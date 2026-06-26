@@ -107,7 +107,7 @@ def _write_file_atomic(content: str, path: Path, encoding: str,
 def _check_write_safety(file_path: str, content: str,
                          encoding: Optional[str] = None,
                          append: bool = False) -> Tuple[Optional[str], str]:
-    """写入前安全检查 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小健 2026-06-24 使用file_type_checker，恢复append+encoding限制
+    """写入前安全检查 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小健 2026-06-24 使用file_type_checker，恢复append+encoding限制 — 小健 2026-06-26 增加类型自动转换
     
     append时指定encoding会导致编码混乱：
     - 原文件GBK + 追加UTF-8 = 混合编码文件（损坏）
@@ -117,9 +117,22 @@ def _check_write_safety(file_path: str, content: str,
         return "file_path不能为空", content
     if content is None:
         return "content不能为None", ""
-    if isinstance(content, str) and len(content) == 0:
+    
+    # 类型自动转换：dict/list → JSON字符串 — 小健 2026-06-26
+    if isinstance(content, (dict, list)):
+        import json as _json
+        try:
+            content = _json.dumps(content, ensure_ascii=False, indent=2)
+            logger.info(f"[_check_write_safety] content参数为{type(content).__name__}，已自动转为JSON字符串")
+        except Exception as e:
+            return f"content序列化失败: {e}", ""
+    
+    if not isinstance(content, str):
+        return f"content类型错误: 期望str/dict/list，实际{type(content).__name__}", ""
+    
+    if len(content) == 0:
         return "content不能为空字符串,如需清空文件请使用其他方式", content
-    if isinstance(content, str) and '\x00' in content:
+    if '\x00' in content:
         return "content包含null字符(0x00),文本文件不允许包含null字符", content
     if append and encoding:
         return "append模式不允许指定encoding。追加时会自动检测原文件编码并使用相同编码写入。如需转换编码请先读取全文、转换后覆盖写入。", content

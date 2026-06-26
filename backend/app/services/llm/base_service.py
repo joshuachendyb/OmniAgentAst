@@ -116,7 +116,7 @@ class BaseAIService:
 
     def _create_stream_error_chunk(self, e: Exception) -> StreamChunk:
         msg, err_type = _resolve_exception(e)
-        if err_type == "unknown_error":
+        if err_type == "unknown":
             logger.error(f"[{_resolve_exception.__name__}] 未知异常: {e}, 类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}")
         return StreamChunk(content="", model=self.model, is_done=True, stream_error=msg, stream_error_type=err_type)
 
@@ -172,6 +172,8 @@ class BaseAIService:
         max_retries = LLM_STREAM_MAX_RETRIES
         stream_options = LLM_STREAM_OPTIONS
 
+        from app.services.llm.core import FCFormatError as _FCFormatError
+
         while retry_count <= max_retries:
             try:
                 tool_call_accumulator = {}
@@ -220,10 +222,15 @@ class BaseAIService:
                         tc = tool_call_accumulator[idx]
                         if tc["name"]:
                             try:
-                                params = _normalize_tool_params(_json.loads(tc["arguments"])) if tc["arguments"] else {}
-                            except _json.JSONDecodeError:
+                                # 小健 2026-06-26: 处理空字符串和空白字符
+                                args_str = tc["arguments"].strip() if tc["arguments"] else ""
+                                if not args_str:
+                                    params = {}
+                                else:
+                                    params = _normalize_tool_params(_json.loads(args_str))
+                            except _json.JSONDecodeError as e:
                                 failed_parses.append(tc["name"])
-                                logger.warning(f"[request_stream] tool_call '{tc['name']}' 参数JSON解析失败(LLM输出截断), 跳过")
+                                logger.warning(f"[request_stream] tool_call '{tc['name']}' 参数JSON解析失败: {str(e)[:100]}, arguments前100字符: {args_str[:100]}")
                                 continue
                             tool_calls_list.append({
                                 "tool_name": tc["name"],
@@ -240,14 +247,15 @@ class BaseAIService:
                             })
                     # 小欧 2026-06-25: 所有tool_calls都解析失败 → FCFormatError
                     if tool_call_accumulator and not tool_calls_list:
-                        from app.services.llm.core import FCFormatError
-                        raise FCFormatError(f"所有tool_calls参数解析失败: {failed_parses}")
+                        raise _FCFormatError(f"所有tool_calls参数解析失败: {failed_parses}")
                     yield StreamChunk(content="", model=self.model, is_done=False,
                                       tool_calls=tool_calls_list, raw_data=complete_raw)
 
                 yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw, usage=usage_data)
                 return
 
+            except _FCFormatError:
+                raise  # 穿透给call_llm_with_fallback重试/降级 — 2026-06-26
             except Exception as e:
                 if self._should_retry(e) and retry_count < max_retries:
                     retry_count += 1

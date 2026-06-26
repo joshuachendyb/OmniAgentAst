@@ -191,15 +191,11 @@ class UnifiedErrorClassifier:
     
     @staticmethod
     def _check_special_errors(error: Exception) -> Optional[ErrorCategory]:
-        """检查特殊错误 - 小沈 2026-06-08; 小欧 2026-06-26 新增FCFormatError"""
+        """检查特殊错误 - 小沈 2026-06-08; 小欧 2026-06-26 FCFormatError(className绕过循环导入) 2026-06-26"""
         if IdleTimeoutError and isinstance(error, IdleTimeoutError):
             return ErrorCategory.IDLE_TIMEOUT
-        try:
-            from app.services.llm.core import FCFormatError
-            if isinstance(error, FCFormatError):
-                return ErrorCategory.INVALID_PARAMS
-        except ImportError:
-            pass
+        if type(error).__name__ == "FCFormatError":
+            return ErrorCategory.INVALID_PARAMS
         return None
     
     @staticmethod

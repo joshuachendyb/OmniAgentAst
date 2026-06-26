@@ -96,15 +96,36 @@ async def run_sse_stream(
     current_execution_steps: List,
     stream_state: Any = None,
 ) -> AsyncGenerator[str, None]:
-    """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState"""
+    """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState — 小健 2026-06-26 增加session存在性验证"""
     from app.services.agent.universal_agent import UniversalAgent
     from app.utils.sse_formatter import format_agent_sse
     from app.services.react_sse_wrapper.chat_stream import save_execution_steps_to_db
+    from app.db import db
 
     agent = None
     log_tag = "[AgentOp]"
     error_label = "操作执行失败"
     error_type = "agent_operation_error"
+
+    # 小健 2026-06-26: 验证session是否存在，避免后续保存失败
+    if session_id:
+        try:
+            with db.get_conn("chat") as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM chat_sessions WHERE id=?", (session_id,))
+                if not cursor.fetchone():
+                    error_msg = f"Session {session_id} 不存在，无法执行任务"
+                    logger.error(f"[SSE] {error_msg}")
+                    from app.services.agent.steps import ErrorStep, FinalStep
+                    error_step = ErrorStep(step=next_step(), error_type="session_not_found", error_message=error_msg)
+                    current_execution_steps.append(error_step.to_dict())
+                    yield format_agent_sse(error_step.to_dict())
+                    final_step = FinalStep(step=next_step(), response=error_msg)
+                    current_execution_steps.append(final_step.to_dict())
+                    yield format_agent_sse(final_step.to_dict())
+                    return
+        except Exception as e:
+            logger.error(f"[SSE] Session验证失败: {e}")
 
     try:
         agent = UniversalAgent(
