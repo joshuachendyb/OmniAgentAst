@@ -133,29 +133,61 @@ eval(user_input)  # ❌ 会读取敏感文件！
 
 ## 三、代码实现
 
-### 3.1 风险等级定义
+### 3.1 代码组织结构
 
-**文件**: `backend/app/tools/tool_constants.py`
+**文件命名规范**：`{tool_name}_safety.py`
+
+**示例**：
+- `execute_code_safety.py` - execute_code工具的安全检查
+- `execute_shell_command_safety.py` - execute_shell_command工具的安全检查
+- `write_text_file_safety.py` - write_text_file工具的安全检查
+
+**优点**：
+1. ✅ **一目了然**：一看文件名就知道是哪个工具的安全处理
+2. ✅ **单一职责**：每个工具的安全检查独立
+3. ✅ **易于维护**：修改某工具的安全检查不影响其他工具
+4. ✅ **可扩展**：新增工具的安全检查只需新建文件
+
+### 3.2 风险等级定义
+
+**文件**: `backend/app/tools/shell/execute_code_safety.py`
 
 ```python
+# -*- coding: utf-8 -*-
+"""
+execute_code安全检查模块 — 小健 2026-06-27
+
+命名规范：{tool_name}_safety.py
+- execute_code_safety.py - execute_code的安全检查
+- execute_shell_command_safety.py - execute_shell_command的安全检查
+
+职责：
+- 定义风险等级
+- 定义安全检查规则
+- 实现安全检查函数
+"""
+
+from typing import Dict, Any, List
+import re as re_mod
+from app.utils.logger import setup_logger
+
+logger = setup_logger(__name__)
+
+
 # ============================================================
-# 安全风险等级 — 小健 2026-06-27
+# 风险等级定义
 # ============================================================
 class RiskLevel:
+    """安全风险等级 — 小健 2026-06-27"""
     LOW = "low"        # 低风险：允许执行，INFO日志
     MEDIUM = "medium"  # 中风险：允许执行，WARNING日志
     HIGH = "high"      # 高风险：拒绝执行
-```
 
-### 3.2 分级检查规则
 
-**文件**: `backend/app/tools/tool_constants.py`
-
-```python
 # ============================================================
-# 分级安全检查规则 — 小健 2026-06-27
+# execute_code安全检查规则
 # ============================================================
-RISK_CHECK_RULES = [
+RISK_CHECK_RULES: List[Dict[str, Any]] = [
     # ===== subprocess =====
     # 低风险：执行Python/Node等解释器
     {
@@ -251,11 +283,18 @@ RISK_CHECK_RULES = [
 
 ### 3.3 安全检查函数
 
-**文件**: `backend/app/tools/tool_fc_helper.py`
+**文件**: `backend/app/tools/shell/execute_code_safety.py`
 
 ```python
-def _validate_code_safety_v2(code: str) -> Dict[str, Any]:
+def validate_code_safety(code: str) -> Dict[str, Any]:
     """分级安全检查 — 小健 2026-06-27
+    
+    使用方式：
+        from app.tools.shell.execute_code_safety import validate_code_safety
+        
+        result = validate_code_safety(code)
+        if not result["allow"]:
+            # 拒绝执行
     
     返回:
     {
@@ -265,7 +304,6 @@ def _validate_code_safety_v2(code: str) -> Dict[str, Any]:
         "details": ["详细信息"]
     }
     """
-    from app.tools.tool_constants import RISK_CHECK_RULES, RiskLevel
     
     warnings = []
     details = []
@@ -298,19 +336,20 @@ def _validate_code_safety_v2(code: str) -> Dict[str, Any]:
     }
 ```
 
-### 3.4 execute_code修改
+### 3.4 execute_code调用
 
 **文件**: `backend/app/tools/shell/execute_code.py`
 
 ```python
+from app.tools.shell.execute_code_safety import validate_code_safety
+
 def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> Dict[str, Any]:
-    """执行Python代码 — 小健 2026-06-27 改用分级安全检查"""
+    """执行Python代码 — 小健 2026-06-27 使用execute_code_safety模块"""
     if not code or not code.strip():
         return {"success": False, "error_detail": "code参数不能为空"}
     
     if safety_check:
-        from app.tools.tool_fc_helper import _validate_code_safety_v2
-        safety_result = _validate_code_safety_v2(code)
+        safety_result = validate_code_safety(code)
         
         risk_level = safety_result["risk_level"]
         warnings = safety_result["warnings"]
@@ -400,11 +439,20 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 
 ### 6.1 实施步骤
 
-1. **Step 1**: 在 `tool_constants.py` 中添加 `RiskLevel` 和 `RISK_CHECK_RULES`
-2. **Step 2**: 在 `tool_fc_helper.py` 中实现 `_validate_code_safety_v2`
-3. **Step 3**: 修改 `execute_code.py` 使用新的安全检查
-4. **Step 4**: 编写单元测试验证效果
+1. **Step 1**: 创建 `backend/app/tools/shell/execute_code_safety.py`
+2. **Step 2**: 实现 `RiskLevel`、`RISK_CHECK_RULES`、`validate_code_safety()`
+3. **Step 3**: 修改 `execute_code.py` 调用 `execute_code_safety` 模块
+4. **Step 4**: 编写单元测试 `test_execute_code_safety.py`
 5. **Step 5**: 更新文档
+
+**文件结构**：
+```
+backend/app/tools/shell/
+├── execute_code.py              # 主工具
+├── execute_code_safety.py       # 安全检查模块（新增）
+├── execute_shell_command.py     # 主工具
+└── execute_shell_command_safety.py  # 安全检查模块（未来）
+```
 
 ### 6.2 测试用例
 
