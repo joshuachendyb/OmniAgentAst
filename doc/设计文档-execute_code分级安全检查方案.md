@@ -70,14 +70,6 @@ class RiskLevel:
 | `open("/etc/passwd", "w")` | HIGH | 写入系统文件 | ❌ 拒绝 |
 | `open("data.txt", "w")` | MEDIUM | 其他文件写入 | ✅ 允许（警告） |
 
-#### **HTTP请求规则**
-
-| 模式 | 风险等级 | 说明 | 是否允许 |
-|------|---------|------|---------|
-| `requests.get("https://api.com")` | LOW | HTTPS请求 | ✅ 允许 |
-| `requests.get("file://...")` | HIGH | file://协议 | ❌ 拒绝 |
-| `requests.get("http://...")` | MEDIUM | HTTP请求 | ✅ 允许（警告） |
-
 #### **eval/exec规则**
 
 | 模式 | 风险等级 | 说明 | 是否允许 |
@@ -111,7 +103,7 @@ eval(user_input)  # ❌ 会读取敏感文件！
 
 **问题**：eval会把字符串当Python代码执行，如果字符串来自用户输入，可以执行任意代码！
 
-#### **socket和requests规则**
+#### **socket和requests：无风险，不检查**
 
 | 模式 | 风险等级 | 说明 | 是否允许 |
 |------|---------|------|---------|
@@ -210,29 +202,6 @@ RISK_CHECK_RULES = [
         "allow": True,
     },
     
-    # ===== requests/HTTP =====
-    # 低风险：HTTPS请求
-    {
-        "pattern": r"requests\.(get|post|put|delete|patch)\s*\(\s*[\'\"]https://",
-        "risk": RiskLevel.LOW,
-        "desc": "HTTPS请求（相对安全）",
-        "allow": True,
-    },
-    # 高风险：file:// 协议
-    {
-        "pattern": r"requests\.(get|post|put|delete|patch)\s*\(\s*[\'\"]file://",
-        "risk": RiskLevel.HIGH,
-        "desc": "file://协议请求",
-        "allow": False,
-    },
-    # 中风险：HTTP请求
-    {
-        "pattern": r"requests\.(get|post|put|delete|patch)\s*\(",
-        "risk": RiskLevel.MEDIUM,
-        "desc": "HTTP请求",
-        "allow": True,
-    },
-    
     # ===== eval/exec =====
     # 低风险：eval硬编码字符串
     {
@@ -274,10 +243,9 @@ RISK_CHECK_RULES = [
         "allow": False,
     },
     
-    # ===== socket和requests =====
-    # 无风险：不检查
-    # socket - 只是建立网络连接，无法提权，完全允许
-    # requests - 只是HTTP客户端，正常操作，完全允许
+    # ===== socket和requests：无风险，不检查 =====
+    # socket - 只是建立网络连接，无法提权
+    # requests - 只是HTTP客户端，正常操作
 ]
 ```
 
@@ -385,15 +353,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 | `open("/etc/passwd", "w")` | ❌ 拒绝 | ❌ 拒绝（HIGH） | ✅ 保持安全 |
 | `open("data.txt", "w")` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ✅ 允许但有警告 |
 
-### 4.3 HTTP请求
-
-| 代码 | 旧方案 | 新方案 | 改进 |
-|------|--------|--------|------|
-| `requests.get("https://api.com")` | ❌ 拒绝 | ✅ 允许（LOW） | ✅ 不再过度拦截 |
-| `requests.get("file://...")` | ❌ 拒绝 | ❌ 拒绝（HIGH） | ✅ 保持安全 |
-| `requests.get("http://...")` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ✅ 允许但有警告 |
-
-### 4.4 eval/exec
+### 4.3 eval/exec
 
 | 代码 | 旧方案 | 新方案 | 改进 |
 |------|--------|--------|------|
@@ -401,7 +361,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 | `eval(user_input)` | ❌ 拒绝 | ❌ 拒绝（HIGH） | ✅ 保持安全 |
 | `eval(complex_expr)` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ✅ 允许但有警告 |
 
-### 4.5 socket和requests
+### 4.4 socket和requests
 
 | 代码 | 旧方案 | 新方案 | 改进 |
 |------|--------|--------|------|
