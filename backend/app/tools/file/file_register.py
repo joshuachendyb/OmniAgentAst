@@ -120,7 +120,9 @@ FILE_TOOL_EXAMPLES = {
     ],
     "write_text_file": [
         {"file_path": "D:/output/test.txt", "content": "Hello World"},
-        {"file_path": "D:/logs/app.log", "content": "[2026-05-18] Done\\n", "append": True},
+        {"file_path": "D:/report.md", "content": "# 标题\n\n第一段内容\n\n第二段内容"},
+        {"file_path": "D:/config.json", "content": "{\"name\": \"test\", \"value\": 123}"},
+        {"file_path": "D:/logs/app.log", "content": "[2026-05-18] Done\n", "append": True},
     ],
     "read_media_file": [
         {"file_path": "D:/screenshot.png"},

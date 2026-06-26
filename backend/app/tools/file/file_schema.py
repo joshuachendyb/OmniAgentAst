@@ -57,11 +57,27 @@ class WriteTextFileInput(BaseModel):
         description="文件的完整路径(绝对路径,支持中文路径)。用于写入文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
     content: str = Field(
-        description="要写入文件的文本内容"
+        description="""要写入文件的文本内容。
+
+【格式要求】
+- 类型: 必须是字符串(string)，不支持dict/list/object
+- 换行: 使用\\n表示换行
+- 特殊字符: 双引号用\\"表示，反斜杠用\\\\表示
+
+【长度限制】
+- 建议: 单次调用不超过2000字符(避免LLM输出截断)
+- 超过2000字符: 建议分多次调用(第一次append=False，后续append=True)
+- 最大: 10000字符
+
+【示例】
+- 单行: "Hello World"
+- 多行: "第一行\\n第二行\\n第三行"
+- JSON: "{\\"key\\": \\"value\\"}" """,
+        max_length=10000
     )
     encoding: Optional[str] = Field(
         default=None,
-        description="文件编码。追加时检测已有文件编码,新建时默认为utf-8。也可指定gbk/gb2312等"
+        description="文件编码。追加时检测已有文件编码,新建时默认utf-8。也可指定gbk/gb2312等"
     )
     append: bool = Field(
         default=False,
