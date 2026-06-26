@@ -1,6 +1,26 @@
-v0.17.4
+v0.17.5
 
-更新时间: 2026-06-26 13:43:12
+更新时间: 2026-06-26 22:41:52
+
+## v0.17.4→v0.17.5 变更汇总 - 小欧-2026-06-26
+
+### refactor: 代码重构(5项)
+- 592f025b4: 统一函数签名，删除Union类型 - 小健
+- 4af528c38: 删除generate_chart的dict支持，只支持文件路径 - 小健
+- aa61056fd: 统一time参数类型约束为str - 小健
+- 5f4e5cf42: 修复参数类型歧义问题 - 小健
+- 2f8d7fd1b: 增强write_text_file的Schema约束 - 小健
+
+### fix: 代码修复(4项)
+- 2b4372911: file_schema 参数说明多示例改单一 - 小欧
+- d9f911a4a: shell_schema+react_cycle+tool_constants 参数说明准确化+B3零工具检测 - 小欧
+- 8612b8b01: write_text_file参数类型错误+tool_call解析失败+session存在性验证 - 小健
+- 4c6716d04: E2E超时marker系统+check_db tool_params修复+obs_text完整显示+超时2000s - 小欧
+
+### docs: 文档更新(1项)
+- 4aa082db6: clean up old test records and reports - 小欧
+
+---
 
 ## v0.17.3→v0.17.4 变更汇总 - 小欧-2026-06-26
 
