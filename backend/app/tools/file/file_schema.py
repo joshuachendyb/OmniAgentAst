@@ -153,7 +153,7 @@ class ListDirectoryInput(BaseModel):
 
 class SearchFilesInput(BaseModel):
     pattern: str = Field(
-        description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\"、\"**/*.ts\"、\"config*\""
+        description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\""
     )
     search_dir: str = Field(
         description="搜索的起始目录(绝对路径,必填)。如 D:/项目代码"
@@ -174,14 +174,14 @@ class SearchFilesInput(BaseModel):
 
 class GrepFileContentInput(BaseModel):
     pattern: str = Field(
-        description="正则表达式搜索模式,支持中文内容搜索。如 \"def read_file\" 或 \"class.*Component\""
+        description="正则表达式搜索模式,支持中文内容搜索。如 \"def read_file\""
     )
     search_dir: str = Field(
         description="搜索路径(绝对路径,必填)"
     )
     glob: Optional[str] = Field(
         default=None,
-        description="文件过滤(glob通配符),如 \"*.py\"、\"*.{js,ts}\""
+        description="文件过滤(glob通配符),如 \"*.py\""
     )
     ignore_case: bool = Field(
         default=True,
