@@ -11,6 +11,7 @@ task操作只在本层处理:register → interrupt检查 → pause检查 → st
 """
 
 import asyncio
+import time
 import uuid
 from dataclasses import dataclass
 from fastapi import APIRouter, Request
@@ -112,6 +113,21 @@ async def chat_stream(request: ChatRequest):
         prompt_logger = get_prompt_logger()
         prompt_logger.start_request(user_input, session_id)
 
+        # Task 生命周期日志（开始）— 小欧 2026-06-26
+        _task_start_time = time.time()
+        _user_msg_id = None
+        try:
+            from app.utils.message_id_tracker import get_user_message_id
+            _user_msg_id = get_user_message_id(session_id)
+        except Exception:
+            pass
+        logger.info(
+            f"[TASK_START] task_id={task_id} session_id={session_id} "
+            f"user_message_id={_user_msg_id} | "
+            f"provider={ai_service.provider} model={ai_service.model} | "
+            f"user_input={user_input}"
+        )
+
         try:
             await register_task(task_id, ai_service)
 
@@ -129,7 +145,7 @@ async def chat_stream(request: ChatRequest):
                 last_message=user_input,
                 next_step=next_step,
                 session_id=session_id, current_execution_steps=execution_steps,
-                stream_state=state,
+                stream_state=state, start_time=_task_start_time,
             )
             cancel_event = asyncio.Event()
 

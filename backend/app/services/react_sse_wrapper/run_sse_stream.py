@@ -9,7 +9,8 @@ Author: 小沈 - 2026-05-31
 """
 
 import asyncio
-from typing import List, AsyncGenerator, Any, Callable, Dict
+import time
+from typing import List, AsyncGenerator, Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
 from app.services.agent.types import AgentStatus
@@ -95,6 +96,7 @@ async def run_sse_stream(
     session_id: str,
     current_execution_steps: List,
     stream_state: Any = None,
+    start_time: Optional[float] = None,
 ) -> AsyncGenerator[str, None]:
     """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState — 小健 2026-06-26 增加session存在性验证"""
     from app.services.agent.universal_agent import UniversalAgent
@@ -106,6 +108,7 @@ async def run_sse_stream(
     log_tag = "[AgentOp]"
     error_label = "操作执行失败"
     error_type = "agent_operation_error"
+    end_type = "unknown"
 
     # 小健 2026-06-26: 验证session是否存在，避免后续保存失败
     if session_id:
@@ -123,6 +126,8 @@ async def run_sse_stream(
                     final_step = FinalStep(step=next_step(), response=error_msg)
                     current_execution_steps.append(final_step.to_dict())
                     yield format_agent_sse(final_step.to_dict())
+                    end_type = "session_not_found"
+                    _log_task_end(task_id, end_type, start_time)
                     return
         except Exception as e:
             logger.error(f"[SSE] Session验证失败: {e}")
@@ -168,6 +173,7 @@ async def run_sse_stream(
 
             # 更新current_content — 小沈 2026-06-09 支持StreamState
             if event_type == 'final':
+                end_type = "final"
                 content = event_dict.get('response', '') or ''
                 if stream_state is not None:
                     stream_state.current_content = content or stream_state.current_content
@@ -188,6 +194,7 @@ async def run_sse_stream(
         # R3-2修复: 在finally保存前创建IncidentStep(interrupted),防止step丢失 — 小沈 2026-06-09
         # R3-3修复: CancelledError路径补FinalStep,保证客户端收到终态事件 — 小沈 2026-06-10
         # R3-4修复: log_step_yield补全,防止prompt日志遗漏 — 小欧 2026-06-23
+        end_type = "interrupted"
         logger.info(f"[SSE] 任务 {task_id} 被取消(CancelledError)")
         from app.services.agent.steps import MetaStep, FinalStep
         from app.utils.prompt_logger import get_prompt_logger
@@ -206,6 +213,7 @@ async def run_sse_stream(
             agent.status = AgentStatus.CANCELLED
 
     except Exception as e:
+        end_type = "error"
         error_response = await _yield_error_sse(
             error_type=error_type, error_label=error_label, log_tag=log_tag,
             task_id=task_id, e=e, next_step=next_step,
@@ -239,6 +247,18 @@ async def run_sse_stream(
 
         if agent is not None and stream_state is not None:
             stream_state.llm_call_count = getattr(agent, "llm_call_count", 0)
+
+        # Task 生命周期日志（结束）— 小欧 2026-06-26
+        _log_task_end(task_id, end_type, start_time)
+
+
+def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = None) -> None:
+    """输出 TASK_END 日志（结束方式 + 耗时）"""
+    duration_str = ""
+    if start_time is not None:
+        elapsed = time.time() - start_time
+        duration_str = f" duration={elapsed:.2f}s"
+    logger.info(f"[TASK_END] task_id={task_id} end_type={end_type}{duration_str}")
 
 
 async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):
