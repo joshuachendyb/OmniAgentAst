@@ -180,42 +180,11 @@ eval(user_input)  # ❌ 会读取敏感文件！
 - ❌ 简单检查（≤5条规则）直接写在工具内
 - ❌ 常规检查（路径、类型等）不需要单独文件
 
-### 3.3 风险等级定义
+### 3.3 安全检查规则
 
 **文件**: `backend/app/tools/shell/execute_code_safety.py`
 
 ```python
-# -*- coding: utf-8 -*-
-"""
-execute_code安全检查模块 — 小健 2026-06-27
-
-命名规范：{tool_name}_safety.py
-- execute_code_safety.py - execute_code的安全检查
-- execute_shell_command_safety.py - execute_shell_command的安全检查
-
-职责：
-- 定义风险等级
-- 定义安全检查规则
-- 实现安全检查函数
-"""
-
-from typing import Dict, Any, List
-import re as re_mod
-from app.utils.logger import setup_logger
-
-logger = setup_logger(__name__)
-
-
-# ============================================================
-# 风险等级定义
-# ============================================================
-class RiskLevel:
-    """安全风险等级 — 小健 2026-06-27"""
-    LOW = "low"        # 低风险：允许执行，INFO日志
-    MEDIUM = "medium"  # 中风险：允许执行，WARNING日志
-    HIGH = "high"      # 高风险：拒绝执行
-
-
 # ============================================================
 # execute_code安全检查规则
 # ============================================================
@@ -313,7 +282,7 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
 ]
 ```
 
-### 3.3 安全检查函数
+### 3.4 安全检查函数
 
 **文件**: `backend/app/tools/shell/execute_code_safety.py`
 
@@ -489,19 +458,22 @@ backend/app/tools/shell/
 ### 6.2 测试用例
 
 ```python
-def test_safety_check_v2():
+def test_validate_code_safety():
+    """测试分级安全检查 — 小健 2026-06-27"""
+    from app.tools.shell.execute_code_safety import validate_code_safety
+    
     # LOW风险：允许
-    result = _validate_code_safety_v2('subprocess.run(["python", "script.py"])')
+    result = validate_code_safety('subprocess.run(["python", "script.py"])')
     assert result["risk_level"] == "low"
     assert result["allow"] == True
     
     # HIGH风险：拒绝
-    result = _validate_code_safety_v2('subprocess.run(["rm", "-rf", "/"])')
+    result = validate_code_safety('subprocess.run(["rm", "-rf", "/"])')
     assert result["risk_level"] == "high"
     assert result["allow"] == False
     
     # MEDIUM风险：允许但有警告
-    result = _validate_code_safety_v2('subprocess.run(["dir"])')
+    result = validate_code_safety('subprocess.run(["dir"])')
     assert result["risk_level"] == "medium"
     assert result["allow"] == True
     assert len(result["warnings"]) > 0
