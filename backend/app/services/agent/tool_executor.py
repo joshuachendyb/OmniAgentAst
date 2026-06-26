@@ -5,6 +5,7 @@ tool_executor — 工具执行逻辑
 从universal_agent拆出 — 小沈 2026-06-17
 """
 
+import time
 from typing import Any, Dict, Set
 
 from app.tools.tool_types import ToolCategory
@@ -12,10 +13,22 @@ from app.tools.tool_types import ToolCategory
 
 async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
     """执行工具并处理tool_search自动注入"""
+    start = time.time()
     result = await agent._retry_engine.execute_tool_with_retry(tool_name, tool_params)
+    elapsed = time.time() - start
+    code = result.get("code", "?") if isinstance(result, dict) else "?"
+    status = "ok" if code in (0, 200, "success") else "fail"
+    _log_single_tool(tool_name, tool_params, elapsed, status)
     if tool_name == "tool_search":
         auto_inject_from_search(agent, result)
     return result
+
+
+def _log_single_tool(tool_name: str, params: Dict[str, Any], elapsed: float, status: str) -> None:
+    """一行格式: [tool_executor] tool=xxx, 耗时=0.35s, 状态=ok, params无敏感字段"""
+    from app.utils.logger import logger
+    keys = list(params.keys()) if params else []
+    logger.info(f"[tool_executor] tool={tool_name}, 耗时={elapsed:.2f}s, 状态={status}, params={keys}")
 
 
 def auto_inject_from_search(agent, result: Dict[str, Any]) -> None:

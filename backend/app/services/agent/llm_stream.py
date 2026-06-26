@@ -7,6 +7,7 @@ llm_stream — LLM流式调用+响应构建
 
 import asyncio
 import json
+import time
 from typing import Any
 
 from app.services.agent.steps import ChunkStep
@@ -82,6 +83,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     usage_data = None
     tool_choice = LLM_TOOL_CHOICE if openai_tools else None
 
+    llm_start = time.time()
     try:
         async for chunk in agent.llm_client.request_stream(
             messages=messages, tools=openai_tools, tool_choice=tool_choice,
@@ -109,6 +111,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
                 if chunk.usage:
                     usage_data = chunk.usage
                 break
+        llm_elapsed = time.time() - llm_start
     except Exception as e:
         from app.services.llm.core import FCFormatError
         if isinstance(e, FCFormatError):
@@ -136,12 +139,14 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
 
     if tool_calls_result:
         _fc_names = [tc.get("tool_name","?") if isinstance(tc,dict) else "?" for tc in tool_calls_result]
-        logger.info(f"[FC] 解析结果: tool_calls({len(tool_calls_result)})={_fc_names}, tokens={usage_data.get('total_tokens','?') if usage_data else '?'}")
+        _p = usage_data.get('prompt_tokens','?') if usage_data else '?'; _c = usage_data.get('completion_tokens','?') if usage_data else '?'; _t = usage_data.get('total_tokens','?') if usage_data else '?'
+        logger.info(f"[FC] 解析结果: tool_calls({len(tool_calls_result)})={_fc_names}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
         yield _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent)
         return
 
     content = full_content or full_reasoning or ""
-    logger.info(f"[FC] 解析结果: answer, len={len(content)}, tokens={usage_data.get('total_tokens','?') if usage_data else '?'}")
+    _p = usage_data.get('prompt_tokens','?') if usage_data else '?'; _c = usage_data.get('completion_tokens','?') if usage_data else '?'; _t = usage_data.get('total_tokens','?') if usage_data else '?'
+    logger.info(f"[FC] 解析结果: answer, len={len(content)}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
     yield _build_answer_response(content, usage_data, agent)
 
 

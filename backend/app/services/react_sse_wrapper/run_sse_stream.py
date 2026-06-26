@@ -249,16 +249,27 @@ async def run_sse_stream(
             stream_state.llm_call_count = getattr(agent, "llm_call_count", 0)
 
         # Task 生命周期日志（结束）— 小欧 2026-06-26
-        _log_task_end(task_id, end_type, start_time)
+        _log_task_end(task_id, end_type, start_time, current_execution_steps, agent)
 
 
-def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = None) -> None:
-    """输出 TASK_END 日志（结束方式 + 耗时）"""
-    duration_str = ""
+def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = None,
+                  steps: Optional[list] = None, agent: Any = None) -> None:
+    """输出 TASK_END 日志（结束方式+耗时+步骤统计+LLM调用次数）— 一行完整"""
+    parts = [f"task_id={task_id}", f"end_type={end_type}"]
     if start_time is not None:
         elapsed = time.time() - start_time
-        duration_str = f" duration={elapsed:.2f}s"
-    logger.info(f"[TASK_END] task_id={task_id} end_type={end_type}{duration_str}")
+        parts.append(f"duration={elapsed:.2f}s")
+    if agent is not None:
+        parts.append(f"llm_calls={getattr(agent, 'llm_call_count', 0)}")
+    if steps:
+        counter: Dict[str, int] = {}
+        for s in steps:
+            t = s.get("type", "?") if isinstance(s, dict) else "?"
+            counter[t] = counter.get(t, 0) + 1
+        step_summary = ",".join(f"{k}={v}" for k, v in sorted(counter.items()))
+        if step_summary:
+            parts.append(f"steps=[{step_summary}]")
+    logger.info(f"[TASK_END] {' | '.join(parts)}")
 
 
 async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):
