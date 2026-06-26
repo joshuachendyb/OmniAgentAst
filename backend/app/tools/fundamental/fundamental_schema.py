@@ -35,23 +35,18 @@ class TimeAddInput(BaseModel):
         ...,
         description="偏移量。正数=增加,负数=减少。例如 delta=3 表示加3,delta=-2 表示减2。必填参数"
     )
-    start: Optional[Union[int, float, str]] = Field(
+    start: Optional[str] = Field(
         default=None,
-        description="""基准时间(可选)，默认当前时间。支持多种格式：
+        description="""基准时间(可选)，默认当前时间。
 
-【时间戳】
-- 整数: 1719360000
-- 浮点数: 1719360000.123
-
-【时间字符串】
-- 日期: "2026-06-26"
-- 日期时间: "2026-06-26 10:30:00"
-- ISO格式: "2026-06-26T10:30:00"
+【格式要求】ISO格式字符串: "YYYY-MM-DD HH:MM:SS"
 
 【示例】
 - 不传(使用当前时间): start=None
-- 时间戳: start=1719360000
-- 日期字符串: start="2026-06-26" """
+- 日期: start="2026-06-26"
+- 日期时间: start="2026-06-26 10:30:00"
+
+【注意】只支持字符串格式，不支持时间戳"""
     )
     unit: Literal["days", "hours", "minutes", "seconds", "months"] = Field(
         default="days",
@@ -60,40 +55,30 @@ class TimeAddInput(BaseModel):
 
 
 class TimeDiffInput(BaseModel):
-    start: Union[int, float, str] = Field(
+    start: str = Field(
         ...,
-        description="""起始时间。支持多种格式：
+        description="""起始时间。
 
-【时间戳】
-- 整数: 1719360000
-- 浮点数: 1719360000.123
-
-【时间字符串】
-- 日期: "2026-06-26"
-- 日期时间: "2026-06-26 10:30:00"
-- ISO格式: "2026-06-26T10:30:00"
+【格式要求】ISO格式字符串: "YYYY-MM-DD HH:MM:SS"
 
 【示例】
-- 时间戳: start=1719360000
-- 日期字符串: start="2026-06-26" """
+- 日期: start="2026-06-26"
+- 日期时间: start="2026-06-26 10:30:00"
+
+【注意】只支持字符串格式，不支持时间戳"""
     )
-    end: Optional[Union[int, float, str]] = Field(
+    end: Optional[str] = Field(
         default=None,
-        description="""结束时间(可选)，默认当前时间。支持多种格式：
+        description="""结束时间(可选)，默认当前时间。
 
-【时间戳】
-- 整数: 1719456000
-- 浮点数: 1719456000.456
-
-【时间字符串】
-- 日期: "2026-06-27"
-- 日期时间: "2026-06-27 10:30:00"
-- ISO格式: "2026-06-27T10:30:00"
+【格式要求】ISO格式字符串: "YYYY-MM-DD HH:MM:SS"
 
 【示例】
 - 不传(使用当前时间): end=None
-- 时间戳: end=1719456000
-- 日期字符串: end="2026-06-27" """
+- 日期: end="2026-06-27"
+- 日期时间: end="2026-06-27 10:30:00"
+
+【注意】只支持字符串格式，不支持时间戳"""
     )
 
 
