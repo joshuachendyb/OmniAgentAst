@@ -83,8 +83,59 @@ class RiskLevel:
 | 模式 | 风险等级 | 说明 | 是否允许 |
 |------|---------|------|---------|
 | `eval("1+1")` | LOW | eval硬编码字符串 | ✅ 允许 |
-| `eval(user_input)` | HIGH | eval动态变量 | ❌ 拒绝 |
+| `eval(user_input)` | HIGH | eval动态变量（**代码注入风险**） | ❌ 拒绝 |
 | `eval(complex_expr)` | MEDIUM | 其他eval调用 | ✅ 允许（警告） |
+
+**eval()是什么？**
+
+`eval()` 是Python内置函数，用于**执行字符串形式的Python代码**：
+
+```python
+# 正常用法
+eval("1+1")  # 返回 2
+eval("2*3")  # 返回 6
+```
+
+**为什么eval(user_input)危险？**
+
+**代码注入攻击**：
+
+```python
+# 假设user_input来自用户输入
+user_input = "__import__('os').system('rm -rf /')"
+eval(user_input)  # ❌ 会执行删除命令！
+
+user_input = "open('/etc/passwd', 'r').read()"
+eval(user_input)  # ❌ 会读取敏感文件！
+```
+
+**问题**：eval会把字符串当Python代码执行，如果字符串来自用户输入，可以执行任意代码！
+
+#### **socket和requests规则**
+
+| 模式 | 风险等级 | 说明 | 是否允许 |
+|------|---------|------|---------|
+| `socket.socket()` | **无风险** | 正常网络连接 | ✅ 完全允许 |
+| `requests.get("https://api.com")` | **无风险** | 正常HTTP请求 | ✅ 完全允许 |
+
+**为什么socket和requests无风险？**
+
+1. **socket**：
+   - 只是建立网络连接
+   - execute_code在临时目录执行，没有特殊权限
+   - 无法访问敏感资源
+   - **不应该被拦截**
+
+2. **requests**：
+   - 只是发起HTTP请求
+   - 正常的网络操作
+   - 无法访问本地敏感文件
+   - **不应该被拦截**
+
+**之前的过度担心**：
+- ❌ 担心socket可以建立恶意连接 → 实际无法提权
+- ❌ 担心requests可以发起DDoS攻击 → 实际单机无法DDoS
+- ❌ 担心泄露数据 → 实际execute_code在沙箱环境
 
 ---
 
@@ -223,14 +274,10 @@ RISK_CHECK_RULES = [
         "allow": False,
     },
     
-    # ===== socket =====
-    # 中风险：网络Socket
-    {
-        "pattern": r"socket\s*\.",
-        "risk": RiskLevel.MEDIUM,
-        "desc": "网络Socket操作",
-        "allow": True,
-    },
+    # ===== socket和requests =====
+    # 无风险：不检查
+    # socket - 只是建立网络连接，无法提权，完全允许
+    # requests - 只是HTTP客户端，正常操作，完全允许
 ]
 ```
 
@@ -354,6 +401,13 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 | `eval(user_input)` | ❌ 拒绝 | ❌ 拒绝（HIGH） | ✅ 保持安全 |
 | `eval(complex_expr)` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ✅ 允许但有警告 |
 
+### 4.5 socket和requests
+
+| 代码 | 旧方案 | 新方案 | 改进 |
+|------|--------|--------|------|
+| `socket.socket()` | ❌ 拒绝 | ✅ 完全允许 | ✅ 不再过度拦截 |
+| `requests.get("https://api.com")` | ❌ 拒绝 | ✅ 完全允许 | ✅ 不再过度拦截 |
+
 ---
 
 ## 五、方案优点
@@ -376,7 +430,8 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 
 - ✅ **允许合法的subprocess调用**：如执行Python脚本
 - ✅ **允许合法的文件写入**：如写入临时文件
-- ✅ **允许合法的HTTP请求**：如调用API
+- ✅ **允许合法的HTTP请求**：如调用API（完全允许，不检查）
+- ✅ **允许合法的网络连接**：如socket（完全允许，不检查）
 - ✅ **允许合法的eval调用**：如计算表达式
 
 ---
