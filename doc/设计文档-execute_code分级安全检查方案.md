@@ -133,22 +133,54 @@ eval(user_input)  # ❌ 会读取敏感文件！
 
 ## 三、代码实现
 
-### 3.1 代码组织结构
+### 3.1 设计原则
 
-**文件命名规范**：`{tool_name}_safety.py`
+**原则：根据复杂度选择组织方式**
+
+| 情况 | 组织方式 | 示例 |
+|------|---------|------|
+| **特殊、量大、非常规** | 单独 `{tool_name}_safety.py` 文件 | `execute_code_safety.py` |
+| **普通、常规、量小** | 直接在tool代码内检查 | `read_text_file` 的路径检查 |
+
+**判断标准**：
+1. ✅ **规则数量 > 5条** → 单独文件
+2. ✅ **规则复杂（需要多级判断）** → 单独文件
+3. ✅ **规则特殊（非通用场景）** → 单独文件
+4. ❌ **规则数量 ≤ 5条** → 工具内检查
+5. ❌ **规则简单（单级判断）** → 工具内检查
+6. ❌ **规则通用（常规场景）** → 工具内检查
+
+**示例对比**：
+
+| 工具 | 规则数量 | 复杂度 | 组织方式 |
+|------|---------|--------|---------|
+| `execute_code` | 15+ | 高（多级判断） | ✅ 单独 `execute_code_safety.py` |
+| `execute_shell_command` | 10+ | 高（命令审查） | ✅ 单独 `execute_shell_command_safety.py` |
+| `read_text_file` | 2 | 低（路径检查） | ❌ 工具内检查 |
+| `write_text_file` | 3 | 低（路径+类型检查） | ❌ 工具内检查 |
+
+### 3.2 代码组织结构
+
+**文件命名规范**：`{tool_name}_safety.py`（仅复杂工具）
 
 **示例**：
-- `execute_code_safety.py` - execute_code工具的安全检查
-- `execute_shell_command_safety.py` - execute_shell_command工具的安全检查
-- `write_text_file_safety.py` - write_text_file工具的安全检查
+- `execute_code_safety.py` - execute_code工具的安全检查（复杂，15+规则）
+- `execute_shell_command_safety.py` - execute_shell_command工具的安全检查（复杂，10+规则）
+- `write_text_file` - 直接在工具内检查（简单，3条规则）
 
 **优点**：
 1. ✅ **一目了然**：一看文件名就知道是哪个工具的安全处理
 2. ✅ **单一职责**：每个工具的安全检查独立
 3. ✅ **易于维护**：修改某工具的安全检查不影响其他工具
 4. ✅ **可扩展**：新增工具的安全检查只需新建文件
+5. ✅ **避免过度设计**：简单工具不需要单独文件
 
-### 3.2 风险等级定义
+**避免过度设计**：
+- ❌ 不要为每个工具都创建safety文件
+- ❌ 简单检查（≤5条规则）直接写在工具内
+- ❌ 常规检查（路径、类型等）不需要单独文件
+
+### 3.3 风险等级定义
 
 **文件**: `backend/app/tools/shell/execute_code_safety.py`
 
