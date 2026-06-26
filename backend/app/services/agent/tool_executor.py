@@ -12,13 +12,17 @@ from app.tools.tool_types import ToolCategory
 
 
 async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
-    """执行工具并处理tool_search自动注入"""
+    """执行工具并处理tool_search自动注入 — 小健 2026-06-26 修复状态判断逻辑"""
+    from app.tools.tool_response import is_success
+    
     start = time.time()
     result = await agent._retry_engine.execute_tool_with_retry(tool_name, tool_params)
     elapsed = time.time() - start
-    code = result.get("code", "?") if isinstance(result, dict) else "?"
-    status = "ok" if code in (0, 200, "success") else "fail"
+    
+    # 小健 2026-06-26: 使用is_success函数判断状态，而非错误的result.get("code")
+    status = "ok" if is_success(result) else "fail"
     _log_single_tool(tool_name, tool_params, elapsed, status)
+    
     if tool_name == "tool_search":
         auto_inject_from_search(agent, result)
     return result
