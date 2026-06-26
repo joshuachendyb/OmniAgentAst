@@ -22,11 +22,11 @@ from typing import Literal, Optional
 
 class ExecuteShellCommandInput(BaseModel):
     command: str = Field(
-        ..., description="要执行的命令。如 \"dir\"、\"ls -la\"、\"python script.py\" 等"
+        ..., description="PowerShell命令字符串。多个命令用;分隔（不支持Linux的&&）。示例: Get-ChildItem"
     )
     shell_type: Optional[Literal["powershell", "cmd"]] = Field(
         default="powershell",
-        description="执行环境:powershell(默认)或cmd。Windows系统推荐powershell"
+        description="powershell(默认)或cmd"
     )
     timeout: int = Field(
         default=30000, ge=1, le=600000, description="超时毫秒数,默认30000(30秒)。最小1毫秒,最大600000(10分钟)"
@@ -42,7 +42,7 @@ class ExecuteShellCommandInput(BaseModel):
 
 class FindCommandInput(BaseModel):
     command: str = Field(
-        ..., description="要查找的命令名称,如 python、git、npm、node"
+        ..., description="要查找的命令名称。示例: python"
     )
     all_paths: bool = Field(
         default=False,

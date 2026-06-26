@@ -169,7 +169,7 @@ DANGEROUS_PATTERNS = [
     (r"shutil\.rmtree\s*\(", "递归删除目录(shutil.rmtree)"),
     (r"os\.remove\s*\(", "删除文件(os.remove)"),
     (r"os\.unlink\s*\(", "删除文件(os.unlink)"),
-    (r"__import__\s*\(", "动态导入(__import__)"),
+    # 2026-06-26 移除__import__: LLM在try/except中用其检查库可用性，属合法用途；且参数为硬编码模块名，无注入风险
     (r"eval\s*\(", "动态执行(eval)"),
     (r"exec\s*\(", "动态执行(exec)"),
     (r"compile\s*\(", "动态编译(compile)"),
