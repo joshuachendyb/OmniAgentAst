@@ -140,8 +140,6 @@ def tool_search(query: str) -> Dict[str, Any]:
             {
                 "name": m.name,
                 "category": m.category.value,
-                "description": m.description[:200],
-                "score": 0,
             }
             for m in all_tools.values()
         ]
@@ -152,8 +150,7 @@ def tool_search(query: str) -> Dict[str, Any]:
             "query": query, "matches": top,
             "total_matched": len(all_items), "total_tools": len(all_tools),
         }
-        llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(all_items), len(all_tools),
-                                                 [{"name": r["name"], "category": r["category"]} for r in top])
+        llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(all_items), len(all_tools), top)
         return build_success(data=data, llm_data=llm_data)
 
     docs, tool_names, avgdl, df = _build_bm25()
@@ -167,28 +164,29 @@ def tool_search(query: str) -> Dict[str, Any]:
         scored.append({
             "name": metadata.name,
             "category": metadata.category.value,
-            "description": metadata.description[:200],
-            "score": round(scores[i], 4),
+            "_score": round(scores[i], 4),
         })
 
-    scored.sort(key=lambda x: x["score"], reverse=True)
+    scored.sort(key=lambda x: x["_score"], reverse=True)
     # P1-1修复 2026-06-23 小欧: 相对阈值过滤,只保留分数>=最高分10%的结果
     if scored:
-        threshold = scored[0]["score"] * 0.1
-        meaningful = [r for r in scored if r["score"] >= threshold]
+        threshold = scored[0]["_score"] * 0.1
+        meaningful = [r for r in scored if r["_score"] >= threshold]
     else:
         meaningful = []
     top_results = meaningful[:10]
 
     duration_ms = int((time.perf_counter() - t0) * 1000)
+    # data.matches已精简为仅name+category，LLM仅需知道"搜到了/没搜到"，
+    # 工具详情感知由auto_inject_from_search自动注入整个分类 — 北京老陈 2026-06-26
     data = {
         "query": query,
-        "matches": top_results,
+        "matches": [{"name": r["name"], "category": r["category"]} for r in top_results],
         "total_matched": len(meaningful),
         "total_tools": len(all_tools),
     }
     llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(meaningful), len(all_tools),
-                                             [{"name": r["name"], "category": r["category"]} for r in top_results[:10]])
+                                             [{"name": r["name"], "category": r["category"]} for r in top_results])
     return build_success(data=data, llm_data=llm_data)
 
 
