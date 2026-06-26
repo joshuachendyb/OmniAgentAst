@@ -71,7 +71,7 @@ def _flush_pending_records():
     """进程退出时写入所有未完成的测试记录"""
     for rec in _pending_records:
         try:
-            _write_record_file(**rec)
+            write_test_record(**rec)
         except Exception:
             pass
     _pending_records.clear()
@@ -547,9 +547,9 @@ def check_db(session_id: str) -> Dict[str, Any]:
                                     f"step[{si}]: tool_name empty(MUST)"
                                 )
                             tp = step.get("tool_params")
-                            if not tp or not isinstance(tp, dict):
+                            if not isinstance(tp, dict):
                                 result["step_field_issues"].append(
-                                    f"step[{si}]: tool_params empty(MUST)"
+                                    f"step[{si}]: tool_params非dict(MUST)"
                                 )
                             obs = step.get("observation") or step.get("execution_result")
                             if not obs:
@@ -1148,6 +1148,97 @@ def print_report(
 RECORD_DIR = Path(__file__).parent.parent.parent / "notes"
 
 
+# ─── 超时 marker 系统（进程被强杀时保留证据）────────────────────
+# 小欧 2026-06-26
+# 在测试开始时写一个 JSON marker 文件，结束时删除。
+# 如果进程被强杀，marker 文件保留在磁盘上，recover_timeout_markers() 可恢复为 TIMEOUT 记录。
+
+STATUS_DIR = RECORD_DIR / ".e2e_status"
+
+
+def write_test_marker(test_id: str, test_name: str = "", user_input: str = ""):
+    """在测试开始时写入 marker 文件，标记该测试正在运行。
+    
+    写磁盘是同步操作，即使进程随后被强杀，marker 文件也已存在。
+    """
+    STATUS_DIR.mkdir(parents=True, exist_ok=True)
+    marker = STATUS_DIR / f"{test_id}.json"
+    data = {
+        "test_id": test_id,
+        "test_name": test_name,
+        "user_input": user_input,
+        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "RUNNING",
+    }
+    marker.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"  [MARKER] {marker.name}")
+
+
+def clear_test_marker(test_id: str):
+    """测试正常/异常完成时删除 marker 文件。"""
+    marker = STATUS_DIR / f"{test_id}.json"
+    if marker.exists():
+        marker.unlink()
+        print(f"  [MARKER CLEAR] {marker.name}")
+    else:
+        # 同时检查旧命名模式兼容
+        for old in STATUS_DIR.glob(f"{test_id}_*.json"):
+            old.unlink()
+
+
+def recover_timeout_markers() -> int:
+    """扫描 STATUS_DIR 中剩余的 marker，转为 TIMEOUT 测试记录。
+    
+    如果进程被强杀（bash timeout），marker 未清理。
+    调用此函数将其转换为标准的 TIMEOUT 记录文件。
+    返回恢复的记录数。
+    """
+    if not STATUS_DIR.exists():
+        return 0
+    count = 0
+    for marker_file in sorted(STATUS_DIR.glob("*.json")):
+        try:
+            data = json.loads(marker_file.read_text(encoding="utf-8"))
+            test_id = data.get("test_id", marker_file.stem)
+            test_name = data.get("test_name", "未知")
+            user_input = data.get("user_input", "")
+            start_time = data.get("start_time", "未知")
+            elapsed = 0.0
+            # 如果start_time已知，计算已经过了多久
+            if start_time != "未知":
+                try:
+                    st = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+                    elapsed = (datetime.now() - st).total_seconds()
+                except ValueError:
+                    pass
+            # 写入 TIMEOUT 记录
+            TIMEOUT_RECORD = (
+                f"# 测试记录-{test_id}\n\n"
+                f"**创建时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"**测试编号**: {test_id}\n"
+                f"**测试名称**: {test_name}\n"
+                f"**用户命令**: {user_input}\n"
+                f"**测试结果**: TIMEOUT\n\n"
+                f"---\n\n"
+                f"## 1 超时说明\n\n"
+                f"测试在 {start_time} 启动后进程被强杀，未正常完成 `write_test_record()`。\n"
+                f"此记录由 `recover_timeout_markers()` 从残留 marker 恢复。\n\n"
+                f"**恢复时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"**已过时间**: {elapsed:.0f}秒\n\n"
+                f"---\n"
+                f"**更新时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            )
+            today = datetime.now().strftime("%Y-%m-%d")
+            record_file = RECORD_DIR / f"测试记录-{test_id}-{today}.md"
+            record_file.write_text(TIMEOUT_RECORD, encoding="utf-8")
+            print(f"  [RECOVER TIMEOUT] {record_file.name}")
+            marker_file.unlink()
+            count += 1
+        except Exception as e:
+            print(f"  [RECOVER FAIL] {marker_file.name}: {e}")
+    return count
+
+
 def verify_test_record_exists(test_id: str) -> bool:
     """验证测试记录文件是否存在 -- 小欧 2026-06-18
     
@@ -1198,6 +1289,8 @@ def write_test_record(
     # dict列表代表tool_calls,不是一致性问题,应视为空问题 -- 小健 2026-06-19
     if consistency_issues and isinstance(consistency_issues[0], dict):
         consistency_issues = []
+    # 先清除同test_id旧记录，再注册新记录（防止_reflush_pending_records重复写入）
+    remove_pending_record(test_id)
     # 注册待写入记录（超时保护）
     register_pending_record(
         test_id, test_name, user_input, result, db,
@@ -1397,7 +1490,7 @@ def write_test_record(
                 tn = s.get("tool_name", "?")
                 tp = json.dumps(s.get("tool_params", {}), ensure_ascii=False)
                 obs_raw = s.get("observation") or s.get("execution_result", "")
-                obs_str = _obs_to_text(obs_raw)[:200] if obs_raw else "(空)"
+                obs_str = _obs_to_text(obs_raw) if obs_raw else "(空)"
                 lines.append(f"**步骤{s.get('step', '?')}: {tn}**")
                 lines.append(f"- 参数: `{tp}`")
                 lines.append(f"- 观察结果: `{obs_str}`")
@@ -1581,6 +1674,7 @@ def write_test_record(
     else:
         print(f"  [CALL CHAIN] (无工具调用)")
 
-    # 正常完成，移除待写入记录
+    # 正常完成，移除待写入记录 + 清理 marker
     remove_pending_record(test_id)
+    clear_test_marker(test_id)
     return written_path

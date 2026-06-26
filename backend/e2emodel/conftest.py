@@ -1,4 +1,4 @@
-"""共享测试fixtures：临时DB、Mock LLM、测试配置、隔离的ToolRegistry"""
+"""共享测试fixtures：临时DB、Mock LLM、测试配置、隔离的ToolRegistry、E2E marker"""
 
 import pytest
 import tempfile
@@ -192,3 +192,29 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
                     f.write(f"    {err.longrepr}\n")
         f.write(f"{'='*60}\n")
         f.write(f"Exit code: {exitstatus}\n")
+
+
+# ─── E2E 超时 marker（进程被强杀也能保留痕迹）─────────────────
+
+@pytest.fixture(autouse=True)
+def e2e_timeout_marker(request):
+    """所有模块有 TEST_CASE_ID 常量的测试自动写盘 marker。
+
+    正常完成 → clear_test_marker() 删除 marker。
+    进程被强杀 → marker 留盘 → recover_timeout_markers() 恢复为 TIMEOUT 记录。
+    """
+    mod = request.module
+    test_id = getattr(mod, "TEST_CASE_ID", None)
+    if test_id is None:
+        yield
+        return
+
+    from e2emodel.e2e_helpers import write_test_marker, clear_test_marker
+
+    test_name = getattr(mod, "TEST_CASE_NAME", "")
+    user_input = getattr(mod, "USER_INPUT", "")
+    write_test_marker(test_id, test_name, user_input)
+    try:
+        yield
+    finally:
+        clear_test_marker(test_id)
