@@ -1,6 +1,22 @@
-v0.17.3
+v0.17.4
 
-更新时间: 2026-06-26 07:33:37
+更新时间: 2026-06-26 13:43:12
+
+## v0.17.3→v0.17.4 变更汇总 - 小欧-2026-06-26
+
+### fix: 代码修复(3项)
+- ceea19d72: action_handler完整summary日志+system_prompts tag排除列表+error_classifier FCFormatError+超时900s - 小欧
+- 2dc265c8f: e2e_helpers write_test_record改用tempfile+os.replace原子写入 - 小欧
+- bbf85b5b6: constants删除3个死重试常量+llm_stream dict防御加固+LLM_MAX_RETRIES改名 - 小欧
+
+### feat: 新功能(1项)
+- 84e787f03: add start_backend.ps1 and start_server.bat startup scripts - 小欧
+
+### docs: 文档更新(2项)
+- 32ee896cc: update E2E操作手册 - 小欧
+- 39d881756: clean up old test records and debug notes - 小欧
+
+---
 
 ## v0.17.2→v0.17.3 变更汇总 - 小欧-2026-06-26
 
