@@ -36,8 +36,8 @@ def _build_time_diff_llm_data(exec_code: str, duration_ms: int, humanized: str, 
     }
 
 
-def time_diff(start: Union[int, float, str], end: Optional[Union[int, float, str]] = None) -> Dict[str, Any]:
-    """计算时间差值 — 小健 2026-06-22 拆分独立文件"""
+def time_diff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
+    """计算时间差值 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union，只支持str"""
     t0 = _time_mod.perf_counter()
     try:
         start_dt = _parse_datetime_any(start)

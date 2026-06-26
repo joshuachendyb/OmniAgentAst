@@ -36,8 +36,8 @@ def _build_time_add_llm_data(exec_code: str, duration_ms: int, result_time: str,
     }
 
 
-def time_add(delta: float, start: Optional[Union[int, float, str]] = None, unit: Literal["days", "hours", "minutes", "seconds", "months"] = "days") -> Dict[str, Any]:
-    """时间加减计算 — 小健 2026-06-22 拆分独立文件"""
+def time_add(delta: float, start: Optional[str] = None, unit: Literal["days", "hours", "minutes", "seconds", "months"] = "days") -> Dict[str, Any]:
+    """时间加减计算 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union，只支持str"""
     t0 = _time_mod.perf_counter()
     try:
         if start is None:

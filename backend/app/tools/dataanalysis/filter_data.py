@@ -97,10 +97,10 @@ def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) 
     return {"mask": mask, "warnings": warnings}
 
 
-def filter_data(data: Union[str, List[Dict[str, Any]]], conditions: List[Dict[str, Any]],
+def filter_data(data: str, conditions: List[Dict[str, Any]],
                 select_columns: Optional[List[str]] = None, max_rows: Optional[int] = None,
                 sort_by: Optional[str] = None, top_n: Optional[int] = None) -> Dict[str, Any]:
-    """筛选数据 — 小健 2026-06-22 拆分独立文件"""
+    """筛选数据 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union，只支持str"""
     data = coerce_json(data)
     conditions = coerce_json(conditions)
     t0 = _time_mod.perf_counter()

@@ -81,10 +81,10 @@ def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_co
     }
 
 
-def analyze_data(data: Union[str, List[Dict[str, Any]]], operations: Optional[List[str]] = None,
+def analyze_data(data: str, operations: Optional[List[str]] = None,
                  group_by: Optional[str] = None, sort_by: Optional[str] = None,
                  top_n: Optional[int] = None, max_rows: Optional[int] = None) -> Dict[str, Any]:
-    """对数据集进行统计分析 — 小健 2026-06-22 拆分独立文件"""
+    """对数据集进行统计分析 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union，只支持str"""
     data = coerce_json(data)
     t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
