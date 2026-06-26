@@ -284,7 +284,7 @@ async def build_observation(ctx: ObservationContext) -> List:
     if merged_llm_data:
         _status = merged_llm_data.get("status", {})
         _act = merged_llm_data.get("action", {})
-        logger.info(f"[Observation] step={ctx.step}, tool={_act.get('tool','')}, code={_status.get('exec_code','?')}, summary={(merged_llm_data.get('summary','') or '')[:120]}")
+        logger.info(f"[Observation] step={ctx.step}, tool={_act.get('tool','')}, code={_status.get('exec_code','?')}, summary={(merged_llm_data.get('summary','') or '')}")
 
     merged_other = _all_other_data[0] if _all_other_data else None
     if len(_all_other_data) > 1:

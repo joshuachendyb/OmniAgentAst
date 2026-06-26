@@ -142,7 +142,7 @@ class PromptBuilder:
         unclosed = re.findall(r'<(\w+)>', result)
         closed = re.findall(r'</(\w+)>', result)
         for tag in set(unclosed):
-            if tag not in closed and tag not in ('角色', 'br'):
+            if tag not in closed and tag not in ('角色', 'br', '执行纪律', '回答要求', '任务分析与处理规则', '安全规则', '工具参数复核'):
                 logger.warning(f"[PromptBuilder] tag <{tag}> 可能未闭合")
 
         return result
