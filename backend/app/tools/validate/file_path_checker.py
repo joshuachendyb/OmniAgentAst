@@ -56,6 +56,8 @@ def validate_path_for_extract(output_dir: str) -> Tuple[bool, Optional[str], Opt
     
     Returns: (is_valid, error_msg, warning_msg)
     """
+    if not output_dir:
+        return True, None, None
     system_dirs = ["windows", "program files", "program files (x86)"]
     output_lower = output_dir.lower()
     for sd in system_dirs:

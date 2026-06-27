@@ -10,7 +10,7 @@ path_validator — 文件路径越权校验
 
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_constants import (
     FORBIDDEN_PATHS_EXACT,
@@ -18,6 +18,8 @@ from app.tools.tool_constants import (
     FORBIDDEN_PATHS_WINDOWS_EXACT,
     FORBIDDEN_PATHS_WINDOWS_PREFIX,
 )
+from app.tools.registry import tool_registry
+from app.tools.tool_types import ToolCategory
 
 
 def get_default_allowed_paths() -> List[Path]:
@@ -139,4 +141,48 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
         return False, f"路径验证失败: {str(e)}"
 
 
-__all__ = ["ALLOWED_PATHS", "get_default_allowed_paths", "validate_path", "_is_forbidden_path"]
+# 路径相关的工具分类 — 5类工具涉及文件路径操作
+_PATH_CATEGORIES = {
+    ToolCategory.FILE, ToolCategory.DOCUMENT,
+    ToolCategory.DATAANALYSIS, ToolCategory.NETWORK,
+    ToolCategory.DESKTOP,
+}
+
+# 工具参数中可能的路径参数名
+_PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
+                    "directory", "file_name", "destination_path", "output_path")
+
+
+def validate_tool_path(tool_name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    """
+    工具路径检查：自动判断分类 + 找路径参数 + 调validate_path
+    
+    将调度逻辑从 tool_safety_checker._check_known_risks 迁移至此，
+    path相关的事情全部在 path_validator 中处理。
+    小欧 2026-06-27
+    """
+    try:
+        all_categories = tool_registry.get_categories()
+        path_tools = set()
+        for cat in _PATH_CATEGORIES:
+            path_tools.update(all_categories.get(cat, []))
+
+        if tool_name not in path_tools:
+            return True, None
+
+        real_path = None
+        for key in _PATH_PARAM_KEYS:
+            real_path = params.get(key)
+            if real_path is not None:
+                break
+
+        if real_path is None:
+            return True, None
+
+        return validate_path(real_path)
+    except Exception as e:
+        return False, f"路径安全检查异常: {e}"
+
+
+__all__ = ["ALLOWED_PATHS", "get_default_allowed_paths", "validate_path",
+           "validate_tool_path", "_is_forbidden_path"]

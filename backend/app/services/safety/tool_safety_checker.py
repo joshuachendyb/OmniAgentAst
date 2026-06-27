@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from app.utils.logger import logger
-from app.services.safety.path_validator import validate_path
+from app.services.safety.path_validator import validate_tool_path as _validate_tool_path
 
 _WRITE_RISK_TOOL = "write_text_file"
 _CODE_INJECTION_RISK_TOOLS = {"execute_shell_command", "execute_code"}
@@ -100,31 +100,13 @@ class ToolSafetyChecker:
     @staticmethod
     def _check_known_risks(tool_name: str, params: Dict) -> Optional["SafetyResult"]:
         """已知风险检测：路径越权 / 写入大小保护 / 代码注入 — 小沈 2026-06-17 改用path_validator
-        小欧 2026-06-25: 返回SafetyResult替代raw dict"""
-        from app.tools.registry import tool_registry
+        小欧 2026-06-25: 返回SafetyResult替代raw dict
+        小欧 2026-06-27: 路径检查委托validate_tool_path(path_validator统一处理)"""
+        is_valid, msg = _validate_tool_path(tool_name, params)
+        if not is_valid:
+            return SafetyResult(is_safe=False, blocked=True, message=f"路径越权: {msg}")
+
         from app.tools.tool_types import ToolCategory
-
-        all_categories = tool_registry.get_categories()
-        file_tools = set(all_categories.get(ToolCategory.FILE, []))
-
-        if tool_name in file_tools:
-            try:
-                path = params.get("path")
-                if path is None:
-                    path = params.get("source_path")
-                if path is None:
-                    path = params.get("target_path")
-                if path is None:
-                    path = params.get("file_path")
-                if path is None:
-                    path = params.get("directory")
-                if path is not None:
-                    is_valid, msg = validate_path(path)
-                    if not is_valid:
-                        return SafetyResult(is_safe=False, blocked=True, message=f"路径越权: {msg}")
-            except Exception as e:
-                logger.error(f"[ToolSafetyChecker] 路径检查异常,阻止执行: {e}")
-                return SafetyResult(is_safe=False, blocked=True, message=f"安全检查异常(已阻止): {e}")
 
         if tool_name == _WRITE_RISK_TOOL:
             try:
@@ -142,7 +124,8 @@ class ToolSafetyChecker:
                 logger.error(f"[ToolSafetyChecker] 写入检查异常,阻止执行: {e}")
                 return SafetyResult(is_safe=False, blocked=True, message=f"安全检查异常(已阻止): {e}")
 
-        shell_tools = set(all_categories.get(ToolCategory.SHELL, []))
+        from app.tools.registry import tool_registry
+        shell_tools = set(tool_registry.get_categories().get(ToolCategory.SHELL, []))
         # 小健 2026-06-26: 修复P0-4 代码注入检查仅对_CODE_INJECTION_RISK_TOOLS交集生效的bug，改为覆盖所有shell工具
         if tool_name in shell_tools:
             try:
