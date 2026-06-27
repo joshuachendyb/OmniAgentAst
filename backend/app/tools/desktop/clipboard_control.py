@@ -42,11 +42,20 @@ def _read_clipboard() -> Dict[str, Any]:
         try:
             import ctypes
             CF_TEXT = 1
+            kernel32 = ctypes.windll.kernel32
             user32 = ctypes.windll.user32
             user32.OpenClipboard(None)
             try:
-                data_ptr = user32.GetClipboardData(CF_TEXT)
-                text = ctypes.c_char_p(data_ptr).value.decode('gbk') if data_ptr else ""
+                handle = user32.GetClipboardData(CF_TEXT)
+                if handle:
+                    ptr = kernel32.GlobalLock(handle)
+                    if ptr:
+                        text = ctypes.c_char_p(ptr).value.decode('gbk')
+                        kernel32.GlobalUnlock(handle)
+                    else:
+                        text = ""
+                else:
+                    text = ""
             finally:
                 user32.CloseClipboard()
             return {"text": text}
@@ -82,9 +91,11 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
                     user32.CloseClipboard()
                     return {"content": content}
                 else:
+                    kernel32.GlobalFree(h_mem)
                     return {"error_detail": "内存锁定失败", "params": {}}
-            finally:
+            except Exception:
                 kernel32.GlobalFree(h_mem)
+                raise
         except Exception as e:
             return {"error_detail": str(e), "params": {"method": "ctypes"}}
 
