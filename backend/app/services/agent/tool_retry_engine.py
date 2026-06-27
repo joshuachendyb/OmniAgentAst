@@ -85,7 +85,10 @@ class ToolRetryEngine:
         action: str,
         action_input: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """统一工具执行方法 — FC-only: 无finish分支"""
+        """统一工具执行方法 — FC-only: 无finish分支
+        
+        小欧 2026-06-27: 增加参数名别名映射，解决LLM返回参数名不匹配问题
+        """
         tool = self._tools.get(action)
         if tool is None:
             return build_error(
@@ -101,7 +104,12 @@ class ToolRetryEngine:
                 error_type="tool_not_found",
             )
         
-        params = self._validate_params(action, action_input, tool)
+        # 参数名别名映射 — 小欧 2026-06-27
+        # 解决LLM返回参数名不匹配问题（如返回path而非file_path）
+        from app.tools.param_alias_mapper import normalize_params
+        normalized_input, has_mapping = normalize_params(action, action_input)
+        
+        params = self._validate_params(action, normalized_input, tool)
         _ec = params.get("llm_data", {}).get("status", {}).get("exec_code", "") if isinstance(params, dict) else ""
         if _ec == "error":
             return params
