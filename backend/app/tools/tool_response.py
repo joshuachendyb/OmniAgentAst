@@ -23,7 +23,9 @@ _RESERVED_TOP_KEYS: set = {"data", "llm_data", "other_data"}
 
 def build_success(data: Any = None, llm_data: Optional[Dict] = None,
                   other_data: Optional[Dict] = None, **extra) -> Dict[str, Any]:
-    """构建成功响应 — 纯组装result，不构建llm_data — 小欧 2026-06-21"""
+    """构建成功响应 — 小欧 2026-06-21，小欧 2026-06-27 修复默认llm_data一致性"""
+    if llm_data is None:
+        llm_data = {"status": {"exec_code": "success"}}
     result: Dict[str, Any] = {
         "data": data,
         "llm_data": llm_data,
@@ -37,7 +39,9 @@ def build_success(data: Any = None, llm_data: Optional[Dict] = None,
 
 def build_error(data: Any = None, llm_data: Optional[Dict] = None,
                 other_data: Optional[Dict] = None, **extra) -> Dict[str, Any]:
-    """构建错误响应 — 纯组装result，不构建llm_data — 小欧 2026-06-21"""
+    """构建错误响应 — 小欧 2026-06-21，小欧 2026-06-27 修复默认llm_data一致性"""
+    if llm_data is None:
+        llm_data = {"status": {"exec_code": "error"}}
     result: Dict[str, Any] = {
         "data": data,
         "llm_data": llm_data,
@@ -51,7 +55,9 @@ def build_error(data: Any = None, llm_data: Optional[Dict] = None,
 
 def build_warning(data: Any = None, llm_data: Optional[Dict] = None,
                   other_data: Optional[Dict] = None, **extra) -> Dict[str, Any]:
-    """构建警告响应 — 纯组装result，不构建llm_data — 小欧 2026-06-21"""
+    """构建警告响应 — 小欧 2026-06-21，小欧 2026-06-27 修复默认llm_data一致性"""
+    if llm_data is None:
+        llm_data = {"status": {"exec_code": "warning"}}
     result: Dict[str, Any] = {
         "data": data,
         "llm_data": llm_data,

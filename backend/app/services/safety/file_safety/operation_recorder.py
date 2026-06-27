@@ -47,29 +47,34 @@ def record_operation(
     sequence_number: int = 0,
     file_size: Optional[int] = None,
 ) -> Optional[str]:
-    """记录文件操作到数据库（失败时返回None，不阻塞主流程）— 小健 2026-06-24 容错处理"""
+    """记录文件操作到数据库（失败时返回None，不阻塞主流程）— 小健 2026-06-24 容错处理 — 小欧 2026-06-27 修复operation_type str/Enum不一致"""
     operation_id = f"op-{uuid4().hex}"
     space_impact_bytes = None
-    if file_size is not None:
-        if operation_type == OperationType.CREATE:
+    if file_size is not None and operation_type is not None:
+        if isinstance(operation_type, str):
+            op_enum = OperationType(operation_type)
+        else:
+            op_enum = operation_type
+        if op_enum == OperationType.CREATE:
             space_impact_bytes = -file_size
-        elif operation_type == OperationType.DELETE:
+        elif op_enum == OperationType.DELETE:
             space_impact_bytes = file_size
     try:
         with db.get_conn("operations") as conn:
             cursor = conn.cursor()
+            op_type_str = operation_type.value if isinstance(operation_type, OperationType) else operation_type
             cursor.execute(
                 '''INSERT INTO file_operations
                 (operation_id, task_id, operation_type, status, source_path,
                  destination_path, sequence_number, file_size, space_impact_bytes, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                (operation_id, task_id, operation_type.value,
+                (operation_id, task_id, op_type_str,
                  OperationStatus.PENDING.value,
                  str(source_path) if source_path else None,
                  str(destination_path) if destination_path else None,
                  sequence_number, file_size, space_impact_bytes, datetime.now()),
             )
-        logger.debug(f"Operation recorded: {operation_id} - {operation_type.value}")
+        logger.debug(f"Operation recorded: {operation_id} - {op_type_str}")
         return operation_id
     except Exception as e:
         logger.warning(f"Failed to record operation: {e}, continue without recording")
