@@ -861,9 +861,66 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 
 ---
 
-## 七、实施计划
+## 七、DANGEROUS_PATTERNS处理方案
 
-### 7.1 实施步骤
+### 7.1 DANGEROUS_PATTERNS是什么
+
+`DANGEROUS_PATTERNS`（`tool_constants.py:166-180`）是当前系统中唯一的代码安全规则列表，包含12条Python代码危险模式（如`os.system`、`subprocess`、`eval`、`socket`等）。
+
+### 7.2 谁在用它
+
+| 调用方 | 用它做什么 | 用得对不对 |
+|--------|-----------|-----------|
+| `tool_fc_helper._validate_code_safety()` | execute_code的Python代码安全检查 | ❌ 一棍子打死，没有分级 |
+| `tool_safety_checker._check_known_risks()` | shell工具的代码注入检查 | ❌ **完全无效**——Python模式匹配不到PowerShell/CMD命令 |
+| `execute_code.py._JS_DANGEROUS_PATTERNS` | JavaScript代码安全检查 | 另外定义的，与DANGEROUS_PATTERNS无关 |
+
+### 7.3 为什么改造后就不需要了
+
+**execute_code改造后**：
+- `_validate_code_safety()` → 迁移到`execute_code_safety.validate_code_safety()`
+- 使用新的`RISK_CHECK_RULES`（分级检查），不再使用`DANGEROUS_PATTERNS`
+
+**shell工具改造后**：
+- `tool_safety_checker._check_known_risks()` → 改用`SHELL_DANGEROUS_PATTERNS`（Shell命令模式）
+- 现在用`DANGEROUS_PATTERNS`本来就是无效的（Python模式匹配不到Shell命令），改用Shell模式才真正有效
+
+**两个都改完后**：
+- `DANGEROUS_PATTERNS`无人引用 → **删除**
+
+### 7.4 改造顺序
+
+```
+Step 1: execute_code改造（本次）
+  _validate_code_safety() → execute_code_safety.validate_code_safety()
+  DANGEROUS_PATTERNS → RISK_CHECK_RULES
+
+Step 2: shell工具改造（后续）
+  tool_safety_checker → 改用SHELL_DANGEROUS_PATTERNS
+  （当前DANGEROUS_PATTERNS对Shell命令无效，改用Shell模式才真正有效）
+
+Step 3: 删除DANGEROUS_PATTERNS
+  两个调用方都迁移后，DANGEROUS_PATTERNS无人引用，删除
+```
+
+### 7.5 迁移后的调用关系
+
+```
+改造前：
+  execute_code.py → tool_fc_helper._validate_code_safety() → DANGEROUS_PATTERNS
+  execute_shell_command.py → tool_safety_checker._check_known_risks() → DANGEROUS_PATTERNS（无效）
+
+改造后：
+  execute_code.py → execute_code_safety.validate_code_safety() → RISK_CHECK_RULES + AST别名检测
+  execute_shell_command.py → tool_safety_checker._check_known_risks() → SHELL_DANGEROUS_PATTERNS（有效）
+  DANGEROUS_PATTERNS → 删除
+```
+
+---
+
+## 八、实施计划
+
+### 8.1 实施步骤
 
 1. **Step 1**: 创建 `backend/app/tools/shell/execute_code_safety.py`
 2. **Step 2**: 实现安全检查引擎 — 第一层 `RISK_CHECK_RULES`（正则规则，含用户输入组合检测）+ 第二层 `_resolve_import_aliases()`（AST别名解析，含shell=True和危险命令的HIGH检测）
@@ -880,7 +937,7 @@ backend/app/tools/shell/
 └── execute_shell_command_safety.py  # 安全检查模块（未来）
 ```
 
-### 7.2 测试用例
+### 8.2 测试用例
 
 ```python
 def test_validate_code_safety():
@@ -1019,9 +1076,9 @@ def test_validate_code_safety():
 
 ---
 
-## 八、风险与缓解
+## 九、风险与缓解
 
-### 8.1 潜在风险
+### 9.1 潜在风险
 
 | 风险 | 说明 | 缓解措施 |
 |------|------|---------|
@@ -1029,7 +1086,7 @@ def test_validate_code_safety():
 | 误判 | 可能错误判断风险等级 | 提供配置开关，允许关闭检查 |
 | 绕过 | 攻击者可能绕过检查 | 多层防御，结合其他安全机制 |
 
-### 8.2 缓解措施
+### 9.2 缓解措施
 
 1. **配置开关**：
    ```python
@@ -1051,7 +1108,7 @@ def test_validate_code_safety():
 
 ---
 
-## 九、总结
+## 十、总结
 
 **本方案通过分级安全检查，解决了当前"一棍子打死"的问题，在保证安全性的同时提升了可用性。**
 
