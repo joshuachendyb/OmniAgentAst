@@ -112,8 +112,15 @@ def validate_url(url: str) -> Tuple[bool, Optional[str], Optional[str]]:
         return False, f"不允许访问内网地址: {hostname}", None
     
     # DNS二次校验（防DNS rebinding）
-    # TODO: 实现DNS解析后二次校验 resolved_ip 是否在内网段
-    
+    try:
+        addrs = socket.getaddrinfo(hostname, None)
+        for addr in addrs:
+            ip = addr[4][0]
+            if _is_private_or_loopback_ip(ip):
+                return False, f"DNS解析到内网地址: {ip}", None
+    except OSError:
+        return False, f"DNS解析失败: {hostname}", None
+
     # 裸IP检查（SSRF绕过常见手法）
     if _is_literal_ip(host_lower):
         return True, None, f"目标为IP地址而非域名，请确认"
