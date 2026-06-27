@@ -17,7 +17,7 @@ Network Schema - 网络工具参数模型
 Author: 小沈 - 2026-04-29
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Dict, Any, List, Literal
 
 
@@ -123,7 +123,7 @@ class NetworkDiagnoseInput(BaseModel):
     port: Optional[int] = Field(
         default=None,
         ge=1, le=65535,
-        description="目标端口号(mode=port时【必填】,范围1-65535;mode=ping时忽略)"
+        description="目标端口号(mode=port时必填,范围1-65535;mode=ping时严禁传入)"
     )
     count: int = Field(
         default=4, ge=1, le=20, description="ping请求次数,默认4,范围1-20"
@@ -131,6 +131,14 @@ class NetworkDiagnoseInput(BaseModel):
     timeout: int = Field(
         default=5, ge=1, le=30, description="超时时间(秒),默认5,范围1-30"
     )
+
+    @model_validator(mode="after")
+    def _check_port_for_mode(self):
+        if self.mode == "port" and self.port is None:
+            raise ValueError("mode=port时port必填")
+        if self.mode == "ping" and self.port is not None:
+            raise ValueError("mode=ping时严禁传入port")
+        return self
 
 
 __all__ = [

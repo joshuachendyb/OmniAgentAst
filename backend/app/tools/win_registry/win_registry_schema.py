@@ -23,28 +23,39 @@ Author: 小沈 - 2026-05-02
 更新: 小沈 - 2026-06-16 拆分registry_control为3个独立工具
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Literal
 
 
 class RegistryReadInput(BaseModel):
+    """key_path含根键前缀(如HKCU\...)时hive参数无效,严禁同时指定"""
     key_path: str = Field(
-        ..., description="注册表键路径(必填)。如 Software\\Microsoft\\Windows\\CurrentVersion。若含根键前缀则自动忽略 hive 参数"
+        ..., description="注册表键路径(必填)。两种写法:1.含根键前缀如HKCU\\Software\\MyApp(此时hive参数无效) 2.不含根键如Software\\MyApp(此时通过hive指定根键)。严禁key_path含根键前缀的同时指定非默认hive"
     )
     value_name: Optional[str] = Field(
         default=None, description="值名称(可选)。不填则读取默认值"
     )
     hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
-        default="HKCU", description="注册表根键(可选)。默认HKCU"
+        default="HKCU", description="注册表根键(仅key_path不含根键前缀时生效)。默认HKCU"
     )
     output_format: Literal["auto", "hex"] = Field(
         default="auto", description="输出格式。auto=自动格式(默认),hex=二进制值转换为十六进制字符串"
     )
 
+    @model_validator(mode="after")
+    def _check_key_path_hive(self):
+        _ROOT_PREFIXES = ("HKCU\\", "HKLM\\", "HKCR\\", "HKU\\", "HKCC\\",
+                          "HKEY_CURRENT_USER\\", "HKEY_LOCAL_MACHINE\\", "HKEY_CLASSES_ROOT\\", "HKEY_USERS\\", "HKEY_CURRENT_CONFIG\\")
+        has_root_prefix = self.key_path.upper().startswith(_ROOT_PREFIXES)
+        if has_root_prefix and self.hive != "HKCU":
+            raise ValueError("key_path含根键前缀时hive参数无效,请去掉key_path中的根键前缀或使用默认hive")
+        return self
+
 
 class RegistryWriteInput(BaseModel):
+    """key_path含根键前缀(如HKCU\...)时hive参数无效,严禁同时指定"""
     key_path: str = Field(
-        ..., description="注册表键路径(必填)。如 Software\\MyApp"
+        ..., description="注册表键路径(必填)。两种写法:1.含根键前缀如HKCU\\Software\\MyApp(此时hive参数无效) 2.不含根键如Software\\MyApp(此时通过hive指定根键)。严禁key_path含根键前缀的同时指定非默认hive"
     )
     value_name: str = Field(
         ..., description="值名称(必填)。如 Version、InstallPath"
@@ -56,23 +67,42 @@ class RegistryWriteInput(BaseModel):
         default="auto_detect", description="值类型(可选)。默认auto_detect。REG_EXPAND_SZ=可扩展字符串(含%VAR%),REG_QWORD=64位整数"
     )
     hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
-        default="HKCU", description="注册表根键(可选)。默认HKCU"
+        default="HKCU", description="注册表根键(仅key_path不含根键前缀时生效)。默认HKCU"
     )
+
+    @model_validator(mode="after")
+    def _check_key_path_hive(self):
+        _ROOT_PREFIXES = ("HKCU\\", "HKLM\\", "HKCR\\", "HKU\\", "HKCC\\",
+                          "HKEY_CURRENT_USER\\", "HKEY_LOCAL_MACHINE\\", "HKEY_CLASSES_ROOT\\", "HKEY_USERS\\", "HKEY_CURRENT_CONFIG\\")
+        has_root_prefix = self.key_path.upper().startswith(_ROOT_PREFIXES)
+        if has_root_prefix and self.hive != "HKCU":
+            raise ValueError("key_path含根键前缀时hive参数无效,请去掉key_path中的根键前缀或使用默认hive")
+        return self
 
 
 class RegistryDeleteInput(BaseModel):
+    """key_path含根键前缀(如HKCU\...)时hive参数无效,严禁同时指定"""
     key_path: str = Field(
-        ..., description="注册表键路径(必填)。如 Software\\MyApp"
+        ..., description="注册表键路径(必填)。两种写法:1.含根键前缀如HKCU\\Software\\MyApp(此时hive参数无效) 2.不含根键如Software\\MyApp(此时通过hive指定根键)。严禁key_path含根键前缀的同时指定非默认hive"
     )
     value_name: Optional[str] = Field(
         default=None, description="值名称(可选)。不填则删除整个键"
     )
     hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
-        default="HKCU", description="注册表根键(可选)。默认HKCU"
+        default="HKCU", description="注册表根键(仅key_path不含根键前缀时生效)。默认HKCU"
     )
     recursive: bool = Field(
         default=False, description="递归删除子键(可选)。默认False。键不为空时需设为True才能删除"
     )
+
+    @model_validator(mode="after")
+    def _check_key_path_hive(self):
+        _ROOT_PREFIXES = ("HKCU\\", "HKLM\\", "HKCR\\", "HKU\\", "HKCC\\",
+                          "HKEY_CURRENT_USER\\", "HKEY_LOCAL_MACHINE\\", "HKEY_CLASSES_ROOT\\", "HKEY_USERS\\", "HKEY_CURRENT_CONFIG\\")
+        has_root_prefix = self.key_path.upper().startswith(_ROOT_PREFIXES)
+        if has_root_prefix and self.hive != "HKCU":
+            raise ValueError("key_path含根键前缀时hive参数无效,请去掉key_path中的根键前缀或使用默认hive")
+        return self
 
 
 __all__ = [

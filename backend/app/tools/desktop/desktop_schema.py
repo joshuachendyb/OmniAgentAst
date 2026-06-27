@@ -18,7 +18,7 @@ DESKTOP Schema - 桌面工具参数模型
 """
 
 from typing import Optional, Literal, Dict, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class WindowInfoInput(BaseModel):
@@ -71,18 +71,25 @@ class SetWindowStateInput(BaseModel):
 
 
 class MouseClickInput(BaseModel):
+    """x和y必须同时传入或同时不传(不传则在当前鼠标位置点击)"""
     x: Optional[int] = Field(
         default=None,
-        description="X坐标,不传则在当前鼠标位置点击"
+        description="X坐标。必须与y同时传入或同时不传,不传则在当前鼠标位置点击"
     )
     y: Optional[int] = Field(
         default=None,
-        description="Y坐标,不传则在当前鼠标位置点击"
+        description="Y坐标。必须与x同时传入或同时不传,不传则在当前鼠标位置点击"
     )
     button: Literal["left", "right", "middle"] = Field(
         default="left",
         description="鼠标按钮:left/right/middle,默认left"
     )
+
+    @model_validator(mode="after")
+    def _check_xy_together(self):
+        if (self.x is None) != (self.y is None):
+            raise ValueError("x和y必须同时传入或同时不传")
+        return self
 
 
 class MouseMoveInput(BaseModel):
@@ -125,23 +132,31 @@ class KeyboardControlInput(BaseModel):
         description="键盘操作:type(输入文本)、shortcut(快捷键，支持组合键如ctrl+shift+esc)"
     )
     text_or_keys: str = Field(
-        description="输入内容:type时为文本,shortcut时为快捷键如ctrl+c或ctrl+shift+esc"
+        description="输入内容,含义由action决定:action=type时为要输入的文本(如Hello World),action=shortcut时为快捷键组合(如ctrl+c或ctrl+shift+esc)"
     )
 
 
 class ScreenCaptureInput(BaseModel):
+    """display与region/output_path互斥,指定display时严禁传入region或output_path"""
     output_path: Optional[str] = Field(
         default=None,
-        description="输出文件路径(绝对路径,可选)。不传则保存到系统临时目录如<temp>/screenshot_<时间戳>.png"
+        description="输出文件路径(绝对路径,可选)。不传则保存到系统临时目录如<temp>/screenshot_<时间戳>.png。严禁与display同时传入"
     )
     region: Optional[Dict[str, int]] = Field(
         default=None,
-        description="截取区域(可选)。Dict键:x(默认0)/y(默认0)/width(默认800)/height(默认600)"
+        description="截取区域(可选)。Dict键:x(默认0)/y(默认0)/width(默认800)/height(默认600)。严禁与display同时传入"
     )
     display: Optional[int] = Field(
         default=None,
-        description="显示器编号(可选),1=主显示器,2=第二显示器。指定display时,region和output_path参数将被忽略"
+        description="显示器编号(可选),1=主显示器,2=第二显示器。指定display时严禁传入region和output_path"
     )
+
+    @model_validator(mode="after")
+    def _check_display_exclusive(self):
+        if self.display is not None:
+            if self.region is not None or self.output_path is not None:
+                raise ValueError("指定display时严禁传入region或output_path")
+        return self
 
 
 class ClipboardControlInput(BaseModel):

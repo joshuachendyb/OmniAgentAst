@@ -22,19 +22,33 @@ from typing import Optional, Dict, Any, List, Union, Literal
 
 
 class _DbConnectionMixin(BaseModel):
-    """数据库连接参数混入基类 — 小健 2026-06-20 DRY:3个SQL Schema共用"""
+    """connection_type决定使用db_path还是connection_string,严禁交叉传入"""
     connection_type: Literal["sqlite", "mysql", "postgresql"] = Field(
         default="sqlite",
-        description="数据库类型。可选值:sqlite/mysql/postgresql。默认为sqlite"
+        description="数据库类型。可选值:sqlite/mysql/postgresql。默认为sqlite。connection_type=sqlite时用db_path,mysql/postgresql时用connection_string"
     )
     connection_string: Optional[str] = Field(
         default=None,
-        description="MySQL/PostgreSQL 连接字符串(connection_type=mysql/postgresql时必填)。示例:user:pass@host:port/dbname"
+        description="MySQL/PostgreSQL连接字符串(connection_type=mysql/postgresql时必填,connection_type=sqlite时严禁传入)。示例:user:pass@host:port/dbname"
     )
     db_path: Optional[str] = Field(
         default=None,
-        description="SQLite 数据库文件路径(connection_type=sqlite时必填)。示例:D:/data/app.db"
+        description="SQLite数据库文件路径(connection_type=sqlite时必填,connection_type=mysql/postgresql时严禁传入)。示例:D:/data/app.db"
     )
+
+    @model_validator(mode="after")
+    def _check_connection_params(self):
+        if self.connection_type == "sqlite":
+            if not self.db_path:
+                raise ValueError("connection_type=sqlite时db_path必填")
+            if self.connection_string:
+                raise ValueError("connection_type=sqlite时严禁传入connection_string")
+        else:
+            if not self.connection_string:
+                raise ValueError(f"connection_type={self.connection_type}时connection_string必填")
+            if self.db_path:
+                raise ValueError(f"connection_type={self.connection_type}时严禁传入db_path")
+        return self
 
 class GenerateChartInput(BaseModel):
     data: str = Field(
@@ -74,7 +88,7 @@ class GenerateChartInput(BaseModel):
 
 
 class AnalyzeDataInput(BaseModel):
-    '''file_path和data参数互斥,只能传入其中一个'''
+    """file_path和data参数互斥,只能传入其中一个"""
     file_path: Optional[str] = Field(
         default=None,
         description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时使用。示例:D:/data/sales.csv"
@@ -114,7 +128,7 @@ class AnalyzeDataInput(BaseModel):
 
 
 class FilterDataInput(BaseModel):
-    '''file_path和data参数互斥,只能传入其中一个'''
+    """file_path和data参数互斥,只能传入其中一个"""
     file_path: Optional[str] = Field(
         default=None,
         description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时传入。示例:D:/data/users.csv"

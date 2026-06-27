@@ -17,7 +17,7 @@ Document Schema - 文档工具参数模型
 【2026-06-20 小健】删除非document的Schema(QuerySqlInput等6个),已在dataanalysis_schema.py中
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Any, List, Dict, Literal, Union
 
 class ReadPdfInput(BaseModel):
@@ -42,6 +42,7 @@ class ReadXlsxInput(BaseModel):
 
 
 class WriteDocxInput(BaseModel):
+    """content和table_data互斥,只能传入其中一个"""
     file_name: str = Field(..., description="文件名+路径(.docx)")
     title: Optional[str] = Field(default=None, description="文档标题（显示在文档开头）")
     content: Optional[str] = Field(
@@ -54,13 +55,21 @@ class WriteDocxInput(BaseModel):
 - 表格：| 列1 | 列2 |  （Markdown表格语法，第一行为表头）
 示例：\"# 报告标题\\n\\n第一段内容\\n\\n## 数据表格\\n\\n| 项目 | 数值 |\\n|------|------|\\n| A | 100 |\\n\\n## 章节\\n\\n- 要点1\\n- 要点2\"
 
-与table_data互斥，优先使用content"""
+与table_data互斥,严禁同时传入"""
     )
     table_data: Optional[List[List[str]]] = Field(
         default=None,
         description="""表格数据(二维数组)。格式：[["列1", "列2"], ["A", "B"], ["C", "D"]]
-第一行为表头，后续为数据行。用于纯表格文档，与content互斥。如果content有值，此参数忽略"""
+第一行为表头，后续为数据行。用于纯表格文档。与content互斥,严禁同时传入"""
     )
+
+    @model_validator(mode="after")
+    def _check_content_or_table(self):
+        if self.content and self.table_data:
+            raise ValueError("content和table_data互斥,只能传入其中一个")
+        if not self.content and not self.table_data:
+            raise ValueError("content和table_data必须传入其中一个")
+        return self
 
 
 class WriteXlsxInput(BaseModel):
@@ -80,6 +89,7 @@ class WriteXlsxInput(BaseModel):
 
 
 class WritePdfInput(BaseModel):
+    """content和table_data互斥,只能传入其中一个"""
     file_name: str = Field(..., description="文件名+路径(.pdf)")
     title: Optional[str] = Field(default=None, description="文档标题（显示在文档开头）")
     content: Optional[str] = Field(
@@ -92,13 +102,21 @@ class WritePdfInput(BaseModel):
 - 表格：| 列1 | 列2 |  （Markdown表格语法，第一行为表头）
 示例：\"# 报告标题\\n\\n第一段内容\\n\\n## 数据表格\\n\\n| 项目 | 数值 |\\n|------|------|\\n| A | 100 |\\n\\n## 章节\\n\\n- 要点1\\n- 要点2\"
 
-与table_data互斥，优先使用content"""
+与table_data互斥,严禁同时传入"""
     )
     table_data: Optional[List[List[str]]] = Field(
         default=None,
         description="""表格数据(二维数组)。格式：[["列1", "列2"], ["A", "B"], ["C", "D"]]
-第一行为表头，后续为数据行。用于纯表格文档，与content互斥。如果content有值，此参数忽略"""
+第一行为表头，后续为数据行。用于纯表格文档。与content互斥,严禁同时传入"""
     )
+
+    @model_validator(mode="after")
+    def _check_content_or_table(self):
+        if self.content and self.table_data:
+            raise ValueError("content和table_data互斥,只能传入其中一个")
+        if not self.content and not self.table_data:
+            raise ValueError("content和table_data必须传入其中一个")
+        return self
 
 
 _SLIDE_DESC = """幻灯片列表。每项Dict包含：
