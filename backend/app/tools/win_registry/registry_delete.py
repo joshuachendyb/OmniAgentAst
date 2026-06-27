@@ -14,17 +14,18 @@ from typing import Optional, Dict, Any
 
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_REG_DELETE_FAILED
+from app.constants import ERR_REG_DELETE_FAILED, ERR_PARAMETER_INVALID
 from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_key_path, _backup_registry
+from app.tools.validate.registry_path_checker import validate_delete_safety
 
 
-def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, key_path: str, action: str) -> dict:
+def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, key_path: str, action: str, err_code: str = None, detail: str = "") -> dict:
     """registry_delete的llm_data构建函数 — 小健 2026-06-22"""
     if exec_code == "error":
         return {
             "summary": f"删除注册表失败: {key_path}",
             "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": key_path, "params": {"key_path": key_path}},
-            "status": {"exec_code": "error", "message": "删除注册表失败", "code": ERR_REG_DELETE_FAILED, "detail": "", "hint": "请检查键路径和权限"},
+            "status": {"exec_code": "error", "message": "删除注册表失败", "code": err_code or ERR_REG_DELETE_FAILED, "detail": detail, "hint": "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -39,6 +40,12 @@ def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, key_path: 
 
 def registry_delete(key_path: str, value_name: Optional[str] = None, backup_before_delete: bool = True, recursive: bool = False, hive: str = "HKCU") -> dict:
     """删除Windows注册表键值或子键 — 小健 2026-06-22 拆分独立文件"""
+    is_valid, error_msg, warning_msg = validate_delete_safety(key_path, value_name, hive, recursive)
+    if not is_valid:
+        llm_data = _build_registry_delete_llm_data("error", 0, key_path, "", err_code=ERR_PARAMETER_INVALID, detail=error_msg)
+        return build_error(data={"error_detail": error_msg, "params": {"key_path": key_path}}, llm_data=llm_data)
+    if warning_msg:
+        logger.warning(f"[registry_delete] {warning_msg}")
     t0 = _time_mod.perf_counter()
     try:
         full_root_key, sub_key = _parse_key_path(key_path, hive=hive)

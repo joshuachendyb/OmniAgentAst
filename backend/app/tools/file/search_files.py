@@ -19,13 +19,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, MAX_SEARCH_RESULTS
 from app.constants import ERR_FILE_SEARCH_FAILED
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.utils.logger import logger
-
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
@@ -108,11 +102,6 @@ async def search_files(
     """搜索文件名(始终递归搜索子目录) — 小沈 2026-05-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-23 去掉recursive参数"""
     t0 = _time_mod.perf_counter()
     max_depth = 50
-    is_valid, error_msg = _validate_path(search_dir)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=error_msg)
-        return build_error(data={"error_detail": error_msg, "params": {"search_dir": search_dir}}, llm_data=llm_data)
     if type is not None and type not in ("file", "directory"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"type参数只能为'file'或'directory',当前值: '{type}'")

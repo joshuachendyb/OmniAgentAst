@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
+from app.tools.validate.timeout_validator import validate_timeout
 from app.services.safety.tool_safety_checker import get_tool_safety_checker
 from app.utils.logger import logger
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_SHORT
@@ -186,6 +187,11 @@ def execute_shell_command(
     """执行Shell命令 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件
     包装辅助函数结果，构建build3和llm_data — 北京老陈 2026-06-22
     """
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "execute_shell_command")
+    if not timeout_valid:
+        llm_data = _build_execute_shell_command_llm_data("error", 0, command, -1, "", "", shell_type or "", ERR_PARAMETER_INVALID, timeout_err)
+        return build_error(data={"error_detail": timeout_err, "params": {"timeout": timeout}}, llm_data=llm_data)
+
     t0 = _time_mod.perf_counter()
     if shell_type not in ("powershell", "cmd", None):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

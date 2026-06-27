@@ -19,9 +19,9 @@ from app.tools.tool_constants import MAX_READ_SIZE
 from app.constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
 from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.tools.file_type_checker import check_for_text_tool
+from app.tools.validate.file_path_checker import validate_path_for_write
 from app.utils.logger import logger
 
 
@@ -49,11 +49,6 @@ def _get_file_encoding(file_path: str) -> Dict[str, Any]:
         return {"data": {"encoding": "utf-8", "confidence": 0.5}}
     except Exception:
         return {"data": {"encoding": "utf-8", "confidence": 0.5}}
-
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 
@@ -163,9 +158,6 @@ async def _precise_replace_in_file(
         return {"error_detail": error_detail}
 
     try:
-        is_valid_path, err = _validate_path(file_path)
-        if not is_valid_path:
-            return {"error_detail": err}
         path = Path(file_path)
         if not path.exists():
             return {"error_detail": f"文件不存在: {file_path}"}
@@ -236,6 +228,14 @@ async def edit_text_file(
 ) -> Dict[str, Any]:
     """编辑文本文件 — 小健 2026-06-20 删dry_run参数 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加ignore_case参数"""
     t0 = _time_mod.perf_counter()
+    is_valid, error_msg, warning_msg = validate_path_for_write(file_path, new_string, False)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_msg)
+        return build_error(data={"error_detail": error_msg, "params": {"file_path": file_path}}, llm_data=llm_data)
+    if warning_msg:
+        logger.warning(warning_msg)
+
     if not file_path or not file_path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=str(file_path), detail="file_path不能为空")

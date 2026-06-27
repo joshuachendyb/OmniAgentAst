@@ -13,19 +13,13 @@ import asyncio
 import base64
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import MAX_MEDIA_READ_SIZE
 from app.constants import ERR_FILE_READ_FAILED
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.tools.file_type_checker import check_for_media_tool
 from app.utils.logger import logger
-
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 _MIME_MAP = {
@@ -78,12 +72,6 @@ async def read_media_file(
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail)
             return build_error(data={"error_detail": error_detail, "params": {"file_path": file_path}}, llm_data=llm_data)
-
-        is_valid_path, error_msg = _validate_path(file_path)
-        if not is_valid_path:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=error_msg)
-            return build_error(data={"error_detail": error_msg, "params": {"file_path": file_path}}, llm_data=llm_data)
 
         path = Path(file_path)
         if not path.exists():

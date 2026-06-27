@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
+from app.tools.validate.timeout_validator import validate_timeout
 from app.utils.logger import setup_logger
 from app.constants import (
     ERR_EXEC_FAILED,
@@ -184,6 +185,11 @@ def execute_code(
     """统一代码执行入口 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 统一timeout单位为秒
     包装辅助函数结果，构建build3和llm_data — 北京老陈 2026-06-22
     """
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "execute_code")
+    if not timeout_valid:
+        llm_data = _build_execute_code_llm_data("error", 0, "", language, ERR_PARAM_INVALID, timeout_err)
+        return build_error(data={"error_detail": timeout_err, "params": {"timeout": timeout}}, llm_data=llm_data)
+
     t0 = _time_mod.perf_counter()
     language = language.lower().strip() if language else "python"
     if language == "python":

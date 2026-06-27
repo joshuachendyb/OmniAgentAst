@@ -18,6 +18,7 @@ from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.utils.json_utils import coerce_json
+from app.tools.validate.file_path_checker import validate_path_for_write
 from app.constants import ERR_DOC_CHART_GENERATE
 
 
@@ -56,6 +57,15 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
                    y_label: Optional[str] = None, output_path: Optional[str] = None) -> Dict[str, Any]:
     """使用matplotlib生成数据可视化图表 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除dict支持，只支持文件路径"""
     t0 = _time_mod.perf_counter()
+    if output_path:
+        is_valid, err, warn = validate_path_for_write(output_path)
+        if not is_valid:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err)
+            return build_error(data={"error_detail": err, "params": {"output_path": output_path}}, llm_data=llm_data)
+        if warn:
+            logger.warning(f"[generate_chart] {warn}")
+
     if not _check_module("matplotlib"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="matplotlib库未安装")

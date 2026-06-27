@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
+from app.tools.validate.file_path_checker import validate_path_for_extract
 from app.utils.logger import logger
 
 
@@ -136,6 +137,14 @@ async def extract_archive(
 ) -> Dict[str, Any]:
     """解压归档包 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件"""
     t0 = _time_mod.perf_counter()
+
+    is_valid, error_msg, warning_msg = validate_path_for_extract(destination)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=error_msg)
+        return build_error(data={"error_detail": error_msg, "params": {"destination": destination}}, llm_data=llm_data)
+    if warning_msg:
+        logger.warning(warning_msg)
 
     try:
         is_valid, err = _validate_path(source)

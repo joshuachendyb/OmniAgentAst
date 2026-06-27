@@ -18,7 +18,8 @@ from typing import Optional, Dict, Any
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT, HIVE_MAP
-from app.constants import ERR_REG_READ_FAILED
+from app.tools.validate.registry_path_checker import validate_registry_key
+from app.constants import ERR_REG_READ_FAILED, ERR_PARAMETER_INVALID
 
 ROOT_KEY_MAP = {
     "HKEY_CLASSES_ROOT": winreg.HKEY_CLASSES_ROOT,
@@ -80,13 +81,13 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
     return backup_file
 
 
-def _build_registry_read_llm_data(exec_code: str, duration_ms: int, key_path: str, value_name: str, value: Any = None, value_type: str = "") -> dict:
+def _build_registry_read_llm_data(exec_code: str, duration_ms: int, key_path: str, value_name: str, value: Any = None, value_type: str = "", err_code: str = None, detail: str = "") -> dict:
     """registry_read的llm_data构建函数 — 小健 2026-06-22"""
     if exec_code == "error":
         return {
             "summary": f"读取注册表失败: {key_path}",
             "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": key_path, "params": {"key_path": key_path}},
-            "status": {"exec_code": "error", "message": "读取注册表失败", "code": ERR_REG_READ_FAILED, "detail": "", "hint": "请检查键路径和权限"},
+            "status": {"exec_code": "error", "message": "读取注册表失败", "code": err_code or ERR_REG_READ_FAILED, "detail": detail, "hint": "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -101,6 +102,12 @@ def _build_registry_read_llm_data(exec_code: str, duration_ms: int, key_path: st
 
 def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "HKCU", output_format: str = "auto") -> dict:
     """读取Windows注册表键值 — 小健 2026-06-22 拆分独立文件"""
+    is_valid, error_msg, warning_msg = validate_registry_key(key_path, hive, "read")
+    if not is_valid:
+        llm_data = _build_registry_read_llm_data("error", 0, key_path, hive, err_code=ERR_PARAMETER_INVALID, detail=error_msg)
+        return build_error(data={"error_detail": error_msg, "params": {"key_path": key_path}}, llm_data=llm_data)
+    if warning_msg:
+        logger.warning(f"[registry_read] {warning_msg}")
     t0 = _time_mod.perf_counter()
     try:
         full_root_key, sub_key = _parse_key_path(key_path, hive)

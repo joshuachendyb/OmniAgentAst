@@ -18,6 +18,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.tools.file_type_checker import check_for_document_tool
 from app.constants import ERR_WRITE_XLSX, ERR_DOC_NO_OPENPYXL
 from app.utils.json_utils import coerce_json
+from app.tools.validate.file_path_checker import validate_path_for_write
 from app.utils.logger import logger
 from app.utils.table_helper import calculate_column_widths, get_table_header_style_config
 
@@ -111,6 +112,15 @@ def write_xlsx(
 ) -> Dict[str, Any]:
     """写入Excel文件 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
+
+    # 路径业务级前置检查
+    is_valid, err, warn = validate_path_for_write(file_name)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=err)
+        return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
+    if warn:
+        logger.warning(f"[write_xlsx] {warn}")
 
     # 文件类型前置检查（write操作允许创建新文件） — 小欧 2026-06-24
     is_valid, error_detail, suggested_tool = check_for_document_tool(file_name, allow_create=True)

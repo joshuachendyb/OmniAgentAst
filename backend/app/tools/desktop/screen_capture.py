@@ -15,6 +15,7 @@ from typing import Dict, Any, Optional
 
 from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error
+from app.tools.validate.file_path_checker import validate_path_for_write
 from app.constants import ERR_SCREENSHOT, ERR_SCREEN_SNAPSHOT
 
 
@@ -103,6 +104,15 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
 def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str, int]] = None, display: Optional[int] = None) -> Dict[str, Any]:
     """统一屏幕截图入口 — 小健 2026-06-22 拆分独立文件"""
     t0 = _time_mod.perf_counter()
+    if output_path:
+        is_valid, err, warn = validate_path_for_write(output_path)
+        if not is_valid:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_screen_capture_llm_data("error", duration_ms, err_code=ERR_SCREENSHOT, detail=err)
+            return build_error(data={"error_detail": err, "params": {"output_path": output_path}}, llm_data=llm_data)
+        if warn:
+            logger.warning(f"[screen_capture] {warn}")
+
     if display is not None:
         result = _snapshot(display=display)
     else:

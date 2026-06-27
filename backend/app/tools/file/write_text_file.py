@@ -21,6 +21,7 @@ from app.db.models.operation_enums import OperationType
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.tools.file_type_checker import check_for_text_tool
+from app.tools.validate.file_path_checker import validate_path_for_write
 from app.utils.logger import logger
 
 
@@ -189,6 +190,14 @@ async def write_text_file(
 ) -> Dict[str, Any]:
     """写入文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件"""
     t0 = _time_mod.perf_counter()
+    is_valid, error_msg, warning_msg = validate_path_for_write(file_path, content, append)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_msg)
+        return build_error(data={"error_detail": error_msg, "params": {"file_path": file_path}}, llm_data=llm_data)
+    if warning_msg:
+        logger.warning(warning_msg)
+
     create_parents = True
     error, checked_content = _check_write_safety(file_path, content, encoding, append)
     if error:

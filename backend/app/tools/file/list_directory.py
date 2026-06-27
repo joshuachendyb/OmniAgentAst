@@ -17,13 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.constants import ERR_FILE_LIST_DIR_FAILED
 from app.tools.tool_constants import TOOL_TIMEOUTS
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.utils.logger import logger
-
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 def _classify_size(size: int) -> str:
@@ -169,10 +163,6 @@ async def _get_directory_tree(
     include_hidden: bool = False, sort_by: str = "name",
 ) -> Dict[str, Any]:
     """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时 — 小欧 2026-06-24 修复include_hidden和sort_by"""
-    is_valid, error_msg = _validate_path(dir_path)
-    if not is_valid:
-        return {"error_detail": error_msg, "params": {"dir_path": dir_path}}
-
     path = Path(dir_path)
     if not path.exists():
         return {"error_detail": "目录不存在", "params": {"dir_path": dir_path}}
@@ -286,12 +276,6 @@ async def list_directory(
         else:
             llm_data = _build_list_directory_llm_data("success", duration_ms, dir_path=dir_path, total=tree_result["statistics"]["file_count"] + tree_result["statistics"]["dir_count"])
             return build_success(data=tree_result, llm_data=llm_data)
-
-    is_valid, error_msg = _validate_path(dir_path)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=error_msg)
-        return build_error(data={"error_detail": error_msg, "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
     path = Path(dir_path)
     start_offset = 0

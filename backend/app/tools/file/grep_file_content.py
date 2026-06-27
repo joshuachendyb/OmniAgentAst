@@ -18,14 +18,8 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, MAX_SEARCH_FILE_SIZE, MAX_SEARCH_RESULTS
 from app.constants import ERR_FILE_CONTENT_SEARCH_FAILED
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.tools.file_type_checker import is_binary_file, BINARY_EXTENSIONS, TEXT_EXTENSIONS
 from app.utils.logger import logger
-
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 _ENCODING_PRIORITY = ["utf-8", "gbk", "gb2312", "utf-8-sig", "latin-1", "cp1252", "iso-8859-2", "cp1250"]
@@ -233,12 +227,6 @@ async def grep_file_content(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="search_dir不能为空")
         return build_error(data={"error_detail": "search_dir不能为空", "params": {"search_dir": actual_dir}}, llm_data=llm_data)
-    is_valid, error_msg = _validate_path(actual_dir)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=error_msg)
-        return build_error(data={"error_detail": error_msg, "params": {"search_dir": actual_dir}}, llm_data=llm_data)
-
     if not pattern or not pattern.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="搜索模式不能为空")

@@ -22,6 +22,7 @@ from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.services.safety.file_safety import record_operation, execute_with_safety
+from app.tools.validate.file_path_checker import validate_path_for_overwrite
 from app.utils.logger import logger
 
 
@@ -65,6 +66,12 @@ async def _move_file_impl(
     is_valid_dst, error_msg_dst = _validate_path(destination_path)
     if not is_valid_dst:
         return {"success": False, "error_detail": f"目标路径{error_msg_dst}", "params": {"destination": destination_path}}
+
+    is_valid, err, warn = validate_path_for_overwrite(source_path, destination_path, overwrite)
+    if not is_valid:
+        return {"success": False, "error_detail": err, "params": {"source": source_path}}
+    if warn:
+        logger.warning(f"[move_file] {warn}")
 
     src = Path(source_path)
     dst = Path(destination_path)

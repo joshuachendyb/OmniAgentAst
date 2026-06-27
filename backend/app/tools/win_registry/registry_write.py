@@ -14,8 +14,9 @@ from typing import Optional, Dict, Any, Callable
 
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_REG_WRITE_FAILED
+from app.constants import ERR_REG_WRITE_FAILED, ERR_PARAMETER_INVALID
 from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_key_path, _backup_registry, _validate_root_key
+from app.tools.validate.registry_path_checker import validate_registry_key
 
 _REG_TYPE_MAP: Dict[str, int] = {
     "REG_SZ": winreg.REG_SZ, "REG_DWORD": winreg.REG_DWORD, "REG_QWORD": winreg.REG_QWORD,
@@ -35,13 +36,13 @@ def _convert_reg_value(value_type: str, value: str) -> Any:
     return converter(value) if converter else value
 
 
-def _build_registry_write_llm_data(exec_code: str, duration_ms: int, key_path: str, value_name: str, value: str, value_type: str) -> dict:
+def _build_registry_write_llm_data(exec_code: str, duration_ms: int, key_path: str, value_name: str, value: str, value_type: str, err_code: str = None, detail: str = "") -> dict:
     """registry_write的llm_data构建函数 — 小健 2026-06-22"""
     if exec_code == "error":
         return {
             "summary": f"写入注册表失败: {key_path}",
             "action": {"tool": "registry_write", "tool_zh": "写入注册表", "target": key_path, "params": {"key_path": key_path, "value_name": value_name}},
-            "status": {"exec_code": "error", "message": "写入注册表失败", "code": ERR_REG_WRITE_FAILED, "detail": "", "hint": "请检查权限"},
+            "status": {"exec_code": "error", "message": "写入注册表失败", "code": err_code or ERR_REG_WRITE_FAILED, "detail": detail, "hint": "请检查权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -56,6 +57,12 @@ def _build_registry_write_llm_data(exec_code: str, duration_ms: int, key_path: s
 
 def registry_write(key_path: str, value_name: str, value: str, value_type: str = "auto_detect", backup_before_write: bool = True, dry_run: bool = False, hive: str = "HKCU") -> dict:
     """写入Windows注册表键值 — 小健 2026-06-22 拆分独立文件"""
+    is_valid, error_msg, warning_msg = validate_registry_key(key_path, hive, "write")
+    if not is_valid:
+        llm_data = _build_registry_write_llm_data("error", 0, key_path, value_name, value, "auto_detect", err_code=ERR_PARAMETER_INVALID, detail=error_msg)
+        return build_error(data={"error_detail": error_msg, "params": {"key_path": key_path}}, llm_data=llm_data)
+    if warning_msg:
+        logger.warning(f"[registry_write] {warning_msg}")
     t0 = _time_mod.perf_counter()
     full_root_key, sub_key = _parse_key_path(key_path, hive)
     hkey = _validate_root_key(full_root_key)

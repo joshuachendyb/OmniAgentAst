@@ -18,7 +18,9 @@ import httpx
 from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client, HTTPClient
 from app.tools.network.connectivity import check_network
-from app.tools.network.url_validator import validate_url
+from app.tools.validate.url_validator import validate_url, validate_proxy
+from app.tools.validate.timeout_validator import validate_timeout
+from app.tools.validate.file_path_checker import validate_path_for_write
 
 _check_network = check_network
 _validate_url = validate_url
@@ -121,15 +123,28 @@ async def download_file(
     proxy: Optional[str] = None,
 ) -> Dict[str, Any]:
     """从URL下载文件 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "download_file")
+    if not timeout_valid:
+        llm_data = _build_download_file_llm_data("error", 0, url, err_code=ERR_INVALID_URL, detail=timeout_err)
+        return build_error(data={"error_detail": timeout_err, "params": {"url": url}}, llm_data=llm_data)
+
+    dest_path = os.path.abspath(os.path.join(_DOWNLOAD_DIR, destination_path.lstrip("/\\")))
+    is_valid_path, path_err, path_warn = validate_path_for_write(dest_path)
+    if not is_valid_path:
+        llm_data = _build_download_file_llm_data("error", 0, url, err_code=ERR_NETWORK_INVALID_PATH, detail=path_err)
+        return build_error(data={"error_detail": path_err, "params": {"destination_path": destination_path}}, llm_data=llm_data)
+    if path_warn:
+        logger.warning(f"[download_file] {path_warn}")
+
     t0 = _time_mod.perf_counter()
     dest_path = ""
     try:
-        url_info = validate_url(url)
-        if not url_info["valid"]:
-            error_msg = url_info.get("error", "URL格式无效")
+        is_valid, error_msg, warning_msg = validate_url(url)
+        if not is_valid:
+            detail = error_msg or "URL格式无效"
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_INVALID_URL, detail=error_msg)
-            return build_error(data={"error_detail": error_msg, "params": {"url": url}}, llm_data=llm_data)
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_INVALID_URL, detail=detail)
+            return build_error(data={"error_detail": detail, "params": {"url": url}}, llm_data=llm_data)
         net_info = check_network()
         if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional, Tuple
 from app.tools.tool_response import build_success, build_error
 from app.services.context_vars import _current_task_id
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
+from app.tools.validate.file_path_checker import validate_path_for_overwrite
 from app.utils.logger import logger
 
 
@@ -59,6 +60,14 @@ async def copy_file(
 ) -> Dict[str, Any]:
     """复制文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复计时铁规"""
     t0 = _time_mod.perf_counter()
+    is_valid, error_msg, warning_msg = validate_path_for_overwrite(source, destination, overwrite)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": error_msg})
+        return build_error(data={"error_detail": error_msg, "params": {"source": source, "destination": destination}}, llm_data=llm_data)
+    if warning_msg:
+        logger.warning(warning_msg)
+
     is_valid_src, err_src = _validate_path(source)
     if not is_valid_src:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

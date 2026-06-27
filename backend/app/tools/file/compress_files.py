@@ -24,14 +24,8 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error
 from app.constants import ERR_FILE_COMPRESS_FAILED
 from app.services.context_vars import _current_task_id
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.utils.json_utils import coerce_json
 from app.utils.logger import logger
-
-
-def _validate_path(file_path: str):
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 def _build_compress_files_llm_data(
@@ -215,18 +209,6 @@ async def compress_files(
     t0 = _time_mod.perf_counter()
     exclude_patterns = coerce_json(exclude_patterns)
     compression_level = 6
-
-    is_valid_src, err_src = _validate_path(source)
-    if not is_valid_src:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"源路径验证失败: {err_src}", hint="请检查源路径是否正确")
-        return build_error(data={"error_detail": f"源路径验证失败: {err_src}", "params": {"source": source}}, llm_data=llm_data)
-
-    is_valid_dst, err_dst = _validate_path(destination)
-    if not is_valid_dst:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"目标路径验证失败: {err_dst}", hint="请检查目标路径是否正确")
-        return build_error(data={"error_detail": f"目标路径验证失败: {err_dst}", "params": {"destination": destination}}, llm_data=llm_data)
 
     if not overwrite and os.path.exists(destination):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

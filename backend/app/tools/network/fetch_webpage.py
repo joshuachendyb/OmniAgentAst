@@ -20,7 +20,8 @@ import httpx
 from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client
 from app.tools.network.connectivity import check_network
-from app.tools.network.url_validator import validate_url
+from app.tools.validate.url_validator import validate_url
+from app.tools.validate.timeout_validator import validate_timeout
 
 _check_network = check_network
 _validate_url = validate_url
@@ -288,14 +289,19 @@ async def fetch_webpage(
 ) -> Dict[str, Any]:
     """获取网页内容 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
     max_tokens = 8000
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "fetch_webpage")
+    if not timeout_valid:
+        llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_INVALID_URL, detail=timeout_err)
+        return build_error(data={"error_detail": timeout_err, "params": {"url": url}}, llm_data=llm_data)
+
     t0 = _time_mod.perf_counter()
 
     try:
-        url_info = validate_url(url)
-        if not url_info["valid"]:
+        is_valid, error_msg, warning_msg = validate_url(url)
+        if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_INVALID_URL, detail="URL格式无效")
-            return build_error(data={"error_detail": "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
+            llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_INVALID_URL, detail=error_msg or "URL格式无效")
+            return build_error(data={"error_detail": error_msg or "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
 
         net_info = check_network()
         if not net_info["connected"]:

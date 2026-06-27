@@ -22,6 +22,7 @@ from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.services.safety.file_safety import record_operation, execute_with_safety
+from app.tools.validate.file_path_checker import validate_path_for_delete
 from app.utils.logger import logger
 
 
@@ -141,6 +142,14 @@ async def delete_file(
 ) -> Dict[str, Any]:
     """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3"""
     t0 = _time_mod.perf_counter()
+    is_valid, error_msg, warning_msg = validate_path_for_delete(source, recursive, force)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=error_msg)
+        return build_error(data={"error_detail": error_msg, "params": {"source": source}}, llm_data=llm_data)
+    if warning_msg:
+        logger.warning(warning_msg)
+
     src_path = Path(source)
     if not src_path.exists():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

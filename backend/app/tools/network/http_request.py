@@ -20,7 +20,8 @@ import httpx
 from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client
 from app.tools.network.connectivity import check_network
-from app.tools.network.url_validator import validate_url
+from app.tools.validate.url_validator import validate_url, validate_proxy
+from app.tools.validate.timeout_validator import validate_timeout
 from app.utils.json_utils import coerce_json, parse_json
 
 _check_network = check_network
@@ -126,14 +127,26 @@ async def http_request(
         llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=f"重试次数必须在0-10之间,当前值:{retry}")
         return build_error(data={"error_detail": f"重试次数必须在0-10之间", "params": {"retry": retry}}, llm_data=llm_data)
 
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "http_request")
+    if not timeout_valid:
+        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_INVALID_URL, detail=timeout_err)
+        return build_error(data={"error_detail": timeout_err, "params": {"url": url}}, llm_data=llm_data)
+
+    proxy_valid, proxy_err, _ = validate_proxy(proxy)
+    if not proxy_valid:
+        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_INVALID_URL, detail=proxy_err)
+        return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
+
     t0 = _time_mod.perf_counter()
 
     try:
-        url_info = validate_url(url)
-        if not url_info["valid"]:
+        is_valid, error_msg, warning_msg = validate_url(url)
+        if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_INVALID_URL, detail="URL格式无效")
-            return build_error(data={"error_detail": "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
+            llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_INVALID_URL, detail=error_msg or "URL格式无效")
+            return build_error(data={"error_detail": error_msg or "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
+        if warning_msg:
+            logger.warning(f"[http_request] {warning_msg}")
 
         net_info = check_network()
         if not net_info["connected"]:

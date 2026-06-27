@@ -19,6 +19,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.constants import ERR_WRITE_PDF
 from reportlab.lib.units import mm
+from app.tools.validate.file_path_checker import validate_path_for_write
 from app.utils.logger import logger
 from app.utils.table_helper import parse_markdown_table, get_table_header_style_config
 
@@ -82,6 +83,15 @@ def write_pdf(
 ) -> Dict[str, Any]:
     """写入PDF文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化（Markdown格式）+ table_data支持"""
     t0 = _time_mod.perf_counter()
+
+    # 路径业务级前置检查
+    is_valid, err, warn = validate_path_for_write(file_name)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=err)
+        return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
+    if warn:
+        logger.warning(f"[write_pdf] {warn}")
 
     if not _check_module("reportlab"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
