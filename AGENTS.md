@@ -254,3 +254,9 @@ ISP 接口窄，复用先查库
 
 ### Pending
 - （无待办 — 本轮设计文档全量代码已实施完成）
+
+### 第2轮修正（补遗漏）
+以下3项遗漏已在第2轮补齐 + 第3次 commit `af19c933b`：
+- ✅ search_web.validate_proxy() 已存在（预先有，非遗漏）
+- ✅ 系统级检查扩展：`_check_known_risks()` 覆盖 `DOCUMENT/DATAANALYSIS/NETWORK/DESKTOP` 分类
+- ✅ 4组 validator 单元测试（131个测试全部通过）

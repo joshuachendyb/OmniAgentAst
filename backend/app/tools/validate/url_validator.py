@@ -149,14 +149,6 @@ def validate_proxy(proxy: Optional[str]) -> Tuple[bool, Optional[str], Optional[
     return True, None, None
 
 
-def _is_private_ip(hostname: str) -> bool:
-    """检查主机名是否为内网IP（简单前缀匹配）"""
-    host_lower = hostname.lower()
-    for prefix in PRIVATE_IP_PREFIXES:
-        if host_lower.startswith(prefix):
-            return True
-    return False
-
 
 def _is_literal_ip(hostname: str) -> bool:
     """检查主机名是否为IP地址（而非域名）"""

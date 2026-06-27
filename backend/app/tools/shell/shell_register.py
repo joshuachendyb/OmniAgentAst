@@ -54,8 +54,8 @@ SHELL_TOOL_DESCRIPTIONS = {
 
 SHELL_TOOL_EXAMPLES = {
     "execute_shell_command": [
-        {"command": "dir", "timeout": 10000},
-        {"command": "python --version", "shell_type": "powershell", "timeout": 10000},
+        {"command": "dir", "timeout": 10},
+        {"command": "python --version", "shell_type": "powershell", "timeout": 10},
         {"command": "npm run dev", "run_in_background": True}
     ],
 

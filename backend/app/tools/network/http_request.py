@@ -25,7 +25,7 @@ from app.tools.validate.timeout_validator import validate_timeout
 from app.utils.json_utils import coerce_json, parse_json
 
 _check_network = check_network
-_validate_url = validate_url
+
 from app.utils.tool_result_formatter import make_json_safe
 from app.utils.logger import logger
 from app.constants import (

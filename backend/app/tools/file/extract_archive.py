@@ -143,18 +143,6 @@ async def extract_archive(
         logger.warning(warning_msg)
 
     try:
-        is_valid, err = _validate_path(source)
-        if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"源路径验证失败: {err}")
-            return build_error(data={"error_detail": f"源路径验证失败: {err}", "params": {"source": source}}, llm_data=llm_data)
-
-        if destination:
-            is_valid_dst, err_dst = _validate_path(destination)
-            if not is_valid_dst:
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"目标路径验证失败: {err_dst}")
-                return build_error(data={"error_detail": f"目标路径验证失败: {err_dst}", "params": {"destination": destination}}, llm_data=llm_data)
 
         if not os.path.exists(source):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

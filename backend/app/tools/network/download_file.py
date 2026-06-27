@@ -23,7 +23,7 @@ from app.tools.validate.timeout_validator import validate_timeout
 from app.tools.validate.file_path_checker import validate_path_for_write
 
 _check_network = check_network
-_validate_url = validate_url
+
 from app.utils.logger import logger
 
 _DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), ".omniagent", "downloads")
