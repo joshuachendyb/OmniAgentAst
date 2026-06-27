@@ -17,7 +17,7 @@ DataAnalysis Schema - 数据分析工具参数模型
 【2026-06-20 小健】提取_DbConnectionMixin基类,3个SQL Schema共用连接参数(DRY)
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Dict, Any, List, Union, Literal
 
 
@@ -43,7 +43,7 @@ class GenerateChartInput(BaseModel):
 
 【支持格式】
 - CSV文件: D:/data/sales.csv
-- Excel文件: D:/data/sales.xlsx 或 D:/data/sales.xls
+- Excel文件: D:/data/sales.xlsx
 
 【文件要求】
 - 至少2列数据
@@ -74,8 +74,14 @@ class GenerateChartInput(BaseModel):
 
 
 class AnalyzeDataInput(BaseModel):
-    data: str = Field(
-        ..., description="要分析的数据。可以是CSV/XLSX/XLS文件路径(绝对路径)或JSON字符串"
+    '''file_path和data参数互斥,只能传入其中一个'''
+    file_path: Optional[str] = Field(
+        default=None,
+        description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时使用。示例:D:/data/sales.csv"
+    )
+    data: Optional[str] = Field(
+        default=None,
+        description="JSON字符串形式的数组数据。严禁与file_path参数同时使用。示例:'[{\"name\":\"A\",\"value\":10}]'"
     )
     operations: Optional[List[str]] = Field(
         default=None,
@@ -98,10 +104,24 @@ class AnalyzeDataInput(BaseModel):
         description="最大读取行数。对于大文件,可以限制读取的行数以提高性能"
     )
 
+    @model_validator(mode="after")
+    def _check_file_path_or_data(self):
+        if self.file_path and self.data:
+            raise ValueError("file_path和data参数互斥,只能传入其中一个")
+        if not self.file_path and not self.data:
+            raise ValueError("file_path和data参数必须传入其中一个")
+        return self
+
 
 class FilterDataInput(BaseModel):
-    data: str = Field(
-        ..., description="要筛选的数据。可以是CSV/Excel文件路径(绝对路径)或JSON字符串"
+    '''file_path和data参数互斥,只能传入其中一个'''
+    file_path: Optional[str] = Field(
+        default=None,
+        description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时传入。示例:D:/data/users.csv"
+    )
+    data: Optional[str] = Field(
+        default=None,
+        description="JSON字符串形式的数组数据。严禁与file_path参数同时传入。示例:'[{\"name\":\"A\",\"age\":25}]'"
     )
     conditions: List[Dict[str, Any]] = Field(
         ..., description="筛选条件列表。每个条件: {\"column\": \"列名\", \"operator\": \"操作符\", \"value\": 值}。操作符: eq/ne/gt/gte/lt/lte/in/contains/not_contains"
@@ -122,6 +142,14 @@ class FilterDataInput(BaseModel):
         default=None,
         description="只返回前N条结果。不填则返回全部"
     )
+
+    @model_validator(mode="after")
+    def _check_file_path_or_data(self):
+        if self.file_path and self.data:
+            raise ValueError("file_path和data参数互斥,只能传入其中一个")
+        if not self.file_path and not self.data:
+            raise ValueError("file_path和data参数必须传入其中一个")
+        return self
 
 
 class QuerySqlInput(_DbConnectionMixin):

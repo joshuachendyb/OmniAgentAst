@@ -97,12 +97,24 @@ def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) 
     return {"mask": mask, "warnings": warnings}
 
 
-def filter_data(data: str, conditions: List[Dict[str, Any]],
+def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
+                conditions: List[Dict[str, Any]] = None,
                 select_columns: Optional[List[str]] = None, max_rows: Optional[int] = None,
                 sort_by: Optional[str] = None, top_n: Optional[int] = None) -> Dict[str, Any]:
-    """筛选数据 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union，只支持str"""
-    data = coerce_json(data)
-    conditions = coerce_json(conditions)
+    """筛选数据 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union — 小欧 2026-06-27 file_path+data互斥拆分"""
+    if file_path and data:
+        t0 = _time_mod.perf_counter()
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数互斥,只能传入其中一个")
+        return build_error(data={"error_detail": "file_path和data参数互斥,只能传入其中一个"}, llm_data=llm_data)
+    if not file_path and not data:
+        t0 = _time_mod.perf_counter()
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数必须传入其中一个")
+        return build_error(data={"error_detail": "file_path和data参数必须传入其中一个"}, llm_data=llm_data)
+
+    if conditions is not None:
+        conditions = coerce_json(conditions)
     t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -110,7 +122,16 @@ def filter_data(data: str, conditions: List[Dict[str, Any]],
         return build_error(data={"error_detail": "pandas库未安装", "params": {"library": "pandas"}}, llm_data=llm_data)
 
     try:
-        loaded = _load_data_to_df(data, max_rows)
+        if file_path:
+            loaded = _load_data_to_df(file_path, max_rows)
+        else:
+            parsed_data = coerce_json(data)
+            if isinstance(parsed_data, list):
+                loaded = _load_data_to_df(parsed_data, max_rows)
+            else:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_filter_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组字符串")
+                return build_error(data={"error_detail": "data参数必须是JSON数组字符串", "params": {"data_type": type(parsed_data).__name__}}, llm_data=llm_data)
         if "error_detail" in loaded:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_filter_data_llm_data("error", duration_ms, detail=loaded["error_detail"])

@@ -81,11 +81,22 @@ def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_co
     }
 
 
-def analyze_data(data: str, operations: Optional[List[str]] = None,
+def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
+                 operations: Optional[List[str]] = None,
                  group_by: Optional[str] = None, sort_by: Optional[str] = None,
                  top_n: Optional[int] = None, max_rows: Optional[int] = None) -> Dict[str, Any]:
-    """对数据集进行统计分析 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union，只支持str"""
-    data = coerce_json(data)
+    """对数据集进行统计分析 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union — 小欧 2026-06-27 file_path+data互斥拆分"""
+    if file_path and data:
+        t0 = _time_mod.perf_counter()
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="file_path和data参数互斥,只能传入其中一个")
+        return build_error(data={"error_detail": "file_path和data参数互斥,只能传入其中一个"}, llm_data=llm_data)
+    if not file_path and not data:
+        t0 = _time_mod.perf_counter()
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="file_path和data参数必须传入其中一个")
+        return build_error(data={"error_detail": "file_path和data参数必须传入其中一个"}, llm_data=llm_data)
+
     t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -97,29 +108,31 @@ def analyze_data(data: str, operations: Optional[List[str]] = None,
         if operations is None:
             operations = all_ops
 
-        if isinstance(data, str):
-            path = Path(data)
+        if file_path:
+            path = Path(file_path)
             if not path.exists():
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=f"文件不存在: {data}")
-                return build_error(data={"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}, llm_data=llm_data)
+                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=f"文件不存在: {file_path}")
+                return build_error(data={"error_detail": f"文件不存在: {file_path}", "params": {"file_path": file_path}}, llm_data=llm_data)
             read_kwargs = {}
             if max_rows is not None:
                 read_kwargs["nrows"] = max_rows
-            if data.endswith('.xlsx') or data.endswith('.xls'):
+            if file_path.endswith('.xlsx'):
                 if not _check_module("openpyxl"):
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                     llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="openpyxl库未安装")
                     return build_error(data={"error_detail": "openpyxl库未安装", "params": {"library": "openpyxl"}}, llm_data=llm_data)
-                df = pd.read_excel(data, engine="openpyxl", **({k: v for k, v in read_kwargs.items() if k == 'nrows'}))
+                df = pd.read_excel(file_path, engine="openpyxl", **({k: v for k, v in read_kwargs.items() if k == 'nrows'}))
             else:
-                df = pd.read_csv(data, **read_kwargs)
-        elif isinstance(data, list):
-            df = pd.DataFrame(data)
+                df = pd.read_csv(file_path, **read_kwargs)
         else:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="data参数必须是文件路径或数据数组")
-            return build_error(data={"error_detail": "data参数必须是文件路径或数据数组", "params": {"data_type": type(data).__name__}}, llm_data=llm_data)
+            parsed_data = coerce_json(data)
+            if isinstance(parsed_data, list):
+                df = pd.DataFrame(parsed_data)
+            else:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组字符串")
+                return build_error(data={"error_detail": "data参数必须是JSON数组字符串", "params": {"data_type": type(parsed_data).__name__}}, llm_data=llm_data)
 
         total_count = len(df)
         numeric_cols = df.select_dtypes(include="number").columns.tolist()

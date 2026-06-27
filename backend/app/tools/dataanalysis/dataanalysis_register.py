@@ -63,11 +63,11 @@ DESCRIPTIONS = {
 EXAMPLES = {
     "analyze_data": [
         {"data": "[{\"name\": \"A\", \"value\": 10}, {\"name\": \"B\", \"value\": 20}]"},
-        {"data": "D:/data/users.csv", "group_by": "city"},
+        {"file_path": "D:/data/users.csv", "group_by": "city"},
     ],
     "filter_data": [
         {"data": "[{\"name\": \"A\", \"age\": 25}, {\"name\": \"B\", \"age\": 35}]", "conditions": [{"column": "age", "operator": "gt", "value": 30}]},
-        {"data": "D:/data/users.csv", "conditions": [{"column": "city", "operator": "eq", "value": "北京"}], "sort_by": "age", "top_n": 10},
+        {"file_path": "D:/data/users.csv", "conditions": [{"column": "city", "operator": "eq", "value": "北京"}], "sort_by": "age", "top_n": 10},
     ],
     "generate_chart": [
         {"data": {"labels": ["A", "B"], "values": [10, 20]}, "chart_type": "bar", "title": "\u9500\u552e\u7edf\u8ba1"},

@@ -75,7 +75,7 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
         
         source_file_dir = str(path.parent)
 
-        if data.endswith('.xlsx') or data.endswith('.xls'):
+        if data.endswith('.xlsx'):
             df = pd.read_excel(data, engine="openpyxl")
         else:
             df = pd.read_csv(data)

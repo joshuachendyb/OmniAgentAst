@@ -139,8 +139,8 @@ def _load_dataframe(source: Union[str, List[Dict[str, Any]]], **kwargs):
         if not path.exists():
             raise FileNotFoundError(f"文件不存在: {source}")
         suffix = path.suffix.lower()
-        if suffix in (".xlsx", ".xls"):
-            return pd.read_excel(source, engine="openpyxl" if suffix == ".xlsx" else None, **kwargs)
+        if suffix == ".xlsx":
+            return pd.read_excel(source, engine="openpyxl", **kwargs)
         else:
             return pd.read_csv(source, **kwargs)
     elif isinstance(source, list):
