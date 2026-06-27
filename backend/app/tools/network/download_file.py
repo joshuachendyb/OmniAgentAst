@@ -75,7 +75,7 @@ def _map_network_error(url: str, timeout: int, e: Exception, duration_ms: int = 
     """将httpx异常映射为错误信息字典 — 小欧 2026-06-22"""
     for exc_type, code, prefix in _NET_ERROR_MAP:
         if isinstance(e, exc_type):
-            detail = f"{prefix}({timeout/1000}秒):{url}"
+            detail = f"{prefix}({timeout}秒):{url}"
             if isinstance(e, httpx.HTTPStatusError):
                 detail = f"{prefix} (HTTP {e.response.status_code}):{url}"
             return {"error_detail": detail, "params": {"url": url}, "err_code": code, "detail": detail}
@@ -117,7 +117,7 @@ async def download_file(
     url: str,
     destination_path: str,
     headers: Optional[Dict[str, str]] = None,
-    timeout: int = 300000,
+    timeout: int = 60,
     proxy: Optional[str] = None,
 ) -> Dict[str, Any]:
     """从URL下载文件 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
@@ -151,7 +151,7 @@ async def download_file(
 
         req_headers = headers or {}
 
-        async with create_http_client(timeout_sec=timeout / 1000.0, proxy=proxy) as client:
+        async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
             downloaded, content_type, total_bytes = await _stream_download(client, url, dest_path, req_headers)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

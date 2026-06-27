@@ -244,7 +244,7 @@ def _build_media_result(url: str, mime: str, raw_bytes: bytes, extract_format: s
     return {"data": data, "other_data": other_data}
 
 
-async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout_sec: float,
+async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout: float,
                                 extract_format: str, max_tokens: int) -> Dict[str, Any]:
     """Playwright路径封装 — 小欧 2026-06-22"""
     try:
@@ -261,8 +261,8 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout_sec: flo
             try:
                 page = await browser.new_page()
                 if proxy:
-                    await page.set_default_timeout(timeout_sec * 1000)
-                await page.goto(url, wait_until="networkidle", timeout=timeout_sec * 1000)
+                    await page.set_default_timeout(timeout * 1000)
+                await page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
                 html_content = await page.content()
             finally:
                 await browser.close()
@@ -283,12 +283,11 @@ async def fetch_webpage(
     prompt: Optional[str] = None,
     extract_format: str = "markdown",
     js_render: bool = False,
-    timeout: int = 30000,
+    timeout: int = 30,
     proxy: Optional[str] = None,
 ) -> Dict[str, Any]:
     """获取网页内容 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
     max_tokens = 8000
-    timeout_sec = timeout / 1000.0
     t0 = _time_mod.perf_counter()
 
     try:
@@ -312,7 +311,7 @@ async def fetch_webpage(
         }
 
         if js_render:
-            playwright_result = await _fetch_via_playwright(url, proxy, timeout_sec, extract_format, max_tokens)
+            playwright_result = await _fetch_via_playwright(url, proxy, timeout, extract_format, max_tokens)
             if playwright_result.get("error"):
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=playwright_result.get("err_code", ERR_NETWORK_JS_RENDER), detail=playwright_result.get("detail", ""))
@@ -323,7 +322,7 @@ async def fetch_webpage(
             content_type = playwright_result["content_type"]
             status_code = playwright_result["status_code"]
         else:
-            async with create_http_client(timeout_sec=timeout_sec, proxy=proxy) as client:
+            async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
@@ -368,8 +367,8 @@ async def fetch_webpage(
 
     except httpx.TimeoutException:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_TIMEOUT, detail=f"超时({timeout_sec:.1f}秒)")
-        return build_error(data={"error_detail": f"超时({timeout_sec:.1f}秒)", "params": {"url": url, "timeout": timeout_sec}}, llm_data=llm_data)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_TIMEOUT, detail=f"超时({timeout:.1f}秒)")
+        return build_error(data={"error_detail": f"超时({timeout:.1f}秒)", "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
     except httpx.HTTPStatusError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_HTTP_ERROR, detail=f"HTTP {e.response.status_code}")

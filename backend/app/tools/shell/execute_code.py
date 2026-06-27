@@ -178,19 +178,18 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
 def execute_code(
     code: str,
     language: str = "python",
-    timeout: int = 30000,
+    timeout: int = 30,
     working_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """统一代码执行入口 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 统一timeout单位为毫秒
+    """统一代码执行入口 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 统一timeout单位为秒
     包装辅助函数结果，构建build3和llm_data — 北京老陈 2026-06-22
     """
     t0 = _time_mod.perf_counter()
-    timeout_sec = timeout / 1000.0
     language = language.lower().strip() if language else "python"
     if language == "python":
-        result = _execute_python(code=code, timeout=timeout_sec, working_dir=working_dir, safety_check=True)
+        result = _execute_python(code=code, timeout=timeout, working_dir=working_dir, safety_check=True)
     elif language == "javascript":
-        result = _execute_javascript(code=code, timeout=timeout_sec, working_dir=working_dir, safety_check=True)
+        result = _execute_javascript(code=code, timeout=timeout, working_dir=working_dir, safety_check=True)
     else:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_execute_code_llm_data("error", duration_ms, language, -1, err_code=ERR_PARAM_INVALID, detail=f"不支持的语言: {language}")

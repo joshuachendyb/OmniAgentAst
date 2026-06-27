@@ -115,7 +115,7 @@ def _build_execute_shell_command_llm_data(
 
 
 def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
-                         timed_out: bool, timeout: int = 30000,
+                         timed_out: bool, timeout: int = 60,
                          shell_type: str = "powershell", duration_ms: int = 0) -> Dict[str, Any]:
     """统一构建shell执行结果 — 小欧 2026-06-22
     返回原始字典，不调用build3，不含llm_data — 北京老陈 2026-06-22
@@ -126,7 +126,7 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
         "returncode": returncode,
     }
     if timed_out:
-        return {"success": False, "error_detail": f"命令执行超时({timeout}毫秒)", "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type, "timeout": timeout}, "err_code": ERR_SHELL_TIMEOUT}
+        return {"success": False, "error_detail": f"命令执行超时({timeout}秒)", "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type, "timeout": timeout}, "err_code": ERR_SHELL_TIMEOUT}
     if returncode == 0:
         return {"success": True, "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type}}
     return {"success": False, "error_detail": f"命令执行失败(退出码{returncode})", "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type}}
@@ -180,7 +180,7 @@ def cleanup_background_shells() -> int:
 
 def execute_shell_command(
     command: str, shell_type: Optional[str] = "powershell",
-    timeout: int = 30000, run_in_background: bool = False,
+    timeout: int = 60, run_in_background: bool = False,
     cwd: Optional[str] = None,
 ) -> Dict[str, Any]:
     """执行Shell命令 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件
@@ -199,12 +199,11 @@ def execute_shell_command(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}")
         return build_error(data={"error_detail": f"工作目录不存在: {cwd}", "params": {"cwd": cwd}}, llm_data=llm_data)
-    if timeout < 1 or timeout > 600000:
+    if timeout < 1 or timeout > 600:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_PARAMETER_INVALID, f"timeout必须在1-600000毫秒之间，当前值: {timeout}")
-        return build_error(data={"error_detail": f"timeout必须在1-600000毫秒之间", "params": {"timeout": timeout}}, llm_data=llm_data)
+        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_PARAMETER_INVALID, f"timeout必须在1-600秒之间，当前值: {timeout}")
+        return build_error(data={"error_detail": f"timeout必须在1-600秒之间", "params": {"timeout": timeout}}, llm_data=llm_data)
 
-    timeout_sec = timeout / 1000.0
     env = os.environ.copy()
     env['PYTHONUTF8'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
@@ -240,7 +239,7 @@ def execute_shell_command(
             cwd=cwd, env=env, executable=executable)
         timed_out = False
         try:
-            stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout_sec)
+            stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
             try:

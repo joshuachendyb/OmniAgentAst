@@ -35,7 +35,7 @@ class HttpRequestInput(BaseModel):
         default=None, description="JSON请求体(POST/PUT/PATCH/DELETE时使用),自动设Content-Type为application/json"
     )
     timeout: int = Field(
-        default=30000, ge=1000, le=300000, description="超时时间(毫秒),默认30000,范围1000-300000"
+        default=30, ge=1, le=300, description="超时时间(秒),默认30,范围1-300"
     )
     proxy: Optional[str] = Field(
         default=None, description="代理地址,如 http://127.0.0.1:8080"
@@ -56,7 +56,7 @@ class DownloadFileInput(BaseModel):
         default=None, description="请求头字典,如 {\"Authorization\": \"Bearer token\"}"
     )
     timeout: int = Field(
-        default=300000, ge=5000, le=3600000, description="超时时间(毫秒),默认300000,范围5000-3600000"
+        default=60, ge=5, le=3600, description="超时时间(秒),默认60,范围5-3600"
     )
     proxy: Optional[str] = Field(
         default=None, description="代理地址,如 http://127.0.0.1:8080"
@@ -77,7 +77,7 @@ class FetchWebpageInput(BaseModel):
         default=False, description="是否启用JS渲染(处理动态页面),默认false"
     )
     timeout: int = Field(
-        default=30000, ge=1000, le=120000, description="超时时间(毫秒),默认30000,范围1000-120000"
+        default=30, ge=1, le=120, description="超时时间(秒),默认30,范围1-120"
     )
     proxy: Optional[str] = Field(
         default=None, description="代理地址,如 http://127.0.0.1:8080"

@@ -115,7 +115,7 @@ async def http_request(
     method: str = "GET",
     headers: Optional[Dict[str, str]] = None,
     body: Optional[Dict[str, Any]] = None,
-    timeout: int = 30000,
+    timeout: int = 30,
     proxy: Optional[str] = None,
     retry: int = 3,
 ) -> Dict[str, Any]:
@@ -126,7 +126,6 @@ async def http_request(
         llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=f"重试次数必须在0-10之间,当前值:{retry}")
         return build_error(data={"error_detail": f"重试次数必须在0-10之间", "params": {"retry": retry}}, llm_data=llm_data)
 
-    timeout_sec = timeout / 1000.0
     t0 = _time_mod.perf_counter()
 
     try:
@@ -147,7 +146,7 @@ async def http_request(
             request_headers.update(headers)
 
         last_exception = None
-        async with create_http_client(timeout_sec=timeout_sec, proxy=proxy) as client:
+        async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
             for attempt in range(retry + 1):
                 try:
                     method_upper = method.upper()
