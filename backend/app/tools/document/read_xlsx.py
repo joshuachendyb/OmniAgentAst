@@ -58,45 +58,45 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional
             return {"error_detail": "文件不存在", "params": {"file_path": file_path}}
 
         wb = load_workbook(path, read_only=True, data_only=True)
-        sheet_names = wb.sheetnames
-        
-        if sheet_name:
-            if sheet_name not in sheet_names:
-                wb.close()
-                return {"error_detail": f"工作表不存在: {sheet_name}", "params": {"file_path": file_path, "sheet_name": sheet_name}}
-            target_sheets = [sheet_name]
-        else:
-            target_sheets = sheet_names
-        
-        all_sheets_data = []
-        total_rows = 0
-        
-        for sheet in target_sheets:
-            ws = wb[sheet]
-            rows = []
-            headers = []
-            row_count = 0
-            
-            for i, row in enumerate(ws.iter_rows(values_only=True)):
-                if i >= max_rows + 1:
-                    break
-                row_data = [None if val is None else val for val in row]
-                if i == 0:
-                    headers = [str(h) if h is not None else f"column_{j}" for j, h in enumerate(row_data)]
-                else:
-                    rows.append(row_data)
-                    row_count += 1
-            
-            sheet_data = {
-                "sheet_name": sheet,
-                "headers": headers,
-                "rows": rows,
-                "row_count": row_count,
-            }
-            all_sheets_data.append(sheet_data)
-            total_rows += row_count
+        try:
+            sheet_names = wb.sheetnames
 
-        wb.close()
+            if sheet_name:
+                if sheet_name not in sheet_names:
+                    return {"error_detail": f"工作表不存在: {sheet_name}", "params": {"file_path": file_path, "sheet_name": sheet_name}}
+                target_sheets = [sheet_name]
+            else:
+                target_sheets = sheet_names
+
+            all_sheets_data = []
+            total_rows = 0
+
+            for sheet in target_sheets:
+                ws = wb[sheet]
+                rows = []
+                headers = []
+                row_count = 0
+
+                for i, row in enumerate(ws.iter_rows(values_only=True)):
+                    if i >= max_rows + 1:
+                        break
+                    row_data = [None if val is None else val for val in row]
+                    if i == 0:
+                        headers = [str(h) if h is not None else f"column_{j}" for j, h in enumerate(row_data)]
+                    else:
+                        rows.append(row_data)
+                        row_count += 1
+
+                sheet_data = {
+                    "sheet_name": sheet,
+                    "headers": headers,
+                    "rows": rows,
+                    "row_count": row_count,
+                }
+                all_sheets_data.append(sheet_data)
+                total_rows += row_count
+        finally:
+            wb.close()
         
         if len(all_sheets_data) == 1:
             result = all_sheets_data[0]
