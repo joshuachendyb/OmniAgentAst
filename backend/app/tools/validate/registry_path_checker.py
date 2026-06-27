@@ -70,9 +70,7 @@ def validate_registry_key(key_path: str, hive: str, operation: str = "read") -> 
     if hive_upper not in ALLOWED_HIVES:
         return False, f"不允许的hive: {hive_upper}（仅允许HKCU、HKLM）", None
     
-    if ".." in key_path:
-        return False, "key_path不能包含路径穿越符(..)", None
-    
+
     if key_path.endswith("\\") or key_path.endswith("/"):
         return False, "key_path不能以\\结尾", None
     
