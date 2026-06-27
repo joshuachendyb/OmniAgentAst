@@ -206,6 +206,8 @@ class PromptLogger:
         
         # 计算消息统计
         message_stats = {}
+        if not messages:
+            messages = []
         for msg in messages:
             role = msg.get("role", "unknown")
             message_stats[role] = message_stats.get(role, 0) + 1
