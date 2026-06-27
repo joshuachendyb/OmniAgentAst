@@ -22,7 +22,7 @@ from typing import Any, Dict, Optional
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.validate.timeout_validator import validate_timeout
-from app.services.safety.tool_safety_checker import get_tool_safety_checker
+
 from app.utils.logger import logger
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_SHORT
 from app.constants import (
@@ -215,18 +215,19 @@ def execute_shell_command(
     env['PYTHONIOENCODING'] = 'utf-8'
 
     executable = None if shell_type == "cmd" else (
-        shutil.which("powershell.exe") or shutil.which("pwsh.exe") or "powershell.exe")
+        shutil.which("pwsh.exe") or shutil.which("powershell.exe") or "pwsh.exe")
 
-    # PowerShell 5.1 不支持 && 和 ||，自动翻译为兼容语法 — 小欧 2026-06-25
-    if shell_type == "powershell" and ('&&' in command or '||' in command):
+    # PS 5.1 (powershell.exe) 不支持 && 和 ||，需要翻译；PS 7 (pwsh.exe) 原生支持 — 小沈 2026-06-27
+    if shell_type == "powershell" and 'pwsh' not in executable and ('&&' in command or '||' in command):
         command = _translate_powershell_operators(command)
 
-    safety_check = get_tool_safety_checker().check_before_execute("execute_shell_command", {"command": command})
-    if safety_check.blocked:
-        logger.warning(f"[Shell安全] 拦截: {safety_check.message}")
+    from app.tools.shell.execute_shell_command_safety import check_shell_command_risk
+    safety_result = check_shell_command_risk(command)
+    if safety_result is not None and safety_result.blocked:
+        logger.warning(f"[Shell安全] 拦截: {safety_result.message}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_SHELL_INJECTION, safety_check.message)
-        return build_error(data={"error_detail": safety_check.message, "params": {"command": command[:200]}}, llm_data=llm_data)
+        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_SHELL_INJECTION, safety_result.message)
+        return build_error(data={"error_detail": safety_result.message, "params": {"command": command[:200]}}, llm_data=llm_data)
 
     if run_in_background:
         result = _run_shell_background(command, executable, cwd, env)
