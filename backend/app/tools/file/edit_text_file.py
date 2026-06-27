@@ -24,6 +24,9 @@ from app.tools.file_type_checker import check_for_text_tool
 from app.tools.validate.tools_file_path_checker import validate_path_for_write
 from app.utils.logger import logger
 
+# U+FFFD replacement character threshold for encoding detection — 小欧 2026-06-27
+_REPLACEMENT_CHAR_THRESHOLD = 0.05
+
 
 def _get_file_encoding(file_path: str) -> Dict[str, Any]:
     """内联编码检测，替代已删除的 file_helper.get_file_encoding — 小欧 2026-06-22"""
@@ -57,6 +60,7 @@ async def _try_read_file_with_encodings(
 ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """编码检测+同步文件读取 — 小欧 2026-06-22"""
     try:
+        preferred_failed = False
         if preferred:
             encodings_to_try = [preferred]
         else:
@@ -64,7 +68,10 @@ async def _try_read_file_with_encodings(
             encodings_to_try = []
             if auto and auto.get("data", {}).get("encoding"):
                 encodings_to_try.append(auto["data"]["encoding"])
-        encodings_to_try.extend(["utf-8", "gbk", "gb2312", "utf-8-sig"])
+        fallbacks = ["utf-8", "gbk", "gb2312", "utf-8-sig"]
+        for enc in fallbacks:
+            if enc not in encodings_to_try:
+                encodings_to_try.append(enc)
         for enc in encodings_to_try:
             if enc is None:
                 continue
@@ -73,11 +80,15 @@ async def _try_read_file_with_encodings(
                     with open(path, 'r', encoding=e, errors='replace') as f:
                         return f.read()
                 content = await asyncio.to_thread(_read)
-                if '\ufffd' in content and content.count('\ufffd') > len(content) * 0.05:
+                if '\ufffd' in content and content.count('\ufffd') > len(content) * _REPLACEMENT_CHAR_THRESHOLD:
                     content = None
                     continue
+                if preferred_failed:
+                    logger.warning(f"User-specified encoding '{preferred}' failed for {path}, using '{enc}' instead")
                 return content, enc, None
             except Exception:
+                if preferred and enc == preferred:
+                    preferred_failed = True
                 continue
         return None, None, f"无法读取文件: {path},已尝试编码: {encodings_to_try}"
     except Exception as e:
@@ -96,7 +107,7 @@ def _apply_replacement(
         pattern = re_mod.escape(old_string)
         if ignore_case:
             count = len(re_mod.findall(pattern, content, flags))
-            content = re_mod.sub(pattern, new_string, content, flags=flags)
+            content = re_mod.sub(pattern, lambda m: new_string, content, flags=flags)
         else:
             count = content.count(old_string)
             content = content.replace(old_string, new_string)
@@ -158,11 +169,19 @@ async def _precise_replace_in_file(
         return {"error_detail": error_detail}
 
     try:
-        path = Path(file_path)
+        path = Path(file_path).resolve()
         if not path.exists():
             return {"error_detail": f"文件不存在: {file_path}"}
         if path.stat().st_size > MAX_READ_SIZE:
             return {"error_detail": f"文件过大({path.stat().st_size}字节)", "file_size": path.stat().st_size}
+
+        # B2 fix: detect CRLF from raw bytes — 小欧 2026-06-27
+        _has_crlf = False
+        try:
+            _raw = path.read_bytes()[:8192]
+            _has_crlf = b'\r\n' in _raw
+        except Exception:
+            pass
 
         operation_id = record_operation(
             task_id=task_id, operation_type=OperationType.MODIFY,
@@ -187,8 +206,9 @@ async def _precise_replace_in_file(
                 replace_result['content_preview'] = preview
                 replace_result['total_lines'] = len(lines)
                 return False
+            write_content = new_content.replace('\n', '\r\n') if _has_crlf else new_content
             with open(path, 'w', encoding=used_enc, newline='') as f:
-                f.write(new_content)
+                f.write(write_content)
             return True
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
@@ -203,6 +223,8 @@ async def _precise_replace_in_file(
         if not success or count == 0:
             preview = replace_result.get('content_preview', '')
             total_lines = replace_result.get('total_lines', 0)
+            if total_lines == 1 and not content.strip():
+                return {"error_detail": f"未找到匹配内容: 文件为空", "old_string": old_string[:50]}
             return {
                 "error_detail": f"未找到匹配内容: '{old_string[:80]}'。文件共{total_lines}行，前15行:\n{preview}",
                 "old_string": old_string[:50],
@@ -240,6 +262,10 @@ async def edit_text_file(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=str(file_path), detail="file_path不能为空")
         return build_error(data={"error_detail": "file_path不能为空", "params": {"file_path": file_path}}, llm_data=llm_data)
+    if '\x00' in file_path:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="file_path包含空字节")
+        return build_error(data={"error_detail": "file_path包含空字节", "params": {"file_path": file_path}}, llm_data=llm_data)
     if old_string is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为None")

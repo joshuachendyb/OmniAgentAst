@@ -21,6 +21,39 @@ from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chu
 from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
 
+def _try_fix_incomplete_json(json_str: str) -> Optional[Dict]:
+    """
+    尝试修复不完整的JSON字符串 — 小沈 2026-06-27
+    
+    常见问题:
+    1. 缺少右引号或右括号
+    2. 反斜杠未转义
+    
+    返回: 解析成功的dict或None
+    """
+    if not json_str or not json_str.strip().startswith('{'):
+        return None
+    
+    s = json_str.strip()
+    
+    fixes = [
+        s,
+        s + '"}',
+        s + '}',
+        s + '"',
+        s.replace('\\\\', '\\') + '"}',
+        s.replace('\\\\', '\\') + '}',
+    ]
+    
+    for fixed in fixes:
+        try:
+            return _json.loads(fixed)
+        except _json.JSONDecodeError:
+            continue
+    
+    return None
+
+
 def _normalize_tool_params(params: Any) -> Any:
     """递归归一化tool params — 修复LLM双倍编码: 字符串形式的JSON array/object还
     原为真实类型. 在 _json.loads(arguments)之后调用,对后续所有工具无感生效 - 小沈 2026-06-14"""
@@ -222,16 +255,20 @@ class BaseAIService:
                         tc = tool_call_accumulator[idx]
                         if tc["name"]:
                             try:
-                                # 小健 2026-06-26: 处理空字符串和空白字符
                                 args_str = tc["arguments"].strip() if tc["arguments"] else ""
                                 if not args_str:
                                     params = {}
                                 else:
                                     params = _normalize_tool_params(_json.loads(args_str))
                             except _json.JSONDecodeError as e:
-                                failed_parses.append(tc["name"])
                                 logger.warning(f"[request_stream] tool_call '{tc['name']}' 参数JSON解析失败: {str(e)[:100]}, arguments前100字符: {args_str[:100]}")
-                                continue
+                                fixed_params = _try_fix_incomplete_json(args_str)
+                                if fixed_params is not None:
+                                    logger.info(f"[request_stream] JSON修复成功: {tc['name']}")
+                                    params = _normalize_tool_params(fixed_params)
+                                else:
+                                    failed_parses.append(tc["name"])
+                                    continue
                             tool_calls_list.append({
                                 "tool_name": tc["name"],
                                 "tool_params": params,

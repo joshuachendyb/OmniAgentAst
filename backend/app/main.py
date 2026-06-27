@@ -125,6 +125,9 @@ async def startup_event():
     ensure_tools_registered()
     _start_cleanup_task()
     print(f"当前版本: {app_version}")
+    from app.config import get_config
+    _cfg = get_config()
+    print(f"LLM 配置: provider={_cfg.get('ai.provider')}, model={_cfg.get('ai.model')}")
 
 
 @app.on_event("shutdown")

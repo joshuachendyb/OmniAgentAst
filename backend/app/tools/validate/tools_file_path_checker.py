@@ -12,15 +12,18 @@ def validate_path_for_write(file_path: str, content: str = "", append: bool = Fa
     Returns: (is_valid, error_msg, warning_msg)
     """
     path = Path(file_path)
-    if path.exists() and path.is_file():
-        if not append:
-            old_size = path.stat().st_size
-            if old_size > 1024 * 1024:
-                return True, None, f"覆盖大文件({old_size}字节)，请确认"
-        else:
-            old_size = path.stat().st_size
-            if old_size > 100 * 1024 * 1024:
-                return True, None, f"追加到超大文件({old_size}字节)，请确认"
+    try:
+        if path.exists() and path.is_file():
+            if not append:
+                old_size = path.stat().st_size
+                if old_size > 1024 * 1024:
+                    return True, None, f"覆盖大文件({old_size}字节)，请确认"
+            else:
+                old_size = path.stat().st_size
+                if old_size > 100 * 1024 * 1024:
+                    return True, None, f"追加到超大文件({old_size}字节)，请确认"
+    except PermissionError:
+        return False, f"无权限访问文件: {file_path}", None
     return True, None, None
 
 

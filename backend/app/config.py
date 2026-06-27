@@ -166,6 +166,7 @@ _config_instance: Optional[Config] = None
 def get_config() -> Config:
     """
     获取配置实例 — 唯一公共API
+    每次调用检查文件mtime，变化则自动重读（支持运行时修改config.yaml）
     
     Returns:
         Config: 配置管理实例
@@ -173,5 +174,5 @@ def get_config() -> Config:
     global _config_instance
     if _config_instance is None:
         _config_instance = Config()
-        _config_instance._load_config()
+    _config_instance._load_config()  # 内部有mtime缓存检查，未变则跳过
     return _config_instance
