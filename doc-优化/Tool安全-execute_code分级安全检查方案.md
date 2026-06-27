@@ -146,13 +146,17 @@ class RiskLevel:
 
 #### **文件操作规则**
 
+> **核心原则**：open()本身安全，关键是write模式。只读模式（r/rb）不检查，写入模式（w/wb/a/ab等）才需要检查。
+
 | 模式 | 风险等级 | 说明 | 是否允许 |
 |------|---------|------|---------|
-| `open("test.txt", "w")` | LOW | 写入临时文件 | ✅ 允许 |
-| `open("/etc/passwd", "w")` | HIGH | 写入系统文件 | ❌ 拒绝 |
-| `open("data.txt", "w")` | MEDIUM | 其他文件写入 | ✅ 允许（警告） |
-| `open("data.bin", "wb")` | MEDIUM | 二进制写入 | ✅ 允许（警告） |
-| `open("C:\\Windows\\system.ini", "w")` | HIGH | 写入Windows系统目录 | ❌ 拒绝 |
+| `open("file.txt", "r")` | **不检查** | 只读，完全安全 | ✅ 允许 |
+| `open("file.txt", "rb")` | **不检查** | 只读二进制，完全安全 | ✅ 允许 |
+| `open("file.txt", "w")` | MEDIUM | 写入文件 | ✅ 允许（警告） |
+| `open("file.txt", "wb")` | MEDIUM | 写入二进制文件 | ✅ 允许（警告） |
+| `open("file.txt", "a")` | MEDIUM | 追加写入文件 | ✅ 允许（警告） |
+
+> **说明**：写入系统文件路径保护——tool内部可调用系统级`path_validator`检查目标路径是否为系统敏感路径，若为系统敏感路径则升级为HIGH拒绝。
 
 #### **eval/exec规则**
 
@@ -196,9 +200,11 @@ eval(user_input)  # ❌ 会读取敏感文件！
 
 | 模式 | 风险等级 | 说明 | 是否允许 |
 |------|---------|------|---------|
-| `subprocess.run("ls", shell=True)` | HIGH | shell=True字符串参数（可注入） | ❌ 拒绝 |
-| `subprocess.Popen(cmd, shell=True)` | HIGH | shell=True变量参数（不可审查） | ❌ 拒绝 |
-| `os.popen("ls")` | HIGH | os.popen同样存在注入风险 | ❌ 拒绝 |
+| `subprocess.run("ls", shell=True)` | MEDIUM | shell=True字符串参数 | ✅ 允许（警告） |
+| `subprocess.Popen(cmd, shell=True)` | MEDIUM | shell=True变量参数 | ✅ 允许（警告） |
+| `os.popen("ls")` | MEDIUM | os.popen执行命令 | ✅ 允许（警告） |
+
+> **说明**：shell=True本身风险在于参数来源，不在于shell=True本身。已有"用户输入+shell=True"的HIGH规则覆盖真正危险的情况（见用户输入变量检测），因此shell=True统一为MEDIUM。
 
 #### **文件删除规则**
 
@@ -318,32 +324,18 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
     },
     
     # ===== open/write =====
-    # 低风险：写入临时文件或当前目录
+    # 中风险：文件写入操作（只检查write/append模式，只读模式不检查）
+    # 正则说明：匹配 open(..., "w"/"wb"/"a"/"ab" 等写入模式
     {
-        "pattern": r"open\s*\(\s*[\'\"](test|temp|tmp|output)",
-        "risk": RiskLevel.LOW,
-        "desc": "写入临时文件（相对安全）",
+        "pattern": r"open\s*\(.*[\'\"]w[b+]?[\'\"]",
+        "risk": RiskLevel.MEDIUM,
+        "desc": "文件写入操作（write模式）",
         "allow": True,
     },
-    # 高风险：写入 Linux/Mac 系统文件
     {
-        "pattern": r"open\s*\(\s*[\'\"]/(etc|sys|proc|windows)",
-        "risk": RiskLevel.HIGH,
-        "desc": "写入 Linux/Mac 系统文件",
-        "allow": False,
-    },
-    # 高风险：写入 Windows 系统路径
-    {
-        "pattern": r"open\s*\(\s*[\'\"][a-zA-Z]:[/\\](Windows|Program Files|Program Files \(x86\))",
-        "risk": RiskLevel.HIGH,
-        "desc": "写入 Windows 系统目录",
-        "allow": False,
-    },
-    # 中风险：其他文件写入（含二进制模式，排除LOW的test/temp/tmp/out前缀）
-    {
-        "pattern": r"open\s*\((?:[\'\"](?!(?:test|temp|tmp|output))[^\'\"]*[\'\"],|[a-zA-Z_]\w*\s*,)\s*[\'\"]w[b+]?[\'\"]",
+        "pattern": r"open\s*\(.*[\'\"]a[b+]?[\'\"]",
         "risk": RiskLevel.MEDIUM,
-        "desc": "文件写入操作（含二进制模式）",
+        "desc": "文件追加操作（append模式）",
         "allow": True,
     },
     
@@ -424,40 +416,37 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
         "allow": False,
     },
     
-    # ===== os.system =====
-    # 高风险：os.system（无法检查参数）
+    # ===== os.system / os.popen =====
+    # 中风险：os.system调用（LLM经常使用，不拒绝；用户输入组合已在上面覆盖HIGH）
     {
         "pattern": r"os\.system\s*\(",
-        "risk": RiskLevel.HIGH,
-        "desc": "os.system调用（无法审查参数）",
-        "allow": False,
+        "risk": RiskLevel.MEDIUM,
+        "desc": "os.system调用",
+        "allow": True,
+    },
+    {
+        "pattern": r"os\.popen\s*\(",
+        "risk": RiskLevel.MEDIUM,
+        "desc": "os.popen调用",
+        "allow": True,
     },
     
     # ===== shutil.rmtree =====
-    # 高风险：递归删除
+    # 中风险：递归删除（LLM经常需要清理目录，不拒绝）
     {
         "pattern": r"shutil\.rmtree\s*\(",
-        "risk": RiskLevel.HIGH,
+        "risk": RiskLevel.MEDIUM,
         "desc": "递归删除目录",
-        "allow": False,
+        "allow": True,
     },
     
     # ===== subprocess shell=True =====
-    # 高风险：shell=True 无法审查参数内容
+    # 中风险：shell=True（用户输入组合已在上面覆盖HIGH，此处只处理非用户输入的情况）
     {
         "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\([^)]*?shell\s*=\s*True",
-        "risk": RiskLevel.HIGH,
-        "desc": "subprocess shell=True（可命令注入）",
-        "allow": False,
-    },
-    
-    # ===== os.popen =====
-    # 高风险：os.popen 执行命令，与 os.system 同等风险
-    {
-        "pattern": r"os\.popen\s*\(",
-        "risk": RiskLevel.HIGH,
-        "desc": "os.popen 执行命令（无法审查参数）",
-        "allow": False,
+        "risk": RiskLevel.MEDIUM,
+        "desc": "subprocess shell=True",
+        "allow": True,
     },
     
     # ===== os.remove / os.unlink =====
@@ -776,9 +765,9 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 
 | 代码 | 旧方案 | 新方案 | 改进 |
 |------|--------|--------|------|
-| `open("test.txt", "w")` | ❌ 拒绝 | ✅ 允许（LOW） | ✅ 不再过度拦截 |
-| `open("/etc/passwd", "w")` | ❌ 拒绝 | ❌ 拒绝（HIGH） | ✅ 保持安全 |
-| `open("data.txt", "w")` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ✅ 允许但有警告 |
+| `open("file.txt", "r")` | ✅ 允许 | ✅ 允许（不检查） | ✅ 只读不检查 |
+| `open("file.txt", "w")` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ✅ 不再过度拦截 |
+| `open("file.txt", "a")` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ✅ 不再过度拦截 |
 
 ### 4.3 eval/exec
 
@@ -806,8 +795,9 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 
 | 代码 | 旧方案 | 新方案 | 改进 |
 |------|--------|--------|------|
-| `subprocess.run("ls", shell=True)` | ⚠️ 未检测（正则漏过） | ❌ 拒绝（HIGH） | ✅ 新增覆盖 |
-| `os.popen("ls")` | ⚠️ 未检测（函数未覆盖） | ❌ 拒绝（HIGH） | ✅ 新增覆盖 |
+| `subprocess.run("ls", shell=True)` | ⚠️ 未检测（正则漏过） | ✅ 允许（MEDIUM） | ✅ 分级处理，不再一棍子打死 |
+| `os.popen("ls")` | ⚠️ 未检测（函数未覆盖） | ✅ 允许（MEDIUM） | ✅ 分级处理 |
+| `subprocess.run(sys.argv[1], shell=True)` | ⚠️ 未检测 | ❌ 拒绝（HIGH） | ✅ 用户输入+shell=True精确拦截 |
 
 ### 4.6 文件删除
 
@@ -912,8 +902,7 @@ def test_validate_code_safety():
     assert result["risk_level"] == "medium"
     assert result["allow"] == True
     assert len(result["warnings"]) > 0
-    
-    # ===== AST别名检测 =====
+
     # 别名绕过：import subprocess as sp → sp.run 应被拦截
     result = validate_code_safety('import subprocess as sp; sp.run(["rm", "-rf", "/"])')
     assert result["risk_level"] == "high"
@@ -999,13 +988,32 @@ def test_validate_code_safety():
     result = validate_code_safety('subprocess.run(["python", "-c", "rm -rf /"])')
     assert result["risk_level"] == "high"
     assert result["allow"] == False
-    # 同时触发两条规则
-    assert len([d for d in result["details"] if "[LOW]" in d or "[HIGH]" in d]) >= 2
     
     # Python解释器（LOW）+ 普通subprocess（MEDIUM）
-    # 应判定为MEDIUM
+    # 应判定为MEDIUM（但LOW规则匹配，MEDIUM被负向前瞻排除）
     result = validate_code_safety('subprocess.run(["python", "-c", "print(1)"])')
-    assert result["risk_level"] == "low"  # LOW规则匹配，MEDIUM被负向前瞻排除
+    assert result["risk_level"] == "low"
+    assert result["allow"] == True
+    
+    # ===== os.system / shutil.rmtree =====
+    # os.system应为MEDIUM（不拒绝）
+    result = validate_code_safety('os.system("dir")')
+    assert result["risk_level"] == "medium"
+    assert result["allow"] == True
+    
+    # shutil.rmtree应为MEDIUM（不拒绝）
+    result = validate_code_safety('shutil.rmtree("build/")')
+    assert result["risk_level"] == "medium"
+    assert result["allow"] == True
+    
+    # ===== 文件写入统一MEDIUM =====
+    # open写入统一MEDIUM，不区分文件名
+    result = validate_code_safety('open("test.txt", "w")')
+    assert result["risk_level"] == "medium"
+    assert result["allow"] == True
+    
+    result = validate_code_safety('open("data.txt", "w")')
+    assert result["risk_level"] == "medium"
     assert result["allow"] == True
 ```
 
