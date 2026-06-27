@@ -7,20 +7,12 @@ keyboard_control — 键盘控制
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
-import importlib
 import time as _time_mod
 from typing import Dict, Any, List, Literal
 
 from app.tools.tool_response import build_success, build_error
+from app.tools.desktop.desktop_helper import check_pyautogui_available
 from app.constants import ERR_INVALID_ACTION, ERR_KEYBOARD_TYPE, ERR_KEYBOARD_SHORTCUT, ERR_KEY_COMBO
-
-
-def _check_pyautogui() -> bool:
-    try:
-        importlib.import_module("pyautogui")
-        return True
-    except ImportError:
-        return False
 
 
 def _build_keyboard_control_llm_data(exec_code: str, duration_ms: int, action: str, text_or_keys: str,
@@ -43,7 +35,7 @@ def _build_keyboard_control_llm_data(exec_code: str, duration_ms: int, action: s
 
 def _type_text(text: str, interval: float = 0) -> Dict[str, Any]:
     """模拟键盘输入文本(内聚) — 小健 2026-06-22"""
-    if not _check_pyautogui():
+    if not check_pyautogui_available():
         return {"error_detail": "pyautogui库未安装", "params": {"library": "pyautogui"}}
     try:
         import pyautogui
@@ -58,7 +50,7 @@ def _type_text(text: str, interval: float = 0) -> Dict[str, Any]:
 
 def _shortcut(keys: str) -> Dict[str, Any]:
     """执行键盘快捷键组合(内聚) — 小健 2026-06-22"""
-    if not _check_pyautogui():
+    if not check_pyautogui_available():
         return {"error_detail": "pyautogui库未安装", "params": {"library": "pyautogui"}}
     try:
         import pyautogui
@@ -71,7 +63,7 @@ def _shortcut(keys: str) -> Dict[str, Any]:
 
 def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
     """按住多个键后释放(内聚) — 小健 2026-06-22"""
-    if not _check_pyautogui():
+    if not check_pyautogui_available():
         return {"error_detail": "pyautogui库未安装", "params": {"library": "pyautogui"}}
     try:
         import pyautogui
