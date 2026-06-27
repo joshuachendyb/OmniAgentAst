@@ -31,6 +31,40 @@
 - 无法根据具体内容判断风险等级
 - 一刀切，影响正常使用
 
+### 1.3 当前方案代码
+
+**当前安全检查函数**: `backend/app/tools/tool_fc_helper.py:82-88`
+
+```python
+def _validate_code_safety(code: str) -> List[str]:
+    """验证代码安全性 — 小沈 2026-05-17"""
+    warnings = []
+    for pattern, desc in DANGEROUS_PATTERNS:
+        if re.search(pattern, code):
+            warnings.append(desc)
+    return warnings
+```
+
+**当前危险模式列表**: `backend/app/tools/tool_constants.py:166-180`
+
+```python
+DANGEROUS_PATTERNS = [
+    (r"os\.system\s*\(", "系统调用(os.system)"),
+    (r"subprocess\.(call|run|Popen|check_output)\s*\(", "子进程调用(subprocess)"),
+    (r"shutil\.rmtree\s*\(", "递归删除目录(shutil.rmtree)"),
+    (r"os\.remove\s*\(", "删除文件(os.remove)"),
+    (r"os\.unlink\s*\(", "删除文件(os.unlink)"),
+    (r"eval\s*\(", "动态执行(eval)"),
+    (r"exec\s*\(", "动态执行(exec)"),
+    (r"compile\s*\(", "动态编译(compile)"),
+    (r"open\s*\(.*[\'\"]w[\'\"]", "写入文件操作"),
+    (r"socket\s*\.", "网络Socket操作"),           # ❌ 过度拦截
+    (r"requests\.(get|post|put|delete|patch)\s*\(", "HTTP请求(requests)"),  # ❌ 过度拦截
+    (r"urllib\.request", "URL请求(urllib)"),      # ❌ 过度拦截
+]
+# 共12条，其中 socket、requests、urllib 共计3条属于过度拦截
+```
+
 ---
 
 ## 二、方案设计
@@ -125,8 +159,13 @@ class RiskLevel:
 | 模式 | 风险等级 | 说明 | 是否允许 |
 |------|---------|------|---------|
 | `eval("1+1")` | LOW | eval硬编码字符串 | ✅ 允许 |
-| `eval(user_input)` | HIGH | eval动态变量（**代码注入风险**） | ❌ 拒绝 |
+| `eval(user_input)` | MEDIUM | eval变量（正则无法区分user_input与complex_expr） | ✅ 允许（警告） |
 | `eval(complex_expr)` | MEDIUM | 其他eval调用 | ✅ 允许（警告） |
+| `exec("import os; os.system('ls')")` | LOW | exec硬编码字符串 | ✅ 允许 |
+| `exec(user_input)` | MEDIUM | exec变量（代码注入风险） | ✅ 允许（警告） |
+| `exec(sys.argv[1])` | HIGH | exec用户输入（代码注入风险） | ❌ 拒绝 |
+| `compile("1+1","","eval")` | LOW | compile硬编码字符串 | ✅ 允许 |
+| `compile(source,"","exec")` | MEDIUM | compile变量（潜在代码注入） | ✅ 允许（警告） |
 
 **eval()是什么？**
 
@@ -185,14 +224,40 @@ eval(user_input)  # ❌ 会读取敏感文件！
 | `ctypes.CDLL("lib.so")` | HIGH | 加载原生共享库 | ❌ 拒绝 |
 | `ctypes.cdll.LoadLibrary(...)` | HIGH | 加载原生库（代码执行） | ❌ 拒绝 |
 
-#### **socket和requests：无风险，不检查**
+#### **用户输入变量检测**
+
+当 eval/exec/subprocess/os.system 等危险函数**与用户输入变量结合使用**时，风险升级为 HIGH：
+
+| 模式 | 风险等级 | 说明 | 是否允许 |
+|------|---------|------|---------|
+| `eval(input())` | HIGH | eval用户输入（**代码注入风险**） | ❌ 拒绝 |
+| `exec(sys.argv[1])` | HIGH | exec用户输入（**代码注入风险**） | ❌ 拒绝 |
+| `subprocess.run(cmd, shell=True)` + `cmd=input()` | HIGH | subprocess用户输入+shell=True（**命令注入**） | ❌ 拒绝 |
+| `os.system(os.getenv("cmd"))` | HIGH | os.system用户输入（**命令注入**） | ❌ 拒绝 |
+
+**用户输入变量来源**：`input()`、`sys.argv`、`os.getenv()`、`os.environ`
+
+```python
+# 用户输入变量检测
+USER_INPUT_PATTERNS = [
+    r"\binput\s*\(",           # input()
+    r"\bsys\.argv",            # sys.argv
+    r"\bos\.getenv\s*\(",      # os.getenv()
+    r"\bos\.environ",          # os.environ
+]
+```
+
+**检测逻辑**：代码中同时出现危险函数和用户输入变量时，即使内容正则判断为 MEDIUM，也升级为 HIGH 拒绝执行。无用户输入变量的 eval/exec/subprocess 调用保持原分级。
+
+#### **socket、requests、urllib：无风险，不检查**
 
 | 模式 | 风险等级 | 说明 | 是否允许 |
 |------|---------|------|---------|
 | `socket.socket()` | **无风险** | 正常网络连接 | ✅ 完全允许 |
 | `requests.get("https://api.com")` | **无风险** | 正常HTTP请求 | ✅ 完全允许 |
+| `urllib.request.urlopen("https://api.com")` | **无风险** | 正常URL请求 | ✅ 完全允许 |
 
-**为什么socket和requests无风险？**
+**为什么socket、requests、urllib无风险？**
 
 1. **socket**：
    - 只是建立网络连接
@@ -206,9 +271,15 @@ eval(user_input)  # ❌ 会读取敏感文件！
    - 无法访问本地敏感文件
    - **不应该被拦截**
 
+3. **urllib**：
+   - 标准的URL请求库
+   - 与requests同级，同样无代码注入风险
+   - **不应该被拦截**
+
 **之前的过度担心**：
 - ❌ 担心socket可以建立恶意连接 → 实际无法提权
 - ❌ 担心requests可以发起DDoS攻击 → 实际单机无法DDoS
+- ❌ 担心urllib可以访问本地文件 → 实际受沙箱限制
 - ❌ 担心泄露数据 → 实际execute_code在沙箱环境
 
 ---
@@ -226,21 +297,21 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
     # ===== subprocess =====
     # 低风险：执行Python/Node等解释器
     {
-        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(\s*\[.*?(python|node|python3)",
+        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(\s*\[[^\]]*?(python|node|python3)",
         "risk": RiskLevel.LOW,
         "desc": "执行解释器脚本（相对安全）",
         "allow": True,
     },
     # 高风险：执行系统命令（rm、del、format等）
     {
-        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(\s*\[.*?(rm|del|format|shutdown|reboot)",
+        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(\s*\[[^\]]*?(rm|del|format|shutdown|reboot)",
         "risk": RiskLevel.HIGH,
         "desc": "执行危险系统命令",
         "allow": False,
     },
-    # 中风险：其他subprocess调用
+    # 中风险：其他subprocess调用（负向前瞻排除LOW匹配的解释器脚本）
     {
-        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(",
+        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\((?!\s*\[[^\]]*?(?:python|node|python3))",
         "risk": RiskLevel.MEDIUM,
         "desc": "子进程调用（需审查）",
         "allow": True,
@@ -268,9 +339,9 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
         "desc": "写入 Windows 系统目录",
         "allow": False,
     },
-    # 中风险：其他文件写入（含二进制模式）
+    # 中风险：其他文件写入（含二进制模式，排除LOW的test/temp/tmp/out前缀）
     {
-        "pattern": r"open\s*\(.*[\'\"]w[b+]?[\'\"]",  # 匹配 w/wb/w+/wb+
+        "pattern": r"open\s*\((?:[\'\"](?!(?:test|temp|tmp|output))[^\'\"]*[\'\"],|[a-zA-Z_]\w*\s*,)\s*[\'\"]w[b+]?[\'\"]",
         "risk": RiskLevel.MEDIUM,
         "desc": "文件写入操作（含二进制模式）",
         "allow": True,
@@ -284,19 +355,73 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
         "desc": "eval硬编码字符串（相对安全）",
         "allow": True,
     },
-    # 高风险：eval动态变量
+    # 中风险：其他eval（负向前瞻排除LOW的字符串字面量）
+    # 注：正则无法区分 eval(var) 与 eval(expr)，统一按MEDIUM处理
     {
-        "pattern": r"eval\s*\(\s*[a-zA-Z_]",  # eval(variable)
+        "pattern": r"eval\s*\((?!\s*[\'\"])",
+        "risk": RiskLevel.MEDIUM,
+        "desc": "eval调用（非字面量，需审查）",
+        "allow": True,
+    },
+    
+    # ===== exec =====
+    # 低风险：exec硬编码字符串
+    {
+        "pattern": r"exec\s*\(\s*[\'\"]",
+        "risk": RiskLevel.LOW,
+        "desc": "exec硬编码字符串（相对安全）",
+        "allow": True,
+    },
+    # 中风险：其他exec（负向前瞻排除LOW的字符串字面量）
+    {
+        "pattern": r"exec\s*\((?!\s*[\'\"])",
+        "risk": RiskLevel.MEDIUM,
+        "desc": "exec调用（非字面量，需审查）",
+        "allow": True,
+    },
+    
+    # ===== compile =====
+    # 低风险：compile硬编码字符串
+    {
+        "pattern": r"compile\s*\(\s*[\'\"]",
+        "risk": RiskLevel.LOW,
+        "desc": "compile硬编码字符串（相对安全）",
+        "allow": True,
+    },
+    # 中风险：compile动态编译（负向前瞻排除LOW的字符串字面量）
+    {
+        "pattern": r"compile\s*\((?!\s*[\'\"])",
+        "risk": RiskLevel.MEDIUM,
+        "desc": "compile动态编译（非字面量，潜在代码注入）",
+        "allow": True,
+    },
+    
+    # ===== 用户输入变量 + 危险函数组合 =====
+    # 高风险：当 input()/sys.argv/os.getenv/os.environ 与危险函数结合使用
+    # 即使内容正则判为 MEDIUM，也升级为 HIGH 拒绝执行
+    {
+        "pattern": r"eval\s*\([^)]*?(?:input|sys\.argv|os\.getenv|os\.environ)",
         "risk": RiskLevel.HIGH,
-        "desc": "eval动态变量（代码注入风险）",
+        "desc": "eval用户输入（代码注入风险）",
         "allow": False,
     },
-    # 中风险：其他eval
     {
-        "pattern": r"eval\s*\(",
-        "risk": RiskLevel.MEDIUM,
-        "desc": "eval调用",
-        "allow": True,
+        "pattern": r"exec\s*\([^)]*?(?:input|sys\.argv|os\.getenv|os\.environ)",
+        "risk": RiskLevel.HIGH,
+        "desc": "exec用户输入（代码注入风险）",
+        "allow": False,
+    },
+    {
+        "pattern": r"subprocess\.(?:run|call|Popen|check_output)\s*\([^)]*?(?:input|sys\.argv|os\.getenv|os\.environ)[^)]*?shell\s*=\s*True",
+        "risk": RiskLevel.HIGH,
+        "desc": "subprocess用户输入+shell=True（命令注入风险）",
+        "allow": False,
+    },
+    {
+        "pattern": r"os\.system\s*\([^)]*?(?:input|sys\.argv|os\.getenv|os\.environ)",
+        "risk": RiskLevel.HIGH,
+        "desc": "os.system用户输入（命令注入风险）",
+        "allow": False,
     },
     
     # ===== os.system =====
@@ -320,7 +445,7 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
     # ===== subprocess shell=True =====
     # 高风险：shell=True 无法审查参数内容
     {
-        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(.*shell\s*=\s*True",
+        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\([^)]*?shell\s*=\s*True",
         "risk": RiskLevel.HIGH,
         "desc": "subprocess shell=True（可命令注入）",
         "allow": False,
@@ -440,7 +565,7 @@ def _resolve_import_aliases(code: str) -> Dict[str, str]:
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
                 if alias.asname:  # from X import Y as Z 形式
-                    aliases[alias.asname] = f"{node.module}.{alias.name}"
+                    aliases[alias.asname] = f"{node.module}.{alias.name}" if node.module else alias.name
     return aliases
 ```
 
@@ -486,22 +611,12 @@ def _resolve_import_aliases(code: str) -> Dict[str, str]:
     return aliases
 
 
-# 别名→真实模块的映射表，用于将别名调用映射到对应的正则规则
-ALIAS_MODULE_MAP = {
-    "subprocess": ["sp", "subp", "proc"],
-    "os": ["o", "operating_sys"],
-    "shutil": ["sh", "shut"],
-    "pickle": ["pk", "pkl"],
-    "ctypes": ["ct", "ctp"],
-    "requests": ["req", "rq"],
-}
-
-
 def _validate_code_safety_v2(code: str) -> Dict[str, Any]:
-    """分级安全检查（双层防御） — 小欧 2026-06-27
-    
-    第一层：正则规则匹配（RISK_CHECK_RULES）
-    第二层：AST别名检测（_resolve_import_aliases）
+    """分级安全检查（三层防御） — 小欧 2026-06-27
+     
+     第一层：正则规则匹配（RISK_CHECK_RULES，含用户输入组合检测）
+     第二层：AST别名检测（_resolve_import_aliases）
+     第三层：用户输入变量与危险函数组合升级（嵌入在第一层内，§用户输入变量检测）
     
     使用方式：
         from app.tools.shell.execute_code_safety import _validate_code_safety_v2
@@ -544,25 +659,29 @@ def _validate_code_safety_v2(code: str) -> Dict[str, Any]:
     # 只要代码中出现 alias.dangerous_func(...) 即告警
     ALIAS_PATTERNS = {
         "subprocess": [
-            (r"\{\}\.(run|call|Popen|check_output)\s*\(", RiskLevel.MEDIUM,
+            (r"{{}}\.(run|call|Popen|check_output)\s*\(", RiskLevel.MEDIUM,
              "通过别名调用subprocess执行子进程"),
+            (r"{{}}\.(run|call|Popen|check_output)\s*\([^)]*?shell\s*=\s*True", RiskLevel.HIGH,
+             "通过别名调用subprocess且shell=True（命令注入风险）"),
+            (r"{{}}\.(run|call|Popen|check_output)\s*\(\s*\[[^\]]*?(rm|del|format|shutdown|reboot)", RiskLevel.HIGH,
+             "通过别名调用subprocess执行危险系统命令"),
         ],
         "os": [
-            (r"\{\}\.(system|popen)\s*\(", RiskLevel.HIGH,
+            (r"{{}}\.(system|popen)\s*\(", RiskLevel.HIGH,
              "通过别名调用os执行系统命令"),
-            (r"\{\}\.(remove|unlink)\s*\(", RiskLevel.MEDIUM,
+            (r"{{}}\.(remove|unlink)\s*\(", RiskLevel.MEDIUM,
              "通过别名调用os删除文件"),
         ],
         "shutil": [
-            (r"\{\}\.rmtree\s*\(", RiskLevel.HIGH,
+            (r"{{}}\.rmtree\s*\(", RiskLevel.HIGH,
              "通过别名调用shutil递归删除"),
         ],
         "pickle": [
-            (r"\{\}\.(load|loads)\s*\(", RiskLevel.HIGH,
-             "通过别名调用pickle反序列化（RCE风险）"),
+            (r"{{}}\.(load|loads)\s*\(", RiskLevel.HIGH,
+              "通过别名调用pickle反序列化（RCE风险）"),
         ],
         "ctypes": [
-            (r"\{\}\.(CDLL|cdll|windll|oledll)\s*\(", RiskLevel.HIGH,
+            (r"{{}}\.(CDLL|cdll|windll|oledll)\s*\(", RiskLevel.HIGH,
              "通过别名调用ctypes加载原生库"),
         ],
     }
@@ -608,26 +727,35 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
     if not code or not code.strip():
         return {"success": False, "error_detail": "code参数不能为空"}
     
-    if safety_check:
-        safety_result = validate_code_safety(code)
-        
-        risk_level = safety_result["risk_level"]
-        warnings = safety_result["warnings"]
-        allow = safety_result["allow"]
-        details = safety_result["details"]
-        
-        # 记录安全检查结果
-        if risk_level == "low":
-            logger.info(f"[安全检查] 低风险: {details}")
-        elif risk_level == "medium":
-            logger.warning(f"[安全检查] 中风险: {warnings}")
-        elif risk_level == "high":
-            logger.error(f"[安全检查] 高风险，拒绝执行: {warnings}")
-            return {
-                "success": False,
-                "error_detail": f"代码存在高风险: {', '.join(warnings)}",
-                "params": {"risk_level": risk_level, "warnings": warnings}
-            }
+        if safety_check:
+            safety_result = validate_code_safety(code)
+            
+            risk_level = safety_result["risk_level"]
+            warnings = safety_result["warnings"]
+            allow = safety_result["allow"]
+            details = safety_result["details"]
+            
+            # strict_mode 配置：MEDIUM 也拒绝
+            if risk_level == "medium" and config.safety_check.strict_mode:
+                logger.error(f"[安全检查] 严格模式({config.safety_check.strict_mode})中风险也拒绝: {'; '.join(warnings)}")
+                return {
+                    "success": False,
+                    "error_detail": f"严格模式下代码存在中风险: {'; '.join(warnings)}",
+                    "params": {"risk_level": risk_level, "warnings": warnings, "details": details}
+                }
+            
+            # 记录安全检查结果
+            if risk_level == "low":
+                logger.info(f"[安全检查] 低风险: {'; '.join(details)}")
+            elif risk_level == "medium":
+                logger.warning(f"[安全检查] 中风险: {'; '.join(warnings)}")
+            elif risk_level == "high":
+                logger.error(f"[安全检查] 高风险，拒绝执行: {', '.join(warnings)}")
+                return {
+                    "success": False,
+                    "error_detail": f"代码存在高风险: {', '.join(warnings)}",
+                    "params": {"risk_level": risk_level, "warnings": warnings, "details": details}
+                }
     
     # 执行代码...
 ```
@@ -640,7 +768,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 
 | 代码 | 旧方案 | 新方案 | 改进 |
 |------|--------|--------|------|
-| `subprocess.run(["python", "script.py"])` | ❌ 拒绝 | ✅ 允许（LOW） | ✅ 不再过度拦截 |
+| `subprocess.run(["python", "script.py"])` | ❌ 拒绝 | ✅ 允许（LOW） | ✅ 不再过度拦截（负向前瞻排除MEDIUM超集） |
 | `subprocess.run(["rm", "-rf", "/"])` | ❌ 拒绝 | ❌ 拒绝（HIGH） | ✅ 保持安全 |
 | `subprocess.run(["dir"])` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ✅ 允许但有警告 |
 
@@ -657,8 +785,14 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 | 代码 | 旧方案 | 新方案 | 改进 |
 |------|--------|--------|------|
 | `eval("1+1")` | ❌ 拒绝 | ✅ 允许（LOW） | ✅ 不再过度拦截 |
-| `eval(user_input)` | ❌ 拒绝 | ❌ 拒绝（HIGH） | ✅ 保持安全 |
+| `eval(user_input)` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ⚠️ 纯内容判MEDIUM；若检测到 input() 等用户输入源头则升级至 HIGH |
 | `eval(complex_expr)` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ✅ 允许但有警告 |
+| `eval(input())` | ❌ 拒绝 | ❌ 拒绝（HIGH） | ✅ 用户输入检测精确拦截 |
+| `exec("import os; os.system('ls')")` | ❌ 拒绝 | ✅ 允许（LOW） | ✅ 不再过度拦截 |
+| `exec(user_input)` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ✅ 允许但有警告 |
+| `exec(input())` | ❌ 拒绝 | ❌ 拒绝（HIGH） | ✅ 用户输入检测精确拦截 |
+| `compile("1+1","","eval")` | ❌ 拒绝 | ✅ 允许（LOW） | ✅ 不再过度拦截 |
+| `compile(source,"","exec")` | ❌ 拒绝 | ✅ 允许（MEDIUM） | ✅ 允许但有警告 |
 
 ### 4.4 socket和requests
 
@@ -666,6 +800,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 |------|--------|--------|------|
 | `socket.socket()` | ❌ 拒绝 | ✅ 完全允许 | ✅ 不再过度拦截 |
 | `requests.get("https://api.com")` | ❌ 拒绝 | ✅ 完全允许 | ✅ 不再过度拦截 |
+| `urllib.request.urlopen("https://api.com")` | ❌ 拒绝 | ✅ 完全允许 | ✅ 不再过度拦截 |
 
 ### 4.5 subprocess shell=True
 
@@ -697,9 +832,22 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 
 ---
 
-## 五、方案优点
+## 五、与 execute_shell_command 的区别
 
-### 5.1 核心优点
+| 工具 | 执行内容 | 安全检查重点 |
+|------|---------|-------------|
+| execute_code | Python/JavaScript代码 | 代码注入风险（eval用户输入、subprocess+shell=True、AST别名绕过） |
+| execute_shell_command | PowerShell/CMD命令 | Shell命令风险（递归删除、格式化、系统命令） |
+
+**关键区别**：
+- execute_code 需要检查 Python/JavaScript 代码中的**动态执行**和**用户输入**，分级细（LOW/MEDIUM/HIGH），双层防御（正则+AST）
+- execute_shell_command 需要检查 Shell 命令的**危险操作**，规则直接（HIGH/MEDIUM 两级）
+
+---
+
+## 六、方案优点
+
+### 6.1 核心优点
 
 1. ✅ **不再一棍子打死**：根据具体内容判断风险
 2. ✅ **细粒度检查**：区分合法用途和恶意用途
@@ -707,13 +855,13 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 4. ✅ **可扩展**：容易添加新规则
 5. ✅ **日志清晰**：记录每个风险等级
 
-### 5.2 安全性保证
+### 6.2 安全性保证
 
 - ✅ **高风险操作仍然拒绝**：如 `rm -rf /`、`eval(user_input)`
 - ✅ **中风险有警告**：提醒开发者注意
 - ✅ **低风险有日志**：可追溯
 
-### 5.3 可用性提升
+### 6.3 可用性提升
 
 - ✅ **允许合法的subprocess调用**：如执行Python脚本
 - ✅ **允许合法的文件写入**：如写入临时文件
@@ -723,12 +871,12 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 
 ---
 
-## 六、实施计划
+## 七、实施计划
 
-### 6.1 实施步骤
+### 7.1 实施步骤
 
 1. **Step 1**: 创建 `backend/app/tools/shell/execute_code_safety.py`
-2. **Step 2**: 实现 `RiskLevel`、`RISK_CHECK_RULES`、`validate_code_safety()`
+2. **Step 2**: 实现安全检查引擎 — 第一层 `RISK_CHECK_RULES`（正则规则，含用户输入组合检测）+ 第二层 `_resolve_import_aliases()`（AST别名解析，含shell=True和危险命令的HIGH检测）
 3. **Step 3**: 修改 `execute_code.py` 调用 `execute_code_safety` 模块
 4. **Step 4**: 编写单元测试 `test_execute_code_safety.py`
 5. **Step 5**: 更新文档
@@ -742,7 +890,7 @@ backend/app/tools/shell/
 └── execute_shell_command_safety.py  # 安全检查模块（未来）
 ```
 
-### 6.2 测试用例
+### 7.2 测试用例
 
 ```python
 def test_validate_code_safety():
@@ -764,13 +912,108 @@ def test_validate_code_safety():
     assert result["risk_level"] == "medium"
     assert result["allow"] == True
     assert len(result["warnings"]) > 0
+    
+    # ===== AST别名检测 =====
+    # 别名绕过：import subprocess as sp → sp.run 应被拦截
+    result = validate_code_safety('import subprocess as sp; sp.run(["rm", "-rf", "/"])')
+    assert result["risk_level"] == "high"
+    assert result["allow"] == False
+    
+    # 别名绕过：from os import system as cmd → cmd() 应被拦截
+    result = validate_code_safety('from os import system as cmd; cmd("rm -rf /")')
+    assert result["risk_level"] == "high"
+    assert result["allow"] == False
+    
+    # 别名绕过：import pickle as pk → pk.load 应被拦截
+    result = validate_code_safety('import pickle as pk; pk.load(data)')
+    assert result["risk_level"] == "high"
+    assert result["allow"] == False
+    
+    # AST正确解析：无别名的正常调用不应被误判
+    result = validate_code_safety('import subprocess; subprocess.run(["python", "script.py"])')
+    assert result["risk_level"] == "low"  # 触发LOW规则
+    assert result["allow"] == True
+    
+    # ===== 用户输入变量检测 =====
+    # eval(input()) 应被拦截（用户输入+危险函数组合）
+    result = validate_code_safety('eval(input())')
+    assert result["risk_level"] == "high"
+    assert result["allow"] == False
+    
+    # eval("1+1") 应允许（纯字面量，无用户输入）
+    result = validate_code_safety('eval("1+1")')
+    assert result["risk_level"] == "low"
+    assert result["allow"] == True
+    
+    # subprocess + shell=True + sys.argv 应被拦截
+    result = validate_code_safety('subprocess.run(sys.argv[1], shell=True)')
+    assert result["risk_level"] == "high"
+    assert result["allow"] == False
+    
+    # ===== exec测试 =====
+    # exec硬编码字符串（LOW）
+    result = validate_code_safety('exec("import os; os.system(\'ls\')")')
+    assert result["risk_level"] == "low"
+    assert result["allow"] == True
+    
+    # exec变量（MEDIUM）
+    result = validate_code_safety('exec(user_input)')
+    assert result["risk_level"] == "medium"
+    assert result["allow"] == True
+    
+    # exec用户输入（HIGH）
+    result = validate_code_safety('exec(sys.argv[1])')
+    assert result["risk_level"] == "high"
+    assert result["allow"] == False
+    
+    # ===== compile测试 =====
+    # compile硬编码字符串（LOW）
+    result = validate_code_safety('compile("1+1", "", "eval")')
+    assert result["risk_level"] == "low"
+    assert result["allow"] == True
+    
+    # compile变量（MEDIUM）
+    result = validate_code_safety('compile(source, "", "exec")')
+    assert result["risk_level"] == "medium"
+    assert result["allow"] == True
+    
+    # ===== 负向测试：无风险操作不拦截 =====
+    # socket不应被拦截
+    result = validate_code_safety('s = socket.socket()')
+    assert result["risk_level"] == "low"
+    assert result["allow"] == True
+    
+    # requests不应被拦截
+    result = validate_code_safety('requests.get("https://api.com")')
+    assert result["risk_level"] == "low"
+    assert result["allow"] == True
+    
+    # urllib不应被拦截
+    result = validate_code_safety('urllib.request.urlopen("https://api.com")')
+    assert result["risk_level"] == "low"
+    assert result["allow"] == True
+    
+    # ===== 多规则叠加测试 =====
+    # subprocess执行Python解释器（LOW）+ 危险命令（HIGH）
+    # 应判定为HIGH（取最高风险）
+    result = validate_code_safety('subprocess.run(["python", "-c", "rm -rf /"])')
+    assert result["risk_level"] == "high"
+    assert result["allow"] == False
+    # 同时触发两条规则
+    assert len([d for d in result["details"] if "[LOW]" in d or "[HIGH]" in d]) >= 2
+    
+    # Python解释器（LOW）+ 普通subprocess（MEDIUM）
+    # 应判定为MEDIUM
+    result = validate_code_safety('subprocess.run(["python", "-c", "print(1)"])')
+    assert result["risk_level"] == "low"  # LOW规则匹配，MEDIUM被负向前瞻排除
+    assert result["allow"] == True
 ```
 
 ---
 
-## 七、风险与缓解
+## 八、风险与缓解
 
-### 7.1 潜在风险
+### 8.1 潜在风险
 
 | 风险 | 说明 | 缓解措施 |
 |------|------|---------|
@@ -778,14 +1021,14 @@ def test_validate_code_safety():
 | 误判 | 可能错误判断风险等级 | 提供配置开关，允许关闭检查 |
 | 绕过 | 攻击者可能绕过检查 | 多层防御，结合其他安全机制 |
 
-### 7.2 缓解措施
+### 8.2 缓解措施
 
 1. **配置开关**：
    ```python
    # config.yaml
    safety_check:
      enabled: true
-     strict_mode: false  # 严格模式：MEDIUM也拒绝
+     strict_mode: false  # 严格模式：true=MEDIUM也拒绝（§3.5代码已处理）；false=MEDIUM允许但有警告
    ```
 
 2. **多层防御**：
@@ -800,7 +1043,7 @@ def test_validate_code_safety():
 
 ---
 
-## 八、总结
+## 九、总结
 
 **本方案通过分级安全检查，解决了当前"一棍子打死"的问题，在保证安全性的同时提升了可用性。**
 
