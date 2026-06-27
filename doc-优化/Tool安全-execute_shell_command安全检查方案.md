@@ -4,6 +4,8 @@
 **变更**: 北京老陈 2026-06-27 复核修正（正则精度/MEDIUM处理/路由逻辑/缺失模式）
 **设计复核**: 小欧 2026-06-27 发现别名/CMD顺序/check_fn跳过/换行续行等10项漏洞，修复于v1.1
 **设计复核v2**: 小欧 2026-06-27 发现CMD路径前置绕过/MEDIUM消息丢失等3项漏洞，修复于v1.2
+**复核修正v3**: 小欧 2026-06-27 14项漏洞逐条3轮复核，13项真问题保留，第6项为假问题（代码逻辑不受顺序影响），修正注释描述
+**设计复核v3**: 小健 2026-06-27 6项问题3轮复核，1项真问题（cipher /w:遗漏→补入HIGH），1项语义修正（MEDIUM is_safe=True→False），4项降级为建议（补充说明）
 
 ---
 
@@ -135,10 +137,12 @@ DANGEROUS_PATTERNS = [
 - `-Recurse -Force` 组合模式放在 `-Recurse` 之前，优先匹配更危险的组合
 - `Invoke-Expression` 升级为HIGH（等价于Python的eval，风险极高）
 - PowerShell别名覆盖：`Remove-Item` 的别名 `rm`/`del`/`ri`/`erase` 使用 `(?:Remove-Item|rm|del|ri|erase)` 分组覆盖
+- `del` 跨shell说明：`del` 在 PowerShell 中是 `Remove-Item` 的别名（支持 `-Recurse`/`-Force`），在 CMD 中是独立命令（支持 `/s`/`/f`）。PowerShell 别名模式中的 `del -Recurse` 仅在 PowerShell 上下文有效；CMD 的 `del /s` 由独立的 CMD 模式 `\bdel\b.*?/s\b` 覆盖，两者不冲突。若 CMD 用户误输入 `del -Recurse`，该命令在 CMD 中本就执行失败，误拦截无害
 - `-Recurse:$false` 排除：追加 `(?!:\$false\b)` 前导排除，显式关闭递归时不误拦
 - CMD参数顺序与路径前置：使用 `\bdel\b.*?/s\b` 处理路径在前（`del C:\temp /s`）和flag在前（`del /q /s`）两种情形，`.*?` 惰性匹配确保只匹配到最近的 `/s`
 - `shutdown /a` 排除：追加 `(?!\s+/a\b)` 前导排除，取消已计划关机不拦截
 - `net user /delete` 用户名要求：`net\s+user\s+\S+` 要求指定用户名，避免 `net user /delete` 帮助命令误判
+- `Remove-ItemProperty` 未覆盖说明：PowerShell 的 `Remove-ItemProperty`（删除单个注册表值）风险低于删除整个键，且 `execute_shell_command` 默认 `needs_confirmation=True` 兜底，LLM 极少使用此命令，暂不覆盖
 - 反引号换行续行：`re.search` 启用 `re.DOTALL` 标志，`.` 跨行匹配；或模式内用 `[\s\S]*` 替代 `.*`（见2.3节实现）
 - 命令名自身加 `\b` 词边界：`\bshutdown\b` 避免 `autoshutdown`、`system-shutdown` 误匹配
 
@@ -151,7 +155,7 @@ DANGEROUS_PATTERNS = [
 
 SHELL_DANGEROUS_PATTERNS = [
     # HIGH风险 - 拒绝执行(blocked=True)
-    # 注意: 组合模式必须放在单模式之前，确保优先匹配；重排序会导致等级降级
+    # 组合模式放在单模式之前，便于阅读和维护（MEDIUM仅记录不return，不会降级；HIGH匹配后立即return）
     (r"(?:Remove-Item|rm|del|ri|erase)\s+.*\b-Recurse\b.*\b-Force\b", "递归+强制删除", "HIGH"),
     (r"(?:Remove-Item|rm|del|ri|erase)\s+(?:.*\b-Recurse\b(?!:\$false\b))", "递归删除目录", "HIGH"),
     (r"Invoke-Command", "远程/本地执行命令", "HIGH"),
@@ -164,6 +168,7 @@ SHELL_DANGEROUS_PATTERNS = [
     (r"(?<!\w)format\s+[A-Za-z]", "格式化磁盘", "HIGH"),
     (r"\bshutdown\b(?!\s+/a\b)", "关机/重启", "HIGH"),
     (r"net\s+user\s+\S+.*\/delete", "删除用户", "HIGH"),
+    (r"\bcipher\b\s+/w:", "永久数据销毁(cipher /w)", "HIGH"),
 
     # MEDIUM风险 - 需用户确认(requires_confirmation=True)
     (r"(?:Remove-Item|rm|del|ri|erase)\s+.*\b-Force\b", "强制删除文件", "MEDIUM"),
@@ -209,7 +214,7 @@ def _check_shell_command_risk(command: str) -> Optional["SafetyResult"]:
         desc, _ = medium_hit
         logger.warning(f"[Shell安全] 中风险操作: {desc}")
         return SafetyResult(
-            is_safe=True,
+            is_safe=False,
             blocked=False,
             requires_confirmation=True,
             message=f"中风险Shell操作: {desc}",
@@ -226,7 +231,7 @@ MEDIUM级别设置 `requires_confirmation=True`，触发用户确认流程：
 2. `action_handler.py:70` 检测到 `requires_confirmation`，发送确认请求给用户
 3. 用户确认 → 继续执行；用户拒绝 → 中止
 
-**注意**: MEDIUM结果必须从 `_check_known_risks` 返回给 `check_before_execute`，由 `check_before_execute` 的第88行统一处理 `requires_confirmation`。因此 `_check_known_risks` 的返回值需要支持非 `is_safe=True` 的 MEDIUM 情况。
+**注意**: MEDIUM结果必须从 `_check_known_risks` 返回给 `check_before_execute`，由 `check_before_execute` 的第88行统一处理 `requires_confirmation`。MEDIUM 的 `is_safe=False` + `blocked=False` + `requires_confirmation=True` 三者组合明确表达"不安全但不直接拒绝，需用户确认"的语义，避免 `is_safe=True` 与 `requires_confirmation=True` 的语义矛盾。
 
 **_check_known_risks 集成改造**:
 
@@ -241,26 +246,19 @@ if tool_name == "execute_shell_command":
     if shell_risk is not None:
         return shell_risk
 
-# Python代码注入检查 — 仅对execute_code生效
-if tool_name == "execute_code":
-    from app.tools.tool_constants import DANGEROUS_PATTERNS
-    code = params.get("code") or ""
-    for pattern_str, desc in DANGEROUS_PATTERNS:
-        if re.search(pattern_str, code):
-            return SafetyResult(is_safe=False, blocked=True, message=f"代码注入: {desc}")
-
+# execute_code — 由execute_code_safety自行管理（见execute_code分级安全检查方案），不在此处检查
 # shell_session / find_command — 不做代码注入检查
 ```
 
 **关键改动**:
 - 原来按 `shell_tools` 集合（4个工具）统一检查 → 改为按工具名精确路由
 - `execute_shell_command` → `SHELL_DANGEROUS_PATTERNS`
-- `execute_code` → `DANGEROUS_PATTERNS`（保留Python模式）
+- `execute_code` → 不在此处检查（由 `execute_code_safety` 自行管理 — 见`execute_code分级安全检查方案`）
 - `shell_session` / `find_command` → 不检查（无执行风险）
 
 **check_before_execute 的 MEDIUM 处理**:
 
-当前 `check_before_execute` 第66行 `if known_risk is not None and not known_risk.is_safe` 会跳过 MEDIUM 结果（因为 MEDIUM 的 `is_safe=True`）。需要修改判断逻辑：
+当前 `check_before_execute` 第66行 `if known_risk is not None and not known_risk.is_safe` 使用 `is_safe` 作为判断依据。虽然当前设计中 MEDIUM 的 `is_safe=True` 不会导致跳过，但这种设计不够清晰——应该使用 `blocked` 和 `requires_confirmation` 作为更明确的判断依据：
 
 ```python
 # 原代码（第66-68行）:
@@ -324,7 +322,19 @@ return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confi
 
 ## 3. 实施计划
 
-### 3.1 修改文件
+### 3.1 实施步骤
+
+| 步骤 | 操作 | 说明 |
+|------|------|------|
+| **Step 1** | `tool_constants.py` 新增 `SHELL_DANGEROUS_PATTERNS` | 在第8节后新增，含PowerShell+CMD两组模式 |
+| **Step 2** | `tool_safety_checker.py` 新增 `_check_shell_command_risk` 静态方法 | Shell命令风险分级检查核心逻辑 |
+| **Step 3** | `tool_safety_checker.py` 修改 `_check_known_risks` | shell_tools分支改为按工具名精确路由；删除execute_code分支（由execute_code_safety自行管理） |
+| **Step 4** | `tool_safety_checker.py` 修改 `check_before_execute` | known_risk判断支持MEDIUM级别（requires_confirmation） |
+| **Step 5** | 编写单元测试 `test_shell_command_safety.py` | 验证所有模式匹配正确性 |
+| **Step 6** | 运行全量回归测试 | 确认不破坏现有功能 |
+| **Step 7** | 更新文档 | 标记实施完成 |
+
+### 3.2 修改文件
 
 | 文件 | 修改内容 |
 |------|---------|
@@ -332,17 +342,47 @@ return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confi
 | `tool_safety_checker.py` | 1. 新增 `_check_shell_command_risk` 静态方法 |
 | | 2. 修改 `_check_known_risks`：shell_tools分支改为按工具名路由 |
 | | 3. 修改 `check_before_execute`：known_risk判断支持MEDIUM |
+| | 4. 删除 `_check_known_risks` 中 execute_code/DANGEROUS_PATTERNS 分支 |
 
-### 3.2 不修改的文件
+### 3.3 不修改的文件
 
 | 文件 | 原因 |
 |------|------|
 | `execute_shell_command.py` | 调用方只检查 `blocked`，无需改动；MEDIUM由 `action_handler` 的确认流程处理 |
-| `execute_code.py` | 已有独立安全检查（`_validate_code_safety` + `_js_safety_check`），不受影响 |
+| `execute_code.py` | 已有独立安全检查（`execute_code_safety`），不受影响 |
 | `shell_session.py` | 只管理后台会话，不执行新命令，无需检查 |
-| `DANGEROUS_PATTERNS` | 保留不动，仍用于 `execute_code` 的代码注入检查 |
+| `DANGEROUS_PATTERNS` | 🔴 待删除——当前仍有 `tool_fc_helper` 引用，待execute_code迁移后整段删除 |
 
-### 3.3 测试用例
+### 3.4 测试文件与测试要点
+
+**测试文件位置**：`backend/tests/tools/test_shell_command_safety.py`
+
+**测试框架**：pytest
+
+**执行命令**：
+```bash
+cd backend
+pytest tests/tools/test_shell_command_safety.py -v
+```
+
+**测试要点分类**：
+
+| 测试类型 | 覆盖范围 | 用例数 |
+|---------|---------|--------|
+| **HIGH模式匹配** | PowerShell递归删除/强制删除/格式化/关机/动态执行/数据销毁 + CMD递归删除/格式化/关机/删除用户 | 16+ |
+| **MEDIUM模式匹配** | PowerShell强制删除/重启/停止进程/启动进程 + CMD删除注册表/强制杀进程 | 7+ |
+| **安全命令不拦截** | Get-Process/dir等日常命令 | 3+ |
+| **误拦截排除** | shutdown /a/net user帮助/-Recurse:$false/Get-FormatData/autoshutdown | 5+ |
+| **别名绕过** | rm/del/ri/erase作为Remove-Item别名 | 4+ |
+| **CMD参数顺序绕过** | del/rd/rmdir + 中间参数(/q /f) + 路径前置 | 8+ |
+| **边界条件** | 反引号换行续行/Invoke-Command/Start-Process | 3+ |
+
+**测试通过标准**：
+- `pytest` 返回：X passed, 0 failed, 0 error
+- 不存在任何🔴被测代码问题
+- 所有🟡测试代码问题首轮修复
+
+### 3.5 测试用例
 
 | 命令 | 预期结果 | 说明 |
 |------|---------|------|
@@ -350,6 +390,8 @@ return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confi
 | `Remove-Item -Recurse C:\temp -Force` | blocked=True (HIGH) | 组合模式优先匹配 |
 | `Remove-Item -Force C:\temp\file.txt` | requires_confirmation=True (MEDIUM) | 强制删除 |
 | `Invoke-Expression "cmd"` | blocked=True (HIGH) | 动态执行=eval |
+| `Stop-Computer` | blocked=True (HIGH) | 关机（PowerShell） |
+| `Format-Volume` | blocked=True (HIGH) | 格式化卷 |
 | `Get-Process` | blocked=False, requires_confirmation=False | 安全命令 |
 | `del /s C:\temp` | blocked=True (HIGH) | CMD递归删除 |
 | `rmdir /s C:\temp` | blocked=True (HIGH) | CMD递归删除 |
@@ -357,6 +399,8 @@ return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confi
 | `Get-FormatData` | blocked=False | format前导限制，不误判 |
 | `shutdown /s` | blocked=True (HIGH) | 关机 |
 | `Restart-Computer` | requires_confirmation=True (MEDIUM) | 重启 |
+| `Set-ExecutionPolicy` | requires_confirmation=True (MEDIUM) | 修改执行策略 |
+| `Stop-Process -Force` | requires_confirmation=True (MEDIUM) | 强制停止进程 |
 | `reg delete HKCU\Software\Test` | requires_confirmation=True (MEDIUM) | 删除注册表 |
 | `taskkill /f /im notepad.exe` | requires_confirmation=True (MEDIUM) | 强制杀进程 |
 | `net user test /delete` | blocked=True (HIGH) | 删除用户 |
@@ -378,8 +422,51 @@ return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confi
 | `net user /delete` | blocked=False | 无用户名，仅显示帮助 |
 | ``Remove-Item `\n  -Recurse `\n  C:\temp`` | blocked=True (HIGH) | 反引号续行绕过（需 DOTALL） |
 | `Invoke-Command -ScriptBlock {Remove-Item -Recurse C:\temp}` | blocked=True (HIGH) | Invoke-Command远程执行 |
+| `Invoke-Command -ComputerName SRV01 -ScriptBlock {dir}` | blocked=True (HIGH) | Invoke-Command仅命令本身即HIGH |
 | `Start-Process -FilePath "malware.exe"` | requires_confirmation=True (MEDIUM) | Start-Process启动任意进程 |
 | `autoshutdown` | blocked=False | shutdown词边界，不误判 |
+| `cipher /w:C:\temp` | blocked=True (HIGH) | 永久数据销毁 |
+| `Remove-ItemProperty -Path HKLM:\Software\Test -Name MyValue` | blocked=False, requires_confirmation=True | 删除单个注册表值（默认确认兜底） |
+
+### 3.6 验证清单
+
+实施完成后，按以下清单逐项验证：
+
+| 序号 | 验证项 | 验证方法 | 预期结果 |
+|------|--------|---------|---------|
+| 1 | `SHELL_DANGEROUS_PATTERNS` 定义正确 | `python -c "from app.tools.tool_constants import SHELL_DANGEROUS_PATTERNS; print(len(SHELL_DANGEROUS_PATTERNS))"` | 输出模式数量 ≥ 20（13 HIGH + 7 MEDIUM） |
+| 2 | `_check_shell_command_risk` 可调用 | `python -c "from app.services.safety.tool_safety_checker import ToolSafetyChecker; print(ToolSafetyChecker._check_shell_command_risk('dir'))"` | 返回 None（安全命令） |
+| 3 | HIGH命令被拦截 | 同上，传入 `Remove-Item -Recurse C:\temp` | 返回 SafetyResult(blocked=True) |
+| 4 | MEDIUM命令需确认 | 同上，传入 `Remove-Item -Force C:\temp` | 返回 SafetyResult(requires_confirmation=True) |
+| 5 | `_check_known_risks` 路由正确 | `python -c "from app.services.safety.tool_safety_checker import ToolSafetyChecker; print(ToolSafetyChecker._check_known_risks('execute_shell_command', {'command': 'dir'}))"` | 返回 None |
+| 6 | execute_code分支已删除 | 检查 `_check_known_risks` 源码 | 无 `DANGEROUS_PATTERNS` 引用 |
+| 7 | 单元测试全量通过 | `pytest tests/tools/test_shell_command_safety.py -v` | X passed, 0 failed, 0 error |
+| 8 | 全量回归测试通过 | `pytest` | 不破坏现有功能 |
+| 9 | MEDIUM确认流程可用 | 手动触发MEDIUM命令（如 `taskkill /f /im notepad.exe`） | 弹出确认对话框，消息显示"中风险Shell操作: 强制杀进程" |
+
+### 3.7 后续清理：DANGEROUS_PATTERNS迁移
+
+**来源**：execute_code设计文档第7章要求 — shell工具改造后，DANGEROUS_PATTERNS最终删除。
+
+**流程**：
+
+```
+Step 1: shell工具改造（本次）
+  tool_safety_checker → 改用SHELL_DANGEROUS_PATTERNS
+  _check_known_risks中execute_code分支 → 删除（由execute_code_safety自行管理）
+
+Step 2: execute_code迁移（execute_code设计文档方案）
+  tool_fc_helper._validate_code_safety() → execute_code_safety.validate_code_safety()
+  DANGEROUS_PATTERNS → RISK_CHECK_RULES
+
+Step 3: 删除DANGEROUS_PATTERNS
+  两个调用方都迁移后（shell端已在本方案中完成，execute_code端待迁移），
+  DANGEROUS_PATTERNS无人引用 → 删除整个常量定义
+```
+
+**本方案负责**：Step 1（已完成）+ Step 3的前提条件（DANGEROUS_PATTERNS在shell端不再使用）
+
+**边界**：Step 2（execute_code迁移）和Step 3（实际删除）不在本方案范围内，由execute_code设计文档负责。
 
 ---
 
@@ -388,14 +475,15 @@ return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confi
 | 工具 | 执行内容 | 安全检查机制 | 检查位置 |
 |------|---------|-------------|---------|
 | execute_shell_command | PowerShell/CMD命令 | `SHELL_DANGEROUS_PATTERNS`（Shell命令危险模式） | `tool_safety_checker.py` |
-| execute_code | Python/JS代码 | `DANGEROUS_PATTERNS`（Python注入）+ `_JS_DANGEROUS_PATTERNS`（JS注入） | `tool_safety_checker.py` + `execute_code.py` |
+| execute_code | Python/JS代码 | `execute_code_safety.validate_code_safety()`（RISK_CHECK_RULES + AST别名解析）+ `_JS_DANGEROUS_PATTERNS`（JS注入） | `execute_code.py` → `execute_code_safety.py` |
 | shell_session | 后台会话管理 | 无需代码注入检查 | — |
 | find_command | 查找命令路径 | 无需代码注入检查 | — |
 
 **关键区别**:
-- `execute_code` 有**双重安全检查**：`tool_safety_checker` 的 `DANGEROUS_PATTERNS`（Python代码注入）+ 自身的 `_validate_code_safety` / `_js_safety_check`
-- `execute_shell_command` 改用 `SHELL_DANGEROUS_PATTERNS`（Shell命令危险模式），不再使用 Python 模式
+- `execute_code` 有**独立安全检查模块**：`execute_code_safety.validate_code_safety()`（RISK_CHECK_RULES + AST别名解析）+ `_js_safety_check`（JS注入）
+- `execute_shell_command` 使用 `SHELL_DANGEROUS_PATTERNS`（Shell命令危险模式），不再使用 Python 模式
 - `shell_session` / `find_command` 不执行用户输入的命令/代码，无需代码注入检查
+- 两个工具都迁移完毕后，`DANGEROUS_PATTERNS` 无人引用 → 删除（见3.7节）
 
 ---
 
@@ -412,7 +500,8 @@ return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confi
 - 高风险操作（递归删除、格式化、关机、动态执行）被拒绝
 - 中风险操作（强制删除、重启、杀进程）需用户确认
 - 正常命令不受影响
-- `execute_code` 的 Python 注入检查不受影响
+- `execute_code` 由自己的 `execute_code_safety` 模块独立管理安全检查
+- DANGEROUS_PATTERNS 在两工具迁移完毕后删除（见3.7节）
 
 ### 5.2 v1.1 设计复核修复项
 
@@ -426,7 +515,7 @@ return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confi
 | 3 | MEDIUM结果提前return跳过check_fn | 🟡 中 | 重构check_before_execute：MEDIUM不直接return，继续执行check_fn后再覆盖needs_confirm |
 | 4 | shutdown /a（取消关机）被误拦截 | 🟡 中 | 追加 `(?!\s+/a\b)` 前导排除 |
 | 5 | net user /delete（无用户名帮助命令）被误拦截 | 🟡 中 | 改为 `net\s+user\s+\S+` 要求指定用户名 |
-| 6 | 组合模式顺序依赖脆弱 | 🟢 建议 | 加注释警告"重排序会导致等级降级" |
+| 6 | 组合模式顺序依赖脆弱 | 🟢 建议 | 加注释说明顺序关系（经3轮复核为假问题：MEDIUM仅记录不return，HIGH匹配后仍会覆盖） |
 | 7 | 缺失Invoke-Command（远程/本地任意命令执行） | 🟢 建议 | 新增 `Invoke-Command` HIGH模式 |
 | 8 | 缺失Start-Process（启动任意进程） | 🟢 建议 | 新增 `Start-Process` MEDIUM模式 |
 | 9 | -Recurse:$false显式关闭递归仍被拦截 | 🟡 中 | 追加 `(?!:\$false\b)` 前导排除 |
