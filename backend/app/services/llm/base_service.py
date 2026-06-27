@@ -16,7 +16,7 @@ from app.utils.json_utils import parse_json
 from app.services.llm.core import ChatResponse, StreamChunk, _resolve_exception
 from app.services.llm.stream_parser import create_cancelled_chunk
 from app.services.llm.client_sdk import create_llm_client
-from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chunk
+from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
 
 from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
@@ -145,7 +145,7 @@ class BaseAIService:
             content = msg.get("content", "") or ""
             tool_calls = msg.get("tool_calls", [])
 
-            reasoning = extract_reasoning_from_chunk(msg) or ""
+            reasoning = extract_reasoning_from_message(msg) or ""
 
             return ChatResponse(
                 content=content,
