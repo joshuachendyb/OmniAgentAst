@@ -1,3 +1,64 @@
+v0.17.6
+
+更新时间: 2026-06-27 16:35:29
+
+## v0.17.5→v0.17.6 变更汇总 - 小欧-2026-06-27
+
+### feat: 新功能(7项)
+- eed9a0acd: execute_shell_command分级安全检查 - 独立safety模块+工具内调用(对齐execute_code) - 小健
+- aef96640a: execute_code分级安全检查(LOW/MEDIUM/HIGH)+strict_mode+SHELL_DANGEROUS_PATTERNS替代DANGEROUS_PATTERNS - 小欧
+- af19c933b: 补齐系统级检查扩展+validator单元测试 - 小欧
+- ccaaa49bd: 全量实现file_path+registry校验集成 - 小欧
+- 4137f06f4: llm调用日志增强(token明细+响应耗时)+单工具执行日志+TASK_END步骤聚合统计 - 小欧
+- 12a0c6801: TASK_START/TASK_END日志(用户指令+provider+model+耗时+结束方式) - 小欧
+- a7155a0a4: start_e2e.bat E2E测试专用启动脚本(弹cmd窗口) - 小欧
+
+### fix: 代码修复(4项)
+- c1c601fc1: PowerShell优先pwsh.exe(PS7)+条件翻译 - 小沈
+- 1e96d6103: 撤销tool_safety_checker系统级扩展，只保留FILE分类 - 小欧
+- 0f86d353a: schema参数互斥校验+docstring/description完善(8个tool),docstring统一用三引号 - chendyg
+- a7f41ecb5: 修复tool_executor状态判断逻辑错误 - 小健
+
+### refactor: 代码重构(6项)
+- bee330bb0: 删除registry_path_checker中无效的..穿越检查(注册表非文件系统) - 小欧
+- 7a400eea9: _check_pyautogui()去重，提取到desktop_helper.py统一复用 - 小欧
+- 52796b7cb: file_path_checker.py重命名为tools_file_path_checker.py+13个import路径更新 - 小欧
+- fd3c8f0e1: path_validator/tool_safety_checker/file_path_checker 迁移路径调度到path_validator+fix None bug - 小欧
+- ac2c7fec0: network/shell 6个tool timeout统一为秒 - 小沈
+- 81e653939: dataanalysis analyze_data/filter_data参数拆分file_path+data互斥,删除.xls假支持 - chendyg
+
+### perf: 性能优化(1项)
+- ae3279bad: tool_search结果精简为仅name+category(description和score给LLM无意义) - 小欧
+
+### docs: 文档更新(15项)
+- b558dca10: 更新Tool安全-execute_shell_command设计文档v5复核修正 - 小沈
+- d36c2207f: 更新Tool安全检查设计文档+测试记录 - 小欧
+- 0f827d48f: version.txt删除v0.17.6记录(tag已删除) - 小欧
+- d397e5c14: version.txt 更新v0.17.6变更汇总 - 小欧
+- 2a20cc069: 设计文档-Tool内部安全检查复核修订版 文件路径统一为validate/目录 - 小沈
+- e41a5994c: Tool安全-execute_code分级安全检查方案 重写第7章 - chendyg
+- 87403cf30: Tool安全-execute_code分级安全检查方案 审核修正4项 - chendyg
+- 687d21f30: 更新Tool安全-execute_code分级安全检查方案 - 小沈
+- 851a29e07: 更新Tool安全-execute_code分级安全检查方案 新增AST别名检测 - 小欧
+- 380e00204: 确认文档章节序号正确 - 小健
+- 74f87ab51: 修复章节编号重复和测试用例错误 - 小健
+- c55e65be6: 增加safety文件设计原则 - 小健
+- c83be4ff4: 采用{tool_name}_safety.py命名规范 - 小健
+- f34d14c9b: 修复文档逻辑矛盾和章节重复 - 小健
+- e80406733: 补充eval解释和socket/requests无风险说明 - 小健
+- 7bf422c38: execute_code分级安全检查方案设计 - 小健
+- da11a3e7c: 更新手册v2.7(start_e2e.bat去--reload)+bat简化 - 小欧
+- 7d4d700c3: start_e2e.bat+手册3.1节 AI用弹窗命令启动后端 - 小欧
+
+### chore: 杂项(2项)
+- db42077e0: 删除遗留冗余文件operation_commands.py(已拆分为4个SRP模块) - 小欧
+- 7aeed0eb2: 清理测试废文件和备份文件 - 小欧
+
+### 合计
+- feat: 7项 | fix: 4项 | refactor: 6项 | perf: 1项 | docs: 15项 | chore: 2项 = 共35项
+
+---
+
 v0.17.5
 
 更新时间: 2026-06-26 22:41:52
