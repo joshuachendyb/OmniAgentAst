@@ -1,4 +1,4 @@
-# validate/file_path_checker.py — tool内部路径业务级检查（集中管理）
+# validate/tools_file_path_checker.py — tool内部路径业务级检查（集中管理）
 # 小沈 2026-06-27
 
 from pathlib import Path

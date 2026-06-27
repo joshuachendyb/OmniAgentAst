@@ -19,7 +19,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.tools.file_type_checker import check_for_document_tool
 from app.constants import ERR_DOC_WRITE_PPTX, ERR_DOC_NO_PPTX
 from app.utils.json_utils import coerce_json
-from app.tools.validate.file_path_checker import validate_path_for_write
+from app.tools.validate.tools_file_path_checker import validate_path_for_write
 from app.utils.logger import logger
 from app.utils.table_helper import calculate_column_widths, get_table_header_style_config
 

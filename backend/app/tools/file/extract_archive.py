@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 
-from app.tools.validate.file_path_checker import validate_path_for_extract
+from app.tools.validate.tools_file_path_checker import validate_path_for_extract
 from app.utils.logger import logger
 
 

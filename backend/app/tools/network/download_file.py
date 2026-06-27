@@ -20,7 +20,7 @@ from app.tools.network.http_client_sdk import create_http_client, HTTPClient
 from app.tools.network.connectivity import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy
 from app.tools.validate.timeout_validator import validate_timeout
-from app.tools.validate.file_path_checker import validate_path_for_write
+from app.tools.validate.tools_file_path_checker import validate_path_for_write
 
 _check_network = check_network
 

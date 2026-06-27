@@ -21,7 +21,7 @@ from app.constants import ERR_FILE_DELETE_FAILED
 from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 
-from app.tools.validate.file_path_checker import validate_path_for_delete
+from app.tools.validate.tools_file_path_checker import validate_path_for_delete
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.utils.logger import logger
 
