@@ -47,7 +47,7 @@ class HTTPClient:
         self._client = None
 
     @staticmethod
-    def _validate_redirect(response):
+    async def _validate_redirect(response):
         if 300 <= response.status_code < 400:
             location = response.headers.get("location")
             if location:

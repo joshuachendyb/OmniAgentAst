@@ -119,6 +119,9 @@ def check_file_type(
         >>> if not is_valid:
         >>>     return build_error(error_detail=error, hint=f"请使用{tool}工具")
     """
+    if isinstance(file_path, Path):
+        file_path = str(file_path)
+    
     if not file_path or not file_path.strip():
         return False, "文件路径不能为空", None
     
