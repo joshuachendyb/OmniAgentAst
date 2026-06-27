@@ -42,7 +42,8 @@ async def get_session_messages(session_id: str):
     with db.get_conn("chat") as conn:
         cursor = conn.cursor()
 
-        cursor.execute('''SELECT id, title, COALESCE(title_locked, 0) as title_locked,
+        cursor.execute('''SELECT id, title, created_at, updated_at,
+                          COALESCE(title_locked, 0) as title_locked,
                           COALESCE(title_updated_at, created_at) as title_updated_at,
                           COALESCE(version, 1) as version, COALESCE(is_valid, 1) as is_valid
                        FROM chat_sessions WHERE id = ? AND is_deleted = FALSE''', (session_id,))
@@ -71,6 +72,8 @@ async def get_session_messages(session_id: str):
         title_locked = bool(session['title_locked'])
         return {
             "session_id": session_id, "title": session['title'],
+            "created_at": session['created_at'],
+            "updated_at": session['updated_at'],
             "title_locked": title_locked,
             "title_source": "user" if title_locked else "auto",
             "title_updated_at": convert_to_utc(session['title_updated_at']),
