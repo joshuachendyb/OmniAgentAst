@@ -79,9 +79,9 @@ def find_command(command: str, all_paths: bool = False) -> Dict[str, Any]:
             return build_success(data=data, llm_data=llm_data)
         else:
             if os.name == 'nt':
-                result = subprocess.run(['where', command], capture_output=True, text=True, shell=False)
+                result = subprocess.run(['where', command], capture_output=True, text=True, shell=False, timeout=10)
             else:
-                result = subprocess.run(['which', '-a', command], capture_output=True, text=True)
+                result = subprocess.run(['which', '-a', command], capture_output=True, text=True, timeout=10)
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             if result.returncode == 0:
                 paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
