@@ -38,6 +38,23 @@ def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, key_path: 
     }
 
 
+def _delete_registry_recursive(hkey, sub_key):
+    """递归删除注册表键及其所有子键 — 小欧 2026-06-27"""
+    with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_ALL_ACCESS) as key:
+        while True:
+            try:
+                subkey_name = winreg.EnumKey(key, 0)
+            except OSError:
+                break
+            _delete_registry_recursive(hkey, f"{sub_key}\\{subkey_name}")
+        while True:
+            try:
+                value_name = winreg.EnumValue(key, 0)[0]
+                winreg.DeleteValue(key, value_name)
+            except OSError:
+                break
+
+
 def registry_delete(key_path: str, value_name: Optional[str] = None, backup_before_delete: bool = True, recursive: bool = False, hive: str = "HKCU") -> dict:
     """删除Windows注册表键值或子键 — 小健 2026-06-22 拆分独立文件"""
     is_valid, error_msg, warning_msg = validate_delete_safety(key_path, value_name, hive, recursive)
@@ -90,6 +107,9 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "")
                 return build_error(data={"error_detail": "不能直接删除根键下的子键", "params": {"key_path": key_path}}, llm_data=llm_data)
+
+            if recursive:
+                _delete_registry_recursive(hkey, sub_key)
 
             with winreg.OpenKey(hkey, parent_key, 0, winreg.KEY_SET_VALUE) as key:
                 winreg.DeleteKey(key, key_name)
