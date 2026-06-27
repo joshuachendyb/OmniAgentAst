@@ -217,8 +217,13 @@ async def build_observation(ctx: ObservationContext) -> List:
     events = []
 
     for call, result in zip(ctx.all_calls, ctx.results):
-        _llm_data = result.get("llm_data") if isinstance(result, dict) and isinstance(result.get("llm_data"), dict) else {}
-        _ec = _llm_data.get("status", {}).get("exec_code", "") if _llm_data else ""
+        if isinstance(result, Exception):
+            _ec = "error"
+        elif isinstance(result, dict):
+            _llm_data = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
+            _ec = _llm_data.get("status", {}).get("exec_code", "") if _llm_data else "error"
+        else:
+            _ec = "error"
         action_step = ActionStep(
             step=ctx.step,
             tool_name=call.get("tool_name", ""),
@@ -249,7 +254,11 @@ async def build_observation(ctx: ObservationContext) -> List:
                 per_call_fc = _fc
             ctx.agent.message_builder.add_observation(obs_text, per_call_fc)
         except Exception as e:
-            logger.warning(f"[action_handler] _update_message_builder异常: {e}")
+            logger.warning(f"[action_handler] add_observation异常: {e}")
+            try:
+                ctx.agent.message_builder.add_observation(obs_text, {"tool_call_id": "", "tool_calls": []})
+            except Exception:
+                pass
 
     if not obs_parts:
         obs_parts = ["Observation: 无结果"]
@@ -306,7 +315,7 @@ def _build_call_list(parsed: Dict) -> tuple:
     chendyg 2026-06-26 P1-10/11修复: 防御tool_name为空和pending_calls缺字段"""
     tool_name = parsed.get("tool_name", "")
     tool_params = parsed.get("tool_params") or {}
-    fc_context = parsed.get("fc_context", {})
+    fc_context = parsed.get("fc_context") or {}
     pending_calls = parsed.get("_pending_calls", [])
 
     # 【P1-10修复】tool_name为空时直接FAILED — chendyg 2026-06-26
@@ -358,6 +367,15 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
     """完整action处理流程 — FC-only: 提取fc_context传递 — 小沈 2026-06-11"""
     tool_name, tool_params, fc_context, pending_calls, all_calls, is_parallel = _build_call_list(parsed)
     step = agent.llm_call_count
+
+    if not tool_name:
+        logger.warning(f"[handle_action] tool_name为空, parsed={parsed}")
+        agent.set_failed("LLM返回的action中tool_name为空")
+        yield agent._step_emitter.emit(ErrorStep(
+            step=step, error_type="invalid_action",
+            error_message="LLM返回的action中tool_name为空",
+        ))
+        return
 
     yield agent._step_emitter.emit(ThoughtStep(
         step=step,

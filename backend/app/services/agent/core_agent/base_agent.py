@@ -57,6 +57,7 @@ class BaseAgent(ABC):
         self.steps: List[ReasoningStep] = []
         self.message_builder = MessageBuilder(max_context_chars=get_config().get_max_context_chars())
 
+        self._loaded_categories: Set = set(initial_categories or [])
         self._tool_loader = ToolLoader(self)
         self._tool_loader.init_tools(initial_categories=initial_categories)
         self._retry_engine = ToolRetryEngine(self._tools_dict)

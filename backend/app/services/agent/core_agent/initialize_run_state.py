@@ -60,6 +60,7 @@ def initialize_run_state(
     agent.status = AgentStatus.THINKING
     agent.llm_call_count = 0
     agent._consecutive_truncations = 0
+    agent._notool_retried = False
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent._tracked_task_id:
         try:

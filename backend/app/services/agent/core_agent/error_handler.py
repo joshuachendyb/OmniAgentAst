@@ -33,9 +33,12 @@ def _classify_error(error):
     if isinstance(error, FCFormatError):
         return "fc_format_error"
 
-    category = UnifiedErrorClassifier.classify_error(error)
-    if category in (ErrorCategory.NETWORK, ErrorCategory.CONNECT, ErrorCategory.TIMEOUT, ErrorCategory.EMPTY_RESPONSE):
-        return "network_error"
+    try:
+        category = UnifiedErrorClassifier.classify_error(error)
+        if category in (ErrorCategory.NETWORK, ErrorCategory.CONNECT, ErrorCategory.TIMEOUT, ErrorCategory.EMPTY_RESPONSE):
+            return "network_error"
+    except Exception as e:
+        logger.error(f"[_classify_error] UnifiedErrorClassifier异常: {e}")
 
     return "unknown_error"
 
