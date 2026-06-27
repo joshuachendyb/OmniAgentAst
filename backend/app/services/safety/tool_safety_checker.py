@@ -10,15 +10,15 @@ Layer 3: 已知风险检测(路径越权/写入污染/代码注入)
              路径校验改用path_validator(打破safety→tools循环依赖)
 """
 
-import re
+
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 from app.utils.logger import logger
 from app.services.safety.path_validator import validate_tool_path as _validate_tool_path
 
 _WRITE_RISK_TOOL = "write_text_file"
-_CODE_INJECTION_RISK_TOOLS = {"execute_shell_command", "execute_code"}
+
 
 
 @dataclass
@@ -63,9 +63,12 @@ class ToolSafetyChecker:
                     safety_level="dangerous")
 
         known_risk = self._check_known_risks(tool_name, params or {})
-        if known_risk is not None and not known_risk.is_safe:
-            known_risk.safety_level = "dangerous"
-            return known_risk
+        if known_risk is not None:
+            if known_risk.blocked:
+                known_risk.safety_level = "dangerous"
+                return known_risk
+            if known_risk.requires_confirmation:
+                pass
 
         needs_confirm = self._get_needs_confirmation(tool_meta, params or {})
 
@@ -84,9 +87,13 @@ class ToolSafetyChecker:
                         message=f"安全检查异常(已阻止): {e}",
                         safety_level="dangerous")
 
+        if known_risk is not None and known_risk.requires_confirmation:
+            needs_confirm = True
+
         safety_level = "destructive" if needs_confirm else "safe"
+        message = known_risk.message if known_risk and known_risk.requires_confirmation else ""
         return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confirm,
-                blocked=False, message="", safety_level=safety_level)
+                blocked=False, message=message, safety_level=safety_level)
 
     @staticmethod
     def _get_needs_confirmation(tool_meta, params: Dict) -> bool:
@@ -124,19 +131,6 @@ class ToolSafetyChecker:
                 logger.error(f"[ToolSafetyChecker] 写入检查异常,阻止执行: {e}")
                 return SafetyResult(is_safe=False, blocked=True, message=f"安全检查异常(已阻止): {e}")
 
-        from app.tools.registry import tool_registry
-        shell_tools = set(tool_registry.get_categories().get(ToolCategory.SHELL, []))
-        # 小健 2026-06-27: shell工具改用SHELL_DANGEROUS_PATTERNS（PowerShell/CMD模式），原DANGEROUS_PATTERNS是Python模式对Shell命令无效
-        if tool_name in shell_tools:
-            try:
-                from app.tools.tool_constants import SHELL_DANGEROUS_PATTERNS
-                code = params.get("command") or params.get("code") or ""
-                for pattern_str, desc in SHELL_DANGEROUS_PATTERNS:
-                    if re.search(pattern_str, code, re.IGNORECASE):
-                        return SafetyResult(is_safe=False, blocked=True, message=f"危险命令: {desc}")
-            except Exception as e:
-                logger.error(f"[ToolSafetyChecker] Shell命令检查异常,阻止执行: {e}")
-                return SafetyResult(is_safe=False, blocked=True, message=f"安全检查异常(已阻止): {e}")
 
         return None
 

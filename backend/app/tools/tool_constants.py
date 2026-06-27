@@ -165,27 +165,11 @@ SHORT_CONTENT_LENGTH = 50
 
 # DANGEROUS_PATTERNS 已于 2026-06-27 删除
 # 原因：execute_code改用execute_code_safety.py的分级检查(RISK_CHECK_RULES)，
-#        tool_safety_checker改用SHELL_DANGEROUS_PATTERNS（PowerShell/CMD模式），
+#        tool_safety_checker改用execute_shell_command_safety.py的分级检查(SHELL_DANGEROUS_PATTERNS)，
 #        DANGEROUS_PATTERNS（Python模式）无人引用，删除。
 
-# Shell命令危险模式（适用于execute_shell_command等PowerShell/CMD工具）
-# 小健 2026-06-27
-SHELL_DANGEROUS_PATTERNS = [
-    (r"rm\s+-rf\s+/", "递归删除根目录(rm -rf /)"),
-    (r"rm\s+-rf\s+[A-Za-z]:\\", "递归删除Windows根目录(rm -rf C:\\)"),
-    (r"del\s+/[SFQ]\s+[A-Za-z]:\\", "Windows强制删除根目录(del /S /F C:\\)"),
-    (r"rd\s+/[SQ]\s+[A-Za-z]:\\", "Windows递归删除根目录(rd /S /Q C:\\)"),
-    (r"Remove-Item\s+.*-Recurse\s+-Force", "PowerShell强制递归删除"),
-    (r"format\s+[A-Za-z]:", "格式化磁盘(format)"),
-    (r"shutdown", "关机/重启(shutdown)"),
-    (r"net\s+(user|localgroup)\s", "用户/组管理(net user/localgroup)"),
-    (r"reg\s+(add|delete)\s+.*HKLM", "修改系统注册表(reg add/delete HKLM)"),
-    (r"taskkill\s+/[FPI]", "强制终止进程(taskkill)"),
-    (r"cipher\s+/w:", "永久删除数据(cipher /w)"),
-    (r"diskpart", "磁盘分区管理(diskpart)"),
-    (r"bcdedit", "启动配置修改(bcdedit)"),
-    (r"icacls\s+.*[A-Za-z]:\\.*grant", "修改根目录权限(icacls grant)"),
-]
+# SHELL_DANGEROUS_PATTERNS 已于 2026-06-27 迁出到 execute_shell_command_safety.py
+# 原因：规则与检查逻辑内聚（对齐execute_code_safety.py设计原则），不再放在全局常量文件
 
 
 

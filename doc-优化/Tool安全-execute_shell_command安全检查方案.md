@@ -7,6 +7,7 @@
 **复核修正v3**: 小欧 2026-06-27 14项漏洞逐条3轮复核，13项真问题保留，第6项为假问题（代码逻辑不受顺序影响），修正注释描述
 **设计复核v3**: 小健 2026-06-27 6项问题3轮复核，1项真问题（cipher /w:遗漏→补入HIGH），1项语义修正（MEDIUM is_safe=True→False），4项降级为建议（补充说明）
 **设计复核v4**: 小健 2026-06-27 对齐execute_code设计原则——检查逻辑从tool_safety_checker.py迁出到独立execute_shell_command_safety.py，SHELL_DANGEROUS_PATTERNS从tool_constants.py迁出到safety文件内聚
+**设计复核v5**: 小健 2026-06-27 调用方式对齐execute_code——execute_shell_command.py内部直接调用check_shell_command_risk()，不走框架层（符合SRP+KISS-DIRECT原则）
 **复核修正v5**: 小沈 2026-06-27 6项问题3轮复核全部确认：2项逻辑矛盾（is_safe/safety_level）、2项正则遗漏（shutdown -a/format /q D:）、1项死代码、1项代码冗余，已在文档中修正
 
 ---
@@ -105,6 +106,7 @@ DANGEROUS_PATTERNS = [
 **与 execute_code 的区别**：execute_code 有 LOW/MEDIUM/HIGH 三级（需区分 `eval("1+1")` 和 `eval(user_input)`），Shell命令无需此区分——命令本身即表达完整语义，不存在"硬编码字符串 vs 变量"的歧义，因此只设两级。
 
 ```python
+# 以下定义仅用于文档说明，代码中直接使用字符串 "HIGH"/"MEDIUM"
 class ShellRiskLevel:
     HIGH = "high"      # 高风险：拒绝执行(blocked=True)，记录ERROR日志
     MEDIUM = "medium"  # 中风险：需用户确认(requires_confirmation=True)，记录WARNING日志
@@ -208,8 +210,8 @@ SHELL_DANGEROUS_PATTERNS = [
     (r"\bdel\b.*?/s\b", "递归删除文件", "HIGH"),
     (r"\brd\b.*?/s\b", "递归删除目录(rd)", "HIGH"),
     (r"\brmdir\b.*?/s\b", "递归删除目录(rmdir)", "HIGH"),
-        (r"(?<!\w)format\b.*?[A-Za-z]:", "格式化磁盘", "HIGH"),
-        (r"\bshutdown\b(?!\s+[/-]a\b)", "关机/重启", "HIGH"),
+    (r"(?<!\w)format\b.*?[A-Za-z]:", "格式化磁盘", "HIGH"),
+    (r"\bshutdown\b(?!\s+[/-]a\b)", "关机/重启", "HIGH"),
     (r"net\s+user\s+\S+.*\/delete", "删除用户", "HIGH"),
     (r"\bcipher\b\s+/w:", "永久数据销毁(cipher /w)", "HIGH"),
 
@@ -243,41 +245,28 @@ def check_shell_command_risk(command: str) -> Optional[SafetyResult]:
     — 北京老陈 2026-06-27
     — 小健 2026-06-27 迁出到独立safety文件（对齐execute_code_safety.py设计原则）
     """
-        medium_hit_desc = None
+    medium_hit_desc = None
 
-        for pattern_str, desc, level in SHELL_DANGEROUS_PATTERNS:
-            # 使用 DOTALL 标志，确保 `.*` 能跨反引号续行的换行匹配
-            if re.search(pattern_str, command, re.IGNORECASE | re.DOTALL):
-                if level == "HIGH":
-                    return SafetyResult(
-                        is_safe=False,
-                        blocked=True,
-                        message=f"高风险Shell操作: {desc}",
-                        safety_level="dangerous",
-                    )
-                elif level == "MEDIUM" and medium_hit_desc is None:
-                    medium_hit_desc = desc
+    for pattern_str, desc, level in SHELL_DANGEROUS_PATTERNS:
+        # 使用 DOTALL 标志，确保 `.*` 能跨反引号续行的换行匹配
+        if re.search(pattern_str, command, re.IGNORECASE | re.DOTALL):
+            if level == "HIGH":
+                return SafetyResult(
+                    is_safe=False,
+                    blocked=True,
+                    message=f"高风险Shell操作: {desc}",
+                    safety_level="dangerous",
+                )
+            elif level == "MEDIUM" and medium_hit_desc is None:
+                medium_hit_desc = desc
 
-        if medium_hit_desc:
-            logger.warning(f"[Shell安全] 中风险操作: {medium_hit_desc}")
-            return SafetyResult(
-                is_safe=False,
-                blocked=False,
-                requires_confirmation=True,
-                message=f"中风险Shell操作: {medium_hit_desc}",
-                safety_level="destructive",
-            )
-            elif level == "MEDIUM" and medium_hit is None:
-                medium_hit = (desc, pattern_str)
-
-    if medium_hit:
-        desc, _ = medium_hit
-        logger.warning(f"[Shell安全] 中风险操作: {desc}")
+    if medium_hit_desc:
+        logger.warning(f"[Shell安全] 中风险操作: {medium_hit_desc}")
         return SafetyResult(
             is_safe=False,
             blocked=False,
             requires_confirmation=True,
-            message=f"中风险Shell操作: {desc}",
+            message=f"中风险Shell操作: {medium_hit_desc}",
             safety_level="destructive",
         )
 
@@ -312,73 +301,30 @@ if tool_name == "execute_shell_command":
 ```
 
 **关键改动**:
-- 原来按 `shell_tools` 集合（4个工具）统一检查 → 改为按工具名精确路由
-- `execute_shell_command` → `execute_shell_command_safety.check_shell_command_risk()`（独立safety模块，对齐execute_code_safety设计原则）
-- `execute_code` → 不在此处检查（由 `execute_code_safety` 自行管理 — 见`execute_code分级安全检查方案`）
-- `shell_session` / `find_command` → 不检查（无执行风险）
-- `SHELL_DANGEROUS_PATTERNS` 存放在 `execute_shell_command_safety.py` 内（不再放在 `tool_constants.py`，规则与检查逻辑内聚）
+- `execute_shell_command` 在工具内部调用 `check_shell_command_risk()`（与 `execute_code` 方式对齐，符合SRP+KISS-DIRECT原则）
+- `execute_code` / `shell_session` / `find_command` → 不走 shell 安全检查
+- `SHELL_DANGEROUS_PATTERNS` 存放在 `execute_shell_command_safety.py` 内（规则与检查逻辑内聚）
 
-**check_before_execute 的 MEDIUM 处理**:
-
-v3设计中 MEDIUM 使用 `is_safe=True`（语义矛盾），`check_before_execute` 第66行 `not True=False` 不会触发。v4 改为 `is_safe=False` 消除语义矛盾——但此时 `not False=True` 会触发第66行直接 `return known_risk`，导致 check_fn 被跳过且 safety_level 被错误改为 `"dangerous"`。因此必须修改判断逻辑，改用 `blocked` 和 `requires_confirmation` 作为判断依据：
+**execute_shell_command 调用方式**（与 execute_code 对齐）:
 
 ```python
-# 原代码（第66-68行）:
-known_risk = self._check_known_risks(tool_name, params or {})
-if known_risk is not None and not known_risk.is_safe:
-    known_risk.safety_level = "dangerous"
-    return known_risk
+# backend/app/tools/shell/execute_shell_command.py
 
-# 修改为:
-known_risk = self._check_known_risks(tool_name, params or {})
-if known_risk is not None:
-    if known_risk.blocked:
-        known_risk.safety_level = "dangerous"
-        return known_risk
-    if known_risk.requires_confirmation:
-        # 注意: 不能直接return，要先执行 tool_meta.check_fn！
-        # 如果先return了，check_fn 的自定义安全检查会被跳过。
-        pass  # 继续执行，让下面的 check_fn 和确认流程处理
+from app.tools.shell.execute_shell_command_safety import check_shell_command_risk
 
-needs_confirm = self._get_needs_confirmation(tool_meta, params or {})
+def execute_shell_command(command: str, ...):
+    # ... 参数校验 ...
 
-if tool_meta.check_fn:
-    try:
-        custom_result = tool_meta.check_fn(params or {})
-        if not custom_result.get("is_safe", True):
-            return SafetyResult(
-                is_safe=False, blocked=True,
-                message=custom_result.get("message", "安全检查未通过"),
-                safety_level=custom_result.get("safety_level", "dangerous"),
-            )
-    except Exception as e:
-        logger.error(f"[ToolSafetyChecker] check_fn异常,阻止执行: {e}")
-        return SafetyResult(is_safe=False, blocked=True,
-                message=f"安全检查异常(已阻止): {e}",
-                safety_level="dangerous")
+    # 安全检查 — 工具内部直接调用，不绕到框架层
+    safety_result = check_shell_command_risk(command)
+    if safety_result is not None and safety_result.blocked:
+        logger.warning(f"[Shell安全] 拦截: {safety_result.message}")
+        return build_error(data={"error_detail": safety_result.message}, ...)
 
-# 如果已知风险设置了 requires_confirmation，覆盖 needs_confirm 并保留消息
-if known_risk is not None and known_risk.requires_confirmation:
-    needs_confirm = True
-
-safety_level = "destructive" if needs_confirm else "safe"
-# 保留MEDIUM消息，让用户知道为什么需要确认（如"中风险Shell操作: 强制删除文件"）
-message = known_risk.message if known_risk and known_risk.requires_confirmation else ""
-return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confirm,
-        blocked=False, message=message, safety_level=safety_level)
+    # ... 执行命令 ...
 ```
 
-这样 MEDIUM 级别的 `requires_confirmation=True` 能正确传递到 `action_handler` 的用户确认流程，同时 `check_fn` 的自定义检查不会被跳过。
-
-**注意**: 修改后 `known_risk` 与 `needs_confirm` 的关系：
-- `known_risk` MEDIUM → `known_risk.requires_confirmation=True` → `needs_confirm` 被覆盖为 True
-- `known_risk` HIGH → `known_risk.blocked=True` → 直接返回，不执行后续流程
-- `known_risk` None → 正常流程，`needs_confirm` 由 `_get_needs_confirmation` 决定
-
-**`check_fn` 优先级说明**:
-- `check_fn` 在 MEDIUM 结果之后执行，但其返回的 `blocked=True` 会**覆盖** MEDIUM 结果
-- 即：MEDIUM 命令如果被 `check_fn` 判定为不安全，会被升级为 HIGH（blocked=True）
-- 这是正确行为：`check_fn` 是工具级自定义检查，优先级高于通用的 `SHELL_DANGEROUS_PATTERNS`
+**注意**: MEDIUM 级别的 `requires_confirmation=True` 由 `execute_shell_command` 的默认 `needs_confirmation=True` 兜底（工具注册时设置），用户确认流程由 `action_handler.py:70` 统一处理。
 
 ---
 
@@ -389,11 +335,9 @@ return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confi
 | 步骤 | 操作 | 说明 |
 |------|------|------|
 | **Step 1** | 新建 `execute_shell_command_safety.py` | 独立safety模块，含 `SHELL_DANGEROUS_PATTERNS` + `check_shell_command_risk()` |
-| **Step 2** | `tool_safety_checker.py` 修改 `_check_known_risks` | shell_tools分支改为按工具名精确路由，调用 `execute_shell_command_safety` |
-| **Step 3** | `tool_safety_checker.py` 修改 `check_before_execute` | known_risk判断支持MEDIUM级别（requires_confirmation） |
-| **Step 4** | 编写单元测试 `test_shell_command_safety.py` | 验证所有模式匹配正确性 |
-| **Step 5** | 运行全量回归测试 | 确认不破坏现有功能 |
-| **Step 6** | 更新文档 | 标记实施完成 |
+| **Step 2** | `execute_shell_command.py` 调用安全检查 | 在执行前调用 `check_shell_command_risk()`，拦截 `blocked=True` 的命令 |
+| **Step 3** | 编写单元测试 | 验证所有模式匹配正确性 |
+| **Step 4** | 运行回归测试 | 确认不破坏现有功能 |
 
 ### 3.2 修改文件
 
@@ -401,19 +345,16 @@ return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confi
 |------|---------|
 | `execute_shell_command_safety.py`（新建） | 1. `SHELL_DANGEROUS_PATTERNS`（20条规则，13 HIGH + 7 MEDIUM） |
 | | 2. `check_shell_command_risk()` 分级检查函数 |
-| `tool_safety_checker.py` | 1. 修改 `_check_known_risks`：shell_tools分支改为按工具名路由，调用 `execute_shell_command_safety` |
-| | 2. 修改 `check_before_execute`：known_risk判断支持MEDIUM |
-| | 3. 删除 `_check_known_risks` 中 execute_code/DANGEROUS_PATTERNS 分支 |
-| | 4. 删除 `_CODE_INJECTION_RISK_TOOLS` 死常量（第21行，定义后无人使用） |
+| `execute_shell_command.py` | 在执行前调用 `check_shell_command_risk()`，拦截 `blocked=True` 的命令（与 `execute_code` 方式对齐） |
 
 ### 3.3 不修改的文件
 
 | 文件 | 原因 |
 |------|------|
-| `execute_shell_command.py` | 调用方只检查 `blocked`，无需改动；MEDIUM由 `action_handler` 的确认流程处理 |
 | `execute_code.py` | 已有独立安全检查（`execute_code_safety`），不受影响 |
 | `shell_session.py` | 只管理后台会话，不执行新命令，无需检查 |
 | `tool_constants.py` | `SHELL_DANGEROUS_PATTERNS` 存放在 `execute_shell_command_safety.py` 内（规则与检查逻辑内聚），不放在全局常量文件 |
+| `tool_safety_checker.py` | 安全检查由 `execute_shell_command.py` 内部直接调用 `check_shell_command_risk()`，不走框架层（与 `execute_code` 方式对齐，符合SRP+KISS-DIRECT原则） |
 | `DANGEROUS_PATTERNS` | 🔴 待删除——当前仍有 `tool_fc_helper` 引用，待execute_code迁移后整段删除 |
 
 ### 3.4 测试文件与测试要点
