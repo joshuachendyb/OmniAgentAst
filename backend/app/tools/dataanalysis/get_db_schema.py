@@ -35,10 +35,14 @@ def _get_tables(conn, connection_type: str, db_name: Optional[str]) -> List[str]
 
 def _get_columns(conn, connection_type: str, table_name: str) -> List[Dict]:
     """获取列信息(2路SQL) — 小沈 2026-05-25 — 小欧 2026-06-24 修复SQL注入"""
-    if connection_type in ("mysql", "postgresql"):
+    if connection_type == "mysql":
         from sqlalchemy import text
         result = conn.execute(text("SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
         return [{"name": r[0], "type": r[1], "nullable": r[2] == "YES", "pk": r[3] == "PRI", "default": r[4]} for r in result]
+    if connection_type == "postgresql":
+        from sqlalchemy import text
+        result = conn.execute(text("SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
+        return [{"name": r[0], "type": r[1], "nullable": r[2] == "YES", "pk": False, "default": r[3]} for r in result]
     import re
     if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
         return []
@@ -49,10 +53,14 @@ def _get_columns(conn, connection_type: str, table_name: str) -> List[Dict]:
 
 def _get_indexes(conn, connection_type: str, table_name: str) -> List[Dict]:
     """获取索引信息(2路SQL) — 小沈 2026-05-25 — 小欧 2026-06-24 修复SQL注入"""
-    if connection_type in ("mysql", "postgresql"):
+    if connection_type == "mysql":
         from sqlalchemy import text
         result = conn.execute(text("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name=:t GROUP BY index_name, non_unique"), {"t": table_name})
         return [{"name": r[0], "unique": not bool(r[1])} for r in result]
+    if connection_type == "postgresql":
+        from sqlalchemy import text
+        result = conn.execute(text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename=:t"), {"t": table_name})
+        return [{"name": r[0], "unique": "UNIQUE" in r[1].upper(), "definition": r[1]} for r in result]
     import re
     if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
         return []
@@ -127,7 +135,7 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
         for table in schema_info:
             md += f"### {table['name']}\n\n|字段名|类型|可空|主键|默认值|\n|--------|------|------|------|--------|\n"
             for c in table["columns"]:
-                md += f"|{c['name']}|{c['type']}|{'否' if c.get('nullable') else '是'}|{'是' if c.get('pk') else '否'}|{c.get('default') or '-'}|\n"
+                md += f"|{c['name']}|{c['type']}|{'是' if c.get('nullable') else '否'}|{'是' if c.get('pk') else '否'}|{c.get('default') or '-'}|\n"
             md += "\n"
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

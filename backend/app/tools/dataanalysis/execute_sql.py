@@ -86,12 +86,20 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
             syntax_valid = False
             try:
-                if connection_type in ("mysql", "postgresql"):
+                if connection_type == "sqlite":
+                    conn.execute("SAVEPOINT dry_run_check")
+                    try:
+                        conn.execute(sql)
+                    except Exception:
+                        syntax_valid = False
+                    else:
+                        syntax_valid = True
+                    finally:
+                        conn.execute("ROLLBACK TO SAVEPOINT dry_run_check; RELEASE SAVEPOINT dry_run_check")
+                else:
                     from sqlalchemy import text
                     conn.execute(text(sql))
-                else:
-                    conn.execute(sql)
-                syntax_valid = True
+                    syntax_valid = True
             except Exception as e:
                 syntax_valid = False
             finally:
@@ -116,8 +124,13 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             from sqlalchemy import text
             engine = conn.engine
             result = conn.execute(text(sql))
-            conn.commit()
             affected_rows = result.rowcount
+            if affected_rows > 10000:
+                conn.rollback()
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, affected_rows)
+                return build_warning(data={"affected_rows": affected_rows, "action": "rollback"}, llm_data=llm_data)
+            conn.commit()
         else:
             cursor = conn.cursor()
             cursor.execute(sql)

@@ -19,6 +19,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.utils.json_utils import coerce_json
 from app.tools.validate.tools_file_path_checker import validate_path_for_write
+from app.utils.logger import logger
 from app.constants import ERR_DOC_CHART_GENERATE
 
 
