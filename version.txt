@@ -1,3 +1,14 @@
+v0.17.6
+
+更新时间: 2026-06-27 23:55:00
+
+## v0.17.5→v0.17.6 变更汇总 - 小欧-2026-06-27
+
+### refactor: 代码重构(1项)
+- fd3c8f0e1: path_validator/tool_safety_checker/file_path_checker 迁移路径调度到path_validator+fix None bug - 小欧
+
+---
+
 v0.17.5
 
 更新时间: 2026-06-26 22:41:52
