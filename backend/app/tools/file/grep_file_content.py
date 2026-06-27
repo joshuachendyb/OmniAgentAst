@@ -176,6 +176,7 @@ def _grep_files_sync(
                     if output_mode == "files_with_matches":
                         results.append({"file": str(fpath)})
                         total_files += 1
+                        total_matches += 1
                         break
                     # 计算该行实际匹配次数 — 小欧 2026-06-25 修复total_matches按出现次数计数
                     line_match_count = len(regex.findall(line))

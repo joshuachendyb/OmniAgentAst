@@ -73,7 +73,7 @@ async def _try_read_file_with_encodings(
                     with open(path, 'r', encoding=e, errors='replace') as f:
                         return f.read()
                 content = await asyncio.to_thread(_read)
-                if '\ufffd' in content:
+                if '\ufffd' in content and content.count('\ufffd') > len(content) * 0.05:
                     content = None
                     continue
                 return content, enc, None
