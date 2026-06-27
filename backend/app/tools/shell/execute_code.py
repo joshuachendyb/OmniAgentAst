@@ -96,6 +96,7 @@ def _js_safety_check(code: str) -> Optional[str]:
 def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> Dict[str, Any]:
     """执行Python代码 — 小欧 2026-06-22
     返回原始字典，不调用build3，不含llm_data，不含duration_ms — 北京老陈 2026-06-22
+    小健 2026-06-27: 分级安全检查替代一棍子打死
     """
     if not code or not code.strip():
         return {"success": False, "error_detail": "code参数不能为空", "params": {"language": "python"}}
@@ -105,10 +106,27 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
         except OSError:
             return {"success": False, "error_detail": f"工作目录创建失败: {working_dir}", "params": {"working_dir": working_dir}}
     if safety_check:
-        from app.tools.tool_fc_helper import _validate_code_safety
-        warnings = _validate_code_safety(code)
-        if warnings:
-            return {"success": False, "error_detail": f"代码存在安全风险: {', '.join(warnings)}", "params": {"warnings": warnings}}
+        from app.tools.shell.execute_code_safety import validate_code_safety
+        result = validate_code_safety(code)
+        risk_level = result["risk_level"]
+        warnings = result["warnings"]
+        allow = result["allow"]
+        details = result["details"]
+        if risk_level == "low":
+            logger.info(f"[安全检查] 低风险: {'; '.join(details)}")
+        elif risk_level == "medium":
+            try:
+                from app.config import get_config
+                strict_mode = get_config().get("security.strict_mode", False)
+            except Exception:
+                strict_mode = False
+            if strict_mode:
+                logger.error(f"[安全检查] 严格模式中风险也拒绝: {'; '.join(warnings)}")
+                return {"success": False, "error_detail": f"严格模式下代码存在中风险: {'; '.join(warnings)}", "params": {"risk_level": risk_level, "warnings": warnings, "details": details}}
+            logger.warning(f"[安全检查] 中风险: {'; '.join(warnings)}")
+        elif risk_level == "high":
+            logger.error(f"[安全检查] 高风险，拒绝执行: {', '.join(warnings)}")
+            return {"success": False, "error_detail": f"代码存在高风险: {', '.join(warnings)}", "params": {"risk_level": risk_level, "warnings": warnings, "details": details}}
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
             f.write(code)

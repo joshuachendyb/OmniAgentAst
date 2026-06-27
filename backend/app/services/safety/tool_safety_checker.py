@@ -126,16 +126,16 @@ class ToolSafetyChecker:
 
         from app.tools.registry import tool_registry
         shell_tools = set(tool_registry.get_categories().get(ToolCategory.SHELL, []))
-        # 小健 2026-06-26: 修复P0-4 代码注入检查仅对_CODE_INJECTION_RISK_TOOLS交集生效的bug，改为覆盖所有shell工具
+        # 小健 2026-06-27: shell工具改用SHELL_DANGEROUS_PATTERNS（PowerShell/CMD模式），原DANGEROUS_PATTERNS是Python模式对Shell命令无效
         if tool_name in shell_tools:
             try:
-                from app.tools.tool_constants import DANGEROUS_PATTERNS
+                from app.tools.tool_constants import SHELL_DANGEROUS_PATTERNS
                 code = params.get("command") or params.get("code") or ""
-                for pattern_str, desc in DANGEROUS_PATTERNS:
-                    if re.search(pattern_str, code):
-                        return SafetyResult(is_safe=False, blocked=True, message=f"代码注入: {desc}")
+                for pattern_str, desc in SHELL_DANGEROUS_PATTERNS:
+                    if re.search(pattern_str, code, re.IGNORECASE):
+                        return SafetyResult(is_safe=False, blocked=True, message=f"危险命令: {desc}")
             except Exception as e:
-                logger.error(f"[ToolSafetyChecker] 代码注入检查异常,阻止执行: {e}")
+                logger.error(f"[ToolSafetyChecker] Shell命令检查异常,阻止执行: {e}")
                 return SafetyResult(is_safe=False, blocked=True, message=f"安全检查异常(已阻止): {e}")
 
         return None

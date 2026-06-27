@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
-from app.tools.tool_constants import DANGEROUS_PATTERNS, QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
+from app.tools.tool_constants import QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
 from app.utils.common_patterns import UTC_OFFSET_PATTERN
 from app.utils.json_utils import parse_json
 
@@ -78,14 +78,6 @@ def _check_module_available(module_name: str) -> Tuple[bool, str]:
     except ImportError:
         return False, ""
 
-
-def _validate_code_safety(code: str) -> List[str]:
-    """验证代码安全性 — 小沈 2026-05-17"""
-    warnings = []
-    for pattern, desc in DANGEROUS_PATTERNS:
-        if re.search(pattern, code):
-            warnings.append(desc)
-    return warnings
 
 
 def _check_python_available() -> bool:
@@ -821,7 +813,7 @@ __all__ = [
     "_check_module",
     "_decode_bytes_safe",
     "_check_module_available",
-    "_validate_code_safety",
+
     "_check_python_available",
     "_check_node_available",
     "_serialize_rows",

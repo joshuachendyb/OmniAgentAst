@@ -2,7 +2,7 @@
 
 **作者**: 小健  
 **日期**: 2026-06-27  
-**状态**: 设计完成，待实现
+**状态**: 已实现 — 小健 2026-06-27
 
 ---
 
@@ -54,6 +54,7 @@ DANGEROUS_PATTERNS = [
     (r"shutil\.rmtree\s*\(", "递归删除目录(shutil.rmtree)"),
     (r"os\.remove\s*\(", "删除文件(os.remove)"),
     (r"os\.unlink\s*\(", "删除文件(os.unlink)"),
+    # __import__ 已于2026-06-26移除：LLM在try/except中用其检查库可用性，属合法用途
     (r"eval\s*\(", "动态执行(eval)"),
     (r"exec\s*\(", "动态执行(exec)"),
     (r"compile\s*\(", "动态编译(compile)"),
@@ -62,7 +63,7 @@ DANGEROUS_PATTERNS = [
     (r"requests\.(get|post|put|delete|patch)\s*\(", "HTTP请求(requests)"),  # ❌ 过度拦截
     (r"urllib\.request", "URL请求(urllib)"),      # ❌ 过度拦截
 ]
-# 共12条，其中 socket、requests、urllib 共计3条属于过度拦截
+# 共11条（__import__已移除），其中 socket、requests、urllib 共计3条属于过度拦截
 ```
 
 ---
@@ -141,7 +142,8 @@ class RiskLevel:
 | 模式 | 风险等级 | 说明 | 是否允许 |
 |------|---------|------|---------|
 | `subprocess.run(["python", "script.py"])` | LOW | 执行解释器脚本 | ✅ 允许 |
-| `subprocess.run(["rm", "-rf", "/"])` | HIGH | 执行危险系统命令 | ❌ 拒绝 |
+| `subprocess.run(["rm", "-rf", "/"])` | HIGH | 执行危险系统命令（列表形式） | ❌ 拒绝 |
+| `subprocess.run("rm -rf /", shell=True)` | HIGH | 执行危险系统命令（字符串+shell=True） | ❌ 拒绝 |
 | `subprocess.run(["dir"])` | MEDIUM | 其他子进程调用 | ✅ 允许（警告） |
 
 #### **文件操作规则**
@@ -308,11 +310,18 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
         "desc": "执行解释器脚本（相对安全）",
         "allow": True,
     },
-    # 高风险：执行系统命令（rm、del、format等）
+    # 高风险：执行系统命令（rm、del、format等）— 列表形式
     {
         "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(\s*\[[^\]]*?(rm|del|format|shutdown|reboot)",
         "risk": RiskLevel.HIGH,
-        "desc": "执行危险系统命令",
+        "desc": "执行危险系统命令（列表形式）",
+        "allow": False,
+    },
+    # 高风险：执行系统命令（rm、del、format等）— 字符串+shell=True形式
+    {
+        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(\s*[\'\"].*?(rm|del|format|shutdown|reboot).*?shell\s*=\s*True",
+        "risk": RiskLevel.HIGH,
+        "desc": "执行危险系统命令（shell=True+危险命令）",
         "allow": False,
     },
     # 中风险：其他subprocess调用（负向前瞻排除LOW匹配的解释器脚本）
@@ -325,15 +334,15 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
     
     # ===== open/write =====
     # 中风险：文件写入操作（只检查write/append模式，只读模式不检查）
-    # 正则说明：匹配 open(..., "w"/"wb"/"a"/"ab" 等写入模式
+    # 正则说明：匹配 open(..., "w"/"wb"/"w+"/"wb+" 等写入模式
     {
-        "pattern": r"open\s*\(.*[\'\"]w[b+]?[\'\"]",
+        "pattern": r"open\s*\(.*[\'\"]w[bt\+]?[\'\"]",
         "risk": RiskLevel.MEDIUM,
         "desc": "文件写入操作（write模式）",
         "allow": True,
     },
     {
-        "pattern": r"open\s*\(.*[\'\"]a[b+]?[\'\"]",
+        "pattern": r"open\s*\(.*[\'\"]a[bt\+]?[\'\"]",
         "risk": RiskLevel.MEDIUM,
         "desc": "文件追加操作（append模式）",
         "allow": True,
@@ -650,8 +659,8 @@ def _validate_code_safety_v2(code: str) -> Dict[str, Any]:
         "subprocess": [
             (r"{{}}\.(run|call|Popen|check_output)\s*\(", RiskLevel.MEDIUM,
              "通过别名调用subprocess执行子进程"),
-            (r"{{}}\.(run|call|Popen|check_output)\s*\([^)]*?shell\s*=\s*True", RiskLevel.HIGH,
-             "通过别名调用subprocess且shell=True（命令注入风险）"),
+            (r"{{}}\.(run|call|Popen|check_output)\s*\([^)]*?shell\s*=\s*True", RiskLevel.MEDIUM,
+             "通过别名调用subprocess且shell=True"),
             (r"{{}}\.(run|call|Popen|check_output)\s*\(\s*\[[^\]]*?(rm|del|format|shutdown|reboot)", RiskLevel.HIGH,
              "通过别名调用subprocess执行危险系统命令"),
         ],
@@ -716,7 +725,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
     if not code or not code.strip():
         return {"success": False, "error_detail": "code参数不能为空"}
     
-        if safety_check:
+    if safety_check:
             safety_result = validate_code_safety(code)
             
             risk_level = safety_result["risk_level"]
@@ -872,7 +881,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 | 调用方 | 用它做什么 | 用得对不对 |
 |--------|-----------|-----------|
 | `tool_fc_helper._validate_code_safety()` | execute_code的Python代码安全检查 | ❌ 一棍子打死，没有分级 |
-| `tool_safety_checker._check_known_risks()` | shell工具的代码注入检查 | ❌ **完全无效**——Python模式匹配不到PowerShell/CMD命令 |
+| `tool_safety_checker._check_known_risks()` | shell工具的代码注入检查 | ❌ **对PowerShell/CMD命令无效**——DANGEROUS_PATTERNS是Python模式，匹配不到Shell命令语法 |
 | `execute_code.py._JS_DANGEROUS_PATTERNS` | JavaScript代码安全检查 | 另外定义的，与DANGEROUS_PATTERNS无关 |
 
 ### 7.3 为什么改造后就不需要了
@@ -1040,8 +1049,10 @@ def test_validate_code_safety():
     assert result["allow"] == True
     
     # ===== 多规则叠加测试 =====
-    # subprocess执行Python解释器（LOW）+ 危险命令（HIGH）
+    # subprocess执行Python解释器（LOW）+ 危险命令关键词（HIGH）
     # 应判定为HIGH（取最高风险）
+    # 注：`subprocess.run(["python", "-c", "rm -rf /"])`中"rm"匹配HIGH规则，
+    # 实际执行的是Python代码`rm -rf /`（会报NameError），但正则无法区分语义，按关键词判HIGH
     result = validate_code_safety('subprocess.run(["python", "-c", "rm -rf /"])')
     assert result["risk_level"] == "high"
     assert result["allow"] == False

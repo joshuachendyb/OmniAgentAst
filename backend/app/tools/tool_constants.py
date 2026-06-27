@@ -163,20 +163,28 @@ SHORT_CONTENT_LENGTH = 50
 # 8. 工具安全模式(从 shell_helper/exec_helper 迁移)
 # ============================================================
 
-DANGEROUS_PATTERNS = [
-    (r"os\.system\s*\(", "系统调用(os.system)"),
-    (r"subprocess\.(call|run|Popen|check_output)\s*\(", "子进程调用(subprocess)"),
-    (r"shutil\.rmtree\s*\(", "递归删除目录(shutil.rmtree)"),
-    (r"os\.remove\s*\(", "删除文件(os.remove)"),
-    (r"os\.unlink\s*\(", "删除文件(os.unlink)"),
-    # 2026-06-26 移除__import__: LLM在try/except中用其检查库可用性，属合法用途；且参数为硬编码模块名，无注入风险
-    (r"eval\s*\(", "动态执行(eval)"),
-    (r"exec\s*\(", "动态执行(exec)"),
-    (r"compile\s*\(", "动态编译(compile)"),
-    (r"open\s*\(.*[\'\"]w[\'\"]", "写入文件操作"),
-    (r"socket\s*\.", "网络Socket操作"),
-    (r"requests\.(get|post|put|delete|patch)\s*\(", "HTTP请求(requests)"),
-    (r"urllib\.request", "URL请求(urllib)"),
+# DANGEROUS_PATTERNS 已于 2026-06-27 删除
+# 原因：execute_code改用execute_code_safety.py的分级检查(RISK_CHECK_RULES)，
+#        tool_safety_checker改用SHELL_DANGEROUS_PATTERNS（PowerShell/CMD模式），
+#        DANGEROUS_PATTERNS（Python模式）无人引用，删除。
+
+# Shell命令危险模式（适用于execute_shell_command等PowerShell/CMD工具）
+# 小健 2026-06-27
+SHELL_DANGEROUS_PATTERNS = [
+    (r"rm\s+-rf\s+/", "递归删除根目录(rm -rf /)"),
+    (r"rm\s+-rf\s+[A-Za-z]:\\", "递归删除Windows根目录(rm -rf C:\\)"),
+    (r"del\s+/[SFQ]\s+[A-Za-z]:\\", "Windows强制删除根目录(del /S /F C:\\)"),
+    (r"rd\s+/[SQ]\s+[A-Za-z]:\\", "Windows递归删除根目录(rd /S /Q C:\\)"),
+    (r"Remove-Item\s+.*-Recurse\s+-Force", "PowerShell强制递归删除"),
+    (r"format\s+[A-Za-z]:", "格式化磁盘(format)"),
+    (r"shutdown", "关机/重启(shutdown)"),
+    (r"net\s+(user|localgroup)\s", "用户/组管理(net user/localgroup)"),
+    (r"reg\s+(add|delete)\s+.*HKLM", "修改系统注册表(reg add/delete HKLM)"),
+    (r"taskkill\s+/[FPI]", "强制终止进程(taskkill)"),
+    (r"cipher\s+/w:", "永久删除数据(cipher /w)"),
+    (r"diskpart", "磁盘分区管理(diskpart)"),
+    (r"bcdedit", "启动配置修改(bcdedit)"),
+    (r"icacls\s+.*[A-Za-z]:\\.*grant", "修改根目录权限(icacls grant)"),
 ]
 
 
