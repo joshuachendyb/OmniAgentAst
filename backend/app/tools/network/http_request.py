@@ -129,12 +129,12 @@ async def http_request(
 
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "http_request")
     if not timeout_valid:
-        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_INVALID_URL, detail=timeout_err)
+        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=timeout_err)
         return build_error(data={"error_detail": timeout_err, "params": {"url": url}}, llm_data=llm_data)
 
     proxy_valid, proxy_err, _ = validate_proxy(proxy)
     if not proxy_valid:
-        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_INVALID_URL, detail=proxy_err)
+        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=proxy_err)
         return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()

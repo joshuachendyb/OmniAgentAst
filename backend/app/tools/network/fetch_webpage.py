@@ -264,6 +264,13 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout: float,
                 if proxy:
                     await page.set_default_timeout(timeout * 1000)
                 await page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
+                current_url = page.url
+                if current_url and current_url != url:
+                    is_valid, err, _ = validate_url(current_url)
+                    if not is_valid:
+                        logger.warning(f"[fetch_webpage] Playwright重定向到不安全地址: {err}")
+                        await browser.close()
+                        return {"error": True, "error_detail": f"重定向到不安全地址: {err or 'URL无效'}", "params": {"url": url}, "err_code": ERR_INVALID_URL, "detail": err}
                 html_content = await page.content()
             finally:
                 await browser.close()
@@ -345,6 +352,12 @@ async def fetch_webpage(
                     response = await client.get(url, headers=simple_headers)
 
                 response.raise_for_status()
+
+                MAX_FETCH_CONTENT_LENGTH = 100 * 1024 * 1024
+                cl = response.headers.get("content-length")
+                if cl and int(cl) > MAX_FETCH_CONTENT_LENGTH:
+                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                    return build_error(data={"error_detail": f"内容过大({int(int(cl)/1024/1024)}MB),限制{MAX_FETCH_CONTENT_LENGTH//(1024*1024)}MB", "params": {"url": url}}, llm_data=_build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=f"内容过大({int(int(cl)/1024/1024)}MB)"))
 
                 content_type = response.headers.get("content-type", "")
                 mime = content_type.split(";")[0].strip().lower() if content_type else ""

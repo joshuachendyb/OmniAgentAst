@@ -186,6 +186,16 @@ async def _port_check(host: str, port: int, timeout: int = 3) -> Dict[str, Any]:
     if port < 1 or port > 65535:
         return {"success": False, "error_detail": f"端口号无效: {port}", "err_code": ERR_NETWORK_INVALID_PORT, "params": {"port": port}}
     host = host.strip()
+    if _is_private_or_loopback_ip(host):
+        return {"success": False, "error_detail": f"禁止访问内网地址: {host}", "err_code": ERR_NETWORK_INVALID_HOST, "params": {"host": host, "port": port}}
+    try:
+        addrs = await asyncio.to_thread(socket.getaddrinfo, host, None)
+        for addr in addrs:
+            ip = addr[4][0]
+            if _is_private_or_loopback_ip(ip):
+                return {"success": False, "error_detail": f"DNS解析到内网地址: {ip}", "err_code": ERR_NETWORK_INVALID_HOST, "params": {"host": host, "port": port}}
+    except socket.gaierror:
+        return {"success": False, "error_detail": f"DNS解析失败: {host}", "err_code": ERR_NETWORK_DNS_ERROR, "params": {"host": host, "port": port}}
     service = well_known_ports.get(port, "Unknown")
 
     def _do_check():
@@ -220,6 +230,18 @@ async def network_diagnose(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_NETWORK_INVALID_HOST, f"禁止访问内网地址: {host}")
         return build_error(data={"error_detail": f"禁止访问内网地址: {host}", "params": {"host": host, "mode": mode}}, llm_data=llm_data)
+
+    # SSRF防护：DNS解析后校验解析IP是否为内网（防hostname绕过）
+    try:
+        addrs = await asyncio.to_thread(socket.getaddrinfo, host, None)
+        for addr in addrs:
+            ip = addr[4][0]
+            if _is_private_or_loopback_ip(ip):
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_NETWORK_INVALID_HOST, f"DNS解析到内网地址: {ip}")
+                return build_error(data={"error_detail": f"DNS解析到内网地址: {ip}", "params": {"host": host, "mode": mode}}, llm_data=llm_data)
+    except socket.gaierror:
+        pass
     if mode == "ping":
         result = await _ping(host=host, count=count, timeout=timeout)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

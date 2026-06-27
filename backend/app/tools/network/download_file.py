@@ -172,6 +172,11 @@ async def download_file(
 
         req_headers = headers or {}
 
+        if os.path.exists(dest_path) and os.path.realpath(dest_path) != os.path.abspath(dest_path):
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_INVALID_PATH, detail="路径被篡改(symlink)")
+            return build_error(data={"error_detail": "路径被篡改(symlink)", "params": {"path": dest_path}}, llm_data=llm_data)
+
         async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
             downloaded, content_type, total_bytes = await _stream_download(client, url, dest_path, req_headers)
 
