@@ -29,7 +29,7 @@ SHELL_DANGEROUS_PATTERNS = [
     (r"\bdel\b.*?/s\b", "递归删除文件", "HIGH"),
     (r"\brd\b.*?/s\b", "递归删除目录(rd)", "HIGH"),
     (r"\brmdir\b.*?/s\b", "递归删除目录(rmdir)", "HIGH"),
-    (r"(?<!\w)format\b.*?[A-Za-z]:", "格式化磁盘", "HIGH"),
+    (r"(?<!\w)format\b\s+[A-Za-z]:\s*(?:[/\\]|$)", "格式化磁盘", "HIGH"),
     (r"\bshutdown\b(?!\s+[/-]a\b)", "关机/重启", "HIGH"),
     (r"net\s+user\s+\S+.*\/delete", "删除用户", "HIGH"),
     (r"\bcipher\b\s+/w:", "永久数据销毁(cipher /w)", "HIGH"),

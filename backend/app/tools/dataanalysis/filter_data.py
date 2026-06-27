@@ -115,6 +115,8 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
 
     if conditions is not None:
         conditions = coerce_json(conditions)
+    else:
+        conditions = []
     t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

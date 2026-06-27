@@ -88,7 +88,7 @@ class GenerateChartInput(BaseModel):
 
 
 class AnalyzeDataInput(BaseModel):
-    """file_path和data参数互斥,只能传入其中一个"""
+    """file_path和data参数互斥,只能传入其中一个 - 小欧-2026-06-27完善"""
     file_path: Optional[str] = Field(
         default=None,
         description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时使用。示例:D:/data/sales.csv"
@@ -99,7 +99,19 @@ class AnalyzeDataInput(BaseModel):
     )
     operations: Optional[List[str]] = Field(
         default=None,
-        description="统计操作列表。可选值: mean(均值)/sum(求和)/count(计数)/min(最小值)/max(最大值)/std(标准差)。不填则使用全部统计操作"
+        description="""统计操作列表。不填则使用全部统计操作。
+
+【支持的操作】
+- mean: 均值
+- sum: 求和
+- count: 计数
+- min: 最小值
+- max: 最大值
+- std: 标准差
+
+【默认值】不填时使用全部: ["mean", "sum", "count", "min", "max", "std"]
+
+【示例】operations=["mean", "std"]"""
     )
     group_by: Optional[str] = Field(
         default=None,
@@ -128,7 +140,7 @@ class AnalyzeDataInput(BaseModel):
 
 
 class FilterDataInput(BaseModel):
-    """file_path和data参数互斥,只能传入其中一个"""
+    """file_path和data参数互斥,只能传入其中一个 - 小欧-2026-06-27完善"""
     file_path: Optional[str] = Field(
         default=None,
         description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时传入。示例:D:/data/users.csv"
@@ -138,7 +150,23 @@ class FilterDataInput(BaseModel):
         description="JSON字符串形式的数组数据。严禁与file_path参数同时传入。示例:'[{\"name\":\"A\",\"age\":25}]'"
     )
     conditions: List[Dict[str, Any]] = Field(
-        ..., description="筛选条件列表。每个条件: {\"column\": \"列名\", \"operator\": \"操作符\", \"value\": 值}。操作符: eq/ne/gt/gte/lt/lte/in/contains/not_contains"
+        ..., 
+        description="""筛选条件列表。每个条件: {"column": "列名", "operator": "操作符", "value": 值}
+
+【支持的操作符】
+- eq: 等于 (value: 任意值)
+- ne: 不等于 (value: 任意值)
+- gt: 大于 (value: 数值)
+- gte: 大于等于 (value: 数值)
+- lt: 小于 (value: 数值)
+- lte: 小于等于 (value: 数值)
+- in: 包含于 (value: 列表)
+- contains: 字符串包含 (value: 字符串)
+- not_contains: 字符串不包含 (value: 字符串)
+
+【示例】
+[{"column": "age", "operator": "gte", "value": 25}]
+[{"column": "name", "operator": "contains", "value": "张"}]"""
     )
     select_columns: Optional[List[str]] = Field(
         default=None,

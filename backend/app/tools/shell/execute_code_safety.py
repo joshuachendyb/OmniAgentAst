@@ -58,46 +58,28 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
         "allow": True,
     },
 
-    # ===== eval =====
+    # ===== eval ===== 小欧-2026-06-27 修复：标记为HIGH风险
     {
-        "pattern": r"eval\s*\(\s*[\'\"]",
-        "risk": RiskLevel.LOW,
-        "desc": "eval硬编码字符串（相对安全）",
-        "allow": True,
-    },
-    {
-        "pattern": r"eval\s*\((?!\s*[\'\"])",
-        "risk": RiskLevel.MEDIUM,
-        "desc": "eval调用（非字面量，需审查）",
-        "allow": True,
+        "pattern": r"eval\s*\(",
+        "risk": RiskLevel.HIGH,
+        "desc": "eval执行任意代码（代码注入风险）",
+        "allow": False,
     },
 
-    # ===== exec =====
+    # ===== exec ===== 小欧-2026-06-27 修复：标记为HIGH风险
     {
-        "pattern": r"exec\s*\(\s*[\'\"]",
-        "risk": RiskLevel.LOW,
-        "desc": "exec硬编码字符串（相对安全）",
-        "allow": True,
-    },
-    {
-        "pattern": r"exec\s*\((?!\s*[\'\"])",
-        "risk": RiskLevel.MEDIUM,
-        "desc": "exec调用（非字面量，需审查）",
-        "allow": True,
+        "pattern": r"exec\s*\(",
+        "risk": RiskLevel.HIGH,
+        "desc": "exec执行任意代码（代码注入风险）",
+        "allow": False,
     },
 
-    # ===== compile =====
+    # ===== compile ===== 小欧-2026-06-27 修复：标记为HIGH风险
     {
-        "pattern": r"compile\s*\(\s*[\'\"]",
-        "risk": RiskLevel.LOW,
-        "desc": "compile硬编码字符串（相对安全）",
-        "allow": True,
-    },
-    {
-        "pattern": r"compile\s*\((?!\s*[\'\"])",
-        "risk": RiskLevel.MEDIUM,
-        "desc": "compile动态编译（非字面量，潜在代码注入）",
-        "allow": True,
+        "pattern": r"compile\s*\(",
+        "risk": RiskLevel.HIGH,
+        "desc": "compile编译任意代码（代码注入风险）",
+        "allow": False,
     },
 
     # ===== 用户输入变量 + 危险函数组合 → HIGH =====
@@ -186,6 +168,22 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
         "risk": RiskLevel.MEDIUM,
         "desc": "importlib 动态导入（需审查）",
         "allow": True,
+    },
+
+    # ===== getattr绕过检测 ===== 小欧-2026-06-27 新增
+    {
+        "pattern": r"getattr\s*\([^)]*?,\s*[\'\"](?:system|popen|exec|eval|run|call|Popen)[\'\"]",
+        "risk": RiskLevel.HIGH,
+        "desc": "getattr绕过安全检查访问危险函数",
+        "allow": False,
+    },
+
+    # ===== globals/locals绕过检测 ===== 小欧-2026-06-27 新增
+    {
+        "pattern": r"(globals|locals)\s*\(\s*\)\s*\[[\'\"]__builtins__[\'\"]",
+        "risk": RiskLevel.HIGH,
+        "desc": "通过globals/locals访问__builtins__绕过检查",
+        "allow": False,
     },
 
     # ===== pickle 反序列化 =====

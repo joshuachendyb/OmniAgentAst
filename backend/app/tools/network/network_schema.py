@@ -23,7 +23,7 @@ from typing import Optional, Dict, Any, List, Literal
 
 class HttpRequestInput(BaseModel):
     url: str = Field(
-        ..., description="请求的目标URL,如 https://api.example.com/data"
+        ..., min_length=1, description="请求的目标URL,如 https://api.example.com/data"
     )
     method: Literal["GET", "POST", "PUT", "DELETE", "PATCH"] = Field(
         default="GET", description="HTTP方法,默认GET。支持GET/POST/PUT/DELETE/PATCH"
@@ -47,10 +47,10 @@ class HttpRequestInput(BaseModel):
 
 class DownloadFileInput(BaseModel):
     url: str = Field(
-        ..., description="要下载文件的URL,如 https://example.com/file.zip"
+        ..., min_length=1, description="要下载文件的URL,如 https://example.com/file.zip"
     )
     destination_path: str = Field(
-        ..., description="文件保存的相对路径(相对于下载目录),如 file.zip 或 subdir/file.zip"
+        ..., min_length=1, description="文件保存的相对路径(相对于下载目录),如 file.zip 或 subdir/file.zip"
     )
     headers: Optional[Dict[str, str]] = Field(
         default=None, description="请求头字典,如 {\"Authorization\": \"Bearer token\"}"
@@ -65,7 +65,7 @@ class DownloadFileInput(BaseModel):
 
 class FetchWebpageInput(BaseModel):
     url: str = Field(
-        ..., description="网页URL,如 https://example.com/page"
+        ..., min_length=1, description="网页URL,如 https://example.com/page"
     )
     prompt: Optional[str] = Field(
         default=None, description="提取指令。未指定时返回完整页面内容,指定时精准提取"
@@ -114,7 +114,7 @@ class NetworkDiagnoseInput(BaseModel):
     - 端口检测 → network_diagnose(host="8.8.8.8", mode="port", port=53)
     """
     host: str = Field(
-        ..., description="目标主机地址(必填),可以是域名或IP地址,例如 8.8.8.8 或 baidu.com"
+        ..., min_length=1, description="目标主机地址(必填),可以是域名或IP地址,例如 8.8.8.8 或 baidu.com"
     )
     mode: Literal["ping", "port"] = Field(
         default="ping",

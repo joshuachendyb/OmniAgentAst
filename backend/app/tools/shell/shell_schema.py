@@ -21,8 +21,25 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 class ExecuteShellCommandInput(BaseModel):
+    """execute_shell_command安全检查和翻译机制 - 小欧-2026-06-27
+    
+    【PowerShell翻译】&&和||自动翻译（兼容PS 5.1）：
+    - cmd1 && cmd2 → cmd1; if ($?) { cmd2 }
+    - cmd1 || cmd2 → cmd1; if (-not $?) { cmd2 }
+    - PS 7+原生支持，PS 5.1需要翻译
+    
+    【安全检查】分级安全检查：
+    - HIGH风险（拒绝）: Remove-Item递归删除、format格式化、del /s递归删除
+    - MEDIUM风险（警告）: 其他危险命令
+    
+    【返回值结构】
+    - stdout: 标准输出内容
+    - stderr: 标准错误内容
+    - returncode: 退出码（0=成功）
+    - shell_type: 实际使用的shell类型
+    """
     command: str = Field(
-        ..., description="PowerShell命令字符串。多个命令用;分隔（不支持Linux的&&）。示例: Get-ChildItem"
+        ..., description="PowerShell命令字符串。多个命令用;分隔。注意：PS 5.1中&&和||会自动翻译。示例: Get-ChildItem"
     )
     shell_type: Optional[Literal["powershell", "cmd"]] = Field(
         default="powershell",
@@ -72,8 +89,25 @@ class ShellSessionInput(BaseModel):
 
 
 class ExecuteCodeInput(BaseModel):
+    """execute_code安全检查机制说明 - 小欧-2026-06-27
+    
+    【安全检查】分级安全检查（三层防御）：
+    - HIGH风险（拒绝执行）: eval/exec/compile/pickle/ctypes/getattr绕过
+    - MEDIUM风险（警告）: os.system/subprocess/open写入/importlib
+    - LOW风险（允许）: 基本计算、打印等安全操作
+    
+    【strict_mode】配置项：
+    - strict_mode=False（默认）: MEDIUM风险允许执行，仅警告
+    - strict_mode=True: MEDIUM风险也拒绝执行
+    
+    【返回值结构】
+    - stdout: 标准输出内容
+    - stderr: 标准错误内容
+    - returncode: 退出码（0=成功）
+    - working_dir: 实际工作目录
+    """
     code: str = Field(
-        ..., description="要执行的代码(字符串),必填参数"
+        ..., description="要执行的代码(字符串),必填参数。注意：eval/exec/compile等高风险函数会被安全检查拦截"
     )
     language: Literal["python", "javascript"] = Field(
         default="python", description="语言类型: python 或 javascript,默认python"

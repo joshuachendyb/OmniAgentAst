@@ -43,7 +43,7 @@ class ReadXlsxInput(BaseModel):
 
 class WriteDocxInput(BaseModel):
     """content和table_data互斥,只能传入其中一个"""
-    file_name: str = Field(..., description="文件名+路径(.docx)")
+    file_name: str = Field(..., min_length=1, description="文件名+路径(.docx)")
     title: Optional[str] = Field(default=None, description="文档标题（显示在文档开头）")
     content: Optional[str] = Field(
         default=None, 
@@ -90,7 +90,7 @@ class WriteXlsxInput(BaseModel):
 
 class WritePdfInput(BaseModel):
     """content和table_data互斥,只能传入其中一个"""
-    file_name: str = Field(..., description="文件名+路径(.pdf)")
+    file_name: str = Field(..., min_length=1, description="文件名+路径(.pdf)")
     title: Optional[str] = Field(default=None, description="文档标题（显示在文档开头）")
     content: Optional[str] = Field(
         default=None, 
