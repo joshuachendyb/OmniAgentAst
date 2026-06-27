@@ -202,12 +202,29 @@ PARAM_ALIASES = {
         "file": "file_name",
         "file_path": "file_name",
     },
+    "http_request": {
+        "link": "url",
+        "address": "url",
+        "endpoint": "url",
+    },
+    "fetch_webpage": {
+        "link": "url",
+        "address": "url",
+        "endpoint": "url",
+    },
+    "create_task": {
+        "program": "command",
+        "path": "command",
+        "executable": "command",
+    },
     "generate_chart": {
         "output": "output_path",
         "output_file": "output_path",
         "file": "output_path",
         "filepath": "output_path",
         "target": "output_path",
+        "data": "file_path",
+        "path": "file_path",
     },
     "analyze_data": {
         "path": "file_path",
