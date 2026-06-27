@@ -18,14 +18,10 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.services.context_vars import _current_task_id
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
+
 from app.tools.validate.file_path_checker import validate_path_for_overwrite
 from app.utils.logger import logger
 
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 def _build_copy_file_llm_data(
@@ -68,17 +64,6 @@ async def copy_file(
     if warning_msg:
         logger.warning(warning_msg)
 
-    is_valid_src, err_src = _validate_path(source)
-    if not is_valid_src:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": f"源路径验证失败: {err_src}"})
-        return build_error(data={"error_detail": f"源路径验证失败: {err_src}", "params": {"source": source}}, llm_data=llm_data)
-
-    is_valid_dst, err_dst = _validate_path(destination)
-    if not is_valid_dst:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": f"目标路径验证失败: {err_dst}"})
-        return build_error(data={"error_detail": f"目标路径验证失败: {err_dst}", "params": {"destination": destination}}, llm_data=llm_data)
 
     src = Path(source)
     dst = Path(destination)

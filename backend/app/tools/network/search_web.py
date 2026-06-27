@@ -20,6 +20,7 @@ import httpx
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.network.http_client_sdk import create_http_client
+from app.tools.validate.url_validator import validate_proxy
 from app.utils.common_patterns import HTML_TAG_PATTERN
 from app.utils.json_utils import parse_json
 from app.utils.logger import logger
@@ -356,6 +357,12 @@ async def search_web(
     proxy: Optional[str] = None,
 ) -> Dict[str, Any]:
     """搜索网络 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
+    proxy_valid, proxy_err, _ = validate_proxy(proxy)
+    if not proxy_valid:
+        t0 = _time_mod.perf_counter()
+        llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail=proxy_err)
+        return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
+
     t0 = _time_mod.perf_counter()
     try:
         if len(query) < 2:

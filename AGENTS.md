@@ -232,3 +232,25 @@ ISP 接口窄，复用先查库
 - No default exports for components
 - Use `@/` alias for absolute imports
 - Run `npm run check` before commit
+
+---
+
+## Anchored Summary
+
+### Goal
+全量实现「Tool内部安全检查复核修订版v3」设计文档的代码变更。
+
+### Progress (so far this session)
+- ✅ 创建 `tools/validate/` 目录，集中存放4个校验文件（url_validator, timeout_validator, file_path_checker, registry_path_checker）
+- ✅ url_validator 从 `network/` 迁移到 `validate/`，返回格式改为 `(is_valid, error_msg, warning_msg)` 三元组
+- ✅ 4个网络工具 import 路径更新 + 适配新返回格式
+- ✅ 6个工具入口添加 `validate_timeout()` 调用（http_request/download_file/fetch_webpage/network_diagnose/execute_shell_command/execute_code）
+- ✅ 13个写入工具添加 `validate_path_for_*()` 调用
+- ✅ 8个只读文件工具去掉 `_validate_path()` 系统级透传
+- ✅ 3个 registry 工具集成 `registry_path_checker`
+- ✅ 旧 `network/url_validator.py` 已删除
+- ✅ 验证：650 passed, 4 failed（均为预先存在的问题）
+- ✅ 2次 commit: `2a20cc069`(文档+timeout+URL) + `ccaaa49bd`(file_path+registry)
+
+### Pending
+- （无待办 — 本轮设计文档全量代码已实施完成）

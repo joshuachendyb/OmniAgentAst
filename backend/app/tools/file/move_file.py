@@ -20,15 +20,10 @@ from app.tools.tool_response import build_success, build_error
 from app.constants import ERR_FILE_MOVE_FAILED
 from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
-from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.tools.validate.file_path_checker import validate_path_for_overwrite
+from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.utils.logger import logger
 
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 def _build_move_file_llm_data(
@@ -59,13 +54,6 @@ async def _move_file_impl(
     source_path: str, destination_path: str, overwrite: bool = False,
 ) -> Dict[str, Any]:
     """移动或重命名文件实现 — 小欧 2026-06-22 — 小健 2026-06-22 重构：只返回raw dict，不含build3/llm_data"""
-    is_valid_src, error_msg_src = _validate_path(source_path)
-    if not is_valid_src:
-        return {"success": False, "error_detail": f"源路径{error_msg_src}", "params": {"source": source_path}}
-
-    is_valid_dst, error_msg_dst = _validate_path(destination_path)
-    if not is_valid_dst:
-        return {"success": False, "error_detail": f"目标路径{error_msg_dst}", "params": {"destination": destination_path}}
 
     is_valid, err, warn = validate_path_for_overwrite(source_path, destination_path, overwrite)
     if not is_valid:

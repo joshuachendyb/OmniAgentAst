@@ -128,6 +128,11 @@ async def download_file(
         llm_data = _build_download_file_llm_data("error", 0, url, err_code=ERR_INVALID_URL, detail=timeout_err)
         return build_error(data={"error_detail": timeout_err, "params": {"url": url}}, llm_data=llm_data)
 
+    proxy_valid, proxy_err, _ = validate_proxy(proxy)
+    if not proxy_valid:
+        llm_data = _build_download_file_llm_data("error", 0, url, err_code=ERR_INVALID_URL, detail=proxy_err)
+        return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
+
     dest_path = os.path.abspath(os.path.join(_DOWNLOAD_DIR, destination_path.lstrip("/\\")))
     is_valid_path, path_err, path_warn = validate_path_for_write(dest_path)
     if not is_valid_path:
@@ -137,7 +142,6 @@ async def download_file(
         logger.warning(f"[download_file] {path_warn}")
 
     t0 = _time_mod.perf_counter()
-    dest_path = ""
     try:
         is_valid, error_msg, warning_msg = validate_url(url)
         if not is_valid:
@@ -145,13 +149,15 @@ async def download_file(
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_INVALID_URL, detail=detail)
             return build_error(data={"error_detail": detail, "params": {"url": url}}, llm_data=llm_data)
+        if warning_msg:
+            logger.warning(f"[download_file] {warning_msg}")
         net_info = check_network()
         if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
             return build_error(data={"error_detail": "网络不可用", "params": {"url": url}}, llm_data=llm_data)
 
-        dest_path = os.path.abspath(os.path.join(_DOWNLOAD_DIR, destination_path.lstrip("/\\")))
+
         if not dest_path.startswith(os.path.abspath(_DOWNLOAD_DIR)):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_INVALID_PATH, detail="路径遍历不允许")

@@ -98,33 +98,50 @@ class ToolSafetyChecker:
         return tool_meta.needs_confirmation
 
     @staticmethod
+    def _check_file_path(params: Dict) -> Optional["SafetyResult"]:
+        """统一路径越权检查 — 小欧 2026-06-27 从_check_known_risks抽出"""
+        _PATH_KEYS = ("path", "source_path", "target_path", "file_path",
+                      "directory", "file_name", "destination_path",
+                      "output_path", "db_path")
+        try:
+            file_path = None
+            for key in _PATH_KEYS:
+                file_path = params.get(key)
+                if file_path is not None:
+                    break
+            if file_path is not None:
+                is_valid, msg = validate_path(file_path)
+                if not is_valid:
+                    return SafetyResult(is_safe=False, blocked=True, message=f"路径越权: {msg}")
+        except Exception as e:
+            logger.error(f"[ToolSafetyChecker] 路径检查异常,阻止执行: {e}")
+            return SafetyResult(is_safe=False, blocked=True, message=f"安全检查异常(已阻止): {e}")
+        return None
+
+    @staticmethod
     def _check_known_risks(tool_name: str, params: Dict) -> Optional["SafetyResult"]:
         """已知风险检测：路径越权 / 写入大小保护 / 代码注入 — 小沈 2026-06-17 改用path_validator
-        小欧 2026-06-25: 返回SafetyResult替代raw dict"""
+        小欧 2026-06-25: 返回SafetyResult替代raw dict
+        小欧 2026-06-27: 扩展路径检查覆盖DOCUMENT/DATAANALYSIS/NETWORK/DESKTOP"""
         from app.tools.registry import tool_registry
         from app.tools.tool_types import ToolCategory
 
         all_categories = tool_registry.get_categories()
-        file_tools = set(all_categories.get(ToolCategory.FILE, []))
 
-        if tool_name in file_tools:
-            try:
-                path = params.get("path")
-                if path is None:
-                    path = params.get("source_path")
-                if path is None:
-                    path = params.get("target_path")
-                if path is None:
-                    path = params.get("file_path")
-                if path is None:
-                    path = params.get("directory")
-                if path is not None:
-                    is_valid, msg = validate_path(path)
-                    if not is_valid:
-                        return SafetyResult(is_safe=False, blocked=True, message=f"路径越权: {msg}")
-            except Exception as e:
-                logger.error(f"[ToolSafetyChecker] 路径检查异常,阻止执行: {e}")
-                return SafetyResult(is_safe=False, blocked=True, message=f"安全检查异常(已阻止): {e}")
+        # 合并所有有路径参数的分类
+        categories_with_path = {
+            ToolCategory.FILE, ToolCategory.DOCUMENT,
+            ToolCategory.DATAANALYSIS, ToolCategory.NETWORK,
+            ToolCategory.DESKTOP,
+        }
+        path_category_tools = set()
+        for cat in categories_with_path:
+            path_category_tools.update(all_categories.get(cat, []))
+
+        if tool_name in path_category_tools:
+            result = ToolSafetyChecker._check_file_path(params)
+            if result is not None:
+                return result
 
         if tool_name == _WRITE_RISK_TOOL:
             try:

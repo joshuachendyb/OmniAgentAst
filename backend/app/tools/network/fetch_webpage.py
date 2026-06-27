@@ -20,7 +20,7 @@ import httpx
 from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client
 from app.tools.network.connectivity import check_network
-from app.tools.validate.url_validator import validate_url
+from app.tools.validate.url_validator import validate_url, validate_proxy
 from app.tools.validate.timeout_validator import validate_timeout
 
 _check_network = check_network
@@ -294,6 +294,11 @@ async def fetch_webpage(
         llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_INVALID_URL, detail=timeout_err)
         return build_error(data={"error_detail": timeout_err, "params": {"url": url}}, llm_data=llm_data)
 
+    proxy_valid, proxy_err, _ = validate_proxy(proxy)
+    if not proxy_valid:
+        llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_INVALID_URL, detail=proxy_err)
+        return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
+
     t0 = _time_mod.perf_counter()
 
     try:
@@ -302,6 +307,8 @@ async def fetch_webpage(
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_INVALID_URL, detail=error_msg or "URL格式无效")
             return build_error(data={"error_detail": error_msg or "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
+        if warning_msg:
+            logger.warning(f"[fetch_webpage] {warning_msg}")
 
         net_info = check_network()
         if not net_info["connected"]:

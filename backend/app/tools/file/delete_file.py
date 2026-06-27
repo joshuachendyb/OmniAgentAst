@@ -20,15 +20,11 @@ from app.tools.tool_response import build_success, build_error
 from app.constants import ERR_FILE_DELETE_FAILED
 from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
-from app.services.safety.file_safety import record_operation, execute_with_safety
+
 from app.tools.validate.file_path_checker import validate_path_for_delete
+from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.utils.logger import logger
 
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 def _remove_readonly(func, path, excinfo):
@@ -96,9 +92,6 @@ async def _delete_file_impl(
     file_path: str, recursive: bool = False, force: bool = False,
 ) -> Dict[str, Any]:
     """删除文件或目录实现 — 小欧 2026-06-22 — 小健 2026-06-22 重构：只返回raw dict，不含build3/llm_data"""
-    is_valid, error_msg = _validate_path(file_path)
-    if not is_valid:
-        return {"success": False, "error_detail": error_msg, "params": {"source": file_path}}
 
     path = Path(file_path)
     try:

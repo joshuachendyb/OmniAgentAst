@@ -18,14 +18,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
+
 from app.tools.validate.file_path_checker import validate_path_for_extract
 from app.utils.logger import logger
 
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小健 2026-06-24"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 def _build_extract_archive_llm_data(

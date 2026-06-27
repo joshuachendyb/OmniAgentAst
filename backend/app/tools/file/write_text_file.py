@@ -18,10 +18,10 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.constants import ERR_FILE_WRITE_FAILED
 from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
+
+from app.tools.validate.file_path_checker import validate_path_for_write
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.tools.file_type_checker import check_for_text_tool
-from app.tools.validate.file_path_checker import validate_path_for_write
 from app.utils.logger import logger
 
 
@@ -49,11 +49,6 @@ def _get_file_encoding(file_path: str) -> Dict[str, Any]:
         return {"data": {"encoding": "utf-8", "confidence": 0.5}}
     except Exception:
         return {"data": {"encoding": "utf-8", "confidence": 0.5}}
-
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 
@@ -141,9 +136,7 @@ def _check_write_safety(file_path: str, content: str,
     is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=False, allow_create=True)
     if not is_valid:
         return error_detail, content
-    is_valid_path, error_msg = _validate_path(file_path)
-    if not is_valid_path:
-        return error_msg, content
+
     return None, content
 
 
