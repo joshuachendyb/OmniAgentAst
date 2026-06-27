@@ -41,7 +41,7 @@ def rollback_operation(operation_id: str) -> bool:
                     source_path = Path(src)
                     source_path.parent.mkdir(parents=True, exist_ok=True)
                     if backup_path.is_dir():
-                        shutil.copytree(backup_path, source_path)
+                        shutil.copytree(backup_path, source_path, dirs_exist_ok=True)
                     else:
                         shutil.copy2(backup_path, source_path)
                     success = True

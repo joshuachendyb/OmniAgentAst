@@ -72,8 +72,11 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> b
             success = operation_func(*args, **kwargs)
 
             if success:
-                target = dest_path if dest_path and dest_path.exists() else source_path if source_path and source_path.exists() else None
-                info = collect_file_info(target) if target else {}
+                if op_type == OperationType.DELETE.value and backup_path and backup_path.exists():
+                    info = collect_file_info(backup_path)
+                else:
+                    target = dest_path if dest_path and dest_path.exists() else source_path if source_path and source_path.exists() else None
+                    info = collect_file_info(target) if target else {}
                 executed_at = datetime.now()
                 duration_ms = int((executed_at - created_at).total_seconds() * 1000) if created_at else None
                 space_impact = 0
