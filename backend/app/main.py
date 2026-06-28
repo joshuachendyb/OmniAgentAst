@@ -1,3 +1,9 @@
+# Windows需要ProactorEventLoop支持asyncio subprocess — 小沈 2026-06-28
+import sys
+import asyncio
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -7,7 +13,6 @@ import traceback
 from app.utils.time_utils import get_utc_timestamp
 import os
 import logging
-import asyncio
 
 from app.api.v1 import health, ai_config, sessions, messages, conversation, execution, metrics
 from app.api.v1.chat import router as chat_router, task_router
