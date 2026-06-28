@@ -1,10 +1,10 @@
-# Agent 状态管理重构设计方案
+# Agent 状态及数据流向处理设计方案
 
 **创建时间**: 2026-06-28 23:40:40  
 **更新时间**: 2026-06-29  
 **版本**: v1.6  
 **作者**: 小欧  
-**设计目标**: handler 零接触状态，react_cycle 唯一负责状态流转，yield-only 单通道
+**设计目标**: handler 只 yield Step（管数据），编排层从 Step event type 推状态（管类型）
 
 ---
 
@@ -54,9 +54,31 @@ Agent 状态赋值分散在 10 处、6 个文件中，无统一入口、无合�
 | **return 与 yield 的隐式顺序依赖** | handler 必须在 yield 完最后一个 event 后才 return dict。如果 yield 完忘记 return，无声无息丢状态信号 | 🟡 极易出错 |
 | **dict 格式无契约** | `{"action":"complete","response":...}` 的 key 全靠约定。没有人强制写"action"而不是"status"，也没有类型校验 | 🟡 脆弱 |
 
-**根因**：`async generator return` 的 `StopAsyncIteration.value` 机制虽然 Python 原生支持，但在多层 yield chain 中透传需要每层都 try/except，代码复杂且容易遗漏。更本质地说，handler 只需要一条通道（yield event）就足够传递所有信息——不需要第二条。
+**根因**：`async generator return` 的 `StopAsyncIteration.value` 机制虽然 Python 原生支持，但在多层 yield chain 中透传需要每层都 try/except，代码复杂且容易遗漏。
 
-**解决方案**：抛弃 return dict，改用 **yield-only + event type 推断**。_dispatch_handler 在遍历 handler 的 yield 链时透明记录 event type，handler 结束后从 type 推断状态。handler 只需要 yield，不需要 return 任何东西。
+**更本质地说，这不是一个孤立问题，而是 handler 产出消费未分离的一个表现。** 整个系统有三个消费者 consume handler 产出的 Step：
+
+```
+Step 的消费者：        当前 handler 怎么服务：      应该怎么服务：
+┌──────────────┐    ┌──────────────────────┐    ┌─────────────────────────┐
+│ 前端（展示）    │    │ yield Step → SSE      │ ✅ │ yield Step → SSE       │
+├──────────────┤    ├──────────────────────┤    ├─────────────────────────┤
+│ 状态机        │    │ set_failed/set_completed│ ❌ │ _dispatch_handler       │
+│（判断继续/停）│    │ （绕过编排层走后门）    │    │ 从 event type 推断状态   │
+├──────────────┤    ├──────────────────────┤    ├─────────────────────────┤
+│ LLM context  │    │ handler 直接调         │ ❓ │ 编排层收到 ObservationStep│
+│（observation │    │ agent.message_builder  │    │ 后自己加 content        │
+│  内容给下轮） │    │ （也是走后门）          │    │ （不走后门）             │
+└──────────────┘    └──────────────────────┘    └─────────────────────────┘
+```
+
+**当前 handler 有三个对外出口**：yield（大门）、set_xxx（后门1）、直接加 message_builder（后门2）。后门越多，越难控制。
+
+**正确设计**：handler 只通过 **yield** 一个出口（单一事件通道），三个消费者都由编排层统一从 Step 中取信息。这就是 **"handler 单一产出原则"**——handler 只产生 Step，不消费 Step。消费（前端、状态、context）全是编排层的事。
+
+**解决方案**：抛弃 return dict，改用 **yield-only + 编排层统一消费**：
+1. _dispatch_handler 从 yield chain 的 event type 推断状态（conplete the return dict problem）
+2. 编排层收到 ObservationStep 后，自动提取 content 加到 message_builder（fix the observation branch）
 
 ### 1.3 根因分析
 
@@ -92,7 +114,7 @@ Agent 状态赋值分散在 10 处、6 个文件中，无统一入口、无合�
 
 ---
 
-## 二、方案B：handler 零接触状态
+## 二、方案：handler 只 yield Step，编排层从 event type 推状态
 
 ### 2.1 架构总览
 
