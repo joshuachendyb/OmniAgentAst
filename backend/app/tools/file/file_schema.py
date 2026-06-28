@@ -76,6 +76,7 @@ class ReadTextFileInput(BaseModel):
 【示例】
 - tail=20: 读最后20行
 - tail=100: 读最后100行"""
+    )
     encoding: Optional[str] = Field(
         default=None,
         description="文件编码,默认utf-8。读取失败时自动尝试gbk/gb2312/utf-8-sig"
