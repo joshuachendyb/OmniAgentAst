@@ -2,7 +2,7 @@
 
 **创建时间**: 2026-06-28 23:40:40  
 **更新时间**: 2026-06-28 23:47:48  
-**版本**: v1.2  
+**版本**: v1.3  
 **作者**: 小欧  
 **设计目标**: handler 零接触状态，react_cycle 唯一负责状态流转
 
@@ -15,6 +15,7 @@
 | v1.0 | 2026-06-28 23:40:40 | 初始版本，完整设计方案 A/B | 小欧 |
 | v1.1 | 2026-06-28 23:55:00 | 删除方案A，方案B 精炼为唯一方案，章节重新编号，补充风险分析和实施步骤 | 小欧 |
 | v1.2 | 2026-06-28 23:47:48 | 追加详细设计 v2：逐文件代码规格，9 个文件的完整改动定义 | 小欧 |
+| v1.3 | 2026-06-28 23:47:48 | 修正 action_handler/step_emitter/run_sse_stream 3 处 diff 与实际代码不符；新增第9章：流程对比图 + 改动好处说明 | 小欧 |
 
 ---
 
@@ -984,6 +985,150 @@ if isinstance(result, dict):
 
 ---
 
-**文档版本**: v1.2  
+## 九、流程对比与改动好处
+
+### 9.1 当前流程（现状）
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          当前流程（现状）                                   │
+│                                                                           │
+│  运输层(run_sse_stream)                                                    │
+│    ├─ 用户取消 → agent.status = CANCELLED          [直接赋值]              │
+│    └─ 外部异常 → agent.status = FAILED             [直接赋值]              │
+│                                                                           │
+│  编排层(react_cycle)                                                       │
+│    ├─ _dispatch_handler:                                                   │
+│    │   ├─ "action" → handle_action() yield 事件    [不返回结果]            │
+│    │   ├─ "answer" → handle_answer() yield 事件    [不返回结果]            │
+│    │   ├─ "error"  → agent.set_failed() + ErrorStep  [设状态]              │
+│    │   └─ 未知类型 → agent.set_failed() + FinalStep  [设状态]              │
+│    ├─ run_react_cycle:                                                     │
+│    │   ├─ agent.status = EXECUTING                  [直接赋值]              │
+│    │   ├─ agent.set_failed(...) 多处                 [设状态]               │
+│    │   ├─ agent.set_cancelled()                     [设状态]               │
+│    │   ├─ if RETRYABLE_ERROR: agent.status = THINKING [直接赋值]            │
+│    │   └─ if status != RETRYABLE_ERROR 条件判断      [特殊处理]             │
+│    └─ initialize_run_state:                                                │
+│        └─ agent.status = THINKING                   [直接赋值]              │
+│                                                                           │
+│  执行层(handlers) — 既 yield 事件又设状态                                   │
+│    ├─ answer_handler:                                                      │
+│    │   ├─ 空内容 → agent.set_failed() + yield FinalStep  [设状态]          │
+│    │   └─ 正常 →   agent.set_completed() + yield FinalStep [设状态]        │
+│    ├─ action_handler:                                                      │
+│    │   ├─ 安全检查blocked → agent.set_failed()        [设状态]              │
+│    │   ├─ 用户拒绝 → agent.set_failed()               [设状态]              │
+│    │   ├─ tool_name为空 → agent.set_failed()          [设状态]              │
+│    │   └─ return_direct → agent.set_completed()       [设状态]              │
+│    ├─ step_emitter.exit_with_error → agent.set_failed() [设状态]            │
+│    └─ error_handler — 3 处 agent.set_failed()         [设状态]              │
+│                                                                           │
+│  ⚠  问题: 状态变更散布在 4 层 8 个文件, 无统一管控                          │
+│  ⚠  无合法转换校验: 任何代码可在任何时候设任意状态                           │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### 9.2 新设计流程（方案B）
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         新设计流程（方案B）                                  │
+│                                                                           │
+│  运输层(run_sse_stream) — 仅外部异常时调状态函数                            │
+│    ├─ 用户取消 → set_cancelled(agent)           [调 status_table]         │
+│    └─ 外部异常 → set_failed(agent, msg)         [调 status_table]         │
+│                                                                           │
+│  编排层(react_cycle) ← 唯一正常设状态的地方                                  │
+│    ├─ _dispatch_handler: — 收集 handler 返回 dict                           │
+│    │   ├─ "action" → handle_action() yield 事件 → return dict             │
+│    │   ├─ "answer" → handle_answer() yield 事件 → return dict             │
+│    │   ├─ "error"  → ErrorStep + return {"action":"fail", ...}           │
+│    │   └─ 未知类型 → FinalStep + return {"action":"fail", ...}           │
+│    │                                                                       │
+│    ├─ _process_single_step: — 据 handler 返回 dict 设状态                   │
+│    │   ├─ "complete" → set_completed(agent)                               │
+│    │   ├─ "fail"     → set_failed(agent, error_msg)                       │
+│    │   └─ "continue" → 不设状态, 继续循环                                  │
+│    │                                                                       │
+│    ├─ run_react_cycle: — 全部调 status_table 函数                          │
+│    │   ├─ set_status(agent, EXECUTING)      [无直接赋值]                   │
+│    │   ├─ set_failed(agent, msg) 各处        [无直接赋值]                  │
+│    │   ├─ set_cancelled(agent)              [无直接赋值]                   │
+│    │   ├─ [RETRYABLE_ERROR 整块删除]        [不再存在]                     │
+│    │   └─ [RETRYABLE_ERROR 条件删除]        [不再需要]                     │
+│    │                                                                       │
+│    └─ initialize_run_state:                                                │
+│        └─ set_status(agent, THINKING)       [调 status_table]             │
+│                                                                           │
+│  执行层(handlers) ← 完全不碰状态                                            │
+│    ├─ answer_handler:                                                      │
+│    │   ├─ 空内容 → yield FinalStep + return {"action":"fail", ...}       │
+│    │   └─ 正常   → yield FinalStep + return {"action":"complete", ...}   │
+│    ├─ action_handler:                                                      │
+│    │   ├─ 安全检查blocked → return {"action":"fail", ...}                 │
+│    │   ├─ 用户拒绝 → return {"action":"fail", ...}                        │
+│    │   ├─ tool_name为空 → return {"action":"fail", ...}                   │
+│    │   └─ return_direct → return {"action":"complete", ...}               │
+│    ├─ step_emitter.exit_with_error → 只创建 ErrorStep, 不设状态            │
+│    └─ error_handler — 3 处都只创建 ErrorStep, 不设状态                     │
+│                                                                           │
+│  状态机(status_table.py) ← 唯一改得动 agent.status 的地方                   │
+│    ├─ _TRANSITIONS 数据表 — 6 行, 定义所有合法转换                          │
+│    ├─ set_status()  — 合法转换校验 + 设状态 + 日志                          │
+│    ├─ set_failed()  — 快捷 → set_status(FAILED)                           │
+│    ├─ set_completed()  — 快捷 → set_status(COMPLETED)                     │
+│    ├─ set_cancelled()  — 快捷 → set_status(CANCELLED)                     │
+│    └─ 非法转换 → ValueError("非法转换: 当前状态 → 目标状态")                │
+│                                                                           │
+│  ✅ 结果: 状态变更集中在 1 个文件, 统一校验 + 统一日志                      │
+│  ✅ 唯一物理改属性的地方: status_table.py 第 X 行                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### 9.3 逐层对比
+
+| 层级 | 维度 | 当前流程 | 新设计 | 好处 |
+|------|------|---------|--------|------|
+| **运输层** | 状态变更方式 | `agent.status = CANCELLED/FAILED` 直接赋值 | `set_cancelled(agent)` / `set_failed(agent, msg)` | 经过校验入口，非法转换直接报错 |
+| **编排层** | 状态变更分散度 | 6 处散布在 _dispatch_handler + run_react_cycle | 全部收敛在 _process_single_step + run_react_cycle | 一处改状态，排查问题只需看一个函数 |
+| **编排层** | RETRYABLE_ERROR | 存在，while 循环需特殊判断 + 特殊条件 | **彻底删除** | while 循环逻辑简化，无死代码 |
+| **执行层** | handler 职责 | yield 事件 + 设状态 (双重职责) | 只 yield 事件 + return dict (单一职责) | SRP 原则，handler 可独立测试 |
+| **执行层** | step_emitter | exit_with_error 创建 ErrorStep + 设状态 | 只创建 ErrorStep | 工具层不越权 |
+| **执行层** | error_handler | 3 处 set_failed，与 ErrorStep 创建混在一起 | 只创建 ErrorStep | 异常处理与状态管理解耦 |
+| **状态机** | 合法转换校验 | 无 | _TRANSITIONS 表 + 运行时校验 | 非法转换 → ValueError，500ms 内定位 |
+| **状态机** | 状态变更入口 | 8 个文件 14+ 处 | 1 个文件 4 个导出函数 | 加日志/加回调只需改一个地方 |
+
+### 9.4 数据流路径对比
+
+```
+当前:
+  handler yield 事件 → SSE 流
+  handler 设状态   → agent.status (直接/通过 setter)
+
+新设计:
+  handler yield 事件 → SSE 流
+  handler return dict → react_cycle 判断 dict → status_table 设状态
+```
+
+**当前路径**：事件流和状态流的控制者在同一个函数里，耦合在一起。handler 干了它不该干的事。
+
+**新设计路径**：事件流由 handler 管，状态流由 react_cycle 管，各行其道。handler 只报告"发生了什么"，react_cycle 决定"状态怎么变"。
+
+### 9.5 改动好处总结
+
+| 好处 | 说明 | 直接效果 |
+|------|------|---------|
+| **① 零处直接赋值** | `grep 'agent.status ='` 仅返回 `__init__` 一行 | 新人接手不用猜哪里改了状态 |
+| **② 非法转换校验** | `_TRANSITIONS` 表 + `ValueError` | 非法转换在 500ms 内暴露，不等到用户反馈 |
+| **③ 层次隔离** | 执行层不碰状态，编排层唯一负责 | handler 改 bug 不会意外改状态；react_cycle 改状态流转不会影响 handler |
+| **④ 统一日志** | 所有状态变更都经过 `set_status`，带原因 | 排查问题时 `grep '[Agent]'` 可回溯完整状态变化历史 |
+| **⑤ 简化循环** | 删除 RETRYABLE_ERROR，减少 2 处特殊判断 | while 循环逻辑更直白，排查更简单 |
+| **⑥ 可扩展性** | 新状态只需加一行到 `_TRANSITIONS` | 未来加 SUSPENDED/RESUMED 等只需改一个表 |
+| **⑦ handler 可独立测试** | handler 不依赖 agent.status 副作用 | handler 测试可以纯测事件，不 mock 状态 |
+
+---
+
+**文档版本**: v1.3  
 **更新时间**: 2026-06-28 23:47:48  
 **编写人**: 小欧
