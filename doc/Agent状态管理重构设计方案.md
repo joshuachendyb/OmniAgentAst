@@ -866,7 +866,18 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ### 8.4 修改 `action_handler.py` — 同理
 
+共 4 处状态调用全部改为返回 dict：
+
 ```diff
+- agent.set_failed(f"安全检查blocked: {safety_result.message}")
++ return {"action": "fail", "error_msg": f"安全检查blocked: {safety_result.message}", "error_type": "blocked"}
+
+- agent.set_failed(f"用户拒绝执行工具: {_cn}")
++ return {"action": "fail", "error_msg": f"用户拒绝执行工具: {_cn}", "error_type": "user_rejected"}
+
+- agent.set_failed("LLM返回的action中tool_name为空")
++ return {"action": "fail", "error_msg": "LLM返回的action中tool_name为空", "error_type": "invalid_action"}
+
 - agent.set_completed()
 + return {"action": "complete", "response": ...}
 ```
@@ -877,10 +888,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ```diff
   def exit_with_error(self, step_count, error_type, error_message, recoverable=False):
--     if recoverable:
--         self.agent.status = AgentStatus.RETRYABLE_ERROR
--     else:
--         self.agent.set_failed(error_message)
+-     self.agent.set_failed(error_message)
 +     # 不设状态，只创建 ErrorStep 返回
       error_step = ErrorStep(step=step_count, error_type=error_type, ...)
       return self.emit(error_step)
@@ -939,11 +947,11 @@ if isinstance(result, dict):
 ### 8.8 修改 `run_sse_stream.py` — 外部异常用函数
 
 ```diff
-- agent.status = AgentStatus.CANCELLED
+- agent.set_cancelled()
 + from app.services.agent.core_agent.status_table import set_cancelled, set_failed
 + set_cancelled(agent)
 
-- agent.status = AgentStatus.FAILED
+- agent.set_failed(str(e)[:200])
 + set_failed(agent, str(e)[:200])
 ```
 
