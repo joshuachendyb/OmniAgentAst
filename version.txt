@@ -1,3 +1,32 @@
+v0.17.10
+
+更新时间: 2026-06-29 06:55:33
+
+## v0.17.9→v0.17.10 变更汇总 - 小欧-2026-06-29
+
+### docs: 文档更新(7项)
+- d1e00ab44: 重命名设计方案为'Agent状态及数据流向处理' - 小欧
+- 01cc6515d: 更新Agent状态管理重构设计方案 v1.6 - 小欧
+- 6acf3260c: 重构第9章用户补充内容为9.6/9.7/9.8并规范化表格格式 - 小欧
+- 2fbb29a77: 新增第9章流程对比图和改动好处 - 小欧
+- 0698fe9b5: 更新Agent状态管理重构设计方案 - 小欧
+- 790decb6d: 移动后端错误处理架构设计文档到doc-优化目录 - 小欧
+
+### refactor: 代码重构(2项)
+- b86467ab5: 新增set_cancelled方法+移除RETRYABLE_ERROR处理 - 小欧
+- cb64f7ede: 统一Agent状态设置入口+移除error_handler外层重试 - 小欧
+
+### fix: 代码修复(3项)
+- 81313db45: react_cycle.py 循环结束无终态强制FAILED - 小欧
+- 300d2c2e7: run_sse_stream.py 精简finally注释 - 小欧
+- 3d6086a0b: run_sse_stream.py end_type从agent.status推导 - 小欧
+- 855dc450b: 修正文档第8章3处与实际代码不符的diff - 小欧
+
+### 合计
+- docs: 6项, refactor: 2项, fix: 4项
+
+---
+
 v0.17.9
 
 更新时间: 2026-06-28 17:48:53

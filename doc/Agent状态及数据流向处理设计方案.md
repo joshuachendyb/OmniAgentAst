@@ -2,9 +2,9 @@
 
 **创建时间**: 2026-06-28 23:40:40  
 **更新时间**: 2026-06-29  
-**版本**: v1.6  
+**版本**: v1.7  
 **作者**: 小欧  
-**设计目标**: handler 只 yield Step（管数据），编排层从 Step event type 推状态（管类型）
+**设计目标**: handler 只 yield Step（单通道），编排层统一消费状态（从 event type 推）和数据（从 Step content 提）
 
 ---
 
@@ -19,12 +19,13 @@
 | v1.4 | 2026-06-29 23:47:48 | 追加用户补充内容到第9章：9.6调用架构、9.7具体变化、9.8最终代码边界；表格/代码块规范化 | 小欧 |
 | v1.5 | 2026-06-29 | 设计修正：抛弃 return dict 方案，改为 yield-only。handler 只 yield event，_dispatch_handler 从 event type 推断状态。全文所有 return dict 描述替换为 yield-only | 小欧 |
 | v1.6 | 2026-06-29 | 补充第1章：新增 1.2 本轮设计审查中发现的新问题（return dict 设计缺陷分析），调整章节序号 | 小欧 |
+| v1.7 | 2026-06-29 | 有机整合：补全"handler 多出口"问题（状态+数据+return dict）；yield-only 协议扩展（不 add_message）；handler build_observation/answer_handler message_builder 越界 diff；第9章数据流对比统一；全文一致性更新 | 小欧 |
 
 ---
 
 ## 一、背景与问题
 
-### 1.1 当前问题
+### 1.1 当前问题：handler 多出口
 
 Agent 状态赋值分散在 10 处、6 个文件中，无统一入口、无合法转换校验：
 
@@ -41,7 +42,27 @@ Agent 状态赋值分散在 10 处、6 个文件中，无统一入口、无合�
 | `run_sse_stream.py` | 212 | `agent.status = AgentStatus.CANCELLED` | 直接赋值 |
 | `run_sse_stream.py` | 228 | `agent.status = AgentStatus.FAILED` | 直接赋值 |
 
-此外，handler 层直接调 `agent.set_failed()` 和 `agent.set_completed()`，绕过了编排层的控制。
+此外，handler 层通过 `set_failed()` / `set_completed()` 绕过了编排层的状态控制。
+
+**不止状态，数据也有同样问题。** handler 层还直接操纵 `message_builder`，跳过编排层把数据灌进 LLM 上下文：
+
+| 文件 | 行号 | 函数 | 越界调用 | 越界行为 |
+|------|------|------|---------|---------|
+| `action_handler.py` | 255 | `build_observation` | `ctx.agent.message_builder.add_observation(obs_text, fc)` | handler 层直接加 observation 到 LLM context |
+| `action_handler.py` | 259 | `build_observation` | `ctx.agent.message_builder.add_observation(obs_text, {})` | 异常兜底同 |
+| `answer_handler.py` | 26 | `handle_answer` | `agent.message_builder.add_assistant_message("")` | handler 层直接加 LLM 回复到 context |
+| `answer_handler.py` | 45 | `handle_answer` | `agent.message_builder.add_assistant_message(content)` | 同上，正常路径 |
+
+**本质是一个问题**：handler 有多个对外出口，大多数是后门。
+
+```
+handler 的出口：
+  ① yield Step       → 前端展示         ✅ handler 该做的
+  ② set_failed/completed → 状态机流转  ❌ 越界（绕过编排层）
+  ③ message_builder.add → LLM context  ❌ 越界（绕过编排层）
+```
+
+两个后门（② 和 ③）做的事不同——一个管"类型（状态）"，一个管"数据（context）"——但毛病一样：**handler 通过 yield 以外的通道直接影响系统其他部分**。
 
 ### 1.2 本轮设计审查中发现的新问题
 
@@ -66,19 +87,20 @@ Step 的消费者：        当前 handler 怎么服务：      应该怎么服�
 │ 状态机        │    │ set_failed/set_completed│ ❌ │ _dispatch_handler       │
 │（判断继续/停）│    │ （绕过编排层走后门）    │    │ 从 event type 推断状态   │
 ├──────────────┤    ├──────────────────────┤    ├─────────────────────────┤
-│ LLM context  │    │ handler 直接调         │ ❓ │ 编排层收到 ObservationStep│
-│（observation │    │ agent.message_builder  │    │ 后自己加 content        │
-│  内容给下轮） │    │ （也是走后门）          │    │ （不走后门）             │
+│ LLM context  │    │ handler 直接调         │ ❌ │ 编排层收到 ObservationStep│
+│（observation │    │ agent.message_builder  │    │ 或 FinalStep 后自己加    │
+│  内容给下轮） │    │ （4处：已代码核实）     │    │ 内容到 message_builder   │
 └──────────────┘    └──────────────────────┘    └─────────────────────────┘
 ```
 
-**当前 handler 有三个对外出口**：yield（大门）、set_xxx（后门1）、直接加 message_builder（后门2）。后门越多，越难控制。
+**当前 handler 有三个对外出口**：yield（大门）、set_xxx（6处后门）、直接加 message_builder（4处后门）。后门越多，越难控制。
 
-**正确设计**：handler 只通过 **yield** 一个出口（单一事件通道），三个消费者都由编排层统一从 Step 中取信息。这就是 **"handler 单一产出原则"**——handler 只产生 Step，不消费 Step。消费（前端、状态、context）全是编排层的事。
+**正确设计**：handler 只通过 **yield** 一个出口（单一事件通道），三个消费者都由编排层统一从 Step 中取信息。
 
 **解决方案**：抛弃 return dict，改用 **yield-only + 编排层统一消费**：
-1. _dispatch_handler 从 yield chain 的 event type 推断状态（conplete the return dict problem）
-2. 编排层收到 ObservationStep 后，自动提取 content 加到 message_builder（fix the observation branch）
+1. _dispatch_handler 从 yield chain 的 event type 推断状态（fix set_xxx 后门）
+2. _dispatch_handler 在 yield 透传 ObservationStep/FinalStep 时，提取 content 加 message_builder（fix add_message 后门）
+3. handler 只 yield Step，不 return dict、不 set_xxx、不 add_message
 
 ### 1.3 根因分析
 
@@ -98,7 +120,7 @@ Step 的消费者：        当前 handler 怎么服务：      应该怎么服�
 | **统一入口** | 所有状态变更必须经过 `status_table.set_status()` | 所有调用均通过 import 的函数 |
 | **合法转换校验** | 运行时检测非法转换，提前暴露错误 | 非法转换时抛 `ValueError`，500ms 内可定位 |
 | **层次隔离** | handler 不碰状态，编排层唯一负责状态流转 | handler 代码中无 `set_failed`/`set_completed`/`status=` 调用 |
-| **单通道事件传递** | handler 只 yield event，不 return dict | _dispatch_handler 从 event type 推断状态，无 dual-channel |
+| **单通道事件传递** | handler 只 yield event，不 return dict、不 set_xxx、不 add_message | _dispatch_handler 从 event type 推断状态 + 从 Step content 加 context，handler 无后门 |
 
 ### 1.5 设计原则
 
@@ -175,15 +197,15 @@ _TRANSITIONS = {
 
 ### 2.3 三层职责边界
 
-| 层级 | 文件 | 职责 | 能否改状态 |
-|------|------|------|-----------|
-| **运输层** | `run_sse_stream.py` | SSE 收发、DB 存取、用户取消、捕获外部异常 | ❌ 正常流程不能。仅在用户取消时调 `set_cancelled`、捕获到顶层未预期异常时调 `set_failed` |
-| **编排层** | `react_cycle.py` | 主循环调度、_dispatch_handler 从 event type 推断状态、异常兜底 | ✅ 唯一正常设状态的地方 |
-| **执行层** | `handlers/answer_handler.py` | 处理 LLM 返回的 final answer，生成 ThoughtStep/FinalStep | ❌ 绝对不能，只能 yield Step 对象 |
-| **执行层** | `handlers/action_handler.py` | 处理 LLM 返回的工具调用，生成 ThoughtStep/ActionStep/ObservationStep | ❌ 绝对不能，只能 yield Step 对象 |
-| **执行层** | `step_emitter.py` | 创建 ErrorStep/ObservationStep/FinalStep 等步骤对象 | ❌ `exit_with_error` 不设状态，只创建 ErrorStep |
-| **执行层** | `error_handler.py` | 处理 LLM 解析错误、网络异常等 | ❌ 不设状态，只创建/返回 ErrorStep |
-| **状态机** | `status_table.py` | 唯一改得动 `agent.status` 的地方，提供合法转换校验 | ✅ 唯一物理上改属性的地方 |
+| 层级 | 文件 | 职责 | 能否改状态 | 能否改数据(message_builder) |
+|------|------|------|-----------|---------------------------|
+| **运输层** | `run_sse_stream.py` | SSE 收发、DB 存取、用户取消、捕获外部异常 | ❌ 正常流程不能。仅在用户取消时调 `set_cancelled`、捕获到顶层未预期异常时调 `set_failed` | ❌ 正常流程不能。finally 中只读 agent.status 存 DB |
+| **编排层** | `react_cycle.py` | 主循环调度、_dispatch_handler 从 event type 推断状态+从 Step content 加 context、异常兜底 | ✅ 唯一正常设状态的地方 | ✅ 唯一正常加 context 的地方 |
+| **执行层** | `handlers/answer_handler.py` | 处理 LLM 返回的 final answer，生成 ThoughtStep/FinalStep | ❌ 绝对不能，只能 yield Step 对象 | ❌ 绝对不能，只能 yield Step 对象 |
+| **执行层** | `handlers/action_handler.py` | 处理 LLM 返回的工具调用，生成 ThoughtStep/ActionStep/ObservationStep | ❌ 绝对不能，只能 yield Step 对象 | ❌ 绝对不能，只能 yield Step 对象 |
+| **执行层** | `step_emitter.py` | 创建 ErrorStep/ObservationStep/FinalStep 等步骤对象 | ❌ `exit_with_error` 不设状态，只创建 ErrorStep | ❌ 不碰 message_builder |
+| **执行层** | `error_handler.py` | 处理 LLM 解析错误、网络异常等 | ❌ 不设状态，只创建/返回 ErrorStep | ❌ 不碰 message_builder |
+| **状态机** | `status_table.py` | 唯一改得动 `agent.status` 的地方，提供合法转换校验 | ✅ 唯一物理上改属性的地方 | ❌ 不碰 message_builder |
 
 **运输层（run_sse_stream.py）的例外说明**：
 - 用户取消（`KeyboardInterrupt` 或前端发取消信号）：这是运输层的直接责任，它持有连接上下文，不能等到编排层去处理。允许调 `set_cancelled`
@@ -194,7 +216,7 @@ _TRANSITIONS = {
 
 #### 2.4.1 协议定义
 
-handler 不再调任何 `set_xxx` 函数，也不再 `return dict`。handler 是 **async generator**，只 `yield Step` 对象。所有信息通过 **yield chain** 单一通道传递。
+handler 不再调任何 `set_xxx` 函数，不再调 `message_builder.add_xxx`，也不再 `return dict`。handler 是 **async generator**，只 `yield Step` 对象。所有信息通过 **yield chain** 单一通道传递。
 
 `_dispatch_handler` 在遍历 handler 的 yield 链时，跟踪每个 event 的 type。handler 结束后，根据 type 决定状态：
 
@@ -280,9 +302,10 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
 ```
 
 **关键点：**
-- handler 只 `yield`，不 `return`，不 `set_xxx`
+- handler 只 `yield`，不 `return`，不 `set_xxx`，不调 `message_builder.add_xxx`
 - `_dispatch_handler` 跟踪 `seen_types` 和 `last_event`
 - 状态推断在 handler **完全遍历结束后**执行，此时 handler 的所有事件已到达 SSE 层
+- ObservationStep 和 FinalStep 的 content 加到 message_builder，由调用 `_dispatch_handler` 的编排层（react_cycle）统一处理，不属于 handler 职责
 - 运输层（run_sse_stream）不受影响，它收到的 Step 事件和现在完全一样
 
 ### 2.5 异常兜底策略
@@ -409,41 +432,44 @@ def set_cancelled(agent) -> None:
 **当前行为**：
 - LLM 返回 final answer 时，在 yield 完所有事件后调 `agent.set_completed()`
 - LLM 返回空内容时，调 `agent.set_failed("LLM返回空内容")`
+- 正常路径和空内容路径都直接调 `agent.message_builder.add_assistant_message(content)`
 
-**改为**：只删掉 `set_xxx` 调用，保留全部 yield 逻辑不变。
+**改为**：只删掉 `set_xxx` 和 `message_builder.add_xxx` 调用，保留全部 yield 逻辑不变。
 
 ```diff
    # 路径1：空内容
--  agent.set_failed("LLM返回空内容")
-+  # 删掉，_dispatch_handler 看到 yield 链中有 FinalStep → 与正常路径无法区分？
-+  # 答：正常路径 yield ThoughtStep + FinalStep，空内容只 yield FinalStep
-+  #    但这对 _dispatch_handler 来说都是 "final" type，正常路径也有 FinalStep
-+  #    那空内容路径如何区分失败？—— 在 yield FinalStep 之前先 yield ErrorStep
-   agent.message_builder.add_assistant_message("")
-   yield agent._step_emitter.emit(FinalStep(...))
-   
+ -  agent.set_failed("LLM返回空内容")
+ +  # 删掉，_dispatch_handler 看到 yield 链中有 "error" → set_failed
+ -  agent.message_builder.add_assistant_message("")
+ +  # 删掉，编排层（react_cycle）收到 FinalStep/ErrorStep 后提取 content 加 context
+    yield agent._step_emitter.emit(FinalStep(...))
+    
    # 路径2：正常完成
--  agent.set_completed()
-+  # 删掉，_dispatch_handler 看到 yield 链中有 "final" → set_completed
+ -  agent.set_completed()
+ +  # 删掉，_dispatch_handler 看到 yield 链中有 "final" → set_completed
+ -  agent.message_builder.add_assistant_message(content)
+ +  # 删掉，编排层收到 FinalStep 后提取 content 加到 message_builder
 ```
 
 **关键设计：空内容路径改为先 yield ErrorStep 再 yield FinalStep**
 
 ```python
 # 空内容路径（改后）：
-agent.message_builder.add_assistant_message("")
+# — 不再调 agent.message_builder.add_assistant_message("")
 yield agent._step_emitter.emit(ErrorStep(         # ← 新增，表明这是失败
     step=step, error_type="empty_response",
     error_message="LLM返回空内容",
 ))
 yield agent._step_emitter.emit(FinalStep(...))     # ← 保留，前端需要 FinalStep
 # _dispatch_handler 看到 "error" in seen_types → set_failed
+# 编排层看到 FinalStep 后提取 content "" 同时加到 message_builder（保持 LLM 上下文一致性）
 ```
 
 **改动影响**：
 - handler 内部 yield 逻辑不变（仅空内容分支多 yield 一个 ErrorStep）
-- handler 末尾的 `set_xxx` 全部删除
+- handler 末尾的 `set_xxx` 和 `message_builder.add_xxx` 全部删除
 - `_dispatch_handler` 从 yield chain 的 event type 推断状态
+- 编排层收到 FinalStep/ErrorStep 后自行提取 content 加 message_builder
 - 前端多收到一个 ErrorStep（空内容失败时），前端兼容（现有 ErrorStep 处理逻辑）
 
 ### 3.4 修改：`action_handler.py`
@@ -498,6 +524,20 @@ yield agent._step_emitter.emit(FinalStep(...))     # ← 保留，前端需要 F
 - `handle_action` 用局部 `check_failed` 替代 `agent.status` 检查
 - 正常路径末尾只 yield FinalStep 不调 `set_completed`
 - handler 以 yield 结束，不 return dict
+
+**改动4：`build_observation` — 不再直接加 message_builder，交由编排层处理**
+
+当前代码中 `build_observation` 创建完 ObservationStep 后直接调了 `ctx.agent.message_builder.add_observation(...)`，这是 handler 层直接操纵 LLM context 的越界行为。
+
+```diff
+   # build_observation 内部（当前）：
+-  ctx.agent.message_builder.add_observation(obs_text, fc)
++  # 删掉。编排层（react_cycle）在 yield 透传时遇到 ObservationStep
++  # 会自动提取其 content 加到 message_builder
+   yield ctx.agent._step_emitter.emit(observation_step)
+```
+
+编排层已有对应的消费逻辑（react_cycle.py 的 yield 循环中，收到 ObservationStep 后提取 `step.get_content()` 调 `add_observation`），之前 handler 层额外多调一次是冗余。删除后**数据流不变**，只是消费方从 handler 移到了编排层。
 
 ### 3.5 修改：`error_handler.py`
 
@@ -1037,13 +1077,14 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 8.3 修改 `answer_handler.py` — 不 set_xxx，空内容路径加 ErrorStep
+### 8.3 修改 `answer_handler.py` — 不 set_xxx、不 add_message，空内容路径加 ErrorStep
 
-**改动点**：删掉 2 处 `agent.set_failed/set_completed`。空内容路径先 yield ErrorStep 再 yield FinalStep，让 _dispatch_handler 能通过 event type 区分失败与正常完成。
+**改动点**：删掉 2 处 `agent.set_failed/set_completed`。删掉 2 处 `agent.message_builder.add_assistant_message`。空内容路径先 yield ErrorStep 再 yield FinalStep，让 _dispatch_handler 能通过 event type 区分失败与正常完成。
 
 ```diff
    # 路径1：空内容
-   agent.message_builder.add_assistant_message("")
+-  agent.message_builder.add_assistant_message("")
++  # 删掉，编排层收到 FinalStep 后提取 content 统一加 message_builder
 -  agent.set_failed("LLM返回空内容")
 +  yield agent._step_emitter.emit(ErrorStep(step=step, error_type="empty_response",
 +      error_message="LLM返回空内容"))          # ← 新增：先 yield ErrorStep 表明失败
@@ -1052,9 +1093,11 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
    # 路径2：正常完成
 -  agent.set_completed()
 +  # 删掉 set_completed，_dispatch_handler 看到 "final" in seen_types → set_completed
+-  agent.message_builder.add_assistant_message(content)
++  # 删掉，编排层收到 FinalStep 后提取 content 统一加 message_builder
 ```
 
-**影响**：_dispatch_handler 遍历完成后 detected "error" in seen_types → set_failed。空内容路径的行为不变（失败）。
+**影响**：_dispatch_handler 遍历完成后 detected "error" in seen_types → set_failed。空内容路径的行为不变（失败）。正常路径的 LLM context 由编排层统一维护。
 
 ---
 
@@ -1090,6 +1133,15 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
    # 普通工具调用完成路径（继续循环）
 -  return
    # 不变——无 ErrorStep、无 FinalStep → continue
+```
+
+**变动点 4：`build_observation` — 删掉 message_builder 调用**
+
+```diff
+-  ctx.agent.message_builder.add_observation(obs_text, fc)
++  # 删掉。编排层（react_cycle）在 yield 透传时遇到 ObservationStep
++  # 会自动提取其 content 加到 message_builder，handler 层不碰 context
+   yield ctx.agent._step_emitter.emit(observation_step)
 ```
 
 ---
@@ -1218,6 +1270,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 | 新建文件 | — | `status_table.py` |
 | 删除方法 | `base_agent.set_failed/completed/cancelled` | — |
 | handler 改签名 | 不返回，直接设状态 | 返回 dict，不碰状态 |
+| handler 改数据 | 4 处 message_builder.add_xxx | 不碰 message_builder，编排层统一消费 Step content |
 | `step_emitter.exit_with_error` | 设 RETRYABLE_ERROR 或 FAILED | 只 emit |
 | `error_handler` | 设 FAILED | 只创建 ErrorStep |
 | `react_cycle` | 散落 6 处设状态 | 全部调 status_table 函数 |
@@ -1255,11 +1308,12 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 │    └─ initialize_run_state:                                                │
 │        └─ agent.status = THINKING                   [直接赋值]              │
 │                                                                           │
-│  执行层(handlers) — 既 yield 事件又设状态                                   │
+ │  执行层(handlers) — 既 yield 事件又设状态，还直接加 context                      │
 │    ├─ answer_handler:                                                      │
-│    │   ├─ 空内容 → agent.set_failed() + yield FinalStep  [设状态]          │
-│    │   └─ 正常 →   agent.set_completed() + yield FinalStep [设状态]        │
+│    │   ├─ 空内容 → agent.set_failed() + add_assistant_message("") + yield  [设状态+改数据]│
+│    │   └─ 正常   → agent.set_completed() + add_assistant_message(content)  [设状态+改数据]│
 │    ├─ action_handler:                                                      │
+│    │   ├─ build_observation → add_observation(obs, fc)                     [改数据]    │
 │    │   ├─ 安全检查blocked → agent.set_failed()        [设状态]              │
 │    │   ├─ 用户拒绝 → agent.set_failed()               [设状态]              │
 │    │   ├─ tool_name为空 → agent.set_failed()          [设状态]              │
@@ -1267,8 +1321,9 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 │    ├─ step_emitter.exit_with_error → agent.set_failed() [设状态]            │
 │    └─ error_handler — 3 处 agent.set_failed()         [设状态]              │
 │                                                                           │
-│  ⚠  问题: 状态变更散布在 4 层 8 个文件, 无统一管控                          │
-│  ⚠  无合法转换校验: 任何代码可在任何时候设任意状态                           │
+│  ⚠  问题: 状态变更散布在 4 层 8 个文件, 无统一管控                           │
+│  ⚠  无合法转换校验: 任何代码可在任何时候设任意状态                             │
+│  ⚠  handler 还直接操纵 LLM context（4 处 message_builder.add_xxx），绕过编排层 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1305,14 +1360,15 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 │    └─ initialize_run_state:                                                │
 │        └─ set_status(agent, THINKING)       [调 status_table]             │
 │                                                                           │
-│  执行层(handlers) ← 完全不碰状态，只 yield event                             │
+ │  执行层(handlers) ← 完全不碰状态、不碰 LLM context，只 yield event              │
 │    ├─ answer_handler:                                                      │
-│    │   ├─ 空内容 → yield ErrorStep + FinalStep（_dispatch_handler → fail）  │
-│    │   └─ 正常   → yield FinalStep（_dispatch_handler → complete）          │
+│    │   ├─ 空内容 → yield ErrorStep + FinalStep（编排层设状态+加 context）     │
+│    │   └─ 正常   → yield FinalStep（编排层 set_completed + 加 context）      │
 │    ├─ action_handler:                                                      │
-│    │   ├─ 安全检查blocked → yield ErrorStep → 局部 return（dispatch → fail）│
-│    │   ├─ 用户拒绝 → yield ErrorStep → 局部 return（dispatch → fail）       │
-│    │   ├─ tool_name为空 → yield ErrorStep（dispatch → fail）               │
+│    │   ├─ build_observation → yield ObservationStep（编排层加 context）       │
+│    │   ├─ 安全检查blocked → yield ErrorStep → 局部 return（dispatch → fail） │
+│    │   ├─ 用户拒绝 → yield ErrorStep → 局部 return（dispatch → fail）        │
+│    │   ├─ tool_name为空 → yield ErrorStep（dispatch → fail）                │
 │    │   └─ return_direct → yield FinalStep（dispatch → complete）            │
 │    ├─ step_emitter.exit_with_error → 只创建 ErrorStep, 不设状态            │
 │    └─ error_handler — 3 处都只创建 ErrorStep, 不设状态                     │
@@ -1347,6 +1403,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 | **执行层** | handler 返回方式 | return dict (双通道) | yield-only (单通道) | 简化和清晰，无需解析 return 值 |
 | **执行层** | step_emitter | exit_with_error 创建 ErrorStep + 设状态 | 只创建 ErrorStep | 工具层不越权 |
 | **执行层** | error_handler | 3 处 set_failed，与 ErrorStep 创建混在一起 | 只创建 ErrorStep | 异常处理与状态管理解耦 |
+| **执行层** | LLM context 数据 | handler 直接 message_builder.add_xxx（4 处越界） | handler 只 yield Step，编排层在 yield 透传时统一加 context | handler 零 context 副作用，可独立测试 |
 | **状态机** | 合法转换校验 | 无 | _TRANSITIONS 表 + 运行时校验 | 非法转换 → ValueError，500ms 内定位 |
 | **状态机** | 状态变更入口 | 8 个文件 14+ 处 | 1 个文件 4 个导出函数 | 加日志/加回调只需改一个地方 |
 
@@ -1356,19 +1413,18 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 当前:
   handler yield 事件 → SSE 流
   handler 设状态   → agent.status (直接/通过 setter)
+  handler 加数据   → message_builder (直接调 add_xxx)
 
-新设计 (return dict 方案 — 已废弃):
+新设计 (yield-only):
   handler yield 事件 → SSE 流
-  handler return dict → react_cycle 判断 dict → status_table 设状态
-
-新设计 (yield-only 方案 — 最终选择):
-  handler yield 事件 → SSE 流
-  _dispatch_handler 从 yield chain 的 event type 推断状态 → status_table 设状态
+                       → _dispatch_handler 从 event type 推断状态 → status_table 设状态
+                       → 编排层从 ObservationStep/FinalStep 提取 content → message_builder
+  handler 没有其他出口
 ```
 
-**当前路径**：事件流和状态流的控制者在同一个函数里，耦合在一起。handler 干了它不该干的事。
+**当前路径**：事件流、状态流、数据流三条通道混在 handler 里。handler 干了它不该干的事。
 
-**yield-only 路径**：handler 只有一个产出通道（yield event），_dispatch_handler 在中途透明收集 event type。handler 结束时，dispatch_handler 已拥有完整的信息来推断状态。**不需要 return dict，不需要 StopAsyncIteration 捕获，不需要约定 dict 格式。**
+**yield-only 路径**：handler 只有一个产出通道（yield event）。状态（agent.status）和数据（message_builder）都由编排层从 yield chain 中统一消费。handler 零副作用。
 
 ### 9.5 改动好处总结
 
@@ -1382,6 +1438,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 | **⑥ 可扩展性** | 新状态只需加一行到 `_TRANSITIONS` | 未来加 SUSPENDED/RESUMED 等只需改一个表 |
 | **⑦ handler 可独立测试** | handler 不依赖 agent.status 副作用 | handler 测试可以纯测事件，不 mock 状态 |
 | **⑧ yield-only 零双通道** | handler 只 yield，不 return dict | 代码简化，无 StopAsyncIteration 捕获，无 dict 契约 |
+| **⑨ 数据流统一** | handler 不直接加 message_builder，编排层统一消费 Step content | handler 零 context 副作用，编排层独占 LLM context 写入权 |
 
 
 ### 9.6 调用架构
@@ -1416,6 +1473,10 @@ run_sse_stream ─── react_cycle ─── handler
 | `agent.status = AgentStatus.THINKING` (react_cycle:295) | `set_status(agent, AgentStatus.THINKING)` |
 | `agent.status = AgentStatus.THINKING` (initialize_run_state:60) | `set_status(agent, AgentStatus.THINKING)` |
 | `self.status = AgentStatus.IDLE` (base_agent init) | 保留（初始化不算状态流转） |
+| `agent.message_builder.add_assistant_message("")` (answer_handler:26) | 删除，编排层收到 FinalStep 后提取 content 统一加 context |
+| `agent.message_builder.add_assistant_message(content)` (answer_handler:45) | 同上 |
+| `ctx.agent.message_builder.add_observation(obs_text, fc)` (action_handler:255) | 删除，编排层 yield 透传时遇到 ObservationStep 自动提取 content 加 context |
+| `ctx.agent.message_builder.add_observation(obs_text, {})` (action_handler:259) | 同上 |
 
 ### 9.8 最终代码边界
 
@@ -1424,8 +1485,8 @@ backend/app/services/agent/core_agent/
 ├── status_table.py     ← 新建：_TRANSITIONS + _set_status + set_failed/set_completed/set_cancelled
 ├── react_cycle.py      ← 改：删除自己所有 agent.status = X，全部调 status_table 函数；_dispatch_handler 改为 event type 推断
 ├── handlers/
-│   ├── answer_handler.py   ← 改：删除 set_xxx，空内容路径加 ErrorStep；yield-only，不 return dict
-│   └── action_handler.py   ← 改：删除 set_xxx，check_safety_and_confirm 用局部变量；yield-only
+│   ├── answer_handler.py   ← 改：删除 set_xxx + add_assistant_message，空内容路径加 ErrorStep；yield-only
+│   └── action_handler.py   ← 改：删除 set_xxx + build_observation 中的 add_observation，用局部变量；yield-only
 ├── step_emitter.py     ← 改：exit_with_error 不碰状态
 ├── error_handler.py    ← 改：不碰状态
 ├── initialize_run_state.py ← 改：调 set_status
@@ -1434,6 +1495,6 @@ backend/app/services/agent/core_agent/
 
 ---
 
-**文档版本**: v1.6  
+**文档版本**: v1.7  
 **更新时间**: 2026-06-29  
 **编写人**: 小欧
