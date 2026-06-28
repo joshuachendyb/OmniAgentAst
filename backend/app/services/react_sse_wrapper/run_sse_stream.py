@@ -269,7 +269,9 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
         step_summary = ",".join(f"{k}={v}" for k, v in sorted(counter.items()))
         if step_summary:
             parts.append(f"steps=[{step_summary}]")
-    logger.info(f"[TASK_END] {' | '.join(parts)}")
+    _msg = f"[TASK_END] {' | '.join(parts)}"
+    print(_msg)
+    logger.info(_msg)
 
 
 async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):

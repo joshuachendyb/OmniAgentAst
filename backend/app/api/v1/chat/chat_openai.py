@@ -121,7 +121,7 @@ async def chat_stream(request: ChatRequest):
             _user_msg_id = get_user_message_id(session_id)
         except Exception:
             pass
-        print(f"[TASK_START] provider={ai_service.provider}, model={ai_service.model}")
+        print(f"[TASK_START] task_id={task_id} session_id={session_id} user_message_id={_user_msg_id} | provider={ai_service.provider} model={ai_service.model} | user_input={user_input}")
         logger.info(
             f"[TASK_START] task_id={task_id} session_id={session_id} "
             f"user_message_id={_user_msg_id} | "

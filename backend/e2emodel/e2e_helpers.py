@@ -1623,25 +1623,14 @@ def write_test_record(
 
     written_path: Optional[Path] = None
     content = "\n".join(lines)
-    mode = "a" if record_file.exists() else "w"
     import tempfile as _tf
     for _attempt in range(3):
         try:
-            if mode == "a":
-                existing = record_file.read_text(encoding="utf-8-sig") if record_file.exists() else ""
-                full_content = existing + "\n\n---\n\n" + content
-                _fd, _tmp = _tf.mkstemp(suffix=".md", dir=str(RECORD_DIR))
-                with open(_fd, "w", encoding="utf-8-sig") as f:
-                    f.write(full_content)
-                record_file.unlink(missing_ok=True)
-                import os as _os
-                _os.replace(_tmp, str(record_file))
-            else:
-                _fd, _tmp = _tf.mkstemp(suffix=".md", dir=str(RECORD_DIR))
-                with open(_fd, "w", encoding="utf-8-sig") as f:
-                    f.write(content)
-                import os as _os
-                _os.replace(_tmp, str(record_file))
+            _fd, _tmp = _tf.mkstemp(suffix=".md", dir=str(RECORD_DIR))
+            with open(_fd, "w", encoding="utf-8-sig") as f:
+                f.write(content)
+            import os as _os
+            _os.replace(_tmp, str(record_file))
             written_path = record_file
             break
         except PermissionError:
