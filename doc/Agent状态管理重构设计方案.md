@@ -1,8 +1,8 @@
 # Agent 状态管理重构设计方案
 
 **创建时间**: 2026-06-28 23:40:40  
-**更新时间**: 2026-06-28 23:47:48  
-**版本**: v1.3  
+**更新时间**: 2026-06-29 23:47:48  
+**版本**: v1.4  
 **作者**: 小欧  
 **设计目标**: handler 零接触状态，react_cycle 唯一负责状态流转
 
@@ -16,6 +16,7 @@
 | v1.1 | 2026-06-28 23:55:00 | 删除方案A，方案B 精炼为唯一方案，章节重新编号，补充风险分析和实施步骤 | 小欧 |
 | v1.2 | 2026-06-28 23:47:48 | 追加详细设计 v2：逐文件代码规格，9 个文件的完整改动定义 | 小欧 |
 | v1.3 | 2026-06-28 23:47:48 | 修正 action_handler/step_emitter/run_sse_stream 3 处 diff 与实际代码不符；新增第9章：流程对比图 + 改动好处说明 | 小欧 |
+| v1.4 | 2026-06-29 23:47:48 | 追加用户补充内容到第9章：9.6调用架构、9.7具体变化、9.8最终代码边界；表格/代码块规范化 | 小欧 |
 
 ---
 
@@ -1127,8 +1128,57 @@ if isinstance(result, dict):
 | **⑥ 可扩展性** | 新状态只需加一行到 `_TRANSITIONS` | 未来加 SUSPENDED/RESUMED 等只需改一个表 |
 | **⑦ handler 可独立测试** | handler 不依赖 agent.status 副作用 | handler 测试可以纯测事件，不 mock 状态 |
 
+
+### 9.6 调用架构
+
+```
+run_sse_stream ─── react_cycle ─── handler
+    │                                          │
+    │  外部异常 → set_failed/set_cancelled     │ 返回 HandlerResult
+    │  finally 读 agent.status 存 DB           │
+```
+
+| 层 | 职责 | 能否改状态 |
+|-----|------|---------|
+| `run_sse_stream` | 运输、catch 外部异常、存 DB | ✅ 异常时 call set_failed/set_cancelled，finally 只读 |
+| `react_cycle` | 编排：根据 HandlerResult 调 set_completed/set_failed | ✅ 唯一 正常流转 设状态的地方 |
+| handler | 执行业务逻辑，返回 HandlerResult | ❌ 绝对不能 |
+| step_emitter | 发射 step，不碰状态 | ❌ 绝对不能 |
+| error_handler | 创建 ErrorStep，不碰状态 | ❌ 绝对不能 |
+
+### 9.7 具体变化（零处直接赋值）
+
+| 当前 | 改后 |
+|------|------|
+| `agent.status = AgentStatus.COMPLETED` (answer_handler:47) | 删除，handler 返回 `{"action":"complete"}`，react_cycle 调 `set_completed(agent)` |
+| `agent.status = AgentStatus.COMPLETED` (action_handler:415) | 同上 |
+| `agent.status = AgentStatus.CANCELLED` (react_cycle:188) | `set_cancelled(agent)` |
+| `agent.status = AgentStatus.CANCELLED` (run_sse_stream:212) | `set_cancelled(agent)` |
+| `agent.status = AgentStatus.FAILED` (run_sse_stream:228) | `set_failed(agent, str(e)[:200])` |
+| `agent.status = AgentStatus.FAILED` (base_agent.set_failed) | 移到 `status_table.py`，base_agent 删除 set_failed/set_completed/set_cancelled |
+| `agent.status = AgentStatus.RETRYABLE_ERROR` (step_emitter:32) | 删除，exit_with_error 只 emit 不碰状态 |
+| `agent.status = AgentStatus.EXECUTING` (react_cycle:281) | `set_status(agent, AgentStatus.EXECUTING)` |
+| `agent.status = AgentStatus.THINKING` (react_cycle:295) | `set_status(agent, AgentStatus.THINKING)` |
+| `agent.status = AgentStatus.THINKING` (initialize_run_state:60) | `set_status(agent, AgentStatus.THINKING)` |
+| `self.status = AgentStatus.IDLE` (base_agent init) | 保留（初始化不算状态流转） |
+
+### 9.8 最终代码边界
+
+```
+backend/app/services/agent/core_agent/
+├── status_table.py     ← 新建：_TRANSITIONS + _set_status + set_failed/set_completed/set_cancelled
+├── react_cycle.py      ← 改：删除自己所有 agent.status = X，全部调 status_table 函数
+├── handlers/
+│   ├── answer_handler.py   ← 改：返回 HandlerResult，不碰状态
+│   └── action_handler.py   ← 改：返回 HandlerResult，不碰状态
+├── step_emitter.py     ← 改：exit_with_error 不碰状态
+├── error_handler.py    ← 改：不碰状态
+├── initialize_run_state.py ← 改：调 set_status
+├── base_agent.py       ← 改：删除 set_failed/set_completed/set_cancelled
+```
+
 ---
 
-**文档版本**: v1.3  
-**更新时间**: 2026-06-28 23:47:48  
+**文档版本**: v1.4  
+**更新时间**: 2026-06-29 23:47:48  
 **编写人**: 小欧
