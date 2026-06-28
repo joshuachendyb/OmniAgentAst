@@ -1,6 +1,39 @@
-v0.17.7
+v0.17.8
 
-更新时间: 2026-06-27 23:24:47
+更新时间: 2026-06-28 12:35:00
+
+## v0.17.7→v0.17.8 变更汇总 - 小欧-2026-06-28
+
+### feat: 新功能(2项)
+- b597cffec: 补充参数别名映射 - http_request/fetch_webpage/create_task - 小欧
+- 94fe19e56: 参数名别名映射 - 解决LLM返回参数名不匹配问题 - 小欧
+
+### fix: 代码修复(11项)
+- 5017698b4: network_diagnose.py _ping改用to_thread修复Python 3.13 Windows NotImplementedError - 小欧
+- 6f16f7f06: 注册表路径穿越检测+窗口回调返回类型修复 - 小沈
+- 227c7425a: Windows设置ProactorEventLoop支持asyncio subprocess - 小沈
+- 7d270acf2: E2E测试基础设施修复 - 小欧
+- d48cc0e0d: execute_sql和query_sql Schema改进 - 添加docstring+明确单条语句限制 - 小欧
+- e33be3b1e: execute_sql和query_sql Schema描述改进 - 小欧
+- c49a4f1e0: file_schema.py语法错误修复 - 小欧
+- 1a8df8b0b: read_text_file参数容错 - 小欧
+- 41d0a71bb: API返回缺失created_at/updated_at字段 - 小欧
+- 74bbec77d: 修复两个严重bug - WindowsPath.strip和NoneType await - 小欧
+- 2bffa46a6: 多项修复 - JSON解析/编码检测/CRLF保留/权限检查 - 小欧
+
+### perf: 性能优化(1项)
+- 5ce794544: 优化重试日志+增大工具超时 - 小沈
+
+### refactor: 代码重构(1项)
+- dcd0c4246: read_text_file新增tail参数替代offset负数 - 小欧
+
+### 合计
+- feat: 2项
+- fix: 11项
+- perf: 1项
+- refactor: 1项
+
+---
 
 ## v0.17.6→v0.17.7 变更汇总 - 小欧-2026-06-27
 
