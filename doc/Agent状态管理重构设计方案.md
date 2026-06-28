@@ -1,10 +1,10 @@
 # Agent 状态管理重构设计方案
 
 **创建时间**: 2026-06-28 23:40:40  
-**更新时间**: 2026-06-29 23:47:48  
-**版本**: v1.4  
+**更新时间**: 2026-06-29  
+**版本**: v1.6  
 **作者**: 小欧  
-**设计目标**: handler 零接触状态，react_cycle 唯一负责状态流转
+**设计目标**: handler 零接触状态，react_cycle 唯一负责状态流转，yield-only 单通道
 
 ---
 
@@ -17,6 +17,8 @@
 | v1.2 | 2026-06-28 23:47:48 | 追加详细设计 v2：逐文件代码规格，9 个文件的完整改动定义 | 小欧 |
 | v1.3 | 2026-06-28 23:47:48 | 修正 action_handler/step_emitter/run_sse_stream 3 处 diff 与实际代码不符；新增第9章：流程对比图 + 改动好处说明 | 小欧 |
 | v1.4 | 2026-06-29 23:47:48 | 追加用户补充内容到第9章：9.6调用架构、9.7具体变化、9.8最终代码边界；表格/代码块规范化 | 小欧 |
+| v1.5 | 2026-06-29 | 设计修正：抛弃 return dict 方案，改为 yield-only。handler 只 yield event，_dispatch_handler 从 event type 推断状态。全文所有 return dict 描述替换为 yield-only | 小欧 |
+| v1.6 | 2026-06-29 | 补充第1章：新增 1.2 本轮设计审查中发现的新问题（return dict 设计缺陷分析），调整章节序号 | 小欧 |
 
 ---
 
@@ -41,7 +43,22 @@ Agent 状态赋值分散在 10 处、6 个文件中，无统一入口、无合�
 
 此外，handler 层直接调 `agent.set_failed()` 和 `agent.set_completed()`，绕过了编排层的控制。
 
-### 1.2 根因分析
+### 1.2 本轮设计审查中发现的新问题
+
+本设计方案 v1.0–v1.4 采用的是 "handler return dict" 方案（handler 作为 async generator 在 yield 完事件后用 `return {"action": "complete/fail/continue"}` 传递状态信号），但在设计审查中发现该方案本身存在设计缺陷：
+
+| 问题 | 描述 | 严重程度 |
+|------|------|---------|
+| **双通道设计** | handler 有两条产出通道——yield event（SSE 事件流）和 return dict（状态信号）。同一信息分两条线传递，违反 SRP | 🔴 设计错误 |
+| **StopAsyncIteration 捕获** | 调用方需要 try/except 从 `.value` 提取 return dict。每个中间层（check_safety_and_confirm → handle_action → _dispatch_handler）都要透传这个异常 | 🔴 复杂度高 |
+| **return 与 yield 的隐式顺序依赖** | handler 必须在 yield 完最后一个 event 后才 return dict。如果 yield 完忘记 return，无声无息丢状态信号 | 🟡 极易出错 |
+| **dict 格式无契约** | `{"action":"complete","response":...}` 的 key 全靠约定。没有人强制写"action"而不是"status"，也没有类型校验 | 🟡 脆弱 |
+
+**根因**：`async generator return` 的 `StopAsyncIteration.value` 机制虽然 Python 原生支持，但在多层 yield chain 中透传需要每层都 try/except，代码复杂且容易遗漏。更本质地说，handler 只需要一条通道（yield event）就足够传递所有信息——不需要第二条。
+
+**解决方案**：抛弃 return dict，改用 **yield-only + event type 推断**。_dispatch_handler 在遍历 handler 的 yield 链时透明记录 event type，handler 结束后从 type 推断状态。handler 只需要 yield，不需要 return 任何东西。
+
+### 1.3 根因分析
 
 **根因1：无状态机**。没有合法转换表，任何代码可以在任何时候设任意状态。代码层没有契约约束，程序员只能靠记忆和文档来避免误用。
 
@@ -51,7 +68,7 @@ Agent 状态赋值分散在 10 处、6 个文件中，无统一入口、无合�
 
 **根因4：无非法转换检测**。例如从 `IDLE` 直接到 `COMPLETED` 不会报错，只在运行时产生奇怪的行为。状态转换的错误在 agent 行为异常时才被发现，定位成本高。
 
-### 1.3 设计目标
+### 1.4 设计目标
 
 | 目标 | 说明 | 验收标准 |
 |------|------|---------|
@@ -59,9 +76,9 @@ Agent 状态赋值分散在 10 处、6 个文件中，无统一入口、无合�
 | **统一入口** | 所有状态变更必须经过 `status_table.set_status()` | 所有调用均通过 import 的函数 |
 | **合法转换校验** | 运行时检测非法转换，提前暴露错误 | 非法转换时抛 `ValueError`，500ms 内可定位 |
 | **层次隔离** | handler 不碰状态，编排层唯一负责状态流转 | handler 代码中无 `set_failed`/`set_completed`/`status=` 调用 |
-| **测试不改** | handler 测试协议保持不变，仅调整 Mock 方式 | 测试通过率 100%，不改 handler 测试的业务逻辑 |
+| **单通道事件传递** | handler 只 yield event，不 return dict | _dispatch_handler 从 event type 推断状态，无 dual-channel |
 
-### 1.4 设计原则
+### 1.5 设计原则
 
 本方案遵守以下原则：
 
@@ -90,11 +107,11 @@ Agent 状态赋值分散在 10 处、6 个文件中，无统一入口、无合�
 │    react_cycle.py                                            │
 │    ┌─ run_react_cycle() — 主循环，唯一设状态的地方             │
 │    ├─ _process_single_step() — 调度 handler，据结果设状态    │
-│    └─ _dispatch_handler() — 分发 handler，收集返回结果       │
+│    └─ _dispatch_handler() — 分发 handler，从 event type 推断状态│
 ├─────────────────────────────────────────────────────────────┤
 │                       执行层                                  │
 │    handlers/answer_handler.py                                │
-│    handlers/action_handler.py    ← 只返回结果 dict，不碰状态  │
+│    handlers/action_handler.py    ← 只 yield event，不碰状态   │
 │    error_handler.py                                          │
 │    step_emitter.py                                           │
 ├─────────────────────────────────────────────────────────────┤
@@ -139,9 +156,9 @@ _TRANSITIONS = {
 | 层级 | 文件 | 职责 | 能否改状态 |
 |------|------|------|-----------|
 | **运输层** | `run_sse_stream.py` | SSE 收发、DB 存取、用户取消、捕获外部异常 | ❌ 正常流程不能。仅在用户取消时调 `set_cancelled`、捕获到顶层未预期异常时调 `set_failed` |
-| **编排层** | `react_cycle.py` | 主循环调度、根据 handler 返回结果设状态、异常兜底 | ✅ 唯一正常设状态的地方 |
-| **执行层** | `handlers/answer_handler.py` | 处理 LLM 返回的 final answer，生成 ThoughtStep/FinalStep | ❌ 绝对不能，只能返回结果 dict |
-| **执行层** | `handlers/action_handler.py` | 处理 LLM 返回的工具调用，生成 ThoughtStep/ActionStep/ObservationStep | ❌ 绝对不能，只能返回结果 dict |
+| **编排层** | `react_cycle.py` | 主循环调度、_dispatch_handler 从 event type 推断状态、异常兜底 | ✅ 唯一正常设状态的地方 |
+| **执行层** | `handlers/answer_handler.py` | 处理 LLM 返回的 final answer，生成 ThoughtStep/FinalStep | ❌ 绝对不能，只能 yield Step 对象 |
+| **执行层** | `handlers/action_handler.py` | 处理 LLM 返回的工具调用，生成 ThoughtStep/ActionStep/ObservationStep | ❌ 绝对不能，只能 yield Step 对象 |
 | **执行层** | `step_emitter.py` | 创建 ErrorStep/ObservationStep/FinalStep 等步骤对象 | ❌ `exit_with_error` 不设状态，只创建 ErrorStep |
 | **执行层** | `error_handler.py` | 处理 LLM 解析错误、网络异常等 | ❌ 不设状态，只创建/返回 ErrorStep |
 | **状态机** | `status_table.py` | 唯一改得动 `agent.status` 的地方，提供合法转换校验 | ✅ 唯一物理上改属性的地方 |
@@ -151,44 +168,100 @@ _TRANSITIONS = {
 - 顶层未预期异常：例如数据库连接断开、LLM 客户端 HTTP 错误等。这些发生在编排层之外，运输层捕获后调 `set_failed`
 - 正常流程（无取消、无异常）下，运输层不做任何状态操作
 
-### 2.4 Handler 返回协议
+### 2.4 Handler 协议 — yield-only
 
 #### 2.4.1 协议定义
 
-handler 不再调任何 `set_xxx` 函数，改为在 yield 完所有事件后，通过 async generator 的 `return` 机制返回一个结果 dict：
+handler 不再调任何 `set_xxx` 函数，也不再 `return dict`。handler 是 **async generator**，只 `yield Step` 对象。所有信息通过 **yield chain** 单一通道传递。
 
-```python
-HandlerResult = {
-    "action":   "continue" | "complete" | "fail",
-    "response": str,          # 最终回复内容（complete 时）
-    "error_msg": str,         # 错误消息（fail 时）
-    "error_type": str,        # 错误类型（fail 时）
-    "step": ErrorStep | None, # 已创建的 ErrorStep（fail 时）
-}
-```
+`_dispatch_handler` 在遍历 handler 的 yield 链时，跟踪每个 event 的 type。handler 结束后，根据 type 决定状态：
 
-#### 2.4.2 返回规则矩阵
+| 关键判断 | 含义 | 状态动作 |
+|----------|------|---------|
+| yield 链中出现 `type == "error"` | handler 发生了错误 | `set_failed(agent, ...)` |
+| 无 error，但有 `type == "final"` | handler 正常完成 | `set_completed(agent)` |
+| 无 error、无 final（如 observation） | handler 需要继续循环 | 不设状态 |
 
-| action | 含义 | 触发场景 | 携带字段 | 编排层的响应 |
-|--------|------|---------|---------|-------------|
-| `"continue"` | 需要继续循环 | 工具调用执行完后，需要让 LLM 继续思考 | — | 不设状态，继续下一轮 while 循环 |
-| `"complete"` | 任务正常完成 | LLM 返回 final answer；工具 return_direct 完成 | `response` | `set_completed(agent)` → break |
-| `"fail"` | 任务失败 | LLM 返回空内容；工具执行失败；解析错误 | `error_msg`, `error_type`, `step` | `set_failed(agent, error_msg)` → break |
-| `"cancelled"` | 用户取消 | 编排层检测到取消标志（当前 react_cycle 已有） | — | `set_cancelled(agent)` → break |
-
-**注意**：`"cancelled"` 目前已经在 react_cycle 中处理（line 188），不是 handler 返回的。handler 不需要返回 `"cancelled"`。
-
-#### 2.4.3 为什么用 async generator return 而不是 yield 一个特殊 step
-
-Python 3.6+ 的 async generator 支持 `return value` 语法，调用方通过 `StopAsyncIteration` 异常的 `.value` 属性获取。
-
-这里不使用在末尾 yield 一个 MetaStep 的原因：
+**为什么抛弃 return dict：**
 
 | 方案 | 问题 | 结论 |
 |------|------|------|
-| yield HandlerResultStep | SSE 流中混入非业务事件，前端需要特殊处理 | ❌ 不适合 |
-| yield MetaStep(type="handler_result") | 同上，且需要新增 MetaStep 类型 | ❌ 过度设计 |
-| async generator return | Python 原生机制，不产生额外事件流，调用方天然知晓 handler 已结束 | ✅ 选择本方案 |
+| async generator return dict | 每个中间层都要捕获 `StopAsyncIteration` 提取 result，代码复杂度高 | ❌ 复杂、易错 |
+| yield 事件 + return dict 双通道 | 同一信息两条通道传递，违反 SRP | ❌ 重复设计 |
+| **只 yield，用 event type 推断** | 单通道自然传递，各层只需 `async for event: yield event` | **✅ 选此方案** |
+
+#### 2.4.2 handler 的 yield 模式
+
+```
+完成路径:
+  yield ThoughtStep / ActionStep ... → yield FinalStep
+                                        有 "final" 无 "error" → set_completed
+
+失败路径:
+  yield ErrorStep [→ yield FinalStep]   任何位置有 "error" → set_failed(优先于final)
+
+继续路径:
+  yield ThoughtStep → yield ActionStep → yield ObservationStep → (返回)
+  无 "error"、无 "final" → continue（不设状态）
+```
+
+**为什么检查 `any("error")` 而不是仅检查最后一个 event：**
+
+handler 可能在 yield ErrorStep（失败信号）之后再 yield FinalStep（给前端的终态事件）。例如 answer_handler 空内容分支目前就是先 yield FinalStep 再 `set_failed`。如果只看最后一个 event 的 type（"final"），会错误地设为 completed。**只要 yield 链中出现过一次 ErrorStep，就应该 set_failed。**
+
+#### 2.4.3 实现方式
+
+```python
+async def _dispatch_handler(agent, llm_response, chunk_buffer):
+    parsed_type = llm_response.get("type", "answer")
+    seen_types = set()              # ← 记录所有 event type
+    last_event = None               # ← 记录最后一个 event（提取 error_msg 用）
+
+    if parsed_type == "action":
+        async for event in handle_action(agent, llm_response, chunk_buffer):
+            seen_types.add(event.type)
+            last_event = event
+            yield event
+
+    elif parsed_type == "answer":
+        async for event in handle_answer(agent, llm_response, chunk_buffer):
+            seen_types.add(event.type)
+            last_event = event
+            yield event
+
+    elif parsed_type == "error":
+        content = llm_response.get("content", "")
+        agent.message_builder.add_assistant_message(content or "")
+        error_step = ErrorStep(step=agent.llm_call_count,
+            error_type="llm_error", error_message=content or "LLM流式错误")
+        seen_types.add(error_step.type)
+        last_event = error_step
+        yield agent._step_emitter.emit(error_step)
+
+    else:
+        content = llm_response.get("content", "") or llm_response.get("thought", "")
+        if content:
+            agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
+        final_step = FinalStep(step=agent.llm_call_count,
+            response=f"LLM返回未知响应类型: {parsed_type}")
+        seen_types.add(final_step.type)
+        last_event = final_step
+        yield agent._step_emitter.emit(final_step)
+
+    # === handler 结束，根据 yield chain 设状态 ===
+    if "error" in seen_types:
+        error_msg = last_event.get_content() if last_event else ""
+        set_failed(agent, error_msg)
+    elif "final" in seen_types:
+        set_completed(agent)
+    # 否则不设状态，react_cycle 继续循环
+```
+
+**关键点：**
+- handler 只 `yield`，不 `return`，不 `set_xxx`
+- `_dispatch_handler` 跟踪 `seen_types` 和 `last_event`
+- 状态推断在 handler **完全遍历结束后**执行，此时 handler 的所有事件已到达 SSE 层
+- 运输层（run_sse_stream）不受影响，它收到的 Step 事件和现在完全一样
 
 ### 2.5 异常兜底策略
 
@@ -315,68 +388,103 @@ def set_cancelled(agent) -> None:
 - LLM 返回 final answer 时，在 yield 完所有事件后调 `agent.set_completed()`
 - LLM 返回空内容时，调 `agent.set_failed("LLM返回空内容")`
 
-**改为**：
+**改为**：只删掉 `set_xxx` 调用，保留全部 yield 逻辑不变。
 
 ```diff
-  # 当前代码（两种路径）：
-  
-  # 路径1：空内容
-- agent.set_failed("LLM返回空内容")
-+ return {"action": "fail", "error_msg": "LLM返回空内容", "error_type": "empty_response"}
-  
-  # 路径2：正常完成
-- agent.set_completed()
-+ return {"action": "complete", "response": content}
+   # 路径1：空内容
+-  agent.set_failed("LLM返回空内容")
++  # 删掉，_dispatch_handler 看到 yield 链中有 FinalStep → 与正常路径无法区分？
++  # 答：正常路径 yield ThoughtStep + FinalStep，空内容只 yield FinalStep
++  #    但这对 _dispatch_handler 来说都是 "final" type，正常路径也有 FinalStep
++  #    那空内容路径如何区分失败？—— 在 yield FinalStep 之前先 yield ErrorStep
+   agent.message_builder.add_assistant_message("")
+   yield agent._step_emitter.emit(FinalStep(...))
+   
+   # 路径2：正常完成
+-  agent.set_completed()
++  # 删掉，_dispatch_handler 看到 yield 链中有 "final" → set_completed
+```
+
+**关键设计：空内容路径改为先 yield ErrorStep 再 yield FinalStep**
+
+```python
+# 空内容路径（改后）：
+agent.message_builder.add_assistant_message("")
+yield agent._step_emitter.emit(ErrorStep(         # ← 新增，表明这是失败
+    step=step, error_type="empty_response",
+    error_message="LLM返回空内容",
+))
+yield agent._step_emitter.emit(FinalStep(...))     # ← 保留，前端需要 FinalStep
+# _dispatch_handler 看到 "error" in seen_types → set_failed
 ```
 
 **改动影响**：
-- handler 签名从 `async generator → None` 变为 `async generator → dict`
-- handler 内部的 yield 逻辑完全不变
-- 仅末尾的 `set_xxx` 改为 `return {dict}`
-- 测试需要捕获 handler 的返回值并验证
+- handler 内部 yield 逻辑不变（仅空内容分支多 yield 一个 ErrorStep）
+- handler 末尾的 `set_xxx` 全部删除
+- `_dispatch_handler` 从 yield chain 的 event type 推断状态
+- 前端多收到一个 ErrorStep（空内容失败时），前端兼容（现有 ErrorStep 处理逻辑）
 
 ### 3.4 修改：`action_handler.py`
 
 **路径**: `backend/app/services/agent/core_agent/handlers/action_handler.py`
 
 **当前行为**：
-- 工具 return_direct 完成时，在 yield 完所有事件后调 `agent.set_completed()`
+- `check_safety_and_confirm` 中调 `agent.set_failed()` 后被阻塞/拒绝的工具调用
+- `handle_action` 中根据 `agent.status == FAILED` 判断是否继续
+- 正常路径末尾调 `agent.set_completed(agent)`（return_direct 完成）或 `return`（不设状态，继续循环）
 
 **改为**：
 
+**改动1：`check_safety_and_confirm` — 只 yield ErrorStep 通知上层，不 set_failed**
+
 ```diff
-  # 当前代码：
-- agent.set_completed()
-+ return {"action": "complete", "response": _status.get("message", "")}
+-  agent.set_failed("工具执行被拒绝", error_type="tool_rejected")
+   yield step_emitter.emit(ErrorStep(...))
++  # 不 set_failed 了。ErrorStep 会通过 yield chain 传到 _dispatch_handler
++  # handle_action 通过 event.type == "error" 自行判断
 ```
+
+**改动2：`handle_action` — 用局部变量跟踪检查结果**
+
+```diff
++  check_failed = False                   # ← 新增局部变量
+   async for event in check_safety_and_confirm(...):
++      if event.type == "error":
++          check_failed = True             # ← 发现 error signal
+       yield event
+   if getattr(agent, 'status', None) == AgentStatus.FAILED:  # ← 旧代码
++  if check_failed:                       # ← 新代码，替代 agent.status 检查
+       return
+```
+
+**改动3：`handle_action` — 正常路径末尾删 set_completed**
+
+```diff
+   # return_direct 路径
+-  agent.set_completed(return_content)
++  # 删掉，_dispatch_handler 看到 yield 的 event 中有 "final" → set_completed
+   yield agent._step_emitter.emit(FinalStep(...))
+   return                                   # ← return 但无 dict
+
+   # 普通工具调用完成路径
+-  # 当前：不设状态，return
+-  # 改后：不变——无 ErrorStep 无 FinalStep → continue
+```
+
+**改动影响**：
+- `check_safety_and_confirm` 只 `yield` 不 `set_failed`
+- `handle_action` 用局部 `check_failed` 替代 `agent.status` 检查
+- 正常路径末尾只 yield FinalStep 不调 `set_completed`
+- handler 以 yield 结束，不 return dict
 
 ### 3.5 修改：`error_handler.py`
 
-**路径**: `backend/app/services/agent/core_agent/error_handler.py`
+**路径**: `backend/app/services/agent/core_agent/handlers/error_handler.py`
 
 **当前行为**：
-- 所有 `_handle_*` 函数在创建 ErrorStep 后调 `agent.set_failed(str(error))`
-- 包括：`_handle_fc_format_error`、`_handle_network_error`、`_handle_empty_response`、`_handle_max_retries` 等
+- `handle_error` 已在 yield 完 ErrorStep 后仅 `return`（不设状态）
 
-**改为**：
-- 所有 `_handle_*` 函数不再调 `set_failed`，只返回 ErrorStep 列表
-- 调用方 `react_cycle.py` 负责在收到 ErrorStep 后调 `set_failed`
-
-**具体改动**：
-
-```diff
-  def _handle_fc_format_error(agent, error: FCFormatError):
-      step = ErrorStep(error=str(error), ...)
--     agent.set_failed(str(error))
-      return [step]
-  
-  def _handle_network_error(agent, error: NetworkError):
-      step = ErrorStep(error=str(error), ...)
--     agent.set_failed(str(error))
-      return [step]
-  
-  # ... 其余 _handle_* 函数同理
-```
+**不改 —— 当前代码已符合 yield-only 协议**。_dispatch_handler 看到 `type == "error"` 的 event 后就地 set_failed。
 
 ```diff
   # handle_react_error 入口函数（最外层的统一入口）：
@@ -420,15 +528,67 @@ def exit_with_error(self, error_message, error_type="general", recoverable=False
 
 **路径**: `backend/app/services/agent/core_agent/react_cycle.py`
 
-这是改动最核心的文件。方案B 的所有变化在此汇总。
+**当前行为**：
+- `_dispatch_handler` 只透传 handler 的 yield 事件，不主动管状态
+- `_process_single_step` 从 handler 的 `Send()` 返回值取得 handler 处理结果 dict，据此设状态
 
-#### 3.7.1 import 变更
+**改为**：
+- `_dispatch_handler` 跟踪 seen_types + last_event，handler 结束后根据 yield chain 的 event type 设状态
+- `_process_single_step` 不再读 Send() 返回值，直接依靠 dispatch_handler 已完成的状态设置
 
 ```diff
-+ from app.services.agent.core_agent.status_table import (
-+     set_status, set_failed, set_completed, set_cancelled,
-+ )
+   async def _dispatch_handler(self, agent, llm_response, chunk_buffer):
+       """分派 handler 并透传事件"""
+-      # 当前：只透传，不管状态
+-      async for event in self._call_handler(agent, llm_response, chunk_buffer):
+-          yield event
++      seen_types = set()
++      last_event = None
++      
++      if parsed_type == "action":
++          handler = handle_action(agent, llm_response, chunk_buffer)
++      elif ...:
++          handler = ...
++      
++      async for event in handler:
++          seen_types.add(event.type)      # ← 跟踪 type
++          last_event = event
++          yield event
++      
++      # handler 耗尽，根据 yield chain 推断状态
++      if "error" in seen_types:
++          error_msg = last_event.get_content() if last_event else ""
++          set_failed(agent, error_msg)
++      elif "final" in seen_types:
++          set_completed(agent)
++      # 否则 continue（不设状态）
+
+   async def _process_single_step(self, agent, event_generator):
+       """轮询 LLM 响应 → dispatch → 设状态"""
+-      # 当前方式：从 Send() 返回值读 dict
+-      result_dict = await agent.send(None)
+-      if result_dict:
+-          action = result_dict.get("action", "continue")
+-          if action == "complete":
+-              agent.set_completed(...)
+-          elif action == "fail":
+-              agent.set_failed(...)
++      # 改后：dispatch_handler 已在 yield 穿透过程中设了状态
++      # _process_single_step 只需检查 agent.status
++      async for event in event_generator:
++          if isinstance(event, FinalStep):
++              agent.set_completed(event.response)
++              break
++          elif isinstance(event, ErrorStep):
++              agent.set_failed(event.error_message, error_type=event.error_type)
++              break
 ```
+
+**关键思路**：
+- 状态判断权从 **handler 侧**（return dict）移到了 **_dispatch_handler 侧**（event type 推断）
+- _dispatch_handler 作为 handler 和循环之间的唯一中介，自然知道 handler 有哪些 event 被 yield 了
+- _process_single_step 不再需要解读 handler 的"return value"，只需确认 dispatch_handler 已完成的状态设置
+- _process_single_step 的 Simplify 版本（上面第二段）直接从 event_generator 的 event 判状态，和 dispatch_handler 形成**双重保障**
 
 #### 3.7.2 `_dispatch_handler` 方法 — 改为收集 handler 返回值
 
@@ -719,14 +879,14 @@ assert result["action"] == "complete"
 | 1.7 | 改 `initialize_run_state.py` — 调 set_status | `core_agent/initialize_run_state.py` | 小 |
 | 1.8 | 测试修复 + 全量回归 | `tests/` | 中 |
 
-**第二步：handler 返回协议改造**
+**第二步：handler yield-only 改造**
 
 | 序号 | 任务 | 涉及文件 | 测试影响 |
 |------|------|---------|---------|
-| 2.1 | 改 `answer_handler.py` — return dict | `handlers/answer_handler.py` | **大（每个测试都要改）** |
-| 2.2 | 改 `action_handler.py` — return dict | `handlers/action_handler.py` | **大** |
-| 2.3 | 改 `react_cycle._dispatch_handler` — 捕获 handler 返回值 | `core_agent/react_cycle.py` | 中 |
-| 2.4 | 改 `react_cycle._process_single_step` — 据结果设状态 | `core_agent/react_cycle.py` | 中 |
+| 2.1 | 改 `answer_handler.py` — 删 set_xxx，空内容路径加 ErrorStep | `handlers/answer_handler.py` | **大（每个测试都要改）** |
+| 2.2 | 改 `action_handler.py` — 删 set_xxx，check_safety_and_confirm 用局部变量 | `handlers/action_handler.py` | **大** |
+| 2.3 | 改 `react_cycle._dispatch_handler` — 跟踪 seen_types + last_event 推断状态 | `core_agent/react_cycle.py` | 中 |
+| 2.4 | 改 `react_cycle._process_single_step` — 简化，只检查 agent.status | `core_agent/react_cycle.py` | 中 |
 | 2.5 | handler 测试适配 | `tests/` | **大** |
 | 2.6 | 全量回归 | `tests/` | 必须归零 |
 
@@ -734,7 +894,7 @@ assert result["action"] == "complete"
 
 第一步先做，确保"统一入口 + 合法转换校验"的基础设施落地，同时删除执行层的状态赋值（error_handler、step_emitter）。此时 handler 仍然通过 `base_agent.set_failed()`（已改为委托）设状态，测试基本不受影响。
 
-第二步改 handler 返回协议，这是影响最大的部分。handler 从"yield + set_xxx"变为"yield + return dict"，所有 handler 测试需要适配返回值。这一步才真正实现"handler 零接触状态"。
+第二步改 handler 为 yield-only，这是影响最大的部分。handler 从"yield + set_xxx"变为"只 yield event"，dispatch_handler 从 event type 推断状态。所有 handler 测试需检查 yield 的事件序列是否包含预期的 ErrorStep/FinalStep。这一步才真正实现"handler 零接触状态"。
 
 ### 5.3 版本号建议
 
@@ -751,8 +911,8 @@ assert result["action"] == "complete"
 
 | 风险ID | 风险描述 | 概率 | 影响 | 等级 | 缓解措施 |
 |--------|---------|------|------|------|---------|
-| R001 | handler 改为 return dict 后，遗漏某处 set_xxx 未删除，导致双重设状态 | 中 | 高 | **高** | 第一步 grep 确认 handler 中所有 `set_` 调用，逐处审查 |
-| R002 | 异步 generator 的 StopAsyncIteration 异常处理不当，导致 handler 返回值丢失 | 中 | 中 | **中** | 加单元测试验证 handler 返回值传播，测试中 assert result |
+| R001 | handler 改为 yield-only 后，遗漏某处 set_xxx 未删除，导致双重设状态 | 中 | 高 | **高** | 第一步 grep 确认 handler 中所有 `set_` 调用，逐处审查 |
+| R002 | handler 空内容路径新增 ErrorStep 后，前端可能未兼容多收到一个 ErrorStep 事件 | 低 | 低 | **低** | 前端现有 ErrorStep 处理逻辑兼容；验证 SSE 事件序列 |
 | R003 | REACT_CYCLE 的 while 循环中异常兜底路径遗漏 | 低 | 高 | **中** | 枚举 react_cycle 中每个异常路径，补充 set_failed |
 | R004 | 测试改动量过大导致实施时间远超预期 | 高 | 低 | **中** | 分两步实施，第一步测试不改，第二步再适配 handler 测试 |
 | R005 | 非法转换检测抛 ValueError 导致生产环境异常 | 低 | 中 | **低** | 测试覆盖所有合法流转路径；上线前跑完整回归 |
@@ -761,9 +921,11 @@ assert result["action"] == "complete"
 
 实施前逐项确认：
 
-- [ ] 所有 handler 的 `agent.set_failed()` / `agent.set_completed()` 是否已全部改为 `return {dict}`
-- [ ] `react_cycle._dispatch_handler` 是否所有分支都返回了 dict（包括 error / 未知类型）
-- [ ] `exit_with_error` 的所有调用方是否在调用后补了 `set_failed`
+- [ ] 所有 handler 的 `agent.set_failed()` / `agent.set_completed()` 是否已全部删除
+- [ ] answer_handler 空内容路径是否在 yield FinalStep 前加了 ErrorStep（区分失败与正常完成）
+- [ ] action_handler 中 `check_safety_and_confirm` 调用后是否用局部变量替代了 `agent.status == FAILED` 检查
+- [ ] `_dispatch_handler` 是否在所有 handler 分支都跟踪了 `seen_types` 和 `last_event`
+- [ ] `exit_with_error` 的所有调用方是否已无 `set_failed` 依赖
 - [ ] `error_handler.handle_react_error` 的所有调用方是否在收到 ErrorStep 后调了 `set_failed`
 - [ ] `run_react_cycle` 的 while 循环中是否每个异常路径都有 set_failed/set_cancelled
 - [ ] grep 'agent\.status\s*=' 是否仅返回 `__init__` 一行
@@ -779,14 +941,14 @@ assert result["action"] == "complete"
 |------|------|------|
 | `backend/app/services/agent/core_agent/status_table.py` | 新建 | 函数式状态机 |
 | `backend/app/services/agent/core_agent/base_agent.py` | 修改 | 删除 set_failed/set_completed/set_cancelled |
-| `backend/app/services/agent/core_agent/react_cycle.py` | 修改 | 核心改动：调 status_table + handler 结果编排 |
-| `backend/app/services/agent/core_agent/handlers/answer_handler.py` | 修改 | 返回 dict |
-| `backend/app/services/agent/core_agent/handlers/action_handler.py` | 修改 | 返回 dict |
+| `backend/app/services/agent/core_agent/react_cycle.py` | 修改 | 核心改动：调 status_table + _dispatch_handler event type 推断 |
+| `backend/app/services/agent/core_agent/handlers/answer_handler.py` | 修改 | yield-only，空内容路径加 ErrorStep |
+| `backend/app/services/agent/core_agent/handlers/action_handler.py` | 修改 | yield-only，check_safety_and_confirm 用局部变量 |
 | `backend/app/services/agent/core_agent/error_handler.py` | 修改 | 不设状态 |
 | `backend/app/services/agent/core_agent/step_emitter.py` | 修改 | exit_with_error 不设状态 |
 | `backend/app/services/react_sse_wrapper/run_sse_stream.py` | 修改 | 调 status_table |
 | `backend/app/services/agent/core_agent/initialize_run_state.py` | 修改 | 调 set_status |
-| `backend/tests/` | 修改 | 适配 handler 新返回协议 |
+| `backend/tests/` | 修改 | 适配 handler 新行为（yield-only） |
 
 ### 7.2 决策记录
 
@@ -794,7 +956,7 @@ assert result["action"] == "complete"
 |--------|------|------|
 | 状态机实现方式 | 纯函数 + 数据表，不用类 | SRP/KISS-DIRECT：类带来不必要的抽象，一个函数 + 一个 dict 足以 |
 | 合法转换检测时机 | 运行时抛 ValueError | 编译时无法检测状态流转路径，运行时抛异常是唯一可行的方式 |
-| handler 返回方式 | async generator return | Python 原生支持，不引入新类型（如 MetaStep），SSE 流不受污染 |
+| handler 返回方式 | **yield-only（不 return dict）** | _dispatch_handler 从 yield chain 的 event type 推断状态，无需 StopAsyncIteration 捕获，无需 dict 契约。handler 单通道 yield，各层 `async for event: yield event` 自然穿透 |
 | RETRYABLE_ERROR | 彻底删除 | 当前没有业务场景依赖它，保留只是死代码 |
 | base_agent 三个方法 | 彻底删除，不留委托 | 消除 handler 误用的"默认路径" |
 | 测试改动策略 | 分两步实施，第一步测试不改 | 降低实施风险，先确保基础设施正确 |
@@ -853,35 +1015,59 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 8.3 修改 `answer_handler.py` — 不碰状态，返回结果
+### 8.3 修改 `answer_handler.py` — 不 set_xxx，空内容路径加 ErrorStep
+
+**改动点**：删掉 2 处 `agent.set_failed/set_completed`。空内容路径先 yield ErrorStep 再 yield FinalStep，让 _dispatch_handler 能通过 event type 区分失败与正常完成。
 
 ```diff
-- agent.set_failed("LLM返回空内容")
-- agent.set_completed()
-+ # 所有 agent.set_failed/set_completed 都删掉
-+ # 函数签名改为返回 dict:
-+ return {"action": "complete", "response": content}  # 正常
-+ return {"action": "fail", "error_msg": "LLM返回空内容", "step": error_step}  # 空内容
+   # 路径1：空内容
+   agent.message_builder.add_assistant_message("")
+-  agent.set_failed("LLM返回空内容")
++  yield agent._step_emitter.emit(ErrorStep(step=step, error_type="empty_response",
++      error_message="LLM返回空内容"))          # ← 新增：先 yield ErrorStep 表明失败
+   yield agent._step_emitter.emit(FinalStep(...))  # ← 保留，前端仍需 FinalStep
+
+   # 路径2：正常完成
+-  agent.set_completed()
++  # 删掉 set_completed，_dispatch_handler 看到 "final" in seen_types → set_completed
 ```
+
+**影响**：_dispatch_handler 遍历完成后 detected "error" in seen_types → set_failed。空内容路径的行为不变（失败）。
 
 ---
 
-### 8.4 修改 `action_handler.py` — 同理
+### 8.4 修改 `action_handler.py` — 不 set_xxx，用局部变量跟踪
 
-共 4 处状态调用全部改为返回 dict：
+**变动点 1：`check_safety_and_confirm` — 只 yield ErrorStep**
 
 ```diff
-- agent.set_failed(f"安全检查blocked: {safety_result.message}")
-+ return {"action": "fail", "error_msg": f"安全检查blocked: {safety_result.message}", "error_type": "blocked"}
+   async for event in check_safety_and_confirm(agent, all_calls, step):
+       yield event
+-  if agent.status == AgentStatus.FAILED:
++  if check_failed:                         # ← 改用局部变量
+       return
+```
 
-- agent.set_failed(f"用户拒绝执行工具: {_cn}")
-+ return {"action": "fail", "error_msg": f"用户拒绝执行工具: {_cn}", "error_type": "user_rejected"}
+**变动点 2：`check_safety_and_confirm` 内 — 不 set_failed**
 
-- agent.set_failed("LLM返回的action中tool_name为空")
-+ return {"action": "fail", "error_msg": "LLM返回的action中tool_name为空", "error_type": "invalid_action"}
+```diff
+-  agent.set_failed(f"安全检查blocked: {safety_result.message}", error_type="blocked")
+   yield step_emitter.emit(ErrorStep(...))   # ← 保留 yield ErrorStep
++  return                                     # ← 返回，不设状态
+```
 
-- agent.set_completed()
-+ return {"action": "complete", "response": ...}
+**变动点 3：`handle_action` — 末尾不 return dict**
+
+```diff
+   # return_direct 路径
+-  agent.set_completed(return_content)
++  # 删掉 set_completed，yield FinalStep 已有
+   yield agent._step_emitter.emit(FinalStep(...))
+   return
+
+   # 普通工具调用完成路径（继续循环）
+-  return
+   # 不变——无 ErrorStep、无 FinalStep → continue
 ```
 
 ---
@@ -889,7 +1075,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 ### 8.5 修改 `step_emitter.py` — 不碰状态
 
 ```diff
-  def exit_with_error(self, step_count, error_type, error_message, recoverable=False):
+   def exit_with_error(self, step_count, error_type, error_message, recoverable=False):
 -     self.agent.set_failed(error_message)
 +     # 不设状态，只创建 ErrorStep 返回
       error_step = ErrorStep(step=step_count, error_type=error_type, ...)
@@ -901,24 +1087,22 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 ### 8.6 修改 `error_handler.py` — 不碰状态
 
 ```diff
-  def _handle_fc_format_error(agent, error, step):
+   def _handle_fc_format_error(agent, error, step):
 -     agent.set_failed(str(error))
 +     # 不设状态，只创建 ErrorStep
       return ErrorStep(step=step, error_type="fc_format_error", ...)
 
-  def _handle_network_error(agent, error, step):
+   def _handle_network_error(agent, error, step):
 -     agent.set_failed(str(error))
 +     # 不设状态，只创建 ErrorStep
       return ErrorStep(step=step, error_type="network_error", ...)
 ```
 
-然后 `handle_react_error` 的 else 分支也把 `agent.set_failed(str(error))` 删掉。
-
 ---
 
-### 8.7 修改 `react_cycle.py` — 唯一设状态的地方
+### 8.7 修改 `react_cycle.py` — 唯一设状态的地方 + _dispatch_handler 基于 event type 推断
 
-所有 `agent.status = X` 和 `agent.set_failed/set_completed/set_cancelled` 都改成：
+**改动 1：所有 `agent.status = X` 改为用函数**
 
 ```diff
 - agent.status = AgentStatus.EXECUTING
@@ -932,16 +1116,52 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 + set_failed(agent, "...")
 ```
 
-`_process_single_step` 收到 handler 返回的 dict 后设状态：
+**改动 2：`_dispatch_handler` 跟踪 event type，代替 return dict**
 
 ```python
-result = await _dispatch_handler(agent, parsed, chunk_buffer)
-if isinstance(result, dict):
-    action = result.get("action")
-    if action == "complete":
+async def _dispatch_handler(self, agent, llm_response, chunk_buffer):
+    seen_types = set()
+    last_event = None
+
+    # 按响应类型分派 handler
+    parsed_type = llm_response.get("type", "answer")
+    if parsed_type == "action":
+        handler = handle_action(agent, llm_response, chunk_buffer)
+    elif parsed_type == "answer":
+        handler = handle_answer(agent, llm_response, chunk_buffer)
+    elif parsed_type == "error":
+        handler = handle_error_gen(agent, llm_response)
+    else:
+        handler = self._handle_unknown(agent, llm_response)
+
+    # 统一遍历：跟踪 event type + 透传
+    async for event in handler:
+        seen_types.add(event.type)
+        last_event = event
+        yield event
+
+    # handler 遍历完毕 → 根据 event type 推断状态
+    if "error" in seen_types:
+        error_msg = last_event.get_content() if hasattr(last_event, 'get_content') else ""
+        set_failed(agent, error_msg)
+    elif "final" in seen_types:
         set_completed(agent)
-    elif action == "fail":
-        set_failed(agent, result.get("error_msg", ""))
+    # 否则 continue（不设状态）
+```
+
+**改动 3：`_process_single_step` 不再读 Send() 返回值**
+
+```python
+# 改前：从 Send() 读 handler 返回的 dict
+result_dict = await agent.send(None)
+if result_dict:
+    action = result_dict.get("action")
+    ...
+
+# 改后：不再读返回值，_dispatch_handler 已在 yield 穿透时设好状态
+# _process_single_step 只需检查 agent.status
+if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
+    break
 ```
 
 ---
@@ -1034,23 +1254,24 @@ if isinstance(result, dict):
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                         新设计流程（方案B）                                  │
+│                        新设计流程（方案B — yield-only）                         │
 │                                                                           │
 │  运输层(run_sse_stream) — 仅外部异常时调状态函数                            │
 │    ├─ 用户取消 → set_cancelled(agent)           [调 status_table]         │
 │    └─ 外部异常 → set_failed(agent, msg)         [调 status_table]         │
 │                                                                           │
 │  编排层(react_cycle) ← 唯一正常设状态的地方                                  │
-│    ├─ _dispatch_handler: — 收集 handler 返回 dict                           │
-│    │   ├─ "action" → handle_action() yield 事件 → return dict             │
-│    │   ├─ "answer" → handle_answer() yield 事件 → return dict             │
-│    │   ├─ "error"  → ErrorStep + return {"action":"fail", ...}           │
-│    │   └─ 未知类型 → FinalStep + return {"action":"fail", ...}           │
+│    ├─ _dispatch_handler: — 从 yield chain 的 event type 推断状态            │
+│    │   ├─ handler 遍历时记录 seen_types + last_event                       │
+│    │   ├─ handler 结束 → "error"? → set_failed                             │
+│    │   │              → "final"?  → set_completed                          │
+│    │   │              → 其他     → continue（不设状态）                     │
+│    │   └─ handler 不返回 dict，不 return 任何东西                           │
 │    │                                                                       │
-│    ├─ _process_single_step: — 据 handler 返回 dict 设状态                   │
-│    │   ├─ "complete" → set_completed(agent)                               │
-│    │   ├─ "fail"     → set_failed(agent, error_msg)                       │
-│    │   └─ "continue" → 不设状态, 继续循环                                  │
+│    ├─ _process_single_step: — 确认 dispatch_handler 已设状态               │
+│    │   ├─ agent.status == COMPLETED → break                                │
+│    │   ├─ agent.status == FAILED   → break                                │
+│    │   └─ 其他 → 继续循环                                                  │
 │    │                                                                       │
 │    ├─ run_react_cycle: — 全部调 status_table 函数                          │
 │    │   ├─ set_status(agent, EXECUTING)      [无直接赋值]                   │
@@ -1062,17 +1283,22 @@ if isinstance(result, dict):
 │    └─ initialize_run_state:                                                │
 │        └─ set_status(agent, THINKING)       [调 status_table]             │
 │                                                                           │
-│  执行层(handlers) ← 完全不碰状态                                            │
+│  执行层(handlers) ← 完全不碰状态，只 yield event                             │
 │    ├─ answer_handler:                                                      │
-│    │   ├─ 空内容 → yield FinalStep + return {"action":"fail", ...}       │
-│    │   └─ 正常   → yield FinalStep + return {"action":"complete", ...}   │
+│    │   ├─ 空内容 → yield ErrorStep + FinalStep（_dispatch_handler → fail）  │
+│    │   └─ 正常   → yield FinalStep（_dispatch_handler → complete）          │
 │    ├─ action_handler:                                                      │
-│    │   ├─ 安全检查blocked → return {"action":"fail", ...}                 │
-│    │   ├─ 用户拒绝 → return {"action":"fail", ...}                        │
-│    │   ├─ tool_name为空 → return {"action":"fail", ...}                   │
-│    │   └─ return_direct → return {"action":"complete", ...}               │
+│    │   ├─ 安全检查blocked → yield ErrorStep → 局部 return（dispatch → fail）│
+│    │   ├─ 用户拒绝 → yield ErrorStep → 局部 return（dispatch → fail）       │
+│    │   ├─ tool_name为空 → yield ErrorStep（dispatch → fail）               │
+│    │   └─ return_direct → yield FinalStep（dispatch → complete）            │
 │    ├─ step_emitter.exit_with_error → 只创建 ErrorStep, 不设状态            │
 │    └─ error_handler — 3 处都只创建 ErrorStep, 不设状态                     │
+│                                                                           │
+│  handler 间的事件传递（yield chain 透明穿透）：                                │
+│    handle_action → check_safety_and_confirm   (只 yield, 不 set_status)   │
+│    check_safety_and_confirm 的 ErrorStep 由 _dispatch_handler 捕获         │
+│    handle_action 通过局部 check_failed 变量判断是否继续                      │
 │                                                                           │
 │  状态机(status_table.py) ← 唯一改得动 agent.status 的地方                   │
 │    ├─ _TRANSITIONS 数据表 — 6 行, 定义所有合法转换                          │
@@ -1084,6 +1310,7 @@ if isinstance(result, dict):
 │                                                                           │
 │  ✅ 结果: 状态变更集中在 1 个文件, 统一校验 + 统一日志                      │
 │  ✅ 唯一物理改属性的地方: status_table.py 第 X 行                          │
+│  ✅ handler yield-only，无 return dict 双通道                              │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1092,9 +1319,10 @@ if isinstance(result, dict):
 | 层级 | 维度 | 当前流程 | 新设计 | 好处 |
 |------|------|---------|--------|------|
 | **运输层** | 状态变更方式 | `agent.status = CANCELLED/FAILED` 直接赋值 | `set_cancelled(agent)` / `set_failed(agent, msg)` | 经过校验入口，非法转换直接报错 |
-| **编排层** | 状态变更分散度 | 6 处散布在 _dispatch_handler + run_react_cycle | 全部收敛在 _process_single_step + run_react_cycle | 一处改状态，排查问题只需看一个函数 |
+| **编排层** | 状态变更分散度 | 6 处散布在 _dispatch_handler + run_react_cycle | 全部收敛在 _dispatch_handler + run_react_cycle | 一处改状态，排查问题只需看一个函数 |
 | **编排层** | RETRYABLE_ERROR | 存在，while 循环需特殊判断 + 特殊条件 | **彻底删除** | while 循环逻辑简化，无死代码 |
-| **执行层** | handler 职责 | yield 事件 + 设状态 (双重职责) | 只 yield 事件 + return dict (单一职责) | SRP 原则，handler 可独立测试 |
+| **执行层** | handler 职责 | yield 事件 + 设状态 (双重职责) | 只 yield 事件 (单一职责) | SRP 原则，handler 可独立测试 |
+| **执行层** | handler 返回方式 | return dict (双通道) | yield-only (单通道) | 简化和清晰，无需解析 return 值 |
 | **执行层** | step_emitter | exit_with_error 创建 ErrorStep + 设状态 | 只创建 ErrorStep | 工具层不越权 |
 | **执行层** | error_handler | 3 处 set_failed，与 ErrorStep 创建混在一起 | 只创建 ErrorStep | 异常处理与状态管理解耦 |
 | **状态机** | 合法转换校验 | 无 | _TRANSITIONS 表 + 运行时校验 | 非法转换 → ValueError，500ms 内定位 |
@@ -1107,14 +1335,18 @@ if isinstance(result, dict):
   handler yield 事件 → SSE 流
   handler 设状态   → agent.status (直接/通过 setter)
 
-新设计:
+新设计 (return dict 方案 — 已废弃):
   handler yield 事件 → SSE 流
   handler return dict → react_cycle 判断 dict → status_table 设状态
+
+新设计 (yield-only 方案 — 最终选择):
+  handler yield 事件 → SSE 流
+  _dispatch_handler 从 yield chain 的 event type 推断状态 → status_table 设状态
 ```
 
 **当前路径**：事件流和状态流的控制者在同一个函数里，耦合在一起。handler 干了它不该干的事。
 
-**新设计路径**：事件流由 handler 管，状态流由 react_cycle 管，各行其道。handler 只报告"发生了什么"，react_cycle 决定"状态怎么变"。
+**yield-only 路径**：handler 只有一个产出通道（yield event），_dispatch_handler 在中途透明收集 event type。handler 结束时，dispatch_handler 已拥有完整的信息来推断状态。**不需要 return dict，不需要 StopAsyncIteration 捕获，不需要约定 dict 格式。**
 
 ### 9.5 改动好处总结
 
@@ -1127,6 +1359,7 @@ if isinstance(result, dict):
 | **⑤ 简化循环** | 删除 RETRYABLE_ERROR，减少 2 处特殊判断 | while 循环逻辑更直白，排查更简单 |
 | **⑥ 可扩展性** | 新状态只需加一行到 `_TRANSITIONS` | 未来加 SUSPENDED/RESUMED 等只需改一个表 |
 | **⑦ handler 可独立测试** | handler 不依赖 agent.status 副作用 | handler 测试可以纯测事件，不 mock 状态 |
+| **⑧ yield-only 零双通道** | handler 只 yield，不 return dict | 代码简化，无 StopAsyncIteration 捕获，无 dict 契约 |
 
 
 ### 9.6 调用架构
@@ -1134,15 +1367,15 @@ if isinstance(result, dict):
 ```
 run_sse_stream ─── react_cycle ─── handler
     │                                          │
-    │  外部异常 → set_failed/set_cancelled     │ 返回 HandlerResult
-    │  finally 读 agent.status 存 DB           │
+    │  外部异常 → set_failed/set_cancelled     │ yield-only event（不 return dict）
+    │  finally 读 agent.status 存 DB           │ dispatch_handler 从 event type 推
 ```
 
 | 层 | 职责 | 能否改状态 |
 |-----|------|---------|
 | `run_sse_stream` | 运输、catch 外部异常、存 DB | ✅ 异常时 call set_failed/set_cancelled，finally 只读 |
-| `react_cycle` | 编排：根据 HandlerResult 调 set_completed/set_failed | ✅ 唯一 正常流转 设状态的地方 |
-| handler | 执行业务逻辑，返回 HandlerResult | ❌ 绝对不能 |
+| `react_cycle` | 编排：_dispatch_handler 从 event type 推断，调 set_completed/set_failed | ✅ 唯一 正常流转 设状态的地方 |
+| handler | 执行业务逻辑，只 yield 事件 | ❌ 绝对不能 |
 | step_emitter | 发射 step，不碰状态 | ❌ 绝对不能 |
 | error_handler | 创建 ErrorStep，不碰状态 | ❌ 绝对不能 |
 
@@ -1150,7 +1383,7 @@ run_sse_stream ─── react_cycle ─── handler
 
 | 当前 | 改后 |
 |------|------|
-| `agent.status = AgentStatus.COMPLETED` (answer_handler:47) | 删除，handler 返回 `{"action":"complete"}`，react_cycle 调 `set_completed(agent)` |
+| `agent.status = AgentStatus.COMPLETED` (answer_handler:47) | 删除，handler yield-only，_dispatch_handler 看到 "final" in seen_types → `set_completed(agent)` |
 | `agent.status = AgentStatus.COMPLETED` (action_handler:415) | 同上 |
 | `agent.status = AgentStatus.CANCELLED` (react_cycle:188) | `set_cancelled(agent)` |
 | `agent.status = AgentStatus.CANCELLED` (run_sse_stream:212) | `set_cancelled(agent)` |
@@ -1167,10 +1400,10 @@ run_sse_stream ─── react_cycle ─── handler
 ```
 backend/app/services/agent/core_agent/
 ├── status_table.py     ← 新建：_TRANSITIONS + _set_status + set_failed/set_completed/set_cancelled
-├── react_cycle.py      ← 改：删除自己所有 agent.status = X，全部调 status_table 函数
+├── react_cycle.py      ← 改：删除自己所有 agent.status = X，全部调 status_table 函数；_dispatch_handler 改为 event type 推断
 ├── handlers/
-│   ├── answer_handler.py   ← 改：返回 HandlerResult，不碰状态
-│   └── action_handler.py   ← 改：返回 HandlerResult，不碰状态
+│   ├── answer_handler.py   ← 改：删除 set_xxx，空内容路径加 ErrorStep；yield-only，不 return dict
+│   └── action_handler.py   ← 改：删除 set_xxx，check_safety_and_confirm 用局部变量；yield-only
 ├── step_emitter.py     ← 改：exit_with_error 不碰状态
 ├── error_handler.py    ← 改：不碰状态
 ├── initialize_run_state.py ← 改：调 set_status
@@ -1179,6 +1412,6 @@ backend/app/services/agent/core_agent/
 
 ---
 
-**文档版本**: v1.4  
-**更新时间**: 2026-06-29 23:47:48  
+**文档版本**: v1.6  
+**更新时间**: 2026-06-29  
 **编写人**: 小欧
