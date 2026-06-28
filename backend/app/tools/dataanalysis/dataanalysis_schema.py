@@ -197,18 +197,61 @@ class FilterDataInput(BaseModel):
 class QuerySqlInput(_DbConnectionMixin):
     sql: str = Field(
         ...,
-        description="SQL 查询语句。工具强制只读:仅允许 SELECT/SHOW/DESCRIBE/PRAGMA/WITH/EXPLAIN,写入操作返回错误。必填参数"
+        description="""SQL查询语句（单条，只读）。
+
+【重要限制】
+- 一次只能执行一条SELECT语句
+- 不支持分号分隔的多条语句
+- 强制只读：仅允许 SELECT/SHOW/DESCRIBE/PRAGMA/WITH/EXPLAIN
+- 写入操作（INSERT/UPDATE/DELETE/DDL）会返回错误
+
+【示例】
+✅ 正确: SELECT * FROM users WHERE age > 25
+✅ 正确: SELECT name, COUNT(*) FROM orders GROUP BY name
+❌ 错误: SELECT * FROM users; SELECT * FROM orders
+❌ 错误: INSERT INTO users ...（写入操作不允许）"""
     )
 
 
 class ExecuteSqlInput(_DbConnectionMixin):
     sql: str = Field(
         ...,
-        description="SQL 写入语句。支持 INSERT/UPDATE/DELETE/DDL。必填参数"
+        description="""SQL写入语句（单条）。
+
+【重要限制】
+- 一次只能执行一条SQL语句
+- 不支持分号分隔的多条语句
+- 多条语句请多次调用execute_sql
+
+【支持的语句】
+- INSERT: 插入数据
+- UPDATE: 更新数据
+- DELETE: 删除数据
+- DDL: CREATE/ALTER/DROP（危险操作会拦截）
+
+【常见错误避免】
+1. UNIQUE约束失败: 插入前先用query_sql检查是否存在
+2. 外键约束失败: 确保引用的记录存在
+3. 语法错误: 检查SQL语法
+
+【示例】
+✅ 正确: INSERT INTO users (id, name) VALUES (1, 'Alice')
+❌ 错误: INSERT INTO users ...; INSERT INTO orders ...
+如需执行多条语句，请多次调用execute_sql"""
     )
     dry_run: bool = Field(
         default=False,
-        description="预检模式。True=仅校验语法不执行,返回syntax_valid=True。默认False。注意:检测到危险操作(DROP/TRUNCATE/ALTER/DELETE无WHERE等)时工具自动拦截返回WARNING,与dry_run无关"
+        description="""预检模式。
+
+【功能】
+- True: 仅校验SQL语法，不执行
+- False: 实际执行SQL
+
+【返回】
+- syntax_valid=True: 语法正确
+- syntax_valid=False: 语法错误
+
+【注意】危险操作（DROP/TRUNCATE/ALTER/DELETE无WHERE等）会自动拦截返回WARNING，与dry_run无关"""
     )
 
 
