@@ -115,7 +115,7 @@ FILE_TOOL_DESCRIPTIONS = {
 FILE_TOOL_EXAMPLES = {
     "read_text_file": [
         {"file_path": "D:/project/main.py"},                               # 全文
-        {"file_path": "D:/logs/app.log", "offset": -50},                  # 末50行(看日志尾部)
+        {"file_path": "D:/logs/app.log", "tail": 50},                     # 末50行(看日志尾部)
         {"file_path": "D:/project/main.py", "offset": 1, "limit": 200},  # 分页
     ],
     "write_text_file": [

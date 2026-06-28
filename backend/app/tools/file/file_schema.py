@@ -28,23 +28,31 @@ from typing import Optional, List, Dict, Any, Literal, Union
 # ⚠️ Pydantic class docstring 会进入 JSON Schema 的 parameters.description 并发给 LLM
 # 禁止在这里写文档字符串。工具描述写在 file_register.py 的 FILE_TOOL_DESCRIPTIONS 里。
 class ReadTextFileInput(BaseModel):
+    """
+    【四种模式】
+    1. 读全文: 不传offset/limit/tail
+    2. 前N行: 只传limit（如limit=100读前100行）
+    3. 尾部N行: 只传tail（如tail=20读最后20行）
+    4. 分页: offset+limit（如offset=10, limit=20读第10-29行）
+
+    【互斥规则】
+    - tail不能与offset/limit同时使用
+
+    【示例】
+    - 不传参数: 读全文
+    - limit=100: 读前100行
+    - tail=20: 读最后20行
+    - offset=10, limit=20: 读第10-29行"""
     file_path: str = Field(
         description="要读取的文件路径(绝对路径)。支持文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
     offset: Optional[int] = Field(
         default=None,
-        description="""起始行号(1-indexed)。
-
-【四种模式】
-1. 不传offset和limit: 读全文
-2. 只传limit: 读前limit行（如limit=100读前100行）
-3. offset为负数: 从末尾倒数（如-20读最后20行，limit无效）
-4. offset为正数: 分页模式，必须配合limit
+        ge=1,
+        description="""起始行号(1-indexed)，必须配合limit使用。
 
 【示例】
-- 不传参数: 读全文
-- limit=100: 读前100行
-- offset=-20: 读最后20行
+- offset=1, limit=100: 读第1-100行
 - offset=10, limit=20: 读第10-29行"""
     )
     limit: Optional[int] = Field(
@@ -53,16 +61,21 @@ class ReadTextFileInput(BaseModel):
         le=1000000,
         description="""读取行数。
 
-【重要说明】
-- offset为正数时: limit必填（分页模式）
-- offset为负数时: limit无效（已忽略，返回warning）
-- offset不传时: limit有效（读前N行）
+【三种模式】
+1. 只传limit: 读前limit行（如limit=100读前100行）
+2. offset+limit: 分页模式（如offset=10, limit=20读第10-29行）
+3. tail: 读尾部N行（不能与offset/limit同时使用）"""
+    )
+    tail: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="""读取尾部N行。
+
+【重要】tail不能与offset/limit同时使用！
 
 【示例】
-- limit=100: 读前100行
-- offset=1, limit=100: 读第1-100行
-- offset=-20, limit=100: 读最后20行（limit被忽略）"""
-    )
+- tail=20: 读最后20行
+- tail=100: 读最后100行"""
     encoding: Optional[str] = Field(
         default=None,
         description="文件编码,默认utf-8。读取失败时自动尝试gbk/gb2312/utf-8-sig"
