@@ -1,6 +1,6 @@
 v0.17.8
 
-更新时间: 2026-06-28 12:35:00
+更新时间: 2026-06-28 17:42:30
 
 ## v0.17.7→v0.17.8 变更汇总 - 小欧-2026-06-28
 
@@ -8,7 +8,7 @@ v0.17.8
 - b597cffec: 补充参数别名映射 - http_request/fetch_webpage/create_task - 小欧
 - 94fe19e56: 参数名别名映射 - 解决LLM返回参数名不匹配问题 - 小欧
 
-### fix: 代码修复(11项)
+### fix: 代码修复(13项)
 - 5017698b4: network_diagnose.py _ping改用to_thread修复Python 3.13 Windows NotImplementedError - 小欧
 - 6f16f7f06: 注册表路径穿越检测+窗口回调返回类型修复 - 小沈
 - 227c7425a: Windows设置ProactorEventLoop支持asyncio subprocess - 小沈
@@ -20,6 +20,8 @@ v0.17.8
 - 41d0a71bb: API返回缺失created_at/updated_at字段 - 小欧
 - 74bbec77d: 修复两个严重bug - WindowsPath.strip和NoneType await - 小欧
 - 2bffa46a6: 多项修复 - JSON解析/编码检测/CRLF保留/权限检查 - 小欧
+- 45f36e2c0: _close_connection日志恢复+fetch_webpage冗余close清理+filter_data max_rows=0一致+get_db_schema僵尸导入清理 - 小欧
+- af2ecc755: P0-09根因修复: llm_stream error_type分派+补丁清理(删error_utils.py+answer_handler恢复+e2e_helpers恢复) - 小欧
 
 ### perf: 性能优化(1项)
 - 5ce794544: 优化重试日志+增大工具超时 - 小沈
@@ -27,11 +29,17 @@ v0.17.8
 ### refactor: 代码重构(1项)
 - dcd0c4246: read_text_file新增tail参数替代offset负数 - 小欧
 
+### docs: 文档更新(3项)
+- d8fa504f4: 更新E2E测试操作手册 - 强化手动检查要求 - 小欧
+- 7ad32f506: 删除临时分析报告 - 小欧
+- a37e3878f: 删除临时验证报告 - 小欧
+
 ### 合计
 - feat: 2项
-- fix: 11项
+- fix: 13项
 - perf: 1项
 - refactor: 1项
+- docs: 3项
 
 ---
 
