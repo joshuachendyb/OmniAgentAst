@@ -176,10 +176,12 @@ class ToolRetryEngine:
             error_category = UnifiedErrorClassifier.classify_error(e)
             attempt = engine.record_attempt()
 
+            # 超时/网络错误不打印堆栈，只有未知错误才打印 — 小沈 2026-06-28
+            should_print_traceback = error_category.name in ("UNKNOWN", "INTERNAL")
             logger.warning(
                 f"[重试] action={action} 尝试{attempt}/{max_retries} "
                 f"失败：{error_category.description} - {str(e)[:100]}",
-                exc_info=True
+                exc_info=should_print_traceback
             )
             
             if not self._should_retry(e, retryable_errors, engine):
