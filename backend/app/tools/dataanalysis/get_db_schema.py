@@ -11,7 +11,6 @@ import sqlite3
 import time as _time_mod
 from typing import Any, Dict, List, Optional, Union, Literal
 
-from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.constants import (
     ERR_DB_CONNECTION,

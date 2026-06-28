@@ -38,6 +38,7 @@ import pandas as pd
 from app.tools.tool_constants import QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
 from app.utils.common_patterns import UTC_OFFSET_PATTERN
 from app.utils.json_utils import parse_json
+from app.utils.logger import logger
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -798,15 +799,15 @@ def _get_connection(connection_type, connection_string=None, db_path=None, timeo
 
 
 def _close_connection(conn, engine=None):
-    """关闭数据库连接 — 小欧 2026-06-24 从dataanalysis提取到公共helper"""
+    """关闭数据库连接 — 小欧 2026-06-24 从dataanalysis提取到公共helper — 小欧 2026-06-28 修复silent swallow"""
     try:
         if engine:
             conn.close()
             engine.dispose()
         elif conn:
             conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"关闭数据库连接时出错: {e}")
 
 
 __all__ = [

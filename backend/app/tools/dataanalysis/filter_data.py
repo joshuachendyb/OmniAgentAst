@@ -51,7 +51,7 @@ def _load_data_to_df(data: Union[str, List[Dict[str, Any]]], max_rows: Optional[
             return {"df": pd.read_excel(data, engine="openpyxl", nrows=max_rows)}
         return {"df": pd.read_csv(data, nrows=max_rows)}
     if isinstance(data, list):
-        if max_rows and len(data) > max_rows:
+        if max_rows is not None and len(data) > max_rows:
             data = data[:max_rows]
         return {"df": pd.DataFrame(data)}
     return {"error_detail": "data参数必须是文件路径或数据数组", "params": {"data_type": type(data).__name__}}

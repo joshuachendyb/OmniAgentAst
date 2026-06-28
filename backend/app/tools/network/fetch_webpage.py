@@ -269,7 +269,6 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout: float,
                     is_valid, err, _ = validate_url(current_url)
                     if not is_valid:
                         logger.warning(f"[fetch_webpage] Playwright重定向到不安全地址: {err}")
-                        await browser.close()
                         return {"error": True, "error_detail": f"重定向到不安全地址: {err or 'URL无效'}", "params": {"url": url}, "err_code": ERR_INVALID_URL, "detail": err}
                 html_content = await page.content()
             finally:
