@@ -922,116 +922,14 @@ assert result["action"] == "complete"
 
 ---
 
-## 五、实施计划
 
-### 5.1 分步实施
-
-本方案分两步实施，每步都确保测试全通过：
-
-**第一步：status_table + 非 handler 清除直接赋值**
-
-| 序号 | 任务 | 涉及文件 | 测试影响 |
-|------|------|---------|---------|
-| 1.1 | 新建 `status_table.py` | `core_agent/status_table.py` | 无（新文件，无测试） |
-| 1.2 | 改 `base_agent.py` — 删 set_failed/set_completed/set_cancelled | `core_agent/base_agent.py` | 极小（import 变化） |
-| 1.3 | 改 `react_cycle.py` — 所有 `agent.status = X` 统一调 status_table（仅非 handler 部分） | `core_agent/react_cycle.py` | 中（mock 需调整） |
-| 1.4 | 改 `step_emitter.exit_with_error` — 不碰状态 | `core_agent/step_emitter.py` | 小（返回不变，状态已移出） |
-| 1.5 | 改 `error_handler` — 所有 `_handle_*` 不设状态 | `core_agent/error_handler.py` | 小（返回不变） |
-| 1.6 | 改 `run_sse_stream.py` — 调 set_cancelled/set_failed | `react_sse_wrapper/run_sse_stream.py` | 小 |
-| 1.7 | 改 `initialize_run_state.py` — 调 set_status | `core_agent/initialize_run_state.py` | 小 |
-| 1.8 | 测试修复 + 全量回归 | `tests/` | 中 |
-
-**第二步：handler yield-only 改造**
-
-| 序号 | 任务 | 涉及文件 | 测试影响 |
-|------|------|---------|---------|
-| 2.1 | 改 `answer_handler.py` — 删 set_xxx，空内容路径加 ErrorStep | `handlers/answer_handler.py` | **大（每个测试都要改）** |
-| 2.2 | 改 `action_handler.py` — 删 set_xxx，check_safety_and_confirm 用局部变量 | `handlers/action_handler.py` | **大** |
-| 2.3 | 改 `react_cycle._dispatch_handler` — 跟踪 seen_types + last_event 推断状态 | `core_agent/react_cycle.py` | 中 |
-| 2.4 | 改 `react_cycle._process_single_step` — 简化，只检查 agent.status | `core_agent/react_cycle.py` | 中 |
-| 2.5 | handler 测试适配 | `tests/` | **大** |
-| 2.6 | 全量回归 | `tests/` | 必须归零 |
-
-### 5.2 实施顺序说明
-
-第一步先做，确保"统一入口 + 合法转换校验"的基础设施落地，同时删除执行层的状态赋值（error_handler、step_emitter）。此时 handler 仍然通过 `base_agent.set_failed()`（已改为委托）设状态，测试基本不受影响。
-
-第二步改 handler 为 yield-only，这是影响最大的部分。handler 从"yield + set_xxx"变为"只 yield event"，dispatch_handler 从 event type 推断状态。所有 handler 测试需检查 yield 的事件序列是否包含预期的 ErrorStep/FinalStep。这一步才真正实现"handler 零接触状态"。
-
-### 5.3 版本号建议
-
-| 步骤 | 版本号 | 说明 |
-|------|--------|------|
-| 第一步完成后 | PATCH+1 | 基础设施搭建，对外行为不变 |
-| 第二步完成后 | MINOR+1 | handler 协议变更，虽对外仍不变，但改动较大 |
-
----
-
-## 六、风险分析
-
-### 6.1 风险矩阵
-
-| 风险ID | 风险描述 | 概率 | 影响 | 等级 | 缓解措施 |
-|--------|---------|------|------|------|---------|
-| R001 | handler 改为 yield-only 后，遗漏某处 set_xxx 未删除，导致双重设状态 | 中 | 高 | **高** | 第一步 grep 确认 handler 中所有 `set_` 调用，逐处审查 |
-| R002 | handler 空内容路径新增 ErrorStep 后，前端可能未兼容多收到一个 ErrorStep 事件 | 低 | 低 | **低** | 前端现有 ErrorStep 处理逻辑兼容；验证 SSE 事件序列 |
-| R003 | REACT_CYCLE 的 while 循环中异常兜底路径遗漏 | 低 | 高 | **中** | 枚举 react_cycle 中每个异常路径，补充 set_failed |
-| R004 | 测试改动量过大导致实施时间远超预期 | 高 | 低 | **中** | 分两步实施，第一步测试不改，第二步再适配 handler 测试 |
-| R005 | 非法转换检测抛 ValueError 导致生产环境异常 | 低 | 中 | **低** | 测试覆盖所有合法流转路径；上线前跑完整回归 |
-
-### 6.2 关键检查项
-
-实施前逐项确认：
-
-- [ ] 所有 handler 的 `agent.set_failed()` / `agent.set_completed()` 是否已全部删除
-- [ ] answer_handler 空内容路径是否在 yield FinalStep 前加了 ErrorStep（区分失败与正常完成）
-- [ ] action_handler 中 `check_safety_and_confirm` 调用后是否用局部变量替代了 `agent.status == FAILED` 检查
-- [ ] `_dispatch_handler` 是否在所有 handler 分支都跟踪了 `seen_types` 和 `last_event`
-- [ ] `exit_with_error` 的所有调用方是否已无 `set_failed` 依赖
-- [ ] `error_handler.handle_react_error` 的所有调用方是否在收到 ErrorStep 后调了 `set_failed`
-- [ ] `run_react_cycle` 的 while 循环中是否每个异常路径都有 set_failed/set_cancelled
-- [ ] grep 'agent\.status\s*=' 是否仅返回 `__init__` 一行
-- [ ] grep 'agent\.set_failed' / 'agent\.set_completed' / 'agent\.set_cancelled' 是否返回 0 行
-
----
-
-## 七、附录
-
-### 7.1 相关文件清单
-
-| 文件 | 操作 | 备注 |
-|------|------|------|
-| `backend/app/services/agent/core_agent/status_table.py` | 新建 | 函数式状态机 |
-| `backend/app/services/agent/core_agent/base_agent.py` | 修改 | 删除 set_failed/set_completed/set_cancelled |
-| `backend/app/services/agent/core_agent/react_cycle.py` | 修改 | 核心改动：调 status_table + _dispatch_handler event type 推断 |
-| `backend/app/services/agent/core_agent/handlers/answer_handler.py` | 修改 | yield-only，空内容路径加 ErrorStep |
-| `backend/app/services/agent/core_agent/handlers/action_handler.py` | 修改 | yield-only，check_safety_and_confirm 用局部变量 |
-| `backend/app/services/agent/core_agent/error_handler.py` | 修改 | 不设状态 |
-| `backend/app/services/agent/core_agent/step_emitter.py` | 修改 | exit_with_error 不设状态 |
-| `backend/app/services/react_sse_wrapper/run_sse_stream.py` | 修改 | 调 status_table |
-| `backend/app/services/agent/core_agent/initialize_run_state.py` | 修改 | 调 set_status |
-| `backend/tests/` | 修改 | 适配 handler 新行为（yield-only） |
-
-### 7.2 决策记录
-
-| 决策项 | 结论 | 理由 |
-|--------|------|------|
-| 状态机实现方式 | 纯函数 + 数据表，不用类 | SRP/KISS-DIRECT：类带来不必要的抽象，一个函数 + 一个 dict 足以 |
-| 合法转换检测时机 | 运行时抛 ValueError | 编译时无法检测状态流转路径，运行时抛异常是唯一可行的方式 |
-| handler 返回方式 | **yield-only（不 return dict）** | _dispatch_handler 从 yield chain 的 event type 推断状态，无需 StopAsyncIteration 捕获，无需 dict 契约。handler 单通道 yield，各层 `async for event: yield event` 自然穿透 |
-| RETRYABLE_ERROR | 彻底删除 | 当前没有业务场景依赖它，保留只是死代码 |
-| base_agent 三个方法 | 彻底删除，不留委托 | 消除 handler 误用的"默认路径" |
-| 测试改动策略 | 分两步实施，第一步测试不改 | 降低实施风险，先确保基础设施正确 |
-
----
-
-## 八、详细设计 v2 — 逐文件代码规格（diff 格式）
+## 五、详细设计 v2 — 逐文件代码规格（diff 格式）
 
 **章节说明**: 本章节为代码层级的详细设计 v2，使用 `-`（删除）和 `+`（新增）标记改动内容。实施时严格按此规格执行。
 
 ---
 
-### 8.1 新建 `status_table.py`
+### 5.1 新建 `status_table.py`
 
 **路径**: `backend/app/services/agent/core_agent/status_table.py`
 
@@ -1062,7 +960,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 8.2 修改 `base_agent.py` — 删 3 个方法
+### 5.2 修改 `base_agent.py` — 删 3 个方法
 
 **删除**：
 
@@ -1077,7 +975,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 8.3 修改 `answer_handler.py` — 不 set_xxx、不 add_message，空内容路径加 ErrorStep
+### 5.3 修改 `answer_handler.py` — 不 set_xxx、不 add_message，空内容路径加 ErrorStep
 
 **改动点**：删掉 2 处 `agent.set_failed/set_completed`。删掉 2 处 `agent.message_builder.add_assistant_message`。空内容路径先 yield ErrorStep 再 yield FinalStep，让 _dispatch_handler 能通过 event type 区分失败与正常完成。
 
@@ -1101,7 +999,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 8.4 修改 `action_handler.py` — 不 set_xxx，用局部变量跟踪
+### 5.4 修改 `action_handler.py` — 不 set_xxx，用局部变量跟踪
 
 **变动点 1：`check_safety_and_confirm` — 只 yield ErrorStep**
 
@@ -1146,7 +1044,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 8.5 修改 `step_emitter.py` — 不碰状态
+### 5.5 修改 `step_emitter.py` — 不碰状态
 
 ```diff
    def exit_with_error(self, step_count, error_type, error_message, recoverable=False):
@@ -1158,7 +1056,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 8.6 修改 `error_handler.py` — 不碰状态
+### 5.6 修改 `error_handler.py` — 不碰状态
 
 ```diff
    def _handle_fc_format_error(agent, error, step):
@@ -1174,7 +1072,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 8.7 修改 `react_cycle.py` — 唯一设状态的地方 + _dispatch_handler 基于 event type 推断
+### 5.7 修改 `react_cycle.py` — 唯一设状态的地方 + _dispatch_handler 基于 event type 推断
 
 **改动 1：所有 `agent.status = X` 改为用函数**
 
@@ -1240,7 +1138,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 
 ---
 
-### 8.8 修改 `run_sse_stream.py` — 外部异常用函数
+### 5.8 修改 `run_sse_stream.py` — 外部异常用函数
 
 ```diff
 - agent.set_cancelled()
@@ -1253,7 +1151,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 
 ---
 
-### 8.9 修改 `initialize_run_state.py`
+### 5.9 修改 `initialize_run_state.py`
 
 ```diff
 - agent.status = AgentStatus.THINKING
@@ -1263,7 +1161,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 
 ---
 
-### 8.10 变化总表
+### 5.10 变化总表
 
 | 改动 | 原来 | 改后 |
 |------|------|------|
@@ -1281,9 +1179,9 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 
 ---
 
-## 九、流程对比与改动好处
+## 六、流程对比与改动好处
 
-### 9.1 当前流程（现状）
+### 6.1 当前流程（现状）
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -1327,7 +1225,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 9.2 新设计流程（方案B）
+### 6.2 新设计流程（方案B）
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -1392,7 +1290,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 9.3 逐层对比
+### 6.3 逐层对比
 
 | 层级 | 维度 | 当前流程 | 新设计 | 好处 |
 |------|------|---------|--------|------|
@@ -1407,7 +1305,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 | **状态机** | 合法转换校验 | 无 | _TRANSITIONS 表 + 运行时校验 | 非法转换 → ValueError，500ms 内定位 |
 | **状态机** | 状态变更入口 | 8 个文件 14+ 处 | 1 个文件 4 个导出函数 | 加日志/加回调只需改一个地方 |
 
-### 9.4 数据流路径对比
+### 6.4 数据流路径对比
 
 ```
 当前:
@@ -1426,7 +1324,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 
 **yield-only 路径**：handler 只有一个产出通道（yield event）。状态（agent.status）和数据（message_builder）都由编排层从 yield chain 中统一消费。handler 零副作用。
 
-### 9.5 改动好处总结
+### 6.5 改动好处总结
 
 | 好处 | 说明 | 直接效果 |
 |------|------|---------|
@@ -1441,7 +1339,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 | **⑨ 数据流统一** | handler 不直接加 message_builder，编排层统一消费 Step content | handler 零 context 副作用，编排层独占 LLM context 写入权 |
 
 
-### 9.6 调用架构
+### 6.6 调用架构
 
 ```
 run_sse_stream ─── react_cycle ─── handler
@@ -1458,7 +1356,7 @@ run_sse_stream ─── react_cycle ─── handler
 | step_emitter | 发射 step，不碰状态 | ❌ 绝对不能 |
 | error_handler | 创建 ErrorStep，不碰状态 | ❌ 绝对不能 |
 
-### 9.7 具体变化（零处直接赋值）
+### 6.7 具体变化（零处直接赋值）
 
 | 当前 | 改后 |
 |------|------|
@@ -1478,7 +1376,7 @@ run_sse_stream ─── react_cycle ─── handler
 | `ctx.agent.message_builder.add_observation(obs_text, fc)` (action_handler:255) | 删除，编排层 yield 透传时遇到 ObservationStep 自动提取 content 加 context |
 | `ctx.agent.message_builder.add_observation(obs_text, {})` (action_handler:259) | 同上 |
 
-### 9.8 最终代码边界
+### 6.8 最终代码边界
 
 ```
 backend/app/services/agent/core_agent/
@@ -1492,6 +1390,108 @@ backend/app/services/agent/core_agent/
 ├── initialize_run_state.py ← 改：调 set_status
 ├── base_agent.py       ← 改：删除 set_failed/set_completed/set_cancelled
 ```
+
+---
+## 七、实施计划
+
+### 7.1 分步实施
+
+本方案分两步实施，每步都确保测试全通过：
+
+**第一步：status_table + 非 handler 清除直接赋值**
+
+| 序号 | 任务 | 涉及文件 | 测试影响 |
+|------|------|---------|---------|
+| 1.1 | 新建 `status_table.py` | `core_agent/status_table.py` | 无（新文件，无测试） |
+| 1.2 | 改 `base_agent.py` — 删 set_failed/set_completed/set_cancelled | `core_agent/base_agent.py` | 极小（import 变化） |
+| 1.3 | 改 `react_cycle.py` — 所有 `agent.status = X` 统一调 status_table（仅非 handler 部分） | `core_agent/react_cycle.py` | 中（mock 需调整） |
+| 1.4 | 改 `step_emitter.exit_with_error` — 不碰状态 | `core_agent/step_emitter.py` | 小（返回不变，状态已移出） |
+| 1.5 | 改 `error_handler` — 所有 `_handle_*` 不设状态 | `core_agent/error_handler.py` | 小（返回不变） |
+| 1.6 | 改 `run_sse_stream.py` — 调 set_cancelled/set_failed | `react_sse_wrapper/run_sse_stream.py` | 小 |
+| 1.7 | 改 `initialize_run_state.py` — 调 set_status | `core_agent/initialize_run_state.py` | 小 |
+| 1.8 | 测试修复 + 全量回归 | `tests/` | 中 |
+
+**第二步：handler yield-only 改造**
+
+| 序号 | 任务 | 涉及文件 | 测试影响 |
+|------|------|---------|---------|
+| 2.1 | 改 `answer_handler.py` — 删 set_xxx，空内容路径加 ErrorStep | `handlers/answer_handler.py` | **大（每个测试都要改）** |
+| 2.2 | 改 `action_handler.py` — 删 set_xxx，check_safety_and_confirm 用局部变量 | `handlers/action_handler.py` | **大** |
+| 2.3 | 改 `react_cycle._dispatch_handler` — 跟踪 seen_types + last_event 推断状态 | `core_agent/react_cycle.py` | 中 |
+| 2.4 | 改 `react_cycle._process_single_step` — 简化，只检查 agent.status | `core_agent/react_cycle.py` | 中 |
+| 2.5 | handler 测试适配 | `tests/` | **大** |
+| 2.6 | 全量回归 | `tests/` | 必须归零 |
+
+### 7.2 实施顺序说明
+
+第一步先做，确保"统一入口 + 合法转换校验"的基础设施落地，同时删除执行层的状态赋值（error_handler、step_emitter）。此时 handler 仍然通过 `base_agent.set_failed()`（已改为委托）设状态，测试基本不受影响。
+
+第二步改 handler 为 yield-only，这是影响最大的部分。handler 从"yield + set_xxx"变为"只 yield event"，dispatch_handler 从 event type 推断状态。所有 handler 测试需检查 yield 的事件序列是否包含预期的 ErrorStep/FinalStep。这一步才真正实现"handler 零接触状态"。
+
+### 7.3 版本号建议
+
+| 步骤 | 版本号 | 说明 |
+|------|--------|------|
+| 第一步完成后 | PATCH+1 | 基础设施搭建，对外行为不变 |
+| 第二步完成后 | MINOR+1 | handler 协议变更，虽对外仍不变，但改动较大 |
+
+---
+
+## 八、风险分析
+
+### 5.1 风险矩阵
+
+| 风险ID | 风险描述 | 概率 | 影响 | 等级 | 缓解措施 |
+|--------|---------|------|------|------|---------|
+| R001 | handler 改为 yield-only 后，遗漏某处 set_xxx 未删除，导致双重设状态 | 中 | 高 | **高** | 第一步 grep 确认 handler 中所有 `set_` 调用，逐处审查 |
+| R002 | handler 空内容路径新增 ErrorStep 后，前端可能未兼容多收到一个 ErrorStep 事件 | 低 | 低 | **低** | 前端现有 ErrorStep 处理逻辑兼容；验证 SSE 事件序列 |
+| R003 | REACT_CYCLE 的 while 循环中异常兜底路径遗漏 | 低 | 高 | **中** | 枚举 react_cycle 中每个异常路径，补充 set_failed |
+| R004 | 测试改动量过大导致实施时间远超预期 | 高 | 低 | **中** | 分两步实施，第一步测试不改，第二步再适配 handler 测试 |
+| R005 | 非法转换检测抛 ValueError 导致生产环境异常 | 低 | 中 | **低** | 测试覆盖所有合法流转路径；上线前跑完整回归 |
+
+### 5.2 关键检查项
+
+实施前逐项确认：
+
+- [ ] 所有 handler 的 `agent.set_failed()` / `agent.set_completed()` 是否已全部删除
+- [ ] answer_handler 空内容路径是否在 yield FinalStep 前加了 ErrorStep（区分失败与正常完成）
+- [ ] action_handler 中 `check_safety_and_confirm` 调用后是否用局部变量替代了 `agent.status == FAILED` 检查
+- [ ] `_dispatch_handler` 是否在所有 handler 分支都跟踪了 `seen_types` 和 `last_event`
+- [ ] `exit_with_error` 的所有调用方是否已无 `set_failed` 依赖
+- [ ] `error_handler.handle_react_error` 的所有调用方是否在收到 ErrorStep 后调了 `set_failed`
+- [ ] `run_react_cycle` 的 while 循环中是否每个异常路径都有 set_failed/set_cancelled
+- [ ] grep 'agent\.status\s*=' 是否仅返回 `__init__` 一行
+- [ ] grep 'agent\.set_failed' / 'agent\.set_completed' / 'agent\.set_cancelled' 是否返回 0 行
+
+---
+
+## 九、附录
+
+### 6.1 相关文件清单
+
+| 文件 | 操作 | 备注 |
+|------|------|------|
+| `backend/app/services/agent/core_agent/status_table.py` | 新建 | 函数式状态机 |
+| `backend/app/services/agent/core_agent/base_agent.py` | 修改 | 删除 set_failed/set_completed/set_cancelled |
+| `backend/app/services/agent/core_agent/react_cycle.py` | 修改 | 核心改动：调 status_table + _dispatch_handler event type 推断 |
+| `backend/app/services/agent/core_agent/handlers/answer_handler.py` | 修改 | yield-only，空内容路径加 ErrorStep |
+| `backend/app/services/agent/core_agent/handlers/action_handler.py` | 修改 | yield-only，check_safety_and_confirm 用局部变量 |
+| `backend/app/services/agent/core_agent/error_handler.py` | 修改 | 不设状态 |
+| `backend/app/services/agent/core_agent/step_emitter.py` | 修改 | exit_with_error 不设状态 |
+| `backend/app/services/react_sse_wrapper/run_sse_stream.py` | 修改 | 调 status_table |
+| `backend/app/services/agent/core_agent/initialize_run_state.py` | 修改 | 调 set_status |
+| `backend/tests/` | 修改 | 适配 handler 新行为（yield-only） |
+
+### 6.2 决策记录
+
+| 决策项 | 结论 | 理由 |
+|--------|------|------|
+| 状态机实现方式 | 纯函数 + 数据表，不用类 | SRP/KISS-DIRECT：类带来不必要的抽象，一个函数 + 一个 dict 足以 |
+| 合法转换检测时机 | 运行时抛 ValueError | 编译时无法检测状态流转路径，运行时抛异常是唯一可行的方式 |
+| handler 返回方式 | **yield-only（不 return dict）** | _dispatch_handler 从 yield chain 的 event type 推断状态，无需 StopAsyncIteration 捕获，无需 dict 契约。handler 单通道 yield，各层 `async for event: yield event` 自然穿透 |
+| RETRYABLE_ERROR | 彻底删除 | 当前没有业务场景依赖它，保留只是死代码 |
+| base_agent 三个方法 | 彻底删除，不留委托 | 消除 handler 误用的"默认路径" |
+| 测试改动策略 | 分两步实施，第一步测试不改 | 降低实施风险，先确保基础设施正确 |
 
 ---
 
