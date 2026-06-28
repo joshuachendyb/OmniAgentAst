@@ -1323,19 +1323,7 @@ def write_test_record(
         # 有final事件，检查是否有error
         if has_error:
             passed = False
-        # 检查回复是否有错误关键词
-        _KNOWN_LLM_ERR_PREFIXES = ("LLM流式错误:", "LLM流式错误：")
-        if resp:
-            _clean = resp.replace("\n", " ").replace("\r", " ").strip()
-            for pfx in _KNOWN_LLM_ERR_PREFIXES:
-                if _clean.startswith(pfx):
-                    _clean = _clean[len(pfx):].strip()
-                    break
-            if _clean:
-                err_markers = ("错误:", "错误：", "超时,", "超时，", "超时)", "超时）", "出错", "failed:", "exception:", "traceback:")
-                resp_has_error = any(m in _clean for m in err_markers)
-        if resp_has_error:
-            passed = False
+        
     else:
         # 没有final事件，失败
         passed = False

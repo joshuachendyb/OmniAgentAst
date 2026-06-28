@@ -71,6 +71,16 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
     elif parsed_type == "answer":
         async for event in handle_answer(agent, llm_response, chunk_buffer):
             yield event
+    elif parsed_type == "error":
+        # 【E-4修复】error类型—建ErrorStep+set_failed — 小欧 2026-06-28
+        content = llm_response.get("content", "")
+        agent.message_builder.add_assistant_message(content or "")
+        agent.set_failed(content or "LLM流式错误")
+        yield agent._step_emitter.emit(ErrorStep(
+            step=agent.llm_call_count,
+            error_type="llm_error",
+            error_message=content or "LLM流式错误",
+        ))
     else:
         logger.warning(f"[dispatch_handler] 未知返回类型: {parsed_type}, 设置为FAILED")
         # 【#35修复】未知类型响应加入对话历史，防止LLM重复产生相同无效响应 — chendyg 2026-06-26

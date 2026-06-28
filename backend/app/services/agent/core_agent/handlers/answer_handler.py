@@ -5,6 +5,7 @@ answer_handler — answer/implicit类型处理
 从react_cycle.py拷出_handle_answer函数，保持业务逻辑不变
 
 Author: 小沈 - 2026-06-09
+v2.0: 新增错误消息检测，LLM返回错误时设FAILED而非COMPLETED — 小欧 2026-06-28
 """
 from typing import Dict
 
@@ -13,7 +14,7 @@ from app.services.agent.types import AgentStatus
 
 
 async def handle_answer(agent, parsed: Dict, chunk_buffer):
-    """处理answer类型 — FC-only: 空内容视为错误"""
+    """处理answer类型 — FC-only: 空内容/错误内容均视为失败"""
     step = agent.llm_call_count
     content = parsed.get("content", "")
 

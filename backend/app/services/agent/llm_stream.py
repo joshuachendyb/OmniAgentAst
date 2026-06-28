@@ -59,9 +59,10 @@ def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_r
 
 def _yield_error_response(error_msg: str, agent):
     """统一错误响应构建 — 小健 2026-06-18 DRY提取"""
+    # 【E-4修复】返回type:error,DispatchHandler的error分支处理 — 小欧 2026-06-28
     logger.error(f"[FC] {error_msg}")
-    _log_llm_response(agent, error_msg, "answer", None, finish_reason="error")
-    return ("response", {"type": "answer", "content": error_msg})
+    _log_llm_response(agent, error_msg, "error", None, finish_reason="error")
+    return ("response", {"type": "error", "content": error_msg})
 
 
 def _build_answer_response(content, usage_data, agent):

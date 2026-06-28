@@ -176,7 +176,7 @@ async def test_fc_fallback_disabled():
 
             response_results = [r for r in results if r[0] == "response"]
             assert len(response_results) == 1, "降级关闭时应返回1个错误response"
-            assert response_results[0][1]["type"] == "answer", "错误response应为answer类型"
+            assert response_results[0][1]["type"] == "error", "错误response应为error类型"
             assert "FC模式失败" in response_results[0][1]["content"], f"错误信息应包含FC模式失败，实际: {response_results[0][1]['content']}"
             assert call_count == 2, f"应调用2次LLM（FC_MAX_RETRIES=2），实际{call_count}次"
 
