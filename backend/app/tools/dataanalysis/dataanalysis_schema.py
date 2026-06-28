@@ -195,9 +195,7 @@ class FilterDataInput(BaseModel):
 
 
 class QuerySqlInput(_DbConnectionMixin):
-    sql: str = Field(
-        ...,
-        description="""SQL查询语句（单条，只读）。
+    """SQL查询语句（单条，只读,严禁多条语句）。
 
 【重要限制】
 - 一次只能执行一条SELECT语句
@@ -205,6 +203,10 @@ class QuerySqlInput(_DbConnectionMixin):
 - 强制只读：仅允许 SELECT/SHOW/DESCRIBE/PRAGMA/WITH/EXPLAIN
 - 写入操作（INSERT/UPDATE/DELETE/DDL）会返回错误
 
+"""
+    sql: str = Field(
+        ...,
+        description="""SQL查询语句（单条，只读,严禁多条语句）
 【示例】
 ✅ 正确: SELECT * FROM users WHERE age > 25
 ✅ 正确: SELECT name, COUNT(*) FROM orders GROUP BY name
@@ -214,9 +216,7 @@ class QuerySqlInput(_DbConnectionMixin):
 
 
 class ExecuteSqlInput(_DbConnectionMixin):
-    sql: str = Field(
-        ...,
-        description="""SQL写入语句（单条）。
+    """SQL写入语句（单条,严禁多条语句）。
 
 【重要限制】
 - 一次只能执行一条SQL语句
@@ -234,6 +234,10 @@ class ExecuteSqlInput(_DbConnectionMixin):
 2. 外键约束失败: 确保引用的记录存在
 3. 语法错误: 检查SQL语法
 
+"""
+    sql: str = Field(
+        ...,
+        description="""SQL写入语句（单条）严禁多条语句。
 【示例】
 ✅ 正确: INSERT INTO users (id, name) VALUES (1, 'Alice')
 ❌ 错误: INSERT INTO users ...; INSERT INTO orders ...
