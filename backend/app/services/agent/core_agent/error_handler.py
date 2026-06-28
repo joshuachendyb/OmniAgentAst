@@ -8,7 +8,6 @@ exit_with_error保留不动, 用于确定要FAILED的场景(空响应/安全bloc
 """
 
 from app.services.agent.steps import ErrorStep
-from app.services.agent.types import AgentStatus
 from app.utils.logger import logger
 
 
@@ -44,16 +43,16 @@ def _classify_error(error):
 
 
 def _handle_fc_format_error(agent, error, step):
-    """FC格式错误 → 可重试 — 小欧 2026-06-25"""
+    """FC格式错误 → FAILED（已无外层重试）— 小欧 2026-06-28"""
     logger.error(f"[ErrorHandler] FC格式错误: {error}")
-    agent.status = AgentStatus.RETRYABLE_ERROR
+    agent.set_failed(str(error))
     return ErrorStep(step=step, error_type="fc_format_error",
-                     error_message=str(error), recoverable=True)
+                     error_message=str(error), recoverable=False)
 
 
 def _handle_network_error(agent, error, step):
-    """网络错误 → 可重试 — 小欧 2026-06-25"""
+    """网络错误 → FAILED（已无外层重试）— 小欧 2026-06-28"""
     logger.error(f"[ErrorHandler] 网络错误: {error}")
-    agent.status = AgentStatus.RETRYABLE_ERROR
+    agent.set_failed(str(error))
     return ErrorStep(step=step, error_type="network_error",
-                     error_message=str(error), recoverable=True)
+                     error_message=str(error), recoverable=False)

@@ -412,4 +412,4 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
             step=step, response=_status.get("message", ""),
             thought=parsed.get("thought", ""),
         ))
-        agent.status = AgentStatus.COMPLETED
+        agent.set_completed()

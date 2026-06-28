@@ -99,6 +99,10 @@ class BaseAgent(ABC):
         if reason:
             logger.warning(f"[Agent] FAILED: {reason}")
 
+    def set_completed(self):
+        """统一COMPLETED状态入口 — 小欧 2026-06-28"""
+        self.status = AgentStatus.COMPLETED
+
     def _create_cancelled_chunk(self):
         """创建取消chunk — 直接使用stream_parser函数
          【修复P2-6】移除对llm_client私有方法的依赖 — 北京老陈 2026-06-13

@@ -10,7 +10,6 @@ v2.0: 新增错误消息检测，LLM返回错误时设FAILED而非COMPLETED — 
 from typing import Dict
 
 from app.services.agent.steps import ThoughtStep, FinalStep
-from app.services.agent.types import AgentStatus
 
 
 async def handle_answer(agent, parsed: Dict, chunk_buffer):
@@ -22,7 +21,7 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
         from app.utils.logger import logger
         logger.warning(f"[handle_answer] LLM返回空内容(step={step})")
         # 【P1-17修复】空内容应设FAILED而非COMPLETED — chendyg 2026-06-26
-        agent.status = AgentStatus.FAILED
+        agent.set_failed("LLM返回空内容")
         # 【Bug3修复】空内容也需保存assistant消息到对话历史，保持FC协议完整性 — chendyg 2026-06-26
         agent.message_builder.add_assistant_message("")
         yield agent._step_emitter.emit(FinalStep(
@@ -44,4 +43,4 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
     # 【修复P0-2】保存assistant回复到对话历史 — 北京老陈 2026-06-13
     # 【J-1修复】走MessageBuilder封装入口 — 小欧 2026-06-25
     agent.message_builder.add_assistant_message(content)
-    agent.status = AgentStatus.COMPLETED
+    agent.set_completed()

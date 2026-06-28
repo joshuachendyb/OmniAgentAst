@@ -171,7 +171,6 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
     if not llm_response or not isinstance(llm_response, dict):
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
-        agent.set_failed("LLM返回空响应")
         yield agent._step_emitter.exit_with_error(
             step_count=step, error_type="empty_response",
             error_message="LLM返回空响应",
