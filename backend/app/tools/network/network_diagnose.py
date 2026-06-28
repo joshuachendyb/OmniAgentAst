@@ -154,18 +154,15 @@ def _parse_ping_output(raw_output: str, system: str) -> dict:
 
 
 async def _ping(host: str, count: int = 4, timeout: int = 5) -> Dict[str, Any]:
-    """Ping测试(内部函数) — 只返回raw dict — 小欧 2026-06-22 — 小健 2026-06-22 修复铁规违反"""
+    """Ping测试(内部函数) — 只返回raw dict — 小欧 2026-06-22 — 小健 2026-06-22 修复铁规违反 — 小欧 2026-06-28 改用to_thread避免Python 3.13+ EventLoop NotImplementedError"""
     if not host or not host.strip():
         return {"success": False, "error_detail": "目标主机地址不能为空", "err_code": ERR_NETWORK_INVALID_HOST, "params": {"host": host}}
     host = host.strip()
     cmd = _build_ping_cmd(host, count, timeout)
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=count * timeout + 10)
-        raw_output = stdout.decode("utf-8", errors="replace")
-    except asyncio.TimeoutError:
+        result = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True, timeout=count * timeout + 10)
+        raw_output = result.stdout
+    except subprocess.TimeoutExpired:
         return {"success": False, "error_detail": f"Ping超时({count * timeout + 10}秒)", "err_code": ERR_NETWORK_TIMEOUT, "params": {"host": host}}
     except FileNotFoundError:
         return {"success": False, "error_detail": "系统ping命令不可用", "err_code": ERR_SHELL_COMMAND_NOT_FOUND, "params": {"host": host}}
