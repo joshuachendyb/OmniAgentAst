@@ -209,7 +209,7 @@ async def run_sse_stream(
         yield format_agent_sse(final_dict)
         if agent is not None:
             # 【Bug17修复】CancelledError应设CANCELLED而非COMPLETED — chendyg 2026-06-26
-            agent.status = AgentStatus.CANCELLED
+            agent.set_cancelled()
 
     except Exception as e:
         end_type = "error"
@@ -225,7 +225,7 @@ async def run_sse_stream(
         current_execution_steps.append(final_step.to_dict())
         yield format_agent_sse(final_step.to_dict())
         if agent is not None:
-            agent.status = AgentStatus.FAILED
+            agent.set_failed(str(e)[:200])
 
     finally:
         # 从agent.status推导end_type

@@ -11,7 +11,6 @@ Author: 小沈 - 2026-05-31
 from typing import Any, Dict, Optional
 
 from app.services.agent.steps import ErrorStep
-from app.services.agent.types import AgentStatus
 from app.utils.logger import logger
 
 
@@ -27,11 +26,8 @@ class StepEmitter:
         return step
 
     def exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> 'ReasoningStep':
-        """创建error_step,设置状态(可重试设RETRYABLE_ERROR否则FAILED),返回Step对象 — chendyg 2026-06-26 修复recoverable=True仍设FAILED"""
-        if recoverable:
-            self.agent.status = AgentStatus.RETRYABLE_ERROR
-        else:
-            self.agent.set_failed(error_message)
+        """创建error_step,设FAILED,返回Step对象 — 小欧 2026-06-28 终态统一走set_failed"""
+        self.agent.set_failed(error_message)
         error_step = ErrorStep(
             step=step_count,
             error_type=error_type,

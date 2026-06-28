@@ -185,7 +185,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             thought="",
         ))
         # 【Bug17修复】取消应设CANCELLED而非COMPLETED — chendyg 2026-06-26
-        agent.status = AgentStatus.CANCELLED
+        agent.set_cancelled()
         return
 
     # B3修复: LLM未调用任何工具直接回答 → 注入警告并重试 — 小欧 2026-06-26

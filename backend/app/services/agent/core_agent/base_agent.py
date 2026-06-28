@@ -103,6 +103,10 @@ class BaseAgent(ABC):
         """统一COMPLETED状态入口 — 小欧 2026-06-28"""
         self.status = AgentStatus.COMPLETED
 
+    def set_cancelled(self):
+        """统一CANCELLED状态入口 — 小欧 2026-06-28"""
+        self.status = AgentStatus.CANCELLED
+
     def _create_cancelled_chunk(self):
         """创建取消chunk — 直接使用stream_parser函数
          【修复P2-6】移除对llm_client私有方法的依赖 — 北京老陈 2026-06-13
