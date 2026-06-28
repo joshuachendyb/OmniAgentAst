@@ -228,7 +228,7 @@ async def run_sse_stream(
             agent.status = AgentStatus.FAILED
 
     finally:
-        # 从agent.status推导end_type（exception路径已设"interrupted"/"error"，不覆盖）
+        # 从agent.status推导end_type
         if end_type == "unknown" and agent is not None:
             _m = {
                 AgentStatus.COMPLETED: "final",
