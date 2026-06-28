@@ -25,6 +25,56 @@
 
 ## 一、背景与问题
 
+### 1.0--架构设计与数据分流的新模式
+
+架构叫:Agent状态及数据分流处理设计方案
+
+Agent状态（元数据）集中到 status_table 管，
+数据（Step）通过 yield chain 统一流转。handler 只 yield Step（数据层的事），
+编排层从 Step 取 type（状态层的事）
+
+#### 1.0.1 agent状态与数据分流的两个维度说明
+
+两个维度，不是两个正交的事，也不是同一类问题——是互补的：
+
+状态层（agent.status）：管元数据——"现在是什么阶段"
+数据层（yield chain）：管数据本体——"具体内容是什么"
+
+#### 1.0.2 agent状态的设计原则
+
+gent.status 管"是什么类型"，yield handler 管"具体数据是什么"
+agent.status = THINKING    → 类型：正在思考
+    yield ThoughtStep(...) → 数据：具体思考内容
+
+agent.status = EXECUTING   → 类型：正在执行
+    yield ActionStep(...)  → 数据：具体调用哪个工具
+    yield ObservationStep(...) → 数据：工具返回的结果
+    ↑ 数据本身给前端展示 + 给 LLM context（两个消费，是数据层的事）
+
+agent.status = FAILED      → 类型：失败了
+    yield ErrorStep(...)   → 数据：具体错误信息
+
+
+#### 1.0.3 handle及数据风流说明
+
+LLM → handler 执行 → 产出 Step 事件 → 前端展示
+                                   → 判断状态（要不要继续）
+                                   → 加 context（下一轮 LLM 用）
+
+正确的设计：handler 除了 yield Step，什么也不做。
+ObservationStep 的内容进 message_builder，是编排层（react_cycle）收到 Step 后自己加，不是 handler 加。
+
+三个出口，两个是后门。应该：
+
+handler 产出 Step → yield（唯一大门）
+                     ↓
+             编排层统一处理：
+               ├─ type → 状态
+               ├─ observation.content → context
+               └─ yield → 前端
+
+
+
 ### 1.1 当前问题：handler 多出口
 
 Agent 状态赋值分散在 10 处、6 个文件中，无统一入口、无合法转换校验：
@@ -55,12 +105,13 @@ Agent 状态赋值分散在 10 处、6 个文件中，无统一入口、无合�
 
 **本质是一个问题**：handler 有多个对外出口，大多数是后门。
 
-```
-handler 的出口：
-  ① yield Step       → 前端展示         ✅ handler 该做的
-  ② set_failed/completed → 状态机流转  ❌ 越界（绕过编排层）
-  ③ message_builder.add → LLM context  ❌ 越界（绕过编排层）
-```
+
+handler 干了三件事，其中两件不归它管：
+
+handler 做的事	归属	问题
+① yield Step 事件给前端	handler 该做的 ✅	—
+② set_failed/set_completed 状态	编排层该管的 ❌	已被修正（yield-only）
+③ ObservationStep 内容加到 message_builder	编排层该管的？ ❓	您说的"还有一个不好"
 
 两个后门（② 和 ③）做的事不同——一个管"类型（状态）"，一个管"数据（context）"——但毛病一样：**handler 通过 yield 以外的通道直接影响系统其他部分**。
 
@@ -121,6 +172,7 @@ Step 的消费者：        当前 handler 怎么服务：      应该怎么服�
 | **合法转换校验** | 运行时检测非法转换，提前暴露错误 | 非法转换时抛 `ValueError`，500ms 内可定位 |
 | **层次隔离** | handler 不碰状态，编排层唯一负责状态流转 | handler 代码中无 `set_failed`/`set_completed`/`status=` 调用 |
 | **单通道事件传递** | handler 只 yield event，不 return dict、不 set_xxx、不 add_message | _dispatch_handler 从 event type 推断状态 + 从 Step content 加 context，handler 无后门 |
+
 
 ### 1.5 设计原则
 
@@ -1179,7 +1231,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 
 ---
 
-## 六、流程对比与改动好处
+## 六、流程对比:新的Agent及数据分流处理流程
 
 ### 6.1 当前流程（现状）
 
@@ -1225,7 +1277,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 新设计流程（方案B）
+### 6.2 新设计流程:新的Agent及数据流向综合处理流程说明
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
