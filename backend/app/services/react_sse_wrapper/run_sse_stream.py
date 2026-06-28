@@ -173,7 +173,6 @@ async def run_sse_stream(
 
             # 更新current_content — 小沈 2026-06-09 支持StreamState
             if event_type == 'final':
-                end_type = "final"
                 content = event_dict.get('response', '') or ''
                 if stream_state is not None:
                     stream_state.current_content = content or stream_state.current_content
@@ -229,6 +228,15 @@ async def run_sse_stream(
             agent.status = AgentStatus.FAILED
 
     finally:
+        # 从agent.status推导end_type（exception路径已设"interrupted"/"error"，不覆盖）
+        if end_type == "unknown" and agent is not None:
+            _m = {
+                AgentStatus.COMPLETED: "final",
+                AgentStatus.FAILED: "failed",
+                AgentStatus.CANCELLED: "interrupted",
+            }
+            end_type = _m.get(agent.status, "unknown")
+
         # 统一保存入口：正常、异常、取消都走这里
         if current_execution_steps:
             for retry in range(2):
