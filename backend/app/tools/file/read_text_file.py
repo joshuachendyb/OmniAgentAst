@@ -106,9 +106,9 @@ def _select_lines(
     offset: Optional[int] = None,
     limit: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 offset超范围返回warning — 小健 2026-06-25 空文件+offset返回warning
-    offset: 负数=从尾倒数;正数=分页(必须配合limit);None=全文
-    limit: 仅配合offset正数(分页)"""
+    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 offset超范围返回warning — 小健 2026-06-25 空文件+offset返回warning — 小欧 2026-06-28 支持limit单独使用+offset负数容错
+    offset: 负数=从尾倒数;正数=分页(必须配合limit);None=全文或前limit行
+    limit: 配合offset正数(分页)或单独使用(读前N行)"""
     total = len(lines)
     params = {}
     warning = None
@@ -127,16 +127,30 @@ def _select_lines(
             start_idx = max(0, offset - 1) if offset > 0 else max(0, total + offset)
             if start_idx >= total and total > 0:
                 warning = f"offset={offset}超出文件范围(共{total}行),返回空内容"
-            if limit is not None:
+            
+            if offset < 0 and limit is not None:
+                warning = (warning + "; " if warning else "") + f"offset为负数时limit参数无效(已忽略limit={limit})"
+                selected = lines[start_idx:]
+            elif limit is not None:
                 selected = lines[start_idx:start_idx + limit]
             else:
                 selected = lines[start_idx:]
+            
             n = len(selected)
             params.update({
                 "offset": offset, "limit": limit,
                 "start_line": start_idx + 1 if n > 0 else 0,
                 "end_line": start_idx + n if n > 0 else 0,
             })
+    elif limit is not None:
+        selected = lines[:limit]
+        n = len(selected)
+        params = {
+            "offset": None,
+            "limit": limit,
+            "start_line": 1,
+            "end_line": n,
+        }
     else:
         selected = lines
 
@@ -243,20 +257,10 @@ async def read_text_file(
             return build_error(data={"error_detail": "offset为正数时必须带limit,示例: offset=10,limit=20读第10-30行", "params": {"offset": offset, "limit": limit}}, llm_data=llm_data)
 
         if offset is not None and offset < 0 and limit is not None:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data(
-                "error", duration_ms, file_path=file_path,
-                detail="offset为负数时不能带limit",
-            )
-            return build_error(data={"error_detail": "offset为负数时不能带limit", "params": {"offset": offset, "limit": limit}}, llm_data=llm_data)
+            pass
 
         if limit is not None and offset is None:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data(
-                "error", duration_ms, file_path=file_path,
-                detail="limit必须配合offset使用,单独使用无意义",
-            )
-            return build_error(data={"error_detail": "limit必须配合offset使用", "params": {"limit": limit}}, llm_data=llm_data)
+            pass
 
         path = Path(file_path)
         if not path.exists():

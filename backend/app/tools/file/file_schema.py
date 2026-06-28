@@ -33,13 +33,35 @@ class ReadTextFileInput(BaseModel):
     )
     offset: Optional[int] = Field(
         default=None,
-        description="读取模式：不传=读全文；负数=从尾倒数(如-20返回末20行,此时limit无效)；正数=分页起始行(必须配合limit)"
+        description="""起始行号(1-indexed)。
+
+【四种模式】
+1. 不传offset和limit: 读全文
+2. 只传limit: 读前limit行（如limit=100读前100行）
+3. offset为负数: 从末尾倒数（如-20读最后20行，limit无效）
+4. offset为正数: 分页模式，必须配合limit
+
+【示例】
+- 不传参数: 读全文
+- limit=100: 读前100行
+- offset=-20: 读最后20行
+- offset=10, limit=20: 读第10-29行"""
     )
     limit: Optional[int] = Field(
         default=None,
         ge=1,
         le=1000000,
-        description="最大读取行数。仅offset为正数时有效(分页模式)"
+        description="""读取行数。
+
+【重要说明】
+- offset为正数时: limit必填（分页模式）
+- offset为负数时: limit无效（已忽略，返回warning）
+- offset不传时: limit有效（读前N行）
+
+【示例】
+- limit=100: 读前100行
+- offset=1, limit=100: 读第1-100行
+- offset=-20, limit=100: 读最后20行（limit被忽略）"""
     )
     encoding: Optional[str] = Field(
         default=None,
