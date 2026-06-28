@@ -82,32 +82,32 @@ def find_windows_by_title(window_title: str) -> List[int]:
     if not _win32gui:
         return []
     windows = []
-    def callback(hwnd: int, _: List) -> bool:
+    def callback(hwnd: int, _: List) -> int:
         try:
             title = _win32gui.GetWindowText(hwnd)
             if title and window_title.lower() in title.lower():
                 windows.append(hwnd)
         except Exception:
             pass
-        return True
+        return 1
     _win32gui.EnumWindows(callback, [])
     return windows
 
 
-def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> bool:
-    """枚举窗口回调函数 — 小健 2026-06-22"""
+def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> int:
+    """枚举窗口回调函数 — 小健 2026-06-22，小沈 2026-06-28修复返回类型"""
     try:
         if not _win32gui.IsWindowVisible(hwnd):
-            return True
+            return 1
         title = _win32gui.GetWindowText(hwnd)
         if not title:
-            return True
+            return 1
         rect = get_window_rect(hwnd)
         state = get_window_state(hwnd)
         windows.append({"hwnd": hwnd, "title": title, "state": state, "position": rect})
     except Exception:
         pass
-    return True
+    return 1
 
 
 def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: int, filter_title: str = "", detail: str = "") -> dict:
