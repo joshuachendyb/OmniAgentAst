@@ -304,6 +304,21 @@ async def run_react_cycle(
                 yield agent._step_emitter.emit(ErrorStep(step=agent.llm_call_count, error_type="chunk_buffer_timeout", error_message="chunk buffer累积超时，强制停止"))
                 break
 
+        # 【修复】循环自然结束（max_steps耗尽）但无终态→强制FAILED — 小欧 2026-06-28
+        if agent.status not in (
+            AgentStatus.COMPLETED,
+            AgentStatus.FAILED,
+            AgentStatus.CANCELLED,
+            AgentStatus.RETRYABLE_ERROR,
+        ):
+            logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 设为FAILED")
+            agent.set_failed(f"ReAct循环结束但无终态(status={agent.status})")
+            yield agent._step_emitter.emit(FinalStep(
+                step=agent.llm_call_count,
+                response=f"ReAct循环结束但无终态(status={agent.status})",
+                thought="",
+            ))
+
     except Exception as e:
         logger.error(f"[run_react_cycle] 异常: {e}", exc_info=True)
         error_step = handle_react_error(agent, e, agent.llm_call_count)
