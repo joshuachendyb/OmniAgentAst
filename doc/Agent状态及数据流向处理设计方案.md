@@ -651,130 +651,6 @@ def exit_with_error(self, error_message, error_type="general", recoverable=False
 - `_dispatch_handler` 跟踪 seen_types + last_event，handler 结束后根据 yield chain 的 event type 设状态
 - `_process_single_step` 不再读 Send() 返回值，直接依靠 dispatch_handler 已完成的状态设置
 
-#### 3.7.1 `_dispatch_handler` / `_process_single_step` — 改为 seen_types event type 推断
-
-```diff
-   async def _dispatch_handler(self, agent, llm_response, chunk_buffer):
-       """分派 handler 并透传事件"""
--      # 当前：只透传，不管状态
--      async for event in self._call_handler(agent, llm_response, chunk_buffer):
--          yield event
-+      seen_types = set()
-+      last_event = None
-+      
-+      if parsed_type == "action":
-+          handler = handle_action(agent, llm_response, chunk_buffer)
-+      elif ...:
-+          handler = ...
-+      
-+      async for event in handler:
-+          seen_types.add(event.type)      # ← 跟踪 type
-+          last_event = event
-+          yield event
-+      
-+      # handler 耗尽，根据 yield chain 推断状态
-+      if "error" in seen_types:
-+          error_msg = last_event.get_content() if last_event else ""
-+          set_failed(agent, error_msg)
-+      elif "final" in seen_types:
-+          set_completed(agent)
-+      # 否则 continue（不设状态）
-
-   async def _process_single_step(self, agent, event_generator):
-       """轮询 LLM 响应 → dispatch → 设状态"""
--      # 当前方式：从 Send() 返回值读 dict
--      result_dict = await agent.send(None)
--      if result_dict:
--          action = result_dict.get("action", "continue")
--          if action == "complete":
--              agent.set_completed(...)
--          elif action == "fail":
--              agent.set_failed(...)
-+      # 改后：dispatch_handler 已在 yield 穿透过程中设了状态
-+      # _process_single_step 只需检查 agent.status
-+      async for event in event_generator:
-+          if isinstance(event, FinalStep):
-+              agent.set_completed(event.response)
-+              break
-+          elif isinstance(event, ErrorStep):
-+              agent.set_failed(event.error_message, error_type=event.error_type)
-+              break
-```
-
-**关键思路**：
-- 状态判断权从 **handler 侧**（return dict）移到了 **_dispatch_handler 侧**（event type 推断）
-- _dispatch_handler 作为 handler 和循环之间的唯一中介，自然知道 handler 有哪些 event 被 yield 了
-- _process_single_step 不再需要解读 handler 的"return value"，只需确认 dispatch_handler 已完成的状态设置
-- _process_single_step 的 Simplify 版本（上面第二段）直接从 event_generator 的 event 判状态，和 dispatch_handler 形成**双重保障**
-
-#### 3.7.2 `_dispatch_handler` — yield-only + seen_types event type 推断（无 return dict）
-
-**最终代码**（_dispatch_handler 遍历 handler yield chain，跟踪 seen_types + last_event，handler 结束后从 event type 推断状态。无 return dict、无 StopAsyncIteration）：
-
-```python
-async def _dispatch_handler(self, agent, llm_response, chunk_buffer):
-    parsed_type = llm_response.get("type", "answer")
-    seen_types = set()
-    last_event = None
-
-    if parsed_type == "action":
-        async for event in handle_action(agent, llm_response, chunk_buffer):
-            seen_types.add(event.type)
-            last_event = event
-            yield event
-
-    elif parsed_type == "answer":
-        async for event in handle_answer(agent, llm_response, chunk_buffer):
-            seen_types.add(event.type)
-            last_event = event
-            yield event
-
-    elif parsed_type == "error":
-        content = llm_response.get("content", "")
-        agent.message_builder.add_assistant_message(content or "")
-        error_step = ErrorStep(step=agent.llm_call_count,
-            error_type="llm_error", error_message=content or "LLM流式错误")
-        seen_types.add(error_step.type)
-        last_event = error_step
-        yield agent._step_emitter.emit(error_step)
-
-    else:
-        content = llm_response.get("content", "") or llm_response.get("thought", "")
-        if content:
-            agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
-        final_step = FinalStep(step=agent.llm_call_count,
-            response=f"LLM返回未知响应类型: {parsed_type}")
-        seen_types.add(final_step.type)
-        last_event = final_step
-        yield agent._step_emitter.emit(final_step)
-
-    # handler 结束，根据 yield chain 设状态（无 return dict）
-    if "error" in seen_types:
-        error_msg = last_event.get_content() if last_event else ""
-        set_failed(agent, error_msg)
-    elif "final" in seen_types:
-        set_completed(agent)
-    # 否则不设状态，react_cycle 继续循环
-```
-
-#### 3.7.3 `_process_single_step` — dispatch 后仅检查 agent.status（无 StopAsyncIteration）
-
-**最终代码**（_process_single_step 只透传事件，依赖 _dispatch_handler 已设好的状态。不读 Send() 返回值、不捕获 StopAsyncIteration）：
-
-```python
-async def _process_single_step(self, agent, chunk_buffer):
-    llm_response = await agent.llm_client.chat(
-        messages=agent.messages,
-        tools=agent.enabled_tool_defs,
-    )
-    
-    async for event in self._dispatch_handler(agent, llm_response, chunk_buffer):
-        yield event
-    
-    # _dispatch_handler 已在 yield 透传时从 seen_types 推断并设好状态
-    # _process_single_step 只需检查 agent.status 判断是否继续循环
-```
-
 #### 3.7.4 `run_react_cycle` — 状态赋值替换 + 删除 RETRYABLE_ERROR
 
 **当前直接赋值**（需要替换的行）：
@@ -884,7 +760,7 @@ finally:
 
 ---
 
-### 5.1 新建 `status_table.py`
+### 4.1 新建 `status_table.py`
 
 **路径**: `backend/app/services/agent/core_agent/status_table.py`
 
@@ -915,7 +791,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 5.2 修改 `base_agent.py` — 删 3 个方法
+### 4.2 修改 `base_agent.py` — 删 3 个方法
 
 **删除**：
 
@@ -930,7 +806,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 5.3 修改 `answer_handler.py` — 不 set_xxx、不 add_message，空内容路径加 ErrorStep
+### 4.3 修改 `answer_handler.py` — 不 set_xxx、不 add_message，空内容路径加 ErrorStep
 
 **改动点**：删掉 2 处 `agent.set_failed/set_completed`。删掉 2 处 `agent.message_builder.add_assistant_message`。空内容路径先 yield ErrorStep 再 yield FinalStep，让 _dispatch_handler 能通过 event type 区分失败与正常完成。
 
@@ -954,7 +830,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 5.4 修改 `action_handler.py` — 不 set_xxx，用局部变量跟踪
+### 4.4 修改 `action_handler.py` — 不 set_xxx，用局部变量跟踪
 
 **变动点 1：`check_safety_and_confirm` — 只 yield ErrorStep**
 
@@ -999,7 +875,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 5.5 修改 `step_emitter.py` — 不碰状态
+### 4.5 修改 `step_emitter.py` — 不碰状态
 
 ```diff
    def exit_with_error(self, step_count, error_type, error_message, recoverable=False):
@@ -1011,7 +887,7 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 
 ---
 
-### 5.6 修改 `error_handler.py` — 不碰状态
+### 4.6 修改 `error_handler.py` — 不碰状态
 
 ```diff
    def _handle_fc_format_error(agent, error, step):
@@ -1019,15 +895,24 @@ def set_cancelled(agent):          set_status(agent, AgentStatus.CANCELLED)
 +     # 不设状态，只创建 ErrorStep
       return ErrorStep(step=step, error_type="fc_format_error", ...)
 
-   def _handle_network_error(agent, error, step):
+    def _handle_network_error(agent, error, step):
 -     agent.set_failed(str(error))
 +     # 不设状态，只创建 ErrorStep
       return ErrorStep(step=step, error_type="network_error", ...)
 ```
 
+**入口函数 `handle_react_error`** — 也要删 `set_failed`：
+
+```diff
+  # handle_react_error 入口函数（最外层的统一入口）：
+  for error_step in handle_react_error(agent, error):
+      yield error_step
+- agent.set_failed(str(error))          # ← 删掉！handler 只 yield ErrorStep，不设状态
+```
+
 ---
 
-### 5.7 修改 `react_cycle.py` — 唯一设状态的地方 + _dispatch_handler 基于 event type 推断
+### 4.7 修改 `react_cycle.py` — 唯一设状态的地方 + _dispatch_handler 基于 event type 推断
 
 **改动 1：所有 `agent.status = X` 改为用函数**
 
@@ -1076,6 +961,30 @@ async def _dispatch_handler(self, agent, llm_response, chunk_buffer):
     # 否则 continue（不设状态）
 ```
 
+**改动 2a：新增 `handle_error_gen`（LLM 返回 type=error）**
+
+```python
+async def handle_error_gen(agent, llm_response):
+    """LLM type=error：提取 error content → yield ErrorStep（不设状态、不碰 message_builder）"""
+    content = llm_response.get("content", "")
+    error = content or "LLM流式错误"
+    error_step = agent._step_emitter.emit(ErrorStep(error_type="llm_error", error_message=error))
+    yield error_step
+```
+
+**改动 2b：新增 `_handle_unknown`（未知响应类型）**
+
+```python
+async def _handle_unknown(self, agent, llm_response):
+    """未知响应类型：提取 content → yield FinalStep"""
+    parsed_type = llm_response.get("type", "unknown")
+    content = llm_response.get("content", "") or llm_response.get("thought", "")
+    final_step = agent._step_emitter.emit(FinalStep(
+        response=f"LLM返回未知响应类型: {parsed_type}",
+    ))
+    yield final_step
+```
+
 **改动 3：`_process_single_step` 不再读 Send() 返回值**
 
 ```python
@@ -1091,9 +1000,77 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
     break
 ```
 
+**改动 4：`run_react_cycle` — while 循环 + 取消处理 + 异常兜底**
+
+```python
+async def run_react_cycle(self, agent, task):
+    """核心循环：LLM 调用 → 工具执行 → dispatch → 状态推断"""
+    chunk_buffer = []
+    
+    while agent.status in (AgentStatus.THINKING, AgentStatus.EXECUTING):
+        try:
+            # 取消检查
+            if agent.cancelled:
+                set_cancelled(agent)
+                yield agent._step_emitter.emit(FinalStep(step=agent.llm_call_count,
+                    agent_status=agent.status.value, response="用户取消"))
+                break
+            
+            set_status(agent, AgentStatus.THINKING)
+            llm_response = await agent.llm_client.chat(
+                messages=agent.messages,
+                tools=agent.enabled_tool_defs,
+                stream=True,
+                chunk_buffer=chunk_buffer,     # ← chunk_buffer 由编排层维护
+            )
+            if not llm_response:
+                set_failed(agent, "LLM返回空响应")
+                yield agent._step_emitter.emit(ErrorStep(error_type="llm_error",
+                    error_message="LLM返回空响应"))
+                break
+            
+            # 工具执行（仅 action 类型）
+            if llm_response.get("type") == "action":
+                set_status(agent, AgentStatus.EXECUTING)
+                execute_result = await agent.tool_manager.execute(llm_response, chunk_buffer)
+                if execute_result.get("code") != 0:
+                    set_failed(agent, str(execute_result) or "工具调用失败")
+                    yield agent._step_emitter.emit(ErrorStep(error_type="tool_error",
+                        error_message=str(execute_result)))
+                    break
+            
+            # dispatch handler（yield-only，状态在 _dispatch_handler 中推断）
+            async for event in _process_single_step(agent, chunk_buffer):
+                yield event
+            
+            # 循环自然继续：状态由 _dispatch_handler 决定是 break 还是 continue
+        
+        except asyncio.CancelledError:
+            set_cancelled(agent)
+            yield agent._step_emitter.emit(ErrorStep(error_type="cancelled",
+                error_message="用户取消"))
+            break
+        
+        except Exception as e:
+            set_failed(agent, f"循环异常: {e}"[:200])
+            yield agent._step_emitter.emit(ErrorStep(error_type="system_error",
+                error_message=f"循环异常: {e}"[:200]))
+            break
+    
+    finally:
+        # 确保终态有 FinalStep
+        if agent.status == AgentStatus.FAILED:
+            yield agent._step_emitter.emit(FinalStep(step=agent.llm_call_count,
+                agent_status=agent.status.value, response="任务执行失败"))
+```
+
+**chunk_buffer 说明**：由编排层在 `run_react_cycle` 循环内维护，传给 LLM client 和 tool_manager 做流式数据缓冲，handler 层不碰。
+
+**取消处理流程**：`run_react_cycle` 内每次循环先检查 `agent.cancelled`。取消时调 `set_cancelled(agent)` → yield FinalStep → break。
+
 ---
 
-### 5.8 修改 `run_sse_stream.py` — 外部异常用函数
+### 4.8 修改 `run_sse_stream.py` — 外部异常用函数
 
 ```diff
 - agent.set_cancelled()
@@ -1106,7 +1083,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 
 ---
 
-### 5.9 修改 `initialize_run_state.py`
+### 4.9 修改 `initialize_run_state.py`
 
 ```diff
 - agent.status = AgentStatus.THINKING
@@ -1116,7 +1093,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 
 ---
 
-### 5.10 变化总表
+### 4.10 变化总表
 
 | 改动 | 原来 | 改后 |
 |------|------|------|
@@ -1136,7 +1113,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 
 ## 五、流程对比:新的Agent状态及数据分流处理流程
 
-### 6.1 当前流程（现状）
+### 5.1 当前流程（现状）
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -1180,7 +1157,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 新设计流程:新的Agent及数据流向综合处理流程说明
+### 5.2 新设计流程:新的Agent及数据流向综合处理流程说明
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -1245,7 +1222,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.3 逐层对比
+### 5.3 逐层对比
 
 | 层级 | 维度 | 当前流程 | 新设计 | 好处 |
 |------|------|---------|--------|------|
@@ -1260,7 +1237,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 | **状态机** | 合法转换校验 | 无 | _TRANSITIONS 表 + 运行时校验 | 非法转换 → ValueError，500ms 内定位 |
 | **状态机** | 状态变更入口 | 8 个文件 14+ 处 | 1 个文件 4 个导出函数 | 加日志/加回调只需改一个地方 |
 
-### 6.4 数据流路径对比
+### 5.4 数据流路径对比
 
 ```
 当前:
@@ -1279,7 +1256,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 
 **yield-only 路径**：handler 只有一个产出通道（yield event）。状态（agent.status）和数据（message_builder）都由编排层从 yield chain 中统一消费。handler 零副作用。
 
-### 6.5 改动好处总结
+### 5.5 改动好处总结
 
 | 好处 | 说明 | 直接效果 |
 |------|------|---------|
@@ -1294,7 +1271,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 | **⑨ 数据流统一** | handler 不直接加 message_builder，编排层统一消费 Step content | handler 零 context 副作用，编排层独占 LLM context 写入权 |
 
 
-### 6.6 调用架构
+### 5.6 调用架构
 
 ```
 run_sse_stream ─── react_cycle ─── handler
@@ -1311,7 +1288,7 @@ run_sse_stream ─── react_cycle ─── handler
 | step_emitter | 发射 step，不碰状态 | ❌ 绝对不能 |
 | error_handler | 创建 ErrorStep，不碰状态 | ❌ 绝对不能 |
 
-### 6.7 具体变化（零处直接赋值）
+### 5.7 具体变化（零处直接赋值）
 
 | 当前 | 改后 |
 |------|------|
@@ -1331,7 +1308,7 @@ run_sse_stream ─── react_cycle ─── handler
 | `ctx.agent.message_builder.add_observation(obs_text, fc)` (action_handler:255) | 删除，编排层 yield 透传时遇到 ObservationStep 自动提取 content 加 context |
 | `ctx.agent.message_builder.add_observation(obs_text, {})` (action_handler:259) | 同上 |
 
-### 6.8 最终代码边界
+### 5.8 最终代码边界
 
 ```
 backend/app/services/agent/core_agent/
