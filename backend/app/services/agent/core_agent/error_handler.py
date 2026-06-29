@@ -13,8 +13,8 @@ from app.utils.logger import logger
 
 def handle_react_error(agent, error, step):
     """统一处理ReAct循环中的错误 — 均走 set_failed() — 小欧 2026-06-29"""
-    from app.utils.error_classifier import UnifiedErrorClassifier
-    error_type = UnifiedErrorClassifier.classify_error(error).name.lower()
+    from app.utils.error_classifier import SystemErrorClassifier
+    error_type = SystemErrorClassifier.classify_error(error).name.lower()
     logger.error(f"[ErrorHandler] 错误类型={error_type}: {error}")
     agent.set_failed(str(error))
     return ErrorStep(step=step, error_type=error_type, error_message=str(error))

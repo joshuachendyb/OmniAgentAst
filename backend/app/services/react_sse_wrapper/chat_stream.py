@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from app.utils.time_utils import create_timestamp
 from app.utils.sse_formatter import format_sse_event, format_agent_sse
 from app.services.agent.steps import MetaStep, ErrorStep, FinalStep
-from app.utils.error_classifier import UnifiedErrorClassifier
+from app.utils.error_classifier import SystemErrorClassifier
 from app.utils.error_parser import extract_api_error_detail
 from app.utils.logger import logger
 
@@ -52,8 +52,8 @@ def create_error_response(
 
 
 def get_error_info(error: Exception) -> Dict[str, Any]:
-    """获取错误信息，委托给UnifiedErrorClassifier"""
-    info = UnifiedErrorClassifier.get_error_info(error)
+    """获取错误信息，委托给SystemErrorClassifier"""
+    info = SystemErrorClassifier.get_error_info(error)
     category = info["category"]
     return {
         "code": category.name,

@@ -382,9 +382,9 @@ class BaseAIService:
             return None
 
     def _should_retry(self, e: Exception) -> bool:
-        """判断是否应该重试 — 委托给UnifiedErrorClassifier - 小沈 2026-06-17"""
-        from app.utils.error_classifier import UnifiedErrorClassifier
-        return UnifiedErrorClassifier.classify_error(e).is_retryable
+        """判断是否应该重试 — 委托给SystemErrorClassifier - 小沈 2026-06-17"""
+        from app.utils.error_classifier import SystemErrorClassifier
+        return SystemErrorClassifier.classify_error(e).is_retryable
 
     async def close(self):
         if self._llm_sdk:

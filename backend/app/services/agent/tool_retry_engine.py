@@ -17,7 +17,7 @@ import inspect
 from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
-from app.utils.error_classifier import UnifiedErrorClassifier
+from app.tools.tool_error_classifier import ToolErrorClassifier
 from app.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_BACKOFF
 from app.tools.tool_response import build_error
 
@@ -31,15 +31,16 @@ from app.constants import (
 
 # TOOL_RETRY_CONFIG: 按 tool 名直配重试参数
 # 不在字典中的 tool → max_retries=0（不重试）
-# 返回格式: {tool名: {"max_retries": int, "retryable_errors": list[str]}}
+# 返回格式: {tool名: {"max_retries": int, "retryable": list[str]}}
+# 注意: retryable 列表中的字符串必须与 ToolErrorCategory.value 完全匹配
 TOOL_RETRY_CONFIG = {
-    "http_request": {"max_retries": 3, "retryable_errors": ["timeout", "connect", "http", "api_rate_limit", "server", "protocol"]},
-    "download_file": {"max_retries": 3, "retryable_errors": ["timeout", "connect", "http", "api_rate_limit", "server", "protocol"]},
-    "fetch_webpage": {"max_retries": 2, "retryable_errors": ["timeout", "connect", "http", "api_rate_limit", "server", "protocol"]},
-    "search_web": {"max_retries": 2, "retryable_errors": ["timeout", "connect", "http", "api_rate_limit", "server"]},
-    "execute_shell_command": {"max_retries": 2, "retryable_errors": ["timeout"]},
-    "execute_code": {"max_retries": 3, "retryable_errors": ["timeout"]},
-    "network_diagnose": {"max_retries": 2, "retryable_errors": ["timeout", "connect", "server"]},
+    "http_request": {"max_retries": 3, "retryable": ["timeout", "connect", "network", "protocol"]},
+    "download_file": {"max_retries": 3, "retryable": ["timeout", "connect", "network", "protocol"]},
+    "fetch_webpage": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
+    "search_web": {"max_retries": 2, "retryable": ["timeout", "connect", "network"]},
+    "execute_shell_command": {"max_retries": 2, "retryable": ["timeout"]},
+    "execute_code": {"max_retries": 3, "retryable": ["timeout"]},
+    "network_diagnose": {"max_retries": 2, "retryable": ["timeout", "connect"]},
 }
 
 
@@ -89,8 +90,8 @@ class ToolRetryEngine:
         config = TOOL_RETRY_CONFIG.get(action, {})
         return (
             config.get("max_retries", 0),
-            TOOL_RETRY_BACKOFF.get(action, TOOL_RETRY_BACKOFF["default"]),
-            config.get("retryable_errors", []),
+            TOOL_RETRY_BACKOFF["default"],  # 直接使用默认退避因子
+            config.get("retryable", []),  # 修正：使用 retryable 而不是 retryable_errors
             TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"]),
         )
     
@@ -166,8 +167,9 @@ class ToolRetryEngine:
     
     def _should_retry(self, e: Exception, retryable_errors: list, attempt: int, max_retries: int) -> bool:
         """判断是否应该重试 — 只查 per-tool 配置，不查 is_retryable — 小欧 2026-06-29"""
-        error_category = UnifiedErrorClassifier.classify_error(e)
-        is_retryable = error_category.name.lower() in retryable_errors
+        error_category = ToolErrorClassifier.classify_tool_error(e)
+        # 使用 error_category.value 进行匹配，因为 TOOL_RETRY_CONFIG 中的字符串是 ToolErrorCategory.value
+        is_retryable = error_category.value in retryable_errors
         return is_retryable and attempt < max_retries
 
     async def _execute_with_retry(self, action: str, params: Dict[str, Any], tool: Callable) -> Dict[str, Any]:
@@ -189,7 +191,7 @@ class ToolRetryEngine:
                 return result
             except Exception as e:
                 last_error = e
-                error_category = UnifiedErrorClassifier.classify_error(e)
+                error_category = ToolErrorClassifier.classify_tool_error(e)
 
                 # 超时/网络错误不打印堆栈，只有未知错误才打印 — 小沈 2026-06-28
                 should_print_traceback = error_category.name in ("UNKNOWN", "INTERNAL")
