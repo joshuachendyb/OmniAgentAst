@@ -4,6 +4,7 @@ N3: fetch_webpage — 获取和处理网页内容
 
 从network_tools.py拆分而来 — 小欧 2026-06-22
 内聚: _extract_html_content / _build_media_result / _fetch_via_playwright 辅助函数
+小欧 2026-06-29: 使用ToolErrorClassifier统一错误分类
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -18,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from app.tools.tool_response import build_success, build_error
+from app.tools.tool_error_classifier import ToolErrorClassifier
 from app.tools.network.http_client_sdk import create_http_client
 from app.tools.network.connectivity import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy
@@ -390,20 +392,24 @@ async def fetch_webpage(
         llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated)
         return build_success(data=result_data, llm_data=llm_data)
 
-    except httpx.TimeoutException:
+    except httpx.TimeoutException as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_TIMEOUT, detail=f"超时({timeout:.1f}秒)")
-        return build_error(data={"error_detail": f"超时({timeout:.1f}秒)", "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
+        error_category = ToolErrorClassifier.classify_tool_error(e)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=f"ERR_{error_category.name}", detail=error_category.description)
+        return build_error(data={"error_detail": error_category.description, "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
     except httpx.HTTPStatusError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_HTTP_ERROR, detail=f"HTTP {e.response.status_code}")
+        error_category = ToolErrorClassifier.classify_tool_error(e)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=f"ERR_{error_category.name}", detail=f"HTTP {e.response.status_code}")
         return build_error(data={"error_detail": f"HTTP {e.response.status_code}", "params": {"url": url, "status_code": e.response.status_code}}, llm_data=llm_data)
     except httpx.RequestError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"url": url}}, llm_data=llm_data)
+        error_category = ToolErrorClassifier.classify_tool_error(e)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=f"ERR_{error_category.name}", detail=error_category.description)
+        return build_error(data={"error_detail": error_category.description, "params": {"url": url}}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[fetch_webpage] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NET_UNKNOWN, detail=str(e))
+        error_category = ToolErrorClassifier.classify_tool_error(e)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=f"ERR_{error_category.name}", detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"url": url}}, llm_data=llm_data)

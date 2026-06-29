@@ -6,6 +6,7 @@ N5: network_diagnose — 网络连通性诊断
 内聚: _ping / _port_check / _build_ping_cmd / _parse_ping_output 等辅助函数
 注意: _build_ping_llm_data和_build_port_check_llm_data是内部函数的builder,
      不是注册tool的builder。注册tool的builder只有_build_network_diagnose_llm_data。
+小欧 2026-06-29: 使用ToolErrorClassifier统一错误分类
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -21,6 +22,7 @@ import time as _time_mod
 from typing import Any, Dict, List, Literal, Optional
 
 from app.tools.tool_response import build_success, build_error
+from app.tools.tool_error_classifier import ToolErrorClassifier
 from app.tools.validate.url_validator import _is_private_or_loopback_ip
 from app.tools.validate.timeout_validator import validate_timeout
 
@@ -266,22 +268,26 @@ async def network_diagnose(
             else:
                 llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=result.get("err_code", ERR_NET_UNKNOWN), detail=result.get("error_detail", ""))
                 return build_error(data={"error_detail": result.get("error_detail", ""), "params": result.get("params", {})}, llm_data=llm_data)
-        except socket.gaierror:
+        except socket.gaierror as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_DNS_ERROR, detail=f"DNS解析失败: {host}")
+            error_category = ToolErrorClassifier.classify_tool_error(e)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=f"ERR_{error_category.name}", detail=f"DNS解析失败: {host}")
             return build_error(data={"error_detail": f"DNS解析失败: {host}", "params": {"host": host, "port": port}}, llm_data=llm_data)
-        except socket.timeout:
+        except socket.timeout as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_TIMEOUT, detail=f"端口 {port} 连接超时")
+            error_category = ToolErrorClassifier.classify_tool_error(e)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=f"ERR_{error_category.name}", detail=f"端口 {port} 连接超时")
             return build_error(data={"error_detail": f"端口 {port} 连接超时", "params": {"host": host, "port": port}}, llm_data=llm_data)
         except OSError as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_CONNECTION_ERROR, detail=str(e))
+            error_category = ToolErrorClassifier.classify_tool_error(e)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=f"ERR_{error_category.name}", detail=str(e))
             return build_error(data={"error_detail": str(e), "params": {"host": host, "port": port}}, llm_data=llm_data)
         except Exception as e:
             logger.error(f"[port_check] 未知错误: {e}")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NET_UNKNOWN, detail=str(e))
+            error_category = ToolErrorClassifier.classify_tool_error(e)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=f"ERR_{error_category.name}", detail=str(e))
             return build_error(data={"error_detail": str(e), "params": {"host": host, "port": port}}, llm_data=llm_data)
     else:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

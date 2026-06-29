@@ -3,7 +3,8 @@
 N1: http_request — 发起HTTP请求
 
 从network_tools.py拆分而来 — 小欧 2026-06-22
-内聚: _parse_response_body / _build_http_error 辅助函数
+内聚: _parse_response_body 辅助函数
+小欧 2026-06-29: 使用ToolErrorClassifier统一错误分类，删除_build_http_error
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -18,6 +19,7 @@ from urllib.parse import urlencode, urlparse, urlunparse
 import httpx
 
 from app.tools.tool_response import build_success, build_error
+from app.tools.tool_error_classifier import ToolErrorClassifier
 from app.tools.network.http_client_sdk import create_http_client
 from app.tools.network.connectivity import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy
@@ -102,15 +104,6 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     }
 
 
-def _build_http_error(last_exception: Exception, url: str, retry: int, duration_ms: int = 0) -> Dict[str, Any]:
-    """构建HTTP请求最终错误信息字典 — 小欧 2026-06-22"""
-    if isinstance(last_exception, httpx.TimeoutException):
-        return {"error_detail": "请求超时", "params": {"url": url}, "err_code": ERR_NETWORK_TIMEOUT, "detail": "请求超时"}
-    if isinstance(last_exception, httpx.HTTPStatusError):
-        return {"error_detail": f"HTTP {last_exception.response.status_code}", "params": {"url": url, "status_code": last_exception.response.status_code}, "err_code": ERR_NETWORK_HTTP_ERROR, "detail": f"HTTP {last_exception.response.status_code}"}
-    return {"error_detail": str(last_exception), "params": {"url": url, "retry": retry}, "err_code": ERR_NETWORK_REQUEST_ERROR, "detail": str(last_exception)}
-
-
 async def http_request(
     url: str,
     method: str = "GET",
@@ -189,9 +182,11 @@ async def http_request(
                 raise
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        error_info = _build_http_error(last_exception, url, 0, duration_ms)
-        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"])
-        return build_error(data={"error_detail": error_info["error_detail"], "params": error_info["params"]}, llm_data=llm_data)
+        error_category = ToolErrorClassifier.classify_tool_error(last_exception)
+        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, 
+                                                  err_code=f"ERR_{error_category.name}", 
+                                                  detail=error_category.description)
+        return build_error(data={"error_detail": error_category.description, "params": {"url": url}}, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"[http_request] 未知错误: {e}")

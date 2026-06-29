@@ -3,7 +3,8 @@
 N2: download_file — 下载文件到本地
 
 从network_tools.py拆分而来 — 小欧 2026-06-22
-内聚: _stream_download / _map_network_error 辅助函数
+内聚: _stream_download 辅助函数
+小欧 2026-06-29: 使用ToolErrorClassifier统一错误分类，删除_NET_ERROR_MAP和_map_network_error
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -16,6 +17,7 @@ from typing import Any, Dict, Optional, Tuple
 import httpx
 
 from app.tools.tool_response import build_success, build_error
+from app.tools.tool_error_classifier import ToolErrorClassifier
 from app.tools.network.http_client_sdk import create_http_client, HTTPClient
 from app.tools.network.connectivity import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy
@@ -65,24 +67,6 @@ def _build_download_file_llm_data(
         "metrics": {"file_size": {"value": file_size, "text": f"{file_size}字节"}},
     }
 
-
-_NET_ERROR_MAP = [
-    (httpx.TimeoutException, ERR_NETWORK_TIMEOUT, "下载超时"),
-    (httpx.HTTPStatusError, ERR_NETWORK_HTTP_ERROR, "下载失败"),
-    (httpx.RequestError, ERR_NETWORK_REQUEST_ERROR, "网络请求失败"),
-]
-
-
-def _map_network_error(url: str, timeout: int, e: Exception, duration_ms: int = 0) -> Dict[str, Any]:
-    """将httpx异常映射为错误信息字典 — 小欧 2026-06-22"""
-    for exc_type, code, prefix in _NET_ERROR_MAP:
-        if isinstance(e, exc_type):
-            detail = f"{prefix}({timeout}秒):{url}"
-            if isinstance(e, httpx.HTTPStatusError):
-                detail = f"{prefix} (HTTP {e.response.status_code}):{url}"
-            return {"error_detail": detail, "params": {"url": url}, "err_code": code, "detail": detail}
-    logger.error(f"[download_file] 未知错误: {e}")
-    return {"error_detail": str(e), "params": {"url": url}, "err_code": ERR_NET_UNKNOWN, "detail": str(e)}
 
 
 async def _stream_download(client: HTTPClient, url: str, dest_path: str,
@@ -190,9 +174,9 @@ async def download_file(
         return build_error(data={"error_detail": str(e), "params": {"file_path": dest_path}}, llm_data=llm_data)
     except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        error_info = _map_network_error(url, timeout, e, duration_ms)
-        llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=error_info["err_code"], detail=error_info["detail"])
-        return build_error(data={"error_detail": error_info["error_detail"], "params": error_info["params"]}, llm_data=llm_data)
+        error_category = ToolErrorClassifier.classify_tool_error(e)
+        llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=f"ERR_{error_category.name}", detail=error_category.description)
+        return build_error(data={"error_detail": error_category.description, "params": {"url": url}}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[download_file] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
