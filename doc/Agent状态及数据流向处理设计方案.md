@@ -68,10 +68,10 @@ ObservationStep 的内容进 message_builder，是编排层（react_cycle）收�
 
 handler 产出 Step → yield（唯一大门）
                      ↓
-             编排层统一处理：
-               ├─ type → 状态
-               ├─ observation.content → context
-               └─ yield → 前端
+              编排层统一消费：
+                ├─ _dispatch_handler 从 event type 推状态
+                ├─ react_cycle yield 循环提取 content → message_builder
+                └─ yield → 前端（SSE）
 
 
 
@@ -150,7 +150,7 @@ Step 的消费者：        当前 handler 怎么服务：      应该怎么服�
 
 **解决方案**：抛弃 return dict，改用 **yield-only + 编排层统一消费**：
 1. _dispatch_handler 从 yield chain 的 event type 推断状态（fix set_xxx 后门）
-2. _dispatch_handler 在 yield 透传 ObservationStep/FinalStep 时，提取 content 加 message_builder（fix add_message 后门）
+2. 编排层（react_cycle 的 yield 循环）在透传 ObservationStep/FinalStep 时，提取 content 加 message_builder（fix add_message 后门）
 3. handler 只 yield Step，不 return dict、不 set_xxx、不 add_message
 
 ### 1.3 根因分析
@@ -1030,7 +1030,16 @@ async def run_react_cycle(self, agent, task):
                     break
             
             # dispatch handler（yield-only，状态在 _dispatch_handler 中推断）
+            # 编排层统一提取 Step content → message_builder（替代 handler 层 add_xxx）
             async for event in self._process_single_step(agent, llm_response, chunk_buffer):
+                if event.type == "observation":
+                    obs_text = event.get_content() or ""
+                    if obs_text:
+                        agent.message_builder.add_observation(obs_text, {})
+                elif event.type == "final":
+                    response = event.response or ""
+                    if response:
+                        agent.message_builder.add_assistant_message(response)
                 yield event
             
             # 循环自然继续：状态由 _dispatch_handler 决定是 break 还是 continue
