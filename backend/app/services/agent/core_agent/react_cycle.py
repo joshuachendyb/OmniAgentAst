@@ -291,9 +291,7 @@ async def run_react_cycle(
             async for event in _process_single_step(agent, chunk_buffer):
                 yield event
 
-            if agent.status == AgentStatus.RETRYABLE_ERROR:
-                agent.status = AgentStatus.THINKING
-                continue
+
             if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED):
                 break
 
@@ -308,7 +306,7 @@ async def run_react_cycle(
             AgentStatus.COMPLETED,
             AgentStatus.FAILED,
             AgentStatus.CANCELLED,
-            AgentStatus.RETRYABLE_ERROR,
+
         ):
             logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 设为FAILED")
             agent.set_failed(f"ReAct循环结束但无终态(status={agent.status})")
@@ -324,8 +322,7 @@ async def run_react_cycle(
         yield agent._step_emitter.emit(error_step)
 
     finally:
-        if agent.status != AgentStatus.RETRYABLE_ERROR:
-            failed_step = _ensure_failed_final_step(agent)
-            if failed_step:
-                yield agent._step_emitter.emit(failed_step)
-            _finalize_cycle(agent)
+        failed_step = _ensure_failed_final_step(agent)
+        if failed_step:
+            yield agent._step_emitter.emit(failed_step)
+        _finalize_cycle(agent)
