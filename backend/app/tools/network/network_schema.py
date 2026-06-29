@@ -40,9 +40,6 @@ class HttpRequestInput(BaseModel):
     proxy: Optional[str] = Field(
         default=None, description="代理地址,如 http://127.0.0.1:8080"
     )
-    retry: int = Field(
-        default=3, ge=0, le=10, description="重试次数,默认3,范围0-10"
-    )
 
 
 class DownloadFileInput(BaseModel):

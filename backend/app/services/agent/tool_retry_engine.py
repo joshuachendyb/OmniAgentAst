@@ -18,8 +18,7 @@ from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
 from app.utils.error_classifier import UnifiedErrorClassifier
-from app.utils.retry_engine import RetryEngine, BackoffStrategy
-from app.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_MAX, TOOL_RETRY_BACKOFF, TOOL_RETRYABLE_ERRORS
+from app.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_BACKOFF
 from app.tools.tool_response import build_error
 
 from app.constants import (
@@ -28,6 +27,20 @@ from app.constants import (
     ERR_TOOL_NOT_FOUND,
     ERR_UNKNOWN,
 )
+
+
+# TOOL_RETRY_CONFIG: 按 tool 名直配重试参数
+# 不在字典中的 tool → max_retries=0（不重试）
+# 返回格式: {tool名: {"max_retries": int, "retryable_errors": list[str]}}
+TOOL_RETRY_CONFIG = {
+    "http_request": {"max_retries": 3, "retryable_errors": ["timeout", "connect", "http", "api_rate_limit", "server", "protocol"]},
+    "download_file": {"max_retries": 3, "retryable_errors": ["timeout", "connect", "http", "api_rate_limit", "server", "protocol"]},
+    "fetch_webpage": {"max_retries": 2, "retryable_errors": ["timeout", "connect", "http", "api_rate_limit", "server", "protocol"]},
+    "search_web": {"max_retries": 2, "retryable_errors": ["timeout", "connect", "http", "api_rate_limit", "server"]},
+    "execute_shell_command": {"max_retries": 2, "retryable_errors": ["timeout"]},
+    "execute_code": {"max_retries": 3, "retryable_errors": ["timeout"]},
+    "network_diagnose": {"max_retries": 2, "retryable_errors": ["timeout", "connect", "server"]},
+}
 
 
 class ToolRetryEngine:
@@ -72,11 +85,12 @@ class ToolRetryEngine:
         )
     
     def _get_retry_config(self, action: str):
-        """获取重试配置 — 提取自 execute_tool_with_retry 小健 2026-05-31"""
+        """获取重试配置 — 按 tool 名直配 — 小欧 2026-06-29"""
+        config = TOOL_RETRY_CONFIG.get(action, {})
         return (
-            TOOL_RETRY_MAX.get(action, TOOL_RETRY_MAX["default"]),
+            config.get("max_retries", 0),
             TOOL_RETRY_BACKOFF.get(action, TOOL_RETRY_BACKOFF["default"]),
-            TOOL_RETRYABLE_ERRORS.get(action, TOOL_RETRYABLE_ERRORS["default"]),
+            config.get("retryable_errors", []),
             TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"]),
         )
     
@@ -150,77 +164,53 @@ class ToolRetryEngine:
         
         return params
     
-    def _should_retry(self, e: Exception, retryable_errors: list, engine: RetryEngine) -> bool:
-        """判断是否应该重试 — 小沈 2026-06-08"""
+    def _should_retry(self, e: Exception, retryable_errors: list, attempt: int, max_retries: int) -> bool:
+        """判断是否应该重试 — 只查 per-tool 配置，不查 is_retryable — 小欧 2026-06-29"""
         error_category = UnifiedErrorClassifier.classify_error(e)
-        is_retryable = error_category.is_retryable or error_category.name.lower() in retryable_errors
-        return is_retryable and not engine.exhausted
-    
-    async def _execute_single_attempt(self, tool: Callable, params: Dict[str, Any], timeout: float, 
-                                      engine: RetryEngine, max_retries: int, action: str,
-                                      retryable_errors: list) -> Optional[Dict[str, Any]]:
-        """执行单次尝试 — 小沈 2026-06-08; 小欧 2026-06-21 透传result+retry_count入other_data"""
-        try:
-            result = await self._execute_tool_once(tool, params, timeout)
-            if isinstance(result, dict):
-                other = result.get("other_data", {})
-                if not isinstance(other, dict):
-                    other = {}
-                other["retry_count"] = engine.attempt_count
-                result["other_data"] = other
-                return result
-            return result
-        except Exception as e:
-            # 【#43修复】保存原始异常供_execute_with_retry使用 — chendyg 2026-06-26
-            self._last_exception = e
-            error_category = UnifiedErrorClassifier.classify_error(e)
-            attempt = engine.record_attempt()
+        is_retryable = error_category.name.lower() in retryable_errors
+        return is_retryable and attempt < max_retries
 
-            # 超时/网络错误不打印堆栈，只有未知错误才打印 — 小沈 2026-06-28
-            should_print_traceback = error_category.name in ("UNKNOWN", "INTERNAL")
-            logger.warning(
-                f"[重试] action={action} 尝试{attempt}/{max_retries} "
-                f"失败：{error_category.description} - {str(e)[:100]}",
-                exc_info=should_print_traceback
-            )
-            
-            if not self._should_retry(e, retryable_errors, engine):
-                return self._build_retry_error(
-                    f"ERR_{error_category.name}",
-                    f"{error_category.description}: {str(e)[:200]}",
-                    attempt - 1, error_type=error_category.name.lower(),
-                )
-            
-            await asyncio.sleep(engine.current_delay)
-            return None
-    
     async def _execute_with_retry(self, action: str, params: Dict[str, Any], tool: Callable) -> Dict[str, Any]:
-        """带重试执行工具 — P1-06修复: 捕获last_error"""
+        """带重试执行工具 — 内联版，去掉 RetryEngine 中介层 — 小欧 2026-06-29"""
         max_retries, backoff_factor, retryable_errors, timeout = self._get_retry_config(action)
-        
-        engine = RetryEngine(
-            max_retries=max_retries,
-            backoff_strategy=BackoffStrategy.EXPONENTIAL,
-            backoff_factor=backoff_factor,
-            retryable_check=lambda e: self._should_retry(e, retryable_errors, engine),
-        )
-        
+
         last_error: Optional[Exception] = None
-        
-        while engine.attempt_count <= max_retries:
-            result = await self._execute_single_attempt(
-                tool, params, timeout, engine, max_retries, action, retryable_errors
-            )
-            if result is not None:
+
+        for attempt in range(max_retries + 1):
+            try:
+                result = await self._execute_tool_once(tool, params, timeout)
+                if isinstance(result, dict):
+                    other = result.get("other_data", {})
+                    if not isinstance(other, dict):
+                        other = {}
+                    other["retry_count"] = attempt
+                    result["other_data"] = other
+                    return result
                 return result
-            # 【#43修复】保留原始异常信息，而非创建新Exception — chendyg 2026-06-26
-            if not hasattr(self, '_last_exception') or self._last_exception is None:
-                last_error = Exception(f"重试耗尽: {action}, attempts={engine.attempt_count}")
-            else:
-                last_error = self._last_exception
-        
+            except Exception as e:
+                last_error = e
+                error_category = UnifiedErrorClassifier.classify_error(e)
+
+                # 超时/网络错误不打印堆栈，只有未知错误才打印 — 小沈 2026-06-28
+                should_print_traceback = error_category.name in ("UNKNOWN", "INTERNAL")
+                logger.warning(
+                    f"[重试] action={action} 尝试{attempt + 1}/{max_retries + 1} "
+                    f"失败：{error_category.description} - {str(e)[:100]}",
+                    exc_info=should_print_traceback
+                )
+
+                if not self._should_retry(e, retryable_errors, attempt, max_retries):
+                    return self._build_retry_error(
+                        f"ERR_{error_category.name}",
+                        f"{error_category.description}: {str(e)[:200]}",
+                        attempt, error_type=error_category.name.lower(),
+                    )
+
+                delay = backoff_factor ** attempt
+                await asyncio.sleep(delay)
+
         return self._build_retry_error(
             ERR_UNKNOWN, str(last_error)[:200] if last_error else "Unknown error",
-            engine.attempt_count - 1,
+            max_retries,
         )
 

@@ -118,14 +118,11 @@ async def http_request(
     body: Optional[Dict[str, Any]] = None,
     timeout: int = 30,
     proxy: Optional[str] = None,
-    retry: int = 3,
 ) -> Dict[str, Any]:
-    """发起HTTP请求 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化"""
+    """发起HTTP请求 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化
+    【小欧 2026-06-29】取消内建重试，异常传播给 ToolRetryEngine"""
     headers = coerce_json(headers)
     body = coerce_json(body)
-    if retry < 0 or retry > 10:
-        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=f"重试次数必须在0-10之间,当前值:{retry}")
-        return build_error(data={"error_detail": f"重试次数必须在0-10之间", "params": {"retry": retry}}, llm_data=llm_data)
 
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "http_request")
     if not timeout_valid:
@@ -158,46 +155,41 @@ async def http_request(
         if headers:
             request_headers.update(headers)
 
-        last_exception = None
         async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
-            for attempt in range(retry + 1):
-                try:
-                    method_upper = method.upper()
-                    request_kwargs = {"url": url, "headers": request_headers}
-                    if body is not None:
-                        request_kwargs["json"] = body
+            try:
+                method_upper = method.upper()
+                request_kwargs = {"url": url, "headers": request_headers}
+                if body is not None:
+                    request_kwargs["json"] = body
 
-                    response = await client.request(method_upper, **request_kwargs)
-                    response.raise_for_status()
+                response = await client.request(method_upper, **request_kwargs)
+                response.raise_for_status()
 
-                    parsed = _parse_response_body(response)
+                parsed = _parse_response_body(response)
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                data = parsed["body"]
+                llm_data = _build_http_request_llm_data("success", duration_ms, url, method,
+                                                        response.status_code, parsed["content_type_short"])
+                return build_success(data=data, llm_data=llm_data)
+            except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
+                last_exception = e
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in RETRYABLE_HTTP_STATUS_CODES:
+                    try:
+                        error_body = e.response.text
+                    except Exception:
+                        error_body = None
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                    data = parsed["body"]
-                    llm_data = _build_http_request_llm_data("success", duration_ms, url, method,
-                                                            response.status_code, parsed["content_type_short"])
-                    return build_success(data=data, llm_data=llm_data)
-                except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
-                    last_exception = e
-                    if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in RETRYABLE_HTTP_STATUS_CODES:
-                        try:
-                            error_body = e.response.text
-                        except Exception:
-                            error_body = None
-                        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                        llm_data = _build_http_request_llm_data("error", duration_ms, url, method,
-                                                                  err_code=ERR_NETWORK_HTTP_ERROR,
-                                                                  detail=f"HTTP {e.response.status_code}")
-                        return build_error(
-                            data={"error_detail": f"HTTP {e.response.status_code}", "params": {"url": url, "status_code": e.response.status_code, "body": error_body}},
-                            llm_data=llm_data)
-                    if attempt < retry:
-                        backoff = min(0.5 * (2 ** attempt), 10.0)
-                        await asyncio.sleep(backoff)
-                        continue
-                    break
+                    llm_data = _build_http_request_llm_data("error", duration_ms, url, method,
+                                                              err_code=ERR_NETWORK_HTTP_ERROR,
+                                                              detail=f"HTTP {e.response.status_code}")
+                    return build_error(
+                        data={"error_detail": f"HTTP {e.response.status_code}", "params": {"url": url, "status_code": e.response.status_code, "body": error_body}},
+                        llm_data=llm_data)
+                # 可重试异常 → 传播给 ToolRetryEngine
+                raise
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        error_info = _build_http_error(last_exception, url, retry, duration_ms)
+        error_info = _build_http_error(last_exception, url, 0, duration_ms)
         llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"])
         return build_error(data={"error_detail": error_info["error_detail"], "params": error_info["params"]}, llm_data=llm_data)
 

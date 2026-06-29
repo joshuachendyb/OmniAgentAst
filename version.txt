@@ -1,3 +1,16 @@
+v0.17.12
+更新时间: 2026-06-29 15:29:53
+## v0.17.11→v0.17.12 变更汇总 - 小欧-2026-06-29
+
+### refactor: 重试架构代码实施(7项)
+- tool_retry_engine.py: 新增TOOL_RETRY_CONFIG按tool名直配 - 小欧-20260629
+- tool_retry_engine.py: _execute_with_retry内联, 删RetryEngine依赖 - 小欧-20260629
+- tool_retry_engine.py: _should_retry删error_category.is_retryable - 小欧-20260629
+- http_request.py: 取消内建重试, 异常传播给ToolRetryEngine - 小欧-20260629
+- network_schema.py: HttpRequestInput删retry字段 - 小欧-20260629
+- error_handler.py: _classify_error简化为统一委托UnifiedErrorClassifier - 小欧-20260629
+- retry_engine.py: 整文件删除(内联至tool_retry_engine) - 小欧-20260629
+
 v0.17.11
 更新时间: 2026-06-29 12:10:00
 ## v0.17.10→v0.17.11 变更汇总 - 小欧-2026-06-29

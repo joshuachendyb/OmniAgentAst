@@ -12,47 +12,11 @@ from app.utils.logger import logger
 
 
 def handle_react_error(agent, error, step):
-    """统一处理ReAct循环中的错误 — if/elif直接分派 — 小欧 2026-06-25"""
-    error_type = _classify_error(error)
-
-    if error_type == "fc_format_error":
-        return _handle_fc_format_error(agent, error, step)
-    elif error_type == "network_error":
-        return _handle_network_error(agent, error, step)
-    else:
-        agent.set_failed(str(error))
-        return ErrorStep(step=step, error_type="unknown_error", error_message=str(error))
-
-
-def _classify_error(error):
-    """错误分类 — 基于异常类型, 不基于字符串匹配 — 小欧 2026-06-25"""
-    from app.services.llm.core import FCFormatError
-    from app.utils.error_classifier import UnifiedErrorClassifier, ErrorCategory
-
-    if isinstance(error, FCFormatError):
-        return "fc_format_error"
-
-    try:
-        category = UnifiedErrorClassifier.classify_error(error)
-        if category in (ErrorCategory.NETWORK, ErrorCategory.CONNECT, ErrorCategory.TIMEOUT, ErrorCategory.EMPTY_RESPONSE):
-            return "network_error"
-    except Exception as e:
-        logger.error(f"[_classify_error] UnifiedErrorClassifier异常: {e}")
-
-    return "unknown_error"
-
-
-def _handle_fc_format_error(agent, error, step):
-    """FC格式错误 → FAILED（已无外层重试）— 小欧 2026-06-28"""
-    logger.error(f"[ErrorHandler] FC格式错误: {error}")
+    """统一处理ReAct循环中的错误 — 均走 set_failed() — 小欧 2026-06-29"""
+    from app.utils.error_classifier import UnifiedErrorClassifier
+    error_type = UnifiedErrorClassifier.classify_error(error).name.lower()
+    logger.error(f"[ErrorHandler] 错误类型={error_type}: {error}")
     agent.set_failed(str(error))
-    return ErrorStep(step=step, error_type="fc_format_error",
-                     error_message=str(error), recoverable=False)
+    return ErrorStep(step=step, error_type=error_type, error_message=str(error))
 
 
-def _handle_network_error(agent, error, step):
-    """网络错误 → FAILED（已无外层重试）— 小欧 2026-06-28"""
-    logger.error(f"[ErrorHandler] 网络错误: {error}")
-    agent.set_failed(str(error))
-    return ErrorStep(step=step, error_type="network_error",
-                     error_message=str(error), recoverable=False)
