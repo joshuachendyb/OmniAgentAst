@@ -23,7 +23,7 @@
 
 ---
 
-## 一、背景与问题
+## 一、背景与问题及新设计说明
 
 ### 1.0--架构设计与数据分流的新模式
 
@@ -596,9 +596,10 @@ yield agent._step_emitter.emit(FinalStep(...))     # ← 保留，前端需要 F
 **路径**: `backend/app/services/agent/core_agent/handlers/error_handler.py`
 
 **当前行为**：
-- `handle_error` 已在 yield 完 ErrorStep 后仅 `return`（不设状态）
+- `handle_error` 已在 yield 完 ErrorStep 后仅 `return`（不设状态），符合 yield-only
+- `handle_react_error` 入口函数仍调 `agent.set_failed(str(error))`，需删除
 
-**不改 —— 当前代码已符合 yield-only 协议**。_dispatch_handler 看到 `type == "error"` 的 event 后就地 set_failed。
+**修改**：`handle_react_error` 删掉 `set_failed`，只返回 ErrorStep 列表。状态由 _dispatch_handler 看到 "error" event type 后统一设。
 
 ```diff
   # handle_react_error 入口函数（最外层的统一入口）：
@@ -649,6 +650,8 @@ def exit_with_error(self, error_message, error_type="general", recoverable=False
 **改为**：
 - `_dispatch_handler` 跟踪 seen_types + last_event，handler 结束后根据 yield chain 的 event type 设状态
 - `_process_single_step` 不再读 Send() 返回值，直接依靠 dispatch_handler 已完成的状态设置
+
+#### 3.7.1 `_dispatch_handler` / `_process_single_step` — 改为 seen_types event type 推断
 
 ```diff
    async def _dispatch_handler(self, agent, llm_response, chunk_buffer):
@@ -704,67 +707,59 @@ def exit_with_error(self, error_message, error_type="general", recoverable=False
 - _process_single_step 不再需要解读 handler 的"return value"，只需确认 dispatch_handler 已完成的状态设置
 - _process_single_step 的 Simplify 版本（上面第二段）直接从 event_generator 的 event 判状态，和 dispatch_handler 形成**双重保障**
 
-#### 3.7.2 `_dispatch_handler` 方法 — 改为收集 handler 返回值
+#### 3.7.2 `_dispatch_handler` — yield-only + seen_types event type 推断（无 return dict）
 
-**当前**（async generator，内部 handler 直接设状态）：
+**最终代码**（_dispatch_handler 遍历 handler yield chain，跟踪 seen_types + last_event，handler 结束后从 event type 推断状态。无 return dict、无 StopAsyncIteration）：
 
 ```python
 async def _dispatch_handler(self, agent, llm_response, chunk_buffer):
     parsed_type = llm_response.get("type", "answer")
+    seen_types = set()
+    last_event = None
+
     if parsed_type == "action":
-        async for event in self._handle_action(agent, llm_response, chunk_buffer):
+        async for event in handle_action(agent, llm_response, chunk_buffer):
+            seen_types.add(event.type)
+            last_event = event
             yield event
+
     elif parsed_type == "answer":
-        async for event in self._handle_answer(agent, llm_response, chunk_buffer):
+        async for event in handle_answer(agent, llm_response, chunk_buffer):
+            seen_types.add(event.type)
+            last_event = event
             yield event
+
     elif parsed_type == "error":
         content = llm_response.get("content", "")
-        agent.set_failed(content or "LLM流式错误")
-        yield agent._step_emitter.emit(ErrorStep(error=content or "LLM流式错误"))
+        agent.message_builder.add_assistant_message(content or "")
+        error_step = ErrorStep(step=agent.llm_call_count,
+            error_type="llm_error", error_message=content or "LLM流式错误")
+        seen_types.add(error_step.type)
+        last_event = error_step
+        yield agent._step_emitter.emit(error_step)
+
     else:
-        agent.set_failed(f"LLM返回未知响应类型: {parsed_type}")
-        yield agent._step_emitter.emit(FinalStep(...))
+        content = llm_response.get("content", "") or llm_response.get("thought", "")
+        if content:
+            agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
+        final_step = FinalStep(step=agent.llm_call_count,
+            response=f"LLM返回未知响应类型: {parsed_type}")
+        seen_types.add(final_step.type)
+        last_event = final_step
+        yield agent._step_emitter.emit(final_step)
+
+    # handler 结束，根据 yield chain 设状态（无 return dict）
+    if "error" in seen_types:
+        error_msg = last_event.get_content() if last_event else ""
+        set_failed(agent, error_msg)
+    elif "final" in seen_types:
+        set_completed(agent)
+    # 否则不设状态，react_cycle 继续循环
 ```
 
-**改为**（捕获 handler 的返回 dict，error/else 分支直接返回 dict）：
+#### 3.7.3 `_process_single_step` — dispatch 后仅检查 agent.status（无 StopAsyncIteration）
 
-```python
-async def _dispatch_handler(self, agent, llm_response, chunk_buffer):
-    parsed_type = llm_response.get("type", "answer")
-    
-    if parsed_type == "action":
-        result = None
-        try:
-            async for event in handle_action(agent, llm_response, chunk_buffer):
-                yield event
-        except StopAsyncIteration as e:
-            result = e.value
-        return result
-    
-    if parsed_type == "answer":
-        result = None
-        try:
-            async for event in handle_answer(agent, llm_response, chunk_buffer):
-                yield event
-        except StopAsyncIteration as e:
-            result = e.value
-        return result
-    
-    if parsed_type == "error":
-        content = llm_response.get("content", "")
-        yield agent._step_emitter.emit(ErrorStep(error=content or "LLM流式错误"))
-        return {"action": "fail", "error_msg": content or "LLM流式错误"}
-    
-    # 未知类型
-    yield agent._step_emitter.emit(FinalStep(
-        content=f"LLM返回未知响应类型: {parsed_type}",
-    ))
-    return {"action": "fail", "error_msg": f"LLM返回未知响应类型: {parsed_type}"}
-```
-
-#### 3.7.3 `_process_single_step` — 据 handler 结果设状态
-
-**当前**：
+**最终代码**（_process_single_step 只透传事件，依赖 _dispatch_handler 已设好的状态。不读 Send() 返回值、不捕获 StopAsyncIteration）：
 
 ```python
 async def _process_single_step(self, agent, chunk_buffer):
@@ -772,35 +767,12 @@ async def _process_single_step(self, agent, chunk_buffer):
         messages=agent.messages,
         tools=agent.enabled_tool_defs,
     )
+    
     async for event in self._dispatch_handler(agent, llm_response, chunk_buffer):
         yield event
-```
-
-**改为**：
-
-```python
-async def _process_single_step(self, agent, chunk_buffer):
-    llm_response = await agent.llm_client.chat(
-        messages=agent.messages,
-        tools=agent.enabled_tool_defs,
-    )
     
-    handler_result = None
-    try:
-        async for event in self._dispatch_handler(agent, llm_response, chunk_buffer):
-            yield event
-    except StopAsyncIteration as e:
-        handler_result = e.value
-    
-    if handler_result:
-        action = handler_result.get("action")
-        if action == "complete":
-            set_completed(agent)
-        elif action == "fail":
-            error_msg = handler_result.get("error_msg", "")
-            set_failed(agent, error_msg)
-        elif action == "continue":
-            pass  # 不设状态，继续循环
+    # _dispatch_handler 已在 yield 透传时从 seen_types 推断并设好状态
+    # _process_single_step 只需检查 agent.status 判断是否继续循环
 ```
 
 #### 3.7.4 `run_react_cycle` — 状态赋值替换 + 删除 RETRYABLE_ERROR
@@ -906,76 +878,7 @@ finally:
 + set_status(agent, AgentStatus.THINKING)
 ```
 
----
-
-## 四、测试策略
-
-### 4.1 测试改动量评估
-
-| 测试文件 | 改动范围 | 改动量 | 策略 |
-|---------|---------|--------|------|
-| 直接测 handler 的测试（call handle_answer/handle_action 并验证结果） | handler 返回结果从 None 变成 dict，需要捕获返回值 | **大** | 每个测试末尾加 `StopAsyncIteration` 捕获逻辑或 wrap 一层 helper |
-| 通过 react_cycle 测 handler 的测试（mock dispatch） | mock 需要伪造 handler 返回值 | **中** | 改 mock 的 return_value |
-| 测 react_cycle 状态流转的测试 | 直接赋值改为调 status_table，Mock 需调整 | **中** | 用 `from status_table import *` 后 patch |
-| 测 run_sse_stream 的测试 | import 变化 | **小** | 加 import mock |
-| 测 initialize_run_state 的测试 | import 变化 | **小** | 加 import mock |
-| `test_batch2_refactor_verification.py` | 源码检查测试需更新状态相关断言 | **小** | 更新断言 |
-
-### 4.2 Handler 测试适配
-
-handler 测试的核心改动：
-
-```python
-# 方案A（当前）：
-async for event in handle_answer(agent, parsed, chunk_buffer):
-    ...  # 验证事件
-
-# 方案B（改为）：
-result = None
-try:
-    async for event in handle_answer(agent, parsed, chunk_buffer):
-        ...  # 验证事件（不变）
-except StopAsyncIteration as e:
-    result = e.value
-assert result["action"] == "complete"
-assert result["response"] == "预期内容"
-```
-
-**helper 函数**（减少重复）：
-
-```python
-async def collect_handler(handler_fn, *args, **kwargs):
-    """执行 handler，返回 (events, result)"""
-    events = []
-    result = None
-    try:
-        async for event in handler_fn(*args, **kwargs):
-            events.append(event)
-    except StopAsyncIteration as e:
-        result = e.value
-    return events, result
-```
-
-测试中：
-
-```python
-events, result = await collect_handler(handle_answer, agent, parsed, chunk_buffer)
-assert len(events) == 2
-assert result["action"] == "complete"
-```
-
-### 4.3 回归测试
-
-| 轮次 | 测试内容 | 预期结果 |
-|------|---------|---------|
-| 第1轮 | 全部 pytest | 问题归零（向零推进），记录所有失败 |
-| 第2轮 | 修复第1轮问题后的全量回归 | 所有之前失败的问题消失 |
-| 第3轮 | 最终验证 | passed=全部, failed=0, error=0 |
-
----
-
-
-## 五、详细设计 v2 — 逐文件代码规格（diff 格式）
+## 四、详细设计 v2 — 逐文件代码规格（diff 格式）
 
 **章节说明**: 本章节为代码层级的详细设计 v2，使用 `-`（删除）和 `+`（新增）标记改动内容。实施时严格按此规格执行。
 
@@ -1231,7 +1134,7 @@ if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
 
 ---
 
-## 六、流程对比:新的Agent及数据分流处理流程
+## 五、流程对比:新的Agent状态及数据分流处理流程
 
 ### 6.1 当前流程（现状）
 
@@ -1444,9 +1347,9 @@ backend/app/services/agent/core_agent/
 ```
 
 ---
-## 七、实施计划
+## 六、实施计划
 
-### 7.1 分步实施
+### 6.1 分步实施
 
 本方案分两步实施，每步都确保测试全通过：
 
@@ -1474,13 +1377,13 @@ backend/app/services/agent/core_agent/
 | 2.5 | handler 测试适配 | `tests/` | **大** |
 | 2.6 | 全量回归 | `tests/` | 必须归零 |
 
-### 7.2 实施顺序说明
+### 6.2 实施顺序说明
 
 第一步先做，确保"统一入口 + 合法转换校验"的基础设施落地，同时删除执行层的状态赋值（error_handler、step_emitter）。此时 handler 仍然通过 `base_agent.set_failed()`（已改为委托）设状态，测试基本不受影响。
 
 第二步改 handler 为 yield-only，这是影响最大的部分。handler 从"yield + set_xxx"变为"只 yield event"，dispatch_handler 从 event type 推断状态。所有 handler 测试需检查 yield 的事件序列是否包含预期的 ErrorStep/FinalStep。这一步才真正实现"handler 零接触状态"。
 
-### 7.3 版本号建议
+### 6.3 版本号建议
 
 | 步骤 | 版本号 | 说明 |
 |------|--------|------|
@@ -1489,9 +1392,70 @@ backend/app/services/agent/core_agent/
 
 ---
 
+## 七、测试策略
+
+### 7.1 测试改动量评估
+
+| 测试文件 | 改动范围 | 改动量 | 策略 |
+|---------|---------|--------|------|
+| 直接测 handler 的测试（call handle_answer/handle_action 并验证结果） | handler 不再 return dict，改为 yield-only | **中** | 不再捕获返回值，改为验证 yield 事件链中是否包含预期 ErrorStep/FinalStep |
+| 通过 react_cycle 测 handler 的测试（mock dispatch） | mock 不再需要伪造 handler 返回值 | **中** | mock 的 return_value 为 None，改为验证 agent.status |
+| 测 react_cycle 状态流转的测试 | 直接赋值改为调 status_table，Mock 需调整 | **中** | 用 `from status_table import *` 后 patch |
+| 测 run_sse_stream 的测试 | import 变化 | **小** | 加 import mock |
+| 测 initialize_run_state 的测试 | import 变化 | **小** | 加 import mock |
+| `test_batch2_refactor_verification.py` | 源码检查测试需更新状态相关断言 | **小** | 更新断言 |
+
+### 7.2 Handler 测试适配
+
+handler 测试的核心改动（yield-only，无 return dict、无 StopAsyncIteration 捕获）：
+
+```python
+# yield-only 方案：
+events = []
+async for event in handle_answer(agent, parsed, chunk_buffer):
+    events.append(event)
+
+# 正常路径：验证 yield 链中有 FinalStep，无 ErrorStep
+assert any(e.type == "final" for e in events)
+assert not any(e.type == "error" for e in events)
+
+# 失败路径：验证 yield 链中有 ErrorStep
+# assert any(e.type == "error" for e in events)
+
+# 状态由 _dispatch_handler 从 event type 推断设好，handler 测试无需验证状态
+```
+
+**helper 函数**（验证 yield 链）：
+
+```python
+async def collect_events(handler_fn, *args, **kwargs):
+    """执行 handler，返回 events 列表（无 return dict）"""
+    events = []
+    async for event in handler_fn(*args, **kwargs):
+        events.append(event)
+    return events
+```
+
+测试中：
+
+```python
+events = await collect_events(handle_answer, agent, parsed, chunk_buffer)
+assert len(events) == 2
+assert events[-1].type == "final"
+```
+
+### 7.3 回归测试
+
+| 轮次 | 测试内容 | 预期结果 |
+|------|---------|---------|
+| 第1轮 | 全部 pytest | 问题归零（向零推进），记录所有失败 |
+| 第2轮 | 修复第1轮问题后的全量回归 | 所有之前失败的问题消失 |
+| 第3轮 | 最终验证 | passed=全部, failed=0, error=0 |
+
+---
 ## 八、风险分析
 
-### 5.1 风险矩阵
+### 8.1 风险矩阵
 
 | 风险ID | 风险描述 | 概率 | 影响 | 等级 | 缓解措施 |
 |--------|---------|------|------|------|---------|
@@ -1501,7 +1465,7 @@ backend/app/services/agent/core_agent/
 | R004 | 测试改动量过大导致实施时间远超预期 | 高 | 低 | **中** | 分两步实施，第一步测试不改，第二步再适配 handler 测试 |
 | R005 | 非法转换检测抛 ValueError 导致生产环境异常 | 低 | 中 | **低** | 测试覆盖所有合法流转路径；上线前跑完整回归 |
 
-### 5.2 关键检查项
+### 8.2 关键检查项
 
 实施前逐项确认：
 
@@ -1519,7 +1483,7 @@ backend/app/services/agent/core_agent/
 
 ## 九、附录
 
-### 6.1 相关文件清单
+### 9.1 相关文件清单
 
 | 文件 | 操作 | 备注 |
 |------|------|------|
@@ -1534,7 +1498,7 @@ backend/app/services/agent/core_agent/
 | `backend/app/services/agent/core_agent/initialize_run_state.py` | 修改 | 调 set_status |
 | `backend/tests/` | 修改 | 适配 handler 新行为（yield-only） |
 
-### 6.2 决策记录
+### 9.2 决策记录
 
 | 决策项 | 结论 | 理由 |
 |--------|------|------|
