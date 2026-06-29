@@ -42,7 +42,7 @@ Agent状态（元数据）集中到 status_table 管，
 
 #### 1.0.2 agent状态的设计原则
 
-gent.status 管"是什么类型"，yield handler 管"具体数据是什么"
+agent.status 管"是什么类型"，yield handler 管"具体数据是什么"
 agent.status = THINKING    → 类型：正在思考
     yield ThoughtStep(...) → 数据：具体思考内容
 
@@ -309,55 +309,41 @@ handler 可能在 yield ErrorStep（失败信号）之后再 yield FinalStep（�
 
 ```python
 async def _dispatch_handler(agent, llm_response, chunk_buffer):
+    seen_types = set()
+    last_event = None
+
+    # 按响应类型分派 handler（handler 统一为 async generator，内部不碰状态）
     parsed_type = llm_response.get("type", "answer")
-    seen_types = set()              # ← 记录所有 event type
-    last_event = None               # ← 记录最后一个 event（提取 error_msg 用）
-
     if parsed_type == "action":
-        async for event in handle_action(agent, llm_response, chunk_buffer):
-            seen_types.add(event.type)
-            last_event = event
-            yield event
-
+        handler = handle_action(agent, llm_response, chunk_buffer)
     elif parsed_type == "answer":
-        async for event in handle_answer(agent, llm_response, chunk_buffer):
-            seen_types.add(event.type)
-            last_event = event
-            yield event
-
+        handler = handle_answer(agent, llm_response, chunk_buffer)
     elif parsed_type == "error":
-        content = llm_response.get("content", "")
-        agent.message_builder.add_assistant_message(content or "")
-        error_step = ErrorStep(step=agent.llm_call_count,
-            error_type="llm_error", error_message=content or "LLM流式错误")
-        seen_types.add(error_step.type)
-        last_event = error_step
-        yield agent._step_emitter.emit(error_step)
-
+        handler = handle_error_gen(agent, llm_response)
     else:
-        content = llm_response.get("content", "") or llm_response.get("thought", "")
-        if content:
-            agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
-        final_step = FinalStep(step=agent.llm_call_count,
-            response=f"LLM返回未知响应类型: {parsed_type}")
-        seen_types.add(final_step.type)
-        last_event = final_step
-        yield agent._step_emitter.emit(final_step)
+        handler = _handle_unknown(agent, llm_response)
 
-    # === handler 结束，根据 yield chain 设状态 ===
+    # 统一遍历：跟踪 event type + 透传
+    async for event in handler:
+        seen_types.add(event.type)
+        last_event = event
+        yield event
+
+    # handler 遍历完毕 → 根据 event type 推断状态
     if "error" in seen_types:
-        error_msg = last_event.get_content() if last_event else ""
+        error_msg = last_event.get_content() if hasattr(last_event, 'get_content') else ""
         set_failed(agent, error_msg)
     elif "final" in seen_types:
         set_completed(agent)
-    # 否则不设状态，react_cycle 继续循环
+    # 否则 continue（不设状态）
 ```
 
 **关键点：**
 - handler 只 `yield`，不 `return`，不 `set_xxx`，不调 `message_builder.add_xxx`
+- handler 统一通过 handler 变量引用，**一次遍历**跟踪 event type（消除 4 段重复 async for）
 - `_dispatch_handler` 跟踪 `seen_types` 和 `last_event`
 - 状态推断在 handler **完全遍历结束后**执行，此时 handler 的所有事件已到达 SSE 层
-- ObservationStep 和 FinalStep 的 content 加到 message_builder，由调用 `_dispatch_handler` 的编排层（react_cycle）统一处理，不属于 handler 职责
+- ObservationStep 和 FinalStep 的 content 提取由调用 `_dispatch_handler` 的编排层（react_cycle）的 yield 循环统一处理，不属于 handler 职责
 - 运输层（run_sse_stream）不受影响，它收到的 Step 事件和现在完全一样
 
 ### 2.5 异常兜底策略
@@ -617,21 +603,21 @@ yield agent._step_emitter.emit(FinalStep(...))     # ← 保留，前端需要 F
 **当前方法** — `exit_with_error`：
 
 ```python
-def exit_with_error(self, error_message, error_type="general", recoverable=False):
+def exit_with_error(self, step_count, error_type, error_message, recoverable=False):
     if recoverable:
         self.agent.status = AgentStatus.RETRYABLE_ERROR
     else:
         self.agent.set_failed(error_message)
-    return ErrorStep(error=error_message, type=error_type)
+    return ErrorStep(step=step_count, error=error_message, type=error_type)
 ```
 
 **改为**：
 
 ```python
-def exit_with_error(self, error_message, error_type="general", recoverable=False):
+def exit_with_error(self, step_count, error_type, error_message, recoverable=False):
     # recoverable 参数保留（预留），但在此处不设任何状态
     # 调用方（react_cycle）负责在收到 ErrorStep 后调 set_failed
-    return ErrorStep(error=error_message, type=error_type)
+    return ErrorStep(step=step_count, error=error_message, type=error_type)
 ```
 
 **改动说明**：
@@ -704,7 +690,7 @@ while agent.status in (THINKING, EXECUTING):
                 break
         
         # 调度 handler（dispatch 已在 _process_single_step 中处理）
-        async for event in _process_single_step(...):
+        async for event in self._process_single_step(agent, llm_response, chunk_buffer):
             yield event
     
     except CancelledError:
@@ -751,7 +737,8 @@ finally:
 ```diff
 - agent.status = AgentStatus.THINKING
 + from app.services.agent.core_agent.status_table import set_status
-+ set_status(agent, AgentStatus.THINKING)
++ if agent.status != AgentStatus.THINKING:
++     set_status(agent, AgentStatus.THINKING)
 ```
 
 ## 四、详细设计 v2 — 逐文件代码规格（diff 格式）
@@ -944,7 +931,7 @@ async def _dispatch_handler(self, agent, llm_response, chunk_buffer):
     elif parsed_type == "error":
         handler = handle_error_gen(agent, llm_response)
     else:
-        handler = self._handle_unknown(agent, llm_response)
+        handler = _handle_unknown(agent, llm_response)
 
     # 统一遍历：跟踪 event type + 透传
     async for event in handler:
@@ -975,8 +962,9 @@ async def handle_error_gen(agent, llm_response):
 **改动 2b：新增 `_handle_unknown`（未知响应类型）**
 
 ```python
-async def _handle_unknown(self, agent, llm_response):
-    """未知响应类型：提取 content → yield FinalStep"""
+async def _handle_unknown(agent, llm_response):
+    """未知响应类型：提取 content → yield FinalStep
+    注意：content 未被直接使用，由编排层 yield 循环消费（透传至 SSE），不属于 handler 职责"""
     parsed_type = llm_response.get("type", "unknown")
     content = llm_response.get("content", "") or llm_response.get("thought", "")
     final_step = agent._step_emitter.emit(FinalStep(
@@ -988,16 +976,17 @@ async def _handle_unknown(self, agent, llm_response):
 **改动 3：`_process_single_step` 不再读 Send() 返回值**
 
 ```python
-# 改前：从 Send() 读 handler 返回的 dict
-result_dict = await agent.send(None)
-if result_dict:
-    action = result_dict.get("action")
-    ...
+# 改前：读 handler 的 return dict（旧逻辑：async generator return + StopAsyncIteration.value）
+# 旧代码中 _process_single_step 在 yield 完 handler 事件后，
+# 通过 handler 的 return dict 获取 action/response 信号
 
-# 改后：不再读返回值，_dispatch_handler 已在 yield 穿透时设好状态
-# _process_single_step 只需检查 agent.status
-if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
-    break
+# 改后：不再读返回值，传 llm_response 给 _dispatch_handler，状态由后者推断
+async def _process_single_step(self, agent, llm_response, chunk_buffer):
+    async for event in self._dispatch_handler(agent, llm_response, chunk_buffer):
+        yield event
+    # 完成 dispatch 后检查状态
+    if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
+        break
 ```
 
 **改动 4：`run_react_cycle` — while 循环 + 取消处理 + 异常兜底**
@@ -1016,7 +1005,8 @@ async def run_react_cycle(self, agent, task):
                     agent_status=agent.status.value, response="用户取消"))
                 break
             
-            set_status(agent, AgentStatus.THINKING)
+            if agent.status != AgentStatus.THINKING:
+                set_status(agent, AgentStatus.THINKING)
             llm_response = await agent.llm_client.chat(
                 messages=agent.messages,
                 tools=agent.enabled_tool_defs,
@@ -1040,7 +1030,7 @@ async def run_react_cycle(self, agent, task):
                     break
             
             # dispatch handler（yield-only，状态在 _dispatch_handler 中推断）
-            async for event in _process_single_step(agent, chunk_buffer):
+            async for event in self._process_single_step(agent, llm_response, chunk_buffer):
                 yield event
             
             # 循环自然继续：状态由 _dispatch_handler 决定是 break 还是 continue
@@ -1062,6 +1052,7 @@ async def run_react_cycle(self, agent, task):
         if agent.status == AgentStatus.FAILED:
             yield agent._step_emitter.emit(FinalStep(step=agent.llm_call_count,
                 agent_status=agent.status.value, response="任务执行失败"))
+        _finalize_cycle(agent)
 ```
 
 **chunk_buffer 说明**：由编排层在 `run_react_cycle` 循环内维护，传给 LLM client 和 tool_manager 做流式数据缓冲，handler 层不碰。
@@ -1088,7 +1079,8 @@ async def run_react_cycle(self, agent, task):
 ```diff
 - agent.status = AgentStatus.THINKING
 + from app.services.agent.core_agent.status_table import set_status
-+ set_status(agent, AgentStatus.THINKING)
++ if agent.status != AgentStatus.THINKING:
++     set_status(agent, AgentStatus.THINKING)
 ```
 
 ---
@@ -1099,7 +1091,7 @@ async def run_react_cycle(self, agent, task):
 |------|------|------|
 | 新建文件 | — | `status_table.py` |
 | 删除方法 | `base_agent.set_failed/completed/cancelled` | — |
-| handler 改签名 | 不返回，直接设状态 | 返回 dict，不碰状态 |
+| handler 改签名 | 不返回，直接设状态 | 只 yield event，不返回 |
 | handler 改数据 | 4 处 message_builder.add_xxx | 不碰 message_builder，编排层统一消费 Step content |
 | `step_emitter.exit_with_error` | 设 RETRYABLE_ERROR 或 FAILED | 只 emit |
 | `error_handler` | 设 FAILED | 只创建 ErrorStep |
@@ -1312,7 +1304,7 @@ run_sse_stream ─── react_cycle ─── handler
 
 ```
 backend/app/services/agent/core_agent/
-├── status_table.py     ← 新建：_TRANSITIONS + _set_status + set_failed/set_completed/set_cancelled
+├── status_table.py     ← 新建：_TRANSITIONS + set_status + set_failed/set_completed/set_cancelled
 ├── react_cycle.py      ← 改：删除自己所有 agent.status = X，全部调 status_table 函数；_dispatch_handler 改为 event type 推断
 ├── handlers/
 │   ├── answer_handler.py   ← 改：删除 set_xxx + add_assistant_message，空内容路径加 ErrorStep；yield-only
@@ -1338,7 +1330,7 @@ backend/app/services/agent/core_agent/
 | 1.2 | 改 `base_agent.py` — 删 set_failed/set_completed/set_cancelled | `core_agent/base_agent.py` | 极小（import 变化） |
 | 1.3 | 改 `react_cycle.py` — 所有 `agent.status = X` 统一调 status_table（仅非 handler 部分） | `core_agent/react_cycle.py` | 中（mock 需调整） |
 | 1.4 | 改 `step_emitter.exit_with_error` — 不碰状态 | `core_agent/step_emitter.py` | 小（返回不变，状态已移出） |
-| 1.5 | 改 `error_handler` — 所有 `_handle_*` 不设状态 | `core_agent/error_handler.py` | 小（返回不变） |
+| 1.5 | 改 `error_handler` — 入口 `handle_react_error` + 所有 `_handle_*` 不设状态 | `core_agent/error_handler.py` | 小（返回不变） |
 | 1.6 | 改 `run_sse_stream.py` — 调 set_cancelled/set_failed | `react_sse_wrapper/run_sse_stream.py` | 小 |
 | 1.7 | 改 `initialize_run_state.py` — 调 set_status | `core_agent/initialize_run_state.py` | 小 |
 | 1.8 | 测试修复 + 全量回归 | `tests/` | 中 |
@@ -1397,7 +1389,7 @@ assert any(e.type == "final" for e in events)
 assert not any(e.type == "error" for e in events)
 
 # 失败路径：验证 yield 链中有 ErrorStep
-# assert any(e.type == "error" for e in events)
+assert any(e.type == "error" for e in events)
 
 # 状态由 _dispatch_handler 从 event type 推断设好，handler 测试无需验证状态
 ```
