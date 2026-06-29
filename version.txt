@@ -1,15 +1,29 @@
 v0.17.12
-更新时间: 2026-06-29 15:29:53
+更新时间: 2026-06-29 16:33:29
 ## v0.17.11→v0.17.12 变更汇总 - 小欧-2026-06-29
 
-### refactor: 重试架构代码实施(7项)
-- tool_retry_engine.py: 新增TOOL_RETRY_CONFIG按tool名直配 - 小欧-20260629
-- tool_retry_engine.py: _execute_with_retry内联, 删RetryEngine依赖 - 小欧-20260629
-- tool_retry_engine.py: _should_retry删error_category.is_retryable - 小欧-20260629
-- http_request.py: 取消内建重试, 异常传播给ToolRetryEngine - 小欧-20260629
-- network_schema.py: HttpRequestInput删retry字段 - 小欧-20260629
-- error_handler.py: _classify_error简化为统一委托UnifiedErrorClassifier - 小欧-20260629
-- retry_engine.py: 整文件删除(内联至tool_retry_engine) - 小欧-20260629
+### refactor: 代码重构(1项)
+- b20490e86: 重试架构重构 - 删除retry_engine+移除工具内建重试+简化error_handler - 小欧
+
+### docs: 文档更新(13项)
+- 434de7f06: 02-重试架构机制设计 - §§7.2-7.7 各代码修改添加diff格式 - 小欧
+- 4d299b03b: 02-重试架构机制设计 - 新增§7.1.6 涉及代码文件总览 - 小欧
+- 3ae499ab3: 02-重试架构机制设计 - TOOL_RETRY_CONFIG 移至 tool_retry_engine.py - 小欧
+- d1d287484: 02-重试架构机制设计 - 配置改为按tool名直配(非category) - 小欧
+- 35555eb94: 02-重试架构机制设计文档 v2.1 - 修正6处概念/序号不一致 - 小欧
+- 363b1190c: 02-重试架构机制设计文档 v2.1 - 版本号更新 - 小欧
+- d7bd7c7bb: 02-重试架构机制设计文档 v2.1 - 完全删除RETRYABLE_ERROR特殊处理路径 - 小欧
+- 97a99a6e6: 02-重试架构 v2.0 修正分类：系统重试=真正L1/L2，RETRYABLE_ERROR不是重试 - 小欧
+- 96b2a64b8: 重试架构设计文档副本 - 小欧
+- ddee90a65: 重试架构设计文档 §7.3 重写+双重重试分析结论 - 小欧
+- e102dc5ec: 02-重试架构机制设计与分析 §4重写+全篇15处一致性修正 - 小欧
+- 8d27cc4dc: version.txt v0.17.12 版本更新 - 小欧
+- e934c213b: 重试架构设计文档 §7.3 重写+双重重试分析结论(Plan A) - 小欧
+
+### 合计
+- refactor: 1项, docs: 13项
+
+---
 
 v0.17.11
 更新时间: 2026-06-29 12:10:00
