@@ -90,6 +90,9 @@ EXCEPTION_TO_TOOL_ERROR: Dict[str, ToolErrorCategory] = {
     "InvalidURL": ToolErrorCategory.INVALID_PARAMS,
     "TooManyRedirects": ToolErrorCategory.NETWORK,
     "ReadError": ToolErrorCategory.NETWORK,
+    # HTTP状态错误应该归类为网络错误
+    "HTTPStatusError": ToolErrorCategory.NETWORK,
+    "HTTPError": ToolErrorCategory.NETWORK,
 }
 
 # 错误关键词到工具错误分类的映射
@@ -108,6 +111,8 @@ KEYWORD_TO_TOOL_ERROR: Dict[str, ToolErrorCategory] = {
     "required": ToolErrorCategory.INVALID_PARAMS,
     "does not exist": ToolErrorCategory.TOOL_NOT_FOUND,
     "no attribute": ToolErrorCategory.TOOL_NOT_FOUND,
+    "os error": ToolErrorCategory.PERMISSION_DENIED,  # OSError通常与权限相关
+    "io error": ToolErrorCategory.NETWORK,  # IO错误通常与网络/文件系统相关
 }
 
 
