@@ -268,21 +268,8 @@ async def network_diagnose(
             else:
                 llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=result.get("err_code", ERR_NET_UNKNOWN), detail=result.get("error_detail", ""))
                 return build_error(data={"error_detail": result.get("error_detail", ""), "params": result.get("params", {})}, llm_data=llm_data)
-        except socket.gaierror as e:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            error_category = ToolErrorClassifier.classify_tool_error(e)
-            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=f"ERR_{error_category.name}", detail=f"DNS解析失败: {host}")
-            return build_error(data={"error_detail": f"DNS解析失败: {host}", "params": {"host": host, "port": port}}, llm_data=llm_data)
-        except socket.timeout as e:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            error_category = ToolErrorClassifier.classify_tool_error(e)
-            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=f"ERR_{error_category.name}", detail=f"端口 {port} 连接超时")
-            return build_error(data={"error_detail": f"端口 {port} 连接超时", "params": {"host": host, "port": port}}, llm_data=llm_data)
-        except OSError as e:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            error_category = ToolErrorClassifier.classify_tool_error(e)
-            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=f"ERR_{error_category.name}", detail=str(e))
-            return build_error(data={"error_detail": str(e), "params": {"host": host, "port": port}}, llm_data=llm_data)
+        except (socket.timeout, OSError):
+            raise  # 【小欧 2026-06-29】传播给ToolRetryEngine统一分类+重试
         except Exception as e:
             logger.error(f"[port_check] 未知错误: {e}")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

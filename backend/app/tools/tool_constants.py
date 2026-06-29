@@ -10,6 +10,11 @@
 # ============================================================
 
 TOOL_TIMEOUTS = {
+    # 双重用途：
+    # 1. 工具内部校验 deadline / subprocess.run 超时
+    # 2. ToolRetryEngine 用 asyncio.wait_for(timeout=此值) 做保险丝，
+    #    防止工具卡死不返回。详见 tool_retry_engine.py 第95行。
+    # 警告：修改此值会影响重试引擎的超时行为。
     "list_directory": 30,
     "search_files": 120,
     "grep_file_content": 120,

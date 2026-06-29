@@ -1,3 +1,21 @@
+v0.17.13
+更新时间: 2026-06-29 20:00:00
+## v0.17.12→v0.17.13 变更汇总 - 小欧-2026-06-29
+
+### refactor: 代码重构(2项)
+- 70ab81cbd: 删除RETRYABLE_ERROR枚举及相关代码 - 小欧
+- f7cc823e8: 网络工具使用ToolErrorClassifier统一错误分类 - 小欧
+
+### fix: 错误分类器完善(3项)
+- fe7db3a48: 拆分系统级和工具级错误分类器 - 小欧
+- 0dbf0d939: 完善ToolErrorClassifier映射，添加OSError和HTTP错误 - 小欧
+- 9a1bafaaf: 更新测试文件，移除_classify_error引用 - 小欧
+
+### fix: 异常传播重构(2项)
+- e5ca1cd16: search_web + network_diagnose异常传播给ToolRetryEngine - 小欧
+
+---
+
 v0.17.12
 更新时间: 2026-06-29 16:33:29
 ## v0.17.11→v0.17.12 变更汇总 - 小欧-2026-06-29

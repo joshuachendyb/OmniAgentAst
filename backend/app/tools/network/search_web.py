@@ -211,8 +211,8 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
                 _search_failed(engine, "无搜索结果")
             return formatted
 
-    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
-        _search_failed(engine, f"网络错误: {type(e).__name__}: {str(e)[:200]}")
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):
+        raise  # 【小欧 2026-06-29】传播给ToolRetryEngine统一分类+重试
     except Exception as e:
         _search_failed(engine, f"异常: {type(e).__name__}: {str(e)[:200]}")
     return None
@@ -420,6 +420,8 @@ async def search_web(
             return build_warning(data=data, llm_data=llm_data)
         return build_success(data=data, llm_data=llm_data)
 
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):
+        raise  # 【小欧 2026-06-29】传播给ToolRetryEngine统一分类+重试
     except Exception as e:
         logger.error(f"[search_web] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
