@@ -165,7 +165,8 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
             return
         except FCFormatError as e:
             last_error = e
-            logger.warning(f"[FC降级] FC模式第{attempt+1}次失败: {e}")
+            logger.warning(f"[Retry][L2] FC模式第{attempt+1}/{FC_MAX_RETRIES}次失败: {e}")
+            await asyncio.sleep(0.5)
             continue
 
     if FC_FALLBACK_ENABLED:

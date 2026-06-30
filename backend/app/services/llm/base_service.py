@@ -201,11 +201,10 @@ class BaseAIService:
         self.reset_cancel()
         self._ensure_client()
 
-        retry_count = 0
         max_retries = LLM_STREAM_MAX_RETRIES
         stream_options = LLM_STREAM_OPTIONS
 
-        while retry_count <= max_retries:
+        for attempt in range(max_retries + 1):
             try:
                 tool_call_accumulator = {}
                 raw_data_buf: list = []
@@ -282,7 +281,10 @@ class BaseAIService:
                             })
                     # 小欧 2026-06-25: 所有tool_calls都解析失败 → FCFormatError
                     if tool_call_accumulator and not tool_calls_list:
-                        raise FCFormatError(f"所有tool_calls参数解析失败: {failed_parses}")
+                        raise FCFormatError(
+                            message="所有tool_calls参数解析失败",
+                            details={"failed_parses": failed_parses}
+                        )
                     yield StreamChunk(content="", model=self.model, is_done=False,
                                       tool_calls=tool_calls_list, raw_data=complete_raw)
 
@@ -292,10 +294,10 @@ class BaseAIService:
             except FCFormatError:
                 raise  # 穿透给call_llm_with_fallback重试/降级 — 2026-06-26
             except Exception as e:
-                if self._should_retry(e) and retry_count < max_retries:
-                    retry_count += 1
-                    wait_time = 2 ** retry_count
-                    logger.warning(f"[request_stream] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: {e}")
+                if self._should_retry(e) and attempt < max_retries:
+                    wait_time = min(0.5 * (2 ** (attempt + 1)), 10)
+                    logger.warning(f"[Retry][L1] 重试 {attempt+1}/{max_retries}, "
+                                   f"等待{wait_time:.1f}s, 错误: {e}")
                     await asyncio.sleep(wait_time)
                     continue
                 else:

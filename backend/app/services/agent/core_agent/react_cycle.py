@@ -97,7 +97,7 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
 
 def _ensure_failed_final_step(agent):
     """FAILED时补发FinalStep — 小健 2026-06-17 从finally提取
-    小健 2026-06-26: 修复P0-5 RETRYABLE_ERROR不应补发FinalStep，由循环继续处理"""
+    小健 2026-06-26: 修复P0-5 重试错误不应补发FinalStep，由循环继续处理"""
     if agent.status != AgentStatus.FAILED:
         return
     last_err = None

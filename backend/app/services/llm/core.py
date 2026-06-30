@@ -15,7 +15,9 @@ from app.utils.logger import logger
 
 class FCFormatError(Exception):
     """FC格式错误 — LLM返回的tool_calls无法解析 — 小欧 2026-06-25"""
-    pass
+    def __init__(self, *, message: str, details: dict = None):
+        super().__init__(message)
+        self.details = details or {}
 
 
 def _resolve_exception(e: Exception) -> tuple:
