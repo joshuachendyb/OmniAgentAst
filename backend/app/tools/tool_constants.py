@@ -229,6 +229,13 @@ TOOL_RETRY_BACKOFF = {
 #       与系统层 constants.py 的 SYS_RATE_LIMIT_CODES（LLM 限流检测）完全无关。
 TOOL_RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504}
 
+# 工具层错误码(从 constants.py 迁入) — 小欧 2026-06-30
+# 用途：ToolRetryEngine 构建重试耗尽错误返回。
+ERR_TOOL_NOT_FOUND = "ERR_TOOL_NOT_FOUND"
+ERR_MISSING_PARAM = "ERR_MISSING_PARAM"
+ERR_INVALID_PARAMS = "ERR_INVALID_PARAMS"
+ERR_UNKNOWN = "ERR_UNKNOWN"
+
 SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
 
 # ============================================================
