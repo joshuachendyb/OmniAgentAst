@@ -30,7 +30,7 @@ from app.tools.tool_response import build_error
 
 
 # TOOL_RETRY_CONFIG: 按 tool 名直配重试参数
-# 不在字典中的 tool → max_retries=0（不重试）
+# 不在字典中的 tool → max_retries=0（不重试）。默认不重试的 tool 不列入字典。
 # 返回格式: {tool名: {"max_retries": int, "retryable": list[str]}}
 # 注意: retryable 列表中的字符串必须与 ToolErrorCategory.value 完全匹配
 TOOL_RETRY_CONFIG = {
@@ -38,10 +38,8 @@ TOOL_RETRY_CONFIG = {
     "download_file": {"max_retries": 3, "retryable": ["timeout", "connect", "network", "protocol"]},
     "fetch_webpage": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
     "search_web": {"max_retries": 2, "retryable": ["timeout", "connect", "network"]},
-    # shell/代码: 非幂等+永久性错误为主，不重试。工具内部已 catch 所有异常，
-    # 异常不会传播到 retry engine，设 max_retries=0 明确不重试 — 小欧 2026-06-30
-    "execute_shell_command": {"max_retries": 0, "retryable": []},
-    "execute_code": {"max_retries": 0, "retryable": []},
+    # shell/代码: 非幂等+永久性错误为主，工具内部已 catch 所有异常，
+    # 不会传播到 retry engine，不在字典中即默认不重试 — 小欧 2026-06-30
     "network_diagnose": {"max_retries": 2, "retryable": ["timeout", "connect"]},
 }
 
