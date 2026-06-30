@@ -110,7 +110,7 @@ async def _stream_download(client: HTTPClient, url: str, dest_path: str,
                 if os.path.exists(dest_path):
                     os.remove(dest_path)
             except Exception:
-                pass
+                logger.warning(f"[download_file] 清理失败: {dest_path}")
             raise
         return downloaded, content_type, total_bytes if raw_total else downloaded
 

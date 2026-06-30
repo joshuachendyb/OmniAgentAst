@@ -1,3 +1,40 @@
+v0.17.14
+更新时间: 2026-06-30 10:00:00
+## v0.17.13→v0.17.14 变更汇总 - 小欧-2026-06-30
+
+### refactor: 代码质量全面修复
+
+#### fix: except Exception: pass 静默吞异常(13处)
+- download_file.py: cleanup → logger.warning
+- execute_shell_command.py ×2: cleanup → logger.warning
+- shell_session.py: process kill → logger.warning
+- client_sdk.py: config fallback → logger.warning
+- initialize_run_state.py: task update → logger.warning
+- chat_openai.py: message ID → logger.warning
+- database.py ×2: rollback/close → logger.warning
+- execute_sql.py ×3: connection cleanup/rollback → logger.warning
+- path_validator.py: security validation pass→return False(失败关闭)
+- write_text_file.py: encoding detect → logger.warning
+- edit_text_file.py: CRLF detect → logger.warning
+
+#### DRY: 抽出3份重复_get_file_encoding→file_encoding.py
+- 新建 app/tools/file/file_encoding.py，提供 get_file_encoding()
+- 3个文件(write/read/edit_text_file)改为共享调用
+
+#### refactor: context_vars从services/移动到utils/
+- 消除 tools→services 横向依赖(api和tools都需要引用)
+- 更新8个import路径
+
+#### refactor: 19个inline import移到模块顶层
+- run_sse_stream.py: json/db/steps/agent/sse_formatter/prompt_logger(15处)
+- base_service.py: llm_constants/core/sys_error_classifier(4处)
+
+#### fix: UniversalAgent消除_loaded_categories shadow
+- 删除super().__init__()后多余的 self._loaded_categories 赋值
+
+#### P3: 清理unused import
+- universal_agent.py: 删除未使用的 List/AgentResult 导入
+
 v0.17.13
 更新时间: 2026-06-29 20:00:00
 ## v0.17.12→v0.17.13 变更汇总 - 小欧-2026-06-29

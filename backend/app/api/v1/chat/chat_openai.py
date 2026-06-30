@@ -30,7 +30,7 @@ from app.services.task.task_cancel_check import task_cancel_check_and_yield
 from app.services.task.task_state_queries import check_cancelled
 from app.services.task.task_cleanup import task_cleanup
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
-from app.services.context_vars import _current_task_id
+from app.utils.context_vars import _current_task_id
 from app.utils.prompt_logger import get_prompt_logger
 from app.api.v1.chat.confirm_operation import confirm_operation
 from app.api.v1.chat.validate_chat_config import validate_chat_config
@@ -120,7 +120,7 @@ async def chat_stream(request: ChatRequest):
             from app.utils.message_id_tracker import get_user_message_id
             _user_msg_id = get_user_message_id(session_id)
         except Exception:
-            pass
+            logger.warning(f"[chat] 获取user_message_id失败: session_id={session_id}")
         print(f"[TASK_START]:provider={ai_service.provider} model={ai_service.model}")
         print(f"ask_id={task_id} session_id={session_id} user_message_id={_user_msg_id} |")
         print(f"user_input={user_input}")

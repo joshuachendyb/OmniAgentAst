@@ -13,10 +13,12 @@ from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 import httpx
 from app.utils.logger import logger
 from app.utils.json_utils import parse_json
-from app.services.llm.core import ChatResponse, StreamChunk, _resolve_exception
+from app.services.llm.core import ChatResponse, FCFormatError, StreamChunk, _resolve_exception
+from app.services.llm.llm_constants import LLM_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS, LLM_TEMPERATURE
 from app.services.llm.stream_parser import create_cancelled_chunk
 from app.services.llm.client_sdk import create_llm_client
 from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
+from app.utils.sys_error_classifier import SystemErrorClassifier
 
 from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
@@ -86,7 +88,6 @@ class BaseAIService:
         temperature: float = None,
         seed: Optional[int] = None,
     ):
-        from app.services.llm.llm_constants import LLM_TEMPERATURE
         if temperature is None:
             temperature = LLM_TEMPERATURE
         self.api_key = api_key
@@ -201,11 +202,8 @@ class BaseAIService:
         self._ensure_client()
 
         retry_count = 0
-        from app.services.llm.llm_constants import LLM_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS
         max_retries = LLM_STREAM_MAX_RETRIES
         stream_options = LLM_STREAM_OPTIONS
-
-        from app.services.llm.core import FCFormatError as _FCFormatError
 
         while retry_count <= max_retries:
             try:
@@ -284,14 +282,14 @@ class BaseAIService:
                             })
                     # 小欧 2026-06-25: 所有tool_calls都解析失败 → FCFormatError
                     if tool_call_accumulator and not tool_calls_list:
-                        raise _FCFormatError(f"所有tool_calls参数解析失败: {failed_parses}")
+                        raise FCFormatError(f"所有tool_calls参数解析失败: {failed_parses}")
                     yield StreamChunk(content="", model=self.model, is_done=False,
                                       tool_calls=tool_calls_list, raw_data=complete_raw)
 
                 yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw, usage=usage_data)
                 return
 
-            except _FCFormatError:
+            except FCFormatError:
                 raise  # 穿透给call_llm_with_fallback重试/降级 — 2026-06-26
             except Exception as e:
                 if self._should_retry(e) and retry_count < max_retries:
@@ -383,7 +381,6 @@ class BaseAIService:
 
     def _should_retry(self, e: Exception) -> bool:
         """判断是否应该重试 — 委托给SystemErrorClassifier - 小沈 2026-06-17"""
-        from app.utils.sys_error_classifier import SystemErrorClassifier
         return SystemErrorClassifier.classify_error(e).is_retryable
 
     async def close(self):

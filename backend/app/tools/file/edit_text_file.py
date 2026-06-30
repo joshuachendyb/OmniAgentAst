@@ -17,42 +17,16 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import MAX_READ_SIZE
 from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
-from app.services.context_vars import _current_task_id
+from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.tools.file_type_checker import check_for_text_tool
 from app.tools.validate.tools_file_path_checker import validate_path_for_write
 from app.utils.logger import logger
+from app.tools.file.file_encoding import get_file_encoding
 
 # U+FFFD replacement character threshold for encoding detection — 小欧 2026-06-27
 _REPLACEMENT_CHAR_THRESHOLD = 0.05
-
-
-def _get_file_encoding(file_path: str) -> Dict[str, Any]:
-    """内联编码检测，替代已删除的 file_helper.get_file_encoding — 小欧 2026-06-22"""
-    import os
-    from app.tools.tool_fc_helper import _detect_encoding
-    try:
-        file_path = os.path.abspath(file_path)
-        if not os.path.exists(file_path):
-            return {"data": {"encoding": "utf-8", "confidence": 0.5}}
-        detected = _detect_encoding(Path(file_path))
-        if detected in ("utf-8-sig", "utf-16-le", "utf-16-be", "utf-8"):
-            confidence = 1.0 if detected != "utf-8" else 0.95
-            return {"data": {"encoding": detected, "confidence": confidence}}
-        common_encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin-1']
-        with open(file_path, 'rb') as f:
-            raw_data = f.read(10000)
-        for encoding in common_encodings:
-            try:
-                raw_data.decode(encoding)
-                return {"data": {"encoding": encoding, "confidence": 0.9}}
-            except UnicodeDecodeError:
-                continue
-        return {"data": {"encoding": "utf-8", "confidence": 0.5}}
-    except Exception:
-        return {"data": {"encoding": "utf-8", "confidence": 0.5}}
-
 
 
 async def _try_read_file_with_encodings(
@@ -64,7 +38,7 @@ async def _try_read_file_with_encodings(
         if preferred:
             encodings_to_try = [preferred]
         else:
-            auto = _get_file_encoding(str(path))
+            auto = get_file_encoding(str(path))
             encodings_to_try = []
             if auto and auto.get("data", {}).get("encoding"):
                 encodings_to_try.append(auto["data"]["encoding"])

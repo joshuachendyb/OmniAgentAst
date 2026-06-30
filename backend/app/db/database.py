@@ -87,7 +87,7 @@ class DatabaseManager:
                 try:
                     conn.rollback()
                 except Exception:
-                    pass
+                    logger.warning(f"[db] rollback 失败: {db_name}")
             
             logger.error(f"DB operation failed [{db_name}]: {e}")
             raise
@@ -97,7 +97,7 @@ class DatabaseManager:
                 try:
                     conn.close()
                 except Exception:
-                    pass
+                    logger.warning(f"[db] 关闭连接失败: {db_name}")
     
     def init(self):
         """初始化所有数据库(应用启动时调用)"""

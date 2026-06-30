@@ -20,6 +20,7 @@ from app.tools.tool_constants import (
 )
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
+from app.utils.logger import logger
 
 
 def get_default_allowed_paths() -> List[Path]:
@@ -108,8 +109,9 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
         original_resolved = os.path.realpath(os.path.dirname(file_path))
         if not resolved.startswith(original_resolved) and file_path != resolved:
             return False, f"路径穿越检测: {file_path} 解析为 {resolved}"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"[path_validator] 路径校验异常: {file_path}: {e}")
+        return False, f"路径校验异常: {file_path}"
 
     paths = allowed_paths or ALLOWED_PATHS
     try:

@@ -116,7 +116,7 @@ def shell_session(
                 terminated = True
                 returncode = process.returncode
             except Exception:
-                pass
+                logger.warning(f"[shell_session] 强制终止shell进程失败: {shell_id}")
         _background_shells.pop(shell_id, None)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_shell_session_llm_data("success", duration_ms, shell_id, terminated=terminated)

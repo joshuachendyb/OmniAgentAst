@@ -106,7 +106,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 try:
                     conn.close()
                 except Exception:
-                    pass
+                    logger.warning("[execute_sql] 关闭校验连接失败")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_execute_sql_llm_data("success" if syntax_valid else "error", duration_ms, sql, 0)
             if syntax_valid:
@@ -153,7 +153,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             try:
                 conn.rollback()
             except Exception:
-                pass
+                logger.warning("[execute_sql] sqlite3回滚失败")
         logger.error(f"[execute_sql] ERR_SQL_EXEC: {e}")
         return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
     except Exception as e:
@@ -163,8 +163,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             try:
                 conn.rollback()
             except Exception:
-                pass
-        logger.error(f"[execute_sql] ERR_EXEC_FAILED: {e}")
+                logger.warning("[execute_sql] 回滚失败")
         return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)

@@ -39,7 +39,7 @@ async def execute_tool(request: ToolExecuteRequest):
         )
 
     try:
-        from app.services.context_vars import _current_task_id
+        from app.utils.context_vars import _current_task_id
         _api_task_id = str(_uuid.uuid4())
         _current_task_id.set(_api_task_id)
 

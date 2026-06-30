@@ -109,7 +109,7 @@ class LLMClient:
             if provider in custom_urls:
                 return custom_urls[provider]
         except Exception:
-            pass
+            logger.warning(f"[client_sdk] 读取自定义URL配置失败: provider={provider}")
         return self._DEFAULT_URLS.get(provider, "")
 
     async def request(

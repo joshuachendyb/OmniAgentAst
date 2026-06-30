@@ -175,7 +175,7 @@ def cleanup_background_shells() -> int:
                 del _background_shells[shell_id]
                 count += 1
         except Exception:
-            pass
+            logger.warning(f"[execute_shell_command] 清理shell进程失败: {shell_id}")
     return count
 
 
@@ -253,7 +253,7 @@ def execute_shell_command(
                 proc.kill()
                 proc.wait(timeout=5)
             except Exception:
-                pass
+                logger.warning(f"[execute_shell_command] 终止超时进程失败")
             stdout_bytes, stderr_bytes = b"", b""
 
         stdout_str = _decode_bytes_safe(stdout_bytes)

@@ -9,17 +9,23 @@ Author: 小沈 - 2026-05-31
 """
 
 import asyncio
+import json
 import time
 from typing import List, AsyncGenerator, Any, Callable, Dict, Optional
 
-from app.utils.logger import logger
+from app.db import db
+from app.services.agent.steps import ErrorStep, FinalStep, MetaStep
 from app.services.agent.types import AgentStatus
+from app.services.agent.universal_agent import UniversalAgent
+from app.services.react_sse_wrapper.chat_stream import save_execution_steps_to_db
 from app.services.task.task_state_queries import check_cancelled, check_paused
+from app.utils.logger import logger
+from app.utils.prompt_logger import get_prompt_logger
+from app.utils.sse_formatter import format_agent_sse
 
 
 def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
     """从execution_steps JSON提取tool_calls列表 — 小欧 2026-06-25 从_load_previous_messages提取"""
-    import json
     try:
         exec_steps = json.loads(exec_steps_json)
         tool_calls = []
@@ -40,7 +46,6 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
 
 def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
     """从execution_steps JSON提取observation tool消息 — 小欧 2026-06-25 从_load_previous_messages提取"""
-    import json
     try:
         exec_steps = json.loads(exec_steps_json)
         observations = []
@@ -61,7 +66,6 @@ def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
 def _load_previous_messages(session_id: str) -> List[Dict[str, Any]]:
     """从DB加载会话历史消息 — 小健 2026-06-17 委托db层，消除SQLite越界
     小欧 2026-06-25: 抽取_parse_tool_calls/_parse_observations消除嵌套try/except"""
-    from app.db import db
     try:
         with db.get_conn("chat") as conn:
             rows = conn.execute(
@@ -99,11 +103,6 @@ async def run_sse_stream(
     start_time: Optional[float] = None,
 ) -> AsyncGenerator[str, None]:
     """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState — 小健 2026-06-26 增加session存在性验证"""
-    from app.services.agent.universal_agent import UniversalAgent
-    from app.utils.sse_formatter import format_agent_sse
-    from app.services.react_sse_wrapper.chat_stream import save_execution_steps_to_db
-    from app.db import db
-
     agent = None
     log_tag = "[AgentOp]"
     error_label = "操作执行失败"
@@ -119,7 +118,6 @@ async def run_sse_stream(
                 if not cursor.fetchone():
                     error_msg = f"Session {session_id} 不存在，无法执行任务"
                     logger.error(f"[SSE] {error_msg}")
-                    from app.services.agent.steps import ErrorStep, FinalStep
                     error_step = ErrorStep(step=next_step(), error_type="session_not_found", error_message=error_msg)
                     current_execution_steps.append(error_step.to_dict())
                     yield format_agent_sse(error_step.to_dict())
@@ -164,7 +162,6 @@ async def run_sse_stream(
                 logger.warning(f"[SSE] 跳过非Step事件: {type(event)}")
                 continue
             event_type = event_dict.get('type', '')
-            from app.utils.prompt_logger import get_prompt_logger
             get_prompt_logger().log_step_yield(event_dict, round_number=event_dict.get('step', 0))
 
             # 累积execution_steps
@@ -195,8 +192,6 @@ async def run_sse_stream(
         # R3-4修复: log_step_yield补全,防止prompt日志遗漏 — 小欧 2026-06-23
         end_type = "interrupted"
         logger.info(f"[SSE] 任务 {task_id} 被取消(CancelledError)")
-        from app.services.agent.steps import MetaStep, FinalStep
-        from app.utils.prompt_logger import get_prompt_logger
         interrupted_step = MetaStep(step=next_step(), type="interrupted", message='任务已被中断')
         interrupted_dict = interrupted_step.to_dict()
         current_execution_steps.append(interrupted_dict)
@@ -220,7 +215,6 @@ async def run_sse_stream(
         )
         yield error_response
         # 小健 2026-06-19: error后补发FinalStep,保证客户端收到终态事件
-        from app.services.agent.steps import FinalStep
         final_step = FinalStep(step=next_step(), response=f"执行异常: {str(e)[:200]}")
         current_execution_steps.append(final_step.to_dict())
         yield format_agent_sse(final_step.to_dict())
@@ -244,7 +238,6 @@ async def run_sse_stream(
                     saved_content = stream_state.current_content if stream_state else ""
                     ai_message_id = await save_execution_steps_to_db(session_id, current_execution_steps, saved_content)
                     if ai_message_id:
-                        from app.utils.prompt_logger import get_prompt_logger
                         get_prompt_logger().update_ai_message_id(str(ai_message_id))
                     break
                 except Exception as save_err:
@@ -284,9 +277,6 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
 
 async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):
     """内联错误SSE生成(避免外部模块依赖) — P2-18 使用ErrorStep替代手工dict"""
-    from app.utils.sse_formatter import format_agent_sse
-    from app.services.agent.steps import ErrorStep
-
     step_num = next_step()
     error_step = ErrorStep(
         step=step_num,

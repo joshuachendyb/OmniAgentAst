@@ -16,55 +16,29 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
-from app.services.context_vars import _current_task_id
+from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 
 from app.tools.validate.tools_file_path_checker import validate_path_for_write
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.tools.file_type_checker import check_for_text_tool
 from app.utils.logger import logger
-
-
-def _get_file_encoding(file_path: str) -> Dict[str, Any]:
-    """内联编码检测，替代已删除的 file_helper.get_file_encoding — 小欧 2026-06-22"""
-    import os
-    from app.tools.tool_fc_helper import _detect_encoding
-    try:
-        file_path = os.path.abspath(file_path)
-        if not os.path.exists(file_path):
-            return {"data": {"encoding": "utf-8", "confidence": 0.5}}
-        detected = _detect_encoding(Path(file_path))
-        if detected in ("utf-8-sig", "utf-16-le", "utf-16-be", "utf-8"):
-            confidence = 1.0 if detected != "utf-8" else 0.95
-            return {"data": {"encoding": detected, "confidence": confidence}}
-        common_encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin-1']
-        with open(file_path, 'rb') as f:
-            raw_data = f.read(10000)
-        for encoding in common_encodings:
-            try:
-                raw_data.decode(encoding)
-                return {"data": {"encoding": encoding, "confidence": 0.9}}
-            except UnicodeDecodeError:
-                continue
-        return {"data": {"encoding": "utf-8", "confidence": 0.5}}
-    except Exception:
-        return {"data": {"encoding": "utf-8", "confidence": 0.5}}
-
+from app.tools.file.file_encoding import get_file_encoding
 
 
 def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
-    """统一编码检测,复用 get_file_encoding — 小沈 2026-05-25 — 小欧 2026-06-22"""
+    """统一编码检测 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-30 抽公用"""
     if not append:
         return "utf-8"
     path = Path(file_path)
     if not (path.exists() and path.is_file()):
         return "utf-8"
     try:
-        result = _get_file_encoding(str(path))
+        result = get_file_encoding(str(path))
         if result and result.get("data", {}).get("encoding"):
             return result["data"]["encoding"]
     except Exception:
-        pass
+        logger.warning(f"[write_text_file] 编码检测失败: {file_path}")
     return "utf-8"
 
 
