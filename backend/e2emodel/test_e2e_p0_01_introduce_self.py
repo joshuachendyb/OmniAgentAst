@@ -2,9 +2,9 @@
 
 操作手册对照:
   用例: E2E-P0-01
-  用户输入: "详细介绍一下你自己，你能做什么"
-  前置数据: 无
-  预期过程: LLM直接回复，不调用工具
+   用户输入: "系统介绍自己能力范围+实际操作验证能力+写两个报告"
+   前置数据: 无
+   预期过程: LLM调用工具进行实际操作验证
   通过标准: 收到final事件；回复语义完整；无error事件
   失败标准: 超时未收到final；回复为空或胡言乱语；收到error
 
@@ -45,11 +45,21 @@ async def test_e2e_p0_01_introduce_self():
     lc = {"errors": [], "tracebacks": []}
     elapsed = 0.0
     error_info = None
+    user_input = (
+        "作为一名AI助手，请系统地介绍你的能力范围。请从以下几个维度详细说明："
+        "文件操作——读写、编辑、搜索文件的能力如何；"
+        "代码执行——能否直接运行脚本或编译程序；"
+        "网络功能——搜索、抓取网页从何做起；"
+        "系统管理——查看系统资源、监控性能能到什么程度。"
+        "每个维度最好给出具体的功能描述和适用场景，让我对你能做什么、不能做什么有个清晰的预期。"
+        "另外你的回复机制是什么样的——能流式输出吗？"
+        "讲能力汇总写两个报告一个文本报告一个是doc报告"
+        "接着 自己 执行从file 网络 获取和网络测试  代码执行 系统管理 监控等都执行一系列操作 "
+        "检查实际的操作能力是什么样, 然后 讲这些能力情况的检查分析结果 汇总到报告中"
+    )
 
     try:
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
-
-        user_input = "详细介绍一下你自己，你能做什么"
         print(f"\n  [Step1] T0={test_start.strftime('%H:%M:%S')}, input: {user_input}")
 
         result = await send_chat(user_input)
@@ -129,7 +139,7 @@ async def test_e2e_p0_01_introduce_self():
     finally:
         write_test_record(
             "E2E-P0-01", "核心链路验证-自我介绍",
-            "详细介绍一下你自己，你能做什么",
+            user_input,
             r or {}, db, ci, si, lc, passed, elapsed,
             error_info=error_info,
         )

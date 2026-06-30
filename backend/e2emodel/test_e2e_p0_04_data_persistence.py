@@ -167,7 +167,7 @@ async def test_e2e_p0_04_data_persistence():
     finally:
         write_test_record(
             "E2E-P0-04", "数据持久化通路验证",
-            "列出E:\\test_dir下的所有文件",
+            user_input,
             r or {}, db, ci, si, lc, passed, elapsed,
             error_info=error_info,
         )
