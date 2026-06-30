@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional, Union, Literal
 
 from app.tools.tool_fc_helper import parse_datetime_any as _parse_datetime_any
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_TIME_ADD
+from app.tools.tool_constants import ERR_TIME_ADD
 
 
 def _build_time_add_llm_data(exec_code: str, duration_ms: int, result_time: str, unit: str, delta: float) -> dict:

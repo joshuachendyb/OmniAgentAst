@@ -19,7 +19,7 @@ from app.tools.tool_fc_helper import (
     get_holiday_date_by_name as _get_holiday_date_by_name,
 )
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_TIME_DATE
+from app.tools.tool_constants import ERR_TIME_DATE
 
 
 def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: str, is_weekend: bool, is_hol: bool, is_workday: bool, holiday_name: str) -> dict:

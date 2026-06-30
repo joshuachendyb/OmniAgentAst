@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import MAX_READ_SIZE
-from app.constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
+from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
 from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 from app.services.safety.file_safety import record_operation, execute_with_safety

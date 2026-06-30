@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_TIME_NOW
+from app.tools.tool_constants import ERR_TIME_NOW
 
 
 def _build_time_now_llm_data(exec_code: str, duration_ms: int, iso: str, formatted: str, weekday: str) -> dict:

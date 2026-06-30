@@ -19,7 +19,7 @@ from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT, HIVE_MAP
 from app.tools.validate.registry_path_checker import validate_registry_key
-from app.constants import ERR_REG_READ_FAILED, ERR_PARAMETER_INVALID
+from app.tools.tool_constants import ERR_REG_READ_FAILED, ERR_PARAMETER_INVALID
 
 ROOT_KEY_MAP = {
     "HKEY_CLASSES_ROOT": winreg.HKEY_CLASSES_ROOT,

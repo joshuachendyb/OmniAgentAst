@@ -16,7 +16,7 @@ import pandas as pd
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.utils.json_utils import coerce_json
-from app.constants import ERR_DOC_ANALYZE_DATA
+from app.tools.tool_constants import ERR_DOC_ANALYZE_DATA
 
 
 def _convert_pd_value(val: Any) -> Any:

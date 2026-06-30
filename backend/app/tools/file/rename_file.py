@@ -15,7 +15,7 @@ from typing import Any, Dict
 
 from app.tools.file.move_file import _move_file_impl
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_FILE_RENAME_FAILED
+from app.tools.tool_constants import ERR_FILE_RENAME_FAILED
 
 
 def _build_rename_file_llm_data(

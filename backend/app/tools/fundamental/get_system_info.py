@@ -16,7 +16,7 @@ import psutil
 
 from app.tools.tool_response import build_success, build_error
 from app.utils.logger import logger
-from app.constants import ERR_SYSTEM_INFO
+from app.tools.tool_constants import ERR_SYSTEM_INFO
 
 
 def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type: str) -> dict:

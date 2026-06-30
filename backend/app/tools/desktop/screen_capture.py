@@ -17,7 +17,7 @@ from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error
 from app.tools.validate.tools_file_path_checker import validate_path_for_write
 from app.utils.logger import logger
-from app.constants import ERR_SCREENSHOT, ERR_SCREEN_SNAPSHOT
+from app.tools.tool_constants import ERR_SCREENSHOT, ERR_SCREEN_SNAPSHOT
 
 
 def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, output_path: str = "", region=None,

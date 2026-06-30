@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_INVALID_ACTION, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE, ERR_DESKTOP_GET_WINDOW_INFO
+from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE, ERR_DESKTOP_GET_WINDOW_INFO
 from app.tools.desktop.window_info import (
     check_win32_platform, find_windows_by_title, _win32gui, _win32con,
 )

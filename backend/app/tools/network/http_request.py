@@ -30,7 +30,7 @@ _check_network = check_network
 
 from app.utils.tool_result_formatter import make_json_safe
 from app.utils.logger import logger
-from app.constants import (
+from app.tools.tool_constants import (
     ERR_INVALID_URL,
     ERR_NETWORK_DOWN,
     ERR_NETWORK_HTTP_ERROR,

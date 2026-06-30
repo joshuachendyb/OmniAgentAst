@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, MAX_SEARCH_FILE_SIZE, MAX_SEARCH_RESULTS
-from app.constants import ERR_FILE_CONTENT_SEARCH_FAILED
+from app.tools.tool_constants import ERR_FILE_CONTENT_SEARCH_FAILED
 from app.tools.file_type_checker import is_binary_file, BINARY_EXTENSIONS, TEXT_EXTENSIONS
 from app.utils.logger import logger
 

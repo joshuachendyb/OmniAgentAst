@@ -17,7 +17,7 @@ from typing import Any, Dict
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import MAX_MEDIA_READ_SIZE
-from app.constants import ERR_FILE_READ_FAILED
+from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.file_type_checker import check_for_media_tool
 from app.utils.logger import logger
 

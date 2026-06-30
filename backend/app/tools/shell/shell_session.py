@@ -18,7 +18,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.shell.execute_shell_command import _background_shells
 from app.tools.tool_fc_helper import _read_stream_nonblocking
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_SHORT, SUBPROCESS_TIMEOUT_VERY_SHORT
-from app.constants import (
+from app.tools.tool_constants import (
     ERR_INVALID_ACTION,
     ERR_SHELL_EXEC,
     ERR_SHELL_NOT_FOUND,

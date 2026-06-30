@@ -16,7 +16,7 @@ import time as _time_mod
 from typing import Any, Dict
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.constants import ERR_SHELL_FIND_COMMAND
+from app.tools.tool_constants import ERR_SHELL_FIND_COMMAND
 
 
 def _build_find_command_llm_data(

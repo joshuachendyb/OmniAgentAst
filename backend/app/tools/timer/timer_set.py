@@ -17,7 +17,7 @@ from app.utils.logger import logger
 from app.utils.time_utils import get_timestamp_ms
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import HTTPX_TIMEOUT_DEFAULT
-from app.constants import ERR_TIMER_SET
+from app.tools.tool_constants import ERR_TIMER_SET
 
 _timers: Dict[str, asyncio.TimerHandle] = {}
 _timer_counter = 0

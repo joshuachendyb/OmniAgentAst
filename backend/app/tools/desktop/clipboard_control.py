@@ -11,7 +11,7 @@ import time as _time_mod
 from typing import Dict, Any, Literal
 
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_DESKTOP_CLIPBOARD
+from app.tools.tool_constants import ERR_DESKTOP_CLIPBOARD
 
 
 def _build_clipboard_control_llm_data(exec_code: str, duration_ms: int, action: str,

@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, MAX_SEARCH_RESULTS
-from app.constants import ERR_FILE_SEARCH_FAILED
+from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED
 from app.utils.logger import logger
 
 

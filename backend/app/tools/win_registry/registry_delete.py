@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any
 
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_REG_DELETE_FAILED, ERR_PARAMETER_INVALID
+from app.tools.tool_constants import ERR_REG_DELETE_FAILED, ERR_PARAMETER_INVALID
 from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_key_path, _backup_registry
 from app.tools.validate.registry_path_checker import validate_delete_safety
 

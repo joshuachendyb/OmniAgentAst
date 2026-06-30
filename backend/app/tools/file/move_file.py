@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_FILE_MOVE_FAILED
+from app.tools.tool_constants import ERR_FILE_MOVE_FAILED
 from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 from app.tools.validate.tools_file_path_checker import validate_path_for_overwrite

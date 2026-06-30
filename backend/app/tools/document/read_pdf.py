@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.file_type_checker import check_for_document_tool
-from app.constants import ERR_DOC_READ_PDF
+from app.tools.tool_constants import ERR_DOC_READ_PDF
 from app.utils.logger import logger
 
 

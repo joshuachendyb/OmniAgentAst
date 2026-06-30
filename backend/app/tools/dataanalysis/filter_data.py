@@ -16,7 +16,7 @@ import pandas as pd
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module, _serialize_rows
 from app.utils.json_utils import coerce_json
-from app.constants import ERR_FILTER_INVALID
+from app.tools.tool_constants import ERR_FILTER_INVALID
 
 
 def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail=""):

@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_FILE_COMPRESS_FAILED
+from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED
 from app.services.context_vars import _current_task_id
 from app.utils.json_utils import coerce_json
 from app.utils.logger import logger

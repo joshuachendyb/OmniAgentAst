@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-统一工具重试引擎
+统一工具重试引擎 — 工具的外部重试机制
+
+物理位置: Agent编排层(被 UniversalAgent.run_react_cycle 调用)
+归属分层: 【工具层】— 虽在编排层目录，但本质是工具的外部重试机制，引用工具层常量
 
 小沈 - 2026-06-08 P1-7/8/9: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
+小欧 - 2026-06-30: 明确分层归属(工具的外部重试 → 工具层)，常量全部引自 tool_constants
 
 【分层规范 - 小健 2026-05-27】
-本文件属于【Agent编排层】,使用 tool_result_utils.py 的 create_xxx 函数
-禁止使用 _response.py 的 build_xxx 函数(那是工具层用的)
+本文件是工具的【外部重试】，使用 tool_result_utils.py 的 create_xxx 函数
+禁止使用 _response.py 的 build_xxx 函数(那是工具层内部响应用的)
 
 负责统一处理工具执行的重试逻辑,消除双重实现
 Author: 小沈 - 2026-05-27

@@ -15,7 +15,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
-from app.constants import (
+from app.tools.tool_constants import (
     ERR_DESKTOP_PLATFORM_NOT_SUPPORTED,
     ERR_SHELL_COMMAND_NOT_FOUND,
     ERR_SHELL_TIMEOUT,

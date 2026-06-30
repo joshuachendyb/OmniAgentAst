@@ -13,7 +13,7 @@ from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.desktop.desktop_helper import check_pyautogui_available
-from app.constants import ERR_DESKTOP_MOUSE_MOVE
+from app.tools.tool_constants import ERR_DESKTOP_MOUSE_MOVE
 
 
 def _build_mouse_move_llm_data(exec_code: str, duration_ms: int, x: int, y: int,

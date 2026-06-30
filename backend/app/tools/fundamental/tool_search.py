@@ -14,7 +14,7 @@ from typing import Dict, Any, List, Tuple
 
 from app.tools.registry import tool_registry
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_DOC_QUERY_EMPTY
+from app.tools.tool_constants import ERR_DOC_QUERY_EMPTY
 
 
 def _tokenize(text: str) -> List[str]:

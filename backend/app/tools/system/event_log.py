@@ -17,7 +17,7 @@ from typing import Dict, Any, Optional
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
-from app.constants import (
+from app.tools.tool_constants import (
     ERR_SHELL_COMMAND_NOT_FOUND,
     ERR_SHELL_TIMEOUT,
     ERR_SYSTEM_EVENT_LOG,

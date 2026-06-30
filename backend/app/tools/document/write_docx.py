@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.file_type_checker import check_for_document_tool
-from app.constants import ERR_WRITE_DOCX
+from app.tools.tool_constants import ERR_WRITE_DOCX
 from app.tools.validate.tools_file_path_checker import validate_path_for_write
 from app.utils.logger import logger
 from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config

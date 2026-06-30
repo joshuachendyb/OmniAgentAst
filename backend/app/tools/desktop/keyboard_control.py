@@ -12,7 +12,7 @@ from typing import Dict, Any, List, Literal
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.desktop.desktop_helper import check_pyautogui_available
-from app.constants import ERR_INVALID_ACTION, ERR_KEYBOARD_TYPE, ERR_KEYBOARD_SHORTCUT, ERR_KEY_COMBO
+from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_KEYBOARD_TYPE, ERR_KEYBOARD_SHORTCUT, ERR_KEY_COMBO
 
 
 def _build_keyboard_control_llm_data(exec_code: str, duration_ms: int, action: str, text_or_keys: str,

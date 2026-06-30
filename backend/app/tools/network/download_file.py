@@ -30,7 +30,7 @@ from app.utils.logger import logger
 
 _DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), ".omniagent", "downloads")
 _MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
-from app.constants import (
+from app.tools.tool_constants import (
     ERR_INVALID_URL,
     ERR_NETWORK_CONNECTION_ERROR,
     ERR_NETWORK_CREATE_DIR,

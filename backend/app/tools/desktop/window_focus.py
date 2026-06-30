@@ -12,7 +12,7 @@ import time as _time_mod
 from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_FOCUS_WINDOW, ERR_WINDOW_NOT_FOUND
+from app.tools.tool_constants import ERR_FOCUS_WINDOW, ERR_WINDOW_NOT_FOUND
 
 
 def _build_window_focus_llm_data(exec_code: str, duration_ms: int, title: str = "",

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Union, Literal
 
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_SQL_EXEC
+from app.tools.tool_constants import ERR_SQL_EXEC
 from app.tools.tool_fc_helper import _get_connection, _close_connection
 
 
