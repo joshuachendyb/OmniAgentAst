@@ -24,8 +24,8 @@ from app.tools.validate.url_validator import validate_proxy
 from app.utils.common_patterns import HTML_TAG_PATTERN
 from app.utils.json_utils import parse_json
 from app.utils.logger import logger
+from app.tools.tool_constants import TOOL_BROWSER_UA
 from app.constants import (
-    BROWSER_USER_AGENT,
     ERR_NET_UNKNOWN,
     ERR_PARAM_INVALID,
 )
@@ -233,7 +233,7 @@ async def _search_bing(
     if _depth >= _MAX_SEARCH_DEPTH:
         return []
 
-    headers = {"User-Agent": BROWSER_USER_AGENT}
+    headers = {"User-Agent": TOOL_BROWSER_UA}
     params = {"q": query, "count": num_results}
 
     def _has_challenge_page(html: str) -> Optional[str]:

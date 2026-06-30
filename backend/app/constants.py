@@ -61,7 +61,7 @@ LLM_MAX_CONNECTIONS = 10
 LLM_MAX_KEEPALIVE = 5
 # NETWORK_TOOL_MAX_* 已迁移到 tool_constants.py (NETWORK_MAX_CONNECTIONS/NETWORK_MAX_KEEPALIVE)
 
-BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+# BROWSER_USER_AGENT 已迁移到 tool_constants.py → TOOL_BROWSER_UA
 
 DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
 

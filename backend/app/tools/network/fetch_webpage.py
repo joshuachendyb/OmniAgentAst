@@ -29,8 +29,8 @@ _check_network = check_network
 
 from app.utils.common_patterns import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
 from app.utils.logger import logger
+from app.tools.tool_constants import TOOL_BROWSER_UA
 from app.constants import (
-    BROWSER_USER_AGENT,
     ERR_INVALID_URL,
     ERR_NETWORK_DOWN,
     ERR_NETWORK_HTTP_ERROR,
@@ -325,7 +325,7 @@ async def fetch_webpage(
             return build_error(data={"error_detail": "网络不可用", "params": {"url": url}}, llm_data=llm_data)
 
         headers = {
-            "User-Agent": BROWSER_USER_AGENT,
+            "User-Agent": TOOL_BROWSER_UA,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8",
             "Accept-Encoding": "gzip, deflate",
