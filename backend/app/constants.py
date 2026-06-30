@@ -1,9 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-系统常量集中管理 — 小健 2026-05-24
+【系统层常量】系统常量集中管理 — 小健 2026-05-24
 
-所有跨模块共享的常量统一定义在此,消除散落和重复。
-按功能分组:HTTP/错误码、重试/限流、网络/超时、内容截断、错误类型。
+定义：负责 LLM 通信、Agent 循环、API 服务的基础设施层。
+文件：app/services/llm/base_service.py、app/utils/error_classifier.py
+职责：调 LLM API、处理 LLM 返回结果、管理 Agent 循环、SSE 流
+错误分类器：SystemErrorClassifier（按异常消息字符串判断，返回 SystemErrorCategory 枚举）
+
+系统层常量包括：HTTP 协议定义、LLM 客户端配置、Agent 循环参数、共享错误码（ERR_*）等。
+与工具层常量文件 tool_constants.py 严格分开，两层互不引用。
+
+分层原则：
+  - 本文件（constants.py）：系统层。SYS_HTTP_* 是 HTTP 协议事实定义（如 429=限流），
+    供 SystemErrorClassifier 和 LLM 客户端使用。SYS_DEFAULT_LLM_TIMEOUT 等是 LLM 客户端超时。
+  - tool_constants.py：工具层。TOOL_HTTP_* 是工具自己判断重试用的拷贝，TOOL_TIMEOUTS 等是工具运行参数。
+
+禁止：
+  ❌ 本文件引用 tool_constants.py 的任何内容
+  ❌ 本文件的 SYS_HTTP_* 被工具层代码直接引用（工具层应引用 tool_constants.py 的 TOOL_HTTP_*）
 """
 
 # ============================================================

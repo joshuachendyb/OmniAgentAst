@@ -1,12 +1,32 @@
 # -*- coding: utf-8 -*-
 """
-工具函数运行时常量集中管理 — 北京老陈 2026-05-30
+【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
+
+定义：执行具体工具的执行层。
+文件：app/tools/network/http_request.py、app/tools/tool_error_classifier.py、
+      app/services/agent/tool_retry_engine.py
+职责：执行工具、捕获工具异常、判断工具能否重试
+错误分类器：ToolErrorClassifier（不看 HTTP 状态码数字，只看异常类型名。
+  HTTPStatusError → 不管 400/429/500 → 统一归为 ToolErrorCategory.NETWORK）
 
 所有工具函数本身运行时需要的常量统一定义在此。
+与系统层常量文件 constants.py 严格分开，两层互不引用。
+
+分层原则：
+  - 本文件（tool_constants.py）：工具层。TOOL_HTTP_* 是工具自己判断重试用的拷贝，
+    TOOL_TIMEOUTS 等是工具运行参数。不引用 constants.py 的系统层 SYS_HTTP_*。
+  - constants.py：系统层。SYS_HTTP_* 是 HTTP 协议事实定义，
+    供 SystemErrorClassifier 和 LLM 客户端使用。
+
+禁止：
+  ❌ 本文件 import constants.py 的任何内容
+  ❌ 本文件的常量被系统层代码引用（系统层应引用 constants.py 的 SYS_* 常量）
 """
 
 # ============================================================
-# 1. 工具超时配置(从 tool_meta.py 迁移)
+# 1. 工具超时配置(从 tool_meta.py 迁移) — 【工具层】
+#    用于工具内部校验 deadline、ToolRetryEngine 保险丝超时。
+#    与系统层的 SYS_DEFAULT_LLM_TIMEOUT（LLM 客户端超时）完全无关。
 # ============================================================
 
 TOOL_TIMEOUTS = {
@@ -64,6 +84,8 @@ TOOL_TIMEOUTS = {
 
 # ============================================================
 # 1.1 Subprocess/HTTP超时配置(从各工具文件硬编码迁移)— 北京老陈 2026-05-31
+# 【工具层】工具执行 subprocess/httpx 的硬超时阈值。
+#     系统层的 SYS_DEFAULT_CONNECT_TIMEOUT 等是 LLM 客户端超时，与本段无关。
 # ============================================================
 
 # subprocess执行超时(秒)
@@ -77,6 +99,7 @@ HTTPX_TIMEOUT_DEFAULT = 5.0        # 通用httpx请求超时
 
 # ============================================================
 # 2. 文件工具配置(从 file_tools.py 迁移) — 小欧 2026-06-18 新增FILE_OPERATION_TOOLS
+# 【工具层】文件工具运行时的参数。仅工具代码使用。
 # ============================================================
 
 FILE_OPERATION_TOOLS = {
@@ -110,7 +133,7 @@ BINARY_EXTENSIONS = {
 }
 
 # ============================================================
-# 3. 工具注册模块映射(从 lazy_loader.py 迁移)
+# 3. 工具注册模块映射(从 lazy_loader.py 迁移) — 【工具层】
 # ============================================================
 
 CATEGORY_MODULES = {
@@ -127,7 +150,8 @@ CATEGORY_MODULES = {
 }
 
 # ============================================================
-# 4. 网络工具配置(从 http_client_sdk.py 迁移)
+# 4. 网络工具配置(从 http_client_sdk.py 迁移) — 【工具层】
+#    网络工具的 httpx 客户端连接池参数。与系统层的 LLM_MAX_CONNECTIONS（LLM 客户端）分开。
 # ============================================================
 
 DEFAULT_TIMEOUT_SEC = 30.0
@@ -135,7 +159,7 @@ NETWORK_MAX_CONNECTIONS = 100
 NETWORK_MAX_KEEPALIVE = 20
 
 # ============================================================
-# 6. 注册表工具映射(从 reg_tools.py 迁移)
+# 6. 注册表工具映射(从 reg_tools.py 迁移) — 【工具层】
 # ============================================================
 
 HIVE_MAP = {
@@ -147,7 +171,7 @@ HIVE_MAP = {
 }
 
 # ============================================================
-# 7. 工具内容质量(从 content_quality.py 迁移)
+# 7. 工具内容质量(从 content_quality.py 迁移) — 【工具层】
 # ============================================================
 
 SELF_REF_KEYWORDS = [
@@ -165,7 +189,7 @@ SELF_REF_THRESHOLD_SHORT = 0.4
 SHORT_CONTENT_LENGTH = 50
 
 # ============================================================
-# 8. 工具安全模式(从 shell_helper/exec_helper 迁移)
+# 8. 工具安全模式(从 shell_helper/exec_helper 迁移) — 【工具层】
 # ============================================================
 
 # DANGEROUS_PATTERNS 已于 2026-06-27 删除
@@ -179,7 +203,7 @@ SHORT_CONTENT_LENGTH = 50
 
 
 # ============================================================
-# 9. 工具日期/哈希辅助(从 date_helper/hash_helper 迁移)
+# 9. 工具日期/哈希辅助(从 date_helper/hash_helper 迁移) — 【工具层】
 # ============================================================
 
 QINGMING_DATES = {
@@ -191,25 +215,25 @@ QINGMING_DATES = {
 SUPPORTED_ALGORITHMS = {"md5", "sha1", "sha256", "sha512"}
 
 # ============================================================
-# 10. 工具重试配置(从 tool_config.py 迁移)
+# 10. 工具重试配置(从 tool_config.py 迁移) — 【工具层】
+#    工具重试引擎（ToolRetryEngine）运行时参数。
+#    与系统层的 LLM 熔断/重试策略完全分开。
 # ============================================================
-
-TOOL_RETRY_MAX = {
-    "default": 3,
-}
 
 TOOL_RETRY_BACKOFF = {
     "default": 2.0,
 }
 
-TOOL_RETRYABLE_ERRORS = {
-    "default": ["timeout"],
-}
+# 工具层 HTTP 可重试状态码 — 小欧 2026-06-30
+# 用途：http_request 等 network 工具判断是否抛异常给 ToolRetryEngine 重试。
+#       与系统层 constants.py 的 SYS_RATE_LIMIT_CODES（LLM 限流检测）完全无关。
+TOOL_RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504}
 
 SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
 
 # ============================================================
 # 11. 系统敏感路径黑名单(从 path_validator 迁移) — 小健 2026-06-23
+# 【工具层】path_validator 的工具级安全检查路径，防止误写系统关键文件。
 # ============================================================
 
 FORBIDDEN_PATHS_EXACT = {

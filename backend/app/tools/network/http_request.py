@@ -38,8 +38,9 @@ from app.constants import (
     ERR_NETWORK_REQUEST_ERROR,
     ERR_NETWORK_TIMEOUT,
     ERR_NET_UNKNOWN,
-    RETRYABLE_HTTP_STATUS_CODES,
 )
+
+from app.tools.tool_constants import TOOL_RETRYABLE_HTTP_CODES
 
 
 def _build_http_request_llm_data(
@@ -166,7 +167,7 @@ async def http_request(
                 return build_success(data=data, llm_data=llm_data)
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
                 last_exception = e
-                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in RETRYABLE_HTTP_STATUS_CODES:
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in TOOL_RETRYABLE_HTTP_CODES:
                     try:
                         error_body = e.response.text
                     except Exception:
