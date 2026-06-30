@@ -3,7 +3,7 @@
 【系统层常量】系统常量集中管理 — 小健 2026-05-24
 
 定义：负责 LLM 通信、Agent 循环、API 服务的基础设施层。
-文件：app/services/llm/base_service.py、app/utils/error_classifier.py
+文件：app/services/llm/base_service.py、app/utils/sys_error_classifier.py
 职责：调 LLM API、处理 LLM 返回结果、管理 Agent 循环、SSE 流
 错误分类器：SystemErrorClassifier（按异常消息字符串判断，返回 SystemErrorCategory 枚举）
 
@@ -83,7 +83,7 @@ DATA_TOO_LARGE_THRESHOLD = 10000
 MAX_CACHE_SIZE = 1000
 
 # ============================================================
-# 10. SSE流超时(从 react_sse_wrapper 迁移)
+# 6. SSE流超时(从 react_sse_wrapper 迁移)
 # ============================================================
 
 from datetime import timedelta

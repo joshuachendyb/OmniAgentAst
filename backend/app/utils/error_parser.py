@@ -1,8 +1,8 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 error_parser — API错误详情提取
 
-从 error_classifier.py 移出,SRP: 解析与分类分离
+从 sys_error_classifier.py 移出,SRP: 解析与分类分离
 Author: 小欧 - 2026-06-08
 """
 

@@ -1,8 +1,14 @@
 """
-系统级错误分类器
+【系统层】系统级错误分类器 — 小欧 2026-06-30
 
-责任:专门处理系统级错误分类（LLM通信、HTTP状态码、系统内部错误）
-设计原则:单一职责、简单直接、与工具级错误分类分离
+责任：专门处理系统层错误分类（LLM通信、HTTP状态码、系统内部错误）。
+      看异常消息字符串中的数字（如 "429" → SystemErrorCategory.SERVER）。
+      与工具层的 ToolErrorClassifier（看异常类型名）完全独立。
+
+文件：app/utils/sys_error_classifier.py（系统层专用）
+      app/tools/tool_error_classifier.py（工具层专用）
+
+设计原则：单一职责、简单直接、与工具级错误分类分离
 
 作者: 小欧 - 2026-06-29
 """

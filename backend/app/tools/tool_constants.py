@@ -4,7 +4,7 @@
 
 定义：执行具体工具的执行层。
 文件：app/tools/network/http_request.py、app/tools/tool_error_classifier.py、
-      app/services/agent/tool_retry_engine.py
+      app/services/agent/tool_retry_engine.py、app/utils/sys_error_classifier.py
 职责：执行工具、捕获工具异常、判断工具能否重试
 错误分类器：ToolErrorClassifier（不看 HTTP 状态码数字，只看异常类型名。
   HTTPStatusError → 不管 400/429/500 → 统一归为 ToolErrorCategory.NETWORK）

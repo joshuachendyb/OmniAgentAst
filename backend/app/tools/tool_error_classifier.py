@@ -1,8 +1,14 @@
 """
-工具级错误分类器
+【工具层】工具级错误分类器 — 小欧 2026-06-30
 
-责任: 专门处理工具执行相关的错误分类
-设计原则: 单一职责、简单直接、与系统级错误分类分离
+责任：专门处理工具层错误分类。看异常类型名（如 "HTTPStatusError" → 
+      ToolErrorCategory.NETWORK），不看 HTTP 状态码数字。
+      与系统层的 SystemErrorClassifier（看异常消息字符串）完全独立。
+
+文件：app/tools/tool_error_classifier.py（工具层专用）
+      app/utils/sys_error_classifier.py（系统层专用）
+
+设计原则：单一职责、简单直接、与系统级错误分类分离
 
 作者: 小欧 - 2026-06-29
 """

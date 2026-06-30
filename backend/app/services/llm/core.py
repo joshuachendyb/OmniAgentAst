@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05-27
 
@@ -20,7 +20,7 @@ class FCFormatError(Exception):
 
 def _resolve_exception(e: Exception) -> tuple:
     """解析异常→(用户消息, 错误类型) — 委托至SystemErrorClassifier统一分类 — 小沈 2026-05-28"""
-    from app.utils.error_classifier import SystemErrorClassifier
+    from app.utils.sys_error_classifier import SystemErrorClassifier
     info = SystemErrorClassifier.get_error_info(e)
     msg = info["message"]
     err_type = info["code"]

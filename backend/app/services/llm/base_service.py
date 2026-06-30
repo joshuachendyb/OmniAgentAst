@@ -1,4 +1,4 @@
-"""
+﻿"""
 LLM 核心模块 — BaseAIService
 
 重构: 删除mixin继承, 统一为request/request_stream/chat + mode参数 - 小沈 2026-06-09
@@ -383,7 +383,7 @@ class BaseAIService:
 
     def _should_retry(self, e: Exception) -> bool:
         """判断是否应该重试 — 委托给SystemErrorClassifier - 小沈 2026-06-17"""
-        from app.utils.error_classifier import SystemErrorClassifier
+        from app.utils.sys_error_classifier import SystemErrorClassifier
         return SystemErrorClassifier.classify_error(e).is_retryable
 
     async def close(self):
