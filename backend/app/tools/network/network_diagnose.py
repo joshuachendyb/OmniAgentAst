@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-N5: network_diagnose — 网络连通性诊断
+N5: ping_port — 网络连通性诊断(ping+端口检测)
 
 从network_tools.py拆分而来 — 小欧 2026-06-22
 内聚: _ping / _port_check / _build_ping_cmd / _parse_ping_output 等辅助函数
@@ -56,14 +56,14 @@ def _build_network_diagnose_llm_data(
     if exec_code == "error":
         return {
             "summary": f"网络诊断失败: {host}",
-            "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": host, "params": {"mode": mode}},
+            "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": host, "params": {"mode": mode}},
             "status": {"exec_code": "error", "message": "网络诊断失败", "code": err_code, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"网络诊断成功: {host}",
-        "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": host, "params": {"mode": mode}},
+        "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": host, "params": {"mode": mode}},
         "status": {"exec_code": "success", "message": "网络诊断成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
@@ -78,7 +78,7 @@ def _build_ping_llm_data(exec_code: str, duration_ms: int, host: str = "", is_re
     if exec_code == "error":
         return {
             "summary": f"Ping测试失败: {host}",
-            "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": host, "params": {"mode": "ping"}},
+            "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": host, "params": {"mode": "ping"}},
             "status": {"exec_code": "error", "message": "Ping测试失败", "code": err_code, "detail": detail, "hint": ""},
             "duration_ms": duration_ms, "metrics": {},
         }
@@ -90,7 +90,7 @@ def _build_ping_llm_data(exec_code: str, duration_ms: int, host: str = "", is_re
             metrics["avg_latency"] = {"value": avg_latency, "text": f"{avg_latency}ms"}
     return {
         "summary": f"Ping测试{'成功' if is_reachable else '失败'}:{host} {status_text}",
-        "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": host, "params": {"mode": "ping"}},
+        "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": host, "params": {"mode": "ping"}},
         "status": {"exec_code": "success" if is_reachable else "error", "message": f"Ping {status_text}", "code": "" if is_reachable else ERR_NETWORK_TIMEOUT, "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
     }
@@ -103,14 +103,14 @@ def _build_port_check_llm_data(exec_code: str, duration_ms: int, host: str = "",
     if exec_code == "error":
         return {
             "summary": f"端口检查失败: {host}:{port}",
-            "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": f"{host}:{port}", "params": {"mode": "port"}},
+            "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": f"{host}:{port}", "params": {"mode": "port"}},
             "status": {"exec_code": "error", "message": "端口检查失败", "code": err_code, "detail": detail, "hint": ""},
             "duration_ms": duration_ms, "metrics": {},
         }
     status_text = "开放" if is_open else "关闭"
     return {
         "summary": f"端口 {port} ({service}) {status_text}: {host}:{port}",
-        "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": f"{host}:{port}", "params": {"mode": "port"}},
+        "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": f"{host}:{port}", "params": {"mode": "port"}},
         "status": {"exec_code": "success", "message": f"端口{status_text}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }
@@ -209,15 +209,15 @@ async def _port_check(host: str, port: int, timeout: int = 3) -> Dict[str, Any]:
     return {"success": True, "data": data, "is_open": is_open, "service": service}
 
 
-async def network_diagnose(
+async def ping_port(
     host: str,
     mode: Literal["ping", "port"] = "ping",
     port: Optional[int] = None,
     count: int = 4,
     timeout: int = 5,
 ) -> Dict[str, Any]:
-    """网络连通性诊断 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复铁规违反"""
-    timeout_valid, timeout_err, _ = validate_timeout(timeout, "network_diagnose")
+    """网络连通性诊断(ping+端口检测) — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复铁规违反 — 小欧 2026-06-30 更名为ping_port"""
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "ping_port")
     if not timeout_valid:
         llm_data = _build_network_diagnose_llm_data("error", 0, host, mode, ERR_NETWORK_INVALID_HOST, timeout_err)
         return build_error(data={"error_detail": timeout_err, "params": {"host": host, "mode": mode}}, llm_data=llm_data)

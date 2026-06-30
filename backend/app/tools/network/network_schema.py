@@ -107,8 +107,8 @@ class NetworkDiagnoseInput(BaseModel):
     - port: TCP端口检测(服务级)
     
     【使用示例】
-    - ping测试 → network_diagnose(host="8.8.8.8")
-    - 端口检测 → network_diagnose(host="8.8.8.8", mode="port", port=53)
+    - ping测试 → ping_port(host="8.8.8.8")
+    - 端口检测 → ping_port(host="8.8.8.8", mode="port", port=53)
     """
     host: str = Field(
         ..., min_length=1, description="目标主机地址(必填),可以是域名或IP地址,例如 8.8.8.8 或 baidu.com"

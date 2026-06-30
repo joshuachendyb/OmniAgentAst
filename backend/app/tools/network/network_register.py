@@ -12,7 +12,7 @@ Network Register - 网络通信工具注册点
 2. download_file - 下载文件到本地
 3. fetch_webpage - 获取和处理网页内容
 4. search_web - 搜索网络获取最新信息
-5. network_diagnose - 网络连通性诊断(合并ping+port_check)
+5. ping_port - 网络连通性诊断(ping+端口检测,原名network_diagnose)
 
 创建时间: 2026-04-29
 更新时间: 2026-05-17 小沈
@@ -34,7 +34,7 @@ NETWORK_TOOL_DEPENDENCIES = {
     "download_file": ["httpx==0.26.0", "httpcore==1.0.1"],
     "fetch_webpage": ["httpx==0.26.0", "httpcore==1.0.1"],
     "search_web": ["httpx==0.26.0", "httpcore==1.0.1"],
-    "network_diagnose": [],  # 使用内置库
+    "ping_port": [],  # 使用内置库
 }
 
 
@@ -64,7 +64,7 @@ from app.tools.network.http_request import http_request
 from app.tools.network.download_file import download_file
 from app.tools.network.fetch_webpage import fetch_webpage
 from app.tools.network.search_web import search_web
-from app.tools.network.network_diagnose import network_diagnose
+from app.tools.network.network_diagnose import ping_port
 
 # 工具描述
 NETWORK_TOOL_DESCRIPTIONS = {
@@ -72,7 +72,7 @@ NETWORK_TOOL_DESCRIPTIONS = {
     "download_file": """从URL下载文件到本地磁盘。适用场景:需要下载图片、安装包、数据文件等到本地时使用。""",
     "fetch_webpage": """获取网页内容并提取正文,支持Markdown/HTML格式输出。适用场景:需要阅读网页文档、从网页提取信息时使用。""",
     "search_web": """使用搜索引擎查询最新信息。适用场景:需要获取实时新闻、技术文档、问题解决方案时使用。""",
-    "network_diagnose": """检测网络连通性,支持ping和TCP端口检测。适用场景:需要排查网络连接问题时使用。""",
+    "ping_port": """检测网络连通性,支持ping和TCP端口检测。适用场景:需要排查网络连接问题时使用。""",
 }
 
 # 工具名到实现函数的映射
@@ -81,7 +81,7 @@ NETWORK_TOOL_IMPLEMENTATIONS = {
     "download_file": download_file,
     "fetch_webpage": fetch_webpage,
     "search_web": search_web,
-    "network_diagnose": network_diagnose,
+    "ping_port": ping_port,
 }
 
 # 工具名到 Pydantic 模型的映射
@@ -90,7 +90,7 @@ NETWORK_TOOL_INPUT_MODELS = {
     "download_file": DownloadFileInput,
     "fetch_webpage": FetchWebpageInput,
     "search_web": SearchWebInput,
-    "network_diagnose": NetworkDiagnoseInput,
+    "ping_port": NetworkDiagnoseInput,
 }
 
 # 使用示例
@@ -110,7 +110,7 @@ NETWORK_TOOL_EXAMPLES = {
         {"query": "OpenAI function calling"},
         {"query": "React 19 新特性"},
     ],
-    "network_diagnose": [
+    "ping_port": [
         {"host": "8.8.8.8"},
         {"host": "8.8.8.8", "mode": "port", "port": 53},
         {"host": "baidu.com"},

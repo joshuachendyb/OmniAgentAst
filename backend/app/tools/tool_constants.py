@@ -56,7 +56,7 @@ TOOL_TIMEOUTS = {
     "http_request": 60,
     "download_file": 120,
     "fetch_webpage": 60,
-    "network_diagnose": 60,
+    "ping_port": 60,
     "window_info": 20,
     "window_focus": 20,
     "window_resize": 20,

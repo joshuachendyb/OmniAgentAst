@@ -9,7 +9,7 @@ TIMEOUT_RANGES_SECONDS = {
     "http_request":           (1,   300),     # 1秒 ~ 5分钟
     "download_file":          (5,  3600),     # 5秒 ~ 1小时
     "fetch_webpage":          (1,   120),     # 1秒 ~ 2分钟
-    "network_diagnose":       (1,    30),     # 1秒 ~ 30秒
+    "ping_port":              (1,    30),     # 1秒 ~ 30秒
     "execute_shell_command":  (1,   600),     # 1秒 ~ 10分钟
     "execute_code":           (1,   300),     # 1秒 ~ 5分钟
 }

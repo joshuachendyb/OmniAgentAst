@@ -40,7 +40,7 @@ TOOL_RETRY_CONFIG = {
     "search_web": {"max_retries": 2, "retryable": ["timeout", "connect", "network"]},
     # shell/代码: 非幂等+永久性错误为主，工具内部已 catch 所有异常，
     # 不会传播到 retry engine，不在字典中即默认不重试 — 小欧 2026-06-30
-    "network_diagnose": {"max_retries": 2, "retryable": ["timeout", "connect"]},
+    "ping_port": {"max_retries": 2, "retryable": ["timeout", "connect"]},
 }
 
 
