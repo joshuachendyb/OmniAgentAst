@@ -38,8 +38,10 @@ TOOL_RETRY_CONFIG = {
     "download_file": {"max_retries": 3, "retryable": ["timeout", "connect", "network", "protocol"]},
     "fetch_webpage": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
     "search_web": {"max_retries": 2, "retryable": ["timeout", "connect", "network"]},
-    "execute_shell_command": {"max_retries": 2, "retryable": ["timeout"]},
-    "execute_code": {"max_retries": 3, "retryable": ["timeout"]},
+    # shell/代码: 非幂等+永久性错误为主，不重试。工具内部已 catch 所有异常，
+    # 异常不会传播到 retry engine，设 max_retries=0 明确不重试 — 小欧 2026-06-30
+    "execute_shell_command": {"max_retries": 0, "retryable": []},
+    "execute_code": {"max_retries": 0, "retryable": []},
     "network_diagnose": {"max_retries": 2, "retryable": ["timeout", "connect"]},
 }
 
