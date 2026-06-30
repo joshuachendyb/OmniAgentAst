@@ -35,10 +35,6 @@ HTTP_SERVICE_UNAVAILABLE = 503
 HTTP_GATEWAY_TIMEOUT = 504
 HTTP_TIMEOUT_BROKEN = 524
 
-RATE_LIMIT_STATUS_CODES = {HTTP_RATE_LIMIT, 1305}
-
-RETRYABLE_HTTP_STATUS_CODES = {HTTP_RATE_LIMIT, HTTP_INTERNAL_ERROR, HTTP_BAD_GATEWAY, HTTP_SERVICE_UNAVAILABLE, HTTP_GATEWAY_TIMEOUT}
-
 # ============================================================
 # 2. 重试与限流
 # ============================================================
@@ -86,57 +82,14 @@ LOG_PREVIEW_CHARS = 500
 DATA_TOO_LARGE_THRESHOLD = 10000
 
 # ============================================================
-# 5. 错误类型常量
-# ============================================================
-
-ERROR_TYPE_NETWORK_ERROR = "network_error"
-ERROR_TYPE_TIMEOUT = "timeout"
-ERROR_TYPE_IDLE_TIMEOUT = "idle_timeout"
-ERROR_TYPE_RATE_LIMIT = "rate_limit"
-ERROR_TYPE_EMPTY_RESPONSE = "empty_response"
-ERROR_TYPE_RETRY_FAILED = "retry_failed"
-ERROR_TYPE_THOUGHT_ONLY = "thought_only"
-ERROR_TYPE_JSON_PARSE_ERROR = "json_parse_error"
-ERROR_TYPE_API_LIMIT = "api_limit"
-ERROR_TYPE_DATA_TOO_LARGE = "data_too_large"
-ERROR_TYPE_UNKNOWN = "unknown"
-
-API_ERROR_PREFIX = "api_error_"
-API_ERROR_429 = "api_error_429"
-API_ERROR_400 = "api_error_400"
-API_ERROR_401 = "api_error_401"
-API_ERROR_403 = "api_error_403"
-API_ERROR_500 = "api_error_500"
-API_ERROR_502 = "api_error_502"
-API_ERROR_503 = "api_error_503"
-API_ERROR_504 = "api_error_504"
-API_ERROR_524 = "api_error_524"
-
-# ============================================================
-# 6. HTTP状态码 → 错误类型 映射表
-# ============================================================
-
-HTTP_STATUS_TO_ERROR_TYPE = {
-    HTTP_RATE_LIMIT: API_ERROR_429,
-    HTTP_SERVICE_UNAVAILABLE: API_ERROR_503,
-    HTTP_TIMEOUT_BROKEN: API_ERROR_524,
-    HTTP_INTERNAL_ERROR: API_ERROR_500,
-    HTTP_BAD_GATEWAY: API_ERROR_502,
-    HTTP_GATEWAY_TIMEOUT: API_ERROR_504,
-    HTTP_UNAUTHORIZED: API_ERROR_401,
-    HTTP_FORBIDDEN: API_ERROR_403,
-    HTTP_BAD_REQUEST: API_ERROR_400,
-}
-
-# ============================================================
-# 7. 工具结果状态码 — 小沈 2026-05-27
+# 5. 工具结果状态码 — 小沈 2026-05-27
 # ============================================================
 
 SUCCESS_CODE = "SUCCESS"
 LLM_SAFE_LIMIT = 100_000
 
 # ============================================================
-# 8. 工具错误码常量 — 小沈 2026-05-26
+# 6. 工具错误码常量 — 小沈 2026-05-26
 #     命名规范: ERR_{MODULE}_{PROBLEM}
 #     MODULE: DOC/FILE/SHELL/META/SYSTEM/DESKTOP/NETWORK/DB/REG/TIMER/TASK/WIN/SYS_ENV/SYS_REG
 #     所有工具返回的错误码统一定义在此,消除散落和命名不一致
