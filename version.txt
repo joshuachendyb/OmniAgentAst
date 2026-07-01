@@ -1,6 +1,34 @@
-v27.16
+v0.17.17
+更新时间: 2026-07-01 21:55:52
+## v0.17.16→v0.17.17 变更汇总 - 小欧-2026-07-01
+
+### fix: 代码修复(8项)
+- prompt_logger/status_table/chat_openai logging fixes (contextvars, mark_completed, log_status)
+- system_prompts优化+react_cycle警告消息+e2e_helpers信号处理+chat_openai日志+messages时间格式
+- react_cycle.py B3警告消息优化
+- e2emodel test updates
+- llm_stream.py pass full_reasoning to action/answer response
+- action_handler.py remove redundant thought field from ThoughtStep
+- answer_handler.py remove redundant thought field from ThoughtStep
+- e2e_helpers.py test helper updates
+
+### refactor: 代码重构(3项)
+- message_builder+initialize_run_state+react_cycle 裁剪函数精简为单一入口+新增消息数触发阈值
+- list_directory.py _sort_items参数化sort_by,去除tree中size排序
+- system_prompts.py system prompt内容优化精简
+
+### feat: 新功能(2项)
+- L1退避公式改首跳1s+FCFormatError增强+注释parallel限制待测试
+- system_adapter.py+system_prompts.py PS版本动态检测+Shell运行环境prompt
+
+### 合计
+- feat: 2项 | fix: 8项 | refactor: 3项 = 共13项
+
+---
+
+v0.17.16
 更新时间: 2026-07-01 09:48:36
-## v17.15→v27.16 变更汇总 - 小沈-2026-07-01
+## v0.17.15→v0.17.16 变更汇总 - 小沈-2026-07-01
 
 ### refactor: Agent状态集中管理重构v2
 - 新建status_table.py，所有状态设置集中管理
@@ -28,9 +56,9 @@ v27.16
 ### docs: Agent状态语义深度分析文档
 - EXECUTING/THINKING代码逻辑分析与转换表合规复核
 
-v17.15
+v0.17.15
 更新时间: 2026-07-01 09:46:13
-## v0.17.14→v17.15 变更汇总 - 小沈-2026-07-01
+## v0.17.14→v0.17.15 变更汇总 - 小沈-2026-07-01
 
 ### refactor: 系统重试层优化实施
 - L1重试循环重构：while→for attempt，退避公式优化为min(0.5×2^(attempt+1), 10)

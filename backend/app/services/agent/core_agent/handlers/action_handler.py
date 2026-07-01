@@ -377,6 +377,9 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
         ))
         return
 
+    params_str = str(tool_params); params_short = (params_str[:50] + '..') if len(params_str) > 50 else params_str  # 小欧 2026-07-01 控制台截断
+    print(f"{time.strftime('%H:%M:%S')} [Action] step={step}, tool={tool_name}, params={params_short}")  # 小欧 2026-07-01 控制台
+
     # thought 步骤 — content=LLM推理内容, reasoning=内部思维过程 — 小欧 2026-07-01
     yield agent._step_emitter.emit(ThoughtStep(
         step=step,
