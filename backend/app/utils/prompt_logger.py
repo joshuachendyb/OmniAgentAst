@@ -12,7 +12,7 @@ Prompt 日志记录器 - 记录 Prompt 组装全过程
 """
 
 import json
-import threading
+import contextvars
 from app.utils.time_utils import now_str, timestamp_for_filename
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -23,7 +23,7 @@ from app.utils.logger import logger
 class PromptLogger:
     """Prompt 日志记录器 - 记录每次请求的 prompt 组装过程
     
-    【并发安全】使用线程局部存储,每个线程/请求独立的日志数据
+    【并发安全】使用 contextvars,每个协程/请求独立的日志数据
     """
     
     def __init__(self):
@@ -32,16 +32,16 @@ class PromptLogger:
         self.log_dir = Path(__file__).parent.parent.parent / "logs" / "prompt-logs"
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
-        # 线程局部存储 - 每个线程独立的日志数据
-        self._local = threading.local()
+        # contextvars - 每个协程独立的日志数据,避免 asyncio 协程间覆盖
+        self._current_log: contextvars.ContextVar = contextvars.ContextVar('prompt_log', default=None)
     
     def _get_current_log(self) -> Optional[Dict[str, Any]]:
-        """获取当前线程的日志数据"""
-        return getattr(self._local, 'current_log', None)
+        """获取当前协程的日志数据"""
+        return self._current_log.get()
     
     def _set_current_log(self, log_data: Optional[Dict[str, Any]]):
-        """设置当前线程的日志数据"""
-        self._local.current_log = log_data
+        """设置当前协程的日志数据"""
+        self._current_log.set(log_data)
     
     def start_request(
         self,
@@ -419,6 +419,22 @@ class PromptLogger:
         
         current_log["Prompt组装过程"].append(entry)
     
+    def log_status(self, old_status: str, new_status: str, reason: str = ""):
+        """记录Agent状态变化到prompt log — 小欧 2026-07-01"""
+        current_log = self._get_current_log()
+        if not current_log:
+            return
+        if "状态变化记录" not in current_log:
+            current_log["状态变化记录"] = []
+        entry = {
+            "时间": now_str(),
+            "旧状态": str(old_status),
+            "新状态": str(new_status),
+        }
+        if reason:
+            entry["原因"] = reason
+        current_log["状态变化记录"].append(entry)
+
     def mark_completed(self):
         """标记请求已完成 — 小欧 2026-06-30"""
         current_log = self._get_current_log()

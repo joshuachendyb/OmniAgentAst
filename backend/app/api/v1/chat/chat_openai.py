@@ -178,6 +178,10 @@ async def chat_stream(request: ChatRequest):
                 else:
                     prompt_logger.mark_completed()
             finally:
+                # break/cancel 路径也标记已完成,避免遗漏 — 小欧 2026-07-01
+                current_log = prompt_logger.get_current_log()
+                if current_log and current_log["基本信息"].get("状态") == "处理中":
+                    prompt_logger.mark_completed()
                 cancel_event.set()
                 poller_task.cancel()
                 try:
