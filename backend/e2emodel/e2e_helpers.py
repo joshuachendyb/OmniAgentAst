@@ -307,51 +307,52 @@ async def send_chat(
     response_text = ""
     tool_calls: List[Dict[str, Any]] = []
 
-    # 统一墙钟超时(26分钟=1600s)，所有测试用例不单独设置超时
-    # 确保超时由send_chat自行处理而非被pytest-timeout杀死 -- 小健 2026-06-24
-    # 增加到900s以支持复杂多步测试(P0-04等) -- 小欧 2026-06-26
-    # 增加到1600s给pytest-timeout(2000s)留足余量 -- 小欧 2026-07-01
+    # 统一墙钟超时(1600s=26.7min)，所有测试用例不单独设置超时
+    # asyncio.wait_for()创建独立task，超时后强杀task，TimeouError从wait_for抛出
+    # 不会被httpx/anyio内部吞掉 -- 小欧 2026-07-01 (修复原asyncio.timeout被吞bug)
     effective_timeout = 1600
 
+    async def _stream():
+        """内部协程: HTTP SSE流接收，被wait_for包裹确保超时可靠"""
+        nonlocal events, error_occurred, final_event, response_text, tool_calls
+        async with httpx.AsyncClient(timeout=httpx.Timeout(effective_timeout)) as client:
+            try:
+                async with client.stream("POST", chat_url, json=payload) as resp:
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data_str = line[6:]
+                        try:
+                            event = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+
+                        event_type = event.get("type", "")
+                        events.append(event)
+
+                        if event_type == "error":
+                            error_occurred = True
+
+                        if event_type == "final":
+                            final_event = event
+                            response_text = event.get("content") or event.get("response", "")
+
+                        if event_type == "action_tool":
+                            tool_calls.append({
+                                "type": event_type,
+                                "tool_name": event.get("tool_name", ""),
+                                "tool_params": event.get("tool_params", {}),
+                            })
+            except httpx.TimeoutException:
+                pass
+            except (asyncio.CancelledError, TimeoutError):
+                raise  # 让wait_for捕获，不应被吞 -- 小欧 2026-07-01
+            except Exception:
+                pass  # 其他流式异常不影响主流程
+
     try:
-        # asyncio.timeout提供墙钟超时，与httpx的read timeout(按chunk重置)不同
-        # 无论LLM是否持续发chunk，timeout_seconds后强制超时返回部分结果
-        # 修复: 超时不杀死进程，返回部分数据保证finally执行write_test_record
-        # -- 小健 2026-06-24
-        async with asyncio.timeout(effective_timeout):
-            async with httpx.AsyncClient(timeout=httpx.Timeout(effective_timeout)) as client:
-                try:
-                    async with client.stream("POST", chat_url, json=payload) as resp:
-                        async for line in resp.aiter_lines():
-                            if not line.startswith("data: "):
-                                continue
-                            data_str = line[6:]
-                            try:
-                                event = json.loads(data_str)
-                            except json.JSONDecodeError:
-                                continue
-
-                            event_type = event.get("type", "")
-                            events.append(event)
-
-                            if event_type == "error":
-                                error_occurred = True
-
-                            if event_type == "final":
-                                final_event = event
-                                response_text = event.get("content") or event.get("response", "")
-
-                            if event_type == "action_tool":
-                                tool_calls.append({
-                                    "type": event_type,
-                                    "tool_name": event.get("tool_name", ""),
-                                    "tool_params": event.get("tool_params", {}),
-                                })
-                except httpx.TimeoutException:
-                    pass
-                except Exception:
-                    pass
-    except (TimeoutError, httpx.TimeoutException):
+        await asyncio.wait_for(_stream(), timeout=effective_timeout)
+    except (TimeoutError, asyncio.TimeoutError):
         pass
     finally:
         total_time_ms = int((time.monotonic() - start_time) * 1000)
