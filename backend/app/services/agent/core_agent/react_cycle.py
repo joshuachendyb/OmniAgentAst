@@ -104,20 +104,17 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
     if parsed_type == "action":
         handler = handle_action(agent, llm_response, chunk_buffer)
     elif parsed_type == "answer":
-        content_short = (llm_response.get("content", "")[:60] + '..') if len(llm_response.get("content", "")) > 60 else llm_response.get("content", "")
-        print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response={content_short}")  # 小欧 2026-07-02 控制台
+        print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response={llm_response.get('content', '')}")  # 小欧 2026-07-02 控制台
         handler = handle_answer(agent, llm_response, chunk_buffer)
     elif parsed_type == "error":
         content = llm_response.get("content", "")
         agent.message_builder.add_assistant_message(content or "")
-        content_short = (content[:60] + '..') if len(content) > 60 else content
-        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, error={content_short}")  # 小欧 2026-07-02 控制台
+        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, error={content}")  # 小欧 2026-07-02 控制台
         handler = _handle_llm_error(agent, llm_response)
     else:
         logger.warning(f"[dispatch_handler] 未知返回类型: {parsed_type}, 设置为FAILED")
         content = llm_response.get("content", "") or llm_response.get("thought", "")
-        content_short = (content[:60] + '..') if len(content) > 60 else content
-        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, type={parsed_type}, content={content_short}")  # 小欧 2026-07-02 控制台
+        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, type={parsed_type}, content={content}")  # 小欧 2026-07-02 控制台
         if content:
             agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
         handler = _handle_unknown(agent, llm_response)
