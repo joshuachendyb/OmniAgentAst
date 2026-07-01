@@ -27,6 +27,7 @@ from e2emodel.e2e_helpers import (
     verify_consistency, verify_steps, check_logs,
     print_report, write_test_record,
     assert_stream_ended,
+    register_pending_record,
 )
 
 TEST_DIR = Path("E:/test_dir")
@@ -48,12 +49,16 @@ async def test_e2e_p0_04_data_persistence():
     lc = {"errors": [], "tracebacks": []}
     elapsed = 0.0
     error_info = None
+    user_input = "列出E:\\test_dir下的所有文件"
 
     try:
+        register_pending_record(
+            "E2E-P0-04", "数据持久化通路验证",
+            user_input, {}, {}, [], [], {"errors":[],"tracebacks":[]}, False,
+        )
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
         assert TEST_DIR.exists(), f"测试目录不存在: {TEST_DIR}"
 
-        user_input = "列出E:\\test_dir下的所有文件"
         print(f"\n  [Step1] T0={test_start.strftime('%H:%M:%S')}, input: {user_input}")
 
         result = await send_chat(user_input)

@@ -26,6 +26,7 @@ from e2emodel.e2e_helpers import (
     verify_consistency, verify_steps, check_logs,
     print_report, write_test_record,
     assert_stream_ended,
+    register_pending_record,
 )
 
 
@@ -59,6 +60,10 @@ async def test_e2e_p0_01_introduce_self():
     )
 
     try:
+        register_pending_record(
+            "E2E-P0-01", "核心链路验证-自我介绍",
+            user_input, {}, {}, [], [], {"errors":[],"tracebacks":[]}, False,
+        )
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
         print(f"\n  [Step1] T0={test_start.strftime('%H:%M:%S')}, input: {user_input}")
 

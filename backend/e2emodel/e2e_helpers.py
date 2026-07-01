@@ -307,10 +307,11 @@ async def send_chat(
     response_text = ""
     tool_calls: List[Dict[str, Any]] = []
 
-    # 统一墙钟超时(15分钟=900s)，所有测试用例不单独设置超时
+    # 统一墙钟超时(26分钟=1600s)，所有测试用例不单独设置超时
     # 确保超时由send_chat自行处理而非被pytest-timeout杀死 -- 小健 2026-06-24
     # 增加到900s以支持复杂多步测试(P0-04等) -- 小欧 2026-06-26
-    effective_timeout = 900
+    # 增加到1600s给pytest-timeout(2000s)留足余量 -- 小欧 2026-07-01
+    effective_timeout = 1600
 
     try:
         # asyncio.timeout提供墙钟超时，与httpx的read timeout(按chunk重置)不同

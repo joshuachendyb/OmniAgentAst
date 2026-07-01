@@ -25,6 +25,7 @@ from e2emodel.e2e_helpers import (
     verify_consistency, verify_steps, verify_db_prompt_consistency, check_logs,
     cleanup, print_report, write_test_record,
     assert_stream_ended,
+    register_pending_record,
 )
 
 TEST_FILE = Path("E:/test_dir/test.txt")
@@ -40,6 +41,10 @@ async def test_e2e_p0_03_multi_step_reasoning():
     user_input = "读取E:\\test_dir\\test.txt的内容，然后告诉我里面写了什么"
 
     try:
+        register_pending_record(
+            "E2E-P0-03", "多步推理通路验证",
+            user_input, {}, {}, [], [], {"errors":[],"tracebacks":[]}, False,
+        )
         assert ensure_backend_ready(), "backend not ready(manual 6.1)"
         assert TEST_FILE.exists(), f"test file not found: {TEST_FILE}"
 

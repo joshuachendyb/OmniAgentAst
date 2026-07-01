@@ -25,6 +25,7 @@ from e2emodel.e2e_helpers import (
     verify_consistency, verify_steps, verify_db_prompt_consistency, check_logs,
     cleanup, print_report, write_test_record,
     assert_stream_ended,
+    register_pending_record,
 )
 
 TEST_FILE = Path("E:/e2e_test_p0.txt")
@@ -43,6 +44,10 @@ async def test_e2e_p0_02_tool_call():
         TEST_FILE.unlink(missing_ok=True)
 
     try:
+        register_pending_record(
+            "E2E-P0-02", "工具调用通路验证",
+            user_input, {}, {}, [], [], {"errors":[],"tracebacks":[]}, False,
+        )
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
 
         print(f"\n  [Step1] T0={test_start.strftime('%H:%M:%S')}, input: {user_input}")
