@@ -1,3 +1,33 @@
+v27.16
+更新时间: 2026-07-01 09:48:36
+## v17.15→v27.16 变更汇总 - 小沈-2026-07-01
+
+### refactor: Agent状态集中管理重构v2
+- 新建status_table.py，所有状态设置集中管理
+- status_table中新增SUSPENDED转换条目
+- EXECUTING/THINKING精确状态循环：THINKING=调LLM，EXECUTING=跑工具
+- react_cycle.py: THINKING在循环尾部设(第350行)，EXECUTING在LLM出响应后设(第219行)
+
+### refactor: handler去状态职责
+- action_handler/answer_handler/step_emitter 删除所有set_failed/set_completed调用
+- _dispatch_handler从ErrorStep/FinalStep event type推断状态
+- error_handler.py(旧文件)已删除
+
+### refactor: SSE+SUSPENDED映射
+- run_sse_stream.py导入status_table的set_cancelled/set_failed
+- SUSPENDED→"failed" SSE end_type映射
+- sys_error_classifier添加httpx网络/超时异常分类
+
+### refactor: LLM日志增强+工具安全检查
+- prompt_logger新增mark_completed/mark_error状态标记
+- base_service.py L1重试日志增强([type.name] args)
+- llm_stream.py残缺tool_call参数日志警告
+- chat_openai.py prompt_logger状态标记
+- file_encoding.py/read_text_file.py/execute_shell_command.py 工具安全检查加固
+
+### docs: Agent状态语义深度分析文档
+- EXECUTING/THINKING代码逻辑分析与转换表合规复核
+
 v17.15
 更新时间: 2026-07-01 09:46:13
 ## v0.17.14→v17.15 变更汇总 - 小沈-2026-07-01
