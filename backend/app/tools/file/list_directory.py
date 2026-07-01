@@ -191,24 +191,17 @@ async def _get_directory_tree(
             pass
         return fc, dc, ts
 
-    def _sort_items(items):
-        if sort_by == "size":
-            def _get_size(p):
-                try:
-                    _, _, total_size = _count_tree_fs(p)
-                    return total_size
-                except Exception:
-                    return 0
-            return sorted(items, key=lambda x: (-_get_size(x), x.name.lower()))
-        elif sort_by == "mtime":
+    def _sort_items(items, sort_by_param):
+        """排序目录项 - 小沈 2026-07-01"""
+        if sort_by_param == "mtime":
             def _get_mtime(p):
                 try:
                     return p.stat().st_mtime
                 except OSError:
                     return 0
             return sorted(items, key=lambda x: (-_get_mtime(x), x.name.lower()))
-        else:
-            return sorted(items, key=lambda x: x.name.lower())
+        # name/size均回退按名称排序(tree只列目录,size无意义)
+        return sorted(items, key=lambda x: x.name.lower())
 
     def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
         if depth > max_depth:
@@ -229,7 +222,7 @@ async def _get_directory_tree(
             items = [item for item in current_path.iterdir() if item.is_dir()]
             if not include_hidden:
                 items = [item for item in items if not item.name.startswith('.')]
-            for item in _sort_items(items):
+            for item in _sort_items(items, sort_by):
                 child = _build_tree(item, depth + 1)
                 if child:
                     children.append(child)
