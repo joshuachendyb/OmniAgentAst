@@ -204,10 +204,11 @@ class BaseAIService:
         self.reset_cancel()
         self._ensure_client()
 
+        retry_count = 0
         max_retries = LLM_STREAM_MAX_RETRIES
         stream_options = LLM_STREAM_OPTIONS
 
-        for attempt in range(max_retries + 1):
+        while retry_count <= max_retries:
             try:
                 tool_call_accumulator = {}
                 raw_data_buf: list = []
@@ -297,11 +298,10 @@ class BaseAIService:
             except FCFormatError:
                 raise  # 穿透给call_llm_with_fallback重试/降级 — 2026-06-26
             except Exception as e:
-                if self._should_retry(e) and attempt < max_retries:
-                    wait_time = min(0.5 * (2 ** (attempt + 1)), 10)
-                    logger.warning(f"[Retry][L1] 重试 {attempt+1}/{max_retries}, "
-                                   f"等待{wait_time:.1f}s, "
-                                   f"错误: [{type(e).__name__}] {e} (args={e.args})")
+                if self._should_retry(e) and retry_count < max_retries:
+                    retry_count += 1
+                    wait_time = 2 ** retry_count
+                    logger.warning(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {e}")
                     await asyncio.sleep(wait_time)
                     continue
                 else:
