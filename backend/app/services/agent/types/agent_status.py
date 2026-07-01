@@ -17,4 +17,5 @@ class AgentStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
-    CANCELLED = "cancelled"  # 【Bug17修复】chendyg 2026-06-26: 任务被取消，区分于COMPLETED
+    CANCELLED = "cancelled"  # chendyg 2026-06-26: 任务被取消，区分于COMPLETED
+    SUSPENDED = "suspended"  # chendyg 2026-07-01: 可恢复失败状态，用于重试机制

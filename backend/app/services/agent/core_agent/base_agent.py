@@ -93,19 +93,8 @@ class BaseAgent(ABC):
         """生命周期Hook: ReAct循环结束后 — 子类可override"""
         pass
 
-    def set_failed(self, reason: str = ""):
-        """统一FAILED状态入口 — 小欧 2026-06-25 Batch2d"""
-        self.status = AgentStatus.FAILED
-        if reason:
-            logger.warning(f"[Agent] FAILED: {reason}")
-
-    def set_completed(self):
-        """统一COMPLETED状态入口 — 小欧 2026-06-28"""
-        self.status = AgentStatus.COMPLETED
-
-    def set_cancelled(self):
-        """统一CANCELLED状态入口 — 小欧 2026-06-28"""
-        self.status = AgentStatus.CANCELLED
+    # set_failed/set_completed/set_cancelled 方法已删除，统一使用 status_table.py 中的函数
+    # chendyg 2026-07-01: 删除这三个方法，强制使用 status_table.set_failed/set_completed/set_cancelled
 
     def _create_cancelled_chunk(self):
         """创建取消chunk — 直接使用stream_parser函数

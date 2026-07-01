@@ -2,16 +2,13 @@
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
-职责: 循环调度 + 类型分派，不含业务逻辑
+职责: 循环调度 + 类型分派 + 状态推断，不含业务逻辑
 业务逻辑在 handlers/ 目录
 
-小健 2026-06-08
-P2-5: if/elif → 注册式分派 — 小欧 2026-06-08
-F4修复: _handle_action拆分SRP + _call_llm空保护 — 小欧 2026-06-08
-P3-12: 删除3个纯透传函数(内联调用) — 小沈 2026-06-09
-P4-01: 薄调度重构，业务逻辑移至handlers/ — 小沈 2026-06-09
-FC-only重构: 删除parse_llm_response/TOOL_REMINDER/_has_tool_call, yield dict — 小沈 2026-06-11
-P0-01: 删除step_counter list hack,使用agent.llm_call_count — 小沈 2026-06-13
+chendyg 2026-07-01: 状态集中管理重构v2
+- 状态用 status_table，数据 handler 自己写
+- _dispatch_handler 基于 event type 推断状态
+- handler 保留 add_observation/add_assistant_message，不绕路
 """
 
 import asyncio
@@ -22,13 +19,44 @@ from app.config import get_config
 from app.constants import TASK_TIMEOUT
 from app.services.agent.steps import ChunkStep, FinalStep, ObservationStep, ErrorStep
 from app.services.agent.types import AgentStatus
+from app.services.agent.core_agent.status_table import set_status, set_failed, set_completed, set_cancelled
 from app.services.agent.core_agent.initialize_run_state import initialize_run_state
 from app.services.agent.core_agent.handlers import (
     handle_action, handle_answer,
 )
-from app.services.agent.core_agent.error_handler import handle_react_error
 
 _MAX_CONSECUTIVE_TRUNCATIONS = 3
+
+
+def handle_react_error(agent, error, step):
+    """统一处理ReAct循环中的错误 — 只创建 ErrorStep，不设状态 — chendyg 2026-07-01"""
+    from app.utils.sys_error_classifier import SystemErrorClassifier
+    error_type = SystemErrorClassifier.classify_error(error).name.lower()
+    logger.error(f"[ErrorHandler] 错误类型={error_type}: {error}")
+    recoverable = _is_recoverable_error(error)
+    return ErrorStep(step=step, error_type=error_type, error_message=str(error), recoverable=recoverable)
+
+
+def _is_recoverable_error(error) -> bool:
+    """判断错误是否可恢复（FC格式错误/网络错误/超时） — chendyg 2026-07-01"""
+    try:
+        from app.services.llm.core import FCFormatError
+        if isinstance(error, FCFormatError):
+            return True
+    except ImportError:
+        pass
+    if isinstance(error, asyncio.TimeoutError):
+        return True
+    try:
+        import httpx
+        if isinstance(error, (
+            httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError,
+            httpx.ProxyError, httpx.TooManyRedirects,
+        )):
+            return True
+    except ImportError:
+        pass
+    return False
 
 
 def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
@@ -50,8 +78,6 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
     for i in range(len(history) - 1, -1, -1):
         msg = history[i]
         if msg.get("role") == "assistant" and msg.get("tool_calls"):
-            # 检查该tool_call之后是否有工具执行结果
-            # 有→工具已执行,短答案是正常确认,非截断
             for j in range(i + 1, len(history)):
                 next_msg = history[j]
                 if next_msg.get("role") in ("tool", "observation"):
@@ -61,54 +87,79 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
 
 
 async def _dispatch_handler(agent, llm_response, chunk_buffer):
-    """按type分派handler — 小健 2026-06-17 if/elif替代2-entry注册表
-    北京老陈 2026-06-25: 未知类型走FAILED而非handle_answer
+    """按type分派handler，基于 event type + recoverable 推断状态 — chendyg 2026-07-01
+    
+    状态推断规则:
+    - "error" + recoverable → set_failed（非重试场景由编排层except块处理SUSPENDED）
+    - "error" + !recoverable → set_failed
+    - "final" → set_completed
+    - 其他 → continue（不设状态）
     """
     parsed_type = llm_response.get("type", "answer")
     if parsed_type == "action":
-        async for event in handle_action(agent, llm_response, chunk_buffer):
-            yield event
+        handler = handle_action(agent, llm_response, chunk_buffer)
     elif parsed_type == "answer":
-        async for event in handle_answer(agent, llm_response, chunk_buffer):
-            yield event
+        handler = handle_answer(agent, llm_response, chunk_buffer)
     elif parsed_type == "error":
-        # 【E-4修复】error类型—建ErrorStep+set_failed — 小欧 2026-06-28
         content = llm_response.get("content", "")
         agent.message_builder.add_assistant_message(content or "")
-        agent.set_failed(content or "LLM流式错误")
-        yield agent._step_emitter.emit(ErrorStep(
-            step=agent.llm_call_count,
-            error_type="llm_error",
-            error_message=content or "LLM流式错误",
-        ))
+        handler = _handle_llm_error(agent, llm_response)
     else:
         logger.warning(f"[dispatch_handler] 未知返回类型: {parsed_type}, 设置为FAILED")
-        # 【#35修复】未知类型响应加入对话历史，防止LLM重复产生相同无效响应 — chendyg 2026-06-26
         content = llm_response.get("content", "") or llm_response.get("thought", "")
         if content:
             agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
-        agent.set_failed(f"LLM返回未知响应类型: {parsed_type}")
-        yield agent._step_emitter.emit(FinalStep(
-            step=agent.llm_call_count,
-            response=f"LLM返回未知响应类型: {parsed_type}",
-            thought="",
-        ))
+        handler = _handle_unknown(agent, llm_response)
+
+    seen_types = set()
+    last_event = None
+    last_error_event = None
+    async for event in handler:
+        seen_types.add(event.type)
+        last_event = event
+        if event.type == "error":
+            last_error_event = event
+        yield event
+
+    if "error" in seen_types:
+        error_event = last_error_event
+        error_msg = error_event.get_content() if hasattr(error_event, 'get_content') else ""
+        if getattr(error_event, 'recoverable', False):
+            set_status(agent, AgentStatus.SUSPENDED, error_msg)
+        else:
+            set_failed(agent, error_msg)
+    elif "final" in seen_types:
+        set_completed(agent)
+
+
+async def _handle_llm_error(agent, llm_response):
+    """LLM type=error：yield ErrorStep — chendyg 2026-07-01"""
+    content = llm_response.get("content", "") or "LLM流式错误"
+    yield agent._step_emitter.emit(ErrorStep(
+        step=agent.llm_call_count,
+        error_type="llm_error",
+        error_message=content,
+    ))
+
+
+async def _handle_unknown(agent, llm_response):
+    """未知响应类型：yield ErrorStep — chendyg 2026-07-01"""
+    parsed_type = llm_response.get("type", "unknown")
+    yield agent._step_emitter.emit(ErrorStep(
+        step=agent.llm_call_count,
+        error_type="unknown_response",
+        error_message=f"LLM返回未知响应类型: {parsed_type}",
+    ))
 
 
 def _ensure_failed_final_step(agent):
     """FAILED时补发FinalStep — 小健 2026-06-17 从finally提取
-    小健 2026-06-26: 修复P0-5 重试错误不应补发FinalStep，由循环继续处理"""
+    response="" 触发前端空响应守卫，设置 isError=true + 用户友好错误消息 — chendyg 2026-06-30"""
     if agent.status != AgentStatus.FAILED:
         return
-    last_err = None
-    for s in reversed(agent.steps):
-        err = getattr(s, '_error_message', None)
-        if err:
-            last_err = err
-            break
     return FinalStep(
         step=agent.llm_call_count,
-        response=last_err or "任务执行失败",
+        response="",
         thought="",
     )
 
@@ -154,7 +205,6 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         if chunk_type == "chunk":
             content = chunk_data.content if hasattr(chunk_data, 'content') else str(chunk_data)
             is_reasoning = getattr(chunk_data, 'is_reasoning', False)
-            # 【P1-13修复】chunk_buffer.append使should_force_stop生效 — chendyg 2026-06-26
             chunk_buffer.append(content)
             chunk_step = ChunkStep(
                 step=agent.llm_call_count,
@@ -164,17 +214,19 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             yield agent._step_emitter.emit(chunk_step)
         elif chunk_type == "response":
             llm_response = chunk_data
-            # 【P1-13修复】收到完整响应时重置chunk计数器 — chendyg 2026-06-26
             chunk_buffer.clear()
+
+    set_status(agent, AgentStatus.EXECUTING)
 
     step = agent.llm_call_count
 
     if not llm_response or not isinstance(llm_response, dict):
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
-        yield agent._step_emitter.exit_with_error(
-            step_count=step, error_type="empty_response",
-            error_message="LLM返回空响应",
-        )
+        set_failed(agent, "LLM返回空响应")
+        yield agent._step_emitter.emit(ErrorStep(
+            step=step, error_type="empty_response",
+            error_message="LLM返回空响应"
+        ))
         return
 
     if getattr(getattr(agent, 'llm_client', None), '_cancelled', False):
@@ -184,8 +236,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             response="任务已被中断",
             thought="",
         ))
-        # 【Bug17修复】取消应设CANCELLED而非COMPLETED — chendyg 2026-06-26
-        agent.set_cancelled()
+        set_cancelled(agent)
         return
 
     # B3修复: LLM未调用任何工具直接回答 → 注入警告并重试 — 小欧 2026-06-26
@@ -219,7 +270,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
         if agent._consecutive_truncations >= _MAX_CONSECUTIVE_TRUNCATIONS:
             logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试, 设为FAILED")
-            agent.set_failed(f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断")
+            set_failed(agent, f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断")
             yield agent._step_emitter.emit(FinalStep(
                 step=step,
                 response=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
@@ -228,7 +279,6 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             return
 
         obs_text = "[Observation] 工具调用输出不完整，请重新调用该工具并补充完整参数"
-        # 【P1-8修复】截断重试需从历史中找到未完成的tool_call_id，不能传空 — chendyg 2026-06-26
         _retry_tc_id = ""
         history = agent.message_builder.conversation_history
         for i in range(len(history) - 1, -1, -1):
@@ -259,57 +309,59 @@ async def run_react_cycle(
     max_steps: Optional[int] = None,
     task_id: Optional[str] = None,
 ):
-    """ReAct循环:调用LLM→解析→分派handler→产出Step — 小沈 2026-06-09 薄调度重构
-    N-1修复 2026-06-25 小欧: 总耗时超TASK_TIMEOUT则强制结束
-    Batch2c: 导入移文件顶部 — 小欧 2026-06-25
-    """
+    """ReAct循环:调用LLM→解析→分派handler→产出Step — chendyg 2026-07-01 状态集中管理重构v2"""
     if max_steps is None:
         max_steps = get_config().get_max_steps()
 
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
 
-    # 【P1-12修复】max_steps<=0时直接FAILED，避免无终态 — chendyg 2026-06-26
     if max_steps <= 0:
         logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接设为FAILED")
-        agent.set_failed(f"max_steps={max_steps}, 无可用步骤")
+        set_failed(agent, f"max_steps={max_steps}, 无可用步骤")
         yield agent._step_emitter.emit(FinalStep(
             step=0, response=f"max_steps={max_steps}, 无可用步骤", thought="",
         ))
         _finalize_cycle(agent)
         return
 
-    agent.status = AgentStatus.EXECUTING
+
     _start_time = asyncio.get_event_loop().time()
 
     try:
         while agent.llm_call_count < max_steps:
             if asyncio.get_event_loop().time() - _start_time > TASK_TIMEOUT.total_seconds():
                 logger.warning(f"[run_react_cycle] 总耗时超TASK_TIMEOUT({TASK_TIMEOUT}), 强制结束")
-                agent.set_failed(f"总耗时超TASK_TIMEOUT({TASK_TIMEOUT})")
+                set_failed(agent, f"总耗时超TASK_TIMEOUT({TASK_TIMEOUT})")
                 yield agent._step_emitter.emit(ErrorStep(step=agent.llm_call_count, error_type="timeout", error_message=f"ReAct循环执行超时，耗时{asyncio.get_event_loop().time() - _start_time:.1f}秒"))
                 break
             async for event in _process_single_step(agent, chunk_buffer):
                 yield event
 
-
             if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED):
                 break
 
+            if agent.status == AgentStatus.SUSPENDED:
+                agent._retry_count = getattr(agent, '_retry_count', 0) + 1
+                if agent._retry_count > 3:
+                    set_failed(agent, "可恢复错误重试超限")
+                    break
+                set_status(agent, AgentStatus.THINKING, f"第{agent._retry_count}次重试")
+            elif agent.status == AgentStatus.EXECUTING:
+                set_status(agent, AgentStatus.THINKING)
+
             if chunk_buffer.should_force_stop():
                 logger.warning(f"[run_react_cycle] chunk累积超时({agent.llm_call_count}步),强制停止")
-                agent.set_failed(f"chunk累积超时({agent.llm_call_count}步)")
+                set_failed(agent, f"chunk累积超时({agent.llm_call_count}步)")
                 yield agent._step_emitter.emit(ErrorStep(step=agent.llm_call_count, error_type="chunk_buffer_timeout", error_message="chunk buffer累积超时，强制停止"))
                 break
 
-        # 【修复】循环自然结束（max_steps耗尽）但无终态→强制FAILED — 小欧 2026-06-28
         if agent.status not in (
             AgentStatus.COMPLETED,
             AgentStatus.FAILED,
             AgentStatus.CANCELLED,
-
         ):
             logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 设为FAILED")
-            agent.set_failed(f"ReAct循环结束但无终态(status={agent.status})")
+            set_failed(agent, f"ReAct循环结束但无终态(status={agent.status})")
             yield agent._step_emitter.emit(FinalStep(
                 step=agent.llm_call_count,
                 response=f"ReAct循环结束但无终态(status={agent.status})",
@@ -320,6 +372,14 @@ async def run_react_cycle(
         logger.error(f"[run_react_cycle] 异常: {e}", exc_info=True)
         error_step = handle_react_error(agent, e, agent.llm_call_count)
         yield agent._step_emitter.emit(error_step)
+        if hasattr(error_step, 'recoverable') and error_step.recoverable:
+            agent._retry_count = getattr(agent, '_retry_count', 0) + 1
+            if agent._retry_count > 3:
+                set_failed(agent, f"重试超限: {e}")
+            else:
+                set_status(agent, AgentStatus.SUSPENDED, str(e)[:200])
+        else:
+            set_failed(agent, f"循环异常: {e}"[:200])
 
     finally:
         failed_step = _ensure_failed_final_step(agent)
