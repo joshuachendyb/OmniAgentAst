@@ -12,6 +12,7 @@ chendyg 2026-07-01: 状态集中管理重构v2
 """
 
 import asyncio
+import time
 from typing import Any, Dict, Optional, AsyncGenerator
 
 from app.utils.logger import logger
@@ -96,17 +97,27 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
     - 其他 → continue（不设状态）
     """
     parsed_type = llm_response.get("type", "answer")
+    step = agent.llm_call_count
+    thought = llm_response.get("thought", "")
+    if thought:
+        print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}")  # 小欧 2026-07-02 控制台
     if parsed_type == "action":
         handler = handle_action(agent, llm_response, chunk_buffer)
     elif parsed_type == "answer":
+        content_short = (llm_response.get("content", "")[:60] + '..') if len(llm_response.get("content", "")) > 60 else llm_response.get("content", "")
+        print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response={content_short}")  # 小欧 2026-07-02 控制台
         handler = handle_answer(agent, llm_response, chunk_buffer)
     elif parsed_type == "error":
         content = llm_response.get("content", "")
         agent.message_builder.add_assistant_message(content or "")
+        content_short = (content[:60] + '..') if len(content) > 60 else content
+        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, error={content_short}")  # 小欧 2026-07-02 控制台
         handler = _handle_llm_error(agent, llm_response)
     else:
         logger.warning(f"[dispatch_handler] 未知返回类型: {parsed_type}, 设置为FAILED")
         content = llm_response.get("content", "") or llm_response.get("thought", "")
+        content_short = (content[:60] + '..') if len(content) > 60 else content
+        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, type={parsed_type}, content={content_short}")  # 小欧 2026-07-02 控制台
         if content:
             agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
         handler = _handle_unknown(agent, llm_response)
@@ -222,6 +233,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
     if not llm_response or not isinstance(llm_response, dict):
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
+        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, empty_response")  # 小欧 2026-07-02 控制台
         set_failed(agent, "LLM返回空响应")
         yield agent._step_emitter.emit(ErrorStep(
             step=step, error_type="empty_response",
@@ -230,6 +242,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         return
 
     if getattr(getattr(agent, 'llm_client', None), '_cancelled', False):
+        print(f"{time.strftime('%H:%M:%S')} [Interrupt] step={step}, cancelled")  # 小欧 2026-07-02 控制台
         yield agent._create_cancelled_chunk()
         yield agent._step_emitter.emit(FinalStep(
             step=step,
@@ -270,6 +283,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
         if agent._consecutive_truncations >= _MAX_CONSECUTIVE_TRUNCATIONS:
             logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试, 设为FAILED")
+            print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, consecutive_truncation")  # 小欧 2026-07-02 控制台
             set_failed(agent, f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断")
             yield agent._step_emitter.emit(FinalStep(
                 step=step,

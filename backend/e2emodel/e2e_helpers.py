@@ -737,21 +737,21 @@ def verify_db_prompt_consistency(
         issues.append(f"读取Prompt日志失败: {e}")
         return issues
 
-    # 获取「执行步骤」节：第四个key
+    # 获取「执行步骤」节：第五个key（[0]基本信息 [1]Prompt组装过程 [2]LLM调用记录 [3]状态变化记录 [4]步骤产出）
     log_keys = list(log_data.keys())
-    if len(log_keys) < 4:
+    if len(log_keys) < 5:
         issues.append(f"Prompt日志缺少执行步骤节, 仅{len(log_keys)}个节")
         return issues
-    exec_steps_key = log_keys[3]
+    exec_steps_key = log_keys[4]
     log_steps = log_data.get(exec_steps_key, [])
 
     if not log_steps:
         issues.append("Prompt日志«执行步骤»为空")
         return issues
 
-    # 非start步骤数对比(prompt日志不含start事件) - 必须完全一致
-    db_main = [s for s in db_steps if s.get("type") != "start"]
-    log_main = [s for s in log_steps if s.get("步骤类型") != "start"]
+    # 非start/chunk步骤数对比(prompt日志不含start/chunk事件) - 必须完全一致
+    db_main = [s for s in db_steps if s.get("type") not in ("start", "chunk")]
+    log_main = [s for s in log_steps if s.get("步骤类型") not in ("start", "chunk")]
 
     if len(db_main) != len(log_main):
         issues.append(
@@ -774,9 +774,9 @@ def verify_db_prompt_consistency(
     for sn in sorted(all_step_nums):
         db_ss = db_by_step.get(sn, [])
         log_ss = log_by_step.get(sn, [])
-        # type对比(排除start, prompt日志不含start事件)
-        db_types = sorted([s.get("type", "") for s in db_ss if s.get("type") != "start"])
-        log_types = sorted([s.get("步骤类型", "") for s in log_ss if s.get("步骤类型") != "start"])
+        # type对比(排除start/chunk, prompt日志不含start/chunk事件)
+        db_types = sorted([s.get("type", "") for s in db_ss if s.get("type") not in ("start", "chunk")])
+        log_types = sorted([s.get("步骤类型", "") for s in log_ss if s.get("步骤类型") not in ("start", "chunk")])
         if db_types != log_types:
             issues.append(f"步骤{sn} type不一致(DB={db_types}, Prompt日志={log_types})(MUST)")
 
