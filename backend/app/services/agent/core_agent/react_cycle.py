@@ -251,7 +251,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             content = llm_response.get("content", "")
             agent._notool_retried = True
             logger.warning(f"[B3] LLM返回answer但未调用任何工具(step={step}), 注入警告并重试")
-            obs_text = "[Observation] 警告: 你未调用任何工具获取实时数据。必须复核3遍用户的任务,是否需要工具调用,尤其是对于需要系统状态、文件内容、时间信息等数据的任务，你必须使用相关工具获取准确数据，不能凭记忆编造。请重新使用工具获取数据后回答。"
+            obs_text = "[Observation] 警告: 你未调用任何工具获取实时数据。必须复核3遍用户的任务,是否需要工具调用,尤其是对于需要系统状态、文件内容、时间信息等数据的任务。"
             agent.message_builder.add_observation(
                 obs_text, {"tool_call_id": "", "tool_calls": [], "llm_content": content},
             )

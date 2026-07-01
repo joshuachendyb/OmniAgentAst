@@ -121,6 +121,7 @@ async def chat_stream(request: ChatRequest):
             _user_msg_id = get_user_message_id(session_id)
         except Exception:
             logger.warning(f"[chat] 获取user_message_id失败: session_id={session_id}")
+        print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"[TASK_START]:provider={ai_service.provider} model={ai_service.model}")
         print(f"ask_id={task_id} session_id={session_id} user_message_id={_user_msg_id} |")
         print(f"user_input={user_input}")

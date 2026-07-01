@@ -81,9 +81,8 @@ atexit.register(_flush_pending_records)
 
 
 def _signal_handler(signum, frame):
-    """信号处理：进程被终止前写入记录"""
+    """信号处理：进程被终止前写入记录；不调sys.exit，让finally块自然执行 — 小欧 2026-07-01"""
     _flush_pending_records()
-    sys.exit(1)
 
 
 for _sig in (signal.SIGTERM, signal.SIGINT):

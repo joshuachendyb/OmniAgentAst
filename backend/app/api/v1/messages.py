@@ -24,6 +24,7 @@ from app.utils.cache import LRUCache
 from app.constants import MAX_CACHE_SIZE
 from app.utils.display_utils import extract_display_name_from_steps
 from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, get_timestamp_ms
+from app.api.v1.sessions.format_timestamp import format_timestamp
 from app.utils.json_utils import parse_json
 from app.db import db
 from app.db.models.chat_models import MessageResponse
@@ -73,7 +74,7 @@ async def get_session_messages(session_id: str):
         return {
             "session_id": session_id, "title": session['title'],
             "created_at": session['created_at'],
-            "updated_at": session['updated_at'],
+            "updated_at": format_timestamp(session['updated_at']),
             "title_locked": title_locked,
             "title_source": "user" if title_locked else "auto",
             "title_updated_at": convert_to_utc(session['title_updated_at']),
