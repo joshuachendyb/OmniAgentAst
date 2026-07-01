@@ -32,9 +32,10 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
     thought = parsed.get("thought", content)
     reasoning = parsed.get("reasoning", "")
 
+    # thought 步骤 — content=LLM回答文本, reasoning=内部思维过程 — 小欧 2026-07-01
     if thought:
         yield agent._step_emitter.emit(ThoughtStep(
-            step=step, content=thought, thought=thought, reasoning=reasoning,
+            step=step, content=thought, reasoning=reasoning,
         ))
 
     yield agent._step_emitter.emit(FinalStep(
