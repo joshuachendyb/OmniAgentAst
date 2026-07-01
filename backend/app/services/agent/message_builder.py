@@ -20,10 +20,14 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定,
 from typing import Any, Dict, List, Optional
 
 from app.constants import MAX_CONTEXT_CHARS, TEMP_HISTORY_CHAR_LIMIT
+from app.utils.logger import logger  # 小欧 2026-07-01: 裁剪日志
 from app.services.agent.agent_utils.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
     message_to_dict, dict_to_message,
 )
+
+_ROUND_CAP = 20             # 消息数触发裁剪阈值 — 小欧 2026-07-01
+_ROUND_TRIM_BUDGET = 30000  # 消息数触发时收紧预算 — 小欧 2026-07-01
 
 
 class MessageBuilder:
@@ -107,8 +111,8 @@ class MessageBuilder:
         self.add_tool_result(tool_call_id, observation_text)
 
     def add_observation(self, observation_text: str, fc_context: Dict) -> None:
+        """添加observation — 裁剪统一在 _process_single_step — 小欧 2026-07-01"""
         self._append_observation(observation_text, fc_context)
-        self.trim_history()
 
     def add_assistant_message(self, content: str) -> AssistantMessage:
         """追加assistant最终回答到conversation_history — 2026-06-25 小欧 J-1修复: 封装统一入口
@@ -146,9 +150,19 @@ class MessageBuilder:
     # =========================================================================
 
     def trim_history(self) -> None:
-        """容量感知的对话历史裁剪 — 2026-06-25 小欧 D-1修复: user与system分两组"""
+        """对话历史裁剪 — 唯一裁剪入口 — 小欧 2026-07-01
+
+        裁剪策略:
+        - 触发条件: 字符 >160K 或 消息数 >_ROUND_CAP(20) 条，任一达标即触发
+        - 方法: _trim_to_budget 从后往前扫，保留最新 N 轮完整 FC 对
+        - system+user 消息永保
+        - 配对不完整的 FC 对由 _trim_fc_pairs 清理
+        """
         total = self._total_chars(self.conversation_history)
-        if total < self.MAX_CONTEXT_CHARS * 0.8:
+        msg_count = len(self.conversation_history)
+
+        # 入口: 两个条件都不达标 → 不裁剪 — 小欧 2026-07-01 新增消息数条件
+        if total < self.MAX_CONTEXT_CHARS * 0.8 and msg_count <= _ROUND_CAP:
             return
         if len(self.conversation_history) <= 2:
             return
@@ -156,10 +170,18 @@ class MessageBuilder:
         system_msgs, user_msgs, obs_list, assistant_msgs = self._classify_messages()
         always_keep_chars = self._total_chars(system_msgs) + self._total_chars(user_msgs)
         available_budget = max(10000, int(self.MAX_CONTEXT_CHARS * 0.7) - always_keep_chars)
+
+        # 消息数触发时: 收紧预算 — 小欧 2026-07-01
+        if msg_count > _ROUND_CAP:
+            available_budget = min(available_budget, _ROUND_TRIM_BUDGET)
+
         trimmed = self._trim_to_budget(obs_list, assistant_msgs, available_budget)
         rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed)
         if rebuilt is not None:
             self.conversation_history = rebuilt
+
+        logger.info(f"[trim_history] 裁剪: {msg_count}条({total} chars) "
+                    f"→ {len(rebuilt)}条(触发: {'消息数' if msg_count > _ROUND_CAP else '字符'})")
 
     def _classify_messages(self):
         """将消息分类为 system / user / observation(tool) / assistant 四组 — 2026-06-25 小欧 D-1修复"""

@@ -179,7 +179,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     from app.utils.prompt_logger import get_prompt_logger
 
     agent.llm_call_count += 1
-    agent.message_builder.trim_history()
+    agent.message_builder.trim_history()  # 唯一裁剪入口 — 小欧 2026-07-01
     messages = agent.message_builder.prepare_messages_for_llm()
     openai_tools = get_openai_tools(agent)
 

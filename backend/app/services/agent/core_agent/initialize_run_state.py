@@ -63,7 +63,7 @@ def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> No
         )
     elif history_msgs:
         agent.message_builder.conversation_history = history_msgs + agent.message_builder.conversation_history
-    agent.message_builder.trim_history()
+    # 裁剪统一在 _process_single_step 调用 — 小欧 2026-07-01
 
 
 def initialize_run_state(
