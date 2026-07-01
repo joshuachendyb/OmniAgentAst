@@ -16,7 +16,7 @@ from app.utils.prompt_logger import get_prompt_logger
 
 
 
-def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent):
+def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent, full_reasoning=""):
     """构建action类型响应 — 小欧 2026-06-25 抽取_log_llm_response"""
     for tc in tool_calls_result:
         if "tool_params" in tc and tc["tool_params"] is None:
@@ -40,7 +40,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
     _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "action", usage_data,
                       tool_name=first.get("tool_name", "?"), parallel_calls=len(_pending_calls))
     return ("response", {
-        "type": "action", "thought": full_content,
+        "type": "action", "thought": full_content, "reasoning": full_reasoning,
         "fc_context": {"tool_call_id": first.get("tool_call_id") or "", "tool_calls": built_tool_calls, "llm_content": full_content},
         "_pending_calls": _pending_calls, "tool_name": first.get("tool_name", ""),
         "tool_params": first.get("tool_params") or {}, "tool_call_id": first.get("tool_call_id") or "",
@@ -68,12 +68,12 @@ def _yield_error_response(error_msg: str, agent):
     return ("response", {"type": "error", "content": error_msg})
 
 
-def _build_answer_response(content, usage_data, agent):
+def _build_answer_response(content, usage_data, agent, full_reasoning=""):
     """构建answer类型响应 — 小欧 2026-06-25 抽取_log_llm_response"""
     logger.info(f"[FC] LLM原始响应(answer): {content}")
     assembled = {"content": content}
     _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "answer", usage_data)
-    return ("response", {"type": "answer", "content": content, "thought": ""})
+    return ("response", {"type": "answer", "content": content, "reasoning": full_reasoning})
 
 
 
@@ -145,7 +145,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
         _fc_names = [tc.get("tool_name","?") if isinstance(tc,dict) else "?" for tc in tool_calls_result]
         _p = usage_data.get('prompt_tokens','?') if usage_data else '?'; _c = usage_data.get('completion_tokens','?') if usage_data else '?'; _t = usage_data.get('total_tokens','?') if usage_data else '?'
         logger.info(f"[FC] 解析结果: tool_calls({len(tool_calls_result)})={_fc_names}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
-        yield _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent)
+        yield _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent, full_reasoning)
         return
 
     content = full_content or full_reasoning or ""
