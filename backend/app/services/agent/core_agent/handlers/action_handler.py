@@ -377,11 +377,11 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
         ))
         return
 
+    # thought 步骤 — content=LLM推理内容, reasoning=内部思维过程 — 小欧 2026-07-01
     yield agent._step_emitter.emit(ThoughtStep(
         step=step,
         content=parsed.get("thought", ""),
         tool_name=tool_name, tool_params=tool_params,
-        thought=parsed.get("thought", ""),
         reasoning=parsed.get("reasoning", ""),
     ))
 
