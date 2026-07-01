@@ -9,7 +9,7 @@ v2.0: 新增错误消息检测，LLM返回错误时设FAILED而非COMPLETED — 
 """
 from typing import Dict
 
-from app.services.agent.steps import ThoughtStep, FinalStep
+from app.services.agent.steps import ThoughtStep, FinalStep, ErrorStep
 
 
 async def handle_answer(agent, parsed: Dict, chunk_buffer):
@@ -20,12 +20,12 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
     if not content:
         from app.utils.logger import logger
         logger.warning(f"[handle_answer] LLM返回空内容(step={step})")
-        # 【P1-17修复】空内容应设FAILED而非COMPLETED — chendyg 2026-06-26
-        agent.set_failed("LLM返回空内容")
-        # 【Bug3修复】空内容也需保存assistant消息到对话历史，保持FC协议完整性 — chendyg 2026-06-26
+        # chendyg 2026-07-01: yield ErrorStep让_dispatch_handler推断FAILED
+        # 保留add_assistant_message("")，FC协议要求空assistant消息也入历史
         agent.message_builder.add_assistant_message("")
-        yield agent._step_emitter.emit(FinalStep(
-            step=step, response="", thought="",
+        yield agent._step_emitter.emit(ErrorStep(
+            step=step, error_type="empty_response",
+            error_message="LLM返回空内容"
         ))
         return
 
@@ -40,7 +40,5 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
     yield agent._step_emitter.emit(FinalStep(
         step=step, response=content, thought=thought,
     ))
-    # 【修复P0-2】保存assistant回复到对话历史 — 北京老陈 2026-06-13
-    # 【J-1修复】走MessageBuilder封装入口 — 小欧 2026-06-25
+    # 保留add_assistant_message，数据就地 — chendyg 2026-07-01
     agent.message_builder.add_assistant_message(content)
-    agent.set_completed()

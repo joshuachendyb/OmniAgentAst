@@ -15,6 +15,7 @@ from typing import List, AsyncGenerator, Any, Callable, Dict, Optional
 
 from app.db import db
 from app.services.agent.steps import ErrorStep, FinalStep, MetaStep
+from app.services.agent.core_agent.status_table import set_cancelled, set_failed
 from app.services.agent.types import AgentStatus
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.react_sse_wrapper.chat_stream import save_execution_steps_to_db
@@ -203,8 +204,10 @@ async def run_sse_stream(
         get_prompt_logger().log_step_yield(final_dict, round_number=final_dict.get('step', 0))
         yield format_agent_sse(final_dict)
         if agent is not None:
-            # 【Bug17修复】CancelledError应设CANCELLED而非COMPLETED — chendyg 2026-06-26
-            agent.set_cancelled()
+            try:
+                set_cancelled(agent)
+            except ValueError:
+                pass
 
     except Exception as e:
         end_type = "error"
@@ -219,7 +222,10 @@ async def run_sse_stream(
         current_execution_steps.append(final_step.to_dict())
         yield format_agent_sse(final_step.to_dict())
         if agent is not None:
-            agent.set_failed(str(e)[:200])
+            try:
+                set_failed(agent, str(e)[:200])
+            except ValueError:
+                pass
 
     finally:
         # 从agent.status推导end_type
@@ -228,6 +234,7 @@ async def run_sse_stream(
                 AgentStatus.COMPLETED: "final",
                 AgentStatus.FAILED: "failed",
                 AgentStatus.CANCELLED: "interrupted",
+                AgentStatus.SUSPENDED: "failed",
             }
             end_type = _m.get(agent.status, "unknown")
 

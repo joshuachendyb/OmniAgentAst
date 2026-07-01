@@ -26,8 +26,7 @@ class StepEmitter:
         return step
 
     def exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> 'ReasoningStep':
-        """创建error_step,设FAILED,返回Step对象 — 小欧 2026-06-28 终态统一走set_failed"""
-        self.agent.set_failed(error_message)
+        """创建error_step,返回Step对象 — chendyg 2026-07-01: 不设状态，只创建 ErrorStep"""
         error_step = ErrorStep(
             step=step_count,
             error_type=error_type,

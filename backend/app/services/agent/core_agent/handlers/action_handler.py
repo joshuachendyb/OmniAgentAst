@@ -64,7 +64,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                     error_type="blocked",
                     error_message=safety_result.message
                 ))
-                agent.set_failed(f"安全检查blocked: {safety_result.message}")
+                # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态
                 return
 
             if safety_result.requires_confirmation:
@@ -93,7 +93,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                         error_type="user_rejected",
                         error_message=f"用户拒绝执行工具: {_cn}"
                     ))
-                    agent.set_failed(f"用户拒绝执行工具: {_cn}")
+                    # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态
                     return
 
 
@@ -370,7 +370,7 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
 
     if not tool_name:
         logger.warning(f"[handle_action] tool_name为空, parsed={parsed}")
-        agent.set_failed("LLM返回的action中tool_name为空")
+        # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态
         yield agent._step_emitter.emit(ErrorStep(
             step=step, error_type="invalid_action",
             error_message="LLM返回的action中tool_name为空",
@@ -385,9 +385,12 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
         reasoning=parsed.get("reasoning", ""),
     ))
 
+    _has_error = False
     async for event in check_safety_and_confirm(agent, all_calls, step):
+        if getattr(event, 'type', None) == 'error':
+            _has_error = True
         yield event
-    if agent.status == AgentStatus.FAILED:
+    if _has_error:
         return
 
     results = await execute_tools(agent, all_calls, is_parallel, tool_name, tool_params)
@@ -412,4 +415,4 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
             step=step, response=_status.get("message", ""),
             thought=parsed.get("thought", ""),
         ))
-        agent.set_completed()
+        # chendyg 2026-07-01: 删set_completed，_dispatch_handler从FinalStep推断状态

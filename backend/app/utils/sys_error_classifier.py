@@ -125,6 +125,17 @@ class SystemErrorClassifier:
         if category:
             return category
         
+        # 1b. 检查httpx网络/超时异常 — chendyg 2026-07-01
+        try:
+            import httpx
+            if isinstance(error, (httpx.TimeoutException, httpx.NetworkError)):
+                return SystemErrorCategory.SERVER
+        except ImportError:
+            error_type_name = type(error).__name__
+            if error_type_name in ("ReadTimeout", "ConnectTimeout", "WriteTimeout", "PoolTimeout",
+                                    "ConnectError", "ReadError", "WriteError", "CloseError"):
+                return SystemErrorCategory.SERVER
+        
         # 2. 检查HTTP状态码错误
         category = SystemErrorClassifier._check_http_status_errors(error_msg)
         if category:
