@@ -8,6 +8,9 @@ Author: 小沈 - 2026-06-14
 """
 import os
 import platform
+import shutil
+import subprocess
+from typing import Optional
 
 from app.utils.logger import logger
 
@@ -54,6 +57,46 @@ _ALWAYS_RULES = """【路径规则】
 - ❌ 中文路径禁止翻译或转换!
 
 """
+
+
+_POWERSHELL_VERSION: Optional[str] = None
+_PWSH_VERSION: Optional[str] = None
+
+
+def get_powershell_version() -> str:
+    """检测 Windows PowerShell 5.1 版本号（带缓存）— 小沈 2026-07-01"""
+    global _POWERSHELL_VERSION
+    if _POWERSHELL_VERSION is not None:
+        return _POWERSHELL_VERSION
+    try:
+        r = subprocess.run(
+            ['powershell.exe', '-NoLogo', '-Command', '$PSVersionTable.PSVersion.ToString()'],
+            capture_output=True, text=True, timeout=5
+        )
+        _POWERSHELL_VERSION = r.stdout.strip() or "5.1"
+    except Exception:
+        _POWERSHELL_VERSION = "5.1"
+    return _POWERSHELL_VERSION
+
+
+def get_pwsh_version() -> str:
+    """检测 pwsh.exe (PS 7+) 版本号（带缓存）— 小沈 2026-07-01"""
+    global _PWSH_VERSION
+    if _PWSH_VERSION is not None:
+        return _PWSH_VERSION
+    pwsh = shutil.which("pwsh.exe")
+    if not pwsh:
+        _PWSH_VERSION = ""
+        return _PWSH_VERSION
+    try:
+        r = subprocess.run(
+            [pwsh, '-NoLogo', '-Command', '$PSVersionTable.PSVersion.ToString()'],
+            capture_output=True, text=True, timeout=5
+        )
+        _PWSH_VERSION = r.stdout.strip()
+    except Exception:
+        _PWSH_VERSION = ""
+    return _PWSH_VERSION
 
 
 def get_system_prompt() -> str:

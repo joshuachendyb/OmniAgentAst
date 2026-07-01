@@ -70,7 +70,7 @@ class PromptBuilder:
 
 """
 
-    TOOL_CALL_RULES = """
+    _TOOL_CALL_RULES_BASE = """
 【文本工具】(.txt .py .js .ts .java .go .c .cpp .rs .rb .swift .kt .html .css .scss .less .md .log .cfg .conf .sh .bat .ps1)
 - 读 → 必须用read_text_file
 - 写 → 必须用write_text_file
@@ -88,6 +88,24 @@ class PromptBuilder:
 - 读 → 必须用read_media_file，禁止用read_text_file和office文档读取工具比.
 
  """
+
+    @property
+    def TOOL_CALL_RULES(self) -> str:
+        """工具调用规则 + Shell运行环境 — 小沈 2026-07-01"""
+        from app.services.prompts.system_adapter import get_powershell_version, get_pwsh_version
+        ps_ver = get_powershell_version()
+        pwsh_ver = get_pwsh_version()
+        pwsh_line = f"pwsh.exe {pwsh_ver} 已安装" if pwsh_ver else "pwsh.exe 未安装"
+        shell_rules = f"""
+【Shell 运行环境】
+- 默认 Shell: Windows PowerShell {ps_ver} (powershell.exe)
+- {pwsh_line}
+- 不支持 PS7+ 语法: ?. ?? ??= 三元运算符 Get-ComputerInfo Join-String
+- findstr 查找无匹配时 exit code=1 (正常行为,非错误)
+- PowerShell 管道变量用 $_.Property 形式,注意下划线不要遗漏
+
+"""
+        return self._TOOL_CALL_RULES_BASE + shell_rules
 
     def _get_system_info(self) -> str:
         """获取系统信息 — P0-2修复 2026-06-23 小欧: 删除冗余日志(完整prompt已在initialize_run_state记录)"""
