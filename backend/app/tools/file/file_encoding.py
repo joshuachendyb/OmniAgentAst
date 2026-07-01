@@ -24,13 +24,27 @@ def get_file_encoding(file_path: str) -> Dict[str, Any]:
         common_encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin-1']
         with open(file_path, 'rb') as f:
             raw_data = f.read(10000)
+        first_success = None
         for encoding in common_encodings:
             try:
                 raw_data.decode(encoding)
-                return {"data": {"encoding": encoding, "confidence": 0.9}}
+                first_success = encoding
+                break
             except UnicodeDecodeError:
                 continue
-        return {"data": {"encoding": "utf-8", "confidence": 0.5}}
+        if first_success is None:
+            return {"data": {"encoding": "utf-8", "confidence": 0.5}}
+        if first_success == 'utf-8':
+            try:
+                gbk_decoded = raw_data.decode('gbk')
+                utf8_decoded = raw_data.decode('utf-8')
+                cjk_gbk = sum(1 for c in gbk_decoded if '\u4e00' <= c <= '\u9fff')
+                cjk_utf8 = sum(1 for c in utf8_decoded if '\u4e00' <= c <= '\u9fff')
+                if cjk_gbk > cjk_utf8:
+                    return {"data": {"encoding": "gbk", "confidence": 0.85}}
+            except UnicodeDecodeError:
+                pass
+        return {"data": {"encoding": first_success, "confidence": 0.9}}
     except OSError:
         logger.warning(f"[file_encoding] 文件访问失败: {file_path}")
         return {"data": {"encoding": "utf-8", "confidence": 0.5}}

@@ -17,6 +17,7 @@ import threading
 import time as _time_mod
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from app.tools.tool_response import build_success, build_error, build_warning
@@ -80,6 +81,47 @@ def _translate_powershell_operators(command: str) -> str:
                 next_op = pos
         result = result[:idx + len(marker) + next_op] + ' }' + result[idx + len(marker) + next_op:]
     return result
+
+
+def _convert_redirect_to_utf8(command: str, cwd: Optional[str] = None) -> None:
+    """Shell >重定向输出文件自动转为UTF-8 — 北京老陈 2026-06-30
+    仅处理简单重定向 command > path，不处理 >> 或复杂路径"""
+    target = _parse_redirect_path(command, cwd)
+    if not target or not target.exists() or not target.is_file():
+        return
+    if target.stat().st_size > 1048576:
+        return
+    from app.tools.file.file_encoding import get_file_encoding
+    result = get_file_encoding(str(target))
+    encoding = result.get("data", {}).get("encoding", "") if result else ""
+    if encoding in ("", "utf-8", "utf-8-sig", "ascii"):
+        return
+    try:
+        with open(target, 'r', encoding=encoding, errors='replace') as f:
+            content = f.read()
+        with open(target, 'w', encoding='utf-8') as f:
+            f.write(content)
+        logger.info(f"[Shell] >重定向文件自动转UTF-8: {target} (原编码:{encoding})")
+    except Exception as e:
+        logger.warning(f"[Shell] >重定向文件转UTF-8失败: {target}: {e}")
+
+
+def _parse_redirect_path(command: str, cwd: Optional[str] = None) -> Optional[Path]:
+    """解析Shell命令中 >重定向的目标文件路径 — 北京老陈 2026-06-30
+    仅处理 command > path（无空格、无引号的简单路径）"""
+    import re
+    cleaned = re.sub(r'["\'][^"\']*["\']', '', command)
+    m = re.search(r'(?<![<>])>(?!>)\s*(\S+)', cleaned)
+    if not m:
+        return None
+    path_str = m.group(1)
+    if '?' in path_str or '*' in path_str or '|' in path_str:
+        return None
+    p = Path(path_str)
+    if not p.is_absolute():
+        base = Path(cwd) if cwd else Path.cwd()
+        p = base / p
+    return p
 
 
 def _build_execute_shell_command_llm_data(
@@ -259,6 +301,9 @@ def execute_shell_command(
         stdout_str = _decode_bytes_safe(stdout_bytes)
         stderr_str = _decode_bytes_safe(stderr_bytes)
         returncode = proc.returncode if proc.returncode is not None else -1
+
+        if returncode == 0 and '>' in command:
+            _convert_redirect_to_utf8(command, cwd)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         result = _build_shell_result(returncode, stdout_str, stderr_str, timed_out, timeout=timeout, shell_type=shell_type, duration_ms=duration_ms)

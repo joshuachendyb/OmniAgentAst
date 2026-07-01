@@ -175,6 +175,8 @@ async def chat_stream(request: ChatRequest):
                         yield cancelled_sse
                         break
                     yield sse_chunk
+                else:
+                    prompt_logger.mark_completed()
             finally:
                 cancel_event.set()
                 poller_task.cancel()
@@ -186,6 +188,7 @@ async def chat_stream(request: ChatRequest):
 
         except Exception as e:
             logger.error(f"[chat_stream] Error: {e}", exc_info=True)
+            prompt_logger.mark_error(str(e))
             yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
         finally:
             await task_cleanup(task_id, state.llm_call_count)

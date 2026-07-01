@@ -49,7 +49,10 @@ def _try_fix_incomplete_json(json_str: str) -> Optional[Dict]:
     
     for fixed in fixes:
         try:
-            return _json.loads(fixed)
+            result = _json.loads(fixed)
+            if isinstance(result, dict) and len(result) == 0 and len(s) < 4:
+                continue
+            return result
         except _json.JSONDecodeError:
             continue
     
@@ -297,7 +300,8 @@ class BaseAIService:
                 if self._should_retry(e) and attempt < max_retries:
                     wait_time = min(0.5 * (2 ** (attempt + 1)), 10)
                     logger.warning(f"[Retry][L1] 重试 {attempt+1}/{max_retries}, "
-                                   f"等待{wait_time:.1f}s, 错误: {e}")
+                                   f"等待{wait_time:.1f}s, "
+                                   f"错误: [{type(e).__name__}] {e} (args={e.args})")
                     await asyncio.sleep(wait_time)
                     continue
                 else:

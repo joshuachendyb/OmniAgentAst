@@ -22,6 +22,23 @@ from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 
 
+def _looks_like_mojibake(content: str, file_path: str = "") -> bool:
+    """检测内容是否可能是编码错误造成的乱码 — 小欧 2026-06-30
+    GBK字节被误读为UTF-8时，内容中CJK字符极少、Latin-1补充字符极多
+    北京老陈 2026-06-30: 文件路径或内容中无中文时不检测，避免误判法文/德文"""
+    if not content or len(content) < 10:
+        return False
+    has_cjk = any('\u4e00' <= c <= '\u9fff' for c in file_path)
+    has_cjk = has_cjk or any('\u4e00' <= c <= '\u9fff' for c in content[:100])
+    if not has_cjk:
+        return False
+    total = len(content)
+    cjk = sum(1 for c in content if '\u4e00' <= c <= '\u9fff')
+    latin1_supp = sum(1 for c in content if '\u0080' <= c <= '\u00ff')
+    if cjk / total < 0.05 and latin1_supp / total > 0.30:
+        return True
+    return False
+
 
 async def _try_read_file_with_encodings(
     path: Path,
@@ -65,7 +82,10 @@ async def _try_read_file_with_encodings(
                     # �数量较多且占比高，认为是编码错误
                     if replacement_count >= 3 and replacement_ratio > 0.03:
                         continue  # 编码不对，尝试下一个
-                
+
+                if _looks_like_mojibake(content, str(path)):
+                    continue
+
                 return content, enc, None
             except Exception:
                 continue

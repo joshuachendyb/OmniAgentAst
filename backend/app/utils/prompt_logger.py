@@ -72,6 +72,7 @@ class PromptLogger:
                 "用户消息ID": user_message_id,
                 "AI消息ID": None,
                 "用户消息": user_message,
+                "状态": "处理中",
             },
             "Prompt组装过程": [],
             "LLM调用记录": []
@@ -217,12 +218,16 @@ class PromptLogger:
         for i, msg in enumerate(messages):
             role = msg.get("role", "unknown")
             content = msg.get("content") or ""
-            message_summaries.append({
+            summary = {
                 "序号": i + 1,
                 "角色": role,
                 "内容长度": len(content),
                 "内容摘要": content[:200] + "..." if len(content) > 200 else content
-            })
+            }
+            if role == "assistant" and msg.get("tool_calls"):
+                tc_names = [tc.get("function", {}).get("name", "?") for tc in msg["tool_calls"]]
+                summary["工具调用"] = tc_names
+            message_summaries.append(summary)
         
         # 记录工具定义(完整 JSON Schema) — 小欧 2026-06-19
         # 注意:工具描述有2层——function.description(register.py)和parameters.description(Pydantic class docstring)
@@ -414,13 +419,33 @@ class PromptLogger:
         
         current_log["Prompt组装过程"].append(entry)
     
+    def mark_completed(self):
+        """标记请求已完成 — 小欧 2026-06-30"""
+        current_log = self._get_current_log()
+        if current_log:
+            current_log["基本信息"]["状态"] = "已完成"
+
+    def mark_error(self, error_msg: str):
+        """标记请求异常终止 — 小欧 2026-06-30"""
+        current_log = self._get_current_log()
+        if current_log:
+            current_log["基本信息"]["状态"] = "异常终止"
+            current_log["基本信息"]["错误信息"] = error_msg
+
     def save(self):
         """保存日志到文件 — 文件名用ai_message_id生成 — 小欧 2026-06-23"""
         current_log = self._get_current_log()
         if not current_log:
             logger.warning("[PromptLogger] 保存失败:没有当前日志数据")
             return
-        
+
+        status = current_log["基本信息"].get("状态", "处理中")
+        if status == "处理中":
+            if current_log.get("LLM调用记录"):
+                current_log["基本信息"]["状态"] = "已完成"
+            else:
+                current_log["基本信息"]["状态"] = "异常终止"
+
         # 从日志数据中取ai_message_id,生成最终文件名
         ai_id = current_log["基本信息"].get("AI消息ID")
         if ai_id:

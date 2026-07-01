@@ -18,6 +18,9 @@ from app.utils.prompt_logger import get_prompt_logger
 
 def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent):
     """构建action类型响应 — 小欧 2026-06-25 抽取_log_llm_response"""
+    for tc in tool_calls_result:
+        if "tool_params" in tc and tc["tool_params"] is None:
+            logger.warning(f"[FC] LLM生成残缺tool_call: {tc.get('tool_name', '?')} tool_params为None, 由工具层降级校验")
     first = tool_calls_result[0]
     built_tool_calls = []
     for tc in tool_calls_result:
