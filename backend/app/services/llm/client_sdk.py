@@ -145,6 +145,7 @@ class LLMClient:
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
         stream_options: Optional[Dict] = None,
+        request_timeout: Optional[int] = None,
     ) -> AsyncGenerator[str, None]:
         """流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小健 2026-06-17 新增stream_options"""
         body = _build_request_body(
@@ -153,7 +154,8 @@ class LLMClient:
             tools=tools, tool_choice=tool_choice, stream=True,
             stream_options=stream_options,
         )
-        async with self._client.stream("POST", "/chat/completions", json=body) as response:
+        _timeout = float(request_timeout) if request_timeout is not None else None
+        async with self._client.stream("POST", "/chat/completions", json=body, timeout=_timeout) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
                 if line.startswith("data: "):

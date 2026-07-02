@@ -155,6 +155,7 @@ class BaseAIService:
         stream_options = LLM_STREAM_OPTIONS
 
         while retry_count <= max_retries:
+            effective_timeout = self.timeout + (retry_count + 1) * 20
             try:
                 tool_call_accumulator = {}
                 raw_data_buf: list = []
@@ -167,6 +168,7 @@ class BaseAIService:
                     temperature=self.temperature,
                     seed=self.seed,
                     stream_options=stream_options,
+                    request_timeout=effective_timeout,
                 ):
                     if await self._check_stop():
                         yield create_cancelled_chunk(self.model)
