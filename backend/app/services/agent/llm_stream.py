@@ -62,6 +62,11 @@ def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_r
     )
 
 
+def _format_fc_error(e: "FCFormatError") -> str:
+    """格式化FC错误为前端友好信息 — 小欧 2026-07-02"""
+    return f"解析失败: {e.message}"
+
+
 def _yield_error_response(error_msg: str, agent):
     """统一错误响应构建 — 小健 2026-06-18 DRY提取"""
     # 【E-4修复】返回type:error,DispatchHandler的error分支处理 — 小欧 2026-06-28
@@ -180,6 +185,8 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
             async for item in call_llm_stream(agent, messages, openai_tools=None):
                 yield item
         except FCFormatError as e:
-            yield _yield_error_response(f"FC降级后仍解析失败: {e}", agent)
+            error_msg = _format_fc_error(e)
+            logger.error(f"[FC降级] {error_msg}", exc_info=True)
+            yield _yield_error_response(error_msg, agent)
     else:
-        yield _yield_error_response(f"FC模式失败: {last_error}", agent)
+        yield _yield_error_response(_format_fc_error(last_error), agent)
