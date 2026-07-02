@@ -10,12 +10,14 @@
 【小沈 2026-05-29】重命名:safe_parse_json → parse_json(符合命名规范)
 【小沈 2026-05-30】移除:safe_truncate → 移至 agent/tool_result_formatter.py 内部(唯一消费者)
 【小沈 2026-06-08】新增:raise_on_error参数，统一所有JSON解析场景
+【小沈 2026-07-02】迁移:_try_fix_incomplete_json,_normalize_tool_params从base_service.py迁入(集中JSON解析函数)
 
 Author: 小健 - 2026-05-28
 """
 
+import ast
 import json
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 
 def parse_json(json_str: Optional[str], label: str = "", raise_on_error: bool = False) -> Any:
@@ -91,8 +93,74 @@ def read_json_file(file_path: str, label: str = "", raise_on_error: bool = False
         return None
 
 
+def _try_fix_incomplete_json(json_str: str) -> Optional[Dict]:
+    """
+    尝试修复不完整/非标准JSON字符串 — 小沈 2026-07-02
+
+    常见问题:
+    1. 缺少右引号或右括号
+    2. 反斜杠未转义
+    3. 单引号Python dict格式(LLM受prompt中Python dict影响)
+
+    返回: 解析成功的dict或None
+    """
+    if not json_str or not json_str.strip().startswith('{'):
+        return None
+
+    s = json_str.strip()
+
+    # 第1步: ast.literal_eval处理Python dict格式(单引号/True/False/None等)
+    try:
+        result = ast.literal_eval(s)
+        if isinstance(result, dict):
+            return result
+    except (ValueError, SyntaxError, MemoryError):
+        pass
+
+    # 第2步: 原有JSON修补策略(缺少括号/引号)
+    fixes = [
+        s,
+        s + '"}',
+        s + '}',
+        s + '"',
+        s.replace('\\\\', '\\') + '"}',
+        s.replace('\\\\', '\\') + '}',
+    ]
+
+    for fixed in fixes:
+        try:
+            result = json.loads(fixed)
+            if isinstance(result, dict) and len(result) == 0 and len(s) < 4:
+                continue
+            return result
+        except json.JSONDecodeError:
+            continue
+
+    return None
+
+
+def _normalize_tool_params(params: Any) -> Any:
+    """递归归一化tool params — 修复LLM双倍编码: 字符串形式的JSON array/object还
+    原为真实类型. 在 json.loads(arguments)之后调用,对后续所有工具无感生效 - 小沈 2026-06-14"""
+    if isinstance(params, dict):
+        return {k: _normalize_tool_params(v) for k, v in params.items()}
+    if isinstance(params, list):
+        return [_normalize_tool_params(item) for item in params]
+    if isinstance(params, str) and params.strip():
+        s = params.strip()
+        if s.startswith('[') or s.startswith('{'):
+            try:
+                parsed = json.loads(s)
+                return _normalize_tool_params(parsed)
+            except json.JSONDecodeError:
+                pass
+    return params
+
+
 __all__ = [
     "parse_json",
     "coerce_json",
     "read_json_file",
+    "_try_fix_incomplete_json",
+    "_normalize_tool_params",
 ]

@@ -6,14 +6,13 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 """
 
 import asyncio
-import ast
 import json as _json
 import traceback
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 
 import httpx
 from app.utils.logger import logger
-from app.utils.json_utils import parse_json
+from app.utils.json_utils import parse_json, _try_fix_incomplete_json, _normalize_tool_params
 from app.services.llm.core import ChatResponse, FCFormatError, StreamChunk, _resolve_exception
 from app.services.llm.llm_constants import LLM_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS, LLM_TEMPERATURE
 from app.services.llm.stream_parser import create_cancelled_chunk
@@ -22,70 +21,6 @@ from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chu
 from app.utils.sys_error_classifier import SystemErrorClassifier
 
 from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
-
-
-def _try_fix_incomplete_json(json_str: str) -> Optional[Dict]:
-    """
-    尝试修复不完整/非标准JSON字符串 — 小沈 2026-07-02
-    
-    常见问题:
-    1. 缺少右引号或右括号
-    2. 反斜杠未转义
-    3. 单引号Python dict格式(LLM受prompt中Python dict影响)
-    
-    返回: 解析成功的dict或None
-    """
-    if not json_str or not json_str.strip().startswith('{'):
-        return None
-    
-    s = json_str.strip()
-    
-    # 第1步: ast.literal_eval处理Python dict格式(单引号/True/False/None等)
-    try:
-        result = ast.literal_eval(s)
-        if isinstance(result, dict):
-            return result
-    except (ValueError, SyntaxError, MemoryError):
-        pass
-    
-    # 第2步: 原有JSON修补策略(缺少括号/引号)
-    fixes = [
-        s,
-        s + '"}',
-        s + '}',
-        s + '"',
-        s.replace('\\\\', '\\') + '"}',
-        s.replace('\\\\', '\\') + '}',
-    ]
-    
-    for fixed in fixes:
-        try:
-            result = _json.loads(fixed)
-            if isinstance(result, dict) and len(result) == 0 and len(s) < 4:
-                continue
-            return result
-        except _json.JSONDecodeError:
-            continue
-    
-    return None
-
-
-def _normalize_tool_params(params: Any) -> Any:
-    """递归归一化tool params — 修复LLM双倍编码: 字符串形式的JSON array/object还
-    原为真实类型. 在 _json.loads(arguments)之后调用,对后续所有工具无感生效 - 小沈 2026-06-14"""
-    if isinstance(params, dict):
-        return {k: _normalize_tool_params(v) for k, v in params.items()}
-    if isinstance(params, list):
-        return [_normalize_tool_params(item) for item in params]
-    if isinstance(params, str) and params.strip():
-        s = params.strip()
-        if s.startswith('[') or s.startswith('{'):
-            try:
-                parsed = _json.loads(s)
-                return _normalize_tool_params(parsed)
-            except _json.JSONDecodeError:
-                pass
-    return params
 
 
 class BaseAIService:

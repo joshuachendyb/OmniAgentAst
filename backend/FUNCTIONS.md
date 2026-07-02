@@ -44,7 +44,10 @@
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `parse_json` | 解析JSON字符串 | json_str, label, raise_on_error | 解析结果或None |
+| `coerce_json` | **【v0.16.3新增】** 若值为JSON字符串则解析为dict/list，否则原样返回 | value: Any | Any |
 | `read_json_file` | **【v1.4新增】** 读取JSON文件 | file_path, label, raise_on_error | 解析结果或None |
+| `_try_fix_incomplete_json` | **【v1.5新增】** 修复不完整/非标准JSON字符串(缺括号/单引号Python dict) | json_str: str | Optional[Dict] |
+| `_normalize_tool_params` | **【v1.5新增】** 递归归一化tool params，修复LLM双倍编码字符串→还原为list/dict（从llm层迁入） | params: Any | Any |
 
 ### 1.4 响应工具（response_utils.py）【v0.13.33新增】
 
@@ -147,9 +150,7 @@
 
 ## 四、LLM核心层（app/services/llm_core/）
 
-| 函数名 | 功能 | 参数 | 返回值 |
-|--------|------|------|--------|
-| `_normalize_tool_params` | **【v0.16.3新增】** 递归归一化tool params，修复LLM双倍编码字符串→还原为list/dict | params: Any | Any |
+> `_normalize_tool_params` 已于 v1.5 迁至 `json_utils.py`（集中JSON解析函数）
 
 ---
 
@@ -186,6 +187,8 @@ def my_parse_json(json_str):
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v1.5 | 2026-07-02 | _try_fix_incomplete_json新增,_normalize_tool_params从llm_core迁入json_utils.py | 小沈 |
+| v1.4 | 2026-06-17 | 新增read_json_file函数 | 小沈 |
 | v1.3 | 2026-06-14 | 新增llm_core层_normalize_tool_params函数 | 小沈 |
 | v1.2 | 2026-06-13 | 新增test_marker.py测试标记工具 | 小沈 |
 | v1.1 | 2026-06-09 15:45:00 | 新增extract_data_summary函数 | 小沈 |

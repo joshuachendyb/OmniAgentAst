@@ -1,3 +1,17 @@
+v0.17.18
+更新时间: 2026-07-02 10:48:22
+## v0.17.17→v0.17.18 变更汇总 - 小欧-2026-07-02
+
+### refactor: 代码重构(3项)
+- json_utils集中_try_fix_incomplete_json和_normalize_tool_params，增强Python单引号dict解析
+- base_service.py删除两个函数定义，改为从json_utils导入
+- FUNCTIONS.md更新函数清单(新增coerce_json,_try_fix_incomplete_json；_normalize_tool_params迁入)
+
+### 合计
+- refactor: 3项
+
+---
+
 v0.17.17
 更新时间: 2026-07-01 21:55:52
 ## v0.17.16→v0.17.17 变更汇总 - 小欧-2026-07-01
