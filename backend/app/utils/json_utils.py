@@ -130,7 +130,8 @@ def _try_fix_incomplete_json(json_str: str) -> Optional[Dict]:
     for fixed in fixes:
         try:
             result = json.loads(fixed)
-            if isinstance(result, dict) and len(result) == 0 and len(s.strip()) == 0:
+            # 补出 {} 但原始串无冒号 → 连 key 都没写过 → 空壳误修，跳过 — 小欧 2026-07-02
+            if isinstance(result, dict) and len(result) == 0 and ":" not in s:
                 continue
             return result
         except json.JSONDecodeError:

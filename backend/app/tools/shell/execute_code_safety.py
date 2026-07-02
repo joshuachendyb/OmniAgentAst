@@ -74,9 +74,9 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
         "allow": False,
     },
 
-    # ===== compile ===== 小欧-2026-06-27 修复：标记为HIGH风险
+    # ===== compile ===== 小欧-2026-07-02 修复：排除 module.compile() 误杀
     {
-        "pattern": r"compile\s*\(",
+        "pattern": r"(?<!\.)compile\s*\(",
         "risk": RiskLevel.HIGH,
         "desc": "compile编译任意代码（代码注入风险）",
         "allow": False,
@@ -84,13 +84,13 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
 
     # ===== 用户输入变量 + 危险函数组合 → HIGH =====
     {
-        "pattern": r"eval\s*\([^)]*?(?:input|sys\.argv|os\.getenv|os\.environ)",
+        "pattern": r"(?<!\.)eval\s*\([^)]*?(?:input|sys\.argv|os\.getenv|os\.environ)",
         "risk": RiskLevel.HIGH,
         "desc": "eval用户输入（代码注入风险）",
         "allow": False,
     },
     {
-        "pattern": r"exec\s*\([^)]*?(?:input|sys\.argv|os\.getenv|os\.environ)",
+        "pattern": r"(?<!\.)exec\s*\([^)]*?(?:input|sys\.argv|os\.getenv|os\.environ)",
         "risk": RiskLevel.HIGH,
         "desc": "exec用户输入（代码注入风险）",
         "allow": False,
