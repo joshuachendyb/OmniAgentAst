@@ -6,6 +6,7 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 """
 
 import asyncio
+import ast
 import json as _json
 import traceback
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
@@ -25,11 +26,12 @@ from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
 def _try_fix_incomplete_json(json_str: str) -> Optional[Dict]:
     """
-    尝试修复不完整的JSON字符串 — 小沈 2026-06-27
+    尝试修复不完整/非标准JSON字符串 — 小沈 2026-07-02
     
     常见问题:
     1. 缺少右引号或右括号
     2. 反斜杠未转义
+    3. 单引号Python dict格式(LLM受prompt中Python dict影响)
     
     返回: 解析成功的dict或None
     """
@@ -38,6 +40,15 @@ def _try_fix_incomplete_json(json_str: str) -> Optional[Dict]:
     
     s = json_str.strip()
     
+    # 第1步: ast.literal_eval处理Python dict格式(单引号/True/False/None等)
+    try:
+        result = ast.literal_eval(s)
+        if isinstance(result, dict):
+            return result
+    except (ValueError, SyntaxError, MemoryError):
+        pass
+    
+    # 第2步: 原有JSON修补策略(缺少括号/引号)
     fixes = [
         s,
         s + '"}',

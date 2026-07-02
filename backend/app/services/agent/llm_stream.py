@@ -174,7 +174,10 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
 
     if FC_FALLBACK_ENABLED:
         logger.warning(f"[FC降级] FC模式{FC_MAX_RETRIES}次重试均失败，降级到Text模式")
-        async for item in call_llm_stream(agent, messages, openai_tools=None):
-            yield item
+        try:
+            async for item in call_llm_stream(agent, messages, openai_tools=None):
+                yield item
+        except FCFormatError as e:
+            yield _yield_error_response(f"FC降级后仍解析失败: {e}", agent)
     else:
         yield _yield_error_response(f"FC模式失败: {last_error}", agent)
