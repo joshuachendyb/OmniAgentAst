@@ -26,13 +26,13 @@ RISK_CHECK_RULES: List[Dict[str, Any]] = [
         "allow": True,
     },
     {
-        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(\s*\[[^\]]*?(rm|del|format|shutdown|reboot)",
+        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(\s*\[[^\]]*?\b(rm|del|format|shutdown|reboot)\b",
         "risk": RiskLevel.HIGH,
         "desc": "执行危险系统命令（列表形式）",
         "allow": False,
     },
     {
-        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(\s*[\'\"].*?(rm|del|format|shutdown|reboot).*?shell\s*=\s*True",
+        "pattern": r"subprocess\.(run|call|Popen|check_output)\s*\(\s*[\'\"].*?\b(rm|del|format|shutdown|reboot)\b.*?shell\s*=\s*True",
         "risk": RiskLevel.HIGH,
         "desc": "执行危险系统命令（shell=True+危险命令）",
         "allow": False,
@@ -209,7 +209,7 @@ _ALIAS_PATTERNS: Dict[str, List[tuple]] = {
          "通过别名调用subprocess执行子进程"),
         (r"{}\.(run|call|Popen|check_output)\s*\([^)]*?shell\s*=\s*True", RiskLevel.MEDIUM,
          "通过别名调用subprocess且shell=True"),
-        (r"{}\.(run|call|Popen|check_output)\s*\(\s*\[[^\]]*?(rm|del|format|shutdown|reboot)", RiskLevel.HIGH,
+        (r"{}\.(run|call|Popen|check_output)\s*\(\s*\[[^\]]*?\b(rm|del|format|shutdown|reboot)\b", RiskLevel.HIGH,
          "通过别名调用subprocess执行危险系统命令"),
     ],
     "os": [
