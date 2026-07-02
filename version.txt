@@ -1,30 +1,30 @@
-v0.17.19
-更新时间: 2026-07-02 11:58:31
-## v0.17.18→v0.17.19 变更汇总 - 小欧-2026-07-02
-
-### fix: 代码修复(1项)
-- 截断JSON参数自动修复({追加}) + warning注入LLM
-
-### refactor: 代码重构(1项)
-- FC降级错误统一用_format_fc_error(DRY)
-
-### 合计
-- fix: 1项
-- refactor: 1项
-
----
-
 v0.17.18
-更新时间: 2026-07-02 10:48:22
+更新时间: 2026-07-02 12:19:41
 ## v0.17.17→v0.17.18 变更汇总 - 小欧-2026-07-02
 
-### refactor: 代码重构(3项)
-- json_utils集中_try_fix_incomplete_json和_normalize_tool_params，增强Python单引号dict解析
-- base_service.py删除两个函数定义，改为从json_utils导入
-- FUNCTIONS.md更新函数清单(新增coerce_json,_try_fix_incomplete_json；_normalize_tool_params迁入)
+### fix: 代码修复(3项)
+- FC降级Text加异常保护 + JSON修复支持Python dict格式
+- 截断JSON参数自动修复({追加}) + warning注入LLM
+- 控制台打印去截断(60→全量显示)
+
+### refactor: 代码重构(4项)
+- json_utils集中_try_fix_incomplete_json和_normalize_tool_params+增强单引号解析+更新FUNCTIONS.md
+- message_builder+init_history+inject_bypass封装
+- llm_stream.py FC降级错误统一用_format_fc_error(DRY)
+- message_builder.py trim_history双条件独立裁剪
+
+### feat: 新功能(1项)
+- 优化系统提示词(分析计划铁律) + PPTX支持dict类型内容
+
+### perf: 性能优化(1项)
+- react_cycle+e2e_helpers 控制台log增强+Prompt日志E2E校验兼容状态变化记录
+
+### docs: 文档(2项)
+- version.txt v0.17.19变更汇总
+- doc-优化 两个Agent文档迁入doc-优化目录
 
 ### 合计
-- refactor: 3项
+- fix: 3项, refactor: 4项, feat: 1项, perf: 1项, docs: 2项
 
 ---
 
