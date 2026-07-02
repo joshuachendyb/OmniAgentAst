@@ -55,15 +55,7 @@ def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> No
             history_msgs.append({"role": "user", "content": msg["content"]})
         elif role == "system" and msg.get("content"):
             history_msgs.append({"role": "system", "content": msg["content"]})
-    if history_msgs and len(agent.message_builder.conversation_history) >= 2:
-        agent.message_builder.conversation_history = (
-            agent.message_builder.conversation_history[:1]
-            + history_msgs
-            + agent.message_builder.conversation_history[1:]
-        )
-    elif history_msgs:
-        agent.message_builder.conversation_history = history_msgs + agent.message_builder.conversation_history
-    # 裁剪统一在 _process_single_step 调用 — 小欧 2026-07-01
+    agent.message_builder.inject_history(history_msgs)
 
 
 def initialize_run_state(

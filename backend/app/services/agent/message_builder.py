@@ -76,10 +76,29 @@ class MessageBuilder:
         """初始化conversation_history — 替代base_react.py L368-369"""
         if not task_prompt or not task_prompt.strip():
             raise ValueError("task_prompt不能为空")
-        self.conversation_history = [
-            message_to_dict(SystemMessage(content=sys_prompt)),
-            message_to_dict(UserMessage(content=task_prompt)),
-        ]
+        self.conversation_history = []
+        self.add_system_message(sys_prompt)
+        self.add_user_message(task_prompt)
+
+    def inject_history(self, history_msgs: List[Dict]) -> None:
+        """注入多轮对话历史到 system 和 task 之间 — 小欧 2026-07-02
+
+        封装 history_msgs 插入 conversation_history 的列表操作：
+        - history >= 2：[:1] + history_msgs + [1:]（system 之后、task 之前插入）
+        - 否则：history_msgs + 现有（兜底追加）
+
+        不转换消息格式，调用方负责构建好 history_msgs（如去掉最后一条 user 避免与 task 重复）。
+        """
+        if not history_msgs:
+            return
+        if len(self.conversation_history) >= 2:
+            self.conversation_history = (
+                self.conversation_history[:1]
+                + history_msgs
+                + self.conversation_history[1:]
+            )
+        else:
+            self.conversation_history = history_msgs + self.conversation_history
 
     def _prepare_observation_text(self, observation_text: str) -> str:
         """归一化observation前缀"""
