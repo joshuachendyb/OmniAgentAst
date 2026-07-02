@@ -26,8 +26,7 @@ from app.services.agent.agent_utils.fc_message_types import (
     message_to_dict, dict_to_message,
 )
 
-_ROUND_CAP = 20             # 消息数触发裁剪阈值 — 小欧 2026-07-01
-_ROUND_TRIM_BUDGET = 30000  # 消息数触发时收紧预算 — 小欧 2026-07-01
+_MAX_ROUNDS = 20            # 最多保留20轮FC完整对 — 小欧 2026-07-02
 
 
 class MessageBuilder:
@@ -169,38 +168,48 @@ class MessageBuilder:
     # =========================================================================
 
     def trim_history(self) -> None:
-        """对话历史裁剪 — 唯一裁剪入口 — 小欧 2026-07-01
+        """对话历史裁剪 — 两个独立条件 — 小欧 2026-07-02
 
         裁剪策略:
-        - 触发条件: 字符 >160K 或 消息数 >_ROUND_CAP(20) 条，任一达标即触发
-        - 方法: _trim_to_budget 从后往前扫，保留最新 N 轮完整 FC 对
+        - 条件1(轮次太多): 消息数 >_MAX_ROUNDS(20)*2+2 → 只保留最近 _MAX_ROUNDS 轮完整FC对
+        - 条件2(字符太多): 字符 >160K → _trim_to_budget 按70%预算从旧到新裁
         - system+user 消息永保
         - 配对不完整的 FC 对由 _trim_fc_pairs 清理
         """
         total = self._total_chars(self.conversation_history)
         msg_count = len(self.conversation_history)
 
-        # 入口: 两个条件都不达标 → 不裁剪 — 小欧 2026-07-01 新增消息数条件
-        if total < self.MAX_CONTEXT_CHARS * 0.8 and msg_count <= _ROUND_CAP:
+        if msg_count <= 2:
             return
-        if len(self.conversation_history) <= 2:
+
+        # 两个条件都不达标 → 不裁剪
+        if total < self.MAX_CONTEXT_CHARS * 0.8 and msg_count <= _MAX_ROUNDS * 2 + 2:
             return
 
         system_msgs, user_msgs, obs_list, assistant_msgs = self._classify_messages()
-        always_keep_chars = self._total_chars(system_msgs) + self._total_chars(user_msgs)
-        available_budget = max(10000, int(self.MAX_CONTEXT_CHARS * 0.7) - always_keep_chars)
+        original_order = {id(m): i for i, m in enumerate(self.conversation_history)}
 
-        # 消息数触发时: 收紧预算 — 小欧 2026-07-01
-        if msg_count > _ROUND_CAP:
-            available_budget = min(available_budget, _ROUND_TRIM_BUDGET)
+        # 条件1: 轮次太多 → 保留最近 _MAX_ROUNDS 轮
+        if msg_count > _MAX_ROUNDS * 2 + 2:
+            all_fc = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
+            kept_fc = all_fc[-(_MAX_ROUNDS * 2):]
+            obs_list = [m for m in kept_fc if m.get("role") == "tool"]
+            assistant_msgs = [m for m in kept_fc if m.get("role") == "assistant"]
 
-        trimmed = self._trim_to_budget(obs_list, assistant_msgs, available_budget)
+        # 条件2: 字符太多 → 按预算裁(70%余量)
+        if total > self.MAX_CONTEXT_CHARS * 0.8:
+            always_keep_chars = self._total_chars(system_msgs) + self._total_chars(user_msgs)
+            available_budget = max(0, int(self.MAX_CONTEXT_CHARS * 0.7) - always_keep_chars)
+            trimmed = self._trim_to_budget(obs_list, assistant_msgs, available_budget)
+        else:
+            trimmed = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
+
         rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed)
         if rebuilt is not None:
             self.conversation_history = rebuilt
 
         logger.info(f"[trim_history] 裁剪: {msg_count}条({total} chars) "
-                    f"→ {len(rebuilt)}条(触发: {'消息数' if msg_count > _ROUND_CAP else '字符'})")
+                    f"→ {len(rebuilt)}条(触发: {'消息数' if msg_count > _MAX_ROUNDS * 2 + 2 else '字符'})")
 
     def _classify_messages(self):
         """将消息分类为 system / user / observation(tool) / assistant 四组 — 2026-06-25 小欧 D-1修复"""
