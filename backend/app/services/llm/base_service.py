@@ -211,8 +211,9 @@ class BaseAIService:
                                 logger.warning(f"[request_stream] tool_call '{tc['name']}' 参数JSON解析失败: {str(e)[:100]}, arguments前100字符: {args_str[:100]}")
                                 fixed_params = _try_fix_incomplete_json(args_str)
                                 if fixed_params is not None:
-                                    logger.info(f"[request_stream] JSON修复成功: {tc['name']}")
+                                    logger.warning(f"[request_stream] 参数截断修复: tool_call '{tc['name']}' 参数JSON不完整, 已自动修复为 {_json.dumps(fixed_params, ensure_ascii=False)}")
                                     params = _normalize_tool_params(fixed_params)
+                                    tc["_repair_warning"] = f"[Warning: LLM返回的'{tc['name']}' tool_call参数不完整(截断位置: {args_str[:20]}...),已自动修复为 {_json.dumps(params, ensure_ascii=False)}]"
                                 else:
                                     failed_parses.append(tc["name"])
                                     continue
@@ -220,6 +221,7 @@ class BaseAIService:
                                 "tool_name": tc["name"],
                                 "tool_params": params,
                                 "tool_call_id": tc.get("id"),
+                                "_repair_warning": tc.get("_repair_warning", ""),
                                 "tool_calls": [{
                                     "id": tc.get("id"),
                                     "type": "function",

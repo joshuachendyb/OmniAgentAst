@@ -33,6 +33,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
         _pending_calls.append({
             "tool_name": tc.get("tool_name", ""), "tool_params": tc.get("tool_params") or {},
             "_tool_call_id": tc.get("tool_call_id") or "",
+            "_repair_warning": tc.get("_repair_warning", ""),
         })
 
     logger.info(f"[FC] LLM原始响应(action): tool={first.get('tool_name','?')}, parallel={len(_pending_calls)}")
@@ -45,6 +46,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
         "_pending_calls": _pending_calls, "tool_name": first.get("tool_name", ""),
         "tool_params": first.get("tool_params") or {}, "tool_call_id": first.get("tool_call_id") or "",
         "tool_calls": first.get("tool_calls", []),
+        "_repair_warning": first.get("_repair_warning", ""),
     })
 
 

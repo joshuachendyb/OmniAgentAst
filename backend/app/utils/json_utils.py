@@ -130,7 +130,7 @@ def _try_fix_incomplete_json(json_str: str) -> Optional[Dict]:
     for fixed in fixes:
         try:
             result = json.loads(fixed)
-            if isinstance(result, dict) and len(result) == 0 and len(s) < 4:
+            if isinstance(result, dict) and len(result) == 0 and len(s.strip()) == 0:
                 continue
             return result
         except json.JSONDecodeError:

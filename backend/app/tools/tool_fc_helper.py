@@ -11,7 +11,7 @@ Tool函数公共辅助代码 — 纯逻辑函数集合
   - date_helper.py: parse_datetime_any, parse_datetime_string, is_holiday, calc_next_n_workday, get_holiday_date_by_name, resolve_timezone
   - shell_helper.py: _check_shell_injection, _read_stream_nonblocking
   - db_helper.py: check_db_exists
-  - content_validation.py: validate_json_content, validate_csv_content, validate_xml_content, validate_html_content, validate_python_content
+   - content_validation.py: validate_csv_content, validate_xml_content, validate_html_content, validate_python_content
 """
 # 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -37,7 +37,7 @@ import pandas as pd
 
 from app.tools.tool_constants import QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
 from app.utils.common_patterns import UTC_OFFSET_PATTERN
-from app.utils.json_utils import parse_json
+
 from app.utils.logger import logger
 
 
@@ -403,15 +403,6 @@ def check_db_exists(db_path: str) -> Dict[str, Any]:
 # 来自 content_validation.py
 # ═══════════════════════════════════════════════════════════════
 
-def validate_json_content(content: str) -> Optional[str]:
-    """验证JSON内容格式 — 小健 2026-05-25"""
-    try:
-        parse_json(content, raise_on_error=True)
-        return None
-    except json.JSONDecodeError as e:
-        return f"JSON格式验证失败: 第{e.lineno}行第{e.colno}列 - {e.msg}"
-
-
 def validate_csv_content(content: str, max_check_lines: int = 1000) -> Optional[str]:
     """验证CSV内容格式 — 小健 2026-05-25"""
     try:
@@ -541,16 +532,6 @@ def _detect_encoding_simple(path, default: str = "utf-8") -> str:
                     return "latin-1"
     except Exception:
         return default
-
-
-def _read_json(file_path: str, encoding: str = "auto_detect") -> Any:
-    """读取JSON文件，返回纯数据 — 小沈 2026-05-25"""
-    path = Path(file_path)
-    if not path.exists():
-        raise FileNotFoundError(f"文件不存在: {file_path}")
-    actual_encoding = _detect_encoding_simple(path) if encoding == "auto_detect" else encoding
-    with open(path, "r", encoding=actual_encoding) as f:
-        return json.load(f)
 
 
 def _write_json(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2, ensure_ascii: bool = False, create_parents: bool = True) -> Dict[str, Any]:
@@ -738,7 +719,7 @@ def _parse_properties(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]
 
 
 FORMAT_DISPATCH = {
-    "json": {"read": _read_json, "write": _write_json},
+    "json": {"write": _write_json},
     "yaml": {"read": _parse_yaml, "write": _write_yaml},
     "toml": {"read": _parse_toml, "write": _write_toml},
     "ini": {"read": _parse_ini},
@@ -830,14 +811,12 @@ __all__ = [
     "_check_shell_injection",
     "_read_stream_nonblocking",
     "check_db_exists",
-    "validate_json_content",
     "validate_csv_content",
     "validate_xml_content",
     "validate_html_content",
     "validate_python_content",
     "_detect_encoding",
     "_detect_encoding_simple",
-    "_read_json",
     "_write_json",
     "_read_csv_basic",
     "_parse_yaml",

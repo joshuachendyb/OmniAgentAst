@@ -239,6 +239,11 @@ async def build_observation(ctx: ObservationContext) -> List:
             obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
         else:
             obs_text = build_observation_text(result, call["tool_name"], call["tool_params"])
+        repair_warning = call.get("_repair_warning", "")
+        if repair_warning:
+            obs_text = f"Observation: {repair_warning}\n{obs_text}"
+            print(f"{time.strftime('%H:%M:%S')} [Warning] step={ctx.step}, {call['tool_name']} 参数截断修复")
+            logger.warning(f"[action_handler] step={ctx.step}, {call['tool_name']} 参数截断修复: {repair_warning}")
         obs_parts.append(obs_text)
         try:
             _fc = ctx.fc_context or {}
@@ -325,6 +330,7 @@ def _build_call_list(parsed: Dict) -> tuple:
     all_calls = [{
         "tool_name": tool_name, "tool_params": tool_params,
         "_tool_call_id": fc_context.get("tool_call_id", "") if fc_context else "",
+        "_repair_warning": parsed.get("_repair_warning", ""),
     }]
     # 【P1-11修复】pending_calls条目缺tool_name时跳过 — chendyg 2026-06-26
     for pc in pending_calls:
@@ -335,6 +341,7 @@ def _build_call_list(parsed: Dict) -> tuple:
         all_calls.append({
             "tool_name": pc_name, "tool_params": pc.get("tool_params") or {},
             "_tool_call_id": pc.get("_tool_call_id", ""),
+            "_repair_warning": pc.get("_repair_warning", ""),
         })
 
     return tool_name, tool_params, fc_context, pending_calls, all_calls, len(all_calls) > 1
