@@ -90,6 +90,20 @@ def _add_pptx_content(slide, content):
                         first_slot = False
                         p.text = str(b)
                         p.level = 1
+    elif isinstance(content, dict):
+        t = content.get("type", "paragraph")
+        items = content.get("items", [])
+        first_slot = True
+        if t == "bullets":
+            for b in items:
+                p = _get_para(first_slot)
+                first_slot = False
+                p.text = str(b)
+                p.level = 1
+        elif t == "paragraph":
+            txt = content.get("text", "")
+            p = _get_para(first_slot)
+            p.text = txt
 
 
 def _add_pptx_table(slide, table_data, start_top=None):
