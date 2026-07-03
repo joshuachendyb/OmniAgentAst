@@ -30,6 +30,7 @@ from e2emodel.e2e_helpers import (
     print_report, write_test_record,
     assert_stream_ended,
     register_pending_record,
+    filter_safety_errors,
 )
 
 
@@ -94,8 +95,7 @@ async def test_e2e_p0_10_file_shell_data_system():
 
         print(f"  [Step8] Log check...")
         lc = check_logs(test_start, sid, result.get("user_msg_id"))
-        safety_errors = [e for e in lc["errors"] if any(k in e for k in ["安全检查", "拒绝执行", "高风险", "execute_code", "pickle", "RCE", "extract", "create_task", "delete_task"])]
-        other_errors = [e for e in lc["errors"] if e not in safety_errors]
+        safety_errors, other_errors = filter_safety_errors(lc["errors"])
         if safety_errors:
             print(f"  [INFO] Safety checker errors (expected): {len(safety_errors)}")
         assert len(other_errors) == 0, f"日志不应有非安全ERROR(MUST): {other_errors[:3]}"

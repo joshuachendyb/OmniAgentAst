@@ -1678,7 +1678,7 @@ def write_test_record(
         lines.append("")
 
     lines.append("---")
-    lines.append(f"**更新时间**: {ts_str}")
+    lines.append(f"**更新时间**: {end_str}")
     lines.append("")
 
     written_path: Optional[Path] = None
