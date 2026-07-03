@@ -249,28 +249,20 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         set_cancelled(agent)
         return
 
-    # B3修复: LLM未调用任何工具直接回答 → 注入警告并重试 — 小欧 2026-06-26
+    # B3: LLM未调用任何工具直接回答 → 注入warning（不重试）— 小健 2026-07-03
     if (llm_response.get("type") == "answer"
-            and llm_response.get("content")
-            and not getattr(agent, '_notool_retried', False)):
+            and llm_response.get("content")):
         has_tool_results = any(
             msg.get("role") == "tool"
             for msg in agent.message_builder.conversation_history
         )
         if not has_tool_results:
             content = llm_response.get("content", "")
-            agent._notool_retried = True
-            logger.warning(f"[B3] LLM返回answer但未调用任何工具(step={step}), 注入警告并重试")
-            obs_text = "[Observation] 警告: 你未调用任何工-->必须复核3遍用户任务:[1]问答任务补充说明;[2] 多步任务是否完成,如果完成任务对任务进行总结,否则继续调用工具"
+            logger.warning(f"[B3] LLM返回answer但未调用任何工具(step={step})")
+            obs_text = "[Observation] 警告: 你未调用任何工具-->必须复核3遍用户任务:[1]问答任务补充说明;[2] 多步任务就继续调用工具"
             agent.message_builder.add_observation(
                 obs_text, {"tool_call_id": "", "tool_calls": [], "llm_content": content},
             )
-            yield agent._step_emitter.emit(ObservationStep(
-                step=step,
-                llm_data={"summary": "LLM未调用工具直接回答", "action": {}, "status": {"exec_code": "error", "message": obs_text}},
-                tool_result={},
-            ))
-            return
 
     # BUG修复: LLM输出截断导致工具调用遗漏 — 检测preamble文本+注入重试
     if _should_retry_truncated_tool(agent, llm_response):
