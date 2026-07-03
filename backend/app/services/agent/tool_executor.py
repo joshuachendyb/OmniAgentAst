@@ -12,7 +12,7 @@ from app.tools.tool_types import ToolCategory
 
 
 async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
-    """执行工具并处理tool_search自动注入 — 小健 2026-06-26 修复状态判断逻辑"""
+    """执行工具并处理searchtool自动注入 — 小健 2026-06-26 修复状态判断逻辑"""
     from app.tools.tool_response import is_success
     
     start = time.time()
@@ -23,7 +23,7 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any]) -> Di
     status = "ok" if is_success(result) else "fail"
     _log_single_tool(tool_name, tool_params, elapsed, status)
     
-    if tool_name == "tool_search":
+    if tool_name == "searchtool":
         auto_inject_from_search(agent, result)
     return result
 
@@ -36,7 +36,7 @@ def _log_single_tool(tool_name: str, params: Dict[str, Any], elapsed: float, sta
 
 
 def auto_inject_from_search(agent, result: Dict[str, Any]) -> None:
-    """从tool_search结果自动注入整个工具类给LLM — 小欧 2026-06-23
+    """从searchtool结果自动注入整个工具类给LLM — 小欧 2026-06-23
 
     P0-4修复: 匹配到一个工具，就把该工具所在的整个类(如NETWORK)全部注入LLM。
     因为LLM知道类名后就能理解该类的所有工具，无需逐个注入。

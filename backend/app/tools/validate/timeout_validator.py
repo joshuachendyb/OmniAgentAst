@@ -6,9 +6,9 @@ from typing import Optional, Tuple
 
 # 各工具timeout范围（秒）
 TIMEOUT_RANGES_SECONDS = {
-    "http_request":           (1,   300),     # 1秒 ~ 5分钟
-    "download_file":          (5,  3600),     # 5秒 ~ 1小时
-    "fetch_webpage":          (1,   120),     # 1秒 ~ 2分钟
+    "httpget":           (1,   300),     # 1秒 ~ 5分钟
+    "download":          (5,  3600),     # 5秒 ~ 1小时
+    "fetchpage":          (1,   120),     # 1秒 ~ 2分钟
     "ping_port":              (1,    30),     # 1秒 ~ 30秒
     "shell":  (1,   600),     # 1秒 ~ 10分钟
     "runcode":           (1,   300),     # 1秒 ~ 5分钟

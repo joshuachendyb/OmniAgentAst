@@ -139,7 +139,7 @@ PARAM_ALIASES = {
         "directory": "working_dir",
         "cwd": "working_dir",
     },
-    "download_file": {
+    "download": {
         "dst": "destination_path",
         "to": "destination_path",
         "dst_path": "destination_path",
@@ -202,12 +202,12 @@ PARAM_ALIASES = {
         "file": "file_name",
         "file_path": "file_name",
     },
-    "http_request": {
+    "httpget": {
         "link": "url",
         "address": "url",
         "endpoint": "url",
     },
-    "fetch_webpage": {
+    "fetchpage": {
         "link": "url",
         "address": "url",
         "endpoint": "url",

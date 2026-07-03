@@ -5,7 +5,7 @@ FUNDAMENTAL Register — 基础工具注册点
 【2026-06-18 小欧】从 meta/ 迁入, 匹配 ToolCategory.FUNDAMENTAL
 
 7个工具:
-- tool_search — BM25全文检索搜索工具
+- searchtool — BM25全文检索搜索工具
 - time_now — 获取当前时间
 - time_add — 时间加减运算
 - time_diff — 时间差值计算
@@ -20,7 +20,7 @@ from app.utils.logger import logger
 
 # 基础工具依赖配置 — 小健 2026-06-18
 FUNDAMENTAL_TOOL_DEPENDENCIES = {
-    "tool_search": [],  # 使用内置库
+    "searchtool": [],  # 使用内置库
     "time_now": [],  # 使用内置库
     "time_add": [],  # 使用内置库
     "time_diff": [],  # 使用内置库
@@ -38,7 +38,7 @@ from app.tools.fundamental.fundamental_schema import (
     SendNotificationInput,
     GetSystemInfoInput,
 )
-from app.tools.fundamental.tool_search import tool_search
+from app.tools.fundamental.tool_search import searchtool
 from app.tools.fundamental.time_now import time_now
 from app.tools.fundamental.time_add import time_add
 from app.tools.fundamental.time_diff import time_diff
@@ -48,7 +48,7 @@ from app.tools.fundamental.send_notification import send_notification
 
 
 FUNDAMENTAL_TOOL_DESCRIPTIONS = {
-    "tool_search": """搜索并注入未加载的工具。当前工具列表无匹配时优先调用此工具,按关键词检索并自动注入匹配的工具分类。适用场景:当前工具列表未找到对应的专用工具时使用。""",
+    "searchtool": """搜索并注入未加载的工具。当前工具列表无匹配时优先调用此工具,按关键词检索并自动注入匹配的工具分类。适用场景:当前工具列表未找到对应的专用工具时使用。""",
     "time_now": """获取当前系统时间,返回ISO格式、时间戳、格式化字符串、时区、星期等信息。适用场景:需要获取当前时间时使用。""",
     "time_add": """对时间进行加减偏移运算,支持天/小时/分钟/秒/月。适用场景:需要计算N个单位后的时间或某个时间点之前的时间时使用。""",
     "time_diff": """计算两个时间之间的差值。适用场景:需要计算日期差、距离某时间还有多久时使用。""",
@@ -58,7 +58,7 @@ FUNDAMENTAL_TOOL_DESCRIPTIONS = {
 }
 
 FUNDAMENTAL_TOOL_EXAMPLES = {
-    "tool_search": [
+    "searchtool": [
         {"query": "读取Word文档"},
         {"query": "SQL查询 数据库"},
         {"query": "生成图表 可视化"},
@@ -115,7 +115,7 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
 def _register_fundamental_tools():
     """注册7个基础工具到FUNDAMENTAL分类 — 小健 2026-06-18"""
     tool_methods = {
-        "tool_search": tool_search,
+        "searchtool": searchtool,
         "time_now": time_now,
         "time_add": time_add,
         "time_diff": time_diff,
@@ -125,7 +125,7 @@ def _register_fundamental_tools():
     }
 
     TOOL_INPUT_MODELS = {
-        "tool_search": ToolSearchInput,
+        "searchtool": ToolSearchInput,
         "time_now": TimeNowInput,
         "time_add": TimeAddInput,
         "time_diff": TimeDiffInput,
@@ -154,7 +154,7 @@ def _register_fundamental_tools():
 
 __all__ = [
     "_register_fundamental_tools",
-    "tool_search",
+    "searchtool",
     "time_now",
     "time_add",
     "time_diff",

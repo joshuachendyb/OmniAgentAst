@@ -46,10 +46,10 @@ TOOL_TIMEOUTS = {
 
     "event_log": 60,
 
-    "search_web": 60,
-    "http_request": 60,
-    "download_file": 120,
-    "fetch_webpage": 60,
+    "searchweb": 60,
+    "httpget": 60,
+    "download": 120,
+    "fetchpage": 60,
     "ping_port": 60,
     "window_info": 20,
     "window_focus": 20,
@@ -219,7 +219,7 @@ TOOL_RETRY_BACKOFF = {
 }
 
 # 工具层 HTTP 可重试状态码 — 小欧 2026-06-30
-# 用途：http_request 等 network 工具判断是否抛异常给 ToolRetryEngine 重试。
+# 用途：httpget 等 network 工具判断是否抛异常给 ToolRetryEngine 重试。
 #       与系统层 constants.py 的 SYS_RATE_LIMIT_CODES（LLM 限流检测）完全无关。
 TOOL_RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504}
 

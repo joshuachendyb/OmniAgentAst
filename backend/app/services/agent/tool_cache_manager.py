@@ -16,7 +16,7 @@ def get_openai_tools(agent) -> list:
     注意：这里获取的是已注入(inject)给LLM的工具，不是所有已注册(register)的工具
 
     P0-4修复 2026-06-23 小欧: revert P0-3改为注入整个tool类,通过_loaded_categories承载
-    Batch2e: 使用agent._tool_search_desc_override副本,不修改全局ts_meta — 小欧 2026-06-25
+    Batch2e: 使用agent._searchtool_desc_override副本,不修改全局ts_meta — 小欧 2026-06-25
     """
     cached = agent._tool_cache.get()
     if cached is not None:
@@ -25,10 +25,10 @@ def get_openai_tools(agent) -> list:
     from app.tools.registry import tool_registry
     tools = tool_registry.to_openai_tools(categories=agent._loaded_categories)
 
-    override = getattr(agent, '_tool_search_desc_override', None)
+    override = getattr(agent, '_searchtool_desc_override', None)
     if override:
         for t in tools:
-            if t.get("function", {}).get("name") == "tool_search":
+            if t.get("function", {}).get("name") == "searchtool":
                 t["function"]["description"] = override
                 break
 
@@ -42,11 +42,11 @@ def invalidate_tool_cache(agent):
 
 
 def _get_original_search_desc() -> str:
-    """获取 tool_search 的原始描述（不带已注入的"当前未加载分类"后缀）— 小欧 2026-06-23
+    """获取 searchtool 的原始描述（不带已注入的"当前未加载分类"后缀）— 小欧 2026-06-23
     P0-1修复: 严禁重复追加,每次重新拼装
     """
     from app.tools.registry import tool_registry
-    ts_meta = tool_registry.get_tool("tool_search")
+    ts_meta = tool_registry.get_tool("searchtool")
     if not ts_meta:
         return ""
     desc = ts_meta.description
@@ -58,7 +58,7 @@ def _get_original_search_desc() -> str:
 
 
 def patch_search_desc(agent):
-    """动态更新 tool_search 描述: 列出未加载分类
+    """动态更新 searchtool 描述: 列出未加载分类
     
     改为副本模式，不修改全局 ts_meta — 小欧 2026-06-25 Batch2e
     
@@ -81,19 +81,19 @@ def patch_search_desc(agent):
     ]
     
     if not unloaded:
-        agent._tool_search_desc_override = None
+        agent._searchtool_desc_override = None
         invalidate_tool_cache(agent)
         return
     
-    ts_meta = tool_registry.get_tool("tool_search")
+    ts_meta = tool_registry.get_tool("searchtool")
     if not ts_meta:
-        agent._tool_search_desc_override = None
+        agent._searchtool_desc_override = None
         invalidate_tool_cache(agent)
         return
     
     base_desc = _get_original_search_desc()
     if not base_desc:
-        agent._tool_search_desc_override = None
+        agent._searchtool_desc_override = None
         invalidate_tool_cache(agent)
         return
     
@@ -103,7 +103,7 @@ def patch_search_desc(agent):
         lines.append(f"- {cat.name_cn}({cat.value})")
     
     if lines:
-        agent._tool_search_desc_override = base_desc + "\n\n当前未加载分类:\n" + "\n".join(lines)
+        agent._searchtool_desc_override = base_desc + "\n\n当前未加载分类:\n" + "\n".join(lines)
     else:
-        agent._tool_search_desc_override = None
+        agent._searchtool_desc_override = None
     invalidate_tool_cache(agent)

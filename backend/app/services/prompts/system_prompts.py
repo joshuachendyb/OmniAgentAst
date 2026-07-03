@@ -52,21 +52,21 @@ class PromptBuilder:
 
 <执行纪律>
 - ①选择精确工具,严禁无效和无意义的重复tool call
-- ②优先使用直接工具.无匹配工具→tool_search搜工具
-- ③调用tool_search搜索无直接可用tool→用shell/runcode
+- ②优先使用直接工具.无匹配工具→searchtool搜工具
+- ③调用searchtool搜索无直接可用tool→用shell/runcode
 - ④禁止直接绕路用runcode/shell实现
 
 <复核工具参数>
 - 核查tool参数：调用工具须核查３遍确认:参数名称/类型/值/格式正确（如路径是文件还是目录、content内容是否填写、必填参数是否缺失）
 
-<tool_search 使用说明>
+<searchtool 使用说明>
 - 搜索词=任务关键词
-- 读/写 Word/Excel/PDF/PPT 文档 → 用tool_search搜"文档 读写"
-- 统计分析/筛选/图表生成分析 →调用tool_search搜"数据分析 图表"
-- 查数据库表结构/执行SQL/读写数据库 → 用tool_search搜"数据库 SQL"
-- 搜网页/抓URL内容/网络处理 → 用tool_search搜"网络 搜索 http"
-- 进程/环境变量/系统日志/注册表/服务启停 → 用tool_search搜"系统信息 进程 注册表 任务"
-- 窗口管理/鼠标点击/截屏/剪贴板/OCR → 用tool_search搜"桌面 窗口"
+- 读/写 Word/Excel/PDF/PPT 文档 → 用searchtool搜"文档 读写"
+- 统计分析/筛选/图表生成分析 →调用searchtool搜"数据分析 图表"
+- 查数据库表结构/执行SQL/读写数据库 → 用searchtool搜"数据库 SQL"
+- 搜网页/抓URL内容/网络处理 → 用searchtool搜"网络 搜索 http"
+- 进程/环境变量/系统日志/注册表/服务启停 → 用searchtool搜"系统信息 进程 注册表 任务"
+- 窗口管理/鼠标点击/截屏/剪贴板/OCR → 用searchtool搜"桌面 窗口"
 
 """
 
@@ -152,7 +152,7 @@ class PromptBuilder:
         unclosed = re.findall(r'<(\w+)>', result)
         closed = re.findall(r'</(\w+)>', result)
         for tag in set(unclosed):
-            if tag not in closed and tag not in ('角色', 'br', '能力', '铁规-分析计划', '执行纪律', '复核工具参数', 'tool_search 使用说明'):
+            if tag not in closed and tag not in ('角色', 'br', '能力', '铁规-分析计划', '执行纪律', '复核工具参数', 'searchtool 使用说明'):
                 logger.warning(f"[PromptBuilder] tag <{tag}> 可能未闭合")
 
         return result

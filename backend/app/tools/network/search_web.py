@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-N4: search_web — 搜索网络获取最新信息
+N4: searchweb — 搜索网络获取最新信息
 
 从network_tools.py拆分而来 — 小欧 2026-06-22
 内聚: _search_mcp_engine / _search_bing / _parse_exa_results / _MCP_CONFIGS 辅助函数
@@ -80,7 +80,7 @@ def _build_search_web_llm_data(
     if exec_code == "error":
         return {
             "summary": f"搜索失败: {detail}",
-            "action": {"tool": "search_web", "tool_zh": "搜索", "target": query, "params": {"query": query}},
+            "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": {"query": query}},
             "status": {"exec_code": "error", "message": f"搜索失败: {detail}", "code": err_code, "detail": detail, "hint": "请检查搜索词和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -88,14 +88,14 @@ def _build_search_web_llm_data(
     if exec_code == "warning":
         return {
             "summary": f"搜索 {query}，{result_count}条结果（降级到{engine_used}引擎）",
-            "action": {"tool": "search_web", "tool_zh": "搜索", "target": query, "params": {"query": query}},
+            "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": {"query": query}},
             "status": {"exec_code": "warning", "message": "搜索服务降级", "code": "", "detail": f"Parallel引擎不可用，降级到{engine_used}搜索", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎（降级）"}},
         }
     return {
         "summary": f"搜索 {query}，{result_count}条结果",
-        "action": {"tool": "search_web", "tool_zh": "搜索", "target": query, "params": {"query": query}},
+        "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": {"query": query}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎"}},
@@ -349,7 +349,7 @@ async def _search_bing(
     return []
 
 
-async def search_web(
+async def searchweb(
     query: str,
     allowed_domains: Optional[List[str]] = None,
     blocked_domains: Optional[List[str]] = None,
@@ -379,17 +379,17 @@ async def search_web(
         engine_used = "Parallel"
 
         if results is None:
-            logger.info("[search_web] Parallel失败,降级到Exa MCP搜索")
+            logger.info("[searchweb] Parallel失败,降级到Exa MCP搜索")
             results = await _search_mcp_engine("exa", query, num_results, proxy)
             engine_used = "Exa"
 
         if results is None:
-            logger.info("[search_web] Exa失败,降级到Bing中国搜索")
+            logger.info("[searchweb] Exa失败,降级到Bing中国搜索")
             try:
                 results = await _search_bing(query, num_results, proxy)
                 engine_used = "Bing"
             except Exception as e:
-                logger.warning(f"[search_web] Bing搜索也失败: {e}")
+                logger.warning(f"[searchweb] Bing搜索也失败: {e}")
                 results = []
 
         results = results or []
@@ -423,7 +423,7 @@ async def search_web(
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):
         raise  # 【小欧 2026-06-29】传播给ToolRetryEngine统一分类+重试
     except Exception as e:
-        logger.error(f"[search_web] 未知错误: {e}")
+        logger.error(f"[searchweb] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_NET_UNKNOWN, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"query": query}}, llm_data=llm_data)

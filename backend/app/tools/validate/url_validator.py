@@ -79,7 +79,7 @@ def _is_private_or_loopback_ip(hostname: str) -> bool:
 
 def validate_url(url: str) -> Tuple[bool, Optional[str], Optional[str]]:
     """
-    URL业务级安全检查（适用于http_request、download_file、fetch_webpage）
+    URL业务级安全检查（适用于httpget、download、fetchpage）
     
     检查内容：
     1. URL格式是否合法

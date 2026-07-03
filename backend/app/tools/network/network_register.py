@@ -8,10 +8,10 @@ Network Register - 网络通信工具注册点
 - 使用 Pydantic 模型注册,自动生成 OpenAI Schema
 
 【工具列表】(共5个)— 【2026-05-17 小沈】P1: 6→5,ping+port_check→network_diagnose
-1. http_request - 发起HTTP请求
-2. download_file - 下载文件到本地
-3. fetch_webpage - 获取和处理网页内容
-4. search_web - 搜索网络获取最新信息
+1. httpget - 发起HTTP请求
+2. download - 下载文件到本地
+3. fetchpage - 获取和处理网页内容
+4. searchweb - 搜索网络获取最新信息
 5. ping_port - 网络连通性诊断(ping+端口检测,原名network_diagnose)
 
 创建时间: 2026-04-29
@@ -30,10 +30,10 @@ from typing import Optional
 # 每个工具对应的第三方依赖包列表
 # 注意：httpx必须使用0.26.0版本，httpcore必须使用1.0.1版本（AGENTS.md明确要求）
 NETWORK_TOOL_DEPENDENCIES = {
-    "http_request": ["httpx==0.26.0", "httpcore==1.0.1"],
-    "download_file": ["httpx==0.26.0", "httpcore==1.0.1"],
-    "fetch_webpage": ["httpx==0.26.0", "httpcore==1.0.1"],
-    "search_web": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "httpget": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "download": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "fetchpage": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "searchweb": ["httpx==0.26.0", "httpcore==1.0.1"],
     "ping_port": [],  # 使用内置库
 }
 
@@ -60,53 +60,53 @@ from app.tools.network.network_schema import (
     NetworkDiagnoseInput,
 )
 
-from app.tools.network.http_request import http_request
-from app.tools.network.download_file import download_file
-from app.tools.network.fetch_webpage import fetch_webpage
-from app.tools.network.search_web import search_web
+from app.tools.network.http_request import httpget
+from app.tools.network.download_file import download
+from app.tools.network.fetch_webpage import fetchpage
+from app.tools.network.search_web import searchweb
 from app.tools.network.network_diagnose import ping_port
 
 # 工具描述
 NETWORK_TOOL_DESCRIPTIONS = {
-    "http_request": """发送HTTP请求到指定URL,支持GET/POST/PUT/DELETE等方法。适用场景:需要调用REST API获取数据、提交数据、调用Web服务时使用。""",
-    "download_file": """从URL下载文件到本地磁盘。适用场景:需要下载图片、安装包、数据文件等到本地时使用。""",
-    "fetch_webpage": """获取网页内容并提取正文,支持Markdown/HTML格式输出。适用场景:需要阅读网页文档、从网页提取信息时使用。""",
-    "search_web": """使用搜索引擎查询最新信息。适用场景:需要获取实时新闻、技术文档、问题解决方案时使用。""",
+    "httpget": """发送HTTP请求到指定URL,支持GET/POST/PUT/DELETE等方法。适用场景:需要调用REST API获取数据、提交数据、调用Web服务时使用。""",
+    "download": """从URL下载文件到本地磁盘。适用场景:需要下载图片、安装包、数据文件等到本地时使用。""",
+    "fetchpage": """获取网页内容并提取正文,支持Markdown/HTML格式输出。适用场景:需要阅读网页文档、从网页提取信息时使用。""",
+    "searchweb": """使用搜索引擎查询最新信息。适用场景:需要获取实时新闻、技术文档、问题解决方案时使用。""",
     "ping_port": """检测网络连通性,支持ping和TCP端口检测。适用场景:需要排查网络连接问题时使用。""",
 }
 
 # 工具名到实现函数的映射
 NETWORK_TOOL_IMPLEMENTATIONS = {
-    "http_request": http_request,
-    "download_file": download_file,
-    "fetch_webpage": fetch_webpage,
-    "search_web": search_web,
+    "httpget": httpget,
+    "download": download,
+    "fetchpage": fetchpage,
+    "searchweb": searchweb,
     "ping_port": ping_port,
 }
 
 # 工具名到 Pydantic 模型的映射
 NETWORK_TOOL_INPUT_MODELS = {
-    "http_request": HttpRequestInput,
-    "download_file": DownloadFileInput,
-    "fetch_webpage": FetchWebpageInput,
-    "search_web": SearchWebInput,
+    "httpget": HttpRequestInput,
+    "download": DownloadFileInput,
+    "fetchpage": FetchWebpageInput,
+    "searchweb": SearchWebInput,
     "ping_port": NetworkDiagnoseInput,
 }
 
 # 使用示例
 NETWORK_TOOL_EXAMPLES = {
-    "http_request": [
+    "httpget": [
         {"url": "https://api.github.com/repos/python/cpython", "method": "GET"},
         {"url": "https://httpbin.org/post", "method": "POST", "body": {"name": "test", "value": 123}},
     ],
-    "download_file": [
+    "download": [
         {"url": "https://github.com/python/cpython/archive/refs/heads/main.zip", "destination_path": "D:/Downloads/cpython-main.zip"},
     ],
-    "fetch_webpage": [
+    "fetchpage": [
         {"url": "https://example.com", "extract_format": "markdown"},
         {"url": "https://docs.python.org/3/library/asyncio.html", "prompt": "提取asyncio的主要功能和使用示例"},
     ],
-    "search_web": [
+    "searchweb": [
         {"query": "OpenAI function calling"},
         {"query": "React 19 新特性"},
     ],
@@ -126,7 +126,7 @@ def _register_network_tools():
     for tool_name in NETWORK_TOOL_DESCRIPTIONS:
         input_model = NETWORK_TOOL_INPUT_MODELS[tool_name]
         examples = NETWORK_TOOL_EXAMPLES.get(tool_name, [])
-        failure_hint_fn = _http_request_failure_hint if tool_name == "http_request" else None
+        failure_hint_fn = _http_request_failure_hint if tool_name == "httpget" else None
         tool_registry.register(
             name=tool_name,
             description=NETWORK_TOOL_DESCRIPTIONS[tool_name],

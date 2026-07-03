@@ -58,7 +58,7 @@
    格式2：带版本号字符串
    ```
    TOOL_DEPENDENCIES = {
-       "http_request": ["httpx==0.26.0", "httpcore==1.0.1"],
+       "httpget": ["httpx==0.26.0", "httpcore==1.0.1"],
    }
    ```
 

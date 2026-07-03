@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-tool_search — BM25 全文检索搜索工具
+searchtool — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
@@ -100,21 +100,21 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
     if exec_code == "error":
         return {
             "summary": f"搜索失败: {query}",
-            "action": {"tool": "tool_search", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
+            "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_DOC_QUERY_EMPTY, "detail": "搜索关键词不能为空", "hint": "请输入有效的搜索关键词"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"搜索 '{query}'，匹配 {total_matched} 个工具（共 {total_tools} 个）",
-        "action": {"tool": "tool_search", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
+        "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"matched": {"value": total_matched, "text": f"{total_matched}个"}, "total": {"value": total_tools, "text": f"{total_tools}个"}},
     }
 
 
-def tool_search(query: str) -> Dict[str, Any]:
+def searchtool(query: str) -> Dict[str, Any]:
     """按关键词搜索匹配的工具列表（BM25 全文检索） — 小健 2026-06-22 拆分独立文件"""
     t0 = time.perf_counter()
     if not query.strip():
@@ -190,4 +190,4 @@ def tool_search(query: str) -> Dict[str, Any]:
     return build_success(data=data, llm_data=llm_data)
 
 
-__all__ = ["tool_search"]
+__all__ = ["searchtool"]

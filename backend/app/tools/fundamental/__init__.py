@@ -5,7 +5,7 @@
 
 from app.tools.fundamental.fundamental_register import _register_fundamental_tools
 
-from app.tools.fundamental.tool_search import tool_search
+from app.tools.fundamental.tool_search import searchtool
 from app.tools.fundamental.time_now import time_now
 from app.tools.fundamental.time_add import time_add
 from app.tools.fundamental.time_diff import time_diff
@@ -15,7 +15,7 @@ from app.tools.fundamental.send_notification import send_notification
 
 __all__ = [
     "_register_fundamental_tools",
-    "tool_search",
+    "searchtool",
     "time_now",
     "time_add",
     "time_diff",

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-N3: fetch_webpage — 获取和处理网页内容
+N3: fetchpage — 获取和处理网页内容
 
 从network_tools.py拆分而来 — 小欧 2026-06-22
 内聚: _extract_html_content / _build_media_result / _fetch_via_playwright 辅助函数
@@ -191,14 +191,14 @@ def _build_fetch_webpage_llm_data(
     if exec_code == "error":
         return {
             "summary": f"获取网页失败: {url}",
-            "action": {"tool": "fetch_webpage", "tool_zh": "获取网页", "target": url, "params": {"url": url, "extract_format": extract_format}},
+            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": {"url": url, "extract_format": extract_format}},
             "status": {"exec_code": "error", "message": "获取网页失败", "code": err_code, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"成功获取网页内容({extract_format}格式)" + ("(已截断)" if truncated else ""),
-        "action": {"tool": "fetch_webpage", "tool_zh": "获取网页", "target": url, "params": {"url": url, "extract_format": extract_format}},
+        "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": {"url": url, "extract_format": extract_format}},
         "status": {"exec_code": "success", "message": "获取网页内容成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}},
@@ -268,7 +268,7 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout: float,
                 if current_url and current_url != url:
                     is_valid, err, _ = validate_url(current_url)
                     if not is_valid:
-                        logger.warning(f"[fetch_webpage] Playwright重定向到不安全地址: {err}")
+                        logger.warning(f"[fetchpage] Playwright重定向到不安全地址: {err}")
                         return {"error": True, "error_detail": f"重定向到不安全地址: {err or 'URL无效'}", "params": {"url": url}, "err_code": ERR_INVALID_URL, "detail": err}
                 html_content = await page.content()
             finally:
@@ -285,7 +285,7 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout: float,
         return {"error": True, "error_detail": str(e), "params": {"url": url}, "err_code": ERR_NETWORK_JS_RENDER, "detail": str(e)}
 
 
-async def fetch_webpage(
+async def fetchpage(
     url: str,
     prompt: Optional[str] = None,
     extract_format: str = "markdown",
@@ -295,7 +295,7 @@ async def fetch_webpage(
 ) -> Dict[str, Any]:
     """获取网页内容 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
     max_tokens = 8000
-    timeout_valid, timeout_err, _ = validate_timeout(timeout, "fetch_webpage")
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "fetchpage")
     if not timeout_valid:
         llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_INVALID_URL, detail=timeout_err)
         return build_error(data={"error_detail": timeout_err, "params": {"url": url}}, llm_data=llm_data)
@@ -314,7 +314,7 @@ async def fetch_webpage(
             llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_INVALID_URL, detail=error_msg or "URL格式无效")
             return build_error(data={"error_detail": error_msg or "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
         if warning_msg:
-            logger.warning(f"[fetch_webpage] {warning_msg}")
+            logger.warning(f"[fetchpage] {warning_msg}")
 
         net_info = check_network()
         if not net_info["connected"]:
@@ -345,7 +345,7 @@ async def fetch_webpage(
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
-                    logger.info(f"[fetch_webpage] Cloudflare挑战检测,降级UA重试: {url}")
+                    logger.info(f"[fetchpage] Cloudflare挑战检测,降级UA重试: {url}")
                     simple_headers = dict(headers)
                     simple_headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                     response = await client.get(url, headers=simple_headers)
@@ -403,7 +403,7 @@ async def fetch_webpage(
         llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"url": url}}, llm_data=llm_data)
     except Exception as e:
-        logger.error(f"[fetch_webpage] 未知错误: {e}")
+        logger.error(f"[fetchpage] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NET_UNKNOWN, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"url": url}}, llm_data=llm_data)

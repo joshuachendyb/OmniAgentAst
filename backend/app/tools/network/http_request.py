@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-N1: http_request — 发起HTTP请求
+N1: httpget — 发起HTTP请求
 
 从network_tools.py拆分而来 — 小欧 2026-06-22
 内聚: _parse_response_body / _build_http_error 辅助函数
@@ -50,14 +50,14 @@ def _build_http_request_llm_data(
     if exec_code == "error":
         return {
             "summary": f"HTTP请求失败: {method} {url}",
-            "action": {"tool": "http_request", "tool_zh": "HTTP请求", "target": url, "params": {"method": method, "url": url}},
+            "action": {"tool": "httpget", "tool_zh": "HTTP请求", "target": url, "params": {"method": method, "url": url}},
             "status": {"exec_code": "error", "message": "HTTP请求失败", "code": err_code, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"请求成功 (HTTP {status_code})",
-        "action": {"tool": "http_request", "tool_zh": "HTTP请求", "target": url, "params": {"method": method, "url": url}},
+        "action": {"tool": "httpget", "tool_zh": "HTTP请求", "target": url, "params": {"method": method, "url": url}},
         "status": {"exec_code": "success", "message": "HTTP请求成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}},
@@ -112,7 +112,7 @@ def _build_http_error(last_exception: Exception, url: str, retry: int, duration_
     return {"error_detail": str(last_exception), "params": {"url": url, "retry": retry}, "err_code": ERR_NETWORK_REQUEST_ERROR, "detail": str(last_exception)}
 
 
-async def http_request(
+async def httpget(
     url: str,
     method: str = "GET",
     headers: Optional[Dict[str, str]] = None,
@@ -125,7 +125,7 @@ async def http_request(
     headers = coerce_json(headers)
     body = coerce_json(body)
 
-    timeout_valid, timeout_err, _ = validate_timeout(timeout, "http_request")
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "httpget")
     if not timeout_valid:
         llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=timeout_err)
         return build_error(data={"error_detail": timeout_err, "params": {"url": url}}, llm_data=llm_data)
@@ -144,7 +144,7 @@ async def http_request(
             llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_INVALID_URL, detail=error_msg or "URL格式无效")
             return build_error(data={"error_detail": error_msg or "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
         if warning_msg:
-            logger.warning(f"[http_request] {warning_msg}")
+            logger.warning(f"[httpget] {warning_msg}")
 
         net_info = check_network()
         if not net_info["connected"]:
@@ -195,7 +195,7 @@ async def http_request(
         return build_error(data={"error_detail": error_info["error_detail"], "params": error_info["params"]}, llm_data=llm_data)
 
     except Exception as e:
-        logger.error(f"[http_request] 未知错误: {e}")
+        logger.error(f"[httpget] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_NET_UNKNOWN, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"url": url}}, llm_data=llm_data)

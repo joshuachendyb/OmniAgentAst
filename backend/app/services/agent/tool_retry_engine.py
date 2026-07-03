@@ -34,10 +34,10 @@ from app.tools.tool_response import build_error
 # 返回格式: {tool名: {"max_retries": int, "retryable": list[str]}}
 # 注意: retryable 列表中的字符串必须与 ToolErrorCategory.value 完全匹配
 TOOL_RETRY_CONFIG = {
-    "http_request": {"max_retries": 3, "retryable": ["timeout", "connect", "network", "protocol"]},
-    "download_file": {"max_retries": 3, "retryable": ["timeout", "connect", "network", "protocol"]},
-    "fetch_webpage": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
-    "search_web": {"max_retries": 2, "retryable": ["timeout", "connect", "network"]},
+    "httpget": {"max_retries": 3, "retryable": ["timeout", "connect", "network", "protocol"]},
+    "download": {"max_retries": 3, "retryable": ["timeout", "connect", "network", "protocol"]},
+    "fetchpage": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
+    "searchweb": {"max_retries": 2, "retryable": ["timeout", "connect", "network"]},
     # shell/代码: 非幂等+永久性错误为主，工具内部已 catch 所有异常，
     # 不会传播到 retry engine，不在字典中即默认不重试 — 小欧 2026-06-30
     "ping_port": {"max_retries": 2, "retryable": ["timeout", "connect"]},
@@ -111,7 +111,7 @@ class ToolRetryEngine:
                 llm_data={
                     "summary": f"工具 '{action}' 未找到",
                     "action": {"tool": action, "tool_zh": "", "target": "", "params": {"action": action}},
-                    "status": {"exec_code": "error", "message": f"工具 '{action}' 未找到", "code": ERR_TOOL_NOT_FOUND, "detail": f"可用工具: {list(self._tools.keys())}", "hint": "该工具未注入。请先调用 tool_search 搜索该工具名称(如'网络 搜索')，系统会自动注入整个工具分类。"},
+                    "status": {"exec_code": "error", "message": f"工具 '{action}' 未找到", "code": ERR_TOOL_NOT_FOUND, "detail": f"可用工具: {list(self._tools.keys())}", "hint": "该工具未注入。请先调用 searchtool 搜索该工具名称(如'网络 搜索')，系统会自动注入整个工具分类。"},
                     "duration_ms": 0,
                     "metrics": {},
                 },

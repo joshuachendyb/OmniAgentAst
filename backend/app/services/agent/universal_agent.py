@@ -27,7 +27,7 @@ _INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUNDAMENTAL, ToolCategory
 
 
 class UniversalAgent(BaseAgent):
-    """通用 Agent — 初始仅注入 FUNDAMENTAL+SHELL+FILE 3个分类给LLM，其余分类通过 tool_search 动态注入"""
+    """通用 Agent — 初始仅注入 FUNDAMENTAL+SHELL+FILE 3个分类给LLM，其余分类通过 searchtool 动态注入"""
 
     TOOL_CACHE_TTL = _TOOL_CACHE_TTL
 
