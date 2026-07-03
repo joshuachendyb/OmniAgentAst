@@ -147,3 +147,39 @@ async def set_was_paused(task_id: str, value: bool) -> None:
         task = _running_tasks.get(task_id)
         if task:
             task["_was_paused"] = value
+
+
+# ============================================================
+# 薄包装: 仅供外部调用
+# ============================================================
+
+async def pause_task(task_id: str, session_id=None) -> dict:
+    """暂停指定的流式任务"""
+    if session_id:
+        logger.info(f"[Pause] 会话 {session_id} 暂停任务 {task_id}")
+    result = await set_paused(task_id)
+    if result["success"]:
+        logger.info(f"[Pause] 任务 {task_id} 已暂停")
+    return result
+
+
+async def resume_task(task_id: str, session_id=None) -> dict:
+    """继续指定的流式任务"""
+    if session_id:
+        logger.info(f"[Resume] 会话 {session_id} 恢复任务 {task_id}")
+    result = await set_resumed(task_id)
+    if result["success"]:
+        logger.info(f"[Resume] 任务 {task_id} 已继续")
+    return result
+
+
+async def task_cleanup(task_id: str, llm_call_count: int = 0) -> None:
+    """任务完成后清理"""
+    logger.info(
+        f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {llm_call_count} ======"
+    )
+    cleaned = await cleanup_task(task_id)
+    if cleaned:
+        logger.info(f"[Cleanup] 任务 {task_id} 正常完成,已清理")
+    else:
+        logger.info(f"[Cleanup] 任务 {task_id} 已被中断,保留记录")

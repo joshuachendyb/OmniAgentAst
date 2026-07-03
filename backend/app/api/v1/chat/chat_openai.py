@@ -24,11 +24,10 @@ from app.services.react_sse_wrapper.chat_stream import create_error_response
 from app.api.v1.chat.models import ChatRequest
 from app.api.v1.chat.step_start import step_start
 from app.utils.counter_utils import create_step_counter
-from app.services.task.task_registry import register_task
+from app.services.task.task_registry import register_task, task_cleanup
 from app.services.task.task_interrupt_check import task_interrupt_check, task_pause_check_and_yield
 from app.services.task.task_cancel_check import task_cancel_check_and_yield
 from app.services.task.task_state_queries import check_cancelled
-from app.services.task.task_cleanup import task_cleanup
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
 from app.utils.context_vars import _current_task_id
 from app.utils.prompt_logger import get_prompt_logger
@@ -52,13 +51,13 @@ async def cancel_stream_endpoint(task_id: str, session_id: Optional[str] = None)
 
 @task_router.post("/chat/stream/pause/{task_id}")
 async def pause_stream_endpoint(task_id: str, session_id: Optional[str] = None):
-    from app.services.task.task_pause import pause_task
+    from app.services.task.task_registry import pause_task
     return await pause_task(task_id, session_id)
 
 
 @task_router.post("/chat/stream/resume/{task_id}")
 async def resume_stream_endpoint(task_id: str, session_id: Optional[str] = None):
-    from app.services.task.task_resume import resume_task
+    from app.services.task.task_registry import resume_task
     return await resume_task(task_id, session_id)
 
 
