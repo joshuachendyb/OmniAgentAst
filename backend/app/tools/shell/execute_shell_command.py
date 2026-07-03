@@ -135,7 +135,7 @@ def _build_execute_shell_command_llm_data(
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
         return {
             "summary": f"执行失败: {_detail}",
-            "action": {"tool": "execute_shell_command", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
+            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
             "status": {"exec_code": "error", "message": f"执行失败: {detail or (stderr_preview[:200] if stderr_preview else '')}", "code": err_code or ERR_SHELL_EXEC, "detail": detail or (stderr_preview[:200] if stderr_preview else ""), "hint": "请检查命令语法和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -143,15 +143,15 @@ def _build_execute_shell_command_llm_data(
     if exec_code == "warning":
         return {
             "summary": f"执行 {cmd_short}，退出码{returncode}（有警告输出）",
-            "action": {"tool": "execute_shell_command", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
+            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
             "status": {"exec_code": "warning", "message": "执行成功（有警告输出）", "code": "", "detail": stderr_preview[:200] if stderr_preview else "", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
         }
     return {
         "summary": f"执行 {cmd_short}，退出码{returncode}",
-        "action": {"tool": "execute_shell_command", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
-        "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
+            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
+            "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
     }
@@ -221,7 +221,7 @@ def cleanup_background_shells() -> int:
     return count
 
 
-def execute_shell_command(
+def shell(
     command: str, shell_type: Optional[str] = "powershell",
     timeout: int = 60, run_in_background: bool = False,
     cwd: Optional[str] = None,
@@ -229,7 +229,7 @@ def execute_shell_command(
     """执行Shell命令 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件
     包装辅助函数结果，构建build3和llm_data — 北京老陈 2026-06-22
     """
-    timeout_valid, timeout_err, _ = validate_timeout(timeout, "execute_shell_command")
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "shell")
     if not timeout_valid:
         llm_data = _build_execute_shell_command_llm_data("error", 0, command, -1, "", "", shell_type or "", ERR_PARAMETER_INVALID, timeout_err)
         return build_error(data={"error_detail": timeout_err, "params": {"timeout": timeout}}, llm_data=llm_data)

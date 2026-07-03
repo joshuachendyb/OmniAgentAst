@@ -29,7 +29,7 @@ def _build_find_command_llm_data(
     if exec_code == "error":
         return {
             "summary": f"查找命令失败: {command}",
-            "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
+            "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
             "status": {"exec_code": "error", "message": "查找命令失败", "code": err_code or ERR_SHELL_FIND_COMMAND, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -38,7 +38,7 @@ def _build_find_command_llm_data(
         hint = "" if available else "请确认是否已安装并添加到PATH"
         return {
             "summary": f"命令 '{command}' 不可用",
-            "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
+            "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
             "status": {"exec_code": "warning", "message": "命令不可用", "code": "", "detail": "", "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -46,7 +46,7 @@ def _build_find_command_llm_data(
     if paths is not None:
         return {
             "summary": f"命令 '{command}' 找到 {count} 个路径",
-            "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
+            "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
             "status": {"exec_code": "success", "message": f"找到 {count} 个路径", "code": "", "detail": "", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {"count": {"value": count, "text": f"{count}个"}},
@@ -55,14 +55,14 @@ def _build_find_command_llm_data(
     hint = "" if available else "请确认是否已安装并添加到PATH"
     return {
         "summary": f"命令 '{command}' {status}",
-        "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
+        "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
         "status": {"exec_code": "success", "message": f"命令{status}", "code": "", "detail": "", "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-def find_command(command: str, all_paths: bool = False) -> Dict[str, Any]:
+def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
     """查找系统命令路径 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 修复空值校验"""
     t0 = _time_mod.perf_counter()
     if not command or not isinstance(command, str) or not command.strip():

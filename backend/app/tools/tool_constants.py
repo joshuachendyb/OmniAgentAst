@@ -43,12 +43,12 @@ TOOL_TIMEOUTS = {
     "archive_tool": 120,
     "read_config_file": 30,
     "write_config_file": 30,
-    "execute_shell_command": 120,
-    "execute_shell_command_foreground": 120,
-    "execute_shell_command_background": 10,
+    "shell": 120,
+    "shell_foreground": 120,
+    "shell_background": 10,
     "execute_python": 300,
     "execute_javascript": 300,
-    "shell_session": 60,
+    "session": 60,
 
     "event_log": 60,
 

@@ -126,13 +126,13 @@ PARAM_ALIASES = {
         "dst_path": "destination",
         "new_name": "destination",
     },
-    "execute_shell_command": {
+    "shell": {
         "workdir": "cwd",
         "work_dir": "cwd",
         "working_directory": "cwd",
         "directory": "cwd",
     },
-    "execute_code": {
+    "runcode": {
         "workdir": "working_dir",
         "work_dir": "working_dir",
         "working_directory": "working_dir",

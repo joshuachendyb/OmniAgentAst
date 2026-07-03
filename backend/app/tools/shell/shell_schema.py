@@ -20,8 +20,8 @@ Shell Schema - Shell工具参数模型
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
-class ExecuteShellCommandInput(BaseModel):
-    """execute_shell_command安全检查和翻译机制 - 小欧-2026-06-27
+class ShellInput(BaseModel):
+    """shell安全检查和翻译机制 - 小欧-2026-06-27
     
     【PowerShell翻译】&&和||自动翻译（兼容PS 5.1）：
     - cmd1 && cmd2 → cmd1; if ($?) { cmd2 }
@@ -57,7 +57,7 @@ class ExecuteShellCommandInput(BaseModel):
     )
 
 
-class FindCommandInput(BaseModel):
+class WhichInput(BaseModel):
     command: str = Field(
         ..., description="要查找的命令名称。示例: python"
     )
@@ -67,7 +67,7 @@ class FindCommandInput(BaseModel):
     )
 
 
-class ShellSessionInput(BaseModel):
+class SessionInput(BaseModel):
     """后台Shell会话管理工具
     
     【action参数】决定操作类型：
@@ -75,11 +75,11 @@ class ShellSessionInput(BaseModel):
     - terminate: 终止后台会话（强制终止）
     
     【使用示例】
-    - 读取输出 → shell_session(shell_id="shell_abc123")
-    - 终止会话 → shell_session(shell_id="shell_abc123", action="terminate")
+    - 读取输出 → session(shell_id="shell_abc123")
+    - 终止会话 → session(shell_id="shell_abc123", action="terminate")
     """
     shell_id: str = Field(
-        ..., description="后台Shell会话ID,由 execute_shell_command(run_in_background=True) 返回"
+        ..., description="后台Shell会话ID,由 shell(run_in_background=True) 返回"
     )
     action: Literal["output", "terminate"] = Field(
         default="output",
@@ -88,8 +88,8 @@ class ShellSessionInput(BaseModel):
 
 
 
-class ExecuteCodeInput(BaseModel):
-    """execute_code安全检查机制说明 - 小欧-2026-06-27
+class RuncodeInput(BaseModel):
+    """runcode安全检查机制说明 - 小欧-2026-06-27
     
     【安全检查】分级安全检查（三层防御）：
     - HIGH风险（拒绝执行）: eval/exec/compile/pickle/ctypes/getattr绕过
@@ -123,9 +123,9 @@ class ExecuteCodeInput(BaseModel):
 
 
 __all__ = [
-    "ExecuteShellCommandInput",
+    "ShellInput",
 
-    "FindCommandInput",
-    "ShellSessionInput",
-    "ExecuteCodeInput",
+    "WhichInput",
+    "SessionInput",
+    "RuncodeInput",
 ]

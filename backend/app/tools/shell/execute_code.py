@@ -47,7 +47,7 @@ def _build_execute_code_llm_data(
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
         return {
             "summary": f"{language}代码执行失败（{_detail}）",
-            "action": {"tool": "execute_code", "tool_zh": "执行代码", "target": language, "params": {"language": language}},
+            "action": {"tool": "runcode", "tool_zh": "执行代码", "target": language, "params": {"language": language}},
             "status": {"exec_code": "error", "message": f"代码执行失败({_detail})", "code": err_code or ERR_EXEC_FAILED, "detail": stderr_preview[:200] if stderr_preview else "", "hint": "请检查代码语法和逻辑"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -55,14 +55,14 @@ def _build_execute_code_llm_data(
     if exec_code == "warning":
         return {
             "summary": f"{language}代码执行成功（有警告输出）",
-            "action": {"tool": "execute_code", "tool_zh": "执行代码", "target": language, "params": {"language": language}},
+            "action": {"tool": "runcode", "tool_zh": "执行代码", "target": language, "params": {"language": language}},
             "status": {"exec_code": "warning", "message": "代码执行成功（有警告输出）", "code": "", "detail": stderr_preview[:200] if stderr_preview else "", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {"returncode": {"value": returncode, "text": f"退出码{returncode}"}},
         }
     return {
         "summary": f"{language}代码执行成功",
-        "action": {"tool": "execute_code", "tool_zh": "执行代码", "target": language, "params": {"language": language}},
+        "action": {"tool": "runcode", "tool_zh": "执行代码", "target": language, "params": {"language": language}},
         "status": {"exec_code": "success", "message": "代码执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"returncode": {"value": returncode, "text": f"退出码{returncode}"}},
@@ -194,7 +194,7 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
         return {"success": False, "error_detail": str(e), "params": {"language": "javascript"}}
 
 
-def execute_code(
+def runcode(
     code: str,
     language: str = "python",
     timeout: int = 30,
@@ -203,7 +203,7 @@ def execute_code(
     """统一代码执行入口 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 统一timeout单位为秒
     包装辅助函数结果，构建build3和llm_data — 北京老陈 2026-06-22
     """
-    timeout_valid, timeout_err, _ = validate_timeout(timeout, "execute_code")
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "runcode")
     if not timeout_valid:
         llm_data = _build_execute_code_llm_data("error", 0, "", language, ERR_PARAM_INVALID, timeout_err)
         return build_error(data={"error_detail": timeout_err, "params": {"timeout": timeout}}, llm_data=llm_data)

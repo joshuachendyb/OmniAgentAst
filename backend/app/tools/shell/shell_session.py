@@ -35,7 +35,7 @@ def _build_shell_session_llm_data(
     if exec_code == "error":
         return {
             "summary": f"Shell会话错误: {shell_id}",
-            "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
+            "action": {"tool": "session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
             "status": {"exec_code": "error", "message": detail or "Shell会话错误", "code": err_code or ERR_SHELL_NOT_FOUND, "detail": detail, "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -43,7 +43,7 @@ def _build_shell_session_llm_data(
     if terminated:
         return {
             "summary": f"会话{shell_id}已终止",
-            "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
+            "action": {"tool": "session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
             "status": {"exec_code": "success", "message": "会话已终止", "code": "", "detail": "", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -51,14 +51,14 @@ def _build_shell_session_llm_data(
     running_text = "运行中" if is_running else "已结束"
     return {
         "summary": f"后台命令输出（{running_text}）",
-        "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
+        "action": {"tool": "session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
         "status": {"exec_code": "success", "message": "后台命令输出", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-def shell_session(
+def session(
     shell_id: str,
     action: str = "output",
 ) -> Dict[str, Any]:

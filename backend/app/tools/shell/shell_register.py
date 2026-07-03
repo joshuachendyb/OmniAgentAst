@@ -28,48 +28,48 @@ from app.utils.logger import logger
 # Shell工具使用内置库，无第三方依赖
 SHELL_TOOL_DEPENDENCIES = {
     tool_name: [] for tool_name in [
-        "execute_shell_command", "find_command", "shell_session", "execute_code"
+        "shell", "which", "session", "runcode"
     ]
 }
 
 from app.tools.shell.shell_schema import (
-    ExecuteShellCommandInput,
-    FindCommandInput,
-    ShellSessionInput,
-    ExecuteCodeInput,
+    ShellInput,
+    WhichInput,
+    SessionInput,
+    RuncodeInput,
 )
 
-from app.tools.shell.execute_shell_command import execute_shell_command
-from app.tools.shell.find_command import find_command
-from app.tools.shell.shell_session import shell_session
-from app.tools.shell.execute_code import execute_code
+from app.tools.shell.execute_shell_command import shell
+from app.tools.shell.find_command import which
+from app.tools.shell.shell_session import session
+from app.tools.shell.execute_code import runcode
 
 SHELL_TOOL_DESCRIPTIONS = {
-    "execute_shell_command": """在Windows环境中执行命令,支持PowerShell和CMD两种shell类型。推荐使用PowerShell语法,支持前台等待和后台运行。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
+    "shell": """在Windows环境中执行命令,支持PowerShell和CMD两种shell类型。推荐使用PowerShell语法,支持前台等待和后台运行。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
 
-    "find_command": """查找系统命令的安装路径。适用场景:需要确认命令是否已安装、查看其安装路径时使用。""",
-    "execute_code": """执行代码片段(Python/JavaScript)并返回结果,内置安全防护。适用场景:需要快速验证代码逻辑、进行数据处理时使用。""",
-    "shell_session": """管理后台Shell会话,可查看输出或终止会话。适用场景:需要查看后台命令结果、终止后台进程时使用。""",
+    "which": """查找系统命令的安装路径。适用场景:需要确认命令是否已安装、查看其安装路径时使用。""",
+    "runcode": """执行代码片段(Python/JavaScript)并返回结果,内置安全防护。适用场景:需要快速验证代码逻辑、进行数据处理时使用。""",
+    "session": """管理后台Shell会话,可查看输出或终止会话。适用场景:需要查看后台命令结果、终止后台进程时使用。""",
 }
 
 SHELL_TOOL_EXAMPLES = {
-    "execute_shell_command": [
+    "shell": [
         {"command": "dir", "timeout": 10},
         {"command": "python --version", "shell_type": "powershell", "timeout": 10},
         {"command": "npm run dev", "run_in_background": True}
     ],
 
-    "find_command": [
+    "which": [
         {"command": "python"},
         {"command": "python", "all_paths": True},
         {"command": "git"},
         {"command": "npm"}
     ],
-    "shell_session": [
+    "session": [
         {"shell_id": "shell_abc123"},
         {"shell_id": "shell_abc123", "action": "terminate"}
     ],
-    "execute_code": [
+    "runcode": [
         {"code": "print('Hello, World!')"},
         {"code": "console.log('Hello');", "language": "javascript"},
         {"code": "import math\nprint(math.sqrt(16))"},
@@ -78,11 +78,11 @@ SHELL_TOOL_EXAMPLES = {
 
 
 TOOL_INPUT_MODELS = {
-    "execute_shell_command": ExecuteShellCommandInput,
+    "shell": ShellInput,
 
-    "find_command": FindCommandInput,
-    "shell_session": ShellSessionInput,
-    "execute_code": ExecuteCodeInput,
+    "which": WhichInput,
+    "session": SessionInput,
+    "runcode": RuncodeInput,
 }
 
 def _register_shell_tools():
@@ -96,14 +96,14 @@ def _register_shell_tools():
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
     CONFIRMATION_MAP = {
-        "execute_shell_command": {"write": True},
+        "shell": {"write": True},
     }
     
     tool_methods = {
-        "execute_shell_command": execute_shell_command,
-        "find_command": find_command,
-        "shell_session": shell_session,
-        "execute_code": execute_code,
+        "shell": shell,
+        "which": which,
+        "session": session,
+        "runcode": runcode,
     }
 
     for name, method in tool_methods.items():
@@ -119,7 +119,7 @@ def _register_shell_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
-            needs_confirmation=(name == "execute_shell_command"),
+            needs_confirmation=(name == "shell"),
             action_confirmation=CONFIRMATION_MAP.get(name),
             dependencies=SHELL_TOOL_DEPENDENCIES.get(name, []),
         )
@@ -129,9 +129,8 @@ def _register_shell_tools():
 
 __all__ = [
     "_register_shell_tools",
-    "execute_shell_command",
-
-    "find_command",
-    "shell_session",
-    "execute_code",
+    "shell",
+    "which",
+    "session",
+    "runcode",
 ]
