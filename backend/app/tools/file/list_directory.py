@@ -12,7 +12,7 @@ import asyncio
 import time as _time_mod
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
@@ -132,7 +132,7 @@ def _build_list_directory_llm_data(
     if exec_code == "error":
         return {
             "summary": f"列出目录失败: {detail}",
-            "action": {"tool": "list_directory", "tool_zh": "列出目录", "target": dir_path, "params": {}},
+            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {}},
             "status": {"exec_code": "error", "message": "列出目录失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -142,7 +142,7 @@ def _build_list_directory_llm_data(
         m["truncated"] = {"value": True, "text": "已截断"}
         return {
             "summary": f"列出目录成功: {dir_path} ({total}项，已截断)",
-            "action": {"tool": "list_directory", "tool_zh": "列出目录", "target": dir_path, "params": {}},
+            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {}},
             "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": "结果过多已截断，仅显示前200项", "hint": "请使用更精确的路径或筛选条件"},
             "duration_ms": duration_ms,
             "metrics": m,
@@ -151,104 +151,21 @@ def _build_list_directory_llm_data(
         m["truncated"] = {"value": True, "text": "已截断"}
     return {
         "summary": f"列出目录成功: {dir_path} ({total}项)",
-        "action": {"tool": "list_directory", "tool_zh": "列出目录", "target": dir_path, "params": {}},
+        "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {}},
         "status": {"exec_code": "success", "message": "列出目录成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": m,
     }
 
 
-async def _get_directory_tree(
-    dir_path: str, max_depth: int = 10,
-    include_hidden: bool = False, sort_by: str = "name",
-) -> Dict[str, Any]:
-    """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时 — 小欧 2026-06-24 修复include_hidden和sort_by"""
-    path = Path(dir_path)
-    if not path.exists():
-        return {"error_detail": "目录不存在", "params": {"dir_path": dir_path}}
-    if not path.is_dir():
-        return {"error_detail": "不是目录", "params": {"dir_path": dir_path}}
-
-    def _count_tree_fs(root: Path) -> Tuple[int, int, int]:
-        fc = dc = ts = 0
-        try:
-            for entry in os.scandir(root):
-                try:
-                    if entry.is_dir(follow_symlinks=False):
-                        if not include_hidden and entry.name.startswith('.'):
-                            continue
-                        dc += 1
-                        sub_f, sub_d, sub_s = _count_tree_fs(Path(entry.path))
-                        fc += sub_f; dc += sub_d; ts += sub_s
-                    else:
-                        if not include_hidden and entry.name.startswith('.'):
-                            continue
-                        fc += 1
-                        ts += entry.stat().st_size
-                except (PermissionError, OSError):
-                    pass
-        except (PermissionError, OSError):
-            pass
-        return fc, dc, ts
-
-    def _sort_items(items, sort_by_param):
-        """排序目录项 - 小沈 2026-07-01"""
-        if sort_by_param == "mtime":
-            def _get_mtime(p):
-                try:
-                    return p.stat().st_mtime
-                except OSError:
-                    return 0
-            return sorted(items, key=lambda x: (-_get_mtime(x), x.name.lower()))
-        # name/size均回退按名称排序(tree只列目录,size无意义)
-        return sorted(items, key=lambda x: x.name.lower())
-
-    def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
-        if depth > max_depth:
-            return None
-        try:
-            st = current_path.stat()
-        except OSError:
-            return None
-        node: Dict[str, Any] = {
-            "name": current_path.name,
-            "path": str(current_path.absolute()),
-            "type": "directory",
-            "size": None,
-            "mtime": st.st_mtime,
-        }
-        children: list = []
-        try:
-            items = [item for item in current_path.iterdir() if item.is_dir()]
-            if not include_hidden:
-                items = [item for item in items if not item.name.startswith('.')]
-            for item in _sort_items(items, sort_by):
-                child = _build_tree(item, depth + 1)
-                if child:
-                    children.append(child)
-        except (PermissionError, OSError):
-            pass
-        node["children"] = children
-        return node
-
-    tree = await asyncio.to_thread(_build_tree, path)
-    if tree is None:
-        return {"error_detail": "构建目录树失败", "params": {"dir_path": dir_path}}
-
-    fc, dc, ts = await asyncio.to_thread(_count_tree_fs, path)
-    return {"tree": tree, "statistics": {"file_count": fc, "dir_count": dc, "total_size": ts}}
-
-
-async def list_directory(
+async def listdir(
     dir_path: str,
-    tree: bool = False,
     sort_by: str = "name",
     include_hidden: bool = False,
 ) -> Dict[str, Any]:
-    """列出目录内容 — 小沈 2026-05-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-23 recursive改名为tree"""
+    """列出目录内容 — 小沈 2026-05-19 — 小欧 2026-06-22 独立文件 — 小沈 2026-07-03 拆分tree"""
     t0 = _time_mod.perf_counter()
     max_depth = 10
-    format_mode = "tree" if tree else "list"
 
     if not dir_path or not dir_path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -259,16 +176,6 @@ async def list_directory(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'")
         return build_error(data={"error_detail": f"sort_by只支持name/size/mtime", "params": {"sort_by": sort_by}}, llm_data=llm_data)
-
-    if format_mode == "tree":
-        tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth, include_hidden=include_hidden, sort_by=sort_by)
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        if "error_detail" in tree_result:
-            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=tree_result["error_detail"])
-            return build_error(data=tree_result, llm_data=llm_data)
-        else:
-            llm_data = _build_list_directory_llm_data("success", duration_ms, dir_path=dir_path, total=tree_result["statistics"]["file_count"] + tree_result["statistics"]["dir_count"])
-            return build_success(data=tree_result, llm_data=llm_data)
 
     path = Path(dir_path)
     start_offset = 0
@@ -283,7 +190,7 @@ async def list_directory(
             llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"不是目录: {dir_path}")
             return build_error(data={"error_detail": "不是目录", "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
-        deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"]) - 2
+        deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution = await asyncio.to_thread(
             _scan_directory_sync, path, False, max_depth, include_hidden, deadline,
         )
@@ -304,7 +211,7 @@ async def list_directory(
         }
 
         if total > MAX_DISPLAY_ENTRIES:
-            logger.warning(f"[list_directory] Large directory truncated: path={path}, total={total}")
+            logger.warning(f"[listdir] Large directory truncated: path={path}, total={total}")
 
         list_data = _build_list_success(all_entries, total, path, statistics, start_offset, MAX_DISPLAY_ENTRIES)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

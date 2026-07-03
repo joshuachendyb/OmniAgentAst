@@ -52,21 +52,21 @@ PARAM_ALIASES = {
         "folder": "dir_path",
         "dirpath": "dir_path",
     },
-    "search_files": {
+    "find": {
         "dir": "search_dir",
         "path": "search_dir",
         "directory": "search_dir",
         "folder": "search_dir",
         "search_path": "search_dir",
     },
-    "grep_file_content": {
+    "grep": {
         "dir": "search_dir",
         "path": "search_dir",
         "directory": "search_dir",
         "folder": "search_dir",
         "search_path": "search_dir",
     },
-    "compress_files": {
+    "compress": {
         "src": "source",
         "from": "source",
         "src_path": "source",
@@ -77,7 +77,7 @@ PARAM_ALIASES = {
         "target": "destination",
         "output": "destination",
     },
-    "extract_archive": {
+    "extract": {
         "src": "source",
         "from": "source",
         "src_path": "source",
@@ -89,7 +89,7 @@ PARAM_ALIASES = {
         "target": "destination",
         "output": "destination",
     },
-    "move_file": {
+    "move": {
         "src": "source",
         "from": "source",
         "src_path": "source",
@@ -99,7 +99,7 @@ PARAM_ALIASES = {
         "dst_path": "destination",
         "target": "destination",
     },
-    "copy_file": {
+    "copy": {
         "src": "source",
         "from": "source",
         "src_path": "source",
@@ -109,14 +109,14 @@ PARAM_ALIASES = {
         "dst_path": "destination",
         "target": "destination",
     },
-    "delete_file": {
+    "delete": {
         "path": "source",
         "file": "source",
         "filepath": "source",
         "file_path": "source",
         "target": "source",
     },
-    "rename_file": {
+    "rename": {
         "src": "source",
         "from": "source",
         "src_path": "source",

@@ -38,7 +38,7 @@ def _build_compress_files_llm_data(
     if exec_code == "error":
         return {
             "summary": f"压缩失败: {detail}",
-            "action": {"tool": "compress_files", "tool_zh": "压缩", "target": source, "params": {"source": source}},
+            "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": {"source": source}},
             "status": {"exec_code": "error", "message": f"压缩失败: {detail}", "code": ERR_FILE_COMPRESS_FAILED, "detail": detail, "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -46,7 +46,7 @@ def _build_compress_files_llm_data(
     ratio = 1 - (compressed_size / original_size) if original_size > 0 else 0
     return {
         "summary": f"压缩 {source}，{file_count}个文件，{compressed_size}字节",
-        "action": {"tool": "compress_files", "tool_zh": "压缩", "target": source, "params": {"source": source}},
+        "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": {"source": source}},
         "status": {"exec_code": "success", "message": "压缩成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -197,7 +197,7 @@ def _get_total_size_sync(path: Path, deadline: float) -> int:
     return total_size
 
 
-async def compress_files(
+async def compress(
     source: str,
     destination: str,
     format: str = "zip",
@@ -252,7 +252,7 @@ async def compress_files(
             sequence_number=0,
         )
 
-        _cf_deadline = time.monotonic() + TOOL_TIMEOUTS.get("compress_files", TOOL_TIMEOUTS["default"]) - 2
+        _cf_deadline = time.monotonic() + TOOL_TIMEOUTS.get("compress", TOOL_TIMEOUTS["default"]) - 2
         original_size = _get_total_size_sync(src, _cf_deadline)
 
         def _compress_sync():

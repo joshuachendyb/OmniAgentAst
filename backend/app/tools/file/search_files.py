@@ -67,7 +67,7 @@ def _build_search_files_llm_data(
     if exec_code == "error":
         return {
             "summary": f"搜索文件失败: {detail}",
-            "action": {"tool": "search_files", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
+            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -75,7 +75,7 @@ def _build_search_files_llm_data(
     if exec_code == "warning":
         return {
             "summary": f"搜索完成: {total}个匹配（结果被截断，可能不完整）",
-            "action": {"tool": "search_files", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
+            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
             "status": {"exec_code": "warning", "message": "结果被截断，可能不完整", "code": "", "detail": "搜索超时或结果数量达到上限，仅返回部分匹配项", "hint": "可缩小搜索范围或使用更精确的匹配模式"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -84,7 +84,7 @@ def _build_search_files_llm_data(
         }
     return {
         "summary": f"搜索完成: {total}个匹配",
-        "action": {"tool": "search_files", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
+        "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -93,7 +93,7 @@ def _build_search_files_llm_data(
     }
 
 
-async def search_files(
+async def find(
     pattern: str,
     search_dir: str,
     ignore_case: bool = True,
@@ -120,7 +120,7 @@ async def search_files(
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索路径不是目录: {search_dir}")
         return build_error(data={"error_detail": "搜索路径不是目录", "params": {"search_dir": search_dir}}, llm_data=llm_data)
 
-    deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("search_files", TOOL_TIMEOUTS["default"]) - 2
+    deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("find", TOOL_TIMEOUTS["default"]) - 2
     all_matches: List = []
     llm_preview: List = []
     seen_files: set = set()
@@ -130,10 +130,10 @@ async def search_files(
         nonlocal seen_files
         for root, dirs, files in os.walk(path):
             if _time_mod.monotonic() > deadline:
-                logger.warning(f"[search_files] 超时自检触发,提前返回{len(all_matches)}个匹配")
+                logger.warning(f"[find] 超时自检触发,提前返回{len(all_matches)}个匹配")
                 break
             if len(all_matches) >= MAX_SEARCH_RESULTS:
-                logger.warning(f"[search_files] 结果数量达到上限{MAX_SEARCH_RESULTS},提前返回")
+                logger.warning(f"[find] 结果数量达到上限{MAX_SEARCH_RESULTS},提前返回")
                 break
             if max_depth:
                 depth = root[len(str(path)):].count(os.sep)

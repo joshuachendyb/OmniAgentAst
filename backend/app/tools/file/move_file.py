@@ -35,7 +35,7 @@ def _build_move_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"移动失败: {detail}",
-            "action": {"tool": "move_file", "tool_zh": "移动", "target": source, "params": {"source": source, "destination": destination}},
+            "action": {"tool": "move", "tool_zh": "移动", "target": source, "params": {"source": source, "destination": destination}},
             "status": {"exec_code": "error", "message": f"移动失败: {detail}", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": "请检查源路径和目标路径"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -43,7 +43,7 @@ def _build_move_file_llm_data(
     _summary = f"移动 {source} → {destination}" if destination else f"移动 {source}"
     return {
         "summary": _summary,
-        "action": {"tool": "move_file", "tool_zh": "移动", "target": source, "params": {"source": source, "destination": destination}},
+        "action": {"tool": "move", "tool_zh": "移动", "target": source, "params": {"source": source, "destination": destination}},
         "status": {"exec_code": "success", "message": "移动成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics,
@@ -59,7 +59,7 @@ async def _move_file_impl(
     if not is_valid:
         return {"success": False, "error_detail": err, "params": {"source": source_path}}
     if warn:
-        logger.warning(f"[move_file] {warn}")
+        logger.warning(f"[move] {warn}")
 
     src = Path(source_path)
     dst = Path(destination_path)
@@ -85,7 +85,7 @@ async def _move_file_impl(
                 if not overwrite:
                     raise FileExistsError(f"目标路径已存在: {dst},请设置overwrite=True")
                 if dst.is_dir():
-                    logger.warning(f"[move_file] overwrite模式: 目标目录已存在,将删除后移动: {dst}")
+                    logger.warning(f"[move] overwrite模式: 目标目录已存在,将删除后移动: {dst}")
                     shutil.rmtree(str(dst))
                 else:
                     dst.unlink()
@@ -109,7 +109,7 @@ async def _move_file_impl(
         return {"success": False, "error_detail": str(e), "params": {"source": source_path, "destination": destination_path}}
 
 
-async def move_file(
+async def move(
     source: str,
     destination: str,
     overwrite: bool = False,

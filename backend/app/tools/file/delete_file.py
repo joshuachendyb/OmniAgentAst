@@ -73,7 +73,7 @@ def _build_delete_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"删除失败: {detail}",
-            "action": {"tool": "delete_file", "tool_zh": "删除", "target": source, "params": {"source": source}},
+            "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": {"source": source}},
             "status": {"exec_code": "error", "message": f"删除失败: {detail}", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": "请检查文件是否存在"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -81,7 +81,7 @@ def _build_delete_file_llm_data(
     _suffix = extra_metrics.get("status", {}).get("text", "") or extra_metrics.get("deleted", {}).get("text", "")
     return {
         "summary": f"删除 {source}，{_suffix}" if _suffix else f"删除 {source}",
-        "action": {"tool": "delete_file", "tool_zh": "删除", "target": source, "params": {"source": source}},
+        "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": {"source": source}},
         "status": {"exec_code": "success", "message": "删除成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics,
@@ -128,7 +128,7 @@ async def _delete_file_impl(
         return {"success": False, "error_detail": str(e), "params": {"source": file_path}}
 
 
-async def delete_file(
+async def delete(
     source: str,
     recursive: bool = False,
     force: bool = False,

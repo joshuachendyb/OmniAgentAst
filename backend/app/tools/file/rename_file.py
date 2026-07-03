@@ -26,7 +26,7 @@ def _build_rename_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"重命名失败: {detail}",
-            "action": {"tool": "rename_file", "tool_zh": "重命名", "target": source, "params": {"source": source, "new_name": new_name}},
+            "action": {"tool": "rename", "tool_zh": "重命名", "target": source, "params": {"source": source, "new_name": new_name}},
             "status": {"exec_code": "error", "message": f"重命名失败: {detail}", "code": ERR_FILE_RENAME_FAILED, "detail": detail, "hint": "请检查源路径和新名称"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -34,14 +34,14 @@ def _build_rename_file_llm_data(
     _summary = f"重命名 {source} → {new_name}" if new_name else f"重命名 {source}"
     return {
         "summary": _summary,
-        "action": {"tool": "rename_file", "tool_zh": "重命名", "target": source, "params": {"source": source, "new_name": new_name}},
+        "action": {"tool": "rename", "tool_zh": "重命名", "target": source, "params": {"source": source, "new_name": new_name}},
         "status": {"exec_code": "success", "message": "重命名成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-async def rename_file(
+async def rename(
     source: str,
     destination: str,
 ) -> Dict[str, Any]:

@@ -83,7 +83,7 @@ def _build_grep_file_content_llm_data(
     if exec_code == "error":
         return {
             "summary": f"内容搜索失败: {detail}",
-            "action": {"tool": "grep_file_content", "tool_zh": "内容搜索", "target": pattern, "params": {"pattern": pattern}},
+            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": {"pattern": pattern}},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_CONTENT_SEARCH_FAILED, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -91,7 +91,7 @@ def _build_grep_file_content_llm_data(
     if exec_code == "warning":
         return {
             "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件（结果被截断，可能不完整）",
-            "action": {"tool": "grep_file_content", "tool_zh": "内容搜索", "target": pattern, "params": {"pattern": pattern}},
+            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": {"pattern": pattern}},
             "status": {"exec_code": "warning", "message": "结果被截断，可能不完整", "code": "", "detail": "搜索超时或结果数量达到上限，仅返回部分结果", "hint": "可缩小搜索范围、使用head_limit参数限制结果数量或增加超时时间"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -101,7 +101,7 @@ def _build_grep_file_content_llm_data(
         }
     return {
         "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件",
-        "action": {"tool": "grep_file_content", "tool_zh": "内容搜索", "target": pattern, "params": {"pattern": pattern}},
+        "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": {"pattern": pattern}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -198,7 +198,7 @@ def _grep_files_sync(
 import os
 
 
-async def grep_file_content(
+async def grep(
     pattern: str,
     search_dir: str,
     glob: Optional[str] = None,
@@ -251,7 +251,7 @@ async def grep_file_content(
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"search_dir是一个文件而非目录: {actual_dir}")
         return build_error(data={"error_detail": f"search_dir是一个文件而非目录: {actual_dir}", "params": {"search_dir": actual_dir}}, llm_data=llm_data)
 
-    deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("grep_file_content", TOOL_TIMEOUTS["default"]) - 2
+    deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("grep", TOOL_TIMEOUTS["default"]) - 2
 
     try:
         results, total_files, total_matches, truncated, skipped_binary_files = await asyncio.to_thread(

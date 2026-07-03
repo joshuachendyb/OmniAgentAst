@@ -162,16 +162,12 @@ class EditTextFileInput(BaseModel):
 
 
 # ============================================================
-# F5: list_directory — 列出目录内容
+# F5a: listdir — 列出目录内容
 # ============================================================
 
-class ListDirectoryInput(BaseModel):
+class ListdirInput(BaseModel):
     dir_path: str = Field(
         description="目录路径(绝对路径,必填)。如 D:/项目代码"
-    )
-    tree: bool = Field(
-        default=False,
-        description="是否以目录树形式列出。True=仅显示目录层级(不含文件节点,输出紧凑,统计信息仍含文件数),False=扁平列表(当前层所有文件+目录),默认False"
     )
     sort_by: Literal["name", "size", "mtime"] = Field(
         default="name",
@@ -184,10 +180,28 @@ class ListDirectoryInput(BaseModel):
 
 
 # ============================================================
+# F5b: tree — 列出目录树
+# ============================================================
+
+class TreeInput(BaseModel):
+    dir_path: str = Field(
+        description="目录路径(绝对路径,必填)。如 D:/项目代码"
+    )
+    include_hidden: bool = Field(
+        default=False,
+        description="是否显示隐藏文件(以.开头的文件),默认False"
+    )
+    sort_by: Literal["name", "mtime"] = Field(
+        default="name",
+        description="排序方式:name/mtime(树模式不支持size排序),默认name"
+    )
+
+
+# ============================================================
 # F6: search_files — 搜索文件名
 # ============================================================
 
-class SearchFilesInput(BaseModel):
+class FindInput(BaseModel):
     pattern: str = Field(
         description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\""
     )
@@ -208,7 +222,7 @@ class SearchFilesInput(BaseModel):
 # F7: grep_file_content — 搜索文件内容
 # ============================================================
 
-class GrepFileContentInput(BaseModel):
+class GrepInput(BaseModel):
     pattern: str = Field(
         description="正则表达式搜索模式,支持中文内容搜索。如 \"def read_file\""
     )
@@ -234,7 +248,7 @@ class GrepFileContentInput(BaseModel):
 # F8: compress_files — 压缩文件
 # ============================================================
 
-class CompressFilesInput(BaseModel):
+class CompressInput(BaseModel):
     source: str = Field(description="要压缩的文件/目录路径(绝对路径),支持通配符如*.txt")
     destination: str = Field(description="输出压缩包路径(绝对路径,必填)")
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
@@ -252,7 +266,7 @@ class CompressFilesInput(BaseModel):
 # F8b: extract_archive — 解压文件
 # ============================================================
 
-class ExtractArchiveInput(BaseModel):
+class ExtractInput(BaseModel):
     source: str = Field(description="压缩包路径(绝对路径,必填)。支持格式:zip/tar/tar.gz/tar.bz2")
     destination: Optional[str] = Field(
         default=None, description="解压目标目录(绝对路径,可选,默认自动创建同名目录)"
@@ -265,7 +279,7 @@ class ExtractArchiveInput(BaseModel):
 # F9a: move_file — 移动文件
 # ============================================================
 
-class MoveFileInput(BaseModel):
+class MoveInput(BaseModel):
     source: str = Field(description="源文件路径(绝对路径)")
     destination: str = Field(description="目标路径(绝对路径)")
     overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
@@ -275,7 +289,7 @@ class MoveFileInput(BaseModel):
 # F9b: copy_file — 复制文件
 # ============================================================
 
-class CopyFileInput(BaseModel):
+class CopyInput(BaseModel):
     source: str = Field(description="源文件路径(绝对路径)")
     destination: str = Field(description="目标路径(绝对路径)")
     recursive: bool = Field(default=False, description="复制目录时需True,默认False")
@@ -288,7 +302,7 @@ class CopyFileInput(BaseModel):
 # F9c: delete_file — 删除文件
 # ============================================================
 
-class DeleteFileInput(BaseModel):
+class DeleteInput(BaseModel):
     source: str = Field(description="要删除的文件/目录路径(绝对路径)")
     recursive: bool = Field(default=False, description="删除非空目录时需True,默认False")
     force: bool = Field(default=False, description="True=跳过回收站永久删除,False=放入回收站。默认False")
@@ -298,7 +312,7 @@ class DeleteFileInput(BaseModel):
 # F9d: rename_file — 重命名文件
 # ============================================================
 
-class RenameFileInput(BaseModel):
+class RenameInput(BaseModel):
     source: str = Field(description="原文件/目录路径(绝对路径)")
     destination: str = Field(description="新名称(仅文件名,不含目录路径)")
 
@@ -313,14 +327,14 @@ __all__ = [
     "WriteTextFileInput",
     "ReadMediaFileInput",
     "EditTextFileInput",
-    "ListDirectoryInput",
-    "SearchFilesInput",
-    "GrepFileContentInput",
-
-    "CompressFilesInput",
-    "ExtractArchiveInput",
-    "MoveFileInput",
-    "CopyFileInput",
-    "DeleteFileInput",
-    "RenameFileInput",
+    "ListdirInput",
+    "TreeInput",
+    "FindInput",
+    "GrepInput",
+    "CompressInput",
+    "ExtractInput",
+    "MoveInput",
+    "CopyInput",
+    "DeleteInput",
+    "RenameInput",
 ]

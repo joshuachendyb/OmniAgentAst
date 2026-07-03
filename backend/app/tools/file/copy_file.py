@@ -33,21 +33,21 @@ def _build_copy_file_llm_data(
         detail = (extra_metrics or {}).get("detail", "复制失败")
         return {
             "summary": f"复制文件失败: {detail}",
-            "action": {"tool": "copy_file", "tool_zh": "复制文件", "target": source, "params": {}},
+            "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": {}},
             "status": {"exec_code": "error", "message": "复制失败", "code": "", "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"复制文件成功: {source}",
-        "action": {"tool": "copy_file", "tool_zh": "复制文件", "target": source, "params": {}},
+        "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": {}},
         "status": {"exec_code": "success", "message": "复制成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics or {},
     }
 
 
-async def copy_file(
+async def copy(
     source: str,
     destination: str,
     recursive: bool = False,
@@ -108,7 +108,7 @@ async def copy_file(
             elif src.is_dir():
                 if recursive:
                     if dst.exists():
-                        logger.warning(f"[copy_file] recursive模式: 目标目录已存在,将删除后重建: {dst}")
+                        logger.warning(f"[copy] recursive模式: 目标目录已存在,将删除后重建: {dst}")
                         shutil.rmtree(str(dst))
                     if preserve_metadata:
                         shutil.copytree(str(src), str(dst))

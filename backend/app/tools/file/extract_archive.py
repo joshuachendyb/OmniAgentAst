@@ -32,14 +32,14 @@ def _build_extract_archive_llm_data(
     if exec_code == "error":
         return {
             "summary": f"解压文件失败: {detail}",
-            "action": {"tool": "extract_archive", "tool_zh": "解压文件", "target": source, "params": {}},
+            "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": {}},
             "status": {"exec_code": "error", "message": "解压失败", "code": "", "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"解压文件成功: {source}",
-        "action": {"tool": "extract_archive", "tool_zh": "解压文件", "target": source, "params": {}},
+        "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": {}},
         "status": {"exec_code": "success", "message": "解压成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
@@ -125,7 +125,7 @@ def _extract_tar_archive(archive_path: str, output_dir: str, overwrite: bool,
     }
 
 
-async def extract_archive(
+async def extract(
     source: str,
     destination: Optional[str] = None,
     password: Optional[str] = None,
@@ -180,6 +180,6 @@ async def extract_archive(
         return build_error(data={"error_detail": f"TAR文件错误: {str(e)}", "params": {"source": source}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        logger.error(f"[extract_archive] 解压失败: {e}")
+        logger.error(f"[extract] 解压失败: {e}")
         llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"source": source}}, llm_data=llm_data)

@@ -36,13 +36,10 @@ TOOL_TIMEOUTS = {
     #    防止工具卡死不返回。详见 tool_retry_engine.py 第95行。
     # 警告：修改此值会影响重试引擎的超时行为。
     "list_directory": 30,
-    "search_files": 120,
-    "grep_file_content": 120,
+    "find": 120,
+    "grep": 120,
     "read_media_file": 60,
     "edit_text_file": 60,
-    "archive_tool": 120,
-    "read_config_file": 30,
-    "write_config_file": 30,
     "shell": 120,
     "shell_foreground": 120,
     "shell_background": 10,
@@ -104,8 +101,8 @@ HTTPX_TIMEOUT_DEFAULT = 5.0        # 通用httpx请求超时
 
 FILE_OPERATION_TOOLS = {
     "read_text_file", "write_text_file", "edit_text_file",
-    "move_file", "copy_file", "delete_file", "rename_file",
-    "compress_files", "extract_archive",
+    "move", "copy", "delete", "rename",
+    "compress", "extract",
 }
 
 READ_FILE_DEFAULT_LIMIT = 500

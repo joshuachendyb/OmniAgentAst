@@ -8,20 +8,21 @@ File Register - 文件工具注册点 v3.0
 【拆分时间】2026-06-17 小欧 — data_file_format→2: read_config_file, write_config_file
 【删除时间】2026-06-24 小欧 — 删除read_config_file/write_config_file，text工具已覆盖
 
-13个工具清单(F1-F13):
+14个工具清单(F1-F13):
 F1  read_text_file     — 读取文本文件
 F2  write_text_file    — 写文本文件
 F3  read_media_file    — 读媒体文件
 F4  edit_text_file     — 编辑文本文件
-F5  list_directory     — 列出目录内容
-F6  search_files       — 搜索文件名
-F7  grep_file_content  — 搜索文件内容
-F8  compress_files     — 压缩文件
-F9  extract_archive    — 解压文件
-F10 move_file          — 移动文件
-F11 copy_file          — 复制文件
-F12 delete_file        — 删除文件
-F13 rename_file        — 重命名文件
+F5a listdir            — 列出目录内容
+F5b tree               — 列出目录树
+F6  find       — 搜索文件名
+F7  grep  — 搜索文件内容
+F8  compress     — 压缩文件
+F9  extract    — 解压文件
+F10 move          — 移动文件
+F11 copy          — 复制文件
+F12 delete        — 删除文件
+F13 rename        — 重命名文件
 
 
 创建时间: 2026-04-26
@@ -31,18 +32,19 @@ F13 rename_file        — 重命名文件
 """
 
 from app.tools.file.file_schema import (
-    CompressFilesInput,
-    CopyFileInput,
-    DeleteFileInput,
+    CompressInput,
+    CopyInput,
+    DeleteInput,
     EditTextFileInput,
-    ExtractArchiveInput,
-    GrepFileContentInput,
-    ListDirectoryInput,
-    MoveFileInput,
+    ExtractInput,
+    GrepInput,
+    ListdirInput,
+    TreeInput,
+    MoveInput,
     ReadTextFileInput,
     ReadMediaFileInput,
-    RenameFileInput,
-    SearchFilesInput,
+    RenameInput,
+    FindInput,
     WriteTextFileInput,
 )
 
@@ -50,33 +52,34 @@ from app.tools.file.read_text_file import read_text_file
 from app.tools.file.write_text_file import write_text_file
 from app.tools.file.read_media_file import read_media_file
 from app.tools.file.edit_text_file import edit_text_file
-from app.tools.file.list_directory import list_directory
-from app.tools.file.search_files import search_files
-from app.tools.file.grep_file_content import grep_file_content
-from app.tools.file.compress_files import compress_files
-from app.tools.file.extract_archive import extract_archive
-from app.tools.file.move_file import move_file
-from app.tools.file.copy_file import copy_file
-from app.tools.file.delete_file import delete_file
-from app.tools.file.rename_file import rename_file
+from app.tools.file.list_directory import listdir
+from app.tools.file.tree import tree
+from app.tools.file.search_files import find
+from app.tools.file.grep_file_content import grep
+from app.tools.file.compress_files import compress
+from app.tools.file.extract_archive import extract
+from app.tools.file.move_file import move
+from app.tools.file.copy_file import copy
+from app.tools.file.delete_file import delete
+from app.tools.file.rename_file import rename
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 # 文件工具依赖配置 — 小健 2026-06-18
-# compress_files的pyzipper是可选依赖(仅加密ZIP时需要) — 小健 2026-06-19
+# compress的pyzipper是可选依赖(仅加密ZIP时需要) — 小健 2026-06-19
 FILE_TOOL_DEPENDENCIES = {
     tool_name: [] for tool_name in [
         "read_text_file", "write_text_file", "read_media_file", "edit_text_file",
-        "list_directory", "search_files", "grep_file_content",
-        "extract_archive", "move_file", "copy_file", "delete_file", "rename_file",
+        "listdir", "tree", "find", "grep",
+        "extract", "move", "copy", "delete", "rename",
     ]
 }
-FILE_TOOL_DEPENDENCIES["compress_files"] = ["pyzipper"]
+FILE_TOOL_DEPENDENCIES["compress"] = ["pyzipper"]
 
 
 # ============================================================
-# 工具描述(15个)
+# 工具描述(14个)
 # ============================================================
 
 FILE_TOOL_DESCRIPTIONS = {
@@ -88,28 +91,30 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "edit_text_file": """替换文本文件中的指定内容。适用场景:需要精确修改代码中的函数名、变量、配置值等时使用。""",
 
-    "list_directory": """列出目录内容,支持扁平列表和目录树两种格式。适用场景:需要查看目录结构、文件大小、文件数量统计时使用。""",
+    "listdir": """列出目录内容,返回扁平列表(当前层所有文件+目录)。适用场景:需要查看目录结构、文件大小、文件数量统计时使用。""",
 
-    "search_files": """按文件名匹配模式递归搜索文件或目录。适用场景:需要查找特定文件、统计项目中某类文件数量时使用。""",
+    "tree": """列出目录树,仅显示目录层级(不含文件)。适用场景:需要查看项目目录结构、快速了解文件夹组织时使用。""",
 
-    "grep_file_content": """在文件中搜索文本内容,支持正则表达式。适用场景:需要查找代码或文档中的函数定义、关键字、TODO等文本时使用。""",
+    "find": """按文件名匹配模式递归搜索文件或目录。适用场景:需要查找特定文件、统计项目中某类文件数量时使用。""",
 
-    "compress_files": """将单个文件或目录压缩为归档包,可选加密。多文件打包请用通配符(如*.txt)或分多次调用(设overwrite=true)。适用场景:需要备份文件、打包项目、创建加密压缩包时使用。""",
+    "grep": """在文件中搜索文本内容,支持正则表达式。适用场景:需要查找代码或文档中的函数定义、关键字、TODO等文本时使用。""",
 
-    "extract_archive": """解压归档包到指定目录。适用场景:需要解压下载的压缩包、恢复备份时使用。""",
+    "compress": """将单个文件或目录压缩为归档包,可选加密。多文件打包请用通配符(如*.txt)或分多次调用(设overwrite=true)。适用场景:需要备份文件、打包项目、创建加密压缩包时使用。""",
 
-    "move_file": """移动文件或目录到新位置。适用场景:需要整理文件位置、迁移文件时使用。""",
+    "extract": """解压归档包到指定目录。适用场景:需要解压下载的压缩包、恢复备份时使用。""",
 
-    "copy_file": """复制文件或目录到目标位置。适用场景:需要备份文件、复制模板时使用。""",
+    "move": """移动文件或目录到新位置。适用场景:需要整理文件位置、迁移文件时使用。""",
 
-    "delete_file": """删除文件或目录(默认可恢复)。适用场景:需要清理临时文件、删除过期数据时使用。""",
+    "copy": """复制文件或目录到目标位置。适用场景:需要备份文件、复制模板时使用。""",
 
-    "rename_file": """重命名文件或目录。适用场景:需要修改文件名、规范化命名时使用。""",
+    "delete": """删除文件或目录(默认可恢复)。适用场景:需要清理临时文件、删除过期数据时使用。""",
+
+    "rename": """重命名文件或目录。适用场景:需要修改文件名、规范化命名时使用。""",
 }
 
 
 # ============================================================
-# 工具示例(15个)
+# 工具示例(14个)
 # ============================================================
 
 FILE_TOOL_EXAMPLES = {
@@ -131,45 +136,49 @@ FILE_TOOL_EXAMPLES = {
         {"file_path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"},
         {"file_path": "D:/main.py", "old_string": "import os", "new_string": "import sys"},
     ],
-    "list_directory": [
+    "listdir": [
         {"dir_path": "D:/project"},
-        {"dir_path": "D:/project", "tree": True},
+        {"dir_path": "D:/project", "sort_by": "size"},
     ],
-    "search_files": [
+    "tree": [
+        {"dir_path": "D:/project"},
+        {"dir_path": "D:/project", "include_hidden": True},
+    ],
+    "find": [
         {"pattern": "**/*.py", "search_dir": "D:/project"},
     ],
-    "grep_file_content": [
+    "grep": [
         {"pattern": "def read_text_file", "search_dir": "D:/backend"},
         {"pattern": "TODO", "search_dir": "D:/src"},
         {"pattern": "error", "search_dir": "D:/logs", "output_mode": "files_with_matches"},
         {"pattern": "class.*Component", "search_dir": "D:/src", "glob": "*.py"}
     ],
-    "compress_files": [
+    "compress": [
         {"source": "D:/project", "destination": "D:/backup.zip"},
         {"source": "D:/secret.txt", "destination": "D:/secret_encrypted.zip", "password": "my_password"},
         {"source": "D:/dir/*.txt", "destination": "D:/all_txt.zip"},
         {"source": "D:/b.txt", "destination": "D:/archive.zip", "overwrite": True},
     ],
-    "extract_archive": [
+    "extract": [
         {"source": "D:/backup.zip", "destination": "D:/extracted"},
     ],
-    "move_file": [
+    "move": [
         {"source": "D:/a.txt", "destination": "E:/b.txt"},
     ],
-    "copy_file": [
+    "copy": [
         {"source": "D:/a.txt", "destination": "D:/backup/a.txt"},
     ],
-    "delete_file": [
+    "delete": [
         {"source": "D:/temp.txt"},
     ],
-    "rename_file": [
+    "rename": [
         {"source": "D:/old.txt", "destination": "new.txt"},
     ],
 }
 
 
 # ============================================================
-# 工具名到Pydantic模型的映射(15个)
+# 工具名到Pydantic模型的映射(14个)
 # ============================================================
 
 TOOL_INPUT_MODELS = {
@@ -177,15 +186,16 @@ TOOL_INPUT_MODELS = {
     "write_text_file": WriteTextFileInput,
     "read_media_file": ReadMediaFileInput,
     "edit_text_file": EditTextFileInput,
-    "list_directory": ListDirectoryInput,
-    "search_files": SearchFilesInput,
-    "grep_file_content": GrepFileContentInput,
-    "compress_files": CompressFilesInput,
-    "extract_archive": ExtractArchiveInput,
-    "move_file": MoveFileInput,
-    "copy_file": CopyFileInput,
-    "delete_file": DeleteFileInput,
-    "rename_file": RenameFileInput,
+    "listdir": ListdirInput,
+    "tree": TreeInput,
+    "find": FindInput,
+    "grep": GrepInput,
+    "compress": CompressInput,
+    "extract": ExtractInput,
+    "move": MoveInput,
+    "copy": CopyInput,
+    "delete": DeleteInput,
+    "rename": RenameInput,
 }
 
 
@@ -195,7 +205,7 @@ TOOL_INPUT_MODELS = {
 
 def _register_file_tools():
     """
-    注册15个文件工具 — 小健 2026-06-18 函数式设计重构
+    注册14个文件工具 — 小健 2026-06-18 函数式设计重构 — 小沈 2026-07-03 拆分list_directory
     """
 
     tool_methods = {
@@ -203,19 +213,20 @@ def _register_file_tools():
         "write_text_file": write_text_file,
         "read_media_file": read_media_file,
         "edit_text_file": edit_text_file,
-        "list_directory": list_directory,
-        "search_files": search_files,
-        "grep_file_content": grep_file_content,
-        "compress_files": compress_files,
-        "extract_archive": extract_archive,
-        "move_file": move_file,
-        "copy_file": copy_file,
-        "delete_file": delete_file,
-        "rename_file": rename_file,
+        "listdir": listdir,
+        "tree": tree,
+        "find": find,
+        "grep": grep,
+        "compress": compress,
+        "extract": extract,
+        "move": move,
+        "copy": copy,
+        "delete": delete,
+        "rename": rename,
     }
     
     CONFIRMATION_MAP = {
-        "delete_file": True,
+        "delete": True,
     }
 
     for name, method in tool_methods.items():
