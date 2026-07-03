@@ -1,20 +1,26 @@
-"""全链路E2E集成测试 - P0-02: 工具调用通路验证
+"""全链路E2E集成测试 - P0-13: 工具调用通路验证 (模板拷贝)
 
 操作手册对照:
-  用例: E2E-P0-02
-  用户输入: "在E盘创建一个e2e_test_p0.txt，内容为hello"
-  预期过程: Agent调用write_text_file，返回成功
-  通过标准: SSE包含action事件；DB有execution_steps记录；文件存在且内容正确
-  失败标准: 未调用工具；文件未创建；DB无记录
+   用例: E2E-P0-13
+   用户输入: "在E盘创建一个e2e_test_p0.txt，内容为hello"
+   预期过程: Agent调用write_text_file，返回成功
+   通过标准: SSE包含action事件；DB有execution_steps记录；文件存在且内容正确
+   失败标准: 未调用工具；文件未创建；DB无记录
 
 铁律:
-  1. 一个用例一个脚本，写完跑通再写下一个
-  2. 所有验证基于真实后端运行，禁止Mock
-  3. 测试前必须重启后端服务(手册6.1)
-  4. 禁止在测试代码中使用emoji字符
+   1. 一个用例一个脚本，写完跑通再写下一个
+   2. 所有验证基于真实后端运行，禁止Mock
+   3. 测试前必须重启后端服务(手册6.1)
+   4. 禁止在测试代码中使用emoji字符
+   5. 严禁在脚本内设任何超时 — 统一由pytest.ini的timeout=3000管理
 
--- 小健 2026-06-15
+-- 小健 2026-06-15, 小欧 2026-06-30 renumber
+-- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
 """
+
+TEST_CASE_ID = "E2E-P0-13"
+TEST_CASE_NAME = "工具调用通路验证"
+USER_INPUT = "在E盘创建一个e2e_test_p0.txt，内容为hello"
 
 from datetime import datetime
 from pathlib import Path
@@ -33,19 +39,19 @@ TEST_FILE = Path("E:/e2e_test_p0.txt")
 
 @pytest.mark.e2e_full_link
 @pytest.mark.asyncio
-async def test_e2e_p0_02_tool_call():
-    """P0-02: 工具调用通路验证 - 创建文件"""
+async def test_e2e_p0_13_tool_call():
+    """P0-13: 工具调用通路验证 - 创建文件"""
 
     test_start = datetime.now()
     passed = False; r = {}; sid = None; db = {}; ci = []; si = []; dpi = []; lc = {"errors":[],"tracebacks":[]}; error_info = None
-    user_input = "在E盘创建一个e2e_test_p0.txt，内容为hello"
+    user_input = USER_INPUT
 
     if TEST_FILE.exists():
         TEST_FILE.unlink(missing_ok=True)
 
     try:
         register_pending_record(
-            "E2E-P0-02", "工具调用通路验证",
+            "E2E-P0-13", "工具调用通路验证",
             user_input, {}, {}, [], [], {"errors":[],"tracebacks":[]}, False,
         )
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
@@ -59,27 +65,27 @@ async def test_e2e_p0_02_tool_call():
 
         print(f"  [Step3-4] SSE: {result['total_steps']} events, tools: {[t['tool_name'] for t in result['tool_calls']]}")
 
-        # ── L1 流结束验证(所有方式有效，不阻断) ──
+        # L1 流结束验证
         end_type = assert_stream_ended(result)
         print(f"  流结束: {end_type}")
 
-        # ── L1 MUST层 ──
+        # L1 MUST层
         assert result["total_steps"] >= 2, f"至少start+final(MUST)"
 
-        # ── L2 SHOULD WARN: has_error降级 ──
+        # L2 SHOULD WARN
         if result["has_error"]:
             print(f"  [WARN] 有error事件(SHOULD)，流结束: {end_type}")
 
-        assert len(result["tool_calls"]) > 0, "必须调用工具(MUST P0-02)"
+        assert len(result["tool_calls"]) > 0, "必须调用工具(MUST P0-13)"
         tool_names = [t["tool_name"] for t in result["tool_calls"]]
-        write_tools = {"write_text_file", "write_file", "move_file", "copy_file", "delete_file", "rename_file", "create_file"}
+        write_tools = {"writetext", "write_file", "move", "copy", "delete", "rename", "create_file"}
         has_write = any(n in write_tools for n in tool_names)
-        assert has_write, f"应调用写文件工具(MUST P0-02), 实际: {tool_names}"
+        assert has_write, f"应调用写文件工具(MUST P0-13), 实际: {tool_names}"
 
         print(f"  [Step5] File check...")
-        assert TEST_FILE.exists(), f"文件必须已创建(MUST P0-02): {TEST_FILE}"
+        assert TEST_FILE.exists(), f"文件必须已创建(MUST P0-13): {TEST_FILE}"
         file_content = TEST_FILE.read_text(encoding="utf-8")
-        assert "hello" in file_content.lower(), f"文件内容应含'hello'(MUST P0-02)"
+        assert "hello" in file_content.lower(), f"文件内容应含'hello'(MUST P0-13)"
 
         db = check_db(sid)
         assert db["session_exists"], "session必须保存到DB(MUST)"
@@ -115,10 +121,10 @@ async def test_e2e_p0_02_tool_call():
 
         print(f"  [Step8b] DB-Prompt consistency...")
         dpi = verify_db_prompt_consistency(sid, result.get("user_msg_id"))
-        assert len(dpi) == 0, f"DB↔Prompt不一致(MUST): {dpi}"
+        assert len(dpi) == 0, f"DB->Prompt不一致(MUST): {dpi}"
 
         print_report(
-            "E2E-P0-02", "工具调通路验证", result, db, lc,
+            "E2E-P0-13", "工具调用通路验证", result, db, lc,
             ci, si, True, elapsed,
             extra={"LLM calls": result["llm_call_count"], "Tools": tool_names, "File": str(TEST_FILE), "DbPromptIssues": len(dpi)},
         )
@@ -136,8 +142,7 @@ async def test_e2e_p0_02_tool_call():
     finally:
         if TEST_FILE.exists():
             TEST_FILE.unlink(missing_ok=True)
-        write_test_record("E2E-P0-02", "工具调用通路验证", user_input, r, db, ci, si, lc, passed, r.get("total_time_ms", 0)/1000.0 if r else 0, dpi=dpi, error_info=error_info)
-
+        write_test_record("E2E-P0-13", "工具调用通路验证", user_input, r, db, ci, si, lc, passed, r.get("total_time_ms", 0)/1000.0 if r else 0, dpi=dpi, error_info=error_info)
 
     if passed:
-        print(f"\n  [DONE] E2E-P0-02 PASSED")
+        print(f"\n  [DONE] E2E-P0-13 PASSED")

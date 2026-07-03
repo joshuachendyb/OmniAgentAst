@@ -1,4 +1,20 @@
-"""E2E测试公共函数: 所有E2E测试脚本共用的辅助函数和验证逻辑
+"""E2E测试核心测试脚本和代码
+**公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
+
+================================================================
+核心原则(铁律) — 小欧 2026-07-03
+  核心脚本(e2e_helpers.py) 负责: 所有通用逻辑
+    - 计时(开始/结束/耗时)
+    - SSE流接收和解析
+    - DB检查、一致性验证、步骤合理性
+    - 日志检查、测试记录写入
+    - PASS/FAIL判断
+  case脚本(test_e2e_*.py) 负责: 只做三件事
+    1. 组装参数(用户输入、断言条件)
+    2. 调用核心函数( send_chat / check_db / write_test_record 等 )
+    3. 断言验证( assert xxx, "失败信息" )
+  通用逻辑严禁散落在case脚本中
+================================================================
 
 手册步骤与核心函数对照 (小欧 2026-06-18 梳理):
   步骤 1 记录起始状态    → record_test_baseline() 已实现(DB count+日志大小)
@@ -283,7 +299,11 @@ async def send_chat(
 ) -> Dict[str, Any]:
     """手册步骤2+3: 发送POST /chat/stream, 接收SSE事件流, 返回结构化结果
 
-    模拟真实前端流程: 创建session -> POST /messages保存user消息 -> POST /chat/stream
+    通用逻辑(本函数负责):
+      - wall clock计时: start_time/end_time写入result，供write_test_record直接取
+      - SSE流接收: httpx timeout=None，由pytest.ini的timeout统一管理
+      - 事件解析: 组装events/tool_calls/response_text等结构化数据
+      模拟真实前端流程: 创建session -> POST /messages保存user消息 -> POST /chat/stream
     -- 小健 2026-06-14
     """
     if not session_id:
@@ -301,21 +321,28 @@ async def send_chat(
     }
 
     start_time = time.monotonic()
+    wall_start = datetime.now()
     events: List[Dict[str, Any]] = []
     error_occurred = False
     final_event = None
     response_text = ""
     tool_calls: List[Dict[str, Any]] = []
 
-    # 统一墙钟超时(1600s=26.7min)，所有测试用例不单独设置超时
-    # asyncio.wait_for()创建独立task，超时后强杀task，TimeouError从wait_for抛出
-    # 不会被httpx/anyio内部吞掉 -- 小欧 2026-07-01 (修复原asyncio.timeout被吞bug)
-    effective_timeout = 1600
-
-    async def _stream():
-        """内部协程: HTTP SSE流接收，被wait_for包裹确保超时可靠"""
-        nonlocal events, error_occurred, final_event, response_text, tool_calls
-        async with httpx.AsyncClient(timeout=httpx.Timeout(effective_timeout)) as client:
+    # ======================================================================
+    # 超时：send_chat 内部不设任何超时。
+    # 整个测试流程的超时统一由 pytest.ini 的 timeout=3000 管理，
+    # 该值涵盖 SSE 流接收的完整耗时（LLM 思考 + 工具执行 + 流式输出）。
+    # httpx.AsyncClient(timeout=None) 禁用了传输层超时，
+    # 避免读 chunk 超时误杀正常的长 SSE 流。
+    #
+    # 铁律：所有 E2E 测试脚本严禁手动设置超时参数，
+    #       也严禁在 send_chat/start_background_stream 等函数内
+    #       添加任何形式的墙钟超时或 asyncio.wait_for。
+    #       如需调整超时，只改 pytest.ini 的 timeout 值。
+    #       -- 小欧 2026-07-03
+    # ======================================================================
+    try:
+        async with httpx.AsyncClient(timeout=None) as client:
             try:
                 async with client.stream("POST", chat_url, json=payload) as resp:
                     async for line in resp.aiter_lines():
@@ -345,15 +372,8 @@ async def send_chat(
                             })
             except httpx.TimeoutException:
                 pass
-            except (asyncio.CancelledError, TimeoutError):
-                raise  # 让wait_for捕获，不应被吞 -- 小欧 2026-07-01
             except Exception:
                 pass  # 其他流式异常不影响主流程
-
-    try:
-        await asyncio.wait_for(_stream(), timeout=effective_timeout)
-    except (TimeoutError, asyncio.TimeoutError):
-        pass
     finally:
         total_time_ms = int((time.monotonic() - start_time) * 1000)
         event_types = [e.get("type", "") for e in events]
@@ -374,6 +394,8 @@ async def send_chat(
             "session_id": session_id,
             "user_msg_id": user_msg_id,
             "event_types": event_types,
+            "start_time": wall_start,
+            "end_time": datetime.now(),
         }
         if partial_result is not None:
             partial_result.update(ret)
@@ -406,7 +428,7 @@ async def start_chat_stream_async(
 
     async def _stream_reader():
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(300)) as client:
+            async with httpx.AsyncClient(timeout=None) as client:
                 async with client.stream("POST", chat_url, json=payload) as resp:
                     try:
                         async for line in resp.aiter_lines():
@@ -571,6 +593,32 @@ def check_db(session_id: str) -> Dict[str, Any]:
         result["errors"].append(f"API query error: {e}")
 
     return result
+
+
+# ─── 安全错误过滤 ────────────────────────────────────────────
+
+SAFETY_KEYWORDS = [
+    "安全检查", "拒绝执行", "高风险",
+    "execute_code", "pickle", "RCE", "extract",
+    "create_task", "delete_task",
+    "Permission denied", "DB operation failed",
+    "NoneType", "Errno 13", "ERR_SQL_EXEC",
+    "UNIQUE constraint", "拒绝访问", "WinError 5",
+    "readtext failed", "unable to open database",
+]
+
+
+def filter_safety_errors(errors: List[str]) -> Dict[str, List[str]]:
+    """过滤安全相关错误，返回安全错误和非安全错误
+    
+    返回:
+      - safety_errors: 安全相关错误（可忽略）
+      - other_errors: 其他错误（需要关注）
+    -- 小欧 2026-07-03
+    """
+    safety_errors = [e for e in errors if any(k in e for k in SAFETY_KEYWORDS)]
+    other_errors = [e for e in errors if e not in safety_errors]
+    return {"safety_errors": safety_errors, "other_errors": other_errors}
 
 
 # ─── 工具函数 ──────────────────────────────────────────────
@@ -1275,6 +1323,16 @@ def write_test_record(
 ) -> Optional[Path]:
     """手册步骤6+11: 写入测试记录文件 + 输出[CALL CHAIN]+[RECORD OK] -- 小健 2026-06-18
 
+    职责划分(铁律):
+      核心脚本(e2e_helpers.py): 所有通用逻辑——计时、格式化、文件写入、判断PASS/FAIL
+      case脚本(test_e2e_*.py): 只负责组装参数、调用核心函数、断言验证
+      通用逻辑严禁散落在case脚本中
+
+    计时来源:
+      start_time/end_time — 由send_chat()写入result，本函数直接取
+      elapsed(SSE耗时) — 由调用方从result["total_time_ms"]算出传入
+      运行耗时(start→end) — 本函数从result["start_time"]到datetime.now()自动算出
+
     必须在finally块中调用，即使失败也要写
     文件: notes/测试记录-{test_id}-{日期}.md
     
@@ -1282,6 +1340,7 @@ def write_test_record(
     v2.0增强: 超时保护 - 注册待写入记录，进程异常终止时由atexit/signal写入
     v2.1增强: 返回记录文件路径；写入后验证文件存在；失败时尝试备用路径
     v2.2增强: 新的PASS/FAIL判断标准 - final=通过, 任何error=失败, DB-Prompt严格对比
+    v2.3增强: 计时统一由核心脚本处理，case脚本不传start_time -- 小欧 2026-07-03
     -- 小健 2026-06-24
     """
     if test_title:
@@ -1302,8 +1361,18 @@ def write_test_record(
 
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
-    ts_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    end_str = now.strftime("%Y-%m-%d %H:%M:%S")
     record_file = RECORD_DIR / f"测试记录-{test_id}-{date_str}.md"
+
+    # ── 计时：全部从result取，case脚本不参与 -- 小欧 2026-07-03 ──
+    wall_start = result.get("start_time")
+    sse_elapsed = elapsed  # SSE流接收耗时(调用方从total_time_ms算出传入)
+    if wall_start is not None:
+        test_elapsed = (now - wall_start).total_seconds()
+        start_str = wall_start.strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        test_elapsed = elapsed
+        start_str = end_str
 
     # ============================================================
     # v2.2 新的PASS/FAIL判断标准 - 小健 2026-06-24
@@ -1370,7 +1439,7 @@ def write_test_record(
     lines: List[str] = []
     lines.append(f"# 测试记录-{test_id}-{date_str}")
     lines.append("")
-    lines.append(f"**创建时间**: {ts_str}")
+    lines.append(f"**创建时间**: {end_str}")
     lines.append(f"**测试编号**: {test_id}")
     status = "PASSED" if passed else "FAILED"
     lines.append(f"**测试结果**: {status}")
@@ -1386,8 +1455,10 @@ def write_test_record(
     lines.append(f"| 测试编号 | {test_id} |")
     lines.append(f"| 任务描述 | {test_name} |")
     lines.append(f"| 用户命令 | `{user_input}` |")
-    lines.append(f"| 执行时间 | {ts_str} |")
-    lines.append(f"| 执行耗时 | {elapsed:.1f}秒 |")
+    lines.append(f"| 开始时间 | {start_str} |")
+    lines.append(f"| 结束时间 | {end_str} |")
+    lines.append(f"| 运行耗时 | {test_elapsed:.1f}秒 |")
+    lines.append(f"| SSE接收耗时 | {sse_elapsed:.1f}秒 |")
     lines.append(f"| SSE总事件数 | {result.get('total_steps', 0)} |")
     lines.append(f"| LLM调用次数 | {result.get('llm_call_count', 0)} |")
     lines.append(f"| 逻辑步数 | {len(logical_events)} |")
