@@ -41,10 +41,7 @@ TOOL_TIMEOUTS = {
     "readmedia": 60,
     "edittext": 60,
     "shell": 120,
-    "shell_foreground": 120,
-    "shell_background": 10,
-    "execute_python": 300,
-    "execute_javascript": 300,
+    "tree": 120,
     "session": 60,
 
     "event_log": 60,
