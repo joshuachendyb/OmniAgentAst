@@ -65,9 +65,9 @@
    格式3：字典格式（完整参数）
    ```
    TOOL_DEPENDENCIES = {
-       "send_notification": [
-           {"import_name": "win10toast", "pip_package": "win10toast", "pre_install": ["setuptools<70"]}
-       ],
+        "notify": [
+            {"import_name": "win10toast", "pip_package": "win10toast", "pre_install": ["setuptools<70"]}
+        ],
    }
    ```
 
