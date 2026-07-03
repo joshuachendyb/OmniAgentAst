@@ -19,8 +19,7 @@ from app.utils.logger import logger
 from app.config import get_config
 from app.constants import TASK_TIMEOUT
 from app.services.agent.steps import ChunkStep, FinalStep, ObservationStep, ErrorStep
-from app.services.agent.types import AgentStatus
-from app.services.agent.core_agent.status_table import set_status, set_failed, set_completed, set_cancelled
+from app.services.agent.core_agent.status_table import AgentStatus, set_status, set_failed, set_completed, set_cancelled
 from app.services.agent.core_agent.initialize_run_state import initialize_run_state
 from app.services.agent.core_agent.handlers import (
     handle_action, handle_answer,

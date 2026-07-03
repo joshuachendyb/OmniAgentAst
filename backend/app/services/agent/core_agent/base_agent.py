@@ -13,7 +13,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, AsyncGenerator, Set, Tuple
 
-from app.services.agent.types import AgentStatus
+from app.services.agent.core_agent.status_table import AgentStatus
 from app.services.agent.steps import ReasoningStep
 
 from app.config import get_config

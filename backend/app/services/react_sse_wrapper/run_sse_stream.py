@@ -15,8 +15,7 @@ from typing import List, AsyncGenerator, Any, Callable, Dict, Optional
 
 from app.db import db
 from app.services.agent.steps import ErrorStep, FinalStep, MetaStep
-from app.services.agent.core_agent.status_table import set_cancelled, set_failed
-from app.services.agent.types import AgentStatus
+from app.services.agent.core_agent.status_table import AgentStatus, set_cancelled, set_failed
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.react_sse_wrapper.chat_stream import save_execution_steps_to_db
 from app.services.task.task_state_queries import check_cancelled, check_paused

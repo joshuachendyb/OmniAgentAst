@@ -9,10 +9,20 @@ chendyg 2026-07-01
 """
 
 import threading
+from enum import Enum
 from typing import Optional
-
-from app.services.agent.types import AgentStatus
 from app.utils.logger import logger
+
+
+class AgentStatus(Enum):
+    """Agent状态"""
+    IDLE = "idle"
+    THINKING = "thinking"
+    EXECUTING = "executing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    SUSPENDED = "suspended"
 
 
 # 合法状态转换表 — 只保留代码中实际存在的转换路径（KISS-DIRECT：无死代码）

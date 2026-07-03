@@ -6,10 +6,8 @@ Agent 类型定义
 """
 
 from .agent_result import AgentResult
-from .agent_status import AgentStatus
 
 
 __all__ = [
     "AgentResult",
-    "AgentStatus",
 ]

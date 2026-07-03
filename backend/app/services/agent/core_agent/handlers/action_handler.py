@@ -20,7 +20,7 @@ from typing import Dict, List, Any
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep
-from app.services.agent.types import AgentStatus
+from app.services.agent.core_agent.status_table import AgentStatus
 from app.services.agent.agent_utils.message_utils import build_observation_text
 from app.constants import HITL_TIMEOUT
 from app.db.models.operation_enums import OperationStatus
