@@ -11,18 +11,57 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   _build_base_text/_append_warning/_append_hint/_prevent_json_oom/_get_failure_hint
 
 设计原则:
-- 工具返回原始data，不做截断
-- observation_formatter不截断，LLM需要完整数据
+- 工具返回原始data，不做截断（工具层如果有 need_full_data=True，完整数据走 other_data）
 - 安全兜底:format_data_detail加try-except确保不崩
 - 三段式:观察行 + 结果行 + 详情行
-- 【铁规】截断只能在前端yield层，tool和observation_formatter都禁止截断
+- 【铁规 v2】observation_formatter 做安全截断（防 LLM observation 过大），
+-   完整数据由前端 yield 层 + other_data 承载。截断常量见 tool_constants.py
 
-Author: 小欧 2026-06-21; 小欧 2026-06-22 添加截断铁规
+工具 → handler 映射（全部 ~26 个工具）:
+ 工具            data 键                        命中 handler              formatter上限                     tool上限
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ readtext        {content: str}                 #2 raw str               OBS_MAX_STRING_LENGTH=10000      行数不限
+ read_pdf        {content: str}                 #2 raw str               OBS_MAX_STRING_LENGTH=10000      页数不限
+ read_docx       {content: str}                 #2 raw str               OBS_MAX_STRING_LENGTH=10000      字符数不限
+ read_pptx       {content: str}                 #2 raw str               OBS_MAX_STRING_LENGTH=10000      字符数不限
+ fetch_webpage   {content: str}                 #2 raw str               OBS_MAX_STRING_LENGTH=10000      5000字符
+ read_xlsx       {content: {headers, rows}}     #1 _format_table         OBS_MAX_DISPLAY_ITEMS=500 行     10000行
+ query_sql       {columns, rows}                #5 _format_rows          OBS_MAX_DISPLAY_ITEMS=500 行     50行
+ filter_data     {columns, rows}                #5 _format_rows          OBS_MAX_DISPLAY_ITEMS=500 行     top_n
+ listdir         {entries}                      #3 _format_entries       OBS_MAX_DISPLAY_ITEMS=500 项     200+offset
+ find            {matches}                      #9 _format_matches       OBS_MAX_DISPLAY_ITEMS=500 项     1000+offset
+ grep            {matches}                      #9 _format_matches       OBS_MAX_DISPLAY_ITEMS=500 项     1000
+ searchweb       {items}                        #4 _format_items         OBS_MAX_DISPLAY_ITEMS=500 项；snippet 300字符 50项
+ event_log       {events}                       #8 _format_events        OBS_MAX_DISPLAY_ITEMS=500 条     50
+ searchtool      {matches}                      #9 _format_matches       OBS_MAX_DISPLAY_ITEMS=500 项     small
+ get_db_schema   {tables}                       #6 _format_schema        OBS_MAX_DISPLAY_ITEMS=500 张表   不限
+ shell           {output, error_output}         #7 output str            OBS_MAX_STRING_LENGTH=10000      不限
+ runcode         {output, error_output}         #7 output str            OBS_MAX_STRING_LENGTH=10000      不限
+ httpget         {body, ...}                     fallback _format_kv     OBS_DICT_MAX_KEYS=100；值>10000截  400KB
+ tree            {tree, statistics, ...}         fallback _format_kv     OBS_DICT_MAX_KEYS=100             depth=10
+ sysinfo         {memory, cpu, ...}              fallback _format_kv     OBS_DICT_MAX_KEYS=100             不限
+ readmedia       {base64_data, ...}              fallback _format_kv     OBS_DICT_MAX_KEYS=100；字符串>10000截 不限
+ analyze_data    {statistics, ...}               fallback _format_kv     OBS_DICT_MAX_KEYS=100             不限
+ screen_capture  {image_path}                    fallback _format_kv     OBS_DICT_MAX_KEYS=100             N/A
+ generate_chart  {output_path}                   fallback _format_kv     OBS_DICT_MAX_KEYS=100             N/A
+ registry_read   {value, ...}                    fallback _format_kv     OBS_DICT_MAX_KEYS=100；字符串>10000截 不限
+ list_tasks      {tasks, ...}                    fallback _format_kv     OBS_DICT_MAX_KEYS=100；列表>500截  N/A
+ timer_list      {ids, ...}                      fallback _format_kv     OBS_DICT_MAX_KEYS=100；列表>500截  N/A
+
+【注意】listdir/find 的 offset 分页由工具层自行处理（tools/file/），
+  formatter 仅展示当前 page（最多 OBS_MAX_DISPLAY_ITEMS 项）。
+
+Author: 小欧 2026-06-21; 小欧 2026-07-04 更新工具→handler映射表
 """
 
 import json
 from typing import Any, Dict
 
+from app.tools.tool_constants import (
+    OBS_MAX_DISPLAY_ITEMS,
+    OBS_MAX_STRING_LENGTH,
+    OBS_DICT_MAX_KEYS,
+)
 from app.utils.json_utils import safe_json_dumps
 
 
@@ -42,7 +81,10 @@ def format_data_detail(data: Any) -> str:
             return _format_table(data["content"]["headers"], data["content"]["rows"])
 
         if "content" in data and isinstance(data["content"], str):
-            return data["content"]
+            content = data["content"]
+            if len(content) > OBS_MAX_STRING_LENGTH:
+                content = content[:OBS_MAX_STRING_LENGTH] + "\n... (截断，完整内容见文件)"
+            return content
 
         if "entries" in data:
             return _format_entries(data["entries"])
@@ -62,10 +104,16 @@ def format_data_detail(data: Any) -> str:
                 parts.append(data["output"])
             if data.get("error_output"):
                 parts.append(f"[stderr] {data['error_output']}")
-            return "\n".join(parts)
+            output_text = "\n".join(parts)
+            if len(output_text) > OBS_MAX_STRING_LENGTH:
+                output_text = output_text[:OBS_MAX_STRING_LENGTH] + "\n... (截断)"
+            return output_text
 
         if "events" in data:
             return _format_events(data["events"])
+
+        if "matches" in data:
+            return _format_matches(data["matches"])
 
         return _format_key_value(data)
     except Exception:
@@ -120,13 +168,15 @@ def _format_table(headers: list, rows: list) -> str:
     if not headers or not rows:
         return ""
     lines = []
-    for row in rows:
+    for row in rows[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(row, (list, tuple)):
             parts = [f"{h}={v}" for h, v in zip(headers, row) if v is not None]
             lines.append(" | ".join(parts))
         elif isinstance(row, dict):
             parts = [f"{h}={row.get(h, '')}" for h in headers if row.get(h) is not None]
             lines.append(" | ".join(parts))
+    if len(rows) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(rows) - OBS_MAX_DISPLAY_ITEMS} 行")
     return "\n".join(lines)
 
 
@@ -135,7 +185,7 @@ def _format_entries(entries: list) -> str:
     if not entries:
         return ""
     lines = []
-    for entry in entries:
+    for entry in entries[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(entry, str):
             suffix = " [目录]" if entry.endswith("/") or entry.endswith("\\") else " [文件]"
             lines.append(f"  {entry}{suffix}")
@@ -146,6 +196,8 @@ def _format_entries(entries: list) -> str:
             label = "目录" if etype in ("dir", "directory") else "文件"
             size_str = f", {size}字节" if size else ""
             lines.append(f"  {name} [{label}{size_str}]")
+    if len(entries) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(entries) - OBS_MAX_DISPLAY_ITEMS} 项")
     return "\n".join(lines)
 
 
@@ -156,7 +208,7 @@ def _format_items(items: list) -> str:
         return ""
     SNIPPET_MAX = 300
     lines = []
-    for item in items:
+    for item in items[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(item, str):
             lines.append(f"  {item}")
         elif isinstance(item, dict):
@@ -173,6 +225,8 @@ def _format_items(items: list) -> str:
                 lines.append(f"  {name}: {url}{tag}")
             else:
                 lines.append(f"  {name}{tag}")
+    if len(items) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(items) - OBS_MAX_DISPLAY_ITEMS} 项")
     return "\n".join(lines)
 
 
@@ -181,12 +235,14 @@ def _format_rows(rows: list) -> str:
     if not rows:
         return ""
     lines = []
-    for row in rows:
+    for row in rows[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(row, (list, tuple)):
             lines.append(" | ".join(str(v) for v in row))
         elif isinstance(row, dict):
             parts = [f"{k}={v}" for k, v in row.items() if v is not None]
             lines.append(" | ".join(parts))
+    if len(rows) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(rows) - OBS_MAX_DISPLAY_ITEMS} 行")
     return "\n".join(lines)
 
 
@@ -195,7 +251,7 @@ def _format_schema(tables: list) -> str:
     if not tables:
         return ""
     lines = []
-    for table in tables:
+    for table in tables[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(table, str):
             lines.append(f"  {table}")
         elif isinstance(table, dict):
@@ -206,6 +262,8 @@ def _format_schema(tables: list) -> str:
                 lines.append(f"  {name}: {col_str}")
             else:
                 lines.append(f"  {name}")
+    if len(tables) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(tables) - OBS_MAX_DISPLAY_ITEMS} 张表")
     return "\n".join(lines)
 
 
@@ -214,7 +272,7 @@ def _format_events(events: list) -> str:
     if not events:
         return ""
     lines = []
-    for event in events:
+    for event in events[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(event, str):
             lines.append(f"  {event}")
         elif isinstance(event, dict):
@@ -224,18 +282,53 @@ def _format_events(events: list) -> str:
                 lines.append(f"  [{ts}] {msg}")
             else:
                 lines.append(f"  {msg}")
+    if len(events) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(events) - OBS_MAX_DISPLAY_ITEMS} 条事件")
     return "\n".join(lines)
 
 
 def _format_key_value(data: dict) -> str:
-    """格式化键值对 — 小欧 2026-06-21"""
+    """格式化键值对 — 小欧 2026-06-21 — 小欧 2026-07-04 统一截断"""
     lines = []
+    keys_shown = 0
     for k, v in data.items():
+        if keys_shown >= OBS_DICT_MAX_KEYS:
+            lines.append(f"  ... 还有 {len(data) - OBS_DICT_MAX_KEYS} 个字段")
+            break
+        keys_shown += 1
         if isinstance(v, dict):
             for sk, sv in v.items():
-                lines.append(f"  {k}.{sk}: {sv}")
+                sv_str = str(sv)
+                if len(sv_str) > OBS_MAX_STRING_LENGTH:
+                    sv_str = sv_str[:OBS_MAX_STRING_LENGTH] + "..."
+                lines.append(f"  {k}.{sk}: {sv_str}")
         elif isinstance(v, list):
-            lines.append(f"  {k}: {safe_json_dumps(v, ensure_ascii=False)}")
+            v_list = v[:OBS_MAX_DISPLAY_ITEMS]
+            v_str = safe_json_dumps(v_list, ensure_ascii=False)
+            if len(v) > OBS_MAX_DISPLAY_ITEMS:
+                v_str += f" ... (共{len(v)}项)"
+            if len(v_str) > OBS_MAX_STRING_LENGTH:
+                v_str = v_str[:OBS_MAX_STRING_LENGTH] + "..."
+            lines.append(f"  {k}: {v_str}")
         else:
-            lines.append(f"  {k}: {v}")
+            v_str = str(v)
+            if len(v_str) > OBS_MAX_STRING_LENGTH:
+                v_str = v_str[:OBS_MAX_STRING_LENGTH] + "..."
+            lines.append(f"  {k}: {v_str}")
+    return "\n".join(lines)
+
+
+def _format_matches(matches: list) -> str:
+    """格式化 grep 匹配结果 — 小欧 2026-07-04 — 小欧 2026-07-04 使用 OBS_MAX_DISPLAY_ITEMS"""
+    if not matches:
+        return ""
+    lines = []
+    for i, m in enumerate(matches):
+        if i >= OBS_MAX_DISPLAY_ITEMS:
+            lines.append(f"  ... 还有 {len(matches) - OBS_MAX_DISPLAY_ITEMS} 个匹配项")
+            break
+        matched = m.get("matched", [])
+        matched_str = ", ".join(matched) if isinstance(matched, list) else str(matched)
+        content = m.get("content", "")
+        lines.append(f"  {m.get('file','')}:{m.get('line','')}: [{matched_str}] {content}")
     return "\n".join(lines)

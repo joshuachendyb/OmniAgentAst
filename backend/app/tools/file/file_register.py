@@ -91,11 +91,11 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "edittext": """替换文本文件中的指定内容。适用场景:需要精确修改代码中的函数名、变量、配置值等时使用。""",
 
-    "listdir": """列出目录内容,返回扁平列表(当前层所有文件+目录)。适用场景:需要查看目录结构、文件大小、文件数量统计时使用。""",
+    "listdir": """列出目录内容,返回扁平列表(当前层所有文件+目录)。支持offset参数分页遍历大目录(每页最多500项)。适用场景:需要查看目录结构、文件大小、文件数量统计时使用。""",
 
     "tree": """列出目录树,仅显示目录层级(不含文件)。适用场景:需要查看项目目录结构、快速了解文件夹组织时使用。""",
 
-    "find": """按文件名匹配模式递归搜索文件或目录。适用场景:需要查找特定文件、统计项目中某类文件数量时使用。""",
+    "find": """按文件名匹配模式递归搜索文件或目录。支持offset参数分页遍历大量搜索结果(每页最多500条)。适用场景:需要查找特定文件、统计项目中某类文件数量时使用。""",
 
     "grep": """在文件中搜索文本内容,支持正则表达式。适用场景:需要查找代码或文档中的函数定义、关键字、TODO等文本时使用。""",
 
@@ -139,6 +139,7 @@ FILE_TOOL_EXAMPLES = {
     "listdir": [
         {"dir_path": "D:/project"},
         {"dir_path": "D:/project", "sort_by": "size"},
+        {"dir_path": "D:/project", "offset": 500},
     ],
     "tree": [
         {"dir_path": "D:/project"},
@@ -146,6 +147,7 @@ FILE_TOOL_EXAMPLES = {
     ],
     "find": [
         {"pattern": "**/*.py", "search_dir": "D:/project"},
+        {"pattern": "**/*.py", "search_dir": "D:/project", "offset": 500},
     ],
     "grep": [
         {"pattern": "def readtext", "search_dir": "D:/backend"},

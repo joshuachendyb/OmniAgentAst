@@ -31,7 +31,7 @@ def get_version() -> str:
     """从version.txt读取版本号 - 小沈 2026-05-27"""
     try:
         current_file = Path(__file__).resolve()
-        project_root = current_file.parent.parent
+        project_root = current_file.parent.parent.parent  # 项目根目录 — 小欧 2026-07-04
         version_file = project_root / "version.txt"
 
         if version_file.exists():
@@ -44,7 +44,7 @@ def get_version() -> str:
             return version.lstrip('v')
     except Exception as e:
         logger.warning(f"Failed to read version.txt: {e}")
-    return "0.13.36"
+    return "0.0.0"
 
 
 app_version = get_version()

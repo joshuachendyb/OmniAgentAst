@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
-from app.tools.tool_constants import TOOL_TIMEOUTS
+from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE
 from app.utils.logger import logger
 
 
@@ -162,8 +162,9 @@ async def listdir(
     dir_path: str,
     sort_by: str = "name",
     include_hidden: bool = False,
+    offset: int = 0,
 ) -> Dict[str, Any]:
-    """列出目录内容 — 小沈 2026-05-19 — 小欧 2026-06-22 独立文件 — 小沈 2026-07-03 拆分tree"""
+    """列出目录内容 — 小沈 2026-05-19 — 小欧 2026-06-22 — 小沈 2026-07-03 拆分tree — 小欧 2026-07-04 offset分页"""
     t0 = _time_mod.perf_counter()
     max_depth = 10
 
@@ -178,7 +179,7 @@ async def listdir(
         return build_error(data={"error_detail": f"sort_by只支持name/size/mtime", "params": {"sort_by": sort_by}}, llm_data=llm_data)
 
     path = Path(dir_path)
-    start_offset = 0
+    start_offset = offset
 
     try:
         if not path.exists():
@@ -203,17 +204,16 @@ async def listdir(
             all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
 
         total = len(all_entries)
-        MAX_DISPLAY_ENTRIES = 200
         statistics = {
             "total_size": stats["total_size"], "dir_count": stats["dir_count"],
             "file_count": stats["file_count"], "sort_by": sort_by,
             "file_types": file_types, "size_distribution": size_distribution,
         }
 
-        if total > MAX_DISPLAY_ENTRIES:
+        if total > DEFAULT_PAGE_SIZE:
             logger.warning(f"[listdir] Large directory truncated: path={path}, total={total}")
 
-        list_data = _build_list_success(all_entries, total, path, statistics, start_offset, MAX_DISPLAY_ENTRIES)
+        list_data = _build_list_success(all_entries, total, path, statistics, start_offset, DEFAULT_PAGE_SIZE)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         exec_code = "warning" if list_data["truncated"] else "success"
         llm_data = _build_list_directory_llm_data(exec_code, duration_ms, dir_path=dir_path, total=total, truncated=list_data["truncated"])

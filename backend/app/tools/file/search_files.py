@@ -98,8 +98,9 @@ async def find(
     search_dir: str,
     ignore_case: bool = True,
     type: Optional[Literal["file", "directory"]] = None,
+    offset: int = 0,
 ) -> Dict[str, Any]:
-    """搜索文件名(始终递归搜索子目录) — 小沈 2026-05-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-23 去掉recursive参数"""
+    """搜索文件名(始终递归搜索子目录) — 小沈 2026-05-19 — 小欧 2026-06-22 — 小欧 2026-06-23 去掉recursive — 小欧 2026-07-04 offset分页"""
     t0 = _time_mod.perf_counter()
     max_depth = 50
     if type is not None and type not in ("file", "directory"):
@@ -173,17 +174,19 @@ async def find(
 
     all_matches.sort(key=lambda x: x.get("name", ""))
     total = len(all_matches)
+    page = all_matches[offset:offset + DEFAULT_PAGE_SIZE]
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     truncated_by_deadline = _time_mod.monotonic() > deadline
     truncated_by_limit = total >= MAX_SEARCH_RESULTS
-    exec_code = "warning" if (truncated_by_deadline or truncated_by_limit) else "success"
-    llm_data = _build_search_files_llm_data(exec_code, duration_ms, search_dir=search_dir, total=total, truncated=(truncated_by_deadline or truncated_by_limit))
+    truncated_by_offset = total > (offset + DEFAULT_PAGE_SIZE)
+    exec_code = "warning" if (truncated_by_deadline or truncated_by_limit or truncated_by_offset) else "success"
+    llm_data = _build_search_files_llm_data(exec_code, duration_ms, search_dir=search_dir, total=total, truncated=(truncated_by_deadline or truncated_by_limit or truncated_by_offset))
     if exec_code == "warning":
         return build_warning(
-            data={"matches": all_matches, "total": total, "search_dir": search_dir, "pattern": pattern},
+            data={"matches": page, "total": total, "search_dir": search_dir, "pattern": pattern, "offset": offset},
             llm_data=llm_data,
         )
     return build_success(
-        data={"matches": all_matches, "total": total, "search_dir": search_dir, "pattern": pattern},
+        data={"matches": page, "total": total, "search_dir": search_dir, "pattern": pattern, "offset": offset},
         llm_data=llm_data,
     )

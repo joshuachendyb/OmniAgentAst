@@ -24,6 +24,17 @@ from app.utils.logger import logger
 
 _ENCODING_PRIORITY = ["utf-8", "gbk", "gb2312", "utf-8-sig", "latin-1", "cp1252", "iso-8859-2", "cp1250"]
 
+_MAX_LINE_CONTENT = 200
+
+_SKIP_DIRS = frozenset({
+    'node_modules', 'bower_components',
+    '.git', '.svn', '.hg', '__pycache__',
+    '.next', '.nuxt', 'dist', 'build', 'target', 'out',
+    'vendor', '.venv', 'venv', '.env', 'env',
+    '.idea', '.vscode', '.yarn', '.pnp', 'coverage',
+    '.terraform', '.serverless',
+})
+
 
 def _read_file_safe(file_path: Path) -> List[str]:
     """多编码尝试读取文件行 — 小健 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-25 chardet自动检测"""
@@ -140,6 +151,7 @@ def _grep_files_sync(
         raise ValueError(f"正则表达式无效: {e}") from e
 
     for root, dirs, files in os.walk(search_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         if _time_mod.monotonic() > deadline:
             break
         if total_matches >= MAX_SEARCH_RESULTS:
@@ -163,6 +175,9 @@ def _grep_files_sync(
             if suffix and not suffix in TEXT_EXTENSIONS and is_binary_file(str(fpath)):
                 skipped_binary_files.append(str(fpath))
                 continue
+            # grep 只搜已知 text 扩展名 — 小欧 2026-07-04
+            if suffix and suffix not in TEXT_EXTENSIONS:
+                continue
             
             lines = _read_file_safe(fpath)
             if not lines:
@@ -171,22 +186,23 @@ def _grep_files_sync(
             for line_no, line in enumerate(lines, 1):
                 if total_matches >= MAX_SEARCH_RESULTS:
                     break
-                m = regex.search(line)
-                if m:
-                    if output_mode == "files_with_matches":
-                        results.append({"file": str(fpath)})
-                        total_files += 1
-                        total_matches += 1
-                        break
-                    # 计算该行实际匹配次数 — 小欧 2026-06-25 修复total_matches按出现次数计数
-                    line_match_count = len(regex.findall(line))
-                    match_item = {
-                        "file": str(fpath),
-                        "line": line_no,
-                        "content": line.rstrip('\n\r'),
-                    }
-                    file_matches.append(match_item)
-                    total_matches += line_match_count
+                matches_in_line = list(regex.finditer(line))
+                if not matches_in_line:
+                    continue
+                if output_mode == "files_with_matches":
+                    results.append({"file": str(fpath)})
+                    total_files += 1
+                    total_matches += 1
+                    break
+                matched_texts = [m.group(0) for m in matches_in_line]
+                match_item = {
+                    "file": str(fpath),
+                    "line": line_no,
+                    "matched": matched_texts,
+                    "content": line.rstrip('\n\r')[:_MAX_LINE_CONTENT],
+                }
+                file_matches.append(match_item)
+                total_matches += len(matched_texts)
             if file_matches:
                 total_files += 1
                 results.extend(file_matches)

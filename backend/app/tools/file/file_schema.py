@@ -177,6 +177,10 @@ class ListdirInput(BaseModel):
         default=False,
         description="是否显示隐藏文件(以.开头的文件),默认False"
     )
+    offset: int = Field(
+        default=0,
+        description="分页偏移量,用于跳过前N项。仅返回第offset项开始的500项,支持分页遍历大目录"
+    )
 
 
 # ============================================================
@@ -215,6 +219,10 @@ class FindInput(BaseModel):
     type: Optional[Literal["file", "directory"]] = Field(
         default=None,
         description="搜索类型过滤:file=只返回文件,directory=只返回目录,不设则全部返回"
+    )
+    offset: int = Field(
+        default=0,
+        description="分页偏移量,用于跳过前N条结果。仅返回第offset条开始的500条,支持分页遍历大量搜索结果"
     )
 
 
