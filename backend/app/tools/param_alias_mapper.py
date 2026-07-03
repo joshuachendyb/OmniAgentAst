@@ -17,28 +17,28 @@ from app.utils.logger import logger
 
 
 PARAM_ALIASES = {
-    "read_text_file": {
+    "readtext": {
         "path": "file_path",
         "filepath": "file_path",
         "file": "file_path",
         "filename": "file_path",
         "file_name": "file_path",
     },
-    "write_text_file": {
+    "writetext": {
         "path": "file_path",
         "filepath": "file_path",
         "file": "file_path",
         "filename": "file_path",
         "file_name": "file_path",
     },
-    "edit_text_file": {
+    "edittext": {
         "path": "file_path",
         "filepath": "file_path",
         "file": "file_path",
         "filename": "file_path",
         "file_name": "file_path",
     },
-    "read_media_file": {
+    "readmedia": {
         "path": "file_path",
         "filepath": "file_path",
         "file": "file_path",

@@ -9,10 +9,10 @@ File Register - 文件工具注册点 v3.0
 【删除时间】2026-06-24 小欧 — 删除read_config_file/write_config_file，text工具已覆盖
 
 14个工具清单(F1-F13):
-F1  read_text_file     — 读取文本文件
-F2  write_text_file    — 写文本文件
-F3  read_media_file    — 读媒体文件
-F4  edit_text_file     — 编辑文本文件
+F1  readtext     — 读取文本文件
+F2  writetext    — 写文本文件
+F3  readmedia    — 读媒体文件
+F4  edittext     — 编辑文本文件
 F5a listdir            — 列出目录内容
 F5b tree               — 列出目录树
 F6  find       — 搜索文件名
@@ -35,23 +35,23 @@ from app.tools.file.file_schema import (
     CompressInput,
     CopyInput,
     DeleteInput,
-    EditTextFileInput,
+    EdittextInput,
     ExtractInput,
     GrepInput,
     ListdirInput,
     TreeInput,
     MoveInput,
-    ReadTextFileInput,
-    ReadMediaFileInput,
+    ReadtextInput,
+    ReadmediaInput,
     RenameInput,
     FindInput,
-    WriteTextFileInput,
+    WritetextInput,
 )
 
-from app.tools.file.read_text_file import read_text_file
-from app.tools.file.write_text_file import write_text_file
-from app.tools.file.read_media_file import read_media_file
-from app.tools.file.edit_text_file import edit_text_file
+from app.tools.file.read_text_file import readtext
+from app.tools.file.write_text_file import writetext
+from app.tools.file.read_media_file import readmedia
+from app.tools.file.edit_text_file import edittext
 from app.tools.file.list_directory import listdir
 from app.tools.file.tree import tree
 from app.tools.file.search_files import find
@@ -70,7 +70,7 @@ from app.utils.logger import logger
 # compress的pyzipper是可选依赖(仅加密ZIP时需要) — 小健 2026-06-19
 FILE_TOOL_DEPENDENCIES = {
     tool_name: [] for tool_name in [
-        "read_text_file", "write_text_file", "read_media_file", "edit_text_file",
+        "readtext", "writetext", "readmedia", "edittext",
         "listdir", "tree", "find", "grep",
         "extract", "move", "copy", "delete", "rename",
     ]
@@ -83,13 +83,13 @@ FILE_TOOL_DEPENDENCIES["compress"] = ["pyzipper"]
 # ============================================================
 
 FILE_TOOL_DESCRIPTIONS = {
-    "read_text_file": """读取文本文件内容。适用场景:需要查看或分析源代码、日志、配置文件等纯文本时使用。""",
+    "readtext": """读取文本文件内容。适用场景:需要查看或分析源代码、日志、配置文件等纯文本时使用。""",
 
-    "write_text_file": """创建或修改文本文件。适用场景:需要写入代码、配置、日志等内容到文件时使用。""",
+    "writetext": """创建或修改文本文件。适用场景:需要写入代码、配置、日志等内容到文件时使用。""",
 
-    "read_media_file": """读取图片、音频、视频等非文本文件。不支持PDF文件(请用read_pdf)。适用场景:需要获取媒体文件内容进行图像识别、音频分析等时使用。""",
+    "readmedia": """读取图片、音频、视频等非文本文件。不支持PDF文件(请用read_pdf)。适用场景:需要获取媒体文件内容进行图像识别、音频分析等时使用。""",
 
-    "edit_text_file": """替换文本文件中的指定内容。适用场景:需要精确修改代码中的函数名、变量、配置值等时使用。""",
+    "edittext": """替换文本文件中的指定内容。适用场景:需要精确修改代码中的函数名、变量、配置值等时使用。""",
 
     "listdir": """列出目录内容,返回扁平列表(当前层所有文件+目录)。适用场景:需要查看目录结构、文件大小、文件数量统计时使用。""",
 
@@ -118,21 +118,21 @@ FILE_TOOL_DESCRIPTIONS = {
 # ============================================================
 
 FILE_TOOL_EXAMPLES = {
-    "read_text_file": [
+    "readtext": [
         {"file_path": "D:/project/main.py"},                               # 全文
         {"file_path": "D:/logs/app.log", "tail": 50},                     # 末50行(看日志尾部)
         {"file_path": "D:/project/main.py", "offset": 1, "limit": 200},  # 分页
     ],
-    "write_text_file": [
+    "writetext": [
         {"file_path": "D:/output/test.txt", "content": "Hello World"},
         {"file_path": "D:/report.md", "content": "# 标题\n\n第一段内容\n\n第二段内容"},
         {"file_path": "D:/config.json", "content": "{\"name\": \"test\", \"value\": 123}"},
         {"file_path": "D:/logs/app.log", "content": "[2026-05-18] Done\n", "append": True},
     ],
-    "read_media_file": [
+    "readmedia": [
         {"file_path": "D:/screenshot.png"},
     ],
-    "edit_text_file": [
+    "edittext": [
         {"file_path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"},
         {"file_path": "D:/main.py", "old_string": "import os", "new_string": "import sys"},
     ],
@@ -148,7 +148,7 @@ FILE_TOOL_EXAMPLES = {
         {"pattern": "**/*.py", "search_dir": "D:/project"},
     ],
     "grep": [
-        {"pattern": "def read_text_file", "search_dir": "D:/backend"},
+        {"pattern": "def readtext", "search_dir": "D:/backend"},
         {"pattern": "TODO", "search_dir": "D:/src"},
         {"pattern": "error", "search_dir": "D:/logs", "output_mode": "files_with_matches"},
         {"pattern": "class.*Component", "search_dir": "D:/src", "glob": "*.py"}
@@ -182,10 +182,10 @@ FILE_TOOL_EXAMPLES = {
 # ============================================================
 
 TOOL_INPUT_MODELS = {
-    "read_text_file": ReadTextFileInput,
-    "write_text_file": WriteTextFileInput,
-    "read_media_file": ReadMediaFileInput,
-    "edit_text_file": EditTextFileInput,
+    "readtext": ReadtextInput,
+    "writetext": WritetextInput,
+    "readmedia": ReadmediaInput,
+    "edittext": EdittextInput,
     "listdir": ListdirInput,
     "tree": TreeInput,
     "find": FindInput,
@@ -209,10 +209,10 @@ def _register_file_tools():
     """
 
     tool_methods = {
-        "read_text_file": read_text_file,
-        "write_text_file": write_text_file,
-        "read_media_file": read_media_file,
-        "edit_text_file": edit_text_file,
+        "readtext": readtext,
+        "writetext": writetext,
+        "readmedia": readmedia,
+        "edittext": edittext,
         "listdir": listdir,
         "tree": tree,
         "find": find,

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-F4: edit_text_file — 编辑文本文件
+F4: edittext — 编辑文本文件
 
 从file_tools.py拆分而来 — 小欧 2026-06-22
 """
@@ -108,14 +108,14 @@ def _build_edit_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"文件编辑失败: {detail}",
-            "action": {"tool": "edit_text_file", "tool_zh": "编辑文件", "target": file_path, "params": {}},
+            "action": {"tool": "edittext", "tool_zh": "编辑文件", "target": file_path, "params": {}},
             "status": {"exec_code": "error", "message": "编辑失败", "code": ERR_FILE_EDIT_FAILED, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"编辑完成: {file_path} ({applied}/{total}处)",
-        "action": {"tool": "edit_text_file", "tool_zh": "编辑文件", "target": file_path, "params": {}},
+        "action": {"tool": "edittext", "tool_zh": "编辑文件", "target": file_path, "params": {}},
         "status": {"exec_code": "success", "message": "编辑完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -210,11 +210,11 @@ async def _precise_replace_in_file(
         }
 
     except Exception as e:
-        logger.error(f"edit_text_file failed: {file_path}: {e}")
+        logger.error(f"edittext failed: {file_path}: {e}")
         return {"error_detail": str(e)}
 
 
-async def edit_text_file(
+async def edittext(
     file_path: str,
     old_string: str,
     new_string: str = "",

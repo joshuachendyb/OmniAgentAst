@@ -173,7 +173,7 @@ def _check_text_file(path: Path, suffix: str, check_content: bool, allow_create:
     # 检查扩展名
     if suffix in BINARY_EXTENSIONS:
         if suffix in MEDIA_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是媒体文件，不能用文本工具操作。建议使用read_media_file工具", "read_media_file"
+            return False, f"工具选择错误：'{suffix}'是媒体文件，不能用文本工具操作。建议使用readmedia工具", "readmedia"
         elif suffix in DOCUMENT_EXTENSIONS:
             doc_tool = _suggest_doc_tool(suffix)
             return False, f"工具选择错误：'{suffix}'是文档文件，不能用文本工具操作。{doc_tool}", None
@@ -186,7 +186,7 @@ def _check_text_file(path: Path, suffix: str, check_content: bool, allow_create:
     if check_content and not allow_create and path.exists():
         is_binary, reason = _detect_binary_content(path)
         if is_binary:
-            return False, f"工具选择错误：{reason}，不能用文本工具操作。建议使用read_media_file工具", "read_media_file"
+            return False, f"工具选择错误：{reason}，不能用文本工具操作。建议使用readmedia工具", "readmedia"
     
     return True, "", None
 
@@ -195,12 +195,12 @@ def _check_media_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]
     """检查是否为媒体文件 — 小欧 2026-06-24 修正错误信息格式"""
     if suffix not in MEDIA_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是文本文件，不能用媒体工具操作。建议使用read_text_file工具", "read_text_file"
+            return False, f"工具选择错误：'{suffix}'是文本文件，不能用媒体工具操作。建议使用readtext工具", "readtext"
         elif suffix in DOCUMENT_EXTENSIONS:
             doc_tool = _suggest_doc_tool(suffix)
             return False, f"工具选择错误：'{suffix}'是文档文件，不能用媒体工具操作。{doc_tool}", None
         else:
-            return False, f"工具选择错误：'{suffix}'不是支持的媒体格式。建议使用read_text_file或对应的文档工具", None
+            return False, f"工具选择错误：'{suffix}'不是支持的媒体格式。建议使用readtext或对应的文档工具", None
     
     return True, "", None
 
@@ -212,9 +212,9 @@ def _check_document_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[s
         return False, f"工具选择错误：'{suffix}'是不支持的文档格式。{hint}。支持的格式: {', '.join(sorted(DOCUMENT_EXTENSIONS))}", None
     if suffix not in DOCUMENT_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是文本文件，不能用文档工具操作。建议使用read_text_file工具", "read_text_file"
+            return False, f"工具选择错误：'{suffix}'是文本文件，不能用文档工具操作。建议使用readtext工具", "readtext"
         elif suffix in MEDIA_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是媒体文件，不能用文档工具操作。建议使用read_media_file工具", "read_media_file"
+            return False, f"工具选择错误：'{suffix}'是媒体文件，不能用文档工具操作。建议使用readmedia工具", "readmedia"
         else:
             return False, f"工具选择错误：'{suffix}'不是支持的文档格式。支持的格式: {', '.join(sorted(DOCUMENT_EXTENSIONS))}", None
     
@@ -228,7 +228,7 @@ def _check_archive_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[st
         return False, f"工具选择错误：'{suffix}'是不支持的压缩格式。{hint}。支持的格式: {', '.join(sorted(ARCHIVE_EXTENSIONS))}", None
     if suffix not in ARCHIVE_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是文本文件，不是压缩文件。建议使用read_text_file工具", "read_text_file"
+            return False, f"工具选择错误：'{suffix}'是文本文件，不是压缩文件。建议使用readtext工具", "readtext"
         else:
             return False, f"工具选择错误：'{suffix}'不是支持的压缩格式。支持的格式: {', '.join(sorted(ARCHIVE_EXTENSIONS))}", None
     
@@ -281,7 +281,7 @@ def _detect_binary_content(path: Path) -> Tuple[bool, str]:
 
 def check_for_text_tool(file_path: str, check_content: bool = True, allow_create: bool = False) -> Tuple[bool, str, Optional[str]]:
     """
-    供read_text_file/write_text_file/edit_text_file调用
+    供readtext/write_text_file/edit_text_file调用
     
     参数：
         file_path: 文件路径
@@ -297,7 +297,7 @@ def check_for_text_tool(file_path: str, check_content: bool = True, allow_create
 
 
 def check_for_media_tool(file_path: str) -> Tuple[bool, str, Optional[str]]:
-    """供read_media_file调用"""
+    """供readmedia调用"""
     return check_file_type(file_path, "media", check_content=False)
 
 

@@ -17,7 +17,7 @@ from typing import Dict, Optional
 from app.utils.logger import logger
 from app.services.safety.path_validator import validate_tool_path as _validate_tool_path
 
-_WRITE_RISK_TOOL = "write_text_file"
+_WRITE_RISK_TOOL = "writetext"
 
 
 

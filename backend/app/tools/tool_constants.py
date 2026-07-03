@@ -38,8 +38,8 @@ TOOL_TIMEOUTS = {
     "list_directory": 30,
     "find": 120,
     "grep": 120,
-    "read_media_file": 60,
-    "edit_text_file": 60,
+    "readmedia": 60,
+    "edittext": 60,
     "shell": 120,
     "shell_foreground": 120,
     "shell_background": 10,
@@ -100,7 +100,7 @@ HTTPX_TIMEOUT_DEFAULT = 5.0        # 通用httpx请求超时
 # ============================================================
 
 FILE_OPERATION_TOOLS = {
-    "read_text_file", "write_text_file", "edit_text_file",
+    "readtext", "writetext", "edittext",
     "move", "copy", "delete", "rename",
     "compress", "extract",
 }

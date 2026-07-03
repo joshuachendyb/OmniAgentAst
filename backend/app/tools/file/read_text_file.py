@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-F1: read_text_file — 读取文本文件
+F1: readtext — 读取文本文件
 
 从file_tools.py拆分而来，按工具分类聚合设计 — 小欧 2026-06-22
 """
@@ -179,7 +179,7 @@ def _build_read_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"读取失败: {detail}",
-            "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
             "status": {"exec_code": "error", "message": f"读取失败: {detail}", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": "请检查文件路径是否正确"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -187,7 +187,7 @@ def _build_read_text_file_llm_data(
     if exec_code == "warning":
         return {
             "summary": f"读取 {file_path}，{line_count}行，{file_size}字节。注意: {detail}",
-            "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
             "status": {"exec_code": "warning", "message": f"读取成功但有警告: {detail}", "code": "", "detail": detail, "hint": "请检查offset参数是否超出文件范围"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -197,7 +197,7 @@ def _build_read_text_file_llm_data(
         }
     return {
         "summary": f"读取 {file_path}，{line_count}行，{file_size}字节",
-        "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": "success", "message": "读取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -207,7 +207,7 @@ def _build_read_text_file_llm_data(
     }
 
 
-async def read_text_file(
+async def readtext(
     file_path: str,
     offset: Optional[int] = None,
     limit: Optional[int] = None,
@@ -330,7 +330,7 @@ async def read_text_file(
         return build_success(data=_data, llm_data=llm_data)
 
     except Exception as e:
-        logger.error(f"read_text_file failed: {file_path}: {e}")
+        logger.error(f"readtext failed: {file_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)

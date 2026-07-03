@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-F3: read_media_file — 读媒体文件
+F3: readmedia — 读媒体文件
 
 从file_tools.py拆分而来 — 小欧 2026-06-22
 """
@@ -44,14 +44,14 @@ def _build_read_media_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"读取媒体文件失败: {detail}",
-            "action": {"tool": "read_media_file", "tool_zh": "读取媒体", "target": file_path, "params": {}},
+            "action": {"tool": "readmedia", "tool_zh": "读取媒体", "target": file_path, "params": {}},
             "status": {"exec_code": "error", "message": "读取媒体文件失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"读取媒体文件成功: {file_name} ({mime_type})",
-        "action": {"tool": "read_media_file", "tool_zh": "读取媒体", "target": file_path, "params": {}},
+        "action": {"tool": "readmedia", "tool_zh": "读取媒体", "target": file_path, "params": {}},
         "status": {"exec_code": "success", "message": "读取媒体文件成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -60,7 +60,7 @@ def _build_read_media_file_llm_data(
     }
 
 
-async def read_media_file(
+async def readmedia(
     file_path: str,
 ) -> Dict[str, Any]:
     """读取媒体文件,返回Base64编码 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 增加文件类型前置检查"""
@@ -118,9 +118,9 @@ async def read_media_file(
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_media_file_llm_data(
                 "error", duration_ms, file_path=file_path,
-                detail=f"文件后缀 '{suffix}' 是文本文件，请使用read_text_file工具读取",
+                detail=f"文件后缀 '{suffix}' 是文本文件，请使用readtext工具读取",
             )
-            return build_error(data={"error_detail": f"文本文件请使用read_text_file", "params": {"file_path": file_path}}, llm_data=llm_data)
+            return build_error(data={"error_detail": f"文本文件请使用readtext", "params": {"file_path": file_path}}, llm_data=llm_data)
 
         mime_type = _MIME_MAP.get(suffix, "application/octet-stream")
 
@@ -139,7 +139,7 @@ async def read_media_file(
             llm_data=llm_data,
         )
     except Exception as e:
-        logger.error(f"read_media_file failed: {file_path}: {e}")
+        logger.error(f"readmedia failed: {file_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)

@@ -22,12 +22,12 @@ from typing import Optional, List, Dict, Any, Literal, Union
 
 
 # ============================================================
-# F1: read_text_file — 读取文本文件
+# F1: readtext — 读取文本文件
 # ============================================================
 
 # ⚠️ Pydantic class docstring 会进入 JSON Schema 的 parameters.description 并发给 LLM
 # 禁止在这里写文档字符串。工具描述写在 file_register.py 的 FILE_TOOL_DESCRIPTIONS 里。
-class ReadTextFileInput(BaseModel):
+class ReadtextInput(BaseModel):
     """
     【四种模式】
     1. 读全文: 不传offset/limit/tail
@@ -85,10 +85,10 @@ class ReadTextFileInput(BaseModel):
 
 
 # ============================================================
-# F2: write_text_file — 写文本文件
+# F2: writetext — 写文本文件
 # ============================================================
 
-class WriteTextFileInput(BaseModel):
+class WritetextInput(BaseModel):
     file_path: str = Field(
         description="文件的完整路径(绝对路径,支持中文路径)。用于写入文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
@@ -122,20 +122,20 @@ class WriteTextFileInput(BaseModel):
 
 
 # ============================================================
-# F3: read_media_file — 读媒体文件
+# F3: readmedia — 读媒体文件
 # ============================================================
 
-class ReadMediaFileInput(BaseModel):
+class ReadmediaInput(BaseModel):
     file_path: str = Field(
         description="媒体文件的完整路径。支持图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)、音频(MP3/WAV/OGG/M4A/FLAC/AAC)、视频(MP4/AVI/MOV/MKV)。返回Base64编码数据"
     )
 
 
 # ============================================================
-# F4: edit_text_file — 编辑文本文件
+# F4: edittext — 编辑文本文件
 # ============================================================
 
-class EditTextFileInput(BaseModel):
+class EdittextInput(BaseModel):
     file_path: str = Field(
         description="目标文件的绝对路径(仅支持文本文件)"
     )
@@ -323,10 +323,10 @@ class RenameInput(BaseModel):
 # ============================================================
 
 __all__ = [
-    "ReadTextFileInput",
-    "WriteTextFileInput",
-    "ReadMediaFileInput",
-    "EditTextFileInput",
+    "ReadtextInput",
+    "WritetextInput",
+    "ReadmediaInput",
+    "EdittextInput",
     "ListdirInput",
     "TreeInput",
     "FindInput",

@@ -7,10 +7,10 @@ from app.services.safety.path_validator import ALLOWED_PATHS, get_default_allowe
 
 __all__ = [
 
-    "ReadTextFileInput",
-    "WriteTextFileInput",
-    "ReadMediaFileInput",
-    "EditTextFileInput",
+    "ReadtextInput",
+    "WritetextInput",
+    "ReadmediaInput",
+    "EdittextInput",
     "ListdirInput",
     "TreeInput",
     "FindInput",

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-F2: write_text_file — 写文本文件
+F2: writetext — 写文本文件
 
 从file_tools.py拆分而来 — 小欧 2026-06-22
 """
@@ -38,7 +38,7 @@ def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
         if result and result.get("data", {}).get("encoding"):
             return result["data"]["encoding"]
     except Exception:
-        logger.warning(f"[write_text_file] 编码检测失败: {file_path}")
+        logger.warning(f"[writetext] 编码检测失败: {file_path}")
     return "utf-8"
 
 
@@ -123,7 +123,7 @@ def _build_write_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"写入失败: {detail}",
-            "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
             "status": {"exec_code": "error", "message": f"写入失败: {detail}", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": "请检查路径和写入权限"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -131,7 +131,7 @@ def _build_write_text_file_llm_data(
     if exec_code == "warning":
         return {
             "summary": f"写入 {file_path}，{bytes_written}字节。注意: {detail}",
-            "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
             "status": {"exec_code": "warning", "message": f"写入成功但有警告: {detail}", "code": "", "detail": detail, "hint": hint or "请确认编码是否正确"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -140,7 +140,7 @@ def _build_write_text_file_llm_data(
         }
     return {
         "summary": f"写入 {file_path}，{bytes_written}字节",
-        "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -149,7 +149,7 @@ def _build_write_text_file_llm_data(
     }
 
 
-async def write_text_file(
+async def writetext(
     file_path: str,
     content: str,
     encoding: Optional[str] = None,
