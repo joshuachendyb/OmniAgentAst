@@ -59,8 +59,8 @@ class PromptBuilder:
 <复核工具参数>
 - 核查tool参数：调用工具须核查３遍确认:参数名称/类型/值/格式正确（如路径是文件还是目录、content内容是否填写、必填参数是否缺失）
 
-<searchtool 使用说明>
-- 搜索词=任务关键词
+<searchtool-搜直接工具>
+- 直接工具的搜索词=任务关键词
 - 读/写 Word/Excel/PDF/PPT 文档 → 用searchtool搜"文档 读写"
 - 统计分析/筛选/图表生成分析 →调用searchtool搜"数据分析 图表"
 - 查数据库表结构/执行SQL/读写数据库 → 用searchtool搜"数据库 SQL"
@@ -72,9 +72,9 @@ class PromptBuilder:
 
     _TOOL_CALL_RULES_BASE = """
 【文本工具】(.txt .py .js .ts .java .go .c .cpp .rs .rb .swift .kt .html .css .scss .less .md .log .cfg .conf .sh .bat .ps1)
-- 读 → 必须用read_text_file
-- 写 → 必须用write_text_file
-- 改 → 必须用edit_text_file
+- 读 → 必须用readtext
+- 写 → 必须用writetext
+- 改 → 必须用edittext
 
 
 【Office工具】(支持格式:docx .xlsx .pptx .pdf),禁止用文本工具
@@ -85,7 +85,7 @@ class PromptBuilder:
 - 不支持格式 → .doc .xls .ppt .odt .ods .odp .rtf 
 
 【媒体工具】(.jpg .jpeg .png .gif .bmp .webp .svg .tiff .tif .ico .heic .heif .mp3 .wav .ogg .m4a .flac .aac .wma .mid .midi .mp4 .avi .mov .mkv .webm .wmv)
-- 读 → 必须用read_media_file，禁止用read_text_file和office文档读取工具比.
+- 读 → 必须用readmedia，禁止用readtext和office文档读取工具比.
 
  """
 
@@ -152,7 +152,7 @@ class PromptBuilder:
         unclosed = re.findall(r'<(\w+)>', result)
         closed = re.findall(r'</(\w+)>', result)
         for tag in set(unclosed):
-            if tag not in closed and tag not in ('角色', 'br', '能力', '铁规-分析计划', '执行纪律', '复核工具参数', 'searchtool 使用说明'):
+            if tag not in closed and tag not in ('角色', 'br', '能力', '铁规-分析计划', '执行纪律', '复核工具参数', 'searchtool-搜直接工具'):
                 logger.warning(f"[PromptBuilder] tag <{tag}> 可能未闭合")
 
         return result
