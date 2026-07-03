@@ -20,9 +20,9 @@ from typing import Optional
 
 from app.services import get_service
 from app.utils.logger import logger
-from app.services.react_sse_wrapper.chat_stream import create_error_response
+from app.services.react_sse_wrapper.chat_stream import create_error_response, send_start_step
+from app.utils.sse_formatter import format_agent_sse
 from app.api.v1.chat.models import ChatRequest
-from app.api.v1.chat.step_start import step_start
 from app.utils.counter_utils import create_step_counter
 from app.services.task.task_registry import register_task, task_cleanup
 from app.services.task.task_interrupt_check import task_interrupt_check, task_pause_check_and_yield
@@ -31,8 +31,8 @@ from app.services.task.task_state_queries import check_cancelled
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
 from app.utils.context_vars import _current_task_id
 from app.utils.prompt_logger import get_prompt_logger
-from app.api.v1.chat.confirm_operation import confirm_operation
 from app.api.v1.chat.validate_chat_config import validate_chat_config
+from app.services.task.hitl_confirmation import resolve_confirmation
 
 router = APIRouter()
 task_router = APIRouter()
@@ -69,6 +69,38 @@ async def confirm_stream_endpoint(request: Request):
 @router.get("/chat/validate")
 async def validate_config_endpoint():
     return await validate_chat_config()
+
+
+async def step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):
+    """拷贝自 step_start.py"""
+    try:
+        start_step = await send_start_step(
+            ai_service=ai_service, task_id=task_id, next_step=next_step,
+            user_message=user_input, security_check_result={},
+        )
+        start_dict = start_step.to_dict()
+        execution_steps.append(start_dict)
+        yield format_agent_sse(start_dict)
+    except Exception as e:
+        yield create_error_response(error_type="start_failed", error_message=f"start步骤失败: {e}")
+
+
+async def confirm_operation(request: Request):
+    """拷贝自 confirm_operation.py — HITL人工确认"""
+    body = await request.json()
+    confirm_id = body.get("confirm_id")
+    confirmed = body.get("confirmed", True)
+    trust_session = body.get("trust_session", False)
+
+    if not confirm_id:
+        return {"success": False, "error": "missing confirm_id"}
+
+    ok = resolve_confirmation(confirm_id, confirmed, trust_session)
+
+    if not ok:
+        return {"success": False, "error": "confirm_id not found or already processed"}
+
+    return {"success": True}
 
 
 @dataclass
