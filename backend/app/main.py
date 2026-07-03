@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import traceback
 from app.utils.time_utils import get_utc_timestamp
+from pathlib import Path
 import os
 import logging
 
@@ -20,11 +21,31 @@ from app.api.v1.task_queries import router as task_queries_router
 from app.utils.logger import logger
 from app.services.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS
-from app.utils.version import get_version
 from app.services.task.task_registry import cleanup_expired_tasks
 from app.db import db
 
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+
+def get_version() -> str:
+    """从version.txt读取版本号 - 小沈 2026-05-27"""
+    try:
+        current_file = Path(__file__).resolve()
+        project_root = current_file.parent.parent
+        version_file = project_root / "version.txt"
+
+        if version_file.exists():
+            with open(version_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    version = line.strip()
+                    if version:
+                        break
+            logger.info(f"Successfully read version from version.txt: {version}")
+            return version.lstrip('v')
+    except Exception as e:
+        logger.warning(f"Failed to read version.txt: {e}")
+    return "0.13.36"
+
 
 app_version = get_version()
 logger.info(f"Backend version: {app_version}")

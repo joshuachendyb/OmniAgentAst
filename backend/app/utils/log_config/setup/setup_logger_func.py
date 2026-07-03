@@ -15,11 +15,21 @@ from app.utils.log_config.handler import (
     _create_handler_for_logger,
 )
 from app.utils.log_config.config import LogConfig
-from app.utils.log_config.setup.setup_file_handler import setup_file_handler
 
 _logging_configured = False
 _file_handler: Optional[logging.handlers.RotatingFileHandler] = None
 _console_handler: Optional[logging.StreamHandler] = None
+
+
+def setup_file_handler() -> SafeRotatingFileHandler:
+    """拷贝自 setup_file_handler.py"""
+    log_file = _get_log_file_path()
+    return SafeRotatingFileHandler(
+        log_file,
+        maxBytes=LogConfig.get_max_bytes(),
+        backupCount=LogConfig.get_backup_count(),
+        encoding='utf-8'
+    )
 
 
 def setup_logger(name: str) -> logging.Logger:
