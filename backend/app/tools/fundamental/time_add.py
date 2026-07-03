@@ -22,21 +22,21 @@ def _build_time_add_llm_data(exec_code: str, duration_ms: int, result_time: str,
     if exec_code == "error":
         return {
             "summary": f"时间加减失败: {delta} {unit}",
-            "action": {"tool": "time_add", "tool_zh": "时间加减", "target": str(delta), "params": {"delta": delta, "unit": unit}},
+            "action": {"tool": "timeadd", "tool_zh": "时间加减", "target": str(delta), "params": {"delta": delta, "unit": unit}},
             "status": {"exec_code": "error", "message": "时间加减失败", "code": ERR_TIME_ADD, "detail": "", "hint": "请检查参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"{delta} {unit}后: {result_time}",
-        "action": {"tool": "time_add", "tool_zh": "时间加减", "target": str(delta), "params": {"delta": delta, "unit": unit}},
+        "action": {"tool": "timeadd", "tool_zh": "时间加减", "target": str(delta), "params": {"delta": delta, "unit": unit}},
         "status": {"exec_code": "success", "message": "时间加减成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-def time_add(delta: float, start: Optional[str] = None, unit: Literal["days", "hours", "minutes", "seconds", "months"] = "days") -> Dict[str, Any]:
+def timeadd(delta: float, start: Optional[str] = None, unit: Literal["days", "hours", "minutes", "seconds", "months"] = "days") -> Dict[str, Any]:
     """时间加减计算 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union，只支持str"""
     t0 = _time_mod.perf_counter()
     try:
@@ -96,4 +96,4 @@ def time_add(delta: float, start: Optional[str] = None, unit: Literal["days", "h
         return build_error(data={"error_detail": str(e), "params": {"delta": delta, "unit": unit, "start": str(start)}}, llm_data=llm_data)
 
 
-__all__ = ["time_add"]
+__all__ = ["timeadd"]

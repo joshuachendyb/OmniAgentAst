@@ -6,20 +6,20 @@
 from app.tools.fundamental.fundamental_register import _register_fundamental_tools
 
 from app.tools.fundamental.tool_search import searchtool
-from app.tools.fundamental.time_now import time_now
-from app.tools.fundamental.time_add import time_add
-from app.tools.fundamental.time_diff import time_diff
-from app.tools.fundamental.query_calendar import query_calendar
-from app.tools.fundamental.get_system_info import get_system_info
-from app.tools.fundamental.send_notification import send_notification
+from app.tools.fundamental.time_now import timenow
+from app.tools.fundamental.time_add import timeadd
+from app.tools.fundamental.time_diff import timediff
+from app.tools.fundamental.query_calendar import calendar
+from app.tools.fundamental.get_system_info import sysinfo
+from app.tools.fundamental.send_notification import notify
 
 __all__ = [
     "_register_fundamental_tools",
     "searchtool",
-    "time_now",
-    "time_add",
-    "time_diff",
-    "query_calendar",
-    "get_system_info",
-    "send_notification",
+    "timenow",
+    "timeadd",
+    "timediff",
+    "calendar",
+    "sysinfo",
+    "notify",
 ]

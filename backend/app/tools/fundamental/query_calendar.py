@@ -27,7 +27,7 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
     if exec_code == "error":
         return {
             "summary": "日期检查失败",
-            "action": {"tool": "query_calendar", "tool_zh": "日历查询", "target": date_str, "params": {}},
+            "action": {"tool": "calendar", "tool_zh": "日历查询", "target": date_str, "params": {}},
             "status": {"exec_code": "error", "message": "日期检查失败", "code": ERR_TIME_DATE, "detail": "", "hint": "请检查日期格式"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -35,14 +35,14 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
     hol_str = f"，{holiday_name}" if holiday_name else ""
     return {
         "summary": f"{date_str}: {'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}",
-        "action": {"tool": "query_calendar", "tool_zh": "日历查询", "target": date_str, "params": {}},
+        "action": {"tool": "calendar", "tool_zh": "日历查询", "target": date_str, "params": {}},
         "status": {"exec_code": "success", "message": "日期检查完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-def query_calendar(
+def calendar(
     name: str,
     year: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -107,4 +107,4 @@ def query_calendar(
         return build_error(data={"error_detail": str(e), "params": {"name": str(name)}}, llm_data=llm_data)
 
 
-__all__ = ["query_calendar"]
+__all__ = ["calendar"]

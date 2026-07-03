@@ -24,21 +24,21 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
     if exec_code == "error":
         return {
             "summary": f"获取系统信息失败: {info_type}",
-            "action": {"tool": "get_system_info", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
+            "action": {"tool": "sysinfo", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
             "status": {"exec_code": "error", "message": "获取系统信息失败", "code": ERR_SYSTEM_INFO, "detail": "", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"已获取{info_type}类型的系统信息",
-        "action": {"tool": "get_system_info", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
+        "action": {"tool": "sysinfo", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
         "status": {"exec_code": "success", "message": "获取系统信息成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-def get_system_info(info_type: str = "all") -> Dict[str, Any]:
+def sysinfo(info_type: str = "all") -> Dict[str, Any]:
     """获取系统信息 — 小健 2026-06-22 迁入fundamental独立文件; 小健 2026-06-24 修复无效info_type返回success的bug"""
     t0 = _time_mod.perf_counter()
     
@@ -117,10 +117,10 @@ def get_system_info(info_type: str = "all") -> Dict[str, Any]:
         return build_success(data=data, llm_data=llm_data)
 
     except Exception as e:
-        logger.error(f"[get_system_info] 获取系统信息失败: {e}")
+        logger.error(f"[sysinfo] 获取系统信息失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_get_system_info_llm_data("error", duration_ms, info_type)
         return build_error(data={"error_detail": str(e), "params": {"info_type": info_type}}, llm_data=llm_data)
 
 
-__all__ = ["get_system_info"]
+__all__ = ["sysinfo"]

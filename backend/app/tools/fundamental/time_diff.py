@@ -22,21 +22,21 @@ def _build_time_diff_llm_data(exec_code: str, duration_ms: int, humanized: str, 
     if exec_code == "error":
         return {
             "summary": "计算时间差失败",
-            "action": {"tool": "time_diff", "tool_zh": "时间差值", "target": "", "params": {}},
+            "action": {"tool": "timediff", "tool_zh": "时间差值", "target": "", "params": {}},
             "status": {"exec_code": "error", "message": "计算时间差失败", "code": ERR_TIME_DIFF, "detail": "", "hint": "请检查时间格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"时间差: {humanized}（{round(days, 2)}天）",
-        "action": {"tool": "time_diff", "tool_zh": "时间差值", "target": "", "params": {}},
+        "action": {"tool": "timediff", "tool_zh": "时间差值", "target": "", "params": {}},
         "status": {"exec_code": "success", "message": "计算时间差成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"seconds": {"value": seconds, "text": f"{seconds}秒"}, "days": {"value": round(days, 2), "text": f"{round(days, 2)}天"}},
     }
 
 
-def time_diff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
+def timediff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
     """计算时间差值 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union，只支持str"""
     t0 = _time_mod.perf_counter()
     try:
@@ -109,4 +109,4 @@ def time_diff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
         return build_error(data={"error_detail": str(e), "params": {"start": str(start), "end": str(end)}}, llm_data=llm_data)
 
 
-__all__ = ["time_diff"]
+__all__ = ["timediff"]

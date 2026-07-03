@@ -20,21 +20,21 @@ def _build_time_now_llm_data(exec_code: str, duration_ms: int, iso: str, formatt
     if exec_code == "error":
         return {
             "summary": "获取当前时间失败",
-            "action": {"tool": "time_now", "tool_zh": "获取时间", "target": "", "params": {}},
+            "action": {"tool": "timenow", "tool_zh": "获取时间", "target": "", "params": {}},
             "status": {"exec_code": "error", "message": "获取当前时间失败", "code": ERR_TIME_NOW, "detail": "", "hint": "请重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"当前时间 {formatted}，{weekday}",
-        "action": {"tool": "time_now", "tool_zh": "获取时间", "target": "", "params": {}},
+        "action": {"tool": "timenow", "tool_zh": "获取时间", "target": "", "params": {}},
         "status": {"exec_code": "success", "message": "获取当前时间成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-def time_now() -> Dict[str, Any]:
+def timenow() -> Dict[str, Any]:
     """获取当前系统时间 — 小欧 2026-06-17 只保留"now"操作; 小健 2026-06-22 拆分独立文件"""
     t0 = _time_mod.perf_counter()
     try:
@@ -58,4 +58,4 @@ def time_now() -> Dict[str, Any]:
         return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
 
 
-__all__ = ["time_now"]
+__all__ = ["timenow"]

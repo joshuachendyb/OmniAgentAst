@@ -30,21 +30,21 @@ def _build_send_notification_llm_data(exec_code: str, duration_ms: int, title: s
     if exec_code == "error":
         return {
             "summary": f"通知发送失败: {title}",
-            "action": {"tool": "send_notification", "tool_zh": "系统通知", "target": title, "params": {}},
+            "action": {"tool": "notify", "tool_zh": "系统通知", "target": title, "params": {}},
             "status": {"exec_code": "error", "message": "通知发送失败", "code": err_code or ERR_DESKTOP_NOTIFICATION, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"通知已发送: {title}",
-        "action": {"tool": "send_notification", "tool_zh": "系统通知", "target": title, "params": {"duration": notif_duration}},
+        "action": {"tool": "notify", "tool_zh": "系统通知", "target": title, "params": {"duration": notif_duration}},
         "status": {"exec_code": "success", "message": "通知发送成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
+def notify(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
     """发送Windows系统通知 — 小健 2026-06-22 迁入fundamental独立文件 — 小健 2026-06-22 修复计时铁规"""
     t0 = _time_mod.perf_counter()
     if not _check_module("win10toast"):
@@ -69,4 +69,4 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
         return build_error(data={"error_detail": str(e), "params": {"title": title, "message": message[:200]}}, llm_data=llm_data)
 
 
-__all__ = ["send_notification"]
+__all__ = ["notify"]
