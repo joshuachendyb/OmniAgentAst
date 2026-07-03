@@ -13,6 +13,7 @@
 """
 
 import json
+from app.utils.json_utils import safe_json_dumps
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -132,7 +133,7 @@ async def save_message(session_id: str, message: MessageCreate):
         if message.role == "assistant" and not display_name_to_save:
             display_name_to_save = display_name_cache.get(session_id)
 
-        execution_steps_json = json.dumps(message.execution_steps) if message.execution_steps else None
+        execution_steps_json = safe_json_dumps(message.execution_steps) if message.execution_steps else None
         cursor.execute(
             "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, execution_steps, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (session_id, message.role, message.content, utc_time, display_name_to_save,

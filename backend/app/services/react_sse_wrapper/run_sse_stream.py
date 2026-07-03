@@ -217,8 +217,12 @@ async def run_sse_stream(
             current_execution_steps=current_execution_steps, session_id=session_id,
         )
         yield error_response
-        # 小健 2026-06-19: error后补发FinalStep,保证客户端收到终态事件
-        final_step = FinalStep(step=next_step(), response=f"执行异常: {str(e)[:200]}")
+        # 北京老陈 2026-07-03: agent已完成时保留原始回复,不覆盖为"执行异常"
+        original_response = stream_state.current_content if stream_state else ""
+        if original_response:
+            final_step = FinalStep(step=next_step(), response=original_response)
+        else:
+            final_step = FinalStep(step=next_step(), response=f"执行异常: {str(e)[:200]}")
         current_execution_steps.append(final_step.to_dict())
         yield format_agent_sse(final_step.to_dict())
         if agent is not None:

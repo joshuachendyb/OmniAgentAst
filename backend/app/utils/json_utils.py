@@ -158,10 +158,30 @@ def _normalize_tool_params(params: Any) -> Any:
     return params
 
 
+class SafeJSONEncoder(json.JSONEncoder):
+    """安全JSON编码器 — 北京老陈 2026-07-03
+    datetime/date/time → isoformat()
+    其他非标准类型 → str() 保底"""
+    def default(self, obj):
+        if hasattr(obj, 'isoformat'):
+            return obj.isoformat()
+        try:
+            return str(obj)
+        except Exception:
+            return None
+
+
+def safe_json_dumps(obj, **kwargs) -> str:
+    """安全JSON序列化 — 北京老陈 2026-07-03"""
+    return json.dumps(obj, cls=SafeJSONEncoder, **kwargs)
+
+
 __all__ = [
     "parse_json",
     "coerce_json",
     "read_json_file",
     "_try_fix_incomplete_json",
     "_normalize_tool_params",
+    "SafeJSONEncoder",
+    "safe_json_dumps",
 ]

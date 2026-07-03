@@ -5,8 +5,9 @@ update_message_fields — 从 conversation.py 拷出
 拷贝来源: conversation.py 第134-156行
 """
 
-import json
 from sqlite3 import Connection
+
+from app.utils.json_utils import safe_json_dumps
 
 
 def update_message_fields(
@@ -19,7 +20,7 @@ def update_message_fields(
     values: list = []
     if update_data.execution_steps:
         fields.append("execution_steps = ?")
-        values.append(json.dumps(update_data.execution_steps))
+        values.append(safe_json_dumps(update_data.execution_steps))
     if update_data.content is not None:
         fields.append("content = ?")
         values.append(update_data.content)

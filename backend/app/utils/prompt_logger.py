@@ -17,6 +17,7 @@ from app.utils.time_utils import now_str, timestamp_for_filename
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
+from app.utils.json_utils import safe_json_dumps
 from app.utils.logger import logger
 
 
@@ -477,7 +478,7 @@ class PromptLogger:
         for retry in range(2):
             try:
                 with open(log_file_path, 'w', encoding='utf-8') as f:
-                    json.dump(current_log, f, ensure_ascii=False, indent=2)
+                    f.write(safe_json_dumps(current_log, ensure_ascii=False, indent=2))
                 logger.info(f"[PromptLogger] 日志已保存: {log_file_path}")
                 return
             except Exception as e:

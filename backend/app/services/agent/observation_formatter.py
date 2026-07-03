@@ -23,6 +23,8 @@ Author: 小欧 2026-06-21; 小欧 2026-06-22 添加截断铁规
 import json
 from typing import Any, Dict
 
+from app.utils.json_utils import safe_json_dumps
+
 
 def format_data_detail(data: Any) -> str:
     """按data结构类型自动格式化为可读文本 — 小欧 2026-06-21
@@ -233,7 +235,7 @@ def _format_key_value(data: dict) -> str:
             for sk, sv in v.items():
                 lines.append(f"  {k}.{sk}: {sv}")
         elif isinstance(v, list):
-            lines.append(f"  {k}: {json.dumps(v, ensure_ascii=False)}")
+            lines.append(f"  {k}: {safe_json_dumps(v, ensure_ascii=False)}")
         else:
             lines.append(f"  {k}: {v}")
     return "\n".join(lines)

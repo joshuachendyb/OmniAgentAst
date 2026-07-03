@@ -50,6 +50,14 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional
     """读取.xlsx文件(内部) — 小欧 2026-06-22
     辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22
     参数: sheet_name - 指定工作表名，None则读取所有工作表 — 小健 2026-06-24"""
+    def _serialize_val(val):
+        """单值序列化: None→None, datetime→isoformat, 其他原样 — 北京老陈 2026-07-03"""
+        if val is None:
+            return None
+        if hasattr(val, 'isoformat'):
+            return val.isoformat()
+        return val
+
     try:
         from openpyxl import load_workbook
 
@@ -80,7 +88,7 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional
                 for i, row in enumerate(ws.iter_rows(values_only=True)):
                     if i >= max_rows + 1:
                         break
-                    row_data = [None if val is None else val for val in row]
+                    row_data = [_serialize_val(val) for val in row]
                     if i == 0:
                         headers = [str(h) if h is not None else f"column_{j}" for j, h in enumerate(row_data)]
                     else:
