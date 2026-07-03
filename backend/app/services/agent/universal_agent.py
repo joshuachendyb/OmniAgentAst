@@ -16,7 +16,7 @@ from app.utils.logger import logger
 from app.utils.cache import TTLCache
 
 from app.services.agent.tool_cache_manager import patch_search_desc
-from app.services.llm.llm_constants import TOOL_CACHE_TTL as _TOOL_CACHE_TTL
+from app.services.llm.base_service import TOOL_CACHE_TTL as _TOOL_CACHE_TTL
 
 
 # 初始注入分类 — 小健 2026-06-18

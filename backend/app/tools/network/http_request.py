@@ -19,7 +19,7 @@ import httpx
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client
-from app.tools.network.connectivity import check_network
+from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy
 from app.tools.validate.timeout_validator import validate_timeout
 from app.utils.json_utils import coerce_json, parse_json

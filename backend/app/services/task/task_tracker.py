@@ -14,10 +14,20 @@ from uuid import uuid4
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
+from enum import Enum
 from app.db import db
 from app.utils.logger import logger
 from app.db.models.operation_enums import OperationStatus
-from .models import TaskStatus
+
+
+class TaskStatus(str, Enum):
+    """任务生命周期状态 — 小沈 2026-05-29"""
+    PENDING = "pending"
+    EXECUTING = "executing"
+    SUCCESS = "success"
+    FAILED = "failed"
+    PARTIALLY_ROLLED_BACK = "partially_rolled_back"
+    ROLLED_BACK = "rolled_back"
 
 
 class TaskTracker:

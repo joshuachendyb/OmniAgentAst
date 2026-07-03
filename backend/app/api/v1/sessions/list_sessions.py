@@ -12,7 +12,7 @@ from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors
 from app.db import db
 from app.db.models.chat_models import SessionListResponse, SessionResponse
-from app.api.v1.sessions.format_timestamp import format_timestamp
+from app.utils.time_utils import format_timestamp
 
 
 def build_list_where(keyword: Optional[str], is_valid: Optional[bool],

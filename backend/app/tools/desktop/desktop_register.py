@@ -39,6 +39,16 @@ DESKTOP_TOOL_DEPENDENCIES = {
     "clipboard_control": ["pyperclip"],
 }
 
+def check_pyautogui_available() -> bool:
+    """检查pyautogui库是否可用 — 小健 2026-06-27"""
+    import importlib
+    try:
+        importlib.import_module("pyautogui")
+        return True
+    except ImportError:
+        return False
+
+
 from app.tools.desktop.desktop_schema import (
     WindowInfoInput,
     WindowFocusInput,

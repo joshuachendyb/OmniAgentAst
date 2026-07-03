@@ -14,7 +14,7 @@ from typing import Optional, Callable
 from app.utils.logger import logger
 from app.utils.sse_formatter import format_agent_sse
 from app.services.task.task_state_queries import check_cancelled
-from app.services.task.task_utils import build_step_dict
+from app.services.task.task_registry import build_step_dict
 
 
 async def task_cancel_check_and_yield(

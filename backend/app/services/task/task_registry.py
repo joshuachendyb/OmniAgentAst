@@ -183,3 +183,9 @@ async def task_cleanup(task_id: str, llm_call_count: int = 0) -> None:
         logger.info(f"[Cleanup] 任务 {task_id} 正常完成,已清理")
     else:
         logger.info(f"[Cleanup] 任务 {task_id} 已被中断,保留记录")
+
+
+def build_step_dict(step: Optional[int], step_type: str, message: str) -> dict:
+    """构建step字典 — 替代MetaStep.to_dict()，消除对agent/steps的依赖 — 小健 2026-06-17"""
+    from app.utils.time_utils import create_timestamp
+    return {"type": step_type, "step": step, "timestamp": create_timestamp(), "content": message}

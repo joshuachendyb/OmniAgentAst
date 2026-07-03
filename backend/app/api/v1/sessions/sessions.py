@@ -17,7 +17,7 @@ from app.utils.response_utils import handle_api_errors
 from app.utils.time_utils import get_utc_timestamp
 from app.db import db
 from app.api.v1.messages import display_name_cache
-from app.api.v1.sessions.session_update import SessionUpdate
+from app.api.v1.sessions.update_session import SessionUpdate
 from app.db.models.chat_models import SessionCreate
 from app.api.v1.sessions.create_session import create_session
 from app.api.v1.sessions.list_sessions import list_sessions

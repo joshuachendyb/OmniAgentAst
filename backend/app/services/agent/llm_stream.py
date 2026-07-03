@@ -86,7 +86,7 @@ def _build_answer_response(content, usage_data, agent, full_reasoning=""):
 
 async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     """FC/Text双模式流式调用 — tools=None时走Text模式(降级后备) — 小沈 2026-06-12; 小欧 2026-06-25 tools=None支持"""
-    from app.services.llm.llm_constants import LLM_TOOL_CHOICE
+    from app.services.llm.base_service import LLM_TOOL_CHOICE
     full_content = ""
     full_reasoning = ""
     tool_calls_result = None
@@ -163,7 +163,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
 
 async def call_llm_with_fallback(agent, messages, openai_tools):
     """FC模式失败时条件降级到Text模式 — 小欧 2026-06-25"""
-    from app.services.llm.llm_constants import FC_FALLBACK_ENABLED, FC_MAX_RETRIES
+    from app.services.llm.base_service import FC_FALLBACK_ENABLED, FC_MAX_RETRIES
     from app.services.llm.core import FCFormatError
 
     last_error = None

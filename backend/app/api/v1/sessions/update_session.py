@@ -7,10 +7,17 @@ update_session — 从 sessions.py 拷出
 
 from typing import Tuple, Optional
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 from app.utils.logger import logger
 from app.utils.time_utils import get_utc_timestamp
 from app.db import db
-from app.api.v1.sessions.session_update import SessionUpdate
+
+
+class SessionUpdate(BaseModel):
+    """会话更新请求 — 小沈 2026-02-17"""
+    title: Optional[str] = Field(None, description="会话标题", min_length=1, max_length=200)
+    version: Optional[int] = Field(None, ge=1, description="乐观锁版本号")
+    updated_by: Optional[str] = Field(None, description="修改者")
 
 
 def resolve_update_mode(

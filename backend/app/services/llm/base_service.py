@@ -14,7 +14,14 @@ import httpx
 from app.utils.logger import logger
 from app.utils.json_utils import parse_json, _try_fix_incomplete_json, _normalize_tool_params
 from app.services.llm.core import ChatResponse, FCFormatError, StreamChunk, _resolve_exception
-from app.services.llm.llm_constants import LLM_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS, LLM_TEMPERATURE
+# LLM层常量 — 合并自llm_constants.py 小健 2026-07-03
+LLM_TEMPERATURE = 0.7
+LLM_TOOL_CHOICE = "auto"
+LLM_STREAM_MAX_RETRIES = 3
+LLM_STREAM_OPTIONS = {"include_usage": True}
+FC_FALLBACK_ENABLED = True
+FC_MAX_RETRIES = 2
+TOOL_CACHE_TTL = 300
 from app.services.llm.stream_parser import create_cancelled_chunk
 from app.services.llm.client_sdk import create_llm_client
 from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message

@@ -15,8 +15,8 @@ sessions — 从 sessions.py 拆出的职责
 - get_session_titles_batch: API路由
 """
 
-from app.api.v1.sessions.format_timestamp import format_timestamp
-from app.api.v1.sessions.session_update import SessionUpdate
+from app.utils.time_utils import format_timestamp
+from app.api.v1.sessions.update_session import SessionUpdate
 from app.api.v1.sessions.create_session import create_session
 from app.api.v1.sessions.list_sessions import list_sessions, build_list_where
 from app.api.v1.sessions.update_session import (

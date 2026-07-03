@@ -24,7 +24,7 @@ Network Register - 网络通信工具注册点
 from app.tools.registry import register_tool, tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
-from typing import Optional
+from typing import Any, Dict, Optional
 
 # 网络工具依赖配置 — 小健 2026-06-18
 # 每个工具对应的第三方依赖包列表
@@ -50,6 +50,31 @@ def _http_request_failure_hint(tool_params: Optional[dict] = None) -> str:
         hint += f"  失败URL: {failed_url}\n"
     hint += "请勿重复请求同一失败URL!"
     return hint
+
+def check_network() -> Dict[str, Any]:
+    """检查网络连通性 — 小欧 2026-06-24 从3个文件中提取公共函数"""
+    import socket
+    import time
+    test_hosts = [("dns.google", 53), ("8.8.8.8", 53), ("1.1.1.1", 53)]
+    for host, port in test_hosts:
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            t1 = time.time()
+            sock.connect((host, port))
+            latency = (time.time() - t1) * 1000
+            return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
+        except (socket.timeout, socket.error, OSError):
+            pass
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+    return {"connected": False}
+
 
 # 导入 Pydantic 模型
 from app.tools.network.network_schema import (
@@ -144,5 +169,6 @@ def _register_network_tools():
 # 【Phase 1修复 小健 2026-05-14】删除模块级注册代码,改为ensure_tools_registered统一调用
 # 原代码:import时自动执行register_network_tools(),破坏按需注册
 # 现在:导出register函数供ensure_tools_registered显式调用
+
 
 __all__ = ["_register_network_tools"]

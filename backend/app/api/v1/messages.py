@@ -25,7 +25,7 @@ from app.utils.cache import LRUCache
 from app.constants import MAX_CACHE_SIZE
 from app.utils.display_utils import extract_display_name_from_steps
 from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, get_timestamp_ms
-from app.api.v1.sessions.format_timestamp import format_timestamp
+from app.utils.time_utils import format_timestamp
 from app.utils.json_utils import parse_json
 from app.db import db
 from app.db.models.chat_models import MessageResponse

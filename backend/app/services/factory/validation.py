@@ -7,11 +7,22 @@ validation — 配置验证
 """
 
 from typing import Optional, Tuple, List
+from dataclasses import dataclass
 
 import os
 
-from app.services.factory.models import ConfigValidationResult
 from app.utils.paths import get_config_path
+
+
+@dataclass
+class ConfigValidationResult:
+    """配置验证结果 — 小沈 2026-06-08"""
+    success: bool
+    provider: str
+    model: str
+    message: str
+    errors: list
+    warnings: list
 
 
 def make_validation_error(message: str, field: str = "",

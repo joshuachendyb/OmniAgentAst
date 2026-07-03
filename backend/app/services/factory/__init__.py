@@ -13,7 +13,7 @@ factory — 从 factory.py 拆出的职责
 - set_backup_paths/get_backup_paths/clear_backup_paths: 备份路径
 """
 
-from app.services.factory.models import ConfigValidationResult
+from app.services.factory.validation import ConfigValidationResult
 from app.services.factory.lifecycle import close_instance, close_instance_sync, reset
 from app.utils.paths import get_config_path
 from app.services.factory.validation import make_validation_error, validate_credentials, validate_config

@@ -15,7 +15,7 @@ from app.utils.logger import logger
 from app.utils.sse_formatter import format_agent_sse
 from app.services.task.task_state_queries import check_cancelled, check_paused, check_was_paused, get_pause_event
 from app.services.task.task_registry import set_was_paused
-from app.services.task.task_utils import build_step_dict
+from app.services.task.task_registry import build_step_dict
 
 
 def _emit_step_sse(step: Optional[int], step_type: str, message: str) -> str:

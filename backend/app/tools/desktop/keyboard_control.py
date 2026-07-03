@@ -11,7 +11,7 @@ import time as _time_mod
 from typing import Dict, Any, List, Literal
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.desktop.desktop_helper import check_pyautogui_available
+from app.tools.desktop.desktop_register import check_pyautogui_available
 from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_KEYBOARD_TYPE, ERR_KEYBOARD_SHORTCUT, ERR_KEY_COMBO
 
 

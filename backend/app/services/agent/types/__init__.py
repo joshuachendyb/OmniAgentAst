@@ -5,11 +5,22 @@ Agent 类型定义
 小沈 - 2026-06-08 删除Step类re-export(无调用者,统一从steps导入)
 """
 
+from enum import Enum
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from app.services.agent.steps import ReasoningStep
-from .agent_status import AgentStatus
+
+
+class AgentStatus(Enum):
+    """Agent状态 — 小沈 2026-03-21"""
+    IDLE = "idle"
+    THINKING = "thinking"
+    EXECUTING = "executing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    SUSPENDED = "suspended"
 
 
 @dataclass

@@ -12,7 +12,7 @@ import time as _time_mod
 from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.desktop.desktop_helper import check_pyautogui_available
+from app.tools.desktop.desktop_register import check_pyautogui_available
 from app.tools.tool_constants import ERR_DESKTOP_MOUSE_SCROLL
 
 
