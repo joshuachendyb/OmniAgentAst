@@ -25,7 +25,8 @@ from app.services.agent.agent_utils.message_utils import build_observation_text
 from app.constants import HITL_TIMEOUT
 from app.db.models.operation_enums import OperationStatus
 
-from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS
+from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE_OPERATION_TOOLS
+from app.tools.param_alias_mapper import PARAM_ALIASES
 
 
 # 【修复P2-5】封装observation构建上下文 — 北京老陈 2026-06-13
@@ -41,6 +42,10 @@ class ObservationContext:
     is_parallel: bool
     pending_calls: List
     fc_context: Dict = None
+
+
+# 工具文件写操作集合（冲突检测用）— 北京老陈 2026-07-04
+_WRITE_OPS = FILE_OPERATION_TOOLS - {"readtext"}
 
 
 
@@ -97,35 +102,99 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                     return
 
 
+def _has_conflict(all_calls: List[Dict]) -> bool:
+    """检测文件路径冲突 — 复用PARAM_ALIASES做别名→规范名解析 — 北京老陈 2026-07-04
+
+    冲突：同一路径被>=2个FILE_OPERATION_TOOLS访问，且至少一个是写操作
+    有冲突→顺序执行，无冲突→并行
+    """
+    path_ops = {}
+
+    for c in all_calls:
+        name = c.get("tool_name", "")
+        if name not in FILE_OPERATION_TOOLS:
+            continue
+        aliases = PARAM_ALIASES.get(name, {})
+        if not aliases:
+            continue
+
+        params = c.get("tool_params", {})
+        resolved = {}
+        for key, value in params.items():
+            canon = aliases.get(key, key)
+            if canon not in resolved:
+                resolved[canon] = value
+
+        for pname in set(aliases.values()):
+            pval = resolved.get(pname)
+            if pval and isinstance(pval, str):
+                path_ops.setdefault(pval, set()).add(name)
+
+    for path, tools in path_ops.items():
+        if len(tools) > 1 and any(t in _WRITE_OPS for t in tools):
+            logger.info(f"[_has_conflict] 路径冲突: {path}, tools={tools}, 降级顺序执行")
+            return True
+    return False
+
+
 async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                         tool_name: str, tool_params: Dict) -> List[Any]:
-        """工具执行 — 返回results — 小沈 2026-06-09"""
+        """工具执行 — 三分支（单工具/并行/顺序）— 北京老陈 2026-07-04
+
+        继承历史接口签名，兼容外层handle_action调用。
+        三分支：
+          A: 单工具 → 直接执行（用tool_name/tool_params参数）
+          B: 多工具无冲突 → asyncio.gather并行
+          C: 多工具有冲突 → 顺序执行（遍历all_calls，一个不丢）
+        """
         from app.services.agent.tool_executor import execute_tool
         start_time = time.time()
-        
+
         def _cn(c):
             return c.get("tool_name", "") if isinstance(c, dict) else ""
         def _cp(c):
             return c.get("tool_params", {}) if isinstance(c, dict) else {}
-        
-        if is_parallel:
+
+        if len(all_calls) == 1:
+            # A: 单工具
+            _msg = f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={tool_name}"
+            logger.info(_msg); print(_msg)
+            result = await execute_tool(agent, tool_name, tool_params)
+            results = [result]
+
+        elif is_parallel and not _has_conflict(all_calls):
+            # B: 多工具无冲突 → 并行
+            _names = [_cn(c) for c in all_calls]
+            _msg = f"{time.strftime('%H:%M:%S')} [action_handler] 并行执行: tools={_names}"
+            logger.info(_msg); print(_msg)
             tasks = [execute_tool(agent, _cn(c), _cp(c)) for c in all_calls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for i, (call, result) in enumerate(zip(all_calls, results)):
                 if isinstance(result, Exception):
-                    logger.warning(f"[action_handler] 工具{_cn(call)}并行执行失败,重试: {result}")
+                    logger.warning(f"[action_handler] 工具{_cn(call)}并行失败,重试: {result}")
                     try:
                         results[i] = await execute_tool(agent, _cn(call), _cp(call))
                     except Exception as e2:
                         logger.warning(f"[action_handler] 工具{_cn(call)}重试仍失败: {e2}")
         else:
-            result = await execute_tool(agent, tool_name, tool_params)
-            results = [result]
-        
+            # C: 工具有冲突/非并行 → 顺序执行（一个不丢）
+            _names = [_cn(c) for c in all_calls]
+            _reason = "非并行模式" if not is_parallel else "文件路径冲突"
+            _msg = f"{time.strftime('%H:%M:%S')} [action_handler] 顺序执行({_reason}): tools={_names}"
+            logger.info(_msg); print(_msg)
+            results = []
+            for call in all_calls:
+                try:
+                    result = await execute_tool(agent, _cn(call), _cp(call))
+                    results.append(result)
+                except Exception as e:
+                    logger.warning(f"[action_handler] 工具{_cn(call)}顺序执行失败: {e}")
+                    results.append(e)
+
         elapsed = time.time() - start_time
         tool_names = [_cn(c) for c in all_calls]
         logger.info(f"[action_handler] 工具执行完成: tools={tool_names}, 耗时={elapsed:.2f}s")
-        
+
         for call, result in zip(all_calls, results):
             if isinstance(result, Exception):
                 logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result=ERROR({result})")

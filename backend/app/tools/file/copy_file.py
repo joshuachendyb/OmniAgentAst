@@ -11,6 +11,7 @@ F7: copy_file — 复制文件
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import asyncio
+import os
 import shutil
 import time as _time_mod
 from pathlib import Path
@@ -19,7 +20,7 @@ from typing import Any, Dict, Optional, Tuple
 from app.tools.tool_response import build_success, build_error
 from app.utils.context_vars import _current_task_id
 
-from app.tools.validate.tools_file_path_checker import validate_path_for_overwrite
+from app.tools.validate.tools_file_path_checker import validate_path_for_overwrite, validate_not_system_path
 from app.utils.logger import logger
 
 
@@ -56,6 +57,24 @@ async def copy(
 ) -> Dict[str, Any]:
     """复制文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复计时铁规"""
     t0 = _time_mod.perf_counter()
+    if not source or not source.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": "source不能为空"})
+        return build_error(data={"error_detail": "source不能为空", "params": {"source": source}}, llm_data=llm_data)
+    if not destination or not destination.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": "destination不能为空"})
+        return build_error(data={"error_detail": "destination不能为空", "params": {"destination": destination}}, llm_data=llm_data)
+    is_valid, err, _ = validate_not_system_path(source)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": err})
+        return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
+    is_valid, err, _ = validate_not_system_path(destination)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": err})
+        return build_error(data={"error_detail": err, "params": {"destination": destination}}, llm_data=llm_data)
     is_valid, error_msg, warning_msg = validate_path_for_overwrite(source, destination, overwrite)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -109,6 +128,8 @@ async def copy(
                 if recursive:
                     if dst.exists():
                         logger.warning(f"[copy] recursive模式: 目标目录已存在,将删除后重建: {dst}")
+                        if not os.access(str(dst), os.W_OK):
+                            os.chmod(str(dst), os.stat(str(dst)).st_mode | 0o200)
                         shutil.rmtree(str(dst))
                     if preserve_metadata:
                         shutil.copytree(str(src), str(dst))

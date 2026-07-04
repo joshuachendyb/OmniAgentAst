@@ -21,7 +21,7 @@ from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
 from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 
-from app.tools.validate.tools_file_path_checker import validate_path_for_delete
+from app.tools.validate.tools_file_path_checker import validate_path_for_delete, validate_not_system_path
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.utils.logger import logger
 
@@ -95,6 +95,8 @@ async def _delete_file_impl(
 
     path = Path(file_path)
     try:
+        if path.is_dir() and not recursive:
+            return {"success": False, "error_detail": "删除非空目录需要设置recursive=True", "params": {"source": file_path}}
         if not path.exists():
             return {"success": True, "action": "delete", "source": file_path, "already_deleted": True}
 
@@ -135,6 +137,15 @@ async def delete(
 ) -> Dict[str, Any]:
     """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3"""
     t0 = _time_mod.perf_counter()
+    if not source or not source.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail="source不能为空")
+        return build_error(data={"error_detail": "source不能为空", "params": {"source": source}}, llm_data=llm_data)
+    is_valid, err, _ = validate_not_system_path(source)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=err)
+        return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
     is_valid, error_msg, warning_msg = validate_path_for_delete(source, recursive, force)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

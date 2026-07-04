@@ -67,3 +67,23 @@ def validate_path_for_extract(output_dir: str) -> Tuple[bool, Optional[str], Opt
         if sd in output_lower:
             return True, None, f"解压到系统目录，请确认"
     return True, None, None
+
+
+WINDOWS_SYSTEM_DIRS = [
+    "/windows/", "/winnt/", "/program files/",
+    "/program files (x86)/", "/system32/", "/system/",
+]
+
+
+def validate_not_system_path(file_path: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    检查路径是否涉及Windows系统关键目录
+
+    Returns: (is_valid, error_msg, warning_msg)
+    """
+    path_lower = file_path.lower().replace("\\", "/")
+    path_after_drive = path_lower.split(":")[-1] if ":" in path_lower else path_lower
+    for sd in WINDOWS_SYSTEM_DIRS:
+        if path_after_drive.startswith(sd):
+            return False, f"不允许操作系统目录下的文件: {file_path}", None
+    return True, None, None

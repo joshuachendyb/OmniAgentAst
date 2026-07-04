@@ -20,7 +20,7 @@ from app.constants import (
     LLM_MAX_CONNECTIONS,
     LLM_MAX_KEEPALIVE,
 )
-from app.tools.tool_constants import FILE_OPERATION_TOOLS
+
 
 
 def _build_request_body(
@@ -53,13 +53,7 @@ def _build_request_body(
             body["tool_choice"] = tool_choice
         
         if parallel_tool_calls is None:
-            tool_names = {t["function"]["name"] for t in tools}
-            # TODO: 2026-06-30 北京老陈确认 — 此限制粒度太粗:
-            #   只要工具列表里有任何一个文件工具(如 read_text_file),
-            #   连非文件工具(如 get_system_info + time_now) 的并行也被封杀。
-            #   绝大多数文件操作(读不同文件/写不同文件)可安全并行。
-            #   等测试验证后删除此限制,交给执行层(action_handler)控制并发安全。
-            parallel_tool_calls = not bool(tool_names & FILE_OPERATION_TOOLS)
+            parallel_tool_calls = True  # 执行层(action_handler)的_has_conflict控制并发安全 — 北京老陈 2026-07-04
         
         body["parallel_tool_calls"] = parallel_tool_calls
     

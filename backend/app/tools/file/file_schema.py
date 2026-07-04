@@ -321,8 +321,8 @@ class DeleteInput(BaseModel):
 # ============================================================
 
 class RenameInput(BaseModel):
-    source: str = Field(description="原文件/目录路径(绝对路径)")
-    destination: str = Field(description="新名称(仅文件名,不含目录路径)")
+    source: str = Field(min_length=1, description="原文件/目录路径(绝对路径)")
+    destination: str = Field(min_length=1, description="新名称(仅文件名,不含目录路径)")
 
 
 # ============================================================

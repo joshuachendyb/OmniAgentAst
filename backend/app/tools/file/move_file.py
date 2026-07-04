@@ -20,7 +20,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_MOVE_FAILED
 from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
-from app.tools.validate.tools_file_path_checker import validate_path_for_overwrite
+from app.tools.validate.tools_file_path_checker import validate_path_for_overwrite, validate_not_system_path
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.utils.logger import logger
 
@@ -67,6 +67,9 @@ async def _move_file_impl(
     if src.resolve() == dst.resolve():
         return {"success": False, "error_detail": f"源路径和目标路径相同: {source_path}", "params": {"source": source_path, "destination": destination_path}}
 
+    if src.is_dir() and dst.is_file():
+        return {"success": False, "error_detail": "不能移动目录到文件路径", "params": {"source": source_path, "destination": destination_path}}
+
     try:
         if not src.exists():
             return {"success": False, "error_detail": "源文件不存在", "params": {"source": source_path}}
@@ -84,6 +87,8 @@ async def _move_file_impl(
             if dst.exists():
                 if not overwrite:
                     raise FileExistsError(f"目标路径已存在: {dst},请设置overwrite=True")
+                if not os.access(str(dst), os.W_OK):
+                    os.chmod(str(dst), os.stat(str(dst)).st_mode | 0o200)
                 if dst.is_dir():
                     logger.warning(f"[move] overwrite模式: 目标目录已存在,将删除后移动: {dst}")
                     shutil.rmtree(str(dst))
@@ -116,6 +121,24 @@ async def move(
 ) -> Dict[str, Any]:
     """移动文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3"""
     t0 = _time_mod.perf_counter()
+    if not source or not source.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, detail="source不能为空")
+        return build_error(data={"error_detail": "source不能为空", "params": {"source": source}}, llm_data=llm_data)
+    if not destination or not destination.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail="destination不能为空")
+        return build_error(data={"error_detail": "destination不能为空", "params": {"destination": destination}}, llm_data=llm_data)
+    is_valid, err, _ = validate_not_system_path(source)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err)
+        return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
+    is_valid, err, _ = validate_not_system_path(destination)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err)
+        return build_error(data={"error_detail": err, "params": {"destination": destination}}, llm_data=llm_data)
     if os.path.abspath(source) == os.path.abspath(destination):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=f"源路径和目标路径相同: {source}")

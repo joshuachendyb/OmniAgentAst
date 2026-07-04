@@ -76,7 +76,14 @@ async def _get_directory_tree(
         # name/size均回退按名称排序(tree只列目录,size无意义)
         return sorted(items, key=lambda x: x.name.lower())
 
-    def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
+    def _build_tree(current_path: Path, depth: int = 0, _visited: Optional[set] = None) -> Optional[Dict[str, Any]]:
+        if _visited is None:
+            _visited = set()
+        resolved = current_path.resolve()
+        if resolved in _visited:
+            logger.warning(f"[tree] 跳过循环符号链接: {current_path}")
+            return None
+        _visited.add(resolved)
         if depth > max_depth:
             return None
         try:
@@ -96,7 +103,7 @@ async def _get_directory_tree(
             if not include_hidden:
                 items = [item for item in items if not item.name.startswith('.')]
             for item in _sort_items(items, sort_by):
-                child = _build_tree(item, depth + 1)
+                child = _build_tree(item, depth + 1, _visited)
                 if child:
                     children.append(child)
         except (PermissionError, OSError):

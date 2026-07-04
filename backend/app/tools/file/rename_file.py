@@ -16,6 +16,7 @@ from typing import Any, Dict
 from app.tools.file.move_file import _move_file_impl
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_RENAME_FAILED
+from app.tools.validate.tools_file_path_checker import validate_not_system_path
 
 
 def _build_rename_file_llm_data(
@@ -45,8 +46,30 @@ async def rename(
     source: str,
     destination: str,
 ) -> Dict[str, Any]:
-    """重命名文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：独立builder"""
+    """重命名文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：独立builder — 小欧 2026-07-04 增加空串验证"""
     t0 = _time_mod.perf_counter()
+
+    if not source or not source.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail="source不能为空")
+        return build_error(data={"error_detail": "source不能为空", "params": {"source": source}}, llm_data=llm_data)
+    if not destination or not destination.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail="destination不能为空")
+        return build_error(data={"error_detail": "destination不能为空", "params": {"destination": destination}}, llm_data=llm_data)
+
+    is_valid, err, _ = validate_not_system_path(source)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail=err)
+        return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
+
+    WINDOWS_RESERVED_CHARS = '<>:"/\\|?*'
+    if any(c in destination for c in WINDOWS_RESERVED_CHARS):
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail=f"包含Windows保留字符: {destination}")
+        return build_error(data={"error_detail": f"文件名包含Windows保留字符: {destination}", "params": {"destination": destination}}, llm_data=llm_data)
+
     src = Path(source)
     new_name = Path(destination).name
     dst = src.parent / new_name
