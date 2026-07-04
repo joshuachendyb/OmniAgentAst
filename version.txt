@@ -69,1744 +69,1843 @@
 
 ---
 v0.17.18
-鏇存柊鏃堕棿: 2026-07-02 12:19:41
-## v0.17.17鈫抳0.17.18 鍙樻洿姹囨€?- 灏忔-2026-07-02
+更新时间: 2026-07-02 12:19:41
+## v0.17.17→v0.17.18 变更汇总 - 小欧-2026-07-02
 
-### fix: 浠ｇ爜淇(3椤?
-- FC闄嶇骇Text鍔犲紓甯镐繚鎶?+ JSON淇鏀寔Python dict鏍煎紡
-- 鎴柇JSON鍙傛暟鑷姩淇({杩藉姞}) + warning娉ㄥ叆LLM
-- 鎺у埗鍙版墦鍗板幓鎴柇(60鈫掑叏閲忔樉绀?
+### fix: 代码修复(3项)
+- FC降级Text加异常保护 + JSON修复支持Python dict格式
+- 截断JSON参数自动修复({追加}) + warning注入LLM
+- 控制台打印去截断(60→全量显示)
 
-### refactor: 浠ｇ爜閲嶆瀯(4椤?
-- json_utils闆嗕腑_try_fix_incomplete_json鍜宊normalize_tool_params+澧炲己鍗曞紩鍙疯В鏋?鏇存柊FUNCTIONS.md
-- message_builder+init_history+inject_bypass灏佽
-- llm_stream.py FC闄嶇骇閿欒缁熶竴鐢╛format_fc_error(DRY)
-- message_builder.py trim_history鍙屾潯浠剁嫭绔嬭鍓?
-### feat: 鏂板姛鑳?1椤?
-- 浼樺寲绯荤粺鎻愮ず璇?鍒嗘瀽璁″垝閾佸緥) + PPTX鏀寔dict绫诲瀷鍐呭
+### refactor: 代码重构(4项)
+- json_utils集中_try_fix_incomplete_json和_normalize_tool_params+增强单引号解析+更新FUNCTIONS.md
+- message_builder+init_history+inject_bypass封装
+- llm_stream.py FC降级错误统一用_format_fc_error(DRY)
+- message_builder.py trim_history双条件独立裁剪
 
-### perf: 鎬ц兘浼樺寲(1椤?
-- react_cycle+e2e_helpers 鎺у埗鍙發og澧炲己+Prompt鏃ュ織E2E鏍￠獙鍏煎鐘舵€佸彉鍖栬褰?
-### docs: 鏂囨。(2椤?
-- version.txt v0.17.19鍙樻洿姹囨€?- doc-浼樺寲 涓や釜Agent鏂囨。杩佸叆doc-浼樺寲鐩綍
+### feat: 新功能(1项)
+- 优化系统提示词(分析计划铁律) + PPTX支持dict类型内容
 
-### 鍚堣
-- fix: 3椤? refactor: 4椤? feat: 1椤? perf: 1椤? docs: 2椤?
+### perf: 性能优化(1项)
+- react_cycle+e2e_helpers 控制台log增强+Prompt日志E2E校验兼容状态变化记录
+
+### docs: 文档(2项)
+- version.txt v0.17.19变更汇总
+- doc-优化 两个Agent文档迁入doc-优化目录
+
+### 合计
+- fix: 3项, refactor: 4项, feat: 1项, perf: 1项, docs: 2项
+
 ---
 
 v0.17.17
-鏇存柊鏃堕棿: 2026-07-01 21:55:52
-## v0.17.16鈫抳0.17.17 鍙樻洿姹囨€?- 灏忔-2026-07-01
+更新时间: 2026-07-01 21:55:52
+## v0.17.16→v0.17.17 变更汇总 - 小欧-2026-07-01
 
-### fix: 浠ｇ爜淇(8椤?
+### fix: 代码修复(8项)
 - prompt_logger/status_table/chat_openai logging fixes (contextvars, mark_completed, log_status)
-- system_prompts浼樺寲+react_cycle璀﹀憡娑堟伅+e2e_helpers淇″彿澶勭悊+chat_openai鏃ュ織+messages鏃堕棿鏍煎紡
-- react_cycle.py B3璀﹀憡娑堟伅浼樺寲
+- system_prompts优化+react_cycle警告消息+e2e_helpers信号处理+chat_openai日志+messages时间格式
+- react_cycle.py B3警告消息优化
 - e2emodel test updates
 - llm_stream.py pass full_reasoning to action/answer response
 - action_handler.py remove redundant thought field from ThoughtStep
 - answer_handler.py remove redundant thought field from ThoughtStep
 - e2e_helpers.py test helper updates
 
-### refactor: 浠ｇ爜閲嶆瀯(3椤?
-- message_builder+initialize_run_state+react_cycle 瑁佸壀鍑芥暟绮剧畝涓哄崟涓€鍏ュ彛+鏂板娑堟伅鏁拌Е鍙戦槇鍊?- list_directory.py _sort_items鍙傛暟鍖杝ort_by,鍘婚櫎tree涓璼ize鎺掑簭
-- system_prompts.py system prompt鍐呭浼樺寲绮剧畝
+### refactor: 代码重构(3项)
+- message_builder+initialize_run_state+react_cycle 裁剪函数精简为单一入口+新增消息数触发阈值
+- list_directory.py _sort_items参数化sort_by,去除tree中size排序
+- system_prompts.py system prompt内容优化精简
 
-### feat: 鏂板姛鑳?2椤?
-- L1閫€閬垮叕寮忔敼棣栬烦1s+FCFormatError澧炲己+娉ㄩ噴parallel闄愬埗寰呮祴璇?- system_adapter.py+system_prompts.py PS鐗堟湰鍔ㄦ€佹娴?Shell杩愯鐜prompt
+### feat: 新功能(2项)
+- L1退避公式改首跳1s+FCFormatError增强+注释parallel限制待测试
+- system_adapter.py+system_prompts.py PS版本动态检测+Shell运行环境prompt
 
-### 鍚堣
-- feat: 2椤?| fix: 8椤?| refactor: 3椤?= 鍏?3椤?
+### 合计
+- feat: 2项 | fix: 8项 | refactor: 3项 = 共13项
+
 ---
 
 v0.17.16
-鏇存柊鏃堕棿: 2026-07-01 09:48:36
-## v0.17.15鈫抳0.17.16 鍙樻洿姹囨€?- 灏忔矆-2026-07-01
+更新时间: 2026-07-01 09:48:36
+## v0.17.15→v0.17.16 变更汇总 - 小沈-2026-07-01
 
-### refactor: Agent鐘舵€侀泦涓鐞嗛噸鏋剉2
-- 鏂板缓status_table.py锛屾墍鏈夌姸鎬佽缃泦涓鐞?- status_table涓柊澧濻USPENDED杞崲鏉＄洰
-- EXECUTING/THINKING绮剧‘鐘舵€佸惊鐜細THINKING=璋僉LM锛孍XECUTING=璺戝伐鍏?- react_cycle.py: THINKING鍦ㄥ惊鐜熬閮ㄨ(绗?50琛?锛孍XECUTING鍦↙LM鍑哄搷搴斿悗璁?绗?19琛?
+### refactor: Agent状态集中管理重构v2
+- 新建status_table.py，所有状态设置集中管理
+- status_table中新增SUSPENDED转换条目
+- EXECUTING/THINKING精确状态循环：THINKING=调LLM，EXECUTING=跑工具
+- react_cycle.py: THINKING在循环尾部设(第350行)，EXECUTING在LLM出响应后设(第219行)
 
-### refactor: handler鍘荤姸鎬佽亴璐?- action_handler/answer_handler/step_emitter 鍒犻櫎鎵€鏈塻et_failed/set_completed璋冪敤
-- _dispatch_handler浠嶦rrorStep/FinalStep event type鎺ㄦ柇鐘舵€?- error_handler.py(鏃ф枃浠?宸插垹闄?
-### refactor: SSE+SUSPENDED鏄犲皠
-- run_sse_stream.py瀵煎叆status_table鐨剆et_cancelled/set_failed
-- SUSPENDED鈫?failed" SSE end_type鏄犲皠
-- sys_error_classifier娣诲姞httpx缃戠粶/瓒呮椂寮傚父鍒嗙被
+### refactor: handler去状态职责
+- action_handler/answer_handler/step_emitter 删除所有set_failed/set_completed调用
+- _dispatch_handler从ErrorStep/FinalStep event type推断状态
+- error_handler.py(旧文件)已删除
 
-### refactor: LLM鏃ュ織澧炲己+宸ュ叿瀹夊叏妫€鏌?- prompt_logger鏂板mark_completed/mark_error鐘舵€佹爣璁?- base_service.py L1閲嶈瘯鏃ュ織澧炲己([type.name] args)
-- llm_stream.py娈嬬己tool_call鍙傛暟鏃ュ織璀﹀憡
-- chat_openai.py prompt_logger鐘舵€佹爣璁?- file_encoding.py/read_text_file.py/execute_shell_command.py 宸ュ叿瀹夊叏妫€鏌ュ姞鍥?
-### docs: Agent鐘舵€佽涔夋繁搴﹀垎鏋愭枃妗?- EXECUTING/THINKING浠ｇ爜閫昏緫鍒嗘瀽涓庤浆鎹㈣〃鍚堣澶嶆牳
+### refactor: SSE+SUSPENDED映射
+- run_sse_stream.py导入status_table的set_cancelled/set_failed
+- SUSPENDED→"failed" SSE end_type映射
+- sys_error_classifier添加httpx网络/超时异常分类
+
+### refactor: LLM日志增强+工具安全检查
+- prompt_logger新增mark_completed/mark_error状态标记
+- base_service.py L1重试日志增强([type.name] args)
+- llm_stream.py残缺tool_call参数日志警告
+- chat_openai.py prompt_logger状态标记
+- file_encoding.py/read_text_file.py/execute_shell_command.py 工具安全检查加固
+
+### docs: Agent状态语义深度分析文档
+- EXECUTING/THINKING代码逻辑分析与转换表合规复核
 
 v0.17.15
-鏇存柊鏃堕棿: 2026-07-01 09:46:13
-## v0.17.14鈫抳0.17.15 鍙樻洿姹囨€?- 灏忔矆-2026-07-01
+更新时间: 2026-07-01 09:46:13
+## v0.17.14→v0.17.15 变更汇总 - 小沈-2026-07-01
 
-### refactor: 绯荤粺閲嶈瘯灞備紭鍖栧疄鏂?- L1閲嶈瘯寰幆閲嶆瀯锛歸hile鈫抐or attempt锛岄€€閬垮叕寮忎紭鍖栦负min(0.5脳2^(attempt+1), 10)
-- L2鍙嶅帇娣诲姞锛欶C閲嶈瘯鏃跺浐瀹氱瓑寰?.5s锛屾棩蹇楀墠缂€缁熶竴涓篬Retry][L2]
-- FCFormatError澧炲己锛氭坊鍔燿etails瀛楁锛屽己鍒跺叧閿瓧鍙傛暟(message=, details=)
+### refactor: 系统重试层优化实施
+- L1重试循环重构：while→for attempt，退避公式优化为min(0.5×2^(attempt+1), 10)
+- L2反压添加：FC重试时固定等待0.5s，日志前缀统一为[Retry][L2]
+- FCFormatError增强：添加details字段，强制关键字参数(message=, details=)
 
-### config: .gitignore 娣诲姞 backend/report/
-- 閬垮厤鎶ュ憡鐩綍琚剰澶栬窡韪?
-### chore: 娴嬭瘯鏂囦欢娓呯悊
-- 鍒犻櫎e2emodel涓殑娴嬭瘯鏂囦欢锛堝凡绉诲姩鍒皌ests鐩綍锛?- 鍒犻櫎E2E璋冭瘯璁板綍(22涓瑪璁版枃浠?
+### config: .gitignore 添加 backend/report/
+- 避免报告目录被意外跟踪
 
-### fix: e2emodel娴嬭瘯鏂囦欢鏇存柊
+### chore: 测试文件清理
+- 删除e2emodel中的测试文件（已移动到tests目录）
+- 删除E2E调试记录(22个笔记文件)
 
-### docs: 澶氶」鏂囨。鏇存柊
-- 绯荤粺閲嶈瘯璁捐鏂囨。v1.3(鍏ㄦ櫙鍥?璺嚎鍥?妫€鏌ユ竻鍗?
-- 浠ｇ爜瀹℃煡鎶ュ憡 楠岀湡琛ユ紡+绔犺妭淇
-- Agent鐘舵€佸強鏁版嵁鍒嗘祦澶勭悊璁捐鏂规 鍥涙澶嶆牳3澶刡ug-fix
-- 璁捐鏂囨。澶嶆牳淇(8澶勯棶棰樹慨姝ｏ紝v1.7鈫抳1.11)
+### fix: e2emodel测试文件更新
+
+### docs: 多项文档更新
+- 系统重试设计文档v1.3(全景图+路线图+检查清单)
+- 代码审查报告 验真补漏+章节修正
+- Agent状态及数据分流处理设计方案 四次复核3处bug-fix
+- 设计文档复核修复(8处问题修正，v1.7→v1.11)
 
 v0.17.14
-鏇存柊鏃堕棿: 2026-06-30 10:00:00
-## v0.17.13鈫抳0.17.14 鍙樻洿姹囨€?- 灏忔-2026-06-30
+更新时间: 2026-06-30 10:00:00
+## v0.17.13→v0.17.14 变更汇总 - 小欧-2026-06-30
 
-### refactor: 浠ｇ爜璐ㄩ噺鍏ㄩ潰淇
+### refactor: 代码质量全面修复
 
-#### fix: except Exception: pass 闈欓粯鍚炲紓甯?13澶?
-- download_file.py: cleanup 鈫?logger.warning
-- execute_shell_command.py 脳2: cleanup 鈫?logger.warning
-- shell_session.py: process kill 鈫?logger.warning
-- client_sdk.py: config fallback 鈫?logger.warning
-- initialize_run_state.py: task update 鈫?logger.warning
-- chat_openai.py: message ID 鈫?logger.warning
-- database.py 脳2: rollback/close 鈫?logger.warning
-- execute_sql.py 脳3: connection cleanup/rollback 鈫?logger.warning
-- path_validator.py: security validation pass鈫抮eturn False(澶辫触鍏抽棴)
-- write_text_file.py: encoding detect 鈫?logger.warning
-- edit_text_file.py: CRLF detect 鈫?logger.warning
+#### fix: except Exception: pass 静默吞异常(13处)
+- download_file.py: cleanup → logger.warning
+- execute_shell_command.py ×2: cleanup → logger.warning
+- shell_session.py: process kill → logger.warning
+- client_sdk.py: config fallback → logger.warning
+- initialize_run_state.py: task update → logger.warning
+- chat_openai.py: message ID → logger.warning
+- database.py ×2: rollback/close → logger.warning
+- execute_sql.py ×3: connection cleanup/rollback → logger.warning
+- path_validator.py: security validation pass→return False(失败关闭)
+- write_text_file.py: encoding detect → logger.warning
+- edit_text_file.py: CRLF detect → logger.warning
 
-#### DRY: 鎶藉嚭3浠介噸澶峗get_file_encoding鈫抐ile_encoding.py
-- 鏂板缓 app/tools/file/file_encoding.py锛屾彁渚?get_file_encoding()
-- 3涓枃浠?write/read/edit_text_file)鏀逛负鍏变韩璋冪敤
+#### DRY: 抽出3份重复_get_file_encoding→file_encoding.py
+- 新建 app/tools/file/file_encoding.py，提供 get_file_encoding()
+- 3个文件(write/read/edit_text_file)改为共享调用
 
-#### refactor: context_vars浠巗ervices/绉诲姩鍒皍tils/
-- 娑堥櫎 tools鈫抯ervices 妯悜渚濊禆(api鍜宼ools閮介渶瑕佸紩鐢?
-- 鏇存柊8涓猧mport璺緞
+#### refactor: context_vars从services/移动到utils/
+- 消除 tools→services 横向依赖(api和tools都需要引用)
+- 更新8个import路径
 
-#### refactor: 19涓猧nline import绉诲埌妯″潡椤跺眰
-- run_sse_stream.py: json/db/steps/agent/sse_formatter/prompt_logger(15澶?
-- base_service.py: llm_constants/core/sys_error_classifier(4澶?
+#### refactor: 19个inline import移到模块顶层
+- run_sse_stream.py: json/db/steps/agent/sse_formatter/prompt_logger(15处)
+- base_service.py: llm_constants/core/sys_error_classifier(4处)
 
-#### fix: UniversalAgent娑堥櫎_loaded_categories shadow
-- 鍒犻櫎super().__init__()鍚庡浣欑殑 self._loaded_categories 璧嬪€?
-#### P3: 娓呯悊unused import
-- universal_agent.py: 鍒犻櫎鏈娇鐢ㄧ殑 List/AgentResult 瀵煎叆
+#### fix: UniversalAgent消除_loaded_categories shadow
+- 删除super().__init__()后多余的 self._loaded_categories 赋值
+
+#### P3: 清理unused import
+- universal_agent.py: 删除未使用的 List/AgentResult 导入
 
 v0.17.13
-鏇存柊鏃堕棿: 2026-06-29 20:00:00
-## v0.17.12鈫抳0.17.13 鍙樻洿姹囨€?- 灏忔-2026-06-29
+更新时间: 2026-06-29 20:00:00
+## v0.17.12→v0.17.13 变更汇总 - 小欧-2026-06-29
 
-### refactor: 浠ｇ爜閲嶆瀯(2椤?
-- 70ab81cbd: 鍒犻櫎RETRYABLE_ERROR鏋氫妇鍙婄浉鍏充唬鐮?- 灏忔
-- f7cc823e8: 缃戠粶宸ュ叿浣跨敤ToolErrorClassifier缁熶竴閿欒鍒嗙被 - 灏忔
+### refactor: 代码重构(2项)
+- 70ab81cbd: 删除RETRYABLE_ERROR枚举及相关代码 - 小欧
+- f7cc823e8: 网络工具使用ToolErrorClassifier统一错误分类 - 小欧
 
-### fix: 閿欒鍒嗙被鍣ㄥ畬鍠?3椤?
-- fe7db3a48: 鎷嗗垎绯荤粺绾у拰宸ュ叿绾ч敊璇垎绫诲櫒 - 灏忔
-- 0dbf0d939: 瀹屽杽ToolErrorClassifier鏄犲皠锛屾坊鍔燨SError鍜孒TTP閿欒 - 灏忔
-- 9a1bafaaf: 鏇存柊娴嬭瘯鏂囦欢锛岀Щ闄classify_error寮曠敤 - 灏忔
+### fix: 错误分类器完善(3项)
+- fe7db3a48: 拆分系统级和工具级错误分类器 - 小欧
+- 0dbf0d939: 完善ToolErrorClassifier映射，添加OSError和HTTP错误 - 小欧
+- 9a1bafaaf: 更新测试文件，移除_classify_error引用 - 小欧
 
-### fix: 寮傚父浼犳挱閲嶆瀯(2椤?
-- e5ca1cd16: search_web + network_diagnose寮傚父浼犳挱缁橳oolRetryEngine - 灏忔
+### fix: 异常传播重构(2项)
+- e5ca1cd16: search_web + network_diagnose异常传播给ToolRetryEngine - 小欧
 
 ---
 
 v0.17.12
-鏇存柊鏃堕棿: 2026-06-29 16:33:29
-## v0.17.11鈫抳0.17.12 鍙樻洿姹囨€?- 灏忔-2026-06-29
+更新时间: 2026-06-29 16:33:29
+## v0.17.11→v0.17.12 变更汇总 - 小欧-2026-06-29
 
-### refactor: 浠ｇ爜閲嶆瀯(1椤?
-- b20490e86: 閲嶈瘯鏋舵瀯閲嶆瀯 - 鍒犻櫎retry_engine+绉婚櫎宸ュ叿鍐呭缓閲嶈瘯+绠€鍖杄rror_handler - 灏忔
+### refactor: 代码重构(1项)
+- b20490e86: 重试架构重构 - 删除retry_engine+移除工具内建重试+简化error_handler - 小欧
 
-### docs: 鏂囨。鏇存柊(13椤?
-- 434de7f06: 02-閲嶈瘯鏋舵瀯鏈哄埗璁捐 - 搂搂7.2-7.7 鍚勪唬鐮佷慨鏀规坊鍔燿iff鏍煎紡 - 灏忔
-- 4d299b03b: 02-閲嶈瘯鏋舵瀯鏈哄埗璁捐 - 鏂板搂7.1.6 娑夊強浠ｇ爜鏂囦欢鎬昏 - 灏忔
-- 3ae499ab3: 02-閲嶈瘯鏋舵瀯鏈哄埗璁捐 - TOOL_RETRY_CONFIG 绉昏嚦 tool_retry_engine.py - 灏忔
-- d1d287484: 02-閲嶈瘯鏋舵瀯鏈哄埗璁捐 - 閰嶇疆鏀逛负鎸塼ool鍚嶇洿閰?闈瀋ategory) - 灏忔
-- 35555eb94: 02-閲嶈瘯鏋舵瀯鏈哄埗璁捐鏂囨。 v2.1 - 淇6澶勬蹇?搴忓彿涓嶄竴鑷?- 灏忔
-- 363b1190c: 02-閲嶈瘯鏋舵瀯鏈哄埗璁捐鏂囨。 v2.1 - 鐗堟湰鍙锋洿鏂?- 灏忔
-- d7bd7c7bb: 02-閲嶈瘯鏋舵瀯鏈哄埗璁捐鏂囨。 v2.1 - 瀹屽叏鍒犻櫎RETRYABLE_ERROR鐗规畩澶勭悊璺緞 - 灏忔
-- 97a99a6e6: 02-閲嶈瘯鏋舵瀯 v2.0 淇鍒嗙被锛氱郴缁熼噸璇?鐪熸L1/L2锛孯ETRYABLE_ERROR涓嶆槸閲嶈瘯 - 灏忔
-- 96b2a64b8: 閲嶈瘯鏋舵瀯璁捐鏂囨。鍓湰 - 灏忔
-- ddee90a65: 閲嶈瘯鏋舵瀯璁捐鏂囨。 搂7.3 閲嶅啓+鍙岄噸閲嶈瘯鍒嗘瀽缁撹 - 灏忔
-- e102dc5ec: 02-閲嶈瘯鏋舵瀯鏈哄埗璁捐涓庡垎鏋?搂4閲嶅啓+鍏ㄧ瘒15澶勪竴鑷存€т慨姝?- 灏忔
-- 8d27cc4dc: version.txt v0.17.12 鐗堟湰鏇存柊 - 灏忔
-- e934c213b: 閲嶈瘯鏋舵瀯璁捐鏂囨。 搂7.3 閲嶅啓+鍙岄噸閲嶈瘯鍒嗘瀽缁撹(Plan A) - 灏忔
+### docs: 文档更新(13项)
+- 434de7f06: 02-重试架构机制设计 - §§7.2-7.7 各代码修改添加diff格式 - 小欧
+- 4d299b03b: 02-重试架构机制设计 - 新增§7.1.6 涉及代码文件总览 - 小欧
+- 3ae499ab3: 02-重试架构机制设计 - TOOL_RETRY_CONFIG 移至 tool_retry_engine.py - 小欧
+- d1d287484: 02-重试架构机制设计 - 配置改为按tool名直配(非category) - 小欧
+- 35555eb94: 02-重试架构机制设计文档 v2.1 - 修正6处概念/序号不一致 - 小欧
+- 363b1190c: 02-重试架构机制设计文档 v2.1 - 版本号更新 - 小欧
+- d7bd7c7bb: 02-重试架构机制设计文档 v2.1 - 完全删除RETRYABLE_ERROR特殊处理路径 - 小欧
+- 97a99a6e6: 02-重试架构 v2.0 修正分类：系统重试=真正L1/L2，RETRYABLE_ERROR不是重试 - 小欧
+- 96b2a64b8: 重试架构设计文档副本 - 小欧
+- ddee90a65: 重试架构设计文档 §7.3 重写+双重重试分析结论 - 小欧
+- e102dc5ec: 02-重试架构机制设计与分析 §4重写+全篇15处一致性修正 - 小欧
+- 8d27cc4dc: version.txt v0.17.12 版本更新 - 小欧
+- e934c213b: 重试架构设计文档 §7.3 重写+双重重试分析结论(Plan A) - 小欧
 
-### 鍚堣
-- refactor: 1椤? docs: 13椤?
+### 合计
+- refactor: 1项, docs: 13项
+
 ---
 
 v0.17.11
-鏇存柊鏃堕棿: 2026-06-29 12:10:00
-## v0.17.10鈫抳0.17.11 鍙樻洿姹囨€?- 灏忔-2026-06-29
+更新时间: 2026-06-29 12:10:00
+## v0.17.10→v0.17.11 变更汇总 - 小欧-2026-06-29
 
-### docs: 鏂囨。鏇存柊(18椤?
-- b08cbb93e: 搂8-搂10 鍚屾淇涓烘柊璁捐(classify_error鈫抮esult.error_type) - 灏忔
-- e985effa6: 閲嶈瘯鏋舵瀯璁捐鏂囨。 v1.3 缁撴瀯閲嶇粍(鍚堝苟寮曟搸+鎷嗗垎娓呭崟) - 灏忔
-- 6528c7df1: 閲嶈瘯鏋舵瀯璁捐鏂囨。v1.2-fix2 鍚堝苟寮曟搸+鎷嗗垎妫€鏌ユ竻鍗曠珷鑺?- 灏忔
-- e3b64a71c: 鏂板閲嶈瘯鏋舵瀯鏈哄埗璁捐涓庡垎鏋愭枃妗1.2-fix1 - 灏忔
-- 2257e0999: Agent鐘舵€佸強鏁版嵁鍒嗘祦澶勭悊璁捐鏂规 v1.8 SUSPENDED涓€鑷存€?- 灏忔
-- 794ee74c0: 搂3.5/3.6椤哄簭璋冩崲鍖归厤搂4.5/4.6 - 灏忔
-- b636ab410: 缁熶竴鍛藉悕+淇3.7瀛愯妭鍙?鏀瑰姩缁熻 - 灏忔
-- d0df38afb: 搂5.8琛un_sse_stream.py - 灏忔
-- 20ef40f2c: 搂3.10鎬昏〃绉昏嚦搂3.0鍓嶇疆 - 灏忔
-- 1553225d8: 绗?绔犺ˉ4澶勯仐婕?鍔犅?.10浠ｇ爜淇敼鎬昏〃 - 灏忔
-- 69255bccc: 绗?绔犳瑕佽璁′慨姝?鏍囬/2.4.3/2.1鍥惧姞鏁版嵁娴?- 灏忔
-- c912d7e5f: 璁捐鏂规鎸嚦doc-浼樺寲/骞舵敼鍚嶄负-20260629 - 灏忔
-- a3b8b022c: 琛?澶刢ontent鎻愬彇涓€鑷存€?鍥?鏂规/浠ｇ爜) - 灏忔
-- ffaa25d82: 淇16澶勮璁℃枃妗ｄ笉涓€鑷?- 灏忔
-- 66253c72e: 鏇存柊璇︾粏璁捐琛ュ叏+绔犺妭鍙蜂慨姝?- 灏忔
-- 0077aa71b: yield-only涓€鑷存€?绔犺妭鍙蜂慨姝?- 灏忔
-- 8607cc7a5: 鐢ㄦ埛缂栬緫鍐呭 - 灏忔
-- 8d59b2ac0: 淇绔犺妭鍙疯繛缁?- 灏忔
+### docs: 文档更新(18项)
+- b08cbb93e: §8-§10 同步修复为新设计(classify_error→result.error_type) - 小欧
+- e985effa6: 重试架构设计文档 v1.3 结构重组(合并引擎+拆分清单) - 小欧
+- 6528c7df1: 重试架构设计文档v1.2-fix2 合并引擎+拆分检查清单章节 - 小欧
+- e3b64a71c: 新增重试架构机制设计与分析文档v1.2-fix1 - 小欧
+- 2257e0999: Agent状态及数据分流处理设计方案 v1.8 SUSPENDED一致性 - 小欧
+- 794ee74c0: §3.5/3.6顺序调换匹配§4.5/4.6 - 小欧
+- b636ab410: 统一命名+修正3.7子节号+改动统计 - 小欧
+- d0df38afb: §5.8补run_sse_stream.py - 小欧
+- 20ef40f2c: §3.10总表移至§3.0前置 - 小欧
+- 1553225d8: 第3章补4处遗漏+加§3.10代码修改总表 - 小欧
+- 69255bccc: 第2章概要设计修正 标题/2.4.3/2.1图加数据流 - 小欧
+- c912d7e5f: 设计方案挪至doc-优化/并改名为-20260629 - 小欧
+- a3b8b022c: 补3处content提取一致性(图/方案/代码) - 小欧
+- ffaa25d82: 修复16处设计文档不一致 - 小欧
+- 66253c72e: 更新详细设计补全+章节号修正 - 小欧
+- 0077aa71b: yield-only一致性+章节号修正 - 小欧
+- 8607cc7a5: 用户编辑内容 - 小欧
+- 8d59b2ac0: 修正章节号连续 - 小欧
 
 ---
 
 v0.17.10
-鏇存柊鏃堕棿: 2026-06-29 10:08:53
-## v0.17.9鈫抳0.17.10 鍙樻洿姹囨€?- 灏忔-2026-06-29
+更新时间: 2026-06-29 10:08:53
+## v0.17.9→v0.17.10 变更汇总 - 小欧-2026-06-29
 
-### docs: 鏂囨。鏇存柊(7椤?
-- d1e00ab44: 閲嶅懡鍚嶈璁℃柟妗堜负'Agent鐘舵€佸強鏁版嵁娴佸悜澶勭悊' - 灏忔
-- 01cc6515d: 鏇存柊Agent鐘舵€佺鐞嗛噸鏋勮璁℃柟妗?v1.6 - 灏忔
-- 6acf3260c: 閲嶆瀯绗?绔犵敤鎴疯ˉ鍏呭唴瀹逛负9.6/9.7/9.8骞惰鑼冨寲琛ㄦ牸鏍煎紡 - 灏忔
-- 2fbb29a77: 鏂板绗?绔犳祦绋嬪姣斿浘鍜屾敼鍔ㄥソ澶?- 灏忔
-- 0698fe9b5: 鏇存柊Agent鐘舵€佺鐞嗛噸鏋勮璁℃柟妗?- 灏忔
-- 790decb6d: 绉诲姩鍚庣閿欒澶勭悊鏋舵瀯璁捐鏂囨。鍒癲oc-浼樺寲鐩綍 - 灏忔
+### docs: 文档更新(7项)
+- d1e00ab44: 重命名设计方案为'Agent状态及数据流向处理' - 小欧
+- 01cc6515d: 更新Agent状态管理重构设计方案 v1.6 - 小欧
+- 6acf3260c: 重构第9章用户补充内容为9.6/9.7/9.8并规范化表格格式 - 小欧
+- 2fbb29a77: 新增第9章流程对比图和改动好处 - 小欧
+- 0698fe9b5: 更新Agent状态管理重构设计方案 - 小欧
+- 790decb6d: 移动后端错误处理架构设计文档到doc-优化目录 - 小欧
 
-### refactor: 浠ｇ爜閲嶆瀯(2椤?
-- b86467ab5: 鏂板set_cancelled鏂规硶+绉婚櫎RETRYABLE_ERROR澶勭悊 - 灏忔
-- cb64f7ede: 缁熶竴Agent鐘舵€佽缃叆鍙?绉婚櫎error_handler澶栧眰閲嶈瘯 - 灏忔
+### refactor: 代码重构(2项)
+- b86467ab5: 新增set_cancelled方法+移除RETRYABLE_ERROR处理 - 小欧
+- cb64f7ede: 统一Agent状态设置入口+移除error_handler外层重试 - 小欧
 
-### fix: 浠ｇ爜淇(3椤?
-- 81313db45: react_cycle.py 寰幆缁撴潫鏃犵粓鎬佸己鍒禙AILED - 灏忔
-- 300d2c2e7: run_sse_stream.py 绮剧畝finally娉ㄩ噴 - 灏忔
-- 3d6086a0b: run_sse_stream.py end_type浠巃gent.status鎺ㄥ - 灏忔
-- 855dc450b: 淇鏂囨。绗?绔?澶勪笌瀹為檯浠ｇ爜涓嶇鐨刣iff - 灏忔
+### fix: 代码修复(3项)
+- 81313db45: react_cycle.py 循环结束无终态强制FAILED - 小欧
+- 300d2c2e7: run_sse_stream.py 精简finally注释 - 小欧
+- 3d6086a0b: run_sse_stream.py end_type从agent.status推导 - 小欧
+- 855dc450b: 修正文档第8章3处与实际代码不符的diff - 小欧
 
-### 鍚堣
-- docs: 6椤? refactor: 2椤? fix: 4椤?
+### 合计
+- docs: 6项, refactor: 2项, fix: 4项
+
 ---
 
 v0.17.9
 
-鏇存柊鏃堕棿: 2026-06-28 17:48:53
+更新时间: 2026-06-28 17:48:53
 
-## v0.17.8鈫抳0.17.9 鍙樻洿姹囨€?- 灏忔-2026-06-28
+## v0.17.8→v0.17.9 变更汇总 - 小欧-2026-06-28
 
-### refactor: 浠ｇ爜閲嶆瀯(1椤?
-- 5f63caeac: chat_openai.py TASK_START杈撳嚭鏍煎紡鏀逛负3琛?provider/model/ask_id/user_input鍒嗚) - 灏忔
+### refactor: 代码重构(1项)
+- 5f63caeac: chat_openai.py TASK_START输出格式改为3行(provider/model/ask_id/user_input分行) - 小欧
 
-### 鍚堣
-- refactor: 1椤?
+### 合计
+- refactor: 1项
+
 ---
 
 v0.17.8
 
-鏇存柊鏃堕棿: 2026-06-28 17:42:30
+更新时间: 2026-06-28 17:42:30
 
-## v0.17.7鈫抳0.17.8 鍙樻洿姹囨€?- 灏忔-2026-06-28
+## v0.17.7→v0.17.8 变更汇总 - 小欧-2026-06-28
 
-### feat: 鏂板姛鑳?2椤?
-- b597cffec: 琛ュ厖鍙傛暟鍒悕鏄犲皠 - http_request/fetch_webpage/create_task - 灏忔
-- 94fe19e56: 鍙傛暟鍚嶅埆鍚嶆槧灏?- 瑙ｅ喅LLM杩斿洖鍙傛暟鍚嶄笉鍖归厤闂 - 灏忔
+### feat: 新功能(2项)
+- b597cffec: 补充参数别名映射 - http_request/fetch_webpage/create_task - 小欧
+- 94fe19e56: 参数名别名映射 - 解决LLM返回参数名不匹配问题 - 小欧
 
-### fix: 浠ｇ爜淇(13椤?
-- 5017698b4: network_diagnose.py _ping鏀圭敤to_thread淇Python 3.13 Windows NotImplementedError - 灏忔
-- 6f16f7f06: 娉ㄥ唽琛ㄨ矾寰勭┛瓒婃娴?绐楀彛鍥炶皟杩斿洖绫诲瀷淇 - 灏忔矆
-- 227c7425a: Windows璁剧疆ProactorEventLoop鏀寔asyncio subprocess - 灏忔矆
-- 7d270acf2: E2E娴嬭瘯鍩虹璁炬柦淇 - 灏忔
-- d48cc0e0d: execute_sql鍜宷uery_sql Schema鏀硅繘 - 娣诲姞docstring+鏄庣‘鍗曟潯璇彞闄愬埗 - 灏忔
-- e33be3b1e: execute_sql鍜宷uery_sql Schema鎻忚堪鏀硅繘 - 灏忔
-- c49a4f1e0: file_schema.py璇硶閿欒淇 - 灏忔
-- 1a8df8b0b: read_text_file鍙傛暟瀹归敊 - 灏忔
-- 41d0a71bb: API杩斿洖缂哄けcreated_at/updated_at瀛楁 - 灏忔
-- 74bbec77d: 淇涓や釜涓ラ噸bug - WindowsPath.strip鍜孨oneType await - 灏忔
-- 2bffa46a6: 澶氶」淇 - JSON瑙ｆ瀽/缂栫爜妫€娴?CRLF淇濈暀/鏉冮檺妫€鏌?- 灏忔
-- 45f36e2c0: _close_connection鏃ュ織鎭㈠+fetch_webpage鍐椾綑close娓呯悊+filter_data max_rows=0涓€鑷?get_db_schema鍍靛案瀵煎叆娓呯悊 - 灏忔
-- af2ecc755: P0-09鏍瑰洜淇: llm_stream error_type鍒嗘淳+琛ヤ竵娓呯悊(鍒爀rror_utils.py+answer_handler鎭㈠+e2e_helpers鎭㈠) - 灏忔
+### fix: 代码修复(13项)
+- 5017698b4: network_diagnose.py _ping改用to_thread修复Python 3.13 Windows NotImplementedError - 小欧
+- 6f16f7f06: 注册表路径穿越检测+窗口回调返回类型修复 - 小沈
+- 227c7425a: Windows设置ProactorEventLoop支持asyncio subprocess - 小沈
+- 7d270acf2: E2E测试基础设施修复 - 小欧
+- d48cc0e0d: execute_sql和query_sql Schema改进 - 添加docstring+明确单条语句限制 - 小欧
+- e33be3b1e: execute_sql和query_sql Schema描述改进 - 小欧
+- c49a4f1e0: file_schema.py语法错误修复 - 小欧
+- 1a8df8b0b: read_text_file参数容错 - 小欧
+- 41d0a71bb: API返回缺失created_at/updated_at字段 - 小欧
+- 74bbec77d: 修复两个严重bug - WindowsPath.strip和NoneType await - 小欧
+- 2bffa46a6: 多项修复 - JSON解析/编码检测/CRLF保留/权限检查 - 小欧
+- 45f36e2c0: _close_connection日志恢复+fetch_webpage冗余close清理+filter_data max_rows=0一致+get_db_schema僵尸导入清理 - 小欧
+- af2ecc755: P0-09根因修复: llm_stream error_type分派+补丁清理(删error_utils.py+answer_handler恢复+e2e_helpers恢复) - 小欧
 
-### perf: 鎬ц兘浼樺寲(1椤?
-- 5ce794544: 浼樺寲閲嶈瘯鏃ュ織+澧炲ぇ宸ュ叿瓒呮椂 - 灏忔矆
+### perf: 性能优化(1项)
+- 5ce794544: 优化重试日志+增大工具超时 - 小沈
 
-### refactor: 浠ｇ爜閲嶆瀯(1椤?
-- dcd0c4246: read_text_file鏂板tail鍙傛暟鏇夸唬offset璐熸暟 - 灏忔
+### refactor: 代码重构(1项)
+- dcd0c4246: read_text_file新增tail参数替代offset负数 - 小欧
 
-### docs: 鏂囨。鏇存柊(3椤?
-- d8fa504f4: 鏇存柊E2E娴嬭瘯鎿嶄綔鎵嬪唽 - 寮哄寲鎵嬪姩妫€鏌ヨ姹?- 灏忔
-- 7ad32f506: 鍒犻櫎涓存椂鍒嗘瀽鎶ュ憡 - 灏忔
-- a37e3878f: 鍒犻櫎涓存椂楠岃瘉鎶ュ憡 - 灏忔
+### docs: 文档更新(3项)
+- d8fa504f4: 更新E2E测试操作手册 - 强化手动检查要求 - 小欧
+- 7ad32f506: 删除临时分析报告 - 小欧
+- a37e3878f: 删除临时验证报告 - 小欧
 
-### 鍚堣
-- feat: 2椤?- fix: 13椤?- perf: 1椤?- refactor: 1椤?- docs: 3椤?
+### 合计
+- feat: 2项
+- fix: 13项
+- perf: 1项
+- refactor: 1项
+- docs: 3项
+
 ---
 
-## v0.17.6鈫抳0.17.7 鍙樻洿姹囨€?- 灏忔-2026-06-27
+## v0.17.6→v0.17.7 变更汇总 - 小欧-2026-06-27
 
-### fix: 浠ｇ爜淇(2椤?
-- 4221d4912: tool_response.py榛樿llm_data淇鈥斺€攂uild_success/error/warning榛樿鐢熸垚姝ｇ‘llm_data - 灏忔
-- 4221d4912: operation_recorder.py str/Enum涓嶄竴鑷翠慨澶嶁€斺€斿嚱鏁板唴閮ㄧ粺涓€澶勭悊operation_type绫诲瀷杞崲 - 灏忔
+### fix: 代码修复(2项)
+- 4221d4912: tool_response.py默认llm_data修复——build_success/error/warning默认生成正确llm_data - 小欧
+- 4221d4912: operation_recorder.py str/Enum不一致修复——函数内部统一处理operation_type类型转换 - 小欧
 
-### 鍚堣
-- fix: 2椤?
+### 合计
+- fix: 2项
+
 ---
 
-## v0.17.5鈫抳0.17.6 鍙樻洿姹囨€?- 灏忔-2026-06-27
+## v0.17.5→v0.17.6 变更汇总 - 小欧-2026-06-27
 
-### feat: 鏂板姛鑳?7椤?
-- eed9a0acd: execute_shell_command鍒嗙骇瀹夊叏妫€鏌?- 鐙珛safety妯″潡+宸ュ叿鍐呰皟鐢?瀵归綈execute_code) - 灏忓仴
-- aef96640a: execute_code鍒嗙骇瀹夊叏妫€鏌?LOW/MEDIUM/HIGH)+strict_mode+SHELL_DANGEROUS_PATTERNS鏇夸唬DANGEROUS_PATTERNS - 灏忔
-- af19c933b: 琛ラ綈绯荤粺绾ф鏌ユ墿灞?validator鍗曞厓娴嬭瘯 - 灏忔
-- ccaaa49bd: 鍏ㄩ噺瀹炵幇file_path+registry鏍￠獙闆嗘垚 - 灏忔
-- 4137f06f4: llm璋冪敤鏃ュ織澧炲己(token鏄庣粏+鍝嶅簲鑰楁椂)+鍗曞伐鍏锋墽琛屾棩蹇?TASK_END姝ラ鑱氬悎缁熻 - 灏忔
-- 12a0c6801: TASK_START/TASK_END鏃ュ織(鐢ㄦ埛鎸囦护+provider+model+鑰楁椂+缁撴潫鏂瑰紡) - 灏忔
-- a7155a0a4: start_e2e.bat E2E娴嬭瘯涓撶敤鍚姩鑴氭湰(寮筩md绐楀彛) - 灏忔
+### feat: 新功能(7项)
+- eed9a0acd: execute_shell_command分级安全检查 - 独立safety模块+工具内调用(对齐execute_code) - 小健
+- aef96640a: execute_code分级安全检查(LOW/MEDIUM/HIGH)+strict_mode+SHELL_DANGEROUS_PATTERNS替代DANGEROUS_PATTERNS - 小欧
+- af19c933b: 补齐系统级检查扩展+validator单元测试 - 小欧
+- ccaaa49bd: 全量实现file_path+registry校验集成 - 小欧
+- 4137f06f4: llm调用日志增强(token明细+响应耗时)+单工具执行日志+TASK_END步骤聚合统计 - 小欧
+- 12a0c6801: TASK_START/TASK_END日志(用户指令+provider+model+耗时+结束方式) - 小欧
+- a7155a0a4: start_e2e.bat E2E测试专用启动脚本(弹cmd窗口) - 小欧
 
-### fix: 浠ｇ爜淇(4椤?
-- c1c601fc1: PowerShell浼樺厛pwsh.exe(PS7)+鏉′欢缈昏瘧 - 灏忔矆
-- 1e96d6103: 鎾ら攢tool_safety_checker绯荤粺绾ф墿灞曪紝鍙繚鐣橣ILE鍒嗙被 - 灏忔
-- 0f86d353a: schema鍙傛暟浜掓枼鏍￠獙+docstring/description瀹屽杽(8涓猼ool),docstring缁熶竴鐢ㄤ笁寮曞彿 - chendyg
-- a7f41ecb5: 淇tool_executor鐘舵€佸垽鏂€昏緫閿欒 - 灏忓仴
+### fix: 代码修复(4项)
+- c1c601fc1: PowerShell优先pwsh.exe(PS7)+条件翻译 - 小沈
+- 1e96d6103: 撤销tool_safety_checker系统级扩展，只保留FILE分类 - 小欧
+- 0f86d353a: schema参数互斥校验+docstring/description完善(8个tool),docstring统一用三引号 - chendyg
+- a7f41ecb5: 修复tool_executor状态判断逻辑错误 - 小健
 
-### refactor: 浠ｇ爜閲嶆瀯(6椤?
-- bee330bb0: 鍒犻櫎registry_path_checker涓棤鏁堢殑..绌胯秺妫€鏌?娉ㄥ唽琛ㄩ潪鏂囦欢绯荤粺) - 灏忔
-- 7a400eea9: _check_pyautogui()鍘婚噸锛屾彁鍙栧埌desktop_helper.py缁熶竴澶嶇敤 - 灏忔
-- 52796b7cb: file_path_checker.py閲嶅懡鍚嶄负tools_file_path_checker.py+13涓猧mport璺緞鏇存柊 - 灏忔
-- fd3c8f0e1: path_validator/tool_safety_checker/file_path_checker 杩佺Щ璺緞璋冨害鍒皃ath_validator+fix None bug - 灏忔
-- ac2c7fec0: network/shell 6涓猼ool timeout缁熶竴涓虹 - 灏忔矆
-- 81e653939: dataanalysis analyze_data/filter_data鍙傛暟鎷嗗垎file_path+data浜掓枼,鍒犻櫎.xls鍋囨敮鎸?- chendyg
+### refactor: 代码重构(6项)
+- bee330bb0: 删除registry_path_checker中无效的..穿越检查(注册表非文件系统) - 小欧
+- 7a400eea9: _check_pyautogui()去重，提取到desktop_helper.py统一复用 - 小欧
+- 52796b7cb: file_path_checker.py重命名为tools_file_path_checker.py+13个import路径更新 - 小欧
+- fd3c8f0e1: path_validator/tool_safety_checker/file_path_checker 迁移路径调度到path_validator+fix None bug - 小欧
+- ac2c7fec0: network/shell 6个tool timeout统一为秒 - 小沈
+- 81e653939: dataanalysis analyze_data/filter_data参数拆分file_path+data互斥,删除.xls假支持 - chendyg
 
-### perf: 鎬ц兘浼樺寲(1椤?
-- ae3279bad: tool_search缁撴灉绮剧畝涓轰粎name+category(description鍜宻core缁橪LM鏃犳剰涔? - 灏忔
+### perf: 性能优化(1项)
+- ae3279bad: tool_search结果精简为仅name+category(description和score给LLM无意义) - 小欧
 
-### docs: 鏂囨。鏇存柊(15椤?
-- b558dca10: 鏇存柊Tool瀹夊叏-execute_shell_command璁捐鏂囨。v5澶嶆牳淇 - 灏忔矆
-- d36c2207f: 鏇存柊Tool瀹夊叏妫€鏌ヨ璁℃枃妗?娴嬭瘯璁板綍 - 灏忔
-- 0f827d48f: version.txt鍒犻櫎v0.17.6璁板綍(tag宸插垹闄? - 灏忔
-- d397e5c14: version.txt 鏇存柊v0.17.6鍙樻洿姹囨€?- 灏忔
-- 2a20cc069: 璁捐鏂囨。-Tool鍐呴儴瀹夊叏妫€鏌ュ鏍镐慨璁㈢増 鏂囦欢璺緞缁熶竴涓簐alidate/鐩綍 - 灏忔矆
-- e41a5994c: Tool瀹夊叏-execute_code鍒嗙骇瀹夊叏妫€鏌ユ柟妗?閲嶅啓绗?绔?- chendyg
-- 87403cf30: Tool瀹夊叏-execute_code鍒嗙骇瀹夊叏妫€鏌ユ柟妗?瀹℃牳淇4椤?- chendyg
-- 687d21f30: 鏇存柊Tool瀹夊叏-execute_code鍒嗙骇瀹夊叏妫€鏌ユ柟妗?- 灏忔矆
-- 851a29e07: 鏇存柊Tool瀹夊叏-execute_code鍒嗙骇瀹夊叏妫€鏌ユ柟妗?鏂板AST鍒悕妫€娴?- 灏忔
-- 380e00204: 纭鏂囨。绔犺妭搴忓彿姝ｇ‘ - 灏忓仴
-- 74f87ab51: 淇绔犺妭缂栧彿閲嶅鍜屾祴璇曠敤渚嬮敊璇?- 灏忓仴
-- c55e65be6: 澧炲姞safety鏂囦欢璁捐鍘熷垯 - 灏忓仴
-- c83be4ff4: 閲囩敤{tool_name}_safety.py鍛藉悕瑙勮寖 - 灏忓仴
-- f34d14c9b: 淇鏂囨。閫昏緫鐭涚浘鍜岀珷鑺傞噸澶?- 灏忓仴
-- e80406733: 琛ュ厖eval瑙ｉ噴鍜宻ocket/requests鏃犻闄╄鏄?- 灏忓仴
-- 7bf422c38: execute_code鍒嗙骇瀹夊叏妫€鏌ユ柟妗堣璁?- 灏忓仴
-- da11a3e7c: 鏇存柊鎵嬪唽v2.7(start_e2e.bat鍘?-reload)+bat绠€鍖?- 灏忔
-- 7d4d700c3: start_e2e.bat+鎵嬪唽3.1鑺?AI鐢ㄥ脊绐楀懡浠ゅ惎鍔ㄥ悗绔?- 灏忔
+### docs: 文档更新(15项)
+- b558dca10: 更新Tool安全-execute_shell_command设计文档v5复核修正 - 小沈
+- d36c2207f: 更新Tool安全检查设计文档+测试记录 - 小欧
+- 0f827d48f: version.txt删除v0.17.6记录(tag已删除) - 小欧
+- d397e5c14: version.txt 更新v0.17.6变更汇总 - 小欧
+- 2a20cc069: 设计文档-Tool内部安全检查复核修订版 文件路径统一为validate/目录 - 小沈
+- e41a5994c: Tool安全-execute_code分级安全检查方案 重写第7章 - chendyg
+- 87403cf30: Tool安全-execute_code分级安全检查方案 审核修正4项 - chendyg
+- 687d21f30: 更新Tool安全-execute_code分级安全检查方案 - 小沈
+- 851a29e07: 更新Tool安全-execute_code分级安全检查方案 新增AST别名检测 - 小欧
+- 380e00204: 确认文档章节序号正确 - 小健
+- 74f87ab51: 修复章节编号重复和测试用例错误 - 小健
+- c55e65be6: 增加safety文件设计原则 - 小健
+- c83be4ff4: 采用{tool_name}_safety.py命名规范 - 小健
+- f34d14c9b: 修复文档逻辑矛盾和章节重复 - 小健
+- e80406733: 补充eval解释和socket/requests无风险说明 - 小健
+- 7bf422c38: execute_code分级安全检查方案设计 - 小健
+- da11a3e7c: 更新手册v2.7(start_e2e.bat去--reload)+bat简化 - 小欧
+- 7d4d700c3: start_e2e.bat+手册3.1节 AI用弹窗命令启动后端 - 小欧
 
-### chore: 鏉傞」(2椤?
-- db42077e0: 鍒犻櫎閬楃暀鍐椾綑鏂囦欢operation_commands.py(宸叉媶鍒嗕负4涓猄RP妯″潡) - 灏忔
-- 7aeed0eb2: 娓呯悊娴嬭瘯搴熸枃浠跺拰澶囦唤鏂囦欢 - 灏忔
+### chore: 杂项(2项)
+- db42077e0: 删除遗留冗余文件operation_commands.py(已拆分为4个SRP模块) - 小欧
+- 7aeed0eb2: 清理测试废文件和备份文件 - 小欧
 
-### 鍚堣
-- feat: 7椤?| fix: 4椤?| refactor: 6椤?| perf: 1椤?| docs: 15椤?| chore: 2椤?= 鍏?5椤?
+### 合计
+- feat: 7项 | fix: 4项 | refactor: 6项 | perf: 1项 | docs: 15项 | chore: 2项 = 共35项
+
 ---
 
 v0.17.5
 
-鏇存柊鏃堕棿: 2026-06-26 22:41:52
+更新时间: 2026-06-26 22:41:52
 
-## v0.17.4鈫抳0.17.5 鍙樻洿姹囨€?- 灏忔-2026-06-26
+## v0.17.4→v0.17.5 变更汇总 - 小欧-2026-06-26
 
-### refactor: 浠ｇ爜閲嶆瀯(5椤?
-- 592f025b4: 缁熶竴鍑芥暟绛惧悕锛屽垹闄nion绫诲瀷 - 灏忓仴
-- 4af528c38: 鍒犻櫎generate_chart鐨刣ict鏀寔锛屽彧鏀寔鏂囦欢璺緞 - 灏忓仴
-- aa61056fd: 缁熶竴time鍙傛暟绫诲瀷绾︽潫涓簊tr - 灏忓仴
-- 5f4e5cf42: 淇鍙傛暟绫诲瀷姝т箟闂 - 灏忓仴
-- 2f8d7fd1b: 澧炲己write_text_file鐨凷chema绾︽潫 - 灏忓仴
+### refactor: 代码重构(5项)
+- 592f025b4: 统一函数签名，删除Union类型 - 小健
+- 4af528c38: 删除generate_chart的dict支持，只支持文件路径 - 小健
+- aa61056fd: 统一time参数类型约束为str - 小健
+- 5f4e5cf42: 修复参数类型歧义问题 - 小健
+- 2f8d7fd1b: 增强write_text_file的Schema约束 - 小健
 
-### fix: 浠ｇ爜淇(4椤?
-- 2b4372911: file_schema 鍙傛暟璇存槑澶氱ず渚嬫敼鍗曚竴 - 灏忔
-- d9f911a4a: shell_schema+react_cycle+tool_constants 鍙傛暟璇存槑鍑嗙‘鍖?B3闆跺伐鍏锋娴?- 灏忔
-- 8612b8b01: write_text_file鍙傛暟绫诲瀷閿欒+tool_call瑙ｆ瀽澶辫触+session瀛樺湪鎬ч獙璇?- 灏忓仴
-- 4c6716d04: E2E瓒呮椂marker绯荤粺+check_db tool_params淇+obs_text瀹屾暣鏄剧ず+瓒呮椂2000s - 灏忔
+### fix: 代码修复(4项)
+- 2b4372911: file_schema 参数说明多示例改单一 - 小欧
+- d9f911a4a: shell_schema+react_cycle+tool_constants 参数说明准确化+B3零工具检测 - 小欧
+- 8612b8b01: write_text_file参数类型错误+tool_call解析失败+session存在性验证 - 小健
+- 4c6716d04: E2E超时marker系统+check_db tool_params修复+obs_text完整显示+超时2000s - 小欧
 
-### docs: 鏂囨。鏇存柊(1椤?
-- 4aa082db6: clean up old test records and reports - 灏忔
-
----
-
-## v0.17.3鈫抳0.17.4 鍙樻洿姹囨€?- 灏忔-2026-06-26
-
-### fix: 浠ｇ爜淇(3椤?
-- ceea19d72: action_handler瀹屾暣summary鏃ュ織+system_prompts tag鎺掗櫎鍒楄〃+error_classifier FCFormatError+瓒呮椂900s - 灏忔
-- 2dc265c8f: e2e_helpers write_test_record鏀圭敤tempfile+os.replace鍘熷瓙鍐欏叆 - 灏忔
-- bbf85b5b6: constants鍒犻櫎3涓閲嶈瘯甯搁噺+llm_stream dict闃插尽鍔犲浐+LLM_MAX_RETRIES鏀瑰悕 - 灏忔
-
-### feat: 鏂板姛鑳?1椤?
-- 84e787f03: add start_backend.ps1 and start_server.bat startup scripts - 灏忔
-
-### docs: 鏂囨。鏇存柊(2椤?
-- 32ee896cc: update E2E鎿嶄綔鎵嬪唽 - 灏忔
-- 39d881756: clean up old test records and debug notes - 灏忔
+### docs: 文档更新(1项)
+- 4aa082db6: clean up old test records and reports - 小欧
 
 ---
 
-## v0.17.2鈫抳0.17.3 鍙樻洿姹囨€?- 灏忔-2026-06-26
+## v0.17.3→v0.17.4 变更汇总 - 小欧-2026-06-26
 
-### feat: 鏂板姛鑳?6椤?
-- ba1445e32: Batch2 5椤归噸鏋勫疄鏂?骞界伒绫诲唴鑱?set_failed鏀跺彛/patch_search_desc鍓湰/瓒呮椂FAILED/cancel_poller Event) - 灏忔
-- 9270914b1: 鏂板LLM甯搁噺閰嶇疆鏂囦欢 - 灏忔
-- 424b5b374: 鏂板ErrorHandler閿欒澶勭悊鍣?- 灏忔
-- 8f6c93aba: 娣诲姞FCFormatError寮傚父绫?- 灏忔
-- 0ae4425f1: LLM娴佸紡璋冪敤Text妯″紡闄嶇骇+FC鏍煎紡閿欒閲嶈瘯 - 灏忔
-- c1d11a4ea: 娣诲姞RETRYABLE_ERROR鐘舵€?- 灏忔
+### fix: 代码修复(3项)
+- ceea19d72: action_handler完整summary日志+system_prompts tag排除列表+error_classifier FCFormatError+超时900s - 小欧
+- 2dc265c8f: e2e_helpers write_test_record改用tempfile+os.replace原子写入 - 小欧
+- bbf85b5b6: constants删除3个死重试常量+llm_stream dict防御加固+LLM_MAX_RETRIES改名 - 小欧
 
-### fix: 浠ｇ爜淇(37椤?
-- 6d57d9256: action_handler _build_call_list None tool_params宕╂簝 - 灏忔
-- 601e4dce7: action_handler _safe_str(None)杩斿洖'None'姹℃煋LLM summary - 灏忔
-- 5ca3365e4: SSE circular ref宕╂簝+_merge_other_data join宕╂簝 - 灏忔
-- 8595abc7e: message_builder _trim_to_budget duplicate when assistant precedes tool - 灏忔
-- 22fc0fc3e: tool_retry_engine淇濈暀鍘熷寮傚父淇℃伅闈炲垱寤烘柊Exception - chendyg
-- d1b5ba1ef: tool_safety_checker鍐欏叆淇濇姢浼樺厛鐢╬ath鍙傛暟 - chendyg
-- ad70f82c0: run_sse_stream event to_dict闃插尽闈瀌ict闈濻tep - chendyg
-- cd9bb72ff: step_emitter tracker寮傚父debug鍗囩骇涓簑arning - chendyg
-- 863514a07: react_cycle鏈煡绫诲瀷鍝嶅簲鍔犲叆瀵硅瘽鍘嗗彶闃查噸澶?- chendyg
-- 0462df57c: initialize_run_state鏇存柊tracker浠诲姟鎻忚堪 - chendyg
-- 52cc4b2bb: message_builder _trim_to_budget閰嶅鍔╂墜娑堟伅鍙岄噸璁℃暟 - 灏忔
-- 32acb43d6: react_cycle鎴柇閲嶈瘯璺緞history鏈畾涔塩rash - 灏忔
-- 15fa89309: Bug17鏂板CANCELLED鏋氫妇+鍙栨秷璺緞璁綜ANCELLED + Bug3绌哄唴瀹逛繚瀛榓ssistant - chendyg
-- 3baa16a4c: Bug15 patch_search_desc缂撳瓨澶辨晥 + Bug16 load_category鏇存柊_loaded_categories - chendyg
-- 230c713f4: react_cycle RETRYABLE_ERROR椤哄簲閲嶈瘯鑰岄潪缁撴潫寰幆 - 灏忔
-- 035c8a7c9: P1绾ug淇(8/9/10/11/14/17/19/21/22) - chendyg
-- d90909f73: registry update_existing_tool缂哄皯瀛楁+鍒嗙被绱㈠紩 - 灏忔
-- a1f256eba: react_cycle chunk_buffer鎶曡瘝/max_steps妫€鏌?鎴柇tc_id - 灏忔
-- c6711e3d0: action_handler dict鐩存帴璁块棶KeyError椋庨櫓 - 灏忔
-- fe475defb: base_service _extract_tool_calls/_extract_usage寮傚父闈欓粯 - 灏忔
-- a72cfba34: action_handler exec_code绌哄€艰error瑕嗙洊 - 灏忔
-- 995dc36fa: llm_stream dict鐩存帴璁块棶KeyError椋庨櫓 - 灏忔
-- dfc61ac82: run_sse_stream鍔犺浇鍘嗗彶寮傚父澧炲姞鏃ュ織 - 灏忔
-- 6d97db271: client_sdk娣诲姞async涓婁笅鏂囩鐞嗗櫒鏀寔 - 灏忔
-- 71163feb3: chat_openai绌烘秷鎭唴瀹规嫤鎴?- 灏忔
-- 36388fd35: initialize_run_state淇濈暀tool/assistant瀹屾暣娑堟伅 - 灏忔
-- ec730cc2b: step_emitter exit_with_error灏婇噸recoverable鏍囧織 - 灏忔
-- ba21dbe5f: react_cycle RETRYABLE_ERROR涓嶈ˉ鍙慒inalStep - 灏忔
-- 9b0bbfffe: action_handler骞惰return_direct妫€鏌ユ墍鏈夌粨鏋?- 灏忔
-- 4151fd553: answer_handler绌哄唴瀹硅FAILED鑰岄潪COMPLETED - 灏忔
-- d36b5d518: tool_safety_checker浠ｇ爜娉ㄥ叆妫€鏌ヨ鐩栨墍鏈塻hell宸ュ叿 - 灏忔
-- 7e67ea3bd: path_validator寮傚父鏃堕粦鍚嶅崟缁曡繃鏀逛负鎷掔粷 - 灏忔
-- 3f5502fc5: error_classifier httpx.ReadError缂哄け鏄犲皠 - 灏忔
-- ff6c1e5e9: meta_step to_dict缂哄皯message瀛楁 - 灏忔
-- ffdf24c8f: tool_safety_checker or閾鹃櫡闃?绌哄瓧绗︿覆楠岃瘉缂洪櫡 - 灏忔
-- 7c5fffdaf: path_validator绌鸿矾寰勫畨鍏ㄦ鏌?- 灏忔
-- a0a9e1109: 淇SSE鍓嶇瑙ｆ瀽閫昏緫 - 灏忔
+### feat: 新功能(1项)
+- 84e787f03: add start_backend.ps1 and start_server.bat startup scripts - 小欧
 
-### refactor: 浠ｇ爜閲嶆瀯(4椤?
-- 214ef1e6d: message_builder+react_cycle+error_handler 绫诲瀷瀹夊叏/FAILED/鎴柇 - 鍖椾含鑰侀檲
-- fe4529c5c: 浼樺寲LLM鍩虹鏈嶅姟璋冪敤閫昏緫 - 灏忔
-- b3a04c133: React寰幆璋冪敤閫昏緫浼樺寲 - 灏忔
-- 7e9f3357b: 绠€鍖朥niversalAgent璋冪敤閫昏緫 - 灏忔
+### docs: 文档更新(2项)
+- 32ee896cc: update E2E操作手册 - 小欧
+- 39d881756: clean up old test records and debug notes - 小欧
 
-### test: 娴嬭瘯(1椤?
-- 4201ba3be: 鏂板FC闄嶇骇E2E娴嬭瘯 - 灏忔
+---
 
-### docs: 鏂囨。鏇存柊(7椤?
-- 716932911: 鏇存柊绯荤粺鍏抽敭娴佺▼娣卞害鍒嗘瀽 v4.0 - 灏忔
-- 36f52b992: 鏇存柊LLM绯荤粺浼樺寲鏂规/鍒犳棫鐗?鏍囨敞Batch2瀹炴柦鐘舵€?- 灏忔
-- 556748bc1: 鏂板E2E娴嬭瘯璁板綍P0-01 - 灏忔
-- b0bafcc03: 鏂板鏃х増LLM绯荤粺浼樺寲鏂规瀛樻。 - 灏忔
-- 0380536ac: 鏂板LLM绯荤粺浼樺寲鏂规v2.0 - 灏忔
-- 7dfd75810: 澶囦唤鏃х増LLM绯荤粺浼樺寲鏂规 - 灏忔
-- 522718163: 鏇存柊LLM-Prompt-Message绯荤粺浼樺寲鏂规v4.1 - 灏忔
+## v0.17.2→v0.17.3 变更汇总 - 小欧-2026-06-26
 
-### 鍚堣
-- feat: 6椤?| fix: 37椤?| refactor: 4椤?| test: 1椤?| docs: 7椤?= 鍏?5椤?
+### feat: 新功能(6项)
+- ba1445e32: Batch2 5项重构实施(幽灵类内联/set_failed收口/patch_search_desc副本/超时FAILED/cancel_poller Event) - 小欧
+- 9270914b1: 新增LLM常量配置文件 - 小欧
+- 424b5b374: 新增ErrorHandler错误处理器 - 小欧
+- 8f6c93aba: 添加FCFormatError异常类 - 小欧
+- 0ae4425f1: LLM流式调用Text模式降级+FC格式错误重试 - 小欧
+- c1d11a4ea: 添加RETRYABLE_ERROR状态 - 小欧
+
+### fix: 代码修复(37项)
+- 6d57d9256: action_handler _build_call_list None tool_params崩溃 - 小欧
+- 601e4dce7: action_handler _safe_str(None)返回'None'污染LLM summary - 小欧
+- 5ca3365e4: SSE circular ref崩溃+_merge_other_data join崩溃 - 小欧
+- 8595abc7e: message_builder _trim_to_budget duplicate when assistant precedes tool - 小欧
+- 22fc0fc3e: tool_retry_engine保留原始异常信息非创建新Exception - chendyg
+- d1b5ba1ef: tool_safety_checker写入保护优先用path参数 - chendyg
+- ad70f82c0: run_sse_stream event to_dict防御非dict非Step - chendyg
+- cd9bb72ff: step_emitter tracker异常debug升级为warning - chendyg
+- 863514a07: react_cycle未知类型响应加入对话历史防重复 - chendyg
+- 0462df57c: initialize_run_state更新tracker任务描述 - chendyg
+- 52cc4b2bb: message_builder _trim_to_budget配对助手消息双重计数 - 小欧
+- 32acb43d6: react_cycle截断重试路径history未定义crash - 小欧
+- 15fa89309: Bug17新增CANCELLED枚举+取消路径设CANCELLED + Bug3空内容保存assistant - chendyg
+- 3baa16a4c: Bug15 patch_search_desc缓存失效 + Bug16 load_category更新_loaded_categories - chendyg
+- 230c713f4: react_cycle RETRYABLE_ERROR顺应重试而非结束循环 - 小欧
+- 035c8a7c9: P1级bug修复(8/9/10/11/14/17/19/21/22) - chendyg
+- d90909f73: registry update_existing_tool缺少字段+分类索引 - 小欧
+- a1f256eba: react_cycle chunk_buffer投词/max_steps检查/截断tc_id - 小欧
+- c6711e3d0: action_handler dict直接访问KeyError风险 - 小欧
+- fe475defb: base_service _extract_tool_calls/_extract_usage异常静默 - 小欧
+- a72cfba34: action_handler exec_code空值被error覆盖 - 小欧
+- 995dc36fa: llm_stream dict直接访问KeyError风险 - 小欧
+- dfc61ac82: run_sse_stream加载历史异常增加日志 - 小欧
+- 6d97db271: client_sdk添加async上下文管理器支持 - 小欧
+- 71163feb3: chat_openai空消息内容拦截 - 小欧
+- 36388fd35: initialize_run_state保留tool/assistant完整消息 - 小欧
+- ec730cc2b: step_emitter exit_with_error尊重recoverable标志 - 小欧
+- ba21dbe5f: react_cycle RETRYABLE_ERROR不补发FinalStep - 小欧
+- 9b0bbfffe: action_handler并行return_direct检查所有结果 - 小欧
+- 4151fd553: answer_handler空内容设FAILED而非COMPLETED - 小欧
+- d36b5d518: tool_safety_checker代码注入检查覆盖所有shell工具 - 小欧
+- 7e67ea3bd: path_validator异常时黑名单绕过改为拒绝 - 小欧
+- 3f5502fc5: error_classifier httpx.ReadError缺失映射 - 小欧
+- ff6c1e5e9: meta_step to_dict缺少message字段 - 小欧
+- ffdf24c8f: tool_safety_checker or链陷阱+空字符串验证缺陷 - 小欧
+- 7c5fffdaf: path_validator空路径安全检查 - 小欧
+- a0a9e1109: 修复SSE前端解析逻辑 - 小欧
+
+### refactor: 代码重构(4项)
+- 214ef1e6d: message_builder+react_cycle+error_handler 类型安全/FAILED/截断 - 北京老陈
+- fe4529c5c: 优化LLM基础服务调用逻辑 - 小欧
+- b3a04c133: React循环调用逻辑优化 - 小欧
+- 7e9f3357b: 简化UniversalAgent调用逻辑 - 小欧
+
+### test: 测试(1项)
+- 4201ba3be: 新增FC降级E2E测试 - 小欧
+
+### docs: 文档更新(7项)
+- 716932911: 更新系统关键流程深度分析 v4.0 - 小欧
+- 36f52b992: 更新LLM系统优化方案/删旧版/标注Batch2实施状态 - 小欧
+- 556748bc1: 新增E2E测试记录P0-01 - 小欧
+- b0bafcc03: 新增旧版LLM系统优化方案存档 - 小欧
+- 0380536ac: 新增LLM系统优化方案v2.0 - 小欧
+- 7dfd75810: 备份旧版LLM系统优化方案 - 小欧
+- 522718163: 更新LLM-Prompt-Message系统优化方案v4.1 - 小欧
+
+### 合计
+- feat: 6项 | fix: 37项 | refactor: 4项 | test: 1项 | docs: 7项 = 共55项
+
 ---
 
 v0.17.2
 
-鏇存柊鏃堕棿: 2026-06-25 19:57:42
+更新时间: 2026-06-25 19:57:42
 
-## v0.17.1鈫抳0.17.2 鍙樻洿姹囨€?- 灏忔-2026-06-25
+## v0.17.1→v0.17.2 变更汇总 - 小欧-2026-06-25
 
-### feat: 鏂板姛鑳?7椤?
-- 8cbaa6c01: 鎻愬彇鍏叡妯″潡 connectivity.py+url_validator.py - 灏忔
-- 3d1ed8315: network_schema琛ュ厖timeout/proxy/retry/js_render/count/blocked_domains绛夌己澶卞瓧娈?- 灏忔
-- 2ee04b15b: 骞惰tool call multi-call鏀寔 - 灏忓仴
-- c47dab779: 澧炲己execute_shell_command瀵筆owerShell 5.1鐨勬敮鎸?鑷姩缈昏瘧&&鍜寍|) - 灏忓仴
-- 鍏朵粬3椤筬eat (璇﹁git log)
+### feat: 新功能(7项)
+- 8cbaa6c01: 提取公共模块 connectivity.py+url_validator.py - 小欧
+- 3d1ed8315: network_schema补充timeout/proxy/retry/js_render/count/blocked_domains等缺失字段 - 小欧
+- 2ee04b15b: 并行tool call multi-call支持 - 小健
+- c47dab779: 增强execute_shell_command对PowerShell 5.1的支持(自动翻译&&和||) - 小健
+- 其他3项feat (详见git log)
 
-### fix: 浠ｇ爜淇(15椤?
-- 6c4426dd0: network+system+desktop+timer+dataanalysis 13涓猙ug淇 - 灏忔
-- ea662d3ec: execute_code timeout鍗曚綅Schema閿欒(绉掆啋姣) - 灏忓仴
-- 09b4896de: network_diagnose SSRF鍏ュ彛妫€鏌?search_web閫掑綊娣卞害闄愬埗 - 灏忔
-- 082cd41b6: 淇Shell绯诲垪宸ュ叿14涓狟ug - 灏忔
-- 5d99e5690: tool_fc_helper YAML/HTMLParser/sqlite3/utf-8淇 - 灏忔
-- 4a1877fca: get_db_schema鏂囦欢瀛樺湪妫€鏌?compress_files鎺掗櫎妯″紡+create_task鍙傛暟浼犻€?- 灏忔
-- f2669015e: 10椤瑰弬鏁伴獙璇佺己澶?- 灏忔矆
-- db360307a: fetch_webpage缂篿mport re + search_web NoneType len宕╂簝 - 灏忔矆
-- 4a3a0e3e4: 淇tool鍙傛暟鎻忚堪闂(11涓伐鍏? - 灏忓仴
-- 8757ee762: 淇dataanalysis_schema鍙傛暟涓嶄竴鑷撮棶棰?- 灏忓仴
-- 8930ac1fb: 淇win_registry_schema鍙傛暟涓嶄竴鑷撮棶棰?- 灏忓仴
-- 711c310d1: 淇file鍒嗙被宸ュ叿鐨勫畨鍏ㄩ棶棰樺拰鍙傛暟鎻忚堪 - 灏忓仴
-- 17b04aece: 淇绯荤粺prompts.py SyntaxError+TOOL_CALL_RULES缂哄け - 灏忔
-- deb33dd45: Prompt-Message鍏ㄩ摼璺?P1+P2+P3鍏?2闂鍏ㄩ儴淇 - 灏忔
-- a0be614b3: 鍚堝苟鏈彁浜ゅ彉鏇?娑堟伅鍔犺浇FC鍗忚閲嶆瀯+姝讳唬鐮佹竻鐞?- 灏忔
+### fix: 代码修复(15项)
+- 6c4426dd0: network+system+desktop+timer+dataanalysis 13个bug修复 - 小欧
+- ea662d3ec: execute_code timeout单位Schema错误(秒→毫秒) - 小健
+- 09b4896de: network_diagnose SSRF入口检查+search_web递归深度限制 - 小欧
+- 082cd41b6: 修复Shell系列工具14个Bug - 小欧
+- 5d99e5690: tool_fc_helper YAML/HTMLParser/sqlite3/utf-8修复 - 小欧
+- 4a1877fca: get_db_schema文件存在检查+compress_files排除模式+create_task参数传递 - 小欧
+- f2669015e: 10项参数验证缺失 - 小沈
+- db360307a: fetch_webpage缺import re + search_web NoneType len崩溃 - 小沈
+- 4a3a0e3e4: 修复tool参数描述问题(11个工具) - 小健
+- 8757ee762: 修复dataanalysis_schema参数不一致问题 - 小健
+- 8930ac1fb: 修复win_registry_schema参数不一致问题 - 小健
+- 711c310d1: 修复file分类工具的安全问题和参数描述 - 小健
+- 17b04aece: 修复系统prompts.py SyntaxError+TOOL_CALL_RULES缺失 - 小欧
+- deb33dd45: Prompt-Message全链路 P1+P2+P3共32问题全部修复 - 小欧
+- a0be614b3: 合并未提交变更-消息加载FC协议重构+死代码清理 - 小欧
 
-### refactor: 浠ｇ爜閲嶆瀯(10椤?
-- 2590d2b85: http_request/fetch_webpage/download_file 浣跨敤鍏叡妯″潡 - 灏忔
-- fe47eeb52: 鎺у埗鍙板彧鎵揥ARNING+,print鏀筶ogger - 灏忔矆
-- 96eb17271: FC+Observation娴佺▼鏃ュ織澧炲己,reg鍣０闄嶇骇 - 灏忔矆
-- fcebc0bf3: print鐗堟湰鍙风Щ鍒皊tartup浜嬩欢鏈熬 - 灏忔矆
-- e9fcae901: 鍚姩鎵撳嵃鍔?褰撳墠鐗堟湰'鍓嶇紑 - 灏忔矆
-- 699daea0c: operation_executor鎴愬姛鏃ュ織闄嶄负DEBUG - 灏忔矆
-- 7d63a82e4: 浼樺寲system prompt缁勮椤哄簭 - 灏忓仴
-- 8047cbcd7: 绠€鍖杘bservation棰勭畻绯荤粺-鐮嶆帀DECAY/MAX/MIN鍗曟潯鎴柇閫昏緫 - 灏忔
-- 7cbe41500: 閲嶅懡鍚峟irst_tool_obs to tool_last_obs - 灏忔
-- 69b252c41: 鍒犻櫎forced-keep鏈哄埗, 绾痓udget trim - 灏忔
-- 1c1b121d5: Batch 1 type safety + SRP extraction - 灏忔
-- ac6163327: 鍒犻櫎鍐椾綑META_TOOL_NAMES鍔犺浇+鏇存柊AGENTS.md杩囨湡淇℃伅 - 灏忔
-- 099c662ec: llm_caller閲嶅懡鍚嶄负llm_stream+鏂囨。杩佺Щ - 灏忔
+### refactor: 代码重构(10项)
+- 2590d2b85: http_request/fetch_webpage/download_file 使用公共模块 - 小欧
+- fe47eeb52: 控制台只打WARNING+,print改logger - 小沈
+- 96eb17271: FC+Observation流程日志增强,reg噪声降级 - 小沈
+- fcebc0bf3: print版本号移到startup事件末尾 - 小沈
+- e9fcae901: 启动打印加'当前版本'前缀 - 小沈
+- 699daea0c: operation_executor成功日志降为DEBUG - 小沈
+- 7d63a82e4: 优化system prompt组装顺序 - 小健
+- 8047cbcd7: 简化observation预算系统-砍掉DECAY/MAX/MIN单条截断逻辑 - 小欧
+- 7cbe41500: 重命名first_tool_obs to tool_last_obs - 小欧
+- 69b252c41: 删除forced-keep机制, 纯budget trim - 小欧
+- 1c1b121d5: Batch 1 type safety + SRP extraction - 小欧
+- ac6163327: 删除冗余META_TOOL_NAMES加载+更新AGENTS.md过期信息 - 小欧
+- 099c662ec: llm_caller重命名为llm_stream+文档迁移 - 小欧
 
-### docs: 鏂囨。鏇存柊(8椤?
-- 873913f0e: 鏇存柊闂鍒嗘瀽鏂囨。鏂板绗竷绔燘ug澶嶆牳缁撴灉+47涓湡瀹濨ug姹囨€?- 灏忔
-- 2b8606eac: 淇execute_shell_command宸ュ叿鎻忚堪 - 灏忓仴
-- d37ee0b37: 娣诲姞tool浠ｇ爜鏍告煡鎶ュ憡 - 灏忓仴
-- 4673188bd: 娣诲姞tool浠ｇ爜鏍告煡spec鏂囨。 - 灏忓仴
-- 58fdc8536: 浼樺寲execute_shell_command宸ュ叿鎻忚堪 - 灏忓仴
-- b10af119b: 鍏ㄩ摼璺疎2E闆嗘垚娴嬭瘯-鎿嶄綔鎵嬪唽鏇存柊v2.4-v2.5 - 灏忔
-- 9a3eade5f: 娓呯悊鏃犵敤娴嬭瘯鐩綍骞舵洿鏂版枃妗?- 灏忓仴
-- 绯荤粺鍏抽敭娴佺▼娣卞害鍒嗘瀽鏂囨。鍏ㄩ潰閲嶅啓(v2.0) - 灏忔
+### docs: 文档更新(8项)
+- 873913f0e: 更新问题分析文档新增第七章Bug复核结果+47个真实Bug汇总 - 小欧
+- 2b8606eac: 修正execute_shell_command工具描述 - 小健
+- d37ee0b37: 添加tool代码核查报告 - 小健
+- 4673188bd: 添加tool代码核查spec文档 - 小健
+- 58fdc8536: 优化execute_shell_command工具描述 - 小健
+- b10af119b: 全链路E2E集成测试-操作手册更新v2.4-v2.5 - 小欧
+- 9a3eade5f: 清理无用测试目录并更新文档 - 小健
+- 系统关键流程深度分析文档全面重写(v2.0) - 小欧
 
-### perf: 鎬ц兘浼樺寲(1椤?
-- 8047cbcd7: 绠€鍖杘bservation棰勭畻绯荤粺-鐮嶆帀DECAY/MAX/MIN鍗曟潯鎴柇閫昏緫 - 灏忔
+### perf: 性能优化(1项)
+- 8047cbcd7: 简化observation预算系统-砍掉DECAY/MAX/MIN单条截断逻辑 - 小欧
 
-### 鍚堣
-- feat: 7椤?| fix: 15椤?| refactor: 13椤?| docs: 8椤?| perf: 1椤?= 鍏?4椤?
+### 合计
+- feat: 7项 | fix: 15项 | refactor: 13项 | docs: 8项 | perf: 1项 = 共44项
+
 ---
 
 v0.17.1
 
-鏇存柊鏃堕棿: 2026-06-24 22:26:01
+更新时间: 2026-06-24 22:26:01
 
-## v0.17.0鈫抳0.17.1 鍙樻洿姹囨€?- 灏忔-2026-06-24
+## v0.17.0→v0.17.1 变更汇总 - 小欧-2026-06-24
 
-### feat: 鏂板姛鑳?17椤?
-- e6aac3424: 鏂板file_type_checker鏂囦欢绫诲瀷妫€鏌ュ伐鍏?- 灏忔
-- 5dcb00dc0: grep_file_content鏂板head_limit/output_mode/context_lines鍔熻兘 - 灏忓仴
-- 27e53db4c: write_docx鏀寔Markdown琛ㄦ牸+table_data鍙傛暟(浜掓枼璁捐) - 灏忓仴
-- 0dc64f227: observation_formatter.py summary琛岃拷鍔燼ction缁撴瀯淇℃伅 - 灏忔
-- cc215d5fb: 澧炲姞绯荤粺鏁忔劅璺緞榛戝悕鍗曟牎楠?- 灏忓仴
-- 786a99f4a: edit_text_file澧炲姞绌哄€兼牎楠屻€乮gnore_case鍙傛暟 - 灏忔
-- 鍏朵粬11椤筬eat (璇﹁git log)
+### feat: 新功能(17项)
+- e6aac3424: 新增file_type_checker文件类型检查工具 - 小欧
+- 5dcb00dc0: grep_file_content新增head_limit/output_mode/context_lines功能 - 小健
+- 27e53db4c: write_docx支持Markdown表格+table_data参数(互斥设计) - 小健
+- 0dc64f227: observation_formatter.py summary行追加action结构信息 - 小欧
+- cc215d5fb: 增加系统敏感路径黑名单校验 - 小健
+- 786a99f4a: edit_text_file增加空值校验、ignore_case参数 - 小欧
+- 其他11项feat (详见git log)
 
-### fix: 浠ｇ爜淇(72椤?
-- 59d51dfe9: 淇4涓猣ile宸ュ叿BUG(list_directory/read_text_file/write_text_file/edit_text_file) - 灏忓仴
-- 060e06cc0: document璇诲彇宸ュ叿Bug淇(read_pptx琛ㄦ牸/read_docx绌烘钀?read_xlsx澶氬伐浣滆〃) - 灏忓仴
-- a43839c32: write宸ュ叿琛ㄦ牸闂淇(write_pptx 10涓狟ug/write_docx 3涓?write_xlsx 4涓? - 灏忓仴
-- ee4f55f6d: SSRF鍐呯綉IP鎷︽埅(http_request/download_file/fetch_webpage) - 灏忔
-- 58e074607: http_request socket娉勬紡+clipboard ctypes鍐呭瓨娉勬紡淇 - 灏忔
-- abc0b6f7f: write_text_file绌哄瓧绗︿覆鎷︽埅+append+encoding绂佹+浜岃繘鍒舵娴?- 灏忔
-- 555903ac9: read_text_file澧炲姞offset=0鏍￠獙+offset瓒呰寖鍥磜arning+浜岃繘鍒舵娴?- 灏忔
-- 鍏朵粬65椤筬ix (璇﹁git log)
+### fix: 代码修复(72项)
+- 59d51dfe9: 修复4个file工具BUG(list_directory/read_text_file/write_text_file/edit_text_file) - 小健
+- 060e06cc0: document读取工具Bug修复(read_pptx表格/read_docx空段落/read_xlsx多工作表) - 小健
+- a43839c32: write工具表格问题修复(write_pptx 10个Bug/write_docx 3个/write_xlsx 4个) - 小健
+- ee4f55f6d: SSRF内网IP拦截(http_request/download_file/fetch_webpage) - 小欧
+- 58e074607: http_request socket泄漏+clipboard ctypes内存泄漏修复 - 小欧
+- abc0b6f7f: write_text_file空字符串拦截+append+encoding禁止+二进制检测 - 小欧
+- 555903ac9: read_text_file增加offset=0校验+offset超范围warning+二进制检测 - 小欧
+- 其他65项fix (详见git log)
 
-### refactor: 浠ｇ爜閲嶆瀯(24椤?
-- 8e4bd72d9: 浼樺寲绯荤粺鎻愮ず瑙勫垯缁勭粐+宸ュ叿鍙傛暟澶嶆牳+鎵ц绾緥 - 灏忔
-- eb9621820: 宸ュ叿鍙傛暟绠€鍖栨柟妗堝疄鏂?11涓伐鍏穝chema+瀹炵幇+娉ㄥ唽鏂囦欢鐢ㄤ緥淇) - 灏忓仴
-- 580b72f39: search_files鍘绘帀鏃犳剰涔夌殑recursive鍙傛暟,濮嬬粓閫掑綊鎼滅储 - 灏忔
-- 58ed1e893: 鍏ㄩ儴tool register鎻忚堪绮剧畝涓轰竴鍙ヨ瘽鍔熻兘+閫傜敤鍦烘櫙 - 灏忔
-- 196d436a9: 鏂囦欢绫诲瀷鍒嗙被浼樺寲鍜屾枃妗ｆ坊鍔?- 灏忔
-- 鍏朵粬19椤箁efactor (璇﹁git log)
+### refactor: 代码重构(24项)
+- 8e4bd72d9: 优化系统提示规则组织+工具参数复核+执行纪律 - 小欧
+- eb9621820: 工具参数简化方案实施(11个工具schema+实现+注册文件用例修正) - 小健
+- 580b72f39: search_files去掉无意义的recursive参数,始终递归搜索 - 小欧
+- 58ed1e893: 全部tool register描述精简为一句话功能+适用场景 - 小欧
+- 196d436a9: 文件类型分类优化和文档添加 - 小欧
+- 其他19项refactor (详见git log)
 
-### docs: 鏂囨。鏇存柊(22椤?
-- 05b23f05f: 鍒涘缓Tool鍙傛暟缁勫悎涓庡唴瀹规祴璇曡鑼冩枃妗?- 灏忓仴
-- 876cb6f7b: 琛ュ厖鏍稿績鍘熷垯涓庤姹傚埌娴嬭瘯瑙勮寖鏂囨。澶撮儴 - 灏忓仴
-- bc45d8c89: 绮剧畝娴嬭瘯瑙勮寖鏂囨。,浠rite_docx涓哄畬鏁寸ず渚?- 灏忓仴
-- fe216d6cc: E2E娴嬭瘯璁板綍鏇存柊 - 灏忔
-- 鍏朵粬18椤筪ocs (璇﹁git log)
+### docs: 文档更新(22项)
+- 05b23f05f: 创建Tool参数组合与内容测试规范文档 - 小健
+- 876cb6f7b: 补充核心原则与要求到测试规范文档头部 - 小健
+- bc45d8c89: 精简测试规范文档,以write_docx为完整示例 - 小健
+- fe216d6cc: E2E测试记录更新 - 小欧
+- 其他18项docs (详见git log)
 
-### perf: 鎬ц兘浼樺寲(1椤?
-- f6d1cce4b: P0-1/P0-2/P0-3/P1-1/P2-1 prompt娉ㄥ叆淇+宸ュ叿绛涢€変紭鍖?- 灏忔
+### perf: 性能优化(1项)
+- f6d1cce4b: P0-1/P0-2/P0-3/P1-1/P2-1 prompt注入修复+工具筛选优化 - 小欧
 
-### chore: 鏉傞」(2椤?
-- b9f3debd5: 娣诲姞notes/鍒?gitignore - 灏忓仴
-- 0eaa136db: 娣诲姞.codeartsdoer/鍒?gitignore - 灏忓仴
+### chore: 杂项(2项)
+- b9f3debd5: 添加notes/到.gitignore - 小健
+- 0eaa136db: 添加.codeartsdoer/到.gitignore - 小健
 
-### 鍚堣
-- feat: 17椤?| fix: 72椤?| refactor: 24椤?| docs: 22椤?| perf: 1椤?| chore: 2椤?= 鍏?38椤?
+### 合计
+- feat: 17项 | fix: 72项 | refactor: 24项 | docs: 22项 | perf: 1项 | chore: 2项 = 共138项
+
 ---
 
 v0.17.0
 
-鏇存柊鏃堕棿: 2026-06-22 19:42:43
+更新时间: 2026-06-22 19:42:43
 
-## v0.16.11鈫抳0.17.0 鍙樻洿姹囨€?- 灏忔-2026-06-22
+## v0.16.11→v0.17.0 变更汇总 - 小欧-2026-06-22
 
-### feat: 鏂板姛鑳?10椤?
-- 8608c3957: system_prompts.py 娉ㄥ叆銆愰」鐩牴鐩綍銆戝埌绯荤粺Prompt - 灏忔
-- 06b1926ba: field_handlers.py 娣诲姞project_root鏇存柊澶勭悊鍣?- 灏忔
-- 6addce264: get_system_config.py 杩斿洖project_root鍒板墠绔?- 灏忔
-- 3b9815f6b: models.py ConfigResponse/ConfigUpdate娣诲姞project_root瀛楁 - 灏忔
-- 185352313: config.py 娣诲姞get_project_root()鏂规硶+璇诲彇+鑷姩妫€娴?- 灏忔
-- faf5db30e: paths.py 娣诲姞get_default_project_root()鍏敤鍑芥暟 - 灏忔
-- 445b2c52b: _helpers.py 娣诲姞_make_yaml_loader鏀寔OrderedDict瑙ｆ瀽 - 灏忔
-- a2bfea01a: update_session.py 娣诲姞绌篵ody鏍￠獙杩斿洖400 - 灏忔
-- 19580646d: tool_fc_helper.py 娣诲姞OrderedDict representer杈撳嚭骞插噣YAML - 灏忔
-- 69f9494c8: 6tools warning鍒嗘敮(grep_file_content/list_directory/search_files/search_web/execute_code/execute_shell_command) - 灏忔
+### feat: 新功能(10项)
+- 8608c3957: system_prompts.py 注入【项目根目录】到系统Prompt - 小欧
+- 06b1926ba: field_handlers.py 添加project_root更新处理器 - 小欧
+- 6addce264: get_system_config.py 返回project_root到前端 - 小欧
+- 3b9815f6b: models.py ConfigResponse/ConfigUpdate添加project_root字段 - 小欧
+- 185352313: config.py 添加get_project_root()方法+读取+自动检测 - 小欧
+- faf5db30e: paths.py 添加get_default_project_root()公用函数 - 小欧
+- 445b2c52b: _helpers.py 添加_make_yaml_loader支持OrderedDict解析 - 小欧
+- a2bfea01a: update_session.py 添加空body校验返回400 - 小欧
+- 19580646d: tool_fc_helper.py 添加OrderedDict representer输出干净YAML - 小欧
+- 69f9494c8: 6tools warning分支(grep_file_content/list_directory/search_files/search_web/execute_code/execute_shell_command) - 小欧
 
-### fix: 浠ｇ爜淇(3椤?
-- cb02f5fb9: update_config.py 楠岃瘉鍐欏叆娈垫敼鐢╛make_yaml_loader - 灏忔
-- 3154d7cb8: main.py 淇shutdown瀵煎叆璺緞shell_tools鈫抏xecute_shell_command - 灏忔
-- 74c0713a7: desktop_register.py 淇DESK_TOOL_EXAMPLES鎷煎啓閿欒 - 灏忔
+### fix: 代码修复(3项)
+- cb02f5fb9: update_config.py 验证写入段改用_make_yaml_loader - 小欧
+- 3154d7cb8: main.py 修复shutdown导入路径shell_tools→execute_shell_command - 小欧
+- 74c0713a7: desktop_register.py 修复DESK_TOOL_EXAMPLES拼写错误 - 小欧
 
-### refactor: 浠ｇ爜閲嶆瀯(1椤?
-- cbef59328: lazy_loader.py 鍒嗙被娉ㄥ唽鏃ュ織闄嶇骇涓篸ebug - 灏忔
+### refactor: 代码重构(1项)
+- cbef59328: lazy_loader.py 分类注册日志降级为debug - 小欧
 
-### docs: 鏂囨。鏇存柊(2椤?
-- e2c696532: 娴嬭瘯鏁版嵁搴撻殧绂诲師鍒?绂佹鎿嶄綔绯荤粺杩愯鏁版嵁搴?- 灏忓仴
-- dcbd1de40: 娴嬭瘯閰嶇疆闅旂鍘熷垯-绂佹淇敼绯荤粺config.yaml - 灏忓仴
+### docs: 文档更新(2项)
+- e2c696532: 测试数据库隔离原则-禁止操作系统运行数据库 - 小健
+- dcbd1de40: 测试配置隔离原则-禁止修改系统config.yaml - 小健
 
-### 鍚堣
-- feat: 10椤?| fix: 3椤?| refactor: 1椤?| docs: 2椤?= 鍏?6椤?
+### 合计
+- feat: 10项 | fix: 3项 | refactor: 1项 | docs: 2项 = 共16项
+
 ---
 
 v0.17.0
 
-鏇存柊鏃堕棿: 2026-06-22 19:42:43
+更新时间: 2026-06-22 19:42:43
 
-## v0.16.11鈫抳0.17.0 鍙樻洿姹囨€?- 灏忔-2026-06-22
+## v0.16.11→v0.17.0 变更汇总 - 小欧-2026-06-22
 
-### feat: 鏂板姛鑳?14椤?
-- ee48408ae: Phase 2 observation妯″紡鏀归€?- 鍓嶇閫傞厤llm_data/tool_result/other_data - 灏忔
-- 51b3ec606: Phase 2 observation妯″紡鏀归€?- 鍚庣ToolStep+action_handler - 灏忔
-- d4fb25d0f: 閫忎紶helper result閲嶆柊鍖呰llm_data - 灏忓仴
-- c5565a59e: toolhelper 4涓枃浠舵棫build_error/build_success绛惧悕鏀归€犲畬鎴?- 灏忓仴
-- eda94d93d: file_tools 83澶勬棫build_error绛惧悕鏀归€犲畬鎴?- 灏忓仴
-- 92f5824ca: document_tools builder鏀归€犲畬鎴?7涓猙uilder) - 灏忓仴
-- 24ffc2569: dataanalysis_tools builder鏀归€犲畬鎴?3涓猙uilder) - 灏忓仴
-- a4f41def9: network/shell/desktop/database builder鏀归€犲畬鎴?- 灏忓仴
-- 46f964117: desktop_gui_tools builder鏀归€犲畬鎴?- 灏忓仴
-- 7e33c82a3: desktop_tools builder鏀归€犲畬鎴?- 灏忓仴
-- 184b5df1c: system_tools builder鏀归€犲畬鎴?- 灏忓仴
-- ed2eba6f4: Phase1宸ュ叿鏂囦欢builder鏀归€?shell/code_execution) - 灏忓仴
-- e51b72c68: Phase1宸ュ叿鏂囦欢builder鏀归€?fundamental/time/timer/win_registry) - 灏忓仴
-- dd603fcab: Phase1妗嗘灦灞?宸ュ叿Observation缁熶竴鏍煎紡 - 灏忓仴
+### feat: 新功能(14项)
+- ee48408ae: Phase 2 observation模式改造 - 前端适配llm_data/tool_result/other_data - 小欧
+- 51b3ec606: Phase 2 observation模式改造 - 后端ToolStep+action_handler - 小欧
+- d4fb25d0f: 透传helper result重新包装llm_data - 小健
+- c5565a59e: toolhelper 4个文件旧build_error/build_success签名改造完成 - 小健
+- eda94d93d: file_tools 83处旧build_error签名改造完成 - 小健
+- 92f5824ca: document_tools builder改造完成(7个builder) - 小健
+- 24ffc2569: dataanalysis_tools builder改造完成(3个builder) - 小健
+- a4f41def9: network/shell/desktop/database builder改造完成 - 小健
+- 46f964117: desktop_gui_tools builder改造完成 - 小健
+- 7e33c82a3: desktop_tools builder改造完成 - 小健
+- 184b5df1c: system_tools builder改造完成 - 小健
+- ed2eba6f4: Phase1工具文件builder改造(shell/code_execution) - 小健
+- e51b72c68: Phase1工具文件builder改造(fundamental/time/timer/win_registry) - 小健
+- dd603fcab: Phase1框架层-工具Observation统一格式 - 小健
 
-### fix: 浠ｇ爜淇(9椤?
-- 08612802e: 闃插尽鎬х紪绋?澧炲姞绫诲瀷瀹夊叏妫€鏌?- 灏忔
-- 5700fefb3: 5椤硅鑼冩牳鏌ヤ慨澶?- metrics key鍚?summary鏍煎紡/success message - 灏忔
-- c4a0eb484: 11涓猼ool鐨別rror message琛ュ厖鍏蜂綋鍘熷洜 - 灏忔
-- 92f738dc1: 11涓猼ool llm_data builder琛ュ叏error鍒嗘敮 - 灏忔
-- 8f742d9c0: 淇閾佽杩濆弽闂(閾佽2+閾佽3) - 灏忓仴
-- 78715ea40: 淇9涓猼ool鍑芥暟鐨勯搧瑙勮繚鍙嶉棶棰?- 灏忓仴
-- 694568586: 鍐呰仈_get_file_encoding鏇夸唬宸插垹闄ょ殑file_helper渚濊禆 - 灏忔
-- 7b1bd2a24: 澶嶆牳淇5涓棶棰?- 灏忓仴
-- 12ae13b7c: desktop_gui_tools 鎻愬彇鐙珛builder鍑芥暟 - 灏忓仴
+### fix: 代码修复(9项)
+- 08612802e: 防御性编程-增加类型安全检查 - 小欧
+- 5700fefb3: 5项规范核查修复 - metrics key名/summary格式/success message - 小欧
+- c4a0eb484: 11个tool的error message补充具体原因 - 小欧
+- 92f738dc1: 11个tool llm_data builder补全error分支 - 小欧
+- 8f742d9c0: 修复铁规违反问题(铁规2+铁规3) - 小健
+- 78715ea40: 修复9个tool函数的铁规违反问题 - 小健
+- 694568586: 内联_get_file_encoding替代已删除的file_helper依赖 - 小欧
+- 7b1bd2a24: 复核修复5个问题 - 小健
+- 12ae13b7c: desktop_gui_tools 提取独立builder函数 - 小健
 
-### refactor: 浠ｇ爜閲嶆瀯(19椤?
-- 6ec4618b2: 娓呯悊鏍圭洰褰晅emp鏂囦欢鍙婃棫E2E娴嬭瘯绗旇 - 灏忔
-- 6c11d2d7d: SRP鎷嗗垎ToolStep涓篈ctionStep+ObservationStep - 灏忓仴
-- 7d4d614d2: 11涓猼ool鐨刲lm_data builder缁熶竴summary鏍煎紡+C4 metrics鑷弿杩?- 灏忔
-- 0d859088b: 11涓猼ool鏂囦欢淇閾佽1/3+tool_zh+data闆堕噸澶?- 灏忔
-- 658ce2315: 66涓猼ool鏂囦欢娣诲姞3鏉￠搧瑙勬敞閲?淇閾佽3杩濊 - 灏忔
-- 1bf15ca8f: 淇R8+閾佽杩濊锛?5涓伐鍏锋枃浠跺悎瑙?- 灏忓仴
-- a92378852: edit_text_file鏀逛负绾痙ict杩斿洖锛宐uild3绉诲埌涓诲嚱鏁?- 灏忔
-- ae06bd76e: 鍒犻櫎toolhelper鐩綍锛屽垱寤簍ool_fc_helper.py - 灏忔
-- 93d2292e3: 鍚堝苟clipboard_read+clipboard_write涓篶lipboard_control - 灏忓仴
-- 5b30b8719: 娓呯悊window_info.py閲嶅浠ｇ爜 - 灏忔
-- 8da5193cb: 鎷嗗垎desktop宸ュ叿涓?6涓嫭绔嬫ā鍧?- 灏忔
-- f5f335fff: 鎷嗗垎timer鍜寃in_registry涓虹嫭绔嬫ā鍧?- 灏忔
-- 13860d6db: 鎷嗗垎dataanalysis_tools.py涓?涓嫭绔嬫ā鍧?- 灏忔
-- c154d4fcb: 鎷嗗垎system_tools.py涓?涓嫭绔嬫ā鍧?- 灏忔
-- 8a46ef6e1: 鎷嗗垎shell_tools.py涓?涓嫭绔嬫ā鍧?- 灏忔
-- 965841b5e: 鎷嗗垎fundamental_tools.py涓?涓嫭绔嬫ā鍧?- 灏忔
-- 03ac08337: 鎷嗗垎network_tools.py涓?涓嫭绔嬫ā鍧?- 灏忔
-- 110d95bfc: 鎷嗗垎document_tools.py涓?涓嫭绔嬫ā鍧?- 灏忔
-- 4ea683ee5: 鎷嗗垎file_tools.py涓虹嫭绔嬪伐鍏锋ā鍧?2涓枃浠?- 灏忔
+### refactor: 代码重构(19项)
+- 6ec4618b2: 清理根目录temp文件及旧E2E测试笔记 - 小欧
+- 6c11d2d7d: SRP拆分ToolStep为ActionStep+ObservationStep - 小健
+- 7d4d614d2: 11个tool的llm_data builder统一summary格式+C4 metrics自描述 - 小欧
+- 0d859088b: 11个tool文件修复铁规1/3+tool_zh+data零重复 - 小欧
+- 658ce2315: 66个tool文件添加3条铁规注释+修复铁规3违规 - 小欧
+- 1bf15ca8f: 修复R8+铁规违规，25个工具文件合规 - 小健
+- a92378852: edit_text_file改为纯dict返回，build3移到主函数 - 小欧
+- ae06bd76e: 删除toolhelper目录，创建tool_fc_helper.py - 小欧
+- 93d2292e3: 合并clipboard_read+clipboard_write为clipboard_control - 小健
+- 5b30b8719: 清理window_info.py重复代码 - 小欧
+- 8da5193cb: 拆分desktop工具为16个独立模块 - 小欧
+- f5f335fff: 拆分timer和win_registry为独立模块 - 小欧
+- 13860d6db: 拆分dataanalysis_tools.py为6个独立模块 - 小欧
+- c154d4fcb: 拆分system_tools.py为4个独立模块 - 小欧
+- 8a46ef6e1: 拆分shell_tools.py为4个独立模块 - 小欧
+- 965841b5e: 拆分fundamental_tools.py为7个独立模块 - 小欧
+- 03ac08337: 拆分network_tools.py为5个独立模块 - 小欧
+- 110d95bfc: 拆分document_tools.py为8个独立模块 - 小欧
+- 4ea683ee5: 拆分file_tools.py为独立工具模块12个文件 - 小欧
 
-### docs: 鏂囨。鏇存柊(25椤?
-- cba8be2fd: P1-01澧炲姞椤圭洰绫诲瀷璇存槑 - 灏忓仴
-- bd1f73078: P0鏍稿績閾捐矾鎵╁睍涓?0涓贩鍚堝绫籧ase - 灏忓仴
-- 53df3a219: E2E娴嬭瘯case鍛藉悕缁熶竴涓篍2E-P*-*鏍煎紡 - 灏忓仴
-- ddab580f5: Phase 2璁捐鏈€缁堢‘璁?v7.1) - 灏忓仴
-- ffe8959b3: 琛ュ厖other_data瀛楁鍒版暟鎹祦鍥惧拰瑙勫垯琛?- 灏忓仴
-- 32c814cde: 鍒犻櫎鍐椾綑瀛楁锛岀鍚圖RY鍘熷垯(v7.0) - 灏忓仴
-- f9aeecc16: 琛ュ厖5.10.7鑺侱B琛╫ther_data瀛楁 - 灏忓仴
-- 55b38e548: 鏂板other_data瀛楁 - 灏忓仴
-- bb74a6dc3: 淇娉ㄩ噴骞惰ˉ鍏呰繑鍥炵粨鏋勮鏄?- 灏忓仴
-- 41317a89b: 鏄庣‘ToolStep涓ょ妯″紡鍖哄埆 - 灏忓仴
-- 2918bc7db: 淇Phase 2/3璁捐涓€鑷存€ч棶棰?- 灏忓仴
-- 5e263efa9: 宸ュ叿Observation缁熶竴鏍煎紡-铻嶅悎鏂规 Phase 2/3鎷嗗垎+4澶勮璁￠敊璇慨澶?- 灏忔
-- a07ffcb99: 鏄庣‘涓嶅仛鍏煎锛屾棫DB鏁版嵁鐩存帴鍒犻櫎 - 灏忓仴
-- 837ffc6e0: 鏂板DB琛ㄥ瓧娈垫洿鏂拌鏄?- 灏忓仴
-- bb89aeec2: 鏄庣‘DB瀛樺偍瑙勫垯鍜孉ction涓嶅瓨data - 灏忓仴
-- c0d8472c1: Phase 2璁捐鏂囨。淇鍜岃ˉ鍏?- 灏忓仴
-- 8cbc0c535: 宸ュ叿Observation缁熶竴鏍煎紡鏂囨。鏇存柊 - 灏忔
-- 22d3b55e3: tool_fc_helper.py娣诲姞閾佽娉ㄩ噴 - 灏忓仴
-- 2f3795dcf: 25涓猼ool鏂囦欢娣诲姞閾佽娉ㄩ噴 - 灏忓仴
-- 9780512da: 鏇存柊AGENTS.md鍜屽伐鍏稯bservation缁熶竴鏍煎紡鏂囨。 - 灏忔
-- 98340ce2a: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡璁捐鏂囨。v6.0 - 灏忓仴
-- d5bb33605: Observation璁捐鏂囨。v6.0鍏ㄩ噺鏇存柊 - 灏忓仴
-- 34fab2f7c: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡-铻嶅悎鏂规 - 灏忔
-- 1f97388b8: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡璁捐鏂囨。 - 灏忔
-- 509cdcf34: Observation璁捐鏂囨。v5.0 - 灏忓仴
+### docs: 文档更新(25项)
+- cba8be2fd: P1-01增加项目类型说明 - 小健
+- bd1f73078: P0核心链路扩展为10个混合多类case - 小健
+- 53df3a219: E2E测试case命名统一为E2E-P*-*格式 - 小健
+- ddab580f5: Phase 2设计最终确认(v7.1) - 小健
+- ffe8959b3: 补充other_data字段到数据流图和规则表 - 小健
+- 32c814cde: 删除冗余字段，符合DRY原则(v7.0) - 小健
+- f9aeecc16: 补充5.10.7节DB表other_data字段 - 小健
+- 55b38e548: 新增other_data字段 - 小健
+- bb74a6dc3: 修正注释并补充返回结构说明 - 小健
+- 41317a89b: 明确ToolStep两种模式区别 - 小健
+- 2918bc7db: 修正Phase 2/3设计一致性问题 - 小健
+- 5e263efa9: 工具Observation统一格式-融合方案 Phase 2/3拆分+4处设计错误修复 - 小欧
+- a07ffcb99: 明确不做兼容，旧DB数据直接删除 - 小健
+- 837ffc6e0: 新增DB表字段更新说明 - 小健
+- bb89aeec2: 明确DB存储规则和Action不存data - 小健
+- c0d8472c1: Phase 2设计文档修正和补充 - 小健
+- 8cbc0c535: 工具Observation统一格式文档更新 - 小欧
+- 22d3b55e3: tool_fc_helper.py添加铁规注释 - 小健
+- 2f3795dcf: 25个tool文件添加铁规注释 - 小健
+- 9780512da: 更新AGENTS.md和工具Observation统一格式文档 - 小欧
+- 98340ce2a: 更新工具Observation统一格式设计文档v6.0 - 小健
+- d5bb33605: Observation设计文档v6.0全量更新 - 小健
+- 34fab2f7c: 更新工具Observation统一格式-融合方案 - 小欧
+- 1f97388b8: 更新工具Observation统一格式设计文档 - 小欧
+- 509cdcf34: Observation设计文档v5.0 - 小健
 
-### test: 娴嬭瘯(2椤?
-- 8963fcd51: test: 鏂板file宸ュ叿妯″潡鍏ㄩ潰娴嬭瘯(200涓祴璇曠敤渚? - 灏忔
-- 446cd55a8: Revert "test: 鏂板file宸ュ叿妯″潡鍏ㄩ潰娴嬭瘯" - 灏忔
+### test: 测试(2项)
+- 8963fcd51: test: 新增file工具模块全面测试(200个测试用例) - 小欧
+- 446cd55a8: Revert "test: 新增file工具模块全面测试" - 小欧
 
-### 鍚堣
-- feat: 14椤?| fix: 9椤?| refactor: 19椤?| docs: 25椤?| test: 2椤?= 鍏?9椤?
+### 合计
+- feat: 14项 | fix: 9项 | refactor: 19项 | docs: 25项 | test: 2项 = 共69项
+
 ---
 
 v0.16.11
 
-鏇存柊鏃堕棿: 2026-06-20 23:51:06
+更新时间: 2026-06-20 23:51:06
 
-## v0.16.10鈫抳0.16.11 鍙樻洿姹囨€?- 灏忔-2026-06-20
+## v0.16.10→v0.16.11 变更汇总 - 小欧-2026-06-20
 
-### feat: 鏂板姛鑳?2椤?
-- be2891ec9: 鍏ㄩ噺琛ラ綈21澶刡uild_success鐨刲lm_data - 灏忓仴-2026-06-20
-- f770fe69f: document_tools 鍔?xls鏀寔銆亁lrd渚濊禆绠＄悊銆乸andoc閿欒娑堟伅涓枃鍖?- 灏忔矆-2026-06-19
+### feat: 新功能(2项)
+- be2891ec9: 全量补齐21处build_success的llm_data - 小健-2026-06-20
+- f770fe69f: document_tools 加.xls支持、xlrd依赖管理、pandoc错误消息中文化 - 小沈-2026-06-19
 
-### fix: 浠ｇ爜淇(9椤?
-- 5820455ad: tool_response.py鏇存柊 - 鍖椾含鑰侀檲-2026-06-20
-- b8c3b9c89: observation涓嶅啀涓㈠純data瀛楁,llm_data+data閮界粰LLM - 鍖椾含鑰侀檲-2026-06-20
-- 1c253faca: 淇LLM observation 10涓狿1闂 - 灏忔-2026-06-20
-- 768604a07: 鏇存柊宸ュ叿鍝嶅簲澶勭悊 - 鍖椾含鑰侀檲-2026-06-20
-- 2de440f80: 鏂板coerce_json闃插尽-12涓伐鍏峰嚱鏁?5涓弬鏁伴槻姝LM浼燡SON瀛楃涓插穿婧?- 灏忓仴-2026-06-20
-- 20f29ca7a: document_tools 8椤逛唬鐮佽川閲忎慨澶?CSV瀛楁缁熶竴/甯搁噺瀵煎叆褰掍綅/Schema SRP/瑁竐xcept/DRY/绌烘鏌?llm鎴柇) - 灏忓仴-2026-06-20
-- 01f1daabe: document_tools/schema 澧炲己paragraphs/table_data/slides鍙傛暟鐨剆tr->list闃插尽 - 灏忔-2026-06-19
-- 3f658d29c: filter_data绌哄弬鏁版椂琛ュ厖缂哄け鍙傛暟鍚?閿欒鎻愮ず - 灏忔-2026-06-19
-- 20709f4e4: Reapply str->list闃插尽(鍥炴粴鎭㈠) - 灏忔-2026-06-19
+### fix: 代码修复(9项)
+- 5820455ad: tool_response.py更新 - 北京老陈-2026-06-20
+- b8c3b9c89: observation不再丢弃data字段,llm_data+data都给LLM - 北京老陈-2026-06-20
+- 1c253faca: 修复LLM observation 10个P1问题 - 小欧-2026-06-20
+- 768604a07: 更新工具响应处理 - 北京老陈-2026-06-20
+- 2de440f80: 新增coerce_json防御-12个工具函数15个参数防止LLM传JSON字符串崩溃 - 小健-2026-06-20
+- 20f29ca7a: document_tools 8项代码质量修复(CSV字段统一/常量导入归位/Schema SRP/裸except/DRY/空检查/llm截断) - 小健-2026-06-20
+- 01f1daabe: document_tools/schema 增强paragraphs/table_data/slides参数的str->list防御 - 小欧-2026-06-19
+- 3f658d29c: filter_data空参数时补充缺失参数名+错误提示 - 小欧-2026-06-19
+- 20709f4e4: Reapply str->list防御(回滚恢复) - 小欧-2026-06-19
 
-### refactor: 浠ｇ爜閲嶆瀯(6椤?
-- b905cd7c1: observation鏍煎紡鍖栨秷闄RY閲嶅,鎻愬彇_format_summary_parts澶嶇敤 - 鍖椾含鑰侀檲-2026-06-20
-- 4e834c350: 娓呯悊5涓浠ｇ爜/椋庢牸闂 - 灏忔-2026-06-20
-- bc45dc94b: 宸ュ叿鍙傛暟瀹¤绮剧畝-鍒犻櫎6涓伐鍏?绮剧畝39涓猄chema鍙傛暟+淇3涓鏌ラ棶棰?- 灏忓仴-2026-06-20
-- 06e6010da: fundamental+system schema鍙傛暟鎻忚堪绠€鍖?- 灏忔-2026-06-20
-- c0a85da4e: document_tools 娓呯悊姝讳唬鐮?缁熶竴schema鎻忚堪 - 灏忔-2026-06-19
-- cf2ee5828: document_register write宸ュ叿鎻忚堪鍘婚噸(鍙傛暟缁嗚妭褰抯chema) - 灏忔矆-2026-06-19
+### refactor: 代码重构(6项)
+- b905cd7c1: observation格式化消除DRY重复,提取_format_summary_parts复用 - 北京老陈-2026-06-20
+- 4e834c350: 清理5个死代码/风格问题 - 小欧-2026-06-20
+- bc45dc94b: 工具参数审计精简-删除6个工具+精简39个Schema参数+修复3个审查问题 - 小健-2026-06-20
+- 06e6010da: fundamental+system schema参数描述简化 - 小欧-2026-06-20
+- c0a85da4e: document_tools 清理死代码+统一schema描述 - 小欧-2026-06-19
+- cf2ee5828: document_register write工具描述去重(参数细节归schema) - 小沈-2026-06-19
 
-### docs: 鏂囨。鏇存柊(21椤?
-- 3289830d5: 鏇存柊宸ュ叿Observation鏍煎紡璁捐鏂囨。+鏂板浼氳瘽璁板綍 - 鍖椾含鑰侀檲-2026-06-20
-- 33eb7f27e: 绗?绔犲疄鏂芥柟妗堣ˉ鍏呭垎鎵硅鍒?娓呮煡姝ラ+tool_response鏂板builder鏈哄埗 - 灏忔-2026-06-20
-- 225e09ace: 3閬嶅鏌ヤ慨澶?澶勪笉涓€鑷?5.8/2.2/5.9绔犺妭) - 鍖椾含鑰侀檲-2026-06-20
-- a386ddc88: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡璁捐鏂囨。 - 鍖椾含鑰侀檲-2026-06-20
-- 6f28c8ff8: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡璁捐铻嶅悎鏂规v4.0 - 灏忔-2026-06-20
-- 7b816eb0c: 宸ュ叿Observation铻嶅悎鏂规 build_result绛惧悕鍘绘帀* - 灏忔-2026-06-20
-- d31c2ebe9: 鏂板宸ュ叿缁撴灉缁橪LM鏁版嵁缁熶竴鏍煎紡璁捐鏂规 - 鍖椾含鑰侀檲-2026-06-20
-- 63d14445b: 5.6鑺傝ˉ鍏卋uild_success/error/warning娴佺▼浣嶇疆 - 鍖椾含鑰侀檲-2026-06-20
-- defa4dd79: 宸ュ叿Observation缁熶竴鏍煎紡璁捐鏂囨。v2.0鈫抳2.1 - 鍖椾含鑰侀檲-2026-06-20
-- b723bc729: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡璁捐鏂囨。 - 鍖椾含鑰侀檲-2026-06-20
-- f0b0e5cec: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡璁捐鏂囨。 - 鍖椾含鑰侀檲-2026-06-20
-- e9807ffdb: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡璁捐鏂囨。 - 鍖椾含鑰侀檲-2026-06-20
-- 4bb769cba: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡璁捐缁煎悎鏂规 - 鍖椾含鑰侀檲-2026-06-20
-- 4bd870080: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡璁捐缁煎悎鏂规 - 鍖椾含鑰侀檲-2026-06-20
-- 477e05600: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡璁捐缁煎悎鏂规 - 鍖椾含鑰侀檲-2026-06-20
-- 5b0ea177c: 鏇存柊宸ュ叿Observation缁熶竴鏍煎紡璁捐缁煎悎鏂规 - 鍖椾含鑰侀檲-2026-06-20
-- aec6f9f7e: 鏂板宸ュ叿Observation缁熶竴鏍煎紡璁捐缁煎悎鏂规 - 鍖椾含鑰侀檲-2026-06-20
-- f9d71a72f: 鏂板LLM-observation缁熶竴鏍煎紡璁捐鏂囨。 - 鍖椾含鑰侀檲-2026-06-20
-- 5e8370d6b: E2E娴嬭瘯璁板綍+Excel鎶ュ憡鐢熸垚鑴氭湰 - 灏忔-2026-06-20
-- d49c5be43: 鏇存柊宸ュ叿鍙傛暟瀹¤鎶ュ憡-琛ュ厖瀹屾暣79涓猄chema鍙傛暟琛?- 灏忔-2026-06-20
-- aac629be0: 鏂板宸ュ叿鍙傛暟瀹¤鎶ュ憡 - 灏忔-2026-06-20
+### docs: 文档更新(21项)
+- 3289830d5: 更新工具Observation格式设计文档+新增会话记录 - 北京老陈-2026-06-20
+- 33eb7f27e: 第9章实施方案补充分批计划+清查步骤+tool_response新增builder机制 - 小欧-2026-06-20
+- 225e09ace: 3遍复查修复7处不一致(5.8/2.2/5.9章节) - 北京老陈-2026-06-20
+- a386ddc88: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- 6f28c8ff8: 更新工具Observation统一格式设计融合方案v4.0 - 小欧-2026-06-20
+- 7b816eb0c: 工具Observation融合方案 build_result签名去掉* - 小欧-2026-06-20
+- d31c2ebe9: 新增工具结果给LLM数据统一格式设计方案 - 北京老陈-2026-06-20
+- 63d14445b: 5.6节补充build_success/error/warning流程位置 - 北京老陈-2026-06-20
+- defa4dd79: 工具Observation统一格式设计文档v2.0→v2.1 - 北京老陈-2026-06-20
+- b723bc729: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- f0b0e5cec: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- e9807ffdb: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- 4bb769cba: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- 4bd870080: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- 477e05600: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- 5b0ea177c: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- aec6f9f7e: 新增工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- f9d71a72f: 新增LLM-observation统一格式设计文档 - 北京老陈-2026-06-20
+- 5e8370d6b: E2E测试记录+Excel报告生成脚本 - 小欧-2026-06-20
+- d49c5be43: 更新工具参数审计报告-补充完整79个Schema参数表 - 小欧-2026-06-20
+- aac629be0: 新增工具参数审计报告 - 小欧-2026-06-20
 
-### 鍚堣
-- feat: 2椤?| fix: 9椤?| refactor: 6椤?| docs: 21椤?= 鍏?8椤?
+### 合计
+- feat: 2项 | fix: 9项 | refactor: 6项 | docs: 21项 = 共38项
+
 ---
 
 v0.16.10
 
-鏇存柊鏃堕棿: 2026-06-19 14:20:28
+更新时间: 2026-06-19 14:20:28
 
-## v0.16.9鈫抳0.16.10 鍙樻洿姹囨€?- 鍖椾含鑰侀檲-2026-06-19
+## v0.16.9→v0.16.10 变更汇总 - 北京老陈-2026-06-19
 
-### feat: 鏂板姛鑳?3椤?
-- 17afd3d96: prompt_logger璁板綍瀹屾暣宸ュ叿Schema+llm_caller浼犻€抰ools鏁扮粍 - 灏忔
-- 5fef592c9: compress_files AES-256鍔犲瘑 + 榛樿瀵嗙爜aes-256 - 灏忓仴
-- c340a98f6: chat_stream+e2e_helpers浠ｇ爜鏇存柊+鍩虹娴嬭瘯鑴氭湰 - 鍖椾含鑰侀檲
+### feat: 新功能(3项)
+- 17afd3d96: prompt_logger记录完整工具Schema+llm_caller传递tools数组 - 小欧
+- 5fef592c9: compress_files AES-256加密 + 默认密码aes-256 - 小健
+- c340a98f6: chat_stream+e2e_helpers代码更新+基础测试脚本 - 北京老陈
 
-### fix: 浠ｇ爜淇(6椤?
-- 718355ae1: E2E娴嬭瘯闂淇-Shell璇硶/鍘嬬缉鍔犲瘑/閫氶厤绗?SSE缁堟€?楠岃瘉妗嗘灦 - 灏忓仴
-- 587e70232: prompt_logger璁板綍宸ュ叿Schema鎻忚堪(parameters.description),淇閬楁紡schema docstring - 灏忔
-- 2cf1ddb28: shell宸ュ叿E4/E6浠ｇ爜鍙奓LM淇℃伅瀹屽杽 - 灏忔
-- 9ccc8deb5: shell宸ュ叿3涓緭鍑哄畬鏁存€ч棶棰?- 灏忔
-- 5f07102ee: 琛ュ厖鎵€鏈夊伐鍏穊uild_error鐨刣ata鍙傛暟 - 灏忔
-- fba9904cc: error observation缂哄けdata/llm_data瀵艰嚧LLM鐩茬洰閲嶈瘯 - 灏忔
+### fix: 代码修复(6项)
+- 718355ae1: E2E测试问题修复-Shell语法/压缩加密/通配符/SSE终态/验证框架 - 小健
+- 587e70232: prompt_logger记录工具Schema描述(parameters.description),修复遗漏schema docstring - 小欧
+- 2cf1ddb28: shell工具E4/E6代码及LLM信息完善 - 小欧
+- 9ccc8deb5: shell工具3个输出完整性问题 - 小欧
+- 5f07102ee: 补充所有工具build_error的data参数 - 小欧
+- fba9904cc: error observation缺失data/llm_data导致LLM盲目重试 - 小欧
 
-### refactor: 浠ｇ爜閲嶆瀯(9椤?
-- 3c96bf424: 鎶藉彇_has_wildcard鍏敤浠ユ秷闄ゅ帇缂╂ā鍧桪RY杩濆弽+鎻愬彇_write_zip_entries娑堥櫎for寰幆閲嶅 - 灏忔
-- 6a1afcd09: 绮剧畝宸ュ叿瀹炵幇浠ｇ爜 - 灏忔
-- 2c11f9720: file_tools.py content绫诲瀷鑷姩杞琂SON+e2e_helpers澧炲己+鎿嶄綔鎵嬪唽P4绉诲叆4.4 - chendyg
-- 47ede9273: 绯荤粺Prompt缁撴瀯閲嶆暣+3澶勬枃瀛椾慨姝?- chendyg
-- e235c41df: 绯荤粺Prompt宸ュ叿澶辫触鎭㈠瑙勫垯+write_text_file/shell鎻忚堪浼樺寲 - chendyg
-- 26aa7e942: file_tools.py _precise_replace_in_file绉婚櫎self鍙傛暟+E2E鎿嶄綔鎵嬪唽鏂板浠ｇ爜閿欒妫€鏌ラ獙璇侀」 - chendyg
-- 40bca7b85: write_text_file鎻愬彇_do_write鍐呴儴鍑芥暟绠€鍖朼syncio.to_thread璋冪敤 - chendyg
-- f1804dbb2: 浼樺寲宸ュ叿鎻忚堪+绯荤粺Prompt+淇dataanalysis_schema.__all__ - 灏忔
-- e2c29a4d6: E2E娴嬭瘯璁板綍+鎿嶄綔鎵嬪唽鏇存柊 - 鍖椾含鑰侀檲
+### refactor: 代码重构(9项)
+- 3c96bf424: 抽取_has_wildcard公用以消除压缩模块DRY违反+提取_write_zip_entries消除for循环重复 - 小欧
+- 6a1afcd09: 精简工具实现代码 - 小欧
+- 2c11f9720: file_tools.py content类型自动转JSON+e2e_helpers增强+操作手册P4移入4.4 - chendyg
+- 47ede9273: 系统Prompt结构重整+3处文字修正 - chendyg
+- e235c41df: 系统Prompt工具失败恢复规则+write_text_file/shell描述优化 - chendyg
+- 26aa7e942: file_tools.py _precise_replace_in_file移除self参数+E2E操作手册新增代码错误检查验证项 - chendyg
+- 40bca7b85: write_text_file提取_do_write内部函数简化asyncio.to_thread调用 - chendyg
+- f1804dbb2: 优化工具描述+系统Prompt+修复dataanalysis_schema.__all__ - 小欧
+- e2c29a4d6: E2E测试记录+操作手册更新 - 北京老陈
 
-### docs: 鏂囨。鏇存柊(2椤?
-- 9740c18e2: 鏁寸悊notes鐩綍锛屾棫娴嬭瘯璁板綍绉诲叆doc-娴嬭瘯涓庡鏌?- 灏忔
-- 33b58fe02: 鍒犻櫎notes涓嬪叏閮‥2E娴嬭瘯璁板綍(62涓枃浠? - 鍖椾含鑰侀檲
+### docs: 文档更新(2项)
+- 9740c18e2: 整理notes目录，旧测试记录移入doc-测试与审查 - 小欧
+- 33b58fe02: 删除notes下全部E2E测试记录(62个文件) - 北京老陈
 
-### fix: 绯荤粺娉ㄥ唽(1椤?
-- 6b53d20b3: system_register.py 缁熶竴娉ㄥ唽鏃ュ織绾у埆涓篸ebug - 灏忔
+### fix: 系统注册(1项)
+- 6b53d20b3: system_register.py 统一注册日志级别为debug - 小欧
 
 ---
 
 v0.16.9
 
-鏇存柊鏃堕棿: 2026-06-18 20:30:00
+更新时间: 2026-06-18 20:30:00
 
-## v0.16.8鈫抳0.16.9 鍙樻洿姹囨€?- 灏忓仴-2026-06-18
+## v0.16.8→v0.16.9 变更汇总 - 小健-2026-06-18
 
-### refactor: 浠ｇ爜閲嶆瀯(2椤?
-- 0e61fb59d: file_tools.py绉婚櫎FileTools绫绘敼涓哄嚱鏁板紡璁捐+file_register.py鐩存帴娉ㄥ唽鍑芥暟 - 灏忓仴
-- 3ff538ed5: file_tools.py閲嶆瀯浼樺寲(鍙傛暟绠€鍖?鎬ц兘鎻愬崌)+e2e_helpers.py鏀硅繘+娴嬭瘯璁板綍鏇存柊 - 灏忓仴
+### refactor: 代码重构(2项)
+- 0e61fb59d: file_tools.py移除FileTools类改为函数式设计+file_register.py直接注册函数 - 小健
+- 3ff538ed5: file_tools.py重构优化(参数简化/性能提升)+e2e_helpers.py改进+测试记录更新 - 小健
 
-### feat: 鏂板姛鑳?1椤?
-- bf3175768: file_tools.py鍙傛暟绠€鍖?e2e_helpers.py瓒呮椂淇濇姢鏈哄埗(atexit/signal)+pytest.ini瓒呮椂閰嶇疆 - 灏忓仴
+### feat: 新功能(1项)
+- bf3175768: file_tools.py参数简化+e2e_helpers.py超时保护机制(atexit/signal)+pytest.ini超时配置 - 小健
 
-### fix: 浠ｇ爜淇(3椤?
-- d6a66b6af: desktop_register.py淇pywin32渚濊禆(pip鍖呭悕鈫抜mport鍚峸in32gui) - 灏忓仴
-- 138ee5638: document_register.py淇pip鍖呭悕涓巌mport鍚嶄笉涓€鑷?python-docx鈫抎ocx, pywin32鈫抴in32com) - 灏忓仴
-- 4a7088484: main.py绉婚櫎db.init()鐨刟wait(鍚屾璋冪敤) - 灏忓仴
+### fix: 代码修复(3项)
+- d6a66b6af: desktop_register.py修正pywin32依赖(pip包名→import名win32gui) - 小健
+- 138ee5638: document_register.py修正pip包名与import名不一致(python-docx→docx, pywin32→win32com) - 小健
+- 4a7088484: main.py移除db.init()的await(同步调用) - 小健
 
-### docs: 鏂囨。鏇存柊(1椤?
-- 86088a9a8: 鎵嬪唽v2.3閲嶆瀯+鏍稿績鍑芥暟鍗囩骇+娴嬭瘯璁板綍 - 鍖椾含鑰侀檲
+### docs: 文档更新(1项)
+- 86088a9a8: 手册v2.3重构+核心函数升级+测试记录 - 北京老陈
 
 ---
 
 v0.16.8
 
-鏇存柊鏃堕棿: 2026-06-18 16:10:00
+更新时间: 2026-06-18 16:10:00
 
-## v0.16.7鈫抳0.16.8 鍙樻洿姹囨€?- 灏忔-2026-06-18
+## v0.16.7→v0.16.8 变更汇总 - 小欧-2026-06-18
 
-### refactor: 10澶у師鍒欎唬鐮佷紭鍖?13椤?
-- 67c832382: P1-1 operation_commands.py SRP鎷嗗垎(recorder/executor/rollback/cleanup) - 灏忔
-- 0c26f2239: P1-2 database.py SRP鎷嗗垎(db_initializer/database.py绮剧畝涓鸿繛鎺ョ鐞? - 灏忔
-- c54cd40df: P1-4 _build_step_dict閲嶅鎻愬彇鍒皌ask_utils.py - 灏忔
-- 9cd3835c5: P1-5 provider杩囨护閫昏緫閲嶅5娆℃彁鍙杋s_provider_metadata_field鍒癬helpers.py - 灏忔
-- 0898cc29a: P1-6 CRUD妯″紡閲嶅鎻愬彇load_config/save_config鍒癬helpers.py - 灏忔
-- c82064b8e: P2-7/8 sankey/mermaid DRY淇(浣跨敤common.save_json_file/save_text_file) - 灏忔
-- 8aa1e3ae3: FILE_TOOLS纭紪鐮佺Щ鍒皌ool_constants.py(FILE_OPERATION_TOOLS) - 灏忔
-- 3149a8521: document鐩綍鏁村悎+system_tools鍒犻櫎_log_message - 灏忔
-- 44b8464fb: KISS-DIRECT閫忎紶鍑芥暟鍐呰仈(7鏂囦欢)+瀹℃煡鎶ュ憡鏇存柊 - 灏忔
-- 4b271be48: DRY淇+绫诲瀷瀹夊叏+鍩虹被property缁熶竴(5鏂囦欢)+瀹℃煡鎶ュ憡鏇存柊 - 灏忔
-- e4ea3847b: DRY鍒犻櫎tool_categories.json鏀逛负浠巖egistry鑾峰彇 - 灏忔
-- c3efd5aaf: shell鍒犻櫎涓や釜鍖呰鍣╕AGNI(shell_register/shell_tools) - 灏忔
-- 053856f0d: get_system_info/send_notification绉昏嚦FUNDAMENTAL鍒嗙被+渚濊禆閰嶇疆 - 灏忔
-- ba68abf69: 宸ュ叿鎻忚堪浼樺寲-澶歛ction宸ュ叿schema澧炲己+register绠€鍖?6涓伐鍏? - 灏忓仴
+### refactor: 10大原则代码优化(13项)
+- 67c832382: P1-1 operation_commands.py SRP拆分(recorder/executor/rollback/cleanup) - 小欧
+- 0c26f2239: P1-2 database.py SRP拆分(db_initializer/database.py精简为连接管理) - 小欧
+- c54cd40df: P1-4 _build_step_dict重复提取到task_utils.py - 小欧
+- 9cd3835c5: P1-5 provider过滤逻辑重复5次提取is_provider_metadata_field到_helpers.py - 小欧
+- 0898cc29a: P1-6 CRUD模式重复提取load_config/save_config到_helpers.py - 小欧
+- c82064b8e: P2-7/8 sankey/mermaid DRY修复(使用common.save_json_file/save_text_file) - 小欧
+- 8aa1e3ae3: FILE_TOOLS硬编码移到tool_constants.py(FILE_OPERATION_TOOLS) - 小欧
+- 3149a8521: document目录整合+system_tools删除_log_message - 小欧
+- 44b8464fb: KISS-DIRECT透传函数内联(7文件)+审查报告更新 - 小欧
+- 4b271be48: DRY修复+类型安全+基类property统一(5文件)+审查报告更新 - 小欧
+- e4ea3847b: DRY删除tool_categories.json改为从registry获取 - 小欧
+- c3efd5aaf: shell删除两个包装器YAGNI(shell_register/shell_tools) - 小欧
+- 053856f0d: get_system_info/send_notification移至FUNDAMENTAL分类+依赖配置 - 小欧
+- ba68abf69: 工具描述优化-多action工具schema增强+register简化(6个工具) - 小健
 
-### feat: 鏂板姛鑳?2椤?
-- 521b2055a: 宸ュ叿渚濊禆绠＄悊绯荤粺(registry娣诲姞dependencies鍙傛暟+dependency.py鐗堟湰鏀寔+鍚剅egister閰嶇疆渚濊禆) - 灏忔
-- bfc937cc0: generate_chart鏀寔鏂囦欢璺緞杈撳叆(xlsx/csv)+output_path澧炲己 - 灏忔
+### feat: 新功能(2项)
+- 521b2055a: 工具依赖管理系统(registry添加dependencies参数+dependency.py版本支持+各register配置依赖) - 小欧
+- bfc937cc0: generate_chart支持文件路径输入(xlsx/csv)+output_path增强 - 小欧
 
-### fix: 浠ｇ爜淇(8椤?
-- 71b6ffd57: database_tools.py鍒犻櫎榛樿DB璺緞(security:绂佹榛樿杩炴帴搴旂敤鏁版嵁搴? - 灏忔矆
-- 23faa0508: dataanalysis_schema.py db_path鏍囨敞(蹇呭～) - 灏忔矆
-- c0557e112: document_schema.py db_path鏍囨敞(蹇呭～) - 灏忔矆
-- 4a75006f3: dataanalysis_register.py淇SQL绀轰緥鍙傛暟(db_path蹇呭～,鎻忚堪鏇存柊) - 灏忔矆
-- f5a160fef: desktop_register.py绐楀彛宸ュ叿渚濊禆pygetwindow鈫抪ywin32, screen_capture杩藉姞mss - 灏忓仴
-- 0dd81ce8e: document_register.py娣诲姞pywin32渚濊禆(杞崲鍏煎),淇.doc/.xls鍏煎鎻忚堪 - 灏忓仴
-- 6ffb9e08c: fundamental_register.py绠€鍖杝end_notification渚濊禆鏍煎紡,get_system_info鏍囨敞psutil - 灏忓仴
-- 3f240c5f2: timer_register.py鍒犻櫎杩囨湡娉ㄩ噴(httpx鐗堟湰閿佸畾宸插湪dependency.py缁熶竴绠＄悊) - 灏忓仴
+### fix: 代码修复(8项)
+- 71b6ffd57: database_tools.py删除默认DB路径(security:禁止默认连接应用数据库) - 小沈
+- 23faa0508: dataanalysis_schema.py db_path标注(必填) - 小沈
+- c0557e112: document_schema.py db_path标注(必填) - 小沈
+- 4a75006f3: dataanalysis_register.py修正SQL示例参数(db_path必填,描述更新) - 小沈
+- f5a160fef: desktop_register.py窗口工具依赖pygetwindow→pywin32, screen_capture追加mss - 小健
+- 0dd81ce8e: document_register.py添加pywin32依赖(转换兼容),修正.doc/.xls兼容描述 - 小健
+- 6ffb9e08c: fundamental_register.py简化send_notification依赖格式,get_system_info标注psutil - 小健
+- 3f240c5f2: timer_register.py删除过期注释(httpx版本锁定已在dependency.py统一管理) - 小健
 
-### docs: 鏂囨。鏇存柊(11椤?
-- 927f156e2: 10鍘熷垯鍒嗘瀽鎶ュ憡+ai_config/sessions浠ｇ爜璇勪及鎶ュ憡 - 灏忔
-- 8a9bfd511: 10鍘熷垯瀹℃煡鎶ュ憡鏍囨敞宸插鐞嗛」(4.4/5.4/5.5/P0) - 灏忔
-- dfcd304f6: 绉诲姩绯荤粺Tool鎸夊垎绫诲垎鏋愭姤鍛婂埌doc-浼樺寲鐩綍 - 灏忔
-- e1dda3b81: 鏇存柊娉ㄩ噴(register/inject姒傚康鍖哄垎+鍒犻櫎tool_executor璇硶閿欒) - 灏忔
-- 7f6763d3a: 鏇存柊绯荤粺Tool鎸夊垎绫诲垎鏋愭姤鍛?E2E娴嬭瘯璁板綍 - 灏忔
-- 599f044b6: 娣诲姞Schema Docstring瑙勮寖+澧炲己QueryCalendarInput/Desktop妯″紡璇存槑 - 灏忔
-- 6ba8feccc: 宸ュ叿FC璋冪敤娑堟伅缁勮娴佺▼璇存槑鏇存柊(閫氱煡鎸囦护/鑷姩鍘婚噸/瀛愬弬鏁? - 灏忔
-- 1892a4fed: 绯荤粺Tool鎸夊垎绫诲垎鏋愭姤鍛婃洿鏂拌嚦v2.3(宸ュ叿杩佺Щ+鍒犻櫎鍖呰鍣?80鈫?7) - 灏忔
-- baabc2ccf: 鍏ㄩ摼璺疎2E闆嗘垚娴嬭瘯-鎿嶄綔鎵嬪唽P3/P4閲嶆帓鑷虫渶浣庝紭鍏堢骇+绔犺妭鍘婚噸 - 灏忓仴
-- 97e79e750: TOOL_CHECK_REPORT.md鏂板Tool鎻忚堪涓庡弬鏁版鏌ユ姤鍛?77宸ュ叿10鍒嗙被) - 灏忓仴
-- 90b19967d: 鍏ㄩ摼璺疎2E闆嗘垚娴嬭瘯-鎿嶄綔鎵嬪唽P1/P2鏀逛负澶氬伐鍏风湡瀹炲伐浣滃満鏅?5+4鍦烘櫙瑕嗙洊24宸ュ叿) - 灏忓仴
-- a05226bfe: E2E鎿嶄綔鎵嬪唽鍓嶇疆鍑嗗澧炲己+P3澶氬伐鍏峰満鏅敼閫?19宸ュ叿5鍦烘櫙) - 灏忓仴
+### docs: 文档更新(11项)
+- 927f156e2: 10原则分析报告+ai_config/sessions代码评估报告 - 小欧
+- 8a9bfd511: 10原则审查报告标注已处理项(4.4/5.4/5.5/P0) - 小欧
+- dfcd304f6: 移动系统Tool按分类分析报告到doc-优化目录 - 小欧
+- e1dda3b81: 更新注释(register/inject概念区分+删除tool_executor语法错误) - 小欧
+- 7f6763d3a: 更新系统Tool按分类分析报告+E2E测试记录 - 小欧
+- 599f044b6: 添加Schema Docstring规范+增强QueryCalendarInput/Desktop模式说明 - 小欧
+- 6ba8feccc: 工具FC调用消息组装流程说明更新(通知指令/自动去重/子参数) - 小欧
+- 1892a4fed: 系统Tool按分类分析报告更新至v2.3(工具迁移+删除包装器,80→77) - 小欧
+- baabc2ccf: 全链路E2E集成测试-操作手册P3/P4重排至最低优先级+章节去重 - 小健
+- 97e79e750: TOOL_CHECK_REPORT.md新增Tool描述与参数检查报告(77工具10分类) - 小健
+- 90b19967d: 全链路E2E集成测试-操作手册P1/P2改为多工具真实工作场景(5+4场景覆盖24工具) - 小健
+- a05226bfe: E2E操作手册前置准备增强+P3多工具场景改造(19工具5场景) - 小健
 
-### test: 娴嬭瘯淇(6椤?
-- aa69b5769: 淇娴嬭瘯(is_done鏀逛负property/database/db_initializer瀵煎叆/react_cycle call_llm mock) - 灏忔
-- e197d914f: e2e_helpers.py娣诲姞error_info鍙傛暟澧炲己澶辫触璇︽儏璁板綍(v1.9) - 灏忓仴
-- f92f904f4: test_e2e_p0_01淇import璺緞+error_info寮傚父璇︽儏璺熻釜 - 灏忓仴
-- ae71810ce: test_e2e_p0_02淇import璺緞+error_info寮傚父璇︽儏璺熻釜 - 灏忓仴
-- aa3e10175: test_e2e_p0_03淇import璺緞+error_info寮傚父璇︽儏璺熻釜 - 灏忓仴
-- d53466adf: test_e2e_p0_04淇import璺緞+error_info寮傚父璇︽儏璺熻釜 - 灏忓仴
+### test: 测试修复(6项)
+- aa69b5769: 修复测试(is_done改为property/database/db_initializer导入/react_cycle call_llm mock) - 小欧
+- e197d914f: e2e_helpers.py添加error_info参数增强失败详情记录(v1.9) - 小健
+- f92f904f4: test_e2e_p0_01修正import路径+error_info异常详情跟踪 - 小健
+- ae71810ce: test_e2e_p0_02修正import路径+error_info异常详情跟踪 - 小健
+- aa3e10175: test_e2e_p0_03修正import路径+error_info异常详情跟踪 - 小健
+- d53466adf: test_e2e_p0_04修正import路径+error_info异常详情跟踪 - 小健
 
-### 鍚堣
-- refactor: 14椤?| feat: 2椤?| fix: 8椤?| docs: 12椤?| test: 6椤?= 鍏?2椤?
+### 合计
+- refactor: 14项 | feat: 2项 | fix: 8项 | docs: 12项 | test: 6项 = 共42项
+
 ---
 
 v0.16.7
 
-鏇存柊鏃堕棿: 2026-06-18 08:49:01
+更新时间: 2026-06-18 08:49:01
 
-## v0.16.6鈫抳0.16.7 鍙樻洿姹囨€?- 灏忔-2026-06-18
+## v0.16.6→v0.16.7 变更汇总 - 小欧-2026-06-18
 
-### docs: 鍚庣绯荤粺浠ｇ爜10澶у師鍒欏垎鏋愭姤鍛?- 2026-06-18 08:52:21: 鍘绘帀file_helper.py闂锛坱ool澶ф枃浠舵槸璁捐纭妯″紡锛?- 2026-06-18 08:49:01: 瀹屾垚鍚庣绯荤粺269涓狿ython鏂囦欢鐨?0澶у師鍒欐繁搴﹀垎鏋?- 鍒嗘瀽鑼冨洿锛氭牴绾ф枃浠躲€丄PI灞傘€佹湇鍔″眰銆佸伐鍏峰眰銆佸伐鍏峰嚱鏁板眰銆佹暟鎹簱灞?- 鏁翠綋璇勫垎锛?.9/10锛堣壇濂斤級
-- 鏍稿績鍙戠幇锛歋RP鍜孌RY鍘熷垯闇€鍔犲己锛屼富瑕侀棶棰橀泦涓湪operation_commands.py銆乨atabase.py绛夋枃浠?- 鏀硅繘寤鸿锛氭寜P1/P2/P3浼樺厛绾ч€愭浼樺寲
+### docs: 后端系统代码10大原则分析报告
+- 2026-06-18 08:52:21: 去掉file_helper.py问题（tool大文件是设计确认模式）
+- 2026-06-18 08:49:01: 完成后端系统269个Python文件的10大原则深度分析
+- 分析范围：根级文件、API层、服务层、工具层、工具函数层、数据库层
+- 整体评分：8.9/10（良好）
+- 核心发现：SRP和DRY原则需加强，主要问题集中在operation_commands.py、database.py等文件
+- 改进建议：按P1/P2/P3优先级逐步优化
 
-### refactor: 10鍘熷垯鍒嗘瀽+KISS-DIRECT閫忎紶inline+SRP鍑芥暟鎷嗗垎
+### refactor: 10原则分析+KISS-DIRECT透传inline+SRP函数拆分
 
-### refactor: 10鍘熷垯鍒嗘瀽+KISS-DIRECT閫忎紶inline+SRP鍑芥暟鎷嗗垎
-- a635c4fed: action_handler.py/llm_caller.py SRP鎷嗗垎(handle_action/call_llm_fc_stream鎻愬彇瀛愬嚱鏁? + KISS-DIRECT閫忎紶wrapper inline(10澶? + 瓒呴暱鍑芥暟闃堝€?0鈫?00琛?
-### refactor: 鍚勫垎绫籹chema鍚堝苟(姣忎釜鍒嗙被1schema+1register, 鍒犻櫎meta姝讳唬鐮?
-- 3ae4e592c: 鍚勫垎绫籹chema鍚堝苟(姣忎釜鍒嗙被1schema+1register, 鍒犻櫎meta姝讳唬鐮?
+### refactor: 10原则分析+KISS-DIRECT透传inline+SRP函数拆分
+- a635c4fed: action_handler.py/llm_caller.py SRP拆分(handle_action/call_llm_fc_stream提取子函数) + KISS-DIRECT透传wrapper inline(10处) + 超长函数阈值80→100行
 
-### refactor: services/tools/鈫抰ools/ 鐩綍涓婄Щ鍒癮pp灞?閫昏緫鍚堢悊, 864鍏ㄩ噺閫氳繃)
-- ae65df55b: services/tools/鈫抰ools/ 鐩綍涓婄Щ鍒癮pp灞?閫昏緫鍚堢悊, 864鍏ㄩ噺閫氳繃)
+### refactor: 各分类schema合并(每个分类1schema+1register, 删除meta死代码)
+- 3ae4e592c: 各分类schema合并(每个分类1schema+1register, 删除meta死代码)
+
+### refactor: services/tools/→tools/ 目录上移到app层(逻辑合理, 864全量通过)
+- ae65df55b: services/tools/→tools/ 目录上移到app层(逻辑合理, 864全量通过)
 
 v0.16.6
 
-鏇存柊鏃堕棿: 2026-06-18 07:51:38
+更新时间: 2026-06-18 07:51:38
 
-## v0.16.5鈫抳0.16.6 鍙樻洿姹囨€?- 灏忔-2026-06-18
+## v0.16.5→v0.16.6 变更汇总 - 小欧-2026-06-18
 
-### refactor: 宸ュ叿鍒嗙被鍚嶇洰褰曞悕瀵归綈(11鍒嗙被, TIMER/WIN_REGISTRY鐙珛)
-- 29d33d9b5: tool_types.py+tool_constants.py+娉ㄥ唽鏂囦欢 鐩綍鍚嶅垎绫诲悕涓€鑷达紝DATA鈫扗ATAANALYSIS, meta鈫抐undamental, timer鐙珛, win_registry鐙珛
+### refactor: 工具分类名目录名对齐(11分类, TIMER/WIN_REGISTRY独立)
+- 29d33d9b5: tool_types.py+tool_constants.py+注册文件 目录名分类名一致，DATA→DATAANALYSIS, meta→fundamental, timer独立, win_registry独立
 
-### fix: Schema浜ゅ弶鏍搁獙+set_window_state淇+鏂囨。娓呯悊
-- 50779b17f: desktop/file/shell 鍏ㄩ噺Schema鈫擨mplementation鍙傛暟浜ゅ弶鏍搁獙鍖归厤+set_window_state next_actions绉婚櫎宸插垹info鍔ㄤ綔
+### fix: Schema交叉核验+set_window_state修复+文档清理
+- 50779b17f: desktop/file/shell 全量Schema↔Implementation参数交叉核验匹配+set_window_state next_actions移除已删info动作
 
-### feat: stream_options+parallel_tool_calls+缁勫悎宸ュ叿鎷嗗垎
-- f86c7aa43: stream_options鏂板include_usage鑾峰彇token鐢ㄩ噺缁熻
-- 7994ab2b2: 鏂板parallel_tool_calls+strict妯″紡+宸ュ叿閫夋嫨閾佸緥
-- 8119299d9: 缁勫悎宸ュ叿鎷嗗垎Phase1+2 鈥?14+6涓崟宸ュ叿
-- 05bd10212: 鏂板read_json_file鍏敤鍑芥暟
-- 1a1a776fb: 11涓粍鍚堝伐鍏稴chema鎻忚堪+鏉′欢蹇呭～鍙傛暟鏍囨敞銆愬繀濉€?
-### refactor: universal_agent鎷嗗垎涓?鏂囦欢+ToolLoader閲嶅懡鍚?妯″潡鍚堝苟+鍙嶅悜渚濊禆娑堥櫎
-- 04fd29873: universal_agent鎷嗗垎涓?鏂囦欢
-- 2f4747eae: ToolManager鈫扵oolLoader閲嶅懡鍚?- 779a14c06: 鍒犻櫎tool_config.py姝讳唬鐮?- c2f2c27ae: factory/ 11鏂囦欢鍚堝苟涓?涓?- e242a4aed: 閲嶆瀯tool鍒嗙被绯荤粺
-- d0770e8f0: chat_stream_v2鈫抍hat_stream閲嶅懡鍚?- 3c364555e: 鍐呰仈缂撳瓨鈫扵TLCache閫氱敤绫?DRY)
-- c9b44e783: 娑堥櫎visualization鈫抯afety鍙嶅悜渚濊禆
-- 0e187ac3e: 娑堥櫎llm鈫抰ask鍙嶅悜渚濊禆
-- ff5cc1825: task妯″潡MetaStep鈫抎ict+璇诲啓鍒嗙
-- 9a54b0b97: 娓呯悊build_next_actions闂存帴瀵煎嚭
-- 793b401d1: ToolMetadata娓呯悊5搴熷瓧娈?- 58d4adac0: lazy_loader绠€鍖?file_register/shell__init__瀵煎嚭淇
-- 37397bf2f: initialize_run_state鍙傛暟鍚峴elf鈫抋gent
-- 981e31ff0: action_handler瀵煎叆AgentStatus淇
-- d67f98f14: 10澶ц鑼?椤逛慨姝?DRY/KISS/SLAP/YAGNI/OCP)
-- 19f03f86c: 鍚庣鐩綍缁撴瀯11椤硅鑼冧慨姝?- 85d5927f3: llm_core鐩綍鍚堝苟鍏lm
-- 2b7a5774d: visualization鐨刣b鏌ヨ涓嬫矇鍒皊ervice灞?- f7e1ec897: SSE鏍煎紡鍖栧嚱鏁颁笅娌夊埌utils
-- 10292d9af: HITL纭閫昏緫浠嶢PI灞備笅娌夊埌service灞?- d81fc1b0a: 鎵撶牬safety鈫攖ools寰幆渚濊禆
-- b0c778171: 绗?鎵逛唬鐮佽鑼冧慨姝?7椤?
-- fbe4f58f0: 7椤逛唬鐮佽鑼冧慨姝?
-### fix: 澶氶」Bug淇
-- db8e8991e: tool_cache_manager缂╄繘閿欒+async lambda鐭矾
-- 71dbdb521: desktop_tools瀵煎叆鍚?system_register鐮存崯瀵煎叆
-- 82f048c36: 9椤逛唬鐮佽鑼冧慨姝?鍐椾綑/閲嶅import/寮傚父榛戞礊绛?
-- 94b4bf24e: 绉婚櫎璇彁浜ょ殑娴嬭瘯鏂囦欢
+### feat: stream_options+parallel_tool_calls+组合工具拆分
+- f86c7aa43: stream_options新增include_usage获取token用量统计
+- 7994ab2b2: 新增parallel_tool_calls+strict模式+工具选择铁律
+- 8119299d9: 组合工具拆分Phase1+2 — 14+6个单工具
+- 05bd10212: 新增read_json_file公用函数
+- 1a1a776fb: 11个组合工具Schema描述+条件必填参数标注【必填】
 
-### docs: 鏂囨。鏁寸悊+鎶ュ憡鏇存柊+AGENTS.md缁熶竴
-- a6a96c1cf: 鍚堝苟鎴掑緥鏂囨。/绉诲姩Tool鍒嗘瀽鏂囨。
-- b9b3bd85e: 鏁寸悊鍚庣鏂囨。
-- 3ce440791: 鏇存柊鍚庣浠ｇ爜瀹℃煡鎶ュ憡闂璺熻釜
-- 9faa8ad10: 娓呯悊doc-6鏈堝彂灞曠洰褰曚腑宸茶縼绉荤殑鏂囨。
-- 8b9078a3a: 閲嶇粍鏂囨。鐩綍缁撴瀯
-- 21bf9b502: 鏁寸悊鏂囨。-绉诲姩娑堟伅娈靛ぇ鍏?API瀵规瘮+鏍瑰洜鍒嗘瀽
-- bda3b6e73: 鏇存柊鍚庣浠ｇ爜瀹℃煡鎶ュ憡
-- bcab6bbef: 鏇存柊AGENTS.md鏋舵瀯鎻忚堪
-- 7fa372b3d: AGENTS.md鏂板缂栫爜鍙ｈ瘈+淇鏍囩璇存槑
-- 6155ffc4b: AGENTS.md缁熶竴commit鏍煎紡瑙勫垯
-- 9629cc8ad: AGENTS.md鏋舵瀯鎻忚堪鏇存柊
-- 1d12da8df: 缂栫爜閾佽鏇存柊(KISS-DIRECT绠€鍗曠洿鎺ュ師鍒?
-- a81f5078d: commit鏍煎紡澧炲姞鏂囦欢鍚嶅瓧娈?- 831ecfbb6: 鍚庣浠ｇ爜娣卞害鍒嗘瀽鎶ュ憡
-- c25eec9b9: 缁勫悎宸ュ叿鎷嗗垎鍒嗘瀽鏂囨。v1.4
-- 991bceb90: 娓呯悊宸茶縼绉荤殑杩囨椂鏂囨。(5涓枃浠跺垹闄?
+### refactor: universal_agent拆分为4文件+ToolLoader重命名+模块合并+反向依赖消除
+- 04fd29873: universal_agent拆分为4文件
+- 2f4747eae: ToolManager→ToolLoader重命名
+- 779a14c06: 删除tool_config.py死代码
+- c2f2c27ae: factory/ 11文件合并为6个
+- e242a4aed: 重构tool分类系统
+- d0770e8f0: chat_stream_v2→chat_stream重命名
+- 3c364555e: 内联缓存→TTLCache通用类(DRY)
+- c9b44e783: 消除visualization→safety反向依赖
+- 0e187ac3e: 消除llm→task反向依赖
+- ff5cc1825: task模块MetaStep→dict+读写分离
+- 9a54b0b97: 清理build_next_actions间接导出
+- 793b401d1: ToolMetadata清理5废字段
+- 58d4adac0: lazy_loader简化+file_register/shell__init__导出修复
+- 37397bf2f: initialize_run_state参数名self→agent
+- 981e31ff0: action_handler导入AgentStatus修复
+- d67f98f14: 10大规范5项修正(DRY/KISS/SLAP/YAGNI/OCP)
+- 19f03f86c: 后端目录结构11项规范修正
+- 85d5927f3: llm_core目录合并入llm
+- 2b7a5774d: visualization的db查询下沉到service层
+- f7e1ec897: SSE格式化函数下沉到utils
+- 10292d9af: HITL确认逻辑从API层下沉到service层
+- d81fc1b0a: 打破safety↔tools循环依赖
+- b0c778171: 第2批代码规范修正(7项)
+- fbe4f58f0: 7项代码规范修正
+
+### fix: 多项Bug修复
+- db8e8991e: tool_cache_manager缩进错误+async lambda短路
+- 71dbdb521: desktop_tools导入名+system_register破损导入
+- 82f048c36: 9项代码规范修正(冗余/重复import/异常黑洞等)
+- 94b4bf24e: 移除误提交的测试文件
+
+### docs: 文档整理+报告更新+AGENTS.md统一
+- a6a96c1cf: 合并戒律文档/移动Tool分析文档
+- b9b3bd85e: 整理后端文档
+- 3ce440791: 更新后端代码审查报告问题跟踪
+- 9faa8ad10: 清理doc-6月发展目录中已迁移的文档
+- 8b9078a3a: 重组文档目录结构
+- 21bf9b502: 整理文档-移动消息段大全+API对比+根因分析
+- bda3b6e73: 更新后端代码审查报告
+- bcab6bbef: 更新AGENTS.md架构描述
+- 7fa372b3d: AGENTS.md新增编码口诀+修正标签说明
+- 6155ffc4b: AGENTS.md统一commit格式规则
+- 9629cc8ad: AGENTS.md架构描述更新
+- 1d12da8df: 编码铁规更新(KISS-DIRECT简单直接原则)
+- a81f5078d: commit格式增加文件名字段
+- 831ecfbb6: 后端代码深度分析报告
+- c25eec9b9: 组合工具拆分分析文档v1.4
+- 991bceb90: 清理已迁移的过时文档(5个文件删除)
 
 ---
 
 v0.16.5
 
-鏇存柊鏃堕棿: 2026-06-16 20:34:44
+更新时间: 2026-06-16 20:34:44
 
-## v0.16.4鈫抳0.16.5 鍙樻洿姹囨€?- 灏忔矆-2026-06-16
+## v0.16.4→v0.16.5 变更汇总 - 小沈-2026-06-16
 
-### fix: database.py P1淇+send_notification娉ㄥ唽鎭㈠
-- 04074dfc8: database.py 鏁版嵁搴撳垵濮嬪寲閲嶆瀯+鍏ㄩ摼璺疎2E娴嬭瘯鎵嬪唽鏇存柊
-- b9c5ac4f7: database.py+prompt_logger.py P1闂淇(寮傚父澶勭悊+鍒楀悕瀹夊叏+SDK缁熶竴)
-- a29db4308: 鍒犻櫎pytest娴嬭瘯涓存椂鏁版嵁搴撴枃浠?- 5d03f4229: desktop_register.py/desktop_schema.py 鎭㈠send_notification宸ュ叿娉ㄥ唽
+### fix: database.py P1修复+send_notification注册恢复
+- 04074dfc8: database.py 数据库初始化重构+全链路E2E测试手册更新
+- b9c5ac4f7: database.py+prompt_logger.py P1问题修复(异常处理+列名安全+SDK统一)
+- a29db4308: 删除pytest测试临时数据库文件
+- 5d03f4229: desktop_register.py/desktop_schema.py 恢复send_notification工具注册
 
-### refactor: 鎶ュ憡鏂囦欢鐩綍閲嶆瀯+E2E娴嬭瘯浼樺寲
-- ee14f3fde: 鍚庡彴鎶ュ憡鏂囦欢绉诲叆reports/鐩綍
-- 2d2084132: 鎶ュ憡鏂囦欢鍚堝苟鍒版牴鐩綍reports/
-- 7ec5adfa6: 娓呯悊鍚庡彴鏃犵敤鐩綍(json_backup/pycache/venc) + .gitignore琛ュ厖
-- ee1819fef: E2E娴嬭瘯浼樺寲-鏂板assert_stream_ended()缁熶竴娴佺粨鏉熼獙璇?娓呯悊涓存椂鏂囦欢
+### refactor: 报告文件目录重构+E2E测试优化
+- ee14f3fde: 后台报告文件移入reports/目录
+- 2d2084132: 报告文件合并到根目录reports/
+- 7ec5adfa6: 清理后台无用目录(json_backup/pycache/venc) + .gitignore补充
+- ee1819fef: E2E测试优化-新增assert_stream_ended()统一流结束验证+清理临时文件
 
-### docs: E2E娴嬭瘯璁板綍+鎿嶄綔鎵嬪唽鏇存柊
-- 21e511de5: 鍒犻櫎涓存椂鏂囦欢+鎿嶄綔鎵嬪唽鏇存柊
-- c6f3d8cf0: E2E娴嬭瘯璁板綍+鎿嶄綔鎵嬪唽鏇存柊+浠ｇ爜鏇存柊
-- 8433627c0: E2E娴嬭瘯璁板綍+鎶ュ憡鏇存柊
+### docs: E2E测试记录+操作手册更新
+- 21e511de5: 删除临时文件+操作手册更新
+- c6f3d8cf0: E2E测试记录+操作手册更新+代码更新
+- 8433627c0: E2E测试记录+报告更新
 
-### feat: 娴嬭瘯璁板綍鏇存柊+send_notification鑷姩瀹夎
-- efd1a7fe6: 浠ｇ爜+鏂囨。+娴嬭瘯璁板綍+鎶ュ憡鏇存柊
-- 5f7516ec1: gui_tools.py send_notification鑷姩瀹夎win10toast渚濊禆
+### feat: 测试记录更新+send_notification自动安装
+- efd1a7fe6: 代码+文档+测试记录+报告更新
+- 5f7516ec1: gui_tools.py send_notification自动安装win10toast依赖
 
-### refactor: send_notification閲嶆瀯+5绾у畨鍏ㄧ郴缁熸竻鐞?- 3a6b3f12a: gui_tools.py/dependency.py/FUNCTIONS.md 鎶藉彇ensure_dependency鍏敤鍑芥暟+閲嶆瀯send_notification
-- 5c092c6ab: dependency.py 涓ょ骇闄嶇骇瀹夎(鏅€氣啋--user)+send_notification鍘荤敤鎴锋彁绀?- da5d33738: 5绾у畨鍏ㄧ郴缁熸竻鐞?浜屽厓瀹夊叏+check_fn瀹炵幇
+### refactor: send_notification重构+5级安全系统清理
+- 3a6b3f12a: gui_tools.py/dependency.py/FUNCTIONS.md 抽取ensure_dependency公用函数+重构send_notification
+- 5c092c6ab: dependency.py 两级降级安装(普通→--user)+send_notification去用户提示
+- da5d33738: 5级安全系统清理-二元安全+check_fn实现
 
-### fix: XC-10/Sessions/骞跺彂ID/缃戠粶鎼滅储淇
-- 6544b0f0d: XC-10淇 - 澧炲姞observation棰勭畻骞朵繚鐣欓娆bservation
-- 68c7c9730: sessions.py create_session_endpoint鍙傛暟缂篜ydantic绫诲瀷娉ㄨВ瀵艰嚧鏍囬姘歌繙璧伴粯璁ゅ€?- baf88464e: assistant_message_id_allocator+file_schema淇骞跺彂ID鍐茬獊鍜宺ename缂篸estination鍙傛暟
-- 8c0975cfe: network_tools.py search_web娣诲姞鎻愮ず瀛楁闃叉LLM閲嶅鎼滅储
+### fix: XC-10/Sessions/并发ID/网络搜索修复
+- 6544b0f0d: XC-10修复 - 增加observation预算并保留首次observation
+- 68c7c9730: sessions.py create_session_endpoint参数缺Pydantic类型注解导致标题永远走默认值
+- baf88464e: assistant_message_id_allocator+file_schema修复并发ID冲突和rename缺destination参数
+- 8c0975cfe: network_tools.py search_web添加提示字段防止LLM重复搜索
 
-### docs: XC-10/P6娴嬭瘯/鎿嶄綔鎵嬪唽鏇存柊
-- 3c9a416fa: XC-10鍒嗘瀽鏂囨。+娴嬭瘯璁板綍+gitignore鏇存柊
-- 059b1225e: 鏇存柊鎿嶄綔鎵嬪唽P6/P7/P8娴嬭瘯鍦烘櫙璁捐
-- 5ae4a2f87: P6娴嬭瘯璁板綍ERR-01~08鍏ㄩ儴PASSED
+### docs: XC-10/P6测试/操作手册更新
+- 3c9a416fa: XC-10分析文档+测试记录+gitignore更新
+- 059b1225e: 更新操作手册P6/P7/P8测试场景设计
+- 5ae4a2f87: P6测试记录ERR-01~08全部PASSED
 
-### docs: TaskMemory璁捐鏂规
-- 7209b0c3e: TaskMemory璁捐鏂规-浠巃gent.steps娲剧敓閫氱敤宸ヤ綔璁板繂
-- 742cde964: 绉诲姩TaskMemory璁捐鏂规鍒癲oc-6鏈堝彂灞曠洰褰?
-### docs: 涓夌郴缁焧ool鏈哄埗鍒嗘瀽(5 commits)
-- 9a28ef979: 鏂板涓夌郴缁熷伐鍏锋敞鍐屾灦鏋勫姣斿垎鏋?- f1a9f361e: 涓夌郴缁焧ool鏈哄埗鍒嗘瀽鏂囨。
-- cf499c3c3: 涓夌郴缁焧ool鏈哄埗鍒嗘瀽-3杞鏍镐慨姝?2澶勯敊璇?鍙€熼壌鎶€鏈€荤粨
-- da5d33738: 5绾у畨鍏ㄧ郴缁熸竻鐞?浜屽厓瀹夊叏+check_fn瀹炵幇
-- f3e4c1f44: 鏂扮殑tool瀹夊叏鏈哄埗鍙婂墠绔搴斿鐞嗘枃妗?- 4d033d1a4: 涓夌郴缁焧ool鏈哄埗鍒嗘瀽-鍏ㄧ瘒瀹夊叏浣撶郴鏇存柊5绾р啋浜屽厓瀹夊叏
-- bfab7184d: 涓夌郴缁焧ool鏈哄埗鍒嗘瀽-淇娉ㄥ唽鍙傛暟璁℃暟15鈫?6+鍒犻櫎绗?1绔犲鏍告姤鍛?
-### docs: 缁勫悎宸ュ叿鎷嗗垎鍒嗘瀽(2 commits)
-- c8c3e93bd: 缁勫悎宸ュ叿鎷嗗垎鍒嗘瀽鏂囨。-2閬嶅垎鏋?- ceae4761d: 缁勫悎宸ュ叿鎷嗗垎鍒嗘瀽+浼氳瘽璁板綍+娴嬭瘯璁板綍(E2E)
+### docs: TaskMemory设计方案
+- 7209b0c3e: TaskMemory设计方案-从agent.steps派生通用工作记忆
+- 742cde964: 移动TaskMemory设计方案到doc-6月发展目录
 
-### docs: 鍏ㄧ綉澶ф竻鐞?3 commits)
-- 02e876ff0: 娓呯悊鏃犵敤涓存椂鏂囦欢(鎴浘/缂撳瓨/鏃ф棩蹇?涓存椂鑴氭湰)
-- 6c65704e2: 娓呯悊鏃犵敤璋冭瘯绗旇/鎶ュ憡/涓€娆℃€ц剼鏈?- 750c0b156: 娓呯悊鏃犵敤鏂囨。+reports+tool-scripts锛屽悎骞禿oc鐩綍
+### docs: 三系统tool机制分析(5 commits)
+- 9a28ef979: 新增三系统工具注册架构对比分析
+- f1a9f361e: 三系统tool机制分析文档
+- cf499c3c3: 三系统tool机制分析-3轮复核修正12处错误+可借鉴技术总结
+- da5d33738: 5级安全系统清理-二元安全+check_fn实现
+- f3e4c1f44: 新的tool安全机制及前端对应处理文档
+- 4d033d1a4: 三系统tool机制分析-全篇安全体系更新5级→二元安全
+- bfab7184d: 三系统tool机制分析-修复注册参数计数15→16+删除第11章复核报告
+
+### docs: 组合工具拆分分析(2 commits)
+- c8c3e93bd: 组合工具拆分分析文档-2遍分析
+- ceae4761d: 组合工具拆分分析+会话记录+测试记录(E2E)
+
+### docs: 全网大清理(3 commits)
+- 02e876ff0: 清理无用临时文件(截图/缓存/旧日志/临时脚本)
+- 6c65704e2: 清理无用调试笔记/报告/一次性脚本
+- 750c0b156: 清理无用文档+reports+tool-scripts，合并doc目录
 
 ---
 
 v0.16.4
 
-鏇存柊鏃堕棿: 2026-06-14 14:41:23
+更新时间: 2026-06-14 14:41:23
 
-## v0.16.3鈫抳0.16.4 鍙樻洿姹囨€?- 灏忔矆-2026-06-14
+## v0.16.3→v0.16.4 变更汇总 - 小沈-2026-06-14
 
-### fix: version.txt缂栫爜鎹熷潖淇+prompt logger & FC鏋舵瀯淇
-- 575380346: version.txt 鍥炴粴鍒?v0.16.3 淇缂栫爜鎹熷潖
-- f9d26418b: prompt_logger淇濈暀瀹屾暣prompt璁板綍+action_handler/universal_agent/run_sse_stream FC鏋舵瀯淇
-- a098b8ff1: LLM鏋舵瀯瀹炴柦鎶ュ憡绔犺妭搴忓彿淇+FC-only鍐呭鍚屾
+### fix: version.txt编码损坏修复+prompt logger & FC架构修复
+- 575380346: version.txt 回滚到 v0.16.3 修复编码损坏
+- f9d26418b: prompt_logger保留完整prompt记录+action_handler/universal_agent/run_sse_stream FC架构修复
+- a098b8ff1: LLM架构实施报告章节序号修正+FC-only内容同步
 
 ---
 
 v0.16.3
 
-鏇存柊鏃堕棿: 2026-06-14 14:30:00
+更新时间: 2026-06-14 14:30:00
 
-## v0.16.2鈫抳0.16.3 鍙樻洿姹囨€?- 灏忔矆-2026-06-14
+## v0.16.2→v0.16.3 变更汇总 - 小沈-2026-06-14
 
-### fix: FC娴佸紡鏋舵瀯淇 鈥?G1: llm_content涓㈠け + G3: 鍐椾綑绌篶hunk
-- d7d2fb423: universal_agent.py G1 - fc_context鍔犲叆llm_content,淇濈暀LLM鏂囨湰鍒癱onversation_history
-- d7d2fb423: message_builder.py G1 - AssistantMessage浣跨敤llm_content濉厖content瀛楁
-- d7d2fb423: action_handler.py G1 - 骞惰宸ュ叿鍦烘櫙淇濈暀llm_content
-- d7d2fb423: llm_core.py G3 - _parse_sse_data璺宠繃tool_calls-only绌篶hunk鐨剏ield
+### fix: FC流式架构修复 — G1: llm_content丢失 + G3: 冗余空chunk
+- d7d2fb423: universal_agent.py G1 - fc_context加入llm_content,保留LLM文本到conversation_history
+- d7d2fb423: message_builder.py G1 - AssistantMessage使用llm_content填充content字段
+- d7d2fb423: action_handler.py G1 - 并行工具场景保留llm_content
+- d7d2fb423: llm_core.py G3 - _parse_sse_data跳过tool_calls-only空chunk的yield
 
-### refactor: _normalize_tool_params闆嗕腑淇+scattered json.loads娓呯悊
-- d7d2fb423: llm_core.py 鏂板_normalize_tool_params(),JSON鏁扮粍/瀵硅薄鍙屽€嶇紪鐮侀泦涓慨澶?- d7d2fb423: document_register.py/tools.py 绉婚櫎鍚勫伐鍏蜂腑鏁ｈ惤鐨刯son.loads()
-- d7d2fb423: FUNCTIONS.md 鏂板LLM鏍稿績灞?_normalize_tool_params鏂囨。
+### refactor: _normalize_tool_params集中修复+scattered json.loads清理
+- d7d2fb423: llm_core.py 新增_normalize_tool_params(),JSON数组/对象双倍编码集中修复
+- d7d2fb423: document_register.py/tools.py 移除各工具中散落的json.loads()
+- d7d2fb423: FUNCTIONS.md 新增LLM核心层+_normalize_tool_params文档
 
 ---
 
 v0.16.2
 
-鏇存柊鏃堕棿: 2026-06-14 09:00:00
+更新时间: 2026-06-14 09:00:00
 
-## v0.16.1鈫抳0.16.2 鍙樻洿姹囨€?- 灏忔矆-2026-06-14
+## v0.16.1→v0.16.2 变更汇总 - 小沈-2026-06-14
 
-### refactor: message_id_tracker璺ㄥ眰渚濊禆娑堥櫎+prompts/meta鎵佸钩鍖栭噸鏋?- 4c3a2e966: message_id_tracker.py浠巗ervices绉诲埌utils灞傦紝娑堥櫎璺ㄥ眰渚濊禆
-- b8eb2db80: 鍒犻櫎services/message_id_tracker.py鏃ф枃浠?- d48408a79: prompts+meta 鎵佸钩鍖栭噸鏋?BM25鎼滅储浼樺寲
-- 4fcb55585: COMMANDS浠巗ystem_adapter绉昏嚦execute_shell_command鎻忚堪
-- e6657137e: system_prompts.py閲嶅啓core prompt浠縃ermes鏍囩鍒嗗眰
+### refactor: message_id_tracker跨层依赖消除+prompts/meta扁平化重构
+- 4c3a2e966: message_id_tracker.py从services移到utils层，消除跨层依赖
+- b8eb2db80: 删除services/message_id_tracker.py旧文件
+- d48408a79: prompts+meta 扁平化重构+BM25搜索优化
+- 4fcb55585: COMMANDS从system_adapter移至execute_shell_command描述
+- e6657137e: system_prompts.py重写core prompt仿Hermes标签分层
 
-### feat: query_calendar name鍙傛暟鏀寔+system_prompt绮剧畝
-- 5d947c197: query_calendar鏂板name鍙傛暟锛屾敮鎸佹寜鑺傛棩鍚嶇О鏌ヨ(绔崍鑺?涓鑺傜瓑)
-- 1fdd14fcb: system_prompt merge鎿嶄綔瑙勮寖+宸ュ叿閫夋嫨锛岀簿绠€涓?绔?3琛?
-### fix+docs: query_sql榛樿璺緞淇+E2E鎿嶄綔鎵嬪唽
-- 5e7249ed8: query_sql榛樿DB璺緞淇+搴熷純鏂规鏂囦欢鍒犻櫎
-- 235bc5489: 鍏ㄩ摼璺疎2E闆嗘垚娴嬭瘯鎿嶄綔鎵嬪唽(鏇夸唬鍘熸柟妗堟枃浠?
+### feat: query_calendar name参数支持+system_prompt精简
+- 5d947c197: query_calendar新增name参数，支持按节日名称查询(端午节/中秋节等)
+- 1fdd14fcb: system_prompt merge操作规范+工具选择，精简为4章13行
+
+### fix+docs: query_sql默认路径修复+E2E操作手册
+- 5e7249ed8: query_sql默认DB路径修复+废弃方案文件删除
+- 235bc5489: 全链路E2E集成测试操作手册(替代原方案文件)
 
 ---
 
 v0.16.1
 
-鏇存柊鏃堕棿: 2026-06-13 18:30:00
+更新时间: 2026-06-13 18:30:00
 
-## v0.16.0鈫抳0.16.1 鍙樻洿姹囨€?- 灏忔矆-2026-06-13
+## v0.16.0→v0.16.1 变更汇总 - 小沈-2026-06-13
 
-### fix: 6涓狤2E娴嬭瘯Bug淇
-- initialize_run_state.py:44 淇max_consecutive_chunks璁块棶涓嶅瓨鍦ㄧ殑self灞炴€р啋鏀逛负甯搁噺
-- answer_handler.py:42 淇conversation_history璁块棶璺緞閿欒鈫掓敼涓簃essage_builder.conversation_history
-- action_handler.py:152 淇璋冪敤鏈畾涔夋柟娉曗啋鏀逛负message_builder.add_observation()
-- universal_agent.py:89 淇_auto_inject_from_search璇诲彇璺緞閿欒鈫掓敼涓簉esult.get("data",{}).get("llm_data")
-- run_sse_stream.py: 鍒濆鍒嗙被鍔犲叆FILE鈫掑垵濮嬪彲鐢‵ILE宸ュ叿
-- run_sse_stream.py: 澶氳疆瀵硅瘽鍘嗗彶鍔犺浇鈫掓柊澧瀇load_previous_messages()+_inject_conversation_history()
+### fix: 6个E2E测试Bug修复
+- initialize_run_state.py:44 修复max_consecutive_chunks访问不存在的self属性→改为常量
+- answer_handler.py:42 修复conversation_history访问路径错误→改为message_builder.conversation_history
+- action_handler.py:152 修复调用未定义方法→改为message_builder.add_observation()
+- universal_agent.py:89 修复_auto_inject_from_search读取路径错误→改为result.get("data",{}).get("llm_data")
+- run_sse_stream.py: 初始分类加入FILE→初始可用FILE工具
+- run_sse_stream.py: 多轮对话历史加载→新增_load_previous_messages()+_inject_conversation_history()
 
-### fix: 纭紪鐮?0鈫抇CATEGORIES_CONFIG_CACHE_TTL + 鎶藉彇_inject_conversation_history
-- ba57fbcb5: universal_agent/initialize_run_state 鐨?0纭紪鐮佹敼涓哄父閲?_CATEGORIES_CONFIG_CACHE_TTL
-- 鎶藉彇_inject_conversation_history涓虹嫭绔嬫柟娉?
-### fix: prompt_logger/chat_stream_v2 message_id鍙栧€奸敊璇?- a3ad3ef8a: 淇user_message_id鍜宎i_message_id鍙栧€奸敊璇?
-### refactor: 鍒犻櫎display_name_cache.py锛孡RUCache杩佸叆messages.py
-- 02d4876df: display_name_cache.py鍒犻櫎锛孡RUCache閫昏緫杩佸叆messages.py鐩存帴鎸佹湁
-- 鏂板test_marker.py娴嬭瘯鏍囪宸ュ叿
-- 澶氭枃浠舵€ц兘浼樺寲
+### fix: 硬编码60→_CATEGORIES_CONFIG_CACHE_TTL + 抽取_inject_conversation_history
+- ba57fbcb5: universal_agent/initialize_run_state 的60硬编码改为常量 _CATEGORIES_CONFIG_CACHE_TTL
+- 抽取_inject_conversation_history为独立方法
 
-### fix: tool_step action_tool淇濆瓨tool_name/tool_params
-- action_tool绫诲瀷鐨刜extra_fields()鏂板tool_name/tool_params瀛楁(涔嬪墠缂哄け锛屽鑷碊B璁板綍瀛楁涓虹┖)
-- E2E娴嬭瘯鏂板3.5鑺傞獙璇侀搧寰嬶紝姣忎釜娴嬭瘯鏄惧紡鍋氭楠?+6楠岃瘉
-- 淇_process_event缁熻action_tool浜嬩欢(鍘熼敊缁熻thought浜嬩欢)
-- 绉婚櫎auto_e2e_verify fixture(楠岃瘉閫昏緫绉昏嚦娴嬭瘯鐢ㄤ緥鏄惧紡璋冪敤)
+### fix: prompt_logger/chat_stream_v2 message_id取值错误
+- a3ad3ef8a: 修复user_message_id和ai_message_id取值错误
 
-- dc38d7652: 绉婚櫎宸茶窡韪殑鏃ュ織鏂囦欢
+### refactor: 删除display_name_cache.py，LRUCache迁入messages.py
+- 02d4876df: display_name_cache.py删除，LRUCache逻辑迁入messages.py直接持有
+- 新增test_marker.py测试标记工具
+- 多文件性能优化
+
+### fix: tool_step action_tool保存tool_name/tool_params
+- action_tool类型的_extra_fields()新增tool_name/tool_params字段(之前缺失，导致DB记录字段为空)
+- E2E测试新增3.5节验证铁律，每个测试显式做步骤5+6验证
+- 修复_process_event统计action_tool事件(原错统计thought事件)
+- 移除auto_e2e_verify fixture(验证逻辑移至测试用例显式调用)
+
+- dc38d7652: 移除已跟踪的日志文件
 
 v0.16.0
 
-鏇存柊鏃堕棿: 2026-06-13 15:00:00
+更新时间: 2026-06-13 15:00:00
 
-## v0.15.14鈫抳0.16.0 鍙樻洿姹囨€?- 灏忔矆-2026-06-13
+## v0.15.14→v0.16.0 变更汇总 - 小沈-2026-06-13
 
-### refactor: Step鍏ㄩ潰閲嶆瀯 - 8鏂囦欢鈫?鏂囦欢锛屽悎骞禡etaStep/ToolStep
-- MetaStep: 鍚堝苟StartStep+IncidentStep锛屽姩鎬乀YPE鍖哄垎(start/interrupted/paused/resumed/retrying/authorization_required)
-- ToolStep: 鍚堝苟ActionToolStep+ObservationStep锛宻tep_type鍙傛暟鍖哄垎(action_tool/observation)
-- ErrorStep: 绮剧畝涓?瀛楁(鍒爎easoning/context/retry_after/details/stack)
-- ChunkStep: 鍒燺thinking/model/provider
-- FinalStep: 鍒爄s_streaming/is_reasoning
-- 鍒犻櫎鏃ф枃浠? start_step/incident_step/action_step/observation_step.py
-- 鏇存柊寮曠敤: action_handler/task_interrupt_check/task_cancel_check/run_sse_stream/chat_stream.py
-- chat_stream.create_error_response: 娓呯悊宸插垹鍙傛暟
-- 娴嬭瘯閲嶅啓: 124 step娴嬭瘯+鍏ㄩ儴236 step鐩稿叧娴嬭瘯閫氳繃
-- 鍏ㄩ噺楠岃瘉: 838 passed, 0 failed
+### refactor: Step全面重构 - 8文件→6文件，合并MetaStep/ToolStep
+- MetaStep: 合并StartStep+IncidentStep，动态TYPE区分(start/interrupted/paused/resumed/retrying/authorization_required)
+- ToolStep: 合并ActionToolStep+ObservationStep，step_type参数区分(action_tool/observation)
+- ErrorStep: 精简为5字段(删reasoning/context/retry_after/details/stack)
+- ChunkStep: 删_thinking/model/provider
+- FinalStep: 删is_streaming/is_reasoning
+- 删除旧文件: start_step/incident_step/action_step/observation_step.py
+- 更新引用: action_handler/task_interrupt_check/task_cancel_check/run_sse_stream/chat_stream.py
+- chat_stream.create_error_response: 清理已删参数
+- 测试重写: 124 step测试+全部236 step相关测试通过
+- 全量验证: 838 passed, 0 failed
 
 v0.15.13
 
-鏇存柊鏃堕棿: 2026-06-13 14:30:00
+更新时间: 2026-06-13 14:30:00
 
-## v0.15.12鈫抳0.15.13 鍙樻洿姹囨€?- 灏忔矆-2026-06-13
+## v0.15.12→v0.15.13 变更汇总 - 小沈-2026-06-13
 
-### refactor: 鍏ㄧ郴缁熸浠ｇ爜娓呯悊+涓嶅繀瑕佺殑闂存帴灞傚垹闄?鍐椾綑绯荤粺鍚堝苟
+### refactor: 全系统死代码清理+不必要的间接层删除+冗余系统合并
 
-Phase1 - 姝讳唬鐮佹竻鐞?
-- registry.list_all_tools()鍒犻櫎 (鏃犳秷璐硅€?
-- tool_description.py 鍒犻櫎get_all_tools_summary/detail/_group_tools_by_category (鏃犳秷璐硅€?
-- tools/response_utils.py鍒犻櫎, is_success/is_error绉诲叆_response.py
-- ToolMetadata.author/critical_notes/usage_hint/forbidden瀛楁鍒犻櫎 (浠庢湭璧嬪€?
-- ToolConfig.reload()鏂规硶鍒犻櫎 (鏃犺皟鐢ㄨ€?
-- schema_utils._TYPE_ORDER鍒犻櫎 (鏈娇鐢?
-- system_adapter.py 鍒犻櫎Linux/Darwin鍛戒护琛?(Windows-only)
-- 娓呯悊7涓枃浠剁殑鏈娇鐢ㄥ鍏?- stream_parser.py 鍒犻櫎parse_sse_stream/handle_http_error_stream (姝讳唬鐮?宸叉湁llm_core鏇夸唬)
-- llm_core/__init__.py 鍒犻櫎ChatResponse/StreamChunk閲嶆柊瀵煎嚭 (鏃犳秷璐硅€?
-- utils/retry/鍖呮暣浣撳垹闄?(network_retry.py钖勫寘瑁呮棤娑堣垂鑰?
+Phase1 - 死代码清理:
+- registry.list_all_tools()删除 (无消费者)
+- tool_description.py 删除get_all_tools_summary/detail/_group_tools_by_category (无消费者)
+- tools/response_utils.py删除, is_success/is_error移入_response.py
+- ToolMetadata.author/critical_notes/usage_hint/forbidden字段删除 (从未赋值)
+- ToolConfig.reload()方法删除 (无调用者)
+- schema_utils._TYPE_ORDER删除 (未使用)
+- system_adapter.py 删除Linux/Darwin命令表 (Windows-only)
+- 清理7个文件的未使用导入
+- stream_parser.py 删除parse_sse_stream/handle_http_error_stream (死代码,已有llm_core替代)
+- llm_core/__init__.py 删除ChatResponse/StreamChunk重新导出 (无消费者)
+- utils/retry/包整体删除 (network_retry.py薄包装无消费者)
 
-Phase2 - 鍒犱笉蹇呰鐨勯棿鎺ュ眰:
-- AgentFactory鍒犻櫎 (绾€忎紶,鐩存帴UniversalAgent)
-- ActionHandler浠巗tateless class杞负妯″潡绾у嚱鏁?
-Phase3 - 淇寰幆瀵煎叆:
-- task_cancel_check.py/task_interrupt_check.py format_agent_sse鏀逛负鎳掑鍏?- chat_stream.py鍒犻櫎姝籭mport create_step_counter
+Phase2 - 删不必要的间接层:
+- AgentFactory删除 (纯透传,直接UniversalAgent)
+- ActionHandler从stateless class转为模块级函数
 
-## v0.15.11鈫抳0.15.12 鍙樻洿姹囨€?- 灏忔矆-2026-06-13
+Phase3 - 修复循环导入:
+- task_cancel_check.py/task_interrupt_check.py format_agent_sse改为懒导入
+- chat_stream.py删除死import create_step_counter
 
-### feat: universal_agent.py tool_search鍔ㄦ€佹弿杩版敞鍏?
-- 鏂板tool_categories.json: 鍚勫垎绫籹ummary+姣忎釜宸ュ叿涓€鍙ヨ瘽鎻忚堪
-- 鏂板_patch_search_desc(): 璇诲彇JSON鈫掑姩鎬佹嫾瑁呮湭鍔犺浇鍒嗙被鍒楄〃鈫掑啓鍏ool_search.description
-- Agent鍚姩鏃剁敓鎴愬垵濮嬪垪琛?娉ㄥ叆鍚庤嚜鍔ㄦ洿鏂?- OCP鍘熷垯: 鏂板鍒嗙被鍙渶鏀笿SON,闆朵唬鐮佹敼鍔?
-## v0.15.10鈫抳0.15.11 鍙樻洿姹囨€?- 灏忔矆-2026-06-13
+## v0.15.11→v0.15.12 变更汇总 - 小沈-2026-06-13
 
-### Revert: 鍥為€€YAGNI杩濊鐨刪andle_chunk/handle_parse_error/handle_unknown
+### feat: universal_agent.py tool_search动态描述注入
 
-鍘熷洜: 3涓猦andler浠庢湭琚敓浜т唬鐮佽皟鐢?浠呮湇鍔′簬.gitignore涓殑娴嬭瘯鏂囦欢,杩濆弽YAGNI鍘熷垯
+- 新增tool_categories.json: 各分类summary+每个工具一句话描述
+- 新增_patch_search_desc(): 读取JSON→动态拼装未加载分类列表→写入tool_search.description
+- Agent启动时生成初始列表,注入后自动更新
+- OCP原则: 新增分类只需改JSON,零代码改动
+
+## v0.15.10→v0.15.11 变更汇总 - 小沈-2026-06-13
+
+### Revert: 回退YAGNI违规的handle_chunk/handle_parse_error/handle_unknown
+
+原因: 3个handler从未被生产代码调用,仅服务于.gitignore中的测试文件,违反YAGNI原则
 
 v0.15.10
 
-鏇存柊鏃堕棿: 2026-06-13 08:33:35
+更新时间: 2026-06-13 08:33:35
 
-## v0.15.9鈫抳0.15.10 鍙樻洿姹囨€?- 灏忔-2026-06-13
+## v0.15.9→v0.15.10 变更汇总 - 小欧-2026-06-13
 
-### refactor: 绮剧畝Agent浠ｇ爜(鍒犻櫎dead code+淇瀵煎叆bug+琛ュ厖hook鏂规硶)
+### refactor: 精简Agent代码(删除dead code+修复导入bug+补充hook方法)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| agent_config.py | 鍒犻櫎鈥擜gentConfig涓嶅啀浣跨敤(UniversalAgent缁熶竴閰嶇疆) |
-| agent_factory.py | 鍒犻櫎config渚濊禆,绠€鍖栧弬鏁?|
-| agent_initializer.py | create_task鍒犻櫎intent鍙傛暟 |
-| base_agent.py | 鏂板_on_session_init/_on_before_loop/_on_after_loop hook绌烘柟娉?|
-| handlers/__init__.py | 鍙繚鐣檋andle_action/handle_answer瀵煎嚭 |
-| action_handler.py | 鍒犻櫎鏈娇鐢ㄧ殑llm_response鍙傛暟 |
-| answer_handler.py | 鍒犻櫎鏈娇鐢ㄧ殑llm_response鍙傛暟 |
-| chunk_handler.py | 鍒犻櫎(涓嶅啀浣跨敤) |
-| error_handler.py | 鍒犻櫎(涓嶅啀浣跨敤) |
-| react_cycle.py | handler璋冪敤绛惧悕鍚屾鍒犻櫎llm_response |
-| tool_manager.py | 鍒犻櫎_loaded_categories杩借釜 |
-| action_step.py | 鍒犻櫎raw_data閲嶅瀛楁 |
-| agent_status.py | 鍒犻櫎OBSERVING/ROLLED_BACK |
-| universal_agent.py | 鍒犻櫎hook绌哄疄鐜?绉诲叆BaseAgent) |
-| run_sse_stream.py | 鍒犻櫎current_content_holder/llm_call_count_holder |
-| task_tracker.py | create_task鍒犻櫎intent鍙傛暟 |
-| registry.py | to_openai_tools鏀逛负categories闆嗗悎 |
-| tool_description.py | 淇CATEGORY_ORDER/CATEGORY_NAMES閿欒瀵煎叆 |
-| retry/__init__.py | 鍒犻櫎agent_retry瀵煎嚭 |
-| agent_retry.py | 鍒犻櫎(涓嶅啀浣跨敤) |
-| prompts(desktop/doc/net/shell) | 鍒犻櫎(宸茬敱SystemPrompts缁熶竴) |
+| agent_config.py | 删除—AgentConfig不再使用(UniversalAgent统一配置) |
+| agent_factory.py | 删除config依赖,简化参数 |
+| agent_initializer.py | create_task删除intent参数 |
+| base_agent.py | 新增_on_session_init/_on_before_loop/_on_after_loop hook空方法 |
+| handlers/__init__.py | 只保留handle_action/handle_answer导出 |
+| action_handler.py | 删除未使用的llm_response参数 |
+| answer_handler.py | 删除未使用的llm_response参数 |
+| chunk_handler.py | 删除(不再使用) |
+| error_handler.py | 删除(不再使用) |
+| react_cycle.py | handler调用签名同步删除llm_response |
+| tool_manager.py | 删除_loaded_categories追踪 |
+| action_step.py | 删除raw_data重复字段 |
+| agent_status.py | 删除OBSERVING/ROLLED_BACK |
+| universal_agent.py | 删除hook空实现(移入BaseAgent) |
+| run_sse_stream.py | 删除current_content_holder/llm_call_count_holder |
+| task_tracker.py | create_task删除intent参数 |
+| registry.py | to_openai_tools改为categories集合 |
+| tool_description.py | 修复CATEGORY_ORDER/CATEGORY_NAMES错误导入 |
+| retry/__init__.py | 删除agent_retry导出 |
+| agent_retry.py | 删除(不再使用) |
+| prompts(desktop/doc/net/shell) | 删除(已由SystemPrompts统一) |
 
-### 鍑€鏁堟灉
+### 净效果
 
-- 鍒犻櫎7涓棤鐢ㄦ枃浠?鍒犻櫎5涓湭浣跨敤鍙傛暟
-- 淇1涓繍琛屾椂ImportError(tool_description閿欒瀵煎叆)
-- 淇1涓繍琛屾椂AttributeError(缂哄皯hook鏂规硶)
-- 176涓浉鍏虫祴璇曞叏閮ㄩ€氳繃,0鍥炲綊
+- 删除7个无用文件,删除5个未使用参数
+- 修复1个运行时ImportError(tool_description错误导入)
+- 修复1个运行时AttributeError(缺少hook方法)
+- 176个相关测试全部通过,0回归
 
 ---
 
 v0.15.9
 
-鏇存柊鏃堕棿: 2026-06-12
+更新时间: 2026-06-12
 
-## v0.15.8鈫抳0.15.9 鍙樻洿姹囨€?- 灏忔矆-2026-06-12
+## v0.15.8→v0.15.9 变更汇总 - 小沈-2026-06-12
 
-### refactor: 瀹夊叏寮€鍏充粠鐜鍙橀噺鏀逛负config.yaml閰嶇疆(security.enabled) (1 commit)
+### refactor: 安全开关从环境变量改为config.yaml配置(security.enabled) (1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| tool_safety_checker.py | 瀹夊叏寮€鍏充粠鐜鍙橀噺璇诲彇鏀逛负config.yaml閰嶇疆(security.enabled) |
-| config/config.yaml | 鏂板security.enabled閰嶇疆椤?|
+| tool_safety_checker.py | 安全开关从环境变量读取改为config.yaml配置(security.enabled) |
+| config/config.yaml | 新增security.enabled配置项 |
 
-### fix+docs: 琛ュ叏LLM/宸ュ叿鍘熷鏃ュ織璁板綍 + E2E娴嬭瘯鏂规鍏ㄩ潰閲嶅啓 (1 commit)
+### fix+docs: 补全LLM/工具原始日志记录 + E2E测试方案全面重写 (1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| action_handler.py | 宸ュ叿鎵ц鍚庤褰曞畬鏁村師濮嬪弬鏁板拰缁撴灉鍒癮pp log |
-| universal_agent.py | LLM鍝嶅簲璁板綍瀹屾暣鍘熷鍐呭(action/answer)鍒癮pp log |
-| doc/E2E娴嬭瘯鏂规 | 鍏ㄩ潰閲嶅啓:绗笁~涓冪珷+98涓敤渚?杈呭姪鍑芥暟+閾佸緥(涓ョ鎵归噺) |
+| action_handler.py | 工具执行后记录完整原始参数和结果到app log |
+| universal_agent.py | LLM响应记录完整原始内容(action/answer)到app log |
+| doc/E2E测试方案 | 全面重写:第三~七章+98个用例+辅助函数+铁律(严禁批量) |
 
-### fix: write_text_file鍙傛暟text鈫抍ontent + 宸ュ叿鎻忚堪澧炲己 + CRSS鍏抽敭璇嶆墿灞?+ JSON瑙ｆ瀽瀹归敊 (1 commit)
+### fix: write_text_file参数text→content + 工具描述增强 + CRSS关键词扩展 + JSON解析容错 (1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| file_schema.py/file_tools.py/file_register.py/file_prompts.py | write_text_file鍙傛暟text鈫抍ontent缁熶竴 |
-| tool_safety_checker.py | write_text_file鍙傛暟鍚嶄慨澶?|
-| document_register.py/document_schema.py | 宸ュ叿鎻忚堪澧炲己/绠€鍖?|
-| file_register.py | 绠€鍖栨弿杩帮紝缁熶竴绀轰緥鏍煎紡 |
-| tool_types.py | CRSS鍏抽敭璇嶆墿灞?FILE澧炲姞鎵╁睍鍚?鍘嬬缉/鎼滅储绛? |
-| universal_agent.py | JSON瑙ｆ瀽瀹归敊(鏂囨湰+JSON娣峰悎鏃舵嫭鍙峰尮閰? |
+| file_schema.py/file_tools.py/file_register.py/file_prompts.py | write_text_file参数text→content统一 |
+| tool_safety_checker.py | write_text_file参数名修复 |
+| document_register.py/document_schema.py | 工具描述增强/简化 |
+| file_register.py | 简化描述，统一示例格式 |
+| tool_types.py | CRSS关键词扩展(FILE增加扩展名/压缩/搜索等) |
+| universal_agent.py | JSON解析容错(文本+JSON混合时括号匹配) |
 
-### refactor: validate_config SLAP/DRY淇 + safety stub鈫掔湡瀹瀎ile_safety濮旀墭 (1 commit)
+### refactor: validate_config SLAP/DRY修复 + safety stub→真实file_safety委托 (1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| ai_config_resolver.py | validate_config: 鍐呰仈鍒ゆ柇鏀逛负澶嶇敤宸叉湁鏂规硶(SLAP/DRY) |
-| tool_safety_checker.py | record_operation/execute_with_safety: stub鈫掔湡瀹瀎ile_safety濮旀墭(绂佹鍚戝悗鍏煎/澶嶇敤浼樺厛) |
-| tool_safety_checker.py | _check_known_risks: FileTools._validate_path()瀹炰緥鏂规硶璋冪敤淇 |
-| version.py | version.txt绌鸿璺宠繃(get_version鍋ュ．鎬? |
-| README.md | 鐗堟湰v0.15.8鈫抳0.15.9, 鏇存柊鐗堟湰鍘嗗彶 |
+| ai_config_resolver.py | validate_config: 内联判断改为复用已有方法(SLAP/DRY) |
+| tool_safety_checker.py | record_operation/execute_with_safety: stub→真实file_safety委托(禁止向后兼容/复用优先) |
+| tool_safety_checker.py | _check_known_risks: FileTools._validate_path()实例方法调用修复 |
+| version.py | version.txt空行跳过(get_version健壮性) |
+| README.md | 版本v0.15.8→v0.15.9, 更新版本历史 |
 
-### 鍑€鏁堟灉
+### 净效果
 
-- 瀹夊叏寮€鍏充粠鐜鍙橀噺鏀逛负config.yaml閰嶇疆
-- LLM/宸ュ叿鍘熷鏃ュ織瀹屾暣璁板綍
-- E2E娴嬭瘯鏂规鍏ㄩ潰閲嶅啓
-- write_text_file鍙傛暟缁熶竴(text鈫抍ontent)
-- 宸ュ叿鎻忚堪澧炲己+CRSS鍏抽敭璇嶆墿灞?- JSON瑙ｆ瀽瀹归敊澧炲己
-- validate_config SLAP/DRY鍘熷垯鍚堣淇
-- safety stub鈫掔湡瀹瀎ile_safety濮旀墭(绂佹鍚戝悗鍏煎/澶嶇敤浼樺厛)
-- version.txt绌鸿璺宠繃(get_version鍋ュ．鎬?
-- P1娴嬭瘯14/14鍏ㄩ儴閫氳繃锛?鍥炲綊
+- 安全开关从环境变量改为config.yaml配置
+- LLM/工具原始日志完整记录
+- E2E测试方案全面重写
+- write_text_file参数统一(text→content)
+- 工具描述增强+CRSS关键词扩展
+- JSON解析容错增强
+- validate_config SLAP/DRY原则合规修复
+- safety stub→真实file_safety委托(禁止向后兼容/复用优先)
+- version.txt空行跳过(get_version健壮性)
+- P1测试14/14全部通过，0回归
 
 ---
 
 v0.15.8
 
-鏇存柊鏃堕棿: 2026-06-11
+更新时间: 2026-06-11
 
-## v0.15.7鈫抳0.15.8 鍙樻洿姹囨€?- 灏忔矆-2026-06-11
+## v0.15.7→v0.15.8 变更汇总 - 小沈-2026-06-11
 
-### fix鈥斺€斿洓灞傚畨鍏ㄤ綋绯讳慨澶?P0骞宠璋冪敤涓㈠け+P1瀛楁閲嶅+P2 fc_context鍏辩敤(1 commit)
+### fix——四层安全体系修复:P0平行调用丢失+P1字段重复+P2 fc_context共用(1 commit)
 
-| 闂 | 涓ラ噸鎬?| 淇 |
+| 问题 | 严重性 | 修复 |
 |------|--------|------|
-| P0 `_pending_calls` 浠庢湭璧嬪€硷紙骞宠宸ュ叿璋冪敤鍏ㄩ儴闈欓粯涓㈠け锛?| 馃敶 | `_call_llm_fc_stream` 浠?`tool_calls` 鏁扮粍鎻愬彇闈瀙rimary璋冪敤 鈫?`_pending_calls` |
-| P1 `ToolMetadata.critical_notes`/`forbidden` 瀛楁閲嶅瀹氫箟 | 馃煛 | 鍒犻櫎绗?鍧楅噸澶嶅畾涔夛紙绗?鍧楄鐩栫1鍧楋級 |
-| P2 骞宠璋冪敤鎵€鏈塼ool result鍏辩敤鍚屼竴涓?`tool_call_id` | 馃數 | `build_observation` 鎸?`_tool_call_id` 鏋勫缓鍚刢all鐙湁 `per_call_fc` |
-| `tool_retry_engine.py` finish鍒嗘敮姝讳唬鐮?| 馃數 | FC-only鍒犻櫎finish鐭矾閫昏緫 |
-| `tool_safety_checker.py` 瀹夊叏闅愭偅 | 馃數 | import鏃舵眰鍊尖啋杩愯鏃惰鍙栵紱寮傚父鏃堕樆姝㈡墽琛岃€岄潪浠厀arn |
+| P0 `_pending_calls` 从未赋值（平行工具调用全部静默丢失） | 🔴 | `_call_llm_fc_stream` 从 `tool_calls` 数组提取非primary调用 → `_pending_calls` |
+| P1 `ToolMetadata.critical_notes`/`forbidden` 字段重复定义 | 🟡 | 删除第1块重复定义（第2块覆盖第1块） |
+| P2 平行调用所有tool result共用同一个 `tool_call_id` | 🔵 | `build_observation` 按 `_tool_call_id` 构建各call独有 `per_call_fc` |
+| `tool_retry_engine.py` finish分支死代码 | 🔵 | FC-only删除finish短路逻辑 |
+| `tool_safety_checker.py` 安全隐患 | 🔵 | import时求值→运行时读取；异常时阻止执行而非仅warn |
 
-### 鍑€鏁堟灉
+### 净效果
 
-- 骞宠宸ュ叿璋冪敤鍙甯稿伐浣滐紙澶氫釜tool_calls涓嶅啀闈欓粯涓㈠純锛?- FC鍗忚閰嶅姝ｇ‘锛堟瘡涓猼ool result瀵瑰簲鑷繁鐨則ool_call_id锛?- 瀛楁瀹氫箟鍘婚噸
-- 1085娴嬭瘯鍏ㄩ儴閫氳繃锛?鍥炲綊
+- 平行工具调用可正常工作（多个tool_calls不再静默丢弃）
+- FC协议配对正确（每个tool result对应自己的tool_call_id）
+- 字段定义去重
+- 1085测试全部通过，0回归
 
 ---
 
 v0.15.7
 
-鏇存柊鏃堕棿: 2026-06-11
+更新时间: 2026-06-11
 
-## v0.15.6鈫抳0.15.7 鍙樻洿姹囨€?- 灏忔矆-2026-06-11
+## v0.15.6→v0.15.7 变更汇总 - 小沈-2026-06-11
 
-### feat鈥斺€擯rompt浼樺寲:椤圭洰涓婁笅鏂囨敞鍏?鐜淇℃伅+宸ュ叿critical_notes+FC娑堟伅绫诲瀷瀹夊叏(1 commit)
+### feat——Prompt优化:项目上下文注入+环境信息+工具critical_notes+FC消息类型安全(1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| prompts/project_context.py | 鏂板鈥旇鍙朢EADME.md娉ㄥ叆绯荤粺Prompt |
-| prompts/middle/system_adapter.py | 鏂板鐜淇℃伅(宸ヤ綔鐩綍/Git妫€娴?鏃ユ湡) |
-| prompts/base_prompt_template.py | _get_project_context鈫掑娲緇oad_project_context; build_tool_descriptions杈撳嚭critical_notes/usage_hint/forbidden |
-| universal_agent.py | 鍒犻櫎閲嶅鐨刜build_project_context(宸茬敱BasePrompts缁熶竴娉ㄥ叆) |
-| tools/tool_types.py | ToolMetadata鏂板critical_notes/usage_hint/forbidden瀛楁 |
-| agent_utils/fc_message_types.py | 鏂板鈥擣C娑堟伅Pydantic妯″瀷(SystemMessage/UserMessage/AssistantMessage/ToolResultMessage) |
-| agent/message_builder.py | init_history/_append_observation鏀圭敤typed models鏋勫缓 |
+| prompts/project_context.py | 新增—读取README.md注入系统Prompt |
+| prompts/middle/system_adapter.py | 新增环境信息(工作目录/Git检测/日期) |
+| prompts/base_prompt_template.py | _get_project_context→委派load_project_context; build_tool_descriptions输出critical_notes/usage_hint/forbidden |
+| universal_agent.py | 删除重复的_build_project_context(已由BasePrompts统一注入) |
+| tools/tool_types.py | ToolMetadata新增critical_notes/usage_hint/forbidden字段 |
+| agent_utils/fc_message_types.py | 新增—FC消息Pydantic模型(SystemMessage/UserMessage/AssistantMessage/ToolResultMessage) |
+| agent/message_builder.py | init_history/_append_observation改用typed models构建 |
 
-### 鍑€鏁堟灉
+### 净效果
 
-- 椤圭洰涓婁笅鏂囩敱BasePrompts缁熶竴娉ㄥ叆(READMEmd),娑堥櫎UniversalAgent閲嶅娉ㄥ叆
-- 宸ュ叿鎻忚堪鏂板鈿犳敞鎰忎簨椤?馃挕浣跨敤鎻愮ず/馃毇绂佹鐢ㄦ硶
-- FC娑堟伅鏋勯€犻€氳繃Pydantic妯″瀷楠岃瘉,绫诲瀷瀹夊叏
-- 490闈濫2E娴嬭瘯鍏ㄩ儴閫氳繃,0鍥炲綊
+- 项目上下文由BasePrompts统一注入(READMEmd),消除UniversalAgent重复注入
+- 工具描述新增⚠注意事项/💡使用提示/🚫禁止用法
+- FC消息构造通过Pydantic模型验证,类型安全
+- 490非E2E测试全部通过,0回归
 
 ---
 
 v0.15.6
 
-鏇存柊鏃堕棿: 2026-06-11
+更新时间: 2026-06-11
 
-## v0.15.5鈫抳0.15.6 鍙樻洿姹囨€?- 灏忔矆-2026-06-11
+## v0.15.5→v0.15.6 变更汇总 - 小沈-2026-06-11
 
-### docs鈥斺€?02鏂囨。7.8瀹炴柦椤哄簭閲嶅啓+7.9鑺傚彿淇(1 commit)
+### docs——002文档7.8实施顺序重写+7.9节号修正(1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| 002LLM_Prompt涓嶮essage_History鍏ㄧ郴缁熷垎鏋?md | 鐗堟湰v1.4鈫抳1.5锛?.8瀹炴柦椤哄簭閲嶅啓锛堜緷璧栧墠缃紝涓冭疆鎵规锛夛紱7.9"6.4.1"鈫?7.4.1" |
+| 002LLM_Prompt与Message_History全系统分析.md | 版本v1.4→v1.5：7.8实施顺序重写（依赖前置，七轮批次）；7.9"6.4.1"→"7.4.1" |
 
 v0.15.5
 
-鏇存柊鏃堕棿: 2026-06-11 09:37:46
+更新时间: 2026-06-11 09:37:46
 
-## v0.15.4鈫抳0.15.5 鍙樻洿姹囨€?- 灏忔矆-2026-06-11
+## v0.15.4→v0.15.5 变更汇总 - 小沈-2026-06-11
 
-### docs鈥斺€?02鏂囨。绔犺妭鍙蜂簰鎹?闄嶇骇璺緞鍒嗘瀽(1 commit)
+### docs——002文档章节号互换+降级路径分析(1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| 002LLM_Prompt涓嶮essage_History鍏ㄧ郴缁熷垎鏋?md | 鐗堟湰v1.3鈫抳1.4锛氬叚鈫斾竷绔犺妭鍙蜂簰鎹紙鍏?瀹屾暣娴佺▼绀轰緥, 涓?FC-only锛夛紱鏂板7.1.1闄嶇骇璺緞蹇呰鎬у垎鏋?|
+| 002LLM_Prompt与Message_History全系统分析.md | 版本v1.3→v1.4：六↔七章节号互换（六=完整流程示例, 七=FC-only）；新增7.1.1降级路径必要性分析 |
 
 v0.15.4
 
-鏇存柊鏃堕棿: 2026-06-11 09:19:07
+更新时间: 2026-06-11 09:19:07
 
-## v0.15.3鈫抳0.15.4 鍙樻洿姹囨€?- 灏忔矆-2026-06-11
+## v0.15.3→v0.15.4 变更汇总 - 小沈-2026-06-11
 
-### docs鈥斺€?02鏂囨。鏂板FC-only鍏ㄧ郴缁熸枃浠舵鏌ユ竻鍗?1 commit)
+### docs——002文档新增FC-only全系统文件检查清单(1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| 002LLM_Prompt涓嶮essage_History鍏ㄧ郴缁熷垎鏋?md | 鐗堟湰v1.2鈫抳1.3锛氭柊澧?.9鑺侳C-only鍏ㄧ郴缁熸枃浠舵鏌ユ竻鍗曪紱鏂板"璁捐绾︽潫"瑕佹眰锛涜ˉ鍏?.8瀹炴柦椤哄簭锛堛墤-銐橈級|
+| 002LLM_Prompt与Message_History全系统分析.md | 版本v1.2→v1.3：新增6.9节FC-only全系统文件检查清单；新增"设计约束"要求；补充6.8实施顺序（㉑-㉘）|
 
-## v0.15.2鈫抳0.15.3 鍙樻洿姹囨€?- 灏忔矆-2026-06-10
+## v0.15.2→v0.15.3 变更汇总 - 小沈-2026-06-10
 
-### feat鈥斺€擣C妯″紡宸ュ叿璋冪敤澧炲己 + intent鏄犲皠淇 + 涓枃澶у皬鍐欎笉鏁忔劅(1 commit)
+### feat——FC模式工具调用增强 + intent映射修复 + 中文大小写不敏感(1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| detect_intent.py | 娣诲姞ToolCategory.value鈫抜ntent_type鏄犲皠(doc_content鈫抎ocument绛? |
-| chat_stream_v2.py | 璁剧疆_current_task_id context variable |
-| react_cycle.py | FC妯″紡LLM绾枃鏈椂娉ㄥ叆宸ュ叿璋冪敤鎻愰啋 |
-| crss_scorer.py | 涓枃鍏抽敭璇嶅ぇ灏忓啓涓嶆晱鎰?浣跨敤kw.lower()) |
-| tool_types.py | C鐩?D鐩?E鐩樻敼涓哄皬鍐?|
-| shell_tools.py | 瀹夊叏妫€鏌ユ敼鐢╞locked瀛楁(涓嶇敤is_safe) |
-| tool_safety_checker.py | write_text_file鍙傛暟鍚嶄慨澶?+ 娣诲姞鍏煎鏂规硶 |
-| base_prompt_template.py | TOOL_CALL_RULES澧炲己寮哄埗宸ュ叿璋冪敤瑙勫垯 |
-| task_cancel.py | 鍒犻櫎鐩存帴Task.cancel(),璁㏑eAct鑷劧鍙戠幇cancelled鐘舵€?|
+| detect_intent.py | 添加ToolCategory.value→intent_type映射(doc_content→document等) |
+| chat_stream_v2.py | 设置_current_task_id context variable |
+| react_cycle.py | FC模式LLM纯文本时注入工具调用提醒 |
+| crss_scorer.py | 中文关键词大小写不敏感(使用kw.lower()) |
+| tool_types.py | C盘/D盘/E盘改为小写 |
+| shell_tools.py | 安全检查改用blocked字段(不用is_safe) |
+| tool_safety_checker.py | write_text_file参数名修复 + 添加兼容方法 |
+| base_prompt_template.py | TOOL_CALL_RULES增强强制工具调用规则 |
+| task_cancel.py | 删除直接Task.cancel(),让ReAct自然发现cancelled状态 |
 
-### refactor鈥斺€擧ITL纭鏈哄埗淇 + 鏃ュ織浼樺寲 + 鎬ц兘缁熻(1 commit)
+### refactor——HITL确认机制修复 + 日志优化 + 性能统计(1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| action_handler.py | check_safety_and_confirm鏀逛负async generator,IncidentStep鍏坹ield鍐嶇瓑纭 |
-| action_handler.py | 浣跨敤agent.status鍒ゆ柇鍋滄,娑堥櫎isinstance妫€鏌?SLAP) |
-| crss_scorer/react_cycle/prompts澶氫釜 | 鏃ュ織info鈫抎ebug浼樺寲,鍑忓皯鍐椾綑鏃ュ織 |
-| llm_core.py | 娣诲姞娴佸紡璇锋眰鑰楁椂+chunk鏁扮粺璁?|
-| action_handler.py | 娣诲姞宸ュ叿鎵ц鑰楁椂缁熻 |
-| error_handler.py | parse_error鏃跺皾璇曚綔涓烘渶缁堝洖绛?FC妯″紡LLM鐩存帴鍥炵瓟) |
-| pytest.ini | 娣诲姞e2e_full_link/asyncio markers |
+| action_handler.py | check_safety_and_confirm改为async generator,IncidentStep先yield再等确认 |
+| action_handler.py | 使用agent.status判断停止,消除isinstance检查(SLAP) |
+| crss_scorer/react_cycle/prompts多个 | 日志info→debug优化,减少冗余日志 |
+| llm_core.py | 添加流式请求耗时+chunk数统计 |
+| action_handler.py | 添加工具执行耗时统计 |
+| error_handler.py | parse_error时尝试作为最终回答(FC模式LLM直接回答) |
+| pytest.ini | 添加e2e_full_link/asyncio markers |
 
-### refactor鈥斺€攕afety纭鏀圭敤AgentStatus.FAILED(1 commit)
+### refactor——safety确认改用AgentStatus.FAILED(1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| action_handler.py | safety纭閫昏緫鏀逛负AgentStatus.FAILED |
-| tool_safety_checker.py | 鏂板鐩稿叧鏀寔鏂规硶 |
+| action_handler.py | safety确认逻辑改为AgentStatus.FAILED |
+| tool_safety_checker.py | 新增相关支持方法 |
 
-### refactor鈥斺€攆actory閲嶆瀯+handlers璋冩暣+tools娉ㄥ唽琛ㄦ洿鏂?1 commit)
+### refactor——factory重构+handlers调整+tools注册表更新(1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| handlers/ (action/error) | 澶勭悊閫昏緫閲嶆瀯 |
-| factory/ (澶氫釜) | 宸ュ巶鏂规硶璋冩暣 |
-| tools/register (6涓? | 娉ㄥ唽琛ㄧ粺涓€鏇存柊 |
-| log_config/ (setup) | 鏃ュ織閰嶇疆鏁寸悊 |
-| doc/ | 鏂板backend-code-logic-review v2鍒嗘瀽鏂囨。 |
+| handlers/ (action/error) | 处理逻辑重构 |
+| factory/ (多个) | 工厂方法调整 |
+| tools/register (6个) | 注册表统一更新 |
+| log_config/ (setup) | 日志配置整理 |
+| doc/ | 新增backend-code-logic-review v2分析文档 |
 
-### refactor鈥斺€斿垹闄ool_safety_checker姝讳唬鐮?YAGNI)(1 commit)
+### refactor——删除tool_safety_checker死代码(YAGNI)(1 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| tool_safety_checker.py | 鍒犻櫎record_operation/execute_with_safety鏈皟鐢ㄦ柟娉?|
+| tool_safety_checker.py | 删除record_operation/execute_with_safety未调用方法 |
 
-### docs鈥斺€旀柊澧濴LM-Prompt涓嶮essage绯荤粺鍒嗘瀽鏂囨。鍙婅皟璇曡剼鏈?1 commit)
+### docs——新增LLM-Prompt与Message系统分析文档及调试脚本(1 commit)
 
-| 鏂囦欢 | 璇存槑 |
+| 文件 | 说明 |
 |------|------|
-| doc/LLM-Prompt涓嶮essage鐩綍(7涓枃浠? | 鍒嗘瀽鎶ュ憡+璋冭瘯鑴氭湰+娣卞害鍒嗘瀽 |
+| doc/LLM-Prompt与Message目录(7个文件) | 分析报告+调试脚本+深度分析 |
 
-### 鍑€鏁堟灉
+### 净效果
 
-- 9涓湁鏁坈ommit
-- FC妯″紡宸ュ叿璋冪敤澧炲己
-- HITL纭鏈哄埗瀹屽杽
-- 鏃ュ織鍐椾綑澶у箙鍑忓皯
-- 鎬ц兘缁熻鑳藉姏鏂板
-- 鍏ㄩ儴娴嬭瘯閫氳繃
+- 9个有效commit
+- FC模式工具调用增强
+- HITL确认机制完善
+- 日志冗余大幅减少
+- 性能统计能力新增
+- 全部测试通过
 
 ---
 
 v0.15.2
 
-鏇存柊鏃堕棿: 2026-06-10 01:52:30
+更新时间: 2026-06-10 01:52:30
 
-## v0.15.1鈫抳0.15.2 鍙樻洿姹囨€?- 灏忔矆-2026-06-10
+## v0.15.1→v0.15.2 变更汇总 - 小沈-2026-06-10
 
-### P4-01 钖勮皟搴﹂噸鏋?5 commit)
+### P4-01 薄调度重构(5 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| handlers/ (5涓? | 鏂板handler妯″潡锛屼笟鍔￠€昏緫浠巖eact_cycle.py绉诲嚭 |
-| react_cycle.py | 钖勮皟搴﹂噸鏋?16+/250-)锛宊TYPE_HANDLERS鍒嗘淳 |
-| AGENTS.md | 鍒犻櫎宸蹭笉瀛樺湪鐨凩LM classifier fallback鎻忚堪 |
-| factory/ (澶氫釜) | backup_paths鍚堝苟3鏂囦欢+get_service鍔犻攣+validate_config浼樺寲 |
-| message_id_tracker.py | api/v1/鈫抯ervices/杩佺Щ |
+| handlers/ (5个) | 新增handler模块，业务逻辑从react_cycle.py移出 |
+| react_cycle.py | 薄调度重构(16+/250-)，_TYPE_HANDLERS分派 |
+| AGENTS.md | 删除已不存在的LLM classifier fallback描述 |
+| factory/ (多个) | backup_paths合并3文件+get_service加锁+validate_config优化 |
+| message_id_tracker.py | api/v1/→services/迁移 |
 
-### 姝讳唬鐮佹竻鐞?Safety妯″潡閲嶆瀯(6 commit)
+### 死代码清理+Safety模块重构(6 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| tool_safety_checker.py | 鏂板宸ュ叿瀹夊叏妫€鏌ュ櫒(SafetyManager鍓ョ) |
-| manager.py | 鍒犻櫎宸插簾寮僑afetyManager(212琛? |
-| file_operation_safety.py | 鍒犻櫎搴熷純SafetyHook缁ф壙 |
-| shell_tools.py | import璺緞safety.manager鈫抯afety.tool_safety_checker |
-| file_tools.py | 鍒犻櫎搴熷純get_hook/register_hook璋冪敤 |
-| llm_core.py | 鍒犻櫎196-224琛屾浠ｇ爜(return鍚庨噸澶嶄唬鐮? |
+| tool_safety_checker.py | 新增工具安全检查器(SafetyManager剥离) |
+| manager.py | 删除已废弃SafetyManager(212行) |
+| file_operation_safety.py | 删除废弃SafetyHook继承 |
+| shell_tools.py | import路径safety.manager→safety.tool_safety_checker |
+| file_tools.py | 删除废弃get_hook/register_hook调用 |
+| llm_core.py | 删除196-224行死代码(return后重复代码) |
 
-### CancelledError+DB寮傚父淇濇姢(2 commit)
+### CancelledError+DB异常保护(2 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| run_sse_stream.py | CancelledError鐢熸垚IncidentStep+finally鍧桪B寮傚父淇濇姢 |
-| task_cancel_check.py | 闃查噸澶峚ppend interrupted step |
+| run_sse_stream.py | CancelledError生成IncidentStep+finally块DB异常保护 |
+| task_cancel_check.py | 防重复append interrupted step |
 
-### 寮傛淇+HTTP闃诲鏆傚仠(4 commit)
+### 异步修复+HTTP阻塞暂停(4 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| confirm_operation.py | get_event_loop鈫抔et_running_loop, CLEANUP_INTERVAL 10绉?|
+| confirm_operation.py | get_event_loop→get_running_loop, CLEANUP_INTERVAL 10秒 |
 | close_instance_sync.py | get_running_loop() + fallback |
-| llm_core.py | HTTP闃诲鏈熼棿瀹氭湡妫€鏌ュ彇娑?鏆傚仠鐘舵€?閲嶈瘯 |
-| client_sdk.py | request_stream娣诲姞cancel_check鍙傛暟 |
-| universal_agent.py | LLM璇锋眰娣诲姞pause_event鍙傛暟 |
+| llm_core.py | HTTP阻塞期间定期检查取消/暂停状态+重试 |
+| client_sdk.py | request_stream添加cancel_check参数 |
+| universal_agent.py | LLM请求添加pause_event参数 |
 
-### 绾跨▼瀹夊叏+宸ュ叿閰嶇疆(4 commit)
+### 线程安全+工具配置(4 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
 | get_service.py | threading.Lock + double-checked locking |
-| constants.py | 鏂板MAX_CHUNKS_WITHOUT_PROMOTE甯搁噺 |
-| chunk_buffer.py | max_without_promote鍙厤缃?浠巆onstants璇诲彇) |
-| tool_manager.py | refresh_fc_tools搴熷純(UniversalAgent鏃爐ools_strategy) |
+| constants.py | 新增MAX_CHUNKS_WITHOUT_PROMOTE常量 |
+| chunk_buffer.py | max_without_promote可配置(从constants读取) |
+| tool_manager.py | refresh_fc_tools废弃(UniversalAgent无tools_strategy) |
 
-### 宸ュ叿鍑芥暟璋冩暣(5 commit)
+### 工具函数调整(5 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| time_utils.py | 鏃堕棿宸ュ叿鍑芥暟浼樺寲 |
-| data_format_helper.py | 鏂板write_yaml_ordered鍏叡鎺ュ彛 |
-| file_helpers.py | 瀵煎叆璺緞璋冩暣 |
-| file_visualization.py | 鏂囦欢鍙鍖栬皟鏁?|
-| api.ts | Confirm鎺ュ彛鏀逛负confirm_id+trust_session |
+| time_utils.py | 时间工具函数优化 |
+| data_format_helper.py | 新增write_yaml_ordered公共接口 |
+| file_helpers.py | 导入路径调整 |
+| file_visualization.py | 文件可视化调整 |
+| api.ts | Confirm接口改为confirm_id+trust_session |
 
-### 鍏朵粬(3 commit)
+### 其他(3 commit)
 
-| 鏂囦欢 | 鍙樻洿 |
+| 文件 | 变更 |
 |------|------|
-| .gitignore | 淇缂栫爜鎹熷潖+娣诲姞鎻掍欢妯″瀷-research/蹇界暐 |
-| models.py | 鍒犻櫎ChatRequest.task_id瀛楁 |
+| .gitignore | 修复编码损坏+添加插件模型-research/忽略 |
+| models.py | 删除ChatRequest.task_id字段 |
 
 ---
 
 v0.15.1
 
-鏇存柊鏃堕棿: 2026-06-09 15:28:15
+更新时间: 2026-06-09 15:28:15
 
-## v0.15.0鈫抳0.15.1 鍙樻洿姹囨€?- 灏忔矆-2026-06-09
+## v0.15.0→v0.15.1 变更汇总 - 小沈-2026-06-09
 
-### 涓€銆乺efactor 閲嶆瀯鈥斺€擜gent/SDK/Service涓夊眰缁熶竴涓簉equest/request_stream鏂规硶(6涓猚ommit)
+### 一、refactor 重构——Agent/SDK/Service三层统一为request/request_stream方法(6个commit)
 
-| 妯″潡 | 鍙樻洿鍐呭 |
+| 模块 | 变更内容 |
 |------|---------|
-| SDK灞?| chat/chat_stream閲嶆瀯涓簉equest/request_stream |
-| Service灞?| 缁熶竴涓簉equest/request_stream/chat鏂规硶 |
-| Agent璋冪敤 | 缁熶竴涓簉equest/request_stream鏂规硶 |
-| llm_core瀵煎嚭 | 鏇存柊涓烘柊鏂规硶 |
+| SDK层 | chat/chat_stream重构为request/request_stream |
+| Service层 | 统一为request/request_stream/chat方法 |
+| Agent调用 | 统一为request/request_stream方法 |
+| llm_core导出 | 更新为新方法 |
 
-### 浜屻€乺efactor 閲嶆瀯鈥斺€旀浠ｇ爜娓呯悊(6涓猚ommit)
+### 二、refactor 重构——死代码清理(6个commit)
 
-| 鍒犻櫎椤?| 璇存槑 |
+| 删除项 | 说明 |
 |--------|------|
-| chat.py / chat_with_tools_stream.py / tool_caller.py | 鏁存枃浠跺垹闄?|
-| REACT_KEYWORDS / _get_all_tool_names | 鏃х瓥鐣ュ垹闄?|
-| sse_retry.py | 鍔熻兘鍚堝苟鍒皀etwork_retry.py |
-| get_config_path.py / compute_file_hash.py | 鍔熻兘鍚堝苟鍒板叾浠栨ā鍧?|
-| tool_queries.py | 鍔熻兘鍚堝苟鍒皌ool_registry |
+| chat.py / chat_with_tools_stream.py / tool_caller.py | 整文件删除 |
+| REACT_KEYWORDS / _get_all_tool_names | 旧策略删除 |
+| sse_retry.py | 功能合并到network_retry.py |
+| get_config_path.py / compute_file_hash.py | 功能合并到其他模块 |
+| tool_queries.py | 功能合并到tool_registry |
 
-### 涓夈€乺efactor 閲嶆瀯鈥斺€?0澶у師鍒欎慨澶?9涓猚ommit)
+### 三、refactor 重构——10大原则修复(9个commit)
 
-| 鍘熷垯 | 淇鍐呭 |
+| 原则 | 修复内容 |
 |------|---------|
-| 澶嶇敤浼樺厛 | 9涓繚鍙嶅鐢ㄤ紭鍏堥棶棰樹慨澶?parse_json缁熶竴銆佸叕鐢ㄥ嚱鏁版娊鍙栫瓑) |
-| DRY | _format_tool_calls娑堥櫎3娆￠噸澶峱arse_json銆乪xtract_data_summary鎶藉彇鍏敤 |
-| KISS | 绠€鍖朣tep绫汇€丄PI灞傘€乀ask妯″瀷銆佸垹闄ゅ啑浣欐枃浠?|
-| SRP | Agent鐘舵€佺鐞嗙Щ鍏gent銆佸弬鏁伴獙璇佽亴璐ｆ竻鏅?|
+| 复用优先 | 9个违反复用优先问题修复(parse_json统一、公用函数抽取等) |
+| DRY | _format_tool_calls消除3次重复parse_json、extract_data_summary抽取公用 |
+| KISS | 简化Step类、API层、Task模型、删除冗余文件 |
+| SRP | Agent状态管理移入Agent、参数验证职责清晰 |
 
-### 鍥涖€乺efactor 閲嶆瀯鈥斺€擳oolCategory鍒嗙被閲嶆瀯(3涓猚ommit)
+### 四、refactor 重构——ToolCategory分类重构(3个commit)
 
-| 鍙樻洿 | 璇存槑 |
+| 变更 | 说明 |
 |------|------|
-| ToolCategory閲嶅懡鍚?| 5鍒嗙被閲嶅懡鍚嶏紝娑堥櫎璇箟妯＄硦 |
-| SYSTEM鎷嗗垎涓篎UND_RUNTIME+NET_PROCESS | 鑱岃矗鏇存竻鏅?|
-| batch_process褰掑叆FILE | 娑堥櫎杈圭晫妯＄硦 |
+| ToolCategory重命名 | 5分类重命名，消除语义模糊 |
+| SYSTEM拆分为FUND_RUNTIME+NET_PROCESS | 职责更清晰 |
+| batch_process归入FILE | 消除边界模糊 |
 
-### 浜斻€乺efactor 閲嶆瀯鈥斺€攗niversal_agent娴佸紡鏋舵瀯閲嶆瀯(1涓猚ommit)
+### 五、refactor 重构——universal_agent流式架构重构(1个commit)
 
-- 鍏ㄦ祦寮忔灦鏋勯噸鍐?
-### 鍏€乫ix bug鈥斺€斾慨澶?8涓猚ommit)
+- 全流式架构重写
 
-| 淇椤?| 璇存槑 |
+### 六、fix bug——修复(8个commit)
+
+| 修复项 | 说明 |
 |--------|------|
-| incident鎭㈠ | 鍚庣鍙慽ncident+incident_value鍓嶇switch鍒嗗彂 |
-| useChatFacade | 鍒犻櫎鏁村璞eps浣縰seMemo鐢熸晥 |
-| 10椤逛唬鐮佽川閲忎慨澶?| bare except/姝讳唬鐮?瓒呮椂/鐘舵€?|
-| 鍚庣绗簩杞鏌?椤逛慨澶?| R1-1/R1-2/R3-1/R5-1/R10-2/R10-4 |
-| sse.ts閲嶅is_reasoning妫€鏌?| 鍒犻櫎閲嶅妫€鏌?|
-| useChatFacade淇useMemo渚濊禆椤?| perf浼樺寲 |
-| _handle_finish_tool琛ュ厖reasoning浼犻€?| finish鏃跺墠绔彲鏄剧ず鎺ㄧ悊杩囩▼ |
+| incident恢复 | 后端发incident+incident_value前端switch分发 |
+| useChatFacade | 删除整对象deps使useMemo生效 |
+| 10项代码质量修复 | bare except/死代码/超时/状态 |
+| 后端第二轮审查6项修复 | R1-1/R1-2/R3-1/R5-1/R10-2/R10-4 |
+| sse.ts重复is_reasoning检查 | 删除重复检查 |
+| useChatFacade修复useMemo依赖项 | perf优化 |
+| _handle_finish_tool补充reasoning传递 | finish时前端可显示推理过程 |
 
-### 涓冦€乨ocs 鏂囨。(7涓猚ommit)
+### 七、docs 文档(7个commit)
 
-- LLM鏍稿績鏋舵瀯閲嶆瀯瀹炶返鎶ュ憡
-- LLM鏍稿績鏋舵瀯浠ｇ爜鏍告煡鎶ュ憡
-- 閲嶅啓瀹炴柦淇敼鏂规(10澶у師鍒欑増)
-- LLM鏍稿績鏋舵瀯娣卞害鍒嗘瀽&瀵规瘮鍒嗘瀽
-- Agent2.5璁捐鏂囨。绮剧畝
-- 浠ｇ爜5鍘熷垯鍒嗘瀽鎶ュ憡鏇存柊
-- 浠ｇ爜鏍告煡璋冭瘯绗旇
+- LLM核心架构重构实践报告
+- LLM核心架构代码核查报告
+- 重写实施修改方案(10大原则版)
+- LLM核心架构深度分析&对比分析
+- Agent2.5设计文档精简
+- 代码5原则分析报告更新
+- 代码核查调试笔记
 
-### 鍑€鏁堟灉
+### 净效果
 
 - 40+ commit
-- Agent/SDK/Service涓夊眰缁熶竴鍛藉悕
-- 姝讳唬鐮佸ぇ閲忓垹闄?- 10澶у師鍒欏叏闈㈤伒瀹?- 鍏ㄩ儴娴嬭瘯閫氳繃
+- Agent/SDK/Service三层统一命名
+- 死代码大量删除
+- 10大原则全面遵守
+- 全部测试通过
 
 ---
 
 v0.15.0
 
-鏇存柊鏃堕棿: 2026-06-09 06:36:19
+更新时间: 2026-06-09 06:36:19
 
-## v0.14.10鈫抳0.15.0 鍙樻洿姹囨€?- 灏忔矆-2026-06-09
+## v0.14.10→v0.15.0 变更汇总 - 小沈-2026-06-09
 
-### 涓€銆乺efactor 閲嶆瀯鈥斺€斿悗绔牳蹇冧唬鐮佸叏闈㈤噸鏋?1 涓ぇ commit)
+### 一、refactor 重构——后端核心代码全面重构(1 个大 commit)
 
-| 妯″潡 | 鍙樻洿鍐呭 |
+| 模块 | 变更内容 |
 |------|---------|
-| agent/ | base_react鈫抍ore_agent閲嶅懡鍚?娑堥櫎react_loop/react鏈璇 |
-| chat璺敱 | chat_stream鐩綍鍚堝苟涓哄崟鏂囦欢,鍒犻櫎react_sse_wrapper鏃ф枃浠?|
-| preprocessing/safety | 浠ｇ爜瑙勮寖鍖?姝讳唬鐮佹竻鐞?|
-| command_parser/llm_response_parser | import鎺掑簭+鏍煎紡鍖?姝讳唬鐮佹竻鐞?|
-| message_saver | 缁熶竴閲嶆瀯 |
+| agent/ | base_react→core_agent重命名,消除react_loop/react术语误导 |
+| chat路由 | chat_stream目录合并为单文件,删除react_sse_wrapper旧文件 |
+| preprocessing/safety | 代码规范化+死代码清理 |
+| command_parser/llm_response_parser | import排序+格式化+死代码清理 |
+| message_saver | 统一重构 |
 
-### 浜屻€乺efactor 閲嶆瀯鈥斺€攁gent鐩綍鐑備唬鐮佹竻鐞?v0.14.10宸茶褰?寤剁画)
+### 二、refactor 重构——agent目录烂代码清理(v0.14.10已记录,延续)
 
-- base_react.py/react_handler_mixin.py/steps.py/types.py鍚堝苟
-- 80+姝籭mport鍒犻櫎,2涓弗閲峛ug淇
+- base_react.py/react_handler_mixin.py/steps.py/types.py合并
+- 80+死import删除,2个严重bug修复
 
-### 涓夈€乺efactor 閲嶆瀯鈥斺€斿懡鍚嶇粺涓€(6 涓?commit)
+### 三、refactor 重构——命名统一(6 个 commit)
 
-| 鍙樻洿 | 璇存槑 |
+| 变更 | 说明 |
 |------|------|
-| Agent绫诲懡鍚?| React鈫扐gent,娑堥櫎react鏈璇 |
-| base_react鈫抍ore_agent | 鏂囦欢/绫诲悕缁熶竴 |
-| agent_loop.py | 娑堥櫎react_loop鏈 |
-| react_cycle.py | 鍑芥暟鍚嶇粺涓€涓簉un_react_cycle |
-| parse_llm_response.py | 鍑芥暟鍜屾枃浠堕噸鍛藉悕 |
-| chat鈫抋ggregate_chat_response | 鍑芥暟鍚嶈涔夊寲 |
+| Agent类命名 | React→Agent,消除react术语误导 |
+| base_react→core_agent | 文件/类名统一 |
+| agent_loop.py | 消除react_loop术语 |
+| react_cycle.py | 函数名统一为run_react_cycle |
+| parse_llm_response.py | 函数和文件重命名 |
+| chat→aggregate_chat_response | 函数名语义化 |
 
-### 鍥涖€乫ix bug鈥斺€斿叏闈慨澶嶅懡鍚?鏂囨。/API涓嶅尮閰?3 涓?commit)
+### 四、fix bug——全面修复命名/文档/API不匹配(3 个 commit)
 
-- 26涓懡鍚?鏂囨。/API涓嶅尮閰嶉棶棰樹慨澶?- 31涓懡鍚嶉棶棰樹慨澶?- 10澶т唬鐮佽鑼?3涓棶棰樹慨澶?- 10澶ф祦绋嬩唬鐮佽鑼冧慨澶?F1-F10)
-- ThoughtStep.to_dict宕╂簝淇
-- run_stream瀹屾暣ReAct寰幆瀹炵幇
-- common_patterns妯″潡缂哄け淇
-- 骞跺彂閿?鍙傛暟楠岃瘉/宸ュ叿鏌ユ壘闂淇
-- system_prompts.py import缂╄繘淇
+- 26个命名/文档/API不匹配问题修复
+- 31个命名问题修复
+- 10大代码规范23个问题修复
+- 10大流程代码规范修复(F1-F10)
+- ThoughtStep.to_dict崩溃修复
+- run_stream完整ReAct循环实现
+- common_patterns模块缺失修复
+- 并发锁/参数验证/工具查找问题修复
+- system_prompts.py import缩进修复
 
-### 浜斻€乺efactor 閲嶆瀯鈥斺€旀浠ｇ爜娓呯悊(6 涓?commit)
+### 五、refactor 重构——死代码清理(6 个 commit)
 
-| 鍒犻櫎椤?| 璇存槑 |
+| 删除项 | 说明 |
 |--------|------|
-| AIServiceFactory | 绾┖澹崇被+28涓┖澹冲鎵?|
-| _network_engine | 姝讳唬鐮?|
-| yield_error_sse | 绌哄３鍑芥暟 |
-| _init_tools | base_react.py涓嶅啀浣跨敤鐨勬柟娉?|
-| _RateLimitError/_post_with_retry | llm_core.py涓嶅啀浣跨敤 |
-| normalize_params/_validate_params/_lookup_tool | 涓嶅啀浣跨敤鐨勮緟鍔╂柟娉?|
-| SecurityProvider | 鏈娇鐢?|
-| nextPage鍑芥暟 | 鏈娇鐢?|
+| AIServiceFactory | 纯空壳类+28个空壳委托 |
+| _network_engine | 死代码 |
+| yield_error_sse | 空壳函数 |
+| _init_tools | base_react.py不再使用的方法 |
+| _RateLimitError/_post_with_retry | llm_core.py不再使用 |
+| normalize_params/_validate_params/_lookup_tool | 不再使用的辅助方法 |
+| SecurityProvider | 未使用 |
+| nextPage函数 | 未使用 |
 
-### 鍏€乺efactor 閲嶆瀯鈥斺€斿鐢ㄤ紭鍏堜慨澶?2 涓?commit)
+### 六、refactor 重构——复用优先修复(2 个 commit)
 
-- 浣跨敤_build_handler_result鍜宔xtract_reasoning_from_chunk澶嶇敤
-- retry_engine/collector/visualization浼樺寲
+- 使用_build_handler_result和extract_reasoning_from_chunk复用
+- retry_engine/collector/visualization优化
 
-### 涓冦€乼ests 娴嬭瘯(2 涓?commit)
+### 七、tests 测试(2 个 commit)
 
-- 淇21涓け璐ユ祴璇?error_label bug+observation_step.py _tool_name瀛樺偍
-- 淇test_tool_executor_fallback杩佺Щ鑷砊oolRetryEngine
+- 修复21个失败测试+error_label bug+observation_step.py _tool_name存储
+- 修复test_tool_executor_fallback迁移至ToolRetryEngine
 
-### 鍏€乨ocs 鏂囨。(4 涓?commit)
+### 八、docs 文档(4 个 commit)
 
-- 鏇存柊鍚庣/鍓嶇浠ｇ爜娣卞害鍒嗘瀽鎶ュ憡
-- 鏇存柊鍏ㄩ摼璺疎2E闆嗘垚娴嬭瘯鏂规v1.1
-- 绠€鍖朅PI绔偣鏂囨。+琛ュ厖Router鍒嗙粍璁捐璇存槑
-- 鏇存柊浠ｇ爜瑙勮寖瀹℃煡鎶ュ憡
+- 更新后端/前端代码深度分析报告
+- 更新全链路E2E集成测试方案v1.1
+- 简化API端点文档+补充Router分组设计说明
+- 更新代码规范审查报告
 
-### 涔濄€乧hore 鏉傞」(3 涓?commit)
+### 九、chore 杂项(3 个 commit)
 
-- 鏇存柊.gitignore娣诲姞tests/reports/logs/pytest/dist/node_modules绛夊拷鐣ヨ鍒?- 浠巊it绱㈠紩绉婚櫎宸茶.gitignore蹇界暐鐨勬祴璇曟枃浠?- 鍒犻櫎涓存椂娴嬭瘯鑴氭湰
+- 更新.gitignore添加tests/reports/logs/pytest/dist/node_modules等忽略规则
+- 从git索引移除已被.gitignore忽略的测试文件
+- 删除临时测试脚本
 
-### 鍑€鏁堟灉
+### 净效果
 
-- 47 涓?commit
-- Agent鍛藉悕浣撶郴鍏ㄩ潰缁熶竴(React鈫扐gent)
-- 姝讳唬鐮佸ぇ閲忓垹闄?- 21涓祴璇曚慨澶嶉€氳繃
-- 10澶у師鍒欏叏闈㈤伒瀹?
+- 47 个 commit
+- Agent命名体系全面统一(React→Agent)
+- 死代码大量删除
+- 21个测试修复通过
+- 10大原则全面遵守
+
 ---
 
 v0.14.10
 
-鏇存柊鏃堕棿: 2026-06-07 22:30:00
+更新时间: 2026-06-07 22:30:00
 
-## v0.14.9鈫抳0.14.10 鍙樻洿姹囨€?- AI鍔╂墜灏忔-2026-06-07
+## v0.14.9→v0.14.10 变更汇总 - AI助手小欧-2026-06-07
 
-### 涓€銆乺efactor 閲嶆瀯鈥斺€斿洖婊?v0.14.9 杩囧害鎷嗗垎(鏈 1 涓?commit)
+### 一、refactor 重构——回滚 v0.14.9 过度拆分(本次 1 个 commit)
 
-v0.14.9 鎶?base_react.py / react_handler_mixin.py 鎷嗗垎涓?package 鐩綍(19 涓?commit)锛?鏈鎸?10 澶у師鍒?YAGNI/KISS)鍥炴粴 4 涓繃搴︽媶鍒嗗瓙鐩綍锛屽悎骞朵负鍗曟枃浠讹細
+v0.14.9 把 base_react.py / react_handler_mixin.py 拆分为 package 目录(19 个 commit)，
+本次按 10 大原则(YAGNI/KISS)回滚 4 个过度拆分子目录，合并为单文件：
 
-| 瀛愮洰褰曗啋鍗曟枃浠?| 鍘熸枃浠舵暟 | 鍒犻櫎/鍚堝苟鍐呭 | 杩濆弽鍘熷垯 |
+| 子目录→单文件 | 原文件数 | 删除/合并内容 | 违反原则 |
 |---------------|---------|---------------|---------|
-| `agent/base_react/`鈫抈base_react.py` | 7鈫? | agent_initializer / initialize_run_state / run_stream / step_emitter / tool_manager 鍏ㄩ儴鍚堝苟 | YAGNI:涓€涓熀绫绘媶 7 涓枃浠?|
-| `agent/mixins/react_handler_mixin/`鈫抈mixins/react_handler_mixin.py` | 12鈫? | 11 涓柟娉曞悎骞跺埌 1 涓?mixin 绫?| YAGNI:姣忎釜鏂规硶涓€涓枃浠?|
-| `agent/steps/`鈫抈steps.py` | 11鈫? | 9 涓?step 瀛愮被 + factory + base 鍚堝苟 | YAGNI:姣忎釜绫讳竴涓枃浠?|
-| `agent/types/`鈫抈types.py` | 3鈫? | AgentStatus 鏋氫妇 + AgentResult dataclass 鍚堝苟 | YAGNI:鏋氫妇鍗曠嫭鎴愭枃浠?|
+| `agent/base_react/`→`base_react.py` | 7→1 | agent_initializer / initialize_run_state / run_stream / step_emitter / tool_manager 全部合并 | YAGNI:一个基类拆 7 个文件 |
+| `agent/mixins/react_handler_mixin/`→`mixins/react_handler_mixin.py` | 12→1 | 11 个方法合并到 1 个 mixin 类 | YAGNI:每个方法一个文件 |
+| `agent/steps/`→`steps.py` | 11→1 | 9 个 step 子类 + factory + base 合并 | YAGNI:每个类一个文件 |
+| `agent/types/`→`types.py` | 3→1 | AgentStatus 枚举 + AgentResult dataclass 合并 | YAGNI:枚举单独成文件 |
 
-### 浜屻€乺efactor 閲嶆瀯鈥斺€斿垹闄ょ函姝讳唬鐮?1 涓?commit)
+### 二、refactor 重构——删除纯死代码(1 个 commit)
 
-| 鏂囦欢 | 澶у皬 | 鍒犻櫎鍘熷洜 |
+| 文件 | 大小 | 删除原因 |
 |------|------|---------|
-| `mixins/protocols.py` | 1186 bytes | 0 寮曠敤 Protocol 鎺ュ彛绾︽潫,YAGNI/ISP 杩濆弽 |
-| `app/utils/type_guards.py` | 鈥?| 鎾ら攢 TYPE-3/4 鏃舵柊寤虹殑杩囧害宸ョ▼,鍔熻兘宸插唴鑱?|
-| `agent/llm_strategies_pkg/` | 鏁翠釜鐩綍 | 鎾ら攢 ARCH-2 鏃舵柊寤虹殑 19 琛?re-export 鍖?|
-| `mixins/react_handler_mixin/session_lifecycle_mixin.py` | 鈥?| 鎾ら攢 ARCH-3 鏃舵柊寤虹殑 Session 鎷嗗垎 |
+| `mixins/protocols.py` | 1186 bytes | 0 引用 Protocol 接口约束,YAGNI/ISP 违反 |
+| `app/utils/type_guards.py` | — | 撤销 TYPE-3/4 时新建的过度工程,功能已内联 |
+| `agent/llm_strategies_pkg/` | 整个目录 | 撤销 ARCH-2 时新建的 19 行 re-export 包 |
+| `mixins/react_handler_mixin/session_lifecycle_mixin.py` | — | 撤销 ARCH-3 时新建的 Session 拆分 |
 
-### 涓夈€乺efactor 閲嶆瀯鈥斺€斿垹 llm_response_parser/__init__.py 涓?80+ 姝?import
+### 三、refactor 重构——删 llm_response_parser/__init__.py 中 80+ 死 import
 
-| 鎿嶄綔 | 琛屾暟鍙樺寲 |
+| 操作 | 行数变化 |
 |------|---------|
-| 鍘?110 琛?`__init__.py` 浠?6 瀛愭ā鍧?import 80+ 鍐呴儴 helper) | 110 |
-| 淇鍚?5 琛?鍙繚鐣?`from .parse_react_response import parse_react_response`) | 5 |
-| 鍚屾椂鍒犻櫎姝诲彉閲?`STRATEGIES = get_strategies()` | -1 |
+| 原 110 行(`__init__.py` 从 6 子模块 import 80+ 内部 helper) | 110 |
+| 修复后 5 行(只保留 `from .parse_react_response import parse_react_response`) | 5 |
+| 同时删除死变量 `STRATEGIES = get_strategies()` | -1 |
 
-### 鍥涖€乫ix bug鈥斺€旀挙閿€杩囧害宸ョ▼鏃舵紡鏀圭殑涓ラ噸 bug(2 涓?
+### 四、fix bug——撤销过度工程时漏改的严重 bug(2 个)
 
-| # | 鏂囦欢 | Bug | 杩濆弽鍘熷垯 |
+| # | 文件 | Bug | 违反原则 |
 |---|------|-----|---------|
-| 1 | `message_builder.py:266-267` | 璋?`_collect_paired_ids` 鏈畾涔夊嚱鏁?鎾ら攢 TYPE-6 婕忔敼),杩愯蹇呭穿 NameError | KISS/淇鏈棴鐜?|
-| 2 | `base_react.py:206` | `if True:` 鍖呰(鎴戣嚜宸卞悎骞舵椂鐣欎笅),鏃犳剰涔夌缉杩?| YAGNI/KISS |
+| 1 | `message_builder.py:266-267` | 调 `_collect_paired_ids` 未定义函数(撤销 TYPE-6 漏改),运行必崩 NameError | KISS/修复未闭环 |
+| 2 | `base_react.py:206` | `if True:` 包装(我自己合并时留下),无意义缩进 | YAGNI/KISS |
 
-### 浜斻€乺efactor 閲嶆瀯鈥斺€旀浠ｇ爜娓呯悊(YAGNI)
+### 五、refactor 重构——死代码清理(YAGNI)
 
-| 绫诲瀷 | 鏁伴噺 | 璇︽儏 |
+| 类型 | 数量 | 详情 |
 |------|------|------|
-| `getattr` 姝讳唬鐮?| 5 澶?| react_handler_mixin.py / prompt_build_mixin.py 鐨?model/provider 姘歌繙涓?None/'unknown' |
-| kwargs 姝诲惊鐜?| 1 澶?| base_react.py `for key in ('model', 'provider', ...): setattr(...)` 姘歌繙涓嶈Е鍙?|
-| class 浣撳唴鏈敤 import | 1 澶?| llm_strategies.py `from ... import _get_all_tool_names` 浠庢湭浣跨敤 |
-| 鏈娇鐢?import | 13 涓枃浠?| 13 涓枃浠剁殑鏈娇鐢?import(agent_factory/chunk_buffer/desktop_react/steps/strategy_manager/tool_result_formatter/tool_retry_engine/universal_react/llm_response_parser/_tool_params/llm_response_parser/_utils/mixins/react_agent_mixin/mixins/tool_step_mixin) |
+| `getattr` 死代码 | 5 处 | react_handler_mixin.py / prompt_build_mixin.py 的 model/provider 永远为 None/'unknown' |
+| kwargs 死循环 | 1 处 | base_react.py `for key in ('model', 'provider', ...): setattr(...)` 永远不触发 |
+| class 体内未用 import | 1 处 | llm_strategies.py `from ... import _get_all_tool_names` 从未使用 |
+| 未使用 import | 13 个文件 | 13 个文件的未使用 import(agent_factory/chunk_buffer/desktop_react/steps/strategy_manager/tool_result_formatter/tool_retry_engine/universal_react/llm_response_parser/_tool_params/llm_response_parser/_utils/mixins/react_agent_mixin/mixins/tool_step_mixin) |
 
-### 鍏€乺efactor 閲嶆瀯鈥斺€斿師鍒欒繚鍙嶄慨澶?
-| 鍘熷垯 | 淇鍐呭 | 浣嶇疆 |
+### 六、refactor 重构——原则违反修复
+
+| 原则 | 修复内容 | 位置 |
 |------|---------|------|
-| KISS/YAGNI | 13 澶?`_val = ...` 鍖呰鈫掔洿鎺?return | react_handler_mixin.py |
-| DRY | 4 娆?if not 閲嶅鈫抈next()` 鍗曡 | react_handler_mixin.py::_handle_completion_type |
-| 闃插尽鎬х紪绋?| 20+ 澶?`except Exception`鈫掑叿浣撳紓甯稿垎绫?httpx/JSON/IO/Attribute/Type) | 10 涓枃浠?|
+| KISS/YAGNI | 13 处 `_val = ...` 包装→直接 return | react_handler_mixin.py |
+| DRY | 4 次 if not 重复→`next()` 单行 | react_handler_mixin.py::_handle_completion_type |
+| 防御性编程 | 20+ 处 `except Exception`→具体异常分类(httpx/JSON/IO/Attribute/Type) | 10 个文件 |
 
-### 涓冦€乺efactor 閲嶆瀯鈥斺€旀挙閿€鐨勮繃搴﹀伐绋?10 椤?
+### 七、refactor 重构——撤销的过度工程(10 项)
 
-| 鎾ら攢椤?| 鍘熻繃搴﹀伐绋?| 鎾ら攢鍚?|
+| 撤销项 | 原过度工程 | 撤销后 |
 |--------|-----------|--------|
-| ARCH-2 | `llm_strategies_pkg/` 19 琛?re-export 鍖?| 鎭㈠ llm_strategies.py 鍘?420 琛?|
-| ARCH-3 | `session_lifecycle_mixin.py` Session 鎷嗗垎 | 鍐呰仈鍒?base_react.py |
-| ARCH-5 | `set/clear_tool_retry_engine` 娉ㄥ叆 | 鎭㈠鍏ㄥ眬鍗曚緥 |
-| DRY-2 | `_build_failure_result` 鍑芥暟鎶藉彇 | 鎭㈠鍐呰仈 |
-| DRY-3 | `_resolve_answer_response` 鍑芥暟鎶藉彇 | 鎭㈠ 3 娆?if not 鍐呰仈(鍚庡張鐢?next() 绠€鍖? |
-| TYPE-3 | `type_guards.validate_data_dict` 缁熶竴 | 鎭㈠ isinstance 妫€鏌?|
-| TYPE-4 | `from ... import validate_data_dict` | 鎭㈠鏃?type guard |
-| TYPE-6 | `_collect_paired_ids/_filter_by_paired_ids` 鎷嗗垎 | 鎭㈠鍐呰仈(骞朵慨澶嶆紡鏀?bug) |
-| @_safe_parse_json 瑁呴グ鍣?| 鎶借楗板櫒 | 鎭㈠鍐呰仈 try/except |
-| `app/utils/type_guards.py` | 鏂板缓鍏敤宸ュ叿 | 鍒犻櫎鏂囦欢 |
+| ARCH-2 | `llm_strategies_pkg/` 19 行 re-export 包 | 恢复 llm_strategies.py 原 420 行 |
+| ARCH-3 | `session_lifecycle_mixin.py` Session 拆分 | 内联到 base_react.py |
+| ARCH-5 | `set/clear_tool_retry_engine` 注入 | 恢复全局单例 |
+| DRY-2 | `_build_failure_result` 函数抽取 | 恢复内联 |
+| DRY-3 | `_resolve_answer_response` 函数抽取 | 恢复 3 次 if not 内联(后又用 next() 简化) |
+| TYPE-3 | `type_guards.validate_data_dict` 统一 | 恢复 isinstance 检查 |
+| TYPE-4 | `from ... import validate_data_dict` | 恢复无 type guard |
+| TYPE-6 | `_collect_paired_ids/_filter_by_paired_ids` 拆分 | 恢复内联(并修复漏改 bug) |
+| @_safe_parse_json 装饰器 | 抽装饰器 | 恢复内联 try/except |
+| `app/utils/type_guards.py` | 新建公用工具 | 删除文件 |
 
-### 鍏€乨ocs 鏂囨。鈥斺€旀湰娆℃竻鐞嗘€荤粨鎶ュ憡(1 涓?
+### 八、docs 文档——本次清理总结报告(1 个)
 
-| 鏂囦欢 | 澶у皬 | 鍐呭 |
+| 文件 | 大小 | 内容 |
 |------|------|------|
-| `doc/agent鐩綍浠ｇ爜娓呯悊鎬荤粨鎶ュ憡-灏忔-2026-06-07.md` | 21KB | 14 绔犺妭,璁板綍 2026-06-07 鐑備唬鐮佹竻鐞嗗叏杩囩▼ |
+| `doc/agent目录代码清理总结报告-小欧-2026-06-07.md` | 21KB | 14 章节,记录 2026-06-07 烂代码清理全过程 |
 
-### 鍑€鏁堟灉
+### 净效果
 
-- agent 鐩綍鏂囦欢鏁?73鈫?2(-41)
-- agent 鐩綍鎬昏鏁?5000+鈫?567(-绾?2500,**鍑忓皯绾?50%**)
-- git diff:58 鏂囦欢,+215/-2907(**鍑€鍒?2692 琛?*)
-- py_compile 楠岃瘉:21 涓?.py 鍏ㄩ儴閫氳繃
-- 鏍稿績绫?import 楠岃瘉:21 涓叏閮ㄩ€氳繃
-- FastAPI app 鍔犺浇:鎴愬姛(v0.14.10)
-- 鏃?NameError/ImportError/AttributeError
+- agent 目录文件数:73→32(-41)
+- agent 目录总行数:5000+→2567(-约 2500,**减少约 50%**)
+- git diff:58 文件,+215/-2907(**净删 2692 行**)
+- py_compile 验证:21 个 .py 全部通过
+- 核心类 import 验证:21 个全部通过
+- FastAPI app 加载:成功(v0.14.10)
+- 无 NameError/ImportError/AttributeError
 
-### 10 澶у師鍒欓伒瀹?
-- 鉁?SRP:涓嶅啀璁╀竴涓嚱鏁?鏋氫妇鍗曠嫭鎴愭枃浠?- 鉁?DRY:4 娆?if not鈫抧ext() 鍗曡
-- 鉁?KISS:13 澶?_val 鍖呰+1 澶?if True+80+ 姝?import 鍏ㄩ儴鍒犻櫎
-- 鉁?SLAP:宸ュ叿灞?Agent 灞傝亴璐ｆ竻鏅?- 鉁?YAGNI:33 杩囧害鎷嗗垎+5 澶?getattr+kwargs 姝诲惊鐜?13 涓 import 鍏ㄩ儴鍒犻櫎
-- 鉁?绂佹 backward compat:鍏ㄩ儴褰诲簳娓呴櫎,涓嶇暀鍏煎浠ｇ爜
-- 鉁?OCP:涓嶅啀涓?鏈潵鎵╁睍"鎷嗘枃浠?- 鉁?ISP:鍒?protocols.py 杩囧害鎺ュ彛绾︽潫
-- 鉁?澶嶇敤浼樺厛:agent_utils 3 涓叕鐢ㄥ伐鍏锋枃浠朵繚鐣?
-### 楠岃瘉娓呭崟
+### 10 大原则遵守
 
-- 鉁?21 涓?.py 鏂囦欢 `python -m py_compile` 鍏ㄩ儴閫氳繃
-- 鉁?21 涓牳蹇冪被/鍑芥暟 import 娴嬭瘯閫氳繃
-- 鉁?FastAPI app 鍔犺浇鎴愬姛(鐗堟湰 v0.14.10)
-- 鉁?鏃?NameError/ImportError/AttributeError
-- 鉁?git diff 鍑€鍒犻櫎 2692 琛?鏃犳柊澧炲鏉傛娊璞?
-### 鍓╀綑鍙敼杩涢」(寰呯敤鎴峰喅绛?
+- ✅ SRP:不再让一个函数/枚举单独成文件
+- ✅ DRY:4 次 if not→next() 单行
+- ✅ KISS:13 处 _val 包装+1 处 if True+80+ 死 import 全部删除
+- ✅ SLAP:工具层/Agent 层职责清晰
+- ✅ YAGNI:33 过度拆分+5 处 getattr+kwargs 死循环+13 个死 import 全部删除
+- ✅ 禁止 backward compat:全部彻底清除,不留兼容代码
+- ✅ OCP:不再为"未来扩展"拆文件
+- ✅ ISP:删 protocols.py 过度接口约束
+- ✅ 复用优先:agent_utils 3 个公用工具文件保留
 
-- agent_utils/ 3 鏂囦欢鏄惁鍚堝苟(鍏敤宸ュ叿,淇濈暀)
-- llm_response_parser/_xxx.py 5 鏂囦欢鍚堝苟(鍐呴儴 helper,淇濈暀)
-- pytest 瀹屾暣娴嬭瘯(璺戝墠鐢ㄦ埛鍙喅绛?
-- git push 鍒拌繙绋?绛夌敤鎴峰喅瀹?
+### 验证清单
+
+- ✅ 21 个 .py 文件 `python -m py_compile` 全部通过
+- ✅ 21 个核心类/函数 import 测试通过
+- ✅ FastAPI app 加载成功(版本 v0.14.10)
+- ✅ 无 NameError/ImportError/AttributeError
+- ✅ git diff 净删除 2692 行,无新增复杂抽象
+
+### 剩余可改进项(待用户决策)
+
+- agent_utils/ 3 文件是否合并(公用工具,保留)
+- llm_response_parser/_xxx.py 5 文件合并(内部 helper,保留)
+- pytest 完整测试(跑前用户可决策)
+- git push 到远程(等用户决定)
 
 ---
 
-鏇存柊鏃堕棿: 2026-06-07 22:30:00
-鏇存柊浜? AI鍔╂墜灏忔
+更新时间: 2026-06-07 22:30:00
+更新人: AI助手小欧
 
 ---
 
-## v0.14.8鈫抳0.14.9 鍙樻洿姹囨€?- 灏忔矆-2026-06-01
+## v0.14.8→v0.14.9 变更汇总 - 小沈-2026-06-01

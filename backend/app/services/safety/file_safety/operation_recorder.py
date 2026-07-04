@@ -23,7 +23,7 @@ def collect_file_info(path: Path) -> Dict[str, Any]:
         return {"size": None, "hash": None, "extension": None, "is_directory": False}
     info = {"size": path.stat().st_size, "is_directory": path.is_dir()}
     if path.is_file():
-        info["hash"] = compute_file_hash(path)
+        info["hash"] = compute_file_hash(str(path))
         info["extension"] = path.suffix.lower() if path.suffix else None
     else:
         info["hash"] = None
