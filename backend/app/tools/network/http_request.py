@@ -197,5 +197,6 @@ async def httpget(
     except Exception as e:
         logger.error(f"[httpget] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_NET_UNKNOWN, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"url": url}}, llm_data=llm_data)
+        error_info = _build_http_error(e, url, 0, duration_ms)
+        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"])
+        return build_error(data={"error_detail": error_info["error_detail"], "params": error_info["params"]}, llm_data=llm_data)

@@ -47,40 +47,66 @@ _RE_POWERSHELL_OR = re.compile(r'\|\|\s*')
 
 
 def _translate_powershell_operators(command: str) -> str:
-    """将 && 和 || 翻译为 PowerShell 5.1 兼容语法 — 小欧 2026-06-25"""
+    """将 && 和 || 翻译为 PowerShell 5.1 兼容语法 — 小欧 2026-06-25
+    小欧 2026-07-04 修复: 跳过引号内的 && / ||，避免破坏字符串内容
+    """
     if '&&' not in command and '||' not in command:
         return command
-    # 按优先级：先处理 || 再处理 &&（|| 优先级更低）
-    # 简单链式：cmd1 && cmd2 && cmd3 → 逐段处理
-    result = command
-    # 处理 &&
-    while '&&' in result:
-        result = _RE_POWERSHELL_AND.sub('; if ($?) { ', result, count=1)
-        # 找到对应的闭合 } — 在下一个 && 或 || 或末尾
-        marker = '; if ($?) { '
-        idx = result.rfind(marker)
-        rest = result[idx + len(marker):]
-        # 在rest中找到下一个 && 或 || 的位置
-        next_op = len(rest)
-        for op in ['&&', '||']:
-            pos = rest.find(op)
-            if pos != -1 and pos < next_op:
-                next_op = pos
-        # 在 next_op 位置插入 }
-        result = result[:idx + len(marker) + next_op] + ' }' + result[idx + len(marker) + next_op:]
-    # 处理 ||
-    while '||' in result:
-        result = _RE_POWERSHELL_OR.sub('; if (-not $?) { ', result, count=1)
-        marker = '; if (-not $?) { '
-        idx = result.rfind(marker)
-        rest = result[idx + len(marker):]
-        next_op = len(rest)
-        for op in ['&&', '||']:
-            pos = rest.find(op)
-            if pos != -1 and pos < next_op:
-                next_op = pos
-        result = result[:idx + len(marker) + next_op] + ' }' + result[idx + len(marker) + next_op:]
-    return result
+    # 逐字符解析，跟踪引号状态，只替换引号外的 && / ||
+    result = []
+    i = 0
+    n = len(command)
+    in_quotes = False
+    while i < n:
+        ch = command[i]
+        if ch == '"':
+            in_quotes = not in_quotes
+            result.append(ch)
+            i += 1
+        elif not in_quotes and command[i:i+2] == '&&':
+            result.append('; if ($?) { ')
+            i += 2
+        elif not in_quotes and command[i:i+2] == '||':
+            result.append('; if (-not $?) { ')
+            i += 2
+        else:
+            result.append(ch)
+            i += 1
+    translated = ''.join(result)
+    # 为 if 块补上闭合 }：从右往左扫描，遇到 } 就停止
+    if '; if ($?) { ' in translated or '; if (-not $?) { ' in translated:
+        translated = _close_if_blocks(translated)
+    return translated
+
+
+def _close_if_blocks(s: str) -> str:
+    """为翻译后的 if 块补上闭合 } — 小欧 2026-07-04
+    从右往左扫描，遇到每个 ; if ... { 就在其后找到下一个指令或字符串末尾插入 }
+    """
+    markers = ['; if ($?) { ', '; if (-not $?) { ']
+    # 收集所有 marker 出现的位置 (marker_text, start_pos)
+    positions = []
+    for marker in markers:
+        start = 0
+        while True:
+            pos = s.find(marker, start)
+            if pos == -1:
+                break
+            positions.append((pos, marker))
+            start = pos + len(marker)
+    # 从右往左处理，这样前面插入 } 不影响后面的位置
+    positions.sort(key=lambda x: x[0], reverse=True)
+    for pos, marker in positions:
+        after = s[pos + len(marker):]
+        # 找下一个 ; if 或 || 的位置作为本块的结束
+        next_block = len(after)
+        for m in markers:
+            p = after.find(m)
+            if p != -1 and p < next_block:
+                next_block = p
+        insert_pos = pos + len(marker) + next_block
+        s = s[:insert_pos] + ' }' + s[insert_pos:]
+    return s
 
 
 def _convert_redirect_to_utf8(command: str, cwd: Optional[str] = None) -> None:
