@@ -81,9 +81,16 @@ def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
 
 
 def keyboard_control(action: Literal["type", "shortcut"], text_or_keys: str) -> Dict[str, Any]:
-    """统一键盘控制入口 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-24 参数简化"""
+    """统一键盘控制入口 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-24 参数简化
+    小欧 2026-07-04 修复: 增加None/空字符串校验
+    """
     t0 = _time_mod.perf_counter()
     
+    if not isinstance(text_or_keys, str) or not text_or_keys.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys)
+        return build_error(data={"error_detail": "键盘输入内容不能为空", "params": {"action": action, "text_or_keys": text_or_keys}}, llm_data=llm_data)
+
     if action == "type":
         result = _type_text(text=text_or_keys, interval=0)
     elif action == "shortcut":
