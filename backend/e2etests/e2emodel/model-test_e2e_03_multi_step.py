@@ -3,9 +3,9 @@
 操作手册对照:
   用例: E2E-P0-03
   用户输入: "读取E:\test_dir\test.txt的内容，然后告诉我里面写了什么"
-  预期过程: 先调read_file，再回复内容
-  通过标准: 调用了read_file；回复中包含文件内容；DB有2条steps
-  失败标准: 未调用read_file；回复中无文件内容
+  预期过程: 先调readtext，再回复内容
+  通过标准: 调用了readtext；回复中包含文件内容；DB有2条steps
+  失败标准: 未调用readtext；回复中无文件内容
 
  铁律:
    1. 一个用例一个脚本，写完跑通再写下一个
@@ -65,7 +65,7 @@ async def test_e2e_p0_03_multi_step_reasoning():
         if result["has_error"]:
             pass
 
-        read_tools = {"read_file", "read_text_file", "read_media_file"}
+        read_tools = {"readtext", "readmedia"}
         has_read = any(n in read_tools for n in tool_names)
         assert has_read, f"must call read tool(MUST P0-03), actual: {tool_names}"
 

@@ -4,7 +4,7 @@
   用例: E2E-P0-04
   用户输入: "列出E:\test_dir下的所有文件"
   前置数据: E:\test_dir\目录存在且有文件(test.txt等)
-  预期过程: 调用list_directory，返回文件列表
+  预期过程: 调用listdir，返回文件列表
   通过标准: sessions表有记录；messages表有user+assistant；execution_steps有步骤记录
   失败标准: 任一表无记录；记录不完整
 
@@ -74,11 +74,11 @@ async def test_e2e_p0_04_data_persistence():
         if result["has_error"]:
             pass
 
-        # P0-04核心: 必须调用list_directory
+        # P0-04核心: 必须调用listdir
         tool_names = [t["tool_name"] for t in result["tool_calls"]]
-        list_tools = {"list_directory", "list_files"}
+        list_tools = {"listdir"}
         has_list = any(n in list_tools for n in tool_names)
-        assert has_list, f"必须调用list_directory(MUST P0-04), 实际: {tool_names}"
+        assert has_list, f"必须调用listdir(MUST P0-04), 实际: {tool_names}"
 
         # P0-04核心: 回复应包含文件名
         resp = result["response_text"]

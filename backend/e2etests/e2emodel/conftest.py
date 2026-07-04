@@ -120,7 +120,7 @@ def step_factory():
         defaults.update(kwargs)
         return ThoughtStep(**defaults)
 
-    def _action(step=1, tool_name="read_file", tool_params=None, **kwargs):
+    def _action(step=1, tool_name="readtext", tool_params=None, **kwargs):
         defaults = dict(step=step, tool_name=tool_name, tool_params=tool_params or {"path": "x"})
         defaults.update(kwargs)
         return ActionStep(**defaults)

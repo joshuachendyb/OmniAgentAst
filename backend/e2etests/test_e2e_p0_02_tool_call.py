@@ -72,7 +72,7 @@ async def test_e2e_p0_02_tool_call():
 
         assert len(result["tool_calls"]) > 0, "必须调用工具(MUST P0-02)"
         tool_names = [t["tool_name"] for t in result["tool_calls"]]
-        write_tools = {"writetext", "write_file", "move", "copy", "delete", "rename", "create_file"}
+        write_tools = {"writetext"}
         has_write = any(n in write_tools for n in tool_names)
         assert has_write, f"应调用写文件工具(MUST P0-02), 实际: {tool_names}"
 
@@ -81,7 +81,7 @@ async def test_e2e_p0_02_tool_call():
         file_content = TEST_FILE.read_text(encoding="utf-8")
         assert "hello" in file_content.lower(), f"文件内容应含'hello'(MUST P0-02)"
         
-        read_tools = {"readtext", "read_file"}
+        read_tools = {"readtext", "readmedia"}
         has_read = any(n in read_tools for n in tool_names)
 
         db = check_db(sid)

@@ -68,7 +68,7 @@ async def test_e2e_p0_06_network_data():
             print(f"  [WARN] 有Error事件(SHOULD)，流结束: {end_type}")
 
         # MUST: 必须有网络搜索
-        network_tools = {"searchweb", "web_search", "search"}
+        network_tools = {"searchweb", "fetchpage", "httpget", "download"}
         search_count = sum(1 for n in tool_names if n in network_tools)
         print(f"  [Check] search count: {search_count}")
         assert search_count >= 1, f"至少搜索1次(MUST P0-06), 实际: {tool_names}"

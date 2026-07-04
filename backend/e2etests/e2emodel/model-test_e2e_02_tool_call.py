@@ -3,7 +3,7 @@
 操作手册对照:
   用例: E2E-P0-02
   用户输入: "在E盘创建一个e2e_test_p0.txt，内容为hello"
-  预期过程: Agent调用write_text_file，返回成功
+  预期过程: Agent调用writetext，返回成功
   通过标准: SSE包含action事件；DB有execution_steps记录；文件存在且内容正确
   失败标准: 未调用工具；文件未创建；DB无记录
 
@@ -67,7 +67,7 @@ async def test_e2e_p0_02_tool_call():
 
         assert len(result["tool_calls"]) > 0, "必须调用工具(MUST P0-02)"
         tool_names = [t["tool_name"] for t in result["tool_calls"]]
-        write_tools = {"write_text_file", "write_file", "move_file", "copy_file", "delete_file", "rename_file", "create_file"}
+        write_tools = {"writetext"}
         has_write = any(n in write_tools for n in tool_names)
         assert has_write, f"应调用写文件工具(MUST P0-02), 实际: {tool_names}"
 

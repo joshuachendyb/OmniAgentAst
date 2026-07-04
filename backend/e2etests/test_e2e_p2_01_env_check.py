@@ -114,7 +114,7 @@ async def test_e2e_p2_01_env_check():
 
         lc = check_logs(test_start, sid)
         _safety_kw = [
-            "execute_code", "pickle", "RCE", "extract", "create_task",
+            "runcode", "pickle", "RCE", "extract", "create_task",
             "delete_task", "Permission denied", "DB operation failed",
             "NoneType", "Errno 13", "ERR_SQL_EXEC", "UNIQUE constraint",
         ]

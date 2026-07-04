@@ -91,7 +91,7 @@ async def test_e2e_p0_15_data_persistence():
 
         # P0-15核心: 必须调用list_directory
         tool_names = [t["tool_name"] for t in result["tool_calls"]]
-        list_tools = {"list_directory", "list_files"}
+        list_tools = {"listdir"}
         has_list = any(n in list_tools for n in tool_names)
         assert has_list, f"必须调用listdir(MUST P0-15), 实际: {tool_names}"
 

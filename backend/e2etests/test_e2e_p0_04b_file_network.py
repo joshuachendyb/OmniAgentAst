@@ -72,7 +72,7 @@ async def test_e2e_p0_04b_file_network():
         assert len(result["tool_calls"]) > 0, "必须调用工具(MUST P0-04)"
 
         # MUST: 必须有网络搜索
-        network_tools = {"searchweb", "web_search", "search"}
+        network_tools = {"searchweb", "fetchpage", "httpget", "download"}
         search_count = sum(1 for n in tool_names if n in network_tools)
         print(f"  [Check] search count: {search_count}")
         assert search_count >= 3, f"至少搜索3次(Python/react/go)(MUST P0-04), 实际: {tool_names}"

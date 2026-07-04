@@ -74,7 +74,7 @@ async def test_e2e_p0_03b_multi_step_reasoning():
         if result["has_error"]:
             print(f"  [WARN] has error event(SHOULD)，流结束: {end_type}")
 
-        read_tools = {"read_file", "readtext", "readmedia"}
+        read_tools = {"readtext", "readmedia"}
         has_read = any(n in read_tools for n in tool_names)
         assert has_read, f"must call read tool(MUST P0-03b), actual: {tool_names}"
 
