@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
-from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE
+from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, LISTDIR_PAGE_SIZE
 from app.utils.logger import logger
 
 
@@ -210,10 +210,10 @@ async def listdir(
             "file_types": file_types, "size_distribution": size_distribution,
         }
 
-        if total > DEFAULT_PAGE_SIZE:
+        if total > LISTDIR_PAGE_SIZE:
             logger.warning(f"[listdir] Large directory truncated: path={path}, total={total}")
 
-        list_data = _build_list_success(all_entries, total, path, statistics, start_offset, DEFAULT_PAGE_SIZE)
+        list_data = _build_list_success(all_entries, total, path, statistics, start_offset, LISTDIR_PAGE_SIZE)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         exec_code = "warning" if list_data["truncated"] else "success"
         llm_data = _build_list_directory_llm_data(exec_code, duration_ms, dir_path=dir_path, total=total, truncated=list_data["truncated"])

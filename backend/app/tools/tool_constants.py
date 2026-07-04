@@ -104,6 +104,7 @@ FILE_OPERATION_TOOLS = {
 
 READ_FILE_DEFAULT_LIMIT = 500
 DEFAULT_PAGE_SIZE = 200
+LISTDIR_PAGE_SIZE = 500
 
 # ============================================================
 # 观察截断常量（observation_formatter.py 统一使用）— 小欧 2026-07-04
@@ -113,8 +114,6 @@ DEFAULT_PAGE_SIZE = 200
 OBS_MAX_DISPLAY_ITEMS = 500       # 所有 list 类 handler 的最大条目数
 OBS_MAX_STRING_LENGTH = 10000     # 单个字符串值的最大显示长度
 OBS_DICT_MAX_KEYS = 100           # _format_key_value 的最大键数
-
-MAX_PAGE_SIZE = 500
 MAX_READ_SIZE = 10 * 1024 * 1024
 MAX_MEDIA_READ_SIZE = 50 * 1024 * 1024
 MAX_BATCH_FILE_COUNT = 100
