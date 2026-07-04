@@ -60,10 +60,17 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns):
 def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
               connection_string: Optional[str] = None, db_path: Optional[str] = None,
               limit: int = 50, timeout: int = 15000) -> Dict[str, Any]:
-    """执行只读SQL查询 — 小健 2026-06-22 拆分独立文件"""
+    """执行只读SQL查询 — 小健 2026-06-22 拆分独立文件
+    小欧 2026-07-04 修复: 增加None/空字符串校验
+    """
     conn = None
     engine = None
     t0 = _time_mod.perf_counter()
+
+    if not isinstance(sql, str) or not sql.strip():
+        duration_ms = 0
+        llm_data = _build_query_sql_llm_data("error", duration_ms, sql or "", 0, [])
+        return build_error(data={"error_detail": "SQL语句不能为空", "params": {"sql": sql}}, llm_data=llm_data)
 
     try:
         sql_upper = sql.strip().upper()
