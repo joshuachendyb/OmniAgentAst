@@ -40,50 +40,84 @@ _background_shells_lock = threading.Lock()
 
 # PowerShell 5.1不支持 && 和 || 作为命令分隔符(仅PS7+支持)
 # 翻译规则:
-#   cmd1 && cmd2  →  cmd1; if ($?) { cmd2 }       (仅cmd1成功时执行cmd2)
-#   cmd1 || cmd2  →  cmd1; if (-not $?) { cmd2 }  (仅cmd1失败时执行cmd2)
-_RE_POWERSHELL_AND = re.compile(r'&&\s*')
-_RE_POWERSHELL_OR = re.compile(r'\|\|\s*')
+#   cmd1 && cmd2  →  $__ok=$true; cmd1; $__ok=$?; if ($__ok) { cmd2 }
+#   cmd1 || cmd2  →  $__ok=$true; cmd1; $__ok=$?; if (-not $__ok) { cmd2 }
 
 
 def _translate_powershell_operators(command: str) -> str:
-    """将 && 和 || 翻译为 PowerShell 5.1 兼容语法 — 小欧 2026-06-25
-    小欧 2026-07-04 修复: 跳过引号内的 && / ||，避免破坏字符串内容
+    """将 && 和 || 翻译为 PowerShell 5.1 兼容语法 — 小沈 2026-07-05
+    修复: 跟踪 7 种状态(双引号/单引号/$()嵌套/行注释/块注释/反引号转义/--%停止)
+    只替换外层非引号非注释处的 &&/||；
+    用 $__ok 保存 $? 避免 if 语句重置 $? 导致 || 失效。
     """
     if '&&' not in command and '||' not in command:
         return command
-    # 逐字符解析，跟踪引号状态，只替换引号外的 && / ||
     result = []
     i = 0
     n = len(command)
-    in_quotes = False
+    in_dq = False
+    in_sq = False
+    depth = 0
+    in_lc = False
+    in_bc = False
+    skip_one = False
+    stop = False
     while i < n:
         ch = command[i]
-        if ch == '"':
-            in_quotes = not in_quotes
-            result.append(ch)
-            i += 1
-        elif not in_quotes and command[i:i+2] == '&&':
-            result.append('; if ($?) { ')
-            i += 2
-        elif not in_quotes and command[i:i+2] == '||':
-            result.append('; if (-not $?) { ')
-            i += 2
-        else:
-            result.append(ch)
-            i += 1
+        if skip_one:
+            result.append(ch); i += 1; skip_one = False; continue
+        if in_lc:
+            result.append(ch); i += 1
+            if ch == '\n': in_lc = False
+            continue
+        if in_bc:
+            result.append(ch); i += 1
+            if ch == '#' and i < n and command[i] == '>':
+                result.append('>'); i += 1; in_bc = False
+            continue
+        if stop:
+            result.append(ch); i += 1
+            if ch == '\n': stop = False
+            continue
+        if i + 3 <= n and command[i:i+3] == '--%':
+            result.append('--%'); i += 3; stop = True; continue
+        if ch == '<' and i + 1 < n and command[i+1] == '#':
+            result.append('<#')
+            i += 2; in_bc = True; continue
+        if ch == '$' and i + 1 < n and command[i+1] == '(':
+            result.append('$(')
+            i += 2; depth += 1; continue
+        if ch == ')' and depth > 0:
+            result.append(ch); i += 1; depth -= 1; continue
+        if ch == '#':
+            result.append(ch); i += 1; in_lc = True; continue
+        if ch == '`':
+            result.append(ch); i += 1; skip_one = True; continue
+        if ch == "'" and depth == 0:
+            result.append(ch); i += 1; in_sq = not in_sq; continue
+        if ch == '"' and depth == 0:
+            result.append(ch); i += 1; in_dq = not in_dq; continue
+        in_outer = not in_dq and not in_sq and depth == 0 and not in_lc and not in_bc and not stop
+        if in_outer and command[i:i+2] == '&&':
+            result.append('; $__ok=$?; if ($__ok) { ')
+            i += 2; continue
+        if in_outer and command[i:i+2] == '||':
+            result.append('; $__ok=$?; if (-not $__ok) { ')
+            i += 2; continue
+        result.append(ch)
+        i += 1
     translated = ''.join(result)
-    # 为 if 块补上闭合 }：从右往左扫描，遇到 } 就停止
-    if '; if ($?) { ' in translated or '; if (-not $?) { ' in translated:
+    if '; if ($__ok) { ' in translated or '; if (-not $__ok) { ' in translated:
+        translated = '$__ok=$true; ' + translated
         translated = _close_if_blocks(translated)
     return translated
 
 
 def _close_if_blocks(s: str) -> str:
-    """为翻译后的 if 块补上闭合 } — 小欧 2026-07-04
-    从右往左扫描，遇到每个 ; if ... { 就在其后找到下一个指令或字符串末尾插入 }
+    """为翻译后的 if 块补上闭合 } — 小沈 2026-07-05
+    从右往左扫描，遇到每个 if ($__ok) { 就在其后找下一个 marker 或字符串末尾插入 }
     """
-    markers = ['; if ($?) { ', '; if (-not $?) { ']
+    markers = ['; if ($__ok) { ', '; if (-not $__ok) { ']
     # 收集所有 marker 出现的位置 (marker_text, start_pos)
     positions = []
     for marker in markers:
