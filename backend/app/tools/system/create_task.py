@@ -27,7 +27,11 @@ def _build_schtasks_create_cmd(task_name: str, command: str, schedule: str,
                                description: Optional[str] = None, user: Optional[str] = None,
                                start_time: Optional[str] = None, start_date: Optional[str] = None,
                                interval: Optional[int] = None) -> list:
-    """构建 schtasks /create 命令参数列表 — 纯函数,无IO — 小沈 2026-05-25"""
+    """构建 schtasks /create 命令参数列表 — 纯函数,无IO — 小沈 2026-05-25
+    小欧 2026-07-04 修复: 增加schedule空值和day范围校验
+    """
+    if not isinstance(schedule, str) or not schedule.strip():
+        raise ValueError("schedule不能为空")
     cmd = ["schtasks", "/create", "/tn", task_name, "/tr", command]
     schedule_parts = schedule.split()
     time_part = schedule_parts[0]
@@ -40,6 +44,8 @@ def _build_schtasks_create_cmd(task_name: str, command: str, schedule: str,
             if day_idx + 1 < len(schedule_parts):
                 day_num = schedule_parts[day_idx + 1]
                 sc_type = "weekly"
+                if day_num.isdigit() and (int(day_num) < 1 or int(day_num) > 7):
+                    raise ValueError(f"day值必须在1-7之间，当前值: {day_num}")
                 day_name = "MON,TUE,WED,THU,FRI,SAT,SUN".split(",")[int(day_num)-1] if day_num.isdigit() else day_num
                 sc_extra = ["/d", day_name]
         elif "/monthly" in schedule_parts:
