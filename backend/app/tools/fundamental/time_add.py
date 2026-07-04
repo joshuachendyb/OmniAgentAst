@@ -64,7 +64,9 @@ def timeadd(delta: float, start: Optional[str] = None, unit: Literal["days", "ho
         elif unit_lower == "months":
             try:
                 from dateutil.relativedelta import relativedelta
-                new_dt = start_dt + relativedelta(months=int(delta))
+                whole_months = int(delta)
+                frac_days = (delta - whole_months) * 30
+                new_dt = start_dt + relativedelta(months=whole_months) + timedelta(days=frac_days)
             except ImportError:
                 new_dt = start_dt + timedelta(days=delta * 30)
         else:
