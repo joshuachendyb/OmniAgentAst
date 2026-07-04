@@ -125,7 +125,7 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
                 return build_error(data={"error_detail": "data为字典时必须指定output_path", "params": {"output_path": output_path}}, llm_data=llm_data)
 
         fig, ax = plt.subplots(figsize=(10, 6))
-        chart_type_lower = chart_type
+        chart_type_lower = chart_type.lower()
 
         try:
             if chart_type_lower == "pie":
