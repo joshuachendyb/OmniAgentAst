@@ -151,7 +151,7 @@ def remove_pending_record(test_id: str):
 BASE_URL = "http://127.0.0.1:8000"
 API_PREFIX = "/api/v1"
 DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
-LOG_DIR = Path(__file__).parent.parent / "logs"
+LOG_DIR = Path(__file__).parent.parent.parent / "logs"
 PROMPT_LOG_DIR = LOG_DIR / "prompt-logs"
 
 
