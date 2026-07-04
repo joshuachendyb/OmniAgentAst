@@ -1,6 +1,33 @@
-﻿v0.17.19
-更新时间: 2026-07-04 07:56:51
-## v0.17.18→v0.17.19 变更汇总 - 小欧-2026-07-04
+﻿v0.17.20
+更新时间: 2026-07-04 13:58:35
+## v0.17.19→v0.17.20 变更汇总 - 小欧-2026-07-04
+
+### fix: tool内部功能代码缺陷修复(20项)
+- tool_search.py: searchtool(None/123) 前置类型校验
+- tools_file_path_checker.py: 4个validate函数None崩溃+静默接受修复+Windows保留名检查
+- registry_path_checker.py: _normalize_key_path(None) 前置校验
+- execute_sql.py: execute_sql(None) None/空SQL校验
+- query_sql.py: query_sql(None) None校验
+- create_task.py: 空schedule/`day=8` ValueError校验
+- time_utils.py: format_timestamp(pre-1970/far-future) OSError捕获
+- hash_helper.py: compute_file_hash(None/空/不存在) None+isfile校验
+- keyboard_control.py: type(None)/shortcut(None) None/空字符串校验
+- operation_recorder.py: OperationType转换移入try块+修复缩进
+- time_add.py: 月数截断修复(frac_days加整月部分)
+- rename_file.py: 不存在文件到自身返回error
+- http_request.py: 死代码错误码分类修复
+- execute_shell_command.py: 引号内&&被破坏重写+`_close_if_blocks`右往左扫描
+- window_focus.py: 空标题None校验
+- generate_chart.py: chart_type大小写不一致修复
+- write_docx.py: `elif table_data`→`if table_data` 修复丢弃table问题
+- write_pdf.py: 同上修复
+
+### fix: 测试代码修复(3项)
+- conftest.py: is_error() 对非dict从return True改为return False
+- test_network_tools.py: 37处async调用包_run()辅助函数
+- test_fundamental.py: 2处"里午节"错别字→"端午节"
+
+### v0.17.19→v0.17.18 变更汇总 - 小欧-2026-07-04
 
 ### refactor: 代码重构(12项)
 - 合并11个小文件到各自同层宿主
