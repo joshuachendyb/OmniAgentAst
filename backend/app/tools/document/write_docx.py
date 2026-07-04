@@ -172,7 +172,7 @@ def write_docx(
                     doc.add_paragraph(line)
                 i += 1
         
-        elif table_data:
+        if table_data:
             if table_data and len(table_data) > 0 and len(table_data[0]) > 0:
                 t = doc.add_table(rows=len(table_data), cols=len(table_data[0]))
                 for ri, row_data in enumerate(table_data):
