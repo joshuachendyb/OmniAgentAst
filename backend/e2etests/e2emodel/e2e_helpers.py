@@ -1194,7 +1194,7 @@ def print_report(
 
 # ─── 步骤6+11: 门禁记录验证 + 测试记录写入 ───────────────────
 
-RECORD_DIR = Path(__file__).parent.parent.parent / "notes"
+RECORD_DIR = Path(__file__).parent.parent.parent.parent / "notes"
 
 
 # ─── 超时 marker 系统（进程被强杀时保留证据）────────────────────
