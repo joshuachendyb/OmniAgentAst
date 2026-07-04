@@ -115,9 +115,11 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
 
 
 def searchtool(query: str) -> Dict[str, Any]:
-    """按关键词搜索匹配的工具列表（BM25 全文检索） — 小健 2026-06-22 拆分独立文件"""
+    """按关键词搜索匹配的工具列表（BM25 全文检索） — 小健 2026-06-22 拆分独立文件
+    小欧 2026-07-04 修复: 增加None/类型校验防止崩溃
+    """
     t0 = time.perf_counter()
-    if not query.strip():
+    if not isinstance(query, str) or not query.strip():
         duration_ms = int((time.perf_counter() - t0) * 1000)
         llm_data = _build_tool_search_llm_data("error", duration_ms, query, 0, 0, [])
         return build_error(data={"error_detail": "搜索关键词不能为空", "params": {"query": query}}, llm_data=llm_data)
