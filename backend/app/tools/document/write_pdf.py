@@ -181,7 +181,7 @@ def write_pdf(
                     elements.append(Spacer(1, 3 * mm))
                 i += 1
         
-        elif table_data:
+        if table_data:
             if table_data and len(table_data) > 0:
                 pdf_table = _create_pdf_table(table_data, chinese_style)
                 elements.append(pdf_table)
