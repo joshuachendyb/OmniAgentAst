@@ -76,6 +76,9 @@ async def rename(
 
     if src.name == new_name:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        if not src.exists():
+            llm_data = _build_rename_file_llm_data("error", duration_ms, source, new_name=new_name, detail="源文件不存在")
+            return build_error(data={"error_detail": f"源文件不存在: {source}", "params": {"source": source}}, llm_data=llm_data)
         llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name)
         return build_success(data={}, llm_data=llm_data)
 
