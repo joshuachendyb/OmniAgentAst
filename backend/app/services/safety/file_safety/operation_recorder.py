@@ -50,16 +50,16 @@ def record_operation(
     """记录文件操作到数据库（失败时返回None，不阻塞主流程）— 小健 2026-06-24 容错处理 — 小欧 2026-06-27 修复operation_type str/Enum不一致"""
     operation_id = f"op-{uuid4().hex}"
     space_impact_bytes = None
-    if file_size is not None and operation_type is not None:
-        if isinstance(operation_type, str):
-            op_enum = OperationType(operation_type)
-        else:
-            op_enum = operation_type
-        if op_enum == OperationType.CREATE:
-            space_impact_bytes = -file_size
-        elif op_enum == OperationType.DELETE:
-            space_impact_bytes = file_size
     try:
+        if file_size is not None and operation_type is not None:
+            if isinstance(operation_type, str):
+                op_enum = OperationType(operation_type)
+            else:
+                op_enum = operation_type
+            if op_enum == OperationType.CREATE:
+                space_impact_bytes = -file_size
+            elif op_enum == OperationType.DELETE:
+                space_impact_bytes = file_size
         with db.get_conn("operations") as conn:
             cursor = conn.cursor()
             op_type_str = operation_type.value if isinstance(operation_type, OperationType) else operation_type
