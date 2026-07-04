@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Tuple
 __all__ = [
     "validate_path_for_write", "validate_path_for_delete", "validate_path_for_overwrite",
     "validate_path_for_extract", "WINDOWS_SYSTEM_DIRS", "validate_not_system_path",
-    "OpCategory", "validate_path",
+    "OpCategory", "validate_path", "validate_str_param",
 ]
 
 _WINDOWS_RESERVED = {'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5',
@@ -233,3 +233,17 @@ def validate_path(
         if w: warnings.append(w)
 
     return True, None, "; ".join(warnings) if warnings else None
+
+
+def validate_str_param(value: Any, param_name: str) -> Optional[str]:
+    """字符串参数基础校验 — 小欧 2026-07-05
+    None/非str类型/空串(含全空白) → 返回错误信息
+    None=通过, str=错误信息
+    """
+    if value is None:
+        return f"参数 {param_name} 不能为 None"
+    if not isinstance(value, str):
+        return f"参数 {param_name} 必须为字符串, 实际类型: {type(value).__name__}"
+    if not value.strip():
+        return f"参数 {param_name} 不能为空字符串"
+    return None
