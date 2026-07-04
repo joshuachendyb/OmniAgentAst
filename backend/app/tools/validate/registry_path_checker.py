@@ -32,7 +32,10 @@ CRITICAL_KEY_PATTERNS = (
 def _normalize_key_path(key_path: str, hive: str) -> Tuple[str, str]:
     """
     规范化key_path：剥离key_path中可能带有的hive前缀，返回(key_path_clean, hive)。
+    小欧 2026-07-04 修复: 增加None/类型校验
     """
+    if not isinstance(key_path, str) or not key_path.strip():
+        return "", hive
     path_upper = key_path.upper()
     for prefix in ALLOWED_HIVES:
         if path_upper.startswith(prefix + "\\") or path_upper.startswith(prefix + "/"):
