@@ -20,7 +20,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_MOVE_FAILED
 from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
-from app.tools.validate.tools_file_path_checker import validate_path_for_overwrite, validate_not_system_path
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.utils.logger import logger
 
@@ -54,12 +54,6 @@ async def _move_file_impl(
     source_path: str, destination_path: str, overwrite: bool = False,
 ) -> Dict[str, Any]:
     """移动或重命名文件实现 — 小欧 2026-06-22 — 小健 2026-06-22 重构：只返回raw dict，不含build3/llm_data"""
-
-    is_valid, err, warn = validate_path_for_overwrite(source_path, destination_path, overwrite)
-    if not is_valid:
-        return {"success": False, "error_detail": err, "params": {"source": source_path}}
-    if warn:
-        logger.warning(f"[move] {warn}")
 
     src = Path(source_path)
     dst = Path(destination_path)
@@ -129,16 +123,24 @@ async def move(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail="destination不能为空")
         return build_error(data={"error_detail": "destination不能为空", "params": {"destination": destination}}, llm_data=llm_data)
-    is_valid, err, _ = validate_not_system_path(source)
+    # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/源存在 — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, warn = validate_path(OpCategory.EXISTS, source)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err)
         return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
-    is_valid, err, _ = validate_not_system_path(destination)
+    if warn:
+        logger.warning(warn)
+    # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, warn = validate_path(OpCategory.WRITE, destination, overwrite=overwrite, source=source)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err)
         return build_error(data={"error_detail": err, "params": {"destination": destination}}, llm_data=llm_data)
+    if warn:
+        logger.warning(warn)
     if os.path.abspath(source) == os.path.abspath(destination):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=f"源路径和目标路径相同: {source}")

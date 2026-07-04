@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, MAX_SEARCH_RESULTS
 from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
@@ -111,15 +112,15 @@ async def find(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail="文件名匹配模式不能为空")
         return build_error(data={"error_detail": "文件名匹配模式不能为空", "params": {"pattern": pattern}}, llm_data=llm_data)
+    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, _ = validate_path(OpCategory.LIST_DIR, search_dir)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=err)
+        return build_error(data={"error_detail": err, "params": {"search_dir": search_dir}}, llm_data=llm_data)
+
     path = Path(os.path.expanduser(search_dir))
-    if not path.exists():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索目录不存在: {search_dir}")
-        return build_error(data={"error_detail": "搜索目录不存在", "params": {"search_dir": search_dir}}, llm_data=llm_data)
-    if not path.is_dir():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索路径不是目录: {search_dir}")
-        return build_error(data={"error_detail": "搜索路径不是目录", "params": {"search_dir": search_dir}}, llm_data=llm_data)
 
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("find", TOOL_TIMEOUTS["default"]) - 2
     all_matches: List = []

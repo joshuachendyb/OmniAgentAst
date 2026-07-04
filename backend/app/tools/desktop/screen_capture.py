@@ -15,7 +15,7 @@ from typing import Dict, Any, Optional
 
 from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error
-from app.tools.validate.tools_file_path_checker import validate_path_for_write
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 from app.tools.tool_constants import ERR_SCREENSHOT, ERR_SCREEN_SNAPSHOT
 
@@ -106,7 +106,9 @@ def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str,
     """统一屏幕截图入口 — 小健 2026-06-22 拆分独立文件"""
     t0 = _time_mod.perf_counter()
     if output_path:
-        is_valid, err, warn = validate_path_for_write(output_path)
+        # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, warn = validate_path(OpCategory.WRITE, output_path)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_screen_capture_llm_data("error", duration_ms, err_code=ERR_SCREENSHOT, detail=err)

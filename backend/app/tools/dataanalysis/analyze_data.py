@@ -15,6 +15,7 @@ import pandas as pd
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.json_utils import coerce_json
 from app.tools.tool_constants import ERR_DOC_ANALYZE_DATA
 
@@ -109,11 +110,14 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
             operations = all_ops
 
         if file_path:
-            path = Path(file_path)
-            if not path.exists():
+            # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+            # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+            is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
+            if not is_valid:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=f"文件不存在: {file_path}")
-                return build_error(data={"error_detail": f"文件不存在: {file_path}", "params": {"file_path": file_path}}, llm_data=llm_data)
+                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=err)
+                return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
+            path = Path(file_path)
             read_kwargs = {}
             if max_rows is not None:
                 read_kwargs["nrows"] = max_rows

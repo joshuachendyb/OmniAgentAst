@@ -17,6 +17,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.file_type_checker import check_for_document_tool
 from app.tools.tool_constants import ERR_DOC_READ_PPTX
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
@@ -65,11 +66,15 @@ def read_pptx(file_name: str) -> Dict[str, Any]:
     try:
         from pptx import Presentation
 
-        path = Path(file_path)
-        if not path.exists():
+        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
+        if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
-            return build_error(data={"error_detail": "文件不存在", "params": {"file_name": file_name}}, llm_data=llm_data)
+            llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=err)
+            return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
+
+        path = Path(file_path)
 
         prs = Presentation(path)
         slides_data = []

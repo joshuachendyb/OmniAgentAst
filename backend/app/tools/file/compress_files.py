@@ -25,6 +25,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED
 from app.utils.context_vars import _current_task_id
 from app.utils.json_utils import coerce_json
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
@@ -210,6 +211,14 @@ async def compress(
     exclude_patterns = coerce_json(exclude_patterns)
     compression_level = 6
 
+    # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, _ = validate_path(OpCategory.WRITE, destination)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err)
+        return build_error(data={"error_detail": err, "params": {"destination": destination}}, llm_data=llm_data)
+
     if not overwrite and os.path.exists(destination):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"目标文件已存在: {destination}", hint="可设置overwrite=true覆盖")
@@ -235,10 +244,14 @@ async def compress(
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"通配符无匹配: {source}", hint="请检查通配符是否正确")
                 return build_error(data={"error_detail": f"通配符无匹配: {source}", "params": {"source": source}}, llm_data=llm_data)
-        elif not src.exists():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"源路径不存在: {source}", hint="请检查源路径是否存在")
-            return build_error(data={"error_detail": f"源路径不存在: {source}", "params": {"source": source}}, llm_data=llm_data)
+        else:
+            # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/路径存在 — 小欧 2026-07-04
+            # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+            is_valid, err, _ = validate_path(OpCategory.EXISTS, source)
+            if not is_valid:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err, hint="请检查源路径是否存在")
+                return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
 
         dst.parent.mkdir(parents=True, exist_ok=True)
 

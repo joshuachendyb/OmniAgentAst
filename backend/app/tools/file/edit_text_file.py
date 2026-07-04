@@ -21,7 +21,7 @@ from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.tools.file_type_checker import check_for_text_tool
-from app.tools.validate.tools_file_path_checker import validate_path_for_write
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 
@@ -143,9 +143,15 @@ async def _precise_replace_in_file(
         return {"error_detail": error_detail}
 
     try:
+        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, warn = validate_path(OpCategory.READ_FILE, file_path, content=new_string)
+        if not is_valid:
+            return {"error_detail": err}
+        if warn:
+            logger.warning(f"[edittext] {warn}")
+
         path = Path(file_path).resolve()
-        if not path.exists():
-            return {"error_detail": f"文件不存在: {file_path}"}
         if path.stat().st_size > MAX_READ_SIZE:
             return {"error_detail": f"文件过大({path.stat().st_size}字节)", "file_size": path.stat().st_size}
 
@@ -224,18 +230,6 @@ async def edittext(
 ) -> Dict[str, Any]:
     """编辑文本文件 — 小健 2026-06-20 删dry_run参数 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加ignore_case参数"""
     t0 = _time_mod.perf_counter()
-    is_valid, error_msg, warning_msg = validate_path_for_write(file_path, new_string, False)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_msg)
-        return build_error(data={"error_detail": error_msg, "params": {"file_path": file_path}}, llm_data=llm_data)
-    if warning_msg:
-        logger.warning(warning_msg)
-
-    if not file_path or not file_path.strip():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=str(file_path), detail="file_path不能为空")
-        return build_error(data={"error_detail": "file_path不能为空", "params": {"file_path": file_path}}, llm_data=llm_data)
     if '\x00' in file_path:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="file_path包含空字节")

@@ -1,13 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-工具安全检查器 — 执行前安全检查
+工具安全检查器 — 执行前安全检查（Safety层入口）
+
+Safety层（本文件 + path_validator.py）：
+  - 路径黑名单/白名单校验（_is_forbidden_path → validate_path）
+  - 路径穿越(..)拒绝
+  - 写入大小保护
+  - 二元安全确认(needs_confirmation)
+  - 已知风险检测(路径越权/写入污染)
+
+工具层（tools_file_path_checker.py）独立运行、互不调用：
+  - 非空/保留字符/保留名/系统目录硬阻断/存在性+类型/业务警告
 
 Layer 2: 二元安全确认(needs_confirmation)
 Layer 3: 已知风险检测(路径越权/写入污染/代码注入)
 
 2026-06-16 小沈 删除5级枚举，改用二元安全+check_fn
-2026-06-17 小沈 删除record_operation/execute_with_safety委托(打破tools→safety循环依赖),
+2026-06-17 小沈 删除record_operation/execute_with_safety委托(打破tools→safety循环依赖)，
              路径校验改用path_validator(打破safety→tools循环依赖)
+2026-07-04 小欧 补充两层架构说明注释
 """
 
 
@@ -45,7 +56,9 @@ class ToolSafetyChecker:
 
     def check_before_execute(self, tool_name: str, params: Optional[Dict] = None) -> SafetyResult:
         """
-        执行前安全检查入口
+        执行前安全检查入口（Safety层）
+        工具层的 validate_path() 先于本函数执行，已拦截空/保留字符/保留名/系统目录/不存在/类型不匹配
+        本函数负责：路径黑名单/白名单/路径穿越/写入大小保护/二元确认
 
         安全开关: config.yaml security.enabled=false 时跳过所有检查
         """

@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
@@ -36,11 +37,13 @@ async def _get_directory_tree(
     include_hidden: bool = False, sort_by: str = "name",
 ) -> Dict[str, Any]:
     """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时 — 小欧 2026-06-24 修复include_hidden和sort_by"""
+    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, _ = validate_path(OpCategory.LIST_DIR, dir_path)
+    if not is_valid:
+        return {"error_detail": err, "params": {"dir_path": dir_path}}
+
     path = Path(dir_path)
-    if not path.exists():
-        return {"error_detail": "目录不存在", "params": {"dir_path": dir_path}}
-    if not path.is_dir():
-        return {"error_detail": "不是目录", "params": {"dir_path": dir_path}}
 
     def _count_tree_fs(root: Path) -> Tuple[int, int, int]:
         fc = dc = ts = 0

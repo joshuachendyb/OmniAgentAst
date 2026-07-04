@@ -19,7 +19,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.tools.file_type_checker import check_for_document_tool
 from app.tools.tool_constants import ERR_DOC_WRITE_PPTX, ERR_DOC_NO_PPTX
 from app.utils.json_utils import coerce_json
-from app.tools.validate.tools_file_path_checker import validate_path_for_write
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 from app.utils.table_helper import calculate_column_widths, get_table_header_style_config
 
@@ -224,8 +224,9 @@ def write_pptx(
     """写入PPT文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
 
-    # 路径业务级前置检查
-    is_valid, err, warn = validate_path_for_write(file_name)
+    # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, warn = validate_path(OpCategory.WRITE, file_name)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pptx_llm_data("error", duration_ms, file_name, detail=err)

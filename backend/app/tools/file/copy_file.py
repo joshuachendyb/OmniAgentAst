@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional, Tuple
 from app.tools.tool_response import build_success, build_error
 from app.utils.context_vars import _current_task_id
 
-from app.tools.validate.tools_file_path_checker import validate_path_for_overwrite, validate_not_system_path
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
@@ -65,24 +65,24 @@ async def copy(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": "destination不能为空"})
         return build_error(data={"error_detail": "destination不能为空", "params": {"destination": destination}}, llm_data=llm_data)
-    is_valid, err, _ = validate_not_system_path(source)
+    # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/源存在 — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, warn = validate_path(OpCategory.EXISTS, source)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": err})
         return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
-    is_valid, err, _ = validate_not_system_path(destination)
+    if warn:
+        logger.warning(warn)
+    # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, warn = validate_path(OpCategory.WRITE, destination, overwrite=overwrite, source=source)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": err})
         return build_error(data={"error_detail": err, "params": {"destination": destination}}, llm_data=llm_data)
-    is_valid, error_msg, warning_msg = validate_path_for_overwrite(source, destination, overwrite)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": error_msg})
-        return build_error(data={"error_detail": error_msg, "params": {"source": source, "destination": destination}}, llm_data=llm_data)
-    if warning_msg:
-        logger.warning(warning_msg)
-
+    if warn:
+        logger.warning(warn)
 
     src = Path(source)
     dst = Path(destination)
@@ -91,11 +91,6 @@ async def copy(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": "源路径和目标路径相同"})
         return build_error(data={"error_detail": f"源路径和目标路径相同: {source}", "params": {"source": source, "destination": destination}}, llm_data=llm_data)
-
-    if not src.exists():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": f"源路径不存在: {source}"})
-        return build_error(data={"error_detail": f"源路径不存在: {source}", "params": {"source": source}}, llm_data=llm_data)
 
     if dst.exists() and not overwrite:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

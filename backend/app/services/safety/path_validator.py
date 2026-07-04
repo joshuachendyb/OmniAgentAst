@@ -1,11 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-path_validator — 文件路径越权校验
+path_validator — 文件路径越权校验（Safety层）
+
+Safety层职责（本文件）：
+  - 路径黑名单：禁止访问系统敏感路径（_is_forbidden_path）
+  - 路径白名单：只允许在 ALLOWED_PATHS 内操作路径
+  - 路径穿越(..)拒绝
+  - 调用入口 validate_tool_path() 自动判断工具分类 + 找路径参数
+
+工具层（tools_file_path_checker.py）独立运行、互不调用：
+  - 非空/保留字符/保留名/系统目录硬阻断/存在性+类型/业务警告
 
 从 file_tools.py 提取,供 safety 和 tools 共用,打破循环依赖
 
 小沈 2026-06-17
 小健 2026-06-23 增加系统敏感路径黑名单校验
+小欧 2026-07-04 补充两层架构说明注释
 """
 
 import os
@@ -77,7 +87,9 @@ def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
 
 
 def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否在白名单内
+    """验证文件路径是否在白名单内（Safety层）
+    工具层的 validate_path() 先于本函数执行，已拦截空/保留字符/保留名/系统目录/不存在/类型不匹配
+    本函数负责：黑名单/白名单/路径穿越拒绝
 
     Args:
         file_path: 待验证路径

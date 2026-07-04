@@ -17,47 +17,8 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.file_type_checker import check_for_document_tool
 from app.tools.tool_constants import ERR_DOC_READ_PDF
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
-
-
-def _parse_pages(pages_str: str) -> List[int]:
-    """解析页码字符串为页码列表 — 小欧 2026-06-22"""
-    result = []
-    for part in pages_str.split(","):
-        part = part.strip()
-        if "-" in part:
-            start, end = part.split("-", 1)
-            try:
-                result.extend(range(int(start), int(end) + 1))
-            except ValueError:
-                pass
-        else:
-            try:
-                result.append(int(part))
-            except ValueError:
-                pass
-    return sorted(set(result))
-
-
-def _process_page(page, page_num: int,
-                   extract_tables: bool, extract_images: bool,
-) -> Tuple[str, List[Dict], List[Dict]]:
-    """处理单页PDF:返回 (text, tables_data, images_data) — 小沈 2026-05-25 — 小欧 2026-06-22"""
-    text = page.extract_text() or ""
-    tables = []
-    if extract_tables:
-        for idx, t in enumerate(page.extract_tables() or []):
-            tables.append({"page": page_num, "table_idx": idx, "data": t})
-    images = []
-    if extract_images:
-        for idx, img in enumerate(page.images or []):
-            images.append({
-                "page": page_num, "image_idx": idx,
-                "x0": float(img.get("x0", 0)), "y0": float(img.get("y0", 0)),
-                "x1": float(img.get("x1", 0)), "y1": float(img.get("y1", 0)),
-                "width": float(img.get("width", 0)), "height": float(img.get("height", 0)),
-            })
-    return text, tables, images
 
 
 def _build_read_pdf_llm_data(
@@ -107,11 +68,15 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
     try:
         import pdfplumber
 
-        path = Path(file_path)
-        if not path.exists():
+        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
+        if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
-            return build_error(data={"error_detail": "文件不存在", "params": {"file_name": file_name}}, llm_data=llm_data)
+            llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=err)
+            return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
+
+        path = Path(file_path)
 
         all_text, pages_read, tables_data, images_data = [], [], [], []
         with pdfplumber.open(path) as pdf:

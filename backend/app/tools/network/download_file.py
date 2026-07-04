@@ -20,7 +20,7 @@ from app.tools.network.http_client_sdk import create_http_client, HTTPClient
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy
 from app.tools.validate.timeout_validator import validate_timeout
-from app.tools.validate.tools_file_path_checker import validate_path_for_write
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 
 _check_network = check_network
 
@@ -134,7 +134,9 @@ async def download(
         return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
 
     dest_path = os.path.abspath(os.path.join(_DOWNLOAD_DIR, destination_path.lstrip("/\\")))
-    is_valid_path, path_err, path_warn = validate_path_for_write(dest_path)
+    # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid_path, path_err, path_warn = validate_path(OpCategory.WRITE, dest_path)
     if not is_valid_path:
         llm_data = _build_download_file_llm_data("error", 0, url, err_code=ERR_NETWORK_INVALID_PATH, detail=path_err)
         return build_error(data={"error_detail": path_err, "params": {"destination_path": destination_path}}, llm_data=llm_data)

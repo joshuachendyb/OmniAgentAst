@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import TOOL_TIMEOUTS, MAX_SEARCH_FILE_SIZE, MAX_SEARCH_RESULTS
-from app.tools.tool_constants import ERR_FILE_CONTENT_SEARCH_FAILED
-from app.tools.file_type_checker import is_binary_file, BINARY_EXTENSIONS, TEXT_EXTENSIONS
+from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE
+from app.tools.tool_constants import ERR_FILE_GREP_FAILED, MAX_GREP_RESULTS
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
@@ -256,16 +256,15 @@ async def grep(
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式无效: {e}")
         return build_error(data={"error_detail": f"正则表达式无效: {e}", "params": {"pattern": pattern}}, llm_data=llm_data)
 
-    search_path = Path(os.path.expanduser(actual_dir))
-    if not search_path.exists():
+    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, _ = validate_path(OpCategory.LIST_DIR, actual_dir)
+    if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"搜索目录不存在: {actual_dir}")
-        return build_error(data={"error_detail": "搜索目录不存在", "params": {"search_dir": actual_dir}}, llm_data=llm_data)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=err)
+        return build_error(data={"error_detail": err, "params": {"search_dir": actual_dir}}, llm_data=llm_data)
 
-    if search_path.is_file():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"search_dir是一个文件而非目录: {actual_dir}")
-        return build_error(data={"error_detail": f"search_dir是一个文件而非目录: {actual_dir}", "params": {"search_dir": actual_dir}}, llm_data=llm_data)
+    search_path = Path(os.path.expanduser(actual_dir))
 
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("grep", TOOL_TIMEOUTS["default"]) - 2
 

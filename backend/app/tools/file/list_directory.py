@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
 from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, LISTDIR_PAGE_SIZE
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
@@ -182,14 +183,13 @@ async def listdir(
     start_offset = offset
 
     try:
-        if not path.exists():
+        # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, _ = validate_path(OpCategory.LIST_DIR, dir_path)
+        if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"目录不存在: {dir_path}")
-            return build_error(data={"error_detail": "目录不存在", "params": {"dir_path": dir_path}}, llm_data=llm_data)
-        if not path.is_dir():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"不是目录: {dir_path}")
-            return build_error(data={"error_detail": "不是目录", "params": {"dir_path": dir_path}}, llm_data=llm_data)
+            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=err)
+            return build_error(data={"error_detail": err, "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
         deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution = await asyncio.to_thread(

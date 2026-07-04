@@ -14,6 +14,7 @@ from typing import Dict, Any, List, Optional, Union
 import pandas as pd
 
 from app.tools.tool_response import build_success, build_error
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.tools.tool_fc_helper import _check_module, _serialize_rows
 from app.utils.json_utils import coerce_json
 from app.tools.tool_constants import ERR_FILTER_INVALID
@@ -42,9 +43,12 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
 def _load_data_to_df(data: Union[str, List[Dict[str, Any]]], max_rows: Optional[int] = None) -> dict:
     """加载数据为 DataFrame — 小健 2026-06-22 拆分独立文件 — 小欧 2026-06-24 修复list分支max_rows无效"""
     if isinstance(data, str):
+        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, _ = validate_path(OpCategory.READ_FILE, data)
+        if not is_valid:
+            return {"error_detail": err, "params": {"file_path": data}}
         path = Path(data)
-        if not path.exists():
-            return {"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}
         if data.endswith('.xlsx'):
             if not _check_module("openpyxl"):
                 return {"error_detail": "openpyxl库未安装", "params": {"library": "openpyxl"}}

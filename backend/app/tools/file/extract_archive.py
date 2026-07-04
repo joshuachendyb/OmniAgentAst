@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 
-from app.tools.validate.tools_file_path_checker import validate_path_for_extract
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
@@ -134,20 +134,24 @@ async def extract(
     """解压归档包 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件"""
     t0 = _time_mod.perf_counter()
 
-    is_valid, error_msg, warning_msg = validate_path_for_extract(destination)
+    # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/源文件存在+是文件 — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, _ = validate_path(OpCategory.READ_FILE, source)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=error_msg)
-        return build_error(data={"error_detail": error_msg, "params": {"destination": destination}}, llm_data=llm_data)
-    if warning_msg:
-        logger.warning(warning_msg)
+        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err)
+        return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
+
+    if destination:
+        # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, _ = validate_path(OpCategory.WRITE, destination)
+        if not is_valid:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err)
+            return build_error(data={"error_detail": err, "params": {"destination": destination}}, llm_data=llm_data)
 
     try:
-
-        if not os.path.exists(source):
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"压缩文件不存在: {source}")
-            return build_error(data={"error_detail": f"压缩文件不存在: {source}", "params": {"source": source}}, llm_data=llm_data)
 
         out_dir = _resolve_output_dir(source, destination)
         os.makedirs(out_dir, exist_ok=True)

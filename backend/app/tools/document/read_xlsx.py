@@ -18,6 +18,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.file_type_checker import check_for_document_tool
 from app.tools.tool_constants import ERR_DOC_READ_XLSX
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
@@ -61,9 +62,13 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional
     try:
         from openpyxl import load_workbook
 
+        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        _vi, _ve, _ = validate_path(OpCategory.READ_FILE, file_path)
+        if not _vi:
+            return {"error_detail": _ve, "params": {"file_path": file_path}}
+
         path = Path(file_path)
-        if not path.exists():
-            return {"error_detail": "文件不存在", "params": {"file_path": file_path}}
 
         wb = load_workbook(path, read_only=True, data_only=True)
         try:
@@ -131,9 +136,13 @@ def _read_csv_stdlib_inner(
     """使用标准库csv读取CSV文件(内部) — 小欧 2026-06-22
     辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22"""
     try:
+        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        _vi, _ve, _ = validate_path(OpCategory.READ_FILE, file_path)
+        if not _vi:
+            return {"error_detail": _ve, "params": {"file_path": file_path}}
+
         path = Path(file_path)
-        if not path.exists():
-            return {"error_detail": "文件不存在", "params": {"file_path": file_path}}
 
         rows = []
         headers = []
