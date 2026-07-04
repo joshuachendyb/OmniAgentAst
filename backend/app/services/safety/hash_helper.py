@@ -41,7 +41,13 @@ def compute_file_hash(
     chunk_size: int = 65536,
     timeout_ms: int = None,
 ) -> str:
-    """核心哈希计算,返回hexdigest字符串 - 小沈 2026-05-18"""
+    """核心哈希计算,返回hexdigest字符串 - 小沈 2026-05-18
+    小欧 2026-07-04 修复: 增加None/空路径校验
+    """
+    if not isinstance(file_path, str) or not file_path.strip():
+        raise ValueError("文件路径不能为空")
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"文件不存在: {file_path}")
     hasher = select_hasher(algorithm)
     start_time = time.time() if timeout_ms is not None else None
     
