@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Literal, Optional
 from app.tools.tool_response import build_success, build_error
 from app.tools.validate.url_validator import _is_private_or_loopback_ip
 from app.tools.validate.timeout_validator import validate_timeout
+from app.tools.validate.tools_file_path_checker import validate_str_param
 
 from app.utils.logger import logger
 from app.tools.tool_constants import ERR_MISSING_PARAM
@@ -223,6 +224,11 @@ async def ping_port(
         return build_error(data={"error_detail": timeout_err, "params": {"host": host, "mode": mode}}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
+    err = validate_str_param(host, "host")
+    if err:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_NETWORK_INVALID_HOST, err)
+        return build_error(data={"error_detail": err, "params": {"host": host, "mode": mode}}, llm_data=llm_data)
     if _is_private_or_loopback_ip(host):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_NETWORK_INVALID_HOST, f"禁止访问内网地址: {host}")

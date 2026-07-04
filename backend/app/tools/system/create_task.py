@@ -15,6 +15,7 @@ from typing import Dict, Any, Optional
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
+from app.tools.validate.tools_file_path_checker import validate_str_param
 from app.tools.tool_constants import (
     ERR_DESKTOP_PLATFORM_NOT_SUPPORTED,
     ERR_SHELL_COMMAND_NOT_FOUND,
@@ -94,6 +95,16 @@ def _build_create_task_llm_data(exec_code: str, duration_ms: int, task_name: str
 def create_task(task_name: str, command: str, schedule: str, interval: Optional[int] = None) -> dict:
     """创建Windows计划任务 — 小健 2026-06-22 拆分独立文件"""
     t0 = _time_mod.perf_counter()
+    err = validate_str_param(task_name, "task_name")
+    if err:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, "", ERR_TASK_CREATE, err)
+        return build_error(data={"error_detail": err, "params": {"task_name": task_name}}, llm_data=llm_data)
+    err = validate_str_param(command, "command")
+    if err:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, "", ERR_TASK_CREATE, err)
+        return build_error(data={"error_detail": err, "params": {"command": command}}, llm_data=llm_data)
     try:
         if platform.system() != "Windows":
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

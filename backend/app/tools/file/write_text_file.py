@@ -19,7 +19,7 @@ from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
 from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory, validate_str_param
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.tools.file_type_checker import check_for_text_tool
 from app.utils.logger import logger
@@ -157,6 +157,11 @@ async def writetext(
 ) -> Dict[str, Any]:
     """写入文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件"""
     t0 = _time_mod.perf_counter()
+    err = validate_str_param(content, "content")
+    if err:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err)
+        return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
     # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
     is_valid, err, warn = validate_path(OpCategory.WRITE, file_path, content=content, append=append)

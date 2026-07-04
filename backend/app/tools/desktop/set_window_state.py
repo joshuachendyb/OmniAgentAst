@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE, ERR_DESKTOP_GET_WINDOW_INFO
+from app.tools.validate.tools_file_path_checker import validate_str_param
 from app.tools.desktop.window_info import (
     check_win32_platform, find_windows_by_title, _win32gui, _win32con,
 )
@@ -56,6 +57,11 @@ def _build_set_window_state_llm_data(exec_code: str, duration_ms: int, action: s
 def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
     """设置窗口状态 — 小健 2026-06-22 独立文件"""
     t0 = _time_mod.perf_counter()
+    err = validate_str_param(window_title, "window_title")
+    if err:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_set_window_state_llm_data("error", duration_ms, "", window_title, err_code=ERR_WINDOW_NOT_FOUND, detail=err)
+        return build_error(data={"error_detail": err, "params": {"window_title": window_title}}, llm_data=llm_data)
     err = check_win32_platform()
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

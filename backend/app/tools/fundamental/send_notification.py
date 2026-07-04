@@ -15,6 +15,7 @@ from typing import Dict, Any
 from app.tools.tool_fc_helper import _check_module_available
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_DESKTOP_NOTIFICATION, ERR_NO_WIN10TOAST
+from app.tools.validate.tools_file_path_checker import validate_str_param
 
 
 def _check_module(module_name: str) -> bool:
@@ -47,6 +48,16 @@ def _build_send_notification_llm_data(exec_code: str, duration_ms: int, title: s
 def notify(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
     """发送Windows系统通知 — 小健 2026-06-22 迁入fundamental独立文件 — 小健 2026-06-22 修复计时铁规"""
     t0 = _time_mod.perf_counter()
+    err = validate_str_param(title, "title")
+    if err:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_send_notification_llm_data("error", duration_ms, title, err_code=ERR_NO_WIN10TOAST)
+        return build_error(data={"error_detail": err, "params": {"title": title}}, llm_data=llm_data)
+    err = validate_str_param(message, "message")
+    if err:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_send_notification_llm_data("error", duration_ms, title, err_code=ERR_NO_WIN10TOAST)
+        return build_error(data={"error_detail": err, "params": {"message": message}}, llm_data=llm_data)
     if not _check_module("win10toast"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         return build_error(data={"error_detail": "win10toast库未安装", "params": {"library": "win10toast"}}, llm_data=_build_send_notification_llm_data("error", duration_ms, title, err_code=ERR_NO_WIN10TOAST))

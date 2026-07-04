@@ -25,7 +25,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED
 from app.utils.context_vars import _current_task_id
 from app.utils.json_utils import coerce_json
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory, validate_str_param
 from app.utils.logger import logger
 
 
@@ -208,6 +208,11 @@ async def compress(
 ) -> Dict[str, Any]:
     """压缩文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件"""
     t0 = _time_mod.perf_counter()
+    err = validate_str_param(source, "source")
+    if err:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err)
+        return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
     exclude_patterns = coerce_json(exclude_patterns)
     compression_level = 6
 

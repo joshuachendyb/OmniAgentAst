@@ -21,7 +21,7 @@ from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.tools.file_type_checker import check_for_text_tool
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory, validate_str_param
 from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 
@@ -238,6 +238,10 @@ async def edittext(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为None")
         return build_error(data={"error_detail": "old_string不能为None", "params": {"file_path": file_path}}, llm_data=llm_data)
+    if not old_string.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为空字符串")
+        return build_error(data={"error_detail": "old_string不能为空字符串", "params": {"file_path": file_path}}, llm_data=llm_data)
     if new_string is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="new_string不能为None")

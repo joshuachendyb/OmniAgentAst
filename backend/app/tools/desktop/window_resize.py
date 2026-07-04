@@ -13,6 +13,7 @@ from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_WINDOW_NOT_FOUND, ERR_WINDOW_RESIZE
+from app.tools.validate.tools_file_path_checker import validate_str_param
 
 
 def _build_window_resize_llm_data(exec_code: str, duration_ms: int, title: str = "", width: int = 0, height: int = 0,
@@ -41,6 +42,11 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
         llm_data = _build_window_resize_llm_data("error", 0, window_title, err_code="ERR_NO_WIN32GUI")
         return build_error(data={"error_detail": "需要安装 pywin32 库", "params": {"window_title": window_title}}, llm_data=llm_data)
     t0 = _time_mod.perf_counter()
+    err = validate_str_param(window_title, "window_title")
+    if err:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_window_resize_llm_data("error", duration_ms, window_title, err_code=ERR_WINDOW_NOT_FOUND)
+        return build_error(data={"error_detail": err, "params": {"window_title": window_title}}, llm_data=llm_data)
     try:
         target_hwnd = None
         def _enum_cb(hwnd, _):
