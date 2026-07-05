@@ -21,6 +21,24 @@ from app.tools.file_type_checker import check_for_text_tool
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
+from app.tools.file.file_state import record_read
+
+
+def _find_similar_files(file_path: str, max_suggestions: int = 3) -> str:
+    """文件不存在时，寻找同目录下的近似文件名 — 小欧 2026-07-05"""
+    import difflib
+    path = Path(file_path)
+    parent = path.parent
+    if not parent.exists():
+        return ""
+    target = path.name
+    candidates = [p.name for p in parent.iterdir() if p.is_file()]
+    if not candidates:
+        candidates = [p.name for p in parent.iterdir()]
+    matches = difflib.get_close_matches(target, candidates, n=max_suggestions, cutoff=0.5)
+    if not matches:
+        return ""
+    return ", ".join(matches)
 
 
 def _looks_like_mojibake(content: str, file_path: str = "") -> bool:
@@ -102,11 +120,13 @@ def _select_lines(
     offset: Optional[int] = None,
     limit: Optional[int] = None,
     tail: Optional[int] = None,
+    max_line_length: Optional[int] = 2000,
 ) -> Dict[str, Any]:
-    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 offset超范围返回warning — 小健 2026-06-25 空文件+offset返回warning — 小欧 2026-06-28 新增tail参数
+    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 offset超范围返回warning — 小健 2026-06-25 空文件+offset返回warning — 小欧 2026-06-28 新增tail参数 — 小欧 2026-07-05 新增长行截断
     offset: 起始行号(正数，必须配合limit)
     limit: 读取行数
-    tail: 读取尾部N行"""
+    tail: 读取尾部N行
+    max_line_length: 单行最大字符数，超长截断(默认2000)"""
     total = len(lines)
     params = {}
     warning = None
@@ -159,12 +179,25 @@ def _select_lines(
     else:
         selected = lines
 
+    # 长行截断 — 小欧 2026-07-05
+    truncated_count = 0
+    if max_line_length is not None and max_line_length > 0:
+        for i, line in enumerate(selected):
+            if len(line) > max_line_length:
+                selected[i] = line[:max_line_length] + f"... [截断, 原长{len(line)}字符]\n"
+                truncated_count += 1
+    if truncated_count:
+        result_extra = {"truncated_lines": truncated_count}
+    else:
+        result_extra = {}
+
     content = "".join(selected)
     result = {
         "content": content,
         "total_lines": total,
         "line_count": len(selected),
         **params,
+        **result_extra,
     }
     if warning:
         result["warning"] = warning
@@ -285,6 +318,9 @@ async def readtext(
         # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
         is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
         if not is_valid:
+            suggestion = _find_similar_files(file_path)
+            if suggestion:
+                err += f"。您是否要找: {suggestion}"
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err)
             return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
@@ -327,11 +363,7 @@ async def readtext(
             line_count=_line_count, total_lines=_total_lines, file_size=file_size,
         )
 
-        try:
-            from app.tools.file.edit_text_file import record_file_mtime
-            record_file_mtime(file_path)
-        except Exception:
-            pass
+        record_read(file_path, content)
 
         return build_success(data=_data, llm_data=llm_data)
 

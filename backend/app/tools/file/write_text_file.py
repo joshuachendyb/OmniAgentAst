@@ -10,6 +10,7 @@ F2: writetext — 写文本文件
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import asyncio
+import difflib
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -24,6 +25,7 @@ from app.services.safety.file_safety import record_operation, execute_with_safet
 from app.tools.file_type_checker import check_for_text_tool
 from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
+from app.tools.file.file_state import record_read, record_write, check_conflict, is_unchanged
 
 
 def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
@@ -189,6 +191,28 @@ async def writetext(
 
     path = Path(file_path)
 
+    # mtime 冲突检查 — 小欧 2026-07-05
+    conflict_warning = check_conflict(file_path)
+    if conflict_warning:
+        logger.warning(f"[writetext] {conflict_warning}")
+
+    # 无操作跳过 + 预读旧内容供 diff — 小欧 2026-07-05
+    old_content = None
+    if not append and path.exists():
+        try:
+            old_raw = path.read_text(encoding=encoding)
+            old_content = old_raw
+            if is_unchanged(file_path, checked_content):
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_write_text_file_llm_data(
+                    "success", duration_ms, file_path=str(path),
+                    bytes_written=0, detail="内容未变化，跳过写入",
+                )
+                llm_data["metrics"]["diff"] = {"value": "(无变更)", "text": "内容相同，无操作"}
+                return build_success(data={"operation_id": None, "skipped": True}, llm_data=llm_data)
+        except Exception:
+            old_content = None
+
     encoding_warning = None
     if append and path.exists() and path.is_file():
         original_encoding = _detect_file_encoding_for_write(file_path, True)
@@ -223,17 +247,37 @@ async def writetext(
             success, error_detail = bool(write_result), ""
 
         if success:
+            # diff 生成 — 小欧 2026-07-05
+            diff_text = ""
+            if old_content is not None:
+                try:
+                    new_content = checked_content
+                    if old_content != new_content:
+                        diff_text = "".join(difflib.unified_diff(
+                            old_content.splitlines(keepends=True),
+                            new_content.splitlines(keepends=True),
+                            fromfile=str(path), tofile=str(path), n=3,
+                        ))[:2000]
+                except Exception:
+                    pass
+
+            record_write(file_path)
+
             try:
                 bytes_written = len(checked_content.encode(encoding))
             except (UnicodeEncodeError, LookupError):
                 bytes_written = len(checked_content.encode("utf-8"))
             if encoding_warning:
                 llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=encoding_warning)
+                if diff_text:
+                    llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
                 return build_warning(
                     data={"operation_id": operation_id},
                     llm_data=llm_data,
                 )
             llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written)
+            if diff_text:
+                llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
             return build_success(
                 data={"operation_id": operation_id},
                 llm_data=llm_data,
