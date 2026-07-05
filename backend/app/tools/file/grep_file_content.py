@@ -59,12 +59,21 @@ def _build_grep_file_content_llm_data(
     pattern: str = "", search_dir: str = "",
     total_files: int = 0, total_matches: int = 0,
     truncated: bool = False, detail: str = "", hint: str = "",
+    user_glob: Optional[str] = None, user_ignore_case: Optional[bool] = None,
+    user_output_mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     """grep_file_content的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示"""
+    _act_params = {"pattern": pattern, "search_dir": search_dir}
+    if user_glob:
+        _act_params["glob"] = user_glob
+    if user_ignore_case is not None:
+        _act_params["ignore_case"] = user_ignore_case
+    if user_output_mode:
+        _act_params["output_mode"] = user_output_mode
     if exec_code == "error":
         return {
-            "summary": f"内容搜索失败: {detail}",
-            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern,             "params": {"pattern": pattern, "search_dir": search_dir}},
+            "summary": f"搜索失败: {search_dir}",
+            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_CONTENT_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索路径和搜索模式"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -72,7 +81,7 @@ def _build_grep_file_content_llm_data(
     if exec_code == "warning":
         return {
             "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件（结果被截断，可能不完整）",
-            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern,             "params": {"pattern": pattern, "search_dir": search_dir}},
+            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
             "status": {"exec_code": "warning", "message": "结果被截断，可能不完整", "code": "", "detail": "搜索超时或结果数量达到上限，仅返回部分结果", "hint": "可缩小搜索范围、使用head_limit参数限制结果数量或增加超时时间"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -82,7 +91,7 @@ def _build_grep_file_content_llm_data(
         }
     return {
         "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件",
-        "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern,         "params": {"pattern": pattern, "search_dir": search_dir}},
+        "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -199,33 +208,33 @@ async def grep(
     valid_output_modes = ("content", "count", "files_with_matches")
     if output_mode not in valid_output_modes:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"output_mode无效: {output_mode},可选值: {valid_output_modes}")
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"output_mode无效: {output_mode},可选值: {valid_output_modes}", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={"error_detail": f"output_mode无效: {output_mode},可选值: {valid_output_modes}", "params": {"output_mode": output_mode}}, llm_data=llm_data)
     if not actual_dir or not actual_dir.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="search_dir不能为空", hint="请指定有效的搜索目录")
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="search_dir不能为空", hint="请指定有效的搜索目录", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={"error_detail": "search_dir不能为空", "params": {"search_dir": actual_dir}}, llm_data=llm_data)
     if not pattern or not pattern.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="搜索模式不能为空", hint="请提供搜索关键词")
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="搜索模式不能为空", hint="请提供搜索关键词", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={"error_detail": "搜索模式不能为空", "params": {"pattern": pattern}}, llm_data=llm_data)
 
     # ReDoS 检测 — 小沈 2026-07-05
     for redos_p in _REDOS_PATTERNS:
         if re_mod.search(redos_p, pattern):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}")
+            llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
             return build_error(data={"error_detail": f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", "params": {"pattern": pattern}}, llm_data=llm_data)
     if len(pattern) > _MAX_PATTERN_LENGTH:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险")
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={"error_detail": f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险", "params": {"pattern": pattern}}, llm_data=llm_data)
 
     try:
         regex = re_mod.compile(pattern, re_mod.IGNORECASE if ignore_case else 0)
     except re_mod.error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式无效: {e}")
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式无效: {e}", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={"error_detail": f"正则表达式无效: {e}", "params": {"pattern": pattern}}, llm_data=llm_data)
 
     # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
@@ -233,7 +242,7 @@ async def grep(
     is_valid, err, _ = validate_path(OpCategory.LIST_DIR, actual_dir)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=err, hint="请检查搜索路径")
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=err, hint="请检查搜索路径", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={"error_detail": err, "params": {"search_dir": actual_dir}}, llm_data=llm_data)
 
     search_path = Path(os.path.expanduser(actual_dir))
@@ -246,7 +255,7 @@ async def grep(
         )
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=str(e), hint="请检查搜索参数")
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=str(e), hint="请检查搜索参数", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={"error_detail": str(e), "params": {"search_dir": actual_dir}}, llm_data=llm_data)
 
     # 按 mtime 降序排序 — 小欧 2026-07-05
@@ -276,6 +285,7 @@ async def grep(
     llm_data = _build_grep_file_content_llm_data(
         exec_code, duration_ms, pattern=pattern, search_dir=actual_dir,
         total_files=gr.total_files, total_matches=gr.total_matches, truncated=gr.truncated,
+        user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode,
     )
 
     # 修改summary添加二进制文件提示 — 小健 2026-06-24
