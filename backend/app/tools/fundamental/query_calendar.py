@@ -25,8 +25,9 @@ from app.tools.tool_constants import ERR_TIME_DATE
 def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: str,
                                     is_weekend: bool, is_hol: bool, is_workday: bool,
                                     holiday_name: str, detail: str = "",
-                                    user_name: str = "", user_year: Optional[int] = None) -> dict:
-    """query_calendar的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-07-05 加detail/user_name/user_year"""
+                                    user_name: str = "", user_year: Optional[int] = None,
+                                    hint: str = "") -> dict:
+    """query_calendar的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-07-05 加detail/user_name/user_year — 小欧 2026-07-05 加hint参数"""
     act_params = {"name": user_name}
     if user_year is not None:
         act_params["year"] = user_year
@@ -34,7 +35,7 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
         return {
             "summary": f"日期检查失败: {user_name}" if user_name else "日期检查失败",
             "action": {"tool": "calendar", "tool_zh": "日历查询", "target": date_str or user_name, "params": act_params},
-            "status": {"exec_code": "error", "message": "日期检查失败", "code": ERR_TIME_DATE, "detail": detail, "hint": "请检查日期格式"},
+            "status": {"exec_code": "error", "message": "日期检查失败", "code": ERR_TIME_DATE, "detail": detail, "hint": hint if hint else "请检查日期格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -91,7 +92,7 @@ def calendar(
         holiday_info = _get_holiday_date_by_name(name, year)
         if holiday_info is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_query_calendar_llm_data("error", duration_ms, "", False, False, False, "", detail=f"未找到节日名称或无效日期: {name}", user_name=name, user_year=year)
+            llm_data = _build_query_calendar_llm_data("error", duration_ms, "", False, False, False, "", detail=f"未找到节日名称或无效日期: {name}", hint="请检查节日名称或日期格式是否正确", user_name=name, user_year=year)
             return build_error(data={"error_detail": f"未找到节日名称或无效日期: {name}", "params": {"name": name, "year": year}}, llm_data=llm_data)
         
         date_obj = datetime.strptime(holiday_info["date"], "%Y-%m-%d").date()
@@ -121,7 +122,7 @@ def calendar(
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_query_calendar_llm_data("error", duration_ms, str(name), False, False, False, "", detail=str(e), user_name=name, user_year=year)
+        llm_data = _build_query_calendar_llm_data("error", duration_ms, str(name), False, False, False, "", detail=str(e), hint="系统内部错误，请重试", user_name=name, user_year=year)
         return build_error(data={"error_detail": str(e), "params": {"name": str(name)}}, llm_data=llm_data)
 
 

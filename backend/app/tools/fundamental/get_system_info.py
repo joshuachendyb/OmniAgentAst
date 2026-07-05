@@ -20,13 +20,13 @@ from app.tools.tool_constants import ERR_SYSTEM_INFO
 
 
 def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type: str,
-                                     detail: str = "") -> dict:
-    """get_system_info的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加detail"""
+                                     detail: str = "", hint: str = "") -> dict:
+    """get_system_info的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加detail — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
             "summary": f"获取系统信息失败: {info_type}",
             "action": {"tool": "sysinfo", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
-            "status": {"exec_code": "error", "message": "获取系统信息失败", "code": ERR_SYSTEM_INFO, "detail": detail, "hint": ""},
+            "status": {"exec_code": "error", "message": "获取系统信息失败", "code": ERR_SYSTEM_INFO, "detail": detail, "hint": hint if hint else "请检查info_type参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -46,7 +46,7 @@ def sysinfo(info_type: str = "all") -> Dict[str, Any]:
     valid_types = ("basic", "cpu", "memory", "disk", "network", "all")
     if info_type not in valid_types:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_get_system_info_llm_data("error", duration_ms, info_type, detail=f"无效的info_type: {info_type}")
+        llm_data = _build_get_system_info_llm_data("error", duration_ms, info_type, detail=f"无效的info_type: {info_type}", hint="请使用basic/cpu/memory/disk/network/all作为info_type")
         return build_error(
             data={"error_detail": f"无效的info_type: {info_type}", "valid_types": list(valid_types)},
             llm_data=llm_data
@@ -126,7 +126,7 @@ def sysinfo(info_type: str = "all") -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"[sysinfo] 获取系统信息失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_get_system_info_llm_data("error", duration_ms, info_type, detail=str(e))
+        llm_data = _build_get_system_info_llm_data("error", duration_ms, info_type, detail=str(e), hint="获取系统信息失败，请重试")
         return build_error(data={"error_detail": str(e), "params": {"info_type": info_type}}, llm_data=llm_data)
 
 
