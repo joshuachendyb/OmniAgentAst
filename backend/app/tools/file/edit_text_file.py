@@ -13,7 +13,7 @@ import asyncio
 import difflib
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import MAX_READ_SIZE
@@ -25,6 +25,7 @@ from app.tools.file_type_checker import check_for_text_tool
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory, validate_str_param
 from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
+from app.tools.file.file_state import check_conflict, record_write
 
 # U+FFFD replacement character threshold for encoding detection — 小欧 2026-06-27
 _REPLACEMENT_CHAR_THRESHOLD = 0.05
@@ -185,18 +186,27 @@ async def _precise_replace_in_file(
         except Exception:
             pass
 
-        operation_id = record_operation(
-            task_id=task_id, operation_type=OperationType.MODIFY,
-            destination_path=path, sequence_number=0,
-        )
-
         content, used_enc, err_msg = await _try_read_file_with_encodings(path, encoding)
         if err_msg:
             raise ValueError(err_msg)
 
-        mtime_warning = check_file_mtime(file_path)
+        mtime_warning = check_conflict(file_path)
         if mtime_warning:
             logger.warning(f"[edittext] {mtime_warning}")
+
+        # 无操作跳过 — 小欧 2026-07-05 — 小沈 2026-07-05 record_operation移后防孤立记录
+        if old_string == new_string:
+            return {
+                "file_path": str(path),
+                "applied_edits": 0, "total_edits": 0,
+                "total_matches": content.count(old_string) if replace_all else (1 if old_string in content else 0),
+                "diff": "", "mtime_warning": mtime_warning, "skipped": True,
+            }
+
+        operation_id = record_operation(
+            task_id=task_id, operation_type=OperationType.MODIFY,
+            destination_path=path, sequence_number=0,
+        )
 
         replace_result = {}
 
@@ -222,6 +232,7 @@ async def _precise_replace_in_file(
             write_content = new_content.replace('\n', '\r\n') if _has_crlf else new_content
             with open(path, 'w', encoding=used_enc, newline='') as f:
                 f.write(write_content)
+            record_write(file_path)
             return True
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
@@ -306,37 +317,4 @@ async def edittext(
     return build_success(data=result, llm_data=llm_data)
 
 
-# ============================================================
-# 文件 mtime 缓存 — readtext 记录, edittext 检查冲突
-# 只记录当前进程内存，不持久化 — 小欧 2026-07-05
-# ============================================================
-
-_file_mtime_cache: Dict[str, int] = {}
-
-def record_file_mtime(file_path: str) -> None:
-    """记录文件当前 mtime（由 readtext 在成功读取后调用）— 小欧 2026-07-05"""
-    try:
-        mtime = Path(file_path).resolve().stat().st_mtime_ns
-        _file_mtime_cache[file_path] = mtime
-    except OSError:
-        pass
-
-def check_file_mtime(file_path: str) -> Optional[str]:
-    """检查文件 mtime 是否变化。返回 None=无冲突, str=冲突警告 — 小欧 2026-07-05"""
-    recorded = _file_mtime_cache.get(file_path)
-    if recorded is None:
-        return None
-    try:
-        current = Path(file_path).resolve().stat().st_mtime_ns
-        if current != recorded:
-            return (
-                f"文件 {file_path} 自上次读取后被外部修改，"
-                "当前编辑可能覆盖外部变更。建议先重新 readtext 确认文件内容"
-            )
-    except OSError:
-        pass
-    return None
-
-def clear_file_mtime(file_path: str) -> None:
-    """清除文件 mtime 记录（如文件已被删除）— 小欧 2026-07-05"""
-    _file_mtime_cache.pop(file_path, None)
+# 本地 mtime 缓存已于 2026-07-05 迁移到 file/file_state.py — 小欧
