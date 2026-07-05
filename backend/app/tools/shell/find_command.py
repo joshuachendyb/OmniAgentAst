@@ -23,9 +23,9 @@ def _build_find_command_llm_data(
     exec_code: str, duration_ms: int, command: str = "",
     available: bool = False, path: str = "",
     paths: list = None, count: int = 0,
-    err_code: str = "", detail: str = "", all_paths: bool = False,
+    err_code: str = "", detail: str = "", all_paths: bool = False, hint: str = "",
 ) -> Dict[str, Any]:
-    """find_command的llm_data构建函数 — 小欧 2026-06-22"""
+    """find_command的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint"""
     _act_params = {"command": command}
     if all_paths:
         _act_params["all_paths"] = True
@@ -33,7 +33,7 @@ def _build_find_command_llm_data(
         return {
             "summary": f"查找命令失败: {command}",
             "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": _act_params},
-            "status": {"exec_code": "error", "message": "查找命令失败", "code": err_code or ERR_SHELL_FIND_COMMAND, "detail": detail, "hint": "请检查命令名称是否正确"},
+            "status": {"exec_code": "error", "message": "查找命令失败", "code": err_code or ERR_SHELL_FIND_COMMAND, "detail": detail, "hint": hint if hint else "请检查命令名称是否正确"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -72,7 +72,7 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_find_command_llm_data("error", duration_ms, str(command), False, "",
             err_code=ERR_PARAMETER_EMPTY, detail="command参数不能为空",
-            all_paths=all_paths)
+            all_paths=all_paths, hint="command参数不能为空")
         return build_error(data={"error_detail": "command参数不能为空", "params": {"command": command}}, llm_data=llm_data)
     try:
         if not all_paths:
@@ -120,5 +120,5 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_find_command_llm_data("error", duration_ms, command,
             err_code=ERR_SHELL_EXCEPTION, detail=str(e),
-            all_paths=all_paths)
+            all_paths=all_paths, hint="查找命令异常,请检查系统环境")
         return build_error(data={"error_detail": str(e), "params": {"command": command}}, llm_data=llm_data)

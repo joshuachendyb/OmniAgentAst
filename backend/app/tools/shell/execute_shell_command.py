@@ -175,9 +175,9 @@ def _build_execute_shell_command_llm_data(
     exec_code: str, duration_ms: int, command: str = "", returncode: int = 0,
     stdout_preview: str = "", stderr_preview: str = "", shell_type: str = "powershell",
     err_code: str = "", detail: str = "", timeout: int = 0, cwd: str = "",
-    output_len: int = 0, stderr_len: int = 0,
+    output_len: int = 0, stderr_len: int = 0, hint: str = "",
 ) -> Dict[str, Any]:
-    """execute_shell_command 的 llm_data 构建函数"""
+    """execute_shell_command 的 llm_data 构建函数 — 小欧 2026-07-05 新增hint"""
     cmd_short = (command[:60] + "..." + command[-37:]) if command and len(command) > 100 else (command[:100] if command else "")
     _act_params = {"command": cmd_short}
     if shell_type:
@@ -191,7 +191,7 @@ def _build_execute_shell_command_llm_data(
         return {
             "summary": f"执行失败: {_detail}",
             "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
-            "status": {"exec_code": "error", "message": "执行失败", "code": err_code or ERR_SHELL_EXEC, "detail": detail or (stderr_preview[:200] if stderr_preview else ""), "hint": "请检查命令语法和参数"},
+            "status": {"exec_code": "error", "message": "执行失败", "code": err_code or ERR_SHELL_EXEC, "detail": detail or (stderr_preview[:200] if stderr_preview else ""), "hint": hint if hint else "请检查命令语法和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -242,14 +242,14 @@ def shell(
     if not timeout_valid:
         llm = _build_execute_shell_command_llm_data("error", 0, command, -1, "", "",
             shell_type or "", ERR_PARAMETER_INVALID, timeout_err,
-            timeout=timeout, cwd=cwd or "")
+            timeout=timeout, cwd=cwd or "", hint="请检查timeout参数")
         return build_error(data={"error_detail": timeout_err, "params": {"timeout": timeout}}, llm_data=llm)
 
     if shell_type not in ("powershell", "cmd", None):
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
             shell_type or "", ERR_PARAMETER_INVALID, "shell_type仅支持powershell/cmd",
-            timeout=timeout, cwd=cwd or "")
+            timeout=timeout, cwd=cwd or "", hint="shell_type仅支持powershell/cmd")
         return build_error(data={"error_detail": "shell_type仅支持powershell/cmd", "params": {"shell_type": shell_type}}, llm_data=llm)
 
     cmd = command.strip() if command else ""
@@ -257,14 +257,14 @@ def shell(
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
             shell_type or "", ERR_PARAMETER_EMPTY, "command不能为空",
-            timeout=timeout, cwd=cwd or "")
+            timeout=timeout, cwd=cwd or "", hint="command不能为空")
         return build_error(data={"error_detail": "command不能为空"}, llm_data=llm)
 
     if cwd is not None and not os.path.isdir(cwd):
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
             shell_type or "", ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}",
-            timeout=timeout, cwd=cwd or "")
+            timeout=timeout, cwd=cwd or "", hint="请检查工作目录路径")
         return build_error(data={"error_detail": f"工作目录不存在: {cwd}", "params": {"cwd": cwd}}, llm_data=llm)
 
     # ── 阶段 2: 安全检查 ──
@@ -274,7 +274,7 @@ def shell(
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
             shell_type or "", ERR_SHELL_INJECTION, safety.message,
-            timeout=timeout, cwd=cwd or "")
+            timeout=timeout, cwd=cwd or "", hint="命令被安全规则拦截")
         return build_error(data={"error_detail": safety.message, "params": {"command": command[:200]}}, llm_data=llm)
 
     # ── 阶段 3: 执行 ──
@@ -344,7 +344,7 @@ def shell(
             llm = _build_execute_shell_command_llm_data("error", d, command,
                 returncode, stdout_str[:200], stderr_str[:200],
                 shell_type or "", ERR_SHELL_TIMEOUT, f"命令执行超时({timeout}秒)",
-                timeout=timeout, cwd=cwd or "")
+                timeout=timeout, cwd=cwd or "", hint="可增大timeout参数重试")
             llm["status"]["hint"] = "可增大timeout参数重试"
             return build_error(data=data, llm_data=llm)
 
@@ -377,14 +377,14 @@ def shell(
         llm = _build_execute_shell_command_llm_data("error", d, command,
             returncode, stdout_str[:200], stderr_str[:200],
             shell_type or "", ERR_SHELL_EXEC, err_detail,
-            timeout=timeout, cwd=cwd or "")
+            timeout=timeout, cwd=cwd or "", hint="请检查命令语法和参数")
         return build_error(data=data, llm_data=llm)
 
     except Exception as e:
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
             shell_type or "", ERR_SHELL_EXCEPTION, str(e),
-            timeout=timeout, cwd=cwd or "")
+            timeout=timeout, cwd=cwd or "", hint="命令执行异常,请检查命令和系统环境")
         data = {
             "stdout": "", "stderr": "",
             "returncode": -1, "shell_type": shell_type or "powershell",
