@@ -231,6 +231,11 @@ class FindInput(BaseModel):
 # ============================================================
 
 class GrepInput(BaseModel):
+    """使用技巧:
+- pattern 支持正则如 \"def \\w+\" 匹配函数定义
+- glob 可限制文件类型如 \"*.py\"
+- output_mode=\"files_with_matches\" 只返回文件名列表,节省token
+- 结果按文件修改时间降序排列,最新修改的文件在最前"""
     pattern: str = Field(
         description="正则表达式搜索模式,支持中文内容搜索。如 \"def read_file\""
     )

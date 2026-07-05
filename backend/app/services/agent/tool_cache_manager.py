@@ -76,7 +76,7 @@ def patch_search_desc(agent):
     
     unloaded = [
         cat for cat in ToolCategory
-        if cat not in {ToolCategory.FUNDAMENTAL, ToolCategory.SHELL}
+        if cat not in {ToolCategory.FUNDAMENTAL, ToolCategory.SHELL, ToolCategory.FILE}
         and cat not in agent._loaded_categories
     ]
     

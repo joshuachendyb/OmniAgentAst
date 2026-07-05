@@ -10,20 +10,21 @@ F7: grep_file_content — 搜索文件内容
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import asyncio
+import fnmatch as fnm
+import os
 import re as re_mod
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, NamedTuple, Optional
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, MAX_SEARCH_RESULTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, MAX_SEARCH_FILE_SIZE
 
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.tools.file_type_checker import TEXT_EXTENSIONS, is_binary_file
+from app.tools.file.file_encoding import safe_read_lines
 from app.utils.logger import logger
 
-
-_ENCODING_PRIORITY = ["utf-8", "gbk", "gb2312", "utf-8-sig", "latin-1", "cp1252", "iso-8859-2", "cp1250"]
 
 _MAX_LINE_CONTENT = 200
 
@@ -36,53 +37,21 @@ _SKIP_DIRS = frozenset({
     '.terraform', '.serverless',
 })
 
+# 模块级 ReDoS 检测常量 — 小沈 2026-07-05
+_REDOS_PATTERNS = frozenset({
+    r"\([^)]*[+*][^)]*\)[+*]",       # (a+)+ 或 (a*)* 嵌套量词
+    r"\([^)]*[+*][^)]*\){[0-9,]+}",  # (a+){2,} 量词嵌套
+})
+_MAX_PATTERN_LENGTH = 200
 
-def _read_file_safe(file_path: Path) -> List[str]:
-    """多编码尝试读取文件行 — 小健 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-25 chardet自动检测"""
-    try:
-        size = file_path.stat().st_size
-        if size > MAX_SEARCH_FILE_SIZE:
-            return []
-    except OSError:
-        return []
-    # chardet自动检测编码
-    detected_enc = None
-    try:
-        import chardet as _chardet
-        raw = file_path.read_bytes()
-        det = _chardet.detect(raw)
-        if det and det.get("encoding") and det.get("confidence", 0) > 0.5:
-            detected_enc = det["encoding"]
-    except Exception:
-        pass
-    # 构建编码列表：chardet结果优先
-    enc_list = []
-    if detected_enc:
-        enc_list.append(detected_enc)
-    for enc in _ENCODING_PRIORITY:
-        if enc not in enc_list:
-            enc_list.append(enc)
-    # 尝试精确解码
-    for enc in enc_list:
-        try:
-            with file_path.open("r", encoding=enc) as f:
-                return f.readlines()
-        except (UnicodeDecodeError, LookupError):
-            continue
-    # 所有编码失败，用replace兜底
-    for enc in enc_list:
-        try:
-            with file_path.open("r", encoding=enc, errors="replace") as f:
-                lines = f.readlines()
-            total_chars = sum(len(line) for line in lines)
-            if total_chars > 0:
-                replace_count = sum(line.count("\ufffd") for line in lines)
-                if replace_count / total_chars > 0.05:
-                    continue
-            return lines
-        except (UnicodeDecodeError, LookupError):
-            continue
-    return []
+
+class GrepSyncResult(NamedTuple):
+    """_grep_files_sync 返回值 — 小沈 2026-07-05"""
+    results: List[Dict]
+    total_files: int
+    total_matches: int
+    truncated: bool
+    skipped_binaries: List[str]
 
 
 def _build_grep_file_content_llm_data(
@@ -124,32 +93,17 @@ def _build_grep_file_content_llm_data(
 
 
 def _grep_files_sync(
-    search_dir: Path, pattern: str, glob_filter: Optional[str],
-    ignore_case: bool, deadline: float,
+    search_dir: Path,
+    regex: re_mod.Pattern,
+    glob_filter: Optional[str],
     output_mode: str,
-) -> Tuple[List[Dict], int, int, bool, List[str]]:
-    """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-24 增加二进制文件检测和提示 — 小欧 2026-06-25 增加ReDoS模式检测"""
+    deadline: float,
+) -> GrepSyncResult:
+    """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-24 增加二进制文件检测和提示 — 小沈 2026-07-05 接收已编译regex"""
     results = []
     total_matches = 0
     total_files = 0
     skipped_binary_files = []  # 记录跳过的二进制文件
-    flags = re_mod.IGNORECASE if ignore_case else 0
-
-    # ReDoS防护: 检测嵌套量词模式 — 小欧 2026-06-25
-    _REDOS_PATTERNS = [
-        r"\([^)]*[+*][^)]*\)[+*]",   # (a+)+ 或 (a*)* 嵌套量词
-        r"\([^)]*[+*][^)]*\){[0-9,]+}",  # (a+){2,} 量词嵌套
-    ]
-    for redos_p in _REDOS_PATTERNS:
-        if re_mod.search(redos_p, pattern):
-            raise ValueError(f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}")
-    if len(pattern) > 200:
-        raise ValueError(f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险")
-
-    try:
-        regex = re_mod.compile(pattern, flags)
-    except re_mod.error as e:
-        raise ValueError(f"正则表达式无效: {e}") from e
 
     for root, dirs, files in os.walk(search_dir):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
@@ -164,7 +118,6 @@ def _grep_files_sync(
                 break
             fpath = Path(root) / fname
             if glob_filter:
-                import fnmatch as fnm
                 if not fnm.fnmatch(fname, glob_filter):
                     continue
             
@@ -180,7 +133,7 @@ def _grep_files_sync(
             if suffix and suffix not in TEXT_EXTENSIONS:
                 continue
             
-            lines = _read_file_safe(fpath)
+            lines = safe_read_lines(fpath, max_size=MAX_SEARCH_FILE_SIZE)
             if not lines:
                 continue
             file_matches = []
@@ -209,10 +162,7 @@ def _grep_files_sync(
                 results.extend(file_matches)
 
     truncated = _time_mod.monotonic() > deadline or total_matches >= MAX_SEARCH_RESULTS
-    return results, total_files, total_matches, truncated, skipped_binary_files
-
-
-import os
+    return GrepSyncResult(results, total_files, total_matches, truncated, skipped_binary_files)
 
 
 def _sort_grep_results_by_mtime(results: List[Dict]) -> None:
@@ -260,6 +210,17 @@ async def grep(
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="搜索模式不能为空")
         return build_error(data={"error_detail": "搜索模式不能为空", "params": {"pattern": pattern}}, llm_data=llm_data)
 
+    # ReDoS 检测 — 小沈 2026-07-05
+    for redos_p in _REDOS_PATTERNS:
+        if re_mod.search(redos_p, pattern):
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}")
+            return build_error(data={"error_detail": f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", "params": {"pattern": pattern}}, llm_data=llm_data)
+    if len(pattern) > _MAX_PATTERN_LENGTH:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险")
+        return build_error(data={"error_detail": f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险", "params": {"pattern": pattern}}, llm_data=llm_data)
+
     try:
         regex = re_mod.compile(pattern, re_mod.IGNORECASE if ignore_case else 0)
     except re_mod.error as e:
@@ -280,9 +241,8 @@ async def grep(
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("grep", TOOL_TIMEOUTS["default"]) - 2
 
     try:
-        results, total_files, total_matches, truncated, skipped_binary_files = await asyncio.to_thread(
-            _grep_files_sync, search_path, pattern, glob, ignore_case, deadline,
-            output_mode,
+        gr = await asyncio.to_thread(
+            _grep_files_sync, search_path, regex, glob, output_mode, deadline,
         )
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -290,39 +250,39 @@ async def grep(
         return build_error(data={"error_detail": str(e), "params": {"search_dir": actual_dir}}, llm_data=llm_data)
 
     # 按 mtime 降序排序 — 小欧 2026-07-05
-    if results and output_mode != "count":
-        _sort_grep_results_by_mtime(results)
+    if gr.results and output_mode != "count":
+        _sort_grep_results_by_mtime(gr.results)
 
     if output_mode == "count":
-        data = {"total_matches": total_matches, "total_files": total_files, "pattern": pattern}
+        data = {"total_matches": gr.total_matches, "total_files": gr.total_files, "pattern": pattern}
     elif output_mode == "files_with_matches":
-        data = {"files": results, "total_files": total_files, "pattern": pattern}
+        data = {"files": gr.results, "total_files": gr.total_files, "pattern": pattern}
     else:
-        data = {"matches": results, "total_matches": total_matches, "total_files": total_files, "pattern": pattern}
-    
+        data = {"matches": gr.results, "total_matches": gr.total_matches, "total_files": gr.total_files, "pattern": pattern}
+
     # 添加跳过的二进制文件信息 — 小健 2026-06-24
-    if skipped_binary_files:
-        data["skipped_binary_files"] = skipped_binary_files[:10]  # 最多返回10个
-        data["skipped_binary_count"] = len(skipped_binary_files)
-    
+    if gr.skipped_binaries:
+        data["skipped_binary_files"] = gr.skipped_binaries[:10]  # 最多返回10个
+        data["skipped_binary_count"] = len(gr.skipped_binaries)
+
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-    
+
     # 如果跳过了二进制文件，添加提示 — 小健 2026-06-24
     binary_hint = ""
-    if skipped_binary_files:
-        binary_hint = f"（跳过{len(skipped_binary_files)}个二进制文件，如: {Path(skipped_binary_files[0]).name}）"
-    
-    exec_code = "warning" if (truncated or skipped_binary_files) else "success"
+    if gr.skipped_binaries:
+        binary_hint = f"（跳过{len(gr.skipped_binaries)}个二进制文件，如: {Path(gr.skipped_binaries[0]).name}）"
+
+    exec_code = "warning" if (gr.truncated or gr.skipped_binaries) else "success"
     llm_data = _build_grep_file_content_llm_data(
         exec_code, duration_ms, pattern=pattern, search_dir=actual_dir,
-        total_files=total_files, total_matches=total_matches, truncated=truncated,
+        total_files=gr.total_files, total_matches=gr.total_matches, truncated=gr.truncated,
     )
-    
+
     # 修改summary添加二进制文件提示 — 小健 2026-06-24
     if binary_hint:
         llm_data["summary"] = llm_data["summary"] + binary_hint
-        llm_data["status"]["detail"] = f"跳过了{len(skipped_binary_files)}个二进制文件，这些文件不是文本格式，无法进行内容搜索"
-    
+        llm_data["status"]["detail"] = f"跳过了{len(gr.skipped_binaries)}个二进制文件，这些文件不是文本格式，无法进行内容搜索"
+
     if exec_code == "warning":
         return build_warning(data=data, llm_data=llm_data)
     return build_success(data=data, llm_data=llm_data)
