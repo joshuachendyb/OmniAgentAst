@@ -70,7 +70,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
         if hkey is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "")
+            llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"无效的根键: {full_root_key}")
             return build_error(data={"error_detail": f"无效的根键: {full_root_key}", "params": {"key_path": key_path, "hive": hive}}, llm_data=llm_data)
 
         if backup_before_delete:
@@ -95,7 +95,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
                             pass
                         if i > 0:
                             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                            llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "")
+                            llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"键不为空({i}个子键),使用recursive=True强制删除")
                             return build_error(data={"error_detail": f"键不为空({i}个子键),使用 recursive=True 强制删除", "params": {"key_path": f"{full_root_key}\\{sub_key}", "subkey_count": i}}, llm_data=llm_data)
                 except FileNotFoundError:
                     pass
@@ -105,7 +105,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
             if not parent_key:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "")
+                llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail="不能直接删除根键下的子键")
                 return build_error(data={"error_detail": "不能直接删除根键下的子键", "params": {"key_path": key_path}}, llm_data=llm_data)
 
             if recursive:
@@ -129,19 +129,19 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"注册表键或值不存在: {key_path}")
         return build_error(data={"error_detail": f"注册表键或值不存在: {key_path}", "params": {"key_path": key_path, "value_name": value_name}}, llm_data=llm_data)
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"权限不足: {key_path}")
         return build_error(data={"error_detail": f"权限不足: {key_path}", "params": {"key_path": key_path}}, llm_data=llm_data)
     except OSError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"删除失败: {e}")
         return build_error(data={"error_detail": f"删除失败(可能子键不为空): {e}", "params": {"key_path": key_path}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"key_path": key_path}}, llm_data=llm_data)
 
 

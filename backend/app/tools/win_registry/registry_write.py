@@ -68,7 +68,7 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
     hkey = _validate_root_key(full_root_key)
     if hkey is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type)
+        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"无效的根键: {full_root_key}")
         return build_error(data={"error_detail": f"无效的根键: {full_root_key}", "params": {"key_path": key_path, "hive": hive}}, llm_data=llm_data)
 
     if dry_run:
@@ -86,11 +86,11 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
             return build_success(data={"key_path": key_path, "dry_run": True}, llm_data=llm_data)
         except FileNotFoundError:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type)
+            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"键路径不存在: {key_path}")
             return build_error(data={"error_detail": f"键路径不存在: {key_path}", "params": {"key_path": key_path}}, llm_data=llm_data)
         except Exception as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type)
+            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=str(e))
             return build_error(data={"error_detail": str(e), "params": {"key_path": key_path}}, llm_data=llm_data)
 
     try:
@@ -103,7 +103,7 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
 
         if actual_type not in _REG_TYPE_MAP:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type)
+            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"不支持的类型: {value_type}")
             return build_error(data={"error_detail": f"不支持的类型: {value_type}", "params": {"key_path": key_path, "value_type": value_type}}, llm_data=llm_data)
 
         converted = _convert_reg_value(actual_type, value)
@@ -123,11 +123,11 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
         return build_success(data=data, llm_data=llm_data)
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type)
+        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"权限不足: {key_path}")
         return build_error(data={"error_detail": f"权限不足: {key_path}", "params": {"key_path": key_path}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type)
+        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"key_path": key_path}}, llm_data=llm_data)
 
 
