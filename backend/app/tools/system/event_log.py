@@ -26,8 +26,8 @@ from app.tools.tool_constants import (
 
 
 def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, event_count: int, level: str,
-                              detail: str = "", err_code: str = "") -> dict:
-    """event_log的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加err_code参数"""
+                              detail: str = "", err_code: str = "", hint: str = "") -> dict:
+    """event_log的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     _act_params = {"log_name": log_name}
     if level:
         _act_params["level"] = level
@@ -36,7 +36,7 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
         return {
             "summary": error_msg,
             "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},
-            "status": {"exec_code": "error", "message": error_msg, "code": err_code or ERR_SYSTEM_EVENT_LOG, "detail": detail, "hint": "请检查日志名称、级别和权限"},
+            "status": {"exec_code": "error", "message": error_msg, "code": err_code or ERR_SYSTEM_EVENT_LOG, "detail": detail, "hint": hint if hint else "请检查日志名称、级别和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -164,24 +164,15 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
         if "error_detail" in result:
             error_code = result.pop("_error_code", ERR_SYSTEM_EVENT_LOG)
             error_detail = result.get("error_detail", "")
-            llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail, err_code=error_code)
-            return build_error(data=result, llm_data=llm_data)
+            llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail, err_code=error_code, hint="请检查日志名称和级别")
+            return build_error(data={"error_detail": error_detail, "params": {"log_name": log_name, "level": level}}, llm_data=llm_data)
         else:
-            result.pop("_error_code", None)
-            event_count = len(result.get("events", []))
-            llm_data = _build_event_log_llm_data("success", duration_ms, log_name, event_count, level)
-            # ---- observation_formatter route -------------------------------------------
-            # branch: #8 events
-            # trigger: "events" in data — events 是 List[dict|str]
-            # handler: _format_events(data["events"])
-            # file:    observation_formatter.py:148-150
-            # ------------------------------------------------------------------------------
-            return build_success(data=result, llm_data=llm_data)
+            events = list(events_generator)
 
     except Exception as e:
         logger.error(f"[event_log] 获取事件日志失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=str(e))
+        llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=str(e), hint="获取事件日志异常,请检查系统状态")
         return build_error(data={"error_detail": str(e), "params": {"log_name": log_name}}, llm_data=llm_data)
 
 
