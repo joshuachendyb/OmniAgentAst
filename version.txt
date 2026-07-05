@@ -1,6 +1,19 @@
-﻿v0.17.20
-更新时间: 2026-07-04 13:58:35
-## v0.17.19→v0.17.20 变更汇总 - 小欧-2026-07-04
+﻿v0.17.21
+更新时间: 2026-07-05
+## v0.17.20→v0.17.21 变更汇总 - 小欧-2026-07-05
+
+### refactor: shell持久引擎 - 替换subprocess为PersistentShell
+- 新建 PersistentShell 类，持久 PowerShell 进程，替代每次新建 subprocess
+- 实例池管理（get_instance），相同 cwd 复用同一个进程
+- 内部命令 + 外部 EXE 的 exit code 统一捕获（`$global:rc` + `$?` 脚本块内检测）
+- `_PWSH_CACHE` 缓存 `shutil.which("pwsh.exe")` 避免重复调用
+- DEVNULL 替代 PIPE 防阻塞 + encode 修复 + 轮询替代 sleep
+- stdout/stderr 30K 截断防超大输出冲垮
+- 删除 `shell_session.py`（background shell 功能）
+- 删除 `run_in_background` schema 字段和所有相关注册
+- main.py shutdown 改为 `cleanup_all_persistent_shells()`
+
+### v0.17.19→v0.17.20 变更汇总 - 小欧-2026-07-04
 
 ### fix: tool内部功能代码缺陷修复(20项)
 - tool_search.py: searchtool(None/123) 前置类型校验
