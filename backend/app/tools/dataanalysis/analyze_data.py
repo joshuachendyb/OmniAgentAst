@@ -62,20 +62,36 @@ def _compute_stats(df: "pd.DataFrame", numeric_cols: List[str], operations: List
     return {"statistics": statistics}
 
 
-def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_col_count=0, columns=None, detail=""):
-    """analyze_data的llm_data构建函数 — 小健 2026-06-22"""
+def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_col_count=0, columns=None, detail="",
+                                  file_path="", data="", operations=None, group_by="", sort_by="", top_n=0, max_rows=0):
+    """analyze_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params"""
     columns = columns or []
+    _act_params = {}
+    if file_path:
+        _act_params["file_path"] = file_path
+    if data:
+        _act_params["data"] = data
+    if operations:
+        _act_params["operations"] = operations
+    if group_by:
+        _act_params["group_by"] = group_by
+    if sort_by:
+        _act_params["sort_by"] = sort_by
+    if top_n:
+        _act_params["top_n"] = top_n
+    if max_rows:
+        _act_params["max_rows"] = max_rows
     if exec_code == "error":
         return {
             "summary": f"数据分析失败: {detail}",
-            "action": {"tool": "analyze_data", "tool_zh": "分析数据", "target": "dataset", "params": {}},
+            "action": {"tool": "analyze_data", "tool_zh": "分析数据", "target": "dataset", "params": _act_params},
             "status": {"exec_code": "error", "message": "分析失败", "code": ERR_DOC_ANALYZE_DATA, "detail": detail, "hint": "请检查数据格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"分析完成: {row_count}行, {numeric_col_count}个数值列",
-        "action": {"tool": "analyze_data", "tool_zh": "分析数据", "target": "dataset", "params": {}},
+        "action": {"tool": "analyze_data", "tool_zh": "分析数据", "target": "dataset", "params": _act_params},
         "status": {"exec_code": "success", "message": "分析成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"row_count": {"value": row_count, "text": f"{row_count}行"}, "numeric_cols": {"value": numeric_col_count, "text": f"{numeric_col_count}列"}},
@@ -90,8 +106,8 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
     if file_path and data:
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="file_path和data参数互斥,只能传入其中一个")
-        return build_error(data={"error_detail": "file_path和data参数互斥,只能传入其中一个"}, llm_data=llm_data)
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="file_path和data参数互斥,只能传入其中一个", file_path=file_path, data=data)
+        return build_error(data={"error_detail": "file_path和data参数互斥,只能传入其中一个", "params": {"file_path": file_path, "data": data}}, llm_data=llm_data)
     if not file_path and not data:
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -101,7 +117,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
     t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="pandas库未安装")
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="pandas库未安装", file_path=file_path, data=data)
         return build_error(data={"error_detail": "pandas库未安装", "params": {"library": "pandas"}}, llm_data=llm_data)
 
     try:
@@ -115,7 +131,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
             is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
             if not is_valid:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=err)
+                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=err, file_path=file_path)
                 return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
             path = Path(file_path)
             read_kwargs = {}
@@ -124,7 +140,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
             if file_path.endswith('.xlsx'):
                 if not _check_module("openpyxl"):
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                    llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="openpyxl库未安装")
+                    llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="openpyxl库未安装", file_path=file_path)
                     return build_error(data={"error_detail": "openpyxl库未安装", "params": {"library": "openpyxl"}}, llm_data=llm_data)
                 df = pd.read_excel(file_path, engine="openpyxl", **({k: v for k, v in read_kwargs.items() if k == 'nrows'}))
             else:
@@ -135,14 +151,15 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
                 df = pd.DataFrame(parsed_data)
             else:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组字符串")
+                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组字符串", data=data)
                 return build_error(data={"error_detail": "data参数必须是JSON数组字符串", "params": {"data_type": type(parsed_data).__name__}}, llm_data=llm_data)
 
         total_count = len(df)
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
         if not numeric_cols:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_analyze_data_llm_data("success", duration_ms, total_count, 0, df.columns.tolist())
+            llm_data = _build_analyze_data_llm_data("success", duration_ms, total_count, 0, df.columns.tolist(),
+                                                      file_path=file_path, data=data, operations=operations, group_by=group_by, sort_by=sort_by, top_n=top_n or 0, max_rows=max_rows or 0)
             # ---- observation_formatter route -------------------------------------------
             # branch: #20 analyze_data(transposed) — 无数值列场景
             # trigger: "statistics" in data — statistics 为 {} 空 dict
@@ -162,7 +179,8 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
         result.update(_compute_stats(df, numeric_cols, operations, all_ops, group_by=group_by))
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_analyze_data_llm_data("success", duration_ms, len(df), len(numeric_cols), df.columns.tolist())
+        llm_data = _build_analyze_data_llm_data("success", duration_ms, len(df), len(numeric_cols), df.columns.tolist(),
+                                                  file_path=file_path, data=data, operations=operations, group_by=group_by, sort_by=sort_by, top_n=top_n or 0, max_rows=max_rows or 0)
         # ---- observation_formatter route -------------------------------------------
         # branch: #20 analyze_data(transposed) — 有数值列场景
         # trigger: "statistics" in data or "grouped_statistics" in data
@@ -172,7 +190,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
         return build_success(data=result, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=str(e))
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=str(e), file_path=file_path, data=data)
         return build_error(data={"error_detail": str(e), "params": {"data": str(data)[:200]}}, llm_data=llm_data)
 
 

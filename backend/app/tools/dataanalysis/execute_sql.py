@@ -36,12 +36,22 @@ def _check_sql_safety(sql: str, dry_run: bool) -> Tuple[bool, Optional[str], Opt
     return False, None, None
 
 
-def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, detail="", hint=""):
-    """execute_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数"""
+def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, detail="", hint="",
+                                 connection_type="", db_path="", dry_run=False, timeout=0):
+    """execute_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数 — 小欧 2026-07-05 新增user_params"""
+    _act_params = {"sql": sql[:200]}
+    if connection_type:
+        _act_params["connection_type"] = connection_type
+    if db_path:
+        _act_params["db_path"] = db_path
+    if dry_run:
+        _act_params["dry_run"] = dry_run
+    if timeout:
+        _act_params["timeout"] = timeout
     if exec_code == "error":
         return {
             "summary": f"SQL执行失败: {detail}",
-            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": {"sql": sql[:200]}},
+            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else "执行失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -49,14 +59,14 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
     if exec_code == "warning":
         return {
             "summary": f"SQL执行警告: 影响{affected_rows}行",
-            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": {"sql": sql[:200]}},
+            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": _act_params},
             "status": {"exec_code": "warning", "message": "影响行数超过安全阈值", "code": "WARNING_DB_SAFETY", "detail": f"影响行数{affected_rows}>10000", "hint": "建议缩小条件范围"},
             "duration_ms": duration_ms,
             "metrics": {"affected_rows": {"value": affected_rows, "text": f"{affected_rows}行"}},
         }
     return {
         "summary": f"SQL执行成功, 影响{affected_rows}行",
-        "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": {"sql": sql[:200]}},
+        "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": _act_params},
         "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"affected_rows": {"value": affected_rows, "text": f"影响{affected_rows}行"}},
@@ -75,21 +85,24 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
 
     if not isinstance(sql, str) or not sql.strip():
         duration_ms = 0
-        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql or "", 0, detail="SQL语句不能为空", hint="请提供有效的SQL语句")
+        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql or "", 0, detail="SQL语句不能为空", hint="请提供有效的SQL语句",
+                                                 connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
         return build_error(data={"error_detail": "SQL语句不能为空", "params": {"sql": sql}}, llm_data=llm_data)
 
     try:
         has_danger, warning_msg, dangerous_list = _check_sql_safety(sql, dry_run)
         if has_danger and not dry_run:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, 0)
+            llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, 0,
+                                                     connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
             return build_warning(data={"detected": dangerous_list, "suggestion": "检测到危险操作,建议使用 dry_run=true 先验证"}, llm_data=llm_data)
 
         if dry_run:
             conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
             if conn is None:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=conn_error, hint="请检查数据库连接参数")
+                llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=conn_error, hint="请检查数据库连接参数",
+                                                         connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
                 return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
             syntax_valid = False
             try:
@@ -116,7 +129,8 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                     logger.warning("[execute_sql] 关闭校验连接失败")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             if syntax_valid:
-                llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, 0)
+                llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, 0,
+                                                         connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
                 # ---- observation_formatter route -------------------------------------------
                 # branch: #21 fallback (key:val) — dry_run path
                 # trigger: 无上述20条分支匹配 — sql/dry_run/syntax_valid 不命中专用分支
@@ -125,13 +139,15 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 # ------------------------------------------------------------------------------
                 return build_success(data={"sql": sql, "dry_run": True, "syntax_valid": True}, llm_data=llm_data)
             else:
-                llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail="SQL语法校验失败", hint="请检查SQL语法")
+                llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail="SQL语法校验失败", hint="请检查SQL语法",
+                                                         connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
                 return build_error(data={"sql": sql, "dry_run": True, "syntax_valid": False, "error_detail": "SQL语法校验失败"}, llm_data=llm_data)
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=conn_error, hint="请检查数据库连接参数")
+            llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=conn_error, hint="请检查数据库连接参数",
+                                                     connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
             return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
 
         if connection_type in ("mysql", "postgresql"):
@@ -142,7 +158,8 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             if affected_rows > 10000:
                 conn.rollback()
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, affected_rows)
+                llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, affected_rows,
+                                                         connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
                 return build_warning(data={"affected_rows": affected_rows, "action": "rollback"}, llm_data=llm_data)
             conn.commit()
         else:
@@ -152,12 +169,14 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             if affected_rows > 10000:
                 conn.rollback()
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, affected_rows)
+                llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, affected_rows,
+                                                         connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
                 return build_warning(data={"affected_rows": affected_rows, "action": "rollback"}, llm_data=llm_data)
             conn.commit()
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, affected_rows)
+        llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, affected_rows,
+                                                 connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val) — normal path
         # trigger: 无上述20条分支匹配 — affected_rows/sql 不命中专用分支
@@ -168,7 +187,8 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
 
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=str(e), hint="请检查SQL语法")
+        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=str(e), hint="请检查SQL语法",
+                                                 connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
         if conn:
             try:
                 conn.rollback()
@@ -178,7 +198,8 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
         return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=str(e), hint="请检查SQL语句和参数")
+        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=str(e), hint="请检查SQL语句和参数",
+                                                 connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
         if conn:
             try:
                 conn.rollback()

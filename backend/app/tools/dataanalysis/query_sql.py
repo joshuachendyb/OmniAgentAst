@@ -35,12 +35,22 @@ def _format_table(columns: List[str], rows: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, detail="", hint=""):
-    """query_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数"""
+def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, detail="", hint="",
+                               connection_type="", db_path="", limit=0, timeout=0):
+    """query_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数 — 小欧 2026-07-05 新增user_params"""
+    _act_params = {"sql": sql[:200]}
+    if connection_type:
+        _act_params["connection_type"] = connection_type
+    if db_path:
+        _act_params["db_path"] = db_path
+    if limit:
+        _act_params["limit"] = limit
+    if timeout:
+        _act_params["timeout"] = timeout
     if exec_code == "error":
         return {
             "summary": f"SQL查询失败: {detail}",
-            "action": {"tool": "query_sql", "tool_zh": "查询", "target": sql[:80], "params": {"sql": sql[:200]}},
+            "action": {"tool": "query_sql", "tool_zh": "查询", "target": sql[:80], "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else "查询失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -50,7 +60,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
         col_text += "..."
     return {
         "summary": f"查询返回{row_count}行, 列: {col_text}",
-        "action": {"tool": "query_sql", "tool_zh": "查询", "target": sql[:80], "params": {"sql": sql[:200]}},
+        "action": {"tool": "query_sql", "tool_zh": "查询", "target": sql[:80], "params": _act_params},
         "status": {"exec_code": "success", "message": "查询成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"row_count": {"value": row_count, "text": f"{row_count}行"}, "columns": {"value": columns[:5], "text": f"列: {col_text}"}},
@@ -69,7 +79,8 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
 
     if not isinstance(sql, str) or not sql.strip():
         duration_ms = 0
-        llm_data = _build_query_sql_llm_data("error", duration_ms, sql or "", 0, [], detail="SQL语句不能为空", hint="请提供有效的SQL语句")
+        llm_data = _build_query_sql_llm_data("error", duration_ms, sql or "", 0, [], detail="SQL语句不能为空", hint="请提供有效的SQL语句",
+                                               connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
         return build_error(data={"error_detail": "SQL语句不能为空", "params": {"sql": sql}}, llm_data=llm_data)
 
     try:
@@ -77,13 +88,15 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
         if not sql_upper.startswith(("SELECT", "SHOW", "DESCRIBE", "PRAGMA", "WITH", "EXPLAIN")):
             attempted_type = sql.split()[0].upper() if sql.strip() else "未知"
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=f"只读查询不支持{attempted_type}操作", hint="如需写操作请使用execute_sql工具")
+            llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=f"只读查询不支持{attempted_type}操作", hint="如需写操作请使用execute_sql工具",
+                                                   connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
             return build_error(data={"error_detail": f"只读查询不支持{attempted_type}操作", "params": {"sql": sql[:200], "attempted_type": attempted_type}, "hint": "如需写操作请使用execute_sql工具"}, llm_data=llm_data)
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=conn_error, hint="请检查数据库连接参数")
+            llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=conn_error, hint="请检查数据库连接参数",
+                                                   connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
             return build_error(data={"error_detail": conn_error, "params": {"sql": sql[:200], "connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
 
         if connection_type in ("mysql", "postgresql"):
@@ -107,7 +120,8 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
         table_str = _format_table(columns, results)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"columns": columns, "rows": results, "total": len(results), "table": table_str}
-        llm_data = _build_query_sql_llm_data("success", duration_ms, sql, len(results), columns)
+        llm_data = _build_query_sql_llm_data("success", duration_ms, sql, len(results), columns,
+                                               connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
         # ---- observation_formatter route -------------------------------------------
         # branch: #5 rows
         # trigger: "rows" in data — rows 是 List[list|dict]
@@ -118,11 +132,13 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
 
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=str(e), hint="请检查SQL语法")
+        llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=str(e), hint="请检查SQL语法",
+                                               connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
         return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=str(e), hint="请检查SQL语句和参数")
+        llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=str(e), hint="请检查SQL语句和参数",
+                                               connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
         return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)
