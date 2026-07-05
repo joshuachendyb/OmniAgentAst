@@ -235,10 +235,19 @@ def _build_read_text_file_llm_data(
                 "bytes": {"value": file_size, "text": f"{file_size}字节"},
             },
         }
+    if line_count == 0:
+        msg = "文件为空"
+        hint_text = ""
+    elif line_count < total_lines:
+        msg = "读取成功,文件还有更多内容"
+        hint_text = "可使用offset+limit继续读取后续内容"
+    else:
+        msg = "读取成功"
+        hint_text = ""
     return {
         "summary": f"读取 {file_path}，{line_count}行，{file_size}字节",
         "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
-        "status": {"exec_code": "success", "message": "读取成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": msg, "code": "", "detail": "", "hint": hint_text},
         "duration_ms": duration_ms,
         "metrics": {
             "lines": {"value": line_count, "text": f"{line_count}行"},
