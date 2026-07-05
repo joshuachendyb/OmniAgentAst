@@ -210,11 +210,11 @@ def _select_lines(
 
 def _build_read_text_file_llm_data(
     exec_code: str, duration_ms: int,
-    file_path: str = "", line_count: int = 0,
+    file_path: str = "", start_line: int = 1, line_count: int = 0,
     total_lines: int = 0, file_size: int = 0, detail: str = "",
     hint: str = "", encoding_name: str = "",
 ) -> Dict[str, Any]:
-    """read_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-06-24 增加warning"""
+    """read_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-06-24 增加warning — 小沈 2026-07-05 success显示读取行范围"""
     if exec_code == "error":
         return {
             "summary": f"读取失败: {detail}",
@@ -235,16 +235,17 @@ def _build_read_text_file_llm_data(
                 "bytes": {"value": file_size, "text": f"{file_size}字节"},
             },
         }
+    end_line = start_line + line_count - 1
     if line_count == 0:
         msg = f"文件为空" if not encoding_name else f"文件为空,编码:{encoding_name}"
         hint_text = ""
     elif line_count < total_lines:
         enc = f",编码:{encoding_name}" if encoding_name else ""
-        msg = f"读取成功{enc},文件还有更多内容"
+        msg = f"读取成功:第{start_line}-{end_line}行,共{total_lines}行{enc}"
         hint_text = "可使用offset+limit继续读取后续内容"
     else:
         enc = f",编码:{encoding_name}" if encoding_name else ""
-        msg = f"读取成功{enc}"
+        msg = f"读取成功:第{start_line}-{end_line}行,共{total_lines}行{enc}"
         hint_text = ""
     return {
         "summary": f"读取 {file_path}，{line_count}行，{file_size}字节",
@@ -388,13 +389,14 @@ async def readtext(
             )
             return build_warning(data=_data, llm_data=llm_data)
 
+        line_offset = _data.get("start_line", 1)
+
         llm_data = _build_read_text_file_llm_data(
             "success", duration_ms, file_path=file_path,
-            line_count=_line_count, total_lines=_total_lines, file_size=file_size,
+            start_line=line_offset, line_count=_line_count,
+            total_lines=_total_lines, file_size=file_size,
             encoding_name=used_encoding or "",
         )
-
-        line_offset = _data.get("start_line", 1)
         raw = _data.get("content", "")
         if raw:
             _data["content"] = f"<file>\n{add_line_numbers(raw, offset=line_offset)}\n</file>"
