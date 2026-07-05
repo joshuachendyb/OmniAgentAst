@@ -84,6 +84,7 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
         if delay <= 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间必须大于0", hint="延迟时间必须大于0")
+            return build_error(data={"error_detail": "延迟时间必须大于0", "params": {"delay": delay}}, llm_data=llm_data)
 
         if delay > 86400:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -86,7 +86,7 @@ def _build_write_xlsx_llm_data(
     file_path: str = "", row_count: int = 0, detail: str = "",
     user_sheet_name: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """write_xlsx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint参数"""
+    """write_xlsx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     _act_params = {"file_path": file_path}
     if user_sheet_name:
         _act_params["sheet_name"] = user_sheet_name

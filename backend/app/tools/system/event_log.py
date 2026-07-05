@@ -167,7 +167,10 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
             llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail, err_code=error_code, hint="请检查日志名称和级别")
             return build_error(data={"error_detail": error_detail, "params": {"log_name": log_name, "level": level}}, llm_data=llm_data)
         else:
-            events = list(events_generator)
+            events = list(result["events"])
+            events_count = len(events)
+            llm_data = _build_event_log_llm_data("success", duration_ms, log_name, events_count, level)
+            return build_success(data={"events": events, "count": events_count, "log_name": log_name, "level": level}, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"[event_log] 获取事件日志失败: {e}")

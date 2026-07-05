@@ -106,6 +106,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
             if not parent_key:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail="不能直接删除根键下的子键", hint="不能直接删除根键下的子键")
+                return build_error(data={"error_detail": "不能直接删除根键下的子键", "params": {"key_path": key_path}}, llm_data=llm_data)
 
             if recursive:
                 _delete_registry_recursive(hkey, sub_key)

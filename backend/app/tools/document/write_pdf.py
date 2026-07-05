@@ -56,7 +56,7 @@ def _build_write_pdf_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", detail: str = "", user_title: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """write_pdf的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint参数"""
+    """write_pdf的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     _act_params = {"file_path": file_path}
     if user_title:
         _act_params["title"] = user_title
@@ -93,10 +93,12 @@ def write_pdf(
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=err, user_title=title or "", hint="请检查文件路径是否合法")
+        return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
 
     if not _check_module("reportlab"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail="reportlab库未安装", user_title=title or "", hint="请安装reportlab库")
+        return build_error(data={"error_detail": "reportlab库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
 
     try:
         from reportlab.lib.pagesizes import A4

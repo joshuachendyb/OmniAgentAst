@@ -77,7 +77,7 @@ def _build_write_docx_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", detail: str = "", user_title: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """write_docx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint参数"""
+    """write_docx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     _act_params = {"file_path": file_path}
     if user_title:
         _act_params["title"] = user_title

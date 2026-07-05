@@ -51,6 +51,7 @@ def delete_task(task_name: str) -> dict:
         if platform.system() != "Windows":
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, detail="delete_task仅支持Windows系统", hint="当前系统不是Windows")
+            return build_error(data={"error_detail": "delete_task仅支持Windows系统", "params": {"task_name": task_name}}, llm_data=llm_data)
 
         query_cmd = ["schtasks", "/query", "/tn", task_name]
         query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=SUBPROCESS_TIMEOUT_DEFAULT)
@@ -58,6 +59,7 @@ def delete_task(task_name: str) -> dict:
         if query_result.returncode != 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_TASK_NOT_FOUND, detail=f"计划任务 {task_name} 不存在", hint="请检查任务名称是否正确")
+            return build_error(data={"error_detail": f"计划任务 {task_name} 不存在", "params": {"task_name": task_name}}, llm_data=llm_data)
 
         cmd = ["schtasks", "/delete", "/tn", task_name, "/f"]
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))

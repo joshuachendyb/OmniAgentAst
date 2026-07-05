@@ -345,7 +345,6 @@ def shell(
                 returncode, stdout_str[:200], stderr_str[:200],
                 shell_type or "", ERR_SHELL_TIMEOUT, f"命令执行超时({timeout}秒)",
                 timeout=timeout, cwd=cwd or "", hint="可增大timeout参数重试")
-            llm["status"]["hint"] = "可增大timeout参数重试"
             return build_error(data=data, llm_data=llm)
 
         if returncode == 0:

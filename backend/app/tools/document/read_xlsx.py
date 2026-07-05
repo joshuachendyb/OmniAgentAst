@@ -27,7 +27,7 @@ def _build_read_xlsx_llm_data(
     file_path: str = "", row_count: int = 0, sheet_count: int = 0, detail: str = "",
     user_sheet_name: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """read_xlsx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint参数"""
+    """read_xlsx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         _act_params = {"file_path": file_path}
         if user_sheet_name:
