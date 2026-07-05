@@ -36,13 +36,13 @@ def _convert_reg_value(value_type: str, value: str) -> Any:
     return converter(value) if converter else value
 
 
-def _build_registry_write_llm_data(exec_code: str, duration_ms: int, key_path: str, value_name: str, value: str, value_type: str, err_code: str = None, detail: str = "") -> dict:
-    """registry_write的llm_data构建函数 — 小健 2026-06-22"""
+def _build_registry_write_llm_data(exec_code: str, duration_ms: int, key_path: str, value_name: str, value: str, value_type: str, err_code: str = None, detail: str = "", hint: str = "") -> dict:
+    """registry_write的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
             "summary": f"写入注册表失败: {key_path}",
             "action": {"tool": "registry_write", "tool_zh": "写入注册表", "target": key_path, "params": {"key_path": key_path, "value_name": value_name}},
-            "status": {"exec_code": "error", "message": "写入注册表失败", "code": err_code or ERR_REG_WRITE_FAILED, "detail": detail, "hint": "请检查权限"},
+            "status": {"exec_code": "error", "message": "写入注册表失败", "code": err_code or ERR_REG_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -59,7 +59,7 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
     """写入Windows注册表键值 — 小健 2026-06-22 拆分独立文件"""
     is_valid, error_msg, warning_msg = validate_registry_key(key_path, hive, "write")
     if not is_valid:
-        llm_data = _build_registry_write_llm_data("error", 0, key_path, value_name, value, "auto_detect", err_code=ERR_PARAMETER_INVALID, detail=error_msg)
+        llm_data = _build_registry_write_llm_data("error", 0, key_path, value_name, value, "auto_detect", err_code=ERR_PARAMETER_INVALID, detail=error_msg, hint="请检查注册表路径和权限")
         return build_error(data={"error_detail": error_msg, "params": {"key_path": key_path}}, llm_data=llm_data)
     if warning_msg:
         logger.warning(f"[registry_write] {warning_msg}")
@@ -68,7 +68,7 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
     hkey = _validate_root_key(full_root_key)
     if hkey is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"无效的根键: {full_root_key}")
+        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"无效的根键: {full_root_key}", hint="请检查根键名称")
         return build_error(data={"error_detail": f"无效的根键: {full_root_key}", "params": {"key_path": key_path, "hive": hive}}, llm_data=llm_data)
 
     if dry_run:
@@ -86,11 +86,11 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
             return build_success(data={"key_path": key_path, "dry_run": True}, llm_data=llm_data)
         except FileNotFoundError:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"键路径不存在: {key_path}")
+            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"键路径不存在: {key_path}", hint="请检查键路径是否正确")
             return build_error(data={"error_detail": f"键路径不存在: {key_path}", "params": {"key_path": key_path}}, llm_data=llm_data)
         except Exception as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=str(e))
+            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=str(e), hint="读取注册表异常,请检查权限")
             return build_error(data={"error_detail": str(e), "params": {"key_path": key_path}}, llm_data=llm_data)
 
     try:
@@ -103,7 +103,7 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
 
         if actual_type not in _REG_TYPE_MAP:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"不支持的类型: {value_type}")
+            llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"不支持的类型: {value_type}", hint="请使用支持的值类型(REG_SZ/REG_DWORD等)")
             return build_error(data={"error_detail": f"不支持的类型: {value_type}", "params": {"key_path": key_path, "value_type": value_type}}, llm_data=llm_data)
 
         converted = _convert_reg_value(actual_type, value)
@@ -123,11 +123,11 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
         return build_success(data=data, llm_data=llm_data)
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"权限不足: {key_path}")
+        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"权限不足: {key_path}", hint="请以管理员身份运行")
         return build_error(data={"error_detail": f"权限不足: {key_path}", "params": {"key_path": key_path}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=str(e))
+        llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=str(e), hint="写入注册表异常,请检查系统状态")
         return build_error(data={"error_detail": str(e), "params": {"key_path": key_path}}, llm_data=llm_data)
 
 

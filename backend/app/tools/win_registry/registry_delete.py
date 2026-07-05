@@ -19,13 +19,13 @@ from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_key_path, 
 from app.tools.validate.registry_path_checker import validate_delete_safety
 
 
-def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, key_path: str, action: str, err_code: str = None, detail: str = "") -> dict:
-    """registry_delete的llm_data构建函数 — 小健 2026-06-22"""
+def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, key_path: str, action: str, err_code: str = None, detail: str = "", hint: str = "") -> dict:
+    """registry_delete的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
             "summary": f"删除注册表失败: {key_path}",
             "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": key_path, "params": {"key_path": key_path}},
-            "status": {"exec_code": "error", "message": "删除注册表失败", "code": err_code or ERR_REG_DELETE_FAILED, "detail": detail, "hint": "请检查键路径和权限"},
+            "status": {"exec_code": "error", "message": "删除注册表失败", "code": err_code or ERR_REG_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -59,7 +59,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
     """删除Windows注册表键值或子键 — 小健 2026-06-22 拆分独立文件"""
     is_valid, error_msg, warning_msg = validate_delete_safety(key_path, value_name, hive, recursive)
     if not is_valid:
-        llm_data = _build_registry_delete_llm_data("error", 0, key_path, "", err_code=ERR_PARAMETER_INVALID, detail=error_msg)
+        llm_data = _build_registry_delete_llm_data("error", 0, key_path, "", err_code=ERR_PARAMETER_INVALID, detail=error_msg, hint="请检查注册表路径和权限")
         return build_error(data={"error_detail": error_msg, "params": {"key_path": key_path}}, llm_data=llm_data)
     if warning_msg:
         logger.warning(f"[registry_delete] {warning_msg}")
@@ -70,7 +70,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
         if hkey is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"无效的根键: {full_root_key}")
+            llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"无效的根键: {full_root_key}", hint="请检查根键名称")
             return build_error(data={"error_detail": f"无效的根键: {full_root_key}", "params": {"key_path": key_path, "hive": hive}}, llm_data=llm_data)
 
         if backup_before_delete:
@@ -95,7 +95,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
                             pass
                         if i > 0:
                             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                            llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"键不为空({i}个子键),使用recursive=True强制删除")
+                            llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"键不为空({i}个子键),使用recursive=True强制删除", hint="请使用recursive=True强制删除")
                             return build_error(data={"error_detail": f"键不为空({i}个子键),使用 recursive=True 强制删除", "params": {"key_path": f"{full_root_key}\\{sub_key}", "subkey_count": i}}, llm_data=llm_data)
                 except FileNotFoundError:
                     pass
@@ -105,8 +105,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
             if not parent_key:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail="不能直接删除根键下的子键")
-                return build_error(data={"error_detail": "不能直接删除根键下的子键", "params": {"key_path": key_path}}, llm_data=llm_data)
+                llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail="不能直接删除根键下的子键", hint="不能直接删除根键下的子键")
 
             if recursive:
                 _delete_registry_recursive(hkey, sub_key)
@@ -129,19 +128,19 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"注册表键或值不存在: {key_path}")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"注册表键或值不存在: {key_path}", hint="请检查键路径是否正确")
         return build_error(data={"error_detail": f"注册表键或值不存在: {key_path}", "params": {"key_path": key_path, "value_name": value_name}}, llm_data=llm_data)
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"权限不足: {key_path}")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"权限不足: {key_path}", hint="请以管理员身份运行")
         return build_error(data={"error_detail": f"权限不足: {key_path}", "params": {"key_path": key_path}}, llm_data=llm_data)
     except OSError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"删除失败: {e}")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"删除失败: {e}", hint="删除失败,请检查键是否为空")
         return build_error(data={"error_detail": f"删除失败(可能子键不为空): {e}", "params": {"key_path": key_path}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=str(e))
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=str(e), hint="删除注册表异常,请检查系统状态")
         return build_error(data={"error_detail": str(e), "params": {"key_path": key_path}}, llm_data=llm_data)
 
 
