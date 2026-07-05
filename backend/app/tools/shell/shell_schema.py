@@ -62,31 +62,10 @@ class WhichInput(BaseModel):
         description="查找模式。False=返回第一个匹配路径(快速,shutil.which), True=返回全部匹配路径(完整列表,where/which -a)"
     )
 
-
-class SessionInput(BaseModel):
-    """后台Shell会话管理工具
     
-    【action参数】决定操作类型：
-    - output: 读取后台命令输出
-    - terminate: 终止后台会话（强制终止）
-    
-    【使用示例】
-    - 读取输出 → session(shell_id="shell_abc123")
-    - 终止会话 → session(shell_id="shell_abc123", action="terminate")
-    """
-    shell_id: str = Field(
-        ..., description="后台Shell会话ID,由 shell(run_in_background=True) 返回"
-    )
-    action: Literal["output", "terminate"] = Field(
-        default="output",
-        description="操作类型:output=读取输出(默认),terminate=强制终止会话"
-    )
-
-
 
 
 __all__ = [
     "ShellInput",
     "WhichInput",
-    "SessionInput",
 ]
