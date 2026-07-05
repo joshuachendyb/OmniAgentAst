@@ -23,11 +23,14 @@ from app.tools.tool_constants import ERR_SCREENSHOT, ERR_SCREEN_SNAPSHOT
 def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, output_path: str = "", region=None,
                                     display: Optional[int] = None, monitor_count: int = 0,
                                     err_code: str = "", detail: str = "") -> dict:
-    """screen_capture的llm_data构建函数 — 小健 2026-06-22"""
+    """screen_capture的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 补output_path入_act_params"""
+    _act_params = {"region": region, "display": display}
+    if output_path:
+        _act_params["output_path"] = output_path
     if exec_code == "error":
         return {
             "summary": "截图失败",
-            "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": "", "params": {"region": region, "display": display}},
+            "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": "", "params": _act_params},
             "status": {"exec_code": "error", "message": "截图失败", "code": err_code or ERR_SCREENSHOT, "detail": detail, "hint": "请检查屏幕显示设置和权限"},
             "duration_ms": duration_ms, "metrics": {},
         }
@@ -36,7 +39,7 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, output_path
         metrics["monitors"] = {"value": monitor_count, "text": f"{monitor_count}个"}
     return {
         "summary": f"截图保存到: {output_path}",
-        "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": output_path, "params": {"region": region, "display": display}},
+        "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": output_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "截图完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
     }
@@ -68,8 +71,8 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
         return {"error_detail": str(e), "params": {"library": "pyautogui"}}
 
 
-def _snapshot(display: int = 1) -> Dict[str, Any]:
-    """获取完整桌面状态快照(内聚) — 小健 2026-06-22
+def _snapshot(display: int = 1, output_path: str = None) -> Dict[str, Any]:
+    """获取完整桌面状态快照(内聚) — 小健 2026-06-22 — 小欧 2026-07-05 修复:接受output_path参数
     返回原始dict：成功 {"image_path": ..., "display": ..., "monitors": ...}，失败 {"error_detail": ..., "params": {...}}
     """
     try:
@@ -77,16 +80,18 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
     except ImportError:
         try:
             import pyautogui
-            timestamp = timestamp_for_filename()
-            output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
+            if output_path is None:
+                timestamp = timestamp_for_filename()
+                output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
             img = pyautogui.screenshot()
             img.save(output_path)
             return {"image_path": output_path, "display": display, "monitors": 0}
         except ImportError:
             return {"error_detail": "需要安装 mss 或 pyautogui 库", "params": {"libraries": ["mss", "pyautogui"]}}
     try:
-        timestamp = timestamp_for_filename()
-        output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
+        if output_path is None:
+            timestamp = timestamp_for_filename()
+            output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
         with mss.mss() as sct:
             monitors = sct.monitors
             if display < 1 or display >= len(monitors):
@@ -111,13 +116,13 @@ def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str,
         is_valid, err, warn = validate_path(OpCategory.WRITE, output_path)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_screen_capture_llm_data("error", duration_ms, err_code=ERR_SCREENSHOT, detail=err)
+            llm_data = _build_screen_capture_llm_data("error", duration_ms, output_path=output_path, region=region, display=display, err_code=ERR_SCREENSHOT, detail=err)
             return build_error(data={"error_detail": err, "params": {"output_path": output_path}}, llm_data=llm_data)
         if warn:
             logger.warning(f"[screen_capture] {warn}")
 
     if display is not None:
-        result = _snapshot(display=display)
+        result = _snapshot(display=display, output_path=output_path)
     else:
         result = _screenshot(output_path=output_path, region=region)
 
@@ -130,7 +135,7 @@ def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str,
             err_code = ERR_SCREEN_SNAPSHOT
         else:
             err_code = ERR_SCREENSHOT
-        llm_data = _build_screen_capture_llm_data("error", duration_ms, err_code=err_code, detail=error_detail)
+        llm_data = _build_screen_capture_llm_data("error", duration_ms, output_path=output_path, region=region, display=display, err_code=err_code, detail=error_detail)
         return build_error(data={"error_detail": error_detail, "params": err_params}, llm_data=llm_data)
 
     image_path = result.pop("image_path", "")

@@ -33,11 +33,14 @@ _WINDOW_ACTIONS = {
 
 def _build_set_window_state_llm_data(exec_code: str, duration_ms: int, action: str, window_title: str = "",
                                       matched_count: int = 0, err_code: str = "", detail: str = "") -> dict:
-    """set_window_state的llm_data构建函数 — 小健 2026-06-22"""
+    """set_window_state的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 补window_title入_act_params"""
+    _act_params = {"action": action}
+    if window_title:
+        _act_params["window_title"] = window_title
     if exec_code == "error":
         return {
             "summary": f"窗口操作{action}失败: {window_title}",
-            "action": {"tool": "set_window_state", "tool_zh": "窗口状态", "target": window_title, "params": {"action": action}},
+            "action": {"tool": "set_window_state", "tool_zh": "窗口状态", "target": window_title, "params": _act_params},
             "status": {"exec_code": "error", "message": f"窗口操作{action}失败", "code": err_code or ERR_WINDOW_SET_STATE, "detail": detail, "hint": "请检查窗口标题和操作类型"},
             "duration_ms": duration_ms, "metrics": {},
         }
@@ -48,7 +51,7 @@ def _build_set_window_state_llm_data(exec_code: str, duration_ms: int, action: s
         metrics["matched"] = {"value": matched_count, "text": f"{matched_count}个"}
     return {
         "summary": summary,
-        "action": {"tool": "set_window_state", "tool_zh": "窗口状态", "target": window_title, "params": {"action": action}},
+        "action": {"tool": "set_window_state", "tool_zh": "窗口状态", "target": window_title, "params": _act_params},
         "status": {"exec_code": "success", "message": f"窗口操作{action}成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
     }

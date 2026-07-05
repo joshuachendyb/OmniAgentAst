@@ -17,17 +17,20 @@ from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_KEYBOARD_TYPE, ERR_
 
 def _build_keyboard_control_llm_data(exec_code: str, duration_ms: int, action: str, text_or_keys: str,
                                       err_code: str = "", detail: str = "") -> dict:
-    """keyboard_control的llm_data构建函数 — 小健 2026-06-22"""
+    """keyboard_control的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 补text_or_keys"""
+    _act_params = {"action": action}
+    if text_or_keys:
+        _act_params["text_or_keys"] = text_or_keys
     if exec_code == "error":
         return {
             "summary": f"无效的键盘操作: {action}",
-            "action": {"tool": "keyboard_control", "tool_zh": "键盘控制", "target": action, "params": {"action": action}},
+            "action": {"tool": "keyboard_control", "tool_zh": "键盘控制", "target": action, "params": _act_params},
             "status": {"exec_code": "error", "message": f"无效的键盘操作: {action}", "code": err_code or ERR_INVALID_ACTION, "detail": detail, "hint": "请使用支持的操作类型"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"键盘操作完成: {action}",
-        "action": {"tool": "keyboard_control", "tool_zh": "键盘控制", "target": action, "params": {"action": action}},
+        "action": {"tool": "keyboard_control", "tool_zh": "键盘控制", "target": action, "params": _act_params},
         "status": {"exec_code": "success", "message": "键盘操作完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }

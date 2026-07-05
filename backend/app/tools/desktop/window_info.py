@@ -110,18 +110,22 @@ def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> int:
     return 1
 
 
-def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: int, filter_title: str = "", detail: str = "") -> dict:
-    """window_info的llm_data构建函数 — 小健 2026-06-22"""
+def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: int, filter_title: str = "",
+                                 include_minimized: bool = False, detail: str = "") -> dict:
+    """window_info的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增include_minimized"""
+    _act_params = {"filter_title": filter_title}
+    if include_minimized:
+        _act_params["include_minimized"] = include_minimized
     if exec_code == "error":
         return {
             "summary": f"获取失败: {detail}" if detail else "获取失败",
-            "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
+            "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
             "status": {"exec_code": "error", "message": f"获取窗口列表失败: {detail}" if detail else "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": detail, "hint": "请检查窗口筛选条件"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"获取 {filter_title or '全部'}，{window_count}个窗口",
-        "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
+        "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"windows": {"value": window_count, "text": f"{window_count}个"}},
@@ -135,7 +139,7 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         _err_detail = err.get("error_detail", "桌面工具不可用")
-        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", detail=_err_detail)
+        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", include_minimized, detail=_err_detail)
         return build_error(data={"error_detail": _err_detail, "params": err.get("params", {})}, llm_data=llm_data)
 
     try:
@@ -148,7 +152,7 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"windows": windows}
-        llm_data = _build_window_info_llm_data("success", duration_ms, len(windows), filter_title or "")
+        llm_data = _build_window_info_llm_data("success", duration_ms, len(windows), filter_title or "", include_minimized)
         # ---- observation_formatter route -------------------------------------------
         # branch: #15 windows table
         # trigger: "windows" in data — windows 是 List[dict]
@@ -159,7 +163,7 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
     except Exception as e:
         logger.error(f"window_info list error: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", detail=str(e))
+        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", include_minimized, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
 
 

@@ -18,17 +18,20 @@ from app.tools.validate.tools_file_path_checker import validate_str_param
 
 def _build_window_resize_llm_data(exec_code: str, duration_ms: int, title: str = "", width: int = 0, height: int = 0,
                                    err_code: str = "", detail: str = "") -> dict:
-    """window_resize的llm_data构建函数 — 小健 2026-06-22"""
+    """window_resize的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 统一_act_params"""
+    _act_params = {"width": width, "height": height}
+    if title:
+        _act_params["title"] = title
     if exec_code == "error":
         return {
             "summary": f"调整窗口大小失败: {title}",
-            "action": {"tool": "window_resize", "tool_zh": "窗口调整", "target": title, "params": {"title": title, "width": width, "height": height}},
+            "action": {"tool": "window_resize", "tool_zh": "窗口调整", "target": title, "params": _act_params},
             "status": {"exec_code": "error", "message": "调整窗口大小失败", "code": err_code or ERR_WINDOW_RESIZE, "detail": detail, "hint": "请检查窗口标题和尺寸"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"窗口大小调整完成: {width}x{height}",
-        "action": {"tool": "window_resize", "tool_zh": "窗口调整", "target": title, "params": {"width": width, "height": height}},
+        "action": {"tool": "window_resize", "tool_zh": "窗口调整", "target": title, "params": _act_params},
         "status": {"exec_code": "success", "message": "窗口大小调整完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }
