@@ -26,7 +26,7 @@ from app.tools.file_type_checker import check_for_text_tool
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory, validate_str_param
 from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
-from app.tools.file.file_state import check_conflict, record_write
+from app.tools.file.file_state import check_conflict_strict, record_write
 
 # U+FFFD replacement character threshold for encoding detection — 小欧 2026-06-27 — 小欧 2026-07-05 统一为readtext的>=3 && >3%逻辑
 _REPLACEMENT_CHAR_MIN_COUNT = 3
@@ -193,9 +193,10 @@ async def _precise_replace_in_file(
         if err_msg:
             raise ValueError(err_msg)
 
-        mtime_warning = check_conflict(file_path)
-        if mtime_warning:
-            logger.warning(f"[edittext] {mtime_warning}")
+        mtime_warning = ""
+        conflict_err = check_conflict_strict(file_path)
+        if conflict_err:
+            return {"error_detail": conflict_err}
 
         # 无操作跳过 — 小欧 2026-07-05 — 小沈 2026-07-05 record_operation移后防孤立记录
         if old_string == new_string:
