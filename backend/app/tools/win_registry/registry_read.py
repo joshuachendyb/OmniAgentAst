@@ -141,6 +141,12 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
             logger.debug(f"[registry_read] 成功读取: {full_root_key}\\{sub_key}\\{value_name or '(默认)'}")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_registry_read_llm_data("success", duration_ms, result_data["key_path"], result_data["value_name"], formatted_value, value_type_name)
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #21 fallback (key:val)
+            # trigger: 无上述20条分支匹配 — key_path/value_name/value/value_type
+            # handler: _format_scalar_data(data) — key | value 单行列表
+            # file:    observation_formatter.py:214
+            # ------------------------------------------------------------------------------
             return build_success(data=result_data, llm_data=llm_data)
 
     except FileNotFoundError:

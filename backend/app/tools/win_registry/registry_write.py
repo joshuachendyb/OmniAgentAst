@@ -77,6 +77,12 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
                 pass
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_registry_write_llm_data("success", duration_ms, key_path, value_name, value, "dry_run")
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #21 fallback (key:val) — dry_run path
+            # trigger: 无上述20条分支匹配 — key_path/dry_run 不命中专用分支
+            # handler: _format_scalar_data(data) — key | value 单行列表
+            # file:    observation_formatter.py:214
+            # ------------------------------------------------------------------------------
             return build_success(data={"key_path": key_path, "dry_run": True}, llm_data=llm_data)
         except FileNotFoundError:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -108,6 +114,12 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"key_path": f"{full_root_key}\\{sub_key}", "value_name": value_name, "value": value, "value_type": actual_type}
         llm_data = _build_registry_write_llm_data("success", duration_ms, data["key_path"], value_name, value, actual_type)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val) — write path
+        # trigger: 无上述20条分支匹配 — key_path/value_name/value/value_type
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
