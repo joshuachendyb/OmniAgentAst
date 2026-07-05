@@ -75,12 +75,19 @@ def _build_search_web_llm_data(
     exec_code: str, duration_ms: int, query: str = "", engine_used: str = "",
     result_count: int = 0, llm_results=None,
     err_code: str = "", detail: str = "",
+    proxy: Optional[str] = None, allowed_domains: Optional[List[str]] = None,
+    blocked_domains: Optional[List[str]] = None, num_results: int = 10,
 ) -> Dict[str, Any]:
     """search_web的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    _act_params = {
+        "query": query, "num_results": num_results,
+        "proxy": proxy, "allowed_domains": allowed_domains,
+        "blocked_domains": blocked_domains,
+    }
     if exec_code == "error":
         return {
-            "summary": f"搜索失败: {detail}",
-            "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": {"query": query}},
+            "summary": f"搜索失败: {query}",
+            "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
             "status": {"exec_code": "error", "message": f"搜索失败: {detail}", "code": err_code, "detail": detail, "hint": "请检查搜索词和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -88,14 +95,14 @@ def _build_search_web_llm_data(
     if exec_code == "warning":
         return {
             "summary": f"搜索 {query}，{result_count}条结果（降级到{engine_used}引擎）",
-            "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": {"query": query}},
+            "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
             "status": {"exec_code": "warning", "message": "搜索服务降级", "code": "", "detail": f"Parallel引擎不可用，降级到{engine_used}搜索", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎（降级）"}},
         }
     return {
         "summary": f"搜索 {query}，{result_count}条结果",
-        "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": {"query": query}},
+        "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎"}},
@@ -360,19 +367,19 @@ async def searchweb(
     proxy_valid, proxy_err, _ = validate_proxy(proxy)
     if not proxy_valid:
         t0 = _time_mod.perf_counter()
-        llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail=proxy_err)
+        llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail=proxy_err, proxy=proxy, num_results=num_results)
         return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
     try:
         if len(query) < 2:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail="搜索查询至少需要2个字符")
+            llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail="搜索查询至少需要2个字符", proxy=proxy, num_results=num_results)
             return build_error(data={"error_detail": "搜索查询至少需要2个字符", "params": {"query": query}}, llm_data=llm_data)
 
         if not isinstance(num_results, int) or num_results < 1 or num_results > 50:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail=f"num_results必须在1-50之间,当前值: {num_results}")
+            llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail=f"num_results必须在1-50之间,当前值: {num_results}", proxy=proxy, num_results=num_results)
             return build_error(data={"error_detail": "num_results必须在1-50之间", "params": {"num_results": num_results}}, llm_data=llm_data)
 
         results = await _search_mcp_engine("parallel", query, num_results, proxy)
@@ -415,7 +422,7 @@ async def searchweb(
             exec_code = "warning"
         else:
             exec_code = "success"
-        llm_data = _build_search_web_llm_data(exec_code, duration_ms, query, engine_used, len(results))
+        llm_data = _build_search_web_llm_data(exec_code, duration_ms, query, engine_used, len(results), proxy=proxy, allowed_domains=allowed_domains, blocked_domains=blocked_domains, num_results=num_results)
         if exec_code == "warning":
             return build_warning(data=data, llm_data=llm_data)
         return build_success(data=data, llm_data=llm_data)
@@ -425,5 +432,5 @@ async def searchweb(
     except Exception as e:
         logger.error(f"[searchweb] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_NET_UNKNOWN, detail=str(e))
+        llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_NET_UNKNOWN, detail=str(e), proxy=proxy, num_results=num_results)
         return build_error(data={"error_detail": str(e), "params": {"query": query}}, llm_data=llm_data)
