@@ -75,20 +75,23 @@ def _set_docx_column_widths(table, table_data):
 
 def _build_write_docx_llm_data(
     exec_code: str, duration_ms: int,
-    file_path: str = "", detail: str = "",
+    file_path: str = "", detail: str = "", user_title: str = "",
 ) -> Dict[str, Any]:
-    """write_docx的llm_data构建函数 — 小欧 2026-06-22"""
+    """write_docx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增user_title参数"""
+    _act_params = {"file_path": file_path}
+    if user_title:
+        _act_params["title"] = user_title
     if exec_code == "error":
         return {
             "summary": f"写入Word失败: {detail}",
-            "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "写入Word失败", "code": ERR_WRITE_DOCX, "detail": detail, "hint": "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入Word成功: {file_path}",
-        "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入Word成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
@@ -111,7 +114,8 @@ def write_docx(
     is_valid, err, warn = validate_path(OpCategory.WRITE, file_name)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=err)
+        _title_str = title or ""
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=err, user_title=_title_str)
         return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
     if warn:
         logger.warning(f"[write_docx] {warn}")
@@ -120,12 +124,12 @@ def write_docx(
     is_valid, error_detail, suggested_tool = check_for_document_tool(file_name, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=error_detail)
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=error_detail, user_title=title or "")
         return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
 
     if not _check_module("docx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail="python-docx库未安装")
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail="python-docx库未安装", user_title=title or "")
         return build_error(data={"error_detail": "python-docx库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
 
     try:
@@ -187,7 +191,7 @@ def write_docx(
         doc.save(path)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("success", duration_ms, str(path))
+        llm_data = _build_write_docx_llm_data("success", duration_ms, str(path), user_title=title or "")
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
         # trigger: 无上述20条分支匹配 — file_path 不命中专用分支
@@ -197,5 +201,5 @@ def write_docx(
         return build_success(data={"file_path": str(path)}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=str(e))
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "")
         return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)

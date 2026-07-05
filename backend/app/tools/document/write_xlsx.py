@@ -84,19 +84,23 @@ def _adjust_xlsx_column_width(ws):
 def _build_write_xlsx_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", row_count: int = 0, detail: str = "",
+    user_sheet_name: str = "",
 ) -> Dict[str, Any]:
-    """write_xlsx的llm_data构建函数 — 小欧 2026-06-22"""
+    """write_xlsx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增user_sheet_name参数"""
+    _act_params = {"file_path": file_path}
+    if user_sheet_name:
+        _act_params["sheet_name"] = user_sheet_name
     if exec_code == "error":
         return {
             "summary": f"写入Excel失败: {detail}",
-            "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "写入Excel失败", "code": ERR_WRITE_XLSX, "detail": detail, "hint": "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入Excel成功: {file_path}, {row_count}行",
-        "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入Excel成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -118,7 +122,7 @@ def write_xlsx(
     is_valid, err, warn = validate_path(OpCategory.WRITE, file_name)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=err)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=err, user_sheet_name=sheet_name)
         return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
     if warn:
         logger.warning(f"[write_xlsx] {warn}")
@@ -127,14 +131,14 @@ def write_xlsx(
     is_valid, error_detail, suggested_tool = check_for_document_tool(file_name, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail, user_sheet_name=sheet_name)
         return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
 
     data = coerce_json(data)
 
     if not _check_module("openpyxl"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装", user_sheet_name=sheet_name)
         return build_error(data={"error_detail": "openpyxl库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
 
     try:
@@ -177,7 +181,7 @@ def write_xlsx(
 
         row_count = len(rows)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("success", duration_ms, str(path), row_count)
+        llm_data = _build_write_xlsx_llm_data("success", duration_ms, str(path), row_count, user_sheet_name=sheet_name)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
         # trigger: 无上述20条分支匹配 — file_path/row_count 不命中专用分支
@@ -187,5 +191,5 @@ def write_xlsx(
         return build_success(data={"file_path": str(path), "row_count": row_count}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=str(e))
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=str(e), user_sheet_name=sheet_name)
         return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)

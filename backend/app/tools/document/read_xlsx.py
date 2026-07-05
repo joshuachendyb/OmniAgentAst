@@ -25,19 +25,26 @@ from app.utils.logger import logger
 def _build_read_xlsx_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", row_count: int = 0, sheet_count: int = 0, detail: str = "",
+    user_sheet_name: str = "",
 ) -> Dict[str, Any]:
-    """read_xlsx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """read_xlsx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 新增user_sheet_name参数"""
     if exec_code == "error":
+        _act_params = {"file_path": file_path}
+        if user_sheet_name:
+            _act_params["sheet_name"] = user_sheet_name
         return {
             "summary": f"读取Excel失败: {detail}",
-            "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "读取Excel失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    _act_params = {"file_path": file_path}
+    if user_sheet_name:
+        _act_params["sheet_name"] = user_sheet_name
     return {
         "summary": f"读取Excel成功: {row_count}行, {sheet_count}个工作表",
-        "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "读取Excel成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -189,7 +196,8 @@ def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any
         is_valid, error_detail, suggested_tool = check_for_document_tool(file_name)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail)
+            _sn = sheet_name or ""
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail, user_sheet_name=_sn)
             return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
 
     if suffix == ".csv":
@@ -197,19 +205,19 @@ def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any
     else:
         if not _check_module("openpyxl"):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装")
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装", user_sheet_name=sheet_name or "")
             return build_error(data={"error_detail": "openpyxl库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
         result = _read_xlsx_inner(file_name, max_rows=10000, sheet_name=sheet_name)
 
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     if "error_detail" in result:
         detail = result["error_detail"]
-        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=detail)
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=detail, user_sheet_name=sheet_name or "")
         return build_error(data=result, llm_data=llm_data)
     else:
         row_count = result.get("row_count", 0)
         sheet_count = len(result.get("sheet_names", []))
-        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_name, row_count, sheet_count)
+        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_name, row_count, sheet_count, user_sheet_name=sheet_name or "")
         # ---- observation_formatter route -------------------------------------------
         # branch: #2b flat table (单sheet/CSV) / #21 scalar fallback (多sheet)
         # trigger: "headers" in data and "rows" in data — 单sheet有headers+rows
