@@ -1,4 +1,56 @@
-﻿v0.17.20
+﻿v0.17.21
+更新时间: 2026-07-05 11:50:00
+## v0.17.20→v0.17.21 变更汇总 - 小欧-2026-07-05
+
+### fix: shell执行引擎缺陷修复(3项)
+- execute_shell_command.py:safety.py L58: DOTALL假阳性——去掉re.DOTALL，改归一化后匹配 - 小欧-2026-07-05
+- execute_shell_command.py:L282-284: CMD分支Popen shell=True引号被CommandLineToArgvW吃掉——改temp.bat执行 - 小欧-2026-07-05
+- execute_shell_command.py: PowerShell翻译器状态机修复+关闭if块-B4 - 小沈-2026-07-05
+
+### feat: 文件工具强化(8项)
+- read_text_file.py: 集成add_line_numbers行号输出 - 小欧-2026-07-05
+- read_text_file.py+write_text_file.py: 长行截断/相似文件提示/diff增强/file_state集成 - 小欧-2026-07-05
+- text_utils.py: 新增add_line_numbers公用函数 - 小欧-2026-07-05
+- file_state.py: 新增check_conflict_strict阻断级冲突检查 - 小欧-2026-07-05
+- edit_text_file.py: 改用check_conflict_strict阻断式冲突检测 - 小欧-2026-07-05
+- write/edit/read_text_file: 复核修复8项缺陷 - 小欧-2026-07-05
+- file_state.py: _resolve重复调用+edit_text_file.py record_operation移后防孤立记录 - 小沈-2026-07-05
+- edit_text_file, read_text_file: diff输出/match警告/mtime检测增强 - 小欧-2026-07-05
+
+### feat: grep工具重构+DRY(3项)
+- grep_file_content.py: ReDoS防护前置+提取safe_read_lines到file_encoding - 小欧/小沈-2026-07-05
+- grep_file_content.py: 结果按mtime降序排序 - 小欧-2026-07-05
+- file_encoding.py: 新增safe_read_lines共用函数(自动编码检测+多编码尝试+replace兜底) - 小沈-2026-07-05
+
+### refactor: shell持久引擎(1项)
+- shell持久引擎: 替换subprocess为PersistentShell - 小欧-2026-07-05
+- shell_schema.py: 删除废弃的SessionInput类 - 小欧-2026-07-05
+- 删除runcode工具及清理全部引用 - 小欧-2026-07-05
+
+### refactor: 路径校验统一(1项)
+- tools_file_path_checker.py+27tools+safety: 增加盘符检查+修复保留字符只查文件名+工具层/Safety层注释 - 小欧-2026-07-04
+- tools_file_path_checker.py: validate_str_param函数 - 小沈-2026-07-05
+- 8tools添加validate_str_param空参数校验 - 小沈-2026-07-05
+
+### feat: 其他增强(3项)
+- tool_cache_manager.py: FILE分类加入patch_search_desc - 小欧-2026-07-05
+- list_directory.py: 遍历跳过__pycache__等噪声目录 - 小欧-2026-07-05
+- listdir分页从200提升到500，删除死常量MAX_PAGE_SIZE - 小欧-2026-07-04
+
+### fix: 其他修复(2项)
+- e2e测试脚本工具名同步更新 - 小欧-2026-07-04
+- version.txt编码修复+operation_recorder类型转换 - 小欧-2026-07-04
+
+### docs: (7项)
+- 代码审查报告: 新增核实章节+修正164个问题 - 小欧-2026-07-05
+- FUNCTIONS.md: 更新add_line_numbers公共函数清单 - 小欧-2026-07-05
+- notes: 添加调试笔记 - 小欧-2026-07-05
+- version.txt: v0.17.21回退至v0.17.20 - 小欧-2026-07-05
+- version.txt: shell持久引擎变更汇总 - 小欧-2026-07-05
+- doc: 新增grep/shell/文件工具/路径校验4篇设计文档 - 小欧/小沈-2026-07-05
+- notes: 删除E2E测试笔记(6个) - 小欧-2026-07-05
+
+v0.17.20
 更新时间: 2026-07-04 13:58:35
 ## v0.17.19→v0.17.20 变更汇总 - 小欧-2026-07-04
 
