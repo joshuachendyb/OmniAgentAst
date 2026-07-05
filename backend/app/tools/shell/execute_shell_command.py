@@ -174,30 +174,38 @@ def _parse_redirect_path(command: str, cwd: Optional[str] = None) -> Optional[Pa
 def _build_execute_shell_command_llm_data(
     exec_code: str, duration_ms: int, command: str = "", returncode: int = 0,
     stdout_preview: str = "", stderr_preview: str = "", shell_type: str = "powershell",
-    err_code: str = "", detail: str = "",
+    err_code: str = "", detail: str = "", timeout: int = 0, cwd: str = "",
+    output_len: int = 0, stderr_len: int = 0,
 ) -> Dict[str, Any]:
     """execute_shell_command 的 llm_data 构建函数"""
     cmd_short = (command[:60] + "..." + command[-37:]) if command and len(command) > 100 else (command[:100] if command else "")
+    _act_params = {"command": cmd_short, "shell_type": shell_type}
+    if timeout:
+        _act_params["timeout"] = timeout
+    if cwd:
+        _act_params["cwd"] = cwd
     if exec_code == "error":
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
         return {
             "summary": f"执行失败: {_detail}",
-            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
-            "status": {"exec_code": "error", "message": f"执行失败: {detail or (stderr_preview[:200] if stderr_preview else '')}", "code": err_code or ERR_SHELL_EXEC, "detail": detail or (stderr_preview[:200] if stderr_preview else ""), "hint": "请检查命令语法和参数"},
+            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
+            "status": {"exec_code": "error", "message": "执行失败", "code": err_code or ERR_SHELL_EXEC, "detail": detail or (stderr_preview[:200] if stderr_preview else ""), "hint": "请检查命令语法和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     if exec_code == "warning":
+        _out_info = f"，输出{output_len}字符" if output_len > 0 else "（无输出）"
         return {
-            "summary": f"执行 {cmd_short}，退出码{returncode}（有警告输出）",
-            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
+            "summary": f"执行 {cmd_short}，退出码{returncode}{_out_info}（警告{stderr_len}字符）",
+            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
             "status": {"exec_code": "warning", "message": "执行成功（有警告输出）", "code": "", "detail": stderr_preview[:200] if stderr_preview else "", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
         }
+    _out_info = f"，输出{output_len}字符" if output_len > 0 else "（无输出）"
     return {
-        "summary": f"执行 {cmd_short}，退出码{returncode}",
-        "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
+        "summary": f"执行 {cmd_short}，退出码{returncode}{_out_info}",
+        "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
         "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
@@ -231,26 +239,30 @@ def shell(
 
     if not timeout_valid:
         llm = _build_execute_shell_command_llm_data("error", 0, command, -1, "", "",
-            shell_type or "", ERR_PARAMETER_INVALID, timeout_err)
+            shell_type or "", ERR_PARAMETER_INVALID, timeout_err,
+            timeout=timeout, cwd=cwd or "")
         return build_error(data={"error_detail": timeout_err, "params": {"timeout": timeout}}, llm_data=llm)
 
     if shell_type not in ("powershell", "cmd", None):
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
-            shell_type or "", ERR_PARAMETER_INVALID, "shell_type仅支持powershell/cmd")
+            shell_type or "", ERR_PARAMETER_INVALID, "shell_type仅支持powershell/cmd",
+            timeout=timeout, cwd=cwd or "")
         return build_error(data={"error_detail": "shell_type仅支持powershell/cmd", "params": {"shell_type": shell_type}}, llm_data=llm)
 
     cmd = command.strip() if command else ""
     if not cmd:
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
-            shell_type or "", ERR_PARAMETER_EMPTY, "command不能为空")
+            shell_type or "", ERR_PARAMETER_EMPTY, "command不能为空",
+            timeout=timeout, cwd=cwd or "")
         return build_error(data={"error_detail": "command不能为空"}, llm_data=llm)
 
     if cwd is not None and not os.path.isdir(cwd):
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
-            shell_type or "", ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}")
+            shell_type or "", ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}",
+            timeout=timeout, cwd=cwd or "")
         return build_error(data={"error_detail": f"工作目录不存在: {cwd}", "params": {"cwd": cwd}}, llm_data=llm)
 
     # ── 阶段 2: 安全检查 ──
@@ -259,7 +271,8 @@ def shell(
     if safety and safety.blocked:
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
-            shell_type or "", ERR_SHELL_INJECTION, safety.message)
+            shell_type or "", ERR_SHELL_INJECTION, safety.message,
+            timeout=timeout, cwd=cwd or "")
         return build_error(data={"error_detail": safety.message, "params": {"command": command[:200]}}, llm_data=llm)
 
     # ── 阶段 3: 执行 ──
@@ -326,29 +339,41 @@ def shell(
 
         # ── 阶段 5: 构建 build3 + llm_data ──
         if timed_out:
-            llm = _build_execute_shell_command_llm_data("error", d, command[:100],
+            llm = _build_execute_shell_command_llm_data("error", d, command,
                 returncode, stdout_str[:200], stderr_str[:200],
-                shell_type or "", ERR_SHELL_TIMEOUT, f"命令执行超时({timeout}秒)")
+                shell_type or "", ERR_SHELL_TIMEOUT, f"命令执行超时({timeout}秒)",
+                timeout=timeout, cwd=cwd or "")
             llm["status"]["hint"] = "可增大timeout参数重试"
             return build_error(data=data, llm_data=llm)
 
         if returncode == 0:
             if stderr_str.strip():
-                llm = _build_execute_shell_command_llm_data("warning", d, command[:100],
-                    returncode, stdout_str[:200], stderr_str[:200], shell_type or "")
+                llm = _build_execute_shell_command_llm_data("warning", d, command,
+                    returncode, stdout_str[:200], stderr_str[:200], shell_type or "",
+                    timeout=timeout, cwd=cwd or "",
+                    output_len=len(stdout_str), stderr_len=len(stderr_str))
                 return build_warning(data=data, llm_data=llm)
-            llm = _build_execute_shell_command_llm_data("success", d, command[:100],
-                returncode, shell_type=shell_type or "")
+            llm = _build_execute_shell_command_llm_data("success", d, command,
+                returncode, stdout_str[:200], stderr_str[:200], shell_type or "",
+                timeout=timeout, cwd=cwd or "",
+                output_len=len(stdout_str), stderr_len=len(stderr_str))
             return build_success(data=data, llm_data=llm)
 
         err_detail = stderr_str[:200] if stderr_str.strip() else f"退出码{returncode}"
-        llm = _build_execute_shell_command_llm_data("error", d, command[:100],
+        llm = _build_execute_shell_command_llm_data("error", d, command,
             returncode, stdout_str[:200], stderr_str[:200],
-            shell_type or "", ERR_SHELL_EXEC, err_detail)
+            shell_type or "", ERR_SHELL_EXEC, err_detail,
+            timeout=timeout, cwd=cwd or "")
         return build_error(data=data, llm_data=llm)
 
     except Exception as e:
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
-            shell_type or "", ERR_SHELL_EXCEPTION, str(e))
-        return build_error(data={"error_detail": str(e), "params": {"command": command[:200]}}, llm_data=llm)
+            shell_type or "", ERR_SHELL_EXCEPTION, str(e),
+            timeout=timeout, cwd=cwd or "")
+        data = {
+            "stdout": "", "stderr": "",
+            "returncode": -1, "shell_type": shell_type or "powershell",
+            "duration_ms": d, "error_detail": str(e),
+        }
+        return build_error(data=data, llm_data=llm)
