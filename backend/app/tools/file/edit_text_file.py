@@ -115,12 +115,26 @@ def _build_edit_text_file_llm_data(
     file_path: str = "", applied: int = 0, total: int = 0, detail: str = "",
     diff: str = "", total_matches: int = 0, mtime_warning: str = "",
     hint: str = "",
+    user_old_string: str = "", user_new_string: str = "",
+    user_replace_all: Optional[bool] = None, user_ignore_case: Optional[bool] = None,
+    user_encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
     """edit_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 增加diff/total_matches/mtime_warning — 小沈 2026-07-05 新增hint参数"""
+    _act_params = {"file_path": file_path}
+    if user_old_string:
+        _act_params["old_string"] = user_old_string[:100]
+    if user_new_string:
+        _act_params["new_string"] = user_new_string[:100]
+    if user_replace_all is not None:
+        _act_params["replace_all"] = user_replace_all
+    if user_ignore_case is not None:
+        _act_params["ignore_case"] = user_ignore_case
+    if user_encoding:
+        _act_params["encoding"] = user_encoding
     if exec_code == "error":
         return {
-            "summary": f"文件编辑失败: {detail}",
-            "action": {"tool": "edittext", "tool_zh": "编辑文件", "target": file_path, "params": {"file_path": file_path}},
+            "summary": f"编辑失败: {file_path}",
+            "action": {"tool": "edittext", "tool_zh": "编辑文件", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "编辑失败", "code": ERR_FILE_EDIT_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和编辑参数"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -140,7 +154,7 @@ def _build_edit_text_file_llm_data(
     _exec_code = "warning" if (_warning_msg or mtime_warning) else "success"
     return {
         "summary": _summary,
-        "action": {"tool": "edittext", "tool_zh": "编辑文件", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "edittext", "tool_zh": "编辑文件", "target": file_path, "params": _act_params},
         "status": {"exec_code": _exec_code, "message": "编辑完成", "code": "", "detail": _warning_msg, "hint": _hint},
         "duration_ms": duration_ms,
         "metrics": {
@@ -284,19 +298,19 @@ async def edittext(
     t0 = _time_mod.perf_counter()
     if '\x00' in file_path:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="file_path包含空字节")
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="file_path包含空字节", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={"error_detail": "file_path包含空字节", "params": {"file_path": file_path}}, llm_data=llm_data)
     if old_string is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为None")
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为None", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={"error_detail": "old_string不能为None", "params": {"file_path": file_path}}, llm_data=llm_data)
     if not old_string.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为空字符串")
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为空字符串", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={"error_detail": "old_string不能为空字符串", "params": {"file_path": file_path}}, llm_data=llm_data)
     if new_string is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="new_string不能为None")
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="new_string不能为None", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={"error_detail": "new_string不能为None", "params": {"file_path": file_path}}, llm_data=llm_data)
     dry_run = False
     result = await _precise_replace_in_file(
@@ -307,7 +321,7 @@ async def edittext(
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     error_detail = result.get("error_detail")
     if error_detail:
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(
             data={"error_detail": error_detail, "params": {"file_path": file_path}},
             llm_data=llm_data,
@@ -318,6 +332,9 @@ async def edittext(
         diff=result.get("diff", ""),
         total_matches=result.get("total_matches", 0),
         mtime_warning=result.get("mtime_warning", "") or "",
+        user_old_string=old_string, user_new_string=new_string,
+        user_replace_all=replace_all, user_ignore_case=ignore_case,
+        user_encoding=encoding,
     )
     return build_success(data=result, llm_data=llm_data)
 
