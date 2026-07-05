@@ -68,21 +68,27 @@ def _build_delete_file_llm_data(
     exec_code: str, duration_ms: int,
     source: str = "", detail: str = "", extra_metrics: Optional[Dict] = None,
     hint: str = "",
+    user_recursive: Optional[bool] = None, user_force: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """delete_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数"""
+    _act_params = {"source": source}
+    if user_recursive is not None:
+        _act_params["recursive"] = user_recursive
+    if user_force is not None:
+        _act_params["force"] = user_force
     extra_metrics = extra_metrics or {}
     if exec_code == "error":
         return {
-            "summary": f"删除失败: {detail}",
-            "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": {"source": source}},
-            "status": {"exec_code": "error", "message": f"删除失败: {detail}", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查文件是否存在"},
+            "summary": f"删除失败: {source}",
+            "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": _act_params},
+            "status": {"exec_code": "error", "message": "删除失败", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查文件是否存在"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     _suffix = extra_metrics.get("status", {}).get("text", "") or extra_metrics.get("deleted", {}).get("text", "")
     return {
         "summary": f"删除 {source}，{_suffix}" if _suffix else f"删除 {source}",
-        "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": {"source": source}},
+        "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": _act_params},
         "status": {"exec_code": "success", "message": "删除成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics,
@@ -140,14 +146,14 @@ async def delete(
     t0 = _time_mod.perf_counter()
     if not source or not source.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail="source不能为空")
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail="source不能为空", user_recursive=recursive, user_force=force)
         return build_error(data={"error_detail": "source不能为空", "params": {"source": source}}, llm_data=llm_data)
     # 工具层校验：非空/保留字符/保留名/系统目录/路径存在（含递归/强制警告） — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
     is_valid, err, warn = validate_path(OpCategory.EXISTS, source, recursive=recursive, force=force)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=err)
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=err, user_recursive=recursive, user_force=force)
         return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
     if warn:
         logger.warning(warn)
@@ -157,16 +163,16 @@ async def delete(
 
     if result.get("success"):
         if result.get("already_deleted"):
-            llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": {"value": "already_deleted", "text": "文件已删除"}})
+            llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": {"value": "already_deleted", "text": "文件已删除"}}, user_recursive=recursive, user_force=force)
             return build_success(data={}, llm_data=llm_data)
         delete_mode = "永久删除" if force else "放入回收站"
         extra_m = {"mode": {"value": result.get("mode", ""), "text": delete_mode}}
-        llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics=extra_m)
+        llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics=extra_m, user_recursive=recursive, user_force=force)
         return build_success(
             data={"operation_id": result.get("operation_id"), "deleted_path": result.get("deleted_path")},
             llm_data=llm_data,
         )
     else:
         error_detail = result.get("error_detail", "删除文件失败")
-        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=error_detail)
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=error_detail, user_recursive=recursive, user_force=force)
         return build_error(data={"error_detail": error_detail, "params": result.get("params", {})}, llm_data=llm_data)
