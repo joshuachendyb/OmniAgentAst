@@ -37,7 +37,7 @@ def get_version() -> str:
         if version_file.exists():
             with open(version_file, 'r', encoding='utf-8') as f:
                 for line in f:
-                    version = line.strip()
+                    version = line.strip().lstrip('\ufeff')
                     if version:
                         break
             logger.info(f"Successfully read version from version.txt: {version}")

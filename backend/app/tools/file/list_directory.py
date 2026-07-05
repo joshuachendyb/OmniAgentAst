@@ -42,15 +42,12 @@ def _classify_size(size: int) -> str:
 
 
 def _build_entry(item: Path, st: os.stat_result) -> Dict[str, Any]:
-    """构建单个目录条目 — 小健 2026-05-25 — 小欧 2026-06-22"""
+    """构建单个目录条目 -- 小健 2026-05-25 -- 小欧 2026-06-22 — 小欧 2026-07-06 去path/mtime，size仅文件"""
     is_dir = item.is_dir()
-    return {
-        "name": item.name,
-        "path": str(item.absolute()),
-        "type": "directory" if is_dir else "file",
-        "size": None if is_dir else st.st_size,
-        "mtime": st.st_mtime,
-    }
+    entry: Dict[str, Any] = {"name": item.name, "type": "directory" if is_dir else "file"}
+    if not is_dir:
+        entry["size"] = st.st_size
+    return entry
 
 
 def _scan_directory_sync(
@@ -198,10 +195,10 @@ async def listdir(
         llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", hint="请提供有效的目录路径", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={"error_detail": "dir_path不能为空", "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
-    if sort_by not in ("name", "size", "mtime"):
+    if sort_by not in ("name", "size"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'", hint="sort_by参数只能为name/size/mtime", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
-        return build_error(data={"error_detail": f"sort_by只支持name/size/mtime", "params": {"sort_by": sort_by}}, llm_data=llm_data)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size',当前值: '{sort_by}'", hint="sort_by参数只能为name或size", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        return build_error(data={"error_detail": f"sort_by只支持name/size", "params": {"sort_by": sort_by}}, llm_data=llm_data)
 
     if offset < 0:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -227,8 +224,6 @@ async def listdir(
 
         if sort_by == "size":
             all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("size") or 0), reverse=True)
-        elif sort_by == "mtime":
-            all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("mtime", 0)), reverse=True)
         else:
             all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
 

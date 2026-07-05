@@ -453,7 +453,7 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
         ))
         return
 
-    params_str = str(tool_params); params_short = (params_str[:100] + '..') if len(params_str) > 100 else params_str  # 小欧 2026-07-01 控制台截断 — 小沈 2026-07-05 50→100
+    params_str = str(tool_params); params_short = (params_str[:180] + '..') if len(params_str) > 180 else params_str  # 小欧 2026-07-01 控制台截断 — 小沈 2026-07-05 50→100
     print(f"{time.strftime('%H:%M:%S')} [Action]step={step} ={tool_name}, pars:{params_short}")  # 小欧 2026-07-01 控制台 — 小沈 2026-07-05 =→:
 
     # thought 步骤 — content=LLM推理内容, reasoning=内部思维过程 — 小欧 2026-07-01
