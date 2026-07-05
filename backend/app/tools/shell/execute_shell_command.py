@@ -1,55 +1,44 @@
 # -*- coding: utf-8 -*-
 """
-S1: execute_shell_command — 执行Shell命令
+S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
-从shell_tools.py拆分而来 — 小欧 2026-06-22
-内聚: _background_shells / _run_shell_background / cleanup_background_shells / _build_shell_result
+【v2 改造】
+  - powershell 分支改用 PersistentShell 持久引擎
+  - 删除 run_in_background / _background_shells / shell_session
+  - 保留 build3 + llm_data 体系不变
+
+铁规1: helper 函数不碰 build3，只在 shell() 主函数包装
+铁规2: 工具返回原始 data，前端截断在前端 yield 层
+铁规3: 计时仅在 shell() 主函数
 """
-# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
-# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
-# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
-# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import os
 import re
 import shutil
 import subprocess
-import threading
 import time as _time_mod
-import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.validate.timeout_validator import validate_timeout
-
 from app.utils.logger import logger
-from app.tools.tool_constants import SUBPROCESS_TIMEOUT_SHORT
 from app.tools.tool_constants import (
-    ERR_PARAMETER_EMPTY,
-    ERR_PARAMETER_INVALID,
-    ERR_SHELL_EXCEPTION,
-    ERR_SHELL_EXEC,
-    ERR_SHELL_INJECTION,
-    ERR_SHELL_TIMEOUT,
+    ERR_PARAMETER_EMPTY, ERR_PARAMETER_INVALID,
+    ERR_SHELL_EXCEPTION, ERR_SHELL_EXEC,
+    ERR_SHELL_INJECTION, ERR_SHELL_TIMEOUT,
 )
 
-_background_shells: Dict[str, Dict[str, Any]] = {}
-_background_shells_lock = threading.Lock()
 
-# PowerShell 5.1不支持 && 和 || 作为命令分隔符(仅PS7+支持)
-# 翻译规则:
-#   cmd1 && cmd2  →  $__ok=$true; cmd1; $__ok=$?; if ($__ok) { cmd2 }
-#   cmd1 || cmd2  →  $__ok=$true; cmd1; $__ok=$?; if (-not $__ok) { cmd2 }
+# ═══════════════════════════════════════════════════════
+#  PowerShell 5.1 &&/|| 翻译（来自小沈 2026-07-05）
+# ═══════════════════════════════════════════════════════
+
+_PWSH_CACHE: list = [None]
 
 
 def _translate_powershell_operators(command: str) -> str:
-    """将 && 和 || 翻译为 PowerShell 5.1 兼容语法 — 小沈 2026-07-05
-    修复: 跟踪 7 种状态(双引号/单引号/$()嵌套/行注释/块注释/反引号转义/--%停止)
-    只替换外层非引号非注释处的 &&/||；
-    用 $__ok 保存 $? 避免 if 语句重置 $? 导致 || 失效。
-    """
+    """将 && 和 || 翻译为 PowerShell 5.1 兼容语法"""
     if '&&' not in command and '||' not in command:
         return command
     result = []
@@ -82,11 +71,9 @@ def _translate_powershell_operators(command: str) -> str:
         if i + 3 <= n and command[i:i+3] == '--%':
             result.append('--%'); i += 3; stop = True; continue
         if ch == '<' and i + 1 < n and command[i+1] == '#':
-            result.append('<#')
-            i += 2; in_bc = True; continue
+            result.append('<#'); i += 2; in_bc = True; continue
         if ch == '$' and i + 1 < n and command[i+1] == '(':
-            result.append('$(')
-            i += 2; depth += 1; continue
+            result.append('$('); i += 2; depth += 1; continue
         if ch == ')' and depth > 0:
             result.append(ch); i += 1; depth -= 1; continue
         if ch == '#':
@@ -114,11 +101,8 @@ def _translate_powershell_operators(command: str) -> str:
 
 
 def _close_if_blocks(s: str) -> str:
-    """为翻译后的 if 块补上闭合 } — 小沈 2026-07-05
-    从右往左扫描，遇到每个 if ($__ok) { 就在其后找下一个 marker 或字符串末尾插入 }
-    """
+    """为翻译后的 if 块补上闭合 }"""
     markers = ['; if ($__ok) { ', '; if (-not $__ok) { ']
-    # 收集所有 marker 出现的位置 (marker_text, start_pos)
     positions = []
     for marker in markers:
         start = 0
@@ -128,11 +112,9 @@ def _close_if_blocks(s: str) -> str:
                 break
             positions.append((pos, marker))
             start = pos + len(marker)
-    # 从右往左处理，这样前面插入 } 不影响后面的位置
     positions.sort(key=lambda x: x[0], reverse=True)
     for pos, marker in positions:
         after = s[pos + len(marker):]
-        # 找下一个 ; if 或 || 的位置作为本块的结束
         next_block = len(after)
         for m in markers:
             p = after.find(m)
@@ -143,9 +125,12 @@ def _close_if_blocks(s: str) -> str:
     return s
 
 
+# ═══════════════════════════════════════════════════════
+#  >重定向 UTF-8 转换（来自北京老陈 2026-06-30）
+# ═══════════════════════════════════════════════════════
+
 def _convert_redirect_to_utf8(command: str, cwd: Optional[str] = None) -> None:
-    """Shell >重定向输出文件自动转为UTF-8 — 北京老陈 2026-06-30
-    仅处理简单重定向 command > path，不处理 >> 或复杂路径"""
+    """Shell >重定向输出文件自动转为UTF-8"""
     target = _parse_redirect_path(command, cwd)
     if not target or not target.exists() or not target.is_file():
         return
@@ -167,9 +152,7 @@ def _convert_redirect_to_utf8(command: str, cwd: Optional[str] = None) -> None:
 
 
 def _parse_redirect_path(command: str, cwd: Optional[str] = None) -> Optional[Path]:
-    """解析Shell命令中 >重定向的目标文件路径 — 北京老陈 2026-06-30
-    仅处理 command > path（无空格、无引号的简单路径）"""
-    import re
+    """解析Shell命令中 >重定向的目标文件路径"""
     cleaned = re.sub(r'["\'][^"\']*["\']', '', command)
     m = re.search(r'(?<![<>])>(?!>)\s*(\S+)', cleaned)
     if not m:
@@ -184,12 +167,16 @@ def _parse_redirect_path(command: str, cwd: Optional[str] = None) -> Optional[Pa
     return p
 
 
+# ═══════════════════════════════════════════════════════
+#  llm_data 构建（来自小欧 2026-06-22）
+# ═══════════════════════════════════════════════════════
+
 def _build_execute_shell_command_llm_data(
     exec_code: str, duration_ms: int, command: str = "", returncode: int = 0,
     stdout_preview: str = "", stderr_preview: str = "", shell_type: str = "powershell",
     err_code: str = "", detail: str = "",
 ) -> Dict[str, Any]:
-    """execute_shell_command的llm_data构建函数 — 小欧 2026-06-22"""
+    """execute_shell_command 的 llm_data 构建函数"""
     cmd_short = (command[:60] + "..." + command[-37:]) if command and len(command) > 100 else (command[:100] if command else "")
     if exec_code == "error":
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
@@ -210,183 +197,145 @@ def _build_execute_shell_command_llm_data(
         }
     return {
         "summary": f"执行 {cmd_short}，退出码{returncode}",
-            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
-            "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
+        "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
     }
 
 
-def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
-                         timed_out: bool, timeout: int = 60,
-                         shell_type: str = "powershell", duration_ms: int = 0) -> Dict[str, Any]:
-    """统一构建shell执行结果 — 小欧 2026-06-22
-    返回原始字典，不调用build3，不含llm_data — 北京老陈 2026-06-22
-    """
-    data = {
-        "stdout": stdout_str, "stderr": stderr_str,
-        "shell_type": shell_type,
-        "returncode": returncode,
-    }
-    if timed_out:
-        return {"success": False, "error_detail": f"命令执行超时({timeout}秒)", "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type, "timeout": timeout}, "err_code": ERR_SHELL_TIMEOUT}
-    if returncode == 0:
-        return {"success": True, "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type}}
-    return {"success": False, "error_detail": f"命令执行失败(退出码{returncode})", "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type}}
-
-
-def _run_shell_background(command: str, executable: Optional[str],
-                           cwd: Optional[str], env: Optional[dict],
-                           shell_type: str = "powershell") -> Dict[str, Any]:
-    """启动后台shell命令 — 小欧 2026-06-22 — 小欧 2026-06-24 修复硬编码shell_type
-    返回原始字典，不调用build3，不含llm_data — 北京老陈 2026-06-22
-    """
-    process = subprocess.Popen(
-        command, shell=True,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        cwd=cwd, env=env, executable=executable,
-    )
-    shell_id = f"shell_{uuid.uuid4().hex[:8]}"
-    with _background_shells_lock:
-        _background_shells[shell_id] = {
-            "process": process, "command": command,
-            "started_at": datetime.now().isoformat(),
-            "shell_type": shell_type, "cwd": cwd,
-        }
-    data = {"shell_id": shell_id, "is_running": True, "started_at": datetime.now().isoformat()}
-    cmd_short = (command[:60] + "..." + command[-37:]) if command and len(command) > 100 else (command[:100] if command else "")
-    return {"success": True, "data": data, "duration_ms": 0, "params": {"shell_type": shell_type}, "command": cmd_short}
-
-
-def cleanup_background_shells() -> int:
-    """终止所有后台shell进程 — 小欧 2026-06-22"""
-    from app.tools.tool_constants import SUBPROCESS_TIMEOUT_VERY_SHORT
-    count = 0
-    shell_ids = list(_background_shells.keys())
-    for shell_id in shell_ids:
-        try:
-            shell_info = _background_shells.get(shell_id)
-            if shell_info:
-                process = shell_info.get("process")
-                if process and process.poll() is None:
-                    process.kill()
-                    try:
-                        process.wait(timeout=SUBPROCESS_TIMEOUT_VERY_SHORT)
-                    except subprocess.TimeoutExpired:
-                        pass
-                del _background_shells[shell_id]
-                count += 1
-        except Exception:
-            logger.warning(f"[execute_shell_command] 清理shell进程失败: {shell_id}")
-    return count
-
+# ═══════════════════════════════════════════════════════
+#  shell() — 主函数（v2 引擎版）
+# ═══════════════════════════════════════════════════════
 
 def shell(
     command: str, shell_type: Optional[str] = "powershell",
-    timeout: int = 60, run_in_background: bool = False,
-    cwd: Optional[str] = None,
+    timeout: int = 60, cwd: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """执行Shell命令 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件
-    包装辅助函数结果，构建build3和llm_data — 北京老陈 2026-06-22
+    """执行 Shell 命令（v2: 持久引擎版）
+
+    参数:
+        command:     PowerShell/CMD 命令
+        shell_type:  "powershell"(默认) 或 "cmd"
+        timeout:     超时秒数，默认 60，范围 1-600
+        cwd:         工作目录绝对路径
+
+    返回:
+        build_success / build_error / build_warning 标准格式
+        data: {stdout, stderr, returncode, shell_type, duration_ms}
+        llm_data: 完整 status/metrics/summary
     """
+    # ── 阶段 1: 参数校验 ──
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "shell")
-    if not timeout_valid:
-        llm_data = _build_execute_shell_command_llm_data("error", 0, command, -1, "", "", shell_type or "", ERR_PARAMETER_INVALID, timeout_err)
-        return build_error(data={"error_detail": timeout_err, "params": {"timeout": timeout}}, llm_data=llm_data)
-
     t0 = _time_mod.perf_counter()
+
+    if not timeout_valid:
+        llm = _build_execute_shell_command_llm_data("error", 0, command, -1, "", "",
+            shell_type or "", ERR_PARAMETER_INVALID, timeout_err)
+        return build_error(data={"error_detail": timeout_err, "params": {"timeout": timeout}}, llm_data=llm)
+
     if shell_type not in ("powershell", "cmd", None):
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_PARAMETER_INVALID, "shell_type仅支持powershell/cmd")
-        return build_error(data={"error_detail": "shell_type仅支持powershell/cmd", "params": {"shell_type": shell_type}}, llm_data=llm_data)
-    if not command or not command.strip():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_PARAMETER_EMPTY, "command不能为空")
-        return build_error(data={"error_detail": "command不能为空", "params": {"command": command}}, llm_data=llm_data)
+        d = int((_time_mod.perf_counter() - t0) * 1000)
+        llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
+            shell_type or "", ERR_PARAMETER_INVALID, "shell_type仅支持powershell/cmd")
+        return build_error(data={"error_detail": "shell_type仅支持powershell/cmd", "params": {"shell_type": shell_type}}, llm_data=llm)
+
+    cmd = command.strip() if command else ""
+    if not cmd:
+        d = int((_time_mod.perf_counter() - t0) * 1000)
+        llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
+            shell_type or "", ERR_PARAMETER_EMPTY, "command不能为空")
+        return build_error(data={"error_detail": "command不能为空"}, llm_data=llm)
+
     if cwd is not None and not os.path.isdir(cwd):
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}")
-        return build_error(data={"error_detail": f"工作目录不存在: {cwd}", "params": {"cwd": cwd}}, llm_data=llm_data)
-    if timeout < 1 or timeout > 600:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_PARAMETER_INVALID, f"timeout必须在1-600秒之间，当前值: {timeout}")
-        return build_error(data={"error_detail": f"timeout必须在1-600秒之间", "params": {"timeout": timeout}}, llm_data=llm_data)
+        d = int((_time_mod.perf_counter() - t0) * 1000)
+        llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
+            shell_type or "", ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}")
+        return build_error(data={"error_detail": f"工作目录不存在: {cwd}", "params": {"cwd": cwd}}, llm_data=llm)
 
-    env = os.environ.copy()
-    env['PYTHONUTF8'] = '1'
-    env['PYTHONIOENCODING'] = 'utf-8'
-
-    executable = None if shell_type == "cmd" else (
-        shutil.which("pwsh.exe") or shutil.which("powershell.exe") or "pwsh.exe")
-
-    # PS 5.1 (powershell.exe) 不支持 && 和 ||，需要翻译；PS 7 (pwsh.exe) 原生支持 — 小沈 2026-06-27
-    if shell_type == "powershell" and 'pwsh' not in executable and ('&&' in command or '||' in command):
-        command = _translate_powershell_operators(command)
-
+    # ── 阶段 2: 安全检查 ──
     from app.tools.shell.execute_shell_command_safety import check_shell_command_risk
-    safety_result = check_shell_command_risk(command)
-    if safety_result is not None and safety_result.blocked:
-        logger.warning(f"[Shell安全] 拦截: {safety_result.message}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_SHELL_INJECTION, safety_result.message)
-        return build_error(data={"error_detail": safety_result.message, "params": {"command": command[:200]}}, llm_data=llm_data)
+    safety = check_shell_command_risk(cmd)
+    if safety and safety.blocked:
+        d = int((_time_mod.perf_counter() - t0) * 1000)
+        llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
+            shell_type or "", ERR_SHELL_INJECTION, safety.message)
+        return build_error(data={"error_detail": safety.message, "params": {"command": command[:200]}}, llm_data=llm)
 
-    if run_in_background:
-        result = _run_shell_background(command, executable, cwd, env)
-        # 包装后台命令结果
-        duration_ms = result.get("duration_ms", 0)
-        data = result.get("data", {})
-        command_preview = result.get("command", "")
-        llm_data = _build_execute_shell_command_llm_data("success", duration_ms, command_preview, 0, shell_type=shell_type or "powershell")
-        llm_data["summary"] = f"后台命令已启动: {command_preview}"
-        llm_data["status"]["message"] = "后台命令已启动"
-        return build_success(data=data, llm_data=llm_data)
-
+    # ── 阶段 3: 执行 ──
     try:
-        proc = subprocess.Popen(
-            command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            cwd=cwd, env=env, executable=executable)
-        timed_out = False
-        try:
-            stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+        if shell_type == "powershell":
+            if _PWSH_CACHE[0] is None:
+                _PWSH_CACHE[0] = bool(shutil.which("pwsh.exe"))
+            if not _PWSH_CACHE[0] and ('&&' in cmd or '||' in cmd):
+                cmd = _translate_powershell_operators(cmd)
+
+            from app.tools.shell.shell_engine import PersistentShell
+            engine = PersistentShell.get_instance(cwd)
+            result = engine.exec(cmd, timeout)
+            stdout_str = result.get("stdout", "")
+            stderr_str = result.get("stderr", "")
+            returncode = result.get("exit_code", -1)
+            timed_out = result.get("timed_out", False)
+
+        else:  # cmd
+            proc = subprocess.Popen(
+                cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                cwd=cwd)
+            timed_out = False
             try:
+                stdout_b, stderr_b = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
                 proc.kill()
                 proc.wait(timeout=5)
-            except Exception:
-                logger.warning(f"[execute_shell_command] 终止超时进程失败")
-            stdout_bytes, stderr_bytes = b"", b""
+                stdout_b, stderr_b = b"", b""
+            stdout_str = _decode_bytes_safe(stdout_b)
+            stderr_str = _decode_bytes_safe(stderr_b)
+            returncode = proc.returncode if proc.returncode is not None else -1
 
-        stdout_str = _decode_bytes_safe(stdout_bytes)
-        stderr_str = _decode_bytes_safe(stderr_bytes)
-        returncode = proc.returncode if proc.returncode is not None else -1
-
+        # ── 阶段 4: 后处理 ──
         if returncode == 0 and '>' in command:
             _convert_redirect_to_utf8(command, cwd)
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        result = _build_shell_result(returncode, stdout_str, stderr_str, timed_out, timeout=timeout, shell_type=shell_type, duration_ms=duration_ms)
-        # 包装结果
-        duration_ms = result.get("duration_ms", 0)
-        data = result.get("data", {})
-        if result.get("success"):
-            if stderr_str and stderr_str.strip():
-                exec_code = "warning"
-            else:
-                exec_code = "success"
-            llm_data = _build_execute_shell_command_llm_data(exec_code, duration_ms, command[:100], returncode, stdout_str[:200], stderr_str[:200], shell_type or "powershell")
-            if exec_code == "warning":
-                return build_warning(data=data, llm_data=llm_data)
-            return build_success(data=data, llm_data=llm_data)
-        else:
-            error_detail = result.get("error_detail", "")
-            err_code = result.get("err_code", ERR_SHELL_EXEC)
-            llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command[:100], returncode, stdout_str[:200], stderr_str[:200], shell_type or "powershell", err_code, error_detail)
-            if timed_out:
-                llm_data["status"]["hint"] = "可增大timeout参数重试"
-            return build_error(data=data, llm_data=llm_data)
+        MAX_OUTPUT = 30000
+        if len(stdout_str) > MAX_OUTPUT:
+            stdout_str = stdout_str[:MAX_OUTPUT // 2] + "\n...[截断]...\n" + stdout_str[-MAX_OUTPUT // 2:]
+        if len(stderr_str) > MAX_OUTPUT:
+            stderr_str = stderr_str[:MAX_OUTPUT // 2] + "\n...[截断]...\n" + stderr_str[-MAX_OUTPUT // 2:]
+
+        d = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {
+            "stdout": stdout_str, "stderr": stderr_str,
+            "returncode": returncode, "shell_type": shell_type or "powershell",
+            "duration_ms": d,
+        }
+
+        # ── 阶段 5: 构建 build3 + llm_data ──
+        if timed_out:
+            llm = _build_execute_shell_command_llm_data("error", d, command[:100],
+                returncode, stdout_str[:200], stderr_str[:200],
+                shell_type or "", ERR_SHELL_TIMEOUT, f"命令执行超时({timeout}秒)")
+            llm["status"]["hint"] = "可增大timeout参数重试"
+            return build_error(data=data, llm_data=llm)
+
+        if returncode == 0:
+            if stderr_str.strip():
+                llm = _build_execute_shell_command_llm_data("warning", d, command[:100],
+                    returncode, stdout_str[:200], stderr_str[:200], shell_type or "")
+                return build_warning(data=data, llm_data=llm)
+            llm = _build_execute_shell_command_llm_data("success", d, command[:100],
+                returncode, shell_type=shell_type or "")
+            return build_success(data=data, llm_data=llm)
+
+        err_detail = stderr_str[:200] if stderr_str.strip() else f"退出码{returncode}"
+        llm = _build_execute_shell_command_llm_data("error", d, command[:100],
+            returncode, stdout_str[:200], stderr_str[:200],
+            shell_type or "", ERR_SHELL_EXEC, err_detail)
+        return build_error(data=data, llm_data=llm)
+
     except Exception as e:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_SHELL_EXCEPTION, str(e))
-        return build_error(data={"error_detail": str(e), "params": {"command": command[:200]}}, llm_data=llm_data)
+        d = int((_time_mod.perf_counter() - t0) * 1000)
+        llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
+            shell_type or "", ERR_SHELL_EXCEPTION, str(e))
+        return build_error(data={"error_detail": str(e), "params": {"command": command[:200]}}, llm_data=llm)

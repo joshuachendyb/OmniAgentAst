@@ -48,10 +48,6 @@ class ShellInput(BaseModel):
     timeout: int = Field(
         default=60, ge=1, le=600, description="超时时间(秒),默认60(60秒)。最小1秒,最大600(10分钟)"
     )
-    run_in_background: bool = Field(
-        default=False,
-        description="是否在后台运行命令"
-    )
     cwd: Optional[str] = Field(
         default=None, description="命令执行的工作目录(绝对路径)。需要在特定目录下执行命令时设置,如 D:/project。不设置则使用当前目录"
     )
