@@ -17,6 +17,7 @@ backend/tests/
 backend/pytest-of-chend/
 backend/reports/
 backend/report/
+backend/notes/测试记录-*.md
 
 # logs & temp
 backend/logs/
