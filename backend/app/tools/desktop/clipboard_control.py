@@ -110,6 +110,12 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
             llm_data = _build_clipboard_control_llm_data("error", duration_ms, "read", detail=result["error_detail"])
             return build_error(data=result, llm_data=llm_data)
         llm_data = _build_clipboard_control_llm_data("success", duration_ms, "read", len(result.get("text", "")))
+        # ---- observation_formatter route [read mode] --------------------------------
+        # branch: #10 raw text
+        # trigger: "text" in data and isinstance(data["text"], str)
+        # handler: _format_text_content(data) — 正文+元数据拼接
+        # file:    observation_formatter.py:124-126
+        # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)
     elif action == "write":
         if not content:
@@ -122,6 +128,12 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
             llm_data = _build_clipboard_control_llm_data("error", duration_ms, "write", detail=result["error_detail"])
             return build_error(data=result, llm_data=llm_data)
         llm_data = _build_clipboard_control_llm_data("success", duration_ms, "write", len(content))
+        # ---- observation_formatter route [write mode] --------------------------------
+        # branch: #2 raw str
+        # trigger: "content" in data and isinstance(data["content"], str)
+        # handler: inline — 直接返回 data["content"], OBS_MAX_STRING_LENGTH 截断
+        # file:    observation_formatter.py:117-122
+        # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)
     else:
         llm_data = _build_clipboard_control_llm_data("error", 0, action, err_code=ERR_DESKTOP_CLIPBOARD, detail=f"无效的action: {action}")

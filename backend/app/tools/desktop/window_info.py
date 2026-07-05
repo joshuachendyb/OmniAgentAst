@@ -149,6 +149,12 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"windows": windows}
         llm_data = _build_window_info_llm_data("success", duration_ms, len(windows), filter_title or "")
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #15 windows table
+        # trigger: "windows" in data — windows 是 List[dict]
+        # handler: _format_windows(data)
+        # file:    observation_formatter.py:196-198
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         logger.error(f"window_info list error: {e}")

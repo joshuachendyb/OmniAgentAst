@@ -49,6 +49,12 @@ def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {}
         llm_data = _build_mouse_click_llm_data("success", duration_ms, x, y, button, click_type)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #0 空data (L73)
+        # trigger: data 为 {} → if not data: return ""
+        # handler: 直接返回空字符串
+        # file:    observation_formatter.py:73-74
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

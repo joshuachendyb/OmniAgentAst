@@ -110,6 +110,12 @@ def keyboard_control(action: Literal["type", "shortcut"], text_or_keys: str) -> 
         return build_error(data=result, llm_data=llm_data)
     
     llm_data = _build_keyboard_control_llm_data("success", duration_ms, action, text_or_keys)
+    # ---- observation_formatter route -------------------------------------------
+    # branch: #21 fallback (key:val) — type 或 shortcut
+    # trigger: 无上述20条分支匹配 — text_length(typing) 或 keys(shortcut)
+    # handler: _format_scalar_data(data) — key | value 单行列表
+    # file:    observation_formatter.py:214
+    # ------------------------------------------------------------------------------
     return build_success(data=result, llm_data=llm_data)
 
 
