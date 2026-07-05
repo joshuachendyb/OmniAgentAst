@@ -20,6 +20,7 @@ from app.tools.tool_constants import MAX_READ_SIZE
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.file_type_checker import check_for_text_tool
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.utils.text_utils import add_line_numbers
 from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_read
@@ -365,6 +366,11 @@ async def readtext(
             "success", duration_ms, file_path=file_path,
             line_count=_line_count, total_lines=_total_lines, file_size=file_size,
         )
+
+        line_offset = _data.get("start_line", 1)
+        raw = _data.get("content", "")
+        if raw:
+            _data["content"] = f"<file>\n{add_line_numbers(raw, offset=line_offset)}\n</file>"
 
         record_read(file_path, content)
 
