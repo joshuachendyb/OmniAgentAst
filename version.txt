@@ -1,4 +1,44 @@
-﻿v0.17.21
+﻿v0.17.22
+更新时间: 2026-07-05 21:50:18
+## v0.17.21→v0.17.22 变更汇总 - 小欧-2026-07-05
+
+### refactor: observation_formatter route 标注（全部63个工具 10 个分类）
+- file/desktop/network/dataanalysis/document/fundamental/shell/system/timer/win_registry: 各分类 _build_*_llm_data 函数增加 format_data_detail route 专业注释 - 小欧-2026-07-05
+- observation_formatter.py: 删除3处死代码（safe_json_dumps import / #1 content-wrapped / #7 output legacy 分支） - 小欧-2026-07-05
+
+### fix: llm_data params 全面补齐（file+network 14个工具）
+- copy_file/delete_file/edit_text_file/grep_file_content/move_file/read_text_file/rename_file/search_files/write_text_file: 补充 user_* params到_act_params - 小沈-2026-07-05
+- download_file/fetch_webpage/http_request/network_diagnose/search_web: 补充timeout/proxy/headers/prompt/js_render等params - 小沈-2026-07-05
+- find_command/execute_shell_command: 补充all_paths/timeout/cwd/output_len/stderr_len等params - 小沈-2026-07-05
+
+### fix: _act_params/error detail/metrics 复核修复（全部63个工具，覆盖166个质量问题）
+- file组（9个工具）：hint/params/detail/error_code全面审计修复 - 小沈-2026-07-05
+- listdir: offset校验+llm_data hint/params补齐+清除死代码/死导入 - 小沈-2026-07-05
+- readtext: hint逐路径细化+metrics补齐total_lines/bytes+message区分空文件/部分/完全读取 - 小沈-2026-07-05
+- network/desktop/fundamental/timer/system/dataanalysis: hint/params批量修复 - 小沈-2026-07-05
+- DataAnalysis组（analyze_data/filter_data/generate_chart）: _act_params/error detail/metrics全面补齐 - 小欧-2026-07-05
+- Desktop组（screen_capture/mouse_position等）: output_path忽略/err_code/_act_params补齐 - 小欧-2026-07-05
+- Document组（read/write_docx等）: builder补user_sheet_name/user_title到_act_params - 小欧-2026-07-05
+- System组（event_log/list_tasks）: builder签名加err_code + _act_params/error detail补齐 - 小欧-2026-07-05
+- Shell组（find_command）: 空命令/异常缺err_code + _act_params条件性入参 - 小欧-2026-07-05
+- Timer组（timer_set/clear/list）: builder加callback/detail参数 + error detail透传 - 小欧-2026-07-05
+- WinRegistry组（registry_read/write/delete）: 修复传参hive→value_name + 13个error分支补detail - 小欧-2026-07-05
+
+### fix: llm_data hint 逐分支细化（本批 document/system/shell/timer/win_registry 16个工具）
+- document组（read_xlsx/write_docx/write_pdf/write_pptx/write_xlsx）: 5个builder新增hint参数 + 20个error call site hint 修复 - 小欧-2026-07-05
+- system组（create_task/delete_task/event_log）: 3个builder + 15个error call site hint 修复 - 小欧-2026-07-05
+- shell组（execute_shell_command/find_command）: 2个builder + 10个error call site hint 修复 - 小欧-2026-07-05
+- timer组（timer_clear/timer_list/timer_set）: 3个builder + 5个error call site hint 修复 - 小欧-2026-07-05
+- win_registry组（registry_delete/registry_read/registry_write）: 3个builder + 20个error call site hint 修复 - 小欧-2026-07-05
+
+### refactor: tool_retry_engine 增强
+- tool_retry_engine.py: 增强_build_retry_error 增加action_name/action_params参数 - 小沈-2026-07-05
+
+### refactor: 清理
+- notes/ 删除测试记录文件 - 小欧-2026-07-05
+- 清除已废弃 runcode 引用（33个 e2etests 文件） - 小沈-2026-07-05
+
+v0.17.21
 更新时间: 2026-07-05 11:50:00
 ## v0.17.20→v0.17.21 变更汇总 - 小欧-2026-07-05
 
