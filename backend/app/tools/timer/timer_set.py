@@ -50,19 +50,26 @@ async def _invoke_timer_callback(timer_id: str, callback: str) -> Dict[str, Any]
     return event
 
 
-def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, trigger_at: str, delay: float) -> dict:
-    """timer_set的llm_data构建函数 — 小健 2026-06-22"""
+def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, trigger_at: str, delay: float, callback: str = "", detail: str = "") -> dict:
+    """timer_set的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增callback/detail"""
+    _act_params = {"delay": delay}
+    if callback:
+        _act_params["callback"] = callback
+    if timer_id:
+        _act_params["timer_id"] = timer_id
+    if trigger_at:
+        _act_params["trigger_at"] = trigger_at
     if exec_code == "error":
         return {
-            "summary": f"定时器设置失败: {delay}秒",
-            "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": {"delay": delay}},
-            "status": {"exec_code": "error", "message": "定时器设置失败", "code": ERR_TIMER_SET, "detail": "", "hint": "请检查延迟时间"},
+            "summary": f"定时器设置失败: {detail}",
+            "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
+            "status": {"exec_code": "error", "message": "定时器设置失败", "code": ERR_TIMER_SET, "detail": detail, "hint": "请检查延迟时间"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"定时器 {timer_id}，{int(delay / 60)}分钟后触发",
-        "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": {"delay": delay}},
+        "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
         "status": {"exec_code": "success", "message": "定时器设置成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"delay": {"value": delay, "text": f"{int(delay / 60)}分钟"}},
@@ -76,11 +83,11 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
     try:
         if delay <= 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay)
+            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间必须大于0")
             return build_error(data={"error_detail": "延迟时间必须大于0", "params": {"delay": delay}}, llm_data=llm_data)
         if delay > 86400:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay)
+            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间不能超过24小时")
             return build_error(data={"error_detail": "延迟时间不能超过24小时", "params": {"delay": delay}}, llm_data=llm_data)
 
         _timer_counter += 1
@@ -109,7 +116,7 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"timer_id": timer_id, "delay": delay, "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S")}
-        llm_data = _build_timer_set_llm_data("success", duration_ms, timer_id, trigger_at.strftime("%Y-%m-%d %H:%M:%S"), delay)
+        llm_data = _build_timer_set_llm_data("success", duration_ms, timer_id, trigger_at.strftime("%Y-%m-%d %H:%M:%S"), delay, callback=callback)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
         # trigger: 无上述20条分支匹配 — timer_id/delay/trigger_at 不命中专用分支
@@ -119,7 +126,7 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay)
+        llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"delay": delay, "callback": callback}}, llm_data=llm_data)
 
 
