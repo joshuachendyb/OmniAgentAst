@@ -70,13 +70,15 @@ class ToolRetryEngine:
     def _build_retry_error(
         self, code: str, message: str, retry_count: int,
         *, error_type: Optional[str] = None,
+        action_name: str = "", action_params: Optional[dict] = None,
     ) -> Dict[str, Any]:
-        """统一构建重试相关错误响应 — 小欧 2026-06-21 适配新3字段result"""
+        """统一构建重试相关错误响应 — 小欧 2026-06-21 适配新3字段result
+        小欧 2026-07-05: 新增 action_name/action_params 参数，LLM 能看到哪个工具/参数失败"""
         return build_error(
-            data={"error_detail": message, "params": {}},
+            data={"error_detail": message, "params": action_params or {}},
             llm_data={
                 "summary": message[:200],
-                "action": {"tool": "", "tool_zh": "", "target": "", "params": {}},
+                "action": {"tool": action_name, "tool_zh": "", "target": "", "params": action_params or {}},
                 "status": {"exec_code": "error", "message": message[:200], "code": code, "detail": message, "hint": ""},
                 "duration_ms": 0,
                 "metrics": {},
@@ -149,6 +151,7 @@ class ToolRetryEngine:
                         ERR_INVALID_PARAMS,
                         f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}",
                         0, error_type="invalid_params",
+                        action_name=action, action_params=params,
                     )
                 
                 required = input_schema.get("required", [])
@@ -158,6 +161,7 @@ class ToolRetryEngine:
                         ERR_MISSING_PARAM,
                         f"缺少必需参数: {action}, 缺失: {missing}",
                         0, error_type="missing_param",
+                        action_name=action, action_params=params,
                     )
         except (ImportError, AttributeError) as e:
             logger.warning(f"[参数验证] action={action}, 获取schema失败: {e}", exc_info=True)
@@ -206,6 +210,7 @@ class ToolRetryEngine:
                         f"ERR_{error_category.name}",
                         f"{error_category.description}: {str(e)[:200]}",
                         attempt, error_type=error_category.name.lower(),
+                        action_name=action, action_params=params,
                     )
 
                 delay = backoff_factor ** attempt
@@ -214,5 +219,6 @@ class ToolRetryEngine:
         return self._build_retry_error(
             ERR_UNKNOWN, str(last_error)[:200] if last_error else "Unknown error",
             max_retries,
+            action_name=action, action_params=params,
         )
 
