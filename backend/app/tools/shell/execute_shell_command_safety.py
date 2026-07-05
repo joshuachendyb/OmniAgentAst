@@ -54,8 +54,12 @@ def check_shell_command_risk(command: str) -> Optional[SafetyResult]:
     """
     medium_hit_desc = None
 
+    # 归一化多行命令为单行，防止 DOTALL 的跨行误匹配 — 小欧 2026-07-05
+    # Remove-Item \n -Recurse → Remove-Item -Recurse（仍能正确匹配）
+    # 但不再跨行串到无关文本导致假阳性拦截
+    normalized = command.replace('\r\n', ' ').replace('\n', ' ')
     for pattern_str, desc, level in SHELL_DANGEROUS_PATTERNS:
-        if re.search(pattern_str, command, re.IGNORECASE | re.DOTALL):
+        if re.search(pattern_str, normalized, re.IGNORECASE):
             if level == "HIGH":
                 return SafetyResult(
                     is_safe=False,

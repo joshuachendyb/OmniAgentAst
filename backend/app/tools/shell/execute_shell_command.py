@@ -279,17 +279,30 @@ def shell(
             timed_out = result.get("timed_out", False)
 
         else:  # cmd
-            proc = subprocess.Popen(
-                cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                cwd=cwd)
-            timed_out = False
+            # 写入 temp .bat 执行，绕过 cmd.exe /c 的引号解析 bug — 小欧 2026-07-05
+            import tempfile
+            bat_fd, bat_path = tempfile.mkstemp(suffix='.bat', text=True)
             try:
-                stdout_b, stderr_b = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                proc.kill()
-                proc.wait(timeout=5)
-                stdout_b, stderr_b = b"", b""
+                with os.fdopen(bat_fd, 'w', encoding='utf-8') as f:
+                    f.write('@echo off\r\n')
+                    f.write(cmd + '\r\n')
+                    f.write('exit /b %errorlevel%\r\n')
+                proc = subprocess.Popen(
+                    bat_path, shell=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, cwd=cwd)
+                timed_out = False
+                try:
+                    stdout_b, stderr_b = proc.communicate(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    proc.kill()
+                    proc.wait(timeout=5)
+                    stdout_b, stderr_b = b"", b""
+            finally:
+                try:
+                    os.unlink(bat_path)
+                except OSError:
+                    pass
             stdout_str = _decode_bytes_safe(stdout_b)
             stderr_str = _decode_bytes_safe(stderr_b)
             returncode = proc.returncode if proc.returncode is not None else -1
