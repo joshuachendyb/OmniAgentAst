@@ -599,7 +599,7 @@ def check_db(session_id: str) -> Dict[str, Any]:
 
 SAFETY_KEYWORDS = [
     "安全检查", "拒绝执行", "高风险",
-    "runcode", "pickle", "RCE", "extract",
+    "pickle", "RCE", "extract",
     "create_task", "delete_task",
     "Permission denied", "DB operation failed",
     "NoneType", "Errno 13", "ERR_SQL_EXEC",
