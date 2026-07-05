@@ -24,6 +24,11 @@ def _get_project_root() -> Path:
     return _PROJECT_ROOT
 
 
+def get_default_project_root() -> str:
+    """获取默认项目根目录(str) — 基于代码位置推算"""
+    return str(_get_project_root())
+
+
 def get_config_path(filename: str = "config.yaml") -> str:
     """统一配置路径获取
     

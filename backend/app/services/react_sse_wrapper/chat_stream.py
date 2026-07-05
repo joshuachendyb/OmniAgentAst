@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 chat_stream — SSE事件流处理统一模块
 
@@ -15,14 +15,14 @@ SLAP原则: 所有SSE流式事件相关函数统一在此模块，不再分散�
 """
 
 import json
+import re
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.utils.time_utils import create_timestamp
 from app.utils.sse_formatter import format_sse_event, format_agent_sse
 from app.services.agent.steps import MetaStep, ErrorStep, FinalStep
-from app.utils.error_classifier import UnifiedErrorClassifier
-from app.utils.error_parser import extract_api_error_detail
+from app.utils.sys_error_classifier import SystemErrorClassifier
 from app.utils.logger import logger
 
 
@@ -52,8 +52,8 @@ def create_error_response(
 
 
 def get_error_info(error: Exception) -> Dict[str, Any]:
-    """获取错误信息，委托给UnifiedErrorClassifier"""
-    info = UnifiedErrorClassifier.get_error_info(error)
+    """获取错误信息，委托给SystemErrorClassifier"""
+    info = SystemErrorClassifier.get_error_info(error)
     category = info["category"]
     return {
         "code": category.name,
@@ -93,15 +93,15 @@ async def save_execution_steps_to_db(
                 reply_to_message_id=user_message_id
             )
         )
-        message_id = result.get("message_id") if isinstance(result, dict) else None
-        if message_id:
-            from app.utils.prompt_logger import get_prompt_logger
-            get_prompt_logger().update_ai_message_id(str(message_id))
+        ai_message_id = result.get("ai_message_id") if isinstance(result, dict) else None
+        return ai_message_id
+
     except Exception as e:
         if "会话不存在" in str(e) or "404" in str(e):
             logger.warning(f"[Save] 会话不存在,跳过本次: session_id={session_id}")
         else:
             logger.error(f"[Save] 保存失败: {e}", exc_info=True)
+        return None
 
 
 # ====================================================================

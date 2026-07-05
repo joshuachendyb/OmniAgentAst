@@ -12,20 +12,19 @@ Prompt 日志记录器 - 记录 Prompt 组装全过程
 """
 
 import json
-import os
-import uuid
-import threading
+import contextvars
 from app.utils.time_utils import now_str, timestamp_for_filename
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
+from app.utils.json_utils import safe_json_dumps
 from app.utils.logger import logger
 
 
 class PromptLogger:
     """Prompt 日志记录器 - 记录每次请求的 prompt 组装过程
     
-    【并发安全】使用线程局部存储,每个线程/请求独立的日志数据
+    【并发安全】使用 contextvars,每个协程/请求独立的日志数据
     """
     
     def __init__(self):
@@ -34,66 +33,47 @@ class PromptLogger:
         self.log_dir = Path(__file__).parent.parent.parent / "logs" / "prompt-logs"
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
-        # 线程局部存储 - 每个线程独立的日志数据
-        self._local = threading.local()
+        # contextvars - 每个协程独立的日志数据,避免 asyncio 协程间覆盖
+        self._current_log: contextvars.ContextVar = contextvars.ContextVar('prompt_log', default=None)
     
     def _get_current_log(self) -> Optional[Dict[str, Any]]:
-        """获取当前线程的日志数据"""
-        return getattr(self._local, 'current_log', None)
+        """获取当前协程的日志数据"""
+        return self._current_log.get()
     
     def _set_current_log(self, log_data: Optional[Dict[str, Any]]):
-        """设置当前线程的日志数据"""
-        self._local.current_log = log_data
-    
-    def _get_log_file_path(self) -> Optional[Path]:
-        """获取当前线程的日志文件路径"""
-        return getattr(self._local, 'log_file_path', None)
-    
-    def _set_log_file_path(self, path: Optional[Path]):
-        """设置当前线程的日志文件路径"""
-        self._local.log_file_path = path
+        """设置当前协程的日志数据"""
+        self._current_log.set(log_data)
     
     def start_request(
         self,
         user_message: str,
         session_id: str,
-        ai_message_id: Optional[str] = None
     ) -> str:
         """
-        开始记录一次请求
+        开始记录一次请求 — AI消息ID由update_ai_message_id()设置
         
         Args:
             user_message: 用户消息内容
             session_id: 会话ID
-            ai_message_id: AI消息ID(可选,后续更新)
         
         Returns:
-            日志文件路径
+            会话ID(用于标识本次请求)
         """
         timestamp = now_str()
-        file_timestamp = timestamp_for_filename()
         
         # 延迟导入: 避免循环导入
         from app.utils.message_id_tracker import get_user_message_id
         user_message_id = get_user_message_id(session_id) or self._user_id_from_db(session_id)
-        # AI消息ID = 用户消息ID + 1
-        ai_msg_id = (user_message_id + 1) if user_message_id is not None else None
-        ai_msg_id_str = str(ai_msg_id) if ai_msg_id is not None else str(uuid.uuid4())[:6]
         
-        # 生成文件名:prompt_{AI消息ID后6位}+{YYYYMMDD_HHMMSS}.json
-        short_id = ai_msg_id_str[-6:] if len(ai_msg_id_str) >= 6 else ai_msg_id_str
-        filename = f"prompt_{short_id}+{file_timestamp}.json"
-        log_file_path = self.log_dir / filename
-        
-        # 初始化日志数据
+        # 初始化日志数据 — AI消息ID由update_ai_message_id()设置,文件名在save()时生成
         current_log = {
             "基本信息": {
                 "时间戳": timestamp,
                 "会话ID": session_id,
                 "用户消息ID": user_message_id,
-                "AI消息ID": ai_msg_id,
+                "AI消息ID": None,
                 "用户消息": user_message,
-                "日志文件": str(log_file_path)
+                "状态": "处理中",
             },
             "Prompt组装过程": [],
             "LLM调用记录": []
@@ -101,10 +81,9 @@ class PromptLogger:
         
         # 保存到线程局部存储
         self._set_current_log(current_log)
-        self._set_log_file_path(log_file_path)
         
-        logger.info(f"[PromptLogger] 开始记录请求: {log_file_path}")
-        return str(log_file_path)
+        logger.info(f"[PromptLogger] 开始记录请求: session_id={session_id}")
+        return session_id
     
     def _user_id_from_db(self, sid: str) -> Optional[int]:
         """P1修复: 改用db.get_conn() SDK+修复裸except"""
@@ -119,12 +98,14 @@ class PromptLogger:
         except Exception:
             return None
 
+
     def update_ai_message_id(self, ai_message_id: str):
-        """更新 AI 消息 ID"""
+        """拿到真实ai_message_id后更新日志数据 — 小欧 2026-06-23"""
         current_log = self._get_current_log()
-        if current_log:
-            current_log["基本信息"]["AI消息ID"] = ai_message_id
-    
+        if not current_log:
+            return
+        current_log["基本信息"]["AI消息ID"] = ai_message_id
+
     def log_system_prompt(
         self,
         step_name: str,
@@ -167,7 +148,8 @@ class PromptLogger:
         self,
         task_content: str,
         context: Optional[Dict[str, Any]] = None,
-        round_number: int = 0
+        round_number: int = 0,
+        source: str = "",
     ):
         """
         记录任务 Prompt
@@ -176,6 +158,7 @@ class PromptLogger:
             task_content: 任务 Prompt 内容
             context: 额外上下文
             round_number: LLM调用轮次 【2026-05-15 小健】
+            source: 来源说明
         """
         current_log = self._get_current_log()
         if not current_log:
@@ -184,7 +167,7 @@ class PromptLogger:
         entry = {
             "步骤": "任务Prompt生成",
             "类型": "任务Prompt",
-            "来源": "file_prompts.py:get_task_prompt()",
+            "来源": source or "unknown",
             "内容": task_content,
             "内容长度": len(task_content),
             "时间戳": now_str()
@@ -225,6 +208,8 @@ class PromptLogger:
         
         # 计算消息统计
         message_stats = {}
+        if not messages:
+            messages = []
         for msg in messages:
             role = msg.get("role", "unknown")
             message_stats[role] = message_stats.get(role, 0) + 1
@@ -234,12 +219,16 @@ class PromptLogger:
         for i, msg in enumerate(messages):
             role = msg.get("role", "unknown")
             content = msg.get("content") or ""
-            message_summaries.append({
+            summary = {
                 "序号": i + 1,
                 "角色": role,
                 "内容长度": len(content),
                 "内容摘要": content[:200] + "..." if len(content) > 200 else content
-            })
+            }
+            if role == "assistant" and msg.get("tool_calls"):
+                tc_names = [tc.get("function", {}).get("name", "?") for tc in msg["tool_calls"]]
+                summary["工具调用"] = tc_names
+            message_summaries.append(summary)
         
         # 记录工具定义(完整 JSON Schema) — 小欧 2026-06-19
         # 注意:工具描述有2层——function.description(register.py)和parameters.description(Pydantic class docstring)
@@ -346,7 +335,7 @@ class PromptLogger:
         current_log["LLM调用记录"].append(entry)
 
     def log_step_yield(self, step_dict: dict, round_number: int = 0):
-        """记录每一步 yield 给前端的 JSON 数据 — 北京老陈 2026-06-14"""
+        """记录每一步 yield 给前端的 JSON 数据 — 北京老陈 2026-06-14 — 小欧 2026-06-24 删除chunk跳过，所有step类型都记录"""
         current_log = self._get_current_log()
         if not current_log:
             return
@@ -431,22 +420,72 @@ class PromptLogger:
         
         current_log["Prompt组装过程"].append(entry)
     
-    def save(self):
-        """保存日志到文件"""
+    def log_status(self, old_status: str, new_status: str, reason: str = ""):
+        """记录Agent状态变化到prompt log — 小欧 2026-07-01"""
         current_log = self._get_current_log()
-        log_file_path = self._get_log_file_path()
-        
-        if not current_log or not log_file_path:
+        if not current_log:
+            return
+        if "状态变化记录" not in current_log:
+            current_log["状态变化记录"] = []
+        entry = {
+            "时间": now_str(),
+            "旧状态": str(old_status),
+            "新状态": str(new_status),
+        }
+        if reason:
+            entry["原因"] = reason
+        current_log["状态变化记录"].append(entry)
+
+    def mark_completed(self):
+        """标记请求已完成 — 小欧 2026-06-30"""
+        current_log = self._get_current_log()
+        if current_log:
+            current_log["基本信息"]["状态"] = "已完成"
+
+    def mark_error(self, error_msg: str):
+        """标记请求异常终止 — 小欧 2026-06-30"""
+        current_log = self._get_current_log()
+        if current_log:
+            current_log["基本信息"]["状态"] = "异常终止"
+            current_log["基本信息"]["错误信息"] = error_msg
+
+    def save(self):
+        """保存日志到文件 — 文件名用ai_message_id生成 — 小欧 2026-06-23"""
+        current_log = self._get_current_log()
+        if not current_log:
             logger.warning("[PromptLogger] 保存失败:没有当前日志数据")
             return
+
+        status = current_log["基本信息"].get("状态", "处理中")
+        if status == "处理中":
+            if current_log.get("LLM调用记录"):
+                current_log["基本信息"]["状态"] = "已完成"
+            else:
+                current_log["基本信息"]["状态"] = "异常终止"
+
+        # 从日志数据中取ai_message_id,生成最终文件名
+        ai_id = current_log["基本信息"].get("AI消息ID")
+        if ai_id:
+            short_id = str(ai_id)[-6:]
+        else:
+            user_id = current_log["基本信息"].get("用户消息ID")
+            short_id = str(user_id)[-6:] if user_id else "no_id"
         
-        try:
-            with open(log_file_path, 'w', encoding='utf-8') as f:
-                json.dump(current_log, f, ensure_ascii=False, indent=2)
-            
-            logger.info(f"[PromptLogger] 日志已保存: {log_file_path}")
-        except Exception as e:
-            logger.error(f"[PromptLogger] 保存失败: {e}")
+        file_timestamp = timestamp_for_filename()
+        filename = f"prompt_{short_id}+{file_timestamp}.json"
+        log_file_path = self.log_dir / filename
+        
+        for retry in range(2):
+            try:
+                with open(log_file_path, 'w', encoding='utf-8') as f:
+                    f.write(safe_json_dumps(current_log, ensure_ascii=False, indent=2))
+                logger.info(f"[PromptLogger] 日志已保存: {log_file_path}")
+                return
+            except Exception as e:
+                if retry == 0:
+                    logger.warning(f"[PromptLogger] 保存失败,重试: {e}")
+                else:
+                    logger.error(f"[PromptLogger] 保存失败: {e}")
     
     def get_current_log(self) -> Optional[Dict[str, Any]]:
         """获取当前日志数据"""

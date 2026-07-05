@@ -15,61 +15,23 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.constants import ERR_DOC_READ_PDF
+from app.tools.file_type_checker import check_for_document_tool
+from app.tools.tool_constants import ERR_DOC_READ_PDF
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
-
-
-def _parse_pages(pages_str: str) -> List[int]:
-    """解析页码字符串为页码列表 — 小欧 2026-06-22"""
-    result = []
-    for part in pages_str.split(","):
-        part = part.strip()
-        if "-" in part:
-            start, end = part.split("-", 1)
-            try:
-                result.extend(range(int(start), int(end) + 1))
-            except ValueError:
-                pass
-        else:
-            try:
-                result.append(int(part))
-            except ValueError:
-                pass
-    return sorted(set(result))
-
-
-def _process_page(page, page_num: int,
-                   extract_tables: bool, extract_images: bool,
-) -> Tuple[str, List[Dict], List[Dict]]:
-    """处理单页PDF:返回 (text, tables_data, images_data) — 小沈 2026-05-25 — 小欧 2026-06-22"""
-    text = page.extract_text() or ""
-    tables = []
-    if extract_tables:
-        for idx, t in enumerate(page.extract_tables() or []):
-            tables.append({"page": page_num, "table_idx": idx, "data": t})
-    images = []
-    if extract_images:
-        for idx, img in enumerate(page.images or []):
-            images.append({
-                "page": page_num, "image_idx": idx,
-                "x0": float(img.get("x0", 0)), "y0": float(img.get("y0", 0)),
-                "x1": float(img.get("x1", 0)), "y1": float(img.get("y1", 0)),
-                "width": float(img.get("width", 0)), "height": float(img.get("height", 0)),
-            })
-    return text, tables, images
 
 
 def _build_read_pdf_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", page_count: int = 0, pages_read: int = 0,
-    text_len: int = 0, table_count: int = 0, image_count: int = 0, detail: str = "",
+    text_len: int = 0, table_count: int = 0, image_count: int = 0, detail: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """read_pdf的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """read_pdf的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
             "summary": f"读取PDF失败: {detail}",
             "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "读取PDF失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": "请检查文件路径和格式"},
+            "status": {"exec_code": "error", "message": "读取PDF失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -87,24 +49,34 @@ def _build_read_pdf_llm_data(
 
 
 def read_pdf(file_name: str) -> Dict[str, Any]:
-    """读取PDF文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件"""
+    """读取PDF文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
     file_path = file_name
 
+    # 文件类型前置检查 — 小欧 2026-06-24
+    is_valid, error_detail, suggested_tool = check_for_document_tool(file_name)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=error_detail, hint="文件类型不匹配,请使用.pdf格式")
+        return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
+
     if not _check_module("pdfplumber"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail="pdfplumber库未安装")
+        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail="pdfplumber库未安装", hint="请安装pdfplumber库")
         return build_error(data={"error_detail": "pdfplumber库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
 
     try:
         import pdfplumber
 
-        path = Path(file_path)
-        if not path.exists():
+        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
+        if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
-            return build_error(data={"error_detail": "文件不存在", "params": {"file_name": file_name}}, llm_data=llm_data)
+            llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径是否正确")
+            return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
 
+        path = Path(file_path)
         all_text, pages_read, tables_data, images_data = [], [], [], []
         with pdfplumber.open(path) as pdf:
             page_count = len(pdf.pages)
@@ -133,9 +105,15 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
             "success", duration_ms, file_path, page_count, len(pages_read),
             len(full_text), len(tables_data), len(images_data),
         )
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #10 raw text
+        # trigger: "text" in data and isinstance(data["text"], str)
+        # handler: _format_text_content(data) — 正文+元数据(页数/表格数/图片数)
+        # file:    observation_formatter.py:124-126
+        # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)
 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=str(e))
+        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=str(e), hint="读取PDF文档异常,请检查文件完整性")
         return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)

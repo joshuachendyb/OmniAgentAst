@@ -14,16 +14,22 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_FILE_LIST_DIR_FAILED
-from app.tools.tool_constants import TOOL_TIMEOUTS
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
+from app.tools.tool_response import build_success, build_error, build_warning
+from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
+from app.tools.tool_constants import TOOL_TIMEOUTS, LISTDIR_PAGE_SIZE
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
+# 文件系统遍历时跳过噪声目录 — 小欧 2026-07-05
+_SKIP_DIRS = frozenset({
+    '__pycache__', 'node_modules', 'bower_components',
+    '.git', '.svn', '.hg',
+    '.next', '.nuxt', 'dist', 'build', 'target', 'out',
+    '.venv', 'venv', '.env', 'env',
+    '.idea', '.vscode', '.yarn', '.pnp', 'coverage',
+    '.terraform', '.serverless', 'vendor',
+})
 
 
 def _classify_size(size: int) -> str:
@@ -62,7 +68,7 @@ def _scan_directory_sync(
         nonlocal _timed_out
         if current_depth > max_depth:
             return
-        if time.monotonic() > deadline:
+        if _time_mod.monotonic() > deadline:
             _timed_out = True
             return
         try:
@@ -71,6 +77,8 @@ def _scan_directory_sync(
                     return
                 try:
                     if not include_hidden and item.name.startswith('.'):
+                        continue
+                    if item.name in _SKIP_DIRS:
                         continue
                     st = item.stat()
                     entry = _build_entry(item, st)
@@ -98,6 +106,8 @@ def _scan_directory_sync(
             try:
                 if not include_hidden and item.name.startswith('.'):
                     continue
+                if item.name in _SKIP_DIRS:
+                    continue
                 st = item.stat()
                 entry = _build_entry(item, st)
                 entries.append(entry)
@@ -113,20 +123,6 @@ def _scan_directory_sync(
                 continue
 
     return entries, stats, ext_counter, size_bins
-
-
-def _count_tree_stats(node: dict) -> Tuple[int, int, int]:
-    """递归统计树形结构的文件数/目录数/总大小 — 小健 2026-05-25 — 小欧 2026-06-22"""
-    files = dirs = total_size = 0
-    if node.get("type") == "file":
-        files = 1
-        total_size = node.get("size", 0)
-    elif node.get("type") == "directory":
-        dirs = 1
-    for child in node.get("children", []):
-        cf, cd, cs = _count_tree_stats(child)
-        files += cf; dirs += cd; total_size += cs
-    return files, dirs, total_size
 
 
 def _build_list_success(entries: List, total: int, path: Path,
@@ -147,124 +143,86 @@ def _build_list_directory_llm_data(
     exec_code: str, duration_ms: int,
     dir_path: str = "", total: int = 0,
     truncated: bool = False, detail: str = "",
+    hint: str = "",
+    user_sort_by: str = "", user_include_hidden: Optional[bool] = None,
+    user_offset: int = 0,
 ) -> Dict[str, Any]:
-    """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数+action params补齐+warning detail动态化+去死代码"""
+    _act_params = {"dir_path": dir_path}
+    if user_sort_by:
+        _act_params["sort_by"] = user_sort_by
+    if user_include_hidden is not None:
+        _act_params["include_hidden"] = user_include_hidden
+    if user_offset:
+        _act_params["offset"] = user_offset
     if exec_code == "error":
         return {
-            "summary": f"列出目录失败: {detail}",
-            "action": {"tool": "list_directory", "tool_zh": "列出目录", "target": dir_path, "params": {}},
-            "status": {"exec_code": "error", "message": "列出目录失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": ""},
+            "summary": f"列出目录失败: {dir_path}",
+            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
+            "status": {"exec_code": "error", "message": "列出目录失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     m: Dict[str, Any] = {"total": {"value": total, "text": f"{total}项"}}
-    if truncated:
+    if exec_code == "warning":
         m["truncated"] = {"value": True, "text": "已截断"}
+        warning_detail = detail if detail else "结果过多已截断，仅显示前200项"
+        warning_hint = hint if hint else "请使用更精确的路径或筛选条件"
+        return {
+            "summary": f"列出目录成功: {dir_path} ({total}项，已截断)",
+            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
+            "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": warning_detail, "hint": warning_hint},
+            "duration_ms": duration_ms,
+            "metrics": m,
+        }
     return {
         "summary": f"列出目录成功: {dir_path} ({total}项)",
-        "action": {"tool": "list_directory", "tool_zh": "列出目录", "target": dir_path, "params": {}},
+        "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "列出目录成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": m,
     }
 
 
-async def _get_directory_tree(
-    dir_path: str, max_depth: int = 10,
-) -> Dict[str, Any]:
-    """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时"""
-    is_valid, error_msg = _validate_path(dir_path)
-    if not is_valid:
-        return {"error_detail": error_msg, "params": {"dir_path": dir_path}}
-
-    path = Path(dir_path)
-    if not path.exists():
-        return {"error_detail": "目录不存在", "params": {"dir_path": dir_path}}
-    if not path.is_dir():
-        return {"error_detail": "不是目录", "params": {"dir_path": dir_path}}
-
-    def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
-        if depth > max_depth:
-            return None
-        try:
-            st = current_path.stat()
-        except OSError:
-            return None
-        node: Dict[str, Any] = {
-            "name": current_path.name,
-            "path": str(current_path.absolute()),
-            "type": "directory" if current_path.is_dir() else "file",
-            "size": st.st_size if not current_path.is_dir() else None,
-            "mtime": st.st_mtime,
-        }
-        if current_path.is_dir():
-            children = []
-            try:
-                for item in sorted(current_path.iterdir(), key=lambda x: x.name.lower()):
-                    child = _build_tree(item, depth + 1)
-                    if child:
-                        children.append(child)
-            except (PermissionError, OSError):
-                pass
-            node["children"] = children
-        return node
-
-    tree = await asyncio.to_thread(_build_tree, path)
-    if tree is None:
-        return {"error_detail": "构建目录树失败", "params": {"dir_path": dir_path}}
-
-    f, d, s = _count_tree_stats(tree)
-    return {"tree": tree, "statistics": {"file_count": f, "dir_count": d, "total_size": s}}
-
-
-async def list_directory(
+async def listdir(
     dir_path: str,
-    recursive: bool = False,
     sort_by: str = "name",
     include_hidden: bool = False,
+    offset: int = 0,
 ) -> Dict[str, Any]:
-    """列出目录内容 — 小沈 2026-05-19 — 小欧 2026-06-22 独立文件"""
+    """列出目录内容 — 小沈 2026-05-19 — 小欧 2026-06-22 — 小沈 2026-07-03 拆分tree — 小欧 2026-07-04 offset分页"""
     t0 = _time_mod.perf_counter()
-    max_depth = 10
-    format_mode = "tree" if recursive else "list"
+
+    if not dir_path or not dir_path.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", hint="请提供有效的目录路径", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        return build_error(data={"error_detail": "dir_path不能为空", "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
     if sort_by not in ("name", "size", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'")
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'", hint="sort_by参数只能为name/size/mtime", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={"error_detail": f"sort_by只支持name/size/mtime", "params": {"sort_by": sort_by}}, llm_data=llm_data)
 
-    if format_mode == "tree":
-        tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth)
+    if offset < 0:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        if "error_detail" in tree_result:
-            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=tree_result["error_detail"])
-            return build_error(data=tree_result, llm_data=llm_data)
-        else:
-            llm_data = _build_list_directory_llm_data("success", duration_ms, dir_path=dir_path, total=tree_result["statistics"]["file_count"] + tree_result["statistics"]["dir_count"])
-            return build_success(data=tree_result, llm_data=llm_data)
-
-    is_valid, error_msg = _validate_path(dir_path)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=error_msg)
-        return build_error(data={"error_detail": error_msg, "params": {"dir_path": dir_path}}, llm_data=llm_data)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"offset必须>=0,当前值: {offset}", hint="offset从0开始,负值无效", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        return build_error(data={"error_detail": f"offset必须>=0", "params": {"offset": offset}}, llm_data=llm_data)
 
     path = Path(dir_path)
-    start_offset = 0
+    start_offset = offset
 
     try:
-        if not path.exists():
+        # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, _ = validate_path(OpCategory.LIST_DIR, dir_path)
+        if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"目录不存在: {dir_path}")
-            return build_error(data={"error_detail": "目录不存在", "params": {"dir_path": dir_path}}, llm_data=llm_data)
-        if not path.is_dir():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"不是目录: {dir_path}")
-            return build_error(data={"error_detail": "不是目录", "params": {"dir_path": dir_path}}, llm_data=llm_data)
+            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=err, hint="请检查目录路径是否正确", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+            return build_error(data={"error_detail": err, "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
-        deadline = time.monotonic() + TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"]) - 2
+        deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution = await asyncio.to_thread(
-            _scan_directory_sync, path, recursive, max_depth, include_hidden, deadline,
+            _scan_directory_sync, path, False, 10, include_hidden, deadline,
         )
 
         if sort_by == "size":
@@ -275,23 +233,37 @@ async def list_directory(
             all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
 
         total = len(all_entries)
-        MAX_DISPLAY_ENTRIES = 200
         statistics = {
             "total_size": stats["total_size"], "dir_count": stats["dir_count"],
             "file_count": stats["file_count"], "sort_by": sort_by,
             "file_types": file_types, "size_distribution": size_distribution,
         }
 
-        if total > MAX_DISPLAY_ENTRIES:
-            logger.warning(f"[list_directory] Large directory truncated: path={path}, total={total}")
+        if total > LISTDIR_PAGE_SIZE:
+            logger.warning(f"[listdir] Large directory truncated: path={path}, total={total}")
 
-        list_data = _build_list_success(all_entries, total, path, statistics, start_offset, MAX_DISPLAY_ENTRIES)
+        list_data = _build_list_success(all_entries, total, path, statistics, start_offset, LISTDIR_PAGE_SIZE)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("success", duration_ms, dir_path=dir_path, total=total, truncated=list_data["truncated"])
+        exec_code = "warning" if list_data["truncated"] else "success"
+        llm_data = _build_list_directory_llm_data(exec_code, duration_ms, dir_path=dir_path, total=total, truncated=list_data["truncated"], user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        if exec_code == "warning":
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #3 entries
+            # trigger: "entries" in data — entries 是 List[dict]
+            # handler: _format_entries(data["entries"])
+            # file:    observation_formatter.py:128-130
+            # ------------------------------------------------------------------------------
+            return build_warning(data=list_data, llm_data=llm_data)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #3 entries
+        # trigger: "entries" in data — entries 是 List[dict]
+        # handler: _format_entries(data["entries"])
+        # file:    observation_formatter.py:128-130
+        # ------------------------------------------------------------------------------
         return build_success(data=list_data, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"Failed to list directory {dir_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=str(e))
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=str(e), hint="请检查目录路径和访问权限", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={"error_detail": str(e), "params": {"dir_path": dir_path}}, llm_data=llm_data)

@@ -17,29 +17,56 @@ DataAnalysis Schema - 数据分析工具参数模型
 【2026-06-20 小健】提取_DbConnectionMixin基类,3个SQL Schema共用连接参数(DRY)
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Dict, Any, List, Union, Literal
 
 
 class _DbConnectionMixin(BaseModel):
-    """数据库连接参数混入基类 — 小健 2026-06-20 DRY:3个SQL Schema共用"""
+    """connection_type决定使用db_path还是connection_string,严禁交叉传入"""
     connection_type: Literal["sqlite", "mysql", "postgresql"] = Field(
         default="sqlite",
-        description="数据库类型。可选值:sqlite/mysql/postgresql。默认为sqlite"
+        description="数据库类型。可选值:sqlite/mysql/postgresql。默认为sqlite。connection_type=sqlite时用db_path,mysql/postgresql时用connection_string"
     )
     connection_string: Optional[str] = Field(
         default=None,
-        description="MySQL/PostgreSQL 连接字符串(connection_type=mysql/postgresql时必填)。示例:user:pass@host:port/dbname"
+        description="MySQL/PostgreSQL连接字符串(connection_type=mysql/postgresql时必填,connection_type=sqlite时严禁传入)。示例:user:pass@host:port/dbname"
     )
     db_path: Optional[str] = Field(
         default=None,
-        description="SQLite 数据库文件路径(connection_type=sqlite时必填)。示例:D:/data/app.db"
+        description="SQLite数据库文件路径(connection_type=sqlite时必填,connection_type=mysql/postgresql时严禁传入)。示例:D:/data/app.db"
     )
 
+    @model_validator(mode="after")
+    def _check_connection_params(self):
+        if self.connection_type == "sqlite":
+            if not self.db_path:
+                raise ValueError("connection_type=sqlite时db_path必填")
+            if self.connection_string:
+                raise ValueError("connection_type=sqlite时严禁传入connection_string")
+        else:
+            if not self.connection_string:
+                raise ValueError(f"connection_type={self.connection_type}时connection_string必填")
+            if self.db_path:
+                raise ValueError(f"connection_type={self.connection_type}时严禁传入db_path")
+        return self
+
 class GenerateChartInput(BaseModel):
-    data: Dict[str, Any] = Field(
+    data: str = Field(
         ...,
-        description="图表数据(JSON 格式)。如 {\"labels\": [\"A\", \"B\", \"C\"], \"values\": [10, 20, 30]}"
+        description="""数据文件路径(绝对路径)。
+
+【支持格式】
+- CSV文件: D:/data/sales.csv
+- Excel文件: D:/data/sales.xlsx
+
+【文件要求】
+- 至少2列数据
+- 第1列作为labels（横轴标签）
+- 第2列作为values（纵轴数值）
+
+【示例】
+- CSV文件: data="D:/data/sales.csv"
+- Excel文件: data="D:/data/report.xlsx" """
     )
     chart_type: Optional[Literal["bar", "line", "pie", "scatter"]] = Field(
         default="bar",
@@ -51,14 +78,40 @@ class GenerateChartInput(BaseModel):
     )
     output_path: Optional[str] = Field(
         default=None,
-        description="输出图片路径(可选)。不传则自动生成临时路径如<temp>/chart_<时间戳>.png"
+        description="""输出图片路径(绝对路径,可选)。
+
+- 不传: 默认在数据文件同目录生成 chart_<时间戳>.png
+- 传入: 使用指定路径
+
+示例: D:/output/chart.png"""
     )
 
 
 class AnalyzeDataInput(BaseModel):
-    data: Union[str, List[Dict[str, Any]]] = Field(
-        ...,
-        description="要分析的数据。可以是数组或CSV/XLSX/XLS文件路径"
+    """file_path和data参数互斥,只能传入其中一个 - 小欧-2026-06-27完善"""
+    file_path: Optional[str] = Field(
+        default=None,
+        description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时使用。示例:D:/data/sales.csv"
+    )
+    data: Optional[str] = Field(
+        default=None,
+        description="JSON字符串形式的数组数据。严禁与file_path参数同时使用。示例:'[{\"name\":\"A\",\"value\":10}]'"
+    )
+    operations: Optional[List[str]] = Field(
+        default=None,
+        description="""统计操作列表。不填则使用全部统计操作。
+
+【支持的操作】
+- mean: 均值
+- sum: 求和
+- count: 计数
+- min: 最小值
+- max: 最大值
+- std: 标准差
+
+【默认值】不填时使用全部: ["mean", "sum", "count", "min", "max", "std"]
+
+【示例】operations=["mean", "std"]"""
     )
     group_by: Optional[str] = Field(
         default=None,
@@ -72,20 +125,56 @@ class AnalyzeDataInput(BaseModel):
         default=None,
         description="只返回前N条结果。不填则返回全部"
     )
+    max_rows: Optional[int] = Field(
+        default=None,
+        description="最大读取行数。对于大文件,可以限制读取的行数以提高性能"
+    )
+
+    @model_validator(mode="after")
+    def _check_file_path_or_data(self):
+        if self.file_path and self.data:
+            raise ValueError("file_path和data参数互斥,只能传入其中一个")
+        if not self.file_path and not self.data:
+            raise ValueError("file_path和data参数必须传入其中一个")
+        return self
 
 
 class FilterDataInput(BaseModel):
-    data: Union[str, List[Dict[str, Any]]] = Field(
-        ...,
-        description="要筛选的数据。可以是数组或CSV/Excel文件路径"
+    """file_path和data参数互斥,只能传入其中一个 - 小欧-2026-06-27完善"""
+    file_path: Optional[str] = Field(
+        default=None,
+        description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时传入。示例:D:/data/users.csv"
+    )
+    data: Optional[str] = Field(
+        default=None,
+        description="JSON字符串形式的数组数据。严禁与file_path参数同时传入。示例:'[{\"name\":\"A\",\"age\":25}]'"
     )
     conditions: List[Dict[str, Any]] = Field(
-        ...,
-        description="筛选条件列表。每个条件: {\"column\": \"列名\", \"operator\": \"操作符\", \"value\": 值}。操作符: eq/ne/gt/gte/lt/lte/in/contains/not_contains"
+        ..., 
+        description="""筛选条件列表。每个条件: {"column": "列名", "operator": "操作符", "value": 值}
+
+【支持的操作符】
+- eq: 等于 (value: 任意值)
+- ne: 不等于 (value: 任意值)
+- gt: 大于 (value: 数值)
+- gte: 大于等于 (value: 数值)
+- lt: 小于 (value: 数值)
+- lte: 小于等于 (value: 数值)
+- in: 包含于 (value: 列表)
+- contains: 字符串包含 (value: 字符串)
+- not_contains: 字符串不包含 (value: 字符串)
+
+【示例】
+[{"column": "age", "operator": "gte", "value": 25}]
+[{"column": "name", "operator": "contains", "value": "张"}]"""
     )
     select_columns: Optional[List[str]] = Field(
         default=None,
         description="选择返回的列(可选)。如 [\"name\", \"age\"]"
+    )
+    max_rows: Optional[int] = Field(
+        default=None,
+        description="最大读取行数。对于大文件,可以限制读取的行数以提高性能"
     )
     sort_by: Optional[str] = Field(
         default=None,
@@ -96,22 +185,77 @@ class FilterDataInput(BaseModel):
         description="只返回前N条结果。不填则返回全部"
     )
 
+    @model_validator(mode="after")
+    def _check_file_path_or_data(self):
+        if self.file_path and self.data:
+            raise ValueError("file_path和data参数互斥,只能传入其中一个")
+        if not self.file_path and not self.data:
+            raise ValueError("file_path和data参数必须传入其中一个")
+        return self
+
 
 class QuerySqlInput(_DbConnectionMixin):
+    """SQL查询语句（单条，只读,严禁多条语句）。
+
+【重要限制】
+- 一次只能执行一条SELECT语句
+- 不支持分号分隔的多条语句
+- 强制只读：仅允许 SELECT/SHOW/DESCRIBE/PRAGMA/WITH/EXPLAIN
+- 写入操作（INSERT/UPDATE/DELETE/DDL）会返回错误
+
+"""
     sql: str = Field(
         ...,
-        description="SQL 查询语句。工具强制只读:仅允许 SELECT/SHOW/DESCRIBE/PRAGMA/WITH/EXPLAIN,写入操作返回错误。必填参数"
+        description="""SQL查询语句（单条，只读,严禁多条语句）
+【示例】
+✅ 正确: SELECT * FROM users WHERE age > 25
+✅ 正确: SELECT name, COUNT(*) FROM orders GROUP BY name
+❌ 错误: SELECT * FROM users; SELECT * FROM orders
+❌ 错误: INSERT INTO users ...（写入操作不允许）"""
     )
 
 
 class ExecuteSqlInput(_DbConnectionMixin):
+    """SQL写入语句（单条,严禁多条语句）。
+
+【重要限制】
+- 一次只能执行一条SQL语句
+- 不支持分号分隔的多条语句
+- 多条语句请多次调用execute_sql
+
+【支持的语句】
+- INSERT: 插入数据
+- UPDATE: 更新数据
+- DELETE: 删除数据
+- DDL: CREATE/ALTER/DROP（危险操作会拦截）
+
+【常见错误避免】
+1. UNIQUE约束失败: 插入前先用query_sql检查是否存在
+2. 外键约束失败: 确保引用的记录存在
+3. 语法错误: 检查SQL语法
+
+"""
     sql: str = Field(
         ...,
-        description="SQL 写入语句。支持 INSERT/UPDATE/DELETE/DDL。必填参数"
+        description="""SQL写入语句（单条）严禁多条语句。
+【示例】
+✅ 正确: INSERT INTO users (id, name) VALUES (1, 'Alice')
+❌ 错误: INSERT INTO users ...; INSERT INTO orders ...
+如需执行多条语句，请多次调用execute_sql"""
     )
     dry_run: bool = Field(
         default=False,
-        description="预检模式。True=仅校验语法不执行,返回syntax_valid=True。默认False。注意:检测到危险操作(DROP/TRUNCATE/ALTER/DELETE无WHERE等)时工具自动拦截返回WARNING,与dry_run无关"
+        description="""预检模式。
+
+【功能】
+- True: 仅校验SQL语法，不执行
+- False: 实际执行SQL
+
+【返回】
+- syntax_valid=True: 语法正确
+- syntax_valid=False: 语法错误
+
+【注意】危险操作（DROP/TRUNCATE/ALTER/DELETE无WHERE等）会自动拦截返回WARNING，与dry_run无关"""
     )
 
 

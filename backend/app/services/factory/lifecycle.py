@@ -53,4 +53,4 @@ def reset():
     from app.services.factory.service import reset_instance
     old = reset_instance()
     close_instance_sync(old)
-    print("[AIServiceFactory] 工厂状态已重置")
+    logger.info("[AIServiceFactory] 工厂状态已重置")

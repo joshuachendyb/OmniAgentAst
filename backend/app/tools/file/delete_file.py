@@ -17,17 +17,14 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_FILE_DELETE_FAILED
-from app.services.context_vars import _current_task_id
+from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
+from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
+
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.utils.logger import logger
 
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 def _remove_readonly(func, path, excinfo):
@@ -70,21 +67,28 @@ def _send2trash_sync(path: Path, recursive: bool = False) -> Tuple[bool, str]:
 def _build_delete_file_llm_data(
     exec_code: str, duration_ms: int,
     source: str = "", detail: str = "", extra_metrics: Optional[Dict] = None,
+    hint: str = "",
+    user_recursive: Optional[bool] = None, user_force: Optional[bool] = None,
 ) -> Dict[str, Any]:
-    """delete_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """delete_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数"""
+    _act_params = {"source": source}
+    if user_recursive is not None:
+        _act_params["recursive"] = user_recursive
+    if user_force is not None:
+        _act_params["force"] = user_force
     extra_metrics = extra_metrics or {}
     if exec_code == "error":
         return {
-            "summary": f"删除失败: {detail}",
-            "action": {"tool": "delete_file", "tool_zh": "删除", "target": source, "params": {"source": source}},
-            "status": {"exec_code": "error", "message": f"删除失败: {detail}", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": "请检查文件是否存在"},
+            "summary": f"删除失败: {source}",
+            "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": _act_params},
+            "status": {"exec_code": "error", "message": "删除失败", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查文件是否存在"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     _suffix = extra_metrics.get("status", {}).get("text", "") or extra_metrics.get("deleted", {}).get("text", "")
     return {
         "summary": f"删除 {source}，{_suffix}" if _suffix else f"删除 {source}",
-        "action": {"tool": "delete_file", "tool_zh": "删除", "target": source, "params": {"source": source}},
+        "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": _act_params},
         "status": {"exec_code": "success", "message": "删除成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics,
@@ -95,12 +99,11 @@ async def _delete_file_impl(
     file_path: str, recursive: bool = False, force: bool = False,
 ) -> Dict[str, Any]:
     """删除文件或目录实现 — 小欧 2026-06-22 — 小健 2026-06-22 重构：只返回raw dict，不含build3/llm_data"""
-    is_valid, error_msg = _validate_path(file_path)
-    if not is_valid:
-        return {"success": False, "error_detail": error_msg, "params": {"source": file_path}}
 
     path = Path(file_path)
     try:
+        if path.is_dir() and not recursive:
+            return {"success": False, "error_detail": "删除非空目录需要设置recursive=True", "params": {"source": file_path}}
         if not path.exists():
             return {"success": True, "action": "delete", "source": file_path, "already_deleted": True}
 
@@ -118,7 +121,12 @@ async def _delete_file_impl(
                 return _force_delete_sync(path, recursive), "permanent"
             return _send2trash_sync(path, recursive)
 
-        is_ok, method = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_delete_sync)
+        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+        if operation_id:
+            is_ok, method = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_delete_sync)
+        else:
+            logger.info("Database unavailable, executing delete operation without recording")
+            is_ok, method = await asyncio.to_thread(_delete_sync)
 
         if is_ok:
             return {"success": True, "operation_id": operation_id, "deleted_path": str(path), "mode": method}
@@ -129,34 +137,54 @@ async def _delete_file_impl(
         return {"success": False, "error_detail": str(e), "params": {"source": file_path}}
 
 
-async def delete_file(
+async def delete(
     source: str,
     recursive: bool = False,
     force: bool = False,
 ) -> Dict[str, Any]:
     """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3"""
     t0 = _time_mod.perf_counter()
-    src_path = Path(source)
-    if not src_path.exists():
+    if not source or not source.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": {"value": "already_deleted", "text": "文件已删除"}})
-        return build_success(data={}, llm_data=llm_data)
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail="source不能为空", user_recursive=recursive, user_force=force)
+        return build_error(data={"error_detail": "source不能为空", "params": {"source": source}}, llm_data=llm_data)
+    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在（含递归/强制警告） — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, warn = validate_path(OpCategory.EXISTS, source, recursive=recursive, force=force)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=err, user_recursive=recursive, user_force=force)
+        return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
+    if warn:
+        logger.warning(warn)
 
     result = await _delete_file_impl(file_path=source, recursive=recursive, force=force)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
     if result.get("success"):
         if result.get("already_deleted"):
-            llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": {"value": "already_deleted", "text": "文件已删除"}})
+            llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": {"value": "already_deleted", "text": "文件已删除"}}, user_recursive=recursive, user_force=force)
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #0 空data (L73)
+            # trigger: data 为 {} → if not data: return ""
+            # handler: 直接返回空字符串
+            # file:    observation_formatter.py:73-74
+            # ------------------------------------------------------------------------------
             return build_success(data={}, llm_data=llm_data)
         delete_mode = "永久删除" if force else "放入回收站"
         extra_m = {"mode": {"value": result.get("mode", ""), "text": delete_mode}}
-        llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics=extra_m)
+        llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics=extra_m, user_recursive=recursive, user_force=force)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val)
+        # trigger: 无上述20条分支匹配 — operation_id/deleted_path 不命中专用分支
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(
             data={"operation_id": result.get("operation_id"), "deleted_path": result.get("deleted_path")},
             llm_data=llm_data,
         )
     else:
         error_detail = result.get("error_detail", "删除文件失败")
-        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=error_detail)
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=error_detail, user_recursive=recursive, user_force=force)
         return build_error(data={"error_detail": error_detail, "params": result.get("params", {})}, llm_data=llm_data)

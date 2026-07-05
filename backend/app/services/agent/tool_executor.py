@@ -5,39 +5,73 @@ tool_executor — 工具执行逻辑
 从universal_agent拆出 — 小沈 2026-06-17
 """
 
+import time
 from typing import Any, Dict, Set
 
 from app.tools.tool_types import ToolCategory
 
 
 async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
-    """执行工具并处理tool_search自动注入"""
+    """执行工具并处理searchtool自动注入 — 小健 2026-06-26 修复状态判断逻辑"""
+    from app.tools.tool_response import is_success
+    
+    start = time.time()
     result = await agent._retry_engine.execute_tool_with_retry(tool_name, tool_params)
-    if tool_name == "tool_search":
+    elapsed = time.time() - start
+    
+    # 小健 2026-06-26: 使用is_success函数判断状态，而非错误的result.get("code")
+    status = "ok" if is_success(result) else "fail"
+    _log_single_tool(tool_name, tool_params, elapsed, status)
+    
+    if tool_name == "searchtool":
         auto_inject_from_search(agent, result)
     return result
 
 
-def auto_inject_from_search(agent, result: Dict[str, Any]) -> None:
-    """从tool_search结果自动注入分类给LLM — 小欧 2026-06-21 适配新3字段result
+def _log_single_tool(tool_name: str, params: Dict[str, Any], elapsed: float, status: str) -> None:
+    """一行格式: [tool_executor] tool=xxx, 耗时=0.35s, 状态=ok, params无敏感字段"""
+    from app.utils.logger import logger
+    keys = list(params.keys()) if params else []
+    logger.info(f"[tool_executor] tool={tool_name}, 耗时={elapsed:.2f}s, 状态={status}, params={keys}")
 
+
+def auto_inject_from_search(agent, result: Dict[str, Any]) -> None:
+    """从searchtool结果自动注入整个工具类给LLM — 小欧 2026-06-23
+
+    P0-4修复: 匹配到一个工具，就把该工具所在的整个类(如NETWORK)全部注入LLM。
+    因为LLM知道类名后就能理解该类的所有工具，无需逐个注入。
+    
     注意：注入(inject)是指将工具描述提供给LLM使用，工具函数已在启动时注册(register)
     """
     from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_search_desc
     data = result.get("data", {})
     llm_matches = data.get("matches", [])
-    new_cats: Set[ToolCategory] = set()
-    for m in llm_matches:
-        try:
-            cat = ToolCategory(m["category"])
-        except (ValueError, KeyError):
-            continue
-        if cat not in agent._loaded_categories:
-            new_cats.add(cat)
-    if not new_cats:
+    if not llm_matches:
         return
-    for cat in new_cats:
-        agent._loaded_categories.add(cat)
-        agent._tool_loader.load_category(cat)
+
+    # 收集匹配工具所属的tool类别
+    new_categories: Set[ToolCategory] = set()
+    for m in llm_matches:
+        cat_str = m.get("category", "")
+        if cat_str:
+            try:
+                new_categories.add(ToolCategory(cat_str))
+            except ValueError:
+                continue
+
+    if not new_categories:
+        return
+
+    before = len(agent._loaded_categories)
+    agent._loaded_categories.update(new_categories)
+    after = len(agent._loaded_categories)
+    if after <= before:
+        return
+
+    # 同时加载工具实现到_tools_dict，确保ToolRetryEngine可执行
+    for cat in new_categories:
+        if hasattr(agent, '_tool_loader'):
+            agent._tool_loader.load_category(cat)
+
     invalidate_tool_cache(agent)
     patch_search_desc(agent)

@@ -8,11 +8,11 @@ Network Register - 网络通信工具注册点
 - 使用 Pydantic 模型注册,自动生成 OpenAI Schema
 
 【工具列表】(共5个)— 【2026-05-17 小沈】P1: 6→5,ping+port_check→network_diagnose
-1. http_request - 发起HTTP请求
-2. download_file - 下载文件到本地
-3. fetch_webpage - 获取和处理网页内容
-4. search_web - 搜索网络获取最新信息
-5. network_diagnose - 网络连通性诊断(合并ping+port_check)
+1. httpget - 发起HTTP请求
+2. download - 下载文件到本地
+3. fetchpage - 获取和处理网页内容
+4. searchweb - 搜索网络获取最新信息
+5. ping_port - 网络连通性诊断(ping+端口检测,原名network_diagnose)
 
 创建时间: 2026-04-29
 更新时间: 2026-05-17 小沈
@@ -24,17 +24,17 @@ Network Register - 网络通信工具注册点
 from app.tools.registry import register_tool, tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
-from typing import Optional
+from typing import Any, Dict, Optional
 
 # 网络工具依赖配置 — 小健 2026-06-18
 # 每个工具对应的第三方依赖包列表
 # 注意：httpx必须使用0.26.0版本，httpcore必须使用1.0.1版本（AGENTS.md明确要求）
 NETWORK_TOOL_DEPENDENCIES = {
-    "http_request": ["httpx==0.26.0", "httpcore==1.0.1"],
-    "download_file": ["httpx==0.26.0", "httpcore==1.0.1"],
-    "fetch_webpage": ["httpx==0.26.0", "httpcore==1.0.1"],
-    "search_web": ["httpx==0.26.0", "httpcore==1.0.1"],
-    "network_diagnose": [],  # 使用内置库
+    "httpget": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "download": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "fetchpage": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "searchweb": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "ping_port": [],  # 使用内置库
 }
 
 
@@ -51,6 +51,31 @@ def _http_request_failure_hint(tool_params: Optional[dict] = None) -> str:
     hint += "请勿重复请求同一失败URL!"
     return hint
 
+def check_network() -> Dict[str, Any]:
+    """检查网络连通性 — 小欧 2026-06-24 从3个文件中提取公共函数"""
+    import socket
+    import time
+    test_hosts = [("dns.google", 53), ("8.8.8.8", 53), ("1.1.1.1", 53)]
+    for host, port in test_hosts:
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            t1 = time.time()
+            sock.connect((host, port))
+            latency = (time.time() - t1) * 1000
+            return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
+        except (socket.timeout, socket.error, OSError):
+            pass
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+    return {"connected": False}
+
+
 # 导入 Pydantic 模型
 from app.tools.network.network_schema import (
     HttpRequestInput,
@@ -60,57 +85,57 @@ from app.tools.network.network_schema import (
     NetworkDiagnoseInput,
 )
 
-from app.tools.network.http_request import http_request
-from app.tools.network.download_file import download_file
-from app.tools.network.fetch_webpage import fetch_webpage
-from app.tools.network.search_web import search_web
-from app.tools.network.network_diagnose import network_diagnose
+from app.tools.network.http_request import httpget
+from app.tools.network.download_file import download
+from app.tools.network.fetch_webpage import fetchpage
+from app.tools.network.search_web import searchweb
+from app.tools.network.network_diagnose import ping_port
 
 # 工具描述
 NETWORK_TOOL_DESCRIPTIONS = {
-    "http_request": """发送HTTP请求到指定URL。支持GET/POST/PUT/DELETE/PATCH等方法,支持自定义请求头、JSON请求体、查询参数。返回响应的状态码、响应头和响应体(JSON自动解析为对象)。访问国外服务失败时提示可选的国内替代地址。适用场景:需要调用REST API获取数据、提交数据、调用Web服务接口时使用。""",
-    "download_file": """从URL下载文件到本地,支持大文件流式下载。自动创建目标目录。返回文件保存路径、下载字节数、文件总大小、进度百分比和内容类型。适用场景:需要下载网络上的图片、安装包、数据文件等到本地磁盘时使用。""",
-    "fetch_webpage": """获取网页内容并提取正文,支持Markdown/HTML/Text格式输出。当需要从网页中提取特定信息时,可通过prompt参数指定提取指令(由LLM后处理)。返回提取的网页内容、格式类型和HTTP状态码。适用场景:需要获取网页文档内容、从网页中提取特定数据、将网页转为Markdown后供LLM阅读时使用。""",
-    "search_web": """使用搜索引擎查询最新信息,默认使用国内可用的Bing中国搜索。返回搜索结果列表(含标题、URL、摘要)、结果总数和使用的搜索引擎。适用场景:需要获取实时信息、新闻动态、技术文档、问题解决方案等最新网络信息时使用。""",
-    "network_diagnose": """网络连通性诊断工具。mode=ping(默认)ICMP可达性检测(主机级),mode=port TCP端口检测(服务级,port参数必填)。适用场景:需要检测网络连通性、排查网络问题时使用。""",
+    "httpget": """发送HTTP请求到指定URL,支持GET/POST/PUT/DELETE等方法。适用场景:需要调用REST API获取数据、提交数据、调用Web服务时使用。""",
+    "download": """从URL下载文件到本地磁盘。适用场景:需要下载图片、安装包、数据文件等到本地时使用。""",
+    "fetchpage": """获取网页内容并提取正文,支持Markdown/HTML格式输出。适用场景:需要阅读网页文档、从网页提取信息时使用。""",
+    "searchweb": """使用搜索引擎查询最新信息。适用场景:需要获取实时新闻、技术文档、问题解决方案时使用。""",
+    "ping_port": """检测网络连通性,支持ping和TCP端口检测。适用场景:需要排查网络连接问题时使用。""",
 }
 
 # 工具名到实现函数的映射
 NETWORK_TOOL_IMPLEMENTATIONS = {
-    "http_request": http_request,
-    "download_file": download_file,
-    "fetch_webpage": fetch_webpage,
-    "search_web": search_web,
-    "network_diagnose": network_diagnose,
+    "httpget": httpget,
+    "download": download,
+    "fetchpage": fetchpage,
+    "searchweb": searchweb,
+    "ping_port": ping_port,
 }
 
 # 工具名到 Pydantic 模型的映射
 NETWORK_TOOL_INPUT_MODELS = {
-    "http_request": HttpRequestInput,
-    "download_file": DownloadFileInput,
-    "fetch_webpage": FetchWebpageInput,
-    "search_web": SearchWebInput,
-    "network_diagnose": NetworkDiagnoseInput,
+    "httpget": HttpRequestInput,
+    "download": DownloadFileInput,
+    "fetchpage": FetchWebpageInput,
+    "searchweb": SearchWebInput,
+    "ping_port": NetworkDiagnoseInput,
 }
 
 # 使用示例
 NETWORK_TOOL_EXAMPLES = {
-    "http_request": [
+    "httpget": [
         {"url": "https://api.github.com/repos/python/cpython", "method": "GET"},
-        {"url": "https://httpbin.org/post", "method": "POST", "json_body": {"name": "test", "value": 123}},
+        {"url": "https://httpbin.org/post", "method": "POST", "body": {"name": "test", "value": 123}},
     ],
-    "download_file": [
+    "download": [
         {"url": "https://github.com/python/cpython/archive/refs/heads/main.zip", "destination_path": "D:/Downloads/cpython-main.zip"},
     ],
-    "fetch_webpage": [
+    "fetchpage": [
         {"url": "https://example.com", "extract_format": "markdown"},
         {"url": "https://docs.python.org/3/library/asyncio.html", "prompt": "提取asyncio的主要功能和使用示例"},
     ],
-    "search_web": [
+    "searchweb": [
         {"query": "OpenAI function calling"},
         {"query": "React 19 新特性"},
     ],
-    "network_diagnose": [
+    "ping_port": [
         {"host": "8.8.8.8"},
         {"host": "8.8.8.8", "mode": "port", "port": 53},
         {"host": "baidu.com"},
@@ -126,7 +151,7 @@ def _register_network_tools():
     for tool_name in NETWORK_TOOL_DESCRIPTIONS:
         input_model = NETWORK_TOOL_INPUT_MODELS[tool_name]
         examples = NETWORK_TOOL_EXAMPLES.get(tool_name, [])
-        failure_hint_fn = _http_request_failure_hint if tool_name == "http_request" else None
+        failure_hint_fn = _http_request_failure_hint if tool_name == "httpget" else None
         tool_registry.register(
             name=tool_name,
             description=NETWORK_TOOL_DESCRIPTIONS[tool_name],
@@ -144,5 +169,6 @@ def _register_network_tools():
 # 【Phase 1修复 小健 2026-05-14】删除模块级注册代码,改为ensure_tools_registered统一调用
 # 原代码:import时自动执行register_network_tools(),破坏按需注册
 # 现在:导出register函数供ensure_tools_registered显式调用
+
 
 __all__ = ["_register_network_tools"]

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_DESKTOP_GET_WINDOW_INFO, ERR_INVALID_ACTION, ERR_WINDOW_LIST, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE
+from app.tools.tool_constants import ERR_DESKTOP_GET_WINDOW_INFO, ERR_INVALID_ACTION, ERR_WINDOW_LIST, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE
 
 
 _HAS_WIN32 = False
@@ -82,57 +82,50 @@ def find_windows_by_title(window_title: str) -> List[int]:
     if not _win32gui:
         return []
     windows = []
-    def callback(hwnd: int, _: List) -> bool:
+    def callback(hwnd: int, _: List) -> int:
         try:
             title = _win32gui.GetWindowText(hwnd)
             if title and window_title.lower() in title.lower():
                 windows.append(hwnd)
         except Exception:
             pass
-        return True
+        return 1
     _win32gui.EnumWindows(callback, [])
     return windows
 
 
-def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> bool:
-    """枚举窗口回调函数 — 小健 2026-06-22"""
+def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> int:
+    """枚举窗口回调函数 — 小健 2026-06-22，小沈 2026-06-28修复返回类型"""
     try:
         if not _win32gui.IsWindowVisible(hwnd):
-            return True
+            return 1
         title = _win32gui.GetWindowText(hwnd)
         if not title:
-            return True
+            return 1
         rect = get_window_rect(hwnd)
         state = get_window_state(hwnd)
         windows.append({"hwnd": hwnd, "title": title, "state": state, "position": rect})
     except Exception:
         pass
-    return True
+    return 1
 
 
-_WINDOW_ACTIONS = {
-    "maximize": (_win32gui.ShowWindow, (_win32con.SW_MAXIMIZE,), "已最大化窗口") if _HAS_WIN32 else None,
-    "minimize": (_win32gui.ShowWindow, (_win32con.SW_MINIMIZE,), "已最小化窗口") if _HAS_WIN32 else None,
-    "restore": (_win32gui.ShowWindow, (_win32con.SW_RESTORE,), "已还原窗口") if _HAS_WIN32 else None,
-    "topmost": (_win32gui.SetWindowPos, (_win32con.HWND_TOPMOST, 0, 0, 0, 0,
-              _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE), "已置顶窗口") if _HAS_WIN32 else None,
-    "unpin": (_win32gui.SetWindowPos, (_win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
-            _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE), "已取消置顶窗口") if _HAS_WIN32 else None,
-}
-
-
-def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: int, filter_title: str = "", detail: str = "") -> dict:
-    """window_info的llm_data构建函数 — 小健 2026-06-22"""
+def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: int, filter_title: str = "",
+                                 include_minimized: bool = False, detail: str = "", hint: str = "") -> dict:
+    """window_info的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增include_minimized — 小欧 2026-07-05 加hint参数"""
+    _act_params = {"filter_title": filter_title}
+    if include_minimized:
+        _act_params["include_minimized"] = include_minimized
     if exec_code == "error":
         return {
             "summary": f"获取失败: {detail}" if detail else "获取失败",
-            "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
-            "status": {"exec_code": "error", "message": f"获取窗口列表失败: {detail}" if detail else "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": detail, "hint": "请检查窗口筛选条件"},
+            "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
+            "status": {"exec_code": "error", "message": f"获取窗口列表失败: {detail}" if detail else "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": detail, "hint": hint if hint else "请检查窗口筛选条件"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"获取 {filter_title or '全部'}，{window_count}个窗口",
-        "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
+        "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"windows": {"value": window_count, "text": f"{window_count}个"}},
@@ -146,7 +139,7 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         _err_detail = err.get("error_detail", "桌面工具不可用")
-        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", detail=_err_detail)
+        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", include_minimized, detail=_err_detail, hint="请确保系统为Windows且已安装pywin32库")
         return build_error(data={"error_detail": _err_detail, "params": err.get("params", {})}, llm_data=llm_data)
 
     try:
@@ -159,12 +152,18 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"windows": windows}
-        llm_data = _build_window_info_llm_data("success", duration_ms, len(windows), filter_title or "")
+        llm_data = _build_window_info_llm_data("success", duration_ms, len(windows), filter_title or "", include_minimized)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #15 windows table
+        # trigger: "windows" in data — windows 是 List[dict]
+        # handler: _format_windows(data)
+        # file:    observation_formatter.py:196-198
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         logger.error(f"window_info list error: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", detail=str(e))
+        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", include_minimized, detail=str(e), hint="获取窗口列表时发生异常,请检查系统窗口管理器状态后重试")
         return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
 
 

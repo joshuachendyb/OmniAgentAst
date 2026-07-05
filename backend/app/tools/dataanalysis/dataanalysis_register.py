@@ -47,27 +47,27 @@ from app.tools.dataanalysis.execute_sql import execute_sql
 from app.tools.dataanalysis.get_db_schema import get_db_schema
 
 DESCRIPTIONS = {
-    "analyze_data": """对数据集进行统计分析。支持直接传入数据列表或CSV/Excel文件路径。默认执行全部统计操作(mean/sum/max/min/count/std),支持分组统计和排序。需要安装pandas库。适用场景:需要获取数据的均值/总和/最值等描述性统计、分析数据分布特征时使用。""",
+    "analyze_data": """对数据集进行统计分析,支持均值/最值/计数等描述性统计和分组统计。适用场景:需要分析数据分布特征、获取统计数据时使用。""",
 
-    "filter_data": """按条件筛选/过滤数据。支持多条件组合,条件含column/operator(eq/ne/gt/gte/lt/lte/in/contains)/value。支持选择返回列、排序和取前N条。数据源可为数据列表或CSV/Excel文件路径。适用场景:需要从数据集中筛选出满足特定条件的记录、排序并取TopN时使用。""",
+    "filter_data": """按条件筛选数据,支持多条件组合和排序取前N条。适用场景:需要从数据集中筛选特定条件的记录时使用。""",
 
-    "generate_chart": """使用matplotlib生成数据可视化图表。支持柱状图(bar)、折线图(line)、饼图(pie)、散点图(scatter)。可指定图表标题和输出路径。默认保存到系统临时目录。适用场景:需要将数据以图表形式可视化呈现、生成报告配图时使用。""",
+    "generate_chart": """生成数据可视化图表,支持柱状图、折线图、饼图、散点图。适用场景:需要将数据以图表形式呈现、生成报告配图时使用。""",
 
-    "query_sql": """执行只读SQL查询。支持SELECT/SHOW/DESCRIBE/EXPLAIN/WITH/PRAGMA语句,强制只读,写操作返回错误。支持SQLite/MySQL/PostgreSQL三种数据库。SQLite必须提供db_path参数。适用场景:需要查询/分析数据库数据、获取表结构信息、分析查询执行计划时使用。""",
+    "query_sql": """执行只读SQL查询,支持SQLite/MySQL/PostgreSQL。适用场景:需要查询数据库数据、分析数据时使用。""",
 
-    "execute_sql": """执行写操作SQL。支持INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE等语句。仅支持单语句,自动提交事务。高风险操作(DROP/TRUNCATE/ALTER/DELETE无WHERE等)自动拦截返回WARNING。支持dry_run=TRUE预演模式。支持SQLite/MySQL/PostgreSQL三种数据库。SQLite必须提供db_path参数。适用场景:需要修改数据库数据、创建或修改表结构时使用。""",
+    "execute_sql": """执行写操作SQL,高风险操作自动拦截,支持预演模式。适用场景:需要修改数据库数据、创建或修改表结构时使用。需谨慎操作。""",
 
-    "get_db_schema": """获取数据库结构元数据。返回数据库中的表名、字段名/类型/约束和索引信息。可指定表名仅获取该表结构。支持SQLite/MySQL/PostgreSQL三种数据库。SQLite必须提供db_path参数。适用场景:需要了解数据库表结构、查看字段定义和索引时使用。""",
+    "get_db_schema": """获取数据库表结构,包括字段名、类型、约束和索引。适用场景:需要了解数据库结构、查看字段定义时使用。""",
 }
 
 EXAMPLES = {
     "analyze_data": [
-        {"data": [{"name": "A", "value": 10}, {"name": "B", "value": 20}]},
-        {"data": "D:/data/users.csv", "group_by": "city"},
+        {"data": "[{\"name\": \"A\", \"value\": 10}, {\"name\": \"B\", \"value\": 20}]"},
+        {"file_path": "D:/data/users.csv", "group_by": "city"},
     ],
     "filter_data": [
-        {"data": [{"name": "A", "age": 25}, {"name": "B", "age": 35}], "conditions": [{"column": "age", "operator": "gt", "value": 30}]},
-        {"data": "D:/data/users.csv", "conditions": [{"column": "city", "operator": "eq", "value": "\u5317\u4eac"}], "sort_by": "age", "top_n": 10},
+        {"data": "[{\"name\": \"A\", \"age\": 25}, {\"name\": \"B\", \"age\": 35}]", "conditions": [{"column": "age", "operator": "gt", "value": 30}]},
+        {"file_path": "D:/data/users.csv", "conditions": [{"column": "city", "operator": "eq", "value": "北京"}], "sort_by": "age", "top_n": 10},
     ],
     "generate_chart": [
         {"data": {"labels": ["A", "B"], "values": [10, 20]}, "chart_type": "bar", "title": "\u9500\u552e\u7edf\u8ba1"},

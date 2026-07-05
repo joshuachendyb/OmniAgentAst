@@ -46,6 +46,18 @@ class HTTPClient:
         self._follow_redirects = follow_redirects
         self._client = None
 
+    @staticmethod
+    async def _validate_redirect(response):
+        if 300 <= response.status_code < 400:
+            location = response.headers.get("location")
+            if location:
+                from urllib.parse import urljoin
+                from app.tools.validate.url_validator import validate_url
+                redirect_url = urljoin(str(response.url), location)
+                is_valid, err, _ = validate_url(redirect_url)
+                if not is_valid:
+                    raise httpx.InvalidURL(f"重定向目标被拦截: {err or 'URL无效'}")
+
     async def __aenter__(self):
         proxy_url = resolve_proxy(self._proxy)
         limits = httpx.Limits(
@@ -59,6 +71,7 @@ class HTTPClient:
             limits=limits,
             follow_redirects=self._follow_redirects,
             proxy=proxy_url if proxy_url else None,
+            event_hooks={"response": [self._validate_redirect]},
         )
         return self
 

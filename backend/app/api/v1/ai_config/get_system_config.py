@@ -38,5 +38,6 @@ async def get_system_config():
         theme=theme,
         language=language,
         security=security_config,
-        max_steps=config.get_max_steps(100)
+        max_steps=config.get_max_steps(100),
+        project_root=config.get_project_root()
     )

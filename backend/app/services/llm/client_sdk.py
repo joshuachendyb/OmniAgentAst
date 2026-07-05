@@ -20,7 +20,7 @@ from app.constants import (
     LLM_MAX_CONNECTIONS,
     LLM_MAX_KEEPALIVE,
 )
-from app.tools.tool_constants import FILE_OPERATION_TOOLS
+
 
 
 def _build_request_body(
@@ -53,8 +53,7 @@ def _build_request_body(
             body["tool_choice"] = tool_choice
         
         if parallel_tool_calls is None:
-            tool_names = {t["function"]["name"] for t in tools}
-            parallel_tool_calls = not bool(tool_names & FILE_OPERATION_TOOLS)
+            parallel_tool_calls = True  # 执行层(action_handler)的_has_conflict控制并发安全 — 北京老陈 2026-07-04
         
         body["parallel_tool_calls"] = parallel_tool_calls
     
@@ -109,7 +108,7 @@ class LLMClient:
             if provider in custom_urls:
                 return custom_urls[provider]
         except Exception:
-            pass
+            logger.warning(f"[client_sdk] 读取自定义URL配置失败: provider={provider}")
         return self._DEFAULT_URLS.get(provider, "")
 
     async def request(
@@ -139,8 +138,8 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
-        cancel_check: Optional[callable] = None,
         stream_options: Optional[Dict] = None,
+        request_timeout: Optional[int] = None,
     ) -> AsyncGenerator[str, None]:
         """流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小健 2026-06-17 新增stream_options"""
         body = _build_request_body(
@@ -149,11 +148,10 @@ class LLMClient:
             tools=tools, tool_choice=tool_choice, stream=True,
             stream_options=stream_options,
         )
-        async with self._client.stream("POST", "/chat/completions", json=body) as response:
+        _timeout = float(request_timeout) if request_timeout is not None else None
+        async with self._client.stream("POST", "/chat/completions", json=body, timeout=_timeout) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
-                if cancel_check and cancel_check():
-                    return
                 if line.startswith("data: "):
                     data = line[6:]
                     if data.strip() == "[DONE]":
@@ -163,6 +161,13 @@ class LLMClient:
     async def close(self):
         """关闭客户端,释放连接池 - 小沈 2026-06-09"""
         await self._client.aclose()
+
+    # 【P1-22修复】添加异步上下文管理器,防止AsyncClient连接池泄漏 — chendyg 2026-06-26
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
 
 
 def create_llm_client(

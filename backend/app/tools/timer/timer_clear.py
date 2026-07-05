@@ -12,17 +12,17 @@ import time as _time_mod
 from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_TIMER_CLEAR
+from app.tools.tool_constants import ERR_TIMER_CLEAR
 from app.tools.timer.timer_set import _timers, _timer_callbacks
 
 
-def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str, cancelled: bool) -> dict:
-    """timer_clear的llm_data构建函数 — 小健 2026-06-22"""
+def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str, cancelled: bool, detail: str = "", hint: str = "") -> dict:
+    """timer_clear的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
             "summary": f"清除定时器失败: {timer_id}",
             "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "target": timer_id, "params": {"timer_id": timer_id}},
-            "status": {"exec_code": "error", "message": "清除定时器失败", "code": ERR_TIMER_CLEAR, "detail": "", "hint": ""},
+            "status": {"exec_code": "error", "message": "清除定时器失败", "code": ERR_TIMER_CLEAR, "detail": detail, "hint": hint if hint else "请检查定时器ID"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -44,6 +44,12 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             data = {"timer_id": timer_id, "cancelled": False}
             llm_data = _build_timer_clear_llm_data("success", duration_ms, timer_id, False)
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #21 fallback (key:val) — not found path
+            # trigger: 无上述20条分支匹配 — timer_id/cancelled 不命中专用分支
+            # handler: _format_scalar_data(data) — key | value 单行列表
+            # file:    observation_formatter.py:214
+            # ------------------------------------------------------------------------------
             return build_success(data=data, llm_data=llm_data)
         handle = _timers.pop(timer_id, None)
         if handle:
@@ -52,10 +58,16 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"timer_id": timer_id, "cancelled": True}
         llm_data = _build_timer_clear_llm_data("success", duration_ms, timer_id, True)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val) — found+cleared path
+        # trigger: 无上述20条分支匹配 — timer_id/cancelled 不命中专用分支
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_timer_clear_llm_data("error", duration_ms, timer_id, False)
+        llm_data = _build_timer_clear_llm_data("error", duration_ms, timer_id, False, detail=str(e), hint="请检查定时器ID")
         return build_error(data={"error_detail": str(e), "params": {"timer_id": timer_id}}, llm_data=llm_data)
 
 

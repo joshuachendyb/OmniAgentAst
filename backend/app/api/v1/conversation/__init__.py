@@ -11,15 +11,15 @@ conversation — 从 conversation.py 拆出的职责
 - save_execution_steps: API路由
 """
 
+from app.api.v1.conversation.models import ExecutionStepsUpdate, ExecutionStep
+from app.api.v1.conversation.save_execution_steps import (
+    save_execution_steps, ensure_session_exists,
+    insert_assistant_message, update_message_fields,
+    update_session_message_count,
+)
 from app.api.v1.conversation.assistant_message_id_allocator import AssistantMessageIdAllocator
 from app.utils.display_utils import extract_metadata_from_steps
-from app.api.v1.conversation.ensure_session_exists import ensure_session_exists
-from app.api.v1.conversation.insert_assistant_message import insert_assistant_message
-from app.api.v1.conversation.update_message_fields import update_message_fields
-from app.api.v1.conversation.update_session_message_count import update_session_message_count
-from app.api.v1.conversation.models import ExecutionStepsUpdate, ExecutionStep
-from app.api.v1.conversation.save_execution_steps import save_execution_steps
-from app.api.v1.conversation.conversation import router
+from app.api.v1.conversation.routes import router
 
 __all__ = [
     "router",

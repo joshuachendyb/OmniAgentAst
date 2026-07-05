@@ -44,7 +44,10 @@
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `parse_json` | 解析JSON字符串 | json_str, label, raise_on_error | 解析结果或None |
+| `coerce_json` | **【v0.16.3新增】** 若值为JSON字符串则解析为dict/list，否则原样返回 | value: Any | Any |
 | `read_json_file` | **【v1.4新增】** 读取JSON文件 | file_path, label, raise_on_error | 解析结果或None |
+| `_try_fix_incomplete_json` | **【v1.5新增】** 修复不完整/非标准JSON字符串(缺括号/单引号Python dict) | json_str: str | Optional[Dict] |
+| `_normalize_tool_params` | **【v1.5新增】** 递归归一化tool params，修复LLM双倍编码字符串→还原为list/dict（从llm层迁入） | params: Any | Any |
 
 ### 1.4 响应工具（response_utils.py）【v0.13.33新增】
 
@@ -59,6 +62,16 @@
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `mark_test_round` | 在app.log注入结构化测试轮次标记 | round_num, total_rounds, description="" | None |
+
+### 1.7 表格辅助（table_helper.py）【v0.17.0新增】
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `parse_markdown_table` | 解析Markdown表格，返回(表格数据, 结束索引) | lines, start_idx | Tuple[List[List[str]], int] |
+| `calculate_column_widths` | 计算列宽比例（按内容长度自适应） | table_data, total_width=1.0 | List[float] |
+| `get_table_header_style_config` | 获取表头样式配置（共享配置） | 无 | Dict[str, Any] |
+| `get_table_border_config` | 获取表格边框配置（共享配置） | 无 | Dict[str, Any] |
+| `normalize_table_data` | 标准化表格数据（所有元素转字符串） | table_data | List[List[str]] |
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -75,6 +88,7 @@
 | `format_output_for_llm` | 格式化输出给LLM | stdout, stderr, max_chars | dict |
 | `format_file_content_llm` | 格式化文件内容给LLM | content, max_chars | dict |
 | `make_json_safe` | 使JSON安全 | data, max_depth, max_str_len | data |
+| `add_line_numbers` | 添加行号前缀 | content, offset | str |
 | `truncate_data_for_frontend` | 截断数据给前端 | data, max_chars | dict |
 
 
@@ -137,9 +151,7 @@
 
 ## 四、LLM核心层（app/services/llm_core/）
 
-| 函数名 | 功能 | 参数 | 返回值 |
-|--------|------|------|--------|
-| `_normalize_tool_params` | **【v0.16.3新增】** 递归归一化tool params，修复LLM双倍编码字符串→还原为list/dict | params: Any | Any |
+> `_normalize_tool_params` 已于 v1.5 迁至 `json_utils.py`（集中JSON解析函数）
 
 ---
 
@@ -169,13 +181,16 @@ def my_parse_json(json_str):
 
 ---
 
-**最后更新时间**: 2026-06-14
+**最后更新时间**: 2026-07-05
 **维护人**: 小沈
 
 ## 版本历史
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v1.6 | 2026-07-05 | text_utils新增add_line_numbers公共函数 | 小欧 |
+| v1.5 | 2026-07-02 | _try_fix_incomplete_json新增,_normalize_tool_params从llm_core迁入json_utils.py | 小沈 |
+| v1.4 | 2026-06-17 | 新增read_json_file函数 | 小沈 |
 | v1.3 | 2026-06-14 | 新增llm_core层_normalize_tool_params函数 | 小沈 |
 | v1.2 | 2026-06-13 | 新增test_marker.py测试标记工具 | 小沈 |
 | v1.1 | 2026-06-09 15:45:00 | 新增extract_data_summary函数 | 小沈 |

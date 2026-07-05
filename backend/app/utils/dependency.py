@@ -58,16 +58,16 @@
    格式2：带版本号字符串
    ```
    TOOL_DEPENDENCIES = {
-       "http_request": ["httpx==0.26.0", "httpcore==1.0.1"],
+       "httpget": ["httpx==0.26.0", "httpcore==1.0.1"],
    }
    ```
 
    格式3：字典格式（完整参数）
    ```
    TOOL_DEPENDENCIES = {
-       "send_notification": [
-           {"import_name": "win10toast", "pip_package": "win10toast", "pre_install": ["setuptools<70"]}
-       ],
+        "notify": [
+            {"import_name": "win10toast", "pip_package": "win10toast", "pre_install": ["setuptools<70"]}
+        ],
    }
    ```
 

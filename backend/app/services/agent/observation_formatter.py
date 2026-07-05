@@ -11,17 +11,58 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   _build_base_text/_append_warning/_append_hint/_prevent_json_oom/_get_failure_hint
 
 设计原则:
-- 工具返回原始data，不做截断
-- observation_formatter不截断，LLM需要完整数据
+- 工具返回原始data，不做截断（工具层如果有 need_full_data=True，完整数据走 other_data）
 - 安全兜底:format_data_detail加try-except确保不崩
 - 三段式:观察行 + 结果行 + 详情行
-- 【铁规】截断只能在前端yield层，tool和observation_formatter都禁止截断
+- 【铁规 v2】observation_formatter 做安全截断（防 LLM observation 过大），
+-   完整数据由前端 yield 层 + other_data 承载。截断常量见 tool_constants.py
 
-Author: 小欧 2026-06-21; 小欧 2026-06-22 添加截断铁规
+工具 → handler 映射（全部 63 个工具）:
+ 工具            data 键                        命中 handler              formatter上限                     tool上限
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  readtext        {content: str}                 #2 raw str               OBS_MAX_STRING_LENGTH=10000      行数不限
+  fetchpage       {content: str}                 #2 raw str               OBS_MAX_STRING_LENGTH=10000      5000字符
+  clipboard_ctl   {content: str}(write)          #2 raw str               OBS_MAX_STRING_LENGTH=10000      N/A
+   clipboard_ctl   {text: str}(read)              #10 raw text             OBS_MAX_STRING_LENGTH=10000      N/A
+   read_pdf        {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000      页数不限
+   read_docx       {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000      字符数不限
+  read_xlsx       {{headers, rows}}              #2b flat _format_table   OBS_MAX_DISPLAY_ITEMS=500 行     10000行
+  query_sql       {columns, rows}                #5 _format_rows          OBS_MAX_DISPLAY_ITEMS=500 行     50行
+  filter_data     {columns, rows}                #5 _format_rows+columns  OBS_MAX_DISPLAY_ITEMS=500 行     top_n
+  listdir         {entries}                      #3 _format_entries       OBS_MAX_DISPLAY_ITEMS=500 项     200+offset
+  find            {matches}                      #9b _format_find_results  OBS_MAX_DISPLAY_ITEMS=500 项     1000+offset
+  grep            {matches}                      #9 _format_matches        OBS_MAX_DISPLAY_ITEMS=500 项     1000
+  searchweb       {items}                        #4 _format_items          OBS_MAX_DISPLAY_ITEMS=500 项；snippet 300字符 50项
+  event_log       {events}                       #8 _format_events         OBS_MAX_DISPLAY_ITEMS=500 条     50
+  searchtool      {matches}                      #9c _format_searchtool_results OBS_MAX_DISPLAY_ITEMS=500 项 small
+  get_db_schema   {tables}                       #6 _format_schema        OBS_MAX_DISPLAY_ITEMS=500 张表   不限
+   shell           {stdout, stderr, ...}          #11 shell stdout         OBS_MAX_STRING_LENGTH=10000      不限
+   timer_list      bare list                      non-dict str()            N/A                              N/A
+   list_tasks      {tasks, ...}                   #14 tasks table          OBS_MAX_DISPLAY_ITEMS=500 行     100
+   window_info     {windows}                      #15 windows table        OBS_MAX_DISPLAY_ITEMS=500 行     不限
+   read_pptx       {slide_count, slides}           #16 slides items        OBS_MAX_DISPLAY_ITEMS=500 页     不限
+   sysinfo         {basic, cpu, ...}               #17 sysinfo sections     每段10项                          不限
+   compress        {compression_ratio, ...}        _format_compress_result  OBS_MAX_STRING_LENGTH=10000      N/A
+   httpget         {status_code, ...}              _format_httpget_result   OBS_MAX_STRING_LENGTH=10000      N/A
+   analyze_data    {statistics, ...}               _format_analyze_data     转置表格                             top_n=50
+    ── _format_scalar_data ──
+    36 tools        {key: scalar, ...}              _format_scalar_data     无限制(值截断OBS_MAX_STRING_LENGTH)
+
+【注意】listdir/find 的 offset 分页由工具层自行处理（tools/file/），
+  formatter 仅展示当前 page（最多 OBS_MAX_DISPLAY_ITEMS 项）。
+
+Author: 小欧 2026-06-21; 小欧 2026-07-04 更新映射表; 小欧 2026-07-05 修复4个Bug, 新增专用handler分组; 小欧 2026-07-05 拆分compress/httpget/analyze_data专用handler
 """
 
 import json
 from typing import Any, Dict
+
+from app.tools.tool_constants import (
+    OBS_MAX_DISPLAY_ITEMS,
+    OBS_MAX_STRING_LENGTH,
+    OBS_DICT_MAX_KEYS,
+)
+
 
 
 def format_data_detail(data: Any) -> str:
@@ -32,40 +73,145 @@ def format_data_detail(data: Any) -> str:
     if not data:
         return ""
 
+    # ┌──────────────────────────┬──────┬────────────────────────────────────────────┐
+    # │  分支                    │ 数量 │ 工具                                       │
+    # ├──────────────────────────┼──────┼────────────────────────────────────────────┤
+    # │  non-dict                │    1 │ timer_list                                 │
+    # │  #2 raw str              │    3 │ readtext, fetchpage, clipboard_ctl(write)  │
+    # │  #10 raw text            │    3 │ read_pdf, read_docx, clipboard_ctl(read)   │
+    # │  #3 entries              │    1 │ listdir                                    │
+    # │  #4 items                │    1 │ searchweb                                  │
+    # │  #2b flat table          │    1 │ read_xlsx                                  │
+    # │  #5 rows                 │    2 │ query_sql, filter_data                     │
+    # │  #6 schema               │    1 │ get_db_schema                              │
+    # │  #8 events               │    1 │ event_log                                  │
+    # │  #9 matches              │    3 │ grep, find, searchtool                     │
+    # │  #11 shell stdout        │    1 │ shell                                      │
+    # │  #12 tree                │    1 │ tree                                       │
+    # │  #13 readmedia           │    1 │ readmedia                                  │
+    # │  #14 tasks table         │    1 │ list_tasks                                 │
+    # │  #15 windows table       │    1 │ window_info                                │
+    # │  #16 slides items        │    1 │ read_pptx                                  │
+    # │  #17 sysinfo sections    │    1 │ sysinfo                                    │
+    # │  #0 空data                │    1 │ mouse_click                                │
+    # │  #18 compress(JSON)        │    1 │ compress                                   │
+    # │  #19 httpget(body+headers)  │    1 │ httpget                                    │
+    # │  #20 analyze_data(转置表)   │    1 │ analyze_data                               │
+    # │  #21 fallback(key:val)      │   36 │ writetext等36个(见下方清单)                  │
+    # ├──────────────────────────┼──────┼────────────────────────────────────────────┤
+    # │  总计                    │   63 │ 63个工具全量覆盖                            │
+    # └──────────────────────────┴──────┴────────────────────────────────────────────┘
+    # _format_scalar_data 36个: writetext, edittext, move, copy, delete, rename, extract,
+    #   which, download, ping_port, write_docx, write_xlsx, write_pdf, write_pptx,
+    #   timenow, timeadd, timediff, calendar, notify, execute_sql, generate_chart,
+    #   create_task, delete_task, timer_set, timer_clear,
+    #   registry_read, registry_write, registry_delete,
+    #   window_focus, window_resize, set_window_state,
+    #   mouse_move, mouse_scroll, mouse_position,
+    #   keyboard_control, screen_capture
     try:
+        # ── non-dict — 1 tool: timer_list (bare list) ──
         if not isinstance(data, dict):
             return str(data)
 
-        if "content" in data and isinstance(data["content"], dict) and "headers" in data["content"]:
-            return _format_table(data["content"]["headers"], data["content"]["rows"])
-
+        # ── #2 raw str — 3 tools: readtext, fetchpage, clipboard_ctl(write) ──
         if "content" in data and isinstance(data["content"], str):
-            return data["content"]
+            content = data["content"]
+            if len(content) > OBS_MAX_STRING_LENGTH:
+                content = content[:OBS_MAX_STRING_LENGTH] + "\n... (截断，完整内容见文件)"
+            return content
 
+        # ── #10 raw text — 3 tools: read_pdf, read_docx, clipboard_ctl(read) ──
+        if "text" in data and isinstance(data["text"], str):
+            return _format_text_content(data)
+
+        # ── #3 entries — 1 tool: listdir ──
         if "entries" in data:
             return _format_entries(data["entries"])
 
+        # ── #4 items — 1 tool: searchweb ──
         if "items" in data:
             return _format_items(data["items"])
 
-        if "rows" in data:
-            return _format_rows(data["rows"])
+        # ── #2b flat table — 1 tool: read_xlsx (含CSV) ──
+        if "headers" in data and "rows" in data:
+            return _format_table(data["headers"], data["rows"])
 
+        # ── #5 rows — 2 tools: query_sql, filter_data ──
+        if "rows" in data:
+            return _format_rows(data["rows"], data.get("columns"))
+
+        # ── #6 schema — 1 tool: get_db_schema ──
         if "tables" in data:
             return _format_schema(data["tables"])
 
-        if "output" in data:
-            parts = []
-            if data["output"]:
-                parts.append(data["output"])
-            if data.get("error_output"):
-                parts.append(f"[stderr] {data['error_output']}")
-            return "\n".join(parts)
-
+        # ── #8 events — 1 tool: event_log ──
         if "events" in data:
             return _format_events(data["events"])
 
-        return _format_key_value(data)
+        # ── #9 matches — 3 tools: grep(file+line), find(path), searchtool(category) ──
+        if "matches" in data:
+            ms = data["matches"]
+            if ms and isinstance(ms[0], dict):
+                if "file" in ms[0]:
+                    return _format_matches(ms)
+                elif "category" in ms[0]:
+                    return _format_searchtool_results(ms)
+                elif "path" in ms[0]:
+                    return _format_find_results(ms)
+            return _format_matches(ms)
+
+        # ── #11 shell stdout — 1 tool: shell ──
+        if "stdout" in data:
+            return _format_shell_result(data)
+
+        # ── #12 tree — 1 tool: tree ──
+        if "tree" in data and isinstance(data.get("tree"), dict):
+            return _format_tree(data)
+
+        # ── #13 readmedia — 1 tool: readmedia ──
+        if "base64_data" in data:
+            return _format_readmedia(data)
+
+        # ── #14 tasks — 1 tool: list_tasks ──
+        if "tasks" in data:
+            return _format_tasks(data)
+
+        # ── #15 windows — 1 tool: window_info ──
+        if "windows" in data:
+            return _format_windows(data)
+
+        # ── #16 slides — 1 tool: read_pptx ──
+        if "slides" in data:
+            return _format_slides(data)
+
+        # ── #17 sysinfo — 1 tool: sysinfo ──
+        if "basic" in data and isinstance(data["basic"], dict):
+            return _format_sysinfo(data)
+
+        # ── #18 compress — 1 tool: compress ──
+        if "compression_ratio" in data:
+            return _format_compress_result(data)
+
+        # ── #19 httpget — 1 tool: httpget ──
+        if "status_code" in data:
+            return _format_httpget_result(data)
+
+        # ── #20 analyze_data — 1 tool: analyze_data ──
+        if "statistics" in data or "grouped_statistics" in data:
+            return _format_analyze_data(data)
+
+        # ── #0 空data — 1 tool: mouse_click（走第 72 行 if not data: return ""）────
+        # ── #21 fallback — 36 tools ──
+        #   writetext, edittext, move, copy, delete, rename, extract,
+        #   which, download, ping_port, write_docx, write_xlsx, write_pdf, write_pptx,
+        #   timenow, timeadd, timediff, calendar, notify, execute_sql, generate_chart,
+        #   create_task, delete_task, timer_set, timer_clear,
+        #   registry_read, registry_write, registry_delete,
+        #   window_focus, window_resize, set_window_state,
+        #   mouse_move, mouse_scroll, mouse_position,
+        #   keyboard_control, screen_capture
+        return _format_scalar_data(data)
     except Exception:
         try:
             return json.dumps(data, ensure_ascii=False, indent=2)
@@ -73,6 +219,107 @@ def format_data_detail(data: Any) -> str:
             return str(data)
 
 
+# #10 raw text 样式:
+#   输入: {"text": "这是文档正文...", "page_count": 5, "metadata": {...}}
+#   输出: 这是文档正文...\npage_count=5, metadata={'author': '...'}
+def _format_text_content(data: dict) -> str:
+    """#10 text handler — read_pdf/read_docx 正文直接展示 — 小欧 2026-07-05"""
+    content = data["text"]
+    if len(content) > OBS_MAX_STRING_LENGTH:
+        content = content[:OBS_MAX_STRING_LENGTH] + "\n... (截断，完整内容见文件)"
+    extra = {k: v for k, v in data.items() if k != "text"}
+    if extra:
+        parts = []
+        for k, v in extra.items():
+            if isinstance(v, list):
+                if len(v) > 5:
+                    parts.append(f"{k}: {len(v)}项")
+                else:
+                    parts.append(f"{k}={v}")
+            else:
+                parts.append(f"{k}={v}")
+        content += "\n" + ", ".join(parts)
+    return content
+
+
+# #11 shell stdout 样式:
+#   输入: {"stdout": "total 42\n-rw-r--r-- 1 root root 1024 ...", "stderr": "", "returncode": 0, "shell_type": "powershell", "duration_ms": 150}
+#   输出: total 42\n-rw-r--r-- 1 root root 1024 ...\n---\n[rc=0, powershell, 150ms]
+def _format_shell_result(data: dict) -> str:
+    """#11 shell handler — stdout 直接展示 + stderr ⚠ + metadata 一行 — 小欧 2026-07-05"""
+    stdout = data.get("stdout", "") or ""
+    stderr = data.get("stderr", "") or ""
+    if len(stdout) > OBS_MAX_STRING_LENGTH:
+        stdout = stdout[:OBS_MAX_STRING_LENGTH] + "\n... (截断)"
+    if len(stderr) > OBS_MAX_STRING_LENGTH:
+        stderr = stderr[:OBS_MAX_STRING_LENGTH] + "\n... (截断)"
+    lines = []
+    if stdout:
+        lines.append(stdout)
+    if stderr:
+        lines.append(f"⚠ {stderr}")
+    returncode = data.get("returncode", "?")
+    shell_type = data.get("shell_type", "")
+    duration_ms = data.get("duration_ms", 0)
+    meta = f"[rc={returncode}, {shell_type}, {duration_ms}ms]"
+    lines.append(f"---\n{meta}" if (stdout or stderr) else meta)
+    return "\n".join(lines)
+
+
+# #12 tree 样式:
+#   输入: {"tree": {"name": "project", "children": [{"name": "src", "children": [{"name": "main.py", "size": 1024}]}]}, ...}
+#   输出: project\n  └── src\n      └── main.py  (1024 bytes)\n---\n[1 files, 1 dirs, 1024 bytes total]
+def _format_tree(data: dict) -> str:
+    """#12 tree handler — 嵌套dict → 可视化树形字符串 — 小欧 2026-07-05"""
+    tree = data.get("tree", {})
+    stats = data.get("statistics", {})
+    lines = []
+
+    def _render(node: dict, prefix: str = "", is_last: bool = True) -> list:
+        if not node or not isinstance(node, dict):
+            return []
+        result = []
+        name = node.get("name", "?")
+        size = node.get("size")
+        label = "/" if size is None else f"  ({size} bytes)"
+        children = node.get("children", [])
+        result.append(f"{prefix}{'└── ' if is_last else '├── '}{name}{label}")
+        if children:
+            child_prefix = prefix + ("    " if is_last else "│   ")
+            for i, child in enumerate(children):
+                result.extend(_render(child, child_prefix, i == len(children) - 1))
+        return result
+
+    root_name = tree.get("name", "root") if isinstance(tree, dict) else str(tree)
+    lines.append(f"{root_name}")
+    children = tree.get("children", []) if isinstance(tree, dict) else []
+    for i, child in enumerate(children):
+        lines.extend(_render(child, "", i == len(children) - 1))
+
+    if stats:
+        fc = stats.get("file_count", 0)
+        dc = stats.get("dir_count", 0)
+        ts = stats.get("total_size", 0)
+        lines.append(f"---\n[{fc} files, {dc} dirs, {ts} bytes total]")
+    return "\n".join(lines)
+
+
+# #13 readmedia 样式:
+#   输入: {"file_name": "photo.jpg", "mime_type": "image/jpeg", "file_size": 204800, "base64_data": "/9j/4AAQ..."}
+#   输出: photo.jpg [image/jpeg, 204800 bytes] [base64: 273104 chars]
+def _format_readmedia(data: dict) -> str:
+    """#13 readmedia handler — 元数据 + base64 摘要 — 小欧 2026-07-05"""
+    name = data.get("file_name", "?")
+    mime = data.get("mime_type", "?")
+    size = data.get("file_size", 0)
+    b64 = data.get("base64_data", "")
+    b64_summary = f" [base64: {len(b64)} chars]" if b64 else ""
+    return f"{name} [{mime}, {size} bytes]{b64_summary}"
+
+
+# format_llm_observation 三段式输出样式:
+#   输入: data={...工具返回data...}, llm_data={"status":{"exec_code":"success","message":"文件已保存"},"action":{"tool_zh":"写文本文件"},"summary":"已写入 test.txt"}
+#   输出: 观察: 文件已保存 - 写文本文件\n  结果: 已写入 test.txt\n  ----------\n  详情: \n  path: /tmp/test.txt\n  size: 1024
 def format_llm_observation(data: Any, llm_data: Dict) -> str:
     """格式化工具结果为LLM observation文本 — 小欧 2026-06-21
 
@@ -85,16 +332,33 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     exec_code = status.get("exec_code", "")
     message = status.get("message", "")
     tool_zh = action.get("tool_zh", "")
+    err_code = status.get("code", "")
+    metrics = llm_data.get("metrics", {}) if isinstance(llm_data.get("metrics"), dict) else {}
+    duration_ms = llm_data.get("duration_ms", 0)
 
     if exec_code == "success":
         text = f"观察: {message} - {tool_zh}"
     elif exec_code == "warning":
-        text = f"观察: {message} - {tool_zh}\n⚠ 警告: {status.get('detail', '')}"
+        code_suffix = f" [{err_code}]" if err_code else ""
+        text = f"观察: {message} - {tool_zh}{code_suffix}\n⚠ 警告: {status.get('detail', '')}"
     else:
-        text = f"观察: {message} - {tool_zh}"
+        code_suffix = f" [{err_code}]" if err_code else ""
+        text = f"观察: {message} - {tool_zh}{code_suffix}\n✖ 错误: {status.get('detail', '')}"
 
     if summary:
-        text += f"\n结果: {summary}"
+        action_info = " ".join(
+            f"{k}={json.dumps(v, ensure_ascii=False) if isinstance(v, dict) else v}"
+            for k, v in action.items()
+        )
+        text += f"\n结果: {summary} | {action_info}"
+
+    metric_lines = []
+    for k, v in metrics.items():
+        metric_lines.append(f"  {k}: {v}")
+    if duration_ms:
+        metric_lines.append(f"  耗时: {duration_ms}ms")
+    if metric_lines:
+        text += "\n统计:\n" + "\n".join(metric_lines)
 
     if data is not None and data != {} and data != [] and data != "":
         detail = format_data_detail(data)
@@ -109,27 +373,35 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     return text
 
 
+# #2b flat table 样式:
+#   输入: headers=["name", "age", "city"], rows=[["Alice", 30, "NY"], ["Bob", 25, "LA"]]
+#   输出: name=Alice | age=30 | city=NY\nname=Bob | age=25 | city=LA
 def _format_table(headers: list, rows: list) -> str:
     """格式化表格数据 — 小欧 2026-06-21"""
     if not headers or not rows:
         return ""
     lines = []
-    for row in rows:
+    for row in rows[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(row, (list, tuple)):
             parts = [f"{h}={v}" for h, v in zip(headers, row) if v is not None]
             lines.append(" | ".join(parts))
         elif isinstance(row, dict):
             parts = [f"{h}={row.get(h, '')}" for h in headers if row.get(h) is not None]
             lines.append(" | ".join(parts))
+    if len(rows) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(rows) - OBS_MAX_DISPLAY_ITEMS} 行")
     return "\n".join(lines)
 
 
+# #3 entries 样式:
+#   输入: [{"name": "src", "type": "dir", "size": null}, {"name": "readme.md", "type": "file", "size": 2048}]
+#   输出:   src [目录]\n  readme.md [文件, 2048字节]
 def _format_entries(entries: list) -> str:
     """格式化目录列表 — 小欧 2026-06-21"""
     if not entries:
         return ""
     lines = []
-    for entry in entries:
+    for entry in entries[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(entry, str):
             suffix = " [目录]" if entry.endswith("/") or entry.endswith("\\") else " [文件]"
             lines.append(f"  {entry}{suffix}")
@@ -138,49 +410,77 @@ def _format_entries(entries: list) -> str:
             etype = entry.get("type", "")
             size = entry.get("size", "")
             label = "目录" if etype in ("dir", "directory") else "文件"
-            size_str = f", {size}字节" if size else ""
+            size_str = f", {size}字节" if size is not None else ""
             lines.append(f"  {name} [{label}{size_str}]")
+    if len(entries) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(entries) - OBS_MAX_DISPLAY_ITEMS} 项")
     return "\n".join(lines)
 
 
+# #4 items 样式:
+#   输入: [{"title": "Python教程", "snippet": "学习Python编程...", "url": "https://...", "source": "web"}]
+#   输出:   Python教程: 学习Python编程... [web]
 def _format_items(items: list) -> str:
-    """格式化搜索结果/列表项 — 小欧 2026-06-21"""
+    """格式化搜索结果/列表项 — 小欧 2026-06-21
+    更新: 2026-06-23 小欧 支持snippet/url/source字段，300字符截断"""
     if not items:
         return ""
+    SNIPPET_MAX = 300
     lines = []
-    for item in items:
+    for item in items[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(item, str):
             lines.append(f"  {item}")
         elif isinstance(item, dict):
             name = item.get("name", item.get("title", item.get("path", "")))
-            desc = item.get("description", item.get("desc", ""))
+            desc = item.get("snippet", item.get("description", item.get("desc", "")))
+            if desc and len(desc) > SNIPPET_MAX:
+                desc = desc[:SNIPPET_MAX] + "..."
+            url = item.get("url", "")
+            source = item.get("source", "")
+            tag = f" [{source}]" if source else ""
             if desc:
-                lines.append(f"  {name}: {desc}")
+                lines.append(f"  {name}: {desc}{tag}")
+            elif url:
+                lines.append(f"  {name}: {url}{tag}")
             else:
-                lines.append(f"  {name}")
+                lines.append(f"  {name}{tag}")
+    if len(items) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(items) - OBS_MAX_DISPLAY_ITEMS} 项")
     return "\n".join(lines)
 
 
-def _format_rows(rows: list) -> str:
+# #5 rows 样式:
+#   输入: columns=["name","age"], rows=[["Alice",30],["Bob",25]]
+#   输出: name=Alice | age=30\nname=Bob | age=25
+def _format_rows(rows: list, columns: list = None) -> str:
     """格式化数据库行 — 小欧 2026-06-21"""
     if not rows:
         return ""
     lines = []
-    for row in rows:
+    for row in rows[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(row, (list, tuple)):
-            lines.append(" | ".join(str(v) for v in row))
+            if columns:
+                parts = [f"{columns[i]}={v}" for i, v in enumerate(row) if v is not None]
+            else:
+                parts = [str(v) for v in row]
+            lines.append(" | ".join(parts))
         elif isinstance(row, dict):
             parts = [f"{k}={v}" for k, v in row.items() if v is not None]
             lines.append(" | ".join(parts))
+    if len(rows) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(rows) - OBS_MAX_DISPLAY_ITEMS} 行")
     return "\n".join(lines)
 
 
+# #6 schema 样式:
+#   输入: [{"table":"users","columns":["id","name","email"]}, {"table":"orders","columns":["id","user_id","total"]}]
+#   输出:   users: id, name, email\n  orders: id, user_id, total
 def _format_schema(tables: list) -> str:
     """格式化Schema信息 — 小欧 2026-06-21"""
     if not tables:
         return ""
     lines = []
-    for table in tables:
+    for table in tables[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(table, str):
             lines.append(f"  {table}")
         elif isinstance(table, dict):
@@ -191,15 +491,20 @@ def _format_schema(tables: list) -> str:
                 lines.append(f"  {name}: {col_str}")
             else:
                 lines.append(f"  {name}")
+    if len(tables) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(tables) - OBS_MAX_DISPLAY_ITEMS} 张表")
     return "\n".join(lines)
 
 
+# #8 events 样式:
+#   输入: [{"time":"2026-07-05 10:00:00","message":"用户登录成功"}, {"message":"文件已保存"}]
+#   输出:   [2026-07-05 10:00:00] 用户登录成功\n  文件已保存
 def _format_events(events: list) -> str:
     """格式化事件日志 — 小欧 2026-06-21"""
     if not events:
         return ""
     lines = []
-    for event in events:
+    for event in events[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(event, str):
             lines.append(f"  {event}")
         elif isinstance(event, dict):
@@ -209,18 +514,367 @@ def _format_events(events: list) -> str:
                 lines.append(f"  [{ts}] {msg}")
             else:
                 lines.append(f"  {msg}")
+    if len(events) > OBS_MAX_DISPLAY_ITEMS:
+        lines.append(f"  ... 还有 {len(events) - OBS_MAX_DISPLAY_ITEMS} 条事件")
     return "\n".join(lines)
 
 
-def _format_key_value(data: dict) -> str:
-    """格式化键值对 — 小欧 2026-06-21"""
+# 列宽计算样式: items=[{"name":"backup","status":"ready"},...], columns=[("name","名称"),("status","状态")]
+#   输出: [10, 8]  # 每列最大宽度(上限40)
+def _calc_col_widths(items: list, columns: list) -> list:
+    """计算列宽度（取字段最长值, 上限40）— 小欧 2026-07-05"""
+    widths = []
+    for key, header in columns:
+        max_w = len(header)
+        for item in items:
+            v = item.get(key, "")
+            if isinstance(v, str) and len(v) > max_w:
+                max_w = min(len(v), 40)
+        widths.append(max_w)
+    return widths
+
+
+# 表格块样式: items=[{name:"backup",status:"ready"}], columns=[("name","名称"),("status","状态")], widths=[10,8]
+#   输出: ["   名称      状态 ", "  ────────────────", "   backup    ready"]
+def _format_table_block(items: list, columns: list, widths: list, indent: str = "") -> list:
+    """格式化表格块：表头 + 分隔线 + 数据行 — 小欧 2026-07-05"""
+    lines = []
+    hdr = indent + "  ".join(f"{hdr:<{w}}" for (_, hdr), w in zip(columns, widths))
+    sep = indent + "  ".join("─" * w for w in widths)
+    lines.append(hdr)
+    lines.append(sep)
+    for i, item in enumerate(items):
+        if i >= OBS_MAX_DISPLAY_ITEMS:
+            lines.append(indent + f"... 还有 {len(items) - OBS_MAX_DISPLAY_ITEMS} 个")
+            break
+        row = indent + "  ".join(
+            _fmt_cell(item.get(key, ""), w) for (key, _), w in zip(columns, widths)
+        )
+        lines.append(row)
+    return lines
+
+
+# 单元格格式化样式: val="backup", width=10
+#   输出: "    backup"
+def _fmt_cell(val: Any, width: int) -> str:
+    """截断并右对齐单元格值 — 小欧 2026-07-05"""
+    s = str(val) if val is not None else ""
+    if len(s) > width:
+        s = s[:width - 3] + "..."
+    return f"{s:<{width}}"
+
+
+# #14 tasks 样式:
+#   输入: {"tasks": [{"name":"backup","next_run":"2026-07-06 03:00","status":"ready","command":"backup.bat"}], ...}
+#   输出:   名称     下次运行          状态   命令\n  ──────────────────────────\n     backup  2026-07-06 03:00  ready  backup.bat\n  ---\ntasks: 1, platform: windows
+def _format_tasks(data: dict) -> str:
+    """#14 tasks handler — list_tasks 表格 — 小欧 2026-07-05"""
+    items = data.get("tasks", [])
+    if not items:
+        return ""
+    cols = [("name", "名称")]
+    if any(t.get("next_run") for t in items):
+        cols.append(("next_run", "下次运行"))
+    if any(t.get("status") for t in items):
+        cols.append(("status", "状态"))
+    if any(t.get("command") for t in items):
+        cols.append(("command", "命令"))
+    widths = _calc_col_widths(items, cols)
+    lines = _format_table_block(items, cols, widths)
+    meta = f"tasks: {len(items)}"
+    if data.get("total", 0) > len(items):
+        meta += f", total: {data['total']}"
+    meta += f", platform: {data.get('platform', '?')}"
+    lines.append(f"---\n{meta}")
+    return "\n".join(lines)
+
+
+# #15 windows 样式:
+#   输入: {"windows": [{"hwnd":123456,"title":"记事本","state":"visible","position":{"left":0,"top":0,"width":800,"height":600}}]}
+#   输出:     HWND    标题    状态    位置\n  ────────────────────────────────\n   123456  记事本  visible  x=0,y=0 800x600\n---\nwindows: 1
+def _format_windows(data: dict) -> str:
+    """#15 windows handler — window_info 表格 — 小欧 2026-07-05"""
+    items = data.get("windows", [])
+    if not items:
+        return ""
+    for w in items:
+        pos = w.get("position")
+        if pos and isinstance(pos, dict):
+            w["_pos"] = f"x={pos.get('left','?')},y={pos.get('top','?')} {pos.get('width','?')}x{pos.get('height','?')}"
+        elif pos is None:
+            w["_pos"] = "[hidden]"
+        else:
+            w["_pos"] = "?"
+    cols = [("hwnd", "HWND"), ("title", "标题"), ("state", "状态"), ("_pos", "位置")]
+    widths = _calc_col_widths(items, cols)
+    lines = _format_table_block(items, cols, widths)
+    meta = f"windows: {len(items)}"
+    if data.get("total", 0) > len(items):
+        meta += f", total: {data['total']}"
+    lines.append(f"---\n{meta}")
+    return "\n".join(lines)
+
+
+# #16 slides 样式:
+#   输入: {"slide_count":3,"slides":[{"slide_num":1,"text":"封面\n副标题","tables_count":0},{"slide_num":2,"text":"内容页","tables_count":1}]}
+#   输出:   幻灯片 1/3\n    封面\n    副标题\n   幻灯片 2/3\n    内容页  [1个表格]\n---\n[slide_count: 3]
+def _format_slides(data: dict) -> str:
+    """#16 slides handler — read_pptx items 块 — 小欧 2026-07-05"""
+    items = data.get("slides", [])
+    if not items:
+        return ""
+    lines = []
+    total = data.get("slide_count", len(items))
+    for i, slide in enumerate(items):
+        if i >= OBS_MAX_DISPLAY_ITEMS:
+            lines.append(f"  ... 还有 {len(items) - OBS_MAX_DISPLAY_ITEMS} 页")
+            break
+        num = slide.get("slide_num", i + 1)
+        lines.append(f"  幻灯片 {num}/{total}")
+        text = slide.get("text", "")
+        if text:
+            if len(text) > 200:
+                text = text[:200] + " ...(截断)"
+            for line in text.split("\n"):
+                lines.append(f"    {line}")
+        tables = slide.get("tables")
+        if tables:
+            lines.append(f"    表格: {len(tables)}个")
+    notes = data.get("notes")
+    if notes:
+        lines.append(f"  ---\n  备注: {len(notes)}条")
+    lines.append(f"---\n[slide_count: {total}]")
+    return "\n".join(lines)
+
+
+# #17 sysinfo 样式:
+#   输入: {"basic":{"hostname":"PC","os":"Windows 11","uptime":"2h"},"cpu":{"cores":8,"usage":35.5}}
+#   输出:   [基本]\n    hostname: PC\n    os: Windows 11\n    uptime: 2h\n  [CPU]\n    cores: 8\n    usage: 35.5
+def _format_sysinfo(data: dict) -> str:
+    """#17 sysinfo handler — 分节展示 — 小欧 2026-07-05"""
+    sections = {
+        "basic": "基本",
+        "cpu": "CPU",
+        "memory": "内存",
+        "disk": "磁盘",
+        "network": "网络",
+    }
+    lines = []
+    for sec_key, sec_label in sections.items():
+        sec_data = data.get(sec_key)
+        if sec_data is None:
+            continue
+        if isinstance(sec_data, list):
+            for i, entry in enumerate(sec_data):
+                if i >= 10:
+                    lines.append(f"  [{sec_label} ... 还有 {len(sec_data) - 10} 个]")
+                    break
+                lines.append(f"[{sec_label} #{i + 1}]")
+                for k, v in entry.items():
+                    v_str = str(v)
+                    if len(v_str) > 120:
+                        v_str = v_str[:120] + "..."
+                    lines.append(f"  {k}: {v_str}")
+        elif isinstance(sec_data, dict):
+            lines.append(f"[{sec_label}]")
+            for k, v in sec_data.items():
+                v_str = str(v)
+                if len(v_str) > 120:
+                    v_str = v_str[:120] + "..."
+                lines.append(f"  {k}: {v_str}")
+    return "\n".join(lines) if lines else ""
+
+
+# fallback(key:val) 实际输出样式:
+#   输入: {"name": "test.txt", "size": 1024, "path": "/tmp/test.txt"}
+#   输出:
+#     name: test.txt
+#     size: 1024
+#     path: /tmp/test.txt
+def _format_scalar_data(data: dict) -> str:
+    """键值对展示，每行一个 key: value — 小欧 2026-07-05"""
     lines = []
     for k, v in data.items():
-        if isinstance(v, dict):
-            for sk, sv in v.items():
-                lines.append(f"  {k}.{sk}: {sv}")
-        elif isinstance(v, list):
-            lines.append(f"  {k}: {json.dumps(v, ensure_ascii=False)}")
-        else:
-            lines.append(f"  {k}: {v}")
+        v_str = str(v)
+        if len(v_str) > OBS_MAX_STRING_LENGTH:
+            v_str = v_str[:OBS_MAX_STRING_LENGTH] + "..."
+        lines.append(f"  {k}: {v_str}")
     return "\n".join(lines)
+
+
+# #9b find 样式:
+#   输入: [{"name":"main.py","type":"file","size":2048,"path":"/project/src/main.py"}, {"name":"test","type":"dir","path":"/project/test"}]
+#   输出:   main.py [文件, 2048字节]\n    /project/src/main.py\n  test [目录]\n    /project/test
+def _format_find_results(matches: list) -> str:
+    """格式化 find 文件搜索结果 — 小欧 2026-07-05"""
+    if not matches:
+        return ""
+    lines = []
+    for i, m in enumerate(matches):
+        if i >= OBS_MAX_DISPLAY_ITEMS:
+            lines.append(f"  ... 还有 {len(matches) - OBS_MAX_DISPLAY_ITEMS} 个匹配项")
+            break
+        name = m.get("name", "")
+        etype = m.get("type", "")
+        size = m.get("size")
+        size_str = f", {size}字节" if size is not None else ""
+        lines.append(f"  {name} [{etype}{size_str}]")
+        p = m.get("path", "")
+        if p:
+            lines.append(f"    {p}")
+    return "\n".join(lines)
+
+
+# #9c searchtool 样式:
+#   输入: [{"name":"http_request","category":"network"}, {"name":"read_file","category":"file"}]
+#   输出:   http_request [network]\n  read_file [file]
+def _format_searchtool_results(matches: list) -> str:
+    """格式化 searchtool 工具搜索结果 — 小欧 2026-07-05"""
+    if not matches:
+        return ""
+    lines = []
+    for i, m in enumerate(matches):
+        if i >= OBS_MAX_DISPLAY_ITEMS:
+            lines.append(f"  ... 还有 {len(matches) - OBS_MAX_DISPLAY_ITEMS} 个匹配项")
+            break
+        name = m.get("name", "")
+        cat = m.get("category", "")
+        lines.append(f"  {name} [{cat}]")
+    return "\n".join(lines)
+
+
+# #9 matches 样式:
+#   输入: [{"file":"src/main.py","line":42,"matched":["import"],"content":"import os"}, {"file":"src/utils.py","line":10,"matched":["import"],"content":"import sys"}]
+#   输出:   src/main.py:42: [import] import os\n  src/utils.py:10: [import] import sys
+def _format_matches(matches: list) -> str:
+    """格式化 grep 内容匹配结果 — 小欧 2026-07-04 — 小欧 2026-07-04 使用 OBS_MAX_DISPLAY_ITEMS"""
+    if not matches:
+        return ""
+    lines = []
+    for i, m in enumerate(matches):
+        if i >= OBS_MAX_DISPLAY_ITEMS:
+            lines.append(f"  ... 还有 {len(matches) - OBS_MAX_DISPLAY_ITEMS} 个匹配项")
+            break
+        matched = m.get("matched", [])
+        matched_str = ", ".join(matched) if isinstance(matched, list) else str(matched)
+        content = m.get("content", "")
+        lines.append(f"  {m.get('file','')}:{m.get('line','')}: [{matched_str}] {content}")
+    return "\n".join(lines)
+
+
+# #18 compress(JSON) 样式:
+#   输入: {"compression_ratio":0.45,"original_size":1024000,"compression_level":6,"encrypted":true,"compressed_files":["doc1.txt","doc2.txt"]}
+#   输出: ── 压缩完成 ── | 压缩比: 45.00% 原始: 1024000 bytes 级别: 6 已加密\n压缩文件: ["doc1.txt", "doc2.txt"]
+def _format_compress_result(data: dict) -> str:
+    """compress 压缩结果 — 小欧 2026-07-05"""
+    ratio = data.get("compression_ratio", 0)
+    original = data.get("original_size", 0)
+    level = data.get("compression_level", "")
+    encrypted = " 已加密" if data.get("encrypted") else ""
+    header = f"压缩比: {ratio:.2%} 原始: {original} bytes 级别: {level}{encrypted}"
+
+    lines = [f"── 压缩完成 ── | {header}"]
+
+    files = data.get("compressed_files", [])
+    if files:
+        lines.append(f"压缩文件: {json.dumps(files, ensure_ascii=False)}")
+
+    return "\n".join(lines)
+
+
+# #19 httpget(body+headers) 样式:
+#   输入: {"status_code":200,"body":{"userId":1,"title":"hello"},"headers":{"content-type":"application/json","date":"2026-07-05"}}
+#   输出: ── HTTP GET ── 200\n── Body ──\n{\n  "userId": 1,\n  "title": "hello"\n}\n── Headers ──\n  content-type: application/json\n  date: 2026-07-05
+def _format_httpget_result(data: dict) -> str:
+    """httpget HTTP 响应 — 小欧 2026-07-05"""
+    lines = [f"── HTTP GET ── {data.get('status_code', '?' )}"]
+
+    body = data.get("body")
+    if body is not None:
+        lines.append("── Body ──")
+        if isinstance(body, (dict, list)):
+            body_str = json.dumps(body, ensure_ascii=False, indent=2)
+        else:
+            body_str = str(body)
+        if len(body_str) > OBS_MAX_STRING_LENGTH:
+            body_str = body_str[:OBS_MAX_STRING_LENGTH] + "\n... (截断)"
+        lines.append(body_str)
+
+    headers = data.get("headers")
+    if headers:
+        lines.append("── Headers ──")
+        for k, v in sorted(headers.items()):
+            lines.append(f"  {k}: {v}")
+
+    return "\n".join(lines)
+
+
+# #20 analyze_data(转置表) 样式:
+#   输入: {"row_count":100,"columns":["price","quantity"],"statistics":{"mean":{"price":29.99,"quantity":150.25},"sum":{"price":2999.0,"quantity":15025.0},"min":{"price":5.99,"quantity":1},"max":{"price":99.99,"quantity":500}}}
+#   输出: ── 数据分析 ── 100行, 2列\n         price       quantity\n  ────────────────────────\n        mean    29.9900    150.2500\n         sum  2999.0000  15025.0000\n         min     5.9900      1.0000\n         max    99.9900    500.0000
+def _format_analyze_data(data: dict) -> str:
+    """analyze_data 描述统计，转置表格 — 小欧 2026-07-05"""
+    lines = [f"── 数据分析 ── {data.get('row_count', '?')}行"]
+    cols = data.get("columns", [])
+    if cols:
+        lines[-1] += f", {len(cols)}列"
+    if "top_n" in data:
+        lines[-1] += f" (top {data['top_n']})"
+
+    stats = data.get("statistics")
+    grouped = data.get("grouped_statistics")
+
+    if grouped:
+        for gk, gs in grouped.items():
+            lines.append(f"\n── 分组: {gk} ──")
+            lines.extend(_build_transposed_table(gs, cols))
+    elif stats:
+        lines.extend(_build_transposed_table(stats, cols))
+    else:
+        lines.append("(无统计结果)")
+
+    return "\n".join(lines)
+
+
+# 转置表样式: stats={"mean":{"price":29.99,"qty":150.25},"sum":{"price":2999,"qty":15025}}, columns=["price","qty"]
+#   输出: ["         price         qty ", " ────────────────────────", "   mean   29.9900   150.2500", "    sum 2999.0000 15025.0000"]
+def _build_transposed_table(stats: dict, columns: list) -> list:
+    """转置统计量字典为文本表格 — 小欧 2026-07-05"""
+    if not columns:
+        for op in ("mean", "sum", "min", "max", "count", "std"):
+            v = stats.get(op)
+            if isinstance(v, dict):
+                columns = list(v.keys())
+                break
+    if not columns:
+        return ["(无数据列)"]
+
+    ops = [op for op in ("mean", "sum", "min", "max", "count", "std")
+           if op in stats and isinstance(stats[op], dict)]
+    if not ops:
+        return ["(无可用统计)"]
+
+    col_w = max(12, *(len(str(c)) for c in columns))
+    op_w = max(6, *(len(op) for op in ops))
+
+    lines = []
+    h = " " * op_w
+    for c in columns:
+        h += f"  {str(c):>{col_w}}"
+    lines.append(h)
+    lines.append("─" * len(h))
+
+    for op in ops:
+        row = f"{op:>{op_w}}"
+        for c in columns:
+            v = stats[op].get(c)
+            if v is None:
+                s = "-"
+            elif isinstance(v, float):
+                s = f"{v:.4f}"
+            else:
+                s = str(v)
+            row += f"  {s:>{col_w}}"
+        lines.append(row)
+
+    return lines

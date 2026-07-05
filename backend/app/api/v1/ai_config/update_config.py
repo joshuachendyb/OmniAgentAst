@@ -33,9 +33,10 @@ async def update_config(config_update: ConfigUpdate):
             return fail_result
 
         write_yaml_config(str(config_path), config_data)
+        from app.api.v1.ai_config._helpers import _make_yaml_loader
         with open(config_path, 'r', encoding='utf-8') as f:
             import yaml
-            verify_data = yaml.safe_load(f)
+            verify_data = yaml.load(f, Loader=_make_yaml_loader())
             logger.info(f"[update_config] 验证写入: provider={verify_data['ai'].get('provider')}, model={verify_data['ai'].get('model')}")
         get_config_instance().reload()
 

@@ -11,50 +11,14 @@ import sqlite3
 import time as _time_mod
 from typing import Any, Dict, List, Optional, Union, Literal
 
-from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
-from app.constants import (
+from app.tools.tool_constants import (
     ERR_DB_CONNECTION,
     ERR_DOC_DB_TABLE_NOT_FOUND,
     ERR_SCHEMA_FAILED,
     ERR_SQL_EXEC,
 )
-
-
-def _get_connection(connection_type: str, connection_string: Optional[str], db_path: Optional[str], timeout: int = 30000):
-    """获取数据库连接,返回 (conn, engine_or_none, error_message) — 小健 2026-06-22"""
-    try:
-        if connection_type == "sqlite":
-            if not db_path:
-                return None, None, "SQLite必须提供db_path参数,禁止默认连接应用数据库"
-            return sqlite3.connect(db_path, timeout=timeout / 1000), None, None
-        elif connection_type in ("mysql", "postgresql"):
-            if not connection_string:
-                return None, None, f"错误:{connection_type} 需要提供 connection_string"
-            try:
-                from sqlalchemy import create_engine
-                engine = create_engine(connection_string, connect_args={"timeout": timeout / 1000} if connection_type == "mysql" else {})
-                return engine.connect(), engine, None
-            except ImportError:
-                return None, None, f"错误:{connection_type} 需要安装 sqlalchemy 和对应驱动"
-            except Exception as e:
-                return None, None, f"连接失败: {str(e)}"
-        else:
-            return None, None, f"不支持的数据库类型: {connection_type}"
-    except Exception as e:
-        return None, None, f"获取连接失败: {str(e)}"
-
-
-def _close_connection(conn, engine=None):
-    """关闭数据库连接 — 小健 2026-06-22"""
-    try:
-        if engine:
-            conn.close()
-            engine.dispose()
-        elif conn:
-            conn.close()
-    except Exception as e:
-        logger.warning(f"关闭数据库连接时出错: {e}")
+from app.tools.tool_fc_helper import _get_connection, _close_connection
 
 
 def _get_tables(conn, connection_type: str, db_name: Optional[str]) -> List[str]:
@@ -69,22 +33,36 @@ def _get_tables(conn, connection_type: str, db_name: Optional[str]) -> List[str]
 
 
 def _get_columns(conn, connection_type: str, table_name: str) -> List[Dict]:
-    """获取列信息(2路SQL) — 小沈 2026-05-25"""
-    if connection_type in ("mysql", "postgresql"):
+    """获取列信息(2路SQL) — 小沈 2026-05-25 — 小欧 2026-06-24 修复SQL注入"""
+    if connection_type == "mysql":
         from sqlalchemy import text
         result = conn.execute(text("SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
         return [{"name": r[0], "type": r[1], "nullable": r[2] == "YES", "pk": r[3] == "PRI", "default": r[4]} for r in result]
+    if connection_type == "postgresql":
+        from sqlalchemy import text
+        result = conn.execute(text("SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
+        return [{"name": r[0], "type": r[1], "nullable": r[2] == "YES", "pk": False, "default": r[3]} for r in result]
+    import re
+    if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
+        return []
     cursor = conn.cursor()
     cursor.execute(f"PRAGMA table_info('{table_name}')")
     return [{"name": r[1], "type": r[2], "nullable": not r[3], "default": r[4], "pk": bool(r[5])} for r in cursor.fetchall()]
 
 
 def _get_indexes(conn, connection_type: str, table_name: str) -> List[Dict]:
-    """获取索引信息(2路SQL) — 小沈 2026-05-25"""
-    if connection_type in ("mysql", "postgresql"):
+    """获取索引信息(2路SQL) — 小沈 2026-05-25 — 小欧 2026-06-24 修复SQL注入"""
+    if connection_type == "mysql":
         from sqlalchemy import text
         result = conn.execute(text("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name=:t GROUP BY index_name, non_unique"), {"t": table_name})
         return [{"name": r[0], "unique": not bool(r[1])} for r in result]
+    if connection_type == "postgresql":
+        from sqlalchemy import text
+        result = conn.execute(text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename=:t"), {"t": table_name})
+        return [{"name": r[0], "unique": "UNIQUE" in r[1].upper(), "definition": r[1]} for r in result]
+    import re
+    if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
+        return []
     cursor = conn.cursor()
     cursor.execute(f"PRAGMA index_list('{table_name}')")
     return [{"name": r[1], "unique": bool(r[2])} for r in cursor.fetchall()]
@@ -103,20 +81,32 @@ def _filter_tables(tables: List[str], table_name: Optional[str], filter_pattern:
 
 
 def _build_get_db_schema_llm_data(exec_code, duration_ms, total_tables=0, table_names=None,
-                                    err_code="", detail="", hint=""):
-    """get_db_schema的llm_data构建函数 — 小健 2026-06-22"""
+                                    err_code="", detail="", hint="",
+                                    connection_type="", db_path="", db_name="", table_name="", filter_pattern=""):
+    """get_db_schema的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params"""
     table_names = table_names or []
+    _act_params = {}
+    if connection_type:
+        _act_params["connection_type"] = connection_type
+    if db_path:
+        _act_params["db_path"] = db_path
+    if db_name:
+        _act_params["db_name"] = db_name
+    if table_name:
+        _act_params["table_name"] = table_name
+    if filter_pattern:
+        _act_params["filter_pattern"] = filter_pattern
     if exec_code == "error":
         return {
             "summary": f"获取数据库结构失败: {detail}" if detail else "获取数据库结构失败",
-            "action": {"tool": "get_db_schema", "tool_zh": "获取结构", "target": "database", "params": {}},
+            "action": {"tool": "get_db_schema", "tool_zh": "获取结构", "target": "database", "params": _act_params},
             "status": {"exec_code": "error", "message": "获取失败", "code": err_code or ERR_DB_CONNECTION, "detail": detail, "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"获取到{total_tables}个表的结构信息",
-        "action": {"tool": "get_db_schema", "tool_zh": "获取结构", "target": "database", "params": {}},
+        "action": {"tool": "get_db_schema", "tool_zh": "获取结构", "target": "database", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total_tables, "text": f"{total_tables}个表"}, "tables": {"value": table_names, "text": f"表: {', '.join(table_names[:5])}"}},
@@ -129,17 +119,24 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
     conn = engine = None
     t0 = _time_mod.perf_counter()
     try:
+        if connection_type == "sqlite" and db_path and not __import__("os").path.exists(db_path):
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DB_CONNECTION, detail=f"数据库文件不存在: {db_path}", hint="请检查路径",
+                                                       connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
+            return build_error(data={"error_detail": f"数据库文件不存在: {db_path}", "params": {"db_path": db_path}}, llm_data=llm_data)
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DB_CONNECTION, detail=conn_error, hint="请检查连接参数")
+            llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DB_CONNECTION, detail=conn_error, hint="请检查连接参数",
+                                                       connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
             return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
 
         tables = _get_tables(conn, connection_type, db_name)
         tables = _filter_tables(tables, table_name, filter_pattern)
         if table_name and not tables:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DOC_DB_TABLE_NOT_FOUND, detail=f"表不存在: {table_name}", hint="请确认表名正确")
+            llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DOC_DB_TABLE_NOT_FOUND, detail=f"表不存在: {table_name}", hint="请确认表名正确",
+                                                       connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
             return build_error(data={"error_detail": f"表不存在: {table_name}", "params": {"table_name": table_name}}, llm_data=llm_data)
 
         schema_info = []
@@ -152,21 +149,30 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
         for table in schema_info:
             md += f"### {table['name']}\n\n|字段名|类型|可空|主键|默认值|\n|--------|------|------|------|--------|\n"
             for c in table["columns"]:
-                md += f"|{c['name']}|{c['type']}|{'否' if c.get('nullable') else '是'}|{'是' if c.get('pk') else '否'}|{c.get('default') or '-'}|\n"
+                md += f"|{c['name']}|{c['type']}|{'是' if c.get('nullable') else '否'}|{'是' if c.get('pk') else '否'}|{c.get('default') or '-'}|\n"
             md += "\n"
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         table_names = [t["name"] for t in schema_info]
-        llm_data = _build_get_db_schema_llm_data("success", duration_ms, len(schema_info), table_names)
+        llm_data = _build_get_db_schema_llm_data("success", duration_ms, len(schema_info), table_names,
+                                                    connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #6 schema
+        # trigger: "tables" in data — tables 是 List[dict], 每项含 name+columns
+        # handler: _format_schema(data["tables"])
+        # file:    observation_formatter.py:144-146
+        # ------------------------------------------------------------------------------
         return build_success(data={"tables": schema_info, "total": len(schema_info), "markdown": md}, llm_data=llm_data)
 
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SQL_EXEC, detail=str(e))
+        llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SQL_EXEC, detail=str(e),
+                                                   connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
         return build_error(data={"error_detail": str(e), "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SCHEMA_FAILED, detail=str(e))
+        llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SCHEMA_FAILED, detail=str(e),
+                                                   connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
         return build_error(data={"error_detail": str(e), "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)

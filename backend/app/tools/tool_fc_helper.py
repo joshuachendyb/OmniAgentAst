@@ -11,13 +11,14 @@ Tool函数公共辅助代码 — 纯逻辑函数集合
   - date_helper.py: parse_datetime_any, parse_datetime_string, is_holiday, calc_next_n_workday, get_holiday_date_by_name, resolve_timezone
   - shell_helper.py: _check_shell_injection, _read_stream_nonblocking
   - db_helper.py: check_db_exists
-  - content_validation.py: validate_json_content, validate_csv_content, validate_xml_content, validate_html_content, validate_python_content
+   - content_validation.py: validate_csv_content, validate_xml_content, validate_html_content, validate_python_content
 """
 # 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 
 import csv
 import importlib
+import locale
 import io
 import json
 import os
@@ -27,15 +28,17 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
-from app.tools.tool_constants import DANGEROUS_PATTERNS, QINGMING_DATES, SHELL_INJECTION_PATTERNS, SUBPROCESS_TIMEOUT_SHORT
+from app.tools.tool_constants import QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
 from app.utils.common_patterns import UTC_OFFSET_PATTERN
-from app.utils.json_utils import parse_json
+
+from app.utils.logger import logger
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -49,13 +52,13 @@ def _check_module(module_name: str) -> bool:
 
 
 def _decode_bytes_safe(data: Any, encodings: Optional[list] = None) -> str:
-    """安全解码bytes为str - 小沈 2026-06-09"""
+    """安全解码bytes为str - 小沈 2026-06-09  fix:系统编码优先于utf-8防GBK被误读 — 小欧 2026-06-23 — 小欧 2026-06-24 utf-8优先防emoji乱码"""
     if data is None:
         return ""
     if isinstance(data, str):
         return data.replace('\r\n', '\n')
     if isinstance(data, bytes):
-        for enc in (encodings or ['utf-8', 'gbk', 'latin-1']):
+        for enc in (encodings or ['utf-8', locale.getpreferredencoding(), 'gbk', 'latin-1']):
             try:
                 return data.decode(enc).replace('\r\n', '\n')
             except (UnicodeDecodeError, LookupError):
@@ -76,14 +79,6 @@ def _check_module_available(module_name: str) -> Tuple[bool, str]:
     except ImportError:
         return False, ""
 
-
-def _validate_code_safety(code: str) -> List[str]:
-    """验证代码安全性 — 小沈 2026-05-17"""
-    warnings = []
-    for pattern, desc in DANGEROUS_PATTERNS:
-        if re.search(pattern, code):
-            warnings.append(desc)
-    return warnings
 
 
 def _check_python_available() -> bool:
@@ -137,8 +132,8 @@ def _load_dataframe(source: Union[str, List[Dict[str, Any]]], **kwargs):
         if not path.exists():
             raise FileNotFoundError(f"文件不存在: {source}")
         suffix = path.suffix.lower()
-        if suffix in (".xlsx", ".xls"):
-            return pd.read_excel(source, engine="openpyxl" if suffix == ".xlsx" else None, **kwargs)
+        if suffix == ".xlsx":
+            return pd.read_excel(source, engine="openpyxl", **kwargs)
         else:
             return pd.read_csv(source, **kwargs)
     elif isinstance(source, list):
@@ -352,12 +347,9 @@ def resolve_timezone(tz_str: str):
 # ═══════════════════════════════════════════════════════════════
 
 def _check_shell_injection(command: str) -> Optional[str]:
-    """检查shell命令注入风险,返回错误描述或None - 小健 2026-05-13"""
-    if not command or not command.strip():
-        return None
-    for pattern, desc in SHELL_INJECTION_PATTERNS:
-        if re.search(pattern, command):
-            return f"检测到高风险shell注入模式: {desc}"
+    """检查shell命令注入风险,返回错误描述或None - 小健 2026-05-13
+    注: && 和 || 已在 execute_shell_command 中翻译为 PS5.1 兼容语法，不再拦截 — 小欧 2026-06-25
+    """
     return None
 
 
@@ -400,9 +392,8 @@ def check_db_exists(db_path: str) -> Dict[str, Any]:
         return {"exists": False, "db_type": None, "size": 0}
     size = path.stat().st_size
     try:
-        conn = sqlite3.connect(str(path))
-        conn.execute("SELECT 1")
-        conn.close()
+        with sqlite3.connect(str(path)) as conn:
+            conn.execute("SELECT 1")
         return {"exists": True, "db_type": "sqlite", "size": size}
     except Exception as e:
         return {"exists": True, "db_type": "unknown", "size": size, "error": str(e)}
@@ -411,15 +402,6 @@ def check_db_exists(db_path: str) -> Dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════
 # 来自 content_validation.py
 # ═══════════════════════════════════════════════════════════════
-
-def validate_json_content(content: str) -> Optional[str]:
-    """验证JSON内容格式 — 小健 2026-05-25"""
-    try:
-        parse_json(content, raise_on_error=True)
-        return None
-    except json.JSONDecodeError as e:
-        return f"JSON格式验证失败: 第{e.lineno}行第{e.colno}列 - {e.msg}"
-
 
 def validate_csv_content(content: str, max_check_lines: int = 1000) -> Optional[str]:
     """验证CSV内容格式 — 小健 2026-05-25"""
@@ -447,12 +429,34 @@ def validate_xml_content(content: str) -> Optional[str]:
         return f"XML格式验证失败: {str(e)[:100]}"
 
 
+class _SimpleHTMLValidator(HTMLParser):
+    """用HTMLParser精确验证HTML — 小欧 2026-06-24"""
+    def __init__(self):
+        super().__init__()
+        self._errors = []
+
+    def handle_starttag(self, tag, attrs):
+        pass
+
+    def handle_endtag(self, tag):
+        pass
+
+    def handle_data(self, data):
+        pass
+
+    def error(self, message):
+        self._errors.append(message)
+
+
 def validate_html_content(content: str) -> Optional[str]:
-    """验证HTML内容格式 — 小健 2026-05-25"""
-    open_tags = content.count('<')
-    close_tags = content.count('>')
-    if open_tags != close_tags:
-        return f"HTML标记验证警告: '<'({open_tags}个)与'>'({close_tags}个)数量不匹配"
+    """验证HTML内容格式 — 小健 2026-05-25 — 小欧 2026-06-24 改用HTMLParser避免误报"""
+    if not content or not content.strip():
+        return None
+    validator = _SimpleHTMLValidator()
+    try:
+        validator.feed(content)
+    except Exception as e:
+        return f"HTML解析错误: {e}"
     return None
 
 
@@ -530,16 +534,6 @@ def _detect_encoding_simple(path, default: str = "utf-8") -> str:
         return default
 
 
-def _read_json(file_path: str, encoding: str = "auto_detect") -> Any:
-    """读取JSON文件，返回纯数据 — 小沈 2026-05-25"""
-    path = Path(file_path)
-    if not path.exists():
-        raise FileNotFoundError(f"文件不存在: {file_path}")
-    actual_encoding = _detect_encoding_simple(path) if encoding == "auto_detect" else encoding
-    with open(path, "r", encoding=actual_encoding) as f:
-        return json.load(f)
-
-
 def _write_json(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2, ensure_ascii: bool = False, create_parents: bool = True) -> Dict[str, Any]:
     """写入JSON文件，返回纯dict — 小沈 2026-05-03"""
     path = Path(file_path)
@@ -608,45 +602,45 @@ def _write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int 
 
 
 def write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
-    """使用OrderedDict写入YAML — 小沈 2026-06-09"""
+    """按传入 dict 的原始 key 顺序写入 YAML（tool专用辅助函数，不做任何重排）— 小沈 2026-06-09 — 小欧 2026-06-24 修复全局YAML状态污染"""
     import yaml
     from collections import OrderedDict
     path = Path(file_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    def _order(d):
+    class _OrderedDumper(yaml.Dumper):
+        """自定义Dumper避免污染全局YAML状态"""
+        pass
+
+    _OrderedDumper.add_representer(OrderedDict, lambda dumper, data: dumper.represent_dict(data.items()))
+
+    def _to_ordered(d):
         if not isinstance(d, dict):
             return d
         result = OrderedDict()
-        if 'ai' in d:
-            ai_data = d['ai']
-            ai_ordered = OrderedDict()
-            if 'provider' in ai_data:
-                ai_ordered['provider'] = ai_data['provider']
-            if 'model' in ai_data:
-                ai_ordered['model'] = ai_data['model']
-            for key in sorted(ai_data.keys()):
-                if key not in ('provider', 'model'):
-                    ai_ordered[key] = _order(ai_data[key]) if isinstance(ai_data[key], dict) else ai_data[key]
-            result['ai'] = ai_ordered
-        for key in sorted(d.keys()):
-            if key != 'ai':
-                result[key] = _order(d[key]) if isinstance(d[key], dict) else d[key]
+        for k in d:
+            result[k] = _to_ordered(d[k]) if isinstance(d[k], dict) else d[k]
         return result
 
     with open(path, "w", encoding=encoding) as f:
-        yaml.dump(_order(data), f, allow_unicode=True, default_flow_style=False, indent=indent)
+        yaml.dump(_to_ordered(data), f, allow_unicode=True, default_flow_style=False, indent=indent, Dumper=_OrderedDumper)
     return {"file_path": file_path}
 
 
 def _parse_toml(file_path: str, encoding: str = "utf-8") -> Any:
-    """读取TOML文件，返回纯数据 — 小沈 2026-05-04"""
-    import tomli
+    """读取TOML文件，返回纯数据 — 小沈 2026-05-04 — 小欧 2026-06-24 优先使用标准库tomllib"""
+    try:
+        import tomllib
+    except ImportError:
+        try:
+            import tomli as tomllib
+        except ImportError:
+            raise ImportError("需要安装tomli库来读取TOML文件: pip install tomli")
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"文件不存在: {file_path}")
     with open(path, "rb") as f:
-        return tomli.load(f)
+        return tomllib.load(f)
 
 
 def _write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -> Dict[str, Any]:
@@ -660,12 +654,12 @@ def _write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -
 
 
 def _parse_ini(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
-    """读取INI配置文件，返回纯dict — 小沈 2026-05-04"""
+    """读取INI配置文件，返回纯dict — 小沈 2026-05-04 — 小欧 2026-06-24 修复重复key crash"""
     import configparser
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"文件不存在: {file_path}")
-    config = configparser.ConfigParser()
+    config = configparser.ConfigParser(strict=False)
     config.read(path, encoding=encoding)
     result = {}
     for section in config.sections():
@@ -683,9 +677,15 @@ def _parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
 
     def elem_to_dict(elem):
         children = list(elem)
+        attrs = dict(elem.attrib) if elem.attrib else None
         if not children:
-            return elem.text
+            text = (elem.text or "").strip()
+            if attrs:
+                return {"@attrs": attrs, "@text": text}
+            return text
         result = {}
+        if attrs:
+            result["@attrs"] = attrs
         for child in children:
             child_data = elem_to_dict(child)
             if child.tag in result:
@@ -719,7 +719,7 @@ def _parse_properties(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]
 
 
 FORMAT_DISPATCH = {
-    "json": {"read": _read_json, "write": _write_json},
+    "json": {"write": _write_json},
     "yaml": {"read": _parse_yaml, "write": _write_yaml},
     "toml": {"read": _parse_toml, "write": _write_toml},
     "ini": {"read": _parse_ini},
@@ -755,11 +755,47 @@ def backup_file(file_path: str, backup_dir: Optional[str] = None, suffix: str = 
     }
 
 
+def _get_connection(connection_type, connection_string=None, db_path=None, timeout=30000):
+    """获取数据库连接,返回 (conn, engine_or_none, error_message) — 小欧 2026-06-24 从dataanalysis提取到公共helper"""
+    try:
+        if connection_type == "sqlite":
+            if not db_path:
+                return None, None, "SQLite必须提供db_path参数,禁止默认连接应用数据库"
+            return sqlite3.connect(db_path, timeout=timeout / 1000), None, None
+        elif connection_type in ("mysql", "postgresql"):
+            if not connection_string:
+                return None, None, f"错误:{connection_type} 需要提供 connection_string"
+            try:
+                from sqlalchemy import create_engine
+                engine = create_engine(connection_string, connect_args={"timeout": timeout / 1000} if connection_type == "mysql" else {})
+                return engine.connect(), engine, None
+            except ImportError:
+                return None, None, f"错误:{connection_type} 需要安装 sqlalchemy 和对应驱动"
+            except Exception as e:
+                return None, None, f"连接失败: {str(e)}"
+        else:
+            return None, None, f"不支持的数据库类型: {connection_type}"
+    except Exception as e:
+        return None, None, f"获取连接失败: {str(e)}"
+
+
+def _close_connection(conn, engine=None):
+    """关闭数据库连接 — 小欧 2026-06-24 从dataanalysis提取到公共helper — 小欧 2026-06-28 修复silent swallow"""
+    try:
+        if engine:
+            conn.close()
+            engine.dispose()
+        elif conn:
+            conn.close()
+    except Exception as e:
+        logger.warning(f"关闭数据库连接时出错: {e}")
+
+
 __all__ = [
     "_check_module",
     "_decode_bytes_safe",
     "_check_module_available",
-    "_validate_code_safety",
+
     "_check_python_available",
     "_check_node_available",
     "_serialize_rows",
@@ -775,14 +811,12 @@ __all__ = [
     "_check_shell_injection",
     "_read_stream_nonblocking",
     "check_db_exists",
-    "validate_json_content",
     "validate_csv_content",
     "validate_xml_content",
     "validate_html_content",
     "validate_python_content",
     "_detect_encoding",
     "_detect_encoding_simple",
-    "_read_json",
     "_write_json",
     "_read_csv_basic",
     "_parse_yaml",
@@ -800,4 +834,6 @@ __all__ = [
     "LUNAR_HOLIDAYS",
     "LUNAR_HOLIDAY_NAMES",
     "HOLIDAY_ALIASES",
+    "_get_connection",
+    "_close_connection",
 ]

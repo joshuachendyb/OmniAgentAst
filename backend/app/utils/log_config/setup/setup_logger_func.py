@@ -15,11 +15,21 @@ from app.utils.log_config.handler import (
     _create_handler_for_logger,
 )
 from app.utils.log_config.config import LogConfig
-from app.utils.log_config.setup.setup_file_handler import setup_file_handler
 
 _logging_configured = False
 _file_handler: Optional[logging.handlers.RotatingFileHandler] = None
 _console_handler: Optional[logging.StreamHandler] = None
+
+
+def setup_file_handler() -> SafeRotatingFileHandler:
+    """拷贝自 setup_file_handler.py"""
+    log_file = _get_log_file_path()
+    return SafeRotatingFileHandler(
+        log_file,
+        maxBytes=LogConfig.get_max_bytes(),
+        backupCount=LogConfig.get_backup_count(),
+        encoding='utf-8'
+    )
 
 
 def setup_logger(name: str) -> logging.Logger:
@@ -36,7 +46,7 @@ def setup_logger(name: str) -> logging.Logger:
 
     if is_debug:
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(filename)s - [%(lineno)d] - %(message)s'
+            '%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
         )
     else:
         formatter = logging.Formatter(
@@ -50,7 +60,7 @@ def setup_logger(name: str) -> logging.Logger:
 
         _console_handler = logging.StreamHandler()
         _console_handler.setFormatter(formatter)
-        _console_handler.setLevel(logging.INFO)
+        _console_handler.setLevel(logging.WARNING)
 
         _logging_configured = True
 
@@ -66,7 +76,7 @@ def setup_logger(name: str) -> logging.Logger:
 
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(logging.WARNING)
 
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)

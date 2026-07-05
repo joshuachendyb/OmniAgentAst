@@ -14,43 +14,8 @@ from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.constants import ERR_SQL_EXEC
-
-
-def _get_connection(connection_type: str, connection_string: Optional[str], db_path: Optional[str], timeout: int = 30000):
-    """获取数据库连接,返回 (conn, engine_or_none, error_message) — 小健 2026-06-22"""
-    try:
-        if connection_type == "sqlite":
-            if not db_path:
-                return None, None, "SQLite必须提供db_path参数,禁止默认连接应用数据库"
-            return sqlite3.connect(db_path, timeout=timeout / 1000), None, None
-        elif connection_type in ("mysql", "postgresql"):
-            if not connection_string:
-                return None, None, f"错误:{connection_type} 需要提供 connection_string"
-            try:
-                from sqlalchemy import create_engine
-                engine = create_engine(connection_string, connect_args={"timeout": timeout / 1000} if connection_type == "mysql" else {})
-                return engine.connect(), engine, None
-            except ImportError:
-                return None, None, f"错误:{connection_type} 需要安装 sqlalchemy 和对应驱动"
-            except Exception as e:
-                return None, None, f"连接失败: {str(e)}"
-        else:
-            return None, None, f"不支持的数据库类型: {connection_type}"
-    except Exception as e:
-        return None, None, f"获取连接失败: {str(e)}"
-
-
-def _close_connection(conn, engine=None):
-    """关闭数据库连接 — 小健 2026-06-22"""
-    try:
-        if engine:
-            conn.close()
-            engine.dispose()
-        elif conn:
-            conn.close()
-    except Exception as e:
-        logger.warning(f"关闭数据库连接时出错: {e}")
+from app.tools.tool_constants import ERR_SQL_EXEC
+from app.tools.tool_fc_helper import _get_connection, _close_connection
 
 
 def _check_sql_safety(sql: str, dry_run: bool) -> Tuple[bool, Optional[str], Optional[List[str]]]:
@@ -71,27 +36,37 @@ def _check_sql_safety(sql: str, dry_run: bool) -> Tuple[bool, Optional[str], Opt
     return False, None, None
 
 
-def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows):
-    """execute_sql的llm_data构建函数 — 小健 2026-06-22"""
+def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, detail="", hint="",
+                                 connection_type="", db_path="", dry_run=False, timeout=0):
+    """execute_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数 — 小欧 2026-07-05 新增user_params"""
+    _act_params = {"sql": sql[:200]}
+    if connection_type:
+        _act_params["connection_type"] = connection_type
+    if db_path:
+        _act_params["db_path"] = db_path
+    if dry_run:
+        _act_params["dry_run"] = dry_run
+    if timeout:
+        _act_params["timeout"] = timeout
     if exec_code == "error":
         return {
-            "summary": f"SQL执行失败: {sql[:80]}",
-            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": {"sql": sql[:200]}},
-            "status": {"exec_code": "error", "message": "执行失败", "code": ERR_SQL_EXEC, "detail": "SQL执行错误", "hint": "请检查SQL语法"},
+            "summary": f"SQL执行失败: {detail}",
+            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": _act_params},
+            "status": {"exec_code": "error", "message": detail if detail else "执行失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     if exec_code == "warning":
         return {
             "summary": f"SQL执行警告: 影响{affected_rows}行",
-            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": {"sql": sql[:200]}},
+            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": _act_params},
             "status": {"exec_code": "warning", "message": "影响行数超过安全阈值", "code": "WARNING_DB_SAFETY", "detail": f"影响行数{affected_rows}>10000", "hint": "建议缩小条件范围"},
             "duration_ms": duration_ms,
             "metrics": {"affected_rows": {"value": affected_rows, "text": f"{affected_rows}行"}},
         }
     return {
         "summary": f"SQL执行成功, 影响{affected_rows}行",
-        "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": {"sql": sql[:200]}},
+        "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": _act_params},
         "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"affected_rows": {"value": affected_rows, "text": f"影响{affected_rows}行"}},
@@ -101,35 +76,92 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows):
 def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
                 connection_string: Optional[str] = None, db_path: Optional[str] = None,
                 dry_run: bool = False, timeout: int = 30000) -> Dict[str, Any]:
-    """执行写操作SQL — 小健 2026-06-22 拆分独立文件"""
+    """执行写操作SQL — 小健 2026-06-22 拆分独立文件
+    小欧 2026-07-04 修复: 增加None/空字符串校验
+    """
     conn = None
     engine = None
     t0 = _time_mod.perf_counter()
+
+    if not isinstance(sql, str) or not sql.strip():
+        duration_ms = 0
+        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql or "", 0, detail="SQL语句不能为空", hint="请提供有效的SQL语句",
+                                                 connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
+        return build_error(data={"error_detail": "SQL语句不能为空", "params": {"sql": sql}}, llm_data=llm_data)
 
     try:
         has_danger, warning_msg, dangerous_list = _check_sql_safety(sql, dry_run)
         if has_danger and not dry_run:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, 0)
+            llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, 0,
+                                                     connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
             return build_warning(data={"detected": dangerous_list, "suggestion": "检测到危险操作,建议使用 dry_run=true 先验证"}, llm_data=llm_data)
 
         if dry_run:
+            conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
+            if conn is None:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=conn_error, hint="请检查数据库连接参数",
+                                                         connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
+                return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
+            syntax_valid = False
+            try:
+                if connection_type == "sqlite":
+                    conn.execute("SAVEPOINT dry_run_check")
+                    try:
+                        conn.execute(sql)
+                    except Exception:
+                        syntax_valid = False
+                    else:
+                        syntax_valid = True
+                    finally:
+                        conn.execute("ROLLBACK TO SAVEPOINT dry_run_check; RELEASE SAVEPOINT dry_run_check")
+                else:
+                    from sqlalchemy import text
+                    conn.execute(text(sql))
+                    syntax_valid = True
+            except Exception as e:
+                syntax_valid = False
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    logger.warning("[execute_sql] 关闭校验连接失败")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, 0)
-            return build_success(data={"sql": sql, "dry_run": True, "syntax_valid": True}, llm_data=llm_data)
+            if syntax_valid:
+                llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, 0,
+                                                         connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
+                # ---- observation_formatter route -------------------------------------------
+                # branch: #21 fallback (key:val) — dry_run path
+                # trigger: 无上述20条分支匹配 — sql/dry_run/syntax_valid 不命中专用分支
+                # handler: _format_scalar_data(data) — key | value 单行列表
+                # file:    observation_formatter.py:214
+                # ------------------------------------------------------------------------------
+                return build_success(data={"sql": sql, "dry_run": True, "syntax_valid": True}, llm_data=llm_data)
+            else:
+                llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail="SQL语法校验失败", hint="请检查SQL语法",
+                                                         connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
+                return build_error(data={"sql": sql, "dry_run": True, "syntax_valid": False, "error_detail": "SQL语法校验失败"}, llm_data=llm_data)
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0)
+            llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=conn_error, hint="请检查数据库连接参数",
+                                                     connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
             return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
 
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
             engine = conn.engine
             result = conn.execute(text(sql))
-            conn.commit()
             affected_rows = result.rowcount
+            if affected_rows > 10000:
+                conn.rollback()
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, affected_rows,
+                                                         connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
+                return build_warning(data={"affected_rows": affected_rows, "action": "rollback"}, llm_data=llm_data)
+            conn.commit()
         else:
             cursor = conn.cursor()
             cursor.execute(sql)
@@ -137,33 +169,42 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             if affected_rows > 10000:
                 conn.rollback()
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, affected_rows)
+                llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, affected_rows,
+                                                         connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
                 return build_warning(data={"affected_rows": affected_rows, "action": "rollback"}, llm_data=llm_data)
             conn.commit()
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, affected_rows)
+        llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, affected_rows,
+                                                 connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val) — normal path
+        # trigger: 无上述20条分支匹配 — affected_rows/sql 不命中专用分支
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data={"affected_rows": affected_rows, "sql": sql}, llm_data=llm_data)
 
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0)
+        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=str(e), hint="请检查SQL语法",
+                                                 connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
         if conn:
             try:
                 conn.rollback()
             except Exception:
-                pass
+                logger.warning("[execute_sql] sqlite3回滚失败")
         logger.error(f"[execute_sql] ERR_SQL_EXEC: {e}")
         return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0)
+        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=str(e), hint="请检查SQL语句和参数",
+                                                 connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
         if conn:
             try:
                 conn.rollback()
             except Exception:
-                pass
-        logger.error(f"[execute_sql] ERR_EXEC_FAILED: {e}")
+                logger.warning("[execute_sql] 回滚失败")
         return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)

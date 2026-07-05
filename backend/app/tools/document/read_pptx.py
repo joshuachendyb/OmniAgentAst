@@ -15,20 +15,23 @@ from typing import Any, Dict
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.constants import ERR_DOC_READ_PPTX
+from app.tools.file_type_checker import check_for_document_tool
+from app.tools.tool_constants import ERR_DOC_READ_PPTX
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
 def _build_read_pptx_llm_data(
     exec_code: str, duration_ms: int,
-    file_path: str = "", slide_count: int = 0, text_len: int = 0, detail: str = "",
+    file_path: str = "", slide_count: int = 0, slides_read: int = 0,
+    text_len: int = 0, table_count: int = 0, image_count: int = 0, detail: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """read_pptx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """read_pptx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
             "summary": f"读取PPT失败: {detail}",
             "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "读取PPT失败", "code": ERR_DOC_READ_PPTX, "detail": detail, "hint": "请检查文件路径和格式"},
+            "status": {"exec_code": "error", "message": "读取PPT失败", "code": ERR_DOC_READ_PPTX, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -45,41 +48,63 @@ def _build_read_pptx_llm_data(
 
 
 def read_pptx(file_name: str) -> Dict[str, Any]:
-    """读取PPT文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件"""
+    """读取PPT文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
     file_path = file_name
 
+    # 文件类型前置检查 — 小欧 2026-06-24
+    is_valid, error_detail, suggested_tool = check_for_document_tool(file_name)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=error_detail, hint="文件类型不匹配,请使用.pptx格式")
+        return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
+
     if not _check_module("pptx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail="python-pptx库未安装")
+        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail="python-pptx库未安装", hint="请安装python-pptx库")
         return build_error(data={"error_detail": "python-pptx库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
 
     try:
         from pptx import Presentation
 
-        path = Path(file_path)
-        if not path.exists():
+        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
+        if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
-            return build_error(data={"error_detail": "文件不存在", "params": {"file_name": file_name}}, llm_data=llm_data)
+            llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径是否正确")
+            return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
 
+        path = Path(file_path)
         prs = Presentation(path)
         slides_data = []
         notes_data = []
 
         for slide_num, slide in enumerate(prs.slides, 1):
             slide_text = []
+            tables_data = []
             for shape in slide.shapes:
-                if shape.has_text_frame:
+                if shape.has_table:
+                    table = shape.table
+                    table_rows = []
+                    for row in table.rows:
+                        row_data = [cell.text.strip() for cell in row.cells]
+                        table_rows.append(row_data)
+                        slide_text.append(" | ".join(row_data))
+                    tables_data.append(table_rows)
+                elif shape.has_text_frame:
                     for para in shape.text_frame.paragraphs:
                         text = para.text.strip()
                         if text:
                             slide_text.append(text)
 
-            slides_data.append({
+            slide_dict = {
                 "slide_num": slide_num,
                 "text": "\n".join(slide_text),
-            })
+            }
+            if tables_data:
+                slide_dict["tables"] = tables_data
+            slides_data.append(slide_dict)
 
             if slide.has_notes_slide:
                 notes = slide.notes_slide.notes_text_frame.text.strip()
@@ -99,9 +124,15 @@ def read_pptx(file_name: str) -> Dict[str, Any]:
         total_text = sum(len(s.get("text", "")) for s in slides_data)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_pptx_llm_data("success", duration_ms, file_path, len(prs.slides), total_text)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #16 slides items
+        # trigger: "slides" in data — slides 是 List[dict], 每项含 slide_num/text/tables
+        # handler: _format_slides(data)
+        # file:    observation_formatter.py:200-202
+        # ------------------------------------------------------------------------------
         return build_success(data=result_data, llm_data=llm_data)
 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=str(e))
+        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=str(e), hint="读取PPT文档异常,请检查文件完整性")
         return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)

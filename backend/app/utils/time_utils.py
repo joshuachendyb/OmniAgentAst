@@ -69,6 +69,20 @@ def timestamp_for_filename() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
+def format_timestamp(val: Any) -> str:
+    """通用时间戳格式化 — 小沈 2026-02-17
+    小欧 2026-07-04 修复: 增加OSError捕获，处理Windows不支持负时间戳的问题
+    """
+    if isinstance(val, (int, float)):
+        try:
+            return datetime.fromtimestamp(val / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
+        except (OSError, OverflowError, ValueError):
+            return str(val)
+    if isinstance(val, str):
+        return val.replace('+00:00', 'Z') if '+00:00' in val else (val + 'Z' if not val.endswith('Z') else val)
+    return convert_to_utc(val)
+
+
 __all__ = [
     "create_timestamp",
     "get_timestamp_ms",
@@ -77,4 +91,5 @@ __all__ = [
     "ensure_timestamp_milliseconds",
     "timestamp_for_filename",
     "now_str",
+    "format_timestamp",
 ]

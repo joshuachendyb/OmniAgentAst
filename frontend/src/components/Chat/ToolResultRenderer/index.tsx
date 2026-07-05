@@ -68,10 +68,10 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
   switch (step.tool_name) {
     case "list_directory":
       return <ListDirectoryRenderer step={step} isExpanded={isExpanded} onToggle={handleToggle} />;
-    case "read_text_file":
+    case "readtext":
     case "read_file":
       return <ReadFileRenderer step={step} />;
-    case "write_text_file":
+    case "writetext":
     case "write_file":
       return <WriteFileRenderer step={step} />;
     case "delete_file":
@@ -98,11 +98,11 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
     case "compress_files":
       return <CompressFilesRenderer step={step} />;
     case "get_current_time":
-    case "time_now":
+    case "timenow":
       return <TimeNowRenderer step={step} />;
     case "time_format":
       return <TimeFormatRenderer step={step} />;
-    case "time_diff":
+    case "timediff":
       return <TimeDiffRenderer step={step} />;
     case "timer_set":
       return <TimerSetRenderer step={step} />;
@@ -116,7 +116,7 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
       return <TimeIsWeekendRenderer step={step} />;
     case "time_is_holiday":
       return <TimeIsHolidayRenderer step={step} />;
-    case "time_add":
+    case "timeadd":
       return <TimeAddRenderer step={step} />;
     case "time_compare":
       return <TimeCompareRenderer step={step} />;
@@ -136,10 +136,10 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
       return <FileStatisticsRenderer step={step} />;
     case "file_checksum":
       return <FileChecksumRenderer step={step} />;
-    case "edit_text_file":
+    case "edittext":
     case "rename_file":
     case "list_allowed_directories":
-    case "read_media_file":
+    case "readmedia":
     case "read_batch_file":
     case "precise_replace_in_file":
     case "get_file_hash":

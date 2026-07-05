@@ -34,9 +34,7 @@ from app.services.task.task_registry import (
     cleanup_expired_tasks,
 )
 from app.services.task.task_cancel import cancel_task
-from app.services.task.task_pause import pause_task
-from app.services.task.task_resume import resume_task
-from app.services.task.task_cleanup import task_cleanup
+from app.services.task.task_registry import pause_task, resume_task, task_cleanup
 from app.services.task.task_cancel_check import task_cancel_check_and_yield
 from app.services.task.task_interrupt_check import (
 

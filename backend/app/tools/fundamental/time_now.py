@@ -12,29 +12,29 @@ from datetime import datetime
 from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_TIME_NOW
+from app.tools.tool_constants import ERR_TIME_NOW
 
 
-def _build_time_now_llm_data(exec_code: str, duration_ms: int, iso: str, formatted: str, weekday: str) -> dict:
-    """time_now的llm_data构建函数 — 小健 2026-06-21"""
+def _build_time_now_llm_data(exec_code: str, duration_ms: int, iso: str, formatted: str, weekday: str, detail: str = "", hint: str = "") -> dict:
+    """time_now的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-07-05 加detail/hint参数"""
     if exec_code == "error":
         return {
             "summary": "获取当前时间失败",
-            "action": {"tool": "time_now", "tool_zh": "获取时间", "target": "", "params": {}},
-            "status": {"exec_code": "error", "message": "获取当前时间失败", "code": ERR_TIME_NOW, "detail": "", "hint": "请重试"},
+            "action": {"tool": "timenow", "tool_zh": "获取时间", "target": "", "params": {}},
+            "status": {"exec_code": "error", "message": "获取当前时间失败", "code": ERR_TIME_NOW, "detail": detail if detail else "", "hint": hint if hint else "请重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"当前时间 {formatted}，{weekday}",
-        "action": {"tool": "time_now", "tool_zh": "获取时间", "target": "", "params": {}},
+        "action": {"tool": "timenow", "tool_zh": "获取时间", "target": "", "params": {}},
         "status": {"exec_code": "success", "message": "获取当前时间成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-def time_now() -> Dict[str, Any]:
+def timenow() -> Dict[str, Any]:
     """获取当前系统时间 — 小欧 2026-06-17 只保留"now"操作; 小健 2026-06-22 拆分独立文件"""
     t0 = _time_mod.perf_counter()
     try:
@@ -51,11 +51,17 @@ def time_now() -> Dict[str, Any]:
             "isoweekday": now.isoweekday(),
         }
         llm_data = _build_time_now_llm_data("success", duration_ms, now.isoformat(), formatted, now.strftime("%A"))
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val)
+        # trigger: 无上述20条分支匹配 — iso/timestamp/format/timezone/weekday/isoweekday
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_time_now_llm_data("error", duration_ms, "", "", "")
-        return build_error(data={"error_detail": str(e), "params": {"timezone": timezone}}, llm_data=llm_data)
+        llm_data = _build_time_now_llm_data("error", duration_ms, "", "", "", detail=str(e), hint="系统内部错误，请重试")
+        return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
 
 
-__all__ = ["time_now"]
+__all__ = ["timenow"]

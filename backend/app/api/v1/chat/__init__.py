@@ -8,11 +8,8 @@ Author: 小沈 - 2026-03-26
 """
 
 from app.api.v1.chat.models import ChatMessage, ChatRequest
-from app.api.v1.chat.step_start import step_start
-from app.api.v1.chat.chat_stream import chat_stream
-from app.api.v1.chat.confirm_operation import confirm_operation
+from app.api.v1.chat.chat_openai import chat_stream, confirm_operation, step_start, router, task_router
 from app.api.v1.chat.validate_chat_config import validate_chat_config
-from app.api.v1.chat.chat_router import router, task_router
 
 __all__ = [
     "ChatMessage", "ChatRequest",

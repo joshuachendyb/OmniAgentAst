@@ -1,4 +1,4 @@
-"""
+﻿"""
 LLM 核心模块 — BaseAIService
 
 重构: 删除mixin继承, 统一为request/request_stream/chat + mode参数 - 小沈 2026-06-09
@@ -7,36 +7,26 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 
 import asyncio
 import json as _json
-import traceback
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 
 import httpx
 from app.utils.logger import logger
-from app.utils.json_utils import parse_json
-from app.services.llm.core import ChatResponse, StreamChunk, _resolve_exception
+from app.utils.json_utils import parse_json, _try_fix_incomplete_json, _normalize_tool_params
+from app.services.llm.core import ChatResponse, FCFormatError, StreamChunk, _resolve_exception
+# LLM层常量 — 合并自llm_constants.py 小健 2026-07-03
+LLM_TEMPERATURE = 0.7
+LLM_TOOL_CHOICE = "auto"
+LLM_STREAM_MAX_RETRIES = 3
+LLM_STREAM_OPTIONS = {"include_usage": True}
+FC_FALLBACK_ENABLED = True
+FC_MAX_RETRIES = 2
+TOOL_CACHE_TTL = 300
 from app.services.llm.stream_parser import create_cancelled_chunk
 from app.services.llm.client_sdk import create_llm_client
-from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chunk
+from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
+from app.utils.sys_error_classifier import SystemErrorClassifier
 
 from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
-
-
-def _normalize_tool_params(params: Any) -> Any:
-    """递归归一化tool params — 修复LLM双倍编码: 字符串形式的JSON array/object还
-    原为真实类型. 在 _json.loads(arguments)之后调用,对后续所有工具无感生效 - 小沈 2026-06-14"""
-    if isinstance(params, dict):
-        return {k: _normalize_tool_params(v) for k, v in params.items()}
-    if isinstance(params, list):
-        return [_normalize_tool_params(item) for item in params]
-    if isinstance(params, str) and params.strip():
-        s = params.strip()
-        if s.startswith('[') or s.startswith('{'):
-            try:
-                parsed = _json.loads(s)
-                return _normalize_tool_params(parsed)
-            except _json.JSONDecodeError:
-                pass
-    return params
 
 
 class BaseAIService:
@@ -50,9 +40,11 @@ class BaseAIService:
         provider: str = "",
         timeout: int = DEFAULT_LLM_TIMEOUT,
         max_tokens: Optional[int] = None,
-        temperature: float = 0.7,
+        temperature: float = None,
         seed: Optional[int] = None,
     ):
+        if temperature is None:
+            temperature = LLM_TEMPERATURE
         self.api_key = api_key
         self.model = model
         self.api_base = api_base
@@ -113,8 +105,8 @@ class BaseAIService:
 
     def _create_stream_error_chunk(self, e: Exception) -> StreamChunk:
         msg, err_type = _resolve_exception(e)
-        if err_type == "unknown_error":
-            logger.error(f"[{_resolve_exception.__name__}] 未知异常: {e}, 类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}")
+        if err_type == "unknown":
+            logger.warning(f"[{type(e).__name__}] 未分类异常: {e}")
         return StreamChunk(content="", model=self.model, is_done=True, stream_error=msg, stream_error_type=err_type)
 
     async def request(
@@ -142,7 +134,7 @@ class BaseAIService:
             content = msg.get("content", "") or ""
             tool_calls = msg.get("tool_calls", [])
 
-            reasoning = extract_reasoning_from_chunk(msg) or ""
+            reasoning = extract_reasoning_from_message(msg) or ""
 
             return ChatResponse(
                 content=content,
@@ -165,10 +157,11 @@ class BaseAIService:
         self._ensure_client()
 
         retry_count = 0
-        max_retries = 3
-        stream_options = {"include_usage": True}
+        max_retries = LLM_STREAM_MAX_RETRIES
+        stream_options = LLM_STREAM_OPTIONS
 
         while retry_count <= max_retries:
+            effective_timeout = self.timeout + (retry_count + 1) * 20
             try:
                 tool_call_accumulator = {}
                 raw_data_buf: list = []
@@ -181,6 +174,7 @@ class BaseAIService:
                     temperature=self.temperature,
                     seed=self.seed,
                     stream_options=stream_options,
+                    request_timeout=effective_timeout,
                 ):
                     if await self._check_stop():
                         yield create_cancelled_chunk(self.model)
@@ -211,17 +205,31 @@ class BaseAIService:
                 complete_raw = "\n".join(raw_data_buf)
                 if tool_call_accumulator:
                     tool_calls_list = []
+                    failed_parses = []  # 小欧 2026-06-25 收集解析失败的tool_call
                     for idx in sorted(tool_call_accumulator):
                         tc = tool_call_accumulator[idx]
                         if tc["name"]:
                             try:
-                                params = _normalize_tool_params(_json.loads(tc["arguments"])) if tc["arguments"] else {}
-                            except _json.JSONDecodeError:
-                                params = {}
+                                args_str = tc["arguments"].strip() if tc["arguments"] else ""
+                                if not args_str:
+                                    params = {}
+                                else:
+                                    params = _normalize_tool_params(_json.loads(args_str))
+                            except _json.JSONDecodeError as e:
+                                logger.warning(f"[request_stream] tool_call '{tc['name']}' 参数JSON解析失败: {str(e)[:100]}, arguments前100字符: {args_str[:100]}")
+                                fixed_params = _try_fix_incomplete_json(args_str)
+                                if fixed_params is not None:
+                                    logger.warning(f"[request_stream] 参数截断修复: tool_call '{tc['name']}' 参数JSON不完整, 已自动修复为 {_json.dumps(fixed_params, ensure_ascii=False)}")
+                                    params = _normalize_tool_params(fixed_params)
+                                    tc["_repair_warning"] = f"[Warning: LLM返回的'{tc['name']}' tool_call参数不完整(截断位置: {args_str[:20]}...),已自动修复为 {_json.dumps(params, ensure_ascii=False)}]"
+                                else:
+                                    failed_parses.append(tc["name"])
+                                    continue
                             tool_calls_list.append({
                                 "tool_name": tc["name"],
                                 "tool_params": params,
                                 "tool_call_id": tc.get("id"),
+                                "_repair_warning": tc.get("_repair_warning", ""),
                                 "tool_calls": [{
                                     "id": tc.get("id"),
                                     "type": "function",
@@ -231,17 +239,25 @@ class BaseAIService:
                                     }
                                 }]
                             })
+                    # 小欧 2026-06-25: 所有tool_calls都解析失败 → FCFormatError
+                    if tool_call_accumulator and not tool_calls_list:
+                        raise FCFormatError(
+                            message="所有tool_calls参数解析失败",
+                            details={"failed_parses": failed_parses}
+                        )
                     yield StreamChunk(content="", model=self.model, is_done=False,
                                       tool_calls=tool_calls_list, raw_data=complete_raw)
 
                 yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw, usage=usage_data)
                 return
 
+            except FCFormatError:
+                raise  # 穿透给call_llm_with_fallback重试/降级 — 2026-06-26
             except Exception as e:
                 if self._should_retry(e) and retry_count < max_retries:
                     retry_count += 1
                     wait_time = 2 ** retry_count
-                    logger.warning(f"[request_stream] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: {e}")
+                    logger.warning(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {e}")
                     await asyncio.sleep(wait_time)
                     continue
                 else:
@@ -276,7 +292,8 @@ class BaseAIService:
                 if entry:
                     result[idx] = entry
             return result
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[BaseAIService] _extract_tool_calls异常: {e}")
             return {}
 
     def _extract_usage(self, data_str: str) -> Optional[Dict]:
@@ -289,7 +306,8 @@ class BaseAIService:
             if usage and isinstance(usage, dict):
                 return usage
             return None
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[BaseAIService] _extract_usage异常: {e}")
             return None
 
     def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
@@ -324,9 +342,8 @@ class BaseAIService:
             return None
 
     def _should_retry(self, e: Exception) -> bool:
-        """判断是否应该重试 — 委托给UnifiedErrorClassifier - 小沈 2026-06-17"""
-        from app.utils.error_classifier import UnifiedErrorClassifier
-        return UnifiedErrorClassifier.classify_error(e).is_retryable
+        """判断是否应该重试 — 委托给SystemErrorClassifier - 小沈 2026-06-17"""
+        return SystemErrorClassifier.classify_error(e).is_retryable
 
     async def close(self):
         if self._llm_sdk:

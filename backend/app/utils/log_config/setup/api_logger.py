@@ -20,9 +20,12 @@ class APILogger:
     _instance: Optional['APILogger'] = None
 
     def __init__(self):
+        if hasattr(self, '_initialized'):
+            return
         self.logger: logging.Logger = setup_logger(__name__)
         self.debug_mode: bool = LogConfig.is_debug_mode()
         self._request_times: dict = {}
+        self._initialized = True
 
     def __new__(cls):
         if cls._instance is None:

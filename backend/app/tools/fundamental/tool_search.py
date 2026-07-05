@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-tool_search — BM25 全文检索搜索工具
+searchtool — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
@@ -14,7 +14,7 @@ from typing import Dict, Any, List, Tuple
 
 from app.tools.registry import tool_registry
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_DOC_QUERY_EMPTY
+from app.tools.tool_constants import ERR_DOC_QUERY_EMPTY
 
 
 def _tokenize(text: str) -> List[str]:
@@ -100,24 +100,26 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
     if exec_code == "error":
         return {
             "summary": f"搜索失败: {query}",
-            "action": {"tool": "tool_search", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
+            "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_DOC_QUERY_EMPTY, "detail": "搜索关键词不能为空", "hint": "请输入有效的搜索关键词"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"搜索 '{query}'，匹配 {total_matched} 个工具（共 {total_tools} 个）",
-        "action": {"tool": "tool_search", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
+        "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"matched": {"value": total_matched, "text": f"{total_matched}个"}, "total": {"value": total_tools, "text": f"{total_tools}个"}},
     }
 
 
-def tool_search(query: str) -> Dict[str, Any]:
-    """按关键词搜索匹配的工具列表（BM25 全文检索） — 小健 2026-06-22 拆分独立文件"""
+def searchtool(query: str) -> Dict[str, Any]:
+    """按关键词搜索匹配的工具列表（BM25 全文检索） — 小健 2026-06-22 拆分独立文件
+    小欧 2026-07-04 修复: 增加None/类型校验防止崩溃
+    """
     t0 = time.perf_counter()
-    if not query.strip():
+    if not isinstance(query, str) or not query.strip():
         duration_ms = int((time.perf_counter() - t0) * 1000)
         llm_data = _build_tool_search_llm_data("error", duration_ms, query, 0, 0, [])
         return build_error(data={"error_detail": "搜索关键词不能为空", "params": {"query": query}}, llm_data=llm_data)
@@ -140,19 +142,17 @@ def tool_search(query: str) -> Dict[str, Any]:
             {
                 "name": m.name,
                 "category": m.category.value,
-                "description": m.description,
-                "score": 0,
             }
             for m in all_tools.values()
         ]
         all_items.sort(key=lambda x: x["name"])
+        top = all_items[:10]
         duration_ms = int((time.perf_counter() - t0) * 1000)
         data = {
-            "query": query, "matches": all_items,
+            "query": query, "matches": top,
             "total_matched": len(all_items), "total_tools": len(all_tools),
         }
-        llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(all_items), len(all_tools),
-                                                 [{"name": r["name"], "category": r["category"]} for r in all_items])
+        llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(all_items), len(all_tools), top)
         return build_success(data=data, llm_data=llm_data)
 
     docs, tool_names, avgdl, df = _build_bm25()
@@ -166,23 +166,36 @@ def tool_search(query: str) -> Dict[str, Any]:
         scored.append({
             "name": metadata.name,
             "category": metadata.category.value,
-            "description": metadata.description,
-            "score": round(scores[i], 4),
+            "_score": round(scores[i], 4),
         })
 
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    top_results = [r for r in scored if r["score"] > 0]
+    scored.sort(key=lambda x: x["_score"], reverse=True)
+    # P1-1修复 2026-06-23 小欧: 相对阈值过滤,只保留分数>=最高分10%的结果
+    if scored:
+        threshold = scored[0]["_score"] * 0.1
+        meaningful = [r for r in scored if r["_score"] >= threshold]
+    else:
+        meaningful = []
+    top_results = meaningful[:10]
 
     duration_ms = int((time.perf_counter() - t0) * 1000)
+    # data.matches已精简为仅name+category，LLM仅需知道"搜到了/没搜到"，
+    # 工具详情感知由auto_inject_from_search自动注入整个分类 — 北京老陈 2026-06-26
     data = {
         "query": query,
-        "matches": top_results,
-        "total_matched": len(scored),
+        "matches": [{"name": r["name"], "category": r["category"]} for r in top_results],
+        "total_matched": len(meaningful),
         "total_tools": len(all_tools),
     }
-    llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(scored), len(all_tools),
+    llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(meaningful), len(all_tools),
                                              [{"name": r["name"], "category": r["category"]} for r in top_results])
+    # ---- observation_formatter route -------------------------------------------
+    # branch: #9 matches (searchtool subtype)
+    # trigger: "matches" in data → ms[0] 含 "category" 键
+    # handler: _format_searchtool_results(ms)
+    # file:    observation_formatter.py:152-178
+    # ------------------------------------------------------------------------------
     return build_success(data=data, llm_data=llm_data)
 
 
-__all__ = ["tool_search"]
+__all__ = ["searchtool"]

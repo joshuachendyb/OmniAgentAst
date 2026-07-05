@@ -1,15 +1,36 @@
 # -*- coding: utf-8 -*-
 """
-path_validator — 文件路径越权校验
+path_validator — 文件路径越权校验（Safety层）
+
+Safety层职责（本文件）：
+  - 路径黑名单：禁止访问系统敏感路径（_is_forbidden_path）
+  - 路径白名单：只允许在 ALLOWED_PATHS 内操作路径
+  - 路径穿越(..)拒绝
+  - 调用入口 validate_tool_path() 自动判断工具分类 + 找路径参数
+
+工具层（tools_file_path_checker.py）独立运行、互不调用：
+  - 非空/保留字符/保留名/系统目录硬阻断/存在性+类型/业务警告
 
 从 file_tools.py 提取,供 safety 和 tools 共用,打破循环依赖
 
 小沈 2026-06-17
+小健 2026-06-23 增加系统敏感路径黑名单校验
+小欧 2026-07-04 补充两层架构说明注释
 """
 
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+from app.tools.tool_constants import (
+    FORBIDDEN_PATHS_EXACT,
+    FORBIDDEN_PATHS_PREFIX,
+    FORBIDDEN_PATHS_WINDOWS_EXACT,
+    FORBIDDEN_PATHS_WINDOWS_PREFIX,
+)
+from app.tools.registry import tool_registry
+from app.tools.tool_types import ToolCategory
+from app.utils.logger import logger
 
 
 def get_default_allowed_paths() -> List[Path]:
@@ -30,8 +51,45 @@ def get_default_allowed_paths() -> List[Path]:
 ALLOWED_PATHS: List[Path] = get_default_allowed_paths()
 
 
+def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
+    """检查路径是否在系统敏感路径黑名单中 — 小健 2026-06-23
+    
+    Args:
+        file_path: 待检查路径
+        
+    Returns:
+        (is_forbidden, error_message)
+    """
+    try:
+        real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
+        real_path_str = str(real_path)
+        real_path_lower = real_path_str.lower()
+        
+        if os.name == 'nt':
+            for forbidden in FORBIDDEN_PATHS_WINDOWS_EXACT:
+                if real_path_lower == forbidden.lower():
+                    return True, f"禁止访问系统敏感文件: {file_path}"
+            for forbidden_prefix in FORBIDDEN_PATHS_WINDOWS_PREFIX:
+                if real_path_lower.startswith(forbidden_prefix.lower()):
+                    return True, f"禁止访问系统敏感目录: {file_path}"
+        
+        for forbidden in FORBIDDEN_PATHS_EXACT:
+            if real_path_str == forbidden:
+                return True, f"禁止访问系统敏感文件: {file_path}"
+        for forbidden_prefix in FORBIDDEN_PATHS_PREFIX:
+            if real_path_str.startswith(forbidden_prefix):
+                return True, f"禁止访问系统敏感目录: {file_path}"
+        
+        return False, None
+    except Exception as e:
+        # 【P1-21修复】异常时拒绝访问而非放行 — chendyg 2026-06-26
+        return True, f"路径安全检查异常,拒绝访问: {file_path} ({e})"
+
+
 def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否在白名单内
+    """验证文件路径是否在白名单内（Safety层）
+    工具层的 validate_path() 先于本函数执行，已拦截空/保留字符/保留名/系统目录/不存在/类型不匹配
+    本函数负责：黑名单/白名单/路径穿越拒绝
 
     Args:
         file_path: 待验证路径
@@ -41,7 +99,32 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
         (is_valid, error_message)
 
     小沈 2026-06-17 从 FileTools._validate_path 提取为纯函数
+    小健 2026-06-23 增加黑名单优先检查
+    小欧 2026-06-25 增加路径穿越(..)拒绝
+    小欧 2026-06-26 拒绝空路径
     """
+    if not file_path or not file_path.strip():
+        return False, "路径为空"
+
+    is_forbidden, forbidden_msg = _is_forbidden_path(file_path)
+    if is_forbidden:
+        return False, forbidden_msg
+
+    # 路径穿越拒绝: 包含..的路径直接拒绝 — 小欧 2026-06-25
+    try:
+        # 检查原始路径的每个部分是否包含..
+        path_parts = Path(file_path).parts
+        if ".." in path_parts:
+            return False, f"路径包含..,禁止路径穿越: {file_path}"
+        # 也检查规范化解析后的路径（处理绝对路径中的..）
+        resolved = os.path.realpath(file_path)
+        original_resolved = os.path.realpath(os.path.dirname(file_path))
+        if not resolved.startswith(original_resolved) and file_path != resolved:
+            return False, f"路径穿越检测: {file_path} 解析为 {resolved}"
+    except Exception as e:
+        logger.warning(f"[path_validator] 路径校验异常: {file_path}: {e}")
+        return False, f"路径校验异常: {file_path}"
+
     paths = allowed_paths or ALLOWED_PATHS
     try:
         real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
@@ -72,4 +155,48 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
         return False, f"路径验证失败: {str(e)}"
 
 
-__all__ = ["ALLOWED_PATHS", "get_default_allowed_paths", "validate_path"]
+# 路径相关的工具分类 — 5类工具涉及文件路径操作
+_PATH_CATEGORIES = {
+    ToolCategory.FILE, ToolCategory.DOCUMENT,
+    ToolCategory.DATAANALYSIS, ToolCategory.NETWORK,
+    ToolCategory.DESKTOP,
+}
+
+# 工具参数中可能的路径参数名
+_PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
+                    "directory", "file_name", "destination_path", "output_path")
+
+
+def validate_tool_path(tool_name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    """
+    工具路径检查：自动判断分类 + 找路径参数 + 调validate_path
+    
+    将调度逻辑从 tool_safety_checker._check_known_risks 迁移至此，
+    path相关的事情全部在 path_validator 中处理。
+    小欧 2026-06-27
+    """
+    try:
+        all_categories = tool_registry.get_categories()
+        path_tools = set()
+        for cat in _PATH_CATEGORIES:
+            path_tools.update(all_categories.get(cat, []))
+
+        if tool_name not in path_tools:
+            return True, None
+
+        real_path = None
+        for key in _PATH_PARAM_KEYS:
+            real_path = params.get(key)
+            if real_path is not None:
+                break
+
+        if real_path is None:
+            return True, None
+
+        return validate_path(real_path)
+    except Exception as e:
+        return False, f"路径安全检查异常: {e}"
+
+
+__all__ = ["ALLOWED_PATHS", "get_default_allowed_paths", "validate_path",
+           "validate_tool_path", "_is_forbidden_path"]

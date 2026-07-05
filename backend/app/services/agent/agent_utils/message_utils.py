@@ -12,21 +12,6 @@ Author: 小沈 - 2026-05-28
 from typing import Any, Dict, List, Optional
 
 
-def build_llm_messages(message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
-    """LLM层消息列表拼接 — DRY原则:统一入口
-
-    【重构 2026-05-27 小健】替代llm_core._build_messages(),
-    消除消息构建逻辑分散两处(DRY)。
-    LLM层只应接收已构建好的messages,不应自行组装(SLAP)。
-    """
-    if not message and history:
-        return list(history)
-    messages = []
-    if history:
-        messages.extend(history)
-    messages.append({"role": "user", "content": message})
-    return messages
-
 
 def build_observation_text(execution_result, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
     """根据工具执行结果构建observation文本 — 小欧 2026-06-21 适配新3字段result
@@ -48,28 +33,21 @@ def build_observation_text(execution_result, tool_name: str = "", tool_params: O
         llm_data = execution_result.get("llm_data")
         if llm_data is not None:
             return format_llm_observation(data, llm_data)
-        return f"Observation: {str(execution_result)}"
-    return f"Observation: {str(execution_result)}"
+        # 如果没有llm_data，但data存在，使用format_data_detail格式化
+        if data is not None:
+            from app.services.agent.observation_formatter import format_data_detail
+            detail = format_data_detail(data)
+            return f"Observation: {detail[:500]}" if len(detail) > 500 else f"Observation: {detail}"
+        # 如果既没有llm_data也没有data，使用简洁的JSON表示
+        import json
+        try:
+            result_str = json.dumps(execution_result, ensure_ascii=False, separators=(',', ':'))
+        except:
+            result_str = str(execution_result)
+        return f"Observation: {result_str[:500]}" if len(result_str) > 500 else f"Observation: {result_str}"
+    result_str = str(execution_result)
+    return f"Observation: {result_str[:500]}" if len(result_str) > 500 else f"Observation: {result_str}"
 
 
-def inject_tools_info(
-    history_dicts: List[Dict[str, Any]],
-    tools_content: str
-) -> List[Dict[str, Any]]:
-    """注入工具信息到 history_dicts
 
-    替代 react_agent_mixin.py L339-363
-    在第一个非system消息前插入,LLM最先看到工具信息。
-    """
-    if not tools_content:
-        return history_dicts
-    tools_msg = {"role": "system", "content": tools_content}
-    insert_pos = 0
-    for i, msg in enumerate(history_dicts):
-        if msg.get("role") != "system":
-            insert_pos = i
-            break
-    else:
-        insert_pos = len(history_dicts)
-    return list(history_dicts[:insert_pos]) + [tools_msg] + list(history_dicts[insert_pos:])
 

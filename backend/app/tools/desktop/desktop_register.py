@@ -39,6 +39,16 @@ DESKTOP_TOOL_DEPENDENCIES = {
     "clipboard_control": ["pyperclip"],
 }
 
+def check_pyautogui_available() -> bool:
+    """检查pyautogui库是否可用 — 小健 2026-06-27"""
+    import importlib
+    try:
+        importlib.import_module("pyautogui")
+        return True
+    except ImportError:
+        return False
+
+
 from app.tools.desktop.desktop_schema import (
     WindowInfoInput,
     WindowFocusInput,
@@ -83,9 +93,9 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 
     "mouse_position": """获取鼠标当前的屏幕坐标位置。适用场景:需要确认鼠标当前位置、获取坐标用于后续点击/移动时使用。""",
 
-    "keyboard_control": """键盘控制工具。action=type(输入文本)、shortcut(快捷键如ctrl+c)、combo(组合键如ctrl,shift,esc)。适用场景:需要模拟键盘输入、执行快捷键操作时使用。""",
+    "keyboard_control": """键盘控制工具。action=type(输入文本)、shortcut(快捷键，支持组合键如ctrl+shift+esc)。适用场景:需要模拟键盘输入、执行快捷键操作时使用。""",
 
-    "screen_capture": """截取屏幕截图。支持全屏截图、指定区域截图(region参数,格式为{"x":0,"y":0,"width":800,"height":600})和多显示器截图(display参数)。优先使用mss库(支持多显示器),降级使用pyautogui。不指定输出路径则保存到系统临时目录。返回图片保存路径、宽度和高度。适用场景:需要截取当前屏幕内容用于记录或传递给LLM分析时使用。""",
+    "screen_capture": """截取屏幕截图,支持全屏、指定区域和多显示器。适用场景:需要截取屏幕内容用于记录或传递给LLM分析时使用。""",
 
     "clipboard_control": """剪贴板操作。action决定操作类型:read(读取剪贴板内容)/write(写入内容到剪贴板)。action=write时content参数必填。适用场景:需要读取或写入剪贴板文本时使用。""",
 
@@ -140,10 +150,9 @@ DESKTOP_TOOL_EXAMPLES = {
     ],
     "keyboard_control": [
         {"action": "type", "text_or_keys": "Hello World"},
-        {"action": "type", "text_or_keys": "Hello", "interval": 0.1},
         {"action": "shortcut", "text_or_keys": "ctrl+c"},
         {"action": "shortcut", "text_or_keys": "alt+tab"},
-        {"action": "combo", "text_or_keys": "ctrl,shift,esc"},
+        {"action": "shortcut", "text_or_keys": "ctrl+shift+esc"}
     ],
     "screen_capture": [
         {},
@@ -176,7 +185,7 @@ def _register_desktop_tools():
     for name, method in tool_methods.items():
         desc = DESKTOP_TOOL_DESCRIPTIONS.get(name, "")
         input_model = DESKTOP_TOOL_INPUT_MODELS.get(name)
-        examples = DESK_TOOL_EXAMPLES.get(name, [])
+        examples = DESKTOP_TOOL_EXAMPLES.get(name, [])
 
         tool_registry.register(
             name=name,

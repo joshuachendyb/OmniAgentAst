@@ -4,16 +4,16 @@ Network 模块 - 网络通信工具
 """
 
 from app.tools.network.network_register import *
-from app.tools.network.http_request import http_request
-from app.tools.network.download_file import download_file
-from app.tools.network.fetch_webpage import fetch_webpage
-from app.tools.network.search_web import search_web
-from app.tools.network.network_diagnose import network_diagnose
+from app.tools.network.http_request import httpget
+from app.tools.network.download_file import download
+from app.tools.network.fetch_webpage import fetchpage
+from app.tools.network.search_web import searchweb
+from app.tools.network.network_diagnose import ping_port
 
 __all__ = [
-    "http_request",
-    "download_file",
-    "fetch_webpage",
-    "search_web",
-    "network_diagnose",
+    "httpget",
+    "download",
+    "fetchpage",
+    "searchweb",
+    "ping_port",
 ]

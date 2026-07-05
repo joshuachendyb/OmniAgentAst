@@ -13,6 +13,7 @@
 """
 
 import json
+from app.utils.json_utils import safe_json_dumps
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -24,6 +25,7 @@ from app.utils.cache import LRUCache
 from app.constants import MAX_CACHE_SIZE
 from app.utils.display_utils import extract_display_name_from_steps
 from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, get_timestamp_ms
+from app.utils.time_utils import format_timestamp
 from app.utils.json_utils import parse_json
 from app.db import db
 from app.db.models.chat_models import MessageResponse
@@ -42,7 +44,8 @@ async def get_session_messages(session_id: str):
     with db.get_conn("chat") as conn:
         cursor = conn.cursor()
 
-        cursor.execute('''SELECT id, title, COALESCE(title_locked, 0) as title_locked,
+        cursor.execute('''SELECT id, title, created_at, updated_at,
+                          COALESCE(title_locked, 0) as title_locked,
                           COALESCE(title_updated_at, created_at) as title_updated_at,
                           COALESCE(version, 1) as version, COALESCE(is_valid, 1) as is_valid
                        FROM chat_sessions WHERE id = ? AND is_deleted = FALSE''', (session_id,))
@@ -71,6 +74,8 @@ async def get_session_messages(session_id: str):
         title_locked = bool(session['title_locked'])
         return {
             "session_id": session_id, "title": session['title'],
+            "created_at": session['created_at'],
+            "updated_at": format_timestamp(session['updated_at']),
             "title_locked": title_locked,
             "title_source": "user" if title_locked else "auto",
             "title_updated_at": convert_to_utc(session['title_updated_at']),
@@ -128,7 +133,7 @@ async def save_message(session_id: str, message: MessageCreate):
         if message.role == "assistant" and not display_name_to_save:
             display_name_to_save = display_name_cache.get(session_id)
 
-        execution_steps_json = json.dumps(message.execution_steps) if message.execution_steps else None
+        execution_steps_json = safe_json_dumps(message.execution_steps) if message.execution_steps else None
         cursor.execute(
             "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, execution_steps, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (session_id, message.role, message.content, utc_time, display_name_to_save,

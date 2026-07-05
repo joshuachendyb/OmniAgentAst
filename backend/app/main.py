@@ -1,3 +1,9 @@
+# Windows需要ProactorEventLoop支持asyncio subprocess — 小沈 2026-06-28
+import sys
+import asyncio
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -5,9 +11,9 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import traceback
 from app.utils.time_utils import get_utc_timestamp
+from pathlib import Path
 import os
 import logging
-import asyncio
 
 from app.api.v1 import health, ai_config, sessions, messages, conversation, execution, metrics
 from app.api.v1.chat import router as chat_router, task_router
@@ -15,14 +21,34 @@ from app.api.v1.task_queries import router as task_queries_router
 from app.utils.logger import logger
 from app.services.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS
-from app.utils.version import get_version
 from app.services.task.task_registry import cleanup_expired_tasks
 from app.db import db
 
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
+
+def get_version() -> str:
+    """从version.txt读取版本号 - 小沈 2026-05-27"""
+    try:
+        current_file = Path(__file__).resolve()
+        project_root = current_file.parent.parent.parent  # 项目根目录 — 小欧 2026-07-04
+        version_file = project_root / "version.txt"
+
+        if version_file.exists():
+            with open(version_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    version = line.strip()
+                    if version:
+                        break
+            logger.info(f"Successfully read version from version.txt: {version}")
+            return version.lstrip('v')
+    except Exception as e:
+        logger.warning(f"Failed to read version.txt: {e}")
+    return "0.0.0"
+
+
 app_version = get_version()
-print(app_version)
+logger.info(f"Backend version: {app_version}")
 
 app = FastAPI(
     title="OmniAgentAst API",
@@ -124,6 +150,10 @@ async def startup_event():
     from app.tools import ensure_tools_registered
     ensure_tools_registered()
     _start_cleanup_task()
+    print(f"当前版本: {app_version}")
+    from app.config import get_config
+    _cfg = get_config()
+    print(f"LLM 配置: provider={_cfg.get('ai.provider')}, model={_cfg.get('ai.model')}")
 
 
 @app.on_event("shutdown")
@@ -131,9 +161,9 @@ async def shutdown_event():
     """应用关闭时清理资源 — 小健 2026-06-18 内联透传函数"""
     from app.services.factory import reset
     reset()
-    from app.tools.shell.shell_tools import cleanup_background_shells
-    count = cleanup_background_shells()
-    logger.info(f"已清理 {count} 个后台shell进程")
+    from app.tools.shell.shell_engine import cleanup_all_persistent_shells
+    count = cleanup_all_persistent_shells()
+    logger.info(f"已清理 {count} 个持久shell进程")
 
 
 @app.get("/")

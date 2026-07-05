@@ -18,7 +18,8 @@ from typing import Optional, Dict, Any
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT, HIVE_MAP
-from app.constants import ERR_REG_READ_FAILED
+from app.tools.validate.registry_path_checker import validate_registry_key
+from app.tools.tool_constants import ERR_REG_READ_FAILED, ERR_PARAMETER_INVALID
 
 ROOT_KEY_MAP = {
     "HKEY_CLASSES_ROOT": winreg.HKEY_CLASSES_ROOT,
@@ -80,19 +81,22 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
     return backup_file
 
 
-def _build_registry_read_llm_data(exec_code: str, duration_ms: int, key_path: str, value_name: str, value: Any = None, value_type: str = "") -> dict:
-    """registry_read的llm_data构建函数 — 小健 2026-06-22"""
+def _build_registry_read_llm_data(exec_code: str, duration_ms: int, key_path: str, value_name: str, value: Any = None, value_type: str = "", err_code: str = None, detail: str = "", hint: str = "") -> dict:
+    """registry_read的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
+    _act_params = {"key_path": key_path}
+    if value_name:
+        _act_params["value_name"] = value_name
     if exec_code == "error":
         return {
             "summary": f"读取注册表失败: {key_path}",
-            "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": key_path, "params": {"key_path": key_path}},
-            "status": {"exec_code": "error", "message": "读取注册表失败", "code": ERR_REG_READ_FAILED, "detail": "", "hint": "请检查键路径和权限"},
+            "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": key_path, "params": _act_params},
+            "status": {"exec_code": "error", "message": "读取注册表失败", "code": err_code or ERR_REG_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"读取 {key_path}\\{value_name} = {value}（{value_type}）",
-        "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": key_path, "params": {"key_path": key_path, "value_name": value_name}},
+        "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": key_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "读取注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
@@ -101,6 +105,12 @@ def _build_registry_read_llm_data(exec_code: str, duration_ms: int, key_path: st
 
 def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "HKCU", output_format: str = "auto") -> dict:
     """读取Windows注册表键值 — 小健 2026-06-22 拆分独立文件"""
+    is_valid, error_msg, warning_msg = validate_registry_key(key_path, hive, "read")
+    if not is_valid:
+        llm_data = _build_registry_read_llm_data("error", 0, key_path, value_name or "", err_code=ERR_PARAMETER_INVALID, detail=error_msg, hint="请检查注册表路径和权限")
+        return build_error(data={"error_detail": error_msg, "params": {"key_path": key_path}}, llm_data=llm_data)
+    if warning_msg:
+        logger.warning(f"[registry_read] {warning_msg}")
     t0 = _time_mod.perf_counter()
     try:
         full_root_key, sub_key = _parse_key_path(key_path, hive)
@@ -108,7 +118,7 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
 
         if hkey is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "")
+            llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=f"无效的根键: {full_root_key}", hint="请检查根键名称")
             return build_error(data={"error_detail": f"无效的根键: {full_root_key}", "params": {"key_path": key_path, "hive": hive}}, llm_data=llm_data)
 
         with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_READ) as key:
@@ -131,22 +141,28 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
                 "value_type": value_type_name,
             }
 
-            logger.info(f"[registry_read] 成功读取: {full_root_key}\\{sub_key}\\{value_name or '(默认)'}")
+            logger.debug(f"[registry_read] 成功读取: {full_root_key}\\{sub_key}\\{value_name or '(默认)'}")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_registry_read_llm_data("success", duration_ms, result_data["key_path"], result_data["value_name"], formatted_value, value_type_name)
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #21 fallback (key:val)
+            # trigger: 无上述20条分支匹配 — key_path/value_name/value/value_type
+            # handler: _format_scalar_data(data) — key | value 单行列表
+            # file:    observation_formatter.py:214
+            # ------------------------------------------------------------------------------
             return build_success(data=result_data, llm_data=llm_data)
 
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "")
+        llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=f"注册表键或值不存在: {key_path}", hint="请检查键路径是否正确")
         return build_error(data={"error_detail": f"注册表键或值不存在: {key_path}", "params": {"key_path": key_path, "value_name": value_name}}, llm_data=llm_data)
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "")
+        llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=f"权限不足: {key_path}", hint="请以管理员身份运行")
         return build_error(data={"error_detail": f"权限不足: {key_path}", "params": {"key_path": key_path}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "")
+        llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=str(e), hint="读取注册表异常,请检查系统状态")
         return build_error(data={"error_detail": str(e), "params": {"key_path": key_path}}, llm_data=llm_data)
 
 

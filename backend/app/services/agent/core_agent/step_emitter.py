@@ -11,7 +11,6 @@ Author: 小沈 - 2026-05-31
 from typing import Any, Dict, Optional
 
 from app.services.agent.steps import ErrorStep
-from app.services.agent.types import AgentStatus
 from app.utils.logger import logger
 
 
@@ -27,8 +26,7 @@ class StepEmitter:
         return step
 
     def exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> 'ReasoningStep':
-        """创建error_step,设置FAILED状态,返回Step对象"""
-        self.agent.status = AgentStatus.FAILED
+        """创建error_step,返回Step对象 — chendyg 2026-07-01: 不设状态，只创建 ErrorStep"""
         error_step = ErrorStep(
             step=step_count,
             error_type=error_type,
@@ -51,7 +49,8 @@ class StepEmitter:
             try:
                 task_tracker.complete_task(tracked_task_id, success=success)
             except Exception as _e:
-                logger.debug(f"[TaskTracker] 完成任务失败: {_e}")
+                # 【#41修复】logger.debug→warning，完成任务记录失败应有感知 — chendyg 2026-06-26
+                logger.warning(f"[TaskTracker] 完成任务失败: {_e}")
 
     def record_operation(self, operation_type: str, *, status: Optional[str] = None, error: Optional[str] = None, **kwargs):
         """Task追踪:记录一次操作(调用方传入真实status和error)
@@ -65,4 +64,5 @@ class StepEmitter:
                     tracked_task_id, operation_type, status=status, error=error, **kwargs,
                 )
             except Exception as _e:
-                logger.debug(f"[TaskTracker] 记录操作失败: {_e}")
+                # 【#40修复】logger.debug→warning，操作记录失败应有感知 — chendyg 2026-06-26
+                logger.warning(f"[TaskTracker] 记录操作失败: {_e}")

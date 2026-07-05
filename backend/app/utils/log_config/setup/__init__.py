@@ -7,7 +7,7 @@ setup — 从 setup.py 拆出的职责
 - APILogger: API结构化日志
 """
 
-from app.utils.log_config.setup.setup_file_handler import setup_file_handler
+from app.utils.log_config.setup.setup_logger_func import setup_file_handler
 from app.utils.log_config.setup.setup_logger_func import setup_logger
 from app.utils.log_config.setup.api_logger import APILogger
 

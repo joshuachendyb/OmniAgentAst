@@ -142,7 +142,9 @@ class ToolRegistry:
         if name in self._tools:
             return self._update_existing_tool(
                 name, description, category, implementation, 
-                input_schema, examples, version, deps
+                input_schema, examples, version, deps,
+                expose_to_llm, failure_hint_fn,
+                needs_confirmation, action_confirmation, check_fn,
             )
         
         # 职责2：注册新工具
@@ -162,9 +164,14 @@ class ToolRegistry:
         input_schema: Optional[Dict],
         examples: Optional[List[Dict]],
         version: str,
-        dependencies: List[Union[str, Dict[str, Any]]]
+        dependencies: List[Union[str, Dict[str, Any]]],
+        expose_to_llm: bool = True,
+        failure_hint_fn: Optional[Callable] = None,
+        needs_confirmation: bool = False,
+        action_confirmation: Optional[Dict[str, bool]] = None,
+        check_fn: Optional[Callable] = None,
     ) -> Dict[str, Any]:
-        """更新已注册工具"""
+        """更新已注册工具 — chendyg 2026-06-26 P1-25/26修复: 补全所有字段更新和分类索引"""
         _update_tool_metadata(
             self._tools[name],
             description=description,
@@ -172,9 +179,16 @@ class ToolRegistry:
             category=category,
             input_schema=input_schema,
             examples=examples,
-            dependencies=dependencies
+            dependencies=dependencies,
+            expose_to_llm=expose_to_llm,
+            failure_hint_fn=failure_hint_fn,
+            needs_confirmation=needs_confirmation,
+            action_confirmation=action_confirmation,
+            check_fn=check_fn,
         )
         self._implementations[name] = implementation
+        # 【P1-26修复】更新分类索引(类别可能变更) — chendyg 2026-06-26
+        self._update_category_index(category, name)
         return {"status": "success"}
     
     def _register_new_tool(
@@ -283,10 +297,11 @@ class ToolRegistry:
         """返回分类→工具名列表映射(copy防外部修改)— 小沈 2026-05-25"""
         return {k: list(v) for k, v in self._categories.items()}
 
-    def to_openai_tools(self, categories: Optional[Set[ToolCategory]] = None) -> list:
+    def to_openai_tools(self, categories: Optional[Set[ToolCategory]] = None,
+                        tool_names: Optional[Set[str]] = None) -> list:
         """生成OpenAI API格式的tools定义 — 委托给tool_description.to_openai_tools — 小沈 2026-06-09"""
         from app.tools.tool_description import to_openai_tools
-        return to_openai_tools(self, categories=categories)
+        return to_openai_tools(self, categories=categories, tool_names=tool_names)
 
     def generate_param_reminder(self, category: Optional[ToolCategory] = None, style: str = "code") -> str:
         """自动生成Parameter Reminder — 委托给tool_description.generate_param_reminder — 小沈 2026-06-09"""

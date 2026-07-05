@@ -5,15 +5,28 @@ list_sessions — 从 sessions.py 拷出
 拷贝来源: sessions.py 第126-171行
 """
 
-from typing import Optional
+from typing import Optional, List, Tuple
 
 from fastapi import Query
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors
 from app.db import db
 from app.db.models.chat_models import SessionListResponse, SessionResponse
-from app.api.v1.sessions.build_list_where import build_list_where
-from app.api.v1.sessions.format_timestamp import format_timestamp
+from app.utils.time_utils import format_timestamp
+
+
+def build_list_where(keyword: Optional[str], is_valid: Optional[bool],
+                     for_count: bool = False) -> Tuple[str, List]:
+    """拷贝自 sessions.py 第38-49行"""
+    where = "WHERE is_deleted = FALSE"
+    params: List = []
+    if keyword:
+        where += " AND title LIKE ?"
+        params.append(f"%{keyword}%")
+    if is_valid is not None:
+        where += " AND is_valid = ?"
+        params.append(1 if is_valid else 0)
+    return where, params
 
 
 @handle_api_errors("获取会话列表")

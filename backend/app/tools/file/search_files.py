@@ -16,16 +16,11 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE
-from app.constants import ERR_FILE_SEARCH_FAILED
-from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
+from app.tools.tool_response import build_success, build_error, build_warning
+from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, MAX_SEARCH_RESULTS
+from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
-
-
-def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否合法 — 小欧 2026-06-22"""
-    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
@@ -66,20 +61,42 @@ def _collect_entry_result(relative_path: str, name: str, fpath: Path,
 
 def _build_search_files_llm_data(
     exec_code: str, duration_ms: int,
-    search_dir: str = "", total: int = 0, detail: str = "",
+    search_dir: str = "", total: int = 0,
+    truncated: bool = False, detail: str = "", hint: str = "",
+    user_pattern: str = "", user_ignore_case: Optional[bool] = None,
+    user_type: Optional[str] = None, user_offset: int = 0,
 ) -> Dict[str, Any]:
-    """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示"""
+    _act_params = {"search_dir": search_dir}
+    if user_pattern:
+        _act_params["pattern"] = user_pattern
+    if user_ignore_case is not None:
+        _act_params["ignore_case"] = user_ignore_case
+    if user_type:
+        _act_params["type"] = user_type
+    if user_offset:
+        _act_params["offset"] = user_offset
     if exec_code == "error":
         return {
-            "summary": f"搜索文件失败: {detail}",
-            "action": {"tool": "search_files", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
-            "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": ""},
+            "summary": f"搜索失败: {search_dir}",
+            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
+            "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索目录和匹配模式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    if exec_code == "warning":
+        return {
+            "summary": f"搜索完成: {total}个匹配（结果被截断，可能不完整）",
+            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
+            "status": {"exec_code": "warning", "message": "结果被截断，可能不完整", "code": "", "detail": "搜索超时或结果数量达到上限，仅返回部分匹配项", "hint": "可缩小搜索范围或使用更精确的匹配模式"},
+            "duration_ms": duration_ms,
+            "metrics": {
+                "total": {"value": total, "text": f"{total}个匹配"},
+            },
+        }
     return {
         "summary": f"搜索完成: {total}个匹配",
-        "action": {"tool": "search_files", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
+        "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -88,32 +105,35 @@ def _build_search_files_llm_data(
     }
 
 
-async def search_files(
+async def find(
     pattern: str,
     search_dir: str,
-    recursive: bool = True,
     ignore_case: bool = True,
     type: Optional[Literal["file", "directory"]] = None,
+    offset: int = 0,
 ) -> Dict[str, Any]:
-    """搜索文件名 — 小沈 2026-05-19 — 小欧 2026-06-22 独立文件"""
+    """搜索文件名(始终递归搜索子目录) — 小沈 2026-05-19 — 小欧 2026-06-22 — 小欧 2026-06-23 去掉recursive — 小欧 2026-07-04 offset分页"""
     t0 = _time_mod.perf_counter()
     max_depth = 50
-    is_valid, error_msg = _validate_path(search_dir)
-    if not is_valid:
+    if type is not None and type not in ("file", "directory"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=error_msg)
-        return build_error(data={"error_detail": error_msg, "params": {"search_dir": search_dir}}, llm_data=llm_data)
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"type参数只能为'file'或'directory',当前值: '{type}'", hint="请使用file或directory作为type参数", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
+        return build_error(data={"error_detail": f"type参数只能为'file'或'directory'", "params": {"type": type}}, llm_data=llm_data)
     if not pattern or not pattern.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail="文件名匹配模式不能为空")
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail="文件名匹配模式不能为空", hint="请输入文件名匹配模式", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
         return build_error(data={"error_detail": "文件名匹配模式不能为空", "params": {"pattern": pattern}}, llm_data=llm_data)
-    path = Path(os.path.expanduser(search_dir))
-    if not path.exists():
+    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, _ = validate_path(OpCategory.LIST_DIR, search_dir)
+    if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索目录不存在: {search_dir}")
-        return build_error(data={"error_detail": "搜索目录不存在", "params": {"search_dir": search_dir}}, llm_data=llm_data)
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=err, hint="请检查搜索目录路径", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
+        return build_error(data={"error_detail": err, "params": {"search_dir": search_dir}}, llm_data=llm_data)
 
-    deadline = time.monotonic() + TOOL_TIMEOUTS.get("search_files", TOOL_TIMEOUTS["default"]) - 2
+    path = Path(os.path.expanduser(search_dir))
+
+    deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("find", TOOL_TIMEOUTS["default"]) - 2
     all_matches: List = []
     llm_preview: List = []
     seen_files: set = set()
@@ -122,17 +142,20 @@ async def search_files(
     def _search_sync():
         nonlocal seen_files
         for root, dirs, files in os.walk(path):
-            if time.monotonic() > deadline:
-                logger.warning(f"[search_files] 超时自检触发,提前返回{len(all_matches)}个匹配")
+            if _time_mod.monotonic() > deadline:
+                logger.warning(f"[find] 超时自检触发,提前返回{len(all_matches)}个匹配")
                 break
-            if not recursive:
-                dirs.clear()
-            elif max_depth:
+            if len(all_matches) >= MAX_SEARCH_RESULTS:
+                logger.warning(f"[find] 结果数量达到上限{MAX_SEARCH_RESULTS},提前返回")
+                break
+            if max_depth:
                 depth = root[len(str(path)):].count(os.sep)
                 if depth >= max_depth:
                     dirs.clear()
             if type != "file":
                 for d in dirs:
+                    if len(all_matches) >= MAX_SEARCH_RESULTS:
+                        break
                     if not _match_fnmatch(d, pattern, ignore_case):
                         continue
                     relative = os.path.relpath(os.path.join(root, d), path)
@@ -140,8 +163,11 @@ async def search_files(
                     if dup or skip:
                         continue
                     _collect_entry_result(relative, d, Path(os.path.join(root, d)), all_matches, llm_preview)
+                    seen_files.add(relative)
             if type != "directory":
                 for f in files:
+                    if len(all_matches) >= MAX_SEARCH_RESULTS:
+                        break
                     if not _match_fnmatch(f, pattern, ignore_case):
                         continue
                     relative = os.path.relpath(os.path.join(root, f), path)
@@ -149,19 +175,42 @@ async def search_files(
                     if dup or skip:
                         continue
                     _collect_entry_result(relative, f, Path(os.path.join(root, f)), all_matches, llm_preview)
+                    seen_files.add(relative)
 
     try:
         await asyncio.to_thread(_search_sync)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索失败: {e}")
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索失败: {e}", hint="请检查搜索参数", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
         return build_error(data={"error_detail": str(e), "params": {"search_dir": search_dir}}, llm_data=llm_data)
 
     all_matches.sort(key=lambda x: x.get("name", ""))
     total = len(all_matches)
+    page = all_matches[offset:offset + DEFAULT_PAGE_SIZE]
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-    llm_data = _build_search_files_llm_data("success", duration_ms, search_dir=search_dir, total=total)
+    truncated_by_deadline = _time_mod.monotonic() > deadline
+    truncated_by_limit = total >= MAX_SEARCH_RESULTS
+    truncated_by_offset = total > (offset + DEFAULT_PAGE_SIZE)
+    exec_code = "warning" if (truncated_by_deadline or truncated_by_limit or truncated_by_offset) else "success"
+    llm_data = _build_search_files_llm_data(exec_code, duration_ms, search_dir=search_dir, total=total, truncated=(truncated_by_deadline or truncated_by_limit or truncated_by_offset), user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
+    if exec_code == "warning":
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #9 matches (find subtype)
+        # trigger: "matches" in data → ms[0] 含 "path" 键
+        # handler: _format_find_results(ms)
+        # file:    observation_formatter.py:152-178
+        # ------------------------------------------------------------------------------
+        return build_warning(
+            data={"matches": page, "total": total, "search_dir": search_dir, "pattern": pattern, "offset": offset},
+            llm_data=llm_data,
+        )
+    # ---- observation_formatter route -------------------------------------------
+    # branch: #9 matches (find subtype)
+    # trigger: "matches" in data → ms[0] 含 "path" 键
+    # handler: _format_find_results(ms)
+    # file:    observation_formatter.py:152-178
+    # ------------------------------------------------------------------------------
     return build_success(
-        data={"matches": all_matches, "total": total, "search_dir": search_dir, "pattern": pattern},
+        data={"matches": page, "total": total, "search_dir": search_dir, "pattern": pattern, "offset": offset},
         llm_data=llm_data,
     )

@@ -23,6 +23,10 @@ class ChunkStep(ReasoningStep):
         self._thought = thought
         self._reasoning = reasoning
 
+    @property
+    def content(self) -> str:
+        return self._content
+
     def get_content(self) -> str:
         return self._content
 

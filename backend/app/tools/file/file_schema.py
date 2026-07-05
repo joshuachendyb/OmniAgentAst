@@ -22,38 +22,60 @@ from typing import Optional, List, Dict, Any, Literal, Union
 
 
 # ============================================================
-# F1: read_text_file — 读取文本文件
+# F1: readtext — 读取文本文件
 # ============================================================
 
 # ⚠️ Pydantic class docstring 会进入 JSON Schema 的 parameters.description 并发给 LLM
 # 禁止在这里写文档字符串。工具描述写在 file_register.py 的 FILE_TOOL_DESCRIPTIONS 里。
-class ReadTextFileInput(BaseModel):
+class ReadtextInput(BaseModel):
+    """
+    【四种模式】
+    1. 读全文: 不传offset/limit/tail
+    2. 前N行: 只传limit（如limit=100读前100行）
+    3. 尾部N行: 只传tail（如tail=20读最后20行）
+    4. 分页: offset+limit（如offset=10, limit=20读第10-29行）
+
+    【互斥规则】
+    - tail不能与offset/limit同时使用
+
+    【示例】
+    - 不传参数: 读全文
+    - limit=100: 读前100行
+    - tail=20: 读最后20行
+    - offset=10, limit=20: 读第10-29行"""
     file_path: str = Field(
-        description="要读取的文件路径(绝对路径)"
-    )
-    head: Optional[int] = Field(
-        default=None,
-        ge=1,
-        le=1000000,
-        description="读取前N行(仅单文件模式,不能与tail/offset同时使用)"
-    )
-    tail: Optional[int] = Field(
-        default=None,
-        ge=1,
-        le=1000000,
-        description="读取后N行(仅单文件模式,不能与head/offset同时使用)"
+        description="要读取的文件路径(绝对路径)。支持文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
     offset: Optional[int] = Field(
         default=None,
         ge=1,
-        le=10000000,
-        description="起始行号,1-indexed(仅单文件模式,不能与head/tail同时使用,配合limit分页读取)"
+        description="""起始行号(1-indexed)，必须配合limit使用。
+
+【示例】
+- offset=1, limit=100: 读第1-100行
+- offset=10, limit=20: 读第10-29行"""
     )
     limit: Optional[int] = Field(
         default=None,
         ge=1,
         le=1000000,
-        description="最大读取行数(仅单文件模式,配合offset分页读取)"
+        description="""读取行数。
+
+【三种模式】
+1. 只传limit: 读前limit行（如limit=100读前100行）
+2. offset+limit: 分页模式（如offset=10, limit=20读第10-29行）
+3. tail: 读尾部N行（不能与offset/limit同时使用）"""
+    )
+    tail: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="""读取尾部N行。
+
+【重要】tail不能与offset/limit同时使用！
+
+【示例】
+- tail=20: 读最后20行
+- tail=100: 读最后100行"""
     )
     encoding: Optional[str] = Field(
         default=None,
@@ -63,56 +85,75 @@ class ReadTextFileInput(BaseModel):
 
 
 # ============================================================
-# F2: write_text_file — 写文本文件
+# F2: writetext — 写文本文件
 # ============================================================
 
-class WriteTextFileInput(BaseModel):
+class WritetextInput(BaseModel):
     file_path: str = Field(
-        description="文件的完整路径(必须是绝对路径,支持中文路径)"
+        description="文件的完整路径(绝对路径,支持中文路径)。用于写入文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
     content: str = Field(
-        description="要写入文件的文本内容(必须是实际内容,禁止传入思考/计划/状态描述)"
+        description="""要写入文件的文本内容。
+
+【格式要求】
+- 类型: 必须是字符串(string)，不支持dict/list/object
+- 换行: 使用\\n表示换行
+- 特殊字符: 双引号用\\"表示，反斜杠用\\\\表示
+
+【长度限制】
+- 建议: 单次调用不超过2000字符(避免LLM输出截断)
+- 超过2000字符: 建议分多次调用(第一次append=False，后续append=True)
+- 最大: 10000字符
+
+【示例】
+- 单行: "Hello World"
+- 多行: "第一行\\n第二行\\n第三行"
+- JSON: "{\\"key\\": \\"value\\"}" """,
+        max_length=10000
     )
     encoding: Optional[str] = Field(
         default=None,
-        description="文件编码。追加时检测已有文件编码,新建时默认为utf-8。也可指定gbk/gb2312等"
+        description="文件编码。追加时检测已有文件编码,新建时默认utf-8。也可指定gbk/gb2312等"
     )
     append: bool = Field(
         default=False,
-        description="是否追加写入。True=追加,False=覆盖。对.log文件Agent可自动设为True"
+        description="是否追加写入。True=追加,False=覆盖"
     )
 
 
 # ============================================================
-# F3: read_media_file — 读媒体文件
+# F3: readmedia — 读媒体文件
 # ============================================================
 
-class ReadMediaFileInput(BaseModel):
+class ReadmediaInput(BaseModel):
     file_path: str = Field(
         description="媒体文件的完整路径。支持图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)、音频(MP3/WAV/OGG/M4A/FLAC/AAC)、视频(MP4/AVI/MOV/MKV)。返回Base64编码数据"
     )
 
 
 # ============================================================
-# F4: edit_text_file — 编辑文本文件
+# F4: edittext — 编辑文本文件
 # ============================================================
 
-class EditTextFileInput(BaseModel):
+class EdittextInput(BaseModel):
     file_path: str = Field(
-        description="目标文件的绝对路径(仅支持文本文件,二进制文件将被拒绝)"
+        description="目标文件的绝对路径(仅支持文本文件)"
     )
     old_string: str = Field(
-        description="待替换的旧字符串(必须唯一，若需替换所有匹配项请设 replace_all=True)"
+        description="待替换的旧字符串。若需替换所有匹配项请设replace_all=True"
     )
     new_string: str = Field(
         default="",
-        description="替换的新字符串。传空字符串 '' 表示删除匹配到的文本"
+        description="替换的新字符串。传空字符串''表示删除匹配到的文本"
     )
     replace_all: bool = Field(
         default=False,
         description="是否替换所有匹配项,默认False只替换第一个"
     )
-
+    ignore_case: bool = Field(
+        default=False,
+        description="是否忽略大小写,默认False"
+    )
     encoding: Optional[str] = Field(
         default=None,
         description="文件编码,默认utf-8"
@@ -121,16 +162,12 @@ class EditTextFileInput(BaseModel):
 
 
 # ============================================================
-# F5: list_directory — 列出目录内容
+# F5a: listdir — 列出目录内容
 # ============================================================
 
-class ListDirectoryInput(BaseModel):
+class ListdirInput(BaseModel):
     dir_path: str = Field(
         description="目录路径(绝对路径,必填)。如 D:/项目代码"
-    )
-    recursive: bool = Field(
-        default=False,
-        description="是否递归列出子目录。True=树形结构(含所有层级),False=扁平列表(仅当前层),默认False"
     )
     sort_by: Literal["name", "size", "mtime"] = Field(
         default="name",
@@ -140,22 +177,40 @@ class ListDirectoryInput(BaseModel):
         default=False,
         description="是否显示隐藏文件(以.开头的文件),默认False"
     )
+    offset: int = Field(
+        default=0,
+        description="分页偏移量,用于跳过前N项。仅返回第offset项开始的500项,支持分页遍历大目录"
+    )
+
+
+# ============================================================
+# F5b: tree — 列出目录树
+# ============================================================
+
+class TreeInput(BaseModel):
+    dir_path: str = Field(
+        description="目录路径(绝对路径,必填)。如 D:/项目代码"
+    )
+    include_hidden: bool = Field(
+        default=False,
+        description="是否显示隐藏文件(以.开头的文件),默认False"
+    )
+    sort_by: Literal["name", "mtime"] = Field(
+        default="name",
+        description="排序方式:name/mtime(树模式不支持size排序),默认name"
+    )
 
 
 # ============================================================
 # F6: search_files — 搜索文件名
 # ============================================================
 
-class SearchFilesInput(BaseModel):
+class FindInput(BaseModel):
     pattern: str = Field(
-        description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\"、\"**/*.ts\"、\"config*\""
+        description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\""
     )
     search_dir: str = Field(
         description="搜索的起始目录(绝对路径,必填)。如 D:/项目代码"
-    )
-    recursive: bool = Field(
-        default=True,
-        description="是否递归搜索子目录,默认True"
     )
     ignore_case: bool = Field(
         default=True,
@@ -165,27 +220,39 @@ class SearchFilesInput(BaseModel):
         default=None,
         description="搜索类型过滤:file=只返回文件,directory=只返回目录,不设则全部返回"
     )
+    offset: int = Field(
+        default=0,
+        description="分页偏移量,用于跳过前N条结果。仅返回第offset条开始的500条,支持分页遍历大量搜索结果"
+    )
 
 
 # ============================================================
 # F7: grep_file_content — 搜索文件内容
 # ============================================================
 
-class GrepFileContentInput(BaseModel):
+class GrepInput(BaseModel):
+    """使用技巧:
+- pattern 支持正则如 \"def \\w+\" 匹配函数定义
+- glob 可限制文件类型如 \"*.py\"
+- output_mode=\"files_with_matches\" 只返回文件名列表,节省token
+- 结果按文件修改时间降序排列,最新修改的文件在最前"""
     pattern: str = Field(
-        description="正则表达式搜索模式,支持中文内容搜索。如 \"def read_file\" 或 \"class.*Component\""
+        description="正则表达式搜索模式,支持中文内容搜索。如 \"def read_file\""
     )
-    search_dir: Optional[str] = Field(
-        default=None,
-        description="搜索路径(绝对路径),默认当前目录"
+    search_dir: str = Field(
+        description="搜索路径(绝对路径,必填)"
     )
     glob: Optional[str] = Field(
         default=None,
-        description="文件过滤(glob通配符),如 \"*.py\"、\"*.{js,ts}\""
+        description="文件过滤(glob通配符),如 \"*.py\""
     )
     ignore_case: bool = Field(
         default=True,
         description="是否忽略大小写,默认True"
+    )
+    output_mode: Literal["content", "count", "files_with_matches"] = Field(
+        default="content",
+        description="输出模式: content=返回匹配内容(默认), count=只返回匹配数量, files_with_matches=只返回文件名列表(节省token)"
     )
 
 
@@ -194,9 +261,9 @@ class GrepFileContentInput(BaseModel):
 # F8: compress_files — 压缩文件
 # ============================================================
 
-class CompressFilesInput(BaseModel):
-    source: str = Field(description="要压缩的文件/目录路径(必填),支持通配符如*.txt")
-    destination: str = Field(description="输出压缩包路径(必填)")
+class CompressInput(BaseModel):
+    source: str = Field(description="要压缩的文件/目录路径(绝对路径),支持通配符如*.txt")
+    destination: str = Field(description="输出压缩包路径(绝对路径,必填)")
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
         default="zip", description="压缩格式:zip/tar/tar.gz/tar.bz2,默认zip"
     )
@@ -212,10 +279,10 @@ class CompressFilesInput(BaseModel):
 # F8b: extract_archive — 解压文件
 # ============================================================
 
-class ExtractArchiveInput(BaseModel):
-    source: str = Field(description="压缩包路径(必填)")
+class ExtractInput(BaseModel):
+    source: str = Field(description="压缩包路径(绝对路径,必填)。支持格式:zip/tar/tar.gz/tar.bz2")
     destination: Optional[str] = Field(
-        default=None, description="解压目标目录(可选,默认自动创建同名目录)"
+        default=None, description="解压目标目录(绝对路径,可选,默认自动创建同名目录)"
     )
     password: Optional[str] = Field(default=None, description="解密密码(仅ZIP格式支持),可选")
     overwrite: bool = Field(default=False, description="是否覆盖已存在文件,默认False")
@@ -225,7 +292,7 @@ class ExtractArchiveInput(BaseModel):
 # F9a: move_file — 移动文件
 # ============================================================
 
-class MoveFileInput(BaseModel):
+class MoveInput(BaseModel):
     source: str = Field(description="源文件路径(绝对路径)")
     destination: str = Field(description="目标路径(绝对路径)")
     overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
@@ -235,11 +302,12 @@ class MoveFileInput(BaseModel):
 # F9b: copy_file — 复制文件
 # ============================================================
 
-class CopyFileInput(BaseModel):
+class CopyInput(BaseModel):
     source: str = Field(description="源文件路径(绝对路径)")
     destination: str = Field(description="目标路径(绝对路径)")
     recursive: bool = Field(default=False, description="复制目录时需True,默认False")
     overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
+    preserve_metadata: bool = Field(default=True, description="是否保留文件元数据(修改时间等),默认True")
 
 
 
@@ -247,7 +315,7 @@ class CopyFileInput(BaseModel):
 # F9c: delete_file — 删除文件
 # ============================================================
 
-class DeleteFileInput(BaseModel):
+class DeleteInput(BaseModel):
     source: str = Field(description="要删除的文件/目录路径(绝对路径)")
     recursive: bool = Field(default=False, description="删除非空目录时需True,默认False")
     force: bool = Field(default=False, description="True=跳过回收站永久删除,False=放入回收站。默认False")
@@ -257,65 +325,29 @@ class DeleteFileInput(BaseModel):
 # F9d: rename_file — 重命名文件
 # ============================================================
 
-class RenameFileInput(BaseModel):
-    source: str = Field(description="原文件/目录路径(绝对路径)")
-    destination: str = Field(description="新名称(仅文件名,不含目录路径)")
-
-
-# ============================================================
-# F11a: read_data_file — 读取结构化配置文件
-# ============================================================
-
-class ReadDataFileInput(BaseModel):
-    file_path: str = Field(
-        description="文件路径(必须是绝对路径)"
-    )
-    format: Optional[Literal["json", "yaml", "toml", "ini", "xml", "properties"]] = Field(
-        default=None,
-        description="强制指定格式:json/yaml/toml/ini/xml/properties。不填则根据文件扩展名自动检测"
-    )
-
-
-
-# ============================================================
-# F11b: write_data_file — 写入结构化配置文件
-# ============================================================
-
-class WriteDataFileInput(BaseModel):
-    file_path: str = Field(
-        description="文件路径(必须是绝对路径)"
-    )
-    data: Any = Field(
-        description="写入数据。JSON/YAML/TOML格式传dict或list,Properties传dict。INI/XML暂不支持写入"
-    )
-    format: Optional[Literal["json", "yaml", "toml"]] = Field(
-        default=None,
-        description="强制指定格式:json/yaml/toml。不填则根据文件扩展名自动检测"
-    )
-
-
+class RenameInput(BaseModel):
+    source: str = Field(min_length=1, description="原文件/目录路径(绝对路径)")
+    destination: str = Field(min_length=1, description="新名称(仅文件名,不含目录路径)")
 
 
 # ============================================================
 # ============================================================
-# __all__ — 15个工具的Schema导出
+# __all__ — 13个工具的Schema导出
 # ============================================================
 
 __all__ = [
-    "ReadTextFileInput",
-    "WriteTextFileInput",
-    "ReadMediaFileInput",
-    "EditTextFileInput",
-    "ListDirectoryInput",
-    "SearchFilesInput",
-    "GrepFileContentInput",
-
-    "CompressFilesInput",
-    "ExtractArchiveInput",
-    "MoveFileInput",
-    "CopyFileInput",
-    "DeleteFileInput",
-    "RenameFileInput",
-    "ReadDataFileInput",
-    "WriteDataFileInput",
+    "ReadtextInput",
+    "WritetextInput",
+    "ReadmediaInput",
+    "EdittextInput",
+    "ListdirInput",
+    "TreeInput",
+    "FindInput",
+    "GrepInput",
+    "CompressInput",
+    "ExtractInput",
+    "MoveInput",
+    "CopyInput",
+    "DeleteInput",
+    "RenameInput",
 ]

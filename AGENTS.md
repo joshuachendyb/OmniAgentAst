@@ -105,7 +105,7 @@ npm run test:e2e     # Playwright
 
 ### Backend: `backend/app/main.py` → FastAPI
 
-**Request flow**: `chat_router.py` → CRSS regex scoring → `AgentFactory.create(intent_type)` → Agent subclasses → ReAct loop → SSE
+**Request flow**: `chat_openai.py` → `run_sse_stream.py` → `UniversalAgent` → `run_react_cycle()` → SSE
 
 **Agent system** (`backend/app/services/agent/`):
 - `core_agent/` — `react_cycle.py`(循环调度), `handlers/`(action/answer处理), `initialize_run_state.py`
@@ -113,10 +113,10 @@ npm run test:e2e     # Playwright
 - `steps/` — Step类型定义(ThoughtStep, ToolStep, FinalStep等)
 - `types/` — AgentStatus枚举, ObservationContext等
 
-**Tool registry** (`backend/app/services/tools/`):
+**Tool registry** (`backend/app/tools/`):
 - `registry.py` — `ToolRegistry` singleton, `ToolCategory` enum
 - `__init__.py` — `ensure_tools_registered()` loads all tools
-- Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `meta`, `win_registry`
+- Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `fundamental`, `dataanalysis`, `timer`, `win_registry`
 - Each `{category}/` has: `{category}_register.py`, `{category}_tools.py`, `{category}_schema.py` (+ optional extras)
 
 **LLM client** (`backend/app/services/llm/`):
@@ -149,12 +149,13 @@ OmniAgentAs-desk/
 │   │   ├── main.py             # FastAPI entrypoint
 │   │   ├── config.py           # YAML+env config loader
 │   │   ├── db/models/          # SQLAlchemy + Pydantic
+│   │   ├── tools/              # Tool registry + categories (file/shell/fundamental/...)
 │   │   ├── services/
 │   │   │   ├── agent/          # core_agent/, agent_utils/, steps/, types/
-│   │   │   ├── tools/          # Tool categories (file/shell/network/...)
+│   │   │   ├── tools/          # (deprecated, moved to app/tools/)
 │   │   │   ├── llm/            # LLM client (client_sdk.py, core.py, stream_parser.py)
 │   │   │   ├── safety/         # file_safety/, tool_safety_checker.py
-│   │   │   ├── task/           # task_tracker.py, task_control.py
+│   │   │   ├── task/           # task_tracker.py, task_pause/cancel/resume.py
 │   │   │   └── react_sse_wrapper/  # run_sse_stream.py, chat_stream.py
 │   │   └── utils/              # 公共工具函数
 │   ├── tests/                  # pytest
@@ -193,7 +194,7 @@ OmniAgentAs-desk/
 | **httpx version lock** | `httpx==0.26.0` + `httpcore==1.0.1` required. Don't upgrade. |
 | **Duplicate `__all__`** | Register files may have 2 `__all__` defs (second overwrites first). |
 | **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
-| **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{current_category, support_tool}`. |
+| **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{FUNDAMENTAL, SHELL, FILE}`. |
 
 ---
 ##  编码口诀-严格遵守
@@ -231,3 +232,31 @@ ISP 接口窄，复用先查库
 - No default exports for components
 - Use `@/` alias for absolute imports
 - Run `npm run check` before commit
+
+---
+
+## Anchored Summary
+
+### Goal
+全量实现「Tool内部安全检查复核修订版v3」设计文档的代码变更。
+
+### Progress (so far this session)
+- ✅ 创建 `tools/validate/` 目录，集中存放4个校验文件（url_validator, timeout_validator, file_path_checker, registry_path_checker）
+- ✅ url_validator 从 `network/` 迁移到 `validate/`，返回格式改为 `(is_valid, error_msg, warning_msg)` 三元组
+- ✅ 4个网络工具 import 路径更新 + 适配新返回格式
+- ✅ 6个工具入口添加 `validate_timeout()` 调用（http_request/download_file/fetch_webpage/network_diagnose/execute_shell_command/execute_code）
+- ✅ 13个写入工具添加 `validate_path_for_*()` 调用
+- ✅ 8个只读文件工具去掉 `_validate_path()` 系统级透传
+- ✅ 3个 registry 工具集成 `registry_path_checker`
+- ✅ 旧 `network/url_validator.py` 已删除
+- ✅ 验证：650 passed, 4 failed（均为预先存在的问题）
+- ✅ 2次 commit: `2a20cc069`(文档+timeout+URL) + `ccaaa49bd`(file_path+registry)
+
+### Pending
+- （无待办 — 本轮设计文档全量代码已实施完成）
+
+### 第2轮修正（补遗漏）
+以下3项遗漏已在第2轮补齐 + 第3次 commit `af19c933b`：
+- ✅ search_web.validate_proxy() 已存在（预先有，非遗漏）
+- ✅ 系统级检查扩展：`_check_known_risks()` 覆盖 `DOCUMENT/DATAANALYSIS/NETWORK/DESKTOP` 分类
+- ✅ 4组 validator 单元测试（131个测试全部通过）

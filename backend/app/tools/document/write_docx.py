@@ -3,102 +3,133 @@
 D5: write_docx — 写入Word文档
 
 从document_tools.py拆分而来 — 小欧 2026-06-22
-内聚: _resolve_paragraphs / _add_docx_content_item 辅助函数
+
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
+import re
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.constants import ERR_WRITE_DOCX, ERR_NO_DOCX
-from app.utils.json_utils import coerce_json
+from app.tools.file_type_checker import check_for_document_tool
+from app.tools.tool_constants import ERR_WRITE_DOCX
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
+from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config
+
+
+def _set_docx_table_style(table):
+    """设置表格边框和表头样式 — 小健 2026-06-24"""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    from docx.shared import RGBColor, Pt
+    
+    tbl = table._tbl
+    tblPr = tbl.tblPr if tbl.tblPr is not None else OxmlElement('w:tblPr')
+    tblBorders = OxmlElement('w:tblBorders')
+    for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+        border = OxmlElement(f'w:{border_name}')
+        border.set(qn('w:val'), 'single')
+        border.set(qn('w:sz'), '4')
+        border.set(qn('w:color'), '000000')
+        tblBorders.append(border)
+    tblPr.append(tblBorders)
+    if tbl.tblPr is None:
+        tbl.insert(0, tblPr)
+    
+    header_config = get_table_header_style_config()
+    if len(table.rows) > 0:
+        for cell in table.rows[0].cells:
+            for para in cell.paragraphs:
+                for run in para.runs:
+                    run.font.bold = header_config["bold"]
+                    run.font.size = Pt(header_config["font_size"])
+            tcPr = cell._tc.get_or_add_tcPr()
+            shd = OxmlElement('w:shd')
+            shd.set(qn('w:fill'), header_config["bg_color"])
+            tcPr.append(shd)
+            for para in cell.paragraphs:
+                for run in para.runs:
+                    run.font.color.rgb = RGBColor(255, 255, 255)
+
+
+def _set_docx_column_widths(table, table_data):
+    """设置列宽自适应 — 小健 2026-06-24"""
+    from docx.shared import Inches
+    
+    if not table_data or not table_data[0]:
+        return
+    
+    col_widths = calculate_column_widths(table_data, total_width=6.0)
+    for ci, width in enumerate(col_widths):
+        if ci < len(table.columns):
+            for cell in table.columns[ci].cells:
+                cell.width = Inches(width)
 
 
 def _build_write_docx_llm_data(
     exec_code: str, duration_ms: int,
-    file_path: str = "", detail: str = "",
+    file_path: str = "", detail: str = "", user_title: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """write_docx的llm_data构建函数 — 小欧 2026-06-22"""
+    """write_docx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint参数"""
+    _act_params = {"file_path": file_path}
+    if user_title:
+        _act_params["title"] = user_title
     if exec_code == "error":
         return {
             "summary": f"写入Word失败: {detail}",
-            "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "写入Word失败", "code": ERR_WRITE_DOCX, "detail": detail, "hint": "请检查路径和权限"},
+            "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": _act_params},
+            "status": {"exec_code": "error", "message": "写入Word失败", "code": ERR_WRITE_DOCX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入Word成功: {file_path}",
-        "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入Word成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-def _resolve_paragraphs(paragraphs):
-    """解析paragraphs参数: 统一输出为 (title_from_dict, content_list) — 小欧 2026-06-19"""
-    title = None
-    items = []
-
-    if isinstance(paragraphs, str):
-        items = [paragraphs]
-    elif isinstance(paragraphs, list):
-        items = paragraphs
-    elif isinstance(paragraphs, dict):
-        title = paragraphs.get("title")
-        content = paragraphs.get("content", [])
-        items = content if isinstance(content, list) else [content]
-
-    return title, items
-
-
-def _add_docx_content_item(doc, item):
-    """处理单个Word内容元素(list中的str或dict) — 小欧 2026-06-19"""
-    if isinstance(item, str):
-        if item.strip():
-            doc.add_paragraph(item)
-    elif isinstance(item, dict):
-        item_type = item.get("type", "paragraph")
-        item_text = item.get("text", "")
-        if item_type in ("h1", "heading"):
-            doc.add_heading(item_text, item.get("level", 1))
-        elif item_type in ("h2", "h3", "h4", "h5"):
-            doc.add_heading(item_text, level=int(item_type[1]))
-        elif item_type == "paragraph":
-            doc.add_paragraph(item_text)
-        elif item_type == "table":
-            rows_data = item.get("rows", [])
-            if rows_data:
-                t = doc.add_table(rows=len(rows_data), cols=len(rows_data[0]))
-                for ri, rd in enumerate(rows_data):
-                    for ci, cv in enumerate(rd):
-                        t.rows[ri].cells[ci].text = str(cv)
-    else:
-        text = str(item)
-        if text.strip():
-            doc.add_paragraph(text)
 
 
 def write_docx(
     file_name: str,
     title: Optional[str] = None,
-    paragraphs: Optional[Union[str, List, Dict]] = None,
+    content: Optional[str] = None,
+    table_data: Optional[List[List[str]]] = None,
 ) -> Dict[str, Any]:
-    """写入Word文档 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件"""
+    """写入Word文档 — 小健 2026-06-24 支持Markdown表格+table_data互斥 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
-    paragraphs = coerce_json(paragraphs)
+
+    # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, warn = validate_path(OpCategory.WRITE, file_name)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        _title_str = title or ""
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=err, user_title=_title_str, hint="请检查文件路径是否合法")
+        return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
+    if warn:
+        logger.warning(f"[write_docx] {warn}")
+
+    # 文件类型前置检查（write操作允许创建新文件） — 小欧 2026-06-24
+    is_valid, error_detail, suggested_tool = check_for_document_tool(file_name, allow_create=True)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=error_detail, user_title=title or "", hint="文件扩展名不正确,请使用.docx格式")
+        return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
 
     if not _check_module("docx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail="python-docx库未安装")
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail="python-docx库未安装", user_title=title or "", hint="请安装python-docx库")
         return build_error(data={"error_detail": "python-docx库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
 
     try:
@@ -109,21 +140,66 @@ def write_docx(
         if title:
             doc.add_heading(title, 0)
 
-        if paragraphs is not None:
-            dict_title, items = _resolve_paragraphs(paragraphs)
-            if dict_title and not title:
-                doc.add_heading(dict_title, 0)
-            for item in items:
-                _add_docx_content_item(doc, item)
+        if content:
+            lines = content.split('\n')
+            i = 0
+            while i < len(lines):
+                line = lines[i].rstrip()
+                if not line:
+                    i += 1
+                    continue
+                
+                if line.startswith('# '):
+                    doc.add_heading(line[2:], 1)
+                elif line.startswith('## '):
+                    doc.add_heading(line[3:], 2)
+                elif line.startswith('### '):
+                    doc.add_heading(line[4:], 3)
+                elif line.startswith('#### '):
+                    doc.add_heading(line[5:], 4)
+                elif line.startswith('##### '):
+                    doc.add_heading(line[6:], 5)
+                elif line.startswith('- ') or line.startswith('* '):
+                    doc.add_paragraph(line[2:], style='List Bullet')
+                elif re.match(r'^\d+\.\s', line):
+                    doc.add_paragraph(re.sub(r'^\d+\.\s', '', line), style='List Number')
+                elif line.startswith('|') and '|' in line[1:]:
+                    table_rows, i = parse_markdown_table(lines, i)
+                    if table_rows:
+                        t = doc.add_table(rows=len(table_rows), cols=len(table_rows[0]))
+                        for ri, row_data in enumerate(table_rows):
+                            for ci, cell_text in enumerate(row_data):
+                                t.rows[ri].cells[ci].text = str(cell_text)
+                        _set_docx_table_style(t)
+                        _set_docx_column_widths(t, table_rows)
+                    continue
+                else:
+                    doc.add_paragraph(line)
+                i += 1
+        
+        if table_data:
+            if table_data and len(table_data) > 0 and len(table_data[0]) > 0:
+                t = doc.add_table(rows=len(table_data), cols=len(table_data[0]))
+                for ri, row_data in enumerate(table_data):
+                    for ci, cell_text in enumerate(row_data):
+                        t.rows[ri].cells[ci].text = str(cell_text)
+                _set_docx_table_style(t)
+                _set_docx_column_widths(t, table_data)
 
         path = Path(file_name)
         path.parent.mkdir(parents=True, exist_ok=True)
         doc.save(path)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("success", duration_ms, str(path))
+        llm_data = _build_write_docx_llm_data("success", duration_ms, str(path), user_title=title or "")
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val)
+        # trigger: 无上述20条分支匹配 — file_path 不命中专用分支
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data={"file_path": str(path)}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=str(e))
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "", hint="写入Word异常,请检查磁盘空间和权限")
         return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)

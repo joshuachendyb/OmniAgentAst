@@ -3,127 +3,100 @@
 D7: write_pdf — 写入PDF文档
 
 从document_tools.py拆分而来 — 小欧 2026-06-22
-内聚: _resolve_paragraphs / _add_pdf_content_item 辅助函数
+
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
+import re
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional, List
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.constants import ERR_WRITE_PDF, ERR_NO_REPORTLAB
-from app.utils.json_utils import coerce_json
+from app.tools.tool_constants import ERR_WRITE_PDF
 from reportlab.lib.units import mm
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
+from app.utils.table_helper import parse_markdown_table, get_table_header_style_config
+
+
+def _create_pdf_table(table_data, chinese_style):
+    """创建PDF表格 — 小健 2026-06-24"""
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib import colors
+    
+    header_config = get_table_header_style_config()
+    bg_color = colors.HexColor('#' + header_config["bg_color"])
+    
+    table = Table(table_data)
+    style_commands = [
+        ('BACKGROUND', (0, 0), (-1, 0), bg_color),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTNAME', (0, 0), (-1, -1), chinese_style.fontName),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('TOPPADDING', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]
+    
+    table.setStyle(TableStyle(style_commands))
+    return table
 
 
 def _build_write_pdf_llm_data(
     exec_code: str, duration_ms: int,
-    file_path: str = "", detail: str = "",
+    file_path: str = "", detail: str = "", user_title: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """write_pdf的llm_data构建函数 — 小欧 2026-06-22"""
+    """write_pdf的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint参数"""
+    _act_params = {"file_path": file_path}
+    if user_title:
+        _act_params["title"] = user_title
     if exec_code == "error":
         return {
             "summary": f"写入PDF失败: {detail}",
-            "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "写入PDF失败", "code": ERR_WRITE_PDF, "detail": detail, "hint": "请检查路径和权限"},
+            "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "target": file_path, "params": _act_params},
+            "status": {"exec_code": "error", "message": "写入PDF失败", "code": ERR_WRITE_PDF, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入PDF成功: {file_path}",
-        "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入PDF成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-def _resolve_paragraphs(paragraphs):
-    """解析paragraphs参数: 统一输出为 (title_from_dict, content_list) — 小欧 2026-06-19"""
-    title = None
-    items = []
-
-    if isinstance(paragraphs, str):
-        items = [paragraphs]
-    elif isinstance(paragraphs, list):
-        items = paragraphs
-    elif isinstance(paragraphs, dict):
-        title = paragraphs.get("title")
-        content = paragraphs.get("content", [])
-        items = content if isinstance(content, list) else [content]
-
-    return title, items
-
-
-def _add_pdf_content_item(elements, item, chinese_style, title_style):
-    """处理单个PDF内容元素 — 小欧 2026-06-19"""
-    from reportlab.lib.units import mm
-    from reportlab.platypus import Paragraph, Table, TableStyle, Spacer
-    from reportlab.lib import colors
-    from reportlab.lib.styles import ParagraphStyle
-
-    if isinstance(item, str):
-        if item.strip():
-            elements.append(Paragraph(item, chinese_style))
-            elements.append(Spacer(1, 3 * mm))
-    elif isinstance(item, dict):
-        item_type = item.get("type", "paragraph")
-        item_text = item.get("text", "")
-        if item_type in ("h1", "heading"):
-            heading_style = ParagraphStyle('h1', parent=chinese_style,
-                                           fontSize=18, spaceBefore=12, spaceAfter=6)
-            elements.append(Paragraph(item_text, heading_style))
-            elements.append(Spacer(1, 3 * mm))
-        elif item_type in ("h2", "h3", "h4", "h5"):
-            fs = max(18 - int(item_type[1]) * 2, 12)
-            h_style = ParagraphStyle(f'h{item_type[1]}', parent=chinese_style,
-                                     fontSize=fs, spaceBefore=8, spaceAfter=4)
-            elements.append(Paragraph(item_text, h_style))
-            elements.append(Spacer(1, 2 * mm))
-        elif item_type == "paragraph":
-            elements.append(Paragraph(item_text, chinese_style))
-            elements.append(Spacer(1, 3 * mm))
-        elif item_type == "table":
-            rows_data = item.get("rows", [])
-            if rows_data and len(rows_data) > 0:
-                try:
-                    t = Table(rows_data)
-                    t.setStyle(TableStyle([
-                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-                        ('FONTSIZE', (0, 0), (-1, -1), 9),
-                    ]))
-                    elements.append(t)
-                    elements.append(Spacer(1, 5 * mm))
-                except Exception:
-                    pass
-    else:
-        text = str(item)
-        if text.strip():
-            elements.append(Paragraph(text, chinese_style))
-            elements.append(Spacer(1, 3 * mm))
-
 
 def write_pdf(
     file_name: str,
     title: Optional[str] = None,
-    paragraphs: Optional[Union[str, List, Dict]] = None,
+    content: Optional[str] = None,
+    table_data: Optional[List[List[str]]] = None,
 ) -> Dict[str, Any]:
-    """写入PDF文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件"""
+    """写入PDF文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化（Markdown格式）+ table_data支持"""
     t0 = _time_mod.perf_counter()
-    paragraphs = coerce_json(paragraphs)
+
+    # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, warn = validate_path(OpCategory.WRITE, file_name)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=err, user_title=title or "", hint="请检查文件路径是否合法")
 
     if not _check_module("reportlab"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail="reportlab库未安装")
-        return build_error(data={"error_detail": "reportlab库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail="reportlab库未安装", user_title=title or "", hint="请安装reportlab库")
 
     try:
         from reportlab.lib.pagesizes import A4
@@ -133,7 +106,7 @@ def write_pdf(
         from reportlab.pdfbase.ttfonts import TTFont
     except ImportError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail="reportlab库导入失败")
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail="reportlab库导入失败", user_title=title or "", hint="请检查reportlab库安装完整性")
         return build_error(data={"error_detail": "reportlab库导入失败", "params": {"file_name": file_name}}, llm_data=llm_data)
 
     try:
@@ -166,12 +139,52 @@ def write_pdf(
             elements.append(Paragraph(title, title_style))
             elements.append(Spacer(1, 10 * mm))
 
-        if paragraphs is not None:
-            dict_title, items = _resolve_paragraphs(paragraphs)
-            if dict_title and not title:
-                elements.append(Paragraph(dict_title, title_style))
-            for item in items:
-                _add_pdf_content_item(elements, item, chinese_style, title_style)
+        if content:
+            lines = content.split('\n')
+            i = 0
+            while i < len(lines):
+                line = lines[i].rstrip()
+                if not line:
+                    i += 1
+                    continue
+                if line.startswith('# '):
+                    h1_style = ParagraphStyle('h1', parent=chinese_style, fontSize=18, spaceBefore=12, spaceAfter=6)
+                    elements.append(Paragraph(line[2:], h1_style))
+                    elements.append(Spacer(1, 3 * mm))
+                elif line.startswith('## '):
+                    h2_style = ParagraphStyle('h2', parent=chinese_style, fontSize=16, spaceBefore=10, spaceAfter=5)
+                    elements.append(Paragraph(line[3:], h2_style))
+                    elements.append(Spacer(1, 3 * mm))
+                elif line.startswith('### '):
+                    h3_style = ParagraphStyle('h3', parent=chinese_style, fontSize=14, spaceBefore=8, spaceAfter=4)
+                    elements.append(Paragraph(line[4:], h3_style))
+                    elements.append(Spacer(1, 2 * mm))
+                elif line.startswith('#### '):
+                    h4_style = ParagraphStyle('h4', parent=chinese_style, fontSize=12, spaceBefore=6, spaceAfter=3)
+                    elements.append(Paragraph(line[5:], h4_style))
+                    elements.append(Spacer(1, 2 * mm))
+                elif line.startswith('- ') or line.startswith('* '):
+                    elements.append(Paragraph('• ' + line[2:], chinese_style))
+                    elements.append(Spacer(1, 2 * mm))
+                elif re.match(r'^\d+\.\s', line):
+                    elements.append(Paragraph(re.sub(r'^\d+\.\s', '', line), chinese_style))
+                    elements.append(Spacer(1, 2 * mm))
+                elif line.startswith('|') and '|' in line[1:]:
+                    table_rows, i = parse_markdown_table(lines, i)
+                    if table_rows:
+                        pdf_table = _create_pdf_table(table_rows, chinese_style)
+                        elements.append(pdf_table)
+                        elements.append(Spacer(1, 5 * mm))
+                    continue
+                else:
+                    elements.append(Paragraph(line, chinese_style))
+                    elements.append(Spacer(1, 3 * mm))
+                i += 1
+        
+        if table_data:
+            if table_data and len(table_data) > 0:
+                pdf_table = _create_pdf_table(table_data, chinese_style)
+                elements.append(pdf_table)
 
         if not elements:
             elements.append(Paragraph(" ", chinese_style))
@@ -179,9 +192,15 @@ def write_pdf(
         doc.build(elements)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("success", duration_ms, str(path))
+        llm_data = _build_write_pdf_llm_data("success", duration_ms, str(path), user_title=title or "")
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val)
+        # trigger: 无上述20条分支匹配 — file_path 不命中专用分支
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data={"file_path": str(path)}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=str(e))
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "", hint="写入PDF异常,请检查磁盘空间和权限")
         return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)

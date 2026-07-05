@@ -46,7 +46,7 @@ def ensure_tools_registered() -> None:
                 _import_and_register(module_path, register_func)
                 count_after = len(tool_registry._tools)
                 _registered_categories.add(cat_name)
-                logger.info(f"[Tools] 分类 {cat_name} 注册完成, {count_after - count_before}个工具")
+                logger.debug(f"[Tools] 分类 {cat_name} 注册完成, {count_after - count_before}个工具")
             except Exception as e:
                 logger.error(f"[Tools] 注册分类{cat_name}失败: {e}")
                 _failed = True

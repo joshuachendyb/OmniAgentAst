@@ -14,25 +14,42 @@ from typing import Dict, Any, List, Optional, Union
 import pandas as pd
 
 from app.tools.tool_response import build_success, build_error
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.tools.tool_fc_helper import _check_module, _serialize_rows
 from app.utils.json_utils import coerce_json
-from app.constants import ERR_FILTER_INVALID
+from app.tools.tool_constants import ERR_FILTER_INVALID
 
 
-def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail=""):
-    """filter_data的llm_data构建函数 — 小健 2026-06-22"""
+def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail="", hint="",
+                                 file_path="", data="", conditions=None, select_columns=None, sort_by="", top_n=0, max_rows=0):
+    """filter_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数"""
     columns = columns or []
+    _act_params = {}
+    if file_path:
+        _act_params["file_path"] = file_path
+    if data:
+        _act_params["data"] = data
+    if conditions:
+        _act_params["conditions"] = conditions
+    if select_columns:
+        _act_params["select_columns"] = select_columns
+    if sort_by:
+        _act_params["sort_by"] = sort_by
+    if top_n:
+        _act_params["top_n"] = top_n
+    if max_rows:
+        _act_params["max_rows"] = max_rows
     if exec_code == "error":
         return {
             "summary": f"数据筛选失败: {detail}",
-            "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": {}},
-            "status": {"exec_code": "error", "message": "筛选失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": "请检查条件和数据"},
+            "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": _act_params},
+            "status": {"exec_code": "error", "message": "筛选失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": hint if hint else "请检查条件和数据"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"筛选完成: {original_count}行→{filtered_count}行",
-        "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": {}},
+        "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": _act_params},
         "status": {"exec_code": "success", "message": "筛选成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"original_count": {"value": original_count, "text": f"{original_count}行"}, "filtered_count": {"value": filtered_count, "text": f"{filtered_count}行"}},
@@ -40,17 +57,22 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
 
 
 def _load_data_to_df(data: Union[str, List[Dict[str, Any]]], max_rows: Optional[int] = None) -> dict:
-    """加载数据为 DataFrame — 小健 2026-06-22 拆分独立文件"""
+    """加载数据为 DataFrame — 小健 2026-06-22 拆分独立文件 — 小欧 2026-06-24 修复list分支max_rows无效"""
     if isinstance(data, str):
+        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, _ = validate_path(OpCategory.READ_FILE, data)
+        if not is_valid:
+            return {"error_detail": err, "params": {"file_path": data}}
         path = Path(data)
-        if not path.exists():
-            return {"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}
         if data.endswith('.xlsx'):
             if not _check_module("openpyxl"):
                 return {"error_detail": "openpyxl库未安装", "params": {"library": "openpyxl"}}
             return {"df": pd.read_excel(data, engine="openpyxl", nrows=max_rows)}
         return {"df": pd.read_csv(data, nrows=max_rows)}
     if isinstance(data, list):
+        if max_rows is not None and len(data) > max_rows:
+            data = data[:max_rows]
         return {"df": pd.DataFrame(data)}
     return {"error_detail": "data参数必须是文件路径或数据数组", "params": {"data_type": type(data).__name__}}
 
@@ -95,23 +117,46 @@ def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) 
     return {"mask": mask, "warnings": warnings}
 
 
-def filter_data(data: Union[str, List[Dict[str, Any]]], conditions: List[Dict[str, Any]],
+def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
+                conditions: List[Dict[str, Any]] = None,
                 select_columns: Optional[List[str]] = None, max_rows: Optional[int] = None,
                 sort_by: Optional[str] = None, top_n: Optional[int] = None) -> Dict[str, Any]:
-    """筛选数据 — 小健 2026-06-22 拆分独立文件"""
-    data = coerce_json(data)
-    conditions = coerce_json(conditions)
+    """筛选数据 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union — 小欧 2026-06-27 file_path+data互斥拆分"""
+    if file_path and data:
+        t0 = _time_mod.perf_counter()
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数互斥,只能传入其中一个", hint="file_path和data只能选其一", file_path=file_path, data=data)
+        return build_error(data={"error_detail": "file_path和data参数互斥,只能传入其中一个", "params": {"file_path": file_path, "data": data}}, llm_data=llm_data)
+    if not file_path and not data:
+        t0 = _time_mod.perf_counter()
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数必须传入其中一个", hint="请提供file_path或data参数")
+        return build_error(data={"error_detail": "file_path和data参数必须传入其中一个"}, llm_data=llm_data)
+
+    if conditions is not None:
+        conditions = coerce_json(conditions)
+    else:
+        conditions = []
     t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="pandas库未安装")
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="pandas库未安装", hint="请安装pandas库", file_path=file_path, data=data)
         return build_error(data={"error_detail": "pandas库未安装", "params": {"library": "pandas"}}, llm_data=llm_data)
 
     try:
-        loaded = _load_data_to_df(data, max_rows)
+        if file_path:
+            loaded = _load_data_to_df(file_path, max_rows)
+        else:
+            parsed_data = coerce_json(data)
+            if isinstance(parsed_data, list):
+                loaded = _load_data_to_df(parsed_data, max_rows)
+            else:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_filter_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组字符串", hint="请提供JSON数组格式的数据", data=data)
+                return build_error(data={"error_detail": "data参数必须是JSON数组字符串", "params": {"data_type": type(parsed_data).__name__}}, llm_data=llm_data)
         if "error_detail" in loaded:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=loaded["error_detail"])
+            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=loaded["error_detail"], hint="请检查数据加载路径", file_path=file_path, data=data)
             return build_error(data=loaded, llm_data=llm_data)
         df = loaded["df"]
         original_count = len(df)
@@ -119,7 +164,7 @@ def filter_data(data: Union[str, List[Dict[str, Any]]], conditions: List[Dict[st
         result = _build_condition_mask(df, conditions)
         if "error_detail" in result:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=result["error_detail"])
+            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=result["error_detail"], hint="请检查筛选条件", file_path=file_path, data=data, conditions=conditions)
             return build_error(data=result, llm_data=llm_data)
         filtered_df = df[result["mask"]]
         warnings = result["warnings"]
@@ -147,11 +192,18 @@ def filter_data(data: Union[str, List[Dict[str, Any]]], conditions: List[Dict[st
             result_data["warnings"] = warnings
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("success", duration_ms, original_count, len(rows), columns)
+        llm_data = _build_filter_data_llm_data("success", duration_ms, original_count, len(rows), columns,
+                                                  file_path=file_path, data=data, conditions=conditions, select_columns=select_columns, sort_by=sort_by, top_n=top_n or 0, max_rows=max_rows or 0)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #5 rows
+        # trigger: "rows" in data — rows 是 List[list|dict]
+        # handler: _format_rows(data["rows"], data.get("columns"))
+        # file:    observation_formatter.py:140-142
+        # ------------------------------------------------------------------------------
         return build_success(data=result_data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail=str(e))
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail=str(e), hint="筛选异常，请检查数据", file_path=file_path, data=data)
         return build_error(data={"error_detail": str(e), "params": {"data": str(data)[:200]}}, llm_data=llm_data)
 
 

@@ -3,7 +3,7 @@
 D4: read_xlsx — 读取Excel/CSV/XLS文档
 
 从document_tools.py拆分而来 — 小欧 2026-06-22
-内聚: _read_xlsx / _read_xls / _read_csv_stdlib 辅助函数
+内聚: _read_xlsx / _read_csv_stdlib 辅助函数 — 小欧 2026-06-24 移除._read_xls(不支持.xls)
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -12,30 +12,39 @@ D4: read_xlsx — 读取Excel/CSV/XLS文档
 import csv
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.constants import ERR_DOC_READ_XLSX
+from app.tools.file_type_checker import check_for_document_tool
+from app.tools.tool_constants import ERR_DOC_READ_XLSX
+from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
 def _build_read_xlsx_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", row_count: int = 0, sheet_count: int = 0, detail: str = "",
+    user_sheet_name: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """read_xlsx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """read_xlsx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint参数"""
     if exec_code == "error":
+        _act_params = {"file_path": file_path}
+        if user_sheet_name:
+            _act_params["sheet_name"] = user_sheet_name
         return {
             "summary": f"读取Excel失败: {detail}",
-            "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "读取Excel失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": "请检查文件路径和格式"},
+            "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": _act_params},
+            "status": {"exec_code": "error", "message": "读取Excel失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    _act_params = {"file_path": file_path}
+    if user_sheet_name:
+        _act_params["sheet_name"] = user_sheet_name
     return {
         "summary": f"读取Excel成功: {row_count}行, {sheet_count}个工作表",
-        "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "读取Excel成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -45,64 +54,81 @@ def _build_read_xlsx_llm_data(
     }
 
 
-def _read_xlsx_inner(file_path: str, max_rows: int = 10000) -> Dict[str, Any]:
+def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional[str] = None) -> Dict[str, Any]:
     """读取.xlsx文件(内部) — 小欧 2026-06-22
-    辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22"""
+    辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22
+    参数: sheet_name - 指定工作表名，None则读取所有工作表 — 小健 2026-06-24"""
+    def _serialize_val(val):
+        """单值序列化: None→None, datetime→isoformat, 其他原样 — 北京老陈 2026-07-03"""
+        if val is None:
+            return None
+        if hasattr(val, 'isoformat'):
+            return val.isoformat()
+        return val
+
     try:
         from openpyxl import load_workbook
 
+        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        _vi, _ve, _ = validate_path(OpCategory.READ_FILE, file_path)
+        if not _vi:
+            return {"error_detail": _ve, "params": {"file_path": file_path}}
+
         path = Path(file_path)
-        if not path.exists():
-            return {"error_detail": "文件不存在", "params": {"file_path": file_path}}
 
         wb = load_workbook(path, read_only=True, data_only=True)
-        sheet_names = wb.sheetnames
-        ws = wb.active
+        try:
+            sheet_names = wb.sheetnames
 
-        rows = []
-        headers = []
-        row_count = 0
-
-        for i, row in enumerate(ws.iter_rows(values_only=True)):
-            if i >= max_rows + 1:
-                break
-            row_data = [None if val is None else val for val in row]
-            if i == 0:
-                headers = [str(h) if h is not None else f"column_{j}" for j, h in enumerate(row_data)]
+            if sheet_name:
+                if sheet_name not in sheet_names:
+                    return {"error_detail": f"工作表不存在: {sheet_name}", "params": {"file_path": file_path, "sheet_name": sheet_name}}
+                target_sheets = [sheet_name]
             else:
-                rows.append(row_data)
-                row_count += 1
+                target_sheets = sheet_names
 
-        wb.close()
-        return {"headers": headers, "rows": rows, "row_count": row_count, "sheet_names": sheet_names}
-    except Exception as e:
-        return {"error_detail": str(e), "params": {"file_path": file_path}}
+            all_sheets_data = []
+            total_rows = 0
 
+            for sheet in target_sheets:
+                ws = wb[sheet]
+                rows = []
+                headers = []
+                row_count = 0
 
-def _read_xls_inner(file_path: str, max_rows: int = 10000) -> Dict[str, Any]:
-    """读取.xls文件(内部) — 小欧 2026-06-22
-    辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22"""
-    try:
-        import xlrd
+                for i, row in enumerate(ws.iter_rows(values_only=True)):
+                    if i >= max_rows + 1:
+                        break
+                    row_data = [_serialize_val(val) for val in row]
+                    if i == 0:
+                        headers = [str(h) if h is not None else f"column_{j}" for j, h in enumerate(row_data)]
+                    else:
+                        rows.append(row_data)
+                        row_count += 1
 
-        path = Path(file_path)
-        if not path.exists():
-            return {"error_detail": "文件不存在", "params": {"file_path": file_path}}
-
-        wb = xlrd.open_workbook_xls(str(path))
-        sheet_names = wb.sheet_names()
-        ws = wb.sheet_by_index(0)
-
-        headers = []
-        rows = []
-        for i in range(min(ws.nrows, max_rows)):
-            row_data = [ws.cell_value(i, j) for j in range(ws.ncols)]
-            if i == 0:
-                headers = [str(h) if h else f"column_{j}" for j, h in enumerate(row_data)]
-            else:
-                rows.append(row_data)
-
-        return {"headers": headers, "rows": rows, "row_count": len(rows), "sheet_names": sheet_names}
+                sheet_data = {
+                    "sheet_name": sheet,
+                    "headers": headers,
+                    "rows": rows,
+                    "row_count": row_count,
+                }
+                all_sheets_data.append(sheet_data)
+                total_rows += row_count
+        finally:
+            wb.close()
+        
+        if len(all_sheets_data) == 1:
+            result = all_sheets_data[0]
+            result["sheet_names"] = sheet_names
+            return result
+        else:
+            return {
+                "sheets": all_sheets_data,
+                "sheet_names": sheet_names,
+                "row_count": total_rows,
+                "sheet_count": len(all_sheets_data),
+            }
     except Exception as e:
         return {"error_detail": str(e), "params": {"file_path": file_path}}
 
@@ -117,9 +143,13 @@ def _read_csv_stdlib_inner(
     """使用标准库csv读取CSV文件(内部) — 小欧 2026-06-22
     辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22"""
     try:
+        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        _vi, _ve, _ = validate_path(OpCategory.READ_FILE, file_path)
+        if not _vi:
+            return {"error_detail": _ve, "params": {"file_path": file_path}}
+
         path = Path(file_path)
-        if not path.exists():
-            return {"error_detail": "文件不存在", "params": {"file_path": file_path}}
 
         rows = []
         headers = []
@@ -152,31 +182,48 @@ def _read_csv_stdlib_inner(
         return {"error_detail": str(e), "params": {"file_path": file_path}}
 
 
-def read_xlsx(file_name: str) -> Dict[str, Any]:
-    """读取Excel/CSV/XLS文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件
-    主函数: 负责build3+llm_data调用 — 小欧 2026-06-22"""
+def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
+    """读取Excel/CSV(.xlsx/.csv)文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件
+    主函数: 负责build3+llm_data调用 — 小欧 2026-06-22
+    参数: sheet_name - 指定工作表名（仅.xlsx），None则读取所有工作表 — 小健 2026-06-24
+    小欧 2026-06-24 增加文件类型前置检查（.csv跳过检查） — 小欧 2026-06-24 移除.xls死代码"""
     path = Path(file_name)
     suffix = path.suffix.lower()
     t0 = _time_mod.perf_counter()
 
+    # 文件类型前置检查（.csv由本工具处理，跳过检查） — 小欧 2026-06-24
+    if suffix != ".csv":
+        is_valid, error_detail, suggested_tool = check_for_document_tool(file_name)
+        if not is_valid:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            _sn = sheet_name or ""
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail, user_sheet_name=_sn, hint="文件类型不匹配,请使用.xlsx或.csv格式")
+            return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
+
     if suffix == ".csv":
         result = _read_csv_stdlib_inner(file_name, encoding="utf-8", delimiter=",", has_header=True, max_rows=10000)
-    elif suffix == ".xls":
-        result = _read_xls_inner(file_name, max_rows=10000)
     else:
         if not _check_module("openpyxl"):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装")
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装", user_sheet_name=sheet_name or "", hint="请安装openpyxl库")
             return build_error(data={"error_detail": "openpyxl库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
-        result = _read_xlsx_inner(file_name, max_rows=10000)
+        result = _read_xlsx_inner(file_name, max_rows=10000, sheet_name=sheet_name)
 
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     if "error_detail" in result:
         detail = result["error_detail"]
-        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=detail)
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=detail, user_sheet_name=sheet_name or "", hint="读取Excel异常,请检查文件完整性")
         return build_error(data=result, llm_data=llm_data)
     else:
         row_count = result.get("row_count", 0)
         sheet_count = len(result.get("sheet_names", []))
-        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_name, row_count, sheet_count)
+        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_name, row_count, sheet_count, user_sheet_name=sheet_name or "")
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #2b flat table (单sheet/CSV) / #21 scalar fallback (多sheet)
+        # trigger: "headers" in data and "rows" in data — 单sheet有headers+rows
+        # handler: _format_table(data["headers"], data["rows"])
+        # note:    多sheet返回 {"sheets": [...], "sheet_names": [...]}, 无headers/rows,
+        #          走 scalar fallback → _format_scalar_data(data)
+        # file:    observation_formatter.py:136-138
+        # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)

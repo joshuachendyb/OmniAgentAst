@@ -11,17 +11,17 @@ import time as _time_mod
 from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
-from app.constants import ERR_TIMER_LIST
+from app.tools.tool_constants import ERR_TIMER_LIST
 from app.tools.timer.timer_set import _timer_callbacks
 
 
-def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids: list) -> dict:
-    """timer_list的llm_data构建函数 — 小健 2026-06-22"""
+def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids: list, detail: str = "", hint: str = "") -> dict:
+    """timer_list的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
             "summary": "获取定时器列表失败",
             "action": {"tool": "timer_list", "tool_zh": "列出定时器", "target": "", "params": {}},
-            "status": {"exec_code": "error", "message": "获取定时器列表失败", "code": ERR_TIMER_LIST, "detail": "", "hint": ""},
+            "status": {"exec_code": "error", "message": "获取定时器列表失败", "code": ERR_TIMER_LIST, "detail": detail, "hint": hint if hint else "请检查定时器状态"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -49,10 +49,16 @@ def timer_list() -> Dict[str, Any]:
         timers.sort(key=lambda x: x.get("trigger_at", ""))
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_list_llm_data("success", duration_ms, len(timers), [t["timer_id"] for t in timers[:5]])
+        # ---- observation_formatter route -------------------------------------------
+        # branch: non-dict
+        # trigger: not isinstance(data, dict) — bare list, 非 dict
+        # handler: str(data)
+        # file:    observation_formatter.py:113-115
+        # ------------------------------------------------------------------------------
         return build_success(data=timers, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_timer_list_llm_data("error", duration_ms, 0, [])
+        llm_data = _build_timer_list_llm_data("error", duration_ms, 0, [], detail=str(e), hint="请检查定时器状态")
         return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
 
 

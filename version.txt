@@ -1,3 +1,801 @@
+﻿v0.17.22
+更新时间: 2026-07-05 21:50:18
+## v0.17.21→v0.17.22 变更汇总 - 小欧-2026-07-05
+
+### refactor: observation_formatter route 标注（全部63个工具 10 个分类）
+- file/desktop/network/dataanalysis/document/fundamental/shell/system/timer/win_registry: 各分类 _build_*_llm_data 函数增加 format_data_detail route 专业注释 - 小欧-2026-07-05
+- observation_formatter.py: 删除3处死代码（safe_json_dumps import / #1 content-wrapped / #7 output legacy 分支） - 小欧-2026-07-05
+
+### fix: llm_data params 全面补齐（file+network 14个工具）
+- copy_file/delete_file/edit_text_file/grep_file_content/move_file/read_text_file/rename_file/search_files/write_text_file: 补充 user_* params到_act_params - 小沈-2026-07-05
+- download_file/fetch_webpage/http_request/network_diagnose/search_web: 补充timeout/proxy/headers/prompt/js_render等params - 小沈-2026-07-05
+- find_command/execute_shell_command: 补充all_paths/timeout/cwd/output_len/stderr_len等params - 小沈-2026-07-05
+
+### fix: _act_params/error detail/metrics 复核修复（全部63个工具，覆盖166个质量问题）
+- file组（9个工具）：hint/params/detail/error_code全面审计修复 - 小沈-2026-07-05
+- listdir: offset校验+llm_data hint/params补齐+清除死代码/死导入 - 小沈-2026-07-05
+- readtext: hint逐路径细化+metrics补齐total_lines/bytes+message区分空文件/部分/完全读取 - 小沈-2026-07-05
+- network/desktop/fundamental/timer/system/dataanalysis: hint/params批量修复 - 小沈-2026-07-05
+- DataAnalysis组（analyze_data/filter_data/generate_chart）: _act_params/error detail/metrics全面补齐 - 小欧-2026-07-05
+- Desktop组（screen_capture/mouse_position等）: output_path忽略/err_code/_act_params补齐 - 小欧-2026-07-05
+- Document组（read/write_docx等）: builder补user_sheet_name/user_title到_act_params - 小欧-2026-07-05
+- System组（event_log/list_tasks）: builder签名加err_code + _act_params/error detail补齐 - 小欧-2026-07-05
+- Shell组（find_command）: 空命令/异常缺err_code + _act_params条件性入参 - 小欧-2026-07-05
+- Timer组（timer_set/clear/list）: builder加callback/detail参数 + error detail透传 - 小欧-2026-07-05
+- WinRegistry组（registry_read/write/delete）: 修复传参hive→value_name + 13个error分支补detail - 小欧-2026-07-05
+
+### fix: llm_data hint 逐分支细化（本批 document/system/shell/timer/win_registry 16个工具）
+- document组（read_xlsx/write_docx/write_pdf/write_pptx/write_xlsx）: 5个builder新增hint参数 + 20个error call site hint 修复 - 小欧-2026-07-05
+- system组（create_task/delete_task/event_log）: 3个builder + 15个error call site hint 修复 - 小欧-2026-07-05
+- shell组（execute_shell_command/find_command）: 2个builder + 10个error call site hint 修复 - 小欧-2026-07-05
+- timer组（timer_clear/timer_list/timer_set）: 3个builder + 5个error call site hint 修复 - 小欧-2026-07-05
+- win_registry组（registry_delete/registry_read/registry_write）: 3个builder + 20个error call site hint 修复 - 小欧-2026-07-05
+
+### refactor: tool_retry_engine 增强
+- tool_retry_engine.py: 增强_build_retry_error 增加action_name/action_params参数 - 小沈-2026-07-05
+
+### refactor: 清理
+- notes/ 删除测试记录文件 - 小欧-2026-07-05
+- 清除已废弃 runcode 引用（33个 e2etests 文件） - 小沈-2026-07-05
+
+v0.17.21
+更新时间: 2026-07-05 11:50:00
+## v0.17.20→v0.17.21 变更汇总 - 小欧-2026-07-05
+
+### fix: shell执行引擎缺陷修复(3项)
+- execute_shell_command.py:safety.py L58: DOTALL假阳性——去掉re.DOTALL，改归一化后匹配 - 小欧-2026-07-05
+- execute_shell_command.py:L282-284: CMD分支Popen shell=True引号被CommandLineToArgvW吃掉——改temp.bat执行 - 小欧-2026-07-05
+- execute_shell_command.py: PowerShell翻译器状态机修复+关闭if块-B4 - 小沈-2026-07-05
+
+### feat: 文件工具强化(8项)
+- read_text_file.py: 集成add_line_numbers行号输出 - 小欧-2026-07-05
+- read_text_file.py+write_text_file.py: 长行截断/相似文件提示/diff增强/file_state集成 - 小欧-2026-07-05
+- text_utils.py: 新增add_line_numbers公用函数 - 小欧-2026-07-05
+- file_state.py: 新增check_conflict_strict阻断级冲突检查 - 小欧-2026-07-05
+- edit_text_file.py: 改用check_conflict_strict阻断式冲突检测 - 小欧-2026-07-05
+- write/edit/read_text_file: 复核修复8项缺陷 - 小欧-2026-07-05
+- file_state.py: _resolve重复调用+edit_text_file.py record_operation移后防孤立记录 - 小沈-2026-07-05
+- edit_text_file, read_text_file: diff输出/match警告/mtime检测增强 - 小欧-2026-07-05
+
+### feat: grep工具重构+DRY(3项)
+- grep_file_content.py: ReDoS防护前置+提取safe_read_lines到file_encoding - 小欧/小沈-2026-07-05
+- grep_file_content.py: 结果按mtime降序排序 - 小欧-2026-07-05
+- file_encoding.py: 新增safe_read_lines共用函数(自动编码检测+多编码尝试+replace兜底) - 小沈-2026-07-05
+
+### refactor: shell持久引擎(1项)
+- shell持久引擎: 替换subprocess为PersistentShell - 小欧-2026-07-05
+- shell_schema.py: 删除废弃的SessionInput类 - 小欧-2026-07-05
+- 删除runcode工具及清理全部引用 - 小欧-2026-07-05
+
+### refactor: 路径校验统一(1项)
+- tools_file_path_checker.py+27tools+safety: 增加盘符检查+修复保留字符只查文件名+工具层/Safety层注释 - 小欧-2026-07-04
+- tools_file_path_checker.py: validate_str_param函数 - 小沈-2026-07-05
+- 8tools添加validate_str_param空参数校验 - 小沈-2026-07-05
+
+### feat: 其他增强(3项)
+- tool_cache_manager.py: FILE分类加入patch_search_desc - 小欧-2026-07-05
+- list_directory.py: 遍历跳过__pycache__等噪声目录 - 小欧-2026-07-05
+- listdir分页从200提升到500，删除死常量MAX_PAGE_SIZE - 小欧-2026-07-04
+
+### fix: 其他修复(2项)
+- e2e测试脚本工具名同步更新 - 小欧-2026-07-04
+- version.txt编码修复+operation_recorder类型转换 - 小欧-2026-07-04
+
+### docs: (7项)
+- 代码审查报告: 新增核实章节+修正164个问题 - 小欧-2026-07-05
+- FUNCTIONS.md: 更新add_line_numbers公共函数清单 - 小欧-2026-07-05
+- notes: 添加调试笔记 - 小欧-2026-07-05
+- version.txt: v0.17.21回退至v0.17.20 - 小欧-2026-07-05
+- version.txt: shell持久引擎变更汇总 - 小欧-2026-07-05
+- doc: 新增grep/shell/文件工具/路径校验4篇设计文档 - 小欧/小沈-2026-07-05
+- notes: 删除E2E测试笔记(6个) - 小欧-2026-07-05
+
+v0.17.20
+更新时间: 2026-07-04 13:58:35
+## v0.17.19→v0.17.20 变更汇总 - 小欧-2026-07-04
+
+### fix: tool内部功能代码缺陷修复(20项)
+- tool_search.py: searchtool(None/123) 前置类型校验
+- tools_file_path_checker.py: 4个validate函数None崩溃+静默接受修复+Windows保留名检查
+- registry_path_checker.py: _normalize_key_path(None) 前置校验
+- execute_sql.py: execute_sql(None) None/空SQL校验
+- query_sql.py: query_sql(None) None校验
+- create_task.py: 空schedule/`day=8` ValueError校验
+- time_utils.py: format_timestamp(pre-1970/far-future) OSError捕获
+- hash_helper.py: compute_file_hash(None/空/不存在) None+isfile校验
+- keyboard_control.py: type(None)/shortcut(None) None/空字符串校验
+- operation_recorder.py: OperationType转换移入try块+修复缩进
+- time_add.py: 月数截断修复(frac_days加整月部分)
+- rename_file.py: 不存在文件到自身返回error
+- http_request.py: 死代码错误码分类修复
+- execute_shell_command.py: 引号内&&被破坏重写+`_close_if_blocks`右往左扫描
+- window_focus.py: 空标题None校验
+- generate_chart.py: chart_type大小写不一致修复
+- write_docx.py: `elif table_data`→`if table_data` 修复丢弃table问题
+- write_pdf.py: 同上修复
+
+### fix: 测试代码修复(3项)
+- conftest.py: is_error() 对非dict从return True改为return False
+- test_network_tools.py: 37处async调用包_run()辅助函数
+- test_fundamental.py: 2处"里午节"错别字→"端午节"
+
+### v0.17.19→v0.17.18 变更汇总 - 小欧-2026-07-04
+
+### refactor: 代码重构(12项)
+- 合并11个小文件到各自同层宿主
+- 合并零星4个helper到各自目标+删除死代码
+- 合并chat/2个helper到chat_openai.py
+- 合并task/3个helper到task_registry.py
+- 合并sessions/6个helper到update_session/list_sessions/sessions.py
+- 合并conversation/4个helper到save_execution_steps.py
+- AgentStatus→status_table.py, list_tools→health.py
+- FILE工具重命名(系统12文件) read_text_file→readtext等4个
+- shell工具重命名execute_shell_command→shell+schema类名+别名+常量+超时
+- fundamental/ 6 tool renames: sysinfo/notify/calendar/timenow/timeadd/timediff
+- 5 tools rename
+- dependency.py update docstring example: send_notification→notify
+
+### fix: 代码修复(9项)
+- version.txt路径修正+observation_formatter统一截断+文件工具改进
+- __init__.py不放代码(抽到routes.py/list_tools.py/agent_result.py)
+- frontend+prompt update old tool names to new names
+- 删除TOOL_TIMEOUTS 3个陈旧条目 shell_background/execute_python/execute_javascript
+- FILE rename 6项残留修复(TOOL_TIMEOUTS/_run旧调用/hasattr/__all__/陈旧条目/日志前缀)
+- 8个文件更新 safe_json_dumps+prompt+error处理+datetime序列化
+- execute_code_safety正则加\b单词边界防误杀
+- DEFAULT_LLM_TIMEOUT 120→150
+- L1重试新增RemoteProtocolError捕获
+
+### feat: 新功能(2项)
+- start_backend.bat 新增后端启动脚本
+- 优化系统提示词(分析计划铁律) + PPTX支持dict类型内容
+
+### docs: 文档(3项)
+- rename E2E操作手册
+- 删除过期的e2e状态笔记
+- version.txt v0.17.18变更汇总
+
+### test: 测试(2项)
+- e2e测试代码重构 filter_safety_errors() + pytest.ini
+- E2E测试套件从e2emodel迁移到e2etests，重写P0-P6共75个测试文件
+
+---
+v0.17.18
+更新时间: 2026-07-02 12:19:41
+## v0.17.17→v0.17.18 变更汇总 - 小欧-2026-07-02
+
+### fix: 代码修复(3项)
+- FC降级Text加异常保护 + JSON修复支持Python dict格式
+- 截断JSON参数自动修复({追加}) + warning注入LLM
+- 控制台打印去截断(60→全量显示)
+
+### refactor: 代码重构(4项)
+- json_utils集中_try_fix_incomplete_json和_normalize_tool_params+增强单引号解析+更新FUNCTIONS.md
+- message_builder+init_history+inject_bypass封装
+- llm_stream.py FC降级错误统一用_format_fc_error(DRY)
+- message_builder.py trim_history双条件独立裁剪
+
+### feat: 新功能(1项)
+- 优化系统提示词(分析计划铁律) + PPTX支持dict类型内容
+
+### perf: 性能优化(1项)
+- react_cycle+e2e_helpers 控制台log增强+Prompt日志E2E校验兼容状态变化记录
+
+### docs: 文档(2项)
+- version.txt v0.17.19变更汇总
+- doc-优化 两个Agent文档迁入doc-优化目录
+
+### 合计
+- fix: 3项, refactor: 4项, feat: 1项, perf: 1项, docs: 2项
+
+---
+
+v0.17.17
+更新时间: 2026-07-01 21:55:52
+## v0.17.16→v0.17.17 变更汇总 - 小欧-2026-07-01
+
+### fix: 代码修复(8项)
+- prompt_logger/status_table/chat_openai logging fixes (contextvars, mark_completed, log_status)
+- system_prompts优化+react_cycle警告消息+e2e_helpers信号处理+chat_openai日志+messages时间格式
+- react_cycle.py B3警告消息优化
+- e2emodel test updates
+- llm_stream.py pass full_reasoning to action/answer response
+- action_handler.py remove redundant thought field from ThoughtStep
+- answer_handler.py remove redundant thought field from ThoughtStep
+- e2e_helpers.py test helper updates
+
+### refactor: 代码重构(3项)
+- message_builder+initialize_run_state+react_cycle 裁剪函数精简为单一入口+新增消息数触发阈值
+- list_directory.py _sort_items参数化sort_by,去除tree中size排序
+- system_prompts.py system prompt内容优化精简
+
+### feat: 新功能(2项)
+- L1退避公式改首跳1s+FCFormatError增强+注释parallel限制待测试
+- system_adapter.py+system_prompts.py PS版本动态检测+Shell运行环境prompt
+
+### 合计
+- feat: 2项 | fix: 8项 | refactor: 3项 = 共13项
+
+---
+
+v0.17.16
+更新时间: 2026-07-01 09:48:36
+## v0.17.15→v0.17.16 变更汇总 - 小沈-2026-07-01
+
+### refactor: Agent状态集中管理重构v2
+- 新建status_table.py，所有状态设置集中管理
+- status_table中新增SUSPENDED转换条目
+- EXECUTING/THINKING精确状态循环：THINKING=调LLM，EXECUTING=跑工具
+- react_cycle.py: THINKING在循环尾部设(第350行)，EXECUTING在LLM出响应后设(第219行)
+
+### refactor: handler去状态职责
+- action_handler/answer_handler/step_emitter 删除所有set_failed/set_completed调用
+- _dispatch_handler从ErrorStep/FinalStep event type推断状态
+- error_handler.py(旧文件)已删除
+
+### refactor: SSE+SUSPENDED映射
+- run_sse_stream.py导入status_table的set_cancelled/set_failed
+- SUSPENDED→"failed" SSE end_type映射
+- sys_error_classifier添加httpx网络/超时异常分类
+
+### refactor: LLM日志增强+工具安全检查
+- prompt_logger新增mark_completed/mark_error状态标记
+- base_service.py L1重试日志增强([type.name] args)
+- llm_stream.py残缺tool_call参数日志警告
+- chat_openai.py prompt_logger状态标记
+- file_encoding.py/read_text_file.py/execute_shell_command.py 工具安全检查加固
+
+### docs: Agent状态语义深度分析文档
+- EXECUTING/THINKING代码逻辑分析与转换表合规复核
+
+v0.17.15
+更新时间: 2026-07-01 09:46:13
+## v0.17.14→v0.17.15 变更汇总 - 小沈-2026-07-01
+
+### refactor: 系统重试层优化实施
+- L1重试循环重构：while→for attempt，退避公式优化为min(0.5×2^(attempt+1), 10)
+- L2反压添加：FC重试时固定等待0.5s，日志前缀统一为[Retry][L2]
+- FCFormatError增强：添加details字段，强制关键字参数(message=, details=)
+
+### config: .gitignore 添加 backend/report/
+- 避免报告目录被意外跟踪
+
+### chore: 测试文件清理
+- 删除e2emodel中的测试文件（已移动到tests目录）
+- 删除E2E调试记录(22个笔记文件)
+
+### fix: e2emodel测试文件更新
+
+### docs: 多项文档更新
+- 系统重试设计文档v1.3(全景图+路线图+检查清单)
+- 代码审查报告 验真补漏+章节修正
+- Agent状态及数据分流处理设计方案 四次复核3处bug-fix
+- 设计文档复核修复(8处问题修正，v1.7→v1.11)
+
+v0.17.14
+更新时间: 2026-06-30 10:00:00
+## v0.17.13→v0.17.14 变更汇总 - 小欧-2026-06-30
+
+### refactor: 代码质量全面修复
+
+#### fix: except Exception: pass 静默吞异常(13处)
+- download_file.py: cleanup → logger.warning
+- execute_shell_command.py ×2: cleanup → logger.warning
+- shell_session.py: process kill → logger.warning
+- client_sdk.py: config fallback → logger.warning
+- initialize_run_state.py: task update → logger.warning
+- chat_openai.py: message ID → logger.warning
+- database.py ×2: rollback/close → logger.warning
+- execute_sql.py ×3: connection cleanup/rollback → logger.warning
+- path_validator.py: security validation pass→return False(失败关闭)
+- write_text_file.py: encoding detect → logger.warning
+- edit_text_file.py: CRLF detect → logger.warning
+
+#### DRY: 抽出3份重复_get_file_encoding→file_encoding.py
+- 新建 app/tools/file/file_encoding.py，提供 get_file_encoding()
+- 3个文件(write/read/edit_text_file)改为共享调用
+
+#### refactor: context_vars从services/移动到utils/
+- 消除 tools→services 横向依赖(api和tools都需要引用)
+- 更新8个import路径
+
+#### refactor: 19个inline import移到模块顶层
+- run_sse_stream.py: json/db/steps/agent/sse_formatter/prompt_logger(15处)
+- base_service.py: llm_constants/core/sys_error_classifier(4处)
+
+#### fix: UniversalAgent消除_loaded_categories shadow
+- 删除super().__init__()后多余的 self._loaded_categories 赋值
+
+#### P3: 清理unused import
+- universal_agent.py: 删除未使用的 List/AgentResult 导入
+
+v0.17.13
+更新时间: 2026-06-29 20:00:00
+## v0.17.12→v0.17.13 变更汇总 - 小欧-2026-06-29
+
+### refactor: 代码重构(2项)
+- 70ab81cbd: 删除RETRYABLE_ERROR枚举及相关代码 - 小欧
+- f7cc823e8: 网络工具使用ToolErrorClassifier统一错误分类 - 小欧
+
+### fix: 错误分类器完善(3项)
+- fe7db3a48: 拆分系统级和工具级错误分类器 - 小欧
+- 0dbf0d939: 完善ToolErrorClassifier映射，添加OSError和HTTP错误 - 小欧
+- 9a1bafaaf: 更新测试文件，移除_classify_error引用 - 小欧
+
+### fix: 异常传播重构(2项)
+- e5ca1cd16: search_web + network_diagnose异常传播给ToolRetryEngine - 小欧
+
+---
+
+v0.17.12
+更新时间: 2026-06-29 16:33:29
+## v0.17.11→v0.17.12 变更汇总 - 小欧-2026-06-29
+
+### refactor: 代码重构(1项)
+- b20490e86: 重试架构重构 - 删除retry_engine+移除工具内建重试+简化error_handler - 小欧
+
+### docs: 文档更新(13项)
+- 434de7f06: 02-重试架构机制设计 - §§7.2-7.7 各代码修改添加diff格式 - 小欧
+- 4d299b03b: 02-重试架构机制设计 - 新增§7.1.6 涉及代码文件总览 - 小欧
+- 3ae499ab3: 02-重试架构机制设计 - TOOL_RETRY_CONFIG 移至 tool_retry_engine.py - 小欧
+- d1d287484: 02-重试架构机制设计 - 配置改为按tool名直配(非category) - 小欧
+- 35555eb94: 02-重试架构机制设计文档 v2.1 - 修正6处概念/序号不一致 - 小欧
+- 363b1190c: 02-重试架构机制设计文档 v2.1 - 版本号更新 - 小欧
+- d7bd7c7bb: 02-重试架构机制设计文档 v2.1 - 完全删除RETRYABLE_ERROR特殊处理路径 - 小欧
+- 97a99a6e6: 02-重试架构 v2.0 修正分类：系统重试=真正L1/L2，RETRYABLE_ERROR不是重试 - 小欧
+- 96b2a64b8: 重试架构设计文档副本 - 小欧
+- ddee90a65: 重试架构设计文档 §7.3 重写+双重重试分析结论 - 小欧
+- e102dc5ec: 02-重试架构机制设计与分析 §4重写+全篇15处一致性修正 - 小欧
+- 8d27cc4dc: version.txt v0.17.12 版本更新 - 小欧
+- e934c213b: 重试架构设计文档 §7.3 重写+双重重试分析结论(Plan A) - 小欧
+
+### 合计
+- refactor: 1项, docs: 13项
+
+---
+
+v0.17.11
+更新时间: 2026-06-29 12:10:00
+## v0.17.10→v0.17.11 变更汇总 - 小欧-2026-06-29
+
+### docs: 文档更新(18项)
+- b08cbb93e: §8-§10 同步修复为新设计(classify_error→result.error_type) - 小欧
+- e985effa6: 重试架构设计文档 v1.3 结构重组(合并引擎+拆分清单) - 小欧
+- 6528c7df1: 重试架构设计文档v1.2-fix2 合并引擎+拆分检查清单章节 - 小欧
+- e3b64a71c: 新增重试架构机制设计与分析文档v1.2-fix1 - 小欧
+- 2257e0999: Agent状态及数据分流处理设计方案 v1.8 SUSPENDED一致性 - 小欧
+- 794ee74c0: §3.5/3.6顺序调换匹配§4.5/4.6 - 小欧
+- b636ab410: 统一命名+修正3.7子节号+改动统计 - 小欧
+- d0df38afb: §5.8补run_sse_stream.py - 小欧
+- 20ef40f2c: §3.10总表移至§3.0前置 - 小欧
+- 1553225d8: 第3章补4处遗漏+加§3.10代码修改总表 - 小欧
+- 69255bccc: 第2章概要设计修正 标题/2.4.3/2.1图加数据流 - 小欧
+- c912d7e5f: 设计方案挪至doc-优化/并改名为-20260629 - 小欧
+- a3b8b022c: 补3处content提取一致性(图/方案/代码) - 小欧
+- ffaa25d82: 修复16处设计文档不一致 - 小欧
+- 66253c72e: 更新详细设计补全+章节号修正 - 小欧
+- 0077aa71b: yield-only一致性+章节号修正 - 小欧
+- 8607cc7a5: 用户编辑内容 - 小欧
+- 8d59b2ac0: 修正章节号连续 - 小欧
+
+---
+
+v0.17.10
+更新时间: 2026-06-29 10:08:53
+## v0.17.9→v0.17.10 变更汇总 - 小欧-2026-06-29
+
+### docs: 文档更新(7项)
+- d1e00ab44: 重命名设计方案为'Agent状态及数据流向处理' - 小欧
+- 01cc6515d: 更新Agent状态管理重构设计方案 v1.6 - 小欧
+- 6acf3260c: 重构第9章用户补充内容为9.6/9.7/9.8并规范化表格格式 - 小欧
+- 2fbb29a77: 新增第9章流程对比图和改动好处 - 小欧
+- 0698fe9b5: 更新Agent状态管理重构设计方案 - 小欧
+- 790decb6d: 移动后端错误处理架构设计文档到doc-优化目录 - 小欧
+
+### refactor: 代码重构(2项)
+- b86467ab5: 新增set_cancelled方法+移除RETRYABLE_ERROR处理 - 小欧
+- cb64f7ede: 统一Agent状态设置入口+移除error_handler外层重试 - 小欧
+
+### fix: 代码修复(3项)
+- 81313db45: react_cycle.py 循环结束无终态强制FAILED - 小欧
+- 300d2c2e7: run_sse_stream.py 精简finally注释 - 小欧
+- 3d6086a0b: run_sse_stream.py end_type从agent.status推导 - 小欧
+- 855dc450b: 修正文档第8章3处与实际代码不符的diff - 小欧
+
+### 合计
+- docs: 6项, refactor: 2项, fix: 4项
+
+---
+
+v0.17.9
+
+更新时间: 2026-06-28 17:48:53
+
+## v0.17.8→v0.17.9 变更汇总 - 小欧-2026-06-28
+
+### refactor: 代码重构(1项)
+- 5f63caeac: chat_openai.py TASK_START输出格式改为3行(provider/model/ask_id/user_input分行) - 小欧
+
+### 合计
+- refactor: 1项
+
+---
+
+v0.17.8
+
+更新时间: 2026-06-28 17:42:30
+
+## v0.17.7→v0.17.8 变更汇总 - 小欧-2026-06-28
+
+### feat: 新功能(2项)
+- b597cffec: 补充参数别名映射 - http_request/fetch_webpage/create_task - 小欧
+- 94fe19e56: 参数名别名映射 - 解决LLM返回参数名不匹配问题 - 小欧
+
+### fix: 代码修复(13项)
+- 5017698b4: network_diagnose.py _ping改用to_thread修复Python 3.13 Windows NotImplementedError - 小欧
+- 6f16f7f06: 注册表路径穿越检测+窗口回调返回类型修复 - 小沈
+- 227c7425a: Windows设置ProactorEventLoop支持asyncio subprocess - 小沈
+- 7d270acf2: E2E测试基础设施修复 - 小欧
+- d48cc0e0d: execute_sql和query_sql Schema改进 - 添加docstring+明确单条语句限制 - 小欧
+- e33be3b1e: execute_sql和query_sql Schema描述改进 - 小欧
+- c49a4f1e0: file_schema.py语法错误修复 - 小欧
+- 1a8df8b0b: read_text_file参数容错 - 小欧
+- 41d0a71bb: API返回缺失created_at/updated_at字段 - 小欧
+- 74bbec77d: 修复两个严重bug - WindowsPath.strip和NoneType await - 小欧
+- 2bffa46a6: 多项修复 - JSON解析/编码检测/CRLF保留/权限检查 - 小欧
+- 45f36e2c0: _close_connection日志恢复+fetch_webpage冗余close清理+filter_data max_rows=0一致+get_db_schema僵尸导入清理 - 小欧
+- af2ecc755: P0-09根因修复: llm_stream error_type分派+补丁清理(删error_utils.py+answer_handler恢复+e2e_helpers恢复) - 小欧
+
+### perf: 性能优化(1项)
+- 5ce794544: 优化重试日志+增大工具超时 - 小沈
+
+### refactor: 代码重构(1项)
+- dcd0c4246: read_text_file新增tail参数替代offset负数 - 小欧
+
+### docs: 文档更新(3项)
+- d8fa504f4: 更新E2E测试操作手册 - 强化手动检查要求 - 小欧
+- 7ad32f506: 删除临时分析报告 - 小欧
+- a37e3878f: 删除临时验证报告 - 小欧
+
+### 合计
+- feat: 2项
+- fix: 13项
+- perf: 1项
+- refactor: 1项
+- docs: 3项
+
+---
+
+## v0.17.6→v0.17.7 变更汇总 - 小欧-2026-06-27
+
+### fix: 代码修复(2项)
+- 4221d4912: tool_response.py默认llm_data修复——build_success/error/warning默认生成正确llm_data - 小欧
+- 4221d4912: operation_recorder.py str/Enum不一致修复——函数内部统一处理operation_type类型转换 - 小欧
+
+### 合计
+- fix: 2项
+
+---
+
+## v0.17.5→v0.17.6 变更汇总 - 小欧-2026-06-27
+
+### feat: 新功能(7项)
+- eed9a0acd: execute_shell_command分级安全检查 - 独立safety模块+工具内调用(对齐execute_code) - 小健
+- aef96640a: execute_code分级安全检查(LOW/MEDIUM/HIGH)+strict_mode+SHELL_DANGEROUS_PATTERNS替代DANGEROUS_PATTERNS - 小欧
+- af19c933b: 补齐系统级检查扩展+validator单元测试 - 小欧
+- ccaaa49bd: 全量实现file_path+registry校验集成 - 小欧
+- 4137f06f4: llm调用日志增强(token明细+响应耗时)+单工具执行日志+TASK_END步骤聚合统计 - 小欧
+- 12a0c6801: TASK_START/TASK_END日志(用户指令+provider+model+耗时+结束方式) - 小欧
+- a7155a0a4: start_e2e.bat E2E测试专用启动脚本(弹cmd窗口) - 小欧
+
+### fix: 代码修复(4项)
+- c1c601fc1: PowerShell优先pwsh.exe(PS7)+条件翻译 - 小沈
+- 1e96d6103: 撤销tool_safety_checker系统级扩展，只保留FILE分类 - 小欧
+- 0f86d353a: schema参数互斥校验+docstring/description完善(8个tool),docstring统一用三引号 - chendyg
+- a7f41ecb5: 修复tool_executor状态判断逻辑错误 - 小健
+
+### refactor: 代码重构(6项)
+- bee330bb0: 删除registry_path_checker中无效的..穿越检查(注册表非文件系统) - 小欧
+- 7a400eea9: _check_pyautogui()去重，提取到desktop_helper.py统一复用 - 小欧
+- 52796b7cb: file_path_checker.py重命名为tools_file_path_checker.py+13个import路径更新 - 小欧
+- fd3c8f0e1: path_validator/tool_safety_checker/file_path_checker 迁移路径调度到path_validator+fix None bug - 小欧
+- ac2c7fec0: network/shell 6个tool timeout统一为秒 - 小沈
+- 81e653939: dataanalysis analyze_data/filter_data参数拆分file_path+data互斥,删除.xls假支持 - chendyg
+
+### perf: 性能优化(1项)
+- ae3279bad: tool_search结果精简为仅name+category(description和score给LLM无意义) - 小欧
+
+### docs: 文档更新(15项)
+- b558dca10: 更新Tool安全-execute_shell_command设计文档v5复核修正 - 小沈
+- d36c2207f: 更新Tool安全检查设计文档+测试记录 - 小欧
+- 0f827d48f: version.txt删除v0.17.6记录(tag已删除) - 小欧
+- d397e5c14: version.txt 更新v0.17.6变更汇总 - 小欧
+- 2a20cc069: 设计文档-Tool内部安全检查复核修订版 文件路径统一为validate/目录 - 小沈
+- e41a5994c: Tool安全-execute_code分级安全检查方案 重写第7章 - chendyg
+- 87403cf30: Tool安全-execute_code分级安全检查方案 审核修正4项 - chendyg
+- 687d21f30: 更新Tool安全-execute_code分级安全检查方案 - 小沈
+- 851a29e07: 更新Tool安全-execute_code分级安全检查方案 新增AST别名检测 - 小欧
+- 380e00204: 确认文档章节序号正确 - 小健
+- 74f87ab51: 修复章节编号重复和测试用例错误 - 小健
+- c55e65be6: 增加safety文件设计原则 - 小健
+- c83be4ff4: 采用{tool_name}_safety.py命名规范 - 小健
+- f34d14c9b: 修复文档逻辑矛盾和章节重复 - 小健
+- e80406733: 补充eval解释和socket/requests无风险说明 - 小健
+- 7bf422c38: execute_code分级安全检查方案设计 - 小健
+- da11a3e7c: 更新手册v2.7(start_e2e.bat去--reload)+bat简化 - 小欧
+- 7d4d700c3: start_e2e.bat+手册3.1节 AI用弹窗命令启动后端 - 小欧
+
+### chore: 杂项(2项)
+- db42077e0: 删除遗留冗余文件operation_commands.py(已拆分为4个SRP模块) - 小欧
+- 7aeed0eb2: 清理测试废文件和备份文件 - 小欧
+
+### 合计
+- feat: 7项 | fix: 4项 | refactor: 6项 | perf: 1项 | docs: 15项 | chore: 2项 = 共35项
+
+---
+
+v0.17.5
+
+更新时间: 2026-06-26 22:41:52
+
+## v0.17.4→v0.17.5 变更汇总 - 小欧-2026-06-26
+
+### refactor: 代码重构(5项)
+- 592f025b4: 统一函数签名，删除Union类型 - 小健
+- 4af528c38: 删除generate_chart的dict支持，只支持文件路径 - 小健
+- aa61056fd: 统一time参数类型约束为str - 小健
+- 5f4e5cf42: 修复参数类型歧义问题 - 小健
+- 2f8d7fd1b: 增强write_text_file的Schema约束 - 小健
+
+### fix: 代码修复(4项)
+- 2b4372911: file_schema 参数说明多示例改单一 - 小欧
+- d9f911a4a: shell_schema+react_cycle+tool_constants 参数说明准确化+B3零工具检测 - 小欧
+- 8612b8b01: write_text_file参数类型错误+tool_call解析失败+session存在性验证 - 小健
+- 4c6716d04: E2E超时marker系统+check_db tool_params修复+obs_text完整显示+超时2000s - 小欧
+
+### docs: 文档更新(1项)
+- 4aa082db6: clean up old test records and reports - 小欧
+
+---
+
+## v0.17.3→v0.17.4 变更汇总 - 小欧-2026-06-26
+
+### fix: 代码修复(3项)
+- ceea19d72: action_handler完整summary日志+system_prompts tag排除列表+error_classifier FCFormatError+超时900s - 小欧
+- 2dc265c8f: e2e_helpers write_test_record改用tempfile+os.replace原子写入 - 小欧
+- bbf85b5b6: constants删除3个死重试常量+llm_stream dict防御加固+LLM_MAX_RETRIES改名 - 小欧
+
+### feat: 新功能(1项)
+- 84e787f03: add start_backend.ps1 and start_server.bat startup scripts - 小欧
+
+### docs: 文档更新(2项)
+- 32ee896cc: update E2E操作手册 - 小欧
+- 39d881756: clean up old test records and debug notes - 小欧
+
+---
+
+## v0.17.2→v0.17.3 变更汇总 - 小欧-2026-06-26
+
+### feat: 新功能(6项)
+- ba1445e32: Batch2 5项重构实施(幽灵类内联/set_failed收口/patch_search_desc副本/超时FAILED/cancel_poller Event) - 小欧
+- 9270914b1: 新增LLM常量配置文件 - 小欧
+- 424b5b374: 新增ErrorHandler错误处理器 - 小欧
+- 8f6c93aba: 添加FCFormatError异常类 - 小欧
+- 0ae4425f1: LLM流式调用Text模式降级+FC格式错误重试 - 小欧
+- c1d11a4ea: 添加RETRYABLE_ERROR状态 - 小欧
+
+### fix: 代码修复(37项)
+- 6d57d9256: action_handler _build_call_list None tool_params崩溃 - 小欧
+- 601e4dce7: action_handler _safe_str(None)返回'None'污染LLM summary - 小欧
+- 5ca3365e4: SSE circular ref崩溃+_merge_other_data join崩溃 - 小欧
+- 8595abc7e: message_builder _trim_to_budget duplicate when assistant precedes tool - 小欧
+- 22fc0fc3e: tool_retry_engine保留原始异常信息非创建新Exception - chendyg
+- d1b5ba1ef: tool_safety_checker写入保护优先用path参数 - chendyg
+- ad70f82c0: run_sse_stream event to_dict防御非dict非Step - chendyg
+- cd9bb72ff: step_emitter tracker异常debug升级为warning - chendyg
+- 863514a07: react_cycle未知类型响应加入对话历史防重复 - chendyg
+- 0462df57c: initialize_run_state更新tracker任务描述 - chendyg
+- 52cc4b2bb: message_builder _trim_to_budget配对助手消息双重计数 - 小欧
+- 32acb43d6: react_cycle截断重试路径history未定义crash - 小欧
+- 15fa89309: Bug17新增CANCELLED枚举+取消路径设CANCELLED + Bug3空内容保存assistant - chendyg
+- 3baa16a4c: Bug15 patch_search_desc缓存失效 + Bug16 load_category更新_loaded_categories - chendyg
+- 230c713f4: react_cycle RETRYABLE_ERROR顺应重试而非结束循环 - 小欧
+- 035c8a7c9: P1级bug修复(8/9/10/11/14/17/19/21/22) - chendyg
+- d90909f73: registry update_existing_tool缺少字段+分类索引 - 小欧
+- a1f256eba: react_cycle chunk_buffer投词/max_steps检查/截断tc_id - 小欧
+- c6711e3d0: action_handler dict直接访问KeyError风险 - 小欧
+- fe475defb: base_service _extract_tool_calls/_extract_usage异常静默 - 小欧
+- a72cfba34: action_handler exec_code空值被error覆盖 - 小欧
+- 995dc36fa: llm_stream dict直接访问KeyError风险 - 小欧
+- dfc61ac82: run_sse_stream加载历史异常增加日志 - 小欧
+- 6d97db271: client_sdk添加async上下文管理器支持 - 小欧
+- 71163feb3: chat_openai空消息内容拦截 - 小欧
+- 36388fd35: initialize_run_state保留tool/assistant完整消息 - 小欧
+- ec730cc2b: step_emitter exit_with_error尊重recoverable标志 - 小欧
+- ba21dbe5f: react_cycle RETRYABLE_ERROR不补发FinalStep - 小欧
+- 9b0bbfffe: action_handler并行return_direct检查所有结果 - 小欧
+- 4151fd553: answer_handler空内容设FAILED而非COMPLETED - 小欧
+- d36b5d518: tool_safety_checker代码注入检查覆盖所有shell工具 - 小欧
+- 7e67ea3bd: path_validator异常时黑名单绕过改为拒绝 - 小欧
+- 3f5502fc5: error_classifier httpx.ReadError缺失映射 - 小欧
+- ff6c1e5e9: meta_step to_dict缺少message字段 - 小欧
+- ffdf24c8f: tool_safety_checker or链陷阱+空字符串验证缺陷 - 小欧
+- 7c5fffdaf: path_validator空路径安全检查 - 小欧
+- a0a9e1109: 修复SSE前端解析逻辑 - 小欧
+
+### refactor: 代码重构(4项)
+- 214ef1e6d: message_builder+react_cycle+error_handler 类型安全/FAILED/截断 - 北京老陈
+- fe4529c5c: 优化LLM基础服务调用逻辑 - 小欧
+- b3a04c133: React循环调用逻辑优化 - 小欧
+- 7e9f3357b: 简化UniversalAgent调用逻辑 - 小欧
+
+### test: 测试(1项)
+- 4201ba3be: 新增FC降级E2E测试 - 小欧
+
+### docs: 文档更新(7项)
+- 716932911: 更新系统关键流程深度分析 v4.0 - 小欧
+- 36f52b992: 更新LLM系统优化方案/删旧版/标注Batch2实施状态 - 小欧
+- 556748bc1: 新增E2E测试记录P0-01 - 小欧
+- b0bafcc03: 新增旧版LLM系统优化方案存档 - 小欧
+- 0380536ac: 新增LLM系统优化方案v2.0 - 小欧
+- 7dfd75810: 备份旧版LLM系统优化方案 - 小欧
+- 522718163: 更新LLM-Prompt-Message系统优化方案v4.1 - 小欧
+
+### 合计
+- feat: 6项 | fix: 37项 | refactor: 4项 | test: 1项 | docs: 7项 = 共55项
+
+---
+
+v0.17.2
+
+更新时间: 2026-06-25 19:57:42
+
+## v0.17.1→v0.17.2 变更汇总 - 小欧-2026-06-25
+
+### feat: 新功能(7项)
+- 8cbaa6c01: 提取公共模块 connectivity.py+url_validator.py - 小欧
+- 3d1ed8315: network_schema补充timeout/proxy/retry/js_render/count/blocked_domains等缺失字段 - 小欧
+- 2ee04b15b: 并行tool call multi-call支持 - 小健
+- c47dab779: 增强execute_shell_command对PowerShell 5.1的支持(自动翻译&&和||) - 小健
+- 其他3项feat (详见git log)
+
+### fix: 代码修复(15项)
+- 6c4426dd0: network+system+desktop+timer+dataanalysis 13个bug修复 - 小欧
+- ea662d3ec: execute_code timeout单位Schema错误(秒→毫秒) - 小健
+- 09b4896de: network_diagnose SSRF入口检查+search_web递归深度限制 - 小欧
+- 082cd41b6: 修复Shell系列工具14个Bug - 小欧
+- 5d99e5690: tool_fc_helper YAML/HTMLParser/sqlite3/utf-8修复 - 小欧
+- 4a1877fca: get_db_schema文件存在检查+compress_files排除模式+create_task参数传递 - 小欧
+- f2669015e: 10项参数验证缺失 - 小沈
+- db360307a: fetch_webpage缺import re + search_web NoneType len崩溃 - 小沈
+- 4a3a0e3e4: 修复tool参数描述问题(11个工具) - 小健
+- 8757ee762: 修复dataanalysis_schema参数不一致问题 - 小健
+- 8930ac1fb: 修复win_registry_schema参数不一致问题 - 小健
+- 711c310d1: 修复file分类工具的安全问题和参数描述 - 小健
+- 17b04aece: 修复系统prompts.py SyntaxError+TOOL_CALL_RULES缺失 - 小欧
+- deb33dd45: Prompt-Message全链路 P1+P2+P3共32问题全部修复 - 小欧
+- a0be614b3: 合并未提交变更-消息加载FC协议重构+死代码清理 - 小欧
+
+### refactor: 代码重构(10项)
+- 2590d2b85: http_request/fetch_webpage/download_file 使用公共模块 - 小欧
+- fe47eeb52: 控制台只打WARNING+,print改logger - 小沈
+- 96eb17271: FC+Observation流程日志增强,reg噪声降级 - 小沈
+- fcebc0bf3: print版本号移到startup事件末尾 - 小沈
+- e9fcae901: 启动打印加'当前版本'前缀 - 小沈
+- 699daea0c: operation_executor成功日志降为DEBUG - 小沈
+- 7d63a82e4: 优化system prompt组装顺序 - 小健
+- 8047cbcd7: 简化observation预算系统-砍掉DECAY/MAX/MIN单条截断逻辑 - 小欧
+- 7cbe41500: 重命名first_tool_obs to tool_last_obs - 小欧
+- 69b252c41: 删除forced-keep机制, 纯budget trim - 小欧
+- 1c1b121d5: Batch 1 type safety + SRP extraction - 小欧
+- ac6163327: 删除冗余META_TOOL_NAMES加载+更新AGENTS.md过期信息 - 小欧
+- 099c662ec: llm_caller重命名为llm_stream+文档迁移 - 小欧
+
+### docs: 文档更新(8项)
+- 873913f0e: 更新问题分析文档新增第七章Bug复核结果+47个真实Bug汇总 - 小欧
+- 2b8606eac: 修正execute_shell_command工具描述 - 小健
+- d37ee0b37: 添加tool代码核查报告 - 小健
+- 4673188bd: 添加tool代码核查spec文档 - 小健
+- 58fdc8536: 优化execute_shell_command工具描述 - 小健
+- b10af119b: 全链路E2E集成测试-操作手册更新v2.4-v2.5 - 小欧
+- 9a3eade5f: 清理无用测试目录并更新文档 - 小健
+- 系统关键流程深度分析文档全面重写(v2.0) - 小欧
+
+### perf: 性能优化(1项)
+- 8047cbcd7: 简化observation预算系统-砍掉DECAY/MAX/MIN单条截断逻辑 - 小欧
+
+### 合计
+- feat: 7项 | fix: 15项 | refactor: 13项 | docs: 8项 | perf: 1项 = 共44项
+
+---
+
+v0.17.1
+
+更新时间: 2026-06-24 22:26:01
+
+## v0.17.0→v0.17.1 变更汇总 - 小欧-2026-06-24
+
+### feat: 新功能(17项)
+- e6aac3424: 新增file_type_checker文件类型检查工具 - 小欧
+- 5dcb00dc0: grep_file_content新增head_limit/output_mode/context_lines功能 - 小健
+- 27e53db4c: write_docx支持Markdown表格+table_data参数(互斥设计) - 小健
+- 0dc64f227: observation_formatter.py summary行追加action结构信息 - 小欧
+- cc215d5fb: 增加系统敏感路径黑名单校验 - 小健
+- 786a99f4a: edit_text_file增加空值校验、ignore_case参数 - 小欧
+- 其他11项feat (详见git log)
+
+### fix: 代码修复(72项)
+- 59d51dfe9: 修复4个file工具BUG(list_directory/read_text_file/write_text_file/edit_text_file) - 小健
+- 060e06cc0: document读取工具Bug修复(read_pptx表格/read_docx空段落/read_xlsx多工作表) - 小健
+- a43839c32: write工具表格问题修复(write_pptx 10个Bug/write_docx 3个/write_xlsx 4个) - 小健
+- ee4f55f6d: SSRF内网IP拦截(http_request/download_file/fetch_webpage) - 小欧
+- 58e074607: http_request socket泄漏+clipboard ctypes内存泄漏修复 - 小欧
+- abc0b6f7f: write_text_file空字符串拦截+append+encoding禁止+二进制检测 - 小欧
+- 555903ac9: read_text_file增加offset=0校验+offset超范围warning+二进制检测 - 小欧
+- 其他65项fix (详见git log)
+
+### refactor: 代码重构(24项)
+- 8e4bd72d9: 优化系统提示规则组织+工具参数复核+执行纪律 - 小欧
+- eb9621820: 工具参数简化方案实施(11个工具schema+实现+注册文件用例修正) - 小健
+- 580b72f39: search_files去掉无意义的recursive参数,始终递归搜索 - 小欧
+- 58ed1e893: 全部tool register描述精简为一句话功能+适用场景 - 小欧
+- 196d436a9: 文件类型分类优化和文档添加 - 小欧
+- 其他19项refactor (详见git log)
+
+### docs: 文档更新(22项)
+- 05b23f05f: 创建Tool参数组合与内容测试规范文档 - 小健
+- 876cb6f7b: 补充核心原则与要求到测试规范文档头部 - 小健
+- bc45d8c89: 精简测试规范文档,以write_docx为完整示例 - 小健
+- fe216d6cc: E2E测试记录更新 - 小欧
+- 其他18项docs (详见git log)
+
+### perf: 性能优化(1项)
+- f6d1cce4b: P0-1/P0-2/P0-3/P1-1/P2-1 prompt注入修复+工具筛选优化 - 小欧
+
+### chore: 杂项(2项)
+- b9f3debd5: 添加notes/到.gitignore - 小健
+- 0eaa136db: 添加.codeartsdoer/到.gitignore - 小健
+
+### 合计
+- feat: 17项 | fix: 72项 | refactor: 24项 | docs: 22项 | perf: 1项 | chore: 2项 = 共138项
+
+---
+
+v0.17.0
+
+更新时间: 2026-06-22 19:42:43
+
+## v0.16.11→v0.17.0 变更汇总 - 小欧-2026-06-22
+
+### feat: 新功能(10项)
+- 8608c3957: system_prompts.py 注入【项目根目录】到系统Prompt - 小欧
+- 06b1926ba: field_handlers.py 添加project_root更新处理器 - 小欧
+- 6addce264: get_system_config.py 返回project_root到前端 - 小欧
+- 3b9815f6b: models.py ConfigResponse/ConfigUpdate添加project_root字段 - 小欧
+- 185352313: config.py 添加get_project_root()方法+读取+自动检测 - 小欧
+- faf5db30e: paths.py 添加get_default_project_root()公用函数 - 小欧
+- 445b2c52b: _helpers.py 添加_make_yaml_loader支持OrderedDict解析 - 小欧
+- a2bfea01a: update_session.py 添加空body校验返回400 - 小欧
+- 19580646d: tool_fc_helper.py 添加OrderedDict representer输出干净YAML - 小欧
+- 69f9494c8: 6tools warning分支(grep_file_content/list_directory/search_files/search_web/execute_code/execute_shell_command) - 小欧
+
+### fix: 代码修复(3项)
+- cb02f5fb9: update_config.py 验证写入段改用_make_yaml_loader - 小欧
+- 3154d7cb8: main.py 修复shutdown导入路径shell_tools→execute_shell_command - 小欧
+- 74c0713a7: desktop_register.py 修复DESK_TOOL_EXAMPLES拼写错误 - 小欧
+
+### refactor: 代码重构(1项)
+- cbef59328: lazy_loader.py 分类注册日志降级为debug - 小欧
+
+### docs: 文档更新(2项)
+- e2c696532: 测试数据库隔离原则-禁止操作系统运行数据库 - 小健
+- dcbd1de40: 测试配置隔离原则-禁止修改系统config.yaml - 小健
+
+### 合计
+- feat: 10项 | fix: 3项 | refactor: 1项 | docs: 2项 = 共16项
+
+---
+
 v0.17.0
 
 更新时间: 2026-06-22 19:42:43

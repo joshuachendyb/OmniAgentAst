@@ -3,10 +3,11 @@
 ObservationStep - 观察步骤（SRP拆分）
 
 只负责observation模式，接收完整的llm_data/tool_result/other_data
+parallel_results: 并行tool call时保留每个call的完整数据映射 — 小健 2026-06-25
 
 小健 2026-06-22
 """
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .base import ReasoningStep
 
@@ -21,6 +22,7 @@ class ObservationStep(ReasoningStep):
         llm_data: Optional[Dict[str, Any]] = None,
         tool_result: Any = None,
         other_data: Optional[Dict[str, Any]] = None,
+        parallel_results: Optional[List[Dict[str, Any]]] = None,
         timestamp: Optional[int] = None,
     ):
         ReasoningStep.__init__(self, step, timestamp)
@@ -28,6 +30,7 @@ class ObservationStep(ReasoningStep):
         self._llm_data = llm_data or {}
         self._tool_result = tool_result
         self._other_data = other_data or {}
+        self._parallel_results = parallel_results
 
     def get_content(self) -> str:
         if self._llm_data and isinstance(self._llm_data, dict):
@@ -42,4 +45,6 @@ class ObservationStep(ReasoningStep):
             obs["tool_result"] = self._tool_result
         if self._other_data:
             obs["other_data"] = self._other_data
+        if self._parallel_results:
+            obs["parallel_results"] = self._parallel_results
         return {"observation": obs}

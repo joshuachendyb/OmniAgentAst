@@ -20,6 +20,19 @@ def truncate_text(text: str, max_chars: int, suffix: str = None) -> tuple:
     return text[:max_chars] + tail, True
 
 
+def add_line_numbers(content: str, offset: int = 1) -> str:
+    """给文本内容添加行号前缀 — 小欧 2026-07-05"""
+    if not content:
+        return content
+    lines = content.rstrip("\n").split("\n")
+    last_lineno = offset + len(lines) - 1
+    width = len(str(last_lineno))
+    return "\n".join(
+        f"{offset + i:>{width}}|{line}"
+        for i, line in enumerate(lines)
+    )
+
+
 def smart_truncate_text(content: str, budget: int, head_ratio: float = 0.6) -> str:
     """智能截断文本 — 小沈 2026-06-09 提取为公用函数
     
@@ -58,4 +71,5 @@ def smart_truncate_text(content: str, budget: int, head_ratio: float = 0.6) -> s
 __all__ = [
     "truncate_text",
     "smart_truncate_text",
+    "add_line_numbers",
 ]
