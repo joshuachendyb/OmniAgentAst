@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE
+from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, MAX_SEARCH_RESULTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, MAX_SEARCH_FILE_SIZE
 
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.file_type_checker import TEXT_EXTENSIONS, is_binary_file
 from app.utils.logger import logger
 
 
@@ -214,6 +215,16 @@ def _grep_files_sync(
 import os
 
 
+def _sort_grep_results_by_mtime(results: List[Dict]) -> None:
+    """按文件修改时间降序排序 grep 结果 — 小欧 2026-07-05"""
+    def _mtime(item: Dict) -> float:
+        try:
+            return Path(item["file"]).stat().st_mtime
+        except OSError:
+            return -1.0
+    results.sort(key=_mtime, reverse=True)
+
+
 async def grep(
     pattern: str,
     search_dir: str,
@@ -277,6 +288,10 @@ async def grep(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"search_dir": actual_dir}}, llm_data=llm_data)
+
+    # 按 mtime 降序排序 — 小欧 2026-07-05
+    if results and output_mode != "count":
+        _sort_grep_results_by_mtime(results)
 
     if output_mode == "count":
         data = {"total_matches": total_matches, "total_files": total_files, "pattern": pattern}
