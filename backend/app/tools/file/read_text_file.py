@@ -327,6 +327,12 @@ async def readtext(
             line_count=_line_count, total_lines=_total_lines, file_size=file_size,
         )
 
+        try:
+            from app.tools.file.edit_text_file import record_file_mtime
+            record_file_mtime(file_path)
+        except Exception:
+            pass
+
         return build_success(data=_data, llm_data=llm_data)
 
     except Exception as e:

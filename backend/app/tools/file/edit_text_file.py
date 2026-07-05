@@ -10,6 +10,7 @@ F4: edittext — 编辑文本文件
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import asyncio
+import difflib
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -72,39 +73,45 @@ async def _try_read_file_with_encodings(
 def _apply_replacement(
     content: str, old_string: str, new_string: str,
     ignore_case: bool, replace_all: bool,
-) -> Tuple[str, int]:
-    """执行替换操作,返回(new_content, count) — 小欧 2026-06-22 — 小健 2026-06-24 修复硬编码flags=2"""
+) -> Tuple[str, int, int]:
+    """执行替换操作,返回(new_content, count, total_matches) — 小欧 2026-06-22 — 小健 2026-06-24 修复硬编码flags=2 — 小欧 2026-07-05 增加total_matches"""
     count = 0
+    total_matches = 0
     import re as re_mod
     if replace_all:
         flags = 0 if not ignore_case else re_mod.IGNORECASE
         pattern = re_mod.escape(old_string)
         if ignore_case:
-            count = len(re_mod.findall(pattern, content, flags))
+            total_matches = len(re_mod.findall(pattern, content, flags))
+            count = total_matches
             content = re_mod.sub(pattern, lambda m: new_string, content, flags=flags)
         else:
-            count = content.count(old_string)
+            total_matches = content.count(old_string)
+            count = total_matches
             content = content.replace(old_string, new_string)
     else:
         if ignore_case:
             pattern = re_mod.escape(old_string)
+            total_matches = len(re_mod.findall(pattern, content, re_mod.IGNORECASE))
             match = re_mod.search(pattern, content, re_mod.IGNORECASE)
             if match:
                 content = content[:match.start()] + new_string + content[match.end():]
                 count = 1
         else:
+            total_matches = content.count(old_string)
             idx = content.find(old_string)
             if idx >= 0:
                 content = content[:idx] + new_string + content[idx + len(old_string):]
                 count = 1
-    return content, count
+    return content, count, total_matches
 
 
 def _build_edit_text_file_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", applied: int = 0, total: int = 0, detail: str = "",
+    diff: str = "", total_matches: int = 0, mtime_warning: str = "",
 ) -> Dict[str, Any]:
-    """edit_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """edit_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 增加diff/total_matches/mtime_warning"""
     if exec_code == "error":
         return {
             "summary": f"文件编辑失败: {detail}",
@@ -113,13 +120,28 @@ def _build_edit_text_file_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    _hint_parts = []
+    if mtime_warning:
+        _hint_parts.append(mtime_warning)
+    _warning_msg = ""
+    if total_matches > applied:
+        _remaining = total_matches - applied
+        _warning_msg = f"共{total_matches}处匹配，已修改{applied}处，剩余{_remaining}处"
+        _hint_parts.append("建议使用 replace_all=True 一次替换所有匹配")
+    _hint = "；".join(_hint_parts) if _hint_parts else ""
+    _summary = f"编辑完成: {file_path} ({applied}/{total}处)"
+    if _warning_msg:
+        _summary += f"，注意: {_warning_msg}"
+    _exec_code = "warning" if (_warning_msg or mtime_warning) else "success"
     return {
-        "summary": f"编辑完成: {file_path} ({applied}/{total}处)",
+        "summary": _summary,
         "action": {"tool": "edittext", "tool_zh": "编辑文件", "target": file_path, "params": {}},
-        "status": {"exec_code": "success", "message": "编辑完成", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": _exec_code, "message": "编辑完成", "code": "", "detail": _warning_msg, "hint": _hint},
         "duration_ms": duration_ms,
         "metrics": {
             "applied": {"value": applied, "text": f"{applied}/{total}处"},
+            "total_matches": {"value": total_matches, "text": f"共{total_matches}处"},
+            "diff": {"value": diff[:2000] if diff else "", "text": diff[:2000] if diff else ""},
         },
     }
 
@@ -172,11 +194,16 @@ async def _precise_replace_in_file(
         if err_msg:
             raise ValueError(err_msg)
 
+        mtime_warning = check_file_mtime(file_path)
+        if mtime_warning:
+            logger.warning(f"[edittext] {mtime_warning}")
+
         replace_result = {}
 
         def _replace_sync() -> bool:
-            new_content, count = _apply_replacement(content, old_string, new_string, ignore_case, replace_all)
+            new_content, count, total_matches = _apply_replacement(content, old_string, new_string, ignore_case, replace_all)
             replace_result['count'] = count
+            replace_result['total_matches'] = total_matches
             replace_result['used_enc'] = used_enc
             if dry_run:
                 return True
@@ -186,6 +213,12 @@ async def _precise_replace_in_file(
                 replace_result['content_preview'] = preview
                 replace_result['total_lines'] = len(lines)
                 return False
+            replace_result['diff'] = ''.join(difflib.unified_diff(
+                content.splitlines(keepends=True),
+                new_content.splitlines(keepends=True),
+                fromfile=str(path), tofile=str(path),
+                n=3,
+            ))
             write_content = new_content.replace('\n', '\r\n') if _has_crlf else new_content
             with open(path, 'w', encoding=used_enc, newline='') as f:
                 f.write(write_content)
@@ -213,6 +246,9 @@ async def _precise_replace_in_file(
         return {
             "operation_id": operation_id, "file_path": str(path),
             "applied_edits": count, "total_edits": count,
+            "total_matches": replace_result.get("total_matches", count),
+            "diff": replace_result.get("diff", ""),
+            "mtime_warning": mtime_warning,
         }
 
     except Exception as e:
@@ -263,5 +299,44 @@ async def edittext(
     llm_data = _build_edit_text_file_llm_data(
         "success", duration_ms, file_path=file_path,
         applied=result.get("applied_edits", 0), total=result.get("total_edits", 0),
+        diff=result.get("diff", ""),
+        total_matches=result.get("total_matches", 0),
+        mtime_warning=result.get("mtime_warning", "") or "",
     )
     return build_success(data=result, llm_data=llm_data)
+
+
+# ============================================================
+# 文件 mtime 缓存 — readtext 记录, edittext 检查冲突
+# 只记录当前进程内存，不持久化 — 小欧 2026-07-05
+# ============================================================
+
+_file_mtime_cache: Dict[str, int] = {}
+
+def record_file_mtime(file_path: str) -> None:
+    """记录文件当前 mtime（由 readtext 在成功读取后调用）— 小欧 2026-07-05"""
+    try:
+        mtime = Path(file_path).resolve().stat().st_mtime_ns
+        _file_mtime_cache[file_path] = mtime
+    except OSError:
+        pass
+
+def check_file_mtime(file_path: str) -> Optional[str]:
+    """检查文件 mtime 是否变化。返回 None=无冲突, str=冲突警告 — 小欧 2026-07-05"""
+    recorded = _file_mtime_cache.get(file_path)
+    if recorded is None:
+        return None
+    try:
+        current = Path(file_path).resolve().stat().st_mtime_ns
+        if current != recorded:
+            return (
+                f"文件 {file_path} 自上次读取后被外部修改，"
+                "当前编辑可能覆盖外部变更。建议先重新 readtext 确认文件内容"
+            )
+    except OSError:
+        pass
+    return None
+
+def clear_file_mtime(file_path: str) -> None:
+    """清除文件 mtime 记录（如文件已被删除）— 小欧 2026-07-05"""
+    _file_mtime_cache.pop(file_path, None)
