@@ -210,4 +210,12 @@ def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any
         row_count = result.get("row_count", 0)
         sheet_count = len(result.get("sheet_names", []))
         llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_name, row_count, sheet_count)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #2b flat table (单sheet/CSV) / #21 scalar fallback (多sheet)
+        # trigger: "headers" in data and "rows" in data — 单sheet有headers+rows
+        # handler: _format_table(data["headers"], data["rows"])
+        # note:    多sheet返回 {"sheets": [...], "sheet_names": [...]}, 无headers/rows,
+        #          走 scalar fallback → _format_scalar_data(data)
+        # file:    observation_formatter.py:136-138
+        # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)

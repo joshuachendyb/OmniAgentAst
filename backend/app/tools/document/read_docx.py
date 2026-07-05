@@ -103,6 +103,12 @@ def read_docx(file_name: str) -> Dict[str, Any]:
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_docx_llm_data("success", duration_ms, file_name, len(paragraphs), len(text))
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #10 raw text
+        # trigger: "text" in data and isinstance(data["text"], str)
+        # handler: _format_text_content(data) — 正文+元数据(段落数/表格数)
+        # file:    observation_formatter.py:124-126
+        # ------------------------------------------------------------------------------
         return build_success(data=result_data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -106,6 +106,12 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
             "success", duration_ms, file_path, page_count, len(pages_read),
             len(full_text), len(tables_data), len(images_data),
         )
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #10 raw text
+        # trigger: "text" in data and isinstance(data["text"], str)
+        # handler: _format_text_content(data) — 正文+元数据(页数/表格数/图片数)
+        # file:    observation_formatter.py:124-126
+        # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)
 
     except Exception as e:

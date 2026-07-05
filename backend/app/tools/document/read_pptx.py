@@ -124,6 +124,12 @@ def read_pptx(file_name: str) -> Dict[str, Any]:
         total_text = sum(len(s.get("text", "")) for s in slides_data)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_pptx_llm_data("success", duration_ms, file_path, len(prs.slides), total_text)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #16 slides items
+        # trigger: "slides" in data — slides 是 List[dict], 每项含 slide_num/text/tables
+        # handler: _format_slides(data)
+        # file:    observation_formatter.py:200-202
+        # ------------------------------------------------------------------------------
         return build_success(data=result_data, llm_data=llm_data)
 
     except Exception as e:
