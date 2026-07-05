@@ -21,7 +21,7 @@ def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids
         return {
             "summary": "获取定时器列表失败",
             "action": {"tool": "timer_list", "tool_zh": "列出定时器", "target": "", "params": {}},
-            "status": {"exec_code": "error", "message": "获取定时器列表失败", "code": ERR_TIMER_LIST, "detail": "", "hint": ""},
+            "status": {"exec_code": "error", "message": "获取定时器列表失败", "code": ERR_TIMER_LIST, "detail": "", "hint": "请检查定时器状态"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

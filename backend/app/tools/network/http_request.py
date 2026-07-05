@@ -44,14 +44,14 @@ from app.tools.tool_constants import TOOL_RETRYABLE_HTTP_CODES
 def _build_http_request_llm_data(
     exec_code: str, duration_ms: int, url: str = "", method: str = "GET",
     status_code: int = 0, content_type: str = "", llm_body=None,
-    err_code: str = "", detail: str = "",
+    err_code: str = "", detail: str = "", hint: str = "",
 ) -> Dict[str, Any]:
     """http_request的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
     if exec_code == "error":
         return {
             "summary": f"HTTP请求失败: {method} {url}",
             "action": {"tool": "httpget", "tool_zh": "HTTP请求", "target": url, "params": {"method": method, "url": url}},
-            "status": {"exec_code": "error", "message": "HTTP请求失败", "code": err_code, "detail": detail, "hint": ""},
+            "status": {"exec_code": "error", "message": "HTTP请求失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -127,12 +127,12 @@ async def httpget(
 
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "httpget")
     if not timeout_valid:
-        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=timeout_err)
+        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=timeout_err, hint="请检查超时设置")
         return build_error(data={"error_detail": timeout_err, "params": {"url": url}}, llm_data=llm_data)
 
     proxy_valid, proxy_err, _ = validate_proxy(proxy)
     if not proxy_valid:
-        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=proxy_err)
+        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=proxy_err, hint="请检查代理配置")
         return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
@@ -141,7 +141,7 @@ async def httpget(
         is_valid, error_msg, warning_msg = validate_url(url)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_INVALID_URL, detail=error_msg or "URL格式无效")
+            llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_INVALID_URL, detail=error_msg or "URL格式无效", hint="请检查URL格式")
             return build_error(data={"error_detail": error_msg or "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
         if warning_msg:
             logger.warning(f"[httpget] {warning_msg}")
@@ -149,7 +149,7 @@ async def httpget(
         net_info = check_network()
         if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
+            llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_NETWORK_DOWN, detail="网络不可用", hint="请检查网络连接")
             return build_error(data={"error_detail": "网络不可用", "params": {"url": url}}, llm_data=llm_data)
 
         request_headers = {}
@@ -182,7 +182,8 @@ async def httpget(
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                     llm_data = _build_http_request_llm_data("error", duration_ms, url, method,
                                                               err_code=ERR_NETWORK_HTTP_ERROR,
-                                                              detail=f"HTTP {e.response.status_code}")
+                                                              detail=f"HTTP {e.response.status_code}",
+                                                              hint="请检查URL和服务器状态")
                     return build_error(
                         data={"error_detail": f"HTTP {e.response.status_code}", "params": {"url": url, "status_code": e.response.status_code, "body": error_body}},
                         llm_data=llm_data)
@@ -191,12 +192,12 @@ async def httpget(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _build_http_error(last_exception, url, 0, duration_ms)
-        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"])
+        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"], hint="请检查URL和网络连接")
         return build_error(data={"error_detail": error_info["error_detail"], "params": error_info["params"]}, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"[httpget] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _build_http_error(e, url, 0, duration_ms)
-        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"])
+        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"], hint="请检查URL和网络连接")
         return build_error(data={"error_detail": error_info["error_detail"], "params": error_info["params"]}, llm_data=llm_data)

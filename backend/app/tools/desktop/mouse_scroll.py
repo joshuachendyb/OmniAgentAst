@@ -23,7 +23,7 @@ def _build_mouse_scroll_llm_data(exec_code: str, duration_ms: int, direction: st
         return {
             "summary": "鼠标滚动失败",
             "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "target": "", "params": {"direction": direction, "amount": amount}},
-            "status": {"exec_code": "error", "message": "滚动失败", "code": err_code or ERR_DESKTOP_MOUSE_SCROLL, "detail": detail, "hint": ""},
+            "status": {"exec_code": "error", "message": "滚动失败", "code": err_code or ERR_DESKTOP_MOUSE_SCROLL, "detail": detail, "hint": "请检查滚动参数"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {

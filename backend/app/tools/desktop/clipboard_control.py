@@ -21,7 +21,7 @@ def _build_clipboard_control_llm_data(exec_code: str, duration_ms: int, action: 
         return {
             "summary": f"剪贴板{action}失败",
             "action": {"tool": "clipboard_control", "tool_zh": "剪贴板", "target": action, "params": {"action": action}},
-            "status": {"exec_code": "error", "message": f"剪贴板{action}失败", "code": err_code or ERR_DESKTOP_CLIPBOARD, "detail": detail, "hint": ""},
+            "status": {"exec_code": "error", "message": f"剪贴板{action}失败", "code": err_code or ERR_DESKTOP_CLIPBOARD, "detail": detail, "hint": "请检查剪贴板访问权限"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {

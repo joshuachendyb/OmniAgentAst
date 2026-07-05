@@ -38,7 +38,7 @@ def _build_set_window_state_llm_data(exec_code: str, duration_ms: int, action: s
         return {
             "summary": f"窗口操作{action}失败: {window_title}",
             "action": {"tool": "set_window_state", "tool_zh": "窗口状态", "target": window_title, "params": {"action": action}},
-            "status": {"exec_code": "error", "message": f"窗口操作{action}失败", "code": err_code or ERR_WINDOW_SET_STATE, "detail": detail, "hint": ""},
+            "status": {"exec_code": "error", "message": f"窗口操作{action}失败", "code": err_code or ERR_WINDOW_SET_STATE, "detail": detail, "hint": "请检查窗口标题和操作类型"},
             "duration_ms": duration_ms, "metrics": {},
         }
     summary = f"窗口操作{action}完成: {window_title}"

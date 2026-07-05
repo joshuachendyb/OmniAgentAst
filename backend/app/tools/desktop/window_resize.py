@@ -22,8 +22,8 @@ def _build_window_resize_llm_data(exec_code: str, duration_ms: int, title: str =
     if exec_code == "error":
         return {
             "summary": f"调整窗口大小失败: {title}",
-            "action": {"tool": "window_resize", "tool_zh": "窗口调整", "target": title, "params": {}},
-            "status": {"exec_code": "error", "message": "调整窗口大小失败", "code": err_code or ERR_WINDOW_RESIZE, "detail": detail, "hint": ""},
+            "action": {"tool": "window_resize", "tool_zh": "窗口调整", "target": title, "params": {"title": title, "width": width, "height": height}},
+            "status": {"exec_code": "error", "message": "调整窗口大小失败", "code": err_code or ERR_WINDOW_RESIZE, "detail": detail, "hint": "请检查窗口标题和尺寸"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {

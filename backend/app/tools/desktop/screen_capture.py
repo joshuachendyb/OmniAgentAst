@@ -27,8 +27,8 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, output_path
     if exec_code == "error":
         return {
             "summary": "截图失败",
-            "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": "", "params": {}},
-            "status": {"exec_code": "error", "message": "截图失败", "code": err_code or ERR_SCREENSHOT, "detail": detail, "hint": ""},
+            "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": "", "params": {"region": region, "display": display}},
+            "status": {"exec_code": "error", "message": "截图失败", "code": err_code or ERR_SCREENSHOT, "detail": detail, "hint": "请检查屏幕显示设置和权限"},
             "duration_ms": duration_ms, "metrics": {},
         }
     metrics = {}
