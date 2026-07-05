@@ -212,7 +212,7 @@ def _build_read_text_file_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", line_count: int = 0,
     total_lines: int = 0, file_size: int = 0, detail: str = "",
-    hint: str = "",
+    hint: str = "", encoding_name: str = "",
 ) -> Dict[str, Any]:
     """read_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-06-24 增加warning"""
     if exec_code == "error":
@@ -236,13 +236,15 @@ def _build_read_text_file_llm_data(
             },
         }
     if line_count == 0:
-        msg = "文件为空"
+        msg = f"文件为空" if not encoding_name else f"文件为空,编码:{encoding_name}"
         hint_text = ""
     elif line_count < total_lines:
-        msg = "读取成功,文件还有更多内容"
+        enc = f",编码:{encoding_name}" if encoding_name else ""
+        msg = f"读取成功{enc},文件还有更多内容"
         hint_text = "可使用offset+limit继续读取后续内容"
     else:
-        msg = "读取成功"
+        enc = f",编码:{encoding_name}" if encoding_name else ""
+        msg = f"读取成功{enc}"
         hint_text = ""
     return {
         "summary": f"读取 {file_path}，{line_count}行，{file_size}字节",
@@ -389,6 +391,7 @@ async def readtext(
         llm_data = _build_read_text_file_llm_data(
             "success", duration_ms, file_path=file_path,
             line_count=_line_count, total_lines=_total_lines, file_size=file_size,
+            encoding_name=used_encoding or "",
         )
 
         line_offset = _data.get("start_line", 1)
