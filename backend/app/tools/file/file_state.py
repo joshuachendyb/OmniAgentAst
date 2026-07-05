@@ -79,6 +79,26 @@ def is_unchanged(file_path: str, content: str) -> bool:
     return hashlib.md5(content.encode("utf-8")).hexdigest() == recorded_hash
 
 
+def check_conflict_strict(file_path: str) -> Optional[str]:
+    """严格冲突检查（阻断级）：与 check_conflict 同逻辑但语义为阻断 — 小欧 2026-07-05"""
+    resolved = Path(file_path).resolve()
+    key = str(resolved)
+    recorded = _state.get(key)
+    if recorded is None:
+        return None
+    recorded_mtime, _ = recorded
+    try:
+        current = resolved.stat().st_mtime_ns
+    except OSError:
+        return None
+    if current != recorded_mtime:
+        return (
+            f"文件 {file_path} 自上次读取后被外部修改，"
+            "请先 readtext 确认最新内容后再操作"
+        )
+    return None
+
+
 def clear_state(file_path: str) -> None:
     """删除后清除状态 — 小欧 2026-07-05 — 小沈 2026-07-05 修复_resolve重复调用"""
     key = str(Path(file_path).resolve())
