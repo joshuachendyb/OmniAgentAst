@@ -24,14 +24,14 @@ from app.utils.logger import logger
 def _build_read_pdf_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", page_count: int = 0, pages_read: int = 0,
-    text_len: int = 0, table_count: int = 0, image_count: int = 0, detail: str = "",
+    text_len: int = 0, table_count: int = 0, image_count: int = 0, detail: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """read_pdf的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """read_pdf的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
             "summary": f"读取PDF失败: {detail}",
             "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "读取PDF失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": "请检查文件路径和格式"},
+            "status": {"exec_code": "error", "message": "读取PDF失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -57,12 +57,12 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
     is_valid, error_detail, suggested_tool = check_for_document_tool(file_name)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=error_detail)
+        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=error_detail, hint="文件类型不匹配,请使用.pdf格式")
         return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
 
     if not _check_module("pdfplumber"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail="pdfplumber库未安装")
+        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail="pdfplumber库未安装", hint="请安装pdfplumber库")
         return build_error(data={"error_detail": "pdfplumber库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
 
     try:
@@ -73,11 +73,10 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
         is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=err)
+            llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径是否正确")
             return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
 
         path = Path(file_path)
-
         all_text, pages_read, tables_data, images_data = [], [], [], []
         with pdfplumber.open(path) as pdf:
             page_count = len(pdf.pages)
@@ -116,5 +115,5 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=str(e))
+        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=str(e), hint="读取PDF文档异常,请检查文件完整性")
         return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)

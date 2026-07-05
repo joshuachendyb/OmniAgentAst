@@ -25,9 +25,9 @@ from app.utils.logger import logger
 def _build_read_xlsx_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", row_count: int = 0, sheet_count: int = 0, detail: str = "",
-    user_sheet_name: str = "",
+    user_sheet_name: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """read_xlsx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 新增user_sheet_name参数"""
+    """read_xlsx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint参数"""
     if exec_code == "error":
         _act_params = {"file_path": file_path}
         if user_sheet_name:
@@ -35,7 +35,7 @@ def _build_read_xlsx_llm_data(
         return {
             "summary": f"读取Excel失败: {detail}",
             "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": _act_params},
-            "status": {"exec_code": "error", "message": "读取Excel失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": "请检查文件路径和格式"},
+            "status": {"exec_code": "error", "message": "读取Excel失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -197,7 +197,7 @@ def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             _sn = sheet_name or ""
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail, user_sheet_name=_sn)
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail, user_sheet_name=_sn, hint="文件类型不匹配,请使用.xlsx或.csv格式")
             return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
 
     if suffix == ".csv":
@@ -205,14 +205,14 @@ def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any
     else:
         if not _check_module("openpyxl"):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装", user_sheet_name=sheet_name or "")
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装", user_sheet_name=sheet_name or "", hint="请安装openpyxl库")
             return build_error(data={"error_detail": "openpyxl库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
         result = _read_xlsx_inner(file_name, max_rows=10000, sheet_name=sheet_name)
 
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     if "error_detail" in result:
         detail = result["error_detail"]
-        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=detail, user_sheet_name=sheet_name or "")
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=detail, user_sheet_name=sheet_name or "", hint="读取Excel异常,请检查文件完整性")
         return build_error(data=result, llm_data=llm_data)
     else:
         row_count = result.get("row_count", 0)

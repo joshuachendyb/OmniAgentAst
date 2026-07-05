@@ -75,9 +75,9 @@ def _set_docx_column_widths(table, table_data):
 
 def _build_write_docx_llm_data(
     exec_code: str, duration_ms: int,
-    file_path: str = "", detail: str = "", user_title: str = "",
+    file_path: str = "", detail: str = "", user_title: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """write_docx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增user_title参数"""
+    """write_docx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint参数"""
     _act_params = {"file_path": file_path}
     if user_title:
         _act_params["title"] = user_title
@@ -85,7 +85,7 @@ def _build_write_docx_llm_data(
         return {
             "summary": f"写入Word失败: {detail}",
             "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": _act_params},
-            "status": {"exec_code": "error", "message": "写入Word失败", "code": ERR_WRITE_DOCX, "detail": detail, "hint": "请检查路径和权限"},
+            "status": {"exec_code": "error", "message": "写入Word失败", "code": ERR_WRITE_DOCX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -115,7 +115,7 @@ def write_docx(
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         _title_str = title or ""
-        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=err, user_title=_title_str)
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=err, user_title=_title_str, hint="请检查文件路径是否合法")
         return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
     if warn:
         logger.warning(f"[write_docx] {warn}")
@@ -124,12 +124,12 @@ def write_docx(
     is_valid, error_detail, suggested_tool = check_for_document_tool(file_name, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=error_detail, user_title=title or "")
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=error_detail, user_title=title or "", hint="文件扩展名不正确,请使用.docx格式")
         return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
 
     if not _check_module("docx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail="python-docx库未安装", user_title=title or "")
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail="python-docx库未安装", user_title=title or "", hint="请安装python-docx库")
         return build_error(data={"error_detail": "python-docx库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
 
     try:
@@ -201,5 +201,5 @@ def write_docx(
         return build_success(data={"file_path": str(path)}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "")
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "", hint="写入Word异常,请检查磁盘空间和权限")
         return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)
