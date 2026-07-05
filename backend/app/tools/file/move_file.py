@@ -31,19 +31,23 @@ def _build_move_file_llm_data(
     source: str = "", destination: str = "", detail: str = "",
     extra_metrics: Optional[Dict[str, Any]] = None,
     hint: str = "",
+    user_overwrite: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """move_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数"""
+    _act_params = {"source": source, "destination": destination}
+    if user_overwrite is not None:
+        _act_params["overwrite"] = user_overwrite
     if exec_code == "error":
         return {
-            "summary": f"移动失败: {detail}",
-            "action": {"tool": "move", "tool_zh": "移动文件", "target": source, "params": {"source": source, "destination": destination}},
+            "summary": f"移动失败: {source}",
+            "action": {"tool": "move", "tool_zh": "移动文件", "target": source, "params": _act_params},
             "status": {"exec_code": "error", "message": "移动失败", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"移动成功: {source} -> {destination}",
-        "action": {"tool": "move", "tool_zh": "移动文件", "target": source, "params": {"source": source, "destination": destination}},
+        "action": {"tool": "move", "tool_zh": "移动文件", "target": source, "params": _act_params},
         "status": {"exec_code": "success", "message": "移动成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics or {},
@@ -51,7 +55,7 @@ def _build_move_file_llm_data(
     _summary = f"移动 {source} → {destination}" if destination else f"移动 {source}"
     return {
         "summary": _summary,
-        "action": {"tool": "move", "tool_zh": "移动", "target": source, "params": {"source": source, "destination": destination}},
+        "action": {"tool": "move", "tool_zh": "移动", "target": source, "params": _act_params},
         "status": {"exec_code": "success", "message": "移动成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics,
@@ -125,18 +129,18 @@ async def move(
     t0 = _time_mod.perf_counter()
     if not source or not source.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, detail="source不能为空")
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, detail="source不能为空", user_overwrite=overwrite)
         return build_error(data={"error_detail": "source不能为空", "params": {"source": source}}, llm_data=llm_data)
     if not destination or not destination.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail="destination不能为空")
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail="destination不能为空", user_overwrite=overwrite)
         return build_error(data={"error_detail": "destination不能为空", "params": {"destination": destination}}, llm_data=llm_data)
     # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/源存在 — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
     is_valid, err, warn = validate_path(OpCategory.EXISTS, source)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err, user_overwrite=overwrite)
         return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
     if warn:
         logger.warning(warn)
@@ -145,25 +149,25 @@ async def move(
     is_valid, err, warn = validate_path(OpCategory.WRITE, destination, overwrite=overwrite, source=source)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err, user_overwrite=overwrite)
         return build_error(data={"error_detail": err, "params": {"destination": destination}}, llm_data=llm_data)
     if warn:
         logger.warning(warn)
     if os.path.abspath(source) == os.path.abspath(destination):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=f"源路径和目标路径相同: {source}")
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=f"源路径和目标路径相同: {source}", user_overwrite=overwrite)
         return build_error(data={"error_detail": f"源路径和目标路径相同: {source}", "params": {"source": source, "destination": destination}}, llm_data=llm_data)
 
     result = await _move_file_impl(source_path=source, destination_path=destination, overwrite=overwrite)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
     if result.get("success"):
-        llm_data = _build_move_file_llm_data("success", duration_ms, source, destination=destination)
+        llm_data = _build_move_file_llm_data("success", duration_ms, source, destination=destination, user_overwrite=overwrite)
         return build_success(
             data={"operation_id": result.get("operation_id")},
             llm_data=llm_data,
         )
     else:
         error_detail = result.get("error_detail", "移动文件失败")
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=error_detail)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=error_detail, user_overwrite=overwrite)
         return build_error(data={"error_detail": error_detail, "params": result.get("params", {})}, llm_data=llm_data)
