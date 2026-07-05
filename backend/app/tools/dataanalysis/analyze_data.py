@@ -143,6 +143,12 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
         if not numeric_cols:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_analyze_data_llm_data("success", duration_ms, total_count, 0, df.columns.tolist())
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #20 analyze_data(transposed) — 无数值列场景
+            # trigger: "statistics" in data — statistics 为 {} 空 dict
+            # handler: _format_analyze_data(data) — 首行 列名 | 总数 转置表
+            # file:    observation_formatter.py:201-202
+            # ------------------------------------------------------------------------------
             return build_success(data={"row_count": total_count, "columns": df.columns.tolist(), "statistics": {}}, llm_data=llm_data)
 
         result = {"total_count": total_count, "columns": df.columns.tolist()}
@@ -157,6 +163,12 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_analyze_data_llm_data("success", duration_ms, len(df), len(numeric_cols), df.columns.tolist())
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #20 analyze_data(transposed) — 有数值列场景
+        # trigger: "statistics" in data or "grouped_statistics" in data
+        # handler: _format_analyze_data(data) — 每列名 均值/求和/计数 转置表
+        # file:    observation_formatter.py:201-202
+        # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

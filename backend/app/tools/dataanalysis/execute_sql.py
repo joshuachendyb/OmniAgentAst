@@ -117,6 +117,12 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             if syntax_valid:
                 llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, 0)
+                # ---- observation_formatter route -------------------------------------------
+                # branch: #21 fallback (key:val) — dry_run path
+                # trigger: 无上述20条分支匹配 — sql/dry_run/syntax_valid 不命中专用分支
+                # handler: _format_scalar_data(data) — key | value 单行列表
+                # file:    observation_formatter.py:214
+                # ------------------------------------------------------------------------------
                 return build_success(data={"sql": sql, "dry_run": True, "syntax_valid": True}, llm_data=llm_data)
             else:
                 llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail="SQL语法校验失败", hint="请检查SQL语法")
@@ -152,6 +158,12 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, affected_rows)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val) — normal path
+        # trigger: 无上述20条分支匹配 — affected_rows/sql 不命中专用分支
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data={"affected_rows": affected_rows, "sql": sql}, llm_data=llm_data)
 
     except sqlite3.Error as e:

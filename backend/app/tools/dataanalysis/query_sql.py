@@ -108,6 +108,12 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"columns": columns, "rows": results, "total": len(results), "table": table_str}
         llm_data = _build_query_sql_llm_data("success", duration_ms, sql, len(results), columns)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #5 rows
+        # trigger: "rows" in data — rows 是 List[list|dict]
+        # handler: _format_rows(data["rows"], data.get("columns"))
+        # file:    observation_formatter.py:140-142
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
 
     except sqlite3.Error as e:

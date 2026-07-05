@@ -177,6 +177,12 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_filter_data_llm_data("success", duration_ms, original_count, len(rows), columns)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #5 rows
+        # trigger: "rows" in data — rows 是 List[list|dict]
+        # handler: _format_rows(data["rows"], data.get("columns"))
+        # file:    observation_formatter.py:140-142
+        # ------------------------------------------------------------------------------
         return build_success(data=result_data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

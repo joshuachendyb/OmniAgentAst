@@ -140,6 +140,12 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         table_names = [t["name"] for t in schema_info]
         llm_data = _build_get_db_schema_llm_data("success", duration_ms, len(schema_info), table_names)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #6 schema
+        # trigger: "tables" in data — tables 是 List[dict], 每项含 name+columns
+        # handler: _format_schema(data["tables"])
+        # file:    observation_formatter.py:144-146
+        # ------------------------------------------------------------------------------
         return build_success(data={"tables": schema_info, "total": len(schema_info), "markdown": md}, llm_data=llm_data)
 
     except sqlite3.Error as e:
