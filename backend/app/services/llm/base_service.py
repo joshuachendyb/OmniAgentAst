@@ -7,7 +7,6 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 
 import asyncio
 import json as _json
-import traceback
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 
 import httpx
@@ -107,7 +106,7 @@ class BaseAIService:
     def _create_stream_error_chunk(self, e: Exception) -> StreamChunk:
         msg, err_type = _resolve_exception(e)
         if err_type == "unknown":
-            logger.error(f"[{_resolve_exception.__name__}] 未知异常: {e}, 类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}")
+            logger.warning(f"[{type(e).__name__}] 未分类异常: {e}")
         return StreamChunk(content="", model=self.model, is_done=True, stream_error=msg, stream_error_type=err_type)
 
     async def request(

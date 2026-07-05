@@ -1,19 +1,20 @@
 """
-【系统层】系统级错误分类器 — 小欧 2026-06-30
+【系统层】系统级错误分类器 — 小欧 2026-06-30；小沈 2026-07-05 黑名单重构
 
 责任：专门处理系统层错误分类（LLM通信、HTTP状态码、系统内部错误）。
-      看异常消息字符串中的数字（如 "429" → SystemErrorCategory.SERVER）。
       与工具层的 ToolErrorClassifier（看异常类型名）完全独立。
+
+设计原则：
+  1. 黑名单策略 — 默认SERVER(retryable)，只列不应重试的例外
+     （白名单策略必然遗漏 httpx→httpcore→anyio 多层异常类型）
+  2. 单一职责、简单直接
 
 文件：app/utils/sys_error_classifier.py（系统层专用）
       app/tools/tool_error_classifier.py（工具层专用）
 
-设计原则：单一职责、简单直接、与工具级错误分类分离
-
 作者: 小欧 - 2026-06-29
 """
 
-import re
 from enum import Enum
 from typing import Optional, Tuple, Dict, Any
 
@@ -92,11 +93,12 @@ class SystemErrorClassifier:
     
     @staticmethod
     def _check_special_errors(error: Exception) -> Optional[SystemErrorCategory]:
-        """检查特殊错误"""
+        """检查特殊错误 — 白名单例外，走非SERVER路径 — 小沈 2026-07-05 移除EndOfStream(黑名单默认处理)"""
         if IdleTimeoutError and isinstance(error, IdleTimeoutError):
             return SystemErrorCategory.IDLE_TIMEOUT
         if type(error).__name__ == "FCFormatError":
-            return SystemErrorCategory.UNKNOWN  # FCFormatError是系统级错误
+            return SystemErrorCategory.UNKNOWN  # FC格式错误，重试无意义
+        # EndOfStream 由黑名单默认SERVER处理，不需特殊case — 小沈 2026-07-05
         return None
     
     @staticmethod
@@ -110,7 +112,12 @@ class SystemErrorClassifier:
     @staticmethod
     def classify_error(error: Exception) -> SystemErrorCategory:
         """
-        分类系统级异常类型
+        分类系统级异常类型 — 黑名单策略，默认SERVER(retryable) — 小沈 2026-07-05
+        
+        黑名单原则：在LLM调用上下文中，绝大多数异常是网络/服务器问题，应重试。
+        只有明确不该重试的（FC格式错、空响应、熔断、Python内置异常）才返回非SERVER。
+        相比白名单（逐类列举httpx→httpcore→anyio异常，必然遗漏），
+        黑名单不会漏掉httpx/httpcore/anyio任何层级的异常类型。
         
         Args:
             error: 异常对象
@@ -120,38 +127,34 @@ class SystemErrorClassifier:
         """
         error_msg = str(error).lower()
         
-        # 1. 检查特殊错误
+        # 1. 特殊错误（白名单例外，先于默认规则检查）
         category = SystemErrorClassifier._check_special_errors(error)
         if category:
             return category
         
-        # 1b. 检查httpx网络/超时/协议异常 — chendyg 2026-07-01; 小欧 2026-07-02 新增RemoteProtocolError
-        #     RemoteProtocolError是服务器中断chunked响应(非NetworkError子类),必须重试
-        try:
-            import httpx
-            if isinstance(error, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)):
-                return SystemErrorCategory.SERVER
-        except ImportError:
-            error_type_name = type(error).__name__
-            if error_type_name in ("ReadTimeout", "ConnectTimeout", "WriteTimeout", "PoolTimeout",
-                                    "ConnectError", "ReadError", "WriteError", "CloseError",
-                                    "RemoteProtocolError"):
-                return SystemErrorCategory.SERVER
-        
-        # 2. 检查HTTP状态码错误
+        # 2. HTTP状态码错误 → SERVER(retryable)
         category = SystemErrorClassifier._check_http_status_errors(error_msg)
         if category:
             return category
         
-        # 3. 检查系统级错误关键词
+        # 3. 系统级关键词
         if "circuit" in error_msg and "open" in error_msg:
             return SystemErrorCategory.CIRCUIT_OPEN
         
         if "empty" in error_msg and "response" in error_msg:
             return SystemErrorCategory.EMPTY_RESPONSE
         
-        # 4. 默认返回UNKNOWN
-        return SystemErrorCategory.UNKNOWN
+        # 4. Python内置异常 → UNKNOWN（代码bug，重试无意义）— 小沈 2026-07-05
+        _builtin_errors = {
+            "ValueError", "TypeError", "AttributeError", "KeyError", "IndexError",
+            "NameError", "SyntaxError", "RuntimeError",
+        }
+        if type(error).__name__ in _builtin_errors:
+            return SystemErrorCategory.UNKNOWN
+        
+        # 5. 默认：SERVER(retryable) — 黑名单兜底
+        #      httpx/httpcore/anyio 所有未识别异常类型自动走重试
+        return SystemErrorCategory.SERVER
     
     @staticmethod
     def classify_error_message(error_type: str, error_message: str = "") -> Tuple[str, str]:

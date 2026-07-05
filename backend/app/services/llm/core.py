@@ -10,8 +10,6 @@ LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05
 
 from typing import List, Dict, Optional
 
-from app.utils.logger import logger
-
 
 class FCFormatError(Exception):
     """FC格式错误 — LLM返回的tool_calls无法解析 — 小欧 2026-06-25"""
@@ -26,8 +24,6 @@ def _resolve_exception(e: Exception) -> tuple:
     info = SystemErrorClassifier.get_error_info(e)
     msg = info["message"]
     err_type = info["code"]
-    if info["category"].value == "unknown":
-        logger.error(f"[_resolve_exception] 未知异常: {e}, 类型: {type(e).__name__}")
     return msg, err_type
 
 
