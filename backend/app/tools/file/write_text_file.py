@@ -170,14 +170,14 @@ async def writetext(
     err = validate_str_param(content, "content")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, user_encoding=encoding, user_append=append)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, hint="请检查content参数", user_encoding=encoding, user_append=append)
         return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
     # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
     is_valid, err, warn = validate_path(OpCategory.WRITE, file_path, content=content, append=append)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, user_encoding=encoding, user_append=append)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, hint="请检查文件路径是否正确", user_encoding=encoding, user_append=append)
         return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
     if warn:
         logger.warning(warn)
@@ -186,7 +186,7 @@ async def writetext(
     error, checked_content = _check_write_safety(file_path, content, encoding, append)
     if error:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, user_encoding=encoding, user_append=append)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, hint="请检查文件写入安全限制", user_encoding=encoding, user_append=append)
         return build_error(data={"error_detail": error, "params": {"file_path": file_path}}, llm_data=llm_data)
 
     encoding = encoding or _detect_file_encoding_for_write(file_path, append)
@@ -194,7 +194,7 @@ async def writetext(
     task_id = _current_task_id.get()
     if not task_id:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail="当前没有活跃任务ID", user_encoding=encoding, user_append=append)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail="当前没有活跃任务ID", hint="系统内部错误，请重试", user_encoding=encoding, user_append=append)
         return build_error(data={"error_detail": "当前没有活跃任务ID", "params": {"file_path": file_path}}, llm_data=llm_data)
 
     path = Path(file_path)
@@ -307,11 +307,11 @@ async def writetext(
             )
         else:
             detail = error_detail or "写入文件失败"
-            llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=detail, user_encoding=encoding, user_append=append)
+            llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=detail, hint="请检查文件路径和写入权限", user_encoding=encoding, user_append=append)
             return build_error(data={"error_detail": detail, "params": {"file_path": file_path}}, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"Failed to write file {file_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), user_encoding=encoding, user_append=append)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint="未知错误，请重试", user_encoding=encoding, user_append=append)
         return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)

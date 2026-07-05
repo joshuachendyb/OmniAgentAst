@@ -217,7 +217,7 @@ async def listdir(
         is_valid, err, _ = validate_path(OpCategory.LIST_DIR, dir_path)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=err, user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=err, hint="请检查目录路径是否正确", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
             return build_error(data={"error_detail": err, "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
         deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
@@ -265,5 +265,5 @@ async def listdir(
     except Exception as e:
         logger.error(f"Failed to list directory {dir_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=str(e), user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=str(e), hint="请检查目录路径和访问权限", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={"error_detail": str(e), "params": {"dir_path": dir_path}}, llm_data=llm_data)

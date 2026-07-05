@@ -364,7 +364,7 @@ async def readtext(
             if suggestion:
                 err += f"。您是否要找: {suggestion}"
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
+            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, hint="请检查文件路径是否正确", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
             return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
 
         path = Path(file_path)
@@ -383,7 +383,7 @@ async def readtext(
         content, used_encoding, error = await _try_read_file_with_encodings(path, encoding)
         if error:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
+            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, hint=f"文件编码无法识别，请尝试指定 encoding 参数", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
             return build_error(data={"error_detail": error, "params": {"file_path": file_path}}, llm_data=llm_data)
 
         lines = content.splitlines(keepends=True)
@@ -433,5 +433,5 @@ async def readtext(
     except Exception as e:
         logger.error(f"readtext failed: {file_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
+        llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint="请检查文件路径和权限", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
         return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)

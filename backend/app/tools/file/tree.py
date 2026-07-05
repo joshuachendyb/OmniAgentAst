@@ -161,19 +161,19 @@ async def tree(
 
     if not dir_path or not dir_path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", user_include_hidden=include_hidden, user_sort_by=sort_by)
+        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", hint="请提供目录路径", user_include_hidden=include_hidden, user_sort_by=sort_by)
         return build_error(data={"error_detail": "dir_path不能为空", "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
     if sort_by not in ("name", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'mtime',当前值: '{sort_by}'", user_include_hidden=include_hidden, user_sort_by=sort_by)
+        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'mtime',当前值: '{sort_by}'", hint="请使用name或mtime作为排序方式", user_include_hidden=include_hidden, user_sort_by=sort_by)
         return build_error(data={"error_detail": f"sort_by只支持name/mtime", "params": {"sort_by": sort_by}}, llm_data=llm_data)
 
     tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth, include_hidden=include_hidden, sort_by=sort_by)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
     if "error_detail" in tree_result:
-        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=tree_result["error_detail"], user_include_hidden=include_hidden, user_sort_by=sort_by)
+        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=tree_result["error_detail"], hint="请检查目录路径是否正确", user_include_hidden=include_hidden, user_sort_by=sort_by)
         return build_error(data=tree_result, llm_data=llm_data)
     else:
         total = tree_result["statistics"]["file_count"] + tree_result["statistics"]["dir_count"]

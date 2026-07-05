@@ -79,10 +79,20 @@ def _build_grep_file_content_llm_data(
             "metrics": {},
         }
     if exec_code == "warning":
+        if truncated:
+            summary_suffix = "（结果被截断，可能不完整）"
+            warning_message = "结果被截断，可能不完整"
+            warning_detail = "搜索超时或结果数量达到上限，仅返回部分结果"
+            warning_hint = "可缩小搜索范围、使用head_limit参数限制结果数量或增加超时时间"
+        else:
+            summary_suffix = ""
+            warning_message = "跳过了部分二进制文件"
+            warning_detail = "跳过了部分二进制文件，无法进行内容搜索"
+            warning_hint = "可排除二进制文件路径或指定文件后缀过滤"
         return {
-            "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件（结果被截断，可能不完整）",
+            "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件{summary_suffix}",
             "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
-            "status": {"exec_code": "warning", "message": "结果被截断，可能不完整", "code": "", "detail": "搜索超时或结果数量达到上限，仅返回部分结果", "hint": "可缩小搜索范围、使用head_limit参数限制结果数量或增加超时时间"},
+            "status": {"exec_code": "warning", "message": warning_message, "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": {
                 "total_files": {"value": total_files, "text": f"{total_files}个文件"},
@@ -208,7 +218,7 @@ async def grep(
     valid_output_modes = ("content", "count", "files_with_matches")
     if output_mode not in valid_output_modes:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"output_mode无效: {output_mode},可选值: {valid_output_modes}", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"output_mode无效: {output_mode},可选值: {valid_output_modes}", hint="output_mode 参数无效，可选值: content/count/files_with_matches", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={"error_detail": f"output_mode无效: {output_mode},可选值: {valid_output_modes}", "params": {"output_mode": output_mode}}, llm_data=llm_data)
     if not actual_dir or not actual_dir.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -223,18 +233,18 @@ async def grep(
     for redos_p in _REDOS_PATTERNS:
         if re_mod.search(redos_p, pattern):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+            llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", hint="正则表达式包含危险嵌套量词，请简化", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
             return build_error(data={"error_detail": f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", "params": {"pattern": pattern}}, llm_data=llm_data)
     if len(pattern) > _MAX_PATTERN_LENGTH:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险", hint="正则表达式过长，请简化", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={"error_detail": f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险", "params": {"pattern": pattern}}, llm_data=llm_data)
 
     try:
         regex = re_mod.compile(pattern, re_mod.IGNORECASE if ignore_case else 0)
     except re_mod.error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式无效: {e}", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式无效: {e}", hint="正则表达式语法错误，请检查并修正", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={"error_detail": f"正则表达式无效: {e}", "params": {"pattern": pattern}}, llm_data=llm_data)
 
     # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
