@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE
-from app.tools.tool_constants import ERR_FILE_GREP_FAILED, MAX_GREP_RESULTS
+
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 

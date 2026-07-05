@@ -88,44 +88,9 @@ class SessionInput(BaseModel):
 
 
 
-class RuncodeInput(BaseModel):
-    """runcode安全检查机制说明 - 小欧-2026-06-27
-    
-    【安全检查】分级安全检查（三层防御）：
-    - HIGH风险（拒绝执行）: eval/exec/compile/pickle/ctypes/getattr绕过
-    - MEDIUM风险（警告）: os.system/subprocess/open写入/importlib
-    - LOW风险（允许）: 基本计算、打印等安全操作
-    
-    【strict_mode】配置项：
-    - strict_mode=False（默认）: MEDIUM风险允许执行，仅警告
-    - strict_mode=True: MEDIUM风险也拒绝执行
-    
-    【返回值结构】
-    - stdout: 标准输出内容
-    - stderr: 标准错误内容
-    - returncode: 退出码（0=成功）
-    - working_dir: 实际工作目录
-    """
-    code: str = Field(
-        ..., description="要执行的代码(字符串),必填参数。注意：eval/exec/compile等高风险函数会被安全检查拦截"
-    )
-    language: Literal["python", "javascript"] = Field(
-        default="python", description="语言类型: python 或 javascript,默认python"
-    )
-    timeout: int = Field(
-        default=30, ge=1, le=300, description="超时时间(秒),默认30(30秒),最大300(5分钟)"
-    )
-    working_dir: Optional[str] = Field(
-        default=None, description="工作目录(绝对路径,可选)。默认为当前工作目录。目录不存在时自动创建"
-    )
-
-
-
 
 __all__ = [
     "ShellInput",
-
     "WhichInput",
     "SessionInput",
-    "RuncodeInput",
 ]

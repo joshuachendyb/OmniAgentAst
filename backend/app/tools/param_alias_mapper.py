@@ -132,13 +132,6 @@ PARAM_ALIASES = {
         "working_directory": "cwd",
         "directory": "cwd",
     },
-    "runcode": {
-        "workdir": "working_dir",
-        "work_dir": "working_dir",
-        "working_directory": "working_dir",
-        "directory": "working_dir",
-        "cwd": "working_dir",
-    },
     "download": {
         "dst": "destination_path",
         "to": "destination_path",

@@ -35,9 +35,8 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
  event_log       {events}                       #8 _format_events        OBS_MAX_DISPLAY_ITEMS=500 条     50
  searchtool      {matches}                      #9 _format_matches       OBS_MAX_DISPLAY_ITEMS=500 项     small
  get_db_schema   {tables}                       #6 _format_schema        OBS_MAX_DISPLAY_ITEMS=500 张表   不限
- shell           {output, error_output}         #7 output str            OBS_MAX_STRING_LENGTH=10000      不限
- runcode         {output, error_output}         #7 output str            OBS_MAX_STRING_LENGTH=10000      不限
- httpget         {body, ...}                     fallback _format_kv     OBS_DICT_MAX_KEYS=100；值>10000截  400KB
+  shell           {output, error_output}         #7 output str            OBS_MAX_STRING_LENGTH=10000      不限
+  httpget         {body, ...}                     fallback _format_kv     OBS_DICT_MAX_KEYS=100；值>10000截  400KB
  tree            {tree, statistics, ...}         fallback _format_kv     OBS_DICT_MAX_KEYS=100             depth=10
  sysinfo         {memory, cpu, ...}              fallback _format_kv     OBS_DICT_MAX_KEYS=100             不限
  readmedia       {base64_data, ...}              fallback _format_kv     OBS_DICT_MAX_KEYS=100；字符串>10000截 不限

@@ -28,7 +28,7 @@ from app.utils.logger import logger
 # Shell工具使用内置库，无第三方依赖
 SHELL_TOOL_DEPENDENCIES = {
     tool_name: [] for tool_name in [
-        "shell", "which", "session", "runcode"
+        "shell", "which", "session"
     ]
 }
 
@@ -36,19 +36,16 @@ from app.tools.shell.shell_schema import (
     ShellInput,
     WhichInput,
     SessionInput,
-    RuncodeInput,
 )
 
 from app.tools.shell.execute_shell_command import shell
 from app.tools.shell.find_command import which
 from app.tools.shell.shell_session import session
-from app.tools.shell.execute_code import runcode
 
 SHELL_TOOL_DESCRIPTIONS = {
     "shell": """在Windows环境中执行命令,支持PowerShell和CMD两种shell类型。推荐使用PowerShell语法,支持前台等待和后台运行。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
 
     "which": """查找系统命令的安装路径。适用场景:需要确认命令是否已安装、查看其安装路径时使用。""",
-    "runcode": """执行代码片段(Python/JavaScript)并返回结果,内置安全防护。适用场景:需要快速验证代码逻辑、进行数据处理时使用。""",
     "session": """管理后台Shell会话,可查看输出或终止会话。适用场景:需要查看后台命令结果、终止后台进程时使用。""",
 }
 
@@ -69,20 +66,13 @@ SHELL_TOOL_EXAMPLES = {
         {"shell_id": "shell_abc123"},
         {"shell_id": "shell_abc123", "action": "terminate"}
     ],
-    "runcode": [
-        {"code": "print('Hello, World!')"},
-        {"code": "console.log('Hello');", "language": "javascript"},
-        {"code": "import math\nprint(math.sqrt(16))"},
-    ],
 }
 
 
 TOOL_INPUT_MODELS = {
     "shell": ShellInput,
-
     "which": WhichInput,
     "session": SessionInput,
-    "runcode": RuncodeInput,
 }
 
 def _register_shell_tools():
@@ -103,7 +93,6 @@ def _register_shell_tools():
         "shell": shell,
         "which": which,
         "session": session,
-        "runcode": runcode,
     }
 
     for name, method in tool_methods.items():
@@ -132,5 +121,4 @@ __all__ = [
     "shell",
     "which",
     "session",
-    "runcode",
 ]

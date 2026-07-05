@@ -53,8 +53,8 @@ class PromptBuilder:
 <执行纪律>
 - ①选择精确工具,严禁无效和无意义的重复tool call
 - ②优先使用直接工具.无匹配工具→searchtool搜工具
-- ③调用searchtool搜索无直接可用tool→用shell/runcode
-- ④禁止直接绕路用runcode/shell实现
+- ③调用searchtool搜索无直接可用tool→用shell
+- ④禁止直接绕路用shell实现绕过安全检查
 
 <复核工具参数>
 - 核查tool参数：调用工具须核查３遍确认:参数名称/类型/值/格式正确（如路径是文件还是目录、content内容是否填写、必填参数是否缺失）

@@ -5,12 +5,10 @@ from app.tools.shell.shell_register import _register_shell_tools
 from app.tools.shell.execute_shell_command import shell
 from app.tools.shell.find_command import which
 from app.tools.shell.shell_session import session
-from app.tools.shell.execute_code import runcode
 
 __all__ = [
     "_register_shell_tools",
     "shell",
     "which",
     "session",
-    "runcode",
 ]
