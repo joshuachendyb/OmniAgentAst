@@ -12,7 +12,7 @@ import asyncio
 import time as _time_mod
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
@@ -144,14 +144,22 @@ def _build_list_directory_llm_data(
     dir_path: str = "", total: int = 0,
     truncated: bool = False, detail: str = "",
     hint: str = "",
+    user_sort_by: str = "", user_include_hidden: Optional[bool] = None,
+    user_offset: int = 0,
 ) -> Dict[str, Any]:
     """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数+action params补齐+warning detail动态化+去死代码"""
+    _act_params = {"dir_path": dir_path}
+    if user_sort_by:
+        _act_params["sort_by"] = user_sort_by
+    if user_include_hidden is not None:
+        _act_params["include_hidden"] = user_include_hidden
+    if user_offset:
+        _act_params["offset"] = user_offset
     if exec_code == "error":
-        error_msg = detail if detail else "列出目录失败"
         return {
-            "summary": f"列出目录失败: {detail}",
-            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {"dir_path": dir_path}},
-            "status": {"exec_code": "error", "message": error_msg, "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
+            "summary": f"列出目录失败: {dir_path}",
+            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
+            "status": {"exec_code": "error", "message": "列出目录失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -162,14 +170,14 @@ def _build_list_directory_llm_data(
         warning_hint = hint if hint else "请使用更精确的路径或筛选条件"
         return {
             "summary": f"列出目录成功: {dir_path} ({total}项，已截断)",
-            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {"dir_path": dir_path}},
+            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
             "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": m,
         }
     return {
         "summary": f"列出目录成功: {dir_path} ({total}项)",
-        "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {"dir_path": dir_path}},
+        "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "列出目录成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": m,
@@ -187,17 +195,17 @@ async def listdir(
 
     if not dir_path or not dir_path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", hint="请提供有效的目录路径")
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", hint="请提供有效的目录路径", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={"error_detail": "dir_path不能为空", "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
     if sort_by not in ("name", "size", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'", hint="sort_by参数只能为name/size/mtime")
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'", hint="sort_by参数只能为name/size/mtime", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={"error_detail": f"sort_by只支持name/size/mtime", "params": {"sort_by": sort_by}}, llm_data=llm_data)
 
     if offset < 0:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"offset必须>=0,当前值: {offset}", hint="offset从0开始,负值无效")
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"offset必须>=0,当前值: {offset}", hint="offset从0开始,负值无效", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={"error_detail": f"offset必须>=0", "params": {"offset": offset}}, llm_data=llm_data)
 
     path = Path(dir_path)
@@ -209,7 +217,7 @@ async def listdir(
         is_valid, err, _ = validate_path(OpCategory.LIST_DIR, dir_path)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=err)
+            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=err, user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
             return build_error(data={"error_detail": err, "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
         deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
@@ -237,13 +245,25 @@ async def listdir(
         list_data = _build_list_success(all_entries, total, path, statistics, start_offset, LISTDIR_PAGE_SIZE)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         exec_code = "warning" if list_data["truncated"] else "success"
-        llm_data = _build_list_directory_llm_data(exec_code, duration_ms, dir_path=dir_path, total=total, truncated=list_data["truncated"])
+        llm_data = _build_list_directory_llm_data(exec_code, duration_ms, dir_path=dir_path, total=total, truncated=list_data["truncated"], user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         if exec_code == "warning":
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #3 entries
+            # trigger: "entries" in data — entries 是 List[dict]
+            # handler: _format_entries(data["entries"])
+            # file:    observation_formatter.py:128-130
+            # ------------------------------------------------------------------------------
             return build_warning(data=list_data, llm_data=llm_data)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #3 entries
+        # trigger: "entries" in data — entries 是 List[dict]
+        # handler: _format_entries(data["entries"])
+        # file:    observation_formatter.py:128-130
+        # ------------------------------------------------------------------------------
         return build_success(data=list_data, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"Failed to list directory {dir_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=str(e))
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=str(e), user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={"error_detail": str(e), "params": {"dir_path": dir_path}}, llm_data=llm_data)

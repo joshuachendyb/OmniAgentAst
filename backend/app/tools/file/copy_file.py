@@ -161,6 +161,12 @@ async def copy(
                 except Exception:
                     pass
             llm_data = _build_copy_file_llm_data("success", duration_ms, source, destination=destination, extra_metrics=extra_m, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #21 fallback (key:val)
+            # trigger: 无上述20条分支匹配 — operation_id/source/destination 不命中专用分支
+            # handler: _format_scalar_data(data) — key | value 单行列表
+            # file:    observation_formatter.py:214
+            # ------------------------------------------------------------------------------
             return build_success(
                 data={"operation_id": operation_id, "source": str(src), "destination": str(dst)},
                 llm_data=llm_data)

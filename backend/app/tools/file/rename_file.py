@@ -85,6 +85,12 @@ async def rename(
         llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination)
         llm_data["summary"] = f"重命名 {source} → {new_name}（名称相同，无操作）"
         llm_data["status"]["message"] = "名称相同，无需重命名"
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val) — skipped path
+        # trigger: 无上述20条分支匹配 — skipped/reason 不命中专用分支
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data={"skipped": True, "reason": "名称相同，无需操作"}, llm_data=llm_data)
 
     result = await _move_file_impl(source_path=source, destination_path=str(dst), overwrite=False)
@@ -92,6 +98,12 @@ async def rename(
 
     if result.get("success"):
         llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val)
+        # trigger: 无上述20条分支匹配 — operation_id 不命中专用分支
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(
             data={"operation_id": result.get("operation_id")},
             llm_data=llm_data,

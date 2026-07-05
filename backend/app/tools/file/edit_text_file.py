@@ -336,6 +336,12 @@ async def edittext(
         user_replace_all=replace_all, user_ignore_case=ignore_case,
         user_encoding=encoding,
     )
+    # ---- observation_formatter route -------------------------------------------
+    # branch: #21 fallback (key:val)
+    # trigger: 无上述20条分支匹配 — result 含 applied_edits/diff，不命中任何专用分支
+    # handler: _format_scalar_data(data) — key | value 单行列表
+    # file:    observation_formatter.py:214
+    # ------------------------------------------------------------------------------
     return build_success(data=result, llm_data=llm_data)
 
 

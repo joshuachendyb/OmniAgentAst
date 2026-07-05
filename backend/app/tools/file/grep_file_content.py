@@ -294,5 +294,17 @@ async def grep(
         llm_data["status"]["detail"] = f"跳过了{len(gr.skipped_binaries)}个二进制文件，这些文件不是文本格式，无法进行内容搜索"
 
     if exec_code == "warning":
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #9 matches (grep subtype)
+        # trigger: "matches" in data → ms[0] 含 "file" 键
+        # handler: _format_matches(ms)
+        # file:    observation_formatter.py:152-178
+        # ------------------------------------------------------------------------------
         return build_warning(data=data, llm_data=llm_data)
+    # ---- observation_formatter route -------------------------------------------
+    # branch: #9 matches (grep subtype)
+    # trigger: "matches" in data → ms[0] 含 "file" 键
+    # handler: _format_matches(ms)
+    # file:    observation_formatter.py:152-178
+    # ------------------------------------------------------------------------------
     return build_success(data=data, llm_data=llm_data)

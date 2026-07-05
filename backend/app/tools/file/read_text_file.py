@@ -422,6 +422,12 @@ async def readtext(
 
         record_read(file_path, content)
 
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #2 raw str
+        # trigger: "content" in data and isinstance(data["content"], str)
+        # handler: inline — 直接返回 data["content"], OBS_MAX_STRING_LENGTH 截断
+        # file:    observation_formatter.py:117-122
+        # ------------------------------------------------------------------------------
         return build_success(data=_data, llm_data=llm_data)
 
     except Exception as e:

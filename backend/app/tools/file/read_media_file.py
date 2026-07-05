@@ -136,6 +136,12 @@ async def readmedia(
             "success", duration_ms, file_path=str(path),
             file_name=path.name, mime_type=mime_type, file_size=path.stat().st_size,
         )
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #13 readmedia
+        # trigger: "base64_data" in data
+        # handler: _format_readmedia(data) — 元数据 + base64 摘要
+        # file:    observation_formatter.py:188-190
+        # ------------------------------------------------------------------------------
         return build_success(
             data={"file_name": path.name, "mime_type": mime_type, "file_size": path.stat().st_size, "base64_data": b64_data},
             llm_data=llm_data,

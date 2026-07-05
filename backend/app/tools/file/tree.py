@@ -125,19 +125,25 @@ async def _get_directory_tree(
 def _build_tree_llm_data(
     exec_code: str, duration_ms: int,
     dir_path: str = "", total: int = 0, detail: str = "", hint: str = "",
+    user_include_hidden: Optional[bool] = None, user_sort_by: str = "",
 ) -> Dict[str, Any]:
     """tree的llm_data构建函数 — 小沈 2026-07-03 — 小沈 2026-07-05 新增hint参数"""
+    _act_params = {"dir_path": dir_path}
+    if user_include_hidden is not None:
+        _act_params["include_hidden"] = user_include_hidden
+    if user_sort_by:
+        _act_params["sort_by"] = user_sort_by
     if exec_code == "error":
         return {
-            "summary": f"列出目录树失败: {detail}",
-            "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": {"dir_path": dir_path}},
+            "summary": f"列出目录树失败: {dir_path}",
+            "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "列出目录树失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"列出目录树成功: {dir_path} ({total}项)",
-        "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": {"dir_path": dir_path}},
+        "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "列出目录树成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total, "text": f"{total}项"}},
@@ -155,21 +161,27 @@ async def tree(
 
     if not dir_path or not dir_path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空")
+        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", user_include_hidden=include_hidden, user_sort_by=sort_by)
         return build_error(data={"error_detail": "dir_path不能为空", "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
     if sort_by not in ("name", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'mtime',当前值: '{sort_by}'")
+        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'mtime',当前值: '{sort_by}'", user_include_hidden=include_hidden, user_sort_by=sort_by)
         return build_error(data={"error_detail": f"sort_by只支持name/mtime", "params": {"sort_by": sort_by}}, llm_data=llm_data)
 
     tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth, include_hidden=include_hidden, sort_by=sort_by)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
     if "error_detail" in tree_result:
-        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=tree_result["error_detail"])
+        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=tree_result["error_detail"], user_include_hidden=include_hidden, user_sort_by=sort_by)
         return build_error(data=tree_result, llm_data=llm_data)
     else:
         total = tree_result["statistics"]["file_count"] + tree_result["statistics"]["dir_count"]
-        llm_data = _build_tree_llm_data("success", duration_ms, dir_path=dir_path, total=total)
+        llm_data = _build_tree_llm_data("success", duration_ms, dir_path=dir_path, total=total, user_include_hidden=include_hidden, user_sort_by=sort_by)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #12 tree
+        # trigger: "tree" in data and isinstance(data.get("tree"), dict)
+        # handler: _format_tree(data) — 嵌套dict→可视化树形字符串
+        # file:    observation_formatter.py:184-186
+        # ------------------------------------------------------------------------------
         return build_success(data=tree_result, llm_data=llm_data)

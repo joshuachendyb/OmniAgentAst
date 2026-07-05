@@ -34,20 +34,31 @@ def _build_compress_files_llm_data(
     source: str = "", detail: str = "",
     original_size: int = 0, compressed_size: int = 0, file_count: int = 0,
     fmt: str = "zip", hint: str = "",
+    user_destination: str = "", user_format: str = "", user_overwrite: Optional[bool] = None,
+    user_exclude_patterns: Optional[str] = None,
 ) -> Dict[str, Any]:
     """compress_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-22 重构：关键指标放入metrics — 小健 2026-06-24 hint参数化"""
+    _act_params = {"source": source}
+    if user_destination:
+        _act_params["destination"] = user_destination
+    if user_format:
+        _act_params["format"] = user_format
+    if user_overwrite is not None:
+        _act_params["overwrite"] = user_overwrite
+    if user_exclude_patterns:
+        _act_params["exclude_patterns"] = user_exclude_patterns
     if exec_code == "error":
         return {
-            "summary": f"压缩失败: {detail}",
-            "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": {"source": source}},
-            "status": {"exec_code": "error", "message": f"压缩失败: {detail}", "code": ERR_FILE_COMPRESS_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径及权限"},
+            "summary": f"压缩失败: {source}",
+            "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": _act_params},
+            "status": {"exec_code": "error", "message": "压缩失败", "code": ERR_FILE_COMPRESS_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径及权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     ratio = 1 - (compressed_size / original_size) if original_size > 0 else 0
     return {
         "summary": f"压缩 {source}，{file_count}个文件，{compressed_size}字节",
-        "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": {"source": source}},
+        "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": _act_params},
         "status": {"exec_code": "success", "message": "压缩成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -211,7 +222,7 @@ async def compress(
     err = validate_str_param(source, "source")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err, user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
     exclude_patterns = coerce_json(exclude_patterns)
     compression_level = 6
@@ -221,23 +232,23 @@ async def compress(
     is_valid, err, _ = validate_path(OpCategory.WRITE, destination)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err, user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={"error_detail": err, "params": {"destination": destination}}, llm_data=llm_data)
 
     if not overwrite and os.path.exists(destination):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"目标文件已存在: {destination}", hint="可设置overwrite=true覆盖")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"目标文件已存在: {destination}", hint="可设置overwrite=true覆盖", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={"error_detail": f"目标文件已存在: {destination},可设置overwrite=true覆盖", "params": {"destination": destination}}, llm_data=llm_data)
 
     task_id = _current_task_id.get()
     if not task_id:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail="No active task", hint="请先开始一个任务")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail="No active task", hint="请先开始一个任务", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={"error_detail": "No active task", "params": {}}, llm_data=llm_data)
 
     if format not in ("zip", "tar", "tar.gz", "tar.bz2"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {format}", hint="支持zip/tar/tar.gz/tar.bz2")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {format}", hint="支持zip/tar/tar.gz/tar.bz2", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={"error_detail": f"不支持的压缩格式: {format},支持格式: zip, tar, tar.gz, tar.bz2", "params": {"format": format}}, llm_data=llm_data)
 
     src = Path(source)
@@ -247,7 +258,7 @@ async def compress(
         if _has_wildcard(source):
             if not glob.glob(source):
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"通配符无匹配: {source}", hint="请检查通配符是否正确")
+                llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"通配符无匹配: {source}", hint="请检查通配符是否正确", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                 return build_error(data={"error_detail": f"通配符无匹配: {source}", "params": {"source": source}}, llm_data=llm_data)
         else:
             # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/路径存在 — 小欧 2026-07-04
@@ -255,7 +266,7 @@ async def compress(
             is_valid, err, _ = validate_path(OpCategory.EXISTS, source)
             if not is_valid:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err, hint="请检查源路径是否存在")
+                llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err, hint="请检查源路径是否存在", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                 return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
 
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -310,14 +321,22 @@ async def compress(
                 compressed_size=result.get("compressed_size", 0),
                 file_count=result.get("file_count", 0),
                 fmt=result.get("format", "zip"),
+                user_destination=destination, user_format=format, user_overwrite=overwrite,
+                user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "",
             )
             safe_data = {k: v for k, v in result.items() if k not in ("source_path", "destination_path", "format", "compressed_size", "file_count")}
             safe_data["operation_id"] = operation_id
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #18 compress
+            # trigger: "compression_ratio" in data
+            # handler: _format_compress_result(data) — ratio/compression_level/encrypted/files
+            # file:    observation_formatter.py:193-194
+            # ------------------------------------------------------------------------------
             return build_success(data=safe_data, llm_data=llm_data)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail="压缩失败", hint="请检查源路径和目标路径是否正确")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail="压缩失败", hint="请检查源路径和目标路径是否正确", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={"error_detail": "压缩失败", "params": {"source": source}}, llm_data=llm_data)
 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=str(e), hint="请检查参数是否正确")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=str(e), hint="请检查参数是否正确", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={"error_detail": f"压缩失败: {str(e)}", "params": {"source": source}}, llm_data=llm_data)

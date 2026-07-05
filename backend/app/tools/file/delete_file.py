@@ -164,10 +164,22 @@ async def delete(
     if result.get("success"):
         if result.get("already_deleted"):
             llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": {"value": "already_deleted", "text": "文件已删除"}}, user_recursive=recursive, user_force=force)
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #0 空data (L73)
+            # trigger: data 为 {} → if not data: return ""
+            # handler: 直接返回空字符串
+            # file:    observation_formatter.py:73-74
+            # ------------------------------------------------------------------------------
             return build_success(data={}, llm_data=llm_data)
         delete_mode = "永久删除" if force else "放入回收站"
         extra_m = {"mode": {"value": result.get("mode", ""), "text": delete_mode}}
         llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics=extra_m, user_recursive=recursive, user_force=force)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val)
+        # trigger: 无上述20条分支匹配 — operation_id/deleted_path 不命中专用分支
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(
             data={"operation_id": result.get("operation_id"), "deleted_path": result.get("deleted_path")},
             llm_data=llm_data,

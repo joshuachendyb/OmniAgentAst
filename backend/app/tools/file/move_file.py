@@ -52,14 +52,6 @@ def _build_move_file_llm_data(
         "duration_ms": duration_ms,
         "metrics": extra_metrics or {},
     }
-    _summary = f"移动 {source} → {destination}" if destination else f"移动 {source}"
-    return {
-        "summary": _summary,
-        "action": {"tool": "move", "tool_zh": "移动", "target": source, "params": _act_params},
-        "status": {"exec_code": "success", "message": "移动成功", "code": "", "detail": "", "hint": ""},
-        "duration_ms": duration_ms,
-        "metrics": extra_metrics,
-    }
 
 
 async def _move_file_impl(
@@ -163,6 +155,12 @@ async def move(
 
     if result.get("success"):
         llm_data = _build_move_file_llm_data("success", duration_ms, source, destination=destination, user_overwrite=overwrite)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val)
+        # trigger: 无上述20条分支匹配 — operation_id 不命中任何专用分支
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(
             data={"operation_id": result.get("operation_id")},
             llm_data=llm_data,

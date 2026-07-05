@@ -194,10 +194,22 @@ async def find(
     exec_code = "warning" if (truncated_by_deadline or truncated_by_limit or truncated_by_offset) else "success"
     llm_data = _build_search_files_llm_data(exec_code, duration_ms, search_dir=search_dir, total=total, truncated=(truncated_by_deadline or truncated_by_limit or truncated_by_offset), user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
     if exec_code == "warning":
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #9 matches (find subtype)
+        # trigger: "matches" in data → ms[0] 含 "path" 键
+        # handler: _format_find_results(ms)
+        # file:    observation_formatter.py:152-178
+        # ------------------------------------------------------------------------------
         return build_warning(
             data={"matches": page, "total": total, "search_dir": search_dir, "pattern": pattern, "offset": offset},
             llm_data=llm_data,
         )
+    # ---- observation_formatter route -------------------------------------------
+    # branch: #9 matches (find subtype)
+    # trigger: "matches" in data → ms[0] 含 "path" 键
+    # handler: _format_find_results(ms)
+    # file:    observation_formatter.py:152-178
+    # ------------------------------------------------------------------------------
     return build_success(
         data={"matches": page, "total": total, "search_dir": search_dir, "pattern": pattern, "offset": offset},
         llm_data=llm_data,
