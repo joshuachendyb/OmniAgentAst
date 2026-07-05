@@ -73,6 +73,12 @@ def delete_task(task_name: str) -> dict:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"task_name": task_name}
         llm_data = _build_delete_task_llm_data("success", duration_ms, task_name)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val)
+        # trigger: 无上述20条分支匹配 — task_name 不命中专用分支
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
 
     except subprocess.TimeoutExpired:

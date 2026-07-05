@@ -167,6 +167,12 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
             result.pop("_error_code", None)
             event_count = len(result.get("events", []))
             llm_data = _build_event_log_llm_data("success", duration_ms, log_name, event_count, level)
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #8 events
+            # trigger: "events" in data — events 是 List[dict|str]
+            # handler: _format_events(data["events"])
+            # file:    observation_formatter.py:148-150
+            # ------------------------------------------------------------------------------
             return build_success(data=result, llm_data=llm_data)
 
     except Exception as e:
