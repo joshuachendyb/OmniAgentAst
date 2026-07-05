@@ -21,6 +21,17 @@ from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
+# 文件系统遍历时跳过噪声目录 — 小欧 2026-07-05
+_SKIP_DIRS = frozenset({
+    '__pycache__', 'node_modules', 'bower_components',
+    '.git', '.svn', '.hg',
+    '.next', '.nuxt', 'dist', 'build', 'target', 'out',
+    '.venv', 'venv', '.env', 'env',
+    '.idea', '.vscode', '.yarn', '.pnp', 'coverage',
+    '.terraform', '.serverless', 'vendor',
+})
+
+
 def _classify_size(size: int) -> str:
     """文件大小分桶 — 小健 2026-05-25 — 小欧 2026-06-22"""
     if size < 1024: return "<1KB"
@@ -67,6 +78,8 @@ def _scan_directory_sync(
                 try:
                     if not include_hidden and item.name.startswith('.'):
                         continue
+                    if item.name in _SKIP_DIRS:
+                        continue
                     st = item.stat()
                     entry = _build_entry(item, st)
                     entries.append(entry)
@@ -92,6 +105,8 @@ def _scan_directory_sync(
         for item in path.iterdir():
             try:
                 if not include_hidden and item.name.startswith('.'):
+                    continue
+                if item.name in _SKIP_DIRS:
                     continue
                 st = item.stat()
                 entry = _build_entry(item, st)
