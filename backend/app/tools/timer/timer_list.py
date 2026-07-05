@@ -49,6 +49,12 @@ def timer_list() -> Dict[str, Any]:
         timers.sort(key=lambda x: x.get("trigger_at", ""))
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_list_llm_data("success", duration_ms, len(timers), [t["timer_id"] for t in timers[:5]])
+        # ---- observation_formatter route -------------------------------------------
+        # branch: non-dict
+        # trigger: not isinstance(data, dict) — bare list, 非 dict
+        # handler: str(data)
+        # file:    observation_formatter.py:113-115
+        # ------------------------------------------------------------------------------
         return build_success(data=timers, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
