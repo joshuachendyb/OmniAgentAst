@@ -11,6 +11,7 @@ F4: edittext — 编辑文本文件
 
 import asyncio
 import difflib
+import re as re_mod
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -27,8 +28,9 @@ from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import check_conflict, record_write
 
-# U+FFFD replacement character threshold for encoding detection — 小欧 2026-06-27
-_REPLACEMENT_CHAR_THRESHOLD = 0.05
+# U+FFFD replacement character threshold for encoding detection — 小欧 2026-06-27 — 小欧 2026-07-05 统一为readtext的>=3 && >3%逻辑
+_REPLACEMENT_CHAR_MIN_COUNT = 3
+_REPLACEMENT_CHAR_RATIO = 0.03
 
 
 async def _try_read_file_with_encodings(
@@ -56,9 +58,11 @@ async def _try_read_file_with_encodings(
                     with open(path, 'r', encoding=e, errors='replace') as f:
                         return f.read()
                 content = await asyncio.to_thread(_read)
-                if '\ufffd' in content and content.count('\ufffd') > len(content) * _REPLACEMENT_CHAR_THRESHOLD:
-                    content = None
-                    continue
+                if '\ufffd' in content:
+                    _repl_count = content.count('\ufffd')
+                    if _repl_count >= _REPLACEMENT_CHAR_MIN_COUNT and _repl_count > len(content) * _REPLACEMENT_CHAR_RATIO:
+                        content = None
+                        continue
                 if preferred_failed:
                     logger.warning(f"User-specified encoding '{preferred}' failed for {path}, using '{enc}' instead")
                 return content, enc, None
@@ -78,7 +82,6 @@ def _apply_replacement(
     """执行替换操作,返回(new_content, count, total_matches) — 小欧 2026-06-22 — 小健 2026-06-24 修复硬编码flags=2 — 小欧 2026-07-05 增加total_matches"""
     count = 0
     total_matches = 0
-    import re as re_mod
     if replace_all:
         flags = 0 if not ignore_case else re_mod.IGNORECASE
         pattern = re_mod.escape(old_string)

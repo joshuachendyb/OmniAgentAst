@@ -11,6 +11,7 @@ F2: writetext — 写文本文件
 
 import asyncio
 import difflib
+import json
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -25,7 +26,7 @@ from app.services.safety.file_safety import record_operation, execute_with_safet
 from app.tools.file_type_checker import check_for_text_tool
 from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
-from app.tools.file.file_state import record_read, record_write, check_conflict, is_unchanged
+from app.tools.file.file_state import record_write, check_conflict, is_unchanged
 
 
 def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
@@ -92,9 +93,8 @@ def _check_write_safety(file_path: str, content: str,
     
     # 类型自动转换：dict/list → JSON字符串 — 小健 2026-06-26
     if isinstance(content, (dict, list)):
-        import json as _json
         try:
-            content = _json.dumps(content, ensure_ascii=False, indent=2)
+            content = json.dumps(content, ensure_ascii=False, indent=2)
             logger.info(f"[_check_write_safety] content参数为{type(content).__name__}，已自动转为JSON字符串")
         except Exception as e:
             return f"content序列化失败: {e}", ""
@@ -119,9 +119,9 @@ def _check_write_safety(file_path: str, content: str,
 def _build_write_text_file_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", bytes_written: int = 0, detail: str = "",
-    hint: str = "",
+    hint: str = "", mtime_warning: str = "",
 ) -> Dict[str, Any]:
-    """write_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-06-24 增加warning"""
+    """write_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-06-24 增加warning — 小欧 2026-07-05 增加mtime_warning"""
     if exec_code == "error":
         return {
             "summary": f"写入失败: {detail}",
@@ -130,11 +130,13 @@ def _build_write_text_file_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    if exec_code == "warning":
+    if exec_code == "warning" or bool(mtime_warning):
+        if mtime_warning:
+            hint = ("；".join([hint, mtime_warning]) if hint else mtime_warning)
         return {
-            "summary": f"写入 {file_path}，{bytes_written}字节。注意: {detail}",
+            "summary": f"写入 {file_path}，{bytes_written}字节。注意: {detail or mtime_warning}",
             "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "warning", "message": f"写入成功但有警告: {detail}", "code": "", "detail": detail, "hint": hint or "请确认编码是否正确"},
+            "status": {"exec_code": "warning", "message": f"写入成功但有警告: {detail or mtime_warning}", "code": "", "detail": detail or mtime_warning, "hint": hint or "请确认编码是否正确"},
             "duration_ms": duration_ms,
             "metrics": {
                 "bytes_written": {"value": bytes_written, "text": f"{bytes_written}字节"},
@@ -203,10 +205,12 @@ async def writetext(
             old_raw = path.read_text(encoding=encoding)
             old_content = old_raw
             if is_unchanged(file_path, checked_content):
+                record_write(file_path)  # 更新mtime缓存 — 小欧 2026-07-05
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_write_text_file_llm_data(
                     "success", duration_ms, file_path=str(path),
                     bytes_written=0, detail="内容未变化，跳过写入",
+                    mtime_warning=conflict_warning or "",
                 )
                 llm_data["metrics"]["diff"] = {"value": "(无变更)", "text": "内容相同，无操作"}
                 return build_success(data={"operation_id": None, "skipped": True}, llm_data=llm_data)
@@ -268,14 +272,14 @@ async def writetext(
             except (UnicodeEncodeError, LookupError):
                 bytes_written = len(checked_content.encode("utf-8"))
             if encoding_warning:
-                llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=encoding_warning)
+                llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=encoding_warning, mtime_warning=conflict_warning or "")
                 if diff_text:
                     llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
                 return build_warning(
                     data={"operation_id": operation_id},
                     llm_data=llm_data,
                 )
-            llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written)
+            llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "")
             if diff_text:
                 llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
             return build_success(

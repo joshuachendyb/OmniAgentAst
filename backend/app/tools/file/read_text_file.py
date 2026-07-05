@@ -10,6 +10,7 @@ F1: readtext — 读取文本文件
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import asyncio
+import difflib
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -25,8 +26,7 @@ from app.tools.file.file_state import record_read
 
 
 def _find_similar_files(file_path: str, max_suggestions: int = 3) -> str:
-    """文件不存在时，寻找同目录下的近似文件名 — 小欧 2026-07-05"""
-    import difflib
+    """文件不存在时，寻找同目录下的近似文件名 — 小欧 2026-07-05 — 小欧 2026-07-05 cutoff 0.5→0.6"""
     path = Path(file_path)
     parent = path.parent
     if not parent.exists():
@@ -35,7 +35,7 @@ def _find_similar_files(file_path: str, max_suggestions: int = 3) -> str:
     candidates = [p.name for p in parent.iterdir() if p.is_file()]
     if not candidates:
         candidates = [p.name for p in parent.iterdir()]
-    matches = difflib.get_close_matches(target, candidates, n=max_suggestions, cutoff=0.5)
+    matches = difflib.get_close_matches(target, candidates, n=max_suggestions, cutoff=0.6)
     if not matches:
         return ""
     return ", ".join(matches)
@@ -179,12 +179,15 @@ def _select_lines(
     else:
         selected = lines
 
-    # 长行截断 — 小欧 2026-07-05
+    # 长行截断 — 小欧 2026-07-05 — 小欧 2026-07-05 保留原行结尾
     truncated_count = 0
     if max_line_length is not None and max_line_length > 0:
         for i, line in enumerate(selected):
             if len(line) > max_line_length:
-                selected[i] = line[:max_line_length] + f"... [截断, 原长{len(line)}字符]\n"
+                suffix = f"... [截断, 原长{len(line)}字符]"
+                if line.endswith('\n'):
+                    suffix += '\n'
+                selected[i] = line[:max_line_length] + suffix
                 truncated_count += 1
     if truncated_count:
         result_extra = {"truncated_lines": truncated_count}
