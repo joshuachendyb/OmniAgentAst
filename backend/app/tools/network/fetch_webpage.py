@@ -23,8 +23,6 @@ from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy
 from app.tools.validate.timeout_validator import validate_timeout
 
-_check_network = check_network
-
 from app.utils.common_patterns import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
 from app.utils.logger import logger
 from app.tools.tool_constants import TOOL_BROWSER_UA
@@ -184,21 +182,31 @@ def _html_to_markdown(html: str) -> str:
 
 def _build_fetch_webpage_llm_data(
     exec_code: str, duration_ms: int, url: str = "", extract_format: str = "markdown",
-    status_code: int = 0, truncated: bool = False, content_preview: str = "",
+    status_code: int = 0, truncated: bool = False,
     err_code: str = "", detail: str = "", hint: str = "",
+    mime_type: str = "",
+    prompt: Optional[str] = None, js_render: bool = False, timeout: int = 30,
+    proxy: Optional[str] = None,
 ) -> Dict[str, Any]:
     """fetch_webpage的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    _act_params = {"url": url, "extract_format": extract_format, "prompt": prompt, "js_render": js_render, "timeout": timeout, "proxy": proxy}
     if exec_code == "error":
         return {
             "summary": f"获取网页失败: {url}",
-            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": {"url": url, "extract_format": extract_format}},
+            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},
             "status": {"exec_code": "error", "message": "获取网页失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    if mime_type:
+        summary = f"成功获取{mime_type}文件"
+    else:
+        summary = f"成功获取网页内容({extract_format}格式)"
+    if truncated:
+        summary += "(已截断)"
     return {
-        "summary": f"成功获取网页内容({extract_format}格式)" + ("(已截断)" if truncated else ""),
-        "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": {"url": url, "extract_format": extract_format}},
+        "summary": summary,
+        "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},
         "status": {"exec_code": "success", "message": "获取网页内容成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}},
@@ -297,12 +305,12 @@ async def fetchpage(
     max_tokens = 8000
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "fetchpage")
     if not timeout_valid:
-        llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_INVALID_URL, detail=timeout_err, hint="请检查超时设置")
-        return build_error(data={"error_detail": timeout_err, "params": {"url": url}}, llm_data=llm_data)
+        llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_INVALID_URL, detail=timeout_err, hint="请检查超时设置", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        return build_error(data={"error_detail": timeout_err, "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
 
     proxy_valid, proxy_err, _ = validate_proxy(proxy)
     if not proxy_valid:
-        llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_INVALID_URL, detail=proxy_err, hint="请检查代理配置")
+        llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_INVALID_URL, detail=proxy_err, hint="请检查代理配置", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
@@ -311,7 +319,7 @@ async def fetchpage(
         is_valid, error_msg, warning_msg = validate_url(url)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_INVALID_URL, detail=error_msg or "URL格式无效", hint="请检查URL格式")
+            llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_INVALID_URL, detail=error_msg or "URL格式无效", hint="请检查URL格式", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
             return build_error(data={"error_detail": error_msg or "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
         if warning_msg:
             logger.warning(f"[fetchpage] {warning_msg}")
@@ -319,7 +327,7 @@ async def fetchpage(
         net_info = check_network()
         if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_DOWN, detail="网络不可用", hint="请检查网络连接")
+            llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_DOWN, detail="网络不可用", hint="请检查网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
             return build_error(data={"error_detail": "网络不可用", "params": {"url": url}}, llm_data=llm_data)
 
         headers = {
@@ -333,7 +341,7 @@ async def fetchpage(
             playwright_result = await _fetch_via_playwright(url, proxy, timeout, extract_format, max_tokens)
             if playwright_result.get("error"):
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=playwright_result.get("err_code", ERR_NETWORK_JS_RENDER), detail=playwright_result.get("detail", ""), hint="请检查网站是否支持JS渲染")
+                llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=playwright_result.get("err_code", ERR_NETWORK_JS_RENDER), detail=playwright_result.get("detail", ""), hint="请检查网站是否支持JS渲染", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
                 return build_error(data={"error_detail": playwright_result.get("error_detail", ""), "params": playwright_result.get("params", {})}, llm_data=llm_data)
             html_content = playwright_result["html_content"]
             extracted_content = playwright_result["extracted_content"]
@@ -356,7 +364,7 @@ async def fetchpage(
                 cl = response.headers.get("content-length")
                 if cl and int(cl) > MAX_FETCH_CONTENT_LENGTH:
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                    return build_error(data={"error_detail": f"内容过大({int(int(cl)/1024/1024)}MB),限制{MAX_FETCH_CONTENT_LENGTH//(1024*1024)}MB", "params": {"url": url}}, llm_data=_build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=f"内容过大({int(int(cl)/1024/1024)}MB)", hint="请使用更具体的URL或减少内容"))
+                    return build_error(data={"error_detail": f"内容过大({int(int(cl)/1024/1024)}MB),限制{MAX_FETCH_CONTENT_LENGTH//(1024*1024)}MB", "params": {"url": url, "content_length": int(cl)}}, llm_data=_build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=f"内容过大({int(int(cl)/1024/1024)}MB)", hint="请使用更具体的URL或减少内容", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy))
 
                 content_type = response.headers.get("content-type", "")
                 mime = content_type.split(";")[0].strip().lower() if content_type else ""
@@ -364,7 +372,7 @@ async def fetchpage(
                     raw_bytes = response.content
                     media_result = _build_media_result(url, mime, raw_bytes, extract_format, response.status_code)
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                    llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, response.status_code)
+                    llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, response.status_code, mime_type=mime, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
                     return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
 
                 html_content = response.text
@@ -387,23 +395,23 @@ async def fetchpage(
             result_data["note"] = "AI提取功能需要LLM后处理"
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated)
+        llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_success(data=result_data, llm_data=llm_data)
 
     except httpx.TimeoutException:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_TIMEOUT, detail=f"超时({timeout:.1f}秒)", hint="请检查URL和网络连接")
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_TIMEOUT, detail=f"超时({timeout:.1f}秒)", hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={"error_detail": f"超时({timeout:.1f}秒)", "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
     except httpx.HTTPStatusError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_HTTP_ERROR, detail=f"HTTP {e.response.status_code}", hint="请检查URL和服务器状态")
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_HTTP_ERROR, detail=f"HTTP {e.response.status_code}", hint="请检查URL和服务器状态", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={"error_detail": f"HTTP {e.response.status_code}", "params": {"url": url, "status_code": e.response.status_code}}, llm_data=llm_data)
     except httpx.RequestError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=str(e), hint="请检查URL和网络连接")
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=str(e), hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={"error_detail": str(e), "params": {"url": url}}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[fetchpage] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NET_UNKNOWN, detail=str(e), hint="请检查URL和网络连接")
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NET_UNKNOWN, detail=str(e), hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={"error_detail": str(e), "params": {"url": url}}, llm_data=llm_data)
