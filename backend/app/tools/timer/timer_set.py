@@ -50,8 +50,8 @@ async def _invoke_timer_callback(timer_id: str, callback: str) -> Dict[str, Any]
     return event
 
 
-def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, trigger_at: str, delay: float, callback: str = "", detail: str = "") -> dict:
-    """timer_set的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增callback/detail"""
+def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, trigger_at: str, delay: float, callback: str = "", detail: str = "", hint: str = "") -> dict:
+    """timer_set的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     _act_params = {"delay": delay}
     if callback:
         _act_params["callback"] = callback
@@ -63,7 +63,7 @@ def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, t
         return {
             "summary": f"定时器设置失败: {detail}",
             "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
-            "status": {"exec_code": "error", "message": "定时器设置失败", "code": ERR_TIMER_SET, "detail": detail, "hint": "请检查延迟时间"},
+            "status": {"exec_code": "error", "message": "定时器设置失败", "code": ERR_TIMER_SET, "detail": detail, "hint": hint if hint else "请检查延迟时间"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -83,11 +83,11 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
     try:
         if delay <= 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间必须大于0")
-            return build_error(data={"error_detail": "延迟时间必须大于0", "params": {"delay": delay}}, llm_data=llm_data)
+            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间必须大于0", hint="延迟时间必须大于0")
+
         if delay > 86400:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间不能超过24小时")
+            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间不能超过24小时", hint="延迟时间不能超过24小时")
             return build_error(data={"error_detail": "延迟时间不能超过24小时", "params": {"delay": delay}}, llm_data=llm_data)
 
         _timer_counter += 1
@@ -126,7 +126,7 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail=str(e))
+        llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail=str(e), hint="设置定时器异常,请重试")
         return build_error(data={"error_detail": str(e), "params": {"delay": delay, "callback": callback}}, llm_data=llm_data)
 
 
