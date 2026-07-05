@@ -120,13 +120,19 @@ def _build_write_text_file_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", bytes_written: int = 0, detail: str = "",
     hint: str = "", mtime_warning: str = "",
+    user_encoding: Optional[str] = None, user_append: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """write_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-06-24 增加warning — 小欧 2026-07-05 增加mtime_warning"""
+    _act_params = {"file_path": file_path}
+    if user_encoding:
+        _act_params["encoding"] = user_encoding
+    if user_append is not None:
+        _act_params["append"] = user_append
     if exec_code == "error":
         return {
-            "summary": f"写入失败: {detail}",
-            "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": f"写入失败: {detail}", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查路径和写入权限"},
+            "summary": f"写入失败: {file_path}",
+            "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
+            "status": {"exec_code": "error", "message": "写入失败", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查路径和写入权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -135,7 +141,7 @@ def _build_write_text_file_llm_data(
             hint = ("；".join([hint, mtime_warning]) if hint else mtime_warning)
         return {
             "summary": f"写入 {file_path}，{bytes_written}字节。注意: {detail or mtime_warning}",
-            "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
             "status": {"exec_code": "warning", "message": f"写入成功但有警告: {detail or mtime_warning}", "code": "", "detail": detail or mtime_warning, "hint": hint or "请确认编码是否正确"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -144,7 +150,7 @@ def _build_write_text_file_llm_data(
         }
     return {
         "summary": f"写入 {file_path}，{bytes_written}字节",
-        "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -164,14 +170,14 @@ async def writetext(
     err = validate_str_param(content, "content")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, user_encoding=encoding, user_append=append)
         return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
     # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
     is_valid, err, warn = validate_path(OpCategory.WRITE, file_path, content=content, append=append)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, user_encoding=encoding, user_append=append)
         return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
     if warn:
         logger.warning(warn)
@@ -180,7 +186,7 @@ async def writetext(
     error, checked_content = _check_write_safety(file_path, content, encoding, append)
     if error:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, user_encoding=encoding, user_append=append)
         return build_error(data={"error_detail": error, "params": {"file_path": file_path}}, llm_data=llm_data)
 
     encoding = encoding or _detect_file_encoding_for_write(file_path, append)
@@ -188,7 +194,7 @@ async def writetext(
     task_id = _current_task_id.get()
     if not task_id:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail="当前没有活跃任务ID")
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail="当前没有活跃任务ID", user_encoding=encoding, user_append=append)
         return build_error(data={"error_detail": "当前没有活跃任务ID", "params": {"file_path": file_path}}, llm_data=llm_data)
 
     path = Path(file_path)
@@ -211,6 +217,7 @@ async def writetext(
                     "success", duration_ms, file_path=str(path),
                     bytes_written=0, detail="内容未变化，跳过写入",
                     mtime_warning=conflict_warning or "",
+                    user_encoding=encoding, user_append=append,
                 )
                 llm_data["metrics"]["diff"] = {"value": "(无变更)", "text": "内容相同，无操作"}
                 return build_success(data={"operation_id": None, "skipped": True}, llm_data=llm_data)
@@ -272,14 +279,14 @@ async def writetext(
             except (UnicodeEncodeError, LookupError):
                 bytes_written = len(checked_content.encode("utf-8"))
             if encoding_warning:
-                llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=encoding_warning, mtime_warning=conflict_warning or "")
+                llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=encoding_warning, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
                 if diff_text:
                     llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
                 return build_warning(
                     data={"operation_id": operation_id},
                     llm_data=llm_data,
                 )
-            llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "")
+            llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
             if diff_text:
                 llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
             return build_success(
@@ -288,11 +295,11 @@ async def writetext(
             )
         else:
             detail = error_detail or "写入文件失败"
-            llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=detail)
+            llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=detail, user_encoding=encoding, user_append=append)
             return build_error(data={"error_detail": detail, "params": {"file_path": file_path}}, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"Failed to write file {file_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e))
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), user_encoding=encoding, user_append=append)
         return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)
