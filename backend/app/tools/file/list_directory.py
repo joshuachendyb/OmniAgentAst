@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
-from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, LISTDIR_PAGE_SIZE
+from app.tools.tool_constants import TOOL_TIMEOUTS, LISTDIR_PAGE_SIZE
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
@@ -143,32 +143,33 @@ def _build_list_directory_llm_data(
     exec_code: str, duration_ms: int,
     dir_path: str = "", total: int = 0,
     truncated: bool = False, detail: str = "",
+    hint: str = "",
 ) -> Dict[str, Any]:
-    """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数+action params补齐+warning detail动态化+去死代码"""
     if exec_code == "error":
         error_msg = detail if detail else "列出目录失败"
         return {
             "summary": f"列出目录失败: {detail}",
-            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {}},
-            "status": {"exec_code": "error", "message": error_msg, "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": "请检查目录路径和权限"},
+            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {"dir_path": dir_path}},
+            "status": {"exec_code": "error", "message": error_msg, "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     m: Dict[str, Any] = {"total": {"value": total, "text": f"{total}项"}}
     if exec_code == "warning":
         m["truncated"] = {"value": True, "text": "已截断"}
+        warning_detail = detail if detail else "结果过多已截断，仅显示前200项"
+        warning_hint = hint if hint else "请使用更精确的路径或筛选条件"
         return {
             "summary": f"列出目录成功: {dir_path} ({total}项，已截断)",
-            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {}},
-            "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": "结果过多已截断，仅显示前200项", "hint": "请使用更精确的路径或筛选条件"},
+            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {"dir_path": dir_path}},
+            "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": m,
         }
-    if truncated:
-        m["truncated"] = {"value": True, "text": "已截断"}
     return {
         "summary": f"列出目录成功: {dir_path} ({total}项)",
-        "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {}},
+        "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {"dir_path": dir_path}},
         "status": {"exec_code": "success", "message": "列出目录成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": m,
@@ -183,17 +184,21 @@ async def listdir(
 ) -> Dict[str, Any]:
     """列出目录内容 — 小沈 2026-05-19 — 小欧 2026-06-22 — 小沈 2026-07-03 拆分tree — 小欧 2026-07-04 offset分页"""
     t0 = _time_mod.perf_counter()
-    max_depth = 10
 
     if not dir_path or not dir_path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空")
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", hint="请提供有效的目录路径")
         return build_error(data={"error_detail": "dir_path不能为空", "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
     if sort_by not in ("name", "size", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'")
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'", hint="sort_by参数只能为name/size/mtime")
         return build_error(data={"error_detail": f"sort_by只支持name/size/mtime", "params": {"sort_by": sort_by}}, llm_data=llm_data)
+
+    if offset < 0:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"offset必须>=0,当前值: {offset}", hint="offset从0开始,负值无效")
+        return build_error(data={"error_detail": f"offset必须>=0", "params": {"offset": offset}}, llm_data=llm_data)
 
     path = Path(dir_path)
     start_offset = offset
@@ -209,7 +214,7 @@ async def listdir(
 
         deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution = await asyncio.to_thread(
-            _scan_directory_sync, path, False, max_depth, include_hidden, deadline,
+            _scan_directory_sync, path, False, 10, include_hidden, deadline,
         )
 
         if sort_by == "size":
