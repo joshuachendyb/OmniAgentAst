@@ -16,7 +16,7 @@ import time as _time_mod
 from typing import Any, Dict
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import ERR_SHELL_FIND_COMMAND
+from app.tools.tool_constants import ERR_PARAMETER_EMPTY, ERR_SHELL_EXCEPTION, ERR_SHELL_FIND_COMMAND
 
 
 def _build_find_command_llm_data(
@@ -26,7 +26,9 @@ def _build_find_command_llm_data(
     err_code: str = "", detail: str = "", all_paths: bool = False,
 ) -> Dict[str, Any]:
     """find_command的llm_data构建函数 — 小欧 2026-06-22"""
-    _act_params = {"command": command, "all_paths": all_paths}
+    _act_params = {"command": command}
+    if all_paths:
+        _act_params["all_paths"] = True
     if exec_code == "error":
         return {
             "summary": f"查找命令失败: {command}",
@@ -69,6 +71,7 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
     if not command or not isinstance(command, str) or not command.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_find_command_llm_data("error", duration_ms, str(command), False, "",
+            err_code=ERR_PARAMETER_EMPTY, detail="command参数不能为空",
             all_paths=all_paths)
         return build_error(data={"error_detail": "command参数不能为空", "params": {"command": command}}, llm_data=llm_data)
     try:
@@ -115,6 +118,7 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
                 return build_warning(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_find_command_llm_data("error", duration_ms, command, detail=str(e),
+        llm_data = _build_find_command_llm_data("error", duration_ms, command,
+            err_code=ERR_SHELL_EXCEPTION, detail=str(e),
             all_paths=all_paths)
         return build_error(data={"error_detail": str(e), "params": {"command": command}}, llm_data=llm_data)

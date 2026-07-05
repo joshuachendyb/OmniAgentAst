@@ -179,7 +179,9 @@ def _build_execute_shell_command_llm_data(
 ) -> Dict[str, Any]:
     """execute_shell_command 的 llm_data 构建函数"""
     cmd_short = (command[:60] + "..." + command[-37:]) if command and len(command) > 100 else (command[:100] if command else "")
-    _act_params = {"command": cmd_short, "shell_type": shell_type}
+    _act_params = {"command": cmd_short}
+    if shell_type:
+        _act_params["shell_type"] = shell_type
     if timeout:
         _act_params["timeout"] = timeout
     if cwd:
