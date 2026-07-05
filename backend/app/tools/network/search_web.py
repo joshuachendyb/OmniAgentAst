@@ -79,11 +79,13 @@ def _build_search_web_llm_data(
     blocked_domains: Optional[List[str]] = None, num_results: int = 10,
 ) -> Dict[str, Any]:
     """search_web的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
-    _act_params = {
-        "query": query, "num_results": num_results,
-        "proxy": proxy, "allowed_domains": allowed_domains,
-        "blocked_domains": blocked_domains,
-    }
+    _act_params = {"query": query, "num_results": num_results}
+    if proxy is not None:
+        _act_params["proxy"] = proxy
+    if allowed_domains is not None:
+        _act_params["allowed_domains"] = allowed_domains
+    if blocked_domains is not None:
+        _act_params["blocked_domains"] = blocked_domains
     if exec_code == "error":
         return {
             "summary": f"搜索失败: {query}",
@@ -424,7 +426,19 @@ async def searchweb(
             exec_code = "success"
         llm_data = _build_search_web_llm_data(exec_code, duration_ms, query, engine_used, len(results), proxy=proxy, allowed_domains=allowed_domains, blocked_domains=blocked_domains, num_results=num_results)
         if exec_code == "warning":
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #4 items
+            # trigger: "items" in data — items 是 List[dict]
+            # handler: _format_items(data["items"])
+            # file:    observation_formatter.py:132-134
+            # ------------------------------------------------------------------------------
             return build_warning(data=data, llm_data=llm_data)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #4 items
+        # trigger: "items" in data — items 是 List[dict]
+        # handler: _format_items(data["items"])
+        # file:    observation_formatter.py:132-134
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
 
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):

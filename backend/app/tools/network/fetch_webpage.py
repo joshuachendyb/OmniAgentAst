@@ -188,8 +188,12 @@ def _build_fetch_webpage_llm_data(
     prompt: Optional[str] = None, js_render: bool = False, timeout: int = 30,
     proxy: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """fetch_webpage的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
-    _act_params = {"url": url, "extract_format": extract_format, "prompt": prompt, "js_render": js_render, "timeout": timeout, "proxy": proxy}
+    """fetch_webpage的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 过滤None值"""
+    _act_params = {"url": url, "extract_format": extract_format, "js_render": js_render, "timeout": timeout}
+    if prompt is not None:
+        _act_params["prompt"] = prompt
+    if proxy is not None:
+        _act_params["proxy"] = proxy
     if exec_code == "error":
         return {
             "summary": f"获取网页失败: {url}",
@@ -396,6 +400,12 @@ async def fetchpage(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #2 raw str
+        # trigger: "content" in data and isinstance(data["content"], str)
+        # handler: inline — 直接返回 data["content"], OBS_MAX_STRING_LENGTH 截断
+        # file:    observation_formatter.py:117-122
+        # ------------------------------------------------------------------------------
         return build_success(data=result_data, llm_data=llm_data)
 
     except httpx.TimeoutException:

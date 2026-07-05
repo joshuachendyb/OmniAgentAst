@@ -54,8 +54,10 @@ def _build_network_diagnose_llm_data(
     err_code: str = "", detail: str = "", hint: str = "",
     port: Optional[int] = None, count: int = 4, timeout: int = 5,
 ) -> Dict[str, Any]:
-    """network_diagnose的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
-    _act_params = {"mode": mode, "host": host, "port": port, "count": count, "timeout": timeout}
+    """network_diagnose的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 过滤None值"""
+    _act_params = {"mode": mode, "host": host, "count": count, "timeout": timeout}
+    if port is not None:
+        _act_params["port"] = port
     if exec_code == "error":
         return {
             "summary": f"网络诊断失败: {host}",
@@ -261,6 +263,12 @@ async def ping_port(
                                             parsed.get("loss_rate", 0.0), parsed.get("avg_latency"),
                                             parsed.get("min_latency"), parsed.get("max_latency"),
                                             count=count, timeout=timeout)
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #21 fallback (key:val) — ping mode
+            # trigger: 无上述20条分支匹配 — data 含 host/is_reachable/packets_sent 等
+            # handler: _format_scalar_data(data) — key | value 单行列表
+            # file:    observation_formatter.py:214
+            # ------------------------------------------------------------------------------
             return build_success(data=result.get("data", {}), llm_data=llm_data)
         else:
             llm_data = _build_ping_llm_data("error", duration_ms, host, err_code=result.get("err_code", ERR_NET_UNKNOWN), detail=result.get("error_detail", ""), hint="请检查主机地址和网络连接", count=count, timeout=timeout)
@@ -275,6 +283,12 @@ async def ping_port(
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             if result.get("success"):
                 llm_data = _build_port_check_llm_data("success", duration_ms, host, port, result.get("is_open", False), result.get("service", ""), timeout=timeout)
+                # ---- observation_formatter route -------------------------------------------
+                # branch: #21 fallback (key:val) — port mode
+                # trigger: 无上述20条分支匹配 — data 含 host/port/is_open/service
+                # handler: _format_scalar_data(data) — key | value 单行列表
+                # file:    observation_formatter.py:214
+                # ------------------------------------------------------------------------------
                 return build_success(data=result.get("data", {}), llm_data=llm_data)
             else:
                 llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=result.get("err_code", ERR_NET_UNKNOWN), detail=result.get("error_detail", ""), hint="请检查主机地址和端口", timeout=timeout)

@@ -46,8 +46,12 @@ def _build_download_file_llm_data(
     timeout: int = 60, proxy: Optional[str] = None,
     headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    """download_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
-    _act_params = {"url": url, "destination_path": dest_path, "timeout": timeout, "proxy": proxy, "headers": headers}
+    """download_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 过滤None值"""
+    _act_params = {"url": url, "destination_path": dest_path, "timeout": timeout}
+    if proxy is not None:
+        _act_params["proxy"] = proxy
+    if headers is not None:
+        _act_params["headers"] = headers
     if exec_code == "error":
         return {
             "summary": f"文件下载失败: {url}",
@@ -184,6 +188,12 @@ async def download(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"file_path": dest_path, "file_size": downloaded, "total_size": total_bytes if total_bytes > 0 else None, "content_type": content_type}
         llm_data = _build_download_file_llm_data("success", duration_ms, url, dest_path, downloaded, total_bytes, content_type, timeout=timeout, proxy=proxy, headers=headers)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val)
+        # trigger: 无上述20条分支匹配 — file_path/file_size/total_size/content_type
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
     except (PermissionError, OSError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -41,8 +41,14 @@ def _build_http_request_llm_data(
     timeout: int = 30, proxy: Optional[str] = None,
     headers: Optional[Dict[str, str]] = None, body: Any = None,
 ) -> Dict[str, Any]:
-    """http_request的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
-    _act_params = {"method": method, "url": url, "timeout": timeout, "proxy": proxy, "headers": headers, "body": body}
+    """http_request的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 过滤None值"""
+    _act_params = {"method": method, "url": url, "timeout": timeout}
+    if proxy is not None:
+        _act_params["proxy"] = proxy
+    if headers is not None:
+        _act_params["headers"] = headers
+    if body is not None:
+        _act_params["body"] = body
     if exec_code == "error":
         return {
             "summary": f"HTTP请求失败: {method} {url}",
@@ -164,6 +170,12 @@ async def httpget(
                 llm_data = _build_http_request_llm_data("success", duration_ms, url, method,
                                                         response.status_code, parsed["content_type_short"],
                                                         timeout=timeout, proxy=proxy, headers=headers, body=body)
+                # ---- observation_formatter route -------------------------------------------
+                # branch: #19 httpget(body+headers)
+                # trigger: "status_code" in data — data 含 status_code/headers/body
+                # handler: _format_httpget_result(data)
+                # file:    observation_formatter.py:197-198
+                # ------------------------------------------------------------------------------
                 return build_success(data=data, llm_data=llm_data)
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
                 if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in TOOL_RETRYABLE_HTTP_CODES:
