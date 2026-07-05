@@ -32,8 +32,8 @@ _WINDOW_ACTIONS = {
 
 
 def _build_set_window_state_llm_data(exec_code: str, duration_ms: int, action: str, window_title: str = "",
-                                      matched_count: int = 0, err_code: str = "", detail: str = "") -> dict:
-    """set_window_state的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 补window_title入_act_params"""
+                                      matched_count: int = 0, err_code: str = "", detail: str = "", hint: str = "") -> dict:
+    """set_window_state的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 补window_title入_act_params — 小欧 2026-07-05 加hint参数"""
     _act_params = {"action": action}
     if window_title:
         _act_params["window_title"] = window_title
@@ -41,7 +41,7 @@ def _build_set_window_state_llm_data(exec_code: str, duration_ms: int, action: s
         return {
             "summary": f"窗口操作{action}失败: {window_title}",
             "action": {"tool": "set_window_state", "tool_zh": "窗口状态", "target": window_title, "params": _act_params},
-            "status": {"exec_code": "error", "message": f"窗口操作{action}失败", "code": err_code or ERR_WINDOW_SET_STATE, "detail": detail, "hint": "请检查窗口标题和操作类型"},
+            "status": {"exec_code": "error", "message": f"窗口操作{action}失败", "code": err_code or ERR_WINDOW_SET_STATE, "detail": detail, "hint": hint if hint else "请检查窗口标题和操作类型"},
             "duration_ms": duration_ms, "metrics": {},
         }
     summary = f"窗口操作{action}完成: {window_title}"
@@ -63,25 +63,25 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
     err = validate_str_param(window_title, "window_title")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_set_window_state_llm_data("error", duration_ms, "", window_title, err_code=ERR_WINDOW_NOT_FOUND, detail=err)
+        llm_data = _build_set_window_state_llm_data("error", duration_ms, "", window_title, err_code=ERR_WINDOW_NOT_FOUND, detail=err, hint="请提供有效的窗口标题,window_title不能为空")
         return build_error(data={"error_detail": err, "params": {"window_title": window_title}}, llm_data=llm_data)
     err = check_win32_platform()
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_DESKTOP_GET_WINDOW_INFO)
+        llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_DESKTOP_GET_WINDOW_INFO, hint="请确保系统为Windows且已安装pywin32库")
         return build_error(data={"error_detail": "桌面工具不可用", "params": {}}, llm_data=llm_data)
 
     try:
         if action not in _WINDOW_ACTIONS or _WINDOW_ACTIONS[action] is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_INVALID_ACTION)
+            llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_INVALID_ACTION, hint="请使用支持的操作类型:maximize/minimize/restore/topmost/unpin")
             return build_error(data={"error_detail": f"无效的操作: {action}", "params": {"action": action}}, llm_data=llm_data)
 
         matched_hwnds = find_windows_by_title(window_title)
 
         if not matched_hwnds:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_WINDOW_NOT_FOUND)
+            llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_WINDOW_NOT_FOUND, hint="请检查窗口标题是否正确,当前未找到匹配窗口")
             return build_error(data={"error_detail": f"未找到窗口: {window_title}", "params": {"window_title": window_title}}, llm_data=llm_data)
 
         hwnd = matched_hwnds[0]
@@ -104,7 +104,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"set_window_state error: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, detail=str(e))
+        llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, detail=str(e), hint="窗口操作执行异常,请检查窗口状态后重试")
         return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
 
 

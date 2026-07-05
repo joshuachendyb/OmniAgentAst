@@ -17,13 +17,13 @@ from app.tools.tool_constants import ERR_DESKTOP_MOUSE_CLICK
 
 
 def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: str = "", click_type: str = "",
-                                 err_code: str = "", detail: str = "") -> dict:
-    """mouse_click的llm_data构建函数 — 小健 2026-06-22"""
+                                 err_code: str = "", detail: str = "", hint: str = "") -> dict:
+    """mouse_click的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
             "summary": f"点击失败: {detail}",
             "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button}},
-            "status": {"exec_code": "error", "message": f"点击失败: {detail}", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": "请检查坐标是否在屏幕范围内"},
+            "status": {"exec_code": "error", "message": f"点击失败: {detail}", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
@@ -41,7 +41,7 @@ def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = 
     click_type = "single"
     if not check_pyautogui_available():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_mouse_click_llm_data("error", duration_ms, x, y, button, click_type, "ERR_NO_PYAUTOGUI"))
+        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_mouse_click_llm_data("error", duration_ms, x, y, button, click_type, "ERR_NO_PYAUTOGUI", hint="请安装pyautogui库: pip install pyautogui"))
     try:
         import pyautogui
         clicks = 2 if click_type == "double" else 1
@@ -58,7 +58,7 @@ def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = 
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_mouse_click_llm_data("error", duration_ms, x, y, button, click_type, detail=str(e))
+        llm_data = _build_mouse_click_llm_data("error", duration_ms, x, y, button, click_type, detail=str(e), hint="请检查坐标是否在屏幕范围内或pyautogui库是否可用")
         return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
 
 

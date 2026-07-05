@@ -22,8 +22,8 @@ from app.tools.tool_constants import ERR_SCREENSHOT, ERR_SCREEN_SNAPSHOT
 
 def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, output_path: str = "", region=None,
                                     display: Optional[int] = None, monitor_count: int = 0,
-                                    err_code: str = "", detail: str = "") -> dict:
-    """screen_capture的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 补output_path入_act_params"""
+                                    err_code: str = "", detail: str = "", hint: str = "") -> dict:
+    """screen_capture的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 补output_path入_act_params — 小欧 2026-07-05 加hint参数"""
     _act_params = {"region": region, "display": display}
     if output_path:
         _act_params["output_path"] = output_path
@@ -31,7 +31,7 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, output_path
         return {
             "summary": "截图失败",
             "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": "", "params": _act_params},
-            "status": {"exec_code": "error", "message": "截图失败", "code": err_code or ERR_SCREENSHOT, "detail": detail, "hint": "请检查屏幕显示设置和权限"},
+            "status": {"exec_code": "error", "message": "截图失败", "code": err_code or ERR_SCREENSHOT, "detail": detail, "hint": hint if hint else "请检查屏幕显示设置和权限"},
             "duration_ms": duration_ms, "metrics": {},
         }
     metrics = {}
@@ -116,7 +116,7 @@ def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str,
         is_valid, err, warn = validate_path(OpCategory.WRITE, output_path)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_screen_capture_llm_data("error", duration_ms, output_path=output_path, region=region, display=display, err_code=ERR_SCREENSHOT, detail=err)
+            llm_data = _build_screen_capture_llm_data("error", duration_ms, output_path=output_path, region=region, display=display, err_code=ERR_SCREENSHOT, detail=err, hint="请检查输出路径是否合法")
             return build_error(data={"error_detail": err, "params": {"output_path": output_path}}, llm_data=llm_data)
         if warn:
             logger.warning(f"[screen_capture] {warn}")
@@ -135,7 +135,7 @@ def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str,
             err_code = ERR_SCREEN_SNAPSHOT
         else:
             err_code = ERR_SCREENSHOT
-        llm_data = _build_screen_capture_llm_data("error", duration_ms, output_path=output_path, region=region, display=display, err_code=err_code, detail=error_detail)
+        llm_data = _build_screen_capture_llm_data("error", duration_ms, output_path=output_path, region=region, display=display, err_code=err_code, detail=error_detail, hint="请检查屏幕显示设置或安装必要的依赖库(mss/pyautogui)")
         return build_error(data={"error_detail": error_detail, "params": err_params}, llm_data=llm_data)
 
     image_path = result.pop("image_path", "")

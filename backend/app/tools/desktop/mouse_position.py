@@ -14,8 +14,8 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_DESKTOP_GET_MOUSE_POSITION
 
 
-def _build_mouse_position_llm_data(exec_code: str, duration_ms: int, x=0, y=0, detail: str = "") -> dict:
-    """mouse_position的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 修复空error code"""
+def _build_mouse_position_llm_data(exec_code: str, duration_ms: int, x=0, y=0, detail: str = "", hint: str = "") -> dict:
+    """mouse_position的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 修复空error code — 小欧 2026-07-05 加hint参数"""
     _act_params = {}
     if x or y:
         _act_params["x"] = x
@@ -24,7 +24,7 @@ def _build_mouse_position_llm_data(exec_code: str, duration_ms: int, x=0, y=0, d
         return {
             "summary": f"获取鼠标位置失败: {detail}",
             "action": {"tool": "mouse_position", "tool_zh": "获取鼠标位置", "target": "", "params": _act_params},
-            "status": {"exec_code": "error", "message": "获取鼠标位置失败", "code": ERR_DESKTOP_GET_MOUSE_POSITION, "detail": detail, "hint": "请检查鼠标设备"},
+            "status": {"exec_code": "error", "message": "获取鼠标位置失败", "code": ERR_DESKTOP_GET_MOUSE_POSITION, "detail": detail, "hint": hint if hint else "请检查鼠标设备"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
@@ -60,7 +60,7 @@ def mouse_position() -> Dict[str, Any]:
     result = _get_mouse_position()
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     if "error_detail" in result:
-        llm_data = _build_mouse_position_llm_data("error", duration_ms, detail=result["error_detail"])
+        llm_data = _build_mouse_position_llm_data("error", duration_ms, detail=result["error_detail"], hint="请检查鼠标设备连接或安装pyautogui/win32api依赖库")
         return build_error(data={"error_detail": result["error_detail"], "params": result.get("params", {})}, llm_data=llm_data)
     x, y = result.get("x", 0), result.get("y", 0)
     llm_data = _build_mouse_position_llm_data("success", duration_ms, x, y)

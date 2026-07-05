@@ -15,13 +15,13 @@ from app.tools.tool_constants import ERR_DESKTOP_CLIPBOARD
 
 
 def _build_clipboard_control_llm_data(exec_code: str, duration_ms: int, action: str,
-                                       char_count: int = 0, err_code: str = "", detail: str = "") -> dict:
-    """clipboard_control的llm_data构建函数 — 小健 2026-06-22"""
+                                       char_count: int = 0, err_code: str = "", detail: str = "", hint: str = "") -> dict:
+    """clipboard_control的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
             "summary": f"剪贴板{action}失败",
             "action": {"tool": "clipboard_control", "tool_zh": "剪贴板", "target": action, "params": {"action": action}},
-            "status": {"exec_code": "error", "message": f"剪贴板{action}失败", "code": err_code or ERR_DESKTOP_CLIPBOARD, "detail": detail, "hint": "请检查剪贴板访问权限"},
+            "status": {"exec_code": "error", "message": f"剪贴板{action}失败", "code": err_code or ERR_DESKTOP_CLIPBOARD, "detail": detail, "hint": hint if hint else "请检查剪贴板访问权限"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
@@ -107,7 +107,7 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
         result = _read_clipboard()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if "error_detail" in result:
-            llm_data = _build_clipboard_control_llm_data("error", duration_ms, "read", detail=result["error_detail"])
+            llm_data = _build_clipboard_control_llm_data("error", duration_ms, "read", detail=result["error_detail"], hint="请检查剪贴板读取权限或确保剪贴板未被其他程序占用")
             return build_error(data=result, llm_data=llm_data)
         llm_data = _build_clipboard_control_llm_data("success", duration_ms, "read", len(result.get("text", "")))
         # ---- observation_formatter route [read mode] --------------------------------
@@ -119,13 +119,13 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
         return build_success(data=result, llm_data=llm_data)
     elif action == "write":
         if not content:
-            llm_data = _build_clipboard_control_llm_data("error", 0, "write", err_code=ERR_DESKTOP_CLIPBOARD, detail="content参数不能为空")
+            llm_data = _build_clipboard_control_llm_data("error", 0, "write", err_code=ERR_DESKTOP_CLIPBOARD, detail="content参数不能为空", hint="请提供要写入的content内容")
             return build_error(data={"error_detail": "content参数不能为空", "params": {}}, llm_data=llm_data)
         t0 = _time_mod.perf_counter()
         result = _write_clipboard(content)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if "error_detail" in result:
-            llm_data = _build_clipboard_control_llm_data("error", duration_ms, "write", detail=result["error_detail"])
+            llm_data = _build_clipboard_control_llm_data("error", duration_ms, "write", detail=result["error_detail"], hint="请检查剪贴板写入权限或确保剪贴板未被其他程序占用")
             return build_error(data=result, llm_data=llm_data)
         llm_data = _build_clipboard_control_llm_data("success", duration_ms, "write", len(content))
         # ---- observation_formatter route [write mode] --------------------------------
@@ -136,7 +136,7 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
         # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)
     else:
-        llm_data = _build_clipboard_control_llm_data("error", 0, action, err_code=ERR_DESKTOP_CLIPBOARD, detail=f"无效的action: {action}")
+        llm_data = _build_clipboard_control_llm_data("error", 0, action, err_code=ERR_DESKTOP_CLIPBOARD, detail=f"无效的action: {action}", hint="请使用read或write作为action参数")
         return build_error(data={"error_detail": f"无效的action: {action}", "params": {"action": action}}, llm_data=llm_data)
 
 

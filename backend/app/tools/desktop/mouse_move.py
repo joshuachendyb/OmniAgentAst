@@ -17,13 +17,13 @@ from app.tools.tool_constants import ERR_DESKTOP_MOUSE_MOVE
 
 
 def _build_mouse_move_llm_data(exec_code: str, duration_ms: int, x: int, y: int,
-                                err_code: str = "", detail: str = "") -> dict:
-    """mouse_move的llm_data构建函数 — 小健 2026-06-22"""
+                                err_code: str = "", detail: str = "", hint: str = "") -> dict:
+    """mouse_move的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
             "summary": f"鼠标移动失败: ({x},{y})",
             "action": {"tool": "mouse_move", "tool_zh": "鼠标移动", "target": f"({x},{y})", "params": {"x": x, "y": y}},
-            "status": {"exec_code": "error", "message": "鼠标移动失败", "code": err_code or ERR_DESKTOP_MOUSE_MOVE, "detail": detail, "hint": "请检查坐标是否在屏幕范围内"},
+            "status": {"exec_code": "error", "message": "鼠标移动失败", "code": err_code or ERR_DESKTOP_MOUSE_MOVE, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
@@ -40,7 +40,7 @@ def mouse_move(x: int, y: int) -> Dict[str, Any]:
     duration = 0
     if not check_pyautogui_available():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_mouse_move_llm_data("error", duration_ms, x, y, "ERR_NO_PYAUTOGUI"))
+        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_mouse_move_llm_data("error", duration_ms, x, y, "ERR_NO_PYAUTOGUI", hint="请安装pyautogui库: pip install pyautogui"))
     try:
         import pyautogui
         pyautogui.moveTo(x, y, duration=duration)
@@ -56,7 +56,7 @@ def mouse_move(x: int, y: int) -> Dict[str, Any]:
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_mouse_move_llm_data("error", duration_ms, x, y, detail=str(e))
+        llm_data = _build_mouse_move_llm_data("error", duration_ms, x, y, detail=str(e), hint="请检查坐标是否在屏幕范围内或pyautogui库是否可用")
         return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
 
 

@@ -16,8 +16,8 @@ from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_KEYBOARD_TYPE, ERR_
 
 
 def _build_keyboard_control_llm_data(exec_code: str, duration_ms: int, action: str, text_or_keys: str,
-                                      err_code: str = "", detail: str = "") -> dict:
-    """keyboard_control的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 补text_or_keys"""
+                                      err_code: str = "", detail: str = "", hint: str = "") -> dict:
+    """keyboard_control的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 补text_or_keys — 小欧 2026-07-05 加hint参数"""
     _act_params = {"action": action}
     if text_or_keys:
         _act_params["text_or_keys"] = text_or_keys
@@ -25,7 +25,7 @@ def _build_keyboard_control_llm_data(exec_code: str, duration_ms: int, action: s
         return {
             "summary": f"无效的键盘操作: {action}",
             "action": {"tool": "keyboard_control", "tool_zh": "键盘控制", "target": action, "params": _act_params},
-            "status": {"exec_code": "error", "message": f"无效的键盘操作: {action}", "code": err_code or ERR_INVALID_ACTION, "detail": detail, "hint": "请使用支持的操作类型"},
+            "status": {"exec_code": "error", "message": f"无效的键盘操作: {action}", "code": err_code or ERR_INVALID_ACTION, "detail": detail, "hint": hint if hint else "请使用支持的操作类型"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
@@ -91,25 +91,23 @@ def keyboard_control(action: Literal["type", "shortcut"], text_or_keys: str) -> 
     
     if not isinstance(text_or_keys, str) or not text_or_keys.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys)
+        llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys, hint="请提供非空的键盘输入内容")
         return build_error(data={"error_detail": "键盘输入内容不能为空", "params": {"action": action, "text_or_keys": text_or_keys}}, llm_data=llm_data)
-
     if action == "type":
         result = _type_text(text=text_or_keys, interval=0)
     elif action == "shortcut":
         result = _shortcut(keys=text_or_keys)
     else:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys)
+        llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys, hint="请使用type或shortcut作为action参数")
         return build_error(data={"error_detail": f"无效的键盘操作: {action}", "params": {"action": action}}, llm_data=llm_data)
-    
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     if "error_detail" in result:
         err_code = {
             "type": ERR_KEYBOARD_TYPE,
             "shortcut": ERR_KEYBOARD_SHORTCUT,
         }.get(action, ERR_INVALID_ACTION)
-        llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys, err_code=err_code, detail=result["error_detail"])
+        llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys, err_code=err_code, detail=result["error_detail"], hint="请检查pyautogui库是否已安装或输入参数是否正确")
         return build_error(data=result, llm_data=llm_data)
     
     llm_data = _build_keyboard_control_llm_data("success", duration_ms, action, text_or_keys)

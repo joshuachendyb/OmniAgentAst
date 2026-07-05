@@ -17,8 +17,8 @@ from app.tools.validate.tools_file_path_checker import validate_str_param
 
 
 def _build_window_resize_llm_data(exec_code: str, duration_ms: int, title: str = "", width: int = 0, height: int = 0,
-                                   err_code: str = "", detail: str = "") -> dict:
-    """window_resize的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 统一_act_params"""
+                                   err_code: str = "", detail: str = "", hint: str = "") -> dict:
+    """window_resize的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 统一_act_params — 小欧 2026-07-05 加hint参数"""
     _act_params = {"width": width, "height": height}
     if title:
         _act_params["title"] = title
@@ -26,7 +26,7 @@ def _build_window_resize_llm_data(exec_code: str, duration_ms: int, title: str =
         return {
             "summary": f"调整窗口大小失败: {title}",
             "action": {"tool": "window_resize", "tool_zh": "窗口调整", "target": title, "params": _act_params},
-            "status": {"exec_code": "error", "message": "调整窗口大小失败", "code": err_code or ERR_WINDOW_RESIZE, "detail": detail, "hint": "请检查窗口标题和尺寸"},
+            "status": {"exec_code": "error", "message": "调整窗口大小失败", "code": err_code or ERR_WINDOW_RESIZE, "detail": detail, "hint": hint if hint else "请检查窗口标题和尺寸"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
@@ -42,13 +42,13 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
     try:
         import win32gui
     except ImportError:
-        llm_data = _build_window_resize_llm_data("error", 0, window_title, err_code="ERR_NO_WIN32GUI")
+        llm_data = _build_window_resize_llm_data("error", 0, window_title, err_code="ERR_NO_WIN32GUI", hint="请安装pywin32库: pip install pywin32")
         return build_error(data={"error_detail": "需要安装 pywin32 库", "params": {"window_title": window_title}}, llm_data=llm_data)
     t0 = _time_mod.perf_counter()
     err = validate_str_param(window_title, "window_title")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_window_resize_llm_data("error", duration_ms, window_title, err_code=ERR_WINDOW_NOT_FOUND)
+        llm_data = _build_window_resize_llm_data("error", duration_ms, window_title, err_code=ERR_WINDOW_NOT_FOUND, hint="请提供有效的窗口标题,window_title不能为空")
         return build_error(data={"error_detail": err, "params": {"window_title": window_title}}, llm_data=llm_data)
     try:
         target_hwnd = None
@@ -63,7 +63,7 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if not target_hwnd:
-            llm_data = _build_window_resize_llm_data("error", duration_ms, window_title, err_code=ERR_WINDOW_NOT_FOUND)
+            llm_data = _build_window_resize_llm_data("error", duration_ms, window_title, err_code=ERR_WINDOW_NOT_FOUND, hint="请检查窗口标题是否正确,当前未找到匹配窗口")
             return build_error(data={"error_detail": f"未找到窗口: {window_title}", "params": {"window_title": window_title}}, llm_data=llm_data)
 
         left, top, right, bottom = win32gui.GetWindowRect(target_hwnd)
@@ -84,7 +84,7 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_window_resize_llm_data("error", duration_ms, window_title, detail=str(e))
+        llm_data = _build_window_resize_llm_data("error", duration_ms, window_title, detail=str(e), hint="调整窗口大小时发生异常,请检查窗口状态后重试")
         return build_error(data={"error_detail": str(e), "params": {"window_title": window_title}}, llm_data=llm_data)
 
 

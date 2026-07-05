@@ -16,13 +16,13 @@ from app.tools.tool_constants import ERR_FOCUS_WINDOW, ERR_WINDOW_NOT_FOUND
 
 
 def _build_window_focus_llm_data(exec_code: str, duration_ms: int, title: str = "",
-                                  err_code: str = "", detail: str = "") -> dict:
-    """window_focus的llm_data构建函数 — 小健 2026-06-22"""
+                                  err_code: str = "", detail: str = "", hint: str = "") -> dict:
+    """window_focus的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
             "summary": f"聚焦窗口失败: {title}",
             "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "target": title, "params": {"title": title}},
-            "status": {"exec_code": "error", "message": "聚焦窗口失败", "code": err_code or ERR_FOCUS_WINDOW, "detail": detail, "hint": "请检查窗口标题是否正确"},
+            "status": {"exec_code": "error", "message": "聚焦窗口失败", "code": err_code or ERR_FOCUS_WINDOW, "detail": detail, "hint": hint if hint else "请检查窗口标题是否正确"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
@@ -38,10 +38,10 @@ def window_focus(window_title: str) -> Dict[str, Any]:
     try:
         import win32gui
     except ImportError:
-        llm_data = _build_window_focus_llm_data("error", 0, window_title, "ERR_NO_WIN32GUI")
+        llm_data = _build_window_focus_llm_data("error", 0, window_title, "ERR_NO_WIN32GUI", hint="请安装pywin32库: pip install pywin32")
         return build_error(data={"error_detail": "需要安装 pywin32 库", "params": {"window_title": window_title}}, llm_data=llm_data)
     if not window_title or not isinstance(window_title, str) or not window_title.strip():
-        llm_data = _build_window_focus_llm_data("error", 0, "", "ERR_INVALID_PARAM", detail="window_title不能为空")
+        llm_data = _build_window_focus_llm_data("error", 0, "", "ERR_INVALID_PARAM", detail="window_title不能为空", hint="请提供有效的窗口标题,window_title不能为空")
         return build_error(data={"error_detail": "window_title不能为空", "params": {"window_title": window_title}}, llm_data=llm_data)
     t0 = _time_mod.perf_counter()
     try:
@@ -68,11 +68,11 @@ def window_focus(window_title: str) -> Dict[str, Any]:
             # ------------------------------------------------------------------------------
             return build_success(data=data, llm_data=llm_data)
         else:
-            llm_data = _build_window_focus_llm_data("error", duration_ms, window_title, ERR_WINDOW_NOT_FOUND)
+            llm_data = _build_window_focus_llm_data("error", duration_ms, window_title, ERR_WINDOW_NOT_FOUND, hint="请检查窗口标题是否正确,当前未找到匹配窗口")
             return build_error(data={"error_detail": f"未找到窗口: {window_title}", "params": {"window_title": window_title}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_window_focus_llm_data("error", duration_ms, window_title, detail=str(e))
+        llm_data = _build_window_focus_llm_data("error", duration_ms, window_title, detail=str(e), hint="聚焦窗口时发生异常,请检查窗口状态后重试")
         return build_error(data={"error_detail": str(e), "params": {"window_title": window_title}}, llm_data=llm_data)
 
 
