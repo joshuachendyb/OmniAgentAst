@@ -30,7 +30,7 @@ def _build_find_command_llm_data(
         return {
             "summary": f"查找命令失败: {command}",
             "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
-            "status": {"exec_code": "error", "message": "查找命令失败", "code": err_code or ERR_SHELL_FIND_COMMAND, "detail": detail, "hint": ""},
+            "status": {"exec_code": "error", "message": "查找命令失败", "code": err_code or ERR_SHELL_FIND_COMMAND, "detail": detail, "hint": "请检查命令名称是否正确"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

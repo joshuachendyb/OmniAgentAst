@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
+from app.tools.tool_constants import ERR_FILE_EXTRACT
 
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
@@ -26,20 +27,20 @@ from app.utils.logger import logger
 
 def _build_extract_archive_llm_data(
     exec_code: str, duration_ms: int,
-    source: str = "", detail: str = "",
+    source: str = "", detail: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """extract_archive的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """extract_archive的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数+修复error code"""
     if exec_code == "error":
         return {
             "summary": f"解压文件失败: {detail}",
-            "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": {}},
-            "status": {"exec_code": "error", "message": "解压失败", "code": "", "detail": detail, "hint": ""},
+            "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": {"source": source}},
+            "status": {"exec_code": "error", "message": "解压失败", "code": ERR_FILE_EXTRACT, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"解压文件成功: {source}",
-        "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": {}},
+        "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": {"source": source}},
         "status": {"exec_code": "success", "message": "解压成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

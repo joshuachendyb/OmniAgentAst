@@ -67,14 +67,15 @@ def _send2trash_sync(path: Path, recursive: bool = False) -> Tuple[bool, str]:
 def _build_delete_file_llm_data(
     exec_code: str, duration_ms: int,
     source: str = "", detail: str = "", extra_metrics: Optional[Dict] = None,
+    hint: str = "",
 ) -> Dict[str, Any]:
-    """delete_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """delete_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数"""
     extra_metrics = extra_metrics or {}
     if exec_code == "error":
         return {
             "summary": f"删除失败: {detail}",
             "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": {"source": source}},
-            "status": {"exec_code": "error", "message": f"删除失败: {detail}", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": "请检查文件是否存在"},
+            "status": {"exec_code": "error", "message": f"删除失败: {detail}", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查文件是否存在"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

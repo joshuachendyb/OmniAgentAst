@@ -58,21 +58,21 @@ def _build_grep_file_content_llm_data(
     exec_code: str, duration_ms: int,
     pattern: str = "", search_dir: str = "",
     total_files: int = 0, total_matches: int = 0,
-    truncated: bool = False, detail: str = "",
+    truncated: bool = False, detail: str = "", hint: str = "",
 ) -> Dict[str, Any]:
     """grep_file_content的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示"""
     if exec_code == "error":
         return {
             "summary": f"内容搜索失败: {detail}",
-            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": {"pattern": pattern}},
-            "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_CONTENT_SEARCH_FAILED, "detail": detail, "hint": ""},
+            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern,             "params": {"pattern": pattern, "search_dir": search_dir}},
+            "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_CONTENT_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索路径和搜索模式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     if exec_code == "warning":
         return {
             "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件（结果被截断，可能不完整）",
-            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": {"pattern": pattern}},
+            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern,             "params": {"pattern": pattern, "search_dir": search_dir}},
             "status": {"exec_code": "warning", "message": "结果被截断，可能不完整", "code": "", "detail": "搜索超时或结果数量达到上限，仅返回部分结果", "hint": "可缩小搜索范围、使用head_limit参数限制结果数量或增加超时时间"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -82,7 +82,7 @@ def _build_grep_file_content_llm_data(
         }
     return {
         "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件",
-        "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": {"pattern": pattern}},
+        "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern,         "params": {"pattern": pattern, "search_dir": search_dir}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -203,11 +203,11 @@ async def grep(
         return build_error(data={"error_detail": f"output_mode无效: {output_mode},可选值: {valid_output_modes}", "params": {"output_mode": output_mode}}, llm_data=llm_data)
     if not actual_dir or not actual_dir.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="search_dir不能为空")
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="search_dir不能为空", hint="请指定有效的搜索目录")
         return build_error(data={"error_detail": "search_dir不能为空", "params": {"search_dir": actual_dir}}, llm_data=llm_data)
     if not pattern or not pattern.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="搜索模式不能为空")
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="搜索模式不能为空", hint="请提供搜索关键词")
         return build_error(data={"error_detail": "搜索模式不能为空", "params": {"pattern": pattern}}, llm_data=llm_data)
 
     # ReDoS 检测 — 小沈 2026-07-05
@@ -233,7 +233,7 @@ async def grep(
     is_valid, err, _ = validate_path(OpCategory.LIST_DIR, actual_dir)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=err)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=err, hint="请检查搜索路径")
         return build_error(data={"error_detail": err, "params": {"search_dir": actual_dir}}, llm_data=llm_data)
 
     search_path = Path(os.path.expanduser(actual_dir))
@@ -246,7 +246,7 @@ async def grep(
         )
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=str(e))
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=str(e), hint="请检查搜索参数")
         return build_error(data={"error_detail": str(e), "params": {"search_dir": actual_dir}}, llm_data=llm_data)
 
     # 按 mtime 降序排序 — 小欧 2026-07-05

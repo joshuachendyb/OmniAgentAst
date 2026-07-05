@@ -28,18 +28,26 @@ from app.utils.logger import logger
 
 def _build_move_file_llm_data(
     exec_code: str, duration_ms: int,
-    source: str = "", destination: str = "", detail: str = "", extra_metrics: Optional[Dict] = None,
+    source: str = "", destination: str = "", detail: str = "",
+    extra_metrics: Optional[Dict[str, Any]] = None,
+    hint: str = "",
 ) -> Dict[str, Any]:
-    """move_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
-    extra_metrics = extra_metrics or {}
+    """move_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数"""
     if exec_code == "error":
         return {
             "summary": f"移动失败: {detail}",
-            "action": {"tool": "move", "tool_zh": "移动", "target": source, "params": {"source": source, "destination": destination}},
-            "status": {"exec_code": "error", "message": f"移动失败: {detail}", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": "请检查源路径和目标路径"},
+            "action": {"tool": "move", "tool_zh": "移动文件", "target": source, "params": {"source": source, "destination": destination}},
+            "status": {"exec_code": "error", "message": "移动失败", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    return {
+        "summary": f"移动成功: {source} -> {destination}",
+        "action": {"tool": "move", "tool_zh": "移动文件", "target": source, "params": {"source": source, "destination": destination}},
+        "status": {"exec_code": "success", "message": "移动成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": extra_metrics or {},
+    }
     _summary = f"移动 {source} → {destination}" if destination else f"移动 {source}"
     return {
         "summary": _summary,

@@ -40,7 +40,7 @@ def _build_compress_files_llm_data(
         return {
             "summary": f"压缩失败: {detail}",
             "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": {"source": source}},
-            "status": {"exec_code": "error", "message": f"压缩失败: {detail}", "code": ERR_FILE_COMPRESS_FAILED, "detail": detail, "hint": hint},
+            "status": {"exec_code": "error", "message": f"压缩失败: {detail}", "code": ERR_FILE_COMPRESS_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径及权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

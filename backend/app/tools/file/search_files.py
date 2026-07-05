@@ -62,21 +62,21 @@ def _collect_entry_result(relative_path: str, name: str, fpath: Path,
 def _build_search_files_llm_data(
     exec_code: str, duration_ms: int,
     search_dir: str = "", total: int = 0,
-    truncated: bool = False, detail: str = "",
+    truncated: bool = False, detail: str = "", hint: str = "",
 ) -> Dict[str, Any]:
     """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示"""
     if exec_code == "error":
         return {
             "summary": f"搜索文件失败: {detail}",
-            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
-            "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": ""},
+            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": {"search_dir": search_dir}},
+            "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索目录和匹配模式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     if exec_code == "warning":
         return {
             "summary": f"搜索完成: {total}个匹配（结果被截断，可能不完整）",
-            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
+            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir,             "params": {"search_dir": search_dir}},
             "status": {"exec_code": "warning", "message": "结果被截断，可能不完整", "code": "", "detail": "搜索超时或结果数量达到上限，仅返回部分匹配项", "hint": "可缩小搜索范围或使用更精确的匹配模式"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -85,7 +85,7 @@ def _build_search_files_llm_data(
         }
     return {
         "summary": f"搜索完成: {total}个匹配",
-        "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
+        "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir,         "params": {"search_dir": search_dir}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -117,7 +117,7 @@ async def find(
     is_valid, err, _ = validate_path(OpCategory.LIST_DIR, search_dir)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=err)
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=err, hint="请检查搜索目录路径")
         return build_error(data={"error_detail": err, "params": {"search_dir": search_dir}}, llm_data=llm_data)
 
     path = Path(os.path.expanduser(search_dir))
@@ -170,7 +170,7 @@ async def find(
         await asyncio.to_thread(_search_sync)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索失败: {e}")
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索失败: {e}", hint="请检查搜索参数")
         return build_error(data={"error_detail": str(e), "params": {"search_dir": search_dir}}, llm_data=llm_data)
 
     all_matches.sort(key=lambda x: x.get("name", ""))

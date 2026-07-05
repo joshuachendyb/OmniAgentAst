@@ -124,20 +124,20 @@ async def _get_directory_tree(
 
 def _build_tree_llm_data(
     exec_code: str, duration_ms: int,
-    dir_path: str = "", total: int = 0, detail: str = "",
+    dir_path: str = "", total: int = 0, detail: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """tree的llm_data构建函数 — 小沈 2026-07-03"""
+    """tree的llm_data构建函数 — 小沈 2026-07-03 — 小沈 2026-07-05 新增hint参数"""
     if exec_code == "error":
         return {
             "summary": f"列出目录树失败: {detail}",
-            "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": {}},
-            "status": {"exec_code": "error", "message": "列出目录树失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": ""},
+            "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": {"dir_path": dir_path}},
+            "status": {"exec_code": "error", "message": "列出目录树失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"列出目录树成功: {dir_path} ({total}项)",
-        "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": {}},
+        "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": {"dir_path": dir_path}},
         "status": {"exec_code": "success", "message": "列出目录树成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total, "text": f"{total}项"}},

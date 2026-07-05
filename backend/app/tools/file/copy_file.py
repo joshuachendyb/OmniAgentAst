@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
+from app.tools.tool_constants import ERR_FILE_COPY_FAILED
 from app.utils.context_vars import _current_task_id
 
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
@@ -28,20 +29,21 @@ from app.utils.logger import logger
 def _build_copy_file_llm_data(
     exec_code: str, duration_ms: int,
     source: str = "", extra_metrics: Optional[Dict[str, Any]] = None,
+    hint: str = "", destination: str = "",
 ) -> Dict[str, Any]:
-    """copy_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """copy_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint/destination参数"""
     if exec_code == "error":
         detail = (extra_metrics or {}).get("detail", "复制失败")
         return {
             "summary": f"复制文件失败: {detail}",
-            "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": {}},
-            "status": {"exec_code": "error", "message": "复制失败", "code": "", "detail": detail, "hint": ""},
+            "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": {"source": source, "destination": destination}},
+            "status": {"exec_code": "error", "message": "复制失败", "code": ERR_FILE_COPY_FAILED, "detail": detail, "hint": hint if hint else "请检查源文件路径和目标路径及权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"复制文件成功: {source}",
-        "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": {}},
+        "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": {"source": source, "destination": destination}},
         "status": {"exec_code": "success", "message": "复制成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics or {},

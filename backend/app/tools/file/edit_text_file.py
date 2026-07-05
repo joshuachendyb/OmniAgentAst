@@ -114,13 +114,14 @@ def _build_edit_text_file_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", applied: int = 0, total: int = 0, detail: str = "",
     diff: str = "", total_matches: int = 0, mtime_warning: str = "",
+    hint: str = "",
 ) -> Dict[str, Any]:
-    """edit_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 增加diff/total_matches/mtime_warning"""
+    """edit_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 增加diff/total_matches/mtime_warning — 小沈 2026-07-05 新增hint参数"""
     if exec_code == "error":
         return {
             "summary": f"文件编辑失败: {detail}",
-            "action": {"tool": "edittext", "tool_zh": "编辑文件", "target": file_path, "params": {}},
-            "status": {"exec_code": "error", "message": "编辑失败", "code": ERR_FILE_EDIT_FAILED, "detail": detail, "hint": ""},
+            "action": {"tool": "edittext", "tool_zh": "编辑文件", "target": file_path, "params": {"file_path": file_path}},
+            "status": {"exec_code": "error", "message": "编辑失败", "code": ERR_FILE_EDIT_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和编辑参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -139,7 +140,7 @@ def _build_edit_text_file_llm_data(
     _exec_code = "warning" if (_warning_msg or mtime_warning) else "success"
     return {
         "summary": _summary,
-        "action": {"tool": "edittext", "tool_zh": "编辑文件", "target": file_path, "params": {}},
+        "action": {"tool": "edittext", "tool_zh": "编辑文件", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": _exec_code, "message": "编辑完成", "code": "", "detail": _warning_msg, "hint": _hint},
         "duration_ms": duration_ms,
         "metrics": {

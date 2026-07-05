@@ -21,14 +21,14 @@ from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 
 def _build_rename_file_llm_data(
     exec_code: str, duration_ms: int,
-    source: str = "", new_name: str = "", detail: str = "",
+    source: str = "", new_name: str = "", detail: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """rename_file的llm_data构建函数 — 小健 2026-06-22"""
+    """rename_file的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增hint参数"""
     if exec_code == "error":
         return {
             "summary": f"重命名失败: {detail}",
             "action": {"tool": "rename", "tool_zh": "重命名", "target": source, "params": {"source": source, "new_name": new_name}},
-            "status": {"exec_code": "error", "message": f"重命名失败: {detail}", "code": ERR_FILE_RENAME_FAILED, "detail": detail, "hint": "请检查源路径和新名称"},
+            "status": {"exec_code": "error", "message": f"重命名失败: {detail}", "code": ERR_FILE_RENAME_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和新名称"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
