@@ -1,4 +1,12 @@
-﻿v0.17.22
+﻿v0.18.0
+更新时间: 2026-07-05 22:32:48
+## v0.17.22→v0.18.0 变更汇总 - 小欧-2026-07-05
+
+### merge: feature/agent-status-refactor-v2 to master (593 commits)
+- merge commit: e8b3eeb59 — no-ff 合并，同步 master 的 2 个 merge commit（feature/agent-optimization）
+- 变更内容同 v0.17.22（tools llm_data 重构 + 166个质量问题修复 + 全部63个工具 route 标注）
+
+v0.17.22
 更新时间: 2026-07-05 21:50:18
 ## v0.17.21→v0.17.22 变更汇总 - 小欧-2026-07-05
 
