@@ -146,10 +146,11 @@ def _build_list_directory_llm_data(
 ) -> Dict[str, Any]:
     """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
     if exec_code == "error":
+        error_msg = detail if detail else "列出目录失败"
         return {
             "summary": f"列出目录失败: {detail}",
             "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": {}},
-            "status": {"exec_code": "error", "message": "列出目录失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": ""},
+            "status": {"exec_code": "error", "message": error_msg, "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": "请检查目录路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
