@@ -88,6 +88,7 @@
 | `format_output_for_llm` | 格式化输出给LLM | stdout, stderr, max_chars | dict |
 | `format_file_content_llm` | 格式化文件内容给LLM | content, max_chars | dict |
 | `make_json_safe` | 使JSON安全 | data, max_depth, max_str_len | data |
+| `add_line_numbers` | 添加行号前缀 | content, offset | str |
 | `truncate_data_for_frontend` | 截断数据给前端 | data, max_chars | dict |
 
 
@@ -180,13 +181,14 @@ def my_parse_json(json_str):
 
 ---
 
-**最后更新时间**: 2026-06-14
+**最后更新时间**: 2026-07-05
 **维护人**: 小沈
 
 ## 版本历史
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v1.6 | 2026-07-05 | text_utils新增add_line_numbers公共函数 | 小欧 |
 | v1.5 | 2026-07-02 | _try_fix_incomplete_json新增,_normalize_tool_params从llm_core迁入json_utils.py | 小沈 |
 | v1.4 | 2026-06-17 | 新增read_json_file函数 | 小沈 |
 | v1.3 | 2026-06-14 | 新增llm_core层_normalize_tool_params函数 | 小沈 |
