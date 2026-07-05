@@ -80,6 +80,12 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
             if available:
                 llm_data = _build_find_command_llm_data("success", duration_ms, command, True, cmd_path or "",
                     all_paths=all_paths)
+                # ---- observation_formatter route -------------------------------------------
+                # branch: #21 fallback (key:val) — available/path 不命中专用分支
+                # trigger: 无上述20条分支匹配
+                # handler: _format_scalar_data(data) — key | value 单行列表
+                # file:    observation_formatter.py:214
+                # ------------------------------------------------------------------------------
                 return build_success(data=data, llm_data=llm_data)
             llm_data = _build_find_command_llm_data("warning", duration_ms, command, available=False,
                 all_paths=all_paths)
@@ -95,6 +101,12 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
                 data = {"command": command, "paths": paths, "count": len(paths)}
                 llm_data = _build_find_command_llm_data("success", duration_ms, command, paths=paths, count=len(paths),
                     all_paths=all_paths)
+                # ---- observation_formatter route -------------------------------------------
+                # branch: #21 fallback (key:val) — command/paths/count 不命中专用分支
+                # trigger: 无上述20条分支匹配
+                # handler: _format_scalar_data(data) — key | value 单行列表
+                # file:    observation_formatter.py:214
+                # ------------------------------------------------------------------------------
                 return build_success(data=data, llm_data=llm_data)
             else:
                 data = {"command": command, "paths": [], "count": 0}

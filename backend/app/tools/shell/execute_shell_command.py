@@ -352,11 +352,23 @@ def shell(
                     returncode, stdout_str[:200], stderr_str[:200], shell_type or "",
                     timeout=timeout, cwd=cwd or "",
                     output_len=len(stdout_str), stderr_len=len(stderr_str))
+                # ---- observation_formatter route -------------------------------------------
+                # branch: #11 shell stdout
+                # trigger: "stdout" in data — stdout/stderr/returncode/shell_type/duration_ms
+                # handler: _format_shell_result(data)
+                # file:    observation_formatter.py:180-182
+                # ------------------------------------------------------------------------------
                 return build_warning(data=data, llm_data=llm)
             llm = _build_execute_shell_command_llm_data("success", d, command,
                 returncode, stdout_str[:200], stderr_str[:200], shell_type or "",
                 timeout=timeout, cwd=cwd or "",
                 output_len=len(stdout_str), stderr_len=len(stderr_str))
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #11 shell stdout
+            # trigger: "stdout" in data — stdout/stderr/returncode/shell_type/duration_ms
+            # handler: _format_shell_result(data)
+            # file:    observation_formatter.py:180-182
+            # ------------------------------------------------------------------------------
             return build_success(data=data, llm_data=llm)
 
         err_detail = stderr_str[:200] if stderr_str.strip() else f"退出码{returncode}"
