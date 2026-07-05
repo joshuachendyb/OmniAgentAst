@@ -74,14 +74,18 @@ def _filter_tasks(tasks: List[Dict], filter_name: Optional[str], filter_status: 
     return matched[:max_results], len(matched)
 
 
-def _build_list_tasks_llm_data(exec_code: str, duration_ms: int, tasks: List[Dict], total_raw: int, total_matched: int, detail: str = "", hint: str = "", task_name: str = "", state: str = "all") -> dict:
-    """list_tasks的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint/params参数"""
-    _params = {"task_name": task_name, "state": state}
+def _build_list_tasks_llm_data(exec_code: str, duration_ms: int, tasks: List[Dict], total_raw: int, total_matched: int,
+                               detail: str = "", hint: str = "", task_name: str = "", state: str = "all",
+                               err_code: str = "") -> dict:
+    """list_tasks的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint/params — 小欧 2026-07-05 加err_code+条件_params"""
+    _params = {"state": state}
+    if task_name:
+        _params["task_name"] = task_name
     if exec_code == "error":
         return {
             "summary": f"获取计划任务列表失败: {detail}",
             "action": {"tool": "list_tasks", "tool_zh": "列出任务", "target": "", "params": _params},
-            "status": {"exec_code": "error", "message": detail if detail else "获取计划任务列表失败", "code": ERR_TASK_LIST, "detail": detail, "hint": hint if hint else "请检查任务名称和系统设置"},
+            "status": {"exec_code": "error", "message": detail if detail else "获取计划任务列表失败", "code": err_code or ERR_TASK_LIST, "detail": detail, "hint": hint if hint else "请检查任务名称和系统设置"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -100,8 +104,7 @@ def list_tasks(task_name: Optional[str] = None, state: str = "all") -> dict:
     try:
         if platform.system() != "Windows":
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail="list_tasks仅支持Windows系统", hint="当前系统不是Windows", task_name=task_name or "", state=state)
-            llm_data["status"]["code"] = ERR_DESKTOP_PLATFORM_NOT_SUPPORTED
+            llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail="list_tasks仅支持Windows系统", hint="当前系统不是Windows", task_name=task_name or "", state=state, err_code=ERR_DESKTOP_PLATFORM_NOT_SUPPORTED)
             return build_error(data={"error_detail": "list_tasks 仅支持Windows系统", "params": {"platform": platform.system()}}, llm_data=llm_data)
 
         stdout = _run_schtasks_query()
@@ -121,23 +124,20 @@ def list_tasks(task_name: Optional[str] = None, state: str = "all") -> dict:
 
     except subprocess.TimeoutExpired:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail="获取计划任务列表超时", hint="请检查系统任务计划程序服务", task_name=task_name or "", state=state)
-        llm_data["status"]["code"] = ERR_SHELL_TIMEOUT
+        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail="获取计划任务列表超时", hint="请检查系统任务计划程序服务", task_name=task_name or "", state=state, err_code=ERR_SHELL_TIMEOUT)
         return build_error(data={"error_detail": "获取计划任务列表超时", "params": {"task_name": task_name, "state": state}}, llm_data=llm_data)
     except ValueError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail=str(e), hint="请检查任务名称是否正确", task_name=task_name or "", state=state)
-        llm_data["status"]["code"] = ERR_TASK_EMPTY
+        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail=str(e), hint="请检查任务名称是否正确", task_name=task_name or "", state=state, err_code=ERR_TASK_EMPTY)
         return build_error(data={"error_detail": str(e), "params": {"task_name": task_name}}, llm_data=llm_data)
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail="schtasks命令不存在", hint="请确认系统支持schtasks命令", task_name=task_name or "", state=state)
-        llm_data["status"]["code"] = ERR_SHELL_COMMAND_NOT_FOUND
+        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail="schtasks命令不存在", hint="请确认系统支持schtasks命令", task_name=task_name or "", state=state, err_code=ERR_SHELL_COMMAND_NOT_FOUND)
         return build_error(data={"error_detail": "schtasks 命令不存在", "params": {"task_name": task_name}}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[list_tasks] 获取计划任务列表失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail=str(e), hint="请检查系统任务计划程序状态", task_name=task_name or "", state=state)
+        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail=str(e), hint="请检查系统任务计划程序状态", task_name=task_name or "", state=state, err_code=ERR_TASK_LIST)
         return build_error(data={"error_detail": str(e), "params": {"task_name": task_name}}, llm_data=llm_data)
 
 

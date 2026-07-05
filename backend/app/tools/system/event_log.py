@@ -25,21 +25,25 @@ from app.tools.tool_constants import (
 )
 
 
-def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, event_count: int, level: str, detail: str = "") -> dict:
-    """event_log的llm_data构建函数 — 小健 2026-06-22"""
+def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, event_count: int, level: str,
+                              detail: str = "", err_code: str = "") -> dict:
+    """event_log的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加err_code参数"""
+    _act_params = {"log_name": log_name}
+    if level:
+        _act_params["level"] = level
     if exec_code == "error":
         error_msg = detail if detail else f"获取事件日志失败: {log_name}"
         return {
             "summary": error_msg,
-            "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": {"log_name": log_name, "level": level}},
-            "status": {"exec_code": "error", "message": error_msg, "code": ERR_SYSTEM_EVENT_LOG, "detail": detail, "hint": "请检查日志名称、级别和权限"},
+            "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},
+            "status": {"exec_code": "error", "message": error_msg, "code": err_code or ERR_SYSTEM_EVENT_LOG, "detail": detail, "hint": "请检查日志名称、级别和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     summary_text = f"获取 {log_name}，{event_count}条事件" if event_count > 0 else f"获取 {log_name} 成功，指定时间范围内无匹配事件"
     return {
         "summary": summary_text,
-        "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": {"log_name": log_name, "level": level}},
+        "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"events": {"value": event_count, "text": f"{event_count}条"}},
@@ -160,8 +164,7 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
         if "error_detail" in result:
             error_code = result.pop("_error_code", ERR_SYSTEM_EVENT_LOG)
             error_detail = result.get("error_detail", "")
-            llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail)
-            llm_data["status"]["code"] = error_code
+            llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail, err_code=error_code)
             return build_error(data=result, llm_data=llm_data)
         else:
             result.pop("_error_code", None)
