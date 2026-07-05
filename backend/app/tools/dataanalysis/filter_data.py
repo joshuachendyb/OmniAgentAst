@@ -20,9 +20,9 @@ from app.utils.json_utils import coerce_json
 from app.tools.tool_constants import ERR_FILTER_INVALID
 
 
-def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail="",
+def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail="", hint="",
                                  file_path="", data="", conditions=None, select_columns=None, sort_by="", top_n=0, max_rows=0):
-    """filter_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params"""
+    """filter_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数"""
     columns = columns or []
     _act_params = {}
     if file_path:
@@ -43,7 +43,7 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
         return {
             "summary": f"数据筛选失败: {detail}",
             "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": _act_params},
-            "status": {"exec_code": "error", "message": "筛选失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": "请检查条件和数据"},
+            "status": {"exec_code": "error", "message": "筛选失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": hint if hint else "请检查条件和数据"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -125,12 +125,12 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
     if file_path and data:
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数互斥,只能传入其中一个", file_path=file_path, data=data)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数互斥,只能传入其中一个", hint="file_path和data只能选其一", file_path=file_path, data=data)
         return build_error(data={"error_detail": "file_path和data参数互斥,只能传入其中一个", "params": {"file_path": file_path, "data": data}}, llm_data=llm_data)
     if not file_path and not data:
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数必须传入其中一个")
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数必须传入其中一个", hint="请提供file_path或data参数")
         return build_error(data={"error_detail": "file_path和data参数必须传入其中一个"}, llm_data=llm_data)
 
     if conditions is not None:
@@ -140,7 +140,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
     t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="pandas库未安装", file_path=file_path, data=data)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="pandas库未安装", hint="请安装pandas库", file_path=file_path, data=data)
         return build_error(data={"error_detail": "pandas库未安装", "params": {"library": "pandas"}}, llm_data=llm_data)
 
     try:
@@ -152,11 +152,11 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
                 loaded = _load_data_to_df(parsed_data, max_rows)
             else:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_filter_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组字符串", data=data)
+                llm_data = _build_filter_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组字符串", hint="请提供JSON数组格式的数据", data=data)
                 return build_error(data={"error_detail": "data参数必须是JSON数组字符串", "params": {"data_type": type(parsed_data).__name__}}, llm_data=llm_data)
         if "error_detail" in loaded:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=loaded["error_detail"], file_path=file_path, data=data)
+            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=loaded["error_detail"], hint="请检查数据加载路径", file_path=file_path, data=data)
             return build_error(data=loaded, llm_data=llm_data)
         df = loaded["df"]
         original_count = len(df)
@@ -164,7 +164,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
         result = _build_condition_mask(df, conditions)
         if "error_detail" in result:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=result["error_detail"], file_path=file_path, data=data, conditions=conditions)
+            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=result["error_detail"], hint="请检查筛选条件", file_path=file_path, data=data, conditions=conditions)
             return build_error(data=result, llm_data=llm_data)
         filtered_df = df[result["mask"]]
         warnings = result["warnings"]
@@ -203,7 +203,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
         return build_success(data=result_data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail=str(e), file_path=file_path, data=data)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail=str(e), hint="筛选异常，请检查数据", file_path=file_path, data=data)
         return build_error(data={"error_detail": str(e), "params": {"data": str(data)[:200]}}, llm_data=llm_data)
 
 
