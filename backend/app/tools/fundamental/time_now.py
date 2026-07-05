@@ -51,6 +51,12 @@ def timenow() -> Dict[str, Any]:
             "isoweekday": now.isoweekday(),
         }
         llm_data = _build_time_now_llm_data("success", duration_ms, now.isoformat(), formatted, now.strftime("%A"))
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val)
+        # trigger: 无上述20条分支匹配 — iso/timestamp/format/timezone/weekday/isoweekday
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

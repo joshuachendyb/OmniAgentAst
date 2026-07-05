@@ -189,6 +189,12 @@ def searchtool(query: str) -> Dict[str, Any]:
     }
     llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(meaningful), len(all_tools),
                                              [{"name": r["name"], "category": r["category"]} for r in top_results])
+    # ---- observation_formatter route -------------------------------------------
+    # branch: #9 matches (searchtool subtype)
+    # trigger: "matches" in data → ms[0] 含 "category" 键
+    # handler: _format_searchtool_results(ms)
+    # file:    observation_formatter.py:152-178
+    # ------------------------------------------------------------------------------
     return build_success(data=data, llm_data=llm_data)
 
 

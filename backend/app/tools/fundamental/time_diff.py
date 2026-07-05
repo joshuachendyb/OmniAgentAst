@@ -17,19 +17,22 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_TIME_DIFF
 
 
-def _build_time_diff_llm_data(exec_code: str, duration_ms: int, humanized: str, seconds: int, days: float, is_future: bool) -> dict:
-    """time_diff的llm_data构建函数 — 小健 2026-06-21"""
+def _build_time_diff_llm_data(exec_code: str, duration_ms: int, humanized: str, seconds: int, days: float, is_future: bool, detail: str = "", user_start: str = "", user_end: Optional[str] = None) -> dict:
+    """time_diff的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-07-05 补start/end参数 + detail透传"""
+    _act_params = {"start": user_start} if user_start else {}
+    if user_end is not None:
+        _act_params["end"] = user_end
     if exec_code == "error":
         return {
             "summary": "计算时间差失败",
-            "action": {"tool": "timediff", "tool_zh": "时间差值", "target": "", "params": {}},
-            "status": {"exec_code": "error", "message": "计算时间差失败", "code": ERR_TIME_DIFF, "detail": "", "hint": "请检查时间格式"},
+            "action": {"tool": "timediff", "tool_zh": "时间差值", "target": "", "params": _act_params},
+            "status": {"exec_code": "error", "message": "计算时间差失败", "code": ERR_TIME_DIFF, "detail": detail, "hint": "请检查时间格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"时间差: {humanized}（{round(days, 2)}天）",
-        "action": {"tool": "timediff", "tool_zh": "时间差值", "target": "", "params": {}},
+        "action": {"tool": "timediff", "tool_zh": "时间差值", "target": "", "params": _act_params},
         "status": {"exec_code": "success", "message": "计算时间差成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"seconds": {"value": seconds, "text": f"{seconds}秒"}, "days": {"value": round(days, 2), "text": f"{round(days, 2)}天"}},
@@ -43,7 +46,7 @@ def timediff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
         start_dt = _parse_datetime_any(start)
         if start_dt is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_time_diff_llm_data("error", duration_ms, "", 0, 0, False)
+            llm_data = _build_time_diff_llm_data("error", duration_ms, "", 0, 0, False, detail=f"无法解析开始时间: {start}", user_start=start, user_end=end)
             return build_error(data={"error_detail": f"无法解析开始时间: {start}", "params": {"start": str(start)}}, llm_data=llm_data)
         if start_dt.tzinfo is None:
             start_dt = start_dt.replace(tzinfo=timezone.utc).astimezone()
@@ -54,7 +57,7 @@ def timediff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
             end_dt = _parse_datetime_any(end)
             if end_dt is None:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_time_diff_llm_data("error", duration_ms, "", 0, 0, False)
+                llm_data = _build_time_diff_llm_data("error", duration_ms, "", 0, 0, False, detail=f"无法解析结束时间: {end}", user_start=start, user_end=end)
                 return build_error(data={"error_detail": f"无法解析结束时间: {end}", "params": {"end": str(end)}}, llm_data=llm_data)
             if end_dt.tzinfo is None:
                 end_dt = end_dt.replace(tzinfo=timezone.utc).astimezone()
@@ -101,11 +104,17 @@ def timediff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
             "is_equal": diff_signed == 0,
             "diff_seconds_signed": diff_signed,
         }
-        llm_data = _build_time_diff_llm_data("success", duration_ms, humanized, seconds, days, is_future)
+        llm_data = _build_time_diff_llm_data("success", duration_ms, humanized, seconds, days, is_future, user_start=start, user_end=end)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #21 fallback (key:val)
+        # trigger: 无上述20条分支匹配 — humanized/seconds/minutes/hours/days/is_future 等
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
+        # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_time_diff_llm_data("error", duration_ms, "", 0, 0, False)
+        llm_data = _build_time_diff_llm_data("error", duration_ms, "", 0, 0, False, detail=str(e), user_start=start, user_end=end)
         return build_error(data={"error_detail": str(e), "params": {"start": str(start), "end": str(end)}}, llm_data=llm_data)
 
 
