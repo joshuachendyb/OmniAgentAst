@@ -70,12 +70,11 @@ async def _try_read_file_with_encodings(
             encodings_to_try = [preferred]
         else:
             auto = get_file_encoding(str(path))
-            encodings_to_try = []
+            encodings_to_try = ["utf-8", "gbk", "gb2312", "utf-8-sig"]
             if auto and auto.get("data", {}).get("encoding"):
-                encodings_to_try.append(auto["data"]["encoding"])
-        encodings_to_try.extend(["utf-8", "gbk", "gb2312", "utf-8-sig"])
-
-        do_detect = preferred is None
+                enc = auto["data"]["encoding"]
+                if enc not in encodings_to_try:
+                    encodings_to_try.insert(0, enc)
 
         for enc in encodings_to_try:
             if enc is None:
