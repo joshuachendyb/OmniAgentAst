@@ -306,8 +306,27 @@ async def build_observation(ctx: ObservationContext) -> List:
     for idx, (call, result) in enumerate(zip(ctx.all_calls, ctx.results)):
         if isinstance(result, Exception):
             obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
+            _ec = "error"
+            _is_failed = True
         else:
             obs_text = build_observation_text(result, call["tool_name"], call["tool_params"])
+            _llm_data = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
+            _ec = _llm_data.get("status", {}).get("exec_code", "") if _llm_data else "error"
+            _is_failed = _ec == "error"
+
+        get_prompt_logger().log_observation(
+            step_name=f"步骤{ctx.step}: 工具执行结果",
+            observation_content=obs_text,
+            tool_name=call["tool_name"],
+            tool_params=call["tool_params"],
+            round_number=ctx.step,
+        )
+        ctx.agent.record_operation(
+            call.get("tool_name", "?"),
+            status=OperationStatus.FAILED.value if _is_failed else OperationStatus.SUCCESS.value,
+            error=str(result) if _is_failed else None,
+        )
+
         repair_warning = call.get("_repair_warning", "")
         if repair_warning:
             obs_text = f"Observation: {repair_warning}\n{obs_text}"
@@ -416,28 +435,6 @@ def _build_call_list(parsed: Dict) -> tuple:
     return tool_name, tool_params, fc_context, pending_calls, all_calls, len(all_calls) > 1
 
 
-def _log_tool_results(step: int, all_calls: list, results: list, agent):
-    """记录工具执行结果到prompt logger和task tracker — 小欧 2026-06-18; 小健 2026-06-18 合并两个循环"""
-    prompt_logger = get_prompt_logger()
-    for call, result in zip(all_calls, results):
-        obs_text = str(result) if isinstance(result, Exception) else (
-            result.get("message", str(result)) if isinstance(result, dict) else str(result)
-        )
-        prompt_logger.log_observation(
-            step_name=f"步骤{step}: 工具执行结果", observation_content=obs_text,
-            tool_name=call["tool_name"], tool_params=call["tool_params"], round_number=step,
-        )
-        
-        is_error = isinstance(result, Exception)
-        if isinstance(result, dict):
-            _llm_d = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
-            exec_code = _llm_d.get("status", {}).get("exec_code", "")
-            is_failed = exec_code == "error"
-        else:
-            is_failed = is_error
-        op_status = OperationStatus.FAILED.value if (is_error or is_failed) else OperationStatus.SUCCESS.value
-        agent.record_operation(call.get("tool_name", "?"), status=op_status, error=str(result) if (is_error or is_failed) else None)
-
 
 async def handle_action(agent, parsed: Dict, chunk_buffer):
     """完整action处理流程 — FC-only: 提取fc_context传递 — 小沈 2026-06-11"""
@@ -473,8 +470,6 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
         return
 
     results = await execute_tools(agent, all_calls, is_parallel, tool_name, tool_params)
-
-    _log_tool_results(step, all_calls, results, agent)
 
     ctx = ObservationContext(
         agent=agent, all_calls=all_calls, results=results, step=step,

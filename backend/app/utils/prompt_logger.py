@@ -375,15 +375,16 @@ class PromptLogger:
             "步骤": step_name,
             "类型": "观察结果Prompt",
             "来源": f"工具执行结果: {tool_name}" if tool_name else "工具执行结果",
-            "内容": observation_content,
             "内容长度": len(observation_content),
-            "时间戳": now_str()
+            "时间戳": now_str(),
         }
         if round_number > 0:
             entry["轮次"] = round_number
         
         if tool_params:
             entry["工具参数"] = tool_params
+        
+        entry["内容"] = observation_content
         
         current_log["Prompt组装过程"].append(entry)
     
