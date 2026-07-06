@@ -336,12 +336,8 @@ def _format_readmedia(data: dict) -> str:
 # format_llm_observation 三段式输出样式:
 #   输入: data={...工具返回data...}, llm_data={"status":{"exec_code":"success","message":"文件已保存"},"action":{"tool_zh":"写文本文件"},"summary":"已写入 test.txt"}
 #   输出: 观察: 文件已保存 - 写文本文件\n  结果: 已写入 test.txt\n  ----------\n  详情: \n  path: /tmp/test.txt\n  size: 1024
-def format_llm_observation(data: Any, llm_data: Dict) -> str:
-    """格式化工具结果为LLM observation文本 — 小欧 2026-06-21
-
-    llm_data → 观察行 + 结果行（三段式的前两段）
-    data     → 详情行（通过 format_data_detail）
-    """
+def _format_llm_data(llm_data: Dict) -> str:
+    """格式化llm_data为observation文本（观察行+结果行+统计行+建议行）— 小欧 2026-07-06"""
     status = llm_data.get("status", {})
     action = llm_data.get("action", {})
     summary = llm_data.get("summary", "")
@@ -376,15 +372,30 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     if metric_lines:
         text += "\n统计:\n" + "\n".join(metric_lines)
 
-    if data is not None and data != {} and data != [] and data != "":
-        detail = format_data_detail(data)
-        if detail:
-            text += f"\n详情:\n{detail}"
+    diff = llm_data.get("diff", "")
+    if diff:
+        text += f"\n差异:\n{diff}"
 
     if exec_code in ("error", "warning"):
         hint = status.get("hint", "")
         if hint:
             text += f"\n建议: {hint}"
+
+    return text
+
+
+def format_llm_observation(data: Any, llm_data: Dict) -> str:
+    """格式化工具结果为LLM observation文本 — 小欧 2026-06-21 — 小欧 2026-07-06 拆分_format_llm_data
+
+    llm_data → _format_llm_data（观察行+结果行+统计行+建议行）
+    data     → 详情行（通过 format_data_detail）
+    """
+    text = _format_llm_data(llm_data)
+
+    if data is not None and data != {} and data != [] and data != "":
+        detail = format_data_detail(data)
+        if detail:
+            text += f"\n详情:\n{detail}"
 
     return text
 

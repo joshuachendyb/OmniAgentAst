@@ -119,7 +119,7 @@ def _build_edit_text_file_llm_data(
     user_replace_all: Optional[bool] = None, user_ignore_case: Optional[bool] = None,
     user_encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """edit_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 增加diff/total_matches/mtime_warning — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-06 diff移入other_data,metrics只留数值"""
+    """edit_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 增加diff/total_matches/mtime_warning — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-06 diff移入other_data — 小欧 2026-07-06 diff移回metrics"""
     _act_params = {"file_path": file_path}
     if user_old_string:
         _act_params["old_string"] = user_old_string[:50]  # 小欧 2026-07-06 100→50，减少返回给LLM的冗余参数
@@ -160,7 +160,8 @@ def _build_edit_text_file_llm_data(
         "metrics": {
             "applied": {"value": applied, "text": f"{applied}/{total}处"},
             "total_matches": {"value": total_matches, "text": f"共{total_matches}处"},
-        },  # 小欧 2026-07-06 diff移入other_data
+        },
+        "diff": diff[:500],
     }
 
 
@@ -341,8 +342,7 @@ async def edittext(
     # handler: _format_scalar_data(data) — key | value 单行列表
     # file:    observation_formatter.py:214
     # ------------------------------------------------------------------------------
-    diff = result.get("diff", "")[:2000]
-    return build_success(data=result, llm_data=llm_data, other_data={"diff": diff})  # 小欧 2026-07-06 diff从metrics移入other_data
+    return build_success(data=result, llm_data=llm_data)  # 小欧 2026-07-06 diff移回llm_data.metrics
 
 
 # 本地 mtime 缓存已于 2026-07-05 迁移到 file/file_state.py — 小欧
