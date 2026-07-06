@@ -1,4 +1,25 @@
-﻿v0.18.0
+﻿v0.18.1
+更新时间: 2026-07-06 10:30:00
+## v0.18.0→v0.18.1 变更汇总 - 小欧-2026-07-06
+
+### feat: 回收站自动清理机制(5天+10GB上限)
+- config.py: BACKUP_RETENTION_DAYS=30→5, 新增RECYCLE_BIN_MAX_SIZE_GB=10 - 小欧-2026-07-06
+- operation_cleanup.py: 新增_get_folder_size/cleanup_by_size 超上限自动删最旧备份 - 小欧-2026-07-06
+- operation_executor.py: 每次备份后调用cleanup_expired_backups - 小欧-2026-07-06
+
+### refactor: observation_formatter 更新工具映射表 + 8个工具LLM data裁剪
+- observation_formatter.py: 更新handler映射注释表 - 小欧-2026-07-06
+- 5个dataanalysis工具: 去掉analyze_data/filter_data的data/conditions大字段 - 小欧-2026-07-06
+- http_request: 去掉headers/body大字段 - 小欧-2026-07-06
+- edit_text_file: diff移入other_data, 统一截断50字符 - 小欧-2026-07-06
+- send_notification/execute_sql/query_sql: message/sql截断200→50统一 - 小欧-2026-07-06
+
+### fix: promptlog + tools return_build_error + gitignore
+- promptlog: observation内容改为formatted text与LLM一致 - 小欧-2026-07-06
+- 6个工具补return build_error + 去重hint + 统一docstring - 小欧-2026-07-05
+- gitignore: 添加测试记录文件 - 小欧-2026-07-05
+
+v0.18.0
 更新时间: 2026-07-05 22:32:48
 ## v0.17.22→v0.18.0 变更汇总 - 小欧-2026-07-05
 
