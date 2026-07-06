@@ -273,11 +273,11 @@ async def grep(
         _sort_grep_results_by_mtime(gr.results)
 
     if output_mode == "count":
-        data = {"total_matches": gr.total_matches, "total_files": gr.total_files, "pattern": pattern}
+        data = {}
     elif output_mode == "files_with_matches":
-        data = {"files": gr.results, "total_files": gr.total_files, "pattern": pattern}
+        data = {"files": gr.results}
     else:
-        data = {"matches": gr.results, "total_matches": gr.total_matches, "total_files": gr.total_files, "pattern": pattern}
+        data = {"matches": gr.results}
 
     # 添加跳过的二进制文件信息 — 小健 2026-06-24
     if gr.skipped_binaries:

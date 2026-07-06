@@ -91,7 +91,7 @@ async def rename(
         # handler: _format_scalar_data(data) — key | value 单行列表
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
-        return build_success(data={"skipped": True, "reason": "名称相同，无需操作"}, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data)
 
     result = await _move_file_impl(source_path=source, destination_path=str(dst), overwrite=False)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -105,7 +105,7 @@ async def rename(
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
         return build_success(
-            data={"operation_id": result.get("operation_id")},
+            data={},
             llm_data=llm_data,
         )
     else:

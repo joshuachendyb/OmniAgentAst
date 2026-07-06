@@ -137,11 +137,11 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 # handler: _format_scalar_data(data) — key | value 单行列表
                 # file:    observation_formatter.py:214
                 # ------------------------------------------------------------------------------
-                return build_success(data={"sql": sql, "dry_run": True, "syntax_valid": True}, llm_data=llm_data)
+                return build_success(data={"syntax_valid": True}, llm_data=llm_data)
             else:
                 llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail="SQL语法校验失败", hint="请检查SQL语法",
                                                          connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
-                return build_error(data={"sql": sql, "dry_run": True, "syntax_valid": False, "error_detail": "SQL语法校验失败"}, llm_data=llm_data)
+                return build_error(data={"dry_run": True, "syntax_valid": False, "error_detail": "SQL语法校验失败"}, llm_data=llm_data)
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
@@ -183,7 +183,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
         # handler: _format_scalar_data(data) — key | value 单行列表
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
-        return build_success(data={"affected_rows": affected_rows, "sql": sql}, llm_data=llm_data)
+        return build_success(data={"affected_rows": affected_rows}, llm_data=llm_data)
 
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

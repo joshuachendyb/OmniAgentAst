@@ -88,15 +88,13 @@ def timeadd(delta: float, start: Optional[str] = None, unit: Literal["days", "ho
             "iso": new_dt.isoformat(),
             "timestamp": int(new_dt.timestamp()),
             "tz": new_dt.strftime("%z").replace(":", ""),
-            "unit_used": unit_lower,
-            "delta_used": delta,
             "weekday": weekday,
             "isoweekday": isoweekday,
         }
         llm_data = _build_time_add_llm_data("success", duration_ms, result_time_str, unit_lower, delta, user_start=start)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — result_time/iso/timestamp/tz/unit_used/delta_used/weekday
+        # trigger: 无上述20条分支匹配 — result_time/iso/timestamp/tz/weekday
         # handler: _format_scalar_data(data) — key | value 单行列表
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------

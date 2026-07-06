@@ -179,7 +179,7 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
         # handler: _format_scalar_data(data) — key | value 单行列表
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
-        return build_success(data={"output_path": output_path, "chart_type": chart_type_lower}, llm_data=llm_data)
+        return build_success(data={"output_path": output_path}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=str(e), hint="图表生成异常，请检查数据", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)

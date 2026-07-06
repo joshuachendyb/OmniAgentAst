@@ -83,7 +83,7 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
             # handler: _format_scalar_data(data) — key | value 单行列表
             # file:    observation_formatter.py:214
             # ------------------------------------------------------------------------------
-            return build_success(data={"key_path": key_path, "dry_run": True}, llm_data=llm_data)
+            return build_success(data={"dry_run": True}, llm_data=llm_data)
         except FileNotFoundError:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_registry_write_llm_data("error", duration_ms, key_path, value_name, value, value_type, detail=f"键路径不存在: {key_path}", hint="请检查键路径是否正确")
@@ -112,7 +112,7 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
 
         logger.debug(f"[registry_write] 写入成功: {full_root_key}\\{sub_key}\\{value_name}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"key_path": f"{full_root_key}\\{sub_key}", "value_name": value_name, "value": value, "value_type": actual_type}
+        data = {"value": value, "value_type": actual_type}
         llm_data = _build_registry_write_llm_data("success", duration_ms, data["key_path"], value_name, value, actual_type)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val) — write path

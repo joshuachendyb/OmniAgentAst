@@ -128,7 +128,6 @@ def searchtool(query: str) -> Dict[str, Any]:
     if not all_tools:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         data = {
-            "query": query,
             "matches": [],
             "total_matched": 0,
             "total_tools": 0,
@@ -149,7 +148,7 @@ def searchtool(query: str) -> Dict[str, Any]:
         top = all_items[:10]
         duration_ms = int((time.perf_counter() - t0) * 1000)
         data = {
-            "query": query, "matches": top,
+            "matches": top,
             "total_matched": len(all_items), "total_tools": len(all_tools),
         }
         llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(all_items), len(all_tools), top)
@@ -182,7 +181,6 @@ def searchtool(query: str) -> Dict[str, Any]:
     # data.matches已精简为仅name+category，LLM仅需知道"搜到了/没搜到"，
     # 工具详情感知由auto_inject_from_search自动注入整个分类 — 北京老陈 2026-06-26
     data = {
-        "query": query,
         "matches": [{"name": r["name"], "category": r["category"]} for r in top_results],
         "total_matched": len(meaningful),
         "total_tools": len(all_tools),

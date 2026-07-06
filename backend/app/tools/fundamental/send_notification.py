@@ -76,7 +76,7 @@ def notify(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
             future = executor.submit(_show_toast)
             future.result(timeout=duration + 5)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"title": title, "message": message, "duration": duration}
+        data = {}
         llm_data = _build_send_notification_llm_data("success", duration_ms, title, duration, message=message)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)

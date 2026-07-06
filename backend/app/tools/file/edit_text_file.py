@@ -342,7 +342,8 @@ async def edittext(
     # handler: _format_scalar_data(data) — key | value 单行列表
     # file:    observation_formatter.py:214
     # ------------------------------------------------------------------------------
-    return build_success(data=result, llm_data=llm_data)  # 小欧 2026-07-06 diff移回llm_data.metrics
+    clean_data = {k: v for k, v in result.items() if k not in ("operation_id", "file_path", "skipped")}
+    return build_success(data=clean_data, llm_data=llm_data)  # 小欧 2026-07-06 diff移回llm_data.metrics
 
 
 # 本地 mtime 缓存已于 2026-07-05 迁移到 file/file_state.py — 小欧

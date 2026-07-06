@@ -71,7 +71,7 @@ def delete_task(task_name: str) -> dict:
             return build_error(data={"error_detail": err_msg, "params": {"task_name": task_name}}, llm_data=llm_data)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"task_name": task_name}
+        data = {}
         llm_data = _build_delete_task_llm_data("success", duration_ms, task_name)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)

@@ -45,13 +45,13 @@ def mouse_move(x: int, y: int) -> Dict[str, Any]:
         import pyautogui
         pyautogui.moveTo(x, y, duration=duration)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"x": x, "y": y}
+        data = {}
         llm_data = _build_mouse_move_llm_data("success", duration_ms, x, y)
         # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — x/y 不命中专用分支
-        # handler: _format_scalar_data(data) — key | value 单行列表
-        # file:    observation_formatter.py:214
+        # branch: #0 空data
+        # trigger: data 为 {}
+        # handler: 直接返回空字符串
+        # file:    observation_formatter.py:73-74
         # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:

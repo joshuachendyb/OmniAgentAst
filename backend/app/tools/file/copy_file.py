@@ -168,7 +168,7 @@ async def copy(
             # file:    observation_formatter.py:214
             # ------------------------------------------------------------------------------
             return build_success(
-                data={"operation_id": operation_id, "source": str(src), "destination": str(dst)},
+                data={},
                 llm_data=llm_data)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "复制失败"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
         return build_error(data={"error_detail": "复制失败", "params": {"source": source}}, llm_data=llm_data)

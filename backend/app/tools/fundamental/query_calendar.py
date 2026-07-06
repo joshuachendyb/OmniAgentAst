@@ -110,12 +110,11 @@ def calendar(
             "holiday_name": holiday_info["name"],
             "is_workday": is_workday,
             "holiday_type": holiday_info["type"],
-            "matched_by_name": name,
         }
         llm_data = _build_query_calendar_llm_data("success", duration_ms, holiday_info["date"], is_weekend, is_hol, is_workday, holiday_info["name"], user_name=name, user_year=year)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val) — name query
-        # trigger: 无上述20条分支匹配 — date/weekday/is_holiday/holiday_type/matched_by_name
+        # trigger: 无上述20条分支匹配 — date/weekday/is_holiday/holiday_type
         # handler: _format_scalar_data(data) — key | value 单行列表
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------

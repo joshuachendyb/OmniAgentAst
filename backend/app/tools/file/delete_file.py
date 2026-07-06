@@ -181,7 +181,7 @@ async def delete(
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
         return build_success(
-            data={"operation_id": result.get("operation_id"), "deleted_path": result.get("deleted_path")},
+            data={},
             llm_data=llm_data,
         )
     else:

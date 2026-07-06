@@ -80,7 +80,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
             with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_SET_VALUE) as key:
                 winreg.DeleteValue(key, value_name)
 
-            result_data = {"key_path": f"{full_root_key}\\{sub_key}", "value_name": value_name, "action": "deleted_value"}
+            result_data = {"action": "deleted_value"}
             logger.debug(f"[registry_delete] 成功删除值: {full_root_key}\\{sub_key}\\{value_name}")
         else:
             if not recursive:
@@ -114,7 +114,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
             with winreg.OpenKey(hkey, parent_key, 0, winreg.KEY_SET_VALUE) as key:
                 winreg.DeleteKey(key, key_name)
 
-            result_data = {"key_path": f"{full_root_key}\\{sub_key}", "action": "deleted_key", "recursive": recursive}
+            result_data = {"action": "deleted_key"}
             logger.debug(f"[registry_delete] 成功删除子键: {full_root_key}\\{sub_key}")
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

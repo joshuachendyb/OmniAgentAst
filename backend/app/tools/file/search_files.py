@@ -201,7 +201,7 @@ async def find(
         # file:    observation_formatter.py:152-178
         # ------------------------------------------------------------------------------
         return build_warning(
-            data={"matches": page, "total": total, "search_dir": search_dir, "pattern": pattern, "offset": offset},
+            data={"matches": page, "total": total, "offset": offset},
             llm_data=llm_data,
         )
     # ---- observation_formatter route -------------------------------------------

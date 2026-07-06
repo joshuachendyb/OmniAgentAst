@@ -186,7 +186,7 @@ async def httpget(
                                                               hint="请检查URL和服务器状态",
                                                               timeout=timeout, proxy=proxy, headers=headers, body=body)
                     return build_error(
-                        data={"error_detail": f"HTTP {e.response.status_code}", "params": {"url": url, "status_code": e.response.status_code, "body": error_body}},
+                        data={"error_detail": f"HTTP {e.response.status_code}", "params": {"url": url, "status_code": e.response.status_code}},
                         llm_data=llm_data)
                 # 可重试异常 → 传播给 ToolRetryEngine
                 raise
@@ -196,4 +196,4 @@ async def httpget(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _build_http_error(e, url, 0, duration_ms)
         llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"], hint="请检查URL和网络连接", timeout=timeout, proxy=proxy, headers=headers, body=body)
-        return build_error(data={"error_detail": error_info["error_detail"], "params": {"url": url, "timeout": timeout, "proxy": proxy, "headers": headers, "body": body}}, llm_data=llm_data)
+        return build_error(data={"error_detail": error_info["error_detail"], "params": {"url": url, "timeout": timeout, "proxy": proxy}}, llm_data=llm_data)

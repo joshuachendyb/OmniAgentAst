@@ -91,13 +91,13 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
         func(hwnd, *args)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"window_title": title, "action": action, "hwnd": hwnd, "matched_count": len(matched_hwnds)}
+        data = {}
         llm_data = _build_set_window_state_llm_data("success", duration_ms, action, title, len(matched_hwnds))
         # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — window_title/action/hwnd/matched_count
-        # handler: _format_scalar_data(data) — key | value 单行列表
-        # file:    observation_formatter.py:214
+        # branch: #0 空data
+        # trigger: data 为 {}
+        # handler: 直接返回空字符串
+        # file:    observation_formatter.py:73-74
         # ------------------------------------------------------------------------------
         return build_success(data=data, llm_data=llm_data)
 

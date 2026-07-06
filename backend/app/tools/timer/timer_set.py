@@ -116,7 +116,7 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
         _timers[timer_id] = timer_handle
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"timer_id": timer_id, "delay": delay, "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S")}
+        data = {"timer_id": timer_id, "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S")}
         llm_data = _build_timer_set_llm_data("success", duration_ms, timer_id, trigger_at.strftime("%Y-%m-%d %H:%M:%S"), delay, callback=callback)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)

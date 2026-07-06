@@ -226,7 +226,7 @@ async def writetext(
                 # handler: _format_scalar_data(data) — key | value 单行列表
                 # file:    observation_formatter.py:214
                 # ------------------------------------------------------------------------------
-                return build_success(data={"operation_id": None, "skipped": True}, llm_data=llm_data)
+                return build_success(data={}, llm_data=llm_data)
         except Exception:
             old_content = None
 
@@ -289,7 +289,7 @@ async def writetext(
                 if diff_text:
                     llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
                 return build_warning(
-                    data={"operation_id": operation_id},
+                    data={},
                     llm_data=llm_data,
                 )
             llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
@@ -302,7 +302,7 @@ async def writetext(
             # file:    observation_formatter.py:214
             # ------------------------------------------------------------------------------
             return build_success(
-                data={"operation_id": operation_id},
+                data={},
                 llm_data=llm_data,
             )
         else:

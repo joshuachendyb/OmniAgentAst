@@ -92,7 +92,7 @@ def keyboard_control(action: Literal["type", "shortcut"], text_or_keys: str) -> 
     if not isinstance(text_or_keys, str) or not text_or_keys.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys, hint="请提供非空的键盘输入内容")
-        return build_error(data={"error_detail": "键盘输入内容不能为空", "params": {"action": action, "text_or_keys": text_or_keys}}, llm_data=llm_data)
+        return build_error(data={"error_detail": "键盘输入内容不能为空", "params": {"action": action}}, llm_data=llm_data)
     if action == "type":
         result = _type_text(text=text_or_keys, interval=0)
     elif action == "shortcut":

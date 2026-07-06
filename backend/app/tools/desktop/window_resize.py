@@ -73,7 +73,7 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
         new_height = height if height else curr_height
 
         win32gui.MoveWindow(target_hwnd, left, top, new_width, new_height, True)
-        data = {"title": window_title, "width": new_width, "height": new_height}
+        data = {"width": new_width, "height": new_height}
         llm_data = _build_window_resize_llm_data("success", duration_ms, window_title, new_width, new_height)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)

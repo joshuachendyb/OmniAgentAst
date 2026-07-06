@@ -162,7 +162,7 @@ async def move(
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
         return build_success(
-            data={"operation_id": result.get("operation_id")},
+            data={},
             llm_data=llm_data,
         )
     else:

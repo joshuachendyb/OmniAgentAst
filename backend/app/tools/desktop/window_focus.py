@@ -58,13 +58,13 @@ def window_focus(window_title: str) -> Dict[str, Any]:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if target_hwnd:
             win32gui.SetForegroundWindow(target_hwnd)
-            data = {"title": window_title, "hwnd": target_hwnd}
+            data = {}
             llm_data = _build_window_focus_llm_data("success", duration_ms, window_title)
             # ---- observation_formatter route -------------------------------------------
-            # branch: #21 fallback (key:val)
-            # trigger: 无上述20条分支匹配 — title/hwnd 不命中专用分支
-            # handler: _format_scalar_data(data) — key | value 单行列表
-            # file:    observation_formatter.py:214
+            # branch: #0 空data
+            # trigger: data 为 {}
+            # handler: 直接返回空字符串
+            # file:    observation_formatter.py:73-74
             # ------------------------------------------------------------------------------
             return build_success(data=data, llm_data=llm_data)
         else:

@@ -335,8 +335,7 @@ def shell(
         d = int((_time_mod.perf_counter() - t0) * 1000)
         data = {
             "stdout": stdout_str, "stderr": stderr_str,
-            "returncode": returncode, "shell_type": shell_type or "powershell",
-            "duration_ms": d,
+            "returncode": returncode,
         }
 
         # ── 阶段 5: 构建 build3 + llm_data ──

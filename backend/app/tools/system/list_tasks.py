@@ -112,7 +112,7 @@ def list_tasks(task_name: Optional[str] = None, state: str = "all") -> dict:
         limited, matched = _filter_tasks(tasks, task_name, state, 100)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"tasks": limited, "total": len(tasks), "returned": len(limited), "platform": "Windows"}
+        data = {"tasks": limited, "total": len(tasks), "returned": len(limited)}
         llm_data = _build_list_tasks_llm_data("success", duration_ms, limited, len(tasks), matched, task_name=task_name or "", state=state)
         # ---- observation_formatter route -------------------------------------------
         # branch: #14 tasks table

@@ -171,7 +171,6 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
             df = df.sort_values(by=sort_by, ascending=True)
         if top_n and top_n > 0:
             df = df.head(top_n)
-            result["top_n"] = top_n
 
         result["row_count"] = len(df)
         result.update(_compute_stats(df, numeric_cols, operations, all_ops, group_by=group_by))

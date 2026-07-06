@@ -386,7 +386,6 @@ async def fetchpage(
             status_code = response.status_code
 
         result_data = {
-            "url": url,
             "content": extracted_content,
             "format": extract_format,
             "content_type": content_type,

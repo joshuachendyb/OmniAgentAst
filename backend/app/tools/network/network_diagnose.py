@@ -178,7 +178,7 @@ async def _ping(host: str, count: int = 4, timeout: int = 5) -> Dict[str, Any]:
 
     parsed = _parse_ping_output(raw_output, platform.system().lower())
     reachable = parsed["is_reachable"]
-    data = {"host": host, **parsed}
+    data = {**parsed}
     if not reachable:
         data.update(packets_received=0, packets_lost=parsed["packets_sent"],
                      loss_rate=100.0, min_latency=None, avg_latency=None, max_latency=None)
@@ -214,7 +214,7 @@ async def _port_check(host: str, port: int, timeout: int = 3) -> Dict[str, Any]:
 
     is_open = await asyncio.to_thread(_do_check)
 
-    data = {"host": host, "port": port, "is_open": is_open, "service": service}
+    data = {"is_open": is_open, "service": service}
     return {"success": True, "data": data, "is_open": is_open, "service": service}
 
 

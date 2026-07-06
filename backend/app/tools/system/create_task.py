@@ -124,7 +124,7 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
             return build_error(data={"error_detail": err_msg, "params": {"task_name": task_name, "command": command, "schedule": schedule}}, llm_data=llm_data)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"task_name": task_name, "command": command, "schedule": schedule}
+        data = {}
         llm_data = _build_create_task_llm_data("success", duration_ms, task_name, schedule)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
