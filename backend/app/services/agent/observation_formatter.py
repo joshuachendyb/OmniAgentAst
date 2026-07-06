@@ -273,6 +273,8 @@ def _format_shell_result(data: dict, llm_data: dict = None) -> str:
         stdout = stdout[:OBS_MAX_STRING_LENGTH] + "\n... (截断)"
     if len(stderr) > OBS_MAX_STRING_LENGTH:
         stderr = stderr[:OBS_MAX_STRING_LENGTH] + "\n... (截断)"
+    if not stdout and not stderr:
+        return ""
     lines = []
     if stdout:
         lines.append(stdout)
@@ -301,6 +303,8 @@ def _format_tree(data: dict) -> str:
     """#12 tree handler — 嵌套dict → 可视化树形字符串 — 小欧 2026-07-05"""
     tree = data.get("tree", {})
     stats = data.get("statistics", {})
+    if not tree or not isinstance(tree, dict):
+        return ""
     lines = []
 
     def _render(node: dict, prefix: str = "", is_last: bool = True) -> list:
@@ -329,6 +333,8 @@ def _format_tree(data: dict) -> str:
         dc = stats.get("dir_count", 0)
         ts = stats.get("total_size", 0)
         lines.append(f"---\n[{fc} files, {dc} dirs, {ts} bytes total]")
+    if len(lines) == 1 and not children and not stats:
+        return ""
     return "\n".join(lines)
 
 
@@ -341,6 +347,8 @@ def _format_readmedia(data: dict) -> str:
     mime = data.get("mime_type", "?")
     size = data.get("file_size", 0)
     b64 = data.get("base64_data", "")
+    if name == "?" and mime == "?" and size == 0 and not b64:
+        return ""
     b64_summary = f" [base64: {len(b64)} chars]" if b64 else ""
     return f"{name} [{mime}, {size} bytes]{b64_summary}"
 
@@ -450,6 +458,8 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
         detail = format_data_detail(data, llm_data)
         if detail:
             text += f"\n详情:\n{detail}"
+        else:
+            text += "\n详情: 结果参考观察的说明"
 
     return text
 
