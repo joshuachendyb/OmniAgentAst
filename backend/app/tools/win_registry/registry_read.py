@@ -134,23 +134,20 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
             if output_format == "hex" and isinstance(value, (bytes, bytearray)):
                 formatted_value = value.hex()
 
-            result_data = {
-                "key_path": f"{full_root_key}\\{sub_key}",
-                "value_name": value_name or "(默认)",
-                "value": formatted_value,
-                "value_type": value_type_name,
-            }
-
             logger.debug(f"[registry_read] 成功读取: {full_root_key}\\{sub_key}\\{value_name or '(默认)'}")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_read_llm_data("success", duration_ms, result_data["key_path"], result_data["value_name"], formatted_value, value_type_name)
+            llm_data = _build_registry_read_llm_data("success", duration_ms, f"{full_root_key}\\{sub_key}", value_name or "(默认)", formatted_value, value_type_name)
+            # =============================================================================
+            # 数据设计：key_path/value_name/value/value_type 全部从 data 移除
+            # summary 已含全部信息: "读取 HKCU\Software\MyApp\Version = 1.0（REG_SZ）"
+            # — 小欧 2026-07-06
+            # =============================================================================
             # ---- observation_formatter route -------------------------------------------
-            # branch: #21 fallback (key:val)
-            # trigger: 无上述20条分支匹配 — key_path/value_name/value/value_type
-            # handler: _format_scalar_data(data) — key | value 单行列表
-            # file:    observation_formatter.py:214
+            # branch: #0 空data
+            # trigger: not data → 直接返回 ""
+            # file:    observation_formatter.py:74
             # ------------------------------------------------------------------------------
-            return build_success(data=result_data, llm_data=llm_data)
+            return build_success(data={}, llm_data=llm_data)
 
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

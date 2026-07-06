@@ -23,9 +23,11 @@ from app.utils.logger import logger
 
 def _build_read_docx_llm_data(
     exec_code: str, duration_ms: int,
-    file_path: str = "", para_count: int = 0, text_len: int = 0, detail: str = "", hint: str = "",
+    file_path: str = "", para_count: int = 0, text_len: int = 0,
+    non_empty: int = 0, empty: int = 0, table_count: int = 0,
+    detail: str = "", hint: str = "",
 ) -> Dict[str, Any]:
-    """read_docx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
+    """read_docx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 丰富summary"""
     if exec_code == "error":
         return {
             "summary": f"读取Word失败: {detail}",
@@ -34,8 +36,18 @@ def _build_read_docx_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    # summary: 段落数(含非空/空分段)、字符数、表格数 — 小欧 2026-07-06
+    parts = []
+    if empty > 0:
+        parts.append(f"{para_count}段({non_empty}非空, {empty}空)")
+    else:
+        parts.append(f"{para_count}段")
+    parts.append(f"{text_len}字符")
+    if table_count:
+        parts.append(f"{table_count}项表格")
+    summary_str = "读取Word成功: " + ", ".join(parts)
     return {
-        "summary": f"读取Word成功: {para_count}段, {text_len}字符",
+        "summary": summary_str,
         "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": "success", "message": "读取Word成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -81,14 +93,6 @@ def read_docx(file_name: str) -> Dict[str, Any]:
         text = "\n".join(non_empty_paragraphs)
         empty_para_count = len(paragraphs) - len(non_empty_paragraphs)
 
-        result_data = {
-            "text": text,
-            "paragraph_count": len(paragraphs),
-            "non_empty_paragraph_count": len(non_empty_paragraphs),
-        }
-        if empty_para_count > 0:
-            result_data["empty_paragraph_count"] = empty_para_count
-
         tables_data = []
         for table in doc.tables:
             table_rows = []
@@ -96,16 +100,27 @@ def read_docx(file_name: str) -> Dict[str, Any]:
                 row_data = [cell.text.strip() for cell in row.cells]
                 table_rows.append(row_data)
             tables_data.append(table_rows)
+
+        result_data = {"text": text}
         if tables_data:
             result_data["tables"] = tables_data
-            result_data["table_count"] = len(tables_data)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("success", duration_ms, file_name, len(paragraphs), len(text))
+        llm_data = _build_read_docx_llm_data(
+            "success", duration_ms, file_name, len(paragraphs), len(text),
+            len(non_empty_paragraphs), empty_para_count, len(tables_data),
+        )
+        # =============================================================================
+        # 数据设计：paragraph_count/non_empty_paragraph_count/empty_paragraph_count/
+        # table_count 从 data 移除，通过 llm_data.metrics + summary 传递给 LLM
+        # summary 示例: "读取Word成功: 5段(3非空, 2空), 1200字符, 1项表格"
+        # data 只保留 text/tables 纯数据 (formatter 渲染用)
+        # — 小欧 2026-07-06
+        # =============================================================================
         # ---- observation_formatter route -------------------------------------------
         # branch: #10 raw text
         # trigger: "text" in data and isinstance(data["text"], str)
-        # handler: _format_text_content(data) — 正文+元数据(段落数/表格数)
+        # handler: _format_text_content(data) — 正文+额外字段(key=value)
         # file:    observation_formatter.py:124-126
         # ------------------------------------------------------------------------------
         return build_success(data=result_data, llm_data=llm_data)

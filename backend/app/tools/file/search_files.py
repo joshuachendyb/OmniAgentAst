@@ -97,7 +97,7 @@ def _build_search_files_llm_data(
             detail_parts.append("分页截断")
         warning_detail = "; ".join(detail_parts)
         return {
-            "summary": f"搜索完成: {search_dir} 下匹配 '{user_pattern}', 共{total}个匹配, 已截断",
+            "summary": f"搜索{search_dir} 完成: 匹配 '{user_pattern}'，共{total}个匹配，结果已截断",
             "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
             "status": {"exec_code": "warning", "message": "搜索结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else "可缩小搜索范围或使用更精确的匹配模式"},
             "duration_ms": duration_ms,
@@ -105,10 +105,10 @@ def _build_search_files_llm_data(
                 "total": {"value": total, "text": f"{total}个匹配"},
             },
         }
-    summary = f"搜索完成: {search_dir} 下匹配 '{user_pattern}', 共{total}个匹配"
+    summary = f"搜索{search_dir} 完成: 匹配 '{user_pattern}'，共{total}个匹配"
     if user_offset:
         end = min(user_offset + DEFAULT_PAGE_SIZE, total)
-        summary += f", 第{user_offset+1}-{end}项"
+        summary += f"，第{user_offset+1}-{end}项"
     return {
         "summary": summary,
         "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},

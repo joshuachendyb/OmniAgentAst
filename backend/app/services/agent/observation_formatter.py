@@ -66,8 +66,8 @@ from app.tools.tool_constants import (
 
 
 
-def format_data_detail(data: Any) -> str:
-    """按data结构类型自动格式化为可读文本 — 小欧 2026-06-21
+def format_data_detail(data: Any, llm_data: dict = None) -> str:
+    """按data结构类型自动格式化为可读文本 — 小欧 2026-06-21 — 小欧 2026-07-06 加llm_data参数供部分handler使用
 
     内部可能抛异常，兜底 JSON dump 或 str() 确保不崩。
     """
@@ -179,7 +179,7 @@ def format_data_detail(data: Any) -> str:
 
         # ── #11 shell stdout — 1 tool: shell ──
         if "stdout" in data:
-            return _format_shell_result(data)
+            return _format_shell_result(data, llm_data)
 
         # ── #12 tree — 1 tool: tree ──
         if "tree" in data and isinstance(data.get("tree"), dict):
@@ -217,10 +217,14 @@ def format_data_detail(data: Any) -> str:
         if "statistics" in data or "grouped_statistics" in data:
             return _format_analyze_data(data)
 
+        # ── #22 which result — 1 tool: which ──
+        if "paths" in data:
+            return _format_which_result(data)
+
         # ── #0 空data — 1 tool: mouse_click（走第 72 行 if not data: return ""）────
-        # ── #21 fallback — 36 tools ──
+        # ── #21 fallback — 35 tools（排除which） ──
         #   writetext, edittext, move, copy, delete, rename, extract,
-        #   which, download, ping_port, write_docx, write_xlsx, write_pdf, write_pptx,
+        #   download, ping_port, write_docx, write_xlsx, write_pdf, write_pptx,
         #   timenow, timeadd, timediff, calendar, notify, execute_sql, generate_chart,
         #   create_task, delete_task, timer_set, timer_clear,
         #   registry_read, registry_write, registry_delete,
@@ -261,8 +265,8 @@ def _format_text_content(data: dict) -> str:
 # #11 shell stdout 样式:
 #   输入: {"stdout": "total 42\n-rw-r--r-- 1 root root 1024 ...", "stderr": "", "returncode": 0, "shell_type": "powershell", "duration_ms": 150}
 #   输出: total 42\n-rw-r--r-- 1 root root 1024 ...\n---\n[rc=0, powershell, 150ms]
-def _format_shell_result(data: dict) -> str:
-    """#11 shell handler — stdout 直接展示 + stderr ⚠ + metadata 一行 — 小欧 2026-07-05"""
+def _format_shell_result(data: dict, llm_data: dict = None) -> str:
+    """#11 shell handler — stdout 直接展示 + stderr ⚠ + metadata 一行 — 小欧 2026-07-05 — 小欧 2026-07-06 returncode从llm_data.metrics取"""
     stdout = data.get("stdout", "") or ""
     stderr = data.get("stderr", "") or ""
     if len(stdout) > OBS_MAX_STRING_LENGTH:
@@ -274,11 +278,19 @@ def _format_shell_result(data: dict) -> str:
         lines.append(stdout)
     if stderr:
         lines.append(f"⚠ {stderr}")
-    returncode = data.get("returncode", "?")
+    rc_info = (llm_data or {}).get("metrics", {}).get("exit_code", {})
+    returncode = rc_info.get("value", "?")
     shell_type = data.get("shell_type", "")
     duration_ms = data.get("duration_ms", 0)
     meta = f"[rc={returncode}, {shell_type}, {duration_ms}ms]"
     lines.append(f"---\n{meta}" if (stdout or stderr) else meta)
+    return "\n".join(lines)
+
+
+def _format_which_result(data: dict) -> str:
+    """#22 which handler — 路径逐行展示 — 小欧 2026-07-06"""
+    paths = data.get("paths", [])
+    lines = [f"  {p}" for p in paths if p]
     return "\n".join(lines)
 
 
@@ -435,7 +447,7 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     text = _format_llm_data(llm_data)
 
     if data is not None and data != {} and data != [] and data != "":
-        detail = format_data_detail(data)
+        detail = format_data_detail(data, llm_data)
         if detail:
             text += f"\n详情:\n{detail}"
 

@@ -115,16 +115,21 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
         timer_handle = loop.call_later(delay, _safe_cb)
         _timers[timer_id] = timer_handle
 
+        trigger_at_str = trigger_at.strftime("%Y-%m-%d %H:%M:%S")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"timer_id": timer_id, "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S")}
-        llm_data = _build_timer_set_llm_data("success", duration_ms, timer_id, trigger_at.strftime("%Y-%m-%d %H:%M:%S"), delay, callback=callback)
+        llm_data = _build_timer_set_llm_data("success", duration_ms, timer_id, trigger_at_str, delay, callback=callback)
+        # =============================================================================
+        # 数据设计：timer_id 从 data 移除（summary 已有: "定时器 timer_1_xxx，5分钟后触发"）
+        # trigger_at 保留在 data 中（summary 只有 X 分钟后，无精确触发时间）
+        # — 小欧 2026-07-06
+        # =============================================================================
         # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — timer_id/delay/trigger_at 不命中专用分支
+        # branch: #21 fallback (key:val) — trigger_at only
+        # trigger: 无专用分支匹配
         # handler: _format_scalar_data(data) — key | value 单行列表
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
-        return build_success(data=data, llm_data=llm_data)
+        return build_success(data={"trigger_at": trigger_at_str}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail=str(e), hint="设置定时器异常,请重试")

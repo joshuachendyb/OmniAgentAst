@@ -23,8 +23,9 @@ from app.tools.validate.timeout_validator import validate_timeout
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 
 from app.utils.logger import logger
+from app.utils.paths import get_default_project_root
 
-_DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), ".omniagent", "downloads")
+_DOWNLOAD_DIR = os.path.join(get_default_project_root(), "download")
 _MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
@@ -61,13 +62,14 @@ def _build_download_file_llm_data(
             "metrics": {},
         }
     size_str = f"{file_size}字节" if file_size else ""
-    summary = f"文件下载成功: {dest_path}" + (f" ({size_str})" if size_str else "")
+    type_str = f", {content_type}" if content_type else ""
+    summary = f"文件下载成功: {dest_path}" + (f" ({size_str}{type_str})" if size_str or type_str else "")
     return {
         "summary": summary,
         "action": {"tool": "download", "tool_zh": "文件下载", "target": url, "params": _act_params},
         "status": {"exec_code": "success", "message": "文件下载成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {"file_size": {"value": file_size, "text": size_str}},
+        "metrics": {"file_size": {"value": file_size, "text": size_str}, "content_type": {"value": content_type, "text": content_type}},
     }
 
 
@@ -189,19 +191,18 @@ async def download(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         # =============================================================================
-        # 数据设计：file_size 从 data 移除，通过 llm_data.metrics 传入 summary
-        # summary 示例: "文件下载成功: /path/file.zip"
-        # — 小欧 2026-07-06 18:46:13
+        # 数据设计：file_path/total_size/content_type 全部通过 llm_data.summary 传入
+        # summary 示例: "文件下载成功: /path/file.zip (1024000字节, application/zip)"
+        # data = {}，无需额外字段 — 小欧 2026-07-06
         # =============================================================================
-        data = {"file_path": dest_path, "total_size": total_bytes if total_bytes > 0 else None, "content_type": content_type}
         llm_data = _build_download_file_llm_data("success", duration_ms, url, dest_path, downloaded, total_bytes, content_type, timeout=timeout, proxy=proxy, headers=headers)
         # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — file_path/file_size/total_size/content_type
-        # handler: _format_scalar_data(data) — key | value 单行列表
+        # branch: A-#0 empty data — 无字段，输出"详情:\n" + 空
+        # trigger: data == {}
+        # handler: _format_scalar_data(data) — 空dict输出空字符串
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
-        return build_success(data=data, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data)
     except (PermissionError, OSError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NETWORK_WRITE_FILE, detail=str(e), hint="请检查磁盘空间和权限", timeout=timeout, proxy=proxy, headers=headers)

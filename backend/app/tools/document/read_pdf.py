@@ -35,8 +35,15 @@ def _build_read_pdf_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    # summary: 页数(已读/总数)、字符数、表格数、图片数 — 小欧 2026-07-06
+    parts = [f"{pages_read}/{page_count}页, {text_len}字符"]
+    if table_count:
+        parts.append(f"{table_count}项表格")
+    if image_count:
+        parts.append(f"{image_count}张图片")
+    summary_str = "读取PDF成功: " + ", ".join(parts)
     return {
-        "summary": f"读取PDF成功: {pages_read}/{page_count}页, {text_len}字符",
+        "summary": summary_str,
         "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": "success", "message": "读取PDF成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -97,25 +104,27 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
         result = {"text": full_text}
         if tables_data:
             result["tables"] = tables_data
-            result["table_count"] = len(tables_data)
         if images_data:
             result["images"] = images_data
-            result["image_count"] = len(images_data)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        table_cnt = len(tables_data)
+        image_cnt = len(images_data)
         llm_data = _build_read_pdf_llm_data(
             "success", duration_ms, file_path, page_count, len(pages_read),
-            len(full_text), len(tables_data), len(images_data),
+            len(full_text), table_cnt, image_cnt,
         )
         # =============================================================================
-        # 数据设计：page_count/pages_read 从 data 移除，通过 llm_data.metrics 传入 summary
-        # summary 示例: "读取PDF成功: 3/5页, 1024字符"
+        # 数据设计：page_count/pages_read/table_count/image_count 从 data 移除
+        # 通过 llm_data.metrics + summary 传递给 LLM
+        # summary 示例: "读取PDF成功: 3/5页, 5000字符, 2项表格, 3张图片"
+        # data 只保留 text/tables/images 纯数据 (formatter 渲染用)
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
         # ---- observation_formatter route -------------------------------------------
         # branch: #10 raw text
         # trigger: "text" in data and isinstance(data["text"], str)
-        # handler: _format_text_content(data) — 正文+元数据(页数/表格数/图片数)
+        # handler: _format_text_content(data) — 正文+额外字段(key=value)
         # file:    observation_formatter.py:124-126
         # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)

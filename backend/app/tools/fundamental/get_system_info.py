@@ -20,8 +20,9 @@ from app.tools.tool_constants import ERR_SYSTEM_INFO
 
 
 def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type: str,
-                                     detail: str = "", hint: str = "") -> dict:
-    """get_system_info的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加detail — 小欧 2026-07-05 加hint参数"""
+                                     detail: str = "", hint: str = "",
+                                     custom_summary: str = "") -> dict:
+    """get_system_info的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加detail — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 加custom_summary"""
     if exec_code == "error":
         return {
             "summary": f"获取系统信息失败: {info_type}",
@@ -30,8 +31,9 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    _summary = custom_summary if custom_summary else f"已获取{info_type}类型的系统信息"
     return {
-        "summary": f"已获取{info_type}类型的系统信息",
+        "summary": _summary,
         "action": {"tool": "sysinfo", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
         "status": {"exec_code": "success", "message": "获取系统信息成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -114,7 +116,34 @@ def sysinfo(info_type: str = "all") -> Dict[str, Any]:
             }
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_get_system_info_llm_data("success", duration_ms, info_type)
+        # =============================================================================
+        # summary 含关键数据，让 LLM 不依赖 data 即可判断系统状态
+        # — 小欧 2026-07-06
+        # =============================================================================
+        _summary_parts = []
+        if info_type in ("basic", "all"):
+            b = data.get("basic", {})
+            _summary_parts.append(f"主机名={b.get('hostname','?')}")
+            _summary_parts.append(f"系统={b.get('platform','?')} {b.get('platform_release','?')}")
+        if info_type in ("cpu", "all"):
+            c = data.get("cpu", {})
+            cpu_usage = c.get("cpu_usage_percent", "?")
+            _summary_parts.append(f"CPU使用率{cpu_usage}%")
+        if info_type in ("memory", "all"):
+            m = data.get("memory", {})
+            _summary_parts.append(f"内存{m.get('used_gb','?')}G/{m.get('total_gb','?')}G")
+        if info_type in ("disk", "all"):
+            disks = data.get("disk", [])
+            disk_strs = []
+            for d in disks:
+                disk_strs.append(f"{d.get('device','?')}{d.get('used_gb','?')}G/{d.get('total_gb','?')}G")
+            _summary_parts.append(f"磁盘: {', '.join(disk_strs)}" if disk_strs else "")
+        if info_type == "network":
+            n = data.get("network", {})
+            _summary_parts.append(f"发送{n.get('bytes_sent_mb','?')}MB/接收{n.get('bytes_recv_mb','?')}MB")
+        _summary_parts = [s for s in _summary_parts if s]
+        _custom_summary = f"已获取{info_type}类型: {', '.join(_summary_parts)}" if _summary_parts else f"已获取{info_type}类型的系统信息"
+        llm_data = _build_get_system_info_llm_data("success", duration_ms, info_type, custom_summary=_custom_summary)
         # ---- observation_formatter route -------------------------------------------
         # branch: #17 sysinfo sections
         # trigger: "basic" in data and isinstance(data["basic"], dict)

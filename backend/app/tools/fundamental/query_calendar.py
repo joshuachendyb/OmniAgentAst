@@ -21,13 +21,20 @@ from app.tools.tool_fc_helper import (
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_TIME_DATE
 
+_WEEKDAY_CN = {
+    "Monday": "星期一", "Tuesday": "星期二", "Wednesday": "星期三",
+    "Thursday": "星期四", "Friday": "星期五", "Saturday": "星期六", "Sunday": "星期日",
+}
+_HOLIDAY_TYPE_CN = {"lunar": "农历", "solar": "公历", "qingming": "节气"}
+
 
 def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: str,
                                     is_weekend: bool, is_hol: bool, is_workday: bool,
                                     holiday_name: str, detail: str = "",
                                     user_name: str = "", user_year: Optional[int] = None,
-                                    hint: str = "") -> dict:
-    """query_calendar的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-07-05 加detail/user_name/user_year — 小欧 2026-07-05 加hint参数"""
+                                    hint: str = "", weekday_cn: str = "",
+                                    holiday_type_cn: str = "") -> dict:
+    """query_calendar的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-07-05 加detail/user_name/user_year — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 加weekday_cn/holiday_type_cn"""
     act_params = {"name": user_name}
     if user_year is not None:
         act_params["year"] = user_year
@@ -40,8 +47,9 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
             "metrics": {},
         }
     hol_str = f"，{holiday_name}" if holiday_name else ""
+    type_str = f"（{holiday_type_cn}）" if holiday_type_cn else ""
     return {
-        "summary": f"{date_str}: {'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}",
+        "summary": f"{date_str} {weekday_cn}: {'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}{type_str}",
         "action": {"tool": "calendar", "tool_zh": "日历查询", "target": date_str, "params": act_params},
         "status": {"exec_code": "success", "message": "日期检查完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -69,25 +77,10 @@ def calendar(
             is_hol, holiday_name = _is_holiday(date_obj)
             is_workday = not is_weekend and not is_hol
             
-            result_data = {
-                "date": date_obj.isoformat(),
-                "weekday": dt.strftime("%A"),
-                "isoweekday": isoweekday,
-                "is_weekend": is_weekend,
-                "is_holiday": is_hol,
-                "holiday_name": holiday_name,
-                "is_workday": is_workday,
-            }
-            
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_query_calendar_llm_data("success", duration_ms, date_obj.isoformat(), is_weekend, is_hol, is_workday, holiday_name or "", user_name=name, user_year=year)
-            # ---- observation_formatter route -------------------------------------------
-            # branch: #21 fallback (key:val) — date query
-            # trigger: 无上述20条分支匹配 — date/weekday/isoweekday/is_holiday/holiday_name
-            # handler: _format_scalar_data(data) — key | value 单行列表
-            # file:    observation_formatter.py:214
-            # ------------------------------------------------------------------------------
-            return build_success(data=result_data, llm_data=llm_data)
+            weekday_cn = _WEEKDAY_CN.get(dt.strftime("%A"), "")
+            llm_data = _build_query_calendar_llm_data("success", duration_ms, date_obj.isoformat(), is_weekend, is_hol, is_workday, holiday_name or "", user_name=name, user_year=year, weekday_cn=weekday_cn)
+            return build_success(data={}, llm_data=llm_data)
         
         holiday_info = _get_holiday_date_by_name(name, year)
         if holiday_info is None:
@@ -100,25 +93,11 @@ def calendar(
         is_weekend = isoweekday >= 6
         is_hol, _ = _is_holiday(date_obj)
         is_workday = not is_weekend and not is_hol
+        weekday_cn = _WEEKDAY_CN.get(holiday_info["weekday"], "")
+        holiday_type_cn = _HOLIDAY_TYPE_CN.get(holiday_info["type"], "")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {
-            "date": holiday_info["date"],
-            "weekday": holiday_info["weekday"],
-            "isoweekday": isoweekday,
-            "is_weekend": is_weekend,
-            "is_holiday": is_hol,
-            "holiday_name": holiday_info["name"],
-            "is_workday": is_workday,
-            "holiday_type": holiday_info["type"],
-        }
-        llm_data = _build_query_calendar_llm_data("success", duration_ms, holiday_info["date"], is_weekend, is_hol, is_workday, holiday_info["name"], user_name=name, user_year=year)
-        # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val) — name query
-        # trigger: 无上述20条分支匹配 — date/weekday/is_holiday/holiday_type
-        # handler: _format_scalar_data(data) — key | value 单行列表
-        # file:    observation_formatter.py:214
-        # ------------------------------------------------------------------------------
-        return build_success(data=data, llm_data=llm_data)
+        llm_data = _build_query_calendar_llm_data("success", duration_ms, holiday_info["date"], is_weekend, is_hol, is_workday, holiday_info["name"], user_name=name, user_year=year, weekday_cn=weekday_cn, holiday_type_cn=holiday_type_cn)
+        return build_success(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_query_calendar_llm_data("error", duration_ms, str(name), False, False, False, "", detail=str(e), hint="系统内部错误，请重试", user_name=name, user_year=year)

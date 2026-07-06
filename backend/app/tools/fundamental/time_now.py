@@ -42,22 +42,8 @@ def timenow() -> Dict[str, Any]:
         fmt = "%Y-%m-%d %H:%M:%S"
         formatted = now.strftime(fmt)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {
-            "iso": now.isoformat(),
-            "timestamp": int(now.timestamp()),
-            "format": formatted,
-            "timezone": now.strftime("%z").replace(":", ""),
-            "weekday": now.strftime("%A"),
-            "isoweekday": now.isoweekday(),
-        }
         llm_data = _build_time_now_llm_data("success", duration_ms, now.isoformat(), formatted, now.strftime("%A"))
-        # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — iso/timestamp/format/timezone/weekday/isoweekday
-        # handler: _format_scalar_data(data) — key | value 单行列表
-        # file:    observation_formatter.py:214
-        # ------------------------------------------------------------------------------
-        return build_success(data=data, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_time_now_llm_data("error", duration_ms, "", "", "", detail=str(e), hint="系统内部错误，请重试")

@@ -97,24 +97,8 @@ def timediff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
         # summary 示例: "时间差: X天前（Y天）"
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
-        data = {
-            "humanized": humanized,
-            "minutes": minutes,
-            "hours": hours,
-            "is_future": is_future,
-            "is_after": diff_signed > 0,
-            "is_before": diff_signed < 0,
-            "is_equal": diff_signed == 0,
-            "diff_seconds_signed": diff_signed,
-        }
         llm_data = _build_time_diff_llm_data("success", duration_ms, humanized, seconds, days, is_future, user_start=start, user_end=end)
-        # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — humanized/seconds/minutes/hours/days/is_future 等
-        # handler: _format_scalar_data(data) — key | value 单行列表
-        # file:    observation_formatter.py:214
-        # ------------------------------------------------------------------------------
-        return build_success(data=data, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_time_diff_llm_data("error", duration_ms, "", 0, 0, False, detail=str(e), hint="系统内部错误，请重试", user_start=start, user_end=end)

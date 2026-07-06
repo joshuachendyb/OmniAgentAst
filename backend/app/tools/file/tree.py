@@ -104,8 +104,9 @@ def _build_tree_llm_data(
     exec_code: str, duration_ms: int,
     dir_path: str = "", total: int = 0, detail: str = "", hint: str = "",
     user_include_hidden: Optional[bool] = None, user_sort_by: str = "",
+    file_count: int = 0, dir_count: int = 0,
 ) -> Dict[str, Any]:
-    """tree的llm_data构建函数 — 小沈 2026-07-03 — 小沈 2026-07-05 新增hint参数"""
+    """tree的llm_data构建函数 — 小沈 2026-07-03 — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-07 summary加file/dir明细"""
     _act_params = {"dir_path": dir_path}
     if user_include_hidden is not None:
         _act_params["include_hidden"] = user_include_hidden
@@ -120,7 +121,7 @@ def _build_tree_llm_data(
             "metrics": {},
         }
     return {
-        "summary": f"列出目录树成功: {dir_path} ({total}项)",
+        "summary": f"列出目录树成功: {dir_path}（{file_count}个文件，{dir_count}个目录）",
         "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "列出目录树成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -154,8 +155,10 @@ async def tree(
         llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=tree_result["error_detail"], hint="请检查目录路径是否正确", user_include_hidden=include_hidden, user_sort_by=sort_by)
         return build_error(data=tree_result, llm_data=llm_data)
     else:
-        total = tree_result["statistics"]["file_count"] + tree_result["statistics"]["dir_count"]
-        llm_data = _build_tree_llm_data("success", duration_ms, dir_path=dir_path, total=total, user_include_hidden=include_hidden, user_sort_by=sort_by)
+        file_count = tree_result["statistics"]["file_count"]
+        dir_count = tree_result["statistics"]["dir_count"]
+        total = file_count + dir_count
+        llm_data = _build_tree_llm_data("success", duration_ms, dir_path=dir_path, total=total, file_count=file_count, dir_count=dir_count, user_include_hidden=include_hidden, user_sort_by=sort_by)
         # ---- observation_formatter route -------------------------------------------
         # branch: #12 tree
         # trigger: "tree" in data and isinstance(data.get("tree"), dict)

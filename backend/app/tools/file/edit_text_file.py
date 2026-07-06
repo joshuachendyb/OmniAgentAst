@@ -148,7 +148,13 @@ def _build_edit_text_file_llm_data(
         _warning_msg = f"剩余{_remaining}处未修改"
         _hint_parts.append("建议使用 replace_all=True 一次替换所有匹配")
     _hint = "；".join(_hint_parts) if _hint_parts else ""
-    _summary = f"编辑完成: {file_path}（总计{total_matches}处，完成{applied}处）"
+    _old_preview = user_old_string[:30] if user_old_string else ""
+    _new_preview = user_new_string[:30] if user_new_string else ""
+    if applied >= total_matches:
+        _replace_status = f"全部替换完成（共{total_matches}处）"
+    else:
+        _replace_status = f"替换{applied}/{total_matches}处"
+    _summary = f"编辑{file_path}完成: 实现了替换 '{_old_preview}' → '{_new_preview}'（{_replace_status}）"
     if _warning_msg:
         _summary += f"，注意: {_warning_msg}"
     _exec_code = "warning" if (_warning_msg or mtime_warning) else "success"

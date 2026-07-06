@@ -117,9 +117,8 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
         if limit > 0 and len(results) > limit:
             results = results[:limit]
 
-        table_str = _format_table(columns, results)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"columns": columns, "rows": results, "table": table_str}
+        data = {"columns": columns, "rows": results}
         llm_data = _build_query_sql_llm_data("success", duration_ms, sql, len(results), columns,
                                                connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
         # =============================================================================

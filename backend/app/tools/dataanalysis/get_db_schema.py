@@ -145,21 +145,16 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
             indexes = _get_indexes(conn, connection_type, t)
             schema_info.append({"name": t, "columns": columns, "indexes": indexes})
 
-        md = f"## 数据库结构 (共 {len(schema_info)} 个表)\n\n"
-        for table in schema_info:
-            md += f"### {table['name']}\n\n|字段名|类型|可空|主键|默认值|\n|--------|------|------|------|--------|\n"
-            for c in table["columns"]:
-                md += f"|{c['name']}|{c['type']}|{'是' if c.get('nullable') else '否'}|{'是' if c.get('pk') else '否'}|{c.get('default') or '-'}|\n"
-            md += "\n"
-
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         table_names = [t["name"] for t in schema_info]
         llm_data = _build_get_db_schema_llm_data("success", duration_ms, len(schema_info), table_names,
-                                                    connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
+                                                     connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
         # =============================================================================
-        # 数据设计：total 从 data 移除，通过 llm_data.metrics 传入 summary
+        # 数据设计：total/markdown 从 data 移除，通过 llm_data.metrics + summary 传递给 LLM
         # summary 示例: "获取到5个表的结构信息"
-        # — 小欧 2026-07-06 18:46:13
+        # markdown 是死数据 (无 formatter 使用)，已移除
+        # data 只保留 tables 结构体 (formatter #6 schema 渲染用)
+        # — 小欧 2026-07-06
         # =============================================================================
         # ---- observation_formatter route -------------------------------------------
         # branch: #6 schema
@@ -167,7 +162,7 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
         # handler: _format_schema(data["tables"])
         # file:    observation_formatter.py:144-146
         # ------------------------------------------------------------------------------
-        return build_success(data={"tables": schema_info, "markdown": md}, llm_data=llm_data)
+        return build_success(data={"tables": schema_info}, llm_data=llm_data)
 
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

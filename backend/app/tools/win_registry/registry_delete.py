@@ -80,7 +80,6 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
             with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_SET_VALUE) as key:
                 winreg.DeleteValue(key, value_name)
 
-            result_data = {"action": "deleted_value"}
             logger.debug(f"[registry_delete] 成功删除值: {full_root_key}\\{sub_key}\\{value_name}")
         else:
             if not recursive:
@@ -114,18 +113,22 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
             with winreg.OpenKey(hkey, parent_key, 0, winreg.KEY_SET_VALUE) as key:
                 winreg.DeleteKey(key, key_name)
 
-            result_data = {"action": "deleted_key"}
             logger.debug(f"[registry_delete] 成功删除子键: {full_root_key}\\{sub_key}")
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("success", duration_ms, key_path, result_data["action"])
+        action = "deleted_value" if value_name is not None else "deleted_key"
+        duration_ms = int((_time_mod.perform_counter() - t0) * 1000)
+        llm_data = _build_registry_delete_llm_data("success", duration_ms, key_path, action)
+        # =============================================================================
+        # 数据设计：action 从 data 移除
+        # summary 已含全部信息: "已删除注册表 HKCU\Software\MyApp\TestValue（deleted_value）"
+        # — 小欧 2026-07-06
+        # =============================================================================
         # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val) — delete_value or delete_key
-        # trigger: 无上述20条分支匹配 — key_path/value_name/action/recursive
-        # handler: _format_scalar_data(data) — key | value 单行列表
-        # file:    observation_formatter.py:214
+        # branch: #0 空data
+        # trigger: not data → 直接返回 ""
+        # file:    observation_formatter.py:74
         # ------------------------------------------------------------------------------
-        return build_success(data=result_data, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data)
 
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

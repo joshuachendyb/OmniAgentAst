@@ -236,15 +236,10 @@ def _extract_html_content(html_content: str, extract_format: str, max_tokens: in
 
 
 def _build_media_result(url: str, mime: str, raw_bytes: bytes, extract_format: str, response_status: int) -> Dict[str, Any]:
-    """构建图片/PDF的base64附件响应 — 小欧 2026-06-22"""
+    """构建图片/PDF的base64附件响应 — 小欧 2026-06-22 — 小欧 2026-07-06 data仅保留content，其余通过summary"""
     b64 = base64.b64encode(raw_bytes).decode("ascii")
     data = {
-        "url": url,
         "content": f"[{mime} 文件,大小: {len(raw_bytes)} 字节]",
-        "format": extract_format,
-        "content_type": mime,
-        "status_code": response_status,
-        "truncated": False,
     }
     other_data = {
         "attachment": {
@@ -386,15 +381,12 @@ async def fetchpage(
             status_code = response.status_code
 
         # =============================================================================
-        # 数据设计：status_code 从 data 移除，通过 llm_data.metrics 传入 summary
-        # summary 示例: "成功获取网页内容(markdown格式)"
-        # — 小欧 2026-07-06 18:46:13
+        # 数据设计：data仅保留content纯数据，format/content_type/truncated通过summary传递
+        # summary 示例: "成功获取网页内容(markdown格式, HTTP 200，已截断)"
+        # — 小欧 2026-07-06
         # =============================================================================
         result_data = {
             "content": extracted_content,
-            "format": extract_format,
-            "content_type": content_type,
-            "truncated": truncated,
         }
 
         if prompt:
@@ -407,6 +399,7 @@ async def fetchpage(
         # branch: #2 raw str
         # trigger: "content" in data and isinstance(data["content"], str)
         # handler: inline — 直接返回 data["content"], OBS_MAX_STRING_LENGTH 截断
+        # data只保留content纯数据，其余通过summary传递 — 小欧 2026-07-06
         # file:    observation_formatter.py:117-122
         # ------------------------------------------------------------------------------
         return build_success(data=result_data, llm_data=llm_data)

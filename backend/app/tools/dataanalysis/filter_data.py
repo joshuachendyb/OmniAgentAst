@@ -178,11 +178,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
 
         columns = filtered_df.columns.tolist()
         rows = _serialize_rows(filtered_df)
-        result_data = {
-            "columns": columns, "rows": rows,
-            "row_count": len(rows),
-            "filter_ratio": f"{len(rows)}/{original_count}",
-        }
+        result_data = {"columns": columns, "rows": rows}
         if warnings:
             result_data["warnings"] = warnings
 

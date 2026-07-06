@@ -83,22 +83,8 @@ def timeadd(delta: float, start: Optional[str] = None, unit: Literal["days", "ho
         isoweekday = dt_parsed.isoweekday() if dt_parsed else 0
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {
-            "result_time": result_time_str,
-            "iso": new_dt.isoformat(),
-            "timestamp": int(new_dt.timestamp()),
-            "tz": new_dt.strftime("%z").replace(":", ""),
-            "weekday": weekday,
-            "isoweekday": isoweekday,
-        }
         llm_data = _build_time_add_llm_data("success", duration_ms, result_time_str, unit_lower, delta, user_start=start)
-        # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — result_time/iso/timestamp/tz/weekday
-        # handler: _format_scalar_data(data) — key | value 单行列表
-        # file:    observation_formatter.py:214
-        # ------------------------------------------------------------------------------
-        return build_success(data=data, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_time_add_llm_data("error", duration_ms, "", unit, delta, detail=str(e), hint="系统内部错误，请重试", user_start=start)

@@ -72,7 +72,7 @@ def _build_grep_file_content_llm_data(
         _act_params["output_mode"] = user_output_mode
     _loc_info = ""
     if search_dir:
-        _loc_info += f" {search_dir} 下"
+        _loc_info += f" {search_dir}"
     if pattern:
         _loc_info += f" 搜索 '{pattern}'"
 
@@ -96,7 +96,7 @@ def _build_grep_file_content_llm_data(
             warning_detail = "跳过了部分二进制文件，无法进行内容搜索"
             warning_hint = "可排除二进制文件路径或指定文件后缀过滤"
         return {
-            "summary": f"搜索完成:{_loc_info}, 匹配{total_matches}行, {total_files}个文件{summary_suffix}",
+            "summary": f"搜索完成:{_loc_info}，满足要求的搜索结果是: {total_files}个文件，{total_matches}行{summary_suffix}",
             "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
             "status": {"exec_code": "warning", "message": warning_message, "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
@@ -106,7 +106,7 @@ def _build_grep_file_content_llm_data(
             },
         }
     return {
-        "summary": f"搜索完成:{_loc_info}, 匹配{total_matches}行, {total_files}个文件",
+        "summary": f"搜索完成:{_loc_info}，满足要求的搜索结果是: {total_files}个文件，{total_matches}行",
         "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

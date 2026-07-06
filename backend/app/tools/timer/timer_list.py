@@ -50,12 +50,12 @@ def timer_list() -> Dict[str, Any]:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_list_llm_data("success", duration_ms, len(timers), [t["timer_id"] for t in timers[:5]])
         # ---- observation_formatter route -------------------------------------------
-        # branch: non-dict
-        # trigger: not isinstance(data, dict) — bare list, 非 dict
-        # handler: str(data)
-        # file:    observation_formatter.py:113-115
+        # branch: #21 fallback
+        # trigger: 无专用分支匹配 — "timers" 键
+        # handler: _format_scalar_data(data) — key | value 单行列表
+        # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
-        return build_success(data=timers, llm_data=llm_data)
+        return build_success(data={"timers": timers}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_list_llm_data("error", duration_ms, 0, [], detail=str(e), hint="请检查定时器状态")

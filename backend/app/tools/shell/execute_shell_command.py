@@ -189,24 +189,22 @@ def _build_execute_shell_command_llm_data(
     if exec_code == "error":
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
         return {
-            "summary": f"执行失败: {_detail}",
+            "summary": f"在 {shell_type}里 执行 {cmd_short} 失败: {_detail},耗时{duration_ms}ms",
             "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
             "status": {"exec_code": "error", "message": "执行失败", "code": err_code or ERR_SHELL_EXEC, "detail": detail or (stderr_preview[:200] if stderr_preview else ""), "hint": hint if hint else "请检查命令语法和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     if exec_code == "warning":
-        _out_info = f"，输出{output_len}字符" if output_len > 0 else "（无输出）"
         return {
-            "summary": f"执行 {cmd_short}，退出码{returncode}{_out_info}（警告{stderr_len}字符）",
+            "summary": f"在 {shell_type}里 执行 {cmd_short}，退出码{returncode}，输出{output_len}字符，警告{stderr_len}字符,耗时{duration_ms}ms",
             "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
             "status": {"exec_code": "warning", "message": "执行成功（有警告输出）", "code": "", "detail": stderr_preview[:200] if stderr_preview else "", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
         }
-    _out_info = f"，输出{output_len}字符" if output_len > 0 else "（无输出）"
     return {
-        "summary": f"执行 {cmd_short}，退出码{returncode}{_out_info}",
+        "summary": f"在 {shell_type}里 执行 {cmd_short}，退出码{returncode}，输出{output_len}字符,耗时{duration_ms}ms",
         "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
         "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -335,7 +333,6 @@ def shell(
         d = int((_time_mod.perf_counter() - t0) * 1000)
         data = {
             "stdout": stdout_str, "stderr": stderr_str,
-            "returncode": returncode,
         }
 
         # ── 阶段 5: 构建 build3 + llm_data ──
@@ -385,7 +382,7 @@ def shell(
             timeout=timeout, cwd=cwd or "", hint="命令执行异常,请检查命令和系统环境")
         data = {
             "stdout": "", "stderr": "",
-            "returncode": -1, "shell_type": shell_type or "powershell",
+            "shell_type": shell_type or "powershell",
             "duration_ms": d, "error_detail": str(e),
         }
         return build_error(data=data, llm_data=llm)

@@ -171,7 +171,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
             # =============================================================================
             return build_success(data={"columns": df.columns.tolist(), "statistics": {}}, llm_data=llm_data)
 
-        result = {"total_count": total_count, "columns": df.columns.tolist()}
+        result = {"columns": df.columns.tolist()}
         if sort_by and sort_by in df.columns:
             df = df.sort_values(by=sort_by, ascending=True)
         if top_n and top_n > 0:

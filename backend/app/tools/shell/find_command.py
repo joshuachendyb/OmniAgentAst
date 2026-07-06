@@ -38,7 +38,7 @@ def _build_find_command_llm_data(
             "metrics": {},
         }
     if exec_code == "warning":
-        hint = "" if available else "请确认是否已安装并添加到PATH"
+        hint = "" if available else "找其他类似可用命令工具"
         return {
             "summary": f"命令 '{command}' 不可用",
             "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": _act_params},
@@ -55,7 +55,7 @@ def _build_find_command_llm_data(
             "metrics": {"count": {"value": count, "text": f"{count}个"}},
         }
     status = "可用" if available else "不可用"
-    hint = "" if available else "请确认是否已安装并添加到PATH"
+    hint = "" if available else "找其他类似可用命令工具"
     return {
         "summary": f"命令 '{command}' {status}",
         "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": _act_params},
@@ -79,20 +79,20 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
             cmd_path = shutil.which(command)
             available = cmd_path is not None
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            data = {"available": available, "command": command, "path": cmd_path}
             if available:
+                data = {"paths": [cmd_path]}
                 llm_data = _build_find_command_llm_data("success", duration_ms, command, True, cmd_path or "",
                     all_paths=all_paths)
                 # ---- observation_formatter route -------------------------------------------
-                # branch: #21 fallback (key:val) — available/path 不命中专用分支
-                # trigger: 无上述20条分支匹配
-                # handler: _format_scalar_data(data) — key | value 单行列表
-                # file:    observation_formatter.py:214
+                # branch: #22 which result — paths 命中专用分支
+                # trigger: "paths" in data
+                # handler: _format_which_result(data)
+                # file:    observation_formatter.py:215
                 # ------------------------------------------------------------------------------
                 return build_success(data=data, llm_data=llm_data)
             llm_data = _build_find_command_llm_data("warning", duration_ms, command, available=False,
                 all_paths=all_paths)
-            return build_warning(data=data, llm_data=llm_data)
+            return build_warning(data={}, llm_data=llm_data)
         else:
             if os.name == 'nt':
                 result = subprocess.run(['where', command], capture_output=True, text=True, shell=False, timeout=10)
@@ -101,21 +101,20 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             if result.returncode == 0:
                 paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
-                data = {"command": command, "paths": paths, "count": len(paths)}
+                data = {"paths": paths}
                 llm_data = _build_find_command_llm_data("success", duration_ms, command, paths=paths, count=len(paths),
                     all_paths=all_paths)
                 # ---- observation_formatter route -------------------------------------------
-                # branch: #21 fallback (key:val) — command/paths/count 不命中专用分支
-                # trigger: 无上述20条分支匹配
-                # handler: _format_scalar_data(data) — key | value 单行列表
-                # file:    observation_formatter.py:214
+                # branch: #22 which result — paths 命中专用分支
+                # trigger: "paths" in data
+                # handler: _format_which_result(data)
+                # file:    observation_formatter.py:215
                 # ------------------------------------------------------------------------------
                 return build_success(data=data, llm_data=llm_data)
             else:
-                data = {"command": command, "paths": [], "count": 0}
                 llm_data = _build_find_command_llm_data("warning", duration_ms, command, available=False,
                     all_paths=all_paths)
-                return build_warning(data=data, llm_data=llm_data)
+                return build_warning(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_find_command_llm_data("error", duration_ms, command,

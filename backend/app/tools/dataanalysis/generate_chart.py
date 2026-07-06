@@ -20,6 +20,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.utils.json_utils import coerce_json
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
+from app.utils.paths import get_default_project_root
 from app.tools.tool_constants import ERR_DOC_CHART_GENERATE
 
 
@@ -39,7 +40,7 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output
     """generate_chart的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 data字段加[:200]截断"""
     _act_params = {"chart_type": chart_type}
     if data:
-        _act_params["data"] = data[:200]  # 小欧 2026-07-06 截断 chart data，防止大字段返回给LLM
+        _act_params["data"] = data[:200] if isinstance(data, str) else str(data)[:200]  # 小欧 2026-07-06 截断 chart data，防止大字段返回给LLM
     if title:
         _act_params["title"] = title
     if x_label:
@@ -101,8 +102,6 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
             llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"文件不存在: {data}", hint="请检查数据文件路径", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
             return build_error(data={"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}, llm_data=llm_data)
         
-        source_file_dir = str(path.parent)
-
         if data.endswith('.xlsx'):
             df = pd.read_excel(data, engine="openpyxl")
         else:
@@ -134,12 +133,7 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
 
         if output_path is None:
             timestamp = timestamp_for_filename()
-            if source_file_dir:
-                output_path = os.path.join(source_file_dir, f"chart_{timestamp}.png")
-            else:
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="data为字典时必须指定output_path参数", hint="从字典生成图表需指定output_path", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
-                return build_error(data={"error_detail": "data为字典时必须指定output_path", "params": {"output_path": output_path}}, llm_data=llm_data)
+            output_path = os.path.join(get_default_project_root(), f"chart_{timestamp}.png")
 
         fig, ax = plt.subplots(figsize=(10, 6))
         chart_type_lower = chart_type.lower()
@@ -173,13 +167,18 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_generate_chart_llm_data("success", duration_ms, chart_type_lower, output_path, file_size=file_size,
                                                     data=data, title=title, x_label=x_label, y_label=y_label)
+        # =============================================================================
+        # 数据设计：output_path 从 data 移除，通过 llm_data.summary 传递给 LLM
+        # summary 示例: "成功生成bar图表: D:/chart.png"
+        # data 留空 (formatter #21 fallback 展示为空)
+        # — 小欧 2026-07-06
+        # =============================================================================
         # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — output_path/chart_type 不命中专用分支
-        # handler: _format_scalar_data(data) — key | value 单行列表
-        # file:    observation_formatter.py:214
+        # branch: #0 空data
+        # trigger: 无 key 可匹配
+        # handler: 直接返回 "" (空字符串)
         # ------------------------------------------------------------------------------
-        return build_success(data={"output_path": output_path}, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=str(e), hint="图表生成异常，请检查数据", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
