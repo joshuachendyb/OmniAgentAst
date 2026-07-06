@@ -11,7 +11,8 @@ from pathlib import Path
 class FileSafetyConfig:
     """拷贝自 file_safety.py 第23-39行"""
     RECYCLE_BIN_PATH: Path = Path.home() / ".omniagent" / "recycle_bin"
-    BACKUP_RETENTION_DAYS: int = 30
+    BACKUP_RETENTION_DAYS: int = 5
+    RECYCLE_BIN_MAX_SIZE_GB: int = 10
     PROJECT_ROOT = Path(__file__).resolve().parents[6]
     REPORT_PATH: Path = PROJECT_ROOT / "reports"
 

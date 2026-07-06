@@ -16,6 +16,7 @@ from app.db.models.operation_enums import OperationType, OperationStatus
 from app.utils.logger import logger
 from app.utils.time_utils import timestamp_for_filename
 from app.services.safety.file_safety.config import FileSafetyConfig
+from app.services.safety.file_safety.operation_cleanup import cleanup_expired_backups
 from app.services.safety.file_safety.operation_recorder import (
     collect_file_info, update_op_failed,
 )
@@ -34,6 +35,7 @@ def backup_to_recycle_bin(source_path: Path) -> Optional[Path]:
         else:
             shutil.copy2(source_path, backup_path)
         logger.info(f"File backed up to recycle bin: {source_path} -> {backup_path}")
+        cleanup_expired_backups()
         return backup_path
     except Exception as e:
         logger.error(f"Failed to backup file to recycle bin: {e}")
