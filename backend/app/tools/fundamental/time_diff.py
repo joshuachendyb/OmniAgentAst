@@ -92,12 +92,15 @@ def timediff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
 
         diff_signed = delta.total_seconds()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        # =============================================================================
+        # 数据设计：seconds/days 从 data 移除，通过 llm_data.metrics 传入 summary
+        # summary 示例: "时间差: X天前（Y天）"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
         data = {
             "humanized": humanized,
-            "seconds": seconds,
             "minutes": minutes,
             "hours": hours,
-            "days": days,
             "is_future": is_future,
             "is_after": diff_signed > 0,
             "is_before": diff_signed < 0,

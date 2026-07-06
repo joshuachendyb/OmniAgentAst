@@ -60,12 +60,14 @@ def _build_download_file_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    size_str = f"{file_size}字节" if file_size else ""
+    summary = f"文件下载成功: {dest_path}" + (f" ({size_str})" if size_str else "")
     return {
-        "summary": f"文件下载成功: {dest_path}",
+        "summary": summary,
         "action": {"tool": "download", "tool_zh": "文件下载", "target": url, "params": _act_params},
         "status": {"exec_code": "success", "message": "文件下载成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {"file_size": {"value": file_size, "text": f"{file_size}字节"}},
+        "metrics": {"file_size": {"value": file_size, "text": size_str}},
     }
 
 
@@ -186,7 +188,12 @@ async def download(
             downloaded, content_type, total_bytes = await _stream_download(client, url, dest_path, req_headers)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"file_path": dest_path, "file_size": downloaded, "total_size": total_bytes if total_bytes > 0 else None, "content_type": content_type}
+        # =============================================================================
+        # 数据设计：file_size 从 data 移除，通过 llm_data.metrics 传入 summary
+        # summary 示例: "文件下载成功: /path/file.zip"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
+        data = {"file_path": dest_path, "total_size": total_bytes if total_bytes > 0 else None, "content_type": content_type}
         llm_data = _build_download_file_llm_data("success", duration_ms, url, dest_path, downloaded, total_bytes, content_type, timeout=timeout, proxy=proxy, headers=headers)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)

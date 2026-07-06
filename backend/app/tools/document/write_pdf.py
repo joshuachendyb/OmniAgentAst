@@ -195,13 +195,13 @@ def write_pdf(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pdf_llm_data("success", duration_ms, str(path), user_title=title or "")
-        # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — file_path 不命中专用分支
-        # handler: _format_scalar_data(data) — key | value 单行列表
-        # file:    observation_formatter.py:214
-        # ------------------------------------------------------------------------------
-        return build_success(data={"file_path": str(path)}, llm_data=llm_data)
+        # =============================================================================
+        # 数据设计：file_path 从 data 移除，通过 llm_data.summary 传入 LLM observation。
+        # summary 已包含文件路径: "写入PDF成功: /path.pdf"
+        # data 为空 dict 时 formatter 不追加详情，避免冗余。
+        # — 小欧 2026-07-06
+        # =============================================================================
+        return build_success(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "", hint="写入PDF异常,请检查磁盘空间和权限")

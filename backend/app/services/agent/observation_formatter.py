@@ -426,6 +426,11 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
 
     llm_data → _format_llm_data（观察行+error/warning详情+diff）
     data     → 详情行（通过 format_data_detail）
+
+    设计原则：工具的统计数据（total_matches/total_files等）已通过
+    llm_data.metrics → summary → _format_llm_data 嵌入"观察:"行，
+    最终给LLM的文本中必然包含。data中不再重复存放这些字段。
+    — 小欧 2026-07-06 18:39:02
     """
     text = _format_llm_data(llm_data)
 

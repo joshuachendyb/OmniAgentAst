@@ -65,8 +65,11 @@ def _build_search_files_llm_data(
     truncated: bool = False, detail: str = "", hint: str = "",
     user_pattern: str = "", user_ignore_case: Optional[bool] = None,
     user_type: Optional[str] = None, user_offset: int = 0,
+    truncated_by_deadline: bool = False,
+    truncated_by_limit: bool = False,
+    truncated_by_offset: bool = False,
 ) -> Dict[str, Any]:
-    """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示"""
+    """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示 — 小欧 2026-07-06 summary含路径/模式/页码, warning用常量"""
     _act_params = {"search_dir": search_dir}
     if user_pattern:
         _act_params["pattern"] = user_pattern
@@ -85,17 +88,29 @@ def _build_search_files_llm_data(
             "metrics": {},
         }
     if exec_code == "warning":
+        detail_parts = [f"总数{total}条, 输出前{min(DEFAULT_PAGE_SIZE, total)}条"]
+        if truncated_by_deadline:
+            detail_parts.append("搜索超时")
+        if truncated_by_limit:
+            detail_parts.append("结果数量达到上限")
+        if truncated_by_offset:
+            detail_parts.append("分页截断")
+        warning_detail = "; ".join(detail_parts)
         return {
-            "summary": f"搜索完成: {total}个匹配（结果被截断，可能不完整）",
+            "summary": f"搜索完成: {search_dir} 下匹配 '{user_pattern}', 共{total}个匹配, 已截断",
             "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
-            "status": {"exec_code": "warning", "message": "结果被截断，可能不完整", "code": "", "detail": "搜索超时或结果数量达到上限，仅返回部分匹配项", "hint": "可缩小搜索范围或使用更精确的匹配模式"},
+            "status": {"exec_code": "warning", "message": "搜索结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else "可缩小搜索范围或使用更精确的匹配模式"},
             "duration_ms": duration_ms,
             "metrics": {
                 "total": {"value": total, "text": f"{total}个匹配"},
             },
         }
+    summary = f"搜索完成: {search_dir} 下匹配 '{user_pattern}', 共{total}个匹配"
+    if user_offset:
+        end = min(user_offset + DEFAULT_PAGE_SIZE, total)
+        summary += f", 第{user_offset+1}-{end}项"
     return {
-        "summary": f"搜索完成: {total}个匹配",
+        "summary": summary,
         "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -192,7 +207,16 @@ async def find(
     truncated_by_limit = total >= MAX_SEARCH_RESULTS
     truncated_by_offset = total > (offset + DEFAULT_PAGE_SIZE)
     exec_code = "warning" if (truncated_by_deadline or truncated_by_limit or truncated_by_offset) else "success"
-    llm_data = _build_search_files_llm_data(exec_code, duration_ms, search_dir=search_dir, total=total, truncated=(truncated_by_deadline or truncated_by_limit or truncated_by_offset), user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
+    llm_data = _build_search_files_llm_data(
+        exec_code, duration_ms,
+        search_dir=search_dir, total=total,
+        truncated=(truncated_by_deadline or truncated_by_limit or truncated_by_offset),
+        user_pattern=pattern, user_ignore_case=ignore_case,
+        user_type=type, user_offset=offset,
+        truncated_by_deadline=truncated_by_deadline,
+        truncated_by_limit=truncated_by_limit,
+        truncated_by_offset=truncated_by_offset,
+    )
     if exec_code == "warning":
         # ---- observation_formatter route -------------------------------------------
         # branch: #9 matches (find subtype)
@@ -200,8 +224,14 @@ async def find(
         # handler: _format_find_results(ms)
         # file:    observation_formatter.py:152-178
         # ------------------------------------------------------------------------------
+        # =============================================================================
+        # 数据设计：total/search_dir/pattern/offset 从 data 移除，
+        # 通过 llm_data.metrics/summary 传入 LLM observation。
+        # summary 示例: "搜索完成: /path 下匹配 '*.py', 共15个匹配"
+        # — 小欧 2026-07-06
+        # =============================================================================
         return build_warning(
-            data={"matches": page, "total": total, "offset": offset},
+            data={"matches": page},
             llm_data=llm_data,
         )
     # ---- observation_formatter route -------------------------------------------
@@ -210,7 +240,13 @@ async def find(
     # handler: _format_find_results(ms)
     # file:    observation_formatter.py:152-178
     # ------------------------------------------------------------------------------
+    # =============================================================================
+    # 数据设计：total/search_dir/pattern/offset 从 data 移除，
+    # 通过 llm_data.metrics/summary 传入 LLM observation。
+    # summary 示例: "搜索完成: /path 下匹配 '*.py', 共15个匹配, 第1-200项"
+    # — 小欧 2026-07-06
+    # =============================================================================
     return build_success(
-        data={"matches": page, "total": total, "search_dir": search_dir, "pattern": pattern, "offset": offset},
+        data={"matches": page},
         llm_data=llm_data,
     )

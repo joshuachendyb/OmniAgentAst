@@ -182,13 +182,15 @@ def write_xlsx(
         row_count = len(rows)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_xlsx_llm_data("success", duration_ms, str(path), row_count, user_sheet_name=sheet_name)
-        # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — file_path/row_count 不命中专用分支
-        # handler: _format_scalar_data(data) — key | value 单行列表
-        # file:    observation_formatter.py:214
-        # ------------------------------------------------------------------------------
-        return build_success(data={"file_path": str(path), "row_count": row_count}, llm_data=llm_data)
+        # =============================================================================
+        # 数据设计：row_count/file_path 从 data 移除，通过 llm_data.metrics/summary
+        # 传入 LLM observation。summary 已包含文件路径和行数：
+        #   "写入Excel成功: /path.xlsx, 100行"
+        # data 为空 dict 时 formatter 不追加详情，LLM 只看到 observation 行，
+        # 避免 file_path 在 summary 和详情中重复造成冗余。
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
+        return build_success(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=str(e), user_sheet_name=sheet_name, hint="写入Excel异常,请检查磁盘空间和权限")

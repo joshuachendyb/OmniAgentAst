@@ -118,7 +118,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
             logger.debug(f"[registry_delete] 成功删除子键: {full_root_key}\\{sub_key}")
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("success", duration_ms, result_data["key_path"], result_data["action"])
+        llm_data = _build_registry_delete_llm_data("success", duration_ms, key_path, result_data["action"])
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val) — delete_value or delete_key
         # trigger: 无上述20条分支匹配 — key_path/value_name/action/recursive

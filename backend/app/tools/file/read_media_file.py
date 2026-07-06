@@ -145,8 +145,13 @@ async def readmedia(
         # handler: _format_readmedia(data) — 元数据 + base64 摘要
         # file:    observation_formatter.py:188-190
         # ------------------------------------------------------------------------------
+        # =============================================================================
+        # 数据设计：file_size 从 data 移除，通过 llm_data.metrics 传入 summary
+        # summary 示例: "读取媒体文件成功: image.png (image/png)"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
         return build_success(
-            data={"file_name": path.name, "mime_type": mime_type, "file_size": file_size, "base64_data": b64_data},
+            data={"mime_type": mime_type, "base64_data": b64_data},
             llm_data=llm_data,
         )
     except Exception as e:

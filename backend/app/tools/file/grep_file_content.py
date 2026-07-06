@@ -70,9 +70,15 @@ def _build_grep_file_content_llm_data(
         _act_params["ignore_case"] = user_ignore_case
     if user_output_mode:
         _act_params["output_mode"] = user_output_mode
+    _loc_info = ""
+    if search_dir:
+        _loc_info += f" {search_dir} 下"
+    if pattern:
+        _loc_info += f" 搜索 '{pattern}'"
+
     if exec_code == "error":
         return {
-            "summary": f"搜索失败: {search_dir}",
+            "summary": f"搜索失败:{_loc_info}",
             "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_CONTENT_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索路径和搜索模式"},
             "duration_ms": duration_ms,
@@ -90,7 +96,7 @@ def _build_grep_file_content_llm_data(
             warning_detail = "跳过了部分二进制文件，无法进行内容搜索"
             warning_hint = "可排除二进制文件路径或指定文件后缀过滤"
         return {
-            "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件{summary_suffix}",
+            "summary": f"搜索完成:{_loc_info}, 匹配{total_matches}行, {total_files}个文件{summary_suffix}",
             "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
             "status": {"exec_code": "warning", "message": warning_message, "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
@@ -100,7 +106,7 @@ def _build_grep_file_content_llm_data(
             },
         }
     return {
-        "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件",
+        "summary": f"搜索完成:{_loc_info}, 匹配{total_matches}行, {total_files}个文件",
         "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -272,6 +278,11 @@ async def grep(
     if gr.results and output_mode != "count":
         _sort_grep_results_by_mtime(gr.results)
 
+    # =============================================================================
+    # 数据设计：total_matches/total_files 从 data 移除，通过 llm_data.metrics 传入 summary
+    # summary 示例: "搜索完成: 匹配5行, 3个文件"
+    # — 小欧 2026-07-06 18:46:13
+    # =============================================================================
     if output_mode == "count":
         data = {}
     elif output_mode == "files_with_matches":

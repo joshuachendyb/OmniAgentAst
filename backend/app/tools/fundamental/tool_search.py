@@ -178,12 +178,15 @@ def searchtool(query: str) -> Dict[str, Any]:
     top_results = meaningful[:10]
 
     duration_ms = int((time.perf_counter() - t0) * 1000)
+    # =============================================================================
+    # 数据设计：total_matched/total_tools 从 data 移除，通过 llm_data.metrics 传入 summary
+    # summary 示例: "搜索 'xxx'，匹配 X 个工具（共 Y 个）"
+    # — 小欧 2026-07-06 18:46:13
+    # =============================================================================
     # data.matches已精简为仅name+category，LLM仅需知道"搜到了/没搜到"，
     # 工具详情感知由auto_inject_from_search自动注入整个分类 — 北京老陈 2026-06-26
     data = {
         "matches": [{"name": r["name"], "category": r["category"]} for r in top_results],
-        "total_matched": len(meaningful),
-        "total_tools": len(all_tools),
     }
     llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(meaningful), len(all_tools),
                                              [{"name": r["name"], "category": r["category"]} for r in top_results])

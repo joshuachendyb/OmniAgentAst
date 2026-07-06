@@ -91,12 +91,14 @@ def _build_ping_llm_data(exec_code: str, duration_ms: int, host: str = "", is_re
         }
     status_text = "可达" if is_reachable else "不可达"
     metrics = {}
+    latency_str = ""
     if is_reachable:
         metrics["loss_rate"] = {"value": loss_rate, "text": f"{loss_rate}%"}
         if avg_latency is not None:
             metrics["avg_latency"] = {"value": avg_latency, "text": f"{avg_latency}ms"}
+            latency_str = f", 延迟{avg_latency}ms"
     return {
-        "summary": f"Ping测试{'成功' if is_reachable else '失败'}:{host} {status_text}",
+        "summary": f"Ping测试{'成功' if is_reachable else '失败'}:{host} {status_text}{latency_str}",
         "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": host, "params": _act_params},
         "status": {"exec_code": "success" if is_reachable else "error", "message": f"Ping {status_text}", "code": "" if is_reachable else ERR_NETWORK_TIMEOUT, "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
@@ -263,13 +265,21 @@ async def ping_port(
                                             parsed.get("loss_rate", 0.0), parsed.get("avg_latency"),
                                             parsed.get("min_latency"), parsed.get("max_latency"),
                                             count=count, timeout=timeout)
+            # =============================================================================
+            # 数据设计：loss_rate/avg_latency 从 data 移除，通过 llm_data.metrics 传入 summary
+            # summary 示例: "Ping测试成功: example.com 可达"
+            # — 小欧 2026-07-06 18:46:13
+            # =============================================================================
             # ---- observation_formatter route -------------------------------------------
             # branch: #21 fallback (key:val) — ping mode
             # trigger: 无上述20条分支匹配 — data 含 host/is_reachable/packets_sent 等
             # handler: _format_scalar_data(data) — key | value 单行列表
             # file:    observation_formatter.py:214
             # ------------------------------------------------------------------------------
-            return build_success(data=result.get("data", {}), llm_data=llm_data)
+            ping_data = result.get("data", {})
+            ping_data.pop("loss_rate", None)
+            ping_data.pop("avg_latency", None)
+            return build_success(data=ping_data, llm_data=llm_data)
         else:
             llm_data = _build_ping_llm_data("error", duration_ms, host, err_code=result.get("err_code", ERR_NET_UNKNOWN), detail=result.get("error_detail", ""), hint="请检查主机地址和网络连接", count=count, timeout=timeout)
             return build_error(data={"error_detail": result.get("error_detail", ""), "params": result.get("params", {})}, llm_data=llm_data)

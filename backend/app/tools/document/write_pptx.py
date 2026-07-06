@@ -262,13 +262,14 @@ def write_pptx(
         slide_count = len(prs.slides)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pptx_llm_data("success", duration_ms, str(path), slide_count)
-        # ---- observation_formatter route -------------------------------------------
-        # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — file_path/slide_count 不命中专用分支
-        # handler: _format_scalar_data(data) — key | value 单行列表
-        # file:    observation_formatter.py:214
-        # ------------------------------------------------------------------------------
-        return build_success(data={"file_path": str(path), "slide_count": slide_count}, llm_data=llm_data)
+        # =============================================================================
+        # 数据设计：slide_count/file_path 从 data 移除，通过 llm_data.metrics/summary
+        # 传入 LLM observation。summary 已包含文件路径和页数：
+        #   "写入PPT成功: /path.pptx, 5页"
+        # data 为空 dict 时 formatter 不追加详情，避免冗余。
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
+        return build_success(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pptx_llm_data("error", duration_ms, file_name, detail=str(e), hint="写入PPT异常,请检查磁盘空间和文件完整性")

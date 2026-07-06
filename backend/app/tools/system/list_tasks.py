@@ -112,7 +112,12 @@ def list_tasks(task_name: Optional[str] = None, state: str = "all") -> dict:
         limited, matched = _filter_tasks(tasks, task_name, state, 100)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"tasks": limited, "total": len(tasks), "returned": len(limited)}
+        # =============================================================================
+        # 数据设计：total 从 data 移除，通过 llm_data.metrics 传入 summary
+        # summary 示例: "共 X 个计划任务，匹配 Y 个，返回 Z 个"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
+        data = {"tasks": limited, "returned": len(limited)}
         llm_data = _build_list_tasks_llm_data("success", duration_ms, limited, len(tasks), matched, task_name=task_name or "", state=state)
         # ---- observation_formatter route -------------------------------------------
         # branch: #14 tasks table

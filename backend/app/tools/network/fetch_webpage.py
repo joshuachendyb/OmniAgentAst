@@ -203,9 +203,9 @@ def _build_fetch_webpage_llm_data(
             "metrics": {},
         }
     if mime_type:
-        summary = f"成功获取{mime_type}文件"
+        summary = f"成功获取{mime_type}文件(HTTP {status_code})"
     else:
-        summary = f"成功获取网页内容({extract_format}格式)"
+        summary = f"成功获取网页内容({extract_format}格式, HTTP {status_code})"
     if truncated:
         summary += "(已截断)"
     return {
@@ -385,11 +385,15 @@ async def fetchpage(
             extracted_content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
             status_code = response.status_code
 
+        # =============================================================================
+        # 数据设计：status_code 从 data 移除，通过 llm_data.metrics 传入 summary
+        # summary 示例: "成功获取网页内容(markdown格式)"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
         result_data = {
             "content": extracted_content,
             "format": extract_format,
             "content_type": content_type,
-            "status_code": status_code,
             "truncated": truncated,
         }
 

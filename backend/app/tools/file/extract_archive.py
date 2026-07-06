@@ -52,8 +52,11 @@ def _build_extract_archive_llm_data(
         _m["extracted_files"] = {"value": extracted_files, "text": f"解压{extracted_files}个文件"}
     if skipped_files:
         _m["skipped_files"] = {"value": skipped_files, "text": f"跳过{skipped_files}个文件"}
+    parts = [f"解压{extracted_files}个文件"]
+    if skipped_files:
+        parts.append(f"跳过{skipped_files}个文件")
     return {
-        "summary": f"解压成功: {source}",
+        "summary": f"解压成功: {source}，{'，'.join(parts)}",
         "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": _act_params},
         "status": {"exec_code": "success", "message": "解压成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -187,6 +190,12 @@ async def extract(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("success", duration_ms, source, user_destination=destination, user_overwrite=overwrite, extracted_files=result.get("extracted_files", 0), skipped_files=result.get("skipped_files", 0), fmt=result.get("format", ""))
+        # =============================================================================
+        # 数据设计：extracted_files/skipped_files/format 仍保留在 data 中供 formatter 展示，
+        # 同时通过 llm_data.metrics 传入 summary，最终进入 LLM 观察文本
+        # summary 示例: "解压成功: /path/file.zip，解压10个文件，跳过2个文件"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
         # trigger: 无上述20条分支匹配 — result 含 output_dir/extracted_files/skipped_files/format

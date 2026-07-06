@@ -37,8 +37,9 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, output_path
     metrics = {}
     if monitor_count > 0:
         metrics["monitors"] = {"value": monitor_count, "text": f"{monitor_count}个"}
+    monitor_text = f"（{monitor_count}个显示器）" if monitor_count > 0 else ""
     return {
-        "summary": f"截图保存到: {output_path}",
+        "summary": f"截图保存到: {output_path}{monitor_text}",
         "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": output_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "截图完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
@@ -140,6 +141,11 @@ def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str,
 
     image_path = result.pop("image_path", "")
     region_val = result.pop("region", None)
+    # =============================================================================
+    # 数据设计：monitors 从 data pop 出，通过 llm_data.metrics 传入 summary
+    # summary 示例: "截图保存到: /path/screenshot.png（2个显示器）"
+    # — 小欧 2026-07-06 18:46:13
+    # =============================================================================
     monitor_count = result.pop("monitors", 0)
     display_val = result.pop("display", None)
     llm_data = _build_screen_capture_llm_data("success", duration_ms, image_path, region=region_val, display=display_val, monitor_count=monitor_count)
@@ -149,7 +155,7 @@ def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str,
     # handler: _format_scalar_data(data) — key | value 单行列表
     # file:    observation_formatter.py:214
     # ------------------------------------------------------------------------------
-    return build_success(data={"image_path": image_path, "display": display_val, "monitors": monitor_count}, llm_data=llm_data)
+    return build_success(data={"image_path": image_path, "display": display_val}, llm_data=llm_data)
 
 
 __all__ = ["screen_capture"]

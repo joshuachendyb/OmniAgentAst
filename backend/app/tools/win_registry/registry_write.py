@@ -113,7 +113,7 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
         logger.debug(f"[registry_write] 写入成功: {full_root_key}\\{sub_key}\\{value_name}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"value": value, "value_type": actual_type}
-        llm_data = _build_registry_write_llm_data("success", duration_ms, data["key_path"], value_name, value, actual_type)
+        llm_data = _build_registry_write_llm_data("success", duration_ms, key_path, value_name, value, actual_type)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val) — write path
         # trigger: 无上述20条分支匹配 — key_path/value_name/value/value_type

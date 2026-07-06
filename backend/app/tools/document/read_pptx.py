@@ -115,7 +115,6 @@ def read_pptx(file_name: str) -> Dict[str, Any]:
                     })
 
         result_data = {
-            "slide_count": len(prs.slides),
             "slides": slides_data,
         }
         if notes_data:
@@ -124,6 +123,11 @@ def read_pptx(file_name: str) -> Dict[str, Any]:
         total_text = sum(len(s.get("text", "")) for s in slides_data)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_pptx_llm_data("success", duration_ms, file_path, len(prs.slides), total_text)
+        # =============================================================================
+        # 数据设计：slide_count 从 data 移除，通过 llm_data.metrics 传入 summary
+        # summary 示例: "读取PPT成功: 10页, 5000字符"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
         # ---- observation_formatter route -------------------------------------------
         # branch: #16 slides items
         # trigger: "slides" in data — slides 是 List[dict], 每项含 slide_num/text/tables

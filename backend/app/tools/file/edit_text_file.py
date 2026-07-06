@@ -145,10 +145,10 @@ def _build_edit_text_file_llm_data(
     _warning_msg = ""
     if total_matches > applied:
         _remaining = total_matches - applied
-        _warning_msg = f"共{total_matches}处匹配，已修改{applied}处，剩余{_remaining}处"
+        _warning_msg = f"剩余{_remaining}处未修改"
         _hint_parts.append("建议使用 replace_all=True 一次替换所有匹配")
     _hint = "；".join(_hint_parts) if _hint_parts else ""
-    _summary = f"编辑完成: {file_path} ({applied}/{total}处)"
+    _summary = f"编辑完成: {file_path}（总计{total_matches}处，完成{applied}处）"
     if _warning_msg:
         _summary += f"，注意: {_warning_msg}"
     _exec_code = "warning" if (_warning_msg or mtime_warning) else "success"
@@ -342,8 +342,23 @@ async def edittext(
     # handler: _format_scalar_data(data) — key | value 单行列表
     # file:    observation_formatter.py:214
     # ------------------------------------------------------------------------------
-    clean_data = {k: v for k, v in result.items() if k not in ("operation_id", "file_path", "skipped")}
-    return build_success(data=clean_data, llm_data=llm_data)  # 小欧 2026-07-06 diff移回llm_data.metrics
+    # =============================================================================
+    # 数据设计三档：
+    #   完全成功 (applied == total_matches > 0)  → data={}
+    #   部分成功 (applied < total_matches, applied>0) → data={"diff": ...}
+    #   跳过/无操作 (skipped 或 applied==0)       → data={}
+    # — 小欧 2026-07-06 21:00:00
+    # =============================================================================
+    _applied = llm_data["metrics"]["applied"]["value"]
+    _total_matches = llm_data["metrics"]["total_matches"]["value"]
+    _skipped = result.get("skipped", False)
+    if _skipped or _applied == 0:
+        data = {}
+    elif _applied >= _total_matches:
+        data = {}
+    else:
+        data = {"diff": result.get("diff", "")}
+    return build_success(data=data, llm_data=llm_data)
 
 
 # 本地 mtime 缓存已于 2026-07-05 迁移到 file/file_state.py — 小欧

@@ -44,6 +44,8 @@ def _build_read_pdf_llm_data(
             "page_count": {"value": page_count, "text": f"{page_count}页"},
             "pages_read": {"value": pages_read, "text": f"读取{pages_read}页"},
             "text_len": {"value": text_len, "text": f"{text_len}字符"},
+            "table_count": {"value": table_count, "text": f"{table_count}个表格"},
+            "image_count": {"value": image_count, "text": f"{image_count}张图片"},
         },
     }
 
@@ -92,7 +94,7 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
                 images_data.extend(images)
 
         full_text = "\n\n".join(all_text)
-        result = {"text": full_text, "page_count": page_count, "pages_read": pages_read}
+        result = {"text": full_text}
         if tables_data:
             result["tables"] = tables_data
             result["table_count"] = len(tables_data)
@@ -105,6 +107,11 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
             "success", duration_ms, file_path, page_count, len(pages_read),
             len(full_text), len(tables_data), len(images_data),
         )
+        # =============================================================================
+        # 数据设计：page_count/pages_read 从 data 移除，通过 llm_data.metrics 传入 summary
+        # summary 示例: "读取PDF成功: 3/5页, 1024字符"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
         # ---- observation_formatter route -------------------------------------------
         # branch: #10 raw text
         # trigger: "text" in data and isinstance(data["text"], str)

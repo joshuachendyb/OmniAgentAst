@@ -170,7 +170,12 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
             events = list(result["events"])
             events_count = len(events)
             llm_data = _build_event_log_llm_data("success", duration_ms, log_name, events_count, level)
-            return build_success(data={"events": events, "count": events_count}, llm_data=llm_data)
+            # =============================================================================
+            # 数据设计：count 从 data 移除，通过 llm_data.metrics 传入 summary
+            # summary 示例: "获取 System，X条事件"
+            # — 小欧 2026-07-06 18:46:13
+            # =============================================================================
+            return build_success(data={"events": events}, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"[event_log] 获取事件日志失败: {e}")

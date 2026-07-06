@@ -121,13 +121,12 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional
         if len(all_sheets_data) == 1:
             result = all_sheets_data[0]
             result["sheet_names"] = sheet_names
+            result.pop("row_count", None)
             return result
         else:
             return {
                 "sheets": all_sheets_data,
                 "sheet_names": sheet_names,
-                "row_count": total_rows,
-                "sheet_count": len(all_sheets_data),
             }
     except Exception as e:
         return {"error_detail": str(e), "params": {"file_path": file_path}}
@@ -217,7 +216,13 @@ def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any
     else:
         row_count = result.get("row_count", 0)
         sheet_count = len(result.get("sheet_names", []))
+        result.pop("row_count", None)
         llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_name, row_count, sheet_count, user_sheet_name=sheet_name or "")
+        # =============================================================================
+        # 数据设计：row_count/sheet_count 从 data 移除，通过 llm_data.metrics 传入 summary
+        # summary 示例: "读取Excel成功: 100行, 3个工作表"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
         # ---- observation_formatter route -------------------------------------------
         # branch: #2b flat table (单sheet/CSV) / #21 scalar fallback (多sheet)
         # trigger: "headers" in data and "rows" in data — 单sheet有headers+rows

@@ -164,7 +164,12 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
             # handler: _format_analyze_data(data) — 首行 列名 | 总数 转置表
             # file:    observation_formatter.py:201-202
             # ------------------------------------------------------------------------------
-            return build_success(data={"row_count": total_count, "columns": df.columns.tolist(), "statistics": {}}, llm_data=llm_data)
+            # =============================================================================
+            # 数据设计：row_count 从 data 移除，通过 llm_data.metrics 传入 summary
+            # summary 示例: "分析完成: X行, Y个数值列"
+            # — 小欧 2026-07-06 18:46:13
+            # =============================================================================
+            return build_success(data={"columns": df.columns.tolist(), "statistics": {}}, llm_data=llm_data)
 
         result = {"total_count": total_count, "columns": df.columns.tolist()}
         if sort_by and sort_by in df.columns:
@@ -172,7 +177,6 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
         if top_n and top_n > 0:
             df = df.head(top_n)
 
-        result["row_count"] = len(df)
         result.update(_compute_stats(df, numeric_cols, operations, all_ops, group_by=group_by))
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

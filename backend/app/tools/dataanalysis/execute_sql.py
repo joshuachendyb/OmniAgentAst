@@ -160,7 +160,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, affected_rows,
                                                          connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
-                return build_warning(data={"affected_rows": affected_rows, "action": "rollback"}, llm_data=llm_data)
+                return build_warning(data={"action": "rollback"}, llm_data=llm_data)
             conn.commit()
         else:
             cursor = conn.cursor()
@@ -171,19 +171,24 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, affected_rows,
                                                          connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
-                return build_warning(data={"affected_rows": affected_rows, "action": "rollback"}, llm_data=llm_data)
+                return build_warning(data={"action": "rollback"}, llm_data=llm_data)
             conn.commit()
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, affected_rows,
                                                  connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
+        # =============================================================================
+        # 数据设计：affected_rows 从 data 移除，通过 llm_data.metrics 传入 summary
+        # summary 示例: "SQL执行成功, 影响5行"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val) — normal path
-        # trigger: 无上述20条分支匹配 — affected_rows/sql 不命中专用分支
+        # trigger: 无上述20条分支匹配 — 仅 action 不命中专用分支
         # handler: _format_scalar_data(data) — key | value 单行列表
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
-        return build_success(data={"affected_rows": affected_rows}, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data)
 
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

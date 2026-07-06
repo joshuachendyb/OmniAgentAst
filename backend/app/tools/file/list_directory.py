@@ -122,16 +122,14 @@ def _scan_directory_sync(
     return entries, stats, ext_counter, size_bins
 
 
-def _build_list_success(entries: List, total: int, path: Path,
-                         statistics: Dict, start_offset: int,
+def _build_list_success(entries: List, total: int,
+                         start_offset: int,
                          max_display: int) -> Dict[str, Any]:
-    """构建list模式的原始数据 — 小健 2026-05-25 — 小欧 2026-06-22"""
+    """构建list模式的原始数据 — 小健 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-07-06 去statistics"""
     truncated = total > max_display
     display_entries = entries[start_offset:start_offset + max_display]
     return {
         "entries": display_entries,
-        "total": total,
-        "statistics": statistics,
         "truncated": truncated,
     }
 
@@ -143,8 +141,11 @@ def _build_list_directory_llm_data(
     hint: str = "",
     user_sort_by: str = "", user_include_hidden: Optional[bool] = None,
     user_offset: int = 0,
+    dir_count: int = 0, file_count: int = 0, total_size: int = 0,
+    file_types: Optional[Dict[str, int]] = None,
+    size_distribution: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
-    """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数+action params补齐+warning detail动态化+去死代码"""
+    """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-06 statistics移入metrics/summary"""
     _act_params = {"dir_path": dir_path}
     if user_sort_by:
         _act_params["sort_by"] = user_sort_by
@@ -160,20 +161,29 @@ def _build_list_directory_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    m: Dict[str, Any] = {"total": {"value": total, "text": f"{total}项"}}
+    m: Dict[str, Any] = {
+        "total": {"value": total, "text": f"{total}项"},
+        "dir_count": {"value": dir_count, "text": f"{dir_count}个目录"},
+        "file_count": {"value": file_count, "text": f"{file_count}个文件"},
+        "total_size": {"value": total_size, "text": f"{total_size}字节"},
+    }
     if exec_code == "warning":
         m["truncated"] = {"value": True, "text": "已截断"}
-        warning_detail = detail if detail else "结果过多已截断，仅显示前200项"
+        warning_detail = detail if detail else f"总数{total}条, 输出前{LISTDIR_PAGE_SIZE}条"
         warning_hint = hint if hint else "请使用更精确的路径或筛选条件"
         return {
-            "summary": f"列出目录成功: {dir_path} ({total}项，已截断)",
+            "summary": f"列出目录成功: {dir_path} ({total}项, {file_count}个文件, {dir_count}个目录, 已截断)",
             "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
             "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": m,
         }
+    summary = f"列出目录成功: {dir_path} ({total}项, {file_count}个文件, {dir_count}个目录)"
+    if user_offset:
+        end_offset = min(user_offset + LISTDIR_PAGE_SIZE, total)
+        summary += f", 第{user_offset+1}-{end_offset}项"
     return {
-        "summary": f"列出目录成功: {dir_path} ({total}项)",
+        "summary": summary,
         "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "列出目录成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -228,19 +238,29 @@ async def listdir(
             all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
 
         total = len(all_entries)
-        statistics = {
-            "total_size": stats["total_size"], "dir_count": stats["dir_count"],
-            "file_count": stats["file_count"], "sort_by": sort_by,
-            "file_types": file_types, "size_distribution": size_distribution,
-        }
 
         if total > LISTDIR_PAGE_SIZE:
             logger.warning(f"[listdir] Large directory truncated: path={path}, total={total}")
 
-        list_data = _build_list_success(all_entries, total, path, statistics, start_offset, LISTDIR_PAGE_SIZE)
+        list_data = _build_list_success(all_entries, total, start_offset, LISTDIR_PAGE_SIZE)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         exec_code = "warning" if list_data["truncated"] else "success"
-        llm_data = _build_list_directory_llm_data(exec_code, duration_ms, dir_path=dir_path, total=total, truncated=list_data["truncated"], user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        llm_data = _build_list_directory_llm_data(
+            exec_code, duration_ms,
+            dir_path=dir_path, total=total,
+            truncated=list_data["truncated"],
+            user_sort_by=sort_by, user_include_hidden=include_hidden,
+            user_offset=offset,
+            dir_count=stats["dir_count"], file_count=stats["file_count"],
+            total_size=stats["total_size"],
+            file_types=file_types, size_distribution=size_distribution,
+        )
+        # =============================================================================
+        # 数据设计：total/statistics 从 data 移除，
+        # dir_count/file_count/total_size/file_types/size_distribution 移入 llm_data.metrics
+        # summary 示例: "列出目录成功: /path (47项, 42个文件, 5个目录)"
+        # — 小欧 2026-07-06
+        # =============================================================================
         if exec_code == "warning":
             # ---- observation_formatter route -------------------------------------------
             # branch: #3 entries

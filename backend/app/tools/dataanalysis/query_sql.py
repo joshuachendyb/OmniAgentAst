@@ -119,9 +119,14 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
 
         table_str = _format_table(columns, results)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"columns": columns, "rows": results, "total": len(results), "table": table_str}
+        data = {"columns": columns, "rows": results, "table": table_str}
         llm_data = _build_query_sql_llm_data("success", duration_ms, sql, len(results), columns,
                                                connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
+        # =============================================================================
+        # 数据设计：total 从 data 移除，行数通过 llm_data.metrics（key:row_count）传入 summary
+        # summary 示例: "查询返回10行, 列: id, name"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
         # ---- observation_formatter route -------------------------------------------
         # branch: #5 rows
         # trigger: "rows" in data — rows 是 List[list|dict]

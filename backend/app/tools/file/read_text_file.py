@@ -197,8 +197,6 @@ def _select_lines(
     content = "".join(selected)
     result = {
         "content": content,
-        "total_lines": total,
-        "line_count": len(selected),
         **params,
         **result_extra,
     }
@@ -225,6 +223,15 @@ def _build_read_text_file_llm_data(
         _act_params["tail"] = user_tail
     if user_encoding:
         _act_params["encoding"] = user_encoding
+    _pi = ""
+    if user_offset is not None:
+        _pi += f", 第{user_offset}行起"
+    if user_limit is not None:
+        _pi += f", 取{user_limit}行"
+    if user_tail is not None:
+        _pi += f", 尾部{user_tail}行"
+    if encoding_name:
+        _pi += f", 编码{encoding_name}"
     if exec_code == "error":
         return {
             "summary": f"读取失败: {file_path}",
@@ -235,7 +242,7 @@ def _build_read_text_file_llm_data(
         }
     if exec_code == "warning":
         return {
-            "summary": f"读取 {file_path}，{line_count}行，{file_size}字节。注意: {detail}",
+            "summary": f"读取 {file_path}，{line_count}/{total_lines}行，{file_size}字节{_pi}。注意: {detail}",
             "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": _act_params},
             "status": {"exec_code": "warning", "message": f"读取成功但有警告: {detail}", "code": "", "detail": detail, "hint": hint if hint else "请检查offset参数是否超出文件范围"},
             "duration_ms": duration_ms,
@@ -258,7 +265,7 @@ def _build_read_text_file_llm_data(
         msg = f"读取成功:第{start_line}-{end_line}行,共{total_lines}行{enc}"
         hint_text = ""
     return {
-        "summary": f"读取 {file_path}，{line_count}行，{file_size}字节",
+        "summary": f"读取 {file_path}，{line_count}/{total_lines}行，{file_size}字节{_pi}",
         "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": msg, "code": "", "detail": "", "hint": hint_text},
         "duration_ms": duration_ms,
@@ -389,8 +396,13 @@ async def readtext(
         lines = content.splitlines(keepends=True)
         _data = _select_lines(lines, offset, limit, tail)
         _data["encoding"] = used_encoding
-        _line_count = _data.get("line_count", 0)
-        _total_lines = _data.get("total_lines", 0)
+        # =============================================================================
+        # 数据设计：line_count/total_lines 从 data pop 出，通过 llm_data.metrics 传给 summary
+        # summary 示例: "读取 /path，20/200行，1024字节"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
+        _line_count = _data.pop("line_count", 0)
+        _total_lines = _data.pop("total_lines", 0)
         _warning = _data.pop("warning", None)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -405,6 +417,9 @@ async def readtext(
                 hint=warning_hint,
                 user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
             )
+            _data.pop("start_line", None); _data.pop("end_line", None)
+            _data.pop("offset", None); _data.pop("limit", None); _data.pop("tail", None)
+            _data.pop("encoding", None)
             return build_warning(data=_data, llm_data=llm_data)
 
         line_offset = _data.get("start_line", 1)
@@ -420,6 +435,9 @@ async def readtext(
         if raw:
             _data["content"] = f"<file>\n{add_line_numbers(raw, offset=line_offset)}\n</file>"
 
+        _data.pop("start_line", None); _data.pop("end_line", None)
+        _data.pop("offset", None); _data.pop("limit", None); _data.pop("tail", None)
+        _data.pop("encoding", None)
         record_read(file_path, content)
 
         # ---- observation_formatter route -------------------------------------------

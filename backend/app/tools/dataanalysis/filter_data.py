@@ -180,8 +180,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
         rows = _serialize_rows(filtered_df)
         result_data = {
             "columns": columns, "rows": rows,
-            "row_count": len(rows), "original_count": original_count,
-            "filtered_count": len(rows),
+            "row_count": len(rows),
             "filter_ratio": f"{len(rows)}/{original_count}",
         }
         if warnings:
@@ -190,6 +189,11 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_filter_data_llm_data("success", duration_ms, original_count, len(rows), columns,
                                                   file_path=file_path, data=data, conditions=conditions, select_columns=select_columns, sort_by=sort_by, top_n=top_n or 0, max_rows=max_rows or 0)
+        # =============================================================================
+        # 数据设计：original_count/filtered_count 从 data 移除，通过 llm_data.metrics 传入 summary
+        # summary 示例: "筛选完成: 100行→50行"
+        # — 小欧 2026-07-06 18:46:13
+        # =============================================================================
         # ---- observation_formatter route -------------------------------------------
         # branch: #5 rows
         # trigger: "rows" in data — rows 是 List[list|dict]
