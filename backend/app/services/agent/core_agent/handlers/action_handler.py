@@ -303,6 +303,15 @@ async def build_observation(ctx: ObservationContext) -> List:
         events.append(ctx.agent._step_emitter.emit(action_step))
 
     obs_parts = []
+
+    # 【Bug A修复】循环前：建1条assistant带所有tool_calls — 小沈 2026-07-06
+    _fc = ctx.fc_context or {}
+    _shared_tc = _fc.get("tool_calls", [])
+    if _shared_tc:
+        ctx.agent.message_builder.add_assistant_tool_call(
+            _shared_tc, content=_fc.get("llm_content", "") or None
+        )
+
     for idx, (call, result) in enumerate(zip(ctx.all_calls, ctx.results)):
         if isinstance(result, Exception):
             obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
@@ -333,23 +342,14 @@ async def build_observation(ctx: ObservationContext) -> List:
             print(f"{time.strftime('%H:%M:%S')} [Warning] step={ctx.step}, {call['tool_name']} 参数截断修复")
             logger.warning(f"[action_handler] step={ctx.step}, {call['tool_name']} 参数截断修复: {repair_warning}")
         obs_parts.append(obs_text)
+
         try:
-            _fc = ctx.fc_context or {}
             tc_id = call.get("_tool_call_id", "")
-            if tc_id and _fc.get("tool_calls"):
-                matching = [tc for tc in _fc["tool_calls"] if tc.get("id") == tc_id]
-                per_call_fc = {"tool_call_id": tc_id, "tool_calls": matching or _fc["tool_calls"]}
-                if not matching:
-                    per_call_fc["tool_call_id"] = tc_id
-                if _fc.get("llm_content"):
-                    per_call_fc["llm_content"] = _fc["llm_content"]
-            else:
-                per_call_fc = _fc
-            ctx.agent.message_builder.add_observation(obs_text, per_call_fc)
+            ctx.agent.message_builder.add_tool_result(tc_id, obs_text)
         except Exception as e:
-            logger.warning(f"[action_handler] add_observation异常: {e}")
+            logger.warning(f"[action_handler] add_tool_result异常: {e}")
             try:
-                ctx.agent.message_builder.add_observation(obs_text, {"tool_call_id": "", "tool_calls": []})
+                ctx.agent.message_builder.add_tool_result("", obs_text)
             except Exception:
                 pass
 

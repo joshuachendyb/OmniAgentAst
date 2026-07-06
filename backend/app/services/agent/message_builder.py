@@ -354,6 +354,8 @@ class MessageBuilder:
             elif msg.get("role") == "tool":
                 if msg.get("tool_call_id") in paired_ids:
                     result.append(msg)
+                elif not msg.get("tool_call_id"):
+                    result.append(msg)
             else:
                 result.append(msg)
         return result

@@ -45,7 +45,6 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
         "fc_context": {"tool_call_id": first.get("tool_call_id") or "", "tool_calls": built_tool_calls, "llm_content": full_content},
         "_pending_calls": _pending_calls, "tool_name": first.get("tool_name", ""),
         "tool_params": first.get("tool_params") or {}, "tool_call_id": first.get("tool_call_id") or "",
-        "tool_calls": first.get("tool_calls", []),
         "_repair_warning": first.get("_repair_warning", ""),
     })
 
