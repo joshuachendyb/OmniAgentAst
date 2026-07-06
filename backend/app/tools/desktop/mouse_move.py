@@ -27,7 +27,7 @@ def _build_mouse_move_llm_data(exec_code: str, duration_ms: int, x: int, y: int,
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"鼠标移动到: ({x}, {y})",
+        "summary": f"鼠标移动完成: 坐标({x}, {y})",
         "action": {"tool": "mouse_move", "tool_zh": "鼠标移动", "target": f"({x},{y})", "params": {"x": x, "y": y}},
         "status": {"exec_code": "success", "message": "鼠标移动完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},

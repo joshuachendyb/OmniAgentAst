@@ -414,12 +414,19 @@ def _format_llm_data(llm_data: Dict) -> str:
     target = action.get("target", "")
     diff = llm_data.get("diff", "")
 
-    # 第一行: 观察: {tool_zh} {target} - {message} - {summary} — 小沈 2026-07-06
+    # 第1行: 工具执行结果: 成功/失败 — 小欧 2026-07-07
+    status_line = {
+        "success": "工具执行结果: 成功",
+        "error": "工具执行结果: 失败",
+        "warning": "工具执行结果: 成功（有警告）",
+    }.get(exec_code, "工具执行结果: 成功")
+
+    # 第2行: 观察: {tool_zh} {target} - {message} - {summary} — 小沈 2026-07-06
     tool_desc = tool_zh
     if target:
         tool_desc += f" {target}"
     parts = [p for p in [tool_desc, message, summary] if p]
-    text = f"观察: {' - '.join(parts)}"
+    text = f"{status_line}\n观察: {' - '.join(parts)}"
 
     # 失败/警告: 附加详情
     detail = status.get("detail", "")

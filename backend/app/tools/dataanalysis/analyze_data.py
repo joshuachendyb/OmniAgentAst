@@ -88,7 +88,7 @@ def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_co
             "metrics": {},
         }
     return {
-        "summary": f"分析完成: {row_count}行, {numeric_col_count}个数值列",
+        "summary": f"数据分析成功: {row_count}行, {numeric_col_count}个数值列",
         "action": {"tool": "analyze_data", "tool_zh": "分析数据", "target": "dataset", "params": _act_params},
         "status": {"exec_code": "success", "message": "分析成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

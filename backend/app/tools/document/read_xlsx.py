@@ -43,7 +43,7 @@ def _build_read_xlsx_llm_data(
     if user_sheet_name:
         _act_params["sheet_name"] = user_sheet_name
     return {
-        "summary": f"读取Excel成功: {row_count}行, {sheet_count}个工作表",
+        "summary": f"读取Excel成功: {row_count}行，{sheet_count}个工作表",
         "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "读取Excel成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

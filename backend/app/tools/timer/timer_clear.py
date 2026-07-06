@@ -28,7 +28,7 @@ def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str,
         }
     status_text = "已取消" if cancelled else "不存在或已触发"
     return {
-        "summary": f"定时器 {timer_id} {status_text}",
+        "summary": f"定时器清除完成: {timer_id} — {status_text}",
         "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "target": timer_id, "params": {"timer_id": timer_id}},
         "status": {"exec_code": "success", "message": f"定时器{status_text}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

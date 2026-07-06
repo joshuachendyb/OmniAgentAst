@@ -59,7 +59,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
     if len(columns) > 5:
         col_text += "..."
     return {
-        "summary": f"查询返回{row_count}行, 列: {col_text}",
+        "summary": f"SQL查询成功: {row_count}行, 列: {col_text}",
         "action": {"tool": "query_sql", "tool_zh": "查询", "target": sql[:80], "params": _act_params},
         "status": {"exec_code": "success", "message": "查询成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

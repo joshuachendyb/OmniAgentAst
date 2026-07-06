@@ -31,7 +31,7 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    _summary = custom_summary if custom_summary else f"已获取{info_type}类型的系统信息"
+    _summary = custom_summary if custom_summary else f"获取系统信息成功({info_type})"
     return {
         "summary": _summary,
         "action": {"tool": "sysinfo", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
@@ -142,7 +142,7 @@ def sysinfo(info_type: str = "all") -> Dict[str, Any]:
             n = data.get("network", {})
             _summary_parts.append(f"发送{n.get('bytes_sent_mb','?')}MB/接收{n.get('bytes_recv_mb','?')}MB")
         _summary_parts = [s for s in _summary_parts if s]
-        _custom_summary = f"已获取{info_type}类型: {', '.join(_summary_parts)}" if _summary_parts else f"已获取{info_type}类型的系统信息"
+        _custom_summary = f"获取系统信息成功({info_type}): {', '.join(_summary_parts)}" if _summary_parts else f"获取系统信息成功({info_type})"
         llm_data = _build_get_system_info_llm_data("success", duration_ms, info_type, custom_summary=_custom_summary)
         # ---- observation_formatter route -------------------------------------------
         # branch: #17 sysinfo sections

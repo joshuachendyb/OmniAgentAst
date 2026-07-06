@@ -96,14 +96,14 @@ def _build_search_web_llm_data(
         }
     if exec_code == "warning":
         return {
-            "summary": f"搜索 {query}，{result_count}条结果（降级到{engine_used}引擎）",
+            "summary": f"搜索完成（降级）: 「{query}」，{result_count}条结果（{engine_used}引擎）",
             "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
             "status": {"exec_code": "warning", "message": "搜索服务降级", "code": "", "detail": f"Parallel引擎不可用，降级到{engine_used}搜索", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎（降级）"}},
         }
     return {
-        "summary": f"搜索 {query}，{result_count}条结果",
+        "summary": f"搜索成功: 「{query}」，{result_count}条结果",
         "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

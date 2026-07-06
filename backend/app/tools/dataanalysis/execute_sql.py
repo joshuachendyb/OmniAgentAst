@@ -58,7 +58,7 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
         }
     if exec_code == "warning":
         return {
-            "summary": f"SQL执行警告: 影响{affected_rows}行",
+            "summary": f"SQL执行完成（有警告）: 影响{affected_rows}行",
             "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": _act_params},
             "status": {"exec_code": "warning", "message": "影响行数超过安全阈值", "code": "WARNING_DB_SAFETY", "detail": f"影响行数{affected_rows}>10000", "hint": "建议缩小条件范围"},
             "duration_ms": duration_ms,

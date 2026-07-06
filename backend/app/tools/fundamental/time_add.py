@@ -31,7 +31,7 @@ def _build_time_add_llm_data(exec_code: str, duration_ms: int, result_time: str,
             "metrics": {},
         }
     return {
-        "summary": f"{delta} {unit}后: {result_time}",
+        "summary": f"时间加减成功: 将当前时间{delta:+g} {unit}后为 {result_time}",
         "action": {"tool": "timeadd", "tool_zh": "时间加减", "target": str(delta), "params": _act_params},
         "status": {"exec_code": "success", "message": "时间加减成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

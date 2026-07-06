@@ -40,7 +40,7 @@ def _build_find_command_llm_data(
     if exec_code == "warning":
         hint = "" if available else "找其他类似可用命令工具"
         return {
-            "summary": f"命令 '{command}' 不可用",
+            "summary": f"命令「{command}」不可用",
             "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": _act_params},
             "status": {"exec_code": "warning", "message": "命令不可用", "code": "", "detail": "", "hint": hint},
             "duration_ms": duration_ms,
@@ -48,7 +48,7 @@ def _build_find_command_llm_data(
         }
     if paths is not None:
         return {
-            "summary": f"命令 '{command}' 找到 {count} 个路径",
+            "summary": f"查找命令成功: 「{command}」找到 {count} 个路径",
             "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": _act_params},
             "status": {"exec_code": "success", "message": f"找到 {count} 个路径", "code": "", "detail": "", "hint": ""},
             "duration_ms": duration_ms,
@@ -57,7 +57,7 @@ def _build_find_command_llm_data(
     status = "可用" if available else "不可用"
     hint = "" if available else "找其他类似可用命令工具"
     return {
-        "summary": f"命令 '{command}' {status}",
+        "summary": f"命令「{command}」{status}",
         "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": _act_params},
         "status": {"exec_code": "success", "message": f"命令{status}", "code": "", "detail": "", "hint": hint},
         "duration_ms": duration_ms,

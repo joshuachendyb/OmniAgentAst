@@ -38,7 +38,7 @@ def _build_write_pptx_llm_data(
             "metrics": {},
         }
     return {
-        "summary": f"写入PPT成功: {file_path}, {slide_count}页",
+        "summary": f"写入PPT成功: {file_path}，{slide_count}页",
         "action": {"tool": "write_pptx", "tool_zh": "写入PPT", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": "success", "message": "写入PPT成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

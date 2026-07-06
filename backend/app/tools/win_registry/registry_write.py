@@ -47,7 +47,7 @@ def _build_registry_write_llm_data(exec_code: str, duration_ms: int, key_path: s
             "metrics": {},
         }
     return {
-        "summary": f"写入 {key_path}\\{value_name} = {value}（{value_type}）",
+        "summary": f"写入注册表成功: {key_path}\\{value_name} = {value}（{value_type}）",
         "action": {"tool": "registry_write", "tool_zh": "写入注册表", "target": key_path, "params": {"key_path": key_path, "value_name": value_name}},
         "status": {"exec_code": "success", "message": "写入注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

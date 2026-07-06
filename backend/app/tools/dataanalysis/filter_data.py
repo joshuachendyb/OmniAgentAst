@@ -44,7 +44,7 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
             "metrics": {},
         }
     return {
-        "summary": f"筛选完成: {original_count}行→{filtered_count}行",
+        "summary": f"筛选完成: 从{original_count}行筛选出{filtered_count}行",
         "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": _act_params},
         "status": {"exec_code": "success", "message": "筛选成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

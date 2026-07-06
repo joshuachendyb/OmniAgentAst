@@ -30,7 +30,7 @@ def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, key_path: 
             "metrics": {},
         }
     return {
-        "summary": f"已删除注册表 {key_path}（{action}）",
+        "summary": f"删除注册表成功: {key_path}（{action}）",
         "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": key_path, "params": {"key_path": key_path}},
         "status": {"exec_code": "success", "message": "删除注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -115,7 +115,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
             logger.debug(f"[registry_delete] 成功删除子键: {full_root_key}\\{sub_key}")
 
-        action = "deleted_value" if value_name is not None else "deleted_key"
+        action = "值已删除" if value_name is not None else "子键已删除"
         duration_ms = int((_time_mod.perform_counter() - t0) * 1000)
         llm_data = _build_registry_delete_llm_data("success", duration_ms, key_path, action)
         # =============================================================================

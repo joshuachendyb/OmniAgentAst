@@ -68,7 +68,7 @@ def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, t
             "metrics": {},
         }
     return {
-        "summary": f"定时器 {timer_id}，{int(delay / 60)}分钟后触发",
+        "summary": f"定时器设置成功: {timer_id}，{int(delay / 60)}分钟后触发",
         "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
         "status": {"exec_code": "success", "message": "定时器设置成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

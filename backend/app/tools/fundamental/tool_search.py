@@ -106,7 +106,7 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
             "metrics": {},
         }
     return {
-        "summary": f"搜索 '{query}'，匹配 {total_matched} 个工具（共 {total_tools} 个）",
+        "summary": f"搜索成功: '{query}' 匹配 {total_matched} 个（共 {total_tools} 个工具）",
         "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

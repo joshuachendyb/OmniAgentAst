@@ -203,11 +203,11 @@ def _build_fetch_webpage_llm_data(
             "metrics": {},
         }
     if mime_type:
-        summary = f"成功获取{mime_type}文件(HTTP {status_code})"
+        summary = f"获取资源成功（{mime_type}，HTTP {status_code}）"
     else:
-        summary = f"成功获取网页内容({extract_format}格式, HTTP {status_code})"
+        summary = f"获取网页内容成功（{extract_format}格式，HTTP {status_code}）"
     if truncated:
-        summary += "(已截断)"
+        summary += "（已截断）"
     return {
         "summary": summary,
         "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},

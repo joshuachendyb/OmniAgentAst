@@ -36,7 +36,7 @@ def _build_read_pptx_llm_data(
             "metrics": {},
         }
     return {
-        "summary": f"读取PPT成功: {slide_count}页, {text_len}字符",
+        "summary": f"读取PPT成功: {slide_count}页，{text_len}字符",
         "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": "success", "message": "读取PPT成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

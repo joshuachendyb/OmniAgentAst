@@ -225,13 +225,13 @@ def _build_read_text_file_llm_data(
         _act_params["encoding"] = user_encoding
     _pi = ""
     if user_offset is not None:
-        _pi += f", 第{user_offset}行起"
+        _pi += f"，第{user_offset}行起"
     if user_limit is not None:
-        _pi += f", 取{user_limit}行"
+        _pi += f"，取{user_limit}行"
     if user_tail is not None:
-        _pi += f", 尾部{user_tail}行"
+        _pi += f"，尾部{user_tail}行"
     if encoding_name:
-        _pi += f", 编码{encoding_name}"
+        _pi += f"，编码{encoding_name}"
     if exec_code == "error":
         return {
             "summary": f"读取失败: {file_path}",
@@ -265,7 +265,7 @@ def _build_read_text_file_llm_data(
         msg = f"读取成功:第{start_line}-{end_line}行,共{total_lines}行{enc}"
         hint_text = ""
     return {
-        "summary": f"读取 {file_path}，{line_count}/{total_lines}行，{file_size}字节{_pi}",
+        "summary": f"读取文件 {file_path}，成功，{line_count}/{total_lines}行，{file_size}字节{_pi}",
         "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": msg, "code": "", "detail": "", "hint": hint_text},
         "duration_ms": duration_ms,

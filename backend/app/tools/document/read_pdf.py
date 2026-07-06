@@ -36,12 +36,12 @@ def _build_read_pdf_llm_data(
             "metrics": {},
         }
     # summary: 页数(已读/总数)、字符数、表格数、图片数 — 小欧 2026-07-06
-    parts = [f"{pages_read}/{page_count}页, {text_len}字符"]
+    parts = [f"已读{pages_read}页/共{page_count}页，{text_len}字符"]
     if table_count:
         parts.append(f"{table_count}项表格")
     if image_count:
         parts.append(f"{image_count}张图片")
-    summary_str = "读取PDF成功: " + ", ".join(parts)
+    summary_str = "读取PDF成功: " + "，".join(parts)
     return {
         "summary": summary_str,
         "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "target": file_path, "params": {"file_path": file_path}},

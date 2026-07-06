@@ -118,13 +118,13 @@ def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: 
         _act_params["include_minimized"] = include_minimized
     if exec_code == "error":
         return {
-            "summary": f"获取失败: {detail}" if detail else "获取失败",
+            "summary": f"获取窗口信息失败: {detail}" if detail else "获取窗口信息失败",
             "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
             "status": {"exec_code": "error", "message": f"获取窗口列表失败: {detail}" if detail else "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": detail, "hint": hint if hint else "请检查窗口筛选条件"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"获取 {filter_title or '全部'}，{window_count}个窗口",
+        "summary": f"获取窗口信息成功: {filter_title or '全部'}，共{window_count}个窗口",
         "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

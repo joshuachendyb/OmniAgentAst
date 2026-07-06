@@ -40,7 +40,7 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    summary_text = f"获取 {log_name}，{event_count}条事件" if event_count > 0 else f"获取 {log_name} 成功，指定时间范围内无匹配事件"
+    summary_text = f"获取事件日志成功: {log_name}，{event_count}条事件" if event_count > 0 else f"获取事件日志成功: {log_name}，指定时间范围内无匹配事件"
     return {
         "summary": summary_text,
         "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},

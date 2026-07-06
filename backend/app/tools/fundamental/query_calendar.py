@@ -49,7 +49,7 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
     hol_str = f"，{holiday_name}" if holiday_name else ""
     type_str = f"（{holiday_type_cn}）" if holiday_type_cn else ""
     return {
-        "summary": f"{date_str} {weekday_cn}: {'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}{type_str}",
+        "summary": f"查询日历成功: {date_str} {weekday_cn}，{'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}{type_str}",
         "action": {"tool": "calendar", "tool_zh": "日历查询", "target": date_str, "params": act_params},
         "status": {"exec_code": "success", "message": "日期检查完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

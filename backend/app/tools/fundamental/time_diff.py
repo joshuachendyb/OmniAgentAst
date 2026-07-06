@@ -31,7 +31,7 @@ def _build_time_diff_llm_data(exec_code: str, duration_ms: int, humanized: str, 
             "metrics": {},
         }
     return {
-        "summary": f"时间差: {humanized}（{round(days, 2)}天）",
+        "summary": f"计算时间差成功: {humanized}（{round(days, 2)}天）",
         "action": {"tool": "timediff", "tool_zh": "时间差值", "target": "", "params": _act_params},
         "status": {"exec_code": "success", "message": "计算时间差成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

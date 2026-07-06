@@ -28,7 +28,7 @@ def _build_mouse_position_llm_data(exec_code: str, duration_ms: int, x=0, y=0, d
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"鼠标位置: ({x},{y})",
+        "summary": f"获取鼠标位置成功: 当前({x},{y})",
         "action": {"tool": "mouse_position", "tool_zh": "获取鼠标位置", "target": f"({x},{y})", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取鼠标位置成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},

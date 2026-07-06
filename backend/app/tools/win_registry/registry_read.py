@@ -95,7 +95,7 @@ def _build_registry_read_llm_data(exec_code: str, duration_ms: int, key_path: st
             "metrics": {},
         }
     return {
-        "summary": f"读取 {key_path}\\{value_name} = {value}（{value_type}）",
+        "summary": f"读取注册表成功: {key_path}\\{value_name} = {value}（{value_type}）",
         "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": key_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "读取注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

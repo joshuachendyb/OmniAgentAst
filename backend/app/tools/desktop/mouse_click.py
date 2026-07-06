@@ -27,7 +27,7 @@ def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: 
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"点击 ({x},{y})",
+        "summary": f"点击成功: 坐标({x},{y})",
         "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button, "click_type": click_type}},
         "status": {"exec_code": "success", "message": "点击成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

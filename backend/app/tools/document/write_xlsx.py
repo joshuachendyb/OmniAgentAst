@@ -99,7 +99,7 @@ def _build_write_xlsx_llm_data(
             "metrics": {},
         }
     return {
-        "summary": f"写入Excel成功: {file_path}, {row_count}行",
+        "summary": f"写入Excel成功: {file_path}，{row_count}行",
         "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入Excel成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

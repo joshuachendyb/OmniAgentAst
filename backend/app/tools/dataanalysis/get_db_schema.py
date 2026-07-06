@@ -105,7 +105,7 @@ def _build_get_db_schema_llm_data(exec_code, duration_ms, total_tables=0, table_
             "metrics": {},
         }
     return {
-        "summary": f"获取到{total_tables}个表的结构信息",
+        "summary": f"获取数据库结构成功: {total_tables}个表",
         "action": {"tool": "get_db_schema", "tool_zh": "获取结构", "target": "database", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

@@ -87,7 +87,7 @@ def _build_create_task_llm_data(exec_code: str, duration_ms: int, task_name: str
             "metrics": {},
         }
     return {
-        "summary": f"计划任务 {task_name} 创建成功",
+        "summary": f"创建计划任务成功: {task_name}",
         "action": {"tool": "create_task", "tool_zh": "创建任务", "target": task_name, "params": _act_params},
         "status": {"exec_code": "success", "message": "创建计划任务成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

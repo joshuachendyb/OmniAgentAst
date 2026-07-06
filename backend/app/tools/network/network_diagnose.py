@@ -98,7 +98,7 @@ def _build_ping_llm_data(exec_code: str, duration_ms: int, host: str = "", is_re
             metrics["avg_latency"] = {"value": avg_latency, "text": f"{avg_latency}ms"}
             latency_str = f", 延迟{avg_latency}ms"
     return {
-        "summary": f"Ping测试{'成功' if is_reachable else '失败'}:{host} {status_text}{latency_str}",
+        "summary": f"Ping测试{'成功' if is_reachable else '失败'}: {host} {status_text}{latency_str}",
         "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": host, "params": _act_params},
         "status": {"exec_code": "success" if is_reachable else "error", "message": f"Ping {status_text}", "code": "" if is_reachable else ERR_NETWORK_TIMEOUT, "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
@@ -120,7 +120,7 @@ def _build_port_check_llm_data(exec_code: str, duration_ms: int, host: str = "",
         }
     status_text = "开放" if is_open else "关闭"
     return {
-        "summary": f"端口 {port} ({service}) {status_text}: {host}:{port}",
+        "summary": f"端口 {port}（{service}）{status_text}: {host}",
         "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": f"{host}:{port}", "params": _act_params},
         "status": {"exec_code": "success", "message": f"端口{status_text}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},

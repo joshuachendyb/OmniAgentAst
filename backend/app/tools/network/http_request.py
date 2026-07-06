@@ -55,7 +55,7 @@ def _build_http_request_llm_data(
         }
     ctype_label = f" [{content_type}]" if content_type else ""
     return {
-        "summary": f"请求成功 (HTTP {status_code}){ctype_label}",
+        "summary": f"HTTP请求成功 (HTTP {status_code}){ctype_label}",
         "action": {"tool": "httpget", "tool_zh": "HTTP请求", "target": url, "params": _act_params},
         "status": {"exec_code": "success", "message": "HTTP请求成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

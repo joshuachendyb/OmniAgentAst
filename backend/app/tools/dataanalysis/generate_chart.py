@@ -61,7 +61,7 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output
     if file_size:
         metrics["file_size"] = {"value": file_size, "text": f"{file_size} bytes"}
     return {
-        "summary": f"成功生成{chart_type}图表: {output_path}",
+        "summary": f"成功生成{chart_type}图表: 已保存为{output_path}",
         "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": _act_params},
         "status": {"exec_code": "success", "message": "图表生成成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

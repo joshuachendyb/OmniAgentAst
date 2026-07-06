@@ -26,7 +26,7 @@ def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids
             "metrics": {},
         }
     return {
-        "summary": f"共 {count} 个定时器",
+        "summary": f"获取定时器列表成功: 共{count}个",
         "action": {"tool": "timer_list", "tool_zh": "列出定时器", "target": "", "params": {}},
         "status": {"exec_code": "success", "message": "获取定时器列表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

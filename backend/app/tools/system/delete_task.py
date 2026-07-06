@@ -36,7 +36,7 @@ def _build_delete_task_llm_data(exec_code: str, duration_ms: int, task_name: str
             "metrics": {},
         }
     return {
-        "summary": f"计划任务 {task_name} 已删除",
+        "summary": f"删除计划任务成功: {task_name}",
         "action": {"tool": "delete_task", "tool_zh": "删除任务", "target": task_name, "params": {"task_name": task_name}},
         "status": {"exec_code": "success", "message": "删除计划任务成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

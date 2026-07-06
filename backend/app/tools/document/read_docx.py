@@ -45,7 +45,7 @@ def _build_read_docx_llm_data(
     parts.append(f"{text_len}字符")
     if table_count:
         parts.append(f"{table_count}项表格")
-    summary_str = "读取Word成功: " + ", ".join(parts)
+    summary_str = "读取Word成功: " + "，".join(parts)
     return {
         "summary": summary_str,
         "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": {"file_path": file_path}},
