@@ -1,4 +1,16 @@
-﻿v0.18.1
+﻿v0.18.2
+更新时间: 2026-07-07 00:00:00
+## v0.18.1→v0.18.2 变更汇总 - 小欧-2026-07-07
+
+### refactor: 全部163个工具llm_data全面去冗余 + observation_formatter精简输出
+- action_handler/llm_stream/message_builder: tool_call去冗余+bug修复 - 小欧-2026-07-06
+- observation_formatter: 精简输出样式(去冗余+注释旧版v1+v1旧代码删除) - 小欧-2026-07-06
+- 35个工具: 去掉data冗余字段(sql/chart_type/坐标等)+删ch6 - 小欧-2026-07-06
+- 30个工具: llm_data重构(data去冗余+字段裁剪统一50) - 小欧-2026-07-06
+- 32个工具+formatter: 继续llm_data重构(去冗余+精简输出) - 小欧-2026-07-06
+- 48个工具+formatter: llm_data继续去冗余重构 - 小欧-2026-07-07
+
+v0.18.1
 更新时间: 2026-07-06 10:30:00
 ## v0.18.0→v0.18.1 变更汇总 - 小欧-2026-07-06
 
