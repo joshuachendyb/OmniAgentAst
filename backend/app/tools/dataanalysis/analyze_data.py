@@ -64,13 +64,11 @@ def _compute_stats(df: "pd.DataFrame", numeric_cols: List[str], operations: List
 
 def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_col_count=0, columns=None, detail="", hint="",
                                   file_path="", data="", operations=None, group_by="", sort_by="", top_n=0, max_rows=0):
-    """analyze_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数"""
+    """analyze_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 去掉data字段，防止大字段返回给LLM"""
     columns = columns or []
     _act_params = {}
     if file_path:
         _act_params["file_path"] = file_path
-    if data:
-        _act_params["data"] = data
     if operations:
         _act_params["operations"] = operations
     if group_by:

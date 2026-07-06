@@ -22,15 +22,11 @@ from app.tools.tool_constants import ERR_FILTER_INVALID
 
 def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail="", hint="",
                                  file_path="", data="", conditions=None, select_columns=None, sort_by="", top_n=0, max_rows=0):
-    """filter_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数"""
+    """filter_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 去掉data/conditions字段，防止大字段返回给LLM"""
     columns = columns or []
     _act_params = {}
     if file_path:
         _act_params["file_path"] = file_path
-    if data:
-        _act_params["data"] = data
-    if conditions:
-        _act_params["conditions"] = conditions
     if select_columns:
         _act_params["select_columns"] = select_columns
     if sort_by:

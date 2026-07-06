@@ -41,14 +41,10 @@ def _build_http_request_llm_data(
     timeout: int = 30, proxy: Optional[str] = None,
     headers: Optional[Dict[str, str]] = None, body: Any = None,
 ) -> Dict[str, Any]:
-    """http_request的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 过滤None值"""
+    """http_request的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 过滤None值 — 小欧 2026-07-06 去掉headers/body，防止大字段返回给LLM"""
     _act_params = {"method": method, "url": url, "timeout": timeout}
     if proxy is not None:
         _act_params["proxy"] = proxy
-    if headers is not None:
-        _act_params["headers"] = headers
-    if body is not None:
-        _act_params["body"] = body
     if exec_code == "error":
         return {
             "summary": f"HTTP请求失败: {method} {url}",

@@ -38,8 +38,8 @@ def _check_sql_safety(sql: str, dry_run: bool) -> Tuple[bool, Optional[str], Opt
 
 def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, detail="", hint="",
                                  connection_type="", db_path="", dry_run=False, timeout=0):
-    """execute_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数 — 小欧 2026-07-05 新增user_params"""
-    _act_params = {"sql": sql[:200]}
+    """execute_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-06 sql截断200→50 统一"""
+    _act_params = {"sql": sql[:50]}  # 小欧 2026-07-06 200→50 统一截断
     if connection_type:
         _act_params["connection_type"] = connection_type
     if db_path:

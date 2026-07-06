@@ -27,10 +27,10 @@ def _check_module(module_name: str) -> bool:
 def _build_send_notification_llm_data(exec_code: str, duration_ms: int, title: str = "",
                                        notif_duration: int = 0, err_code: str = "",
                                        detail: str = "", message: str = "", hint: str = "") -> dict:
-    """send_notification的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加message参数 — 小欧 2026-07-05 加hint参数"""
+    """send_notification的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加message参数 — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 message截断200→50 统一"""
     act_params = {"title": title}
     if message:
-        act_params["message"] = message[:200]
+        act_params["message"] = message[:50]  # 小欧 2026-07-06 200→50 统一截断
     if notif_duration:
         act_params["duration"] = notif_duration
     if exec_code == "error":

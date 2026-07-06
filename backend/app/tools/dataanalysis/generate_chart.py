@@ -36,10 +36,10 @@ def _validate_chart_data(chart_data: dict) -> dict:
 
 def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output_path="", detail="", hint="",
                                     data="", title="", x_label="", y_label="", file_size=0):
-    """generate_chart的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数"""
+    """generate_chart的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 data字段加[:200]截断"""
     _act_params = {"chart_type": chart_type}
     if data:
-        _act_params["data"] = data
+        _act_params["data"] = data[:200]  # 小欧 2026-07-06 截断 chart data，防止大字段返回给LLM
     if title:
         _act_params["title"] = title
     if x_label:
