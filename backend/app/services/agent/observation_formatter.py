@@ -333,61 +333,98 @@ def _format_readmedia(data: dict) -> str:
     return f"{name} [{mime}, {size} bytes]{b64_summary}"
 
 
-# format_llm_observation 三段式输出样式:
+# format_llm_observation 精简输出样式 — 小沈 2026-07-06
 #   输入: data={...工具返回data...}, llm_data={"status":{"exec_code":"success","message":"文件已保存"},"action":{"tool_zh":"写文本文件"},"summary":"已写入 test.txt"}
-#   输出: 观察: 文件已保存 - 写文本文件\n  结果: 已写入 test.txt\n  ----------\n  详情: \n  path: /tmp/test.txt\n  size: 1024
+#   输出: 观察: 写文本文件 - 文件已保存 - 已写入 test.txt\n  详情: \n  path: /tmp/test.txt\n  size: 1024
+# 【旧版 v1 — 观察+结果+统计+建议 — 小欧 2026-07-06 → 2026-07-06 注释保留】
+# def _format_llm_data(llm_data: Dict) -> str:
+#     status = llm_data.get("status", {})
+#     action = llm_data.get("action", {})
+#     summary = llm_data.get("summary", "")
+#     exec_code = status.get("exec_code", "success")
+#     message = status.get("message", "")
+#     tool_zh = action.get("tool_zh", "")
+#     err_code = status.get("code", "")
+#     metrics = llm_data.get("metrics", {}) if isinstance(llm_data.get("metrics"), dict) else {}
+#     duration_ms = llm_data.get("duration_ms", 0)
+# 
+#     if exec_code == "success":
+#         text = f"观察: {message} - {tool_zh}"
+#     elif exec_code == "warning":
+#         code_suffix = f" [{err_code}]" if err_code else ""
+#         text = f"观察: {message} - {tool_zh}{code_suffix}\n⚠ 警告: {status.get('detail', '')}"
+#     else:
+#         code_suffix = f" [{err_code}]" if err_code else ""
+#         text = f"观察: {message} - {tool_zh}{code_suffix}\n✖ 错误: {status.get('detail', '')}"
+# 
+#     if summary:
+#         action_info = " ".join(
+#             f"{k}={json.dumps(v, ensure_ascii=False) if isinstance(v, dict) else v}"
+#             for k, v in action.items()
+#         )
+#         text += f"\n结果: {summary} | {action_info}"
+# 
+#     metric_lines = []
+#     for k, v in metrics.items():
+#         metric_lines.append(f"  {k}: {v}")
+#     if duration_ms:
+#         metric_lines.append(f"  耗时: {duration_ms}ms")
+#     if metric_lines:
+#         text += "\n统计:\n" + "\n".join(metric_lines)
+# 
+#     diff = llm_data.get("diff", "")
+#     if diff:
+#         text += f"\n差异:\n{diff}"
+# 
+#     if exec_code in ("error", "warning"):
+#         hint = status.get("hint", "")
+#         if hint:
+#             text += f"\n建议: {hint}"
+# 
+#     return text
+
 def _format_llm_data(llm_data: Dict) -> str:
-    """格式化llm_data为observation文本（观察行+结果行+统计行+建议行）— 小欧 2026-07-06"""
+    """格式化llm_data为observation文本（精简版: 合并观察+结果为一行,去掉统计,保留建议）— 小沈 2026-07-06"""
     status = llm_data.get("status", {})
     action = llm_data.get("action", {})
     summary = llm_data.get("summary", "")
-    exec_code = status.get("exec_code", "")
+    exec_code = status.get("exec_code", "success")
     message = status.get("message", "")
     tool_zh = action.get("tool_zh", "")
-    err_code = status.get("code", "")
-    metrics = llm_data.get("metrics", {}) if isinstance(llm_data.get("metrics"), dict) else {}
-    duration_ms = llm_data.get("duration_ms", 0)
-
-    if exec_code == "success":
-        text = f"观察: {message} - {tool_zh}"
-    elif exec_code == "warning":
-        code_suffix = f" [{err_code}]" if err_code else ""
-        text = f"观察: {message} - {tool_zh}{code_suffix}\n⚠ 警告: {status.get('detail', '')}"
-    else:
-        code_suffix = f" [{err_code}]" if err_code else ""
-        text = f"观察: {message} - {tool_zh}{code_suffix}\n✖ 错误: {status.get('detail', '')}"
-
-    if summary:
-        action_info = " ".join(
-            f"{k}={json.dumps(v, ensure_ascii=False) if isinstance(v, dict) else v}"
-            for k, v in action.items()
-        )
-        text += f"\n结果: {summary} | {action_info}"
-
-    metric_lines = []
-    for k, v in metrics.items():
-        metric_lines.append(f"  {k}: {v}")
-    if duration_ms:
-        metric_lines.append(f"  耗时: {duration_ms}ms")
-    if metric_lines:
-        text += "\n统计:\n" + "\n".join(metric_lines)
-
+    target = action.get("target", "")
     diff = llm_data.get("diff", "")
-    if diff:
-        text += f"\n差异:\n{diff}"
 
+    # 第一行: 观察: {tool_zh} {target} - {message} - {summary} — 小沈 2026-07-06
+    tool_desc = tool_zh
+    if target:
+        tool_desc += f" {target}"
+    parts = [p for p in [tool_desc, message, summary] if p]
+    text = f"观察: {' - '.join(parts)}"
+
+    # 失败/警告: 附加详情
+    detail = status.get("detail", "")
+    if exec_code == "error" and detail:
+        text += f"\n✖ 错误: {detail}"
+    elif exec_code == "warning" and detail:
+        text += f"\n⚠ 警告: {detail}"
+
+    # 建议（error/warning时保留）
     if exec_code in ("error", "warning"):
         hint = status.get("hint", "")
         if hint:
             text += f"\n建议: {hint}"
+
+    if diff:
+        text += f"\n差异:\n{diff}"
 
     return text
 
 
 def format_llm_observation(data: Any, llm_data: Dict) -> str:
     """格式化工具结果为LLM observation文本 — 小欧 2026-06-21 — 小欧 2026-07-06 拆分_format_llm_data
+    【精简改版】合并观察+结果行,去掉统计+建议 — 小沈 2026-07-06
 
-    llm_data → _format_llm_data（观察行+结果行+统计行+建议行）
+    llm_data → _format_llm_data（观察行+error/warning详情+diff）
     data     → 详情行（通过 format_data_detail）
     """
     text = _format_llm_data(llm_data)
