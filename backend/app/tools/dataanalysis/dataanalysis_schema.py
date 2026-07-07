@@ -52,7 +52,7 @@ class _DbConnectionMixin(BaseModel):
 
 class GenerateChartInput(BaseModel):
 
-    data: str = Field(
+    data: Union[str, Dict[str, Any]] = Field(
         ...,
         description="""数据（两种模式任选其一）。
 

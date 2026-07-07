@@ -256,10 +256,11 @@ def _build_execute_shell_command_llm_data(
             "metrics": {},
         }
     if exec_code == "warning":
+        _warn_msg = detail or f"退出码{returncode}，标准错误{stderr_len}字符"
         return {
-            "summary": f"执行Shell命令{cmd_short}，成功,提示说明: 退出码{returncode}，标准错误{stderr_len}字符",
+            "summary": f"执行Shell命令{cmd_short}，成功,提示说明: {_warn_msg}",
             "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
-            "status": {"exec_code": "warning", "message": "执行成功（有警告输出）", "code": "", "detail": stderr_preview[:200] if stderr_preview else "", "hint": ""},
+            "status": {"exec_code": "warning", "message": "执行成功（有警告）", "code": err_code or "", "detail": detail or (stderr_preview[:200] if stderr_preview else ""), "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
         }
@@ -403,11 +404,11 @@ def shell(
 
         # ── 阶段 5: 构建 build3 + llm_data ──
         if timed_out:
-            llm = _build_execute_shell_command_llm_data("error", d, command,
+            llm = _build_execute_shell_command_llm_data("warning", d, command,
                 returncode, stdout_str[:200], stderr_str[:200],
                 shell_type or "", ERR_SHELL_TIMEOUT, f"命令执行超时({timeout}秒)",
                 timeout=timeout, cwd=cwd or "", hint="可增大timeout参数重试")
-            return build_error(data={}, llm_data=llm)
+            return build_warning(data=data, llm_data=llm)
 
         if returncode == 0:
             if stderr_str.strip():

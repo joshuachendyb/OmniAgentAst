@@ -70,8 +70,8 @@ EXAMPLES = {
         {"file_path": "D:/data/users.csv", "conditions": [{"column": "city", "operator": "eq", "value": "北京"}], "sort_by": "age", "top_n": 10},
     ],
     "generate_chart": [
-        {"data": {"labels": ["A", "B"], "values": [10, 20]}, "chart_type": "bar", "title": "\u9500\u552e\u7edf\u8ba1"},
-        {"data": {"labels": ["1\u6708", "2\u6708"], "values": [100, 200]}, "chart_type": "line", "output_path": "D:/output/chart.png"},
+        {"data": "{\"labels\": [\"A\", \"B\"], \"values\": [10, 20]}", "chart_type": "bar", "title": "\u9500\u552e\u7edf\u8ba1"},
+        {"data": "{\"labels\": [\"1\u6708\", \"2\u6708\"], \"values\": [100, 200]}", "chart_type": "line", "output_path": "D:/output/chart.png"},
     ],
     "query_sql": [
         {"sql": "SELECT * FROM users LIMIT 10", "db_path": "D:/data/app.db"},

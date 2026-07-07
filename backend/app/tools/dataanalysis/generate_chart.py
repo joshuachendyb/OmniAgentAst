@@ -70,8 +70,18 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output
     }
 
 
-def _parse_inline_data(data: str) -> Optional[dict]:
-    """尝试将内联字符串解析为{labels,values}格式 — 小欧 2026-07-07"""
+def _parse_inline_data(data: Union[str, dict, list]) -> Optional[dict]:
+    """尝试将内联JSON解析为{labels,values}格式 — 小欧 2026-07-07 加非string防御"""
+    if isinstance(data, dict):
+        labels = data.get("labels", [])
+        values = data.get("values", [])
+        if labels and values and len(labels) == len(values):
+            return {"labels": labels, "values": values}
+        return None
+    if isinstance(data, list):
+        return None
+    if not isinstance(data, str):
+        return None
     data = data.strip()
     if not data.startswith("{"):
         return None
@@ -87,7 +97,7 @@ def _parse_inline_data(data: str) -> Optional[dict]:
     return None
 
 
-def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter"] = "bar",
+def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", "line", "pie", "scatter"] = "bar",
                    title: Optional[str] = None, x_label: Optional[str] = None,
                    y_label: Optional[str] = None, output_path: Optional[str] = None) -> Dict[str, Any]:
     """使用matplotlib生成数据可视化图表 — 小健 2026-06-22 拆分独立文件 — 小欧 2026-07-07 支持内联JSON数据"""
