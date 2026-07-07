@@ -92,7 +92,6 @@ def _build_search_files_llm_data(
         detail_parts = [f"总数{total}条, 输出前{min(DEFAULT_PAGE_SIZE, total)}条"]
         _timeout_str = ""
         if truncated_by_deadline:
-            detail_parts.append(f"超时({_timeout_sec}秒)")
             _timeout_str = f"，超时({_timeout_sec}秒)"
         if truncated_by_limit:
             detail_parts.append("结果数量达到上限")

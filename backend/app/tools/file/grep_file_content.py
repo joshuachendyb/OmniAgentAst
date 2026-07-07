@@ -88,8 +88,6 @@ def _build_grep_file_content_llm_data(
             summary_suffix = f"（结果被截断，可能不完整）{_timeout_suffix}"
             warning_message = "结果被截断，可能不完整"
             _detail_parts = []
-            if truncated_by_deadline:
-                _detail_parts.append(f"超时({_timeout_sec}秒)")
             if not truncated_by_deadline or total_matches >= MAX_SEARCH_RESULTS:
                 _detail_parts.append("结果数量达到上限")
             warning_detail = "，".join(_detail_parts) + "，仅返回部分结果"
