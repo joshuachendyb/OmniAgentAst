@@ -29,6 +29,7 @@ from typing import Optional, List, Dict, Any, Literal, Union
 # 禁止在这里写文档字符串。工具描述写在 file_register.py 的 FILE_TOOL_DESCRIPTIONS 里。
 class ReadtextInput(BaseModel):
     """
+     不支持office类型.docx/.xlsx/.pptx/.PDF文件和媒体文件读取
     【四种模式】
     1. 读全文: 不传offset/limit/tail
     2. 前N行: 只传limit（如limit=100读前100行）
@@ -89,6 +90,7 @@ class ReadtextInput(BaseModel):
 # ============================================================
 
 class WritetextInput(BaseModel):
+    """不支持office类型.docx/.xlsx/.pptx/.PDF文件和媒体文件写入"""
     file_path: str = Field(
         description="文件的完整路径(绝对路径,支持中文路径)。用于写入文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
@@ -126,6 +128,7 @@ class WritetextInput(BaseModel):
 # ============================================================
 
 class ReadmediaInput(BaseModel):
+    """不支持PDF文件(请用read_pdf)"""
     file_path: str = Field(
         description="媒体文件的完整路径。支持图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)、音频(MP3/WAV/OGG/M4A/FLAC/AAC)、视频(MP4/AVI/MOV/MKV)。返回Base64编码数据"
     )
@@ -166,6 +169,7 @@ class EdittextInput(BaseModel):
 # ============================================================
 
 class ListdirInput(BaseModel):
+    """支持offset参数分页遍历大目录(每页最多500项)"""
     dir_path: str = Field(
         description="目录路径(绝对路径,必填)。如 D:/项目代码"
     )
@@ -206,6 +210,7 @@ class TreeInput(BaseModel):
 # ============================================================
 
 class FindInput(BaseModel):
+    """支持offset参数分页遍历大量搜索结果(每页最多500条)"""
     pattern: str = Field(
         description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\""
     )

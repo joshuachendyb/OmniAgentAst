@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 class ShellInput(BaseModel):
-    """shell安全检查和翻译机制 - 小欧-2026-06-27
+    """shell安全检查和翻译机制
     
     【PowerShell翻译】&&和||自动翻译（兼容PS 5.1）：
     - cmd1 && cmd2 → cmd1; if ($?) { cmd2 }
