@@ -405,8 +405,14 @@ async def searchweb(
         for r in results:
             r["url"] = _decode_bing_redirect_url(r.get("url", ""))
             snippet = r.get("snippet", "")
-            if snippet and len(snippet) > _SNIPPET_MAX_CHARS:
-                r["snippet"] = snippet[:_SNIPPET_MAX_CHARS] + "..."
+            if snippet:
+                # 清理HTML标签和Markdown链接 — 小欧 2026-07-07
+                snippet = HTML_TAG_PATTERN.sub('', snippet)
+                snippet = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', snippet)
+                snippet = re.sub(r'\n{2,}', ' ', snippet).strip()
+                if len(snippet) > _SNIPPET_MAX_CHARS:
+                    snippet = snippet[:_SNIPPET_MAX_CHARS] + "..."
+                r["snippet"] = snippet
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"items": results}
