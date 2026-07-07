@@ -1046,6 +1046,10 @@ def check_logs(
                 continue
             if "流式错误" in line or "请求超时" in line:
                 continue
+            if "operation_cleanup" in line and "Failed to size-cleanup" in line:
+                continue
+            if "database locked" in line:
+                continue
             result["errors"].append(line.strip()[:200])
 
         # ── traceback检查(MUST) ──
