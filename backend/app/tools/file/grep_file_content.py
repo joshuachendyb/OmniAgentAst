@@ -291,7 +291,7 @@ async def grep(
     if output_mode == "count":
         data = {}
     elif output_mode == "files_with_matches":
-        data = {"files": gr.results}
+        data = {"matches": gr.results}
     else:
         data = {"matches": gr.results}
 
