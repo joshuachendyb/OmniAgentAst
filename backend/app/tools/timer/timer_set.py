@@ -9,6 +9,7 @@ timer_set — 设置定时器
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import asyncio
+import math
 import time as _time_mod
 from datetime import datetime, timedelta
 from typing import Dict, Any
@@ -52,6 +53,7 @@ async def _invoke_timer_callback(timer_id: str, callback: str) -> Dict[str, Any]
 
 def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, trigger_at: str, delay: float, callback: str = "", detail: str = "", hint: str = "") -> dict:
     """timer_set的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
+    _delay_sec = 0 if isinstance(delay, float) and math.isnan(delay) else int(delay)
     _act_params = {"delay": delay}
     if callback:
         _act_params["callback"] = callback
@@ -61,18 +63,18 @@ def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, t
         _act_params["trigger_at"] = trigger_at
     if exec_code == "error":
         return {
-            "summary": f"设置定时器{int(delay)}秒，失败: {detail}",
+            "summary": f"设置定时器{_delay_sec}秒，失败: {detail}",
             "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
             "status": {"exec_code": "error", "message": "定时器设置失败", "code": ERR_TIMER_SET, "detail": detail, "hint": hint if hint else "请检查延迟时间"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"设置定时器{int(delay)}秒，成功: {timer_id}，{int(delay / 60)}分钟后触发",
+        "summary": f"设置定时器{_delay_sec}秒，成功: {timer_id}，{_delay_sec // 60}分钟后触发",
         "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
         "status": {"exec_code": "success", "message": "定时器设置成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {"delay": {"value": delay, "text": f"{int(delay / 60)}分钟"}},
+        "metrics": {"delay": {"value": delay, "text": f"{_delay_sec // 60}分钟"}},
     }
 
 
