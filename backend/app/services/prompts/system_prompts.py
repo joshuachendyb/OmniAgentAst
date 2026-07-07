@@ -71,12 +71,6 @@ class PromptBuilder:
 """
 
     _TOOL_CALL_RULES_BASE = """
-【文本工具】(.txt .py .js .ts .java .go .c .cpp .rs .rb .swift .kt .html .css .scss .less .md .log .cfg .conf .sh .bat .ps1)
-- 读 → 必须用readtext
-- 写 → 必须用writetext
-- 改 → 必须用edittext
-
-
 【Office工具】(支持格式:docx .xlsx .pptx .pdf),禁止用文本工具
 - 读写Word → 必须用read_docx或write_docx
 - 读写Excel → 必须用read_xlsx，write_xlsx
