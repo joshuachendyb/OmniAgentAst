@@ -423,11 +423,8 @@ def _format_llm_data(llm_data: Dict) -> str:
         "warning": f"工具执行结果:{_st}- 工具执行: 完成-[有警告提示]",
     }.get(exec_code, f"工具执行结果:{_st}- 工具执行: 成功")
 
-    # 第2行: 观察: {tool_zh} {target} - {message} - {summary} — 小沈 2026-07-06
-    tool_desc = tool_zh
-    if target:
-        tool_desc += f" {target}"
-    parts = [p for p in [tool_desc, message, summary] if p]
+    # 第2行: 观察: {message} - {summary} — 小沈 2026-07-06
+    parts = [p for p in [message, summary] if p]
     text = f"{status_line}\n观察: {' - '.join(parts)}"
 
     # 失败/警告: 附加详情
@@ -452,9 +449,10 @@ def _format_llm_data(llm_data: Dict) -> str:
 def format_llm_observation(data: Any, llm_data: Dict) -> str:
     """格式化工具结果为LLM observation文本 — 小欧 2026-06-21 — 小欧 2026-07-06 拆分_format_llm_data
     【精简改版】合并观察+结果行,去掉统计+建议 — 小沈 2026-07-06
+    【去详情】error时不追加详情段(原始dict混淆LLM),详情已含在✖错误/建议中 — 小欧 2026-07-07
 
     llm_data → _format_llm_data（观察行+error/warning详情+diff）
-    data     → 详情行（通过 format_data_detail）
+    data     → 详情行（通过 format_data_detail）——仅success/warning
 
     设计原则：工具的统计数据（total_matches/total_files等）已通过
     llm_data.metrics → summary → _format_llm_data 嵌入"观察:"行，
@@ -462,6 +460,11 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     — 小欧 2026-07-06 18:39:02
     """
     text = _format_llm_data(llm_data)
+
+    # error 时，data 仅含 error_detail+params 的原始 dict,混淆 LLM
+    # 错误信息已通过 ✖ 错误/建议 两行完整呈现，不再追加详情段
+    if llm_data.get("status", {}).get("exec_code") == "error":
+        return text
 
     if data is not None and data != {} and data != [] and data != "":
         detail = format_data_detail(data, llm_data)

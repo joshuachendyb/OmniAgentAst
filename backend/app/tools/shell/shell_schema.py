@@ -21,17 +21,26 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 class ShellInput(BaseModel):
-    """shell安全检查和翻译机制
-    
-    【PowerShell翻译】&&和||自动翻译（兼容PS 5.1）：
+    """Shell命令执行 - 语法翻译、安全检查、编码处理
+
+    【语法注意事项】
+    - PS 7+ 语法不支持: ?. ?? ??= 三元运算符 Get-ComputerInfo Join-String
+    - 管道变量用 $_.Property 形式，注意下划线不要遗漏
+    - findstr 查找无匹配时 exit code=1（正常行为，非错误）
+
+    【PowerShell翻译】&&和||自动翻译：
     - cmd1 && cmd2 → cmd1; if ($?) { cmd2 }
     - cmd1 || cmd2 → cmd1; if (-not $?) { cmd2 }
-    - PS 7+原生支持，PS 5.1需要翻译
-    
+
     【安全检查】分级安全检查：
     - HIGH风险（拒绝）: Remove-Item递归删除、format格式化、del /s递归删除
     - MEDIUM风险（警告）: 其他危险命令
-    
+
+    【编码处理】引擎自动处理编码：
+    - PowerShell > 输出自动转 UTF-8
+    - Python 子进程自动继承 PYTHONIOENCODING=utf-8 + PYTHONUTF8=1
+    - 中文命令/路径直接使用，无需额外编码设置
+
     【返回值结构】
     - stdout: 标准输出内容
     - stderr: 标准错误内容
