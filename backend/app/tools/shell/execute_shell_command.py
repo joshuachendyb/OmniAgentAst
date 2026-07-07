@@ -2,6 +2,64 @@
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
+╔══════════════════════════════════════════════════════════════════╗
+║                Shell 工具编码链路分析与修复全景                     ║
+║                   2026-07-07 北京老陈驱动检查                       ║
+╚══════════════════════════════════════════════════════════════════╝
+
+┌──────────────┐
+│  shell() 入口 │──── command + shell_type
+└──────┬───────┘
+       │
+       ├── shell_type="powershell" ───────────────────────────────
+       │   │
+       │   ├── PersistentShell._exec()
+       │   │   │
+       │   │   ├── [入] stdin.write(cmd.encode("utf-8"))
+       │   │   │   │   PS5.1 `-Command -` stdin
+       │   │   │   │   ⚡ 实测: 不加BOM PS5.1自动识别UTF-8 ✅
+       │   │   │   │   ⚡ 加BOM反而静默失败 ❌ (不修)
+       │   │   │   │
+       │   │   ├── [子进程] env={PYTHONIOENCODING=utf-8}
+       │   │   │   │   2026-07-07 小欧 修复
+       │   │   │   │   子Python/PS进程输出中文不抛UnicodeEncodeError
+       │   │   │   │
+       │   │   ├── [出] > 替换为 Out-File -Encoding utf8
+       │   │   │   │   2026-07-07 小欧 修复
+       │   │   │   │   PS5.1用>写UTF-16LE导致中文乱码 → 统一UTF-8
+       │   │   │   │
+       │   │   └── [读] safe_read_file + .lstrip('\ufeff')
+       │   │       2026-07-07 小欧 修复
+       │   │       PS5.1 Out-File写BOM头 → 去掉ZWNBSP
+       │   │       out/err/code/cwd 全部处理
+       │   │
+       │   └── PersistentShell 启动: -NoProfile -Command -
+       │       (持久进程, 复用避免反复启动开销)
+       │
+       └── shell_type="cmd" ─────────────────────────────────────
+           │
+           ├── [入] .bat文件写入 locale.getpreferredencoding()
+           │   2026-07-07 小欧 修复
+           │   改为gbk匹配cmd.exe OEM代码页,避免中文乱码
+           │   (原用utf-8写, cmd.exe按gbk读,中文全乱)
+           │
+           ├── [子进程] env={PYTHONIOENCODING=utf-8}
+           │   2026-07-07 小欧 修复
+           │   同上,子Python进程输出中文不崩
+           │
+           └── [出] proc.communicate() → _decode_bytes_safe()
+               utf-8优先(gbk回退, latin-1兜底)
+               Python子进程(PYTHONIOENCODING)输出UTF-8直接命中
+
+
+┌────────────────────────────────────────────────────────────────┐
+│  附: 系统级编码加固 (2026-07-07 小欧)                           │
+├────────────────────────────────────────────────────────────────┤
+│  main.py: sys.stdout.reconfigure(encoding='utf-8')             │
+│    → 服务进程本身stdout设UTF-8, 日志/print中文不乱             │
+└────────────────────────────────────────────────────────────────┘
+
+
 【v2 改造】
   - powershell 分支改用 PersistentShell 持久引擎
   - 删除 run_in_background / _background_shells / shell_session
@@ -293,16 +351,21 @@ def shell(
 
         else:  # cmd
             # 写入 temp .bat 执行，绕过 cmd.exe /c 的引号解析 bug — 小欧 2026-07-05
+            import locale
             import tempfile
+            # cmd.exe读.bat用的是系统OEM编码(中文Win=gbk)，utf-8写入会乱 — 小欧 2026-07-07
+            bat_encoding = locale.getpreferredencoding()
             bat_fd, bat_path = tempfile.mkstemp(suffix='.bat', text=True)
             try:
-                with os.fdopen(bat_fd, 'w', encoding='utf-8') as f:
+                with os.fdopen(bat_fd, 'w', encoding=bat_encoding, errors='replace') as f:
                     f.write('@echo off\r\n')
                     f.write(cmd + '\r\n')
                     f.write('exit /b %errorlevel%\r\n')
+                # 设PYTHONIOENCODING保证子Python进程输出中文不崩 — 小欧 2026-07-07
+                child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
                 proc = subprocess.Popen(
                     bat_path, shell=True, stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE, cwd=cwd)
+                    stderr=subprocess.PIPE, cwd=cwd, env=child_env,)
                 timed_out = False
                 try:
                     stdout_b, stderr_b = proc.communicate(timeout=timeout)

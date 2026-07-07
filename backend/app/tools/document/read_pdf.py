@@ -57,6 +57,29 @@ def _build_read_pdf_llm_data(
     }
 
 
+def _process_page(page, page_num: int, extract_tables: bool = True, extract_images: bool = True) -> Tuple[str, List, List]:
+    """提取单页PDF的文本、表格和图片 — 小欧 2026-07-07
+
+    pdfplumber从document_tools.py拆分出来时遗漏了此函数
+    """
+    text = page.extract_text() or ""
+    tables = []
+    if extract_tables:
+        for table in page.find_tables():
+            tables.append(table.extract())
+    images = []
+    if extract_images:
+        for img in page.images:
+            images.append({
+                "page": page_num,
+                "width": img.get("width", 0),
+                "height": img.get("height", 0),
+                "x0": img.get("x0", 0),
+                "top": img.get("top", 0),
+            })
+    return text, tables, images
+
+
 def read_pdf(file_name: str) -> Dict[str, Any]:
     """读取PDF文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
@@ -86,6 +109,13 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
             return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
 
         path = Path(file_path)
+        # 校验PDF文件头（前5字节应为%PDF），提前拦截非PDF文件 — 小欧 2026-07-07
+        with open(path, 'rb') as fh:
+            header = fh.read(5)
+        if header != b'%PDF-':
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail="文件不是有效的PDF格式（缺少%PDF头）", hint="请确认文件是PDF格式")
+            return build_error(data={"error_detail": "文件不是有效的PDF格式", "params": {"file_name": file_name}}, llm_data=llm_data)
         all_text, pages_read, tables_data, images_data = [], [], [], []
         with pdfplumber.open(path) as pdf:
             page_count = len(pdf.pages)

@@ -69,10 +69,27 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output
     }
 
 
+def _parse_inline_data(data: str) -> Optional[dict]:
+    """尝试将内联字符串解析为{labels,values}格式 — 小欧 2026-07-07"""
+    data = data.strip()
+    if not data.startswith("{"):
+        return None
+    try:
+        import json
+        parsed = json.loads(data)
+        labels = parsed.get("labels", [])
+        values = parsed.get("values", [])
+        if labels and values and len(labels) == len(values):
+            return {"labels": labels, "values": values}
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
 def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter"] = "bar",
                    title: Optional[str] = None, x_label: Optional[str] = None,
                    y_label: Optional[str] = None, output_path: Optional[str] = None) -> Dict[str, Any]:
-    """使用matplotlib生成数据可视化图表 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除dict支持，只支持文件路径"""
+    """使用matplotlib生成数据可视化图表 — 小健 2026-06-22 拆分独立文件 — 小欧 2026-07-07 支持内联JSON数据"""
     t0 = _time_mod.perf_counter()
     if output_path:
         # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
@@ -95,25 +112,27 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
-        # 小健 2026-06-26: 只支持文件路径，删除dict支持
-        path = Path(data)
-        if not path.exists():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"文件不存在: {data}", hint="请检查数据文件路径", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
-            return build_error(data={"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}, llm_data=llm_data)
-        
-        if data.endswith('.xlsx'):
-            df = pd.read_excel(data, engine="openpyxl")
+        # 支持两种数据输入：内联JSON或文件路径 — 小欧 2026-07-07
+        inline = _parse_inline_data(data)
+        if inline is not None:
+            labels, values = inline["labels"], inline["values"]
         else:
-            df = pd.read_csv(data)
-
-        if len(df.columns) < 2:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据至少需要2列(标签列+数值列)", hint="数据文件至少需要2列", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
-            return build_error(data={"error_detail": "数据至少需要2列", "params": {"data": str(data)[:200]}}, llm_data=llm_data)
-
-        labels = df.iloc[:, 0].tolist()
-        values = df.iloc[:, 1].tolist()
+            # 向后兼容：文件路径读取
+            path = Path(data)
+            if not path.exists():
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"文件不存在: {data}", hint="请检查数据文件路径", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
+                return build_error(data={"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}, llm_data=llm_data)
+            if data.endswith('.xlsx'):
+                df = pd.read_excel(data, engine="openpyxl")
+            else:
+                df = pd.read_csv(data)
+            if len(df.columns) < 2:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据至少需要2列(标签列+数值列)", hint="数据文件至少需要2列", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
+                return build_error(data={"error_detail": "数据至少需要2列", "params": {"data": str(data)[:200]}}, llm_data=llm_data)
+            labels = df.iloc[:, 0].tolist()
+            values = df.iloc[:, 1].tolist()
         chart_data = {"labels": labels, "values": values}
 
         validation = _validate_chart_data(chart_data)

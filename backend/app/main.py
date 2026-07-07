@@ -3,6 +3,12 @@ import sys
 import asyncio
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    # Windows PowerShell 5.1中文输出编码修复 — 小欧 2026-07-07
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # Python -u模式下可能抛AttributeError，忽略
+        pass
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware

@@ -53,20 +53,18 @@ class _DbConnectionMixin(BaseModel):
 class GenerateChartInput(BaseModel):
     data: str = Field(
         ...,
-        description="""数据文件路径(绝对路径)。
+        description="""数据（两种模式任选其一）。
 
-【支持格式】
+【模式1：文件路径】
 - CSV文件: D:/data/sales.csv
 - Excel文件: D:/data/sales.xlsx
+- 至少2列数据，第1列=labels，第2列=values
 
-【文件要求】
-- 至少2列数据
-- 第1列作为labels（横轴标签）
-- 第2列作为values（纵轴数值）
+【模式2：内联JSON】{\"labels\":[\"A\",\"B\"],\"values\":[10,20]}
 
 【示例】
-- CSV文件: data="D:/data/sales.csv"
-- Excel文件: data="D:/data/report.xlsx" """
+- 文件: data="D:/data/sales.csv"
+- 内联: data='{"labels":["A","B"],"values":[10,20]}' """
     )
     chart_type: Optional[Literal["bar", "line", "pie", "scatter"]] = Field(
         default="bar",

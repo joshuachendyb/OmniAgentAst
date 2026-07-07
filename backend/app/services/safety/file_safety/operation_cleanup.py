@@ -27,7 +27,12 @@ def _get_folder_size(path: Path) -> int:
 
 
 def _cleanup_by_size() -> int:
-    """总大小超过上限时，从最旧的备份开始删"""
+    """总大小超过上限时，从最旧的备份开始删
+    
+    说明：延迟导入remove_readonly是为了避免循环依赖
+    (operation_cleanup→delete_file→file_safety→operation_cleanup)
+    """
+    from app.tools.file.delete_file import remove_readonly
     config = FileSafetyConfig()
     max_bytes = config.RECYCLE_BIN_MAX_SIZE_GB * 1024 ** 3
     recycle_path = config.RECYCLE_BIN_PATH
@@ -48,7 +53,8 @@ def _cleanup_by_size() -> int:
             break
         try:
             folder_size = _get_folder_size(folder)
-            shutil.rmtree(folder)
+            # onerror解决Windows下只读文件被copy2备份后属性锁死的问题
+            shutil.rmtree(folder, onerror=remove_readonly)
             total -= folder_size
             count += 1
             logger.info(f"Size cleanup: removed {folder.name} (saved {folder_size / 1024**3:.2f}GB)")
@@ -58,7 +64,12 @@ def _cleanup_by_size() -> int:
 
 
 def cleanup_expired_backups() -> int:
-    """清理过期的备份文件 + 超出大小上限时清理最旧的"""
+    """清理过期的备份文件 + 超出大小上限时清理最旧的
+    
+    说明：延迟导入remove_readonly避免循环依赖；
+    shutil.rmtree加onerror是因为Windows下只读文件+备份文件属性继承会导致[WinError 5]
+    """
+    from app.tools.file.delete_file import remove_readonly
     count = 0
     try:
         with db.get_conn("operations") as conn:
@@ -73,7 +84,8 @@ def cleanup_expired_backups() -> int:
                     path = Path(backup_path)
                     if path.exists():
                         if path.is_dir():
-                            shutil.rmtree(path)
+                            # onerror解决Windows下只读文件备份后无法删除的问题
+                            shutil.rmtree(path, onerror=remove_readonly)
                         else:
                             path.unlink()
                         count += 1

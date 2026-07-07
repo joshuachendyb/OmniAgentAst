@@ -27,8 +27,13 @@ from app.utils.logger import logger
 
 
 
-def _remove_readonly(func, path, excinfo):
-    """force删除时解除只读属性的回调 — 小健 2026-05-02 — 小欧 2026-06-22"""
+def remove_readonly(func, path, excinfo):
+    """解除只读属性后重试（共用函数，operation_cleanup也使用）— 小沈 2026-07-07
+    
+    说明：Windows下shutil.rmtree遇到只读文件会[WinError 5]拒绝访问。
+    因为备份用的是shutil.copy2，原文件的只读属性被完整保留。
+    onerror回调先chmod加写权限再重新执行删除，解决此问题。
+    """
     os.chmod(path, os.stat(path).st_mode | 0o200)
     func(path)
 
@@ -38,7 +43,8 @@ def _force_delete_sync(path: Path, recursive: bool = False) -> bool:
     try:
         if path.is_dir():
             if recursive:
-                shutil.rmtree(str(path), onerror=_remove_readonly)
+                # onerror回调解决Windows下只读文件无法删除的问题
+                shutil.rmtree(str(path), onerror=remove_readonly)
             else:
                 path.rmdir()
         else:
@@ -121,9 +127,10 @@ async def _delete_file_impl(
                 return _force_delete_sync(path, recursive), "permanent"
             return _send2trash_sync(path, recursive)
 
-        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24 — 小沈 2026-07-07 execute_with_safety返回bool
         if operation_id:
-            is_ok, method = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_delete_sync)
+            is_ok = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_delete_sync)
+            method = "permanent" if force else "send2trash"
         else:
             logger.info("Database unavailable, executing delete operation without recording")
             is_ok, method = await asyncio.to_thread(_delete_sync)

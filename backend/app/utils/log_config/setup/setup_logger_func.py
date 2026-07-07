@@ -45,12 +45,15 @@ def setup_logger(name: str) -> logging.Logger:
     is_debug = LogConfig.is_debug_mode()
 
     if is_debug:
+        # 加datefmt固定格式，否则默认格式月份日期的0会省略（如"2026-07-07"变"2026-7-7"）
         formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+            '%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
         )
     else:
         formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(filename)s - %(message)s'
+            '%(asctime)s - %(levelname)s - %(filename)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
         )
 
     if not _logging_configured:

@@ -71,7 +71,10 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> b
             if op_type == OperationType.DELETE.value and source_path and source_path.exists():
                 backup_path = backup_to_recycle_bin(source_path)
 
-            success = operation_func(*args, **kwargs)
+            success_raw = operation_func(*args, **kwargs)
+            # 归一化返回值：_delete_sync返回(bool,str)，_copy_sync返回bool
+            # 类型不一致导致cannot unpack non-iterable bool object
+            success = success_raw[0] if isinstance(success_raw, tuple) else bool(success_raw)
 
             if success:
                 if op_type == OperationType.DELETE.value and backup_path and backup_path.exists():

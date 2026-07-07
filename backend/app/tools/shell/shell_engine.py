@@ -2,9 +2,26 @@
 """
 PersistentShell — 持久 PowerShell 进程引擎 — 小欧 2026-07-05
 
+【编码链路】PS分支编码修复 (2026-07-07 小欧):
+  ┌─ [入] stdin.write(cmd.encode("utf-8"))
+  │    PS5.1 `-Command -` stdin 自动识别UTF-8 (实测确认)
+  │    加BOM头反而静默失败 → 不修
+  │
+  ├─ [子进程] env={PYTHONIOENCODING=utf-8}
+  │    子Python/PS进程输出中文不抛UnicodeEncodeError
+  │
+  ├─ [出] > 替换为 Out-File -Encoding utf8
+  │    PS5.1默认>写UTF-16LE导致中文乱码 → 统一UTF-8
+  │
+  └─ [读] safe_read_file + .lstrip('\ufeff')
+       PS5.1 Out-File写BOM头 → 去掉ZWNBSP
+       (out/err/code/cwd 全部处理)
+
+  全景图见 execute_shell_command.py 头部注释
+
 【架构层级】引擎层 (raw dict only，不碰 build3/llm_data)
-  铁规1: 本文件只返回 raw dict，严禁调用 build_success/build_error/build_warning
-  铁规2: 计时(duration_ms) 不在本文件，在 shell() 主函数
+   铁规1: 本文件只返回 raw dict，严禁调用 build_success/build_error/build_warning
+   铁规2: 计时(duration_ms) 不在本文件，在 shell() 主函数
 
 【设计原则】
   SRP: 只做进程管理 + 命令执行，tempfile/安全读取提取为独立函数
@@ -192,10 +209,12 @@ class PersistentShell:
             logger.error("[PersistentShell] PowerShell 未找到")
             return False
         try:
+            # 设PYTHONIOENCODING保证子Python进程输出中文时不抛UnicodeEncodeError — 小欧 2026-07-07
+            child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
             self._proc = subprocess.Popen(
                 [pwsh, "-NoProfile", "-Command", "-"],
                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, cwd=self._cwd,
+                stderr=subprocess.DEVNULL, cwd=self._cwd, env=child_env,
             )
             for _ in range(40):
                 if self._proc.poll() is None:
@@ -215,10 +234,12 @@ class PersistentShell:
 
     def _exec(self, command: str, timeout: int) -> Dict[str, Any]:
         with _TempFiles() as paths:
+            # 用Out-File -Encoding utf8取代>避免PS5.1写UTF-16LE导致中文乱码 — 小欧 2026-07-07
             ps_cmd = (
-                f'$global:rc=0; & {{ {command}; if (-not $?) {{ $global:rc = if ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 1 }} }} }} 2> "{paths.err}" > "{paths.out}"; '
-                f'$global:rc > "{paths.code}"; '
-                f'(Get-Location).Path > "{paths.cwd}"'
+                f'$global:rc=0; & {{ {command}; if (-not $?) {{ $global:rc = if ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 1 }} }} }} 2>&1 | '
+                f'ForEach-Object {{ if ($_ -is [System.Management.Automation.ErrorRecord]) {{ $_ | Out-File -FilePath "{paths.err}" -Encoding utf8 -Append }} else {{ $_ | Out-File -FilePath "{paths.out}" -Encoding utf8 -Append }} }}; '
+                f'$global:rc | Out-File -FilePath "{paths.code}" -Encoding utf8; '
+                f'(Get-Location).Path | Out-File -FilePath "{paths.cwd}" -Encoding utf8'
             )
             try:
                 self._proc.stdin.write((ps_cmd + "\n").encode("utf-8"))
@@ -231,10 +252,11 @@ class PersistentShell:
                 self._close()
                 return dict(_ERROR_TIMEOUT)
 
-            stdout = safe_read_file(paths.out)
-            stderr = safe_read_file(paths.err)
-            code_raw = safe_read_file(paths.code).strip()
-            cwd_raw = safe_read_file(paths.cwd).strip()
+            # .lstrip('\ufeff') 去掉PS5.1 Out-File -Encoding utf8写的BOM — 小欧 2026-07-07
+            stdout = safe_read_file(paths.out).lstrip('\ufeff')
+            stderr = safe_read_file(paths.err).lstrip('\ufeff')
+            code_raw = safe_read_file(paths.code).strip().lstrip('\ufeff')
+            cwd_raw = safe_read_file(paths.cwd).strip().lstrip('\ufeff')
             if cwd_raw:
                 self._cwd = cwd_raw
             return {
