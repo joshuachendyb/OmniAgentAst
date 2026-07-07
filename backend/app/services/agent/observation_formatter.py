@@ -851,7 +851,7 @@ def _format_searchtool_results(matches: list) -> str:
 #   输出:   src/main.py:42: [import] import os\n  src/utils.py:10: [import] import sys
 def _format_matches(matches: list) -> str:
     """格式化 grep 内容匹配结果 — 小欧 2026-07-04 — 小欧 2026-07-04 使用 OBS_MAX_DISPLAY_ITEMS
-    小欧 2026-07-07: files_with_matches模式只显示文件路径"""
+    小欧 2026-07-07: files_with_matches模式显示文件路径+行号列表"""
     if not matches:
         return ""
     lines = []
@@ -859,14 +859,19 @@ def _format_matches(matches: list) -> str:
         if i >= OBS_MAX_DISPLAY_ITEMS:
             lines.append(f"  ... 还有 {len(matches) - OBS_MAX_DISPLAY_ITEMS} 个匹配项")
             break
-        matched = m.get("matched", [])
-        matched_str = ", ".join(matched) if isinstance(matched, list) else str(matched)
-        content = m.get("content", "")
-        line_no = m.get("line", "")
-        if line_no:
-            lines.append(f"  {m.get('file','')}:{line_no}: [{matched_str}] {content}")
+        file_path = m.get("file", "")
+        file_lines = m.get("lines")
+        if file_lines:
+            lines.append(f"  {file_path}: {file_lines}")
         else:
-            lines.append(f"  {m.get('file','')}")
+            matched = m.get("matched", [])
+            matched_str = ", ".join(matched) if isinstance(matched, list) else str(matched)
+            content = m.get("content", "")
+            line_no = m.get("line", "")
+            if line_no:
+                lines.append(f"  {file_path}:{line_no}: [{matched_str}] {content}")
+            else:
+                lines.append(f"  {file_path}")
     return "\n".join(lines)
 
 

@@ -167,6 +167,7 @@ def _grep_files_sync(
             if not lines:
                 continue
             file_matches = []
+            file_lines = []
             for line_no, line in enumerate(lines, 1):
                 if total_matches >= MAX_SEARCH_RESULTS:
                     break
@@ -174,10 +175,9 @@ def _grep_files_sync(
                 if not matches_in_line:
                     continue
                 if output_mode == "files_with_matches":
-                    results.append({"file": str(fpath)})
-                    total_files += 1
+                    file_lines.append(line_no)
                     total_matches += 1
-                    break
+                    continue
                 matched_texts = [m.group(0) for m in matches_in_line]
                 match_item = {
                     "file": str(fpath),
@@ -187,7 +187,10 @@ def _grep_files_sync(
                 }
                 file_matches.append(match_item)
                 total_matches += len(matched_texts)
-            if file_matches:
+            if output_mode == "files_with_matches" and file_lines:
+                total_files += 1
+                results.append({"file": str(fpath), "lines": file_lines})
+            elif file_matches:
                 total_files += 1
                 results.extend(file_matches)
 
