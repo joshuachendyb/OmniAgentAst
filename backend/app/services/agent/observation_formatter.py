@@ -854,7 +854,11 @@ def _format_matches(matches: list) -> str:
     小欧 2026-07-07: files_with_matches模式显示文件路径+行号列表"""
     if not matches:
         return ""
+    # 判断是files_with_matches模式(有lines字段)还是content模式(有line字段)
+    is_files_mode = "lines" in matches[0] if matches else False
     lines = []
+    if is_files_mode:
+        lines.append(f"匹配文件({len(matches)}个):")
     for i, m in enumerate(matches):
         if i >= OBS_MAX_DISPLAY_ITEMS:
             lines.append(f"  ... 还有 {len(matches) - OBS_MAX_DISPLAY_ITEMS} 个匹配项")
