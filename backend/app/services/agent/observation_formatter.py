@@ -850,7 +850,8 @@ def _format_searchtool_results(matches: list) -> str:
 #   输入: [{"file":"src/main.py","line":42,"matched":["import"],"content":"import os"}, {"file":"src/utils.py","line":10,"matched":["import"],"content":"import sys"}]
 #   输出:   src/main.py:42: [import] import os\n  src/utils.py:10: [import] import sys
 def _format_matches(matches: list) -> str:
-    """格式化 grep 内容匹配结果 — 小欧 2026-07-04 — 小欧 2026-07-04 使用 OBS_MAX_DISPLAY_ITEMS"""
+    """格式化 grep 内容匹配结果 — 小欧 2026-07-04 — 小欧 2026-07-04 使用 OBS_MAX_DISPLAY_ITEMS
+    小欧 2026-07-07: files_with_matches模式只显示文件路径"""
     if not matches:
         return ""
     lines = []
@@ -861,7 +862,11 @@ def _format_matches(matches: list) -> str:
         matched = m.get("matched", [])
         matched_str = ", ".join(matched) if isinstance(matched, list) else str(matched)
         content = m.get("content", "")
-        lines.append(f"  {m.get('file','')}:{m.get('line','')}: [{matched_str}] {content}")
+        line_no = m.get("line", "")
+        if line_no:
+            lines.append(f"  {m.get('file','')}:{line_no}: [{matched_str}] {content}")
+        else:
+            lines.append(f"  {m.get('file','')}")
     return "\n".join(lines)
 
 
