@@ -258,7 +258,7 @@ def _build_execute_shell_command_llm_data(
     if exec_code == "warning":
         _warn_msg = detail or f"退出码{returncode}，标准错误{stderr_len}字符"
         return {
-            "summary": f"执行Shell命令{cmd_short}，成功,提示说明: {_warn_msg}",
+            "summary": f"执行Shell命令{cmd_short}，部分成功,提示说明: {_warn_msg}",
             "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
             "status": {"exec_code": "warning", "message": "执行成功（有警告）", "code": err_code or "", "detail": detail or (stderr_preview[:200] if stderr_preview else ""), "hint": hint},
             "duration_ms": duration_ms,
