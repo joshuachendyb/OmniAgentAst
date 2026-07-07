@@ -62,14 +62,14 @@ def _build_write_pdf_llm_data(
         _act_params["title"] = user_title
     if exec_code == "error":
         return {
-            "summary": f"写入PDF失败: {detail}",
+            "summary": f"写入PDF{file_path}，失败: {detail}",
             "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "写入PDF失败", "code": ERR_WRITE_PDF, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入PDF成功: {file_path}",
+        "summary": f"写入PDF{file_path}，成功",
         "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入PDF成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

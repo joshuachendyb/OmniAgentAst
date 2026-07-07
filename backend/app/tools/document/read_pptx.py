@@ -29,14 +29,14 @@ def _build_read_pptx_llm_data(
     """read_pptx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
-            "summary": f"读取PPT失败: {detail}",
+            "summary": f"读取PPT{file_path}，失败: {detail}",
             "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "target": file_path, "params": {"file_path": file_path}},
             "status": {"exec_code": "error", "message": "读取PPT失败", "code": ERR_DOC_READ_PPTX, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"读取PPT成功: {slide_count}页，{text_len}字符",
+        "summary": f"读取PPT{file_path}，成功: {slide_count}页，{text_len}字符",
         "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": "success", "message": "读取PPT成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

@@ -30,7 +30,7 @@ def _build_read_docx_llm_data(
     """read_docx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 丰富summary"""
     if exec_code == "error":
         return {
-            "summary": f"读取Word失败: {detail}",
+            "summary": f"读取Word{file_path}，失败: {detail}",
             "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": {"file_path": file_path}},
             "status": {"exec_code": "error", "message": "读取Word失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
@@ -45,7 +45,7 @@ def _build_read_docx_llm_data(
     parts.append(f"{text_len}字符")
     if table_count:
         parts.append(f"{table_count}项表格")
-    summary_str = "读取Word成功: " + "，".join(parts)
+    summary_str = f"读取Word{file_path}，成功: " + "，".join(parts)
     return {
         "summary": summary_str,
         "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": {"file_path": file_path}},

@@ -31,14 +31,14 @@ def _build_write_pptx_llm_data(
     """write_pptx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint参数"""
     if exec_code == "error":
         return {
-            "summary": f"写入PPT失败: {detail}",
+            "summary": f"写入PPT{file_path}，失败: {detail}",
             "action": {"tool": "write_pptx", "tool_zh": "写入PPT", "target": file_path, "params": {"file_path": file_path}},
             "status": {"exec_code": "error", "message": "写入PPT失败", "code": ERR_DOC_WRITE_PPTX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入PPT成功: {file_path}，{slide_count}页",
+        "summary": f"写入PPT{file_path}，成功: {slide_count}页",
         "action": {"tool": "write_pptx", "tool_zh": "写入PPT", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": "success", "message": "写入PPT成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
