@@ -94,9 +94,6 @@ class PromptBuilder:
 【Shell 运行环境】
 - 默认 Shell: Windows PowerShell {ps_ver} (powershell.exe)
 - {pwsh_line}
-- 不支持 PS7+ 语法: ?. ?? ??= 三元运算符 Get-ComputerInfo Join-String
-- findstr 查找无匹配时 exit code=1 (正常行为,非错误)
-- PowerShell 管道变量用 $_.Property 形式,注意下划线不要遗漏
 
 """
         return self._TOOL_CALL_RULES_BASE + shell_rules
