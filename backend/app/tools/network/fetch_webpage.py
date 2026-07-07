@@ -406,7 +406,7 @@ async def fetchpage(
 
     except httpx.TimeoutException:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_TIMEOUT, detail=f"超时({timeout:.1f}秒)", hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_TIMEOUT, detail=f"超时({timeout:.1f}秒)", hint="可增大timeout参数重试", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)
     except httpx.HTTPStatusError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

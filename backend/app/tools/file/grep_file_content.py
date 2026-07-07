@@ -46,11 +46,12 @@ _MAX_PATTERN_LENGTH = 200
 
 
 class GrepSyncResult(NamedTuple):
-    """_grep_files_sync 返回值 — 小沈 2026-07-05"""
+    """_grep_files_sync 返回值 — 小沈 2026-07-05 — 小欧 2026-07-07 加truncated_by_deadline"""
     results: List[Dict]
     total_files: int
     total_matches: int
     truncated: bool
+    truncated_by_deadline: bool
     skipped_binaries: List[str]
 
 
@@ -61,8 +62,10 @@ def _build_grep_file_content_llm_data(
     truncated: bool = False, detail: str = "", hint: str = "",
     user_glob: Optional[str] = None, user_ignore_case: Optional[bool] = None,
     user_output_mode: Optional[str] = None,
+    truncated_by_deadline: bool = False,
 ) -> Dict[str, Any]:
-    """grep_file_content的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示"""
+    """grep_file_content的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示 — 小欧 2026-07-07 超时秒数"""
+    _timeout_sec = TOOL_TIMEOUTS.get("grep", TOOL_TIMEOUTS["default"])
     _act_params = {"pattern": pattern, "search_dir": search_dir}
     if user_glob:
         _act_params["glob"] = user_glob
@@ -81,9 +84,15 @@ def _build_grep_file_content_llm_data(
         }
     if exec_code == "warning":
         if truncated:
-            summary_suffix = "（结果被截断，可能不完整）"
+            _timeout_suffix = f"，超时({_timeout_sec}秒)" if truncated_by_deadline else ""
+            summary_suffix = f"（结果被截断，可能不完整）{_timeout_suffix}"
             warning_message = "结果被截断，可能不完整"
-            warning_detail = "搜索超时或结果数量达到上限，仅返回部分结果"
+            _detail_parts = []
+            if truncated_by_deadline:
+                _detail_parts.append(f"超时({_timeout_sec}秒)")
+            if not truncated_by_deadline or total_matches >= MAX_SEARCH_RESULTS:
+                _detail_parts.append("结果数量达到上限")
+            warning_detail = "，".join(_detail_parts) + "，仅返回部分结果"
             warning_hint = "可缩小搜索范围、使用head_limit参数限制结果数量或增加超时时间"
         else:
             summary_suffix = ""
@@ -124,15 +133,18 @@ def _grep_files_sync(
     total_matches = 0
     total_files = 0
     skipped_binary_files = []  # 记录跳过的二进制文件
+    _deadline_exceeded = False
 
     for root, dirs, files in os.walk(search_dir):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         if _time_mod.monotonic() > deadline:
+            _deadline_exceeded = True
             break
         if total_matches >= MAX_SEARCH_RESULTS:
             break
         for fname in files:
             if _time_mod.monotonic() > deadline:
+                _deadline_exceeded = True
                 break
             if total_matches >= MAX_SEARCH_RESULTS:
                 break
@@ -181,8 +193,8 @@ def _grep_files_sync(
                 total_files += 1
                 results.extend(file_matches)
 
-    truncated = _time_mod.monotonic() > deadline or total_matches >= MAX_SEARCH_RESULTS
-    return GrepSyncResult(results, total_files, total_matches, truncated, skipped_binary_files)
+    truncated = _deadline_exceeded or total_matches >= MAX_SEARCH_RESULTS
+    return GrepSyncResult(results, total_files, total_matches, truncated, _deadline_exceeded, skipped_binary_files)
 
 
 def _sort_grep_results_by_mtime(results: List[Dict]) -> None:
@@ -302,6 +314,7 @@ async def grep(
         exec_code, duration_ms, pattern=pattern, search_dir=actual_dir,
         total_files=gr.total_files, total_matches=gr.total_matches, truncated=gr.truncated,
         user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode,
+        truncated_by_deadline=gr.truncated_by_deadline,
     )
 
     # 修改summary添加二进制文件提示 — 小健 2026-06-24

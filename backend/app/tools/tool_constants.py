@@ -73,6 +73,7 @@ TOOL_TIMEOUTS = {
     "timer_set": 10,
     "timer_clear": 10,
     "timer_list": 10,
+    "compress": 300,
     "default": 120,
 }
 

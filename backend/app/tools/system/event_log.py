@@ -164,7 +164,12 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
         if "error_detail" in result:
             error_code = result.pop("_error_code", ERR_SYSTEM_EVENT_LOG)
             error_detail = result.get("error_detail", "")
-            llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail, err_code=error_code, hint="请检查日志名称和级别")
+            if error_code == ERR_SYSTEM_TIMEOUT:
+                timeout_sec = TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"])
+                llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail="", err_code=error_code, hint="")
+                llm_data["summary"] = f"获取事件{log_name}日志，失败: 超时({timeout_sec}秒)"
+            else:
+                llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail, err_code=error_code, hint="请检查日志名称和级别")
             return build_error(data={}, llm_data=llm_data)
         else:
             events = list(result["events"])

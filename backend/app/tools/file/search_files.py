@@ -69,7 +69,8 @@ def _build_search_files_llm_data(
     truncated_by_limit: bool = False,
     truncated_by_offset: bool = False,
 ) -> Dict[str, Any]:
-    """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示 — 小欧 2026-07-06 summary含路径/模式/页码, warning用常量"""
+    """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示 — 小欧 2026-07-06 summary含路径/模式/页码, warning用常量 — 小欧 2026-07-07 超时秒数"""
+    _timeout_sec = TOOL_TIMEOUTS.get("find", TOOL_TIMEOUTS["default"])
     _act_params = {"search_dir": search_dir}
     if user_pattern:
         _act_params["pattern"] = user_pattern
@@ -89,15 +90,17 @@ def _build_search_files_llm_data(
         }
     if exec_code == "warning":
         detail_parts = [f"总数{total}条, 输出前{min(DEFAULT_PAGE_SIZE, total)}条"]
+        _timeout_str = ""
         if truncated_by_deadline:
-            detail_parts.append("搜索超时")
+            detail_parts.append(f"超时({_timeout_sec}秒)")
+            _timeout_str = f"，超时({_timeout_sec}秒)"
         if truncated_by_limit:
             detail_parts.append("结果数量达到上限")
         if truncated_by_offset:
             detail_parts.append("分页截断")
         warning_detail = "; ".join(detail_parts)
         return {
-            "summary": f"在 {search_dir} 中搜索 '{user_pattern}' 完成，共 {total} 个匹配项，结果已截断",
+            "summary": f"在 {search_dir} 中搜索 '{user_pattern}' 完成，共 {total} 个匹配项，结果已截断{_timeout_str}",
             "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
             "status": {"exec_code": "warning", "message": "搜索结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else "可缩小搜索范围或使用更精确的匹配模式"},
             "duration_ms": duration_ms,

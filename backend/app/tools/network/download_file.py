@@ -221,7 +221,8 @@ async def download(
     except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _map_network_error(url, timeout, e, dest_path, duration_ms)
-        llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=error_info["err_code"], detail=error_info["detail"], hint="请检查URL和网络连接", timeout=timeout, proxy=proxy, headers=headers)
+        _hint = "可增大timeout参数重试" if error_info["err_code"] == ERR_NETWORK_TIMEOUT else "请检查URL和网络连接"
+        llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=error_info["err_code"], detail=error_info["detail"], hint=_hint, timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[download] 未知错误: {e}")

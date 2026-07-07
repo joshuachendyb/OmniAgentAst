@@ -53,8 +53,8 @@ def _build_entry(item: Path, st: os.stat_result) -> Dict[str, Any]:
 def _scan_directory_sync(
     path: Path, recursive: bool, max_depth: int,
     include_hidden: bool, deadline: float,
-) -> Tuple[List[Dict], Dict, Dict, Dict]:
-    """同步扫描目录 — 小健 2026-05-25 — 小欧 2026-06-22"""
+) -> Tuple[List[Dict], Dict, Dict, Dict, bool]:
+    """同步扫描目录 — 小健 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-07-07 返回timed_out"""
     entries = []
     stats = {"total_size": 0, "dir_count": 0, "file_count": 0}
     ext_counter: Dict[str, int] = {}
@@ -119,7 +119,7 @@ def _scan_directory_sync(
             except (PermissionError, OSError):
                 continue
 
-    return entries, stats, ext_counter, size_bins
+    return entries, stats, ext_counter, size_bins, _timed_out
 
 
 def _build_list_success(entries: List, total: int,
@@ -144,8 +144,10 @@ def _build_list_directory_llm_data(
     dir_count: int = 0, file_count: int = 0, total_size: int = 0,
     file_types: Optional[Dict[str, int]] = None,
     size_distribution: Optional[Dict[str, int]] = None,
+    timed_out: bool = False,
 ) -> Dict[str, Any]:
-    """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-06 statistics移入metrics/summary"""
+    """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-06 statistics移入metrics/summary — 小欧 2026-07-07 超时秒数"""
+    _listdir_timeout_sec = TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"])
     _act_params = {"dir_path": dir_path}
     if user_sort_by:
         _act_params["sort_by"] = user_sort_by
@@ -171,8 +173,9 @@ def _build_list_directory_llm_data(
         m["truncated"] = {"value": True, "text": "已截断"}
         warning_detail = detail if detail else f"总数{total}条, 输出前{LISTDIR_PAGE_SIZE}条"
         warning_hint = hint if hint else "请使用更精确的路径或筛选条件"
+        _summary_suffix = f"，超时({_listdir_timeout_sec}秒)" if timed_out else "，已截断"
         return {
-            "summary": f"列出目录{dir_path}，成功,提示说明: {total}项，{file_count}个文件，{dir_count}个目录，已截断",
+            "summary": f"列出目录{dir_path}，成功,提示说明: {total}项，{file_count}个文件，{dir_count}个目录{_summary_suffix}",
             "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
             "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
@@ -227,8 +230,8 @@ async def listdir(
             llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=err, hint="请检查目录路径是否正确", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
             return build_error(data={}, llm_data=llm_data)
 
-        deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
-        all_entries, stats, file_types, size_distribution = await asyncio.to_thread(
+        deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"]) - 2
+        all_entries, stats, file_types, size_distribution, _scan_timed_out = await asyncio.to_thread(
             _scan_directory_sync, path, False, 10, include_hidden, deadline,
         )
 
@@ -244,7 +247,7 @@ async def listdir(
 
         list_data = _build_list_success(all_entries, total, start_offset, LISTDIR_PAGE_SIZE)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        exec_code = "warning" if list_data["truncated"] else "success"
+        exec_code = "warning" if (list_data["truncated"] or _scan_timed_out) else "success"
         llm_data = _build_list_directory_llm_data(
             exec_code, duration_ms,
             dir_path=dir_path, total=total,
@@ -254,6 +257,7 @@ async def listdir(
             dir_count=stats["dir_count"], file_count=stats["file_count"],
             total_size=stats["total_size"],
             file_types=file_types, size_distribution=size_distribution,
+            timed_out=_scan_timed_out,
         )
         # =============================================================================
         # 数据设计：total/statistics 从 data 移除，

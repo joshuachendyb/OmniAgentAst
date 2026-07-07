@@ -114,11 +114,16 @@ def _compress_entries(source: Path, deadline: float,
 
 
 def _write_zip_entries(zf, source: Path, deadline: float, compressed_files: List[str],
-                       exclude_patterns: Optional[List[str]] = None) -> None:
-    """写入压缩条目 — 小欧 2026-06-19"""
+                       exclude_patterns: Optional[List[str]] = None) -> bool:
+    """写入压缩条目，返回是否超时 — 小欧 2026-06-19 — 小欧 2026-07-07 返回timed_out"""
+    timed_out = False
     for file_path, arcname in _compress_entries(source, deadline, exclude_patterns):
+        if time.monotonic() > deadline:
+            timed_out = True
+            break
         zf.write(file_path, arcname)
         compressed_files.append(str(file_path))
+    return timed_out
 
 
 def _write_zip(
@@ -126,8 +131,9 @@ def _write_zip(
     password: Optional[str], deadline: float,
     exclude_patterns: Optional[List[str]] = None,
 ) -> Tuple[List[str], bool]:
-    """写入zip压缩包 — 小健 2026-05-25"""
+    """写入zip压缩包，返回(文件列表, 是否超时) — 小健 2026-05-25 — 小欧 2026-07-07 传播timed_out"""
     compressed_files: List[str] = []
+    timed_out = False
     if password:
         from app.tools.tool_fc_helper import _check_module
         if not _check_module("pyzipper"):
@@ -137,12 +143,12 @@ def _write_zip(
         with pyzipper.AESZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
             zf.setpassword(password.encode('utf-8'))
             zf.setencryption(pyzipper.WZ_AES)
-            _write_zip_entries(zf, source, deadline, compressed_files, exclude_patterns)
+            timed_out = _write_zip_entries(zf, source, deadline, compressed_files, exclude_patterns)
     else:
         compression = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
         with zipfile.ZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
-            _write_zip_entries(zf, source, deadline, compressed_files, exclude_patterns)
-    return compressed_files, False
+            timed_out = _write_zip_entries(zf, source, deadline, compressed_files, exclude_patterns)
+    return compressed_files, timed_out
 
 
 def _write_tar(source: Path, destination: Path, deadline: float,
@@ -281,23 +287,27 @@ async def compress(
             sequence_number=0,
         )
 
-        _cf_deadline = time.monotonic() + TOOL_TIMEOUTS.get("compress", TOOL_TIMEOUTS["default"]) - 2
+        _cf_timeout = TOOL_TIMEOUTS.get("compress", TOOL_TIMEOUTS["default"])
+        _cf_deadline = time.monotonic() + _cf_timeout - 2
         original_size = _get_total_size_sync(src, _cf_deadline)
 
         def _compress_sync():
             try:
+                _timed_out = False
                 if format == "zip":
-                    compressed_files, _ = _write_zip(src, dst, compression_level, password, _cf_deadline, exclude_patterns)
+                    compressed_files, _timed_out = _write_zip(src, dst, compression_level, password, _cf_deadline, exclude_patterns)
                 elif format == "tar":
-                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w", exclude_patterns)
+                    compressed_files, _timed_out = _write_tar(src, dst, _cf_deadline, "w", exclude_patterns)
                 elif format == "tar.gz":
-                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w:gz", exclude_patterns)
+                    compressed_files, _timed_out = _write_tar(src, dst, _cf_deadline, "w:gz", exclude_patterns)
                 elif format == "tar.bz2":
-                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w:bz2", exclude_patterns)
+                    compressed_files, _timed_out = _write_tar(src, dst, _cf_deadline, "w:bz2", exclude_patterns)
                 compressed_size = dst.stat().st_size
-                return _build_compress_result(
+                result = _build_compress_result(
                     str(src), str(dst), format, compression_level,
                     password, original_size, compressed_size, compressed_files)
+                result["timed_out"] = _timed_out
+                return result
             except Exception:
                 if dst.exists():
                     try:
@@ -313,6 +323,22 @@ async def compress(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if result:
+            _timed_out = result.pop("timed_out", False)
+            if _timed_out:
+                try:
+                    dst.unlink()
+                except OSError:
+                    pass
+                _timeout_msg = f"压缩超时({_cf_timeout}秒)，不完整文件已删除"
+                llm_data = _build_compress_files_llm_data(
+                    "error", duration_ms, source,
+                    detail="",
+                    user_destination=destination, user_format=format, user_overwrite=overwrite,
+                    user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "",
+                )
+                llm_data["summary"] = f"压缩{source}，失败: {_timeout_msg}"
+                llm_data["status"]["hint"] = ""
+                return build_error(data={}, llm_data=llm_data)
             llm_data = _build_compress_files_llm_data(
                 "success", duration_ms, source,
                 original_size=result.get("original_size", 0),

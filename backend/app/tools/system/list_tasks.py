@@ -130,7 +130,9 @@ def list_tasks(task_name: Optional[str] = None, state: str = "all") -> dict:
 
     except subprocess.TimeoutExpired:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail=f"获取计划任务列表超时,任务名: {task_name or '(全部)'}", hint="请检查系统任务计划程序服务", task_name=task_name or "", state=state, err_code=ERR_SHELL_TIMEOUT)
+        timeout_sec = TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"])
+        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail="", hint="", task_name=task_name or "", state=state, err_code=ERR_SHELL_TIMEOUT)
+        llm_data["summary"] = f"获取计划任务列表失败: 超时({timeout_sec}秒)"
         return build_error(data={}, llm_data=llm_data)
     except ValueError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

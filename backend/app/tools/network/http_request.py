@@ -195,5 +195,6 @@ async def httpget(
         logger.error(f"[httpget] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _build_http_error(e, url, 0, duration_ms)
-        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"], hint="请检查URL和网络连接", timeout=timeout, proxy=proxy, headers=headers, body=body)
+        _hint = "可增大timeout参数重试" if error_info["err_code"] == ERR_NETWORK_TIMEOUT else "请检查URL和网络连接"
+        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"], hint=_hint, timeout=timeout, proxy=proxy, headers=headers, body=body)
         return build_error(data={}, llm_data=llm_data)

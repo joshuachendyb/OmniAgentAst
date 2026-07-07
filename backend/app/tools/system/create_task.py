@@ -136,7 +136,9 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
 
     except subprocess.TimeoutExpired:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_TIMEOUT, f"创建计划任务超时: {task_name}", hint="执行schtasks命令超时,请检查系统状态")
+        timeout_sec = TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"])
+        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_TIMEOUT, "", hint="")
+        llm_data["summary"] = f"创建计划任务{task_name}，失败: 超时({timeout_sec}秒)"
         return build_error(data={}, llm_data=llm_data)
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
