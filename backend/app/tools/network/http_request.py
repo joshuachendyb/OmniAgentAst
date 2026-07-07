@@ -47,7 +47,7 @@ def _build_http_request_llm_data(
         _act_params["proxy"] = proxy
     if exec_code == "error":
         return {
-            "summary": f"HTTP请求失败: {method} {url}",
+            "summary": f"HTTP请求:{url}，方法: {method} 失败",
             "action": {"tool": "httpget", "tool_zh": "HTTP请求", "target": url, "params": _act_params},
             "status": {"exec_code": "error", "message": "HTTP请求失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
@@ -55,7 +55,7 @@ def _build_http_request_llm_data(
         }
     ctype_label = f" [{content_type}]" if content_type else ""
     return {
-        "summary": f"HTTP请求成功 (HTTP {status_code}){ctype_label}",
+        "summary": f"HTTP请求:{url}成功: (HTTP {status_code}) ({ctype_label})",
         "action": {"tool": "httpget", "tool_zh": "HTTP请求", "target": url, "params": _act_params},
         "status": {"exec_code": "success", "message": "HTTP请求成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

@@ -306,12 +306,10 @@ async def compress(
                         pass
                 raise
 
-        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+        # execute_with_safety返回bool,先执行操作拿dict再记录safety — 小沈 2026-07-07
+        result = await asyncio.to_thread(_compress_sync)
         if operation_id:
-            result = await asyncio.to_thread(execute_with_safety, operation_id=operation_id, operation_func=_compress_sync)
-        else:
-            logger.info("Database unavailable, executing compress operation without recording")
-            result = await asyncio.to_thread(_compress_sync)
+            await asyncio.to_thread(execute_with_safety, operation_id=operation_id, operation_func=lambda: result)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if result:

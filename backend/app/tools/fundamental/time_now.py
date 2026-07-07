@@ -26,7 +26,7 @@ def _build_time_now_llm_data(exec_code: str, duration_ms: int, iso: str, formatt
             "metrics": {},
         }
     return {
-        "summary": f"获取当前时间成功:{formatted}，{weekday}，",
+        "summary": f"获取当前时间成功:{formatted}，{weekday}",
         "action": {"tool": "timenow", "tool_zh": "获取时间", "target": "", "params": {}},
         "status": {"exec_code": "success", "message": "获取当前时间成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

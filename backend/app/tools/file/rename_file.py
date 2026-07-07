@@ -36,7 +36,7 @@ def _build_rename_file_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    _summary = f"重命名{source}，成功: {new_name}" if new_name else f"重命名{source}，成功"
+    _summary = f"重命名 {source} → {new_name} 成功" if new_name else f"重命名 {source}"
     return {
         "summary": _summary,
         "action": {"tool": "rename", "tool_zh": "重命名", "target": source, "params": _act_params},

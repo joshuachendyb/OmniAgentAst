@@ -46,8 +46,8 @@ class DownloadFileInput(BaseModel):
     url: str = Field(
         ..., min_length=1, description="要下载文件的URL,如 https://example.com/file.zip"
     )
-    destination_path: str = Field(
-        ..., min_length=1, description="文件保存的相对路径(相对于下载目录),如 file.zip 或 subdir/file.zip"
+    destination_path: Optional[str] = Field(
+        default=None, description="文件保存的相对路径(相对于下载目录),如 file.zip 或 subdir/file.zip; 不填则自动从URL提取文件名"
     )
     headers: Optional[Dict[str, str]] = Field(
         default=None, description="请求头字典,如 {\"Authorization\": \"Bearer token\"}"

@@ -196,18 +196,18 @@ def _build_fetch_webpage_llm_data(
         _act_params["proxy"] = proxy
     if exec_code == "error":
         return {
-            "summary": f"获取网页失败: {url}",
+            "summary": f"获取{url}网页，失败",
             "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},
             "status": {"exec_code": "error", "message": "获取网页失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     if mime_type:
-        summary = f"获取资源成功（{mime_type}，HTTP {status_code}）"
+        summary = f"获取{url}资源，成功: {mime_type}，HTTP {status_code}"
     else:
-        summary = f"获取网页内容成功（{extract_format}格式，HTTP {status_code}）"
+        summary = f"获取网页{url}内容成功，成功: {extract_format}格式，HTTP {status_code}"
     if truncated:
-        summary += "（已截断）"
+        summary += "（内容有部分截断）"
     return {
         "summary": summary,
         "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},

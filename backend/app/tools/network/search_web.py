@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from app.tools.tool_response import build_success, build_error, build_warning
+from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client
 from app.tools.validate.url_validator import validate_proxy
 from app.utils.common_patterns import HTML_TAG_PATTERN
@@ -88,22 +88,14 @@ def _build_search_web_llm_data(
         _act_params["blocked_domains"] = blocked_domains
     if exec_code == "error":
         return {
-            "summary": f"搜索失败: {query}",
+            "summary": f"搜索{query}，失败",
             "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
             "status": {"exec_code": "error", "message": f"搜索失败: {detail}", "code": err_code, "detail": detail, "hint": hint if hint else "请检查搜索词和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    if exec_code == "warning":
-        return {
-            "summary": f"搜索完成（降级）: 「{query}」，{result_count}条结果（{engine_used}引擎）",
-            "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
-            "status": {"exec_code": "warning", "message": "搜索服务降级", "code": "", "detail": f"Parallel引擎不可用，降级到{engine_used}搜索", "hint": ""},
-            "duration_ms": duration_ms,
-            "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎（降级）"}},
-        }
     return {
-        "summary": f"搜索成功: 「{query}」，{result_count}条结果",
+        "summary": f"搜索{query}，成功: {result_count}条结果",
         "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -418,21 +410,8 @@ async def searchweb(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"items": results}
-        if not results:
-            exec_code = "warning"
-        elif engine_used != "Parallel":
-            exec_code = "warning"
-        else:
-            exec_code = "success"
+        exec_code = "success"
         llm_data = _build_search_web_llm_data(exec_code, duration_ms, query, engine_used, len(results), proxy=proxy, allowed_domains=allowed_domains, blocked_domains=blocked_domains, num_results=num_results)
-        if exec_code == "warning":
-            # ---- observation_formatter route -------------------------------------------
-            # branch: #4 items
-            # trigger: "items" in data — items 是 List[dict]
-            # handler: _format_items(data["items"])
-            # file:    observation_formatter.py:132-134
-            # ------------------------------------------------------------------------------
-            return build_warning(data=data, llm_data=llm_data)
         # ---- observation_formatter route -------------------------------------------
         # branch: #4 items
         # trigger: "items" in data — items 是 List[dict]

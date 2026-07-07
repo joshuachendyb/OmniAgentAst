@@ -31,7 +31,7 @@ def _build_find_command_llm_data(
         _act_params["all_paths"] = True
     if exec_code == "error":
         return {
-            "summary": f"查找命令失败: {command}",
+            "summary": f"查找命令{command}，失败",
             "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": _act_params},
             "status": {"exec_code": "error", "message": "查找命令失败", "code": err_code or ERR_SHELL_FIND_COMMAND, "detail": detail, "hint": hint if hint else "请检查命令名称是否正确"},
             "duration_ms": duration_ms,
@@ -40,7 +40,7 @@ def _build_find_command_llm_data(
     if exec_code == "warning":
         hint = "" if available else "找其他类似可用命令工具"
         return {
-            "summary": f"命令「{command}」不可用",
+            "summary": f"查找命令[{command}]成功,但是: 命令不可用",
             "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": _act_params},
             "status": {"exec_code": "warning", "message": "命令不可用", "code": "", "detail": "", "hint": hint},
             "duration_ms": duration_ms,
@@ -48,7 +48,7 @@ def _build_find_command_llm_data(
         }
     if paths is not None:
         return {
-            "summary": f"查找命令成功: 「{command}」找到 {count} 个路径",
+            "summary": f"查找命令[{command}]成功: 找到{count}个路径",
             "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": _act_params},
             "status": {"exec_code": "success", "message": f"找到 {count} 个路径", "code": "", "detail": "", "hint": ""},
             "duration_ms": duration_ms,
@@ -57,7 +57,7 @@ def _build_find_command_llm_data(
     status = "可用" if available else "不可用"
     hint = "" if available else "找其他类似可用命令工具"
     return {
-        "summary": f"命令「{command}」{status}",
+        "summary": f"查找命令{command}，成功: {status}",
         "action": {"tool": "which", "tool_zh": "查找命令", "target": command, "params": _act_params},
         "status": {"exec_code": "success", "message": f"命令{status}", "code": "", "detail": "", "hint": hint},
         "duration_ms": duration_ms,

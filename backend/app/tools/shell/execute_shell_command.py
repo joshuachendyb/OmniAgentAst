@@ -249,7 +249,7 @@ def _build_execute_shell_command_llm_data(
     if exec_code == "error":
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
         return {
-            "summary": f"Shell命令执行失败: {shell_type}，{cmd_short}，{_detail}，耗时{duration_ms}ms",
+            "summary": f"执行Shell命令{cmd_short}，失败: {_detail}",
             "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
             "status": {"exec_code": "error", "message": "执行失败", "code": err_code or ERR_SHELL_EXEC, "detail": detail or (stderr_preview[:200] if stderr_preview else ""), "hint": hint if hint else "请检查命令语法和参数"},
             "duration_ms": duration_ms,
@@ -257,14 +257,14 @@ def _build_execute_shell_command_llm_data(
         }
     if exec_code == "warning":
         return {
-            "summary": f"Shell命令执行完成（有警告）: {shell_type}，{cmd_short}，退出码{returncode}，输出{output_len}字符，标准错误{stderr_len}字符，耗时{duration_ms}ms",
+            "summary": f"执行Shell命令{cmd_short}，成功,提示说明: 退出码{returncode}，标准错误{stderr_len}字符",
             "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
             "status": {"exec_code": "warning", "message": "执行成功（有警告输出）", "code": "", "detail": stderr_preview[:200] if stderr_preview else "", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
         }
     return {
-        "summary": f"Shell命令执行成功: {shell_type}，{cmd_short}，退出码{returncode}，输出{output_len}字符，耗时{duration_ms}ms",
+        "summary": f"执行Shell命令{cmd_short}，成功: 退出码{returncode}，输出{output_len}字符",
         "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
         "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
