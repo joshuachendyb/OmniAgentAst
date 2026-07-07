@@ -79,16 +79,17 @@ def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_co
         _act_params["top_n"] = top_n
     if max_rows:
         _act_params["max_rows"] = max_rows
+    _target = file_path or "数据集"
     if exec_code == "error":
         return {
-            "summary": f"数据分析失败: {detail}",
+            "summary": f"分析数据{_target}，失败: {detail}",
             "action": {"tool": "analyze_data", "tool_zh": "分析数据", "target": "dataset", "params": _act_params},
             "status": {"exec_code": "error", "message": "分析失败", "code": ERR_DOC_ANALYZE_DATA, "detail": detail, "hint": hint if hint else "请检查数据格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"数据分析成功: {row_count}行, {numeric_col_count}个数值列",
+        "summary": f"分析数据{_target}，成功: {row_count}行, {numeric_col_count}个数值列",
         "action": {"tool": "analyze_data", "tool_zh": "分析数据", "target": "dataset", "params": _act_params},
         "status": {"exec_code": "success", "message": "分析成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

@@ -32,7 +32,7 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
     if level:
         _act_params["level"] = level
     if exec_code == "error":
-        err_summary = f"获取事件日志{log_name}，失败" + (f": {detail}" if detail else "")
+        err_summary = f"获取事件{log_name}日志，失败,说明信息:" + (f": {detail}" if detail else "")
         return {
             "summary": err_summary,
             "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},
@@ -40,7 +40,7 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    summary_text = f"获取事件日志{log_name}，成功: {event_count}条事件" if event_count > 0 else f"获取事件日志{log_name}，成功,提示说明: 指定时间范围内无匹配事件"
+    summary_text = f"获取事件{log_name}日志，成功,说明信息: {event_count}条事件" if event_count > 0 else f"获取事件日志{log_name}，成功,提示说明: 指定时间范围内无匹配事件"
     return {
         "summary": summary_text,
         "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},

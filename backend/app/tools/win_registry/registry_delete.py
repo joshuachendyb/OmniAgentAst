@@ -23,14 +23,14 @@ def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, key_path: 
     """registry_delete的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": f"删除注册表失败: {key_path}",
+            "summary": f"删除注册表{key_path}，失败",
             "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": key_path, "params": {"key_path": key_path}},
             "status": {"exec_code": "error", "message": "删除注册表失败", "code": err_code or ERR_REG_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"删除注册表成功: {key_path}（{action}）",
+        "summary": f"删除注册表{key_path}，成功: {action}",
         "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": key_path, "params": {"key_path": key_path}},
         "status": {"exec_code": "success", "message": "删除注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

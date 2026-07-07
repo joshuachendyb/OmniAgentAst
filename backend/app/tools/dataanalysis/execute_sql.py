@@ -48,9 +48,10 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
         _act_params["dry_run"] = dry_run
     if timeout:
         _act_params["timeout"] = timeout
+    _target = db_path or connection_type or "database"
     if exec_code == "error":
         return {
-            "summary": f"SQL执行失败: {detail}",
+            "summary": f"执行{_target}，失败: {detail}",
             "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else "执行失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
@@ -58,14 +59,14 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
         }
     if exec_code == "warning":
         return {
-            "summary": f"SQL执行完成（有警告）: 影响{affected_rows}行",
+            "summary": f"执行{_target}，成功,提示说明: 影响{affected_rows}行",
             "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": _act_params},
             "status": {"exec_code": "warning", "message": "影响行数超过安全阈值", "code": "WARNING_DB_SAFETY", "detail": f"影响行数{affected_rows}>10000", "hint": "建议缩小条件范围"},
             "duration_ms": duration_ms,
             "metrics": {"affected_rows": {"value": affected_rows, "text": f"{affected_rows}行"}},
         }
     return {
-        "summary": f"SQL执行成功, 影响{affected_rows}行",
+        "summary": f"执行{_target}，成功: 影响{affected_rows}行",
         "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": _act_params},
         "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

@@ -83,14 +83,14 @@ def _build_list_tasks_llm_data(exec_code: str, duration_ms: int, tasks: List[Dic
         _params["task_name"] = task_name
     if exec_code == "error":
         return {
-            "summary": f"获取计划任务列表，失败: {detail}",
+            "summary": f"获取计划任务列表失败: {detail}",
             "action": {"tool": "list_tasks", "tool_zh": "列出任务", "target": "", "params": _params},
             "status": {"exec_code": "error", "message": detail if detail else "获取计划任务列表失败", "code": err_code or ERR_TASK_LIST, "detail": detail, "hint": hint if hint else "请检查任务名称和系统设置"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"获取计划任务列表，成功: 共{total_raw}个，匹配{total_matched}个",
+        "summary": f"获取计划任务成功: 共{total_raw}个，匹配{total_matched}个",
         "action": {"tool": "list_tasks", "tool_zh": "列出任务", "target": "", "params": _params},
         "status": {"exec_code": "success", "message": "获取计划任务列表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

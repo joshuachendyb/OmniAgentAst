@@ -20,7 +20,7 @@ def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str,
     """timer_clear的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": f"清除定时器失败: {timer_id}",
+            "summary": f"清除定时器{timer_id}，失败",
             "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "target": timer_id, "params": {"timer_id": timer_id}},
             "status": {"exec_code": "error", "message": "清除定时器失败", "code": ERR_TIMER_CLEAR, "detail": detail, "hint": hint if hint else "请检查定时器ID"},
             "duration_ms": duration_ms,
@@ -28,7 +28,7 @@ def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str,
         }
     status_text = "已取消" if cancelled else "不存在或已触发"
     return {
-        "summary": f"定时器清除完成: {timer_id} — {status_text}",
+        "summary": f"清除定时器{timer_id}，成功: {status_text}",
         "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "target": timer_id, "params": {"timer_id": timer_id}},
         "status": {"exec_code": "success", "message": f"定时器{status_text}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

@@ -35,16 +35,17 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
         _act_params["top_n"] = top_n
     if max_rows:
         _act_params["max_rows"] = max_rows
+    _target = file_path or "数据集"
     if exec_code == "error":
         return {
-            "summary": f"数据筛选失败: {detail}",
+            "summary": f"筛选数据{_target}，失败: {detail}",
             "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": _act_params},
             "status": {"exec_code": "error", "message": "筛选失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": hint if hint else "请检查条件和数据"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"筛选完成: 从{original_count}行筛选出{filtered_count}行",
+        "summary": f"筛选数据{_target}，成功: 从{original_count}行筛选出{filtered_count}行",
         "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": _act_params},
         "status": {"exec_code": "success", "message": "筛选成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -153,7 +154,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
         if "error_detail" in loaded:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_filter_data_llm_data("error", duration_ms, detail=loaded["error_detail"], hint="请检查数据加载路径", file_path=file_path, data=data)
-            return build_error(data=loaded, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         df = loaded["df"]
         original_count = len(df)
 
@@ -161,7 +162,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
         if "error_detail" in result:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_filter_data_llm_data("error", duration_ms, detail=result["error_detail"], hint="请检查筛选条件", file_path=file_path, data=data, conditions=conditions)
-            return build_error(data=result, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         filtered_df = df[result["mask"]]
         warnings = result["warnings"]
 

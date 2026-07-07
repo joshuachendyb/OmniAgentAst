@@ -40,14 +40,14 @@ def _build_registry_write_llm_data(exec_code: str, duration_ms: int, key_path: s
     """registry_write的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": f"写入注册表失败: {key_path}",
+            "summary": f"写入注册表{key_path}，失败",
             "action": {"tool": "registry_write", "tool_zh": "写入注册表", "target": key_path, "params": {"key_path": key_path, "value_name": value_name}},
             "status": {"exec_code": "error", "message": "写入注册表失败", "code": err_code or ERR_REG_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入注册表成功: {key_path}\\{value_name} = {value}（{value_type}）",
+        "summary": f"写入注册表{key_path}，成功: {value_name}={value}（{value_type}）",
         "action": {"tool": "registry_write", "tool_zh": "写入注册表", "target": key_path, "params": {"key_path": key_path, "value_name": value_name}},
         "status": {"exec_code": "success", "message": "写入注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

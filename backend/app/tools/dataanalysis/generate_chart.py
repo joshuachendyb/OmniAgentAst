@@ -49,9 +49,10 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output
         _act_params["y_label"] = y_label
     if output_path:
         _act_params["output_path"] = output_path
+    _target = output_path or chart_type
     if exec_code == "error":
         return {
-            "summary": f"生成图表失败: {detail}",
+            "summary": f"生成图表{_target}，失败: {detail}",
             "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": _act_params},
             "status": {"exec_code": "error", "message": "生成图表失败", "code": ERR_DOC_CHART_GENERATE, "detail": detail, "hint": hint if hint else "请检查数据和参数"},
             "duration_ms": duration_ms,
@@ -61,7 +62,7 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output
     if file_size:
         metrics["file_size"] = {"value": file_size, "text": f"{file_size} bytes"}
     return {
-        "summary": f"成功生成{chart_type}图表: 已保存为{output_path}",
+        "summary": f"生成图表{_target}，成功: {chart_type}，已保存",
         "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": _act_params},
         "status": {"exec_code": "success", "message": "图表生成成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

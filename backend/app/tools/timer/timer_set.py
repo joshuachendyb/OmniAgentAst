@@ -61,14 +61,14 @@ def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, t
         _act_params["trigger_at"] = trigger_at
     if exec_code == "error":
         return {
-            "summary": f"定时器设置失败: {detail}",
+            "summary": f"设置定时器{int(delay)}秒，失败: {detail}",
             "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
             "status": {"exec_code": "error", "message": "定时器设置失败", "code": ERR_TIMER_SET, "detail": detail, "hint": hint if hint else "请检查延迟时间"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"定时器设置成功: {timer_id}，{int(delay / 60)}分钟后触发",
+        "summary": f"设置定时器{int(delay)}秒，成功: {timer_id}，{int(delay / 60)}分钟后触发",
         "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
         "status": {"exec_code": "success", "message": "定时器设置成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
