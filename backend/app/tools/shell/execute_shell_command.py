@@ -20,9 +20,10 @@ S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026
        │   │   │   │   ⚡ 实测: 不加BOM PS5.1自动识别UTF-8 ✅
        │   │   │   │   ⚡ 加BOM反而静默失败 ❌ (不修)
        │   │   │   │
-       │   │   ├── [子进程] env={PYTHONIOENCODING=utf-8}
-       │   │   │   │   2026-07-07 小欧 修复
-       │   │   │   │   子Python/PS进程输出中文不抛UnicodeEncodeError
+        │   │   ├── [子进程] env={PYTHONIOENCODING=utf-8, PYTHONUTF8=1}
+        │   │   │   │   2026-07-07 小欧 修复
+        │   │   │   │   PYTHONIOENCODING: print()输出中文不抛异常
+        │   │   │   │   PYTHONUTF8=1: open()默认用UTF-8避免gbk误读
        │   │   │   │
        │   │   ├── [出] > 替换为 Out-File -Encoding utf8
        │   │   │   │   2026-07-07 小欧 修复
@@ -43,9 +44,10 @@ S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026
            │   改为gbk匹配cmd.exe OEM代码页,避免中文乱码
            │   (原用utf-8写, cmd.exe按gbk读,中文全乱)
            │
-           ├── [子进程] env={PYTHONIOENCODING=utf-8}
-           │   2026-07-07 小欧 修复
-           │   同上,子Python进程输出中文不崩
+            ├── [子进程] env={PYTHONIOENCODING=utf-8, PYTHONUTF8=1}
+            │   2026-07-07 小欧 修复
+            │   PYTHONIOENCODING: print()输出中文不崩
+            │   PYTHONUTF8=1: open()默认用UTF-8避免gbk误读
            │
            └── [出] proc.communicate() → _decode_bytes_safe()
                utf-8优先(gbk回退, latin-1兜底)
@@ -299,29 +301,29 @@ def shell(
         llm = _build_execute_shell_command_llm_data("error", 0, command, -1, "", "",
             shell_type or "", ERR_PARAMETER_INVALID, timeout_err,
             timeout=timeout, cwd=cwd or "", hint="请检查timeout参数")
-        return build_error(data={"error_detail": timeout_err, "params": {"timeout": timeout}}, llm_data=llm)
+        return build_error(data={}, llm_data=llm)
 
     if shell_type not in ("powershell", "cmd", None):
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
             shell_type or "", ERR_PARAMETER_INVALID, "shell_type仅支持powershell/cmd",
             timeout=timeout, cwd=cwd or "", hint="shell_type仅支持powershell/cmd")
-        return build_error(data={"error_detail": "shell_type仅支持powershell/cmd", "params": {"shell_type": shell_type}}, llm_data=llm)
+        return build_error(data={}, llm_data=llm)
 
     cmd = command.strip() if command else ""
     if not cmd:
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
-            shell_type or "", ERR_PARAMETER_EMPTY, "command不能为空",
-            timeout=timeout, cwd=cwd or "", hint="command不能为空")
-        return build_error(data={"error_detail": "command不能为空"}, llm_data=llm)
+            shell_type or "", ERR_PARAMETER_EMPTY, "要执行的命令不能为空",
+            timeout=timeout, cwd=cwd or "", hint="请提供要执行的命令")
+        return build_error(data={}, llm_data=llm)
 
     if cwd is not None and not os.path.isdir(cwd):
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
             shell_type or "", ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}",
             timeout=timeout, cwd=cwd or "", hint="请检查工作目录路径")
-        return build_error(data={"error_detail": f"工作目录不存在: {cwd}", "params": {"cwd": cwd}}, llm_data=llm)
+        return build_error(data={}, llm_data=llm)
 
     # ── 阶段 2: 安全检查 ──
     from app.tools.shell.execute_shell_command_safety import check_shell_command_risk
@@ -331,7 +333,7 @@ def shell(
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
             shell_type or "", ERR_SHELL_INJECTION, safety.message,
             timeout=timeout, cwd=cwd or "", hint="命令被安全规则拦截")
-        return build_error(data={"error_detail": safety.message, "params": {"command": command[:200]}}, llm_data=llm)
+        return build_error(data={}, llm_data=llm)
 
     # ── 阶段 3: 执行 ──
     try:
@@ -362,7 +364,8 @@ def shell(
                     f.write(cmd + '\r\n')
                     f.write('exit /b %errorlevel%\r\n')
                 # 设PYTHONIOENCODING保证子Python进程输出中文不崩 — 小欧 2026-07-07
-                child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+                # PYTHONUTF8=1让open()默认用UTF-8而非gbk,避免读UTF-8代码文件乱码 — 小欧 2026-07-07
+                child_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
                 proc = subprocess.Popen(
                     bat_path, shell=True, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, cwd=cwd, env=child_env,)
@@ -404,7 +407,7 @@ def shell(
                 returncode, stdout_str[:200], stderr_str[:200],
                 shell_type or "", ERR_SHELL_TIMEOUT, f"命令执行超时({timeout}秒)",
                 timeout=timeout, cwd=cwd or "", hint="可增大timeout参数重试")
-            return build_error(data=data, llm_data=llm)
+            return build_error(data={}, llm_data=llm)
 
         if returncode == 0:
             if stderr_str.strip():
@@ -436,16 +439,11 @@ def shell(
             returncode, stdout_str[:200], stderr_str[:200],
             shell_type or "", ERR_SHELL_EXEC, err_detail,
             timeout=timeout, cwd=cwd or "", hint="请检查命令语法和参数")
-        return build_error(data=data, llm_data=llm)
+        return build_error(data={}, llm_data=llm)
 
     except Exception as e:
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
             shell_type or "", ERR_SHELL_EXCEPTION, str(e),
             timeout=timeout, cwd=cwd or "", hint="命令执行异常,请检查命令和系统环境")
-        data = {
-            "stdout": "", "stderr": "",
-            "shell_type": shell_type or "powershell",
-            "duration_ms": d, "error_detail": str(e),
-        }
-        return build_error(data=data, llm_data=llm)
+        return build_error(data={}, llm_data=llm)

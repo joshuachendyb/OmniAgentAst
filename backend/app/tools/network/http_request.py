@@ -122,12 +122,12 @@ async def httpget(
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "httpget")
     if not timeout_valid:
         llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=timeout_err, hint="请检查超时设置", timeout=timeout, proxy=proxy, headers=headers, body=body)
-        return build_error(data={"error_detail": timeout_err, "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     proxy_valid, proxy_err, _ = validate_proxy(proxy)
     if not proxy_valid:
         llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=proxy_err, hint="请检查代理配置", timeout=timeout, proxy=proxy, headers=headers, body=body)
-        return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
 
@@ -136,7 +136,7 @@ async def httpget(
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_INVALID_URL, detail=error_msg or "URL格式无效", hint="请检查URL格式", timeout=timeout, proxy=proxy, headers=headers, body=body)
-            return build_error(data={"error_detail": error_msg or "URL格式无效", "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         if warning_msg:
             logger.warning(f"[httpget] {warning_msg}")
 
@@ -144,7 +144,7 @@ async def httpget(
         if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_NETWORK_DOWN, detail="网络不可用", hint="请检查网络连接", timeout=timeout, proxy=proxy, headers=headers, body=body)
-            return build_error(data={"error_detail": "网络不可用", "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         request_headers = {}
         if headers:
@@ -196,4 +196,4 @@ async def httpget(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _build_http_error(e, url, 0, duration_ms)
         llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"], hint="请检查URL和网络连接", timeout=timeout, proxy=proxy, headers=headers, body=body)
-        return build_error(data={"error_detail": error_info["error_detail"], "params": {"url": url, "timeout": timeout, "proxy": proxy}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

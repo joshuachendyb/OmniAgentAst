@@ -41,7 +41,7 @@ def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = 
     click_type = "single"
     if not check_pyautogui_available():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_mouse_click_llm_data("error", duration_ms, x, y, button, click_type, "ERR_NO_PYAUTOGUI", hint="请安装pyautogui库: pip install pyautogui"))
+        return build_error(data={}, llm_data=_build_mouse_click_llm_data("error", duration_ms, x, y, button, click_type, "ERR_NO_PYAUTOGUI", hint="请安装pyautogui库: pip install pyautogui"))
     try:
         import pyautogui
         clicks = 2 if click_type == "double" else 1
@@ -59,7 +59,7 @@ def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_mouse_click_llm_data("error", duration_ms, x, y, button, click_type, detail=str(e), hint="请检查坐标是否在屏幕范围内或pyautogui库是否可用")
-        return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["mouse_click"]

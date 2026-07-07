@@ -56,11 +56,11 @@ async def rename(
     if not source or not source.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail="source不能为空", hint="请提供源文件路径", user_destination=destination)
-        return build_error(data={"error_detail": "source不能为空", "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if not destination or not destination.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail="destination不能为空", hint="请提供目标文件路径", user_destination=destination)
-        return build_error(data={"error_detail": "destination不能为空", "params": {"destination": destination}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     # 工具层校验：非空/保留字符/保留名/系统目录/路径存在 — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
@@ -68,13 +68,13 @@ async def rename(
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail=err, hint="请检查源路径是否正确", user_destination=destination)
-        return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     WINDOWS_RESERVED_CHARS = '<>:"/\\|?*'
     if any(c in destination for c in WINDOWS_RESERVED_CHARS):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail=f"包含Windows保留字符: {destination}", hint="文件名包含Windows保留字符，请修改", user_destination=destination)
-        return build_error(data={"error_detail": f"文件名包含Windows保留字符: {destination}", "params": {"destination": destination}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     src = Path(source)
     new_name = Path(destination).name
@@ -111,4 +111,4 @@ async def rename(
     else:
         error_detail = result.get("error_detail", "重命名失败")
         llm_data = _build_rename_file_llm_data("error", duration_ms, source, new_name=new_name, detail=error_detail, hint="重命名失败，请检查文件状态", user_destination=destination)
-        return build_error(data={"error_detail": error_detail, "params": result.get("params", {})}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

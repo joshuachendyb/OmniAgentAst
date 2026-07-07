@@ -296,27 +296,27 @@ async def readtext(
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             hint = f"请使用{suggested_tool}工具" if suggested_tool else "文件类型不匹配,请使用其他工具"
             llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=hint, user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
-            return build_error(data={"error_detail": error_detail, "params": {"file_path": file_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         if limit is not None and limit < 1:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data(
                 "error", duration_ms, file_path=file_path,
-                detail=f"limit必须>=1,当前值: {limit}",
-                hint="limit参数必须>=1",
+                detail=f"limit参数不能小于1,传入值: {limit}",
+                hint="limit参数不能小于1",
                 user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
             )
-            return build_error(data={"error_detail": f"limit必须>=1", "params": {"limit": limit}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         if tail is not None and tail < 1:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data(
                 "error", duration_ms, file_path=file_path,
-                detail=f"tail必须>=1,当前值: {tail}",
-                hint="tail参数必须>=1",
+                detail=f"tail参数不能小于1,传入值: {tail}",
+                hint="tail参数不能小于1",
                 user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
             )
-            return build_error(data={"error_detail": f"tail必须>=1", "params": {"tail": tail}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         if encoding is not None:
             try:
@@ -329,7 +329,7 @@ async def readtext(
                     hint="请使用正确的编码名称,如utf-8/gbk",
                     user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
                 )
-                return build_error(data={"error_detail": f"不支持的编码: {encoding}", "params": {"encoding": encoding}}, llm_data=llm_data)
+                return build_error(data={}, llm_data=llm_data)
 
         if tail is not None:
             if offset is not None or limit is not None:
@@ -340,28 +340,28 @@ async def readtext(
                     hint="tail与offset/limit参数互斥,请选择其一",
                     user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
                 )
-                return build_error(data={"error_detail": "tail不能与offset/limit同时使用", "params": {"tail": tail, "offset": offset, "limit": limit}}, llm_data=llm_data)
+                return build_error(data={}, llm_data=llm_data)
 
         if offset is not None:
             if offset < 1:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_read_text_file_llm_data(
                     "error", duration_ms, file_path=file_path,
-                    detail="offset必须>=1,行号从1开始",
+                    detail=f"offset参数不能小于1,传入值: {offset},行号从1开始",
                     hint="offset行号从1开始",
                     user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
                 )
-                return build_error(data={"error_detail": "offset必须>=1", "params": {"offset": offset}}, llm_data=llm_data)
+                return build_error(data={}, llm_data=llm_data)
             
             if limit is None:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_read_text_file_llm_data(
                     "error", duration_ms, file_path=file_path,
-                    detail="offset必须配合limit使用,示例: offset=10,limit=20读取第10-29行",
+                    detail=f"offset参数必须同时提供limit参数,当前offset={offset},示例: offset=10,limit=20读取第10-29行",
                     hint="请提供limit参数配合offset",
                     user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
                 )
-                return build_error(data={"error_detail": "offset必须配合limit使用", "params": {"offset": offset}}, llm_data=llm_data)
+                return build_error(data={}, llm_data=llm_data)
 
         # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
         # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
@@ -372,7 +372,7 @@ async def readtext(
                 err += f"。您是否要找: {suggestion}"
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, hint="请检查文件路径是否正确", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
-            return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         path = Path(file_path)
 
@@ -385,13 +385,13 @@ async def readtext(
                 hint="请用offset+limit分段读取",
                 user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
             )
-            return build_error(data={"error_detail": "文件过大", "params": {"file_path": file_path, "file_size": file_size}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         content, used_encoding, error = await _try_read_file_with_encodings(path, encoding)
         if error:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, hint=f"文件编码无法识别，请尝试指定 encoding 参数", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
-            return build_error(data={"error_detail": error, "params": {"file_path": file_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         lines = content.splitlines(keepends=True)
         _data = _select_lines(lines, offset, limit, tail)
@@ -452,4 +452,4 @@ async def readtext(
         logger.error(f"readtext failed: {file_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint="请检查文件路径和权限", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
-        return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

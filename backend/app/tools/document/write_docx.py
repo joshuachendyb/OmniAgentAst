@@ -116,7 +116,7 @@ def write_docx(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         _title_str = title or ""
         llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=err, user_title=_title_str, hint="请检查文件路径是否合法")
-        return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if warn:
         logger.warning(f"[write_docx] {warn}")
 
@@ -125,12 +125,12 @@ def write_docx(
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=error_detail, user_title=title or "", hint="文件扩展名不正确,请使用.docx格式")
-        return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     if not _check_module("docx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail="python-docx库未安装", user_title=title or "", hint="请安装python-docx库")
-        return build_error(data={"error_detail": "python-docx库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         from docx import Document
@@ -202,4 +202,4 @@ def write_docx(
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "", hint="写入Word异常,请检查磁盘空间和权限")
-        return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

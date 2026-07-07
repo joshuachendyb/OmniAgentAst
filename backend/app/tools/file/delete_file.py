@@ -154,14 +154,14 @@ async def delete(
     if not source or not source.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail="source不能为空", user_recursive=recursive, user_force=force)
-        return build_error(data={"error_detail": "source不能为空", "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     # 工具层校验：非空/保留字符/保留名/系统目录/路径存在（含递归/强制警告） — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
     is_valid, err, warn = validate_path(OpCategory.EXISTS, source, recursive=recursive, force=force)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=err, user_recursive=recursive, user_force=force)
-        return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if warn:
         logger.warning(warn)
 
@@ -194,4 +194,4 @@ async def delete(
     else:
         error_detail = result.get("error_detail", "删除文件失败")
         llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=error_detail, user_recursive=recursive, user_force=force)
-        return build_error(data={"error_detail": error_detail, "params": result.get("params", {})}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

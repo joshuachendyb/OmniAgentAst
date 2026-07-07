@@ -61,7 +61,7 @@ def mouse_position() -> Dict[str, Any]:
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     if "error_detail" in result:
         llm_data = _build_mouse_position_llm_data("error", duration_ms, detail=result["error_detail"], hint="请检查鼠标设备连接或安装pyautogui/win32api依赖库")
-        return build_error(data={"error_detail": result["error_detail"], "params": result.get("params", {})}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     x, y = result.get("x", 0), result.get("y", 0)
     llm_data = _build_mouse_position_llm_data("success", duration_ms, x, y)
     # ---- observation_formatter route -------------------------------------------

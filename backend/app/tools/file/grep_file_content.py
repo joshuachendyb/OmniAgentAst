@@ -226,33 +226,33 @@ async def grep(
     if output_mode not in valid_output_modes:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"output_mode无效: {output_mode},可选值: {valid_output_modes}", hint="output_mode 参数无效，可选值: content/count/files_with_matches", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
-        return build_error(data={"error_detail": f"output_mode无效: {output_mode},可选值: {valid_output_modes}", "params": {"output_mode": output_mode}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if not actual_dir or not actual_dir.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="search_dir不能为空", hint="请指定有效的搜索目录", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
-        return build_error(data={"error_detail": "search_dir不能为空", "params": {"search_dir": actual_dir}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if not pattern or not pattern.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="搜索模式不能为空", hint="请提供搜索关键词", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
-        return build_error(data={"error_detail": "搜索模式不能为空", "params": {"pattern": pattern}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     # ReDoS 检测 — 小沈 2026-07-05
     for redos_p in _REDOS_PATTERNS:
         if re_mod.search(redos_p, pattern):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", hint="正则表达式包含危险嵌套量词，请简化", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
-            return build_error(data={"error_detail": f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", "params": {"pattern": pattern}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
     if len(pattern) > _MAX_PATTERN_LENGTH:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险", hint="正则表达式过长，请简化", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
-        return build_error(data={"error_detail": f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险", "params": {"pattern": pattern}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         regex = re_mod.compile(pattern, re_mod.IGNORECASE if ignore_case else 0)
     except re_mod.error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式无效: {e}", hint="正则表达式语法错误，请检查并修正", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
-        return build_error(data={"error_detail": f"正则表达式无效: {e}", "params": {"pattern": pattern}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
@@ -260,7 +260,7 @@ async def grep(
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=err, hint="请检查搜索路径", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
-        return build_error(data={"error_detail": err, "params": {"search_dir": actual_dir}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     search_path = Path(os.path.expanduser(actual_dir))
 
@@ -273,7 +273,7 @@ async def grep(
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=str(e), hint="请检查搜索参数", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
-        return build_error(data={"error_detail": str(e), "params": {"search_dir": actual_dir}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     # 按 mtime 降序排序 — 小欧 2026-07-05
     if gr.results and output_mode != "count":

@@ -43,13 +43,13 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
         import win32gui
     except ImportError:
         llm_data = _build_window_resize_llm_data("error", 0, window_title, err_code="ERR_NO_WIN32GUI", hint="请安装pywin32库: pip install pywin32")
-        return build_error(data={"error_detail": "需要安装 pywin32 库", "params": {"window_title": window_title}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     t0 = _time_mod.perf_counter()
     err = validate_str_param(window_title, "window_title")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_window_resize_llm_data("error", duration_ms, window_title, err_code=ERR_WINDOW_NOT_FOUND, hint="请提供有效的窗口标题,window_title不能为空")
-        return build_error(data={"error_detail": err, "params": {"window_title": window_title}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     try:
         target_hwnd = None
         def _enum_cb(hwnd, _):
@@ -64,7 +64,7 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if not target_hwnd:
             llm_data = _build_window_resize_llm_data("error", duration_ms, window_title, err_code=ERR_WINDOW_NOT_FOUND, hint="请检查窗口标题是否正确,当前未找到匹配窗口")
-            return build_error(data={"error_detail": f"未找到窗口: {window_title}", "params": {"window_title": window_title}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         left, top, right, bottom = win32gui.GetWindowRect(target_hwnd)
         curr_width = right - left
@@ -85,7 +85,7 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_window_resize_llm_data("error", duration_ms, window_title, detail=str(e), hint="调整窗口大小时发生异常,请检查窗口状态后重试")
-        return build_error(data={"error_detail": str(e), "params": {"window_title": window_title}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["window_resize"]

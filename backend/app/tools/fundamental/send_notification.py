@@ -35,14 +35,14 @@ def _build_send_notification_llm_data(exec_code: str, duration_ms: int, title: s
         act_params["duration"] = notif_duration
     if exec_code == "error":
         return {
-            "summary": f"通知发送失败: {title}",
+            "summary": f"发送系统通知，\"{title}\"，失败",
             "action": {"tool": "notify", "tool_zh": "系统通知", "target": title, "params": act_params},
             "status": {"exec_code": "error", "message": "通知发送失败", "code": err_code or ERR_DESKTOP_NOTIFICATION, "detail": detail, "hint": hint if hint else "请检查通知参数和系统通知设置"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"通知已发送: {title}",
+        "summary": f"发送系统通知，\"{title}\"，{notif_duration}秒，成功",
         "action": {"tool": "notify", "tool_zh": "系统通知", "target": title, "params": act_params},
         "status": {"exec_code": "success", "message": "通知发送成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -57,15 +57,15 @@ def notify(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_send_notification_llm_data("error", duration_ms, title, detail=err, hint="请检查通知标题", message=message)
-        return build_error(data={"error_detail": err, "params": {"title": title}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     err = validate_str_param(message, "message")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_send_notification_llm_data("error", duration_ms, title, detail=err, hint="请检查通知内容", message=message)
-        return build_error(data={"error_detail": err, "params": {"message": message}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if not _check_module("win10toast"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_error(data={"error_detail": "win10toast库未安装", "params": {"library": "win10toast"}}, llm_data=_build_send_notification_llm_data("error", duration_ms, title, err_code=ERR_NO_WIN10TOAST, detail="win10toast库未安装", hint="请安装win10toast库", message=message))
+        return build_error(data={}, llm_data=_build_send_notification_llm_data("error", duration_ms, title, err_code=ERR_NO_WIN10TOAST, detail="win10toast库未安装", hint="请安装win10toast库", message=message))
 
     from win10toast import ToastNotifier
     try:
@@ -88,7 +88,7 @@ def notify(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_send_notification_llm_data("error", duration_ms, title, detail=str(e), hint="发送通知异常，请重试", message=message)
-        return build_error(data={"error_detail": str(e), "params": {"title": title, "message": message[:200]}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["notify"]

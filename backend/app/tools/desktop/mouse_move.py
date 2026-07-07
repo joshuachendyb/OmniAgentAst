@@ -40,7 +40,7 @@ def mouse_move(x: int, y: int) -> Dict[str, Any]:
     duration = 0
     if not check_pyautogui_available():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_mouse_move_llm_data("error", duration_ms, x, y, "ERR_NO_PYAUTOGUI", hint="请安装pyautogui库: pip install pyautogui"))
+        return build_error(data={}, llm_data=_build_mouse_move_llm_data("error", duration_ms, x, y, "ERR_NO_PYAUTOGUI", hint="请安装pyautogui库: pip install pyautogui"))
     try:
         import pyautogui
         pyautogui.moveTo(x, y, duration=duration)
@@ -57,7 +57,7 @@ def mouse_move(x: int, y: int) -> Dict[str, Any]:
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_mouse_move_llm_data("error", duration_ms, x, y, detail=str(e), hint="请检查坐标是否在屏幕范围内或pyautogui库是否可用")
-        return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["mouse_move"]

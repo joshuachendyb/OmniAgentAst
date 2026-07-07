@@ -73,7 +73,7 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
         llm_data = _build_find_command_llm_data("error", duration_ms, str(command), False, "",
             err_code=ERR_PARAMETER_EMPTY, detail="command参数不能为空",
             all_paths=all_paths, hint="command参数不能为空")
-        return build_error(data={"error_detail": "command参数不能为空", "params": {"command": command}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     try:
         if not all_paths:
             cmd_path = shutil.which(command)
@@ -120,4 +120,4 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
         llm_data = _build_find_command_llm_data("error", duration_ms, command,
             err_code=ERR_SHELL_EXCEPTION, detail=str(e),
             all_paths=all_paths, hint="查找命令异常,请检查系统环境")
-        return build_error(data={"error_detail": str(e), "params": {"command": command}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

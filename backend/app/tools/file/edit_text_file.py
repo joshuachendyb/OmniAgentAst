@@ -305,19 +305,19 @@ async def edittext(
     if '\x00' in file_path:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="file_path包含空字节", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
-        return build_error(data={"error_detail": "file_path包含空字节", "params": {"file_path": file_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if old_string is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为None", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
-        return build_error(data={"error_detail": "old_string不能为None", "params": {"file_path": file_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if not old_string.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为空字符串", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
-        return build_error(data={"error_detail": "old_string不能为空字符串", "params": {"file_path": file_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if new_string is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="new_string不能为None", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
-        return build_error(data={"error_detail": "new_string不能为None", "params": {"file_path": file_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     dry_run = False
     result = await _precise_replace_in_file(
         file_path=file_path, old_string=old_string, new_string=new_string,

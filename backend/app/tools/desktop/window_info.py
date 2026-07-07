@@ -140,7 +140,7 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         _err_detail = err.get("error_detail", "桌面工具不可用")
         llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", include_minimized, detail=_err_detail, hint="请确保系统为Windows且已安装pywin32库")
-        return build_error(data={"error_detail": _err_detail, "params": err.get("params", {})}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         windows = []
@@ -164,7 +164,7 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
         logger.error(f"window_info list error: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", include_minimized, detail=str(e), hint="获取窗口列表时发生异常,请检查系统窗口管理器状态后重试")
-        return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["window_info", "check_win32_platform", "get_window_rect", "get_window_state", "find_windows_by_title", "_HAS_WIN32", "_win32gui", "_win32con", "_win32api"]

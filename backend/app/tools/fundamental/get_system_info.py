@@ -25,13 +25,13 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
     """get_system_info的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加detail — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 加custom_summary"""
     if exec_code == "error":
         return {
-            "summary": f"获取系统信息失败: {info_type}",
+            "summary": f"获取系统信息，{info_type}，失败",
             "action": {"tool": "sysinfo", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
             "status": {"exec_code": "error", "message": "获取系统信息失败", "code": ERR_SYSTEM_INFO, "detail": detail, "hint": hint if hint else "请检查info_type参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    _summary = custom_summary if custom_summary else f"获取系统信息成功({info_type})"
+    _summary = custom_summary if custom_summary else f"获取系统信息，{info_type}，成功"
     return {
         "summary": _summary,
         "action": {"tool": "sysinfo", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
@@ -142,7 +142,7 @@ def sysinfo(info_type: str = "all") -> Dict[str, Any]:
             n = data.get("network", {})
             _summary_parts.append(f"发送{n.get('bytes_sent_mb','?')}MB/接收{n.get('bytes_recv_mb','?')}MB")
         _summary_parts = [s for s in _summary_parts if s]
-        _custom_summary = f"获取系统信息成功({info_type}): {', '.join(_summary_parts)}" if _summary_parts else f"获取系统信息成功({info_type})"
+        _custom_summary = f"获取系统信息，{info_type}，{', '.join(_summary_parts)}，成功" if _summary_parts else f"获取系统信息，{info_type}，成功"
         llm_data = _build_get_system_info_llm_data("success", duration_ms, info_type, custom_summary=_custom_summary)
         # ---- observation_formatter route -------------------------------------------
         # branch: #17 sysinfo sections
@@ -156,7 +156,7 @@ def sysinfo(info_type: str = "all") -> Dict[str, Any]:
         logger.error(f"[sysinfo] 获取系统信息失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_get_system_info_llm_data("error", duration_ms, info_type, detail=str(e), hint="获取系统信息失败，请重试")
-        return build_error(data={"error_detail": str(e), "params": {"info_type": info_type}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["sysinfo"]

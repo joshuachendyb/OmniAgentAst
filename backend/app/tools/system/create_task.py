@@ -102,17 +102,17 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_create_task_llm_data("error", duration_ms, task_name, "", ERR_TASK_CREATE, err, hint="请检查任务名称")
-        return build_error(data={"error_detail": err, "params": {"task_name": task_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     err = validate_str_param(command, "command")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_create_task_llm_data("error", duration_ms, task_name, "", ERR_TASK_CREATE, err, hint="请检查命令参数")
-        return build_error(data={"error_detail": err, "params": {"command": command}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     try:
         if platform.system() != "Windows":
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, hint="当前系统不是Windows")
-            return build_error(data={"error_detail": "create_task 仅支持Windows系统", "params": {"platform": platform.system()}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         cmd = _build_schtasks_create_cmd(task_name, command, schedule, None, None, None, None, interval)
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
@@ -120,8 +120,8 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
         if result.returncode != 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             err_msg = result.stderr.strip() or result.stdout.strip()
-            llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, err_msg, hint="请检查schtasks命令可用性")
-            return build_error(data={"error_detail": err_msg, "params": {"task_name": task_name, "command": command, "schedule": schedule}}, llm_data=llm_data)
+            llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, err_msg, hint=f"请检查schtasks命令可用性,任务名: {task_name}")
+            return build_error(data={}, llm_data=llm_data)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {}
@@ -136,17 +136,17 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
 
     except subprocess.TimeoutExpired:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_TIMEOUT, hint="创建计划任务超时")
-        return build_error(data={"error_detail": "创建计划任务超时", "params": {"task_name": task_name, "command": command, "schedule": schedule}}, llm_data=llm_data)
+        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_TIMEOUT, f"创建计划任务超时: {task_name}", hint="执行schtasks命令超时,请检查系统状态")
+        return build_error(data={}, llm_data=llm_data)
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_COMMAND_NOT_FOUND, hint="schtasks命令不存在")
-        return build_error(data={"error_detail": "schtasks命令不存在", "params": {"task_name": task_name}}, llm_data=llm_data)
+        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_COMMAND_NOT_FOUND, f"schtasks命令不存在,无法创建任务: {task_name}", hint="系统缺少schtasks命令,请确认Windows版本")
+        return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[create_task] 创建计划任务失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, str(e), hint="创建任务异常,请检查系统状态")
-        return build_error(data={"error_detail": str(e), "params": {"task_name": task_name}}, llm_data=llm_data)
+        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, str(e), hint=f"创建任务异常,任务名: {task_name}")
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["create_task"]

@@ -19,14 +19,14 @@ def _build_time_now_llm_data(exec_code: str, duration_ms: int, iso: str, formatt
     """time_now的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-07-05 加detail/hint参数"""
     if exec_code == "error":
         return {
-            "summary": "获取当前时间失败",
+            "summary": "获取当前时间，失败",
             "action": {"tool": "timenow", "tool_zh": "获取时间", "target": "", "params": {}},
             "status": {"exec_code": "error", "message": "获取当前时间失败", "code": ERR_TIME_NOW, "detail": detail if detail else "", "hint": hint if hint else "请重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"获取当前时间成功: {formatted}，{weekday}",
+        "summary": f"获取当前时间，{formatted}，{weekday}，成功",
         "action": {"tool": "timenow", "tool_zh": "获取时间", "target": "", "params": {}},
         "status": {"exec_code": "success", "message": "获取当前时间成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -47,7 +47,7 @@ def timenow() -> Dict[str, Any]:
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_time_now_llm_data("error", duration_ms, "", "", "", detail=str(e), hint="系统内部错误，请重试")
-        return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["timenow"]

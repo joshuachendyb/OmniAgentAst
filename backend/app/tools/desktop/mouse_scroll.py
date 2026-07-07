@@ -39,7 +39,7 @@ def mouse_scroll(direction: str = "down", amount: int = 3) -> Dict[str, Any]:
     t0 = _time_mod.perf_counter()
     if not check_pyautogui_available():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_mouse_scroll_llm_data("error", duration_ms, direction, amount, "ERR_NO_PYAUTOGUI", hint="请安装pyautogui库: pip install pyautogui"))
+        return build_error(data={}, llm_data=_build_mouse_scroll_llm_data("error", duration_ms, direction, amount, "ERR_NO_PYAUTOGUI", hint="请安装pyautogui库: pip install pyautogui"))
     try:
         import pyautogui
         scroll_amount = -amount if direction == "down" else amount
@@ -57,7 +57,7 @@ def mouse_scroll(direction: str = "down", amount: int = 3) -> Dict[str, Any]:
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_mouse_scroll_llm_data("error", duration_ms, direction, amount, detail=str(e), hint="请检查滚动方向和数值参数是否正确")
-        return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["mouse_scroll"]

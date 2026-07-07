@@ -370,19 +370,19 @@ async def searchweb(
     if not proxy_valid:
         t0 = _time_mod.perf_counter()
         llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail=proxy_err, hint="请检查代理配置", proxy=proxy, num_results=num_results)
-        return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
     try:
         if len(query) < 2:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail="搜索查询至少需要2个字符", hint="搜索词至少需要2个字符", proxy=proxy, num_results=num_results)
-            return build_error(data={"error_detail": "搜索查询至少需要2个字符", "params": {"query": query}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         if not isinstance(num_results, int) or num_results < 1 or num_results > 50:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail=f"num_results必须在1-50之间,当前值: {num_results}", hint="请将结果数量设置在1-50之间", proxy=proxy, num_results=num_results)
-            return build_error(data={"error_detail": "num_results必须在1-50之间", "params": {"num_results": num_results}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         results = await _search_mcp_engine("parallel", query, num_results, proxy)
         engine_used = "Parallel"
@@ -447,4 +447,4 @@ async def searchweb(
         logger.error(f"[searchweb] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_NET_UNKNOWN, detail=str(e), hint="搜索异常，请重试", proxy=proxy, num_results=num_results)
-        return build_error(data={"error_detail": str(e), "params": {"query": query}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

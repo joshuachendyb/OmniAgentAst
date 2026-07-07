@@ -108,7 +108,7 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
     is_valid, error_msg, warning_msg = validate_registry_key(key_path, hive, "read")
     if not is_valid:
         llm_data = _build_registry_read_llm_data("error", 0, key_path, value_name or "", err_code=ERR_PARAMETER_INVALID, detail=error_msg, hint="请检查注册表路径和权限")
-        return build_error(data={"error_detail": error_msg, "params": {"key_path": key_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if warning_msg:
         logger.warning(f"[registry_read] {warning_msg}")
     t0 = _time_mod.perf_counter()
@@ -119,7 +119,7 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
         if hkey is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=f"无效的根键: {full_root_key}", hint="请检查根键名称")
-            return build_error(data={"error_detail": f"无效的根键: {full_root_key}", "params": {"key_path": key_path, "hive": hive}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_READ) as key:
             value, reg_type = winreg.QueryValueEx(key, value_name)
@@ -152,15 +152,15 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=f"注册表键或值不存在: {key_path}", hint="请检查键路径是否正确")
-        return build_error(data={"error_detail": f"注册表键或值不存在: {key_path}", "params": {"key_path": key_path, "value_name": value_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=f"权限不足: {key_path}", hint="请以管理员身份运行")
-        return build_error(data={"error_detail": f"权限不足: {key_path}", "params": {"key_path": key_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=str(e), hint="读取注册表异常,请检查系统状态")
-        return build_error(data={"error_detail": str(e), "params": {"key_path": key_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["registry_read", "ROOT_KEY_MAP", "_registry_session_backup", "_parse_key_path", "_backup_registry", "_validate_root_key"]

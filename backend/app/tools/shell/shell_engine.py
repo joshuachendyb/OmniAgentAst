@@ -7,8 +7,9 @@ PersistentShell — 持久 PowerShell 进程引擎 — 小欧 2026-07-05
   │    PS5.1 `-Command -` stdin 自动识别UTF-8 (实测确认)
   │    加BOM头反而静默失败 → 不修
   │
-  ├─ [子进程] env={PYTHONIOENCODING=utf-8}
-  │    子Python/PS进程输出中文不抛UnicodeEncodeError
+  ├─ [子进程] env={PYTHONIOENCODING=utf-8, PYTHONUTF8=1}
+  │    PYTHONIOENCODING: print()输出中文不抛UnicodeEncodeError
+  │    PYTHONUTF8=1: open()默认用UTF-8,避免gbk误读UTF-8代码文件
   │
   ├─ [出] > 替换为 Out-File -Encoding utf8
   │    PS5.1默认>写UTF-16LE导致中文乱码 → 统一UTF-8
@@ -210,7 +211,8 @@ class PersistentShell:
             return False
         try:
             # 设PYTHONIOENCODING保证子Python进程输出中文时不抛UnicodeEncodeError — 小欧 2026-07-07
-            child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            # PYTHONUTF8=1让open()默认用UTF-8而非gbk,避免读UTF-8代码文件乱码 — 小欧 2026-07-07
+            child_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
             self._proc = subprocess.Popen(
                 [pwsh, "-NoProfile", "-Command", "-"],
                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,

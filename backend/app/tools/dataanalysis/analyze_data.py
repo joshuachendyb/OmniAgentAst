@@ -105,18 +105,18 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="file_path和data参数互斥,只能传入其中一个", hint="file_path和data只能选其一", file_path=file_path, data=data)
-        return build_error(data={"error_detail": "file_path和data参数互斥,只能传入其中一个", "params": {"file_path": file_path, "data": data}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if not file_path and not data:
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="file_path和data参数必须传入其中一个", hint="请提供file_path或data参数")
-        return build_error(data={"error_detail": "file_path和data参数必须传入其中一个"}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="pandas库未安装", hint="请安装pandas库", file_path=file_path, data=data)
-        return build_error(data={"error_detail": "pandas库未安装", "params": {"library": "pandas"}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         all_ops = ["mean", "sum", "count", "min", "max", "std"]
@@ -130,7 +130,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
             if not is_valid:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=err, hint="请检查文件路径", file_path=file_path)
-                return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
+                return build_error(data={}, llm_data=llm_data)
             path = Path(file_path)
             read_kwargs = {}
             if max_rows is not None:
@@ -139,7 +139,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
                 if not _check_module("openpyxl"):
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                     llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="openpyxl库未安装", hint="请安装openpyxl库", file_path=file_path)
-                    return build_error(data={"error_detail": "openpyxl库未安装", "params": {"library": "openpyxl"}}, llm_data=llm_data)
+                    return build_error(data={}, llm_data=llm_data)
                 df = pd.read_excel(file_path, engine="openpyxl", **({k: v for k, v in read_kwargs.items() if k == 'nrows'}))
             else:
                 df = pd.read_csv(file_path, **read_kwargs)
@@ -149,8 +149,8 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
                 df = pd.DataFrame(parsed_data)
             else:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组字符串", hint="请提供JSON数组格式的数据", data=data)
-                return build_error(data={"error_detail": "data参数必须是JSON数组字符串", "params": {"data_type": type(parsed_data).__name__}}, llm_data=llm_data)
+                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组格式的字符串", hint="请提供JSON数组格式的数据", data=data)
+                return build_error(data={}, llm_data=llm_data)
 
         total_count = len(df)
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
@@ -192,7 +192,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=str(e), hint="分析异常，请检查数据", file_path=file_path, data=data)
-        return build_error(data={"error_detail": str(e), "params": {"data": str(data)[:200]}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["analyze_data"]

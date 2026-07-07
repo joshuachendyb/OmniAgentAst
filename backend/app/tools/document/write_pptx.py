@@ -230,7 +230,7 @@ def write_pptx(
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pptx_llm_data("error", duration_ms, file_name, detail=err, hint="请检查文件路径是否合法")
-        return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if warn:
         logger.warning(f"[write_pptx] {warn}")
 
@@ -239,19 +239,19 @@ def write_pptx(
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pptx_llm_data("error", duration_ms, file_name, detail=error_detail, hint="文件扩展名不正确,请使用.pptx格式")
-        return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     slides = coerce_json(slides)
 
     if not isinstance(slides, list) or not slides:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pptx_llm_data("error", duration_ms, file_name, detail="slides参数必须是非空列表", hint="请提供非空slides列表参数")
-        return build_error(data={"error_detail": "slides参数必须是非空列表", "params": {"file_name": file_name, "slides_type": type(slides).__name__}}, llm_data=llm_data)
+        llm_data = _build_write_pptx_llm_data("error", duration_ms, file_name, detail=f"slides参数必须是非空列表,当前类型: {type(slides).__name__}", hint="请提供非空slides列表参数")
+        return build_error(data={}, llm_data=llm_data)
 
     if not _check_module("pptx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pptx_llm_data("error", duration_ms, file_name, detail="python-pptx库未安装", hint="请安装python-pptx库")
-        return build_error(data={"error_detail": "python-pptx库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         prs = _build_pptx_presentation(slides)
@@ -273,4 +273,5 @@ def write_pptx(
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pptx_llm_data("error", duration_ms, file_name, detail=str(e), hint="写入PPT异常,请检查磁盘空间和文件完整性")
-        return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
+

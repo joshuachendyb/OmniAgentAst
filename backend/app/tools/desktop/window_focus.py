@@ -39,10 +39,10 @@ def window_focus(window_title: str) -> Dict[str, Any]:
         import win32gui
     except ImportError:
         llm_data = _build_window_focus_llm_data("error", 0, window_title, "ERR_NO_WIN32GUI", hint="请安装pywin32库: pip install pywin32")
-        return build_error(data={"error_detail": "需要安装 pywin32 库", "params": {"window_title": window_title}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if not window_title or not isinstance(window_title, str) or not window_title.strip():
         llm_data = _build_window_focus_llm_data("error", 0, "", "ERR_INVALID_PARAM", detail="window_title不能为空", hint="请提供有效的窗口标题,window_title不能为空")
-        return build_error(data={"error_detail": "window_title不能为空", "params": {"window_title": window_title}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     t0 = _time_mod.perf_counter()
     try:
         target_hwnd = None
@@ -69,11 +69,11 @@ def window_focus(window_title: str) -> Dict[str, Any]:
             return build_success(data=data, llm_data=llm_data)
         else:
             llm_data = _build_window_focus_llm_data("error", duration_ms, window_title, ERR_WINDOW_NOT_FOUND, hint="请检查窗口标题是否正确,当前未找到匹配窗口")
-            return build_error(data={"error_detail": f"未找到窗口: {window_title}", "params": {"window_title": window_title}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_window_focus_llm_data("error", duration_ms, window_title, detail=str(e), hint="聚焦窗口时发生异常,请检查窗口状态后重试")
-        return build_error(data={"error_detail": str(e), "params": {"window_title": window_title}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["window_focus"]

@@ -99,14 +99,14 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
     """tool_search的llm_data构建函数 — 小健 2026-06-21"""
     if exec_code == "error":
         return {
-            "summary": f"搜索失败: {query}",
+            "summary": f"搜索工具，关键词为空，失败",
             "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_DOC_QUERY_EMPTY, "detail": "搜索关键词不能为空", "hint": "请输入有效的搜索关键词"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"搜索成功: '{query}' 匹配 {total_matched} 个（共 {total_tools} 个工具）",
+        "summary": f"搜索 '{query}'，匹配 {total_matched} 个（共 {total_tools} 个工具），成功",
         "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -122,7 +122,7 @@ def searchtool(query: str) -> Dict[str, Any]:
     if not isinstance(query, str) or not query.strip():
         duration_ms = int((time.perf_counter() - t0) * 1000)
         llm_data = _build_tool_search_llm_data("error", duration_ms, query, 0, 0, [])
-        return build_error(data={"error_detail": "搜索关键词不能为空", "params": {"query": query}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     all_tools = tool_registry._tools
     if not all_tools:

@@ -75,7 +75,7 @@ class ToolRetryEngine:
         """统一构建重试相关错误响应 — 小欧 2026-06-21 适配新3字段result
         小欧 2026-07-05: 新增 action_name/action_params 参数，LLM 能看到哪个工具/参数失败"""
         return build_error(
-            data={"error_detail": message, "params": action_params or {}},
+            data={},
             llm_data={
                 "summary": message[:200],
                 "action": {"tool": action_name, "tool_zh": "", "target": "", "params": action_params or {}},
@@ -109,7 +109,7 @@ class ToolRetryEngine:
         tool = self._tools.get(action)
         if tool is None:
             return build_error(
-                data={"error_detail": f"工具 '{action}' 未找到", "params": {"action": action}},
+                data={},
                 llm_data={
                     "summary": f"工具 '{action}' 未找到",
                     "action": {"tool": action, "tool_zh": "", "target": "", "params": {"action": action}},

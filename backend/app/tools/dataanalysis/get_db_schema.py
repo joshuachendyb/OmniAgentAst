@@ -123,13 +123,13 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DB_CONNECTION, detail=f"数据库文件不存在: {db_path}", hint="请检查路径",
                                                        connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
-            return build_error(data={"error_detail": f"数据库文件不存在: {db_path}", "params": {"db_path": db_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DB_CONNECTION, detail=conn_error, hint="请检查连接参数",
                                                        connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
-            return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         tables = _get_tables(conn, connection_type, db_name)
         tables = _filter_tables(tables, table_name, filter_pattern)
@@ -137,7 +137,7 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DOC_DB_TABLE_NOT_FOUND, detail=f"表不存在: {table_name}", hint="请确认表名正确",
                                                        connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
-            return build_error(data={"error_detail": f"表不存在: {table_name}", "params": {"table_name": table_name}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         schema_info = []
         for t in tables:
@@ -168,12 +168,12 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SQL_EXEC, detail=str(e),
                                                    connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
-        return build_error(data={"error_detail": str(e), "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SCHEMA_FAILED, detail=str(e),
                                                    connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
-        return build_error(data={"error_detail": str(e), "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)
 

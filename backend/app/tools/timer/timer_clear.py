@@ -74,7 +74,7 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_clear_llm_data("error", duration_ms, timer_id, False, detail=str(e), hint="请检查定时器ID")
-        return build_error(data={"error_detail": str(e), "params": {"timer_id": timer_id}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["timer_clear"]

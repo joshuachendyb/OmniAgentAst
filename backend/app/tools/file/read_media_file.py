@@ -73,7 +73,7 @@ async def readmedia(
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint="请检查文件类型，或使用 readtext/read_document 工具")
-            return build_error(data={"error_detail": error_detail, "params": {"file_path": file_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
         # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
@@ -81,7 +81,7 @@ async def readmedia(
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=err, hint="请检查文件路径是否正确")
-            return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         path = Path(file_path)
 
@@ -93,13 +93,13 @@ async def readmedia(
                 detail=f"媒体文件过大({file_size}字节),超过读取上限{MAX_MEDIA_READ_SIZE // 1024 // 1024}MB",
                 hint="文件过大，请使用更小的文件",
             )
-            return build_error(data={"error_detail": "媒体文件过大", "params": {"file_path": file_path, "file_size": file_size}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         suffix = path.suffix.lower()
         if suffix == '.pdf':
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail="PDF文件请使用read_document工具读取", hint="请使用 read_document 工具读取 PDF 文件")
-            return build_error(data={"error_detail": "PDF请使用read_document工具", "params": {"file_path": file_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         _TEXT_EXTENSIONS = {
             '.txt', '.md', '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.go', '.c', '.cpp', '.h',
@@ -117,7 +117,7 @@ async def readmedia(
                 detail=f"文件后缀 '{suffix}' 是文档文件，请使用read_document工具读取",
                 hint="请使用 read_document 工具读取文档文件",
             )
-            return build_error(data={"error_detail": f"文档文件请使用read_document", "params": {"file_path": file_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         if suffix in _TEXT_EXTENSIONS:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_media_file_llm_data(
@@ -125,7 +125,7 @@ async def readmedia(
                 detail=f"文件后缀 '{suffix}' 是文本文件，请使用readtext工具读取",
                 hint="请使用 readtext 工具读取文本文件",
             )
-            return build_error(data={"error_detail": f"文本文件请使用readtext", "params": {"file_path": file_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         mime_type = _MIME_MAP.get(suffix, "application/octet-stream")
 
@@ -158,4 +158,4 @@ async def readmedia(
         logger.error(f"readmedia failed: {file_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint="请检查文件路径和权限")
-        return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

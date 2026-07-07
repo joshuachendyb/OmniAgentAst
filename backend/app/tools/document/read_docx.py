@@ -68,12 +68,12 @@ def read_docx(file_name: str) -> Dict[str, Any]:
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_docx_llm_data("error", duration_ms, file_name, detail=error_detail, hint="文件类型不匹配,请使用.docx格式")
-        return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     if not _check_module("docx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_docx_llm_data("error", duration_ms, file_name, detail="python-docx库未安装", hint="请安装python-docx库")
-        return build_error(data={"error_detail": "python-docx库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         import docx
@@ -84,7 +84,7 @@ def read_docx(file_name: str) -> Dict[str, Any]:
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_docx_llm_data("error", duration_ms, file_name, detail=err, hint="请检查文件路径是否正确")
-            return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         doc_path = Path(file_path)
         doc = docx.Document(doc_path)
@@ -127,4 +127,4 @@ def read_docx(file_name: str) -> Dict[str, Any]:
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_docx_llm_data("error", duration_ms, file_name, detail=str(e), hint="读取Word文档异常,请检查文件完整性")
-        return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

@@ -24,14 +24,14 @@ def _build_time_add_llm_data(exec_code: str, duration_ms: int, result_time: str,
         _act_params["start"] = user_start
     if exec_code == "error":
         return {
-            "summary": f"时间加减失败: {delta} {unit}",
+            "summary": f"时间加减，{delta:+g} {unit}，失败",
             "action": {"tool": "timeadd", "tool_zh": "时间加减", "target": str(delta), "params": _act_params},
             "status": {"exec_code": "error", "message": "时间加减失败", "code": ERR_TIME_ADD, "detail": detail, "hint": hint if hint else "请检查参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"时间加减成功: 将当前时间{delta:+g} {unit}后为 {result_time}",
+        "summary": f"时间加减，{delta:+g} {unit}后为 {result_time}，成功",
         "action": {"tool": "timeadd", "tool_zh": "时间加减", "target": str(delta), "params": _act_params},
         "status": {"exec_code": "success", "message": "时间加减成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -50,7 +50,7 @@ def timeadd(delta: float, start: Optional[str] = None, unit: Literal["days", "ho
             if start_dt is None:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_time_add_llm_data("error", duration_ms, "", unit, delta, detail=f"无法解析基准时间: {start}", hint="请检查基准时间格式是否正确", user_start=start)
-                return build_error(data={"error_detail": f"无法解析基准时间: {start}", "params": {"start": str(start), "delta": delta, "unit": unit}}, llm_data=llm_data)
+                return build_error(data={}, llm_data=llm_data)
 
         if start_dt.tzinfo is None:
             start_dt = start_dt.replace(tzinfo=timezone.utc).astimezone()
@@ -75,7 +75,7 @@ def timeadd(delta: float, start: Optional[str] = None, unit: Literal["days", "ho
         else:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_time_add_llm_data("error", duration_ms, "", unit, delta, detail=f"不支持的单位: {unit_lower}", hint="请使用days/hours/minutes/seconds/months作为单位", user_start=start)
-            return build_error(data={"error_detail": f"不支持的单位: {unit_lower}", "params": {"unit": unit_lower, "delta": delta}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         result_time_str = new_dt.strftime("%Y-%m-%d %H:%M:%S")
         dt_parsed = _parse_datetime_any(result_time_str)
@@ -88,7 +88,7 @@ def timeadd(delta: float, start: Optional[str] = None, unit: Literal["days", "ho
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_time_add_llm_data("error", duration_ms, "", unit, delta, detail=str(e), hint="系统内部错误，请重试", user_start=start)
-        return build_error(data={"error_detail": str(e), "params": {"delta": delta, "unit": unit, "start": str(start)}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["timeadd"]

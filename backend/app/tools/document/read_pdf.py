@@ -90,12 +90,12 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=error_detail, hint="文件类型不匹配,请使用.pdf格式")
-        return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     if not _check_module("pdfplumber"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail="pdfplumber库未安装", hint="请安装pdfplumber库")
-        return build_error(data={"error_detail": "pdfplumber库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         import pdfplumber
@@ -106,7 +106,7 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径是否正确")
-            return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         path = Path(file_path)
         # 校验PDF文件头（前5字节应为%PDF），提前拦截非PDF文件 — 小欧 2026-07-07
@@ -115,7 +115,7 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
         if header != b'%PDF-':
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail="文件不是有效的PDF格式（缺少%PDF头）", hint="请确认文件是PDF格式")
-            return build_error(data={"error_detail": "文件不是有效的PDF格式", "params": {"file_name": file_name}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         all_text, pages_read, tables_data, images_data = [], [], [], []
         with pdfplumber.open(path) as pdf:
             page_count = len(pdf.pages)
@@ -162,4 +162,4 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=str(e), hint="读取PDF文档异常,请检查文件完整性")
-        return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

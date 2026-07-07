@@ -87,7 +87,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
         duration_ms = 0
         llm_data = _build_execute_sql_llm_data("error", duration_ms, sql or "", 0, detail="SQL语句不能为空", hint="请提供有效的SQL语句",
                                                  connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
-        return build_error(data={"error_detail": "SQL语句不能为空", "params": {"sql": sql}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         has_danger, warning_msg, dangerous_list = _check_sql_safety(sql, dry_run)
@@ -103,7 +103,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=conn_error, hint="请检查数据库连接参数",
                                                          connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
-                return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
+                return build_error(data={}, llm_data=llm_data)
             syntax_valid = False
             try:
                 if connection_type == "sqlite":
@@ -141,14 +141,14 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             else:
                 llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail="SQL语法校验失败", hint="请检查SQL语法",
                                                          connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
-                return build_error(data={"dry_run": True, "syntax_valid": False, "error_detail": "SQL语法校验失败"}, llm_data=llm_data)
+                return build_error(data={}, llm_data=llm_data)
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=conn_error, hint="请检查数据库连接参数",
                                                      connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
-            return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -200,7 +200,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             except Exception:
                 logger.warning("[execute_sql] sqlite3回滚失败")
         logger.error(f"[execute_sql] ERR_SQL_EXEC: {e}")
-        return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=str(e), hint="请检查SQL语句和参数",
@@ -210,7 +210,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 conn.rollback()
             except Exception:
                 logger.warning("[execute_sql] 回滚失败")
-        return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)
 

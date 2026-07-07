@@ -51,6 +51,7 @@ class _DbConnectionMixin(BaseModel):
         return self
 
 class GenerateChartInput(BaseModel):
+
     data: str = Field(
         ...,
         description="""数据（两种模式任选其一）。
@@ -86,7 +87,7 @@ class GenerateChartInput(BaseModel):
 
 
 class AnalyzeDataInput(BaseModel):
-    """file_path和data参数互斥,只能传入其中一个 - 小欧-2026-06-27完善"""
+    """file_path和data参数互斥,只能传入其中一个 """
     file_path: Optional[str] = Field(
         default=None,
         description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时使用。示例:D:/data/sales.csv"
@@ -138,7 +139,7 @@ class AnalyzeDataInput(BaseModel):
 
 
 class FilterDataInput(BaseModel):
-    """file_path和data参数互斥,只能传入其中一个 - 小欧-2026-06-27完善"""
+    """file_path和data参数互斥,只能传入其中一个 """
     file_path: Optional[str] = Field(
         default=None,
         description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时传入。示例:D:/data/users.csv"

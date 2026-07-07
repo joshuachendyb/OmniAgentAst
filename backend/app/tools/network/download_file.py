@@ -133,12 +133,12 @@ async def download(
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "download")
     if not timeout_valid:
         llm_data = _build_download_file_llm_data("error", 0, url, dest_path=destination_path, err_code=ERR_INVALID_URL, detail=timeout_err, hint="请检查超时设置", timeout=timeout, proxy=proxy, headers=headers)
-        return build_error(data={"error_detail": timeout_err, "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     proxy_valid, proxy_err, _ = validate_proxy(proxy)
     if not proxy_valid:
         llm_data = _build_download_file_llm_data("error", 0, url, dest_path=destination_path, err_code=ERR_INVALID_URL, detail=proxy_err, hint="请检查代理配置", timeout=timeout, proxy=proxy, headers=headers)
-        return build_error(data={"error_detail": proxy_err, "params": {"proxy": proxy}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     dest_path = os.path.abspath(os.path.join(_DOWNLOAD_DIR, destination_path.lstrip("/\\")))
     # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
@@ -146,7 +146,7 @@ async def download(
     is_valid_path, path_err, path_warn = validate_path(OpCategory.WRITE, dest_path)
     if not is_valid_path:
         llm_data = _build_download_file_llm_data("error", 0, url, dest_path=destination_path, err_code=ERR_NETWORK_INVALID_PATH, detail=path_err, hint="请检查目标路径", timeout=timeout, proxy=proxy, headers=headers)
-        return build_error(data={"error_detail": path_err, "params": {"destination_path": destination_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if path_warn:
         logger.warning(f"[download] {path_warn}")
 
@@ -157,34 +157,34 @@ async def download(
             detail = error_msg or "URL格式无效"
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=destination_path, err_code=ERR_INVALID_URL, detail=detail, hint="请检查URL格式", timeout=timeout, proxy=proxy, headers=headers)
-            return build_error(data={"error_detail": detail, "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         if warning_msg:
             logger.warning(f"[download] {warning_msg}")
         net_info = check_network()
         if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=destination_path, err_code=ERR_NETWORK_DOWN, detail="网络不可用", hint="请检查网络连接", timeout=timeout, proxy=proxy, headers=headers)
-            return build_error(data={"error_detail": "网络不可用", "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
 
         if not dest_path.startswith(os.path.abspath(_DOWNLOAD_DIR)):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=destination_path, err_code=ERR_NETWORK_INVALID_PATH, detail="路径遍历不允许", hint="请检查目标路径", timeout=timeout, proxy=proxy, headers=headers)
-            return build_error(data={"error_detail": "路径遍历不允许", "params": {"path": destination_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         dest_dir = os.path.dirname(dest_path)
         try:
             os.makedirs(dest_dir, exist_ok=True)
         except (PermissionError, OSError) as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=destination_path, err_code=ERR_NETWORK_CREATE_DIR, detail=str(e), hint="检查目标目录权限", timeout=timeout, proxy=proxy, headers=headers)
-            return build_error(data={"error_detail": str(e), "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         req_headers = headers or {}
 
         if os.path.exists(dest_path) and os.path.realpath(dest_path) != os.path.abspath(dest_path):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=destination_path, err_code=ERR_NETWORK_INVALID_PATH, detail="路径被篡改(symlink)", hint="请检查目标路径", timeout=timeout, proxy=proxy, headers=headers)
-            return build_error(data={"error_detail": "路径被篡改(symlink)", "params": {"path": dest_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
             downloaded, content_type, total_bytes = await _stream_download(client, url, dest_path, req_headers)
@@ -206,14 +206,14 @@ async def download(
     except (PermissionError, OSError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NETWORK_WRITE_FILE, detail=str(e), hint="请检查磁盘空间和权限", timeout=timeout, proxy=proxy, headers=headers)
-        return build_error(data={"error_detail": str(e), "params": {"file_path": dest_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _map_network_error(url, timeout, e, dest_path, duration_ms)
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=error_info["err_code"], detail=error_info["detail"], hint="请检查URL和网络连接", timeout=timeout, proxy=proxy, headers=headers)
-        return build_error(data={"error_detail": error_info["error_detail"], "params": error_info["params"]}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[download] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NET_UNKNOWN, detail=str(e), hint="请检查URL和网络连接", timeout=timeout, proxy=proxy, headers=headers)
-        return build_error(data={"error_detail": str(e), "params": {"url": url, "timeout": timeout}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

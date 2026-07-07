@@ -120,7 +120,7 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
     elif action == "write":
         if not content:
             llm_data = _build_clipboard_control_llm_data("error", 0, "write", err_code=ERR_DESKTOP_CLIPBOARD, detail="content参数不能为空", hint="请提供要写入的content内容")
-            return build_error(data={"error_detail": "content参数不能为空", "params": {}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         t0 = _time_mod.perf_counter()
         result = _write_clipboard(content)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -137,7 +137,7 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
         return build_success(data=result, llm_data=llm_data)
     else:
         llm_data = _build_clipboard_control_llm_data("error", 0, action, err_code=ERR_DESKTOP_CLIPBOARD, detail=f"无效的action: {action}", hint="请使用read或write作为action参数")
-        return build_error(data={"error_detail": f"无效的action: {action}", "params": {"action": action}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["clipboard_control"]

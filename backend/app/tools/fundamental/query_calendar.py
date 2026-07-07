@@ -40,7 +40,7 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
         act_params["year"] = user_year
     if exec_code == "error":
         return {
-            "summary": f"日期检查失败: {user_name}" if user_name else "日期检查失败",
+            "summary": f"日历查询:\"{user_name}\"，失败" if user_name else "日历查询失败",
             "action": {"tool": "calendar", "tool_zh": "日历查询", "target": date_str or user_name, "params": act_params},
             "status": {"exec_code": "error", "message": "日期检查失败", "code": ERR_TIME_DATE, "detail": detail, "hint": hint if hint else "请检查日期格式"},
             "duration_ms": duration_ms,
@@ -49,7 +49,7 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
     hol_str = f"，{holiday_name}" if holiday_name else ""
     type_str = f"（{holiday_type_cn}）" if holiday_type_cn else ""
     return {
-        "summary": f"查询日历成功: {date_str} {weekday_cn}，{'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}{type_str}",
+        "summary": f"日历查询成功:{date_str} {weekday_cn}，{'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}{type_str}",
         "action": {"tool": "calendar", "tool_zh": "日历查询", "target": date_str, "params": act_params},
         "status": {"exec_code": "success", "message": "日期检查完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -86,7 +86,7 @@ def calendar(
         if holiday_info is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_query_calendar_llm_data("error", duration_ms, "", False, False, False, "", detail=f"未找到节日名称或无效日期: {name}", hint="请检查节日名称或日期格式是否正确", user_name=name, user_year=year)
-            return build_error(data={"error_detail": f"未找到节日名称或无效日期: {name}", "params": {"name": name, "year": year}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         
         date_obj = datetime.strptime(holiday_info["date"], "%Y-%m-%d").date()
         isoweekday = holiday_info["isoweekday"]
@@ -101,7 +101,7 @@ def calendar(
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_query_calendar_llm_data("error", duration_ms, str(name), False, False, False, "", detail=str(e), hint="系统内部错误，请重试", user_name=name, user_year=year)
-        return build_error(data={"error_detail": str(e), "params": {"name": str(name)}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["calendar"]

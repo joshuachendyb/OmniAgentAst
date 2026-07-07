@@ -122,12 +122,12 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数互斥,只能传入其中一个", hint="file_path和data只能选其一", file_path=file_path, data=data)
-        return build_error(data={"error_detail": "file_path和data参数互斥,只能传入其中一个", "params": {"file_path": file_path, "data": data}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if not file_path and not data:
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数必须传入其中一个", hint="请提供file_path或data参数")
-        return build_error(data={"error_detail": "file_path和data参数必须传入其中一个"}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     if conditions is not None:
         conditions = coerce_json(conditions)
@@ -137,7 +137,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_filter_data_llm_data("error", duration_ms, detail="pandas库未安装", hint="请安装pandas库", file_path=file_path, data=data)
-        return build_error(data={"error_detail": "pandas库未安装", "params": {"library": "pandas"}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         if file_path:
@@ -148,8 +148,8 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
                 loaded = _load_data_to_df(parsed_data, max_rows)
             else:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_filter_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组字符串", hint="请提供JSON数组格式的数据", data=data)
-                return build_error(data={"error_detail": "data参数必须是JSON数组字符串", "params": {"data_type": type(parsed_data).__name__}}, llm_data=llm_data)
+                llm_data = _build_filter_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组格式的字符串", hint="请提供JSON数组格式的数据", data=data)
+                return build_error(data={}, llm_data=llm_data)
         if "error_detail" in loaded:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_filter_data_llm_data("error", duration_ms, detail=loaded["error_detail"], hint="请检查数据加载路径", file_path=file_path, data=data)
@@ -200,7 +200,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_filter_data_llm_data("error", duration_ms, detail=str(e), hint="筛选异常，请检查数据", file_path=file_path, data=data)
-        return build_error(data={"error_detail": str(e), "params": {"data": str(data)[:200]}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["filter_data"]

@@ -81,7 +81,7 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
         duration_ms = 0
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql or "", 0, [], detail="SQL语句不能为空", hint="请提供有效的SQL语句",
                                                connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
-        return build_error(data={"error_detail": "SQL语句不能为空", "params": {"sql": sql}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         sql_upper = sql.strip().upper()
@@ -90,14 +90,14 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=f"只读查询不支持{attempted_type}操作", hint="如需写操作请使用execute_sql工具",
                                                    connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
-            return build_error(data={"error_detail": f"只读查询不支持{attempted_type}操作", "params": {"sql": sql[:200], "attempted_type": attempted_type}, "hint": "如需写操作请使用execute_sql工具"}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=conn_error, hint="请检查数据库连接参数",
                                                    connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
-            return build_error(data={"error_detail": conn_error, "params": {"sql": sql[:200], "connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -138,12 +138,12 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=str(e), hint="请检查SQL语法",
                                                connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
-        return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=str(e), hint="请检查SQL语句和参数",
                                                connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
-        return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)
 

@@ -158,7 +158,7 @@ async def extract(
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, user_destination=destination, user_overwrite=overwrite)
-        return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     if destination:
         # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
@@ -167,7 +167,7 @@ async def extract(
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, user_destination=destination, user_overwrite=overwrite)
-            return build_error(data={"error_detail": err, "params": {"destination": destination}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
     try:
 
@@ -186,7 +186,7 @@ async def extract(
         else:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {source}", user_destination=destination, user_overwrite=overwrite)
-            return build_error(data={"error_detail": f"不支持的压缩格式: {source}", "params": {"source": source}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("success", duration_ms, source, user_destination=destination, user_overwrite=overwrite, extracted_files=result.get("extracted_files", 0), skipped_files=result.get("skipped_files", 0), fmt=result.get("format", ""))
@@ -207,13 +207,13 @@ async def extract(
     except zipfile.BadZipFile:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail="无效的ZIP文件或密码错误", user_destination=destination, user_overwrite=overwrite)
-        return build_error(data={"error_detail": "无效的ZIP文件或密码错误", "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     except tarfile.TarError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"TAR文件错误: {str(e)}", user_destination=destination, user_overwrite=overwrite)
-        return build_error(data={"error_detail": f"TAR文件错误: {str(e)}", "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         logger.error(f"[extract] 解压失败: {e}")
         llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=str(e), user_destination=destination, user_overwrite=overwrite)
-        return build_error(data={"error_detail": str(e), "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

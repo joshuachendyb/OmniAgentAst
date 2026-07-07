@@ -123,7 +123,7 @@ def write_xlsx(
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=err, user_sheet_name=sheet_name, hint="请检查文件路径是否合法")
-        return build_error(data={"error_detail": err, "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if warn:
         logger.warning(f"[write_xlsx] {warn}")
 
@@ -132,14 +132,14 @@ def write_xlsx(
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail, user_sheet_name=sheet_name, hint="文件扩展名不正确,请使用.xlsx格式")
-        return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     data = coerce_json(data)
 
     if not _check_module("openpyxl"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装", user_sheet_name=sheet_name, hint="请安装openpyxl库")
-        return build_error(data={"error_detail": "openpyxl库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         from openpyxl import Workbook
@@ -194,4 +194,4 @@ def write_xlsx(
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=str(e), user_sheet_name=sheet_name, hint="写入Excel异常,请检查磁盘空间和权限")
-        return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

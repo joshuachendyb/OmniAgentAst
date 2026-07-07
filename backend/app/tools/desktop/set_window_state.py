@@ -64,25 +64,25 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_set_window_state_llm_data("error", duration_ms, "", window_title, err_code=ERR_WINDOW_NOT_FOUND, detail=err, hint="请提供有效的窗口标题,window_title不能为空")
-        return build_error(data={"error_detail": err, "params": {"window_title": window_title}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     err = check_win32_platform()
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_DESKTOP_GET_WINDOW_INFO, hint="请确保系统为Windows且已安装pywin32库")
-        return build_error(data={"error_detail": "桌面工具不可用", "params": {}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         if action not in _WINDOW_ACTIONS or _WINDOW_ACTIONS[action] is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_INVALID_ACTION, hint="请使用支持的操作类型:maximize/minimize/restore/topmost/unpin")
-            return build_error(data={"error_detail": f"无效的操作: {action}", "params": {"action": action}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         matched_hwnds = find_windows_by_title(window_title)
 
         if not matched_hwnds:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_WINDOW_NOT_FOUND, hint="请检查窗口标题是否正确,当前未找到匹配窗口")
-            return build_error(data={"error_detail": f"未找到窗口: {window_title}", "params": {"window_title": window_title}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         hwnd = matched_hwnds[0]
         title = _win32gui.GetWindowText(hwnd)
@@ -105,7 +105,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
         logger.error(f"set_window_state error: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, detail=str(e), hint="窗口操作执行异常,请检查窗口状态后重试")
-        return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["set_window_state"]

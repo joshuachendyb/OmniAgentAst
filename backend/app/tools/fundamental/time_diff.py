@@ -24,14 +24,14 @@ def _build_time_diff_llm_data(exec_code: str, duration_ms: int, humanized: str, 
         _act_params["end"] = user_end
     if exec_code == "error":
         return {
-            "summary": "计算时间差失败",
+            "summary": "计算时间差，失败",
             "action": {"tool": "timediff", "tool_zh": "时间差值", "target": "", "params": _act_params},
             "status": {"exec_code": "error", "message": "计算时间差失败", "code": ERR_TIME_DIFF, "detail": detail, "hint": hint if hint else "请检查时间格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"计算时间差成功: {humanized}（{round(days, 2)}天）",
+        "summary": f"计算时间差，{humanized}（{round(days, 2)}天），成功",
         "action": {"tool": "timediff", "tool_zh": "时间差值", "target": "", "params": _act_params},
         "status": {"exec_code": "success", "message": "计算时间差成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -47,7 +47,7 @@ def timediff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
         if start_dt is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_time_diff_llm_data("error", duration_ms, "", 0, 0, False, detail=f"无法解析开始时间: {start}", hint="请检查开始时间格式是否正确", user_start=start, user_end=end)
-            return build_error(data={"error_detail": f"无法解析开始时间: {start}", "params": {"start": str(start)}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         if start_dt.tzinfo is None:
             start_dt = start_dt.replace(tzinfo=timezone.utc).astimezone()
 
@@ -58,7 +58,7 @@ def timediff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
             if end_dt is None:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_time_diff_llm_data("error", duration_ms, "", 0, 0, False, detail=f"无法解析结束时间: {end}", hint="请检查结束时间格式是否正确", user_start=start, user_end=end)
-                return build_error(data={"error_detail": f"无法解析结束时间: {end}", "params": {"end": str(end)}}, llm_data=llm_data)
+                return build_error(data={}, llm_data=llm_data)
             if end_dt.tzinfo is None:
                 end_dt = end_dt.replace(tzinfo=timezone.utc).astimezone()
 
@@ -102,7 +102,7 @@ def timediff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_time_diff_llm_data("error", duration_ms, "", 0, 0, False, detail=str(e), hint="系统内部错误，请重试", user_start=start, user_end=end)
-        return build_error(data={"error_detail": str(e), "params": {"start": str(start), "end": str(end)}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["timediff"]

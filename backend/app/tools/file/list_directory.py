@@ -203,17 +203,17 @@ async def listdir(
     if not dir_path or not dir_path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", hint="请提供有效的目录路径", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
-        return build_error(data={"error_detail": "dir_path不能为空", "params": {"dir_path": dir_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     if sort_by not in ("name", "size"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size',当前值: '{sort_by}'", hint="sort_by参数只能为name或size", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
-        return build_error(data={"error_detail": f"sort_by只支持name/size", "params": {"sort_by": sort_by}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     if offset < 0:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"offset必须>=0,当前值: {offset}", hint="offset从0开始,负值无效", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
-        return build_error(data={"error_detail": f"offset必须>=0", "params": {"offset": offset}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     path = Path(dir_path)
     start_offset = offset
@@ -225,7 +225,7 @@ async def listdir(
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=err, hint="请检查目录路径是否正确", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
-            return build_error(data={"error_detail": err, "params": {"dir_path": dir_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution = await asyncio.to_thread(
@@ -281,4 +281,4 @@ async def listdir(
         logger.error(f"Failed to list directory {dir_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=str(e), hint="请检查目录路径和访问权限", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
-        return build_error(data={"error_detail": str(e), "params": {"dir_path": dir_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

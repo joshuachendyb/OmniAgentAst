@@ -118,7 +118,7 @@ def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str,
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_screen_capture_llm_data("error", duration_ms, output_path=output_path, region=region, display=display, err_code=ERR_SCREENSHOT, detail=err, hint="请检查输出路径是否合法")
-            return build_error(data={"error_detail": err, "params": {"output_path": output_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         if warn:
             logger.warning(f"[screen_capture] {warn}")
 
@@ -137,7 +137,7 @@ def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str,
         else:
             err_code = ERR_SCREENSHOT
         llm_data = _build_screen_capture_llm_data("error", duration_ms, output_path=output_path, region=region, display=display, err_code=err_code, detail=error_detail, hint="请检查屏幕显示设置或安装必要的依赖库(mss/pyautogui)")
-        return build_error(data={"error_detail": error_detail, "params": err_params}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     image_path = result.pop("image_path", "")
     region_val = result.pop("region", None)

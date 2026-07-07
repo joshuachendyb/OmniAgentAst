@@ -141,12 +141,12 @@ async def tree(
     if not dir_path or not dir_path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", hint="请提供目录路径", user_include_hidden=include_hidden, user_sort_by=sort_by)
-        return build_error(data={"error_detail": "dir_path不能为空", "params": {"dir_path": dir_path}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     if sort_by not in ("name",):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name',当前值: '{sort_by}'", hint="sort_by只能为name", user_include_hidden=include_hidden, user_sort_by=sort_by)
-        return build_error(data={"error_detail": f"sort_by只支持name", "params": {"sort_by": sort_by}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth, include_hidden=include_hidden)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

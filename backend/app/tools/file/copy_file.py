@@ -71,18 +71,18 @@ async def copy(
     if not source or not source.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "source不能为空"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={"error_detail": "source不能为空", "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if not destination or not destination.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "destination不能为空"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={"error_detail": "destination不能为空", "params": {"destination": destination}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/源存在 — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
     is_valid, err, warn = validate_path(OpCategory.EXISTS, source)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": err}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={"error_detail": err, "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if warn:
         logger.warning(warn)
     # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
@@ -91,7 +91,7 @@ async def copy(
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": err}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={"error_detail": err, "params": {"destination": destination}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     if warn:
         logger.warning(warn)
 
@@ -101,12 +101,12 @@ async def copy(
     if src.resolve() == dst.resolve():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "源路径和目标路径相同"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={"error_detail": f"源路径和目标路径相同: {source}", "params": {"source": source, "destination": destination}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     if dst.exists() and not overwrite:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": f"目标已存在且overwrite=False: {destination}"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={"error_detail": f"目标已存在,设置overwrite=True覆盖", "params": {"source": source, "destination": destination}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     from app.services.safety.file_safety import record_operation, execute_with_safety
     from app.db.models.operation_enums import OperationType
 
@@ -114,7 +114,7 @@ async def copy(
     if not task_id:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "No active task"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={"error_detail": "No active task", "params": {}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         operation_id = record_operation(
@@ -171,9 +171,9 @@ async def copy(
                 data={},
                 llm_data=llm_data)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "复制失败"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={"error_detail": "复制失败", "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": str(e)}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={"error_detail": str(e), "params": {"source": source}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)

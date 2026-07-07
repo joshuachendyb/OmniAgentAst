@@ -197,7 +197,7 @@ def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             _sn = sheet_name or ""
             llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail, user_sheet_name=_sn, hint="文件类型不匹配,请使用.xlsx或.csv格式")
-            return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
     if suffix == ".csv":
         result = _read_csv_stdlib_inner(file_name, encoding="utf-8", delimiter=",", has_header=True, max_rows=10000)
@@ -205,7 +205,7 @@ def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any
         if not _check_module("openpyxl"):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装", user_sheet_name=sheet_name or "", hint="请安装openpyxl库")
-            return build_error(data={"error_detail": "openpyxl库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         result = _read_xlsx_inner(file_name, max_rows=10000, sheet_name=sheet_name)
 
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

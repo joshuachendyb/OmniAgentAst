@@ -98,14 +98,14 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err, hint="请检查输出路径", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
-            return build_error(data={"error_detail": err, "params": {"output_path": output_path}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         if warn:
             logger.warning(f"[generate_chart] {warn}")
 
     if not _check_module("matplotlib"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="matplotlib库未安装", hint="请安装matplotlib库", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
-        return build_error(data={"error_detail": "matplotlib库未安装", "params": {"library": "matplotlib"}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
     try:
         import matplotlib
@@ -122,7 +122,7 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
             if not path.exists():
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"文件不存在: {data}", hint="请检查数据文件路径", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
-                return build_error(data={"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}, llm_data=llm_data)
+                return build_error(data={}, llm_data=llm_data)
             if data.endswith('.xlsx'):
                 df = pd.read_excel(data, engine="openpyxl")
             else:
@@ -130,7 +130,7 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
             if len(df.columns) < 2:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据至少需要2列(标签列+数值列)", hint="数据文件至少需要2列", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
-                return build_error(data={"error_detail": "数据至少需要2列", "params": {"data": str(data)[:200]}}, llm_data=llm_data)
+                return build_error(data={}, llm_data=llm_data)
             labels = df.iloc[:, 0].tolist()
             values = df.iloc[:, 1].tolist()
         chart_data = {"labels": labels, "values": values}
@@ -140,7 +140,7 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             err_detail = validation["data"].get("error", "数据格式错误")
             llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err_detail, hint="数据验证失败，请检查数据格式", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
-            return build_error(data={"error_detail": err_detail, "params": {"data": str(chart_data)[:200]}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         labels = chart_data.get("labels", [])
         values = chart_data.get("values", [])
@@ -148,7 +148,7 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
         if not labels or not values:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据格式错误,需要包含labels和values字段", hint="数据需要labels和values字段", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
-            return build_error(data={"error_detail": "数据格式错误", "params": {"data": str(chart_data)[:200]}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         if output_path is None:
             timestamp = timestamp_for_filename()
@@ -201,7 +201,7 @@ def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=str(e), hint="图表生成异常，请检查数据", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
-        return build_error(data={"error_detail": str(e), "params": {"data": str(data)[:200]}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["generate_chart"]

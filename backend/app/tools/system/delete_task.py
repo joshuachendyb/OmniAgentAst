@@ -51,7 +51,7 @@ def delete_task(task_name: str) -> dict:
         if platform.system() != "Windows":
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, detail="delete_task仅支持Windows系统", hint="当前系统不是Windows")
-            return build_error(data={"error_detail": "delete_task仅支持Windows系统", "params": {"task_name": task_name}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         query_cmd = ["schtasks", "/query", "/tn", task_name]
         query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=SUBPROCESS_TIMEOUT_DEFAULT)
@@ -59,7 +59,7 @@ def delete_task(task_name: str) -> dict:
         if query_result.returncode != 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_TASK_NOT_FOUND, detail=f"计划任务 {task_name} 不存在", hint="请检查任务名称是否正确")
-            return build_error(data={"error_detail": f"计划任务 {task_name} 不存在", "params": {"task_name": task_name}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         cmd = ["schtasks", "/delete", "/tn", task_name, "/f"]
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
@@ -68,7 +68,7 @@ def delete_task(task_name: str) -> dict:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             err_msg = result.stderr.strip() or result.stdout.strip()
             llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_TASK_DELETE, err_msg, hint="删除任务失败,请检查权限")
-            return build_error(data={"error_detail": err_msg, "params": {"task_name": task_name}}, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {}
@@ -84,16 +84,16 @@ def delete_task(task_name: str) -> dict:
     except subprocess.TimeoutExpired:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_SHELL_TIMEOUT, detail="删除计划任务超时", hint="删除计划任务超时")
-        return build_error(data={"error_detail": "删除计划任务超时", "params": {"task_name": task_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_SHELL_COMMAND_NOT_FOUND, detail="schtasks命令不存在", hint="schtasks命令不存在")
-        return build_error(data={"error_detail": "schtasks命令不存在", "params": {"task_name": task_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[delete_task] 删除计划任务失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_TASK_DELETE, str(e), hint="删除任务异常,请检查系统状态")
-        return build_error(data={"error_detail": str(e), "params": {"task_name": task_name}}, llm_data=llm_data)
+        return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["delete_task"]
