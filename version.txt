@@ -1,4 +1,26 @@
-﻿v0.18.2
+﻿v0.18.3
+更新时间: 2026-07-07 18:44:58
+## v0.18.2→v0.18.3 变更汇总 - 小欧-2026-07-07
+
+### refactor: 全工具summary格式统一化(build_error去冗余+安全校验)
+- tools build_error去冗余(data空llm承载全量+send_notification摘要优化) - 小欧-2026-07-07
+- observation_formatter精简+shell_schema文档更新 - 小欧-2026-07-07
+- system_prompts删除文本工具规则(#在多行字符串内无效) - 小欧-2026-07-07
+- time_now/tool_search摘要格式优化(冒号前置) - 小欧-2026-07-07
+- file工具summary格式统一化(操作+对象，成功/失败) - 小欧-2026-07-07
+- 工具summary格式统一化+download可选路径+safety记录修正 - 小欧-2026-07-07
+- download_file destination_path安全校验(空值+路径遍历) - 小欧-2026-07-07
+- document/system工具summary格式统一化 - 小欧-2026-07-07
+- dataanalysis/timer/registry工具summary格式统一化 - 小欧-2026-07-07
+- generate_chart摘要补output_path+timer_set NaN防护 - 小欧-2026-07-07
+- desktop工具summary格式统一化+timer_set NaN防护 - 小欧-2026-07-07
+
+### docs: E2E P9测试记录3份
+- 新增E2E P9测试记录3份 - 小欧-2026-07-07
+
+---
+
+v0.18.2
 更新时间: 2026-07-07 07:48:51
 ## v0.18.1→v0.18.2 变更汇总 - 小欧-2026-07-07
 
