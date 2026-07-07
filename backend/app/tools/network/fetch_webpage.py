@@ -148,8 +148,33 @@ def _extract_main_content(html: str) -> Optional[str]:
     return None
 
 
+def _clean_markdown_content(text: str) -> str:
+    """清理markdown中的导航噪音、HTML实体等 — 小欧 2026-07-07"""
+    import html as _html
+    # 清理HTML实体
+    text = _html.unescape(text)
+    # 清理HTML注释
+    text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
+    # 先移除markdown链接 [text](url) → text (必须在导航移除前)
+    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    # 移除导航栏模式: "new | past | comments | ask | show | jobs | submit login"
+    text = re.sub(r'\bnew\b\s*\|\s*\bpast\b\s*\|\s*\bcomments?\b[^\n]*?(?:login|submit)\b[^\n]*?1\.', '1.', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bask\b\s*\|\s*\bshow\b\s*\|\s*\bjobs?\b[^\n]*?(?:login|submit)\b[^\n]*?1\.', '1.', text, flags=re.IGNORECASE)
+    # 移除投票/分数: "186 points by xxx ..."
+    text = re.sub(r'\d+\s+points?\s+by\s+\S+[^\n]*', '', text, flags=re.IGNORECASE)
+    # 移除评论数: "| 40 comments"
+    text = re.sub(r'\|?\s*\d+\s+comments?\b', '', text, flags=re.IGNORECASE)
+    # 移除hide链接: "| hide?id=..."
+    text = re.sub(r'\|?\s*hide\?id=\S+', '', text, flags=re.IGNORECASE)
+    # 清理多余空行和空格
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r' {2,}', ' ', text)
+    return text.strip()
+
+
 def _html_to_markdown(html: str) -> str:
-    """简易HTML转Markdown — 小欧 2026-06-22, 2026-06-23 改进:优先提取正文区域"""
+    """简易HTML转Markdown — 小欧 2026-06-22, 2026-06-23 改进:优先提取正文区域
+    小欧 2026-07-07: 转换后清理导航噪音"""
     text = html
     main_content = _extract_main_content(html)
     if main_content:
@@ -177,6 +202,7 @@ def _html_to_markdown(html: str) -> str:
     text = HTML_TAG_PATTERN.sub(' ', text)
     text = MULTI_WHITESPACE_PATTERN.sub(' ', text)
     text = re.sub(r'\n\s*\n', '\n\n', text)
+    text = _clean_markdown_content(text)
     return text.strip()
 
 
