@@ -238,8 +238,8 @@ def _build_execute_shell_command_llm_data(
     output_len: int = 0, stderr_len: int = 0, hint: str = "",
 ) -> Dict[str, Any]:
     """execute_shell_command 的 llm_data 构建函数 — 小欧 2026-07-05 新增hint"""
-    cmd_short = (command[:60] + "..." + command[-37:]) if command and len(command) > 100 else (command[:100] if command else "")
-    _act_params = {"command": command}
+    cmd_short = (command[:80] + "..." + command[-80:]) if command and len(command) > 200 else (command[:200] if command else "")
+    _act_params = {"command": cmd_short}
     if shell_type:
         _act_params["shell_type"] = shell_type
     if timeout:
