@@ -49,7 +49,7 @@ def _build_compress_files_llm_data(
         _act_params["exclude_patterns"] = user_exclude_patterns
     if exec_code == "error":
         return {
-            "summary": f"压缩失败: {source}",
+            "summary": f"压缩{source}，失败",
             "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": _act_params},
             "status": {"exec_code": "error", "message": "压缩失败", "code": ERR_FILE_COMPRESS_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径及权限"},
             "duration_ms": duration_ms,
@@ -57,7 +57,7 @@ def _build_compress_files_llm_data(
         }
     ratio = 1 - (compressed_size / original_size) if original_size > 0 else 0
     return {
-        "summary": f"压缩 {source} -- 生成压缩文件:{user_destination}; 压缩成功，包含 {file_count} 个文件，从 {original_size} 压缩到 {compressed_size} 字节",
+        "summary": f"压缩{source}，成功: {file_count}个文件，{original_size}→{compressed_size}字节，压缩率{ratio:.1%}",
         "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": _act_params},
         "status": {"exec_code": "success", "message": "压缩成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

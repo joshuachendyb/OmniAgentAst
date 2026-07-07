@@ -130,7 +130,7 @@ def _build_write_text_file_llm_data(
         _act_params["append"] = user_append
     if exec_code == "error":
         return {
-            "summary": f"写入失败: {file_path}",
+            "summary": f"写入文件{file_path}，失败",
             "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "写入失败", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查路径和写入权限"},
             "duration_ms": duration_ms,
@@ -140,7 +140,7 @@ def _build_write_text_file_llm_data(
         if mtime_warning:
             hint = ("；".join([hint, mtime_warning]) if hint else mtime_warning)
         return {
-            "summary": f"写入 {file_path}，{bytes_written}字节。注意: {detail or mtime_warning}",
+            "summary": f"写入文件{file_path}，成功,提示说明: {detail or mtime_warning}，{bytes_written}字节",
             "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
             "status": {"exec_code": "warning", "message": f"写入成功但有警告: {detail or mtime_warning}", "code": "", "detail": detail or mtime_warning, "hint": hint or "请确认编码是否正确"},
             "duration_ms": duration_ms,
@@ -149,7 +149,7 @@ def _build_write_text_file_llm_data(
             },
         }
     return {
-        "summary": f"写入文件 {file_path}，成功，共 {bytes_written} 字节",
+            "summary": f"写入文件{file_path}，成功: {bytes_written}字节",
         "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

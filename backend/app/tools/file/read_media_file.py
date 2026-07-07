@@ -45,14 +45,14 @@ def _build_read_media_file_llm_data(
     """read_media_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数"""
     if exec_code == "error":
         return {
-            "summary": f"读取媒体文件失败: {detail}",
+            "summary": f"读取媒体文件{file_path}，失败",
             "action": {"tool": "readmedia", "tool_zh": "读取媒体", "target": file_path, "params": {"file_path": file_path}},
             "status": {"exec_code": "error", "message": "读取媒体文件失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-            "summary": f"读取媒体文件成功: {file_name}（{mime_type}，{file_size}字节）",
+            "summary": f"读取媒体文件{file_path}，成功: {mime_type}，{file_size}字节",
         "action": {"tool": "readmedia", "tool_zh": "读取媒体", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": "success", "message": "读取媒体文件成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

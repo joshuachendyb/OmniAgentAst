@@ -155,7 +155,7 @@ def _build_list_directory_llm_data(
         _act_params["offset"] = user_offset
     if exec_code == "error":
         return {
-            "summary": f"列出目录失败: {dir_path}",
+            "summary": f"列出目录{dir_path}，失败",
             "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "列出目录失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
             "duration_ms": duration_ms,
@@ -172,16 +172,16 @@ def _build_list_directory_llm_data(
         warning_detail = detail if detail else f"总数{total}条, 输出前{LISTDIR_PAGE_SIZE}条"
         warning_hint = hint if hint else "请使用更精确的路径或筛选条件"
         return {
-            "summary": f"列出目录成功: {dir_path} ({total}项, {file_count}个文件, {dir_count}个目录, 已截断)",
+            "summary": f"列出目录{dir_path}，成功,提示说明: {total}项，{file_count}个文件，{dir_count}个目录，已截断",
             "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
             "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": m,
         }
-    summary = f"列出目录成功: {dir_path} ({total}项, {file_count}个文件, {dir_count}个目录)"
+    summary = f"列出目录{dir_path}，成功: {total}项，{file_count}个文件，{dir_count}个目录"
     if user_offset:
         end_offset = min(user_offset + LISTDIR_PAGE_SIZE, total)
-        summary += f", 第{user_offset+1}-{end_offset}项"
+        summary += f"，第{user_offset+1}-{end_offset}项"
     return {
         "summary": summary,
         "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},

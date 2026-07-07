@@ -85,7 +85,7 @@ def _build_delete_file_llm_data(
     extra_metrics = extra_metrics or {}
     if exec_code == "error":
         return {
-            "summary": f"删除失败: {source}",
+            "summary": f"删除{source}，失败",
             "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": _act_params},
             "status": {"exec_code": "error", "message": "删除失败", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查文件是否存在"},
             "duration_ms": duration_ms,
@@ -93,7 +93,7 @@ def _build_delete_file_llm_data(
         }
     _suffix = extra_metrics.get("status", {}).get("text", "") or extra_metrics.get("deleted", {}).get("text", "")
     return {
-        "summary": f"删除成功: {source}（{_suffix}）" if _suffix else f"删除成功: {source}",
+        "summary": f"删除{source}，成功: {_suffix}" if _suffix else f"删除{source}，成功",
         "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": _act_params},
         "status": {"exec_code": "success", "message": "删除成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

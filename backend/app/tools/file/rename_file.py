@@ -30,13 +30,13 @@ def _build_rename_file_llm_data(
         _act_params["destination"] = user_destination
     if exec_code == "error":
         return {
-            "summary": f"重命名失败: {source}",
+            "summary": f"重命名{source}，失败",
             "action": {"tool": "rename", "tool_zh": "重命名", "target": source, "params": _act_params},
             "status": {"exec_code": "error", "message": "重命名失败", "code": ERR_FILE_RENAME_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和新名称"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    _summary = f"重命名 {source} → {new_name} 成功" if new_name else f"重命名 {source}"
+    _summary = f"重命名{source}，成功: {new_name}" if new_name else f"重命名{source}，成功"
     return {
         "summary": _summary,
         "action": {"tool": "rename", "tool_zh": "重命名", "target": source, "params": _act_params},
@@ -83,7 +83,7 @@ async def rename(
     if src.name == new_name:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination)
-        llm_data["summary"] = f"重命名 {source} → {new_name}（名称相同，无操作）"
+        llm_data["summary"] = f"重命名{source}，成功: {new_name}（名称相同，无操作）"
         llm_data["status"]["message"] = "名称相同，无需重命名"
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val) — skipped path

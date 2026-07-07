@@ -44,14 +44,14 @@ def _build_copy_file_llm_data(
     if exec_code == "error":
         detail = (extra_metrics or {}).get("detail", "复制失败")
         return {
-            "summary": f"复制失败: {source}",
+            "summary": f"复制文件{source}，失败",
             "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": _act_params},
             "status": {"exec_code": "error", "message": "复制失败", "code": ERR_FILE_COPY_FAILED, "detail": detail, "hint": hint if hint else "请检查源文件路径和目标路径及权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-            "summary": f"复制成功: {source} -> {destination}",
+            "summary": f"复制文件{source}，成功: 目标{destination}",
         "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": _act_params},
         "status": {"exec_code": "success", "message": "复制成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

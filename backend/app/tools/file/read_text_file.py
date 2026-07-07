@@ -234,7 +234,7 @@ def _build_read_text_file_llm_data(
         _pi += f"，编码{encoding_name}"
     if exec_code == "error":
         return {
-            "summary": f"读取失败: {file_path}",
+            "summary": f"读取文件{file_path}，失败",
             "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "读取失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和参数是否正确"},
             "duration_ms": duration_ms,
@@ -242,7 +242,7 @@ def _build_read_text_file_llm_data(
         }
     if exec_code == "warning":
         return {
-            "summary": f"读取 {file_path}，{line_count}/{total_lines}行，{file_size}字节{_pi}。注意: {detail}",
+            "summary": f"读取文件{file_path}，成功,提示说明: {line_count}/{total_lines}行，{file_size}字节{_pi}，{detail}",
             "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": _act_params},
             "status": {"exec_code": "warning", "message": f"读取成功但有警告: {detail}", "code": "", "detail": detail, "hint": hint if hint else "请检查offset参数是否超出文件范围"},
             "duration_ms": duration_ms,
@@ -265,7 +265,7 @@ def _build_read_text_file_llm_data(
         msg = f"读取成功:第{start_line}-{end_line}行,共{total_lines}行{enc}"
         hint_text = ""
     return {
-        "summary": f"读取文件 {file_path}，成功，{line_count}/{total_lines}行，{file_size}字节{_pi}",
+        "summary": f"读取文件{file_path}，成功: {line_count}/{total_lines}行，{file_size}字节{_pi}",
         "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": msg, "code": "", "detail": "", "hint": hint_text},
         "duration_ms": duration_ms,

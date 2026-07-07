@@ -114,14 +114,14 @@ def _build_tree_llm_data(
         _act_params["sort_by"] = user_sort_by
     if exec_code == "error":
         return {
-            "summary": f"列出目录树失败: {dir_path}",
+            "summary": f"列出目录树{dir_path}，失败",
             "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "列出目录树失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"列出目录树成功: {dir_path}（{file_count}个文件，{dir_count}个目录）",
+        "summary": f"列出目录树{dir_path}，成功: {file_count}个文件，{dir_count}个目录",
         "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "列出目录树成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

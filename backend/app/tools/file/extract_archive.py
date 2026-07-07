@@ -39,7 +39,7 @@ def _build_extract_archive_llm_data(
         _act_params["overwrite"] = user_overwrite
     if exec_code == "error":
         return {
-            "summary": f"解压失败: {source}",
+            "summary": f"解压文件{source}，失败",
             "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": _act_params},
             "status": {"exec_code": "error", "message": "解压失败", "code": ERR_FILE_EXTRACT, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
@@ -56,7 +56,7 @@ def _build_extract_archive_llm_data(
     if skipped_files:
         parts.append(f"跳过{skipped_files}个文件")
     return {
-        "summary": f"解压成功: {source}，{'，'.join(parts)}",
+        "summary": f"解压文件{source}，成功: {'，'.join(parts)}",
         "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": _act_params},
         "status": {"exec_code": "success", "message": "解压成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
