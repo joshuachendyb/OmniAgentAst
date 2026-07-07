@@ -149,61 +149,31 @@ def _extract_main_content(html: str) -> Optional[str]:
 
 
 def _clean_markdown_content(text: str) -> str:
-    """清理markdown中的导航噪音、HTML实体等 — 小欧 2026-07-07"""
-    import html as _html
-    # 清理HTML实体
-    text = _html.unescape(text)
-    # 清理HTML注释
-    text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
-    # 先移除markdown链接 [text](url) → text (必须在导航移除前)
+    """清理markdown导航噪音 — 小沈 2026-07-05 (html2text已处理实体和注释，简化)"""
     text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
-    # 移除导航栏模式: "new | past | comments | ask | show | jobs | submit login"
     text = re.sub(r'\bnew\b\s*\|\s*\bpast\b\s*\|\s*\bcomments?\b[^\n]*?(?:login|submit)\b[^\n]*?1\.', '1.', text, flags=re.IGNORECASE)
     text = re.sub(r'\bask\b\s*\|\s*\bshow\b\s*\|\s*\bjobs?\b[^\n]*?(?:login|submit)\b[^\n]*?1\.', '1.', text, flags=re.IGNORECASE)
-    # 移除投票/分数: "186 points by xxx ..."
     text = re.sub(r'\d+\s+points?\s+by\s+\S+[^\n]*', '', text, flags=re.IGNORECASE)
-    # 移除评论数: "| 40 comments"
     text = re.sub(r'\|?\s*\d+\s+comments?\b', '', text, flags=re.IGNORECASE)
-    # 移除hide链接: "| hide?id=..."
     text = re.sub(r'\|?\s*hide\?id=\S+', '', text, flags=re.IGNORECASE)
-    # 清理多余空行和空格
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = re.sub(r' {2,}', ' ', text)
     return text.strip()
 
 
 def _html_to_markdown(html: str) -> str:
-    """简易HTML转Markdown — 小欧 2026-06-22, 2026-06-23 改进:优先提取正文区域
-    小欧 2026-07-07: 转换后清理导航噪音"""
-    text = html
-    main_content = _extract_main_content(html)
-    if main_content:
-        text = main_content
-    text = SCRIPT_TAG_PATTERN.sub('', text)
-    text = STYLE_TAG_PATTERN.sub('', text)
-    text = re.sub(r'<head[^>]*>.*?</head>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<nav[^>]*>.*?</nav>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<footer[^>]*>.*?</footer>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<aside[^>]*>.*?</aside>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<h1[^>]*>(.*?)</h1>', r'# \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h2[^>]*>(.*?)</h2>', r'## \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h3[^>]*>(.*?)</h3>', r'### \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h4[^>]*>(.*?)</h4>', r'#### \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h5[^>]*>(.*?)</h5>', r'##### \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h6[^>]*>(.*?)</h6>', r'###### \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', text, flags=re.IGNORECASE)
-    text = re.sub(r'<b[^>]*>(.*?)</b>', r'**\1**', text, flags=re.IGNORECASE)
-    text = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', text, flags=re.IGNORECASE)
-    text = re.sub(r'<i[^>]*>(.*?)</i>', r'*\1*', text, flags=re.IGNORECASE)
-    text = re.sub(r'<a[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', r'[\2](\1)', text, flags=re.IGNORECASE)
-    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<p[^>]*>(.*?)</p>', r'\1\n\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<li[^>]*>(.*?)</li>', r'- \1\n', text, flags=re.IGNORECASE)
-    text = HTML_TAG_PATTERN.sub(' ', text)
-    text = MULTI_WHITESPACE_PATTERN.sub(' ', text)
-    text = re.sub(r'\n\s*\n', '\n\n', text)
-    text = _clean_markdown_content(text)
-    return text.strip()
+    """html2text 转换HTML为Markdown — 小沈 2026-07-05 代替手写HTMLParser+regex(30+行→5行)"""
+    import html2text
+    main_html = _extract_main_content(html) or html
+    h = html2text.HTML2Text()
+    h.body_width = 0
+    h.ignore_links = False
+    h.ignore_images = False
+    h.ignore_tables = False
+    h.emphasis_mark = "*"
+    h.strong_mark = "**"
+    markdown = h.handle(main_html)
+    return _clean_markdown_content(markdown)
 
 
 def _build_fetch_webpage_llm_data(
@@ -375,36 +345,56 @@ async def fetchpage(
             status_code = playwright_result["status_code"]
         else:
             async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
-                response = await client.get(url, headers=headers)
+                actual_headers = dict(headers)
 
-                if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
-                    logger.info(f"[fetchpage] Cloudflare挑战检测,降级UA重试: {url}")
-                    simple_headers = dict(headers)
-                    simple_headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    response = await client.get(url, headers=simple_headers)
+                # 流式请求 + 读取硬截断5MB防OOM — 小沈 2026-07-05
+                async with client.stream("GET", url, headers=actual_headers) as resp:
+                    content_type = resp.headers.get("content-type", "")
+                    mime = content_type.split(";")[0].strip().lower() if content_type else ""
 
-                response.raise_for_status()
+                    if resp.status_code == 403 and resp.headers.get("cf-mitigated") == "challenge":
+                        logger.info(f"[fetchpage] Cloudflare挑战检测,降级UA重试: {url}")
+                        actual_headers["User-Agent"] = "Chrome/120.0.0.0"
+                        cf_resp = await client.get(url, headers=actual_headers)
+                        cf_resp.raise_for_status()
+                        content_type = cf_resp.headers.get("content-type", "")
+                        mime = content_type.split(";")[0].strip().lower() if content_type else ""
+                        if mime and (mime.startswith("image/") or mime in ("application/pdf",)):
+                            raw_bytes = cf_resp.content
+                            media_result = _build_media_result(url, mime, raw_bytes, extract_format, cf_resp.status_code)
+                            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, cf_resp.status_code, mime_type=mime, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+                            return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
+                        html_content = cf_resp.text[:5_242_880]
+                        status_code = cf_resp.status_code
+                    else:
+                        resp.raise_for_status()
 
-                MAX_FETCH_CONTENT_LENGTH = 100 * 1024 * 1024
-                cl = response.headers.get("content-length")
-                if cl and int(cl) > MAX_FETCH_CONTENT_LENGTH:
-                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                    return build_error(data={}, llm_data=_build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=f"内容过大({int(int(cl)/1024/1024)}MB)", hint="请使用更具体的URL或减少内容", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy))
+                        MAX_CONTENT_LENGTH = 100 * 1024 * 1024
+                        cl = resp.headers.get("content-length")
+                        if cl and int(cl) > MAX_CONTENT_LENGTH:
+                            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                            return build_error(data={}, llm_data=_build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=f"内容过大({int(int(cl)/1024/1024)}MB)", hint="请使用更具体的URL或减少内容", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy))
 
-                content_type = response.headers.get("content-type", "")
-                mime = content_type.split(";")[0].strip().lower() if content_type else ""
-                if mime and (mime.startswith("image/") or mime in ("application/pdf",)):
-                    raw_bytes = response.content
-                    media_result = _build_media_result(url, mime, raw_bytes, extract_format, response.status_code)
-                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                    llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, response.status_code, mime_type=mime, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                    return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
+                        if mime and (mime.startswith("image/") or mime in ("application/pdf",)):
+                            raw_bytes = await resp.aread()
+                            media_result = _build_media_result(url, mime, raw_bytes, extract_format, resp.status_code)
+                            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, resp.status_code, mime_type=mime, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+                            return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
 
-                html_content = response.text
-                content_type = response.headers.get("content-type", "")
+                        MAX_READ_BYTES = 5_242_880
+                        chunks, total = [], 0
+                        async for chunk in resp.aiter_bytes():
+                            remaining = MAX_READ_BYTES - total
+                            if remaining <= 0:
+                                break
+                            chunks.append(chunk[:remaining] if len(chunk) > remaining else chunk)
+                            total += len(chunk)
+                        html_content = b''.join(chunks).decode('utf-8', errors='replace')
+                        status_code = resp.status_code
 
             extracted_content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
-            status_code = response.status_code
 
         # =============================================================================
         # 数据设计：data仅保留content纯数据，format/content_type/truncated通过summary传递
