@@ -858,7 +858,7 @@ def _format_matches(matches: list) -> str:
     is_files_mode = "lines" in matches[0] if matches else False
     lines = []
     if is_files_mode:
-        lines.append(f"匹配文件({len(matches)}个):")
+        lines.append("文件 : 行号")
     for i, m in enumerate(matches):
         if i >= OBS_MAX_DISPLAY_ITEMS:
             lines.append(f"  ... 还有 {len(matches) - OBS_MAX_DISPLAY_ITEMS} 个匹配项")
