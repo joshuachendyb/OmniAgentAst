@@ -54,3 +54,8 @@ config/
 # CodeArts cache
 .codeartsdoer/
 
+
+# Temp files
+chart_*.png
+*_scan_tools.py
+tmp_*
