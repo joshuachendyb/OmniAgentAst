@@ -862,7 +862,7 @@ def _format_matches(matches: list) -> str:
         file_path = m.get("file", "")
         file_lines = m.get("lines")
         if file_lines:
-            lines.append(f"  {file_path}: {file_lines}")
+            lines.append(f"  {file_path}: 行号{file_lines}")
         else:
             matched = m.get("matched", [])
             matched_str = ", ".join(matched) if isinstance(matched, list) else str(matched)
