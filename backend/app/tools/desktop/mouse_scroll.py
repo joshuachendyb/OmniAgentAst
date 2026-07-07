@@ -27,7 +27,7 @@ def _build_mouse_scroll_llm_data(exec_code: str, duration_ms: int, direction: st
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"滚动完成: {direction} {amount}单位",
+        "summary": f"滚动完成: 方向是{direction} ,滚动{amount}单位",
         "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "target": "", "params": {"direction": direction, "amount": amount}},
         "status": {"exec_code": "success", "message": "滚动完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},

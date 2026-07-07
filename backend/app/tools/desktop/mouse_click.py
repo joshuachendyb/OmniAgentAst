@@ -21,13 +21,13 @@ def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: 
     """mouse_click的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
-            "summary": f"点击失败: {detail}",
+            "summary": f"点击({x},{y})，失败: {detail}",
             "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button}},
             "status": {"exec_code": "error", "message": f"点击失败: {detail}", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"点击成功: 坐标({x},{y})",
+        "summary": f"点击({x},{y})，成功",
         "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button, "click_type": click_type}},
         "status": {"exec_code": "success", "message": "点击成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

@@ -108,7 +108,7 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if "error_detail" in result:
             llm_data = _build_clipboard_control_llm_data("error", duration_ms, "read", detail=result["error_detail"], hint="请检查剪贴板读取权限或确保剪贴板未被其他程序占用")
-            return build_error(data=result, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         llm_data = _build_clipboard_control_llm_data("success", duration_ms, "read", len(result.get("text", "")))
         # ---- observation_formatter route [read mode] --------------------------------
         # branch: #10 raw text
@@ -126,7 +126,7 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if "error_detail" in result:
             llm_data = _build_clipboard_control_llm_data("error", duration_ms, "write", detail=result["error_detail"], hint="请检查剪贴板写入权限或确保剪贴板未被其他程序占用")
-            return build_error(data=result, llm_data=llm_data)
+            return build_error(data={}, llm_data=llm_data)
         llm_data = _build_clipboard_control_llm_data("success", duration_ms, "write", len(content))
         # ---- observation_formatter route [write mode] --------------------------------
         # branch: #2 raw str

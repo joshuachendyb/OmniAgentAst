@@ -53,7 +53,7 @@ async def _invoke_timer_callback(timer_id: str, callback: str) -> Dict[str, Any]
 
 def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, trigger_at: str, delay: float, callback: str = "", detail: str = "", hint: str = "") -> dict:
     """timer_set的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
-    _delay_sec = 0 if isinstance(delay, float) and math.isnan(delay) else int(delay)
+    _delay_sec = 0 if isinstance(delay, float) and not math.isfinite(delay) else int(delay)
     _act_params = {"delay": delay}
     if callback:
         _act_params["callback"] = callback

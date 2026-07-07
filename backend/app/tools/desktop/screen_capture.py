@@ -39,7 +39,7 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, output_path
         metrics["monitors"] = {"value": monitor_count, "text": f"{monitor_count}个"}
     monitor_text = f"（{monitor_count}个显示器）" if monitor_count > 0 else ""
     return {
-        "summary": f"截图成功: 已保存到{output_path}{monitor_text}",
+        "summary": f"截图成功: 已保存到{output_path}.属于第{monitor_text}",
         "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": output_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "截图完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
