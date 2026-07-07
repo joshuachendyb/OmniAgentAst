@@ -410,16 +410,18 @@ def _format_llm_data(llm_data: Dict) -> str:
     summary = llm_data.get("summary", "")
     exec_code = status.get("exec_code", "success")
     message = status.get("message", "")
+    tool = action.get("tool", "")
     tool_zh = action.get("tool_zh", "")
     target = action.get("target", "")
     diff = llm_data.get("diff", "")
 
-    # 第1行: 工具执行结果: 成功/失败 — 小欧 2026-07-07
+    # 第1行: 工具执行结果 — 小欧 2026-07-07 — 北京老陈 2026-07-07 加tool_zh/tool/target
+    _st = f" {tool_zh} 调用工具{tool},目的是处理 {target}"
     status_line = {
-        "success": "工具执行结果: 成功",
-        "error": "工具执行结果: 失败",
-        "warning": "工具执行结果: 成功（有警告）",
-    }.get(exec_code, "工具执行结果: 成功")
+        "success": f"工具执行结果:{_st}- 工具执行: 成功",
+        "error": f"工具执行结果:{_st}- 工具执行: 失败",
+        "warning": f"工具执行结果:{_st}- 工具执行: 完成-[有警告提示]",
+    }.get(exec_code, f"工具执行结果:{_st}- 工具执行: 成功")
 
     # 第2行: 观察: {tool_zh} {target} - {message} - {summary} — 小沈 2026-07-06
     tool_desc = tool_zh
@@ -465,6 +467,9 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
         detail = format_data_detail(data, llm_data)
         if detail:
             text += f"\n详情:\n{detail}"
+        else:
+            text += "\n详情: 结果已在观察中完整说明"
+
     return text
 
 
