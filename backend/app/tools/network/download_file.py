@@ -141,7 +141,13 @@ async def download(
         llm_data = _build_download_file_llm_data("error", 0, url, dest_path=destination_path or "", err_code=ERR_INVALID_URL, detail=proxy_err, hint="请检查代理配置", timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
 
-    if destination_path:
+    if destination_path is not None:
+        if not isinstance(destination_path, str) or not destination_path.strip():
+            llm_data = _build_download_file_llm_data("error", 0, url, dest_path="", err_code=ERR_NETWORK_INVALID_PATH, detail="destination_path不能为空", hint="请填写目标路径或留空自动命名", timeout=timeout, proxy=proxy, headers=headers)
+            return build_error(data={}, llm_data=llm_data)
+        if any(p == ".." for p in destination_path.replace("\\", "/").split("/")):
+            llm_data = _build_download_file_llm_data("error", 0, url, dest_path=destination_path, err_code=ERR_NETWORK_INVALID_PATH, detail="destination_path不允许路径遍历", hint="请使用合法文件名", timeout=timeout, proxy=proxy, headers=headers)
+            return build_error(data={}, llm_data=llm_data)
         dest_path = os.path.abspath(os.path.join(_DOWNLOAD_DIR, destination_path.lstrip("/\\")))
     else:
         filename = os.path.basename(urlparse(url).path) or f"download_{hash(url) & 0xFFFFFFFF}"
