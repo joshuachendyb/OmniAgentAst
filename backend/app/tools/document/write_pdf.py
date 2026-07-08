@@ -21,7 +21,7 @@ from app.tools.tool_constants import ERR_WRITE_PDF
 from reportlab.lib.units import mm
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
-from app.utils.table_helper import parse_markdown_table, get_table_header_style_config
+from app.utils.table_helper import parse_markdown_table, get_table_header_style_config, normalize_table_data
 from app.tools.document.md_inline_utils import _md_to_pdf_xml
 
 
@@ -185,6 +185,7 @@ def write_pdf(
                 i += 1
         
         if table_data:
+            table_data = normalize_table_data(table_data)
             if table_data and len(table_data) > 0:
                 pdf_table = _create_pdf_table(table_data, chinese_style)
                 elements.append(pdf_table)

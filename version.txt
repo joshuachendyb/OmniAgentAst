@@ -1,13 +1,20 @@
 ﻿v0.18.9
-更新时间: 2026-07-08 18:29:29
-## v0.18.8→v0.18.9 变更汇总 - 小欧-2026-07-08
+更新时间: 2026-07-08 22:18:10
+## v0.18.8→v0.18.9 变更汇总 - 小沈-2026-07-08
 
-### fix: PS5.1中文编码+N1修复+(3项增强/修复)
+### feat: edittext安全检测+table_helper增强+pptx归一化
 
-- shell_engine.py: PS stdin编码改用locale.getpreferredencoding()(中文Windows=cp936/GBK)，修复UTF-8编码写入时中文乱码问题(N1) - 小欧-2026-07-08
-- extract_archive.py: AES-256加密ZIP pyzipper后备支持，zipfile不支持的AES加密自动降级pyzipper - 小欧-2026-07-08
-- file_register.py: tree描述去掉max_depth默认值说明 - 小欧-2026-07-08
-- network_schema.py: diagnose host参数添加内网地址禁止访问安全提示 - 小欧-2026-07-08
+- edit_text_file.py: 新增_safety_structure_loss检测函数/类定义丢失，_safety_short_old检测短old_string批量替换风险，error分支增强参数颠倒提示 — 小沈-2026-07-08
+- table_helper.py: dict_table_to_rows从write_pptx迁入共享；normalize_table_data增强支持dict{headers,rows}/list[dict]/None格式 — 小欧-2026-07-08
+- write_docx.py/write_pdf.py: 集成normalize_table_data归一化处理 — 小欧-2026-07-08
+- write_pptx.py: content+tables归一化（覆盖C1~C11/T1~T6共17种输入结构） — 小欧-2026-07-08
+
+### fix: PS5.1中文编码+N1修复+(3项增强/修复) — 小欧-2026-07-08
+
+- shell_engine.py: PS stdin编码改用locale.getpreferredencoding()解决中文乱码(N1) — 小欧-2026-07-08
+- extract_archive.py: AES-256加密ZIP pyzipper后备支持 — 小欧-2026-07-08
+- file_register.py: tree描述去掉max_depth默认值说明 — 小欧-2026-07-08
+- network_schema.py: diagnose host添加内网地址禁止访问安全提示 — 小欧-2026-07-08
 
 ---
 

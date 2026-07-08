@@ -10,7 +10,7 @@
 创建时间: 2026-06-24
 作者: 小健
 """
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 
 
 def parse_markdown_table(lines: List[str], start_idx: int) -> Tuple[List[List[str]], int]:
@@ -118,13 +118,53 @@ def get_table_border_config() -> Dict[str, Any]:
     }
 
 
-def normalize_table_data(table_data: List[List[Any]]) -> List[List[str]]:
+def dict_table_to_rows(dict_table: dict) -> List[List[str]]:
+    """把dict型表格{headers,rows}转成list[list]
+
+    — 小欧 2026-07-08（从write_pptx迁入共享）
     """
-    标准化表格数据（所有元素转字符串）
-    
-    — 小健 2026-06-24
+    rows = []
+    headers = dict_table.get("headers", [])
+    if headers:
+        rows.append([str(h) if h is not None else "" for h in headers])
+    for row in dict_table.get("rows", []):
+        if isinstance(row, list):
+            rows.append([str(c) if c is not None else "" for c in row])
+        else:
+            rows.append([str(row) if row is not None else ""])
+    return rows
+
+
+def normalize_table_data(table_data: Any) -> Optional[List[List[str]]]:
+    """归一化表格数据为list[list[str]]标准格式
+
+    覆盖格式:
+    - list[list] → 原样，元素转str
+    - dict{headers,rows} → 转list[list]（调dict_table_to_rows）
+    - list[dict{headers,rows}] → 逐个转，合并成一张表
+    - None/空 → 返回None
+
+    — 小健 2026-06-24 创建
+    — 小欧 2026-07-08 扩展支持dict/list[dict]/None
     """
-    return [[str(cell) if cell is not None else "" for cell in row] for row in table_data]
+    if not table_data:
+        return None
+    if isinstance(table_data, dict):
+        rows = dict_table_to_rows(table_data)
+        return rows if rows else None
+    if isinstance(table_data, list):
+        if not table_data:
+            return None
+        first = table_data[0]
+        if isinstance(first, dict):
+            result = []
+            for td in table_data:
+                rows = dict_table_to_rows(td)
+                if rows:
+                    result.extend(rows)
+            return result if result else None
+        return [[str(c) if c is not None else "" for c in row] for row in table_data]
+    return None
 
 
 __all__ = [
@@ -132,5 +172,6 @@ __all__ = [
     "calculate_column_widths",
     "get_table_header_style_config",
     "get_table_border_config",
+    "dict_table_to_rows",
     "normalize_table_data",
 ]

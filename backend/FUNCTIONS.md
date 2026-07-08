@@ -71,7 +71,8 @@
 | `calculate_column_widths` | 计算列宽比例（按内容长度自适应） | table_data, total_width=1.0 | List[float] |
 | `get_table_header_style_config` | 获取表头样式配置（共享配置） | 无 | Dict[str, Any] |
 | `get_table_border_config` | 获取表格边框配置（共享配置） | 无 | Dict[str, Any] |
-| `normalize_table_data` | 标准化表格数据（所有元素转字符串） | table_data | List[List[str]] |
+| `dict_table_to_rows` | **【v1.7新增】** dict{headers,rows}转list[list] | dict_table | List[List[str]] |
+| `normalize_table_data` | **【v1.7增强】** 归一化表格数据，支持list[list]/dict/list[dict]/None | table_data | Optional[List[List[str]]] |
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -188,6 +189,7 @@ def my_parse_json(json_str):
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v1.7 | 2026-07-08 | table_helper新增dict_table_to_rows，增强normalize_table_data（支持dict/list[dict]/None） | 小欧 |
 | v1.6 | 2026-07-05 | text_utils新增add_line_numbers公共函数 | 小欧 |
 | v1.5 | 2026-07-02 | _try_fix_incomplete_json新增,_normalize_tool_params从llm_core迁入json_utils.py | 小沈 |
 | v1.4 | 2026-06-17 | 新增read_json_file函数 | 小沈 |

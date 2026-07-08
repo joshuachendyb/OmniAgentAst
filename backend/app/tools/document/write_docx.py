@@ -21,7 +21,7 @@ from app.tools.file_type_checker import check_for_document_tool
 from app.tools.tool_constants import ERR_WRITE_DOCX
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
-from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config
+from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config, normalize_table_data
 from app.tools.document.md_inline_utils import _parse_inline_md
 
 
@@ -206,6 +206,7 @@ def write_docx(
                 i += 1
         
         if table_data:
+            table_data = normalize_table_data(table_data)
             if table_data and len(table_data) > 0 and len(table_data[0]) > 0:
                 t = doc.add_table(rows=len(table_data), cols=len(table_data[0]))
                 for ri, row_data in enumerate(table_data):

@@ -110,11 +110,36 @@ def _apply_replacement(
     return content, count, total_matches
 
 
+def _safety_structure_loss(original: str, new_content: str) -> str:
+    """检测替换是否导致函数/类定义丢失 — 小沈 2026-07-08"""
+    orig_funcs = set(re_mod.findall(r'^\s*(?:async\s+)?def\s+(\w+)', original, re_mod.MULTILINE))
+    new_funcs  = set(re_mod.findall(r'^\s*(?:async\s+)?def\s+(\w+)', new_content, re_mod.MULTILINE))
+    parts = []
+    if len(new_funcs) < len(orig_funcs):
+        lost = orig_funcs - new_funcs
+        if lost:
+            parts.append(f"函数: {', '.join(sorted(lost))}")
+    orig_classes = set(re_mod.findall(r'^\s*class\s+(\w+)', original, re_mod.MULTILINE))
+    new_classes  = set(re_mod.findall(r'^\s*class\s+(\w+)', new_content, re_mod.MULTILINE))
+    if len(new_classes) < len(orig_classes):
+        lost = orig_classes - new_classes
+        if lost:
+            parts.append(f"类: {', '.join(sorted(lost))}")
+    return "替换将删除以下定义: " + "；".join(parts) if parts else ""
+
+
+def _safety_short_old(old_string: str, replace_all: bool, total_matches: int) -> str:
+    """检测过短old_string批量替换风险 — 小沈 2026-07-08"""
+    if replace_all and len(old_string) <= 2 and total_matches >= 5:
+        return f"old_string仅{len(old_string)}字符，replace_all=True匹配{total_matches}处，请确认"
+    return ""
+
+
 def _build_edit_text_file_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", applied: int = 0, total: int = 0, detail: str = "",
     diff: str = "", total_matches: int = 0, mtime_warning: str = "",
-    hint: str = "",
+    hint: str = "", safety_hint: str = "",
     user_old_string: str = "", user_new_string: str = "",
     user_replace_all: Optional[bool] = None, user_ignore_case: Optional[bool] = None,
     user_encoding: Optional[str] = None,
@@ -142,13 +167,15 @@ def _build_edit_text_file_llm_data(
     _hint_parts = []
     if mtime_warning:
         _hint_parts.append(mtime_warning)
+    if safety_hint:
+        _hint_parts.append(safety_hint)
     _warning_msg = ""
     if total_matches > applied:
         _remaining = total_matches - applied
         _warning_msg = f"剩余{_remaining}处未修改"
         _hint_parts.append("建议使用 replace_all=True 一次替换所有匹配")
     _hint = "；".join(_hint_parts) if _hint_parts else ""
-    _exec_code = "warning" if (_warning_msg or mtime_warning) else "success"
+    _exec_code = "warning" if (_warning_msg or mtime_warning or safety_hint) else "success"
     if _exec_code == "warning":
         _summary = f"编辑文件{file_path}，成功,提示说明: 替换 {applied}/{total_matches} 处"
         if _warning_msg:
@@ -251,6 +278,10 @@ async def _precise_replace_in_file(
                 fromfile=str(path), tofile=str(path),
                 n=3,
             ))
+            sl_warn = _safety_structure_loss(content, new_content)
+            so_warn = _safety_short_old(old_string, replace_all, total_matches)
+            if sl_warn or so_warn:
+                replace_result['safety_hint'] = ("；".join(filter(None, [sl_warn, so_warn])))[:200]
             write_content = new_content.replace('\n', '\r\n') if _has_crlf else new_content
             with open(path, 'w', encoding=used_enc, newline='') as f:
                 f.write(write_content)
@@ -271,8 +302,11 @@ async def _precise_replace_in_file(
             total_lines = replace_result.get('total_lines', 0)
             if total_lines == 1 and not content.strip():
                 return {"error_detail": f"未找到匹配内容: 文件为空", "old_string": old_string[:50]}
+            _ed = f"未找到匹配内容: '{old_string[:80]}'。文件共{total_lines}行，前15行:\n{preview}"
+            if count == 0 and new_string and new_string in content:
+                _ed += "。提示: new_string 在文件中但 old_string 未找到，可能参数填反"
             return {
-                "error_detail": f"未找到匹配内容: '{old_string[:80]}'。文件共{total_lines}行，前15行:\n{preview}",
+                "error_detail": _ed,
                 "old_string": old_string[:50],
             }
 
@@ -282,6 +316,7 @@ async def _precise_replace_in_file(
             "total_matches": replace_result.get("total_matches", count),
             "diff": replace_result.get("diff", ""),
             "mtime_warning": mtime_warning,
+            "safety_hint": replace_result.get("safety_hint", ""),
         }
 
     except Exception as e:
@@ -335,6 +370,7 @@ async def edittext(
         diff=result.get("diff", ""),
         total_matches=result.get("total_matches", 0),
         mtime_warning=result.get("mtime_warning", "") or "",
+        safety_hint=result.get("safety_hint", ""),
         user_old_string=old_string, user_new_string=new_string,
         user_replace_all=replace_all, user_ignore_case=ignore_case,
         user_encoding=encoding,

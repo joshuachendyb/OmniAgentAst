@@ -21,7 +21,7 @@ from app.tools.tool_constants import ERR_DOC_WRITE_PPTX, ERR_DOC_NO_PPTX
 from app.utils.json_utils import coerce_json
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
-from app.utils.table_helper import calculate_column_widths, get_table_header_style_config
+from app.utils.table_helper import calculate_column_widths, get_table_header_style_config, dict_table_to_rows
 from app.tools.document.md_inline_utils import _parse_inline_md
 
 
@@ -179,6 +179,103 @@ def _add_pptx_table(slide, table_data, start_top=None):
     return Emu(int(top) + int(height) + int(Inches(0.3)))
 
 
+def _dict_table_to_rows(dict_table):
+    """把dict型表格{headers,rows}转成list[list] — 小欧 2026-07-08"""
+    return dict_table_to_rows(dict_table)
+
+
+def _extract_tables_from_content(content):
+    """从content提取表格数据，返回(text_to_render, extracted_tables) — 小欧 2026-07-08
+
+    覆盖C1~C11全部11种content结构:
+      C1 str / C2 list[str] / C3 list[dict] / C4 dict → 原样返回
+      C5 list[list]纯二维数组 → 全转表格
+      C6 混合list(str+dict+list) → 拆出list行合并成表
+      C7 dict type=table → 转表格
+      C8 list[dict]含type=table → 拆出转表
+      C9 [] / C10 None → 跳过
+      C11 含None元素 → 过滤None
+    """
+    if content is None:
+        return None, []
+    if isinstance(content, str):
+        return content, []
+    if isinstance(content, dict):
+        if content.get("type") == "table":
+            rows = _dict_table_to_rows(content)
+            return None, [rows] if rows else []
+        return content, []
+    if isinstance(content, list):
+        if not content:
+            return None, []
+        has_table_item = any(
+            isinstance(item, list)
+            or (isinstance(item, dict) and item.get("type") == "table")
+            for item in content
+        )
+        if not has_table_item:
+            return content, []
+        text_parts = []
+        extracted = []
+        current_table = []
+        for item in content:
+            if item is None:
+                continue
+            if isinstance(item, list):
+                current_table.append(item)
+            elif isinstance(item, dict) and item.get("type") == "table":
+                if current_table:
+                    extracted.append(current_table)
+                    current_table = []
+                rows = _dict_table_to_rows(item)
+                if rows:
+                    extracted.append(rows)
+            else:
+                if current_table:
+                    extracted.append(current_table)
+                    current_table = []
+                text_parts.append(item)
+        if current_table:
+            extracted.append(current_table)
+        return text_parts if text_parts else None, extracted
+    return None, []
+
+
+def _normalize_tables(tables):
+    """归一化tables为list[list[list]]标准格式 — 小欧 2026-07-08
+
+    覆盖T1~T6全部6种tables结构:
+      T1 list[list[list]] → 原样
+      T2 list[list]少包一层 → 自动包成[list]
+      T3 dict{headers,rows} → 转[list[list]]
+      T4 list[dict{headers,rows}] → 逐个转
+      T5 [] / T6 None → 返回[]
+    """
+    if not tables:
+        return []
+    if isinstance(tables, dict):
+        rows = _dict_table_to_rows(tables)
+        return [rows] if rows else []
+    if isinstance(tables, list):
+        if not tables:
+            return []
+        first = tables[0]
+        if isinstance(first, list):
+            if not first:
+                return []
+            if isinstance(first[0], list):
+                return tables
+            return [tables]
+        if isinstance(first, dict):
+            result = []
+            for td in tables:
+                rows = _dict_table_to_rows(td)
+                if rows:
+                    result.append(rows)
+            return result
+    return []
+
+
 def _normalize_text(value, default=""):
     """文本标准化 — 小健 2026-06-24"""
     if isinstance(value, str):
@@ -209,15 +306,18 @@ def _add_pptx_slide(prs, slide_data):
                 shape.text = subtitle
                 break
 
-    if content:
-        _add_pptx_content(slide, content)
+    # === 归一化 content + tables，覆盖 C1~C11 / T1~T6 / G1~G6 === — 小欧 2026-07-08
+    text_content, table_list = _extract_tables_from_content(content)
+    table_list.extend(_normalize_tables(tables))
 
-    if tables and isinstance(tables, list):
+    if text_content is not None:
+        _add_pptx_content(slide, text_content)
+
+    if table_list:
         from pptx.util import Inches
-        table_top = Inches(2)  # 初始top位置
-        for td in tables:
-            if isinstance(td, list):
-                table_top = _add_pptx_table(slide, td, table_top)
+        table_top = Inches(2)
+        for td in table_list:
+            table_top = _add_pptx_table(slide, td, table_top)
 
 
 def _build_pptx_presentation(slides: list):
