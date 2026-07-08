@@ -19,7 +19,7 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定,
 
 from typing import Any, Dict, List, Optional
 
-from app.config import get_config
+from app.config import get_config  # 小欧 2026-07-08
 from app.constants import MAX_CONTEXT_CHARS, TEMP_HISTORY_CHAR_LIMIT
 from app.utils.logger import logger  # 小欧 2026-07-01: 裁剪日志
 from app.services.agent.agent_utils.fc_message_types import (
@@ -35,7 +35,7 @@ class MessageBuilder:
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
         self.MAX_CONTEXT_CHARS = max_context_chars
-        self._max_rounds = get_config().get_max_rounds()  # 最多保留FC轮数(默认100) — 小欧 2026-07-08
+        self._max_rounds: int = get_config().get_max_rounds()  # 最多保留FC轮数(默认100) — 小欧 2026-07-08
 
     def reset_per_run(self) -> None:
         """每次 run_react_cycle 仅重置 conversation_history,缓存和计数保留跨会话"""
