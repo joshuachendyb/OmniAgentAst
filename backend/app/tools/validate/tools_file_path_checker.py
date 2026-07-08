@@ -4,6 +4,7 @@
 # 小沈 2026-06-27 — 小欧 2026-07-04 重构统一入口 + 注释说明
 
 import os
+import re
 import string
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -193,6 +194,10 @@ def validate_path(
         if not os.path.exists(drive + "\\"):
             avail = [f"{l}:" for l in string.ascii_uppercase if os.path.exists(f"{l}:\\")]
             return False, f"驱动器不存在: {drive}。可用驱动器: {', '.join(avail)}", None
+        # 检测路径中间是否出现多余盘符（如 E:\dir\E:\file）— 小沈 2026-07-08
+        _tail = path[len(drive):]
+        if re.search(r'[A-Za-z]:', _tail.lstrip("\\/")):
+            return False, f"路径中包含多余的盘符: {path}", None
     # 只检查文件名部分（Path(...).name），排除路径分隔符和盘符:号 — 小欧 2026-07-04
     _fname = Path(path).name
     if any(c in _fname for c in _WINDOWS_RESERVED_CHARS):
