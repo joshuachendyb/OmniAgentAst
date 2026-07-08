@@ -3,9 +3,10 @@
 PersistentShell — 持久 PowerShell 进程引擎 — 小欧 2026-07-05
 
 【编码链路】PS分支编码修复 (2026-07-07 小欧):
-  ┌─ [入] stdin.write(cmd.encode("utf-8"))
-  │    PS5.1 `-Command -` stdin 自动识别UTF-8 (实测确认)
-  │    加BOM头反而静默失败 → 不修
+  ┌─ [入] stdin.write(cmd.encode(locale.getpreferredencoding()))
+  │    PS5.1 `-Command -` stdin 用系统OEM编码(中文Windows=cp936/GBK)读取
+  │    UTF-8写入时中文字节被GBK错误解码 → 必须用locale编码写入
+  │    非locale可编码字符用errors='replace'回退
   │
   ├─ [子进程] env={PYTHONIOENCODING=utf-8, PYTHONUTF8=1}
   │    PYTHONIOENCODING: print()输出中文不抛UnicodeEncodeError
@@ -33,6 +34,7 @@ PersistentShell — 持久 PowerShell 进程引擎 — 小欧 2026-07-05
 
 import atexit
 import contextlib
+import locale
 import os
 import shutil
 import subprocess
@@ -246,7 +248,7 @@ class PersistentShell:
                 f'(Get-Location).Path | Out-File -FilePath "{paths.cwd}" -Encoding utf8'
             )
             try:
-                self._proc.stdin.write((ps_cmd + "\n").encode("utf-8"))
+                self._proc.stdin.write((ps_cmd + "\n").encode(locale.getpreferredencoding(), errors="replace"))
                 self._proc.stdin.flush()
             except (BrokenPipeError, OSError):
                 return {"stdout": "", "stderr": "", "exit_code": _EXIT_PROCESS_DIED}

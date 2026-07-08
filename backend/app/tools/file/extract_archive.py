@@ -87,27 +87,48 @@ def _resolve_output_dir(archive_path: str, output_dir: Optional[str] = None) -> 
     return os.path.join(os.path.dirname(archive_path), base_name)
 
 
-def _extract_zip_archive(archive_path: str, output_dir: str, overwrite: bool,
-                         password: Optional[str] = None) -> Dict[str, Any]:
-    """解压zip文件 — 小健 2026-05-25"""
+def _do_zip_extract(zf, output_dir: str, overwrite: bool,
+                     password: Optional[str] = None) -> Tuple[int, int, List[str]]:
+    """通用ZIP解压逻辑（zipfile/pyzipper共用）— 小欧 2026-07-08"""
     extracted_count, skipped_count = 0, 0
     file_names = []
-    with zipfile.ZipFile(archive_path, 'r') as zf:
-        if password:
-            zf.setpassword(password.encode('utf-8'))
-        for name in zf.namelist():
-            if not _is_safe_path(output_dir, name):
-                logger.warning(f"跳过路径遍历成员: {name}")
-                skipped_count += 1
-                continue
-            target_path = os.path.join(output_dir, name)
-            if not overwrite and os.path.exists(target_path):
-                skipped_count += 1
-                continue
-            zf.extract(name, output_dir)
-            extracted_count += 1
-            if len(file_names) < 20:
-                file_names.append(name)
+    if password:
+        zf.setpassword(password.encode('utf-8'))
+    for name in zf.namelist():
+        if not _is_safe_path(output_dir, name):
+            logger.warning(f"跳过路径遍历成员: {name}")
+            skipped_count += 1
+            continue
+        target_path = os.path.join(output_dir, name)
+        if not overwrite and os.path.exists(target_path):
+            skipped_count += 1
+            continue
+        zf.extract(name, output_dir)
+        extracted_count += 1
+        if len(file_names) < 20:
+            file_names.append(name)
+    return extracted_count, skipped_count, file_names
+
+
+def _extract_zip_archive(archive_path: str, output_dir: str, overwrite: bool,
+                         password: Optional[str] = None) -> Dict[str, Any]:
+    """解压zip文件 — 小健 2026-05-25 — 小欧 2026-07-08 pyzipper后备(AES-256)"""
+    try:
+        with zipfile.ZipFile(archive_path, 'r') as zf:
+            extracted_count, skipped_count, file_names = _do_zip_extract(zf, output_dir, overwrite, password)
+    except (zipfile.BadZipFile, RuntimeError) as e:
+        if "compression method" not in str(e):
+            raise
+        # AES-256加密ZIP，zipfile不支持，尝试pyzipper后备 — 小欧 2026-07-08
+        try:
+            from app.tools.tool_fc_helper import _check_module
+            if not _check_module("pyzipper"):
+                raise ImportError("pyzipper")
+            import pyzipper
+            with pyzipper.AESZipFile(archive_path, 'r') as zf:
+                extracted_count, skipped_count, file_names = _do_zip_extract(zf, output_dir, overwrite, password)
+        except ImportError:
+            raise  # pyzipper不可用，抛出原异常给外层
     return {
         "output_dir": output_dir,
         "extracted_files": extracted_count,

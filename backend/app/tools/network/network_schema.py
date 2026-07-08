@@ -111,7 +111,7 @@ class NetworkDiagnoseInput(BaseModel):
     - 端口检测 → ping_port(host="8.8.8.8", mode="port", port=53)
     """
     host: str = Field(
-        ..., min_length=1, description="目标主机地址(必填),可以是域名或IP地址,例如 8.8.8.8 或 baidu.com"
+        ..., min_length=1, description="目标主机地址(必填),可以是域名或IP地址,例如 8.8.8.8 或 baidu.com。注意:出于安全考虑,禁止访问内网地址(127.x.x.x/10.x.x.x/172.16-31.x.x/192.168.x.x等)"
     )
     mode: Literal["ping", "port"] = Field(
         default="ping",
