@@ -127,6 +127,10 @@ class Config:
         return value
     
 
+    def get_max_rounds(self, default: int = 100) -> int:
+        """获取max_rounds配置 — 对话历史最多保留的FC轮数 — 小欧 2026-07-08"""
+        return self.get('app.max_rounds', default)
+
     def get_max_steps(self, default: int = 10000) -> int:
         """
         获取max_steps配置 - 统一入口

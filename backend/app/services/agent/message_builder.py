@@ -19,14 +19,13 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定,
 
 from typing import Any, Dict, List, Optional
 
+from app.config import get_config
 from app.constants import MAX_CONTEXT_CHARS, TEMP_HISTORY_CHAR_LIMIT
 from app.utils.logger import logger  # 小欧 2026-07-01: 裁剪日志
 from app.services.agent.agent_utils.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
     message_to_dict, dict_to_message,
 )
-
-_MAX_ROUNDS = 30            # 最多保留30轮FC完整对（60条）— 小欧 2026-07-02
 
 
 class MessageBuilder:
@@ -36,6 +35,7 @@ class MessageBuilder:
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
         self.MAX_CONTEXT_CHARS = max_context_chars
+        self._max_rounds = get_config().get_max_rounds()  # 最多保留FC轮数(默认100) — 小欧 2026-07-08
 
     def reset_per_run(self) -> None:
         """每次 run_react_cycle 仅重置 conversation_history,缓存和计数保留跨会话"""
@@ -171,7 +171,7 @@ class MessageBuilder:
         """对话历史裁剪 — 两个独立条件 — 小欧 2026-07-02
 
         裁剪策略:
-        - 条件1(轮次太多): 消息数 >_MAX_ROUNDS(30)*2+2 → 只保留最近 _MAX_ROUNDS 轮FC完整对（60条）
+        - 条件1(轮次太多): 消息数 >self._max_rounds(100)*2+2 → 只保留最近 self._max_rounds 轮FC完整对 — 小欧 2026-07-08
         - 条件2(字符太多): 字符 >160K → _trim_to_budget 按70%预算从旧到新裁
         - system+user 消息永保
         - 配对不完整的 FC 对由 _trim_fc_pairs 清理
@@ -183,16 +183,16 @@ class MessageBuilder:
             return
 
         # 两个条件都不达标 → 不裁剪
-        if total < self.MAX_CONTEXT_CHARS * 0.8 and msg_count <= _MAX_ROUNDS * 2 + 5:
+        if total < self.MAX_CONTEXT_CHARS * 0.8 and msg_count <= self._max_rounds * 2 + 5:
             return
 
         system_msgs, user_msgs, obs_list, assistant_msgs = self._classify_messages()
         original_order = {id(m): i for i, m in enumerate(self.conversation_history)}
 
-        # 条件1: 轮次太多 → 保留最近 _MAX_ROUNDS 轮FC完整对
-        if msg_count > _MAX_ROUNDS * 2 + 2:
+        # 条件1: 轮次太多 → 保留最近 self._max_rounds 轮FC完整对
+        if msg_count > self._max_rounds * 2 + 2:
             all_fc = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
-            kept_fc = all_fc[-(_MAX_ROUNDS * 2):]
+            kept_fc = all_fc[-(self._max_rounds * 2):]
             obs_list = [m for m in kept_fc if m.get("role") == "tool"]
             assistant_msgs = [m for m in kept_fc if m.get("role") == "assistant"]
 
@@ -209,7 +209,7 @@ class MessageBuilder:
             self.conversation_history = rebuilt
 
         logger.info(f"[trim_history] 裁剪: {msg_count}条({total} chars) "
-                    f"→ {len(rebuilt)}条(触发: {'消息数' if msg_count > _MAX_ROUNDS * 2 + 2 else '字符'})")
+                    f"→ {len(rebuilt)}条(触发: {'消息数' if msg_count > self._max_rounds * 2 + 2 else '字符'})")
 
     def _classify_messages(self):
         """将消息分类为 system / user / observation(tool) / assistant 四组 — 2026-06-25 小欧 D-1修复"""

@@ -17,7 +17,6 @@ from typing import Any, Dict, Optional, AsyncGenerator
 
 from app.utils.logger import logger
 from app.config import get_config
-from app.constants import TASK_TIMEOUT
 from app.services.agent.steps import ChunkStep, FinalStep, ObservationStep, ErrorStep
 from app.services.agent.core_agent.status_table import AgentStatus, set_status, set_failed, set_completed, set_cancelled
 from app.services.agent.core_agent.initialize_run_state import initialize_run_state
@@ -325,9 +324,6 @@ async def run_react_cycle(
         ))
         _finalize_cycle(agent)
         return
-
-
-    _start_time = asyncio.get_event_loop().time()
 
     try:
         while agent.llm_call_count < max_steps:
