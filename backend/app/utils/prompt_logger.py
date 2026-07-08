@@ -355,7 +355,8 @@ class PromptLogger:
         observation_content: str,
         tool_name: str = "",
         tool_params: Optional[Dict[str, Any]] = None,
-        round_number: int = 0
+        round_number: int = 0,
+        raw_data: Any = None,
     ):
         """
         记录观察结果 Prompt
@@ -366,6 +367,7 @@ class PromptLogger:
             tool_name: 工具名称
             tool_params: 工具参数
             round_number: LLM调用轮次 【2026-05-15 小健】
+            raw_data: 格式化前的原始data内容 【2026-07-08 小沈】
         """
         current_log = self._get_current_log()
         if not current_log:
@@ -384,7 +386,9 @@ class PromptLogger:
         if tool_params:
             entry["工具参数"] = tool_params
         
-        entry["内容"] = observation_content
+        entry["格式化tool result内容:"] = observation_content
+        if raw_data is not None:
+            entry["原始的tool result内容:"] = raw_data
         
         current_log["Prompt组装过程"].append(entry)
     

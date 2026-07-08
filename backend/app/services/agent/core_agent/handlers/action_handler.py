@@ -329,6 +329,7 @@ async def build_observation(ctx: ObservationContext) -> List:
             tool_name=call["tool_name"],
             tool_params=call["tool_params"],
             round_number=ctx.step,
+            raw_data=result,
         )
         ctx.agent.record_operation(
             call.get("tool_name", "?"),
