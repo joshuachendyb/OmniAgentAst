@@ -159,18 +159,30 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         labels = chart_data.get("labels", [])
         values = chart_data.get("values", [])
 
-        # 检查labels/title/x_label/y_label是否包含中文，有则注册中文字体 — 小欧 2026-07-08
+        # ================================================================
+        # CJK字体按需加载逻辑 — 小欧 2026-07-08
+        # 1. 检查labels/title/x_label/y_label是否含中文(CJK统一表意文字范围 > 0x2E80)
+        # 2. 不含中文 → 跳过字体注册(用DejaVu Sans默认字体，无警告)
+        # 3. 含中文 → 检查字体是否已注册(避免重复addfont)，未注册则从C:/Windows/Fonts加载
+        # 4. addfont + rcParams.font.sans-serif让matplotlib渲染时优先命中中文字体
+        # 5. axes.unicode_minus=False防止负号被渲染为U+2212(显示为方块)
+        # ================================================================
         _cjk_texts = [str(t) for t in (labels or [])] + [str(t or "") for t in (title, x_label, y_label)]
         _needs_cjk = any(ord(c) > 0x2E80 for text in _cjk_texts for c in text)
         if _needs_cjk:
             import matplotlib.font_manager as fm
-            for _fp in ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/msyh.ttf",
-                         "C:/Windows/Fonts/simhei.ttf"]:
-                try:
-                    if os.path.exists(_fp):
+            # 获取当前已注册字体名集合，避免重复addfont
+            _registered = {f.name for f in fm.fontManager.ttflist}
+            for _fp, _fn in [
+                ("C:/Windows/Fonts/msyh.ttc", "Microsoft YaHei"),
+                ("C:/Windows/Fonts/msyh.ttf", "Microsoft YaHei"),
+                ("C:/Windows/Fonts/simhei.ttf", "SimHei"),
+            ]:
+                if _fn not in _registered and os.path.exists(_fp):
+                    try:
                         fm.fontManager.addfont(_fp)
-                except Exception:
-                    pass
+                    except Exception:
+                        pass
             matplotlib.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']
             matplotlib.rcParams['axes.unicode_minus'] = False
 
