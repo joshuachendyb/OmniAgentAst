@@ -17,6 +17,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
+
+
+def _build_content_preview(content: str) -> str:
+    """文首50 + 文末50 预览 — 小沈 2026-07-08"""
+    if len(content) <= 100:
+        return content
+    return f"文首(50字符):{content[:50]}\n...(中间省略)...\n文末(50字符):{content[-50:]}"
 from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
 from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
@@ -226,7 +233,7 @@ async def writetext(
                 # handler: _format_scalar_data(data) — key | value 单行列表
                 # file:    observation_formatter.py:214
                 # ------------------------------------------------------------------------------
-                return build_success(data={"content_preview": checked_content[:200]}, llm_data=llm_data)
+                return build_success(data={"content_preview": _build_content_preview(checked_content)}, llm_data=llm_data)
         except Exception:
             old_content = None
 
@@ -289,7 +296,7 @@ async def writetext(
                 if diff_text:
                     llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
                 return build_warning(
-                    data={"content_preview": checked_content[:200]},
+                    data={"content_preview": _build_content_preview(checked_content)},
                     llm_data=llm_data,
                 )
             llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
@@ -302,7 +309,7 @@ async def writetext(
             # file:    observation_formatter.py:214
             # ------------------------------------------------------------------------------
             return build_success(
-                data={"content_preview": checked_content[:200]},
+                data={"content_preview": _build_content_preview(checked_content)},
                 llm_data=llm_data,
             )
             llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
@@ -315,7 +322,7 @@ async def writetext(
             # file:    observation_formatter.py:214
             # ------------------------------------------------------------------------------
             return build_success(
-                data={"content_preview": checked_content[:200]},
+                data={"content_preview": _build_content_preview(checked_content)},
                 llm_data=llm_data,
             )
         else:

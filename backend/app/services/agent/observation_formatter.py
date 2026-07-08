@@ -228,7 +228,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
 
         # ── #23 content_preview — writetext 内容预览 ──
         if "content_preview" in data:
-            return data["content_preview"]
+            return "已写入内容\n" + data["content_preview"]
 
         # ── #22 which result — 1 tool: which ──
         if "paths" in data:
