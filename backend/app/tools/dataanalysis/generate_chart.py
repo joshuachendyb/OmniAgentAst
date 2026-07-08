@@ -121,23 +121,10 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
     try:
         import matplotlib
         matplotlib.use("Agg")
-        import matplotlib.font_manager as fm
         import matplotlib.pyplot as plt
-        # 注册Windows中文字体，使中文标签正确渲染 — 小欧 2026-07-08
-        for _font_path in [
-            "C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/msyh.ttf",
-            "C:/Windows/Fonts/simhei.ttf",
-        ]:
-            try:
-                if os.path.exists(_font_path):
-                    fm.fontManager.addfont(_font_path)
-            except Exception:
-                pass
         import warnings
-        # 抑制matplotlib中文字形缺失警告(字体注册失败时的fallback) — 小欧 2026-07-08
+        # 抑制matplotlib中文字形缺失警告(全局防御) — 小欧 2026-07-08
         warnings.filterwarnings('ignore', message='Glyph.*missing from font')
-        matplotlib.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']
-        matplotlib.rcParams['axes.unicode_minus'] = False
 
         # 支持两种数据输入：内联JSON或文件路径 — 小欧 2026-07-07
         inline = _parse_inline_data(data)
@@ -171,6 +158,21 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
 
         labels = chart_data.get("labels", [])
         values = chart_data.get("values", [])
+
+        # 检查labels/title/x_label/y_label是否包含中文，有则注册中文字体 — 小欧 2026-07-08
+        _cjk_texts = [str(t) for t in (labels or [])] + [str(t or "") for t in (title, x_label, y_label)]
+        _needs_cjk = any(ord(c) > 0x2E80 for text in _cjk_texts for c in text)
+        if _needs_cjk:
+            import matplotlib.font_manager as fm
+            for _fp in ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/msyh.ttf",
+                         "C:/Windows/Fonts/simhei.ttf"]:
+                try:
+                    if os.path.exists(_fp):
+                        fm.fontManager.addfont(_fp)
+                except Exception:
+                    pass
+            matplotlib.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']
+            matplotlib.rcParams['axes.unicode_minus'] = False
 
         if not labels or not values:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
