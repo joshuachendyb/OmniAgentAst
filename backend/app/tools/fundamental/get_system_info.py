@@ -117,32 +117,10 @@ def sysinfo(info_type: str = "all") -> Dict[str, Any]:
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         # =============================================================================
-        # summary 含关键数据，让 LLM 不依赖 data 即可判断系统状态
-        # — 小欧 2026-07-06
+        # summary 简短化（详情走 data → _format_sysinfo 展示），避免观测行过长
+        # — 小沈 2026-07-08
         # =============================================================================
-        _summary_parts = []
-        if info_type in ("basic", "all"):
-            b = data.get("basic", {})
-            _summary_parts.append(f"主机名={b.get('hostname','?')}")
-            _summary_parts.append(f"系统={b.get('platform','?')} {b.get('platform_release','?')}")
-        if info_type in ("cpu", "all"):
-            c = data.get("cpu", {})
-            cpu_usage = c.get("cpu_usage_percent", "?")
-            _summary_parts.append(f"CPU使用率{cpu_usage}%")
-        if info_type in ("memory", "all"):
-            m = data.get("memory", {})
-            _summary_parts.append(f"内存{m.get('used_gb','?')}G/{m.get('total_gb','?')}G")
-        if info_type in ("disk", "all"):
-            disks = data.get("disk", [])
-            disk_strs = []
-            for d in disks:
-                disk_strs.append(f"{d.get('device','?')}{d.get('used_gb','?')}G/{d.get('total_gb','?')}G")
-            _summary_parts.append(f"磁盘: {', '.join(disk_strs)}" if disk_strs else "")
-        if info_type == "network":
-            n = data.get("network", {})
-            _summary_parts.append(f"发送{n.get('bytes_sent_mb','?')}MB/接收{n.get('bytes_recv_mb','?')}MB")
-        _summary_parts = [s for s in _summary_parts if s]
-        _custom_summary = f"获取系统信息，{info_type}，{', '.join(_summary_parts)}，成功" if _summary_parts else f"获取系统信息，{info_type}，成功"
+        _custom_summary = f"获取系统信息，{info_type}，成功（见下方详情）"
         llm_data = _build_get_system_info_llm_data("success", duration_ms, info_type, custom_summary=_custom_summary)
         # ---- observation_formatter route -------------------------------------------
         # branch: #17 sysinfo sections

@@ -428,13 +428,13 @@ def _format_llm_data(llm_data: Dict) -> str:
     target = action.get("target", "")
 
     # 第1行: 工具执行结果 — 小欧 2026-07-07 — 北京老陈 2026-07-07
-    _target_part = f",目的是处理{target}" if target else ""
-    _st = f"{tool_zh} 调用工具{tool}{_target_part}"
+    _target_part = f",处理对象-{target}" if target else ""
+    _st = f"{tool_zh} 调用工具-{tool}{_target_part}"
     status_line = {
-        "success": f"工具执行结果: {_st} - 工具执行: 成功",
-        "error": f"工具执行结果: {_st} - 工具执行: 失败",
-        "warning": f"工具执行结果: {_st} - 工具执行: 完成-[有警告提示]",
-    }.get(exec_code, f"工具执行结果: {_st} - 工具执行: 成功")
+        "success": f"工具执行: {_st} - 执行结果: 成功",
+        "error": f"工具执行: {_st} - 执行结果: 失败",
+        "warning": f"工具执行: {_st} - 执行结果: 完成-[有警告]",
+    }.get(exec_code, f"工具执行: {_st} - 执行结果: 成功")
 
     # 第2行: 观察: {message} - {summary} — 小沈 2026-07-06
     parts = [p for p in [message, summary] if p]
@@ -515,9 +515,10 @@ def _format_table(headers: list, rows: list) -> str:
 #   输入: [{"name": "src", "type": "dir", "size": null}, {"name": "readme.md", "type": "file", "size": 2048}]
 #   输出:   src [目录]\n  readme.md [文件, 2048字节]
 def _format_entries(entries: list) -> str:
-    """格式化目录列表 — 小欧 2026-06-21"""
+    """格式化目录列表 — 小欧 2026-06-21 — 小沈 2026-07-08 加列表已展示提示（避免LLM重复请求）"""
     if not entries:
         return ""
+    total = len(entries)
     lines = []
     for entry in entries[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(entry, str):
@@ -530,9 +531,12 @@ def _format_entries(entries: list) -> str:
             label = "目录" if etype_lower in ("dir", "directory") else "文件"
             size_str = f", {size}字节" if size not in (None, "") else ""
             lines.append(f"  {name} [{label}{size_str}]")
-    if len(entries) > OBS_MAX_DISPLAY_ITEMS:
-        remaining = len(entries) - OBS_MAX_DISPLAY_ITEMS
+    if total > OBS_MAX_DISPLAY_ITEMS:
+        remaining = total - OBS_MAX_DISPLAY_ITEMS
         lines.append(f"  ... 还有 {remaining} 项（使用 offset={OBS_MAX_DISPLAY_ITEMS} 查看下一页）")
+        lines.append(f"[已含目录结构: {total}项;列表已截断]")
+    else:
+        lines.append(f"[已含目录结构: {total}项;列表已完整展示]")
     return "\n".join(lines)
 
 
@@ -820,13 +824,16 @@ def _format_sysinfo(data: dict) -> str:
 #     size: 1024
 #     path: /tmp/test.txt
 def _format_scalar_data(data: dict) -> str:
-    """键值对展示，每行一个 key: value — 小欧 2026-07-05"""
+    """键值对展示，每行一个 key: value — 小欧 2026-07-05 — 小沈 2026-07-08 _note 特殊处理"""
+    _note = data.pop("_note", "")
     lines = []
     for k, v in data.items():
         v_str = str(v)
         if len(v_str) > OBS_MAX_STRING_LENGTH:
             v_str = v_str[:OBS_MAX_STRING_LENGTH] + "..."
         lines.append(f"  {k}: {v_str}")
+    if _note:
+        lines.append(f"  {_note}")
     return "\n".join(lines)
 
 

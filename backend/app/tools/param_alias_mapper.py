@@ -216,8 +216,8 @@ PARAM_ALIASES = {
         "file": "output_path",
         "filepath": "output_path",
         "target": "output_path",
-        "data": "file_path",
-        "path": "file_path",
+        "file_path": "data",
+        "path": "data",
     },
     "analyze_data": {
         "path": "file_path",

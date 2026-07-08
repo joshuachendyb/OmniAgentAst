@@ -19,12 +19,15 @@ from app.tools.tool_fc_helper import _get_connection, _close_connection
 
 
 def _check_sql_safety(sql: str, dry_run: bool) -> Tuple[bool, Optional[str], Optional[List[str]]]:
-    """统一危险模式检测 + 无WHERE检测 + 拦截决策 — 小沈 2026-05-25"""
+    """统一危险模式检测 + 无WHERE检测 + 拦截决策 — 小沈 2026-05-25 — 小沈 2026-07-08 IF NOT EXISTS 不警告"""
     sql_upper = sql.strip().upper()
     DANGEROUS_PATTERN = re.compile(r'\b(DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b', re.IGNORECASE)
     dangerous_matches = DANGEROUS_PATTERN.findall(sql)
     if re.match(r'\s*(DELETE|UPDATE)\s', sql_upper) and 'WHERE' not in sql_upper:
         dangerous_matches.append('NO_WHERE')
+    # CREATE TABLE/VIEW IF NOT EXISTS 语义安全，不警告 — 小沈 2026-07-08
+    if 'CREATE' in dangerous_matches and re.search(r'CREATE\s+(TABLE|VIEW)\s+IF\s+NOT\s+EXISTS', sql, re.IGNORECASE):
+        dangerous_matches = [d for d in dangerous_matches if d != 'CREATE']
     if dangerous_matches:
         warnings = []
         dangerous_to_show = [d for d in dangerous_matches if d != 'NO_WHERE']

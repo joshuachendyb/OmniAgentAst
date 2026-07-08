@@ -442,7 +442,7 @@ def shell(
             llm = _build_execute_shell_command_llm_data("warning", d, command,
                 returncode, stdout_str[:200], stderr_str[:200],
                 shell_type or "", ERR_SHELL_TIMEOUT, f"命令执行超时({timeout}秒)",
-                timeout=timeout, cwd=cwd or "", hint="可增大timeout参数重试")
+                timeout=timeout, cwd=cwd or "", hint="命令执行超时，建议: 1. 增大timeout参数 2. 简化命令 3. 分步执行")
             return build_warning(data=data, llm_data=llm)
 
         if returncode == 0:

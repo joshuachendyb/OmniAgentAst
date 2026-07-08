@@ -282,6 +282,7 @@ async def ping_port(
             ping_data = result.get("data", {})
             ping_data.pop("loss_rate", None)
             ping_data.pop("avg_latency", None)
+            ping_data["_note"] = "网络诊断数据已完整"
             return build_success(data=ping_data, llm_data=llm_data)
         else:
             _hint = "可增大timeout参数重试" if result.get("err_code") == ERR_NETWORK_TIMEOUT else "请检查主机地址和网络连接"
@@ -303,7 +304,9 @@ async def ping_port(
                 # handler: _format_scalar_data(data) — key | value 单行列表
                 # file:    observation_formatter.py:214
                 # ------------------------------------------------------------------------------
-                return build_success(data=result.get("data", {}), llm_data=llm_data)
+                port_data = result.get("data", {})
+                port_data["_note"] = "网络诊断已完成"
+                return build_success(data=port_data, llm_data=llm_data)
             else:
                 llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=result.get("err_code", ERR_NET_UNKNOWN), detail=result.get("error_detail", ""), hint="请检查主机地址和端口", timeout=timeout)
                 return build_error(data={}, llm_data=llm_data)

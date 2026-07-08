@@ -26,8 +26,6 @@ from app.tools.file.file_encoding import safe_read_lines
 from app.utils.logger import logger
 
 
-_MAX_LINE_CONTENT = 200
-
 _SKIP_DIRS = frozenset({
     'node_modules', 'bower_components',
     '.git', '.svn', '.hg', '__pycache__',
@@ -183,7 +181,7 @@ def _grep_files_sync(
                     "file": str(fpath),
                     "line": line_no,
                     "matched": matched_texts,
-                    "content": line.rstrip('\n\r')[:_MAX_LINE_CONTENT],
+                    "content": line.rstrip('\n\r'),
                 }
                 file_matches.append(match_item)
                 total_matches += len(matched_texts)
