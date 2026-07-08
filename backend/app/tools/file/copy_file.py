@@ -155,6 +155,15 @@ async def copy(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if success:
             extra_m = {}
+            src_size = None
+            src_mtime = None
+            if src.exists():
+                try:
+                    s = src.stat()
+                    src_size = s.st_size
+                    src_mtime = s.st_mtime
+                except Exception:
+                    pass
             if dst.exists():
                 try:
                     extra_m["bytes"] = {"value": dst.stat().st_size, "text": f"{dst.stat().st_size}字节"}
@@ -168,7 +177,7 @@ async def copy(
             # file:    observation_formatter.py:214
             # ------------------------------------------------------------------------------
             return build_success(
-                data={},
+                data={"source_size": src_size, "mtime": src_mtime},
                 llm_data=llm_data)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "复制失败"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
         return build_error(data={}, llm_data=llm_data)

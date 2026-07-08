@@ -192,7 +192,8 @@ async def httpget(
                 raise
 
     except Exception as e:
-        logger.error(f"[httpget] 未知错误: {e}")
+        err_msg = str(e) or "未知错误(无详细信息)"
+        logger.error(f"[httpget] 未知错误: {err_msg}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _build_http_error(e, url, 0, duration_ms)
         _hint = "可增大timeout参数重试" if error_info["err_code"] == ERR_NETWORK_TIMEOUT else "请检查URL和网络连接"

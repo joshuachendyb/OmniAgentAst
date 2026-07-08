@@ -91,6 +91,7 @@ def _extract_zip_archive(archive_path: str, output_dir: str, overwrite: bool,
                          password: Optional[str] = None) -> Dict[str, Any]:
     """解压zip文件 — 小健 2026-05-25"""
     extracted_count, skipped_count = 0, 0
+    file_names = []
     with zipfile.ZipFile(archive_path, 'r') as zf:
         if password:
             zf.setpassword(password.encode('utf-8'))
@@ -105,11 +106,14 @@ def _extract_zip_archive(archive_path: str, output_dir: str, overwrite: bool,
                 continue
             zf.extract(name, output_dir)
             extracted_count += 1
+            if len(file_names) < 20:
+                file_names.append(name)
     return {
         "output_dir": output_dir,
         "extracted_files": extracted_count,
         "skipped_files": skipped_count,
         "format": "zip",
+        "file_list": file_names,
     }
 
 
@@ -117,6 +121,7 @@ def _extract_tar_archive(archive_path: str, output_dir: str, overwrite: bool,
                          preserve_permissions: bool, mode: str, fmt: str) -> Dict[str, Any]:
     """解压tar文件 — 小健 2026-05-25"""
     extracted_count, skipped_count = 0, 0
+    file_names = []
     with tarfile.open(archive_path, mode) as tf:
         for member in tf.getmembers():
             if not _is_safe_path(output_dir, member.name):
@@ -130,6 +135,8 @@ def _extract_tar_archive(archive_path: str, output_dir: str, overwrite: bool,
             if member.isfile():
                 tf.extract(member, output_dir)
                 extracted_count += 1
+                if len(file_names) < 20:
+                    file_names.append(member.name)
                 if preserve_permissions:
                     try:
                         os.chmod(target_path, member.mode)
@@ -140,6 +147,7 @@ def _extract_tar_archive(archive_path: str, output_dir: str, overwrite: bool,
         "extracted_files": extracted_count,
         "skipped_files": skipped_count,
         "format": fmt,
+        "file_list": file_names,
     }
 
 

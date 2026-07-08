@@ -58,10 +58,18 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
             "metrics": {},
         }
     if exec_code == "warning":
+        if affected_rows > 10000:
+            msg = "影响行数超过安全阈值"
+            detail_msg = f"影响行数{affected_rows}>10000，已回滚"
+            hint_msg = "建议缩小条件范围"
+        else:
+            msg = "检测到危险SQL操作"
+            detail_msg = f"检测到危险SQL操作（{sql[:50]}），已回滚"
+            hint_msg = "建议使用 dry_run=true 先验证"
         return {
-            "summary": f"执行{_target}，成功,提示说明: 影响{affected_rows}行",
+            "summary": f"执行{_target}，{detail_msg}",
             "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": _act_params},
-            "status": {"exec_code": "warning", "message": "影响行数超过安全阈值", "code": "WARNING_DB_SAFETY", "detail": f"影响行数{affected_rows}>10000", "hint": "建议缩小条件范围"},
+            "status": {"exec_code": "warning", "message": msg, "code": "WARNING_DB_SAFETY", "detail": detail_msg, "hint": hint_msg},
             "duration_ms": duration_ms,
             "metrics": {"affected_rows": {"value": affected_rows, "text": f"{affected_rows}行"}},
         }

@@ -253,9 +253,12 @@ def _build_read_text_file_llm_data(
             },
         }
     end_line = start_line + line_count - 1
-    if line_count == 0:
+    if total_lines == 0:
         msg = f"文件为空" if not encoding_name else f"文件为空,编码:{encoding_name}"
         hint_text = ""
+    elif line_count == 0:
+        msg = "已无更多内容，当前读取结果为空"
+        hint_text = "请调整offset/limit参数"
     elif line_count < total_lines:
         enc = f",编码:{encoding_name}" if encoding_name else ""
         msg = f"读取成功:第{start_line}-{end_line}行,共{total_lines}行{enc}"
@@ -433,7 +436,7 @@ async def readtext(
         )
         raw = _data.get("content", "")
         if raw:
-            _data["content"] = f"<file>\n{add_line_numbers(raw, offset=line_offset)}\n</file>"
+            _data["content"] = add_line_numbers(raw, offset=line_offset)
 
         _data.pop("start_line", None); _data.pop("end_line", None)
         _data.pop("offset", None); _data.pop("limit", None); _data.pop("tail", None)

@@ -273,6 +273,34 @@ def _build_execute_shell_command_llm_data(
     }
 
 
+def _fix_encoding(text: str) -> str:
+    """编码修复：检测并修复中文乱码 — 小沈 2026-07-08"""
+    if not text:
+        return text
+    try:
+        text.encode('utf-8')
+        return text
+    except UnicodeEncodeError:
+        for enc in ('gbk', 'gb2312', 'latin-1'):
+            try:
+                return text.encode('latin-1').decode(enc)
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                continue
+        return text
+
+
+def _cmd_powershell_mismatch_hint(command: str, shell_type: str, stderr: str) -> str:
+    """检测CMD/PowerShell语法混用，返回针对性hint — 小沈 2026-07-08
+
+    场景: 用户设shell_type="cmd"但命令含PowerShell语法(Select-Object等)
+    原则: KISS-DIRECT — 只加hint提示，不改命令、不自动降级
+    """
+    if shell_type != "cmd":
+        return ""
+    if "不是内部或外部命令" in stderr or "不是可运行的程序" in stderr:
+        return "命令可能包含PowerShell语法，建议设置shell_type='powershell'"
+    return ""
+
 # ═══════════════════════════════════════════════════════
 #  shell() — 主函数（v2 引擎版）
 # ═══════════════════════════════════════════════════════
@@ -377,14 +405,21 @@ def shell(
                     timed_out = True
                     proc.kill()
                     proc.wait(timeout=5)
-                    stdout_b, stderr_b = b"", b""
+                    try:
+                        stdout_b = proc.stdout.read() if proc.stdout else b""
+                    except Exception:
+                        stdout_b = b""
+                    try:
+                        stderr_b = proc.stderr.read() if proc.stderr else b""
+                    except Exception:
+                        stderr_b = b""
             finally:
                 try:
                     os.unlink(bat_path)
                 except OSError:
                     pass
-            stdout_str = _decode_bytes_safe(stdout_b)
-            stderr_str = _decode_bytes_safe(stderr_b)
+            stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
+            stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
             returncode = proc.returncode if proc.returncode is not None else -1
 
         # ── 阶段 4: 后处理 ──
@@ -436,10 +471,11 @@ def shell(
             return build_success(data=data, llm_data=llm)
 
         err_detail = stderr_str[:200] if stderr_str.strip() else f"退出码{returncode}"
+        _hint = _cmd_powershell_mismatch_hint(command, shell_type, stderr_str) or "请检查命令语法和参数"
         llm = _build_execute_shell_command_llm_data("error", d, command,
             returncode, stdout_str[:200], stderr_str[:200],
             shell_type or "", ERR_SHELL_EXEC, err_detail,
-            timeout=timeout, cwd=cwd or "", hint="请检查命令语法和参数")
+            timeout=timeout, cwd=cwd or "", hint=_hint)
         return build_error(data={}, llm_data=llm)
 
     except Exception as e:

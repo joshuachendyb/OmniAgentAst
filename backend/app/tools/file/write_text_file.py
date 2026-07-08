@@ -226,7 +226,7 @@ async def writetext(
                 # handler: _format_scalar_data(data) — key | value 单行列表
                 # file:    observation_formatter.py:214
                 # ------------------------------------------------------------------------------
-                return build_success(data={}, llm_data=llm_data)
+                return build_success(data={"content_preview": checked_content[:200]}, llm_data=llm_data)
         except Exception:
             old_content = None
 
@@ -289,7 +289,7 @@ async def writetext(
                 if diff_text:
                     llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
                 return build_warning(
-                    data={},
+                    data={"content_preview": checked_content[:200]},
                     llm_data=llm_data,
                 )
             llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
@@ -302,7 +302,20 @@ async def writetext(
             # file:    observation_formatter.py:214
             # ------------------------------------------------------------------------------
             return build_success(
-                data={},
+                data={"content_preview": checked_content[:200]},
+                llm_data=llm_data,
+            )
+            llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
+            if diff_text:
+                llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #21 fallback (key:val)
+            # trigger: 无上述20条分支匹配 — operation_id 不命中任何专用分支
+            # handler: _format_scalar_data(data) — key | value 单行列表
+            # file:    observation_formatter.py:214
+            # ------------------------------------------------------------------------------
+            return build_success(
+                data={"content_preview": checked_content[:200]},
                 llm_data=llm_data,
             )
         else:

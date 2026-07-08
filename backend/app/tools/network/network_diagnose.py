@@ -181,6 +181,9 @@ async def _ping(host: str, count: int = 4, timeout: int = 5) -> Dict[str, Any]:
     parsed = _parse_ping_output(raw_output, platform.system().lower())
     reachable = parsed["is_reachable"]
     data = {**parsed}
+    # 数据一致性校验：packets_sent=0 但 latency 存在 → 矛盾，清空 latency
+    if data.get("packets_sent", 0) == 0 and data.get("min_latency") is not None:
+        data.update(min_latency=None, avg_latency=None, max_latency=None)
     if not reachable:
         data.update(packets_received=0, packets_lost=parsed["packets_sent"],
                      loss_rate=100.0, min_latency=None, avg_latency=None, max_latency=None)
