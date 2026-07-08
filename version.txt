@@ -1,4 +1,39 @@
-﻿v0.18.3
+﻿v0.18.4
+更新时间: 2026-07-08 17:30:00
+## v0.18.3→v0.18.4 变更汇总 - 小欧-2026-07-08
+
+### feat: fetch_webpage全面增强(SSR+Playwright+性能优化)
+- fetch_webpage全面增强(SSR嵌套JSON+Playwright无条件超时+性能优化) - 小沈-2026-07-08
+- fetch_webpage add _clean_markdown_content - 小欧-2026-07-08
+- grep files_with_matches显示文件路径+行号列表 - 小欧-2026-07-07
+- generate_chart支持内联JSON双模式+shell warning消息优化 - 小欧-2026-07-07
+
+### fix: 日志+Shell+Snippet多项修复
+- http_request.py 外层异常空消息fallback - 小欧-2026-07-08
+- fetchpage清理导航噪音(markdown链接先去+导航栏正则修复) - 小欧-2026-07-07
+- searchweb snippet清理HTML标签+Markdown链接+多余换行 - 小欧-2026-07-07
+- grep表头改为'文件 : 行号'去掉重复计数 - 小欧-2026-07-07
+- grep files_with_matches的data key从files改为matches - 小欧-2026-07-07
+- _format_matches无行号时只显示文件路径 - 小欧-2026-07-07
+- compress safe_data过滤去掉compressed_files - 小欧-2026-07-07
+- shell action.params存完整命令+PS5.1设置OutputEncoding=UTF8 - 小欧-2026-07-07
+- shell warning超时信息去重 - 小欧-2026-07-07
+- search/grep超时信息去重(summary已有,删detail重复) - 小欧-2026-07-07
+
+### refactor: grep展示优化+cmd_short阈值调整
+- grep files_with_matches加表头'匹配文件(N个):' - 小欧-2026-07-07
+- grep行号显示加'行号'前缀 - 小欧-2026-07-07
+- cmd_short截断阈值调整(100→200→50) - 小欧-2026-07-07
+- 压缩超时传播+grep超时截断+download超时提示优化 - 小欧-2026-07-07
+- shell warning摘要改为'部分成功'+warning消息优化 - 小欧-2026-07-07
+
+### docs: 清理+更新测试记录
+- 清理过期测试记录+备份文件 - 小沈-2026-07-08
+- 更新E2E P9+unit测试记录 - 小欧-2026-07-07
+
+---
+
+v0.18.3
 更新时间: 2026-07-07 18:44:58
 ## v0.18.2→v0.18.3 变更汇总 - 小欧-2026-07-07
 
