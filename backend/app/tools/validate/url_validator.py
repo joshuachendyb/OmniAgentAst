@@ -8,8 +8,8 @@ import struct
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
-# 协议白名单：仅允许安全的协议
-ALLOWED_PROTOCOLS = {"https"}
+# 协议白名单：http/https/ftp 等标准网络协议
+ALLOWED_PROTOCOLS = {"http", "https", "ftp", "ftps"}
 
 # 内网IP段（用于DNS解析后检查）
 # 注意：仅覆盖IPv4内网段。IPv6内网（fd00::/8）暂未覆盖
@@ -83,7 +83,7 @@ def validate_url(url: str) -> Tuple[bool, Optional[str], Optional[str]]:
     
     检查内容：
     1. URL格式是否合法
-    2. 协议是否在白名单内（仅允许https）
+     2. 协议是否在白名单内（http/https/ftp/ftps）
     3. 主机名是否为内网/回环地址（SSRF防护，含hex/octal绕过检测）
     4. 是否为裸IP+端口（SSRF绕过常见手法）
     
@@ -98,7 +98,7 @@ def validate_url(url: str) -> Tuple[bool, Optional[str], Optional[str]]:
         return False, f"URL格式解析失败: {url}", None
     
     if parsed.scheme not in ALLOWED_PROTOCOLS:
-        return False, f"不允许的协议: {parsed.scheme}（仅允许https）", None
+        return False, f"不允许的协议: {parsed.scheme}（允许: {', '.join(sorted(ALLOWED_PROTOCOLS))}）", None
     
     hostname = parsed.hostname
     if not hostname:

@@ -10,6 +10,8 @@ N3: fetchpage — 获取和处理网页内容
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import base64
+import html2text
+import json
 import re
 import time as _time_mod
 from html.parser import HTMLParser
@@ -17,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.network.http_client_sdk import create_http_client
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy
@@ -43,6 +45,22 @@ _VOID_ELEMENTS = frozenset({
 })
 
 
+def _match_attrs(attrs: Dict[str, str], required: Dict[str, str]) -> bool:
+    """检查HTML属性是否匹配要求的模式 — 小沈 2026-07-08"""
+    for key, val in required.items():
+        actual = attrs.get(key)
+        if actual is None:
+            return False
+        if val is True:
+            continue
+        if hasattr(val, "search"):
+            if not val.search(actual):
+                return False
+        elif val != actual:
+            return False
+    return True
+
+
 class _ContentExtractor(HTMLParser):
     """用HTMLParser正确提取匹配指定属性的容器内容(处理嵌套标签)—小欧2026-06-23"""
 
@@ -61,7 +79,7 @@ class _ContentExtractor(HTMLParser):
             self._parts.append(self.get_starttag_text())
         elif self._found is None:
             for t, attr_dict in self._tag_matchers:
-                if tag == t and self._match(dict(attrs), attr_dict):
+                if tag == t and _match_attrs(dict(attrs), attr_dict):
                     self._started = True
                     self._depth = 0
                     self._parts = []
@@ -96,21 +114,6 @@ class _ContentExtractor(HTMLParser):
 
     def handle_comment(self, data):
         pass
-
-    @staticmethod
-    def _match(attrs: Dict[str, str], required: Dict[str, str]) -> bool:
-        for key, val in required.items():
-            actual = attrs.get(key)
-            if actual is None:
-                return False
-            if val is True:
-                continue
-            if hasattr(val, "search"):
-                if not val.search(actual):
-                    return False
-            elif val != actual:
-                return False
-        return True
 
     def get_content(self) -> Optional[str]:
         return self._found
@@ -148,6 +151,18 @@ def _extract_main_content(html: str) -> Optional[str]:
     return None
 
 
+def _convert_html2text(html: str) -> str:
+    """html2text转换 — 小欧 2026-07-08"""
+    h = html2text.HTML2Text()
+    h.body_width = 0
+    h.ignore_links = False
+    h.ignore_images = False
+    h.ignore_tables = False
+    h.emphasis_mark = "*"
+    h.strong_mark = "**"
+    return h.handle(html)
+
+
 def _clean_markdown_content(text: str) -> str:
     """清理markdown导航噪音 — 小沈 2026-07-05 (html2text已处理实体和注释，简化)"""
     text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
@@ -161,19 +176,202 @@ def _clean_markdown_content(text: str) -> str:
     return text.strip()
 
 
+def _balanced_braces_extract(text: str, start: int = 0) -> Optional[str]:
+    """从start位置找第一个{，返回平衡大括号匹配的完整JSON字符串 — 小沈 2026-07-08
+
+    正确处理嵌套大括号和字符串中的转义引号，
+    解决旧版正则{.*?}在嵌套JSON时截断的问题。
+    """
+    brace_start = text.find('{', start)
+    if brace_start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(brace_start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == '\\' and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if not in_string:
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    return text[brace_start:i + 1]
+    return None
+
+
+def _extract_ssr_json_content(html: str) -> Optional[str]:
+    """从SPA站点的SSR JSON中提取文章内容 — 小欧 2026-07-08
+    小沈 2026-07-08: 替换为正则+平衡大括号匹配，支持嵌套JSON
+
+    支持:
+      - window.__INITIAL_STATE__ (CSDN等Vue SSR)
+      - window.__NUXT__ (掘金等Nuxt.js)
+      - <script id="__NEXT_DATA__"> (Next.js)
+    递归扫描JSON中所有 title+description/summary 字段对。
+    """
+    # 各SSR框架：找到前缀后，用平衡大括号匹配提取完整JSON
+    prefixes = [
+        r'window\.__INITIAL_STATE__\s*=\s*',
+        r'window\.__NUXT__\s*=\s*',
+        r'<script\s+id="__NEXT_DATA__"[^>]*>\s*',
+    ]
+    articles = []
+    for pat in prefixes:
+        m = re.search(pat, html, re.DOTALL)
+        if not m:
+            continue
+        json_str = _balanced_braces_extract(html, m.end())
+        if not json_str:
+            continue
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError:
+            continue
+        _scan_json_for_articles(data, articles, max_items=50)
+        if articles:
+            break
+
+    if not articles:
+        return None
+
+    lines = []
+    for art in articles:
+        t = art.get("title", "").strip()
+        d = art.get("desc", "").strip()
+        if not t or len(t) < 4:
+            continue
+        if d:
+            lines.append(f"- {t}: {d[:300]}")
+        else:
+            lines.append(f"- {t}")
+    return "\n".join(lines) if lines else None
+
+
+def _scan_json_for_articles(obj, results, max_items=50, depth=0):
+    """递归扫描JSON找 title+description/summary 文章对 — 小欧 2026-07-08"""
+    if depth > 6 or len(results) >= max_items:
+        return
+    if isinstance(obj, dict):
+        title = obj.get("title") or obj.get("articleTitle") or ""
+        if isinstance(title, str) and len(title) > 4:
+            desc = (obj.get("description") or obj.get("summary")
+                    or obj.get("desc") or obj.get("digest") or "")
+            if isinstance(desc, str):
+                results.append({"title": title.strip(), "desc": desc.strip()})
+        for v in obj.values():
+            _scan_json_for_articles(v, results, max_items, depth + 1)
+    elif isinstance(obj, list):
+        for item in obj:
+            _scan_json_for_articles(item, results, max_items, depth + 1)
+
+
 def _html_to_markdown(html: str) -> str:
-    """html2text 转换HTML为Markdown — 小沈 2026-07-05 代替手写HTMLParser+regex(30+行→5行)"""
-    import html2text
-    main_html = _extract_main_content(html) or html
-    h = html2text.HTML2Text()
-    h.body_width = 0
-    h.ignore_links = False
-    h.ignore_images = False
-    h.ignore_tables = False
-    h.emphasis_mark = "*"
-    h.strong_mark = "**"
-    markdown = h.handle(main_html)
-    return _clean_markdown_content(markdown)
+    """html2text 转换HTML为Markdown — 小沈 2026-07-05
+    小欧 2026-07-08: 加入_extract_ssr_json_content兜底"""
+    main_html = _extract_main_content(html)
+    if main_html:
+        return _clean_markdown_content(_convert_html2text(main_html))
+
+    ssr_md = _extract_ssr_json_content(html)
+    if ssr_md:
+        return ssr_md
+
+    return _clean_markdown_content(_convert_html2text(html))
+
+
+def _has_embedded_state(html: str) -> bool:
+    """检查HTML是否含有可在HTTP层提取的SSR JSON — 小沈 2026-07-08 (从rolling-reader借鉴)"""
+    patterns = [
+        r'window\.__INITIAL_STATE__\s*=\s*\{',
+        r'window\.__NUXT__\s*=\s*\{',
+        r'<script id="__NEXT_DATA__"',
+    ]
+    for pat in patterns:
+        if re.search(pat, html, re.IGNORECASE):
+            return True
+    return False
+
+
+def _needs_browser(html: str, status_code: int, mime: str) -> tuple:
+    """检测页面是否需要浏览器渲染 — 小沈 2026-07-08 (从rolling-reader http.py needs_browser() V4借鉴)
+
+    Returns:
+        (needs_browser: bool, reason: str)
+    """
+    if not html:
+        return False, ""
+
+    if "application/json" in mime:
+        return False, ""
+
+    if status_code in (400, 401, 403, 407):
+        return True, f"http_{status_code}"
+
+    if len(html) < 500:
+        return True, "short_html"
+
+    # SSR JSON override: 有嵌入state的页面无需浏览器
+    if _has_embedded_state(html):
+        return False, ""
+
+    # 空标题检测 — 小沈 2026-07-08
+    title_match = re.search(r'<title[^>]*>\s*</title>', html, re.IGNORECASE)
+    if title_match and len(html) < 20000:
+        return True, "empty_title"
+
+    lower_html = html.lower()
+    js_markers = ['id="app"', "id='app'", 'id="root"', "id='root'",
+                  'id="__next"', "id='__next'",
+                  'id="__nuxt"', "id='__nuxt'",
+                  "enable javascript", "you need javascript", "javascript is required"]
+    for marker in js_markers:
+        if marker in lower_html:
+            return True, "js_marker"
+
+    # Body 脚本占比检测 — 小沈 2026-07-08
+    body_m = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL | re.IGNORECASE)
+    if body_m:
+        body_html = body_m.group(1)
+        scripts = re.findall(r'<script[^>]*>.*?</script>', body_html, re.DOTALL | re.IGNORECASE)
+        script_text_len = sum(len(s) for s in scripts)
+        if len(body_html) > 0 and script_text_len / len(body_html) > 0.50:
+            return True, f"high_script_ratio:{script_text_len/max(len(body_html),1):.0%}"
+
+    # Text ratio 分析
+    text_content = re.sub(r'<[^>]+>', ' ', html)
+    text_content = re.sub(r'\s+', ' ', text_content).strip()
+    text_len = len(text_content)
+    html_len = len(html)
+    text_ratio = text_len / max(html_len, 1)
+
+    if text_ratio < 0.005:
+        return True, f"ratio_near_zero:{text_ratio:.4f}"
+
+    if text_len < 200 and text_ratio < 0.15:
+        return True, f"tiny_shell:tlen={text_len}"
+
+    if html_len > 50000 and text_ratio < 0.018 and text_len < 3000:
+        return True, f"large_page_low_ratio:{text_ratio:.4f}"
+
+    # 空 main 容器检测（轻量正则，避免调_extract_main_content重复解析）— 小沈 2026-07-08
+    main_tags = re.findall(r'<(?:main|article)[^>]*>(.*?)</(?:main|article)>', html, re.DOTALL | re.IGNORECASE)
+    for main_html in main_tags:
+        main_text = re.sub(r'<[^>]+>', ' ', main_html)
+        main_text = re.sub(r'\s+', ' ', main_text).strip()
+        if len(main_text) < 50 and text_len > 300:
+            return True, "empty_main"
+
+    return False, ""
 
 
 def _build_fetch_webpage_llm_data(
@@ -198,10 +396,21 @@ def _build_fetch_webpage_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    if exec_code == "warning":
+        base_msg = f"获取网页{url}内容，成功但有警告"
+        if mime_type:
+            base_msg = f"获取{url}资源，成功但有警告: {mime_type}，HTTP {status_code}"
+        return {
+            "summary": base_msg,
+            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},
+            "status": {"exec_code": "warning", "message": "获取网页完成但有警告", "code": "", "detail": detail, "hint": hint},
+            "duration_ms": duration_ms,
+            "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}} if status_code else {},
+        }
     if mime_type:
         summary = f"获取{url}资源，成功: {mime_type}，HTTP {status_code}"
     else:
-        summary = f"获取网页{url}内容成功，成功: {extract_format}格式，HTTP {status_code}"
+        summary = f"获取网页{url}内容成功: {extract_format}格式，HTTP {status_code}"
     if truncated:
         summary += "（内容有部分截断）"
     return {
@@ -231,8 +440,9 @@ def _extract_html_content(html_content: str, extract_format: str, max_tokens: in
     return content, truncated
 
 
-def _build_media_result(url: str, mime: str, raw_bytes: bytes, extract_format: str, response_status: int) -> Dict[str, Any]:
-    """构建图片/PDF的base64附件响应 — 小欧 2026-06-22 — 小欧 2026-07-06 data仅保留content，其余通过summary"""
+def _build_media_result(url: str, mime: str, raw_bytes: bytes) -> Dict[str, Any]:
+    """构建图片/PDF的base64附件响应 — 小欧 2026-06-22 — 小欧 2026-07-06 data仅保留content，其余通过summary
+    小沈 2026-07-08: 删除未使用的response_status参数"""
     b64 = base64.b64encode(raw_bytes).decode("ascii")
     data = {
         "content": f"[{mime} 文件,大小: {len(raw_bytes)} 字节]",
@@ -264,8 +474,7 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout: float,
             browser = await p.chromium.launch(**browser_config)
             try:
                 page = await browser.new_page()
-                if proxy:
-                    await page.set_default_timeout(timeout * 1000)
+                await page.set_default_timeout(timeout * 1000)
                 await page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
                 current_url = page.url
                 if current_url and current_url != url:
@@ -361,7 +570,7 @@ async def fetchpage(
                         mime = content_type.split(";")[0].strip().lower() if content_type else ""
                         if mime and (mime.startswith("image/") or mime in ("application/pdf",)):
                             raw_bytes = cf_resp.content
-                            media_result = _build_media_result(url, mime, raw_bytes, extract_format, cf_resp.status_code)
+                            media_result = _build_media_result(url, mime, raw_bytes)
                             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                             llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, cf_resp.status_code, mime_type=mime, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
                             return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
@@ -378,7 +587,7 @@ async def fetchpage(
 
                         if mime and (mime.startswith("image/") or mime in ("application/pdf",)):
                             raw_bytes = await resp.aread()
-                            media_result = _build_media_result(url, mime, raw_bytes, extract_format, resp.status_code)
+                            media_result = _build_media_result(url, mime, raw_bytes)
                             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                             llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, resp.status_code, mime_type=mime, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
                             return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
@@ -394,7 +603,28 @@ async def fetchpage(
                         html_content = b''.join(chunks).decode('utf-8', errors='replace')
                         status_code = resp.status_code
 
-            extracted_content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
+            # 自动Playwright回退 — 小沈 2026-07-08 (从rolling-reader needs_browser() V4借鉴)
+            pw_content = None
+            if _needs_browser(html_content, status_code, mime)[0]:
+                logger.info(f"[fetchpage] SPA空壳检测,自动回退Playwright: {url}")
+                pw_res = await _fetch_via_playwright(url, proxy, timeout, extract_format, max_tokens)
+                if not pw_res.get("error"):
+                    pw_content = pw_res
+
+            if pw_content:
+                # HTTP HTML先提取做fallback — 小沈 2026-07-08
+                http_extracted, http_truncated = _extract_html_content(html_content, extract_format, max_tokens)
+                pw_extracted = pw_content["extracted_content"]
+                # Playwright提取内容显著更好才用它,否则回退HTTP HTML
+                if len(pw_extracted) >= len(http_extracted) * 1.5:
+                    extracted_content = pw_extracted
+                    truncated = pw_content["truncated"]
+                    content_type = pw_content.get("content_type", content_type)
+                    status_code = pw_content.get("status_code", status_code)
+                else:
+                    extracted_content, truncated = http_extracted, http_truncated
+            else:
+                extracted_content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
 
         # =============================================================================
         # 数据设计：data仅保留content纯数据，format/content_type/truncated通过summary传递
@@ -405,20 +635,21 @@ async def fetchpage(
             "content": extracted_content,
         }
 
-        if prompt:
-            result_data["prompt"] = prompt
-            result_data["note"] = "AI提取功能需要LLM后处理"
-
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-        # ---- observation_formatter route -------------------------------------------
-        # branch: #2 raw str
-        # trigger: "content" in data and isinstance(data["content"], str)
-        # handler: inline — 直接返回 data["content"], OBS_MAX_STRING_LENGTH 截断
-        # data只保留content纯数据，其余通过summary传递 — 小欧 2026-07-06
-        # file:    observation_formatter.py:117-122
-        # ------------------------------------------------------------------------------
-        return build_success(data=result_data, llm_data=llm_data)
+        # 内容<100字走warning，<30字data置空 — 小沈 2026-07-08
+        content_len = len(extracted_content)
+        if content_len >= 100:
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #2 raw str
+            # trigger: "content" in data and isinstance(data["content"], str)
+            # handler: inline — 直接返回 data["content"], OBS_MAX_STRING_LENGTH 截断
+            # file:    observation_formatter.py:117-122
+            # ------------------------------------------------------------------------------
+            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+            return build_success(data=result_data, llm_data=llm_data)
+        result_data = {} if content_len < 30 else result_data
+        llm_data = _build_fetch_webpage_llm_data("warning", duration_ms, url, extract_format, status_code, truncated, hint="尝试其他的网站地址", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        return build_warning(data=result_data, llm_data=llm_data)
 
     except httpx.TimeoutException:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
