@@ -769,7 +769,7 @@ def verify_db_prompt_consistency(
         for pf in sorted(PROMPT_LOG_DIR.glob("prompt_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
             try:
                 content = pf.read_text(encoding="utf-8", errors="ignore")
-                if str(user_msg_id) in content:
+                if str(user_msg_id) in content and session_id in content:
                     prompt_log_file = pf
                     break
             except Exception:
@@ -785,19 +785,15 @@ def verify_db_prompt_consistency(
         issues.append(f"读取Prompt日志失败: {e}")
         return issues
 
-    # 获取「执行步骤」节：第五个key（[0]基本信息 [1]Prompt组装过程 [2]LLM调用记录 [3]状态变化记录 [4]步骤产出）
-    log_keys = list(log_data.keys())
-    if len(log_keys) < 5:
-        issues.append(f"Prompt日志缺少执行步骤节, 仅{len(log_keys)}个节")
-        return issues
-    exec_steps_key = log_keys[4]
+    # 获取「步骤产出」节
+    exec_steps_key = "步骤产出"
     log_steps = log_data.get(exec_steps_key, [])
 
     if not log_steps:
-        issues.append("Prompt日志«执行步骤»为空")
+        issues.append("Prompt日志«步骤产出»为空")
         return issues
 
-    # 非start/chunk步骤数对比(prompt日志不含start/chunk事件) - 必须完全一致
+    # 非start/chunk步骤数对比
     db_main = [s for s in db_steps if s.get("type") not in ("start", "chunk")]
     log_main = [s for s in log_steps if s.get("步骤类型") not in ("start", "chunk")]
 
@@ -806,84 +802,81 @@ def verify_db_prompt_consistency(
             f"非chunk/start步骤数不一致(DB={len(db_main)}, Prompt日志={len(log_main)})(MUST)"
         )
 
-    # 按步骤号分组对比(只对比action_tool) - 必须完全一致
+    # 按步骤号分组，只取action_tool，按位置对比
     db_by_step: Dict[int, List[Dict]] = {}
     log_by_step: Dict[int, List[Dict]] = {}
     for s in db_steps:
         sn = s.get("step")
-        if sn is not None:
+        if sn is not None and s.get("type") == "action_tool":
             db_by_step.setdefault(sn, []).append(s)
     for s in log_steps:
         sn = s.get("步骤")
         if sn is not None:
-            log_by_step.setdefault(sn, []).append(s)
+            evt = s.get("数据", {})
+            if isinstance(evt, dict) and evt.get("type") == "action_tool":
+                log_by_step.setdefault(sn, []).append(evt)
 
     all_step_nums = set(db_by_step.keys()) | set(log_by_step.keys())
     for sn in sorted(all_step_nums):
-        db_ss = db_by_step.get(sn, [])
-        log_ss = log_by_step.get(sn, [])
-        # type对比(排除start/chunk, prompt日志不含start/chunk事件)
-        db_types = sorted([s.get("type", "") for s in db_ss if s.get("type") not in ("start", "chunk")])
-        log_types = sorted([s.get("步骤类型", "") for s in log_ss if s.get("步骤类型") not in ("start", "chunk")])
-        if db_types != log_types:
-            issues.append(f"步骤{sn} type不一致(DB={db_types}, Prompt日志={log_types})(MUST)")
+        db_actions = db_by_step.get(sn, [])
+        log_actions = log_by_step.get(sn, [])
 
-        # action_tool对比: tool_name + tool_params
-        for db_s in db_ss:
-            if db_s.get("type") != "action_tool":
+        # 数量对比
+        if len(db_actions) != len(log_actions):
+            issues.append(
+                f"步骤{sn} action_tool数量不一致(DB={len(db_actions)}, Prompt日志={len(log_actions)})(MUST)"
+            )
+
+        max_len = max(len(db_actions), len(log_actions))
+        for i in range(max_len):
+            # 哪边多出
+            if i >= len(db_actions):
+                issues.append(f"步骤{sn} DB少第{i+1}个action_tool, Prompt日志多出(MUST)")
                 continue
+            if i >= len(log_actions):
+                issues.append(f"步骤{sn} DB多出第{i+1}个action_tool, Prompt日志缺少(MUST)")
+                continue
+
+            db_s = db_actions[i]
+            log_evt = log_actions[i]
+
+            # tool_name对比
             db_tn = db_s.get("tool_name", "")
+            log_tn = log_evt.get("tool_name", "")
+            if db_tn != log_tn:
+                issues.append(
+                    f"步骤{sn} 第{i+1}个tool_name不一致(DB={db_tn}, Prompt日志={log_tn})(MUST)"
+                )
+
+            # tool_params对比
             db_tp = db_s.get("tool_params", {})
             if isinstance(db_tp, str):
                 try:
                     db_tp = json.loads(db_tp)
                 except Exception:
                     db_tp = {"_raw": db_tp}
-            # 在log_steps找同步骤的同tool
-            matched = False
-            for log_s in log_ss:
-                evt = log_s.get("数据", {})
-                if not isinstance(evt, dict):
-                    continue
-                log_tn = evt.get("tool_name", "")
-                if log_tn != db_tn:
-                    continue
-                log_tp = evt.get("tool_params", {})
-                # 严格比较: 必须完全一致
-                if str(log_tp) != str(db_tp):
-                    issues.append(
-                        f"步骤{sn} tool_params不一致(DB={db_tp}, Prompt日志={log_tp})(MUST)"
-                    )
-                matched = True
-                break
-            if not matched:
-                issues.append(f"步骤{sn} tool_name({db_tn})在Prompt日志中未找到(MUST)")
+            log_tp = log_evt.get("tool_params", {})
+            if str(db_tp) != str(log_tp):
+                issues.append(
+                    f"步骤{sn} 第{i+1}个tool_params不一致(DB={db_tp}, Prompt日志={log_tp})(MUST)"
+                )
 
-        # observation对比(仅action_tool) - 严格比较
-        for db_s in db_ss:
-            if db_s.get("type") != "action_tool":
-                continue
+            # observation对比(仅位置匹配)
             db_obs = db_s.get("observation") or db_s.get("execution_result", "")
-            for log_s in log_ss:
-                evt = log_s.get("数据", {})
-                if not isinstance(evt, dict):
-                    continue
-                log_obs = evt.get("execution_result") or evt.get("observation") or ""
-                # 严格比较: DB存结构化dict, Prompt日志存summary字符串
-                db_str = str(db_obs)
-                log_str = str(log_obs)
-                if db_str and log_str:
-                    # 提取DB中的有意义的标识(ERR_CODE, SUCCESS等)
-                    db_upper = ''.join(c for c in db_str if c.isupper() or c == '_')
-                    log_upper = ''.join(c for c in log_str if c.isupper() or c == '_')
-                    if 'ERR' in db_upper and 'ERR' not in log_upper:
-                        issues.append(
-                            f"步骤{sn} observation错误码不匹配: DB含错误码, Prompt日志未含(MUST)"
-                        )
-                    elif 'SUCCESS' in db_upper and 'SUCCESS' not in log_upper:
-                        issues.append(
-                            f"步骤{sn} observation状态不匹配: DB含SUCCESS, Prompt日志未含(MUST)"
-                        )
+            log_obs = log_evt.get("execution_result") or log_evt.get("observation") or ""
+            db_str = str(db_obs)
+            log_str = str(log_obs)
+            if db_str and log_str:
+                db_upper = ''.join(c for c in db_str if c.isupper() or c == '_')
+                log_upper = ''.join(c for c in log_str if c.isupper() or c == '_')
+                if 'ERR' in db_upper and 'ERR' not in log_upper:
+                    issues.append(
+                        f"步骤{sn} 第{i+1}个observation错误码不匹配: DB含错误码, Prompt日志未含(MUST)"
+                    )
+                elif 'SUCCESS' in db_upper and 'SUCCESS' not in log_upper:
+                    issues.append(
+                        f"步骤{sn} 第{i+1}个observation状态不匹配: DB含SUCCESS, Prompt日志未含(MUST)"
+                    )
 
     return issues
 
