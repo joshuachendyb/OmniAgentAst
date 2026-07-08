@@ -1,4 +1,31 @@
-﻿v0.18.5
+﻿v0.18.6
+更新时间: 2026-07-08 16:33:33
+## v0.18.5→v0.18.6 变更汇总 - 小欧-2026-07-08
+
+### fix: read_pdf 中文乱码检测 + PyMuPDF 后备提取(P001)
+- read_pdf.py: 新增 `_is_garbled_text()` 检测?/U+FFFD占比>30%时自动触发后备提取 - 小欧-2026-07-08
+- read_pdf.py: 新增 `_extract_with_fitz()` PyMuPDF后备提取(CJK PDF编码丢失场景) - 小欧-2026-07-08
+- read_pdf.py: llm_data hint 区分3种状态(正常/后备提取成功/编码不可恢复) - 小欧-2026-07-08
+- 安装 PyMuPDF==1.28.0 至 Python 3.13 环境 - 小欧-2026-07-08
+
+### fix: requirements.txt 中文注释乱码修复
+- 9处UTF-8二次编码的中文注释全部修复(FastAPI妗嗘灦→# FastAPI框架等) - 小欧-2026-07-08
+
+### fix: generate_chart CJK字体按需加载
+- generate_chart.py: 中文字体延迟注册(按需加载: 先检测labels/title等是否含CJK) - 小欧-2026-07-08
+- generate_chart.py: Glyph警告全局抑制，集合防重复注册 - 小欧-2026-07-08
+
+### refactor: generate_chart + e2e_helpers 代码优化
+- generate_chart.py: 有中文才注册字体(按需加载+防重复注册) - 小欧-2026-07-08
+- e2e_helpers.py: 代码优化 - 小沈-2026-07-08
+
+### fix: prompt_logger 记录优化
+- 观察记录键名去掉冗余"tool result"字样 - 小沈-2026-07-08
+- 记录原始data内容(raw_data) - 小沈-2026-07-08
+
+---
+
+v0.18.5
 更新时间: 2026-07-08 11:26:29
 ## v0.18.4→v0.18.5 变更汇总 - 小欧-2026-07-08
 

@@ -21,6 +21,35 @@ from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
+def _is_garbled_text(text: str, threshold: float = 0.30) -> bool:
+    """检测文本是否含大量 ? 字符（CJK编码丢失）— 小欧 2026-07-08"""
+    if not text.strip():
+        return False
+    q_count = sum(1 for c in text if c == '\ufffd' or c == '?')
+    return (q_count / len(text)) > threshold
+
+
+def _extract_with_fitz(file_path: str, page_count: int) -> Tuple[str, list, list]:
+    """PyMuPDF后备提取文本+表格+图片 — 小欧 2026-07-08"""
+    import fitz
+    all_text, tables_data, images_data = [], [], []
+    doc = fitz.open(file_path)
+    for pn in range(doc.page_count):
+        page = doc[pn]
+        text = page.get_text() or ""
+        all_text.append(f"--- 第 {pn + 1} 页 ---\n{text}")
+        tables_data.append({"page": pn + 1, "note": "PyMuPDF不提供表格提取"})
+        for img in page.get_images():
+            images_data.append({
+                "page": pn + 1,
+                "width": 0, "height": 0,
+                "note": "图片引用索引, 实际尺寸需渲染后获取",
+            })
+    doc.close()
+    full_text = "\n\n".join(all_text)
+    return full_text, tables_data, images_data
+
+
 def _build_read_pdf_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", page_count: int = 0, pages_read: int = 0,
@@ -131,6 +160,21 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
                 images_data.extend(images)
 
         full_text = "\n\n".join(all_text)
+
+        # CJK乱码检测: 当?/U+FFFD占比>30%时，尝试PyMuPDF后备提取 — 小欧 2026-07-08
+        fitz_used = False
+        if _is_garbled_text(full_text):
+            try:
+                if _check_module("fitz"):
+                    fitz_text, fitz_tables, fitz_images = _extract_with_fitz(file_path, page_count)
+                    if not _is_garbled_text(fitz_text):
+                        full_text = fitz_text
+                        tables_data = fitz_tables
+                        images_data = fitz_images
+                        fitz_used = True
+            except Exception:
+                pass
+
         result = {"text": full_text}
         if tables_data:
             result["tables"] = tables_data
@@ -140,9 +184,14 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         table_cnt = len(tables_data)
         image_cnt = len(images_data)
+        hint = ""
+        if fitz_used:
+            hint = "pdfplumber提取中文乱码,已使用PyMuPDF后备提取"
+        elif _is_garbled_text(full_text):
+            hint = "该PDF文档的中文文本在创建时已丢失编码信息,无法通过文本提取恢复,建议使用OCR工具"
         llm_data = _build_read_pdf_llm_data(
             "success", duration_ms, file_path, page_count, len(pages_read),
-            len(full_text), table_cnt, image_cnt,
+            len(full_text), table_cnt, image_cnt, hint=hint,
         )
         # =============================================================================
         # 数据设计：page_count/pages_read/table_count/image_count 从 data 移除
