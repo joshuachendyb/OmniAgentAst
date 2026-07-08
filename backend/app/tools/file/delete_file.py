@@ -193,5 +193,13 @@ async def delete(
         )
     else:
         error_detail = result.get("error_detail", "删除文件失败")
-        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=error_detail, user_recursive=recursive, user_force=force)
+        if "recursive" in error_detail.lower():
+            error_hint = "请设置recursive=True重新删除"
+        elif "safety" in error_detail.lower():
+            error_hint = "文件被安全策略拦截，请检查权限"
+        elif "任务ID" in error_detail:
+            error_hint = "请先创建任务再删除"
+        else:
+            error_hint = "请检查文件是否存在和权限"
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=error_detail, hint=error_hint, user_recursive=recursive, user_force=force)
         return build_error(data={}, llm_data=llm_data)

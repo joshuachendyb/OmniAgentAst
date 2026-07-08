@@ -121,12 +121,12 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional
         if len(all_sheets_data) == 1:
             result = all_sheets_data[0]
             result["sheet_names"] = sheet_names
-            result.pop("row_count", None)
             return result
         else:
             return {
                 "sheets": all_sheets_data,
                 "sheet_names": sheet_names,
+                "row_count": total_rows,
             }
     except Exception as e:
         return {"error_detail": str(e), "params": {"file_path": file_path}}

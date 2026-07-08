@@ -179,6 +179,14 @@ async def _ping(host: str, count: int = 4, timeout: int = 5) -> Dict[str, Any]:
         return {"success": False, "error_detail": "系统ping命令不可用", "err_code": ERR_SHELL_COMMAND_NOT_FOUND, "params": {"host": host}}
 
     parsed = _parse_ping_output(raw_output, platform.system().lower())
+    # 后备：locale不匹配时正则失败但TTL=存在 → 从TTL计数推算包数 — 小欧 2026-07-08
+    if parsed["is_reachable"] and parsed["packets_sent"] == 0:
+        ttl_count = len(re.findall(r"TTL=|ttl=", raw_output, re.IGNORECASE))
+        if ttl_count > 0:
+            parsed["packets_received"] = ttl_count
+            parsed["packets_sent"] = count
+            parsed["packets_lost"] = max(0, count - ttl_count)
+            parsed["loss_rate"] = round(parsed["packets_lost"] / count * 100, 1)
     reachable = parsed["is_reachable"]
     data = {**parsed}
     # 数据一致性校验：packets_sent=0 但 latency 存在 → 矛盾，清空 latency
