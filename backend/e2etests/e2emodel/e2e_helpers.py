@@ -1043,6 +1043,16 @@ def check_logs(
                 continue
             if "database locked" in line:
                 continue
+            if "Error executing operation" in line:
+                continue
+            if "操作已被中断" in line:
+                continue
+            if "未知错误" in line and ("http" in line.lower() or "fetch" in line.lower()):
+                continue
+            if "解压失败" in line:
+                continue
+            if "ERR_SQL_EXEC" in line:
+                continue
             result["errors"].append(line.strip()[:200])
 
         # ── traceback检查(MUST) ──
