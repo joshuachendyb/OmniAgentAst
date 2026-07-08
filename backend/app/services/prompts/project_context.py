@@ -1,10 +1,12 @@
-"""项目上下文注入 — 读取 OmniAgent.md 注入Prompt — 小沈 2026-06-11
+"""项目上下文注入 — 读取 OmniAgent.md 注入Prompt — 小沈 2026-06-11 — 小欧 2026-07-08 改用config.get_project_root()
 
 只读取 OmniAgent.md 文件，不读取其他文件。
 
 Author: 小沈 - 2026-06-11
 """
 import os
+
+from app.config import get_config as get_config_instance
 
 CONTEXT_FILE = "OmniAgent.md"
 MAX_CHARS = 8000
@@ -14,16 +16,16 @@ _context_cache: dict = {}
 
 
 def load_project_context(workdir: str = None) -> str:
-    """加载 OmniAgent.md 文件内容 — 小沈 2026-06-11
+    """加载 OmniAgent.md 文件内容 — 小沈 2026-06-11 — 小欧 2026-07-08 改用config.get_project_root()
 
     Args:
-        workdir: 项目根目录,默认自动探测(从cwd向上找OmniAgent.md)
+        workdir: 项目根目录,默认从配置读取(get_project_root)
 
     Returns:
         文件内容,如果没有找到则返回空字符串
     """
     if workdir is None:
-        workdir = _detect_project_root()
+        workdir = get_config_instance().get_project_root()
 
     if workdir in _context_cache:
         return _context_cache[workdir]
@@ -47,17 +49,4 @@ def load_project_context(workdir: str = None) -> str:
 
     _context_cache[workdir] = content
     return content
-
-
-def _detect_project_root() -> str:
-    """从当前工作目录向上搜索,找到包含 OmniAgent.md 的目录 — 小沈 2026-06-11"""
-    cwd = os.getcwd()
-    for _ in range(3):
-        if os.path.isfile(os.path.join(cwd, CONTEXT_FILE)):
-            return cwd
-        parent = os.path.dirname(cwd)
-        if parent == cwd:
-            break
-        cwd = parent
-    return os.getcwd()
 
