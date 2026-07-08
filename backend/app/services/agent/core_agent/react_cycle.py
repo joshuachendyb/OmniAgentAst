@@ -331,11 +331,6 @@ async def run_react_cycle(
 
     try:
         while agent.llm_call_count < max_steps:
-            if asyncio.get_event_loop().time() - _start_time > TASK_TIMEOUT.total_seconds():
-                logger.warning(f"[run_react_cycle] 总耗时超TASK_TIMEOUT({TASK_TIMEOUT}), 强制结束")
-                set_failed(agent, f"总耗时超TASK_TIMEOUT({TASK_TIMEOUT})")
-                yield agent._step_emitter.emit(ErrorStep(step=agent.llm_call_count, error_type="timeout", error_message=f"ReAct循环执行超时，耗时{asyncio.get_event_loop().time() - _start_time:.1f}秒"))
-                break
             async for event in _process_single_step(agent, chunk_buffer):
                 yield event
 

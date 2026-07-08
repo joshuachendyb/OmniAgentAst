@@ -127,7 +127,7 @@ class Config:
         return value
     
 
-    def get_max_steps(self, default: int = 100) -> int:
+    def get_max_steps(self, default: int = 10000) -> int:
         """
         获取max_steps配置 - 统一入口
 
