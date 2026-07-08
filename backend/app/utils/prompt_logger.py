@@ -386,9 +386,9 @@ class PromptLogger:
         if tool_params:
             entry["工具参数"] = tool_params
         
-        entry["格式化tool result内容:"] = observation_content
+        entry["格式化内容:"] = observation_content
         if raw_data is not None:
-            entry["原始的tool result内容:"] = raw_data
+            entry["原始的内容:"] = raw_data
         
         current_log["Prompt组装过程"].append(entry)
     
