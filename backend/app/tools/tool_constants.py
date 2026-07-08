@@ -543,3 +543,19 @@ ERR_REG_PERMISSION_DENIED = "ERR_REG_PERMISSION_DENIED"
 ERR_DESKTOP_NO_PYWIN32 = "ERR_DESKTOP_NO_PYWIN32"
 ERR_NO_WIN10TOAST = "ERR_NO_WIN10TOAST"
 ERR_NO_WIN32GUI = "ERR_NO_WIN32GUI"
+
+
+def sql_error_hint(e: Exception) -> str:
+    """根据SQL异常消息生成更精确的hint — 小欧 2026-07-08"""
+    msg = str(e).lower()
+    if "no such column" in msg or "has no column" in msg:
+        return "请先使用 get_db_schema 查看表结构确认列名是否正确"
+    if "no such table" in msg:
+        return "请先使用 get_db_schema 查看所有表确认表名是否正确"
+    if "syntax error" in msg or "unrecognized token" in msg or "near " in msg:
+        return "SQL语法错误，请检查关键字拼写和语句结构"
+    if "ambiguous column" in msg:
+        return "列名存在歧义，请使用 表名.列名 方式限定"
+    if "no such function" in msg:
+        return "函数名不存在，请检查SQL函数拼写"
+    return "请检查SQL语法"

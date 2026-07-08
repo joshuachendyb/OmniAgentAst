@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import ERR_SQL_EXEC
+from app.tools.tool_constants import ERR_SQL_EXEC, sql_error_hint
 from app.tools.tool_fc_helper import _get_connection, _close_connection
 
 
@@ -204,7 +204,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
 
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=str(e), hint="请检查SQL语法",
+        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=str(e), hint=sql_error_hint(e),
                                                  connection_type=connection_type, db_path=db_path, dry_run=dry_run, timeout=timeout)
         if conn:
             try:

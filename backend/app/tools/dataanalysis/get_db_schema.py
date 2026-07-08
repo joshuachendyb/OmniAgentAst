@@ -17,6 +17,7 @@ from app.tools.tool_constants import (
     ERR_DOC_DB_TABLE_NOT_FOUND,
     ERR_SCHEMA_FAILED,
     ERR_SQL_EXEC,
+    sql_error_hint,
 )
 from app.tools.tool_fc_helper import _get_connection, _close_connection
 
@@ -167,7 +168,7 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
 
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SQL_EXEC, detail=str(e),
+        llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SQL_EXEC, detail=str(e), hint=sql_error_hint(e),
                                                    connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
