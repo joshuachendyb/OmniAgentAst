@@ -2,12 +2,13 @@
 更新时间: 2026-07-08 18:30:00
 ## v0.18.4→v0.18.5 变更汇总 - 小欧-2026-07-08
 
-### feat: 观测输出质量修复6项(#10/11/19/25/31/35)
+### feat: 观测输出质量修复7项(#10/11/19/25/31/35+content_preview)
 - sysinfo(#10/#11): summary从冗长JSON缩略为"获取系统信息，{info_type}，成功（详情见下方）" - 小沈-2026-07-08
 - grep(#19): 删除_MAX_LINE_CONTENT=200行内容截断,统一由formatter的OBS_MAX_STRING_LENGTH管控 - 小沈-2026-07-08
 - ping_port(#25): _note: "网络诊断已完成"提示放详情末尾,_format_scalar_data特殊渲染 - 小沈-2026-07-08
 - param_alias(#31): generate_chart别名映射从data→file_path改为file_path→data - 小沈-2026-07-08
 - CREATE TABLE IF NOT EXISTS(#35): _check_sql_safety检测到IF NOT EXISTS时豁免CREATE - 小沈-2026-07-08
+- content_preview: 改为文首50字+文末50字,formatter加"已写入内容"行 - 小沈-2026-07-08
 
 ### fix: 多项bug修复
 - http_request.py _build_http_error: str(e)为空时返回LLM可读的详细指引 - 小欧-2026-07-08
