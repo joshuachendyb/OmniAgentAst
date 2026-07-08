@@ -1049,9 +1049,9 @@ def check_logs(
                 continue
             if "未知错误" in line and ("http" in line.lower() or "fetch" in line.lower()):
                 continue
-            if "解压失败" in line:
-                continue
             if "ERR_SQL_EXEC" in line:
+                continue
+            if "LLM格式错误" in line:
                 continue
             result["errors"].append(line.strip()[:200])
 
