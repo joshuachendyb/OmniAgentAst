@@ -289,6 +289,20 @@ def _fix_encoding(text: str) -> str:
         return text
 
 
+# 已知良性stderr模式白名单（不触发warning）— 小欧 2026-07-08
+_BENIGN_STDERR_PATTERNS = [
+    "Non-authoritative answer",
+]
+
+def _filter_benign_stderr(stderr: str) -> str:
+    """过滤已知良性stderr行 — 小欧 2026-07-08"""
+    if not stderr:
+        return ""
+    lines = stderr.splitlines()
+    filtered = [l for l in lines if not any(p in l for p in _BENIGN_STDERR_PATTERNS)]
+    return "\n".join(filtered)
+
+
 def _cmd_powershell_mismatch_hint(command: str, shell_type: str, stderr: str) -> str:
     """检测CMD/PowerShell语法混用，返回针对性hint — 小沈 2026-07-08
 
@@ -371,6 +385,9 @@ def shell(
                 _PWSH_CACHE[0] = bool(shutil.which("pwsh.exe"))
             if not _PWSH_CACHE[0] and ('&&' in cmd or '||' in cmd):
                 cmd = _translate_powershell_operators(cmd)
+            # Format-Table输出追加Out-String -Width 4096，避免PS5.1默认80列截断 — 小欧 2026-07-08
+            if re.search(r'(?i)(?:^|\|)\s*Format-Table\b', cmd):
+                cmd += " | Out-String -Width 4096"
 
             from app.tools.shell.shell_engine import PersistentShell
             engine = PersistentShell.get_instance(cwd)
@@ -446,18 +463,23 @@ def shell(
             return build_warning(data=data, llm_data=llm)
 
         if returncode == 0:
-            if stderr_str.strip():
-                llm = _build_execute_shell_command_llm_data("warning", d, command,
-                    returncode, stdout_str[:200], stderr_str[:200], shell_type or "",
-                    timeout=timeout, cwd=cwd or "",
-                    output_len=len(stdout_str), stderr_len=len(stderr_str))
-                # ---- observation_formatter route -------------------------------------------
-                # branch: #11 shell stdout
-                # trigger: "stdout" in data — stdout/stderr/returncode/shell_type/duration_ms
-                # handler: _format_shell_result(data)
-                # file:    observation_formatter.py:180-182
-                # ------------------------------------------------------------------------------
-                return build_warning(data=data, llm_data=llm)
+            stderr_clean = stderr_str.strip()
+            if stderr_clean:
+                benign_filtered = _filter_benign_stderr(stderr_str)
+                if not benign_filtered.strip():
+                    data["stderr"] = ""
+                else:
+                    llm = _build_execute_shell_command_llm_data("warning", d, command,
+                        returncode, stdout_str[:200], stderr_str[:200], shell_type or "",
+                        timeout=timeout, cwd=cwd or "",
+                        output_len=len(stdout_str), stderr_len=len(stderr_str))
+                    # ---- observation_formatter route -------------------------------------------
+                    # branch: #11 shell stdout
+                    # trigger: "stdout" in data — stdout/stderr/returncode/shell_type/duration_ms
+                    # handler: _format_shell_result(data)
+                    # file:    observation_formatter.py:180-182
+                    # ------------------------------------------------------------------------------
+                    return build_warning(data=data, llm_data=llm)
             llm = _build_execute_shell_command_llm_data("success", d, command,
                 returncode, stdout_str[:200], stderr_str[:200], shell_type or "",
                 timeout=timeout, cwd=cwd or "",

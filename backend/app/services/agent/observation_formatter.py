@@ -22,8 +22,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   readtext        {content: str}                 #2 raw str               OBS_MAX_STRING_LENGTH=10000          无行数限制(仅10MB文件大小)
   fetchpage       {content: str}                 #2 raw str               OBS_MAX_STRING_LENGTH=10000          max_tokens=8000→32000字符
-  clipboard_ctl   {content: str}(write)          #2 raw str               OBS_MAX_STRING_LENGTH=10000          N/A
-  clipboard_ctl   {text: str}(read)              #10 raw text             OBS_MAX_STRING_LENGTH=10000          N/A
+  clipboard_ctl   {text: str}                    #10 raw text            OBS_MAX_STRING_LENGTH=10000          N/A
   read_pdf        {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000          页数不限
   read_docx       {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000          字符数不限
   read_xlsx       {{headers, rows}}              #2b flat _format_table   行: OBS_MAX_DISPLAY_ITEMS=500         max_rows=10000
@@ -93,9 +92,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # non-dict          timer_list                       无限制                             直接 str()，无截断
     # #2 raw str        readtext                         无行数限制(仅MAX_READ_SIZE=10MB)     OBS_MAX_STRING_LENGTH=10000
     #                   fetchpage                        max_tokens=8000 → 32000字符           OBS_MAX_STRING_LENGTH=10000
-    #                   clipboard_ctl(write)              无限制                              OBS_MAX_STRING_LENGTH=10000
-    # #10 raw text      read_pdf, read_docx              页数/字符数不限                      OBS_MAX_STRING_LENGTH=10000
-    #                   clipboard_ctl(read)               无限制                              OBS_MAX_STRING_LENGTH=10000
+    # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=10000
     # #3 entries        listdir                          LISTDIR_PAGE_SIZE=500                OBS_MAX_DISPLAY_ITEMS=500
     # #4 items          searchweb                         num_results=50(最大); snippet 300   OBS_MAX_DISPLAY_ITEMS=500
     # #2b flat table    read_xlsx                         max_rows=10000                      OBS_MAX_DISPLAY_ITEMS=500
@@ -139,14 +136,14 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
         if not isinstance(data, dict):
             return str(data)
 
-        # ── #2 raw str — 3 tools: readtext, fetchpage, clipboard_ctl(write) ──
+        # ── #2 raw str — 2 tools: readtext, fetchpage ──
         if "content" in data and isinstance(data["content"], str):
             content = data["content"]
             if len(content) > OBS_MAX_STRING_LENGTH:
                 content = content[:OBS_MAX_STRING_LENGTH] + _truncation_msg(llm_data)
             return content
 
-        # ── #10 raw text — 3 tools: read_pdf, read_docx, clipboard_ctl(read) ──
+        # ── #10 raw text — 3 tools: read_pdf, read_docx, clipboard_ctl ──
         if "text" in data and isinstance(data["text"], str):
             return _format_text_content(data, llm_data)
 

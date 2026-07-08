@@ -380,14 +380,15 @@ async def build_observation(ctx: ObservationContext) -> List:
                 "other_data": result.get("other_data", {}) if isinstance(result, dict) else {},
             })
 
-    merged_llm_data = _all_llm_data[0] if _all_llm_data else None
-    if len(_all_llm_data) > 1:
-        merged_llm_data = _merge_llm_data(_all_llm_data)
+    # 直接列表传递，不merge（各是各的，与parallel_results索引1:1）— 北京老陈 2026-07-08
+    llm_data_list = _all_llm_data if _all_llm_data else None
 
-    if merged_llm_data:
-        _status = merged_llm_data.get("status", {})
-        _act = merged_llm_data.get("action", {})
-        logger.info(f"[Observation] step={ctx.step}, tool={_act.get('tool','')}, code={_status.get('exec_code','?')}, summary={(merged_llm_data.get('summary','') or '')}")
+    if llm_data_list:
+        for i, ld in enumerate(llm_data_list):
+            _st = ld.get("status", {}) if isinstance(ld, dict) else {}
+            _ac = ld.get("action", {}) if isinstance(ld, dict) else {}
+            _sm = (ld.get("summary", "") if isinstance(ld, dict) else "")[:120]
+            logger.info(f"[Observation] step={ctx.step}[{i}], tool={_ac.get('tool','')}, code={_st.get('exec_code','?')}, summary={_sm}")
 
     merged_other = _all_other_data[0] if _all_other_data else None
     if len(_all_other_data) > 1:
@@ -395,7 +396,7 @@ async def build_observation(ctx: ObservationContext) -> List:
 
     events.append(ctx.agent._step_emitter.emit(ObservationStep(
         step=ctx.step,
-        llm_data=merged_llm_data,
+        llm_data=llm_data_list,
         tool_result=_all_tool_results[0] if len(_all_tool_results) == 1 else _all_tool_results,
         other_data=merged_other,
         parallel_results=_parallel_results or None,

@@ -22,6 +22,7 @@ from reportlab.lib.units import mm
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 from app.utils.table_helper import parse_markdown_table, get_table_header_style_config
+from app.tools.document.md_inline_utils import _md_to_pdf_xml
 
 
 def _create_pdf_table(table_data, chinese_style):
@@ -151,25 +152,25 @@ def write_pdf(
                     continue
                 if line.startswith('# '):
                     h1_style = ParagraphStyle('h1', parent=chinese_style, fontSize=18, spaceBefore=12, spaceAfter=6)
-                    elements.append(Paragraph(line[2:], h1_style))
+                    elements.append(Paragraph(_md_to_pdf_xml(line[2:]), h1_style))
                     elements.append(Spacer(1, 3 * mm))
                 elif line.startswith('## '):
                     h2_style = ParagraphStyle('h2', parent=chinese_style, fontSize=16, spaceBefore=10, spaceAfter=5)
-                    elements.append(Paragraph(line[3:], h2_style))
+                    elements.append(Paragraph(_md_to_pdf_xml(line[3:]), h2_style))
                     elements.append(Spacer(1, 3 * mm))
                 elif line.startswith('### '):
                     h3_style = ParagraphStyle('h3', parent=chinese_style, fontSize=14, spaceBefore=8, spaceAfter=4)
-                    elements.append(Paragraph(line[4:], h3_style))
+                    elements.append(Paragraph(_md_to_pdf_xml(line[4:]), h3_style))
                     elements.append(Spacer(1, 2 * mm))
                 elif line.startswith('#### '):
                     h4_style = ParagraphStyle('h4', parent=chinese_style, fontSize=12, spaceBefore=6, spaceAfter=3)
-                    elements.append(Paragraph(line[5:], h4_style))
+                    elements.append(Paragraph(_md_to_pdf_xml(line[5:]), h4_style))
                     elements.append(Spacer(1, 2 * mm))
                 elif line.startswith('- ') or line.startswith('* '):
-                    elements.append(Paragraph('• ' + line[2:], chinese_style))
+                    elements.append(Paragraph('• ' + _md_to_pdf_xml(line[2:]), chinese_style))
                     elements.append(Spacer(1, 2 * mm))
                 elif re.match(r'^\d+\.\s', line):
-                    elements.append(Paragraph(re.sub(r'^\d+\.\s', '', line), chinese_style))
+                    elements.append(Paragraph(_md_to_pdf_xml(re.sub(r'^\d+\.\s', '', line)), chinese_style))
                     elements.append(Spacer(1, 2 * mm))
                 elif line.startswith('|') and '|' in line[1:]:
                     table_rows, i = parse_markdown_table(lines, i)
@@ -179,7 +180,7 @@ def write_pdf(
                         elements.append(Spacer(1, 5 * mm))
                     continue
                 else:
-                    elements.append(Paragraph(line, chinese_style))
+                    elements.append(Paragraph(_md_to_pdf_xml(line), chinese_style))
                     elements.append(Spacer(1, 3 * mm))
                 i += 1
         

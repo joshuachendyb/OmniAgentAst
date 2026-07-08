@@ -293,7 +293,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         )
         yield agent._step_emitter.emit(ObservationStep(
             step=step,
-            llm_data={"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}},
+            llm_data=[{"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}}],
             tool_result={},
         ))
         return

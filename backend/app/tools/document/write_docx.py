@@ -22,6 +22,25 @@ from app.tools.tool_constants import ERR_WRITE_DOCX
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config
+from app.tools.document.md_inline_utils import _parse_inline_md
+
+
+def _apply_inline_formatting(p, text):
+    """给python-docx段落添加行内格式run — 小欧 2026-07-08"""
+    from docx.shared import Pt
+    for seg_text, bold, italic, code, link_url in _parse_inline_md(text):
+        run = p.add_run(seg_text)
+        run.bold = bold
+        run.italic = italic
+        if code:
+            run.font.name = 'Courier New'
+            run.font.size = Pt(9)
+
+
+def _format_cell_content(cell, text):
+    """给表格单元格添加行内格式文本 — 小欧 2026-07-08"""
+    cell.text = ""
+    _apply_inline_formatting(cell.paragraphs[0], str(text))
 
 
 def _set_docx_table_style(table):
@@ -149,32 +168,41 @@ def write_docx(
                     i += 1
                     continue
                 
+                p = None
                 if line.startswith('# '):
-                    doc.add_heading(line[2:], 1)
+                    p = doc.add_paragraph(style='Heading 1')
+                    _apply_inline_formatting(p, line[2:])
                 elif line.startswith('## '):
-                    doc.add_heading(line[3:], 2)
+                    p = doc.add_paragraph(style='Heading 2')
+                    _apply_inline_formatting(p, line[3:])
                 elif line.startswith('### '):
-                    doc.add_heading(line[4:], 3)
+                    p = doc.add_paragraph(style='Heading 3')
+                    _apply_inline_formatting(p, line[4:])
                 elif line.startswith('#### '):
-                    doc.add_heading(line[5:], 4)
+                    p = doc.add_paragraph(style='Heading 4')
+                    _apply_inline_formatting(p, line[5:])
                 elif line.startswith('##### '):
-                    doc.add_heading(line[6:], 5)
+                    p = doc.add_paragraph(style='Heading 5')
+                    _apply_inline_formatting(p, line[6:])
                 elif line.startswith('- ') or line.startswith('* '):
-                    doc.add_paragraph(line[2:], style='List Bullet')
+                    p = doc.add_paragraph(style='List Bullet')
+                    _apply_inline_formatting(p, line[2:])
                 elif re.match(r'^\d+\.\s', line):
-                    doc.add_paragraph(re.sub(r'^\d+\.\s', '', line), style='List Number')
+                    p = doc.add_paragraph(style='List Number')
+                    _apply_inline_formatting(p, re.sub(r'^\d+\.\s', '', line))
                 elif line.startswith('|') and '|' in line[1:]:
                     table_rows, i = parse_markdown_table(lines, i)
-                    if table_rows:
+                    if table_rows and table_rows[0]:
                         t = doc.add_table(rows=len(table_rows), cols=len(table_rows[0]))
                         for ri, row_data in enumerate(table_rows):
                             for ci, cell_text in enumerate(row_data):
-                                t.rows[ri].cells[ci].text = str(cell_text)
+                                _format_cell_content(t.rows[ri].cells[ci], cell_text)
                         _set_docx_table_style(t)
                         _set_docx_column_widths(t, table_rows)
                     continue
                 else:
-                    doc.add_paragraph(line)
+                    p = doc.add_paragraph()
+                    _apply_inline_formatting(p, line)
                 i += 1
         
         if table_data:
@@ -182,7 +210,7 @@ def write_docx(
                 t = doc.add_table(rows=len(table_data), cols=len(table_data[0]))
                 for ri, row_data in enumerate(table_data):
                     for ci, cell_text in enumerate(row_data):
-                        t.rows[ri].cells[ci].text = str(cell_text)
+                        _format_cell_content(t.rows[ri].cells[ci], cell_text)
                 _set_docx_table_style(t)
                 _set_docx_column_widths(t, table_data)
 

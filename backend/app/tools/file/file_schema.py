@@ -192,6 +192,7 @@ class ListdirInput(BaseModel):
 # ============================================================
 
 class TreeInput(BaseModel):
+    """可设max_depth控制深度(默认5层,大目录如node_modules建议设3以下)"""
     dir_path: str = Field(
         description="目录路径(绝对路径,必填)。如 D:/项目代码"
     )
@@ -199,9 +200,14 @@ class TreeInput(BaseModel):
         default=False,
         description="是否显示隐藏文件(以.开头的文件),默认False"
     )
+    max_depth: int = Field(
+        default=5,
+        ge=1, le=20,
+        description="树的最大深度(1~20),默认5层"
+    )
     sort_by: Literal["name", "mtime"] = Field(
         default="name",
-        description="排序方式:name/mtime(树模式不支持size排序),默认name"
+        description="排序方式:name/mtime(不支持size排序),默认name"
     )
 
 

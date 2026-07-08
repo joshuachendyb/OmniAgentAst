@@ -112,6 +112,7 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
     if warning_msg:
         logger.warning(f"[registry_read] {warning_msg}")
     t0 = _time_mod.perf_counter()
+    key_opened = False
     try:
         full_root_key, sub_key = _parse_key_path(key_path, hive)
         hkey = ROOT_KEY_MAP.get(full_root_key)
@@ -122,21 +123,41 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
             return build_error(data={}, llm_data=llm_data)
 
         with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_READ) as key:
-            value, reg_type = winreg.QueryValueEx(key, value_name)
+            key_opened = True
+            if value_name is None:
+                # 枚举所有命名值（未指定value_name时列出全部）— 小欧 2026-07-08
+                values_dict = {}
+                i = 0
+                while True:
+                    try:
+                        v_name, v_value, v_type = winreg.EnumValue(key, i)
+                        if output_format == "hex" and isinstance(v_value, (bytes, bytearray)):
+                            v_value = v_value.hex()
+                        values_dict[v_name] = v_value
+                        i += 1
+                    except OSError:
+                        break
+                if not values_dict:
+                    raise FileNotFoundError(f"注册表键 {key_path} 没有值")
+                formatted_value = values_dict
+                llm_value_name = "(所有值)"
+                value_type_name = f"REG_ENUM({len(values_dict)} values)"
+                logger.debug(f"[registry_read] 枚举 {len(values_dict)} 个值: {full_root_key}\\{sub_key}")
+            else:
+                value, reg_type = winreg.QueryValueEx(key, value_name)
+                value_type_name = {
+                    winreg.REG_SZ: "REG_SZ", winreg.REG_DWORD: "REG_DWORD", winreg.REG_QWORD: "REG_QWORD",
+                    winreg.REG_EXPAND_SZ: "REG_EXPAND_SZ", winreg.REG_MULTI_SZ: "REG_MULTI_SZ",
+                    winreg.REG_BINARY: "REG_BINARY", winreg.REG_NONE: "REG_NONE",
+                }.get(reg_type, f"UNKNOWN({reg_type})")
+                formatted_value = value
+                if output_format == "hex" and isinstance(value, (bytes, bytearray)):
+                    formatted_value = value.hex()
+                llm_value_name = value_name or "(默认)"
+                logger.debug(f"[registry_read] 成功读取: {full_root_key}\\{sub_key}\\{value_name or '(默认)'}")
 
-            value_type_name = {
-                winreg.REG_SZ: "REG_SZ", winreg.REG_DWORD: "REG_DWORD", winreg.REG_QWORD: "REG_QWORD",
-                winreg.REG_EXPAND_SZ: "REG_EXPAND_SZ", winreg.REG_MULTI_SZ: "REG_MULTI_SZ",
-                winreg.REG_BINARY: "REG_BINARY", winreg.REG_NONE: "REG_NONE",
-            }.get(reg_type, f"UNKNOWN({reg_type})")
-
-            formatted_value = value
-            if output_format == "hex" and isinstance(value, (bytes, bytearray)):
-                formatted_value = value.hex()
-
-            logger.debug(f"[registry_read] 成功读取: {full_root_key}\\{sub_key}\\{value_name or '(默认)'}")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_read_llm_data("success", duration_ms, f"{full_root_key}\\{sub_key}", value_name or "(默认)", formatted_value, value_type_name)
+            llm_data = _build_registry_read_llm_data("success", duration_ms, f"{full_root_key}\\{sub_key}", llm_value_name, formatted_value, value_type_name)
             # =============================================================================
             # 数据设计：key_path/value_name/value/value_type 全部从 data 移除
             # summary 已含全部信息: "读取 HKCU\Software\MyApp\Version = 1.0（REG_SZ）"
@@ -151,7 +172,18 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
 
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=f"注册表键或值不存在: {key_path}", hint="请检查键路径是否正确")
+        if key_opened:
+            # OpenKey成功 → 键存在，FileNotFoundError来自QueryValueEx或显式raise
+            if value_name:
+                detail = f"值不存在: {key_path}\\{value_name}"
+                hint = "请检查值名称是否正确"
+            else:
+                detail = f"注册表键 {key_path} 没有值"
+                hint = "该键下没有可读取的值"
+        else:
+            detail = f"注册表键不存在: {key_path}"
+            hint = "请检查键路径是否正确"
+        llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=detail, hint=hint)
         return build_error(data={}, llm_data=llm_data)
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

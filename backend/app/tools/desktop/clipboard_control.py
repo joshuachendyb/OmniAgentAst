@@ -68,7 +68,7 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
     try:
         import pyperclip
         pyperclip.copy(content)
-        return {"content": content}
+        return {"text": content}
     except ImportError:
         try:
             import ctypes
@@ -89,7 +89,7 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
                     user32.EmptyClipboard()
                     user32.SetClipboardData(CF_TEXT, h_mem)
                     user32.CloseClipboard()
-                    return {"content": content}
+                    return {"text": content}
                 else:
                     kernel32.GlobalFree(h_mem)
                     return {"error_detail": "内存锁定失败", "params": {}}

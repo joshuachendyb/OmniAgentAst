@@ -1540,7 +1540,9 @@ const processSSEData = (
           }>;
 
           // Phase 2: 从llm_data/other_data提取字段
-          const llmData = obsData.llm_data as Record<string, unknown> | undefined;
+          // llm_data是列表（单工具[dict]，多工具[dict1,dict2]），取首项给下游消费 — 北京老陈 2026-07-08
+          const llmDataRaw = obsData.llm_data;
+          const llmData = (Array.isArray(llmDataRaw) ? llmDataRaw[0] : llmDataRaw) as Record<string, unknown> | undefined;
           const otherData = obsData.other_data as Record<string, unknown> | undefined;
 
           // 字段兼容：优先新格式(llm_data)，回退旧格式(summary等)

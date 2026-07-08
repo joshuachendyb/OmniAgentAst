@@ -21,7 +21,7 @@ from app.utils.logger import logger
 
 
 async def _get_directory_tree(
-    dir_path: str, max_depth: int = 10,
+    dir_path: str, max_depth: int = 5,
     include_hidden: bool = False,
 ) -> Dict[str, Any]:
     """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时 — 小欧 2026-06-24 修复include_hidden — 小欧 2026-07-06 去mtime排序"""
@@ -33,7 +33,7 @@ async def _get_directory_tree(
 
     path = Path(dir_path)
 
-    def _count_tree_fs(root: Path) -> Tuple[int, int, int]:
+    def _count_tree_fs(root: Path, depth: int = 0) -> Tuple[int, int, int]:
         fc = dc = ts = 0
         try:
             for entry in os.scandir(root):
@@ -42,8 +42,9 @@ async def _get_directory_tree(
                         if not include_hidden and entry.name.startswith('.'):
                             continue
                         dc += 1
-                        sub_f, sub_d, sub_s = _count_tree_fs(Path(entry.path))
-                        fc += sub_f; dc += sub_d; ts += sub_s
+                        if depth < max_depth:  # 与 _build_tree 深度一致 — 小沈 2026-07-08
+                            sub_f, sub_d, sub_s = _count_tree_fs(Path(entry.path), depth + 1)
+                            fc += sub_f; dc += sub_d; ts += sub_s
                     else:
                         if not include_hidden and entry.name.startswith('.'):
                             continue
@@ -132,11 +133,13 @@ def _build_tree_llm_data(
 async def tree(
     dir_path: str,
     include_hidden: bool = False,
+    max_depth: int = 5,
     sort_by: str = "name",
 ) -> Dict[str, Any]:
     """列出目录树 — 小沈 2026-07-03 从list_directory拆分"""
     t0 = _time_mod.perf_counter()
-    max_depth = 10
+    if max_depth < 1:
+        max_depth = 1
 
     if not dir_path or not dir_path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

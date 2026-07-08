@@ -1,4 +1,46 @@
-﻿v0.18.7
+﻿v0.18.8
+更新时间: 2026-07-08 17:24:19
+## v0.18.7→v0.18.8 变更汇总 - 小欧-2026-07-08
+
+### feat: docx/pdf/pptx写工具行内Markdown格式支持
+- write_docx.py: 新增 `_apply_inline_formatting`+`_format_cell_content`，段落和表格支持**加粗**、*斜体*、`行内代码` - 小欧-2026-07-08
+- write_pdf.py: 标题/列表/正文调用 `_md_to_pdf_xml` 行内格式 - 小欧-2026-07-08
+- write_pptx.py: 新增 `_set_pptx_paragraph_text`，段落/列表/表格全支持行内格式 - 小欧-2026-07-08
+- 新增 `md_inline_utils.py`: 统一 `_parse_inline_md` + PDF专用 `_md_to_pdf_xml` - 小欧-2026-07-08
+
+### feat: tree目录树新增max_depth参数
+- tree.py: max_depth默认10→5，递归深度保护，新增参数校验 - 小沈-2026-07-08
+- file_schema.py: TreeInput新增max_depth(1~20) - 小沈-2026-07-08
+- file_register.py: tree示例补充max_depth用法 - 小沈-2026-07-08
+
+### refactor: llm_data改列表传递+write_text安全收敛
+- action_handler.py: llm_data改为列表直接传递（不merge），并行工具索引1:1 - 北京老陈-2026-07-08
+- react_cycle.py: 截断分支llm_data同步改为列表 - 北京老陈-2026-07-08
+- observation_step.py: _llm_data始终存列表，get_content支持多工具 - 北京老陈-2026-07-08
+- sse.ts: llm_data列表模式兼容（取首项给下游消费） - 北京老陈-2026-07-08
+- write_text_file.py: content验证+类型转换统一到_check_write_safety - 小欧-2026-07-08
+
+### fix: Shell引擎+create_task多项修复
+- shell_engine.py: Out-File加-Width 4096防PS5.1 Format-Table截断 - 小欧-2026-07-08
+- execute_shell_command.py: Format-Table自动追加Out-String -Width 4096 - 小欧-2026-07-08
+- create_task.py: 补缺/sc参数（schedule_type未传入命令） - 小沈-2026-07-08
+
+### fix: N3 clipboard键名不一致(P4)
+- clipboard_control.py: _write_clipboard返回键名content→text，读/写统一 - 小欧-2026-07-08
+- observation_formatter.py: clipboard_ctl(write)改为#10 raw text，合并单行 - 小欧-2026-07-08
+
+### fix: N4 registry_read错误信息不准(P4)
+- registry_read.py: 加key_opened标记区分键不存在vs值不存在，hint各对指引 - 小欧-2026-07-08
+
+### fix: N7 stderr良性输出白名单(P5)
+- execute_shell_command.py: 新增_BENIGN_STDERR_PATTERNS白名单+_filter_benign_stderr - 小欧-2026-07-08
+
+### chore: requirements.txt加PyMuPDF
+- PyMuPDF>=1.25.0 (read_pdf中文乱码后备提取依赖) - 小欧-2026-07-08
+
+---
+
+v0.18.7
 更新时间: 2026-07-08 16:13:10
 ## v0.18.6→v0.18.7 变更汇总 - 小欧-2026-07-08
 

@@ -22,6 +22,21 @@ from app.utils.json_utils import coerce_json
 from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 from app.utils.table_helper import calculate_column_widths, get_table_header_style_config
+from app.tools.document.md_inline_utils import _parse_inline_md
+
+
+def _set_pptx_paragraph_text(paragraph, text):
+    """设置段落文本，支持行内Markdown格式 — 小欧 2026-07-08"""
+    from pptx.util import Pt
+    paragraph.clear()
+    for seg_text, bold, italic, code, link_url in _parse_inline_md(text):
+        run = paragraph.add_run()
+        run.text = seg_text
+        run.font.bold = bold
+        run.font.italic = italic
+        if code:
+            run.font.name = 'Courier New'
+            run.font.size = Pt(9)
 
 
 def _build_write_pptx_llm_data(
@@ -69,26 +84,26 @@ def _add_pptx_content(slide, content):
         return body.paragraphs[0] if is_first else body.add_paragraph()
 
     if isinstance(content, str):
-        body.paragraphs[0].text = content
+        _set_pptx_paragraph_text(body.paragraphs[0], content)
     elif isinstance(content, list):
         first_slot = True
         for item in content:
             if isinstance(item, str):
                 p = _get_para(first_slot)
                 first_slot = False
-                p.text = item
+                _set_pptx_paragraph_text(p, item)
             elif isinstance(item, dict):
                 t = item.get("type", "paragraph")
                 txt = item.get("text", "")
                 if t == "paragraph":
                     p = _get_para(first_slot)
                     first_slot = False
-                    p.text = txt
+                    _set_pptx_paragraph_text(p, txt)
                 elif t == "bullets":
                     for b in item.get("items", []):
                         p = _get_para(first_slot)
                         first_slot = False
-                        p.text = str(b)
+                        _set_pptx_paragraph_text(p, str(b))
                         p.level = 1
     elif isinstance(content, dict):
         t = content.get("type", "paragraph")
@@ -98,12 +113,12 @@ def _add_pptx_content(slide, content):
             for b in items:
                 p = _get_para(first_slot)
                 first_slot = False
-                p.text = str(b)
+                _set_pptx_paragraph_text(p, str(b))
                 p.level = 1
         elif t == "paragraph":
             txt = content.get("text", "")
             p = _get_para(first_slot)
-            p.text = txt
+            _set_pptx_paragraph_text(p, txt)
 
 
 def _add_pptx_table(slide, table_data, start_top=None):
@@ -144,11 +159,11 @@ def _add_pptx_table(slide, table_data, start_top=None):
                 text = str(val)
                 if '\n' in text:
                     lines = text.split('\n')
-                    cell.text_frame.paragraphs[0].text = lines[0]
+                    _set_pptx_paragraph_text(cell.text_frame.paragraphs[0], lines[0])
                     for line in lines[1:]:
-                        cell.text_frame.add_paragraph().text = line
+                        _set_pptx_paragraph_text(cell.text_frame.add_paragraph(), line)
                 else:
-                    cell.text = text
+                    _set_pptx_paragraph_text(cell.text_frame.paragraphs[0], text)
                 
                 if ri == 0:
                     for para in cell.text_frame.paragraphs:
