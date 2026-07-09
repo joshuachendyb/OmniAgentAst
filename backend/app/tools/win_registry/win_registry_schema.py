@@ -28,7 +28,7 @@ from typing import Optional, Literal
 
 
 class RegistryReadInput(BaseModel):
-    """key_path含根键前缀(如HKCU\...)时hive参数无效,严禁同时指定"""
+    r"""key_path含根键前缀(如HKCU\...)时hive参数无效,严禁同时指定"""
     key_path: str = Field(
         ..., description="注册表键路径(必填)。两种写法:1.含根键前缀如HKCU\\Software\\MyApp(此时hive参数无效) 2.不含根键如Software\\MyApp(此时通过hive指定根键)。严禁key_path含根键前缀的同时指定非默认hive"
     )
@@ -53,7 +53,7 @@ class RegistryReadInput(BaseModel):
 
 
 class RegistryWriteInput(BaseModel):
-    """key_path含根键前缀(如HKCU\...)时hive参数无效,严禁同时指定"""
+    r"""key_path含根键前缀(如HKCU\...)时hive参数无效,严禁同时指定"""
     key_path: str = Field(
         ..., description="注册表键路径(必填)。两种写法:1.含根键前缀如HKCU\\Software\\MyApp(此时hive参数无效) 2.不含根键如Software\\MyApp(此时通过hive指定根键)。严禁key_path含根键前缀的同时指定非默认hive"
     )
@@ -81,7 +81,7 @@ class RegistryWriteInput(BaseModel):
 
 
 class RegistryDeleteInput(BaseModel):
-    """key_path含根键前缀(如HKCU\...)时hive参数无效,严禁同时指定"""
+    r"""key_path含根键前缀(如HKCU\...)时hive参数无效,严禁同时指定"""
     key_path: str = Field(
         ..., description="注册表键路径(必填)。两种写法:1.含根键前缀如HKCU\\Software\\MyApp(此时hive参数无效) 2.不含根键如Software\\MyApp(此时通过hive指定根键)。严禁key_path含根键前缀的同时指定非默认hive"
     )
