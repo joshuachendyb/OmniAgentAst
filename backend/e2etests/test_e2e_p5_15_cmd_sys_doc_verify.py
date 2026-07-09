@@ -11,7 +11,28 @@
 TEST_CASE_ID = "E2E-P5-15"
 TEST_CASE_NAME = "命令查询+系统分析+文档生成+文件验证"
 USER_INPUT = (
-    "先用systeminfo命令查一下这台电脑的初始安装日期和详细的硬件信息，再用其他方法查一下CPU的具体型号和内存的详细规格，把收集到的初始安装日期、CPU信息、内存大小、操作系统版本和硬件信息汇总整理成一份结构化的Word文档保存到E:\\test_dir\\hardware_report.docx，然后列出目录确认文件已生成。把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "这是一项多阶段系统硬件信息采集与文档生成任务，请严格按照以下阶段顺序执行。"
+    ""
+    "【阶段一：命令方式采集硬件信息】"
+    "第一步，用systeminfo命令获取完整的系统硬件和软件信息。"
+    "第二步，从systeminfo输出中提取：初始安装日期、系统制造商、系统型号、处理器信息、物理内存总量、BIOS版本。"
+    "第三步，用wmic cpu命令获取CPU的详细规格：名称、核心数、逻辑处理器数、最大时钟频率、L2/L3缓存。"
+    "第四步，用wmic memorychip命令获取内存条的详细规格：容量、速度、制造商和插槽位置。"
+    ""
+    "【阶段二：硬件信息汇总分析】"
+    "第五步，把从systeminfo和wmic获取的信息进行汇总对比，确保数据一致性。"
+    "第六步，写一个Python脚本做硬件配置评分：根据CPU核心数和频率、内存容量（>=8GB为合格/>=16GB为良好/>=32GB为优秀）、"
+    "磁盘类型和容量（SSD加分）进行综合评分，给出硬件配置等级和升级建议，保存到E:\\test_dir\\hardware_score.txt。"
+    ""
+    "【阶段三：Word文档生成】"
+    "第七步，把收集到的初始安装日期、CPU详细规格、内存规格、操作系统版本和硬件评分汇总整理成结构化的Word文档，"
+    "要求文档包含标题页、硬件总览表、CPU规格表、内存规格表、操作系统信息和硬件评分六部分，保存到E:\\test_dir\\hardware_report.docx。"
+    ""
+    "【阶段四：文件验证】"
+    "第八步，确认hardware_report.docx已成功生成，获取文件大小、创建时间和修改时间，展示验证结果。"
+    ""
+    "【阶段五：四版本报告】"
+    "第九步，把以上所有操作的过程和结果独立生成四种版本的报告（TXT版、DOCX版、结构化DOCX版、PDF版）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
 )
 
 import pytest
@@ -58,7 +79,7 @@ async def test_e2e_p5_15_cmd_sys_doc_verify():
 
         end_type = assert_stream_ended(result)
         assert result["total_steps"] >= 2, "至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, "疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, "疑似死循环(MUST)"
 
         for issue in verify_response_quality(result):
             pass

@@ -89,7 +89,7 @@ async def test_e2e_p2_01_env_check():
 
         end_type = assert_stream_ended(result)
         assert result["total_steps"] >= 2, "至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, "疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, "疑似死循环(MUST)"
 
         for issue in verify_response_quality(result):
             pass

@@ -21,7 +21,26 @@
 
 TEST_CASE_ID = "E2E-P6-04"
 TEST_CASE_NAME = "SQL查询错误容错"
-USER_INPUT = "先连接到数据库chat_history.db查看它有哪些表，列出所有表名和每张表的记录数，然后查一下有没有user_settings这张表，如果这张表不存在就查一下sessions表的结构，把两个结果都保存到E:\\test_dir\\db_query_report.txt"
+USER_INPUT = (
+    "这是一项多阶段数据库查询与错误处理任务，请严格按照阶段顺序执行。"
+    ""
+    "第一阶段：连接到chat_history.db，获取所有表的列表，展示每张表的名称和表中的记录数。"
+    ""
+    "第二阶段：写一个Python脚本用于数据库表结构分析，脚本要求："
+    "连接到SQLite数据库并获取所有表的CREATE TABLE语句、"
+    "解析出每张表中各个字段的名称和数据类型、输出所有表结构和字段类型，保存到E:\\test_dir\\schema_analyzer.py。"
+    ""
+    "第三阶段：用schema_analyzer.py分析chat_history.db的表结构，展示分析结果给我。"
+    ""
+    "第四阶段：查询数据库中有没有user_settings这张表，不管是否存在都继续后续操作——"
+    "如果不存在则查看sessions表的完整结构（字段名、数据类型、是否为主键、默认值），"
+    "如果存在则查看user_settings表的结构和内容。"
+    ""
+    "第五阶段：查询messages表中按角色分组统计消息数量，再查询sessions表中按状态分组统计会话数量。"
+    ""
+    "第六阶段：把所有查询结果——表列表、表记录数、schema分析报告、表查询结果和消息/会话统计——汇总保存到E:\\test_dir\\db_query_report.txt。"
+    "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
+)
 
 import pytest
 from e2emodel.e2e_helpers import (
@@ -68,7 +87,7 @@ async def test_e2e_p6_04_sql_error():
         record_test_baseline()
 
         assert result["total_steps"] >= 2, f"至少start+final(MUST), got {result['total_steps']}"
-        assert result["unique_step_numbers"] < 50, f"疑似死循环(MUST): {result['unique_step_numbers']}步"
+        assert result["unique_step_numbers"] < 300, f"疑似死循环(MUST): {result['unique_step_numbers']}步"
 
         if result["has_error"]:
             print(f"  [WARN] 有Error事件(SHOULD)，流结束: {end_type}")

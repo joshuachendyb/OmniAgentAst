@@ -13,15 +13,28 @@
 TEST_CASE_ID = "E2E-P4-03"
 TEST_CASE_NAME = "数据库分析"
 USER_INPUT = (
-    "请帮我全面分析一下应用的数据库。"
-    "首先，连接到本地的应用数据库，获取所有表的表结构信息——每个表有哪些字段、字段的数据类型、主键和外键约束，"
-    "把这些信息汇总展示出来。"
-    "接着，查询sessions表中最近创建的5条会话记录，显示每条记录的会话ID、创建时间和当前状态。"
-    "然后，统计messages表中一共有多少条消息记录，再按照消息角色（user/assistant）分组统计各类别有多少条。"
-    "最后，把以上全部分析结果——数据库表结构、sessions表最近记录、messages表统计信息——"
-    "整理成一份数据库分析报告，保存到E:\\test_dir\\db_analysis.txt文件中，"
-    "报告格式要清晰易读，使用分隔线和标题分层组织。"
-    "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "这是一项多阶段数据库分析任务，请严格按照以下阶段顺序执行。"
+    ""
+    "【阶段一：数据库结构探索】"
+    "第一步，连接到应用的数据库chat_history.db，获取所有表的列表，展示数据库中共有几张表、表名和每张表的记录数。"
+    "第二步，对每张表逐一获取表结构——字段名、数据类型、是否为主键、是否为外键，把完整的数据库模式（schema）整理展示。"
+    "第三步，写一个Python脚本来分析表之间的关联关系：识别哪些字段是外键、对应的主表和关联字段是什么，绘制表之间的关联图描述，保存到E:\\test_dir\\db_relations.txt。"
+    ""
+    "【阶段二：会话数据深度分析】"
+    "第四步，查询sessions表中最近10条会话记录，展示每条记录的会话ID、创建时间和当前状态。"
+    "第五步，写一个Python脚本做会话时间分析：计算每条会话从创建到最新消息的持续时间、"
+    "找出持续时间最长的会话和最短的会话、统计每天的会话创建数量分布，把分析结果保存到E:\\test_dir\\session_analysis.txt。"
+    ""
+    "【阶段三：消息数据统计】"
+    "第六步，查询messages表中消息总数，按角色（user/assistant）分组统计消息数量和占比。"
+    "第七步，按会话ID分组统计每个会话中的消息数量，找出消息最多的前5个会话，"
+    "计算消息的平均长度和最大长度，把统计结果保存到E:\\test_dir\\message_stats.txt。"
+    "第八步，写一个Python脚本分析消息的时间模式：统计一天中每个小时的消息分布（0-23时），找出消息最活跃的时间段，保存到E:\\test_dir\\hourly_trend.txt。"
+    ""
+    "【阶段四：交叉分析与报告】"
+    "第九步，综合会话和消息数据做交叉分析：计算每个会话的平均消息数、最长会话的消息数、消息频率（条/天），找出高频会话和低频会话的特征差异。"
+    "第十步，把所有分析结果汇总成数据库分析报告保存到E:\\test_dir\\db_analysis.txt。"
+    "第十一步，独立生成四种版本的报告（TXT版本、带表格的DOCX版、结构化DOCX版、PDF版）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
 )
 
 import pytest
@@ -68,7 +81,7 @@ async def test_e2e_p4_03_db_analysis():
 
         end_type = assert_stream_ended(result)
         assert result["total_steps"] >= 2, "至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, "疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, "疑似死循环(MUST)"
 
         for issue in verify_response_quality(result):
             pass

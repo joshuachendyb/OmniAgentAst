@@ -11,7 +11,28 @@
 TEST_CASE_ID = "E2E-P5-13"
 TEST_CASE_NAME = "网络搜索+系统诊断+文件存档"
 USER_INPUT = (
-    "先从网上搜一下Windows系统时间同步的方法，搜到的结果打开详细看看有哪些具体步骤和工具，然后用systeminfo命令查一下我这台电脑的详细系统信息，从输出中提取出初始安装日期、系统启动时间和系统型号这些关键信息，再看看当前系统时间是否已经启用了时间同步，把搜索到的解决方案和系统诊断信息汇总保存到E:\\test_dir。把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "这是一项多阶段网络搜索与系统诊断任务，请严格按照以下阶段顺序执行。"
+    ""
+    "【阶段一：网络搜索时间同步方案】"
+    "第一步，搜索\"Windows系统时间同步设置方法\"，获取前5条搜索结果，展示标题和摘要。"
+    "第二步，打开前2条结果的详细页面，提取具体的时间同步操作步骤和使用的命令/工具。"
+    ""
+    "【阶段二：系统详细诊断】"
+    "第三步，用systeminfo命令获取完整的系统信息输出。"
+    "第四步，从systeminfo输出中提取：初始安装日期、系统启动时间、系统型号、物理内存总量、可用内存。"
+    "第五步，用w32tm命令或注册表查询当前系统是否已启用NTP时间同步，以及当前的NTP服务器地址。"
+    ""
+    "【阶段三：Python对比分析】"
+    "第六步，写一个Python脚本做对比分析：对比从网上搜索到的时间同步方案与当前系统的时间同步配置、"
+    "列出当前系统已开启的时间同步设置VS推荐的配置、"
+    "如果当前时间同步未正确配置则给出具体的配置步骤（使用w32tm命令），把对比分析报告保存到E:\\test_dir\\time_sync_analysis.txt。"
+    ""
+    "【阶段四：汇总保存】"
+    "第七步，把搜索到的时间同步方案和系统诊断信息汇总保存到E:\\test_dir\\time_sync_report.txt，"
+    "报告包含：网络搜索总结、系统当前配置、对比分析和配置建议。"
+    ""
+    "【阶段五：四版本报告】"
+    "第八步，把以上所有操作的过程和结果独立生成四种版本的报告（TXT版、DOCX版、结构化DOCX版、PDF版）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
 )
 
 import pytest
@@ -58,7 +79,7 @@ async def test_e2e_p5_13_search_sys_file():
 
         end_type = assert_stream_ended(result)
         assert result["total_steps"] >= 2, "至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, "疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, "疑似死循环(MUST)"
 
         for issue in verify_response_quality(result):
             pass

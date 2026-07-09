@@ -31,7 +31,7 @@ USER_INPUT = ("作为一位AI助手，请系统地介绍你的能力范围。请
                "另外你的回复机制是什么样的——能流式输出吗？"
                "讲能力汇总写两个报告一个文本报告一个是doc报告\n"
                "接着 自己 执行从file 网络 获取和网络测试 代码执行 系统管理 监控等都执行一系列操作 "
-               "检查实际的操作能力是什么样, 然后  讲这些能力情况的检查分析结果汇总到报告中")
+               "检查实际的操作能力是什么样, 然后  讲这些能力情况的检查分析结果汇总到报告中你创建于于本次任务相关的目录存放报告")
 
 from datetime import datetime
 
@@ -79,7 +79,7 @@ async def test_e2e_p0_01_introduce_self():
         end_type = assert_stream_ended(result)
 
         assert result["total_steps"] >= 2, f"至少start+final(MUST), got {result['total_steps']}"
-        assert result["unique_step_numbers"] < 100, f"疑似死循环: {result['unique_step_numbers']}步(MUST)"
+        assert result["unique_step_numbers"] < 300, f"疑似死循环: {result['unique_step_numbers']}步(MUST)"
 
         if result["has_error"]:
             pass

@@ -11,7 +11,31 @@
 TEST_CASE_ID = "E2E-P5-11"
 TEST_CASE_NAME = "SQL结果存文件"
 USER_INPUT = (
-    "先帮我查一下数据库有哪些表，看看sessions表的结构是什么样的，然后查询sessions表里最近5条会话记录的详情，再查一下messages表里按角色分组统计各有多少条消息，把查询到的所有数据做一下分析比对，比如看看会话的时间分布和消息数量关系，将所有查询结果和分析内容保存到E:\\test_dir。把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "这是一项多阶段数据库查询与分析任务，请严格按照以下阶段顺序执行。"
+    ""
+    "【阶段一：数据库结构探索】"
+    "第一步，连接到应用数据库chat_history.db，获取所有表的列表，显示表名和每张表的记录数。"
+    "第二步，获取sessions表的完整结构：所有字段名、数据类型、是否允许NULL、主键信息。"
+    "第三步，获取messages表的完整结构同样展示。"
+    ""
+    "【阶段二：会话数据查询】"
+    "第四步，查询sessions表中最近10条会话记录，显示会话ID、创建时间、更新时间、会话状态。"
+    "第五步，查询sessions表按创建日期统计每天的会话数量，显示最近7天的会话分布。"
+    ""
+    "【阶段三：消息数据统计】"
+    "第六步，查询messages表的总记录数。"
+    "第七步，按角色（user/assistant）分组统计消息数量和占比。"
+    "第八步，按会话ID分组统计每个会话的消息数量，找出消息最多的前5个会话和最少的5个会话。"
+    ""
+    "【阶段四：Python交叉分析】"
+    "第九步，写一个Python脚本做会话与消息的交叉分析：对每个会话计算其持续时长（从创建到最后一条消息的时间差）、"
+    "平均每会话的消息数、消息频率（条/天/会话），分析会话时长与消息数量的相关性，"
+    "找出活跃度最高的会话特征，把交叉分析报告保存到E:\\test_dir\\db_cross_analysis.txt。"
+    ""
+    "【阶段五：综合报告】"
+    "第十步，把所有查询结果和分析内容汇总保存到E:\\test_dir\\db_query_report.txt，"
+    "报告包含：数据库结构总览、会话列表和分布、消息统计、交叉分析和结论。"
+    "第十一步，独立生成四种版本的报告（TXT版、DOCX表格版、结构化DOCX版、PDF版）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
 )
 
 import pytest
@@ -58,7 +82,7 @@ async def test_e2e_p5_11_sql_query_save():
 
         end_type = assert_stream_ended(result)
         assert result["total_steps"] >= 2, "至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, "疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, "疑似死循环(MUST)"
 
         for issue in verify_response_quality(result):
             pass

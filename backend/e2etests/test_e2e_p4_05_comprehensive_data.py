@@ -13,18 +13,30 @@
 TEST_CASE_ID = "E2E-P4-05"
 TEST_CASE_NAME = "综合数据处理"
 USER_INPUT = (
-    "请帮我综合处理一批数据并生成多种格式的输出文件。"
-    "第一步，读取E:\\test_dir\\data.csv文件的数据，展示数据集的基本信息——行数、列数、列名和每列的数据样例。"
-    "第二步，对数据做全面的统计分析——计算所有数值型字段的描述性统计量"
-    "（均值、中位数、标准差、最小值、最大值、四分位数），"
-    "识别类别型字段的分布特征，还分析一下各字段之间的相关性。"
-    "第三步，根据主要数值列的时间趋势生成一张折线图，要包含图例、坐标轴标签和标题，"
-    "把图表保存到E:\\test_dir\\trend_chart.png。"
-    "第四步，把完整的统计数据——包括原始数据预览、描述性统计表、相关性矩阵——"
-    "写入到Excel工作簿中保存到E:\\test_dir\\data_report.xlsx，使用多个sheet组织不同类别的数据。"
-    "第五步，基于所有的分析结果和图表撰写一份Word格式的分析总结文档保存到E:\\test_dir\\analysis_summary.docx，"
+    "这是一项多阶段综合数据处理任务，请严格按照以下阶段顺序执行。"
+    ""
+    "【阶段一：数据加载与质量分析】"
+    "第一步，读取E:\\test_dir\\data.csv的全部数据，展示基本信息——总行数、列数、列名、每列数据类型、数据样例前5行。"
+    "第二步，写一个Python脚本做全面数据质量分析：每列缺失值比例、重复行数、数值列是否有异常值（超过3倍IQR）、"
+    "类别列是否有罕见类别（占比<1%）、数据完整性评分，把质量分析报告保存到E:\\test_dir\\quality_report.txt。"
+    ""
+    "【阶段二：深度统计与特征分析】"
+    "第三步，对所有数值列计算描述性统计量（均值、中位数、标准差、最小值、最大值、Q1、Q3、偏度、峰度），生成统计表。"
+    "第四步，对所有类别列做频数统计，计算每种类别的占比，将结果汇总成类别分布表。"
+    "第五步，计算数值列之间的皮尔逊相关系数矩阵和Spearman秩相关系数矩阵，比较两者结果找出非线性关系的列对。"
+    ""
+    "【阶段三：多图表生成】"
+    "第六步，根据主要数值列的时间趋势生成一张折线图——包含图例、坐标轴标签、标题和网格线，保存到E:\\test_dir\\trend_chart.png。"
+    "第七步，根据类别列的分布生成一张条形图，按频数从高到低排序，保存到E:\\test_dir\\category_dist.png。"
+    "第八步，根据年度汇总数据生成一张柱状图，对比2025和2026年的各月数据，保存到E:\\test_dir\\year_compare.png。"
+    ""
+    "【阶段四：多格式输出】"
+    "第九步，把完整统计数据写入Excel工作簿保存到E:\\test_dir\\data_report.xlsx，"
+    "用多个Sheet组织数据：Sheet1原始数据预览、Sheet2描述性统计、Sheet3类别分布、Sheet4相关性矩阵、Sheet5数据质量。"
+    "第十步，基于所有分析结果撰写Word分析总结文档保存到E:\\test_dir\\analysis_summary.docx，"
+    "嵌入三张图表，文档包含章节：数据概况、质量分析、统计特征、图表分析、结论建议。"
     "总结中要包含数据概况、关键发现、统计结论和可视化分析四大板块。"
-    "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下你创建于于本次任务相关的目录存放报告。"
 )
 
 import pytest
@@ -71,7 +83,7 @@ async def test_e2e_p4_05_comprehensive_data():
 
         end_type = assert_stream_ended(result)
         assert result["total_steps"] >= 2, "至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, "疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, "疑似死循环(MUST)"
 
         for issue in verify_response_quality(result):
             pass

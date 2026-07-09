@@ -21,7 +21,25 @@
 
 TEST_CASE_ID = "E2E-P6-01"
 TEST_CASE_NAME = "文件不存在容错"
-USER_INPUT = "先读取E:\\test_dir\\test.txt看看内容，然后读取E:\\test_dir\\no_such_file.txt看看有什么，对比一下两个文件的内容差异，最后把对比结果保存到E:\\test_dir\\comparison_report.txt"
+USER_INPUT = (
+    "这是一项多阶段文件处理与容错验证任务，请严格按照阶段顺序执行。"
+    ""
+    "第一阶段：先检查E:\\test_dir目录下有哪些txt文件，列出完整的文件清单。"
+    "然后读取test.txt的内容，统计其中的总字符数和总行数，展示内容摘要给我看。"
+    ""
+    "第二阶段：写一个Python脚本用于文件的逐行读取和差异对比，"
+    "脚本要求支持指定两个文件路径并输出它们的行差异，保存到E:\\test_dir\\diff_tool.py。"
+    ""
+    "第三阶段：用Python脚本对比test.txt和no_such_file.txt的差异，但这个no_such_file.txt文件并不存在，"
+    "读取它的时候看看会发生什么情况，如果报错了请告诉我具体错误原因。"
+    ""
+    "第四阶段：检查test.txt的内容完整性——确认文件编码格式、最后修改时间、"
+    "文件头签名是否正确，把检查结果展示给我。"
+    ""
+    "第五阶段：将以上所有操作——文件清单、test.txt内容统计、diff_tool.py脚本、"
+    "对比结果和文件完整性检查——汇总整理后保存到E:\\test_dir\\file_processing_summary.txt。"
+    "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
+)
 
 from pathlib import Path
 
@@ -72,7 +90,7 @@ async def test_e2e_p6_01_file_not_found():
         record_test_baseline()
 
         assert result["total_steps"] >= 2, f"至少start+final(MUST), got {result['total_steps']}"
-        assert result["unique_step_numbers"] < 50, f"疑似死循环(MUST): {result['unique_step_numbers']}步"
+        assert result["unique_step_numbers"] < 300, f"疑似死循环(MUST): {result['unique_step_numbers']}步"
 
         if result["has_error"]:
             print(f"  [WARN] 有Error事件(SHOULD)，流结束: {end_type}")

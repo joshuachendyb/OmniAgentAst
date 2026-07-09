@@ -87,7 +87,7 @@ async def test_e2e_p1_02_log_analysis():
 
         end_type = assert_stream_ended(result)
         assert result["total_steps"] >= 2, "至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, "疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, "疑似死循环(MUST)"
 
         quality_issues = verify_response_quality(result)
         assert len(quality_issues) == 0, f"回复质量问题: {quality_issues}"

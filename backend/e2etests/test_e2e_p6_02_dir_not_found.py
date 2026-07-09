@@ -21,7 +21,23 @@
 
 TEST_CASE_ID = "E2E-P6-02"
 TEST_CASE_NAME = "目录不存在容错"
-USER_INPUT = "先列出E:\\test_dir目录下的所有文件，然后再列出E:\\test_dir\\no_such_dir下的文件看看有什么区别，把两个目录的列表合并成一份目录对比报告保存到E:\\test_dir\\dir_comparison.txt"
+USER_INPUT = (
+    "这是一项多阶段目录操作与容错处理任务，请严格按照阶段顺序执行。"
+    ""
+    "第一阶段：先列出E:\\test_dir目录下的所有文件和子目录，获取每个文件的大小和修改日期，"
+    "按文件类型（txt/docx/png等）分组统计各类型文件数量。"
+    ""
+    "第二阶段：写一个Python脚本用于目录内容对比分析，脚本功能：接受两个目录路径作为参数、"
+    "分别列出两个目录下的文件清单、找出两个目录下相同的文件名和不同的文件名、"
+    "输出对比统计（总文件数差异、相同文件数、差异文件数），保存到E:\\test_dir\\dir_compare_tool.py。"
+    ""
+    "第三阶段：列出E:\\test_dir\\no_such_dir下的文件，这个目录不存在，访问它看看会有什么结果，如果报错请解释错误原因并告诉我该怎么办。"
+    ""
+    "第四阶段：检查一下E:\\test_dir\\backup目录是否存在，如果存在则用Python对比脚本对比E:\\test_dir和backup目录的内容差异。"
+    ""
+    "第五阶段：将目录清单、Python脚本、目录访问错误信息、目录对比结果汇总整理后保存到E:\\test_dir\\dir_operation_report.txt。"
+    "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下。你创建于于本次任务相关的目录存放报告"
+)
 
 from pathlib import Path
 
@@ -72,7 +88,7 @@ async def test_e2e_p6_02_dir_not_found():
         record_test_baseline()
 
         assert result["total_steps"] >= 2, f"至少start+final(MUST), got {result['total_steps']}"
-        assert result["unique_step_numbers"] < 50, f"疑似死循环(MUST): {result['unique_step_numbers']}步"
+        assert result["unique_step_numbers"] < 300, f"疑似死循环(MUST): {result['unique_step_numbers']}步"
 
         if result["has_error"]:
             print(f"  [WARN] 有Error事件(SHOULD)，流结束: {end_type}")

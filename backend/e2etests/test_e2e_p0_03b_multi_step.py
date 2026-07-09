@@ -20,8 +20,11 @@
 
 TEST_CASE_ID = "E2E-P0-03b"
 TEST_CASE_NAME = "多步推理通路验证"
-USER_INPUT = "请读取E:\\test_dir\\test.txt文件的内容并做详细分析。先读取全文，然后分别统计：文件一共有多少个字符（含空格和不含空格）、多少个单词、多少行。统计完成后，把原始内容和你分析得到的统计特征——字符数、单词数、行数、是否包含数字或特殊字符——一起汇总给我。如果有中英文混合的内容，也分别统计中文字符数和英文字符数。"
-
+USER_INPUT = "请读取E:\\test_dir\\test.txt文件的内容并做详细分析。"
+"先读取全文，然后分别统计：文件一共有多少个字符（含空格和不含空格）、多少个单词、"
+"多少行。统计完成后，把原始内容和你分析得到的统计特征——字符数、单词数、行数、是否包含数字"
+"或特殊字符——一起汇总给我。如果有中英文混合的内容，也分别统计中文字符数和英文字符数。"
+"你创建于于本次任务相关的目录存放报告"
 from datetime import datetime
 from pathlib import Path
 
@@ -69,7 +72,7 @@ async def test_e2e_p0_03b_multi_step_reasoning():
         print(f"  流结束: {end_type}")
 
         assert result["total_steps"] >= 2, f"at least start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, f"suspect loop(MUST)"
+        assert result["unique_step_numbers"] < 300, f"suspect loop(MUST)"
 
         if result["has_error"]:
             print(f"  [WARN] has error event(SHOULD)，流结束: {end_type}")

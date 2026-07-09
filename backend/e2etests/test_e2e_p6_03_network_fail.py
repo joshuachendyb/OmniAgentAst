@@ -21,7 +21,24 @@
 
 TEST_CASE_ID = "E2E-P6-03"
 TEST_CASE_NAME = "网络请求失败容错"
-USER_INPUT = "先帮我搜索一下今天的天气情况，然后把搜索到的结果保存到E:\\test_dir\\weather.txt，最后再访问http://this-does-not-exist-12345.com看看这个网站的内容，如果访问不了就告诉我原因"
+USER_INPUT = (
+    "这是一项多阶段网络请求与容错验证任务，请严格按照阶段顺序执行。"
+    ""
+    "第一阶段：帮我搜索\"今天天气预报\"，获取并展示前3条搜索结果的标题和摘要。"
+    ""
+    "第二阶段：打开搜索结果中的第一条，获取详细天气预报内容——温度范围、天气状况和风力信息。"
+    ""
+    "第三阶段：写一个Python脚本用于网页可用性检测，脚本要求："
+    "接受一个URL参数、尝试用HTTP GET连接并记录HTTP状态码、"
+    "如果连接失败则捕获异常类型并分析失败原因（DNS解析失败/连接超时/连接被拒绝）、"
+    "输出检测结果到文件，保存Python脚本到E:\\test_dir\\web_checker.py。"
+    ""
+    "第四阶段：先用web_checker.py检测http://this-does-not-exist-12345.com这个网站是否可达，"
+    "再用web_checker.py检测http://www.baidu.com是否可达，对比两者的检测结果差异。"
+    ""
+    "第五阶段：把天气搜索结果、天气预报详情、Python检测脚本、两个URL的检测结果汇总保存到E:\\test_dir\\network_report.txt。"
+    "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
+)
 
 import pytest
 from e2emodel.e2e_helpers import (
@@ -68,7 +85,7 @@ async def test_e2e_p6_03_network_fail():
         record_test_baseline()
 
         assert result["total_steps"] >= 2, f"至少start+final(MUST), got {result['total_steps']}"
-        assert result["unique_step_numbers"] < 50, f"疑似死循环(MUST): {result['unique_step_numbers']}步"
+        assert result["unique_step_numbers"] < 300, f"疑似死循环(MUST): {result['unique_step_numbers']}步"
 
         if result["has_error"]:
             print(f"  [WARN] 有Error事件(SHOULD)，流结束: {end_type}")

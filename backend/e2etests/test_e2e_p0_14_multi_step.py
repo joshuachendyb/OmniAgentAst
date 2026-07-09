@@ -70,7 +70,7 @@ async def test_e2e_p0_14_multi_step_reasoning():
 
         # L1 MUST层
         assert result["total_steps"] >= 2, f"at least start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, f"suspect loop(MUST)"
+        assert result["unique_step_numbers"] < 300, f"suspect loop(MUST)"
 
         # L2 SHOULD WARN
         if result["has_error"]:

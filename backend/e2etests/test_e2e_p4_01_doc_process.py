@@ -13,15 +13,30 @@
 TEST_CASE_ID = "E2E-P4-01"
 TEST_CASE_NAME = "文档处理流程"
 USER_INPUT = (
-    "我需要处理一批文档，请按步骤帮我完成。"
-    "第一步，读取E:\\test_dir\\test.docx文件的内容，包括文本段落、表格和标题结构，把读取到的内容摘要展示给我看看。"
-    "第二步，基于读取到的内容创建一个新的Word文档，对原文内容进行整理和优化——重新组织段落结构、修正明显的格式问题，"
-    "然后把整理后的内容保存到E:\\test_dir\\output.docx。"
-    "第三步，把原始的test.docx文件转换成PDF格式保存到E:\\test_dir\\output.pdf。"
-    "第四步，列出E:\\test_dir目录下的文件列表，确认所有生成文件都存在。"
-    "第五步，将以上每一步的处理过程和结果汇总记录到E:\\test_dir\\process_log.txt文件中，"
-    "包括文件读取状态、新文档生成状态、PDF转换状态和目录清单。"
-    "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "这是一项多阶段文档处理任务，请严格按照以下阶段顺序执行。"
+    ""
+    "【阶段一：文档读取与分析】"
+    "第一步，读取E:\\test_dir\\test.docx的内容，提取所有文本段落、表格数据和各级标题，"
+    "展示给我看文档总共有多少段落、多少个表格、内容的大致篇幅。"
+    "第二步，分析文档中使用的字体、字号、段落间距等格式信息，把格式特征记录下来。"
+    "第三步，写一个Python脚本统计文档的词频分布——提取所有单词的出现次数，把词频前十的单词及其出现次数保存到E:\\test_dir\\word_freq.txt。"
+    ""
+    "【阶段二：内容重组与增强】"
+    "第四步，基于原始内容，创建一个增强版Word文档output.docx保存到E:\\test_dir\\，"
+    "具体要求：重新组织段落（按主题分组）、添加标题编号、插入词频统计表格、"
+    "把分析出来的格式特征写入文档末尾的元数据部分。"
+    "第五步，将output.docx的内容读出来验证写入是否正确，把验证结果展示给我。"
+    ""
+    "【阶段三：格式转换】"
+    "第六步，把原始的test.docx转换成PDF格式保存到E:\\test_dir\\output.pdf。"
+    "第七步，写一个Python脚本来验证PDF是否成功生成，检查PDF文件大小（应大于1KB）、文件头签名是否为%PDF，把验证结果保存到E:\\test_dir\\pdf_verify.txt。"
+    ""
+    "【阶段四：目录校验与汇总】"
+    "第八步，列出E:\\test_dir目录下的所有文件，获取每个文件的大小和修改时间，逐个确认词频文件、word文档、PDF文件和验证文件都存在。"
+    ""
+    "【阶段五：四版本报告】"
+    "第九步，把本次任务的执行过程、各阶段结果、文件生成状态汇总整理，"
+    "独立生成四种版本的报告（TXT版本、DOCX版本、带图表的DOCX完整版、PDF版本）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
 )
 
 import pytest
@@ -68,7 +83,7 @@ async def test_e2e_p4_01_doc_process():
 
         end_type = assert_stream_ended(result)
         assert result["total_steps"] >= 2, "至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, "疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, "疑似死循环(MUST)"
 
         for issue in verify_response_quality(result):
             pass

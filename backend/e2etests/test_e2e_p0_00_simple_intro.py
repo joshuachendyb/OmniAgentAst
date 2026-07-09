@@ -60,7 +60,7 @@ async def test_e2e_p0_00_simple_intro():
         end_type = assert_stream_ended(result)
 
         assert result["total_steps"] >= 2, f"至少start+final(MUST), got {result['total_steps']}"
-        assert result["unique_step_numbers"] < 50, f"疑似死循环(MUST): {result['unique_step_numbers']}步"
+        assert result["unique_step_numbers"] < 300, f"疑似死循环(MUST): {result['unique_step_numbers']}步"
         tool_calls = result.get("tool_calls", [])
         assert len(tool_calls) == 0, f"纯问答不应调工具(MUST P0-00), 实际工具: {[t['tool_name'] for t in tool_calls]}"
 

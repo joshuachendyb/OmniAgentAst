@@ -11,7 +11,30 @@
 TEST_CASE_ID = "E2E-P5-02"
 TEST_CASE_NAME = "文件管理链"
 USER_INPUT = (
-    "刚才创建的e2e_mc01.txt我想改个名叫e2e_mc02.txt，改完再复制一份到backup目录备份一下，复制完后帮我读一下备份文件的内容看看有没有丢数据，再对比一下原文件和备份文件的大小是否一致，然后用dir命令列出E:\\test_dir\\backup目录下的文件确认。把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "这是一项多阶段文件管理任务，请严格按照以下阶段顺序执行。"
+    ""
+    "【阶段一：文件重命名】"
+    "第一步，把E:\\test_dir\\e2e_mc01.txt重命名为e2e_mc02.txt。"
+    "第二步，重命名后读取e2e_mc02.txt的内容，验证文件内容没有因为改名而丢失。"
+    "第三步，检查改名后e2e_mc01.txt是否已不存在（即原路径确认文件已移走），获取e2e_mc02.txt的文件信息确认改名成功。"
+    ""
+    "【阶段二：文件备份】"
+    "第四步，在E:\\test_dir\\backup目录下创建一份e2e_mc02.txt的副本，命名为e2e_mc02_backup.txt。"
+    "第五步，读取备份文件的内容，与原文件逐行对比，确认内容是否完全一致，展示对比结果。"
+    "第六步，写一个Python脚本来做文件完整性校验：计算原文件和备份文件的MD5哈希值，对比哈希是否一致，"
+    "再比较两个文件的大小（字节数是否相同）、修改时间差异，把校验报告保存到E:\\test_dir\\backup_verify.txt。"
+    ""
+    "【阶段三：版本比较与差异分析】"
+    "第七步，创建第三个版本的文件：在原文件末尾追加一行\"第三次版本更新内容\"，然后把这个版本复制到backup目录下。"
+    "第八步，写一个Python脚本来做三个版本之间的差异对比：对比原始版本vs备份版本vs新版本的内容差异，"
+    "标记各版本之间有哪些行不同，把差异分析报告保存到E:\\test_dir\\diff_analysis.txt。"
+    ""
+    "【阶段四：目录验证与清理建议】"
+    "第九步，用命令列出E:\\test_dir\\backup目录下的所有文件，确认备份文件都存在，并检查目录大小。"
+    "第十步，列出E:\\test_dir根目录下的文件，确认e2e_mc02.txt和e2e_mc01.txt的状态。"
+    ""
+    "【阶段五：四版本报告】"
+    "第十一步，把以上所有操作的过程和结果独立生成四种版本的报告（TXT版、带表格的DOCX版、结构化DOCX版、PDF版）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
 )
 
 import pytest
@@ -58,7 +81,7 @@ async def test_e2e_p5_02_file_manage():
 
         end_type = assert_stream_ended(result)
         assert result["total_steps"] >= 2, "至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, "疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, "疑似死循环(MUST)"
 
         for issue in verify_response_quality(result):
             pass

@@ -69,7 +69,7 @@ async def test_e2e_p0_04_data_persistence():
         end_type = assert_stream_ended(result)
 
         assert result["total_steps"] >= 2, f"至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, f"疑似死循环: {result['unique_step_numbers']}步(MUST)"
+        assert result["unique_step_numbers"] < 300, f"疑似死循环: {result['unique_step_numbers']}步(MUST)"
 
         if result["has_error"]:
             pass

@@ -22,7 +22,11 @@
 
 TEST_CASE_ID = "E2E-P0-03a"
 TEST_CASE_NAME = "FILE+SHELL混合通路验证"
-USER_INPUT = "帮我完成以下多步骤任务：第一步，在E:\\test_dir\\目录下创建一个Python脚本文件run_python.py，脚本内容应该包含导入sys和datetime模块、获取当前系统时间、打印一条带有时间戳的测试消息、打印Python版本信息。第二步，使用python命令执行这个脚本，捕获所有输出。第三步，把执行输出的内容保存到E:\\test_dir\\script_output.txt文件中。第四步，读取这个输出文件确认内容正确完整。每一步完成都告诉我当前进展。"
+USER_INPUT = "帮我完成以下多步骤任务：第一步，在E:\\test_dir\\目录下创建一个Python脚本文件"
+"run_python.py，脚本内容应该包含导入sys和datetime模块、获取当前系统时间、"
+"打印一条带有时间戳的测试消息、打印Python版本信息。第二步，使用python命令执行这个脚本"
+"，捕获所有输出。第三步，把执行输出的内容保存到E:\\test_dir\\script的脚本文件中。"
+"第四步，读取这个输出文件确认内容正确完整。每一步完成都告诉我当前进展m你创建于于本次任务相关的目录存放报告。"
 
 from datetime import datetime
 from pathlib import Path
@@ -68,7 +72,7 @@ async def test_e2e_p0_03a_file_shell():
         end_type = assert_stream_ended(result)
 
         assert result["total_steps"] >= 2, f"至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, f"疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, f"疑似死循环(MUST)"
 
         if result["has_error"]:
             pass

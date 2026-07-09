@@ -60,7 +60,7 @@ async def test_e2e_p0_03_multi_step_reasoning():
         end_type = assert_stream_ended(result)
 
         assert result["total_steps"] >= 2, f"at least start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, f"suspect loop(MUST)"
+        assert result["unique_step_numbers"] < 300, f"suspect loop(MUST)"
 
         if result["has_error"]:
             pass

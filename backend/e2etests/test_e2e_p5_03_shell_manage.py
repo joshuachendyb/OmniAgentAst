@@ -11,7 +11,29 @@
 TEST_CASE_ID = "E2E-P5-03"
 TEST_CASE_NAME = "Shell管理链"
 USER_INPUT = (
-    "帮我查一下notepad.exe装在哪了，查到了帮我把它打开，不过在打开之前先帮我看看这台电脑的系统信息比如操作系统版本和内存大小，再查一下当前notepad有没有已经在运行，确认没有重复运行后再启动，启动之后帮我列出当前所有运行的进程看看notepad有没有在列表中。把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "这是一项多阶段Shell管理任务，请严格按照以下阶段顺序执行。"
+    ""
+    "【阶段一：程序定位与系统信息收集】"
+    "第一步，用where命令查找notepad.exe的安装路径，找到它安装在哪几个目录下。"
+    "第二步，用systeminfo命令获取操作系统详细信息：包括OS名称、版本、系统制造商、系统型号、BIOS版本、物理内存总量。"
+    "第三步，用tasklist命令查看当前是否有notepad.exe在运行，如果有列出其PID和内存占用。"
+    ""
+    "【阶段二：Python脚本生成与进程控制】"
+    "第四步，写一个Python脚本，功能是：调用subprocess启动notepad.exe、等待3秒后检查进程是否存活、"
+    "获取新启动进程的PID和内存占用、返回进程状态信息。"
+    "第五步，执行这个Python脚本启动notepad，记录启动成功的PID。"
+    ""
+    "【阶段三：进程监控分析】"
+    "第六步，用tasklist命令列出当前所有运行进程，按内存使用量排序，确认notepad在列表中。"
+    "第七步，写一个Python脚本做进程监控：读取tasklist的输出、解析出所有进程名和PID、"
+    "统计当前总进程数、找出notepad进程的完整信息，把监控报告保存到E:\\test_dir\\process_monitor.txt。"
+    ""
+    "【阶段四：系统资源记录】"
+    "第八步，再次获取CPU使用率和内存占用情况，对比启动notepad前后的资源变化。"
+    "第九步，写一个Python脚本计算notepad启动前后的内存变化量，分析对系统性能的影响，保存到E:\\test_dir\\resource_impact.txt。"
+    ""
+    "【阶段五：四版本报告】"
+    "第十步，把以上所有操作的过程和结果独立生成四种版本的报告（TXT版、带表格的DOCX版、结构化DOCX版、PDF版）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
 )
 
 import pytest
@@ -58,7 +80,7 @@ async def test_e2e_p5_03_shell_manage():
 
         end_type = assert_stream_ended(result)
         assert result["total_steps"] >= 2, "至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, "疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, "疑似死循环(MUST)"
 
         for issue in verify_response_quality(result):
             pass

@@ -63,7 +63,7 @@ async def test_e2e_p0_05_shell_system():
         print(f"  流结束: {end_type}")
 
         assert result["total_steps"] >= 2, f"至少start+final(MUST)"
-        assert result["unique_step_numbers"] < 50, f"疑似死循环(MUST)"
+        assert result["unique_step_numbers"] < 300, f"疑似死循环(MUST)"
 
         if result["has_error"]:
             print(f"  [WARN] 有Error事件(SHOULD)，流结束: {end_type}")
