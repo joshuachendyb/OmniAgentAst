@@ -184,8 +184,9 @@ def _finalize_cycle(agent):
 
 
 async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
-    """处理单步循环 — call_llm内联, 直接调用call_llm_stream — 小欧 2026-06-25"""
+    """单步ReAct调度: LLM调用→响应处理→分发 — 小欧 2026-06-25 / 小欧 2026-07-09 加分区注释"""
 
+    # ── Phase 1: LLM 调用准备 ──────────────────────────────────
     agent.llm_call_count += 1
     agent.message_builder.trim_history()  # 唯一裁剪入口 — 小欧 2026-07-01
     messages = agent.message_builder.prepare_messages_for_llm()
@@ -206,6 +207,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     if not openai_tools:
         logger.error("[_process_single_step] 无可用工具")
 
+    # ── Phase 2: LLM 流式调用 ──────────────────────────────────
     llm_response = None
     async for chunk_or_response in call_llm_with_fallback(agent, messages, openai_tools):
         chunk_type, chunk_data = chunk_or_response
@@ -224,10 +226,12 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             llm_response = chunk_data
             chunk_buffer.clear()
 
+    # ── Phase 3: 响应分发 ──────────────────────────────────────
     set_status(agent, AgentStatus.EXECUTING)
 
     step = agent.llm_call_count
 
+    # ── 场景A: 空响应 — LLM未返回有效数据 ──────────────────────
     if not llm_response or not isinstance(llm_response, dict):
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
         print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, empty_response")  # 小欧 2026-07-02 控制台
@@ -238,6 +242,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         ))
         return
 
+    # ── 场景B: 任务取消 ─────────────────────────────────────────
     if getattr(getattr(agent, 'llm_client', None), '_cancelled', False):
         print(f"{time.strftime('%H:%M:%S')} [Interrupt] step={step}, cancelled")  # 小欧 2026-07-02 控制台
         yield agent._create_cancelled_chunk()
@@ -249,7 +254,9 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         set_cancelled(agent)
         return
 
-    # B3: LLM未调用任何工具直接回答 → 注入warning（不重试）— 小健 2026-07-03
+    # ── 场景C: LLM直接回答 → 注入复核warning（不重试）— 小健 2026-07-03
+    # 设计: fall through到正常分发, warning进history,
+    # 下轮循环LLM会看到这条observation并重新思考 — 小欧 2026-07-09
     if (llm_response.get("type") == "answer"
             and llm_response.get("content")):
         has_tool_results = any(
@@ -264,7 +271,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                 obs_text, {"tool_call_id": "", "tool_calls": [], "llm_content": content},
             )
 
-    # BUG修复: LLM输出截断导致工具调用遗漏 — 检测preamble文本+注入重试
+    # ── 场景D: 输出截断重试 — 检测preamble截断,注入重试observation ── 小健 2026-07-03
     if _should_retry_truncated_tool(agent, llm_response):
         content = llm_response.get("content", "")
         agent._consecutive_truncations = getattr(agent, '_consecutive_truncations', 0) + 1
@@ -299,7 +306,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         ))
         return
 
-    # 正常响应, 重置截断计数器
+    # ── 场景E: 正常分发 ─────────────────────────────────────────
     agent._consecutive_truncations = 0
     async for event in _dispatch_handler(agent, llm_response, chunk_buffer):
         yield event

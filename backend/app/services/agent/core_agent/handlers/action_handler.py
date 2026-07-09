@@ -412,7 +412,18 @@ async def build_observation(ctx: ObservationContext) -> List:
     return events
 
 
-def _build_call_list(parsed: Dict) -> tuple:
+@dataclass
+class BuildCallListResult:
+    """_build_call_list 返回值 — M-03 6元组→dataclass — 小欧 2026-07-10"""
+    tool_name: str
+    tool_params: Dict
+    fc_context: Dict
+    pending_calls: List
+    all_calls: List[Dict]
+    is_parallel: bool
+
+
+def _build_call_list(parsed: Dict) -> BuildCallListResult:
     """构建工具调用列表 — 小欧 2026-06-18 从handle_action提取
     chendyg 2026-06-26 P1-10/11修复: 防御tool_name为空和pending_calls缺字段"""
     tool_name = parsed.get("tool_name", "")
@@ -441,7 +452,11 @@ def _build_call_list(parsed: Dict) -> tuple:
             "_repair_warning": pc.get("_repair_warning", ""),
         })
 
-    return tool_name, tool_params, fc_context, pending_calls, all_calls, len(all_calls) > 1
+    return BuildCallListResult(
+        tool_name=tool_name, tool_params=tool_params, fc_context=fc_context,
+        pending_calls=pending_calls, all_calls=all_calls,
+        is_parallel=len(all_calls) > 1,
+    )
 
 
 
@@ -462,10 +477,10 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
     小沈 2026-06-11
     小欧 2026-07-09: 新增重试通知注入（步骤4-6）
     """
-    tool_name, tool_params, fc_context, pending_calls, all_calls, is_parallel = _build_call_list(parsed)
+    call_result = _build_call_list(parsed)
     step = agent.llm_call_count
 
-    if not tool_name:
+    if not call_result.tool_name:
         logger.warning(f"[handle_action] tool_name为空, parsed={parsed}")
         # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态
         yield agent._step_emitter.emit(ErrorStep(
@@ -474,19 +489,19 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
         ))
         return
 
-    params_str = str(tool_params); params_short = (params_str[:180] + '..') if len(params_str) > 180 else params_str  # 小欧 2026-07-01 控制台截断 — 小沈 2026-07-05 50→100
-    print(f"{time.strftime('%H:%M:%S')} [Action]step={step} ={tool_name}, pars:{params_short}")  # 小欧 2026-07-01 控制台 — 小沈 2026-07-05 =→:
+    params_str = str(call_result.tool_params); params_short = (params_str[:180] + '..') if len(params_str) > 180 else params_str  # 小欧 2026-07-01 控制台截断 — 小沈 2026-07-05 50→100
+    print(f"{time.strftime('%H:%M:%S')} [Action]step={step} ={call_result.tool_name}, pars:{params_short}")  # 小欧 2026-07-01 控制台 — 小沈 2026-07-05 =→:
 
     # thought 步骤 — content=LLM推理内容, reasoning=内部思维过程 — 小欧 2026-07-01
     yield agent._step_emitter.emit(ThoughtStep(
         step=step,
         content=parsed.get("thought", ""),
-        tool_name=tool_name, tool_params=tool_params,
+        tool_name=call_result.tool_name, tool_params=call_result.tool_params,
         reasoning=parsed.get("reasoning", ""),
     ))
 
     _has_error = False
-    async for event in check_safety_and_confirm(agent, all_calls, step):
+    async for event in check_safety_and_confirm(agent, call_result.all_calls, step):
         if getattr(event, 'type', None) == 'error':
             _has_error = True
         yield event
@@ -508,7 +523,8 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
             "max_retries": max_retries, "error_msg": error_msg,
         })
 
-    results = await execute_tools(agent, all_calls, is_parallel, tool_name, tool_params,
+    results = await execute_tools(agent, call_result.all_calls, call_result.is_parallel,
+                                  call_result.tool_name, call_result.tool_params,
                                   on_retry_started=_on_retry)
 
     for n in retry_notifications:
@@ -519,10 +535,10 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
         ))
 
     ctx = ObservationContext(
-        agent=agent, all_calls=all_calls, results=results, step=step,
-        tool_name=tool_name, tool_params=tool_params,
-        is_parallel=is_parallel, pending_calls=pending_calls,
-        fc_context=fc_context,
+        agent=agent, all_calls=call_result.all_calls, results=results, step=step,
+        tool_name=call_result.tool_name, tool_params=call_result.tool_params,
+        is_parallel=call_result.is_parallel, pending_calls=call_result.pending_calls,
+        fc_context=call_result.fc_context,
     )
     for event in await build_observation(ctx):
         yield event

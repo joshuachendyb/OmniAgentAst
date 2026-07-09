@@ -11,6 +11,8 @@ import time
 from typing import Any
 
 from app.services.agent.steps import ChunkStep
+from app.services.llm.base_service import FC_FALLBACK_ENABLED, FC_MAX_RETRIES, LLM_TOOL_CHOICE
+from app.services.llm.core import FCFormatError
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 
@@ -89,7 +91,6 @@ def _build_answer_response(full_content, full_reasoning, usage_data, agent):
 
 async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     """FC/Text双模式流式调用 — tools=None时走Text模式(降级后备) — 小沈 2026-06-12; 小欧 2026-06-25 tools=None支持"""
-    from app.services.llm.base_service import LLM_TOOL_CHOICE
     full_content = ""
     full_reasoning = ""
     tool_calls_result = None
@@ -127,7 +128,6 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
                 break
         llm_elapsed = time.time() - llm_start
     except Exception as e:
-        from app.services.llm.core import FCFormatError
         if isinstance(e, FCFormatError):
             raise  # 小欧 2026-06-25: FCFormatError穿透，由call_llm_with_fallback处理
         if getattr(agent.llm_client, '_cancelled', False):
@@ -153,22 +153,23 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
 
     if tool_calls_result:
         _fc_names = [tc.get("tool_name","?") if isinstance(tc,dict) else "?" for tc in tool_calls_result]
-        _p = usage_data.get('prompt_tokens','?') if usage_data else '?'; _c = usage_data.get('completion_tokens','?') if usage_data else '?'; _t = usage_data.get('total_tokens','?') if usage_data else '?'
+        _p = usage_data.get('prompt_tokens', '?') if usage_data else '?'
+        _c = usage_data.get('completion_tokens', '?') if usage_data else '?'
+        _t = usage_data.get('total_tokens', '?') if usage_data else '?'
         logger.info(f"[FC] 解析结果: tool_calls({len(tool_calls_result)})={_fc_names}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
         yield _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent, full_reasoning)
         return
 
     content = full_content or full_reasoning or ""
-    _p = usage_data.get('prompt_tokens','?') if usage_data else '?'; _c = usage_data.get('completion_tokens','?') if usage_data else '?'; _t = usage_data.get('total_tokens','?') if usage_data else '?'
+    _p = usage_data.get('prompt_tokens', '?') if usage_data else '?'
+    _c = usage_data.get('completion_tokens', '?') if usage_data else '?'
+    _t = usage_data.get('total_tokens', '?') if usage_data else '?'
     logger.info(f"[FC] 解析结果: answer, len={len(content)}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
     yield _build_answer_response(full_content, full_reasoning, usage_data, agent)
 
 
 async def call_llm_with_fallback(agent, messages, openai_tools):
     """FC模式失败时条件降级到Text模式 — 小欧 2026-06-25"""
-    from app.services.llm.base_service import FC_FALLBACK_ENABLED, FC_MAX_RETRIES
-    from app.services.llm.core import FCFormatError
-
     last_error = None
 
     for attempt in range(FC_MAX_RETRIES):

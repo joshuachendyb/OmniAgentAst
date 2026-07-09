@@ -36,11 +36,12 @@ def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> No
             continue
         role = msg.get("role")
         if role == "tool":
-            history_msgs.append({
-                "role": "tool",
-                "tool_call_id": msg.get("tool_call_id", ""),
-                "content": msg.get("content", ""),
-            })
+            entry = {"role": "tool", "tool_call_id": msg.get("tool_call_id", ""), "content": msg.get("content", "")}
+            # M-04: FC协议需要name字段 — 小欧 2026-07-10
+            name = msg.get("name")
+            if name:
+                entry["name"] = name
+            history_msgs.append(entry)
         elif role == "assistant":
             tc = msg.get("tool_calls")
             if tc:
