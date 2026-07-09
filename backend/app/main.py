@@ -17,6 +17,9 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import traceback
 from app.utils.time_utils import get_utc_timestamp
+from app.tools import ensure_tools_registered
+from app.config import get_config
+from app.tools.shell.shell_engine import cleanup_all_persistent_shells
 from pathlib import Path
 import os
 import logging
@@ -153,11 +156,9 @@ def _start_cleanup_task():
 async def startup_event():
     """应用启动时注册工具 + 启动后台任务 — 小健 2026-06-18 内联透传函数"""
     db.init()
-    from app.tools import ensure_tools_registered
     ensure_tools_registered()
     _start_cleanup_task()
     print(f"当前版本: {app_version}")
-    from app.config import get_config
     _cfg = get_config()
     print(f"LLM 配置: provider={_cfg.get('ai.provider')}, model={_cfg.get('ai.model')}")
 
@@ -167,7 +168,6 @@ async def shutdown_event():
     """应用关闭时清理资源 — 小健 2026-06-18 内联透传函数"""
     from app.services.factory import reset
     reset()
-    from app.tools.shell.shell_engine import cleanup_all_persistent_shells
     count = cleanup_all_persistent_shells()
     logger.info(f"已清理 {count} 个持久shell进程")
 

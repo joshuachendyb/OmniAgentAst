@@ -3,6 +3,7 @@ from .models import ConfigUpdate
 from .field_handlers import FIELD_HANDLERS
 from ._helpers import get_config_path, read_yaml_config, write_yaml_config
 from ._helpers import _backup_config, _auto_fix_and_validate, _restore_backup_if_needed
+from ._helpers import _make_yaml_loader
 from fastapi import HTTPException
 from app.config import get_config as get_config_instance
 from app.services import clear_backup_paths
@@ -33,7 +34,6 @@ async def update_config(config_update: ConfigUpdate):
             return fail_result
 
         write_yaml_config(str(config_path), config_data)
-        from app.api.v1.ai_config._helpers import _make_yaml_loader
         with open(config_path, 'r', encoding='utf-8') as f:
             import yaml
             verify_data = yaml.load(f, Loader=_make_yaml_loader())

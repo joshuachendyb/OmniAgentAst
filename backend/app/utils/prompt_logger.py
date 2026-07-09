@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from app.utils.json_utils import safe_json_dumps
+from app.utils.message_id_tracker import get_user_message_id
+from app.db import db
 from app.utils.logger import logger
 
 
@@ -62,7 +64,6 @@ class PromptLogger:
         timestamp = now_str()
         
         # 延迟导入: 避免循环导入
-        from app.utils.message_id_tracker import get_user_message_id
         user_message_id = get_user_message_id(session_id) or self._user_id_from_db(session_id)
         
         # 初始化日志数据 — AI消息ID由update_ai_message_id()设置,文件名在save()时生成
@@ -88,7 +89,6 @@ class PromptLogger:
     def _user_id_from_db(self, sid: str) -> Optional[int]:
         """P1修复: 改用db.get_conn() SDK+修复裸except"""
         try:
-            from app.db import db
             with db.get_conn("chat") as conn:
                 row = conn.execute(
                     "SELECT id FROM chat_messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",

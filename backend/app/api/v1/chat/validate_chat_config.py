@@ -6,12 +6,12 @@ validate_chat_config — 从 chat_router.py 拷出
 """
 
 from app.utils.logger import logger
+from app.services.ai_config_resolver import get_ai_config_resolver
 
 
 async def validate_chat_config():
     """拷贝自 chat_router.py 第378-413行"""
     try:
-        from app.services.ai_config_resolver import get_ai_config_resolver
 
         resolver = get_ai_config_resolver()
         is_valid, final_provider, final_model, error_messages = resolver.validate_config()

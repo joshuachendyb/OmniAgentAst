@@ -13,6 +13,9 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.config import get_config as get_config_instance
+from app.tools.tool_fc_helper import backup_file
+
 from app.services import get_config_path as _get_config_path, reset
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors as handle_config_errors
@@ -103,7 +106,6 @@ def write_yaml_config(config_path: str, data: dict) -> None:
 
 def reload_ai_config() -> None:
     """重新加载 AI 配置并重置缓存"""
-    from app.config import get_config as get_config_instance
     config_obj = get_config_instance()
     config_obj._load_config()
     reset()
@@ -142,7 +144,6 @@ def save_config(config_path: str, config: dict) -> None:
 
 def _backup_config(config_path: Path) -> Path:
     """备份配置文件"""
-    from app.tools.tool_fc_helper import backup_file
     result = backup_file(str(config_path), suffix=".backup")
     bp = Path(result["backup_path"])
     logger.info(f"配置文件已备份: {bp}")
@@ -247,7 +248,6 @@ def _auto_fix_and_validate(
     original_config_data: dict,
 ) -> Tuple[bool, List[str], List[str], Optional[Dict[str, Any]]]:
     """自动修复+验证,失败则恢复备份"""
-    from app.config import get_config as get_config_instance
     config_data = _fix_config_common_issues(config_data)
     is_valid, errors, warnings = _validate_config_integrity(config_data)
     if not is_valid:

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from app.utils.time_utils import get_utc_timestamp
+from app.tools import tool_registry
 
 router = APIRouter()
 
@@ -41,7 +42,6 @@ async def echo(request: EchoRequest):
 @router.get("/tool/list")
 async def list_tools():
     """获取所有已注册的工具列表"""
-    from app.tools import tool_registry
 
     tools = tool_registry.to_openai_tools()
 

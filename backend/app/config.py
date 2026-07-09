@@ -8,6 +8,7 @@ import yaml
 from collections import OrderedDict
 from typing import Dict, Any, Optional
 from pathlib import Path
+from app.utils.paths import get_config_path, get_default_project_root
 
 
 def _make_safe_loader() -> type:

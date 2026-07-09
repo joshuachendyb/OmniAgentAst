@@ -4,6 +4,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 import uuid as _uuid
 import re as _re
+from app.tools import tool_registry
+from app.utils.context_vars import _current_task_id
 
 router = APIRouter()
 
@@ -20,11 +22,10 @@ class ToolExecuteResponse(BaseModel):
 @router.post("/tool/execute", response_model=ToolExecuteResponse)
 async def execute_tool(request: ToolExecuteRequest):
     """
-    直接执行工具的测试接口
-    用法: POST /api/v1/tool/execute
+    direct execution of the tool's test interface
+    Usage: POST /api/v1/tool/execute
     Body: {"tool_name": "readtext", "params": {"path": "app/main.py"}}
     """
-    from app.tools import tool_registry
 
     tool_name = request.tool_name
     params = request.params
@@ -39,7 +40,6 @@ async def execute_tool(request: ToolExecuteRequest):
         )
 
     try:
-        from app.utils.context_vars import _current_task_id
         _api_task_id = str(_uuid.uuid4())
         _current_task_id.set(_api_task_id)
 

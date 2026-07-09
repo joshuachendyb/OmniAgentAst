@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from typing import Optional
+from app.utils.message_id_tracker import get_user_message_id
 
 from app.services import get_service
 from app.utils.logger import logger
@@ -148,7 +149,6 @@ async def chat_stream(request: ChatRequest):
         _task_start_time = time.time()
         _user_msg_id = None
         try:
-            from app.utils.message_id_tracker import get_user_message_id
             _user_msg_id = get_user_message_id(session_id)
         except Exception:
             logger.warning(f"[chat] 获取user_message_id失败: session_id={session_id}")
