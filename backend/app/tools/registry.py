@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Callable, Any, Type, Set, Union
 from pydantic import BaseModel
 from app.tools.tool_types import ToolCategory, ToolMetadata
 from app.tools.schema_utils import _generate_input_schema
+from app.tools.tool_description import to_openai_tools, generate_param_reminder
 from app.utils.logger import setup_logger
 from app.utils.dependency import ensure_dependency
 
@@ -300,12 +301,10 @@ class ToolRegistry:
     def to_openai_tools(self, categories: Optional[Set[ToolCategory]] = None,
                         tool_names: Optional[Set[str]] = None) -> list:
         """生成OpenAI API格式的tools定义 — 委托给tool_description.to_openai_tools — 小沈 2026-06-09"""
-        from app.tools.tool_description import to_openai_tools
         return to_openai_tools(self, categories=categories, tool_names=tool_names)
 
     def generate_param_reminder(self, category: Optional[ToolCategory] = None, style: str = "code") -> str:
         """自动生成Parameter Reminder — 委托给tool_description.generate_param_reminder — 小沈 2026-06-09"""
-        from app.tools.tool_description import generate_param_reminder
         return generate_param_reminder(self, category=category, style=style)
 
 

@@ -10,6 +10,7 @@
 from typing import Dict, List, Optional, Callable, Any, Union
 from dataclasses import dataclass, field
 from enum import Enum
+from app.utils.logger import logger
 
 
 # ====================================================================
@@ -96,7 +97,6 @@ class ToolMetadata:
             try:
                 return self.failure_hint_fn(tool_params)
             except Exception as e:
-                from app.utils.logger import logger
                 logger.warning(f"[ToolMetadata] failure_hint_fn 异常: {e}")
         return ""
 

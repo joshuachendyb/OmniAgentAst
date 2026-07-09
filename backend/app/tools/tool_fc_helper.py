@@ -16,6 +16,7 @@ Tool函数公共辅助代码 — 纯逻辑函数集合
 # 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 
+import configparser
 import csv
 import importlib
 import locale
@@ -23,6 +24,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -655,7 +657,6 @@ def _write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -
 
 def _parse_ini(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
     """读取INI配置文件，返回纯dict — 小沈 2026-05-04 — 小欧 2026-06-24 修复重复key crash"""
-    import configparser
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"文件不存在: {file_path}")
@@ -733,7 +734,6 @@ def backup_file(file_path: str, backup_dir: Optional[str] = None, suffix: str = 
     """备份文件，返回纯dict — 小沈 2026-05-02
     【注意】本函数返回纯dict，不含build3结构。
     """
-    import shutil
     from app.utils.time_utils import timestamp_for_filename
     file_path = os.path.abspath(file_path)
     if not os.path.exists(file_path):

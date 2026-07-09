@@ -30,6 +30,7 @@ from typing import Tuple, Optional, Literal
 
 from app.tools.tool_constants import BINARY_EXTENSIONS
 from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_safety_checker import check_tool_module
 
 
 # ============================================================
@@ -214,7 +215,6 @@ def check_office_file(
 
     # 3. 模块安全检查(file_safety_checker)
     if tool_name:
-        from app.tools.validate.file_safety_checker import check_tool_module
         is_valid, err, hint = check_tool_module(tool_name)
         if not is_valid:
             return False, err, hint

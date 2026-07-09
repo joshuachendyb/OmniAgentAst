@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time as _time_mod
 import winreg
+from app.utils.time_utils import timestamp_for_filename
 from typing import Optional, Dict, Any
 
 from app.utils.logger import logger
@@ -56,7 +57,6 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
         return _registry_session_backup[backup_key]
 
     backup_dir = tempfile.gettempdir()
-    from app.utils.time_utils import timestamp_for_filename
     backup_file = os.path.join(backup_dir, f"reg_backup_{session_id}_{timestamp_for_filename()}.reg")
 
     try:
