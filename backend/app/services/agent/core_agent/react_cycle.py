@@ -25,6 +25,8 @@ from app.services.agent.core_agent.initialize_run_state import initialize_run_st
 from app.services.agent.core_agent.handlers import (
     handle_action, handle_answer,
 )
+from app.services.agent.llm_stream import call_llm_with_fallback
+from app.services.agent.tool_cache_manager import get_openai_tools
 
 _MAX_CONSECUTIVE_TRUNCATIONS = 3
 
@@ -179,10 +181,6 @@ def _finalize_cycle(agent):
 
 async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     """处理单步循环 — call_llm内联, 直接调用call_llm_stream — 小欧 2026-06-25"""
-
-    from app.services.agent.llm_stream import call_llm_with_fallback
-    from app.services.agent.tool_cache_manager import get_openai_tools
-    from app.services.agent.steps import ChunkStep
 
     agent.llm_call_count += 1
     agent.message_builder.trim_history()  # 唯一裁剪入口 — 小欧 2026-07-01

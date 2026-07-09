@@ -23,6 +23,7 @@ from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, E
 from app.services.agent.core_agent.status_table import AgentStatus
 from app.services.agent.agent_utils.message_utils import build_observation_text
 from app.constants import HITL_TIMEOUT
+from app.services.agent.tool_executor import execute_tool
 from app.db.models.operation_enums import OperationStatus
 
 from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE_OPERATION_TOOLS
@@ -147,7 +148,6 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
           B: 多工具无冲突 → asyncio.gather并行
           C: 多工具有冲突 → 顺序执行（遍历all_calls，一个不丢）
         """
-        from app.services.agent.tool_executor import execute_tool
         start_time = time.time()
 
         def _cn(c):

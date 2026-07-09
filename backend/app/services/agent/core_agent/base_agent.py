@@ -24,6 +24,7 @@ from app.services.agent.message_builder import MessageBuilder
 from app.services.agent.core_agent.tool_manager import ToolLoader
 from app.services.agent.core_agent.step_emitter import StepEmitter
 from app.services.agent.tool_retry_engine import ToolRetryEngine
+from app.services.agent.core_agent.react_cycle import run_react_cycle as _run
 
 
 class BaseAgent(ABC):
@@ -105,6 +106,5 @@ class BaseAgent(ABC):
 
     async def run_react_cycle(self, task, context=None, max_steps=None, task_id=None):
         """直接从模块导入 — 小沈 2026-06-09 替代纯委托"""
-        from app.services.agent.core_agent.react_cycle import run_react_cycle as _run
         async for event in _run(self, task, context, max_steps, task_id):
             yield event

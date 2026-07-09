@@ -12,6 +12,8 @@ Author: 小沈 - 2026-05-28
 import json
 from typing import Any, Dict, List, Optional
 
+from app.services.agent.observation_formatter import format_llm_observation, format_data_detail
+
 
 
 def build_observation_text(execution_result, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
@@ -27,16 +29,12 @@ def build_observation_text(execution_result, tool_name: str = "", tool_params: O
     Returns:
         observation文本
     """
-    from app.services.agent.observation_formatter import format_llm_observation
-
     if isinstance(execution_result, dict):
         data = execution_result.get("data")
         llm_data = execution_result.get("llm_data")
         if llm_data is not None:
             return format_llm_observation(data, llm_data)
-        # 如果没有llm_data，但data存在，使用format_data_detail格式化
         if data is not None:
-            from app.services.agent.observation_formatter import format_data_detail
             detail = format_data_detail(data)
             return f"Observation: {detail[:500]}" if len(detail) > 500 else f"Observation: {detail}"
         # 如果既没有llm_data也没有data，使用简洁的JSON表示
