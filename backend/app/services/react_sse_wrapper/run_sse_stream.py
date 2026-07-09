@@ -93,7 +93,7 @@ def _load_previous_messages(session_id: str) -> List[Dict[str, Any]]:
 
 
 async def run_sse_stream(
-    llm_client,
+    llm_service,  # 实际是BaseAIService实例，非LLMClient — 小欧 2026-07-09 修正命名
     task_id: str,
     last_message: str,
     next_step: Callable[[], int],
@@ -102,7 +102,8 @@ async def run_sse_stream(
     stream_state: Any = None,
     start_time: Optional[float] = None,
 ) -> AsyncGenerator[str, None]:
-    """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState — 小健 2026-06-26 增加session存在性验证"""
+    """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState — 小健 2026-06-26 增加session存在性验证
+    小欧 2026-07-09: llm_client→llm_service 重命名，消除命名误导"""
     agent = None
     log_tag = "[AgentOp]"
     error_label = "操作执行失败"
@@ -132,17 +133,17 @@ async def run_sse_stream(
 
     try:
         agent = UniversalAgent(
-            llm_client=llm_client, task_id=task_id,
+            llm_client=llm_service, task_id=task_id,
         )
-        if hasattr(llm_client, 'context_limit') and llm_client.context_limit:
-            agent.message_builder.MAX_CONTEXT_CHARS = llm_client.context_limit
+        if hasattr(llm_service, 'context_limit') and llm_service.context_limit:
+            agent.message_builder.MAX_CONTEXT_CHARS = llm_service.context_limit
         
         # 【2026-06-17 小沈】注入停止检查回调，消除llm→task反向依赖
         # 修复: check_cancelled/check_paused是async，不能用lambda的or短路(会跳过check_paused)
-        if hasattr(llm_client, 'set_stop_check'):
+        if hasattr(llm_service, 'set_stop_check'):
             async def _stop_check():
                 return await check_cancelled(task_id) or await check_paused(task_id)
-            llm_client.set_stop_check(_stop_check)
+            llm_service.set_stop_check(_stop_check)
 
         # 加载会话历史，支持多轮对话 — 北京老陈 2026-06-13
         context = {}

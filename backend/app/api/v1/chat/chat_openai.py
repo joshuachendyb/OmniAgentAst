@@ -175,8 +175,10 @@ async def chat_stream(request: ChatRequest):
             async for event in step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):
                 yield event
 
+            # llm_service=ai_service — ai_service是BaseAIService实例
+            # 小欧 2026-07-09: llm_client→llm_service重命名
             sse_stream = run_sse_stream(
-                llm_client=ai_service, task_id=task_id,
+                llm_service=ai_service, task_id=task_id,
                 last_message=user_input,
                 next_step=next_step,
                 session_id=session_id, current_execution_steps=execution_steps,
