@@ -25,7 +25,8 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
         agent.message_builder.add_assistant_message("")
         yield agent._step_emitter.emit(ErrorStep(
             step=step, error_type="empty_response",
-            error_message="LLM返回空内容"
+            error_message="LLM返回空内容",
+            recoverable=True,
         ))
         return
 

@@ -5,11 +5,14 @@
 # 小沈 2026-06-27 — 小欧 2026-07-04 重构统一入口 + 注释说明
 # 北京老陈 2026-07-09 交叉引用注释统一
 
+import logging
 import os
 import re
 import string
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "validate_path_for_write", "validate_path_for_delete", "validate_path_for_overwrite",
@@ -220,6 +223,10 @@ def validate_path(
     if rule["check_exist"]:
         p = Path(path)
         if not p.exists():
+            logger.warning("[TOCTOU] path=%s op=%s drive_exists=%s parent_exists=%s parent_dir=%s",
+                           path, op.value,
+                           os.path.exists(os.path.splitdrive(path)[0] + "\\") if os.path.splitdrive(path)[0] else "N/A",
+                           p.parent.exists(), str(p.parent))
             return False, "路径不存在: " + path, None
         if rule["must_be"] == "file" and not p.is_file():
             return False, "不是文件: " + path, None
