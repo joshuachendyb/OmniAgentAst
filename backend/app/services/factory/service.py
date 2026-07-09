@@ -67,7 +67,11 @@ def get_provider_config(ai_config: dict, final_provider: str) -> dict:
 
 
 def create_service_instance(provider_config: dict, final_provider: str, final_model: str) -> BaseAIService:
-    """创建服务实例 — 小沈 2026-06-08; 2026-06-17 去除_前缀+透传层"""
+    """创建服务实例 — 小沈 2026-06-08; 2026-06-17 去除_前缀+透传层; 小欧 2026-07-09 新增model_params透传"""
+    DEFAULT_CONTEXT_LIMIT = 262144
+    model_params = provider_config.get("model_params", {}) or {}
+    specific_params = dict(model_params.get(final_model, {})) if model_params else {}
+    context_limit = specific_params.pop("context_limit", DEFAULT_CONTEXT_LIMIT)
     return BaseAIService(
         api_key=(provider_config.get("api_key") or "").strip(),
         model=final_model,
@@ -77,6 +81,8 @@ def create_service_instance(provider_config: dict, final_provider: str, final_mo
         max_tokens=provider_config.get("max_tokens"),
         temperature=float(provider_config.get("temperature", 0.7)),
         seed=provider_config.get("seed", None),
+        extra_body_params=specific_params or None,
+        context_limit=context_limit,
     )
 
 

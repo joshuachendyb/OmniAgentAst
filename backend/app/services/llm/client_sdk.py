@@ -35,8 +35,9 @@ def _build_request_body(
     stream: bool = False,
     parallel_tool_calls: Optional[bool] = None,
     stream_options: Optional[Dict] = None,
+    extra_body: Optional[Dict] = None,
 ) -> Dict:
-    """统一构建 LLM 请求体 — FC-only: 无mode参数 — 小沈 2026-06-11; 小沈 2026-06-17 新增parallel_tool_calls; 小健 2026-06-17 新增stream_options"""
+    """统一构建 LLM 请求体 — FC-only: 无mode参数 — 小沈 2026-06-11; 小沈 2026-06-17 新增parallel_tool_calls; 小健 2026-06-17 新增stream_options; 小欧 2026-07-09 新增extra_body"""
     body = {"model": model, "messages": messages}
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
@@ -57,6 +58,9 @@ def _build_request_body(
             parallel_tool_calls = True  # 执行层(action_handler)的_has_conflict控制并发安全 — 北京老陈 2026-07-04
         
         body["parallel_tool_calls"] = parallel_tool_calls
+    
+    if extra_body:
+        body.update(extra_body)
     
     return body
 
@@ -119,12 +123,14 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
+        extra_body: Optional[Dict] = None,
     ) -> Dict[str, Any]:
-        """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11"""
+        """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小欧 2026-07-09 新增extra_body"""
         body = _build_request_body(
             messages=messages, model=self.model,
             max_tokens=max_tokens, temperature=temperature, seed=seed,
             tools=tools, tool_choice=tool_choice, stream=False,
+            extra_body=extra_body,
         )
         response = await self._client.post("/chat/completions", json=body)
         response.raise_for_status()
@@ -140,13 +146,15 @@ class LLMClient:
         seed: Optional[int] = None,
         stream_options: Optional[Dict] = None,
         request_timeout: Optional[int] = None,
+        extra_body: Optional[Dict] = None,
     ) -> AsyncGenerator[str, None]:
-        """流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小健 2026-06-17 新增stream_options"""
+        """流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小健 2026-06-17 新增stream_options; 小欧 2026-07-09 新增extra_body"""
         body = _build_request_body(
             messages=messages, model=self.model,
             max_tokens=max_tokens, temperature=temperature, seed=seed,
             tools=tools, tool_choice=tool_choice, stream=True,
             stream_options=stream_options,
+            extra_body=extra_body,
         )
         _timeout = float(request_timeout) if request_timeout is not None else None
         async with self._client.stream("POST", "/chat/completions", json=body, timeout=_timeout) as response:

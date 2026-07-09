@@ -134,6 +134,8 @@ async def run_sse_stream(
         agent = UniversalAgent(
             llm_client=llm_client, task_id=task_id,
         )
+        if hasattr(llm_client, 'context_limit') and llm_client.context_limit:
+            agent.message_builder.MAX_CONTEXT_CHARS = llm_client.context_limit
         
         # 【2026-06-17 小沈】注入停止检查回调，消除llm→task反向依赖
         # 修复: check_cancelled/check_paused是async，不能用lambda的or短路(会跳过check_paused)

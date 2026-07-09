@@ -42,6 +42,8 @@ class BaseAIService:
         max_tokens: Optional[int] = None,
         temperature: float = None,
         seed: Optional[int] = None,
+        extra_body_params: Optional[Dict] = None,
+        context_limit: Optional[int] = None,
     ):
         if temperature is None:
             temperature = LLM_TEMPERATURE
@@ -52,6 +54,8 @@ class BaseAIService:
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.seed = seed
+        self.extra_body_params = extra_body_params
+        self.context_limit = context_limit
         self._llm_sdk = None
         try:
             timeout_value = float(timeout) if timeout else float(DEFAULT_LLM_TIMEOUT)
@@ -125,6 +129,7 @@ class BaseAIService:
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
                 seed=self.seed,
+                extra_body=self.extra_body_params,
             )
             choices = response.get("choices", [])
             if not choices:
@@ -175,6 +180,7 @@ class BaseAIService:
                     seed=self.seed,
                     stream_options=stream_options,
                     request_timeout=effective_timeout,
+                    extra_body=self.extra_body_params,
                 ):
                     if await self._check_stop():
                         yield create_cancelled_chunk(self.model)

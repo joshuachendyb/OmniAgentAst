@@ -1041,7 +1041,7 @@ def check_logs(
                 continue
             if "operation_cleanup" in line and "Failed to size-cleanup" in line:
                 continue
-            if "database locked" in line:
+            if "database is locked" in line:
                 continue
             if "Error executing operation" in line:
                 continue
