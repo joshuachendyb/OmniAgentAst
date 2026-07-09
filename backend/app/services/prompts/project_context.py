@@ -7,6 +7,7 @@ Author: 小沈 - 2026-06-11
 import os
 
 from app.config import get_config as get_config_instance
+from app.utils.logger import logger
 
 CONTEXT_FILE = "OmniAgent.md"
 MAX_CHARS = 8000
@@ -43,7 +44,6 @@ def load_project_context(workdir: str = None) -> str:
         return ""
 
     if len(content) >= MAX_CHARS:
-        from app.utils.logger import logger
         logger.warning(f"[project_context] OmniAgent.md超过{MAX_CHARS}字符, 已截断")
         content = content[:MAX_CHARS] + "\n...(截断)"
 

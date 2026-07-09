@@ -12,6 +12,7 @@ import threading
 from enum import Enum
 from typing import Optional
 from app.utils.logger import logger
+from app.utils.prompt_logger import get_prompt_logger
 
 
 class AgentStatus(Enum):
@@ -104,7 +105,6 @@ def set_status(agent, new_status: AgentStatus, reason: str = ""):
         logger.info(f"[Agent] {old_status} → {new_status}")
     # 同时写入 prompt log — 小欧 2026-07-01
     try:
-        from app.utils.prompt_logger import get_prompt_logger
         get_prompt_logger().log_status(str(old_status), str(new_status), reason)
     except Exception:
         pass

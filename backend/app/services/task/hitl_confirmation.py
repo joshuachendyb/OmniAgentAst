@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from typing import Dict
 from uuid import uuid4
 
+from app.services.task.task_state_queries import check_cancelled
+
 from app.utils.logger import logger
 
 
@@ -85,7 +87,6 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
 
     try:
         # 【P1-9修复】等待确认期间检查任务是否已取消 — chendyg 2026-06-26
-        from app.services.task.task_state_queries import check_cancelled
         task_id = confirm_id.split(":")[0] if ":" in confirm_id else ""
         check_interval = 2
         elapsed = 0

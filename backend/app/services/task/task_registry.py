@@ -12,6 +12,7 @@ Author: 小健 - 2026-05-31
 import asyncio
 from datetime import datetime
 from typing import Any, Optional
+from app.utils.time_utils import create_timestamp
 
 from app.utils.logger import logger
 from app.constants import TASK_TIMEOUT
@@ -187,5 +188,4 @@ async def task_cleanup(task_id: str, llm_call_count: int = 0) -> None:
 
 def build_step_dict(step: Optional[int], step_type: str, message: str) -> dict:
     """构建step字典 — 替代MetaStep.to_dict()，消除对agent/steps的依赖 — 小健 2026-06-17"""
-    from app.utils.time_utils import create_timestamp
     return {"type": step_type, "step": step, "timestamp": create_timestamp(), "content": message}

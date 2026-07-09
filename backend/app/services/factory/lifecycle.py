@@ -6,6 +6,7 @@ lifecycle — 服务生命周期管理
 小沈 2026-06-17
 """
 
+import asyncio
 from typing import Optional
 
 from app.utils.logger import setup_logger
@@ -31,7 +32,6 @@ def close_instance_sync(instance: Optional[BaseAIService]) -> None:
     if instance is None:
         return
     try:
-        import asyncio
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:

@@ -20,7 +20,11 @@ Author: 小沈 - 2026-06-14
 """
 
 import re
-from app.services.prompts.system_adapter import get_system_prompt as get_system_prompt_string
+from app.services.prompts.system_adapter import (
+    get_default_shell_name,
+    get_pwsh_version,
+    get_system_prompt as get_system_prompt_string,
+)
 from app.utils.logger import logger
 from app.services.prompts.project_context import load_project_context
 from app.config import get_config as get_config_instance
@@ -86,7 +90,6 @@ class PromptBuilder:
     @property
     def TOOL_CALL_RULES(self) -> str:
         """工具调用规则 + Shell运行环境 — 小沈 2026-07-01  — 北京老陈 2026-07-09 统一Prompt与实际shell匹配"""
-        from app.services.prompts.system_adapter import get_default_shell_name, get_pwsh_version
         default_shell = get_default_shell_name()
         pwsh_ver = get_pwsh_version()
         pwsh_line = f"pwsh.exe {pwsh_ver} 已安装" if pwsh_ver else "pwsh.exe 未安装"

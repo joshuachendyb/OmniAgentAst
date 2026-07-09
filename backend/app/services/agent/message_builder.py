@@ -17,6 +17,7 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定,
 - _trim_to_budget 统一裁剪,按原始顺序重排
 """
 
+import json
 from typing import Any, Dict, List, Optional
 
 from app.config import get_config  # 小欧 2026-07-08
@@ -367,7 +368,6 @@ class MessageBuilder:
         FC模式下assistant消息content可为None(tool_calls协议),
         但tool_calls包含JSON负载(tool名/参数/id),必须计入预算。
         """
-        import json
         total = 0
         for msg in messages:
             content = msg.get("content")

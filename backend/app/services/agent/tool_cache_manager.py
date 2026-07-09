@@ -7,6 +7,7 @@ tool_cache_manager — 工具缓存管理
 """
 
 from app.tools.tool_types import ToolCategory
+from app.tools.registry import tool_registry
 from app.utils.logger import logger
 
 
@@ -22,7 +23,6 @@ def get_openai_tools(agent) -> list:
     if cached is not None:
         return cached
 
-    from app.tools.registry import tool_registry
     tools = tool_registry.to_openai_tools(categories=agent._loaded_categories)
 
     override = getattr(agent, '_searchtool_desc_override', None)
@@ -45,7 +45,6 @@ def _get_original_search_desc() -> str:
     """获取 searchtool 的原始描述（不带已注入的"当前未加载分类"后缀）— 小欧 2026-06-23
     P0-1修复: 严禁重复追加,每次重新拼装
     """
-    from app.tools.registry import tool_registry
     ts_meta = tool_registry.get_tool("searchtool")
     if not ts_meta:
         return ""
@@ -72,8 +71,7 @@ def patch_search_desc(agent):
     【方案A修复 2026-06-23 小健】移除工具名列表，只列出分类名，避免LLM直接调用未注入工具
     【Bug15修复】chendyg 2026-06-26: override变更后统一失效缓存，消除4处重复invalidate调用
     """
-    from app.tools.registry import tool_registry
-    
+
     unloaded = [
         cat for cat in ToolCategory
         if cat not in {ToolCategory.FUNDAMENTAL, ToolCategory.SHELL, ToolCategory.FILE}

@@ -13,6 +13,8 @@ import subprocess
 from typing import Optional
 
 from app.utils.logger import logger
+from app.utils.time_utils import now_str
+from app.config import get_config as get_config_instance
 
 PATH_FORMATS = {
     "Windows": "C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt",
@@ -36,8 +38,6 @@ def _get_environment_info() -> str:
     """获取环境信息（项目根目录/Git 状态/日期时间）— 小沈 2026-06-11
     【2026-06-23 北京老陈】工作目录改为项目根目录,避免显示backend子目录
     """
-    from app.utils.time_utils import now_str
-    from app.config import get_config as get_config_instance
 
     config = get_config_instance()
     root = config.get_project_root()

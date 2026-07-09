@@ -13,6 +13,7 @@ from app.services.agent.core_agent.status_table import AgentStatus, set_status
 from app.services.agent.chunk_buffer import ChunkBuffer
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
+from app.db import db
 
 
 def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> None:
@@ -70,7 +71,6 @@ def initialize_run_state(
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent._tracked_task_id:
         try:
-            from app.db import db
             with db.get_conn("task_tracker") as conn:
                 conn.execute(
                     "UPDATE tasks SET task_description = ? WHERE task_id = ?",

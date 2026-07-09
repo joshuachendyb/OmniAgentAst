@@ -9,11 +9,12 @@ import time
 from typing import Any, Dict, Set
 
 from app.tools.tool_types import ToolCategory
+from app.tools.tool_response import is_success
+from app.utils.logger import logger
 
 
 async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
     """执行工具并处理searchtool自动注入 — 小健 2026-06-26 修复状态判断逻辑"""
-    from app.tools.tool_response import is_success
     
     start = time.time()
     result = await agent._retry_engine.execute_tool_with_retry(tool_name, tool_params)
@@ -30,7 +31,6 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any]) -> Di
 
 def _log_single_tool(tool_name: str, params: Dict[str, Any], elapsed: float, status: str) -> None:
     """一行格式: [tool_executor] tool=xxx, 耗时=0.35s, 状态=ok, params无敏感字段"""
-    from app.utils.logger import logger
     keys = list(params.keys()) if params else []
     logger.info(f"[tool_executor] tool={tool_name}, 耗时={elapsed:.2f}s, 状态={status}, params={keys}")
 

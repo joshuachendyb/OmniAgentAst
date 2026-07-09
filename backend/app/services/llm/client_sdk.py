@@ -20,6 +20,7 @@ from app.constants import (
     LLM_MAX_CONNECTIONS,
     LLM_MAX_KEEPALIVE,
 )
+from app.config import get_config
 
 
 
@@ -103,7 +104,6 @@ class LLMClient:
     def _default_base_url(self, provider: str) -> str:
         """根据 provider 返回默认 API 地址 — 小健 2026-06-17 OCP: 优先配置,其次硬编码默认"""
         try:
-            from app.config import get_config
             custom_urls = get_config().get("llm", {}).get("provider_urls", {})
             if provider in custom_urls:
                 return custom_urls[provider]

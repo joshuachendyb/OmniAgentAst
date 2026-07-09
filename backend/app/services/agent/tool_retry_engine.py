@@ -27,6 +27,8 @@ from app.tools.tool_constants import (
     ERR_MISSING_PARAM, ERR_INVALID_PARAMS, ERR_TOOL_NOT_FOUND, ERR_UNKNOWN,
 )
 from app.tools.tool_response import build_error
+from app.tools.param_alias_mapper import normalize_params
+from app.tools.registry import tool_registry
 
 
 # TOOL_RETRY_CONFIG: 按 tool 名直配重试参数
@@ -123,7 +125,6 @@ class ToolRetryEngine:
         
         # 参数名别名映射 — 小欧 2026-06-27
         # 解决LLM返回参数名不匹配问题（如返回path而非file_path）
-        from app.tools.param_alias_mapper import normalize_params
         normalized_input, has_mapping = normalize_params(action, action_input)
         
         params = self._validate_params(action, normalized_input, tool)
@@ -139,7 +140,6 @@ class ToolRetryEngine:
         params = action_input.copy()
         
         try:
-            from app.tools.registry import tool_registry
             metadata = tool_registry.get_tool(action)
             if metadata and metadata.input_schema:
                 input_schema = metadata.input_schema

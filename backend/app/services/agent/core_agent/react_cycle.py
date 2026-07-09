@@ -16,6 +16,8 @@ import time
 from typing import Any, Dict, Optional, AsyncGenerator
 
 from app.utils.logger import logger
+from app.utils.sys_error_classifier import SystemErrorClassifier
+from app.utils.prompt_logger import get_prompt_logger
 from app.config import get_config
 from app.services.agent.steps import ChunkStep, FinalStep, ObservationStep, ErrorStep
 from app.services.agent.core_agent.status_table import AgentStatus, set_status, set_failed, set_completed, set_cancelled
@@ -29,7 +31,6 @@ _MAX_CONSECUTIVE_TRUNCATIONS = 3
 
 def handle_react_error(agent, error, step):
     """统一处理ReAct循环中的错误 — 只创建 ErrorStep，不设状态 — chendyg 2026-07-01"""
-    from app.utils.sys_error_classifier import SystemErrorClassifier
     error_type = SystemErrorClassifier.classify_error(error).name.lower()
     logger.error(f"[ErrorHandler] 错误类型={error_type}: {error}")
     recoverable = _is_recoverable_error(error)
@@ -182,7 +183,6 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     from app.services.agent.llm_stream import call_llm_with_fallback
     from app.services.agent.tool_cache_manager import get_openai_tools
     from app.services.agent.steps import ChunkStep
-    from app.utils.prompt_logger import get_prompt_logger
 
     agent.llm_call_count += 1
     agent.message_builder.trim_history()  # 唯一裁剪入口 — 小欧 2026-07-01

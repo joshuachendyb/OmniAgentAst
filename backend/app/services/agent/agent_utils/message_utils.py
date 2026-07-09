@@ -9,6 +9,7 @@ Message工具函数 — 纯函数,无状态
 Author: 小沈 - 2026-05-28
 """
 
+import json
 from typing import Any, Dict, List, Optional
 
 
@@ -39,7 +40,6 @@ def build_observation_text(execution_result, tool_name: str = "", tool_params: O
             detail = format_data_detail(data)
             return f"Observation: {detail[:500]}" if len(detail) > 500 else f"Observation: {detail}"
         # 如果既没有llm_data也没有data，使用简洁的JSON表示
-        import json
         try:
             result_str = json.dumps(execution_result, ensure_ascii=False, separators=(',', ':'))
         except:
