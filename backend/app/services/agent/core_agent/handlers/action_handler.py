@@ -19,7 +19,7 @@ from typing import Dict, List, Any
 
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
-from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep
+from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep, ChunkStep  # ChunkStep用于重试前端通知 — 小欧 2026-07-09
 from app.services.agent.core_agent.status_table import AgentStatus
 from app.services.agent.agent_utils.message_utils import build_observation_text
 from app.constants import HITL_TIMEOUT
@@ -139,14 +139,27 @@ def _has_conflict(all_calls: List[Dict]) -> bool:
 
 
 async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
-                        tool_name: str, tool_params: Dict) -> List[Any]:
-        """工具执行 — 三分支（单工具/并行/顺序）— 北京老陈 2026-07-04
-
-        继承历史接口签名，兼容外层handle_action调用。
-        三分支：
-          A: 单工具 → 直接执行（用tool_name/tool_params参数）
-          B: 多工具无冲突 → asyncio.gather并行
-          C: 多工具有冲突 → 顺序执行（遍历all_calls，一个不丢）
+                        tool_name: str, tool_params: Dict,
+                        on_retry_started=None) -> List[Any]:
+        """工具执行调度 — 三分支策略（遵守SLAP：本层只做决策不分派执行细节）
+         
+        三分支说明：
+          A: 单工具（len==1）→ execute_tool(on_retry_started=...)
+             单个工具执行，注入重试回调。引擎层自动处理重试+通知。
+          B: 多工具无冲突 → execute_tool(parallel=True, 无on_retry_started)
+             各工具并行执行，用try_once一次执行不重试。
+             设计理由（YAGNI）：并行工具的瞬态失败概率低，不需要引擎自动重试。
+             LLM从observation看到失败后可自行决定重试。同时避免asyncio.gather内
+             多重试的复杂性。
+          C: 多工具有冲突/非并行模式 → 顺序执行，每个调execute_tool(on_retry_started=...)
+             文件路径冲突（一写多读）→降级顺序避免并发竞态。
+             非并行模式→依次执行不并发。
+         
+        参数变化历史：
+        北京老陈 2026-07-04: 初版，三分支+文件冲突检测
+        小欧 2026-07-09: 
+          - 并行分支B改用parallel=True（→try_once），删除手动重试循环（解决SRP/DRY违规）
+          - 新增on_retry_started参数，透传给单工具/顺序分支（解决重试无前端通知问题）
         """
         start_time = time.time()
 
@@ -159,23 +172,17 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             # A: 单工具
             _msg = f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={tool_name}"
             logger.info(_msg); print(_msg)
-            result = await execute_tool(agent, tool_name, tool_params)
+            result = await execute_tool(agent, tool_name, tool_params, on_retry_started=on_retry_started)
             results = [result]
 
         elif is_parallel and not _has_conflict(all_calls):
-            # B: 多工具无冲突 → 并行
+            # B: 多工具无冲突 → 并行（try_once，无重试）
             _names = [_cn(c) for c in all_calls]
             _msg = f"{time.strftime('%H:%M:%S')} [action_handler] 并行执行: tools={_names}"
             logger.info(_msg); print(_msg)
-            tasks = [execute_tool(agent, _cn(c), _cp(c)) for c in all_calls]
+            tasks = [execute_tool(agent, _cn(c), _cp(c), parallel=True) for c in all_calls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            for i, (call, result) in enumerate(zip(all_calls, results)):
-                if isinstance(result, Exception):
-                    logger.warning(f"[action_handler] 工具{_cn(call)}并行失败,重试: {result}")
-                    try:
-                        results[i] = await execute_tool(agent, _cn(call), _cp(call))
-                    except Exception as e2:
-                        logger.warning(f"[action_handler] 工具{_cn(call)}重试仍失败: {e2}")
+            # 并行分支不重试 — 失败信息传给LLM自己决策
         else:
             # C: 工具有冲突/非并行 → 顺序执行（一个不丢）
             _names = [_cn(c) for c in all_calls]
@@ -185,7 +192,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             results = []
             for call in all_calls:
                 try:
-                    result = await execute_tool(agent, _cn(call), _cp(call))
+                    result = await execute_tool(agent, _cn(call), _cp(call), on_retry_started=on_retry_started)
                     results.append(result)
                 except Exception as e:
                     logger.warning(f"[action_handler] 工具{_cn(call)}顺序执行失败: {e}")
@@ -439,7 +446,22 @@ def _build_call_list(parsed: Dict) -> tuple:
 
 
 async def handle_action(agent, parsed: Dict, chunk_buffer):
-    """完整action处理流程 — FC-only: 提取fc_context传递 — 小沈 2026-06-11"""
+    """完整action处理流程 — FC-only: 提取fc_context传递
+     
+    处理管线（遵守SLAP，逐层递进）：
+    1. _build_call_list → 解析parsed为all_calls
+    2. emit ThoughtStep → LLM推理内容
+    3. check_safety_and_confirm → 安全检查+HITL（async generator）
+    4. build retry notification callback → 收集重试通知
+    5. execute_tools → 三分支执行（单/并行/顺序）
+    6. consume retry_notifications → yield ChunkStep推前端
+    7. build ObservationContext → 收集执行结果
+    8. build_observation → yield ActionStep + ObservationStep
+    9. return_direct检查 → 需要时yield FinalStep提前结束
+     
+    小沈 2026-06-11
+    小欧 2026-07-09: 新增重试通知注入（步骤4-6）
+    """
     tool_name, tool_params, fc_context, pending_calls, all_calls, is_parallel = _build_call_list(parsed)
     step = agent.llm_call_count
 
@@ -471,7 +493,30 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
     if _has_error:
         return
 
-    results = await execute_tools(agent, all_calls, is_parallel, tool_name, tool_params)
+    # ── 工具重试通知 ──
+    # 设计模式：同步回调收集 + 事后yield ChunkStep
+    # 选择理由（KISS-DIRECT）：重试1-2秒完成，事后通知vs实时推送的UX差异极小，
+    # Queue+双Task轮询方案过于复杂，违背KISS-DIRECT和YAGNI。
+    # 回调签名只传4个基本类型，符合ISP原则；retry_engine不感知前端，符合OCP。
+    # 小欧 2026-07-09
+    retry_notifications = []
+
+    def _on_retry(tool_name: str, attempt: int, max_retries: int, error_msg: str):
+        """工具重试前回调 — 由retry_engine._execute_with_retry调用 — 小欧 2026-07-09"""
+        retry_notifications.append({
+            "tool_name": tool_name, "attempt": attempt,
+            "max_retries": max_retries, "error_msg": error_msg,
+        })
+
+    results = await execute_tools(agent, all_calls, is_parallel, tool_name, tool_params,
+                                  on_retry_started=_on_retry)
+
+    for n in retry_notifications:
+        yield agent._step_emitter.emit(ChunkStep(
+            step=step,
+            content=f"[Retry] 工具 {n['tool_name']} 执行失败({n['error_msg']}),"
+                    f" 正在重试 {n['attempt']}/{n['max_retries']}..."
+        ))
 
     ctx = ObservationContext(
         agent=agent, all_calls=all_calls, results=results, step=step,

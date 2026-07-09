@@ -6,7 +6,7 @@ tool_executor — 工具执行逻辑
 """
 
 import time
-from typing import Any, Dict, Set
+from typing import Any, Callable, Dict, Optional, Set
 
 from app.tools.tool_types import ToolCategory
 from app.tools.tool_response import is_success
@@ -14,11 +14,42 @@ from app.utils.logger import logger
 from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_search_desc
 
 
-async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
-    """执行工具并处理searchtool自动注入 — 小健 2026-06-26 修复状态判断逻辑"""
+async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
+                       parallel: bool = False,
+                       on_retry_started: Optional[Callable] = None) -> Dict[str, Any]:
+    """执行工具（单入口）— 根据parallel参数分派try_once或带重试执行
+     
+    职责（SRP：只决定「执行方式」，不重写重试逻辑）：
+    1. parallel=True → 调retry_engine.try_once() → 一次执行，不重试
+       适用场景：action_handler并行分支（asyncio.gather），瞬态失败概率低
+    2. parallel=False → 调retry_engine.execute_tool_with_retry() → 带重试
+       适用场景：单工具/顺序执行，需要自动重试瞬态失败
+     
+    无论哪种路径，统一处理：
+    - 耗时统计 + 日志输出
+    - is_success状态判断
+    - searchtool自动注入（searchtool成功时自动注入整个工具类别给LLM）
+     
+    Args:
+        agent: UniversalAgent实例
+        tool_name: 工具名
+        tool_params: 工具参数字典
+        parallel: True=并行模式用try_once，False=顺序模式用execute_tool_with_retry
+        on_retry_started: 仅在parallel=False时透传给execute_tool_with_retry
+     
+    小健 2026-06-26: 修复状态判断逻辑
+    小欧 2026-07-09: 新增parallel/on_retry_started参数，支持并行无重试模式
+    """
     
     start = time.time()
-    result = await agent._retry_engine.execute_tool_with_retry(tool_name, tool_params)
+    if parallel:
+        # 并行分支：一次执行不重试，失败信息直接返回给LLM决策
+        result = await agent._retry_engine.try_once(tool_name, tool_params)
+    else:
+        # 单工具/顺序分支：带重试+回调通知
+        result = await agent._retry_engine.execute_tool_with_retry(
+            tool_name, tool_params, on_retry_started=on_retry_started,
+        )
     elapsed = time.time() - start
     
     # 小健 2026-06-26: 使用is_success函数判断状态，而非错误的result.get("code")
