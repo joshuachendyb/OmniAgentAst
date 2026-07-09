@@ -36,8 +36,8 @@ from app.tools.registry import tool_registry
 # 返回格式: {tool名: {"max_retries": int, "retryable": list[str]}}
 # 注意: retryable 列表中的字符串必须与 ToolErrorCategory.value 完全匹配
 TOOL_RETRY_CONFIG = {
-    "httpget": {"max_retries": 3, "retryable": ["timeout", "connect", "network", "protocol"]},
-    "download": {"max_retries": 3, "retryable": ["timeout", "connect", "network", "protocol"]},
+    "httpget": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
+    "download": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
     "fetchpage": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
     "searchweb": {"max_retries": 2, "retryable": ["timeout", "connect", "network"]},
     # shell/代码: 非幂等+永久性错误为主，工具内部已 catch 所有异常，
@@ -99,18 +99,29 @@ class ToolRetryEngine:
             TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"]),
         )
     
-    async def execute_tool_with_retry(
-        self,
-        action: str,
-        action_input: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """统一工具执行方法 — FC-only: 无finish分支
-        
-        小欧 2026-06-27: 增加参数名别名映射，解决LLM返回参数名不匹配问题
+    def _prepare_execution(self, action: str, action_input: Dict[str, Any]):
+        """查找工具+参数规范化+参数验证 — 统一入口，try_once与execute_tool_with_retry共享
+         
+        遵守DRY原则：两个执行方法共用此函数，消除查找/规范化/验证的代码重复。
+        遵守SRP原则：只负责「准备工作」，不涉执行/重试。
+         
+        Args:
+            action: 工具名
+            action_input: 原始参数字典
+         
+        Returns:
+            (tool, validated_params) — 验证通过
+            (None, error_dict) — 工具不存在或参数验证失败，error_dict包含给LLM的错误描述
+         
+        设计决策:
+        - 工具不存在时返回含hint的error_dict，提示LLM使用searchtool搜索
+        - 参数验证失败时返回含具体缺失/非法字段的错误，让LLM修正后重试
+         
+        小欧 2026-07-09
         """
         tool = self._tools.get(action)
         if tool is None:
-            return build_error(
+            return None, build_error(
                 data={},
                 llm_data={
                     "summary": f"工具 '{action}' 未找到",
@@ -122,17 +133,76 @@ class ToolRetryEngine:
                 other_data={"retry_count": 0},
                 error_type="tool_not_found",
             )
-        
-        # 参数名别名映射 — 小欧 2026-06-27
-        # 解决LLM返回参数名不匹配问题（如返回path而非file_path）
-        normalized_input, has_mapping = normalize_params(action, action_input)
-        
+        # 参数别名映射：解决LLM返回参数名与schema不匹配的问题（如"path"→"file_path"）
+        normalized_input, _ = normalize_params(action, action_input)
         params = self._validate_params(action, normalized_input, tool)
+        # 验证失败（非法参数/缺失必需参数）→ 返回error_dict，不继续执行
         _ec = params.get("llm_data", {}).get("status", {}).get("exec_code", "") if isinstance(params, dict) else ""
         if _ec == "error":
-            return params
-        
-        return await self._execute_with_retry(action, params, tool)
+            return None, params
+        return tool, params
+
+    async def try_once(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
+        """单次执行，不重试 — 专供action_handler并行分支使用
+         
+        与execute_tool_with_retry的区别：
+        - 无重试循环：只调一次_execute_tool_once，失败直接返回错误
+        - 无等待退避：不调用asyncio.sleep
+        - 无on_retry_started回调：一次执行不需要通知
+         
+        设计理由（action_handler并行分支场景）：
+        并行工具失败的瞬态概率低，让LLM从observation看到失败后可自行决定是否重试，
+        不需要引擎层自动重试。这避免了asyncio.gather内部的重试复杂性。
+         
+        小欧 2026-07-09
+        """
+        tool, params_or_error = self._prepare_execution(action, action_input)
+        if tool is None:
+            return params_or_error
+        # 复用_get_retry_config的超时查询，消除与_execute_with_retry的DRY违规 — 小欧 2026-07-09
+        _, _, _, base_timeout = self._get_retry_config(action)
+        timeout = min(base_timeout, 300)
+        try:
+            result = await self._execute_tool_once(tool, params_or_error, timeout)
+            if isinstance(result, dict):
+                result.setdefault("other_data", {})["retry_count"] = 0
+            return result
+        except Exception as e:
+            error_category = ToolErrorClassifier.classify_tool_error(e)
+            return self._build_retry_error(
+                f"ERR_{error_category.name}", f"{error_category.description}: {str(e)[:200]}",
+                0, error_type=error_category.name.lower(),
+                action_name=action, action_params=params_or_error,
+            )
+
+    async def execute_tool_with_retry(
+        self,
+        action: str,
+        action_input: Dict[str, Any],
+        on_retry_started: Optional[Callable] = None,
+    ) -> Dict[str, Any]:
+        """统一工具执行方法（带重试）— action_handler单工具/顺序分支使用
+         
+        与try_once的区别：
+        - 有重试循环：按TOOL_RETRY_CONFIG配置的重试次数自动重试
+        - 有指数退避：重试间隔backoff_factor^attempt
+        - 有on_retry_started回调：每次重试前通知调用方（→前端显示重试状态）
+        - 有渐进超时：每次重试的超时递增base_timeout*(attempt+1)，上限300秒
+         
+        Args:
+            action: 工具名
+            action_input: 原始参数字典
+            on_retry_started: 可选回调，重试触发前调用。
+               签名: (tool_name, attempt_1indexed, max_retries, error_msg)
+               attempt从1开始（第1次重试=1）。同步调用，不阻塞重试流程。
+         
+        小欧 2026-06-27: 增加参数名别名映射，解决LLM返回参数名不匹配问题
+        小欧 2026-07-09: 新增on_retry_started回调参数
+        """
+        tool, params_or_error = self._prepare_execution(action, action_input)
+        if tool is None:
+            return params_or_error
+        return await self._execute_with_retry(action, params_or_error, tool, on_retry_started=on_retry_started)
     
     def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
         """验证参数（非法参数+必需参数）— P1-05修复: 返回错误字典而非None
@@ -176,13 +246,38 @@ class ToolRetryEngine:
         is_retryable = error_category.value in retryable_errors
         return is_retryable and attempt < max_retries
 
-    async def _execute_with_retry(self, action: str, params: Dict[str, Any], tool: Callable) -> Dict[str, Any]:
-        """带重试执行工具 — 内联版，去掉 RetryEngine 中介层 — 小欧 2026-06-29"""
-        max_retries, backoff_factor, retryable_errors, timeout = self._get_retry_config(action)
+    async def _execute_with_retry(self, action: str, params: Dict[str, Any], tool: Callable,
+                                   on_retry_started: Optional[Callable] = None) -> Dict[str, Any]:
+        """带重试执行工具 — 核心循环：渐进超时+重试前回调通知
+         
+        重试策略（遵守KISS-DIRECT原则，简单直线）：
+        1. 渐进超时: 每次尝试的超时 = base_timeout * (attempt + 1)，上限300秒
+           → 第一次60s超时，第二次给120s，第三次给180s（让网络问题有更长时间恢复）
+        2. 指数退避等待: 重试间隔 = backoff_factor^attempt（1s, 2s, 4s...）
+           → 给小故障足够恢复时间，同时避免立即重试又失败
+        3. 分类重试: 只有TOOL_RETRY_CONFIG中retryable列表里的错误类别才会重试
+           → 永久性错误（如参数无效）不重试，直接返回错误让LLM修正
+        4. 回调通知: 每次重试前调on_retry_started回调
+           → action_handler可消费回调→yield ChunkStep→前端显示重试进度
+         
+        日志约定（[Retry][Lx]层级）：
+        - [Retry][L1]: LLM流式调用重试（base_service.py）
+        - [Retry][L2]: 工具执行重试（本方法）
+         
+        小欧 2026-07-09
+        """
+        max_retries, backoff_factor, retryable_errors, base_timeout = self._get_retry_config(action)
 
         last_error: Optional[Exception] = None
 
         for attempt in range(max_retries + 1):
+            # 渐进超时：首次base_timeout，后续递增，cap 300s防止过长阻塞
+            timeout = min(base_timeout * (attempt + 1), 300)
+            if attempt > 0 and on_retry_started:
+                try:
+                    on_retry_started(action, attempt, max_retries, str(last_error)[:100])
+                except Exception as cb_err:
+                    logger.warning(f"[Retry][L2] on_retry_started回调异常: {cb_err}")
             try:
                 result = await self._execute_tool_once(tool, params, timeout)
                 if isinstance(result, dict):
@@ -200,7 +295,7 @@ class ToolRetryEngine:
                 # 超时/网络错误不打印堆栈，只有未知错误才打印 — 小沈 2026-06-28
                 should_print_traceback = error_category.name in ("UNKNOWN", "INTERNAL")
                 logger.warning(
-                    f"[重试] action={action} 尝试{attempt + 1}/{max_retries + 1} "
+                    f"[Retry][L2] action={action} 尝试{attempt + 1}/{max_retries + 1} "
                     f"失败：{error_category.description} - {str(e)[:100]}",
                     exc_info=should_print_traceback
                 )
