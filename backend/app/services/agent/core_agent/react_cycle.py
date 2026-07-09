@@ -100,12 +100,16 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
     parsed_type = llm_response.get("type", "answer")
     step = agent.llm_call_count
     thought = llm_response.get("thought", "")
+    reasoning = llm_response.get("reasoning", "")
     if thought:
-        print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}")  # 小欧 2026-07-02 控制台
+        reasoning_part = f"\n{time.strftime('%H:%M:%S')} === 推理 ===\n{reasoning}" if reasoning else ""
+        print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}")  # 小欧 2026-07-02 控制台
     if parsed_type == "action":
         handler = handle_action(agent, llm_response, chunk_buffer)
     elif parsed_type == "answer":
-        print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response={llm_response.get('content', '')}")  # 小欧 2026-07-02 控制台
+        reasoning = llm_response.get("reasoning", "")
+        reasoning_part = f"\n{time.strftime('%H:%M:%S')} === 推理 ===\n{reasoning}" if reasoning else ""
+        print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response={llm_response.get('content', '')}{reasoning_part}")  # 小欧 2026-07-02 控制台
         handler = handle_answer(agent, llm_response, chunk_buffer)
     elif parsed_type == "error":
         content = llm_response.get("content", "")

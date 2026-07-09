@@ -37,7 +37,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
         })
 
     logger.info(f"[FC] LLM原始响应(action): tool={first.get('tool_name','?')}, parallel={len(_pending_calls)}")
-    assembled = {"content": full_content, "tool_calls": built_tool_calls}
+    assembled = {"content": full_content, "reasoning": full_reasoning, "tool_calls": built_tool_calls}
     _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "action", usage_data,
                       tool_name=first.get("tool_name", "?"), parallel_calls=len(_pending_calls))
     return ("response", {
@@ -74,12 +74,12 @@ def _yield_error_response(error_msg: str, agent):
     return ("response", {"type": "error", "content": error_msg})
 
 
-def _build_answer_response(content, usage_data, agent, full_reasoning=""):
+def _build_answer_response(full_content, full_reasoning, usage_data, agent):
     """构建answer类型响应 — 小欧 2026-06-25 抽取_log_llm_response"""
-    logger.info(f"[FC] LLM原始响应(answer): {content}")
-    assembled = {"content": content}
+    logger.info(f"[FC] LLM原始响应(answer): {full_content}")
+    assembled = {"content": full_content, "reasoning": full_reasoning}
     _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "answer", usage_data)
-    return ("response", {"type": "answer", "content": content, "reasoning": full_reasoning})
+    return ("response", {"type": "answer", "content": full_content, "reasoning": full_reasoning})
 
 
 
@@ -157,7 +157,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     content = full_content or full_reasoning or ""
     _p = usage_data.get('prompt_tokens','?') if usage_data else '?'; _c = usage_data.get('completion_tokens','?') if usage_data else '?'; _t = usage_data.get('total_tokens','?') if usage_data else '?'
     logger.info(f"[FC] 解析结果: answer, len={len(content)}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
-    yield _build_answer_response(content, usage_data, agent)
+    yield _build_answer_response(full_content, full_reasoning, usage_data, agent)
 
 
 async def call_llm_with_fallback(agent, messages, openai_tools):
