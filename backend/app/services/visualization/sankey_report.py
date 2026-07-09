@@ -9,11 +9,11 @@ from typing import List, Optional, Tuple
 from dataclasses import asdict
 
 from app.services.visualization.common import FlowData, save_json_file
+from app.db.operation_queries import query_sankey_operations
 
 
 def _query_sankey_operations(task_id: str) -> List[Tuple]:
     """查询Sankey操作记录 - 小沈 2026-06-08; 2026-06-17 改为调用service层"""
-    from app.db.operation_queries import query_sankey_operations
     return query_sankey_operations(task_id)
 
 

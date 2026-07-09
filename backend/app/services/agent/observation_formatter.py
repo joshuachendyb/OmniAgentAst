@@ -55,6 +55,7 @@ Author: 小欧 2026-06-21; 小欧 2026-07-04 更新映射表; 小欧 2026-07-05 
 """
 
 import json
+import re
 from typing import Any, Dict
 
 from app.tools.tool_constants import (
@@ -942,7 +943,6 @@ def _format_compress_result(data: dict) -> str:
 
 def _extract_html_summary(html: str, max_len: int = 500) -> str:
     """从 HTML 中提取纯文本摘要 — 小沈 2026-07-08"""
-    import re
     text = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL)
     text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)
     text = re.sub(r'<[^>]+>', ' ', text)

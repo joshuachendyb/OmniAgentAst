@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.services.visualization.common import save_text_file
+from app.db.operation_queries import query_mermaid_operations
 
 
 def generate_mermaid_report(task_id: str, output_path: Optional[Path] = None) -> str:
@@ -21,7 +22,6 @@ def generate_mermaid_report(task_id: str, output_path: Optional[Path] = None) ->
     Returns:
         Mermaid报告文件路径
     """
-    from app.db.operation_queries import query_mermaid_operations
     operations = query_mermaid_operations(task_id)
 
     mermaid_content = "graph TD\n"

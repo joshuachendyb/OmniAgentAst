@@ -28,9 +28,13 @@ Layer 3: 已知风险检测(路径越权/写入污染/代码注入)
 
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Optional
 
 from app.utils.logger import logger
+from app.config import get_config
+from app.tools.registry import tool_registry
+from app.tools.tool_types import ToolCategory
 from app.services.safety.path_safe_check import validate_tool_path as _validate_tool_path
 
 _WRITE_RISK_TOOL = "writetext"
@@ -50,7 +54,6 @@ class SafetyResult:
 def _is_skip_safety() -> bool:
     """运行时检查安全开关 — 只读 config.yaml security.enabled"""
     try:
-        from app.config import get_config
         return not get_config().get("security.enabled", True)
     except Exception:
         return False
@@ -71,8 +74,6 @@ class ToolSafetyChecker:
             return SafetyResult(is_safe=True, requires_confirmation=False,
                     blocked=False, message="安全开关已绕过",
                     safety_level="safe")
-
-        from app.tools.registry import tool_registry
 
         tool_meta = tool_registry.get_tool(tool_name)
         if tool_meta is None:
@@ -131,15 +132,12 @@ class ToolSafetyChecker:
         if not is_valid:
             return SafetyResult(is_safe=False, blocked=True, message=f"路径越权: {msg}")
 
-        from app.tools.tool_types import ToolCategory
-
         if tool_name == _WRITE_RISK_TOOL:
             try:
-                from pathlib import Path as _Path
                 # 【#29修复】写入大小保护应优先用path参数（与路径检查一致），file_path兜底 — chendyg 2026-06-26
                 file_path = params.get("path") or params.get("file_path", "")
                 content = params.get("content", "")
-                p = _Path(file_path)
+                p = Path(file_path)
                 old_size = p.stat().st_size if p.exists() and p.is_file() else 0
                 new_size = len(content.encode("utf-8")) if content else 0
                 if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:

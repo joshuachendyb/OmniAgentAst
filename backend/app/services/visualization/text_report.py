@@ -8,6 +8,8 @@ from datetime import datetime
 
 from app.services.visualization.common import count_op_stats, format_size
 from app.utils.logger import logger
+from app.utils.time_utils import now_str
+from app.db.operation_queries import query_file_operations
 
 
 def _build_header(task_id: str, task_description: str, operations: List[Tuple]) -> List[str]:
@@ -63,7 +65,6 @@ def _build_footer() -> List[str]:
     """构建报告尾部 - 小沈 2026-06-08"""
     lines = []
     lines.append("=" * 80)
-    from app.utils.time_utils import now_str
     lines.append("报告生成时间: " + now_str())
     lines.append("=" * 80)
     return lines
@@ -107,7 +108,6 @@ def generate_text_report(task_id: str, task_description: str) -> str:
     Returns:
         报告文本内容
     """
-    from app.db.operation_queries import query_file_operations
     operations = query_file_operations(task_id)
     if not operations:
         logger.warning(f"No operations found for session: {task_id}")

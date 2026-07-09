@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from app.utils.logger import logger
+from app.db.operation_queries import query_file_operations
 
 
 
@@ -41,7 +42,6 @@ def _build_report_data(task_id: str, task_description: str, operations: List[Tup
 
 def _save_json_file(data: dict, path: Path) -> str:
     """保存JSON到文件 - 小沈 2026-06-09 复用 common.save_json_file"""
-    from app.services.visualization.common import save_json_file as _save
     return _save(data, path, logger_name="JSON report")
 
 
@@ -61,7 +61,6 @@ def generate_json_report(task_id: str, task_description: str, output_path: Optio
     Returns:
         JSON报告文件路径
     """
-    from app.db.operation_queries import query_file_operations
     operations = query_file_operations(task_id)
     
     if not operations:

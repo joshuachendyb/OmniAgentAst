@@ -10,6 +10,7 @@ v2.0: 新增错误消息检测，LLM返回错误时设FAILED而非COMPLETED — 
 from typing import Dict
 
 from app.services.agent.steps import ThoughtStep, FinalStep, ErrorStep
+from app.utils.logger import logger
 
 
 async def handle_answer(agent, parsed: Dict, chunk_buffer):
@@ -18,7 +19,6 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
     content = parsed.get("content", "")
 
     if not content:
-        from app.utils.logger import logger
         logger.warning(f"[handle_answer] LLM返回空内容(step={step})")
         # chendyg 2026-07-01: yield ErrorStep让_dispatch_handler推断FAILED
         # 保留add_assistant_message("")，FC协议要求空assistant消息也入历史

@@ -7,6 +7,7 @@ from typing import List, Dict, Tuple
 
 
 from app.utils.logger import logger
+from app.db.operation_queries import query_file_operations
 
 
 def build_html_report_content(
@@ -88,7 +89,6 @@ def generate_html_report(task_id: str, task_description: str) -> str:
     Returns:
         HTML报告内容字符串
     """
-    from app.db.operation_queries import query_file_operations
     operations = query_file_operations(task_id)
 
     if not operations:

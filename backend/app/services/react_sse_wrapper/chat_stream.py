@@ -24,6 +24,8 @@ from app.utils.sse_formatter import format_sse_event, format_agent_sse
 from app.services.agent.steps import MetaStep, ErrorStep, FinalStep
 from app.utils.sys_error_classifier import SystemErrorClassifier
 from app.utils.logger import logger
+from app.api.v1.conversation import save_execution_steps, ExecutionStepsUpdate
+from app.utils.message_id_tracker import get_user_message_id
 
 
 # ====================================================================
@@ -76,8 +78,6 @@ async def save_execution_steps_to_db(
     user_message_id: Optional[int] = None
 ) -> None:
     """保存execution_steps到DB — 唯一保存入口 — 小健 2026-06-18 内联_get_user_message_id"""
-    from app.api.v1.conversation import save_execution_steps, ExecutionStepsUpdate
-    from app.utils.message_id_tracker import get_user_message_id
 
     if session_id is None:
         return
