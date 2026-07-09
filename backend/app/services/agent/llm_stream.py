@@ -37,6 +37,8 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
         })
 
     logger.info(f"[FC] LLM原始响应(action): tool={first.get('tool_name','?')}, parallel={len(_pending_calls)}")
+    full_content = full_content.strip()
+    full_reasoning = full_reasoning.strip()
     assembled = {"content": full_content, "reasoning": full_reasoning, "tool_calls": built_tool_calls}
     _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "action", usage_data,
                       tool_name=first.get("tool_name", "?"), parallel_calls=len(_pending_calls))
@@ -77,6 +79,8 @@ def _yield_error_response(error_msg: str, agent):
 def _build_answer_response(full_content, full_reasoning, usage_data, agent):
     """构建answer类型响应 — 小欧 2026-06-25 抽取_log_llm_response"""
     logger.info(f"[FC] LLM原始响应(answer):\n")
+    full_content = full_content.strip()
+    full_reasoning = full_reasoning.strip()
     assembled = {"content": full_content, "reasoning": full_reasoning}
     _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "answer", usage_data)
     return ("response", {"type": "answer", "content": full_content, "reasoning": full_reasoning})

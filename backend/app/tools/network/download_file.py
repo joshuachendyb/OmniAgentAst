@@ -24,9 +24,12 @@ from app.tools.validate.timeout_validator import validate_timeout
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 
 from app.utils.logger import logger
-from app.utils.paths import get_default_project_root
 
-_DOWNLOAD_DIR = os.path.join(get_default_project_root(), "download")
+def _get_download_dir() -> str:
+    """获取下载目录 — 优先从配置读取project_root，未配则fallback到代码位置 — 小欧 2026-07-09"""
+    from app.config import get_config
+    return os.path.join(get_config().get_project_root(), "download")
+
 _MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
@@ -148,10 +151,10 @@ async def download(
         if any(p == ".." for p in destination_path.replace("\\", "/").split("/")):
             llm_data = _build_download_file_llm_data("error", 0, url, dest_path=destination_path, err_code=ERR_NETWORK_INVALID_PATH, detail="destination_path不允许路径遍历", hint="请使用合法文件名", timeout=timeout, proxy=proxy, headers=headers)
             return build_error(data={}, llm_data=llm_data)
-        dest_path = os.path.abspath(os.path.join(_DOWNLOAD_DIR, destination_path.lstrip("/\\")))
+        dest_path = os.path.abspath(os.path.join(_get_download_dir(), destination_path.lstrip("/\\")))
     else:
         filename = os.path.basename(urlparse(url).path) or f"download_{hash(url) & 0xFFFFFFFF}"
-        dest_path = os.path.abspath(os.path.join(_DOWNLOAD_DIR, filename))
+        dest_path = os.path.abspath(os.path.join(_get_download_dir(), filename))
     # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
     is_valid_path, path_err, path_warn = validate_path(OpCategory.WRITE, dest_path)
@@ -178,7 +181,7 @@ async def download(
             return build_error(data={}, llm_data=llm_data)
 
 
-        if not dest_path.startswith(os.path.abspath(_DOWNLOAD_DIR)):
+        if not dest_path.startswith(os.path.abspath(_get_download_dir())):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=dest_path, err_code=ERR_NETWORK_INVALID_PATH, detail="路径遍历不允许", hint="请检查目标路径", timeout=timeout, proxy=proxy, headers=headers)
             return build_error(data={}, llm_data=llm_data)

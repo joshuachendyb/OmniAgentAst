@@ -22,8 +22,13 @@ from app.tools.tool_fc_helper import _check_module
 from app.utils.json_utils import coerce_json
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
-from app.utils.paths import get_default_project_root
 from app.tools.tool_constants import ERR_DOC_CHART_GENERATE
+
+
+def _get_output_dir() -> str:
+    """获取项目输出目录 — 优先从配置读取project_root，子目录output — 小欧 2026-07-09"""
+    from app.config import get_config
+    return os.path.join(get_config().get_project_root(), "output")
 
 
 def _validate_chart_data(chart_data: dict) -> dict:
@@ -193,7 +198,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
 
         if output_path is None:
             timestamp = timestamp_for_filename()
-            output_path = os.path.join(get_default_project_root(), f"chart_{timestamp}.png")
+            output_path = os.path.join(_get_output_dir(), f"chart_{timestamp}.png")
 
         fig, ax = plt.subplots(figsize=(10, 6))
         chart_type_lower = chart_type.lower()
