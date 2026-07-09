@@ -212,7 +212,8 @@ class BaseAIService:
                             try:
                                 args_str = tc["arguments"].strip() if tc["arguments"] else ""
                                 if not args_str:
-                                    params = {}
+                                    failed_parses.append(tc["name"])
+                                    continue
                                 else:
                                     params = _normalize_tool_params(_json.loads(args_str))
                             except _json.JSONDecodeError as e:

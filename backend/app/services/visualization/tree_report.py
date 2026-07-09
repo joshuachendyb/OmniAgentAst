@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from app.services.visualization.common import OperationNode, save_json_file as _save
+from app.db.operation_queries import query_tree_operations
 
 from app.utils.logger import logger
 
