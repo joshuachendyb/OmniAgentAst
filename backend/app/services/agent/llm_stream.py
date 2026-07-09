@@ -76,7 +76,7 @@ def _yield_error_response(error_msg: str, agent):
 
 def _build_answer_response(full_content, full_reasoning, usage_data, agent):
     """构建answer类型响应 — 小欧 2026-06-25 抽取_log_llm_response"""
-    logger.info(f"[FC] LLM原始响应(answer): {full_content}")
+    logger.info(f"[FC] LLM原始响应(answer):\n")
     assembled = {"content": full_content, "reasoning": full_reasoning}
     _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "answer", usage_data)
     return ("response", {"type": "answer", "content": full_content, "reasoning": full_reasoning})
