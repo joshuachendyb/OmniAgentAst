@@ -21,6 +21,8 @@ DESKTOP Register - 桌面工具注册点
 更新时间: 2026-06-22 小健
 """
 
+import importlib
+
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
@@ -41,7 +43,6 @@ DESKTOP_TOOL_DEPENDENCIES = {
 
 def check_pyautogui_available() -> bool:
     """检查pyautogui库是否可用 — 小健 2026-06-27"""
-    import importlib
     try:
         importlib.import_module("pyautogui")
         return True

@@ -71,14 +71,19 @@ S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026
 铁规2: 工具返回原始 data，前端截断在前端 yield 层
 铁规3: 计时仅在 shell() 主函数
 """
+import locale
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from app.tools.file.file_encoding import get_file_encoding
+from app.tools.shell.execute_shell_command_safety import check_shell_command_risk
+from app.tools.shell.shell_engine import PersistentShell
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.validate.timeout_validator import validate_timeout
@@ -196,7 +201,6 @@ def _convert_redirect_to_utf8(command: str, cwd: Optional[str] = None) -> None:
         return
     if target.stat().st_size > 1048576:
         return
-    from app.tools.file.file_encoding import get_file_encoding
     result = get_file_encoding(str(target))
     encoding = result.get("data", {}).get("encoding", "") if result else ""
     if encoding in ("", "utf-8", "utf-8-sig", "ascii"):
@@ -369,7 +373,6 @@ def shell(
         return build_error(data={}, llm_data=llm)
 
     # ── 阶段 2: 安全检查 ──
-    from app.tools.shell.execute_shell_command_safety import check_shell_command_risk
     safety = check_shell_command_risk(cmd)
     if safety:
         d = int((_time_mod.perf_counter() - t0) * 1000)
@@ -392,7 +395,6 @@ def shell(
             if re.search(r'(?i)(?:^|\|)\s*Format-Table\b', cmd):
                 cmd += " | Out-String -Width 4096"
 
-            from app.tools.shell.shell_engine import PersistentShell
             engine = PersistentShell.get_instance(cwd)
             result = engine.exec(cmd, timeout)
             stdout_str = _fix_encoding(result.get("stdout", ""))
@@ -402,8 +404,6 @@ def shell(
 
         else:  # cmd
             # 写入 temp .bat 执行，绕过 cmd.exe /c 的引号解析 bug — 小欧 2026-07-05
-            import locale
-            import tempfile
             # cmd.exe读.bat用的是系统OEM编码(中文Win=gbk)，utf-8写入会乱 — 小欧 2026-07-07
             bat_encoding = locale.getpreferredencoding()
             bat_fd, bat_path = tempfile.mkstemp(suffix='.bat', text=True)

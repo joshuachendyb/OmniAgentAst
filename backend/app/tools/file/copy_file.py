@@ -23,6 +23,8 @@ from app.utils.context_vars import _current_task_id
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
+from app.services.safety.file_safety import record_operation, execute_with_safety
+from app.db.models.operation_enums import OperationType
 
 
 
@@ -107,9 +109,6 @@ async def copy(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": f"目标已存在且overwrite=False: {destination}"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
         return build_error(data={}, llm_data=llm_data)
-    from app.services.safety.file_safety import record_operation, execute_with_safety
-    from app.db.models.operation_enums import OperationType
-
     task_id = _current_task_id.get()
     if not task_id:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -7,6 +7,7 @@ clipboard_control — 剪贴板操作(read/write)
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+import ctypes
 import time as _time_mod
 from typing import Dict, Any, Literal
 
@@ -40,7 +41,6 @@ def _read_clipboard() -> Dict[str, Any]:
         return {"text": text}
     except ImportError:
         try:
-            import ctypes
             CF_TEXT = 1
             kernel32 = ctypes.windll.kernel32
             user32 = ctypes.windll.user32
@@ -71,9 +71,7 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
         return {"text": content}
     except ImportError:
         try:
-            import ctypes
             CF_TEXT = 1
-            GMEM_MOVEABLE = 0x0002
             kernel32 = ctypes.windll.kernel32
             user32 = ctypes.windll.user32
             text_bytes = content.encode('gbk') + b'\0'

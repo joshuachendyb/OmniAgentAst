@@ -24,6 +24,8 @@ Network Register - 网络通信工具注册点
 from app.tools.registry import register_tool, tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
+import socket
+import time
 from typing import Any, Dict, Optional
 
 # 网络工具依赖配置 — 小健 2026-06-18
@@ -53,8 +55,6 @@ def _http_request_failure_hint(tool_params: Optional[dict] = None) -> str:
 
 def check_network() -> Dict[str, Any]:
     """检查网络连通性 — 小欧 2026-06-24 从3个文件中提取公共函数"""
-    import socket
-    import time
     test_hosts = [("dns.google", 53), ("8.8.8.8", 53), ("1.1.1.1", 53)]
     for host, port in test_hosts:
         sock = None

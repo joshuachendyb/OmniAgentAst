@@ -12,6 +12,7 @@ F8: compress_files — 压缩文件
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import asyncio
+import fnmatch
 import glob
 import os
 import tarfile
@@ -22,11 +23,14 @@ from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED
+from app.tools.tool_fc_helper import _check_module
+from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, TOOL_TIMEOUTS
 from app.utils.context_vars import _current_task_id
 from app.utils.json_utils import coerce_json
 from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param
 from app.utils.logger import logger
+from app.services.safety.file_safety import record_operation, execute_with_safety
+from app.db.models.operation_enums import OperationType
 
 
 def _build_compress_files_llm_data(
@@ -78,7 +82,6 @@ def _has_wildcard(path_str: str) -> bool:
 def _compress_entries(source: Path, deadline: float,
                       exclude_patterns: Optional[List[str]] = None) -> Generator[Tuple[Path, str], None, bool]:
     """通用文件遍历生成器 — 小健 2026-05-25"""
-    import fnmatch
     def _is_excluded(p: Path) -> bool:
         if not exclude_patterns:
             return False
@@ -135,7 +138,6 @@ def _write_zip(
     compressed_files: List[str] = []
     timed_out = False
     if password:
-        from app.tools.tool_fc_helper import _check_module
         if not _check_module("pyzipper"):
             raise ImportError("pyzipper库未安装,无法创建加密ZIP,请先执行: pip install pyzipper")
         import pyzipper
@@ -276,10 +278,6 @@ async def compress(
                 return build_error(data={}, llm_data=llm_data)
 
         dst.parent.mkdir(parents=True, exist_ok=True)
-
-        from app.services.safety.file_safety import record_operation, execute_with_safety
-        from app.db.models.operation_enums import OperationType
-        from app.tools.tool_constants import TOOL_TIMEOUTS
 
         operation_id = record_operation(
             task_id=task_id, operation_type=OperationType.COMPRESS,

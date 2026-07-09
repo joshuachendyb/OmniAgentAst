@@ -7,8 +7,10 @@ generate_chart — 使用matplotlib生成数据可视化图表
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+import json
 import os
 import time as _time_mod
+import warnings
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, Literal
 
@@ -86,7 +88,6 @@ def _parse_inline_data(data: Union[str, dict, list]) -> Optional[dict]:
     if not data.startswith("{"):
         return None
     try:
-        import json
         parsed = json.loads(data)
         labels = parsed.get("labels", [])
         values = parsed.get("values", [])
@@ -122,7 +123,6 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        import warnings
         # 抑制matplotlib中文字形缺失警告(全局防御) — 小欧 2026-07-08
         warnings.filterwarnings('ignore', message='Glyph.*missing from font')
 

@@ -13,8 +13,10 @@ Author: 小沈 - 2026-05-29
 
 import os
 from typing import Optional
+from urllib.parse import urljoin
 
 import httpx
+from app.tools.validate.url_validator import validate_url
 
 
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
@@ -51,8 +53,6 @@ class HTTPClient:
         if 300 <= response.status_code < 400:
             location = response.headers.get("location")
             if location:
-                from urllib.parse import urljoin
-                from app.tools.validate.url_validator import validate_url
                 redirect_url = urljoin(str(response.url), location)
                 is_valid, err, _ = validate_url(redirect_url)
                 if not is_valid:

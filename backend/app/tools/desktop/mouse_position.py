@@ -7,6 +7,7 @@ mouse_position — 获取鼠标当前位置
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+import ctypes
 import time as _time_mod
 from typing import Dict, Any
 
@@ -38,7 +39,6 @@ def _build_mouse_position_llm_data(exec_code: str, duration_ms: int, x=0, y=0, d
 def _get_mouse_position() -> Dict[str, Any]:
     """获取当前鼠标位置(内聚) — 小健 2026-06-22 拆分独立文件"""
     try:
-        import ctypes
         point = ctypes.wintypes.POINT()
         ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
         return {"x": point.x, "y": point.y}

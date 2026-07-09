@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
+from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_EXTRACT
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory
@@ -121,7 +122,6 @@ def _extract_zip_archive(archive_path: str, output_dir: str, overwrite: bool,
             raise
         # AES-256加密ZIP，zipfile不支持，尝试pyzipper后备 — 小欧 2026-07-08
         try:
-            from app.tools.tool_fc_helper import _check_module
             if not _check_module("pyzipper"):
                 raise ImportError("pyzipper")
             import pyzipper

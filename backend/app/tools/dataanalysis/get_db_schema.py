@@ -7,6 +7,7 @@ get_db_schema — 获取数据库结构元数据
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 
 import fnmatch
+import re
 import sqlite3
 import time as _time_mod
 from typing import Any, Dict, List, Optional, Union, Literal
@@ -43,7 +44,6 @@ def _get_columns(conn, connection_type: str, table_name: str) -> List[Dict]:
         from sqlalchemy import text
         result = conn.execute(text("SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
         return [{"name": r[0], "type": r[1], "nullable": r[2] == "YES", "pk": False, "default": r[3]} for r in result]
-    import re
     if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
         return []
     cursor = conn.cursor()
@@ -61,7 +61,6 @@ def _get_indexes(conn, connection_type: str, table_name: str) -> List[Dict]:
         from sqlalchemy import text
         result = conn.execute(text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename=:t"), {"t": table_name})
         return [{"name": r[0], "unique": "UNIQUE" in r[1].upper(), "definition": r[1]} for r in result]
-    import re
     if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
         return []
     cursor = conn.cursor()
