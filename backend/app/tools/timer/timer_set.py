@@ -24,6 +24,7 @@ _timers: Dict[str, asyncio.TimerHandle] = {}
 _timer_counter = 0
 _timer_callbacks: Dict[str, Dict[str, Any]] = {}
 _timer_events: list[Dict[str, Any]] = []
+_timer_lock = asyncio.Lock()
 
 
 async def _invoke_timer_callback(timer_id: str, callback: str) -> Dict[str, Any]:
@@ -93,29 +94,33 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
             llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间不能超过24小时", hint="延迟时间不能超过24小时")
             return build_error(data={}, llm_data=llm_data)
 
-        _timer_counter += 1
-        timer_id = f"timer_{_timer_counter}_{get_timestamp_ms()}"
-        trigger_at = datetime.now().astimezone() + timedelta(seconds=delay)
+        async with _timer_lock:
+            # 模块级共享状态: _timer_counter / _timer_callbacks / _timers / _timer_events 统一加锁
+            # — 小欧 2026-07-10 C-07
+            _timer_counter += 1
+            timer_id = f"timer_{_timer_counter}_{get_timestamp_ms()}"
+            trigger_at = datetime.now().astimezone() + timedelta(seconds=delay)
 
-        _timer_callbacks[timer_id] = {
-            "callback": callback,
-            "created_at": datetime.now().astimezone().isoformat(),
-            "trigger_at": trigger_at.isoformat(),
-        }
+            _timer_callbacks[timer_id] = {
+                "callback": callback,
+                "created_at": datetime.now().astimezone().isoformat(),
+                "trigger_at": trigger_at.isoformat(),
+            }
 
-        async def _timer_cb():
-            event = await _invoke_timer_callback(timer_id, callback)
-            _timer_events.append(event)
+            async def _timer_cb():
+                event = await _invoke_timer_callback(timer_id, callback)
+                async with _timer_lock:
+                    _timer_events.append(event)
 
-        def _safe_cb():
-            try:
-                loop.create_task(_timer_cb())
-            except RuntimeError:
-                pass
+            def _safe_cb():
+                try:
+                    loop.create_task(_timer_cb())
+                except RuntimeError:
+                    pass
 
-        loop = asyncio.get_running_loop()
-        timer_handle = loop.call_later(delay, _safe_cb)
-        _timers[timer_id] = timer_handle
+            loop = asyncio.get_running_loop()
+            timer_handle = loop.call_later(delay, _safe_cb)
+            _timers[timer_id] = timer_handle
 
         trigger_at_str = trigger_at.strftime("%Y-%m-%d %H:%M:%S")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -138,4 +143,4 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
         return build_error(data={}, llm_data=llm_data)
 
 
-__all__ = ["timer_set", "_timers", "_timer_counter", "_timer_callbacks", "_timer_events"]
+__all__ = ["timer_set", "_timers", "_timer_counter", "_timer_callbacks", "_timer_events", "_timer_lock"]

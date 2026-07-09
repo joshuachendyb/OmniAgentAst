@@ -13,7 +13,7 @@ from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_TIMER_CLEAR
-from app.tools.timer.timer_set import _timers, _timer_callbacks
+from app.tools.timer.timer_set import _timers, _timer_callbacks, _timer_lock
 
 
 def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str, cancelled: bool, detail: str = "", hint: str = "") -> dict:
@@ -40,24 +40,27 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
     """清除定时器 — 小健 2026-06-22 拆分独立文件"""
     t0 = _time_mod.perf_counter()
     try:
-        if timer_id not in _timers:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_timer_clear_llm_data("success", duration_ms, timer_id, False)
-            # =============================================================================
-            # 数据设计：cancelled 从 data 移除
-            # summary 已含状态信息: "定时器 timer_1_xxx 不存在或已触发"
-            # — 小欧 2026-07-06
-            # =============================================================================
-            # ---- observation_formatter route -------------------------------------------
-            # branch: #0 空data
-            # trigger: not data → 直接返回 ""
-            # file:    observation_formatter.py:74
-            # ------------------------------------------------------------------------------
-            return build_success(data={}, llm_data=llm_data)
-        handle = _timers.pop(timer_id, None)
-        if handle:
-            handle.cancel()
-        _timer_callbacks.pop(timer_id, None)
+        async with _timer_lock:
+            # 模块级共享状态: _timers / _timer_callbacks 统一加锁
+            # — 小欧 2026-07-10 C-07
+            if timer_id not in _timers:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_timer_clear_llm_data("success", duration_ms, timer_id, False)
+                # =============================================================================
+                # 数据设计：cancelled 从 data 移除
+                # summary 已含状态信息: "定时器 timer_1_xxx 不存在或已触发"
+                # — 小欧 2026-07-06
+                # =============================================================================
+                # ---- observation_formatter route -------------------------------------------
+                # branch: #0 空data
+                # trigger: not data → 直接返回 ""
+                # file:    observation_formatter.py:74
+                # ------------------------------------------------------------------------------
+                return build_success(data={}, llm_data=llm_data)
+            handle = _timers.pop(timer_id, None)
+            if handle:
+                handle.cancel()
+            _timer_callbacks.pop(timer_id, None)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_clear_llm_data("success", duration_ms, timer_id, True)
         # =============================================================================

@@ -12,7 +12,7 @@ from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_TIMER_LIST
-from app.tools.timer.timer_set import _timer_callbacks
+from app.tools.timer.timer_set import _timer_callbacks, _timer_lock
 
 
 def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids: list, detail: str = "", hint: str = "") -> dict:
@@ -34,19 +34,20 @@ def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids
     }
 
 
-def timer_list() -> Dict[str, Any]:
-    """列出所有活跃定时器 — 小健 2026-06-22 拆分独立文件"""
+async def timer_list() -> Dict[str, Any]:
+    """列出所有活跃定时器 — 小健 2026-06-22 拆分独立文件 — 小欧 2026-07-10 async+锁 C-07"""
     t0 = _time_mod.perf_counter()
     try:
-        timers = []
-        for timer_id, info in _timer_callbacks.items():
-            timers.append({
-                "timer_id": timer_id,
-                "callback": info.get("callback", ""),
-                "created_at": info.get("created_at", ""),
-                "trigger_at": info.get("trigger_at", ""),
-            })
-        timers.sort(key=lambda x: x.get("trigger_at", ""))
+        async with _timer_lock:
+            timers = []
+            for timer_id, info in _timer_callbacks.items():
+                timers.append({
+                    "timer_id": timer_id,
+                    "callback": info.get("callback", ""),
+                    "created_at": info.get("created_at", ""),
+                    "trigger_at": info.get("trigger_at", ""),
+                })
+            timers.sort(key=lambda x: x.get("trigger_at", ""))
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_list_llm_data("success", duration_ms, len(timers), [t["timer_id"] for t in timers[:5]])
         # ---- observation_formatter route -------------------------------------------
