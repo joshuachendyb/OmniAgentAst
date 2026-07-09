@@ -11,7 +11,6 @@ from pathlib import Path
 
 from app.db import db
 from app.utils.logger import logger
-from app.services.safety.file_safety.config import FileSafetyConfig
 
 
 def _get_folder_size(path: Path) -> int:
@@ -33,6 +32,7 @@ def _cleanup_by_size() -> int:
     (operation_cleanup→delete_file→file_safety→operation_cleanup)
     """
     from app.tools.file.delete_file import remove_readonly
+    from app.services.safety.file_safety.operation_executor import FileSafetyConfig
     config = FileSafetyConfig()
     max_bytes = config.RECYCLE_BIN_MAX_SIZE_GB * 1024 ** 3
     recycle_path = config.RECYCLE_BIN_PATH

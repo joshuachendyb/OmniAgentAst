@@ -11,15 +11,29 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
+from app.config import get_config
 from app.db import db
 from app.db.models.operation_enums import OperationType, OperationStatus
 from app.utils.logger import logger
 from app.utils.time_utils import timestamp_for_filename
-from app.services.safety.file_safety.config import FileSafetyConfig
 from app.services.safety.file_safety.operation_cleanup import cleanup_expired_backups
 from app.services.safety.file_safety.operation_recorder import (
     collect_file_info, update_op_failed,
 )
+
+
+class FileSafetyConfig:
+    """文件安全操作配置 — 小欧 2026-07-10 从 config.py 合并至此 C-10"""
+    RECYCLE_BIN_PATH: Path = Path.home() / ".omniagent" / "recycle_bin"
+    BACKUP_RETENTION_DAYS: int = 5
+    RECYCLE_BIN_MAX_SIZE_GB: int = 10
+    PROJECT_ROOT: Path = Path(get_config().get_project_root())
+    REPORT_PATH: Path = PROJECT_ROOT / "reports"
+
+    @classmethod
+    def ensure_directories(cls):
+        cls.RECYCLE_BIN_PATH.mkdir(parents=True, exist_ok=True)
+        cls.REPORT_PATH.mkdir(parents=True, exist_ok=True)
 
 
 def backup_to_recycle_bin(source_path: Path) -> Optional[Path]:

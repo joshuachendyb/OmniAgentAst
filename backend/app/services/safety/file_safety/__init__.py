@@ -3,16 +3,16 @@
 file_safety — 文件操作安全模块 — 小健 2026-06-17 合并14文件为4文件
 
 文件结构:
-- config.py: 配置常量
-- operation_queries.py: 所有只读查询
+- operation_executor.py: 操作执行和备份（含 FileSafetyConfig）
 - operation_recorder.py: 操作记录和文件信息收集
-- operation_executor.py: 操作执行和备份
 - operation_rollback.py: 操作回滚
 - operation_cleanup.py: 操作清理
+- operation_queries.py: 所有只读查询
 
 小欧 2026-06-18 拆分operation_commands.py为4个模块，遵守SRP
+小欧 2026-07-10 config.py 合并到 operation_executor.py，C-10
 """
-from app.services.safety.file_safety.config import FileSafetyConfig
+from app.services.safety.file_safety.operation_executor import FileSafetyConfig
 from app.services.safety.hash_helper import compute_file_hash
 from app.db.operation_queries import (
     row_to_operation_record, get_operation, get_session_operations,
