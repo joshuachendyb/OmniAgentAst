@@ -37,13 +37,15 @@ USER_INPUT = (
 )
 
 import os
+from datetime import datetime
+
 import pytest
 from e2emodel.e2e_helpers import (
     ensure_backend_ready, send_chat, check_db,
     verify_consistency, verify_steps, check_logs,
     print_report, write_test_record,
-    assert_stream_ended, record_test_baseline,
-    verify_response_quality, verify_response_time,
+    assert_stream_ended,
+    verify_response_quality,
     verify_db_steps_data_completeness,
     register_pending_record, filter_safety_errors,
 )
@@ -53,8 +55,6 @@ from e2emodel.e2e_helpers import (
 @pytest.mark.asyncio
 async def test_e2e_p1_02_log_analysis():
     """P1-02: FILE工具多任务场景- 日志分析流程"""
-    from datetime import datetime
-
     test_start = datetime.now()
     passed = False
     r = None
@@ -65,7 +65,6 @@ async def test_e2e_p1_02_log_analysis():
     lc = {"errors": [], "tracebacks": []}
     elapsed = 0.0
     error_info = None
-    baseline = {}
 
     try:
         register_pending_record(
@@ -73,7 +72,6 @@ async def test_e2e_p1_02_log_analysis():
             USER_INPUT, {}, {}, [], [], {"errors": [], "tracebacks": []}, False,
         )
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
-        baseline = record_test_baseline()
 
         result = await send_chat(USER_INPUT)
         sid = result["session_id"]
@@ -84,10 +82,8 @@ async def test_e2e_p1_02_log_analysis():
         assert result["total_steps"] >= 2, "至少start+final(MUST)"
         assert result["unique_step_numbers"] < 50, "疑似死循环(MUST)"
 
-        for issue in verify_response_quality(result):
-            pass
-        for issue in verify_response_time(result):
-            pass
+        quality_issues = verify_response_quality(result)
+        assert len(quality_issues) == 0, f"回复质量问题: {quality_issues}"
 
         db = check_db(sid)
         assert db["session_exists"], "session必须保存到DB(MUST)"

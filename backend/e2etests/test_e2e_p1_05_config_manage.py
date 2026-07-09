@@ -28,8 +28,8 @@ from e2emodel.e2e_helpers import (
     ensure_backend_ready, send_chat, check_db,
     verify_consistency, verify_steps, check_logs,
     print_report, write_test_record,
-    assert_stream_ended, record_test_baseline,
-    verify_response_quality, verify_response_time,
+    assert_stream_ended,
+    verify_response_quality,
     verify_db_steps_data_completeness,
     register_pending_record, filter_safety_errors,
 )
@@ -50,7 +50,6 @@ async def test_e2e_p1_05_config_manage():
     lc = {"errors": [], "tracebacks": []}
     elapsed = 0.0
     error_info = None
-    baseline = {}
     user_input = USER_INPUT
 
     try:
@@ -59,7 +58,6 @@ async def test_e2e_p1_05_config_manage():
             user_input, {}, {}, [], [], {"errors":[],"tracebacks":[]}, False,
         )
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
-        baseline = record_test_baseline()
 
 
         result = await send_chat(user_input)
@@ -72,10 +70,8 @@ async def test_e2e_p1_05_config_manage():
         assert result["total_steps"] >= 2, f"至少start+final(MUST)"
         assert result["unique_step_numbers"] < 50, f"疑似死循环(MUST)"
 
-        for issue in verify_response_quality(result):
-            pass
-        for issue in verify_response_time(result):
-            pass
+        quality_issues = verify_response_quality(result)
+        assert len(quality_issues) == 0, f"回复质量问题: {quality_issues}"
         db = check_db(sid)
         assert db["session_exists"], "session必须保存到DB(MUST)"
         assert db["is_valid"], f"is_valid必须为true(MUST)"
