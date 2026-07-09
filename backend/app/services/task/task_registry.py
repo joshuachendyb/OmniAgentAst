@@ -30,9 +30,9 @@ from app.services.task.task_state_queries import (
 )
 
 # ============================================================
-# 数据存储(本文件私有,外部禁止直接访问)
+# 数据存储（从 task_state_queries 导入）
 # ============================================================
-from app.services.task.task_state_store import _running_tasks_lock, _running_tasks
+from app.services.task.task_state_queries import running_tasks_lock, running_tasks
 
 
 # ============================================================
@@ -41,8 +41,8 @@ from app.services.task.task_state_store import _running_tasks_lock, _running_tas
 
 async def register_task(task_id: str, ai_service: Any) -> None:
     """注册任务到 running_tasks"""
-    async with _running_tasks_lock:
-        _running_tasks[task_id] = {
+    async with running_tasks_lock:
+        running_tasks[task_id] = {
             "status": "running",
             "cancelled": False,
             "paused": False,
@@ -51,16 +51,16 @@ async def register_task(task_id: str, ai_service: Any) -> None:
             "_task": asyncio.current_task(),
             "_pause_event": asyncio.Event(),
         }
-        _running_tasks[task_id]["_pause_event"].set()
+        running_tasks[task_id]["_pause_event"].set()
 
 
 async def cleanup_task(task_id: str) -> bool:
     """清理非cancelled任务,返回True=已清理,False=保留(cancelled记录)"""
-    async with _running_tasks_lock:
-        if task_id not in _running_tasks:
+    async with running_tasks_lock:
+        if task_id not in running_tasks:
             return False
-        if _running_tasks[task_id].get("status") != "cancelled":
-            del _running_tasks[task_id]
+        if running_tasks[task_id].get("status") != "cancelled":
+            del running_tasks[task_id]
             return True
         return False
 
@@ -68,13 +68,13 @@ async def cleanup_task(task_id: str) -> bool:
 async def cleanup_expired_tasks() -> None:
     """清理过期任务"""
     now = datetime.now()
-    async with _running_tasks_lock:
+    async with running_tasks_lock:
         expired = [
-            tid for tid, t in _running_tasks.items()
+            tid for tid, t in running_tasks.items()
             if t.get("created_at") and now - t["created_at"] > TASK_TIMEOUT
         ]
         for tid in expired:
-            del _running_tasks[tid]
+            del running_tasks[tid]
         if expired:
             logger.info(f"[TaskRegistry] 清理了 {len(expired)} 个过期任务")
 
@@ -85,8 +85,8 @@ async def cleanup_expired_tasks() -> None:
 
 async def pop_task_field(task_id: str, field: str) -> Any:
     """从任务中弹出一个字段"""
-    async with _running_tasks_lock:
-        task = _running_tasks.get(task_id)
+    async with running_tasks_lock:
+        task = running_tasks.get(task_id)
         if task:
             return task.pop(field, None)
         return None
@@ -98,8 +98,8 @@ async def pop_task_field(task_id: str, field: str) -> Any:
 
 async def set_cancelled(task_id: str, **extra) -> bool:
     """设置任务为cancelled状态,返回是否成功"""
-    async with _running_tasks_lock:
-        task = _running_tasks.get(task_id)
+    async with running_tasks_lock:
+        task = running_tasks.get(task_id)
         if not task:
             return False
         task["cancelled"] = True
@@ -110,8 +110,8 @@ async def set_cancelled(task_id: str, **extra) -> bool:
 
 async def set_paused(task_id: str) -> dict:
     """设置任务暂停,返回 {"success": bool, "message": str}"""
-    async with _running_tasks_lock:
-        task = _running_tasks.get(task_id)
+    async with running_tasks_lock:
+        task = running_tasks.get(task_id)
         if not task:
             return api_failure(message=f"任务 {task_id} 不存在")
         if task.get("cancelled"):
@@ -126,8 +126,8 @@ async def set_paused(task_id: str) -> dict:
 
 async def set_resumed(task_id: str) -> dict:
     """设置任务恢复,返回 {"success": bool, "message": str}"""
-    async with _running_tasks_lock:
-        task = _running_tasks.get(task_id)
+    async with running_tasks_lock:
+        task = running_tasks.get(task_id)
         if not task:
             return api_failure(message=f"任务 {task_id} 不存在")
         if task.get("cancelled"):
@@ -144,8 +144,8 @@ async def set_resumed(task_id: str) -> dict:
 
 async def set_was_paused(task_id: str, value: bool) -> None:
     """设置 _was_paused 标志"""
-    async with _running_tasks_lock:
-        task = _running_tasks.get(task_id)
+    async with running_tasks_lock:
+        task = running_tasks.get(task_id)
         if task:
             task["_was_paused"] = value
 
