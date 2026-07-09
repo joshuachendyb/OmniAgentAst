@@ -112,10 +112,10 @@ async def test_e2e_p0_03b_multi_step_reasoning():
 
         print(f"  [Step8] Log check...")
         lc = check_logs(test_start, sid, result.get("user_msg_id"))
-        safety_errors, other_errors = filter_safety_errors(lc["errors"])
-        if safety_errors:
-            print(f"  [INFO] Safety/unrelated errors (expected): {len(safety_errors)}")
-        assert len(other_errors) == 0, f"no ERROR in log(MUST): {other_errors[:3]}"
+        filtered = filter_safety_errors(lc["errors"])
+        if filtered["safety_errors"]:
+            print(f"  [INFO] Safety/unrelated errors (expected): {len(filtered['safety_errors'])}")
+        assert len(filtered["other_errors"]) == 0, f"no ERROR in log(MUST): {filtered['other_errors'][:3]}"
         assert len(lc["tracebacks"]) == 0, "no traceback(MUST)"
         if not lc["session_records_found"]:
             print("  [WARN] log: session records not found(SHOULD, non-blocking)")

@@ -18,7 +18,22 @@
 
 TEST_CASE_ID = "E2E-P1-03"
 TEST_CASE_NAME = "FILE工具多任务场景- 代码重构流程"
-USER_INPUT = "read E:\\test_dir\\test.txt, create a backup in E:\\test_dir\\refactor_backups, then perform text analysis and generate a refactor report"
+USER_INPUT = (
+    "请对E:\\test_dir\\test.txt文件执行一次完整的代码质量分析和重构操作。"
+    "第一阶段——先读取文件全部内容，分析代码结构和质量。"
+    "识别其中的函数、类、变量定义，分析命名规范性、注释完整性、代码重复度。"
+    "对每个函数计算圈复杂度，标注重构优先级（高/中/低）。"
+    "第二阶段——创建备份目录E:\\test_dir\\refactor_backups，将原文件完整备份到该目录下，"
+    "备份文件名加上时间戳标记。"
+    "第三阶段——根据分析结果执行重构操作：修复命名不规范问题、提取重复代码为公共函数、"
+    "补充缺失的注释和类型注解、优化逻辑结构减少嵌套深度。"
+    "第四阶段——重构完成后重新读取文件验证修改是否正确，对比重构前后的代码行数、"
+    "函数数量、注释比例等指标的变化。"
+    "第五阶段——生成完整的重构报告保存到E:\\test_dir\\refactor_report.md，"
+    "报告内容包括：原始代码质量评分、每项问题的详细分析、重构操作记录、"
+    "重构前后的对比数据（行数/函数数/注释率/复杂度）、重构效果综合评价。"
+    "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+)
 
 from datetime import datetime
 import os

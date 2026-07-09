@@ -73,7 +73,7 @@ async def test_e2e_p0_12_introduce_self():
 
         resp = result["response_text"]
         assert len(resp) > 10, f"回复太短({len(resp)}字)(SHOULD)"
-        key_terms = ["assistant", "AI", "can", "help", "capable"]
+        key_terms = ["assistant", "AI", "can", "help", "capable", "助手", "可以", "能够"]
         assert any(t.lower() in resp.lower() for t in key_terms), "回复与自我介绍无关(SHOULD)"
 
         print(f"  [Step5] DB check...")

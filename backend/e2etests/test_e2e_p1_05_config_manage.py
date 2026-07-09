@@ -18,7 +18,27 @@
 
 TEST_CASE_ID = "E2E-P1-05"
 TEST_CASE_NAME = "FILE工具多任务场景- 配置管理流程"
-USER_INPUT = "read E:\\test_dir\\data.csv, analyze data structure and quality, create dev/test/prod config files and a settings.toml"
+USER_INPUT = (
+    "请完成一个Python项目的完整配置管理和环境搭建任务。"
+    "第一阶段——读取E:\\test_dir\\data.csv文件，分析其数据结构和质量："
+    "列名、数据类型、缺失值比例、异常值分布、数据量统计。"
+    "基于数据分析结果生成数据质量报告。"
+    "第二阶段——为该项目创建三套环境配置文件："
+    "dev环境配置（开发模式、debug开启、本地数据库连接、日志级别DEBUG）、"
+    "test环境配置（测试模式、mock服务地址、测试数据库连接、日志级别INFO）、"
+    "prod环境配置（生产模式、debug关闭、正式数据库连接、日志级别WARNING）。"
+    "每套配置包含database.yaml、app_config.yaml、logging.yaml三个文件。"
+    "第三阶段——创建项目主配置settings.toml，包含项目名称、版本号、"
+    "作者信息、依赖列表（至少包含pandas、numpy、fastapi、pydantic四个包）、"
+    "以及引用上述三套环境配置的include指令。"
+    "第四阶段——生成一个Python脚本config_validator.py，"
+    "能够读取并验证所有配置文件格式是否正确、必填字段是否完整、"
+    "跨配置文件的依赖关系是否一致。"
+    "第五阶段——生成配置管理总报告保存到E:\\test_dir\\config_report.md，"
+    "包含：数据质量分析结果、各环境配置说明、配置文件的目录结构、"
+    "配置验证脚本的执行结果、配置管理的推荐最佳实践。"
+    "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+)
 
 from datetime import datetime
 import os

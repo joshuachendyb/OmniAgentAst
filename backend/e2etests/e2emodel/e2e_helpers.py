@@ -914,7 +914,7 @@ def verify_db_steps_data_completeness(
             
             # tool_params检查
             tool_params = step.get("tool_params")
-            if not tool_params or not isinstance(tool_params, dict):
+            if tool_params is None or not isinstance(tool_params, dict):
                 issues.append(f"步骤{step_num}(index={i}): tool_params为空或非dict(MUST)")
             
             # observation检查

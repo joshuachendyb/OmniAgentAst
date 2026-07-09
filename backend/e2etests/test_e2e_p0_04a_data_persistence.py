@@ -106,10 +106,10 @@ async def test_e2e_p0_04a_data_persistence():
 
         print(f"  [Step8] Log check...")
         lc = check_logs(test_start, sid, result.get("user_msg_id"))
-        safety_errors, other_errors = filter_safety_errors(lc["errors"])
-        if safety_errors:
-            print(f"  [INFO] Safety checker errors (expected): {len(safety_errors)}")
-        assert len(other_errors) == 0, f"日志不应有非安全ERROR(MUST): {other_errors[:3]}"
+        filtered = filter_safety_errors(lc["errors"])
+        if filtered["safety_errors"]:
+            print(f"  [INFO] Safety checker errors (expected): {len(filtered['safety_errors'])}")
+        assert len(filtered["other_errors"]) == 0, f"日志不应有非安全ERROR(MUST): {filtered['other_errors'][:3]}"
         assert len(lc["tracebacks"]) == 0, "日志不应有Traceback(MUST)"
 
         print(f"  [Step8b] DB-Prompt consistency...")

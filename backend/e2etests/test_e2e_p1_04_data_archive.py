@@ -18,7 +18,24 @@
 
 TEST_CASE_ID = "E2E-P1-04"
 TEST_CASE_NAME = "FILE工具多任务场景- 数据归档流程"
-USER_INPUT = "list files in E:\\test_dir, create archive.zip and archive.tar in E:\\test_dir\\backup, generate manifest and report"
+USER_INPUT = (
+    "请对E:\\test_dir目录下的所有文件执行一次完整的数据归档和项目打包操作。"
+    "第一阶段——先列出E:\\test_dir下的完整目录结构，按文件类型分类统计："
+    "源代码文件（.py/.js/.ts/.java等）、文档文件（.txt/.md/.docx等）、"
+    "数据文件（.csv/.json/.xml等）、配置文件（.yaml/.toml/.ini等）各自的数量和总大小。"
+    "第二阶段——读取目录下所有源代码文件的头部注释和文件结构，"
+    "分析项目整体架构，识别出核心模块和辅助模块的依赖关系。"
+    "生成一份项目结构分析报告。"
+    "第三阶段——创建E:\\test_dir\\backup目录，将全部文件分门别类归档："
+    "生成archive.zip（包含全部文件的标准ZIP压缩包）、"
+    "生成archive.tar（保留文件权限和目录结构的TAR包）。"
+    "第四阶段——生成归档清单文件manifest.json，包含每个文件的路径、大小、"
+    "修改时间、校验和（SHA256）、文件类型分类。"
+    "第五阶段——生成完整的归档报告保存到E:\\test_dir\\archive_report.md，"
+    "包含：归档前文件统计、目录结构图、压缩前后大小对比、各类型文件的分布统计、"
+    "校验和清单、归档操作的完整日志。"
+    "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+)
 
 from datetime import datetime
 import os

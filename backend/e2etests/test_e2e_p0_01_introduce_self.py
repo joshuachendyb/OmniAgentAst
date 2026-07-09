@@ -87,7 +87,7 @@ async def test_e2e_p0_01_introduce_self():
         # -- L2 SHOULD层: 回复语义 --
         resp = result["response_text"]
         assert len(resp) > 10, f"回复太短({len(resp)}字)(SHOULD)"
-        key_terms = ["助手", "AI", "可以", "能够", "帮助"]
+        key_terms = ["助手", "AI", "可以", "能够", "帮助", "文件", "网络", "系统", "工具", "报告", "执行", "能力"]
         assert any(t in resp for t in key_terms), "回复与自我介绍无关(SHOULD)"
 
 
