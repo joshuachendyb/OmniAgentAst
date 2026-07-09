@@ -242,7 +242,7 @@ class PersistentShell:
             # 设置$OutputEncoding为UTF8避免PS5.1用GBK解读子进程UTF-8输出导致乱码 — 小欧 2026-07-07
             # $OutputEncoding+Out-File -Width 4096解决PS5.1 Format-Table因控制台宽度不足(默认80列)输出空白 — 小欧 2026-07-08
             ps_cmd = (
-                f'$OutputEncoding=[System.Text.Encoding]::UTF8; $global:rc=0; & {{ {command}; if (-not $?) {{ $global:rc = if ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 1 }} }} }} 2>&1 | '
+                f'[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; $global:rc=0; & {{ {command}; if (-not $?) {{ $global:rc = if ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 1 }} }} }} 2>&1 | '
                 f'ForEach-Object {{ if ($_ -is [System.Management.Automation.ErrorRecord]) {{ $_ | Out-File -FilePath "{paths.err}" -Encoding utf8 -Width 4096 -Append }} else {{ $_ | Out-File -FilePath "{paths.out}" -Encoding utf8 -Width 4096 -Append }} }}; '
                 f'$global:rc | Out-File -FilePath "{paths.code}" -Encoding utf8; '
                 f'(Get-Location).Path | Out-File -FilePath "{paths.cwd}" -Encoding utf8'

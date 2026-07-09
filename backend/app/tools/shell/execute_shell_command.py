@@ -274,7 +274,7 @@ def _build_execute_shell_command_llm_data(
 
 
 def _fix_encoding(text: str) -> str:
-    """编码修复：检测并修复中文乱码 — 小沈 2026-07-08"""
+    """编码修复：检测并修复中文乱码 — 小沈 2026-07-08  — 北京老陈 2026-07-09 修复:去掉CJK双通道检测(会产生误报)"""
     if not text:
         return text
     try:
@@ -371,12 +371,15 @@ def shell(
     # ── 阶段 2: 安全检查 ──
     from app.tools.shell.execute_shell_command_safety import check_shell_command_risk
     safety = check_shell_command_risk(cmd)
-    if safety and safety.blocked:
+    if safety:
         d = int((_time_mod.perf_counter() - t0) * 1000)
-        llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
-            shell_type or "", ERR_SHELL_INJECTION, safety.message,
-            timeout=timeout, cwd=cwd or "", hint="命令被安全规则拦截")
-        return build_error(data={}, llm_data=llm)
+        if safety.blocked:
+            llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
+                shell_type or "", ERR_SHELL_INJECTION, safety.message,
+                timeout=timeout, cwd=cwd or "", hint="命令被安全规则拦截")
+            return build_error(data={}, llm_data=llm)
+        if safety.requires_confirmation:
+            logger.warning(f"[Shell] 中风险命令已放行（需用户确认）: {safety.message}")
 
     # ── 阶段 3: 执行 ──
     try:
@@ -392,8 +395,8 @@ def shell(
             from app.tools.shell.shell_engine import PersistentShell
             engine = PersistentShell.get_instance(cwd)
             result = engine.exec(cmd, timeout)
-            stdout_str = result.get("stdout", "")
-            stderr_str = result.get("stderr", "")
+            stdout_str = _fix_encoding(result.get("stdout", ""))
+            stderr_str = _fix_encoding(result.get("stderr", ""))
             returncode = result.get("exit_code", -1)
             timed_out = result.get("timed_out", False)
 

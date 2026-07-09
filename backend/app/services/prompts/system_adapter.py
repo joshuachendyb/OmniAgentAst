@@ -99,6 +99,15 @@ def get_pwsh_version() -> str:
     return _PWSH_VERSION
 
 
+def get_default_shell_name() -> str:
+    """返回实际默认 Shell 名称（匹配 shell_engine.py 的启动优先级）— 北京老陈 2026-07-09"""
+    pwsh_ver = get_pwsh_version()
+    if pwsh_ver:
+        return f"PowerShell {pwsh_ver} (pwsh.exe)"
+    ps_ver = get_powershell_version()
+    return f"Windows PowerShell {ps_ver} (powershell.exe)"
+
+
 def get_system_prompt() -> str:
     """获取系统 Prompt 字符串（带缓存）"""
     system = platform.system()

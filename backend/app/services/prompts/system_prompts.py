@@ -85,14 +85,14 @@ class PromptBuilder:
 
     @property
     def TOOL_CALL_RULES(self) -> str:
-        """工具调用规则 + Shell运行环境 — 小沈 2026-07-01"""
-        from app.services.prompts.system_adapter import get_powershell_version, get_pwsh_version
-        ps_ver = get_powershell_version()
+        """工具调用规则 + Shell运行环境 — 小沈 2026-07-01  — 北京老陈 2026-07-09 统一Prompt与实际shell匹配"""
+        from app.services.prompts.system_adapter import get_default_shell_name, get_pwsh_version
+        default_shell = get_default_shell_name()
         pwsh_ver = get_pwsh_version()
         pwsh_line = f"pwsh.exe {pwsh_ver} 已安装" if pwsh_ver else "pwsh.exe 未安装"
         shell_rules = f"""
 【Shell 运行环境】
-- 默认 Shell: Windows PowerShell {ps_ver} (powershell.exe)
+- 默认 Shell: {default_shell}
 - {pwsh_line}
 
 """
