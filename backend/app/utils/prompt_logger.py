@@ -322,7 +322,7 @@ class PromptLogger:
         if extra_info:
             entry["额外信息"] = extra_info
 
-        # 查找对应的LLM调用记录,更新其返回信息 — 北京老陈 2026-06-14
+        # 查找已有条目更新（不重复追加）— 北京老陈 2026-06-14 — 小欧 2026-07-10 C-08 修复
         for call_entry in reversed(current_log.get("LLM调用记录", [])):
             if call_entry.get("轮次") == round_number:
                 call_entry["解析结果"] = response_content
@@ -331,8 +331,8 @@ class PromptLogger:
                 call_entry["返回类型"] = response_type
                 call_entry["结束原因"] = finish_reason
                 break
-
-        current_log["LLM调用记录"].append(entry)
+        else:
+            current_log["LLM调用记录"].append(entry)
 
     def log_step_yield(self, step_dict: dict, round_number: int = 0):
         """记录每一步 yield 给前端的 JSON 数据 — 北京老陈 2026-06-14 — 小欧 2026-06-24 删除chunk跳过，所有step类型都记录"""

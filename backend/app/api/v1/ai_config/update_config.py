@@ -52,7 +52,7 @@ async def update_config(config_update: ConfigUpdate):
         current_model = config_data.get('ai', {}).get('model', '')
         return {
             "success": True, "message": "配置更新成功,请验证服务可用性",
-            "updated_fields": config_update.dict(exclude_none=True), "warnings": warnings,
+            "updated_fields": config_update.model_dump(exclude_none=True), "warnings": warnings,
             "backup_path": str(backup_path), "current_provider": current_provider, "current_model": current_model,
         }
 

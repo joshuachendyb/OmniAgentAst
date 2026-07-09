@@ -154,17 +154,20 @@ def make_cache_key(data: Any) -> str:
         return str(id(data))
 
 
+_MISS = object()
+
+
 class TTLCache:
-    """单值TTL缓存 — 小沈 2026-06-17 从universal_agent内联缓存提取"""
+    """单值TTL缓存 — 小沈 2026-06-17 从universal_agent内联缓存提取 — 小欧 2026-07-10 C-17 哨兵对象"""
 
     def __init__(self, ttl: float = 60.0):
         self._ttl = ttl
-        self._value: Any = None
+        self._value: Any = _MISS
         self._timestamp: float = 0.0
 
     def get(self) -> Optional[Any]:
         """返回缓存值(TTL未过期)或None"""
-        if self._value is not None and time.time() - self._timestamp < self._ttl:
+        if self._value is not _MISS and time.time() - self._timestamp < self._ttl:
             return self._value
         return None
 
@@ -175,5 +178,5 @@ class TTLCache:
 
     def invalidate(self):
         """清除缓存"""
-        self._value = None
+        self._value = _MISS
         self._timestamp = 0.0

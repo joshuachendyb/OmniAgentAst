@@ -15,6 +15,7 @@
 作者: 小欧 - 2026-06-29
 """
 
+import re
 from enum import Enum
 from typing import Optional, Tuple, Dict, Any
 
@@ -22,6 +23,11 @@ try:
     from app.utils.idle_timeout import IdleTimeoutError
 except ImportError:
     IdleTimeoutError = None
+
+try:
+    from app.services.llm.core import FCFormatError
+except ImportError:
+    FCFormatError = None
 
 
 class SystemErrorCategory(Enum):
@@ -96,7 +102,7 @@ class SystemErrorClassifier:
         """检查特殊错误 — 白名单例外，走非SERVER路径 — 小沈 2026-07-05 移除EndOfStream(黑名单默认处理)"""
         if IdleTimeoutError and isinstance(error, IdleTimeoutError):
             return SystemErrorCategory.IDLE_TIMEOUT
-        if type(error).__name__ == "FCFormatError":
+        if FCFormatError and isinstance(error, FCFormatError):
             return SystemErrorCategory.UNKNOWN  # FC格式错误，重试无意义
         # EndOfStream 由黑名单默认SERVER处理，不需特殊case — 小沈 2026-07-05
         return None
@@ -105,7 +111,7 @@ class SystemErrorClassifier:
     def _check_http_status_errors(error_msg: str) -> Optional[SystemErrorCategory]:
         """检查HTTP状态码错误"""
         for status_code, error_category in HTTP_STATUS_TO_ERROR_TYPE.items():
-            if str(status_code) in error_msg:
+            if re.search(rf'\b{status_code}\b', error_msg):
                 return error_category
         return None
     

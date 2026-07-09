@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Optional
 from app.utils.time_utils import now_str
 
-logging.raiseExceptions = False
+# C-09: 删除 logging.raiseExceptions = False
+# SafeRotatingFileHandler.emit() 已有 try/except 保护，全局吞异常有害
+# — 小欧 2026-07-10
 
 # 延迟导入,避免循环依赖(_create_handler_for_logger 内部使用)
 from .config import LogConfig

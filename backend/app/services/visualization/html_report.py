@@ -3,6 +3,7 @@ HTML报告模块 - 生成HTML格式的文件操作报告(含图表)
 包含 build_html_report_content + generate_html_report
 小沈 2026-05-29 拆分自 file_visualization.py
 """
+import html
 from typing import List, Dict, Tuple
 
 
@@ -20,18 +21,18 @@ def build_html_report_content(
     小沈 2026-05-25 重构拆分
     """
     op_items = "".join(
-        f'<div class="operation {s}"><strong>{t}</strong>'
-        f'<p>源路径: {s2 or "N/A"}</p>'
-        f'<p>目标路径: {d or "N/A"}</p>'
-        f'<p>状态: {s}</p>'
-        + (f'<p>错误: {e}</p>' if e else '') + '</div>'
+        f'<div class="operation {html.escape(s)}"><strong>{html.escape(t)}</strong>'
+        f'<p>源路径: {html.escape(s2) if s2 else "N/A"}</p>'
+        f'<p>目标路径: {html.escape(d) if d else "N/A"}</p>'
+        f'<p>状态: {html.escape(s)}</p>'
+        + (f'<p>错误: {html.escape(e)}</p>' if e else '') + '</div>'
         for t, s2, d, s, _sz, _isd, _ct, e in operations
     )
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>文件操作报告 - {task_id}</title>
+    <title>文件操作报告 - {html.escape(task_id)}</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 20px; }}
         .header {{ background: #f5f5f5; padding: 15px; border-radius: 5px; }}
@@ -44,15 +45,15 @@ def build_html_report_content(
 <body>
     <div class="header">
         <h1>文件操作执行报告</h1>
-        <p>会话ID: {task_id}</p>
+        <p>会话ID: {html.escape(task_id)}</p>
         <p>Agent: file-operation-agent</p>
-        <p>任务: {task_description}</p>
+        <p>任务: {html.escape(task_description)}</p>
     </div>
 
     <div class="chart">
         <h2>操作类型统计</h2>
         <ul>
-            {"".join(f'<li>{op_type}: {count}次</li>' for op_type, count in op_types.items())}
+            {"".join(f'<li>{html.escape(op_type)}: {count}次</li>' for op_type, count in op_types.items())}
         </ul>
     </div>
 

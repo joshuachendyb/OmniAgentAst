@@ -4,7 +4,7 @@
 """
 
 from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -27,7 +27,7 @@ class Metric:
     type: MetricType
     value: float
     labels: Optional[Dict[str, str]] = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class MetricsCollector:
@@ -91,7 +91,7 @@ class MetricsCollector:
     
     def _cleanup_old_metrics(self):
         """清理过期的指标"""
-        cutoff_time = datetime.utcnow() - timedelta(seconds=self.retention_period)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=self.retention_period)
         
         for name, metrics_list in list(self.metrics.items()):
             # 保留最近期的指标
