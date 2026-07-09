@@ -15,7 +15,7 @@ from typing import Dict, Any
 from app.tools.tool_fc_helper import _check_module_available
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_DESKTOP_NOTIFICATION, ERR_NO_WIN10TOAST
-from app.tools.validate.tools_file_path_checker import validate_str_param
+from app.tools.validate.file_path_checker import validate_str_param
 
 
 def _check_module(module_name: str) -> bool:

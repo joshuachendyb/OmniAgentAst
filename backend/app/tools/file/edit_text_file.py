@@ -22,8 +22,8 @@ from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAIL
 from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 from app.services.safety.file_safety import record_operation, execute_with_safety
-from app.tools.file_type_checker import check_for_text_tool
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory, validate_str_param
+from app.tools.validate.file_type_checker import check_for_text_tool
+from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param
 from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import check_conflict_strict, record_write
@@ -200,18 +200,13 @@ async def _precise_replace_in_file(
     replace_all: bool = False, ignore_case: bool = False,
     dry_run: bool = False, encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """精确替换文件中的字符串(返回原始dict,不含build3/llm_data) — 小欧 2026-06-22 — 小健 2026-06-24 使用file_type_checker"""
+    """精确替换文件中的字符串(返回原始dict,不含build3/llm_data) — 小欧 2026-06-22"""
     if not old_string:
         return {"error_detail": "old_string不能为空"}
 
     task_id = _current_task_id.get(None)
     if not task_id:
         return {"error_detail": "当前没有活跃任务ID"}
-
-    # 文件类型检查 — 小健 2026-06-24
-    is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=True)
-    if not is_valid:
-        return {"error_detail": error_detail}
 
     try:
         # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
@@ -350,6 +345,23 @@ async def edittext(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="new_string不能为None", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
+
+    # 文件类型检查 — 北京老陈 2026-07-09
+    ft_valid, ft_detail, ft_tool = check_for_text_tool(file_path, check_content=True)
+    if not ft_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        if ft_tool:
+            _hint = f"建议使用{ft_tool}工具"
+        elif ft_tool == "":
+            _hint = "请检查文件路径和文件名是否正确"
+        else:
+            _hint = "请选择正确的工具类型"
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=ft_detail, hint=_hint, user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
+        return build_error(
+            data={"error_detail": ft_detail, "params": {"file_path": file_path}},
+            llm_data=llm_data,
+        )
+
     dry_run = False
     result = await _precise_replace_in_file(
         file_path=file_path, old_string=old_string, new_string=new_string,

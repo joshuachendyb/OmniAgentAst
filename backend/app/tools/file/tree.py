@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 

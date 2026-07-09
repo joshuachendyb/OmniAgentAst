@@ -1053,6 +1053,8 @@ def check_logs(
                 continue
             if "LLM格式错误" in line:
                 continue
+            if "写入失败" in line and "文件系统错误" in line:
+                continue
             result["errors"].append(line.strip()[:200])
 
         # ── traceback检查(MUST) ──

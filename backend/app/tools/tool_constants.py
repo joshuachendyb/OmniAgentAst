@@ -245,8 +245,7 @@ SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "
 TOOL_BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 # ============================================================
-# 11. 系统敏感路径黑名单(从 path_validator 迁移) — 小健 2026-06-23
-# 【工具层】path_validator 的工具级安全检查路径，防止误写系统关键文件。
+# 11. 系统敏感路径黑名单常量 — Safety层(path_safe_check)消费
 # ============================================================
 
 FORBIDDEN_PATHS_EXACT = {

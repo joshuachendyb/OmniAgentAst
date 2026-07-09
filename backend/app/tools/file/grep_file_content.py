@@ -20,8 +20,8 @@ from typing import Any, Dict, List, Literal, NamedTuple, Optional
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, MAX_SEARCH_RESULTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, MAX_SEARCH_FILE_SIZE
 
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
-from app.tools.file_type_checker import TEXT_EXTENSIONS, is_binary_file
+from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file
 from app.tools.file.file_encoding import safe_read_lines
 from app.utils.logger import logger
 

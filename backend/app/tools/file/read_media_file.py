@@ -18,8 +18,8 @@ from typing import Any, Dict
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import MAX_MEDIA_READ_SIZE
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
-from app.tools.file_type_checker import check_for_media_tool
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_type_checker import check_for_media_tool
+
 from app.utils.logger import logger
 
 
@@ -72,18 +72,17 @@ async def readmedia(
         is_valid, error_detail, suggested_tool = check_for_media_tool(file_path)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint="请检查文件类型，或使用 readtext/read_document 工具")
-            return build_error(data={}, llm_data=llm_data)
-
-        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
-        if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=err, hint="请检查文件路径是否正确")
+            if suggested_tool:
+                _hint = f"建议使用{suggested_tool}工具"
+            elif suggested_tool == "":
+                _hint = "请检查文件路径和文件名是否正确"
+            else:
+                _hint = "请检查文件类型，或使用 readtext/read_document 工具"
+            llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=_hint)
             return build_error(data={}, llm_data=llm_data)
 
         path = Path(file_path)
+        suffix = path.suffix.lower()
 
         file_size = path.stat().st_size
         if file_size > MAX_MEDIA_READ_SIZE:
@@ -92,38 +91,6 @@ async def readmedia(
                 "error", duration_ms, file_path=file_path,
                 detail=f"媒体文件过大({file_size}字节),超过读取上限{MAX_MEDIA_READ_SIZE // 1024 // 1024}MB",
                 hint="文件过大，请使用更小的文件",
-            )
-            return build_error(data={}, llm_data=llm_data)
-
-        suffix = path.suffix.lower()
-        if suffix == '.pdf':
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail="PDF文件请使用read_document工具读取", hint="请使用 read_document 工具读取 PDF 文件")
-            return build_error(data={}, llm_data=llm_data)
-
-        _TEXT_EXTENSIONS = {
-            '.txt', '.md', '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.go', '.c', '.cpp', '.h',
-            '.rs', '.rb', '.swift', '.kt', '.scala',
-            '.json', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.xml', '.properties',
-            '.csv', '.html', '.htm', '.css', '.scss', '.less', '.sql',
-            '.sh', '.bat', '.ps1', '.cmd', '.log', '.env',
-            '.rtf', '.odt', '.ods', '.odp',
-        }
-        _DOC_EXTENSIONS = {'.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'}
-        if suffix in _DOC_EXTENSIONS:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_media_file_llm_data(
-                "error", duration_ms, file_path=file_path,
-                detail=f"文件后缀 '{suffix}' 是文档文件，请使用read_document工具读取",
-                hint="请使用 read_document 工具读取文档文件",
-            )
-            return build_error(data={}, llm_data=llm_data)
-        if suffix in _TEXT_EXTENSIONS:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_media_file_llm_data(
-                "error", duration_ms, file_path=file_path,
-                detail=f"文件后缀 '{suffix}' 是文本文件，请使用readtext工具读取",
-                hint="请使用 readtext 工具读取文本文件",
             )
             return build_error(data={}, llm_data=llm_data)
 

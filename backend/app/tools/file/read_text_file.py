@@ -18,8 +18,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import MAX_READ_SIZE
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
-from app.tools.file_type_checker import check_for_text_tool
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_type_checker import check_for_text_tool
+
 from app.utils.text_utils import add_line_numbers
 from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
@@ -297,8 +297,13 @@ async def readtext(
         is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=True)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            hint = f"请使用{suggested_tool}工具" if suggested_tool else "文件类型不匹配,请使用其他工具"
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=hint, user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
+            if suggested_tool:
+                _hint = f"建议使用{suggested_tool}工具"
+            elif suggested_tool == "":
+                _hint = "请检查文件路径和文件名是否正确"
+            else:
+                _hint = "文件类型不匹配,请使用其他工具"
+            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=_hint, user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
             return build_error(data={}, llm_data=llm_data)
 
         if limit is not None and limit < 1:
@@ -365,17 +370,6 @@ async def readtext(
                     user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
                 )
                 return build_error(data={}, llm_data=llm_data)
-
-        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
-        if not is_valid:
-            suggestion = _find_similar_files(file_path)
-            if suggestion:
-                err += f"。您是否要找: {suggestion}"
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, hint="请检查文件路径是否正确", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
-            return build_error(data={}, llm_data=llm_data)
 
         path = Path(file_path)
 

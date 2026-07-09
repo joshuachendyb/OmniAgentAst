@@ -15,7 +15,7 @@ from typing import Dict, Any, Optional
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
-from app.tools.validate.tools_file_path_checker import validate_str_param
+from app.tools.validate.file_path_checker import validate_str_param
 from app.tools.tool_constants import (
     ERR_DESKTOP_PLATFORM_NOT_SUPPORTED,
     ERR_SHELL_COMMAND_NOT_FOUND,

@@ -25,7 +25,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED
 from app.utils.context_vars import _current_task_id
 from app.utils.json_utils import coerce_json
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory, validate_str_param
+from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param
 from app.utils.logger import logger
 
 

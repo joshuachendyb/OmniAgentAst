@@ -15,10 +15,11 @@ from typing import Any, Dict, List, Optional, Union
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.tools.file_type_checker import check_for_document_tool
+from app.tools.validate.file_type_checker import check_office_file
+from app.tools.validate.file_safety_checker import check_content_safety
 from app.tools.tool_constants import ERR_WRITE_XLSX, ERR_DOC_NO_OPENPYXL
 from app.utils.json_utils import coerce_json
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error
 from app.utils.logger import logger
 from app.utils.table_helper import calculate_column_widths, get_table_header_style_config
 
@@ -117,24 +118,20 @@ def write_xlsx(
     """写入Excel文件 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
 
-    # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, warn = validate_path(OpCategory.WRITE, file_name)
+    # 文件类型前置检查（含路径检查+类型检查+模块安全检查）— 北京老陈 2026-07-09
+    is_valid, error_detail, hint = check_office_file(file_name, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=err, user_sheet_name=sheet_name, hint="请检查文件路径是否合法")
-        return build_error(data={}, llm_data=llm_data)
-    if warn:
-        logger.warning(f"[write_xlsx] {warn}")
-
-    # 文件类型前置检查（write操作允许创建新文件） — 小欧 2026-06-24
-    is_valid, error_detail, suggested_tool = check_for_document_tool(file_name, allow_create=True)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail, user_sheet_name=sheet_name, hint="文件扩展名不正确,请使用.xlsx格式")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail, user_sheet_name=sheet_name, hint=hint)
         return build_error(data={}, llm_data=llm_data)
 
     data = coerce_json(data)
+    cs_error, safe_data = check_content_safety(data, "xlsx", param_name="data")
+    if cs_error:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=cs_error, user_sheet_name=sheet_name, hint=f"请检查data参数(当前类型: {type(data).__name__})")
+        return build_error(data={}, llm_data=llm_data)
+    data = safe_data
 
     if not _check_module("openpyxl"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -145,9 +142,6 @@ def write_xlsx(
         from openpyxl import Workbook
         from openpyxl.styles import Font, Alignment
 
-        if data is None:
-            data = []
-        
         headers = []
         rows = []
         if len(data) > 0:
@@ -191,7 +185,13 @@ def write_xlsx(
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
         return build_success(data={}, llm_data=llm_data)
+    except PermissionError as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        hint = permission_error_hint(file_name)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=str(e), user_sheet_name=sheet_name, hint=hint)
+        return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=str(e), user_sheet_name=sheet_name, hint="写入Excel异常,请检查磁盘空间和权限")
+        hint = hint_for_write_error(e, file_name, "写入Excel异常,请检查磁盘空间和权限")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=str(e), user_sheet_name=sheet_name, hint=hint)
         return build_error(data={}, llm_data=llm_data)

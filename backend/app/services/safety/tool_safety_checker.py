@@ -2,23 +2,28 @@
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
-Safety层（本文件 + path_validator.py）：
+Safety层（本文件 + path_safe_check.py）：
   - 路径黑名单/白名单校验（_is_forbidden_path → validate_path）
   - 路径穿越(..)拒绝
   - 写入大小保护
   - 二元安全确认(needs_confirmation)
   - 已知风险检测(路径越权/写入污染)
 
-工具层（tools_file_path_checker.py）独立运行、互不调用：
-  - 非空/保留字符/保留名/系统目录硬阻断/存在性+类型/业务警告
+工具层（validate/file_safety_checker.py + validate/file_path_checker.py + validate/file_type_checker.py）独立运行、互不调用：
+  - check_content_safety: 内容安全检查（None/空/null字节/类型/append冲突）
+  - validate_path: 非空/保留字符/保留名/系统目录硬阻断/存在性+类型/业务警告
+  - check_file_type: 文件类型检查（文本/媒体/文档/压缩）
+  - check_tool_module: 依赖库安装检查
+  - check_office_file: 路径+类型+模块安全三位一体
 
 Layer 2: 二元安全确认(needs_confirmation)
 Layer 3: 已知风险检测(路径越权/写入污染/代码注入)
 
 2026-06-16 小沈 删除5级枚举，改用二元安全+check_fn
 2026-06-17 小沈 删除record_operation/execute_with_safety委托(打破tools→safety循环依赖)，
-             路径校验改用path_validator(打破safety→tools循环依赖)
+             路径校验改用path_safe_check(打破safety→tools循环依赖)
 2026-07-04 小欧 补充两层架构说明注释
+2026-07-09 北京老陈 补充validate层完整函数清单
 """
 
 
@@ -26,7 +31,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 
 from app.utils.logger import logger
-from app.services.safety.path_validator import validate_tool_path as _validate_tool_path
+from app.services.safety.path_safe_check import validate_tool_path as _validate_tool_path
 
 _WRITE_RISK_TOOL = "writetext"
 
@@ -119,9 +124,9 @@ class ToolSafetyChecker:
 
     @staticmethod
     def _check_known_risks(tool_name: str, params: Dict) -> Optional["SafetyResult"]:
-        """已知风险检测：路径越权 / 写入大小保护 / 代码注入 — 小沈 2026-06-17 改用path_validator
+        """已知风险检测：路径越权 / 写入大小保护 / 代码注入 — 小沈 2026-06-17 改用path_safe_check
         小欧 2026-06-25: 返回SafetyResult替代raw dict
-        小欧 2026-06-27: 路径检查委托validate_tool_path(path_validator统一处理)"""
+        小欧 2026-06-27: 路径检查委托validate_tool_path(path_safe_check统一处理)"""
         is_valid, msg = _validate_tool_path(tool_name, params)
         if not is_valid:
             return SafetyResult(is_safe=False, blocked=True, message=f"路径越权: {msg}")

@@ -18,8 +18,10 @@ from typing import Any, Dict, Optional, List
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_WRITE_PDF
+from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error
 from reportlab.lib.units import mm
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_type_checker import check_office_file
+from app.tools.validate.file_safety_checker import check_content_safety
 from app.utils.logger import logger
 from app.utils.table_helper import parse_markdown_table, get_table_header_style_config, normalize_table_data
 from app.tools.document.md_inline_utils import _md_to_pdf_xml
@@ -88,13 +90,19 @@ def write_pdf(
     """写入PDF文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化（Markdown格式）+ table_data支持"""
     t0 = _time_mod.perf_counter()
 
-    # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, warn = validate_path(OpCategory.WRITE, file_name)
+    # 文件类型前置检查（含路径检查+类型检查+模块安全检查）— 北京老陈 2026-07-09
+    is_valid, error_detail, hint = check_office_file(file_name, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=err, user_title=title or "", hint="请检查文件路径是否合法")
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=error_detail, user_title=title or "", hint=hint)
         return build_error(data={}, llm_data=llm_data)
+
+    if content is not None:
+        cs_error, _ = check_content_safety(content, "pdf")
+        if cs_error:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=cs_error, user_title=title or "", hint="请检查content参数")
+            return build_error(data={}, llm_data=llm_data)
 
     if not _check_module("reportlab"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -204,7 +212,13 @@ def write_pdf(
         # — 小欧 2026-07-06
         # =============================================================================
         return build_success(data={}, llm_data=llm_data)
+    except PermissionError as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        hint = permission_error_hint(file_name)
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "", hint=hint)
+        return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "", hint="写入PDF异常,请检查磁盘空间和权限")
+        hint = hint_for_write_error(e, file_name, "写入PDF异常,请检查磁盘空间和权限")
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "", hint=hint)
         return build_error(data={}, llm_data=llm_data)

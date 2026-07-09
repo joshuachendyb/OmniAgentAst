@@ -15,9 +15,9 @@ from typing import Any, Dict
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.tools.file_type_checker import check_for_document_tool
+from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.tool_constants import ERR_DOC_READ_PPTX
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+
 from app.utils.logger import logger
 
 
@@ -56,7 +56,13 @@ def read_pptx(file_name: str) -> Dict[str, Any]:
     is_valid, error_detail, suggested_tool = check_for_document_tool(file_name)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=error_detail, hint="文件类型不匹配,请使用.pptx格式")
+        if suggested_tool:
+            _hint = f"建议使用{suggested_tool}工具"
+        elif suggested_tool == "":
+            _hint = "请检查文件路径和文件名是否正确"
+        else:
+            _hint = "文件类型不匹配,请使用正确的文档格式"
+        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=error_detail, hint=_hint)
         return build_error(data={}, llm_data=llm_data)
 
     if not _check_module("pptx"):
@@ -66,14 +72,6 @@ def read_pptx(file_name: str) -> Dict[str, Any]:
 
     try:
         from pptx import Presentation
-
-        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
-        if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径是否正确")
-            return build_error(data={}, llm_data=llm_data)
 
         path = Path(file_path)
         prs = Presentation(path)

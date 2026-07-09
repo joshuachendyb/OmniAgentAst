@@ -1,7 +1,9 @@
-# validate/tools_file_path_checker.py — tool内部路径业务级检查（集中管理）
+# validate/file_path_checker.py — tool内部路径业务级检查（集中管理）
 # 工具层（本文件）：非空/保留字符/保留名/系统目录/存在性+类型/业务警告
-# Safety层（path_validator.py）：路径黑名单/白名单/路径穿越/权限校验 — 两层独立运行、互不调用
+# Safety层（services/safety/tool_safety_checker.py + path_safe_check.py）：
+#   路径黑名单/白名单/路径穿越/权限校验 — 两层独立运行、互不调用
 # 小沈 2026-06-27 — 小欧 2026-07-04 重构统一入口 + 注释说明
+# 北京老陈 2026-07-09 交叉引用注释统一
 
 import os
 import re
@@ -13,6 +15,8 @@ __all__ = [
     "validate_path_for_write", "validate_path_for_delete", "validate_path_for_overwrite",
     "validate_path_for_extract", "WINDOWS_SYSTEM_DIRS", "validate_not_system_path",
     "OpCategory", "validate_path", "validate_str_param",
+    "permission_error_hint",
+    "hint_for_write_error",
 ]
 
 _WINDOWS_RESERVED = {'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5',
@@ -37,7 +41,7 @@ def validate_path_for_write(file_path: str, content: str = "", append: bool = Fa
     """
     写入操作的路径业务级检查（适用于write_text_file、edit_text_file及所有写入类工具）
     工具层校验：非空/保留字符/保留名（仅警告，不阻断）
-    Safety层（path_validator.py）独立运行：黑名单/白名单/路径穿越/权限
+    Safety层（path_safe_check.py）独立运行：黑名单/白名单/路径穿越/权限
     
     Returns: (is_valid, error_msg, warning_msg)
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -67,7 +71,7 @@ def validate_path_for_delete(file_path: str, recursive: bool = False, force: boo
     """
     删除操作的路径业务级检查（适用于delete_file）
     工具层校验：非空/保留字符/保留名（仅递归/强制警告）
-    Safety层（path_validator.py）独立运行：黑名单/白名单/路径穿越/权限
+    Safety层（path_safe_check.py）独立运行：黑名单/白名单/路径穿越/权限
     
     Returns: (is_valid, error_msg, warning_msg)
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -88,7 +92,7 @@ def validate_path_for_overwrite(source: str, destination: str, overwrite: bool =
     """
     覆盖操作的路径业务级检查（适用于move_file、copy_file）
     工具层校验：非空（仅覆盖警告）
-    Safety层（path_validator.py）独立运行：黑名单/白名单/路径穿越/权限
+    Safety层（path_safe_check.py）独立运行：黑名单/白名单/路径穿越/权限
     
     Returns: (is_valid, error_msg, warning_msg)
     注意：文件存在检查与实际操作之间存在时间窗口（TOCTOU），
@@ -108,7 +112,7 @@ def validate_path_for_extract(output_dir: str) -> Tuple[bool, Optional[str], Opt
     """
     解压操作的路径业务级检查（适用于extract_archive）
     工具层校验：非空（仅系统目录警告）
-    Safety层（path_validator.py）独立运行：黑名单/白名单/路径穿越/权限
+    Safety层（path_safe_check.py）独立运行：黑名单/白名单/路径穿越/权限
     
     Returns: (is_valid, error_msg, warning_msg)
     """
@@ -131,7 +135,7 @@ WINDOWS_SYSTEM_DIRS = [
 def validate_not_system_path(file_path: str) -> Tuple[bool, Optional[str], Optional[str]]:
     """
     检查路径是否涉及Windows系统关键目录（工具层硬阻断）
-    Safety层（path_validator.py）独立运行：黑名单/白名单/路径穿越/权限
+    Safety层（path_safe_check.py）独立运行：黑名单/白名单/路径穿越/权限
 
     Returns: (is_valid, error_msg, warning_msg)
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -175,7 +179,7 @@ def validate_path(
     """
     统一路径前置校验（编排层，同文件调所有 validate_path_for_*）
     工具层校验：非空/保留字符/保留名/系统目录/存在性+类型/业务警告
-    Safety层（path_validator.py）后续独立运行：黑名单/白名单/路径穿越/权限校验
+    Safety层（path_safe_check.py）后续独立运行：黑名单/白名单/路径穿越/权限校验
     小欧 2026-07-04
 
     第1层 基础校验（ALL）：非空 + 保留字符 + 保留名 + 盘符存在性
@@ -193,7 +197,7 @@ def validate_path(
     if drive:
         if not os.path.exists(drive + "\\"):
             avail = [f"{l}:" for l in string.ascii_uppercase if os.path.exists(f"{l}:\\")]
-            return False, f"驱动器不存在: {drive}。可用驱动器: {', '.join(avail)}", None
+            return False, f"驱动器: {drive}不存在。可用驱动器: {', '.join(avail)}", None
         # 检测路径中间是否出现多余盘符（如 E:\dir\E:\file）— 小沈 2026-07-08
         _tail = path[len(drive):]
         if re.search(r'[A-Za-z]:', _tail.lstrip("\\/")):
@@ -252,3 +256,24 @@ def validate_str_param(value: Any, param_name: str) -> Optional[str]:
     if not value.strip():
         return f"参数 {param_name} 不能为空字符串"
     return None
+
+
+def permission_error_hint(file_name: str) -> str:
+    """PermissionError 时告知LLM更改文件名或路径 — 小欧 2026-07-08"""
+    return f"写入{file_name}权限不足，更换文件名或路径重试"
+
+
+def hint_for_write_error(e: Exception, file_name: str, default_hint: str) -> str:
+    """根据文件写入异常类型返回更精确的 hint — 小欧 2026-07-08
+
+    覆盖常见可识别异常：
+    - OSError errno=28 (No space left on device) → 磁盘空间不足
+    - OSError errno in (36,63) (File name too long) → 文件名过长
+    - 其他 → 返回 default_hint
+    """
+    if isinstance(e, OSError):
+        if e.errno == 28:
+            return f"磁盘空间不足无法写入，请清理磁盘后重试"
+        if e.errno in (36, 63):
+            return f"文件{file_name}的名称太长,更换短文件名或路径重试: "
+    return default_hint

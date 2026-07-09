@@ -16,7 +16,7 @@ from typing import Any, Dict
 from app.tools.file.move_file import _move_file_impl
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_RENAME_FAILED
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory
 
 
 def _build_rename_file_llm_data(

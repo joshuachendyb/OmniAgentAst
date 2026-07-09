@@ -28,9 +28,10 @@ from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
 from app.utils.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.services.safety.file_safety import record_operation, execute_with_safety
-from app.tools.file_type_checker import check_for_text_tool
+from app.tools.validate.file_type_checker import check_for_text_tool
+from app.tools.validate.file_safety_checker import check_content_safety
 from app.utils.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_write, check_conflict, is_unchanged
@@ -87,40 +88,13 @@ def _write_file_atomic(content: str, path: Path, encoding: str,
 def _check_write_safety(file_path: str, content: str,
                          encoding: Optional[str] = None,
                          append: bool = False) -> Tuple[Optional[str], str]:
-    """写入前安全检查 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小健 2026-06-24 使用file_type_checker，恢复append+encoding限制 — 小健 2026-06-26 增加类型自动转换
-    
+    """写入前安全检查 — 委托到统一函数 check_content_safety
     append时指定encoding会导致编码混乱：
     - 原文件GBK + 追加UTF-8 = 混合编码文件（损坏）
     - 正确做法：append时不指定encoding，自动检测原文件编码
+    北京老陈 2026-07-09
     """
-    if not file_path or not file_path.strip():
-        return "file_path不能为空", content
-    if content is None:
-        return "content不能为None", ""
-    
-    # 类型自动转换：dict/list → JSON字符串 — 小健 2026-06-26
-    if isinstance(content, (dict, list)):
-        try:
-            content = json.dumps(content, ensure_ascii=False, indent=2)
-            logger.info(f"[_check_write_safety] content参数为{type(content).__name__}，已自动转为JSON字符串")
-        except Exception as e:
-            return f"content序列化失败: {e}", ""
-    
-    if not isinstance(content, str):
-        return f"content类型错误: 期望str/dict/list，实际{type(content).__name__}", ""
-    
-    if len(content) == 0:
-        return "content不能为空字符串,如需清空文件请使用其他方式", content
-    if '\x00' in content:
-        return "content包含null字符(0x00),文本文件不允许包含null字符", content
-    if append and encoding:
-        return "append模式不允许指定encoding。追加时会自动检测原文件编码并使用相同编码写入。如需转换编码请先读取全文、转换后覆盖写入。", content
-    # 文件类型检查 — 小健 2026-06-24
-    is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=False, allow_create=True)
-    if not is_valid:
-        return error_detail, content
-
-    return None, content
+    return check_content_safety(content, "text", encoding=encoding, append=append)
 
 
 def _build_write_text_file_llm_data(
@@ -186,6 +160,20 @@ async def writetext(
         logger.warning(warn)
 
     create_parents = True
+
+    # 文件类型检查 — 北京老陈 2026-07-09
+    ft_valid, ft_detail, ft_tool = check_for_text_tool(file_path, check_content=False, allow_create=True, op_category=OpCategory.WRITE)
+    if not ft_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        if ft_tool:
+            _hint = f"建议使用{ft_tool}工具"
+        elif ft_tool == "":
+            _hint = "请检查文件路径和文件名是否正确"
+        else:
+            _hint = "请选择正确的工具类型"
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=ft_detail, hint=_hint, user_encoding=encoding, user_append=append)
+        return build_error(data={}, llm_data=llm_data)
+
     error, checked_content = _check_write_safety(file_path, content, encoding, append)
     if error:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

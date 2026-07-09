@@ -13,7 +13,7 @@ from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_WINDOW_NOT_FOUND, ERR_WINDOW_RESIZE
-from app.tools.validate.tools_file_path_checker import validate_str_param
+from app.tools.validate.file_path_checker import validate_str_param
 
 
 def _build_window_resize_llm_data(exec_code: str, duration_ms: int, title: str = "", width: int = 0, height: int = 0,

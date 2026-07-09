@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-path_validator — 文件路径越权校验（Safety层）
+path_safe_check — 文件路径越权校验（Safety层）
 
 Safety层职责（本文件）：
   - 路径黑名单：禁止访问系统敏感路径（_is_forbidden_path）
@@ -8,8 +8,9 @@ Safety层职责（本文件）：
   - 路径穿越(..)拒绝
   - 调用入口 validate_tool_path() 自动判断工具分类 + 找路径参数
 
-工具层（tools_file_path_checker.py）独立运行、互不调用：
+工具层（validate/file_path_checker.py + validate/file_safety_checker.py）独立运行、互不调用：
   - 非空/保留字符/保留名/系统目录硬阻断/存在性+类型/业务警告
+  - 内容安全检查 / 模块安装检查
 
 从 file_tools.py 提取,供 safety 和 tools 共用,打破循环依赖
 
@@ -22,14 +23,14 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.tools.registry import tool_registry
+from app.tools.tool_types import ToolCategory
 from app.tools.tool_constants import (
     FORBIDDEN_PATHS_EXACT,
     FORBIDDEN_PATHS_PREFIX,
     FORBIDDEN_PATHS_WINDOWS_EXACT,
     FORBIDDEN_PATHS_WINDOWS_PREFIX,
 )
-from app.tools.registry import tool_registry
-from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 
@@ -122,7 +123,7 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
         if not resolved.startswith(original_resolved) and file_path != resolved:
             return False, f"路径穿越检测: {file_path} 解析为 {resolved}"
     except Exception as e:
-        logger.warning(f"[path_validator] 路径校验异常: {file_path}: {e}")
+        logger.warning(f"[path_safe_check] 路径校验异常: {file_path}: {e}")
         return False, f"路径校验异常: {file_path}"
 
     paths = allowed_paths or ALLOWED_PATHS
@@ -172,7 +173,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]) -> Tuple[bool, Op
     工具路径检查：自动判断分类 + 找路径参数 + 调validate_path
     
     将调度逻辑从 tool_safety_checker._check_known_risks 迁移至此，
-    path相关的事情全部在 path_validator 中处理。
+    path相关的事情全部在 path_safe_check 中处理。
     小欧 2026-06-27
     """
     try:

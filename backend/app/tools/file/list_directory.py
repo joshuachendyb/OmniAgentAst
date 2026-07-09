@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
 from app.tools.tool_constants import TOOL_TIMEOUTS, LISTDIR_PAGE_SIZE
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
@@ -42,9 +42,9 @@ def _classify_size(size: int) -> str:
 
 
 def _build_entry(item: Path, st: os.stat_result) -> Dict[str, Any]:
-    """构建单个目录条目 -- 小健 2026-05-25 -- 小欧 2026-06-22 — 小欧 2026-07-06 去path/mtime，size仅文件"""
+    """构建单个目录条目 -- 小健 2026-05-25 -- 小欧 2026-06-22 — 小欧 2026-07-06 去path/mtime，size仅文件 — 小沈 2026-07-08 恢复mtime"""
     is_dir = item.is_dir()
-    entry: Dict[str, Any] = {"name": item.name, "type": "directory" if is_dir else "file"}
+    entry: Dict[str, Any] = {"name": item.name, "type": "directory" if is_dir else "file", "mtime": st.st_mtime}
     if not is_dir:
         entry["size"] = st.st_size
     return entry
@@ -208,9 +208,9 @@ async def listdir(
         llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", hint="请提供有效的目录路径", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={}, llm_data=llm_data)
 
-    if sort_by not in ("name", "size"):
+    if sort_by not in ("name", "size", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size',当前值: '{sort_by}'", hint="sort_by参数只能为name或size", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path,         detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'", hint="sort_by参数只能为name/size/mtime", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={}, llm_data=llm_data)
 
     if offset < 0:
@@ -237,6 +237,8 @@ async def listdir(
 
         if sort_by == "size":
             all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("size") or 0), reverse=True)
+        elif sort_by == "mtime":
+            all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("mtime", 0)), reverse=True)
         else:
             all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
 

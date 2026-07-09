@@ -21,7 +21,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
 from app.utils.context_vars import _current_task_id
 
-from app.tools.validate.tools_file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 
 
