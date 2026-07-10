@@ -10,8 +10,7 @@ Tools 模块 - 按功能域组织的工具集
   to_openai_tools/generate_param_reminder → app.tools.tool_description
 """
 
-from app.tools.registry import tool_registry, register_tool, ToolRegistry
-from app.tools.lazy_loader import ensure_tools_registered
+from app.tools.registry import tool_registry, register_tool, ToolRegistry, ensure_tools_registered
 
 
 __all__ = [

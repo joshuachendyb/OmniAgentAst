@@ -16,8 +16,12 @@ from app.tools.schema_utils import _generate_input_schema
 from app.tools.tool_description import to_openai_tools, generate_param_reminder
 from app.utils.logger import setup_logger
 from app.utils.dependency import ensure_dependency
+from app.tools.tool_constants import CATEGORY_MODULES
 
 logger = setup_logger(__name__)
+
+# 懒加载注册状态跟踪（从 lazy_loader.py 迁入）
+_registered_categories: set = set()
 
 
 def _update_tool_metadata(metadata: ToolMetadata, **kwargs) -> None:
@@ -360,3 +364,37 @@ def register_tool(
         return func
     
     return decorator
+
+
+# ============================================================
+# 懒加载注册（从 lazy_loader.py 迁入）
+# ============================================================
+
+def _import_and_register(module_path: str, register_func_name: str) -> None:
+    """导入模块并调用注册函数 — 小健 2026-05-14; 小沈 2026-06-17 简化"""
+    module = __import__(module_path, fromlist=[register_func_name])
+    register_func = getattr(module, register_func_name)
+    register_func()
+
+
+def ensure_tools_registered() -> None:
+    """确保所有工具已注册(全量注册) - 小沈 2026-05-15"""
+    global _registered_categories
+
+    _failed = False
+    for cat_name, (module_path, register_func) in CATEGORY_MODULES.items():
+        if cat_name not in _registered_categories:
+            try:
+                count_before = len(tool_registry._tools)
+                _import_and_register(module_path, register_func)
+                count_after = len(tool_registry._tools)
+                _registered_categories.add(cat_name)
+                logger.debug(f"[Tools] 分类 {cat_name} 注册完成, {count_after - count_before}个工具")
+            except Exception as e:
+                logger.error(f"[Tools] 注册分类{cat_name}失败: {e}")
+                _failed = True
+    if _failed:
+        logger.warning(f"[Tools] 部分分类注册失败,已注册{len(_registered_categories)}个分类,下次调用将重试")
+    elif _registered_categories:
+        total_tools = len(tool_registry._tools)
+        logger.info(f"[Tools] 全部注册完成, {total_tools}个工具, {len(_registered_categories)}个分类")
