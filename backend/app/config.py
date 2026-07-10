@@ -9,9 +9,6 @@ import yaml
 from collections import OrderedDict
 from typing import Dict, Any, Optional
 from pathlib import Path
-from app.utils.paths import get_config_path, get_default_project_root
-
-
 @functools.lru_cache(maxsize=1)
 def _make_safe_loader() -> type:
     """创建支持 OrderedDict 标签的 SafeLoader — 小欧 2026-06-22"""
@@ -82,9 +79,6 @@ class Config:
         env_path = os.getenv('OMNIAGENT_CONFIG_PATH')
         if env_path:
             return Path(env_path)
-
-        # 延迟导入:避免 utils/paths.py 依赖 config 导致循环导入
-        from app.utils.paths import get_config_path
         return Path(get_config_path())
     
     def _apply_env_overrides(self):
@@ -158,7 +152,6 @@ class Config:
         root = self.get('app.project_root', '')
         if root:
             return root
-        from app.utils.paths import get_default_project_root
         return get_default_project_root()
 
     def reload(self):
@@ -183,3 +176,32 @@ def get_config() -> Config:
         _config_instance = Config()
     _config_instance._load_config()  # 内部有mtime缓存检查，未变则跳过
     return _config_instance
+
+
+# ============================================================
+# 路径计算函数（从 utils/paths.py 迁入）
+# ============================================================
+
+_PROJECT_ROOT: Optional[Path] = None
+
+
+def _get_project_root() -> Path:
+    """唯一项目根目录计算入口——基于当前文件位置推算"""
+    global _PROJECT_ROOT
+    if _PROJECT_ROOT is None:
+        _PROJECT_ROOT = Path(__file__).parent.parent.parent
+    return _PROJECT_ROOT
+
+
+def get_default_project_root() -> str:
+    """获取默认项目根目录(str) — 基于代码位置推算"""
+    return str(_get_project_root())
+
+
+def get_config_path(filename: str = "config.yaml") -> str:
+    """统一配置路径获取"""
+    return str(_get_project_root() / "config" / filename)
+
+
+DEFAULT_CONFIG_FILENAME = "config.yaml"
+DEFAULT_TOOLS_CONFIG_FILENAME = "tools.yaml"

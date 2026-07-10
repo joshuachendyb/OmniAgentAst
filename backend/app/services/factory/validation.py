@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import os
 
-from app.utils.paths import get_config_path
+from app.config import get_config_path
 
 
 @dataclass
