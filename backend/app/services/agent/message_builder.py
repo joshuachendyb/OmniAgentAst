@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 from app.config import get_config  # 小欧 2026-07-08
 from app.constants import MAX_CONTEXT_CHARS, TEMP_HISTORY_CHAR_LIMIT
 from app.utils.logger import logger  # 小欧 2026-07-01: 裁剪日志
-from app.services.agent.agent_utils.fc_message_types import (
+from app.services.agent.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
     message_to_dict, dict_to_message,
 )
