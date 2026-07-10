@@ -33,10 +33,38 @@ from app.services.task.task_runtime import (
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
 from app.utils.message_id_tracker import _current_task_id
 from app.utils.prompt_logger import get_prompt_logger
-from app.api.v1.chat.validate_chat_config import validate_chat_config
 from app.services.task.hitl_confirmation import resolve_confirmation
 
 router = APIRouter()
+
+async def validate_chat_config():
+    """拷贝自 validate_chat_config.py — 内联入 chat_openai.py 小欧 2026-07-10"""
+    from app.utils.logger import logger
+    from app.services.ai_config_resolver import get_ai_config_resolver
+    try:
+        resolver = get_ai_config_resolver()
+        is_valid, final_provider, final_model, error_messages = resolver.validate_config()
+        if not is_valid:
+            return {
+                "valid": False,
+                "message": f"配置验证失败: {', '.join(error_messages)}",
+                "provider": final_provider or "unknown",
+                "model": final_model or ""
+            }
+        return {
+            "valid": True,
+            "message": f"配置验证通过: {final_provider} ({final_model})",
+            "provider": final_provider,
+            "model": final_model
+        }
+    except Exception as e:
+        logger.error(f"验证AI服务配置失败: {e}")
+        return {
+            "valid": False,
+            "message": f"验证失败: {str(e)}",
+            "provider": "unknown",
+            "model": ""
+        }
 task_router = APIRouter()
 
 
