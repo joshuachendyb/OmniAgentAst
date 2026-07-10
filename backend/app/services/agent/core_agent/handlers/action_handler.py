@@ -21,10 +21,10 @@ from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep, ChunkStep  # ChunkStep用于重试前端通知 — 小欧 2026-07-09
 from app.services.agent.core_agent.status_table import AgentStatus
-from app.services.agent.agent_utils.message_utils import build_observation_text
+from app.services.agent.observation_formatter import build_observation_text
 from app.constants import HITL_TIMEOUT
 from app.services.agent.tool_executor import execute_tool
-from app.db.models.operation_enums import OperationStatus
+from app.db.models.operation_models import OperationStatus
 
 from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE_OPERATION_TOOLS
 from app.tools.param_alias_mapper import PARAM_ALIASES

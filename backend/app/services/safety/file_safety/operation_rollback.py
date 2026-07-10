@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 from app.db import db
-from app.db.models.operation_enums import OperationType, OperationStatus
+from app.db.models.operation_models import OperationType, OperationStatus
 from app.utils.logger import logger
 
 

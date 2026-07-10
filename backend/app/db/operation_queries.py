@@ -13,7 +13,7 @@ Author: 小健 - 2026-06-17
 from typing import List, Tuple, Dict, Any, Optional
 
 from app.db import db
-from app.db.models.operation_enums import OperationType, OperationStatus
+from app.db.models.operation_models import OperationType, OperationStatus
 from app.db.models.operation_models import OperationRecord
 from app.utils.json_utils import parse_json
 from app.utils.logger import logger

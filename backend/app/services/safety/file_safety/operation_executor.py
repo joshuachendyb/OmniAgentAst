@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from app.config import get_config
 from app.db import db
-from app.db.models.operation_enums import OperationType, OperationStatus
+from app.db.models.operation_models import OperationType, OperationStatus
 from app.utils.logger import logger
 from app.utils.time_utils import timestamp_for_filename
 from app.services.safety.file_safety.operation_cleanup import cleanup_expired_backups

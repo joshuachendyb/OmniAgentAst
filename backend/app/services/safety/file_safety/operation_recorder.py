@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 from uuid import uuid4
 
 from app.db import db
-from app.db.models.operation_enums import OperationType, OperationStatus
+from app.db.models.operation_models import OperationType, OperationStatus
 from app.utils.logger import logger
 from app.services.safety.hash_helper import compute_file_hash
 

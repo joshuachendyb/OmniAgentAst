@@ -24,7 +24,7 @@ from app.utils.message_id_tracker import _current_task_id
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger
 from app.services.safety.file_safety import record_operation, execute_with_safety
-from app.db.models.operation_enums import OperationType
+from app.db.models.operation_models import OperationType
 
 
 

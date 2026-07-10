@@ -6,9 +6,34 @@
 Author: 小沈 - 2026-05-22
 """
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict
-from app.db.models.operation_enums import OperationType, OperationStatus
+
+
+class OperationType(str, Enum):
+    """操作类型枚举 — 小沈 2026-05-22"""
+    CREATE = "create"
+    DELETE = "delete"
+    MOVE = "move"
+    COPY = "copy"
+    RENAME = "rename"
+    MODIFY = "modify"
+    COMPARE = "compare"
+    BATCH_RENAME = "batch_rename"
+    COMPRESS = "compress"
+    MONITOR = "monitor"
+    STATISTICS = "statistics"
+    CHECKSUM = "checksum"
+
+
+class OperationStatus(str, Enum):
+    """操作状态枚举 — 小沈 2026-05-22"""
+    PENDING = "pending"
+    EXECUTING = "executing"
+    SUCCESS = "success"
+    FAILED = "failed"
+    ROLLBACK = "rollback"
 
 
 class OperationRecord(BaseModel):

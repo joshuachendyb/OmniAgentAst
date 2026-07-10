@@ -14,7 +14,7 @@ from app.db.models.chat_models import (
     BatchTitleResponse,
     MessageResponse,
 )
-from app.db.models.operation_enums import OperationType, OperationStatus
+from app.db.models.operation_models import OperationType, OperationStatus
 from app.db.models.operation_models import OperationRecord, TaskRecord
 
 __all__ = [

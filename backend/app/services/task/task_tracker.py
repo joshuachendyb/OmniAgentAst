@@ -17,7 +17,7 @@ from typing import Optional, Dict, Any, List
 from enum import Enum
 from app.db import db
 from app.utils.logger import logger
-from app.db.models.operation_enums import OperationStatus
+from app.db.models.operation_models import OperationStatus
 
 
 class TaskStatus(str, Enum):

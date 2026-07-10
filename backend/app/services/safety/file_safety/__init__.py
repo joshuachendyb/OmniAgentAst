@@ -31,7 +31,7 @@ from app.services.safety.file_safety.operation_rollback import (
 from app.services.safety.file_safety.operation_cleanup import (
     cleanup_expired_backups,
 )
-from app.db.models.operation_enums import OperationType, OperationStatus
+from app.db.models.operation_models import OperationType, OperationStatus
 
 __all__ = [
     "FileSafetyConfig",
