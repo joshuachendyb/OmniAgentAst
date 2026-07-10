@@ -23,6 +23,8 @@ from app.api.v1.sessions.create_session import create_session
 from app.api.v1.sessions.list_sessions import list_sessions
 from app.api.v1.sessions.update_session import update_session
 from app.api.v1.sessions.get_session_titles_batch import get_session_titles_batch
+from app.api.v1.sessions.models import ExecutionStepsUpdate
+from app.services.conversation_storage import save_execution_steps
 
 router = APIRouter()
 
@@ -80,3 +82,8 @@ async def get_session_titles_batch_endpoint(
     session_ids: str = Query(..., description="逗号分隔的会话ID列表")
 ):
     return await get_session_titles_batch(session_ids)
+
+
+@router.post("/sessions/{session_id}/execution_steps")
+async def save_execution_steps_endpoint(session_id: str, update_data: ExecutionStepsUpdate):
+    return await save_execution_steps(session_id, update_data)

@@ -25,6 +25,7 @@ from app.api.v1.sessions.update_session import (
 )
 from app.api.v1.sessions.get_session_titles_batch import get_session_titles_batch
 from app.api.v1.sessions.sessions import router, delete_session
+from app.api.v1.sessions.models import ExecutionStep, ExecutionStepsUpdate
 
 __all__ = [
     "router",
@@ -32,4 +33,5 @@ __all__ = [
     "create_session", "list_sessions", "resolve_update_mode",
     "build_update_params", "build_update_sql", "record_title_history",
     "update_session", "delete_session", "get_session_titles_batch",
+    "ExecutionStep", "ExecutionStepsUpdate",
 ]

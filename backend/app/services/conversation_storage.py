@@ -18,10 +18,9 @@ from fastapi import HTTPException
 from app.utils.logger import logger
 from app.db import db
 from app.utils.json_utils import safe_json_dumps
-from app.utils.time_utils import get_timestamp_ms
+from app.utils.time_utils import create_timestamp
 from app.utils.message_id_tracker import _user_message_ids, _message_ids_lock
 from app.utils.display_utils import extract_metadata_from_steps
-from app.api.v1.conversation.models import ExecutionStepsUpdate
 
 
 class AssistantMessageIdAllocator:
@@ -92,7 +91,7 @@ def insert_assistant_message(
 ) -> None:
     """拷贝自 conversation.py 第115-131行"""
     cursor = conn.cursor()
-    utc_time = get_timestamp_ms()
+    utc_time = create_timestamp()
     initial_content = update_data.content or ""
     reply_to = getattr(update_data, 'reply_to_message_id', None)
     cursor.execute(
@@ -131,7 +130,7 @@ def update_session_message_count(
 ) -> None:
     """拷贝自 conversation.py 第159-177行"""
     cursor = conn.cursor()
-    utc_time = get_timestamp_ms()
+    utc_time = create_timestamp()
     if increment:
         cursor.execute(
             "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
@@ -144,7 +143,7 @@ def update_session_message_count(
         )
 
 
-async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdate):
+async def save_execution_steps(session_id: str, update_data):
     """拷贝自 conversation.py 第198-221行"""
     try:
         with db.get_conn("chat") as conn:
