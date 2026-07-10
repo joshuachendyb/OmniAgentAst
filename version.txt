@@ -1,6 +1,17 @@
-﻿v0.18.10
+﻿v0.18.11
 更新时间: 2026-07-10 15:27:00
-## v0.18.10→v0.18.11 变更汇总 - 小欧-2026-07-10
+## v0.18.11→v0.18.12 变更汇总 - 小欧-2026-07-10
+
+### refactor: sessions模块7文件合并为sessions.py(1新7删)
+- app/api/v1/sessions/(7文件)合并为 sessions.py(6路由+ExecutionStep+5个内部函数) — 小欧-2026-07-10
+- 修复botched合并导致的严重格式化问题(每行后空行)+多余空行标准化 — 小欧-2026-07-10
+- 修复execution.py/chat_stream.py import路径(sessions.models→sessions) — 小欧-2026-07-10
+
+### refactor: health模块3文件合并为health.py(1新3删)
+- app/api/v1/health/(3文件)合并为health.py(4路由:health/echo/tool/list/tool/execute) — 小欧-2026-07-10
+- 修复execute_tool/ToolExecuteResponse严重格式化问题(每行后空行) — 小欧-2026-07-10
+
+### 累计：8轮合并重构完成，772 tests 0 failures
 
 ### refactor: ai_config API模块合并 + 格式/导入修复
 - app/api/v1/ai_config/ 目录(17文件)合并为 model_routes(15路由)+model_schemas(12模型) — 小欧-2026-07-10
