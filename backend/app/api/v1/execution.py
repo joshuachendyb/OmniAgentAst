@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from app.utils.time_utils import create_timestamp
 from app.utils.json_utils import parse_json
 from app.db import db
-from app.api.v1.sessions.models import ExecutionStep
+from app.api.v1.sessions import ExecutionStep
 
 router = APIRouter()
 
