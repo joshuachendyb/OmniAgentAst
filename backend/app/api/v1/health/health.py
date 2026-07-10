@@ -58,7 +58,7 @@ async def list_tools():
             "name": name,
             "description": desc[:100] if desc else "",
             "required_params": required,
-            "optional_params": props,
+            "optional_params": [p for p in props if p not in set(required)],
             "inputSchema": params,
         })
 

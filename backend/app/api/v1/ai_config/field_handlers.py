@@ -58,7 +58,8 @@ def _update_max_steps(config_data: dict, update) -> None:
 def _update_security(config_data: dict, update) -> None:
     if not update.security:
         return
-    config_data['security'] = {
+    security = config_data.get('security', {})
+    security.update({
         "contentFilterEnabled": update.security.contentFilterEnabled,
         "contentFilterLevel": update.security.contentFilterLevel,
         "whitelistEnabled": update.security.whitelistEnabled,
@@ -66,7 +67,8 @@ def _update_security(config_data: dict, update) -> None:
         "commandBlacklist": update.security.commandBlacklist,
         "confirmDangerousOps": update.security.confirmDangerousOps,
         "maxFileSize": update.security.maxFileSize,
-    }
+    })
+    config_data['security'] = security
     logger.info("更新安全配置成功")
 
 

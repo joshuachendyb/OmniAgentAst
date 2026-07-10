@@ -57,7 +57,7 @@ async def get_metrics():
     - 请求进行中的数量
     """
     summary = get_metrics_summary()
-    total_metrics = sum(len(metrics) for metrics in get_raw_metrics().values())
+    total_metrics = int(sum(data.get("count", 0) for data in summary.values()))
     
     metrics_dict = {
         name: MetricSummary(**data) 
@@ -126,9 +126,5 @@ async def metrics_health_check():
             "message": "监控系统运行正常"
         }
     except Exception as e:
-        return {
-            "success": False,
-            "status": "unhealthy",
-            "timestamp": get_utc_timestamp(),
-            "message": f"监控系统异常: {str(e)}"
-        }
+        logger.error(f"健康检查异常: {e}")
+        raise HTTPException(status_code=503, detail=f"监控系统异常: {str(e)}")
