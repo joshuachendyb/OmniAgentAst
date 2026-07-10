@@ -14,16 +14,11 @@ Author: 小健 - 2026-05-28
 """
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 
 def create_timestamp() -> int:
     """生成统一的时间戳(毫秒, UTC) — 小沈 2026-06-09 统一UTC"""
-    return int(datetime.now(timezone.utc).timestamp() * 1000)
-
-
-def get_timestamp_ms() -> int:
-    """获取毫秒时间戳(UTC)"""
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
@@ -69,10 +64,13 @@ def timestamp_for_filename() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
-def format_timestamp(val: Any) -> str:
+def format_timestamp(val: Any) -> Optional[str]:
     """通用时间戳格式化 — 小沈 2026-02-17
     小欧 2026-07-04 修复: 增加OSError捕获，处理Windows不支持负时间戳的问题
+    小欧 2026-07-10 M-19: 为None时返回None
     """
+    if val is None:
+        return None
     if isinstance(val, (int, float)):
         try:
             return datetime.fromtimestamp(val / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
@@ -85,7 +83,6 @@ def format_timestamp(val: Any) -> str:
 
 __all__ = [
     "create_timestamp",
-    "get_timestamp_ms",
     "get_utc_timestamp",
     "convert_to_utc",
     "ensure_timestamp_milliseconds",

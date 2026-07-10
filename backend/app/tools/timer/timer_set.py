@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any
 
 from app.utils.logger import logger
-from app.utils.time_utils import get_timestamp_ms
+from app.utils.time_utils import create_timestamp
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import HTTPX_TIMEOUT_DEFAULT
 from app.tools.tool_constants import ERR_TIMER_SET
@@ -98,7 +98,7 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
             # 模块级共享状态: _timer_counter / _timer_callbacks / _timers / _timer_events 统一加锁
             # — 小欧 2026-07-10 C-07
             _timer_counter += 1
-            timer_id = f"timer_{_timer_counter}_{get_timestamp_ms()}"
+            timer_id = f"timer_{_timer_counter}_{create_timestamp()}"
             trigger_at = datetime.now().astimezone() + timedelta(seconds=delay)
 
             _timer_callbacks[timer_id] = {

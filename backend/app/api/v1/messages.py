@@ -24,7 +24,7 @@ from app.utils.response_utils import handle_api_errors
 from app.utils.cache import LRUCache
 from app.constants import MAX_CACHE_SIZE
 from app.utils.display_utils import extract_display_name_from_steps
-from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, get_timestamp_ms
+from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, create_timestamp
 from app.utils.time_utils import format_timestamp
 from app.utils.json_utils import parse_json
 from app.db import db
@@ -126,14 +126,14 @@ async def save_message(session_id: str, message: MessageCreate):
         if not session:
             raise HTTPException(status_code=404, detail="会话不存在")
 
-        utc_time = get_timestamp_ms()
+        utc_time = create_timestamp()
         new_message_count = session["message_count"] + 1
 
         display_name_to_save = message.display_name
         if message.role == "assistant" and not display_name_to_save:
             display_name_to_save = display_name_cache.get(session_id)
 
-        execution_steps_json = safe_json_dumps(message.execution_steps) if message.execution_steps else None
+        execution_steps_json = safe_json_dumps(message.execution_steps) if message.execution_steps is not None else None
         cursor.execute(
             "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, execution_steps, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (session_id, message.role, message.content, utc_time, display_name_to_save,

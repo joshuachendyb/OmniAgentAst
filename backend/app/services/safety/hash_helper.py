@@ -15,7 +15,7 @@ Author: 小沈 - 2026-05-18
 import hashlib
 import os
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.tools.tool_constants import SUPPORTED_ALGORITHMS
 
@@ -39,7 +39,7 @@ def compute_file_hash(
     file_path: str,
     algorithm: str = "sha256",
     chunk_size: int = 65536,
-    timeout_ms: int = None,
+    timeout_ms: Optional[int] = None,
 ) -> str:
     """核心哈希计算,返回hexdigest字符串 - 小沈 2026-05-18
     小欧 2026-07-04 修复: 增加None/空路径校验
