@@ -1,6 +1,23 @@
 ﻿v0.18.11
+更新时间: 2026-07-10 20:13:00
+## v0.18.10→v0.18.11 变更汇总 - 小欧-2026-07-10
+
+### refactor: services/model/ 配置管理模块重构
+- services/ai_config_resolver + model_config 合并为 services/model/（resolver + persistence）— 小欧-2026-07-10
+
+### refactor: services/lifecycle/ 替代 factory/
+- services/factory/（4文件）重命名为 lifecycle/ — 小欧-2026-07-10
+
+### refactor: safety/ 扁平化 + 死代码修复
+- safety/file_safety/（5文件）上移到 safety/operation_* — 小欧-2026-07-10
+- 修复 write_text_file.py 299-311行 return后不可达死代码 — 小欧-2026-07-10
+
+### refactor: llm/error_classifier 迁移
+- utils/sys_error_classifier.py→services/llm/error_classifier.py — 小欧-2026-07-10
+
+v0.18.10
 更新时间: 2026-07-10 15:27:00
-## v0.18.11→v0.18.12 变更汇总 - 小欧-2026-07-10
+## v0.18.9→v0.18.10 变更汇总 - 小欧-2026-07-10
 
 ### refactor: sessions模块7文件合并为sessions.py(1新7删)
 - app/api/v1/sessions/(7文件)合并为 sessions.py(6路由+ExecutionStep+5个内部函数) — 小欧-2026-07-10
