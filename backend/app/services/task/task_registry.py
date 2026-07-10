@@ -18,7 +18,7 @@ from app.utils.logger import logger
 from app.constants import TASK_TIMEOUT
 from app.utils.response_utils import api_success, api_failure
 
-from app.services.task.task_state_queries import (
+from app.services.task.task_state import (
     check_cancelled,
     check_paused,
     check_was_paused,
@@ -27,12 +27,9 @@ from app.services.task.task_state_queries import (
     get_cancel_request_time,
     get_pause_event,
     get_task_field,
+    running_tasks_lock,
+    running_tasks,
 )
-
-# ============================================================
-# 数据存储（从 task_state_queries 导入）
-# ============================================================
-from app.services.task.task_state_queries import running_tasks_lock, running_tasks
 
 
 # ============================================================

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Dict
 from uuid import uuid4
 
-from app.services.task.task_state_queries import check_cancelled
+from app.services.task.task_runtime import check_cancelled
 
 from app.constants import HITL_TIMEOUT
 from app.utils.logger import logger

@@ -18,7 +18,7 @@ from app.services.agent.steps import ErrorStep, FinalStep, MetaStep
 from app.services.agent.core_agent.status_table import AgentStatus, set_cancelled, set_failed
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.react_sse_wrapper.chat_stream import save_execution_steps_to_db
-from app.services.task.task_state_queries import check_cancelled, check_paused
+from app.services.task.task_runtime import check_cancelled, check_paused
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 from app.utils.sse_formatter import format_agent_sse

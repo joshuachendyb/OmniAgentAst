@@ -26,9 +26,10 @@ from app.utils.sse_formatter import format_agent_sse
 from app.api.v1.chat.models import ChatRequest
 from app.services.agent.steps.base import create_step_counter
 from app.services.task.task_registry import register_task, task_cleanup
-from app.services.task.task_interrupt_check import task_interrupt_check, task_pause_check_and_yield
-from app.services.task.task_cancel_check import task_cancel_check_and_yield
-from app.services.task.task_state_queries import check_cancelled
+from app.services.task.task_runtime import (
+    task_interrupt_check, task_pause_check_and_yield,
+    task_cancel_check_and_yield, check_cancelled,
+)
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
 from app.utils.message_id_tracker import _current_task_id
 from app.utils.prompt_logger import get_prompt_logger
@@ -46,7 +47,7 @@ async def chat_stream_endpoint(request: ChatRequest):
 
 @task_router.post("/chat/stream/cancel/{task_id}")
 async def cancel_stream_endpoint(task_id: str, session_id: Optional[str] = None):
-    from app.services.task.task_cancel import cancel_task
+    from app.services.task.task_runtime import cancel_task
     return await cancel_task(task_id, session_id)
 
 
