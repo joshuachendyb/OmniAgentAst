@@ -46,13 +46,13 @@ class ObservationStep(ReasoningStep):
         return ""
 
     def _extra_fields(self) -> Dict[str, Any]:
-        obs: Dict[str, Any] = {}
+        extra: Dict[str, Any] = {}
         if self._llm_data:
-            obs["llm_data"] = self._llm_data
+            extra["llm_data"] = self._llm_data
         if self._tool_result is not None:
-            obs["tool_result"] = self._tool_result
+            extra["tool_result"] = self._tool_result
         if self._other_data:
-            obs["other_data"] = self._other_data
+            extra["other_data"] = self._other_data
         if self._parallel_results:
-            obs["parallel_results"] = self._parallel_results
-        return {"observation": obs}
+            extra["parallel_results"] = self._parallel_results
+        return extra

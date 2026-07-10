@@ -45,17 +45,18 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
 
 
 def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
-    """从execution_steps JSON提取observation tool消息 — 小欧 2026-06-25 从_load_previous_messages提取"""
+    """从execution_steps JSON提取observation tool消息 — 小欧 2026-06-25 从_load_previous_messages提取
+    小欧 2026-07-10 M-12: content已扁平到顶层，不再从observation包装读取"""
     try:
         exec_steps = json.loads(exec_steps_json)
         observations = []
         for step in exec_steps:
             if step.get("type") == "observation":
-                observation = step.get("observation", "")
-                if observation:
+                content = step.get("content", "")
+                if content:
                     observations.append({
                         "role": "tool",
-                        "content": observation,
+                        "content": content,
                         "tool_call_id": f"call_{msg_id}_{step.get('step', 0)}"
                     })
         return observations
