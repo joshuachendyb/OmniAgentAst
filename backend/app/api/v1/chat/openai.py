@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from typing import Optional
-from app.utils.message_id_tracker import get_user_message_id
+from app.services.chat.storage import get_user_message_id
 
 from app.services import get_service
 from app.utils.logger import logger
@@ -31,7 +31,7 @@ from app.services.task.task_runtime import (
     task_cancel_check_and_yield, check_cancelled,
 )
 from app.services.chat.stream import run_sse_stream
-from app.utils.message_id_tracker import _current_task_id
+from app.services.task.task_context import _current_task_id
 from app.services.prompts.prompt_logger import get_prompt_logger
 from app.services.task.hitl_confirmation import resolve_confirmation
 

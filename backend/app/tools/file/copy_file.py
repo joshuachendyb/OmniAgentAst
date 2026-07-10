@@ -19,7 +19,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
-from app.utils.message_id_tracker import _current_task_id
+from app.services.task.task_context import _current_task_id
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.utils.logger import logger

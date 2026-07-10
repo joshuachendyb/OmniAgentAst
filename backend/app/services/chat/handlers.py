@@ -17,7 +17,7 @@ from app.utils.sys_error_classifier import SystemErrorClassifier
 from app.utils.logger import logger
 from app.services.chat.storage import save_execution_steps
 from app.services.chat.storage import ExecutionStepsUpdate
-from app.utils.message_id_tracker import get_user_message_id
+from app.services.chat.storage import get_user_message_id
 
 
 # ====================================================================

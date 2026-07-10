@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from app.utils.json_utils import safe_json_dumps
-from app.utils.message_id_tracker import get_user_message_id
+from app.services.chat.storage import get_user_message_id
 from app.db import db
 from app.utils.logger import logger
 

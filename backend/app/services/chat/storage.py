@@ -16,8 +16,23 @@ from app.utils.logger import logger
 from app.db import db
 from app.utils.json_utils import safe_json_dumps
 from app.utils.time_utils import create_timestamp
-from app.utils.message_id_tracker import _user_message_ids, _message_ids_lock
 from app.utils.display_utils import extract_metadata_from_steps
+
+# 存储每个session的消息ID
+# key: session_id, value: user_message_id 或 assistant_message_id
+_user_message_ids: Dict[str, int] = {}
+_message_ids_lock = threading.Lock()
+
+
+def track_user_message(session_id: str, message_id: int):
+    """记录用户消息ID"""
+    with _message_ids_lock:
+        _user_message_ids[session_id] = message_id
+
+
+def get_user_message_id(session_id: str) -> Optional[int]:
+    """获取用户消息ID"""
+    return _user_message_ids.get(session_id)
 
 
 class ExecutionStepsUpdate(BaseModel):

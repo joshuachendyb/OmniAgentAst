@@ -25,7 +25,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, TOOL_TIMEOUTS
-from app.utils.message_id_tracker import _current_task_id
+from app.services.task.task_context import _current_task_id
 from app.utils.json_utils import coerce_json
 from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param
 from app.utils.logger import logger

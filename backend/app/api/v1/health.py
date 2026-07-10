@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from app.utils.time_utils import get_utc_timestamp
 from app.tools import tool_registry
-from app.utils.message_id_tracker import _current_task_id
+from app.services.task.task_context import _current_task_id
 
 router = APIRouter()
 
