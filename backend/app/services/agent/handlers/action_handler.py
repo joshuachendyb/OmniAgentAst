@@ -20,7 +20,7 @@ from typing import Dict, List, Any, Optional
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep, ChunkStep  # ChunkStep用于重试前端通知 — 小欧 2026-07-09
-from app.services.agent.core_agent.status_table import AgentStatus
+from app.services.agent.status_table import AgentStatus
 from app.services.agent.observation_formatter import build_observation_text
 from app.constants import HITL_TIMEOUT
 from app.services.agent.tool_executor import execute_tool

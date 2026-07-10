@@ -13,7 +13,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, AsyncGenerator, Set, Tuple
 
-from app.services.agent.core_agent.status_table import AgentStatus
+from app.services.agent.status_table import AgentStatus
 from app.services.agent.steps import ReasoningStep
 
 from app.config import get_config
@@ -23,9 +23,9 @@ from app.utils.logger import logger
 from app.services.agent.chunk_buffer import ChunkBuffer
 from app.services.agent.message_builder import MessageBuilder
 
-from app.services.agent.core_agent.step_emitter import StepEmitter
+from app.services.agent.step_emitter import StepEmitter
 from app.services.agent.tool_retry_engine import ToolRetryEngine
-from app.services.agent.core_agent.react_cycle import run_react_cycle as _run
+from app.services.agent.react_cycle import run_react_cycle as _run
 
 
 class BaseAgent(ABC):

@@ -9,7 +9,7 @@ Updated: 小健 - 2026-06-18 删除 _categories_config_cache（DRY原则）
 """
 from typing import Any, Optional, Set
 
-from app.services.agent.core_agent import BaseAgent
+from app.services.agent import BaseAgent
 from app.tools.tool_types import ToolCategory
 from app.services.prompts.system_prompts import PromptBuilder
 from app.utils.logger import logger
