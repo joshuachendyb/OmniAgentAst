@@ -1,6 +1,24 @@
 ﻿v0.18.10
-更新时间: 2026-07-09 15:13:34
-## v0.18.9→v0.18.10 变更汇总 - 小欧-2026-07-09
+更新时间: 2026-07-10 15:27:00
+## v0.18.10→v0.18.11 变更汇总 - 小欧-2026-07-10
+
+### refactor: ai_config API模块合并 + 格式/导入修复
+- app/api/v1/ai_config/ 目录(17文件)合并为 model_routes(15路由)+model_schemas(12模型) — 小欧-2026-07-10
+- app/api/v1/ai_config/_helpers+field_handlers+_validators 合并为 app/services/model_config — 小欧-2026-07-10
+- 修复script合并导致的docstring碎片+散落import+重复import+多余空行 — 小欧-2026-07-10
+- 772 tests passed, 0 new failures — 小欧-2026-07-10
+
+### refactor: task模块合并6->3文件+修复循环导入 — 小沈-2026-07-10
+
+### refactor: LogConfig内联至handler+paths合并入config — 小沈-2026-07-10
+
+### refactor: lazy_loader+model_adapters+fc_message_types — 小沈-2026-07-10
+
+### refactor: 系统层/agent层/operation_enums/空init删除 — 小欧-2026-07-10
+
+### refactor: 常量提取/observation精简/import清理/死代码删除 — 小欧-2026-07-10
+
+### 累计：43 commits, 134+ files reviewed, 23 groups committed
 
 ### feat: extra_body_params透传+context_limit传播+LLM reasoning控制台输出
 
