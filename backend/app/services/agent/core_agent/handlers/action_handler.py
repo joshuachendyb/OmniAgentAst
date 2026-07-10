@@ -15,7 +15,7 @@ action_handler — action类型处理（SRP拆分，模块级函数）
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
@@ -287,7 +287,7 @@ def _merge_other_data(all_other_data: List[Dict]) -> Dict:
     return merged
 
 
-async def build_observation(ctx: ObservationContext) -> List:
+async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict] = None) -> List:
     """构建observation — FC-only: 传递fc_context,删除add_assistant — 小沈 2026-06-11
     【修复P2-5】使用ObservationContext封装参数 — 北京老陈 2026-06-13"""
     events = []
@@ -397,9 +397,10 @@ async def build_observation(ctx: ObservationContext) -> List:
             _sm = (ld.get("summary", "") if isinstance(ld, dict) else "")[:120]
             logger.info(f"[Observation] step={ctx.step}[{i}], tool={_ac.get('tool','')}, code={_st.get('exec_code','?')}, summary={_sm}")
 
-    merged_other = _all_other_data[0] if _all_other_data else None
-    if len(_all_other_data) > 1:
-        merged_other = _merge_other_data(_all_other_data)
+    if merged_other is None:
+        merged_other = _all_other_data[0] if _all_other_data else None
+        if len(_all_other_data) > 1:
+            merged_other = _merge_other_data(_all_other_data)
 
     events.append(ctx.agent._step_emitter.emit(ObservationStep(
         step=ctx.step,
@@ -540,11 +541,9 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
         is_parallel=call_result.is_parallel, pending_calls=call_result.pending_calls,
         fc_context=call_result.fc_context,
     )
-    for event in await build_observation(ctx):
-        yield event
-
-    # 小健 2026-06-26: 修复P0-3 并行场景return_direct仅检查results[0]的bug，改用merged_other覆盖所有结果
     merged_other = _merge_other_data([r.get("other_data", {}) for r in results if isinstance(r, dict)]) if results else {}
+    for event in await build_observation(ctx, merged_other=merged_other):
+        yield event
     if merged_other.get("return_direct"):
         merged_llm = _merge_llm_data([r.get("llm_data", {}) for r in results if isinstance(r, dict)]) if results else {}
         _status = merged_llm.get("status", {}) if isinstance(merged_llm, dict) else {}

@@ -127,9 +127,9 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
                     usage_data = chunk.usage
                 break
         llm_elapsed = time.time() - llm_start
+    except FCFormatError:
+        raise
     except Exception as e:
-        if isinstance(e, FCFormatError):
-            raise  # 小欧 2026-06-25: FCFormatError穿透，由call_llm_with_fallback处理
         if getattr(agent.llm_client, '_cancelled', False):
             logger.info(f"[FC] LLM调用因取消而中断, 跳过异常响应")
             return

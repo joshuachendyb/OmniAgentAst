@@ -214,7 +214,7 @@ async def run_sse_stream(
 
     except Exception as e:
         end_type = "error"
-        error_response = await _yield_error_sse(
+        error_response = _yield_error_sse(
             error_type=error_type, error_label=error_label, log_tag=log_tag,
             task_id=task_id, e=e, next_step=next_step,
             current_execution_steps=current_execution_steps, session_id=session_id,
@@ -289,7 +289,7 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
     logger.info(_msg)
 
 
-async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):
+def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):
     """内联错误SSE生成(避免外部模块依赖) — P2-18 使用ErrorStep替代手工dict"""
     step_num = next_step()
     error_step = ErrorStep(

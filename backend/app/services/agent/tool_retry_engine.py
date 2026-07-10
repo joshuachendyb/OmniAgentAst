@@ -21,7 +21,7 @@ import inspect
 from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
-from app.tools.tool_error_classifier import ToolErrorClassifier
+from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
 from app.tools.tool_constants import (
     TOOL_TIMEOUTS, TOOL_RETRY_BACKOFF,
     ERR_MISSING_PARAM, ERR_INVALID_PARAMS, ERR_TOOL_NOT_FOUND, ERR_UNKNOWN,
@@ -239,9 +239,11 @@ class ToolRetryEngine:
         
         return params
     
-    def _should_retry(self, e: Exception, retryable_errors: list, attempt: int, max_retries: int) -> bool:
+    def _should_retry(self, e: Exception, retryable_errors: list, attempt: int, max_retries: int,
+                       error_category: Optional[ToolErrorCategory] = None) -> bool:
         """判断是否应该重试 — 只查 per-tool 配置，不查 is_retryable — 小欧 2026-06-29"""
-        error_category = ToolErrorClassifier.classify_tool_error(e)
+        if error_category is None:
+            error_category = ToolErrorClassifier.classify_tool_error(e)
         # 使用 error_category.value 进行匹配，因为 TOOL_RETRY_CONFIG 中的字符串是 ToolErrorCategory.value
         is_retryable = error_category.value in retryable_errors
         return is_retryable and attempt < max_retries
@@ -300,7 +302,7 @@ class ToolRetryEngine:
                     exc_info=should_print_traceback
                 )
 
-                if not self._should_retry(e, retryable_errors, attempt, max_retries):
+                if not self._should_retry(e, retryable_errors, attempt, max_retries, error_category):
                     return self._build_retry_error(
                         f"ERR_{error_category.name}",
                         f"{error_category.description}: {str(e)[:200]}",
