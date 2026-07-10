@@ -84,47 +84,47 @@ TOOL_TIMEOUTS = {
 # ============================================================
 
 # subprocess执行超时(秒)
-SUBPROCESS_TIMEOUT_DEFAULT = 10    # 通用subprocess执行超时
-SUBPROCESS_TIMEOUT_SHORT = 5       # 短时subprocess(shell communicate、代码执行)
-SUBPROCESS_TIMEOUT_VERY_SHORT = 3  # 极短subprocess(process wait)
-SUBPROCESS_TIMEOUT_LONG = 60       # 长时subprocess(文档转换等耗时操作)
+SUBPROCESS_TIMEOUT_DEFAULT: int = 10    # 通用subprocess执行超时
+SUBPROCESS_TIMEOUT_SHORT: int = 5       # 短时subprocess(shell communicate、代码执行)
+SUBPROCESS_TIMEOUT_VERY_SHORT: int = 3  # 极短subprocess(process wait)
+SUBPROCESS_TIMEOUT_LONG: int = 60       # 长时subprocess(文档转换等耗时操作)
 
 # httpx请求超时(秒)
-HTTPX_TIMEOUT_DEFAULT = 5.0        # 通用httpx请求超时
+HTTPX_TIMEOUT_DEFAULT: float = 5.0        # 通用httpx请求超时
 
 # ============================================================
 # 2. 文件工具配置(从 file_tools.py 迁移) — 小欧 2026-06-18 新增FILE_OPERATION_TOOLS
 # 【工具层】文件工具运行时的参数。仅工具代码使用。
 # ============================================================
 
-FILE_OPERATION_TOOLS = {
+FILE_OPERATION_TOOLS: set[str] = {
     "readtext", "writetext", "edittext",
     "move", "copy", "delete", "rename",
     "compress", "extract",
 }
 
-READ_FILE_DEFAULT_LIMIT = 500
-DEFAULT_PAGE_SIZE = 200
-LISTDIR_PAGE_SIZE = 500
+READ_FILE_DEFAULT_LIMIT: int = 500
+DEFAULT_PAGE_SIZE: int = 200
+LISTDIR_PAGE_SIZE: int = 500
 
 # ============================================================
 # 观察截断常量（observation_formatter.py 统一使用）— 小欧 2026-07-04
 #     常量集中管理，便于后续统一调整。
 #     与 tool 层面的截断上限（如 READ_FILE_DEFAULT_LIMIT）相互独立。
 # ============================================================
-OBS_MAX_DISPLAY_ITEMS = 500       # 所有 list 类 handler 的最大条目数
-OBS_MAX_STRING_LENGTH = 10000     # 单个字符串值的最大显示长度
-OBS_DICT_MAX_KEYS = 100           # _format_key_value 的最大键数
-MAX_READ_SIZE = 10 * 1024 * 1024
-MAX_MEDIA_READ_SIZE = 50 * 1024 * 1024
-MAX_BATCH_FILE_COUNT = 100
-MAX_SEARCH_FILE_SIZE = 10 * 1024 * 1024
-MAX_SEARCH_RESULTS = 1000
+OBS_MAX_DISPLAY_ITEMS: int = 500       # 所有 list 类 handler 的最大条目数
+OBS_MAX_STRING_LENGTH: int = 10000     # 单个字符串值的最大显示长度
+OBS_DICT_MAX_KEYS: int = 100           # _format_key_value 的最大键数
+MAX_READ_SIZE: int = 10 * 1024 * 1024
+MAX_MEDIA_READ_SIZE: int = 50 * 1024 * 1024
+MAX_BATCH_FILE_COUNT: int = 100
+MAX_SEARCH_FILE_SIZE: int = 10 * 1024 * 1024
+MAX_SEARCH_RESULTS: int = 1000
 
 # 二进制文件扩展名 — 小健 2026-06-24 更新：补充媒体扩展名
 # 用途：read_text_file/write_text_file/edit_text_file等文本工具拒绝二进制文件
 # 说明：包含所有二进制格式（包括系统不支持的.rar/.7z），用于防止文本工具误操作二进制文件
-BINARY_EXTENSIONS = {
+BINARY_EXTENSIONS: set[str] = {
     '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.tiff', '.tif', '.svg',
     '.heic', '.heif',
     '.mp3', '.mp4', '.wav', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.m4a', '.ogg',
@@ -139,7 +139,7 @@ BINARY_EXTENSIONS = {
 # 3. 工具注册模块映射(从 lazy_loader.py 迁移) — 【工具层】
 # ============================================================
 
-CATEGORY_MODULES = {
+CATEGORY_MODULES: dict[str, tuple[str, str]] = {
     "file": ("app.tools.file", "_register_file_tools"),
     "shell": ("app.tools.shell", "_register_shell_tools"),
     "network": ("app.tools.network", "_register_network_tools"),
@@ -157,15 +157,15 @@ CATEGORY_MODULES = {
 #    网络工具的 httpx 客户端连接池参数。与系统层的 LLM_MAX_CONNECTIONS（LLM 客户端）分开。
 # ============================================================
 
-DEFAULT_TIMEOUT_SEC = 30.0
-NETWORK_MAX_CONNECTIONS = 100
-NETWORK_MAX_KEEPALIVE = 20
+DEFAULT_TIMEOUT_SEC: float = 30.0
+NETWORK_MAX_CONNECTIONS: int = 100
+NETWORK_MAX_KEEPALIVE: int = 20
 
 # ============================================================
 # 6. 注册表工具映射(从 reg_tools.py 迁移) — 【工具层】
 # ============================================================
 
-HIVE_MAP = {
+HIVE_MAP: dict[str, str] = {
     "HKCU": "HKEY_CURRENT_USER",
     "HKLM": "HKEY_LOCAL_MACHINE",
     "HKCR": "HKEY_CLASSES_ROOT",
@@ -177,19 +177,19 @@ HIVE_MAP = {
 # 7. 工具内容质量(从 content_quality.py 迁移) — 【工具层】
 # ============================================================
 
-SELF_REF_KEYWORDS = [
+SELF_REF_KEYWORDS: list[str] = [
     '已成功', '需要继续', '现在需要', '接下来将', '按照要求',
     '继续创建', '已完成', '已创建', '写入成功', '已经写入',
     '已成功创建', '内容已写入', '成功写入', '已成功写入',
     '现在应该', '接下来需要', '需要先', '然后需要',
 ]
 
-CODE_EXTENSIONS = {'.py', '.js', '.ts', '.java', '.go', '.c', '.cpp', '.rs', '.rb', '.swift', '.kt', '.scala'}
-DOC_EXTENSIONS = {'.txt', '.md', '.doc', '.docx', '.csv', '.log', '.ini', '.cfg', '.yml', '.yaml', '.json', '.xml', '.html', '.htm', '.css', '.scss', '.less'}
+CODE_EXTENSIONS: set[str] = {'.py', '.js', '.ts', '.java', '.go', '.c', '.cpp', '.rs', '.rb', '.swift', '.kt', '.scala'}
+DOC_EXTENSIONS: set[str] = {'.txt', '.md', '.doc', '.docx', '.csv', '.log', '.ini', '.cfg', '.yml', '.yaml', '.json', '.xml', '.html', '.htm', '.css', '.scss', '.less'}
 
-SELF_REF_THRESHOLD_NORMAL = 0.6
-SELF_REF_THRESHOLD_SHORT = 0.4
-SHORT_CONTENT_LENGTH = 50
+SELF_REF_THRESHOLD_NORMAL: float = 0.6
+SELF_REF_THRESHOLD_SHORT: float = 0.4
+SHORT_CONTENT_LENGTH: int = 50
 
 # ============================================================
 # 8. 工具安全模式(从 shell_helper/exec_helper 迁移) — 【工具层】
@@ -209,13 +209,13 @@ SHORT_CONTENT_LENGTH = 50
 # 9. 工具日期/哈希辅助(从 date_helper/hash_helper 迁移) — 【工具层】
 # ============================================================
 
-QINGMING_DATES = {
+QINGMING_DATES: dict[int, tuple[int, int]] = {
     2024: (4, 4), 2025: (4, 4), 2026: (4, 5),
     2027: (4, 5), 2028: (4, 4), 2029: (4, 5), 2030: (4, 5),
     2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
 }
 
-SUPPORTED_ALGORITHMS = {"md5", "sha1", "sha256", "sha512"}
+SUPPORTED_ALGORITHMS: set[str] = {"md5", "sha1", "sha256", "sha512"}
 
 # ============================================================
 # 10. 工具重试配置(从 tool_config.py 迁移) — 【工具层】
@@ -223,14 +223,14 @@ SUPPORTED_ALGORITHMS = {"md5", "sha1", "sha256", "sha512"}
 #    与系统层的 LLM 熔断/重试策略完全分开。
 # ============================================================
 
-TOOL_RETRY_BACKOFF = {
+TOOL_RETRY_BACKOFF: dict[str, float] = {
     "default": 2.0,
 }
 
 # 工具层 HTTP 可重试状态码 — 小欧 2026-06-30
 # 用途：httpget 等 network 工具判断是否抛异常给 ToolRetryEngine 重试。
 #       与系统层 constants.py 的 SYS_RATE_LIMIT_CODES（LLM 限流检测）完全无关。
-TOOL_RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504}
+TOOL_RETRYABLE_HTTP_CODES: set[int] = {429, 500, 502, 503, 504}
 
 # 工具层错误码(从 constants.py 迁入) — 小欧 2026-06-30
 # 用途：ToolRetryEngine 构建重试耗尽错误返回。
@@ -239,26 +239,26 @@ ERR_MISSING_PARAM = "ERR_MISSING_PARAM"
 ERR_INVALID_PARAMS = "ERR_INVALID_PARAMS"
 ERR_UNKNOWN = "ERR_UNKNOWN"
 
-SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
+SENSITIVE_FIELDS: set[str] = {"password", "token", "api_key", "secret", "authorization", "credential"}
 
 # 工具层浏览器 User-Agent(从 constants.py 迁入) — 小欧 2026-06-30
-TOOL_BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+TOOL_BROWSER_UA: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 # ============================================================
 # 11. 系统敏感路径黑名单常量 — Safety层(path_safe_check)消费
 # ============================================================
 
-FORBIDDEN_PATHS_EXACT = {
+FORBIDDEN_PATHS_EXACT: set[str] = {
     "/etc/shadow",
     "/etc/sudoers",
 }
 
-FORBIDDEN_PATHS_PREFIX = {
+FORBIDDEN_PATHS_PREFIX: set[str] = {
     "/proc",
     "/sys",
 }
 
-FORBIDDEN_PATHS_WINDOWS_EXACT = {
+FORBIDDEN_PATHS_WINDOWS_EXACT: set[str] = {
     r"C:\Windows\System32\config\SAM",
     r"C:\Windows\System32\config\SYSTEM",
     r"C:\Windows\System32\config\SECURITY",
@@ -266,7 +266,7 @@ FORBIDDEN_PATHS_WINDOWS_EXACT = {
     r"C:\Windows\System32\config\DEFAULT",
 }
 
-FORBIDDEN_PATHS_WINDOWS_PREFIX = {
+FORBIDDEN_PATHS_WINDOWS_PREFIX: set[str] = {
     r"C:\Windows\System32\config",
     r"C:\Windows\WinSxS",
 }

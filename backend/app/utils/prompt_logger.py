@@ -64,7 +64,9 @@ class PromptLogger:
         timestamp = now_str()
         
         # 延迟导入: 避免循环导入
-        user_message_id = get_user_message_id(session_id) or self._user_id_from_db(session_id)
+        user_message_id = get_user_message_id(session_id)
+        if user_message_id is None:
+            user_message_id = self._user_id_from_db(session_id)
         
         # 初始化日志数据 — AI消息ID由update_ai_message_id()设置,文件名在save()时生成
         current_log = {
@@ -180,6 +182,60 @@ class PromptLogger:
         
         current_log["Prompt组装过程"].append(entry)
     
+    def _summarize_messages(self, messages):
+        """消息统计和摘要提取 — 小欧 2026-07-10 M-43"""
+        message_stats = {}
+        if not messages:
+            messages = []
+        for msg in messages:
+            role = msg.get("role", "unknown")
+            message_stats[role] = message_stats.get(role, 0) + 1
+        message_summaries = []
+        for i, msg in enumerate(messages):
+            role = msg.get("role", "unknown")
+            content = msg.get("content") or ""
+            summary = {
+                "序号": i + 1,
+                "角色": role,
+                "内容长度": len(content),
+                "内容摘要": content[:200] + "..." if len(content) > 200 else content
+            }
+            if role == "assistant" and msg.get("tool_calls"):
+                tc_names = [tc.get("function", {}).get("name", "?") for tc in msg["tool_calls"]]
+                summary["工具调用"] = tc_names
+            message_summaries.append(summary)
+        return message_stats, message_summaries
+
+    def _summarize_tools(self, tools):
+        """工具定义摘要提取 — 小欧 2026-07-10 M-43"""
+        if not tools:
+            return None
+        tools_summary = []
+        for t in tools:
+            func = t.get("function", t)
+            params = func.get("parameters", {})
+            tool_info = {
+                "名称": func.get("name", ""),
+                "工具描述": func.get("description", ""),
+                "Schema描述": params.get("description"),
+            }
+            if params:
+                props = params.get("properties", {})
+                required = set(params.get("required", []) or [])
+                param_list = []
+                for pname, pinfo in props.items():
+                    param_list.append({
+                        "参数名": pname,
+                        "类型": pinfo.get("type", "any"),
+                        "必填": pname in required,
+                        "描述": pinfo.get("description", ""),
+                        "枚举": pinfo.get("enum") if "enum" in pinfo else None,
+                        "默认值": pinfo.get("default") if "default" in pinfo else None,
+                    })
+                tool_info["参数列表"] = param_list
+            tools_summary.append(tool_info)
+        return tools_summary
+
     def log_llm_call(
         self,
         round_number: int = 0,
@@ -206,58 +262,8 @@ class PromptLogger:
         if not current_log:
             return
         
-        # 计算消息统计
-        message_stats = {}
-        if not messages:
-            messages = []
-        for msg in messages:
-            role = msg.get("role", "unknown")
-            message_stats[role] = message_stats.get(role, 0) + 1
-        
-        # 只记录消息摘要,避免内存问题
-        message_summaries = []
-        for i, msg in enumerate(messages):
-            role = msg.get("role", "unknown")
-            content = msg.get("content") or ""
-            summary = {
-                "序号": i + 1,
-                "角色": role,
-                "内容长度": len(content),
-                "内容摘要": content[:200] + "..." if len(content) > 200 else content
-            }
-            if role == "assistant" and msg.get("tool_calls"):
-                tc_names = [tc.get("function", {}).get("name", "?") for tc in msg["tool_calls"]]
-                summary["工具调用"] = tc_names
-            message_summaries.append(summary)
-        
-        # 记录工具定义(完整 JSON Schema) — 小欧 2026-06-19
-        # 注意:工具描述有2层——function.description(register.py)和parameters.description(Pydantic class docstring)
-        tools_summary = None
-        if tools:
-            tools_summary = []
-            for t in tools:
-                func = t.get("function", t)
-                params = func.get("parameters", {})
-                tool_info = {
-                    "名称": func.get("name", ""),
-                    "工具描述": func.get("description", ""),
-                    "Schema描述": params.get("description"),  # Pydantic class docstring
-                }
-                if params:
-                    props = params.get("properties", {})
-                    required = set(params.get("required", []) or [])
-                    param_list = []
-                    for pname, pinfo in props.items():
-                        param_list.append({
-                            "参数名": pname,
-                            "类型": pinfo.get("type", "any"),
-                            "必填": pname in required,
-                            "描述": pinfo.get("description", ""),
-                            "枚举": pinfo.get("enum") if "enum" in pinfo else None,
-                            "默认值": pinfo.get("default") if "default" in pinfo else None,
-                        })
-                    tool_info["参数列表"] = param_list
-                tools_summary.append(tool_info)
+        message_stats, message_summaries = self._summarize_messages(messages)
+        tools_summary = self._summarize_tools(tools)
 
         entry = {
             "轮次": round_number,

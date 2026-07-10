@@ -67,8 +67,8 @@ def notify(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         return build_error(data={}, llm_data=_build_send_notification_llm_data("error", duration_ms, title, err_code=ERR_NO_WIN10TOAST, detail="win10toast库未安装", hint="请安装win10toast库", message=message))
 
-    from win10toast import ToastNotifier
     try:
+        from win10toast import ToastNotifier
         toaster = ToastNotifier()
         def _show_toast():
             toaster.show_toast(title, message, duration=duration, threaded=True)

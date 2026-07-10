@@ -77,8 +77,7 @@ async def _generate_execution_stream(session_id: str):
                                     timestamp=step.get('timestamp', create_timestamp())
                                 ).to_dict()
                                 yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
-                                # 添加小延迟,模拟流式输出
-                                await asyncio.sleep(0.1)
+                                
                         else:
                             # 单个步骤对象
                             step_data = ExecutionStep(
@@ -98,7 +97,7 @@ async def _generate_execution_stream(session_id: str):
                     yield f"event: step\ndata: {json.dumps(ExecutionStep('final', content).to_dict(), ensure_ascii=False)}\n\n"
         
         # 发送完成事件
-        yield f"event: complete\ndata: {json.dumps(ExecutionStep('final', '执行完成').to_dict(), ensure_ascii=False)}\n\n"
+        yield f"event: complete\ndata: {json.dumps({'type': 'complete', 'content': '执行完成'}, ensure_ascii=False)}\n\n"
         
     except Exception as e:
         yield f"event: error\ndata: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"

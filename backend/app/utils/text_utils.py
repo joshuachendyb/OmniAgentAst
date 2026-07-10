@@ -8,9 +8,10 @@
 
 Author: 小沈 - 2026-06-09
 """
+from typing import Optional
 
 
-def truncate_text(text: str, max_chars: int, suffix: str = None) -> tuple:
+def truncate_text(text: str, max_chars: int, suffix: Optional[str] = None) -> tuple:
     """通用尾部截断,返回(截断后文本, 是否截断) — 小沈 2026-06-17 从tool_result_formatter迁入"""
     if not text:
         return text, False
