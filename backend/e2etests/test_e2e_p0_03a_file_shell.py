@@ -22,11 +22,17 @@
 
 TEST_CASE_ID = "E2E-P0-03a"
 TEST_CASE_NAME = "FILE+SHELL混合通路验证"
-USER_INPUT = "帮我完成以下多步骤任务：第一步，在E:\\test_dir\\目录下创建一个Python脚本文件"
-"run_python.py，脚本内容应该包含导入sys和datetime模块、获取当前系统时间、"
-"打印一条带有时间戳的测试消息、打印Python版本信息。第二步，使用python命令执行这个脚本"
-"，捕获所有输出。第三步，把执行输出的内容保存到E:\\test_dir\\script的脚本文件中。"
-"第四步，读取这个输出文件确认内容正确完整。每一步完成都告诉我当前进展m你创建于于本次任务相关的目录存放报告。"
+USER_INPUT = (
+    "请帮我完成一项多阶段文件创建与脚本执行任务，严格按照以下步骤执行："
+    "第一阶段，在E:\\test_dir\\目录下创建一个Python脚本文件system_check.py，脚本内容包含："
+    "导入sys、os、datetime三个模块，获取当前系统时间和时区信息，获取Python版本号和解释器路径，"
+    "获取操作系统名称和环境变量PATH的值，将所有获取到的信息格式化输出。"
+    "第二阶段，使用python命令执行system_check.py脚本，捕获全部标准输出和标准错误输出。"
+    "第三阶段，把执行输出的内容逐行分析——提取出时间信息、Python版本、系统名称和PATH路径，"
+    "将提取的关键信息整理成结构化的摘要保存到E:\\test_dir\\system_check_output.txt。"
+    "第四阶段，读取输出文件确认内容正确完整，并将执行结果与脚本内容对比验证。"
+    "将本次任务的分析和完成过程总结以4种文档格式写到report目录下自建任务相关的目录下保存。"
+)
 
 from datetime import datetime
 from pathlib import Path
@@ -39,7 +45,7 @@ from e2emodel.e2e_helpers import (
     assert_stream_ended, register_pending_record, filter_safety_errors,
 )
 
-TEST_FILE = Path("E:/test_dir/run_python.py")
+TEST_FILE = Path("E:/test_dir/system_check.py")
 
 
 @pytest.mark.e2e_full_link

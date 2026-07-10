@@ -19,7 +19,19 @@
 
 TEST_CASE_ID = "E2E-P0-08"
 TEST_CASE_NAME = "FILE+DATA+DOCUMENT混合通路验证"
-USER_INPUT = "read E:\\test_dir\\data.csv, do full statistical analysis, generate analysis.docx professional report"
+USER_INPUT = (
+    "请帮我完成一项多阶段数据读取与文档生成任务，严格按照以下步骤执行："
+    "第一阶段，读取E:\\test_dir\\data.csv文件的全部数据，先展示数据集的基本概况——"
+    "总记录数、列数、各列名称和数据类型、前5行数据样例。"
+    "第二阶段，对所有数值列做全面的统计分析——计算均值、中位数、标准差、最小值、最大值、"
+    "四分位数，找出数值分布异常的列和缺失值比例。"
+    "第三阶段，对类别列做频数统计，列出各类别出现的次数和占比。"
+    "第四阶段，根据分析结果生成一张统计图表保存到E:\\test_dir\\analysis_chart.png，"
+    "图表要包含标题、坐标轴标签和图例。"
+    "第五阶段，把所有分析结果——数据概况、统计特征表、类别分布和图表——"
+    "整合成一份完整的分析报告文档保存到E:\\test_dir\\analysis_report.docx。"
+    "将本次任务的分析和完成过程总结以4种文档格式写到report目录下自建任务相关的目录下保存。"
+)
 
 from datetime import datetime
 from pathlib import Path

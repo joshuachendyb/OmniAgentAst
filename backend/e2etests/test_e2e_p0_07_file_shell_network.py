@@ -19,7 +19,18 @@
 
 TEST_CASE_ID = "E2E-P0-07"
 TEST_CASE_NAME = "FILE+SHELL+NETWORK混合通路验证"
-USER_INPUT = "create check_network.py test script, execute it, search best practices for network diagnosis, save network_report.txt report"
+USER_INPUT = (
+    "请帮我完成一项多阶段网络诊断脚本任务，严格按照以下步骤执行："
+    "第一阶段，在E:\\test_dir\\下创建一个Python脚本network_diag.py，脚本功能包括："
+    "用socket库检测本地主机名和IP地址，用requests库尝试访问http://www.baidu.com并记录HTTP状态码和响应时间，"
+    "检测8.8.8.8的连通性（ping模拟），将所有检测结果格式化输出。"
+    "第二阶段，执行network_diag.py脚本，捕获全部输出。"
+    "第三阶段，在网上搜索\"Windows网络诊断最佳实践\"，获取前3条搜索结果的详细内容，"
+    "提取出诊断步骤和常用命令行工具。"
+    "第四阶段，将脚本执行结果与网上搜索到的诊断方法进行对比分析，"
+    "汇总整理成一份完整的网络诊断报告保存到E:\\test_dir\\network_diagnosis_report.txt。"
+    "将本次任务的分析和完成过程总结以4种文档格式写到report目录下自建任务相关的目录下保存。"
+)
 
 from datetime import datetime
 
