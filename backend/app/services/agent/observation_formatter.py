@@ -479,7 +479,7 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     if llm_data.get("status", {}).get("exec_code") == "error":
         return text
 
-    if data is not None and data != {} and data != [] and data != "":
+    if data:
         detail = format_data_detail(data, llm_data)
         if detail:
             text += f"\n详情:\n{detail}"

@@ -26,6 +26,8 @@ from app.constants import (
 )
 from app.utils.logger import setup_logger
 from app.utils.cache import LRUCache, make_cache_key
+
+_KEY_OVERHEAD: int = 100  # 字典键固定估算开销 — t-20 小欧 2026-07-10
 from app.utils.text_utils import truncate_text
 
 logger = setup_logger(__name__)
@@ -166,7 +168,7 @@ def _quick_estimate(data: Any) -> int:
     if isinstance(data, dict):
         total = 0
         for k, v in data.items():
-            total += len(str(k)) + 100  # 键 + 固定开销
+            total += len(str(k)) + _KEY_OVERHEAD
             total += _quick_estimate(v)
         return total
     if isinstance(data, (list, tuple)):

@@ -78,7 +78,7 @@ def initialize_run_state(
                     (task[:200], agent._tracked_task_id),
                 )
         except Exception:
-            logger.warning(f"[initialize_run_state] 更新任务描述失败: task_id={agent._tracked_task_id}")
+            logger.error(f"[initialize_run_state] 更新任务描述失败: task_id={agent._tracked_task_id}")
     if task_id:
         agent.task_id = task_id
 
