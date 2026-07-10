@@ -19,6 +19,12 @@ from app.utils.json_utils import parse_json
 from app.utils.logger import logger
 
 
+def _execute_query(sql: str, params: tuple) -> list:
+    """公用查询：打开 operations 连接并执行 SQL — 小欧 2026-07-10 M-18"""
+    with db.get_conn("operations") as conn:
+        return conn.cursor().execute(sql, params).fetchall()
+
+
 def row_to_operation_record(row) -> OperationRecord:
     return OperationRecord(
         operation_id=row[1], task_id=row[2],
@@ -72,48 +78,36 @@ def get_operation_task_id(operation_id: str) -> Optional[str]:
 
 
 def query_file_operations(task_id: str) -> List[Tuple]:
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status,
-                   file_size, is_directory, created_at, error_message
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        return cursor.fetchall()
+    return _execute_query('''
+        SELECT operation_type, source_path, destination_path, status,
+               file_size, is_directory, created_at, error_message
+        FROM file_operations WHERE task_id = ?
+        ORDER BY sequence_number ASC
+    ''', (task_id,))
 
 
 def query_tree_operations(task_id: str) -> List[Tuple]:
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_id, operation_type, source_path, destination_path, status
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        return cursor.fetchall()
+    return _execute_query('''
+        SELECT operation_id, operation_type, source_path, destination_path, status
+        FROM file_operations WHERE task_id = ?
+        ORDER BY sequence_number ASC
+    ''', (task_id,))
 
 
 def query_sankey_operations(task_id: str) -> List[Tuple]:
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status
-            FROM file_operations WHERE task_id = ? AND status = 'success'
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        return cursor.fetchall()
+    return _execute_query('''
+        SELECT operation_type, source_path, destination_path, status
+        FROM file_operations WHERE task_id = ? AND status = 'success'
+        ORDER BY sequence_number ASC
+    ''', (task_id,))
 
 
 def query_animation_operations(task_id: str) -> List[Dict[str, Any]]:
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status, created_at
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        rows = cursor.fetchall()
+    rows = _execute_query('''
+        SELECT operation_type, source_path, destination_path, status, created_at
+        FROM file_operations WHERE task_id = ?
+        ORDER BY sequence_number ASC
+    ''', (task_id,))
     if not rows:
         return []
     return [
@@ -123,11 +117,8 @@ def query_animation_operations(task_id: str) -> List[Dict[str, Any]]:
 
 
 def query_mermaid_operations(task_id: str) -> List[Tuple]:
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status, sequence_number
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        return cursor.fetchall()
+    return _execute_query('''
+        SELECT operation_type, source_path, destination_path, status, sequence_number
+        FROM file_operations WHERE task_id = ?
+        ORDER BY sequence_number ASC
+    ''', (task_id,))
