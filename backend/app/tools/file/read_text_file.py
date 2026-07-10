@@ -178,6 +178,11 @@ def _select_lines(
         }
     else:
         selected = lines
+        n = len(selected)
+        params = {
+            "start_line": 1,
+            "end_line": n,
+        }
 
     # 长行截断 — 小欧 2026-07-05 — 小欧 2026-07-05 保留原行结尾
     truncated_count = 0
@@ -197,6 +202,8 @@ def _select_lines(
     content = "".join(selected)
     result = {
         "content": content,
+        "total_lines": total,
+        "line_count": len(selected),
         **params,
         **result_extra,
     }
