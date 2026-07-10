@@ -40,7 +40,7 @@ router = APIRouter()
 async def validate_chat_config():
     """拷贝自 validate_chat_config.py — 内联入 chat_openai.py 小欧 2026-07-10"""
     from app.utils.logger import logger
-    from app.services.ai_config_resolver import get_ai_config_resolver
+    from app.services.model.resolver import get_ai_config_resolver
     try:
         resolver = get_ai_config_resolver()
         is_valid, final_provider, final_model, error_messages = resolver.validate_config()

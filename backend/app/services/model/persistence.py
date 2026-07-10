@@ -1,5 +1,6 @@
 """ai_config 包内部公用函数 — YAML读写/配置修复/验证/备份/装饰器
 
+迁入: services/config/persistence.py — 小欧 2026-07-10
 原分散文件: _ordered_dict.py, _write_yaml_with_order.py, _backup_config.py,
 _restore_backup_if_needed.py, _fix_config_common_issues.py, _auto_fix_and_validate.py,
 _validate_config_integrity.py, _decorators.py
@@ -16,7 +17,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.config import get_config as get_config_instance, _make_safe_loader
 from app.tools.tool_fc_helper import backup_file
 
-from app.services.factory.lifecycle import get_config_path as _get_config_path, reset
+from app.config import get_config_path as _get_config_path
+from app.services.lifecycle.lifecycle import reset
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors as handle_config_errors
 from fastapi import HTTPException

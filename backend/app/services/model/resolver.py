@@ -1,6 +1,7 @@
 """
 AI配置解析器 — 直接读配置,无效就报错
 
+迁入: services/config/resolver.py — 小欧 2026-07-10
 Author: 小沈 - 2026-06-07
 """
 
