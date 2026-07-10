@@ -20,7 +20,7 @@ from typing import Dict, Any, List, Optional
 from app.utils.json_utils import safe_json_dumps
 from app.services.chat.storage import get_user_message_id
 from app.db import db
-from app.utils.logger import logger
+from app.logger import logger
 
 
 class PromptLogger:
@@ -32,7 +32,7 @@ class PromptLogger:
     def __init__(self):
         """初始化日志目录"""
         # 日志目录:backend/logs/prompt-logs/
-        self.log_dir = Path(__file__).parent.parent.parent.parent / "logs" / "prompt-logs"
+        self.log_dir = Path(__file__).parent.parent.parent / "logs" / "prompt-logs"
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
         # contextvars - 每个协程独立的日志数据,避免 asyncio 协程间覆盖
