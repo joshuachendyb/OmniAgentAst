@@ -6,7 +6,11 @@
 
 from .handler import SafeRotatingFileHandler, LOG_DIR
 from .config import LogConfig
-from .setup import setup_logger, APILogger, logger, api_logger
+from .setup_logger_func import setup_logger, setup_file_handler
+from .api_logger import APILogger
+
+api_logger = APILogger()
+logger = setup_logger(__name__)
 
 __all__ = [
     "SafeRotatingFileHandler",

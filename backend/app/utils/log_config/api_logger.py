@@ -11,7 +11,7 @@ import uuid
 from typing import Optional
 
 from app.utils.log_config.config import LogConfig
-from app.utils.log_config.setup.setup_logger_func import setup_logger
+from app.utils.log_config.setup_logger_func import setup_logger
 
 
 class APILogger:
