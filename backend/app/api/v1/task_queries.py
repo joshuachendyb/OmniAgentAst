@@ -5,7 +5,7 @@
 Author: 小沈 - 2026-05-29
 """
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from app.services.task import TaskQueries
 
 router = APIRouter()
@@ -17,7 +17,7 @@ def get_task(task_id: str):
     """获取单个任务详情"""
     result = _queries.get_task(task_id)
     if not result:
-        return {"error": "Task not found"}
+        raise HTTPException(status_code=404, detail="Task not found")
     return result
 
 

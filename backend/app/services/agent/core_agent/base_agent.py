@@ -28,7 +28,8 @@ from app.services.agent.core_agent.react_cycle import run_react_cycle as _run
 
 
 class BaseAgent(ABC):
-    """Agent 核心基类 — 只保留骨架"""
+    """Agent 核心基类 — 小沈 2026-03-25"""
+    _ALLOWED_KWARGS = {'model', 'provider', 'api_base', 'api_key'}
 
     def __init__(
         self,
@@ -40,9 +41,8 @@ class BaseAgent(ABC):
     ):
         # 原 AgentInitializer._init_llm
         self.llm_client = llm_client
-        _ALLOWED_KWARGS = {'model', 'provider', 'api_base', 'api_key'}
         for key, value in kwargs.items():
-            if key in _ALLOWED_KWARGS:
+            if key in self._ALLOWED_KWARGS:
                 setattr(self, key, value)
 
         if max_steps is None:

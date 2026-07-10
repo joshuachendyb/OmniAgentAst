@@ -13,6 +13,7 @@ from .base import ReasoningStep
 
 class ActionStep(ReasoningStep):
     """工具执行步骤 - 只负责action_tool模式"""
+    TYPE: str = "action_tool"
 
     def __init__(
         self,
@@ -27,7 +28,6 @@ class ActionStep(ReasoningStep):
         timestamp: Optional[int] = None,
     ):
         ReasoningStep.__init__(self, step, timestamp)
-        self.TYPE = "action_tool"
         self._tool_name = tool_name
         self._tool_params = tool_params
         self._execution_status = execution_status

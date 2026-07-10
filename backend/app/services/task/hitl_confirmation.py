@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from app.services.task.task_state_queries import check_cancelled
 
+from app.constants import HITL_TIMEOUT
 from app.utils.logger import logger
 
 
@@ -24,9 +25,6 @@ class _PendingConfirmation:
     """待确认请求"""
     future: asyncio.Future
     created_at: float
-
-
-_CONFIRM_TIMEOUT = 120
 MAX_PENDING_CONFIRMATIONS = 100
 _pending_confirmations: Dict[str, _PendingConfirmation] = {}
 _last_cleanup_time: float = 0.0
@@ -43,7 +41,7 @@ def _cleanup_stale_confirmations():
 
     _last_cleanup_time = now
     stale = [k for k, v in _pending_confirmations.items()
-             if v.future.done() or now - v.created_at > _CONFIRM_TIMEOUT]
+             if v.future.done() or now - v.created_at > HITL_TIMEOUT]
     for k in stale:
         _pending_confirmations.pop(k, None)
 
