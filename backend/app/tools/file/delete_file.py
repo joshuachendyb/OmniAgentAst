@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
-from app.utils.context_vars import _current_task_id
+from app.utils.message_id_tracker import _current_task_id
 from app.db.models.operation_enums import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory

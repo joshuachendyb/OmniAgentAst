@@ -30,7 +30,7 @@ from app.services.task.task_interrupt_check import task_interrupt_check, task_pa
 from app.services.task.task_cancel_check import task_cancel_check_and_yield
 from app.services.task.task_state_queries import check_cancelled
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
-from app.utils.context_vars import _current_task_id
+from app.utils.message_id_tracker import _current_task_id
 from app.utils.prompt_logger import get_prompt_logger
 from app.api.v1.chat.validate_chat_config import validate_chat_config
 from app.services.task.hitl_confirmation import resolve_confirmation

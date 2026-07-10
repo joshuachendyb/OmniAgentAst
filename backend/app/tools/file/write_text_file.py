@@ -25,7 +25,7 @@ def _build_content_preview(content: str) -> str:
         return content
     return f"文首(50字符):{content[:50]}\n...(中间省略)...\n文末(50字符):{content[-50:]}"
 from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
-from app.utils.context_vars import _current_task_id
+from app.utils.message_id_tracker import _current_task_id
 from app.db.models.operation_enums import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory

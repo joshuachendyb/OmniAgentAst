@@ -8,6 +8,7 @@
 """
 
 import threading
+from contextvars import ContextVar
 from typing import Dict, Optional
 
 # 存储每个session的消息ID
@@ -25,3 +26,11 @@ def track_user_message(session_id: str, message_id: int):
 def get_user_message_id(session_id: str) -> Optional[int]:
     """获取用户消息ID"""
     return _user_message_ids.get(session_id)
+
+
+# ============================================================
+# 跨模块 task_id 追踪(原 app.utils.context_vars) — 小欧 2026-07-10
+# 合并原因：都是 ID 追踪职责，减少文件数量
+# ============================================================
+
+_current_task_id: ContextVar[Optional[str]] = ContextVar("tool_task_id", default=None)

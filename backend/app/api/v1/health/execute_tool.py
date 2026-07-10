@@ -5,7 +5,7 @@ from pydantic import BaseModel
 import uuid as _uuid
 import re as _re
 from app.tools import tool_registry
-from app.utils.context_vars import _current_task_id
+from app.utils.message_id_tracker import _current_task_id
 
 router = APIRouter()
 
