@@ -19,14 +19,13 @@ from app.tools.tool_fc_helper import backup_file
 from app.services import get_config_path as _get_config_path, reset
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors as handle_config_errors
-
+from fastapi import HTTPException
 
 # ====================================================================
 # 装饰器
 # ====================================================================
 
 # __all__ 不包含 import 来的符号 — t-04 小欧 2026-07-10
-
 
 # ====================================================================
 # YAML 有序写入（配置专用）
@@ -64,7 +63,6 @@ def _write_system_yaml(file_path: str, data: dict):
     with open(file_path, 'w', encoding='utf-8') as f:
         yaml.dump(_order(data), f, allow_unicode=True, default_flow_style=False, indent=2)
 
-
 # ====================================================================
 # 配置路径 / 读写
 # ====================================================================
@@ -73,7 +71,6 @@ def get_config_path() -> Path:
     """获取配置文件路径(缓存式调用)"""
     return Path(_get_config_path())
 
-
 def read_yaml_config(config_path: Path) -> dict:
     """读取 YAML 配置文件,文件不存在时返回空 dict"""
     if not config_path.exists():
@@ -81,11 +78,9 @@ def read_yaml_config(config_path: Path) -> dict:
     with open(config_path, 'r', encoding='utf-8') as f:
         return yaml.load(f, Loader=_make_safe_loader()) or {}
 
-
 def write_yaml_config(config_path: str, data: dict) -> None:
     """使用有序 Key 写入 YAML 配置文件"""
     _write_system_yaml(config_path, data)
-
 
 def reload_ai_config() -> None:
     """重新加载 AI 配置并重置缓存"""
@@ -93,17 +88,14 @@ def reload_ai_config() -> None:
     config_obj._load_config()
     reset()
 
-
 def _set_app_field(config_data: dict, field_name: str, value: Any, display_name: str = "") -> None:
     """设置 app 下单一字段"""
     config_data.setdefault('app', {})[field_name] = value
     logger.info(f"更新{display_name or field_name}: {value}")
 
-
 def is_provider_metadata_field(field_name: str) -> bool:
     """检查字段是否是provider元数据字段（provider/model），用于遍历ai配置时跳过 — 小欧 2026-06-18"""
     return field_name in ('provider', 'model')
-
 
 def load_config() -> tuple:
     """加载配置的公共函数 — 小欧 2026-06-18
@@ -113,13 +105,11 @@ def load_config() -> tuple:
     config = read_yaml_config(config_path)
     return config_path, config
 
-
 def save_config(config_path: str, config: dict) -> None:
     """保存配置的公共函数 — 小欧 2026-06-18
     """
     write_yaml_config(config_path, config)
     reload_ai_config()
-
 
 # ====================================================================
 # 备份 / 恢复
@@ -131,7 +121,6 @@ def _backup_config(config_path: Path) -> Path:
     bp = Path(result["backup_path"])
     logger.info(f"配置文件已备份: {bp}")
     return bp
-
 
 def _restore_backup_if_needed(
     backup_path: Optional[Path], config_path: Optional[Path],
@@ -151,7 +140,6 @@ def _restore_backup_if_needed(
         logger.error(f"备份恢复失败: {e}")
         return False
 
-
 # ====================================================================
 # 配置修复
 # ====================================================================
@@ -167,7 +155,6 @@ def _fix_config_common_issues(config_data: Dict[str, Any]) -> Dict[str, Any]:
             del provider_data['model']
             logger.info(f"已删除 provider '{provider_name}' 下废弃的 model 字段")
     return config_data
-
 
 # ====================================================================
 # 配置验证
@@ -221,7 +208,6 @@ def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[
 
     return True, errors, warnings
 
-
 # ====================================================================
 # 自动修复 + 验证
 # ====================================================================
@@ -250,3 +236,125 @@ def _auto_fix_and_validate(
         }
         return False, errors, warnings, fail_result
     return True, [], warnings, None
+
+# ====================================================================
+# 来自 _validators.py
+# ====================================================================
+
+def ensure_provider_exists(config: dict, provider_name: str) -> None:
+    """确保 Provider 存在于配置中,否则抛 HTTPException(404)"""
+    if provider_name not in config.get('ai', {}):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Provider {provider_name} 不存在"
+        )
+
+def ensure_provider_not_duplicate(config: dict, provider_name: str) -> None:
+    """确保 Provider 名不重复,否则抛 HTTPException(400)"""
+    if provider_name in config.get('ai', {}):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provider {provider_name} 已存在"
+        )
+
+def ensure_model_exists(config: dict, provider_name: str, model_name: str) -> None:
+    """确保模型在指定 Provider 中存在,否则抛 HTTPException(404)"""
+    providers = config.get('ai', {})
+    if provider_name not in providers:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Provider {provider_name} 不存在"
+        )
+    models = providers[provider_name].get('models', [])
+    if model_name and model_name not in models:
+        raise HTTPException(
+            status_code=404,
+            detail=f"模型 {model_name} 在 Provider {provider_name} 中不存在"
+        )
+
+def ensure_model_not_duplicate(config: dict, provider_name: str, model_name: str) -> None:
+    """确保模型名不重复,否则抛 HTTPException(400)"""
+    providers = config.get('ai', {})
+    if provider_name not in providers:
+        return
+    models = providers[provider_name].get('models', [])
+    if model_name and model_name in models:
+        raise HTTPException(
+            status_code=400,
+            detail=f"模型 {model_name} 已存在"
+        )
+
+__all__ = [
+    "ensure_provider_exists",
+    "ensure_provider_not_duplicate",
+    "ensure_model_exists",
+    "ensure_model_not_duplicate",
+]
+
+# ====================================================================
+# 来自 field_handlers.py
+# ====================================================================
+
+def _update_provider(config_data: dict, update) -> None:
+    ai_config = config_data.get('ai', {})
+    if update.ai_provider not in ai_config:
+        raise HTTPException(status_code=400, detail=f"不支持的提供商: {update.ai_provider}")
+    config_data['ai']['provider'] = update.ai_provider
+    reset()
+    logger.info(f"更新AI Provider: {update.ai_provider}")
+
+def _update_model(config_data: dict, update) -> None:
+    _ai_cfg = config_data.get('ai', {})
+    provider = update.ai_provider or _ai_cfg.get('provider')
+    if not provider:
+        for _k, _v in _ai_cfg.items():
+            if isinstance(_v, dict) and _v.get('models'):
+                provider = _k
+                break
+    if provider in config_data.get('ai', {}):
+        config_data['ai']['model'] = update.ai_model
+        logger.info(f"更新AI Model: {update.ai_model} (provider={provider})")
+        reset()
+
+def _update_api_keys(config_data: dict, update) -> None:
+    for provider_name, api_key in (update.provider_api_keys or {}).items():
+        if provider_name in config_data.get('ai', {}):
+            config_data['ai'][provider_name]['api_key'] = api_key.strip()
+            logger.info(f"更新Provider API Key成功: {provider_name}")
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的Provider: {provider_name}")
+
+def _update_max_steps(config_data: dict, update) -> None:
+    if update.max_steps < 1:
+        raise HTTPException(status_code=400, detail="max_steps 必须大于等于 1")
+    if update.max_steps > 10000:
+        raise HTTPException(status_code=400, detail="max_steps 不能超过 10000")
+    config_data.setdefault('app', {})['max_steps'] = update.max_steps
+    logger.info(f"更新max_steps: {update.max_steps}")
+
+def _update_security(config_data: dict, update) -> None:
+    if not update.security:
+        return
+    security = config_data.get('security', {})
+    security.update({
+        "contentFilterEnabled": update.security.contentFilterEnabled,
+        "contentFilterLevel": update.security.contentFilterLevel,
+        "whitelistEnabled": update.security.whitelistEnabled,
+        "commandWhitelist": update.security.commandWhitelist,
+        "commandBlacklist": update.security.commandBlacklist,
+        "confirmDangerousOps": update.security.confirmDangerousOps,
+        "maxFileSize": update.security.maxFileSize,
+    })
+    config_data['security'] = security
+    logger.info("更新安全配置成功")
+
+FIELD_HANDLERS: Dict[str, Any] = {
+    "ai_provider": _update_provider,
+    "ai_model": _update_model,
+    "provider_api_keys": _update_api_keys,
+    "theme": lambda config_data, update: _set_app_field(config_data, "theme", update.theme, "主题"),
+    "language": lambda config_data, update: _set_app_field(config_data, "language", update.language, "语言"),
+    "max_steps": _update_max_steps,
+    "security": _update_security,
+    "project_root": lambda config_data, update: _set_app_field(config_data, "project_root", update.project_root, "项目根目录"),
+}
