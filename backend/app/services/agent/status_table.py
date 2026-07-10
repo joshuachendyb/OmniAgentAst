@@ -12,7 +12,7 @@ import threading
 from enum import Enum
 from typing import Optional
 from app.utils.logger import logger
-from app.utils.prompt_logger import get_prompt_logger
+from app.services.prompts.prompt_logger import get_prompt_logger
 
 
 class AgentStatus(Enum):

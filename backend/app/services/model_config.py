@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.config import get_config as get_config_instance, _make_safe_loader
 from app.tools.tool_fc_helper import backup_file
 
-from app.services import get_config_path as _get_config_path, reset
+from app.services.factory.lifecycle import get_config_path as _get_config_path, reset
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors as handle_config_errors
 from fastapi import HTTPException

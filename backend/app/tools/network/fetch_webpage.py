@@ -9,10 +9,12 @@ N3: fetchpage — 获取和处理网页内容
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+import asyncio
 import base64
 import html2text
 import json
 import re
+import traceback
 import time as _time_mod
 from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Tuple
@@ -552,6 +554,7 @@ async def fetchpage(
             truncated = playwright_result["truncated"]
             content_type = playwright_result["content_type"]
             status_code = playwright_result["status_code"]
+            mime = content_type.split(";")[0].strip().lower() if content_type else ""
         else:
             async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
                 actual_headers = dict(headers)
@@ -651,7 +654,7 @@ async def fetchpage(
         llm_data = _build_fetch_webpage_llm_data("warning", duration_ms, url, extract_format, status_code, truncated, hint="尝试其他的网站地址", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_warning(data=result_data, llm_data=llm_data)
 
-    except httpx.TimeoutException:
+    except (httpx.TimeoutException, asyncio.TimeoutError):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_TIMEOUT, detail=f"超时({timeout:.1f}秒)", hint="可增大timeout参数重试", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)
@@ -664,7 +667,7 @@ async def fetchpage(
         llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=str(e), hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
-        logger.error(f"[fetchpage] 未知错误: {e}")
+        logger.error(f"[fetchpage] 未知错误: {e}\n{traceback.format_exc()}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NET_UNKNOWN, detail=str(e), hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)
