@@ -6,7 +6,7 @@ conversation 路由定义 — 小沈 2026-05-28
 from fastapi import APIRouter
 
 from app.api.v1.conversation.models import ExecutionStepsUpdate
-from app.api.v1.conversation.save_execution_steps import save_execution_steps
+from app.services.conversation_storage import save_execution_steps
 
 router = APIRouter()
 

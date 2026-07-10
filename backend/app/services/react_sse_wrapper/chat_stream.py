@@ -24,7 +24,8 @@ from app.utils.sse_formatter import format_sse_event, format_agent_sse
 from app.services.agent.steps import MetaStep, ErrorStep, FinalStep
 from app.utils.sys_error_classifier import SystemErrorClassifier
 from app.utils.logger import logger
-from app.api.v1.conversation import save_execution_steps, ExecutionStepsUpdate
+from app.services.conversation_storage import save_execution_steps
+from app.api.v1.conversation.models import ExecutionStepsUpdate
 from app.utils.message_id_tracker import get_user_message_id
 
 

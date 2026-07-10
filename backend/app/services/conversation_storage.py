@@ -1,22 +1,78 @@
 # -*- coding: utf-8 -*-
 """
-save_execution_steps — 从 conversation.py 拷出
+conversation_storage — 会话存储业务逻辑（从 API 层下沉）
 
-拷贝来源: conversation.py 第198-221行
+合并来源:
+- app.api.v1.conversation.save_execution_steps
+- app.api.v1.conversation.assistant_message_id_allocator
+
+小欧 2026-07-10 M-15: 从 API 层下沉到服务层，消除 chat_stream 反向依赖
 """
 
-from typing import Optional
+import threading
+from typing import Dict, Optional, Tuple
 from sqlite3 import Connection
-from fastapi import APIRouter, HTTPException
+
+from fastapi import HTTPException
 
 from app.utils.logger import logger
 from app.db import db
 from app.utils.json_utils import safe_json_dumps
 from app.utils.time_utils import get_timestamp_ms
 from app.utils.message_id_tracker import _user_message_ids, _message_ids_lock
-from app.api.v1.conversation.assistant_message_id_allocator import AssistantMessageIdAllocator
 from app.utils.display_utils import extract_metadata_from_steps
 from app.api.v1.conversation.models import ExecutionStepsUpdate
+
+
+class AssistantMessageIdAllocator:
+    """拷贝自 conversation.py 第34-79行"""
+
+    def __init__(self, user_ids: Dict[str, int], lock: threading.Lock):
+        self._user_ids = user_ids
+        self._assistant_ids: Dict[str, int] = {}
+        self._lock = lock
+
+    def allocate(self, session_id: str, conn: Connection) -> Tuple[int, bool]:
+        """拷贝自 conversation.py 第48-79行
+
+        10规范(SRP): 只负责分配assistant消息ID
+        10规范(DRY): 复用conn执行查询
+        修复: 并发场景下检查session_id归属+递增寻空位
+        """
+        with self._lock:
+            user_id = self._user_ids.get(session_id)
+
+        if user_id is not None:
+            expected = user_id + 1
+        else:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id FROM chat_messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+                (session_id,),
+            )
+            row = cursor.fetchone()
+            expected = (row["id"] + 1) if row else 1
+
+        cursor = conn.cursor()
+        for _ in range(10):
+            cursor.execute("SELECT id, role, session_id FROM chat_messages WHERE id=?", (expected,))
+            existing = cursor.fetchone()
+            if existing is None:
+                break
+            if existing["role"] == "assistant" and existing["session_id"] == session_id:
+                return expected, False
+            expected += 1
+        else:
+            cursor.execute(
+                "SELECT id FROM chat_messages ORDER BY id DESC LIMIT 1",
+            )
+            max_row = cursor.fetchone()
+            expected = (max_row["id"] + 1) if max_row else 1
+
+        with self._lock:
+            self._assistant_ids[session_id] = expected
+        return expected, True
+
 
 # 模块级单例:AssistantMessageIdAllocator复用实例(避免每次调用新建,缓存失效)
 _allocator = AssistantMessageIdAllocator(_user_message_ids, _message_ids_lock)
@@ -34,10 +90,7 @@ def insert_assistant_message(
     conn: Connection, ai_message_id: int, session_id: str,
     display_name: Optional[str], update_data,
 ) -> None:
-    """拷贝自 conversation.py 第115-131行
-
-    10规范(SRP): 只负责INSERT,内容在update_message_fields中更新
-    """
+    """拷贝自 conversation.py 第115-131行"""
     cursor = conn.cursor()
     utc_time = get_timestamp_ms()
     initial_content = update_data.content or ""
