@@ -32,7 +32,7 @@ class PromptLogger:
     def __init__(self):
         """初始化日志目录"""
         # 日志目录:backend/logs/prompt-logs/
-        self.log_dir = Path(__file__).parent.parent.parent / "logs" / "prompt-logs"
+        self.log_dir = Path(__file__).parent.parent.parent.parent / "logs" / "prompt-logs"
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
         # contextvars - 每个协程独立的日志数据,避免 asyncio 协程间覆盖
@@ -193,7 +193,8 @@ class PromptLogger:
         message_summaries = []
         for i, msg in enumerate(messages):
             role = msg.get("role", "unknown")
-            content = msg.get("content") or ""
+            raw = msg.get("content")
+            content = str(raw) if raw is not None else ""
             summary = {
                 "序号": i + 1,
                 "角色": role,
