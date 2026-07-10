@@ -127,10 +127,10 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
             return build_error(data={}, llm_data=llm_data)
         llm_data = _build_clipboard_control_llm_data("success", duration_ms, "write", len(content))
         # ---- observation_formatter route [write mode] --------------------------------
-        # branch: #2 raw str
-        # trigger: "content" in data and isinstance(data["content"], str)
-        # handler: inline — 直接返回 data["content"], OBS_MAX_STRING_LENGTH 截断
-        # file:    observation_formatter.py:117-122
+        # branch: #10 raw text
+        # trigger: "text" in data and isinstance(data["text"], str)
+        # handler: _format_text_content(data) — 正文+元数据拼接
+        # file:    observation_formatter.py:148-149
         # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)
     else:
