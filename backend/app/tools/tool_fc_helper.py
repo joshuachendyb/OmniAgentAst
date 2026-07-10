@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 
 from app.tools.tool_constants import QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
-from app.utils.common_patterns import UTC_OFFSET_PATTERN
+from app.constants import UTC_OFFSET_PATTERN
 
 from app.utils.logger import logger
 

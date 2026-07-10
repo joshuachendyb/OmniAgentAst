@@ -20,6 +20,7 @@
   ❌ 本文件的 SYS_HTTP_* 被工具层代码直接引用（工具层应引用 tool_constants.py 的 TOOL_HTTP_*）
 """
 
+import re
 from datetime import timedelta
 
 # ============================================================
@@ -92,5 +93,15 @@ TASK_TIMEOUT = timedelta(hours=1)
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧
 HITL_TIMEOUT = 120
+
+# ============================================================
+# 7. 通用正则常量（从 common_patterns.py 迁入）
+# ============================================================
+
+HTML_TAG_PATTERN = re.compile(r'<[^>]+>')
+SCRIPT_TAG_PATTERN = re.compile(r'<script[^>]*>.*?</script>', re.DOTALL)
+STYLE_TAG_PATTERN = re.compile(r'<style[^>]*>.*?</style>', re.DOTALL)
+MULTI_WHITESPACE_PATTERN = re.compile(r'\s+')
+UTC_OFFSET_PATTERN = re.compile(r'([+-]\d{2}):?(\d{2})')
 
 

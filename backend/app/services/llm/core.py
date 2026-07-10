@@ -60,9 +60,25 @@ class StreamChunk:
         self.usage = usage
 
 
+def create_cancelled_chunk(model: str) -> StreamChunk:
+    """创建取消响应片段 — 小健 2026-05-27"""
+    return StreamChunk(content="", model=model, is_done=True,
+                       stream_error="Request cancelled",
+                       stream_error_type="cancelled")
+
+
+def create_error_chunk(model: str, error: str, error_type: str = "http_error") -> StreamChunk:
+    """创建错误响应片段 — 小健 2026-05-27"""
+    return StreamChunk(content="", model=model, is_done=True,
+                       stream_error=error,
+                       stream_error_type=error_type)
+
+
 __all__ = [
     "ChatResponse",
     "StreamChunk",
     "FCFormatError",
     "_resolve_exception",
+    "create_cancelled_chunk",
+    "create_error_chunk",
 ]

@@ -18,7 +18,7 @@ from app.services.factory.lifecycle import close_instance, close_instance_sync, 
 from app.utils.paths import get_config_path
 from app.services.factory.validation import make_validation_error, validate_credentials, validate_config
 from app.services.factory.service import get_service, get_service_for_model
-from app.services.factory.backup_paths import set_backup_paths, get_backup_paths, clear_backup_paths
+from app.services.factory.lifecycle import set_backup_paths, get_backup_paths, clear_backup_paths
 
 __all__ = [
     "ConfigValidationResult",

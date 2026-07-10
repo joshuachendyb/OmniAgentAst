@@ -33,7 +33,7 @@ from app.services.llm.core import (
     _resolve_exception,
 )
 
-from app.services.llm.stream_parser import (
+from app.services.llm.core import (
     create_cancelled_chunk,
     create_error_chunk,
 )
