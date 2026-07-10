@@ -2,18 +2,83 @@
 更新时间: 2026-07-10 20:13:00
 ## v0.18.10→v0.18.11 变更汇总 - 小欧-2026-07-10
 
-### refactor: services/model/ 配置管理模块重构
-- services/ai_config_resolver + model_config 合并为 services/model/（resolver + persistence）— 小欧-2026-07-10
+### 批次9(G1-G4): services/扁平化最终轮
+- **G1**: ai_config_resolver + model_config 合并为 services/model/（resolver + persistence）— 小欧-2026-07-10
+- **G2**: services/factory/（4文件）重命名为 lifecycle/ — 小欧-2026-07-10
+- **G3**: safety/file_safety/（5文件）上移到 safety/operation_*；修复 write_text_file.py 299-311行死代码 — 小欧-2026-07-10
+- **G4**: utils/sys_error_classifier.py → services/llm/error_classifier.py — 小欧-2026-07-10
 
-### refactor: services/lifecycle/ 替代 factory/
-- services/factory/（4文件）重命名为 lifecycle/ — 小欧-2026-07-10
+### 批次8: 代码清理 + 模块拆分
+- message_id_tracker 拆分 → storage内联 + task_context新建 — 小欧-2026-07-10
+- 删死代码(content_quality + tool_result_formatter)；prompt_logger 违规层移到 services/prompts/；model_config 自引用修复 — 小欧-2026-07-10
 
-### refactor: safety/ 扁平化 + 死代码修复
-- safety/file_safety/（5文件）上移到 safety/operation_* — 小欧-2026-07-10
-- 修复 write_text_file.py 299-311行 return后不可达死代码 — 小欧-2026-07-10
+### 批次7: chat模块重组 + core_agent扁平化
+- core_agent/ 扁平化 → services/agent/ + 全部 import路径更新 — 小欧-2026-07-10
+- 删除旧模块(conversation_storage + react_sse_wrapper) + import路径更新 — 小欧-2026-07-10
+- services/chat/ 目录新建(storage + handlers + stream) — 小欧-2026-07-10
+- execution → chat/sse；ExecutionStepsUpdate 下沉 conversation_storage — 小欧-2026-07-10
+- chat模块合并(chat_openai + validate_chat_config → openai) — 小欧-2026-07-10
 
-### refactor: llm/error_classifier 迁移
-- utils/sys_error_classifier.py→services/llm/error_classifier.py — 小欧-2026-07-10
+### 批次6: sessions + health 模块合并
+- health模块 3文件合并为 health.py(1新3删) — 小欧-2026-07-10
+- sessions模块 7文件合并为 sessions.py + import路径修复(1新7删2改) — 小欧-2026-07-10
+- health.py 删除残留的重复 execute_tool 函数体 — 小欧-2026-07-10
+
+### 批次5(小沈): 多轮合并重构
+- ai_config API模块合并为 model_routes + model_schemas + model_config（17删3新）— 小沈-2026-07-10
+- task模块 6→3文件合并 + 循环导入修复 — 小沈-2026-07-10
+- LogConfig 内联至 handler.py（消除 config.py中间层）— 小沈-2026-07-10
+- paths.py 合并入 config.py（消除循环导入）— 小沈-2026-07-10
+- lazy_loader 合并入 registry — 小沈-2026-07-10
+- model_adapters/ → llm/ 扁平化 — 小沈-2026-07-10
+- fc_message_types 上移 agent_utils/ → agent/ — 小沈-2026-07-10
+- 删除 test_marker.py + FUNCTIONS.md 同步 — 小沈-2026-07-10
+
+### 批次4(小欧): 交叉合并 + 修复
+- 删除空 __init__.py (app/api/api/v1) — 小欧-2026-07-10
+- 系统层文件合并(stream_parser→core/；backup_paths→lifecycle/；common_patterns→constants/) — 小欧-2026-07-10
+- agent层文件合并(message_utils→observation_formatter/；tool_manager→base_agent/；meta_step+agent_result→steps/base/；counter_utils→steps/base/) — 小欧-2026-07-10
+- operation_enums 合并到 operation_models — 小欧-2026-07-10
+- 常量提取 / observation精简 / 日志级别提升 — 小欧-2026-07-10
+- import整理 / 死代码删除 — 小欧-2026-07-10
+- 裸except → 精确异常 + 静默pass → 日志 — 小欧-2026-07-10
+- context_vars 合并至 message_id_tracker — 小欧-2026-07-10
+
+### 批次3(小欧): 优化轮
+- 中间件：请求体大小跟踪 + 依赖版本校验 + 动画模板缓存 — 小欧-2026-07-10
+- async消除 / DRY提取 / 异常捕获优化 — 小欧-2026-07-10
+- 日志级别 / 完成时间 / regex清理 / 未使用变量删除 — 小欧-2026-07-10
+- log_config 模块扁平化(setup/ 子包上移到 log_config/) — 小欧-2026-07-10
+- 类型标注 + DRY提取 + 延迟导入 + execution清理 — 小欧-2026-07-10
+- timer 持久化到 DB — 小欧-2026-07-10
+- security 合并 + health optional_params 过滤 + metrics HTTPException — 小欧-2026-07-10
+- 删除 conversation 模块 + models 迁移到 sessions + execution_steps 端点迁移 — 小欧-2026-07-10
+- get_timestamp_ms→create_timestamp 统一 + format_timestamp None安全 + hash_helper Optional — 小欧-2026-07-10
+
+### 批次2(小欧): M/C标记修复轮
+- M-18: operation_queries DRY _execute_query 抽取 5处复用 — 小欧-2026-07-10
+- M-12: observation 扁平化 — 小欧-2026-07-10
+- M-13: project_context LRU 缓存 — 小欧-2026-07-10
+- M-15: conversation 存储下沉到 services/conversation_storage.py — 小欧-2026-07-10
+- M-07: YAML loader 合并到 config.py + 修复 _helpers.py 调用残留 — 小欧-2026-07-10
+- M-02/M-03/M-04/M-05 + C-05: import移顶/dataclass/name字段/PRAGMA/注释分区 — 小欧-2026-07-10
+- C-10: FileSafetyConfig 合并到 operation_executor 消除 parents[6] — 小欧-2026-07-10
+- C-14: 合并 task_state_store 到 task_state_queries public API — 小欧-2026-07-10
+- C-07: timer 模块加 asyncio.Lock 消除竞态 — 小欧-2026-07-10
+- C-01/C-02/C-08/C-09/C-12/C-13/C-15/C-16/C-17: 8个 Critical Bug 修复 — 小欧-2026-07-10
+- misc: 404 raise / HITL_TIMEOUT常量 / _ALLOWED_KWARGS 类属性 / TYPE 类属性 — 小欧-2026-07-10
+
+### 批次1(北京老陈+小欧): e2e测试 + 修复
+- 批量提交e2e测试文件变更 — 北京老陈-2026-07-09
+- e2e测试用例更新(预存修改) — 小欧-2026-07-09
+- 代码审查报告更新(预存修改) — 小欧-2026-07-09
+- run_sse_stream + chat_openai 参数名标注(llm_client→llm_service) — 小欧-2026-07-09
+- action_handler + tool_executor 重试通知优化(并行try_once + 重试回调注入) — 小欧-2026-07-09
+- tool_retry_engine DRY修复(try_once复用_get_retry_config) — 小欧-2026-07-09
+- answer_handler 空内容 recoverable + file_path_checker TOCTOU日志 — 小欧-2026-07-09
+- win_registry_schema.py SyntaxWarning 3处 raw docstring 修正 — 小欧-2026-07-09
+
+### 累计: 58 commits, 9个批次, 全量扁平化重构完成
 
 v0.18.10
 更新时间: 2026-07-10 15:27:00
