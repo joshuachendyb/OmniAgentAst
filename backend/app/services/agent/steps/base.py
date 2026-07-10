@@ -8,7 +8,8 @@ Date: 2026-04-15
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
 
 from app.utils.time_utils import create_timestamp
 
@@ -74,3 +75,54 @@ class ReasoningStep(ABC):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(step={self._step}, type={self.get_type()})"
+
+
+def create_step_counter() -> Callable[[], int]:
+    """创建统一的步骤计数器函数 — 小欧 2026-06-08"""
+    step_counter = 0
+
+    def next_step() -> int:
+        nonlocal step_counter
+        step_counter += 1
+        return step_counter
+
+    return next_step
+
+
+@dataclass
+class AgentResult:
+    """Agent执行结果 — 小沈"""
+    success: bool
+    message: str
+    steps: List[ReasoningStep]
+    total_steps: int
+    task_id: Optional[str] = None
+    final_result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+class MetaStep(ReasoningStep):
+    """运行时元事件 - start/interrupted/paused/resumed/retrying/authorization_required — 小沈"""
+
+    def __init__(
+        self,
+        step: int,
+        type: str,
+        *,
+        message: str = "",
+        timestamp: Optional[int] = None,
+        **kwargs: Any
+    ):
+        ReasoningStep.__init__(self, step, timestamp)
+        self.TYPE = type
+        self._message = message
+        self._kwargs = kwargs
+
+    def get_content(self) -> str:
+        return self._message
+
+    def _extra_fields(self) -> Dict[str, Any]:
+        fields = dict(self._kwargs)
+        if self._message:
+            fields["message"] = self._message
+        return fields

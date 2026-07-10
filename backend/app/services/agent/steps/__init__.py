@@ -17,8 +17,7 @@ Date: 2026-04-15
 Updated: 2026-06-22 SRP拆分：ActionStep(action_tool) + ObservationStep(observation)
 """
 
-from .base import ReasoningStep
-from .meta_step import MetaStep
+from .base import ReasoningStep, MetaStep, create_step_counter
 from .action_step import ActionStep
 from .observation_step import ObservationStep
 from .chunk_step import ChunkStep
@@ -27,8 +26,6 @@ from .final_step import FinalStep
 from .error_step import ErrorStep
 
 from app.utils.time_utils import create_timestamp
-from app.utils.counter_utils import create_step_counter
-
 __all__ = [
     "ReasoningStep",
     "MetaStep",

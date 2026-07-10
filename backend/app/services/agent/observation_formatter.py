@@ -56,7 +56,7 @@ Author: 小欧 2026-06-21; 小欧 2026-07-04 更新映射表; 小欧 2026-07-05 
 
 import json
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from app.tools.tool_constants import (
     OBS_MAX_DISPLAY_ITEMS,
@@ -1048,3 +1048,33 @@ def _build_transposed_table(stats: dict, columns: list) -> list:
         lines.append(row)
 
     return lines
+
+
+def build_observation_text(execution_result, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
+    """根据工具执行结果构建observation文本 — 小欧 2026-06-21
+
+    从result中拆包data/llm_data，直接调format_llm_observation(data, llm_data)
+
+    Args:
+        execution_result: 工具执行结果（新格式dict或Exception）
+        tool_name: 工具名称（仅异常时用）
+        tool_params: 工具参数（仅异常时用）
+
+    Returns:
+        observation文本
+    """
+    if isinstance(execution_result, dict):
+        data = execution_result.get("data")
+        llm_data = execution_result.get("llm_data")
+        if llm_data is not None:
+            return format_llm_observation(data, llm_data)
+        if data is not None:
+            detail = format_data_detail(data)
+            return f"Observation: {detail[:500]}" if len(detail) > 500 else f"Observation: {detail}"
+        try:
+            result_str = json.dumps(execution_result, ensure_ascii=False, separators=(',', ':'))
+        except (TypeError, ValueError):
+            result_str = str(execution_result)
+        return f"Observation: {result_str[:500]}" if len(result_str) > 500 else f"Observation: {result_str}"
+    result_str = str(execution_result)
+    return f"Observation: {result_str[:500]}" if len(result_str) > 500 else f"Observation: {result_str}"

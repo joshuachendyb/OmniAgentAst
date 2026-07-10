@@ -24,7 +24,7 @@ from app.utils.logger import logger
 from app.services.react_sse_wrapper.chat_stream import create_error_response, send_start_step
 from app.utils.sse_formatter import format_agent_sse
 from app.api.v1.chat.models import ChatRequest
-from app.utils.counter_utils import create_step_counter
+from app.services.agent.steps.base import create_step_counter
 from app.services.task.task_registry import register_task, task_cleanup
 from app.services.task.task_interrupt_check import task_interrupt_check, task_pause_check_and_yield
 from app.services.task.task_cancel_check import task_cancel_check_and_yield
