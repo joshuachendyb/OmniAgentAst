@@ -20,6 +20,8 @@
   ❌ 本文件的 SYS_HTTP_* 被工具层代码直接引用（工具层应引用 tool_constants.py 的 TOOL_HTTP_*）
 """
 
+from datetime import timedelta
+
 # ============================================================
 # 1. HTTP 状态码与错误码
 # ============================================================
@@ -86,7 +88,6 @@ MAX_CACHE_SIZE = 1000
 # 6. SSE流超时(从 react_sse_wrapper 迁移)
 # ============================================================
 
-from datetime import timedelta
 TASK_TIMEOUT = timedelta(hours=1)
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧

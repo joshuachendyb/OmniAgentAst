@@ -25,7 +25,7 @@ from app.utils.response_utils import handle_api_errors as handle_config_errors
 # 装饰器
 # ====================================================================
 
-__all__ = ["handle_config_errors"]
+# __all__ 不包含 import 来的符号 — t-04 小欧 2026-07-10
 
 
 # ====================================================================

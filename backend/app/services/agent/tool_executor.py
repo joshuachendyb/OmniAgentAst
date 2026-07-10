@@ -101,8 +101,7 @@ def auto_inject_from_search(agent, result: Dict[str, Any]) -> None:
 
     # 同时加载工具实现到_tools_dict，确保ToolRetryEngine可执行
     for cat in new_categories:
-        if hasattr(agent, '_tool_loader'):
-            agent._tool_loader.load_category(cat)
+        agent._tool_loader.load_category(cat)
 
     invalidate_tool_cache(agent)
     patch_search_desc(agent)

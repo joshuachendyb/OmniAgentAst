@@ -1,3 +1,5 @@
+import yaml
+
 from . import router
 from .models import ConfigUpdate
 from .field_handlers import FIELD_HANDLERS
@@ -35,7 +37,6 @@ async def update_config(config_update: ConfigUpdate):
 
         write_yaml_config(str(config_path), config_data)
         with open(config_path, 'r', encoding='utf-8') as f:
-            import yaml
             verify_data = yaml.load(f, Loader=_make_safe_loader())
             logger.info(f"[update_config] 验证写入: provider={verify_data['ai'].get('provider')}, model={verify_data['ai'].get('model')}")
         get_config_instance().reload()

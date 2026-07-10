@@ -100,10 +100,6 @@ class MessageBuilder:
         else:
             self.conversation_history = history_msgs + self.conversation_history
 
-    def _prepare_observation_text(self, observation_text: str) -> str:
-        """归一化observation前缀"""
-        return self._normalize_observation_prefix(observation_text)
-
     def _append_observation(self, observation_text: str, fc_context: Dict) -> None:
         """追加FC协议observation消息 — fc_context必传 — FC-only重构 2026-06-11 小沈
         北京老陈 2026-06-25: 使用类型安全方法替代原始message_to_dict调用
