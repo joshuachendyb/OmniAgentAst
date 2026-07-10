@@ -5,7 +5,7 @@
 """
 
 from .handler import SafeRotatingFileHandler, LOG_DIR
-from .config import LogConfig
+from .handler import LogConfig
 from .setup_logger_func import setup_logger, setup_file_handler
 from .api_logger import APILogger
 

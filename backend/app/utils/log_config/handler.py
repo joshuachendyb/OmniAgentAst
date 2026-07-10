@@ -10,13 +10,44 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from app.utils.time_utils import now_str
+from app.config import get_config
 
 # C-09: 删除 logging.raiseExceptions = False
 # SafeRotatingFileHandler.emit() 已有 try/except 保护，全局吞异常有害
 # — 小欧 2026-07-10
 
-# 延迟导入,避免循环依赖(_create_handler_for_logger 内部使用)
-from .config import LogConfig
+class LogConfig:
+    """日志配置管理 — 委托至 app.config.Config(消除重复文件读取)"""
+
+    _config = get_config()
+
+    @classmethod
+    def load_config(cls) -> dict:
+        """获取日志配置(通过 Config 缓存)"""
+        return cls._config.get('logging', {})
+
+    @classmethod
+    def is_debug_mode(cls) -> bool:
+        """检查是否为debug模式"""
+        return cls._config.get('app.debug', False)
+
+    @classmethod
+    def get_log_level(cls) -> str:
+        """获取日志级别"""
+        if cls._config.get('app.debug', False):
+            return "DEBUG"
+        return cls._config.get('logging.level', 'INFO')
+
+    @classmethod
+    def get_max_bytes(cls) -> int:
+        """获取单个日志文件最大大小(字节)"""
+        return cls._config.get('logging.max_file_size', 10 * 1024 * 1024)
+
+    @classmethod
+    def get_backup_count(cls) -> int:
+        """获取备份文件数量"""
+        return cls._config.get('logging.backup_count', 5)
+
 
 LOG_DIR = Path(__file__).parent.parent.parent.parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)

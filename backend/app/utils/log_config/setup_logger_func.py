@@ -14,7 +14,7 @@ from app.utils.log_config.handler import (
     _get_log_file_path,
     _create_handler_for_logger,
 )
-from app.utils.log_config.config import LogConfig
+from app.utils.log_config.handler import LogConfig
 
 
 def setup_file_handler() -> SafeRotatingFileHandler:
