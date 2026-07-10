@@ -4,7 +4,7 @@ sessions — merged from sessions/ 7 files
 COPY — 小欧 2026-07-10
 """
 
-from typing import Optional, Any, Dict, List, Tuple
+from typing import Optional, List, Tuple
 import uuid
 
 from pydantic import BaseModel, Field
@@ -17,39 +17,9 @@ from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionResponse, SessionListResponse, BatchTitleResponse
 from app.api.v1.messages import display_name_cache
 from app.services.conversation_storage import save_execution_steps
+from app.services.conversation_storage import ExecutionStepsUpdate
 
 router = APIRouter()
-
-# ===== models =====
-
-class ExecutionStep:
-    """执行步骤数据模型"""
-    def __init__(self, step_type: str, content: str = "", tool: str = "",
-                 params: Optional[Dict] = None, result: Any = None, timestamp: int = 0):
-        self.type = step_type
-        self.content = content
-        self.tool = tool
-        self.params = params or {}
-        self.result = result
-        self.timestamp = timestamp
-
-    def to_dict(self):
-        data = {"type": self.type, "timestamp": self.timestamp}
-        if self.content:
-            data["content"] = self.content
-        if self.tool:
-            data["tool"] = self.tool
-            data["params"] = self.params
-        if self.result is not None:
-            data["result"] = self.result
-        return data
-
-
-class ExecutionStepsUpdate(BaseModel):
-    """执行步骤更新请求体"""
-    execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
-    content: Optional[str] = Field(None, description="AI生成的文本内容")
-    reply_to_message_id: Optional[int] = Field(None, description="回复的用户消息ID")
 
 # ===== create_session =====
 

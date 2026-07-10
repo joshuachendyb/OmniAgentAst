@@ -24,9 +24,9 @@ from pathlib import Path
 import os
 import logging
 
-from app.api.v1 import health, sessions, messages, execution, metrics
+from app.api.v1 import health, sessions, messages, metrics
 from app.api.v1.model_routes import router as model_router
-from app.api.v1.chat import router as chat_router, task_router
+from app.api.v1.chat import router as chat_router, task_router, sse as chat_execution_router
 from app.api.v1.task_queries import router as task_queries_router
 from app.utils.logger import logger
 from app.services.monitoring import setup_monitoring
@@ -133,7 +133,7 @@ app.include_router(model_router, prefix="/api/v1", tags=["config"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(messages.router, prefix="/api/v1", tags=["sessions"])
 
-app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
+app.include_router(chat_execution_router.router, prefix="/api/v1", tags=["execution"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 app.include_router(task_queries_router, prefix="/api/v1", tags=["task-queries"])
 

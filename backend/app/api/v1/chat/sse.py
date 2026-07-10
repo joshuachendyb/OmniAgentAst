@@ -1,7 +1,7 @@
 """
-流式执行过程API路由
-提供执行过程的SSE流式输出
-重构: 2026-05-31 小健 - ExecutionStep移至共享models(问题19修复)
+sse — 执行步骤流式查看
+提供从DB读取执行步骤并通过SSE流式输出的端点
+小欧 2026-07-10
 """
 
 import json
@@ -12,10 +12,31 @@ from fastapi.responses import StreamingResponse
 from app.utils.time_utils import create_timestamp
 from app.utils.json_utils import parse_json
 from app.db import db
-from app.api.v1.sessions import ExecutionStep
 
 router = APIRouter()
 
+
+class ExecutionStep:
+    """执行步骤数据模型 — 小欧 2026-07-10"""
+    def __init__(self, step_type: str, content: str = "", tool: str = "",
+                 params: Optional[Dict] = None, result: Any = None, timestamp: int = 0):
+        self.type = step_type
+        self.content = content
+        self.tool = tool
+        self.params = params or {}
+        self.result = result
+        self.timestamp = timestamp
+
+    def to_dict(self):
+        data = {"type": self.type, "timestamp": self.timestamp}
+        if self.content:
+            data["content"] = self.content
+        if self.tool:
+            data["tool"] = self.tool
+            data["params"] = self.params
+        if self.result is not None:
+            data["result"] = self.result
+        return data
 
 
 async def _generate_execution_stream(session_id: str):

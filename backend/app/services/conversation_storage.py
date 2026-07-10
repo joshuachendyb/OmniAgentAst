@@ -14,6 +14,7 @@ from typing import Dict, Optional, Tuple
 from sqlite3 import Connection
 
 from fastapi import HTTPException
+from pydantic import BaseModel, Field
 
 from app.utils.logger import logger
 from app.db import db
@@ -21,6 +22,13 @@ from app.utils.json_utils import safe_json_dumps
 from app.utils.time_utils import create_timestamp
 from app.utils.message_id_tracker import _user_message_ids, _message_ids_lock
 from app.utils.display_utils import extract_metadata_from_steps
+
+
+class ExecutionStepsUpdate(BaseModel):
+    """执行步骤更新请求体 — 小欧 2026-07-10"""
+    execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
+    content: Optional[str] = Field(None, description="AI生成的文本内容")
+    reply_to_message_id: Optional[int] = Field(None, description="回复的用户消息ID")
 
 
 class AssistantMessageIdAllocator:
