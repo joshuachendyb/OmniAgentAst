@@ -14,6 +14,7 @@ from typing import Dict, Any
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_TIMER_CLEAR
 from app.tools.timer.timer_set import _timers, _timer_callbacks, _timer_lock
+from app.db import db
 
 
 def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str, cancelled: bool, detail: str = "", hint: str = "") -> dict:
@@ -61,6 +62,11 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
             if handle:
                 handle.cancel()
             _timer_callbacks.pop(timer_id, None)
+        try:
+            with db.get_conn("operations") as conn:
+                conn.execute("UPDATE timers SET status='cancelled' WHERE timer_id=?", (timer_id,))
+        except Exception:
+            pass
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_clear_llm_data("success", duration_ms, timer_id, True)
         # =============================================================================

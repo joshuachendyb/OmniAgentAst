@@ -13,6 +13,7 @@ from typing import Dict, Any
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_TIMER_LIST
 from app.tools.timer.timer_set import _timer_callbacks, _timer_lock
+from app.db import db
 
 
 def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids: list, detail: str = "", hint: str = "") -> dict:
@@ -46,8 +47,25 @@ async def timer_list() -> Dict[str, Any]:
                     "callback": info.get("callback", ""),
                     "created_at": info.get("created_at", ""),
                     "trigger_at": info.get("trigger_at", ""),
+                    "status": "active",
                 })
             timers.sort(key=lambda x: x.get("trigger_at", ""))
+        try:
+            with db.get_conn("operations") as conn:
+                rows = conn.execute("SELECT timer_id, callback, created_at, trigger_at, triggered_at, status FROM timers ORDER BY created_at DESC LIMIT 50").fetchall()
+                for r in rows:
+                    d = dict(r)
+                    if not any(t["timer_id"] == d["timer_id"] for t in timers):
+                        timers.append({
+                            "timer_id": d["timer_id"],
+                            "callback": d["callback"],
+                            "created_at": d["created_at"],
+                            "trigger_at": d["trigger_at"],
+                            "triggered_at": d["triggered_at"],
+                            "status": d["status"],
+                        })
+        except Exception:
+            pass
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_list_llm_data("success", duration_ms, len(timers), [t["timer_id"] for t in timers[:5]])
         # ---- observation_formatter route -------------------------------------------

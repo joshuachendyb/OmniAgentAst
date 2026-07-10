@@ -19,6 +19,7 @@ from app.utils.time_utils import create_timestamp
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import HTTPX_TIMEOUT_DEFAULT
 from app.tools.tool_constants import ERR_TIMER_SET
+from app.db import db
 
 _timers: Dict[str, asyncio.TimerHandle] = {}
 _timer_counter = 0
@@ -111,6 +112,11 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
                 event = await _invoke_timer_callback(timer_id, callback)
                 async with _timer_lock:
                     _timer_events.append(event)
+                try:
+                    with db.get_conn("operations") as conn:
+                        conn.execute("UPDATE timers SET status='triggered', triggered_at=? WHERE timer_id=?", (datetime.now().astimezone().isoformat(), timer_id))
+                except Exception:
+                    pass
 
             def _safe_cb():
                 try:
@@ -121,6 +127,13 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
             loop = asyncio.get_running_loop()
             timer_handle = loop.call_later(delay, _safe_cb)
             _timers[timer_id] = timer_handle
+
+        try:
+            with db.get_conn("operations") as conn:
+                conn.execute("INSERT OR REPLACE INTO timers (timer_id, delay, callback, created_at, trigger_at, status) VALUES (?, ?, ?, ?, ?, 'active')",
+                             (timer_id, delay, callback, datetime.now().astimezone().isoformat(), trigger_at.isoformat()))
+        except Exception:
+            pass
 
         trigger_at_str = trigger_at.strftime("%Y-%m-%d %H:%M:%S")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

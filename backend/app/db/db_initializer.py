@@ -111,6 +111,17 @@ def init_operations_db(get_conn):
                 completed_at TIMESTAMP
             );
             
+            CREATE TABLE IF NOT EXISTS timers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timer_id TEXT UNIQUE NOT NULL,
+                delay REAL NOT NULL,
+                callback TEXT NOT NULL DEFAULT '',
+                created_at TIMESTAMP NOT NULL,
+                trigger_at TIMESTAMP NOT NULL,
+                triggered_at TIMESTAMP,
+                status TEXT NOT NULL DEFAULT 'active'
+            );
+
             CREATE INDEX IF NOT EXISTS idx_operations_session ON file_operations(task_id);
             CREATE INDEX IF NOT EXISTS idx_operations_created ON file_operations(created_at);
         ''')
