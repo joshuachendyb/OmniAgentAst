@@ -3,6 +3,7 @@
 统一管理应用配置,支持从YAML文件和环境变量加载
 """
 
+import functools
 import os
 import yaml
 from collections import OrderedDict
@@ -11,6 +12,7 @@ from pathlib import Path
 from app.utils.paths import get_config_path, get_default_project_root
 
 
+@functools.lru_cache(maxsize=1)
 def _make_safe_loader() -> type:
     """创建支持 OrderedDict 标签的 SafeLoader — 小欧 2026-06-22"""
     class _Loader(yaml.SafeLoader):
