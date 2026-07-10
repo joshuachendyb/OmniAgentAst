@@ -16,8 +16,8 @@ from app.utils.time_utils import get_utc_timestamp, now_str, format_timestamp, c
 from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionResponse, SessionListResponse, BatchTitleResponse
 from app.api.v1.messages import display_name_cache
-from app.services.conversation_storage import save_execution_steps
-from app.services.conversation_storage import ExecutionStepsUpdate
+from app.services.chat.storage import save_execution_steps
+from app.services.chat.storage import ExecutionStepsUpdate
 
 router = APIRouter()
 

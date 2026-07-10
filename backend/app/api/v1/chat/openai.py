@@ -21,7 +21,7 @@ from app.utils.message_id_tracker import get_user_message_id
 
 from app.services import get_service
 from app.utils.logger import logger
-from app.services.react_sse_wrapper.chat_stream import create_error_response, send_start_step
+from app.services.chat.handlers import create_error_response, send_start_step
 from app.utils.sse_formatter import format_agent_sse
 from app.api.v1.chat.models import ChatRequest
 from app.services.agent.steps.base import create_step_counter
@@ -30,7 +30,7 @@ from app.services.task.task_runtime import (
     task_interrupt_check, task_pause_check_and_yield,
     task_cancel_check_and_yield, check_cancelled,
 )
-from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
+from app.services.chat.stream import run_sse_stream
 from app.utils.message_id_tracker import _current_task_id
 from app.utils.prompt_logger import get_prompt_logger
 from app.services.task.hitl_confirmation import resolve_confirmation
