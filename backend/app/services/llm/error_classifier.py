@@ -9,7 +9,7 @@
      （白名单策略必然遗漏 httpx→httpcore→anyio 多层异常类型）
   2. 单一职责、简单直接
 
-文件：app/utils/sys_error_classifier.py（系统层专用）
+文件：app/services/llm/error_classifier.py（系统层专用）
       app/tools/tool_error_classifier.py（工具层专用）
 
 作者: 小欧 - 2026-06-29

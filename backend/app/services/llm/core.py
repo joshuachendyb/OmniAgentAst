@@ -9,7 +9,7 @@ LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05
 """
 
 from typing import List, Dict, Optional
-from app.utils.sys_error_classifier import SystemErrorClassifier
+from app.services.llm.error_classifier import SystemErrorClassifier
 
 
 class FCFormatError(Exception):

@@ -24,7 +24,7 @@ TOOL_CACHE_TTL = 300
 from app.services.llm.core import create_cancelled_chunk
 from app.services.llm.client_sdk import create_llm_client
 from app.services.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
-from app.utils.sys_error_classifier import SystemErrorClassifier
+from app.services.llm.error_classifier import SystemErrorClassifier
 
 from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
