@@ -58,6 +58,7 @@ import json
 import re
 from typing import Any, Dict, Optional
 
+from app.utils.logger import logger
 from app.tools.tool_constants import (
     OBS_MAX_DISPLAY_ITEMS,
     OBS_MAX_STRING_LENGTH,
@@ -206,7 +207,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
 
         # ── #16 slides — 1 tool: read_pptx ──
         if "slides" in data:
-            return _format_slides(data)
+            return _format_slides(data, llm_data)
 
         # ── #17 sysinfo — 1 tool: sysinfo ──
         if "basic" in data and isinstance(data["basic"], dict):
@@ -243,7 +244,8 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
         #   mouse_move, mouse_scroll, mouse_position,
         #   keyboard_control, screen_capture
         return _format_scalar_data(data)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[observation_formatter] format_data_detail handler failed: {e}")
         try:
             return json.dumps(data, ensure_ascii=False, indent=2)
         except Exception:
@@ -254,7 +256,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
 #   输入: {"text": "这是文档正文...", "page_count": 5, "metadata": {...}}
 #   输出: 这是文档正文...\npage_count=5, metadata={'author': '...'}
 def _format_text_content(data: dict, llm_data: dict = None) -> str:
-    """#10 text handler — read_pdf/read_docx 正文直接展示 — 小欧 2026-07-05 — 小沈 2026-07-08 工具感知截断消息"""
+    """#10 text handler — read_pdf/read_docx 正文直接展示 — 小欧 2026-07-05 — 小沈 2026-07-08 工具感知截断消息 — 小欧 2026-07-10 fix: extra字段长度截断"""
     content = data["text"]
     if len(content) > OBS_MAX_STRING_LENGTH:
         content = content[:OBS_MAX_STRING_LENGTH] + _truncation_msg(llm_data)
@@ -268,7 +270,10 @@ def _format_text_content(data: dict, llm_data: dict = None) -> str:
                 else:
                     parts.append(f"{k}={v}")
             else:
-                parts.append(f"{k}={v}")
+                v_str = str(v)
+                if len(v_str) > OBS_MAX_STRING_LENGTH:
+                    v_str = v_str[:OBS_MAX_STRING_LENGTH] + "..."
+                parts.append(f"{k}={v_str}")
         content += "\n" + ", ".join(parts)
     return content
 
@@ -424,6 +429,8 @@ def _format_llm_data(llm_data: Dict) -> str:
     tool = action.get("tool", "")
     tool_zh = action.get("tool_zh", "")
     target = action.get("target", "")
+    if len(target) > 200:
+        target = target[:200] + "..."
 
     # 第1行: 工具执行结果 — 小欧 2026-07-07 — 北京老陈 2026-07-07
     _target_part = f",处理对象-{target}" if target else ""
@@ -432,7 +439,10 @@ def _format_llm_data(llm_data: Dict) -> str:
         "success": f"工具执行: {_st} - 执行结果: 成功",
         "error": f"工具执行: {_st} - 执行结果: 失败",
         "warning": f"工具执行: {_st} - 执行结果: 完成-[有警告]",
-    }.get(exec_code, f"工具执行: {_st} - 执行结果: 成功")
+    }.get(exec_code)
+    if status_line is None:
+        logger.warning(f"[observation_formatter] unknown exec_code={exec_code!r} in _format_llm_data")
+        status_line = f"工具执行: {_st} - 执行结果: 未知({exec_code})"
 
     # 第2行: 观察: {message} - {summary} — 小沈 2026-07-06
     parts = [p for p in [message, summary] if p]
@@ -723,21 +733,23 @@ def _format_tasks(data: dict) -> str:
 #   输入: {"windows": [{"hwnd":123456,"title":"记事本","state":"visible","position":{"left":0,"top":0,"width":800,"height":600}}]}
 #   输出:     HWND    标题    状态    位置\n  ────────────────────────────────\n   123456  记事本  visible  x=0,y=0 800x600\n---\nwindows: 1
 def _format_windows(data: dict) -> str:
-    """#15 windows handler — window_info 表格 — 小欧 2026-07-05"""
+    """#15 windows handler — window_info 表格 — 小欧 2026-07-05 — 小欧 2026-07-10 fix: 不修改原始数据"""
     items = data.get("windows", [])
     if not items:
         return ""
+    augmented = []
     for w in items:
         pos = w.get("position")
         if pos and isinstance(pos, dict):
-            w["_pos"] = f"x={pos.get('left','?')},y={pos.get('top','?')} {pos.get('width','?')}x{pos.get('height','?')}"
+            _pos_val = f"x={pos.get('left','?')},y={pos.get('top','?')} {pos.get('width','?')}x{pos.get('height','?')}"
         elif pos is None:
-            w["_pos"] = "[hidden]"
+            _pos_val = "[hidden]"
         else:
-            w["_pos"] = "?"
+            _pos_val = "?"
+        augmented.append({**w, "_pos": _pos_val})
     cols = [("hwnd", "HWND"), ("title", "标题"), ("state", "状态"), ("_pos", "位置")]
-    widths = _calc_col_widths(items, cols)
-    lines = _format_table_block(items, cols, widths)
+    widths = _calc_col_widths(augmented, cols)
+    lines = _format_table_block(augmented, cols, widths)
     meta = f"windows: {len(items)}"
     if data.get("total", 0) > len(items):
         meta += f", total: {data['total']}"
@@ -748,8 +760,8 @@ def _format_windows(data: dict) -> str:
 # #16 slides 样式:
 #   输入: {"slide_count":3,"slides":[{"slide_num":1,"text":"封面\n副标题","tables_count":0},{"slide_num":2,"text":"内容页","tables_count":1}]}
 #   输出:   幻灯片 1/3\n    封面\n    副标题\n   幻灯片 2/3\n    内容页  [1个表格]\n---\n[slide_count: 3]
-def _format_slides(data: dict) -> str:
-    """#16 slides handler — read_pptx items 块 — 小欧 2026-07-05"""
+def _format_slides(data: dict, llm_data: dict = None) -> str:
+    """#16 slides handler — read_pptx items 块 — 小欧 2026-07-05 — 小欧 2026-07-10 fix: 加llm_data参数统一截断消息"""
     items = data.get("slides", [])
     if not items:
         return ""
@@ -764,7 +776,7 @@ def _format_slides(data: dict) -> str:
         text = slide.get("text", "")
         if text:
             if len(text) > OBS_MAX_STRING_LENGTH:
-                text = text[:OBS_MAX_STRING_LENGTH] + " ...(截断)"
+                text = text[:OBS_MAX_STRING_LENGTH] + _truncation_msg(llm_data)
             for line in text.split("\n"):
                 lines.append(f"    {line}")
         tables = slide.get("tables")
@@ -822,13 +834,20 @@ def _format_sysinfo(data: dict) -> str:
 #     size: 1024
 #     path: /tmp/test.txt
 def _format_scalar_data(data: dict) -> str:
-    """键值对展示，每行一个 key: value — 小欧 2026-07-05 — 小沈 2026-07-08 _note 特殊处理"""
-    _note = data.pop("_note", "")
+    """键值对展示，每行一个 key: value — 小欧 2026-07-05 — 小沈 2026-07-08 _note 特殊处理 — 小欧 2026-07-10 fix: pop→get 防副作用 + OBS_DICT_MAX_KEYS"""
+    _note = data.get("_note", "")
+    keys = [k for k in data if k != "_note"]
     lines = []
-    for k, v in data.items():
+    for i, k in enumerate(keys):
+        if i >= OBS_DICT_MAX_KEYS:
+            remaining = len(keys) - OBS_DICT_MAX_KEYS
+            if remaining > 0:
+                lines.append(f"  ... 还有 {remaining} 个键未显示")
+            break
+        v = data[k]
         v_str = str(v)
         if len(v_str) > OBS_MAX_STRING_LENGTH:
-            v_str = v_str[:OBS_MAX_STRING_LENGTH] + "..."
+            v_str = v_str[:OBS_MAX_STRING_LENGTH] + "... (截断)"
         lines.append(f"  {k}: {v_str}")
     if _note:
         lines.append(f"  {_note}")
