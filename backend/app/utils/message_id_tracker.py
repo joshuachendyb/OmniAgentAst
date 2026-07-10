@@ -13,7 +13,6 @@ from typing import Dict, Optional
 # 存储每个session的消息ID
 # key: session_id, value: user_message_id 或 assistant_message_id
 _user_message_ids: Dict[str, int] = {}
-_assistant_message_ids: Dict[str, int] = {}
 _message_ids_lock = threading.Lock()
 
 

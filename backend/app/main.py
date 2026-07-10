@@ -49,7 +49,7 @@ def get_version() -> str:
                     version = line.strip().lstrip('\ufeff')
                     if version:
                         break
-            logger.info(f"Successfully read version from version.txt: {version}")
+            logger.debug(f"Successfully read version from version.txt: {version}")
             return version.lstrip('v')
     except Exception as e:
         logger.warning(f"Failed to read version.txt: {e}")

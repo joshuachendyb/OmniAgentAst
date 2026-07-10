@@ -61,7 +61,7 @@ def _detect_self_ref_rate(content: str) -> float:
     Returns:
         自我指涉检测率 (0.0 ~ 1.0)
     """
-    sentences = re.split(r'[。!?\n!?.!?]', content)
+    sentences = re.split(r'[。!?\n.]', content)
     sentences = [s.strip() for s in sentences if s.strip()]
     total_sentences = max(len(sentences), 1)
 

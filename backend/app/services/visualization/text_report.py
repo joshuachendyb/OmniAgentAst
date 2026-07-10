@@ -21,7 +21,7 @@ def _build_header(task_id: str, task_description: str, operations: List[Tuple]) 
     lines.append(f"Agent: file-operation-agent")
     lines.append(f"任务描述: {task_description}")
     lines.append(f"开始时间: {operations[0][6] if operations else ''}")
-    lines.append(f"完成时间: 未完成")
+    lines.append(f"完成时间: {operations[-1][6] if operations else ''}")
     lines.append("")
     return lines
 
