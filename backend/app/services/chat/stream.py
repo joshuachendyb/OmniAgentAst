@@ -17,7 +17,7 @@ from app.services.agent.universal_agent import UniversalAgent
 from app.services.chat.handlers import save_execution_steps_to_db
 from app.services.task.task_runtime import check_cancelled, check_paused
 from app.utils.logger import logger
-from app.services.prompts.prompt_logger import get_prompt_logger
+from app.logger.prompt_logger import get_prompt_logger
 from app.utils.sse_formatter import format_agent_sse
 
 

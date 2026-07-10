@@ -14,7 +14,7 @@ from app.services.agent.steps import ChunkStep
 from app.services.llm.base_service import FC_FALLBACK_ENABLED, FC_MAX_RETRIES, LLM_TOOL_CHOICE
 from app.services.llm.core import FCFormatError
 from app.utils.logger import logger
-from app.services.prompts.prompt_logger import get_prompt_logger
+from app.logger.prompt_logger import get_prompt_logger
 
 
 

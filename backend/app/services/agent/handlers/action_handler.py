@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 
 from app.utils.logger import logger
-from app.services.prompts.prompt_logger import get_prompt_logger
+from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep, ChunkStep  # ChunkStep用于重试前端通知 — 小欧 2026-07-09
 from app.services.agent.status_table import AgentStatus
 from app.services.agent.observation_formatter import build_observation_text

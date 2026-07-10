@@ -32,7 +32,7 @@ from app.services.task.task_runtime import (
 )
 from app.services.chat.stream import run_sse_stream
 from app.services.task.task_context import _current_task_id
-from app.services.prompts.prompt_logger import get_prompt_logger
+from app.logger.prompt_logger import get_prompt_logger
 from app.services.task.hitl_confirmation import resolve_confirmation
 
 router = APIRouter()
