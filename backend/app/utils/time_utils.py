@@ -37,7 +37,7 @@ def convert_to_utc(time_value) -> str:
         dt = datetime.fromisoformat(str(time_value).replace(' ', 'T'))
         dt_utc = dt.astimezone(timezone.utc)
         return dt_utc.isoformat().replace("+00:00", "Z")
-    except:
+    except (ValueError, TypeError, OverflowError):
         return get_utc_timestamp()
 
 

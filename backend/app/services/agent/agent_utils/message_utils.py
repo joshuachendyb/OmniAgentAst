@@ -40,7 +40,7 @@ def build_observation_text(execution_result, tool_name: str = "", tool_params: O
         # 如果既没有llm_data也没有data，使用简洁的JSON表示
         try:
             result_str = json.dumps(execution_result, ensure_ascii=False, separators=(',', ':'))
-        except:
+        except (TypeError, ValueError):
             result_str = str(execution_result)
         return f"Observation: {result_str[:500]}" if len(result_str) > 500 else f"Observation: {result_str}"
     result_str = str(execution_result)

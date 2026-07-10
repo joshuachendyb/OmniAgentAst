@@ -228,7 +228,8 @@ def _merge_llm_data(all_llm_data: List[Dict]) -> Dict:
         status = d.get("status")
         if not isinstance(status, dict):
             return 0
-        return severity_order.get(status.get("exec_code", "success"), 0)
+        exec_code = status.get("exec_code", "success")
+        return severity_order.get(exec_code, 0)
 
     sorted_data = sorted(all_llm_data, key=_severity_key, reverse=True)
 
@@ -358,8 +359,8 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
             logger.warning(f"[action_handler] add_tool_result异常: {e}")
             try:
                 ctx.agent.message_builder.add_tool_result("", obs_text)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[action_handler] add_tool_result最终异常: {e}")
 
     if not obs_parts:
         obs_parts = ["Observation: 无结果"]
