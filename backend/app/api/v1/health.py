@@ -147,37 +147,3 @@ async def execute_tool(request: ToolExecuteRequest):
             success=False,
             error=err_msg
         )
-
-    try:
-        _api_task_id = str(_uuid.uuid4())
-        _current_task_id.set(_api_task_id)
-
-        if inspect.iscoroutinefunction(impl):
-            result = await impl(**params)
-        else:
-            loop = asyncio.get_event_loop()
-            _captured_task_id = _current_task_id.get()
-            def _run_with_task_context():
-                _current_task_id.set(_captured_task_id)
-                return impl(**params)
-            result = await loop.run_in_executor(None, _run_with_task_context)
-
-        if asyncio.iscoroutine(result):
-            result = await result
-
-        return ToolExecuteResponse(
-            tool_name=tool_name,
-            success=True,
-            result=result if isinstance(result, dict) else {"output": str(result)}
-        )
-    except Exception as e:
-        err_msg = str(e)
-        if "missing" in err_msg and "required positional argument" in err_msg:
-            match = _re.search(r"missing \d+ required positional argument[s]?:\s*(.+)", err_msg)
-            missing_params = match.group(1) if match else "未知参数"
-            err_msg = f"缺少必填参数: {missing_params}。请参考tool/list获取{tool_name}的inputSchema"
-        return ToolExecuteResponse(
-            tool_name=tool_name,
-            success=False,
-            error=err_msg
-        )
