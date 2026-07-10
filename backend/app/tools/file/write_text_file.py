@@ -29,7 +29,7 @@ from app.services.task.task_context import _current_task_id
 from app.db.models.operation_models import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory
-from app.services.safety.file_safety import record_operation, execute_with_safety
+from app.services.safety import record_operation, execute_with_safety
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_safety_checker import check_content_safety
 from app.utils.logger import logger
@@ -283,19 +283,6 @@ async def writetext(
                     data={"content_preview": _build_content_preview(checked_content)},
                     llm_data=llm_data,
                 )
-            llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
-            if diff_text:
-                llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
-            # ---- observation_formatter route -------------------------------------------
-            # branch: #21 fallback (key:val)
-            # trigger: 无上述20条分支匹配 — operation_id 不命中任何专用分支
-            # handler: _format_scalar_data(data) — key | value 单行列表
-            # file:    observation_formatter.py:214
-            # ------------------------------------------------------------------------------
-            return build_success(
-                data={"content_preview": _build_content_preview(checked_content)},
-                llm_data=llm_data,
-            )
             llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
             if diff_text:
                 llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}

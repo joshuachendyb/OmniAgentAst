@@ -21,7 +21,7 @@ from app.tools.tool_constants import MAX_READ_SIZE
 from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
 from app.services.task.task_context import _current_task_id
 from app.db.models.operation_models import OperationType
-from app.services.safety.file_safety import record_operation, execute_with_safety
+from app.services.safety import record_operation, execute_with_safety
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param
 from app.utils.logger import logger

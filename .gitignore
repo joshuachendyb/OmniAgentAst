@@ -46,7 +46,8 @@ backend/test_verify_*
 frontend/node_modules/
 
 # config (contains API keys)
-config/
+/config/
+backend/config/
 
 # research docs (not project source)
 插件模型-research/
