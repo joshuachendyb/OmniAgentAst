@@ -17,7 +17,7 @@ from uuid import uuid4
 from app.services.task.task_runtime import check_cancelled
 
 from app.constants import HITL_TIMEOUT
-from app.utils.logger import logger
+from app.logger import logger
 
 
 @dataclass

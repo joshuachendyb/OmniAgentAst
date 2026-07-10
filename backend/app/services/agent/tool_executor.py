@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, Optional, Set
 
 from app.tools.tool_types import ToolCategory
 from app.tools.tool_response import is_success
-from app.utils.logger import logger
+from app.logger import logger
 from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_search_desc
 
 

@@ -20,7 +20,7 @@ SYSTEM Register - 系统信息工具注册点
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.utils.logger import logger
+from app.logger import logger
 
 SYSTEM_TOOL_DEPENDENCIES = {
     "event_log": ["psutil"],

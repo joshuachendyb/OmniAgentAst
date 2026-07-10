@@ -23,7 +23,7 @@ Network Register - 网络通信工具注册点
 # ============================================================
 from app.tools.registry import register_tool, tool_registry
 from app.tools.tool_types import ToolCategory
-from app.utils.logger import logger
+from app.logger import logger
 import socket
 import time
 from typing import Any, Dict, Optional

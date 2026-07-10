@@ -6,7 +6,7 @@ db_initializer — 数据库初始化
 小欧 2026-06-18 从database.py拆分，遵守SRP
 """
 import sqlite3
-from app.utils.logger import logger
+from app.logger import logger
 
 
 def init_chat_db(get_conn):

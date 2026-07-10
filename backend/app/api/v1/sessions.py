@@ -10,7 +10,7 @@ import uuid
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Query
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.response_utils import handle_api_errors
 from app.utils.time_utils import get_utc_timestamp, now_str, format_timestamp, convert_to_utc
 from app.db import db

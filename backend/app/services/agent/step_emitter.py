@@ -11,7 +11,7 @@ Author: 小沈 - 2026-05-31
 from typing import Any, Dict, Optional
 
 from app.services.agent.steps import ErrorStep
-from app.utils.logger import logger
+from app.logger import logger
 
 
 class StepEmitter:

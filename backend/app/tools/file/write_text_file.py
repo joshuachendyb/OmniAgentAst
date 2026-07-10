@@ -32,7 +32,7 @@ from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.services.safety import record_operation, execute_with_safety
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_safety_checker import check_content_safety
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_write, check_conflict, is_unchanged
 

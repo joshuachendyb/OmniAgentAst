@@ -45,7 +45,7 @@ from app.services.model.persistence import (
     save_config,
     write_yaml_config,
 )
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.response_utils import api_success, api_failure
 
 

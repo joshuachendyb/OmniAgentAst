@@ -20,7 +20,7 @@ from app.tools.validate.file_safety_checker import check_content_safety
 from app.tools.tool_constants import ERR_WRITE_XLSX, ERR_DOC_NO_OPENPYXL
 from app.utils.json_utils import coerce_json
 from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.table_helper import calculate_column_widths, get_table_header_style_config
 
 

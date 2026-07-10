@@ -8,7 +8,7 @@ tool_cache_manager — 工具缓存管理
 
 from app.tools.tool_types import ToolCategory
 from app.tools.registry import tool_registry
-from app.utils.logger import logger
+from app.logger import logger
 
 
 

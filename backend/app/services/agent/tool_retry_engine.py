@@ -20,7 +20,7 @@ import asyncio
 import inspect
 from typing import Any, Callable, Dict, Optional
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
 from app.tools.tool_constants import (
     TOOL_TIMEOUTS, TOOL_RETRY_BACKOFF,

@@ -14,7 +14,7 @@ from app.utils.time_utils import create_timestamp
 from app.utils.sse_formatter import format_sse_event, format_agent_sse
 from app.services.agent.steps import MetaStep, ErrorStep, FinalStep
 from app.services.llm.error_classifier import SystemErrorClassifier
-from app.utils.logger import logger
+from app.logger import logger
 from app.services.chat.storage import save_execution_steps
 from app.services.chat.storage import ExecutionStepsUpdate
 from app.services.chat.storage import get_user_message_id

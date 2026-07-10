@@ -23,7 +23,7 @@ from app.tools.network.http_client_sdk import create_http_client
 from app.tools.validate.url_validator import validate_proxy
 from app.constants import HTML_TAG_PATTERN
 from app.utils.json_utils import parse_json
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_constants import TOOL_BROWSER_UA
 from app.tools.tool_constants import (
     ERR_NET_UNKNOWN,

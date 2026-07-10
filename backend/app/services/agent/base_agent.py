@@ -19,7 +19,7 @@ from app.services.agent.steps import ReasoningStep
 from app.config import get_config
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.utils.logger import logger
+from app.logger import logger
 from app.services.agent.chunk_buffer import ChunkBuffer
 from app.services.agent.message_builder import MessageBuilder
 

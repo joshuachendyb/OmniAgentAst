@@ -15,7 +15,7 @@ import asyncio
 import time
 from typing import Any, Dict, Optional, AsyncGenerator
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.services.llm.error_classifier import SystemErrorClassifier
 from app.logger.prompt_logger import get_prompt_logger
 from app.config import get_config

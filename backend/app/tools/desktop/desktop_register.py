@@ -25,7 +25,7 @@ import importlib
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.utils.logger import logger
+from app.logger import logger
 
 DESKTOP_TOOL_DEPENDENCIES = {
     "window_info": [{"import_name": "win32gui", "pip_package": "pywin32"}],

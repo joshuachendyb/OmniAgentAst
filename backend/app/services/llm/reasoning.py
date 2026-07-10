@@ -9,7 +9,7 @@ Author: 小沈 - 2026-05-27
 
 from typing import Dict, List, Optional
 
-from app.utils.logger import logger
+from app.logger import logger
 
 
 def fix_thinking_messages(messages: List[Dict], is_thinking: bool) -> List[Dict]:

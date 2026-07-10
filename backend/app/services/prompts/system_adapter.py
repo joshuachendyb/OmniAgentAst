@@ -12,7 +12,7 @@ import shutil
 import subprocess
 from typing import Optional
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.time_utils import now_str
 from app.config import get_config as get_config_instance
 

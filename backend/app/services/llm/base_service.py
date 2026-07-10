@@ -10,7 +10,7 @@ import json as _json
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 
 import httpx
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.json_utils import parse_json, _try_fix_incomplete_json, _normalize_tool_params
 from app.services.llm.core import ChatResponse, FCFormatError, StreamChunk, _resolve_exception
 # LLM层常量 — 合并自llm_constants.py 小健 2026-07-03

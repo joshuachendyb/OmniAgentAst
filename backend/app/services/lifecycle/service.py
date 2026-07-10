@@ -9,7 +9,7 @@ service — 服务创建与获取
 from typing import Optional
 import threading
 
-from app.utils.logger import setup_logger
+from app.logger import setup_logger
 from app.utils.time_utils import now_str
 from app.services.llm import BaseAIService
 from app.services.lifecycle.lifecycle import close_instance_sync

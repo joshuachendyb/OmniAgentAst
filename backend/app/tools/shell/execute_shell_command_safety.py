@@ -14,7 +14,7 @@ import re
 from typing import Optional
 
 from app.services.safety.tool_safety_checker import SafetyResult
-from app.utils.logger import logger
+from app.logger import logger
 
 
 SHELL_DANGEROUS_PATTERNS = [

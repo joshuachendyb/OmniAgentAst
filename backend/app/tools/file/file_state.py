@@ -9,7 +9,7 @@ import hashlib
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from app.utils.logger import logger
+from app.logger import logger
 
 # {resolved_path_str: (mtime_ns, content_hash)}
 _state: Dict[str, Tuple[int, str]] = {}

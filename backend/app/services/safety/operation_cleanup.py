@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.db import db
-from app.utils.logger import logger
+from app.logger import logger
 
 
 def _get_folder_size(path: Path) -> int:

@@ -21,7 +21,7 @@ from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.validate.file_type_checker import check_for_text_tool
 
 from app.utils.text_utils import add_line_numbers
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_read
 

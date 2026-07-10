@@ -15,7 +15,7 @@ from app.services.visualization.text_report import generate_text_report
 from app.services.visualization.tree_report import export_tree_to_json
 from app.services.visualization.sankey_report import generate_sankey_data
 from app.services.visualization.animation_report import generate_animation_script
-from app.utils.logger import logger
+from app.logger import logger
 
 
 def generate_all_reports(task_id: str, task_description: str, output_dir: Path) -> Dict[str, Path]:

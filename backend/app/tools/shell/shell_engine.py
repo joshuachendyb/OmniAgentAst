@@ -43,7 +43,7 @@ import threading
 import time
 from typing import Any, Dict, Optional
 
-from app.utils.logger import logger
+from app.logger import logger
 
 
 # ═══════════════════════════════════════════════════════

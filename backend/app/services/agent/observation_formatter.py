@@ -58,7 +58,7 @@ import json
 import re
 from typing import Any, Dict, Optional
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_constants import (
     OBS_MAX_DISPLAY_ITEMS,
     OBS_MAX_STRING_LENGTH,

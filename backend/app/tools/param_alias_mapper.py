@@ -13,7 +13,7 @@
 """
 
 from typing import Dict, Any, Tuple
-from app.utils.logger import logger
+from app.logger import logger
 
 
 PARAM_ALIASES = {

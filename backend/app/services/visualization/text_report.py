@@ -7,7 +7,7 @@ from typing import List, Dict, Tuple
 from datetime import datetime
 
 from app.services.visualization.common import count_op_stats, format_size
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.time_utils import now_str
 from app.db.operation_queries import query_file_operations
 

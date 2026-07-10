@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from jinja2 import Environment, FileSystemLoader
 
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.db.operation_queries import query_animation_operations as _query_animation_operations
 
 

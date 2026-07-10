@@ -9,7 +9,7 @@ lifecycle — 服务生命周期管理
 import asyncio
 from typing import Optional
 
-from app.utils.logger import setup_logger
+from app.logger import setup_logger
 from app.services.llm import BaseAIService
 
 logger = setup_logger(__name__)

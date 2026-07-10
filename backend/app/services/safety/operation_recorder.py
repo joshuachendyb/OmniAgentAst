@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from app.db import db
 from app.db.models.operation_models import OperationType, OperationStatus
-from app.utils.logger import logger
+from app.logger import logger
 from app.services.safety.hash_helper import compute_file_hash
 
 

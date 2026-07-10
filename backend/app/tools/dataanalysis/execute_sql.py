@@ -12,7 +12,7 @@ import sqlite3
 import time as _time_mod
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_SQL_EXEC, sql_error_hint
 from app.tools.tool_fc_helper import _get_connection, _close_connection

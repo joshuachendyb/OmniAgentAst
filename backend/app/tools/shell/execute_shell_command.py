@@ -87,7 +87,7 @@ from app.tools.shell.shell_engine import PersistentShell
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.validate.timeout_validator import validate_timeout
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_constants import (
     ERR_PARAMETER_EMPTY, ERR_PARAMETER_INVALID,
     ERR_SHELL_EXCEPTION, ERR_SHELL_EXEC,

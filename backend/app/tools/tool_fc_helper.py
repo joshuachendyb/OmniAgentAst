@@ -40,7 +40,7 @@ import pandas as pd
 from app.tools.tool_constants import QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
 from app.constants import UTC_OFFSET_PATTERN
 
-from app.utils.logger import logger
+from app.logger import logger
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -7,7 +7,7 @@ import html
 from typing import List, Dict, Tuple
 
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.db.operation_queries import query_file_operations
 
 

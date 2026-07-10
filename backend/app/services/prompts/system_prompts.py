@@ -25,7 +25,7 @@ from app.services.prompts.system_adapter import (
     get_pwsh_version,
     get_system_prompt as get_system_prompt_string,
 )
-from app.utils.logger import logger
+from app.logger import logger
 from app.services.prompts.project_context import load_project_context
 from app.config import get_config as get_config_instance
 

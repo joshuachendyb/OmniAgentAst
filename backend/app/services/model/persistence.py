@@ -19,7 +19,7 @@ from app.tools.tool_fc_helper import backup_file
 
 from app.config import get_config_path as _get_config_path
 from app.services.lifecycle.lifecycle import reset
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.response_utils import handle_api_errors as handle_config_errors
 from fastapi import HTTPException
 

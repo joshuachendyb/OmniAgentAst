@@ -9,7 +9,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 
-from app.utils.logger import logger
+from app.logger import logger
 
 
 class MetricType(Enum):

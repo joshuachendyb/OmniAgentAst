@@ -25,7 +25,7 @@ from app.tools.validate.url_validator import _is_private_or_loopback_ip
 from app.tools.validate.timeout_validator import validate_timeout
 from app.tools.validate.file_path_checker import validate_str_param
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_constants import ERR_MISSING_PARAM
 from app.tools.tool_constants import (
     ERR_INVALID_MODE,

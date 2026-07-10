@@ -9,7 +9,7 @@ task_runtime — 运行态任务管理（内存）
 from datetime import datetime
 from typing import Optional, Callable, AsyncGenerator
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.sse_formatter import format_agent_sse
 from app.utils.response_utils import api_success, api_failure
 from app.services.task.task_state import (

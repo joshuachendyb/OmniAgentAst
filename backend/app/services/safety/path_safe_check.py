@@ -31,7 +31,7 @@ from app.tools.tool_constants import (
     FORBIDDEN_PATHS_WINDOWS_EXACT,
     FORBIDDEN_PATHS_WINDOWS_PREFIX,
 )
-from app.utils.logger import logger
+from app.logger import logger
 
 
 def get_default_allowed_paths() -> List[Path]:

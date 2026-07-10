@@ -11,7 +11,7 @@ set_window_state — 窗口状态操作(maximize/minimize/restore/topmost/unpin)
 import time as _time_mod
 from typing import Any, Dict, List, Optional
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE, ERR_DESKTOP_GET_WINDOW_INFO
 from app.tools.validate.file_path_checker import validate_str_param

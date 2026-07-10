@@ -23,7 +23,7 @@ from app.db.models.operation_models import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.services.safety import record_operation, execute_with_safety
-from app.utils.logger import logger
+from app.logger import logger
 
 
 

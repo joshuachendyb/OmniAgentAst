@@ -21,7 +21,7 @@
 import asyncio
 import time
 from typing import AsyncIterator, TypeVar, Generic
-from app.utils.logger import setup_logger
+from app.logger import setup_logger
 
 logger = setup_logger(__name__)
 

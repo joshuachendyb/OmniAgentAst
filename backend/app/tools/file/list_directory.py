@@ -18,7 +18,7 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
 from app.tools.tool_constants import TOOL_TIMEOUTS, LISTDIR_PAGE_SIZE
 from app.tools.validate.file_path_checker import validate_path, OpCategory
-from app.utils.logger import logger
+from app.logger import logger
 
 
 # 文件系统遍历时跳过噪声目录 — 小欧 2026-07-05

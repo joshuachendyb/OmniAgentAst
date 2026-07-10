@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable, Optional, TypeVar
 
 from fastapi import HTTPException
 
-from app.utils.logger import logger
+from app.logger import logger
 
 F = TypeVar("F", bound=Callable[..., Awaitable])
 

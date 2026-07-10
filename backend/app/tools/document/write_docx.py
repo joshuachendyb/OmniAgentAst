@@ -21,7 +21,7 @@ from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
 from app.tools.tool_constants import ERR_WRITE_DOCX
 from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config, normalize_table_data
 from app.tools.document.md_inline_utils import _parse_inline_md
 

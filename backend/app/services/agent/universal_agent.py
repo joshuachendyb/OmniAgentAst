@@ -12,7 +12,7 @@ from typing import Any, Optional, Set
 from app.services.agent import BaseAgent
 from app.tools.tool_types import ToolCategory
 from app.services.prompts.system_prompts import PromptBuilder
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.cache import TTLCache
 
 from app.services.agent.tool_cache_manager import patch_search_desc

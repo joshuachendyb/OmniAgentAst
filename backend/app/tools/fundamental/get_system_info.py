@@ -15,7 +15,7 @@ from typing import Dict, Any
 import psutil
 
 from app.tools.tool_response import build_success, build_error
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_constants import ERR_SYSTEM_INFO
 
 

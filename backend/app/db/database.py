@@ -27,7 +27,7 @@ import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
 from typing import Iterator
-from app.utils.logger import logger
+from app.logger import logger
 from app.db.db_initializer import (
     init_chat_db, init_operations_db, init_task_tracker_db,
 )

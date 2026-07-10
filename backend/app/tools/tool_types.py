@@ -10,7 +10,7 @@
 from typing import Dict, List, Optional, Callable, Any, Union
 from dataclasses import dataclass, field
 from enum import Enum
-from app.utils.logger import logger
+from app.logger import logger
 
 
 # ====================================================================

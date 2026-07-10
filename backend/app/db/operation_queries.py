@@ -16,7 +16,7 @@ from app.db import db
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.db.models.operation_models import OperationRecord
 from app.utils.json_utils import parse_json
-from app.utils.logger import logger
+from app.logger import logger
 
 
 def _execute_query(sql: str, params: tuple) -> list:

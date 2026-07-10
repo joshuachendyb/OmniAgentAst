@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.tools.tool_fc_helper import _detect_encoding
-from app.utils.logger import logger
+from app.logger import logger
 
 
 _ENCODING_PRIORITY = [

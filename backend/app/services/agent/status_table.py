@@ -11,7 +11,7 @@ chendyg 2026-07-01
 import threading
 from enum import Enum
 from typing import Optional
-from app.utils.logger import logger
+from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 
 

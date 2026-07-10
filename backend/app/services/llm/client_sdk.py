@@ -21,7 +21,7 @@ from app.constants import (
     LLM_MAX_KEEPALIVE,
 )
 from app.config import get_config
-from app.utils.logger import logger
+from app.logger import logger
 
 
 

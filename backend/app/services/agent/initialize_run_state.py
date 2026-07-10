@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 from app.constants import MAX_CONSECUTIVE_CHUNKS
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.chunk_buffer import ChunkBuffer
-from app.utils.logger import logger
+from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 from app.db import db
 

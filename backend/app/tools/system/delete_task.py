@@ -12,7 +12,7 @@ import subprocess
 import time as _time_mod
 from typing import Dict, Any
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS, SUBPROCESS_TIMEOUT_DEFAULT
 from app.tools.tool_constants import (

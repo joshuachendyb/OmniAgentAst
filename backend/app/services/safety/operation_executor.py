@@ -14,7 +14,7 @@ from uuid import uuid4
 from app.config import get_config
 from app.db import db
 from app.db.models.operation_models import OperationType, OperationStatus
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.time_utils import timestamp_for_filename
 from app.services.safety.operation_cleanup import cleanup_expired_backups
 from app.services.safety.operation_recorder import (

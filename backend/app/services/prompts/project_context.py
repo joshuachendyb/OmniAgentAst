@@ -8,7 +8,7 @@ import os
 from collections import OrderedDict
 
 from app.config import get_config as get_config_instance
-from app.utils.logger import logger
+from app.logger import logger
 
 CONTEXT_FILE = "OmniAgent.md"
 MAX_CHARS = 8000

@@ -21,7 +21,7 @@ from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy
 from app.tools.validate.timeout_validator import validate_timeout
 from app.utils.json_utils import coerce_json
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
     ERR_NETWORK_DOWN,

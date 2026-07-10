@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any, List
 from enum import Enum
 
 from app.db import db
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.json_utils import parse_json
 from app.db.models.operation_models import OperationStatus
 

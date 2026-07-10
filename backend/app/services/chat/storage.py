@@ -12,7 +12,7 @@ from sqlite3 import Connection
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.db import db
 from app.utils.json_utils import safe_json_dumps
 from app.utils.time_utils import create_timestamp

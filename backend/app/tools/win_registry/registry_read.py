@@ -16,7 +16,7 @@ import winreg
 from app.utils.time_utils import timestamp_for_filename
 from typing import Optional, Dict, Any
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT, HIVE_MAP
 from app.tools.validate.registry_path_checker import validate_registry_key

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 from dataclasses import dataclass
 
-from app.utils.logger import logger
+from app.logger import logger
 
 
 @dataclass

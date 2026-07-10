@@ -6,7 +6,7 @@
 import time
 from typing import Dict, List, Optional, Any
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.services.monitoring.collector import MetricsCollector, Metric
 
 

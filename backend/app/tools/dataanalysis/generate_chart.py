@@ -21,7 +21,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.utils.json_utils import coerce_json
 from app.tools.validate.file_path_checker import validate_path, OpCategory
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_constants import ERR_DOC_CHART_GENERATE
 
 

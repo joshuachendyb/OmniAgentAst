@@ -21,7 +21,7 @@ Document Register - 文档操作工具注册点（仅DOCUMENT分类）
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.utils.logger import logger
+from app.logger import logger
 
 # 文档工具依赖配置 — 小健 2026-06-18
 # 注意：pip包名与import名不一致时必须用字典格式指定import_name

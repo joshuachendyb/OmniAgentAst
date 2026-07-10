@@ -28,7 +28,7 @@ from app.tools.validate.url_validator import validate_url, validate_proxy
 from app.tools.validate.timeout_validator import validate_timeout
 
 from app.constants import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.tool_constants import TOOL_BROWSER_UA
 from app.tools.tool_constants import (
     ERR_INVALID_URL,

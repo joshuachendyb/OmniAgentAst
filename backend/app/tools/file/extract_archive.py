@@ -22,7 +22,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_EXTRACT
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory
-from app.utils.logger import logger
+from app.logger import logger
 
 
 

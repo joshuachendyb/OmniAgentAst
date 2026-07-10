@@ -25,7 +25,7 @@ import json
 from typing import Any, Optional, Tuple
 
 from app.tools.tool_fc_helper import _check_module
-from app.utils.logger import logger
+from app.logger import logger
 
 _OFFICE_WRITE_MODULES = {
     "write_docx": "docx",

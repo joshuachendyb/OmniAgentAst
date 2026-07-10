@@ -64,7 +64,7 @@ from app.tools.file.delete_file import delete
 from app.tools.file.rename_file import rename
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.utils.logger import logger
+from app.logger import logger
 
 # 文件工具依赖配置 — 小健 2026-06-18
 # compress的pyzipper是可选依赖(仅加密ZIP时需要) — 小健 2026-06-19

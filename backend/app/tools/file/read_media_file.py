@@ -20,7 +20,7 @@ from app.tools.tool_constants import MAX_MEDIA_READ_SIZE
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.validate.file_type_checker import check_for_media_tool
 
-from app.utils.logger import logger
+from app.logger import logger
 
 
 _MIME_MAP = {

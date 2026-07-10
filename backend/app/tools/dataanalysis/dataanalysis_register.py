@@ -16,7 +16,7 @@ DATAANALYSIS Register — 数据分析工具注册点
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.utils.logger import logger
+from app.logger import logger
 
 # 数据分析工具依赖配置 — 小健 2026-06-18
 # 每个工具对应的第三方依赖包列表

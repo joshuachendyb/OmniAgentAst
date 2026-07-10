@@ -10,7 +10,7 @@ v2.0: 新增错误消息检测，LLM返回错误时设FAILED而非COMPLETED — 
 from typing import Dict
 
 from app.services.agent.steps import ThoughtStep, FinalStep, ErrorStep
-from app.utils.logger import logger
+from app.logger import logger
 
 
 async def handle_answer(agent, parsed: Dict, chunk_buffer):

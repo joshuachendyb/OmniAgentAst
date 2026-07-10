@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any, Optional
 from app.utils.time_utils import create_timestamp
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.constants import TASK_TIMEOUT
 from app.utils.response_utils import api_success, api_failure
 

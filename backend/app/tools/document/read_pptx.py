@@ -18,7 +18,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.tool_constants import ERR_DOC_READ_PPTX
 
-from app.utils.logger import logger
+from app.logger import logger
 
 
 def _build_read_pptx_llm_data(

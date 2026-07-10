@@ -28,7 +28,7 @@ from app.api.v1 import health, sessions, messages, metrics
 from app.api.v1.model_routes import router as model_router
 from app.api.v1.chat import router as chat_router, task_router, sse as chat_execution_router
 from app.api.v1.task_queries import router as task_queries_router
-from app.utils.logger import logger
+from app.logger import logger
 from app.services.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS
 from app.services.task.task_registry import cleanup_expired_tasks

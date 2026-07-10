@@ -22,7 +22,7 @@ Shell Register - Shell工具注册点
 
 from app.tools.registry import register_tool, tool_registry
 from app.tools.tool_types import ToolCategory
-from app.utils.logger import logger
+from app.logger import logger
 
 # Shell工具依赖配置 — 小健 2026-06-18
 # Shell工具使用内置库，无第三方依赖

@@ -10,7 +10,7 @@ REGISTRY Register - 注册表工具注册点
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.utils.logger import logger
+from app.logger import logger
 
 # 注册表工具依赖配置 — 小健 2026-06-18
 # 注册表工具使用内置库，无第三方依赖

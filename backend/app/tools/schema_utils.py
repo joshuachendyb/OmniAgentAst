@@ -7,7 +7,7 @@ Schema处理工具 — Pydantic JSON Schema 修复和生成
 
 from typing import Dict, Any, Optional, Type
 from pydantic import BaseModel
-from app.utils.logger import setup_logger
+from app.logger import setup_logger
 
 logger = setup_logger(__name__)
 

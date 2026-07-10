@@ -21,7 +21,7 @@ import time
 from collections import OrderedDict
 from typing import Any, Dict, Optional
 
-from app.utils.logger import logger
+from app.logger import logger
 
 
 class LRUCache:

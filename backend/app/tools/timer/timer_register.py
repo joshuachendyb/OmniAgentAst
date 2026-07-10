@@ -10,7 +10,7 @@ Timer Register - 定时器工具注册点 — 小欧 2026-06-17
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.utils.logger import logger
+from app.logger import logger
 
 # 定时器工具依赖配置 — 小健 2026-06-18
 

@@ -24,7 +24,7 @@ from app.db.models.operation_models import OperationType
 from app.services.safety import record_operation, execute_with_safety
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param
-from app.utils.logger import logger
+from app.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import check_conflict_strict, record_write
 

@@ -23,7 +23,7 @@ from app.tools.validate.url_validator import validate_url, validate_proxy
 from app.tools.validate.timeout_validator import validate_timeout
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 
-from app.utils.logger import logger
+from app.logger import logger
 
 def _get_download_dir() -> str:
     """获取下载目录 — 优先从配置读取project_root，未配则fallback到代码位置 — 小欧 2026-07-09"""

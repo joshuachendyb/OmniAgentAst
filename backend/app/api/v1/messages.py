@@ -19,7 +19,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.utils.response_utils import handle_api_errors
 from app.utils.cache import LRUCache
 from app.constants import MAX_CACHE_SIZE

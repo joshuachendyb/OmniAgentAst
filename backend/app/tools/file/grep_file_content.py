@@ -23,7 +23,7 @@ from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, MAX_SEARC
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file
 from app.tools.file.file_encoding import safe_read_lines
-from app.utils.logger import logger
+from app.logger import logger
 
 
 _SKIP_DIRS = frozenset({

@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from app.tools.tool_types import ToolCategory, ToolMetadata
 from app.tools.schema_utils import _generate_input_schema
 from app.tools.tool_description import to_openai_tools, generate_param_reminder
-from app.utils.logger import setup_logger
+from app.logger import setup_logger
 from app.utils.dependency import ensure_dependency
 from app.tools.tool_constants import CATEGORY_MODULES
 

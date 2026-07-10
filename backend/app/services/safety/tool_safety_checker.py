@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
 
-from app.utils.logger import logger
+from app.logger import logger
 from app.config import get_config
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory

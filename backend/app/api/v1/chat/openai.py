@@ -20,7 +20,7 @@ from typing import Optional
 from app.services.chat.storage import get_user_message_id
 
 from app.services import get_service
-from app.utils.logger import logger
+from app.logger import logger
 from app.services.chat.handlers import create_error_response, send_start_step
 from app.utils.sse_formatter import format_agent_sse
 from app.api.v1.chat.models import ChatRequest
@@ -39,7 +39,7 @@ router = APIRouter()
 
 async def validate_chat_config():
     """拷贝自 validate_chat_config.py — 内联入 chat_openai.py 小欧 2026-07-10"""
-    from app.utils.logger import logger
+    from app.logger import logger
     from app.services.model.resolver import get_ai_config_resolver
     try:
         resolver = get_ai_config_resolver()
