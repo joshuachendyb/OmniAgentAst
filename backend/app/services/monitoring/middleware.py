@@ -47,25 +47,33 @@ class MonitoringMiddleware:
             return await self.app(scope, receive, send)
         
         request_info = self._extract_request_info(scope)
+        # 捕获请求体大小 — 小欧 2026-07-10 M-52
+        body_size = [0]
+        async def _receive_with_size():
+            msg = await receive()
+            if msg["type"] == "http.request":
+                body_size[0] += len(msg.get("body", b""))
+            return msg
+        
         wrapped_send = self._make_send_wrapper(
             send,
             request_info["start_time"],
             request_info["method"],
             request_info["path"],
-            request_info["request_size"]
+            body_size
         )
         
         try:
-            await self.app(scope, receive, wrapped_send)
+            await self.app(scope, _receive_with_size, wrapped_send)
         except Exception as e:
             self._record_error(e, request_info)
             raise
     
-    def _make_send_wrapper(self, send, start_time, method, path, request_size):
+    def _make_send_wrapper(self, send, start_time, method, path, body_size):
         """创建包装send — 闭包提取为工厂方法 — 小健 2026-05-29"""
         async def wrapper(message):
             if message["type"] == "http.response.start":
-                self._record_response_metrics(message, start_time, method, path, request_size)
+                self._record_response_metrics(message, start_time, method, path, body_size[0])
             await send(message)
         return wrapper
     

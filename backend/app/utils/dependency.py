@@ -90,6 +90,7 @@
    - 版本锁定示例：httpx必须使用0.26.0版本（AGENTS.md要求）
 """
 
+import importlib.metadata
 import subprocess
 import sys
 from typing import Optional
@@ -145,6 +146,13 @@ def ensure_dependency(
 
     try:
         __import__(import_name)
+        if version and version.startswith("=="):
+            try:
+                installed = importlib.metadata.version(pip_package or import_name)
+                if installed != version[2:]:
+                    raise ImportError(f"版本不匹配: 已安装{installed}, 需要{version}")
+            except importlib.metadata.PackageNotFoundError:
+                raise ImportError(f"依赖{import_name}版本不可查")
         return True
     except ImportError:
         if not _pip_install(pip_package, version):

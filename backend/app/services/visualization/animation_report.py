@@ -5,6 +5,7 @@
 小沈 2026-05-29 拆分自 file_visualization.py
 """
 import json
+import functools
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from jinja2 import Environment, FileSystemLoader
@@ -75,6 +76,7 @@ def prepare_animation_data(anim_data: Dict[str, Any], task_id: str) -> Dict[str,
     }
 
 
+@functools.lru_cache(maxsize=None)
 def load_template_assets() -> Tuple[str, str]:
     """加载CSS和JS模板资源 — 小健 2026-05-25
 
