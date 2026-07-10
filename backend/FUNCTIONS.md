@@ -57,13 +57,7 @@
 |--------|------|------|--------|
 | `ensure_dependency` | 确保Python依赖可用，缺失自动安装 | import_name, pip_package, pre_install | bool |
 
-### 1.6 测试标记（test_marker.py）【v0.16.0新增】
-
-| 函数名 | 功能 | 参数 | 返回值 |
-|--------|------|------|--------|
-| `mark_test_round` | 在app.log注入结构化测试轮次标记 | round_num, total_rounds, description="" | None |
-
-### 1.7 表格辅助（table_helper.py）【v0.17.0新增】
+### 1.6 表格辅助（table_helper.py）【v0.17.0新增】
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -182,13 +176,14 @@ def my_parse_json(json_str):
 
 ---
 
-**最后更新时间**: 2026-07-05
+**最后更新时间**: 2026-07-10 13:00:25
 **维护人**: 小沈
 
 ## 版本历史
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v1.8 | 2026-07-10 | 删除test_marker.py（已废弃） | 小沈 |
 | v1.7 | 2026-07-08 | table_helper新增dict_table_to_rows，增强normalize_table_data（支持dict/list[dict]/None） | 小欧 |
 | v1.6 | 2026-07-05 | text_utils新增add_line_numbers公共函数 | 小欧 |
 | v1.5 | 2026-07-02 | _try_fix_incomplete_json新增,_normalize_tool_params从llm_core迁入json_utils.py | 小沈 |
