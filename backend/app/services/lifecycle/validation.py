@@ -62,7 +62,7 @@ def _check_config_exists(actual_path: str) -> Optional[ConfigValidationResult]:
 def _resolve_provider_model(resolver=None) -> Tuple[Optional[str], Optional[str], list]:
     """解析provider和model — 小沈 2026-06-09 接受外部resolver"""
     if resolver is None:
-        from app.services.ai_config_resolver import get_ai_config_resolver
+        from app.services.model.resolver import get_ai_config_resolver
         resolver = get_ai_config_resolver()
     try:
         provider, model = resolver.resolve_provider_model()
@@ -83,7 +83,7 @@ def _make_provider_model_error(errors: list, provider: Optional[str], model: Opt
 def _validate_credentials_internal(provider: str, resolver=None) -> Tuple[list, list]:
     """验证凭证(内部) — 小沈 2026-06-09 接受外部resolver"""
     if resolver is None:
-        from app.services.ai_config_resolver import get_ai_config_resolver
+        from app.services.model.resolver import get_ai_config_resolver
         resolver = get_ai_config_resolver()
     return validate_credentials(resolver.get_ai_config(), provider)
 
@@ -114,7 +114,7 @@ def validate_config(config_path: Optional[str] = None) -> ConfigValidationResult
     if error:
         return error
     
-    from app.services.ai_config_resolver import get_ai_config_resolver
+    from app.services.model.resolver import get_ai_config_resolver
     resolver = get_ai_config_resolver()
     
     provider, model, errors = _resolve_provider_model(resolver)

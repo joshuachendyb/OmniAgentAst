@@ -12,7 +12,7 @@ import threading
 from app.utils.logger import setup_logger
 from app.utils.time_utils import now_str
 from app.services.llm import BaseAIService
-from app.services.factory.lifecycle import close_instance_sync
+from app.services.lifecycle.lifecycle import close_instance_sync
 
 logger = setup_logger(__name__)
 
@@ -23,7 +23,7 @@ _instance_lock = threading.Lock()
 
 def get_resolver_and_config():
     """获取resolver和配置 — 小沈 2026-06-08; 2026-06-17 去除_前缀"""
-    from app.services.ai_config_resolver import get_ai_config_resolver
+    from app.services.model.resolver import get_ai_config_resolver
     resolver = get_ai_config_resolver()
     final_provider, final_model = resolver.resolve_provider_model()
     ai_config = resolver.get_ai_config()
@@ -142,7 +142,7 @@ def get_service_for_model(provider: str, model: str):
     """获取指定provider/model的服务实例 — 小沈 2026-06-08
     P2-07修复: 使用set_instance替代直接操作私有变量; P2-09: 删除未使用的config_path
     """
-    from app.services.ai_config_resolver import get_ai_config_resolver
+    from app.services.model.resolver import get_ai_config_resolver
     resolver = get_ai_config_resolver()
     ai_config = resolver.get_ai_config()
     

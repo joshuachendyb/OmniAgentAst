@@ -167,7 +167,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时清理资源 — 小健 2026-06-18 内联透传函数"""
-    from app.services.factory import reset
+    from app.services.lifecycle import reset
     reset()
     count = cleanup_all_persistent_shells()
     logger.info(f"已清理 {count} 个持久shell进程")

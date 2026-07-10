@@ -7,7 +7,6 @@ lifecycle — 服务生命周期管理
 """
 
 import asyncio
-import threading
 from typing import Optional
 
 from app.utils.logger import setup_logger
@@ -51,35 +50,7 @@ def reset():
     """重置工厂状态 — 小沈 2026-06-08
     P1-07/P2-07修复: 使用公开reset_instance替代直接操作私有变量
     """
-    from app.services.factory.service import reset_instance
+    from app.services.lifecycle.service import reset_instance
     old = reset_instance()
     close_instance_sync(old)
     logger.info("[AIServiceFactory] 工厂状态已重置")
-
-
-# 备份路径管理 — 从 backup_paths.py 迁入
-_backup_path = None
-_config_path = None
-_backup_lock = threading.Lock()
-
-
-def set_backup_paths(backup_path: str, config_path: str):
-    """设置备份路径"""
-    global _backup_path, _config_path
-    with _backup_lock:
-        _backup_path = backup_path
-        _config_path = config_path
-
-
-def get_backup_paths():
-    """获取备份路径"""
-    with _backup_lock:
-        return _backup_path, _config_path
-
-
-def clear_backup_paths():
-    """清除备份路径"""
-    global _backup_path, _config_path
-    with _backup_lock:
-        _backup_path = None
-        _config_path = None
