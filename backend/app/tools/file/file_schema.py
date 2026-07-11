@@ -139,10 +139,11 @@ class ReadmediaInput(BaseModel):
 # ============================================================
 
 class EdittextInput(BaseModel):
-    """mode="once"   -- 只替换第一个（默认，完全向后兼容）
-mode="all"    -- 替换全部
-mode="before" -- 在唯一锚点前插入（P1 修复）
-mode="after"  -- 在唯一锚点后插入（P1 修复）"""
+    """edit工具的替换模式说明:
+    mode="once"   -- 只替换第一个匹配的old_string
+    mode="all"    -- 替换全部匹配的old_string
+    mode="before" -- 在唯一锚点前插入
+    mode="after"  -- 在唯一锚点后插入"""
     file_path: str = Field(
         description="目标文件的绝对路径(仅支持文本文件)"
     )

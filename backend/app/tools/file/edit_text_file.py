@@ -27,6 +27,7 @@ from app.tools.validate.file_path_checker import validate_path, OpCategory, vali
 from app.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import check_conflict_strict, record_write
+from app.tools.file.fuzzy_match import fuzzy_find_replace  # 小欧 2026-07-11
 
 # U+FFFD replacement character threshold for encoding detection — 小欧 2026-06-27 — 小欧 2026-07-05 统一为readtext的>=3 && >3%逻辑
 _REPLACEMENT_CHAR_MIN_COUNT = 3
@@ -310,9 +311,15 @@ async def _precise_replace_in_file(
 
         def _replace_sync() -> bool:
             new_content, count, total_matches = _apply_replacement(content, old_string, new_string, ignore_case, mode)
+            # 模糊回退: mode=once精确匹配失败时尝试escape_normalized — 小欧 2026-07-11
+            if count == 0 and mode == "once" and not ignore_case:
+                fuzzy_content, fuzzy_count, fuzzy_total, fuzzy_err = fuzzy_find_replace(
+                    content, old_string, new_string
+                )
+                if fuzzy_count > 0:
+                    new_content, count, total_matches = fuzzy_content, fuzzy_count, fuzzy_total
             replace_result['count'] = count
             replace_result['total_matches'] = total_matches
-            replace_result['used_enc'] = used_enc
             if dry_run:
                 return True
             if count == 0:
@@ -408,7 +415,7 @@ async def edittext(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为None", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
-    if not old_string.strip():
+    if not old_string:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为空字符串", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
