@@ -52,7 +52,7 @@ def _build_download_file_llm_data(
     headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """download_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 过滤None值"""
-    _act_params = {"url": url, "destination_path": dest_path, "timeout": timeout}
+    _act_params = {"url": url, "dest": dest_path, "timeout": timeout}
     if proxy is not None:
         _act_params["proxy"] = proxy
     if headers is not None:
@@ -91,9 +91,9 @@ def _map_network_error(url: str, timeout: int, e: Exception, dest_path: str = ""
             detail = f"{prefix}({timeout}秒):{url}"
             if isinstance(e, httpx.HTTPStatusError):
                 detail = f"{prefix} (HTTP {e.response.status_code}):{url}"
-            return {"error_detail": detail, "params": {"url": url, "destination_path": dest_path, "timeout": timeout}, "err_code": code, "detail": detail}
+            return {"error_detail": detail, "params": {"url": url, "dest": dest_path, "timeout": timeout}, "err_code": code, "detail": detail}
     logger.error(f"[download] 未知错误: {e}")
-    return {"error_detail": str(e), "params": {"url": url, "destination_path": dest_path, "timeout": timeout}, "err_code": ERR_NET_UNKNOWN, "detail": str(e)}
+    return {"error_detail": str(e), "params": {"url": url, "dest": dest_path, "timeout": timeout}, "err_code": ERR_NET_UNKNOWN, "detail": str(e)}
 
 
 async def _stream_download(client: HTTPClient, url: str, dest_path: str,
@@ -128,7 +128,7 @@ async def _stream_download(client: HTTPClient, url: str, dest_path: str,
 
 async def download(
     url: str,
-    destination_path: Optional[str] = None,
+    dest: Optional[str] = None,
     headers: Optional[Dict[str, str]] = None,
     timeout: int = 60,
     proxy: Optional[str] = None,
@@ -136,22 +136,22 @@ async def download(
     """从URL下载文件 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "download")
     if not timeout_valid:
-        llm_data = _build_download_file_llm_data("error", 0, url, dest_path=destination_path or "", err_code=ERR_INVALID_URL, detail=timeout_err, hint="请检查超时设置", timeout=timeout, proxy=proxy, headers=headers)
+        llm_data = _build_download_file_llm_data("error", 0, url, dest_path=dest or "", err_code=ERR_INVALID_URL, detail=timeout_err, hint="请检查超时设置", timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
 
     proxy_valid, proxy_err, _ = validate_proxy(proxy)
     if not proxy_valid:
-        llm_data = _build_download_file_llm_data("error", 0, url, dest_path=destination_path or "", err_code=ERR_INVALID_URL, detail=proxy_err, hint="请检查代理配置", timeout=timeout, proxy=proxy, headers=headers)
+        llm_data = _build_download_file_llm_data("error", 0, url, dest_path=dest or "", err_code=ERR_INVALID_URL, detail=proxy_err, hint="请检查代理配置", timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
 
-    if destination_path is not None:
-        if not isinstance(destination_path, str) or not destination_path.strip():
-            llm_data = _build_download_file_llm_data("error", 0, url, dest_path="", err_code=ERR_NETWORK_INVALID_PATH, detail="destination_path不能为空", hint="请填写目标路径或留空自动命名", timeout=timeout, proxy=proxy, headers=headers)
+    if dest is not None:
+        if not isinstance(dest, str) or not dest.strip():
+            llm_data = _build_download_file_llm_data("error", 0, url, dest_path="", err_code=ERR_NETWORK_INVALID_PATH, detail="dest不能为空", hint="请填写目标路径或留空自动命名", timeout=timeout, proxy=proxy, headers=headers)
             return build_error(data={}, llm_data=llm_data)
-        if any(p == ".." for p in destination_path.replace("\\", "/").split("/")):
-            llm_data = _build_download_file_llm_data("error", 0, url, dest_path=destination_path, err_code=ERR_NETWORK_INVALID_PATH, detail="destination_path不允许路径遍历", hint="请使用合法文件名", timeout=timeout, proxy=proxy, headers=headers)
+        if any(p == ".." for p in dest.replace("\\", "/").split("/")):
+            llm_data = _build_download_file_llm_data("error", 0, url, dest_path=dest, err_code=ERR_NETWORK_INVALID_PATH, detail="dest不允许路径遍历", hint="请使用合法文件名", timeout=timeout, proxy=proxy, headers=headers)
             return build_error(data={}, llm_data=llm_data)
-        dest_path = os.path.abspath(os.path.join(_get_download_dir(), destination_path.lstrip("/\\")))
+        dest_path = os.path.abspath(os.path.join(_get_download_dir(), dest.lstrip("/\\")))
     else:
         filename = os.path.basename(urlparse(url).path) or f"download_{hash(url) & 0xFFFFFFFF}"
         dest_path = os.path.abspath(os.path.join(_get_download_dir(), filename))
