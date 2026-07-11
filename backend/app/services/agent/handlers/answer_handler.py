@@ -17,8 +17,10 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
     """处理answer类型 — FC-only: 空内容/错误内容均视为失败"""
     step = agent.llm_call_count
     content = parsed.get("content", "")
+    reasoning = parsed.get("reasoning", "")
 
-    if not content:
+    # ── 真·空：content和reasoning都空 → ErrorStep SUSPENDED ──
+    if not content and not reasoning:
         logger.warning(f"[handle_answer] LLM返回空内容(step={step})")
         # chendyg 2026-07-01: yield ErrorStep让_dispatch_handler推断FAILED
         # 保留add_assistant_message("")，FC协议要求空assistant消息也入历史
@@ -30,8 +32,20 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
         ))
         return
 
+    # ── reasoning-only：content空但reasoning有内容 → 注入observation继续循环 ──
+    if not content and reasoning:
+        logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入observation继续循环")
+        agent.message_builder.add_assistant_message("")
+        agent.message_builder.add_observation(
+            reasoning,
+            {"tool_call_id": "", "tool_calls": [], "llm_content": reasoning},
+        )
+        yield agent._step_emitter.emit(ThoughtStep(
+            step=step, content=reasoning, reasoning="",
+        ))
+        return
+
     thought = parsed.get("thought", content)
-    reasoning = parsed.get("reasoning", "")
 
     # thought 步骤 — content=LLM回答文本, reasoning=内部思维过程 — 小欧 2026-07-01
     if thought:
