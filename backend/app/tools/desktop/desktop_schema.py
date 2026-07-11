@@ -137,8 +137,8 @@ class KeyboardControlInput(BaseModel):
 
 
 class ScreenCaptureInput(BaseModel):
-    """display与region/output_path互斥,指定display时严禁传入region或output_path"""
-    output_path: Optional[str] = Field(
+    """display与region/dest互斥,指定display时严禁传入region或dest"""
+    dest: Optional[str] = Field(
         default=None,
         description="输出文件路径(绝对路径,可选)。不传则保存到系统临时目录如<temp>/screenshot_<时间戳>.png。严禁与display同时传入"
     )
@@ -148,14 +148,14 @@ class ScreenCaptureInput(BaseModel):
     )
     display: Optional[int] = Field(
         default=None,
-        description="显示器编号(可选),1=主显示器,2=第二显示器。指定display时严禁传入region和output_path"
+        description="显示器编号(可选),1=主显示器,2=第二显示器。指定display时严禁传入region和dest"
     )
 
     @model_validator(mode="after")
     def _check_display_exclusive(self):
         if self.display is not None:
-            if self.region is not None or self.output_path is not None:
-                raise ValueError("指定display时严禁传入region或output_path")
+            if self.region is not None or self.dest is not None:
+                raise ValueError("指定display时严禁传入region或dest")
         return self
 
 

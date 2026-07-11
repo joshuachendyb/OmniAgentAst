@@ -20,13 +20,13 @@ from app.logger import logger
 from app.tools.tool_constants import ERR_SCREENSHOT, ERR_SCREEN_SNAPSHOT
 
 
-def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, output_path: str = "", region=None,
+def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, dest: str = "", region=None,
                                     display: Optional[int] = None, monitor_count: int = 0,
                                     err_code: str = "", detail: str = "", hint: str = "") -> dict:
-    """screen_capture的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 补output_path入_act_params — 小欧 2026-07-05 加hint参数"""
+    """screen_capture的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 补dest入_act_params — 小欧 2026-07-05 加hint参数"""
     _act_params = {"region": region, "display": display}
-    if output_path:
-        _act_params["output_path"] = output_path
+    if dest:
+        _act_params["dest"] = dest
     if exec_code == "error":
         return {
             "summary": "截图失败",
@@ -39,14 +39,14 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, output_path
         metrics["monitors"] = {"value": monitor_count, "text": f"{monitor_count}个"}
     monitor_text = f"（{monitor_count}个显示器）" if monitor_count > 0 else ""
     return {
-        "summary": f"截图成功: 已保存到{output_path}.属于第{monitor_text}",
-        "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": output_path, "params": _act_params},
+        "summary": f"截图成功: 已保存到{dest}.属于第{monitor_text}",
+        "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": dest, "params": _act_params},
         "status": {"exec_code": "success", "message": "截图完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
     }
 
 
-def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[str, Any]:
+def _screenshot(dest: str = None, region: Dict[str, int] = None) -> Dict[str, Any]:
     """截取屏幕截图(内聚) — 小健 2026-06-22
     返回原始dict：成功 {"image_path": ...}，失败 {"error_detail": ..., "params": {...}}
     """
@@ -55,9 +55,9 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
     except ImportError:
         return {"error_detail": "pyautogui库未安装", "params": {"library": "pyautogui"}}
     try:
-        if output_path is None:
+        if dest is None:
             timestamp = timestamp_for_filename()
-            output_path = os.path.join(tempfile.gettempdir(), f"screenshot_{timestamp}.png")
+            dest = os.path.join(tempfile.gettempdir(), f"screenshot_{timestamp}.png")
 
         if region:
             r = (region.get("x", 0), region.get("y", 0), region.get("width", 800), region.get("height", 600))
@@ -65,15 +65,15 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
         else:
             img = pyautogui.screenshot()
 
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        img.save(output_path)
-        return {"image_path": output_path, "region": region}
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        img.save(dest)
+        return {"image_path": dest, "region": region}
     except Exception as e:
         return {"error_detail": str(e), "params": {"library": "pyautogui"}}
 
 
-def _snapshot(display: int = 1, output_path: str = None) -> Dict[str, Any]:
-    """获取完整桌面状态快照(内聚) — 小健 2026-06-22 — 小欧 2026-07-05 修复:接受output_path参数
+def _snapshot(display: int = 1, dest: str = None) -> Dict[str, Any]:
+    """获取完整桌面状态快照(内聚) — 小健 2026-06-22 — 小欧 2026-07-05 修复:接受dest参数
     返回原始dict：成功 {"image_path": ..., "display": ..., "monitors": ...}，失败 {"error_detail": ..., "params": {...}}
     """
     try:
@@ -81,18 +81,18 @@ def _snapshot(display: int = 1, output_path: str = None) -> Dict[str, Any]:
     except ImportError:
         try:
             import pyautogui
-            if output_path is None:
+            if dest is None:
                 timestamp = timestamp_for_filename()
-                output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
+                dest = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
             img = pyautogui.screenshot()
-            img.save(output_path)
-            return {"image_path": output_path, "display": display, "monitors": 0}
+            img.save(dest)
+            return {"image_path": dest, "display": display, "monitors": 0}
         except ImportError:
             return {"error_detail": "需要安装 mss 或 pyautogui 库", "params": {"libraries": ["mss", "pyautogui"]}}
     try:
-        if output_path is None:
+        if dest is None:
             timestamp = timestamp_for_filename()
-            output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
+            dest = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
         with mss.mss() as sct:
             monitors = sct.monitors
             if display < 1 or display >= len(monitors):
@@ -102,30 +102,30 @@ def _snapshot(display: int = 1, output_path: str = None) -> Dict[str, Any]:
             img = sct.grab(monitors[mon_index])
             from PIL import Image
             pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
-            pil_img.save(output_path)
-        return {"image_path": output_path, "display": display, "monitors": len(monitors) - 1}
+            pil_img.save(dest)
+        return {"image_path": dest, "display": display, "monitors": len(monitors) - 1}
     except Exception as e:
         return {"error_detail": str(e), "params": {"display": display}}
 
 
-def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str, int]] = None, display: Optional[int] = None) -> Dict[str, Any]:
+def screen_capture(dest: Optional[str] = None, region: Optional[Dict[str, int]] = None, display: Optional[int] = None) -> Dict[str, Any]:
     """统一屏幕截图入口 — 小健 2026-06-22 拆分独立文件"""
     t0 = _time_mod.perf_counter()
-    if output_path:
+    if dest:
         # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
         # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, warn = validate_path(OpCategory.WRITE, output_path)
+        is_valid, err, warn = validate_path(OpCategory.WRITE, dest)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_screen_capture_llm_data("error", duration_ms, output_path=output_path, region=region, display=display, err_code=ERR_SCREENSHOT, detail=err, hint="请检查输出路径是否合法")
+            llm_data = _build_screen_capture_llm_data("error", duration_ms, dest=dest, region=region, display=display, err_code=ERR_SCREENSHOT, detail=err, hint="请检查输出路径是否合法")
             return build_error(data={}, llm_data=llm_data)
         if warn:
             logger.warning(f"[screen_capture] {warn}")
 
     if display is not None:
-        result = _snapshot(display=display, output_path=output_path)
+        result = _snapshot(display=display, dest=dest)
     else:
-        result = _screenshot(output_path=output_path, region=region)
+        result = _screenshot(dest=dest, region=region)
 
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
@@ -136,7 +136,7 @@ def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str,
             err_code = ERR_SCREEN_SNAPSHOT
         else:
             err_code = ERR_SCREENSHOT
-        llm_data = _build_screen_capture_llm_data("error", duration_ms, output_path=output_path, region=region, display=display, err_code=err_code, detail=error_detail, hint="请检查屏幕显示设置或安装必要的依赖库(mss/pyautogui)")
+        llm_data = _build_screen_capture_llm_data("error", duration_ms, dest=dest, region=region, display=display, err_code=err_code, detail=error_detail, hint="请检查屏幕显示设置或安装必要的依赖库(mss/pyautogui)")
         return build_error(data={}, llm_data=llm_data)
 
     image_path = result.pop("image_path", "")
