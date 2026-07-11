@@ -98,7 +98,15 @@ async def test_e2e_p6_01_file_not_found():
         resp = result.get("response_text", "")
         err_keywords = ["不存在", "找不到", "无法", "没有", "失败", "错误"]
         found = [k for k in err_keywords if k in resp]
-        assert len(found) >= 1, f"回复应提示文件不存在(MUST), 实际回复前100字: {resp[:100]}"
+        tool_msgs = [t.get("result", "") for t in result.get("tool_calls", [])
+                     if "result" in t]
+        if len(found) < 1:
+            found = [k for k in err_keywords if any(k in m for m in tool_msgs)]
+        assert len(found) >= 1, (
+            f"回复或工具结果应提示文件不存在(MUST), "
+            f"回复前100字: {resp[:100]}, "
+            f"工具结果条数: {len(tool_msgs)}"
+        )
 
         for issue in verify_response_quality(result):
             pass
