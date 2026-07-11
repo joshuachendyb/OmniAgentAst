@@ -169,18 +169,18 @@ def _read_csv_stdlib_inner(
         return {"error_detail": str(e), "params": {"file_path": file_path}}
 
 
-def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
+def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
     """读取Excel/CSV(.xlsx/.csv)文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件
     主函数: 负责build3+llm_data调用 — 小欧 2026-06-22
     参数: sheet_name - 指定工作表名（仅.xlsx），None则读取所有工作表 — 小健 2026-06-24
     小欧 2026-06-24 增加文件类型前置检查（.csv跳过检查） — 小欧 2026-06-24 移除.xls死代码"""
-    path = Path(file_name)
+    path = Path(path)
     suffix = path.suffix.lower()
     t0 = _time_mod.perf_counter()
 
     # 文件类型前置检查（.csv由本工具处理，跳过检查） — 小欧 2026-06-24
     if suffix != ".csv":
-        is_valid, error_detail, suggested_tool = check_for_document_tool(file_name)
+        is_valid, error_detail, suggested_tool = check_for_document_tool(path)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             _sn = sheet_name or ""
@@ -190,28 +190,28 @@ def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any
                 _hint = "请检查文件路径和文件名是否正确"
             else:
                 _hint = "文件类型不匹配,请使用.xlsx或.csv格式"
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail, user_sheet_name=_sn, hint=_hint)
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, path, detail=error_detail, user_sheet_name=_sn, hint=_hint)
             return build_error(data={}, llm_data=llm_data)
 
     if suffix == ".csv":
-        result = _read_csv_stdlib_inner(file_name, encoding="utf-8", delimiter=",", has_header=True, max_rows=10000)
+        result = _read_csv_stdlib_inner(path, encoding="utf-8", delimiter=",", has_header=True, max_rows=10000)
     else:
         if not _check_module("openpyxl"):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装", user_sheet_name=sheet_name or "", hint="请安装openpyxl库")
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, path, detail="openpyxl库未安装", user_sheet_name=sheet_name or "", hint="请安装openpyxl库")
             return build_error(data={}, llm_data=llm_data)
-        result = _read_xlsx_inner(file_name, max_rows=10000, sheet_name=sheet_name)
+        result = _read_xlsx_inner(path, max_rows=10000, sheet_name=sheet_name)
 
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     if "error_detail" in result:
         detail = result["error_detail"]
-        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=detail, user_sheet_name=sheet_name or "", hint="读取Excel异常,请检查文件完整性")
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, path, detail=detail, user_sheet_name=sheet_name or "", hint="读取Excel异常,请检查文件完整性")
         return build_error(data=result, llm_data=llm_data)
     else:
         row_count = result.get("row_count", 0)
         sheet_count = len(result.get("sheet_names", []))
         result.pop("row_count", None)
-        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_name, row_count, sheet_count, user_sheet_name=sheet_name or "")
+        llm_data = _build_read_xlsx_llm_data("success", duration_ms, path, row_count, sheet_count, user_sheet_name=sheet_name or "")
         # =============================================================================
         # 数据设计：row_count/sheet_count 从 data 移除，通过 llm_data.metrics 传入 summary
         # summary 示例: "读取Excel成功: 100行, 3个工作表"

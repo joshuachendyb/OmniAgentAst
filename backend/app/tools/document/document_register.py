@@ -76,42 +76,42 @@ DESCRIPTIONS = {
 
 EXAMPLES = {
     "read_pdf": [
-        {"file_name": "D:/documents/report.pdf"},
+        {"path": "D:/documents/report.pdf"},
     ],
     "read_docx": [
-        {"file_name": "D:/documents/report.docx"},
+        {"path": "D:/documents/report.docx"},
     ],
     "read_pptx": [
-        {"file_name": "D:/documents/presentation.pptx"},
+        {"path": "D:/documents/presentation.pptx"},
     ],
     "read_xlsx": [
-        {"file_name": "D:/data/sales.xlsx"},
-        {"file_name": "D:/data/sales.csv"},
+        {"path": "D:/data/sales.xlsx"},
+        {"path": "D:/data/sales.csv"},
     ],
     "write_docx": [
-        {"file_name": "D:/output/report.docx", "title": "测试报告", "content": "这是测试内容"},
-        {"file_name": "D:/output/report_structured.docx", "title": "结构化报告", "content": "# 第一章\n\n正文内容\n\n## 第二节\n\n- 列表项1\n- 列表项2"},
-        {"file_name": "D:/output/report_with_table.docx", "title": "数据报告", "content": "# 概述\n\n本次统计结果如下。\n\n## 数据表格\n\n| 项目 | 数值 | 占比 |\n|------|------|------|\n| A | 100 | 40% |\n| B | 150 | 60% |\n\n## 结论\n\n- 数据A占比40%\n- 数据B占比60%"},
-        {"file_name": "D:/output/tech_report.docx", "title": "代码审查报告", "content": "# 审查概览\n\n本次审查覆盖3个模块。\n\n## 问题清单\n\n### 严重问题\n\n1. SQL注入风险\n2. 硬编码密钥\n\n### 一般问题\n\n- 缺少错误处理\n- 日志级别不当"},
-        {"file_name": "D:/output/data_table.docx", "title": "数据表", "table_data": [["姓名", "年龄", "城市"], ["张三", "25", "北京"], ["李四", "30", "上海"]]},
+        {"path": "D:/output/report.docx", "title": "测试报告", "content": "这是测试内容"},
+        {"path": "D:/output/report_structured.docx", "title": "结构化报告", "content": "# 第一章\n\n正文内容\n\n## 第二节\n\n- 列表项1\n- 列表项2"},
+        {"path": "D:/output/report_with_table.docx", "title": "数据报告", "content": "# 概述\n\n本次统计结果如下。\n\n## 数据表格\n\n| 项目 | 数值 | 占比 |\n|------|------|------|\n| A | 100 | 40% |\n| B | 150 | 60% |\n\n## 结论\n\n- 数据A占比40%\n- 数据B占比60%"},
+        {"path": "D:/output/tech_report.docx", "title": "代码审查报告", "content": "# 审查概览\n\n本次审查覆盖3个模块。\n\n## 问题清单\n\n### 严重问题\n\n1. SQL注入风险\n2. 硬编码密钥\n\n### 一般问题\n\n- 缺少错误处理\n- 日志级别不当"},
+        {"path": "D:/output/data_table.docx", "title": "数据表", "table_data": [["姓名", "年龄", "城市"], ["张三", "25", "北京"], ["李四", "30", "上海"]]},
     ],
     "write_xlsx": [
-        {"file_name": "D:/output/data.xlsx", "data": [{"姓名": "张三", "年龄": 25}, {"姓名": "李四", "年龄": 30}]},
-        {"file_name": "D:/output/report.xlsx", "data": [{"产品": "A", "销量": 100}, {"产品": "B", "销量": 200}], "sheet_name": "销售数据"},
-        {"file_name": "D:/output/empty.xlsx"},
+        {"path": "D:/output/data.xlsx", "data": [{"姓名": "张三", "年龄": 25}, {"姓名": "李四", "年龄": 30}]},
+        {"path": "D:/output/report.xlsx", "data": [{"产品": "A", "销量": 100}, {"产品": "B", "销量": 200}], "sheet_name": "销售数据"},
+        {"path": "D:/output/empty.xlsx"},
     ],
     "write_pdf": [
-        {"file_name": "D:/output/report.pdf", "title": "测试报告", "content": "这是报告内容"},
-        {"file_name": "D:/output/structured_report.pdf", "title": "结构化报告", "content": "# 第一章\n\n正文内容\n\n## 第二节\n\n- 列表项1\n- 列表项2"},
-        {"file_name": "D:/output/tech_report.pdf", "title": "代码审查报告", "content": "# 审查概览\n\n本次审查覆盖3个模块。\n\n## 问题清单\n\n### 严重问题\n\n1. SQL注入风险\n2. 硬编码密钥"},
-        {"file_name": "D:/output/guide.pdf", "title": "使用指南", "content": "# 快速开始\n\n## 安装步骤\n\n1. 下载安装包\n2. 运行安装程序\n3. 配置环境变量\n\n## 注意事项\n\n- 需要管理员权限\n- 建议关闭杀毒软件"},
-        {"file_name": "D:/output/data_table.pdf", "title": "数据表", "table_data": [["姓名", "年龄", "城市"], ["张三", "25", "北京"], ["李四", "30", "上海"]]},
+        {"path": "D:/output/report.pdf", "title": "测试报告", "content": "这是报告内容"},
+        {"path": "D:/output/structured_report.pdf", "title": "结构化报告", "content": "# 第一章\n\n正文内容\n\n## 第二节\n\n- 列表项1\n- 列表项2"},
+        {"path": "D:/output/tech_report.pdf", "title": "代码审查报告", "content": "# 审查概览\n\n本次审查覆盖3个模块。\n\n## 问题清单\n\n### 严重问题\n\n1. SQL注入风险\n2. 硬编码密钥"},
+        {"path": "D:/output/guide.pdf", "title": "使用指南", "content": "# 快速开始\n\n## 安装步骤\n\n1. 下载安装包\n2. 运行安装程序\n3. 配置环境变量\n\n## 注意事项\n\n- 需要管理员权限\n- 建议关闭杀毒软件"},
+        {"path": "D:/output/data_table.pdf", "title": "数据表", "table_data": [["姓名", "年龄", "城市"], ["张三", "25", "北京"], ["李四", "30", "上海"]]},
     ],
     "write_pptx": [
-        {"file_name": "D:/output/cover.pptx", "slides": [{"title": "项目汇报"}]},
-        {"file_name": "D:/output/slides.pptx", "slides": [{"title": "业绩概览", "content": "本季度销售额增长20%"}]},
-        {"file_name": "D:/output/full.pptx", "slides": [{"title": "封面", "subtitle": "2026年度"}, {"title": "数据", "tables": [[["项目", "数值"], ["A", "100"]]]}]},
-        {"file_name": "D:/output/bullets.pptx", "slides": [{"title": "要点", "content": [{"type": "bullets", "items": ["完成目标", "提升效率"]}]}]},
+        {"path": "D:/output/cover.pptx", "slides": [{"title": "项目汇报"}]},
+        {"path": "D:/output/slides.pptx", "slides": [{"title": "业绩概览", "content": "本季度销售额增长20%"}]},
+        {"path": "D:/output/full.pptx", "slides": [{"title": "封面", "subtitle": "2026年度"}, {"title": "数据", "tables": [[["项目", "数值"], ["A", "100"]]]}]},
+        {"path": "D:/output/bullets.pptx", "slides": [{"title": "要点", "content": [{"type": "bullets", "items": ["完成目标", "提升效率"]}]}]},
     ],
 }
 

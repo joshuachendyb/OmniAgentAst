@@ -82,7 +82,7 @@ def _build_write_pdf_llm_data(
 
 
 def write_pdf(
-    file_name: str,
+    path: str,
     title: Optional[str] = None,
     content: Optional[str] = None,
     table_data: Optional[List[List[str]]] = None,
@@ -91,22 +91,22 @@ def write_pdf(
     t0 = _time_mod.perf_counter()
 
     # 文件类型前置检查（含路径检查+类型检查+模块安全检查）— 北京老陈 2026-07-09
-    is_valid, error_detail, hint = check_office_file(file_name, allow_create=True)
+    is_valid, error_detail, hint = check_office_file(path, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=error_detail, user_title=title or "", hint=hint)
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=error_detail, user_title=title or "", hint=hint)
         return build_error(data={}, llm_data=llm_data)
 
     if content is not None:
         cs_error, _ = check_content_safety(content, "pdf")
         if cs_error:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=cs_error, user_title=title or "", hint="请检查content参数")
+            llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=cs_error, user_title=title or "", hint="请检查content参数")
             return build_error(data={}, llm_data=llm_data)
 
     if not _check_module("reportlab"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail="reportlab库未安装", user_title=title or "", hint="请安装reportlab库")
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail="reportlab库未安装", user_title=title or "", hint="请安装reportlab库")
         return build_error(data={}, llm_data=llm_data)
 
     try:
@@ -117,11 +117,11 @@ def write_pdf(
         from reportlab.pdfbase.ttfonts import TTFont
     except ImportError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail="reportlab库导入失败", user_title=title or "", hint="请检查reportlab库安装完整性")
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail="reportlab库导入失败", user_title=title or "", hint="请检查reportlab库安装完整性")
         return build_error(data={}, llm_data=llm_data)
 
     try:
-        path = Path(file_name)
+        path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
         doc = SimpleDocTemplate(str(path), pagesize=A4)
@@ -214,11 +214,11 @@ def write_pdf(
         return build_success(data={}, llm_data=llm_data)
     except PermissionError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        hint = permission_error_hint(file_name)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "", hint=hint)
+        hint = permission_error_hint(path)
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=str(e), user_title=title or "", hint=hint)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        hint = hint_for_write_error(e, file_name, "写入PDF异常,请检查磁盘空间和权限")
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, file_name, detail=str(e), user_title=title or "", hint=hint)
+        hint = hint_for_write_error(e, path, "写入PDF异常,请检查磁盘空间和权限")
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=str(e), user_title=title or "", hint=hint)
         return build_error(data={}, llm_data=llm_data)

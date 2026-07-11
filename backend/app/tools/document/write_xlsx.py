@@ -111,7 +111,7 @@ def _build_write_xlsx_llm_data(
 
 
 def write_xlsx(
-    file_name: str,
+    path: str,
     data: Optional[List[Dict[str, Any]]] = None,
     sheet_name: str = "Sheet1",
 ) -> Dict[str, Any]:
@@ -119,23 +119,23 @@ def write_xlsx(
     t0 = _time_mod.perf_counter()
 
     # 文件类型前置检查（含路径检查+类型检查+模块安全检查）— 北京老陈 2026-07-09
-    is_valid, error_detail, hint = check_office_file(file_name, allow_create=True)
+    is_valid, error_detail, hint = check_office_file(path, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail, user_sheet_name=sheet_name, hint=hint)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=error_detail, user_sheet_name=sheet_name, hint=hint)
         return build_error(data={}, llm_data=llm_data)
 
     data = coerce_json(data)
     cs_error, safe_data = check_content_safety(data, "xlsx", param_name="data")
     if cs_error:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=cs_error, user_sheet_name=sheet_name, hint=f"请检查data参数(当前类型: {type(data).__name__})")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=cs_error, user_sheet_name=sheet_name, hint=f"请检查data参数(当前类型: {type(data).__name__})")
         return build_error(data={}, llm_data=llm_data)
     data = safe_data
 
     if not _check_module("openpyxl"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装", user_sheet_name=sheet_name, hint="请安装openpyxl库")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail="openpyxl库未安装", user_sheet_name=sheet_name, hint="请安装openpyxl库")
         return build_error(data={}, llm_data=llm_data)
 
     try:
@@ -169,7 +169,7 @@ def write_xlsx(
             _set_xlsx_table_style(ws)
             _adjust_xlsx_column_width(ws)
 
-        path = Path(file_name)
+        path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         wb.save(path)
 
@@ -187,11 +187,11 @@ def write_xlsx(
         return build_success(data={}, llm_data=llm_data)
     except PermissionError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        hint = permission_error_hint(file_name)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=str(e), user_sheet_name=sheet_name, hint=hint)
+        hint = permission_error_hint(path)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=str(e), user_sheet_name=sheet_name, hint=hint)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        hint = hint_for_write_error(e, file_name, "写入Excel异常,请检查磁盘空间和权限")
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, file_name, detail=str(e), user_sheet_name=sheet_name, hint=hint)
+        hint = hint_for_write_error(e, path, "写入Excel异常,请检查磁盘空间和权限")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=str(e), user_sheet_name=sheet_name, hint=hint)
         return build_error(data={}, llm_data=llm_data)

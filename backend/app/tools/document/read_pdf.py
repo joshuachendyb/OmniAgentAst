@@ -109,13 +109,13 @@ def _process_page(page, page_num: int, extract_tables: bool = True, extract_imag
     return text, tables, images
 
 
-def read_pdf(file_name: str) -> Dict[str, Any]:
+def read_pdf(path: str) -> Dict[str, Any]:
     """读取PDF文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
-    file_path = file_name
+    file_path = path
 
     # 文件类型前置检查 — 小欧 2026-06-24
-    is_valid, error_detail, suggested_tool = check_for_document_tool(file_name)
+    is_valid, error_detail, suggested_tool = check_for_document_tool(path)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if suggested_tool:

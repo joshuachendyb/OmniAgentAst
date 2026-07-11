@@ -21,19 +21,19 @@ from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Any, List, Dict, Literal, Union
 
 class ReadPdfInput(BaseModel):
-    file_name: str = Field(..., description="文件名+路径(.pdf)")
+    path: str = Field(..., description="文件名+路径(.pdf)")
 
 
 class ReadDocxInput(BaseModel):
-    file_name: str = Field(..., description="文件名+路径(.docx) — 小健 2026-06-24: 不支持.doc格式")
+    path: str = Field(..., description="文件名+路径(.docx) — 小健 2026-06-24: 不支持.doc格式")
 
 
 class ReadPptxInput(BaseModel):
-    file_name: str = Field(..., description="文件名+路径(.pptx) — 小健 2026-06-24: 不支持.ppt格式")
+    path: str = Field(..., description="文件名+路径(.pptx) — 小健 2026-06-24: 不支持.ppt格式")
 
 
 class ReadXlsxInput(BaseModel):
-    file_name: str = Field(..., description="文件名+路径(.xlsx/.csv) — 小健 2026-06-24: 不支持.xls格式")
+    path: str = Field(..., description="文件名+路径(.xlsx/.csv) — 小健 2026-06-24: 不支持.xls格式")
     sheet_name: Optional[str] = Field(
         default=None,
         description="工作表名（仅.xlsx格式有效）。None=读取所有工作表，指定名称=读取单个工作表。CSV/XLS格式忽略此参数"
@@ -43,7 +43,7 @@ class ReadXlsxInput(BaseModel):
 
 class WriteDocxInput(BaseModel):
     """content和table_data互斥,只能传入其中一个"""
-    file_name: str = Field(..., min_length=1, description="文件名+路径(.docx)")
+    path: str = Field(..., min_length=1, description="文件名+路径(.docx)")
     title: Optional[str] = Field(default=None, description="文档标题（显示在文档开头）")
     content: Optional[str] = Field(
         default=None, 
@@ -73,7 +73,7 @@ class WriteDocxInput(BaseModel):
 
 
 class WriteXlsxInput(BaseModel):
-    file_name: str = Field(..., description="文件名+路径(.xlsx)")
+    path: str = Field(..., description="文件名+路径(.xlsx)")
     data: Optional[List[Dict[str, Any]]] = Field(
         default=None, 
         description="""写入的数据。对象数组格式:[{"列1":"a","列2":"b"},{"列1":"c","列2":"d"}]
@@ -90,7 +90,7 @@ class WriteXlsxInput(BaseModel):
 
 class WritePdfInput(BaseModel):
     """content和table_data互斥,只能传入其中一个"""
-    file_name: str = Field(..., min_length=1, description="文件名+路径(.pdf)")
+    path: str = Field(..., min_length=1, description="文件名+路径(.pdf)")
     title: Optional[str] = Field(default=None, description="文档标题（显示在文档开头）")
     content: Optional[str] = Field(
         default=None, 
@@ -136,7 +136,7 @@ _SLIDE_DESC = """幻灯片列表。每项Dict包含：
   {"title":"数据","tables":[[["项目","数值"],["A","100"],["B","200"]]]}
 ]"""
 class WritePptxInput(BaseModel):
-    file_name: str = Field(..., description="文件名+路径(.pptx)")
+    path: str = Field(..., description="文件名+路径(.pptx)")
     # slides允许List[Dict]或JSON字符串(LLM常把list序列化为字符串传入) — 小欧 2026-07-12 修问题4反序列化
     slides: Optional[Union[List[Dict], str]] = Field(default=None, description=_SLIDE_DESC)
 
