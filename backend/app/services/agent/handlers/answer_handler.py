@@ -6,18 +6,20 @@ answer_handler — answer/implicit类型处理
 
 Author: 小沈 - 2026-06-09
 v2.0: 新增错误消息检测，LLM返回错误时设FAILED而非COMPLETED — 小欧 2026-06-28
+v3.0: reasoning-only分支+tool call文本格式化 — 小欧 2026-07-12
 """
 from typing import Dict
 
 from app.services.agent.steps import ThoughtStep, FinalStep, ErrorStep
+from app.utils.text_utils import format_tool_call_markup
 from app.logger import logger
 
 
 async def handle_answer(agent, parsed: Dict, chunk_buffer):
     """处理answer类型 — FC-only: 空内容/错误内容均视为失败"""
     step = agent.llm_call_count
-    content = parsed.get("content", "")
-    reasoning = parsed.get("reasoning", "")
+    content = format_tool_call_markup(parsed.get("content", ""))
+    reasoning = format_tool_call_markup(parsed.get("reasoning", ""))
 
     # ── 真·空：content和reasoning都空 → ErrorStep SUSPENDED ──
     if not content and not reasoning:

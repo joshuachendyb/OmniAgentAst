@@ -7,7 +7,10 @@
 禁止在业务代码中重复定义公共函数。
 
 Author: 小沈 - 2026-06-09
+v2.0: 新增format_tool_call_markup — 小欧 2026-07-12
 """
+import json
+import re
 from typing import Optional
 
 
@@ -69,8 +72,96 @@ def smart_truncate_text(content: str, budget: int, head_ratio: float = 0.6) -> s
     return result
 
 
+def _try_format_json_tool_call(obj):
+    """若parsed JSON是tool call对象则返回格式化文本,否则None — 小欧 2026-07-12"""
+    if not isinstance(obj, dict):
+        return None
+    if "function" in obj and isinstance(obj["function"], dict) and "name" in obj["function"]:
+        name = obj["function"]["name"]
+        args_raw = obj["function"].get("arguments", "{}")
+        args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw if isinstance(args_raw, dict) else {})
+        params = [f"  {k}: {v}" for k, v in args.items()]
+        r = f"[工具调用] {name}"
+        if params:
+            r += "\n" + "\n".join(params)
+        return r
+    if "name" in obj and "arguments" in obj:
+        args_raw = obj["arguments"]
+        args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw if isinstance(args_raw, dict) else {})
+        params = [f"  {k}: {v}" for k, v in args.items()]
+        r = f"[工具调用] {obj['name']}"
+        if params:
+            r += "\n" + "\n".join(params)
+        return r
+    return None
+
+
+def _format_xml_tool_block(match):
+    """将<tool_call>...块格式化为纯文本 — 小欧 2026-07-12"""
+    block = match.group(0)
+    func_m = re.search(r'<function=([^>\n]+)>', block)
+    func_name = func_m.group(1) if func_m else "unknown"
+    params = []
+    for pm in re.finditer(r'<parameter=([^>\n]+)>\n?(.*?)\n?</parameter>', block, re.DOTALL):
+        params.append(f"  {pm.group(1)}: {pm.group(2).strip()}")
+    r = f"[工具调用] {func_name}"
+    if params:
+        r += "\n" + "\n".join(params)
+    return r
+
+
+def format_tool_call_markup(text: str) -> str:
+    """将LLM输出中的XML/JSON tool call标记格式化为纯文本
+
+    处理格式:
+      - Anthropic XML: <tool_call><function=name><parameter=k>v</parameter></function></tool_call>
+      - OpenAI JSON:  {"function": {"name": "...", "arguments": "..."}}
+
+    Args:
+        text: 原始LLM输出文本(string不限制)
+
+    Returns:
+        格式化后的纯文本(带换行,无XML/JSON标记)
+    """
+    if not text:
+        return text
+
+    text = re.sub(r'<tool_call>.*?</tool_call>', _format_xml_tool_block, text, flags=re.DOTALL)
+
+    result = []
+    i = 0
+    while i < len(text):
+        if text[i] == '{':
+            depth = 1
+            j = i + 1
+            while j < len(text) and depth > 0:
+                if text[j] == '{':
+                    depth += 1
+                elif text[j] == '}':
+                    depth -= 1
+                j += 1
+            if depth == 0:
+                candidate = text[i:j]
+                try:
+                    obj = json.loads(candidate)
+                    formatted = _try_format_json_tool_call(obj)
+                    if formatted:
+                        result.append(formatted)
+                        i = j
+                        continue
+                except json.JSONDecodeError:
+                    pass
+        result.append(text[i])
+        i += 1
+
+    text = "".join(result)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
 __all__ = [
     "truncate_text",
     "smart_truncate_text",
     "add_line_numbers",
+    "format_tool_call_markup",
 ]
