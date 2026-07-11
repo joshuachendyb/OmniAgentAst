@@ -38,12 +38,13 @@ def _get_shared_handler() -> SafeRotatingFileHandler:
 # ---- Console 截断 Formatter --------------------------------------------
 
 class _TruncateConsoleFormatter(logging.Formatter):
-    """console 日志截断 Formatter — 写文件完整，console 只显示前 100 字符 — 小欧 2026-07-11"""
+    """console 日志截断 Formatter — 只截断消息体%(message)s，前缀不动 — 小欧 2026-07-11"""
     def format(self, record):
-        msg = super().format(record)
-        if len(msg) > 100:
-            msg = msg[:100] + f"...(截断{len(msg)-100}字符)"
-        return msg
+        raw = record.getMessage()
+        if len(raw) > 100:
+            record.msg = raw[:120] + f"...(截断{len(raw)-120}字符)"
+            record.args = None
+        return super().format(record)
 
 
 # ---- setup_logger -----------------------------------------------------
