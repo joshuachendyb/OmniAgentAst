@@ -148,7 +148,7 @@ def validate_not_system_path(file_path: str) -> Tuple[bool, Optional[str], Optio
     path_lower = file_path.lower().replace("\\", "/")
     path_after_drive = path_lower.split(":")[-1] if ":" in path_lower else path_lower
     for sd in WINDOWS_SYSTEM_DIRS:
-        if path_after_drive.startswith(sd):
+        if path_after_drive == sd.rstrip("/") or path_after_drive.startswith(sd):
             return False, f"不允许操作系统目录下的文件: {file_path}", None
     return True, None, None
 
