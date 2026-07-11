@@ -1,4 +1,23 @@
-﻿v0.18.11
+﻿v0.18.12
+更新时间: 2026-07-11 14:22:00
+## v0.18.11→v0.18.12 变更汇总 - 小欧-2026-07-11
+
+### Logger 重构
+- 新建 app/logger/ 模块（api_logger + config + setup_logger）— 小欧-2026-07-10
+- 批量更新 import 路径（114个文件）— 小欧-2026-07-10
+- SafeRotatingFileHandler 单例共享消除 Windows 文件锁竞争 — 小欧-2026-07-11
+- console 截断只截消息体不截前缀（原 bug：完整前缀被砍）— 小欧-2026-07-11
+
+### Bug 修复
+- observation_formatter 副作用修复（pop→get + truncation + None守卫）— 小欧-2026-07-10
+- P6-01 文件不存在断言含工具结果检查 — 小欧-2026-07-11
+
+### 其他
+- read_text_file 返回 total_lines/line_count 行信息 — 小欧-2026-07-10
+- clipboard_control 注释修正 — 小欧-2026-07-10
+
+---
+v0.18.11
 更新时间: 2026-07-10 20:13:00
 ## v0.18.10→v0.18.11 变更汇总 - 小欧-2026-07-10
 
