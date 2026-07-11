@@ -104,8 +104,8 @@ FILE_OPERATION_TOOLS: set[str] = {
 }
 
 READ_FILE_DEFAULT_LIMIT: int = 500
-DEFAULT_PAGE_SIZE: int = 200
 LISTDIR_PAGE_SIZE: int = 500
+FIND_PAGE_SIZE: int = 500
 
 # ============================================================
 # 观察截断常量（observation_formatter.py 统一使用）— 小欧 2026-07-04
@@ -259,6 +259,9 @@ FORBIDDEN_PATHS_PREFIX: set[str] = {
 }
 
 FORBIDDEN_PATHS_WINDOWS_EXACT: set[str] = {
+    r"C:\Windows",
+    r"C:\Program Files",
+    r"C:\Program Files (x86)",
     r"C:\Windows\System32\config\SAM",
     r"C:\Windows\System32\config\SYSTEM",
     r"C:\Windows\System32\config\SECURITY",

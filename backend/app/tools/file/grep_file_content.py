@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, NamedTuple, Optional
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, MAX_SEARCH_RESULTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, MAX_SEARCH_FILE_SIZE
+from app.tools.tool_constants import TOOL_TIMEOUTS, MAX_SEARCH_RESULTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, MAX_SEARCH_FILE_SIZE
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file
@@ -157,15 +157,18 @@ def _grep_files_sync(
                     continue
             
             # 检查是否为二进制文件 — 小健 2026-06-24 — 小欧 2026-06-24 扩展名已知直接跳过，未知才读内容
+            # — 小欧 2026-07-12 灰区后缀与无后缀二进制也计入skipped_binary_files,消除静默跳过无提示
             suffix = fpath.suffix.lower()
             if suffix in BINARY_EXTENSIONS:
                 skipped_binary_files.append(str(fpath))
                 continue
-            if suffix and not suffix in TEXT_EXTENSIONS and is_binary_file(str(fpath)):
+            # 无后缀或未知后缀:内容探测是否二进制(覆盖Makefile/README等无后缀二进制文件)
+            if (not suffix or suffix not in TEXT_EXTENSIONS) and is_binary_file(str(fpath)):
                 skipped_binary_files.append(str(fpath))
                 continue
-            # grep 只搜已知 text 扩展名 — 小欧 2026-07-04
+            # 非文本且未被判为二进制的"灰区"后缀文件:记录提示而非静默跳过 — 小欧 2026-07-12
             if suffix and suffix not in TEXT_EXTENSIONS:
+                skipped_binary_files.append(str(fpath))
                 continue
             
             lines = safe_read_lines(fpath, max_size=MAX_SEARCH_FILE_SIZE)

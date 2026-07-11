@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, MAX_SEARCH_RESULTS
+from app.tools.tool_constants import TOOL_TIMEOUTS, FIND_PAGE_SIZE, MAX_SEARCH_RESULTS
 from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.logger import logger
@@ -68,6 +68,7 @@ def _build_search_files_llm_data(
     truncated_by_deadline: bool = False,
     truncated_by_limit: bool = False,
     truncated_by_offset: bool = False,
+    reached_cap: bool = False,
 ) -> Dict[str, Any]:
     """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示 — 小欧 2026-07-06 summary含路径/模式/页码, warning用常量 — 小欧 2026-07-07 超时秒数"""
     _timeout_sec = TOOL_TIMEOUTS.get("find", TOOL_TIMEOUTS["default"])
@@ -89,7 +90,7 @@ def _build_search_files_llm_data(
             "metrics": {},
         }
     if exec_code == "warning":
-        detail_parts = [f"总数{total}条, 输出前{min(DEFAULT_PAGE_SIZE, total)}条"]
+        detail_parts = [f"总数{total}条, 输出前{min(FIND_PAGE_SIZE, total)}条"]
         _timeout_str = ""
         if truncated_by_deadline:
             _timeout_str = f"，超时({_timeout_sec}秒)"
@@ -97,11 +98,15 @@ def _build_search_files_llm_data(
             detail_parts.append("结果数量达到上限")
         if truncated_by_offset:
             detail_parts.append("分页截断")
+        if reached_cap:
+            detail_parts.append("已到结果上限,无更多结果")
         warning_detail = "; ".join(detail_parts)
+        # 翻页引导提示:已匹配的MAX_SEARCH_RESULTS条可用offset分页获取 — 小欧 2026-07-12
+        _default_hint = f"可使用offset参数分页获取已匹配的{MAX_SEARCH_RESULTS}条结果,或缩小搜索范围/使用更精确匹配模式"
         return {
             "summary": f"在 {search_dir} 中搜索 '{user_pattern}' 完成，共 {total} 个匹配项，结果已截断{_timeout_str}",
             "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
-            "status": {"exec_code": "warning", "message": "搜索结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else "可缩小搜索范围或使用更精确的匹配模式"},
+            "status": {"exec_code": "warning", "message": "已到达结果上限" if reached_cap else "搜索结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else _default_hint},
             "duration_ms": duration_ms,
             "metrics": {
                 "total": {"value": total, "text": f"{total}个匹配"},
@@ -109,7 +114,7 @@ def _build_search_files_llm_data(
         }
     summary = f"在 {search_dir} 中搜索 '{user_pattern}' 完成，共 {total} 个匹配项"
     if user_offset:
-        end = min(user_offset + DEFAULT_PAGE_SIZE, total)
+        end = min(user_offset + FIND_PAGE_SIZE, total)
         summary += f"，第{user_offset+1}-{end}项"
     return {
         "summary": summary,
@@ -205,21 +210,24 @@ async def find(
 
     all_matches.sort(key=lambda x: x.get("name", ""))
     total = len(all_matches)
-    page = all_matches[offset:offset + DEFAULT_PAGE_SIZE]
+    page = all_matches[offset:offset + FIND_PAGE_SIZE]
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     truncated_by_deadline = _time_mod.monotonic() > deadline
     truncated_by_limit = total >= MAX_SEARCH_RESULTS
-    truncated_by_offset = total > (offset + DEFAULT_PAGE_SIZE)
-    exec_code = "warning" if (truncated_by_deadline or truncated_by_limit or truncated_by_offset) else "success"
+    truncated_by_offset = total > (offset + FIND_PAGE_SIZE)
+    # 已达收集上限且本页无数据(offset越界):明确提示"已到上限",消除静默空页 — 小欧 2026-07-12
+    reached_cap = truncated_by_limit and len(page) == 0
+    exec_code = "warning" if (truncated_by_deadline or truncated_by_limit or truncated_by_offset or reached_cap) else "success"
     llm_data = _build_search_files_llm_data(
         exec_code, duration_ms,
         search_dir=search_dir, total=total,
-        truncated=(truncated_by_deadline or truncated_by_limit or truncated_by_offset),
+        truncated=(truncated_by_deadline or truncated_by_limit or truncated_by_offset or reached_cap),
         user_pattern=pattern, user_ignore_case=ignore_case,
         user_type=type, user_offset=offset,
         truncated_by_deadline=truncated_by_deadline,
         truncated_by_limit=truncated_by_limit,
         truncated_by_offset=truncated_by_offset,
+        reached_cap=reached_cap,
     )
     if exec_code == "warning":
         # ---- observation_formatter route -------------------------------------------

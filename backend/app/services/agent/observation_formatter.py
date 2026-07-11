@@ -29,7 +29,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   query_sql       {columns, rows}                #5 _format_rows          行: OBS_MAX_DISPLAY_ITEMS=500         limit=50
   filter_data     {columns, rows}                #5 _format_rows+columns  行: OBS_MAX_DISPLAY_ITEMS=500         top_n(用户指定,无默认)
   listdir         {entries}                      #3 _format_entries       项: OBS_MAX_DISPLAY_ITEMS=500         LISTDIR_PAGE_SIZE=500
-  find            {matches}                      #9b _format_find_results 项: OBS_MAX_DISPLAY_ITEMS=500         收集1000/每页DEFAULT_PAGE_SIZE=200
+   find            {matches}                      #9b _format_find_results 项: OBS_MAX_DISPLAY_ITEMS=500         收集1000/每页FIND_PAGE_SIZE=500
   grep            {matches}                      #9 _format_matches       项: OBS_MAX_DISPLAY_ITEMS=500         MAX_SEARCH_RESULTS=1000
   searchweb       {items}                        #4 _format_items         项: OBS_MAX_DISPLAY_ITEMS=500        num_results≤50; snippet 300字符
   event_log       {events}                       #8 _format_events        条: OBS_MAX_DISPLAY_ITEMS=500         max_events=50
