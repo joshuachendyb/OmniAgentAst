@@ -62,14 +62,17 @@ def _build_copy_file_llm_data(
 
 
 async def copy(
-    source: str,
-    destination: str,
+    path: str,
+    dest: str,
     recursive: bool = False,
     overwrite: bool = False,
     preserve_metadata: bool = True,
 ) -> Dict[str, Any]:
-    """复制文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复计时铁规"""
+    """复制文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复计时铁规 — 小欧 2026-07-11 路径参数统一为path/dest"""
     t0 = _time_mod.perf_counter()
+    # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
+    source = path
+    destination = dest
     if not source or not source.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "source不能为空"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)

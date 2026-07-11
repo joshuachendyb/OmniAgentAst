@@ -173,13 +173,16 @@ def _extract_tar_archive(archive_path: str, output_dir: str, overwrite: bool,
 
 
 async def extract(
-    source: str,
-    destination: Optional[str] = None,
+    path: str,
+    dest: Optional[str] = None,
     password: Optional[str] = None,
     overwrite: bool = False,
 ) -> Dict[str, Any]:
-    """解压归档包 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件"""
+    """解压归档包 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-11 路径参数统一为path/dest"""
     t0 = _time_mod.perf_counter()
+    # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
+    source = path
+    destination = dest
 
     # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/源文件存在+是文件 — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04

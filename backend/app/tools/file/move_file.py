@@ -113,12 +113,15 @@ async def _move_file_impl(
 
 
 async def move(
-    source: str,
-    destination: str,
+    path: str,
+    dest: str,
     overwrite: bool = False,
 ) -> Dict[str, Any]:
-    """移动文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3"""
+    """移动文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3 — 小欧 2026-07-11 路径参数统一为path/dest"""
     t0 = _time_mod.perf_counter()
+    # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
+    source = path
+    destination = dest
     if not source or not source.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail="source不能为空", hint="请提供有效的源文件路径", user_overwrite=overwrite)

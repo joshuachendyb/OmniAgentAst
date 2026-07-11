@@ -145,12 +145,14 @@ async def _delete_file_impl(
 
 
 async def delete(
-    source: str,
+    path: str,
     recursive: bool = False,
     force: bool = False,
 ) -> Dict[str, Any]:
-    """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3"""
+    """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3 — 小欧 2026-07-11 路径参数统一为path"""
     t0 = _time_mod.perf_counter()
+    # 路径参数统一为path,桥接到内部变量source — 小欧 2026-07-11
+    source = path
     if not source or not source.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail="source不能为空", user_recursive=recursive, user_force=force)

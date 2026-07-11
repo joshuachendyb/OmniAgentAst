@@ -23,6 +23,7 @@ from app.logger import logger
 async def _get_directory_tree(
     dir_path: str, max_depth: int = 5,
     include_hidden: bool = False,
+    sort_by: str = "name",
 ) -> Dict[str, Any]:
     """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时 — 小欧 2026-06-24 修复include_hidden — 小欧 2026-07-06 去mtime排序"""
     # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
@@ -60,6 +61,10 @@ async def _get_directory_tree(
         """按名称排序目录项 """
         return sorted(items, key=lambda x: x.name.lower())
 
+    def _sort_items_by_mtime(items):
+        """按修改时间降序排序目录项(最新在前) — 小欧 2026-07-12 补齐sort_by=mtime"""
+        return sorted(items, key=lambda x: x.stat().st_mtime, reverse=True)
+
     def _build_tree(current_path: Path, depth: int = 0, _visited: Optional[set] = None) -> Optional[Dict[str, Any]]:
         if _visited is None:
             _visited = set()
@@ -84,7 +89,8 @@ async def _get_directory_tree(
             items = [item for item in current_path.iterdir() if item.is_dir()]
             if not include_hidden:
                 items = [item for item in items if not item.name.startswith('.')]
-            for item in _sort_items(items):
+            _sorter = _sort_items_by_mtime if (sort_by == "mtime") else _sort_items
+            for item in _sorter(items):
                 child = _build_tree(item, depth + 1, _visited)
                 if child:
                     children.append(child)
@@ -93,7 +99,7 @@ async def _get_directory_tree(
         node["children"] = children
         return node
 
-    tree = await asyncio.to_thread(_build_tree, path)
+    tree = await asyncio.to_thread(_build_tree, path, 0, None)
     if tree is None:
         return {"error_detail": "查询目录树失败", "params": {"path": dir_path}}
 
@@ -148,12 +154,12 @@ async def tree(
         llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空", hint="请提供目录路径", user_include_hidden=include_hidden, user_sort_by=sort_by)
         return build_error(data={}, llm_data=llm_data)
 
-    if sort_by not in ("name",):
+    if sort_by not in ("name", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name',当前值: '{sort_by}'", hint="sort_by只能为name", user_include_hidden=include_hidden, user_sort_by=sort_by)
+        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'mtime',当前值: '{sort_by}'", hint="sort_by只能为name或mtime", user_include_hidden=include_hidden, user_sort_by=sort_by)
         return build_error(data={}, llm_data=llm_data)
 
-    tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth, include_hidden=include_hidden)
+    tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth, include_hidden=include_hidden, sort_by=sort_by)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
     if "error_detail" in tree_result:

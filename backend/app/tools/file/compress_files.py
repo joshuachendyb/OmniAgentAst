@@ -218,15 +218,18 @@ def _get_total_size_sync(path: Path, deadline: float) -> int:
 
 
 async def compress(
-    source: str,
-    destination: str,
+    path: str,
+    dest: str,
     format: str = "zip",
     password: Optional[str] = None,
     overwrite: bool = False,
     exclude_patterns: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """压缩文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件"""
+    """压缩文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-11 路径参数统一为path/dest"""
     t0 = _time_mod.perf_counter()
+    # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
+    source = path
+    destination = dest
     err = validate_str_param(source, "source")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

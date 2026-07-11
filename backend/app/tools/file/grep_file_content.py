@@ -320,11 +320,11 @@ async def grep(
     # — 小欧 2026-07-06 18:46:13
     # =============================================================================
     if output_mode == "count":
-        data = {}
+        data = {"total_matches": gr.total_matches, "total_files": gr.total_files}
     elif output_mode == "only_files":
-        data = {"matches": gr.results}
+        data = {"matches": gr.results, "total_matches": gr.total_matches, "total_files": gr.total_files}
     else:
-        data = {"matches": gr.results}
+        data = {"matches": gr.results, "total_matches": gr.total_matches, "total_files": gr.total_files}
 
     # 添加跳过的二进制文件信息 — 小健 2026-06-24
     if gr.skipped_binaries:

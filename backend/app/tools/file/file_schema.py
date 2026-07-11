@@ -286,8 +286,8 @@ class GrepInput(BaseModel):
 # ============================================================
 
 class CompressInput(BaseModel):
-    source: str = Field(description="要压缩的文件/目录路径(绝对路径),支持通配符如*.txt")
-    destination: str = Field(description="输出压缩包路径(绝对路径,必填)")
+    path: str = Field(description="要压缩的文件/目录路径(绝对路径),支持通配符如*.txt")
+    dest: str = Field(description="输出压缩包路径(绝对路径,必填)")
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
         default="zip", description="压缩格式:zip/tar/tar.gz/tar.bz2,默认zip"
     )
@@ -304,8 +304,8 @@ class CompressInput(BaseModel):
 # ============================================================
 
 class ExtractInput(BaseModel):
-    source: str = Field(description="压缩包路径(绝对路径,必填)。支持格式:zip/tar/tar.gz/tar.bz2")
-    destination: Optional[str] = Field(
+    path: str = Field(description="压缩包路径(绝对路径,必填)。支持格式:zip/tar/tar.gz/tar.bz2")
+    dest: Optional[str] = Field(
         default=None, description="解压目标目录(绝对路径,可选,默认自动创建同名目录)"
     )
     password: Optional[str] = Field(default=None, description="解密密码(仅ZIP格式支持),可选")
@@ -317,8 +317,8 @@ class ExtractInput(BaseModel):
 # ============================================================
 
 class MoveInput(BaseModel):
-    source: str = Field(description="源文件路径(绝对路径)")
-    destination: str = Field(description="目标路径(绝对路径)")
+    path: str = Field(description="源文件路径(绝对路径)")
+    dest: str = Field(description="目标路径(绝对路径)")
     overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
 
 
@@ -327,8 +327,8 @@ class MoveInput(BaseModel):
 # ============================================================
 
 class CopyInput(BaseModel):
-    source: str = Field(description="源文件路径(绝对路径)")
-    destination: str = Field(description="目标路径(绝对路径)")
+    path: str = Field(description="源文件路径(绝对路径)")
+    dest: str = Field(description="目标路径(绝对路径)")
     recursive: bool = Field(default=False, description="复制目录时需True,默认False")
     overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
     preserve_metadata: bool = Field(default=True, description="是否保留文件元数据(修改时间等),默认True")
@@ -340,7 +340,7 @@ class CopyInput(BaseModel):
 # ============================================================
 
 class DeleteInput(BaseModel):
-    source: str = Field(description="要删除的文件/目录路径(绝对路径)")
+    path: str = Field(description="要删除的文件/目录路径(绝对路径)")
     recursive: bool = Field(default=False, description="删除非空目录时需True,默认False")
     force: bool = Field(default=False, description="True=跳过回收站永久删除,False=放入回收站。默认False")
 
@@ -350,8 +350,8 @@ class DeleteInput(BaseModel):
 # ============================================================
 
 class RenameInput(BaseModel):
-    source: str = Field(min_length=1, description="原文件/目录路径(绝对路径)")
-    destination: str = Field(min_length=1, description="新名称(仅文件名,不含目录路径)")
+    path: str = Field(min_length=1, description="原文件/目录路径(绝对路径)")
+    dest: str = Field(min_length=1, description="新名称(仅文件名,不含目录路径)")
 
 
 # ============================================================
