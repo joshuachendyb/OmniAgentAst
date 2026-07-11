@@ -89,7 +89,7 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "readmedia": """读取图片、音频、视频等非文本文件。适用场景:需要获取媒体文件内容进行图像识别、音频分析等时使用。""",
 
-    "edittext": """替换文本文件中的指定内容。适用场景:需要精确修改代码中的函数名、变量、配置值等时使用。""",
+    "edittext": """替换/插入文本文件中的指定内容。mode=once(只替换第一个), all(替换全部), before(在锚点前插入), after(在锚点后插入)。适用场景:需要精确修改函数名/变量/配置值,或在代码前后插入新逻辑。""",
 
     "listdir": """列出目录内容,返回扁平列表(当前层所有文件+目录)。适用场景:需要查看目录结构、文件大小、文件数量统计时使用。""",
 
@@ -134,7 +134,9 @@ FILE_TOOL_EXAMPLES = {
     ],
     "edittext": [
         {"file_path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"},
-        {"file_path": "D:/main.py", "old_string": "import os", "new_string": "import sys"},
+        {"file_path": "D:/main.py", "old_string": "import os", "new_string": "import sys\nimport json", "mode": "all"},
+        {"file_path": "D:/main.py", "mode": "before", "old_string": "def main():", "new_string": "# new function above main\ndef helper():\n    pass\n\n"},
+        {"file_path": "D:/main.py", "mode": "after", "old_string": "def main():", "new_string": "\n    # added after main start\n    pass"},
     ],
     "listdir": [
         {"dir_path": "D:/project"},

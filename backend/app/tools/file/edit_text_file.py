@@ -77,12 +77,45 @@ async def _try_read_file_with_encodings(
 
 def _apply_replacement(
     content: str, old_string: str, new_string: str,
-    ignore_case: bool, replace_all: bool,
+    ignore_case: bool, mode: str,
 ) -> Tuple[str, int, int]:
-    """执行替换操作,返回(new_content, count, total_matches) — 小欧 2026-06-22 — 小健 2026-06-24 修复硬编码flags=2 — 小欧 2026-07-05 增加total_matches"""
+    """执行替换/插入操作,返回(new_content, count, total_matches) — 小欧 2026-06-22 — 小健 2026-06-24 修复硬编码flags=2 — 小欧 2026-07-05 增加total_matches — 小欧 2026-07-11 replace_all→mode,增加before/after"""
     count = 0
     total_matches = 0
-    if replace_all:
+
+    if mode == "before":
+        if ignore_case:
+            pattern = re_mod.escape(old_string)
+            total_matches = len(re_mod.findall(pattern, content, re_mod.IGNORECASE))
+            if total_matches == 1:
+                match = re_mod.search(pattern, content, re_mod.IGNORECASE)
+                content = content[:match.start()] + new_string + content[match.start():]
+                count = 1
+        else:
+            total_matches = content.count(old_string)
+            if total_matches == 1:
+                idx = content.find(old_string)
+                content = content[:idx] + new_string + content[idx:]
+                count = 1
+        return content, count, total_matches
+
+    if mode == "after":
+        if ignore_case:
+            pattern = re_mod.escape(old_string)
+            total_matches = len(re_mod.findall(pattern, content, re_mod.IGNORECASE))
+            if total_matches == 1:
+                match = re_mod.search(pattern, content, re_mod.IGNORECASE)
+                content = content[:match.end()] + new_string + content[match.end():]
+                count = 1
+        else:
+            total_matches = content.count(old_string)
+            if total_matches == 1:
+                idx = content.find(old_string)
+                content = content[:idx + len(old_string)] + new_string + content[idx + len(old_string):]
+                count = 1
+        return content, count, total_matches
+
+    if mode == "all":
         flags = 0 if not ignore_case else re_mod.IGNORECASE
         pattern = re_mod.escape(old_string)
         if ignore_case:
@@ -93,20 +126,22 @@ def _apply_replacement(
             total_matches = content.count(old_string)
             count = total_matches
             content = content.replace(old_string, new_string)
+        return content, count, total_matches
+
+    # mode == "once"
+    if ignore_case:
+        pattern = re_mod.escape(old_string)
+        total_matches = len(re_mod.findall(pattern, content, re_mod.IGNORECASE))
+        match = re_mod.search(pattern, content, re_mod.IGNORECASE)
+        if match:
+            content = content[:match.start()] + new_string + content[match.end():]
+            count = 1
     else:
-        if ignore_case:
-            pattern = re_mod.escape(old_string)
-            total_matches = len(re_mod.findall(pattern, content, re_mod.IGNORECASE))
-            match = re_mod.search(pattern, content, re_mod.IGNORECASE)
-            if match:
-                content = content[:match.start()] + new_string + content[match.end():]
-                count = 1
-        else:
-            total_matches = content.count(old_string)
-            idx = content.find(old_string)
-            if idx >= 0:
-                content = content[:idx] + new_string + content[idx + len(old_string):]
-                count = 1
+        total_matches = content.count(old_string)
+        idx = content.find(old_string)
+        if idx >= 0:
+            content = content[:idx] + new_string + content[idx + len(old_string):]
+            count = 1
     return content, count, total_matches
 
 
@@ -128,10 +163,10 @@ def _safety_structure_loss(original: str, new_content: str) -> str:
     return "替换将删除以下定义: " + "；".join(parts) if parts else ""
 
 
-def _safety_short_old(old_string: str, replace_all: bool, total_matches: int) -> str:
-    """检测过短old_string批量替换风险 — 小沈 2026-07-08"""
-    if replace_all and len(old_string) <= 2 and total_matches >= 5:
-        return f"old_string仅{len(old_string)}字符，replace_all=True匹配{total_matches}处，请确认"
+def _safety_short_old(old_string: str, mode: str, total_matches: int) -> str:
+    """检测过短old_string批量替换风险 — 小沈 2026-07-08 — 小欧 2026-07-11 replace_all→mode"""
+    if mode == "all" and len(old_string) <= 2 and total_matches >= 5:
+        return f"old_string仅{len(old_string)}字符，all模式匹配{total_matches}处，请确认"
     return ""
 
 
@@ -141,17 +176,17 @@ def _build_edit_text_file_llm_data(
     diff: str = "", total_matches: int = 0, mtime_warning: str = "",
     hint: str = "", safety_hint: str = "",
     user_old_string: str = "", user_new_string: str = "",
-    user_replace_all: Optional[bool] = None, user_ignore_case: Optional[bool] = None,
+    user_mode: str = "", user_ignore_case: Optional[bool] = None,
     user_encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """edit_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 增加diff/total_matches/mtime_warning — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-06 diff移入other_data — 小欧 2026-07-06 diff移回metrics"""
+    """edit_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 增加diff/total_matches/mtime_warning — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-06 diff移入other_data — 小欧 2026-07-06 diff移回metrics — 小欧 2026-07-11 replace_all→mode"""
     _act_params = {"file_path": file_path}
     if user_old_string:
         _act_params["old_string"] = user_old_string[:50]  # 小欧 2026-07-06 100→50，减少返回给LLM的冗余参数
     if user_new_string:
         _act_params["new_string"] = user_new_string[:50]  # 小欧 2026-07-06 100→50，减少返回给LLM的冗余参数
-    if user_replace_all is not None:
-        _act_params["replace_all"] = user_replace_all
+    if user_mode and user_mode != "once":
+        _act_params["mode"] = user_mode
     if user_ignore_case is not None:
         _act_params["ignore_case"] = user_ignore_case
     if user_encoding:
@@ -173,7 +208,7 @@ def _build_edit_text_file_llm_data(
     if total_matches > applied:
         _remaining = total_matches - applied
         _warning_msg = f"剩余{_remaining}处未修改"
-        _hint_parts.append("建议使用 replace_all=True 一次替换所有匹配")
+        _hint_parts.append("建议使用 mode='all' 一次替换所有匹配")
     _hint = "；".join(_hint_parts) if _hint_parts else ""
     _exec_code = "warning" if (_warning_msg or mtime_warning or safety_hint) else "success"
     if _exec_code == "warning":
@@ -197,10 +232,10 @@ def _build_edit_text_file_llm_data(
 
 async def _precise_replace_in_file(
     file_path: str, old_string: str, new_string: str,
-    replace_all: bool = False, ignore_case: bool = False,
+    mode: str = "once", ignore_case: bool = False,
     dry_run: bool = False, encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """精确替换文件中的字符串(返回原始dict,不含build3/llm_data) — 小欧 2026-06-22"""
+    """精确替换文件中的字符串(返回原始dict,不含build3/llm_data) — 小欧 2026-06-22 — 小欧 2026-07-11 replace_all→mode"""
     if not old_string:
         return {"error_detail": "old_string不能为空"}
 
@@ -233,19 +268,38 @@ async def _precise_replace_in_file(
         if err_msg:
             raise ValueError(err_msg)
 
+        # 编码预检移入 _replace_sync：验完整落盘内容(write_content)，
+        # 覆盖 new_string + 原文 errors='replace' 残留的 U+FFFD，且在 open('w') 截断前失败 — 小欧 2026-07-11
+
         mtime_warning = ""
         conflict_err = check_conflict_strict(file_path)
         if conflict_err:
             return {"error_detail": conflict_err}
 
-        # 无操作跳过 — 小欧 2026-07-05 — 小沈 2026-07-05 record_operation移后防孤立记录
-        if old_string == new_string:
+        # 无操作跳过（仅replace模式，插入模式即使内容相同也改变文件） — 小欧 2026-07-11
+        if old_string == new_string and mode in ("once", "all"):
+            total_matches = content.count(old_string) if mode == "all" else (1 if old_string in content else 0)
             return {
                 "file_path": str(path),
                 "applied_edits": 0, "total_edits": 0,
-                "total_matches": content.count(old_string) if replace_all else (1 if old_string in content else 0),
+                "total_matches": total_matches,
                 "diff": "", "mtime_warning": mtime_warning, "skipped": True,
             }
+
+        # before/after 模式：new_string 不能为空(插入空内容无意义,否则误报成功) — 小欧 2026-07-11
+        if mode in ("before", "after") and new_string == "":
+            return {"error_detail": f"mode={mode} 需要非空 new_string（插入内容不能为空）", "old_string": old_string[:50]}
+
+        # before/after 模式：校验唯一匹配 — 小欧 2026-07-11
+        if mode in ("before", "after"):
+            if ignore_case:
+                total_matches = len(re_mod.findall(re_mod.escape(old_string), content, re_mod.IGNORECASE))
+            else:
+                total_matches = content.count(old_string)
+            if total_matches == 0:
+                return {"error_detail": f"未找到匹配内容: '{old_string[:80]}'（mode={mode}）", "old_string": old_string[:50]}
+            if total_matches > 1:
+                return {"error_detail": f"before/after模式要求唯一匹配，old_string在文件中出现{total_matches}次，请提供更多上下文以精确定位", "old_string": old_string[:50]}
 
         operation_id = record_operation(
             task_id=task_id, operation_type=OperationType.MODIFY,
@@ -255,7 +309,7 @@ async def _precise_replace_in_file(
         replace_result = {}
 
         def _replace_sync() -> bool:
-            new_content, count, total_matches = _apply_replacement(content, old_string, new_string, ignore_case, replace_all)
+            new_content, count, total_matches = _apply_replacement(content, old_string, new_string, ignore_case, mode)
             replace_result['count'] = count
             replace_result['total_matches'] = total_matches
             replace_result['used_enc'] = used_enc
@@ -274,10 +328,16 @@ async def _precise_replace_in_file(
                 n=3,
             ))
             sl_warn = _safety_structure_loss(content, new_content)
-            so_warn = _safety_short_old(old_string, replace_all, total_matches)
+            so_warn = _safety_short_old(old_string, mode, total_matches)
             if sl_warn or so_warn:
                 replace_result['safety_hint'] = ("；".join(filter(None, [sl_warn, so_warn])))[:200]
             write_content = new_content.replace('\n', '\r\n') if _has_crlf else new_content
+            # 完整编码预检：验落盘全文,含原文残留U+FFFD,赶在open('w')截断前失败 — 小欧 2026-07-11
+            try:
+                write_content.encode(used_enc)
+            except UnicodeEncodeError as e:
+                replace_result['encode_error'] = f"替换后内容含编码 {used_enc} 不支持的字符: {e}"
+                return False
             with open(path, 'w', encoding=used_enc, newline='') as f:
                 f.write(write_content)
             record_write(file_path)
@@ -292,13 +352,17 @@ async def _precise_replace_in_file(
 
         count = replace_result.get('count', 0)
 
+        # 优先处理编码失败(count!=0但写入被拦),避免误判为"未找到匹配" — 小欧 2026-07-11
+        if replace_result.get('encode_error'):
+            return {"error_detail": replace_result['encode_error']}
+
         if not success or count == 0:
             preview = replace_result.get('content_preview', '')
             total_lines = replace_result.get('total_lines', 0)
             if total_lines == 1 and not content.strip():
                 return {"error_detail": f"未找到匹配内容: 文件为空", "old_string": old_string[:50]}
             _ed = f"未找到匹配内容: '{old_string[:80]}'。文件共{total_lines}行，前15行:\n{preview}"
-            if count == 0 and new_string and new_string in content:
+            if mode == "once" and count == 0 and new_string and new_string in content:
                 _ed += "。提示: new_string 在文件中但 old_string 未找到，可能参数填反"
             return {
                 "error_detail": _ed,
@@ -323,27 +387,34 @@ async def edittext(
     file_path: str,
     old_string: str,
     new_string: str = "",
-    replace_all: bool = False,
+    mode: str = "once",
     ignore_case: bool = False,
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """编辑文本文件 — 小健 2026-06-20 删dry_run参数 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加ignore_case参数"""
+    """编辑文本文件 — 小健 2026-06-20 删dry_run参数 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加ignore_case参数 — 小欧 2026-07-11 replace_all→mode"""
     t0 = _time_mod.perf_counter()
+
+    # mode 有效性检查 — 小欧 2026-07-11
+    if mode not in ("once", "all", "before", "after"):
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"无效mode: '{mode}'，可选值: once, all, before, after", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
+        return build_error(data={}, llm_data=llm_data)
+
     if '\x00' in file_path:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="file_path包含空字节", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="file_path包含空字节", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
     if old_string is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为None", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为None", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
     if not old_string.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为空字符串", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为空字符串", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
     if new_string is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="new_string不能为None", user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="new_string不能为None", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
 
     # 文件类型检查 — 北京老陈 2026-07-09
@@ -356,7 +427,7 @@ async def edittext(
             _hint = "请检查文件路径和文件名是否正确"
         else:
             _hint = "请选择正确的工具类型"
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=ft_detail, hint=_hint, user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=ft_detail, hint=_hint, user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(
             data={"error_detail": ft_detail, "params": {"file_path": file_path}},
             llm_data=llm_data,
@@ -365,13 +436,13 @@ async def edittext(
     dry_run = False
     result = await _precise_replace_in_file(
         file_path=file_path, old_string=old_string, new_string=new_string,
-        replace_all=replace_all, ignore_case=ignore_case,
+        mode=mode, ignore_case=ignore_case,
         dry_run=dry_run, encoding=encoding,
     )
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     error_detail = result.get("error_detail")
     if error_detail:
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, user_old_string=old_string, user_new_string=new_string, user_replace_all=replace_all, user_ignore_case=ignore_case, user_encoding=encoding)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(
             data={"error_detail": error_detail, "params": {"file_path": file_path}},
             llm_data=llm_data,
@@ -384,7 +455,7 @@ async def edittext(
         mtime_warning=result.get("mtime_warning", "") or "",
         safety_hint=result.get("safety_hint", ""),
         user_old_string=old_string, user_new_string=new_string,
-        user_replace_all=replace_all, user_ignore_case=ignore_case,
+        user_mode=mode, user_ignore_case=ignore_case,
         user_encoding=encoding,
     )
     # ---- observation_formatter route -------------------------------------------

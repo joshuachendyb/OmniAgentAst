@@ -139,19 +139,23 @@ class ReadmediaInput(BaseModel):
 # ============================================================
 
 class EdittextInput(BaseModel):
+    """mode="once"   -- 只替换第一个（默认，完全向后兼容）
+mode="all"    -- 替换全部
+mode="before" -- 在唯一锚点前插入（P1 修复）
+mode="after"  -- 在唯一锚点后插入（P1 修复）"""
     file_path: str = Field(
         description="目标文件的绝对路径(仅支持文本文件)"
     )
     old_string: str = Field(
-        description="待替换的旧字符串。若需替换所有匹配项请设replace_all=True"
+        description="定位锚点字符串"
     )
     new_string: str = Field(
         default="",
-        description="替换的新字符串。传空字符串''表示删除匹配到的文本"
+        description="替换/插入的字符串。mode=once时传空字符串''表示删除匹配文本"
     )
-    replace_all: bool = Field(
-        default=False,
-        description="是否替换所有匹配项,默认False只替换第一个"
+    mode: str = Field(
+        default="once",
+        description="操作模式: once(只替换第一个), all(替换全部), before(在锚点前插入), after(在锚点后插入)"
     )
     ignore_case: bool = Field(
         default=False,
@@ -159,7 +163,7 @@ class EdittextInput(BaseModel):
     )
     encoding: Optional[str] = Field(
         default=None,
-        description="文件编码,默认utf-8"
+        description="文件编码,默认自动检测"
     )
 
 
