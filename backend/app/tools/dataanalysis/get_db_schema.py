@@ -82,21 +82,21 @@ def _filter_tables(tables: List[str], table_name: Optional[str], filter_pattern:
 
 def _build_get_db_schema_llm_data(exec_code, duration_ms, total_tables=0, table_names=None,
                                     err_code="", detail="", hint="",
-                                    connection_type="", db_path="", db_name="", table_name="", filter_pattern=""):
+                                    connection_type="", path="", db_name="", table_name="", filter_pattern=""):
     """get_db_schema的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params"""
     table_names = table_names or []
     _act_params = {}
     if connection_type:
         _act_params["connection_type"] = connection_type
-    if db_path:
-        _act_params["db_path"] = db_path
+    if path:
+        _act_params["path"] = path
     if db_name:
         _act_params["db_name"] = db_name
     if table_name:
         _act_params["table_name"] = table_name
     if filter_pattern:
         _act_params["filter_pattern"] = filter_pattern
-    _target = db_path or db_name or "database"
+    _target = path or db_name or "database"
     if exec_code == "error":
         return {
             "summary": f"获取数据库结构{_target}，失败" + (f": {detail}" if detail else ""),
@@ -114,22 +114,22 @@ def _build_get_db_schema_llm_data(exec_code, duration_ms, total_tables=0, table_
     }
 
 
-def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None,
+def get_db_schema(connection_type="sqlite", connection_string=None, path=None,
                    db_name=None, table_name=None, filter_pattern=None) -> Dict:
     """获取数据库表结构 — 小健 2026-06-22 拆分独立文件"""
     conn = engine = None
     t0 = _time_mod.perf_counter()
     try:
-        if connection_type == "sqlite" and db_path and not __import__("os").path.exists(db_path):
+        if connection_type == "sqlite" and path and not __import__("os").path.exists(path):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DB_CONNECTION, detail=f"数据库文件不存在: {db_path}", hint="请检查路径",
-                                                       connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
+            llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DB_CONNECTION, detail=f"数据库文件不存在: {path}", hint="请检查路径",
+                                                       connection_type=connection_type, path=path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
             return build_error(data={}, llm_data=llm_data)
-        conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
+        conn, engine, conn_error = _get_connection(connection_type, connection_string, path)
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DB_CONNECTION, detail=conn_error, hint="请检查连接参数",
-                                                       connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
+                                                       connection_type=connection_type, path=path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
             return build_error(data={}, llm_data=llm_data)
 
         tables = _get_tables(conn, connection_type, db_name)
@@ -137,7 +137,7 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
         if table_name and not tables:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DOC_DB_TABLE_NOT_FOUND, detail=f"表不存在: {table_name}", hint="请确认表名正确",
-                                                       connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
+                                                       connection_type=connection_type, path=path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
             return build_error(data={}, llm_data=llm_data)
 
         schema_info = []
@@ -149,7 +149,7 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         table_names = [t["name"] for t in schema_info]
         llm_data = _build_get_db_schema_llm_data("success", duration_ms, len(schema_info), table_names,
-                                                     connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
+                                                     connection_type=connection_type, path=path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
         # =============================================================================
         # 数据设计：total/markdown 从 data 移除，通过 llm_data.metrics + summary 传递给 LLM
         # summary 示例: "获取到5个表的结构信息"
@@ -168,12 +168,12 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SQL_EXEC, detail=str(e), hint=sql_error_hint(e),
-                                                   connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
+                                                   connection_type=connection_type, path=path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SCHEMA_FAILED, detail=str(e),
-                                                   connection_type=connection_type, db_path=db_path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
+                                                   connection_type=connection_type, path=path, db_name=db_name, table_name=table_name, filter_pattern=filter_pattern)
         return build_error(data={}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)

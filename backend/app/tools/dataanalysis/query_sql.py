@@ -36,18 +36,18 @@ def _format_table(columns: List[str], rows: List[Dict]) -> str:
 
 
 def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, detail="", hint="",
-                               connection_type="", db_path="", limit=0, timeout=0):
+                               connection_type="", path="", limit=0, timeout=0):
     """query_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-06 sql截断200→50 统一"""
     _act_params = {"sql": sql[:50]}  # 小欧 2026-07-06 200→50 统一截断
     if connection_type:
         _act_params["connection_type"] = connection_type
-    if db_path:
-        _act_params["db_path"] = db_path
+    if path:
+        _act_params["path"] = path
     if limit:
         _act_params["limit"] = limit
     if timeout:
         _act_params["timeout"] = timeout
-    _target = db_path or connection_type or "database"
+    _target = path or connection_type or "database"
     if exec_code == "error":
         return {
             "summary": f"查询{_target}，失败: {detail}",
@@ -69,7 +69,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
 
 
 def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
-              connection_string: Optional[str] = None, db_path: Optional[str] = None,
+              connection_string: Optional[str] = None, path: Optional[str] = None,
               limit: int = 50, timeout: int = 15000) -> Dict[str, Any]:
     """执行只读SQL查询 — 小健 2026-06-22 拆分独立文件
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -81,7 +81,7 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
     if not isinstance(sql, str) or not sql.strip():
         duration_ms = 0
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql or "", 0, [], detail="SQL语句不能为空", hint="请提供有效的SQL语句",
-                                               connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
+                                               connection_type=connection_type, path=path, limit=limit, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
 
     try:
@@ -90,14 +90,14 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
             attempted_type = sql.split()[0].upper() if sql.strip() else "未知"
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=f"只读查询不支持{attempted_type}操作", hint="如需写操作请使用execute_sql工具",
-                                                   connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
+                                                   connection_type=connection_type, path=path, limit=limit, timeout=timeout)
             return build_error(data={}, llm_data=llm_data)
 
-        conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
+        conn, engine, conn_error = _get_connection(connection_type, connection_string, path, timeout)
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=conn_error, hint="请检查数据库连接参数",
-                                                   connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
+                                                   connection_type=connection_type, path=path, limit=limit, timeout=timeout)
             return build_error(data={}, llm_data=llm_data)
 
         if connection_type in ("mysql", "postgresql"):
@@ -121,7 +121,7 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"columns": columns, "rows": results}
         llm_data = _build_query_sql_llm_data("success", duration_ms, sql, len(results), columns,
-                                               connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
+                                               connection_type=connection_type, path=path, limit=limit, timeout=timeout)
         # =============================================================================
         # 数据设计：total 从 data 移除，行数通过 llm_data.metrics（key:row_count）传入 summary
         # summary 示例: "查询返回10行, 列: id, name"
@@ -138,12 +138,12 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=str(e), hint=sql_error_hint(e),
-                                               connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
+                                               connection_type=connection_type, path=path, limit=limit, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=str(e), hint="请检查SQL语句和参数",
-                                               connection_type=connection_type, db_path=db_path, limit=limit, timeout=timeout)
+                                               connection_type=connection_type, path=path, limit=limit, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)

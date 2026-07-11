@@ -42,7 +42,7 @@ def _validate_chart_data(chart_data: dict) -> dict:
     return {"code": "SUCCESS", "data": {"valid": True}}
 
 
-def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output_path="", detail="", hint="",
+def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", dest="", detail="", hint="",
                                     data="", title="", x_label="", y_label="", file_size=0):
     """generate_chart的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 data字段加[:200]截断"""
     _act_params = {"chart_type": chart_type}
@@ -54,9 +54,9 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output
         _act_params["x_label"] = x_label
     if y_label:
         _act_params["y_label"] = y_label
-    if output_path:
-        _act_params["output_path"] = output_path
-    _target = output_path or chart_type
+    if dest:
+        _act_params["dest"] = dest
+    _target = dest or chart_type
     if exec_code == "error":
         return {
             "summary": f"生成图表{_target}，失败: {detail}",
@@ -69,7 +69,7 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output
     if file_size:
         metrics["file_size"] = {"value": file_size, "text": f"{file_size} bytes"}
     return {
-        "summary": f"生成图表{_target}，成功: {chart_type}，已保存为{output_path}",
+        "summary": f"生成图表{_target}，成功: {chart_type}，已保存为{dest}",
         "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": _act_params},
         "status": {"exec_code": "success", "message": "图表生成成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -105,23 +105,23 @@ def _parse_inline_data(data: Union[str, dict, list]) -> Optional[dict]:
 
 def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", "line", "pie", "scatter"] = "bar",
                    title: Optional[str] = None, x_label: Optional[str] = None,
-                   y_label: Optional[str] = None, output_path: Optional[str] = None) -> Dict[str, Any]:
+                   y_label: Optional[str] = None, dest: Optional[str] = None) -> Dict[str, Any]:
     """使用matplotlib生成数据可视化图表 — 小健 2026-06-22 拆分独立文件 — 小欧 2026-07-07 支持内联JSON数据"""
     t0 = _time_mod.perf_counter()
-    if output_path:
+    if dest:
         # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
         # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, warn = validate_path(OpCategory.WRITE, output_path)
+        is_valid, err, warn = validate_path(OpCategory.WRITE, dest)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err, hint="请检查输出路径", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err, hint="请检查输出路径", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
             return build_error(data={}, llm_data=llm_data)
         if warn:
             logger.warning(f"[generate_chart] {warn}")
 
     if not _check_module("matplotlib"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="matplotlib库未安装", hint="请安装matplotlib库", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
+        llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="matplotlib库未安装", hint="请安装matplotlib库", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
         return build_error(data={}, llm_data=llm_data)
 
     try:
@@ -140,7 +140,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
             path = Path(data)
             if not path.exists():
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"文件不存在: {data}", hint="请检查数据文件路径", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
+                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"文件不存在: {data}", hint="请检查数据文件路径", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
                 return build_error(data={}, llm_data=llm_data)
             if data.endswith('.xlsx'):
                 df = pd.read_excel(data, engine="openpyxl")
@@ -148,7 +148,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
                 df = pd.read_csv(data)
             if len(df.columns) < 2:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据至少需要2列(标签列+数值列)", hint="数据文件至少需要2列", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
+                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据至少需要2列(标签列+数值列)", hint="数据文件至少需要2列", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
                 return build_error(data={}, llm_data=llm_data)
             labels = df.iloc[:, 0].tolist()
             values = df.iloc[:, 1].tolist()
@@ -158,7 +158,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         if validation["code"] != "SUCCESS" or not validation["data"].get("valid", False):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             err_detail = validation["data"].get("error", "数据格式错误")
-            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err_detail, hint="数据验证失败，请检查数据格式", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err_detail, hint="数据验证失败，请检查数据格式", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
             return build_error(data={}, llm_data=llm_data)
 
         labels = chart_data.get("labels", [])
@@ -193,12 +193,12 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
 
         if not labels or not values:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据格式错误,需要包含labels和values字段", hint="数据需要labels和values字段", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据格式错误,需要包含labels和values字段", hint="数据需要labels和values字段", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
             return build_error(data={}, llm_data=llm_data)
 
-        if output_path is None:
+        if dest is None:
             timestamp = timestamp_for_filename()
-            output_path = os.path.join(_get_output_dir(), f"chart_{timestamp}.png")
+            dest = os.path.join(_get_output_dir(), f"chart_{timestamp}.png")
 
         fig, ax = plt.subplots(figsize=(10, 6))
         chart_type_lower = chart_type.lower()
@@ -223,17 +223,17 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
                 ax.set_ylabel(y_label)
 
             plt.tight_layout()
-            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-            fig.savefig(output_path, dpi=150, bbox_inches="tight")
+            Path(dest).parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(dest, dpi=150, bbox_inches="tight")
         finally:
             plt.close(fig)
 
-        file_size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+        file_size = os.path.getsize(dest) if os.path.exists(dest) else 0
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_generate_chart_llm_data("success", duration_ms, chart_type_lower, output_path, file_size=file_size,
+        llm_data = _build_generate_chart_llm_data("success", duration_ms, chart_type_lower, dest, file_size=file_size,
                                                     data=data, title=title, x_label=x_label, y_label=y_label)
         # =============================================================================
-        # 数据设计：output_path 从 data 移除，通过 llm_data.summary 传递给 LLM
+        # 数据设计：dest 从 data 移除，通过 llm_data.summary 传递给 LLM
         # summary 示例: "成功生成bar图表: D:/chart.png"
         # data 留空 (formatter #21 fallback 展示为空)
         # — 小欧 2026-07-06
@@ -246,7 +246,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         return build_success(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=str(e), hint="图表生成异常，请检查数据", data=data, title=title, x_label=x_label, y_label=y_label, output_path=output_path)
+        llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=str(e), hint="图表生成异常，请检查数据", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
         return build_error(data={}, llm_data=llm_data)
 
 

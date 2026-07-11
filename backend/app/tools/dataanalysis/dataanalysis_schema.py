@@ -22,16 +22,16 @@ from typing import Optional, Dict, Any, List, Union, Literal
 
 
 class _DbConnectionMixin(BaseModel):
-    """connection_type决定使用db_path还是connection_string,严禁交叉传入"""
+    """connection_type决定使用path还是connection_string,严禁交叉传入"""
     connection_type: Literal["sqlite", "mysql", "postgresql"] = Field(
         default="sqlite",
-        description="数据库类型。可选值:sqlite/mysql/postgresql。默认为sqlite。connection_type=sqlite时用db_path,mysql/postgresql时用connection_string"
+        description="数据库类型。可选值:sqlite/mysql/postgresql。默认为sqlite。connection_type=sqlite时用path,mysql/postgresql时用connection_string"
     )
     connection_string: Optional[str] = Field(
         default=None,
         description="MySQL/PostgreSQL连接字符串(connection_type=mysql/postgresql时必填,connection_type=sqlite时严禁传入)。示例:user:pass@host:port/dbname"
     )
-    db_path: Optional[str] = Field(
+    path: Optional[str] = Field(
         default=None,
         description="SQLite数据库文件路径(connection_type=sqlite时必填,connection_type=mysql/postgresql时严禁传入)。示例:D:/data/app.db"
     )
@@ -39,15 +39,15 @@ class _DbConnectionMixin(BaseModel):
     @model_validator(mode="after")
     def _check_connection_params(self):
         if self.connection_type == "sqlite":
-            if not self.db_path:
-                raise ValueError("connection_type=sqlite时db_path必填")
+            if not self.path:
+                raise ValueError("connection_type=sqlite时path必填")
             if self.connection_string:
                 raise ValueError("connection_type=sqlite时严禁传入connection_string")
         else:
             if not self.connection_string:
                 raise ValueError(f"connection_type={self.connection_type}时connection_string必填")
-            if self.db_path:
-                raise ValueError(f"connection_type={self.connection_type}时严禁传入db_path")
+            if self.path:
+                raise ValueError(f"connection_type={self.connection_type}时严禁传入path")
         return self
 
 class GenerateChartInput(BaseModel):
@@ -75,7 +75,7 @@ class GenerateChartInput(BaseModel):
         default=None,
         description="图表标题,显示在图的正上方。建议使用能概括数据内容的简短标题,不填则不显示标题"
     )
-    output_path: Optional[str] = Field(
+    dest: Optional[str] = Field(
         default=None,
         description="""输出图片路径(绝对路径,可选)。
 
