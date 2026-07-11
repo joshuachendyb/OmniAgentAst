@@ -41,16 +41,16 @@ def _read_clipboard() -> Dict[str, Any]:
         return {"text": text}
     except ImportError:
         try:
-            CF_TEXT = 1
+            CF_UNICODETEXT = 13
             kernel32 = ctypes.windll.kernel32
             user32 = ctypes.windll.user32
             user32.OpenClipboard(None)
             try:
-                handle = user32.GetClipboardData(CF_TEXT)
+                handle = user32.GetClipboardData(CF_UNICODETEXT)
                 if handle:
                     ptr = kernel32.GlobalLock(handle)
                     if ptr:
-                        text = ctypes.c_char_p(ptr).value.decode('gbk')
+                        text = ctypes.wstring_at(ptr)
                         kernel32.GlobalUnlock(handle)
                     else:
                         text = ""

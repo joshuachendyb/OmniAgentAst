@@ -137,7 +137,8 @@ _SLIDE_DESC = """幻灯片列表。每项Dict包含：
 ]"""
 class WritePptxInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.pptx)")
-    slides: Optional[List[Dict]] = Field(default=None, description=_SLIDE_DESC)
+    # slides允许List[Dict]或JSON字符串(LLM常把list序列化为字符串传入) — 小欧 2026-07-12 修问题4反序列化
+    slides: Optional[Union[List[Dict], str]] = Field(default=None, description=_SLIDE_DESC)
 
 
 __all__ = [

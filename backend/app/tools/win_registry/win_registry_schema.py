@@ -24,7 +24,7 @@ Author: 小沈 - 2026-05-02
 """
 
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
 
 
 class RegistryReadInput(BaseModel):
@@ -60,8 +60,8 @@ class RegistryWriteInput(BaseModel):
     value_name: str = Field(
         ..., description="值名称(必填)。如 Version、InstallPath"
     )
-    value: str = Field(
-        ..., description="值数据(必填)。如 '1.0'、'C:\\Program Files\\MyApp'"
+    value: Union[str, int] = Field(
+        ..., description="值数据(必填)。如 '1.0'、'C:\\Program Files\\MyApp'、20260711。数字会自动转为字符串后再按value_type处理"
     )
     value_type: Literal["auto_detect", "REG_SZ", "REG_EXPAND_SZ", "REG_DWORD", "REG_QWORD", "REG_BINARY", "REG_MULTI_SZ"] = Field(
         default="auto_detect", description="值类型(可选)。默认auto_detect。REG_EXPAND_SZ=可扩展字符串(含%VAR%),REG_QWORD=64位整数"

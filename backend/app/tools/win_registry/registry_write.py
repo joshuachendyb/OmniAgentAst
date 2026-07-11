@@ -57,6 +57,9 @@ def _build_registry_write_llm_data(exec_code: str, duration_ms: int, key_path: s
 
 def registry_write(key_path: str, value_name: str, value: str, value_type: str = "auto_detect", backup_before_write: bool = True, dry_run: bool = False, hive: str = "HKCU") -> dict:
     """写入Windows注册表键值 — 小健 2026-06-22 拆分独立文件"""
+    # 数值参数(int/bool等)归一为str, 避免后续 auto_detect 的 value.isdigit() 对 int 崩溃 — 小欧 2026-07-12
+    if not isinstance(value, str):
+        value = str(value)
     is_valid, error_msg, warning_msg = validate_registry_key(key_path, hive, "write")
     if not is_valid:
         llm_data = _build_registry_write_llm_data("error", 0, key_path, value_name, value, "auto_detect", err_code=ERR_PARAMETER_INVALID, detail=error_msg, hint="请检查注册表路径和权限")

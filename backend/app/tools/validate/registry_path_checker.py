@@ -3,6 +3,8 @@
 
 from typing import Optional, Tuple
 
+import winreg
+
 
 ALLOWED_HIVES = {"HKCU", "HKLM"}
 
@@ -107,11 +109,32 @@ def validate_delete_safety(key_path: str, value_name: Optional[str],
         return is_valid, error_msg, warning_msg
     
     hive_upper = hive.upper() if hive else "HKCU"
-    
+
     if value_name is None and not recursive:
-        return False, "删除整个注册表键必须指定recursive=True", None
-    
+        # 仅当键确实含子键时才强制 recursive=True; 空键(仅值或无内容)允许直接删除 — 小欧 2026-07-12
+        if _key_has_subkeys(key_path, hive):
+            return False, "删除整个注册表键必须指定recursive=True", None
+        return True, None, warning_msg
+
     if hive_upper == "HKLM" and not value_name:
         return True, None, "删除HKLM下的整个键，请确认"
-    
+
     return True, None, warning_msg
+
+
+def _key_has_subkeys(key_path: str, hive: str) -> bool:
+    """判断注册表键是否含子键(不含值) — 小欧 2026-07-12"""
+    from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_key_path
+    try:
+        full_root_key, sub_key = _parse_key_path(key_path, hive=hive)
+        hkey = ROOT_KEY_MAP.get(full_root_key)
+        if hkey is None:
+            return False
+        with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_READ) as key:
+            try:
+                winreg.EnumKey(key, 0)
+                return True
+            except OSError:
+                return False
+    except (FileNotFoundError, OSError):
+        return False

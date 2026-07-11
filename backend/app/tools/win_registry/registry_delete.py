@@ -14,9 +14,12 @@ from typing import Optional, Dict, Any
 
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_REG_DELETE_FAILED, ERR_PARAMETER_INVALID
+from app.tools.tool_constants import ERR_REG_DELETE_FAILED, ERR_PARAMETER_INVALID, SUBPROCESS_TIMEOUT_DEFAULT
 from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_key_path, _backup_registry
 from app.tools.validate.registry_path_checker import validate_delete_safety
+
+# hkey(int) -> 根键名 反向映射, 供 reg.exe 拼接完整键路径 — 小欧 2026-07-12
+ROOT_KEY_MAP_REVERSE = {v: k for k, v in ROOT_KEY_MAP.items()}
 
 
 def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, key_path: str, action: str, err_code: str = None, detail: str = "", hint: str = "") -> dict:
@@ -39,7 +42,25 @@ def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, key_path: 
 
 
 def _delete_registry_recursive(hkey, sub_key):
-    """递归删除注册表键及其所有子键 — 小欧 2026-06-27"""
+    """递归删除注册表键及其所有子键 — 小欧 2026-06-27
+
+    主路径用系统 reg.exe 原子级递归删除(规避 winreg 父句柄枚举视图不刷新导致
+    的嵌套子键死循环挂起, 详见 test_delete_nonempty_key_recursive_true_still_fails) — 小欧 2026-07-12
+    """
+    import subprocess
+    full_key = f"{ROOT_KEY_MAP_REVERSE.get(hkey, 'HKEY_CURRENT_USER')}\\{sub_key}"
+    try:
+        result = subprocess.run(
+            ["reg", "delete", full_key, "/f"],
+            capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT,
+        )
+        if result.returncode == 0:
+            return
+        logger.warning(f"[registry_delete] reg.exe递归删除失败(返回码{result.returncode}), 回退winreg: {result.stderr.strip()}")
+    except Exception as e:
+        logger.warning(f"[registry_delete] reg.exe递归删除异常, 回退winreg: {e}")
+
+    # 回退: winreg 递归(单层子键有效, 嵌套场景可能受枚举视图影响)
     with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_ALL_ACCESS) as key:
         while True:
             try:
@@ -82,23 +103,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
             logger.debug(f"[registry_delete] 成功删除值: {full_root_key}\\{sub_key}\\{value_name}")
         else:
-            if not recursive:
-                try:
-                    with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_READ) as key:
-                        i = 0
-                        try:
-                            while True:
-                                winreg.EnumKey(key, i)
-                                i += 1
-                        except OSError:
-                            pass
-                        if i > 0:
-                            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                            llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"键不为空({i}个子键),使用recursive=True强制删除", hint="请使用recursive=True强制删除")
-                            return build_error(data={}, llm_data=llm_data)
-                except FileNotFoundError:
-                    pass
-
+            # 非空键且recursive=False 已在 validate_delete_safety 拦截; 此处仅处理已放行(空键)或recursive=True 的删除 — 小欧 2026-07-12
             parent_key = "\\".join(sub_key.split("\\")[:-1])
             key_name = sub_key.split("\\")[-1]
 
@@ -109,6 +114,16 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
             if recursive:
                 _delete_registry_recursive(hkey, sub_key)
+                # reg.exe递归删除已原子删掉整棵子树(含本键), 再删父键下的本键会FileNotFoundError — 小欧 2026-07-12
+                try:
+                    with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_READ):
+                        pass
+                except FileNotFoundError:
+                    logger.debug(f"[registry_delete] reg递归删除已移除整键: {full_root_key}\\{sub_key}")
+                    action = "子键已删除"
+                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                    llm_data = _build_registry_delete_llm_data("success", duration_ms, key_path, action)
+                    return build_success(data={}, llm_data=llm_data)
 
             with winreg.OpenKey(hkey, parent_key, 0, winreg.KEY_SET_VALUE) as key:
                 winreg.DeleteKey(key, key_name)
@@ -116,7 +131,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
             logger.debug(f"[registry_delete] 成功删除子键: {full_root_key}\\{sub_key}")
 
         action = "值已删除" if value_name is not None else "子键已删除"
-        duration_ms = int((_time_mod.perform_counter() - t0) * 1000)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_registry_delete_llm_data("success", duration_ms, key_path, action)
         # =============================================================================
         # 数据设计：action 从 data 移除
