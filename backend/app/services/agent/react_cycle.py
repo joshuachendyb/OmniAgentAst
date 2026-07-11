@@ -342,6 +342,10 @@ async def run_react_cycle(
             if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED):
                 break
 
+            # ======== SUSPENDED 处理（不是重试）========
+            # 说明：llm_call_count 已+1进入下一step，这不是"重试当前step"。
+            # SUSPENDED 仅表示"当前step出错了，让 while 循环继续走下一step"。
+            # 与系统层（base_service.py:168）的HTTP请求重试无关，是两套独立机制。
             if agent.status == AgentStatus.SUSPENDED:
                 agent._retry_count = getattr(agent, '_retry_count', 0) + 1
                 if agent._retry_count > 3:

@@ -165,6 +165,11 @@ class BaseAIService:
         max_retries = LLM_STREAM_MAX_RETRIES
         stream_options = LLM_STREAM_OPTIONS
 
+        # ======== 系统层HTTP请求重试（真正的重试逻辑）========
+        # 同一个 LLM 调用（llm_call_count 不变），HTTP请求超时/断连时自动重新发送。
+        # 与 Agent 层（react_cycle.py）的 SUSPENDED 机制无关，是两套独立机制。
+        # Agent 层感知不到这里重试了几次。
+        # retry_count=0,1,2,3 共4次机会，每次超时递增20s。
         while retry_count <= max_retries:
             effective_timeout = self.timeout + (retry_count + 1) * 20
             try:

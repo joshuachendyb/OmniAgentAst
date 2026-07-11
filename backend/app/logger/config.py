@@ -1,143 +1,105 @@
 """
-安全轮转文件处理器
-负责日志文件的轮转与错误保护
+安全轮转文件处理器 — 单例 handler + 内置 OSError 保护
+- 修改人 小欧 2026-07-11
+- 根因：7个独立 handler 写同一文件 → Windows rename 文件锁冲突 → PermissionError 死循环
+- 修复：全局共享一个 handler，消除竞争；doRollover() 加 OSError 保护
 """
 
 import logging
 import logging.handlers
-import sys
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
 from app.utils.time_utils import now_str
 from app.config import get_config
 
-# C-09: 删除 logging.raiseExceptions = False
-# SafeRotatingFileHandler.emit() 已有 try/except 保护，全局吞异常有害
-# — 小欧 2026-07-10
+LOG_DIR = Path(__file__).parent.parent.parent / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+
+# ============================================================
+# LogConfig — 日志配置，委托至 app.config.Config
+# ============================================================
 
 class LogConfig:
-    """日志配置管理 — 委托至 app.config.Config(消除重复文件读取)"""
+    """日志配置 — 委托至 app.config.Config — 小欧 2026-07-11"""
 
     _config = get_config()
 
     @classmethod
-    def load_config(cls) -> dict:
-        """获取日志配置(通过 Config 缓存)"""
-        return cls._config.get('logging', {})
-
-    @classmethod
     def is_debug_mode(cls) -> bool:
-        """检查是否为debug模式"""
         return cls._config.get('app.debug', False)
 
     @classmethod
     def get_log_level(cls) -> str:
-        """获取日志级别"""
         if cls._config.get('app.debug', False):
             return "DEBUG"
         return cls._config.get('logging.level', 'INFO')
 
     @classmethod
     def get_max_bytes(cls) -> int:
-        """获取单个日志文件最大大小(字节)"""
         return cls._config.get('logging.max_file_size', 10 * 1024 * 1024)
 
     @classmethod
     def get_backup_count(cls) -> int:
-        """获取备份文件数量"""
         return cls._config.get('logging.backup_count', 5)
 
 
-LOG_DIR = Path(__file__).parent.parent.parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-
+# ============================================================
+# SafeRotatingFileHandler
+# ============================================================
 
 class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
-    """安全的轮转文件处理器,捕获轮转错误避免程序崩溃"""
+    """
+    安全的轮转文件处理器
+    - 日期轮转：detect 日期变更 → 切 baseFilename + reopen
+    - 大小轮转：委托 RotatingFileHandler.doRollover()，加 OSError 保护
+    - 不分日志名，全应用共享同一个实例（由 setup_logger 保证）
+    — 小欧 2026-07-11
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._current_date = now_str('%Y-%m-%d')
-        self._logger_name = None
 
-    def set_logger_name(self, name: str):
-        self._logger_name = name
+    # ---- 日期轮转 -------------------------------------------------
 
     def _check_and_rotate_by_date(self):
-
+        """检测日期变更，切 baseFilename 后 reopen — 不新建 handler — 小欧 2026-07-11"""
         today = now_str('%Y-%m-%d')
+        if self._current_date == today:
+            return
+        self._current_date = today
+        new_path = str(LOG_DIR / f"app_{today}.log")
+        if new_path == self.baseFilename:
+            return
+        print(f"[Logger] 日期轮转: {self.baseFilename} -> {new_path}")
+        self.baseFilename = new_path
+        if self.stream:
+            self.stream.close()
+            self.stream = None
+        self.stream = self._open()
 
-        if self._current_date != today:
-            old_date = self._current_date
-            self._current_date = today
+    # ---- 大小轮转 -------------------------------------------------
 
-            print(f"[Logger] 日志文件轮转: {old_date} -> {today}")
+    def doRollover(self):
+        """重写：super 失败后恢复流，防止流永久损坏 — 小欧 2026-07-11"""
+        try:
+            super().doRollover()
+        except OSError:
+            self.stream = self._open()
 
-            if self._logger_name:
-                try:
-                    logger = logging.getLogger(self._logger_name)
-
-                    self.close()
-                    if self in logger.handlers:
-                        logger.removeHandler(self)
-
-                    new_handler = _create_handler_for_logger(
-                        self._logger_name,
-                        logger.level,
-                        logger.handlers[0].formatter if logger.handlers else None
-                    )
-
-                    if new_handler:
-                        logger.addHandler(new_handler)
-
-                except Exception as e:
-                    print(f"[Logger] 日志文件切换失败: {e}")
+    # ---- emit -----------------------------------------------------
 
     def emit(self, record):
-        self._check_and_rotate_by_date()
-
         try:
-            super().emit(record)
-        except PermissionError:
-            sys.stderr.write(f"[Logger] 日志写入权限不足: {record.getMessage()}\n")
-        except Exception as e:
-            sys.stderr.write(f"[Logger] 日志写入失败: {e}\n")
+            self._check_and_rotate_by_date()
+        except Exception:
+            self.handleError(record)
+        super().emit(record)
 
+
+# ============================================================
+# 工具函数
+# ============================================================
 
 def _get_log_file_path() -> Path:
     return LOG_DIR / f"app_{now_str('%Y-%m-%d')}.log"
-
-
-def _create_handler_for_logger(logger_name: str, level: int = None, formatter: logging.Formatter = None) -> Optional[SafeRotatingFileHandler]:
-    """
-    为指定logger创建新的文件处理器(使用当前日期的文件名)
-
-    Args:
-        logger_name: logger名称
-        level: 日志级别(可选)
-        formatter: 日志格式(可选)
-
-    Returns:
-        SafeRotatingFileHandler: 新的文件处理器,失败返回None
-    """
-    try:
-        log_file = _get_log_file_path()
-        handler = SafeRotatingFileHandler(
-            log_file,
-            maxBytes=LogConfig.get_max_bytes(),
-            backupCount=LogConfig.get_backup_count(),
-            encoding='utf-8'
-        )
-        handler.set_logger_name(logger_name)
-
-        if formatter:
-            handler.setFormatter(formatter)
-
-        if level:
-            handler.setLevel(level)
-
-        return handler
-    except Exception as e:
-        print(f"[Logger] 创建文件处理器失败: {e}")
-        return None
