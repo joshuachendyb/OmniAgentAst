@@ -315,9 +315,10 @@ async def grep(
         _sort_grep_results_by_mtime(gr.results)
 
     # =============================================================================
-    # 数据设计：total_matches/total_files 从 data 移除，通过 llm_data.metrics 传入 summary
+    # 数据设计：total_matches/total_files 既留在 data 中（供前端/断言读取），
+    # 也通过 llm_data.metrics 传入 summary
     # summary 示例: "搜索完成: 匹配5行, 3个文件"
-    # — 小欧 2026-07-06 18:46:13
+    # — 小欧 2026-07-06 18:46:13 原始设计移除data；小欧 2026-07-12 修正: 重新加回data(count模式此前返回空data)
     # =============================================================================
     if output_mode == "count":
         data = {"total_matches": gr.total_matches, "total_files": gr.total_files}
