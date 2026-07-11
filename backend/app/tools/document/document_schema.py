@@ -25,15 +25,15 @@ class ReadPdfInput(BaseModel):
 
 
 class ReadDocxInput(BaseModel):
-    path: str = Field(..., description="文件名+路径(.docx) — 小健 2026-06-24: 不支持.doc格式")
+    path: str = Field(..., description="文件名+路径(.docx) — 不支持.doc格式")
 
 
 class ReadPptxInput(BaseModel):
-    path: str = Field(..., description="文件名+路径(.pptx) — 小健 2026-06-24: 不支持.ppt格式")
+    path: str = Field(..., description="文件名+路径(.pptx) — 不支持.ppt格式")
 
 
 class ReadXlsxInput(BaseModel):
-    path: str = Field(..., description="文件名+路径(.xlsx/.csv) — 小健 2026-06-24: 不支持.xls格式")
+    path: str = Field(..., description="文件名+路径(.xlsx/.csv) —不支持.xls格式")
     sheet_name: Optional[str] = Field(
         default=None,
         description="工作表名（仅.xlsx格式有效）。None=读取所有工作表，指定名称=读取单个工作表。CSV/XLS格式忽略此参数"
