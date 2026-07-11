@@ -60,11 +60,11 @@ PARAM_ALIASES = {
         "search_path": "search_dir",
     },
     "grep": {
-        "dir": "search_dir",
-        "path": "search_dir",
-        "directory": "search_dir",
-        "folder": "search_dir",
-        "search_path": "search_dir",
+        "dir": "path",
+        "directory": "path",
+        "folder": "path",
+        "search_dir": "path",
+        "search_path": "path",
     },
     "compress": {
         "src": "source",
@@ -272,6 +272,16 @@ PARAM_ALIASES = {
 }
 
 
+# 参数值别名:大众化旧枚举值→规范值 — 小欧 2026-07-11
+# 仅当旧值是大众化术语(LLM训练里常见,会自然使用)才需要兼容;自造的旧值不必处理
+PARAM_VALUE_ALIASES = {
+    "grep": {
+        # files_with_matches 是 grep/ripgrep 标准术语(-l/--files-with-matches),LLM常用
+        "output_mode": {"files_with_matches": "only_files"},
+    },
+}
+
+
 def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
     """
     规范化参数名 - 将LLM返回的参数名映射为Schema要求的参数名
@@ -288,10 +298,10 @@ def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, 
     if not params:
         return params, False
 
-    if tool_name not in PARAM_ALIASES:
+    if tool_name not in PARAM_ALIASES and tool_name not in PARAM_VALUE_ALIASES:
         return params, False
 
-    aliases = PARAM_ALIASES[tool_name]
+    aliases = PARAM_ALIASES.get(tool_name, {})
     normalized = {}
     has_mapping = False
     mapped_keys = []
@@ -316,6 +326,21 @@ def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, 
         logger.info(
             f"[param_alias] {tool_name}: 参数名映射 {mapped_keys}"
         )
+
+    # 参数值别名映射(在名映射后、schema校验前) — 小欧 2026-07-11
+    value_aliases = PARAM_VALUE_ALIASES.get(tool_name, {})
+    if value_aliases:
+        mapped_values = []
+        for pname, vmap in value_aliases.items():
+            if pname in normalized and normalized[pname] in vmap:
+                old_v = normalized[pname]
+                normalized[pname] = vmap[old_v]
+                has_mapping = True
+                mapped_values.append(f"{pname}:{old_v}→{vmap[old_v]}")
+        if mapped_values:
+            logger.info(
+                f"[param_alias] {tool_name}: 参数值映射 {mapped_values}"
+            )
 
     return normalized, has_mapping
 

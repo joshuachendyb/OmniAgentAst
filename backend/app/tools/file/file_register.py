@@ -153,10 +153,12 @@ FILE_TOOL_EXAMPLES = {
         {"pattern": "**/*.py", "search_dir": "D:/project", "offset": 500},
     ],
     "grep": [
-        {"pattern": "def readtext", "search_dir": "D:/backend"},
-        {"pattern": "TODO", "search_dir": "D:/src"},
-        {"pattern": "error", "search_dir": "D:/logs", "output_mode": "files_with_matches"},
-        {"pattern": "class.*Component", "search_dir": "D:/src", "glob": "*.py"}
+        {"pattern": "def readtext", "path": "D:/backend"},
+        {"pattern": "TODO", "path": "D:/src"},
+        {"pattern": "error", "path": "D:/logs", "output_mode": "only_files"},
+        {"pattern": "class.*Component", "path": "D:/src", "glob": "*.py"},
+        {"pattern": "arr[0]", "path": "D:/src", "literal": True},
+        {"pattern": "def run", "path": "D:/backend", "context": 2}
     ],
     "compress": [
         {"source": "D:/project", "destination": "D:/backup.zip"},

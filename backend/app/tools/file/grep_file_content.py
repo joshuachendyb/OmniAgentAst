@@ -55,20 +55,26 @@ class GrepSyncResult(NamedTuple):
 
 def _build_grep_file_content_llm_data(
     exec_code: str, duration_ms: int,
-    pattern: str = "", search_dir: str = "",
+    pattern: str = "", path: str = "",
     total_files: int = 0, total_matches: int = 0,
     truncated: bool = False, detail: str = "", hint: str = "",
     user_glob: Optional[str] = None, user_ignore_case: Optional[bool] = None,
     user_output_mode: Optional[str] = None,
     truncated_by_deadline: bool = False,
+    user_literal: Optional[bool] = None,
+    user_context: Optional[int] = None,
 ) -> Dict[str, Any]:
     """grep_file_content的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示 — 小欧 2026-07-07 超时秒数"""
     _timeout_sec = TOOL_TIMEOUTS.get("grep", TOOL_TIMEOUTS["default"])
-    _act_params = {"pattern": pattern, "search_dir": search_dir}
+    _act_params = {"pattern": pattern, "path": path}
     if user_glob:
         _act_params["glob"] = user_glob
     if user_ignore_case is not None:
         _act_params["ignore_case"] = user_ignore_case
+    if user_literal:
+        _act_params["literal"] = user_literal
+    if user_context:
+        _act_params["context"] = user_context
     if user_output_mode:
         _act_params["output_mode"] = user_output_mode
 
@@ -118,20 +124,21 @@ def _build_grep_file_content_llm_data(
 
 
 def _grep_files_sync(
-    search_dir: Path,
+    path: Path,
     regex: re_mod.Pattern,
     glob_filter: Optional[str],
     output_mode: str,
     deadline: float,
+    context: int = 0,
 ) -> GrepSyncResult:
-    """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-24 增加二进制文件检测和提示 — 小沈 2026-07-05 接收已编译regex"""
+    """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-24 增加二进制文件检测和提示 — 小沈 2026-07-05 接收已编译regex — 小欧 2026-07-11 支持context上下文行"""
     results = []
     total_matches = 0
     total_files = 0
     skipped_binary_files = []  # 记录跳过的二进制文件
     _deadline_exceeded = False
 
-    for root, dirs, files in os.walk(search_dir):
+    for root, dirs, files in os.walk(path):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         if _time_mod.monotonic() > deadline:
             _deadline_exceeded = True
@@ -172,7 +179,7 @@ def _grep_files_sync(
                 matches_in_line = list(regex.finditer(line))
                 if not matches_in_line:
                     continue
-                if output_mode == "files_with_matches":
+                if output_mode == "only_files":
                     file_lines.append(line_no)
                     total_matches += 1
                     continue
@@ -183,9 +190,21 @@ def _grep_files_sync(
                     "matched": matched_texts,
                     "content": line.rstrip('\n\r'),
                 }
+                # context上下文行:前后各context行(仅content模式) — 小欧 2026-07-11
+                if context > 0:
+                    lo = max(0, line_no - 1 - context)
+                    match_item["before"] = [
+                        {"line": i + 1, "text": lines[i].rstrip('\n\r')}
+                        for i in range(lo, line_no - 1)
+                    ]
+                    hi = min(len(lines), line_no + context)
+                    match_item["after"] = [
+                        {"line": i + 1, "text": lines[i].rstrip('\n\r')}
+                        for i in range(line_no, hi)
+                    ]
                 file_matches.append(match_item)
                 total_matches += len(matched_texts)
-            if output_mode == "files_with_matches" and file_lines:
+            if output_mode == "only_files" and file_lines:
                 total_files += 1
                 results.append({"file": str(fpath), "lines": file_lines})
             elif file_matches:
@@ -208,76 +227,87 @@ def _sort_grep_results_by_mtime(results: List[Dict]) -> None:
 
 async def grep(
     pattern: str,
-    search_dir: str,
+    path: str,
     glob: Optional[str] = None,
     ignore_case: bool = True,
-    output_mode: Literal["content", "count", "files_with_matches"] = "content",
+    literal: bool = False,
+    output_mode: Literal["content", "count", "only_files"] = "content",
+    context: int = 0,
 ) -> Dict[str, Any]:
-    """搜索文件内容 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化
+    """搜索文件内容 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化 — 小欧 2026-07-11 新增literal字面量搜索+context上下文行 — 小欧 2026-07-11 search_dir→path(单一路径参数统一命名path)
     
     参数说明:
         pattern: 正则表达式搜索模式
-        search_dir: 搜索目录（必填）
+        path: 搜索目录（必填）
         glob: 文件名过滤模式（如"*.py"）
         ignore_case: 是否忽略大小写
+        literal: True=按纯文本精确搜索(自动转义正则特殊字符如 . ( ) [ ]),默认False=正则模式
         output_mode: 输出模式
             - content: 返回匹配内容（默认）
             - count: 只返回匹配数量
-            - files_with_matches: 只返回文件名列表
+            - only_files: 只返回文件名列表
+        context: 返回匹配行前后各N行上下文(仅content模式生效),默认0,上限10
     """
     t0 = _time_mod.perf_counter()
-    actual_dir = search_dir
-    valid_output_modes = ("content", "count", "files_with_matches")
+    valid_output_modes = ("content", "count", "only_files")
     if output_mode not in valid_output_modes:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"output_mode无效: {output_mode},可选值: {valid_output_modes}", hint="output_mode 参数无效，可选值: content/count/files_with_matches", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"output_mode无效: {output_mode},可选值: {valid_output_modes}", hint="output_mode 参数无效，可选值: content/count/only_files", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={}, llm_data=llm_data)
-    if not actual_dir or not actual_dir.strip():
+    # context范围校验:0-10 — 小欧 2026-07-11
+    if context < 0 or context > 10:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="search_dir不能为空", hint="请指定有效的搜索目录", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"context超出范围: {context},可选值: 0-10", hint="context 参数取值范围为 0-10", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        return build_error(data={}, llm_data=llm_data)
+    if not path or not path.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail="path不能为空", hint="请指定有效的搜索目录", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={}, llm_data=llm_data)
     if not pattern or not pattern.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="搜索模式不能为空", hint="请提供搜索关键词", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail="搜索模式不能为空", hint="请提供搜索关键词", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={}, llm_data=llm_data)
 
-    # ReDoS 检测 — 小沈 2026-07-05
-    for redos_p in _REDOS_PATTERNS:
-        if re_mod.search(redos_p, pattern):
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", hint="正则表达式包含危险嵌套量词，请简化", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
-            return build_error(data={}, llm_data=llm_data)
+    # ReDoS 检测 — 小沈 2026-07-05 — 小欧 2026-07-11 literal模式转义后安全,跳过检测
+    if not literal:
+        for redos_p in _REDOS_PATTERNS:
+            if re_mod.search(redos_p, pattern):
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", hint="正则表达式包含危险嵌套量词，请简化", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode, user_literal=literal)
+                return build_error(data={}, llm_data=llm_data)
     if len(pattern) > _MAX_PATTERN_LENGTH:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险", hint="正则表达式过长，请简化", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险", hint="正则表达式过长，请简化", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={}, llm_data=llm_data)
 
+    # literal=True时转义pattern,按纯文本精确匹配 — 小欧 2026-07-11
+    effective_pattern = re_mod.escape(pattern) if literal else pattern
     try:
-        regex = re_mod.compile(pattern, re_mod.IGNORECASE if ignore_case else 0)
+        regex = re_mod.compile(effective_pattern, re_mod.IGNORECASE if ignore_case else 0)
     except re_mod.error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"正则表达式无效: {e}", hint="正则表达式语法错误，请检查并修正", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式无效: {e}", hint="正则表达式语法错误，请检查并修正", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode, user_literal=literal)
         return build_error(data={}, llm_data=llm_data)
 
     # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, _ = validate_path(OpCategory.LIST_DIR, actual_dir)
+    is_valid, err, _ = validate_path(OpCategory.LIST_DIR, path)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=err, hint="请检查搜索路径", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=err, hint="请检查搜索路径", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={}, llm_data=llm_data)
 
-    search_path = Path(os.path.expanduser(actual_dir))
+    search_path = Path(os.path.expanduser(path))
 
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("grep", TOOL_TIMEOUTS["default"]) - 2
 
     try:
         gr = await asyncio.to_thread(
-            _grep_files_sync, search_path, regex, glob, output_mode, deadline,
+            _grep_files_sync, search_path, regex, glob, output_mode, deadline, context,
         )
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=str(e), hint="请检查搜索参数", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=str(e), hint="请检查搜索参数", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
         return build_error(data={}, llm_data=llm_data)
 
     # 按 mtime 降序排序 — 小欧 2026-07-05
@@ -291,7 +321,7 @@ async def grep(
     # =============================================================================
     if output_mode == "count":
         data = {}
-    elif output_mode == "files_with_matches":
+    elif output_mode == "only_files":
         data = {"matches": gr.results}
     else:
         data = {"matches": gr.results}
@@ -310,10 +340,11 @@ async def grep(
 
     exec_code = "warning" if (gr.truncated or gr.skipped_binaries) else "success"
     llm_data = _build_grep_file_content_llm_data(
-        exec_code, duration_ms, pattern=pattern, search_dir=actual_dir,
+        exec_code, duration_ms, pattern=pattern, path=path,
         total_files=gr.total_files, total_matches=gr.total_matches, truncated=gr.truncated,
         user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode,
-        truncated_by_deadline=gr.truncated_by_deadline,
+        truncated_by_deadline=gr.truncated_by_deadline, user_literal=literal,
+        user_context=context,
     )
 
     # 修改summary添加二进制文件提示 — 小健 2026-06-24

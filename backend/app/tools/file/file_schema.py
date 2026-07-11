@@ -250,13 +250,13 @@ class GrepInput(BaseModel):
     """使用技巧:
 - pattern 支持正则如 \"def \\w+\" 匹配函数定义
 - glob 可限制文件类型如 \"*.py\"
-- output_mode=\"files_with_matches\" 只返回文件名列表,节省token
+- output_mode=\"only_files\" 只返回文件名列表,节省token
 - 结果按文件修改时间降序排列,最新修改的文件在最前"""
     pattern: str = Field(
         description="正则表达式搜索模式,支持中文内容搜索。如 \"def read_file\""
     )
-    search_dir: str = Field(
-        description="搜索路径(绝对路径,必填)"
+    path: str = Field(
+        description="搜索目录(绝对路径,必填)"
     )
     glob: Optional[str] = Field(
         default=None,
@@ -266,9 +266,17 @@ class GrepInput(BaseModel):
         default=True,
         description="是否忽略大小写,默认True"
     )
-    output_mode: Literal["content", "count", "files_with_matches"] = Field(
+    literal: bool = Field(
+        default=False,
+        description="是否按纯文本精确搜索,默认False(正则模式)。搜索带正则特殊字符的字符串时设为True,如 \"foo.bar()\" \"arr[0]\" \"price$\",会自动转义 . ( ) [ ] * + ? $ 等字符"
+    )
+    context: int = Field(
+        default=0, ge=0, le=10,
+        description="返回匹配行前后各N行上下文,默认0,上限10。仅output_mode=content生效,其余模式忽略。用于查看匹配代码的上下文"
+    )
+    output_mode: Literal["content", "count", "only_files"] = Field(
         default="content",
-        description="输出模式: content=返回匹配内容(默认), count=只返回匹配数量, files_with_matches=只返回文件名列表(节省token)"
+        description="输出模式: content=返回匹配内容(默认), count=只返回匹配数量, only_files=只返回含匹配的文件名列表(节省token)"
     )
 
 

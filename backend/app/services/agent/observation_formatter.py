@@ -930,7 +930,17 @@ def _format_matches(matches: list) -> str:
             content = m.get("content", "")
             line_no = m.get("line", "")
             if line_no:
-                lines.append(f"  {file_path}:{line_no}: [{matched_str}] {content}")
+                # context上下文:before在命中行之前,after在之后,命中行加>标记 — 小欧 2026-07-11
+                before = m.get("before")
+                after = m.get("after")
+                if before or after:
+                    for ctx in (before or []):
+                        lines.append(f"       {ctx.get('line')}| {ctx.get('text', '')}")
+                    lines.append(f"  >  {file_path}:{line_no}: [{matched_str}] {content}")
+                    for ctx in (after or []):
+                        lines.append(f"       {ctx.get('line')}| {ctx.get('text', '')}")
+                else:
+                    lines.append(f"  {file_path}:{line_no}: [{matched_str}] {content}")
             else:
                 lines.append(f"  {file_path}")
     return "\n".join(lines)
