@@ -106,23 +106,8 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
         print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}")  # 小欧 2026-07-02 控制台
     if parsed_type == "action":
         handler = handle_action(agent, llm_response, chunk_buffer)
-    elif parsed_type == "answer":
-        reasoning = llm_response.get("reasoning", "")
-        reasoning_part = f"\n{time.strftime('%H:%M:%S')} === 推理 ===\n{reasoning}" if reasoning else ""
-        print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response={llm_response.get('content', '')}{reasoning_part}")  # 小欧 2026-07-02 控制台
-        handler = handle_answer(agent, llm_response, chunk_buffer)
-    elif parsed_type == "error":
-        content = llm_response.get("content", "")
-        agent.message_builder.add_assistant_message(content or "")
-        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, error={content}")  # 小欧 2026-07-02 控制台
-        handler = _handle_llm_error(agent, llm_response)
     else:
-        logger.warning(f"[dispatch_handler] 未知返回类型: {parsed_type}, 设置为FAILED")
-        content = llm_response.get("content", "") or llm_response.get("thought", "")
-        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, type={parsed_type}, content={content}")  # 小欧 2026-07-02 控制台
-        if content:
-            agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
-        handler = _handle_unknown(agent, llm_response)
+        handler = handle_answer(agent, llm_response, chunk_buffer)
 
     seen_types = set()
     last_event = None
@@ -143,26 +128,6 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
             set_failed(agent, error_msg)
     elif "final" in seen_types:
         set_completed(agent)
-
-
-async def _handle_llm_error(agent, llm_response):
-    """LLM type=error：yield ErrorStep — chendyg 2026-07-01"""
-    content = llm_response.get("content", "") or "LLM流式错误"
-    yield agent._step_emitter.emit(ErrorStep(
-        step=agent.llm_call_count,
-        error_type="llm_error",
-        error_message=content,
-    ))
-
-
-async def _handle_unknown(agent, llm_response):
-    """未知响应类型：yield ErrorStep — chendyg 2026-07-01"""
-    parsed_type = llm_response.get("type", "unknown")
-    yield agent._step_emitter.emit(ErrorStep(
-        step=agent.llm_call_count,
-        error_type="unknown_response",
-        error_message=f"LLM返回未知响应类型: {parsed_type}",
-    ))
 
 
 def _ensure_failed_final_step(agent):
