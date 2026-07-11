@@ -44,7 +44,7 @@ class ReadtextInput(BaseModel):
     - limit=100: 读前100行
     - tail=20: 读最后20行
     - offset=10, limit=20: 读第10-29行"""
-    file_path: str = Field(
+    path: str = Field(
         description="要读取的文件路径(绝对路径)。支持文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
     offset: Optional[int] = Field(
@@ -91,7 +91,7 @@ class ReadtextInput(BaseModel):
 
 class WritetextInput(BaseModel):
     """不支持office类型.docx/.xlsx/.pptx/.PDF文件和媒体文件写入"""
-    file_path: str = Field(
+    path: str = Field(
         description="文件的完整路径(绝对路径,支持中文路径)。用于写入文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
     content: str = Field(
@@ -129,7 +129,7 @@ class WritetextInput(BaseModel):
 
 class ReadmediaInput(BaseModel):
     """不支持PDF文件(请用read_pdf)"""
-    file_path: str = Field(
+    path: str = Field(
         description="媒体文件的完整路径。支持图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)、音频(MP3/WAV/OGG/M4A/FLAC/AAC)、视频(MP4/AVI/MOV/MKV)。返回Base64编码数据"
     )
 
@@ -144,7 +144,7 @@ class EdittextInput(BaseModel):
     mode="all"    -- 替换全部匹配的old_string
     mode="before" -- 在唯一锚点前插入
     mode="after"  -- 在唯一锚点后插入"""
-    file_path: str = Field(
+    path: str = Field(
         description="目标文件的绝对路径(仅支持文本文件)"
     )
     old_string: str = Field(
@@ -175,7 +175,7 @@ class EdittextInput(BaseModel):
 
 class ListdirInput(BaseModel):
     """支持offset参数分页遍历大目录(每页最多500项)"""
-    dir_path: str = Field(
+    path: str = Field(
         description="目录路径(绝对路径,必填)。如 D:/项目代码"
     )
     sort_by: Literal["name", "size", "mtime"] = Field(
@@ -198,7 +198,7 @@ class ListdirInput(BaseModel):
 
 class TreeInput(BaseModel):
     """可设max_depth控制深度(默认5层,大目录如node_modules建议设3以下)"""
-    dir_path: str = Field(
+    path: str = Field(
         description="目录路径(绝对路径,必填)。如 D:/项目代码"
     )
     include_hidden: bool = Field(
@@ -225,7 +225,7 @@ class FindInput(BaseModel):
     pattern: str = Field(
         description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\""
     )
-    search_dir: str = Field(
+    path: str = Field(
         description="搜索的起始目录(绝对路径,必填)。如 D:/项目代码"
     )
     ignore_case: bool = Field(
@@ -276,7 +276,7 @@ class GrepInput(BaseModel):
     )
     output_mode: Literal["content", "count", "only_files"] = Field(
         default="content",
-        description="输出模式: content=返回匹配内容(默认), count=只返回匹配数量, only_files=只返回含匹配的文件名列表(节省token)"
+        description="输出模式: content=返回匹配内容(默认), count=只返回匹配数量, only_files=只返回含匹配的文件名列表"
     )
 
 

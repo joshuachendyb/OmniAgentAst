@@ -71,7 +71,7 @@ def _build_search_files_llm_data(
 ) -> Dict[str, Any]:
     """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示 — 小欧 2026-07-06 summary含路径/模式/页码, warning用常量 — 小欧 2026-07-07 超时秒数"""
     _timeout_sec = TOOL_TIMEOUTS.get("find", TOOL_TIMEOUTS["default"])
-    _act_params = {"search_dir": search_dir}
+    _act_params = {"path": search_dir}
     if user_pattern:
         _act_params["pattern"] = user_pattern
     if user_ignore_case is not None:
@@ -124,12 +124,14 @@ def _build_search_files_llm_data(
 
 async def find(
     pattern: str,
-    search_dir: str,
+    path: str,
     ignore_case: bool = True,
     type: Optional[Literal["file", "directory"]] = None,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """搜索文件名(始终递归搜索子目录) — 小沈 2026-05-19 — 小欧 2026-06-22 — 小欧 2026-06-23 去掉recursive — 小欧 2026-07-04 offset分页"""
+    """搜索文件名(始终递归搜索子目录) — 小沈 2026-05-19 — 小欧 2026-06-22 — 小欧 2026-06-23 去掉recursive — 小欧 2026-07-04 offset分页 — 小欧 2026-07-11 路径参数统一为path"""
+    # 路径参数统一为path,桥接到内部变量search_dir — 小欧 2026-07-11
+    search_dir = path
     t0 = _time_mod.perf_counter()
     max_depth = 50
     if type is not None and type not in ("file", "directory"):

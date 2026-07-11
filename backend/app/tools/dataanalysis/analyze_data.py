@@ -63,12 +63,12 @@ def _compute_stats(df: "pd.DataFrame", numeric_cols: List[str], operations: List
 
 
 def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_col_count=0, columns=None, detail="", hint="",
-                                  file_path="", data="", operations=None, group_by="", sort_by="", top_n=0, max_rows=0):
-    """analyze_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 去掉data字段，防止大字段返回给LLM"""
+                                  path="", data="", operations=None, group_by="", sort_by="", top_n=0, max_rows=0):
+    """analyze_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 去掉data字段，防止大字段返回给LLM — 小欧 2026-07-11 路径参数统一为path"""
     columns = columns or []
     _act_params = {}
-    if file_path:
-        _act_params["file_path"] = file_path
+    if path:
+        _act_params["path"] = path
     if operations:
         _act_params["operations"] = operations
     if group_by:
@@ -79,7 +79,7 @@ def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_co
         _act_params["top_n"] = top_n
     if max_rows:
         _act_params["max_rows"] = max_rows
-    _target = file_path or "数据集"
+    _target = path or "数据集"
     if exec_code == "error":
         return {
             "summary": f"分析数据{_target}，失败: {detail}",
@@ -97,26 +97,28 @@ def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_co
     }
 
 
-def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
+def analyze_data(path: Optional[str] = None, data: Optional[str] = None,
                  operations: Optional[List[str]] = None,
                  group_by: Optional[str] = None, sort_by: Optional[str] = None,
                  top_n: Optional[int] = None, max_rows: Optional[int] = None) -> Dict[str, Any]:
-    """对数据集进行统计分析 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union — 小欧 2026-06-27 file_path+data互斥拆分"""
+    """对数据集进行统计分析 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union — 小欧 2026-06-27 file_path+data互斥拆分 — 小欧 2026-07-11 路径参数统一为path"""
+    # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
+    file_path = path
     if file_path and data:
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="file_path和data参数互斥,只能传入其中一个", hint="file_path和data只能选其一", file_path=file_path, data=data)
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="path和data参数互斥,只能传入其中一个", hint="path和data只能选其一", path=file_path, data=data)
         return build_error(data={}, llm_data=llm_data)
     if not file_path and not data:
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="file_path和data参数必须传入其中一个", hint="请提供file_path或data参数")
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="path和data参数必须传入其中一个", hint="请提供path或data参数")
         return build_error(data={}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="pandas库未安装", hint="请安装pandas库", file_path=file_path, data=data)
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="pandas库未安装", hint="请安装pandas库", path=file_path, data=data)
         return build_error(data={}, llm_data=llm_data)
 
     try:
@@ -130,7 +132,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
             is_valid, err, _ = validate_path(OpCategory.READ_FILE, file_path)
             if not is_valid:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=err, hint="请检查文件路径", file_path=file_path)
+                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=err, hint="请检查文件路径", path=file_path)
                 return build_error(data={}, llm_data=llm_data)
             path = Path(file_path)
             read_kwargs = {}
@@ -139,7 +141,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
             if file_path.endswith('.xlsx'):
                 if not _check_module("openpyxl"):
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                    llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="openpyxl库未安装", hint="请安装openpyxl库", file_path=file_path)
+                    llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="openpyxl库未安装", hint="请安装openpyxl库", path=file_path)
                     return build_error(data={}, llm_data=llm_data)
                 df = pd.read_excel(file_path, engine="openpyxl", **({k: v for k, v in read_kwargs.items() if k == 'nrows'}))
             else:
@@ -158,7 +160,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
         if not numeric_cols:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_analyze_data_llm_data("success", duration_ms, total_count, 0, df.columns.tolist(),
-                                                      file_path=file_path, data=data, operations=operations, group_by=group_by, sort_by=sort_by, top_n=top_n or 0, max_rows=max_rows or 0)
+                                                      path=file_path, data=data, operations=operations, group_by=group_by, sort_by=sort_by, top_n=top_n or 0, max_rows=max_rows or 0)
             # ---- observation_formatter route -------------------------------------------
             # branch: #20 analyze_data(transposed) — 无数值列场景
             # trigger: "statistics" in data — statistics 为 {} 空 dict
@@ -182,7 +184,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_analyze_data_llm_data("success", duration_ms, len(df), len(numeric_cols), df.columns.tolist(),
-                                                  file_path=file_path, data=data, operations=operations, group_by=group_by, sort_by=sort_by, top_n=top_n or 0, max_rows=max_rows or 0)
+                                                  path=file_path, data=data, operations=operations, group_by=group_by, sort_by=sort_by, top_n=top_n or 0, max_rows=max_rows or 0)
         # ---- observation_formatter route -------------------------------------------
         # branch: #20 analyze_data(transposed) — 有数值列场景
         # trigger: "statistics" in data or "grouped_statistics" in data
@@ -192,7 +194,7 @@ def analyze_data(file_path: Optional[str] = None, data: Optional[str] = None,
         return build_success(data=result, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=str(e), hint="分析异常，请检查数据", file_path=file_path, data=data)
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=str(e), hint="分析异常，请检查数据", path=file_path, data=data)
         return build_error(data={}, llm_data=llm_data)
 
 

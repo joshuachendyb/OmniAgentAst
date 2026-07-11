@@ -29,7 +29,7 @@ async def _get_directory_tree(
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
     is_valid, err, _ = validate_path(OpCategory.LIST_DIR, dir_path)
     if not is_valid:
-        return {"error_detail": err, "params": {"dir_path": dir_path}}
+        return {"error_detail": err, "params": {"path": dir_path}}
 
     path = Path(dir_path)
 
@@ -95,7 +95,7 @@ async def _get_directory_tree(
 
     tree = await asyncio.to_thread(_build_tree, path)
     if tree is None:
-        return {"error_detail": "构建目录树失败", "params": {"dir_path": dir_path}}
+        return {"error_detail": "查询目录树失败", "params": {"path": dir_path}}
 
     fc, dc, ts = await asyncio.to_thread(_count_tree_fs, path)
     return {"tree": tree, "statistics": {"file_count": fc, "dir_count": dc, "total_size": ts}}
@@ -108,7 +108,7 @@ def _build_tree_llm_data(
     file_count: int = 0, dir_count: int = 0,
 ) -> Dict[str, Any]:
     """tree的llm_data构建函数 — 小沈 2026-07-03 — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-07 summary加file/dir明细"""
-    _act_params = {"dir_path": dir_path}
+    _act_params = {"path": dir_path}
     if user_include_hidden is not None:
         _act_params["include_hidden"] = user_include_hidden
     if user_sort_by:
@@ -131,12 +131,14 @@ def _build_tree_llm_data(
 
 
 async def tree(
-    dir_path: str,
+    path: str,
     include_hidden: bool = False,
     max_depth: int = 5,
     sort_by: str = "name",
 ) -> Dict[str, Any]:
-    """列出目录树 — 小沈 2026-07-03 从list_directory拆分"""
+    """列出目录树 — 小沈 2026-07-03 从list_directory拆分 — 小欧 2026-07-11 路径参数统一为path"""
+    # 路径参数统一为path,桥接到内部变量dir_path — 小欧 2026-07-11
+    dir_path = path
     t0 = _time_mod.perf_counter()
     if max_depth < 1:
         max_depth = 1

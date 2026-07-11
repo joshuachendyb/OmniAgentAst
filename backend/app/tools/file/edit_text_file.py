@@ -181,7 +181,7 @@ def _build_edit_text_file_llm_data(
     user_encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
     """edit_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 增加diff/total_matches/mtime_warning — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-06 diff移入other_data — 小欧 2026-07-06 diff移回metrics — 小欧 2026-07-11 replace_all→mode"""
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_old_string:
         _act_params["old_string"] = user_old_string[:50]  # 小欧 2026-07-06 100→50，减少返回给LLM的冗余参数
     if user_new_string:
@@ -391,14 +391,16 @@ async def _precise_replace_in_file(
 
 
 async def edittext(
-    file_path: str,
+    path: str,
     old_string: str,
     new_string: str = "",
     mode: str = "once",
     ignore_case: bool = False,
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """编辑文本文件 — 小健 2026-06-20 删dry_run参数 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加ignore_case参数 — 小欧 2026-07-11 replace_all→mode"""
+    """编辑文本文件 — 小健 2026-06-20 删dry_run参数 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加ignore_case参数 — 小欧 2026-07-11 replace_all→mode — 小欧 2026-07-11 路径参数统一为path"""
+    # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
+    file_path = path
     t0 = _time_mod.perf_counter()
 
     # mode 有效性检查 — 小欧 2026-07-11
@@ -436,7 +438,7 @@ async def edittext(
             _hint = "请选择正确的工具类型"
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=ft_detail, hint=_hint, user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(
-            data={"error_detail": ft_detail, "params": {"file_path": file_path}},
+            data={"error_detail": ft_detail, "params": {"path": file_path}},
             llm_data=llm_data,
         )
 
@@ -451,7 +453,7 @@ async def edittext(
     if error_detail:
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(
-            data={"error_detail": error_detail, "params": {"file_path": file_path}},
+            data={"error_detail": error_detail, "params": {"path": file_path}},
             llm_data=llm_data,
         )
     llm_data = _build_edit_text_file_llm_data(

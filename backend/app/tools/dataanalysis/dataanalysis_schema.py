@@ -87,14 +87,14 @@ class GenerateChartInput(BaseModel):
 
 
 class AnalyzeDataInput(BaseModel):
-    """file_path和data参数互斥,只能传入其中一个 """
-    file_path: Optional[str] = Field(
+    """path和data参数互斥,只能传入其中一个 """
+    path: Optional[str] = Field(
         default=None,
         description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时使用。示例:D:/data/sales.csv"
     )
     data: Optional[str] = Field(
         default=None,
-        description="JSON字符串形式的数组数据。严禁与file_path参数同时使用。示例:'[{\"name\":\"A\",\"value\":10}]'"
+        description="JSON字符串形式的数组数据。严禁与path参数同时使用。示例:'[{\"name\":\"A\",\"value\":10}]'"
     )
     operations: Optional[List[str]] = Field(
         default=None,
@@ -131,22 +131,22 @@ class AnalyzeDataInput(BaseModel):
 
     @model_validator(mode="after")
     def _check_file_path_or_data(self):
-        if self.file_path and self.data:
-            raise ValueError("file_path和data参数互斥,只能传入其中一个")
-        if not self.file_path and not self.data:
-            raise ValueError("file_path和data参数必须传入其中一个")
+        if self.path and self.data:
+            raise ValueError("path和data参数互斥,只能传入其中一个")
+        if not self.path and not self.data:
+            raise ValueError("path和data参数必须传入其中一个")
         return self
 
 
 class FilterDataInput(BaseModel):
-    """file_path和data参数互斥,只能传入其中一个 """
-    file_path: Optional[str] = Field(
+    """path和data参数互斥,只能传入其中一个 """
+    path: Optional[str] = Field(
         default=None,
         description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时传入。示例:D:/data/users.csv"
     )
     data: Optional[str] = Field(
         default=None,
-        description="JSON字符串形式的数组数据。严禁与file_path参数同时传入。示例:'[{\"name\":\"A\",\"age\":25}]'"
+        description="JSON字符串形式的数组数据。严禁与path参数同时传入。示例:'[{\"name\":\"A\",\"age\":25}]'"
     )
     conditions: List[Dict[str, Any]] = Field(
         ..., 
@@ -185,11 +185,11 @@ class FilterDataInput(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _check_file_path_or_data(self):
-        if self.file_path and self.data:
-            raise ValueError("file_path和data参数互斥,只能传入其中一个")
-        if not self.file_path and not self.data:
-            raise ValueError("file_path和data参数必须传入其中一个")
+    def _check_path_or_data(self):
+        if self.path and self.data:
+            raise ValueError("path和data参数互斥,只能传入其中一个")
+        if not self.path and not self.data:
+            raise ValueError("path和data参数必须传入其中一个")
         return self
 
 

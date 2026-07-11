@@ -119,38 +119,38 @@ FILE_TOOL_DESCRIPTIONS = {
 
 FILE_TOOL_EXAMPLES = {
     "readtext": [
-        {"file_path": "D:/project/main.py"},                               # 全文
-        {"file_path": "D:/logs/app.log", "tail": 50},                     # 末50行(看日志尾部)
-        {"file_path": "D:/project/main.py", "offset": 1, "limit": 200},  # 分页
+        {"path": "D:/project/main.py"},                               # 全文
+        {"path": "D:/logs/app.log", "tail": 50},                     # 末50行(看日志尾部)
+        {"path": "D:/project/main.py", "offset": 1, "limit": 200},  # 分页
     ],
     "writetext": [
-        {"file_path": "D:/output/test.txt", "content": "Hello World"},
-        {"file_path": "D:/report.md", "content": "# 标题\n\n第一段内容\n\n第二段内容"},
-        {"file_path": "D:/config.json", "content": "{\"name\": \"test\", \"value\": 123}"},
-        {"file_path": "D:/logs/app.log", "content": "[2026-05-18] Done\n", "append": True},
+        {"path": "D:/output/test.txt", "content": "Hello World"},
+        {"path": "D:/report.md", "content": "# 标题\n\n第一段内容\n\n第二段内容"},
+        {"path": "D:/config.json", "content": "{\"name\": \"test\", \"value\": 123}"},
+        {"path": "D:/logs/app.log", "content": "[2026-05-18] Done\n", "append": True},
     ],
     "readmedia": [
-        {"file_path": "D:/screenshot.png"},
+        {"path": "D:/screenshot.png"},
     ],
     "edittext": [
-        {"file_path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"},
-        {"file_path": "D:/main.py", "old_string": "import os", "new_string": "import sys\nimport json", "mode": "all"},
-        {"file_path": "D:/main.py", "mode": "before", "old_string": "def main():", "new_string": "# new function above main\ndef helper():\n    pass\n\n"},
-        {"file_path": "D:/main.py", "mode": "after", "old_string": "def main():", "new_string": "\n    # added after main start\n    pass"},
+        {"path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"},
+        {"path": "D:/main.py", "old_string": "import os", "new_string": "import sys\nimport json", "mode": "all"},
+        {"path": "D:/main.py", "mode": "before", "old_string": "def main():", "new_string": "# new function above main\ndef helper():\n    pass\n\n"},
+        {"path": "D:/main.py", "mode": "after", "old_string": "def main():", "new_string": "\n    # added after main start\n    pass"},
     ],
     "listdir": [
-        {"dir_path": "D:/project"},
-        {"dir_path": "D:/project", "sort_by": "size"},
-        {"dir_path": "D:/project", "offset": 500},
+        {"path": "D:/project"},
+        {"path": "D:/project", "sort_by": "size"},
+        {"path": "D:/project", "offset": 500},
     ],
     "tree": [
-        {"dir_path": "D:/project"},
-        {"dir_path": "D:/project", "include_hidden": True},
-        {"dir_path": "D:/project/node_modules", "max_depth": 2},
+        {"path": "D:/project"},
+        {"path": "D:/project", "include_hidden": True},
+        {"path": "D:/project/node_modules", "max_depth": 2},
     ],
     "find": [
-        {"pattern": "**/*.py", "search_dir": "D:/project"},
-        {"pattern": "**/*.py", "search_dir": "D:/project", "offset": 500},
+        {"pattern": "**/*.py", "path": "D:/project"},
+        {"pattern": "**/*.py", "path": "D:/project", "offset": 500},
     ],
     "grep": [
         {"pattern": "def readtext", "path": "D:/backend"},

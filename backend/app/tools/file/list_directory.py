@@ -148,7 +148,7 @@ def _build_list_directory_llm_data(
 ) -> Dict[str, Any]:
     """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-06 statistics移入metrics/summary — 小欧 2026-07-07 超时秒数"""
     _listdir_timeout_sec = TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"])
-    _act_params = {"dir_path": dir_path}
+    _act_params = {"path": dir_path}
     if user_sort_by:
         _act_params["sort_by"] = user_sort_by
     if user_include_hidden is not None:
@@ -195,12 +195,14 @@ def _build_list_directory_llm_data(
 
 
 async def listdir(
-    dir_path: str,
+    path: str,
     sort_by: str = "name",
     include_hidden: bool = False,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """列出目录内容 — 小沈 2026-05-19 — 小欧 2026-06-22 — 小沈 2026-07-03 拆分tree — 小欧 2026-07-04 offset分页"""
+    """列出目录内容 — 小沈 2026-05-19 — 小欧 2026-06-22 — 小沈 2026-07-03 拆分tree — 小欧 2026-07-04 offset分页 — 小欧 2026-07-11 路径参数统一为path"""
+    # 路径参数统一为path,桥接到内部变量dir_path — 小欧 2026-07-11
+    dir_path = path
     t0 = _time_mod.perf_counter()
 
     if not dir_path or not dir_path.strip():

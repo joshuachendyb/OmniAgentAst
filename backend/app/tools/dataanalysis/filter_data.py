@@ -21,12 +21,12 @@ from app.tools.tool_constants import ERR_FILTER_INVALID
 
 
 def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail="", hint="",
-                                 file_path="", data="", conditions=None, select_columns=None, sort_by="", top_n=0, max_rows=0):
-    """filter_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 去掉data/conditions字段，防止大字段返回给LLM"""
+                                 path="", data="", conditions=None, select_columns=None, sort_by="", top_n=0, max_rows=0):
+    """filter_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 去掉data/conditions字段，防止大字段返回给LLM — 小欧 2026-07-11 路径参数统一为path"""
     columns = columns or []
     _act_params = {}
-    if file_path:
-        _act_params["file_path"] = file_path
+    if path:
+        _act_params["path"] = path
     if select_columns:
         _act_params["select_columns"] = select_columns
     if sort_by:
@@ -35,7 +35,7 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
         _act_params["top_n"] = top_n
     if max_rows:
         _act_params["max_rows"] = max_rows
-    _target = file_path or "数据集"
+    _target = path or "数据集"
     if exec_code == "error":
         return {
             "summary": f"筛选数据{_target}，失败: {detail}",
@@ -60,7 +60,7 @@ def _load_data_to_df(data: Union[str, List[Dict[str, Any]]], max_rows: Optional[
         # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
         is_valid, err, _ = validate_path(OpCategory.READ_FILE, data)
         if not is_valid:
-            return {"error_detail": err, "params": {"file_path": data}}
+            return {"error_detail": err, "params": {"path": data}}
         path = Path(data)
         if data.endswith('.xlsx'):
             if not _check_module("openpyxl"):
@@ -114,20 +114,22 @@ def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) 
     return {"mask": mask, "warnings": warnings}
 
 
-def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
+def filter_data(path: Optional[str] = None, data: Optional[str] = None,
                 conditions: List[Dict[str, Any]] = None,
                 select_columns: Optional[List[str]] = None, max_rows: Optional[int] = None,
                 sort_by: Optional[str] = None, top_n: Optional[int] = None) -> Dict[str, Any]:
-    """筛选数据 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union — 小欧 2026-06-27 file_path+data互斥拆分"""
+    """筛选数据 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union — 小欧 2026-06-27 file_path+data互斥拆分 — 小欧 2026-07-11 路径参数统一为path"""
+    # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
+    file_path = path
     if file_path and data:
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数互斥,只能传入其中一个", hint="file_path和data只能选其一", file_path=file_path, data=data)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="path和data参数互斥,只能传入其中一个", hint="path和data只能选其一", path=file_path, data=data)
         return build_error(data={}, llm_data=llm_data)
     if not file_path and not data:
         t0 = _time_mod.perf_counter()
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="file_path和data参数必须传入其中一个", hint="请提供file_path或data参数")
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="path和data参数必须传入其中一个", hint="请提供path或data参数")
         return build_error(data={}, llm_data=llm_data)
 
     if conditions is not None:
@@ -137,7 +139,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
     t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="pandas库未安装", hint="请安装pandas库", file_path=file_path, data=data)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="pandas库未安装", hint="请安装pandas库", path=file_path, data=data)
         return build_error(data={}, llm_data=llm_data)
 
     try:
@@ -153,7 +155,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
                 return build_error(data={}, llm_data=llm_data)
         if "error_detail" in loaded:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=loaded["error_detail"], hint="请检查数据加载路径", file_path=file_path, data=data)
+            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=loaded["error_detail"], hint="请检查数据加载路径", path=file_path, data=data)
             return build_error(data={}, llm_data=llm_data)
         df = loaded["df"]
         original_count = len(df)
@@ -161,7 +163,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
         result = _build_condition_mask(df, conditions)
         if "error_detail" in result:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=result["error_detail"], hint="请检查筛选条件", file_path=file_path, data=data, conditions=conditions)
+            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=result["error_detail"], hint="请检查筛选条件", path=file_path, data=data, conditions=conditions)
             return build_error(data={}, llm_data=llm_data)
         filtered_df = df[result["mask"]]
         warnings = result["warnings"]
@@ -185,7 +187,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_filter_data_llm_data("success", duration_ms, original_count, len(rows), columns,
-                                                  file_path=file_path, data=data, conditions=conditions, select_columns=select_columns, sort_by=sort_by, top_n=top_n or 0, max_rows=max_rows or 0)
+                                                  path=file_path, data=data, conditions=conditions, select_columns=select_columns, sort_by=sort_by, top_n=top_n or 0, max_rows=max_rows or 0)
         # =============================================================================
         # 数据设计：original_count/filtered_count 从 data 移除，通过 llm_data.metrics 传入 summary
         # summary 示例: "筛选完成: 100行→50行"
@@ -200,7 +202,7 @@ def filter_data(file_path: Optional[str] = None, data: Optional[str] = None,
         return build_success(data=result_data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail=str(e), hint="筛选异常，请检查数据", file_path=file_path, data=data)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail=str(e), hint="筛选异常，请检查数据", path=file_path, data=data)
         return build_error(data={}, llm_data=llm_data)
 
 

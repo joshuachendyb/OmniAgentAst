@@ -104,7 +104,7 @@ def _build_write_text_file_llm_data(
     user_encoding: Optional[str] = None, user_append: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """write_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-06-24 增加warning — 小欧 2026-07-05 增加mtime_warning"""
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_encoding:
         _act_params["encoding"] = user_encoding
     if user_append is not None:
@@ -141,12 +141,14 @@ def _build_write_text_file_llm_data(
 
 
 async def writetext(
-    file_path: str,
+    path: str,
     content: str,
     encoding: Optional[str] = None,
     append: bool = False,
 ) -> Dict[str, Any]:
-    """写入文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件"""
+    """写入文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-11 路径参数统一为path"""
+    # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
+    file_path = path
     t0 = _time_mod.perf_counter()
     # content验证+类型转换(dict/list→json)统一在_check_write_safety处理 — 小欧 2026-07-08
     # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04

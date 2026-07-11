@@ -221,7 +221,7 @@ def _build_read_text_file_llm_data(
     user_tail: Optional[int] = None, user_encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
     """read_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-06-24 增加warning — 小沈 2026-07-05 success显示读取行范围"""
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_offset is not None:
         _act_params["offset"] = user_offset
     if user_limit is not None:
@@ -288,16 +288,18 @@ def _build_read_text_file_llm_data(
 
 
 async def readtext(
-    file_path: str,
+    path: str,
     offset: Optional[int] = None,
     limit: Optional[int] = None,
     tail: Optional[int] = None,
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """读取文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 增加文件类型前置检查 — 小欧 2026-06-28 新增tail参数替代offset负数
+    """读取文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 增加文件类型前置检查 — 小欧 2026-06-28 新增tail参数替代offset负数 — 小欧 2026-07-11 路径参数统一为path
     offset: 起始行号(正数，必须配合limit)
     limit: 读取行数
     tail: 读取尾部N行（不能与offset/limit同时使用）"""
+    # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
+    file_path = path
     t0 = _time_mod.perf_counter()
     try:
         # 文件类型前置检查 — 小健 2026-06-24
