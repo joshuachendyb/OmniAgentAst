@@ -15,26 +15,26 @@ from typing import Optional, Dict, Any
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_REG_DELETE_FAILED, ERR_PARAMETER_INVALID, SUBPROCESS_TIMEOUT_DEFAULT
-from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_key_path, _backup_registry
+from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_path, _backup_registry
 from app.tools.validate.registry_path_checker import validate_delete_safety
 
 # hkey(int) -> 根键名 反向映射, 供 reg.exe 拼接完整键路径 — 小欧 2026-07-12
 ROOT_KEY_MAP_REVERSE = {v: k for k, v in ROOT_KEY_MAP.items()}
 
 
-def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, key_path: str, action: str, err_code: str = None, detail: str = "", hint: str = "") -> dict:
+def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, path: str, action: str, err_code: str = None, detail: str = "", hint: str = "") -> dict:
     """registry_delete的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": f"删除注册表{key_path}，失败",
-            "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": key_path, "params": {"key_path": key_path}},
+            "summary": f"删除注册表{path}，失败",
+            "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": path, "params": {"path": path}},
             "status": {"exec_code": "error", "message": "删除注册表失败", "code": err_code or ERR_REG_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"删除注册表{key_path}，成功: {action}",
-        "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": key_path, "params": {"key_path": key_path}},
+        "summary": f"删除注册表{path}，成功: {action}",
+        "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": path, "params": {"path": path}},
         "status": {"exec_code": "success", "message": "删除注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
@@ -76,22 +76,22 @@ def _delete_registry_recursive(hkey, sub_key):
                 break
 
 
-def registry_delete(key_path: str, value_name: Optional[str] = None, backup_before_delete: bool = True, recursive: bool = False, hive: str = "HKCU") -> dict:
+def registry_delete(path: str, value_name: Optional[str] = None, backup_before_delete: bool = True, recursive: bool = False, hive: str = "HKCU") -> dict:
     """删除Windows注册表键值或子键 — 小健 2026-06-22 拆分独立文件"""
-    is_valid, error_msg, warning_msg = validate_delete_safety(key_path, value_name, hive, recursive)
+    is_valid, error_msg, warning_msg = validate_delete_safety(path, value_name, hive, recursive)
     if not is_valid:
-        llm_data = _build_registry_delete_llm_data("error", 0, key_path, "", err_code=ERR_PARAMETER_INVALID, detail=error_msg, hint="请检查注册表路径和权限")
+        llm_data = _build_registry_delete_llm_data("error", 0, path, "", err_code=ERR_PARAMETER_INVALID, detail=error_msg, hint="请检查注册表路径和权限")
         return build_error(data={}, llm_data=llm_data)
     if warning_msg:
         logger.warning(f"[registry_delete] {warning_msg}")
     t0 = _time_mod.perf_counter()
     try:
-        full_root_key, sub_key = _parse_key_path(key_path, hive=hive)
+        full_root_key, sub_key = _parse_path(path, hive=hive)
         hkey = ROOT_KEY_MAP.get(full_root_key)
 
         if hkey is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"无效的根键: {full_root_key}", hint="请检查根键名称")
+            llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail=f"无效的根键: {full_root_key}", hint="请检查根键名称")
             return build_error(data={}, llm_data=llm_data)
 
         if backup_before_delete:
@@ -109,7 +109,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
             if not parent_key:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail="不能直接删除根键下的子键", hint="不能直接删除根键下的子键")
+                llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail="不能直接删除根键下的子键", hint="不能直接删除根键下的子键")
                 return build_error(data={}, llm_data=llm_data)
 
             if recursive:
@@ -122,7 +122,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
                     logger.debug(f"[registry_delete] reg递归删除已移除整键: {full_root_key}\\{sub_key}")
                     action = "子键已删除"
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                    llm_data = _build_registry_delete_llm_data("success", duration_ms, key_path, action)
+                    llm_data = _build_registry_delete_llm_data("success", duration_ms, path, action)
                     return build_success(data={}, llm_data=llm_data)
 
             with winreg.OpenKey(hkey, parent_key, 0, winreg.KEY_SET_VALUE) as key:
@@ -132,7 +132,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
         action = "值已删除" if value_name is not None else "子键已删除"
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("success", duration_ms, key_path, action)
+        llm_data = _build_registry_delete_llm_data("success", duration_ms, path, action)
         # =============================================================================
         # 数据设计：action 从 data 移除
         # summary 已含全部信息: "已删除注册表 HKCU\Software\MyApp\TestValue（deleted_value）"
@@ -147,19 +147,19 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
 
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"注册表键或值不存在: {key_path}", hint="请检查键路径是否正确")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail=f"注册表键或值不存在: {path}", hint="请检查键路径是否正确")
         return build_error(data={}, llm_data=llm_data)
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"权限不足: {key_path}", hint="请以管理员身份运行")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail=f"权限不足: {path}", hint="请以管理员身份运行")
         return build_error(data={}, llm_data=llm_data)
     except OSError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=f"删除失败: {e}", hint="删除失败,请检查键是否为空")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail=f"删除失败: {e}", hint="删除失败,请检查键是否为空")
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, key_path, "", detail=str(e), hint="删除注册表异常,请检查系统状态")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail=str(e), hint="删除注册表异常,请检查系统状态")
         return build_error(data={}, llm_data=llm_data)
 
 

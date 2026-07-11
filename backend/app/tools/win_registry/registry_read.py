@@ -38,16 +38,16 @@ def _validate_root_key(full_root_key: str):
     return ROOT_KEY_MAP.get(full_root_key)
 
 
-def _parse_key_path(key_path: str, hive: str = "HKCU") -> tuple:
-    """解析key_path,提取根键和子键路径 — 小沈 2026-05-05"""
+def _parse_path(path: str, hive: str = "HKCU") -> tuple:
+    """解析path,提取根键和子键路径 — 小沈 2026-05-05"""
     for hk_name, full_name in HIVE_MAP.items():
-        if key_path.upper().startswith(f"{hk_name}\\"):
-            sub = key_path[len(hk_name)+1:]
+        if path.upper().startswith(f"{hk_name}\\"):
+            sub = path[len(hk_name)+1:]
             return full_name, sub
-        if key_path.upper().startswith(f"{full_name}\\"):
-            sub = key_path[len(full_name)+1:]
+        if path.upper().startswith(f"{full_name}\\"):
+            sub = path[len(full_name)+1:]
             return full_name, sub
-    return HIVE_MAP.get(hive, "HKEY_CURRENT_USER"), key_path
+    return HIVE_MAP.get(hive, "HKEY_CURRENT_USER"), path
 
 
 def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
@@ -81,45 +81,45 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
     return backup_file
 
 
-def _build_registry_read_llm_data(exec_code: str, duration_ms: int, key_path: str, value_name: str, value: Any = None, value_type: str = "", err_code: str = None, detail: str = "", hint: str = "") -> dict:
+def _build_registry_read_llm_data(exec_code: str, duration_ms: int, path: str, value_name: str, value: Any = None, value_type: str = "", err_code: str = None, detail: str = "", hint: str = "") -> dict:
     """registry_read的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
-    _act_params = {"key_path": key_path}
+    _act_params = {"path": path}
     if value_name:
         _act_params["value_name"] = value_name
     if exec_code == "error":
         return {
-            "summary": f"读取注册表{key_path}，失败",
-            "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": key_path, "params": _act_params},
+            "summary": f"读取注册表{path}，失败",
+            "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": path, "params": _act_params},
             "status": {"exec_code": "error", "message": "读取注册表失败", "code": err_code or ERR_REG_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"读取注册表{key_path}，成功: {value_name}={value}（{value_type}）",
-        "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": key_path, "params": _act_params},
+        "summary": f"读取注册表{path}，成功: {value_name}={value}（{value_type}）",
+        "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": path, "params": _act_params},
         "status": {"exec_code": "success", "message": "读取注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
 
 
-def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "HKCU", output_format: str = "auto") -> dict:
+def registry_read(path: str, value_name: Optional[str] = None, hive: str = "HKCU", output_format: str = "auto") -> dict:
     """读取Windows注册表键值 — 小健 2026-06-22 拆分独立文件"""
-    is_valid, error_msg, warning_msg = validate_registry_key(key_path, hive, "read")
+    is_valid, error_msg, warning_msg = validate_registry_key(path, hive, "read")
     if not is_valid:
-        llm_data = _build_registry_read_llm_data("error", 0, key_path, value_name or "", err_code=ERR_PARAMETER_INVALID, detail=error_msg, hint="请检查注册表路径和权限")
+        llm_data = _build_registry_read_llm_data("error", 0, path, value_name or "", err_code=ERR_PARAMETER_INVALID, detail=error_msg, hint="请检查注册表路径和权限")
         return build_error(data={}, llm_data=llm_data)
     if warning_msg:
         logger.warning(f"[registry_read] {warning_msg}")
     t0 = _time_mod.perf_counter()
     key_opened = False
     try:
-        full_root_key, sub_key = _parse_key_path(key_path, hive)
+        full_root_key, sub_key = _parse_path(path, hive)
         hkey = ROOT_KEY_MAP.get(full_root_key)
 
         if hkey is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=f"无效的根键: {full_root_key}", hint="请检查根键名称")
+            llm_data = _build_registry_read_llm_data("error", duration_ms, path, value_name or "", detail=f"无效的根键: {full_root_key}", hint="请检查根键名称")
             return build_error(data={}, llm_data=llm_data)
 
         with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_READ) as key:
@@ -138,7 +138,7 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
                     except OSError:
                         break
                 if not values_dict:
-                    raise FileNotFoundError(f"注册表键 {key_path} 没有值")
+                    raise FileNotFoundError(f"注册表键 {path} 没有值")
                 formatted_value = values_dict
                 llm_value_name = "(所有值)"
                 value_type_name = f"REG_ENUM({len(values_dict)} values)"
@@ -159,7 +159,7 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_registry_read_llm_data("success", duration_ms, f"{full_root_key}\\{sub_key}", llm_value_name, formatted_value, value_type_name)
             # =============================================================================
-            # 数据设计：key_path/value_name/value/value_type 全部从 data 移除
+            # 数据设计：path/value_name/value/value_type 全部从 data 移除
             # summary 已含全部信息: "读取 HKCU\Software\MyApp\Version = 1.0（REG_SZ）"
             # — 小欧 2026-07-06
             # =============================================================================
@@ -175,24 +175,24 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
         if key_opened:
             # OpenKey成功 → 键存在，FileNotFoundError来自QueryValueEx或显式raise
             if value_name:
-                detail = f"值不存在: {key_path}\\{value_name}"
+                detail = f"值不存在: {path}\\{value_name}"
                 hint = "请检查值名称是否正确"
             else:
-                detail = f"注册表键 {key_path} 没有值"
+                detail = f"注册表键 {path} 没有值"
                 hint = "该键下没有可读取的值"
         else:
-            detail = f"注册表键不存在: {key_path}"
+            detail = f"注册表键不存在: {path}"
             hint = "请检查键路径是否正确"
-        llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=detail, hint=hint)
+        llm_data = _build_registry_read_llm_data("error", duration_ms, path, value_name or "", detail=detail, hint=hint)
         return build_error(data={}, llm_data=llm_data)
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=f"权限不足: {key_path}", hint="请以管理员身份运行")
+        llm_data = _build_registry_read_llm_data("error", duration_ms, path, value_name or "", detail=f"权限不足: {path}", hint="请以管理员身份运行")
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_read_llm_data("error", duration_ms, key_path, value_name or "", detail=str(e), hint="读取注册表异常,请检查系统状态")
+        llm_data = _build_registry_read_llm_data("error", duration_ms, path, value_name or "", detail=str(e), hint="读取注册表异常,请检查系统状态")
         return build_error(data={}, llm_data=llm_data)
 
 
-__all__ = ["registry_read", "ROOT_KEY_MAP", "_registry_session_backup", "_parse_key_path", "_backup_registry", "_validate_root_key"]
+__all__ = ["registry_read", "ROOT_KEY_MAP", "_registry_session_backup", "_parse_path", "_backup_registry", "_validate_root_key"]
