@@ -1,4 +1,26 @@
-﻿v0.18.12
+﻿v0.18.13
+更新时间: 2026-07-12 10:37:05
+## v0.18.12→v0.18.13 变更汇总 - 小欧-2026-07-12
+
+### 工具路径参数统一（短名化）
+- download: destination_path → dest（schema+函数+别名+测试同步）— 小欧-2026-07-12
+- screen_capture: output_path → dest — 小欧-2026-07-12
+- generate_chart: output_path → dest — 小欧-2026-07-12
+- registry_read/write/delete: key_path → path（含别名表 keypath/registry_path 恢复）— 小欧-2026-07-12
+- query_sql/execute_sql/get_db_schema: db_path → path — 小欧-2026-07-12
+- document x8: file_name → path（read/write pdf/docx/pptx/xlsx）— 小欧-2026-07-12
+- 别名表全量同步（85条映射）+ 纠正 registry_write "value"/"data" 指向不存在的 value_data 预存 bug — 小欧-2026-07-12
+- 端到端校验 verify_dispatch：17工具/85条别名映射 normalize_params→schema 全绿 — 小欧-2026-07-12
+
+### Bug 修复
+- WindowsPath target 致 len() 崩溃（read_xlsx + write_* Path 入参 str 化 + observation_formatter str 防御）— 小欧-2026-07-12
+- edit_text_file before/after 独立行插入（新增 _insert_line_after，避免行拼接污染）— 小欧-2026-07-12
+
+### 文档/清理
+- notes/ 归档清理；删除废弃临时脚本 _audit_path/verify_dispatch/check_downstream/scan_path_leak/scan_write_success — 小欧-2026-07-12
+
+---
+v0.18.12
 更新时间: 2026-07-11 14:22:00
 ## v0.18.11→v0.18.12 变更汇总 - 小欧-2026-07-11
 
