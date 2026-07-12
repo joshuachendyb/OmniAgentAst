@@ -92,7 +92,7 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
     """按type分派handler，基于 event type + recoverable 推断状态 — chendyg 2026-07-01
     
     状态推断规则:
-    - "error" + recoverable → set_failed（非重试场景由编排层except块处理SUSPENDED）
+    - "error" + recoverable → 置RETRYING（重试由编排层except块处理）；"error" + !recoverable → set_failed
     - "error" + !recoverable → set_failed
     - "final" → set_completed
     - 其他 → continue（不设状态）
@@ -123,7 +123,7 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
         error_event = last_error_event
         error_msg = error_event.get_content() if hasattr(error_event, 'get_content') else ""
         if getattr(error_event, 'recoverable', False):
-            set_status(agent, AgentStatus.SUSPENDED, error_msg)
+            set_status(agent, AgentStatus.RETRYING, error_msg)
         else:
             set_failed(agent, error_msg)
     elif "final" in seen_types:
@@ -307,11 +307,12 @@ async def run_react_cycle(
             if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED):
                 break
 
-            # ======== SUSPENDED 处理（不是重试）========
-            # 说明：llm_call_count 已+1进入下一step，这不是"重试当前step"。
-            # SUSPENDED 仅表示"当前step出错了，让 while 循环继续走下一step"。
-            # 与系统层（base_service.py:168）的HTTP请求重试无关，是两套独立机制。
-            if agent.status == AgentStatus.SUSPENDED:
+            # ======== RETRYING 处理（react循环重试）========
+            # 说明：本态是"可恢复错误后的重试中间态"。llm_call_count 已+1，
+            # react循环回 THINKING 重新调用LLM（即第N次重试），并非原地重跑当前step。
+            # 与 tool_retry_engine 的"工具级重试"（同工具重执行）及 base_service 的
+            # HTTP请求重试是两套独立机制，勿混淆。 — 小欧 2026-07-12 修正矛盾注释
+            if agent.status == AgentStatus.RETRYING:
                 agent._retry_count = getattr(agent, '_retry_count', 0) + 1
                 if agent._retry_count > 3:
                     set_failed(agent, "可恢复错误重试超限")
@@ -348,7 +349,7 @@ async def run_react_cycle(
             if agent._retry_count > 3:
                 set_failed(agent, f"重试超限: {e}")
             else:
-                set_status(agent, AgentStatus.SUSPENDED, str(e)[:200])
+                set_status(agent, AgentStatus.RETRYING, str(e)[:200])
         else:
             set_failed(agent, f"循环异常: {e}"[:200])
 

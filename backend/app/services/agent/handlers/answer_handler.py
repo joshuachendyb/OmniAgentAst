@@ -50,7 +50,7 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
     content = format_tool_call_markup(parsed.get("content", ""))
     reasoning = format_tool_call_markup(parsed.get("reasoning", ""))
 
-    # 真·空：content和reasoning都空 → ErrorStep SUSPENDED
+    # 真·空：content和reasoning都空 → ErrorStep 触发RETRYING态
     if not content and not reasoning:
         logger.warning(f"[handle_answer] LLM返回空内容(step={step})")
         agent.message_builder.add_assistant_message("")
