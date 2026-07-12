@@ -1,8 +1,8 @@
 # OmniAgentAs-desk
 
-> AI智能体桌面应用 - 基于 ReAct 架构的全栈 Web 应用（React + FastAPI）
+> 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**版本**: v0.15.9 | **更新时间**: 2026-06-12 10:13:54 | **作者**: 北京老陈团队
+**版本**: v0.18.14 | **更新时间**: 2026-07-12 17:21:14 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-07-12
 
 ---
 
@@ -12,9 +12,9 @@ OmniAgentAs-desk 是一个基于 **ReAct (Reasoning + Acting)** 架构的智能�
 
 | 能力 | 说明 |
 |------|------|
-| **58个工具函数** | 覆盖文件、Shell、网络、系统、桌面、文档、元工具等7个分类 |
+| **63个工具函数** | 覆盖 file/shell/network/system/desktop/document/dataanalysis/fundamental/win_registry/timer 共10个分类 |
 | **ReAct推理引擎** | thought → action → observation 循环推理 |
-| **AgentFactory分发** | 按意图类型分发到UniversalReactAgent / DesktopReactAgent |
+| **统一Agent调度** | 单一 UniversalAgent（BaseAgent 子类，配置驱动），无 AgentFactory 分发 |
 | **多AI Provider** | OpenCode、智谱AI、DeepSeek、Kimi等 OpenAI兼容API |
 | **流式响应** | SSE实时推送，推理过程即时可见 |
 | **会话管理** | 历史记录、搜索、标题自动生成、跨会话切换 |
@@ -31,112 +31,134 @@ OmniAgentAs-desk 是一个基于 **ReAct (Reasoning + Acting)** 架构的智能�
 | **后端** | Python / FastAPI / Uvicorn | 3.13 / ≥0.109.0 / ≥0.27.0 |
 | **前端** | React / TypeScript / Vite / Ant Design | 18 / 5 / — / 5 |
 | **LLM集成** | 多Provider适配层（OpenAI兼容API） | — |
-| **数据库** | SQLite (aiosqlite + SQLAlchemy) | — |
+| **数据库** | SQLite（aiosqlite + SQLAlchemy，默认）；支持 PostgreSQL/MySQL 连接类型抽象 | — |
+| **任务执行** | 请求内流式（SSE），`run_react_cycle` 单请求驱动；无独立任务队列/Redis | — |
 | **测试** | pytest / Vitest / Playwright | — |
 
-### 2.2 当前架构图
+### 2.2 当前架构图（代码实际，v0.18.14）
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      前端 (React + Vite)                     │
+│                 前端 (React + Vite + Ant Design)             │
 │  ┌─────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────┐ │
-│  │  Chat   │  │  Settings  │  │  Session   │  │  Mark   │ │
-│  │   UI    │  │    UI      │  │    UI      │  │   down  │ │
+│  │  Chat   │  │  Settings  │  │  Session   │  │ Security│ │
+│  │   UI    │  │    UI      │  │    UI      │  │  Alert  │ │
 │  └────┬────┘  └──────┬──────┘  └──────┬──────┘  └────┬────┘ │
 │       └────────────┴─────────────┴────────────┘         │
-│                         │ SSE 流式                        │
+│                         │ SSE 流式 / REST                 │
 └─────────────────────────┬───────────────────────────────┘
-                          │
+                           │
 ┌─────────────────────────┴───────────────────────────────┐
-│                     后端 (FastAPI)                        │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │
-│  │ ChatRouter  │  │ 意图识别    │  │ ReAct Loop  │       │
-│  │   路由层    │  │CRSS+LLM兜底 │  │   执行层    │       │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘       │
-│         │               │              │               │
-│  ┌──────┴──────┐  ┌──────┴──────┐  ┌──────┴──────┐       │
-│  │AgentFactory │  │   Tools    │  │  Safety    │       │
-│  │ 2个Agent类  │  │  58个工具  │  │ 安全检查   │       │
-│  └─────────────┘  └─────────────┘  └─────────────┘       │
+│              后端 (FastAPI，单进程，无独立网关)            │
+│  ┌─────────────┐  ┌──────────────────────────────────┐  │
+│  │ ChatRouter  │  │  UniversalAgent (BaseAgent 子类)  │  │
+│  │  /api/v1/   │  │   └─ run_react_cycle (ReAct 循环) │  │
+│  └──────┬──────┘  └──────────────┬───────────────────┘  │
+│         │                        │                      │
+│  ┌──────┴────────────────────────┴───────────────────┐  │
+│  │  ToolRegistry(单例) ── 10分类63工具               │  │
+│  │  Safety 四层：开关→安全级→已知风险→file_safety    │  │
+│  │  LLM 客户端(httpx, 多Provider)                    │  │
+│  └────────────────────────────────────────────────────┘  │
+│  数据层：SQLite(chat_history.db/operations.db)+多库抽象    │
 └─────────────────────────────────────────────────────────┘
 ```
 
+> 说明：FastAPI 直接对外提供 REST/SSE，未独立出「网关层（认证/权限/限流）」微服务；任务在单次请求内由 `run_react_cycle` 流式执行，无独立任务队列。详见 2.3。
+
+
 ---
 
-## 三、工具体系（58个）
+### 2.3 架构现状与常见目标架构的偏差
 
-### 3.1 工具分类（7个ToolCategory）
+> 下表基于 v0.18.14 代码实际核查（grep + 运行时 registry 加载），如实标注与「网关认证/权限/限流 + 任务队列 + Redis + 多端接入」理想架构的差异。
+
+| 维度 | 现状（代码实际） | 与理想架构差异 |
+|------|----------------|---------------|
+| 接入端 | 仅 React Web App（`frontend/`）+ FastAPI REST API（`api/v1/`） | ❌ 无独立桌面客户端、无移动端 |
+| API 网关 | FastAPI 直接对外，无独立 Gateway 微服务 | ❌ 未独立成层 |
+| 用户认证 | 仅 HITL 人工确认（`action_handler.authorization_required`）+ 敏感字段脱敏 | ❌ 无用户登录/鉴权体系 |
+| 权限 | 工具/文件路径级校验（`file_path_checker`/`registry_path_checker`） | ❌ 无用户级 RBAC |
+| 限流 | 仅 LLM 429 限流检测（`base_service._is_rate_limit_status`） | ❌ 无请求级/IP 限流 |
+| 日志 | 有（`app/logger/`） | ✅ |
+| 任务队列 | 无 Redis/Celery/RQ；任务在单次请求内流式执行（`chat/stream.py`→`run_react_cycle`），由 `task_tracker` 做暂停/取消/恢复 | ❌ 无独立任务队列服务 |
+| 缓存 | 无 | ❌ 无 Redis 缓存 |
+| Agent 执行 | `UniversalAgent` + `run_react_cycle`（ReAct 循环） | ✅ |
+| 工具注册 | `ToolRegistry` 单例 + `ensure_tools_registered()`，10 分类 63 工具 | ✅ |
+| 数据存储 | SQLite（`chat_history.db`/`operations.db`），支持 PostgreSQL/MySQL 连接抽象 | ✅（默认 SQLite） |
+
+**结论**：系统为「单进程 FastAPI + React Web + ReAct Agent + 工具注册表 + SQLite」的紧凑架构，并非带独立网关、任务队列、Redis 的多层分布式架构。
+
+---
+
+## 三、工具体系（63个）
+
+### 3.1 工具分类（10个ToolCategory，共63工具）
 
 | 分类 | 数量 | 说明 |
 |------|------|------|
-| **FILE** | 11 | 文件读写、搜索、编辑、归档等 |
-| **SHELL** | 4 | 注册到SYSTEM分类，Shell命令执行、Python/JS代码执行 |
-| **NETWORK** | 5 | HTTP请求、下载、网页抓取、网络诊断 |
-| **SYSTEM** | 10 | 系统信息查询、进程管理、服务控制、环境变量 |
-| **DESKTOP** | 9 | 窗口管理、截屏、OCR、剪贴板、通知 |
-| **DOCUMENT** | 9 | PDF/Word/Excel读写、SQL查询、图表生成 |
-| **META** | 10 | 注册到SYSTEM分类，工具帮助、时间日期、定时器 |
-| **合计** | **58** | |
+| **FILE** | 14 | 文件读写、搜索、编辑、归档、树、校验等 |
+| **SHELL** | 2 | Shell命令执行、Python/JS代码执行 |
+| **NETWORK** | 5 | HTTP请求、下载、网页抓取、网络诊断、搜索 |
+| **SYSTEM** | 4 | 系统计划任务、事件日志 |
+| **DESKTOP** | 11 | 窗口管理、截屏、剪贴板、键鼠、通知 |
+| **DOCUMENT** | 8 | PDF/Word/Excel/PPT 读写 |
+| **DATAANALYSIS** | 6 | SQL查询/执行、图表生成、数据筛选/分析 |
+| **FUNDAMENTAL** | 7 | 系统信息、时间日期、通知、工具搜索 |
+| **WIN_REGISTRY** | 3 | 注册表读/写/删 |
+| **TIMER** | 3 | 定时器设置/列出/清除 |
+| **合计** | **63** | |
 
-> **注**：SHELL工具注册到SYSTEM分类，META工具注册到SYSTEM分类，其余分类一对一注册。
+> **注**：分类与数量以 `backend/app/tools/tool_constants.py` 的 `CATEGORY_MODULES` + 运行时 `ensure_tools_registered()` 为准（上述为 v0.18.14 实际加载值）。`validate/` 为校验层（路径/URL/超时/注册表），不计入对外工具。
 
 ### 3.2 工具注册架构
 
 ```
-backend/app/services/tools/
-├── registry.py              # 统一注册表 + ToolCategory枚举（7分类）
-├── __init__.py              # 总入口（导入触发注册）
+backend/app/tools/
+├── registry.py              # ToolRegistry 单例 + 装饰器 register_tool
+├── tool_types.py            # ToolCategory 枚举 / ToolMetadata
+├── tool_constants.py        # CATEGORY_MODULES（分类→模块/注册函数映射）
 ├── tool_aliases.py          # 工具别名映射
-├── tool_config.py           # 工具配置
-├── tool_meta.py             # 工具元数据
-├── tool_result_utils.py     # 工具结果工具函数
 ├── toolhelper/              # 工具辅助
-├── file/                    # 文件操作
-├── shell/                   # Shell命令
-├── network/                 # 网络通信
-├── desktop/                 # 桌面操作
-├── system/                  # 系统信息
-├── document/                # 文档处理
-└── meta/                    # 元工具
+├── validate/                # 校验层（路径/URL/超时/注册表，非对外工具）
+├── file/                    # 文件操作（14）
+├── shell/                   # Shell命令（2）
+├── network/                 # 网络通信（5）
+├── system/                 # 系统计划任务/事件日志（4）
+├── desktop/                # 桌面操作（11）
+├── document/               # 文档处理（8）
+├── dataanalysis/            # 数据分析（6）
+├── fundamental/             # 基础能力（7）
+├── win_registry/            # 注册表（3）
+└── timer/                   # 定时器（3）
 ```
 
-每个分类目录结构：
+每个分类目录结构（`{category}_register.py` 为注册入口，`{category}_tools.py` 为具体实现）：
 ```
 {category}/
 ├── __init__.py              # 导入触发注册
 ├── {category}_schema.py     # Pydantic 参数模型
-├── {category}_register.py   # 注册点
+├── {category}_register.py   # 注册点（_register_{category}_tools）
 └── {category}_tools.py      # 具体实现
 ```
+
 
 ---
 
 ## 四、Agent体系
 
-### 4.1 当前架构（2个Agent实现类）
+### 4.1 当前架构（BaseAgent + 单一 UniversalAgent）
 
 ```
-BaseAgent(ABC)                 ← ReAct循环核心
-ReactAgentMixin                ← 公用逻辑混入
-RollbackMixin                  ← rollback能力（仅UniversalReactAgent使用）
-ToolStepMixin                  ← 工具步骤管理
-         ↓ MRO
-UniversalReactAgent            ← ToolStep + ReactAgentMixin + Rollback + BaseAgent
-DesktopReactAgent              ← ToolStep + ReactAgentMixin + BaseAgent
+BaseAgent(ABC)                 ← 抽象基类，含 run_react_cycle 编排钩子
+    ↓ 继承
+UniversalAgent(BaseAgent)      ← 唯一实现类，配置驱动（意图/模型/工具集由 config 决定）
 ```
 
-### 4.2 AgentFactory 意图分发
+> 代码实际（`backend/app/services/agent/`）：仅 `base_agent.py` 的 `BaseAgent(ABC)` 与 `universal_agent.py` 的 `UniversalAgent(BaseAgent)` 两个类，**无 AgentFactory、无 UniversalReactAgent/DesktopReactAgent 分发**。所有意图类型统一进入 `UniversalAgent.run_react_cycle` 完成 ReAct 循环。
+### 4.2 意图分发（现状）
 
-```python
-AgentFactory.create(intent_type, llm_client, task_id, ...)
-├── "file"      → UniversalReactAgent
-├── "system"    → UniversalReactAgent  (含 shell / meta / time / code_execution 等别名)
-├── "network"   → UniversalReactAgent
-├── "document"  → UniversalReactAgent  (含 database 别名)
-└── "desktop"   → DesktopReactAgent
-```
-
-共有 **5个意图类型**、含别名 **12个入口**，后路由到 2 个实现类。
+原设计的 `AgentFactory` 多类分发已移除。当前流程：请求经 `ChatRouter` → 意图识别（CRSS 正则 + LLM 兜底）→ 统一构造 `UniversalAgent` 并调用 `run_react_cycle`。意图类型只影响系统 Prompt 与工具集装配，不影响 Agent 类的选择。
 
 ### 4.3 安全体系（v0.15.9）
 
@@ -157,9 +179,9 @@ AgentFactory.create(intent_type, llm_client, task_id, ...)
 | SemanticRouter | 设计中 | LLM语义路由，替代CRSS正则匹配 |
 | ToolSafetyLayer | 设计中 | 工具声明式安全分级 |
 | ToolObserver | 设计中 | 全量审计日志 + 异常检测 |
-| HITL | 设计中 | DANGEROUS工具人机协同确认 |
+| HITL | 部分实现 | DANGEROUS 工具人机协同确认已落地（`action_handler.authorization_required` + `wait_for_confirmation_result`） |
 
-> 统一Agent（GenericReactAgent → UniversalReactAgent）已在 v0.14.0 完成，详见 `doc-agent2.0/`。
+> 统一Agent（BaseAgent → UniversalAgent）已在 v0.14.0 完成，详见 `doc-agent2.0/`。HITL 确认机制在 v0.18.x 已接入。
 
 ---
 
@@ -169,31 +191,31 @@ AgentFactory.create(intent_type, llm_client, task_id, ...)
 OmniAgentAs-desk/
 ├── backend/                    # Python FastAPI 后端
 │   ├── app/
-│   │   ├── api/v1/             # API 端点
+│   │   ├── api/v1/             # API 端点（ChatRouter 等）
+│   │   ├── tools/              # 工具函数（10分类63工具，含 validate 校验层）
 │   │   ├── services/
-│   │   │   ├── agent/          # Agent体系（base_react, 2个实现类, mixins/）
-│   │   │   ├── tools/          # 工具函数（7个分类目录，58个工具）
-│   │   │   ├── preprocessing/  # 意图分类
-│   │   │   ├── intents/        # 意图定义
-│   │   │   ├── safety/         # 安全检查
-│   │   │   └── llm_core.py     # LLM客户端
+│   │   │   ├── agent/          # Agent体系（base_agent + universal_agent + react_cycle + handlers + steps）
+│   │   │   ├── llm/            # LLM 客户端（httpx 多Provider）
+│   │   │   ├── safety/         # 安全检查（tool_safety_checker / file_safety）
+│   │   │   ├── task/           # 任务追踪（task_tracker / pause/cancel/resume）
+│   │   │   └── chat/           # 对话编排（stream / chat_stream）
 │   │   └── utils/
 │   ├── tests/                  # 后端测试（pytest）
-│   ├── tools/                  # 测试与调试脚本
 │   └── requirements.txt
-├── frontend/                   # React + TypeScript 前端
+├── frontend/                   # React + TypeScript 前端（Web App，非桌面/移动端）
 │   ├── src/
-│   │   ├── components/         # UI 组件
+│   │   ├── components/         # UI 组件（Chat / Security / Layout 等）
 │   │   ├── pages/              # 页面
 │   │   ├── services/           # API 服务
-│   │   └── utils/              # 工具函数
-│   ├── tests/                  # 前端测试
+│   │   ├── hooks/              # 聊天流/任务控制等 Hook
+│   │   └── utils/              # 工具函数（SSE 处理等）
+│   ├── tests/                  # 前端测试（Vitest / Playwright）
 │   └── package.json
 ├── config/                     # 配置文件
 ├── doc-agent2.0/               # Agent 2.0架构重构设计文档
 ├── doc/                        # 系统设计文档
 ├── notes/                      # 调试笔记
-├── version.txt                 # 版本变更记录
+├── version.txt                 # 版本变更记录（append-only）
 └── AGENTS.md                   # 开发规范
 ```
 
@@ -425,6 +447,7 @@ cd backend
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| **v0.18.14** | 2026-07-12 | README架构章节据代码现状重写：63工具10分类、UniversalAgent单一实现(移除AgentFactory)、架构图与现状偏差(2.3)如实标注(无独立网关/认证/RBAC/限流/任务队列/Redis/桌面移动端)、项目结构路径修正 - 小欧-2026-07-12 |
 | **v0.15.9** | 2026-06-12 | CRSS关键词修复(txt/md/json→FILE)、write_text_file参数text→content统一、JSON混合提取容错、safety stub→真实file_safety委托(禁止向后兼容+复用优先)、validate_config SLAP/DRY修复、version.txt空行跳过、P1 E2E测试 14/14通过(xfail清零)、README全面内容更新 |
 | **v0.15.8** | 2026-06-11 | 四层安全体系修复（P0平行调用丢失+P1字段重复+P2 fc_context共用） |
 | v0.13.46 | 2026-05-25 | feature/prompt-optimization 全量变更合并 |
@@ -461,4 +484,4 @@ cd backend
 
 ---
 
-**许可**: 内部项目 | **最后更新**: 2026-06-12 10:13:54 | **版本**: v0.15.9
+**许可**: 内部项目 | **最后更新**: 2026-07-12 17:21:14 | **版本**: v0.18.14

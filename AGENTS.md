@@ -101,17 +101,66 @@ npm run test:e2e     # Playwright
 
 ---
 
+## E2E 全链路测试（核心要点）
+
+> 完整流程见 `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md`（v2.8）。以下为「启动」与「执行检查」的抽取要点，每次 E2E 必读。
+
+### 启动后端（每次测试前必做）
+1. 杀掉旧进程：`Stop-Process -Id (Get-NetTCPConnection -LocalPort 8000).OwningProcess -Force`
+2. 独立 PowerShell 窗口启动（**不走 OpenCode bash tool**，避免日志混扰）：
+   `Start-Process powershell -ArgumentList "-NoExit","-Command","cd 'G:\OmniAgentAs-desk\backend'; python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000" -WindowStyle Normal`
+3. 验证：`Invoke-RestMethod http://127.0.0.1:8000/api/v1/health` 返回 200（或窗口显示 `Application startup complete`）
+
+### 执行脚本（铁律）
+- **一次只跑一个 case**，严禁批量；核心脚本默认超时 2000s，**严禁给启动脚本另设超时**
+- E2E 调真实 LLM，单次常 >120s；OpenCode bash 工具会强杀进程 → **必须用 subprocess.Popen 方式**，禁止直接 bash `python -m pytest`
+- 方式：用 Python 内联脚本调 `subprocess.Popen`，bash tool timeout 设 `9007199254740991`，pytest 自行管理超时（`--timeout=2900`）；stdout/stderr 落盘 `tests/output/XXX_stdout.txt` / `XXX_stderr.txt`，结果查 junitxml
+  ```
+  python -c "
+  import subprocess, sys, os, time
+  out_dir = 'tests/output'
+  os.makedirs(out_dir, exist_ok=True)
+  p = subprocess.Popen(
+      [sys.executable, '-m', 'pytest', 测试文件, '--timeout=2900', '-x', '--tb=short', '-v',
+       f'--junitxml={out_dir}/XXX_result.xml'],
+      stdout=open(f'{out_dir}/XXX_stdout.txt', 'w'),
+      stderr=open(f'{out_dir}/XXX_stderr.txt', 'w'))
+  deadline = time.time() + 3000
+  while p.poll() is None and time.time() < deadline: time.sleep(10)
+  if p.poll() is None: p.kill(); print('TIMEOUT')
+  else: print(f'EXIT_CODE={p.returncode}')
+  with open(f'{out_dir}/XXX_stdout.txt') as f: print(f.read())
+  with open(f'{out_dir}/XXX_stderr.txt') as f:
+      e = f.read()
+      if e.strip(): print(e)
+  "
+  ```
+
+### 执行检查（手动，逐项验证）
+按 3 项验证，全过才进入下一个 case：
+1. **代码错误异常检查（最高优先级）**：查日志 traceback/ERROR、SSE 是否有 error 事件 → 有则立即停，走修复
+2. **调用链分析**：工具选择/顺序/LLM 次数是否合理，输出 `[CALL CHAIN]`
+3. **参数正确性**：路径/关键词等是否准确
+
+### 铁律
+- 测试目的是**发现问题**，不是跑脚本；严禁看到 FAIL 跳过
+- 一律真实后端 + 真实 LLM + 真实工具 + 真实 SQLite（`~/.omniagent/chat_history.db`），**禁止 Mock**
+
+---
+
 ## Architecture (Current)
 
 ### Backend: `backend/app/main.py` → FastAPI
 
-**Request flow**: `chat_openai.py` → `run_sse_stream.py` → `UniversalAgent` → `run_react_cycle()` → SSE
+**Request flow**: FastAPI `/api/v1` → `services/chat/stream.py`(SSE 编排) → `UniversalAgent.run_react_cycle()` → SSE
 
 **Agent system** (`backend/app/services/agent/`):
-- `core_agent/` — `react_cycle.py`(循环调度), `handlers/`(action/answer处理), `initialize_run_state.py`
-- `agent_utils/` — Agent层公共函数(message_utils, fc_message_types)
-- `steps/` — Step类型定义(ThoughtStep, ToolStep, FinalStep等)
-- `types/` — AgentStatus枚举, ObservationContext等
+- `base_agent.py` — `BaseAgent(ABC)`，含 `run_react_cycle` 编排钩子
+- `universal_agent.py` — `UniversalAgent(BaseAgent)`，唯一实现类（配置驱动，**无 AgentFactory 分发**）
+- `react_cycle.py` — ReAct 循环核心（薄调度：调用 LLM → 解析 → 分派 handler → 产出 Step）
+- `handlers/` — ReAct 循环业务处理器（action / answer）
+- `steps/` — Step 类型定义（ThoughtStep, ToolStep, FinalStep 等）
+- 其余模块：`message_builder.py` / `observation_formatter.py` / `status_table.py` / `tool_executor.py` / `tool_retry_engine.py` / `tool_cache_manager.py` / `llm_stream.py` / `initialize_run_state.py` / `fc_message_types.py`
 
 **Tool registry** (`backend/app/tools/`):
 - `registry.py` — `ToolRegistry` singleton, `ToolCategory` enum
@@ -133,7 +182,9 @@ npm run test:e2e     # Playwright
 ### Frontend: `frontend/src/main.tsx` → Vite+React
 
 - `src/pages/` — page components
-- `src/stores/` — state stores
+- `src/contexts/` — React Context 状态（AppContext / SecurityContext）
+- `src/hooks/` — 聊天流/任务控制/持久化等 Hook（`hooks/chat/`）
+- `src/components/` — UI 组件（Chat / Security / Layout 等）
 - `src/services/` — API layer
 - `src/utils/` — formatters, step rendering, SSE handling
 
@@ -151,7 +202,7 @@ OmniAgentAs-desk/
 │   │   ├── db/models/          # SQLAlchemy + Pydantic
 │   │   ├── tools/              # Tool registry + categories (file/shell/fundamental/...)
 │   │   ├── services/
-│   │   │   ├── agent/          # core_agent/, agent_utils/, steps/, types/
+│   │   │   ├── agent/          # base_agent + universal_agent + react_cycle + handlers/ + steps/（单一 UniversalAgent，无 AgentFactory）
 │   │   │   ├── tools/          # (deprecated, moved to app/tools/)
 │   │   │   ├── llm/            # LLM client (client_sdk.py, core.py, stream_parser.py)
 │   │   │   ├── safety/         # file_safety/, tool_safety_checker.py
@@ -237,26 +288,14 @@ ISP 接口窄，复用先查库
 
 ## Anchored Summary
 
-### Goal
-全量实现「Tool内部安全检查复核修订版v3」设计文档的代码变更。
+### 当前架构状态（v0.18.14，基于代码实测）
 
-### Progress (so far this session)
-- ✅ 创建 `tools/validate/` 目录，集中存放4个校验文件（url_validator, timeout_validator, file_path_checker, registry_path_checker）
-- ✅ url_validator 从 `network/` 迁移到 `validate/`，返回格式改为 `(is_valid, error_msg, warning_msg)` 三元组
-- ✅ 4个网络工具 import 路径更新 + 适配新返回格式
-- ✅ 6个工具入口添加 `validate_timeout()` 调用（http_request/download_file/fetch_webpage/network_diagnose/execute_shell_command/execute_code）
-- ✅ 13个写入工具添加 `validate_path_for_*()` 调用
-- ✅ 8个只读文件工具去掉 `_validate_path()` 系统级透传
-- ✅ 3个 registry 工具集成 `registry_path_checker`
-- ✅ 旧 `network/url_validator.py` 已删除
-- ✅ 验证：650 passed, 4 failed（均为预先存在的问题）
-- ✅ 2次 commit: `2a20cc069`(文档+timeout+URL) + `ccaaa49bd`(file_path+registry)
+- **接入层**：React Web App（`frontend/`）+ FastAPI REST/SSE（`api/v1/`）；无独立桌面客户端、无移动端
+- **Agent 层**：`BaseAgent(ABC)` + `UniversalAgent(BaseAgent)` 唯一实现（`backend/app/services/agent/`），`run_react_cycle` 驱动 ReAct 循环；**无 AgentFactory / 无多 Agent 类分发**
+- **工具层**：`ToolRegistry` 单例 + `ensure_tools_registered()`，**10 分类 63 工具**（file14/shell2/network5/system4/desktop11/document8/dataanalysis6/fundamental7/win_registry3/timer3）；`validate/` 为校验层（非对外工具）
+- **安全**：四层（开关→安全级→已知风险→file_safety）；HITL 对 DANGEROUS 工具确认已落地（`action_handler.authorization_required`）
+- **数据层**：SQLite（`~/.omniagent/chat_history.db`/`operations.db`），支持 PostgreSQL/MySQL 连接抽象；**无 Redis**
+- **任务执行**：单次请求内流式执行（`services/chat/stream.py` → `run_react_cycle`），`task_tracker` 做暂停/取消/恢复；**无独立任务队列**
+- **网关**：FastAPI 直接对外，未独立成 Gateway 微服务；用户认证/RBAC/请求级限流均未实现（仅 LLM 429 限流检测 + HITL 确认）
 
-### Pending
-- （无待办 — 本轮设计文档全量代码已实施完成）
-
-### 第2轮修正（补遗漏）
-以下3项遗漏已在第2轮补齐 + 第3次 commit `af19c933b`：
-- ✅ search_web.validate_proxy() 已存在（预先有，非遗漏）
-- ✅ 系统级检查扩展：`_check_known_risks()` 覆盖 `DOCUMENT/DATAANALYSIS/NETWORK/DESKTOP` 分类
-- ✅ 4组 validator 单元测试（131个测试全部通过）
+> 架构描述以本区块与上方 `Architecture (Current)` 为准；历史 session 的临时进度摘要已不再保留。
