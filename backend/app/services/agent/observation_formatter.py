@@ -428,7 +428,7 @@ def _format_llm_data(llm_data: Dict) -> str:
     message = status.get("message", "")
     tool = action.get("tool", "")
     tool_zh = action.get("tool_zh", "")
-    target = str(action.get("target", ""))
+    target = str(action.get("target", ""))  # 小欧 2026-07-12: 防御target为Path对象,转str避免len()崩溃
     if len(target) > 200:
         target = target[:200] + "..."
 
