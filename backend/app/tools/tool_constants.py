@@ -561,3 +561,29 @@ def sql_error_hint(e: Exception) -> str:
     if "no such function" in msg:
         return "函数名不存在，请检查SQL函数拼写"
     return "请检查SQL语法"
+
+
+def hint_for_data_error(e: Exception) -> str:
+    """根据数据处理异常类型返回诚实、准确的 hint — 小欧 2026-07-12
+
+    原则（与 file_path_checker.hint_for_read/write_error 一致）：
+    - 可识别异常给精准提示；
+    - 未知异常如实报出异常类型，由 detail 承载真实信息；
+    - 绝不编造与真实原因无关的提示（如对权限异常谎称"检查数据"）。
+    """
+    import sqlite3 as _sqlite3
+    if isinstance(e, _sqlite3.Error):
+        return sql_error_hint(e)
+    if isinstance(e, PermissionError) or (isinstance(e, OSError) and getattr(e, "errno", None) == 13):
+        return "无文件读取/写入权限，请检查文件权限后重试"
+    if isinstance(e, OSError) and getattr(e, "errno", None) == 28:
+        return "磁盘空间不足，请清理磁盘后重试"
+    if isinstance(e, OSError):
+        return f"文件操作失败({e.strerror or type(e).__name__})，详见错误明细"
+    if isinstance(e, ValueError):
+        return "数据或参数格式异常，请检查输入数据"
+    if isinstance(e, (TypeError, KeyError)):
+        return "数据结构异常，请检查字段和格式"
+    if isinstance(e, ImportError):
+        return "所需库未安装，请安装缺失依赖"
+    return f"处理失败({type(e).__name__})，详见错误明细"

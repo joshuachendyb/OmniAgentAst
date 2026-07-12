@@ -17,7 +17,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.tools.tool_fc_helper import _check_module, _serialize_rows
 from app.utils.json_utils import coerce_json
-from app.tools.tool_constants import ERR_FILTER_INVALID
+from app.tools.tool_constants import ERR_FILTER_INVALID, hint_for_data_error
 
 
 def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail="", hint="",
@@ -202,7 +202,7 @@ def filter_data(path: Optional[str] = None, data: Optional[str] = None,
         return build_success(data=result_data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail=str(e), hint="筛选异常，请检查数据", path=file_path, data=data)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail=str(e), hint=hint_for_data_error(e), path=file_path, data=data)
         return build_error(data={}, llm_data=llm_data)
 
 

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Union, Literal
 
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_SQL_EXEC, sql_error_hint
+from app.tools.tool_constants import ERR_SQL_EXEC, sql_error_hint, hint_for_data_error
 from app.tools.tool_fc_helper import _get_connection, _close_connection
 
 
@@ -142,7 +142,7 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=str(e), hint="请检查SQL语句和参数",
+        llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=str(e), hint=hint_for_data_error(e),
                                                connection_type=connection_type, path=path, limit=limit, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
     finally:

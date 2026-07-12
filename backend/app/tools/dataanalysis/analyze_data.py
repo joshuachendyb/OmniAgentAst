@@ -17,7 +17,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.utils.json_utils import coerce_json
-from app.tools.tool_constants import ERR_DOC_ANALYZE_DATA
+from app.tools.tool_constants import ERR_DOC_ANALYZE_DATA, hint_for_data_error
 
 
 def _convert_pd_value(val: Any) -> Any:
@@ -194,7 +194,7 @@ def analyze_data(path: Optional[str] = None, data: Optional[str] = None,
         return build_success(data=result, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=str(e), hint="分析异常，请检查数据", path=file_path, data=data)
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=str(e), hint=hint_for_data_error(e), path=file_path, data=data)
         return build_error(data={}, llm_data=llm_data)
 
 

@@ -22,7 +22,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.utils.json_utils import coerce_json
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.logger import logger
-from app.tools.tool_constants import ERR_DOC_CHART_GENERATE
+from app.tools.tool_constants import ERR_DOC_CHART_GENERATE, hint_for_data_error
 
 
 def _get_output_dir() -> str:
@@ -94,12 +94,13 @@ def _parse_inline_data(data: Union[str, dict, list]) -> Optional[dict]:
         return None
     try:
         parsed = json.loads(data)
-        labels = parsed.get("labels", [])
-        values = parsed.get("values", [])
-        if labels and values and len(labels) == len(values):
-            return {"labels": labels, "values": values}
     except json.JSONDecodeError:
-        pass
+        # 以"{"开头但JSON解析失败——返回 False 让调用方区分"非JSON"与"JSON格式错误" — 小欧 2026-07-12
+        return False
+    labels = parsed.get("labels", [])
+    values = parsed.get("values", [])
+    if labels and values and len(labels) == len(values):
+        return {"labels": labels, "values": values}
     return None
 
 
@@ -133,6 +134,11 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
 
         # 支持两种数据输入：内联JSON或文件路径 — 小欧 2026-07-07
         inline = _parse_inline_data(data)
+        if inline is False:
+            # data以"{"开头但JSON格式错误，不再误报为"文件不存在" — 小欧 2026-07-12
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"JSON格式错误: {data[:200]}", hint="数据JSON格式错误，请检查labels/values字段和JSON语法", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+            return build_error(data={}, llm_data=llm_data)
         if inline is not None:
             labels, values = inline["labels"], inline["values"]
         else:
@@ -246,7 +252,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         return build_success(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=str(e), hint="图表生成异常，请检查数据", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+        llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=str(e), hint=hint_for_data_error(e), data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
         return build_error(data={}, llm_data=llm_data)
 
 
