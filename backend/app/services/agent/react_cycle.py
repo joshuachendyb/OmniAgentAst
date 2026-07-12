@@ -209,7 +209,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
     # ── 场景B: 任务取消 ─────────────────────────────────────────
     if getattr(getattr(agent, 'llm_client', None), '_cancelled', False):
-        print(f"{time.strftime('%H:%M:%S')} [Interrupt] step={step}, cancelled")  # 小欧 2026-07-02 控制台
+        print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, cancelled")  # 小欧 2026-07-02 控制台
         yield agent._create_cancelled_chunk()
         yield agent._step_emitter.emit(FinalStep(
             step=step,
