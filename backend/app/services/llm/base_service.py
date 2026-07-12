@@ -335,12 +335,15 @@ class BaseAIService:
 
             delta = choices[0].get("delta", {})
             content = delta.get("content", "") or ""
-            reasoning_content = extract_reasoning_from_chunk(delta) or ""
+            # 这条消息是不是"思考"及多模型识别规则，统一见 reasoning.py 模块注释 — 小欧 2026-07-12
+            reasoning_text = extract_reasoning_from_chunk(delta) or ""
+
+            # 是思考 → 存进"思考区"；不是 → 存进"答案区"（详见 reasoning.py 第三节）
+            if reasoning_text:
+                return StreamChunk(content=reasoning_text, model=self.model, is_done=False, is_reasoning=True, raw_data=data_str)
 
             if content:
                 return StreamChunk(content=content, model=self.model, is_done=False, is_reasoning=False, raw_data=data_str)
-            if reasoning_content:
-                return StreamChunk(content=reasoning_content, model=self.model, is_done=False, is_reasoning=True, raw_data=data_str)
 
             # tool_calls delta — _extract_tool_calls 已处理,跳过冗余空 chunk — 小沈 2026-06-14
             tool_calls_delta = delta.get("tool_calls", [])

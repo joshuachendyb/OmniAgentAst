@@ -115,6 +115,8 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
                     tool_calls_result.extend(chunk.tool_calls)
 
             if chunk.content:
+                # is_reasoning 标记由 base_service.py 解析时打上（判定规则见 reasoning.py 模块注释）
+                # 此处只消费该标记：True → 思考区，False → 答案区 — 小欧 2026-07-12
                 is_reasoning = getattr(chunk, "is_reasoning", False)
                 if is_reasoning:
                     full_reasoning += chunk.content
