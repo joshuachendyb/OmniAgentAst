@@ -53,7 +53,7 @@ def validate_path_for_write(file_path: str, content: str = "", append: bool = Fa
         return False, "文件路径不能为空", None
     reserved = _has_windows_reserved_name(file_path)
     if reserved:
-        return False, f"文件名包含Windows保留名: {reserved}", None
+        return False, f"文件: {reserved}名包含Windows保留名", None
     path = Path(file_path)
     try:
         if path.exists() and path.is_file():
@@ -83,7 +83,7 @@ def validate_path_for_delete(file_path: str, recursive: bool = False, force: boo
         return False, "文件路径不能为空", None
     reserved = _has_windows_reserved_name(file_path)
     if reserved:
-        return False, f"文件名包含Windows保留名: {reserved}", None
+        return False, f"文件: {reserved}名包含Windows保留名", None
     if recursive and Path(file_path).is_dir():
         return True, None, "递归删除目录，请确认"
     if force:
@@ -204,14 +204,14 @@ def validate_path(
         # 检测路径中间是否出现多余盘符（如 E:\dir\E:\file）— 小沈 2026-07-08
         _tail = path[len(drive):]
         if re.search(r'[A-Za-z]:', _tail.lstrip("\\/")):
-            return False, f"路径中包含多余的盘符: {path}", None
+            return False, f"路径: {path}中包含多余的盘符", None
     # 只检查文件名部分（Path(...).name），排除路径分隔符和盘符:号 — 小欧 2026-07-04
     _fname = Path(path).name
     if any(c in _fname for c in _WINDOWS_RESERVED_CHARS):
-        return False, f"文件名包含Windows保留字符: {_fname}", None
+        return False, f"文件: {_fname}名包含Windows保留字符", None
     reserved = _has_windows_reserved_name(path)
     if reserved:
-        return False, f"文件名包含Windows保留名: {reserved}", None
+        return False, f"文件: {reserved}名包含Windows保留名", None
 
     # 第2层
     is_valid, sys_err, _ = validate_not_system_path(path)
@@ -229,9 +229,9 @@ def validate_path(
                            p.parent.exists(), str(p.parent))
             return False, "路径不存在: " + path, None
         if rule["must_be"] == "file" and not p.is_file():
-            return False, "不是文件: " + path, None
+            return False, path +"不是文件" , None
         if rule["must_be"] == "dir" and not p.is_dir():
-            return False, "不是目录: " + path, None
+            return False,  path +"不是目录", None
 
     # 第4层
     warnings = []
@@ -259,7 +259,7 @@ def validate_str_param(value: Any, param_name: str) -> Optional[str]:
     if value is None:
         return f"参数 {param_name} 不能为 None"
     if not isinstance(value, str):
-        return f"参数 {param_name} 必须为字符串, 实际类型: {type(value).__name__}"
+        return f"参数 {param_name} 必须为字符串, 实际类型为 {type(value).__name__}"
     if not value.strip():
         return f"参数 {param_name} 不能为空字符串"
     return None
@@ -267,20 +267,53 @@ def validate_str_param(value: Any, param_name: str) -> Optional[str]:
 
 def permission_error_hint(file_name: str) -> str:
     """PermissionError 时告知LLM更改文件名或路径 — 小欧 2026-07-08"""
-    return f"写入{file_name}权限不足，更换文件名或路径重试"
+    return f"写入的{file_name}权限不足，更换文件名或路径重试"
 
 
-def hint_for_write_error(e: Exception, file_name: str, default_hint: str) -> str:
-    """根据文件写入异常类型返回更精确的 hint — 小欧 2026-07-08
+def hint_for_write_error(e: Exception, file_name: str) -> str:
+    """根据文件写入异常类型返回准确、诚实的 hint — 小欧 2026-07-12 重写
 
-    覆盖常见可识别异常：
-    - OSError errno=28 (No space left on device) → 磁盘空间不足
-    - OSError errno in (36,63) (File name too long) → 文件名过长
-    - 其他 → 返回 default_hint
+    原则：绝不编造与真实原因无关的提示（如对非磁盘异常谎称“磁盘/权限”）。
+    可识别异常给精准提示；未知异常如实报出异常类型，由 detail 承载真实信息。
+
+    覆盖：
+    - OSError errno=28 → 磁盘空间不足
+    - OSError errno in (36,63) → 文件名过长
+    - IndexError → Markdown 表格列数不一致
+    - ValueError → 内容/格式异常
+    - 其他 → 如实返回异常类型，不编造原因
     """
     if isinstance(e, OSError):
         if e.errno == 28:
-            return f"磁盘空间不足无法写入，请清理磁盘后重试"
+            return "磁盘空间不足，请清理磁盘后重试"
         if e.errno in (36, 63):
-            return f"文件{file_name}的名称太长,更换短文件名或路径重试: "
-    return default_hint
+            return f"文件{file_name}名称过长，请使用更短的文件名或路径"
+    if isinstance(e, IndexError):
+        return "文档内容的 Markdown 表格列数不一致，请检查表格每行单元格数量是否相同"
+    if isinstance(e, ValueError):
+        return "文档内容或格式异常，请检查表格或参数后重试"
+    return f"写入失败({type(e).__name__})，详见错误明细"
+
+
+def hint_for_read_error(e: Exception, file_name: str) -> str:
+    """根据文件读取异常类型返回准确、诚实的 hint — 小欧 2026-07-12
+
+    原则（与 hint_for_write_error 一致）：绝不编造与真实原因无关的提示。
+    前置的 check_for_document_tool 已校验路径与文件类型，故兜底绝不回显
+    “文件路径/格式/完整性”等已查项，只如实反映未被识别的异常类型。
+
+    覆盖：
+    - FileNotFoundError / OSError errno=2 → 文件不存在
+    - PermissionError / OSError errno=13 → 无读取权限
+    - IsADirectoryError / OSError errno=21 → 路径指向目录
+    - 其他 → 如实返回异常类型，不编造原因
+    """
+    if isinstance(e, (FileNotFoundError, IsADirectoryError)) or (isinstance(e, OSError) and e.errno in (2, 21)):
+        if isinstance(e, IsADirectoryError) or (isinstance(e, OSError) and e.errno == 21):
+            return f"{file_name}是目录而非文件，请提供具体的文件路径"
+        return f"文件不存在: {file_name}，请确认路径是否正确"
+    if isinstance(e, PermissionError) or (isinstance(e, OSError) and e.errno == 13):
+        return f"无读取权限: {file_name}，请检查文件权限"
+    if isinstance(e, OSError):
+        return f"读取文件失败(OSError)，详见错误明细"
+    return f"读取失败({type(e).__name__})，详见错误明细"
