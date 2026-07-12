@@ -215,10 +215,10 @@ def write_pdf(
     except PermissionError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         hint = permission_error_hint(path)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, str(path), detail=str(e), user_title=title or "", hint=hint)  # 小欧 2026-07-12: path已Path()重赋值,须str()防target泄漏WindowsPath
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, str(path), detail=str(e), user_title=title or "", hint=hint)  # 小欧 2026-07-12: 此处path经Path()重赋值为WindowsPath,须str()化后传入builder,避免action.target持有Path对象触发观察格式化len()崩溃
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         hint = hint_for_write_error(e, path, "写入PDF异常,请检查磁盘空间和权限")
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, str(path), detail=str(e), user_title=title or "", hint=hint)  # 小欧 2026-07-12: path已Path()重赋值,须str()防target泄漏WindowsPath
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, str(path), detail=str(e), user_title=title or "", hint=hint)  # 小欧 2026-07-12: 此处path经Path()重赋值为WindowsPath,须str()化后传入builder,避免action.target持有Path对象触发观察格式化len()崩溃
         return build_error(data={}, llm_data=llm_data)
