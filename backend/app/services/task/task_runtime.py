@@ -21,6 +21,8 @@ from app.services.task.task_registry import (
     set_was_paused, build_step_dict,
 )
 
+from app.services.agent.status_table import set_status, AgentStatus
+
 # ============================================================
 # 取消/暂停操作（从 task_cancel 迁入）
 # ============================================================
@@ -99,6 +101,9 @@ async def task_pause_check(
         return
     if not await check_was_paused(task_id):
         await set_was_paused(task_id, True)
+        _agent = running_tasks.get(task_id, {}).get("agent")
+        if _agent is not None and _agent.status in (AgentStatus.THINKING, AgentStatus.EXECUTING):
+            set_status(_agent, AgentStatus.SUSPENDED, "用户暂停任务")
         step_value = next_step() if next_step else None
         yield _emit_step_sse(step_value, "paused", '任务已暂停')
     try:
@@ -113,6 +118,9 @@ async def task_pause_check(
     if await check_cancelled(task_id):
         return
     await set_was_paused(task_id, False)
+    _agent = running_tasks.get(task_id, {}).get("agent")
+    if _agent is not None and _agent.status == AgentStatus.SUSPENDED:
+        set_status(_agent, AgentStatus.THINKING, "任务已恢复")
     step_value = next_step() if next_step else None
     yield _emit_step_sse(step_value, "resumed", '任务已恢复')
 

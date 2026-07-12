@@ -23,16 +23,18 @@ class AgentStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
-    SUSPENDED = "suspended"
+    RETRYING = "retrying"
+    SUSPENDED = "suspended"   # 真挂起：用户暂停任务 / HITL 等用户确认（区别于 RETRYING 错误重试）— 小欧 2026-07-12
 
 
 # 合法状态转换表 — 只保留代码中实际存在的转换路径（KISS-DIRECT：无死代码）
 # 实际状态机流程：
 # 1. 正常流程：IDLE → THINKING → (EXECUTING → THINKING)* → COMPLETED
-# 2. 错误恢复：THINKING/EXECUTING → SUSPENDED → THINKING（重试）或 FAILED（重试超限）
+# 2. 错误恢复：THINKING/EXECUTING → RETRYING → THINKING（重试）或 FAILED（重试超限）
+# 2b. 真挂起：THINKING/EXECUTING → SUSPENDED（用户暂停 / HITL等确认）→ THINKING/EXECUTING（恢复）或 CANCELLED/FAILED
 # 3. 终止状态：CANCELLED（用户取消）、FAILED（不可恢复错误）、COMPLETED（成功完成）
-# 4. 取消可在任何活跃状态触发：THINKING/EXECUTING/SUSPENDED → CANCELLED
-# 5. 失败可在任何活跃状态触发：THINKING/EXECUTING/SUSPENDED → FAILED
+# 4. 取消可在任何活跃状态触发：THINKING/EXECUTING/RETRYING/SUSPENDED → CANCELLED
+# 5. 失败可在任何活跃状态触发：THINKING/EXECUTING/RETRYING/SUSPENDED → FAILED
 
 _TRANSITIONS = {
     # 初始状态
@@ -48,7 +50,8 @@ _TRANSITIONS = {
         AgentStatus.COMPLETED,     # 正常：直接回答完成
         AgentStatus.FAILED,        # 异常：不可恢复错误
         AgentStatus.CANCELLED,     # 异常：用户取消
-        AgentStatus.SUSPENDED,     # 异常：可恢复错误（_dispatch_handler中recoverable=True）
+        AgentStatus.RETRYING,     # 异常：可恢复错误（_dispatch_handler中recoverable=True）
+        AgentStatus.SUSPENDED,    # 异常：真挂起（用户暂停 / HITL等确认）— 小欧 2026-07-12
     },
 
     # 执行中
@@ -57,13 +60,23 @@ _TRANSITIONS = {
         AgentStatus.COMPLETED,     # 正常：执行完成，任务结束
         AgentStatus.FAILED,        # 异常：不可恢复错误
         AgentStatus.CANCELLED,     # 异常：用户取消
-        AgentStatus.SUSPENDED,     # 异常：可恢复错误（_dispatch_handler中recoverable=True）
+        AgentStatus.RETRYING,     # 异常：可恢复错误（_dispatch_handler中recoverable=True）
+        AgentStatus.SUSPENDED,    # 异常：真挂起（用户暂停 / HITL等确认）— 小欧 2026-07-12
     },
 
-    # 挂起（可恢复错误）
-    AgentStatus.SUSPENDED: {
+    # 重试（可恢复错误，react循环回THINKING重试）
+    AgentStatus.RETRYING: {
         AgentStatus.THINKING,      # 恢复：重试思考（react_cycle重试机制）
         AgentStatus.FAILED,        # 终止：重试超限
+        AgentStatus.CANCELLED,     # 终止：用户取消
+    },
+
+    # 真挂起（用户暂停任务 / HITL 等用户确认）
+    AgentStatus.SUSPENDED: {
+        AgentStatus.THINKING,      # 恢复：回到思考
+        AgentStatus.EXECUTING,     # 恢复：继续执行（HITL确认后）
+        AgentStatus.RETRYING,     # 挂起期间异常→转重试（HITL等待抛错时react_cycle except块置RETRYING）— 小欧 2026-07-12
+        AgentStatus.FAILED,        # 终止：挂起期间出错
         AgentStatus.CANCELLED,     # 终止：用户取消
     },
 

@@ -16,6 +16,7 @@ from app.services.agent.status_table import AgentStatus, set_cancelled, set_fail
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.chat.handlers import save_execution_steps_to_db
 from app.services.task.task_runtime import check_cancelled, check_paused
+from app.services.task.task_state import running_tasks
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 from app.utils.sse_formatter import format_agent_sse
@@ -133,6 +134,9 @@ async def run_sse_stream(
         agent = UniversalAgent(
             llm_client=llm_service, task_id=task_id,
         )
+        # 注册 agent 到任务运行表，供用户暂停路径（task_pause_check）设置 AgentStatus.SUSPENDED — 小欧 2026-07-12
+        if task_id in running_tasks:
+            running_tasks[task_id]["agent"] = agent
         if hasattr(llm_service, 'context_limit') and llm_service.context_limit:
             agent.message_builder.MAX_CONTEXT_CHARS = llm_service.context_limit
         
@@ -238,7 +242,8 @@ async def run_sse_stream(
                 AgentStatus.COMPLETED: "final",
                 AgentStatus.FAILED: "failed",
                 AgentStatus.CANCELLED: "interrupted",
-                AgentStatus.SUSPENDED: "failed",
+                AgentStatus.RETRYING: "failed",
+                AgentStatus.SUSPENDED: "paused",
             }
             end_type = _m.get(agent.status, "unknown")
 

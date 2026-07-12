@@ -20,7 +20,7 @@ from typing import Dict, List, Any, Optional
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep, ChunkStep  # ChunkStep用于重试前端通知 — 小欧 2026-07-09
-from app.services.agent.status_table import AgentStatus
+from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.observation_formatter import build_observation_text
 from app.constants import HITL_TIMEOUT
 from app.services.agent.tool_executor import execute_tool
@@ -91,6 +91,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                     },
                 ))
 
+                # 进入真挂起：等待用户确认（SUSPENDED=真挂起，区别于 RETRYING 错误重试）— 小欧 2026-07-12
+                set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认工具执行: {_cn}")
+
                 auth = await wait_for_confirmation_result(confirm_id, timeout=HITL_TIMEOUT)
 
                 if not auth.get("confirmed"):
@@ -100,7 +103,11 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                         error_message=f"用户拒绝执行工具: {_cn}"
                     ))
                     # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态
+                    set_status(agent, AgentStatus.EXECUTING, "用户拒绝，恢复执行态由_dispatch_handler推断")  # SUSPENDED→EXECUTING 合法
                     return
+
+                # 用户已确认：恢复执行态继续工具执行（SUSPENDED→EXECUTING 合法）— 小欧 2026-07-12
+                set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
 
 
 def _has_conflict(all_calls: List[Dict]) -> bool:
