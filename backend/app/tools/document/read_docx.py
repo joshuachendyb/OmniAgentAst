@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
+from app.tools.validate.file_path_checker import hint_for_read_error
 from app.tools.tool_constants import ERR_DOC_READ_DOCX
 
 from app.logger import logger
@@ -32,7 +33,7 @@ def _build_read_docx_llm_data(
         return {
             "summary": f"读取Word{file_path}，失败: {detail}",
             "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "读取Word失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
+            "status": {"exec_code": "error", "message": "读取Word失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -124,5 +125,5 @@ def read_docx(path: str) -> Dict[str, Any]:
         return build_success(data=result_data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=str(e), hint="读取Word文档异常,请检查文件完整性")
+        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=str(e), hint=hint_for_read_error(e, path))
         return build_error(data={}, llm_data=llm_data)

@@ -387,7 +387,7 @@ def write_pptx(
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        hint = hint_for_write_error(e, path, "写入PPT异常,请检查磁盘空间和文件完整性")
+        hint = hint_for_write_error(e, path)
         # 小欧 2026-07-12: 此处path经Path()重赋值为WindowsPath,须str()化后传入builder,
         # 避免action.target持有Path对象触发观察格式化len()崩溃
         llm_data = _build_write_pptx_llm_data("error", duration_ms, str(path), detail=str(e), hint=hint)

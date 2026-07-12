@@ -16,6 +16,7 @@ from typing import Any, Dict
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
+from app.tools.validate.file_path_checker import hint_for_read_error
 from app.tools.tool_constants import ERR_DOC_READ_PPTX
 
 from app.logger import logger
@@ -31,7 +32,7 @@ def _build_read_pptx_llm_data(
         return {
             "summary": f"读取PPT{file_path}，失败: {detail}",
             "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "读取PPT失败", "code": ERR_DOC_READ_PPTX, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
+            "status": {"exec_code": "error", "message": "读取PPT失败", "code": ERR_DOC_READ_PPTX, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -136,5 +137,5 @@ def read_pptx(path: str) -> Dict[str, Any]:
 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=str(e), hint="读取PPT文档异常,请检查文件完整性")
+        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=str(e), hint=hint_for_read_error(e, file_path))
         return build_error(data={}, llm_data=llm_data)

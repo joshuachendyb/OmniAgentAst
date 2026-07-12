@@ -21,7 +21,7 @@ from app.tools.network.http_client_sdk import create_http_client, HTTPClient
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy
 from app.tools.validate.timeout_validator import validate_timeout
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error
 
 from app.logger import logger
 
@@ -219,7 +219,7 @@ async def download(
         return build_success(data={}, llm_data=llm_data)
     except (PermissionError, OSError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NETWORK_WRITE_FILE, detail=str(e), hint="请检查磁盘空间和权限", timeout=timeout, proxy=proxy, headers=headers)
+        llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NETWORK_WRITE_FILE, detail=str(e), hint=hint_for_write_error(e, dest_path), timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
     except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
