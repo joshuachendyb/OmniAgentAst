@@ -13,6 +13,19 @@
 from typing import List, Tuple, Dict, Any, Optional
 
 
+def _normalize_table_widths(table_data: List[List[str]]) -> List[List[str]]:
+    """列宽归一化：以最大列数为基准，短行右侧补空串，保证各行列数一致 — 小欧 2026-07-12
+
+    仅补空、不截断、不丢数据；整齐表格为恒等变换，无行为变化。
+    """
+    if table_data:
+        _max_cols = max(len(row) for row in table_data)
+        for row in table_data:
+            if len(row) < _max_cols:
+                row.extend([""] * (_max_cols - len(row)))
+    return table_data
+
+
 def parse_markdown_table(lines: List[str], start_idx: int) -> Tuple[List[List[str]], int]:
     """
     解析Markdown表格，返回(表格数据, 结束索引)
@@ -39,7 +52,10 @@ def parse_markdown_table(lines: List[str], start_idx: int) -> Tuple[List[List[st
             if not all(c.replace('-', '').replace(':', '') == '' for c in cells):
                 table_rows.append(cells)
         i += 1
-    
+
+    # 列宽归一化：以最大列数为基准，短行右侧补空串，保证各行列数一致
+    # 防止渲染层按表头列数建表后因行宽不一触发 IndexError（小欧 2026-07-12）
+    _normalize_table_widths(table_rows)
     return table_rows, i
 
 
@@ -151,7 +167,7 @@ def normalize_table_data(table_data: Any) -> Optional[List[List[str]]]:
         return None
     if isinstance(table_data, dict):
         rows = dict_table_to_rows(table_data)
-        return rows if rows else None
+        return _normalize_table_widths(rows) if rows else None
     if isinstance(table_data, list):
         if not table_data:
             return None
@@ -162,8 +178,10 @@ def normalize_table_data(table_data: Any) -> Optional[List[List[str]]]:
                 rows = dict_table_to_rows(td)
                 if rows:
                     result.extend(rows)
-            return result if result else None
-        return [[str(c) if c is not None else "" for c in row] for row in table_data]
+            return _normalize_table_widths(result) if result else None
+        return _normalize_table_widths(
+            [[str(c) if c is not None else "" for c in row] for row in table_data]
+        )
     return None
 
 
