@@ -36,7 +36,7 @@ from app.services.task.task_registry import (
 from app.services.task.task_runtime import (
     cancel_task,
     task_cancel_check_and_yield,
-    task_interrupt_check,
+    task_cancel_check,
     task_pause_check,
 )
 from app.services.task.task_registry import pause_task, resume_task, task_cleanup
@@ -66,7 +66,7 @@ __all__ = [
     "task_cleanup",
     "task_cancel_check_and_yield",
 
-    "task_interrupt_check",
+    "task_cancel_check",
     "task_pause_check",
     # tracker/queries
     "get_tracker",

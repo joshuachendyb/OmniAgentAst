@@ -2,7 +2,7 @@
 """
 task_runtime — 运行态任务管理（内存）
 
-合并自: task_state_queries + task_cancel + task_cancel_check + task_interrupt_check
+合并自: task_state_queries + task_cancel + task_cancel_check
 小欧 2026-07-10
 """
 
@@ -28,12 +28,12 @@ from app.services.agent.status_table import set_status, AgentStatus
 # ============================================================
 
 async def cancel_task(task_id: str, session_id=None) -> dict:
-    interrupt_time = datetime.now()
+    cancel_time = datetime.now()
     logger.info(f"[TaskControl] 取消任务 {task_id}")
     success = await set_cancelled(
         task_id,
-        interrupt_time=interrupt_time.isoformat(),
-        cancel_request_time=interrupt_time.timestamp(),
+        cancel_time=cancel_time.isoformat(),
+        cancel_request_time=cancel_time.timestamp(),
     )
     ai_service = await get_task_field(task_id, "ai_service")
     if ai_service:
@@ -44,13 +44,13 @@ async def cancel_task(task_id: str, session_id=None) -> dict:
             logger.error(f"[Task Cancelled] 关闭HTTP连接失败: {e}")
     if success:
         logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为cancelled,保留记录")
-        return api_success(message=f"任务 {task_id} 已中断", task_status="cancelled", interrupt_time=interrupt_time.isoformat())
+        return api_success(message=f"任务 {task_id} 已取消", task_status="cancelled", cancel_time=cancel_time.isoformat())
     else:
         logger.warning(f"[TaskControl] 任务 {task_id} 不存在,可能已结束")
         return api_failure(message=f"任务 {task_id} 不存在", task_status="not_found")
 
 # ============================================================
-# 取消/暂停检查 + SSE（从 task_cancel_check + task_interrupt_check 迁入）
+# 取消/暂停检查 + SSE（从 task_cancel_check 迁入）
 # ============================================================
 
 async def task_cancel_check_and_yield(
@@ -58,15 +58,15 @@ async def task_cancel_check_and_yield(
     current_execution_steps: list, current_content: str
 ) -> Optional[str]:
     if await check_cancelled(task_id):
-        has_interrupted = any(
-            s.get('incident_value') == 'interrupted' for s in current_execution_steps
+        has_cancelled = any(
+            s.get('incident_value') == 'cancelled' for s in current_execution_steps
         )
-        if has_interrupted:
-            logger.info(f"[InterruptCheck] 任务 {task_id} 已有interrupted step,跳过")
+        if has_cancelled:
+            logger.info(f"[CancelCheck] 任务 {task_id} 已有cancelled step,跳过")
             return None
-        logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: True")
-        step_dict = build_step_dict(next_step(), "interrupted", '任务已被中断')
-        logger.info(f"[Step incident] 发送incident步骤(interrupted)")
+        logger.info(f"[CancelCheck] 任务 {task_id} 取消状态: True")
+        step_dict = build_step_dict(next_step(), "cancelled", '任务已被取消')
+        logger.info(f"[Step incident] 发送incident步骤(cancelled)")
         current_execution_steps.append(step_dict)
         return format_agent_sse(step_dict)
     return None
@@ -76,13 +76,13 @@ def _emit_step_sse(step: Optional[int], step_type: str, message: str) -> str:
     return format_agent_sse(build_step_dict(step, step_type, message))
 
 
-async def task_interrupt_check(
+async def task_cancel_check(
     task_id: str,
     next_step: Optional[Callable[[], int]] = None
 ) -> tuple:
     if await check_cancelled(task_id):
         step_value = next_step() if next_step else None
-        return True, _emit_step_sse(step_value, "interrupted", '任务已被中断')
+        return True, _emit_step_sse(step_value, "cancelled", '任务已被取消')
     return False, ""
 
 

@@ -102,7 +102,7 @@ class AgentResult:
 
 
 class MetaStep(ReasoningStep):
-    """运行时元事件 - start/interrupted/paused/resumed/retrying/authorization_required — 小沈"""
+    """运行时元事件 - start/cancelled/paused/resumed/retrying/authorization_required — 小欧 2026-07-12"""
 
     def __init__(
         self,

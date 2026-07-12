@@ -3,7 +3,7 @@
 chat_openai — Chat API层入口（路由+实现合一）
 
 小健 - 2026-06-07 清理:删除save_step_to_db调用,改用统一save_execution_steps_to_db
-task操作只在本层处理:register → interrupt检查 → pause检查 → stream → cancel检查 → cleanup
+task操作只在本层处理:register → cancel检查 → pause检查 → stream → cancel检查 → cleanup
 
 统一: 小健 - 2026-05-31
 更新: 小健 - 2026-06-17 重命名chat_stream_v2→chat_stream，删除版本后缀
@@ -25,12 +25,15 @@ from app.services.chat.handlers import create_error_response, send_start_step
 from app.utils.sse_formatter import format_agent_sse
 from app.api.v1.chat.models import ChatRequest
 from app.services.agent.steps.base import create_step_counter
-from app.services.task.task_registry import register_task, task_cleanup
+from app.services.task.task_registry import register_task
 from app.services.task.task_runtime import (
-    task_interrupt_check, task_pause_check_and_yield,
+    task_cancel_check, task_pause_check_and_yield,
     task_cancel_check_and_yield, check_cancelled,
 )
-from app.services.chat.stream import run_sse_stream
+from app.services.chat.stream import stream_reader
+from app.services.agent.agent_runner import run_agent_in_background
+from app.services.agent.universal_agent import UniversalAgent
+from app.services.task.task_state import create_stream_buffer, get_stream_buffer
 from app.services.task.task_context import _current_task_id
 from app.logger.prompt_logger import get_prompt_logger
 from app.services.task.hitl_confirmation import resolve_confirmation
@@ -146,7 +149,11 @@ class StreamState:
 
 
 async def chat_stream(request: ChatRequest):
-    """API层入口 — 小沈 2026-06-08 重构"""
+    """API层入口 — 小沈 2026-06-08 重构
+    北京老陈 2026-07-12: agent 执行与 SSE 传输解耦 — 小欧 2026-07-12
+
+    流程：注册控制态 + 创建流态缓冲 + 启动后台生产者(agent) + 消费者(SSE)读缓冲
+    """
     if not request.messages:
         return PlainTextResponse(
             content=create_error_response(error_type="invalid_request", error_message="消息列表不能为空"),
@@ -164,7 +171,7 @@ async def chat_stream(request: ChatRequest):
     session_id = request.session_id or str(uuid.uuid4())
 
     async def generate():
-        """生成器 — 小沈 2026-06-08 重构"""
+        """SSE 消费者生成器 — 小欧 2026-07-12"""
         task_id = str(uuid.uuid4())
         _current_task_id.set(task_id)
         next_step = create_step_counter()
@@ -193,72 +200,77 @@ async def chat_stream(request: ChatRequest):
         )
 
         try:
+            # 创建流态缓冲 + 注册控制态 — 小欧 2026-07-12
+            buffer = create_stream_buffer(task_id)
             await register_task(task_id, ai_service)
 
-            is_interrupted, interrupt_msg = await task_interrupt_check(task_id)
-            if is_interrupted:
-                yield interrupt_msg
-                await task_cleanup(task_id, 0)
+            is_cancelled, cancel_msg = await task_cancel_check(task_id)
+            if is_cancelled:
+                yield cancel_msg
                 return
 
+            # 发送 start 步骤 — 小沈 2026-06-08
             async for event in step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):
                 yield event
 
-            # llm_service=ai_service — ai_service是BaseAIService实例
-            # 小欧 2026-07-09: llm_client→llm_service重命名
-            sse_stream = run_sse_stream(
-                llm_service=ai_service, task_id=task_id,
-                last_message=user_input,
-                next_step=next_step,
-                session_id=session_id, current_execution_steps=execution_steps,
-                stream_state=state, start_time=_task_start_time,
-            )
-            cancel_event = asyncio.Event()
+            # 启动后台生产者(agent)，与 SSE 传输解耦 — 北京老陈 2026-07-12 小欧 2026-07-12
+            agent = UniversalAgent(llm_client=ai_service, task_id=task_id)
+            asyncio.create_task(run_agent_in_background(
+                agent, task_id, user_input, None, next_step, session_id, state, _task_start_time))
 
-            async def _cancel_poller():
-                while not cancel_event.is_set():
-                    await asyncio.sleep(1)
-                    if await check_cancelled(task_id):
-                        logger.info(f"[chat_stream] cancel轮询检测到取消, 通知主协程")
-                        cancel_event.set()
-                        return
-
-            poller_task = asyncio.create_task(_cancel_poller())
-            try:
-                async for sse_chunk in sse_stream:
-                    if cancel_event.is_set():
-                        break
-                    async for pause_event in task_pause_check_and_yield(task_id, next_step):
-                        yield pause_event
-
-                    cancelled_sse = await task_cancel_check_and_yield(
-                        task_id, next_step, session_id, execution_steps, state.current_content
-                    )
-                    if cancelled_sse:
-                        yield cancelled_sse
-                        break
-                    yield sse_chunk
-                else:
-                    prompt_logger.mark_completed()
-            finally:
-                # break/cancel 路径也标记已完成,避免遗漏 — 小欧 2026-07-01
-                current_log = prompt_logger.get_current_log()
-                if current_log and current_log["基本信息"].get("状态") == "处理中":
-                    prompt_logger.mark_completed()
-                cancel_event.set()
-                poller_task.cancel()
-                try:
-                    await poller_task
-                except asyncio.CancelledError:
-                    pass
-                await sse_stream.aclose()
-
+            # 消费者：读缓冲 + 注入 pause/cancel 检查
+            async for sse_chunk in _stream_with_control(buffer, task_id, next_step, session_id, execution_steps, state):
+                yield sse_chunk
+            else:
+                prompt_logger.mark_completed()
+        except asyncio.CancelledError:
+            # 客户端断开：静默返回，agent 后台继续运行 — 北京老陈 2026-07-12 小欧 2026-07-12
+            logger.info(f"[chat_stream] 客户端断开(task={task_id})，agent 后台继续")
+            return
         except Exception as e:
             logger.error(f"[chat_stream] Error: {e}", exc_info=True)
             prompt_logger.mark_error(str(e))
             yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
         finally:
-            await task_cleanup(task_id, state.llm_call_count)
+            # 生命周期清理已由生产者 run_agent_in_background 负责，此处仅保存 prompt 日志
             prompt_logger.save()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+async def _stream_with_control(buffer, task_id: str, next_step, session_id: str,
+                               execution_steps: list, state=None, after_seq: int = 0):
+    """SSE 消费者包装：读缓冲 + 注入 pause/cancel 检查 — 小欧 2026-07-12
+
+    首次请求(after_seq=0)与重连请求(after_seq=N)共用本函数，DRY。
+    客户端断开时 CancelledError 向上传播，由 generate() 捕获（不标记完成）。
+    """
+    async for sse_chunk in stream_reader(buffer, task_id, after_seq):
+        async for pause_event in task_pause_check_and_yield(task_id, next_step):
+            yield pause_event
+        cancelled_sse = await task_cancel_check_and_yield(
+            task_id, next_step, session_id, execution_steps,
+            state.current_content if state else "")
+        if cancelled_sse:
+            yield cancelled_sse
+            return
+        yield sse_chunk
+
+
+@router.get("/chat/stream/{task_id}")
+async def chat_stream_reconnect(task_id: str, session_id: str = None, after_seq: int = 0):
+    """SSE 重连端点：读同一任务的流态缓冲，不启动新 agent — 北京老陈 2026-07-12 小欧 2026-07-12
+
+    前端断线重连(最多3次)走此端点；3次全失败由前端发 cancel 置为取消。
+    """
+    buffer = get_stream_buffer(task_id)
+    if not buffer:
+        return PlainTextResponse(
+            content=create_error_response(error_type="not_found", error_message="任务不存在或已结束"),
+            media_type="text/event-stream"
+        )
+    next_step = create_step_counter()
+    return StreamingResponse(
+        _stream_with_control(buffer, task_id, next_step, session_id or "", [], None, after_seq),
+        media_type="text/event-stream"
+    )
