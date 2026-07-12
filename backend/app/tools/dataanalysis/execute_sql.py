@@ -127,7 +127,8 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                     else:
                         syntax_valid = True
                     finally:
-                        conn.execute("ROLLBACK TO SAVEPOINT dry_run_check; RELEASE SAVEPOINT dry_run_check")
+                        conn.execute("ROLLBACK TO SAVEPOINT dry_run_check")
+                        conn.execute("RELEASE SAVEPOINT dry_run_check")
                 else:
                     from sqlalchemy import text
                     conn.execute(text(sql))
