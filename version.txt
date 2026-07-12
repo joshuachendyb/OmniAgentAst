@@ -1,4 +1,28 @@
-﻿v0.18.14
+﻿v0.18.15
+更新时间: 2026-07-13 00:45:36 - 小欧-2026-07-12
+## v0.18.14→v0.18.15 变更汇总 - 小欧-2026-07-12
+
+### 取消语义与SSE重连重构（核心）
+- feat: agent 执行与 SSE 传输解耦（agent_runner 生产者 + stream_reader 消费者 + openai 新增 GET /chat/stream/{task_id} 重连端点 + task_state 新增 StreamBuffer）— 小欧-2026-07-12
+- feat: 前端 SSE 重连 GET 续传（after_seq）+ 取消语义统一 interrupted→cancelled + 命名校正 Interrupt→Cancel — 小欧-2026-07-12
+- refactor: 后端取消语义命名校正 interrupt→cancel（react_cycle/steps/__init__/task_runtime/task_cancel_check/agent_runner）名实相符 — 小欧-2026-07-12
+
+### AgentStatus 职责分离与命名
+- feat: AgentStatus SUSPENDED 真挂起与 RETRYING 错误重试职责分离 — 小欧-2026-07-12
+- refactor: AgentStatus.SUSPENDED→RETRYING 重命名同步 — 小欧-2026-07-12
+
+### 清理
+- refactor: 删除 handler 层遗留未使用的 chunk_buffer 死参数 — 小欧-2026-07-12
+- chore: 删除过期调试笔记 E2E-P9/unit-05 — 小欧-2026-07-12
+
+### 文档
+- docs: doc-7月优化 新增 SSE断线重连与取消语义统一设计方案 + Agent状态语义v1.1 + 系统关键流程深度分析（挪至7月目录）— 小欧-2026-07-12
+- docs: doc-7月发布 新增 v0.17.16-v0.18.14 2份版本变更详解文档 — 小欧-2026-07-12
+- docs: AGENTS/README/doc/notes AgentStatus分离架构说明与调试笔记更新 — 小欧-2026-07-12
+- docs: doc-优化 Agent状态语义v1.1与重试架构v2.2按本地代码更新 — 小欧-2026-07-12
+
+---
+v0.18.14
 更新时间: 2026-07-12 17:14:22 - 小欧-2026-07-12
 ## v0.18.13→v0.18.14 变更汇总 - 小欧-2026-07-12
 
