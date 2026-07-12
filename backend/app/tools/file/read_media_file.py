@@ -19,6 +19,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import MAX_MEDIA_READ_SIZE
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.validate.file_type_checker import check_for_media_tool
+from app.tools.validate.file_path_checker import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 
 from app.logger import logger
 
@@ -120,11 +121,11 @@ async def readmedia(
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
         return build_success(
-            data={"mime_type": mime_type, "base64_data": b64_data},
+            data={"file_name": path.name, "mime_type": mime_type, "base64_data": b64_data},
             llm_data=llm_data,
         )
     except Exception as e:
         logger.error(f"readmedia failed: {file_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint="请检查文件路径和权限")
+        llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint=hint_for_read_error(e, Path(file_path).name))  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)

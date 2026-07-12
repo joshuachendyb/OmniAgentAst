@@ -21,7 +21,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
 from app.services.task.task_context import _current_task_id
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
 from app.services.safety import record_operation, execute_with_safety
 from app.db.models.operation_models import OperationType
@@ -186,5 +186,5 @@ async def copy(
 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": str(e)}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": str(e)}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata, hint=hint_for_write_error(e, Path(source).name))  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)

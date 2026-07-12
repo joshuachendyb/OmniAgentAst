@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Literal, NamedTuple, Optional
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, MAX_SEARCH_RESULTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, MAX_SEARCH_FILE_SIZE
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file
 from app.tools.file.file_encoding import safe_read_lines
 from app.logger import logger
@@ -310,7 +310,7 @@ async def grep(
         )
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=str(e), hint="请检查搜索参数", user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=str(e), hint=hint_for_read_error(e, Path(path).name), user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode)  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)
 
     # 按 mtime 降序排序 — 小欧 2026-07-05

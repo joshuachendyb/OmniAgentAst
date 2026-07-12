@@ -20,7 +20,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_MOVE_FAILED
 from app.services.task.task_context import _current_task_id
 from app.db.models.operation_models import OperationType
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.services.safety import record_operation, execute_with_safety
 from app.logger import logger
 
@@ -109,7 +109,7 @@ async def _move_file_impl(
 
     except Exception as e:
         logger.error(f"Failed to move {source_path} -> {destination_path}: {e}")
-        return {"success": False, "error_detail": str(e), "params": {"source": source_path, "destination": destination_path}}
+        return {"success": False, "error_detail": str(e), "hint": hint_for_write_error(e, Path(source_path).name), "params": {"source": source_path, "destination": destination_path}}  # 统一错误提示 - 小欧 2026-07-12
 
 
 async def move(
@@ -170,5 +170,5 @@ async def move(
         )
     else:
         error_detail = result.get("error_detail", "移动文件失败")
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=error_detail, hint="请检查移动操作的参数和文件状态", user_overwrite=overwrite)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=error_detail, hint=result.get("hint", "请检查移动操作的参数和文件状态"), user_overwrite=overwrite)  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)

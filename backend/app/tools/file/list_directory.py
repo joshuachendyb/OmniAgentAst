@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
 from app.tools.tool_constants import TOOL_TIMEOUTS, LISTDIR_PAGE_SIZE
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
 
 
@@ -288,5 +288,5 @@ async def listdir(
     except Exception as e:
         logger.error(f"Failed to list directory {dir_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=str(e), hint="请检查目录路径和访问权限", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=str(e), hint=hint_for_read_error(e, Path(dir_path).name), user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)

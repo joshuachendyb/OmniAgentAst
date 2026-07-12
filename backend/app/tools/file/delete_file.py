@@ -21,7 +21,7 @@ from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
 from app.services.task.task_context import _current_task_id
 from app.db.models.operation_models import OperationType
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.services.safety import record_operation, execute_with_safety
 from app.logger import logger
 
@@ -141,7 +141,7 @@ async def _delete_file_impl(
 
     except Exception as e:
         logger.error(f"Failed to delete {file_path}: {e}")
-        return {"success": False, "error_detail": str(e), "params": {"source": file_path}}
+        return {"success": False, "error_detail": str(e), "hint": hint_for_write_error(e, Path(file_path).name), "params": {"source": file_path}}  # 统一错误提示 - 小欧 2026-07-12
 
 
 async def delete(
@@ -202,6 +202,6 @@ async def delete(
         elif "任务ID" in error_detail:
             error_hint = "请先创建任务再删除"
         else:
-            error_hint = "请检查文件是否存在和权限"
+            error_hint = result.get("hint") or "请检查文件是否存在和权限"  # 统一错误提示 - 小欧 2026-07-12
         llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=error_detail, hint=error_hint, user_recursive=recursive, user_force=force)
         return build_error(data={}, llm_data=llm_data)

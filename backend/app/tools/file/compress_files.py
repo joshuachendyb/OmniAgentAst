@@ -27,7 +27,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, TOOL_TIMEOUTS
 from app.services.task.task_context import _current_task_id
 from app.utils.json_utils import coerce_json
-from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param
+from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
 from app.services.safety import record_operation, execute_with_safety
 from app.db.models.operation_models import OperationType
@@ -362,5 +362,5 @@ async def compress(
 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=str(e), hint="请检查参数是否正确", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=str(e), hint=hint_for_write_error(e, Path(source).name), user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)

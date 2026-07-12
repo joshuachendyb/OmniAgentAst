@@ -23,7 +23,7 @@ from app.services.task.task_context import _current_task_id
 from app.db.models.operation_models import OperationType
 from app.services.safety import record_operation, execute_with_safety
 from app.tools.validate.file_type_checker import check_for_text_tool
-from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param
+from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import check_conflict_strict, record_write
@@ -413,7 +413,7 @@ async def _precise_replace_in_file(
 
     except Exception as e:
         logger.error(f"edittext failed: {file_path}: {e}")
-        return {"error_detail": str(e)}
+        return {"error_detail": str(e), "hint": hint_for_write_error(e, Path(file_path).name)}  # 统一错误提示 - 小欧 2026-07-12
 
 
 async def edittext(
@@ -477,7 +477,7 @@ async def edittext(
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     error_detail = result.get("error_detail")
     if error_detail:
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=result.get("hint"), user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)  # 统一错误提示 - 小欧 2026-07-12
         return build_error(
             data={"error_detail": error_detail, "params": {"path": file_path}},
             llm_data=llm_data,

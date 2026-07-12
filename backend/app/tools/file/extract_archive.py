@@ -21,7 +21,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_EXTRACT
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
 
 
@@ -247,5 +247,5 @@ async def extract(
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         logger.error(f"[extract] 解压失败: {e}")
-        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=str(e), user_destination=destination, user_overwrite=overwrite)
+        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=str(e), hint=hint_for_write_error(e, Path(source).name), user_destination=destination, user_overwrite=overwrite)  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)

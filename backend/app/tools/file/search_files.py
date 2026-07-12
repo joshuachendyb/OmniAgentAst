@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, FIND_PAGE_SIZE, MAX_SEARCH_RESULTS
 from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
 
 
@@ -205,7 +205,7 @@ async def find(
         await asyncio.to_thread(_search_sync)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索失败: {e}", hint="请检查搜索参数", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索失败: {e}", hint=hint_for_read_error(e, Path(search_dir).name), user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)
 
     all_matches.sort(key=lambda x: x.get("name", ""))
