@@ -477,8 +477,12 @@ def assert_stream_ended(result: Dict[str, Any]) -> str:
 
 # ─── 数据库连接(通过后端API, 避免sqlite3直连权限问题) ────────
 
-def _api_get(path: str, params: Optional[Dict] = None) -> Optional[Dict]:
-    """同步GET请求后端API -- 小健 2026-06-14"""
+def _api_get(path: str, params: Optional[Dict] = None, timeout: int = 10) -> Optional[Dict]:
+    """同步GET请求后端API -- 小健 2026-06-14
+
+    timeout 可调: 大任务结束后后端仍在后台做大体积DB写入(如1.4MB execution_steps),
+    可能短暂占用SQLite写锁导致本GET被阻塞, 调用方按需传更长超时 — 小欧 2026-07-13
+    """
     import urllib.request
     import urllib.parse
     url = f"{BASE_URL}{API_PREFIX}{path}"
@@ -486,7 +490,7 @@ def _api_get(path: str, params: Optional[Dict] = None) -> Optional[Dict]:
         url += "?" + urllib.parse.urlencode(params)
     try:
         req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except Exception:
         return None
@@ -532,7 +536,15 @@ def check_db(session_id: str) -> Dict[str, Any]:
 
     try:
         # ── chat_sessions (via API) ──
-        session_data = _api_get(f"/sessions/{session_id}/messages")
+        # 大任务结束后 send_chat 随SSE流结束即返回, 但 agent_runner 后台任务仍在 finally 中
+        # 做大体积DB写入(如1.4MB execution_steps), 短暂占用SQLite写锁, 致本GET可能超时返回None。
+        # 此处重试若干次, 等待真实后端保存完成(非Mock) — 小欧 2026-07-13
+        session_data = None
+        for _attempt in range(8):
+            session_data = _api_get(f"/sessions/{session_id}/messages", timeout=30)
+            if session_data and session_data.get("session_id"):
+                break
+            time.sleep(2)
         if session_data and session_data.get("session_id"):
             result["session_exists"] = True
             result["is_valid"] = bool(session_data.get("is_valid"))
