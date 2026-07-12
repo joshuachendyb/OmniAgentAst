@@ -381,11 +381,11 @@ def write_pptx(
     except PermissionError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         hint = permission_error_hint(path)
-        llm_data = _build_write_pptx_llm_data("error", duration_ms, path, detail=str(e), hint=hint)
+        llm_data = _build_write_pptx_llm_data("error", duration_ms, str(path), detail=str(e), hint=hint)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         hint = hint_for_write_error(e, path, "写入PPT异常,请检查磁盘空间和文件完整性")
-        llm_data = _build_write_pptx_llm_data("error", duration_ms, path, detail=str(e), hint=hint)
+        llm_data = _build_write_pptx_llm_data("error", duration_ms, str(path), detail=str(e), hint=hint)
         return build_error(data={}, llm_data=llm_data)
 

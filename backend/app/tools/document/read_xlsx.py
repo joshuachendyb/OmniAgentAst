@@ -190,7 +190,7 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
                 _hint = "请检查文件路径和文件名是否正确"
             else:
                 _hint = "文件类型不匹配,请使用.xlsx或.csv格式"
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, path, detail=error_detail, user_sheet_name=_sn, hint=_hint)
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, str(path), detail=error_detail, user_sheet_name=_sn, hint=_hint)
             return build_error(data={}, llm_data=llm_data)
 
     if suffix == ".csv":
@@ -198,20 +198,20 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
     else:
         if not _check_module("openpyxl"):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, path, detail="openpyxl库未安装", user_sheet_name=sheet_name or "", hint="请安装openpyxl库")
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, str(path), detail="openpyxl库未安装", user_sheet_name=sheet_name or "", hint="请安装openpyxl库")
             return build_error(data={}, llm_data=llm_data)
         result = _read_xlsx_inner(path, max_rows=10000, sheet_name=sheet_name)
 
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     if "error_detail" in result:
         detail = result["error_detail"]
-        llm_data = _build_read_xlsx_llm_data("error", duration_ms, path, detail=detail, user_sheet_name=sheet_name or "", hint="读取Excel异常,请检查文件完整性")
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, str(path), detail=detail, user_sheet_name=sheet_name or "", hint="读取Excel异常,请检查文件完整性")
         return build_error(data=result, llm_data=llm_data)
     else:
         row_count = result.get("row_count", 0)
         sheet_count = len(result.get("sheet_names", []))
         result.pop("row_count", None)
-        llm_data = _build_read_xlsx_llm_data("success", duration_ms, path, row_count, sheet_count, user_sheet_name=sheet_name or "")
+        llm_data = _build_read_xlsx_llm_data("success", duration_ms, str(path), row_count, sheet_count, user_sheet_name=sheet_name or "")
         # =============================================================================
         # 数据设计：row_count/sheet_count 从 data 移除，通过 llm_data.metrics 传入 summary
         # summary 示例: "读取Excel成功: 100行, 3个工作表"

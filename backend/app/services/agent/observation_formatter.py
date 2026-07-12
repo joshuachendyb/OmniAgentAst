@@ -428,7 +428,7 @@ def _format_llm_data(llm_data: Dict) -> str:
     message = status.get("message", "")
     tool = action.get("tool", "")
     tool_zh = action.get("tool_zh", "")
-    target = action.get("target", "")
+    target = str(action.get("target", ""))
     if len(target) > 200:
         target = target[:200] + "..."
 
