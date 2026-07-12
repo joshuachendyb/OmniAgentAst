@@ -88,7 +88,7 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
     return False
 
 
-async def _dispatch_handler(agent, llm_response, chunk_buffer):
+async def _dispatch_handler(agent, llm_response):
     """按type分派handler，基于 event type + recoverable 推断状态 — chendyg 2026-07-01
     
     状态推断规则:
@@ -105,9 +105,9 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
         reasoning_part = f"\n{time.strftime('%H:%M:%S')} === 推理 ===\n{reasoning}" if reasoning else ""
         print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}")  # 小欧 2026-07-02 控制台
     if parsed_type == "action":
-        handler = handle_action(agent, llm_response, chunk_buffer)
+        handler = handle_action(agent, llm_response)
     else:
-        handler = handle_answer(agent, llm_response, chunk_buffer)
+        handler = handle_answer(agent, llm_response)
 
     seen_types = set()
     last_event = None
@@ -273,7 +273,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
     # ── 场景E: 正常分发 ─────────────────────────────────────────
     agent._consecutive_truncations = 0
-    async for event in _dispatch_handler(agent, llm_response, chunk_buffer):
+    async for event in _dispatch_handler(agent, llm_response):
         yield event
 
 

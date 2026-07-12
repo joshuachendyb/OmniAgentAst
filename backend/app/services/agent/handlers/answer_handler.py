@@ -18,7 +18,7 @@ from app.utils.text_utils import format_tool_call_markup
 from app.logger import logger
 
 
-async def handle_answer(agent, parsed: Dict, chunk_buffer):
+async def handle_answer(agent, parsed: Dict):
     """统一处理所有非action的LLM返回类型（answer/error/unknown）"""
     step = agent.llm_call_count
     parsed_type = parsed.get("type", "answer")

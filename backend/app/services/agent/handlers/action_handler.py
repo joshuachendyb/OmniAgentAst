@@ -474,7 +474,7 @@ def _build_call_list(parsed: Dict) -> BuildCallListResult:
 
 
 
-async def handle_action(agent, parsed: Dict, chunk_buffer):
+async def handle_action(agent, parsed: Dict):
     """完整action处理流程 — FC-only: 提取fc_context传递
      
     处理管线（遵守SLAP，逐层递进）：
