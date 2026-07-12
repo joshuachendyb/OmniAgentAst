@@ -52,12 +52,15 @@ async def run_agent_in_background(
     end_type = "unknown"
 
     async def _append(event_dict: Dict) -> None:
+        # 注意: current_execution_steps 由各调用点(主循环/异常分支)显式追加,
+        # 此处仅负责写入 event_log + 唤醒消费者, 禁止再 append current_execution_steps,
+        # 否则会导致DB步骤被重复累积(实测 SSE=21/DB=42 翻倍) — 小欧 2026-07-13
         d = dict(event_dict)
         d["seq"] = len(buffer.event_log)
         buffer.event_log.append(d)
-        current_execution_steps.append(d)
         get_prompt_logger().log_step_yield(d, round_number=d.get("step", 0))
-        # 唤醒等待中的消费者（Condition.notify 必须在持锁时调用）
+        # 唤醒等待中的消费者: Condition.notify_all 必须在持锁时调用,
+        # 否则抛 RuntimeError('cannot notify on un-acquired lock') — 小欧 2026-07-13
         async with buffer.cond:
             buffer.cond.notify_all()
 
@@ -195,7 +198,9 @@ async def run_agent_in_background(
         # 标记生产者结束，唤醒消费者；延迟回收缓冲以支持重连窗口 — 小欧 2026-07-12
         if buffer is not None:
             buffer.done.set()
-            buffer.cond.notify_all()
+            # 必须持锁调 notify_all(同 _append), 否则 RuntimeError — 小欧 2026-07-13
+            async with buffer.cond:
+                buffer.cond.notify_all()
             try:
                 loop = asyncio.get_event_loop()
                 loop.call_later(300, lambda: reclaim_stream_buffer(task_id))
