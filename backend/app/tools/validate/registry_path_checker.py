@@ -124,9 +124,9 @@ def validate_delete_safety(key_path: str, value_name: Optional[str],
 
 def _key_has_subkeys(key_path: str, hive: str) -> bool:
     """判断注册表键是否含子键(不含值) — 小欧 2026-07-12"""
-    from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_key_path
+    from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_path
     try:
-        full_root_key, sub_key = _parse_key_path(key_path, hive=hive)
+        full_root_key, sub_key = _parse_path(key_path, hive=hive)
         hkey = ROOT_KEY_MAP.get(full_root_key)
         if hkey is None:
             return False
