@@ -1,4 +1,28 @@
-﻿v0.18.13
+﻿v0.18.14
+更新时间: 2026-07-12 17:14:22 - 小欧-2026-07-12
+## v0.18.13→v0.18.14 变更汇总 - 小欧-2026-07-12
+
+### 错误提示诚实化（去编造兜底）
+- file类13工具 错误提示hint统一调用集中函数 hint_for_read/write_error（去硬编码通用hint）— 小欧-2026-07-12
+- document读写工具+download_file 统一改用file_path_checker诚实错误提示并str(path)化 — 小欧-2026-07-12
+- file_path_checker 重写hint_for_write_error(去编造提示,新增IndexError/ValueError精准提示)并新增hint_for_read_error — 小欧-2026-07-12
+- file_path_checker 新增幂等删除(force=True不存在不报错)支撑delete_file — 小欧-2026-07-12
+- dataanalysis错误提示增强+generate_chart JSON格式错误修复 — 小欧-2026-07-12
+- read_xlsx 例外传播重构+str(path)防WindowsPath崩溃+统一hint_for_read_error — 小欧-2026-07-12
+- registry_path_checker 修正_parse_path导入名匹配registry_read实现 — 小欧-2026-07-12
+
+### Bug 修复
+- execute_sql 拆分SAVEPOINT ROLLBACK与RELEASE避免sqlite执行错误 — 小欧-2026-07-12
+- execute_shell_command 新增命令含null byte拒绝执行安全检查 — 小欧-2026-07-12
+- table_helper 新增_normalize_table_widths消除Markdown表格列数不一导致的IndexError — 小欧-2026-07-12
+- 思考识别顺序修正+多模型reasoning支持 — 小欧-2026-07-12
+
+### 文档/清理
+- fc_message_types.py等 补充FC消息配对结构说明+thought入历史科学原理注释 — 小欧-2026-07-12
+- notes/调试笔记+错误提示-unit-05 错误提示诚实化审计与表格健壮性分析归档 — 小欧-2026-07-12
+
+---
+v0.18.13
 更新时间: 2026-07-12 10:37:05
 ## v0.18.12→v0.18.13 变更汇总 - 小欧-2026-07-12
 
