@@ -89,6 +89,7 @@ async def handle_answer(agent, parsed: Dict):
             step=step, content=thought, reasoning=reasoning,
         ))
 
+    print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response={content}")  # 小欧 2026-07-12 恢复answer分支终态日志(94eac9723合并时误删)
     yield agent._step_emitter.emit(FinalStep(
         step=step, response=content, thought=thought,
     ))
