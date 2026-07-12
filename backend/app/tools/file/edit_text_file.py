@@ -76,11 +76,31 @@ async def _try_read_file_with_encodings(
         return None, None, str(e)
 
 
+def _insert_line_after(content: str, match_end: int, new_string: str) -> str:
+    """在 match_end 所在行的行尾之后插入 new_string 作为独立新行 - 小欧 2026-07-12
+
+    定位包含 match_end 的行的终止换行符:其后所有后续内容下移至新行之后,
+    保证 new_string 独占一行,不与原行或后续行拼接。
+    """
+    nl = content.find('\n', match_end)
+    if nl == -1:
+        # 匹配行是末行且无换行:末尾补换行后追加
+        return content + '\n' + new_string
+    ins_pos = nl + 1
+    if ins_pos < len(content):
+        # 其后还有内容:new_string 后补换行,后续内容保持独立行
+        return content[:ins_pos] + new_string + '\n' + content[ins_pos:]
+    # 换行符即文件末尾:直接追加,不额外补空行
+    return content[:ins_pos] + new_string
+
+
 def _apply_replacement(
     content: str, old_string: str, new_string: str,
     ignore_case: bool, mode: str,
 ) -> Tuple[str, int, int]:
-    """执行替换/插入操作,返回(new_content, count, total_matches) — 小欧 2026-06-22 — 小健 2026-06-24 修复硬编码flags=2 — 小欧 2026-07-05 增加total_matches — 小欧 2026-07-11 replace_all→mode,增加before/after"""
+    """执行替换/插入操作,返回(new_content, count, total_matches) — 小欧 2026-06-22 — 小健 2026-06-24 修复硬编码flags=2 — 小欧 2026-07-05 增加total_matches — 小欧 2026-07-11 replace_all→mode,增加before/after
+    before/after 语义:在包含 old_string 的那一行之前/之后插入一条独立新行(非子串内联拼接) — 小欧 2026-07-12 修复行拼接缺陷"""
+
     count = 0
     total_matches = 0
 
@@ -90,13 +110,17 @@ def _apply_replacement(
             total_matches = len(re_mod.findall(pattern, content, re_mod.IGNORECASE))
             if total_matches == 1:
                 match = re_mod.search(pattern, content, re_mod.IGNORECASE)
-                content = content[:match.start()] + new_string + content[match.start():]
+                # 行边界感知:在匹配行行首之前插入独立新行,避免与原行拼接 - 小欧 2026-07-12
+                line_start = content.rfind('\n', 0, match.start()) + 1
+                content = content[:line_start] + new_string + '\n' + content[line_start:]
                 count = 1
         else:
             total_matches = content.count(old_string)
             if total_matches == 1:
                 idx = content.find(old_string)
-                content = content[:idx] + new_string + content[idx:]
+                # 行边界感知:在匹配行行首之前插入独立新行,避免与原行拼接 - 小欧 2026-07-12
+                line_start = content.rfind('\n', 0, idx) + 1
+                content = content[:line_start] + new_string + '\n' + content[line_start:]
                 count = 1
         return content, count, total_matches
 
@@ -106,13 +130,15 @@ def _apply_replacement(
             total_matches = len(re_mod.findall(pattern, content, re_mod.IGNORECASE))
             if total_matches == 1:
                 match = re_mod.search(pattern, content, re_mod.IGNORECASE)
-                content = content[:match.end()] + new_string + content[match.end():]
+                # 行边界感知:在匹配行行尾之后插入独立新行,避免与原行拼接 - 小欧 2026-07-12
+                content = _insert_line_after(content, match.end(), new_string)
                 count = 1
         else:
             total_matches = content.count(old_string)
             if total_matches == 1:
                 idx = content.find(old_string)
-                content = content[:idx + len(old_string)] + new_string + content[idx + len(old_string):]
+                # 行边界感知:在匹配行行尾之后插入独立新行,避免与原行拼接 - 小欧 2026-07-12
+                content = _insert_line_after(content, idx + len(old_string), new_string)
                 count = 1
         return content, count, total_matches
 
