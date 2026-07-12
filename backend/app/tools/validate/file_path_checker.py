@@ -223,6 +223,9 @@ def validate_path(
     if rule["check_exist"]:
         p = Path(path)
         if not p.exists():
+            # 幂等删除: force=True 时不存在即视为已删除,不报错(delete 专用) — 北京老陈 2026-07-12
+            if op == OpCategory.EXISTS and options.get("force"):
+                return True, None, None
             logger.warning("[TOCTOU] path=%s op=%s drive_exists=%s parent_exists=%s parent_dir=%s",
                            path, op.value,
                            os.path.exists(os.path.splitdrive(path)[0] + "\\") if os.path.splitdrive(path)[0] else "N/A",
