@@ -50,7 +50,7 @@ export type StepType =
   | 'start'
   | 'final'
   | 'error'
-  | 'interrupted'
+  | 'cancelled'
   | 'paused'
   | 'resumed'
   | 'retrying'
@@ -177,12 +177,12 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     priority: 'secondary',
     layout: 'block',
   },
-  interrupted: {
+  cancelled: {
     bg1: '#fff2e8',
     bg2: '#fff',
     border: '#ffbb96',
     text: '#d4380d',
-    label: '⚠️ 中断',
+    label: '⚠️ 已取消',
     priority: 'primary',
     layout: 'block',
   },

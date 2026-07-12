@@ -81,7 +81,8 @@ export interface ActionToolMessage {
 export interface ObservationData {
   llm_data?: Record<string, unknown>; // 完整llm_data（含summary/action/status/duration_ms/metrics）
   tool_result?: unknown; // 完整data（工具返回的业务数据）
-  other_data?: { // 控制字段
+  other_data?: {
+    // 控制字段
     return_direct?: boolean;
     warning?: string;
     attachment?: unknown;
@@ -178,7 +179,7 @@ export interface ErrorMessage {
 /**
  * status类型值
  */
-export type StatusValue = 'interrupted' | 'paused' | 'resumed' | 'retrying';
+export type StatusValue = 'cancelled' | 'paused' | 'resumed' | 'retrying';
 
 /**
  * status类型 - 执行状态
@@ -294,7 +295,6 @@ export interface TaskControlResponse {
   success: boolean;
   message: string;
 }
-
 
 // ============================================================
 // NewChatContainer 专用类型 - 小新 2026-03-13

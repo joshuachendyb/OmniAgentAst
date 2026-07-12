@@ -21,6 +21,7 @@ import {
   handleSSEError as errorHandlerHandleSSE,
   ErrorType,
 } from './errorHandler';
+import { taskControlApi } from '../services/api';
 
 // 【小强修复 2026-03-18】sessionStorage key - 用于长时间隐藏页面时备份数据
 // 场景：用户切换到其他应用→页面隐藏→SSE 连接不断开→后端数据持续发送
@@ -88,7 +89,11 @@ export interface ExecutionStep {
     | 'final'
     | 'error'
     | 'incident'
-    | 'start';
+    | 'start'
+    | 'cancelled'
+    | 'paused'
+    | 'resumed'
+    | 'retrying';
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
 
   // 【6-03-09】添加task_id字段，用于分页请求
@@ -329,6 +334,7 @@ const handleSSEError = (params: {
   onSetIsReceiving: (receiving: boolean) => void;
   onError: ((error: SSEError) => void) | undefined;
   reconnectTimeoutRef: React.MutableRefObject<number | null>;
+  serverTaskId?: string | null; // 【北京老陈 2026-07-12 小欧】重连耗尽用于发起取消
 }) => {
   const {
     error,
@@ -342,6 +348,7 @@ const handleSSEError = (params: {
     onSetIsReceiving,
     onError,
     reconnectTimeoutRef,
+    serverTaskId,
   } = params;
 
   // 使用统一错误处理中心
@@ -371,6 +378,14 @@ const handleSSEError = (params: {
     onSetReconnectStatus('failed');
     onSetIsConnected(false);
     onSetIsReceiving(false);
+
+    // 【北京老陈 2026-07-12 小欧】重连 N 次全失败 → 才置为取消（不武断算取消）
+    if (serverTaskId) {
+      console.warn(
+        `[SSE] 重连 ${reconnectConfig.maxAttempts} 次均失败，发起取消 task=${serverTaskId}`
+      );
+      taskControlApi.cancel(serverTaskId).catch(() => {});
+    }
 
     // 调用错误回调
     onError?.({
@@ -436,7 +451,8 @@ const ERROR_CONFIG_MAP: Record<SSEErrorType, ErrorConfig> = {
     retryDelay: 0,
     showMessage: '发生未知错误',
   },
-  fc_format_error: { // 小欧 2026-06-25: FC格式错误（可恢复，后端会自动降级到Text模式）
+  fc_format_error: {
+    // 小欧 2026-06-25: FC格式错误（可恢复，后端会自动降级到Text模式）
     retryable: false,
     maxRetries: 0,
     retryDelay: 0,
@@ -510,6 +526,8 @@ export const useSSE = (
     maxDelay: 10000,
   });
   const reconnectAttemptsRef = useRef(0);
+  // 【北京老陈 2026-07-12 小欧】记录已收到的最大后端事件 seq，断线重连时作为 after_seq 续传
+  const lastSeqRef = useRef(0);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const pendingMessageRef = useRef<{
     content: string;
@@ -680,25 +698,43 @@ export const useSSE = (
     setReconnectStatus('connecting');
 
     try {
-      // 聊天流式传输端点
-      const url = `${config.baseURL}/chat/stream`;
+      // 【北京老陈 2026-07-12 小欧】断线重连：复用 task_id 走 GET 读同一流态缓冲，避免双 agent
+      const isReconnect = reconnectAttemptsRef.current > 0 && !!serverTaskId;
+      if (!isReconnect) {
+        lastSeqRef.current = 0; // 新请求重置 seq 偏移
+      }
       const controller = new AbortController();
       abortControllerRef.current = controller; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
       const timeoutId = setTimeout(() => controller.abort(), 180000); // 180s超时，qwen2.5:1.5b CPU首次推理约2分钟
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}),
-        },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: content }],
-          stream: true,
-          session_id: sessionId || undefined,
-        }),
-        signal: controller.signal,
-      });
+      let response: Response;
+      if (isReconnect) {
+        // 重连：GET /chat/stream/{task_id}?after_seq=N 续传，不重新发起对话 — 北京老陈 2026-07-12 小欧
+        const url = `${config.baseURL}/chat/stream/${serverTaskId}?session_id=${encodeURIComponent(sessionId || '')}&after_seq=${lastSeqRef.current}`;
+        console.log(`[SSE] [重连] GET ${url} after_seq=${lastSeqRef.current}`);
+        response = await fetch(url, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+      } else {
+        // 聊天流式传输端点
+        const url = `${config.baseURL}/chat/stream`;
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(config.token
+              ? { Authorization: `Bearer ${config.token}` }
+              : {}),
+          },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: content }],
+            stream: true,
+            session_id: sessionId || undefined,
+          }),
+          signal: controller.signal,
+        });
+      }
 
       clearTimeout(timeoutId);
 
@@ -759,6 +795,9 @@ export const useSSE = (
                 setIsConnected,
                 disconnect,
                 setServerTaskId,
+                onSeq: (s: number) => {
+                  if (s > lastSeqRef.current) lastSeqRef.current = s;
+                },
               },
               isProcessingRef
             );
@@ -796,6 +835,9 @@ export const useSSE = (
               setIsConnected,
               disconnect,
               setServerTaskId,
+              onSeq: (s: number) => {
+                if (s > lastSeqRef.current) lastSeqRef.current = s;
+              },
             },
             isProcessingRef
           );
@@ -826,6 +868,7 @@ export const useSSE = (
         onSetIsReceiving: setIsReceiving,
         onError,
         reconnectTimeoutRef,
+        serverTaskId, // 【北京老陈 2026-07-12 小欧】重连耗尽用于发起取消
       });
 
       // 保存待重连的消息（用于下次重连）
@@ -1006,6 +1049,8 @@ const processSSEData = (
       onDisconnect?: () => void
     ) => void;
     setServerTaskId?: (taskId: string) => void;
+    // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，用于断线重连 after_seq 续传
+    onSeq?: (seq: number) => void;
   },
   _isProcessingRef: React.MutableRefObject<boolean>
 ) => {
@@ -1026,6 +1071,7 @@ const processSSEData = (
     setIsConnected,
     disconnect: _disconnect,
     setServerTaskId,
+    onSeq,
   } = handlers;
 
   if (!line.trim() || !line.startsWith('data: ')) {
@@ -1036,6 +1082,11 @@ const processSSEData = (
     let jsonStr = line.slice(6);
     jsonStr = jsonStr.trim();
     const rawData = JSON.parse(jsonStr);
+
+    // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，断线重连时用于 after_seq 续传避免重复
+    if (typeof rawData.seq === 'number' && onSeq) {
+      onSeq(rawData.seq);
+    }
 
     // 【小强修复 2026-03-18】统一处理timestamp转换
     // 后端有些字段返回字符串格式timestamp，前端需要转换为毫秒数
@@ -1542,23 +1593,46 @@ const processSSEData = (
           // Phase 2: 从llm_data/other_data提取字段
           // llm_data是列表（单工具[dict]，多工具[dict1,dict2]），取首项给下游消费 — 北京老陈 2026-07-08
           const llmDataRaw = obsData.llm_data;
-          const llmData = (Array.isArray(llmDataRaw) ? llmDataRaw[0] : llmDataRaw) as Record<string, unknown> | undefined;
-          const otherData = obsData.other_data as Record<string, unknown> | undefined;
+          const llmData = (
+            Array.isArray(llmDataRaw) ? llmDataRaw[0] : llmDataRaw
+          ) as Record<string, unknown> | undefined;
+          const otherData = obsData.other_data as
+            | Record<string, unknown>
+            | undefined;
 
           // 字段兼容：优先新格式(llm_data)，回退旧格式(summary等)
           step.observation = obsData;
-          step.tool_name = (llmData?.action as Record<string, unknown>)?.tool as string ?? obsData.tool_name ?? '';
-          step.tool_params = (llmData?.action as Record<string, unknown>)?.params as Record<string, unknown> ?? obsData.tool_params ?? {};
-          step.return_direct = (otherData?.return_direct as boolean) ?? obsData.return_direct ?? false;
+          step.tool_name =
+            ((llmData?.action as Record<string, unknown>)?.tool as string) ??
+            obsData.tool_name ??
+            '';
+          step.tool_params =
+            ((llmData?.action as Record<string, unknown>)?.params as Record<
+              string,
+              unknown
+            >) ??
+            obsData.tool_params ??
+            {};
+          step.return_direct =
+            (otherData?.return_direct as boolean) ??
+            obsData.return_direct ??
+            false;
           step.summary = (llmData?.summary as string) ?? obsData.summary ?? '';
           step.execution_status =
-            ((llmData?.status as Record<string, unknown>)?.exec_code as 'success' | 'error' | 'warning') ??
+            ((llmData?.status as Record<string, unknown>)?.exec_code as
+              | 'success'
+              | 'error'
+              | 'warning') ??
             (obsData.execution_status as 'success' | 'error' | 'warning') ??
             undefined;
-          step.error_message = (llmData?.status as Record<string, unknown>)?.message as string ?? obsData.error_message;
+          step.error_message =
+            ((llmData?.status as Record<string, unknown>)?.message as string) ??
+            obsData.error_message;
           step.content = step.summary; // content用于显示
           // 并行tool call映射 — 小健 2026-06-25
-          step.parallel_results = (obsData as { parallel_results?: typeof step.parallel_results }).parallel_results;
+          step.parallel_results = (
+            obsData as { parallel_results?: typeof step.parallel_results }
+          ).parallel_results;
         } else {
           // 旧格式：observation是字符串或null/undefined（向后兼容）
           const obsStr =
@@ -1630,8 +1704,8 @@ const processSSEData = (
             console.log('[SSE] 收到授权请求:', rawData.data);
             handlers.onAuthorizationRequired?.(rawData.data);
             break;
-          case 'interrupted':
-            // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保中断时步骤列表显示
+          case 'cancelled':
+            // 【北京老陈 2026-07-12 小欧】统一取消语义：interrupted → cancelled
             onShowSteps?.(true);
             // 【小沈修复 2026-04-27】必须传当前的steps，否则前端的16个steps会丢失
             onComplete?.(
@@ -1679,8 +1753,8 @@ const processSSEData = (
         break;
       }
 
-      // 【修改 2026-06-09 小沈】直接处理interrupted/paused/resumed/retrying类型，不再处理incident
-      case 'interrupted':
+      // 【北京老陈 2026-07-12 小欧】直接处理 cancelled/paused/resumed/retrying 类型
+      case 'cancelled':
       case 'paused':
       case 'resumed':
       case 'retrying': {
@@ -1712,7 +1786,7 @@ const processSSEData = (
 
         // 根据type调用对应的回调
         switch (rawData.type) {
-          case 'interrupted':
+          case 'cancelled':
             onShowSteps?.(true);
             onComplete?.(
               responseBufferRef.current,

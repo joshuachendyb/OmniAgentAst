@@ -141,15 +141,21 @@ const StepContent: React.FC<StepContentProps> = ({
             ? (obsStep.observation as Record<string, unknown>)
             : null;
 
-          const llmData = rawObs?.llm_data as Record<string, unknown> | undefined;
-          const otherData = rawObs?.other_data as Record<string, unknown> | undefined;
-          const parallelResults = rawObs?.parallel_results as Array<{
-            tool_name: string;
-            tool_params: Record<string, unknown>;
-            llm_data: Record<string, unknown>;
-            tool_result: unknown;
-            other_data: Record<string, unknown>;
-          }> | undefined;
+          const llmData = rawObs?.llm_data as
+            | Record<string, unknown>
+            | undefined;
+          const otherData = rawObs?.other_data as
+            | Record<string, unknown>
+            | undefined;
+          const parallelResults = rawObs?.parallel_results as
+            | Array<{
+                tool_name: string;
+                tool_params: Record<string, unknown>;
+                llm_data: Record<string, unknown>;
+                tool_result: unknown;
+                other_data: Record<string, unknown>;
+              }>
+            | undefined;
 
           const summary =
             (llmData?.summary as string) ??
@@ -157,13 +163,35 @@ const StepContent: React.FC<StepContentProps> = ({
             (typeof obsStep.observation === 'string'
               ? obsStep.observation
               : '');
-          const toolName = (llmData?.action as Record<string, unknown>)?.tool as string ?? (rawObs?.tool_name as string) ?? step.tool_name ?? '';
-          const toolParams = (llmData?.action as Record<string, unknown>)?.params as Record<string, unknown> ?? (rawObs?.tool_params as Record<string, unknown>) ?? step.tool_params ?? {};
+          const toolName =
+            ((llmData?.action as Record<string, unknown>)?.tool as string) ??
+            (rawObs?.tool_name as string) ??
+            step.tool_name ??
+            '';
+          const toolParams =
+            ((llmData?.action as Record<string, unknown>)?.params as Record<
+              string,
+              unknown
+            >) ??
+            (rawObs?.tool_params as Record<string, unknown>) ??
+            step.tool_params ??
+            {};
           const returnDirect =
-            (otherData?.return_direct as boolean) ?? (rawObs?.return_direct as boolean) ?? step.return_direct ?? false;
-          const warning = (otherData?.warning as string) ?? (rawObs?.warning as string);
-          const errorMessage = (llmData?.status as Record<string, unknown>)?.message as string ?? (rawObs?.error_message as string);
-          const nextActions = (rawObs?.next_actions as Array<{tool: string; description: string; when?: string}>) ?? undefined;
+            (otherData?.return_direct as boolean) ??
+            (rawObs?.return_direct as boolean) ??
+            step.return_direct ??
+            false;
+          const warning =
+            (otherData?.warning as string) ?? (rawObs?.warning as string);
+          const errorMessage =
+            ((llmData?.status as Record<string, unknown>)?.message as string) ??
+            (rawObs?.error_message as string);
+          const nextActions =
+            (rawObs?.next_actions as Array<{
+              tool: string;
+              description: string;
+              when?: string;
+            }>) ?? undefined;
           const code = obsStep.code;
 
           // 并行tool call：每个call单独渲染 — 小健 2026-06-25
@@ -177,14 +205,27 @@ const StepContent: React.FC<StepContentProps> = ({
                 }}
               >
                 {parallelResults.map((pr, idx) => {
-                  const prLlm = pr.llm_data as Record<string, unknown> | undefined;
-                  const prOther = pr.other_data as Record<string, unknown> | undefined;
+                  const prLlm = pr.llm_data as
+                    | Record<string, unknown>
+                    | undefined;
+                  const prOther = pr.other_data as
+                    | Record<string, unknown>
+                    | undefined;
                   const prSummary = (prLlm?.summary as string) ?? '';
-                  const prStatus = (prLlm?.status as Record<string, unknown>)?.exec_code as string ?? '';
-                  const prError = (prLlm?.status as Record<string, unknown>)?.message as string;
+                  const prStatus =
+                    ((prLlm?.status as Record<string, unknown>)
+                      ?.exec_code as string) ?? '';
+                  const prError = (prLlm?.status as Record<string, unknown>)
+                    ?.message as string;
                   const prWarning = prOther?.warning as string;
                   return (
-                    <div key={idx} style={{ marginBottom: idx < parallelResults.length - 1 ? Spacing.SM : 0 }}>
+                    <div
+                      key={idx}
+                      style={{
+                        marginBottom:
+                          idx < parallelResults.length - 1 ? Spacing.SM : 0,
+                      }}
+                    >
                       <div
                         style={{
                           display: 'flex',
@@ -194,15 +235,24 @@ const StepContent: React.FC<StepContentProps> = ({
                         }}
                       >
                         <StatusIcon code={prStatus || code} />
-                        <ToolInfo toolName={pr.tool_name} toolParams={pr.tool_params} compact />
+                        <ToolInfo
+                          toolName={pr.tool_name}
+                          toolParams={pr.tool_params}
+                          compact
+                        />
                       </div>
                       {prError ? (
-                        <div style={{ marginTop: Spacing.XS, color: Colors.ERROR }}>
+                        <div
+                          style={{ marginTop: Spacing.XS, color: Colors.ERROR }}
+                        >
                           ❌ {prError}
                         </div>
                       ) : (
                         <div style={{ marginTop: Spacing.XS }}>
-                          <SmartContentRenderer content={prSummary} maxLines={5} />
+                          <SmartContentRenderer
+                            content={prSummary}
+                            maxLines={5}
+                          />
                         </div>
                       )}
                       <WarningBox warning={prWarning} />
@@ -560,15 +610,13 @@ const StepContent: React.FC<StepContentProps> = ({
           errorContext={step.context}
         />
       )}
-      {(step.type === 'interrupted' ||
+      {(step.type === 'cancelled' ||
         (step.type === 'incident' &&
           (step as ExecutionStep & Record<string, unknown>).incident_value ===
-            'interrupted')) && (
-        <div style={getStepStyle('interrupted' as StepType)}>
-          <span
-            style={getStepContentStyle('interrupted' as StepType, 'primary')}
-          >
-            {step.content || '客户端断开连接，任务中断'}
+            'cancelled')) && (
+        <div style={getStepStyle('cancelled' as StepType)}>
+          <span style={getStepContentStyle('cancelled' as StepType, 'primary')}>
+            {step.content || '客户端断开连接，任务已取消'}
           </span>
         </div>
       )}

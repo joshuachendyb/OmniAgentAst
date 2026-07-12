@@ -21,17 +21,9 @@
  * @update 2026-04-11 迁移到errorHandler统一处理 - by 小强
  */
 
-import React, { useState, useMemo, memo, useCallback } from "react";
-import {
-  Collapse,
-  Tag,
-  Spin,
-  Button,
-  Space,
-  Tooltip,
-  Typography,
-} from "antd";
-import { showSuccess, handleError } from "../../utils/errorHandler";
+import React, { useState, useMemo, memo, useCallback } from 'react';
+import { Collapse, Tag, Spin, Button, Space, Tooltip, Typography } from 'antd';
+import { showSuccess, handleError } from '../../utils/errorHandler';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -43,8 +35,8 @@ import {
   CheckOutlined,
   // 【小新重构2026-03-09】新增图标
   RobotOutlined,
-} from "@ant-design/icons";
-import type { ExecutionStep } from "../../utils/sse";
+} from '@ant-design/icons';
+import type { ExecutionStep } from '../../utils/sse';
 
 const { Text } = Typography;
 
@@ -58,11 +50,18 @@ const CollapsibleResult: React.FC<{
   index: number;
   copyToClipboard: (text: string, index: number) => void;
   copiedIndex: number | null;
-}> = ({ result, index: _index, copyToClipboard: _copyToClipboard, copiedIndex: _copiedIndex }) => {
+}> = ({
+  result,
+  index: _index,
+  copyToClipboard: _copyToClipboard,
+  copiedIndex: _copiedIndex,
+}) => {
   // 北京老陈要求：不截断，完全显示
   return (
     <div className="step-result">
-      <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      <pre
+        style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+      >
         {result}
       </pre>
     </div>
@@ -75,30 +74,30 @@ const CollapsibleResult: React.FC<{
 
 const STEP_STYLES = {
   thought: {
-    color: "#666",
-    fontStyle: "italic",
-    background: "#fffbe6",
-    borderColor: "#faad14",
+    color: '#666',
+    fontStyle: 'italic',
+    background: '#fffbe6',
+    borderColor: '#faad14',
   },
   action: {
-    color: "#1890ff",
-    background: "#f6ffed",
-    borderColor: "#1890ff",
+    color: '#1890ff',
+    background: '#f6ffed',
+    borderColor: '#1890ff',
   },
   observation: {
-    color: "#52c41a",
-    background: "#f6ffed",
-    borderColor: "#52c41a",
+    color: '#52c41a',
+    background: '#f6ffed',
+    borderColor: '#52c41a',
   },
   final: {
-    color: "#52c41a",
-    background: "#f6ffed",
-    borderColor: "#52c41a",
+    color: '#52c41a',
+    background: '#f6ffed',
+    borderColor: '#52c41a',
   },
   error: {
-    color: "#cf1322",
-    background: "#fff1f0",
-    borderColor: "#ff4d4f",
+    color: '#cf1322',
+    background: '#fff1f0',
+    borderColor: '#ff4d4f',
   },
 } as const;
 
@@ -221,16 +220,16 @@ interface ExecutionPanelProps {
  */
 const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
   ({ steps, isActive = false, totalTime, onViewRaw, onExport }) => {
-    ExecutionPanel.displayName = "ExecutionPanel";
+    ExecutionPanel.displayName = 'ExecutionPanel';
 
-    const [activeKey, setActiveKey] = useState<string | string[]>("1");
+    const [activeKey, setActiveKey] = useState<string | string[]>('1');
     const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
     /**
      * 格式化耗时
      */
     const formatDuration = useCallback((ms?: number) => {
-      if (!ms) return "";
+      if (!ms) return '';
       if (ms < 1000) return `${ms}ms`;
       return `${(ms / 1000).toFixed(1)}s`;
     }, []);
@@ -242,10 +241,10 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
       try {
         await navigator.clipboard.writeText(text);
         setCopiedIndex(index);
-        showSuccess("已复制");
+        showSuccess('已复制');
         setTimeout(() => setCopiedIndex(null), 2000);
       } catch (err) {
-        handleError({ message: "复制失败", error_type: "COPY_FAILED" });
+        handleError({ message: '复制失败', error_type: 'COPY_FAILED' });
       }
     }, []);
 
@@ -260,13 +259,13 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
 
         switch (step.type) {
           // 【小新重构2026-03-09】新增 start 类型处理
-          case "start":
+          case 'start':
             return (
               <div className="step-item">
                 <div className="start-step">
                   <div className="step-header">
                     <RobotOutlined />
-                    <span>{step.display_name || "AI助手"}</span>
+                    <span>{step.display_name || 'AI助手'}</span>
                   </div>
                   {step.model && (
                     <div className="step-info">
@@ -278,14 +277,14 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
             );
 
           // 【小新重构2026-03-09】新增 status 类型处理
-          // 注意：status类型的step.type可能是"paused"/"resumed"/"interrupted"/"retrying"
-          case "thought":
+          // 注意：status类型的step.type可能是"paused"/"resumed"/"cancelled"/"retrying"
+          case 'thought':
             return (
               <div className="step-item">
                 <div
                   style={{
-                    display: "flex",
-                    alignItems: "flex-start",
+                    display: 'flex',
+                    alignItems: 'flex-start',
                     gap: 8,
                     marginBottom: 4,
                   }}
@@ -299,7 +298,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                   <div
                     style={{
                       ...stepStyle,
-                      padding: "4px 6px",
+                      padding: '4px 6px',
                       borderRadius: 4,
                       fontSize: 11,
                       lineHeight: 1.4,
@@ -312,13 +311,13 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
               </div>
             );
 
-          case "action_tool":
+          case 'action_tool':
             return (
               <div className="step-item">
                 <div className="action-step">
                   <div className="step-header">
                     <CodeOutlined />
-                    <span>{step.tool_name || "未知工具"}</span>
+                    <span>{step.tool_name || '未知工具'}</span>
                     <Button
                       type="text"
                       size="small"
@@ -340,7 +339,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                         )
                       }
                       className="copy-btn"
-                      style={{ marginLeft: "auto", padding: 0 }}
+                      style={{ marginLeft: 'auto', padding: 0 }}
                     />
                   </div>
                   {step.tool_params && (
@@ -360,12 +359,16 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                         结果：
                       </Text>
                       {/* 长文本折叠处理 */}
-                      {typeof step.result === "string" && step.result.length > 200 ? (
-                        <CollapsibleResult result={step.result} index={index} copyToClipboard={copyToClipboard} copiedIndex={copiedIndex} />
+                      {typeof step.result === 'string' &&
+                      step.result.length > 200 ? (
+                        <CollapsibleResult
+                          result={step.result}
+                          index={index}
+                          copyToClipboard={copyToClipboard}
+                          copiedIndex={copiedIndex}
+                        />
                       ) : (
-                        <div className="step-result">
-                          {step.result}
-                        </div>
+                        <div className="step-result">{step.result}</div>
                       )}
                     </div>
                   )}
@@ -373,7 +376,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
               </div>
             );
 
-          case "observation":
+          case 'observation':
             return (
               <div className="step-item">
                 <div
@@ -386,13 +389,20 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                   <EyeOutlined style={{ marginRight: 8 }} />
                   {/* 使用result字段（已简化），不要使用observation原始对象 */}
                   <span>
-                    {typeof step.result === "string"
-                      ? step.result.length > 200 ? (
-                        <CollapsibleResult result={step.result} index={index} copyToClipboard={copyToClipboard} copiedIndex={copiedIndex} />
+                    {typeof step.result === 'string' ? (
+                      step.result.length > 200 ? (
+                        <CollapsibleResult
+                          result={step.result}
+                          index={index}
+                          copyToClipboard={copyToClipboard}
+                          copiedIndex={copiedIndex}
+                        />
                       ) : (
                         step.result
                       )
-                      : "无结果"}
+                    ) : (
+                      '无结果'
+                    )}
                   </span>
                   <Button
                     type="text"
@@ -406,20 +416,20 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                     }
                     onClick={() =>
                       copyToClipboard(
-                        typeof step.result === "string"
+                        typeof step.result === 'string'
                           ? step.result
                           : JSON.stringify(step.result || {}),
                         index
                       )
                     }
                     className="copy-btn"
-                    style={{ float: "right", padding: 0 }}
+                    style={{ float: 'right', padding: 0 }}
                   />
                 </div>
               </div>
             );
 
-          case "final":
+          case 'final':
             return (
               <div className="step-item">
                 <div
@@ -441,80 +451,101 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                         <CopyOutlined />
                       )
                     }
-                    onClick={() => copyToClipboard(step.content || "", index)}
+                    onClick={() => copyToClipboard(step.content || '', index)}
                     className="copy-btn"
-                    style={{ float: "right", padding: 0 }}
+                    style={{ float: 'right', padding: 0 }}
                   />
                 </div>
               </div>
             );
 
           // 【问题5修复】incident类型渲染：根据incident_value分发到具体渲染
-          case "incident": {
-            const incidentValue = (step as ExecutionStep & Record<string, unknown>).incident_value as string;
-            const incidentMessage = step.content || (step as ExecutionStep & Record<string, unknown>).message || '';
+          case 'incident': {
+            const incidentValue = (
+              step as ExecutionStep & Record<string, unknown>
+            ).incident_value as string;
+            const incidentMessage =
+              step.content ||
+              (step as ExecutionStep & Record<string, unknown>).message ||
+              '';
             switch (incidentValue) {
-              case "interrupted":
+              case 'cancelled':
                 return (
                   <div className="step-item">
-                    <div style={{
-                      borderLeft: "2px solid #ffbb96",
-                      padding: "6px 8px",
-                      borderRadius: 4,
-                      marginTop: 8,
-                      fontSize: 11,
-                      lineHeight: 1.5,
-                    }}>
+                    <div
+                      style={{
+                        borderLeft: '2px solid #ffbb96',
+                        padding: '6px 8px',
+                        borderRadius: 4,
+                        marginTop: 8,
+                        fontSize: 11,
+                        lineHeight: 1.5,
+                      }}
+                    >
                       <Tag color="warning">⚠️ 中断</Tag>
-                      <Typography.Text type="secondary">{incidentMessage || '任务已中断'}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {incidentMessage || '任务已中断'}
+                      </Typography.Text>
                     </div>
                   </div>
                 );
-              case "paused":
+              case 'paused':
                 return (
                   <div className="step-item">
-                    <div style={{
-                      borderLeft: "2px solid #d9d9d9",
-                      padding: "6px 8px",
-                      borderRadius: 4,
-                      marginTop: 8,
-                      fontSize: 11,
-                      lineHeight: 1.5,
-                    }}>
+                    <div
+                      style={{
+                        borderLeft: '2px solid #d9d9d9',
+                        padding: '6px 8px',
+                        borderRadius: 4,
+                        marginTop: 8,
+                        fontSize: 11,
+                        lineHeight: 1.5,
+                      }}
+                    >
                       <Tag color="default">⏸️ 暂停</Tag>
-                      <Typography.Text type="secondary">{incidentMessage || '任务已暂停'}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {incidentMessage || '任务已暂停'}
+                      </Typography.Text>
                     </div>
                   </div>
                 );
-              case "resumed":
+              case 'resumed':
                 return (
                   <div className="step-item">
-                    <div style={{
-                      borderLeft: "2px solid #52c41a",
-                      padding: "6px 8px",
-                      borderRadius: 4,
-                      marginTop: 8,
-                      fontSize: 11,
-                      lineHeight: 1.5,
-                    }}>
+                    <div
+                      style={{
+                        borderLeft: '2px solid #52c41a',
+                        padding: '6px 8px',
+                        borderRadius: 4,
+                        marginTop: 8,
+                        fontSize: 11,
+                        lineHeight: 1.5,
+                      }}
+                    >
                       <Tag color="success">▶️ 恢复</Tag>
-                      <Typography.Text type="secondary">{incidentMessage || '任务已恢复'}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {incidentMessage || '任务已恢复'}
+                      </Typography.Text>
                     </div>
                   </div>
                 );
-              case "retrying":
+              case 'retrying':
                 return (
                   <div className="step-item">
-                    <div style={{
-                      borderLeft: "2px solid #1890ff",
-                      padding: "6px 8px",
-                      borderRadius: 4,
-                      marginTop: 8,
-                      fontSize: 11,
-                      lineHeight: 1.5,
-                    }}>
+                    <div
+                      style={{
+                        borderLeft: '2px solid #1890ff',
+                        padding: '6px 8px',
+                        borderRadius: 4,
+                        marginTop: 8,
+                        fontSize: 11,
+                        lineHeight: 1.5,
+                      }}
+                    >
                       <Tag color="processing">🔄 重试</Tag>
-                      <Typography.Text type="secondary">{incidentMessage || '正在重试...'}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {incidentMessage || '正在重试...'}
+                      </Typography.Text>
                     </div>
                   </div>
                 );
@@ -525,13 +556,13 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
 
           // 【恢复 2026-06-09 北京老陈指令】恢复incident类型渲染
 
-          case "error":
+          case 'error':
             return (
               <div className="step-item">
                 <div
                   style={{
                     ...stepStyle,
-                    padding: "6px 8px",
+                    padding: '6px 8px',
                     borderRadius: 4,
                     marginTop: 8,
                     fontSize: 11,
@@ -556,7 +587,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
     const { stepCount, hasError } = useMemo(
       () => ({
         stepCount: steps.length,
-        hasError: steps.some((s) => s.type === "error"),
+        hasError: steps.some((s) => s.type === 'error'),
       }),
       [steps]
     );
@@ -569,13 +600,13 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
           onChange={setActiveKey}
           style={{
             marginTop: 6, // ✅ 小新第二修复 2026-03-01 15:52:51：减少留白 12px → 6px
-            background: "#fafafa",
+            background: '#fafafa',
             borderRadius: 8,
-            overflow: "hidden",
+            overflow: 'hidden',
           }}
           items={[
             {
-              key: "1",
+              key: '1',
               label: (
                 <Space>
                   {isActive ? (
@@ -585,15 +616,15 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                       }
                     />
                   ) : hasError ? (
-                    <CloseCircleOutlined style={{ color: "#ff4d4f" }} />
+                    <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
                   ) : (
-                    <CheckCircleOutlined style={{ color: "#52c41a" }} />
+                    <CheckCircleOutlined style={{ color: '#52c41a' }} />
                   )}
                   <span>
-                    {isActive ? "正在执行" : "执行详情"}
+                    {isActive ? '正在执行' : '执行详情'}
                     {stepCount > 0 &&
                       ` (${stepCount}步${
-                        totalTime ? `，耗时${formatDuration(totalTime)}` : ""
+                        totalTime ? `，耗时${formatDuration(totalTime)}` : ''
                       })`}
                   </span>
                   {hasError && <Tag color="error">有错误</Tag>}
@@ -626,22 +657,22 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
               children: (
                 // ✅ 小新第二修复 2026-03-01 15:06:37：移除Timeline，使用自定义flex布局
                 // 解决步骤布局错乱问题：Timeline的label和children分在不同div中，导致Tag和内容竖立显示
-                <div style={{ padding: "4px" }}>
+                <div style={{ padding: '4px' }}>
                   {steps.map((step, index) => (
                     <div key={index}>{renderStepContent(step, index)}</div>
                   ))}
                   {isActive && (
                     <div
                       style={{
-                        color: "#1890ff",
+                        color: '#1890ff',
                         fontSize: 11,
-                        marginTop: "4px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "4px",
+                        marginTop: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
                       }}
                     >
-                      <LoadingOutlined style={{ fontSize: 10 }} spin />{" "}
+                      <LoadingOutlined style={{ fontSize: 10 }} spin />{' '}
                       执行中...
                     </div>
                   )}

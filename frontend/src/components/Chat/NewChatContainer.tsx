@@ -1,23 +1,26 @@
-import React, { useEffect, useCallback, useState, useRef } from "react";
-import { message, Card } from "antd";
-import { useSearchParams } from "react-router-dom";
-import { API_BASE_URL, taskControlApi } from "../../services/api";
-import {
-  STORAGE_KEY,
-} from "../../utils/chatHistory";
+import React, { useEffect, useCallback, useState, useRef } from 'react';
+import { message, Card } from 'antd';
+import { useSearchParams } from 'react-router-dom';
+import { API_BASE_URL, taskControlApi } from '../../services/api';
+import { STORAGE_KEY } from '../../utils/chatHistory';
 
-import ChatInput from "./ChatInput";
+import ChatInput from './ChatInput';
 import MessageArea from './MessageArea';
 import ChatHeader from './ChatHeader';
 import ChatToolbar from './ChatToolbar';
-import AuthorizationModal, { AuthorizationRequest } from '../AuthorizationModal';
+import AuthorizationModal, {
+  AuthorizationRequest,
+} from '../AuthorizationModal';
 import { useChatFacade } from '../../hooks/chat/useChatFacade';
 import { useLoadingMessage } from '../../hooks/useLoadingMessage';
 import { useBeforeUnload } from '../../hooks/useBeforeUnload';
 
 const NewChatContainer: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const chatFacade = useChatFacade({ baseURL: API_BASE_URL, sessionId: searchParams.get('session_id') });
+  const chatFacade = useChatFacade({
+    baseURL: API_BASE_URL,
+    sessionId: searchParams.get('session_id'),
+  });
   const {
     chatState,
     chatStreaming,
@@ -30,24 +33,34 @@ const NewChatContainer: React.FC = () => {
   // 解构chatState
   const {
     // 独立状态
-    showExecution, setShowExecution,
-    useStream, setUseStream,
+    showExecution,
+    setShowExecution,
+    useStream,
+    setUseStream,
     setIsInitialized,
     setSessionJumpLoading,
-    isMessageListLoading, setIsMessageListLoading,
-    retryCount, setRetryCount,
+    isMessageListLoading,
+    setIsMessageListLoading,
+    retryCount,
+    setRetryCount,
     setIsRenderingMessages,
     isRetrying,
-    isPaused, setIsPaused,
+    isPaused,
+    setIsPaused,
     messages,
     loading,
     waitTime,
     sessionId,
-    sessionTitle, setSessionTitle,
-    sessionVersion, setSessionVersion,
-    titleLocked, setTitleLocked,
-    editingTitle, setEditingTitle,
-    titleInput, setTitleInput,
+    sessionTitle,
+    setSessionTitle,
+    sessionVersion,
+    setSessionVersion,
+    titleLocked,
+    setTitleLocked,
+    editingTitle,
+    setEditingTitle,
+    titleInput,
+    setTitleInput,
     // Refs
     messagesEndRef,
     messagesRef,
@@ -59,26 +72,27 @@ const NewChatContainer: React.FC = () => {
   } = chatState;
 
   // 解构chatStreaming
-  const {
-    isReceiving,
-    executionSteps,
-    currentResponse,
-  } = chatStreaming;
+  const { isReceiving, executionSteps, currentResponse } = chatStreaming;
 
   // 解构chatTaskControl
-  const { handleInterrupt, handleTogglePause } = chatTaskControl;
+  const { handleCancel, handleTogglePause } = chatTaskControl;
 
   // 解构chatSend
   const { handleSend } = chatSend;
 
   // 【v3.4新增 2026-06-09 小沈】授权弹窗状态
-  const [authorizationPending, setAuthorizationPending] = useState<AuthorizationRequest | null>(null);
-  const authorizationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [authorizationPending, setAuthorizationPending] =
+    useState<AuthorizationRequest | null>(null);
+  const authorizationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
   // 【v3.4新增 2026-06-09 小沈】授权请求回调（从useChatCallbacks传递）
   useEffect(() => {
     // 通过自定义事件监听授权请求
-    const handleAuthorizationRequired = (event: CustomEvent<Record<string, unknown>>) => {
+    const handleAuthorizationRequired = (
+      event: CustomEvent<Record<string, unknown>>
+    ) => {
       // 后端发送snake_case字段，前端AuthorizationModal使用camelCase
       const rawData = event.detail;
       setAuthorizationPending({
@@ -88,10 +102,16 @@ const NewChatContainer: React.FC = () => {
         safetyLevel: rawData.safety_level as string,
       });
     };
-    
-    window.addEventListener('authorization_required', handleAuthorizationRequired as EventListener);
+
+    window.addEventListener(
+      'authorization_required',
+      handleAuthorizationRequired as EventListener
+    );
     return () => {
-      window.removeEventListener('authorization_required', handleAuthorizationRequired as EventListener);
+      window.removeEventListener(
+        'authorization_required',
+        handleAuthorizationRequired as EventListener
+      );
     };
   }, []);
 
@@ -109,7 +129,9 @@ const NewChatContainer: React.FC = () => {
             confirmed: false,
             trust_session: false,
           }),
-        }).catch(() => { /* 超时reject失败忽略 */ });
+        }).catch(() => {
+          /* 超时reject失败忽略 */
+        });
         setAuthorizationPending(null);
       }, 60000);
     }
@@ -124,17 +146,19 @@ const NewChatContainer: React.FC = () => {
   // chatPersistence 直接使用（restoreState）
 
   // 使用useLoadingMessage Hook管理loading
-  const { show: showLoading, hide: hideLoading } = useLoadingMessage({ duration: 0 });
+  const { show: showLoading, hide: hideLoading } = useLoadingMessage({
+    duration: 0,
+  });
 
   // 新建会话
   const handleNewSession = useCallback(() => {
-    console.log("🔍 [handleNewSession] 按钮被点击");
+    console.log('🔍 [handleNewSession] 按钮被点击');
     chatSession.handleNewSession(0);
   }, [chatSession]);
 
   // 清空对话
   const handleClear = useCallback(() => {
-    console.log("🔍 [handleClear] 清空对话按钮被点击");
+    console.log('🔍 [handleClear] 清空对话按钮被点击');
     setIsPaused(false);
     logFlagsRef.current = {
       chunkFirstDone: false,
@@ -150,7 +174,7 @@ const NewChatContainer: React.FC = () => {
   // 延迟滚动
   const scrollToBottomDelayed = useCallback(() => {
     setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
   }, [messagesEndRef]);
 
@@ -167,19 +191,19 @@ const NewChatContainer: React.FC = () => {
   // 同步executionSteps到ref - 修复清理后缺失的同步功能
   useEffect(() => {
     executionStepsRef.current = executionSteps;
-  }, [executionSteps, executionStepsRef]);  // ✅ 加上executionStepsRef依赖
+  }, [executionSteps, executionStepsRef]); // ✅ 加上executionStepsRef依赖
 
   // 滚动位置监听
   useEffect(() => {
     const container = messagesEndRef.current?.parentElement;
     if (!container) return;
-    
+
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
       userScrolledUpRef.current = distanceFromBottom > SCROLL_THRESHOLD;
     };
-    
+
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
   }, [messagesEndRef, userScrolledUpRef]);
@@ -189,12 +213,14 @@ const NewChatContainer: React.FC = () => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         scrollToBottomDelayed();
-        console.log(`[visibilitychange] 当前状态: isReceiving=${isReceiving}, hasExecutionSteps=${executionSteps.length > 0}`);
+        console.log(
+          `[visibilitychange] 当前状态: isReceiving=${isReceiving}, hasExecutionSteps=${executionSteps.length > 0}`
+        );
       }
     };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [currentResponse, executionSteps, isReceiving, scrollToBottomDelayed]);
 
@@ -202,12 +228,19 @@ const NewChatContainer: React.FC = () => {
   const handleSaveBeforeUnload = useCallback(() => {
     if (!isReceiving || !sessionId) return;
 
-    console.log("💾 [beforeunload] 刷新前保存状态, steps:", executionStepsRef.current.length);
-    
+    console.log(
+      '💾 [beforeunload] 刷新前保存状态, steps:',
+      executionStepsRef.current.length
+    );
+
     let messagesToSave = messagesRef.current;
     if (executionStepsRef.current.length > 0) {
       messagesToSave = messagesRef.current.map((msg, idx) => {
-        if (msg.role === 'assistant' && msg.isStreaming && idx === messagesRef.current.length - 1) {
+        if (
+          msg.role === 'assistant' &&
+          msg.isStreaming &&
+          idx === messagesRef.current.length - 1
+        ) {
           return {
             ...msg,
             executionSteps: executionStepsRef.current,
@@ -216,7 +249,7 @@ const NewChatContainer: React.FC = () => {
         return msg;
       });
     }
-    
+
     const state = {
       messages: messagesToSave,
       sessionId,
@@ -226,7 +259,7 @@ const NewChatContainer: React.FC = () => {
       isPaused,
       isReceiving,
     };
-    
+
     try {
       const stateStr = JSON.stringify(state);
       if (stateStr.length > 4 * 1024 * 1024) {
@@ -244,12 +277,19 @@ const NewChatContainer: React.FC = () => {
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-        console.warn("⚠️ [beforeunload] sessionStorage容量满，跳过保存");
+        console.warn('⚠️ [beforeunload] sessionStorage容量满，跳过保存');
       } else {
-        console.error("保存会话状态失败:", e);
+        console.error('保存会话状态失败:', e);
       }
     }
-  }, [isReceiving, sessionId, sessionTitle, isPaused, executionStepsRef, messagesRef]);
+  }, [
+    isReceiving,
+    sessionId,
+    sessionTitle,
+    isPaused,
+    executionStepsRef,
+    messagesRef,
+  ]);
 
   // 使用useBeforeUnload Hook统一管理
   useBeforeUnload({
@@ -262,8 +302,8 @@ const NewChatContainer: React.FC = () => {
   // 组件卸载前清理
   useEffect(() => {
     return () => {
-      message.destroy("session-load");
-      console.log("🔄 组件卸载（页面即将跳转或关闭）");
+      message.destroy('session-load');
+      console.log('🔄 组件卸载（页面即将跳转或关闭）');
     };
   }, []);
 
@@ -272,11 +312,11 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     const onLoadingStart = () => {
       setSessionJumpLoading(true);
-      showLoading("正在加载会话...", "session-load");
+      showLoading('正在加载会话...', 'session-load');
     };
 
     const onLoadingEnd = () => {
-      hideLoading("session-load");
+      hideLoading('session-load');
       setSessionJumpLoading(false);
     };
 
@@ -317,7 +357,7 @@ const NewChatContainer: React.FC = () => {
   // 组件卸载时清理loading
   useEffect(() => {
     return () => {
-      hideLoading("session-load");
+      hideLoading('session-load');
     };
   }, [hideLoading]);
 
@@ -325,27 +365,27 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl/Cmd + K 清空对话
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
         handleClear();
       }
       // Ctrl/Cmd + N 新建会话
-      if ((e.ctrlKey || e.metaKey) && e.key === "n") {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
         e.preventDefault();
         handleNewSession();
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [handleClear, handleNewSession]);
 
   // ChatHeader回调
   const handleEditingStart = useCallback(() => {
     if (!editingTitle && sessionId) {
-      setTitleInput(sessionTitle || "");
+      setTitleInput(sessionTitle || '');
     }
     setEditingTitle(true);
   }, [editingTitle, sessionId, sessionTitle, setTitleInput, setEditingTitle]);
@@ -355,41 +395,47 @@ const NewChatContainer: React.FC = () => {
   }, [setEditingTitle]);
 
   // ChatToolbar回调
-  const handleToggleStream = useCallback((checked: boolean) => {
-    console.log("🔍 [流式开关] 被点击，新状态:", checked);
-    setUseStream(checked);
-    if (!checked) {
-      setShowExecution(false);
-    }
-  }, [setUseStream, setShowExecution]);
+  const handleToggleStream = useCallback(
+    (checked: boolean) => {
+      console.log('🔍 [流式开关] 被点击，新状态:', checked);
+      setUseStream(checked);
+      if (!checked) {
+        setShowExecution(false);
+      }
+    },
+    [setUseStream, setShowExecution]
+  );
 
   const handleToggleExecution = useCallback(() => {
-    console.log("🔍 [显示过程] 按钮被点击");
+    console.log('🔍 [显示过程] 按钮被点击');
     setShowExecution(!showExecution);
   }, [showExecution, setShowExecution]);
 
   // 【v3.4新增 2026-06-09 小沈】授权确认处理
-  const handleAuthorizationConfirm = useCallback(async (confirmed: boolean, trustSession: boolean) => {
-    if (!authorizationPending) {
-      return;
-    }
+  const handleAuthorizationConfirm = useCallback(
+    async (confirmed: boolean, trustSession: boolean) => {
+      if (!authorizationPending) {
+        return;
+      }
 
-    try {
-      await taskControlApi.confirm(
-        authorizationPending.confirmId,
-        confirmed,
-        trustSession
-      );
-    } catch (error) {
-      console.error('[Authorization] 确认失败:', error);
-    } finally {
-      setAuthorizationPending(null);
-    }
-  }, [authorizationPending]);
+      try {
+        await taskControlApi.confirm(
+          authorizationPending.confirmId,
+          confirmed,
+          trustSession
+        );
+      } catch (error) {
+        console.error('[Authorization] 确认失败:', error);
+      } finally {
+        setAuthorizationPending(null);
+      }
+    },
+    [authorizationPending]
+  );
 
   return (
     <Card
-      styles={{ body: { padding: "0 4px 4px" } }}
+      styles={{ body: { padding: '0 4px 4px' } }}
       title={
         <ChatHeader
           sessionId={sessionId}
@@ -436,7 +482,7 @@ const NewChatContainer: React.FC = () => {
         waitTime={waitTime}
         useStream={useStream}
         onSend={handleSend}
-        onInterrupt={handleInterrupt}
+        onCancel={handleCancel}
         onTogglePause={handleTogglePause}
       />
 
