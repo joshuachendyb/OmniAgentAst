@@ -61,13 +61,26 @@ class MessageBuilder:
 
     def add_assistant_tool_call(self, tool_calls: list,
                                 content: Optional[str] = None) -> AssistantMessage:
-        """添加assistant工具调用消息 — 北京老陈 2026-06-25"""
+        """添加assistant工具调用消息 — 北京老陈 2026-06-25
+
+        配对说明:
+          此assistant(带N个tool_calls)与后续N条tool(通过tool_call_id关联)组成一对。
+          调用顺序: add_assistant_tool_call → add_tool_result x N
+          LLM收到的历史: ...→assistant(tool_calls=[id1,id2])→tool(id1)→tool(id2)→...
+        — 小欧 2026-07-12
+        """
         msg = AssistantMessage(content=content, tool_calls=tool_calls)
         self.conversation_history.append(message_to_dict(msg))
         return msg
 
     def add_tool_result(self, tool_call_id: str, content: str) -> ToolResultMessage:
-        """添加工具执行结果消息 — 北京老陈 2026-06-25"""
+        """添加工具执行结果消息 — 北京老陈 2026-06-25
+
+        与add_assistant_tool_call配对使用:
+          每条tool通过tool_call_id关联回assistant中的某一条tool_call.id。
+          同一轮的所有tool共用同一个assistant父消息。
+        — 小欧 2026-07-12
+        """
         msg = ToolResultMessage(content=content, tool_call_id=tool_call_id)
         self.conversation_history.append(message_to_dict(msg))
         return msg

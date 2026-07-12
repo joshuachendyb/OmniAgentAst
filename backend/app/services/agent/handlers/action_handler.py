@@ -313,6 +313,11 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
     obs_parts = []
 
     # 【Bug A修复】循环前：建1条assistant带所有tool_calls — 小沈 2026-07-06
+    # assistant+tool 配对规则:
+    #   1条assistant(带本轮N个tool_calls) + N条tool(每个tool_call_id对应1条)
+    #   历史结构: ...→assistant(tool_calls=[id1,id2])→tool(id1)→tool(id2)→...
+    #   注: 同一assistant的所有tool_calls是一次性发给LLM的"并行"请求
+    # — 小欧 2026-07-12
     _fc = ctx.fc_context or {}
     _shared_tc = _fc.get("tool_calls", [])
     if _shared_tc:

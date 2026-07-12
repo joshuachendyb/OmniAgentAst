@@ -61,7 +61,15 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
         ))
         return
 
-    # reasoning-only：content空但reasoning有内容 → 注入observation继续循环
+    # reasoning-only：LLM只返回推理没给最终答案 → 注入observation继续循环
+    # 本处分两条路径往conversation_history写3条消息，原因如下：
+    #   ① add_assistant_message("") → role=assistant, content=""     真实记录：本轮LLM实际返回空
+    #   ② add_observation(reasoning) → _append_observation拆成2条：
+    #       ②-1 assistant(tool_calls=[], content=reasoning)           合成注入：模拟FC格式，把reasoning当assistant工具调用
+    #       ②-2 tool(tool_call_id="", content=reasoning)             合成注入：模拟FC格式，把reasoning当工具结果
+    #   ① 是"LLM说了什么"的日志记录，②是"喂给下一轮LLM的上文"。
+    #   这样下一轮LLM收到历史时能看到"我上轮推理了这些内容+得到了observation"，从而继续执行。
+    #   — 小欧 2026-07-12
     if not content and reasoning:
         logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入observation继续循环")
         agent.message_builder.add_assistant_message("")
