@@ -365,6 +365,13 @@ def shell(
             timeout=timeout, cwd=cwd or "", hint="请提供要执行的命令")
         return build_error(data={}, llm_data=llm)
 
+    if "\x00" in (command or ""):
+        d = int((_time_mod.perf_counter() - t0) * 1000)
+        llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
+            shell_type or "", ERR_PARAMETER_INVALID, "命令包含空字符(null byte),拒绝执行",
+            timeout=timeout, cwd=cwd or "", hint="命令不能包含空字符(null byte)")
+        return build_error(data={}, llm_data=llm)
+
     if cwd is not None and not os.path.isdir(cwd):
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, command, -1, "", "",
