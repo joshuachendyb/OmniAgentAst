@@ -12,7 +12,7 @@ if sys.platform == "win32":
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import traceback
@@ -180,3 +180,9 @@ async def root():
         "version": app_version,
         "docs": "/docs"
     }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    # 浏览器自动请求 favicon 时返回 204，避免 main.py:87 全局异常处理器记录 404 噪声 — 小欧 2026-07-13
+    return Response(status_code=204)
