@@ -1,8 +1,8 @@
 # 工具 Observation 统一输出格式设计（融合方案）
 
 **创建时间**: 2026-06-20 11:07:25  
-**更新时间**: 2026-06-22 17:24:27  
-**版本**: v7.2  
+**更新时间**: 2026-07-13 05:47:38  
+**版本**: v7.3  
 **编写人**: 小健 + 北京老陈  
 **适用范围**: OmniAgentAs-desk 所有工具给LLM和前端的observation输出格式  
 **状态**: 审查通过
@@ -31,6 +31,7 @@
 | v7.1 | 2026-06-22 17:12:14 | **5轮复核修复12个问题**：A类6处Phase 2/3标签混淆（5.10标题/表头/实施要点/DB说明）；B类3处9.3格式残留（重复行/多余```/残留字典）；C类3处缺other_data（5.10.2 SSE/DB字段/5.10.4描述）| 小欧 |
 | v7.2 | 2026-06-22 17:24:27 | **Phase 2/3分离准确性修复**：D1-5.10.3数据流图标注Phase 3；D2-5.10.3存储规则表标注Phase归属；D3/D4-5.10.6注意事项标注Phase 3；D5-5.10.7 DB表ToolStep列改为Phase 2状态（不变）；Phase 3瘦身目标修正为{code,message,duration_ms}（非仅duration_ms） | 小欧 |
 | v7.0 | 2026-06-22 16:30:00 | **拆分Phase 2/3**：action_tool模式的execution_result瘦身和DB存储优化从Phase 2移除，新增9.4节Phase 3实施清单。Phase 2只改observation模式 | 小欧 |
+| v7.3 | 2026-07-13 05:47:38 | **对照2026-07-13最新代码全面对齐**：①工具名全部改为当前注册名（readtext/listdir/copy/delete/find/readmedia/searchweb/httpget/shell/sysinfo/event_log/keyboard_control/screen_capture/timenow/searchtool/download等）；②路径修正 message_utils.py→observation_formatter.py、action_handler.py→handlers/action_handler.py、file_tools.py→file/read_text_file.py、tool_step.py→steps/observation_step.py+steps/action_step.py；③_format_key_value→_format_scalar_data；④数据示例修正 read_xlsx（去content嵌套、row_count入llm_data.metrics）、read_pdf（content→text）、writetext（返回content_preview非{}）；⑤删除已移除工具 list_processes/list_services/reboot_system 及非注册工具 ask_question/execute_code，finish/think 标注为agent动作（非注册工具） | 小欧 + 北京老陈 |
 
 ---
 
@@ -43,7 +44,7 @@
 | 示例 | data内容 | LLM缺什么 |
 |------|---------|-----------|
 | write_docx成功 | `{"file_path": "..."}` | 写了多少段落？多少字？ |
-| delete_file幂等 | `None` | 哪个文件？什么操作？ |
+| delete幂等 | `None` | 哪个文件？什么操作？ |
 | generate_chart成功 | `"D:/chart.png"`(裸字符串) | 图表类型？ |
 | event_log错误 | `{"error": "..."}` | 哪个日志？什么级别？ |
 | registry_write成功 | `{"key_path": "...", "value": "..."}` | 旧值是什么？ |
@@ -52,10 +53,10 @@
 
 | 操作类型 | 工具 | data结构 | 问题 |
 |---------|------|---------|------|
-| 写入文件 | write_text_file | `{operation_id, file_path, bytes_written}` | 有operation_id |
+| 写入文件 | writetext | `{operation_id, file_path, bytes_written}` | 有operation_id |
 | 写入文件 | write_docx | `{file_path}` | 无operation_id，无内容摘要 |
 | 写入文件 | write_xlsx | `{file_path, row_count}` | 无operation_id |
-| 读取文件 | read_text_file | `{content, total_lines, ...}` | 字段最多 |
+| 读取文件 | readtext | `{content, total_lines, ...}` | 字段最多 |
 | 读取文件 | read_pdf | `{text, page_count, ...}` | 用text而非content |
 | 读取文件 | read_xlsx | `{headers, rows, row_count, ...}` | 完全不同的结构 |
 | 剪贴板读 | clipboard_read | `{text}` | 字段名text |
@@ -152,7 +153,7 @@ llm_data = {
     # === 必填字段 ===
     "summary": str,     # 自然语言摘要（"读取 C:\test.py，156行，2380字节，UTF-8编码"）
     "action": {         # 操作描述（结构固定，新增工具只扩枚举不改结构）
-        "tool": str,    # 工具名称，即LLM调用时的function name（"read_text_file"/"write_docx"/"execute_shell_command"/"search_web"/...）
+        "tool": str,    # 工具名称，即LLM调用时的function name（"readtext"/"write_docx"/"shell"/"searchweb"/...）
         "tool_zh": str, # 中文操作类型（"读取"/"写入"/"删除"/"搜索"/"执行"/"复制"/"列出"/"查询"/"下载"/"点击"/"截图"/"设置"/"获取"/...）
         "target": str,  # 操作目标（路径/URL/查询词/命令，如"C:\test.py"）— 从params中提取的关键参数值，与action天然配对
         "params": dict, # LLM调用时传入的参数（{"file_path":"C:\\test.py","encoding":"utf-8"} / {"command":"Get-Process"} / {"query":"低空星链通信"}/...）
@@ -227,7 +228,7 @@ llm_data = {
 |------|------|------|------|
 | summary | ✅ 结果摘要 | ✅ 错误摘要 | ✅ 警告摘要 |
 | action | ✅ | ✅ | ✅ |
-| action.tool | "read_text_file" | "read_text_file" | "execute_sql" |
+| action.tool | "readtext" | "readtext" | "execute_sql" |
 | action.tool_zh | "读取" | "读取" | "执行" |
 | action.target | "C:\test.py" | "C:\notexist.txt" | "SELECT * FROM users" |
 | action.params | {"file_path":"C:\\test.py"} | {"file_path":"C:\\notexist.txt"} | {"sql":"SELECT..."} |
@@ -278,7 +279,7 @@ message = "影响行数超过安全阈值" # 警告时必须说清原因
 
 | 消费方 | 用action.tool还是action.tool_zh | 原因 |
 |--------|-------------------------------|------|
-| formatter观察行 | action.tool_zh | LLM看中文更直观："读取成功"比"read_text_file success"更清晰 |
+| formatter观察行 | action.tool_zh | LLM看中文更直观："读取成功"比"readtext success"更清晰 |
 | 前端操作标签 | action.tool_zh + action.target | 天然配对："读取 C:\test.py" |
 | 前端程序逻辑 | action.tool | 程序判断用工具名，精确匹配 |
 | 日志/调试 | action.tool | 英文便于检索 |
@@ -332,7 +333,7 @@ data = {"error_detail": str, "params": dict}  # 错误详情和参数
 
 ```python
 # ✅ 正确：llm_data有lines（在metrics里），data不放lines
-llm_data = {"summary":"读取 C:\\test.py，156行","action":{"tool":"read_text_file","tool_zh":"读取","target":"C:\\test.py","params":{"file_path":"C:\\test.py"}},"status":{"exec_code":"success","message":"读取成功","code":"","detail":"","hint":""},"metrics":{"lines":{"value":156,"text":"156行"},"bytes":{"value":2380,"text":"2380字节"}}}
+llm_data = {"summary":"读取 C:\\test.py，156行","action":{"tool":"readtext","tool_zh":"读取","target":"C:\\test.py","params":{"file_path":"C:\\test.py"}},"status":{"exec_code":"success","message":"读取成功","code":"","detail":"","hint":""},"metrics":{"lines":{"value":156,"text":"156行"},"bytes":{"value":2380,"text":"2380字节"}}}
 data = {"content": "def hello():\n    ..."}
 
 # ❌ 错误：data又放lines → 重复
@@ -569,7 +570,7 @@ data = {
 
 ```python
 # llm_data（结构化摘要）
-llm_data = {"summary":"读取 C:\\test.py，156行，2380字节，UTF-8编码","action":{"tool":"read_text_file","tool_zh":"读取","target":"C:\\test.py","params":{"file_path":"C:\\test.py"}},"status":{...},"metrics":{"lines":{"value":156,"text":"156行"},"bytes":{"value":2380,"text":"2380字节"},"encoding":{"value":"utf-8","text":"UTF-8编码"}}}
+llm_data = {"summary":"读取 C:\\test.py，156行，2380字节，UTF-8编码","action":{"tool":"readtext","tool_zh":"读取","target":"C:\\test.py","params":{"file_path":"C:\\test.py"}},"status":{...},"metrics":{"lines":{"value":156,"text":"156行"},"bytes":{"value":2380,"text":"2380字节"},"encoding":{"value":"utf-8","text":"UTF-8编码"}}}
 
 # data（纯业务数据）
 data = {"content": "def hello():\n    ..."}
@@ -591,9 +592,9 @@ data = {
 ```
 
 **示例**：
-- read_text_file: `{"content": "def hello():..."}`
-- read_xlsx: `{"content": {"headers": [...], "rows": [...]}}`
-- read_pdf: `{"content": "PDF文本内容..."}`
+- readtext: `{"content": "def hello():..."}`
+- read_xlsx: `{"headers": [...], "rows": [[...]], "sheet_names": [...]}` （多sheet：`{"sheets": [{"sheet_name":..., "headers":[...], "rows":[[...]]}], "sheet_names": [...]}`；row_count 在 llm_data.metrics）
+- read_pdf: `{"text": "PDF文本内容...", "page_count": N, "char_count": N}` （page_count/char_count 在 llm_data.metrics）
 
 #### 4.2.2 write类（写入）
 
@@ -602,7 +603,7 @@ data = {}  # 写入成功通常无需额外业务数据，关键数字在llm_dat
 ```
 
 **示例**：
-- write_text_file: `{}`  （bytes_written/content_summary在llm_data里）
+- writetext: `{"content_preview": "已写入内容..."}`  （bytes_written 在 llm_data.metrics；content_preview 为写入内容预览）
 - write_docx: `{}` 
 - write_xlsx: `{}` 
 
@@ -736,7 +737,7 @@ def format_data_detail(data: Any) -> str:
             return _format_events(data["events"])
         
         # 键值对类（系统信息/错误详情等）
-        return _format_key_value(data)
+        return _format_scalar_data(data)
     except Exception:
         # 兜底：JSON dump 或 str()
         import json
@@ -805,7 +806,7 @@ build_error(data={"file_path": "D:/test.txt"}, llm_data={...})
 # 规范后（零重复，action含target/status在llm_data）
 build_error(
     data={"error_detail": "文件路径不存在", "params": {"encoding": "utf-8"}},
-    llm_data={"summary":"文件 D:/test.txt 不存在","action":{"tool":"read_text_file","tool_zh":"读取","target":"D:/test.txt","params":{"file_path":"D:/test.txt"}},"status":{"exec_code":"error","message":"文件不存在","code":"ERR_FILE_NOT_FOUND","detail":"文件路径不存在","hint":"请检查路径是否正确"}}
+    llm_data={"summary":"文件 D:/test.txt 不存在","action":{"tool":"readtext","tool_zh":"读取","target":"D:/test.txt","params":{"file_path":"D:/test.txt"}},"status":{"exec_code":"error","message":"文件不存在","code":"ERR_FILE_NOT_FOUND","detail":"文件路径不存在","hint":"请检查路径是否正确"}}
 )
 ```
 
@@ -832,7 +833,7 @@ llm_data = {
     # === 必填 ===
     "summary": str,     # 自然语言摘要（"读取 C:\test.py，156行，2380字节，UTF-8编码"）
     "action": {         # 操作类型（结构冻结）
-        "tool": str,    # function name（"read_text_file"）
+        "tool": str,    # function name（"readtext"）
         "tool_zh": str, # 中文操作类型（"读取"）
         "target": str,  # 操作目标（路径/URL/查询词/命令，如"C:\test.py"）— 从params中提取的关键参数值，与action天然配对
         "params": dict, # LLM调用参数（{"file_path":"C:\\test.py"}）
@@ -866,7 +867,7 @@ llm_data = {
 
 | 子字段 | 类型 | 说明 |
 |--------|------|------|
-| `tool` | str | function name，如 `"read_text_file"` |
+| `tool` | str | function name，如 `"readtext"` |
 | `tool_zh` | str | 中文操作类型，如 `"读取"` |
 | `target` | str | 操作目标，如 `"C:\\test.py"` — 从params中提取的关键参数值，与action天然配对 |
 | `params` | dict | LLM调用参数，如 `{"file_path":"C:\\test.py"}` |
@@ -948,15 +949,15 @@ target本质是action.params中"最关键的那个参数值"（文件路径/URL/
 
 | 工具 | tool_zh | action.target | 核心metrics | summary示例 |
 |------|---------|--------|------------|------------|
-| read_text_file | 读取 | 文件路径 | lines, bytes, encoding | 读取 C:\test.py，156行，2380字节，UTF-8编码 |
-| write_text_file | 写入 | 文件路径 | bytes_written | 写入 C:\output.txt，50行/1024字节 |
+| readtext | 读取 | 文件路径 | lines, bytes, encoding | 读取 C:\test.py，156行，2380字节，UTF-8编码 |
+| writetext | 写入 | 文件路径 | bytes_written | 写入 C:\output.txt，50行/1024字节 |
 | write_docx | 写入 | 文件路径 | bytes_written, content_summary | 写入 C:\report.docx，3段落/500字 |
 | write_xlsx | 写入 | 文件路径 | bytes_written, content_summary | 写入 C:\data.xlsx，10行×5列 |
-| list_directory | 列出 | 目录路径 | total, truncated | 列出 C:\project\，156个文件/目录 |
-| copy_file | 复制 | source→destination | bytes | 复制 C:\a.txt → C:\b.txt，1024字节 |
-| delete_file | 删除 | 文件路径 | deleted, mode | 删除 C:\temp.log，已永久删除 |
-| search_files | 搜索 | 搜索目录 | count, matches | 搜索到3个文件: a.py, b.py, c.py |
-| file_media | 读取 | 文件路径 | mime_type, size | 读取 img.png，image/png，100KB |
+| listdir | 列出 | 目录路径 | total, truncated | 列出 C:\project\，156个文件/目录 |
+| copy | 复制 | source→destination | bytes | 复制 C:\a.txt → C:\b.txt，1024字节 |
+| delete | 删除 | 文件路径 | deleted, mode | 删除 C:\temp.log，已永久删除 |
+| find | 搜索 | 搜索目录 | count, matches | 搜索到3个文件: a.py, b.py, c.py |
+| readmedia | 读取 | 文件路径 | mime_type, size | 读取 img.png，image/png，100KB |
 
 #### 5.4.2 数据库操作
 
@@ -976,33 +977,30 @@ target本质是action.params中"最关键的那个参数值"（文件路径/URL/
 
 | 工具 | tool_zh | action.target | 核心metrics | summary示例 |
 |------|---------|--------|------------|------------|
-| search_web | 搜索 | 搜索词 | total, engine | 搜索到8条结果(Parallel引擎) |
-| http_request | 请求 | URL | status_code, content_type, body_len | HTTP GET https://api.example.com，200，15KB |
+| searchweb | 搜索 | 搜索词 | total, engine | 搜索到8条结果(Parallel引擎) |
+| httpget | 请求 | URL | status_code, content_type, body_len | HTTP GET https://api.example.com，200，15KB |
 
 #### 5.4.5 Shell执行
 
 | 工具 | tool_zh | action.target | 核心metrics | summary示例 |
 |------|---------|--------|------------|------------|
-| execute_shell | 执行 | 命令摘要 | exit_code | 命令执行完成，退出码0 |
+| shell | 执行 | 命令摘要 | exit_code | 命令执行完成，退出码0 |
 
 #### 5.4.6 系统操作
 
 | 工具 | tool_zh | action.target | 核心metrics | summary示例 |
 |------|---------|--------|------------|------------|
-| get_system_info | 获取 | info_type | 各指标平铺 | CPU: 8核/45% |
-| get_event_log | 查询 | 日志源 | count, level | System日志: 15条错误 |
-| list_processes | 列出 | "all" | count | 当前120个进程 |
-| list_services | 列出 | "all" | count | 当前80个服务 |
-| reboot_system | 重启 | "scheduled" | delay | 系统计划60秒后重启 |
+| sysinfo | 获取 | info_type | 各指标平铺 | CPU: 8核/45% |
+| event_log | 查询 | 日志源 | count, level | System日志: 15条错误 |
 
 #### 5.4.7 桌面操作
 
 | 工具 | tool_zh | action.target | 核心metrics | summary示例 |
 |------|---------|--------|------------|------------|
-| screenshot | 截图 | 文件路径 | size, width, height | 截图已保存，512KB，1920×1080 |
+| screen_capture | 截图 | 文件路径 | size, width, height | 截图已保存，512KB，1920×1080 |
 | mouse_click | 点击 | "click" | x, y, button | 鼠标点击 (100,200) 左键 |
-| keyboard_type | 输入 | "type" | text | 输入文本 "hello" |
-| window_control | 操作 | 窗口标题 | action, x, y, w, h | 移动窗口"记事本"到 (0,0) |
+| keyboard_control | 输入 | "type" | text | 输入文本 "hello" |
+| set_window_state / window_focus / window_info / window_resize | 操作 | 窗口标题 | action, x, y, w, h | 移动窗口"记事本"到 (0,0) |
 
 #### 5.4.8 注册表操作
 
@@ -1016,14 +1014,12 @@ target本质是action.params中"最关键的那个参数值"（文件路径/URL/
 
 | 工具 | tool_zh | action.target | 核心metrics | summary示例 |
 |------|---------|--------|------------|------------|
-| ask_question | 询问 | "question"/"confirm" | — | 询问用户确认 |
-| finish | 完成 | "success"/"failed" | reason | 任务完成 |
-| think | 思考 | "" | thought | 思考中... |
-| execute_code | 执行 | 语言 | exit_code, stdout, stderr | Python代码执行完成，退出码0 |
-| get_current_time | 获取 | "local"/"utc" | datetime, timezone | 当前时间 2026-06-20 15:30:00(Asia/Shanghai) |
-| tool_search | 搜索 | 搜索词 | total | 搜索到3个匹配工具 |
+| timenow | 获取 | "local"/"utc" | datetime, timezone | 当前时间 2026-06-20 15:30:00(Asia/Shanghai) |
+| searchtool | 搜索 | 搜索词 | total | 搜索到3个匹配工具 |
 
-**tool_search的data格式**：`data = {"matches": [...]}`（matches是业务数据列表，不是关键数字指标，放data不放metrics。tool_executor从 `result.data.matches` 取值）
+> 注：`finish`/`think` 为 agent 动作（非注册工具）；`list_processes`/`list_services`/`reboot_system` 已移除；`ask_question`/`execute_code` 非注册工具（代码执行走 `shell`）。
+
+**searchtool的data格式**：`data = {"matches": [...]}`（matches是业务数据列表，不是关键数字指标，放data不放metrics。tool_executor从 `result.data.matches` 取值）
 
 ### 5.5 metrics自描述规范
 
@@ -1103,19 +1099,19 @@ format_llm_observation(data, llm_data)                         ← 不再接收 
 | `_build_xxx_llm_data(...)` | 各tools/*.py | 从业务参数构建llm_data（5字段结构化摘要） |
 | `build_success/error/warning(data, llm_data, other_data)` | tool_response.py | 纯组装result dict，不构建llm_data |
 | `format_llm_observation(data, llm_data)` | observation_formatter.py | data+llm_data → observation文本 |
-| `build_observation_text()` | message_utils.py | 桥接，拆包result后调format_llm_observation |
+| `build_observation_text()` | observation_formatter.py | 桥接，拆包result后调format_llm_observation |
 | `MessageBuilder.add_observation()` | message_builder.py | observation文本 → FC协议消息对 |
 | `MessageBuilder.prepare_messages_for_llm()` | message_builder.py | conversation_history → 发给LLM的messages |
 
 **llm_data和data在流程中的位置**：
 
 ```
-llm_data = _build_read_text_file_llm("success", 25, "C:\\test.py", 156, 2380, "utf-8")
+llm_data = _build_read_text_file_llm_data("success", 25, "C:\\test.py", 156, 2380, "utf-8")
   ↓
 build_success(data={"content":"def hello():..."}, llm_data=llm_data)
   ↓
 result = {"data": {"content":"def hello():..."},
-           "llm_data": {"summary":"读取 C:\\test.py，156行","action":{"tool":"read_text_file","tool_zh":"读取","target":"C:\\test.py","params":{"file_path":"C:\\test.py"}},"status":{...},"metrics":{...}},
+           "llm_data": {"summary":"读取 C:\\test.py，156行","action":{"tool":"readtext","tool_zh":"读取","target":"C:\\test.py","params":{"file_path":"C:\\test.py"}},"status":{...},"metrics":{...}},
            "other_data": {}}
   ↓                ↑ data在这里                    ↑ llm_data由builder函数构建后传入
 format_llm_observation(result["data"], result["llm_data"])
@@ -1160,7 +1156,7 @@ def hello():
     {"role": "assistant",
      "content": None,
      "tool_calls": [{"id": "call_abc123", "type": "function",
-                     "function": {"name": "read_text_file",
+                     "function": {"name": "readtext",
                                   "arguments": "{\"file_path\":\"C:\\\\test.py\"}"}}]},
 
     # observation文本作为tool消息（改造后）
@@ -1354,12 +1350,12 @@ builder不再从data内容猜测exec_code，而是接收调用者显式传入。
 **builder完整示例**：
 
 ```python
-def _build_read_text_file_llm(exec_code, duration_ms, file_path, line_count, file_size, encoding):
+def _build_read_text_file_llm_data(exec_code, duration_ms, file_path, line_count, file_size, encoding):
     """read_text_file的llm_data构建函数 — 工具直接调用"""
     if exec_code == "error":
         return {
             "summary": f"文件 {file_path} 不存在",
-            "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
             "status": {"exec_code": "error", "message": "文件不存在", "code": "ERR_FILE_NOT_FOUND", "detail": f"路径不正确: {file_path}", "hint": "请检查文件路径是否正确"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -1367,14 +1363,14 @@ def _build_read_text_file_llm(exec_code, duration_ms, file_path, line_count, fil
     if exec_code == "warning":
         return {
             "summary": f"文件为空: {file_path}",
-            "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
             "status": {"exec_code": "warning", "message": "文件为空，可能不是预期内容", "code": "WARNING_EMPTY_FILE", "detail": "文件内容为空字符串", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {"lines": {"value": 0, "text": "0行"}, "bytes": {"value": 0, "text": "0字节"}},
         }
     return {
         "summary": f"读取 {file_path}，{line_count}行，{file_size}字节，{encoding}编码",
-        "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": "success", "message": "读取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"lines": {"value": line_count, "text": f"{line_count}行"}, "bytes": {"value": file_size, "text": f"{file_size}字节"}},
@@ -1384,13 +1380,13 @@ def _build_read_text_file_llm(exec_code, duration_ms, file_path, line_count, fil
 **工具函数典型写法**：
 
 ```python
-# file_tools.py
-def read_text_file(file_path):
+# file/read_text_file.py
+async def readtext(file_path):
     t0 = time.perf_counter()
     content = do_read(file_path)
     duration_ms = int((time.perf_counter() - t0) * 1000)
     exec_code = "success" if content else "error"
-    llm_data = _build_read_text_file_llm(exec_code, duration_ms, file_path, ...)
+    llm_data = _build_read_text_file_llm_data(exec_code, duration_ms, file_path, ...)
     if exec_code == "success":
         return build_success(data={"content": content}, llm_data=llm_data)
     else:
@@ -1504,7 +1500,7 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
 
 **写法**：
 ```python
-def read_text_file(file_path: str):
+async def readtext(file_path: str):
     t0 = time.perf_counter()
     try:
         content = do_read(file_path)
@@ -1512,7 +1508,7 @@ def read_text_file(file_path: str):
         content = None
     duration_ms = int((time.perf_counter() - t0) * 1000)
     exec_code = "success" if content else "error"
-    llm_data = _build_read_text_file_llm(exec_code, duration_ms, file_path, ...)
+    llm_data = _build_read_text_file_llm_data(exec_code, duration_ms, file_path, ...)
     if exec_code == "success":
         return build_success(data={"content": content}, llm_data=llm_data)
     else:
@@ -1521,7 +1517,7 @@ def read_text_file(file_path: str):
 
 **builder 接收** — builder 签名已包含 `duration_ms`，直接使用：
 ```python
-def _build_read_text_file_llm(exec_code, duration_ms, file_path, line_count, file_size, encoding):
+def _build_read_text_file_llm_data(exec_code, duration_ms, file_path, line_count, file_size, encoding):
     return {
         ...
         "duration_ms": duration_ms,  # ← 直接参数，不猜
@@ -1554,9 +1550,9 @@ duration_ms = **最后一次工具执行的纯耗时**（不含重试间隔、�
 | `tool_response.py` | build_success/error/warning 签名重写（data, llm_data, other_data, **extra）；删除 _REQUIRED_FIELDS/_OPTIONAL_FIELDS/_add_optionals/register_builder/_default_builder/_BUILDERS/build_result；is_success/error 适配 |
 | **所有 tool 文件（21个）** | 每个 tool 文件添加 builder 函数；调用处改为 builder→build_success/error/warning；工具函数内部加 `time.perf_counter()` 测 duration_ms |
 | `observation_formatter.py` | **重写** — format_llm_observation 改为 `(data, llm_data)`；**删除** `_extract_display_data`、`_append_data`、`_format_summary_parts`、`build_execution_result_dict`；format_data_detail 移入（从 4.3.2 设计）|
-| `message_utils.py` | build_observation_text 改为直接调 `format_llm_observation(result["data"], result["llm_data"])` |
-| `action_handler.py` | ToolStep "observation" 构建时从 `other_data` 读 return_direct/warning/attachment；ToolStep "action_tool" 的 execution_result 为新 3 字段结构 |
-| `steps/tool_step.py` | to_dict 适配新 result 结构 |
+| `observation_formatter.py` | build_observation_text 改为直接调 `format_llm_observation(result["data"], result["llm_data"])` |
+| `handlers/action_handler.py` | ToolStep "observation" 构建时从 `other_data` 读 return_direct/warning/attachment；ToolStep "action_tool" 的 execution_result 为新 3 字段结构 |
+| `steps/base.py` | to_dict 适配新 result 结构 |
 | `tool_retry_engine.py` | 透传工具result（不再二次包装）；判断exec_code从 `llm_data.status.exec_code` 取（替代 `result.get("code")`）；自身错误改用build_error(data=..., llm_data=...)；retry_count放入other_data |
 | `tool_executor.py` | auto_inject_from_search从 `result.data.matches` 取值（替代旧路径 `result.data.llm_data.matches`） |
 
@@ -1575,9 +1571,9 @@ duration_ms = **最后一次工具执行的纯耗时**（不含重试间隔、�
 |------|------|---------|
 | 1 | `tool_response.py` — 新 build_success/error/warning 签名 + is_success/is_error 适配 | 单测：构建→result 结构正确 |
 | 2 | `observation_formatter.py` — 重写 format_llm_observation；format_data_detail 加 try-except 兜底 | 单测：各种 data/llm_data 组合→observation 文本正确 |
-| 3 | `message_utils.py` — 适配新签名 | 单测：桥接层正确 |
+| 3 | `observation_formatter.py` — 适配新签名 | 单测：桥接层正确 |
 | 4 | 逐个 tool 文件 — 添加 builder 函数 + 工具函数内部加 time.perf_counter()；替换 build_success/error/warning 调用 | 每个 tool 的 observation 文本正确，duration_ms 准确 |
-| 5 | `action_handler.py` — 从 other_data 读字段 | 集成测试：SSE 事件字段正确 |
+| 5 | `handlers/action_handler.py` — 从 other_data 读字段 | 集成测试：SSE 事件字段正确 |
 | 6 | 删除旧代码 | 确认无引用 |
 | 7 | 全量集成测试 | 所有场景通过 |
 
@@ -1666,9 +1662,9 @@ SSE: 仅完成时间         observation_text
 |----|------|------|
 | **构建层** | `tool_response.py` | **不动** |
 | **格式化层** | `observation_formatter.py` | Phase 1 已改 `(data, llm_data)`，Phase 2 不动 |
-| **桥接层** | `message_utils.py` | Phase 1 已拆包，Phase 2 不动 |
-| **步骤模型** | `tool_step.py` (ToolStep类) | **Phase 2(observation模式)**：`_extra_fields()` 新增 `llm_data`、`tool_result` 和 `other_data` 字段（替代现有6冗余字段）。**Phase 3(action_tool模式)**：`execution_result` 只存 `{"duration_ms": N}`，删除 data/llm_data等字段 |
-| **编排层** | `action_handler.py` | `build_observation()` 中：传入 `llm_data`、`tool_result` 和 `other_data`（从result拆包）|
+| **桥接层** | `observation_formatter.py` | Phase 1 已拆包，Phase 2 不动 |
+| **步骤模型** | `steps/observation_step.py` + `steps/action_step.py` (ObservationStep/ActionStep类) | **Phase 2(observation模式)**：`_extra_fields()` 新增 `llm_data`、`tool_result` 和 `other_data` 字段（替代现有6冗余字段）。**Phase 3(action_tool模式)**：`execution_result` 只存 `{"duration_ms": N}`，删除 data/llm_data等字段 |
+| **编排层** | `handlers/action_handler.py` | `build_observation()` 中：传入 `llm_data`、`tool_result` 和 `other_data`（从result拆包）|
 | **SSE 层** | `run_sse_stream.py` | SSE发送时可优化截断，DB存储必须原始完整 |
 | **前端** | 消费 ToolStep 的代码 | action_tool事件→只取duration_ms显示loading；observation事件→取llm_data渲染卡片、取tool_result渲染详情面板 |
 | **DB 存储** | `save_execution_steps_to_db` | Observation存原始llm_data、tool_result和other_data，ToolStep不存data |
@@ -1677,7 +1673,7 @@ SSE: 仅完成时间         observation_text
 
 1. **ToolStep 瘦身**（Phase 3）：`_execution_result` 只保留 `{code, message, duration_ms}`，**不存 data/llm_data**。
 
-2. **Observation step 新增字段**（Phase 2）：在 `action_handler.py` 的 `build_observation()` 中，把 result["data"] 作为 `tool_result`、result["llm_data"] 作为 `llm_data`、result["other_data"] 作为 `other_data` 字段传入 Observation step。
+2. **Observation step 新增字段**（Phase 2）：在 `handlers/action_handler.py` 的 `build_observation()` 中，把 result["data"] 作为 `tool_result`、result["llm_data"] 作为 `llm_data`、result["other_data"] 作为 `other_data` 字段传入 Observation step。
 
 3. **DB 存储规则**（Phase 2+3）：
    - Observation存入DB的 `llm_data`、`tool_result`、`other_data` 必须是**原始完整数据**，不做任何处理
@@ -1800,7 +1796,7 @@ LLM同时调用多个工具时，每个工具各产出一个result，Observation
 |------|---------|------|
 | `observation_text` | 多个obs_text用 `\n\n` 拼接 | 当前已有此逻辑 |
 | `llm_data` | 按详细规则合并（见下表） | LLM需要知道最差状态+所有摘要 |
-| `tool_result` | 合并为list：`[{"tool_name": "read_text_file", "data": ...}, ...]` | 前端按tool_name分tab展示 |
+| `tool_result` | 合并为list：`[{"tool_name": "readtext", "data": ...}, ...]` | 前端按tool_name分tab展示 |
 | `other_data.warning` | 收集所有非空warning，拼接 | 不丢失任何警告 |
 | `other_data.attachment` | 收集所有非空attachment，合并为list | 不丢失任何附件 |
 | `other_data.return_direct` | 任一为True则True | 任何一个工具要求直接返回就生效 |
@@ -1889,7 +1885,7 @@ def _merge_other_data(all_other_data: List[Dict]) -> Dict:
 
 ### 6.1 文件操作
 
-**read_text_file 成功**：
+**readtext 成功**：
 ```python
 # data
 data = {"content":"def hello():\n    ..."}
@@ -1897,7 +1893,7 @@ data = {"content":"def hello():\n    ..."}
 # llm_data（builder 产出）
 llm_data = {
     "summary": "读取 C:\\test.py，156行，2380字节，UTF-8编码",
-    "action": {"tool": "read_text_file", "tool_zh": "读取", "target": "C:\\test.py", "params": {"file_path": "C:\\test.py", "encoding": "utf-8"}},
+    "action": {"tool": "readtext", "tool_zh": "读取", "target": "C:\\test.py", "params": {"file_path": "C:\\test.py", "encoding": "utf-8"}},
     "status": {"exec_code": "success", "message": "读取成功", "code": "", "detail": "", "hint": ""},
     "metrics": {"lines": {"value": 156, "text": "156行"}, "bytes": {"value": 2380, "text": "2380字节"}, "encoding": {"value": "utf-8", "text": "UTF-8编码"}},
 }
@@ -1924,7 +1920,7 @@ def hello():
 | status.message | 观察行 | 状态指示器 | "读取成功" |
 | metrics.*.text | 嵌在summary里 | 结构化标签 | "156行 | 2380字节 | UTF-8" |
 
-**write_text_file 成功**：
+**writetext 成功**：
 ```python
 # data
 data = {}
@@ -1932,7 +1928,7 @@ data = {}
 # llm_data（builder 产出）
 llm_data = {
     "summary": "写入 C:\\output.txt，50行/1024字节",
-    "action": {"tool": "write_text_file", "tool_zh": "写入", "target": "C:\\output.txt", "params": {"file_path": "C:\\output.txt"}},
+    "action": {"tool": "writetext", "tool_zh": "写入", "target": "C:\\output.txt", "params": {"file_path": "C:\\output.txt"}},
     "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
     "metrics": {"bytes_written": {"value": 1024, "text": "写入1024字节"}},
 }
@@ -1942,7 +1938,7 @@ llm_data = {
 结果: 写入 C:\output.txt，50行/1024字节
 ```
 
-**list_directory 成功**：
+**listdir 成功**：
 ```python
 # data
 data = {"entries":["src/","README.md",...]}
@@ -1950,7 +1946,7 @@ data = {"entries":["src/","README.md",...]}
 # llm_data（builder 产出）
 llm_data = {
     "summary": "列出 C:\\project\\，156个文件/目录",
-    "action": {"tool": "list_directory", "tool_zh": "列出", "target": "C:\\project\\", "params": {"path": "C:\\project\\"}},
+    "action": {"tool": "listdir", "tool_zh": "列出", "target": "C:\\project\\", "params": {"path": "C:\\project\\"}},
     "status": {"exec_code": "success", "message": "列出成功", "code": "", "detail": "", "hint": ""},
     "metrics": {"total": {"value": 156, "text": "156个文件/目录"}, "truncated": {"value": False, "text": "完整列表"}},
 }
@@ -1964,7 +1960,7 @@ llm_data = {
   package.json [文件, 1024字节]
 ```
 
-**copy_file 成功**：
+**copy 成功**：
 ```python
 # data
 data = {}
@@ -1972,7 +1968,7 @@ data = {}
 # llm_data（builder 产出）
 llm_data = {
     "summary": "复制 C:\\a.txt → C:\\b.txt，1024字节",
-    "action": {"tool": "copy_file", "tool_zh": "复制", "target": "C:\\a.txt → C:\\b.txt", "params": {"source": "C:\\a.txt", "destination": "C:\\b.txt"}},
+    "action": {"tool": "copy", "tool_zh": "复制", "target": "C:\\a.txt → C:\\b.txt", "params": {"source": "C:\\a.txt", "destination": "C:\\b.txt"}},
     "status": {"exec_code": "success", "message": "复制成功", "code": "", "detail": "", "hint": ""},
     "metrics": {"bytes": {"value": 1024, "text": "1024字节"}},
 }
@@ -1982,7 +1978,7 @@ llm_data = {
 结果: 复制 C:\a.txt → C:\b.txt，1024字节
 ```
 
-**delete_file 成功**：
+**delete 成功**：
 ```python
 # data
 data = {}
@@ -1990,7 +1986,7 @@ data = {}
 # llm_data（builder 产出）
 llm_data = {
     "summary": "删除 C:\\temp.log，已永久删除",
-    "action": {"tool": "delete_file", "tool_zh": "删除", "target": "C:\\temp.log", "params": {"file_path": "C:\\temp.log"}},
+    "action": {"tool": "delete", "tool_zh": "删除", "target": "C:\\temp.log", "params": {"file_path": "C:\\temp.log"}},
     "status": {"exec_code": "success", "message": "删除成功", "code": "", "detail": "", "hint": ""},
     "metrics": {"deleted": {"value": True, "text": "已永久删除"}, "mode": {"value": "permanent", "text": "永久删除"}},
 }
@@ -2000,7 +1996,7 @@ llm_data = {
 结果: 删除 C:\temp.log，已永久删除
 ```
 
-**delete_file 幂等（文件不存在）**：
+**delete 幂等（文件不存在）**：
 ```python
 # data
 data = {}
@@ -2008,7 +2004,7 @@ data = {}
 # llm_data（builder 产出）
 llm_data = {
     "summary": "删除 C:\\temp.log，文件已不存在(幂等)",
-    "action": {"tool": "delete_file", "tool_zh": "删除", "target": "C:\\temp.log", "params": {"file_path": "C:\\temp.log"}},
+    "action": {"tool": "delete", "tool_zh": "删除", "target": "C:\\temp.log", "params": {"file_path": "C:\\temp.log"}},
     "status": {"exec_code": "success", "message": "删除成功", "code": "", "detail": "", "hint": ""},
     "metrics": {"deleted": {"value": False, "text": "文件已不存在(幂等)"}, "mode": {"value": "already_gone", "text": "无需删除"}},
 }
@@ -2142,7 +2138,7 @@ llm_data = {
 
 ### 6.4 网络工具
 
-**search_web 成功**：
+**searchweb 成功**：
 ```python
 # data
 data = {"items":[...]}
@@ -2150,7 +2146,7 @@ data = {"items":[...]}
 # llm_data（builder 产出）
 llm_data = {
     "summary": "搜索到8条结果(Parallel引擎)",
-    "action": {"tool": "search_web", "tool_zh": "搜索", "target": "低空星链通信 2026", "params": {"query": "低空星链通信 2026"}},
+    "action": {"tool": "searchweb", "tool_zh": "搜索", "target": "低空星链通信 2026", "params": {"query": "低空星链通信 2026"}},
     "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
     "metrics": {"total": {"value": 8, "text": "8条结果"}, "engine": {"value": "Parallel", "text": "Parallel引擎"}},
 }
@@ -2163,7 +2159,7 @@ llm_data = {
 [2] 标题 - 摘要...
 ```
 
-**http_request 成功**：
+**httpget 成功**：
 ```python
 # data
 data = {"body":"..."}
@@ -2171,7 +2167,7 @@ data = {"body":"..."}
 # llm_data（builder 产出）
 llm_data = {
     "summary": "HTTP GET https://api.example.com，状态码200，响应体15000字符",
-    "action": {"tool": "http_request", "tool_zh": "请求", "target": "https://api.example.com", "params": {"url": "https://api.example.com", "method": "GET"}},
+    "action": {"tool": "httpget", "tool_zh": "请求", "target": "https://api.example.com", "params": {"url": "https://api.example.com", "method": "GET"}},
     "status": {"exec_code": "success", "message": "请求成功", "code": "", "detail": "", "hint": ""},
     "metrics": {"status_code": {"value": 200, "text": "HTTP 200"}, "content_type": {"value": "application/json", "text": "JSON格式"}},
 }
@@ -2183,7 +2179,7 @@ llm_data = {
 {"status":"ok","data":[...]}
 ```
 
-**download_file 成功**：
+**download 成功**：
 ```python
 # data
 data = {}
@@ -2191,7 +2187,7 @@ data = {}
 # llm_data（builder 产出）
 llm_data = {
     "summary": "下载完成，102400字节，保存到 C:\\download\\file.zip",
-    "action": {"tool": "download_file", "tool_zh": "下载", "target": "https://example.com/file.zip", "params": {"url": "https://example.com/file.zip"}},
+    "action": {"tool": "download", "tool_zh": "下载", "target": "https://example.com/file.zip", "params": {"url": "https://example.com/file.zip"}},
     "status": {"exec_code": "success", "message": "下载成功", "code": "", "detail": "", "hint": ""},
     "metrics": {"bytes": {"value": 102400, "text": "102400字节"}, "file_path": {"value": "C:\\download\\file.zip", "text": "保存到 C:\\download\\file.zip"}},
 }
@@ -2203,7 +2199,7 @@ llm_data = {
 
 ### 6.5 Shell工具
 
-**execute_shell_command 成功**：
+**shell 成功**：
 ```python
 # data
 data = {"output":"Handles  NPM(K)...","error_output":""}
@@ -2211,7 +2207,7 @@ data = {"output":"Handles  NPM(K)...","error_output":""}
 # llm_data（builder 产出）
 llm_data = {
     "summary": "命令执行成功，退出码0",
-    "action": {"tool": "execute_shell_command", "tool_zh": "执行", "target": "Get-Process", "params": {"command": "Get-Process"}},
+    "action": {"tool": "shell", "tool_zh": "执行", "target": "Get-Process", "params": {"command": "Get-Process"}},
     "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
     "metrics": {"exit_code": {"value": 0, "text": "退出码0"}},
 }
@@ -2225,7 +2221,7 @@ Handles  NPM(K)...
 
 ### 6.6 系统工具
 
-**get_system_info 成功**：
+**sysinfo 成功**：
 ```python
 # data
 data = {"cpu":{"cores":12,"usage":"45%"},"memory":{"total_gb":16,"used_pct":50},"disk":{"C:":{"total_gb":500,"used_pct":60}}}
@@ -2233,7 +2229,7 @@ data = {"cpu":{"cores":12,"usage":"45%"},"memory":{"total_gb":16,"used_pct":50},
 # llm_data（builder 产出）
 llm_data = {
     "summary": "获取系统信息，CPU 12核/内存 16GB(已用50%)/磁盘 C: 500GB(已用60%)",
-    "action": {"tool": "get_system_info", "tool_zh": "获取", "target": "system", "params": {}},
+    "action": {"tool": "sysinfo", "tool_zh": "获取", "target": "system", "params": {}},
     "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
 }
 ```
@@ -2418,7 +2414,7 @@ data = {"error_detail":"文件路径不存在","params":{"encoding":"utf-8"}}
 # llm_data（builder 产出）
 llm_data = {
     "summary": "文件 C:\\notexist.txt 不存在",
-    "action": {"tool": "read_text_file", "tool_zh": "读取", "target": "C:\\notexist.txt", "params": {"file_path": "C:\\notexist.txt"}},
+    "action": {"tool": "readtext", "tool_zh": "读取", "target": "C:\\notexist.txt", "params": {"file_path": "C:\\notexist.txt"}},
     "status": {"exec_code": "error", "message": "文件不存在", "code": "ERR_FILE_NOT_FOUND", "detail": "文件路径不存在", "hint": "请检查路径是否正确"},
 }
 ```
@@ -2481,7 +2477,7 @@ data = {"error_detail":"连接超时，30秒未响应","params":{"url":"https://
 # llm_data（builder 产出）
 llm_data = {
     "summary": "请求 https://slow-api.com 超时，30秒未响应",
-    "action": {"tool": "http_request", "tool_zh": "请求", "target": "https://slow-api.com", "params": {"url": "https://slow-api.com"}},
+    "action": {"tool": "httpget", "tool_zh": "请求", "target": "https://slow-api.com", "params": {"url": "https://slow-api.com"}},
     "status": {"exec_code": "error", "message": "请求超时", "code": "ERR_TIMEOUT", "detail": "连接超时，30秒未响应", "hint": "请稍后重试或检查网络连接"},
 }
 ```
@@ -2637,9 +2633,9 @@ build_success(data=..., llm_data=llm_data)
 |------|-------------|-------------|
 | `tool_response.py` | 新签名 build_success/error/warning(data, llm_data, other_data, **extra) + 新版 is_success/is_error | 旧签名保留，收尾删除 |
 | `observation_formatter.py` | 重写 format_llm_observation(data, llm_data) + 新增 format_data_detail | 清除所有旧格式化函数 |
-| `message_utils.py` | 更新 build_observation_text：拆包 result → (data, llm_data)，直接调 format_llm_observation | 清除 build_execution_result_dict 调用 |
-| `action_handler.py` | 适配新3字段 result：从 llm_data/other_data 取字段 | 清除 result.get("code/warning/attachment/return_direct") |
-| `tool_step.py` | ToolStep 适配新 result 结构 | 清除旧格式字段引用 |
+| `observation_formatter.py` | 更新 build_observation_text：拆包 result → (data, llm_data)，直接调 format_llm_observation | 清除 build_execution_result_dict 调用 |
+| `handlers/action_handler.py` | 适配新3字段 result：从 llm_data/other_data 取字段 | 清除 result.get("code/warning/attachment/return_direct") |
+| `steps/base.py` | BaseStep 适配新 result 结构 | 清除旧格式字段引用 |
 
 **验证**：
 ```
@@ -2661,7 +2657,7 @@ pytest -x --tb=short -k "test_tool_response or test_observation or test_message 
 
 | 批 | 文件 | 调用数 | 优先级 |
 |:-:|------|:-----:|:------:|
-| **第1批** | `file/file_tools.py` + `toolhelper/file_helper.py` | 190 | 最高 |
+| **第1批** | `file/read_text_file.py` + `toolhelper/file_helper.py` | 190 | 最高 |
 | **第2批** | `document/document_tools.py` | 54 | 高 |
 | **第3批** | `system/system_tools.py` + `network/network_tools.py` | 95 | 高 |
 | **第4批** | `desktop/desktop_gui_tools.py` + `desktop/desktop_tools.py` | 60 | 中 |
@@ -2689,11 +2685,11 @@ pytest -x --tb=short -k "test_tool_response or test_observation or test_message 
 
 **范围**：Phase 2只改 **observation模式** 相关代码，action_tool模式的`execution_result`瘦身和DB存储优化拆分到**Phase 3**（9.4节）。
 
-**受影响文件**：3个核心文件（tool_step.py、action_handler.py、run_sse_stream.py）+ 前端消费代码。
+**受影响文件**：3个核心文件（steps/observation_step.py、steps/action_step.py、handlers/action_handler.py、run_sse_stream.py）+ 前端消费代码。
 
 **每步必须手动修改，禁止脚本批量修改。**
 
-#### 9.3.1 步骤1：ToolStep新增参数（tool_step.py）
+#### 9.3.1 步骤1：ObservationStep新增参数（steps/observation_step.py）
 
 **核心说明**：ToolStep类有两种模式，Phase 2只改observation模式，action_tool模式不变（Phase 3才改）。
 
@@ -2808,7 +2804,7 @@ def _extra_fields(self) -> Dict[str, Any]:
 
 **验证**：`pytest -x --tb=short -k "test_tool_step"`
 
-#### 9.3.2 步骤2：action_handler适配（action_handler.py）
+#### 9.3.2 步骤2：action_handler适配（handlers/action_handler.py）
 
 修改 `build_observation()` 函数：
 
@@ -2936,7 +2932,7 @@ const attachment = other_data?.attachment              // 附件
 
 **范围**：Phase 3专门处理action_tool模式的`execution_result`瘦身和DB存储优化。action_tool模式当前在`_extra_fields()`中把完整`execution_result`（含code+message+data+llm_data+duration_ms）透传给前端和DB，Phase 3将其压缩为只存`{code, message, duration_ms}`。
 
-**受影响文件**：`tool_step.py`（_extra_fields action_tool模式）+ DB迁移脚本。
+**受影响文件**：`steps/action_step.py`（`_extra_fields` action_tool模式）+ DB迁移脚本。
 
 #### 9.4.1 步骤1：action_tool模式_execution_result瘦身
 
