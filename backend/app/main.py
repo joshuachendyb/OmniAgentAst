@@ -84,7 +84,9 @@ setup_monitoring(app)
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    logger.error(f"HTTP Exception: {exc.status_code} - {exc.detail}")
+    # 记录请求路径/方法/客户端, 便于定位 404 等异常的真正来源(原日志仅记状态码, 无法定位) — 小欧 2026-07-13
+    client = request.client.host if request.client else "unknown"
+    logger.error(f"HTTP Exception: {exc.status_code} - {exc.detail} | {request.method} {request.url.path} client={client}")
     return JSONResponse(
         status_code=exc.status_code,
         content={
