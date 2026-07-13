@@ -136,7 +136,8 @@ async def run_agent_in_background(
                 logger.warning(f"[Runner] 跳过非Step事件: {type(event)}")
                 continue
             event_type = event_dict.get("type", "")
-            get_prompt_logger().log_step_yield(event_dict, round_number=event_dict.get("step", 0))
+            # prompt 日志统一在 _append 漏斗记一次(见 line 75), 此处禁止再记,
+            # 否则每事件双写导致 DB步数=Prompt日志/2 的一致性失败 — 小欧 2026-07-13
             # 累积 execution_steps
             if event_dict:
                 current_execution_steps.append(event_dict)
