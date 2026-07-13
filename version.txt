@@ -1,4 +1,21 @@
-﻿v0.18.16
+﻿v0.18.17
+更新时间: 2026-07-13 21:34:36 - 小欧-2026-07-13
+## v0.18.16→v0.18.17 变更汇总 - 小欧-2026-07-13
+
+### LLM 超时链路清理与结构化超时（核心）
+- refactor: client_sdk.py 流式请求改为结构化 httpx.Timeout，read 单点控制，connect/write/pool 固定，修复标量超时误将 connect 拉长至 90+s — 小欧-2026-07-13
+- refactor: base_service.py 超时常量 DEFAULT_LLM_TIMEOUT 统一更名为 DEFAULT_READ_TIMEOUT（值不变）— 小欧-2026-07-13
+- refactor: constants.py 合并冗余超时常量，DEFAULT_READ_TIMEOUT 统一为 150，删除 DEFAULT_LLM_TIMEOUT/STREAM_READ_TIMEOUT — 小欧-2026-07-13
+
+### 后台任务防 GC 回收（双重保障）
+- fix: openai.py 新增 _agent_tasks 强引用，与 agent_runner._background_tasks 双重保障后台任务不被 GC 回收 — 小欧-2026-07-13
+- refactor: agent_runner.py 补充退出分支①②③注释并新增 _background_tasks 强引用保障 — 小欧-2026-07-13
+
+### 文档与修复
+- docs: 系统能力与扩展性优化设计(11项) — 小欧-2026-07-13
+- fix: agent_runner.py 修复 asyncio Task GC 回收导致 DB 结果丢失 — 小欧-2026-07-13
+
+v0.18.16
 更新时间: 2026-07-13 18:06:45 - 小欧-2026-07-13
 ## v0.18.15→v0.18.16 变更汇总 - 小欧-2026-07-13
 
