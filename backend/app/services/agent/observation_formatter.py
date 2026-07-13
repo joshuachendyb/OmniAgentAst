@@ -245,7 +245,8 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
         #   keyboard_control, screen_capture
         return _format_scalar_data(data)
     except Exception as e:
-        logger.warning(f"[observation_formatter] format_data_detail handler failed: {e}")
+        # 已兜底恢复, 非致命: 降级为DEBUG避免噪声(原WARNING) — 小欧 2026-07-13
+        logger.debug(f"[observation_formatter] format_data_detail handler failed({type(e).__name__}): {e}")
         try:
             return json.dumps(data, ensure_ascii=False, indent=2)
         except Exception:
@@ -836,7 +837,12 @@ def _format_sysinfo(data: dict) -> str:
 #     size: 1024
 #     path: /tmp/test.txt
 def _format_scalar_data(data: dict) -> str:
-    """键值对展示，每行一个 key: value — 小欧 2026-07-05 — 小沈 2026-07-08 _note 特殊处理 — 小欧 2026-07-10 fix: pop→get 防副作用 + OBS_DICT_MAX_KEYS"""
+    """键值对展示，每行一个 key: value — 小欧 2026-07-05 — 小沈 2026-07-08 _note 特殊处理 — 小欧 2026-07-10 fix: pop→get 防副作用 + OBS_DICT_MAX_KEYS — 小欧 2026-07-13 防御: 非dict直接序列化"""
+    if not isinstance(data, dict):
+        try:
+            return json.dumps(data, ensure_ascii=False, indent=2)
+        except Exception:
+            return str(data)
     _note = data.get("_note", "")
     keys = [k for k in data if k != "_note"]
     lines = []
