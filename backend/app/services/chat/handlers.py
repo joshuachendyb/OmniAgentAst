@@ -30,17 +30,15 @@ def create_error_response(
     error_message: str,
     model: Optional[str] = None,
     provider: Optional[str] = None,
-    recoverable: Optional[bool] = None,
     step: Optional[int] = None
 ) -> str:
-    """创建统一的错误响应格式 — 使用 ErrorStep + format_agent_sse"""
+    """创建统一的错误响应格式 — 使用 ErrorStep + format_agent_sse — 小欧 2026-07-13 删 recoverable（终态由 ErrorStep 表示）"""
     error_step = ErrorStep(
         step=step or 0,
         error_type=error_type,
         error_message=error_message,
         model=model,
         provider=provider,
-        recoverable=recoverable or False,
     )
     return format_agent_sse(error_step.to_dict())
 
@@ -67,9 +65,11 @@ async def save_execution_steps_to_db(
     session_id: Optional[str],
     execution_steps: List[Dict],
     content: Optional[str] = None,
-    user_message_id: Optional[int] = None
+    user_message_id: Optional[int] = None,
+    status: Optional[str] = None
 ) -> None:
-    """保存execution_steps到DB — 唯一保存入口 — 小健 2026-06-18 内联_get_user_message_id"""
+    """保存execution_steps到DB — 唯一保存入口 — 小健 2026-06-18 内联_get_user_message_id
+    小欧 2026-07-13: 新增 status 参数，落 chat_messages.status 列（终态），正常路径依赖该列"""
 
     if session_id is None:
         return
@@ -82,7 +82,8 @@ async def save_execution_steps_to_db(
             ExecutionStepsUpdate(
                 execution_steps=execution_steps,
                 content=content,
-                reply_to_message_id=user_message_id
+                reply_to_message_id=user_message_id,
+                **({"status": status} if status else {})
             )
         )
         ai_message_id = result.get("ai_message_id") if isinstance(result, dict) else None

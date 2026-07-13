@@ -40,6 +40,31 @@ class ExecutionStepsUpdate(BaseModel):
     execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
     content: Optional[str] = Field(None, description="AI生成的文本内容")
     reply_to_message_id: Optional[int] = Field(None, description="回复的用户消息ID")
+    status: Optional[str] = Field(None, description="任务终态: completed/failed/cancelled/paused — 小欧 2026-07-13")
+
+
+def derive_status_from_steps(steps: Optional[list]) -> str:
+    """从 execution_steps 推导任务终态(status列兜底) — 小欧 2026-07-13
+    10规范(YAGNI): 仅作兜底/迁移使用; retrying 为中间态, 不参与终态判定。
+    必须以“最后一条终态 step”为准, 不能用“任意出现”判定, 否则:
+    中间曾取消/报错后又恢复完成的任务会被误标 cancelled/failed。 — 小欧 2026-07-13
+    """
+    if not steps:
+        return "completed"
+    terminal = None
+    for s in steps:
+        if not isinstance(s, dict):
+            continue
+        t = s.get("type")
+        if t in ("cancelled", "paused", "error", "final"):
+            terminal = t
+    if terminal == "cancelled":
+        return "cancelled"
+    if terminal == "paused":
+        return "paused"
+    if terminal == "error":
+        return "failed"
+    return "completed"
 
 
 class AssistantMessageIdAllocator:
@@ -136,6 +161,9 @@ def update_message_fields(
     if update_data.content is not None:
         fields.append("content = ?")
         values.append(update_data.content)
+    if getattr(update_data, "status", None) is not None:
+        fields.append("status = ?")
+        values.append(update_data.status)
     if fields:
         values.append(ai_message_id)
         cursor.execute(

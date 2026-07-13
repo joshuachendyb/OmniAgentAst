@@ -60,11 +60,18 @@ def init_chat_db(get_conn):
         for field in ["client_os", "browser", "device", "network", "reply_to_message_id"]:
             col_type = "INTEGER" if field == "reply_to_message_id" else "TEXT"
             _ensure_column(conn, "chat_messages", field, col_type)
+
+        # 小欧 2026-07-13: 终态列(status), 记录一次请求的任务终态, 供前端/迁移直接读取
+        _ensure_column(conn, "chat_messages", "status", "TEXT")
         
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON chat_sessions(updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON chat_sessions(is_deleted)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON chat_messages(timestamp)")
+
+        # 小欧 2026-07-13: 一次性迁移旧 execution_steps(幂等)
+        from app.services.chat.migrate_steps import migrate_execution_steps_status
+        migrate_execution_steps_status(get_conn)
 
 
 def init_operations_db(get_conn):
