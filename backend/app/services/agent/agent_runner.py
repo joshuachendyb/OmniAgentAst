@@ -18,7 +18,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 from app.db import db
-from app.services.agent.steps import ErrorStep, FinalStep, MetaStep
+from app.services.agent.steps import ErrorStep, MetaStep  # 小欧 2026-07-13: 删 FinalStep（终态改由 ErrorStep/MetaStep 表示，不再补发 FinalStep）
 from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed
 from app.services.chat.handlers import save_execution_steps_to_db
 from app.services.chat.stream import _load_previous_messages, _log_task_end
@@ -74,6 +74,9 @@ async def run_agent_in_background(
             agent.message_builder.MAX_CONTEXT_CHARS = llm_service.context_limit
 
         # 注入停止检查回调，消除 llm→task 反向依赖 — 小沈 2026-06-17
+        # 小沈 2026-07-13: 当前采用"循环粒度取消"(方案 B), LLMClient(client_sdk.py) 尚未实现
+        # set_stop_check, 故 hasattr 为 False, 此分支跳过 —— 这是有意为之(B 方案不依赖流式中断)。
+        # 若后续实施"流式中途打断"(方案 A), 需在此真正注入 _stop_check 并在 llm_stream 逐 chunk 轮询。
         if llm_service is not None and hasattr(llm_service, "set_stop_check"):
             async def _stop_check():
                 from app.services.task.task_runtime import check_cancelled, check_paused
@@ -115,25 +118,17 @@ async def run_agent_in_background(
                     stream_state.current_content += chunk_text
             await _append(event_dict)
 
-        # 正常结束：终态由 react_cycle 内部设置，无需补发
-        if agent.status == AgentStatus.CANCELLED:
-            pass
-        elif agent.status == AgentStatus.FAILED:
-            pass
+        # 正常结束：终态由 react_cycle 内部设置(agent.status), 无需在此补发
 
     except asyncio.CancelledError:
         # 后端主动取消（task 被清理等）— 小沈 2026-06-09 修复
+        # 小欧 2026-07-13: 取消终态仅 MetaStep(cancelled)，不再补发 FinalStep（避免前端误判"已完成"）
         logger.info(f"[Runner] 任务 {task_id} 被取消(CancelledError)")
         cancelled_step = MetaStep(step=next_step(), type="cancelled", message="任务已被取消")
         cancelled_dict = cancelled_step.to_dict()
         current_execution_steps.append(cancelled_dict)
         get_prompt_logger().log_step_yield(cancelled_dict, round_number=cancelled_dict.get("step", 0))
         await _append(cancelled_dict)
-        final_step = FinalStep(step=next_step(), response="任务已被取消")
-        final_dict = final_step.to_dict()
-        current_execution_steps.append(final_dict)
-        get_prompt_logger().log_step_yield(final_dict, round_number=final_dict.get("step", 0))
-        await _append(final_dict)
         if agent is not None:
             try:
                 set_cancelled(agent)
@@ -141,17 +136,12 @@ async def run_agent_in_background(
                 pass
 
     except Exception as e:
+        # 小欧 2026-07-13: 失败终态仅 ErrorStep，不再补发 FinalStep（终止由 ErrorStep 表示）
         logger.error(f"[Runner] 任务 {task_id} 异常: {e}", exc_info=True)
         error_step = ErrorStep(step=next_step(), error_type="agent_operation_error", error_message=str(e))
         error_dict = error_step.to_dict()
         current_execution_steps.append(error_dict)
         await _append(error_dict)
-        original_response = stream_state.current_content if stream_state else ""
-        final_response = original_response or f"执行异常: {str(e)[:200]}"
-        final_step = FinalStep(step=next_step(), response=final_response)
-        final_dict = final_step.to_dict()
-        current_execution_steps.append(final_dict)
-        await _append(final_dict)
         if agent is not None:
             try:
                 set_failed(agent, str(e)[:200])
@@ -171,11 +161,20 @@ async def run_agent_in_background(
             end_type = _m.get(agent.status, "unknown")
 
         # 统一保存入口：正常、异常、取消都走这里 — 小欧 2026-06-26
+        # 小欧 2026-07-13: 落 chat_messages.status 列（终态），正常路径依赖该列
+        _STATUS_MAP = {"final": "completed", "failed": "failed",
+                       "cancelled": "cancelled", "paused": "paused"}
+        # 小沈 2026-07-13: 默认必须用 "failed"(fail-safe), 不能用 "completed"。
+        # end_type 仅在 agent 为 None 或 agent.status 不在映射表中时才落到 default;
+        # 此时该任务并非真正完成, 若误标 completed 会让崩溃/异常任务在 DB 被当成成功,
+        # 前端会话列表与历史回放都会显示错误终态。失败默认失败, 完成必须显式完成。
+        _terminal_status = _STATUS_MAP.get(end_type, "failed")
         if current_execution_steps:
             for retry in range(2):
                 try:
                     saved_content = stream_state.current_content if stream_state else ""
-                    ai_message_id = await save_execution_steps_to_db(session_id, current_execution_steps, saved_content)
+                    ai_message_id = await save_execution_steps_to_db(
+                        session_id, current_execution_steps, saved_content, status=_terminal_status)
                     if ai_message_id:
                         get_prompt_logger().update_ai_message_id(str(ai_message_id))
                     break

@@ -10,25 +10,18 @@ from app.constants import MAX_CONSECUTIVE_CHUNKS, MAX_CHUNKS_WITHOUT_PROMOTE  # 
 
 
 class ChunkBuffer:
-    """管理chunk拼接、阈值检测、flush到message_builder
+    """管理chunk拼接、阈值检测、flush管理 — 小沈 2026-05-25
 
     使用场景:
         - run_react_cycle中chunk内容的累积和阈值检测
         - react_sse_wrapper中SSE chunk的累积逻辑
         - 所有需要"累积→阈值检测→flush"模式的场景
 
-    使用示例:
-        buffer = ChunkBuffer(max_consecutive=5)
-        buffer.append("hello")
-        buffer.append(" world")
-        if buffer.should_promote():
-            content = buffer.flush()
-
     返回数据说明:
         - append: 无返回值,修改内部状态
-        - should_promote: 返回bool,True表示连续chunk数达到阈值
+        - should_promote: 返回bool,True表示连续chunk数达到阈值(历史接口,当前引擎未使用)
         - should_force_stop: 返回bool,True表示累积超时需强制停止
-        - flush: 返回str(buffer内容),同时清空buffer
+        - flush: 返回str(buffer内容),同时清空buffer(历史接口,当前引擎未使用)
         - clear: 无返回值,仅清空buffer和计数器
 
     Author: 小沈 2026-05-25
@@ -52,7 +45,8 @@ class ChunkBuffer:
         """chunk累积超时需强制停止时返回True
         
         【3.9修复 北京老陈 2026-05-31】防止LLM持续返回chunk导致无限循环
-        只有连续chunk未触发promote时才计数,promote后重置
+        小沈 2026-07-13: 计数器仅在 clear() 时重置(收到完整 response 时调用),
+        不存在单独的 promote/flush 路径; 原注释"promote后重置"为误导, 已修正。
         """
         return self.consecutive_count >= self.max_without_promote
 
@@ -64,6 +58,21 @@ class ChunkBuffer:
         result = self.buffer
         self.clear()
         return result
+
+    def clear(self) -> None:
+        self.buffer = ""
+        self.consecutive_count = 0
+        self.buffer += content
+        self.consecutive_count += 1
+
+    def should_force_stop(self) -> bool:
+        """chunk累积超时需强制停止时返回True
+
+        【3.9修复 北京老陈 2026-05-31】防止LLM持续返回chunk导致无限循环
+        小沈 2026-07-13: 计数器仅在 clear() 时重置(收到完整 response 时调用),
+        不存在单独的 promote/flush 路径; 原注释声称"promote后重置"是误导, 已删除死代码。
+        """
+        return self.consecutive_count >= self.max_without_promote
 
     def clear(self) -> None:
         self.buffer = ""
