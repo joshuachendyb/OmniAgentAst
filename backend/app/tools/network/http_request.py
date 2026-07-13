@@ -103,7 +103,7 @@ def _build_http_error(last_exception: Exception, url: str, retry: int, duration_
         return {"error_detail": "请求超时", "params": {"url": url}, "err_code": ERR_NETWORK_TIMEOUT, "detail": "请求超时"}
     if isinstance(last_exception, httpx.HTTPStatusError):
         return {"error_detail": f"HTTP {last_exception.response.status_code}", "params": {"url": url, "status_code": last_exception.response.status_code}, "err_code": ERR_NETWORK_HTTP_ERROR, "detail": f"HTTP {last_exception.response.status_code}"}
-    _msg = str(last_exception) or "HTTP请求异常(无详细错误信息)，请检查URL是否正确、网络是否可达、目标服务是否正常运行"
+    _msg = f"{type(last_exception).__name__}: {str(last_exception) or repr(last_exception)}"
     return {"error_detail": _msg, "params": {"url": url, "retry": retry}, "err_code": ERR_NETWORK_REQUEST_ERROR, "detail": _msg}
 
 
@@ -193,7 +193,7 @@ async def httpget(
                 raise
 
     except Exception as e:
-        err_msg = str(e) or "HTTP请求异常(无详细错误信息)"
+        err_msg = f"{type(e).__name__}: {str(e) or repr(e)}"
         logger.error(f"[httpget] 未知错误: {err_msg}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _build_http_error(e, url, 0, duration_ms)
