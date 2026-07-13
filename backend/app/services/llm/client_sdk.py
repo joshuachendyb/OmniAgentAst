@@ -157,7 +157,16 @@ class LLMClient:
             stream_options=stream_options,
             extra_body=extra_body,
         )
-        _timeout = float(request_timeout) if request_timeout is not None else None
+        # 结构化超时: request_timeout 仅作用于 read 阶段, connect/write/pool 独立固定。
+        # 避免浮点标量将四者全部拉长 (浮点标量 = 全阶段统一值, 会误将 connect 也拉长至 90+秒)。
+        # request_timeout 由 base_service 传入 (provider.timeout + 重试递增),
+        # 未显式传入时用 DEFAULT_READ_TIMEOUT 兜底 — 小欧 2026-07-13
+        _timeout = httpx.Timeout(
+            connect=DEFAULT_CONNECT_TIMEOUT,
+            read=float(request_timeout) if request_timeout is not None else DEFAULT_READ_TIMEOUT,
+            write=DEFAULT_WRITE_TIMEOUT,
+            pool=DEFAULT_POOL_TIMEOUT,
+        )
         async with self._client.stream("POST", "/chat/completions", json=body, timeout=_timeout) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
