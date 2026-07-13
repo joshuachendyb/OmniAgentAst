@@ -1,4 +1,38 @@
-﻿v0.18.15
+﻿v0.18.16
+更新时间: 2026-07-13 18:06:45 - 小欧-2026-07-13
+## v0.18.15→v0.18.16 变更汇总 - 小欧-2026-07-13
+
+### 启动性能修复（核心）
+- fix: migrate_steps.py 加一次性迁移持久化守卫（schema_migrations）避免每次启动全表扫描2.5GB/3107行致启动耗时~25s，实测降至0.65s — 小欧-2026-07-13
+
+### 终态Step语义统一与落库
+- fix: react_cycle/action_handler/answer_handler/status_table/steps 终态Step统一（取消检测修复/暂停重试/MetaStep注释归位）— 小沈-2026-07-13
+- fix: storage/handlers/db_initializer/migrate_steps 终态落库chat_messages.status与历史execution_steps迁移 — 小沈-2026-07-13
+- fix: agent_runner 终态fail-safe默认failed与chunk_buffer误导性注释修正 — 小沈-2026-07-13
+- fix: react_cycle.py HITL拒绝可恢复+暂停真BLOCK+MetaStep文本字段统一为content — 小欧-2026-07-13
+- fix: answer_handler.py 恢复合并时误删的[Final]终态日志 — 小欧-2026-07-13
+- fix: agent_runner.py 移除_append重复累加current_execution_steps（DB步骤翻倍SSE21/DB42）+notify_all必须持锁调用避免RuntimeError — 小欧-2026-07-13
+
+### 前端与工具渲染
+- fix: ToolResultRenderer 生命周期Step契约对齐渲染路由与视图 — 小欧-2026-07-13
+- fix: main.py/api.ts/SecurityContext 消除favicon 404日志噪声并清理前端孤儿安全代码 — 小欧-2026-07-13
+- refactor: table_helper.py 重命名_normalize_table_widths→_equalize_column_count（名实相符）— 小欧-2026-07-13
+- refactor: frontend/dist 取消git跟踪构建产物 — 小欧-2026-07-13
+
+### 网关与错误定位
+- fix: main.py 全局异常处理器记录请求路径/方法/客户端便于定位404来源 — 小欧-2026-07-13
+- test: e2e_helpers.py _api_get增timeout参数+check_db重试等待后台DB写入释放写锁 — 小欧-2026-07-13
+
+### FC消息配对与多模型思考设计说明（文档）
+- docs: fc_message_types.py等 补充FC消息配对结构说明+thought入历史科学原理（状态最小持久化）— 小欧-2026-07-13
+- docs: 后端错误处理架构/LLM系统优化方案/对话引擎架构设计文档 补充FC配对与多模型思考说明 + e2emodel/conftest修正 — 小欧-2026-07-13
+- docs: 工具Observation统一格式-融合方案 对照修正 — 小欧-2026-07-13
+- docs: 工具FC调用消息组装流程说明 对照修正 — 小欧-2026-07-13
+- docs: Tool能力及缺陷清单.md 挪至doc-7月优化目录 — 小欧-2026-07-13
+
+---
+
+v0.18.15
 更新时间: 2026-07-13 00:45:36 - 小欧-2026-07-12
 ## v0.18.14→v0.18.15 变更汇总 - 小欧-2026-07-12
 
