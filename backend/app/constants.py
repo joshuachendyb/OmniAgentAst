@@ -12,7 +12,7 @@
 
 分层原则：
   - 本文件（constants.py）：系统层。SYS_HTTP_* 是 HTTP 协议事实定义（如 429=限流），
-    供 SystemErrorClassifier 和 LLM 客户端使用。SYS_DEFAULT_LLM_TIMEOUT 等是 LLM 客户端超时。
+     供 SystemErrorClassifier 和 LLM 客户端使用。DEFAULT_READ_TIMEOUT 等是 LLM 客户端读超时。
   - tool_constants.py：工具层。TOOL_HTTP_* 是工具自己判断重试用的拷贝，TOOL_TIMEOUTS 等是工具运行参数。
 
 禁止：
@@ -43,8 +43,9 @@ MAX_CHUNKS_WITHOUT_PROMOTE = 50
 # 3. 网络与超时
 # ============================================================
 
-DEFAULT_LLM_TIMEOUT = 150
-DEFAULT_READ_TIMEOUT = 60.0
+DEFAULT_READ_TIMEOUT = 150
+# LLM 读超时兜底(秒): LLMClient/request_stream 未传 timeout 时使用; 亦为 BaseAIService 默认超时。
+# 正常流程 service.py 总传 provider.timeout、base_service 总传 effective_timeout, 故兜底不触发 — 小欧 2026-07-13
 DEFAULT_CONNECT_TIMEOUT = 30.0
 DEFAULT_WRITE_TIMEOUT = 10.0
 DEFAULT_POOL_TIMEOUT = 10.0
