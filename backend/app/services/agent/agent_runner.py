@@ -78,6 +78,24 @@ async def run_agent_in_background(
         async with buffer.cond:
             buffer.cond.notify_all()
 
+    # 退出分支与DB保存保证 — 小欧 2026-07-13
+    # 本函数有 3 个退出路径，无论哪条路径 finally 都会执行 DB 保存：
+    #
+    # 1. try 正常完成：run_react_cycle 正常结束，current_execution_steps 有完整数据
+    #    → finally: save_execution_steps_to_db ✅
+    #
+    # 2. except asyncio.CancelledError：任务被取消（主动/被动）
+    #    → 追加 cancelled_dict 到 current_execution_steps
+    #    → finally: save_execution_steps_to_db ✅
+    #
+    # 3. except Exception：其他异常（LLM 错误/工具异常/网络超时等）
+    #    → 追加 error_dict 到 current_execution_steps
+    #    → finally: save_execution_steps_to_db ✅
+    #
+    # 强引用保障：_background_tasks 集合持有 Task 引用，防止 GC 回收导致 finally 不执行
+    # （无强引用时 Task 被 GC → CancelledError → finally 可能被打断 → DB 结果丢失）
+
+    # ① 正常结束分支 — 小欧 2026-07-13
     try:
         # 注册 agent 到任务运行表，供暂停路径设置 AgentStatus.SUSPENDED — 小欧 2026-07-12
         async with running_tasks_lock:
@@ -135,6 +153,7 @@ async def run_agent_in_background(
 
         # 正常结束：终态由 react_cycle 内部设置(agent.status), 无需在此补发
 
+    # ② 取消分支 — 小欧 2026-07-13
     except asyncio.CancelledError:
         # 后端主动取消（task 被清理等）— 小沈 2026-06-09 修复
         # 小欧 2026-07-13: 取消终态仅 MetaStep(cancelled)，不再补发 FinalStep（避免前端误判"已完成"）
@@ -150,6 +169,7 @@ async def run_agent_in_background(
             except ValueError:
                 pass
 
+    # ③ 异常分支 — 小欧 2026-07-13
     except Exception as e:
         # 小欧 2026-07-13: 失败终态仅 ErrorStep，不再补发 FinalStep（终止由 ErrorStep 表示）
         logger.error(f"[Runner] 任务 {task_id} 异常: {e}", exc_info=True)
@@ -163,6 +183,7 @@ async def run_agent_in_background(
             except ValueError:
                 pass
 
+    # finally: 统一DB保存（①②③都会执行）— 小欧 2026-07-13
     finally:
         # 从 agent.status 推导 end_type — 小欧 2026-07-12 从 stream.py 迁移
         if end_type == "unknown" and agent is not None:
