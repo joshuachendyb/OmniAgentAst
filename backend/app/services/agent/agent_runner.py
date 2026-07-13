@@ -31,6 +31,12 @@ from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 
 
+# 后台任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者断开后任务再无强引用,
+# 会被 GC 回收并取消, 导致 finally 的 save_execution_steps_to_db 被打断、结果丢失。
+# 集中持有强引用, done 时 discard 防内存泄漏 — 小欧 2026-07-13
+_background_tasks: set = set()
+
+
 async def run_agent_in_background(
     agent,
     task_id: str,
@@ -47,6 +53,14 @@ async def run_agent_in_background(
     若 agent 在 handler 内运行，断线即终止 agent。解耦后 agent 在
     独立后台任务运行，断线不影响，前端可重连读取同一 event_log。 — 小欧 2026-07-12
     """
+    # 强引用自身任务, 防止 SSE 消费者断开后任务被 GC 回收→取消→打断 finally 的 DB 保存
+    # (功能退化修复: 升级前 LLM 正常/异常结束 DB 均落库, 升级后断流导致任务被回收而丢失结果)
+    # 与 openai.py 声明的"断线不影响 agent"解耦设计一致 — 小欧 2026-07-13
+    _self_task = asyncio.current_task()
+    if _self_task is not None:
+        _background_tasks.add(_self_task)
+        _self_task.add_done_callback(_background_tasks.discard)
+
     buffer = agent_streams.get(task_id)
     current_execution_steps: List[Dict] = []
     end_type = "unknown"
