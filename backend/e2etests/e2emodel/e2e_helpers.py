@@ -1067,6 +1067,9 @@ def check_logs(
                 continue
             if "写入失败" in line and "文件系统错误" in line:
                 continue
+            # 压缩工具用密码加密后, 无密码解压属预期失败(已捕获), 非后端缺陷 — 小欧 2026-07-13
+            if "is encrypted" in line or ("解压失败" in line and "encrypted" in line):
+                continue
             result["errors"].append(line.strip()[:200])
 
         # ── traceback检查(MUST) ──
