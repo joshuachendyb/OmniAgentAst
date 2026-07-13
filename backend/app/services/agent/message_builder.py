@@ -79,11 +79,21 @@ class MessageBuilder:
         与add_assistant_tool_call配对使用:
           每条tool通过tool_call_id关联回assistant中的某一条tool_call.id。
           同一轮的所有tool共用同一个assistant父消息。
-        — 小欧 2026-07-12
+        — 小欧 2026-07-12 — 小欧 2026-07-13 防御: 构造/序列化失败也兜底追加最小合法tool消息, 保证工具结果绝不丢失
         """
-        msg = ToolResultMessage(content=content, tool_call_id=tool_call_id)
-        self.conversation_history.append(message_to_dict(msg))
-        return msg
+        try:
+            msg = ToolResultMessage(content=content, tool_call_id=tool_call_id)
+            self.conversation_history.append(message_to_dict(msg))
+            return msg
+        except Exception as e:
+            logger.warning(f"[message_builder] add_tool_result构造失败(tool_call_id={tool_call_id}): {type(e).__name__}: {e!r}")
+            # 兜底: 直接追加最小合法tool消息, 保证对话历史完整(结果不丢失) — 小欧 2026-07-13
+            self.conversation_history.append({
+                "role": "tool",
+                "content": content,
+                "tool_call_id": tool_call_id,
+            })
+            return None
 
     def init_history(self, sys_prompt: str, task_prompt: str) -> None:
         """初始化conversation_history — 替代base_react.py L368-369"""
