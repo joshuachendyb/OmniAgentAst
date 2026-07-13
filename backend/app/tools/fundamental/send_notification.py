@@ -7,8 +7,8 @@ send_notification — 发送Windows系统通知
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
-import asyncio
-import concurrent.futures
+import subprocess
+import sys
 import time as _time_mod
 from typing import Dict, Any
 
@@ -50,8 +50,23 @@ def _build_send_notification_llm_data(exec_code: str, duration_ms: int, title: s
     }
 
 
+def _show_toast_detached(title: str, message: str, duration: int) -> None:
+    """在独立子进程中弹出 Windows 通知，隔离 win10toast 的 Tk/WndProc 窗口，
+    避免其常驻后端进程并偶发崩溃 worker(uvicorn)。 — 小欧 2026-07-13"""
+    code = (
+        "from win10toast import ToastNotifier\n"
+        "ToastNotifier().show_toast(%r, %r, duration=%r)\n" % (title, message, duration)
+    )
+    subprocess.Popen(
+        [sys.executable, "-c", code],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+
+
 def notify(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
-    """发送Windows系统通知 — 小健 2026-06-22 迁入fundamental独立文件 — 小健 2026-06-22 修复计时铁规"""
+    """发送Windows系统通知 — 小健 2026-06-22 迁入fundamental独立文件 — 小健 2026-06-22 修复计时铁规 — 小欧 2026-07-13 子进程隔离win10toast窗口"""
     t0 = _time_mod.perf_counter()
     err = validate_str_param(title, "title")
     if err:
@@ -68,13 +83,7 @@ def notify(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
         return build_error(data={}, llm_data=_build_send_notification_llm_data("error", duration_ms, title, err_code=ERR_NO_WIN10TOAST, detail="win10toast库未安装", hint="请安装win10toast库", message=message))
 
     try:
-        from win10toast import ToastNotifier
-        toaster = ToastNotifier()
-        def _show_toast():
-            toaster.show_toast(title, message, duration=duration, threaded=True)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_show_toast)
-            future.result(timeout=duration + 5)
+        _show_toast_detached(title, message, duration)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {}
         llm_data = _build_send_notification_llm_data("success", duration_ms, title, duration, message=message)
