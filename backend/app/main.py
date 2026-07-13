@@ -158,9 +158,17 @@ def _start_cleanup_task():
 @app.on_event("startup")
 async def startup_event():
     """应用启动时注册工具 + 启动后台任务 — 小健 2026-06-18 内联透传函数"""
+    import time as _time
+    _t0 = _time.time()
     db.init()
+    logger.info(f"[启动耗时] db.init: {_time.time()-_t0:.3f}s")
+    _t1 = _time.time()
     ensure_tools_registered()
+    logger.info(f"[启动耗时] ensure_tools_registered: {_time.time()-_t1:.3f}s")
+    _t2 = _time.time()
     _start_cleanup_task()
+    logger.info(f"[启动耗时] _start_cleanup_task: {_time.time()-_t2:.3f}s")
+    logger.info(f"[启动耗时] startup_event 合计: {_time.time()-_t0:.3f}s")
     print(f"当前版本: {app_version}")
     _cfg = get_config()
     print(f"LLM 配置: provider={_cfg.get('ai.provider')}, model={_cfg.get('ai.model')}")

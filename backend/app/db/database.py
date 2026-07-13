@@ -103,13 +103,18 @@ class DatabaseManager:
     
     def init(self):
         """初始化所有数据库(应用启动时调用)"""
+        import time as _time
         logger.info("Initializing all databases...")
-        
+        _ta = _time.time()
         init_chat_db(self.get_conn)
+        logger.info(f"[启动耗时] init_chat_db: {_time.time()-_ta:.3f}s")
+        _tb = _time.time()
         init_operations_db(self.get_conn)
+        logger.info(f"[启动耗时] init_operations_db: {_time.time()-_tb:.3f}s")
+        _tc = _time.time()
         init_task_tracker_db(self.get_conn)
-
-        
+        logger.info(f"[启动耗时] init_task_tracker_db: {_time.time()-_tc:.3f}s")
+        logger.info(f"[启动耗时] db.init 合计: {_time.time()-_ta:.3f}s")
         logger.info("All databases initialized successfully")
     
     def init_observer(self):

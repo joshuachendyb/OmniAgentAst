@@ -14,6 +14,10 @@ migrate_steps — execution_steps 一次性数据迁移
   - authorization_required → MetaStep(type='paused', confirm_id=...)
   - 旧取消 FinalStep → MetaStep(type='cancelled')
 
+一次性守卫(小欧 2026-07-13): 用 chat 库 schema_migrations 表登记"已执行",
+跑过一次后续启动直接跳过全表扫描。修复前该迁移每次启动无条件全表扫描
+2.5GB 聊天库(3107 行), 单次耗时 ~25s, 是启动变慢根因; 加守卫后启动回到 <1s。
+
 10规范(DRY): 复用 json_utils.parse_json / safe_json_dumps
 小欧 2026-07-13
 """
@@ -106,10 +110,56 @@ def _migrate_one_step(step: dict) -> dict:
     return step
 
 
+MIGRATION_NAME = "migrate_execution_steps_status"
+
+
+def _ensure_migrations_table(conn):
+    """确保迁移记录表存在(chat 库) — 小欧 2026-07-13
+    用于登记"一次性迁移"是否已执行, 避免每次启动重跑。
+    """
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            name TEXT PRIMARY KEY,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+
+def _is_migration_applied(conn, name: str) -> bool:
+    """该一次性迁移是否已执行过 — 小欧 2026-07-13
+
+    用途: 避免每次启动都对 chat_messages 做全表扫描。
+    背景: 该迁移原本每次启动无条件执行, 对 2.5GB 聊天库扫描 3107 行并逐行
+          JSON 解析, 单次耗时约 25s, 是启动变慢的根因。加守卫后只跑一次。
+    """
+    _ensure_migrations_table(conn)
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM schema_migrations WHERE name=?", (name,))
+    return cur.fetchone() is not None
+
+
+def _mark_migration_applied(conn, name: str) -> None:
+    """标记该一次性迁移已执行(幂等) — 小欧 2026-07-13"""
+    _ensure_migrations_table(conn)
+    conn.execute("INSERT OR IGNORE INTO schema_migrations(name) VALUES(?)", (name,))
+
+
 def migrate_execution_steps_status(get_conn) -> int:
-    """一次性迁移旧 execution_steps; 返回迁移记录数 — 小欧 2026-07-13"""
+    """一次性迁移旧 execution_steps; 返回迁移记录数 — 小欧 2026-07-13
+
+    守卫逻辑(核心修复): 用 chat 库的 schema_migrations 表登记"已执行",
+    跑过一次之后续启动直接跳过整段全表扫描, 启动耗时从 ~25s 回到 ~0s。
+    迁移本身保持幂等: 已迁移的行 _needs_migration 返回 False 不会重复改。
+    """
+    import time as _time
+    _t0 = _time.time()
     updated = 0
     with get_conn("chat") as conn:
+        # 一次性迁移守卫: 已执行过则跳过整段扫描(核心修复) — 小欧 2026-07-13
+        if _is_migration_applied(conn, MIGRATION_NAME):
+            logger.info(f"[migrate] {MIGRATION_NAME} 已执行过, 跳过全表扫描")
+            logger.info(f"[启动耗时] migrate_execution_steps_status: {_time.time()-_t0:.3f}s (skipped)")
+            return 0
         cursor = conn.cursor()
         cursor.execute(
             "SELECT id, execution_steps FROM chat_messages WHERE execution_steps IS NOT NULL"
@@ -129,6 +179,9 @@ def migrate_execution_steps_status(get_conn) -> int:
                 (safe_json_dumps(new_steps), status, msg_id),
             )
             updated += 1
+        # 标记已执行, 后续启动跳过扫描
+        _mark_migration_applied(conn, MIGRATION_NAME)
     if updated:
         logger.info(f"[migrate] 迁移旧 execution_steps 记录数={updated}")
+    logger.info(f"[启动耗时] migrate_execution_steps_status: {_time.time()-_t0:.3f}s")
     return updated

@@ -379,20 +379,24 @@ def _import_and_register(module_path: str, register_func_name: str) -> None:
 
 def ensure_tools_registered() -> None:
     """确保所有工具已注册(全量注册) - 小沈 2026-05-15"""
+    import time as _time
     global _registered_categories
 
     _failed = False
+    _t_all = _time.time()
     for cat_name, (module_path, register_func) in CATEGORY_MODULES.items():
         if cat_name not in _registered_categories:
+            _t_cat = _time.time()
             try:
                 count_before = len(tool_registry._tools)
                 _import_and_register(module_path, register_func)
                 count_after = len(tool_registry._tools)
                 _registered_categories.add(cat_name)
-                logger.debug(f"[Tools] 分类 {cat_name} 注册完成, {count_after - count_before}个工具")
+                logger.info(f"[启动耗时] 工具分类 {cat_name} 注册: {_time.time()-_t_cat:.3f}s, {count_after - count_before}个工具")
             except Exception as e:
                 logger.error(f"[Tools] 注册分类{cat_name}失败: {e}")
                 _failed = True
+    logger.info(f"[启动耗时] ensure_tools_registered 合计: {_time.time()-_t_all:.3f}s")
     if _failed:
         logger.warning(f"[Tools] 部分分类注册失败,已注册{len(_registered_categories)}个分类,下次调用将重试")
     elif _registered_categories:
