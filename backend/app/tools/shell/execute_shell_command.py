@@ -502,7 +502,10 @@ def shell(
             # ------------------------------------------------------------------------------
             return build_success(data=data, llm_data=llm)
 
-        err_detail = stderr_str[:200] if stderr_str.strip() else f"退出码{returncode}"
+        # 修复: 报错信息可能在stdout(如命令加 2>&1 合并stderr),stderr为空时回退stdout,增强错误可见性不退化 — 小欧 2026-07-13
+        err_detail = (stderr_str[:200] if stderr_str.strip()
+                      else (stdout_str[:200] if stdout_str.strip()
+                            else f"退出码{returncode}"))
         _hint = _cmd_powershell_mismatch_hint(command, shell_type, stderr_str) or "请检查命令语法和参数"
         llm = _build_execute_shell_command_llm_data("error", d, command,
             returncode, stdout_str[:200], stderr_str[:200],

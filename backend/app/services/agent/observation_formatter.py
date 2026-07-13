@@ -487,9 +487,15 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     """
     text = _format_llm_data(llm_data)
 
-    # error 时，data 仅含 error_detail+params 的原始 dict,混淆 LLM
-    # 错误信息已通过 ✖ 错误/建议 两行完整呈现，不再追加详情段
+    # error 统一兜底: 主通道是 llm_data.status.detail(各工具已构造);
+    # 仅当 detail 为空且 data 含诊断信息时,受控渲染 data(复用既有 format_data_detail),
+    # 收敛 build_error(data={}) 不一致且不退化已有 detail 的工具 — 小欧 2026-07-13
     if llm_data.get("status", {}).get("exec_code") == "error":
+        _detail = llm_data.get("status", {}).get("detail", "")
+        if (not _detail or not str(_detail).strip()) and data:
+            _extra = format_data_detail(data, llm_data)
+            if _extra:
+                text += f"\n错误详情:\n{_extra}"
         return text
 
     if data:
