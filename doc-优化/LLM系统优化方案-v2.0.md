@@ -61,7 +61,7 @@
 
 ### 3.1 架构简化（P1-紧急）
 
-#### 3.1.1 合并`llm_caller.py`与`react_cycle.py` 🚧 部分实施（函数名与文档设计不一致）
+#### 3.1.1 合并`llm_caller.py`与`react_cycle.py` 🚧 部分实施（函数名与文档设计不一致）【核查 2026-07-13：✅ 已实施】
 
 **实施验证**：
 - `llm_caller.py` 更名为 `llm_stream.py`（非删除，是改名，功能保持）
@@ -88,7 +88,7 @@ run_react_cycle → call_llm_fc_stream
 
 **预期效果**：减少一次函数调用开销，简化异常处理路径
 
-#### 3.1.2 优化`message_builder.py`历史管理 🚧 核心算法已优化
+#### 3.1.2 优化`message_builder.py`历史管理 🚧 核心算法已优化【核查 2026-07-13：✅ 已实施】
 
 **实施验证**：
 - `_classify_messages()` 已是单次遍历分类(O(n) ✅)
@@ -154,7 +154,7 @@ def _classify_and_map_in_one_pass(self):
 
 ### 3.2 错误恢复增强（P1-紧急）
 
-#### 3.2.1 添加FC降级机制 🚧 部分实施（API与文档设计不一致）
+#### 3.2.1 添加FC降级机制 🚧 部分实施（API与文档设计不一致）【核查 2026-07-13：✅ 已实施】
 
 **实施验证**：
 - FC降级功能已实现，且比文档设计更强（带重试机制） ✅
@@ -187,7 +187,7 @@ async def call_llm_fc_stream_with_fallback(agent, messages, tools):
 2. 在`call_llm_fc_stream()`外层添加降级包装
 3. 添加降级开关配置
 
-#### 3.2.2 统一错误处理 🚧 部分实施（实现方式与文档设计不同）
+#### 3.2.2 统一错误处理 🚧 部分实施（实现方式与文档设计不同）【核查 2026-07-13：🚧 部分实施（handle_react_error 已落地于 react_cycle.py:39；独立 error_handler.py 模块不存在，见 7.2 错误#1）】
 
 **实施验证**：
 - 统一错误处理入口已创建 ✅
@@ -195,7 +195,9 @@ async def call_llm_fc_stream_with_fallback(agent, messages, tools):
 - **设计差异**：
   - 文档设计 `class ErrorHandler`（类+静态方法）→ 实际为模块级函数（`handle_react_error` + 私有辅助函数）
   - 文档设计的`_handle_tool_error`分支是死代码（`_classify_error`永不返回`tool_execution_error`），已在本次修复中删除
-- 对应文件：`core_agent/error_handler.py`、`react_cycle.py`
+  - 对应文件：`core_agent/error_handler.py`、`react_cycle.py`
+
+> ⚠️ **文档错误（2026-07-13 核查）**：`core_agent/error_handler.py` 不存在。该目录已于 2026-07-10 扁平化删除；统一错误处理函数 `handle_react_error` 实际定义在 `backend/app/services/agent/react_cycle.py:39`，集成于 `react_cycle.py:409` except 块。正确路径见 7.2 错误#1。
 
 **问题**：错误处理分散在多个文件
 
@@ -226,7 +228,7 @@ class ErrorHandler:
 
 ### 3.3 工具加载优化（P2-重要）
 
-#### 3.3.1 优化工具缓存（不改变加载策略） 🚧 部分实施
+#### 3.3.1 优化工具缓存（不改变加载策略） 🚧 部分实施【核查 2026-07-13：🚧 部分实施（与文档自述一致）】
 
 **实施验证**：
 - `tool_cache_manager.py` 已创建，提供`get_openai_tools()`统一入口
@@ -289,7 +291,7 @@ class SmartToolCache:
 
 ### 4.1 架构重构：简化消息流转
 
-#### 4.1.1 优化消息系统结构 🚧 部分实施（类型安全接口已添加）
+#### 4.1.1 优化消息系统结构 🚧 部分实施（类型安全接口已添加）【核查 2026-07-13：✅ 已实施】
 
 **实施验证**：
 - `fc_message_types.py` 保留，Pydantic模型提供类型安全 ✅
@@ -360,14 +362,16 @@ class MessageBuilder:
 - 构建逻辑与模型定义分离，职责清晰
 - 减少重构风险，降低回归测试成本
 
-#### 4.1.2 简化ReAct循环和错误处理 🚧 部分实施
+#### 4.1.2 简化ReAct循环和错误处理 🚧 部分实施【核查 2026-07-13：🚧 部分实施（薄调度+handlers/ 已落地；SimpleReActCycle/AgentStateManager 未做，见 7.2 错误#1）】
 
 **实施验证**：
 - `react_cycle.py` 已重构为薄调度(注释: "薄调度重构，业务逻辑移至handlers/")
 - `error_handler.py` 已创建(以模块级函数方式实现，非文档中的UnifiedErrorHandler类)
 - ❌ `SimpleReActCycle` 类未实现，循环逻辑仍在`react_cycle.py`中
 - ❌ `AgentStateManager` 类未实现，状态管理内联在`react_cycle.py`中
-- 对应文件：`react_cycle.py`、`core_agent/error_handler.py`
+  - 对应文件：`react_cycle.py`、`core_agent/error_handler.py`
+
+> ⚠️ **文档错误（2026-07-13 核查）**：`core_agent/error_handler.py` 不存在（见 7.2 错误#1）。`handle_react_error` 实际位于 `backend/app/services/agent/react_cycle.py:39`。
 
 **问题分析**：
 1. `react_cycle.py`包含过多业务逻辑，违反SRP原则
@@ -454,15 +458,19 @@ class AgentStateManager:
         self.status = new_status
 ```
 
+> ⚠️ **文档错误（2026-07-13 核查）**：上方设计代码片段中的 `AgentStatus.RETRYABLE_ERROR` 枚举已不存在，当前枚举为 `RETRYING`（status_table.py:18-27）。见 7.2 错误#2。
+
 **重构步骤**：
 1. 将`react_cycle.py`拆分为：`simple_react_cycle.py`、`error_handler.py`、`state_manager.py`
 2. 统一错误处理策略
 3. 简化状态管理逻辑
 
-### 4.2 测试覆盖率提升 ❌ 未实施
+### 4.2 测试覆盖率提升 ❌ 未实施【核查 2026-07-13：✅ 已实施（backend/tests/ 现有 195 个 test_*.py，含 message_builder/react_cycle Mock/FC降级测试；原 ❌ 为过时结论，见 7.2 错误#4）】
 
 **实施验证**：
-- `backend/tests/` 目录无任何单元测试文件
+  - `backend/tests/` 目录无任何单元测试文件
+
+> ⚠️ **文档错误（2026-07-13 核查）**：现已过时。`backend/tests/` 现有 195 个 `test_*.py`（含 message_builder 裁剪、react_cycle Mock、FC 降级等测试），`e2etests/` 67 个 E2E。原"❌ 未实施"结论不成立，见 7.2 错误#4。
 - `backend/e2emodel/` 存在5个E2E测试文件(`test_e2e_p0_01~05`)
 - ❌ 无集成测试(Mock LLM/工具/错误)
 - ❌ 无单元测试(agent/message/react_cycle各模块)
@@ -486,11 +494,13 @@ class AgentStateManager:
 
 ## 五、长期架构演进（1-3个月）
 
-### 5.1 模块化重构 ❌ 未实施
+### 5.1 模块化重构 ❌ 未实施【核查 2026-07-13：❌ 未实施（与文档一致）；但"当前结构为 core_agent/"描述过时，见 7.2 错误#3】
 
 **实施验证**：
 - `services/agent/`下无`core/`、`messaging/`、`llm/`、`tools/`子目录
-- 当前结构：`core_agent/`、`agent_utils/`，未按文档规划拆分
+  - 当前结构：`core_agent/`、`agent_utils/`，未按文档规划拆分
+
+> ⚠️ **文档错误（2026-07-13 核查）**：`core_agent/` 目录已于 2026-07-10 扁平化删除，当前结构为 `services/agent/`（扁平 + `handlers/` + `steps/`）。见 7.2 错误#3。
 - 无`IMessageBuilder`/`ILLMCaller`等抽象接口定义
 
 #### 5.1.1 按功能拆分模块
@@ -537,12 +547,14 @@ class ILLMCaller(ABC):
         pass
 ```
 
-### 5.2 配置化系统 🚧 部分实施
+### 5.2 配置化系统 🚧 部分实施【核查 2026-07-13：✅ 已实施（config.yaml 已加载 + mtime 热重载已实现；文档两处 ❌ 为错误，见 7.2 错误#5）】
 
 **实施验证**：
 - `get_config()` 已存在(`app.config`)，可获取`max_steps`、`max_context_chars`
-- ❌ 无YAML配置文件(文档中`llm/messaging/tools`各配置项均未实现)
-- ❌ 无热重载功能
+  - ❌ 无YAML配置文件(文档中`llm/messaging/tools`各配置项均未实现)
+  - ❌ 无热重载功能
+
+> ⚠️ **文档错误（2026-07-13 核查）**：两处 ❌ 均错误。`backend/app/config.py` 已实现 `config/config.yaml` 加载（:8 import yaml、:64-65 yaml.load）且 `get_config()` 按 mtime 自动热重载（:56-59），另有 `Config.reload()`（:157）。见 7.2 错误#5。
 
 #### 5.2.1 运行时配置
 
@@ -611,3 +623,128 @@ tools:
 1. **立即**：为核心函数补充单元测试（`trim_history`、`_should_retry_truncated_tool`）
 2. **不行动**：其余8项未实施项，当前代码已优于文档设计，不需要按文档实施
 3. **文档归档**：本文档第四章（中期重构）和第五章（长期演进）的设计方案标记为"已评估-不实施"
+
+---
+
+## 七、2026-07-13 本地代码核查标注（小欧）
+
+> 核查方法：逐项读取 2026-07-13 当前本地代码（`backend/app/`），逐函数/枚举/配置核实，与文档原标注（✅/🚧/❌）比对。文档创建于 2026-06-25，期间经历 2026-07-10 全量扁平化（`core_agent`→`services/agent`）、状态重构（`RETRYABLE_ERROR`→`RETRYING`/`SUSPENDED`）、补单元测试、`config` YAML 化等重大变更，故部分原标注与"当前结构/当前状态"描述已滞后。
+
+### 7.1 核查结论总表
+
+| # | 优化项 | 文档原标注 | 2026-07-13 核查结论 | 文档是否有误 |
+|---|--------|-----------|-------------------|------------|
+| 3.1.1 | 合并 llm_caller/react_cycle | 🚧 | ✅ 已实施（`llm_stream.py` 更名 + `call_llm()` 删除，2 层调用链） | 否 |
+| 3.1.2 | message_builder 历史管理 | 🚧 | ✅ 已实施（`_classify_messages` O(n)、`_trim_to_budget` 无嵌套循环） | 否 |
+| 3.2.1 | FC 降级机制 | 🚧 | ✅ 已实施（`call_llm_with_fallback` 带重试+降级，捕获 `FCFormatError`） | 否 |
+| 3.2.2 | 统一错误处理 | 🚧 | 🚧 部分实施（`handle_react_error` 落地于 `react_cycle.py:39`；但独立 `error_handler.py` 模块不存在） | 是（#1 路径/模块错误） |
+| 3.3.1 | 工具缓存 | 🚧 | 🚧 部分实施（`tool_cache_manager` 已实现；`SmartToolCache`/`_usage_stats` 未做，评估不值得） | 否 |
+| 4.1.1 | 消息系统结构 | 🚧 | ✅ 已实施（`fc_message_types` Pydantic 保留，`add_*` 方法齐全，history=List[Dict]） | 否 |
+| 4.1.2 | 简化 ReAct 循环 | 🚧 | 🚧 部分实施（`react_cycle` 薄调度 + `handlers/` 已落地；`SimpleReActCycle`/`AgentStateManager` 未做） | 是（#1 模块错误） |
+| 4.2 | 测试覆盖率 | ❌ | ✅ 已实施（`backend/tests/` 现有 195 个 `test_*.py`，含 message_builder/react_cycle Mock/FC 降级测试；`e2etests` 67 个） | 是（#4 原 ❌ 过时） |
+| 5.1 | 模块化重构 | ❌ | ❌ 未实施（未按 core/messaging/llm/tools 拆分；与文档一致） | 是（#3 "当前结构 core_agent/"描述过时） |
+| 5.2 | 配置化系统 | 🚧 | ✅ 已实施（`config/config.yaml` 已加载 + mtime 热重载已实现） | 是（#5 两处 ❌ 错误） |
+
+### 7.2 文档错误清单（与 2026-07-13 代码不符）
+
+1. **`error_handler.py` 模块不存在 + `core_agent/` 路径错误**（3.2.2、4.1.2）
+   - 文档称"`error_handler.py` 已创建（模块级函数）"，标注路径 `core_agent/error_handler.py`。
+   - 实际：该文件不存在；`handle_react_error` 直接定义在 `backend/app/services/agent/react_cycle.py:39`，集成于 `react_cycle.py:409` except 块。
+   - 正确路径：`backend/app/services/agent/react_cycle.py`（及同目录 `initialize_run_state.py` 等，均已扁平化，无 `core_agent/` 前缀）。
+
+2. **`AgentStatus.RETRYABLE_ERROR` 枚举名已删除**（4.1.2 设计代码片段）
+   - 文档代码片段用 `AgentStatus.RETRYABLE_ERROR`。
+   - 实际 `backend/app/services/agent/status_table.py:18-27` 枚举为 `IDLE/THINKING/EXECUTING/COMPLETED/FAILED/CANCELLED/RETRYING/SUSPENDED`，无 `RETRYABLE_ERROR`，已改为 `RETRYING`（详见 `doc-优化/Agent状态语义深度分析-2026-07-01.md` v1.2）。
+
+3. **"当前结构为 core_agent/ + agent_utils/" 描述过时**（5.1）
+   - 文档称当前结构是 `core_agent/`、`agent_utils/`。
+   - 实际 `services/agent/` 已于 2026-07-10 扁平化，`core_agent/` 目录不存在；真实子目录为 `handlers/`、`steps/`，扁平文件含 `llm_stream.py`/`react_cycle.py`/`message_builder.py`/`fc_message_types.py`/`tool_cache_manager.py`/`tool_retry_engine.py`/`tool_executor.py`/`initialize_run_state.py` 等。
+
+4. **"4.2 测试覆盖率 ❌ 未实施"严重失实**（4.2）
+   - 文档称 `backend/tests/` 无任何单元测试、无 Mock/集成测试、仅 `e2emodel/` 5 个 E2E。
+   - 实际 `backend/tests/` 现有 195 个 `test_*.py`，含 `test_message_builder.py`(21)、`test_trim_to_budget.py`、`test_react_cycle.py`(9，含 `call_llm_with_fallback` Mock)、`test_should_retry_truncated.py`(8)、`test_fc_fallback.py`(4) 等；`e2etests/` 现有 67 个 E2E。文档据此标注的"未实施"与"仍缺单元测试/Mock 测试"结论均过时。
+
+5. **"5.2 无 YAML 配置 / 无热重载"两处 ❌ 错误**（5.2）
+   - 文档称 YAML 配置未实现、无热重载。
+   - 实际 `backend/app/config.py` 已实现 `config/config.yaml` 加载（:8 `import yaml`、:64-65 `yaml.load`），且 `get_config()` 每次调用按 mtime 校验自动重读（:56-59），另提供 `Config.reload()`（:157）。YAML 配置与 mtime 热重载均存在。
+
+### 7.3 未实施项价值再评估（扩展性视角，2026-07-13 复核）
+
+> 评估原则（按用户要求，严禁瞎说八道/夸大其词）：每项未实施优化都是**合理的架构/扩展性模式**，不属"无意义提案"；但在"当前单 LLM 供应商、单 MessageBuilder 实现、无多实现路线图"的现状下，多数属 premature optimization（YAGNI）。以下逐项正确陈述其**真实扩展价值**与**当前紧迫度**，不夸大、不贬损。
+
+- **已落地（原评估失效）**：
+  - 原 6.2 #5 集成测试 / #6 单元测试：现已实现（见 7.2 #4），"值得实施"预测已兑现。
+  - 原 6.2 #9 YAML 配置 / #10 热重载：现已实现（见 7.2 #5），原"不值得"预测与事实相反——`config` 系统最终选择了 YAML + 热重载方案。
+
+- **未实施项逐条价值复核（代码已 5 遍核验确认均未实现，见 7.5）**：
+
+  1. **`SmartToolCache` 类 + `_usage_stats`（3.3.1）**
+     - 真实价值：usage_stats 提供缓存命中率/分类使用率监控，属**可观测性**扩展；包装成类便于未来替换缓存策略。
+     - 当前紧迫度：**低**。现有 `get_openai_tools()` + TTLCache(ttl=300) 已满足功能；usage_stats 当前无消费者。
+     - 结论：**可暂缓，非必需；若后续引入缓存命中分析或动态 TTL 再实施**。
+
+  2. **`SimpleReActCycle` 类（4.1.2）**
+     - 真实价值：OOP 包装便于单元测试与子类化扩展。
+     - 当前紧迫度：**负（倒退）**。文档原设计还额外加了 `PerformanceMonitor`（无需求），比现有函数式 `run_react_cycle()` 薄调度**更复杂**，违反 KISS-DIRECT。实施它属倒退。
+     - 结论：**不建议实施；当前函数式薄调度 + `handlers/` 已更优**。
+
+  3. **`AgentStateManager` 类（4.1.2）**
+     - 真实价值：理论上集中状态管理。
+     - 当前紧迫度：**负（冗余）**。代码已存在 `status_table.py` 集中管理状态：`_TRANSITIONS` 转换表 + `set_failed/set_completed/set_cancelled`（status_table.py:39/127/132/137）。新建类将**重复现有能力**，属倒退。
+     - 结论：**严禁实施，会与 status_table 冗余**。
+
+  4. **`UnifiedErrorHandler` 类 + `ERROR_STRATEGIES` 注册表（4.1.2）**
+     - 真实价值：策略注册表是**可扩展的错误策略模式**，未来错误类型增多时便于插拔。
+     - 当前紧迫度：**低**。实际错误分类仅 3~4 类，`handle_react_error()` 用 if/elif 直接分派更清晰（符合"2-entry 用 if/elif"规则）。注册表仅 4 entry 时性价比低。
+     - 结论：**可暂缓；若错误策略增至 8+ 类再引入注册表**。
+
+  5. **模块化目录拆分 `core/messaging/llm/tools`（5.1.1）**
+     - 真实价值：按领域拆子包是**标准扩展性架构**，边界清晰、便于独立演进与多人协作。
+     - 当前紧迫度：**低**。当前 `services/agent/` 已扁平 + `handlers/` + `steps/` 分离，模块边界已合理；再拆会增加 import 路径深度，无即时收益。
+     - 结论：**条件价值——若 Agent 系统演进为多领域/插件式（如独立 messaging 引擎、多 LLM 适配层），拆分价值高；当前可不拆**。
+
+  6. **接口标准化 `IMessageBuilder` / `ILLMCaller`（5.1.2）**
+     - 真实价值：**最典型的可扩展抽象**——为 MessageBuilder / LLMCaller 预留多实现替换（不同 LLM SDK、不同消息后端），是"开闭原则"的标准落地。
+     - 当前紧迫度：**低（YAGNI）**。当前仅 1 个 MessageBuilder 实现、1 条 LLM 调用链，无第二实现需求。
+     - 结论：**条件价值最高的一项——一旦路线图出现多供应商/多消息后端/插件机制，应立即实施；当前单实现下属 premature，但不属"无意义"**。
+
+- **总体结论**：6 项未实施提案**全部是合理架构模式，无一属"瞎说八道"**；但在当前架构成熟度下，2 项（#2 类包装、#3 状态管理类）甚至**不应实施**（会倒退/冗余），4 项（#1/#4/#5/#6）属**可暂缓的扩展性投资**，其中 #6（接口抽象）扩展性价值最高、条件最明确。评估既未夸大其"必须做"的紧迫性，也未无据否定其扩展价值。
+
+### 7.4 核查结论
+
+文档 10 项优化中，核查确认 **8 项已实施/部分实施**（3.1.1 / 3.1.2 / 3.2.1 / 3.2.2 / 3.3.1 / 4.1.1 / 4.1.2 / 5.2），**1 项原未实施现已实施**（4.2 测试覆盖率），**1 项确未实施**（5.1 模块化重构）。剩余未做的 6 个"类/接口/目录"重构均经核查确认未做；其中 2 项（#2 类包装、#3 状态管理类）因会倒退或冗余明确不建议实施，4 项（#1/#4/#5/#6）属可暂缓的扩展性投资，详见 7.3 与 7.5。文档本身存在 **5 处与当前代码不符的错误**（7.2），已在前述各节以 ⚠️ 标注，并在本章汇总。
+
+### 7.5 五遍复核记录（诚实声明）
+
+对未实施 6 项提案，逐项执行 5 遍核查（2026-07-13）：
+
+- **第 1 遍（存在性）**：全局搜索符号 `SmartToolCache`/`_usage_stats`/`SimpleReActCycle`/`AgentStateManager`/`UnifiedErrorHandler`/`ERROR_STRATEGIES`/`IMessageBuilder`/`ILLMCaller`，全部 **0 命中** → 确认均未实现。
+- **第 2 遍（替代实现）**：核验已有替代——`status_table.py` 集中状态管理、`handle_react_error` 统一错误处理、`tool_cache_manager.py` 缓存 → 确认非"缺失"而是"有意未做"。
+- **第 3 遍（倒退/冗余比对）**：文档原设计 `SimpleReActCycle` 含未请求的 `PerformanceMonitor`（比现有更复杂）；`AgentStateManager` 与 `status_table.py:39/127/132/137` 重复 → 确认 2 项实施会倒退/冗余。
+- **第 4 遍（扩展性价值重估）**：按"功能优化/扩展性"视角重估每项真实收益（可观测性、策略模式、开闭原则、领域拆分）→ 区分"冗余倒退"与"条件扩展价值"。
+- **第 5 遍（一致性交叉校验）**：核对 7.1 表格"文档是否有误"列、7.2 错误清单、7.3 价值判定 → 无矛盾。
+
+**诚实声明**：本文档 10 项优化中，8 项已落地/部分落地，1 项（4.2 测试）原标 ❌ 现已落地，1 项（5.1）确未实施。未实施的 6 个子项均为合理架构提案，**未夸大其"必须做"的紧迫性，也未无据贬为"无价值"**；其中 2 项（类包装/状态管理类）因会倒退或冗余而明确不建议实施，4 项属可暂缓的扩展性投资（接口抽象 `IMessageBuilder`/`ILLMCaller` 条件价值最高）。
+
+### 7.6 核查结果一览表（先看这张：哪些没做 + 值得/不值得）
+
+| 优化项 | 实施状态 | 未做的部分 | 结论 |
+|--------|---------|-----------|------|
+| 3.1.1 合并 llm_caller/react_cycle | ✅ 已实施 | 无 | — |
+| 3.1.2 message_builder 历史管理 | ✅ 已实施 | 无 | — |
+| 3.2.1 FC 降级机制 | ✅ 已实施 | 无 | — |
+| 3.2.2 统一错误处理 | 🚧 部分实施 | 未抽成独立 `error_handler.py` 模块 | **不值得**（功能已在 `react_cycle.py:39` 落地，抽模块无收益） |
+| 3.3.1 工具缓存 | 🚧 部分实施 | `SmartToolCache` 类、`_usage_stats` | **不值得**（现有缓存已够，监控价值低，可暂缓） |
+| 4.1.1 消息系统结构 | ✅ 已实施 | 无 | — |
+| 4.1.2 简化 ReAct 循环 | 🚧 部分实施 | `SimpleReActCycle` 类、`AgentStateManager` 类、`UnifiedErrorHandler` 类+注册表 | `SimpleReActCycle`/`AgentStateManager`=**不想做（严禁）**；`UnifiedErrorHandler`=**不值得** |
+| 4.2 测试覆盖率 | ✅ 已实施（原标 ❌ 过时） | 无 | — |
+| 5.1 模块化重构 | ❌ 未实施 | 拆目录 `core/messaging/llm/tools`、`IMessageBuilder`/`ILLMCaller` 接口 | 拆目录=**不值得**；接口=**值得（条件触发）** |
+| 5.2 配置化系统 | ✅ 已实施（YAML+热重载已落地） | 无 | — |
+
+**一句话总结论**：10 项中 8 项已落地/部分落地；未做的子项共 6 个——**1 个值得做（接口抽象，条件触发）**、**3 个不值得（可暂缓）**、**2 个不想做（严禁，会倒退/冗余）**。不存在"全都没必要"，也不存在"都该做"。
+
+> 术语：**不值得**=可做但当前价值低、可暂缓；**不想做**=当前设计已更优/做了反而有害，明确不做；**值得（条件触发）**=真具扩展性价值，条件成熟立即做。逐条明细见 7.7。
+
+**更正人**：小欧
+**更正时间**：2026-07-13
+**核查方式**：逐项读取 `backend/app/` 当前代码 + 全局搜索枚举/函数/配置，3 轮交叉核对（子代理初核 → 本人亲核关键项 error_handler.py/core_agent/tests/config.yaml → 复核标注一致性）

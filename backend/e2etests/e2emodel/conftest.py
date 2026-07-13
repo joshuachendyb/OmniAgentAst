@@ -107,7 +107,7 @@ def step_factory():
 
     def _start(step=1, **kwargs):
         defaults = dict(
-            step=step, type="start", message="hello",
+            step=step, type="start", content="hello",
             display_name="test", provider="test",
             model="test", task_id="t-001",
             security_check={"is_safe": True, "risk_level": "low"},
