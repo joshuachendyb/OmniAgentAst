@@ -50,10 +50,13 @@ _WRITE_OPS = FILE_OPERATION_TOOLS - {"readtext"}
 
 
 
-async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
+async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None):
         """安全检查+HITL确认 — async generator: MetaStep先yield给前端,再等确认 — 小沈 2026-06-10
-        
-        blocked/rejected时设agent.status=FAILED并return,调用方检查status即可
+
+        拒绝/拦截是可恢复的(符合人类认知: 拒绝≠失败), 不置终态FAILED:
+        - 把"工具被拒绝/拦截"作为 observation 写进LLM历史(_add_denial_feedback), 让LLM换方案;
+        - 循环回 THINKING 由主循环 EXECUTING→THINKING 处理;
+        - 仅当同类拒绝累计>=3次才由 _dispatch_handler 置 FAILED。 — 小欧 2026-07-13
         """
         from app.services.safety.tool_safety_checker import get_tool_safety_checker
         from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result
@@ -70,7 +73,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                     error_type="blocked",
                     error_message=safety_result.message
                 ))
-                # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态
+                # 拒绝/拦截是可恢复的: 写反馈进LLM历史, 让LLM换方案(拒绝≠失败, 符合人类认知) — 小欧 2026-07-13
+                _add_denial_feedback(agent, all_calls, fc_context, _cn, f"被安全策略拦截: {safety_result.message}")
+                # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态(可恢复不置终态)
                 return
 
             if safety_result.requires_confirmation:
@@ -100,12 +105,43 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                         error_type="user_rejected",
                         error_message=f"用户拒绝执行工具: {_cn}"
                     ))
-                    # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态
+                    # 拒绝/拦截是可恢复的: 写反馈进LLM历史, 让LLM换方案(拒绝≠失败, 符合人类认知) — 小欧 2026-07-13
+                    _add_denial_feedback(agent, all_calls, fc_context, _cn, "被用户拒绝执行")
+                    # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态(可恢复不置终态)
                     set_status(agent, AgentStatus.EXECUTING, "用户拒绝，恢复执行态由_dispatch_handler推断")  # SUSPENDED→EXECUTING 合法
                     return
 
                 # 用户已确认：恢复执行态继续工具执行（SUSPENDED→EXECUTING 合法）— 小欧 2026-07-12
                 set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
+
+
+def _add_denial_feedback(agent, all_calls: List[Dict], fc_context: Dict, denied_tool: str, reason: str):
+    """HITL拒绝/拦截→把反馈写入LLM历史, 让LLM换方案(符合人类认知: 拒绝≠失败) — 小欧 2026-07-13
+
+    不置终态, 仅补充 observation:
+    1. 补 assistant(tool_calls) 使 tool result 能配对;
+    2. 被拒/被拦截的工具: 用 reason 说明原因;
+    3. 同批其他工具: 标记"未执行"(它们并非被拒, 不能错标)。
+    缺此反馈 LLM 会傻乎乎重复请求同一工具陷入死循环(受 max_steps 兜底)。
+    """
+    _fc = fc_context or {}
+    _tc = _fc.get("tool_calls", [])
+    if _tc:
+        agent.message_builder.add_assistant_tool_call(_tc, content=_fc.get("llm_content", "") or None)
+    for call in all_calls:
+        _tid = call.get("_tool_call_id", "")
+        _cn = call.get("tool_name", "")
+        if _cn == denied_tool:
+            _obs = f"[Observation] 工具 {_cn} {reason}. 请改用其他工具或方式完成用户任务。"
+        else:
+            _obs = f"[Observation] 工具 {_cn} 未执行(同批工具 {denied_tool} 未通过安全检查)。"
+        try:
+            agent.message_builder.add_tool_result(_tid, _obs)
+        except Exception:
+            try:
+                agent.message_builder.add_tool_result("", _obs)
+            except Exception:
+                pass
 
 
 def _has_conflict(all_calls: List[Dict]) -> bool:
@@ -513,7 +549,7 @@ async def handle_action(agent, parsed: Dict):
     ))
 
     _has_error = False
-    async for event in check_safety_and_confirm(agent, call_result.all_calls, step):
+    async for event in check_safety_and_confirm(agent, call_result.all_calls, step, call_result.fc_context):
         if getattr(event, 'type', None) == 'error':
             _has_error = True
         yield event

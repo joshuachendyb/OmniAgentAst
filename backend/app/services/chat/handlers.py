@@ -136,7 +136,7 @@ async def send_start_step(
     return MetaStep(
         step=next_step(),
         type="start",
-        message=user_message if user_message else "",
+        content=user_message if user_message else "",
         display_name=f"{ai_service.provider} ({ai_service.model})",
         provider=ai_service.provider,
         model=ai_service.model,

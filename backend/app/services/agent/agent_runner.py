@@ -74,13 +74,14 @@ async def run_agent_in_background(
             agent.message_builder.MAX_CONTEXT_CHARS = llm_service.context_limit
 
         # 注入停止检查回调，消除 llm→task 反向依赖 — 小沈 2026-06-17
-        # 小沈 2026-07-13: 当前采用"循环粒度取消"(方案 B), LLMClient(client_sdk.py) 尚未实现
-        # set_stop_check, 故 hasattr 为 False, 此分支跳过 —— 这是有意为之(B 方案不依赖流式中断)。
-        # 若后续实施"流式中途打断"(方案 A), 需在此真正注入 _stop_check 并在 llm_stream 逐 chunk 轮询。
+        # 小欧 2026-07-13: 采用"循环粒度取消"(方案 B)。_stop_check 仅查取消(中断在飞 LLM 流);
+        # 暂停不再经此中断, 改由 react_cycle 循环顶 task_pause_check 阻塞等待恢复(符合人类认知"原地等")。
         if llm_service is not None and hasattr(llm_service, "set_stop_check"):
             async def _stop_check():
-                from app.services.task.task_runtime import check_cancelled, check_paused
-                return await check_cancelled(task_id) or await check_paused(task_id)
+                from app.services.task.task_runtime import check_cancelled
+                # 仅查取消: 暂停不再经此中断 LLM 流, 改由 react_cycle 循环顶 task_pause_check 阻塞处理
+                # (符合人类认知"原地等"); 否则暂停会令在飞 LLM 流被打断→忙等空转/误判。 — 小欧 2026-07-13
+                return await check_cancelled(task_id)
             llm_service.set_stop_check(_stop_check)
 
         # 加载会话历史，支持多轮对话 — 北京老陈 2026-06-13
@@ -124,7 +125,7 @@ async def run_agent_in_background(
         # 后端主动取消（task 被清理等）— 小沈 2026-06-09 修复
         # 小欧 2026-07-13: 取消终态仅 MetaStep(cancelled)，不再补发 FinalStep（避免前端误判"已完成"）
         logger.info(f"[Runner] 任务 {task_id} 被取消(CancelledError)")
-        cancelled_step = MetaStep(step=next_step(), type="cancelled", message="任务已被取消")
+        cancelled_step = MetaStep(step=next_step(), type="cancelled", content="任务已被取消")
         cancelled_dict = cancelled_step.to_dict()
         current_execution_steps.append(cancelled_dict)
         get_prompt_logger().log_step_yield(cancelled_dict, round_number=cancelled_dict.get("step", 0))

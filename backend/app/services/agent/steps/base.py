@@ -115,20 +115,27 @@ class MetaStep(ReasoningStep):
         step: int,
         type: str,
         *,
-        message: str = "",
+        content: str = "",
         timestamp: Optional[int] = None,
         **kwargs: Any
     ):
+        # 【字段契约】北京老陈 2026-07-13: MetaStep 文本统一用 content(单一权威字段)。
+        # 选 content 不选 message 的决策依据:
+        #   1) 与 ThoughtStep/FinalStep/ErrorStep 一致——基类 to_dict() 已通过 get_content() 输出
+        #      content 键, MetaStep 须复用同一契约, 否则各 Step 序列化的文本字段名不统一;
+        #   2) 旧 message 字段与前端读取字段名错位: 调用方用 content= 时序列化结果无 message 键,
+        #      前端若读 message 则取消/重试提示显示为空(真实跨层缺陷, 已修);
+        #   3) 后端为主、前端迎合后端——后端定 content 为权威字段, 前端改读 content。
         ReasoningStep.__init__(self, step, timestamp)
         self.TYPE = type
-        self._message = message
+        self._content = content
         self._kwargs = kwargs
 
     def get_content(self) -> str:
-        return self._message
+        return self._content
 
     def _extra_fields(self) -> Dict[str, Any]:
-        fields = dict(self._kwargs)
-        if self._message:
-            fields["message"] = self._message
-        return fields
+        # 【序列化规则】小欧 2026-07-13: content 已由基类 to_dict() 经 get_content() 输出,
+        # 此处仅透传构造时传入的其余 kw(confirm_id/tool_name/params/safety_level/wait_time/data 等),
+        # 不再单独输出 message 键, 避免同值双字段(字段双份/错位)。
+        return dict(self._kwargs)

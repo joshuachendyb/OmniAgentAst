@@ -30,6 +30,11 @@ from app.services.agent.tool_cache_manager import get_openai_tools
 
 _MAX_CONSECUTIVE_TRUNCATIONS = 3
 
+# 可恢复的拒绝/拦截错误: 拒绝≠失败(符合人类认知, 助手应换工具继续) — 小欧 2026-07-13
+# 反馈已写入LLM历史(_add_denial_feedback), 循环回THINKING由主循环 EXECUTING→THINKING 处理;
+# 仅当"同一工具+同类型错误"累计>=3次才置 FAILED(说明LLM陷入死胡同) — 北京老陈 2026-07-13。
+_RECOVERABLE_ERRORS = {"user_rejected", "blocked"}
+
 
 def handle_react_error(agent, error, step):
     """统一处理ReAct循环中的错误 — 只创建 ErrorStep，不设状态 — chendyg 2026-07-01
@@ -123,10 +128,38 @@ async def _dispatch_handler(agent, llm_response):
         set_status(agent, AgentStatus.RETRYING, "触发重试")
     elif "error" in seen_types:
         error_event = last_error_event
+        err_type = getattr(error_event, "error_type", "")
         error_msg = error_event.get_content() if hasattr(error_event, 'get_content') else ""
-        set_failed(agent, error_msg)
+        if err_type in _RECOVERABLE_ERRORS:
+            # 拒绝/拦截是可恢复的(拒绝≠失败, 符合人类认知): 不置终态, 反馈已进LLM历史,
+            # 主循环 EXECUTING→THINKING 让LLM换工具。 — 小欧 2026-07-13
+            # 计数按"同工具+同类型错误"累计(北京老陈 2026-07-13): 不同工具被拒不限次数
+            # (往往是参数问题, 换工具/换参数即可); 仅同一工具同一类拒绝累计≥3次才说明LLM
+            # 陷入死胡同, 必须停止 loop → FAILED。故用 per-(tool,type) 字典。
+            # 工具名缺失时不累计(无法分键, 避免空名合并误累计), 保持可恢复回THINKING, 不误杀。
+            _tool = llm_response.get("tool_name", "") or getattr(error_event, "tool_name", "")
+            if _tool:
+                _key = (str(_tool), str(err_type))
+                _deny = getattr(agent, "_deny_counts", {}) or {}
+                _deny[_key] = _deny.get(_key, 0) + 1
+                agent._deny_counts = _deny
+                if _deny[_key] >= 3:
+                    set_failed(agent, f"工具 {_tool} 被反复{err_type}(≥3次), LLM陷入死胡同, 停止循环")
+        else:
+            set_failed(agent, error_msg)
     elif "final" in seen_types:
         set_completed(agent)
+    else:
+        # 正常成功执行(无 error/retrying/final, 且确为 action 执行了工具): 重置该工具的拒绝计数
+        # — 北京老陈 2026-07-13: 同工具成功后证明其未陷死胡同, 旧计数清零, 避免长会话里一次早已
+        # 解决的历史拒绝在后续被误累计触发 FAILED(增强不退化, 逻辑无漏洞)。answer/final 步不重置。
+        if llm_response.get("type") == "action":
+            _tool = llm_response.get("tool_name", "")
+            if _tool:
+                _deny = getattr(agent, "_deny_counts", {}) or {}
+                _deny.pop((str(_tool), "user_rejected"), None)
+                _deny.pop((str(_tool), "blocked"), None)
+                agent._deny_counts = _deny
 
 
 def _finalize_cycle(agent):
@@ -303,7 +336,7 @@ async def run_react_cycle(
             # 注: 原 react_cycle 场景B 依赖 llm_client._cancelled, 该属性全局从未赋值(死代码),
             # 曾导致用户取消误走 empty_response→ErrorStep(failed)。 — 小沈 2026-07-13
             if task_id:
-                from app.services.task.task_runtime import check_cancelled
+                from app.services.task.task_runtime import check_cancelled, task_pause_check
                 if await check_cancelled(task_id):
                     logger.info(f"[run_react_cycle] 检测到任务取消(task_id={task_id}), 终止为 cancelled")
                     yield agent._step_emitter.emit(MetaStep(
@@ -311,6 +344,13 @@ async def run_react_cycle(
                         content="任务已被用户取消"))
                     set_cancelled(agent)
                     break
+                # 用户暂停检测(循环粒度, 阻塞等待恢复) — 小欧 2026-07-13
+                # 符合人类认知: 你喊暂停, 助手原地等(真BLOCK), 不空转、不误判为取消/完成。
+                # 阻塞点在 task_pause_check 内 pause_event.wait(); 恢复后回 THINKING 继续。
+                # 注意: 此处只查暂停不查取消(取消已在上方处理); 暂停不再经 LLMClient._stop_check
+                # 中断流式(已在 agent_runner 改为仅查取消), 故暂停在"下一轮循环顶"干净生效。
+                async for pause_event in task_pause_check(task_id):
+                    yield pause_event
             async for event in _process_single_step(agent, chunk_buffer):
                 yield event
 
