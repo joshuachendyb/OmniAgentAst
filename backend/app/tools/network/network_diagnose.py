@@ -328,12 +328,12 @@ async def ping_port(
             return build_error(data={}, llm_data=llm_data)
         except OSError as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_CONNECTION_ERROR, detail=str(e), hint="请检查主机和端口", timeout=timeout)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_CONNECTION_ERROR, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint="请检查主机和端口", timeout=timeout)
             return build_error(data={}, llm_data=llm_data)
         except Exception as e:
             logger.error(f"[port_check] 未知错误: {e}")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NET_UNKNOWN, detail=str(e), hint="请检查主机地址和网络连接", timeout=timeout)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NET_UNKNOWN, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint="请检查主机地址和网络连接", timeout=timeout)
             return build_error(data={}, llm_data=llm_data)
     else:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

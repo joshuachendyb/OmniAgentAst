@@ -431,5 +431,5 @@ async def searchweb(
     except Exception as e:
         logger.error(f"[searchweb] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_NET_UNKNOWN, detail=str(e), hint="搜索异常，请重试", proxy=proxy, num_results=num_results)
+        llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_NET_UNKNOWN, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint="搜索异常，请重试", proxy=proxy, num_results=num_results)
         return build_error(data={}, llm_data=llm_data)

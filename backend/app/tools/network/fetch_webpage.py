@@ -664,10 +664,10 @@ async def fetchpage(
         return build_error(data={}, llm_data=llm_data)
     except httpx.RequestError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=str(e), hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[fetchpage] 未知错误: {e}\n{traceback.format_exc()}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NET_UNKNOWN, detail=str(e), hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NET_UNKNOWN, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)

@@ -190,7 +190,7 @@ async def download(
             os.makedirs(dest_dir, exist_ok=True)
         except (PermissionError, OSError) as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=dest_path, err_code=ERR_NETWORK_CREATE_DIR, detail=str(e), hint="检查目标目录权限", timeout=timeout, proxy=proxy, headers=headers)
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=dest_path, err_code=ERR_NETWORK_CREATE_DIR, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint="检查目标目录权限", timeout=timeout, proxy=proxy, headers=headers)
             return build_error(data={}, llm_data=llm_data)
 
         req_headers = headers or {}
@@ -219,7 +219,7 @@ async def download(
         return build_success(data={}, llm_data=llm_data)
     except (PermissionError, OSError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NETWORK_WRITE_FILE, detail=str(e), hint=hint_for_write_error(e, dest_path), timeout=timeout, proxy=proxy, headers=headers)
+        llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NETWORK_WRITE_FILE, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint=hint_for_write_error(e, dest_path), timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
     except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -230,5 +230,5 @@ async def download(
     except Exception as e:
         logger.error(f"[download] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NET_UNKNOWN, detail=str(e), hint="请检查URL和网络连接", timeout=timeout, proxy=proxy, headers=headers)
+        llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NET_UNKNOWN, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint="请检查URL和网络连接", timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
