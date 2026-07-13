@@ -402,11 +402,11 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
             tc_id = call.get("_tool_call_id", "")
             ctx.agent.message_builder.add_tool_result(tc_id, obs_text)
         except Exception as e:
-            logger.warning(f"[action_handler] add_tool_result异常: {e}")
+            logger.warning(f"[action_handler] add_tool_result异常: {type(e).__name__}: {e!r}")
             try:
                 ctx.agent.message_builder.add_tool_result("", obs_text)
-            except Exception as e:
-                logger.warning(f"[action_handler] add_tool_result最终异常: {e}")
+            except Exception as e2:
+                logger.warning(f"[action_handler] add_tool_result最终异常: {type(e2).__name__}: {e2!r}")
 
     if not obs_parts:
         obs_parts = ["Observation: 无结果"]
