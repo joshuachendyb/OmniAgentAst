@@ -26,7 +26,7 @@ from app.services.llm.client_sdk import create_llm_client
 from app.services.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
 from app.services.llm.error_classifier import SystemErrorClassifier
 
-from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
+from app.constants import DEFAULT_READ_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
 
 class BaseAIService:
@@ -38,7 +38,7 @@ class BaseAIService:
         model: str,
         api_base: str,
         provider: str = "",
-        timeout: int = DEFAULT_LLM_TIMEOUT,
+        timeout: int = DEFAULT_READ_TIMEOUT,
         max_tokens: Optional[int] = None,
         temperature: float = None,
         seed: Optional[int] = None,
@@ -58,9 +58,9 @@ class BaseAIService:
         self.context_limit = context_limit
         self._llm_sdk = None
         try:
-            timeout_value = float(timeout) if timeout else float(DEFAULT_LLM_TIMEOUT)
+            timeout_value = float(timeout) if timeout else float(DEFAULT_READ_TIMEOUT)
         except (ValueError, TypeError):
-            timeout_value = float(DEFAULT_LLM_TIMEOUT)
+            timeout_value = float(DEFAULT_READ_TIMEOUT)
         self.timeout = int(timeout_value)
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
