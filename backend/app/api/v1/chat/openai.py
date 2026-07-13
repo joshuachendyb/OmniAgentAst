@@ -40,6 +40,12 @@ from app.services.task.hitl_confirmation import resolve_confirmation
 
 router = APIRouter()
 
+# 后台 agent 任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者(generate)断开后任务再无强引用,
+# 会被 GC 回收并取消, 导致 run_agent_in_background 的 finally(DB 保存)被打断、结果丢失(问题2)。
+# 与 agent_runner._background_tasks 双重保险(后者 caller-agnostic): 本表在调用点持有引用,
+# done 时 discard 防内存泄漏 — 小欧 2026-07-13
+_agent_tasks: set = set()
+
 async def validate_chat_config():
     """拷贝自 validate_chat_config.py — 内联入 chat_openai.py 小欧 2026-07-10"""
     from app.logger import logger
@@ -215,8 +221,11 @@ async def chat_stream(request: ChatRequest):
 
             # 启动后台生产者(agent)，与 SSE 传输解耦 — 北京老陈 2026-07-12 小欧 2026-07-12
             agent = UniversalAgent(llm_client=ai_service, task_id=task_id)
-            asyncio.create_task(run_agent_in_background(
+            # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
+            bg_task = asyncio.create_task(run_agent_in_background(
                 agent, task_id, user_input, None, next_step, session_id, state, _task_start_time))
+            _agent_tasks.add(bg_task)
+            bg_task.add_done_callback(_agent_tasks.discard)
 
             # 消费者：读缓冲 + 注入 pause/cancel 检查
             async for sse_chunk in _stream_with_control(buffer, task_id, next_step, session_id, execution_steps, state):
