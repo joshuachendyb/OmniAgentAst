@@ -3,8 +3,7 @@
 steps包 - ReAct Agent Step封装类
 
 按SRP原则拆分,每个文件单一职责:
-- base.py: ReasoningStep(ABC)
-- meta_step.py: MetaStep (start/cancelled/paused/resumed/retrying/authorization_required)
+- base.py: ReasoningStep(ABC) + MetaStep (start/cancelled/paused/resumed/retrying/authorization_required)
 - action_step.py: ActionStep (action_tool模式)
 - observation_step.py: ObservationStep (observation模式)
 - chunk_step.py: ChunkStep

@@ -13,7 +13,7 @@ v4.0: 合并error/unknown处理，react_cycle只分两路 — 小欧 2026-07-12
 import time
 from typing import Dict
 
-from app.services.agent.steps import ThoughtStep, FinalStep, ErrorStep
+from app.services.agent.steps import ThoughtStep, FinalStep, ErrorStep, MetaStep
 from app.utils.text_utils import format_tool_call_markup
 from app.logger import logger
 
@@ -50,14 +50,15 @@ async def handle_answer(agent, parsed: Dict):
     content = format_tool_call_markup(parsed.get("content", ""))
     reasoning = format_tool_call_markup(parsed.get("reasoning", ""))
 
-    # 真·空：content和reasoning都空 → ErrorStep 触发RETRYING态
+    # 真·空：content和reasoning都空 → 系统重试通知(MetaStep.retrying)，由 RETRYING 态驱动编排层重试 — 小欧 2026-07-13 删 recoverable
     if not content and not reasoning:
-        logger.warning(f"[handle_answer] LLM返回空内容(step={step})")
+        logger.warning(f"[handle_answer] LLM返回空内容(step={step}), 触发系统重试")
         agent.message_builder.add_assistant_message("")
-        yield agent._step_emitter.emit(ErrorStep(
-            step=step, error_type="empty_response",
-            error_message="LLM返回空内容",
-            recoverable=True,
+        yield agent._step_emitter.emit(MetaStep(
+            type="retrying",
+            step=step,
+            content="LLM返回空内容，触发重试",
+            wait_time=1,
         ))
         return
 

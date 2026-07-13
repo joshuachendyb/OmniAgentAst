@@ -13,6 +13,7 @@ import asyncio
 from datetime import datetime
 from typing import Any, Optional
 from app.utils.time_utils import create_timestamp
+from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
 
 from app.logger import logger
 from app.constants import TASK_TIMEOUT
@@ -183,6 +184,7 @@ async def task_cleanup(task_id: str, llm_call_count: int = 0) -> None:
         logger.info(f"[Cleanup] 任务 {task_id} 已被中断,保留记录")
 
 
-def build_step_dict(step: Optional[int], step_type: str, message: str) -> dict:
-    """构建step字典 — 替代MetaStep.to_dict()，消除对agent/steps的依赖 — 小健 2026-06-17"""
-    return {"type": step_type, "step": step, "timestamp": create_timestamp(), "content": message}
+def build_step_dict(step: Optional[int], step_type: str, message: str, data=None) -> dict:
+    """构建step字典 — 统一走 MetaStep，生命周期事件(type=cancelled/paused/resumed)直接产出 — 小欧 2026-07-13
+    说明: 不再产出 incident 裸 dict，前端按 step.type 直接渲染（禁止 backward：代码路径单一）"""
+    return MetaStep(type=step_type, step=step, content=message or "", data=data or {}).to_dict()

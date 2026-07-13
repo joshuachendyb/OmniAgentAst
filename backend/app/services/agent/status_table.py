@@ -50,7 +50,7 @@ _TRANSITIONS = {
         AgentStatus.COMPLETED,     # 正常：直接回答完成
         AgentStatus.FAILED,        # 异常：不可恢复错误
         AgentStatus.CANCELLED,     # 异常：用户取消
-        AgentStatus.RETRYING,     # 异常：可恢复错误（_dispatch_handler中recoverable=True）
+        AgentStatus.RETRYING,     # 异常：系统重试（_dispatch_handler 检测 seen_types 含 'retrying'）
         AgentStatus.SUSPENDED,    # 异常：真挂起（用户暂停 / HITL等确认）— 小欧 2026-07-12
     },
 
@@ -60,7 +60,7 @@ _TRANSITIONS = {
         AgentStatus.COMPLETED,     # 正常：执行完成，任务结束
         AgentStatus.FAILED,        # 异常：不可恢复错误
         AgentStatus.CANCELLED,     # 异常：用户取消
-        AgentStatus.RETRYING,     # 异常：可恢复错误（_dispatch_handler中recoverable=True）
+        AgentStatus.RETRYING,     # 异常：系统重试（_dispatch_handler 检测 seen_types 含 'retrying'）
         AgentStatus.SUSPENDED,    # 异常：真挂起（用户暂停 / HITL等确认）— 小欧 2026-07-12
     },
 

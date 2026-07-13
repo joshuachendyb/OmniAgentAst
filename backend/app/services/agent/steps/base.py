@@ -101,8 +101,14 @@ class AgentResult:
     error: Optional[str] = None
 
 
+# MetaStep — 运行时元事件
+# (start/cancelled/paused/resumed/retrying/authorization_required)
+# 小沈 2026-07-13: 实现直接放在 base.py(与 ReasoningStep 基类同文件), 
+# 没有单独的 meta_step.py 文件;
+# 此前 steps/__init__.py 注释误写 meta_step.py, 已修正。
+# 如需严格 SRP 拆分再单独抽 meta_step.py。
 class MetaStep(ReasoningStep):
-    """运行时元事件 - start/cancelled/paused/resumed/retrying/authorization_required — 小欧 2026-07-12"""
+    """运行时元事件 - start/cancelled/paused/resumed/retrying/authorization_required — 小欧 2026-07-12 / 小沈 2026-07-13 注释修正位置"""
 
     def __init__(
         self,

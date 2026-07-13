@@ -59,14 +59,15 @@ async def task_cancel_check_and_yield(
 ) -> Optional[str]:
     if await check_cancelled(task_id):
         has_cancelled = any(
-            s.get('incident_value') == 'cancelled' for s in current_execution_steps
+            s.get('incident_value') == 'cancelled' or s.get('type') == 'cancelled'
+            for s in current_execution_steps
         )
         if has_cancelled:
             logger.info(f"[CancelCheck] 任务 {task_id} 已有cancelled step,跳过")
             return None
         logger.info(f"[CancelCheck] 任务 {task_id} 取消状态: True")
         step_dict = build_step_dict(next_step(), "cancelled", '任务已被取消')
-        logger.info(f"[Step incident] 发送incident步骤(cancelled)")
+        logger.info(f"[Step] 发送 cancelled 步骤")
         current_execution_steps.append(step_dict)
         return format_agent_sse(step_dict)
     return None

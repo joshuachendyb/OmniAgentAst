@@ -25,13 +25,12 @@ class StepEmitter:
         self.agent.steps.append(step)
         return step
 
-    def exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> 'ReasoningStep':
-        """创建error_step,返回Step对象 — chendyg 2026-07-01: 不设状态，只创建 ErrorStep"""
+    def exit_with_error(self, step_count: int, error_type: str, error_message: str) -> 'ReasoningStep':
+        """创建error_step,返回Step对象 — chendyg 2026-07-01: 不设状态，只创建 ErrorStep；小欧 2026-07-13: 删 recoverable（终态由 ErrorStep 表示，不再用 flag 区分可恢复）"""
         error_step = ErrorStep(
             step=step_count,
             error_type=error_type,
-            error_message=error_message,
-            recoverable=recoverable
+            error_message=error_message
         )
         return self.emit(error_step)
 

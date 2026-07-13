@@ -19,7 +19,7 @@ from app.logger import logger
 from app.services.llm.error_classifier import SystemErrorClassifier
 from app.logger.prompt_logger import get_prompt_logger
 from app.config import get_config
-from app.services.agent.steps import ChunkStep, FinalStep, ObservationStep, ErrorStep
+from app.services.agent.steps import ChunkStep, MetaStep, ObservationStep, ErrorStep
 from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_completed, set_cancelled
 from app.services.agent.initialize_run_state import initialize_run_state
 from app.services.agent.handlers import (
@@ -32,11 +32,11 @@ _MAX_CONSECUTIVE_TRUNCATIONS = 3
 
 
 def handle_react_error(agent, error, step):
-    """统一处理ReAct循环中的错误 — 只创建 ErrorStep，不设状态 — chendyg 2026-07-01"""
+    """统一处理ReAct循环中的错误 — 只创建 ErrorStep，不设状态 — chendyg 2026-07-01
+    小欧 2026-07-13: 删 recoverable（终态由 ErrorStep 表示，不再用 flag 区分可恢复）"""
     error_type = SystemErrorClassifier.classify_error(error).name.lower()
     logger.error(f"[ErrorHandler] 错误类型={error_type}: {error}")
-    recoverable = _is_recoverable_error(error)
-    return ErrorStep(step=step, error_type=error_type, error_message=str(error), recoverable=recoverable)
+    return ErrorStep(step=step, error_type=error_type, error_message=str(error))
 
 
 def _is_recoverable_error(error) -> bool:
@@ -89,11 +89,11 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
 
 
 async def _dispatch_handler(agent, llm_response):
-    """按type分派handler，基于 event type + recoverable 推断状态 — chendyg 2026-07-01
+    """按type分派handler，基于 event type 推断状态 — chendyg 2026-07-01 / 小欧 2026-07-13 去掉 recoverable
     
     状态推断规则:
-    - "error" + recoverable → 置RETRYING（重试由编排层except块处理）；"error" + !recoverable → set_failed
-    - "error" + !recoverable → set_failed
+    - "retrying" → 置RETRYING（重试由编排层except块处理）
+    - "error" → set_failed
     - "final" → set_completed
     - 其他 → continue（不设状态）
     """
@@ -119,27 +119,14 @@ async def _dispatch_handler(agent, llm_response):
             last_error_event = event
         yield event
 
-    if "error" in seen_types:
+    if "retrying" in seen_types:
+        set_status(agent, AgentStatus.RETRYING, "触发重试")
+    elif "error" in seen_types:
         error_event = last_error_event
         error_msg = error_event.get_content() if hasattr(error_event, 'get_content') else ""
-        if getattr(error_event, 'recoverable', False):
-            set_status(agent, AgentStatus.RETRYING, error_msg)
-        else:
-            set_failed(agent, error_msg)
+        set_failed(agent, error_msg)
     elif "final" in seen_types:
         set_completed(agent)
-
-
-def _ensure_failed_final_step(agent):
-    """FAILED时补发FinalStep — 小健 2026-06-17 从finally提取
-    response="" 触发前端空响应守卫，设置 isError=true + 用户友好错误消息 — chendyg 2026-06-30"""
-    if agent.status != AgentStatus.FAILED:
-        return
-    return FinalStep(
-        step=agent.llm_call_count,
-        response="",
-        thought="",
-    )
 
 
 def _finalize_cycle(agent):
@@ -207,14 +194,13 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         ))
         return
 
-    # ── 场景B: 任务取消 ─────────────────────────────────────────
+    # ── 场景B: 任务取消(llm_client._cancelled, 历史兜底; 主路径见循环顶 check_cancelled) ──
     if getattr(getattr(agent, 'llm_client', None), '_cancelled', False):
         print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, cancelled")  # 小欧 2026-07-02 控制台
-        yield agent._create_cancelled_chunk()
-        yield agent._step_emitter.emit(FinalStep(
+        yield agent._step_emitter.emit(MetaStep(
+            type="cancelled",
             step=step,
-            response="任务已被中断",
-            thought="",
+            content="任务已被中断",
         ))
         set_cancelled(agent)
         return
@@ -243,14 +229,14 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         logger.warning(f"[run_react_cycle] 检测到LLM输出截断(step={step}, 连续第{agent._consecutive_truncations}次, content={content[:50]})")
 
         if agent._consecutive_truncations >= _MAX_CONSECUTIVE_TRUNCATIONS:
-            logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试, 设为FAILED")
-            print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, consecutive_truncation")  # 小欧 2026-07-02 控制台
-            set_failed(agent, f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断")
-            yield agent._step_emitter.emit(FinalStep(
+            logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试")
+            print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, consecutive_truncation")  # 小欧 2026-07-02 控制台
+            yield agent._step_emitter.emit(MetaStep(
+                type="cancelled",
                 step=step,
-                response=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
-                thought="",
+                content=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
             ))
+            set_cancelled(agent)
             return
 
         obs_text = "[Observation] 工具调用输出不完整，请重新调用该工具并补充完整参数"
@@ -291,16 +277,40 @@ async def run_react_cycle(
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
 
     if max_steps <= 0:
-        logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接设为FAILED")
-        set_failed(agent, f"max_steps={max_steps}, 无可用步骤")
-        yield agent._step_emitter.emit(FinalStep(
-            step=0, response=f"max_steps={max_steps}, 无可用步骤", thought="",
+        logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接终止")
+        yield agent._step_emitter.emit(MetaStep(
+            type="cancelled",
+            step=0,
+            content=f"max_steps={max_steps}, 无可用步骤",
         ))
+        set_cancelled(agent)
         _finalize_cycle(agent)
         return
 
     try:
         while agent.llm_call_count < max_steps:
+            # ── 用户取消检测(循环粒度, 方案 B) ──
+            # 小沈 2026-07-13: 本处采用"循环粒度取消"(方案 B), 不采用"流式中途打断"(方案 A)。
+            # 选 B 不选 A 的原因(利弊权衡, 见 doc-7月优化/流式LLM中途取消方案取舍分析-小沈-2026-07-13.md):
+            #   1) 正确性已满足: B 在每轮 LLM 调用前检测 check_cancelled, 取消即干净终止为
+            #      MetaStep(cancelled), DB status 列落 cancelled, 终态语义 100% 正确, 绝不再误判 failed。
+            #   2) 零回归风险: A 需给 LLMClient 加 set_stop_check 并在 httpx 流式热路径逐 chunk 轮询,
+            #      涉及 client_sdk/llm_stream/call_llm_with_fallback 重试链路, 改动面大、易引入连接泄漏/
+            #      异常语义混淆(CancelledError 是 BaseException 会绕过 except Exception), 必须配真实 LLM E2E。
+            #   3) 体验代价可接受: B 的缺点是"长生成任务需等本轮 LLM 结束才停"; 多数 LLM 调用仅秒级,
+            #      属可接受体验, 非语义缺陷。
+            #   4) A 留作后续独立增强项, 待补单测+E2E 后单独排期, 不阻塞本次上线。
+            # 注: 原 react_cycle 场景B 依赖 llm_client._cancelled, 该属性全局从未赋值(死代码),
+            # 曾导致用户取消误走 empty_response→ErrorStep(failed)。 — 小沈 2026-07-13
+            if task_id:
+                from app.services.task.task_runtime import check_cancelled
+                if await check_cancelled(task_id):
+                    logger.info(f"[run_react_cycle] 检测到任务取消(task_id={task_id}), 终止为 cancelled")
+                    yield agent._step_emitter.emit(MetaStep(
+                        type="cancelled", step=agent.llm_call_count,
+                        content="任务已被用户取消"))
+                    set_cancelled(agent)
+                    break
             async for event in _process_single_step(agent, chunk_buffer):
                 yield event
 
@@ -332,29 +342,33 @@ async def run_react_cycle(
             AgentStatus.FAILED,
             AgentStatus.CANCELLED,
         ):
-            logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 设为FAILED")
-            set_failed(agent, f"ReAct循环结束但无终态(status={agent.status})")
-            yield agent._step_emitter.emit(FinalStep(
+            logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 终止")
+            yield agent._step_emitter.emit(MetaStep(
+                type="cancelled",
                 step=agent.llm_call_count,
-                response=f"ReAct循环结束但无终态(status={agent.status})",
-                thought="",
+                content=f"ReAct循环结束但无终态(status={agent.status})",
             ))
+            set_cancelled(agent)
 
     except Exception as e:
         logger.error(f"[run_react_cycle] 异常: {e}", exc_info=True)
-        error_step = handle_react_error(agent, e, agent.llm_call_count)
-        yield agent._step_emitter.emit(error_step)
-        if hasattr(error_step, 'recoverable') and error_step.recoverable:
+        if _is_recoverable_error(e):
+            # 可恢复异常(FC格式/网络/超时) → 系统重试通知, 由 RETRYING 态驱动编排层重试 — 小欧 2026-07-13
+            logger.warning(f"[run_react_cycle] 可恢复异常, 触发重试: {e}")
+            yield agent._step_emitter.emit(MetaStep(
+                type="retrying",
+                step=agent.llm_call_count,
+                content=f"LLM 请求异常，准备重试: {e}",
+            ))
             agent._retry_count = getattr(agent, '_retry_count', 0) + 1
             if agent._retry_count > 3:
                 set_failed(agent, f"重试超限: {e}")
             else:
                 set_status(agent, AgentStatus.RETRYING, str(e)[:200])
         else:
+            error_step = handle_react_error(agent, e, agent.llm_call_count)
+            yield agent._step_emitter.emit(error_step)
             set_failed(agent, f"循环异常: {e}"[:200])
 
     finally:
-        failed_step = _ensure_failed_final_step(agent)
-        if failed_step:
-            yield agent._step_emitter.emit(failed_step)
         _finalize_cycle(agent)

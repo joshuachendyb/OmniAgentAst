@@ -19,7 +19,7 @@ from typing import Dict, List, Any, Optional
 
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
-from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep, ChunkStep  # ChunkStep用于重试前端通知 — 小欧 2026-07-09
+from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep（工具重试隐蔽，不再 emit）
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.observation_formatter import build_observation_text
 from app.constants import HITL_TIMEOUT
@@ -51,7 +51,7 @@ _WRITE_OPS = FILE_OPERATION_TOOLS - {"readtext"}
 
 
 async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
-        """安全检查+HITL确认 — async generator: IncidentStep先yield给前端,再等确认 — 小沈 2026-06-10
+        """安全检查+HITL确认 — async generator: MetaStep先yield给前端,再等确认 — 小沈 2026-06-10
         
         blocked/rejected时设agent.status=FAILED并return,调用方检查status即可
         """
@@ -81,14 +81,12 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
 
                 yield agent._step_emitter.emit(MetaStep(
                     step=step,
-                    type="authorization_required",
-                    message=f"需要用户确认工具执行: {_cn}",
-                    data={
-                        "confirm_id": confirm_id,
-                        "tool_name": _cn,
-                        "params": desensitized_params,
-                        "safety_level": safety_result.safety_level,
-                    },
+                    type="paused",
+                    content=f"需要用户确认工具执行: {_cn}",
+                    confirm_id=confirm_id,
+                    tool_name=_cn,
+                    params=desensitized_params,
+                    safety_level=safety_result.safety_level,
                 ))
 
                 # 进入真挂起：等待用户确认（SUSPENDED=真挂起，区别于 RETRYING 错误重试）— 小欧 2026-07-12
@@ -483,7 +481,7 @@ async def handle_action(agent, parsed: Dict):
     3. check_safety_and_confirm → 安全检查+HITL（async generator）
     4. build retry notification callback → 收集重试通知
     5. execute_tools → 三分支执行（单/并行/顺序）
-    6. consume retry_notifications → yield ChunkStep推前端
+    6. 工具重试由 tool_retry_engine 内部执行（隐蔽，前端不可见）— 小欧 2026-07-13
     7. build ObservationContext → 收集执行结果
     8. build_observation → yield ActionStep + ObservationStep
     9. return_direct检查 → 需要时yield FinalStep提前结束
@@ -522,31 +520,11 @@ async def handle_action(agent, parsed: Dict):
     if _has_error:
         return
 
-    # ── 工具重试通知 ──
-    # 设计模式：同步回调收集 + 事后yield ChunkStep
-    # 选择理由（KISS-DIRECT）：重试1-2秒完成，事后通知vs实时推送的UX差异极小，
-    # Queue+双Task轮询方案过于复杂，违背KISS-DIRECT和YAGNI。
-    # 回调签名只传4个基本类型，符合ISP原则；retry_engine不感知前端，符合OCP。
-    # 小欧 2026-07-09
-    retry_notifications = []
-
-    def _on_retry(tool_name: str, attempt: int, max_retries: int, error_msg: str):
-        """工具重试前回调 — 由retry_engine._execute_with_retry调用 — 小欧 2026-07-09"""
-        retry_notifications.append({
-            "tool_name": tool_name, "attempt": attempt,
-            "max_retries": max_retries, "error_msg": error_msg,
-        })
-
+    # ── 工具重试（隐蔽，前端不可见）── 小欧 2026-07-13
+    # 工具重试由 tool_retry_engine 内部执行，不向前端 emit 任何 step（北京老陈要求：tool 重试隐蔽）。
+    # 重试回调不再收集/上报，仅后端内部重试。
     results = await execute_tools(agent, call_result.all_calls, call_result.is_parallel,
-                                  call_result.tool_name, call_result.tool_params,
-                                  on_retry_started=_on_retry)
-
-    for n in retry_notifications:
-        yield agent._step_emitter.emit(ChunkStep(
-            step=step,
-            content=f"[Retry] 工具 {n['tool_name']} 执行失败({n['error_msg']}),"
-                    f" 正在重试 {n['attempt']}/{n['max_retries']}..."
-        ))
+                                  call_result.tool_name, call_result.tool_params)
 
     ctx = ObservationContext(
         agent=agent, all_calls=call_result.all_calls, results=results, step=step,
