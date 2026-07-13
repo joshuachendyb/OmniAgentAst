@@ -1,10 +1,11 @@
 ﻿v0.18.18
-更新时间: 2026-07-14 00:06:02 - 小欧-2026-07-14
+更新时间: 2026-07-14 06:09:37 - 小欧-2026-07-14
 ## v0.18.17→v0.18.18 变更汇总 - 小欧-2026-07-14
 
 ### 工具报错可见性修复（核心）
 - fix: execute_shell_command.py shell错误detail忽略stdout → 加stdout回退(命令加2>&1等报错在stdout时agent现可见报错文本);核验88次shell错误中18次stdout型失明已修复 — 小欧-2026-07-14
 - fix: observation_formatter.py 渲染层统一兜底,error且detail空且data有诊断时受控渲染data,收敛build_error(data={})代码不一致且不退化已有detail工具 — 小欧-2026-07-14
+- fix: network download_file/fetch_webpage/search_web/network_diagnose 异常detail由str(e)升级为f"{type(e).__name__}: {str(e) or repr(e)}",空消息异常(如ConnectionError())不再给LLM空白,LLM可见异常类型+repr,与http_request同款,非空消息原样保留仅加类型前缀不退化 — 小欧-2026-07-14
 
 ### 其它修复(v0.18.17以来)
 - fix: observation_formatter.py 观测格式化兜底降级DEBUG并加非dict防御 — 小欧-2026-07-13
@@ -14,6 +15,7 @@
 - fix: agent_runner.py 禁止事件循环内重复记prompt日志,统一由_append漏斗单次记录避免DB步数一致性失败 — 小欧-2026-07-13
 - fix: send_notification.py win10toast改为独立子进程弹出通知,隔离Tk/WndProc窗口避免常驻后端并偶发崩溃 — 小欧-2026-07-13
 - fix: doc-优化/7月优化/系统能力与扩展性优化设计-小李-2026-07-13.md 删除误建的系统性设计文档 — 小欧-2026-07-13
+- test: e2e_helpers.py check_logs跳过压缩文件加密后无密码解压的预期失败日志,避免误报后端缺陷 — 小欧-2026-07-14
 
 ---
 
