@@ -47,7 +47,6 @@ interface SSEError {
   stack?: string;
   retryable?: boolean;
   retry_after?: number;
-  recoverable?: boolean;
   context?: {
     step?: number;
     model?: string;
@@ -152,21 +151,15 @@ export const useChatCallbacks = (
   const onStep = useCallback(
     (step: ExecutionStep) => {
       // 【北京老陈 2026-07-12 小欧】统一取消语义：interrupted → cancelled
-      if (
-        step.type === 'cancelled' ||
-        (step.type === 'incident' &&
-          (step as ExecutionStep).incident_value === 'cancelled')
-      ) {
+      if (step.type === 'cancelled') {
         hasReceivedCancelEventRef.current = true;
         console.log('[取消] 收到 cancelled 事件');
       }
 
       // ✅ 如果正在取消中，只显示 cancelled 事件，跳过其他事件
       if (cancelInProgressRef.current) {
-        // 只允许 incident(cancelled) 事件通过，其他都忽略
-        const isCancelEvent =
-          step.type === 'incident' &&
-          (step as ExecutionStep).incident_value === 'cancelled';
+        // 只允许 cancelled 事件通过，其他都忽略
+        const isCancelEvent = step.type === 'cancelled';
         if (!isCancelEvent) {
           console.log(`[取消] 忽略取消过程中收到的事件: ${step.type}`);
           return;
@@ -215,7 +208,7 @@ export const useChatCallbacks = (
         const lastMessage = prev[prev.length - 1];
         if (!lastMessage || lastMessage.role !== 'assistant') {
           // 【关键修复 2026-04-13】任何step都创建消息，不只是start
-          // 因为后端可能直接发incident/retrying，不发start
+          // 因为后端可能直接发 cancelled/paused/retrying，不发 start
           const extractedDisplay_name = step.display_name;
           let finalDisplay_name = extractedDisplay_name;
           if (!finalDisplay_name && step.model && step.provider) {
@@ -598,9 +591,6 @@ export const useChatCallbacks = (
               '', // 【小沈修改2026-04-15】优先使用error_message
             errorRetryAfter: errorObj.retry_after,
             errorTimestamp: errorObj.timestamp,
-            // 【小沈添加2026-04-15】新增recoverable和context字段
-            errorRecoverable: (errorObj as unknown as Record<string, unknown>)
-              .recoverable as boolean | undefined,
             errorContext: (errorObj as unknown as Record<string, unknown>)
               .context as
               | {

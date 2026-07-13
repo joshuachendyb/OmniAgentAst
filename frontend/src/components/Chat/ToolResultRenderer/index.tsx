@@ -9,6 +9,9 @@
  */
 
 import React from 'react';
+// 【北京老陈 2026-07-13 小欧】switch 必须按后端注册名路由(后端 Phase1 v6.0 已将工具名精简为短名:
+//   listdir/readtext/writetext/readmedia/edittext/tree/find/grep/compress/extract/move/copy/delete/rename
+//   timenow/timeadd/timediff/timer_set/timer_clear/timer_list)，旧长名(copy_file/list_directory...)已全部 miss 落到 DefaultRenderer。
 import ListDirectoryRenderer from './types/ListDirectoryRenderer';
 import ReadFileRenderer from './types/ReadFileRenderer';
 import WriteFileRenderer from './types/WriteFileRenderer';
@@ -16,33 +19,15 @@ import DeleteFileRenderer from './types/DeleteFileRenderer';
 import MoveFileRenderer from './types/MoveFileRenderer';
 import SearchFilesRenderer from './types/SearchFilesRenderer';
 import SearchFileContentRenderer from './types/SearchFileContentRenderer';
-import GenerateReportRenderer from './types/GenerateReportRenderer';
 import CopyFileRenderer from './types/CopyFileRenderer';
-import CreateDirectoryRenderer from './types/CreateDirectoryRenderer';
-import GetFileInfoRenderer from './types/GetFileInfoRenderer';
-import CompareFilesRenderer from './types/CompareFilesRenderer';
-import BatchRenameRenderer from './types/BatchRenameRenderer';
 import CompressFilesRenderer from './types/CompressFilesRenderer';
 import TimeNowRenderer from './types/TimeNowRenderer';
-import TimeFormatRenderer from './types/TimeFormatRenderer';
 import TimeDiffRenderer from './types/TimeDiffRenderer';
 import TimerSetRenderer from './types/TimerSetRenderer';
 import TimerClearRenderer from './types/TimerClearRenderer';
-import TimeUtcToLocalRenderer from './types/TimeUtcToLocalRenderer';
-import TimeLocalToUtcRenderer from './types/TimeLocalToUtcRenderer';
-import TimeIsWeekendRenderer from './types/TimeIsWeekendRenderer';
-import TimeIsHolidayRenderer from './types/TimeIsHolidayRenderer';
 import TimeAddRenderer from './types/TimeAddRenderer';
-import TimeCompareRenderer from './types/TimeCompareRenderer';
-import TimeIsWorkdayRenderer from './types/TimeIsWorkdayRenderer';
-import TimeNextNWorkdayRenderer from './types/TimeNextNWorkdayRenderer';
-import TimeToTimestampRenderer from './types/TimeToTimestampRenderer';
-import TimestampToTimeRenderer from './types/TimestampToTimeRenderer';
 import TimerListRenderer from './types/TimerListRenderer';
 import FileOperationRenderer from './types/FileOperationRenderer';
-import FileMonitorRenderer from './types/FileMonitorRenderer';
-import FileStatisticsRenderer from './types/FileStatisticsRenderer';
-import FileChecksumRenderer from './types/FileChecksumRenderer';
 import GetDirectoryTreeRenderer from './types/GetDirectoryTreeRenderer';
 import DefaultRenderer from './types/DefaultRenderer';
 import { BaseRendererProps } from './types/BaseRendererProps';
@@ -64,9 +49,10 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
     ? () => toggleExpand(stepIndex) 
     : undefined;
 
-  // 工厂模式：根据tool_name选择渲染器
+  // 工厂模式：根据后端注册名(tool_name)选择渲染器 — 小欧 2026-07-13 统一为后端真实短名
   switch (step.tool_name) {
-    case "list_directory":
+    // ===== 文件工具（后端注册名）=====
+    case "listdir":
       return <ListDirectoryRenderer step={step} isExpanded={isExpanded} onToggle={handleToggle} />;
     case "readtext":
     case "read_file":
@@ -74,79 +60,42 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
     case "writetext":
     case "write_file":
       return <WriteFileRenderer step={step} />;
-    case "delete_file":
+    case "delete":
       return <DeleteFileRenderer step={step} />;
-    case "move_file":
+    case "move":
       return <MoveFileRenderer step={step} />;
-    case "search_files":
+    case "find":
       return <SearchFilesRenderer step={step} />;
+    case "grep":
     case "grep_file_content":
     case "search_file_content":
       return <SearchFileContentRenderer step={step} />;
-    case "generate_report":
-      return <GenerateReportRenderer step={step} isExpanded={isExpanded} onToggle={handleToggle} />;
-    case "copy_file":
+    case "copy":
       return <CopyFileRenderer step={step} />;
-    case "create_directory":
-      return <CreateDirectoryRenderer step={step} />;
-    case "get_file_info":
-      return <GetFileInfoRenderer step={step} />;
-    case "compare_files":
-      return <CompareFilesRenderer step={step} />;
-    case "batch_rename":
-      return <BatchRenameRenderer step={step} />;
-    case "compress_files":
+    case "compress":
       return <CompressFilesRenderer step={step} />;
-    case "get_current_time":
-    case "timenow":
-      return <TimeNowRenderer step={step} />;
-    case "time_format":
-      return <TimeFormatRenderer step={step} />;
-    case "timediff":
-      return <TimeDiffRenderer step={step} />;
+    case "tree":
+      return <GetDirectoryTreeRenderer step={step} />;
+    case "edittext":
+    case "rename":
+    case "readmedia":
+    case "extract":
+      return <FileOperationRenderer step={step} />;
+    // ===== 计时器工具 =====
     case "timer_set":
       return <TimerSetRenderer step={step} />;
     case "timer_clear":
       return <TimerClearRenderer step={step} />;
-    case "time_utc_to_local":
-      return <TimeUtcToLocalRenderer step={step} />;
-    case "time_local_to_utc":
-      return <TimeLocalToUtcRenderer step={step} />;
-    case "time_is_weekend":
-      return <TimeIsWeekendRenderer step={step} />;
-    case "time_is_holiday":
-      return <TimeIsHolidayRenderer step={step} />;
-    case "timeadd":
-      return <TimeAddRenderer step={step} />;
-    case "time_compare":
-      return <TimeCompareRenderer step={step} />;
-    case "time_is_workday":
-      return <TimeIsWorkdayRenderer step={step} />;
-    case "time_next_n_workday":
-      return <TimeNextNWorkdayRenderer step={step} />;
-    case "time_to_timestamp":
-      return <TimeToTimestampRenderer step={step} />;
-    case "timestamp_to_time":
-      return <TimestampToTimeRenderer step={step} />;
     case "timer_list":
       return <TimerListRenderer step={step} />;
-    case "file_monitor":
-      return <FileMonitorRenderer step={step} />;
-    case "file_statistics":
-      return <FileStatisticsRenderer step={step} />;
-    case "file_checksum":
-      return <FileChecksumRenderer step={step} />;
-    case "edittext":
-    case "rename_file":
-    case "list_allowed_directories":
-    case "readmedia":
-    case "read_batch_file":
-    case "precise_replace_in_file":
-    case "get_file_hash":
-    case "extract_archive":
-      return <FileOperationRenderer step={step} />;
-    case "get_directory_tree":
-      return <GetDirectoryTreeRenderer step={step} />;
+    // ===== 时间工具（后端注册名）=====
+    case "timenow":
+    case "get_current_time":
+      return <TimeNowRenderer step={step} />;
+    case "timediff":
+      return <TimeDiffRenderer step={step} />;
+    case "timeadd":
+      return <TimeAddRenderer step={step} />;
     default:
       return <DefaultRenderer step={step} />;
   }

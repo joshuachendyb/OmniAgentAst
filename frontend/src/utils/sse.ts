@@ -48,7 +48,6 @@ export interface SSEError {
   stack?: string; // 堆栈信息
   retryable?: boolean; // 是否可重试
   retry_after?: number; // 重试等待秒数
-  recoverable?: boolean; // 是否可恢复 【新增2026-04-15】
   context?: {
     // 错误上下文 【新增2026-04-15】
     step?: number;
@@ -75,12 +74,12 @@ export interface SSEMetadata {
  * - 内容步骤：start（开始）、chunk（AI流式回复的内容片段）、final（最终回答）
  *   【chunk是AI流式输出的内容片段，不是执行步骤，显示在AI回复区域，不在步骤列表】
  * - 执行步骤：thought（思考）、action_tool（工具调用）、observation（工具结果）
- * - 异常步骤：error（错误）、incident（中断）
+ * - 异常步骤：error（错误）、status（生命周期：cancelled/paused/retrying/resumed）
  */
 export interface ExecutionStep {
   // === 通用字段 ===
   // ⭐ 新增action_tool类型，替换原来的action
-  // 【小沈修复2026-03-28】后端type固定为'incident'，通过incident_value区分具体类型
+  // 【北京老陈 2026-07-13 小欧】生命周期 Step 统一约定：type 直接为 cancelled/paused/retrying/resumed
   type:
     | 'thought'
     | 'action_tool'
@@ -88,7 +87,6 @@ export interface ExecutionStep {
     | 'chunk'
     | 'final'
     | 'error'
-    | 'incident'
     | 'start'
     | 'cancelled'
     | 'paused'
@@ -105,6 +103,8 @@ export interface ExecutionStep {
   // === 思考/动作提示字段（后端字段拆分） ===
   thinking_prompt?: string; // thought 类型的提示文本
   action_description?: string; // action_tool 类型的描述文本
+  action?: string; // 执行动作名称（历史兼容，保留原始字段）
+  action_input?: unknown; // 工具调用参数（历史兼容，保留原始字段）
 
   // 【小新重构2026-03-09】thought类型需要的字段
   // 【小健建议2026-03-23】明确用途：LLM思考后决定的下一步动作
@@ -156,8 +156,6 @@ export interface ExecutionStep {
   reasoning?: string; // 思考过程内容（当 is_reasoning=true 时使用）
 
   // === 错误/中断字段 ===
-  // 【小沈修复2026-03-28】后端incident类型使用incident_value区分具体类型
-  incident_value?: string; // incident 类型的具体值（interrupted/paused/resumed/retrying）
   error_message?: string; // error 类型的错误信息 【修改2026-04-15】优先使用error_message
   message?: string; // interrupted 类型的中断信息
 
@@ -168,7 +166,6 @@ export interface ExecutionStep {
   stack?: string; // 堆栈信息
   retryable?: boolean; // 是否可重试
   retry_after?: number; // 重试等待秒数
-  recoverable?: boolean; // 是否可恢复 【新增2026-04-15】
   context?: {
     // 错误上下文 【新增2026-04-15】
     step?: number;
@@ -1402,9 +1399,6 @@ const processSSEData = (
         if (rawData.provider) {
           step.provider = rawData.provider;
         }
-        if (rawData.recoverable !== undefined) {
-          step.recoverable = rawData.recoverable;
-        }
         if (rawData.details !== undefined) {
           step.details = rawData.details;
         }
@@ -1458,7 +1452,6 @@ const processSSEData = (
           stack: rawData.stack,
           retryable: rawData.retryable,
           retry_after: rawData.retry_after,
-          recoverable: rawData.recoverable,
           context: rawData.context,
           timestamp: rawData.timestamp || timestampValue,
         });
@@ -1661,97 +1654,7 @@ const processSSEData = (
         break;
       }
 
-      // 【小查修复2026-03-10】新增：incident类型处理（后端发送type='incident'，incident_value字段）
-      // 【2026-03-11 重命名】status_value -> incident_value
-      // 【小强优化 2026-03-18】统一调用onStep，避免重复
-      case 'incident': {
-        const statusValue = rawData.incident_value;
-        const stepNum = rawData.step || 1;
-        console.log(
-          `%c[STEP] [type=incident] [incident_type=${statusValue}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
-          'color: red; font-weight: bold;'
-        );
-        const statusMessage = rawData.message || '';
-        // 【小沈修复 2026-04-24】保持type为incident，通过incident_value区分具体类型
-        // 后端发送格式: type="incident", incident_value="interrupted/paused/resumed/retrying"
-        // 前端需要保持这个格式，不能直接把type改成具体类型，否则会影响后续判断
-        step.type = 'incident';
-        step.incident_value = statusValue;
-        step.content = statusMessage;
-
-        // 统一调用onStep（所有incident类型都需要添加到executionSteps）
-        // 【小强修复 2026-04-03】incident步骤也需要保存到sessionStorage，否则页面切换后丢失
-        // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
-          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
-          setTimeout(() => {
-            try {
-              saveStepsToStorage?.(newSteps);
-            } catch (e) {
-              console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-            }
-          }, 0);
-          return newSteps;
-        });
-        onStep?.(step);
-
-        // 根据incident_value调用对应的回调
-        switch (statusValue) {
-          case 'authorization_required':
-            // 【v3.4新增 2026-06-09 小沈】HITL授权请求
-            console.log('[SSE] 收到授权请求:', rawData.data);
-            handlers.onAuthorizationRequired?.(rawData.data);
-            break;
-          case 'cancelled':
-            // 【北京老陈 2026-07-12 小欧】统一取消语义：interrupted → cancelled
-            onShowSteps?.(true);
-            // 【小沈修复 2026-04-27】必须传当前的steps，否则前端的16个steps会丢失
-            onComplete?.(
-              responseBufferRef.current,
-              undefined,
-              handlers.executionStepsRef.current
-            );
-            setIsReceiving(false);
-            setIsConnected(false);
-            break;
-          case 'paused':
-            onPaused?.();
-            break;
-          case 'resumed':
-            onResumed?.();
-            break;
-          case 'retrying':
-            // 【小查修复2026-03-13】传递wait_time给重试回调
-            onRetry?.(rawData.message || '正在重试...', rawData.wait_time);
-            break;
-          case 'rate_limit':
-            // 【新增 小健 2026-05-16】429限流提示，复用retry回调显示
-            onRetry?.(
-              rawData.message || 'API限流，正在退避重试...',
-              rawData.wait_time
-            );
-            break;
-          default:
-            // 【修复 小健 2026-05-16】未知incident也显示给用户，不丢弃
-            console.warn('[SSE] 未知的incident_value:', statusValue);
-            onRetry?.(
-              rawData.message || `事件: ${statusValue}`,
-              rawData.wait_time
-            );
-            break;
-        }
-        // 添加timestamp字段
-        if (rawData.timestamp) {
-          step.timestamp = rawData.timestamp as number;
-        }
-        // 【小查修复2026-03-13】添加wait_time字段（仅retrying使用）
-        if (rawData.wait_time !== undefined) {
-          step.wait_time = rawData.wait_time;
-        }
-        break;
-      }
+      // 【北京老陈 2026-07-13 小欧】incident 类型已废弃: 后端统一用 type=cancelled/paused/retrying/resumed 直接表示
 
       // 【北京老陈 2026-07-12 小欧】直接处理 cancelled/paused/resumed/retrying 类型
       case 'cancelled':
@@ -1763,7 +1666,9 @@ const processSSEData = (
           `%c[STEP] [type=${rawData.type}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
           'color: red; font-weight: bold;'
         );
-        const statusMessage = rawData.message || '';
+        // 小欧 2026-07-13: 后端 MetaStep 统一以 content 字段承载文本(与 ThoughtStep/FinalStep 契约一致),
+        // 前端须读 content 而非旧 message 字段, 否则用户取消/重试提示显示为空(真实跨层缺陷, 已修)。
+        const statusMessage = rawData.content || '';
 
         // 直接使用rawData.type作为step.type
         step.type = rawData.type as ExecutionStep['type'];
@@ -1798,17 +1703,27 @@ const processSSEData = (
             break;
           case 'paused':
             onPaused?.();
+            if (rawData.confirm_id) {
+              // 【北京老陈 2026-07-13 小欧】HITL 授权请求：paused + confirm_id 触发授权弹窗
+              handlers.onAuthorizationRequired?.({
+                confirm_id: rawData.confirm_id,
+                tool_name: rawData.tool_name,
+                params: rawData.params,
+                safety_level: rawData.safety_level,
+              });
+            }
             break;
           case 'resumed':
             onResumed?.();
             break;
           case 'retrying':
-            onRetry?.(rawData.message || '正在重试...', rawData.wait_time);
+            // 小欧 2026-07-13: 同上, 读取后端 content 字段作为重试提示文本。
+            onRetry?.(rawData.content || '正在重试...', rawData.wait_time);
             break;
           default:
             console.warn('[SSE] 未知的type:', rawData.type);
             onRetry?.(
-              rawData.message || `事件: ${rawData.type}`,
+              rawData.content || `事件: ${rawData.type}`,
               rawData.wait_time
             );
             break;

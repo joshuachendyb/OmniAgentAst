@@ -19,7 +19,6 @@ export const STEP_LABEL_MAP: Record<string, string> = {
   cancelled: '已取消',
   retrying: '重试',
   rate_limit: '限流',
-  incident: '事件',
 };
 
 export const STEP_ICON_MAP: Record<string, string> = {
@@ -35,5 +34,4 @@ export const STEP_ICON_MAP: Record<string, string> = {
   cancelled: '⚠️',
   retrying: '🔄',
   rate_limit: '🚧',
-  incident: '⚡',
 };

@@ -74,7 +74,6 @@ export const parseMessage = (rawMessage: unknown): Message => {
     errorMessage: (msg.error_message as string) || (msg.message as string) || undefined,
     errorRetryAfter: msg.retry_after as number | undefined,
     errorTimestamp: (msg.timestamp as string) || undefined,
-    errorRecoverable: msg.recoverable as boolean | undefined,
     errorContext: msg.context as Record<string, unknown> | undefined,
   };
 };

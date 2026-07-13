@@ -1,82 +1,78 @@
 /**
- * DeleteFileView - delete_file 工具结果渲染组件
+ * DeleteFileView - delete 工具结果渲染组件
  *
- * 显示文件删除结果
+ * 【北京老陈 2026-07-13 小欧】按后端契约重建：
+ *   data 为空，直接展示 llm_data.summary；可选展示 metrics.mode/status。
+ *   不读不存在的 deleted_path/ message 字段。
  *
  * @author 小强
- * @version 1.0.0
+ * @version 2.0.0
  * @since 2026-03-24
  */
 
 import React from "react";
-import { DeleteOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, CloseCircleOutlined, DeleteOutlined } from "@ant-design/icons";
 
 interface DeleteFileViewProps {
-  data: {
-    deleted_path?: string;
-    message?: string;
+  metrics: {
+    mode: string;
+    status: string;
   };
+  summary?: string;
+  success: boolean;
 }
 
-/**
- * DeleteFileView 主组件
- */
-const DeleteFileView: React.FC<DeleteFileViewProps> = ({ data }) => {
-  const { deleted_path = "", message = "" } = data;
+const deleteContainerStyle = (success: boolean): React.CSSProperties => ({
+  background: success ? "#f6ffed" : "#fff2f0",
+  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
+  borderRadius: 8,
+  padding: "12px 16px",
+  marginTop: 6,
+  fontSize: 13,
+  lineHeight: 1.8,
+});
 
-  if (!deleted_path && !message) {
-    return (
-      <div style={{ color: "#888", fontStyle: "italic" }}>
-        <DeleteOutlined style={{ marginRight: 8 }} />
-        删除结果为空
-      </div>
-    );
-  }
+const deleteTitleStyle = (success: boolean): React.CSSProperties => ({
+  display: "flex",
+  alignItems: "center",
+  marginBottom: 8,
+  fontSize: 14,
+  fontWeight: 500,
+  color: success ? "#52c41a" : "#ff4d4f",
+});
 
-  // 删除成功样式
-  const deleteStyle = {
-    background: "#fff1f0",
-    border: "1px solid #ffa39e",
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 6,
-    fontSize: 13,
-    lineHeight: 1.8,
-  };
+const DeleteFileView: React.FC<DeleteFileViewProps> = ({ metrics, summary, success }) => {
+  const { mode, status } = metrics;
+  const modeText = mode
+    ? mode === "permanent"
+      ? "永久删除"
+      : mode === "send2trash"
+      ? "移至回收站"
+      : mode
+    : status === "already_deleted"
+    ? "此前已删除"
+    : "";
 
   return (
-    <div style={deleteStyle}>
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-        <DeleteOutlined style={{ color: "#ff4d4f", fontSize: 18, marginRight: 8 }} />
-        <span style={{ color: "#ff4d4f", fontWeight: 600 }}>
-          文件删除成功
-        </span>
+    <div style={deleteContainerStyle(success)}>
+      <div style={deleteTitleStyle(success)}>
+        {success ? <CheckCircleOutlined style={{ marginRight: 8 }} /> : <CloseCircleOutlined style={{ marginRight: 8 }} />}
+        <DeleteOutlined style={{ marginRight: 6 }} />
+        删除文件{success ? "成功" : "失败"}
       </div>
 
-      {/* 删除路径 */}
-      {deleted_path && (
-        <div style={{ marginTop: 8 }}>
-          <DeleteOutlined style={{ marginRight: 4 }} /> 删除路径：
-          <code
-            style={{
-              background: "#f5f5f5",
-              padding: "2px 6px",
-              borderRadius: 4,
-              fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-              fontSize: 12,
-            }}
-          >
-            {deleted_path}
-          </code>
+      {modeText && (
+        <div style={{ marginTop: 4, color: "#595959" }}>
+          <span style={{ color: "#8c8c8c", marginRight: 8 }}>方式：</span>
+          {modeText}
         </div>
       )}
 
-      {/* 消息 */}
-      {message && (
-        <div style={{ marginTop: 8, color: "#666" }}>{message}</div>
+      {summary && (
+        <div style={{ color: "#595959", whiteSpace: "pre-wrap", marginTop: 4 }}>{summary}</div>
       )}
     </div>
   );
 };
 
-export default DeleteFileView;
+export default React.memo(DeleteFileView);

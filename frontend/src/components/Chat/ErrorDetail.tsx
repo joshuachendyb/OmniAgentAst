@@ -10,7 +10,6 @@ interface ErrorDetailProps {
   errorRetryAfter?: number;
   model?: string;
   provider?: string;
-  errorRecoverable?: boolean;
   errorContext?: {
     step?: number;
     model?: string;
@@ -184,7 +183,6 @@ const ErrorDetail: React.FC<ErrorDetailProps> = memo(({
   errorRetryAfter,
   model,
   provider,
-  errorRecoverable,
   errorContext,
 }) => {
   // 使用 useMemo 缓存颜色配置
@@ -267,21 +265,6 @@ const ErrorDetail: React.FC<ErrorDetailProps> = memo(({
                 : provider
                 ? provider
                 : model}
-            </span>
-          </div>
-        )}
-
-        {/* 显示recoverable字段 */}
-        {errorRecoverable !== undefined && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={labelStyle}>可恢复:</span>
-            <span style={{ color: errorRecoverable ? "#52c41a" : "#999", fontSize: "13px", fontWeight: 500 }}>
-              {errorRecoverable ? "是" : "否"}
-              {errorRecoverable && errorRetryAfter !== undefined && (
-                <span style={{ color: "#666", marginLeft: 4 }}>
-                  ({errorRetryAfter}秒后)
-                </span>
-              )}
             </span>
           </div>
         )}

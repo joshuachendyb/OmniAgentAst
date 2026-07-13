@@ -1,101 +1,56 @@
 /**
- * MoveFileView - move_file 工具结果渲染组件
+ * MoveFileView - move 工具结果渲染组件
  *
- * 显示文件/文件夹移动结果
+ * 【北京老陈 2026-07-13 小欧】按后端契约重建：
+ *   data 为空，直接展示 llm_data.summary（如「移动成功: A -> B」）。
+ *   不读不存在的 source/ destination/ message 字段。
  *
  * @author 小强
- * @version 1.0.0
+ * @version 2.0.0
  * @since 2026-03-24
  */
 
 import React from "react";
-import { CheckCircleOutlined, SendOutlined, DownloadOutlined, InboxOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, CloseCircleOutlined, SendOutlined } from "@ant-design/icons";
 
 interface MoveFileViewProps {
-  data: {
-    source?: string;
-    destination?: string;
-    message?: string;
-  };
+  summary?: string;
+  success: boolean;
 }
 
-/**
- * MoveFileView 主组件
- */
-const MoveFileView: React.FC<MoveFileViewProps> = ({ data }) => {
-  const { source = "", destination = "", message = "" } = data;
+const moveContainerStyle = (success: boolean): React.CSSProperties => ({
+  background: success ? "#f6ffed" : "#fff2f0",
+  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
+  borderRadius: 8,
+  padding: "12px 16px",
+  marginTop: 6,
+  fontSize: 13,
+  lineHeight: 1.8,
+});
 
-  if (!source && !destination && !message) {
-    return (
-      <div style={{ color: "#888", fontStyle: "italic" }}>
-        <InboxOutlined style={{ marginRight: 6 }} />
-        移动结果为空
-      </div>
-    );
-  }
+const moveTitleStyle = (success: boolean): React.CSSProperties => ({
+  display: "flex",
+  alignItems: "center",
+  marginBottom: 8,
+  fontSize: 14,
+  fontWeight: 500,
+  color: success ? "#52c41a" : "#ff4d4f",
+});
 
-  // 移动成功样式
-  const moveStyle = {
-    background: "#e6f7ff",
-    border: "1px solid #91d5ff",
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 6,
-    fontSize: 13,
-    lineHeight: 1.8,
-  };
-
+const MoveFileView: React.FC<MoveFileViewProps> = ({ summary, success }) => {
   return (
-    <div style={moveStyle}>
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-        <CheckCircleOutlined style={{ color: "#1890ff", fontSize: 18, marginRight: 8 }} />
-        <span style={{ color: "#1890ff", fontWeight: 600 }}>
-          文件移动成功
-        </span>
+    <div style={moveContainerStyle(success)}>
+      <div style={moveTitleStyle(success)}>
+        {success ? <CheckCircleOutlined style={{ marginRight: 8 }} /> : <CloseCircleOutlined style={{ marginRight: 8 }} />}
+        <SendOutlined style={{ marginRight: 6 }} />
+        移动文件{success ? "成功" : "失败"}
       </div>
 
-      {/* 源路径 */}
-      {source && (
-        <div style={{ marginTop: 8 }}>
-          <span style={{ color: "#666" }}><SendOutlined style={{ marginRight: 4 }} /> 源路径：</span>
-          <code
-            style={{
-              background: "#f5f5f5",
-              padding: "2px 6px",
-              borderRadius: 4,
-              fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-              fontSize: 12,
-            }}
-          >
-            {source}
-          </code>
-        </div>
-      )}
-
-      {/* 目标路径 */}
-      {destination && (
-        <div style={{ marginTop: 8 }}>
-          <span style={{ color: "#666" }}><DownloadOutlined style={{ marginRight: 4 }} /> 目标路径：</span>
-          <code
-            style={{
-              background: "#f5f5f5",
-              padding: "2px 6px",
-              borderRadius: 4,
-              fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-              fontSize: 12,
-            }}
-          >
-            {destination}
-          </code>
-        </div>
-      )}
-
-      {/* 消息 */}
-      {message && (
-        <div style={{ marginTop: 8, color: "#666" }}>{message}</div>
+      {summary && (
+        <div style={{ color: "#595959", whiteSpace: "pre-wrap" }}>{summary}</div>
       )}
     </div>
   );
 };
 
-export default MoveFileView;
+export default React.memo(MoveFileView);

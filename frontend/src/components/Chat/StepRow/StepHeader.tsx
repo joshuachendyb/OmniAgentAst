@@ -20,7 +20,6 @@ import {
   PlayCircleOutlined,
   WarningOutlined,
   SyncOutlined,
-  ThunderboltOutlined,
   ClockCircleOutlined,
 } from '@ant-design/icons';
 import { formatTimestamp } from '../../../utils/timestamp';
@@ -42,7 +41,6 @@ const stepIconMap: Record<string, React.ReactNode> = {
   resumed: <PlayCircleOutlined />,
   cancelled: <WarningOutlined />,
   retrying: <SyncOutlined />,
-  incident: <ThunderboltOutlined />,
 };
 
 interface StepHeaderProps {
@@ -66,10 +64,7 @@ const StepHeader: React.FC<StepHeaderProps> = ({
   icon: _icon,
 }) => {
   // 获取对应的Ant Design图标
-  const effectiveType =
-    step.type === 'incident'
-      ? (step as ExecutionStep).incident_value || 'incident'
-      : step.type;
+  const effectiveType = step.type;
   const stepIcon = stepIconMap[effectiveType] || stepIconMap.thought || null;
 
   return (

@@ -606,44 +606,31 @@ const StepContent: React.FC<StepContentProps> = ({
           errorRetryAfter={step.retry_after}
           model={step.model}
           provider={step.provider}
-          errorRecoverable={step.recoverable}
           errorContext={step.context}
         />
       )}
-      {(step.type === 'cancelled' ||
-        (step.type === 'incident' &&
-          (step as ExecutionStep & Record<string, unknown>).incident_value ===
-            'cancelled')) && (
+      {step.type === 'cancelled' && (
         <div style={getStepStyle('cancelled' as StepType)}>
           <span style={getStepContentStyle('cancelled' as StepType, 'primary')}>
             {step.content || '客户端断开连接，任务已取消'}
           </span>
         </div>
       )}
-      {(step.type === 'paused' ||
-        (step.type === 'incident' &&
-          (step as ExecutionStep & Record<string, unknown>).incident_value ===
-            'paused')) && (
+      {step.type === 'paused' && (
         <div style={getStepStyle('paused' as StepType)}>
           <span style={getStepContentStyle('paused' as StepType, 'primary')}>
             {step.content || '任务已暂停，可恢复继续'}
           </span>
         </div>
       )}
-      {(step.type === 'resumed' ||
-        (step.type === 'incident' &&
-          (step as ExecutionStep & Record<string, unknown>).incident_value ===
-            'resumed')) && (
+      {step.type === 'resumed' && (
         <div style={getStepStyle('resumed' as StepType)}>
           <span style={getStepContentStyle('resumed' as StepType, 'primary')}>
             {step.content || '任务已恢复'}
           </span>
         </div>
       )}
-      {(step.type === 'retrying' ||
-        (step.type === 'incident' &&
-          (step as ExecutionStep & Record<string, unknown>).incident_value ===
-            'retrying')) && (
+      {step.type === 'retrying' && (
         <div style={getStepStyle('retrying' as StepType)}>
           <span style={getStepContentStyle('retrying' as StepType, 'primary')}>
             {step.content || '正在重试...'}

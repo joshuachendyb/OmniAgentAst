@@ -25,7 +25,6 @@ export interface ExportData {
   content: string;
   executionSteps?: Record<string, unknown>[];
   error?: Record<string, unknown>;
-  incidentSteps?: Record<string, unknown>[];
 }
 
 /**
@@ -57,7 +56,6 @@ export const exportMessage = async (
     errorMessage?: string;
     errorRetryAfter?: number;
     errorTimestamp?: string;
-    errorRecoverable?: boolean;
     errorContext?: Record<string, unknown>;
   },
   options: ExportOptions = {}
@@ -83,27 +81,6 @@ export const exportMessage = async (
     content: message.content,
   };
 
-  const hasIncident =
-    hasSteps &&
-    message.executionSteps?.some((step) => step.type === 'incident');
-
-  if (hasIncident) {
-    exportData.incidentSteps = message.executionSteps
-      ?.filter((step) => step.type === 'incident')
-      .map((step) => ({
-        type: step.incident_value || 'incident',
-        incident_value: step.incident_value,
-        message:
-          step.content || (step as unknown as Record<string, unknown>).message,
-        timestamp: formatTimestamp(
-          (step as unknown as Record<string, unknown>).timestamp as number
-        ),
-        wait_time: (step as unknown as Record<string, unknown>).wait_time as
-          | number
-          | undefined,
-      }));
-  }
-
   if (isError) {
     exportData.error = {
       type: 'error',
@@ -111,16 +88,17 @@ export const exportMessage = async (
       error_message: message.errorMessage,
       retry_after: message.errorRetryAfter,
       timestamp: formatTimestamp(message.errorTimestamp),
-      model: message.model,
-      provider: message.provider,
-      recoverable: message.errorRecoverable,
-      context: message.errorContext,
+        model: message.model,
+        provider: message.provider,
+        context: message.errorContext,
     };
     exportData.executionSteps = message.executionSteps?.map((step) => ({
       ...step,
       timestamp: formatTimestamp(step.timestamp),
     }));
     filename = `error_${message.id}_${new Date().toISOString().replace(/[/:]/g, '-')}.json`;
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
   } else if (hasSteps) {
     exportData.executionSteps = message.executionSteps?.map((step) => {
       const stepExt = step as ExecutionStep & Record<string, unknown>;
@@ -192,20 +170,10 @@ export const exportMessage = async (
             error_message: stepExt.error_message || '',
             details: stepExt.details,
             stack: stepExt.stack,
-            recoverable: stepExt.recoverable,
             retry_after: stepExt.retry_after,
             model: stepExt.model,
             provider: stepExt.provider,
             context: stepExt.context,
-          };
-        case 'incident':
-          return {
-            ...baseExport,
-            step: step.step,
-            type: stepExt.incident_value || 'incident',
-            incident_value: stepExt.incident_value,
-            message: step.content || stepExt.message,
-            wait_time: stepExt.wait_time,
           };
         case 'start':
           return {

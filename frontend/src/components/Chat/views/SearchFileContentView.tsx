@@ -1,140 +1,179 @@
 /**
- * SearchFileContentView - grep_file_content 工具结果渲染组件
+ * SearchFileContentView - grep 工具结果渲染组件
+ *
+ * 【北京老陈 2026-07-13 小欧】按后端契约重建：
+ *   三种模式由 mode 区分（content / count / only_files）。
+ *   content: 每个命中展示 file:line + 匹配内容+上下文
+ *   count / only_files: 仅展示汇总与文件列表
+ *   不读不存在的 success/ pattern/ path/ pagination 等字段。
  *
  * @author 小强
- * @version 2.0.0
+ * @version 3.0.0
  * @since 2026-03-31
- * @update 2026-05-10 小健-重写：修复图标嵌套bug，精简UI
+ * @update 2026-07-13 小欧-按后端契约重建
  */
 
 import React from "react";
-import { Tag, Collapse, Button } from "antd";
-import {
-  FileTextOutlined,
-  SearchOutlined,
-  FolderOpenOutlined,
-} from "@ant-design/icons";
-
-const { Panel } = Collapse;
+import { CheckCircleOutlined, CloseCircleOutlined, FileTextOutlined } from "@ant-design/icons";
 
 interface ContentMatch {
-  start: number;
-  end: number;
-  matched: string;
-  context: string;
+  file?: string;
+  line?: number;
+  matched?: string[];
+  content?: string;
+  before?: string;
+  after?: string;
 }
 
-interface FileContentMatch {
-  file: string;
-  matches: ContentMatch[];
-  match_count: number;
-}
-
-interface Pagination {
-  page: number;
-  total_pages: number;
-  has_more: boolean;
+interface OnlyFileMatch {
+  file?: string;
+  lines?: number[];
 }
 
 interface SearchFileContentViewProps {
   data: {
-    success?: boolean;
-    pattern: string;
-    path: string;
-    file_pattern: string;
-    matches: FileContentMatch[];
-    total: number;
+    mode: "content" | "count" | "only_files";
+    matches: (ContentMatch | OnlyFileMatch)[];
     total_matches: number;
-    pagination?: Pagination;
+    total_files: number;
+    skipped_binary_files?: string[];
+    skipped_binary_count?: number;
   };
-  onLoadMore?: () => void;
-  isLoadingMore?: boolean;
+  summary?: string;
+  success: boolean;
 }
 
-const SearchFileContentView: React.FC<SearchFileContentViewProps> = ({
-  data,
-  onLoadMore,
-  isLoadingMore,
-}) => {
-  const {
-    success,
-    pattern = "",
-    path = "",
-    file_pattern = "",
-    matches = [],
-    total = 0,
-    total_matches = 0,
-    pagination,
-  } = data;
+const containerStyle = (success: boolean): React.CSSProperties => ({
+  background: success ? "#f6ffed" : "#fff2f0",
+  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
+  borderRadius: 8,
+  padding: "12px 16px",
+  marginTop: 6,
+});
 
-  if (!success || (matches.length === 0 && total === 0)) {
-    return <div style={{ color: "#999", padding: "8px 12px" }}>未找到匹配结果</div>;
-  }
+const titleStyle = (success: boolean): React.CSSProperties => ({
+  display: "flex",
+  alignItems: "center",
+  marginBottom: 12,
+  fontSize: 14,
+  fontWeight: 500,
+  color: success ? "#52c41a" : "#ff4d4f",
+});
+
+const SearchFileContentView: React.FC<SearchFileContentViewProps> = ({ data, summary, success }) => {
+  const { mode, matches, total_matches, total_files, skipped_binary_count } = data;
 
   return (
-    <div style={{ fontSize: 13 }}>
-      {/* 搜索统计 */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginBottom: 8 }}>
-        <SearchOutlined style={{ color: "#1890ff" }} />
-        <span style={{ fontWeight: 500, color: "#1890ff" }}>{pattern}</span>
-        <Tag style={{ background: "#e6f7ff", border: "none", color: "#003a8c" }}>
-          <FolderOpenOutlined style={{ marginRight: 4 }} />{path}
-        </Tag>
-        {file_pattern && file_pattern !== "*" && (
-          <Tag style={{ background: "#e6f7ff", border: "none", color: "#003a8c" }}>{file_pattern}</Tag>
-        )}
-        <span style={{ color: "#595959" }}>{total}个文件 · {total_matches}处匹配</span>
+    <div style={containerStyle(success)}>
+      {/* 标题 */}
+      <div style={titleStyle(success)}>
+        {success ? <CheckCircleOutlined style={{ marginRight: 8 }} /> : <CloseCircleOutlined style={{ marginRight: 8 }} />}
+        搜索文件内容{success ? "成功" : "失败"}
       </div>
 
-      {/* 文件匹配列表 */}
-      {matches.length > 0 && (
-        <div style={{ background: "#fafafa", borderRadius: 4, padding: "4px 8px", maxHeight: 400, overflow: "auto" }}>
-          <Collapse ghost defaultActiveKey={[]} expandIconPosition="end">
-            {matches.map((fm, fi) => (
-              <Panel
-                key={`f${fi}`}
-                header={
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
-                    <FileTextOutlined style={{ color: "#1890ff" }} />
-                    <span style={{ flex: 1, fontFamily: "Consolas, Monaco, monospace", fontSize: 12, color: "#003a8c", wordBreak: "break-all" }}>
-                      {fm.file}
-                    </span>
-                    <Tag style={{ background: "#e6f7ff", border: "none", color: "#003a8c" }}>{fm.match_count}处</Tag>
-                  </div>
-                }
-              >
-                <div style={{ paddingLeft: 8 }}>
-                  {fm.matches?.map((m, mi) => (
-                    <div key={`m${mi}`} style={{ padding: "4px 0", borderBottom: mi < fm.matches.length - 1 ? "1px solid #f0f0f0" : "none" }}>
-                      <div style={{ fontSize: 11, color: "#8c8c8c", marginBottom: 2 }}>#{mi + 1} 位置 {m.start}-{m.end}</div>
-                      {m.matched && (
-                        <div style={{ fontFamily: "Consolas, Monaco, monospace", fontSize: 12, marginBottom: 2 }}>
-                          <span style={{ background: "#fff7e6", padding: "1px 4px", borderRadius: 2, color: "#ad4e00" }}>{m.matched}</span>
-                        </div>
-                      )}
-                      {m.context && (
-                        <div style={{ background: "#1e1e1e", padding: "4px 8px", borderRadius: 3, color: "#d4d4d4", fontFamily: "Consolas, Monaco, monospace", fontSize: 11, whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
-                          {m.context}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </Panel>
-            ))}
-          </Collapse>
+      {/* 命中汇总 */}
+      <div style={{ fontSize: 12, color: "#595959", marginBottom: matches.length > 0 ? 8 : 0 }}>
+        共 {total_files} 个文件 · {total_matches} 处匹配
+        {skipped_binary_count !== undefined && skipped_binary_count > 0 && (
+          <span style={{ color: "#faad14", marginLeft: 8 }}>（跳过 {skipped_binary_count} 个二进制文件）</span>
+        )}
+      </div>
 
-          {pagination?.has_more && onLoadMore && (
-            <div style={{ textAlign: "center", padding: "8px 0" }}>
-              <Button type="link" size="small" loading={isLoadingMore} onClick={onLoadMore}>
-                {isLoadingMore ? "加载中..." : "加载更多"}
-              </Button>
-            </div>
-          )}
+      {/* content 模式：逐命中展示 */}
+      {mode === "content" && matches.length > 0 && (
+        <div style={{ background: "#fafafa", borderRadius: 6, padding: "6px 10px", maxHeight: 400, overflow: "auto" }}>
+          {matches.map((m, idx) => {
+            const cm = m as ContentMatch;
+            const file = cm.file || "";
+            return (
+              <div
+                key={`c-${idx}`}
+                style={{
+                  padding: "6px 0",
+                  borderBottom: idx < matches.length - 1 ? "1px solid #f0f0f0" : "none",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <FileTextOutlined style={{ color: "#1890ff" }} />
+                  <span style={{ flex: 1, fontFamily: "Consolas, Monaco, monospace", fontSize: 12, color: "#003a8c", wordBreak: "break-all" }}>
+                    {file}
+                    {cm.line !== undefined && <span style={{ color: "#8c8c8c" }}> : {cm.line}</span>}
+                  </span>
+                </div>
+                {cm.matched && cm.matched.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    {cm.matched.map((mk, mi) => (
+                      <span
+                        key={mi}
+                        style={{ background: "#fff7e6", padding: "1px 4px", borderRadius: 2, color: "#ad4e00", fontFamily: "Consolas, Monaco, monospace", fontSize: 12, marginRight: 4 }}
+                      >
+                        {mk}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {cm.content && (
+                  <div
+                    style={{
+                      marginTop: 4,
+                      background: "#1e1e1e",
+                      padding: "4px 8px",
+                      borderRadius: 3,
+                      color: "#d4d4d4",
+                      fontFamily: "Consolas, Monaco, monospace",
+                      fontSize: 11,
+                      whiteSpace: "pre-wrap",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {cm.before ? `${cm.before}\n` : ""}
+                    {cm.content}
+                    {cm.after ? `\n${cm.after}` : ""}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+      )}
+
+      {/* only_files 模式：文件 + 命中行号列表 */}
+      {mode === "only_files" && matches.length > 0 && (
+        <div style={{ background: "#fafafa", borderRadius: 6, padding: "6px 10px", maxHeight: 400, overflow: "auto" }}>
+          {matches.map((m, idx) => {
+            const fm = m as OnlyFileMatch;
+            return (
+              <div
+                key={`f-${idx}`}
+                style={{
+                  padding: "5px 0",
+                  borderBottom: idx < matches.length - 1 ? "1px solid #f0f0f0" : "none",
+                  fontSize: 13,
+                }}
+              >
+                <FileTextOutlined style={{ color: "#1890ff", marginRight: 6 }} />
+                <span style={{ fontFamily: "Consolas, Monaco, monospace", fontSize: 12, color: "#003a8c", wordBreak: "break-all" }}>
+                  {fm.file}
+                </span>
+                {fm.lines && fm.lines.length > 0 && (
+                  <span style={{ color: "#8c8c8c", fontSize: 12, marginLeft: 8 }}>
+                    行号：{fm.lines.join(", ")}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* count 模式：无命中明细，仅汇总已展示 */}
+
+      {/* 后端摘要 */}
+      {summary && (
+        <div style={{ color: "#595959", whiteSpace: "pre-wrap", marginTop: matches.length > 0 ? 8 : 4 }}>{summary}</div>
       )}
     </div>
   );
 };
 
-export default SearchFileContentView;
+export default React.memo(SearchFileContentView);

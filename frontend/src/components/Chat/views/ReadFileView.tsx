@@ -1,126 +1,114 @@
 /**
- * ReadFileView - read_file 工具结果渲染组件
+ * ReadFileView - readtext 工具结果渲染组件
  *
- * 显示文件内容，支持带行号显示
+ * 【北京老陈 2026-07-13 小欧】按后端契约重建：
+ *   仅展示 data.content（<pre> 保留格式）+ metrics 行数信息 + summary；
+ *   不读不存在的 file_path/ total_lines 字段。
  *
  * @author 小强
- * @version 1.0.0
+ * @version 2.0.0
  * @since 2026-03-24
  */
 
 import React from "react";
-import { FileTextOutlined, FileOutlined, BarChartOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, CloseCircleOutlined, FileTextOutlined, BarChartOutlined } from "@ant-design/icons";
 
 interface ReadFileViewProps {
   data: {
-    content?: string;
-    total_lines?: number;
-    has_more?: boolean;
-    file_path?: string;
+    content: string;
+    truncated_lines?: number;
   };
+  metrics: {
+    lines: number;
+    total_lines: number;
+    bytes: number;
+  };
+  summary?: string;
+  success: boolean;
 }
 
-/**
- * ReadFileView 主组件
- */
-const ReadFileView: React.FC<ReadFileViewProps> = ({ data }) => {
-  const { content = "", total_lines = 0, file_path = "" } = data;
+const readContainerStyle = (success: boolean): React.CSSProperties => ({
+  background: success ? "#f6ffed" : "#fff2f0",
+  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
+  borderRadius: 8,
+  padding: "12px 16px",
+  marginTop: 6,
+});
+
+const readTitleStyle = (success: boolean): React.CSSProperties => ({
+  display: "flex",
+  alignItems: "center",
+  marginBottom: 12,
+  fontSize: 14,
+  fontWeight: 500,
+  color: success ? "#52c41a" : "#ff4d4f",
+});
+
+const contentBackground: React.CSSProperties = {
+  background: "#1e1e1e",
+  border: "1px solid #303030",
+  borderRadius: 8,
+  padding: "10px 14px",
+  marginTop: 6,
+  fontSize: "0.9em",
+  lineHeight: 1.6,
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-all",
+  maxHeight: 400,
+  overflow: "auto",
+  color: "#d4d4d4",
+  fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+};
+
+const ReadFileView: React.FC<ReadFileViewProps> = ({ data, metrics, summary, success }) => {
+  const { content, truncated_lines } = data;
+  const { lines, total_lines, bytes } = metrics;
 
   if (!content) {
     return (
-      <div style={{ color: "#888", fontStyle: "italic" }}>
-        <FileTextOutlined style={{ marginRight: 8 }} />
-        文件为空
+      <div style={readContainerStyle(success)}>
+        <div style={readTitleStyle(success)}>
+          {success ? <CheckCircleOutlined style={{ marginRight: 8 }} /> : <CloseCircleOutlined style={{ marginRight: 8 }} />}
+          读取文件{success ? "成功" : "失败"}
+        </div>
+        <div style={{ color: "#888", fontStyle: "italic" }}>
+          <FileTextOutlined style={{ marginRight: 8 }} />
+          文件内容为空
+        </div>
       </div>
     );
   }
 
-  // 文件内容背景样式
-  const contentBackground = {
-    background: "#1e1e1e",
-    border: "1px solid #303030",
-    borderRadius: 8,
-    padding: "10px 14px",
-    marginTop: 6,
-    fontSize: "0.9em",
-    lineHeight: 1.6,
-    whiteSpace: "pre-wrap" as const,
-    wordBreak: "break-all" as const,
-    maxHeight: 400,
-    overflow: "auto" as const,
-    color: "#d4d4d4",
-    fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-  };
-
-  // 文件信息栏样式
-  const fileInfoStyle = {
-    marginBottom: 8,
-    fontSize: 12,
-    color: "#666",
-    background: "#f5f5f5",
-    padding: "4px 8px",
-    borderRadius: 4,
-  };
-
   return (
-    <div>
-      {/* 文件路径信息 */}
-      {file_path && (
-        <div style={fileInfoStyle}>
-          <FileOutlined style={{ marginRight: 8 }} /> 文件：{file_path}
-        </div>
-      )}
-
-      {/* 文件内容 - 带行号 */}
-      <div style={contentBackground}>
-        {content.split("\n").map((line, index) => (
-          <div
-            key={index}
-            style={{
-              display: "flex",
-              lineHeight: 1.6,
-            }}
-          >
-            <span
-              style={{
-                minWidth: 40,
-                color: "#858585",
-                textAlign: "right",
-                marginRight: 12,
-                userSelect: "none",
-              }}
-            >
-              {String(index + 1).padStart(4, " ")}
-            </span>
-            <span style={{ flex: 1 }}>{line || " "}</span>
-          </div>
-        ))}
+    <div style={readContainerStyle(success)}>
+      {/* 标题 */}
+      <div style={readTitleStyle(success)}>
+        {success ? <CheckCircleOutlined style={{ marginRight: 8 }} /> : <CloseCircleOutlined style={{ marginRight: 8 }} />}
+        读取文件{success ? "成功" : "失败"}
       </div>
 
-      {/* 总行数信息 */}
-      {total_lines > 0 && (
-        <div
-          style={{
-            marginTop: 8,
-            fontSize: 12,
-            color: "#666",
-          }}
-        >
-          <span
-            style={{
-              background: "#e6f7ff",
-              padding: "2px 8px",
-              borderRadius: 4,
-              color: "#1890ff",
-              fontWeight: 500,
-            }}
-          >
-            <BarChartOutlined style={{ marginRight: 4 }} /> 共 {total_lines} 行
+      {/* 文件内容 */}
+      <pre style={contentBackground}>{content}</pre>
+
+      {/* 行数信息 */}
+      <div style={{ marginTop: 8, fontSize: 12, color: "#666", display: "flex", gap: 12, flexWrap: "wrap" }}>
+        {lines > 0 && (
+          <span style={{ background: "#e6f7ff", padding: "2px 8px", borderRadius: 4, color: "#1890ff", fontWeight: 500 }}>
+            <BarChartOutlined style={{ marginRight: 4 }} /> 本次 {lines} 行 / 共 {total_lines} 行
           </span>
-        </div>
+        )}
+        {bytes > 0 && <span style={{ color: "#8c8c8c" }}>{bytes} 字节</span>}
+        {truncated_lines !== undefined && truncated_lines > 0 && (
+          <span style={{ color: "#faad14" }}>已截断 {truncated_lines} 行</span>
+        )}
+      </div>
+
+      {/* 后端摘要 */}
+      {summary && (
+        <div style={{ color: "#595959", whiteSpace: "pre-wrap", marginTop: 4 }}>{summary}</div>
       )}
     </div>
   );
 };
 
-export default ReadFileView;
+export default React.memo(ReadFileView);

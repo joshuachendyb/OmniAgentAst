@@ -166,7 +166,6 @@ export interface ErrorMessage {
   stack?: string; // 可选
   retryable?: boolean; // 可选
   retry_after?: number; // 可选
-  recoverable?: boolean; // 可选 【新增2026-04-15】
   context?: {
     // 可选 【新增2026-04-15】
     step?: number;
@@ -182,15 +181,18 @@ export interface ErrorMessage {
 export type StatusValue = 'cancelled' | 'paused' | 'resumed' | 'retrying';
 
 /**
- * status类型 - 执行状态
- * 发送时机：状态变化时（暂停、恢复、中断、重试）
- * 【恢复 2026-06-09 北京老陈指令】恢复incident_value机制
+ * status类型 - 执行状态（生命周期 Step 统一约定 v3.2）
+ * 发送时机：状态变化时（取消/暂停/恢复/重试）
+ * 【北京老陈 2026-07-13 小欧】incident_value 已废弃，直接用 type 表示终态/生命周期
  */
 export interface StatusMessage {
-  type: 'incident';
-  incident_value: StatusValue;
+  type: 'cancelled' | 'paused' | 'retrying' | 'resumed';
   message: string;
   timestamp: string; // 必填，时间戳
+  confirm_id?: string; // 仅 paused(HITL) 时可选
+  tool_name?: string; // 仅 paused(HITL) 时可选
+  params?: Record<string, unknown>; // 仅 paused(HITL) 时可选
+  safety_level?: string; // 仅 paused(HITL) 时可选
   wait_time?: number; // 仅 retrying 时可选，重试等待秒数
 }
 
@@ -251,7 +253,12 @@ export function isErrorMessage(msg: StreamMessage): msg is ErrorMessage {
 }
 
 export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
-  return msg.type === 'incident';
+  return (
+    msg.type === 'cancelled' ||
+    msg.type === 'paused' ||
+    msg.type === 'retrying' ||
+    msg.type === 'resumed'
+  );
 }
 
 // ============================================================
@@ -313,12 +320,10 @@ export interface Message extends ChatMessage {
   // 【小沈修复2026-04-23】P0-1: 添加发送状态，用于显示发送失败标识
   sendStatus?: 'sending' | 'sent' | 'failed';
   // 错误相关字段（与API文档对齐）
-  // 【小沈修改2026-04-15】删除errorCode，添加errorRecoverable和errorContext
   // 【小沈修改2026-04-16】删除errorDetails/errorStack/errorRetryable，后端已删除这些字段
   errorMessage?: string; // error_message - 错误消息内容
   errorType?: string; // error_type
   errorTimestamp?: string; // timestamp
-  errorRecoverable?: boolean; // recoverable 【新增2026-04-15】
   errorContext?: {
     // context 【新增2026-04-15】
     step?: number;

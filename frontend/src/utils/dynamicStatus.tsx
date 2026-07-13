@@ -33,8 +33,12 @@ const statusConfig: Record<string, { icon: string; text: string; animate: boolea
   observation: { icon: '🤔', text: 'AI 正在思考', animate: true },
   chunk:       { icon: '💬', text: 'AI 正在回复', animate: true },
   final:       { icon: '✅', text: 'AI任务执行完成', animate: false },
-  error:       { icon: '✅', text: 'AI任务执行完成', animate: false },
+  error:       { icon: '❌', text: 'AI任务执行出错', animate: false },  // 小欧 2026-07-13: error 不可映射为 final(✅), 否则错误被误显为成功
   disconnected:{ icon: '⚠️', text: '连接已中断', animate: false },
+  cancelled:   { icon: '⚠️', text: '任务已取消', animate: false },
+  paused:      { icon: '⏸️', text: '任务已暂停', animate: false },
+  retrying:    { icon: '🔄', text: '正在重试...', animate: true },
+  resumed:     { icon: '▶️', text: '任务已恢复', animate: false },
 };
 
 // 格式化时间：秒 → MM:SS
@@ -53,8 +57,20 @@ const deriveStatus = (executionSteps: Array<{ type: string }>): string => {
   const lastStep = executionSteps[executionSteps.length - 1];
   const hasChunk = executionSteps.some(s => s.type === 'chunk');
   
-  if (lastStep.type === 'final' || lastStep.type === 'error') {
+  if (lastStep.type === 'error') {
+    return 'error';  // 小欧 2026-07-13: error 与 final 严格区分, 错误态显示❌而非✅
+  }
+  if (lastStep.type === 'final') {
     return 'final';
+  }
+  if (lastStep.type === 'cancelled') {
+    return 'cancelled';
+  }
+  if (lastStep.type === 'paused') {
+    return 'paused';
+  }
+  if (lastStep.type === 'retrying') {
+    return 'retrying';
   }
   
   if (hasChunk) {

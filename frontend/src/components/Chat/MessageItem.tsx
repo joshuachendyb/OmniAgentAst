@@ -62,7 +62,6 @@ const MessageItem = memo(({
     errorMessage?: string;
     errorRetryAfter?: number;
     errorTimestamp?: string;
-    errorRecoverable?: boolean;
     errorContext?: {
       step?: number;
       model?: string;

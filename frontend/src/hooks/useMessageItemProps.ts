@@ -36,8 +36,6 @@ export interface MessageItemProps {
     errorMessage?: string;
     errorRetryAfter?: number;
     errorTimestamp?: string;
-    // 【小沈添加2026-04-15】新增recoverable和context
-    errorRecoverable?: boolean;
     errorContext?: {
       step?: number;
       model?: string;
