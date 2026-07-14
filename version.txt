@@ -1,4 +1,15 @@
-﻿v0.18.18
+﻿v0.18.19
+更新时间: 2026-07-14 13:10:16 - 小欧-2026-07-14
+## v0.18.18→v0.18.19 变更汇总 - 小欧-2026-07-14
+
+### 最新改版（持续修改不覆盖）：
+- refactor: app/constants.py 集中系统级散落常量(LLM_TEMPERATURE/LLM_TOOL_CHOICE/LLM_STREAM_MAX_RETRIES/LLM_STREAM_OPTIONS/FC_FALLBACK_ENABLED/FC_MAX_RETRIES/TOOL_CACHE_TTL/MAX_PENDING_CONFIRMATIONS), 加回HTTP_RATE_LIMIT=429并供error_classifier引用以消除裸魔法数429, 清理死代码_is_rate_limit_status/RATE_LIMIT_STATUS_CODES(限流已由SystemErrorClassifier覆盖) - 小欧-2026-07-14
+- refactor: grep截断统一为OBS_MAX_DISPLAY_ITEMS,区分超时/达上限,内容截断防OOM - 小沈-2026-07-14
+- fix: agent_runner/action_handler/message_builder/send_notification/http_request 补编辑历史头部与行内署名 - 小沈-2026-07-14
+- docs: AGENTS.md 代码注释→代码编辑历史 - 小沈-2026-07-14
+- docs: README/doc-7月优化/系统能力与扩展性优化设计-小李-2026-07-14 更新限流描述文案与优化设计文档 - 小欧-2026-07-14
+
+v0.18.18
 更新时间: 2026-07-14 06:09:37 - 小欧-2026-07-14
 ## v0.18.17→v0.18.18 变更汇总 - 小欧-2026-07-14
 
