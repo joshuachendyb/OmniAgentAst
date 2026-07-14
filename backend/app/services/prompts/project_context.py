@@ -1,6 +1,8 @@
-"""项目上下文注入 — 读取 OmniAgent.md 注入Prompt — 小沈 2026-06-11 — 小欧 2026-07-08 改用config.get_project_root()
+# 编辑历史:
+# 2026-07-14 - 小欧 - 明确注释说明 OmniAgent.md 为项目规则文件，替换模糊的"项目上下文"表述
+"""项目规则文件注入 — 读取项目根目录下的项目规则文件(OmniAgent.md)并注入Prompt — 小沈 2026-06-11 — 小欧 2026-07-08 改用config.get_project_root()
 
-只读取 OmniAgent.md 文件，不读取其他文件。
+只读取项目根目录下的 OmniAgent.md（项目规则文件），不读取其他文件。
 
 Author: 小沈 - 2026-06-11
 """
@@ -10,7 +12,7 @@ from collections import OrderedDict
 from app.config import get_config as get_config_instance
 from app.logger import logger
 
-CONTEXT_FILE = "OmniAgent.md"
+CONTEXT_FILE = "OmniAgent.md"  # 项目规则文件名，置于项目根目录
 MAX_CHARS = 8000
 _CACHE_MAX_SIZE = 64
 
@@ -20,7 +22,7 @@ _context_cache: OrderedDict = OrderedDict()
 
 
 def load_project_context(workdir: str = None) -> str:
-    """加载 OmniAgent.md 文件内容 — 小沈 2026-06-11 — 小欧 2026-07-08 改用config.get_project_root()
+    """加载项目规则文件(OmniAgent.md)内容 — 小沈 2026-06-11 — 小欧 2026-07-08 改用config.get_project_root()
 
     Args:
         workdir: 项目根目录,默认从配置读取(get_project_root)

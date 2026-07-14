@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-14 - 小欧 - 注释中"项目上下文(OmniAgent.md)"改为"项目规则文件(OmniAgent.md)"
 """
 PromptBuilder — 唯一的 Prompt 构建类
 
@@ -12,7 +14,7 @@ PromptBuilder — 唯一的 Prompt 构建类
 
 组装架构(build_full_system_prompt) — FC-only版:
 ① _get_system_info()         — 系统信息(OS/路径规则)
-② _get_project_context()     — 项目上下文(OmniAgent.md)
+② _get_project_context()     — 项目规则文件(OmniAgent.md)
 ③ get_core_system_prompt()   — 角色定义 + 业务规则
 ④ TOOL_CALL_RULES            — 回答要求+停止条件
 
@@ -125,7 +127,7 @@ class PromptBuilder:
 
         组装顺序:
         ① get_core_system_prompt()  — 角色+业务规则
-        ② _get_project_context()    — 项目上下文(OmniAgent.md)
+        ② _get_project_context()    — 项目规则文件(OmniAgent.md)
         ③ _get_system_info()        — 系统信息(OS/路径规则)
         ④ _get_project_root_info()  — 项目根目录
         ⑤ TOOL_CALL_RULES           — 文件类型→工具映射
