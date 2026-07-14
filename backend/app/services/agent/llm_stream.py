@@ -6,6 +6,7 @@ llm_stream — LLM流式调用+响应构建
 
 编辑历史:
   2026-07-14 小欧 FC_FALLBACK_ENABLED/FC_MAX_RETRIES/LLM_TOOL_CHOICE导入源由base_service改为app.constants(常量集中,非功能退化)
+  2026-07-15 小欧 修复call_llm_with_fallback:①FC重试循环内拦截type:"error"响应转FCFormatError触发L2重试(避免直抵set_failed) ②降级关闭分支last_error=None兜底防AttributeError崩溃
 """
 
 import asyncio
@@ -180,6 +181,11 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
     for attempt in range(FC_MAX_RETRIES):
         try:
             async for item in call_llm_stream(agent, messages, openai_tools):
+                # 流式error响应(type:"error")会绕过L2重试直抵set_failed使agent失败;此处转FCFormatError交给上层重试 — 小欧 2026-07-15
+                if isinstance(item, tuple) and item[0] == "response":
+                    resp = item[1]
+                    if isinstance(resp, dict) and resp.get("type") == "error":
+                        raise FCFormatError(message=resp.get("content", "LLM流式错误"))
                 yield item
             return
         except FCFormatError as e:
@@ -198,4 +204,9 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
             logger.error(f"[FC降级] {error_msg}", exc_info=True)
             yield _yield_error_response(error_msg, agent)
     else:
-        yield _yield_error_response(_format_fc_error(last_error), agent)
+        # FC_MAX_RETRIES=0时for循环不执行,last_error恒为None,直接_format_fc_error(None)会AttributeError崩溃,故兜底 — 小欧 2026-07-15
+        if last_error is None:
+            error_msg = f"FC模式不可用: FC_MAX_RETRIES={FC_MAX_RETRIES}且降级通道关闭, 任务无法执行"
+        else:
+            error_msg = _format_fc_error(last_error)
+        yield _yield_error_response(error_msg, agent)
