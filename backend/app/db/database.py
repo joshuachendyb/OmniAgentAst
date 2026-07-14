@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-14 - 小欧 - chat库采用DELETE journal模式,其他库维持WAL; Windows大库场景设计选择
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -75,7 +77,11 @@ class DatabaseManager:
             conn = sqlite3.connect(str(db_path))
             conn.row_factory = sqlite3.Row
             
-            conn.execute("PRAGMA journal_mode=WAL")
+            # chat库采用DELETE journal模式，其他库维持WAL — 小欧 2026-07-14
+            if db_name == "chat":
+                conn.execute("PRAGMA journal_mode=DELETE")
+            else:
+                conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=30000")
             # M-05: SQLite默认OFF，外键约束不生效 — 小欧 2026-07-10
             conn.execute("PRAGMA foreign_keys=ON")

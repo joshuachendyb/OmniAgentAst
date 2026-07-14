@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-14 - 小欧 - 新增chat_message_steps独立步骤表(一行=一步)+idx_steps_message和idx_steps_session索引,支撑运行期逐步落库
 """
 db_initializer — 数据库初始化
 
@@ -45,6 +47,17 @@ def init_chat_db(get_conn):
                 change_reason TEXT,
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
+
+            -- 独立步骤表 — 小欧 2026-07-14
+            CREATE TABLE IF NOT EXISTS chat_message_steps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL,
+                session_id TEXT NOT NULL,
+                step_index INTEGER NOT NULL,
+                step_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE
+            );
         ''')
         
         _ensure_column(conn, "chat_sessions", "message_count", "INTEGER DEFAULT 0")
@@ -68,6 +81,10 @@ def init_chat_db(get_conn):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON chat_sessions(is_deleted)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON chat_messages(timestamp)")
+
+        # steps 表索引 — 小欧 2026-07-14
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_message ON chat_message_steps(message_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_session ON chat_message_steps(session_id, step_index)")
 
         # 小欧 2026-07-13: 一次性迁移旧 execution_steps(幂等)
         from app.services.chat.migrate_steps import migrate_execution_steps_status
