@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-13 - 小欧 - 移除事件循环内重复prompt日志写入(已由_append统一记录)
+# 2026-07-14 - 小欧 - 运行期逐步落库chat_message_steps表, finally仅轻量终态更新; 三退出路径均写入steps, ai_message_id未分配时沿用原有写入逻辑保证完整性
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -23,6 +24,8 @@ from app.db import db
 from app.services.agent.steps import ErrorStep, MetaStep  # 小欧 2026-07-13: 删 FinalStep（终态改由 ErrorStep/MetaStep 表示，不再补发 FinalStep）
 from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed
 from app.services.chat.handlers import save_execution_steps_to_db
+# 独立步骤表操作 — 小欧 2026-07-14
+from app.services.chat.storage import allocate_and_insert_message, append_execution_step, finalize_message
 from app.services.chat.stream import _load_previous_messages, _log_task_end
 from app.services.task.task_registry import task_cleanup
 from app.services.task.task_state import (
@@ -66,6 +69,7 @@ async def run_agent_in_background(
     buffer = agent_streams.get(task_id)
     current_execution_steps: List[Dict] = []
     end_type = "unknown"
+    ai_message_id: Optional[int] = None  # 首步分配后复用 — 小欧 2026-07-14
 
     async def _append(event_dict: Dict) -> None:
         # 注意: current_execution_steps 由各调用点(主循环/异常分支)显式追加,
@@ -143,6 +147,17 @@ async def run_agent_in_background(
             # 累积 execution_steps
             if event_dict:
                 current_execution_steps.append(event_dict)
+                # 每步独立事务, 渐进耐久 — 小欧 2026-07-14
+                if ai_message_id is None:
+                    with db.get_conn("chat") as conn:
+                        ai_message_id = allocate_and_insert_message(conn, session_id)
+                        get_prompt_logger().update_ai_message_id(str(ai_message_id))
+                        append_execution_step(conn, ai_message_id, session_id,
+                                              len(current_execution_steps) - 1, event_dict)
+                else:
+                    with db.get_conn("chat") as conn:
+                        append_execution_step(conn, ai_message_id, session_id,
+                                              len(current_execution_steps) - 1, event_dict)
             # 更新 current_content — 小沈 2026-06-09
             if event_type == "final":
                 content = event_dict.get("response", "") or ""
@@ -164,6 +179,11 @@ async def run_agent_in_background(
         cancelled_step = MetaStep(step=next_step(), type="cancelled", content="任务已被取消")
         cancelled_dict = cancelled_step.to_dict()
         current_execution_steps.append(cancelled_dict)
+        # 终态 step 立即落库 — 小欧 2026-07-14
+        if ai_message_id is not None:
+            with db.get_conn("chat") as conn:
+                append_execution_step(conn, ai_message_id, session_id,
+                                      len(current_execution_steps) - 1, cancelled_dict)
         get_prompt_logger().log_step_yield(cancelled_dict, round_number=cancelled_dict.get("step", 0))
         await _append(cancelled_dict)
         if agent is not None:
@@ -179,6 +199,11 @@ async def run_agent_in_background(
         error_step = ErrorStep(step=next_step(), error_type="agent_operation_error", error_message=str(e))
         error_dict = error_step.to_dict()
         current_execution_steps.append(error_dict)
+        # 终态 step 立即落库 — 小欧 2026-07-14
+        if ai_message_id is not None:
+            with db.get_conn("chat") as conn:
+                append_execution_step(conn, ai_message_id, session_id,
+                                      len(current_execution_steps) - 1, error_dict)
         await _append(error_dict)
         if agent is not None:
             try:
@@ -212,16 +237,20 @@ async def run_agent_in_background(
             for retry in range(2):
                 try:
                     saved_content = stream_state.current_content if stream_state else ""
-                    ai_message_id = await save_execution_steps_to_db(
-                        session_id, current_execution_steps, saved_content, status=_terminal_status)
-                    if ai_message_id:
-                        get_prompt_logger().update_ai_message_id(str(ai_message_id))
+                    if ai_message_id is not None:
+                        # 步骤已逐步落库, 仅 finalize content+status — 小欧 2026-07-14
+                        with db.get_conn("chat") as conn:
+                            finalize_message(conn, ai_message_id, saved_content, _terminal_status)
+                    else:
+                        # 兜底: ai_message_id未分配时沿用原有写入逻辑 — 小欧 2026-07-14
+                        ai_message_id = await save_execution_steps_to_db(
+                            session_id, current_execution_steps, saved_content, status=_terminal_status)
                     break
                 except Exception as save_err:
                     if retry == 0:
-                        logger.warning(f"[Runner] DB保存失败(steps={len(current_execution_steps)}), 重试: {save_err}")
+                        logger.warning(f"[Runner] DB 保存/finalize 失败, 重试: {save_err}")
                     else:
-                        logger.error(f"[Runner] DB保存失败(steps={len(current_execution_steps)}): {save_err}", exc_info=True)
+                        logger.error(f"[Runner] DB 保存/finalize 失败: {save_err}", exc_info=True)
 
         if agent is not None and stream_state is not None:
             stream_state.llm_call_count = getattr(agent, "llm_call_count", 0)
