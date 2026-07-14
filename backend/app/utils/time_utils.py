@@ -13,6 +13,9 @@
 Author: 小健 - 2026-05-28
 """
 
+# 编辑历史:
+# 2026-07-14 - 小欧 - 修复ensure_timestamp_milliseconds: 13位epoch毫秒串被Python3.13宽松fromisoformat误解析为pre-1970 datetime致.timestamp()抛OSError[Errno22]; 数字串直接转int(判别毫秒/秒), 并对fromisoformat分支补充捕获OSError
+
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -42,12 +45,27 @@ def convert_to_utc(time_value) -> str:
 
 
 def ensure_timestamp_milliseconds(ts_value: Any) -> int:
-    """确保时间戳转为毫秒整数"""
+    """确保时间戳转为毫秒整数
+
+    小欧 2026-07-14 修复: 13位epoch毫秒串(如'1784031800406')被Python3.13宽松fromisoformat
+    误解析为pre-1970的datetime(公元1784年), 调用.timestamp()时Windows mktime下限(1970)限制
+    抛OSError[Errno22]; 原except仅捕获ValueError/TypeError/OverflowError漏掉OSError。
+    修复: 数字串直接转int(判别毫秒/秒), 并对fromisoformat分支补充捕获OSError。
+    """
     if isinstance(ts_value, (int, float)):
         return int(ts_value)
+    if isinstance(ts_value, str):
+        s = ts_value.strip()
+        if s.lstrip('-').isdigit():
+            try:
+                val = int(s)
+                # 13位及以上(>=1e12)视为毫秒, 否则视为秒
+                return int(val) if val >= 1_000_000_000_000 else int(val * 1000)
+            except (ValueError, OverflowError):
+                pass
     try:
         return int(datetime.fromisoformat(str(ts_value).replace(' ', 'T')).timestamp() * 1000)
-    except (ValueError, TypeError, OverflowError):
+    except (ValueError, TypeError, OverflowError, OSError):
         return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 

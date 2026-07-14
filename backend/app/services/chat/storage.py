@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-14 - 小欧 - 新增allocate_and_insert_message/append_execution_step/load_execution_steps/finalize_message四函数,支撑运行期逐步落库+渐进耐久
+# 2026-07-14 - 小欧 - 修复load_execution_steps: 无步骤且无legacy blob时返回[]而非None,避免API返回execution_steps=None
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
