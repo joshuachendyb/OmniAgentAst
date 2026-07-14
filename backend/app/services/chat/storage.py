@@ -257,7 +257,7 @@ def load_execution_steps(conn: Connection, message_id: int) -> Optional[list]:
     ).fetchone()
     if row and row["execution_steps"]:
         return parse_json(row["execution_steps"], label="execution_steps")
-    return None
+    return []
 
 
 def finalize_message(conn: Connection, message_id: int, content: str, status: str) -> None:
