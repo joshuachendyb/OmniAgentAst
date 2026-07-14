@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-14 - 小沈 - grep搜索结果上限改用OBS_MAX_DISPLAY_ITEMS，区分"超时"与"达上限"两种截断
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -18,7 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, NamedTuple, Optional
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import TOOL_TIMEOUTS, MAX_SEARCH_RESULTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, MAX_SEARCH_FILE_SIZE
+from app.tools.tool_constants import TOOL_TIMEOUTS, OBS_MAX_DISPLAY_ITEMS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, MAX_SEARCH_FILE_SIZE
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file
@@ -51,6 +53,7 @@ class GrepSyncResult(NamedTuple):
     truncated: bool
     truncated_by_deadline: bool
     skipped_binaries: List[str]
+    reached_head_limit: bool          # 小沈 2026-07-14 区分"达条目上限"与"超时"
 
 
 def _build_grep_file_content_llm_data(
@@ -61,6 +64,7 @@ def _build_grep_file_content_llm_data(
     user_glob: Optional[str] = None, user_ignore_case: Optional[bool] = None,
     user_output_mode: Optional[str] = None,
     truncated_by_deadline: bool = False,
+    reached_head_limit: bool = False,   # 小沈 2026-07-14
     user_literal: Optional[bool] = None,
     user_context: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -92,10 +96,17 @@ def _build_grep_file_content_llm_data(
             summary_suffix = f"（结果被截断，可能不完整）{_timeout_suffix}"
             warning_message = "结果被截断，可能不完整"
             _detail_parts = []
-            if not truncated_by_deadline or total_matches >= MAX_SEARCH_RESULTS:
-                _detail_parts.append("结果数量达到上限")
-            warning_detail = "，".join(_detail_parts) + "，仅返回部分结果"
-            warning_hint = "可缩小搜索范围、使用head_limit参数限制结果数量或增加超时时间"
+            if reached_head_limit:
+                _detail_parts.append(f"结果数量达到上限（{OBS_MAX_DISPLAY_ITEMS}条）")
+            if truncated_by_deadline:
+                _detail_parts.append(f"搜索超时（{_timeout_sec}秒）")
+            warning_detail = ("，".join(_detail_parts) + "，仅返回部分结果") if _detail_parts else "仅返回部分结果"
+            if reached_head_limit and not truncated_by_deadline:
+                warning_hint = f"结果已达 {OBS_MAX_DISPLAY_ITEMS} 条上限，可缩小搜索范围或使用更精确的关键词以获取更聚焦的结果"
+            elif truncated_by_deadline:
+                warning_hint = f"搜索超时（{_timeout_sec}秒），可缩小搜索范围或增加超时时间"
+            else:
+                warning_hint = "可排除二进制文件路径或指定文件后缀过滤"
         else:
             summary_suffix = ""
             warning_message = "跳过了部分二进制文件"
@@ -130,6 +141,7 @@ def _grep_files_sync(
     output_mode: str,
     deadline: float,
     context: int = 0,
+    head_limit: int = OBS_MAX_DISPLAY_ITEMS,   # 小沈 2026-07-14 条目数上限，与观察一致
 ) -> GrepSyncResult:
     """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-24 增加二进制文件检测和提示 — 小沈 2026-07-05 接收已编译regex — 小欧 2026-07-11 支持context上下文行"""
     results = []
@@ -143,13 +155,13 @@ def _grep_files_sync(
         if _time_mod.monotonic() > deadline:
             _deadline_exceeded = True
             break
-        if total_matches >= MAX_SEARCH_RESULTS:
+        if len(results) >= head_limit:
             break
         for fname in files:
             if _time_mod.monotonic() > deadline:
                 _deadline_exceeded = True
                 break
-            if total_matches >= MAX_SEARCH_RESULTS:
+            if len(results) >= head_limit:
                 break
             fpath = Path(root) / fname
             if glob_filter:
@@ -174,10 +186,10 @@ def _grep_files_sync(
             lines = safe_read_lines(fpath, max_size=MAX_SEARCH_FILE_SIZE)
             if not lines:
                 continue
-            file_matches = []
+            file_matched = False
             file_lines = []
             for line_no, line in enumerate(lines, 1):
-                if total_matches >= MAX_SEARCH_RESULTS:
+                if len(results) >= head_limit:
                     break
                 matches_in_line = list(regex.finditer(line))
                 if not matches_in_line:
@@ -205,17 +217,18 @@ def _grep_files_sync(
                         {"line": i + 1, "text": lines[i].rstrip('\n\r')}
                         for i in range(line_no, hi)
                     ]
-                file_matches.append(match_item)
+                results.append(match_item)
                 total_matches += len(matched_texts)
+                file_matched = True
             if output_mode == "only_files" and file_lines:
                 total_files += 1
                 results.append({"file": str(fpath), "lines": file_lines})
-            elif file_matches:
+            elif file_matched:
                 total_files += 1
-                results.extend(file_matches)
 
-    truncated = _deadline_exceeded or total_matches >= MAX_SEARCH_RESULTS
-    return GrepSyncResult(results, total_files, total_matches, truncated, _deadline_exceeded, skipped_binary_files)
+    reached_head_limit = len(results) >= head_limit
+    truncated = _deadline_exceeded or reached_head_limit
+    return GrepSyncResult(results, total_files, total_matches, truncated, _deadline_exceeded, skipped_binary_files, reached_head_limit)
 
 
 def _sort_grep_results_by_mtime(results: List[Dict]) -> None:
@@ -306,7 +319,7 @@ async def grep(
 
     try:
         gr = await asyncio.to_thread(
-            _grep_files_sync, search_path, regex, glob, output_mode, deadline, context,
+            _grep_files_sync, search_path, regex, glob, output_mode, deadline, context, OBS_MAX_DISPLAY_ITEMS,
         )
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -348,7 +361,7 @@ async def grep(
         total_files=gr.total_files, total_matches=gr.total_matches, truncated=gr.truncated,
         user_glob=glob, user_ignore_case=ignore_case, user_output_mode=output_mode,
         truncated_by_deadline=gr.truncated_by_deadline, user_literal=literal,
-        user_context=context,
+        user_context=context, reached_head_limit=gr.reached_head_limit,
     )
 
     # 修改summary添加二进制文件提示 — 小健 2026-06-24

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-14 - 小沈 - OBS_MAX_DISPLAY_ITEMS/MAX_SEARCH_RESULTS 注释更新(grep上限与条目数统一)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -112,14 +114,14 @@ FIND_PAGE_SIZE: int = 500
 #     常量集中管理，便于后续统一调整。
 #     与 tool 层面的截断上限（如 READ_FILE_DEFAULT_LIMIT）相互独立。
 # ============================================================
-OBS_MAX_DISPLAY_ITEMS: int = 500       # 所有 list 类 handler 的最大条目数
+OBS_MAX_DISPLAY_ITEMS: int = 500       # 所有 list 类 handler 的最大条目数；grep 内容搜索总开关上限（与条目数一致）— 小沈 2026-07-14
 OBS_MAX_STRING_LENGTH: int = 10000     # 单个字符串值的最大显示长度
 OBS_DICT_MAX_KEYS: int = 100           # _format_key_value 的最大键数
 MAX_READ_SIZE: int = 10 * 1024 * 1024
 MAX_MEDIA_READ_SIZE: int = 50 * 1024 * 1024
 MAX_BATCH_FILE_COUNT: int = 100
 MAX_SEARCH_FILE_SIZE: int = 10 * 1024 * 1024
-MAX_SEARCH_RESULTS: int = 1000
+MAX_SEARCH_RESULTS: int = 1000        # 仅 search_files(find) 用：结果收集上限，按500/页分页；grep 已改引用 OBS_MAX_DISPLAY_ITEMS — 小沈 2026-07-14
 
 # 二进制文件扩展名 — 小健 2026-06-24 更新：补充媒体扩展名
 # 用途：read_text_file/write_text_file/edit_text_file等文本工具拒绝二进制文件

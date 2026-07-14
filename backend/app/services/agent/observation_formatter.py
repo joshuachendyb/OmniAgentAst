@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-13 - 小欧 - #1 观测格式化兜底WARNING降级DEBUG并加非dict防御
+# 2026-07-14 - 小沈 - grep匹配内容与上下文行截断防OOM
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -30,7 +33,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   filter_data     {columns, rows}                #5 _format_rows+columns  行: OBS_MAX_DISPLAY_ITEMS=500         top_n(用户指定,无默认)
   listdir         {entries}                      #3 _format_entries       项: OBS_MAX_DISPLAY_ITEMS=500         LISTDIR_PAGE_SIZE=500
    find            {matches}                      #9b _format_find_results 项: OBS_MAX_DISPLAY_ITEMS=500         收集1000/每页FIND_PAGE_SIZE=500
-  grep            {matches}                      #9 _format_matches       项: OBS_MAX_DISPLAY_ITEMS=500         MAX_SEARCH_RESULTS=1000
+   grep            {matches}                      #9 _format_matches       项: OBS_MAX_DISPLAY_ITEMS=500         上限500(=OBS_MAX_DISPLAY_ITEMS,条目数)
   searchweb       {items}                        #4 _format_items         项: OBS_MAX_DISPLAY_ITEMS=500        num_results≤50; snippet 300字符
   event_log       {events}                       #8 _format_events        条: OBS_MAX_DISPLAY_ITEMS=500         max_events=50
   searchtool      {matches}                      #9c _format_searchtool   项: OBS_MAX_DISPLAY_ITEMS=500         small(内置)
@@ -102,7 +105,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     #                   filter_data                       top_n(用户指定,无默认值)              OBS_MAX_DISPLAY_ITEMS=500
     # #6 schema         get_db_schema                     不限                                OBS_MAX_DISPLAY_ITEMS=500
     # #8 events         event_log                         max_events=50                       OBS_MAX_DISPLAY_ITEMS=500
-    # #9 matches        grep                              MAX_SEARCH_RESULTS=1000             OBS_MAX_DISPLAY_ITEMS=500
+    # #9 matches        grep                              上限500(=OBS_MAX_DISPLAY_ITEMS,条目数)   OBS_MAX_DISPLAY_ITEMS=500
     #                   find                              MAX_SEARCH_RESULTS=1000/每页200      OBS_MAX_DISPLAY_ITEMS=500
     #                   searchtool                        小(内置)                            OBS_MAX_DISPLAY_ITEMS=500
     # #11 shell stdout  shell                             不限                                OBS_MAX_STRING_LENGTH=10000
@@ -942,6 +945,8 @@ def _format_matches(matches: list) -> str:
             matched = m.get("matched", [])
             matched_str = ", ".join(matched) if isinstance(matched, list) else str(matched)
             content = m.get("content", "")
+            if len(content) > OBS_MAX_STRING_LENGTH:
+                content = content[:OBS_MAX_STRING_LENGTH] + "…（内容已截断）"
             line_no = m.get("line", "")
             if line_no:
                 # context上下文:before在命中行之前,after在之后,命中行加>标记 — 小欧 2026-07-11
@@ -949,10 +954,10 @@ def _format_matches(matches: list) -> str:
                 after = m.get("after")
                 if before or after:
                     for ctx in (before or []):
-                        lines.append(f"       {ctx.get('line')}| {ctx.get('text', '')}")
+                        lines.append(f"       {ctx.get('line')}| {(ctx.get('text', '') or '')[:OBS_MAX_STRING_LENGTH]}")
                     lines.append(f"  >  {file_path}:{line_no}: [{matched_str}] {content}")
                     for ctx in (after or []):
-                        lines.append(f"       {ctx.get('line')}| {ctx.get('text', '')}")
+                        lines.append(f"       {ctx.get('line')}| {(ctx.get('text', '') or '')[:OBS_MAX_STRING_LENGTH]}")
                 else:
                     lines.append(f"  {file_path}:{line_no}: [{matched_str}] {content}")
             else:
