@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-13 - 小欧 - #3 http请求异常详情丢失修复为类型:repr兜底
 """
 N1: httpget — 发起HTTP请求
 
@@ -103,7 +105,7 @@ def _build_http_error(last_exception: Exception, url: str, retry: int, duration_
         return {"error_detail": "请求超时", "params": {"url": url}, "err_code": ERR_NETWORK_TIMEOUT, "detail": "请求超时"}
     if isinstance(last_exception, httpx.HTTPStatusError):
         return {"error_detail": f"HTTP {last_exception.response.status_code}", "params": {"url": url, "status_code": last_exception.response.status_code}, "err_code": ERR_NETWORK_HTTP_ERROR, "detail": f"HTTP {last_exception.response.status_code}"}
-    _msg = f"{type(last_exception).__name__}: {str(last_exception) or repr(last_exception)}"
+    _msg = f"{type(last_exception).__name__}: {str(last_exception) or repr(last_exception)}"  # — 小欧 2026-07-13
     return {"error_detail": _msg, "params": {"url": url, "retry": retry}, "err_code": ERR_NETWORK_REQUEST_ERROR, "detail": _msg}
 
 
@@ -193,7 +195,7 @@ async def httpget(
                 raise
 
     except Exception as e:
-        err_msg = f"{type(e).__name__}: {str(e) or repr(e)}"
+        err_msg = f"{type(e).__name__}: {str(e) or repr(e)}"  # — 小欧 2026-07-13
         logger.error(f"[httpget] 未知错误: {err_msg}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _build_http_error(e, url, 0, duration_ms)

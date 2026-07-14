@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-13 - 小欧 - win10toast改为独立子进程通知隔离Tk/WndProc窗口
 """
 send_notification — 发送Windows系统通知
 【2026-06-22 小健】从 desktop/desktop_gui_tools.py 迁入 fundamental 为独立文件

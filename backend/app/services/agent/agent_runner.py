@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-13 - 小欧 - 移除事件循环内重复prompt日志写入(已由_append统一记录)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 

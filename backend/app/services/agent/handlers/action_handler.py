@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-13 - 小欧 - #2 add_tool_result异常日志带类型与repr
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -402,11 +404,11 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
             tc_id = call.get("_tool_call_id", "")
             ctx.agent.message_builder.add_tool_result(tc_id, obs_text)
         except Exception as e:
-            logger.warning(f"[action_handler] add_tool_result异常: {type(e).__name__}: {e!r}")
+            logger.warning(f"[action_handler] add_tool_result异常: {type(e).__name__}: {e!r}")  # — 小欧 2026-07-13
             try:
                 ctx.agent.message_builder.add_tool_result("", obs_text)
             except Exception as e2:
-                logger.warning(f"[action_handler] add_tool_result最终异常: {type(e2).__name__}: {e2!r}")
+                logger.warning(f"[action_handler] add_tool_result最终异常: {type(e2).__name__}: {e2!r}")  # — 小欧 2026-07-13
 
     if not obs_parts:
         obs_parts = ["Observation: 无结果"]
