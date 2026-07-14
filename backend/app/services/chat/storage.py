@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-14 - 小欧 - 新增allocate_and_insert_message/append_execution_step/load_execution_steps/finalize_message四函数,支撑运行期逐步落库+渐进耐久
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -14,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.logger import logger
 from app.db import db
-from app.utils.json_utils import safe_json_dumps
+from app.utils.json_utils import safe_json_dumps, parse_json
 from app.utils.time_utils import create_timestamp
 from app.utils.display_utils import extract_metadata_from_steps
 
@@ -209,3 +211,58 @@ async def save_execution_steps(session_id: str, update_data):
     except Exception as e:
         logger.error(f"保存执行步骤失败: {e}")
         raise HTTPException(status_code=500, detail=f"保存执行步骤失败: {str(e)}")
+
+
+# ====================================================================
+# 独立步骤表操作 — 小欧 2026-07-14
+# ====================================================================
+
+def allocate_and_insert_message(conn: Connection, session_id: str) -> int:
+    """预分配 assistant 消息ID + 插入空白行 — 小欧 2026-07-14"""
+    ai_message_id, is_new = _allocator.allocate(session_id, conn)
+    if is_new:
+        utc_time = create_timestamp()
+        conn.execute(
+            "INSERT INTO chat_messages(id, session_id, role, content, timestamp) "
+            "VALUES (?, ?, 'assistant', ?, ?)",
+            (ai_message_id, session_id, "", utc_time),
+        )
+        conn.execute(
+            "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
+            (utc_time, session_id),
+        )
+    return ai_message_id
+
+
+def append_execution_step(conn: Connection, message_id: int, session_id: str,
+                          step_index: int, step_dict: dict) -> None:
+    """运行期逐步落库 — 小欧 2026-07-14"""
+    conn.execute(
+        "INSERT INTO chat_message_steps(message_id, session_id, step_index, step_json) "
+        "VALUES (?, ?, ?, ?)",
+        (message_id, session_id, step_index, safe_json_dumps(step_dict)),
+    )
+
+
+def load_execution_steps(conn: Connection, message_id: int) -> Optional[list]:
+    """从 chat_message_steps 表组装步骤列表,无数据时从chat_messages.execution_steps列读取 — 小欧 2026-07-14"""
+    rows = conn.execute(
+        "SELECT step_json FROM chat_message_steps WHERE message_id=? ORDER BY step_index ASC",
+        (message_id,),
+    ).fetchall()
+    if rows:
+        return [parse_json(r["step_json"], label="step_json") for r in rows]
+    row = conn.execute(
+        "SELECT execution_steps FROM chat_messages WHERE id=?", (message_id,),
+    ).fetchone()
+    if row and row["execution_steps"]:
+        return parse_json(row["execution_steps"], label="execution_steps")
+    return None
+
+
+def finalize_message(conn: Connection, message_id: int, content: str, status: str) -> None:
+    """finally 轻量终态 — 小欧 2026-07-14"""
+    conn.execute(
+        "UPDATE chat_messages SET content=?, status=? WHERE id=?",
+        (content, status, message_id),
+    )

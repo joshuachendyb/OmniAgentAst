@@ -121,6 +121,15 @@
 | `create_error_tool_result` | 创建错误工具结果 | error_message, error_type, retry_count, metadata | dict |
 | `create_warning_tool_result` | 创建警告工具结果 | warning_message, data, retry_count, metadata | dict |
 
+### 3.3 步骤存储（storage.py）【2026-07-14 — 小欧】
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `allocate_and_insert_message` | 预分配 assistant 消息ID + 插入空白行(幂等) | conn, session_id | int(message_id) |
+| `append_execution_step` | 逐步落库:一行=一步 | conn, message_id, session_id, step_index, step_dict | None |
+| `load_execution_steps` | 从 steps 表组装步骤列表(无数据时从chat_messages.execution_steps列读取) | conn, message_id | Optional[list] |
+| `finalize_message` | finally 轻量终态更新(content+status) | conn, message_id, content, status | None |
+
 ---
 
 ## 三、工具层（app/services/tools/toolhelper/）
@@ -176,13 +185,14 @@ def my_parse_json(json_str):
 
 ---
 
-**最后更新时间**: 2026-07-10 13:00:25
+**最后更新时间**: 2026-07-14 10:30:00
 **维护人**: 小沈
 
 ## 版本历史
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v1.9 | 2026-07-14 | 新增storage.py步骤存储4函数(allocate_and_insert_message/append_execution_step/load_execution_steps/finalize_message) | 小欧 |
 | v1.8 | 2026-07-10 | 删除test_marker.py（已废弃） | 小沈 |
 | v1.7 | 2026-07-08 | table_helper新增dict_table_to_rows，增强normalize_table_data（支持dict/list[dict]/None） | 小欧 |
 | v1.6 | 2026-07-05 | text_utils新增add_line_numbers公共函数 | 小欧 |
