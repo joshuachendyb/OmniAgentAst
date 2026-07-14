@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-12
-   用户输入: 你能做什么？介绍你的能力
+    用户输入: "Multi-dimensional self-intro (file/code/web/system/data), tech, capability boundary table; conversation only, no tools"
    通过标准: 流正常结束；不调工具；回复包含能力描述
    失败标准: 流异常中止；调用了工具
 
@@ -15,11 +15,19 @@
 
 -- 小健 2026-06-14, 小沈 2026-07-03 rewrite
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多维度LLM提问,保持禁工具) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-12"
 TEST_CASE_NAME = "自我介绍通路验证"
-USER_INPUT = "Tell me about yourself - what can you do? Describe your capabilities in detail."
+USER_INPUT = ("Tell me about yourself in depth. Please cover: "
+               "(1) your full capability spectrum across file operations, coding/execution, web search, "
+               "system administration and data analysis, with 2 concrete examples each; "
+               "(2) the underlying technology and how streaming responses work; "
+               "(3) which file types and data formats you support; "
+               "(4) scenarios where you will refuse or ask for confirmation. "
+               "End with a comparison table of 'can do / cannot do / needs confirmation'. "
+               "Note: answer by conversation only, do not invoke any tools.")
 
 from datetime import datetime
 

@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-04
-   用户输入: 列出E:\test_dir下的所有文件和子目录，显示文件名、大小、最后修改时间
+    用户输入: "列出test_dir文件(名称/大小/时间,按扩展名分组)->读test.txt前5行->Python统计->汇总dir_inventory_report.md->Shell确认"
    前置数据: E:\test_dir\目录存在且有文件
    预期过程: 调用send_chat，SSE流正常结束，DB记录完整
    通过标准: 流正常结束；工具调用>0；DB三张表有记录且一致
@@ -18,11 +18,15 @@
 
 -- 小健 2026-06-14, 小沈 2026-07-03 rewrite
 -- 更新: 2026-07-03(铁律6: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-04a"
 TEST_CASE_NAME = "数据持久化通路验证"
-USER_INPUT = "list all files and subdirs under E:\\test_dir with name, size, last modified time, group by extension, and save dir_inventory.txt"
+USER_INPUT = ("请列出E:\\test_dir下所有文件和子目录（名称/大小/修改时间），按扩展名分组；"
+               "读取其中test.txt的前5行；用Python统计目录下各类文件的数量与总大小；"
+               "最后把目录清单、文件抽样内容和统计结果汇总成dir_inventory_report.md保存到E:\\test_dir，"
+               "并用Shell执行一条命令确认该报告文件已生成。")
 
 from datetime import datetime
 from pathlib import Path

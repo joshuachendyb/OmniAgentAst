@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-04b
-   用户输入: 搜索Python/react/go多层次教程并写多篇手册
+    用户输入: "搜索Python/React/Go资源(各>=1次)->建3个手册->Python统计行数/代码数->汇总analysis_report.md(多工具链路)"
    预期过程: 搜索+创建文件
    通过标准: 流正常结束；调用搜索工具；文件被创建
    失败标准: 流异常中止；无工具调用
@@ -16,11 +16,15 @@
 
 -- 小健 2026-06-14, 小沈 2026-07-03 rewrite
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-04b"
 TEST_CASE_NAME = "FILE+NETWORK混合通路验证"
-USER_INPUT = "search for Python, React, Go learning resources, create study manuals in E:\\test_dir, and write an analysis report"
+USER_INPUT = ("请分别搜索Python、React、Go的优质学习资源（每个语言至少搜索1次），下载或整理每个语言的核心概念与示例代码，"
+               "在E:\\test_dir下创建三个学习手册文件（python_manual.md、react_manual.md、go_manual.md）。"
+               "然后用Python统计三个手册的总行数与代码示例数。最后把搜索来源、手册结构和统计结果"
+               "汇总成analysis_report.md保存到E:\\test_dir，并用Shell确认该报告已生成。")
 
 from datetime import datetime
 

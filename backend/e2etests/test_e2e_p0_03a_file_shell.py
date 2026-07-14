@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-03
-   用户输入: "帮我创建一个E:\test_dir\run_python.py文件，内容是print('test')，然后执行它看看输出"
+    用户输入: "创建system_check.py->执行->读输出提取关键信息->Shell复制到report->4种文档格式总结(长链路)"
    前置数据: E:\test_dir\可写；python在PATH中
    预期调用链: write_text_file->execute_shell_command(python)
    通过标准: 文件存在；执行输出包含"test"
@@ -18,6 +18,7 @@
 
 -- 小沈 2026-06-22
 -- 更新: 2026-07-03(铁律6: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-03a"
@@ -28,10 +29,11 @@ USER_INPUT = (
     "导入sys、os、datetime三个模块，获取当前系统时间和时区信息，获取Python版本号和解释器路径，"
     "获取操作系统名称和环境变量PATH的值，将所有获取到的信息格式化输出。"
     "第二阶段，使用python命令执行system_check.py脚本，捕获全部标准输出和标准错误输出。"
-    "第三阶段，把执行输出的内容逐行分析——提取出时间信息、Python版本、系统名称和PATH路径，"
+    "第三阶段，读取执行输出，把内容逐行分析——提取出时间信息、Python版本、系统名称和PATH路径，"
     "将提取的关键信息整理成结构化的摘要保存到E:\\test_dir\\system_check_output.txt。"
-    "第四阶段，读取输出文件确认内容正确完整，并将执行结果与脚本内容对比验证。"
-    "将本次任务的分析和完成过程总结以4种文档格式写到report目录下自建任务相关的目录下保存。"
+    "第四阶段，用Shell执行命令将system_check_output.txt复制到report目录下，并读取report目录中的副本确认复制成功。"
+    "第五阶段，读取原始脚本与输出摘要，将执行结果与脚本内容对比验证；"
+    "最后把本次任务的分析和完成过程总结以4种文档格式写到report目录下自建任务相关的目录下保存。"
 )
 
 from datetime import datetime

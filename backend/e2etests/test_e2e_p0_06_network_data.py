@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-06
-   用户输入: 搜索科技新闻+关键词分析+写报告
+    用户输入: "搜索科技新闻(>=2关键词)->抓取提取关键词做词频->Python画news_freq.png->汇总news_analysis.txt->读回确认"
    通过标准: 流正常结束；调用网络搜索；DB记录完整
    失败标准: 流异常中止；无网络搜索
 
@@ -15,11 +15,14 @@
 
 -- 小健 2026-06-14, 小沈 2026-07-03 rewrite
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-06"
 TEST_CASE_NAME = "NETWORK+DATA混合通路验证"
-USER_INPUT = "search today tech news with 2 keywords, extract keywords, analyze frequency, summarize 3 hot topics, save news_analysis.txt report"
+USER_INPUT = ("请搜索今天科技新闻（用至少2个关键词），抓取搜索结果页面提取正文关键词并做词频统计，归纳3个热点话题；"
+               "用Python把关键词频率画成条形图保存到E:\\test_dir\\news_freq.png；"
+               "最后把热点摘要、词频表和图表说明汇总成news_analysis.txt保存到E:\\test_dir，并读取确认内容完整。")
 
 from datetime import datetime
 

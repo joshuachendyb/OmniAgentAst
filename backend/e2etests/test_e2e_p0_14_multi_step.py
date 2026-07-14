@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-14
-   用户输入: "read E:\test_dir\test.txt and tell me what it says"
+    用户输入: "读取test.txt->统计字符/词/行/中英比例->Python词频Top10->汇总report.md(多工具链路)"
    预期过程: 先调read_file，再回复内容
    通过标准: 调用了read_file；回复中包含文件内容；DB有2条steps
    失败标准: 未调用read_file；回复中无文件内容
@@ -16,11 +16,15 @@
 
 -- 小健 2026-06-14, 小欧 2026-06-30 renumber
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-14"
 TEST_CASE_NAME = "多步推理通路验证"
-USER_INPUT = "read E:\\test_dir\\test.txt and tell me what it says"
+USER_INPUT = ("请先读取E:\\test_dir\\test.txt的全部内容，统计其字符数（含空格与不含空格）、单词数、行数、"
+               "中文字符数与英文字符数，以及是否包含数字或特殊字符。然后基于文件内容用Python写一段脚本"
+               "做词频Top10分析并运行它。最后把原始内容、统计特征与词频分析结果汇总成报告"
+               "保存到E:\\test_dir\\test_analysis_report.md。所有结论必须基于真实读取的内容。")
 
 from datetime import datetime
 from pathlib import Path

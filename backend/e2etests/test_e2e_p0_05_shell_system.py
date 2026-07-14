@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-05
-   用户输入: 系统信息收集+dir列表+进程TOP5+写报告
+    用户输入: "系统信息(OS/CPU/RAM/磁盘)+列test_dir+Shell取CPU Top5存raw->读raw用Python解析->汇总sys_info.txt->Shell确认"
    通过标准: 流正常结束；调用shell工具；DB记录完整
    失败标准: 流异常中止；DB记录不完整
 
@@ -15,11 +15,14 @@
 
 -- 小健 2026-06-14, 小沈 2026-07-03 rewrite
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-05"
 TEST_CASE_NAME = "SHELL+SYSTEM混合通路验证"
-USER_INPUT = "get system info (OS, CPU, RAM, disk), list E:\\test_dir files, show top 5 CPU processes, save sys_info.txt report"
+USER_INPUT = ("请收集系统信息（OS、CPU、RAM、磁盘），列出E:\\test_dir下的文件；用Shell执行命令显示CPU占用Top5进程"
+               "并将结果保存到sys_info_raw.txt。然后读取该文件，用Python解析出Top5进程名与CPU占比。"
+               "最后把系统概况、文件清单和进程解析结果汇总成sys_info.txt保存到E:\\test_dir，并用Shell确认该文件已生成。")
 
 from datetime import datetime
 

@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-09
-   用户输入: 系统信息+文件列表+搜索+整合报告
+    用户输入: "系统信息(OS/CPU/RAM/磁盘)+列test_dir+搜索AI新闻->Python整理sys_ai.json->读回校验->汇总comprehensive_report.md->Shell确认"
    通过标准: 流正常结束；工具调用>0；DB记录完整
    失败标准: 流异常中止；DB记录不完整
 
@@ -15,11 +15,14 @@
 
 -- 小健 2026-06-14, 小沈 2026-07-03 rewrite
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-09"
 TEST_CASE_NAME = "SHELL+SYSTEM+NETWORK混合通路验证"
-USER_INPUT = "get system info, list files in E:\\test_dir, search for AI latest news, and write a comprehensive report"
+USER_INPUT = ("请收集系统信息（OS、CPU、RAM、磁盘），列出E:\\test_dir下的文件，并网上搜索AI最新进展新闻（至少1次）。"
+               "用Python把系统信息整理成结构化JSON保存到sys_ai.json，读取该JSON确认字段完整；"
+               "最后把系统概况、文件清单和AI新闻摘要汇总成comprehensive_report.md保存到E:\\test_dir，并用Shell确认该文件已生成。")
 
 from datetime import datetime
 

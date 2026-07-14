@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-15
-   用户输入: "list all files in E:\test_dir"
+    用户输入: "列出test_dir文件(名称/大小/类型/时间,按扩展名分组)->读test.txt前3行->汇总inventory_report.md->Shell确认"
    前置数据: E:\test_dir\目录存在且有文件(test.txt等)
    预期过程: 调用list_directory，返回文件列表
    通过标准: sessions表有记录；messages表有user+assistant；execution_steps有步骤记录
@@ -18,11 +18,14 @@
 
 -- 小健 2026-06-15, 小欧 2026-06-30 renumber
 -- 更新: 2026-07-03(铁律6: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-15"
 TEST_CASE_NAME = "数据持久化通路验证"
-USER_INPUT = "list all files in E:\\test_dir"
+USER_INPUT = ("请列出E:\\test_dir下的所有文件和子目录，显示名称、大小、类型与最后修改时间，并按扩展名分组。"
+               "然后读取其中test.txt的内容并提取前3行。最后把目录清单和文件摘要汇总成一份"
+               "inventory_report.md保存到E:\\test_dir，并用Shell执行一条命令确认该报告文件已生成。")
 
 from datetime import datetime
 from pathlib import Path

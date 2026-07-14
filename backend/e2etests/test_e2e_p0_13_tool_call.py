@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-13
-   用户输入: "在E盘创建一个e2e_test_p0.txt，内容为hello"
+    用户输入: "创建e2e_test_p0.txt(hello)->读取校验->Shell查属性->汇总report.md(多工具链路)"
    预期过程: Agent调用write_text_file，返回成功
    通过标准: SSE包含action事件；DB有execution_steps记录；文件存在且内容正确
    失败标准: 未调用工具；文件未创建；DB无记录
@@ -16,11 +16,15 @@
 
 -- 小健 2026-06-15, 小欧 2026-06-30 renumber
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-13"
 TEST_CASE_NAME = "工具调用通路验证"
-USER_INPUT = "在E盘创建一个e2e_test_p0.txt，内容为hello"
+USER_INPUT = ("请在E盘根目录创建一个名为e2e_test_p0.txt的文件，文件内容写入hello。"
+               "创建完成后读取该文件验证内容是否准确写入，再用Shell执行一条命令查看该文件的属性"
+               "（大小与最后修改时间），最后把'创建—读取校验—属性查看'的完整操作过程与结果"
+               "汇总写入E:\\test_dir\\e2e_test_p0_report.md。所有步骤必须真实执行并相互对照验证。")
 
 from datetime import datetime
 from pathlib import Path

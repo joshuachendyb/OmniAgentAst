@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-11
-   用户输入: 创建网络检测脚本+执行+搜索最佳实践+汇总报告
+    用户输入: "创建network_check.py(本机IP/网关/DNS/耗时)->Python执行->搜索诊断最佳实践->读输出对照建议->汇总summary_report.md->Shell确认"
    通过标准: 流正常结束；调用工具；DB记录完整
    失败标准: 流异常中止；DB记录不完整
 
@@ -15,11 +15,15 @@
 
 -- 小健 2026-06-14, 小沈 2026-07-03 rewrite
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-11"
 TEST_CASE_NAME = "网络检测通路验证"
-USER_INPUT = "create a network check script, execute it, search for network diagnosis best practices, and write a summary report"
+USER_INPUT = ("请创建网络检测脚本network_check.py（检测本机IP、网关连通性、DNS解析www.baidu.com、记录各步耗时），"
+               "用Python执行并捕获输出；网上搜索网络诊断最佳实践（至少1次）。"
+               "读取脚本输出，对照最佳实践给出优化建议；最后把脚本输出、搜索要点与建议"
+               "汇总成summary_report.md保存到E:\\test_dir，并用Shell确认该文件已生成。")
 
 from datetime import datetime
 

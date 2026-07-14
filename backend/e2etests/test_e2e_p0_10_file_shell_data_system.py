@@ -2,7 +2,7 @@
 
 操作手册对照:
    用例: E2E-P0-10
-   用户输入: 文件操作+shell执行+数据分析+系统信息
+    用户输入: "读data.csv->Python分析脚本(均值/最值/缺失率)运行->系统信息+Shell查磁盘剩余存disk_info.txt->读回->汇总combined_report.md->Shell确认"
    通过标准: 流正常结束；工具调用>0；DB记录完整
    失败标准: 流异常中止；DB记录不完整
 
@@ -15,11 +15,15 @@
 
 -- 小健 2026-06-14, 小沈 2026-07-03 rewrite
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
+-- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
 """
 
 TEST_CASE_ID = "E2E-P0-10"
 TEST_CASE_NAME = "FILE+SHELL+DATA+SYSTEM混合通路验证"
-USER_INPUT = "read E:\\test_dir\\data.csv, run python analysis script, get system info, and save combined report"
+USER_INPUT = ("请读取E:\\test_dir\\data.csv，用Python写一段分析脚本计算各列均值、最值、缺失率并运行；"
+               "收集系统信息（OS、CPU、RAM、磁盘），并用Shell执行命令显示磁盘剩余空间保存到disk_info.txt。"
+               "读取data.csv前5行与disk_info.txt确认内容。最后把数据分析结果、系统信息与磁盘情况"
+               "汇总成combined_report.md保存到E:\\test_dir，并用Shell确认该文件已生成。")
 
 from datetime import datetime
 
