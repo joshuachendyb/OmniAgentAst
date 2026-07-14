@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-14 - 小欧 - _load_previous_messages改为从chat_message_steps组装(load_execution_steps), 多轮上下文读取新表
 """
 stream — SSE流运行器（消费者）
 
@@ -18,6 +20,8 @@ from app.services.agent.steps import ErrorStep
 from app.services.task.task_state import agent_streams
 from app.logger import logger
 from app.utils.sse_formatter import format_agent_sse
+from app.utils.json_utils import safe_json_dumps  # steps序列化为JSON串供多轮上下文 — 小欧 2026-07-14
+from app.services.chat.storage import load_execution_steps  # 从chat_message_steps组装 — 小欧 2026-07-14
 
 
 def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
@@ -62,26 +66,29 @@ def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
 
 def _load_previous_messages(session_id: str) -> List[Dict[str, Any]]:
     """从DB加载会话历史消息 — 小健 2026-06-17 委托db层，消除SQLite越界
-    小欧 2026-06-25: 抽取_parse_tool_calls/_parse_observations消除嵌套try/except"""
+    小欧 2026-06-25: 抽取_parse_tool_calls/_parse_observations消除嵌套try/except
+    小欧 2026-07-14: 从chat_message_steps组装"""
     try:
         with db.get_conn("chat") as conn:
             rows = conn.execute(
-                "SELECT id, role, content, execution_steps FROM chat_messages "
+                "SELECT id, role, content FROM chat_messages "
                 "WHERE session_id=? ORDER BY id ASC",
                 (session_id,),
             ).fetchall()
-        messages = []
-        for msg_id, role, content, exec_steps_json in rows:
-            if role == "user":
-                messages.append({"role": "user", "content": content or ""})
-            elif role == "assistant":
-                tool_calls = _parse_tool_calls(msg_id, exec_steps_json) if exec_steps_json else []
-                if tool_calls:
-                    messages.append({"role": "assistant", "content": content or "", "tool_calls": tool_calls})
-                else:
-                    messages.append({"role": "assistant", "content": content or ""})
-                if exec_steps_json:
-                    messages.extend(_parse_observations(msg_id, exec_steps_json))
+            messages = []
+            for msg_id, role, content in rows:
+                if role == "user":
+                    messages.append({"role": "user", "content": content or ""})
+                elif role == "assistant":
+                    steps = load_execution_steps(conn, msg_id)
+                    steps_json = safe_json_dumps(steps) if steps else None
+                    tool_calls = _parse_tool_calls(msg_id, steps_json) if steps_json else []
+                    if tool_calls:
+                        messages.append({"role": "assistant", "content": content or "", "tool_calls": tool_calls})
+                    else:
+                        messages.append({"role": "assistant", "content": content or ""})
+                    if steps_json:
+                        messages.extend(_parse_observations(msg_id, steps_json))
         return messages
     except Exception as e:
         # 【P1-14修复】DB异常加日志而非静默吞掉 — chendyg 2026-06-26

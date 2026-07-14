@@ -3,6 +3,8 @@ sse — 执行步骤流式查看
 提供从DB读取执行步骤并通过SSE流式输出的端点
 小欧 2026-07-10
 """
+# 编辑历史:
+# 2026-07-14 - 小欧 - _generate_execution_stream改为从chat_message_steps读取步骤列表, SELECT去除execution_steps列, 统一步骤解析走load_execution_steps
 
 import json
 import asyncio
@@ -10,8 +12,8 @@ from typing import Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from app.utils.time_utils import create_timestamp
-from app.utils.json_utils import parse_json
 from app.db import db
+from app.services.chat.storage import load_execution_steps  # 从chat_message_steps组装 — 小欧 2026-07-14
 
 router = APIRouter()
 
@@ -56,7 +58,7 @@ async def _generate_execution_stream(session_id: str):
             
             # 获取会话消息和执行步骤
             cursor.execute(
-                '''SELECT id, session_id, role, content, timestamp, execution_steps 
+                '''SELECT id, session_id, role, content, timestamp
                    FROM chat_messages 
                    WHERE session_id = ?
                    ORDER BY timestamp ASC''',
@@ -65,57 +67,40 @@ async def _generate_execution_stream(session_id: str):
             
             rows = cursor.fetchall()
         
-        if not rows:
-            # 会话不存在或没有消息
-            yield "event: error\ndata: {\"error\": \"会话不存在或没有消息\"}\n\n"
-            return
-        
-        # 遍历所有消息,构建执行步骤流
-        for row in rows:
-            role = row['role']
-            content = row['content']
-            execution_steps_json = row['execution_steps']
+            if not rows:
+                # 会话不存在或没有消息
+                yield "event: error\ndata: {\"error\": \"会话不存在或没有消息\"}\n\n"
+                return
             
-            if role == 'user':
-                # 用户消息,发送thought事件
-                yield f"event: step\ndata: {json.dumps(ExecutionStep('thought', f'用户: {content}').to_dict(), ensure_ascii=False)}\n\n"
-            
-            elif role == 'assistant':
-                # AI回复
-                if execution_steps_json:
-                    # 有执行步骤,解析并发送
-                    try:
-                        steps = parse_json(execution_steps_json, label="execution_steps")
-                        if steps and isinstance(steps, list):
-                            for step in steps:
-                                step_type = step.get('type', 'thought')
-                                step_data = ExecutionStep(
-                                    step_type=step_type,
-                                    content=step.get('content', ''),
-                                    tool=step.get('tool', ''),
-                                    params=step.get('params', {}),
-                                    result=step.get('result'),
-                                    timestamp=step.get('timestamp', create_timestamp())
-                                ).to_dict()
-                                yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
-                                
-                        else:
-                            # 单个步骤对象
+            # 遍历所有消息,构建执行步骤流
+            for row in rows:
+                msg_id = row['id']
+                role = row['role']
+                content = row['content']
+                
+                if role == 'user':
+                    # 用户消息,发送thought事件
+                    yield f"event: step\ndata: {json.dumps(ExecutionStep('thought', f'用户: {content}').to_dict(), ensure_ascii=False)}\n\n"
+                
+                elif role == 'assistant':
+                    # AI回复
+                    # 从 chat_message_steps 组装 — 小欧 2026-07-14
+                    steps = load_execution_steps(conn, msg_id)
+                    if steps and isinstance(steps, list):
+                        for step in steps:
+                            step_type = step.get('type', 'thought')
                             step_data = ExecutionStep(
-                                step_type=steps.get('type', 'thought'),
-                                content=steps.get('content', content),
-                                tool=steps.get('tool', ''),
-                                params=steps.get('params', {}),
-                                result=steps.get('result'),
-                                timestamp=create_timestamp()
+                                step_type=step_type,
+                                content=step.get('content', ''),
+                                tool=step.get('tool', ''),
+                                params=step.get('params', {}),
+                                result=step.get('result'),
+                                timestamp=step.get('timestamp', create_timestamp())
                             ).to_dict()
                             yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
-                    except json.JSONDecodeError:
-                        # 解析失败,发送纯文本
+                    elif content:
+                        # 没有执行步骤,发送最终内容
                         yield f"event: step\ndata: {json.dumps(ExecutionStep('final', content).to_dict(), ensure_ascii=False)}\n\n"
-                else:
-                    # 没有执行步骤,发送最终内容
-                    yield f"event: step\ndata: {json.dumps(ExecutionStep('final', content).to_dict(), ensure_ascii=False)}\n\n"
         
         # 发送完成事件
         yield f"event: complete\ndata: {json.dumps({'type': 'complete', 'content': '执行完成'}, ensure_ascii=False)}\n\n"

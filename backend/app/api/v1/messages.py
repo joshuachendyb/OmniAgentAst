@@ -1,6 +1,8 @@
 # 消息管理API路由(单条消息 CRUD)
 # 编程人:小沈
 # 创建时间:2026-05-28
+# 编辑历史:
+# 2026-07-14 - 小欧 - GET消息历史改为从chat_message_steps读取步骤列表, SELECT去除execution_steps列,无数据时从chat_messages.execution_steps列读取
 
 """
 消息管理API路由
@@ -29,7 +31,7 @@ from app.utils.time_utils import format_timestamp
 from app.utils.json_utils import parse_json
 from app.db import db
 from app.db.models.chat_models import MessageResponse
-from app.services.chat.storage import track_user_message, get_user_message_id
+from app.services.chat.storage import track_user_message, get_user_message_id, load_execution_steps
 
 router = APIRouter()
 
@@ -54,12 +56,14 @@ async def get_session_messages(session_id: str):
         if not session:
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
 
-        cursor.execute('''SELECT id, session_id, role, content, timestamp, execution_steps, display_name
+        cursor.execute('''SELECT id, session_id, role, content, timestamp, display_name
                        FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC''', (session_id,))
 
         messages = []
         for row in cursor.fetchall():
-            steps = parse_json(row['execution_steps'], label="execution_steps")
+            msg_id = row['id']
+            # 从 chat_message_steps 表读取步骤列表 — 小欧 2026-07-14
+            steps = load_execution_steps(conn, msg_id)
             display_name = row['display_name']
             if not display_name and steps:
                 display_name = extract_display_name_from_steps(steps)
