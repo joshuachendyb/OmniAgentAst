@@ -6,6 +6,9 @@ hitl_confirmation — HITL人工确认机制(业务逻辑层)
 API层仅保留路由函数confirm_operation,业务逻辑全部在此。
 
 小沈 2026-06-17
+
+编辑历史:
+  2026-07-14 小欧 集中MAX_PENDING_CONFIRMATIONS至app.constants(代码变迁遗留,非功能退化,同步改导入)
 """
 
 import asyncio
@@ -16,7 +19,7 @@ from uuid import uuid4
 
 from app.services.task.task_runtime import check_cancelled
 
-from app.constants import HITL_TIMEOUT
+from app.constants import HITL_TIMEOUT, MAX_PENDING_CONFIRMATIONS
 from app.logger import logger
 
 
@@ -25,7 +28,7 @@ class _PendingConfirmation:
     """待确认请求"""
     future: asyncio.Future
     created_at: float
-MAX_PENDING_CONFIRMATIONS = 100
+# 注: MAX_PENDING_CONFIRMATIONS 已集中迁移至 app.constants(2026-07-14 小欧)
 _pending_confirmations: Dict[str, _PendingConfirmation] = {}
 _last_cleanup_time: float = 0.0
 _CLEANUP_INTERVAL = 10

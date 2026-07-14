@@ -3,6 +3,11 @@ LLM 核心模块 — BaseAIService
 
 重构: 删除mixin继承, 统一为request/request_stream/chat + mode参数 - 小沈 2026-06-09
 FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
+清理: 删除死代码_is_rate_limit_status(无调用方,限流由SystemErrorClassifier覆盖) - 小欧 2026-07-14
+
+编辑历史:
+  2026-07-14 小欧 删除死代码_is_rate_limit_status(无调用方,限流由SystemErrorClassifier覆盖,功能零退化)
+  2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL至app.constants(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/测试导入)
 """
 
 import asyncio
@@ -13,20 +18,13 @@ import httpx
 from app.logger import logger
 from app.utils.json_utils import parse_json, _try_fix_incomplete_json, _normalize_tool_params
 from app.services.llm.core import ChatResponse, FCFormatError, StreamChunk, _resolve_exception
-# LLM层常量 — 合并自llm_constants.py 小健 2026-07-03
-LLM_TEMPERATURE = 0.7
-LLM_TOOL_CHOICE = "auto"
-LLM_STREAM_MAX_RETRIES = 3
-LLM_STREAM_OPTIONS = {"include_usage": True}
-FC_FALLBACK_ENABLED = True
-FC_MAX_RETRIES = 2
-TOOL_CACHE_TTL = 300
+# 注: LLM_*/FC_*/TOOL_CACHE_TTL 已集中迁移至 app.constants(2026-07-14 小欧)
 from app.services.llm.core import create_cancelled_chunk
 from app.services.llm.client_sdk import create_llm_client
 from app.services.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
 from app.services.llm.error_classifier import SystemErrorClassifier
 
-from app.constants import DEFAULT_READ_TIMEOUT, RATE_LIMIT_STATUS_CODES
+from app.constants import DEFAULT_READ_TIMEOUT, LLM_TEMPERATURE, LLM_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS
 
 
 class BaseAIService:
@@ -103,9 +101,6 @@ class BaseAIService:
             return await self._stop_check()
         return self._cancelled
 
-
-    def _is_rate_limit_status(self, status_code: int) -> bool:
-        return status_code in RATE_LIMIT_STATUS_CODES
 
     def _create_stream_error_chunk(self, e: Exception) -> StreamChunk:
         msg, err_type = _resolve_exception(e)

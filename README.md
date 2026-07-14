@@ -79,7 +79,7 @@ OmniAgentAs-desk 是一个基于 **ReAct (Reasoning + Acting)** 架构的智能�
 | API 网关 | FastAPI 直接对外，无独立 Gateway 微服务 | ❌ 未独立成层 |
 | 用户认证 | 仅 HITL 人工确认（`action_handler.authorization_required`）+ 敏感字段脱敏 | ❌ 无用户登录/鉴权体系 |
 | 权限 | 工具/文件路径级校验（`file_path_checker`/`registry_path_checker`） | ❌ 无用户级 RBAC |
-| 限流 | 仅 LLM 429 限流检测（`base_service._is_rate_limit_status`） | ❌ 无请求级/IP 限流 |
+| 限流 | 仅 LLM 429 限流检测（`SystemErrorClassifier` 识别 HTTP 429） | ❌ 无请求级/IP 限流 |
 | 日志 | 有（`app/logger/`） | ✅ |
 | 任务队列 | 无 Redis/Celery/RQ；任务在单次请求内流式执行（`chat/stream.py`→`run_react_cycle`），由 `task_tracker` 做暂停/取消/恢复 | ❌ 无独立任务队列服务 |
 | 缓存 | 无 | ❌ 无 Redis 缓存 |

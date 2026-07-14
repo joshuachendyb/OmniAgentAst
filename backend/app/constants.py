@@ -18,6 +18,12 @@
 禁止：
   ❌ 本文件引用 tool_constants.py 的任何内容
   ❌ 本文件的 SYS_HTTP_* 被工具层代码直接引用（工具层应引用 tool_constants.py 的 TOOL_HTTP_*）
+
+编辑历史:
+  2026-07-14 小欧 删除死代码RATE_LIMIT_STATUS_CODES(无调用方,限流由error_classifier覆盖,功能零退化)
+  2026-07-14 小欧 删除孤儿常量HTTP_RATE_LIMIT(仅被RATE_LIMIT_STATUS_CODES使用,删除后限流仍由error_classifier覆盖,功能零退化)
+  2026-07-14 小欧 加回HTTP_RATE_LIMIT=429并供error_classifier引用,消除裸魔法数429(代码变迁遗留,非功能退化)
+  2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL(base_service.py)与MAX_PENDING_CONFIRMATIONS(hitl_confirmation.py)至constants.py(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/相关测试导入)
 """
 
 import re
@@ -29,8 +35,6 @@ from datetime import timedelta
 
 HTTP_RATE_LIMIT = 429
 
-RATE_LIMIT_STATUS_CODES = {HTTP_RATE_LIMIT, 1305}
-
 # ============================================================
 # 2. 重试与限流
 # ============================================================
@@ -38,6 +42,18 @@ RATE_LIMIT_STATUS_CODES = {HTTP_RATE_LIMIT, 1305}
 DEFAULT_MAX_STEPS = 100
 MAX_CONSECUTIVE_CHUNKS = 5
 MAX_CHUNKS_WITHOUT_PROMOTE = 50
+
+# ============================================================
+# LLM 客户端配置（从 base_service.py 集中迁移 2026-07-14 小欧）
+# ============================================================
+
+LLM_TEMPERATURE = 0.7
+LLM_TOOL_CHOICE = "auto"
+LLM_STREAM_MAX_RETRIES = 3
+LLM_STREAM_OPTIONS = {"include_usage": True}
+FC_FALLBACK_ENABLED = True
+FC_MAX_RETRIES = 2
+TOOL_CACHE_TTL = 300
 
 # ============================================================
 # 3. 网络与超时
@@ -94,6 +110,9 @@ TASK_TIMEOUT = timedelta(hours=1)
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧
 HITL_TIMEOUT = 120
+
+# HITL最大待确认数（从 hitl_confirmation.py 集中迁移 2026-07-14 小欧）
+MAX_PENDING_CONFIRMATIONS = 100
 
 # ============================================================
 # 7. 通用正则常量（从 common_patterns.py 迁入）

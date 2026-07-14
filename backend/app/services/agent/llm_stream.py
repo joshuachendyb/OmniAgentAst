@@ -3,6 +3,9 @@
 llm_stream — LLM流式调用+响应构建
 
 从llm_caller更名 — 小欧 2026-06-25 名实相符
+
+编辑历史:
+  2026-07-14 小欧 FC_FALLBACK_ENABLED/FC_MAX_RETRIES/LLM_TOOL_CHOICE导入源由base_service改为app.constants(常量集中,非功能退化)
 """
 
 import asyncio
@@ -11,7 +14,7 @@ import time
 from typing import Any
 
 from app.services.agent.steps import ChunkStep
-from app.services.llm.base_service import FC_FALLBACK_ENABLED, FC_MAX_RETRIES, LLM_TOOL_CHOICE
+from app.constants import FC_FALLBACK_ENABLED, FC_MAX_RETRIES, LLM_TOOL_CHOICE
 from app.services.llm.core import FCFormatError
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
