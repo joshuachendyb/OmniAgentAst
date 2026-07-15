@@ -4,6 +4,9 @@ LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05
 
 职责:定义LLM层的响应数据类(ChatResponse、StreamChunk)、异常解析(_resolve_exception)。
 
+编辑历史:
+  小欧 - 2026-07-15: FCFormatError.__init__加self.message=message,补缺失的实例属性(写测试挖出的预存bug)
+
 拆分原则:数据/辅助定义与BaseAIService主服务类分离,遵循SRP。
 对外透明:llm_core.py重新导出这些类,外部import路径不变。
 """
@@ -16,6 +19,7 @@ class FCFormatError(Exception):
     """FC格式错误 — LLM返回的tool_calls无法解析 — 小欧 2026-06-25"""
     def __init__(self, *, message: str, details: dict = None):
         super().__init__(message)
+        self.message = message  # 小欧 2026-07-15: 补缺失实例属性,防_format_fc_error访问e.message时AttributeError
         self.details = details or {}
 
 
