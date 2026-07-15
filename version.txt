@@ -1,4 +1,16 @@
-﻿v0.18.19
+﻿v0.18.20
+更新时间: 2026-07-15 - 小欧-2026-07-15
+## v0.18.19→v0.18.20 变更汇总 - 小欧-2026-07-15
+
+### 最新改版（持续修改不覆盖）：
+- fix: e2e_helpers.py check_logs时间过滤截断start_time微秒,防同秒日志误过滤(日志仅秒精度,datetime.now()有微秒,导致同秒session记录被滤掉) - 小欧-2026-07-15
+- test: e2e_helpers.py check_logs加_debug_raw_lines/_debug_filtered_lines/_debug_session_in_raw/_debug_session_in_filtered字段 - 小欧-2026-07-15
+- test: e2e_p0_*+e2e_p6_* session_records_found断言含debug调试信息 - 小欧-2026-07-15
+- fix: core.py FCFormatError补self.message属性,防_format_fc_error崩溃 - 小欧-2026-07-15
+- fix: llm_stream.py FC重试拦截流式error+last_error=None兜底防崩溃 - 小欧-2026-07-15
+- E2E全链路: P0全部18个case PASSED(含P0-01/P0-13微秒精度bug修复复测) - 小欧-2026-07-15
+
+v0.18.19
 更新时间: 2026-07-14 13:10:16 - 小欧-2026-07-14
 ## v0.18.18→v0.18.19 变更汇总 - 小欧-2026-07-14
 
