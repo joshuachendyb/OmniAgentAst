@@ -14,9 +14,10 @@
 
 作者: 小欧 - 2026-06-29
 
-编辑历史:
-  2026-07-14 小欧 消除裸魔法数429: 引入HTTP_RATE_LIMIT常量供HTTP_STATUS_TO_ERROR_TYPE引用(代码变迁遗留,非功能退化)
-  2026-07-15 小欧 老陈裁定: HTTP_RATE_LIMIT 常量多余且 HTTP_ 前缀不准, 删除; HTTP_STATUS_TO_ERROR_TYPE 中 429 改回裸数字(与其他 HTTP 状态码并列), 功能零退化
+ 编辑历史:
+   2026-07-14 小欧 消除裸魔法数429: 引入HTTP_RATE_LIMIT常量供HTTP_STATUS_TO_ERROR_TYPE引用(代码变迁遗留,非功能退化)
+   2026-07-15 小欧 老陈裁定: HTTP_RATE_LIMIT 常量多余且 HTTP_ 前缀不准, 删除; HTTP_STATUS_TO_ERROR_TYPE 中 429 改回裸数字(与其他 HTTP 状态码并列), 功能零退化
+   2026-07-16 小欧 新增CLIENT枚举: 400/401/403归CLIENT不重试(4xx客户端错确定性失败,429限流仍归SERVER可重试)
 """
 
 import re
@@ -37,37 +38,41 @@ except ImportError:
 class SystemErrorCategory(Enum):
     """系统级错误分类枚举"""
     CIRCUIT_OPEN = "circuit_open"
+    CLIENT = "client"
     SERVER = "server"
     UNKNOWN = "unknown"
     EMPTY_RESPONSE = "empty_response"
     IDLE_TIMEOUT = "idle_timeout"
-    
+
     @property
     def is_retryable(self) -> bool:
         """判断系统错误是否可重试"""
         retryable_categories = {
             SystemErrorCategory.IDLE_TIMEOUT,
             SystemErrorCategory.SERVER,
+            # CLIENT(4xx客户端错) 不在可重试集合：400/401/403 确定性失败，重发必再失败
         }
         return self in retryable_categories
-    
+
     @property
     def to_status(self) -> str:
         """转换为状态字符串"""
         mapping = {
             SystemErrorCategory.CIRCUIT_OPEN: "error",
+            SystemErrorCategory.CLIENT: "client_error",
             SystemErrorCategory.SERVER: "server_error",
             SystemErrorCategory.UNKNOWN: "error",
             SystemErrorCategory.EMPTY_RESPONSE: "empty_response",
             SystemErrorCategory.IDLE_TIMEOUT: "idle_timeout",
         }
         return mapping.get(self, "error")
-    
+
     @property
     def description(self) -> str:
         """错误描述"""
         mapping = {
             SystemErrorCategory.CIRCUIT_OPEN: "熔断器打开",
+            SystemErrorCategory.CLIENT: "客户端错误",
             SystemErrorCategory.SERVER: "服务器错误",
             SystemErrorCategory.UNKNOWN: "未知错误",
             SystemErrorCategory.EMPTY_RESPONSE: "空响应",
@@ -77,10 +82,11 @@ class SystemErrorCategory(Enum):
 
 
 # HTTP状态码到错误类型的映射
+# 4xx 客户端错(400/401/403)归 CLIENT 不可重试；429 限流是唯一可重试 4xx 仍归 SERVER — 小欧 2026-07-16
 HTTP_STATUS_TO_ERROR_TYPE: Dict[int, SystemErrorCategory] = {
-    400: SystemErrorCategory.SERVER,
-    401: SystemErrorCategory.SERVER,
-    403: SystemErrorCategory.SERVER,
+    400: SystemErrorCategory.CLIENT,
+    401: SystemErrorCategory.CLIENT,
+    403: SystemErrorCategory.CLIENT,
     429: SystemErrorCategory.SERVER,
     500: SystemErrorCategory.SERVER,
     502: SystemErrorCategory.SERVER,
@@ -91,6 +97,7 @@ HTTP_STATUS_TO_ERROR_TYPE: Dict[int, SystemErrorCategory] = {
 # 错误类型到用户友好消息的映射
 SYSTEM_ERROR_TYPE_TO_MESSAGE: Dict[SystemErrorCategory, Tuple[str, str]] = {
     SystemErrorCategory.CIRCUIT_OPEN: ("circuit_open", "服务暂时不可用,请稍后重试"),
+    SystemErrorCategory.CLIENT: ("client", "客户端错误:请求参数异常"),
     SystemErrorCategory.SERVER: ("server", "服务器错误,请稍后重试或更换模型"),
     SystemErrorCategory.UNKNOWN: ("unknown", "AI 处理异常,请稍后重试"),
     SystemErrorCategory.EMPTY_RESPONSE: ("empty_response", "AI服务返回空响应,请稍后重试"),
