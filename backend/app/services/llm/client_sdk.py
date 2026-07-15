@@ -7,6 +7,7 @@ Author: 小沈 - 2026-05-29
 SDK 只管发 HTTP 请求,不处理错误,异常原样抛出。
 
 FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-06-11
+编辑历史: 2026-07-16 小欧 request_stream 响应错误路径: >=400时记录响应体后raise_for_status(所有4xx/5xx可见错误原因)
 """
 
 import httpx
@@ -168,7 +169,11 @@ class LLMClient:
             pool=DEFAULT_POOL_TIMEOUT,
         )
         async with self._client.stream("POST", "/chat/completions", json=body, timeout=_timeout) as response:
-            response.raise_for_status()
+            # 记录所有 4xx/5xx 错误响应体(>=400), 定位错误原因 — 小欧 2026-07-16
+            if response.status_code >= 400:
+                response_body = await response.aread()
+                logger.error(f"[LLM] HTTP {response.status_code} 响应体: {response_body.decode('utf-8', errors='replace')}")
+                response.raise_for_status()
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
                     data = line[6:]
