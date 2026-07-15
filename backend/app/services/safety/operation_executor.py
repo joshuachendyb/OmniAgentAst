@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-15 - 小欧 - execute_with_safety返回值(bool)改(bool, Optional[str]): 原仅返bool, 操作失败吞掉真实错误(如"目标路径已存在...请设置overwrite=True"), 上层只能给LLM笼统"移动/复制/删除失败", LLM无法自我纠正。改后透传真实细节, LLM可据细节重试(如带overwrite=True)。
 """
 operation_executor — 操作执行和备份
 
@@ -8,7 +10,7 @@ operation_executor — 操作执行和备份
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 from uuid import uuid4
 
 from app.config import get_config
@@ -56,8 +58,11 @@ def backup_to_recycle_bin(source_path: Path) -> Optional[Path]:
         return None
 
 
-def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> bool:
-    """安全执行文件操作（自动备份、记录结果）"""
+def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> Tuple[bool, Optional[str]]:
+    """安全执行文件操作（自动备份、记录结果）
+
+    返回 (是否成功, 错误详情)：错误详情透传给上层，避免真因在链路中被吞掉 — 小欧 2026-07-15
+    """
     config = FileSafetyConfig()
     try:
         with db.get_conn("operations") as conn:
@@ -69,7 +74,7 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> b
             row = cursor.fetchone()
             if not row:
                 logger.error(f"Operation not found: {operation_id}")
-                return False
+                return False, None
 
             op_type, src_str, dst_str, created_at_str = row
             source_path = Path(src_str) if src_str else None
@@ -87,8 +92,8 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> b
 
             success_raw = operation_func(*args, **kwargs)
             # 归一化返回值：_delete_sync返回(bool,str)，_copy_sync返回bool
-            # 类型不一致导致cannot unpack non-iterable bool object
             success = success_raw[0] if isinstance(success_raw, tuple) else bool(success_raw)
+            error_detail = success_raw[1] if isinstance(success_raw, tuple) and len(success_raw) > 1 else None
 
             if success:
                 if op_type == OperationType.DELETE.value and backup_path and backup_path.exists():
@@ -115,9 +120,10 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> b
                      info.get("extension"), duration_ms, space_impact, executed_at, operation_id),
                 )
                 logger.debug(f"Operation executed successfully: {operation_id}")
+                return True, None
             else:
-                update_op_failed(cursor, operation_id, "Operation failed")
-        return success
+                update_op_failed(cursor, operation_id, error_detail or "Operation failed")
+                return False, error_detail
     except Exception as e:
         logger.error(f"Error executing operation {operation_id}: {e}")
-        return False
+        return False, str(e)

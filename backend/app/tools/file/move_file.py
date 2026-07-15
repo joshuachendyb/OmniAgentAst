@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"移动文件失败"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
 """
 F10: move_file — 移动文件
 
@@ -98,14 +100,15 @@ async def _move_file_impl(
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
         if operation_id:
-            success = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_move_sync)
+            success, detail = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_move_sync)
         else:
             logger.info("Database unavailable, executing move operation without recording")
             success = await asyncio.to_thread(_move_sync)
 
         if success:
             return {"success": True, "operation_id": operation_id, "source": str(src), "destination": str(dst)}
-        return {"success": False, "error_detail": "移动文件失败", "params": {"source": source_path, "destination": destination_path}}
+        # 透传真实错误细节（如"目标路径已存在…请设置overwrite=True"），避免退化为笼统提示 — 小欧 2026-07-15
+        return {"success": False, "error_detail": detail or "移动文件失败", "params": {"source": source_path, "destination": destination_path}}
 
     except Exception as e:
         logger.error(f"Failed to move {source_path} -> {destination_path}: {e}")

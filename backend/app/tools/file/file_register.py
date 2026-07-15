@@ -180,6 +180,7 @@ FILE_TOOL_EXAMPLES = {
     ],
     "rename": [
         {"source": "D:/old.txt", "destination": "new.txt"},
+        {"source": "D:/conflict.txt", "destination": "existing.txt", "overwrite": True},
     ],
 }
 

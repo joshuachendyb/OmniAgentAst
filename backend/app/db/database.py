@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-14 - 小欧 - chat库采用DELETE journal模式,其他库维持WAL; Windows大库场景设计选择
+# 2026-07-15 - 小欧 - get_conn异常分支拆分: 原except Exception兜底所有异常并记"DB operation failed", 业务异常(如rename目标已存在抛FileExistsError)被误报为数据库故障, 且被execute_with_safety二次记日志形成双重日志(首条为误报)。改后仅sqlite3.Error记DB错误日志, 业务异常仅rollback后raise不误报。
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -90,14 +91,22 @@ class DatabaseManager:
             
             conn.commit()
             
-        except Exception as e:
+        except sqlite3.Error as e:
+            # DB级错误(连接/SQL/事务): 回滚 + 记"DB operation failed" — 小欧 2026-07-15
             if conn:
                 try:
                     conn.rollback()
                 except Exception:
                     logger.warning(f"[db] rollback 失败: {db_name}")
-            
             logger.error(f"DB operation failed [{db_name}]: {e}")
+            raise
+        except Exception as e:
+            # 业务级异常(如FileExistsError): 仅回滚, 不当DB错误记避免误报; 由调用方(如execute_with_safety)记录 — 小欧 2026-07-15
+            if conn:
+                try:
+                    conn.rollback()
+                except Exception:
+                    logger.warning(f"[db] rollback 失败: {db_name}")
             raise
             
         finally:

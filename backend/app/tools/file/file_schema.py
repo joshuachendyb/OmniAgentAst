@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-15 - 小欧 - RenameInput新增overwrite字段(默认False): 配合rename工具支持覆盖, 对齐move/copy/compress/extract, 向后兼容(根因: rename原硬编码overwrite=False且不暴露该参数, 目标已存在时LLM无法用overwrite=True纠正)。
 """
 File Schema - 文件工具参数模型
 
@@ -352,6 +354,7 @@ class DeleteInput(BaseModel):
 class RenameInput(BaseModel):
     path: str = Field(min_length=1, description="原文件/目录路径(绝对路径)")
     dest: str = Field(min_length=1, description="新名称(仅文件名,不含目录路径)")
+    overwrite: bool = Field(default=False, description="目标文件已存在时是否覆盖,默认False")
 
 
 # ============================================================

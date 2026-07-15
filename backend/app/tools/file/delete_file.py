@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"删除文件失败,safety拦截"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
 """
 F12: delete_file — 删除文件
 
@@ -127,9 +129,9 @@ async def _delete_file_impl(
                 return _force_delete_sync(path, recursive), "permanent"
             return _send2trash_sync(path, recursive)
 
-        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24 — 小沈 2026-07-07 execute_with_safety返回bool
+        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24 — 小沈 2026-07-07 execute_with_safety返回(bool,str)
         if operation_id:
-            is_ok = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_delete_sync)
+            is_ok, detail = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_delete_sync)
             method = "permanent" if force else "send2trash"
         else:
             logger.info("Database unavailable, executing delete operation without recording")
@@ -137,7 +139,8 @@ async def _delete_file_impl(
 
         if is_ok:
             return {"success": True, "operation_id": operation_id, "deleted_path": str(path), "mode": method}
-        return {"success": False, "error_detail": "删除文件失败,safety拦截", "params": {"source": file_path}}
+        # 透传真实错误细节，避免退化为笼统提示 — 小欧 2026-07-15
+        return {"success": False, "error_detail": detail or "删除文件失败,safety拦截", "params": {"source": file_path}}
 
     except Exception as e:
         logger.error(f"Failed to delete {file_path}: {e}")

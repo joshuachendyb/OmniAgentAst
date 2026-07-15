@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"复制失败"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
 """
 F7: copy_file — 复制文件
 
@@ -149,7 +151,7 @@ async def copy(
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
         if operation_id:
-            success = await asyncio.to_thread(execute_with_safety, operation_id=operation_id, operation_func=_copy_sync)
+            success, detail = await asyncio.to_thread(execute_with_safety, operation_id=operation_id, operation_func=_copy_sync)
         else:
             logger.info("Database unavailable, executing copy operation without recording")
             success = await asyncio.to_thread(_copy_sync)
@@ -181,7 +183,7 @@ async def copy(
             return build_success(
                 data={"source_size": src_size, "mtime": src_mtime},
                 llm_data=llm_data)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "复制失败"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": detail or "复制失败"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
         return build_error(data={}, llm_data=llm_data)
 
     except Exception as e:
