@@ -4,6 +4,28 @@ LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05
 
 职责:定义LLM层的响应数据类(ChatResponse、StreamChunk)、异常解析(_resolve_exception)。
 
+LLM 响应 → type 分类链（知识备忘 — 小欧 2026-07-15）:
+1. LLM 原生输出（OpenAI /chat/completions SSE 格式）：
+   data: {"choices":[{"delta":{"content":"文本"}}]}     ← 纯文本
+   data: {"choices":[{"delta":{"tool_calls":[...]}}]}   ← 工具调用
+   data: [DONE]
+   LLM 自身 不 输出 type 字段。
+
+2. agent 事后分类（llm_stream.py call_llm_stream 末尾）：
+   流结束后 agent 检查累积结果决定 type：
+   - LLM 产 tool_calls → type="action"     → 执行工具，继续循环
+   - LLM 仅文本        → type="answer"     → FinalStep，结束循环
+   - 流异常/出错       → type="error"      → 任务失败
+
+3. type 共 3 种：action | answer | error
+
+4. content / thought / reasoning 字段映射：
+   - content: LLM 非推理文本块累加（is_reasoning=False）
+   - reasoning: LLM 推理文本块累加（is_reasoning=True）
+   - thought:
+     type="action" 时: = full_content（调工具时的附带文本）
+     type="answer" 时: = parsed.get("thought", content)（回退为 content）
+
 编辑历史:
   小欧 - 2026-07-15: FCFormatError.__init__加self.message=message,补缺失的实例属性(写测试挖出的预存bug)
 

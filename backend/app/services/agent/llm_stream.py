@@ -4,6 +4,16 @@ llm_stream — LLM流式调用+响应构建
 
 从llm_caller更名 — 小欧 2026-06-25 名实相符
 
+—— type 分类链（知识备忘 — 小欧 2026-07-15） ——
+此模块是 type 产生的源头。call_llm_stream() 在流结束后根据 LLM 输出做"事后分类"：
+
+  LLM 产 tool_calls → _build_tool_calls_response() → {"type": "action"}
+  LLM 仅文本        → _build_answer_response()     → {"type": "answer"}
+  流异常/出错       → _yield_error_response()      → {"type": "error"}
+
+关键认知：LLM 原生输出（OpenAI SSE）不含 type 字段，type 是 agent 推理加上的。
+详见 llm/core.py 头部的完整分类说明。
+
 编辑历史:
   2026-07-14 小欧 FC_FALLBACK_ENABLED/FC_MAX_RETRIES/LLM_TOOL_CHOICE导入源由base_service改为app.constants(常量集中,非功能退化)
   2026-07-15 小欧 修复call_llm_with_fallback:①FC重试循环内拦截type:"error"响应转FCFormatError触发L2重试(避免直抵set_failed) ②降级关闭分支last_error=None兜底防AttributeError崩溃
@@ -75,7 +85,10 @@ def _format_fc_error(e: "FCFormatError") -> str:
 
 
 def _yield_error_response(error_msg: str, agent):
-    """统一错误响应构建 — 小健 2026-06-18 DRY提取"""
+    """统一错误响应构建 — 小健 2026-06-18 DRY提取
+    
+    type="error" 的含义: LLM 流式调用出现异常/出错,agent 以此终止任务并设 FAILED。
+    由 _dispatch_handler(react_cycle.py) 分派到 handle_answer() 的 error 分支。"""
     # 【E-4修复】返回type:error,DispatchHandler的error分支处理 — 小欧 2026-06-28
     logger.error(f"[FC] {error_msg}")
     _log_llm_response(agent, error_msg, "error", None, finish_reason="error")
@@ -83,7 +96,10 @@ def _yield_error_response(error_msg: str, agent):
 
 
 def _build_answer_response(full_content, full_reasoning, usage_data, agent):
-    """构建answer类型响应 — 小欧 2026-06-25 抽取_log_llm_response"""
+    """构建answer类型响应 — 小欧 2026-06-25 抽取_log_llm_response
+    
+    type="answer" 的含义: agent 推断 LLM 已完成任务(无 tool_calls,仅文本输出),
+    将此文本作为任务最终答复,后续由 handle_answer() → FinalStep 结束循环。"""
     logger.info(f"[FC] LLM原始响应(answer):\n")
     full_content = full_content.strip()
     full_reasoning = full_reasoning.strip()
@@ -157,6 +173,9 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
         yield _yield_error_response(f"LLM流式错误: {stream_error}", agent)
         return
 
+    # ════════════════════════════════════════════════════
+    # type 推断：LLM 产了 tool_calls → action
+    # ════════════════════════════════════════════════════
     if tool_calls_result:
         _fc_names = [tc.get("tool_name","?") if isinstance(tc,dict) else "?" for tc in tool_calls_result]
         _p = usage_data.get('prompt_tokens', '?') if usage_data else '?'
@@ -166,6 +185,9 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
         yield _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent, full_reasoning)
         return
 
+    # ════════════════════════════════════════════════════
+    # type 推断：LLM 无 tool_calls、仅文本 → answer
+    # ════════════════════════════════════════════════════
     content = full_content or full_reasoning or ""
     _p = usage_data.get('prompt_tokens', '?') if usage_data else '?'
     _c = usage_data.get('completion_tokens', '?') if usage_data else '?'
