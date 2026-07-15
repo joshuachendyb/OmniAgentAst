@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-13 - 小欧 - #1 观测格式化兜底WARNING降级DEBUG并加非dict防御
 # 2026-07-14 - 小沈 - grep匹配内容与上下文行截断防OOM
+# 2026-07-15 - 小欧 - 常量归一化治理: snippet/HTML摘要/sysinfo 字段截断改引用 tool_constants(OBS_SNIPPET/HTML_SUMMARY/SYSINFO_FIELD_MAX_CHARS, 原硬编码300/500/120), 功能零退化
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -66,6 +67,9 @@ from app.tools.tool_constants import (
     OBS_MAX_DISPLAY_ITEMS,
     OBS_MAX_STRING_LENGTH,
     OBS_DICT_MAX_KEYS,
+    OBS_SNIPPET_MAX_CHARS,
+    OBS_HTML_SUMMARY_MAX_CHARS,
+    OBS_SYSINFO_FIELD_MAX_CHARS,
 )
 
 
@@ -568,7 +572,6 @@ def _format_items(items: list) -> str:
     更新: 2026-06-23 小欧 支持snippet/url/source字段，300字符截断"""
     if not items:
         return ""
-    SNIPPET_MAX = 300
     lines = []
     for item in items[:OBS_MAX_DISPLAY_ITEMS]:
         if isinstance(item, str):
@@ -576,8 +579,8 @@ def _format_items(items: list) -> str:
         elif isinstance(item, dict):
             name = item.get("name", item.get("title", item.get("path", "")))
             desc = item.get("snippet", item.get("description", item.get("desc", "")))
-            if desc and len(desc) > SNIPPET_MAX:
-                desc = desc[:SNIPPET_MAX] + "..."
+            if desc and len(desc) > OBS_SNIPPET_MAX_CHARS:
+                desc = desc[:OBS_SNIPPET_MAX_CHARS] + "..."
             url = item.get("url", "")
             source = item.get("source", "")
             tag = f" [{source}]" if source else ""
@@ -826,15 +829,15 @@ def _format_sysinfo(data: dict) -> str:
                 lines.append(f"[{sec_label} #{i + 1}]")
                 for k, v in entry.items():
                     v_str = str(v)
-                    if len(v_str) > 120:
-                        v_str = v_str[:120] + "..."
+                    if len(v_str) > OBS_SYSINFO_FIELD_MAX_CHARS:
+                        v_str = v_str[:OBS_SYSINFO_FIELD_MAX_CHARS] + "..."
                     lines.append(f"  {k}: {v_str}")
         elif isinstance(sec_data, dict):
             lines.append(f"[{sec_label}]")
             for k, v in sec_data.items():
                 v_str = str(v)
-                if len(v_str) > 120:
-                    v_str = v_str[:120] + "..."
+                if len(v_str) > OBS_SYSINFO_FIELD_MAX_CHARS:
+                    v_str = v_str[:OBS_SYSINFO_FIELD_MAX_CHARS] + "..."
                 lines.append(f"  {k}: {v_str}")
     return "\n".join(lines) if lines else ""
 
@@ -989,7 +992,7 @@ def _format_compress_result(data: dict) -> str:
     return "\n".join(lines)
 
 
-def _extract_html_summary(html: str, max_len: int = 500) -> str:
+def _extract_html_summary(html: str, max_len: int = OBS_HTML_SUMMARY_MAX_CHARS) -> str:
     """从 HTML 中提取纯文本摘要 — 小沈 2026-07-08"""
     text = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL)
     text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)

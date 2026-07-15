@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - fetchpage异常日志修复: 某些httpx底层异常__str__返回空串, 致logger.error("未知错误:")后空白, 开发排查丢失异常类型。LLM侧detail(line 672)早已用type(e).__name__: str(e) or repr(e)正确传递, 本次仅增强开发日志可读性, 非功能缺陷。
+# 2026-07-15 - 小欧 - 常量归一化治理: 网页正文提取上限改引用 tool_constants.WEB_FETCH_MAX_CHARS(原 max_tokens=8000→32000字符, 现对齐 OBS 10000字符), 功能零退化
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -31,7 +32,7 @@ from app.tools.validate.timeout_validator import validate_timeout
 
 from app.constants import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
 from app.logger import logger
-from app.tools.tool_constants import TOOL_BROWSER_UA
+from app.tools.tool_constants import TOOL_BROWSER_UA, WEB_FETCH_MAX_CHARS
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
     ERR_NETWORK_DOWN,
@@ -510,7 +511,7 @@ async def fetchpage(
     proxy: Optional[str] = None,
 ) -> Dict[str, Any]:
     """获取网页内容 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
-    max_tokens = 8000
+    max_tokens = WEB_FETCH_MAX_CHARS // 4  # 字符上限=WEB_FETCH_MAX_CHARS(10000)→max_len=10000字符(原8000 token→32000字符已偏大, 归一化治理 2026-07-15)
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "fetchpage")
     if not timeout_valid:
         llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_INVALID_URL, detail=timeout_err, hint="请检查超时设置", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)

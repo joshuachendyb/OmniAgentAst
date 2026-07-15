@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-15 - 小欧 - 常量归一化治理: snippet 截断改引用 tool_constants.SEARCH_SNIPPET_MAX_CHARS(原硬编码300), 功能零退化
 """
 N4: searchweb — 搜索网络获取最新信息
 
@@ -28,6 +30,7 @@ from app.tools.tool_constants import TOOL_BROWSER_UA
 from app.tools.tool_constants import (
     ERR_NET_UNKNOWN,
     ERR_PARAM_INVALID,
+    SEARCH_SNIPPET_MAX_CHARS,
 )
 
 
@@ -65,7 +68,7 @@ def _split_long_query(query: str, max_keywords: int = 3) -> List[str]:
     return queries
 
 
-_SNIPPET_MAX_CHARS = 300
+# 统一使用 SEARCH_SNIPPET_MAX_CHARS (tool_constants.py), 原硬编码 300 — 归一化治理 2026-07-15
 
 _CHALLENGE_KEYWORDS = ["captcha", "verify", "security", "robot", "automated",
                        "安全验证", "验证码", "机器人检测", "人机验证"]
@@ -410,8 +413,8 @@ async def searchweb(
                 snippet = HTML_TAG_PATTERN.sub('', snippet)
                 snippet = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', snippet)
                 snippet = re.sub(r'\n{2,}', ' ', snippet).strip()
-                if len(snippet) > _SNIPPET_MAX_CHARS:
-                    snippet = snippet[:_SNIPPET_MAX_CHARS] + "..."
+                if len(snippet) > SEARCH_SNIPPET_MAX_CHARS:
+                    snippet = snippet[:SEARCH_SNIPPET_MAX_CHARS] + "..."
                 r["snippet"] = snippet
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

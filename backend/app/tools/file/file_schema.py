@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - RenameInput新增overwrite字段(默认False): 配合rename工具支持覆盖, 对齐move/copy/compress/extract, 向后兼容(根因: rename原硬编码overwrite=False且不暴露该参数, 目标已存在时LLM无法用overwrite=True纠正)。
+# 2026-07-15 - 小欧 - 常量归一化治理: WritetextInput.content 入参校验上限改引用 tool_constants.WRITE_TEXT_MAX_CHARS(原 max_length=10000), 功能零退化
 """
 File Schema - 文件工具参数模型
 
@@ -21,6 +22,8 @@ Author: 小沈 - 2026-03-21
 
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal, Union
+
+from app.tools.tool_constants import WRITE_TEXT_MAX_CHARS
 
 
 # ============================================================
@@ -113,7 +116,7 @@ class WritetextInput(BaseModel):
 - 单行: "Hello World"
 - 多行: "第一行\\n第二行\\n第三行"
 - JSON: "{\\"key\\": \\"value\\"}" """,
-        max_length=10000
+        max_length=WRITE_TEXT_MAX_CHARS
     )
     encoding: Optional[str] = Field(
         default=None,

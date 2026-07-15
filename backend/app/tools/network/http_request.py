@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-13 - 小欧 - #3 http请求异常详情丢失修复为类型:repr兜底
+# 2026-07-15 - 小欧 - 常量归一化治理: JSON body 预览截断改引用 tool_constants.HTTP_JSON_PREVIEW_MAX_BYTES(原 _MAX_JSON_SIZE=10MB), 功能零退化
 """
 N1: httpget — 发起HTTP请求
 
@@ -31,6 +32,7 @@ from app.tools.tool_constants import (
     ERR_NETWORK_INVALID_PARAM,
     ERR_NETWORK_REQUEST_ERROR,
     ERR_NETWORK_TIMEOUT,
+    HTTP_JSON_PREVIEW_MAX_BYTES,
 )
 
 from app.tools.tool_constants import TOOL_RETRYABLE_HTTP_CODES
@@ -65,7 +67,7 @@ def _build_http_request_llm_data(
     }
 
 
-_MAX_JSON_SIZE = 10 * 1024 * 1024  # 10MB
+HTTP_JSON_PREVIEW_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 
 
 def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
@@ -74,8 +76,8 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     content_type_short = content_type.split(";")[0].strip() if content_type else "unknown"
 
     if "application/json" in content_type:
-        if len(response.content) > _MAX_JSON_SIZE:
-            body = {"_truncated": True, "_preview": response.text[:_MAX_JSON_SIZE]}
+        if len(response.content) > HTTP_JSON_PREVIEW_MAX_BYTES:
+            body = {"_truncated": True, "_preview": response.text[:HTTP_JSON_PREVIEW_MAX_BYTES]}
         else:
             try:
                 body = response.json()

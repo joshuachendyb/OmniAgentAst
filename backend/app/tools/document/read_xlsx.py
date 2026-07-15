@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-15 - 小欧 - 常量归一化治理: 读取行数上限改引用 tool_constants.XLSX_MAX_ROWS(原硬编码10000), 功能零退化
 """
 D4: read_xlsx — 读取Excel/CSV/XLS文档
 
@@ -18,7 +20,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.validate.file_path_checker import hint_for_read_error
-from app.tools.tool_constants import ERR_DOC_READ_XLSX
+from app.tools.tool_constants import ERR_DOC_READ_XLSX, XLSX_MAX_ROWS
 
 from app.logger import logger
 
@@ -192,7 +194,7 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
 
     if suffix == ".csv":
         try:
-            result = _read_csv_stdlib_inner(path, encoding="utf-8", delimiter=",", has_header=True, max_rows=10000)
+            result = _read_csv_stdlib_inner(path, encoding="utf-8", delimiter=",", has_header=True, max_rows=XLSX_MAX_ROWS)
         except Exception as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             # 小欧 2026-07-12: 此处path经Path()重赋值为WindowsPath,须str()化后传入builder,
@@ -207,7 +209,7 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
             llm_data = _build_read_xlsx_llm_data("error", duration_ms, str(path), detail="openpyxl库未安装", user_sheet_name=sheet_name or "", hint="请安装openpyxl库")
             return build_error(data={}, llm_data=llm_data)
         try:
-            result = _read_xlsx_inner(path, max_rows=10000, sheet_name=sheet_name)
+            result = _read_xlsx_inner(path, max_rows=XLSX_MAX_ROWS, sheet_name=sheet_name)
         except Exception as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             # 小欧 2026-07-12: 此处path经Path()重赋值为WindowsPath,须str()化后传入builder,

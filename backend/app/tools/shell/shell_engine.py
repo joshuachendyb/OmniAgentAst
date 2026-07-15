@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-15 - 小欧 - 常量归一化治理: 临时输出文件读取保护线改引用 tool_constants.SHELL_OUTPUT_FILE_MAX_BYTES(原 _MAX_OUTPUT_SZ=10MB), 功能零退化
 """
 PersistentShell — 持久 PowerShell 进程引擎 — 小欧 2026-07-05
 
@@ -44,6 +46,7 @@ import time
 from typing import Any, Dict, Optional
 
 from app.logger import logger
+from app.tools.tool_constants import SHELL_OUTPUT_FILE_MAX_BYTES
 
 
 # ═══════════════════════════════════════════════════════
@@ -54,7 +57,7 @@ _ERROR_NO_SHELL = {"stdout": "", "stderr": "PowerShell不可用", "exit_code": -
 _ERROR_TIMEOUT  = {"stdout": "", "stderr": "timeout", "exit_code": -1, "timed_out": True}
 _EXIT_PROCESS_DIED = -2          # 进程死亡 sentinel，外部重试用
 _IDLE_TIMEOUT   = 1800           # 30 分钟空闲自动清理
-_MAX_OUTPUT_SZ  = 10 * 1024 * 1024  # 10MB 保护线
+SHELL_OUTPUT_FILE_MAX_BYTES  = 10 * 1024 * 1024  # 10MB 保护线
 
 
 # ═══════════════════════════════════════════════════════
@@ -90,10 +93,10 @@ def safe_read_file(path: str) -> str:
         sz = os.path.getsize(path)
         if sz == 0:
             return ""
-        if sz <= _MAX_OUTPUT_SZ:
+        if sz <= SHELL_OUTPUT_FILE_MAX_BYTES:
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 return f.read()
-        half = _MAX_OUTPUT_SZ // 2
+        half = SHELL_OUTPUT_FILE_MAX_BYTES // 2
         with open(path, "rb") as f:
             head = f.read(half)
             f.seek(-half, os.SEEK_END)
