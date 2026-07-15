@@ -318,7 +318,11 @@ class BaseAIService:
             return None
 
     def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
-        """解析SSE data字符串为StreamChunk - 小沈 2026-06-09"""
+        """解析SSE data字符串为StreamChunk - 小沈 2026-06-09
+        
+        此模块产出 StreamChunk（中间格式），不含 type 字段。
+        type（action/answer/error）由 llm_stream.py call_llm_stream()
+        在流结束后根据工具调用有无推断产生。"""
         try:
             data = parse_json(data_str)
             if data is None:
