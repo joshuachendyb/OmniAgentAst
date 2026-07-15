@@ -30,27 +30,12 @@ from typing import Any, Callable, Dict, Optional
 from app.logger import logger
 from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
 from app.tools.tool_constants import (
-    TOOL_TIMEOUTS, TOOL_RETRY_BACKOFF,
+    TOOL_TIMEOUTS, TOOL_RETRY_BACKOFF, TOOL_RETRY_CONFIG,
     ERR_MISSING_PARAM, ERR_INVALID_PARAMS, ERR_TOOL_NOT_FOUND, ERR_UNKNOWN,
 )
 from app.tools.tool_response import build_error
 from app.tools.param_alias_mapper import normalize_params
 from app.tools.registry import tool_registry
-
-
-# TOOL_RETRY_CONFIG: 按 tool 名直配重试参数
-# 不在字典中的 tool → max_retries=0（不重试）。默认不重试的 tool 不列入字典。
-# 返回格式: {tool名: {"max_retries": int, "retryable": list[str]}}
-# 注意: retryable 列表中的字符串必须与 ToolErrorCategory.value 完全匹配
-TOOL_RETRY_CONFIG = {
-    "httpget": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
-    "download": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
-    "fetchpage": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
-    "searchweb": {"max_retries": 2, "retryable": ["timeout", "connect", "network"]},
-    # shell/代码: 非幂等+永久性错误为主，工具内部已 catch 所有异常，
-    # 不会传播到 retry engine，不在字典中即默认不重试 — 小欧 2026-06-30
-    "ping_port": {"max_retries": 2, "retryable": ["timeout", "connect"]},
-}
 
 
 class ToolRetryEngine:

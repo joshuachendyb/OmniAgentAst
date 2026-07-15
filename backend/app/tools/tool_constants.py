@@ -2,6 +2,8 @@
 # 编辑历史:
 # 2026-07-14 - 小沈 - OBS_MAX_DISPLAY_ITEMS/MAX_SEARCH_RESULTS 注释更新(grep上限与条目数统一)
 # 2026-07-15 - 小欧 - 常量归一化治理: 新增 B组【系统级】(OBS_SNIPPET/HTML/SYSINFO)与 C组【tool级】(SHELL_OUTPUT/WEB_FETCH/SEARCH_SNIPPET/XLSX/HTTP/DOWNLOAD/WRITE_TEXT), 各常量统一标注【使用对象】便于识别废弃
+# 2026-07-15 - 小欧 - HTTP常量归并: HTTPX_TIMEOUT_DEFAULT+TOOL_BROWSER_UA+TOOL_RETRYABLE_HTTP_CODES 从1.1/10节移至第4节(网络工具HTTP常量), 消除散落
+# 2026-07-15 - 小欧 - TOOL_RETRY_CONFIG 从 tool_retry_engine.py 迁入第4节, 与 TOOL_RETRYABLE_HTTP_CODES 相邻
 # 注: 本文件数值型长度/上限/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
@@ -82,9 +84,8 @@ TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 各工具 deadline 校验与 To
 }
 
 # ============================================================
-# 1.1 Subprocess/HTTP超时配置(从各工具文件硬编码迁移)— 北京老陈 2026-05-31
-# 【工具层】工具执行 subprocess/httpx 的硬超时阈值。
-#     系统层的 SYS_DEFAULT_CONNECT_TIMEOUT 等是 LLM 客户端超时，与本段无关。
+# 1.1 Subprocess超时配置(从各工具文件硬编码迁移)— 北京老陈 2026-05-31
+# 【工具层】工具执行 subprocess 的硬超时阈值。httpx 超时移至第4节网络常量。
 # ============================================================
 
 # subprocess执行超时(秒)
@@ -92,9 +93,6 @@ SUBPROCESS_TIMEOUT_DEFAULT: int = 10    # 【tool 级】使用对象: 通用 sub
 SUBPROCESS_TIMEOUT_SHORT: int = 5       # 【tool 级】使用对象: 短时 subprocess(shell communicate、代码执行)
 SUBPROCESS_TIMEOUT_VERY_SHORT: int = 3  # 【tool 级】使用对象: 极短 subprocess(process wait)
 SUBPROCESS_TIMEOUT_LONG: int = 60       # 【tool 级】使用对象: 长时 subprocess(文档转换等耗时操作)
-
-# httpx请求超时(秒)
-HTTPX_TIMEOUT_DEFAULT: float = 5.0        # 【tool 级】使用对象: 通用 httpx 请求超时(秒)
 
 # ============================================================
 # 2. 文件工具配置(从 file_tools.py 迁移) — 小欧 2026-06-18 新增FILE_OPERATION_TOOLS
@@ -177,13 +175,36 @@ CATEGORY_MODULES: dict[str, tuple[str, str]] = {  # 【tool 级】使用对象: 
 }
 
 # ============================================================
-# 4. 网络工具配置(从 http_client_sdk.py 迁移) — 【工具层】
-#    网络工具的 httpx 客户端连接池参数。与系统层的 LLM_MAX_CONNECTIONS（LLM 客户端）分开。
+# 4. 网络工具HTTP常量(从各节归并) — 【工具层】
+#     所有 HTTP/网络相关常量集中于此，消除散落。
+#     与系统层的 LLM_MAX_CONNECTIONS（LLM 客户端）分开。
 # ============================================================
 
+# httpx请求超时(秒)
+HTTPX_TIMEOUT_DEFAULT: float = 5.0        # 【tool 级】使用对象: 通用 httpx 请求超时(秒)
+
+# 网络工具默认超时(秒)
 DEFAULT_TIMEOUT_SEC: float = 30.0             # 【tool 级】使用对象: network 工具默认超时(秒)
 NETWORK_MAX_CONNECTIONS: int = 100             # 【tool 级】使用对象: network 工具 httpx 连接池最大连接
 NETWORK_MAX_KEEPALIVE: int = 20                # 【tool 级】使用对象: network 工具 httpx 连接池 keepalive 连接数
+
+# 工具层浏览器 User-Agent
+TOOL_BROWSER_UA: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"  # 【tool 级】使用对象: network 工具(fetch_webpage 等) HTTP 请求 User-Agent
+
+# 工具层 HTTP 可重试状态码
+TOOL_RETRYABLE_HTTP_CODES: set[int] = {429, 500, 502, 503, 504}  # 【tool 级】使用对象: httpget 等 network 工具判断是否抛异常给 ToolRetryEngine 重试
+
+# 工具层 per-tool 重试配置 — 从 tool_retry_engine.py 迁入
+# 不在字典中的 tool → max_retries=0（不重试）
+# 格式: {tool名: {"max_retries": int, "retryable": list[str]}}
+# retryable 列表中的字符串必须与 ToolErrorCategory.value 完全匹配
+TOOL_RETRY_CONFIG: dict[str, dict] = {
+    "httpget": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
+    "download": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
+    "fetchpage": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
+    "searchweb": {"max_retries": 2, "retryable": ["timeout", "connect", "network"]},
+    "ping_port": {"max_retries": 2, "retryable": ["timeout", "connect"]},
+}  # 【tool 级】使用对象: ToolRetryEngine per-tool 重试参数
 
 # ============================================================
 # 6. 注册表工具映射(从 reg_tools.py 迁移) — 【工具层】
@@ -251,11 +272,6 @@ TOOL_RETRY_BACKOFF: dict[str, float] = {  # 【tool 级】使用对象: ToolRetr
     "default": 2.0,
 }
 
-# 工具层 HTTP 可重试状态码 — 小欧 2026-06-30
-# 用途：httpget 等 network 工具判断是否抛异常给 ToolRetryEngine 重试。
-#       与系统层 constants.py 的 SYS_RATE_LIMIT_CODES（LLM 限流检测）完全无关。
-TOOL_RETRYABLE_HTTP_CODES: set[int] = {429, 500, 502, 503, 504}  # 【tool 级】使用对象: httpget 等 network 工具判断是否抛异常给 ToolRetryEngine 重试
-
 # 工具层错误码(从 constants.py 迁入) — 小欧 2026-06-30
 # 使用对象: 各工具 build_error/build_warning 返回码(用途明确, 本组 ERR_* 不再逐条标注使用对象)
 # 用途：ToolRetryEngine 构建重试耗尽错误返回。
@@ -265,9 +281,6 @@ ERR_INVALID_PARAMS = "ERR_INVALID_PARAMS"
 ERR_UNKNOWN = "ERR_UNKNOWN"
 
 SENSITIVE_FIELDS: set[str] = {"password", "token", "api_key", "secret", "authorization", "credential"}  # 【tool 级】使用对象: 敏感字段脱敏/红框判定集合
-
-# 工具层浏览器 User-Agent(从 constants.py 迁入) — 小欧 2026-06-30
-TOOL_BROWSER_UA: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"  # 【tool 级】使用对象: network 工具(fetch_webpage 等) HTTP 请求 User-Agent
 
 # ============================================================
 # 11. 系统敏感路径黑名单常量 — Safety层(path_safe_check)消费

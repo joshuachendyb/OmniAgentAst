@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"删除文件失败,safety拦截"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
+# 2026-07-15 - 小欧 - _force_delete_sync返(bool,str)透传真实失败原因, 替代原返bool(False)导致_delete_sync包装(False,"permanent")致error_detail=模式字串而非真因。
 """
 F12: delete_file — 删除文件
 
@@ -40,12 +41,12 @@ def remove_readonly(func, path, excinfo):
     func(path)
 
 
-def _force_delete_sync(path: Path, recursive: bool = False) -> bool:
-    """永久删除:目录(recursive→rmtree否则rmdir) / 文件→unlink — 小沈重构 2026-05-25 — 小欧 2026-06-22"""
+def _force_delete_sync(path: Path, recursive: bool = False) -> Tuple[bool, str]:
+    """永久删除:目录(recursive→rmtree否则rmdir) / 文件→unlink — 小沈重构 2026-05-25 — 小欧 2026-06-22
+    2026-07-15: 返回(bool,str)透传失败真正原因,替代原返bool导致真因丢失"""
     try:
         if path.is_dir():
             if recursive:
-                # onerror回调解决Windows下只读文件无法删除的问题
                 shutil.rmtree(str(path), onerror=remove_readonly)
             else:
                 path.rmdir()
@@ -53,10 +54,11 @@ def _force_delete_sync(path: Path, recursive: bool = False) -> bool:
             if path.exists() and not os.access(str(path), os.W_OK):
                 path.chmod(path.stat().st_mode | 0o200)
             path.unlink()
-        return True
+        return True, "permanent"
     except Exception as e:
+        err_msg = str(e) or f"永久删除失败: {path}"
         logger.error(f"[_force_delete_sync] 删除失败: {path}, 错误: {e}")
-        return False
+        return False, err_msg
 
 
 def _send2trash_sync(path: Path, recursive: bool = False) -> Tuple[bool, str]:
@@ -69,7 +71,7 @@ def _send2trash_sync(path: Path, recursive: bool = False) -> Tuple[bool, str]:
         logger.warning("send2trash未安装,回退到永久删除")
     except Exception as e:
         logger.warning(f"send2trash失败: {e},回退到永久删除")
-    return _force_delete_sync(path, recursive), "permanent"
+    return _force_delete_sync(path, recursive)
 
 
 def _build_delete_file_llm_data(
@@ -126,7 +128,7 @@ async def _delete_file_impl(
 
         def _delete_sync():
             if force:
-                return _force_delete_sync(path, recursive), "permanent"
+                return _force_delete_sync(path, recursive)
             return _send2trash_sync(path, recursive)
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24 — 小沈 2026-07-07 execute_with_safety返回(bool,str)
