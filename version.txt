@@ -3,11 +3,27 @@
 ## v0.18.19→v0.18.20 变更汇总 - 小欧-2026-07-15
 
 ### 最新改版（持续修改不覆盖）：
-- fix: e2e_helpers.py check_logs时间过滤截断start_time微秒,防同秒日志误过滤(日志仅秒精度,datetime.now()有微秒,导致同秒session记录被滤掉) - 小欧-2026-07-15
-- test: e2e_helpers.py check_logs加_debug_raw_lines/_debug_filtered_lines/_debug_session_in_raw/_debug_session_in_filtered字段 - 小欧-2026-07-15
-- test: e2e_p0_*+e2e_p6_* session_records_found断言含debug调试信息 - 小欧-2026-07-15
+- fix: e2e_helpers.py check_logs时间过滤截断start_time微秒,防同秒日志误过滤 - 小欧-2026-07-15
+- docs: base_service.py 补充SSE解析不含type字段的备忘 - 小欧-2026-07-15
+- docs: answer_handler.py+react_cycle.py 补充type路由表知识备忘 - 小欧-2026-07-15
+- test: e2e_p0_*+e2e_p6_* assert失败提示加debug调试信息 - 小欧-2026-07-15
+- test: e2e_helpers.py check_logs加_debug_*字段辅助定位 - 小欧-2026-07-15
+- docs: llm_stream.py+core.py 补充type分类链知识备忘 - 小欧-2026-07-15
 - fix: core.py FCFormatError补self.message属性,防_format_fc_error崩溃 - 小欧-2026-07-15
+- fix: tool_retry_engine.py+shell工具 超时防孤儿化+success_codes防误判 - 小欧-2026-07-15
 - fix: llm_stream.py FC重试拦截流式error+last_error=None兜底防崩溃 - 小欧-2026-07-15
+- docs: notes/测试记录-E2E-* 提交E2E全量表P0-P6测试记录 - 小欧-2026-07-15
+- test: e2etests/test_e2e_p0_* 提升P0 E2E用例输入复杂度-多工具串联链路 - 小欧-2026-07-15
+- fix: time_utils+storage 修复ensure_timestamp_milliseconds漏捕OSError致Errno22及load_execution_steps返回None - 小欧-2026-07-14
+- docs: notes 新增调试记录(unit-01~04) - 小欧-2026-07-14
+- docs: project_context.py+system_prompts.py 注释明确OmniAgent.md为项目规则文件 - 小欧-2026-07-14
+- fix: storage.py load_execution_steps返回空列表而非None - 小欧-2026-07-14
+- docs: 移动设计说明书到doc-7月优化目录 - 小欧-2026-07-14
+- refactor: messages+stream+sse 读路径改从chat_message_steps表组装步骤列表 - 小欧-2026-07-14
+- refactor: agent_runner 运行期逐步落库chat_message_steps+finalize轻量终态 - 小欧-2026-07-14
+- feat: storage+FUNCTIONS.md 新增allocate_and_insert_message等4个步骤存储函数 - 小欧-2026-07-14
+- refactor: database+db_initializer chat库journal_mode改DELETE+新增chat_message_steps表及索引 - 小欧-2026-07-14
+- docs: doc-6文件移动,doc/后端step单步保存设计说明书-小欧_2026-07-14 - 小欧-2026-07-14
 - E2E全链路: P0全部18个case PASSED(含P0-01/P0-13微秒精度bug修复复测) - 小欧-2026-07-15
 
 v0.18.19
