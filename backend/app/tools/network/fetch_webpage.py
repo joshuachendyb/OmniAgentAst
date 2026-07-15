@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-15 - 小欧 - fetchpage异常日志修复: 某些httpx底层异常__str__返回空串, 致logger.error("未知错误:")后空白, 开发排查丢失异常类型。LLM侧detail(line 672)早已用type(e).__name__: str(e) or repr(e)正确传递, 本次仅增强开发日志可读性, 非功能缺陷。
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -667,7 +669,7 @@ async def fetchpage(
         llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
-        logger.error(f"[fetchpage] 未知错误: {e}\n{traceback.format_exc()}")
+        logger.error(f"[fetchpage] 未知错误: {type(e).__name__}: {e}\n{traceback.format_exc()}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NET_UNKNOWN, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)
