@@ -75,15 +75,25 @@
 | `api_error` | 记录日志并抛 HTTPException | status_code, detail, log_msg | None |
 | `handle_api_errors` | **【v0.13.33新增】** 通用API异常处理装饰器 | operation_name | decorator |
 
+### 1.7 文本处理（text_utils.py）【v2.1新增 — 小欧 2026-07-16】
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `truncate_text` | 通用尾部截断,返回(截断后文本, 是否截断) | text, max_chars, suffix | tuple |
+| `smart_truncate_text` | 智能截断(保留头尾省略中间) | content, budget, head_ratio | str |
+| `add_line_numbers` | 添加行号前缀 | content, offset | str |
+| `extract_tool_call_xml` | **【v2.1新增】** 从文本提取 `<tool_call>` XML 工具调用(非破坏性, reasoning/content中LLM降级旧格式时的恢复路径) | text | Optional[Dict[str, Any]] |
+| `format_tool_call_markup` | **【v2.0新增】** 将LLM输出XML/JSON tool call标记格式化为纯文本(破坏性) | text | str |
+
+> 注：`truncate_text`/`add_line_numbers` 此前曾误登记于 1.5 节(tool_result_utils.py)，实际定义于 text_utils.py；本节为正确归属。 — 小欧 2026-07-16
+
 ### 1.5 工具函数（tool_result_utils.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `truncate_text` | 截断文本 | text, max_chars, suffix | tuple |
 | `format_output_for_llm` | 格式化输出给LLM | stdout, stderr, max_chars | dict |
 | `format_file_content_llm` | 格式化文件内容给LLM | content, max_chars | dict |
 | `make_json_safe` | 使JSON安全 | data, max_depth, max_str_len | data |
-| `add_line_numbers` | 添加行号前缀 | content, offset | str |
 | `truncate_data_for_frontend` | 截断数据给前端 | data, max_chars | dict |
 
 
@@ -185,13 +195,14 @@ def my_parse_json(json_str):
 
 ---
 
-**最后更新时间**: 2026-07-14 10:30:00
+**最后更新时间**: 2026-07-16 07:30:00
 **维护人**: 小沈
 
 ## 版本历史
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v2.0 | 2026-07-16 | 新增1.7 text_utils.py章节：登记extract_tool_call_xml(XML提取,LLM旧格式恢复路径)与format_tool_call_markup；truncate_text/add_line_numbers归属修正至text_utils.py | 小欧 |
 | v1.9 | 2026-07-14 | 新增storage.py步骤存储4函数(allocate_and_insert_message/append_execution_step/load_execution_steps/finalize_message) | 小欧 |
 | v1.8 | 2026-07-10 | 删除test_marker.py（已废弃） | 小沈 |
 | v1.7 | 2026-07-08 | table_helper新增dict_table_to_rows，增强normalize_table_data（支持dict/list[dict]/None） | 小欧 |
