@@ -96,6 +96,22 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
 async def _dispatch_handler(agent, llm_response):
     """按type分派handler，基于 event type 推断状态 — chendyg 2026-07-01 / 小欧 2026-07-13 去掉 recoverable
     
+    type 路由表（知识备忘 — 小欧 2026-07-15）：
+    ┌────────┬─────────────────┬───────────────────┐
+    │ type   │ handler          │ 状态              │
+    ├────────┼─────────────────┼───────────────────┤
+    │ action │ handle_action    │ 继(不设终态)       │
+    │ answer │ handle_answer    │ → FinalStep →     │
+    │        │                  │   set_completed   │
+    │ error  │ handle_answer    │ → ErrorStep →     │
+    │        │ (error 分支)     │   set_failed      │
+    │ 其他   │ handle_answer    │ → ErrorStep →     │
+    │        │ (未知类型分支)   │   set_failed      │
+    └────────┴─────────────────┴───────────────────┘
+    type 产生于 llm_stream.py call_llm_stream() 末尾，
+    规则：有 tool_calls → action；仅文本 → answer；异常 → error。
+    type 不由 LLM 输出，由 agent 推断（详见 llm/core.py 头部）。
+    
     状态推断规则:
     - "retrying" → 置RETRYING（重试由编排层except块处理）
     - "error" → set_failed

@@ -19,7 +19,14 @@ from app.logger import logger
 
 
 async def handle_answer(agent, parsed: Dict):
-    """统一处理所有非action的LLM返回类型（answer/error/unknown）"""
+    """统一处理所有非action的LLM返回类型（answer/error/unknown）
+    
+    由 _dispatch_handler(react_cycle.py) 分派，接收 llm_stream.py 构建的 type：
+    - type="answer" → 正常终态流程（最终答复）
+    - type="error"  → LLM 流式异常 → ErrorStep → set_failed
+    - 其他未知 type → 按 error 处理（兜底）
+    
+    type 产生于 llm_stream.py（见该模块头部），不由 LLM 输出，是 agent 推断。"""
     step = agent.llm_call_count
     parsed_type = parsed.get("type", "answer")
 
