@@ -8,10 +8,11 @@
 
 Author: 小沈 - 2026-06-09
 v2.0: 新增format_tool_call_markup — 小欧 2026-07-12
+v2.1: 新增extract_tool_call_xml从reasoning/content提取XML tool_call(LLM降级旧格式时的恢复路径) + _format_xml_tool_block改调它(正则唯一源,DRY) — 小欧 2026-07-16
 """
 import json
 import re
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 def truncate_text(text: str, max_chars: int, suffix: Optional[str] = None) -> tuple:
@@ -96,18 +97,38 @@ def _try_format_json_tool_call(obj):
     return None
 
 
-def _format_xml_tool_block(match):
-    """将<tool_call>...块格式化为纯文本 — 小欧 2026-07-12"""
-    block = match.group(0)
+def extract_tool_call_xml(text: str) -> Optional[Dict[str, Any]]:
+    """从文本中提取 <tool_call> XML 格式的工具调用 — 小欧 2026-07-16
+
+    解析 <tool_call><function=name><parameter=k>v</parameter></function></tool_call>
+    返回 {"tool_name": str, "tool_params": Dict[str, str]}
+
+    本函数是此 XML schema 的唯一解析源(DRY)。
+    _format_xml_tool_block 调用本函数，正则定义不重复。
+    """
+    block_m = re.search(r'<tool_call>.*?</tool_call>', text, re.DOTALL)
+    if not block_m:
+        return None
+    block = block_m.group(0)
     func_m = re.search(r'<function=([^>\n]+)>', block)
-    func_name = func_m.group(1) if func_m else "unknown"
-    params = []
+    if not func_m:
+        return None
+    tool_name = func_m.group(1)
+    tool_params = {}
     for pm in re.finditer(r'<parameter=([^>\n]+)>\n?(.*?)\n?</parameter>', block, re.DOTALL):
-        params.append(f"  {pm.group(1)}: {pm.group(2).strip()}")
-    r = f"[工具调用] {func_name}"
-    if params:
-        r += "\n" + "\n".join(params)
-    return r
+        tool_params[pm.group(1)] = pm.group(2).strip()
+    return {"tool_name": tool_name, "tool_params": tool_params}
+
+
+def _format_xml_tool_block(match):
+    """将<tool_call>...块格式化为纯文本 — 小欧 2026-07-12; 小欧 2026-07-16 改调extract_tool_call_xml(DRY)"""
+    block = match.group(0)
+    extracted = extract_tool_call_xml(block)
+    if not extracted:
+        return "[工具调用] unknown"
+    params = [f"  {k}: {v}" for k, v in extracted["tool_params"].items()]
+    r = f"[工具调用] {extracted['tool_name']}"
+    return r + "\n" + "\n".join(params) if params else r
 
 
 def format_tool_call_markup(text: str) -> str:
@@ -163,5 +184,6 @@ __all__ = [
     "truncate_text",
     "smart_truncate_text",
     "add_line_numbers",
+    "extract_tool_call_xml",
     "format_tool_call_markup",
 ]

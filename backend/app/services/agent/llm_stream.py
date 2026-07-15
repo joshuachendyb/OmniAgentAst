@@ -15,8 +15,9 @@ llm_stream — LLM流式调用+响应构建
 详见 llm/core.py 头部的完整分类说明。
 
 编辑历史:
-  2026-07-14 小欧 FC_FALLBACK_ENABLED/FC_MAX_RETRIES/LLM_TOOL_CHOICE导入源由base_service改为app.constants(常量集中,非功能退化)
-  2026-07-15 小欧 修复call_llm_with_fallback:①FC重试循环内拦截type:"error"响应转FCFormatError触发L2重试(避免直抵set_failed) ②降级关闭分支last_error=None兜底防AttributeError崩溃
+   2026-07-14 小欧 FC_FALLBACK_ENABLED/FC_MAX_RETRIES/LLM_TOOL_CHOICE导入源由base_service改为app.constants(常量集中,非功能退化)
+   2026-07-15 小欧 修复call_llm_with_fallback:①FC重试循环内拦截type:"error"响应转FCFormatError触发L2重试(避免直抵set_failed) ②降级关闭分支last_error=None兜底防AttributeError崩溃
+   2026-07-16 小欧 新增XML tool_call提取拦截点: call_llm_stream在FC JSON tool_calls为空时,从reasoning/content检XML工具调用,合成tool_call_id走action路径(FC模式openai_tools清单校验防误提取,Text fallback由action_handler兜底)
 """
 
 import asyncio
@@ -27,6 +28,7 @@ from typing import Any
 from app.services.agent.steps import ChunkStep
 from app.constants import FC_FALLBACK_ENABLED, FC_MAX_RETRIES, LLM_TOOL_CHOICE
 from app.services.llm.core import FCFormatError
+from app.utils.text_utils import extract_tool_call_xml
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 
@@ -184,6 +186,41 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
         logger.info(f"[FC] 解析结果: tool_calls({len(tool_calls_result)})={_fc_names}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
         yield _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent, full_reasoning)
         return
+
+    # ════════════════════════════════════════════════════
+    # XML tool_call 提取：LLM 降级使用旧 <tool_call> 格式时,
+    # 从 reasoning（FC退化）或 content（Text fallback）中提取并执行 — 小欧 2026-07-16
+    # ════════════════════════════════════════════════════
+    if not tool_calls_result:
+        search_text = full_reasoning or full_content
+        if search_text:
+            extracted = extract_tool_call_xml(search_text)
+            if extracted:
+                # 防误提取（禁止退化）：FC 模式校验工具名在可用清单内，
+                # 避免推理中讨论 XML 语法被误当作工具执行；不在清单则回落 answer
+                # 容错：工具列表可能含异常条目（None/非dict），逐项防护，避免守卫自身崩溃
+                if openai_tools is not None:
+                    _available = {t.get("function", {}).get("name")
+                                  for t in openai_tools
+                                  if isinstance(t, dict) and isinstance(t.get("function"), dict)}
+                    _valid = extracted["tool_name"] in _available
+                else:
+                    _valid = True   # Text fallback：无清单，由 action_handler 注册表校验
+                if _valid:
+                    synthetic_id = f"call_extracted_{agent.llm_call_count}"
+                    extracted["tool_call_id"] = synthetic_id
+                    extracted["tool_calls"] = [{
+                        "id": synthetic_id, "type": "function",
+                        "function": {
+                            "name": extracted["tool_name"],
+                            "arguments": json.dumps(extracted["tool_params"], ensure_ascii=False)
+                        }
+                    }]
+                    tool_calls_result = [extracted]
+                    yield _build_tool_calls_response(
+                        full_content, tool_calls_result, usage_data, agent, full_reasoning or "")
+                    return
+                logger.info(f"[FC] 提取 tool_name={extracted['tool_name']} 不在可用清单, 跳过XML执行, 回落answer")
 
     # ════════════════════════════════════════════════════
     # type 推断：LLM 无 tool_calls、仅文本 → answer
