@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-14 - 小沈 - OBS_MAX_DISPLAY_ITEMS/MAX_SEARCH_RESULTS 注释更新(grep上限与条目数统一)
+# 2026-07-15 - 小欧 - 常量归一化治理: 新增 B组【系统级】(OBS_SNIPPET/HTML/SYSINFO)与 C组【tool级】(SHELL_OUTPUT/WEB_FETCH/SEARCH_SNIPPET/XLSX/HTTP/DOWNLOAD/WRITE_TEXT), 各常量统一标注【使用对象】便于识别废弃
+# 注: 本文件数值型长度/上限/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -31,7 +33,7 @@
 #    与系统层的 SYS_DEFAULT_LLM_TIMEOUT（LLM 客户端超时）完全无关。
 # ============================================================
 
-TOOL_TIMEOUTS = {
+TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 各工具 deadline 校验与 ToolRetryEngine 超时配置
     # 双重用途：
     # 1. 工具内部校验 deadline / subprocess.run 超时
     # 2. ToolRetryEngine 用 asyncio.wait_for(timeout=此值) 做保险丝，
@@ -86,47 +88,67 @@ TOOL_TIMEOUTS = {
 # ============================================================
 
 # subprocess执行超时(秒)
-SUBPROCESS_TIMEOUT_DEFAULT: int = 10    # 通用subprocess执行超时
-SUBPROCESS_TIMEOUT_SHORT: int = 5       # 短时subprocess(shell communicate、代码执行)
-SUBPROCESS_TIMEOUT_VERY_SHORT: int = 3  # 极短subprocess(process wait)
-SUBPROCESS_TIMEOUT_LONG: int = 60       # 长时subprocess(文档转换等耗时操作)
+SUBPROCESS_TIMEOUT_DEFAULT: int = 10    # 【tool 级】使用对象: 通用 subprocess 执行超时(秒)
+SUBPROCESS_TIMEOUT_SHORT: int = 5       # 【tool 级】使用对象: 短时 subprocess(shell communicate、代码执行)
+SUBPROCESS_TIMEOUT_VERY_SHORT: int = 3  # 【tool 级】使用对象: 极短 subprocess(process wait)
+SUBPROCESS_TIMEOUT_LONG: int = 60       # 【tool 级】使用对象: 长时 subprocess(文档转换等耗时操作)
 
 # httpx请求超时(秒)
-HTTPX_TIMEOUT_DEFAULT: float = 5.0        # 通用httpx请求超时
+HTTPX_TIMEOUT_DEFAULT: float = 5.0        # 【tool 级】使用对象: 通用 httpx 请求超时(秒)
 
 # ============================================================
 # 2. 文件工具配置(从 file_tools.py 迁移) — 小欧 2026-06-18 新增FILE_OPERATION_TOOLS
 # 【工具层】文件工具运行时的参数。仅工具代码使用。
 # ============================================================
 
-FILE_OPERATION_TOOLS: set[str] = {
+FILE_OPERATION_TOOLS: set[str] = {  # 【tool 级】使用对象: 文件操作类工具集合(安全/分批判定)
     "readtext", "writetext", "edittext",
     "move", "copy", "delete", "rename",
     "compress", "extract",
 }
 
-READ_FILE_DEFAULT_LIMIT: int = 500
-LISTDIR_PAGE_SIZE: int = 500
-FIND_PAGE_SIZE: int = 500
+READ_FILE_DEFAULT_LIMIT: int = 500          # 【tool 级】使用对象: file 工具(readtext/edittext 等)读取默认行数上限
+LISTDIR_PAGE_SIZE: int = 500                  # 【tool 级】使用对象: listdir 分页每页条目数
+FIND_PAGE_SIZE: int = 500                     # 【tool 级】使用对象: find 分页每页条目数
 
 # ============================================================
-# 观察截断常量（observation_formatter.py 统一使用）— 小欧 2026-07-04
+# 【系统级】观察截断常量（observation_formatter.py 统一使用）— 小欧 2026-07-04
 #     常量集中管理，便于后续统一调整。
 #     与 tool 层面的截断上限（如 READ_FILE_DEFAULT_LIMIT）相互独立。
+#     老陈 2026-07-15 裁定: OBS_* 逻辑属系统级(observation 统一截断层), 因与 tool 输出耦合紧历史置于本文件, 标注【系统级】以区分【tool 级】常量。
 # ============================================================
-OBS_MAX_DISPLAY_ITEMS: int = 500       # 所有 list 类 handler 的最大条目数；grep 内容搜索总开关上限（与条目数一致）— 小沈 2026-07-14
-OBS_MAX_STRING_LENGTH: int = 10000     # 单个字符串值的最大显示长度
-OBS_DICT_MAX_KEYS: int = 100           # _format_key_value 的最大键数
-MAX_READ_SIZE: int = 10 * 1024 * 1024
-MAX_MEDIA_READ_SIZE: int = 50 * 1024 * 1024
-MAX_BATCH_FILE_COUNT: int = 100
-MAX_SEARCH_FILE_SIZE: int = 10 * 1024 * 1024
-MAX_SEARCH_RESULTS: int = 1000        # 仅 search_files(find) 用：结果收集上限，按500/页分页；grep 已改引用 OBS_MAX_DISPLAY_ITEMS — 小沈 2026-07-14
+OBS_MAX_DISPLAY_ITEMS: int = 500       # 【系统级】使用对象: observation_formatter.py(所有 list 类 handler 最大条目数; grep 搜索总开关) — 小沈 2026-07-14
+OBS_MAX_STRING_LENGTH: int = 10000     # 【系统级】使用对象: observation_formatter.py(单个字符串值最大显示长度)
+OBS_DICT_MAX_KEYS: int = 100           # 【系统级】使用对象: observation_formatter.py(_format_key_value 最大键数)
+# —— 以下 B 组: 原 observation_formatter.py 内硬编码, 迁入统一(【系统级】) ——
+OBS_SNIPPET_MAX_CHARS: int = 300       # 【系统级】使用对象: observation_formatter.py(搜索结果 snippet 截断; 原 SNIPPET_MAX)
+OBS_HTML_SUMMARY_MAX_CHARS: int = 500  # 【系统级】使用对象: observation_formatter.py(HTML→纯文本摘要上限; 原 _extract_html_summary max_len)
+OBS_SYSINFO_FIELD_MAX_CHARS: int = 120 # 【系统级】使用对象: observation_formatter.py(sysinfo 每节字段值截断)
+
+# ============================================================
+# 【tool 级】工具读取/输出上限 — 老陈 2026-07-15 归一化治理
+#     与 tool 紧密相关的长度/上限常量集中于此(便于查看对比检查),
+#     每个常量注释使用对象。FILE/MEDIA 读取上限(MAX_READ_SIZE/MAX_MEDIA_READ_SIZE)保留原名不改名, 免改读取层引用。
+# ============================================================
+# —— 以下为工具文件读取/搜索上限(【tool 级】) ——
+MAX_READ_SIZE: int = 10 * 1024 * 1024          # 【tool 级】使用对象: readtext 读取文件字节上限(保留原名不改名, 免改读取层引用)
+MAX_MEDIA_READ_SIZE: int = 50 * 1024 * 1024     # 【tool 级】使用对象: 媒体文件读取字节上限(保留原名不改名)
+MAX_BATCH_FILE_COUNT: int = 100                 # 【tool 级】使用对象: 批量文件操作单次文件数上限
+MAX_SEARCH_FILE_SIZE: int = 10 * 1024 * 1024    # 【tool 级】使用对象: grep/search_files 单文件搜索字节上限
+MAX_SEARCH_RESULTS: int = 1000                  # 【tool 级】使用对象: search_files(find) 结果收集上限, 按 FIND_PAGE_SIZE/页分页; grep 已改引用 OBS_MAX_DISPLAY_ITEMS — 小沈 2026-07-14
+SHELL_OUTPUT_MAX_CHARS: int = 20000    # 【tool 级】使用对象: execute_shell_command.py(shell 输出超长截断, 头尾各半; 原 MAX_OUTPUT=30000 调小)
+SHELL_OUTPUT_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级】使用对象: shell_engine.py(引擎读 shell 临时输出文件防 OOM; 原 _MAX_OUTPUT_SZ)
+WEB_FETCH_MAX_CHARS: int = 10000       # 【tool 级】使用对象: fetch_webpage.py(网页正文提取上限; 原 max_tokens=8000→32000字符, 对齐 OBS 10000)
+SEARCH_SNIPPET_MAX_CHARS: int = 300    # 【tool 级】使用对象: search_web.py(搜索结果 snippet 截断; 原 _SNIPPET_MAX_CHARS)
+XLSX_MAX_ROWS: int = 10000             # 【tool 级】使用对象: read_xlsx.py(单次读取最大行数; 原 max_rows=10000)
+HTTP_JSON_PREVIEW_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级】使用对象: http_request.py(JSON body 预览截断; 原 _MAX_JSON_SIZE)
+DOWNLOAD_MAX_BYTES: int = 100 * 1024 * 1024  # 【tool 级】使用对象: download_file.py(下载文件大小上限; 原 _MAX_FILE_SIZE)
+WRITE_TEXT_MAX_CHARS: int = 10000      # 【tool 级】使用对象: file_schema.py(WritetextInput.content 入参校验上限; 原 max_length=10000)
 
 # 二进制文件扩展名 — 小健 2026-06-24 更新：补充媒体扩展名
 # 用途：read_text_file/write_text_file/edit_text_file等文本工具拒绝二进制文件
 # 说明：包含所有二进制格式（包括系统不支持的.rar/.7z），用于防止文本工具误操作二进制文件
-BINARY_EXTENSIONS: set[str] = {
+BINARY_EXTENSIONS: set[str] = {  # 【tool 级】使用对象: 文本工具(readtext/writetext/edittext)拒绝二进制文件扩展名集合
     '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.tiff', '.tif', '.svg',
     '.heic', '.heif',
     '.mp3', '.mp4', '.wav', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.m4a', '.ogg',
@@ -141,7 +163,7 @@ BINARY_EXTENSIONS: set[str] = {
 # 3. 工具注册模块映射(从 lazy_loader.py 迁移) — 【工具层】
 # ============================================================
 
-CATEGORY_MODULES: dict[str, tuple[str, str]] = {
+CATEGORY_MODULES: dict[str, tuple[str, str]] = {  # 【tool 级】使用对象: ToolRegistry 各分类→注册函数模块映射
     "file": ("app.tools.file", "_register_file_tools"),
     "shell": ("app.tools.shell", "_register_shell_tools"),
     "network": ("app.tools.network", "_register_network_tools"),
@@ -159,15 +181,15 @@ CATEGORY_MODULES: dict[str, tuple[str, str]] = {
 #    网络工具的 httpx 客户端连接池参数。与系统层的 LLM_MAX_CONNECTIONS（LLM 客户端）分开。
 # ============================================================
 
-DEFAULT_TIMEOUT_SEC: float = 30.0
-NETWORK_MAX_CONNECTIONS: int = 100
-NETWORK_MAX_KEEPALIVE: int = 20
+DEFAULT_TIMEOUT_SEC: float = 30.0             # 【tool 级】使用对象: network 工具默认超时(秒)
+NETWORK_MAX_CONNECTIONS: int = 100             # 【tool 级】使用对象: network 工具 httpx 连接池最大连接
+NETWORK_MAX_KEEPALIVE: int = 20                # 【tool 级】使用对象: network 工具 httpx 连接池 keepalive 连接数
 
 # ============================================================
 # 6. 注册表工具映射(从 reg_tools.py 迁移) — 【工具层】
 # ============================================================
 
-HIVE_MAP: dict[str, str] = {
+HIVE_MAP: dict[str, str] = {  # 【tool 级】使用对象: win_registry 注册表 hive 名称映射
     "HKCU": "HKEY_CURRENT_USER",
     "HKLM": "HKEY_LOCAL_MACHINE",
     "HKCR": "HKEY_CLASSES_ROOT",
@@ -179,19 +201,19 @@ HIVE_MAP: dict[str, str] = {
 # 7. 工具内容质量(从 content_quality.py 迁移) — 【工具层】
 # ============================================================
 
-SELF_REF_KEYWORDS: list[str] = [
+SELF_REF_KEYWORDS: list[str] = [  # 【tool 级】使用对象: content_quality 自检词关键词集合
     '已成功', '需要继续', '现在需要', '接下来将', '按照要求',
     '继续创建', '已完成', '已创建', '写入成功', '已经写入',
     '已成功创建', '内容已写入', '成功写入', '已成功写入',
     '现在应该', '接下来需要', '需要先', '然后需要',
 ]
 
-CODE_EXTENSIONS: set[str] = {'.py', '.js', '.ts', '.java', '.go', '.c', '.cpp', '.rs', '.rb', '.swift', '.kt', '.scala'}
-DOC_EXTENSIONS: set[str] = {'.txt', '.md', '.doc', '.docx', '.csv', '.log', '.ini', '.cfg', '.yml', '.yaml', '.json', '.xml', '.html', '.htm', '.css', '.scss', '.less'}
+CODE_EXTENSIONS: set[str] = {'.py', '.js', '.ts', '.java', '.go', '.c', '.cpp', '.rs', '.rb', '.swift', '.kt', '.scala'}  # 【tool 级】使用对象: content_quality/代码类工具判定代码文件扩展名
+DOC_EXTENSIONS: set[str] = {'.txt', '.md', '.doc', '.docx', '.csv', '.log', '.ini', '.cfg', '.yml', '.yaml', '.json', '.xml', '.html', '.htm', '.css', '.scss', '.less'}  # 【tool 级】使用对象: 文档类工具判定文档扩展名
 
-SELF_REF_THRESHOLD_NORMAL: float = 0.6
-SELF_REF_THRESHOLD_SHORT: float = 0.4
-SHORT_CONTENT_LENGTH: int = 50
+SELF_REF_THRESHOLD_NORMAL: float = 0.6       # 【tool 级】使用对象: content_quality 自检词比例阈值(正常文本)
+SELF_REF_THRESHOLD_SHORT: float = 0.4         # 【tool 级】使用对象: content_quality 自检词比例阈值(短文本)
+SHORT_CONTENT_LENGTH: int = 50                 # 【tool 级】使用对象: content_quality 短文本判定长度
 
 # ============================================================
 # 8. 工具安全模式(从 shell_helper/exec_helper 迁移) — 【工具层】
@@ -211,13 +233,13 @@ SHORT_CONTENT_LENGTH: int = 50
 # 9. 工具日期/哈希辅助(从 date_helper/hash_helper 迁移) — 【工具层】
 # ============================================================
 
-QINGMING_DATES: dict[int, tuple[int, int]] = {
+QINGMING_DATES: dict[int, tuple[int, int]] = {  # 【tool 级】使用对象: 节日/日期相关工具判定清明日期
     2024: (4, 4), 2025: (4, 4), 2026: (4, 5),
     2027: (4, 5), 2028: (4, 4), 2029: (4, 5), 2030: (4, 5),
     2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
 }
 
-SUPPORTED_ALGORITHMS: set[str] = {"md5", "sha1", "sha256", "sha512"}
+SUPPORTED_ALGORITHMS: set[str] = {"md5", "sha1", "sha256", "sha512"}  # 【tool 级】使用对象: hash 工具支持的算法集合
 
 # ============================================================
 # 10. 工具重试配置(从 tool_config.py 迁移) — 【工具层】
@@ -225,42 +247,43 @@ SUPPORTED_ALGORITHMS: set[str] = {"md5", "sha1", "sha256", "sha512"}
 #    与系统层的 LLM 熔断/重试策略完全分开。
 # ============================================================
 
-TOOL_RETRY_BACKOFF: dict[str, float] = {
+TOOL_RETRY_BACKOFF: dict[str, float] = {  # 【tool 级】使用对象: ToolRetryEngine 重试退避系数(秒)
     "default": 2.0,
 }
 
 # 工具层 HTTP 可重试状态码 — 小欧 2026-06-30
 # 用途：httpget 等 network 工具判断是否抛异常给 ToolRetryEngine 重试。
 #       与系统层 constants.py 的 SYS_RATE_LIMIT_CODES（LLM 限流检测）完全无关。
-TOOL_RETRYABLE_HTTP_CODES: set[int] = {429, 500, 502, 503, 504}
+TOOL_RETRYABLE_HTTP_CODES: set[int] = {429, 500, 502, 503, 504}  # 【tool 级】使用对象: httpget 等 network 工具判断是否抛异常给 ToolRetryEngine 重试
 
 # 工具层错误码(从 constants.py 迁入) — 小欧 2026-06-30
+# 使用对象: 各工具 build_error/build_warning 返回码(用途明确, 本组 ERR_* 不再逐条标注使用对象)
 # 用途：ToolRetryEngine 构建重试耗尽错误返回。
 ERR_TOOL_NOT_FOUND = "ERR_TOOL_NOT_FOUND"
 ERR_MISSING_PARAM = "ERR_MISSING_PARAM"
 ERR_INVALID_PARAMS = "ERR_INVALID_PARAMS"
 ERR_UNKNOWN = "ERR_UNKNOWN"
 
-SENSITIVE_FIELDS: set[str] = {"password", "token", "api_key", "secret", "authorization", "credential"}
+SENSITIVE_FIELDS: set[str] = {"password", "token", "api_key", "secret", "authorization", "credential"}  # 【tool 级】使用对象: 敏感字段脱敏/红框判定集合
 
 # 工具层浏览器 User-Agent(从 constants.py 迁入) — 小欧 2026-06-30
-TOOL_BROWSER_UA: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+TOOL_BROWSER_UA: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"  # 【tool 级】使用对象: network 工具(fetch_webpage 等) HTTP 请求 User-Agent
 
 # ============================================================
 # 11. 系统敏感路径黑名单常量 — Safety层(path_safe_check)消费
 # ============================================================
 
-FORBIDDEN_PATHS_EXACT: set[str] = {
+FORBIDDEN_PATHS_EXACT: set[str] = {  # 【tool 级】使用对象: 文件安全禁用路径(精确匹配)
     "/etc/shadow",
     "/etc/sudoers",
 }
 
-FORBIDDEN_PATHS_PREFIX: set[str] = {
+FORBIDDEN_PATHS_PREFIX: set[str] = {  # 【tool 级】使用对象: 文件安全禁用路径(前缀匹配)
     "/proc",
     "/sys",
 }
 
-FORBIDDEN_PATHS_WINDOWS_EXACT: set[str] = {
+FORBIDDEN_PATHS_WINDOWS_EXACT: set[str] = {  # 【tool 级】使用对象: Windows 禁用路径(精确匹配)
     r"C:\Windows",
     r"C:\Program Files",
     r"C:\Program Files (x86)",
@@ -271,7 +294,7 @@ FORBIDDEN_PATHS_WINDOWS_EXACT: set[str] = {
     r"C:\Windows\System32\config\DEFAULT",
 }
 
-FORBIDDEN_PATHS_WINDOWS_PREFIX: set[str] = {
+FORBIDDEN_PATHS_WINDOWS_PREFIX: set[str] = {  # 【tool 级】使用对象: Windows 禁用路径(前缀匹配)
     r"C:\Windows\System32\config",
     r"C:\Windows\WinSxS",
 }

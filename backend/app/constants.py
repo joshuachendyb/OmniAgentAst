@@ -24,6 +24,9 @@
   2026-07-14 小欧 删除孤儿常量HTTP_RATE_LIMIT(仅被RATE_LIMIT_STATUS_CODES使用,删除后限流仍由error_classifier覆盖,功能零退化)
   2026-07-14 小欧 加回HTTP_RATE_LIMIT=429并供error_classifier引用,消除裸魔法数429(代码变迁遗留,非功能退化)
   2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL(base_service.py)与MAX_PENDING_CONFIRMATIONS(hitl_confirmation.py)至constants.py(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/相关测试导入)
+  2026-07-15 小欧 常量归一化治理: 删除11个零引用死常量(DEFAULT_*等), 新增系统级 PROJECT_CONTEXT_MAX_CHARS=10000; 现存数值型长度/上限/超时/阈值常量统一标注【使用对象】便于识别废弃
+  2026-07-15 老陈裁定+小欧: 删除 HTTP_RATE_LIMIT 常量(429 是 HTTP 状态码, 在 error_classifier 映射中以裸数字与其他状态码并列, 单独常量多余且 HTTP_ 前缀不准), error_classifier 改回裸 429, 功能零退化
+# 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 """
 
 import re
@@ -33,66 +36,59 @@ from datetime import timedelta
 # 1. HTTP 状态码与错误码
 # ============================================================
 
-HTTP_RATE_LIMIT = 429
+# 注: 429 等 HTTP 状态码在 error_classifier.HTTP_STATUS_TO_ERROR_TYPE 中以裸数字映射(与其他状态码并列), 不单独设常量 — 老陈 2026-07-15 裁定(HTTP_ 前缀不准且多余)
 
 # ============================================================
 # 2. 重试与限流
 # ============================================================
 
-DEFAULT_MAX_STEPS = 100
-MAX_CONSECUTIVE_CHUNKS = 5
-MAX_CHUNKS_WITHOUT_PROMOTE = 50
+DEFAULT_MAX_STEPS = 100  # 【系统级】使用对象: universal_agent Agent 循环最大步数
+MAX_CONSECUTIVE_CHUNKS = 5  # 【系统级】使用对象: Agent 循环连续 chunk 上限
+MAX_CHUNKS_WITHOUT_PROMOTE = 50  # 【系统级】使用对象: Agent 循环无 promote 的 chunk 上限
 
 # ============================================================
 # LLM 客户端配置（从 base_service.py 集中迁移 2026-07-14 小欧）
 # ============================================================
 
-LLM_TEMPERATURE = 0.7
-LLM_TOOL_CHOICE = "auto"
-LLM_STREAM_MAX_RETRIES = 3
-LLM_STREAM_OPTIONS = {"include_usage": True}
-FC_FALLBACK_ENABLED = True
-FC_MAX_RETRIES = 2
-TOOL_CACHE_TTL = 300
+LLM_TEMPERATURE = 0.7  # 【系统级】使用对象: LLM 客户端采样温度
+LLM_TOOL_CHOICE = "auto"  # 【系统级】使用对象: LLM 客户端 tool_choice 模式
+LLM_STREAM_MAX_RETRIES = 3  # 【系统级】使用对象: LLM 流式最大重试次数
+LLM_STREAM_OPTIONS = {"include_usage": True}  # 【系统级】使用对象: LLM 流式选项
+FC_FALLBACK_ENABLED = True  # 【系统级】使用对象: Function Calling 兜底开关
+FC_MAX_RETRIES = 2  # 【系统级】使用对象: Function Calling 最大重试次数
+TOOL_CACHE_TTL = 300  # 【系统级】使用对象: 工具结果缓存 TTL(秒)
 
 # ============================================================
 # 3. 网络与超时
 # ============================================================
 
-DEFAULT_READ_TIMEOUT = 150
+DEFAULT_READ_TIMEOUT = 150  # 【系统级】使用对象: LLMClient 读超时兜底(秒)
 # LLM 读超时兜底(秒): LLMClient/request_stream 未传 timeout 时使用; 亦为 BaseAIService 默认超时。
 # 正常流程 service.py 总传 provider.timeout、base_service 总传 effective_timeout, 故兜底不触发 — 小欧 2026-07-13
-DEFAULT_CONNECT_TIMEOUT = 30.0
-DEFAULT_WRITE_TIMEOUT = 10.0
-DEFAULT_POOL_TIMEOUT = 10.0
+DEFAULT_CONNECT_TIMEOUT = 30.0  # 【系统级】使用对象: LLMClient 连接超时(秒)
+DEFAULT_WRITE_TIMEOUT = 10.0  # 【系统级】使用对象: LLMClient 写超时(秒)
+DEFAULT_POOL_TIMEOUT = 10.0  # 【系统级】使用对象: LLMClient 连接池超时(秒)
 
-LLM_MAX_CONNECTIONS = 10
-LLM_MAX_KEEPALIVE = 5
+LLM_MAX_CONNECTIONS = 10  # 【系统级】使用对象: LLM 客户端连接池最大连接
+LLM_MAX_KEEPALIVE = 5  # 【系统级】使用对象: LLM 客户端连接池 keepalive 连接数
 # NETWORK_TOOL_MAX_* 已迁移到 tool_constants.py (NETWORK_MAX_CONNECTIONS/NETWORK_MAX_KEEPALIVE)
 
 # BROWSER_USER_AGENT 已迁移到 tool_constants.py → TOOL_BROWSER_UA
 
-DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
+DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"  # 【系统级】使用对象: API 服务 CORS 允许源
 
 # ============================================================
 # 4. 内容截断与字符限制
 # ============================================================
 
-MAX_CONTEXT_CHARS = 200000
-TEMP_HISTORY_CHAR_LIMIT = 50000
+MAX_CONTEXT_CHARS = 200000  # 【系统级】使用对象: Agent 总体上下文字符上限
+TEMP_HISTORY_CHAR_LIMIT = 50000  # 【系统级】使用对象: 临时历史字符上限
 
-DEFAULT_MAX_OUTPUT_CHARS = 5000
-DEFAULT_MAX_FILE_CHARS = 8000
-DEFAULT_MAX_DOC_CHARS = 10000
-DEFAULT_MAX_CLIPBOARD_CHARS = 5000
-DEFAULT_MAX_ENV_VALUE_CHARS = 1000
-DEFAULT_MAX_DATA_CHARS = 1000000
-DEFAULT_MAX_LIST_ITEMS = 10000
+# 系统级长度常量(2026-07-15 归一化治理): 项目规则文件(OmniAgent.md)注入字符上限 — 小欧
+PROJECT_CONTEXT_MAX_CHARS = 10000   # 【系统级】使用对象: 项目规则文件(OmniAgent.md)注入 Prompt 字符上限
 
-MAX_CHUNK_COUNT = 5000
-MAX_EMPTY_CONTENT_COUNT = 100
-LOG_PREVIEW_CHARS = 500
-DATA_TOO_LARGE_THRESHOLD = 10000
+# 注: 原 DEFAULT_*(11个) 经验证均为死常量(零引用), 已于 2026-07-15 删除;
+#     工具相关长度上限已统一迁至 app/tools/tool_constants.py (OBS_*/SHELL_*/WEB_*/XLSX_*/HTTP_*/DOWNLOAD_*/WRITE_TEXT_*)
 
 # 全部 ERR_* 工具错误码已迁移到 tool_constants.py 第12节
 
@@ -100,28 +96,28 @@ DATA_TOO_LARGE_THRESHOLD = 10000
 # 5. 会话与缓存(从 message_saver/display_name_cache 迁移)
 # ============================================================
 
-MAX_CACHE_SIZE = 1000
+MAX_CACHE_SIZE = 1000  # 【系统级】使用对象: 会话/上下文缓存最大条目数
 
 # ============================================================
 # 6. SSE流超时(从 react_sse_wrapper 迁移)
 # ============================================================
 
-TASK_TIMEOUT = timedelta(hours=1)
+TASK_TIMEOUT = timedelta(hours=1)  # 【系统级】使用对象: task_registry.cleanup_expired_tasks 过期任务(创建>1h)兜底清理, 防 running_tasks 内存注册表泄漏
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧
-HITL_TIMEOUT = 120
+HITL_TIMEOUT = 120  # 【系统级】使用对象: HITL 确认超时(秒)
 
 # HITL最大待确认数（从 hitl_confirmation.py 集中迁移 2026-07-14 小欧）
-MAX_PENDING_CONFIRMATIONS = 100
+MAX_PENDING_CONFIRMATIONS = 100  # 【系统级】使用对象: HITL 最大待确认数
 
 # ============================================================
 # 7. 通用正则常量（从 common_patterns.py 迁入）
 # ============================================================
 
-HTML_TAG_PATTERN = re.compile(r'<[^>]+>')
-SCRIPT_TAG_PATTERN = re.compile(r'<script[^>]*>.*?</script>', re.DOTALL)
-STYLE_TAG_PATTERN = re.compile(r'<style[^>]*>.*?</style>', re.DOTALL)
-MULTI_WHITESPACE_PATTERN = re.compile(r'\s+')
-UTC_OFFSET_PATTERN = re.compile(r'([+-]\d{2}):?(\d{2})')
+HTML_TAG_PATTERN = re.compile(r'<[^>]+>')  # 【系统级】使用对象: fetch_webpage 等 HTML→纯文本清洗正则
+SCRIPT_TAG_PATTERN = re.compile(r'<script[^>]*>.*?</script>', re.DOTALL)  # 【系统级】使用对象: fetch_webpage 去除 script 标签正则
+STYLE_TAG_PATTERN = re.compile(r'<style[^>]*>.*?</style>', re.DOTALL)  # 【系统级】使用对象: fetch_webpage 去除 style 标签正则
+MULTI_WHITESPACE_PATTERN = re.compile(r'\s+')  # 【系统级】使用对象: 多空白压缩正则(fetch_webpage/observation)
+UTC_OFFSET_PATTERN = re.compile(r'([+-]\d{2}):?(\d{2})')  # 【系统级】使用对象: 时区偏移解析正则
 
 
