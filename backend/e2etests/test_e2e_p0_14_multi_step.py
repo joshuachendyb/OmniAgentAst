@@ -121,7 +121,11 @@ async def test_e2e_p0_14_multi_step_reasoning():
         assert len(lc["errors"]) == 0, f"no ERROR in log(MUST): {lc['errors'][:3]}"
         assert len(lc["tracebacks"]) == 0, "no traceback(MUST)"
         if not lc["session_records_found"]:
-            print("  [WARN] log: session records not found(SHOULD, non-blocking)")
+            print(f"  [WARN] 日志未找到session操作记录 "
+                  f"(raw_lines={lc.get('_debug_raw_lines')}, "
+                  f"filtered_lines={lc.get('_debug_filtered_lines')}, "
+                  f"session_in_raw={lc.get('_debug_session_in_raw')}, "
+                  f"session_in_filtered={lc.get('_debug_session_in_filtered')})")
         if not lc["sse_records_found"]:
             print("  [WARN] log: SSE records not found(SHOULD, non-blocking)")
 

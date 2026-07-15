@@ -110,7 +110,13 @@ async def test_e2e_p0_01_introduce_self():
         filtered = filter_safety_errors(lc["errors"])
         assert len(filtered["other_errors"]) == 0, f"日志不应有非安全ERROR(MUST): {filtered['other_errors'][:3]}"
         assert len(lc["tracebacks"]) == 0, f"日志不应有Traceback(MUST)"
-        assert lc["session_records_found"], "日志应有session操作记录(SHOULD)"
+        assert lc["session_records_found"], (
+            f"日志应有session操作记录(SHOULD) "
+            f"[raw_lines={lc.get('_debug_raw_lines')} "
+            f"filtered_lines={lc.get('_debug_filtered_lines')} "
+            f"session_in_raw={lc.get('_debug_session_in_raw')} "
+            f"session_in_filtered={lc.get('_debug_session_in_filtered')}]"
+        )
 
         # 步骤9: 报告
         print_report(

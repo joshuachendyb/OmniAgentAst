@@ -114,7 +114,13 @@ async def test_e2e_p0_02_tool_call():
         filtered = filter_safety_errors(lc["errors"])
         assert len(filtered["other_errors"]) == 0, f"日志不应有非安全ERROR(MUST): {filtered['other_errors'][:3]}"
         assert len(lc["tracebacks"]) == 0, f"日志不应有Traceback(MUST)"
-        assert lc["session_records_found"], "日志应有session操作记录(SHOULD)"
+        assert lc["session_records_found"], (
+            f"日志应有session操作记录(SHOULD) "
+            f"[raw_lines={lc.get('_debug_raw_lines')} "
+            f"filtered_lines={lc.get('_debug_filtered_lines')} "
+            f"session_in_raw={lc.get('_debug_session_in_raw')} "
+            f"session_in_filtered={lc.get('_debug_session_in_filtered')}]"
+        )
 
         dpi = verify_db_prompt_consistency(sid, result.get("user_msg_id"))
         assert len(dpi) == 0, f"DB->Prompt不一致(MUST): {dpi}"

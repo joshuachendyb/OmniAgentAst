@@ -126,7 +126,11 @@ async def test_e2e_p6_04_sql_error():
         if lc["tracebacks"]:
             print(f"  [WARN] 日志有Traceback(P6预期), count={len(lc['tracebacks'])}")
         if not lc["session_records_found"]:
-            print("  [WARN] 日志未找到session操作记录(SHOULD, non-blocking)")
+            print(f"  [WARN] 日志未找到session操作记录 "
+                  f"(raw_lines={lc.get('_debug_raw_lines')}, "
+                  f"filtered_lines={lc.get('_debug_filtered_lines')}, "
+                  f"session_in_raw={lc.get('_debug_session_in_raw')}, "
+                  f"session_in_filtered={lc.get('_debug_session_in_filtered')})")
 
         tool_names = [t["tool_name"] for t in result["tool_calls"]]
         print_report(
