@@ -16,13 +16,12 @@
 
 编辑历史:
   2026-07-14 小欧 消除裸魔法数429: 引入HTTP_RATE_LIMIT常量供HTTP_STATUS_TO_ERROR_TYPE引用(代码变迁遗留,非功能退化)
+  2026-07-15 小欧 老陈裁定: HTTP_RATE_LIMIT 常量多余且 HTTP_ 前缀不准, 删除; HTTP_STATUS_TO_ERROR_TYPE 中 429 改回裸数字(与其他 HTTP 状态码并列), 功能零退化
 """
 
 import re
 from enum import Enum
 from typing import Optional, Tuple, Dict, Any
-
-from app.constants import HTTP_RATE_LIMIT
 
 try:
     from app.utils.idle_timeout import IdleTimeoutError
@@ -82,7 +81,7 @@ HTTP_STATUS_TO_ERROR_TYPE: Dict[int, SystemErrorCategory] = {
     400: SystemErrorCategory.SERVER,
     401: SystemErrorCategory.SERVER,
     403: SystemErrorCategory.SERVER,
-    HTTP_RATE_LIMIT: SystemErrorCategory.SERVER,
+    429: SystemErrorCategory.SERVER,
     500: SystemErrorCategory.SERVER,
     502: SystemErrorCategory.SERVER,
     503: SystemErrorCategory.SERVER,

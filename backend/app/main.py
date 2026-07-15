@@ -1,6 +1,9 @@
 # Windows需要ProactorEventLoop支持asyncio subprocess — 小沈 2026-06-28
+# 编辑历史:
+# 2026-07-15 小欧 修复后台清理闭包命名撞车: 原内部闭包 cleanup_task 与 task_registry.cleanup_task(删单个任务)同名不同义, 违反清晰命名/KISS; 展平为模块级 _periodic_cleanup_loop 并保存 task 引用, shutdown 时 cancel
 import sys
 import asyncio
+from typing import Optional
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     # Windows PowerShell 5.1中文输出编码修复 — 小欧 2026-07-07
@@ -140,18 +143,25 @@ app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 app.include_router(task_queries_router, prefix="/api/v1", tags=["task-queries"])
 
 
-def _start_cleanup_task():
-    """启动清理任务 - 小沈 2026-06-08"""
-    async def cleanup_task():
-        """定期清理过期任务"""
-        while True:
-            try:
-                await cleanup_expired_tasks()
-            except Exception as e:
-                logger.error(f"清理过期任务失败: {e}")
-            await asyncio.sleep(3600)
-    
-    asyncio.create_task(cleanup_task())
+_cleanup_task_ref: Optional[asyncio.Task] = None  # 后台清理循环 task 引用, 供 shutdown 时 cancel
+
+
+async def _periodic_cleanup_loop() -> None:
+    """后台周期清理循环: 每 3600s 调用 task_registry.cleanup_expired_tasks 兜底清理过期任务
+       命名与 task_registry.cleanup_task(删单个任务) 区分, 避免混淆 (清晰命名/KISS)
+    """
+    while True:
+        try:
+            await cleanup_expired_tasks()
+        except Exception as e:
+            logger.error(f"清理过期任务失败: {e}")
+        await asyncio.sleep(3600)
+
+
+def _start_cleanup_task() -> None:
+    """启动后台周期清理任务 — 小沈 2026-06-08; 闭包展平+改名 小欧 2026-07-15"""
+    global _cleanup_task_ref
+    _cleanup_task_ref = asyncio.create_task(_periodic_cleanup_loop())
     logger.info("后台清理任务已启动")
 
 
@@ -176,7 +186,10 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """应用关闭时清理资源 — 小健 2026-06-18 内联透传函数"""
+    """应用关闭时清理资源 — 小健 2026-06-18 内联透传函数; 补充 cancel 清理循环 小欧 2026-07-15"""
+    global _cleanup_task_ref
+    if _cleanup_task_ref is not None and not _cleanup_task_ref.done():
+        _cleanup_task_ref.cancel()
     from app.services.lifecycle import reset
     reset()
     count = cleanup_all_persistent_shells()

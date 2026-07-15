@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-15 - 小欧 - 注释说明 TASK_TIMEOUT 兜底清理意义(防 running_tasks 内存注册表泄漏); 老陈裁定改为按终态+超时清理: 仅清非活跃(running/paused 外)且超1h任务, 避免误伤长任务/暂停任务
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -64,12 +66,23 @@ async def cleanup_task(task_id: str) -> bool:
 
 
 async def cleanup_expired_tasks() -> None:
-    """清理过期任务"""
+    """清理过期任务(running_tasks 内存注册表兜底防泄漏) — 老陈 2026-07-15 注释说明
+
+    设计意图:
+      - running_tasks 是进程内内存字典, 正常任务跑完会由 cleanup_task/pop_task_field 自行移除;
+        本函数仅作兜底, 清理遗留僵尸任务, 防内存注册表泄漏。
+      - 判定依据(老陈 2026-07-15 裁定: 按终态+超时, 避免误伤长任务):
+        仅清理「非活跃状态」且「创建超过 TASK_TIMEOUT(1小时)」的任务。
+        活跃状态(running/paused)即使超 1 小时也保留 —— running 可能是 legit 长任务,
+        paused 是用户暂停待恢复, 均不应被自动清掉; 取消(cancelled)等终态任务无恢复意义, 超时即清理。
+        注: 本字典 status 实际取值仅 running/cancelled/paused(status_table 的 completed/failed 是 agent 对象枚举, 不写此字典)。
+    """
     now = datetime.now()
     async with running_tasks_lock:
         expired = [
             tid for tid, t in running_tasks.items()
             if t.get("created_at") and now - t["created_at"] > TASK_TIMEOUT
+            and t.get("status") not in ("running", "paused")
         ]
         for tid in expired:
             del running_tasks[tid]
