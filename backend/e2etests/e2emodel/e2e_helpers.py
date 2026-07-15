@@ -1015,6 +1015,10 @@ def check_logs(
         "sse_records_found": False,
         "llm_calls_found": 0,
         "prompt_log_files": [],
+        "_debug_raw_lines": 0,
+        "_debug_filtered_lines": 0,
+        "_debug_session_in_raw": False,
+        "_debug_session_in_filtered": False,
     }
 
     now = datetime.now()
@@ -1025,13 +1029,14 @@ def check_logs(
         return result
 
     try:
-        content = log_file.read_text(encoding="utf-8", errors="ignore")
+        raw_content = log_file.read_text(encoding="utf-8", errors="ignore")
+        result["_debug_raw_lines"] = len(raw_content.splitlines())
 
         # ── 时间过滤 ──
         if start_time:
             filtered: List[str] = []
             current_ts: Optional[datetime] = None
-            for line in content.splitlines():
+            for line in raw_content.splitlines():
                 m = re.match(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", line)
                 if m:
                     try:
@@ -1041,6 +1046,11 @@ def check_logs(
                 if current_ts is None or current_ts >= start_time:
                     filtered.append(line)
             content = "\n".join(filtered)
+            result["_debug_filtered_lines"] = len(filtered)
+            result["_debug_session_in_raw"] = bool(session_id and session_id in raw_content)
+            result["_debug_session_in_filtered"] = bool(session_id and session_id in content)
+        else:
+            content = raw_content
 
         # ── ERROR检查(MUST) ──
         # 只匹配ERROR级别日志(格式: timestamp - ERROR - ...)，不匹配内容中的ERROR字样
