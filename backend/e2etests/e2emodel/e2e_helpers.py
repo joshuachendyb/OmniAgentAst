@@ -1507,7 +1507,7 @@ def write_test_record(
     lines.append("## 2 LLM回复内容")
     lines.append("")
     lines.append("```")
-    lines.append(resp[:800] if resp else "(空)")
+    lines.append(resp if resp else "(空)")
     lines.append("```")
     lines.append("")
 
@@ -1631,7 +1631,7 @@ def write_test_record(
         lines.append("**异常信息**:")
         lines.append("")
         lines.append("```")
-        lines.append(error_info[:1000])
+        lines.append(error_info[:5000])
         lines.append("```")
         lines.append("")
 
@@ -1639,7 +1639,7 @@ def write_test_record(
         lines.append("**回复内容错误详情**:")
         lines.append("")
         lines.append("```")
-        lines.append(resp[:300])
+        lines.append(resp)
         lines.append("```")
         lines.append("")
 
