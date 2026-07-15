@@ -7,6 +7,7 @@ FC 消息类型安全 — Pydantic 模型
 
 【创建时间】2026-06-11 小沈
 【签名】小沈
+【编辑历史】2026-07-16 小欧 更新推理-only注入注释: 旧3条空tool_call_id消息→合法assistant(content)(工具调用意图由llm_stream XML提取接管)
 """
 
 from pydantic import BaseModel
@@ -106,13 +107,11 @@ LLM 历史消息结构说明
     没进历史（仅 SSE 推前端）：
       ThoughtStep         ─ LLM 推理/思考内容（thought/reasoning），只展示不存储
 
-    例外：content="" 但 reasoning 有内容时（answer_handler.py:65-71），reasoning 会以
-          observation 形式注入 conversation_history，避免 LLM 在下轮丢失上下文。
-          本处分两条路径往 conversation_history 写 3 条消息：
-            ① assistant("")          真实记录：本轮 LLM 实际返回空内容（没给最终答案）
-            ②-1 assistant(tool_calls=[], content=reasoning)  合成注入：模拟 FC 格式，把 reasoning 当 assistant 工具调用
-            ②-2 tool(tool_call_id="", content=reasoning)     合成注入：模拟 FC 格式，把 reasoning 当工具结果
-          ① 是"LLM 说了什么"的日志记录，②是"喂给下一轮 LLM 的上文"。
+    例外：content="" 但 reasoning 有内容时（answer_handler.py），reasoning 会以
+          合法 assistant(content) 形式注入 conversation_history，避免 LLM 在下轮丢失上下文。
+          （旧实现曾伪造空 tool_call_id 的 tool 消息导致下游协议违反，已改为纯文本注入。）
+          若 reasoning 内嵌 <tool_call> XML，由 llm_stream.py 的 XML 提取在 type 判定前处理为
+          合法 action 执行，合成非空 tool_call_id 配对，不落此分支。
 
     ───────────────────────────────────────────────────────────
     5.1 thought（推理）入不入历史的科学原理

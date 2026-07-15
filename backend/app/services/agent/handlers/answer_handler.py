@@ -9,6 +9,7 @@ Author: 小沈 - 2026-06-09
 v2.0: 新增错误消息检测，LLM返回错误时设FAILED而非COMPLETED — 小欧 2026-06-28
 v3.0: reasoning-only分支+tool call文本格式化 — 小欧 2026-07-12
 v4.0: 合并error/unknown处理，react_cycle只分两路 — 小欧 2026-07-12
+v4.1: reasoning-only分支改add_assistant_message(reasoning)合法注入(工具调用意图已由llm_stream提前提取为action,本分支仅处理纯推理文本) — 小欧 2026-07-16
 """
 import os
 import time
@@ -249,22 +250,13 @@ async def handle_answer(agent, parsed: Dict):
         ))
         return
 
-    # reasoning-only：LLM只返回推理没给最终答案 → 注入observation继续循环
-    # 本处分两条路径往conversation_history写3条消息，原因如下：
-    #   ① add_assistant_message("") → role=assistant, content=""     真实记录：本轮LLM实际返回空
-    #   ② add_observation(reasoning) → _append_observation拆成2条：
-    #       ②-1 assistant(tool_calls=[], content=reasoning)           合成注入：模拟FC格式，把reasoning当assistant工具调用
-    #       ②-2 tool(tool_call_id="", content=reasoning)             合成注入：模拟FC格式，把reasoning当工具结果
-    #   ① 是"LLM说了什么"的日志记录，②是"喂给下一轮LLM的上文"。
-    #   这样下一轮LLM收到历史时能看到"我上轮推理了这些内容+得到了observation"，从而继续执行。
-    #   — 小欧 2026-07-12
+    # reasoning-only：LLM只返回推理没给最终答案 → 注入助理消息继续循环
+    # 注：若推理内嵌 <tool_call> XML（LLM降级旧格式），已在 llm_stream.py 的 type 判定前
+    #     提取为合法 action 执行，不会走到本分支。
+    #     本分支仅处理"纯推理、无工具调用意图"的情形，以合法 assistant(content) 保留上下文。— 小欧 2026-07-16
     if not content and reasoning:
-        logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入observation继续循环")
-        agent.message_builder.add_assistant_message("")
-        agent.message_builder.add_observation(
-            reasoning,
-            {"tool_call_id": "", "tool_calls": [], "llm_content": reasoning},
-        )
+        logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入助理消息继续循环")
+        agent.message_builder.add_assistant_message(reasoning)
         yield agent._step_emitter.emit(ThoughtStep(
             step=step, content=reasoning, reasoning="",
         ))
