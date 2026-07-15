@@ -1033,7 +1033,10 @@ def check_logs(
         result["_debug_raw_lines"] = len(raw_content.splitlines())
 
         # ── 时间过滤 ──
+        # 铁律: 日志只有秒精度(%H:%M:%S), start_time有微秒精度。
+        # 截断到秒避免同秒日志被误过滤 — 小欧 2026-07-15
         if start_time:
+            start_time_sec = start_time.replace(microsecond=0)
             filtered: List[str] = []
             current_ts: Optional[datetime] = None
             for line in raw_content.splitlines():
@@ -1043,7 +1046,7 @@ def check_logs(
                         current_ts = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
                     except ValueError:
                         current_ts = None
-                if current_ts is None or current_ts >= start_time:
+                if current_ts is None or current_ts >= start_time_sec:
                     filtered.append(line)
             content = "\n".join(filtered)
             result["_debug_filtered_lines"] = len(filtered)
