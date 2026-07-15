@@ -1,4 +1,22 @@
-﻿v0.18.20
+﻿v0.18.21
+更新时间: 2026-07-15 22:38:57 - 小欧-2026-07-15
+## v0.18.20→v0.18.21 变更汇总 - 小欧-2026-07-15
+
+### 最新改版（持续修改不覆盖）：
+- fix:delete_file+tool_constants+tool_retry_engine _force_delete_sync返回(bool,str)透传真因+HTTP常量归并Section4+TOOL_RETRY_CONFIG迁入常量文件 - 小欧-2026-07-15
+- docs:新增系统长度常量归一化治理方案+更新测试复盘 - 小欧-2026-07-15
+- fix:main.py闭包撞名+error_classifier裸429+task_registry终态清理 - 小欧-2026-07-15
+- refactor:10个工具文件硬编码改引用tool_constants新常量 - 小欧-2026-07-15
+- refactor:constants.py+tool_constants.py 常量归一化治理+标注使用对象 - 小欧-2026-07-15
+- fix:rename+overwrite+database+operation_executor 新增overwrite参数修复rename目标已存在失败,execute_with_safety透传真因消除双重误报日志 - 小欧-2026-07-15
+- fix:test_e2e_p5_05_system_diagnose.py 修正测试数据路径(explicit_p5_test_plan_v2.jsonl) - 小欧-2026-07-15
+- fix:fetch_webpage.py 修复异常日志空消息(type(e).__name__: {e})增强开发日志可读性 - 小欧-2026-07-15
+- fix:e2e_helpers.py 测试记录LLM回复内容取消截断(resp[:800]→resp) - 小欧-2026-07-15
+- docs:notes/删除60+个E2E旧测试记录文件+新增复盘报告 - 小欧-2026-07-15
+- refactor:system_prompts.py 铁律-任务复核①拆分A/B/C/D+增强④任务失败要求 - 小欧-2026-07-15
+- docs:version.txt 补全v0.18.20 v0.18.19以来全部22个commit - 小欧-2026-07-15
+
+v0.18.20
 更新时间: 2026-07-15 - 小欧-2026-07-15
 ## v0.18.19→v0.18.20 变更汇总 - 小欧-2026-07-15
 
