@@ -16,6 +16,7 @@ Shell Schema - Shell工具参数模型
 """
 # Merged schema - 小欧 2026-06-18
 # 【2026-06-18 小健】删除两个包装器schema，违反YAGNI原则
+# 小欧 - 2026-07-15: 新增success_codes参数,支持追加式非零退出码视为成功,0始终成功
 
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
@@ -59,6 +60,12 @@ class ShellInput(BaseModel):
     )
     cwd: Optional[str] = Field(
         default=None, description="命令执行的工作目录(绝对路径)。需要在特定目录下执行命令时设置,如 D:/project。不设置则使用当前目录"
+    )
+    success_codes: Optional[list[int]] = Field(
+        default=None,
+        description="额外视为成功的退出码(0始终算成功,无需列出)。"
+               "当命令用非零退出码表达业务结果(如校验工具返回1=有问题)时,"
+               "在此追加如[1,2]防止被误判为执行失败。不传则只认0。"
     )
 
 

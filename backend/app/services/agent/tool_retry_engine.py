@@ -7,7 +7,14 @@
 
 小沈 - 2026-06-08 P1-7/8/9: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
 小欧 - 2026-06-30: 明确分层归属(工具的外部重试 → 工具层)，常量全部引自 tool_constants
-
+小沈 - 2026-07-15: 外层超时恒>内层timeout+缓冲, 防状态工具(如shell)进程孤儿化. 改动: _execute_with_retry + try_once
+        工具类型	timeout	旧outer	新outer	影响
+        shell (默认)	60	120	120	零变化
+        shell (死锁场景)	600	120	630	修复生效 ✅
+        httpget	300	60	330	wait_for仅+30s兜底
+        download	3600	120	630	cap限制，不再无视LLM意愿
+        readtext/write等	无timeout参	—	—	零变化 
+        
 【分层规范 - 小健 2026-05-27】
 本文件是工具的【外部重试】，使用 tool_result_utils.py 的 create_xxx 函数
 禁止使用 _response.py 的 build_xxx 函数(那是工具层内部响应用的)
@@ -162,6 +169,12 @@ class ToolRetryEngine:
         # 复用_get_retry_config的超时查询，消除与_execute_with_retry的DRY违规 — 小欧 2026-07-09
         _, _, _, base_timeout = self._get_retry_config(action)
         timeout = min(base_timeout, 300)
+        # 同_execute_with_retry: 外层超时恒 > 内层timeout+缓冲 — 小沈 2026-07-15
+        inner = params_or_error.get("timeout")
+        if isinstance(inner, int) and inner > 0:
+            needed = inner + 30
+            if needed > timeout:
+                timeout = min(needed, 630)
         try:
             result = await self._execute_tool_once(tool, params_or_error, timeout)
             if isinstance(result, dict):
@@ -275,6 +288,12 @@ class ToolRetryEngine:
         for attempt in range(max_retries + 1):
             # 渐进超时：首次base_timeout，后续递增，cap 300s防止过长阻塞
             timeout = min(base_timeout * (attempt + 1), 300)
+            # 外层超时恒 > 内层timeout+缓冲, 防外层抢先取消致有状态工具(如shell)进程孤儿化 — 小沈 2026-07-15
+            inner = params.get("timeout")
+            if isinstance(inner, int) and inner > 0:
+                needed = inner + 30
+                if needed > timeout:
+                    timeout = min(needed, 630)
             if attempt > 0 and on_retry_started:
                 try:
                     on_retry_started(action, attempt, max_retries, str(last_error)[:100])

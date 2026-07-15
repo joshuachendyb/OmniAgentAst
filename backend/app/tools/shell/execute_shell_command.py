@@ -71,6 +71,7 @@ S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026
 铁规2: 工具返回原始 data，前端截断在前端 yield 层
 铁规3: 计时仅在 shell() 主函数
 """
+# 小欧 - 2026-07-15: 新增success_codes参数+退出码判断改为`==0 or in`追加式,0永远成功
 import locale
 import os
 import re
@@ -326,6 +327,7 @@ def _cmd_powershell_mismatch_hint(command: str, shell_type: str, stderr: str) ->
 def shell(
     command: str, shell_type: Optional[str] = "powershell",
     timeout: int = 60, cwd: Optional[str] = None,
+    success_codes: Optional[list[int]] = None,
 ) -> Dict[str, Any]:
     """执行 Shell 命令（v2: 持久引擎版）
 
@@ -472,7 +474,7 @@ def shell(
                 timeout=timeout, cwd=cwd or "", hint="命令执行超时，建议: 1. 增大timeout参数 2. 简化命令 3. 分步执行")
             return build_warning(data=data, llm_data=llm)
 
-        if returncode == 0:
+        if returncode == 0 or returncode in (success_codes or []):
             stderr_clean = stderr_str.strip()
             if stderr_clean:
                 benign_filtered = _filter_benign_stderr(stderr_str)
