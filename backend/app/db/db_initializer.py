@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-14 - 小欧 - 新增chat_message_steps独立步骤表(一行=一步)+idx_steps_message和idx_steps_session索引,支撑运行期逐步落库
+# 2026-07-16 - 小欧 - chat_messages 增 thought TEXT 列, 持久化 thought 到主表
 """
 db_initializer — 数据库初始化
 
@@ -76,6 +77,7 @@ def init_chat_db(get_conn):
 
         # 小欧 2026-07-13: 终态列(status), 记录一次请求的任务终态, 供前端/迁移直接读取
         _ensure_column(conn, "chat_messages", "status", "TEXT")
+        _ensure_column(conn, "chat_messages", "thought", "TEXT")  # 小欧 2026-07-16
         
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON chat_sessions(updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON chat_sessions(is_deleted)")
@@ -119,22 +121,6 @@ def init_operations_db(get_conn):
                 sequence_number INTEGER DEFAULT 0
             );
             
-            CREATE TABLE IF NOT EXISTS task_operations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id TEXT UNIQUE NOT NULL,
-                agent_id TEXT NOT NULL,
-                task_description TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                total_operations INTEGER DEFAULT 0,
-                success_count INTEGER DEFAULT 0,
-                failed_count INTEGER DEFAULT 0,
-                rolled_back_count INTEGER DEFAULT 0,
-                report_generated BOOLEAN DEFAULT 0,
-                report_path TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                completed_at TIMESTAMP
-            );
-            
             CREATE TABLE IF NOT EXISTS timers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timer_id TEXT UNIQUE NOT NULL,
@@ -154,6 +140,11 @@ def init_operations_db(get_conn):
 def init_task_tracker_db(get_conn):
     """初始化 Task 追踪数据库"""
     with get_conn("task_tracker") as conn:
+        # 迁移: 旧 operations 表改名为 task_operations（命名正名, 小欧 2026-07-16）
+        if conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='operations'"
+        ).fetchone():
+            conn.execute("ALTER TABLE operations RENAME TO task_operations")
         conn.executescript('''
             CREATE TABLE IF NOT EXISTS tasks (
                 task_id          TEXT PRIMARY KEY,
@@ -172,7 +163,7 @@ def init_task_tracker_db(get_conn):
             );
             CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
 
-            CREATE TABLE IF NOT EXISTS operations (
+            CREATE TABLE IF NOT EXISTS task_operations (
                 operation_id     TEXT PRIMARY KEY,
                 task_id          TEXT NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
                 intent           TEXT NOT NULL DEFAULT '',
@@ -189,8 +180,8 @@ def init_task_tracker_db(get_conn):
                 created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
-            CREATE INDEX IF NOT EXISTS idx_ops_task ON operations(task_id);
-            CREATE INDEX IF NOT EXISTS idx_ops_seq  ON operations(task_id, sequence_number);
+            CREATE INDEX IF NOT EXISTS idx_ops_task ON task_operations(task_id);
+            CREATE INDEX IF NOT EXISTS idx_ops_seq  ON task_operations(task_id, sequence_number);
         ''')
 
 

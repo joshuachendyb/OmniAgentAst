@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-16 - 小欧 - MessageResponse 增 thought 字段, API 返回消息时携带 thought
 """
 聊天数据模型 (Chat Data Models)
 定义会话、消息等数据结构
@@ -65,3 +68,4 @@ class MessageResponse(BaseModel):
     timestamp: int = Field(..., description="时间戳(毫秒,int类型)")  # 【修复 2026-04-01 小沈】从str改为int
     execution_steps: Optional[list] = Field(None, description="执行步骤(数组格式)")
     display_name: Optional[str] = Field(None, description="模型显示名称(记录消息收发时使用的模型)")
+    thought: Optional[str] = Field(None, description="LLM 推理过程")  # 小欧 2026-07-16

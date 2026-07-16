@@ -7,6 +7,7 @@
  * @author 小新
  * @version 1.0.0
  * @since 2026-03-09
+ * @updated 2026-07-16 小欧 - Message 接口增 thought 字段
  */
 
 import type { ExecutionStep } from '../utils/sse';
@@ -315,6 +316,7 @@ export interface Message extends ChatMessage {
   id: string;
   timestamp: Date;
   executionSteps?: ExecutionStep[];
+  thought?: string; // 小欧 2026-07-16 LLM推理过程
   isStreaming?: boolean;
   isError?: boolean;
   // 【小沈修复2026-04-23】P0-1: 添加发送状态，用于显示发送失败标识

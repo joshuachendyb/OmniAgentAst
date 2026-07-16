@@ -261,9 +261,9 @@ def load_execution_steps(conn: Connection, message_id: int) -> Optional[list]:
     return []
 
 
-def finalize_message(conn: Connection, message_id: int, content: str, status: str) -> None:
-    """finally 轻量终态 — 小欧 2026-07-14"""
+def finalize_message(conn: Connection, message_id: int, content: str, status: str, thought: str = "") -> None:
+    """finally 轻量终态 — 小欧 2026-07-14; 2026-07-16 小欧 增 thought 持久化"""
     conn.execute(
-        "UPDATE chat_messages SET content=?, status=? WHERE id=?",
-        (content, status, message_id),
+        "UPDATE chat_messages SET content=?, status=?, thought=? WHERE id=?",
+        (content, status, thought or None, message_id),
     )

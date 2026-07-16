@@ -3,6 +3,7 @@
 # 创建时间:2026-05-28
 # 编辑历史:
 # 2026-07-14 - 小欧 - GET消息历史改为从chat_message_steps读取步骤列表, SELECT去除execution_steps列,无数据时从chat_messages.execution_steps列读取
+# 2026-07-16 - 小欧 - SELECT 加 thought 列; MessageResponse 传 thought
 
 """
 消息管理API路由
@@ -56,7 +57,7 @@ async def get_session_messages(session_id: str):
         if not session:
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
 
-        cursor.execute('''SELECT id, session_id, role, content, timestamp, display_name
+        cursor.execute('''SELECT id, session_id, role, content, timestamp, display_name, thought  -- 小欧 2026-07-16 增 thought
                        FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC''', (session_id,))
 
         messages = []
@@ -73,6 +74,7 @@ async def get_session_messages(session_id: str):
                 role=row['role'], content=row['content'],
                 timestamp=ensure_timestamp_milliseconds(row['timestamp']),
                 execution_steps=steps, display_name=display_name,
+                thought=row['thought'],  # 小欧 2026-07-16
             ))
 
         title_locked = bool(session['title_locked'])

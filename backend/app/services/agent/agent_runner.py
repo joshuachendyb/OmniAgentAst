@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-13 - 小欧 - 移除事件循环内重复prompt日志写入(已由_append统一记录)
 # 2026-07-14 - 小欧 - 运行期逐步落库chat_message_steps表, finally仅轻量终态更新; 三退出路径均写入steps, ai_message_id未分配时沿用原有写入逻辑保证完整性
+# 2026-07-16 - 小欧 - FinalStep 事件更新 stream_state.current_thought; finalize_message 调用传 thought 参数
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -158,11 +159,14 @@ async def run_agent_in_background(
                     with db.get_conn("chat") as conn:
                         append_execution_step(conn, ai_message_id, session_id,
                                               len(current_execution_steps) - 1, event_dict)
-            # 更新 current_content — 小沈 2026-06-09
+            # 更新 current_content / current_thought — 小沈 2026-06-09; 小欧 2026-07-16 增 thought 持久化
             if event_type == "final":
                 content = event_dict.get("response", "") or ""
                 if stream_state is not None:
                     stream_state.current_content = content or stream_state.current_content
+                    thought_val = event_dict.get("thought", "") or ""
+                    if thought_val:
+                        stream_state.current_thought = thought_val
             elif event_type == "chunk":
                 chunk_text = event_dict.get("content", "")
                 if stream_state is not None and chunk_text:
@@ -237,10 +241,11 @@ async def run_agent_in_background(
             for retry in range(2):
                 try:
                     saved_content = stream_state.current_content if stream_state else ""
+                    saved_thought = stream_state.current_thought if stream_state else ""
                     if ai_message_id is not None:
-                        # 步骤已逐步落库, 仅 finalize content+status — 小欧 2026-07-14
+                        # 步骤已逐步落库, 仅 finalize content+status — 小欧 2026-07-14; 2026-07-16 小欧 增 thought 持久化
                         with db.get_conn("chat") as conn:
-                            finalize_message(conn, ai_message_id, saved_content, _terminal_status)
+                            finalize_message(conn, ai_message_id, saved_content, _terminal_status, thought=saved_thought)
                     else:
                         # 兜底: ai_message_id未分配时沿用原有写入逻辑 — 小欧 2026-07-14
                         ai_message_id = await save_execution_steps_to_db(

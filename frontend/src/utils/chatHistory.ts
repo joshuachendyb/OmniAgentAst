@@ -7,6 +7,7 @@
  * @author 小新
  * @version 1.0.0
  * @since 2026-03-13
+ * @updated 2026-07-16 小欧 - parseMessage 解析 thought 字段
  */
 
 import { sessionApi } from "../services/api";
@@ -62,6 +63,7 @@ export const parseMessage = (rawMessage: unknown): Message => {
     id: (msg.id as string)?.toString() || Date.now().toString(),
     role: (msg.role as Message["role"]) || "assistant",
     content: (msg.content as string) || "",
+    thought: msg.thought as string | undefined,  // 小欧 2026-07-16
     timestamp: new Date((msg.timestamp as string) || Date.now()),
     executionSteps,
     display_name: msg.display_name as string | undefined,

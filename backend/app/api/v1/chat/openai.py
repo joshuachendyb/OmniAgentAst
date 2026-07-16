@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-16 - 小欧 - StreamState 增 current_thought 字段, 运行期持有 thought 值
 """
 chat_openai — Chat API层入口（路由+实现合一）
 
@@ -154,6 +156,7 @@ class StreamState:
     """流式状态 — 【修复P3-5】明确语义 — 北京老陈 2026-06-13"""
     llm_call_count: int = 0
     current_content: str = ""
+    current_thought: str = ""  # 小欧 2026-07-16
     step_events: list = None
 
     def __post_init__(self):
