@@ -93,22 +93,15 @@
 - 理由：核心准则"两表是同一文件操作的两个维度，非冗余"——若两表 operation_id 不同，它们只是"碰巧同 task_id 的两条独立记录"，准则在数据模型上根本不成立（即北京老陈痛恨的双轨变种）。真正"两个维度" = 同一操作共享一个 operation_id 主键，可 `JOIN` 精确对应 → 符合 SRP（两维度共享主键）、KISS-DIRECT（数据直接表达"一操作两视角"）、SLAP。**不贯通是偷懒让准则落空（混蛋方法），违反设计自洽。**
 - YAGNI 不违：贯通不是"加无用接口"，而是让已确认的"两个维度"准则内在成立，是设计自洽的必须，非额外负担。
 
-**KISS 实现（零侵入调用链）**：经读代码确认，文件工具（如 delete_file.py:124）`record_operation()` 内部生成 op_id 并**返回**它（delete_file.py:143 `return {"operation_id": operation_id, ...}`），`execute_with_safety(operation_id, ...)` 用此 id 读写 file_operations；而 `action_handler.build_observation`（action_handler.py:390）在工具**返回后**写 task_operations，此时 result 已含文件工具的 operation_id。故：
+**KISS 实现（纯内部 DB 关联，operation_id 不进 LLM 返回结构）**：北京老陈裁定——operation_id 是 agent 内部字段，**严禁进入任何返回 LLM 的结构**（data/llm_data/other_data 均算）；双表同号贯通只能走**纯内部 DB 关联**，不得读取工具返回值 / LLM 体系任何字段。故：
 
-1. `record_operation`（operation_recorder.py）与 `add_operation`（task_db.py）均增加**可选** `operation_id` 参数（不传则内部调 `generate_operation_id()`，保持其他潜在调用方兼容）。
-2. `action_handler.build_observation`（action_handler.py:390 附近）改为统一：
-   ```python
-   op_id = (result.get("operation_id") if isinstance(result, dict) else None) or generate_operation_id()
-   ctx.agent.record_operation(
-       op_id, call.get("tool_name", "?"),
-       status=OperationStatus.FAILED.value if _is_failed else OperationStatus.SUCCESS.value,
-       error=str(result) if _is_failed else None,
-   )
-   ```
-3. 文件类工具（delete/copy/move/edit_text/compress/write_text）**确保 result 返回 `operation_id`**（delete_file 已返回，其余核对补齐），供 action_handler 复用 → `file_operations.operation_id == task_operations.operation_id`，两表同号可精确关联。
-4. 非文件工具 result 无 `operation_id` → 走 `generate_operation_id()` 自生成（正常，无 file_operations 对应）。
+1. `record_operation`（operation_recorder.py）与 `add_operation`（task_db.py）均增加**可选** `operation_id` 参数（不传则内部调 `generate_operation_id()`，保持其他潜在调用方兼容）—— 此点保留。
+2. **文件类工具 result 一律不返回 `operation_id`**（delete/copy/move/edit_text/compress/write_text 已全部抠掉，返回值对 LLM 完全干净）。
+3. `action_handler`（action_handler.py:391）**不读 result**，改为纯内部查询：仅用 `ctx.agent.task_id` 查 `file_operations` 最新一条 `operation_id`（`SELECT operation_id FROM file_operations WHERE task_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1`），传入 `record_operation(operation_id=op_id)` 写 task_operations → `file_operations.operation_id == task_operations.operation_id`，两表同号可精确关联。
+   - 非文件工具 / file_operations 无对应时 `op_id=None` → add_operation 内部自生成（正常，无 file_operations 对应）。
+4. 此贯通全程在 agent/task 内部完成，**与 LLM 返回结构零耦合**，符合"内部功能不污染 LLM"的铁律。
 
-**此实现不改动** `execute_tool` / `ToolRetryEngine` / 工具函数签名，仅调整"取 id 的源头"，符合 KISS-DIRECT。
+**此实现不改动** `execute_tool` / `ToolRetryEngine` / 工具函数签名，仅调整 agent 内部"取 id 的源头"，符合 KISS-DIRECT。
 
 ### 5.4 分层职责固化（写进本方案即设计契约）
 
@@ -145,8 +138,8 @@
 | `backend/app/services/task/task_db.py` | 8 处表名 `operations`→`task_operations`（:52/:81/:87/:88/:95/:130/:149/:200）；:93 改调 `generate_operation_id`；`add_operation` 增可选 `operation_id` 参数 |
 | `backend/app/services/safety/operation_recorder.py` | :51 改调 `generate_operation_id`；`record_operation` 增可选 `operation_id` 参数 |
 | `backend/app/services/safety/operation_rollback.py` | 删 :102 僵尸 `task_operations` UPDATE |
-| `backend/app/services/agent/handlers/action_handler.py` | :390 附近 `build_observation` 改 `op_id = result.get("operation_id") or generate_operation_id()`，传入 `agent.record_operation` |
-| `backend/app/tools/file/{delete,copy,move,edit_text,compress,write_text}_file.py` | 确保 result 返回 `operation_id`（delete_file 已返回，其余核对补齐）|
+| `backend/app/services/agent/handlers/action_handler.py` | :391 改为纯内部关联：仅用 `ctx.agent.task_id` 查 `file_operations` 最新 `operation_id` 传入 `record_operation`（不读 result、不进 LLM 返回） |
+| `backend/app/tools/file/{delete,copy,move,edit_text,compress,write_text}_file.py` | result **不**返回 `operation_id`（全部已抠，对 LLM 返回结构干净）；贯通走纯内部 DB 关联 |
 | `backend/app/utils/id_utils.py` | 新建 `generate_operation_id()` |
 | `backend/FUNCTIONS.md` | 登记 `generate_operation_id` |
 
@@ -197,17 +190,17 @@
 
 **API 设计（符合 10 大规范）**
 - `POST /api/v1/tasks/{task_id}/rollback`
-- 流程：
-  1. 前置 HITL 确认：复用现有 `confirm_id` 机制（hitl_confirmation.py），因回滚破坏性，必须用户确认
-  2. 确认通过后调 `rollback_session(task_id)` → 返回 `{total, success, failed, operations:[{operation_id, type, success, reason}]}`
-  3. 回滚统计串联 `task_db.mark_rolled_back`（已在 task_db.py:118，更新 `tasks` 表 `rolled_back_count`/status）—— 消除"回滚统计无人管"死链
+- 流程（KISS-DIRECT，不套 HITL）：
+  1. 回滚是**显式管理动作**：调用方（前端"回滚"按钮）发起该 API 即代表用户确认，直接同步执行 `rollback_session`，不套 HITL async/Future 确认机制（避免绕弯、与前端按钮语义一致）。
+  2. 直接调 `rollback_session(task_id)` → 返回 `{total, success, failed, operations:[{operation_id, type, success, reason}]}`。
+  3. 回滚统计串联 `task_db.mark_rolled_back`（更新 `tasks` 表 `rolled_back_count`/status）—— 消除"回滚统计无人管"死链。
 - 人因反馈：返回每条操作回滚结果（成功/失败+原因），前端可展示"已恢复 X 个文件，Y 个失败"
 
 **10 大规范核查**
 - SRP：API handler 编排、rollback_session 执行、mark_rolled_back 统计，各管一摊
 - KISS-DIRECT：直接复用既有回滚逻辑，不重写
 - YAGNI：先做"按任务全回滚"，不做花哨的选择性回滚 UI
-- 安全：HITL 确认（复用现有 confirm 机制），禁止静默破坏性操作
+- 安全：显式管理动作（前端按钮发起即代表用户确认），破坏性操作由调用方负责确认，禁止静默执行
 - 禁止 backward：新增端点，不改既有端点
 
 ### 11.2 文件操作报告功能
@@ -223,14 +216,14 @@
 
 **API 设计（克制，从"人能用"角度，YAGNI）**
 - `GET /api/v1/tasks/{task_id}/file-operations` → 结构化 JSON 列表（operation_type / source_path / destination_path / status / space_impact_bytes / backup_path / rolled_back_at），供前端列表
-- `GET /api/v1/tasks/{task_id}/file-operations/report?format=text|html` → 可读报告（text_report / html_report）
+- `GET /api/v1/tasks/{task_id}/file-operations/report?format=text|html|json` → 可读报告（text_report / html_report / json_report）
 - **YAGNI 克制**：不暴露 sankey / mermaid / animation / tree 等花哨可视化（属"奇奇怪怪"），仅结构化列表 + 文本 / HTML 两种人读格式
 
 **流程**
 1. 用户查看任务详情 → 点"文件操作"
 2. 前端 `GET /tasks/{task_id}/file-operations`
 3. 后端 `query_file_operations` → 结构化返回
-4. 前端列表展示（类型 / 路径 / 状态 / 空间 / 是否已回滚）；可选"查看报告"→ text / html
+4. 前端列表展示（类型 / 路径 / 状态 / 空间 / 是否已回滚）；可选"查看报告"→ text / html / json
 
 **10 大规范核查**
 - SRP：API 取数、visualization 生成，分离
@@ -253,3 +246,4 @@
 |---|---|---|---|
 | v1.0 | 2026-07-16 17:25:34 | 小欧 | 创建。Operation 数据模型最佳设计方案：命名治理（删僵尸 task_operations + 活表 operations→task_operations 正名 + 迁移）、DRY 抽 generate_operation_id、operation_id 贯通使两表同号（KISS 实现）、回滚僵尸引用清理、分层职责固化。基于 10 大原则裁决，经复核 3 遍。 |
 | v1.1 | 2026-07-16 17:40:00 | 小欧 | 增补 B 功能激活设计（第十一章）：从系统+人角度设计文件操作回滚（POST /tasks/{id}/rollback，HITL 确认 + 复用 rollback_session + 串联 mark_rolled_back 统计）与文件操作报告（GET /tasks/{id}/file-operations 结构化列表 + report?format=text|html，YAGNI 克制不堆花哨格式），均附 10 大规范核查。A+B 同做。 |
+| v1.2 | 2026-07-16 21:03:47 | 小欧 | 修正文档与实际代码背离的两处方向性错误 + 一处遗漏（北京老陈二次裁定后未同步文档）：① 5.3 贯通方案——原写"工具返回 operation_id、action_handler 取 result.get 贯通"，修正为"纯内部 DB 关联：action_handler 仅用 task_id 查 file_operations 最新 op_id 贯通、6 工具返回值已全抠、operation_id 严禁进 LLM 返回"；② 11.1 回滚——原写"前置 HITL 确认(confirm_id 机制)"，修正为"显式管理动作直接同步 rollback_session、不套 HITL"；③ 11.2 报告格式——原漏 json，补 text|html|json。同步更新第七章实施清单 action_handler 与文件工具行。 |
