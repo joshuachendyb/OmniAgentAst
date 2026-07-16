@@ -25,7 +25,8 @@
   2026-07-14 小欧 加回HTTP_RATE_LIMIT=429并供error_classifier引用,消除裸魔法数429(代码变迁遗留,非功能退化)
   2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL(base_service.py)与MAX_PENDING_CONFIRMATIONS(hitl_confirmation.py)至constants.py(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/相关测试导入)
   2026-07-15 小欧 常量归一化治理: 删除11个零引用死常量(DEFAULT_*等), 新增系统级 PROJECT_CONTEXT_MAX_CHARS=10000; 现存数值型长度/上限/超时/阈值常量统一标注【使用对象】便于识别废弃
-  2026-07-15 老陈裁定+小欧: 删除 HTTP_RATE_LIMIT 常量(429 是 HTTP 状态码, 在 error_classifier 映射中以裸数字与其他状态码并列, 单独常量多余且 HTTP_ 前缀不准), error_classifier 改回裸 429, 功能零退化
+   2026-07-15 老陈裁定+小欧: 删除 HTTP_RATE_LIMIT 常量(429 是 HTTP 状态码, 在 error_classifier 映射中以裸数字与其他状态码并列, 单独常量多余且 HTTP_ 前缀不准), error_classifier 改回裸 429, 功能零退化
+   2026-07-16 小欧 新增 LLM_MAX_TOKENS=16384(系统级max_tokens默认值,防LLM无限长输出致长时间静默)+STREAM_TOTAL_TIMEOUT=500(base_service总时长硬超时,弥补httpx idle timeout在连续流式时不触发的缺陷)
 # 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 """
 
@@ -57,6 +58,7 @@ LLM_STREAM_OPTIONS = {"include_usage": True}  # 【系统级】使用对象: LLM
 FC_FALLBACK_ENABLED = True  # 【系统级】使用对象: Function Calling 兜底开关
 FC_MAX_RETRIES = 2  # 【系统级】使用对象: Function Calling 最大重试次数
 TOOL_CACHE_TTL = 300  # 【系统级】使用对象: 工具结果缓存 TTL(秒)
+LLM_MAX_TOKENS = 16384  # 【系统级】使用对象: LLM 单次调用最大输出 token 数(None=不限)
 
 # ============================================================
 # 3. 网络与超时
@@ -71,6 +73,7 @@ DEFAULT_POOL_TIMEOUT = 10.0  # 【系统级】使用对象: LLMClient 连接池�
 
 LLM_MAX_CONNECTIONS = 10  # 【系统级】使用对象: LLM 客户端连接池最大连接
 LLM_MAX_KEEPALIVE = 5  # 【系统级】使用对象: LLM 客户端连接池 keepalive 连接数
+STREAM_TOTAL_TIMEOUT = 500  # 【系统级】使用对象: base_service.request_stream 单次LLM流式调用总时长硬超时(秒)
 # NETWORK_TOOL_MAX_* 已迁移到 tool_constants.py (NETWORK_MAX_CONNECTIONS/NETWORK_MAX_KEEPALIVE)
 
 # BROWSER_USER_AGENT 已迁移到 tool_constants.py → TOOL_BROWSER_UA
