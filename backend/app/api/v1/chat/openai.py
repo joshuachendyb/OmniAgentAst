@@ -8,6 +8,7 @@ task操作只在本层处理:register → cancel检查 → pause检查 → strea
 统一: 小健 - 2026-05-31
 更新: 小健 - 2026-06-17 重命名chat_stream_v2→chat_stream，删除版本后缀
 合并: 北京老陈 - 2026-06-23 chat_router.py合并入chat_openai.py，删除chat_router.py
+更新: 小欧 - 2026-07-16 统一TaskID: 新增generate_task_id(), :181改用, 修正ask_id→task_id笔误
 """
 
 import asyncio
@@ -45,6 +46,12 @@ router = APIRouter()
 # 与 agent_runner._background_tasks 双重保险(后者 caller-agnostic): 本表在调用点持有引用,
 # done 时 discard 防内存泄漏 — 小欧 2026-07-13
 _agent_tasks: set = set()
+
+
+def generate_task_id() -> str:
+    """生成统一格式 task-{hex}，全链路唯一贯通 — 小欧 2026-07-16"""
+    return f"task-{uuid.uuid4().hex}"
+
 
 async def validate_chat_config():
     """拷贝自 validate_chat_config.py — 内联入 chat_openai.py 小欧 2026-07-10"""
@@ -178,7 +185,7 @@ async def chat_stream(request: ChatRequest):
 
     async def generate():
         """SSE 消费者生成器 — 小欧 2026-07-12"""
-        task_id = str(uuid.uuid4())
+        task_id = generate_task_id()
         _current_task_id.set(task_id)
         next_step = create_step_counter()
         execution_steps = []
@@ -196,11 +203,11 @@ async def chat_stream(request: ChatRequest):
             logger.warning(f"[chat] 获取user_message_id失败: session_id={session_id}")
         print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"[TASK_START]:provider={ai_service.provider} model={ai_service.model}")
-        print(f"ask_id={task_id} session_id={session_id} user_message_id={_user_msg_id} |")
+        print(f"task_id={task_id} session_id={session_id} user_message_id={_user_msg_id} |")
         print(f"user_input={user_input}")
         logger.info(
             f"[TASK_START]:provider={ai_service.provider} model={ai_service.model} | "
-            f"ask_id={task_id} session_id={session_id} "
+            f"task_id={task_id} session_id={session_id} "
             f"user_message_id={_user_msg_id} | "
             f"user_input={user_input}"
         )

@@ -7,6 +7,7 @@ run_react_cycle / initialize_run_state → 独立文件
 
 Author: 小沈 - 2026-03-25
 P3-12: 删除run_react_cycle纯委托，改为混合类方式 — 小沈 2026-06-09
+更新: 小欧 - 2026-07-16 统一TaskID: 删除_tracked_task_id, create_task传入self.task_id
 """
 
 import asyncio
@@ -66,11 +67,12 @@ class BaseAgent(ABC):
 
         # 原 AgentInitializer._init_task_tracking
         self._task_tracker = None
-        self._tracked_task_id = None
         try:
             from app.services.task import get_tracker
             tracker = get_tracker()
-            self._tracked_task_id = tracker.create_task(
+            # 统一任务ID: SSE task_id 为全场唯一标识, tracker 不再自编号 — 北京老陈/小欧 2026-07-16
+            tracker.create_task(
+                task_id=self.task_id,
                 agent_id=self.__class__.__name__,
                 description="",
             )

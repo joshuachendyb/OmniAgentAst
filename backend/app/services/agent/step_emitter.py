@@ -6,6 +6,7 @@ task检查由 run_sse_stream 层处理,本层不碰
 
 Author: 小沈 - 2026-05-31
 统一: 小健 - 2026-05-31 — 删除check_cancelled调用
+更新: 小欧 - 2026-07-16 统一TaskID: _get_tracker只返回tracker, complete_task/record_operation直读agent.task_id
 """
 
 from typing import Any, Dict, Optional
@@ -35,20 +36,16 @@ class StepEmitter:
         return self.emit(error_step)
 
     def _get_tracker(self):
-        """获取task_tracker和tracked_task_id — 小健 2026-06-18 DRY提取"""
-        return (
-            getattr(self.agent, '_task_tracker', None),
-            getattr(self.agent, '_tracked_task_id', None),
-        )
+        """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""
+        return getattr(self.agent, '_task_tracker', None)
 
     def complete_task(self, success: bool):
-        """Task追踪:完成任务记录"""
-        task_tracker, tracked_task_id = self._get_tracker()
-        if task_tracker and tracked_task_id:
+        """Task追踪:完成任务记录 — 小欧 2026-07-16 删除 _tracked_task_id 别名, 直读 agent.task_id"""
+        task_tracker = self._get_tracker()
+        if task_tracker:
             try:
-                task_tracker.complete_task(tracked_task_id, success=success)
+                task_tracker.complete_task(self.agent.task_id, success=success)
             except Exception as _e:
-                # 【#41修复】logger.debug→warning，完成任务记录失败应有感知 — chendyg 2026-06-26
                 logger.warning(f"[TaskTracker] 完成任务失败: {_e}")
 
     def record_operation(self, operation_type: str, *, status: Optional[str] = None, error: Optional[str] = None, **kwargs):
@@ -56,12 +53,11 @@ class StepEmitter:
 
         10规范: SRP — 只透传,不判断业务逻辑
         """
-        task_tracker, tracked_task_id = self._get_tracker()
-        if task_tracker and tracked_task_id:
+        task_tracker = self._get_tracker()
+        if task_tracker:
             try:
                 task_tracker.add_operation(
-                    tracked_task_id, operation_type, status=status, error=error, **kwargs,
+                    self.agent.task_id, operation_type, status=status, error=error, **kwargs,
                 )
             except Exception as _e:
-                # 【#40修复】logger.debug→warning，操作记录失败应有感知 — chendyg 2026-06-26
                 logger.warning(f"[TaskTracker] 记录操作失败: {_e}")

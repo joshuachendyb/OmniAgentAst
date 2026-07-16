@@ -4,6 +4,7 @@ task_db — 任务DB持久化（tasks表 + operations表）
 
 合并自: task_tracker + task_queries
 小欧 2026-07-10
+更新: 小欧 - 2026-07-16 统一TaskID: create_task必填task_id无兜底无返回
 """
 
 import json
@@ -34,8 +35,8 @@ class TaskTracker:
 
     # ===== 任务生命周期 =====
 
-    def create_task(self, agent_id: str, description: str) -> str:
-        task_id = f"task-{uuid4().hex}"
+    def create_task(self, task_id: str, agent_id: str, description: str) -> None:
+        """写入任务记录 — task_id 由调用方统一提供（SSE task_id），tracker 不再自编号 — 小欧 2026-07-16"""
         with db.get_conn("task_tracker") as conn:
             conn.execute(
                 """INSERT INTO tasks
@@ -43,7 +44,6 @@ class TaskTracker:
                    VALUES (?, ?, ?, ?, ?)""",
                 (task_id, "", agent_id, description, TaskStatus.EXECUTING.value),
             )
-        return task_id
 
     def complete_task(self, task_id: str, success: bool = True) -> None:
         status = TaskStatus.SUCCESS.value if success else TaskStatus.FAILED.value

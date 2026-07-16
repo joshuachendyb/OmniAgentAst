@@ -4,6 +4,7 @@ _initialize_run_state — 每次运行前初始化Agent状态
 
 职责: 重置steps/message_builder/status/llm_call_count,注入system prompt和task
 Author: 小沈 - 2026-05-31
+更新: 小欧 - 2026-07-16 统一TaskID: _tracked_task_id → agent.task_id
 """
 
 from typing import Any, Dict, Optional
@@ -70,15 +71,15 @@ def initialize_run_state(
     agent._consecutive_truncations = 0
     agent._retry_count = 0
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
-    if task and agent._task_tracker and agent._tracked_task_id:
+    if task and agent._task_tracker and agent.task_id:
         try:
             with db.get_conn("task_tracker") as conn:
                 conn.execute(
                     "UPDATE tasks SET task_description = ? WHERE task_id = ?",
-                    (task[:200], agent._tracked_task_id),
+                    (task[:200], agent.task_id),
                 )
         except Exception:
-            logger.error(f"[initialize_run_state] 更新任务描述失败: task_id={agent._tracked_task_id}")
+            logger.error(f"[initialize_run_state] 更新任务描述失败: task_id={agent.task_id}")
     if task_id:
         agent.task_id = task_id
 
