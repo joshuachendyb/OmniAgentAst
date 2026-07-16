@@ -6,8 +6,9 @@
 归属分层: 【工具层】— 虽在编排层目录，但本质是工具的外部重试机制，引用工具层常量
 
 小沈 - 2026-06-08 P1-7/8/9: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
-小欧 - 2026-06-30: 明确分层归属(工具的外部重试 → 工具层)，常量全部引自 tool_constants
-小沈 - 2026-07-15: 外层超时恒>内层timeout+缓冲, 防状态工具(如shell)进程孤儿化. 改动: _execute_with_retry + try_once
+ 小欧 - 2026-06-30: 明确分层归属(工具的外部重试 → 工具层)，常量全部引自 tool_constants
+ 小沈 - 2026-07-15: 外层超时恒>内层timeout+缓冲, 防状态工具(如shell)进程孤儿化. 改动: _execute_with_retry + try_once
+ 北京老陈 - 2026-07-17: max_retries=0时日志显示超时值+秒(无重试), 免"1/1"混淆
         工具类型	timeout	旧outer	新outer	影响
         shell (默认)	60	120	120	零变化
         shell (死锁场景)	600	120	630	修复生效 ✅
@@ -300,11 +301,17 @@ class ToolRetryEngine:
 
                 # 超时/网络错误不打印堆栈，只有未知错误才打印 — 小沈 2026-06-28
                 should_print_traceback = error_category.name in ("UNKNOWN", "INTERNAL")
-                logger.warning(
-                    f"[Retry][L2] action={action} 尝试{attempt + 1}/{max_retries + 1} "
-                    f"失败：{error_category.description} - {str(e)[:100]}",
-                    exc_info=should_print_traceback
-                )
+                if max_retries == 0:
+                    logger.warning(
+                        f"[Retry][L2] action={action} {error_category.description}:{timeout}秒(无重试) - {str(e)[:100]}",
+                        exc_info=should_print_traceback
+                    )
+                else:
+                    logger.warning(
+                        f"[Retry][L2] action={action} 尝试{attempt + 1}/{max_retries + 1} "
+                        f"失败：{error_category.description} - {str(e)[:100]}",
+                        exc_info=should_print_traceback
+                    )
 
                 if not self._should_retry(e, retryable_errors, attempt, max_retries, error_category):
                     return self._build_retry_error(
