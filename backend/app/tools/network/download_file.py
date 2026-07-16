@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: 下载大小上限改引用 tool_constants.DOWNLOAD_MAX_BYTES(原 _MAX_FILE_SIZE=100MB), 功能零退化
+# 2026-07-17 - 小欧 - HTTPStatusError hint 按状态码精化(4xx/5xx/429)
 """
 N2: download — 下载文件到本地
 
@@ -226,7 +227,18 @@ async def download(
     except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _map_network_error(url, timeout, e, dest_path, duration_ms)
-        _hint = "可增大timeout参数重试" if error_info["err_code"] == ERR_NETWORK_TIMEOUT else "请检查URL和网络连接"
+        if isinstance(e, httpx.HTTPStatusError):
+            _sc = e.response.status_code
+            if _sc == 429:
+                _hint = "请求过于频繁(限流),请稍后重试或降低请求频率"
+            elif 400 <= _sc < 500:
+                _hint = "客户端请求错误,请检查URL/请求方法与参数(404可能地址不存在,403可能无权限,401可能需认证)"
+            elif 500 <= _sc < 600:
+                _hint = "服务器暂时不可用,可稍后重试或换用其他地址"
+            else:
+                _hint = "请检查URL和网络连接"  # 兜底 — 小欧 2026-07-17
+        else:
+            _hint = "可增大timeout参数重试" if error_info["err_code"] == ERR_NETWORK_TIMEOUT else "请检查URL和网络连接"
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=error_info["err_code"], detail=error_info["detail"], hint=_hint, timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:

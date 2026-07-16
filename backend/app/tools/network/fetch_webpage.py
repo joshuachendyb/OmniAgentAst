@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-15 - 小欧 - fetchpage异常日志修复: 某些httpx底层异常__str__返回空串, 致logger.error("未知错误:")后空白, 开发排查丢失异常类型。LLM侧detail(line 672)早已用type(e).__name__: str(e) or repr(e)正确传递, 本次仅增强开发日志可读性, 非功能缺陷。
 # 2026-07-15 - 小欧 - 常量归一化治理: 网页正文提取上限改引用 tool_constants.WEB_FETCH_MAX_CHARS(原 max_tokens=8000→32000字符, 现对齐 OBS 10000字符), 功能零退化
+# 2026-07-17 - 小欧 - HTTPStatusError hint 按状态码精化(4xx/5xx/429)
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -663,7 +664,16 @@ async def fetchpage(
         return build_error(data={}, llm_data=llm_data)
     except httpx.HTTPStatusError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_HTTP_ERROR, detail=f"HTTP {e.response.status_code}", hint="请检查URL和服务器状态", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        _sc = e.response.status_code
+        if _sc == 429:
+            _hint = "请求过于频繁(限流),请稍后重试或降低请求频率"
+        elif 400 <= _sc < 500:
+            _hint = "客户端请求错误,请检查URL/请求方法与参数(404可能地址不存在,403可能无权限,401可能需认证)"
+        elif 500 <= _sc < 600:
+            _hint = "服务器暂时不可用,可稍后重试或换用其他地址"
+        else:
+            _hint = "请检查URL和服务器状态"  # 兜底 — 小欧 2026-07-17
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_HTTP_ERROR, detail=f"HTTP {_sc}", hint=_hint, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)
     except httpx.RequestError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
