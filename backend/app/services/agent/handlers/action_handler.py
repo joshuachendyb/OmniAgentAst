@@ -1,6 +1,15 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-13 - 小欧 - #2 add_tool_result异常日志带类型与repr
+# 2026-07-16 - 小欧 - op_id双表贯通修复
+#   [原来] for循环内对每个call查file_operations「最新」op_id写task_operations
+#   [问题] ①非文件工具(searchtool等)误关联文件op_id ②同轮多文件工具抢同一op_id撞UNIQUE(constraint failed)
+#   [根因] action_handler在"所有工具返回后统一处理"循环中, 查"最新"在多工具同轮时顺序错乱/抢占
+#   [改法] 循环外预取file_operations「未写入task_operations」的op_id候选队列, 循环内仅文件类工具(白名单6个)按call顺序pop(0)取用, 非文件工具op_id=None自生成
+#   [原理] ①文件工具call顺序==file_operations写入顺序(同轮顺序执行), 升序候选队列+顺序pop精确一一对应
+#          ②用"FO未写入TO的op_id"做差集, 天然排除已消耗项, 杜绝UNIQUE冲突
+#          ③白名单隔离非文件工具使其不参与贯通(op_id=None自生成), 消除误关联
+#          ④纯内部取id(不读result/LLM字段), 符合"operation_id是agent内部字段严禁进LLM返回结构"铁律
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -369,6 +378,52 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
             _shared_tc, content=_fc.get("llm_content", "") or None
         )
 
+    # ==========================================================================
+    # op_id 双表贯通（纯内部逻辑，与 LLM 返回结构零耦合） — 小欧 2026-07-16
+    # 目标：让同一文件操作在 file_operations 与 task_operations 两表共享同一
+    #       operation_id（双表同号），实现"一个文件操作、两个维度"的精确关联。
+    # 为什么需要 _file_tool_names 白名单（硬编码 6 个文件工具名）？
+    #   - 只有这 6 个文件工具会在内部调用 record_operation 写入 file_operations；
+    #   - 非文件工具（searchtool/sysinfo/timer/sql…）不写 file_operations，
+    #     若也去取 op_id 会"误关联"文件操作的 op_id；
+    #   - 白名单用于判定"当前 call 是否参与贯通"，把贯通精准限定在文件类工具维度。
+    #   - 硬编码而非查 registry：action_handler 只有 tool_name 字符串，查 category
+    #     需额外引入/遍历；硬编码最直接(KISS/YAGNI)。代价：新增文件工具需同步此集合。
+    # 解决的两个真实 bug（unit-02 暴露）：
+    #   1) 非文件工具误关联：原实现每个 call 都查 file_operations「最新」op_id，
+    #      导致 searchtool 抢走 write_docx 的 op_id 写进 task_operations（错误关联）；
+    #   2) 多文件工具同轮撞 UNIQUE：同轮多个文件工具抢同一 op_id →
+    #      "UNIQUE constraint failed: task_operations.operation_id"。
+    # 处理逻辑（三步）：
+    #   [预取] 取本 task 在 file_operations 中「尚未写入 task_operations」的 op_id，
+    #          按 created_at/rowid 升序排成候选队列 _pending_op_ids；
+    #   [分配] 循环内：仅文件类工具(call 在白名单)按 call 顺序 pop(0) 取一个候选，
+    #          非文件类工具 op_id=None 由 record_operation 内部自生成；
+    #   [写入] 用取出的 op_id 调 record_operation 写 task_operations，实现双表同号。
+    #   文件工具 call 顺序 == file_operations 写入顺序，故 pop 精确一一对应，不撞车。
+    # ==========================================================================
+    _file_tool_names = {
+        "delete_file", "copy_file", "move_file", "edit_text_file",
+        "write_text_file", "compress_files",
+    }
+    _pending_op_ids = []
+    try:
+        with db.get_conn("operations") as _cf:
+            _fo = _cf.execute(
+                "SELECT operation_id FROM file_operations WHERE task_id = ? "
+                "ORDER BY created_at ASC, rowid ASC",
+                (ctx.agent.task_id,),
+            ).fetchall()
+        with db.get_conn("task_tracker") as _ct:
+            _used = set(r[0] for r in _ct.execute(
+                "SELECT operation_id FROM task_operations WHERE task_id = ?",
+                (ctx.agent.task_id,),
+            ).fetchall())
+        _pending_op_ids = [r[0] for r in _fo if r[0] not in _used]
+    except Exception as _e:
+        logger.warning(f"[action_handler] 查询 operation_id 候选失败: {_e}")
+        _pending_op_ids = []
+
     for idx, (call, result) in enumerate(zip(ctx.all_calls, ctx.results)):
         if isinstance(result, Exception):
             obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
@@ -388,25 +443,17 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
             round_number=ctx.step,
             raw_data=result,
         )
-        # 纯内部: 从 file_operations 取最新 operation_id 贯通双表。
-        # 仅用 task_id 查询, 不读取工具返回值/LLM 体系任何字段(agent 内部功能, 与 LLM 无关, 小欧 2026-07-16)
-        op_id = None
-        try:
-            with db.get_conn("operations") as _c:
-                _row = _c.execute(
-                    "SELECT operation_id FROM file_operations WHERE task_id = ? "
-                    "ORDER BY created_at DESC, rowid DESC LIMIT 1",
-                    (ctx.agent.task_id,),
-                ).fetchone()
-                op_id = _row[0] if _row else None
-        except Exception as _e:
-            logger.warning(f"[action_handler] 查询 operation_id 失败: {_e}")
-            op_id = None
+        # 取 op_id：文件类工具(白名单内)从候选队列按 call 顺序 pop(0) 取一个 → 双表同号；
+        #          非文件类工具为 None → record_operation 内部自生成。绝不读取工具返回值/LLM 字段(纯内部) — 小欧 2026-07-16
+        _tool = call.get("tool_name", "?")
+        _op_id = None
+        if _tool in _file_tool_names and _pending_op_ids:
+            _op_id = _pending_op_ids.pop(0)
         ctx.agent.record_operation(
-            call.get("tool_name", "?"),
+            _tool,
             status=OperationStatus.FAILED.value if _is_failed else OperationStatus.SUCCESS.value,
             error=str(result) if _is_failed else None,
-            operation_id=op_id,
+            operation_id=_op_id,
         )
 
         repair_warning = call.get("_repair_warning", "")

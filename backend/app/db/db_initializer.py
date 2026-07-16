@@ -2,6 +2,14 @@
 # 编辑历史:
 # 2026-07-14 - 小欧 - 新增chat_message_steps独立步骤表(一行=一步)+idx_steps_message和idx_steps_session索引,支撑运行期逐步落库
 # 2026-07-16 - 小欧 - chat_messages 增 thought TEXT 列, 持久化 thought 到主表
+# 2026-07-16 - 小欧 - task_tracker迁移幂等修复(operations→task_operations)
+#   [原来] 若operations表存在则ALTER RENAME operations→task_operations(不处理半残)
+#   [问题] 库处于"旧operations + 已建空task_operations"半残态时, RENAME报"already another table with name task_operations", 后端启动失败
+#   [根因] CREATE TABLE IF NOT EXISTS task_operations 与 RENAME 顺序/幂等不完整: 旧库首次启动先CREATE空task_operations, RENAME失败留残表, 再次启动RENAME撞名
+#   [改法] 先查_has_ops与_has_task_ops; 两者并存则DROP空task_operations再RENAME; 幂等覆盖半残态
+#   [原理] ①半残态task_operations必为空表(IF NOT EXISTS创建后无INSERT), DROP安全不丢数据
+#          ②正常旧库(仅operations)直接RENAME保留历史; 新库/已迁移库CREATE跳过
+#          ③DROP+RENAME使迁移在任何状态都收敛到唯一task_operations, 幂等自愈
 """
 db_initializer — 数据库初始化
 
@@ -140,10 +148,30 @@ def init_operations_db(get_conn):
 def init_task_tracker_db(get_conn):
     """初始化 Task 追踪数据库"""
     with get_conn("task_tracker") as conn:
-        # 迁移: 旧 operations 表改名为 task_operations（命名正名, 小欧 2026-07-16）
-        if conn.execute(
+        # ==========================================================================
+        # task_tracker 迁移：旧 operations 表改名为 task_operations（命名正名） — 小欧 2026-07-16
+        # 目标：把含糊的 operations 表正名为 task_operations（任务步骤统一记录），与
+        #       operations.db 内的 file_operations 区分，消除"双轨/多套 ID"混乱。
+        # 为什么需要幂等处理半残状态：
+        #   - 旧库首次启动会先 CREATE TABLE IF NOT EXISTS task_operations（空表），
+        #     再 ALTER RENAME operations→task_operations 失败 → 留下"operations + 空 task_operations"残表；
+        #   - 再次启动时 RENAME 撞名（already another table with name task_operations），后端起不来。
+        # 处理逻辑：
+        #   [查] 先查 _has_ops / _has_task_ops 两个表是否并存；
+        #   [清] 若并存（半残）→ DROP 空 task_operations（半残态必为空表，DROP 安全不丢数据）；
+        #   [迁] ALTER operations RENAME TO task_operations（保留旧历史数据）；
+        #   [兜底] 末尾 CREATE TABLE IF NOT EXISTS 覆盖新库/已迁移库，幂等自愈。
+        # 原理：DROP 空残表 + RENAME 使迁移在任何状态都收敛到唯一 task_operations，不丢历史、不撞名。
+        # ==========================================================================
+        _has_ops = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='operations'"
-        ).fetchone():
+        ).fetchone()
+        _has_task_ops = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='task_operations'"
+        ).fetchone()
+        if _has_ops:
+            if _has_task_ops:
+                conn.execute("DROP TABLE IF EXISTS task_operations")  # 半残: 清掉空/旧的 task_operations, 小欧 2026-07-16
             conn.execute("ALTER TABLE operations RENAME TO task_operations")
         conn.executescript('''
             CREATE TABLE IF NOT EXISTS tasks (
