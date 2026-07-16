@@ -2,6 +2,11 @@
 # 编辑历史:
 # 2026-07-14 - 小欧 - chat库采用DELETE journal模式,其他库维持WAL; Windows大库场景设计选择
 # 2026-07-15 - 小欧 - get_conn异常分支拆分: 原except Exception兜底所有异常并记"DB operation failed", 业务异常(如rename目标已存在抛FileExistsError)被误报为数据库故障, 且被execute_with_safety二次记日志形成双重日志(首条为误报)。改后仅sqlite3.Error记DB错误日志, 业务异常仅rollback后raise不误报。
+# 2026-07-17 - 小欧 - chat库改回WAL,三库统一WAL。背景因果(经验累积,勿删): 07-14的DELETE源于误诊——
+#            当时遇Errno22误判为"WAL-shm在Windows 2GB+库并发读写不稳"; 同日《后端step单步保存设计说明书》v1.2已更正
+#            Errno22真实根因为time_utils.ensure_timestamp_milliseconds潜伏bug(Python3.13宽松fromisoformat+漏捕OSError),与WAL无关,
+#            DELETE改动属误诊白做但无害、当时未回退。2026-07-17 E2E验证暴露DELETE模式在chat_message_steps膨胀185万行/2.7GB时
+#            写I/O拥塞(每次写journal+fsync)致create_session同步写>10s超时,故回归WAL统一三库消除写拥塞。详见notes/经验累积文档。
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -78,11 +83,12 @@ class DatabaseManager:
             conn = sqlite3.connect(str(db_path))
             conn.row_factory = sqlite3.Row
             
-            # chat库采用DELETE journal模式，其他库维持WAL — 小欧 2026-07-14
-            if db_name == "chat":
-                conn.execute("PRAGMA journal_mode=DELETE")
-            else:
-                conn.execute("PRAGMA journal_mode=WAL")
+            # 全部库统一WAL模式(含chat) — 小欧 2026-07-17
+            # 历史因果(经验累积,勿删): 2026-07-14曾将chat改为DELETE,系误诊"WAL-shm在Windows 2GB+库并发读写Errno22"所致;
+            #   同日《后端step单步保存设计说明书》v1.2已更正Errno22真实根因为time_utils潜伏bug(与WAL无关),DELETE属误诊白做但无害、当时未回退。
+            #   2026-07-17 E2E验证暴露DELETE模式在chat_message_steps膨胀185万行/2.7GB时写I/O拥塞(每次写journal+fsync),
+            #   致create_session同步写>10s超时;故改回WAL统一三库,消除写拥塞。
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=30000")
             # M-05: SQLite默认OFF，外键约束不生效 — 小欧 2026-07-10
             conn.execute("PRAGMA foreign_keys=ON")
