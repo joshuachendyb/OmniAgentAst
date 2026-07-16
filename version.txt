@@ -1,4 +1,31 @@
-﻿v0.18.21
+﻿v0.18.22
+更新时间: 2026-07-16 22:20:52 - 小欧-2026-07-16
+## v0.18.21→v0.18.22 变更汇总 - 小欧-2026-07-16
+
+### 最新改版（持续修改不覆盖）：
+- docs:Operation数据模型设计文档同步双表贯通修复(纯内部DB关联/不进LLM返回结构)+迁移幂等说明 - 小欧-2026-07-16
+- fix:operation双表贯通修复+迁移幂等(db_initializer半残态RENAME撞名自愈/action_handler白名单+候选队列消除UNIQUE冲突与误关联) - 小欧-2026-07-16
+- fix:代码署名+编辑历史合规补充(8文件补署名日期与编辑历史标记) - 小欧-2026-07-16
+- docs:新增设计文档 M3流式护栏+M3 Operation数据模型 - 小欧-2026-07-16
+- feat:Operation数据模型重构 表名operations→task_operations/ID集中生成/rollback API/贯通双表/移除无用operation_id - 小欧-2026-07-16
+- feat:thought持久化链路 后端6文件+前端2文件(StreamState/finalize_message/DB列/API返回/前端类型) - 小欧-2026-07-16
+- refactor:answer_handler 清理L1废弃代码(超长外置/退化检测/退化纠正/降级兜底/工具结果提取) - 小欧-2026-07-16
+- feat:TaskID双轨统一 — 删除_tracked_task_id,统一task-{hex}格式 — 小欧-2026-07-16
+- docs:doc/M2-400根因复现与provider能力归一一化方案 - 小欧-2026-07-16
+- feat:base_service.py ②总时长硬超时+③tool_call流式超时+LLM_MAX_TOKENS默认值; e2etests P1/P2新增; doc M2-400根因分析 - 小欧-2026-07-16
+- feat:constants.py 新增LLM_MAX_TOKENS(16384)+STREAM_TOTAL_TIMEOUT(500s) - 小欧-2026-07-16
+- fix: llm_stream.py M5 空[FC]错误日志补强诊断上下文 - 小欧-2026-07-16
+- fix: client_sdk.py error_classifier.py M1 400错误真因透传前端与用户 - 小欧-2026-07-16
+- docs:P1-04-推理注入400根因分析与修复方案 v2.2(修复方案设计+10原则核验+防误提取守卫审计+实施记录) - 小欧-2026-07-16
+- docs:FUNCTIONS.md 新增text_utils.py章节(登记extract_tool_call_xml+format_tool_call_markup);truncate_text/add_line_numbers归属修正 - 小欧-2026-07-16
+- fix:client_sdk.py request_stream>=400时记录响应体后raise_for_status(所有4xx/5xx可见错误原因) - 小欧-2026-07-16
+- fix:error_classifier.py 新增CLIENT枚举,400/401/403归CLIENT不重试(4xx客户端错确定性失败,429限流仍归SERVER可重试) - 小欧-2026-07-16
+- fix:answer_handler.py,fc_message_types.py reasoning-only注入改合法assistant(content)(工具调用意图已由llm_stream XML提取接管,本分支仅处理纯推理文本) - 小欧-2026-07-16
+- feat:text_utils.py,llm_stream.py XML tool_call提取拦截(reasoning/content中检<tool_call>则合成非空ID走action路径;FC模式openai_tools清单校验防误提取) - 小欧-2026-07-16
+- docs:测试final-退化或超长处理设计 v1.17(含设计文档+旧复盘迁移) - 小欧-2026-07-15
+- feat:answer_handler.py L1 final质量护栏(退化检测/重复去重/超长外置/LLM纠正机会) - 小欧-2026-07-15
+
+v0.18.21
 更新时间: 2026-07-15 22:38:57 - 小欧-2026-07-15
 ## v0.18.20→v0.18.21 变更汇总 - 小欧-2026-07-15
 
