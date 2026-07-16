@@ -146,7 +146,8 @@ def _http_hint(status_code):
     if status_code == 429:
         return "请求过于频繁(限流),请稍后重试或降低请求频率"
     if 400 <= status_code < 500:
-        return "客户端请求错误,请检查URL/请求方法与参数(404可能地址不存在,403可能无权限,401可能需认证)"
+        # hint不重复具体状态码(detail已有精确值,如"HTTP 403"),仅给可行动建议 — 小欧 2026-07-17
+        return "客户端请求错误,请检查URL/请求方法与参数"
     if 500 <= status_code < 600:
         return "服务器暂时不可用,可稍后重试或换用其他地址"
     return "请检查URL和网络连接"
