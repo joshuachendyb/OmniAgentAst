@@ -87,6 +87,12 @@
 
 > 注：`truncate_text`/`add_line_numbers` 此前曾误登记于 1.5 节(tool_result_utils.py)，实际定义于 text_utils.py；本节为正确归属。 — 小欧 2026-07-16
 
+### 1.8 ID生成（id_utils.py）【v2.2新增 — 小欧 2026-07-16】
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `generate_operation_id` | 生成统一格式 op-{hex}, 全链路文件/任务操作 ID 同源(替代各处重复的 f"op-{uuid4().hex}") | 无 | str |
+
 ### 1.5 工具函数（tool_result_utils.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |

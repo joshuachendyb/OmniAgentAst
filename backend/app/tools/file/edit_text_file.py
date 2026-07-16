@@ -403,7 +403,7 @@ async def _precise_replace_in_file(
             }
 
         return {
-            "operation_id": operation_id, "file_path": str(path),
+            "file_path": str(path),
             "applied_edits": count, "total_edits": count,
             "total_matches": replace_result.get("total_matches", count),
             "diff": replace_result.get("diff", ""),

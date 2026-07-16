@@ -106,7 +106,7 @@ async def _move_file_impl(
             success = await asyncio.to_thread(_move_sync)
 
         if success:
-            return {"success": True, "operation_id": operation_id, "source": str(src), "destination": str(dst)}
+            return {"success": True, "source": str(src), "destination": str(dst)}
         # 透传真实错误细节（如"目标路径已存在…请设置overwrite=True"），避免退化为笼统提示 — 小欧 2026-07-15
         return {"success": False, "error_detail": detail or "移动文件失败", "params": {"source": source_path, "destination": destination_path}}
 

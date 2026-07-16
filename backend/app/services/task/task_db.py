@@ -9,8 +9,8 @@ task_db — 任务DB持久化（tasks表 + operations表）
 
 import json
 import threading
-from uuid import uuid4
 from datetime import datetime
+from app.utils.id_utils import generate_operation_id
 from typing import Optional, Dict, Any, List
 from enum import Enum
 
@@ -49,7 +49,7 @@ class TaskTracker:
         status = TaskStatus.SUCCESS.value if success else TaskStatus.FAILED.value
         with db.get_conn("task_tracker") as conn:
             row = conn.execute(
-                "SELECT COUNT(*) FROM operations WHERE task_id = ? AND status = ?",
+                "SELECT COUNT(*) FROM task_operations WHERE task_id = ? AND status = ?",
                 (task_id, OperationStatus.SUCCESS.value),
             ).fetchone()
             success_count = row[0] if row else 0
@@ -66,6 +66,7 @@ class TaskTracker:
         task_id: str,
         operation_type: str,
         *,
+        operation_id: Optional[str] = None,
         status: Optional[str] = None,
         source_path: Optional[str] = None,
         destination_path: Optional[str] = None,
@@ -85,14 +86,14 @@ class TaskTracker:
 
             seq_row = conn.execute(
                 "SELECT COALESCE(MAX(sequence_number), 0) + 1 "
-                "FROM operations WHERE task_id = ?",
+                "FROM task_operations WHERE task_id = ?",
                 (task_id,),
             ).fetchone()
             seq_num = seq_row[0]
 
-            operation_id = f"op-{uuid4().hex}"
+            operation_id = operation_id or generate_operation_id()
             conn.execute(
-                """INSERT INTO operations
+                """INSERT INTO task_operations
                    (operation_id, task_id, operation_type, status,
                     source_path, destination_path, backup_path,
                     file_size, file_hash, sequence_number, details, error)
@@ -122,12 +123,12 @@ class TaskTracker:
             if op_ids:
                 placeholders = ",".join("?" for _ in op_ids)
                 conn.execute(
-                    f"UPDATE operations SET status = ? "
+                    f"UPDATE task_operations SET status = ? "
                     f"WHERE operation_id IN ({placeholders})",
                     [OperationStatus.ROLLBACK.value] + op_ids,
                 )
                 row = conn.execute(
-                    "SELECT COUNT(*) FROM operations WHERE task_id = ? AND status != ?",
+                    "SELECT COUNT(*) FROM task_operations WHERE task_id = ? AND status != ?",
                     (task_id, OperationStatus.ROLLBACK.value),
                 ).fetchone()
                 all_rolled_back = (row[0] == 0) if row else False
@@ -138,7 +139,7 @@ class TaskTracker:
                 )
             else:
                 conn.execute(
-                    "UPDATE operations SET status = ? WHERE task_id = ?",
+                    "UPDATE task_operations SET status = ? WHERE task_id = ?",
                     (OperationStatus.ROLLBACK.value, task_id),
                 )
                 task_status = TaskStatus.ROLLED_BACK.value
@@ -146,7 +147,7 @@ class TaskTracker:
             conn.execute(
                 """UPDATE tasks SET status = ?,
                    rolled_back_count = (
-                       SELECT COUNT(*) FROM operations WHERE task_id = ? AND status = ?
+                       SELECT COUNT(*) FROM task_operations WHERE task_id = ? AND status = ?
                    ) WHERE task_id = ?""",
                 (task_status, task_id, OperationStatus.ROLLBACK.value, task_id),
             )
@@ -197,7 +198,7 @@ class TaskQueries:
     def get_operations(self, task_id: str) -> List[Dict[str, Any]]:
         with db.get_conn("task_tracker") as conn:
             rows = conn.execute(
-                "SELECT * FROM operations WHERE task_id = ? "
+                "SELECT * FROM task_operations WHERE task_id = ? "
                 "ORDER BY sequence_number DESC",
                 (task_id,),
             ).fetchall()

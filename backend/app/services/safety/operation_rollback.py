@@ -13,6 +13,7 @@ from typing import Dict, Any
 from app.db import db
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
+from app.services.task import get_tracker
 
 
 def rollback_operation(operation_id: str) -> bool:
@@ -90,18 +91,23 @@ def rollback_session(task_id: str) -> Dict[str, Any]:
             operations = cursor.fetchall()
             result["total"] = len(operations)
 
+            success_op_ids = []
             for op_id, op_type, src, dst in operations:
                 success = rollback_operation(op_id)
                 result["operations"].append({"operation_id": op_id, "type": op_type, "success": success})
                 if success:
                     result["success"] += 1
+                    success_op_ids.append(op_id)
                 else:
                     result["failed"] += 1
 
-            cursor.execute(
-                'UPDATE task_operations SET rolled_back_count = ?, status = ? WHERE task_id = ?',
-                (result["success"], OperationStatus.ROLLBACK.value, task_id),
-            )
+            # 串联 task_tracker 统计（消除死链, 小欧 2026-07-16）
+            # 注: 原UPDATE task_operations已删除(该表在task_tracker.db, 此处连operations.db必报错)
+            if success_op_ids:
+                try:
+                    get_tracker().mark_rolled_back(task_id, op_ids=success_op_ids)
+                except Exception as e:
+                    logger.error(f"Failed to update rollback stats for {task_id}: {e}")
         logger.info(f"Task rollback completed: {task_id} - {result['success']}/{result['total']} succeeded")
         return result
     except Exception as e:

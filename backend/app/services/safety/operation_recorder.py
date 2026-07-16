@@ -9,7 +9,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
-from uuid import uuid4
+from app.utils.id_utils import generate_operation_id
 
 from app.db import db
 from app.db.models.operation_models import OperationType, OperationStatus
@@ -46,9 +46,10 @@ def record_operation(
     destination_path: Optional[Path] = None,
     sequence_number: int = 0,
     file_size: Optional[int] = None,
+    operation_id: Optional[str] = None,
 ) -> Optional[str]:
     """记录文件操作到数据库（失败时返回None，不阻塞主流程）— 小健 2026-06-24 容错处理 — 小欧 2026-06-27 修复operation_type str/Enum不一致"""
-    operation_id = f"op-{uuid4().hex}"
+    operation_id = operation_id or generate_operation_id()
     space_impact_bytes = None
     try:
         if file_size is not None and operation_type is not None:

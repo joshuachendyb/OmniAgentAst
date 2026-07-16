@@ -27,6 +27,7 @@ from app.services.agent.observation_formatter import build_observation_text
 from app.constants import HITL_TIMEOUT
 from app.services.agent.tool_executor import execute_tool
 from app.db.models.operation_models import OperationStatus
+from app.db import db
 
 from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE_OPERATION_TOOLS
 from app.tools.param_alias_mapper import PARAM_ALIASES
@@ -387,10 +388,25 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
             round_number=ctx.step,
             raw_data=result,
         )
+        # 纯内部: 从 file_operations 取最新 operation_id 贯通双表。
+        # 仅用 task_id 查询, 不读取工具返回值/LLM 体系任何字段(agent 内部功能, 与 LLM 无关, 小欧 2026-07-16)
+        op_id = None
+        try:
+            with db.get_conn("operations") as _c:
+                _row = _c.execute(
+                    "SELECT operation_id FROM file_operations WHERE task_id = ? "
+                    "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                    (ctx.agent.task_id,),
+                ).fetchone()
+                op_id = _row[0] if _row else None
+        except Exception as _e:
+            logger.warning(f"[action_handler] 查询 operation_id 失败: {_e}")
+            op_id = None
         ctx.agent.record_operation(
             call.get("tool_name", "?"),
             status=OperationStatus.FAILED.value if _is_failed else OperationStatus.SUCCESS.value,
             error=str(result) if _is_failed else None,
+            operation_id=op_id,
         )
 
         repair_warning = call.get("_repair_warning", "")
