@@ -140,6 +140,7 @@ async def _delete_file_impl(
             is_ok, method = await asyncio.to_thread(_delete_sync)
 
         if is_ok:
+            # 小欧 2026-07-16 移除未消费的 operation_id 返回值(YAGNI, 调用方不读取)
             return {"success": True, "deleted_path": str(path), "mode": method}
         # 透传真实错误细节，避免退化为笼统提示 — 小欧 2026-07-15
         return {"success": False, "error_detail": detail or "删除文件失败,safety拦截", "params": {"source": file_path}}

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-16 - 小欧 - 新增 rollback / file-operations / file-operations/report(text|html|json) 三API
 """Task 查询 API 路由
 
 提供任务查询接口:单个任务、最近任务列表、操作明细。

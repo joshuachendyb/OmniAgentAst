@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-16 - 小欧 - operations表重命名为task_operations(正名)+在线迁移(RENAME旧表)+操作ID统一generate_operation_id+新增mark_rolled_back方法
 """
 task_db — 任务DB持久化（tasks表 + operations表）
 

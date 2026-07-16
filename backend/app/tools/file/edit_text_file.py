@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-16 - 小欧 - _precise_replace_in_file 返回值移除未消费的 operation_id(YAGNI, 调用方不读取)
 """
 F4: edittext — 编辑文本文件
 
@@ -403,7 +405,7 @@ async def _precise_replace_in_file(
             }
 
         return {
-            "file_path": str(path),
+            "file_path": str(path),  # 小欧 2026-07-16 移除未消费的 operation_id(YAGNI)
             "applied_edits": count, "total_edits": count,
             "total_matches": replace_result.get("total_matches", count),
             "diff": replace_result.get("diff", ""),
