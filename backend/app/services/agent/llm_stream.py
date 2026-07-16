@@ -17,13 +17,14 @@ llm_stream — LLM流式调用+响应构建
 编辑历史:
    2026-07-14 小欧 FC_FALLBACK_ENABLED/FC_MAX_RETRIES/LLM_TOOL_CHOICE导入源由base_service改为app.constants(常量集中,非功能退化)
    2026-07-15 小欧 修复call_llm_with_fallback:①FC重试循环内拦截type:"error"响应转FCFormatError触发L2重试(避免直抵set_failed) ②降级关闭分支last_error=None兜底防AttributeError崩溃
-   2026-07-16 小欧 新增XML tool_call提取拦截点: call_llm_stream在FC JSON tool_calls为空时,从reasoning/content检XML工具调用,合成tool_call_id走action路径(FC模式openai_tools清单校验防误提取,Text fallback由action_handler兜底)
+    2026-07-16 小欧 新增XML tool_call提取拦截点: call_llm_stream在FC JSON tool_calls为空时,从reasoning/content检XML工具调用,合成tool_call_id走action路径(FC模式openai_tools清单校验防误提取,Text fallback由action_handler兜底)
+    2026-07-16 小欧 M5 解决空[FC]错误日志丢失根因问题: 此前_yield_error_response仅记录错误消息, 异常消息为空时(如测试垃圾输入/空串)无任何诊断上下文, 排障无据; 新增exc/exc_type可选参数。能力提升: 错误日志补全异常类型(exc=类名)或错误分类(type=分类)诊断上下文, 即使消息为空也能定位根因
 """
 
 import asyncio
 import json
 import time
-from typing import Any
+from typing import Any, Optional
 
 from app.services.agent.steps import ChunkStep
 from app.constants import FC_FALLBACK_ENABLED, FC_MAX_RETRIES, LLM_TOOL_CHOICE
@@ -86,13 +87,15 @@ def _format_fc_error(e: "FCFormatError") -> str:
     return f"解析失败: {e.message}"
 
 
-def _yield_error_response(error_msg: str, agent):
+def _yield_error_response(error_msg: str, agent, exc: Optional[BaseException] = None, exc_type: str = ""):
     """统一错误响应构建 — 小健 2026-06-18 DRY提取
-    
+
     type="error" 的含义: LLM 流式调用出现异常/出错,agent 以此终止任务并设 FAILED。
     由 _dispatch_handler(react_cycle.py) 分派到 handle_answer() 的 error 分支。"""
     # 【E-4修复】返回type:error,DispatchHandler的error分支处理 — 小欧 2026-06-28
-    logger.error(f"[FC] {error_msg}")
+    # M5: 空消息场景补强诊断上下文(exc类型/分类), 防根因丢失 — 小欧 2026-07-16
+    diag = f" | exc={type(exc).__name__}" if exc else (f" | type={exc_type}" if exc_type else "")
+    logger.error(f"[FC] {error_msg}{diag}")
     _log_llm_response(agent, error_msg, "error", None, finish_reason="error")
     return ("response", {"type": "error", "content": error_msg})
 
@@ -157,7 +160,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
         if getattr(agent.llm_client, '_cancelled', False):
             logger.info(f"[FC] LLM调用因取消而中断, 跳过异常响应")
             return
-        yield _yield_error_response(f"LLM调用异常: {e}", agent)
+        yield _yield_error_response(f"LLM调用异常: {e}", agent, exc=e)
         return
     except asyncio.CancelledError:
         content = full_content or full_reasoning or ""
@@ -172,7 +175,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
         if tool_calls_result:
             logger.warning(f"[FC] LLM流式错误, 丢弃{len(tool_calls_result)}个未完成的tool_calls")
             tool_calls_result = None
-        yield _yield_error_response(f"LLM流式错误: {stream_error}", agent)
+        yield _yield_error_response(f"LLM流式错误: {stream_error}", agent, exc_type=chunk.stream_error_type or "")
         return
 
     # ════════════════════════════════════════════════════
