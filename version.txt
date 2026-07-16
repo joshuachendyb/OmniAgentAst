@@ -1,4 +1,17 @@
-﻿v0.18.22
+﻿v0.18.23
+更新时间: 2026-07-17 06:22:56 - 北京老陈-2026-07-17
+## v0.18.22→v0.18.23 变更汇总 - 北京老陈-2026-07-17
+
+### 最新改版（持续修改不覆盖）：
+- refactor:tool_retry_engine.py max_retries=0日志显示超时值+秒(无重试) - 北京老陈-2026-07-17
+- docs:经验累积-DELETE与WAL轮回归误诊纠正记录 - 小欧-2026-07-17
+- docs:E2E验证问题C根因分析报告 chat库DELETE→WAL回归决策记录 - 小欧-2026-07-17
+- refactor:network/*.py 4xx hint清除重复状态码+注释说明 - 小欧-2026-07-17
+- fix:database.py chat库统一WAL消除写拥塞 - 小欧-2026-07-17
+- refactor:fetchpage+download HTTPStatusError hint按状态码精化(4xx/5xx/429) - 小欧-2026-07-17
+- fix:httpget 修复双层except吞异常(HTTP错误结构化返回LLM/429工具内Retry-After契约重试一次/瞬时故障抛引擎重试)+hint精准化 - 小欧-2026-07-17
+
+v0.18.22
 更新时间: 2026-07-16 22:20:52 - 小欧-2026-07-16
 ## v0.18.21→v0.18.22 变更汇总 - 小欧-2026-07-16
 
