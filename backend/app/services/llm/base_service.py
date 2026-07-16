@@ -7,10 +7,12 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 
 编辑历史:
   2026-07-14 小欧 删除死代码_is_rate_limit_status(无调用方,限流由SystemErrorClassifier覆盖,功能零退化)
-  2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL至app.constants(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/测试导入)
+   2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL至app.constants(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/测试导入)
+   2026-07-16 小欧 新增三层防线——①LLM_MAX_TOKENS=16384(防无限长输出); ②STREAM_TOTAL_TIMEOUT=500s总时长硬超时(httpx idle timeout 在连续流式时不触发,用 wall-clock 兜底); ③tool_call流式超时=总时长3/5=300s(_parse_sse_data 对 tool_call delta 静默跳过, 专门卡此阶段). 三者超时后均 break→accumulator→截断修复, 不触发重试
 """
 
 import asyncio
+import time
 import json as _json
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 
@@ -24,7 +26,7 @@ from app.services.llm.client_sdk import create_llm_client
 from app.services.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
 from app.services.llm.error_classifier import SystemErrorClassifier
 
-from app.constants import DEFAULT_READ_TIMEOUT, LLM_TEMPERATURE, LLM_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS
+from app.constants import DEFAULT_READ_TIMEOUT, LLM_TEMPERATURE, LLM_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS, STREAM_TOTAL_TIMEOUT, LLM_MAX_TOKENS
 
 
 class BaseAIService:
@@ -49,7 +51,7 @@ class BaseAIService:
         self.model = model
         self.api_base = api_base
         self.provider = provider
-        self.max_tokens = max_tokens
+        self.max_tokens = max_tokens if max_tokens is not None else LLM_MAX_TOKENS
         self.temperature = temperature
         self.seed = seed
         self.extra_body_params = extra_body_params
@@ -171,6 +173,8 @@ class BaseAIService:
                 tool_call_accumulator = {}
                 raw_data_buf: list = []
                 usage_data = None
+                tool_call_streaming_start = None
+                deadline = time.monotonic() + STREAM_TOTAL_TIMEOUT
                 async for data_str in self._llm_sdk.request_stream(
                     messages=messages,
                     tools=tools,
@@ -185,6 +189,14 @@ class BaseAIService:
                     if await self._check_stop():
                         yield create_cancelled_chunk(self.model)
                         return
+
+                    # ② 总时长硬超时 — 2026-07-16 小欧
+                    # httpx read timeout 是空闲超时(两字节间隙), 非总时长。
+                    # LLM 持续流式返回 tool_call delta 时字节不断到达, read timeout 永不触发。
+                    # 此处用 wall-clock deadline 做总时长保护, 超时 break→accumulator→截断修复。
+                    if time.monotonic() > deadline:
+                        logger.warning(f"[request_stream] 流调用总时长超时({STREAM_TOTAL_TIMEOUT}s), 截断已累积数据")
+                        break
 
                     raw_data_buf.append(data_str)
 
@@ -202,6 +214,17 @@ class BaseAIService:
                             tool_call_accumulator[idx]["name"] = entry["name"]
                         if entry.get("arguments"):
                             tool_call_accumulator[idx]["arguments"] += entry["arguments"]
+
+                    # ③ tool_call流式超时（总时长的3/5）— 2026-07-16 小欧
+                    # 工具参数(如 writetext content)可能极长(>10万字符), LLM 生成期间
+                    # _parse_sse_data 对 tool_call delta 返回 None(静默跳过), Console 无输出。
+                    # 此超时专卡 tool_call 参数流式阶段, 不误伤普通文本回答。
+                    # 首次检测到 tool_call delta 时开始计时, 超时 break→accumulator→截断修复。
+                    if tc_data and tool_call_streaming_start is None:
+                        tool_call_streaming_start = time.monotonic()
+                    if tool_call_streaming_start and (time.monotonic() - tool_call_streaming_start) > STREAM_TOTAL_TIMEOUT * 3 // 5:
+                        logger.warning(f"[request_stream] tool_call参数流式已持续{time.monotonic()-tool_call_streaming_start:.0f}s, 强制截断")
+                        break
 
                     chunk = self._parse_sse_data(data_str)
                     if chunk:
