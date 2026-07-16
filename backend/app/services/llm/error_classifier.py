@@ -17,7 +17,8 @@
  编辑历史:
    2026-07-14 小欧 消除裸魔法数429: 引入HTTP_RATE_LIMIT常量供HTTP_STATUS_TO_ERROR_TYPE引用(代码变迁遗留,非功能退化)
    2026-07-15 小欧 老陈裁定: HTTP_RATE_LIMIT 常量多余且 HTTP_ 前缀不准, 删除; HTTP_STATUS_TO_ERROR_TYPE 中 429 改回裸数字(与其他 HTTP 状态码并列), 功能零退化
-   2026-07-16 小欧 新增CLIENT枚举: 400/401/403归CLIENT不重试(4xx客户端错确定性失败,429限流仍归SERVER可重试)
+    2026-07-16 小欧 新增CLIENT枚举: 400/401/403归CLIENT不重试(4xx客户端错确定性失败,429限流仍归SERVER可重试)
+    2026-07-16 小欧 M1 解决CLIENT(4xx)错误文案被覆盖问题: 此前classify_error_message对CLIENT类错误固定返回写死文案"客户端错误:请求参数异常", 丢弃服务商真实错误文本; 现CLIENT分支在error_message非空时直接透出。能力提升: 与client_sdk抛出的HTTPStatusError真因打通, 前端/用户获得可读的真实错误原因, 同时保持400不重试的既有重试策略不变
 """
 
 import re
@@ -190,6 +191,9 @@ class SystemErrorClassifier:
             if category.value == error_type_lower or category.name.lower() == error_type_lower:
                 if category in SYSTEM_ERROR_TYPE_TO_MESSAGE:
                     code, default_message = SYSTEM_ERROR_TYPE_TO_MESSAGE[category]
+                    # M1: CLIENT(4xx)携带服务商真实错误文本时直接透出, 便于前端/用户定位根因 — 小欧 2026-07-16
+                    if category == SystemErrorCategory.CLIENT and error_message:
+                        return code, error_message
                     return code, default_message
         
         return 'server', f"服务调用失败: {error_message}"

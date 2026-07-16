@@ -8,9 +8,11 @@ SDK 只管发 HTTP 请求,不处理错误,异常原样抛出。
 
 FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-06-11
 编辑历史: 2026-07-16 小欧 request_stream 响应错误路径: >=400时记录响应体后raise_for_status(所有4xx/5xx可见错误原因)
+编辑历史: 2026-07-16 小欧 M1 解决400错误根因不可见问题: 此前>=400仅把响应体写进服务器日志, 前端/用户只看到泛化文案"客户端错误:请求参数异常", 排障须翻数MB日志; 新增_extract_server_error_message解析OpenAI兼容错误信封{"error":{"message":...}}, >=400时抛HTTPStatusError并携带服务商真实错误文本(server_msg)。能力提升: 前端用户与错误记录可直接看到sensenova等真实错误原因(如参数被拒), 无需查日志即可定位根因
 """
 
 import httpx
+import json
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from app.constants import (
@@ -65,6 +67,24 @@ def _build_request_body(
         body.update(extra_body)
     
     return body
+
+
+def _extract_server_error_message(body_text: str) -> str:
+    """从LLM服务商错误响应体提取真实错误(OpenAI兼容信封 {"error":{"message":...}}) — 小欧 2026-07-16"""
+    if not body_text:
+        return ""
+    try:
+        data = json.loads(body_text)
+        err = data.get("error") if isinstance(data, dict) else None
+        if isinstance(err, dict):
+            msg = err.get("message")
+            if msg:
+                return str(msg)[:500]
+        if isinstance(err, str):
+            return err[:500]
+    except (ValueError, TypeError):
+        pass
+    return body_text[:500]
 
 
 class LLMClient:
@@ -172,8 +192,12 @@ class LLMClient:
             # 记录所有 4xx/5xx 错误响应体(>=400), 定位错误原因 — 小欧 2026-07-16
             if response.status_code >= 400:
                 response_body = await response.aread()
-                logger.error(f"[LLM] HTTP {response.status_code} 响应体: {response_body.decode('utf-8', errors='replace')}")
-                response.raise_for_status()
+                body_text = response_body.decode("utf-8", errors="replace")
+                logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
+                server_msg = _extract_server_error_message(body_text)
+                raise httpx.HTTPStatusError(
+                    f"HTTP {response.status_code} 错误: {server_msg or '（服务商未返回错误详情）'}",
+                    request=response.request, response=response)
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
                     data = line[6:]
