@@ -1,18 +1,16 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 记录 2026-07-01 chendyg 状态集中管理重构v2
+#   - 状态用 status_table, 数据 handler 自己写
+#   - _dispatch_handler 基于 event type 推断状态
+#   - handler 保留 add_observation/add_assistant_message, 不绕路
+# 记录 2026-07-17 小沈 FC重命名: import/LLMResponseError同步
+# 记录 2026-07-17 小欧 B3扩展+修正: 检测reasoning-only空转并软引导(修正has_tool_results屏蔽使已调工具后仍可警告); 改add_observation→add_assistant_message(避免空tool_call_id孤立tool消息致LLM参数不合法, 参照edca06261昨天修正); warning去具体工具名
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
 职责: 循环调度 + 类型分派 + 状态推断，不含业务逻辑
 业务逻辑在 handlers/ 目录
-
-编辑历史:
-# 格式规范: {日期} {署名} {修改内容}
-  chendyg 2026-07-01: 状态集中管理重构v2
-  - 状态用 status_table，数据 handler 自己写
-  - _dispatch_handler 基于 event type 推断状态
-  - handler 保留 add_observation/add_assistant_message，不绕路
- 2026-07-17 小沈 FC重命名: import/LLMResponseError同步
- 2026-07-17 小欧 B3扩展+修正: 检测reasoning-only空转并软引导(修正has_tool_results屏蔽使已调工具后仍可警告); 改add_observation→add_assistant_message(避免空tool_call_id孤立tool消息致LLM参数不合法, 参照edca06261昨天修正); warning去具体工具名
 """
 
 import asyncio

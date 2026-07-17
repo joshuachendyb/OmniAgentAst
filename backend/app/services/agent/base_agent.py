@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 记录 2026-07-16 小欧 统一TaskID: 删除_tracked_task_id, create_task传入self.task_id
+# 记录 2026-07-17 小欧 新增_consecutive_reasoning_only字段(空转检测防御: reasoning-only分支累加, 调工具/正常answer/真空/error/未知/action空名归零)
 """
 Agent 核心基类 — 类骨架
 
@@ -7,8 +10,6 @@ run_react_cycle / initialize_run_state → 独立文件
 
 Author: 小沈 - 2026-03-25
 P3-12: 删除run_react_cycle纯委托，改为混合类方式 — 小沈 2026-06-09
- 更新: 小欧 - 2026-07-16 统一TaskID: 删除_tracked_task_id, create_task传入self.task_id
- 更新: 小欧 - 2026-07-17 新增_consecutive_reasoning_only字段(空转检测防御: reasoning-only分支累加, 调工具/正常answer/真空归零)
 """
 
 import asyncio
