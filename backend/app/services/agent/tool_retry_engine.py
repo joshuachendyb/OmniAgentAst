@@ -3,13 +3,16 @@
 统一工具重试引擎 — 工具的外部重试机制
 
 物理位置: Agent编排层(被 UniversalAgent.run_react_cycle 调用)
-归属分层: 【工具层】— 虽在编排层目录，但本质是工具的外部重试机制，引用工具层常量
+ 归属分层: 【工具层】— 虽在编排层目录，但本质是工具的外部重试机制，引用工具层常量
 
-小沈 - 2026-06-08 P1-7/8/9: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
- 小欧 - 2026-06-30: 明确分层归属(工具的外部重试 → 工具层)，常量全部引自 tool_constants
- 小沈 - 2026-07-15: 外层超时恒>内层timeout+缓冲, 防状态工具(如shell)进程孤儿化. 改动: _execute_with_retry + try_once
- 北京老陈 - 2026-07-17: max_retries=0时日志显示超时值+秒(无重试), 免"1/1"混淆
-        工具类型	timeout	旧outer	新outer	影响
+编辑历史:
+# 格式规范: {日期} {署名} {修改内容}
+ 2026-06-08 小沈 P1-7/8/9: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
+ 2026-06-30 小欧 明确分层归属(工具的外部重试 → 工具层)，常量全部引自 tool_constants
+ 2026-07-15 小沈 外层超时恒>内层timeout+缓冲, 防状态工具(如shell)进程孤儿化. 改动: _execute_with_retry + try_once
+   2026-07-17 小沈 max_retries=0时日志显示超时值+秒(无重试), 免"1/1"混淆
+   2026-07-17 小沈 [Retry][L2]→[Retry][L3](工具执行重试属第3层,与LLM流式L1/LLM响应错误L2保持分层一致)
+          工具类型	timeout	旧outer	新outer	影响
         shell (默认)	60	120	120	零变化
         shell (死锁场景)	600	120	630	修复生效 ✅
         httpget	300	60	330	wait_for仅+30s兜底
@@ -263,9 +266,10 @@ class ToolRetryEngine:
          
         日志约定（[Retry][Lx]层级）：
         - [Retry][L1]: LLM流式调用重试（base_service.py）
-        - [Retry][L2]: 工具执行重试（本方法）
+        - [Retry][L2]: LLM响应错误重试（llm_stream.py）
+        - [Retry][L3]: 工具执行重试（本方法）
          
-        小欧 2026-07-09
+         小沈 2026-07-17
         """
         max_retries, backoff_factor, retryable_errors, base_timeout = self._get_retry_config(action)
 
@@ -284,7 +288,7 @@ class ToolRetryEngine:
                 try:
                     on_retry_started(action, attempt, max_retries, str(last_error)[:100])
                 except Exception as cb_err:
-                    logger.warning(f"[Retry][L2] on_retry_started回调异常: {cb_err}")
+                    logger.warning(f"[Retry][L3] on_retry_started回调异常: {cb_err}")
             try:
                 result = await self._execute_tool_once(tool, params, timeout)
                 if isinstance(result, dict):
@@ -303,12 +307,12 @@ class ToolRetryEngine:
                 should_print_traceback = error_category.name in ("UNKNOWN", "INTERNAL")
                 if max_retries == 0:
                     logger.warning(
-                        f"[Retry][L2] action={action} {error_category.description}:{timeout}秒(无重试) - {str(e)[:100]}",
+                        f"[Retry][L3] action={action} {error_category.description}:{timeout}秒(无重试) - {str(e)[:100]}",
                         exc_info=should_print_traceback
                     )
                 else:
                     logger.warning(
-                        f"[Retry][L2] action={action} 尝试{attempt + 1}/{max_retries + 1} "
+                        f"[Retry][L3] action={action} 尝试{attempt + 1}/{max_retries + 1} "
                         f"失败：{error_category.description} - {str(e)[:100]}",
                         exc_info=should_print_traceback
                     )
