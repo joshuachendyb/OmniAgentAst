@@ -1,4 +1,22 @@
-﻿v0.18.23
+﻿v0.18.24
+更新时间: 2026-07-17 10:33:11 - 小欧-2026-07-17
+## v0.18.23→v0.18.24 变更汇总 - 小欧-2026-07-17
+
+### 最新改版（持续修改不覆盖）：
+- feat:answer_handler.py repeat detection upgrade to sentence frequency v2 - 小欧-2026-07-17
+- docs:doc-7月优化 add dedup/agent-idle/fetchpage design docs - 小欧-2026-07-17
+- docs:5文件 编辑历史规范化#记录格式(日期+署名+概要) - 小欧-2026-07-17
+- docs:answer_handler.py,action_handler.py,react_cycle.py 编辑历史补全/修正(反映计数器修正与B3-add_assistant_message) - 小欧-2026-07-17
+- fix:react_cycle.py B3改用add_assistant_message避免LLM参数不合法+去具体工具名 - 小欧-2026-07-17
+- fix:react_cycle.py B3检测reasoning-only空转并软引导(补A增强版,修正has_tool_results屏蔽) - 小欧-2026-07-17
+- fix:answer_handler.py,action_handler.py 空转计数改>判断+补全非reasoning-only出口归零 - 小欧-2026-07-17
+- fix:answer_handler.py,action_handler.py,base_agent.py 新增reasoning-only空转防御(重复剔除+连续3轮终止) - 小欧-2026-07-17
+- fix:observation_formatter.py 修复_format_items丢弃url致searchweb无URL无法fetchpage空转 - 小欧-2026-07-17
+- refactor:tool_retry_engine 重试层级L2→L3+编辑历史格式规范 - 小沈-2026-07-17
+- refactor:core+llm_stream+error_classifier+react_cycle FCFormatError→LLMResponseError - 小沈-2026-07-17
+- refactor:constants+base_service LLM常量重命名FC_FALLBACK→LLM_RESPONSE, FC_MAX→LLM_RESPONSE_RETRIES - 小沈-2026-07-17
+
+v0.18.23
 更新时间: 2026-07-17 06:22:56 - 北京老陈-2026-07-17
 ## v0.18.22→v0.18.23 变更汇总 - 北京老陈-2026-07-17
 
