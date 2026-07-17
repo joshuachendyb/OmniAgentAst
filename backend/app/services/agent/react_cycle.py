@@ -272,10 +272,8 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             # reasoning-only(纯推理无工具无答案空转): 必警告, 不受has_tool_results限制
             logger.warning(f"[B3] LLM返回reasoning-only(空转)未调用工具(step={step})")
             obs_text = ("[Observation] 警告: 你当前仅在推理未调用工具, 若已掌握所需信息请直接给出最终答案, "
-                        "否则应调用工具(如fetchpage)获取信息, 避免空转")
-            agent.message_builder.add_observation(
-                obs_text, {"tool_call_id": "", "tool_calls": [], "llm_content": _reasoning},
-            )
+                        "否则应调用工具获取信息, 避免空转")
+            agent.message_builder.add_assistant_message(obs_text)  # 2026-07-17 - 小欧 - 改add_assistant_message(参照edca06261昨天修正: add_observation空tool_call_id会创建孤立tool消息致LLM参数不合法)
         else:
             has_tool_results = any(
                 msg.get("role") == "tool"
@@ -284,9 +282,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             if not has_tool_results:
                 logger.warning(f"[B3] LLM返回answer但未调用任何工具(step={step})")
                 obs_text = "[Observation] 警告: 你未调用任何工具-->必须复核3遍用户任务:[1]问答任务补充说明;[2] 多步任务就继续调用工具"
-                agent.message_builder.add_observation(
-                    obs_text, {"tool_call_id": "", "tool_calls": [], "llm_content": _content},
-                )
+                agent.message_builder.add_assistant_message(obs_text)  # 2026-07-17 - 小欧 - 同reasoning-only分支: 改add_assistant_message避免孤立tool消息致LLM参数不合法
 
     # ── 场景D: 输出截断重试 — 检测preamble截断,注入重试observation ── 小健 2026-07-03
     if _should_retry_truncated_tool(agent, llm_response):
