@@ -3,6 +3,7 @@
 # 2026-07-13 - 小欧 - #1 观测格式化兜底WARNING降级DEBUG并加非dict防御
 # 2026-07-14 - 小沈 - grep匹配内容与上下文行截断防OOM
 # 2026-07-15 - 小欧 - 常量归一化治理: snippet/HTML摘要/sysinfo 字段截断改引用 tool_constants(OBS_SNIPPET/HTML_SUMMARY/SYSINFO_FIELD_MAX_CHARS, 原硬编码300/500/120), 功能零退化
+# 2026-07-17 - 小欧 - #2 修复_format_items丢弃url: 原if desc/elif url二选一结构在有snippet时丢弃url, 导致searchweb等"搜索→打开"工作流LLM拿不到URL无法fetchpage而空转(实测task-2ffbc517: 28分钟/1922s/11次LLM调用/重复63%)。改为desc与url并存输出(url为fetchpage必需入参, 通用惠及所有items类工具), 功能零退化
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -584,8 +585,14 @@ def _format_items(items: list) -> str:
             url = item.get("url", "")
             source = item.get("source", "")
             tag = f" [{source}]" if source else ""
+            # 2026-07-17 - 小欧 - 修复url丢弃: 原 if desc/elif url 二选一会吞掉url(有snippet时),
+            #   searchweb等items类工具返回的url是fetchpage必需入参, 丢失则LLM无法打开文章而空转(见task-2ffbc517)。
+            #   改为desc与url并存输出(url非空时附在desc下方一行), 通用惠及所有items类工具, 功能零退化。
             if desc:
-                lines.append(f"  {name}: {desc}{tag}")
+                line = f"  {name}: {desc}{tag}"
+                if url:
+                    line += f"\n    URL: {url}"
+                lines.append(line)
             elif url:
                 lines.append(f"  {name}: {url}{tag}")
             else:
