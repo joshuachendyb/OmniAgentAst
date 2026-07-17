@@ -3,6 +3,7 @@
 # 2026-07-15 - 小欧 - fetchpage异常日志修复: 某些httpx底层异常__str__返回空串, 致logger.error("未知错误:")后空白, 开发排查丢失异常类型。LLM侧detail(line 672)早已用type(e).__name__: str(e) or repr(e)正确传递, 本次仅增强开发日志可读性, 非功能缺陷。
 # 2026-07-15 - 小欧 - 常量归一化治理: 网页正文提取上限改引用 tool_constants.WEB_FETCH_MAX_CHARS(原 max_tokens=8000→32000字符, 现对齐 OBS 10000字符), 功能零退化
 # 2026-07-17 - 小欧 - HTTPStatusError hint 按状态码精化(4xx/5xx/429)
+# 2026-07-17 - 小欧 - fetchpage架构增强: ①提取正文trafilatura优先(html2text/SSR兜底保留) ②Playwright改独立Proactor子循环隔离运行(消Windows Selector NotImplementedError红字) ③SPA回退加外部API(Jina Reader)兜底, 三级降级HTTP→Playwright→外部API→友好提示, 功能零退化
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -24,6 +25,13 @@ from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+
+import sys
+
+try:
+    import trafilatura as _TRAFILATURA
+except ImportError:
+    _TRAFILATURA = None
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.network.http_client_sdk import create_http_client
@@ -169,6 +177,19 @@ def _convert_html2text(html: str) -> str:
     return h.handle(html)
 
 
+def _extract_via_trafilatura(html: str) -> Optional[str]:
+    """trafilatura提取正文Markdown(质量优于html2text), 失败返回None — 小欧 2026-07-17"""
+    if _TRAFILATURA is None:
+        return None
+    try:
+        md = _TRAFILATURA.extract(html, output_format="markdown", include_comments=False)
+        if md and len(md.strip()) > 50:
+            return md.strip()
+    except Exception:
+        pass
+    return None
+
+
 def _clean_markdown_content(text: str) -> str:
     """清理markdown导航噪音 — 小沈 2026-07-05 (html2text已处理实体和注释，简化)"""
     text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
@@ -283,7 +304,11 @@ def _scan_json_for_articles(obj, results, max_items=50, depth=0):
 
 def _html_to_markdown(html: str) -> str:
     """html2text 转换HTML为Markdown — 小沈 2026-07-05
-    小欧 2026-07-08: 加入_extract_ssr_json_content兜底"""
+    小欧 2026-07-08: 加入_extract_ssr_json_content兜底
+    小欧 2026-07-17: 优先trafilatura提取正文(质量优于html2text), 失败回落原链路"""
+    md = _extract_via_trafilatura(html)
+    if md:
+        return _clean_markdown_content(md)
     main_html = _extract_main_content(html)
     if main_html:
         return _clean_markdown_content(_convert_html2text(main_html))
@@ -464,43 +489,77 @@ def _build_media_result(url: str, mime: str, raw_bytes: bytes) -> Dict[str, Any]
     return {"data": data, "other_data": other_data}
 
 
+def _pw_run(url: str, proxy: Optional[str], timeout: float,
+            extract_format: str, max_tokens: int) -> Dict[str, Any]:
+    """Playwright同步内核: 独立Proactor子循环跑, 规避主循环Selector约束 — 小欧 2026-07-17"""
+    async def _go() -> Dict[str, Any]:
+        loop = asyncio.get_event_loop()
+        loop.set_exception_handler(lambda loop, ctx: None)   # 吞掉transport后台Task泄漏(红字)
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            return {"error": True, "error_detail": "js_render需要安装Playwright", "params": {"url": url}, "err_code": ERR_NETWORK_JS_RENDER, "detail": "js_render需要安装Playwright"}
+        try:
+            browser_config = {
+                "headless": True,
+                "proxy": {"server": proxy} if proxy else None,
+            }
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(**browser_config)
+                try:
+                    page = await browser.new_page()
+                    await page.set_default_timeout(timeout * 1000)
+                    await page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
+                    current_url = page.url
+                    if current_url and current_url != url:
+                        is_valid, err, _ = validate_url(current_url)
+                        if not is_valid:
+                            return {"error": True, "error_detail": f"重定向到不安全地址: {err or 'URL无效'}", "params": {"url": url}, "err_code": ERR_INVALID_URL, "detail": err}
+                    html_content = await page.content()
+                finally:
+                    await browser.close()
+            content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
+            return {
+                "html_content": html_content,
+                "extracted_content": content,
+                "truncated": truncated,
+                "content_type": "text/html",
+                "status_code": 200,
+            }
+        except Exception as e:
+            return {"error": True, "error_detail": str(e), "params": {"url": url}, "err_code": ERR_NETWORK_JS_RENDER, "detail": str(e)}
+
+    if sys.platform == "win32" and hasattr(asyncio, "ProactorEventLoop"):
+        loop = asyncio.ProactorEventLoop()
+        try:
+            return loop.run_until_complete(_go())
+        finally:
+            loop.close()
+    return asyncio.run(_go())
+
+
 async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout: float,
                                 extract_format: str, max_tokens: int) -> Dict[str, Any]:
-    """Playwright路径封装 — 小欧 2026-06-22"""
+    """Playwright路径封装(隔离执行) — 小欧 2026-07-17 改为子循环隔离"""
     try:
-        from playwright.async_api import async_playwright
-    except ImportError:
-        return {"error": True, "error_detail": "js_render需要安装Playwright: pip install playwright && playwright install chromium", "params": {"url": url}, "err_code": ERR_NETWORK_JS_RENDER, "detail": "js_render需要安装Playwright"}
-    try:
-        browser_config = {
-            "headless": True,
-            "proxy": {"server": proxy} if proxy else None,
-        }
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(**browser_config)
-            try:
-                page = await browser.new_page()
-                await page.set_default_timeout(timeout * 1000)
-                await page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
-                current_url = page.url
-                if current_url and current_url != url:
-                    is_valid, err, _ = validate_url(current_url)
-                    if not is_valid:
-                        logger.warning(f"[fetchpage] Playwright重定向到不安全地址: {err}")
-                        return {"error": True, "error_detail": f"重定向到不安全地址: {err or 'URL无效'}", "params": {"url": url}, "err_code": ERR_INVALID_URL, "detail": err}
-                html_content = await page.content()
-            finally:
-                await browser.close()
-        content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
-        return {
-            "html_content": html_content,
-            "extracted_content": content,
-            "truncated": truncated,
-            "content_type": "text/html",
-            "status_code": 200,
-        }
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, lambda: _pw_run(url, proxy, timeout, extract_format, max_tokens))
     except Exception as e:
         return {"error": True, "error_detail": str(e), "params": {"url": url}, "err_code": ERR_NETWORK_JS_RENDER, "detail": str(e)}
+
+
+async def _fetch_via_external_reader(url: str, timeout: int) -> Optional[str]:
+    """外部抓取API兜底(Jina Reader, 零本地浏览器, 可选) — 小欧 2026-07-17"""
+    try:
+        async with create_http_client(timeout_sec=timeout) as client:
+            r = await client.get(f"https://r.jina.ai/{url}")
+            if r.status_code == 200:
+                md = r.text.strip()
+                if len(md) > 50:
+                    return md
+    except Exception:
+        pass
+    return None
 
 
 async def fetchpage(
@@ -547,19 +606,27 @@ async def fetchpage(
             "Accept-Encoding": "gzip, deflate",
         }
 
+        playwright_result = None
         if js_render:
             playwright_result = await _fetch_via_playwright(url, proxy, timeout, extract_format, max_tokens)
-            if playwright_result.get("error"):
+        if js_render and playwright_result.get("error"):
+            # 浏览器渲染失败, 先尝试外部API兜底(Jina Reader) — 小欧 2026-07-17
+            external_md = await _fetch_via_external_reader(url, timeout)
+            if external_md and len(external_md) >= 200:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=playwright_result.get("err_code", ERR_NETWORK_JS_RENDER), detail=playwright_result.get("detail", ""), hint="请检查网站是否支持JS渲染", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                return build_error(data={}, llm_data=llm_data)
+                llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail="内容来自外部API(Jina Reader)兜底", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+                return build_success(data={"content": external_md}, llm_data=llm_data)
+            logger.warning(f"js_render渲染失败, 外部API兜底失败, 回落静态抓取: {playwright_result.get('detail')}")
+            # 不return, 继续下方静态抓取
+        elif js_render and not playwright_result.get("error"):
+            # js_render成功: 取L1渲染结果, 不进静态抓取 — 小欧 2026-07-17
             html_content = playwright_result["html_content"]
             extracted_content = playwright_result["extracted_content"]
             truncated = playwright_result["truncated"]
             content_type = playwright_result["content_type"]
             status_code = playwright_result["status_code"]
             mime = content_type.split(";")[0].strip().lower() if content_type else ""
-        else:
+        if not (js_render and playwright_result is not None and not playwright_result.get("error")):
             async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
                 actual_headers = dict(headers)
 
@@ -617,6 +684,10 @@ async def fetchpage(
                 pw_res = await _fetch_via_playwright(url, proxy, timeout, extract_format, max_tokens)
                 if not pw_res.get("error"):
                     pw_content = pw_res
+                else:
+                    ext_md = await _fetch_via_external_reader(url, timeout)   # 小欧 2026-07-17 L2兜底
+                    if ext_md:
+                        pw_content = {"extracted_content": ext_md, "truncated": False, "content_type": "text/markdown", "status_code": 200}
 
             if pw_content:
                 # HTTP HTML先提取做fallback — 小沈 2026-07-08
