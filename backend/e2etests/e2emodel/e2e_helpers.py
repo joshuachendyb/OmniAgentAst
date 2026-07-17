@@ -1057,7 +1057,8 @@ def check_logs(
 
         # ── ERROR检查(MUST) ──
         # 只匹配ERROR级别日志(格式: timestamp - ERROR - ...)，不匹配内容中的ERROR字样
-        for line in re.findall(r"^.* - ERROR - .*$", content, re.MULTILINE)[:10]:
+        # 锚定时间戳+级别字段,避免INFO行消息体含" - ERROR - "被贪婪误判 - 小沈 2026-07-17
+        for line in re.findall(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} - ERROR - .*$", content, re.MULTILINE)[:10]:
             if "unable to open database file" in line:
                 continue
             if "e2e_test" in line:
