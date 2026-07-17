@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-17 - 小欧 - 早期encoding校验: writetext()中encoding确定后立即用codecs.lookup()校验，替代等open()才报错
 """
 F2: writetext — 写文本文件
 
@@ -10,6 +12,7 @@ F2: writetext — 写文本文件
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import asyncio
+import codecs
 import difflib
 import json
 import time as _time_mod
@@ -183,6 +186,14 @@ async def writetext(
         return build_error(data={}, llm_data=llm_data)
 
     encoding = encoding or _detect_file_encoding_for_write(file_path, append)
+
+    # 早期encoding校验 — 小欧 2026-07-17
+    try:
+        codecs.lookup(encoding)
+    except LookupError:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"无效编码: {encoding}", hint="请使用正确的编码名称", user_encoding=encoding, user_append=append)
+        return build_error(data={}, llm_data=llm_data)
 
     task_id = _current_task_id.get()
     if not task_id:
