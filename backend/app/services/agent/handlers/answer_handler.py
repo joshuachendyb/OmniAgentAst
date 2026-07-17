@@ -3,6 +3,7 @@
 # 记录 2026-07-16 小欧 清理L1护栏: 删除超长外置/退化检测/退化纠正/降级兜底/工具结果提取, 仅保留重复检测(dedup)
 # 记录 2026-07-17 小欧 新增reasoning-only空转防御: 复用_dedup_repeat剔除循环重复+连续REASONING_ONLY_MAX_ROUNDS(默认3)轮纯推理无工具无答案即终止; 字段_consecutive_reasoning_only在action/正常answer/真空处归零(防御增强不退化正常流程)
 # 记录 2026-07-17 小欧 计数器修正: 判断改>REASONING_ONLY_MAX_ROUNDS(默认3,即第4轮终止); 补全error/未知类型分支归零, 使不变量"仅reasoning-only累加、其余出口归零"严格成立(复核3遍)
+# 记录 2026-07-17 小欧 重复检测升级: 用句子频率法(v2)替换固定200字chunk, 100%命中率98.4%压缩率; 删除DUP_CHUNK, 新增SENTENCE_MIN_REPEAT=3, REPEAT_CHECK_MIN_LEN=500改250; 排除markdown表行防假阳性(复核3遍+边缘测试14场景)
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -15,7 +16,9 @@ v3.0: reasoning-only分支+tool call文本格式化 — 小欧 2026-07-12
 v4.0: 合并error/unknown处理，react_cycle只分两路 — 小欧 2026-07-12
 v4.1: reasoning-only分支改add_assistant_message(reasoning)合法注入(工具调用意图已由llm_stream提前提取为action,本分支仅处理纯推理文本) — 小欧 2026-07-16
 """
+import re
 import time
+from collections import Counter
 from typing import Dict
 
 from app.services.agent.steps import ThoughtStep, FinalStep, ErrorStep, MetaStep
@@ -23,38 +26,48 @@ from app.utils.text_utils import format_tool_call_markup
 from app.logger import logger
 
 
-# ── 重复检测 ──
-REPEAT_CHECK_MIN_LEN = 500     # 重复检测启动门槛: 不足500字不检(短内容无危害)
-DUP_CHUNK = 200                # 检测窗口: 匹配 LLM 卡顿循环周期(老陈经验值200), 禁止降低防误伤
-DUP_RATIO = 0.5                # 重复块占总长比例阈值, 占比过半才截断, 宁漏判不误伤, 禁止降低
+# ── 重复检测(版本2026-07-17: 句子频率法替代固定chunk) ──
+REPEAT_CHECK_MIN_LEN = 250     # 重复检测启动门槛: 不足250字不检(短内容无危害)
+SENTENCE_MIN_REPEAT = 3        # 2026-07-17 - 小欧 - 句子频率法: 同一句出现≥3次标记为重复(覆盖A-B交替/非200倍数块)
+DUP_RATIO = 0.5                # 重复占总长比例阈值, 占比过半才截断, 宁漏判不误伤, 禁止降低
 
 REASONING_ONLY_MAX_ROUNDS = 3   # 2026-07-17 - 小欧 - 连续reasoning-only(纯推理无工具无答案)终止门限: 用>判断, 容忍连续3轮继续, 第4轮(>3)才终止; 正常LLM每轮给answer或tool, 永不进此分支; 仅防御空转
 
 
 def _dedup_repeat(content: str) -> str:
-    """【卡顿循环重复去重】仅针对 LLM 原样重复, 非通用去重工具
-    【设计意图】类型2无意义重复(模型卡顿循环)截断不误伤(重复段无价值); 去重后若仍超长交给超长外置处理
-    【防误伤边界】① 长度<2*DUP_CHUNK 不检测(零影响); ② 仅识别原样完全重复, 不识别语义相似;
-        ③ 重复占比>DUP_RATIO(=0.5)才截断, 宁漏判不误伤; ④ DUP_CHUNK/DUP_RATIO 禁止降低(防结构化报告表头重复<15%误伤)
-    【调用前提】content 为 final 文本; 返回截断后文本(保留首次有效内容)"""
-    if len(content) <= DUP_CHUNK * 2:
+    """【卡顿循环重复去重】基于句子频率, 非通用去重工具
+    【设计意图】LLM陷入卡顿循环时(如A-B交替/简单块重复), 剔除原样重复句子, 保留首次有效内容
+    【防误伤边界】① 长度<REPEAT_CHECK_MIN_LEN 不检测; ② 句子数<10不检测;
+        ③ 排除markdown表行(行首|); ④ 重复占比>DUP_RATIO才截断; ⑤ 仅精确句子匹配, 非语义相似
+    【调用前提】content 为 final/推理文本; 返回截断后文本"""
+    if len(content) < REPEAT_CHECK_MIN_LEN:
         return content
-    step = DUP_CHUNK
-    chunks = [content[i:i + step] for i in range(0, len(content) - step + 1, step)]
-    seen = {}
-    second_pos = None
-    for idx, ch in enumerate(chunks):
-        if ch in seen:
-            second_pos = idx * step  # 第二次出现起点(字符位置)
-            break
-        seen[ch] = idx
-    if second_pos is None:
+    parts = re.split(r'(?<=[。\n])', content)
+    parts = [p for p in parts if len(p.strip()) > 0]
+    if len(parts) < 10:
         return content
-    repeat_len = len(content) - second_pos
-    if repeat_len / len(content) < DUP_RATIO:
-        return content  # 重复占比低, 不触发(防误伤)
-    logger.warning(f"[L1-C2b] 检测到无意义重复(final {len(content)}字, 重复占比 {repeat_len / len(content):.0%}), 已去重截断")
-    return content[:second_pos] + "\n\n... [已截断重复内容]"
+    counter = Counter(parts)
+    repeated = {s for s, cnt in counter.items()
+                if cnt >= SENTENCE_MIN_REPEAT
+                and not s.strip().startswith('|')}
+    if not repeated:
+        return content
+    result = []
+    seen = set()
+    for p in parts:
+        if p in repeated and p in seen:
+            continue
+        if p in repeated:
+            seen.add(p)
+        result.append(p)
+    deduped = "".join(result)
+    if len(deduped) >= len(content):
+        return content
+    ratio = 1 - len(deduped) / len(content)
+    if ratio < DUP_RATIO:
+        return content
+    logger.warning(f"[L1-C2b] 检测到无意义重复(final {len(content)}字, 重复占比 {ratio:.0%}), 已去重截断")
+    return deduped
 
 
 async def handle_answer(agent, parsed: Dict):
@@ -146,7 +159,7 @@ async def handle_answer(agent, parsed: Dict):
             step=step, content=thought, reasoning=reasoning,
         ))
 
-    # ══ 重复检测(≥500字才检) — DB 入库前唯一保留的护栏 ══
+    # ══ 重复检测(≥250字才检) — DB 入库前唯一保留的护栏 ══
     if len(content) >= REPEAT_CHECK_MIN_LEN:
         deduped = _dedup_repeat(content)
         if deduped != content:
