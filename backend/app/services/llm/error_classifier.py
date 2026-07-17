@@ -15,10 +15,12 @@
 作者: 小欧 - 2026-06-29
 
  编辑历史:
+ # 格式规范: {日期} {署名} {修改内容}
    2026-07-14 小欧 消除裸魔法数429: 引入HTTP_RATE_LIMIT常量供HTTP_STATUS_TO_ERROR_TYPE引用(代码变迁遗留,非功能退化)
    2026-07-15 小欧 老陈裁定: HTTP_RATE_LIMIT 常量多余且 HTTP_ 前缀不准, 删除; HTTP_STATUS_TO_ERROR_TYPE 中 429 改回裸数字(与其他 HTTP 状态码并列), 功能零退化
     2026-07-16 小欧 新增CLIENT枚举: 400/401/403归CLIENT不重试(4xx客户端错确定性失败,429限流仍归SERVER可重试)
-    2026-07-16 小欧 M1 解决CLIENT(4xx)错误文案被覆盖问题: 此前classify_error_message对CLIENT类错误固定返回写死文案"客户端错误:请求参数异常", 丢弃服务商真实错误文本; 现CLIENT分支在error_message非空时直接透出。能力提升: 与client_sdk抛出的HTTPStatusError真因打通, 前端/用户获得可读的真实错误原因, 同时保持400不重试的既有重试策略不变
+     2026-07-16 小欧 M1 解决CLIENT(4xx)错误文案被覆盖问题: 此前classify_error_message对CLIENT类错误固定返回写死文案"客户端错误:请求参数异常", 丢弃服务商真实错误文本; 现CLIENT分支在error_message非空时直接透出。能力提升: 与client_sdk抛出的HTTPStatusError真因打通, 前端/用户获得可读的真实错误原因, 同时保持400不重试的既有重试策略不变
+      2026-07-17 小沈 FC重命名: import/引用同步更新
 """
 
 import re
@@ -31,9 +33,9 @@ except ImportError:
     IdleTimeoutError = None
 
 try:
-    from app.services.llm.core import FCFormatError
+    from app.services.llm.core import LLMResponseError
 except ImportError:
-    FCFormatError = None
+    LLMResponseError = None
 
 
 class SystemErrorCategory(Enum):
@@ -114,8 +116,8 @@ class SystemErrorClassifier:
         """检查特殊错误 — 白名单例外，走非SERVER路径 — 小沈 2026-07-05 移除EndOfStream(黑名单默认处理)"""
         if IdleTimeoutError and isinstance(error, IdleTimeoutError):
             return SystemErrorCategory.IDLE_TIMEOUT
-        if FCFormatError and isinstance(error, FCFormatError):
-            return SystemErrorCategory.UNKNOWN  # FC格式错误，重试无意义
+        if LLMResponseError and isinstance(error, LLMResponseError):
+            return SystemErrorCategory.UNKNOWN  # LLM响应数据错误，重试无意义
         # EndOfStream 由黑名单默认SERVER处理，不需特殊case — 小沈 2026-07-05
         return None
     

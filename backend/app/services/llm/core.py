@@ -27,7 +27,9 @@ LLM 响应 → type 分类链（知识备忘 — 小欧 2026-07-15）:
      type="answer" 时: = parsed.get("thought", content)（回退为 content）
 
 编辑历史:
-  小欧 - 2026-07-15: FCFormatError.__init__加self.message=message,补缺失的实例属性(写测试挖出的预存bug)
+# 格式规范: {日期} {署名} {修改内容}
+   2026-07-15 小欧 FCFormatError.__init__加self.message=message,补缺失的实例属性(写测试挖出的预存bug)
+   2026-07-17 小沈 FCFormatError→LLMResponseError(FC概念改名,对应用户LLM响应数据错误语义)
 
 拆分原则:数据/辅助定义与BaseAIService主服务类分离,遵循SRP。
 对外透明:llm_core.py重新导出这些类,外部import路径不变。
@@ -37,11 +39,11 @@ from typing import List, Dict, Optional
 from app.services.llm.error_classifier import SystemErrorClassifier
 
 
-class FCFormatError(Exception):
-    """FC格式错误 — LLM返回的tool_calls无法解析 — 小欧 2026-06-25"""
+class LLMResponseError(Exception):
+    """LLM响应数据错误 — LLM返回空/无效/格式错误的响应 — 小沈 2026-07-17"""
     def __init__(self, *, message: str, details: dict = None):
         super().__init__(message)
-        self.message = message  # 小欧 2026-07-15: 补缺失实例属性,防_format_fc_error访问e.message时AttributeError
+        self.message = message  # 小欧 2026-07-15: 补缺失实例属性,防_format_response_error访问e.message时AttributeError
         self.details = details or {}
 
 
@@ -103,7 +105,7 @@ def create_error_chunk(model: str, error: str, error_type: str = "http_error") -
 __all__ = [
     "ChatResponse",
     "StreamChunk",
-    "FCFormatError",
+    "LLMResponseError",
     "_resolve_exception",
     "create_cancelled_chunk",
     "create_error_chunk",

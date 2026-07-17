@@ -15,10 +15,12 @@ llm_stream — LLM流式调用+响应构建
 详见 llm/core.py 头部的完整分类说明。
 
 编辑历史:
+# 格式规范: {日期} {署名} {修改内容}
    2026-07-14 小欧 FC_FALLBACK_ENABLED/FC_MAX_RETRIES/LLM_TOOL_CHOICE导入源由base_service改为app.constants(常量集中,非功能退化)
    2026-07-15 小欧 修复call_llm_with_fallback:①FC重试循环内拦截type:"error"响应转FCFormatError触发L2重试(避免直抵set_failed) ②降级关闭分支last_error=None兜底防AttributeError崩溃
-    2026-07-16 小欧 新增XML tool_call提取拦截点: call_llm_stream在FC JSON tool_calls为空时,从reasoning/content检XML工具调用,合成tool_call_id走action路径(FC模式openai_tools清单校验防误提取,Text fallback由action_handler兜底)
-    2026-07-16 小欧 M5 解决空[FC]错误日志丢失根因问题: 此前_yield_error_response仅记录错误消息, 异常消息为空时(如测试垃圾输入/空串)无任何诊断上下文, 排障无据; 新增exc/exc_type可选参数。能力提升: 错误日志补全异常类型(exc=类名)或错误分类(type=分类)诊断上下文, 即使消息为空也能定位根因
+     2026-07-16 小欧 新增XML tool_call提取拦截点: call_llm_stream在FC JSON tool_calls为空时,从reasoning/content检XML工具调用,合成tool_call_id走action路径(FC模式openai_tools清单校验防误提取,Text fallback由action_handler兜底)
+     2026-07-16 小欧 M5 解决空[FC]错误日志丢失根因问题: 此前_yield_error_response仅记录错误消息, 异常消息为空时(如测试垃圾输入/空串)无任何诊断上下文, 排障无据; 新增exc/exc_type可选参数。能力提升: 错误日志补全异常类型(exc=类名)或错误分类(type=分类)诊断上下文, 即使消息为空也能定位根因
+       2026-07-17 小沈 FCFormatError→LLMResponseError, FC_MAX_RETRIES→LLM_RESPONSE_RETRIES, FC_FALLBACK_ENABLED→LLM_RESPONSE_FALLBACK; [FC]→[LLM]并去冗余"LLM"
 """
 
 import asyncio
@@ -27,8 +29,8 @@ import time
 from typing import Any, Optional
 
 from app.services.agent.steps import ChunkStep
-from app.constants import FC_FALLBACK_ENABLED, FC_MAX_RETRIES, LLM_TOOL_CHOICE
-from app.services.llm.core import FCFormatError
+from app.constants import LLM_RESPONSE_FALLBACK, LLM_RESPONSE_RETRIES, LLM_TOOL_CHOICE
+from app.services.llm.core import LLMResponseError
 from app.utils.text_utils import extract_tool_call_xml
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
@@ -39,7 +41,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
     """构建action类型响应 — 小欧 2026-06-25 抽取_log_llm_response"""
     for tc in tool_calls_result:
         if "tool_params" in tc and tc["tool_params"] is None:
-            logger.warning(f"[FC] LLM生成残缺tool_call: {tc.get('tool_name', '?')} tool_params为None, 由工具层降级校验")
+            logger.warning(f"[LLM] 生成残缺tool_call: {tc.get('tool_name', '?')} tool_params为None, 由工具层降级校验")
     first = tool_calls_result[0]
     built_tool_calls = []
     for tc in tool_calls_result:
@@ -55,7 +57,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
             "_repair_warning": tc.get("_repair_warning", ""),
         })
 
-    logger.info(f"[FC] LLM原始响应(action): tool={first.get('tool_name','?')}, parallel={len(_pending_calls)}")
+    logger.info(f"[LLM] 原始响应(action): tool={first.get('tool_name','?')}, parallel={len(_pending_calls)}")
     full_content = full_content.strip()
     full_reasoning = full_reasoning.strip()
     assembled = {"content": full_content, "reasoning": full_reasoning, "tool_calls": built_tool_calls}
@@ -82,8 +84,8 @@ def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_r
     )
 
 
-def _format_fc_error(e: "FCFormatError") -> str:
-    """格式化FC错误为前端友好信息 — 小欧 2026-07-02"""
+def _format_response_error(e: "LLMResponseError") -> str:
+    """格式化LLM响应错误为前端友好信息 — 小沈 2026-07-17"""
     return f"解析失败: {e.message}"
 
 
@@ -95,7 +97,7 @@ def _yield_error_response(error_msg: str, agent, exc: Optional[BaseException] = 
     # 【E-4修复】返回type:error,DispatchHandler的error分支处理 — 小欧 2026-06-28
     # M5: 空消息场景补强诊断上下文(exc类型/分类), 防根因丢失 — 小欧 2026-07-16
     diag = f" | exc={type(exc).__name__}" if exc else (f" | type={exc_type}" if exc_type else "")
-    logger.error(f"[FC] {error_msg}{diag}")
+    logger.error(f"[LLM] {error_msg}{diag}")
     _log_llm_response(agent, error_msg, "error", None, finish_reason="error")
     return ("response", {"type": "error", "content": error_msg})
 
@@ -105,7 +107,7 @@ def _build_answer_response(full_content, full_reasoning, usage_data, agent):
     
     type="answer" 的含义: agent 推断 LLM 已完成任务(无 tool_calls,仅文本输出),
     将此文本作为任务最终答复,后续由 handle_answer() → FinalStep 结束循环。"""
-    logger.info(f"[FC] LLM原始响应(answer):\n")
+    logger.info(f"[LLM] 原始响应(answer):\n")
     full_content = full_content.strip()
     full_reasoning = full_reasoning.strip()
     assembled = {"content": full_content, "reasoning": full_reasoning}
@@ -154,17 +156,17 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
                     usage_data = chunk.usage
                 break
         llm_elapsed = time.time() - llm_start
-    except FCFormatError:
+    except LLMResponseError:
         raise
     except Exception as e:
         if getattr(agent.llm_client, '_cancelled', False):
-            logger.info(f"[FC] LLM调用因取消而中断, 跳过异常响应")
+            logger.info(f"[LLM] 调用因取消而中断, 跳过异常响应")
             return
         yield _yield_error_response(f"LLM调用异常: {e}", agent, exc=e)
         return
     except asyncio.CancelledError:
         content = full_content or full_reasoning or ""
-        logger.warning(f"[FC] LLM流式调用被取消, 已累积内容({len(content)}字符)")
+        logger.warning(f"[LLM] 流式调用被取消, 已累积内容({len(content)}字符)")
         get_prompt_logger().log_llm_response(
             round_number=agent.llm_call_count, response_content=content,
             raw_response="", response_type="answer", finish_reason="cancelled",
@@ -173,7 +175,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
 
     if stream_error:
         if tool_calls_result:
-            logger.warning(f"[FC] LLM流式错误, 丢弃{len(tool_calls_result)}个未完成的tool_calls")
+            logger.warning(f"[LLM] 流式错误, 丢弃{len(tool_calls_result)}个未完成的tool_calls")
             tool_calls_result = None
         yield _yield_error_response(f"LLM流式错误: {stream_error}", agent, exc_type=chunk.stream_error_type or "")
         return
@@ -186,7 +188,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
         _p = usage_data.get('prompt_tokens', '?') if usage_data else '?'
         _c = usage_data.get('completion_tokens', '?') if usage_data else '?'
         _t = usage_data.get('total_tokens', '?') if usage_data else '?'
-        logger.info(f"[FC] 解析结果: tool_calls({len(tool_calls_result)})={_fc_names}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
+        logger.info(f"[LLM] 解析结果: tool_calls({len(tool_calls_result)})={_fc_names}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
         yield _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent, full_reasoning)
         return
 
@@ -223,7 +225,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
                     yield _build_tool_calls_response(
                         full_content, tool_calls_result, usage_data, agent, full_reasoning or "")
                     return
-                logger.info(f"[FC] 提取 tool_name={extracted['tool_name']} 不在可用清单, 跳过XML执行, 回落answer")
+                logger.info(f"[LLM] 提取 tool_name={extracted['tool_name']} 不在可用清单, 跳过XML执行, 回落answer")
 
     # ════════════════════════════════════════════════════
     # type 推断：LLM 无 tool_calls、仅文本 → answer
@@ -232,7 +234,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     _p = usage_data.get('prompt_tokens', '?') if usage_data else '?'
     _c = usage_data.get('completion_tokens', '?') if usage_data else '?'
     _t = usage_data.get('total_tokens', '?') if usage_data else '?'
-    logger.info(f"[FC] 解析结果: answer, len={len(content)}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
+    logger.info(f"[LLM] 解析结果: answer, len={len(content)}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
     yield _build_answer_response(full_content, full_reasoning, usage_data, agent)
 
 
@@ -240,35 +242,35 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
     """FC模式失败时条件降级到Text模式 — 小欧 2026-06-25"""
     last_error = None
 
-    for attempt in range(FC_MAX_RETRIES):
+    for attempt in range(LLM_RESPONSE_RETRIES):
         try:
             async for item in call_llm_stream(agent, messages, openai_tools):
-                # 流式error响应(type:"error")会绕过L2重试直抵set_failed使agent失败;此处转FCFormatError交给上层重试 — 小欧 2026-07-15
+                # 流式error响应(type:"error")会绕过L2重试直抵set_failed使agent失败;此处转LLMResponseError交给上层重试 — 小欧 2026-07-15
                 if isinstance(item, tuple) and item[0] == "response":
                     resp = item[1]
                     if isinstance(resp, dict) and resp.get("type") == "error":
-                        raise FCFormatError(message=resp.get("content", "LLM流式错误"))
+                        raise LLMResponseError(message=resp.get("content", "LLM流式错误"))
                 yield item
             return
-        except FCFormatError as e:
+        except LLMResponseError as e:
             last_error = e
-            logger.warning(f"[Retry][L2] FC模式第{attempt+1}/{FC_MAX_RETRIES}次失败: {e}")
+            logger.warning(f"[Retry][L2] LLM响应错误 第{attempt+1}/{LLM_RESPONSE_RETRIES}次: {e}")
             await asyncio.sleep(0.5)
             continue
 
-    if FC_FALLBACK_ENABLED:
-        logger.warning(f"[FC降级] FC模式{FC_MAX_RETRIES}次重试均失败，降级到Text模式")
+    if LLM_RESPONSE_FALLBACK:
+        logger.warning(f"[FC降级] FC模式{LLM_RESPONSE_RETRIES}次重试均失败，降级到Text模式")
         try:
             async for item in call_llm_stream(agent, messages, openai_tools=None):
                 yield item
-        except FCFormatError as e:
-            error_msg = _format_fc_error(e)
+        except LLMResponseError as e:
+            error_msg = _format_response_error(e)
             logger.error(f"[FC降级] {error_msg}", exc_info=True)
             yield _yield_error_response(error_msg, agent)
     else:
-        # FC_MAX_RETRIES=0时for循环不执行,last_error恒为None,直接_format_fc_error(None)会AttributeError崩溃,故兜底 — 小欧 2026-07-15
+        # LLM_RESPONSE_RETRIES=0时for循环不执行,last_error恒为None,直接_format_response_error(None)会AttributeError崩溃,故兜底 — 小欧 2026-07-15
         if last_error is None:
-            error_msg = f"FC模式不可用: FC_MAX_RETRIES={FC_MAX_RETRIES}且降级通道关闭, 任务无法执行"
+            error_msg = f"FC模式不可用: LLM_RESPONSE_RETRIES={LLM_RESPONSE_RETRIES}且降级通道关闭, 任务无法执行"
         else:
-            error_msg = _format_fc_error(last_error)
+            error_msg = _format_response_error(last_error)
         yield _yield_error_response(error_msg, agent)

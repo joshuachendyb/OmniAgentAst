@@ -5,10 +5,13 @@ run_react_cycle — ReAct 循环核心（薄调度）
 职责: 循环调度 + 类型分派 + 状态推断，不含业务逻辑
 业务逻辑在 handlers/ 目录
 
-chendyg 2026-07-01: 状态集中管理重构v2
-- 状态用 status_table，数据 handler 自己写
-- _dispatch_handler 基于 event type 推断状态
-- handler 保留 add_observation/add_assistant_message，不绕路
+编辑历史:
+# 格式规范: {日期} {署名} {修改内容}
+  chendyg 2026-07-01: 状态集中管理重构v2
+  - 状态用 status_table，数据 handler 自己写
+  - _dispatch_handler 基于 event type 推断状态
+  - handler 保留 add_observation/add_assistant_message，不绕路
+  2026-07-17 小沈 FC重命名: import/LLMResponseError同步
 """
 
 import asyncio
@@ -47,8 +50,8 @@ def handle_react_error(agent, error, step):
 def _is_recoverable_error(error) -> bool:
     """判断错误是否可恢复（FC格式错误/网络错误/超时） — chendyg 2026-07-01"""
     try:
-        from app.services.llm.core import FCFormatError
-        if isinstance(error, FCFormatError):
+        from app.services.llm.core import LLMResponseError
+        if isinstance(error, LLMResponseError):
             return True
     except ImportError:
         pass
@@ -193,7 +196,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     messages = agent.message_builder.prepare_messages_for_llm()
     openai_tools = get_openai_tools(agent)
 
-    logger.info(f"[FC] LLM调用#{agent.llm_call_count}, messages={len(messages)}, tools={len(openai_tools)}, model={getattr(agent.llm_client, 'model', '?')}")
+    logger.info(f"[LLM] 调用#{agent.llm_call_count}, messages={len(messages)}, tools={len(openai_tools)}, model={getattr(agent.llm_client, 'model', '?')}")
 
     prompt_logger = get_prompt_logger()
     prompt_logger.log_llm_call(
