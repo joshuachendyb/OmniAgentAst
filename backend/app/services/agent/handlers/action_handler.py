@@ -11,6 +11,7 @@
 #          ③白名单隔离非文件工具使其不参与贯通(op_id=None自生成), 消除误关联
 #          ④纯内部取id(不读result/LLM字段), 符合"operation_id是agent内部字段严禁进LLM返回结构"铁律
 # 2026-07-17 - 小欧 - handle_action执行工具后重置_consecutive_reasoning_only(空转检测: 本步LLM发起工具调用=非reasoning-only空转, 归零)
+# 2026-07-17 - 小欧 - 计数器修正: handle_action-tool_name空early-return处补归零(空转检测非reasoning-only出口完备, 不变量严格成立)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
