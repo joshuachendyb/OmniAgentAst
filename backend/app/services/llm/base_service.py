@@ -10,7 +10,8 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
   2026-07-14 小欧 删除死代码_is_rate_limit_status(无调用方,限流由SystemErrorClassifier覆盖,功能零退化)
    2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL至app.constants(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/测试导入)
     2026-07-16 小欧 新增三层防线——①LLM_MAX_TOKENS=16384(防无限长输出); ②STREAM_TOTAL_TIMEOUT=500s总时长硬超时(httpx idle timeout 在连续流式时不触发,用 wall-clock 兜底); ③tool_call流式超时=总时长3/5=300s(_parse_sse_data 对 tool_call delta 静默跳过, 专门卡此阶段). 三者超时后均 break→accumulator→截断修复, 不触发重试
-     2026-07-17 小沈 FC重命名: FCFormatError→LLMResponseError, 导入路径同步更新
+      2026-07-17 小沈 FC重命名: FCFormatError→LLMResponseError, 导入路径同步更新
+      2026-07-17 小欧 流式截断落库修复: 落库 tool_call.arguments 改为使用已解析规范化后的 params(json.dumps), 而非原始流式串。原因: 流式总超时截断时原始串为非完整JSON, 直接落库会在下一轮回传给LLM API时触发参数校验失败; 以已成功解析(或已自动修补)的合法dict为准, 保证历史消息 arguments 永远合法, 工具已执行的结果得以保留, 功能零退化
 """
 
 import asyncio
@@ -267,7 +268,9 @@ class BaseAIService:
                                     "type": "function",
                                     "function": {
                                         "name": tc["name"],
-                                        "arguments": tc.get("arguments", "")
+                                        # 落库 arguments 统一用已解析规范化后的 params(json.dumps), 而非原始流式串 —
+                                        # 流式超时截断时原始串为非完整JSON, 落库后下一轮回传会触发LLM API参数校验失败; 以已解析/已修补的合法dict为准, 保证历史合法且工具结果保留 — 小欧 2026-07-17
+                                        "arguments": _json.dumps(params, ensure_ascii=False)
                                     }
                                 }]
                             })
