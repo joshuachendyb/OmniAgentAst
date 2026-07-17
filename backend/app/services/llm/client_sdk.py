@@ -9,6 +9,7 @@ SDK 只管发 HTTP 请求,不处理错误,异常原样抛出。
 FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-06-11
 编辑历史: 2026-07-16 小欧 request_stream 响应错误路径: >=400时记录响应体后raise_for_status(所有4xx/5xx可见错误原因)
 编辑历史: 2026-07-16 小欧 M1 解决400错误根因不可见问题: 此前>=400仅把响应体写进服务器日志, 前端/用户只看到泛化文案"客户端错误:请求参数异常", 排障须翻数MB日志; 新增_extract_server_error_message解析OpenAI兼容错误信封{"error":{"message":...}}, >=400时抛HTTPStatusError并携带服务商真实错误文本(server_msg)。能力提升: 前端用户与错误记录可直接看到sensenova等真实错误原因(如参数被拒), 无需查日志即可定位根因
+编辑历史: 2026-07-17 小欧 修复429/5xx限流日志污染: 可重试状态(429/5xx)由base_service L1重试处理, 降为WARNING; 仅不可重试客户端错误(400/401/403)记ERROR, 避免check_logs/测试误判FAIL
 """
 
 import httpx
@@ -26,6 +27,8 @@ from app.constants import (
 from app.config import get_config
 from app.logger import logger
 
+# 可重试 HTTP 状态: 429限流 / 5xx服务端瞬时错误, 由 base_service L1 重试处理 — 小欧 2026-07-17
+_RETRYABLE_STATUS = (429, 500, 502, 503, 504)
 
 
 def _build_request_body(
@@ -155,7 +158,16 @@ class LLMClient:
             extra_body=extra_body,
         )
         response = await self._client.post("/chat/completions", json=body)
-        response.raise_for_status()
+        if response.status_code >= 400:
+            body_text = response.text
+            if response.status_code in _RETRYABLE_STATUS:
+                logger.warning(f"[LLM] HTTP {response.status_code} 响应体(可重试, base_service将重试): {body_text}")
+            else:
+                logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
+            server_msg = _extract_server_error_message(body_text)
+            raise httpx.HTTPStatusError(
+                f"HTTP {response.status_code} 错误: {server_msg or '（服务商未返回错误详情）'}",
+                request=response.request, response=response)
         return response.json()
 
     async def request_stream(
@@ -190,10 +202,15 @@ class LLMClient:
         )
         async with self._client.stream("POST", "/chat/completions", json=body, timeout=_timeout) as response:
             # 记录所有 4xx/5xx 错误响应体(>=400), 定位错误原因 — 小欧 2026-07-16
+            # 2026-07-17 小欧 修复: 可重试状态(429限流/5xx服务端瞬时错误)由 base_service 的 L1 重试处理,
+            #   降为 WARNING 避免污染 ERROR 日志(check_logs/测试据此误判 FAIL); 仅不可重试客户端错误(400/401/403等)记 ERROR
             if response.status_code >= 400:
                 response_body = await response.aread()
                 body_text = response_body.decode("utf-8", errors="replace")
-                logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
+                if response.status_code in _RETRYABLE_STATUS:
+                    logger.warning(f"[LLM] HTTP {response.status_code} 响应体(可重试, base_service将重试): {body_text}")
+                else:
+                    logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
                 server_msg = _extract_server_error_message(body_text)
                 raise httpx.HTTPStatusError(
                     f"HTTP {response.status_code} 错误: {server_msg or '（服务商未返回错误详情）'}",
