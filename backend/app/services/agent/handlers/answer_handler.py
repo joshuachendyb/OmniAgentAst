@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-16 - 小欧 - 清理L1护栏: 删除超长外置/退化检测/退化纠正/降级兜底/工具结果提取, 仅保留重复检测(dedup)
+# 2026-07-17 - 小欧 - 新增reasoning-only空转防御: 复用_dedup_repeat剔除循环重复+连续REASONING_ONLY_MAX_ROUNDS(默认3)轮纯推理无工具无答案即终止; 字段_consecutive_reasoning_only在action/正常answer/真空处归零(防御增强不退化正常流程)
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -25,6 +26,8 @@ from app.logger import logger
 REPEAT_CHECK_MIN_LEN = 500     # 重复检测启动门槛: 不足500字不检(短内容无危害)
 DUP_CHUNK = 200                # 检测窗口: 匹配 LLM 卡顿循环周期(老陈经验值200), 禁止降低防误伤
 DUP_RATIO = 0.5                # 重复块占总长比例阈值, 占比过半才截断, 宁漏判不误伤, 禁止降低
+
+REASONING_ONLY_MAX_ROUNDS = 3   # 2026-07-17 - 小欧 - 连续reasoning-only(纯推理无工具无答案)终止门限: 正常LLM每轮给answer或tool, 不会连续3轮纯推理; 3=宽松止损防误伤(2更激进), 仅防御空转
 
 
 def _dedup_repeat(content: str) -> str:
@@ -95,6 +98,7 @@ async def handle_answer(agent, parsed: Dict):
     # 真·空：content和reasoning都空 → 系统重试通知(MetaStep.retrying)，由 RETRYING 态驱动编排层重试 — 小欧 2026-07-13 删 recoverable
     if not content and not reasoning:
         logger.warning(f"[handle_answer] LLM返回空内容(step={step}), 触发系统重试")
+        agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 真空非reasoning空转, 归零防残留误累计
         agent.message_builder.add_assistant_message("")
         yield agent._step_emitter.emit(MetaStep(
             type="retrying",
@@ -108,14 +112,30 @@ async def handle_answer(agent, parsed: Dict):
     # 注：若推理内嵌 <tool_call> XML（LLM降级旧格式），已在 llm_stream.py 的 type 判定前
     #     提取为合法 action 执行，不会走到本分支。
     #     本分支仅处理"纯推理、无工具调用意图"的情形，以合法 assistant(content) 保留上下文。— 小欧 2026-07-16
+    # reasoning-only: LLM只返回推理没给最终答案也没调工具 → 注入助理消息继续循环
+    # 2026-07-17 - 小欧 - 防御增强(不退化正常流程):
+    #   ① reasoning先_dedup_repeat剔除原样循环重复(复用L1-C2b同函数), 压缩history防触发trim破坏;
+    #   ② 连续reasoning-only达REASONING_ONLY_MAX_ROUNDS即终止, 切断LLM退化空转(如task-2ffbc517);
+    #   正常任务LLM每轮给answer或tool, 永不进本分支, 计数恒0, 完全不受影响。
     if not content and reasoning:
-        logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入助理消息继续循环")
-        agent.message_builder.add_assistant_message(reasoning)
+        _deduped = _dedup_repeat(reasoning)
+        agent._consecutive_reasoning_only += 1
+        if agent._consecutive_reasoning_only >= REASONING_ONLY_MAX_ROUNDS:
+            logger.warning(f"[handle_answer] 连续{agent._consecutive_reasoning_only}轮reasoning-only无进展(step={step}), 终止任务")
+            yield agent._step_emitter.emit(FinalStep(
+                step=step,
+                response="模型反复思考未产出有效结果，任务已终止（疑似陷入无效循环）",
+                thought=_deduped,
+            ))
+            return
+        logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入助理消息继续循环(连续reasoning-only={agent._consecutive_reasoning_only})")
+        agent.message_builder.add_assistant_message(_deduped)
         yield agent._step_emitter.emit(ThoughtStep(
-            step=step, content=reasoning, reasoning="",
+            step=step, content=_deduped, reasoning="",
         ))
         return
 
+    agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 正常final answer, 归零空转计数(防御残留)
     thought = parsed.get("thought", content)
 
     if thought:

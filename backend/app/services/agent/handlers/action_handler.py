@@ -10,6 +10,7 @@
 #          ②用"FO未写入TO的op_id"做差集, 天然排除已消耗项, 杜绝UNIQUE冲突
 #          ③白名单隔离非文件工具使其不参与贯通(op_id=None自生成), 消除误关联
 #          ④纯内部取id(不读result/LLM字段), 符合"operation_id是agent内部字段严禁进LLM返回结构"铁律
+# 2026-07-17 - 小欧 - handle_action执行工具后重置_consecutive_reasoning_only(空转检测: 本步LLM发起工具调用=非reasoning-only空转, 归零)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -626,6 +627,8 @@ async def handle_action(agent, parsed: Dict):
     # 重试回调不再收集/上报，仅后端内部重试。
     results = await execute_tools(agent, call_result.all_calls, call_result.is_parallel,
                                   call_result.tool_name, call_result.tool_params)
+
+    agent._consecutive_reasoning_only = 0  # 2026-07-17 - 小欧 - 本步LLM发起工具调用(非reasoning-only空转), 归零空转计数
 
     ctx = ObservationContext(
         agent=agent, all_calls=call_result.all_calls, results=results, step=step,

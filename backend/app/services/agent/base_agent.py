@@ -7,7 +7,8 @@ run_react_cycle / initialize_run_state → 独立文件
 
 Author: 小沈 - 2026-03-25
 P3-12: 删除run_react_cycle纯委托，改为混合类方式 — 小沈 2026-06-09
-更新: 小欧 - 2026-07-16 统一TaskID: 删除_tracked_task_id, create_task传入self.task_id
+ 更新: 小欧 - 2026-07-16 统一TaskID: 删除_tracked_task_id, create_task传入self.task_id
+ 更新: 小欧 - 2026-07-17 新增_consecutive_reasoning_only字段(空转检测防御: reasoning-only分支累加, 调工具/正常answer/真空归零)
 """
 
 import asyncio
@@ -55,6 +56,7 @@ class BaseAgent(ABC):
         self.max_steps = max_steps
         self.status = AgentStatus.IDLE
         self.llm_call_count = 0
+        self._consecutive_reasoning_only = 0  # 2026-07-17 - 小欧 - 连续reasoning-only计数(空转检测): reasoning-only分支累加, 调工具/正常answer/真空归零, 达上限终止
 
         # 原 AgentInitializer._init_messages
         self.steps: List[ReasoningStep] = []
