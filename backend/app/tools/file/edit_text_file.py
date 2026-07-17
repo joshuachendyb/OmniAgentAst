@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-16 - 小欧 - _precise_replace_in_file 返回值移除未消费的 operation_id(YAGNI, 调用方不读取)
+# 2026-07-17 - 小欧 - 新增护栏3项: ①锚点重叠检查(before/after拒绝); ②语法校验(all拒绝+增量warning); ③all宽匹配/边界拦截(拒绝+warning)
+# 2026-07-17 - 小欧 - before/after 自动补空行(默认生效,无参数): 新增 _blank_line_sep, before/after 插入时与锚点/后续均隔一个空行(PEP8)
+# 2026-07-17 - 小欧 - DRY重构: 抽出 _is_dangerous_anchor(old_string), _safety_wide_replace 仅保留宽匹配warning, 三引号拒绝统一走 _is_dangerous_anchor+内联
 """
 F4: edittext — 编辑文本文件
 
@@ -79,21 +82,26 @@ async def _try_read_file_with_encodings(
 
 
 def _insert_line_after(content: str, match_end: int, new_string: str) -> str:
-    """在 match_end 所在行的行尾之后插入 new_string 作为独立新行 - 小欧 2026-07-12
+    """在 match_end 所在行的行尾之后插入 new_string 作为独立新行, 与锚点/后续均隔空行 - 小欧 2026-07-12 / 2026-07-17 空行分隔
 
     定位包含 match_end 的行的终止换行符:其后所有后续内容下移至新行之后,
-    保证 new_string 独占一行,不与原行或后续行拼接。
+    保证 new_string 独占一行,且与锚点行、后续内容各有空行分隔(PEP8)。
     """
     nl = content.find('\n', match_end)
     if nl == -1:
-        # 匹配行是末行且无换行:末尾补换行后追加
-        return content + '\n' + new_string
+        # 匹配行是末行且无换行:末尾补空行后追加
+        return content + '\n\n' + new_string
     ins_pos = nl + 1
     if ins_pos < len(content):
-        # 其后还有内容:new_string 后补换行,后续内容保持独立行
-        return content[:ins_pos] + new_string + '\n' + content[ins_pos:]
-    # 换行符即文件末尾:直接追加,不额外补空行
-    return content[:ins_pos] + new_string
+        # 其后续内容:new_string 前后均补空行, 与锚点/后续内容分隔 — 小欧 2026-07-17 空行分隔
+        return content[:ins_pos] + '\n' + new_string + _blank_line_sep(new_string) + content[ins_pos:]
+    # 换行符即文件末尾:补空行后追加
+    return content[:ins_pos] + '\n' + new_string
+
+
+def _blank_line_sep(text: str) -> str:
+    """返回 text 与后文之间的空行分隔符,确保恰好一个空行 — 小欧 2026-07-17"""
+    return '\n' if text.endswith('\n') else '\n\n'
 
 
 def _apply_replacement(
@@ -112,17 +120,19 @@ def _apply_replacement(
             total_matches = len(re_mod.findall(pattern, content, re_mod.IGNORECASE))
             if total_matches == 1:
                 match = re_mod.search(pattern, content, re_mod.IGNORECASE)
-                # 行边界感知:在匹配行行首之前插入独立新行,避免与原行拼接 - 小欧 2026-07-12
+                # 行边界感知:在匹配行行首之前插入独立新行,前后均补空行 - 小欧 2026-07-12 - 2026-07-17 空行分隔
                 line_start = content.rfind('\n', 0, match.start()) + 1
-                content = content[:line_start] + new_string + '\n' + content[line_start:]
+                _lead = '\n' if line_start > 0 else ''
+                content = content[:line_start] + _lead + new_string + _blank_line_sep(new_string) + content[line_start:]
                 count = 1
         else:
             total_matches = content.count(old_string)
             if total_matches == 1:
                 idx = content.find(old_string)
-                # 行边界感知:在匹配行行首之前插入独立新行,避免与原行拼接 - 小欧 2026-07-12
+                # 行边界感知:在匹配行行首之前插入独立新行,前后均补空行 - 小欧 2026-07-12 - 2026-07-17 空行分隔
                 line_start = content.rfind('\n', 0, idx) + 1
-                content = content[:line_start] + new_string + '\n' + content[line_start:]
+                _lead = '\n' if line_start > 0 else ''
+                content = content[:line_start] + _lead + new_string + _blank_line_sep(new_string) + content[line_start:]
                 count = 1
         return content, count, total_matches
 
@@ -174,6 +184,31 @@ def _apply_replacement(
     return content, count, total_matches
 
 
+def _check_anchor_overlap(mode: str, old_string: str, new_string: str) -> str:
+    """检测 before/after 下 new_string 首/尾行是否与锚点old_string整行相同
+    before: new_string 尾行 == old_string → 锚点行将被重复保留
+    after:  new_string 首行 == old_string → 锚点行将被重复保留
+    返回错误描述(拒绝)或空字符串(通过) — 小欧 2026-07-17"""
+    if not old_string or not new_string:
+        return ""
+    _os = old_string.strip()
+    if not _os:
+        return ""
+    if mode == "before":
+        _last_line = new_string.rstrip('\n').rsplit('\n')[-1].strip() if '\n' in new_string else new_string.strip()
+        if _last_line and _last_line == _os:
+            return (f"new_string尾行('{_last_line}')与锚点old_string相同,"
+                    f"before模式会在锚点行前插入导致该行重复,"
+                    f"请从new_string末尾移除该行")
+    elif mode == "after":
+        _first_line = new_string.strip('\n').split('\n')[0].strip() if '\n' in new_string else new_string.strip()
+        if _first_line and _first_line == _os:
+            return (f"new_string首行('{_first_line}')与锚点old_string相同,"
+                    f"after模式会在锚点行后插入导致该行重复,"
+                    f"请从new_string开头移除该行")
+    return ""
+
+
 def _safety_structure_loss(original: str, new_content: str) -> str:
     """检测替换是否导致函数/类定义丢失 — 小沈 2026-07-08"""
     orig_funcs = set(re_mod.findall(r'^\s*(?:async\s+)?def\s+(\w+)', original, re_mod.MULTILINE))
@@ -196,6 +231,23 @@ def _safety_short_old(old_string: str, mode: str, total_matches: int) -> str:
     """检测过短old_string批量替换风险 — 小沈 2026-07-08 — 小欧 2026-07-11 replace_all→mode"""
     if mode == "all" and len(old_string) <= 2 and total_matches >= 5:
         return f"old_string仅{len(old_string)}字符，all模式匹配{total_matches}处，请确认"
+    return ""
+
+
+_WIDE_REPLACE_MAX = 5
+_DANGEROUS_ANCHORS = ('"""', "'''")
+
+def _is_dangerous_anchor(old_string: str) -> bool:
+    """old_string 是否命中 docstring 边界(三引号) — 小欧 2026-07-17"""
+    return old_string.strip() in _DANGEROUS_ANCHORS
+
+
+def _safety_wide_replace(old_string: str, mode: str, total_matches: int) -> str:
+    """all 模式宽匹配 warning — 小欧 2026-07-17 — 三引号拒绝见 _is_dangerous_anchor+内联"""
+    if mode != "all":
+        return ""
+    if total_matches > _WIDE_REPLACE_MAX:
+        return f"all匹配{total_matches}处(>阈值{_WIDE_REPLACE_MAX}), 建议改用once/count或缩小old_string"
     return ""
 
 
@@ -329,6 +381,10 @@ async def _precise_replace_in_file(
                 return {"error_detail": f"未找到匹配内容: '{old_string[:80]}'（mode={mode}）", "old_string": old_string[:50]}
             if total_matches > 1:
                 return {"error_detail": f"before/after模式要求唯一匹配，old_string在文件中出现{total_matches}次，请提供更多上下文以精确定位", "old_string": old_string[:50]}
+            # before/after 锚点重叠检查 — 小欧 2026-07-17
+            _overlap_err = _check_anchor_overlap(mode, old_string, new_string)
+            if _overlap_err:
+                return {"error_detail": _overlap_err, "old_string": old_string[:50]}
 
         operation_id = record_operation(
             task_id=task_id, operation_type=OperationType.MODIFY,
@@ -366,6 +422,19 @@ async def _precise_replace_in_file(
             so_warn = _safety_short_old(old_string, mode, total_matches)
             if sl_warn or so_warn:
                 replace_result['safety_hint'] = ("；".join(filter(None, [sl_warn, so_warn])))[:200]
+            # all 模式宽匹配/边界检查 — 小欧 2026-07-17
+            if mode == "all":
+                wr_warn = _safety_wide_replace(old_string, mode, total_matches)
+                if wr_warn:
+                    _cur_hint = replace_result.get('safety_hint', '')
+                    replace_result['safety_hint'] = ("；".join(filter(None, [_cur_hint, wr_warn])))[:200]
+                # 确定破坏(三引号) → 拒绝写入
+                if _is_dangerous_anchor(old_string):
+                    replace_result['encode_error'] = (
+                        f"拒绝 all 模式对 docstring 边界('{old_string}')的替换——将破坏所有文档字符串。"
+                        f"请用 mode='once'+含上下文的精确 old_string 替换目标行"
+                    )
+                    return False
             write_content = new_content.replace('\n', '\r\n') if _has_crlf else new_content
             # 完整编码预检：验落盘全文,含原文残留U+FFFD,赶在open('w')截断前失败 — 小欧 2026-07-11
             try:
@@ -373,6 +442,20 @@ async def _precise_replace_in_file(
             except UnicodeEncodeError as e:
                 replace_result['encode_error'] = f"替换后内容含编码 {used_enc} 不支持的字符: {e}"
                 return False
+            # 语法校验 — 仅 .py 文件; all拒绝, 增量warning — 小欧 2026-07-17
+            if path.suffix == '.py' and not replace_result.get('encode_error'):
+                try:
+                    compile(new_content, str(path), 'exec')
+                except SyntaxError as se:
+                    _syn_msg = f"编辑后语法错误(行{se.lineno}: {se.msg})"
+                    if mode == "all":
+                        replace_result['encode_error'] = f"{_syn_msg}, 已拒绝写入(mode=all要求语法完整)"
+                        return False
+                    else:
+                        _cur = replace_result.get('safety_hint', '')
+                        _merged = "；".join(filter(None, [_cur, _syn_msg]))
+                        if _merged:
+                            replace_result['safety_hint'] = _merged[:200]
             with open(path, 'w', encoding=used_enc, newline='') as f:
                 f.write(write_content)
             record_write(file_path)
