@@ -4,6 +4,7 @@
 # 2026-07-15 - 小欧 - 常量归一化治理: 网页正文提取上限改引用 tool_constants.WEB_FETCH_MAX_CHARS(原 max_tokens=8000→32000字符, 现对齐 OBS 10000字符), 功能零退化
 # 2026-07-17 - 小欧 - HTTPStatusError hint 按状态码精化(4xx/5xx/429)
 # 2026-07-17 - 小欧 - fetchpage架构增强: ①提取正文trafilatura优先(html2text/SSR兜底保留) ②Playwright改独立Proactor子循环隔离运行(消Windows Selector NotImplementedError红字) ③SPA回退加外部API(Jina Reader)兜底, 三级降级HTTP→Playwright→外部API→友好提示, 功能零退化
+# 2026-07-17 - 小欧 - 异常捕获增强: httpx.InvalidURL 不经 RequestError/HTTPError 继承链, 原先落入 except Exception 打印全量堆栈造成日志噪声; 在 except RequestError 前新增 except InvalidURL 专捕, 走受控 warning 并返回受控错误结构, 功能零退化
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -747,9 +748,17 @@ async def fetchpage(
             _hint = "请检查URL和服务器状态"  # 兜底 — 小欧 2026-07-17
         llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_HTTP_ERROR, detail=f"HTTP {_sc}", hint=_hint, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)
-    except httpx.RequestError as e:
+    except (httpx.InvalidURL, httpx.RequestError) as e:
+        # InvalidURL 不经 RequestError 继承链, 合并捕获后按类型区分错误码与提示;
+        # 专捕 InvalidURL 避免其落入 except Exception 打印全量堆栈造成日志噪声 — 小欧 2026-07-17
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint="请检查URL和网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        _is_invalid_url = isinstance(e, httpx.InvalidURL)
+        llm_data = _build_fetch_webpage_llm_data(
+            "error", duration_ms, url, extract_format,
+            err_code=ERR_INVALID_URL if _is_invalid_url else ERR_NETWORK_REQUEST_ERROR,
+            detail=f"{type(e).__name__}: {str(e) or repr(e)}",
+            hint="请检查URL格式是否正确" if _is_invalid_url else "请检查URL和网络连接",
+            prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[fetchpage] 未知错误: {type(e).__name__}: {e}\n{traceback.format_exc()}")
