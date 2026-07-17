@@ -20,13 +20,15 @@
   ❌ 本文件的 SYS_HTTP_* 被工具层代码直接引用（工具层应引用 tool_constants.py 的 TOOL_HTTP_*）
 
 编辑历史:
+# 格式规范: {日期} {署名} {修改内容}
   2026-07-14 小欧 删除死代码RATE_LIMIT_STATUS_CODES(无调用方,限流由error_classifier覆盖,功能零退化)
   2026-07-14 小欧 删除孤儿常量HTTP_RATE_LIMIT(仅被RATE_LIMIT_STATUS_CODES使用,删除后限流仍由error_classifier覆盖,功能零退化)
   2026-07-14 小欧 加回HTTP_RATE_LIMIT=429并供error_classifier引用,消除裸魔法数429(代码变迁遗留,非功能退化)
   2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL(base_service.py)与MAX_PENDING_CONFIRMATIONS(hitl_confirmation.py)至constants.py(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/相关测试导入)
   2026-07-15 小欧 常量归一化治理: 删除11个零引用死常量(DEFAULT_*等), 新增系统级 PROJECT_CONTEXT_MAX_CHARS=10000; 现存数值型长度/上限/超时/阈值常量统一标注【使用对象】便于识别废弃
    2026-07-15 老陈裁定+小欧: 删除 HTTP_RATE_LIMIT 常量(429 是 HTTP 状态码, 在 error_classifier 映射中以裸数字与其他状态码并列, 单独常量多余且 HTTP_ 前缀不准), error_classifier 改回裸 429, 功能零退化
-   2026-07-16 小欧 新增 LLM_MAX_TOKENS=16384(系统级max_tokens默认值,防LLM无限长输出致长时间静默)+STREAM_TOTAL_TIMEOUT=500(base_service总时长硬超时,弥补httpx idle timeout在连续流式时不触发的缺陷)
+     2026-07-16 小欧 新增 LLM_MAX_TOKENS=16384(系统级max_tokens默认值,防LLM无限长输出致长时间静默)+STREAM_TOTAL_TIMEOUT=500(base_service总时长硬超时,弥补httpx idle timeout在连续流式时不触发的缺陷)
+     2026-07-17 小沈 FC重命名: LLM_RESPONSE_FALLBACK(原FC_FALLBACK_ENABLED)+LLM_RESPONSE_RETRIES(原FC_MAX_RETRIES)
 # 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 """
 
@@ -55,8 +57,8 @@ LLM_TEMPERATURE = 0.7  # 【系统级】使用对象: LLM 客户端采样温度
 LLM_TOOL_CHOICE = "auto"  # 【系统级】使用对象: LLM 客户端 tool_choice 模式
 LLM_STREAM_MAX_RETRIES = 3  # 【系统级】使用对象: LLM 流式最大重试次数
 LLM_STREAM_OPTIONS = {"include_usage": True}  # 【系统级】使用对象: LLM 流式选项
-FC_FALLBACK_ENABLED = True  # 【系统级】使用对象: Function Calling 兜底开关
-FC_MAX_RETRIES = 2  # 【系统级】使用对象: Function Calling 最大重试次数
+LLM_RESPONSE_FALLBACK = True  # 【系统级】使用对象: LLM响应错误降级开关(FC模式错误→Text降级) — 小沈 2026-07-17
+LLM_RESPONSE_RETRIES = 2  # 【系统级】使用对象: LLM响应错误最大重试次数(如空/无效响应) — 小沈 2026-07-17
 TOOL_CACHE_TTL = 300  # 【系统级】使用对象: 工具结果缓存 TTL(秒)
 LLM_MAX_TOKENS = 16384  # 【系统级】使用对象: LLM 单次调用最大输出 token 数(None=不限)
 

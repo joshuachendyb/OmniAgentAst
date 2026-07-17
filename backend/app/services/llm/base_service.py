@@ -6,9 +6,11 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 清理: 删除死代码_is_rate_limit_status(无调用方,限流由SystemErrorClassifier覆盖) - 小欧 2026-07-14
 
 编辑历史:
+# 格式规范: {日期} {署名} {修改内容}
   2026-07-14 小欧 删除死代码_is_rate_limit_status(无调用方,限流由SystemErrorClassifier覆盖,功能零退化)
    2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL至app.constants(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/测试导入)
-   2026-07-16 小欧 新增三层防线——①LLM_MAX_TOKENS=16384(防无限长输出); ②STREAM_TOTAL_TIMEOUT=500s总时长硬超时(httpx idle timeout 在连续流式时不触发,用 wall-clock 兜底); ③tool_call流式超时=总时长3/5=300s(_parse_sse_data 对 tool_call delta 静默跳过, 专门卡此阶段). 三者超时后均 break→accumulator→截断修复, 不触发重试
+    2026-07-16 小欧 新增三层防线——①LLM_MAX_TOKENS=16384(防无限长输出); ②STREAM_TOTAL_TIMEOUT=500s总时长硬超时(httpx idle timeout 在连续流式时不触发,用 wall-clock 兜底); ③tool_call流式超时=总时长3/5=300s(_parse_sse_data 对 tool_call delta 静默跳过, 专门卡此阶段). 三者超时后均 break→accumulator→截断修复, 不触发重试
+     2026-07-17 小沈 FC重命名: FCFormatError→LLMResponseError, 导入路径同步更新
 """
 
 import asyncio
@@ -19,7 +21,7 @@ from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 import httpx
 from app.logger import logger
 from app.utils.json_utils import parse_json, _try_fix_incomplete_json, _normalize_tool_params
-from app.services.llm.core import ChatResponse, FCFormatError, StreamChunk, _resolve_exception
+from app.services.llm.core import ChatResponse, LLMResponseError, StreamChunk, _resolve_exception
 # 注: LLM_*/FC_*/TOOL_CACHE_TTL 已集中迁移至 app.constants(2026-07-14 小欧)
 from app.services.llm.core import create_cancelled_chunk
 from app.services.llm.client_sdk import create_llm_client
@@ -269,9 +271,9 @@ class BaseAIService:
                                     }
                                 }]
                             })
-                    # 小欧 2026-06-25: 所有tool_calls都解析失败 → FCFormatError
+                    # 小欧 2026-06-25: 所有tool_calls都解析失败 → LLMResponseError
                     if tool_call_accumulator and not tool_calls_list:
-                        raise FCFormatError(
+                        raise LLMResponseError(
                             message="所有tool_calls参数解析失败",
                             details={"failed_parses": failed_parses}
                         )
@@ -281,7 +283,7 @@ class BaseAIService:
                 yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw, usage=usage_data)
                 return
 
-            except FCFormatError:
+            except LLMResponseError:
                 raise  # 穿透给call_llm_with_fallback重试/降级 — 2026-06-26
             except Exception as e:
                 if self._should_retry(e) and retry_count < max_retries:
