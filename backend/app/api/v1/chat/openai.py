@@ -37,7 +37,7 @@ from app.services.chat.stream import stream_reader
 from app.services.agent.agent_runner import run_agent_in_background
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.task.task_state import create_stream_buffer, get_stream_buffer
-from app.services.task.task_context import _current_task_id
+from app.services.task.task_context import _current_task_id, session_id_var
 from app.logger.prompt_logger import get_prompt_logger
 from app.services.task.hitl_confirmation import resolve_confirmation
 
@@ -190,6 +190,8 @@ async def chat_stream(request: ChatRequest):
         """SSE 消费者生成器 — 小欧 2026-07-12"""
         task_id = generate_task_id()
         _current_task_id.set(task_id)
+        # 注入会话标识到日志上下文, 使本轮请求全链路日志带 session_id, 便于按会话过滤排查 — 小欧 2026-07-17
+        session_id_var.set(session_id)
         next_step = create_step_counter()
         execution_steps = []
         state = StreamState()

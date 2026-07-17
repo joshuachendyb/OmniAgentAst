@@ -5,6 +5,9 @@ setup_logger — 全局共享一个 SafeRotatingFileHandler 实例
 - 所有 logger 共用一个文件 handler，消灭多 handler 写同一文件的 Windows rename 锁竞争
 """
 
+# 编辑历史:
+# 2026-07-17 - 小欧 - 日志会话维度隔离: 通过 contextvars(context.py) + SessionFilter 将 session_id 注入每条日志记录, formatter 增加 %(session_id)s 字段; 保持全局单例 handler 不变(不破坏 2026-07-11 的 Windows rename 锁竞争修复), 多会话日志可按 session 过滤且不引入多文件描述符, 功能零退化
+
 import logging
 from typing import Optional
 
@@ -32,6 +35,7 @@ def _get_shared_handler() -> SafeRotatingFileHandler:
             backupCount=LogConfig.get_backup_count(),
             encoding='utf-8',
         )
+        _FILE_HANDLER.addFilter(SessionFilter())
     return _FILE_HANDLER
 
 
@@ -45,6 +49,19 @@ class _TruncateConsoleFormatter(logging.Formatter):
             record.msg = raw[:120] + f"...(截断{len(raw)-120}字符)"
             record.args = None
         return super().format(record)
+
+
+# ---- SessionFilter: 注入 session_id 到日志记录 ---------------------------------
+class SessionFilter(logging.Filter):
+    """将当前协程上下文的 session_id 注入每条日志记录 — 小欧 2026-07-17
+    原理: 从请求作用域的上下文变量读取会话标识写入 record.session_id, 供 formatter 的 %(session_id)s 字段输出;
+    默认值为 '-'(无会话上下文时)。延迟导入上下文变量以避开 app.logger 与 app.services 的循环依赖。
+    作用: 多会话并发时日志可按 session 过滤, 且不破坏全局单例 handler 的 Windows 锁修复。
+    """
+    def filter(self, record: logging.LogRecord) -> bool:
+        from app.services.task.task_context import session_id_var
+        record.session_id = session_id_var.get()
+        return True
 
 
 # ---- setup_logger -----------------------------------------------------
@@ -65,9 +82,9 @@ def setup_logger(name: str) -> logging.Logger:
 
     # formatter — 文件 handler 和 console handler 共用
     if is_debug:
-        _fmt = '%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+        _fmt = '%(asctime)s - %(levelname)s - %(session_id)s - %(filename)s:%(lineno)d - %(message)s'
     else:
-        _fmt = '%(asctime)s - %(levelname)s - %(filename)s - %(message)s'
+        _fmt = '%(asctime)s - %(levelname)s - %(session_id)s - %(filename)s - %(message)s'
     formatter = logging.Formatter(_fmt, datefmt='%Y-%m-%d %H:%M:%S')
 
     # 文件 handler — 全局共享
