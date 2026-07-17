@@ -11,7 +11,8 @@ run_react_cycle — ReAct 循环核心（薄调度）
   - 状态用 status_table，数据 handler 自己写
   - _dispatch_handler 基于 event type 推断状态
   - handler 保留 add_observation/add_assistant_message，不绕路
-  2026-07-17 小沈 FC重命名: import/LLMResponseError同步
+ 2026-07-17 小沈 FC重命名: import/LLMResponseError同步
+ 2026-07-17 小欧 B3扩展: 检测reasoning-only空转并软引导(修正has_tool_results屏蔽使已调工具后仍可警告; llm_content传reasoning)
 """
 
 import asyncio
@@ -257,22 +258,35 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         set_cancelled(agent)
         return
 
-    # ── 场景C: LLM直接回答 → 注入复核warning（不重试）— 小健 2026-07-03
+    # ── 场景C: LLM直接回答/纯推理 → 注入复核warning（不重试）— 小健 2026-07-03
     # 设计: fall through到正常分发, warning进history,
     # 下轮循环LLM会看到这条observation并重新思考 — 小欧 2026-07-09
+    # 2026-07-17 - 小欧 - 扩展: 原仅检content(有content的answer), reasoning-only(空转)被漏检;
+    #   现也检reasoning, 且reasoning-only不受has_tool_results限制(否则已调工具后空转仍沉默, 恰是task-2ffbc517场景);
+    #   与answer_handler的硬终止(A增强版)互补: 本处软引导, 引导失败则由A硬终止兜底。
     if (llm_response.get("type") == "answer"
-            and llm_response.get("content")):
-        has_tool_results = any(
-            msg.get("role") == "tool"
-            for msg in agent.message_builder.conversation_history
-        )
-        if not has_tool_results:
-            content = llm_response.get("content", "")
-            logger.warning(f"[B3] LLM返回answer但未调用任何工具(step={step})")
-            obs_text = "[Observation] 警告: 你未调用任何工具-->必须复核3遍用户任务:[1]问答任务补充说明;[2] 多步任务就继续调用工具"
+            and (llm_response.get("content") or llm_response.get("reasoning"))):
+        _content = llm_response.get("content", "") or ""
+        _reasoning = llm_response.get("reasoning", "") or ""
+        if not _content:
+            # reasoning-only(纯推理无工具无答案空转): 必警告, 不受has_tool_results限制
+            logger.warning(f"[B3] LLM返回reasoning-only(空转)未调用工具(step={step})")
+            obs_text = ("[Observation] 警告: 你当前仅在推理未调用工具, 若已掌握所需信息请直接给出最终答案, "
+                        "否则应调用工具(如fetchpage)获取信息, 避免空转")
             agent.message_builder.add_observation(
-                obs_text, {"tool_call_id": "", "tool_calls": [], "llm_content": content},
+                obs_text, {"tool_call_id": "", "tool_calls": [], "llm_content": _reasoning},
             )
+        else:
+            has_tool_results = any(
+                msg.get("role") == "tool"
+                for msg in agent.message_builder.conversation_history
+            )
+            if not has_tool_results:
+                logger.warning(f"[B3] LLM返回answer但未调用任何工具(step={step})")
+                obs_text = "[Observation] 警告: 你未调用任何工具-->必须复核3遍用户任务:[1]问答任务补充说明;[2] 多步任务就继续调用工具"
+                agent.message_builder.add_observation(
+                    obs_text, {"tool_call_id": "", "tool_calls": [], "llm_content": _content},
+                )
 
     # ── 场景D: 输出截断重试 — 检测preamble截断,注入重试observation ── 小健 2026-07-03
     if _should_retry_truncated_tool(agent, llm_response):
