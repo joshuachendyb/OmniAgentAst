@@ -27,7 +27,7 @@ REPEAT_CHECK_MIN_LEN = 500     # 重复检测启动门槛: 不足500字不检(�
 DUP_CHUNK = 200                # 检测窗口: 匹配 LLM 卡顿循环周期(老陈经验值200), 禁止降低防误伤
 DUP_RATIO = 0.5                # 重复块占总长比例阈值, 占比过半才截断, 宁漏判不误伤, 禁止降低
 
-REASONING_ONLY_MAX_ROUNDS = 3   # 2026-07-17 - 小欧 - 连续reasoning-only(纯推理无工具无答案)终止门限: 正常LLM每轮给answer或tool, 不会连续3轮纯推理; 3=宽松止损防误伤(2更激进), 仅防御空转
+REASONING_ONLY_MAX_ROUNDS = 3   # 2026-07-17 - 小欧 - 连续reasoning-only(纯推理无工具无答案)终止门限: 用>判断, 容忍连续3轮继续, 第4轮(>3)才终止; 正常LLM每轮给answer或tool, 永不进此分支; 仅防御空转
 
 
 def _dedup_repeat(content: str) -> str:
@@ -71,6 +71,7 @@ async def handle_answer(agent, parsed: Dict):
     # ── type="error" │ yiled ErrorStep ──
     if parsed_type == "error":
         content = parsed.get("content", "") or "LLM流式错误"
+        agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - error非reasoning-only, 归零防残留(不变量: 仅reasoning-only分支累加)
         agent.message_builder.add_assistant_message(content)
         print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, error={content}")
         yield agent._step_emitter.emit(ErrorStep(
@@ -81,6 +82,7 @@ async def handle_answer(agent, parsed: Dict):
     # ── 未知类型 │ yiled ErrorStep ──
     if parsed_type != "answer":
         logger.warning(f"[handle_answer] 未知返回类型: {parsed_type}, 设置为FAILED")
+        agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 未知类型非reasoning-only, 归零防残留
         content = parsed.get("content", "") or parsed.get("thought", "") or ""
         print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, type={parsed_type}, content={content}")
         if content:
@@ -120,7 +122,7 @@ async def handle_answer(agent, parsed: Dict):
     if not content and reasoning:
         _deduped = _dedup_repeat(reasoning)
         agent._consecutive_reasoning_only += 1
-        if agent._consecutive_reasoning_only >= REASONING_ONLY_MAX_ROUNDS:
+        if agent._consecutive_reasoning_only > REASONING_ONLY_MAX_ROUNDS:
             logger.warning(f"[handle_answer] 连续{agent._consecutive_reasoning_only}轮reasoning-only无进展(step={step}), 终止任务")
             yield agent._step_emitter.emit(FinalStep(
                 step=step,

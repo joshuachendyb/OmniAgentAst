@@ -596,6 +596,7 @@ async def handle_action(agent, parsed: Dict):
 
     if not call_result.tool_name:
         logger.warning(f"[handle_action] tool_name为空, parsed={parsed}")
+        agent._consecutive_reasoning_only = 0  # 2026-07-17 - 小欧 - action空名异常非reasoning-only, 归零防残留
         # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态
         yield agent._step_emitter.emit(ErrorStep(
             step=step, error_type="invalid_action",
