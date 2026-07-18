@@ -1,4 +1,13 @@
-"""E2E测试核心测试脚本和代码
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - FinalStep多态自包含终态重构: assert_stream_ended+PASS/FAIL判断改为outcome驱动
+#   【病根】原assert_stream_ended仅靠final事件和has_error判断终态,
+#          FinalStep多态重构后失败终态统一发type=final+outcome=failed(不再发error事件),
+#          导致失败任务的end_type返回"final"而非"failed", PASS/FAIL判断无error事件→误判PASSED(unit-07)。
+#   【改法】①assert_stream_ended: 读final_event.outcome区分failed/cancelled/failed
+#          ②write_test_record: 读_final_outcome, 失败/取消时passed=False
+"""
+E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
 
 ================================================================
@@ -466,8 +475,17 @@ async def start_chat_stream_async(
 # ─── 步骤4: 验证事件流正确性 (assert_stream_ended) ─────────────
 
 def assert_stream_ended(result: Dict[str, Any]) -> str:
-    """返回流结束方式(final/error/中断), 不阻断
-    所有方式都算流已结束, 忠实记录 -- 小健 2026-06-15"""
+    """返回流结束方式(final/failed/cancelled/error/中断), 不阻断
+    所有方式都算流已结束, 忠实记录 -- 小健 2026-06-15
+    2026-07-18 小欧 响应 FinalStep 多态重构: 终态统一 type=final, 由 outcome 声明结果,
+    故 final 事件须按 outcome 区分 failed/cancelled, 不再仅依赖 error 事件"""
+    final_event = result.get("final_event")
+    if isinstance(final_event, dict):
+        oc = final_event.get("outcome", "completed")
+        if oc == "failed":
+            return "failed"
+        if oc == "cancelled":
+            return "cancelled"
     if result.get("final_event") is not None:
         return "final"
     if result.get("has_error"):
@@ -1420,18 +1438,21 @@ def write_test_record(
     # ============================================================
     final_event = result.get("final_event")
     has_error = result.get("has_error", False)
+    # 2026-07-18 小欧 响应 FinalStep 多态重构: 终态统一 type=final, 由 outcome 声明结果,
+    # 失败/取消不再发 error 事件, 故须读 final.outcome 判终态, 否则失败任务被误判 PASSED
+    _final_outcome = final_event.get("outcome", "completed") if isinstance(final_event, dict) else "completed"
     end_type = assert_stream_ended(result)
-    
+
     # 提取回复内容（统一在if/else外初始化）
     resp = result.get("response_text", "")
     resp_has_error = False
-    
-    # 新的判断标准: 必须有final事件才通过
+
+    # 新的判断标准: 必须有final事件才通过; 终态失败/取消(error事件或outcome)→失败
     if final_event is not None:
-        # 有final事件，检查是否有error
-        if has_error:
+        # 有final事件，检查是否有error或终态失败/取消
+        if has_error or _final_outcome in ("failed", "cancelled"):
             passed = False
-        
+
     else:
         # 没有final事件，失败
         passed = False

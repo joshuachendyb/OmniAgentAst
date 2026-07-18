@@ -1,4 +1,9 @@
-﻿"""E2E-P6-01: 文件不存在容错
+﻿# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - 修复工具结果dict子串匹配: tool_msgs可能为dict, 须json.dumps后再匹配
+#   【病根】k in dict按键匹配, 不按值匹配, 导致err_keywords永远匹配不到工具报错信息。
+#   【改法】tool_msgs先json.dumps转字符串, 再做子串匹配。
+"""E2E-P6-01: 文件不存在容错
 
 操作手册:
    用例: E2E-P6-01
@@ -98,10 +103,17 @@ async def test_e2e_p6_01_file_not_found():
         resp = result.get("response_text", "")
         err_keywords = ["不存在", "找不到", "无法", "没有", "失败", "错误"]
         found = [k for k in err_keywords if k in resp]
+        import json as _json
         tool_msgs = [t.get("result", "") for t in result.get("tool_calls", [])
                      if "result" in t]
         if len(found) < 1:
-            found = [k for k in err_keywords if any(k in m for m in tool_msgs)]
+            # 工具结果可能是 dict（如 {"data":{"stdout":...},"llm_data":...}），
+            # 须序列化为字符串后再做子串匹配，否则 `k in dict` 按键匹配永远失败 — 小欧 2026-07-18
+            tool_msgs_str = [
+                _json.dumps(m, ensure_ascii=False) if not isinstance(m, str) else m
+                for m in tool_msgs
+            ]
+            found = [k for k in err_keywords if any(k in ms for ms in tool_msgs_str)]
         assert len(found) >= 1, (
             f"回复或工具结果应提示文件不存在(MUST), "
             f"回复前100字: {resp[:100]}, "
