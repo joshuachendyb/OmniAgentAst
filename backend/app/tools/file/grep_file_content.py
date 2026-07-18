@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-14 - 小沈 - grep搜索结果上限改用OBS_MAX_DISPLAY_ITEMS，区分"超时"与"达上限"两种截断
+# 2026-07-18 - 小沈 - 灰区后缀跳过逻辑改为内容级探测(复用_detect_binary_content),修复日志轮转文件.log.1/.2被误判二进制跳过
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -23,7 +24,7 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, OBS_MAX_DISPLAY_ITEMS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, MAX_SEARCH_FILE_SIZE
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
-from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file
+from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file, _detect_binary_content
 from app.tools.file.file_encoding import safe_read_lines
 from app.logger import logger
 
@@ -178,10 +179,13 @@ def _grep_files_sync(
             if (not suffix or suffix not in TEXT_EXTENSIONS) and is_binary_file(str(fpath)):
                 skipped_binary_files.append(str(fpath))
                 continue
-            # 非文本且未被判为二进制的"灰区"后缀文件:记录提示而非静默跳过 — 小欧 2026-07-12
+            # 灰区后缀(未知扩展名):复用_detect_binary_content做内容级探测 — 小沈 2026-07-18
+            # (仅判断后缀会误判日志轮转文件如 .log.1 等常见文本)
             if suffix and suffix not in TEXT_EXTENSIONS:
-                skipped_binary_files.append(str(fpath))
-                continue
+                is_bin, _ = _detect_binary_content(fpath)
+                if is_bin:
+                    skipped_binary_files.append(str(fpath))
+                    continue
             
             lines = safe_read_lines(fpath, max_size=MAX_SEARCH_FILE_SIZE)
             if not lines:
