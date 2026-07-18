@@ -1,3 +1,59 @@
+v0.18.25
+更新时间: 2026-07-18 17:21:25 - 小欧-2026-07-18
+## v0.18.24→v0.18.25 变更汇总 - 小欧-2026-07-18
+
+### 最新改版（持续修改不覆盖）：
+- docs:删除notes目录所有测试记录 - 小欧-2026-07-18
+- docs:报告doc v1.3 新增第九章第二轮F1-F4 - 小欧-2026-07-18
+- docs:移入7月优化目录并提交Bug核实与修复方案报告 - 小欧-2026-07-18
+- docs:补全前序批次43条修复的代码编辑历史头注释 - 小欧-2026-07-18
+- docs:时间格式统一设计规范 移入doc/7月优化/ -小欧-2026-07-18
+- docs:prompt-log终态落盘时序竞态修复设计 v2.1 - 小欧-2026-07-18
+- docs:unit测试记录(unit-04~10) - 小欧-2026-07-17~18
+- docs:E2E P2-P6/P9测试记录 - 小欧-2026-07-18
+- docs:E2E P0/P1测试记录+日志分析 - 小欧-2026-07-18
+- docs:FinalStep终态规整重构设计方案 - 小欧-2026-07-18
+- docs:跨Session任务系统架构设计 - 小欧-2026-07-17
+
+### fix:（核心修复）
+- fix:stream.py F4 parse_tool_calls try收窄到单步 - 小欧-2026-07-18
+- fix:react_cycle.py F1可恢复错误重试+F3截断检测O(n) - 小欧-2026-07-18
+- fix: 第一梯队#1-#9 九条硬伤修复 - 小欧-2026-07-18
+- fix: 第二梯队#10-#19 十项修复 - 小欧-2026-07-18
+- fix: 第二梯队#21-#37 + 第三梯队#40/#49 共21条修复 - 小欧-2026-07-18
+- fix:第二梯队#21-#24/#26/#31/#39/#42/#44/#46/#48 共11条修复 - 小欧-2026-07-18
+- fix:answer_handler.py 修拼写yiled→yield(修复#6) - 小欧-2026-07-18
+- fix:react_cycle.py final_event单独捕获+修正stale注释(修复#7#9) - 小欧-2026-07-18
+- fix:storage.py derive_status失败默认failed+修拼写ccancelled(修复#1#6) - 小欧-2026-07-18
+- fix:status_table.py 终态不可变+删RLock死重(修复#2#5#8) - 小欧-2026-07-18
+- fix:prompt-log 生产者全权拥有日志生命周期 - 小欧-2026-07-18
+- fix:database.py _ParamSafeConnection放行datetime/date参数 - 小欧-2026-07-18
+- fix:e2e_helpers+test_e2e_p6_01 E2E测试适配FinalStep多态重构 - 小欧-2026-07-18
+- fix:fetch_webpage.py 去掉page.set_default_timeout误用await - 小欧-2026-07-18
+- fix:initialize_run_state.py 历史重载tool_calls逐元素dict校验 - 小欧-2026-07-18
+- fix:database.py 增加_ParamSafeConnection SQL参数类型安全闸门 - 小欧-2026-07-18
+- fix:client_sdk 429/5xx可重试状态降WARNING - 小欧-2026-07-17
+- fix:base_service 429重试耗尽提示 - 小欧-2026-07-17
+- fix:e2e_helpers ERROR日志正则锚定 - 小沈-2026-07-17
+- fix:setup_logger 日志注入session_id - 小欧-2026-07-17
+- fix:fetch_webpage 新增httpx.InvalidURL专捕 - 小欧-2026-07-17
+- fix:base_service 流式总超时截断后落库arguments规范化 - 小欧-2026-07-17
+
+### feat:（新功能）
+- feat:sse+dynamicStatus+useChatCallbacks+ExecutionPanel+StepContent+StepHeader 前端终态规整 - 小欧-2026-07-18
+- feat:edit_text_file 编辑护栏(锚点重叠拒绝/语法校验all拒绝) - 小欧-2026-07-17
+- feat:write_text_file 早期encoding校验 - 小欧-2026-07-17
+- feat:fetch_webpage.py fetchpage架构增强 trafilatura优先+Playwright隔离+外部API兜底 - 小欧-2026-07-17
+
+### refactor:（重构）
+- refactor:时间格式统一 14文件UTC+Z持久化+API对外契约兜底 -小欧-2026-07-18
+- refactor:时间格式统一 清理死导入create_timestamp/now_str+ETL脚本 -小欧-2026-07-18
+- refactor:final_step+answer/action/react_cycle/agent_runner/storage FinalStep多态自包含终态重构 - 小欧-2026-07-18
+- refactor:prompt_logger.py 删死代码mark_completed/mark_error(修复#10) - 小欧-2026-07-18
+
+### chore:
+- chore: 删除临时文件(test.png/.bak/旧日志/__pycache__) - 小欧-2026-07-18
+
 ﻿v0.18.24
 更新时间: 2026-07-17 10:33:11 - 小欧-2026-07-17
 ## v0.18.23→v0.18.24 变更汇总 - 小欧-2026-07-17
