@@ -54,11 +54,10 @@ async def _generate_execution_stream(session_id: str):
         SSE格式的数据
     """
     try:
-        # 连接数据库获取会话消息
+        # #21 fix: 先取数据退出 with 再 yield，连接不占 SSE 流 — 小欧 2026-07-18
+        _rows_with_steps = []
         with db.get_conn("chat") as conn:
             cursor = conn.cursor()
-            
-            # 获取会话消息和执行步骤
             cursor.execute(
                 '''SELECT id, session_id, role, content, timestamp
                    FROM chat_messages 
@@ -66,49 +65,38 @@ async def _generate_execution_stream(session_id: str):
                    ORDER BY timestamp ASC''',
                 (session_id,)
             )
-            
             rows = cursor.fetchall()
-        
             if not rows:
-                # 会话不存在或没有消息
                 yield "event: error\ndata: {\"error\": \"会话不存在或没有消息\"}\n\n"
                 return
-            
-            # 遍历所有消息,构建执行步骤流
             for row in rows:
-                msg_id = row['id']
-                role = row['role']
-                content = row['content']
-                
-                if role == 'user':
-                    # 用户消息,发送thought事件
-                    yield f"event: step\ndata: {json.dumps(ExecutionStep('thought', f'用户: {content}').to_dict(), ensure_ascii=False)}\n\n"
-                
-                elif role == 'assistant':
-                    # AI回复
-                    # 从 chat_message_steps 组装 — 小欧 2026-07-14
-                    steps = load_execution_steps(conn, msg_id)
-                    if steps and isinstance(steps, list):
-                        for step in steps:
-                            if step is None:  # #18 fix: 单条解析失败防 AttributeError — 小欧 2026-07-18
-                                continue
-                            step_type = step.get('type', 'thought')
-                            step_data = ExecutionStep(
-                                step_type=step_type,
-                                content=step.get('content', ''),
-                                tool=step.get('tool', ''),
-                                params=step.get('params', {}),
-                                result=step.get('result'),
-                                timestamp=step.get('timestamp', get_utc_timestamp())
-                            ).to_dict()
-                            yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
-                    elif content:
-                        # 没有执行步骤,发送最终内容
-                        yield f"event: step\ndata: {json.dumps(ExecutionStep('final', content).to_dict(), ensure_ascii=False)}\n\n"
+                _rows_with_steps.append((row, load_execution_steps(conn, row["id"])))
+        # 退出 with 后再 yield，连接及时释放
         
-        # 发送完成事件
+        for row, steps in _rows_with_steps:
+            role = row['role']
+            content = row['content']
+            if role == 'user':
+                yield f"event: step\ndata: {json.dumps(ExecutionStep('thought', f'用户: {content}').to_dict(), ensure_ascii=False)}\n\n"
+            elif role == 'assistant':
+                if steps and isinstance(steps, list):
+                    for step in steps:
+                        if step is None:
+                            continue
+                        step_type = step.get('type', 'thought')
+                        step_data = ExecutionStep(
+                            step_type=step_type,
+                            content=step.get('content', ''),
+                            tool=step.get('tool', ''),
+                            params=step.get('params', {}),
+                            result=step.get('result'),
+                            timestamp=step.get('timestamp', get_utc_timestamp())
+                        ).to_dict()
+                        yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
+                elif content:
+                    yield f"event: step\ndata: {json.dumps(ExecutionStep('final', content).to_dict(), ensure_ascii=False)}\n\n"
+        
         yield f"event: complete\ndata: {json.dumps({'type': 'complete', 'content': '执行完成'}, ensure_ascii=False)}\n\n"
-        
     except Exception as e:
         yield f"event: error\ndata: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
 

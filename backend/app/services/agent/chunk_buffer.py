@@ -29,11 +29,12 @@ class ChunkBuffer:
     Author: 小沈 2026-05-25
     """
 
-    def __init__(self, max_consecutive: int = MAX_CONSECUTIVE_CHUNKS, max_without_promote: int = MAX_CHUNKS_WITHOUT_PROMOTE):
+    # #46 fix: max_without_promote→max_chunks_before_stop 消除误导名 — 小欧 2026-07-18
+    def __init__(self, max_consecutive: int = MAX_CONSECUTIVE_CHUNKS, max_chunks_before_stop: int = MAX_CHUNKS_WITHOUT_PROMOTE):
         self.buffer: str = ""
         self.consecutive_count: int = 0
         self.max_consecutive: int = max_consecutive
-        self.max_without_promote: int = max_without_promote  # 【修复P2-2 2026-06-09 小沈】可配置
+        self.max_chunks_before_stop: int = max_chunks_before_stop  # #46 fix: 原max_without_promote
 
     def append(self, content: str) -> None:
         self.buffer += content
@@ -59,7 +60,7 @@ class ChunkBuffer:
         小沈 2026-07-13: 计数器仅在 clear() 时重置(收到完整 response 时调用),
         不存在单独的 promote/flush 路径; 原注释声称"promote后重置"是误导, 已删除死代码。
         """
-        return self.consecutive_count >= self.max_without_promote
+        return self.consecutive_count >= self.max_chunks_before_stop
 
     def clear(self) -> None:
         self.buffer = ""

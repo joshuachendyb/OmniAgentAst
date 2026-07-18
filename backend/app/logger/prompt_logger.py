@@ -476,7 +476,10 @@ class PromptLogger:
             short_id = str(user_id)[-6:] if user_id else "no_id"
         
         file_timestamp = timestamp_for_filename()
-        filename = f"prompt_{short_id}+{file_timestamp}.json"
+        # #48 fix: 文件名加UUID片段防覆蓋 — 小欧 2026-07-18
+        import uuid
+        _uid = uuid.uuid4().hex[:8]
+        filename = f"prompt_{short_id}+{_uid}+{file_timestamp}.json"
         log_file_path = self.log_dir / filename
         
         for retry in range(2):

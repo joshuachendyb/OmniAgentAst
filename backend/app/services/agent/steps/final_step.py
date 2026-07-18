@@ -12,7 +12,7 @@
 #          ②新增三个@property读取器 ③_extra_fields()输出这三个字段
 #          ④TYPE="final"不变, IS_DONE=True不变, 向后兼容旧数据。
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from .base import ReasoningStep
 
@@ -33,7 +33,7 @@ class FinalStep(ReasoningStep):
         step: int,
         response: str,
         thought: str = "",
-        outcome: str = "completed",  # 小欧 2026-07-18: 终态声明: completed/failed/cancelled
+        outcome: Literal["completed", "failed", "cancelled"] = "completed",  # #26 fix: Literal约束 — 小欧 2026-07-18
         error_type: str = "",  # 小欧 2026-07-18: 失败时的错误类型(如llm_error/agent_operation_error)
         error_message: str = "",  # 小欧 2026-07-18: 失败/取消时的错误信息
         model: Optional[str] = None,

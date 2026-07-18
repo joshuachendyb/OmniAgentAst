@@ -67,9 +67,9 @@ def get_file_operations(task_id: str):
         "file_size", "is_directory", "created_at", "error_message",
     ]
     return [{
-        **dict(zip(columns, row)),
-        "created_at": format_timestamp(dict(zip(columns, row)).get("created_at")),
-    } for row in rows]
+        **d,
+        "created_at": format_timestamp(d.get("created_at")),
+    } for row in rows for d in [dict(zip(columns, row))]]
 
 
 @router.get("/tasks/{task_id}/file-operations/report")

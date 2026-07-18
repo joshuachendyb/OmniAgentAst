@@ -41,6 +41,7 @@ TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 各工具 deadline 校验与 To
     # 2. ToolRetryEngine 用 asyncio.wait_for(timeout=此值) 做保险丝，
     #    防止工具卡死不返回。详见 tool_retry_engine.py 第95行。
     # 警告：修改此值会影响重试引擎的超时行为。
+    # #39 fix: 仅保留真实注册工具名; 已合并的 window_maximize/minimize、clipboard_read/write 等死键删除 — 小欧 2026-07-18
     "list_directory": 30,
     "find": 120,
     "grep": 120,
@@ -49,9 +50,7 @@ TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 各工具 deadline 校验与 To
     "shell": 120,
     "tree": 120,
     "session": 60,
-
     "event_log": 60,
-
     "searchweb": 60,
     "httpget": 60,
     "download": 120,
@@ -60,8 +59,7 @@ TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 各工具 deadline 校验与 To
     "window_info": 20,
     "window_focus": 20,
     "window_resize": 20,
-    "window_maximize": 20,
-    "window_minimize": 20,
+    "set_window_state": 20,
     "window_restore": 20,
     "window_topmost": 20,
     "window_unpin": 20,
@@ -69,8 +67,7 @@ TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 各工具 deadline 校验与 To
     "mouse_move": 20,
     "mouse_scroll": 20,
     "mouse_position": 10,
-    "clipboard_read": 10,
-    "clipboard_write": 10,
+    "clipboard": 10,
     "timenow": 10,
     "timeadd": 10,
     "timediff": 10,

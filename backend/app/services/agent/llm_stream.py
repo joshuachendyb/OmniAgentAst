@@ -260,6 +260,8 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
 
     if LLM_RESPONSE_FALLBACK:
         logger.warning(f"[FC降级] FC模式{LLM_RESPONSE_RETRIES}次重试均失败，降级到Text模式")
+        # #31 fix: fallback前reset事件，消cancel状态残留 — 小欧 2026-07-18
+        agent.llm_client._cancelled = False
         try:
             async for item in call_llm_stream(agent, messages, openai_tools=None):
                 yield item

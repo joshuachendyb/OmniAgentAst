@@ -14,6 +14,7 @@ API层仅保留路由函数confirm_operation,业务逻辑全部在此。
 """
 
 import asyncio
+import threading
 import time
 from dataclasses import dataclass
 from typing import Dict
@@ -31,7 +32,9 @@ class _PendingConfirmation:
     future: asyncio.Future
     created_at: float
 # 注: MAX_PENDING_CONFIRMATIONS 已集中迁移至 app.constants(2026-07-14 小欧)
+# #42 fix: 加锁防并发读写_pending_confirmations — 小欧 2026-07-18
 _pending_confirmations: Dict[str, _PendingConfirmation] = {}
+_pending_lock = threading.Lock()
 _last_cleanup_time: float = 0.0
 _CLEANUP_INTERVAL = 10
 
@@ -45,10 +48,11 @@ def _cleanup_stale_confirmations():
         return
 
     _last_cleanup_time = now
-    stale = [k for k, v in _pending_confirmations.items()
-             if v.future.done() or now - v.created_at > HITL_TIMEOUT]
-    for k in stale:
-        _pending_confirmations.pop(k, None)
+    with _pending_lock:
+        stale = [k for k, v in _pending_confirmations.items()
+                 if v.future.done() or now - v.created_at > HITL_TIMEOUT]
+        for k in stale:
+            _pending_confirmations.pop(k, None)
 
 
 async def create_confirmation(task_id: str) -> str:
@@ -60,15 +64,16 @@ async def create_confirmation(task_id: str) -> str:
     小沈 2026-06-17 从confirm_operation.py下沉
     """
     _cleanup_stale_confirmations()
-    if len(_pending_confirmations) >= MAX_PENDING_CONFIRMATIONS:
-        raise RuntimeError(f"待确认操作数已达上限({MAX_PENDING_CONFIRMATIONS})")
+    with _pending_lock:
+        if len(_pending_confirmations) >= MAX_PENDING_CONFIRMATIONS:
+            raise RuntimeError(f"待确认操作数已达上限({MAX_PENDING_CONFIRMATIONS})")
 
-    confirm_id = f"{task_id}:{uuid4().hex[:8]}"
-    loop = asyncio.get_running_loop()
-    future = loop.create_future()
-    _pending_confirmations[confirm_id] = _PendingConfirmation(
-        future=future, created_at=time.time()
-    )
+        confirm_id = f"{task_id}:{uuid4().hex[:8]}"
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        _pending_confirmations[confirm_id] = _PendingConfirmation(
+            future=future, created_at=time.time()
+        )
     return confirm_id
 
 
@@ -84,7 +89,8 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
     小沈 2026-06-17 从confirm_operation.py下沉
     chendyg 2026-06-26 P1-9修复: 等待确认时检查任务取消状态
     """
-    entry = _pending_confirmations.get(confirm_id)
+    with _pending_lock:
+        entry = _pending_confirmations.get(confirm_id)
     if entry is None:
         return {"confirmed": False, "trust_session": False}
 
@@ -108,7 +114,8 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
         logger.warning(f"[HITL] 确认超时: confirm_id={confirm_id}, timeout={timeout}s")
         return {"confirmed": False, "trust_session": False, "expired": True}
     finally:
-        _pending_confirmations.pop(confirm_id, None)
+        with _pending_lock:
+            _pending_confirmations.pop(confirm_id, None)
 
 
 def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: bool) -> bool:
@@ -120,7 +127,8 @@ def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: bool) 
 
     小沈 2026-06-17 从confirm_operation.py下沉
     """
-    entry = _pending_confirmations.get(confirm_id)
+    with _pending_lock:
+        entry = _pending_confirmations.get(confirm_id)
     if entry is None:
         return False
 

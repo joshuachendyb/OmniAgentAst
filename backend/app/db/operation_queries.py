@@ -46,7 +46,13 @@ def get_operation(operation_id: str) -> Optional[OperationRecord]:
     try:
         with db.get_conn("operations") as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT * FROM file_operations WHERE operation_id = ?', (operation_id,))
+            # #24 fix: explicit columns取代SELECT * — 小欧 2026-07-18
+            cursor.execute('''SELECT id, operation_id, task_id, operation_type, status,
+                source_path, destination_path, backup_path, backup_expires_at,
+                file_size, file_hash, is_directory, file_extension,
+                duration_ms, space_impact_bytes, metadata, error_message,
+                created_at, executed_at, rolled_back_at, sequence_number
+                FROM file_operations WHERE operation_id = ?''', (operation_id,))
             row = cursor.fetchone()
             return row_to_operation_record(row) if row else None
     except Exception as e:
@@ -59,7 +65,13 @@ def get_session_operations(task_id: str) -> List[OperationRecord]:
         with db.get_conn("operations") as conn:
             cursor = conn.cursor()
             cursor.execute(
-                'SELECT * FROM file_operations WHERE task_id = ? ORDER BY sequence_number ASC',
+                # #24 fix: explicit columns取代SELECT * — 小欧 2026-07-18
+                '''SELECT id, operation_id, task_id, operation_type, status,
+                    source_path, destination_path, backup_path, backup_expires_at,
+                    file_size, file_hash, is_directory, file_extension,
+                    duration_ms, space_impact_bytes, metadata, error_message,
+                    created_at, executed_at, rolled_back_at, sequence_number
+                    FROM file_operations WHERE task_id = ? ORDER BY sequence_number ASC''',
                 (task_id,),
             )
             return [row_to_operation_record(row) for row in cursor.fetchall()]

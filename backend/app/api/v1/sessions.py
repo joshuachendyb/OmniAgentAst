@@ -185,8 +185,6 @@ async def update_session(session_id: str, update_data: SessionUpdate):
     try:
         with db.get_conn("chat") as conn:
             cursor = conn.cursor()
-            cursor.execute("BEGIN")
-            logger.debug(f"开始事务: session_id={session_id}, operation=update_title")
             utc_time = get_utc_timestamp()
             mode, _, params = resolve_update_mode(update_data, cursor, session_id, utc_time)
             if mode == "not_found":
@@ -206,7 +204,6 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             old_title = session["title"] if session else ""
             new_version = current_version + 1
             record_title_history(cursor, session_id, old_title, utc_time, update_data.updated_by or "user")
-            cursor.execute("COMMIT")
         logger.info(f"更新会话成功: id={session_id}, title={update_data.title}, version={new_version}")
         return {"success": True, "title": update_data.title, "version": new_version}
     except HTTPException:
