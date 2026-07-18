@@ -101,8 +101,8 @@ class TaskTracker:
                 """INSERT INTO task_operations
                    (operation_id, task_id, operation_type, status,
                     source_path, destination_path, backup_path,
-                    file_size, file_hash, sequence_number, details, error)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    file_size, file_hash, sequence_number, details, error, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # 小欧 2026-07-18: created_at 列对齐第13值 get_utc_timestamp() UTC Z 入库
                 (
                     operation_id, task_id, operation_type, op_status,
                     source_path, destination_path, backup_path,

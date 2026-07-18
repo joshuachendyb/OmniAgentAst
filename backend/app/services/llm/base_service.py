@@ -216,19 +216,27 @@ class BaseAIService:
                         usage_data = usage_from_chunk
 
                     # 跨chunk聚合tool_calls — FC-only: 含id — 小沈 2026-06-11
+                    # #7 fix 回归修正(小欧 2026-07-18): OpenAI 流式协议里单个 tool_call 以「稳定 index」跨多个 delta 续传,
+                    #   首 delta 带 name, 后续 delta 仅带 arguments(无 name)。须按 index【合并】进同一槽位,
+                    #   原 #7 误把"arguments-only 续传"当"并行碰撞"而自增新槽位, 致 name 与 arguments 撕裂→解析失败→FC降级。
+                    #   并行碰撞(#7原意)已由 _extract_tool_calls 的 index 字典去重, 此处直接合并即可, 不再自增。
                     tc_data = self._extract_tool_calls(data_str)
                     for idx, entry in tc_data.items():
-                        while idx in tool_call_accumulator:
-                            idx += 1  # 并行 tool_calls 缺 index 或全 0 时自增去重，防塌缩成一个（#7 fix）— 小欧 2026-07-18
-                        tool_call_accumulator.setdefault(idx, {"id": None, "name": "", "arguments": ""})
-                        if entry.get("id"):
-                            tool_call_accumulator[idx]["id"] = entry["id"]
-                        if entry.get("name"):
-                            tool_call_accumulator[idx]["name"] = entry["name"]
-                        else:  # #32 fix: 空 name 加日志便于观测 — 小欧 2026-07-18
-                            logger.warning(f"[BaseAIService] 收到空 name 的 tool_call delta, 跳过: idx={idx}, entry={entry}")
-                        if entry.get("arguments"):
-                            tool_call_accumulator[idx]["arguments"] += entry["arguments"]
+                        if idx not in tool_call_accumulator:
+                            tool_call_accumulator[idx] = {"id": None, "name": "", "arguments": ""}
+                        _tc_id = entry.get("id")
+                        _tc_name = entry.get("name")
+                        _tc_args = entry.get("arguments")
+                        if _tc_id:
+                            tool_call_accumulator[idx]["id"] = _tc_id
+                        if _tc_name:
+                            tool_call_accumulator[idx]["name"] = _tc_name
+                        if _tc_args:
+                            tool_call_accumulator[idx]["arguments"] += _tc_args
+                        # #32 修正(小欧 2026-07-18): 仅当整个 delta 完全为空(协议残余)才告警;
+                        #   正常的参数续传(arguments-only, 无 name)属预期行为, 不再刷屏 warning。
+                        if not (_tc_id or _tc_name or _tc_args):
+                            logger.warning(f"[BaseAIService] 收到完全为空的 tool_call delta, 跳过: idx={idx}, entry={entry}")
 
                     # ③ tool_call流式超时（总时长的3/5）— 2026-07-16 小欧
                     # 工具参数(如 writetext content)可能极长(>10万字符), LLM 生成期间
