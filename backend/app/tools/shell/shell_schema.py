@@ -17,6 +17,7 @@ Shell Schema - Shell工具参数模型
 # Merged schema - 小欧 2026-06-18
 # 【2026-06-18 小健】删除两个包装器schema，违反YAGNI原则
 # 小欧 - 2026-07-15: 新增success_codes参数,支持追加式非零退出码视为成功,0始终成功
+# 小沈 - 2026-07-18: command字段描述补本机python3不可用说明(微软商店别名未安装),引导LLM用python而非python3
 
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
@@ -48,8 +49,10 @@ class ShellInput(BaseModel):
     - returncode: 退出码（0=成功）
     - shell_type: 实际使用的shell类型
     """
+    # 2026-07-18 小沈: command描述补python3不可用说明,引导LLM用python而非python3(见日志fc1102db)
+    # 本机python3是微软商店别名(未安装),真解释器为E:\Appsw\python31311\python.exe,命令名python
     command: str = Field(
-        ..., description="PowerShell命令字符串。多个命令用;分隔。注意：PS 5.1中&&和||会自动翻译。示例: Get-ChildItem"
+        ..., description="PowerShell命令字符串。多个命令用;分隔。注意：PS 5.1中&&和||会自动翻译。示例: Get-ChildItem。注意:本机Python解释器命令为python(如python --version),禁止使用python3"
     )
     shell_type: Optional[Literal["powershell", "cmd"]] = Field(
         default="powershell",

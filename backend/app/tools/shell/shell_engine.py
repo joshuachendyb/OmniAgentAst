@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: 临时输出文件读取保护线改引用 tool_constants.SHELL_OUTPUT_FILE_MAX_BYTES(原 _MAX_OUTPUT_SZ=10MB), 功能零退化
+# 2026-07-18 - 小沈 - 修复多行命令(如 python -c "..." 含换行)经 -Command - 从stdin喂入导致PowerShell解析器卡死等待输入(见 logs 2026-07-18 21:34-21:44 step=15 跑满600s超时): 改为写入.ps1文件 + 向持久pwsh喂一句【单行】dot-source投递, 多行内容留在文件内不再经stdin流, 死锁消除; 功能零退化
 """
 PersistentShell — 持久 PowerShell 进程引擎 — 小欧 2026-07-05
 
@@ -66,10 +67,11 @@ SHELL_OUTPUT_FILE_MAX_BYTES  = 10 * 1024 * 1024  # 10MB 保护线
 
 @contextlib.contextmanager
 def _TempFiles():
-    """安全创建 4 个临时文件并自动清理 — out/err/code/cwd"""
+    """安全创建 5 个临时文件并自动清理 — out/err/code/cwd/ps1"""
     paths = {}
     try:
-        for name in ("out", "err", "code", "cwd"):
+        # ps1: 2026-07-18 小沈 新增, 存多行命令脚本(避免直接经stdin喂入导致PS卡死)
+        for name in ("out", "err", "code", "cwd", "ps1"):
             f = tempfile.NamedTemporaryFile(delete=False, suffix=f".{name}",
                                              mode="w", encoding="utf-8")
             f.close()
@@ -251,7 +253,14 @@ class PersistentShell:
                 f'(Get-Location).Path | Out-File -FilePath "{paths.cwd}" -Encoding utf8'
             )
             try:
-                self._proc.stdin.write((ps_cmd + "\n").encode(locale.getpreferredencoding(), errors="replace"))
+                # 修复(小沈 2026-07-18): 多行命令(如 python -c "..." 含换行)直接经 -Command - 从stdin喂入时,
+                # PowerShell解析器会卡死等待输入, 导致命令跑满timeout(见 logs 2026-07-18 step=15 跑满600s)。
+                # 改为: 将ps_cmd(含多行内容)以UTF-8-BOM写入.ps1文件, 再向持久pwsh喂一句【单行】dot-source
+                # (& { . "path.ps1" }), 多行内容留在文件内不再经stdin流 → 死锁消除。单行命令亦正常。
+                with open(paths.ps1, "w", encoding="utf-8-sig") as _ps1:
+                    _ps1.write(ps_cmd)
+                feed = f'& {{ . "{paths.ps1}" }}\n'
+                self._proc.stdin.write(feed.encode(locale.getpreferredencoding(), errors="replace"))
                 self._proc.stdin.flush()
             except (BrokenPipeError, OSError):
                 return {"stdout": "", "stderr": "", "exit_code": _EXIT_PROCESS_DIED}
