@@ -247,6 +247,8 @@ class BaseAIService:
 
                 # 流结束后，如有聚合的tool_calls，原生结构一次性yield — 小沈 2026-06-12
                 complete_raw = "\n".join(raw_data_buf)
+                # #38 fix: 过滤掉只有id无name的幽灵tool_call delta（LLM流式协议残余，非真实工具调用）— 小欧 2026-07-18
+                tool_call_accumulator = {k: v for k, v in tool_call_accumulator.items() if v.get("name")}
                 if tool_call_accumulator:
                     tool_calls_list = []
                     failed_parses = []  # 小欧 2026-06-25 收集解析失败的tool_call
