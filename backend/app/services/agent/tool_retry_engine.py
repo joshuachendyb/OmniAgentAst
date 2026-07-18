@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - #13 fix: _validate_params 增加参数类型校验(string/array/integer/boolean) against schema type,
+#    类型错配在调度层即被捕获, 不必进入工具内部 Pydantic 报错
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -235,10 +238,32 @@ class ToolRetryEngine:
                         0, error_type="missing_param",
                         action_name=action, action_params=params,
                     )
+                # #13 fix: 参数类型校验 — 小欧 2026-07-18
+                props = input_schema.get("properties", {})
+                for k, v in params.items():
+                    spec = props.get(k)
+                    if not spec:
+                        continue
+                    _t = spec.get("type")
+                    if _t == "string" and not isinstance(v, str):
+                        invalid_keys.append(k)
+                    elif _t == "array" and not isinstance(v, list):
+                        invalid_keys.append(k)
+                    elif _t == "integer" and not isinstance(v, int):
+                        invalid_keys.append(k)
+                    elif _t == "boolean" and not isinstance(v, bool):
+                        invalid_keys.append(k)
+                if invalid_keys:
+                    logger.warning(f"[参数验证] action={action} 含非法参数(含类型): {invalid_keys}")
+                    return self._build_retry_error(
+                        ERR_INVALID_PARAMS,
+                        f"参数验证失败: {action} 含非法参数/类型错误, keys={list(params.keys())}",
+                        0, error_type="invalid_params",
+                        action_name=action, action_params=params,
+                    )
         except (ImportError, AttributeError) as e:
             logger.warning(f"[参数验证] action={action}, 获取schema失败: {e}", exc_info=True)
 
-        
         return params
     
     def _should_retry(self, e: Exception, retryable_errors: list, attempt: int, max_retries: int,

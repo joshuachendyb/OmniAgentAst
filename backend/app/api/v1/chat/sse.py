@@ -6,7 +6,8 @@ sse — 执行步骤流式查看
 # 编辑历史:
 # 2026-07-14 - 小欧 - _generate_execution_stream改为从chat_message_steps读取步骤列表, SELECT去除execution_steps列, 统一步骤解析走load_execution_steps
 # 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() 时间统一
- 
+# 2026-07-18 - 小欧 - #18 fix: execution_steps 遍历加 step is None continue 防御, 单条 json 解析失败不触发 AttributeError
+
 import json
 import asyncio
 from typing import Optional, Any, Dict
@@ -89,6 +90,8 @@ async def _generate_execution_stream(session_id: str):
                     steps = load_execution_steps(conn, msg_id)
                     if steps and isinstance(steps, list):
                         for step in steps:
+                            if step is None:  # #18 fix: 单条解析失败防 AttributeError — 小欧 2026-07-18
+                                continue
                             step_type = step.get('type', 'thought')
                             step_data = ExecutionStep(
                                 step_type=step_type,

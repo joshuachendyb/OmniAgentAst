@@ -43,8 +43,8 @@ _WRITE_RISK_TOOL = "writetext"
 
 @dataclass
 class SafetyResult:
-    """安全检查结果 — 替代raw dict — 小欧 2026-06-25"""
-    is_safe: bool = True
+    """安全检查结果 — 替代raw dict — 小欧 2026-06-25
+    #15 #50 fix: 删 is_safe 死字段(无人消费) — 小欧 2026-07-18"""
     blocked: bool = False
     requires_confirmation: bool = False
     message: str = ""
@@ -71,23 +71,21 @@ class ToolSafetyChecker:
         安全开关: config.yaml security.enabled=false 时跳过所有检查
         """
         if _is_skip_safety():
-            return SafetyResult(is_safe=True, requires_confirmation=False,
+            return SafetyResult(requires_confirmation=False,
                     blocked=False, message="安全开关已绕过",
                     safety_level="safe")
 
         tool_meta = tool_registry.get_tool(tool_name)
         if tool_meta is None:
-            return SafetyResult(is_safe=False, blocked=True,
+            return SafetyResult(blocked=True,
                     message=f"工具{tool_name}未注册",
                     safety_level="dangerous")
 
         known_risk = self._check_known_risks(tool_name, params or {})
         if known_risk is not None:
-            if known_risk.blocked:
-                known_risk.safety_level = "dangerous"
-                return known_risk
-            if known_risk.requires_confirmation:
-                pass
+            # #14 fix: 已知风险只拦截，不触发确认（确认由 needs_confirm 路径驱动）— 小欧 2026-07-18
+            known_risk.safety_level = "dangerous"
+            return known_risk
 
         needs_confirm = self._get_needs_confirmation(tool_meta, params or {})
 
@@ -96,23 +94,19 @@ class ToolSafetyChecker:
                 custom_result = tool_meta.check_fn(params or {})
                 if not custom_result.get("is_safe", True):
                     return SafetyResult(
-                        is_safe=False, blocked=True,
+                        blocked=True,
                         message=custom_result.get("message", "安全检查未通过"),
                         safety_level=custom_result.get("safety_level", "dangerous"),
                     )
             except Exception as e:
                 logger.error(f"[ToolSafetyChecker] check_fn异常,阻止执行: {e}")
-                return SafetyResult(is_safe=False, blocked=True,
+                return SafetyResult(blocked=True,
                         message=f"安全检查异常(已阻止): {e}",
                         safety_level="dangerous")
 
-        if known_risk is not None and known_risk.requires_confirmation:
-            needs_confirm = True
-
         safety_level = "destructive" if needs_confirm else "safe"
-        message = known_risk.message if known_risk and known_risk.requires_confirmation else ""
-        return SafetyResult(is_safe=not needs_confirm, requires_confirmation=needs_confirm,
-                blocked=False, message=message, safety_level=safety_level)
+        return SafetyResult(requires_confirmation=needs_confirm,
+                blocked=False, message="", safety_level=safety_level)
 
     @staticmethod
     def _get_needs_confirmation(tool_meta, params: Dict) -> bool:
@@ -130,7 +124,7 @@ class ToolSafetyChecker:
         小欧 2026-06-27: 路径检查委托validate_tool_path(path_safe_check统一处理)"""
         is_valid, msg = _validate_tool_path(tool_name, params)
         if not is_valid:
-            return SafetyResult(is_safe=False, blocked=True, message=f"路径越权: {msg}")
+            return SafetyResult(blocked=True, message=f"路径越权: {msg}")
 
         if tool_name == _WRITE_RISK_TOOL:
             try:
@@ -141,11 +135,11 @@ class ToolSafetyChecker:
                 old_size = p.stat().st_size if p.exists() and p.is_file() else 0
                 new_size = len(content.encode("utf-8")) if content else 0
                 if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:
-                    return SafetyResult(is_safe=False, blocked=True,
+                    return SafetyResult(blocked=True,
                             message=f"数据保护:新内容({new_size}字节)远小于原始内容({old_size}字节)")
             except Exception as e:
                 logger.error(f"[ToolSafetyChecker] 写入检查异常,阻止执行: {e}")
-                return SafetyResult(is_safe=False, blocked=True, message=f"安全检查异常(已阻止): {e}")
+                return SafetyResult(blocked=True, message=f"安全检查异常(已阻止): {e}")
 
 
         return None

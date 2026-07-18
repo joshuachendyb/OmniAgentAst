@@ -140,6 +140,11 @@ def rollback_session(task_id: str) -> Dict[str, Any]:
                     get_tracker().mark_rolled_back(task_id, op_ids=success_op_ids)
                 except Exception as e:
                     logger.error(f"Failed to update rollback stats for {task_id}: {e}")
+        if result["failed"] > 0:
+            result["warning"] = (
+                f"有 {result['failed']} 个操作回滚失败，可能不可恢复，"
+                f"请检查文件备份状态"
+            )
         logger.info(f"Task rollback completed: {task_id} - {result['success']}/{result['total']} succeeded")
         return result
     except Exception as e:

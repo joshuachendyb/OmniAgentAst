@@ -8,6 +8,7 @@
 #   【改法】改为遍历找最后一条type=final, 读其outcome字段返回; 无final时兜底返回completed。
 # 2026-07-18 - 小欧 - create_timestamp→get_utc_timestamp() (3处); append_execution_step 补 created_at 入库
 # 2026-07-18 - 小欧 - 修复#1空步骤谎报完成: derive_status_from_steps 空/无final步默认"failed"(fail-safe, 对齐agent_runner兜底); 修复#6拼写错 ccancelled→cancelled
+# 2026-07-18 - 小欧 - #17 fix: allocate_and_insert_message 首行补 ensure_session_exists, 消除孤儿消息风险
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -217,6 +218,7 @@ async def save_execution_steps(session_id: str, update_data):
 
 def allocate_and_insert_message(conn: Connection, session_id: str) -> int:
     """预分配 assistant 消息ID + 插入空白行 — 小欧 2026-07-14"""
+    ensure_session_exists(session_id, conn)  # #17 fix: 写入前确保会话存在, 消除孤儿消息 — 小欧 2026-07-18
     ai_message_id, is_new = _allocator.allocate(session_id, conn)
     if is_new:
         utc_time = get_utc_timestamp()

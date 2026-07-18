@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - #10 fix: compress/extract/copy/move/rename 的 examples 参数名 source→path、destination→dest,
+#    与 CompressInput/ExtractInput/MoveInput/CopyInput/RenameInput schema 对齐, 消除 example/schema 不一致
 """
 File Register - 文件工具注册点 v3.0
 
@@ -161,27 +164,25 @@ FILE_TOOL_EXAMPLES = {
         {"pattern": "def run", "path": "D:/backend", "context": 2}
     ],
     "compress": [
-        {"source": "D:/project", "destination": "D:/backup.zip"},
-        {"source": "D:/secret.txt", "destination": "D:/secret_encrypted.zip", "password": "my_password"},
-        {"source": "D:/dir/*.txt", "destination": "D:/all_txt.zip"},
-        {"source": "D:/b.txt", "destination": "D:/archive.zip", "overwrite": True},
+        {"path": "D:/project", "dest": "D:/backup.zip"},
+        {"path": "D:/secret.txt", "dest": "D:/secret_encrypted.zip", "password": "my_password"},
+        {"path": "D:/dir/*.txt", "dest": "D:/all_txt.zip"},
+        {"path": "D:/b.txt", "dest": "D:/archive.zip", "overwrite": True},
     ],
     "extract": [
-        {"source": "D:/backup.zip", "destination": "D:/extracted"},
+        {"path": "D:/backup.zip", "dest": "D:/extracted"},
     ],
     "move": [
-        {"source": "D:/a.txt", "destination": "E:/b.txt"},
+        {"path": "D:/a.txt", "dest": "E:/b.txt"},
     ],
     "copy": [
-        {"source": "D:/a.txt", "destination": "D:/backup/a.txt"},
-    ],
-    "delete": [
-        {"source": "D:/temp.txt"},
+        {"path": "D:/a.txt", "dest": "D:/backup/a.txt"},
     ],
     "rename": [
-        {"source": "D:/old.txt", "destination": "new.txt"},
-        {"source": "D:/conflict.txt", "destination": "existing.txt", "overwrite": True},
+        {"path": "D:/old.txt", "dest": "new.txt"},
+        {"path": "D:/conflict.txt", "dest": "existing.txt", "overwrite": True},
     ],
+    
 }
 
 

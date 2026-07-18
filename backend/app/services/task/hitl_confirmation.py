@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - #11 fix: wait_for_confirmation_result 超时返回加 expired=True 标记, 供 action_handler 分流超时/拒绝
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -104,7 +106,7 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
                     logger.info(f"[HITL] 任务已取消,终止确认等待: confirm_id={confirm_id}")
                     return {"confirmed": False, "trust_session": False}
         logger.warning(f"[HITL] 确认超时: confirm_id={confirm_id}, timeout={timeout}s")
-        return {"confirmed": False, "trust_session": False}
+        return {"confirmed": False, "trust_session": False, "expired": True}
     finally:
         _pending_confirmations.pop(confirm_id, None)
 

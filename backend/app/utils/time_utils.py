@@ -15,6 +15,7 @@ Author: 小健 - 2026-05-28
 
 # 编辑历史:
 # 2026-07-14 - 小欧 - 修复ensure_timestamp_milliseconds: 13位epoch毫秒串被Python3.13宽松fromisoformat误解析为pre-1970 datetime致.timestamp()抛OSError[Errno22]; 数字串直接转int(判别毫秒/秒), 并对fromisoformat分支补充捕获OSError
+# 2026-07-18 - 小欧 - #19 fix: convert_to_utc(None) 返回 None 而非当前时间, 返回值类型改为 Optional[str]; 调用方 grep 确认均不受影响
 
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -30,8 +31,10 @@ def get_utc_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def convert_to_utc(time_value) -> str:
-    """将时间转换为UTC ISO格式"""
+def convert_to_utc(time_value) -> Optional[str]:
+    """将时间转换为UTC ISO格式；None 如实返回 None — 小欧 2026-07-18 #19 fix"""
+    if time_value is None:
+        return None
     if not time_value:
         return get_utc_timestamp()
     if 'Z' in str(time_value) or '+' in str(time_value):

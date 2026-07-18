@@ -19,6 +19,8 @@
 # 记录 2026-07-17 小欧 handle_action执行工具后重置_consecutive_reasoning_only(空转检测: 本步LLM发起工具调用=非reasoning-only空转, 归零)
 # 记录 2026-07-17 小欧 计数器修正: handle_action-tool_name空early-return处补归零(空转检测非reasoning-only出口完备, 不变量严格成立)
 # 2026-07-18 小欧 #4 fix: _file_tool_names 白名单值从模块函数名(delete_file等)改为注册名(delete等); 因 call["tool_name"] 是注册名, 原白名单恒 False 致 op_id 双表贯通完全失效
+# 2026-07-18 小欧 #11+#12 fix: check_safety_and_confirm 重构 — 超时与拒绝分流(expired标记); 拒绝不return终止整批, 收
+#   集_denied后continue, 最终只执行通过的call(通过_out参数回传过滤后列表); 调用方对应改_exec_calls
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -71,18 +73,21 @@ _WRITE_OPS = FILE_OPERATION_TOOLS - {"readtext"}
 
 
 
-async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None):
+async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None):
         """安全检查+HITL确认 — async generator: MetaStep先yield给前端,再等确认 — 小沈 2026-06-10
 
         拒绝/拦截是可恢复的(符合人类认知: 拒绝≠失败), 不置终态FAILED:
         - 把"工具被拒绝/拦截"作为 observation 写进LLM历史(_add_denial_feedback), 让LLM换方案;
         - 循环回 THINKING 由主循环 EXECUTING→THINKING 处理;
         - 仅当同类拒绝累计>=3次才由 _dispatch_handler 置 FAILED。 — 小欧 2026-07-13
+        # 2026-07-18 小欧 #11+#12 fix: 超时/拒绝分流; 拒绝不终止整批, 收集_denied后继续检查剩余工具,
+        #   最终只执行通过的call(通过_out返回过滤后的call列表)
         """
         from app.services.safety.tool_safety_checker import get_tool_safety_checker
         from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result
         safety_checker = get_tool_safety_checker()
 
+        _denied = []
         for call in all_calls:
             _cn = call.get("tool_name", "?")
             _cp = call.get("tool_params", {})
@@ -94,10 +99,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     error_type="blocked",
                     error_message=safety_result.message
                 ))
-                # 拒绝/拦截是可恢复的: 写反馈进LLM历史, 让LLM换方案(拒绝≠失败, 符合人类认知) — 小欧 2026-07-13
-                _add_denial_feedback(agent, all_calls, fc_context, _cn, f"被安全策略拦截: {safety_result.message}")
-                # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态(可恢复不置终态)
-                return
+                _denied.append((_cn, f"被安全策略拦截: {safety_result.message}"))
+                continue  # was: return  — 小欧 2026-07-18 #12 fix
 
             if safety_result.requires_confirmation:
                 desensitized_params = {k: v for k, v in _cp.items()
@@ -121,19 +124,34 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 auth = await wait_for_confirmation_result(confirm_id, timeout=HITL_TIMEOUT)
 
                 if not auth.get("confirmed"):
-                    yield agent._step_emitter.emit(ErrorStep(
-                        step=step,
-                        error_type="user_rejected",
-                        error_message=f"用户拒绝执行工具: {_cn}"
-                    ))
-                    # 拒绝/拦截是可恢复的: 写反馈进LLM历史, 让LLM换方案(拒绝≠失败, 符合人类认知) — 小欧 2026-07-13
-                    _add_denial_feedback(agent, all_calls, fc_context, _cn, "被用户拒绝执行")
-                    # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态(可恢复不置终态)
-                    set_status(agent, AgentStatus.EXECUTING, "用户拒绝，恢复执行态由_dispatch_handler推断")  # SUSPENDED→EXECUTING 合法
-                    return
+                    if auth.get("expired"):
+                        # #11 fix: 超时与拒绝分流 — 小欧 2026-07-18
+                        yield agent._step_emitter.emit(ErrorStep(
+                            step=step,
+                            error_type="timeout",
+                            error_message=f"工具确认超时未响应: {_cn}"
+                        ))
+                        _denied.append((_cn, "确认超时未响应"))
+                    else:
+                        yield agent._step_emitter.emit(ErrorStep(
+                            step=step,
+                            error_type="user_rejected",
+                            error_message=f"用户拒绝执行工具: {_cn}"
+                        ))
+                        _denied.append((_cn, "被用户拒绝执行"))
+                    set_status(agent, AgentStatus.EXECUTING, "用户拒绝/超时，恢复执行态")
+                    continue  # was: return  — 小欧 2026-07-18 #12 fix
 
                 # 用户已确认：恢复执行态继续工具执行（SUSPENDED→EXECUTING 合法）— 小欧 2026-07-12
                 set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
+
+        if _denied:
+            _first = _denied[0]
+            _add_denial_feedback(agent, all_calls, fc_context, _first[0], _first[1])
+        # 回传未被拒的call索引给调用方 — 小欧 2026-07-18 #12 fix
+        if _out is not None:
+            _denied_cns = {d[0] for d in _denied}
+            _out[:] = [c for c in all_calls if c.get("tool_name", "") not in _denied_cns]
 
 
 def _add_denial_feedback(agent, all_calls: List[Dict], fc_context: Dict, denied_tool: str, reason: str):
@@ -623,24 +641,23 @@ async def handle_action(agent, parsed: Dict):
         reasoning=parsed.get("reasoning", ""),
     ))
 
-    _has_error = False
-    async for event in check_safety_and_confirm(agent, call_result.all_calls, step, call_result.fc_context):
-        if getattr(event, 'type', None) == 'error':
-            _has_error = True
+    # #11+#12 fix: 传_out收集通过安全检查的call, 拒绝不终止整批 — 小欧 2026-07-18
+    _safe_calls = []
+    async for event in check_safety_and_confirm(agent, call_result.all_calls, step,
+                                                call_result.fc_context, _out=_safe_calls):
         yield event
-    if _has_error:
-        return
+    _exec_calls = _safe_calls or call_result.all_calls
 
     # ── 工具重试（隐蔽，前端不可见）── 小欧 2026-07-13
     # 工具重试由 tool_retry_engine 内部执行，不向前端 emit 任何 step（北京老陈要求：tool 重试隐蔽）。
     # 重试回调不再收集/上报，仅后端内部重试。
-    results = await execute_tools(agent, call_result.all_calls, call_result.is_parallel,
+    results = await execute_tools(agent, _exec_calls, call_result.is_parallel,
                                   call_result.tool_name, call_result.tool_params)
 
     agent._consecutive_reasoning_only = 0  # 2026-07-17 - 小欧 - 本步LLM发起工具调用(非reasoning-only空转), 归零空转计数
 
     ctx = ObservationContext(
-        agent=agent, all_calls=call_result.all_calls, results=results, step=step,
+        agent=agent, all_calls=_exec_calls, results=results, step=step,
         tool_name=call_result.tool_name, tool_params=call_result.tool_params,
         is_parallel=call_result.is_parallel, pending_calls=call_result.pending_calls,
         fc_context=call_result.fc_context,
