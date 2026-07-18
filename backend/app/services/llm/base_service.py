@@ -12,7 +12,8 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
     2026-07-16 小欧 新增三层防线——①LLM_MAX_TOKENS=16384(防无限长输出); ②STREAM_TOTAL_TIMEOUT=500s总时长硬超时(httpx idle timeout 在连续流式时不触发,用 wall-clock 兜底); ③tool_call流式超时=总时长3/5=300s(_parse_sse_data 对 tool_call delta 静默跳过, 专门卡此阶段). 三者超时后均 break→accumulator→截断修复, 不触发重试
    2026-07-17 小沈 FC重命名: FCFormatError→LLMResponseError, 导入路径同步更新
    2026-07-17 小欧 流式截断落库修复: 落库 tool_call.arguments 改为使用已解析规范化后的 params(json.dumps), 而非原始流式串。原因: 流式总超时截断时原始串为非完整JSON, 直接落库会在下一轮回传给LLM API时触发参数校验失败; 以已成功解析(或已自动修补)的合法dict为准, 保证历史消息 arguments 永远合法, 工具已执行的结果得以保留, 功能零退化
-   2026-07-17 小欧 429配额耗尽增强: 重试耗尽后对前端输出"配额/限流耗尽"而非泛化"服务器错误", 提升可观测性
+    2026-07-17 小欧 429配额耗尽增强: 重试耗尽后对前端输出"配额/限流耗尽"而非泛化"服务器错误", 提升可观测性
+    2026-07-18 小欧 #7 fix: 并行tool_calls累加器遇重复idx时自增去重(while idx in tool_call_accumulator: idx+=1), 缺index或全0的并行调用不再塌缩成一个
 """
 
 import asyncio
@@ -211,6 +212,8 @@ class BaseAIService:
                     # 跨chunk聚合tool_calls — FC-only: 含id — 小沈 2026-06-11
                     tc_data = self._extract_tool_calls(data_str)
                     for idx, entry in tc_data.items():
+                        while idx in tool_call_accumulator:
+                            idx += 1  # 并行 tool_calls 缺 index 或全 0 时自增去重，防塌缩成一个（#7 fix）— 小欧 2026-07-18
                         tool_call_accumulator.setdefault(idx, {"id": None, "name": "", "arguments": ""})
                         if entry.get("id"):
                             tool_call_accumulator[idx]["id"] = entry["id"]

@@ -18,6 +18,7 @@
 #          ④纯内部取id(不读result/LLM字段), 符合"operation_id是agent内部字段严禁进LLM返回结构"铁律
 # 记录 2026-07-17 小欧 handle_action执行工具后重置_consecutive_reasoning_only(空转检测: 本步LLM发起工具调用=非reasoning-only空转, 归零)
 # 记录 2026-07-17 小欧 计数器修正: handle_action-tool_name空early-return处补归零(空转检测非reasoning-only出口完备, 不变量严格成立)
+# 2026-07-18 小欧 #4 fix: _file_tool_names 白名单值从模块函数名(delete_file等)改为注册名(delete等); 因 call["tool_name"] 是注册名, 原白名单恒 False 致 op_id 双表贯通完全失效
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -411,8 +412,8 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
     #   文件工具 call 顺序 == file_operations 写入顺序，故 pop 精确一一对应，不撞车。
     # ==========================================================================
     _file_tool_names = {
-        "delete_file", "copy_file", "move_file", "edit_text_file",
-        "write_text_file", "compress_files",
+        "delete", "copy", "move", "edittext",
+        "writetext", "compress",
     }
     _pending_op_ids = []
     try:

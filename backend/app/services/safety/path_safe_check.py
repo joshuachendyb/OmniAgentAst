@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - #3 fix: 白名单盘符下增加系统保护目录拒绝(windows/program files/programdata等),
+#    用 Path.parts[1] 精确只查盘符后第一级, 避免 C:\Users\MyProject\Program Files 误杀
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -129,6 +132,15 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
     paths = allowed_paths or ALLOWED_PATHS
     try:
         real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
+
+        # 白名单盘符下仍拒绝系统保护目录（收紧范围）— 小欧 2026-07-18 #3 fix
+        _SYSTEM_PROTECTED = frozenset({
+            "windows", "program files", "program files (x86)",
+            "programdata", "boot", "recovery",
+        })
+        _real_parts = real_path.parts
+        if len(_real_parts) > 1 and _real_parts[1].lower() in _SYSTEM_PROTECTED:
+            return False, f"路径位于系统保护目录,禁止操作: {file_path}"
 
         for allowed in paths:
             allowed_real = Path(os.path.realpath(allowed))

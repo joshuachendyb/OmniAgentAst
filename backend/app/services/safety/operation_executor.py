@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-15 - 小欧 - execute_with_safety返回值(bool)改(bool, Optional[str]): 原仅返bool, 操作失败吞掉真实错误(如"目标路径已存在...请设置overwrite=True"), 上层只能给LLM笼统"移动/复制/删除失败", LLM无法自我纠正。改后透传真实细节, LLM可据细节重试(如带overwrite=True)。
 # 2026-07-18 - 小欧 - executed_at/backup_expires_at 改 get_utc_timestamp/convert_to_utc 入库 UTC Z; duration 计算 created_at_dt 兼容老/新数据
+# 2026-07-18 - 小欧 - #1 fix: MODIFY 操作也生成备份(MODIFY回滚需原文件恢复), 用 op_type in (DELETE, MODIFY) 替代仅 DELETE, 扩展且不破原有DELETE路径
 """
 operation_executor — 操作执行和备份
 
@@ -91,7 +92,10 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> T
             )
 
             backup_path = None
-            if op_type == OperationType.DELETE.value and source_path and source_path.exists():
+            if source_path and source_path.exists() and op_type in (
+                OperationType.DELETE.value,
+                OperationType.MODIFY.value,
+            ):
                 backup_path = backup_to_recycle_bin(source_path)
 
             success_raw = operation_func(*args, **kwargs)

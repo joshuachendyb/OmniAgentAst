@@ -11,6 +11,7 @@
 #          ③失败路径: ErrorStep→FinalStep(outcome="failed"), 仍手动写(异常分支无守卫)
 #          ④finally守卫: 检测current_execution_steps无type=final时, 按agent.status补发FinalStep
 # 2026-07-18 - 小欧 - prompt-log生命周期归属修正: 生产者全权拥有创建(start_request)/写入(log_step_yield)/设态(set_terminal_status)/存盘(save), 消费者openai.py完全退出日志层
+# 2026-07-18 - 小欧 - #9 fix: 删除失败路径(219)与守卫路径(259)的手动log_step_yield调用;_append(:93)已统一记一次, 消除终态FinalStep prompt-log双写
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -216,7 +217,6 @@ async def run_agent_in_background(
             with db.get_conn("chat") as conn:
                 append_execution_step(conn, ai_message_id, session_id,
                                       len(current_execution_steps) - 1, final_dict)
-        get_prompt_logger().log_step_yield(final_dict, round_number=final_dict.get("step", 0))
         await _append(final_dict)
         if stream_state is not None:
             stream_state.current_content = "任务执行失败"  # 兜底: ③路径 response_text 非空, 根治空 bug
@@ -256,7 +256,6 @@ async def run_agent_in_background(
                 with db.get_conn("chat") as conn:
                     append_execution_step(conn, ai_message_id, session_id,
                                           len(current_execution_steps) - 1, _fd)
-            get_prompt_logger().log_step_yield(_fd, round_number=_fd.get("step", 0))
             if stream_state is not None and _oc != "completed":
                 stream_state.current_content = _resp or stream_state.current_content
             await _append(_fd)

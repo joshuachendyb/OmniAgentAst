@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-16 - 小欧 - rollback_session 改用 get_tracker().mark_rolled_back() 贯通 task_tracker 统计(消除跨库死链), 删除直接UPDATE旧operations表逻辑
 # 2026-07-18 - 小欧 - rolled_back_at 改 get_utc_timestamp() 入库 UTC Z, 消除 datetime.now() 裸传 sqlite3
+# 2026-07-18 - 小欧 - #1 fix: 新增 MODIFY/COPY/COMPRESS 三条回滚分支(MODIFY用备份还原, COPY/COMPRESS删目标); #2 fix: MOVE回滚前检测source是否被新文件占用, 先备份再移回, 杜绝覆盖丢失
 """
 operation_rollback — 操作回滚
 
@@ -39,7 +40,18 @@ def rollback_operation(operation_id: str) -> bool:
                 return True
 
             success = False
-            if op_type == OperationType.DELETE.value:
+            if op_type == OperationType.MODIFY.value:
+                if backup and Path(backup).exists():
+                    backup_path = Path(backup)
+                    source_path = Path(src)
+                    source_path.parent.mkdir(parents=True, exist_ok=True)
+                    if backup_path.is_dir():
+                        shutil.copytree(backup_path, source_path, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(backup_path, source_path)
+                    success = True
+                    logger.info(f"Restored edited file: {backup} -> {source_path}")
+            elif op_type == OperationType.DELETE.value:
                 if backup and Path(backup).exists():
                     backup_path = Path(backup)
                     source_path = Path(src)
@@ -54,6 +66,14 @@ def rollback_operation(operation_id: str) -> bool:
                 dest_path = Path(dst)
                 source_path = Path(src)
                 if dest_path.exists():
+                    # 先保全当前 source（若被新文件占用）再移回，杜绝覆盖丢失 — 小欧 2026-07-18 #2 fix
+                    if source_path.exists():
+                        _bak = source_path.with_name(source_path.name + ".rollback_bak")
+                        try:
+                            source_path.rename(_bak)
+                        except Exception as _e:
+                            logger.error(f"MOVE rollback: backup occupied source failed: {_e}")
+                            return False
                     dest_path.rename(source_path)
                     success = True
                     logger.info(f"Moved back: {dest_path} -> {source_path}")
@@ -66,6 +86,15 @@ def rollback_operation(operation_id: str) -> bool:
                         dest_path.unlink()
                     success = True
                     logger.info(f"Removed created file: {dest_path}")
+            elif op_type in (OperationType.COPY.value, OperationType.COMPRESS.value):
+                dest_path = Path(dst) if dst else Path(src)
+                if dest_path.exists():
+                    if dest_path.is_dir():
+                        shutil.rmtree(dest_path)
+                    else:
+                        dest_path.unlink()
+                    success = True
+                    logger.info(f"Removed copied/compressed target: {dest_path}")
 
             if success:
                 cursor.execute(

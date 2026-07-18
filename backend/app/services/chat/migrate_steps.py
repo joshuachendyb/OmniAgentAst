@@ -20,6 +20,8 @@ migrate_steps — execution_steps 一次性数据迁移
 
 10规范(DRY): 复用 json_utils.parse_json / safe_json_dumps
 小欧 2026-07-13
+# 编辑历史:
+# 2026-07-18 小欧 #5 fix: _needs_migration final分支补齐response字段(与_migrate_one_step一致); 取消文本仅存response的历史消息不再漏迁移误判完成
 """
 
 from typing import Any, Dict, List, Optional
@@ -41,7 +43,7 @@ def _needs_migration(steps: List[dict]) -> bool:
         if s.get("type") == "incident":
             return True
         if s.get("type") == "final":
-            text = (s.get("content") or "") + (s.get("reason") or "")
+            text = (s.get("content") or "") + (s.get("response") or "") + (s.get("reason") or "")
             if "已取消" in text or "取消" in text:
                 return True
     return False
