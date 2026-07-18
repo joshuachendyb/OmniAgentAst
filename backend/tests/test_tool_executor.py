@@ -1,3 +1,4 @@
+# 编辑历史: 2026-07-18 小健 修正AsyncMock缺少return_value导致coroutine未await告警
 """
 test_tool_executor — tool_executor.py 专用测试
 
@@ -176,7 +177,9 @@ class TestAutoInjectFromSearch:
         验证：httpget等非searchtool调用不触发auto_inject_from_search。
         """
         mock_engine = MagicMock()
-        mock_engine.execute_tool_with_retry = AsyncMock()
+        mock_engine.execute_tool_with_retry = AsyncMock(
+            return_value={"code": 200, "data": "ok", "llm_data": {"status": {"exec_code": "success"}}}
+        )
         agent = _make_agent(mock_engine)
 
         from app.services.agent.tool_executor import execute_tool
