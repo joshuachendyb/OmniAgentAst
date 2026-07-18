@@ -1,4 +1,11 @@
 /* eslint-disable react/prop-types */
+/* 编辑历史:
+ * 2026-07-18 小欧 FinalStep终态规整: case 'final' 按outcome分流cancelled/failed渲染; 删除废弃type='cancelled'分支
+ *   【病根】原case 'final'仅渲染成功态, 失败/取消无专属渲染→用户无感知;
+ *          type='cancelled'分支与FinalStep多态设计不一致(取消已统一为type=final+outcome=cancelled)
+ *   【改法】①case 'final'内按outcome分支: cancelled→警告框, failed→错误框, completed→原逻辑
+ *          ②删type='cancelled'分支(已废弃), 原cancelled配置从lifeConfig移除
+ */
 /**
  * ExecutionPanel 组件 - 执行过程可视化（专家级优化版）
  *
@@ -33,6 +40,7 @@ import {
   DownloadOutlined,
   CopyOutlined,
   CheckOutlined,
+  WarningOutlined,
   // 【小新重构2026-03-09】新增图标
   RobotOutlined,
 } from '@ant-design/icons';
@@ -429,7 +437,47 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
               </div>
             );
 
-          case 'final':
+          case 'final': {
+            // 2026-07-18 小欧 FinalStep 终态规整：终态统一 type=final，取消/失败必须按 outcome 分流，禁止误显为完成
+            if (step.outcome === 'cancelled' || step.outcome === 'failed') {
+              const isCancelled = step.outcome === 'cancelled';
+              const lifeCfg = isCancelled
+                ? {
+                    border: '#ffbb96',
+                    tag: 'warning',
+                    label: '⚠️ 取消',
+                    fallback: '任务已取消',
+                  }
+                : {
+                    border: '#ffa39e',
+                    tag: 'error',
+                    label: '❌ 失败',
+                    fallback: '任务执行失败',
+                  };
+              return (
+                <div className="step-item">
+                  <div
+                    style={{
+                      ...stepStyle,
+                      borderLeft: `2px solid ${lifeCfg.border}`,
+                      padding: '6px 8px',
+                      borderRadius: 4,
+                      marginTop: 8,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {isCancelled ? (
+                      <WarningOutlined style={{ marginRight: 8 }} />
+                    ) : (
+                      <CloseCircleOutlined style={{ marginRight: 8 }} />
+                    )}
+                    <Tag color={lifeCfg.tag}>{lifeCfg.label}</Tag>
+                    <span>{step.content || lifeCfg.fallback}</span>
+                  </div>
+                </div>
+              );
+            }
             return (
               <div className="step-item">
                 <div
@@ -458,9 +506,10 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                 </div>
               </div>
             );
+          }
 
           // 【北京老陈 2026-07-13 小欧】生命周期 Step 统一约定：直接用 type 表示终态/生命周期（删 incident）
-          case 'cancelled':
+          // 2026-07-18 小欧 终态规整：取消/失败均统一为 FinalStep(outcome)，type='cancelled' 不再产生；删除废弃分支
           case 'paused':
           case 'resumed':
           case 'retrying': {
@@ -468,10 +517,24 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
               string,
               { border: string; tag: string; label: string; fallback: string }
             > = {
-              cancelled: { border: '#ffbb96', tag: 'warning', label: '⚠️ 取消', fallback: '任务已取消' },
-              paused: { border: '#d9d9d9', tag: 'default', label: '⏸️ 暂停', fallback: '任务已暂停' },
-              resumed: { border: '#52c41a', tag: 'success', label: '▶️ 恢复', fallback: '任务已恢复' },
-              retrying: { border: '#1890ff', tag: 'processing', label: '🔄 重试', fallback: '正在重试...' },
+              paused: {
+                border: '#d9d9d9',
+                tag: 'default',
+                label: '⏸️ 暂停',
+                fallback: '任务已暂停',
+              },
+              resumed: {
+                border: '#52c41a',
+                tag: 'success',
+                label: '▶️ 恢复',
+                fallback: '任务已恢复',
+              },
+              retrying: {
+                border: '#1890ff',
+                tag: 'processing',
+                label: '🔄 重试',
+                fallback: '正在重试...',
+              },
             };
             const cfg = lifeConfig[step.type];
             if (!cfg) return null;

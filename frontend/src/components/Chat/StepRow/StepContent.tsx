@@ -1,3 +1,10 @@
+/* 编辑历史:
+ * 2026-07-18 小欧 FinalStep终态规整: final步骤失败/取消时渲染error_message; 删除废弃type='cancelled'分支
+ *   【病根】原final步骤仅渲染response, 失败时error_message丢失→用户看不到失败原因;
+ *          type='cancelled'分支渲染content, 与FinalStep多态设计不一致
+ *   【改法】①final步骤末尾追加: outcome=failed/cancelled且error_message非空时渲染错误框
+ *          ②删type='cancelled'分支(已废弃)
+ */
 /**
  * StepContent组件 - 步骤内容（根据type渲染不同内容）
  *
@@ -590,6 +597,24 @@ const StepContent: React.FC<StepContentProps> = ({
           <span style={{ fontSize: 13, color: '#333' }}>
             {formatStepContent(step.response)}
           </span>
+          {/* 2026-07-18 小欧 FinalStep 终态规整：失败/取消终态统一 type=final，按 outcome 渲染错误信息，不丢失 error_message */}
+          {(step.outcome === 'failed' || step.outcome === 'cancelled') &&
+            step.error_message && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '6px 8px',
+                  borderRadius: 4,
+                  borderLeft: `2px solid ${step.outcome === 'cancelled' ? '#ffbb96' : '#ffa39e'}`,
+                  fontSize: 12,
+                  color: '#cf1322',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {step.error_message}
+              </div>
+            )}
         </div>
       )}
       {step.type === 'error' && (
@@ -609,13 +634,7 @@ const StepContent: React.FC<StepContentProps> = ({
           errorContext={step.context}
         />
       )}
-      {step.type === 'cancelled' && (
-        <div style={getStepStyle('cancelled' as StepType)}>
-          <span style={getStepContentStyle('cancelled' as StepType, 'primary')}>
-            {step.content || '客户端断开连接，任务已取消'}
-          </span>
-        </div>
-      )}
+      {/* 2026-07-18 小欧 终态规整：取消/失败均统一为 FinalStep(outcome)，type='cancelled' 不再产生；删除废弃分支 */}
       {step.type === 'paused' && (
         <div style={getStepStyle('paused' as StepType)}>
           <span style={getStepContentStyle('paused' as StepType, 'primary')}>

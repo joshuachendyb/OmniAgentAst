@@ -12,6 +12,13 @@
  * @author 小新
  * @version 2.0.0
  * @since 2026-03-04
+ *
+ * 编辑历史:
+ * 2026-07-18 小欧 FinalStep终态规整: ExecutionStep接口加outcome/error_type/error_message; processSSEData同步解析
+ *   【病根】原ExecutionStep无outcome字段, 后端FinalStep.to_dict()输出的outcome被丢弃,
+ *          前端无法区分final事件的具体终态结果(completed/failed/cancelled)。
+ *   【改法】①ExecutionStep加outcome/error_type/error_message三个可选字段
+ *          ②processSSEData: 从rawData同步解析outcome和error_type到step对象
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -139,6 +146,11 @@ export interface ExecutionStep {
   response?: string; // 最终回答内容
   is_streaming?: boolean; // 是否流式输出
   is_finished?: boolean; // 是否已完成
+  // === type=final 终态声明字段（2026-07-18 小欧 FinalStep 终态规整）===
+  // 终态统一由 FinalStep 承载，outcome 声明具体终态结果；取消/失败不再单独 type
+  outcome?: 'completed' | 'failed' | 'cancelled'; // 终态类型：完成/失败/取消
+  error_type?: string; // 失败时的错误类型
+  error_message?: string; // 失败/取消时的错误信息
 
   // === type=observation 字段 【新增2026-04-15】===
   return_direct?: boolean; // 是否直接返回
@@ -1111,6 +1123,9 @@ const processSSEData = (
       // 保留字段
       step: rawData.step || 1, // 与后端一致：step
       thought: rawData.thought, // Agent.thought的值
+      // 2026-07-18 小欧 FinalStep 终态规整：终态统一 type=final，由 outcome 声明；同步解析出后端字段
+      outcome: rawData.outcome,
+      error_type: rawData.error_type,
       action: rawData.action, // 执行动作名称，与后端一致
       observation: rawData.observation, // 保留原始对象，用于调试
       result: rawData.result, // simplify_observation处理后的文本

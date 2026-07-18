@@ -5,6 +5,11 @@
  * @version 1.1.0
  * @since 2026-04-21
  * @update 2026-04-28 小强 - 第六步P1：emoji替换为Ant Design图标
+ *
+ * 编辑历史:
+ * 2026-07-18 小欧 FinalStep终态规整: effectiveType按outcome分流cancelled→cancelled/error→error/completed→final
+ *   【病根】原effectiveType=step.type, type=final统一显示完成图标✅, 失败/取消也误显为完成;
+ *   【改法】effectiveType改写: final+cancelled→cancelled(final配置保留icon), final+failed→error, final+completed→final
  */
 
 import React from 'react';
@@ -64,7 +69,15 @@ const StepHeader: React.FC<StepHeaderProps> = ({
   icon: _icon,
 }) => {
   // 获取对应的Ant Design图标
-  const effectiveType = step.type;
+  // 2026-07-18 小欧 FinalStep 终态规整：终态统一 type=final，按 outcome 分流；取消/失败不误显为完成
+  const effectiveType =
+    step.type === 'final'
+      ? step.outcome === 'cancelled'
+        ? 'cancelled'
+        : step.outcome === 'failed'
+          ? 'error'
+          : 'final'
+      : step.type;
   const stepIcon = stepIconMap[effectiveType] || stepIconMap.thought || null;
 
   return (
@@ -80,7 +93,7 @@ const StepHeader: React.FC<StepHeaderProps> = ({
       <span style={{ flex: 1 }} /> {/* 弹性空间，将timestamp推到右侧 */}
       {/* timestamp放在行右侧，与右侧边框挨着，更醒目 - 第六步P1：使用图标组件 */}
       {step.timestamp && (
-        <span style={getTimestampStyle(step.type)}>
+        <span style={getTimestampStyle(effectiveType)}>
           <ClockCircleOutlined style={{ marginRight: 4 }} />{' '}
           {formatTimestamp(step.timestamp)}
         </span>
