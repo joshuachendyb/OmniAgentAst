@@ -12,6 +12,7 @@
 #          ②新增三个@property读取器 ③_extra_fields()输出这三个字段
 #          ④TYPE="final"不变, IS_DONE=True不变, 向后兼容旧数据。
 # 2026-07-18 小欧 #26 fix: outcome参数Literal["completed","failed","cancelled"]约束
+# 2026-07-18 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致
 
 from typing import Any, Dict, Literal, Optional
 
@@ -41,7 +42,7 @@ class FinalStep(ReasoningStep):
         provider: Optional[str] = None,
         is_finished: bool = True,
         display_name: Optional[str] = None,
-        timestamp: Optional[int] = None
+        timestamp: Optional[str] = None
     ):
         ReasoningStep.__init__(self, step, timestamp)
         self._response = response

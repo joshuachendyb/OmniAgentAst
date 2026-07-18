@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() (UTC Z 字符串), 消除 create_timestamp 毫秒 int 依赖
+# 2026-07-18 - 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致; property 返回类型 int→str
 """
 ReasoningStep 抽象基类
 
@@ -22,9 +23,9 @@ class ReasoningStep(ABC):
     TYPE: str = ""
     IS_DONE: bool = False
 
-    def __init__(self, step: int, timestamp: Optional[int] = None):
+    def __init__(self, step: int, timestamp: Optional[str] = None):
         self._step = step
-        self._timestamp = timestamp or get_utc_timestamp()
+        self._timestamp = timestamp or get_utc_timestamp()  # 小欧 2026-07-18 时间归一化: 默认UTC Z字符串
         self._model: Optional[str] = None
         self._provider: Optional[str] = None
 
@@ -33,7 +34,7 @@ class ReasoningStep(ABC):
         return self._step
 
     @property
-    def timestamp(self) -> int:
+    def timestamp(self) -> str:
         return self._timestamp
 
     @property
@@ -118,7 +119,7 @@ class MetaStep(ReasoningStep):
         type: str,
         *,
         content: str = "",
-        timestamp: Optional[int] = None,
+        timestamp: Optional[str] = None,
         **kwargs: Any
     ):
         # 【字段契约】北京老陈 2026-07-13: MetaStep 文本统一用 content(单一权威字段)。

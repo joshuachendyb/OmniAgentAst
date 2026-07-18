@@ -8,6 +8,7 @@ sse — 执行步骤流式查看
 # 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() 时间统一
 # 2026-07-18 - 小欧 - #18 fix: execution_steps 遍历加 step is None continue 防御, 单条 json 解析失败不触发 AttributeError
 # 2026-07-18 - 小欧 - #21 fix: 预读数据退出with再yield,连接不占SSE流
+# 2026-07-18 - 小欧 - ExecutionStep.timestamp 注解 int→str, 默认值 0→"" 与时间归一化 UTC Z 字符串对齐, 消除 int 注解与 str 实际值不一致
 
 import json
 import asyncio
@@ -24,7 +25,7 @@ router = APIRouter()
 class ExecutionStep:
     """执行步骤数据模型 — 小欧 2026-07-10"""
     def __init__(self, step_type: str, content: str = "", tool: str = "",
-                 params: Optional[Dict] = None, result: Any = None, timestamp: int = 0):
+                 params: Optional[Dict] = None, result: Any = None, timestamp: str = ""):
         self.type = step_type
         self.content = content
         self.tool = tool

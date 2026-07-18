@@ -1,3 +1,6 @@
+# 编辑历史:
+# 2026-07-18 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致
+
 from typing import Any, Dict, Optional
 
 from .base import ReasoningStep
@@ -16,7 +19,7 @@ class ErrorStep(ReasoningStep):
         error_message: str,
         model: Optional[str] = None,
         provider: Optional[str] = None,
-        timestamp: Optional[int] = None
+        timestamp: Optional[str] = None
     ):
         ReasoningStep.__init__(self, step, timestamp)
         self._error_type = error_type

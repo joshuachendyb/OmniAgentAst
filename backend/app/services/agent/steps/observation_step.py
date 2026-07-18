@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致
 """
 ObservationStep - 观察步骤（SRP拆分）
 
@@ -24,7 +26,7 @@ class ObservationStep(ReasoningStep):
         tool_result: Any = None,
         other_data: Optional[Dict[str, Any]] = None,
         parallel_results: Optional[List[Dict[str, Any]]] = None,
-        timestamp: Optional[int] = None,
+        timestamp: Optional[str] = None,
     ):
         ReasoningStep.__init__(self, step, timestamp)
         self.TYPE = "observation"

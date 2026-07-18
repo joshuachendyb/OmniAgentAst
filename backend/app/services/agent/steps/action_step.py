@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致
 """
 ActionStep - 工具执行步骤（SRP拆分）
 
@@ -25,7 +27,7 @@ class ActionStep(ReasoningStep):
         execution_result: Any = None,
         action_retry_count: int = 0,
         execution_time_ms: int = 0,
-        timestamp: Optional[int] = None,
+        timestamp: Optional[str] = None,
     ):
         ReasoningStep.__init__(self, step, timestamp)
         self._tool_name = tool_name
