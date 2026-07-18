@@ -2,6 +2,12 @@
 # 编辑历史:
 # 记录 2026-07-13 小欧 add_tool_result异常日志带类型与repr
 # 记录 2026-07-16 小欧 op_id双表贯通修复
+# 记录 2026-07-18 小欧 FinalStep多态自包含终态重构:
+#   【病根】原FinalStep无outcome字段, 终态语义隐含在type中,
+#          action_handler中return_direct提前返回的FinalStep缺少显式终态声明,
+#          与answer_handler/agent_runner的终态产出不一致。
+#   【改法】在return_direct分支的FinalStep中显式添加outcome="completed",
+#          使所有终态产出点均有显式outcome声明, 与FinalStep多态设计契约一致。
 #   [原来] for循环内对每个call查file_operations「最新」op_id写task_operations
 #   [问题] ①非文件工具(searchtool等)误关联文件op_id ②同轮多文件工具抢同一op_id撞UNIQUE(constraint failed)
 #   [根因] action_handler在"所有工具返回后统一处理"循环中, 查"最新"在多工具同轮时顺序错乱/抢占
@@ -647,5 +653,6 @@ async def handle_action(agent, parsed: Dict):
         yield agent._step_emitter.emit(FinalStep(
             step=step, response=_status.get("message", ""),
             thought=parsed.get("thought", ""),
+            outcome="completed",  # 小欧 2026-07-18: 显式终态声明, 与FinalStep多态契约一致
         ))
         # chendyg 2026-07-01: 删set_completed，_dispatch_handler从FinalStep推断状态

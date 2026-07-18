@@ -2,6 +2,10 @@
 # 编辑历史:
 # 2026-07-14 - 小欧 - 新增allocate_and_insert_message/append_execution_step/load_execution_steps/finalize_message四函数,支撑运行期逐步落库+渐进耐久
 # 2026-07-14 - 小欧 - 修复load_execution_steps: 无步骤且无legacy blob时返回[]而非None,避免API返回execution_steps=None
+# 2026-07-18 - 小欧 - FinalStep多态自包含终态重构: derive_status_from_steps改为读最后一条final.outcome
+#   【病根】原derive_status_from_steps基于type推断终态(ccancelled→cancelled, error→failed),
+#          与FinalStep多态设计不一致; 且type=final始终返回completed, 无法区分failed终态。
+#   【改法】改为遍历找最后一条type=final, 读其outcome字段返回; 无final时兜底返回completed。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -47,27 +51,16 @@ class ExecutionStepsUpdate(BaseModel):
 
 
 def derive_status_from_steps(steps: Optional[list]) -> str:
-    """从 execution_steps 推导任务终态(status列兜底) — 小欧 2026-07-13
-    10规范(YAGNI): 仅作兜底/迁移使用; retrying 为中间态, 不参与终态判定。
-    必须以“最后一条终态 step”为准, 不能用“任意出现”判定, 否则:
-    中间曾取消/报错后又恢复完成的任务会被误标 cancelled/failed。 — 小欧 2026-07-13
-    """
+    """从 execution_steps 推导任务终态(status列兜底) — 小欧 2026-07-13 初版
+    2026-07-18 小欧 重构: 读最后一条 final.outcome(显式声明终态结果),
+    无向后/旧数据兼容(用户: 旧数据不合适可删除或清库)。"""
     if not steps:
         return "completed"
-    terminal = None
+    last_final = None
     for s in steps:
-        if not isinstance(s, dict):
-            continue
-        t = s.get("type")
-        if t in ("cancelled", "paused", "error", "final"):
-            terminal = t
-    if terminal == "cancelled":
-        return "cancelled"
-    if terminal == "paused":
-        return "paused"
-    if terminal == "error":
-        return "failed"
-    return "completed"
+        if isinstance(s, dict) and s.get("type") == "final":
+            last_final = s
+    return last_final.get("outcome", "completed") if last_final else "completed"
 
 
 class AssistantMessageIdAllocator:

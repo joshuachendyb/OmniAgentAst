@@ -3,6 +3,13 @@
 # 2026-07-13 - 小欧 - 移除事件循环内重复prompt日志写入(已由_append统一记录)
 # 2026-07-14 - 小欧 - 运行期逐步落库chat_message_steps表, finally仅轻量终态更新; 三退出路径均写入steps, ai_message_id未分配时沿用原有写入逻辑保证完整性
 # 2026-07-16 - 小欧 - FinalStep 事件更新 stream_state.current_thought; finalize_message 调用传 thought 参数
+# 2026-07-18 - 小欧 - FinalStep多态自包含终态重构: 三退出路径统一产出FinalStep(outcome=xxx);
+#   【病根】原②取消用MetaStep+手动写DB/日志/SSE, ③失败用ErrorStep+手动写DB/日志/SSE,
+#          步骤构建→落库→日志→SSE四步散落在三条路径, 改一处漏一处;
+#          且MetaStep/ErrorStep不含response_text, 导致body为空(unit-09)。
+#   【改法】①import加FinalStep ②取消路径: 删MetaStep手动写逻辑, 改由finally守卫补FinalStep
+#          ③失败路径: ErrorStep→FinalStep(outcome="failed"), 仍手动写(异常分支无守卫)
+#          ④finally守卫: 检测current_execution_steps无type=final时, 按agent.status补发FinalStep
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -22,7 +29,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 from app.db import db
-from app.services.agent.steps import ErrorStep, MetaStep  # 小欧 2026-07-13: 删 FinalStep（终态改由 ErrorStep/MetaStep 表示，不再补发 FinalStep）
+from app.services.agent.steps import ErrorStep, MetaStep, FinalStep  # 小欧 2026-07-18: 加 FinalStep（多态自包含终态）
 from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed
 from app.services.chat.handlers import save_execution_steps_to_db
 # 独立步骤表操作 — 小欧 2026-07-14
@@ -178,18 +185,10 @@ async def run_agent_in_background(
     # ② 取消分支 — 小欧 2026-07-13
     except asyncio.CancelledError:
         # 后端主动取消（task 被清理等）— 小沈 2026-06-09 修复
-        # 小欧 2026-07-13: 取消终态仅 MetaStep(cancelled)，不再补发 FinalStep（避免前端误判"已完成"）
+        # 取消终态由 finally 守卫补 FinalStep(outcome="cancelled") — 小欧 2026-07-18
+        # 守卫覆盖步: step构建→to_dict→current_execution_steps→DB→prompt log→SSE _append
+        # 此处仅设状态: set_cancelled 让守卫读到 CANCELLED 即可补发
         logger.info(f"[Runner] 任务 {task_id} 被取消(CancelledError)")
-        cancelled_step = MetaStep(step=next_step(), type="cancelled", content="任务已被取消")
-        cancelled_dict = cancelled_step.to_dict()
-        current_execution_steps.append(cancelled_dict)
-        # 终态 step 立即落库 — 小欧 2026-07-14
-        if ai_message_id is not None:
-            with db.get_conn("chat") as conn:
-                append_execution_step(conn, ai_message_id, session_id,
-                                      len(current_execution_steps) - 1, cancelled_dict)
-        get_prompt_logger().log_step_yield(cancelled_dict, round_number=cancelled_dict.get("step", 0))
-        await _append(cancelled_dict)
         if agent is not None:
             try:
                 set_cancelled(agent)
@@ -198,25 +197,66 @@ async def run_agent_in_background(
 
     # ③ 异常分支 — 小欧 2026-07-13
     except Exception as e:
-        # 小欧 2026-07-13: 失败终态仅 ErrorStep，不再补发 FinalStep（终止由 ErrorStep 表示）
+        # 失败终态改为自包含 FinalStep(outcome="failed") — 小欧 2026-07-18
         logger.error(f"[Runner] 任务 {task_id} 异常: {e}", exc_info=True)
-        error_step = ErrorStep(step=next_step(), error_type="agent_operation_error", error_message=str(e))
-        error_dict = error_step.to_dict()
-        current_execution_steps.append(error_dict)
+        s = next_step()
+        error_content = str(e)[:200]
+        final_step = FinalStep(
+            step=s, response="任务执行失败", thought=error_content,
+            outcome="failed", error_type="agent_operation_error", error_message=error_content,
+        )
+        final_dict = final_step.to_dict()
+        current_execution_steps.append(final_dict)
         # 终态 step 立即落库 — 小欧 2026-07-14
         if ai_message_id is not None:
             with db.get_conn("chat") as conn:
                 append_execution_step(conn, ai_message_id, session_id,
-                                      len(current_execution_steps) - 1, error_dict)
-        await _append(error_dict)
+                                      len(current_execution_steps) - 1, final_dict)
+        get_prompt_logger().log_step_yield(final_dict, round_number=final_dict.get("step", 0))
+        await _append(final_dict)
+        if stream_state is not None:
+            stream_state.current_content = "任务执行失败"  # 兜底: ③路径 response_text 非空, 根治空 bug
         if agent is not None:
             try:
-                set_failed(agent, str(e)[:200])
+                set_failed(agent, error_content)
             except ValueError:
                 pass
 
     # finally: 统一DB保存（①②③都会执行）— 小欧 2026-07-13
     finally:
+        # === 守卫：兜底补发 FinalStep（覆盖 ②CancelledError + react_cycle 内部 set_failed 等无 final 路径）— 小欧 2026-07-18 ===
+        if not any(
+            isinstance(s, dict) and s.get("type") == "final"
+            for s in current_execution_steps
+        ):
+            _oc, _resp, _et, _em = "failed", "任务执行失败", "agent_operation_error", ""
+            if agent and agent.status == AgentStatus.CANCELLED:
+                _oc, _resp, _et, _em = "cancelled", "任务已取消", "", ""
+            elif agent and agent.status == AgentStatus.COMPLETED:
+                # 防御性: 正常流程成功必有 FinalStep, 此处仅兜底, 不误标 failed — 小欧 2026-07-18
+                _oc, _resp, _et, _em = "completed", "任务执行完成", "", ""
+            else:  # FAILED / RETRYING / SUSPENDED → 提取最后一条 ErrorStep
+                _last_err = next(
+                    (s for s in reversed(current_execution_steps)
+                     if isinstance(s, dict) and s.get("type") == "error"),
+                    None
+                )
+                if _last_err:
+                    _em = _last_err.get("error_message", "")
+                    _et = _last_err.get("error_type", "") or "agent_operation_error"
+            _fs = FinalStep(step=next_step(), response=_resp, thought=_em or _resp,
+                            outcome=_oc, error_type=_et, error_message=_em)
+            _fd = _fs.to_dict()
+            current_execution_steps.append(_fd)
+            if ai_message_id is not None:
+                with db.get_conn("chat") as conn:
+                    append_execution_step(conn, ai_message_id, session_id,
+                                          len(current_execution_steps) - 1, _fd)
+            get_prompt_logger().log_step_yield(_fd, round_number=_fd.get("step", 0))
+            if stream_state is not None and _oc != "completed":
+                stream_state.current_content = _resp or stream_state.current_content
+            await _append(_fd)
+
         # 从 agent.status 推导 end_type — 小欧 2026-07-12 从 stream.py 迁移
         if end_type == "unknown" and agent is not None:
             _m = {

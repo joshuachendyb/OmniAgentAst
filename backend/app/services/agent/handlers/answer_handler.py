@@ -4,6 +4,20 @@
 # 记录 2026-07-17 小欧 新增reasoning-only空转防御: 复用_dedup_repeat剔除循环重复+连续REASONING_ONLY_MAX_ROUNDS(默认3)轮纯推理无工具无答案即终止; 字段_consecutive_reasoning_only在action/正常answer/真空处归零(防御增强不退化正常流程)
 # 记录 2026-07-17 小欧 计数器修正: 判断改>REASONING_ONLY_MAX_ROUNDS(默认3,即第4轮终止); 补全error/未知类型分支归零, 使不变量"仅reasoning-only累加、其余出口归零"严格成立(复核3遍)
 # 记录 2026-07-17 小欧 重复检测升级: 用句子频率法(v2)替换固定200字chunk, 100%命中率98.4%压缩率; 删除DUP_CHUNK, 新增SENTENCE_MIN_REPEAT=3, REPEAT_CHECK_MIN_LEN=500改250; 排除markdown表行防假阳性(复核3遍+边缘测试14场景)
+# 记录 2026-07-18 小欧 修复FAILED终态返回空响应(病根+思路+逻辑): 
+#                【病根】response_text仅由final事件填充(e2e_helpers.py:365/agent_runner.py:163), 
+#                     失败终态设计上不补FinalStep→LLM硬失败时正文为空(unit-09暴露);
+#          而2026-07-13设计"失败终态仅ErrorStep不补FinalStep", 致LLM硬失败(如HTTP400内容审核,
+#            今日unit-09暴露)时响应正文为空、无诊断信息; 
+#           【思路】在error/unknown分支补发FinalStep填充响应正文; 
+#           【逻辑】①FinalStep先于ErrorStep产出, 使derive_status_from_steps(storage.py:49迁移兜底)最后终态=error→仍判failed不翻转 ②_dispatch_handler中error优先于final→终态仍FAILED不退化 ③复用reasoning-only终止分支emit FinalStep既有模式, 不造新范式
+# 记录 2026-07-18 小欧 FinalStep终态规整重构(多态自包含):
+# 【病根】response_text仅由final事件填充, 失败终态无FinalStep→body空;
+# 【重构】FinalStep多态: outcome/error_type/error_message 三字段;
+#         失败→单条 FinalStep(outcome="failed", error_type, error_message);
+#         取消→FinalStep(outcome="cancelled"); ErrorStep仅可恢复;
+#         agent_runner守卫兜底无final路径; derive读final.outcome。
+# 【增强】response_text全路径非空; 失败细节自包含; 内部set_failed全覆盖。
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -21,7 +35,7 @@ import time
 from collections import Counter
 from typing import Dict
 
-from app.services.agent.steps import ThoughtStep, FinalStep, ErrorStep, MetaStep
+from app.services.agent.steps import ThoughtStep, FinalStep, MetaStep
 from app.utils.text_utils import format_tool_call_markup
 from app.logger import logger
 
@@ -75,25 +89,28 @@ async def handle_answer(agent, parsed: Dict):
     
     由 _dispatch_handler(react_cycle.py) 分派，接收 llm_stream.py 构建的 type：
     - type="answer" → 正常终态流程（最终答复）
-    - type="error"  → LLM 流式异常 → ErrorStep → set_failed
+    - type="error"  → LLM 流式异常 → FinalStep(outcome="failed") → set_failed
     - 其他未知 type → 按 error 处理（兜底）
     
     type 产生于 llm_stream.py（见该模块头部），不由 LLM 输出，是 agent 推断。"""
     step = agent.llm_call_count
     parsed_type = parsed.get("type", "answer")
 
-    # ── type="error" │ yiled ErrorStep ──
+    # ── type="error" │ yiled FinalStep(outcome=failed) ──
     if parsed_type == "error":
         content = parsed.get("content", "") or "LLM流式错误"
         agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - error非reasoning-only, 归零防残留(不变量: 仅reasoning-only分支累加)
         agent.message_builder.add_assistant_message(content)
         print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, error={content}")
-        yield agent._step_emitter.emit(ErrorStep(
-            step=step, error_type="llm_error", error_message=content,
+        # 小欧 2026-07-18: 失败终态改为单条自包含 FinalStep(outcome="failed");
+        # response_text 由 final 事件填充→全路径非空; derive 读 final.outcome 判 failed 不翻转。
+        yield agent._step_emitter.emit(FinalStep(
+            step=step, response="任务执行失败", thought=content,
+            outcome="failed", error_type="llm_error", error_message=content,
         ))
         return
 
-    # ── 未知类型 │ yiled ErrorStep ──
+    # ── 未知类型 │ yiled FinalStep(outcome=failed) ──
     if parsed_type != "answer":
         logger.warning(f"[handle_answer] 未知返回类型: {parsed_type}, 设置为FAILED")
         agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 未知类型非reasoning-only, 归零防残留
@@ -101,8 +118,10 @@ async def handle_answer(agent, parsed: Dict):
         print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, type={parsed_type}, content={content}")
         if content:
             agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
-        yield agent._step_emitter.emit(ErrorStep(
-            step=step, error_type="unknown_response",
+        # 小欧 2026-07-18: 未知响应类型同样改单条自包含 FinalStep(outcome="failed", 同error分支)
+        yield agent._step_emitter.emit(FinalStep(
+            step=step, response="任务执行失败", thought=content,
+            outcome="failed", error_type="unknown_response",
             error_message=f"LLM返回未知响应类型: {parsed_type}",
         ))
         return
@@ -142,6 +161,7 @@ async def handle_answer(agent, parsed: Dict):
                 step=step,
                 response="模型反复思考未产出有效结果，任务已终止（疑似陷入无效循环）",
                 thought=_deduped,
+                outcome="failed",
             ))
             return
         logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入助理消息继续循环(连续reasoning-only={agent._consecutive_reasoning_only})")
@@ -168,5 +188,6 @@ async def handle_answer(agent, parsed: Dict):
     print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response={content}")  # 小欧 2026-07-12 恢复answer分支终态日志(94eac9723合并时误删)
     yield agent._step_emitter.emit(FinalStep(
         step=step, response=content, thought=thought,
+        outcome="completed",
     ))
     agent.message_builder.add_assistant_message(content)
