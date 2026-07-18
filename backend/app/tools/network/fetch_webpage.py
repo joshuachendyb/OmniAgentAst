@@ -5,6 +5,8 @@
 # 2026-07-17 - 小欧 - HTTPStatusError hint 按状态码精化(4xx/5xx/429)
 # 2026-07-17 - 小欧 - fetchpage架构增强: ①提取正文trafilatura优先(html2text/SSR兜底保留) ②Playwright改独立Proactor子循环隔离运行(消Windows Selector NotImplementedError红字) ③SPA回退加外部API(Jina Reader)兜底, 三级降级HTTP→Playwright→外部API→友好提示, 功能零退化
 # 2026-07-17 - 小欧 - 异常捕获增强: httpx.InvalidURL 不经 RequestError/HTTPError 继承链, 原先落入 except Exception 打印全量堆栈造成日志噪声; 在 except RequestError 前新增 except InvalidURL 专捕, 走受控 warning 并返回受控错误结构, 功能零退化
+# 2026-07-18 - 小欧 - 【病根】page.set_default_timeout() 是 Playwright 异步 API 中的同步方法, 原代码 `await page.set_default_timeout(...)` 对同步返回值(None)做 await 抛 TypeError, 致 JS 渲染回退分支崩溃。
+#            【解决思路】去掉误加的 await, 保留同步调用, 功能零退化。
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -509,7 +511,7 @@ def _pw_run(url: str, proxy: Optional[str], timeout: float,
                 browser = await p.chromium.launch(**browser_config)
                 try:
                     page = await browser.new_page()
-                    await page.set_default_timeout(timeout * 1000)
+                    page.set_default_timeout(timeout * 1000)  # 小欧 2026-07-18: 同步方法, 误加await会TypeError
                     await page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
                     current_url = page.url
                     if current_url and current_url != url:
