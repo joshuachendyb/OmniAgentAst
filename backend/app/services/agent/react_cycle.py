@@ -19,6 +19,8 @@
 #          ②_dispatch_handler: 从位置驱动改为outcome驱动(set_failed/set_cancelled/set_completed)
 #          ③可恢复错误(ErrorStep)和可恢复拒绝(_RECOVERABLE_ERRORS)保持不变
 # 2026-07-18 - 小欧 - 修复#7 _dispatch_handler 用循环内单独捕获的 final_event 读 outcome, 不取末事件last_event(末事件未必是final,脆弱); 修复#9 stale注释 MetaStep(cancelled)→FinalStep(outcome="cancelled")
+# 2026-07-18 - 小欧 - F1 fix: 可恢复异常从外层except移入per-step内层try, continue回卷while真重试, 不再误标failed
+# 2026-07-18 - 小欧 - F3 fix: _should_retry_truncated_tool O(n²)嵌套循环→单遍O(n)
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -97,14 +99,13 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
     if not content or len(content) > 500:
         return False
     history = agent.message_builder.conversation_history
-    for i in range(len(history) - 1, -1, -1):
-        msg = history[i]
-        if msg.get("role") == "assistant" and msg.get("tool_calls"):
-            for j in range(i + 1, len(history)):
-                next_msg = history[j]
-                if next_msg.get("role") in ("tool", "observation"):
-                    return False
-            return True
+    _seen_response = False
+    for msg in reversed(history):
+        role = msg.get("role")
+        if role in ("tool", "observation"):
+            _seen_response = True
+        elif role == "assistant" and msg.get("tool_calls"):
+            return not _seen_response
     return False
 
 
@@ -393,9 +394,25 @@ async def run_react_cycle(
                 # 中断流式(已在 agent_runner 改为仅查取消), 故暂停在"下一轮循环顶"干净生效。
                 async for pause_event in task_pause_check(task_id):
                     yield pause_event
-            async for event in _process_single_step(agent, chunk_buffer):
-                yield event
-
+            try:
+                async for event in _process_single_step(agent, chunk_buffer):
+                    yield event
+            except Exception as _step_err:
+                if _is_recoverable_error(_step_err):
+                    agent._retry_count = getattr(agent, '_retry_count', 0) + 1
+                    if agent._retry_count > 3:
+                        logger.error(f"[run_react_cycle] 可恢复错误重试超限: {_step_err}")
+                        set_failed(agent, f"重试超限: {_step_err}")
+                        break
+                    logger.warning(f"[run_react_cycle] 可恢复异常, 第{agent._retry_count}次重试: {_step_err}")
+                    yield agent._step_emitter.emit(MetaStep(
+                        type="retrying",
+                        step=agent.llm_call_count,
+                        content=f"LLM请求异常，准备重试: {_step_err}",
+                    ))
+                    set_status(agent, AgentStatus.RETRYING, str(_step_err)[:200])
+                    continue
+                raise
             if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED):
                 break
 
@@ -433,24 +450,10 @@ async def run_react_cycle(
             set_cancelled(agent)
 
     except Exception as e:
-        logger.error(f"[run_react_cycle] 异常: {e}", exc_info=True)
-        if _is_recoverable_error(e):
-            # 可恢复异常(FC格式/网络/超时) → 系统重试通知, 由 RETRYING 态驱动编排层重试 — 小欧 2026-07-13
-            logger.warning(f"[run_react_cycle] 可恢复异常, 触发重试: {e}")
-            yield agent._step_emitter.emit(MetaStep(
-                type="retrying",
-                step=agent.llm_call_count,
-                content=f"LLM 请求异常，准备重试: {e}",
-            ))
-            agent._retry_count = getattr(agent, '_retry_count', 0) + 1
-            if agent._retry_count > 3:
-                set_failed(agent, f"重试超限: {e}")
-            else:
-                set_status(agent, AgentStatus.RETRYING, str(e)[:200])
-        else:
-            error_step = handle_react_error(agent, e, agent.llm_call_count)
-            yield agent._step_emitter.emit(error_step)
-            set_failed(agent, f"循环异常: {e}"[:200])
+        logger.error(f"[run_react_cycle] 不可恢复异常: {e}", exc_info=True)
+        error_step = handle_react_error(agent, e, agent.llm_call_count)
+        yield agent._step_emitter.emit(error_step)
+        set_failed(agent, f"循环异常: {e}"[:200])
 
     finally:
         _finalize_cycle(agent)
