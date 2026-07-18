@@ -1,5 +1,6 @@
 # 编辑历史:
 # 2026-07-18 - 小欧 - prompt-log生命周期归属修正: 删save()状态谎报升级分支; 新增set_terminal_status()供生产者按真实终态设态
+# 2026-07-18 - 小欧 - 修复#10 删除死代码 mark_completed/mark_error(openai.py消费者已退出日志层, 终态统一由生产者调 set_terminal_status)
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
@@ -450,19 +451,9 @@ class PromptLogger:
             entry["原因"] = reason
         current_log["状态变化记录"].append(entry)
 
-    def mark_completed(self):
-        """标记请求已完成 — 小欧 2026-06-30"""
-        current_log = self._get_current_log()
-        if current_log:
-            current_log["基本信息"]["状态"] = "已完成"
-
-    def mark_error(self, error_msg: str):
-        """标记请求异常终止 — 小欧 2026-06-30"""
-        current_log = self._get_current_log()
-        if current_log:
-            current_log["基本信息"]["状态"] = "异常终止"
-            current_log["基本信息"]["错误信息"] = error_msg
-
+    # 2026-07-18 小欧 删除死代码 mark_completed/mark_error: openai.py 消费者已退出日志层
+    # (删除 start_request/mark_completed/mark_error/save/import 全部5处引用), 终态标签统一由
+    # 生产者 agent_runner 调 set_terminal_status 设置, 此二方法现已无人调用, 删除避免误导。
     def set_terminal_status(self, label: str) -> None:
         """由生产者按真实终态设状态标签（"已完成"/"异常终止"/"已取消"/"已暂停"）— 小欧 2026-07-18"""
         current_log = self._get_current_log()
