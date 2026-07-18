@@ -2,6 +2,8 @@
 """
 DataAnalysis Schema - 数据分析工具参数模型
 
+# 2026-07-18 小欧: AnalyzeDataInput.data+FilterDataInput.data 类型从str改为Union[str,List[Dict]](实现层coerce_json已支持list,schema对齐防假阳性WARNING)
+
 【Schema Docstring 规范】小健 2026-06-18
 一般情况下，严禁给Schema类加docstring。
 仅在以下情况可以添加：
@@ -92,9 +94,9 @@ class AnalyzeDataInput(BaseModel):
         default=None,
         description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时使用。示例:D:/data/sales.csv"
     )
-    data: Optional[str] = Field(
+    data: Optional[Union[str, List[Dict[str, Any]]]] = Field(
         default=None,
-        description="JSON字符串形式的数组数据。严禁与path参数同时使用。示例:'[{\"name\":\"A\",\"value\":10}]'"
+        description="数据。支持两种格式:1.JSON字符串如'[{\"name\":\"A\",\"value\":10}]'; 2.对象数组如[{\"name\":\"A\",\"value\":10}]。严禁与path参数同时使用"
     )
     operations: Optional[List[str]] = Field(
         default=None,
@@ -144,9 +146,9 @@ class FilterDataInput(BaseModel):
         default=None,
         description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时传入。示例:D:/data/users.csv"
     )
-    data: Optional[str] = Field(
+    data: Optional[Union[str, List[Dict[str, Any]]]] = Field(
         default=None,
-        description="JSON字符串形式的数组数据。严禁与path参数同时传入。示例:'[{\"name\":\"A\",\"age\":25}]'"
+        description="数据。支持两种格式:1.JSON字符串如'[{\"name\":\"A\",\"age\":25}]'; 2.对象数组如[{\"name\":\"A\",\"age\":25}]。严禁与path参数同时传入"
     )
     conditions: List[Dict[str, Any]] = Field(
         ..., 
