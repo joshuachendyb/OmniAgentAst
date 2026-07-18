@@ -149,15 +149,17 @@ class LLMClient:
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
         extra_body: Optional[Dict] = None,
+        request_timeout: Optional[int] = None,  # #37 fix: per-request timeout — 小欧 2026-07-18
     ) -> Dict[str, Any]:
-        """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小欧 2026-07-09 新增extra_body"""
+        """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小欧 2026-07-09 新增extra_body; #37 新增request_timeout"""
         body = _build_request_body(
             messages=messages, model=self.model,
             max_tokens=max_tokens, temperature=temperature, seed=seed,
             tools=tools, tool_choice=tool_choice, stream=False,
             extra_body=extra_body,
         )
-        response = await self._client.post("/chat/completions", json=body)
+        _to = httpx.Timeout(request_timeout) if request_timeout else self._default_timeout
+        response = await self._client.post("/chat/completions", json=body, timeout=_to)
         if response.status_code >= 400:
             body_text = response.text
             if response.status_code in _RETRYABLE_STATUS:
@@ -216,11 +218,11 @@ class LLMClient:
                     f"HTTP {response.status_code} 错误: {server_msg or '（服务商未返回错误详情）'}",
                     request=response.request, response=response)
             async for line in response.aiter_lines():
-                if line.startswith("data: "):
-                    data = line[6:]
-                    if data.strip() == "[DONE]":
+                if line.startswith("data:"):  # #33 fix: 兼容无空格 data: — 小欧 2026-07-18
+                    _body = line[len("data:"):].lstrip()
+                    if _body.strip() == "[DONE]":
                         break
-                    yield data
+                    yield _body
 
     async def close(self):
         """关闭客户端,释放连接池 - 小沈 2026-06-09"""

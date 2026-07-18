@@ -75,7 +75,8 @@ class StreamChunk:
                  reasoning: Optional[str] = None, is_reasoning: bool = False,
                  tool_calls: Optional[List[Dict]] = None,
                  raw_data: str = "",
-                 usage: Optional[Dict] = None):
+                 usage: Optional[Dict] = None,
+                 truncated: bool = False):  # #34 fix: 超时截断标记 — 小欧 2026-07-18
         self.content = content
         self.model = model
         self.is_done = is_done
@@ -86,6 +87,7 @@ class StreamChunk:
         self.tool_calls = tool_calls or []
         self.raw_data = raw_data
         self.usage = usage
+        self.truncated = truncated  # #34 fix: 超时截断标记 — 小欧 2026-07-18
 
 
 def create_cancelled_chunk(model: str) -> StreamChunk:

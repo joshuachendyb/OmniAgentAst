@@ -140,7 +140,7 @@ def extract_reasoning_from_chunk(delta: Dict) -> Optional[str]:
         思考文字（如果是思考），否则 None
     """
     # 1) 思考在独立字段里：直接取
-    rc = getattr(delta, 'reasoning_content', None) or delta.get('reasoning_content')
+    rc = delta.get('reasoning_content') or delta.get('reasoning') or delta.get('thinking')
     if rc:
         return rc
     thinking = delta.get('thinking')

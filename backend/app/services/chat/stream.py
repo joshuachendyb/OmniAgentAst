@@ -108,6 +108,9 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
             while offset < len(buffer.event_log):
                 yield format_agent_sse(buffer.event_log[offset])
                 offset += 1
+            # #30 fix:排空后复查 len,防止 done.set() 前 producer 追加丢事件 — 小欧 2026-07-18
+            if offset < len(buffer.event_log):
+                continue
             if buffer.done.is_set():
                 return
             await buffer.cond.wait()

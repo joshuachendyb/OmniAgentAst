@@ -125,10 +125,10 @@ async def _dispatch_handler(agent, llm_response):
     type 不由 LLM 输出，由 agent 推断（详见 llm/core.py 头部）。
     
     状态推断规则:
-    - "retrying" → 置RETRYING（重试由编排层except块处理）
-    - "error" → set_failed
-    - "final" → set_completed
-    - 其他 → continue（不设状态）
+    - 含 retrying → set_status(RETRYING)
+    - 含 final → set_completed（按 outcome 子规则: failed→set_failed, cancelled→set_cancelled）
+    - 含 error → 区分可恢复(拒绝/拦截,不失败,循环继续) 与 不可恢复(set_failed)
+    - 其他 → 不设置状态,继续
     """
     parsed_type = llm_response.get("type", "answer")
     step = agent.llm_call_count
@@ -142,20 +142,21 @@ async def _dispatch_handler(agent, llm_response):
     else:
         handler = handle_answer(agent, llm_response)
 
+    _EV_FINAL, _EV_RETRY, _EV_ERROR = "final", "retrying", "error"
     seen_types = set()
     last_error_event = None
     final_event = None
     async for event in handler:
         seen_types.add(event.type)
-        if event.type == "error":
+        if event.type == _EV_ERROR:
             last_error_event = event
-        elif event.type == "final":
+        elif event.type == _EV_FINAL:
             final_event = event
         yield event
 
-    if "retrying" in seen_types:
+    if _EV_RETRY in seen_types:
         set_status(agent, AgentStatus.RETRYING, "触发重试")
-    elif "final" in seen_types:
+    elif _EV_FINAL in seen_types:
         # outcome 驱动终态声明: 读 FinalStep.outcome, 不依赖位置/类型 — 小欧 2026-07-18
         # 用循环内单独捕获的 final_event(真实 FinalStep), 不取末事件 last_event(#7: 末事件未必是final, 脆弱)
         oc = getattr(final_event, "outcome", "completed")
@@ -165,7 +166,7 @@ async def _dispatch_handler(agent, llm_response):
             set_cancelled(agent)
         else:
             set_completed(agent)
-    elif "error" in seen_types:
+    elif _EV_ERROR in seen_types:
         # 无 final → 可恢复错误(blocked/user_rejected, 循环继续)或原子异常(旧数据)
         error_event = last_error_event
         err_type = getattr(error_event, "error_type", "")
@@ -263,17 +264,6 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             step=step, error_type="empty_response",
             error_message="LLM返回空响应"
         ))
-        return
-
-    # ── 场景B: 任务取消(llm_client._cancelled, 历史兜底; 主路径见循环顶 check_cancelled) ──
-    if getattr(getattr(agent, 'llm_client', None), '_cancelled', False):
-        print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, cancelled")  # 小欧 2026-07-02 控制台
-        yield agent._step_emitter.emit(FinalStep(
-            step=step,
-            response="任务已被中断",
-            outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 终态统一type=final+outcome声明
-        ))
-        set_cancelled(agent)
         return
 
     # ── 场景C: LLM直接回答/纯推理 → 注入复核warning（不重试）— 小健 2026-07-03

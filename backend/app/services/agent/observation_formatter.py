@@ -133,7 +133,8 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     #   两者取"都截断则先到先得"：工具先截→formatter再截→最终observation文本。
     #   若工具上限 < formatter上限，最终长度由工具决定(如searchweb 50项 vs formatter 500)。
     # =========================================================================
-    # _format_scalar_data 36个: writetext, edittext, move, copy, delete, rename, extract,
+    # #40 fix: 与下方 fallback 实际分发顺序一致 — 小欧 2026-07-18
+    # _format_scalar_data 覆盖全部 scalar 工具（与下方 fallback 实际分发顺序一致）
     #   which, download, ping_port, write_docx, write_xlsx, write_pdf, write_pptx,
     #   timenow, timeadd, timediff, calendar, notify, execute_sql, generate_chart,
     #   create_task, delete_task, timer_set, timer_clear,

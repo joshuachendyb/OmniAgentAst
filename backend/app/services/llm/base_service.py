@@ -178,6 +178,7 @@ class BaseAIService:
                 tool_call_accumulator = {}
                 raw_data_buf: list = []
                 usage_data = None
+                _truncated = False  # #34 fix: 超时截断标记 — 小欧 2026-07-18
                 tool_call_streaming_start = None
                 deadline = time.monotonic() + STREAM_TOTAL_TIMEOUT
                 async for data_str in self._llm_sdk.request_stream(
@@ -201,6 +202,7 @@ class BaseAIService:
                     # 此处用 wall-clock deadline 做总时长保护, 超时 break→accumulator→截断修复。
                     if time.monotonic() > deadline:
                         logger.warning(f"[request_stream] 流调用总时长超时({STREAM_TOTAL_TIMEOUT}s), 截断已累积数据")
+                        _truncated = True  # #34 fix — 小欧 2026-07-18
                         break
 
                     raw_data_buf.append(data_str)
@@ -219,6 +221,8 @@ class BaseAIService:
                             tool_call_accumulator[idx]["id"] = entry["id"]
                         if entry.get("name"):
                             tool_call_accumulator[idx]["name"] = entry["name"]
+                        else:  # #32 fix: 空 name 加日志便于观测 — 小欧 2026-07-18
+                            logger.warning(f"[BaseAIService] 收到空 name 的 tool_call delta, 跳过: idx={idx}, entry={entry}")
                         if entry.get("arguments"):
                             tool_call_accumulator[idx]["arguments"] += entry["arguments"]
 
@@ -233,9 +237,9 @@ class BaseAIService:
                         logger.warning(f"[request_stream] tool_call参数流式已持续{time.monotonic()-tool_call_streaming_start:.0f}s, 强制截断")
                         break
 
-                    chunk = self._parse_sse_data(data_str)
-                    if chunk:
-                        yield chunk
+                    for chunk in self._parse_sse_data(data_str):  # #35 fix: generator — 小欧 2026-07-18
+                        if chunk:
+                            yield chunk
 
                 # 流结束后，如有聚合的tool_calls，原生结构一次性yield — 小沈 2026-06-12
                 complete_raw = "\n".join(raw_data_buf)
@@ -287,7 +291,7 @@ class BaseAIService:
                     yield StreamChunk(content="", model=self.model, is_done=False,
                                       tool_calls=tool_calls_list, raw_data=complete_raw)
 
-                yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw, usage=usage_data)
+                yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw, usage=usage_data, truncated=_truncated)  # #34 fix — 小欧 2026-07-18
                 return
 
             except LLMResponseError:
@@ -357,16 +361,38 @@ class BaseAIService:
             logger.warning(f"[BaseAIService] _extract_usage异常: {e}")
             return None
 
-    def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
-        """解析SSE data字符串为StreamChunk - 小沈 2026-06-09
-        
-        此模块产出 StreamChunk（中间格式），不含 type 字段。
-        type（action/answer/error）由 llm_stream.py call_llm_stream()
-        在流结束后根据工具调用有无推断产生。"""
+    def _parse_sse_data(self, data_str: str):  # → Generator[StreamChunk, None, None] — #35 fix
+        """解析 SSE data 行, yield StreamChunk — 2026-06-12 小沈 FC-only: tool_calls原生传递
+        小沈 2026-06-14 新增tool_calls_delta逻辑
+        小欧 2026-07-10 M-17: usage兼容纯字符串
+        2026-07-14 小欧 补充捕获IndexError(空choices安全异常)
+        #35 fix: reasoning+content 同 chunk 各 yield 一帧, 不再因 reasoning 存在而丢弃 content — 小欧 2026-07-18"""
         try:
             data = parse_json(data_str)
             if data is None:
-                return None
+                return
+
+            choices = data.get("choices", [])
+            if not choices:
+                return
+
+            delta = choices[0].get("delta", {})
+            content = delta.get("content", "") or ""
+            reasoning_text = extract_reasoning_from_chunk(delta) or ""
+
+            if reasoning_text:
+                yield StreamChunk(content=reasoning_text, model=self.model, is_done=False, is_reasoning=True, raw_data=data_str)
+            if content:
+                yield StreamChunk(content=content, model=self.model, is_done=False, is_reasoning=False, raw_data=data_str)
+            if not reasoning_text and not content:
+                tool_calls_delta = delta.get("tool_calls", [])
+                if not tool_calls_delta:
+                    return
+                # tool_calls delta 处理顺延至外层
+                yield None
+        except (json.JSONDecodeError, AttributeError, IndexError) as e:
+            logger.warning(f"[_parse_sse_data] 解析异常: {e}")
+            return
 
             choices = data.get("choices", [])
             if not choices:

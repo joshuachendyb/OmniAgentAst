@@ -121,12 +121,14 @@ class SystemErrorClassifier:
         # EndOfStream 由黑名单默认SERVER处理，不需特殊case — 小沈 2026-07-05
         return None
     
+    _STATUS_CTX_RE = re.compile(r"status[_\s]*code['\"]?\s*[:=]?\s*(\d{3})", re.IGNORECASE)
+
     @staticmethod
     def _check_http_status_errors(error_msg: str) -> Optional[SystemErrorCategory]:
-        """检查HTTP状态码错误"""
-        for status_code, error_category in HTTP_STATUS_TO_ERROR_TYPE.items():
-            if re.search(rf'\b{status_code}\b', error_msg):
-                return error_category
+        """检查HTTP状态码错误 — #36 fix: 匹配 status_code 语境防误匹配数字 — 小欧 2026-07-18"""
+        m = SystemErrorClassifier._STATUS_CTX_RE.search(error_msg)
+        if m:
+            return HTTP_STATUS_TO_ERROR_TYPE.get(int(m.group(1)))
         return None
     
     @staticmethod
