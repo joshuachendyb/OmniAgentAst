@@ -15,6 +15,7 @@
 #   【改法】①场景B/C/D/循环结束无终态: MetaStep(cancelled)→FinalStep(outcome="cancelled")
 #          ②_dispatch_handler: 从位置驱动改为outcome驱动(set_failed/set_cancelled/set_completed)
 #          ③可恢复错误(ErrorStep)和可恢复拒绝(_RECOVERABLE_ERRORS)保持不变
+# 2026-07-18 - 小欧 - 修复#7 _dispatch_handler 用循环内单独捕获的 final_event 读 outcome, 不取末事件last_event(末事件未必是final,脆弱); 修复#9 stale注释 MetaStep(cancelled)→FinalStep(outcome="cancelled")
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -142,20 +143,21 @@ async def _dispatch_handler(agent, llm_response):
         handler = handle_answer(agent, llm_response)
 
     seen_types = set()
-    last_event = None
     last_error_event = None
+    final_event = None
     async for event in handler:
         seen_types.add(event.type)
-        last_event = event
         if event.type == "error":
             last_error_event = event
+        elif event.type == "final":
+            final_event = event
         yield event
 
     if "retrying" in seen_types:
         set_status(agent, AgentStatus.RETRYING, "触发重试")
     elif "final" in seen_types:
         # outcome 驱动终态声明: 读 FinalStep.outcome, 不依赖位置/类型 — 小欧 2026-07-18
-        final_event = last_event
+        # 用循环内单独捕获的 final_event(真实 FinalStep), 不取末事件 last_event(#7: 末事件未必是final, 脆弱)
         oc = getattr(final_event, "outcome", "completed")
         if oc == "failed":
             set_failed(agent, getattr(final_event, "error_message", "") or final_event.get_content())
@@ -370,8 +372,9 @@ async def run_react_cycle(
             # ── 用户取消检测(循环粒度, 方案 B) ──
             # 小沈 2026-07-13: 本处采用"循环粒度取消"(方案 B), 不采用"流式中途打断"(方案 A)。
             # 选 B 不选 A 的原因(利弊权衡, 见 doc-7月优化/流式LLM中途取消方案取舍分析-小沈-2026-07-13.md):
-            #   1) 正确性已满足: B 在每轮 LLM 调用前检测 check_cancelled, 取消即干净终止为
-            #      MetaStep(cancelled), DB status 列落 cancelled, 终态语义 100% 正确, 绝不再误判 failed。
+    #   1) 正确性已满足: B 在每轮 LLM 调用前检测 check_cancelled, 取消即干净终止为
+    #      FinalStep(outcome="cancelled")(2026-07-18 重构: 原 MetaStep(cancelled)→FinalStep),
+    #      DB status 列落 cancelled, 终态语义 100% 正确, 绝不再误判 failed。
             #   2) 零回归风险: A 需给 LLMClient 加 set_stop_check 并在 httpx 流式热路径逐 chunk 轮询,
             #      涉及 client_sdk/llm_stream/call_llm_with_fallback 重试链路, 改动面大、易引入连接泄漏/
             #      异常语义混淆(CancelledError 是 BaseException 会绕过 except Exception), 必须配真实 LLM E2E。
