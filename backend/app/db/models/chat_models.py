@@ -65,7 +65,7 @@ class MessageResponse(BaseModel):
     session_id: str = Field(..., description="会话 ID")
     role: str = Field(..., description="角色")
     content: str = Field(..., description="消息内容")
-    timestamp: int = Field(..., description="时间戳(毫秒,int类型)")  # 【修复 2026-04-01 小沈】从str改为int
+    timestamp: str = Field(..., description="时间戳(ISO 8601 UTC格式)")  # 小欧 2026-07-18 统一切换为format_timestamp字符串
     execution_steps: Optional[list] = Field(None, description="执行步骤(数组格式)")
     display_name: Optional[str] = Field(None, description="模型显示名称(记录消息收发时使用的模型)")
     thought: Optional[str] = Field(None, description="LLM 推理过程")  # 小欧 2026-07-16
