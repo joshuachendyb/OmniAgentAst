@@ -18,6 +18,8 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
    2026-07-18 小欧 #34 fix: StreamChunk.truncated字段;超时截断时标记
    2026-07-18 小欧 #35 fix: _parse_sse_data改为generator,reasoning+content同chunk各yield一帧
     2026-07-18 小欧 #7 fix: 并行tool_calls累加器遇重复idx时自增去重(while idx in tool_call_accumulator: idx+=1), 缺index或全0的并行调用不再塌缩成一个
+   2026-07-18 小欧 #38 fix: 流结束后过滤空name的幽灵tool_call delta（非真实工具调用,不触发L2重试）
+    2026-07-18 小欧 #7回归修正: 改while自增为if not in直接合并——OpenAI流式协议中单tool_call以稳定index跨多delta续传(首delta带name,后续仅arguments), 原#7自增致name与arguments撕裂不同槽位→解析失败→FC降级
 """
 
 import asyncio

@@ -3,6 +3,7 @@
 # 2026-07-16 - 小欧 - operations表重命名为task_operations(正名)+在线迁移(RENAME旧表)+操作ID统一generate_operation_id+新增mark_rolled_back方法
 # 2026-07-18 - 小欧 - complete_task 的 completed_at 改用 now_str() 序列化入库, 消除对已废弃默认 datetime 适配器(Python3.12+ DeprecationWarning)的依赖, 与 created_at(CURRENT_TIMESTAMP) 空格秒格式统一
 # 2026-07-18 - 小欧 - complete_task/create_task/add_operation 时间统一 get_utc_timestamp() UTC Z; TaskQueries 三返回方法 format_timestamp 对外兜底
+# 2026-07-18 - 小欧 - add_operation/complete_task INSERT补created_at列对齐第13值get_utc_timestamp()
 """
 task_db — 任务DB持久化（tasks表 + operations表）
 
