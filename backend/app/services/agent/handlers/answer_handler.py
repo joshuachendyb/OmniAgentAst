@@ -18,6 +18,7 @@
 #         取消→FinalStep(outcome="cancelled"); ErrorStep仅可恢复;
 #         agent_runner守卫兜底无final路径; derive读final.outcome。
 # 【增强】response_text全路径非空; 失败细节自包含; 内部set_failed全覆盖。
+# 2026-07-18 - 小欧 - 修复#6拼写错 yiled→yield (2处)
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -96,7 +97,7 @@ async def handle_answer(agent, parsed: Dict):
     step = agent.llm_call_count
     parsed_type = parsed.get("type", "answer")
 
-    # ── type="error" │ yiled FinalStep(outcome=failed) ──
+    # ── type="error" │ yield FinalStep(outcome=failed) ──
     if parsed_type == "error":
         content = parsed.get("content", "") or "LLM流式错误"
         agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - error非reasoning-only, 归零防残留(不变量: 仅reasoning-only分支累加)
@@ -110,7 +111,7 @@ async def handle_answer(agent, parsed: Dict):
         ))
         return
 
-    # ── 未知类型 │ yiled FinalStep(outcome=failed) ──
+    # ── 未知类型 │ yield FinalStep(outcome=failed) ──
     if parsed_type != "answer":
         logger.warning(f"[handle_answer] 未知返回类型: {parsed_type}, 设置为FAILED")
         agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 未知类型非reasoning-only, 归零防残留
