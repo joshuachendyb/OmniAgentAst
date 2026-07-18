@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-14 - 小欧 - _load_previous_messages改为从chat_message_steps组装(load_execution_steps), 多轮上下文读取新表
 # 2026-07-18 - 小欧 - #30 fix: _read_stream排空后复查len(buffer.event_log),防done前追加丢事件
+# 2026-07-18 - 小欧 - F4 fix: _parse_tool_calls try收窄到单步, 单步参数异常不株连整批
 """
 stream — SSE流运行器（消费者）
 
@@ -26,23 +27,34 @@ from app.services.chat.storage import load_execution_steps  # 从chat_message_st
 
 
 def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
-    """从execution_steps JSON提取tool_calls列表 — 小欧 2026-06-25 从_load_previous_messages提取"""
+    """从execution_steps JSON提取tool_calls列表
+    小欧 2026-06-25 从_load_previous_messages提取
+    小欧 2026-07-18 F4修复: try收窄到单步, 单步参数异常不株连整批"""
     try:
         exec_steps = json.loads(exec_steps_json)
-        tool_calls = []
-        for step in exec_steps:
-            if step.get("type") == "action_tool":
-                tool_calls.append({
-                    "id": f"call_{msg_id}_{step.get('step', 0)}",
-                    "type": "function",
-                    "function": {
-                        "name": step.get("tool_name", ""),
-                        "arguments": __import__("json").dumps(step.get("tool_params", {}), ensure_ascii=False)
-                    }
-                })
-        return tool_calls
     except Exception:
         return []
+    if not isinstance(exec_steps, list):
+        logger.warning(f"[_parse_tool_calls] exec_steps非list, 跳过: {type(exec_steps)}")
+        return []
+    tool_calls = []
+    for step in exec_steps:
+        if step.get("type") != "action_tool":
+            continue
+        try:
+            arguments = json.dumps(step.get("tool_params", {}), ensure_ascii=False)
+        except (TypeError, ValueError):
+            arguments = "{}"
+            logger.warning(f"[_parse_tool_calls] tool_params不可序列化, 降级为{{}}: {step.get('tool_name')}")
+        tool_calls.append({
+            "id": f"call_{msg_id}_{step.get('step', 0)}",
+            "type": "function",
+            "function": {
+                "name": step.get("tool_name", ""),
+                "arguments": arguments,
+            }
+        })
+    return tool_calls
 
 
 def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
