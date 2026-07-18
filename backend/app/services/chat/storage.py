@@ -3,10 +3,11 @@
 # 2026-07-14 - 小欧 - 新增allocate_and_insert_message/append_execution_step/load_execution_steps/finalize_message四函数,支撑运行期逐步落库+渐进耐久
 # 2026-07-14 - 小欧 - 修复load_execution_steps: 无步骤且无legacy blob时返回[]而非None,避免API返回execution_steps=None
 # 2026-07-18 - 小欧 - FinalStep多态自包含终态重构: derive_status_from_steps改为读最后一条final.outcome
-#   【病根】原derive_status_from_steps基于type推断终态(ccancelled→cancelled, error→failed),
+#   【病根】原derive_status_from_steps基于type推断终态(cancelled→cancelled, error→failed),
 #          与FinalStep多态设计不一致; 且type=final始终返回completed, 无法区分failed终态。
 #   【改法】改为遍历找最后一条type=final, 读其outcome字段返回; 无final时兜底返回completed。
 # 2026-07-18 - 小欧 - create_timestamp→get_utc_timestamp() (3处); append_execution_step 补 created_at 入库
+# 2026-07-18 - 小欧 - 修复#1空步骤谎报完成: derive_status_from_steps 空/无final步默认"failed"(fail-safe, 对齐agent_runner兜底); 修复#6拼写错 ccancelled→cancelled
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -54,14 +55,16 @@ class ExecutionStepsUpdate(BaseModel):
 def derive_status_from_steps(steps: Optional[list]) -> str:
     """从 execution_steps 推导任务终态(status列兜底) — 小欧 2026-07-13 初版
     2026-07-18 小欧 重构: 读最后一条 final.outcome(显式声明终态结果),
-    无向后/旧数据兼容(用户: 旧数据不合适可删除或清库)。"""
+    无向后/旧数据兼容(用户: 旧数据不合适可删除或清库)。
+    失败默认"failed"(fail-safe, 与 agent_runner 终态兜底一致): 空步骤/无终态步一律判失败,
+    杜绝"空步骤谎报完成"。— 北京老陈 2026-07-18"""
     if not steps:
-        return "completed"
+        return "failed"
     last_final = None
     for s in steps:
         if isinstance(s, dict) and s.get("type") == "final":
             last_final = s
-    return last_final.get("outcome", "completed") if last_final else "completed"
+    return last_final.get("outcome", "failed") if last_final else "failed"
 
 
 class AssistantMessageIdAllocator:
