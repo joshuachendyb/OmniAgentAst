@@ -7,6 +7,8 @@
 #            Errno22真实根因为time_utils.ensure_timestamp_milliseconds潜伏bug(Python3.13宽松fromisoformat+漏捕OSError),与WAL无关,
 #            DELETE改动属误诊白做但无害、当时未回退。2026-07-17 E2E验证暴露DELETE模式在chat_message_steps膨胀185万行/2.7GB时
 #            写I/O拥塞(每次写journal+fsync)致create_session同步写>10s超时,故回归WAL统一三库消除写拥塞。详见notes/经验累积文档。
+# 2026-07-18 - 小欧 - 【病根】调用方(如 action_handler)把 task_id 等直接作SQL参数, 若该值为 MagicMock/非基元类型, sqlite3 抛不透明 InterfaceError('type X is not supported'), 排查困难且易误判为DB故障。
+#            【解决思路】get_conn 出口用薄包装 _ParamSafeConnection 在 execute/executemany 边界统一校验参数类型(仅允许 str/int/float/bytes/bool/None), 非基元类型直接抛清晰错误; 调用方零改动(无退化), 单一闸门复用(SRP/DRY)。
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -40,6 +42,46 @@ from app.db.db_initializer import (
     init_chat_db, init_operations_db, init_task_tracker_db,
 )
 
+
+class _ParamSafeConnection:
+    """DB 参数安全闸门(薄包装) — 小欧 2026-07-18
+
+    问题根因: 调用方(如 action_handler)把 task_id 等直接作 SQL 参数,
+    若该值为 MagicMock/非基元类型, sqlite3 会抛不透明的 InterfaceError('type X is not supported')。
+    修复逻辑: 在 execute/executemany 边界统一校验参数类型, 非基元类型(str/int/float/bytes/bool/None)
+    直接拒绝对外报清晰错误; 所有调用方零改动(无退化), 复用此单一闸门(DRY/SRP)。
+    """
+
+    _SAFE_PARAM_TYPES = (str, int, float, bytes, bool, type(None))
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+
+    @staticmethod
+    def _validate(params) -> None:
+        if params is None:
+            return
+        if not isinstance(params, (tuple, list, dict)):
+            params = (params,)
+        for _p in params:
+            if not isinstance(_p, _ParamSafeConnection._SAFE_PARAM_TYPES):
+                raise ValueError(
+                    f"DB 参数类型不被支持: {type(_p).__name__}, "
+                    f"仅允许 {[t.__name__ for t in _ParamSafeConnection._SAFE_PARAM_TYPES]}"
+                )
+
+    def execute(self, sql, params=None):
+        self._validate(params)
+        return self._conn.execute(sql, params)
+
+    def executemany(self, sql, params_seq):
+        _seq = list(params_seq)
+        for _params in _seq:
+            self._validate(_params)
+        return self._conn.executemany(sql, _seq)
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 
 class DatabaseManager:
@@ -93,8 +135,8 @@ class DatabaseManager:
             # M-05: SQLite默认OFF，外键约束不生效 — 小欧 2026-07-10
             conn.execute("PRAGMA foreign_keys=ON")
             
-            yield conn
-            
+            yield _ParamSafeConnection(conn)  # 小欧 2026-07-18: 参数安全闸门包装, 校验SQL参数类型(非基元类型抛清晰错误)
+
             conn.commit()
             
         except sqlite3.Error as e:
