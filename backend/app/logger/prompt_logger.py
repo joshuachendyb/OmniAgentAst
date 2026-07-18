@@ -1,6 +1,7 @@
 # 编辑历史:
 # 2026-07-18 - 小欧 - prompt-log生命周期归属修正: 删save()状态谎报升级分支; 新增set_terminal_status()供生产者按真实终态设态
 # 2026-07-18 - 小欧 - 修复#10 删除死代码 mark_completed/mark_error(openai.py消费者已退出日志层, 终态统一由生产者调 set_terminal_status)
+# 2026-07-18 - 小欧 - #48 fix: 文件名加uuid4().hex[:8]片段防覆蓋
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 

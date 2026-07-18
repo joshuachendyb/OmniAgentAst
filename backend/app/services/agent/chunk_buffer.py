@@ -7,6 +7,7 @@ ChunkBuffer — chunk拼接、阈值检测、flush管理 — 小沈 2026-05-25
 
 # 编辑历史:
 # 2026-07-18 小欧 #6 fix: 删除重复定义的should_force_stop(44-51)与含未定义变量content的buggy clear(62-66); 运行时正确版(68-75/77-79)保留
+# 2026-07-18 小欧 #46 fix: max_without_promote→max_chunks_before_stop，消除误导命名
 # 【3.9修复 北京老陈 2026-05-31】阈值统一从constants.py读取
 from app.constants import MAX_CONSECUTIVE_CHUNKS, MAX_CHUNKS_WITHOUT_PROMOTE  # noqa: F401 - 作为默认值使用
 

@@ -13,6 +13,10 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
    2026-07-17 小沈 FC重命名: FCFormatError→LLMResponseError, 导入路径同步更新
    2026-07-17 小欧 流式截断落库修复: 落库 tool_call.arguments 改为使用已解析规范化后的 params(json.dumps), 而非原始流式串。原因: 流式总超时截断时原始串为非完整JSON, 直接落库会在下一轮回传给LLM API时触发参数校验失败; 以已成功解析(或已自动修补)的合法dict为准, 保证历史消息 arguments 永远合法, 工具已执行的结果得以保留, 功能零退化
     2026-07-17 小欧 429配额耗尽增强: 重试耗尽后对前端输出"配额/限流耗尽"而非泛化"服务器错误", 提升可观测性
+   2026-07-18 小欧 #7 fix: 并行tool_calls累加器遇重复idx自增去重
+   2026-07-18 小欧 #32 fix: 空name tool_call delta加warning日志
+   2026-07-18 小欧 #34 fix: StreamChunk.truncated字段;超时截断时标记
+   2026-07-18 小欧 #35 fix: _parse_sse_data改为generator,reasoning+content同chunk各yield一帧
     2026-07-18 小欧 #7 fix: 并行tool_calls累加器遇重复idx时自增去重(while idx in tool_call_accumulator: idx+=1), 缺index或全0的并行调用不再塌缩成一个
 """
 

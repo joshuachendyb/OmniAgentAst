@@ -9,6 +9,7 @@
 # 2026-07-18 - 小欧 - create_timestamp→get_utc_timestamp() (3处); append_execution_step 补 created_at 入库
 # 2026-07-18 - 小欧 - 修复#1空步骤谎报完成: derive_status_from_steps 空/无final步默认"failed"(fail-safe, 对齐agent_runner兜底); 修复#6拼写错 ccancelled→cancelled
 # 2026-07-18 - 小欧 - #17 fix: allocate_and_insert_message 首行补 ensure_session_exists, 消除孤儿消息风险
+# 2026-07-18 - 小欧 - #22 fix: allocator锁范围扩大覆盖SELECT+dict写入,消除竞态
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入

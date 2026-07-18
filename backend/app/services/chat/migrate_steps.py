@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 小欧 #5 fix: _needs_migration final分支补response字段
 """
 migrate_steps — execution_steps 一次性数据迁移
 

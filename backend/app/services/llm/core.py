@@ -1,4 +1,6 @@
 ﻿# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 小欧 #34 fix: StreamChunk新增truncated字段
 """
 LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05-27
 

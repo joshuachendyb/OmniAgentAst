@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 - 小欧 - OperationRecord/query_animation_operations 时间字段 format_timestamp 对外兜底 UTC Z
+# 2026-07-18 - 小欧 - #24 fix: SELECT * 替换为显式列名列表(第49行get_operation/第62行get_session_operations)
 """
 文件操作查询 — 所有file_operations表只读查询
 

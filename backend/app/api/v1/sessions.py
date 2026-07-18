@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - #23 fix: 删手动BEGIN/COMMIT，归属get_conn事务管理
 """
 sessions — merged from sessions/ 7 files
 COPY — 小欧 2026-07-10

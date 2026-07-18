@@ -7,6 +7,7 @@ sse — 执行步骤流式查看
 # 2026-07-14 - 小欧 - _generate_execution_stream改为从chat_message_steps读取步骤列表, SELECT去除execution_steps列, 统一步骤解析走load_execution_steps
 # 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() 时间统一
 # 2026-07-18 - 小欧 - #18 fix: execution_steps 遍历加 step is None continue 防御, 单条 json 解析失败不触发 AttributeError
+# 2026-07-18 - 小欧 - #21 fix: 预读数据退出with再yield,连接不占SSE流
 
 import json
 import asyncio

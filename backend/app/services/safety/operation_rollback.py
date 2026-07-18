@@ -3,6 +3,7 @@
 # 2026-07-16 - 小欧 - rollback_session 改用 get_tracker().mark_rolled_back() 贯通 task_tracker 统计(消除跨库死链), 删除直接UPDATE旧operations表逻辑
 # 2026-07-18 - 小欧 - rolled_back_at 改 get_utc_timestamp() 入库 UTC Z, 消除 datetime.now() 裸传 sqlite3
 # 2026-07-18 - 小欧 - #1 fix: 新增 MODIFY/COPY/COMPRESS 三条回滚分支(MODIFY用备份还原, COPY/COMPRESS删目标); #2 fix: MOVE回滚前检测source是否被新文件占用, 先备份再移回, 杜绝覆盖丢失
+# 2026-07-18 - 小欧 - #16 fix: rollback_session失败时添加warning提示而非静默
 """
 operation_rollback — 操作回滚
 

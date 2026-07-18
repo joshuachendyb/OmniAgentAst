@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-07-18 小欧 #4 fix: _file_tool_names从模块函数名改为注册名(delete/copy/move/edittext/writetext/compress),op_id双表贯通恢复
+# 2026-07-18 小欧 #11 fix: wait_for_confirmation_result超时返回expired=True;超时/拒绝分流
+# 2026-07-18 小欧 #12 fix: check_safety_and_confirm拒绝不再return终止整批,收集_denied后继续,最终只执行通过的call
 # 记录 2026-07-13 小欧 add_tool_result异常日志带类型与repr
 # 记录 2026-07-16 小欧 op_id双表贯通修复
 # 记录 2026-07-18 小欧 FinalStep多态自包含终态重构:

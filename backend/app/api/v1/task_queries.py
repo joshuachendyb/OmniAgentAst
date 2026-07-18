@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-16 - 小欧 - 新增 rollback / file-operations / file-operations/report(text|html|json) 三API
 # 2026-07-18 - 小欧 - file-operations API created_at 改 format_timestamp 对外兜底 UTC Z
+# 2026-07-18 - 小欧 - #44 fix: 消除dict(zip())双重调用，改用for...in d for d in [dict(...)]单次构建
 """Task 查询 API 路由
 
 提供任务查询接口:单个任务、最近任务列表、操作明细。

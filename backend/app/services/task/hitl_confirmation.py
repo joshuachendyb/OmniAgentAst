@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 - 小欧 - #11 fix: wait_for_confirmation_result 超时返回加 expired=True 标记, 供 action_handler 分流超时/拒绝
+# 2026-07-18 - 小欧 - #42 fix: _pending_confirmations 加 threading.Lock 防并发读写
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 

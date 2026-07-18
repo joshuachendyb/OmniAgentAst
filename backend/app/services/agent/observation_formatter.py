@@ -4,6 +4,7 @@
 # 记录 2026-07-14 小沈 grep匹配内容与上下文行截断防OOM
 # 记录 2026-07-15 小欧 常量归一化治理: snippet/HTML摘要/sysinfo字段截断改引用tool_constants, 功能零退化
 # 记录 2026-07-17 小欧 修复_format_items丢弃url: 原if desc/elif url二选一在有snippet时丢弃url, 致searchweb等"搜索→打开"工作流LLM拿不到URL无法fetchpage而空转(实测task-2ffbc517: 28分钟/1922s/11次LLM调用/重复63%); 改为desc与url并存输出(url为fetchpage必需入参), 功能零退化
+# 2026-07-18 小欧 #40 fix: 修正注释与fallback顺序一致
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 

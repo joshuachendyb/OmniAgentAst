@@ -5,6 +5,7 @@
 # 2026-07-15 - 小欧 - HTTP常量归并: HTTPX_TIMEOUT_DEFAULT+TOOL_BROWSER_UA+TOOL_RETRYABLE_HTTP_CODES 从1.1/10节移至第4节(网络工具HTTP常量), 消除散落
 # 2026-07-15 - 小欧 - TOOL_RETRY_CONFIG 从 tool_retry_engine.py 迁入第4节, 与 TOOL_RETRYABLE_HTTP_CODES 相邻
 # 注: 本文件数值型长度/上限/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
+# 2026-07-18 - 小欧 - #39 fix: TOOL_TIMEOUTS清理死键(合并的window_maximize/minimize/clipboard_read/write等),补真实注册名(set_window_state/clipboard)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 

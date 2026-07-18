@@ -1,3 +1,6 @@
+# 编辑历史:
+# 2026-07-18 小欧 #8 fix: 模块级try/except改为函数内lazy import,消除循环导入
+# 2026-07-18 小欧 #36 fix: _check_http_status_errors改用context-aware正则,防误匹配裸数字
 """
 【系统层】系统级错误分类器 — 小欧 2026-06-30；小沈 2026-07-05 黑名单重构
 

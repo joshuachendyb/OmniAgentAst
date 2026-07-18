@@ -6,6 +6,9 @@
 #   - handler 保留 add_observation/add_assistant_message, 不绕路
 # 记录 2026-07-17 小沈 FC重命名: import/LLMResponseError同步
 # 记录 2026-07-17 小欧 B3扩展+修正: 检测reasoning-only空转并软引导(修正has_tool_results屏蔽使已调工具后仍可警告); 改add_observation→add_assistant_message(避免空tool_call_id孤立tool消息致LLM参数不合法, 参照edca06261昨天修正); warning去具体工具名
+# 2026-07-18 小欧 #27 fix: 删llm_client._cancelled死分支
+# 2026-07-18 小欧 #28 fix: 更新docstring状态推断规则
+# 2026-07-18 小欧 #29 fix: 抽取_EV_FINAL/_EV_RETRY/_EV_ERROR常量
 # 记录 2026-07-18 小欧 FinalStep多态自包含终态重构:
 #   【病根】原react_cycle中取消/截断/无终态等路径用MetaStep(cancelled)表示终态,
 #          与answer_handler的FinalStep(completed)不一致; _dispatch_handler基于event.type位置推断终态,

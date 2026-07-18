@@ -11,6 +11,7 @@
 #   【改法】①__init__新增outcome/error_type/error_message参数(默认值向后兼容)
 #          ②新增三个@property读取器 ③_extra_fields()输出这三个字段
 #          ④TYPE="final"不变, IS_DONE=True不变, 向后兼容旧数据。
+# 2026-07-18 小欧 #26 fix: outcome参数Literal["completed","failed","cancelled"]约束
 
 from typing import Any, Dict, Literal, Optional
 

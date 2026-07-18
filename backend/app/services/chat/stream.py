@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-14 - 小欧 - _load_previous_messages改为从chat_message_steps组装(load_execution_steps), 多轮上下文读取新表
+# 2026-07-18 - 小欧 - #30 fix: _read_stream排空后复查len(buffer.event_log),防done前追加丢事件
 """
 stream — SSE流运行器（消费者）
 

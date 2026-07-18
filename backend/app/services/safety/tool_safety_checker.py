@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 小欧 #14 fix: 删known_risk.requires_confirmation死分支
+# 2026-07-18 小欧 #15/#50 fix: 删SafetyResult.is_safe死字段
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
