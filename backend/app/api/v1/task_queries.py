@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-16 - 小欧 - 新增 rollback / file-operations / file-operations/report(text|html|json) 三API
+# 2026-07-18 - 小欧 - file-operations API created_at 改 format_timestamp 对外兜底 UTC Z
 """Task 查询 API 路由
 
 提供任务查询接口:单个任务、最近任务列表、操作明细。
@@ -15,6 +16,7 @@ from app.db.operation_queries import query_file_operations
 from app.services.visualization.text_report import generate_text_report
 from app.services.visualization.html_report import generate_html_report
 from app.services.visualization.json_report import generate_json_report
+from app.utils.time_utils import format_timestamp  # 小欧 2026-07-18 API 对外契约统一兜底
 
 router = APIRouter()
 _queries = TaskQueries()
@@ -64,7 +66,10 @@ def get_file_operations(task_id: str):
         "operation_type", "source_path", "destination_path", "status",
         "file_size", "is_directory", "created_at", "error_message",
     ]
-    return [dict(zip(columns, row)) for row in rows]
+    return [{
+        **dict(zip(columns, row)),
+        "created_at": format_timestamp(dict(zip(columns, row)).get("created_at")),
+    } for row in rows]
 
 
 @router.get("/tasks/{task_id}/file-operations/report")

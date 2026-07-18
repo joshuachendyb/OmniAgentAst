@@ -11,6 +11,7 @@
 #            【解决思路】get_conn 出口用薄包装 _ParamSafeConnection 在 execute/executemany 边界统一校验参数类型(仅允许 str/int/float/bytes/bool/None), 非基元类型直接抛清晰错误; 调用方零改动(无退化), 单一闸门复用(SRP/DRY)。
 # 2026-07-18 小沈 修复: _ParamSafeConnection.execute 显式传 None 触发 sqlite3.ProgrammingError(parameters are of unsupported type), 致后端启动失败(init_chat_db 的 CREATE INDEX/ALTER TABLE 均走包装且 params=None); 改为 params is None 时调 self._conn.execute(sql) 不传 None, 冗余最小、单一闸门复用(SRP/KISS)。
 # 2026-07-18 小欧 修复回归: _SAFE_PARAM_TYPES 增加 datetime/date/time; sqlite3原生支持此三类参数(内置适配器转ISO串), 原仅允许基元类型致 task_db.complete_task(datetime.now())被误拦(日志报"DB参数类型不被支持: datetime"), 属本次闸门引入的回归。
+# 2026-07-18 - 小欧 - _validate 改 datetime/date→convert_to_utc() 自动归一化 UTC Z; _SAFE_PARAM_TYPES 移除 datetime/date 不依赖 sqlite3 废弃适配器
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -38,9 +39,10 @@ Author: 小沈 - 2026-05-28
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Iterator
 from app.logger import logger
+from app.utils.time_utils import convert_to_utc
 from app.db.db_initializer import (
     init_chat_db, init_operations_db, init_task_tracker_db,
 )
@@ -55,38 +57,42 @@ class _ParamSafeConnection:
     直接拒绝对外报清晰错误; 所有调用方零改动(无退化), 复用此单一闸门(DRY/SRP)。
     """
 
-    _SAFE_PARAM_TYPES = (str, int, float, bytes, bool, type(None),
-                          datetime, date)  # 小欧 2026-07-18: sqlite3原生支持datetime/date/time参数(内置适配器转ISO串), 须放行否则complete_task(datetime.now())等被误拦(回归unit-09暴露)
+    _SAFE_PARAM_TYPES = (str, int, float, bytes, bool, type(None))  # datetime/date 在 _validate 中自动转 UTC Z 入库, 不依赖 sqlite3 废弃适配器; 小欧 2026-07-18
 
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
 
     @staticmethod
-    def _validate(params) -> None:
+    def _validate(params):
+        """验证并转换参数: datetime/date 自动 UTC ISO 8601 Z 字符串; 返回安全参数列表(或 None/dict) — 小欧 2026-07-18"""
         if params is None:
-            return
-        if not isinstance(params, (tuple, list, dict)):
+            return None
+        if isinstance(params, dict):
+            return {k: convert_to_utc(v) if isinstance(v, (datetime, date)) else v
+                    for k, v in params.items()}
+        if not isinstance(params, (tuple, list)):
             params = (params,)
+        result = []
         for _p in params:
+            if isinstance(_p, (datetime, date)):
+                _p = convert_to_utc(_p)  # 边界自动归一化: datetime→UTC ISO 8601 Z
             if not isinstance(_p, _ParamSafeConnection._SAFE_PARAM_TYPES):
                 raise ValueError(
                     f"DB 参数类型不被支持: {type(_p).__name__}, "
                     f"仅允许 {[t.__name__ for t in _ParamSafeConnection._SAFE_PARAM_TYPES]}"
                 )
+            result.append(_p)
+        return result
 
     def execute(self, sql, params=None):
-        self._validate(params)
-        # KISS-DIRECT: 本机 Python3.13/sqlite3 对 execute(sql, None) 显式传 None 抛
-        # ProgrammingError(parameters are of unsupported type), 故 params 为 None 时直接调 execute(sql)
-        if params is None:
+        safe_params = self._validate(params)
+        if safe_params is None:
             return self._conn.execute(sql)
-        return self._conn.execute(sql, params)
+        return self._conn.execute(sql, safe_params)
 
     def executemany(self, sql, params_seq):
-        _seq = list(params_seq)
-        for _params in _seq:
-            self._validate(_params)
-        return self._conn.executemany(sql, _seq)
+        seq = [self._validate(p) for p in params_seq]
+        return self._conn.executemany(sql, seq)
 
     def __getattr__(self, name):
         return getattr(self._conn, name)

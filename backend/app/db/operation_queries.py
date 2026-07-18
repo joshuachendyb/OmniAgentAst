@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - OperationRecord/query_animation_operations 时间字段 format_timestamp 对外兜底 UTC Z
 """
 文件操作查询 — 所有file_operations表只读查询
 
@@ -16,6 +18,7 @@ from app.db import db
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.db.models.operation_models import OperationRecord
 from app.utils.json_utils import parse_json
+from app.utils.time_utils import format_timestamp  # 小欧 2026-07-18 API 对外契约统一兜底
 from app.logger import logger
 
 
@@ -34,7 +37,7 @@ def row_to_operation_record(row) -> OperationRecord:
         is_directory=bool(row[11]), file_extension=row[12],
         duration_ms=row[13], space_impact_bytes=row[14],
         metadata=parse_json(row[15]) or {}, error_message=row[16],
-        created_at=row[17], executed_at=row[18], rolled_back_at=row[19],
+        created_at=format_timestamp(row[17]), executed_at=format_timestamp(row[18]), rolled_back_at=format_timestamp(row[19]),
         sequence_number=row[20],
     )
 
@@ -111,7 +114,7 @@ def query_animation_operations(task_id: str) -> List[Dict[str, Any]]:
     if not rows:
         return []
     return [
-        {"type": op_type, "source": src, "destination": dst, "status": status, "timestamp": created_at}
+        {"type": op_type, "source": src, "destination": dst, "status": status, "timestamp": format_timestamp(created_at)}
         for op_type, src, dst, status, created_at in rows
     ]
 

@@ -5,13 +5,14 @@ sse — 执行步骤流式查看
 """
 # 编辑历史:
 # 2026-07-14 - 小欧 - _generate_execution_stream改为从chat_message_steps读取步骤列表, SELECT去除execution_steps列, 统一步骤解析走load_execution_steps
-
+# 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() 时间统一
+ 
 import json
 import asyncio
 from typing import Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from app.utils.time_utils import create_timestamp
+from app.utils.time_utils import get_utc_timestamp
 from app.db import db
 from app.services.chat.storage import load_execution_steps  # 从chat_message_steps组装 — 小欧 2026-07-14
 
@@ -95,7 +96,7 @@ async def _generate_execution_stream(session_id: str):
                                 tool=step.get('tool', ''),
                                 params=step.get('params', {}),
                                 result=step.get('result'),
-                                timestamp=step.get('timestamp', create_timestamp())
+                                timestamp=step.get('timestamp', get_utc_timestamp())
                             ).to_dict()
                             yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
                     elif content:

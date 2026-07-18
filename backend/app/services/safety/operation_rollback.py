@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-16 - 小欧 - rollback_session 改用 get_tracker().mark_rolled_back() 贯通 task_tracker 统计(消除跨库死链), 删除直接UPDATE旧operations表逻辑
+# 2026-07-18 - 小欧 - rolled_back_at 改 get_utc_timestamp() 入库 UTC Z, 消除 datetime.now() 裸传 sqlite3
 """
 operation_rollback — 操作回滚
 
@@ -8,11 +9,11 @@ operation_rollback — 操作回滚
 小欧 2026-06-18 从operation_commands.py拆分，遵守SRP
 """
 import shutil
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
 
 from app.db import db
+from app.utils.time_utils import get_utc_timestamp  # 小欧 2026-07-18 时间统一入库
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
 from app.services.task import get_tracker
@@ -69,7 +70,7 @@ def rollback_operation(operation_id: str) -> bool:
             if success:
                 cursor.execute(
                     'UPDATE file_operations SET status = ?, rolled_back_at = ? WHERE operation_id = ?',
-                    (OperationStatus.ROLLBACK.value, datetime.now(), operation_id),
+                    (OperationStatus.ROLLBACK.value, get_utc_timestamp(), operation_id),
                 )
                 logger.info(f"Operation rolled back: {operation_id}")
             return success

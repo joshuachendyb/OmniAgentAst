@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() (UTC Z 字符串), 消除 create_timestamp 毫秒 int 依赖
 """
 ReasoningStep 抽象基类
 
@@ -11,7 +13,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from app.utils.time_utils import create_timestamp
+from app.utils.time_utils import get_utc_timestamp
 
 
 class ReasoningStep(ABC):
@@ -22,7 +24,7 @@ class ReasoningStep(ABC):
 
     def __init__(self, step: int, timestamp: Optional[int] = None):
         self._step = step
-        self._timestamp = timestamp or create_timestamp()
+        self._timestamp = timestamp or get_utc_timestamp()
         self._model: Optional[str] = None
         self._provider: Optional[str] = None
 

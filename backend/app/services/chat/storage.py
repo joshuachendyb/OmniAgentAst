@@ -6,6 +6,7 @@
 #   【病根】原derive_status_from_steps基于type推断终态(ccancelled→cancelled, error→failed),
 #          与FinalStep多态设计不一致; 且type=final始终返回completed, 无法区分failed终态。
 #   【改法】改为遍历找最后一条type=final, 读其outcome字段返回; 无final时兜底返回completed。
+# 2026-07-18 - 小欧 - create_timestamp→get_utc_timestamp() (3处); append_execution_step 补 created_at 入库
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -22,7 +23,7 @@ from pydantic import BaseModel, Field
 from app.logger import logger
 from app.db import db
 from app.utils.json_utils import safe_json_dumps, parse_json
-from app.utils.time_utils import create_timestamp
+from app.utils.time_utils import get_utc_timestamp  # 小欧 2026-07-18 时间统一入库 UTC Z
 from app.utils.display_utils import extract_metadata_from_steps
 
 # 存储每个session的消息ID
@@ -131,7 +132,7 @@ def insert_assistant_message(
 ) -> None:
     """拷贝自 conversation.py 第115-131行"""
     cursor = conn.cursor()
-    utc_time = create_timestamp()
+    utc_time = get_utc_timestamp()
     initial_content = update_data.content or ""
     reply_to = getattr(update_data, 'reply_to_message_id', None)
     cursor.execute(
@@ -173,7 +174,7 @@ def update_session_message_count(
 ) -> None:
     """拷贝自 conversation.py 第159-177行"""
     cursor = conn.cursor()
-    utc_time = create_timestamp()
+    utc_time = get_utc_timestamp()
     if increment:
         cursor.execute(
             "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
@@ -215,16 +216,16 @@ def allocate_and_insert_message(conn: Connection, session_id: str) -> int:
     """预分配 assistant 消息ID + 插入空白行 — 小欧 2026-07-14"""
     ai_message_id, is_new = _allocator.allocate(session_id, conn)
     if is_new:
-        utc_time = create_timestamp()
+        utc_time = get_utc_timestamp()
         conn.execute(
             "INSERT INTO chat_messages(id, session_id, role, content, timestamp) "
             "VALUES (?, ?, 'assistant', ?, ?)",
             (ai_message_id, session_id, "", utc_time),
         )
-        conn.execute(
-            "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
-            (utc_time, session_id),
-        )
+    conn.execute(
+        "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
+        (utc_time, session_id),
+    )
     return ai_message_id
 
 
@@ -232,9 +233,9 @@ def append_execution_step(conn: Connection, message_id: int, session_id: str,
                           step_index: int, step_dict: dict) -> None:
     """运行期逐步落库 — 小欧 2026-07-14"""
     conn.execute(
-        "INSERT INTO chat_message_steps(message_id, session_id, step_index, step_json) "
-        "VALUES (?, ?, ?, ?)",
-        (message_id, session_id, step_index, safe_json_dumps(step_dict)),
+        "INSERT INTO chat_message_steps(message_id, session_id, step_index, step_json, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (message_id, session_id, step_index, safe_json_dumps(step_dict), get_utc_timestamp()),
     )
 
 

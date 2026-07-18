@@ -4,7 +4,8 @@
 # 编辑历史:
 # 2026-07-14 - 小欧 - GET消息历史改为从chat_message_steps读取步骤列表, SELECT去除execution_steps列,无数据时从chat_messages.execution_steps列读取
 # 2026-07-16 - 小欧 - SELECT 加 thought 列; MessageResponse 传 thought
-
+# 2026-07-18 - 小欧 - timestamp 改 format_timestamp 对外统一 UTC Z; save_message 传 get_utc_timestamp; created_at 补 format_timestamp 兜底
+ 
 """
 消息管理API路由
 
@@ -27,7 +28,7 @@ from app.utils.response_utils import handle_api_errors
 from app.utils.cache import LRUCache
 from app.constants import MAX_CACHE_SIZE
 from app.utils.display_utils import extract_display_name_from_steps
-from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, create_timestamp
+from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, get_utc_timestamp
 from app.utils.time_utils import format_timestamp
 from app.utils.json_utils import parse_json
 from app.db import db
@@ -72,7 +73,7 @@ async def get_session_messages(session_id: str):
             messages.append(MessageResponse(
                 id=row['id'], session_id=row['session_id'],
                 role=row['role'], content=row['content'],
-                timestamp=ensure_timestamp_milliseconds(row['timestamp']),
+                timestamp=format_timestamp(row['timestamp']),
                 execution_steps=steps, display_name=display_name,
                 thought=row['thought'],  # 小欧 2026-07-16
             ))
@@ -80,7 +81,7 @@ async def get_session_messages(session_id: str):
         title_locked = bool(session['title_locked'])
         return {
             "session_id": session_id, "title": session['title'],
-            "created_at": session['created_at'],
+            "created_at": format_timestamp(session['created_at']),
             "updated_at": format_timestamp(session['updated_at']),
             "title_locked": title_locked,
             "title_source": "user" if title_locked else "auto",
@@ -132,7 +133,7 @@ async def save_message(session_id: str, message: MessageCreate):
         if not session:
             raise HTTPException(status_code=404, detail="会话不存在")
 
-        utc_time = create_timestamp()
+        utc_time = get_utc_timestamp()
         new_message_count = session["message_count"] + 1
 
         display_name_to_save = message.display_name

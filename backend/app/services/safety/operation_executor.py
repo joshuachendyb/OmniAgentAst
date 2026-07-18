@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - execute_with_safety返回值(bool)改(bool, Optional[str]): 原仅返bool, 操作失败吞掉真实错误(如"目标路径已存在...请设置overwrite=True"), 上层只能给LLM笼统"移动/复制/删除失败", LLM无法自我纠正。改后透传真实细节, LLM可据细节重试(如带overwrite=True)。
+# 2026-07-18 - 小欧 - executed_at/backup_expires_at 改 get_utc_timestamp/convert_to_utc 入库 UTC Z; duration 计算 created_at_dt 兼容老/新数据
 """
 operation_executor — 操作执行和备份
 
@@ -8,7 +9,7 @@ operation_executor — 操作执行和备份
 小欧 2026-06-18 从operation_commands.py拆分，遵守SRP
 """
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 from uuid import uuid4
@@ -18,6 +19,7 @@ from app.db import db
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
 from app.utils.time_utils import timestamp_for_filename
+from app.utils.time_utils import get_utc_timestamp, convert_to_utc  # 小欧 2026-07-18 时间统一入库
 from app.services.safety.operation_cleanup import cleanup_expired_backups
 from app.services.safety.operation_recorder import (
     collect_file_info, update_op_failed,
@@ -79,11 +81,13 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> T
             op_type, src_str, dst_str, created_at_str = row
             source_path = Path(src_str) if src_str else None
             dest_path = Path(dst_str) if dst_str else None
-            created_at = datetime.fromisoformat(created_at_str) if isinstance(created_at_str, str) else created_at_str
+            created_at_dt = datetime.fromisoformat(created_at_str.replace('Z', '+00:00')) if isinstance(created_at_str, str) else created_at_str
+            if created_at_dt.tzinfo is None:
+                created_at_dt = created_at_dt.replace(tzinfo=timezone.utc)
 
             cursor.execute(
                 'UPDATE file_operations SET status = ?, executed_at = ? WHERE operation_id = ?',
-                (OperationStatus.EXECUTING.value, datetime.now(), operation_id),
+                (OperationStatus.EXECUTING.value, get_utc_timestamp(), operation_id),
             )
 
             backup_path = None
@@ -101,8 +105,9 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> T
                 else:
                     target = dest_path if dest_path and dest_path.exists() else source_path if source_path and source_path.exists() else None
                     info = collect_file_info(target) if target else {}
-                executed_at = datetime.now()
-                duration_ms = int((executed_at - created_at).total_seconds() * 1000) if created_at else None
+                executed_at = get_utc_timestamp()
+                executed_at_dt = datetime.now(timezone.utc)
+                duration_ms = int((executed_at_dt - created_at_dt).total_seconds() * 1000) if created_at_dt else None
                 space_impact = 0
                 if op_type == OperationType.DELETE.value and info.get("size"):
                     space_impact = info["size"]
@@ -115,9 +120,9 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> T
                     WHERE operation_id = ?''',
                     (OperationStatus.SUCCESS.value,
                      str(backup_path) if backup_path else None,
-                     datetime.now() + timedelta(days=config.BACKUP_RETENTION_DAYS) if backup_path else None,
+                     convert_to_utc(datetime.now(timezone.utc) + timedelta(days=config.BACKUP_RETENTION_DAYS)) if backup_path else None,
                      info.get("size"), info.get("hash"), info.get("is_directory", False),
-                     info.get("extension"), duration_ms, space_impact, executed_at, operation_id),
+                     info.get("extension"), duration_ms, space_impact, get_utc_timestamp(), operation_id),
                 )
                 logger.debug(f"Operation executed successfully: {operation_id}")
                 return True, None

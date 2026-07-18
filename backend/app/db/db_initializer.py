@@ -10,6 +10,7 @@
 #   [原理] ①半残态task_operations必为空表(IF NOT EXISTS创建后无INSERT), DROP安全不丢数据
 #          ②正常旧库(仅operations)直接RENAME保留历史; 新库/已迁移库CREATE跳过
 #          ③DROP+RENAME使迁移在任何状态都收敛到唯一task_operations, 幂等自愈
+# 2026-07-18 - 小欧 - 所有时间列 TIMESTAMP→TEXT, 去 DEFAULT CURRENT_TIMESTAMP; _ensure_column title_updated_at TEXT; backup_expires_at TEXT
 """
 db_initializer — 数据库初始化
 
@@ -27,13 +28,13 @@ def init_chat_db(get_conn):
             CREATE TABLE IF NOT EXISTS chat_sessions (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TEXT,  -- UTC ISO 8601
+                updated_at TEXT,  -- UTC ISO 8601
                 message_count INTEGER DEFAULT 0,
                 is_deleted BOOLEAN DEFAULT FALSE,
                 is_valid BOOLEAN DEFAULT FALSE,
                 title_locked BOOLEAN DEFAULT FALSE,
-                title_updated_at TIMESTAMP,
+                title_updated_at TEXT,  -- UTC ISO 8601
                 version INTEGER DEFAULT 1
             );
             
@@ -42,7 +43,7 @@ def init_chat_db(get_conn):
                 session_id TEXT NOT NULL,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
-                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                timestamp TEXT,  -- UTC ISO 8601
                 execution_steps TEXT,
                 display_name TEXT
             );
@@ -51,7 +52,7 @@ def init_chat_db(get_conn):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
                 title TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TEXT,  -- UTC ISO 8601
                 updated_by TEXT,
                 change_reason TEXT,
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
@@ -64,7 +65,7 @@ def init_chat_db(get_conn):
                 session_id TEXT NOT NULL,
                 step_index INTEGER NOT NULL,
                 step_json TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TEXT,  -- UTC ISO 8601
                 FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE
             );
         ''')
@@ -73,10 +74,10 @@ def init_chat_db(get_conn):
         _ensure_column(conn, "chat_sessions", "is_deleted", "BOOLEAN DEFAULT FALSE")
         _ensure_column(conn, "chat_sessions", "is_valid", "BOOLEAN DEFAULT FALSE")
         _ensure_column(conn, "chat_sessions", "title_locked", "BOOLEAN DEFAULT FALSE")
-        _ensure_column(conn, "chat_sessions", "title_updated_at", "TIMESTAMP")
+        _ensure_column(conn, "chat_sessions", "title_updated_at", "TEXT")
         _ensure_column(conn, "chat_sessions", "version", "INTEGER DEFAULT 1")
         
-        _ensure_column(conn, "chat_messages", "timestamp", "TEXT DEFAULT CURRENT_TIMESTAMP")
+        _ensure_column(conn, "chat_messages", "timestamp", "TEXT")
         _ensure_column(conn, "chat_messages", "display_name", "TEXT")
         
         for field in ["client_os", "browser", "device", "network", "reply_to_message_id"]:
@@ -114,7 +115,7 @@ def init_operations_db(get_conn):
                 source_path TEXT,
                 destination_path TEXT,
                 backup_path TEXT,
-                backup_expires_at TIMESTAMP,
+                backup_expires_at TEXT,  -- UTC ISO 8601
                 file_size INTEGER,
                 file_hash TEXT,
                 is_directory BOOLEAN DEFAULT 0,
@@ -123,9 +124,9 @@ def init_operations_db(get_conn):
                 space_impact_bytes INTEGER,
                 metadata TEXT DEFAULT '{}',
                 error_message TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                executed_at TIMESTAMP,
-                rolled_back_at TIMESTAMP,
+                created_at TEXT,  -- UTC ISO 8601
+                executed_at TEXT,  -- UTC ISO 8601
+                rolled_back_at TEXT,  -- UTC ISO 8601
                 sequence_number INTEGER DEFAULT 0
             );
             
@@ -186,8 +187,8 @@ def init_task_tracker_db(get_conn):
                 rolled_back_count INTEGER DEFAULT 0,
                 report_generated INTEGER DEFAULT 0,
                 report_path      TEXT,
-                created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                completed_at     TIMESTAMP
+                created_at       TEXT,  -- UTC ISO 8601
+                completed_at     TEXT   -- UTC ISO 8601
             );
             CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
 
@@ -205,7 +206,7 @@ def init_task_tracker_db(get_conn):
                 sequence_number  INTEGER NOT NULL DEFAULT 0,
                 details          TEXT,
                 error            TEXT,
-                created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at       TEXT  -- UTC ISO 8601
             );
 
             CREATE INDEX IF NOT EXISTS idx_ops_task ON task_operations(task_id);

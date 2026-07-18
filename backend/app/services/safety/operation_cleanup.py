@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - backup_expires_at 比较改 get_utc_timestamp() 时间统一入库
 """
 operation_cleanup — 操作清理
 
@@ -11,6 +13,7 @@ from pathlib import Path
 
 from app.db import db
 from app.logger import logger
+from app.utils.time_utils import get_utc_timestamp  # 小欧 2026-07-18 时间统一入库
 
 
 def _get_folder_size(path: Path) -> int:
@@ -76,7 +79,7 @@ def cleanup_expired_backups() -> int:
             cursor = conn.cursor()
             cursor.execute(
                 'SELECT backup_path FROM file_operations WHERE backup_expires_at < ? AND backup_path IS NOT NULL',
-                (datetime.now(),),
+                (get_utc_timestamp(),),
             )
             rows = cursor.fetchall()
             for (backup_path,) in rows:

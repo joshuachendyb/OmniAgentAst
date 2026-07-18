@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-16 - 小欧 - operations表重命名为task_operations(正名)+在线迁移(RENAME旧表)+操作ID统一generate_operation_id+新增mark_rolled_back方法
+# 2026-07-18 - 小欧 - complete_task 的 completed_at 改用 now_str() 序列化入库, 消除对已废弃默认 datetime 适配器(Python3.12+ DeprecationWarning)的依赖, 与 created_at(CURRENT_TIMESTAMP) 空格秒格式统一
+# 2026-07-18 - 小欧 - complete_task/create_task/add_operation 时间统一 get_utc_timestamp() UTC Z; TaskQueries 三返回方法 format_timestamp 对外兜底
 """
 task_db — 任务DB持久化（tasks表 + operations表）
 
@@ -11,8 +13,9 @@ task_db — 任务DB持久化（tasks表 + operations表）
 
 import json
 import threading
-from datetime import datetime
 from app.utils.id_utils import generate_operation_id
+from app.utils.time_utils import get_utc_timestamp  # 小欧 2026-07-18: 时间统一入库 UTC Z
+from app.utils.time_utils import format_timestamp  # 小欧 2026-07-18: API 对外契约统一兜底
 from typing import Optional, Dict, Any, List
 from enum import Enum
 
@@ -42,9 +45,9 @@ class TaskTracker:
         with db.get_conn("task_tracker") as conn:
             conn.execute(
                 """INSERT INTO tasks
-                   (task_id, intent, agent_id, task_description, status)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (task_id, "", agent_id, description, TaskStatus.EXECUTING.value),
+                   (task_id, intent, agent_id, task_description, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (task_id, "", agent_id, description, TaskStatus.EXECUTING.value, get_utc_timestamp()),
             )
 
     def complete_task(self, task_id: str, success: bool = True) -> None:
@@ -58,7 +61,7 @@ class TaskTracker:
             conn.execute(
                 """UPDATE tasks SET status = ?, completed_at = ?,
                    success_count = ? WHERE task_id = ?""",
-                (status, datetime.now(), success_count, task_id),
+                (status, get_utc_timestamp(), success_count, task_id),  # 小欧 2026-07-18: UTC Z 字符串入库, 边界自动归一化
             )
 
     # ===== 操作管理 =====
@@ -104,8 +107,8 @@ class TaskTracker:
                     operation_id, task_id, operation_type, op_status,
                     source_path, destination_path, backup_path,
                     file_size, file_hash, seq_num,
-                    json.dumps(details) if details else None, error,
-                ),
+                     json.dumps(details) if details else None, error, get_utc_timestamp(),
+                 ),
             )
             if op_status == OperationStatus.FAILED.value:
                 conn.execute(
@@ -187,7 +190,12 @@ class TaskQueries:
             row = conn.execute(
                 "SELECT * FROM tasks WHERE task_id = ?", (task_id,)
             ).fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            d = dict(row)
+            d["created_at"] = format_timestamp(d.get("created_at"))
+            d["completed_at"] = format_timestamp(d.get("completed_at"))
+            return d
 
     def get_recent_tasks(self, limit: int = 10) -> List[Dict[str, Any]]:
         with db.get_conn("task_tracker") as conn:
@@ -195,7 +203,11 @@ class TaskQueries:
                 "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
-            return [dict(r) for r in rows]
+            return [{
+                **dict(r),
+                "created_at": format_timestamp(r["created_at"]),
+                "completed_at": format_timestamp(r.get("completed_at")),
+            } for r in rows]
 
     def get_operations(self, task_id: str) -> List[Dict[str, Any]]:
         with db.get_conn("task_tracker") as conn:
@@ -209,5 +221,6 @@ class TaskQueries:
                 d = dict(r)
                 if d.get("details"):
                     d["details"] = parse_json(d["details"], label="operation_details")
+                d["created_at"] = format_timestamp(d.get("created_at"))
                 result.append(d)
             return result

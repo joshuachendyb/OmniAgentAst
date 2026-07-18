@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-16 - 小欧 - record_operation 增 operation_id 可选参数, 操作ID生成统一交由 id_utils.generate_operation_id(DRY, 替代各处 f"op-{uuid4().hex}")
+# 2026-07-18 - 小欧 - created_at 改 get_utc_timestamp() 入库 UTC Z, 消除 datetime.now() 裸传 sqlite3
 """
 operation_recorder — 操作记录和文件信息收集
 
@@ -8,10 +9,10 @@ operation_recorder — 操作记录和文件信息收集
 小欧 2026-06-18 从operation_commands.py拆分，遵守SRP
 """
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 from app.utils.id_utils import generate_operation_id  # 小欧 2026-07-16 统一ID生成(DRY)
+from app.utils.time_utils import get_utc_timestamp  # 小欧 2026-07-18 时间统一入库
 
 from app.db import db
 from app.db.models.operation_models import OperationType, OperationStatus
@@ -71,11 +72,11 @@ def record_operation(
                 (operation_id, task_id, operation_type, status, source_path,
                  destination_path, sequence_number, file_size, space_impact_bytes, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                (operation_id, task_id, op_type_str,
-                 OperationStatus.PENDING.value,
-                 str(source_path) if source_path else None,
-                 str(destination_path) if destination_path else None,
-                 sequence_number, file_size, space_impact_bytes, datetime.now()),
+                 (operation_id, task_id, op_type_str,
+                  OperationStatus.PENDING.value,
+                  str(source_path) if source_path else None,
+                  str(destination_path) if destination_path else None,
+                  sequence_number, file_size, space_impact_bytes, get_utc_timestamp()),
             )
         logger.debug(f"Operation recorded: {operation_id} - {op_type_str}")
         return operation_id
