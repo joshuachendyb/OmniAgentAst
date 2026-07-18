@@ -5,6 +5,7 @@
 # 2026-07-14 - 小欧 - GET消息历史改为从chat_message_steps读取步骤列表, SELECT去除execution_steps列,无数据时从chat_messages.execution_steps列读取
 # 2026-07-16 - 小欧 - SELECT 加 thought 列; MessageResponse 传 thought
 # 2026-07-18 - 小欧 - timestamp 改 format_timestamp 对外统一 UTC Z; save_message 传 get_utc_timestamp; created_at 补 format_timestamp 兜底
+# 2026-07-18 - 小欧 - 回归修复: timestamp=row['timestamp'](原始int), 前一条format_timestamp返回str与MessageResponse.timestamp:int冲突致500
  
 """
 消息管理API路由
@@ -73,7 +74,7 @@ async def get_session_messages(session_id: str):
             messages.append(MessageResponse(
                 id=row['id'], session_id=row['session_id'],
                 role=row['role'], content=row['content'],
-                timestamp=format_timestamp(row['timestamp']),
+                timestamp=row['timestamp'],
                 execution_steps=steps, display_name=display_name,
                 thought=row['thought'],  # 小欧 2026-07-16
             ))
