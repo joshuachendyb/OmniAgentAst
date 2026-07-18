@@ -1,3 +1,5 @@
+# 编辑历史:
+# 2026-07-18 - 小欧 - prompt-log生命周期归属修正: 删save()状态谎报升级分支; 新增set_terminal_status()供生产者按真实终态设态
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
@@ -461,19 +463,18 @@ class PromptLogger:
             current_log["基本信息"]["状态"] = "异常终止"
             current_log["基本信息"]["错误信息"] = error_msg
 
+    def set_terminal_status(self, label: str) -> None:
+        """由生产者按真实终态设状态标签（"已完成"/"异常终止"/"已取消"/"已暂停"）— 小欧 2026-07-18"""
+        current_log = self._get_current_log()
+        if current_log:
+            current_log["基本信息"]["状态"] = label
+
     def save(self):
         """保存日志到文件 — 文件名用ai_message_id生成 — 小欧 2026-06-23"""
         current_log = self._get_current_log()
         if not current_log:
             logger.warning("[PromptLogger] 保存失败:没有当前日志数据")
             return
-
-        status = current_log["基本信息"].get("状态", "处理中")
-        if status == "处理中":
-            if current_log.get("LLM调用记录"):
-                current_log["基本信息"]["状态"] = "已完成"
-            else:
-                current_log["基本信息"]["状态"] = "异常终止"
 
         # 从日志数据中取ai_message_id,生成最终文件名
         ai_id = current_log["基本信息"].get("AI消息ID")

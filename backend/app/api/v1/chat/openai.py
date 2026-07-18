@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-16 - 小欧 - StreamState 增 current_thought 字段, 运行期持有 thought 值
+# 2026-07-18 - 小欧 - 消费者完全退出日志层: 删除prompt_logger全部5处引用(start_request/mark_completed/mark_error/save/import)
 """
 chat_openai — Chat API层入口（路由+实现合一）
 
@@ -38,7 +39,6 @@ from app.services.agent.agent_runner import run_agent_in_background
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.task.task_state import create_stream_buffer, get_stream_buffer
 from app.services.task.task_context import _current_task_id, session_id_var
-from app.logger.prompt_logger import get_prompt_logger
 from app.services.task.hitl_confirmation import resolve_confirmation
 
 router = APIRouter()
@@ -196,9 +196,6 @@ async def chat_stream(request: ChatRequest):
         execution_steps = []
         state = StreamState()
 
-        prompt_logger = get_prompt_logger()
-        prompt_logger.start_request(user_input, session_id)
-
         # Task 生命周期日志（开始）— 小欧 2026-06-26
         _task_start_time = time.time()
         _user_msg_id = None
@@ -242,19 +239,13 @@ async def chat_stream(request: ChatRequest):
             # 消费者：读缓冲 + 注入 pause/cancel 检查
             async for sse_chunk in _stream_with_control(buffer, task_id, next_step, session_id, execution_steps, state):
                 yield sse_chunk
-            else:
-                prompt_logger.mark_completed()
         except asyncio.CancelledError:
             # 客户端断开：静默返回，agent 后台继续运行 — 北京老陈 2026-07-12 小欧 2026-07-12
             logger.info(f"[chat_stream] 客户端断开(task={task_id})，agent 后台继续")
             return
         except Exception as e:
             logger.error(f"[chat_stream] Error: {e}", exc_info=True)
-            prompt_logger.mark_error(str(e))
             yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
-        finally:
-            # 生命周期清理已由生产者 run_agent_in_background 负责，此处仅保存 prompt 日志
-            prompt_logger.save()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

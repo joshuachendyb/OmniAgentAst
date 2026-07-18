@@ -10,6 +10,7 @@
 #   【改法】①import加FinalStep ②取消路径: 删MetaStep手动写逻辑, 改由finally守卫补FinalStep
 #          ③失败路径: ErrorStep→FinalStep(outcome="failed"), 仍手动写(异常分支无守卫)
 #          ④finally守卫: 检测current_execution_steps无type=final时, 按agent.status补发FinalStep
+# 2026-07-18 - 小欧 - prompt-log生命周期归属修正: 生产者全权拥有创建(start_request)/写入(log_step_yield)/设态(set_terminal_status)/存盘(save), 消费者openai.py完全退出日志层
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -78,6 +79,9 @@ async def run_agent_in_background(
     current_execution_steps: List[Dict] = []
     end_type = "unknown"
     ai_message_id: Optional[int] = None  # 首步分配后复用 — 小欧 2026-07-14
+
+    # [新] 生产者全权拥有 prompt-log 生命周期(创建) — 小欧 2026-07-18
+    get_prompt_logger().start_request(last_message, session_id)
 
     async def _append(event_dict: Dict) -> None:
         # 注意: current_execution_steps 由各调用点(主循环/异常分支)显式追加,
@@ -313,6 +317,15 @@ async def run_agent_in_background(
             # 必须持锁调 notify_all(同 _append), 否则 RuntimeError — 小欧 2026-07-13
             async with buffer.cond:
                 buffer.cond.notify_all()
+
+            # [新] 生产者权威存盘: 终态 FinalStep 已由上方守卫补记(_fd),
+            #      此刻 current_execution_steps 必含终态。 — 小欧 2026-07-18
+            _pl = get_prompt_logger()
+            _label_map = {"completed": "已完成", "failed": "异常终止",
+                          "cancelled": "已取消", "paused": "已暂停"}
+            _pl.set_terminal_status(_label_map.get(_terminal_status, "异常终止"))
+            _pl.save()
+
             try:
                 loop = asyncio.get_event_loop()
                 loop.call_later(300, lambda: reclaim_stream_buffer(task_id))
