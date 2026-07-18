@@ -21,7 +21,8 @@ llm_stream — LLM流式调用+响应构建
      2026-07-16 小欧 新增XML tool_call提取拦截点: call_llm_stream在FC JSON tool_calls为空时,从reasoning/content检XML工具调用,合成tool_call_id走action路径(FC模式openai_tools清单校验防误提取,Text fallback由action_handler兜底)
      2026-07-16 小欧 M5 解决空[FC]错误日志丢失根因问题: 此前_yield_error_response仅记录错误消息, 异常消息为空时(如测试垃圾输入/空串)无任何诊断上下文, 排障无据; 新增exc/exc_type可选参数。能力提升: 错误日志补全异常类型(exc=类名)或错误分类(type=分类)诊断上下文, 即使消息为空也能定位根因
        2026-07-17 小沈 FCFormatError→LLMResponseError, FC_MAX_RETRIES→LLM_RESPONSE_RETRIES, FC_FALLBACK_ENABLED→LLM_RESPONSE_FALLBACK; [FC]→[LLM]并去冗余"LLM"
-   2026-07-18 小欧 #31 fix: fallback前llm_client._cancelled=False重置,消除cancel状态残留
+    2026-07-18 小欧 #31 fix: fallback前llm_client._cancelled=False重置,消除cancel状态残留
+    2026-07-18 小欧 #39 fix: XML兜底提取分支补WARNING提示(含tool_name+来源reasoning/content),提升可观测性
 """
 
 import asyncio
@@ -202,6 +203,14 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
         if search_text:
             extracted = extract_tool_call_xml(search_text)
             if extracted:
+                # #39 fix: XML兜底路径明确提示 — 小欧 2026-07-18
+                #   原生FC为空才走此分支, 说明LLM未用标准tool_calls, 降级用旧<tool_call>格式
+                #   打WARNING提升可观测性, 避免"既Thought又Action"看似bug实为容错
+                logger.warning(
+                    f"[LLM] 走XML <tool_call> 容错提取(非原生FC): "
+                    f"tool_name={extracted['tool_name']}, "
+                    f"来源={'reasoning' if full_reasoning else 'content'}"
+                )
                 # 防误提取（禁止退化）：FC 模式校验工具名在可用清单内，
                 # 避免推理中讨论 XML 语法被误当作工具执行；不在清单则回落 answer
                 # 容错：工具列表可能含异常条目（None/非dict），逐项防护，避免守卫自身崩溃
