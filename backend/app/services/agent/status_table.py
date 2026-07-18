@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - 修复#5 删除 threading.RLock()+@_synchronized(asyncio单线程下是死重, KISS/YAGNI); 修复#2+#8 终态不可变(首终态为准, terminal→terminal 忽略不翻转, 杜绝ValueError崩溃与终态误标)
 """
 status_table — Agent状态集中管理
 
@@ -8,7 +10,6 @@ handler 不设状态，只 yield Step → 编排层从 event type 推断状态 �
 chendyg 2026-07-01
 """
 
-import threading
 from enum import Enum
 from typing import Optional
 from app.logger import logger
@@ -86,14 +87,8 @@ _TRANSITIONS = {
     AgentStatus.FAILED:    set(),
 }
 
-_status_lock = threading.RLock()
-
-
-def _synchronized(func):
-    def wrapper(agent, *args, **kwargs):
-        with _status_lock:
-            return func(agent, *args, **kwargs)
-    return wrapper
+# 终态集合: 一旦进入即不可逆(首终态为准)。— 北京老陈 2026-07-18
+_TERMINAL_STATUSES = {AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED}
 
 
 def _validate_transition(old_status: AgentStatus, new_status: AgentStatus) -> bool:
@@ -103,11 +98,18 @@ def _validate_transition(old_status: AgentStatus, new_status: AgentStatus) -> bo
     return new_status in _TRANSITIONS.get(old_status, set())
 
 
-@_synchronized
 def set_status(agent, new_status: AgentStatus, reason: str = ""):
-    if not _validate_transition(agent.status, new_status):
-        raise ValueError(f"非法转换: {agent.status} → {new_status}")
     old_status = agent.status
+    if old_status == new_status:
+        return
+    # 【终态不可变】旧态已是终态且新态也是终态 → 忽略(首终态为准)。
+    # ① 杜绝"已完成/失败任务被取消→误标cancelled"等终态翻转(#2);
+    # ② 避免非法转换 ValueError 在主路径崩溃(#8), 改为安全忽略。— 北京老陈 2026-07-18
+    if old_status in _TERMINAL_STATUSES and new_status in _TERMINAL_STATUSES:
+        logger.warning(f"[Agent] 忽略终态翻转: {old_status} → {new_status} (终态不可变, 保持 {old_status})")
+        return
+    if not _validate_transition(old_status, new_status):
+        raise ValueError(f"非法转换: {old_status} → {new_status}")
     agent.status = new_status
     if reason:
         if new_status == AgentStatus.FAILED:
@@ -123,16 +125,13 @@ def set_status(agent, new_status: AgentStatus, reason: str = ""):
         pass
 
 
-@_synchronized
 def set_failed(agent, reason: str = ""):
     set_status(agent, AgentStatus.FAILED, reason)
 
 
-@_synchronized
 def set_completed(agent):
     set_status(agent, AgentStatus.COMPLETED)
 
 
-@_synchronized
 def set_cancelled(agent):
     set_status(agent, AgentStatus.CANCELLED)
