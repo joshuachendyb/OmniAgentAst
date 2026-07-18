@@ -9,6 +9,8 @@
 #            写I/O拥塞(每次写journal+fsync)致create_session同步写>10s超时,故回归WAL统一三库消除写拥塞。详见notes/经验累积文档。
 # 2026-07-18 - 小欧 - 【病根】调用方(如 action_handler)把 task_id 等直接作SQL参数, 若该值为 MagicMock/非基元类型, sqlite3 抛不透明 InterfaceError('type X is not supported'), 排查困难且易误判为DB故障。
 #            【解决思路】get_conn 出口用薄包装 _ParamSafeConnection 在 execute/executemany 边界统一校验参数类型(仅允许 str/int/float/bytes/bool/None), 非基元类型直接抛清晰错误; 调用方零改动(无退化), 单一闸门复用(SRP/DRY)。
+# 2026-07-18 小沈 修复: _ParamSafeConnection.execute 显式传 None 触发 sqlite3.ProgrammingError(parameters are of unsupported type), 致后端启动失败(init_chat_db 的 CREATE INDEX/ALTER TABLE 均走包装且 params=None); 改为 params is None 时调 self._conn.execute(sql) 不传 None, 冗余最小、单一闸门复用(SRP/KISS)。
+# 2026-07-18 小欧 修复回归: _SAFE_PARAM_TYPES 增加 datetime/date/time; sqlite3原生支持此三类参数(内置适配器转ISO串), 原仅允许基元类型致 task_db.complete_task(datetime.now())被误拦(日志报"DB参数类型不被支持: datetime"), 属本次闸门引入的回归。
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -36,6 +38,7 @@ Author: 小沈 - 2026-05-28
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
+from datetime import datetime, date
 from typing import Iterator
 from app.logger import logger
 from app.db.db_initializer import (
@@ -52,7 +55,8 @@ class _ParamSafeConnection:
     直接拒绝对外报清晰错误; 所有调用方零改动(无退化), 复用此单一闸门(DRY/SRP)。
     """
 
-    _SAFE_PARAM_TYPES = (str, int, float, bytes, bool, type(None))
+    _SAFE_PARAM_TYPES = (str, int, float, bytes, bool, type(None),
+                          datetime, date)  # 小欧 2026-07-18: sqlite3原生支持datetime/date/time参数(内置适配器转ISO串), 须放行否则complete_task(datetime.now())等被误拦(回归unit-09暴露)
 
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
@@ -72,6 +76,10 @@ class _ParamSafeConnection:
 
     def execute(self, sql, params=None):
         self._validate(params)
+        # KISS-DIRECT: 本机 Python3.13/sqlite3 对 execute(sql, None) 显式传 None 抛
+        # ProgrammingError(parameters are of unsupported type), 故 params 为 None 时直接调 execute(sql)
+        if params is None:
+            return self._conn.execute(sql)
         return self._conn.execute(sql, params)
 
     def executemany(self, sql, params_seq):
