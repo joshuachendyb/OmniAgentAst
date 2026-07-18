@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-18 - 小欧 - 【病根】历史重载边界(_inject_conversation_history)把 DB(execution_steps)持久化的 assistant.tool_calls 原样注入 message_builder, 零校验; 若某条 tool_calls 含非dict元素(截断/畸形LLM响应落库), 下轮回传即触发 provider 400("Can only get item pairs from a mapping")并 FC 降级→AgentStatus.FAILED。
+#            【解决思路】注入边界对 tool_calls 逐元素 isinstance(t, dict) 校验: list仅留dict元素 / 单dict归一为[dict] / 其余置空回退content分支; 合法 list-of-dict 输入输出100%不变(增强不退化), 调用方零改动。
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
@@ -44,7 +47,17 @@ def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> No
                 entry["name"] = name
             history_msgs.append(entry)
         elif role == "assistant":
-            tc = msg.get("tool_calls")
+            tc_raw = msg.get("tool_calls")
+            # 历史重载边界校验 — 小欧 2026-07-18
+            # 病根: 持久化 assistant.tool_calls 若含非dict元素(截断/畸形LLM响应落库),
+            #       原样回传致 provider 400("Can only get item pairs from a mapping")并触发FC降级。
+            # 修复: 仅保留dict元素, 非dict一律剥离; 剥离后为空则回退content分支(无退化)。
+            if isinstance(tc_raw, list):
+                tc = [t for t in tc_raw if isinstance(t, dict)]
+            elif isinstance(tc_raw, dict):
+                tc = [tc_raw]
+            else:
+                tc = []
             if tc:
                 history_msgs.append({
                     "role": "assistant",
