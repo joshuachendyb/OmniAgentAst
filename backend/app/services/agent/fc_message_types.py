@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-16 小欧 更新推理-only注入注释: 旧3条空tool_call_id消息→合法assistant(content)(工具调用意图由llm_stream XML提取接管)
+# 2026-07-19 小欧 AssistantMessage加reasoning字段; message_to_dict做reasoning→reasoning_content提升
+# 2026-07-19 小欧 message_to_dict提升后del推理内部字段(不泄露非标准字段); dict_to_message反向映射reasoning_content→reasoning(回环不丢)
+# 2026-07-19 小欧 改善: message_to_dict用pop单次重命名; dict_to_message去掉backward条件直接映射(禁backward)
 """
 FC 消息类型安全 — Pydantic 模型
 
@@ -7,7 +12,6 @@ FC 消息类型安全 — Pydantic 模型
 
 【创建时间】2026-06-11 小沈
 【签名】小沈
-【编辑历史】2026-07-16 小欧 更新推理-only注入注释: 旧3条空tool_call_id消息→合法assistant(content)(工具调用意图由llm_stream XML提取接管)
 """
 
 from pydantic import BaseModel
@@ -160,6 +164,7 @@ class AssistantMessage(BaseModel):
     role: Literal["assistant"] = "assistant"
     content: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None
+    reasoning: Optional[str] = None  # 推理链内部字段(message_to_dict→reasoning_content提升) — 小欧 2026-07-19
 
 
 class ToolResultMessage(BaseModel):
@@ -172,8 +177,13 @@ FcMessage = Union[SystemMessage, UserMessage, AssistantMessage, ToolResultMessag
 
 
 def message_to_dict(msg: FcMessage) -> dict:
-    """将 FcMessage 转为 OpenAI 兼容的 dict（排除 None 字段）"""
-    return msg.model_dump(exclude_none=True)
+    """将 FcMessage 转为 OpenAI 兼容的 dict（排除 None 字段）
+    — 小欧 2026-07-19: reasoning→reasoning_content 提升（DeepSeek/Kimi thinking mode 相容）
+    """
+    d = msg.model_dump(exclude_none=True)
+    if d.get("role") == "assistant" and d.get("reasoning"):
+        d["reasoning_content"] = d.pop("reasoning")  # 内部字段提升为API标准字段reasoning_content(单次重命名)
+    return d
 
 
 def dict_to_message(d: dict) -> FcMessage:
@@ -184,6 +194,9 @@ def dict_to_message(d: dict) -> FcMessage:
     elif role == "user":
         return UserMessage(**d)
     elif role == "assistant":
+        d = dict(d)
+        if "reasoning_content" in d:
+            d["reasoning"] = d.pop("reasoning_content")  # 回环: API标准字段映射回内部字段(禁backward条件)
         return AssistantMessage(**d)
     elif role == "tool":
         return ToolResultMessage(**d)
