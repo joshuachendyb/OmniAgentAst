@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-07-13 小欧 add_tool_result异常日志带类型与repr
+# 2026-07-16 小欧 op_id双表贯通修复
+# 2026-07-17 小欧 handle_action执行工具后重置_consecutive_reasoning_only(空转检测: 本步LLM发起工具调用=非reasoning-only空转, 归零)
+# 2026-07-17 小欧 计数器修正: handle_action-tool_name空early-return处补归零(空转检测非reasoning-only出口完备, 不变量严格成立)
 # 2026-07-18 小欧 #4 fix: _file_tool_names从模块函数名改为注册名(delete/copy/move/edittext/writetext/compress),op_id双表贯通恢复
 # 2026-07-18 小欧 #11 fix: wait_for_confirmation_result超时返回expired=True;超时/拒绝分流
 # 2026-07-18 小欧 #12 fix: check_safety_and_confirm拒绝不再return终止整批,收集_denied后继续,最终只执行通过的call
-# 记录 2026-07-13 小欧 add_tool_result异常日志带类型与repr
-# 记录 2026-07-16 小欧 op_id双表贯通修复
-# 记录 2026-07-18 小欧 FinalStep多态自包含终态重构:
+# 2026-07-18 小欧 FinalStep多态自包含终态重构:
 #   【病根】原FinalStep无outcome字段, 终态语义隐含在type中,
 #          action_handler中return_direct提前返回的FinalStep缺少显式终态声明,
 #          与answer_handler/agent_runner的终态产出不一致。
@@ -19,11 +21,11 @@
 #          ②用"FO未写入TO的op_id"做差集, 天然排除已消耗项, 杜绝UNIQUE冲突
 #          ③白名单隔离非文件工具使其不参与贯通(op_id=None自生成), 消除误关联
 #          ④纯内部取id(不读result/LLM字段), 符合"operation_id是agent内部字段严禁进LLM返回结构"铁律
-# 记录 2026-07-17 小欧 handle_action执行工具后重置_consecutive_reasoning_only(空转检测: 本步LLM发起工具调用=非reasoning-only空转, 归零)
-# 记录 2026-07-17 小欧 计数器修正: handle_action-tool_name空early-return处补归零(空转检测非reasoning-only出口完备, 不变量严格成立)
 # 2026-07-18 小欧 #4 fix: _file_tool_names 白名单值从模块函数名(delete_file等)改为注册名(delete等); 因 call["tool_name"] 是注册名, 原白名单恒 False 致 op_id 双表贯通完全失效
 # 2026-07-18 小欧 #11+#12 fix: check_safety_and_confirm 重构 — 超时与拒绝分流(expired标记); 拒绝不return终止整批, 收
 #   集_denied后continue, 最终只执行通过的call(通过_out参数回传过滤后列表); 调用方对应改_exec_calls
+# 2026-07-19 小欧 build_observation/_add_denial_feedback新增reasoning参数传递
+
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -169,7 +171,7 @@ def _add_denial_feedback(agent, all_calls: List[Dict], fc_context: Dict, denied_
     _fc = fc_context or {}
     _tc = _fc.get("tool_calls", [])
     if _tc:
-        agent.message_builder.add_assistant_tool_call(_tc, content=_fc.get("llm_content", "") or None)
+        agent.message_builder.add_assistant_tool_call(_tc, content=_fc.get("llm_content", "") or None, reasoning=_fc.get("llm_reasoning", "") or None)  # 2026-07-19 小欧 reasoning传递
     for call in all_calls:
         _tid = call.get("_tool_call_id", "")
         _cn = call.get("tool_name", "")
@@ -405,7 +407,8 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
     _shared_tc = _fc.get("tool_calls", [])
     if _shared_tc:
         ctx.agent.message_builder.add_assistant_tool_call(
-            _shared_tc, content=_fc.get("llm_content", "") or None
+            _shared_tc, content=_fc.get("llm_content", "") or None,
+            reasoning=_fc.get("llm_reasoning", "") or None  # 2026-07-19 小欧 reasoning传递
         )
 
     # ==========================================================================
