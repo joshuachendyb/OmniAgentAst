@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-13 - 小欧 - #2 add_tool_result构造失败兜底追加最小tool消息防结果丢失
+# 2026-07-19 - 小欧 - add_assistant_tool_call/_append_observation新增reasoning参数传递
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -62,16 +63,17 @@ class MessageBuilder:
         return msg
 
     def add_assistant_tool_call(self, tool_calls: list,
-                                content: Optional[str] = None) -> AssistantMessage:
+                                content: Optional[str] = None,
+                                reasoning: Optional[str] = None) -> AssistantMessage:
         """添加assistant工具调用消息 — 北京老陈 2026-06-25
 
         配对说明:
           此assistant(带N个tool_calls)与后续N条tool(通过tool_call_id关联)组成一对。
           调用顺序: add_assistant_tool_call → add_tool_result x N
           LLM收到的历史: ...→assistant(tool_calls=[id1,id2])→tool(id1)→tool(id2)→...
-        — 小欧 2026-07-12
+        — 小欧 2026-07-12 — 小欧 2026-07-19 新增 reasoning 参数: 存入 LLM 推理链到 conversation history
         """
-        msg = AssistantMessage(content=content, tool_calls=tool_calls)
+        msg = AssistantMessage(content=content, tool_calls=tool_calls, reasoning=reasoning)
         self.conversation_history.append(message_to_dict(msg))
         return msg
 
@@ -142,12 +144,14 @@ class MessageBuilder:
         ) if tool_call_id else False
         if tool_calls and not has_existing_assistant:
             llm_content = fc_context.get("llm_content", "") or None
-            self.add_assistant_tool_call(tool_calls, content=llm_content)
+            llm_reasoning = fc_context.get("llm_reasoning", "") or None  # 2026-07-19 小欧 新增reasoning传递
+            self.add_assistant_tool_call(tool_calls, content=llm_content, reasoning=llm_reasoning)
         elif tool_call_id and not has_existing_assistant:
             self.add_assistant_tool_call([])
         elif not has_existing_assistant:
             llm_content = fc_context.get("llm_content", "") or ""
-            self.add_assistant_tool_call([], content=llm_content)
+            llm_reasoning = fc_context.get("llm_reasoning", "") or None  # 2026-07-19 小欧 新增reasoning传递
+            self.add_assistant_tool_call([], content=llm_content, reasoning=llm_reasoning)
         self.add_tool_result(tool_call_id, observation_text)
 
     def add_observation(self, observation_text: str, fc_context: Dict) -> None:
