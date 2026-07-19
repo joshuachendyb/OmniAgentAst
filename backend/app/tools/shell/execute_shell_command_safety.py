@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 删 SafetyResult(is_safe=False) 两处 kwarg: SafetyResult 已于 2026-07-18 删除 is_safe 字段, 此处漏改致中危/destructive shell 命令检查 TypeError 崩溃; 删后 blocked/requires_confirmation/safety_level 已正确表达风险意图, 行为不变
 """
 execute_shell_command 分级安全检查 — 独立safety模块
 
@@ -62,7 +64,6 @@ def check_shell_command_risk(command: str) -> Optional[SafetyResult]:
         if re.search(pattern_str, normalized, re.IGNORECASE):
             if level == "HIGH":
                 return SafetyResult(
-                    is_safe=False,
                     blocked=True,
                     message=f"高风险Shell操作: {desc}",
                     safety_level="dangerous",
@@ -73,7 +74,6 @@ def check_shell_command_risk(command: str) -> Optional[SafetyResult]:
     if medium_hit_desc:
         logger.warning(f"[Shell安全] 中风险操作: {medium_hit_desc}")
         return SafetyResult(
-            is_safe=False,
             blocked=False,
             requires_confirmation=True,
             message=f"中风险Shell操作: {medium_hit_desc}",
