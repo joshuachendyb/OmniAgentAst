@@ -5,7 +5,8 @@
 # 2026-07-15 - 小欧 - HTTP常量归并: HTTPX_TIMEOUT_DEFAULT+TOOL_BROWSER_UA+TOOL_RETRYABLE_HTTP_CODES 从1.1/10节移至第4节(网络工具HTTP常量), 消除散落
 # 2026-07-15 - 小欧 - TOOL_RETRY_CONFIG 从 tool_retry_engine.py 迁入第4节, 与 TOOL_RETRYABLE_HTTP_CODES 相邻
 # 注: 本文件数值型长度/上限/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
-# 2026-07-18 - 小欧 - #39 fix: TOOL_TIMEOUTS清理死键(合并的window_maximize/minimize/clipboard_read/write等),补真实注册名(set_window_state/clipboard)
+# 2026-07-18 - 小欧 - TOOL_TIMEOUTS清理死键(合并的window_maximize/minimize/clipboard_read/write等),补真实注册名(set_window_state/clipboard)
+# 2026-07-20 - 小欧 - 删 MAX_SEARCH_FILE_SIZE(grep 搜索单文件大小不再设上限, 对齐 rg 无文件大小限制, 因无引用删除); 新增 OBS_GREP_MAX_ROWS=200/OBS_GREP_MAX_ROW_CHARS=150(grep 专属行×列, 显示域截断收口)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -42,7 +43,7 @@ TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 各工具 deadline 校验与 To
     # 2. ToolRetryEngine 用 asyncio.wait_for(timeout=此值) 做保险丝，
     #    防止工具卡死不返回。详见 tool_retry_engine.py 第95行。
     # 警告：修改此值会影响重试引擎的超时行为。
-    # #39 fix: 仅保留真实注册工具名; 已合并的 window_maximize/minimize、clipboard_read/write 等死键删除 — 小欧 2026-07-18
+    # 仅保留真实注册工具名; 已合并的 window_maximize/minimize、clipboard_read/write 等死键删除 — 小欧 2026-07-18
     "list_directory": 30,
     "find": 120,
     "grep": 120,
@@ -121,6 +122,10 @@ OBS_SNIPPET_MAX_CHARS: int = 300       # 【系统级】使用对象: observatio
 OBS_HTML_SUMMARY_MAX_CHARS: int = 500  # 【系统级】使用对象: observation_formatter.py(HTML→纯文本摘要上限; 原 _extract_html_summary max_len)
 OBS_SYSINFO_FIELD_MAX_CHARS: int = 120 # 【系统级】使用对象: observation_formatter.py(sysinfo 每节字段值截断)
 
+# —— grep 专属观察截断常量（显示域行×列；工具输出不做条数/大小限制，唯一收口于此） ——
+OBS_GREP_MAX_ROWS: int = 200            # 【系统级】使用对象: observation_formatter.py(_format_matches grep 行数上限)
+OBS_GREP_MAX_ROW_CHARS: int = 150       # 【系统级】使用对象: observation_formatter.py(_format_matches grep 单行上限)
+
 # ============================================================
 # 【tool 级】工具读取/输出上限 — 老陈 2026-07-15 归一化治理
 #     与 tool 紧密相关的长度/上限常量集中于此(便于查看对比检查),
@@ -130,8 +135,7 @@ OBS_SYSINFO_FIELD_MAX_CHARS: int = 120 # 【系统级】使用对象: observatio
 MAX_READ_SIZE: int = 10 * 1024 * 1024          # 【tool 级】使用对象: readtext 读取文件字节上限(保留原名不改名, 免改读取层引用)
 MAX_MEDIA_READ_SIZE: int = 50 * 1024 * 1024     # 【tool 级】使用对象: 媒体文件读取字节上限(保留原名不改名)
 MAX_BATCH_FILE_COUNT: int = 100                 # 【tool 级】使用对象: 批量文件操作单次文件数上限
-MAX_SEARCH_FILE_SIZE: int = 10 * 1024 * 1024    # 【tool 级】使用对象: grep/search_files 单文件搜索字节上限
-MAX_SEARCH_RESULTS: int = 1000                  # 【tool 级】使用对象: search_files(find) 结果收集上限, 按 FIND_PAGE_SIZE/页分页; grep 已改引用 OBS_MAX_DISPLAY_ITEMS — 小沈 2026-07-14
+MAX_SEARCH_RESULTS: int = 1000                  # 【tool 级】使用对象: search_files(find) 结果收集上限, 按 FIND_PAGE_SIZE/页分页 — 小沈 2026-07-14
 SHELL_OUTPUT_MAX_CHARS: int = 20000    # 【tool 级】使用对象: execute_shell_command.py(shell 输出超长截断, 头尾各半; 原 MAX_OUTPUT=30000 调小)
 SHELL_OUTPUT_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级】使用对象: shell_engine.py(引擎读 shell 临时输出文件防 OOM; 原 _MAX_OUTPUT_SZ)
 WEB_FETCH_MAX_CHARS: int = 10000       # 【tool 级】使用对象: fetch_webpage.py(网页正文提取上限; 原 max_tokens=8000→32000字符, 对齐 OBS 10000)

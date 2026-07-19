@@ -4,7 +4,9 @@
 # 记录 2026-07-14 小沈 grep匹配内容与上下文行截断防OOM
 # 记录 2026-07-15 小欧 常量归一化治理: snippet/HTML摘要/sysinfo字段截断改引用tool_constants, 功能零退化
 # 记录 2026-07-17 小欧 修复_format_items丢弃url: 原if desc/elif url二选一在有snippet时丢弃url, 致searchweb等"搜索→打开"工作流LLM拿不到URL无法fetchpage而空转(实测task-2ffbc517: 28分钟/1922s/11次LLM调用/重复63%); 改为desc与url并存输出(url为fetchpage必需入参), 功能零退化
-# 2026-07-18 小欧 #40 fix: 修正注释与fallback顺序一致
+# 2026-07-18 小欧 修正注释与fallback顺序一致
+# 2026-07-20 小欧 _format_matches 改行×列(200行/150字符): 累计渲染行超出上限则截断并在末尾追加两态说明(有截断⚠已截断/无截断✓无截断-完整); 单行超宽尾部截断, 解决旧逻辑按单串10000字符截断致内容过大被整体丢弃、LLM 看不到匹配结果的问题
+# 2026-07-20 小欧 _format_matches 无截断时仅输出"✓ 无截断-完整"一行, 不再附加冗余截断明细; 有截断明细行去除多余花括号与错配标点
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -72,6 +74,8 @@ from app.tools.tool_constants import (
     OBS_SNIPPET_MAX_CHARS,
     OBS_HTML_SUMMARY_MAX_CHARS,
     OBS_SYSINFO_FIELD_MAX_CHARS,
+    OBS_GREP_MAX_ROWS,
+    OBS_GREP_MAX_ROW_CHARS,
 )
 
 
@@ -134,7 +138,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     #   两者取"都截断则先到先得"：工具先截→formatter再截→最终observation文本。
     #   若工具上限 < formatter上限，最终长度由工具决定(如searchweb 50项 vs formatter 500)。
     # =========================================================================
-    # #40 fix: 与下方 fallback 实际分发顺序一致 — 小欧 2026-07-18
+    # 与下方 fallback 实际分发顺序一致 — 小欧 2026-07-18
     # _format_scalar_data 覆盖全部 scalar 工具（与下方 fallback 实际分发顺序一致）
     #   which, download, ping_port, write_docx, write_xlsx, write_pdf, write_pptx,
     #   timenow, timeadd, timediff, calendar, notify, execute_sql, generate_chart,
@@ -933,48 +937,60 @@ def _is_files_mode(m: dict) -> bool:
 
 
 def _format_matches(matches: list) -> str:
-    """格式化 grep 内容匹配结果 — 小欧 2026-07-04 — 小欧 2026-07-04 使用 OBS_MAX_DISPLAY_ITEMS
-    小欧 2026-07-07: files_with_matches模式显示文件路径+行号列表
-    小沈 2026-07-08: 字符串matches + files_with_matches判断修复"""
+    """格式化 grep 内容匹配结果 — 行×列: OBS_GREP_MAX_ROWS 行 / OBS_GREP_MAX_ROW_CHARS 列
+    小欧 2026-07-04 初版; 小欧 2026-07-20 改行×列(200×150)+截断说明行两态(Tool 输出不截断, 仅显示域按行×列收口)"""
     if not matches:
         return ""
     if isinstance(matches[0], str):
         return "\n".join(f"  {m}" for m in matches)
-    # 判断是files_with_matches模式(有lines字段)还是content模式(有line字段)
+    max_rows = OBS_GREP_MAX_ROWS
+    max_chars = OBS_GREP_MAX_ROW_CHARS
     is_files_mode = _is_files_mode(matches[0]) if matches else False
-    lines = []
+    # 第一遍：构建全部渲染行，并统计超宽行数（用于截断说明行）
+    all_rows = []
+    overwide = 0
+
+    def _clip(text: str) -> str:
+        nonlocal overwide
+        if len(text) > max_chars:
+            overwide += 1
+        return text[:max_chars]
+
     if is_files_mode:
-        lines.append("文件 : 行号")
-    for i, m in enumerate(matches):
-        if i >= OBS_MAX_DISPLAY_ITEMS:
-            lines.append(f"  ... 还有 {len(matches) - OBS_MAX_DISPLAY_ITEMS} 个匹配项")
-            break
+        all_rows.append("文件 : 行号")
+    for m in matches:
         file_path = m.get("file", "")
         file_lines = m.get("lines")
         if file_lines:
-            lines.append(f"  {file_path}: 行号{file_lines}")
-        else:
-            matched = m.get("matched", [])
-            matched_str = ", ".join(matched) if isinstance(matched, list) else str(matched)
-            content = m.get("content", "")
-            if len(content) > OBS_MAX_STRING_LENGTH:
-                content = content[:OBS_MAX_STRING_LENGTH] + "…（内容已截断）"
-            line_no = m.get("line", "")
-            if line_no:
-                # context上下文:before在命中行之前,after在之后,命中行加>标记 — 小欧 2026-07-11
-                before = m.get("before")
-                after = m.get("after")
-                if before or after:
-                    for ctx in (before or []):
-                        lines.append(f"       {ctx.get('line')}| {(ctx.get('text', '') or '')[:OBS_MAX_STRING_LENGTH]}")
-                    lines.append(f"  >  {file_path}:{line_no}: [{matched_str}] {content}")
-                    for ctx in (after or []):
-                        lines.append(f"       {ctx.get('line')}| {(ctx.get('text', '') or '')[:OBS_MAX_STRING_LENGTH]}")
-                else:
-                    lines.append(f"  {file_path}:{line_no}: [{matched_str}] {content}")
+            all_rows.append(_clip(f"  {file_path}: 行号{file_lines}"))
+            continue
+        matched = m.get("matched", [])
+        matched_str = ", ".join(matched) if isinstance(matched, list) else str(matched)
+        content = m.get("content", "")
+        line_no = m.get("line", "")
+        if line_no:
+            # context上下文:before在命中行之前,after在之后,命中行加>标记 — 小欧 2026-07-11
+            before = m.get("before")
+            after = m.get("after")
+            if before or after:
+                for ctx in (before or []):
+                    all_rows.append(_clip(f"       {ctx.get('line')}| {(ctx.get('text', '') or '')}"))
+                all_rows.append(_clip(f"  >  {file_path}:{line_no}: [{matched_str}] {content}"))
+                for ctx in (after or []):
+                    all_rows.append(_clip(f"       {ctx.get('line')}| {(ctx.get('text', '') or '')}"))
             else:
-                lines.append(f"  {file_path}")
-    return "\n".join(lines)
+                all_rows.append(_clip(f"  {file_path}:{line_no}: [{matched_str}] {content}"))
+        else:
+            all_rows.append(_clip(f"  {file_path}"))
+    total = len(all_rows)
+    truncated = total > max_rows
+    shown = all_rows[:max_rows]
+    if truncated:
+        shown.append("⚠ 已截断")
+        shown.append("截断情况：保留%d行,实际 %d 行，截断 %d 行；单行上限 %d 字符（超宽 %d 行尾部截断）" % (max_rows, total, total - max_rows, max_chars, overwide))
+    else:
+        shown.append("✓ 无截断-完整")
+    return "\n".join(shown)
 
 
 # #18 compress(JSON) 样式:
