@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-13 - 小欧 - #2 add_tool_result构造失败兜底追加最小tool消息防结果丢失
 # 2026-07-19 - 小欧 - add_assistant_tool_call/_append_observation新增reasoning参数传递
+# 2026-07-19 - 小欧 - 推理空转不持久化(Hermes字面): ①新增pop_temp_messages()弹掉所有_temp_reasoning标记消息(改更早仅尾部→全表,防B3穿插隔开); ②prepare_messages_for_llm浅拷贝[dict()]隔离篡改+strip _temp_reasoning防泄漏wire。逻辑: 好的reasoning注入时带标记, 终端路径pop弹掉后再持久化; 坏的不注入故无需清理
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -165,6 +166,21 @@ class MessageBuilder:
         self.conversation_history.append(message_to_dict(msg))
         return msg
 
+    def pop_temp_messages(self) -> int:
+        """移除 conversation_history 中所有 _temp_reasoning 标记的临时消息,返回移除数量 — 小欧 2026-07-19
+        【要点】推理空转(thought-only)临时推理经此清理: 好的分支注入时带标记, 终端路径调用本方法弹掉再持久化; bad分支不注入故无需清理
+        【修正】必须移除全部标记消息(非仅尾部): 因B3 warning(无标记)会插在连续reasoning-only轮之间, 仅弹尾部会遗留被B3隔开的早期标记推理"""
+        removed = 0
+        kept = []
+        for _m in self.conversation_history:
+            if _m.get("_temp_reasoning"):
+                removed += 1
+            else:
+                kept.append(_m)
+        self.conversation_history = kept
+        return removed
+
+
     # =========================================================================
     # 第二组:每轮 LLM 调用的消息组装
     # =========================================================================
@@ -179,9 +195,12 @@ class MessageBuilder:
         """
         # temp_history容量保护:总字符超50000时从最旧截断,再构建messages
         self._cap_temp_history()
-        messages = list(self.conversation_history)
+        messages = [dict(msg) for msg in self.conversation_history]   # 浅拷贝防篡改 — 小欧 2026-07-19
         if self.temp_history:
-            messages = messages + list(self.temp_history)
+            messages = messages + [dict(msg) for msg in self.temp_history]
+        # 剥离内部标记防止泄漏到 LLM 请求 — 小欧 2026-07-19
+        for msg in messages:
+            msg.pop("_temp_reasoning", None)
         return messages
 
     def _cap_temp_history(self):
