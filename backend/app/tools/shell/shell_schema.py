@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 复核schema docstring规范,ShellInput保留既有docstring,WhichInput默认行为已在Field中体现,无需新增
 """
 Shell Schema - Shell工具参数模型
 

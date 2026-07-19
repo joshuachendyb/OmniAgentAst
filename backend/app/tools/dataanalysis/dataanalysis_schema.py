@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 复核schema docstring规范,既有docstring全部保留,GetDbSchemaInput默认行为已在Field中体现,无需新增
 """
 DataAnalysis Schema - 数据分析工具参数模型
 

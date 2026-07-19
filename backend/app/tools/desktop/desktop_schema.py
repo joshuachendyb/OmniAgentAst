@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 复核schema docstring规范,既有5个docstring全部保留,其余工具默认行为均已在Field中体现,无需新增
 """
 DESKTOP Schema - 桌面工具参数模型
 

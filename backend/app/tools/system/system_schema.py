@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 复核schema docstring规范,4个工具默认行为均已在Field描述中体现,无需新增docstring
 """
 SYSTEM Schema - 系统工具参数模型
 

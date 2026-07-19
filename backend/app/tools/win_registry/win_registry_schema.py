@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 复核schema docstring规范,3个工具默认行为(recursive默认False等)均已在Field描述中体现,无需新增docstring
 """
 REGISTRY Schema - 注册表工具参数模型
 
