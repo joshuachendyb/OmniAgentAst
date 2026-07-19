@@ -155,6 +155,16 @@ BINARY_EXTENSIONS: set[str] = {  # 【tool 级】使用对象: 文本工具(read
     '.odt', '.ods', '.odp', '.rtf',
 }
 
+# 【tool 级】使用对象: grep/list_directory 遍历时跳过目录集合 — 小欧 2026-07-19
+SKIP_DIRS: frozenset[str] = frozenset({
+    'node_modules', 'bower_components',
+    '.git', '.svn', '.hg', '__pycache__',
+    '.next', '.nuxt', 'dist', 'build', 'target', 'out',
+    'vendor', '.venv', 'venv', '.env', 'env',
+    '.idea', '.vscode', '.yarn', '.pnp', 'coverage',
+    '.terraform', '.serverless',
+})
+
 # ============================================================
 # 3. 工具注册模块映射(从 lazy_loader.py 迁移) — 【工具层】
 # ============================================================
