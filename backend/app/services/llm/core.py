@@ -1,6 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 小欧 #34 fix: StreamChunk新增truncated字段
+# 2026-07-19 小欧 StreamChunk新增finish_reason字段(OpenAI兼容API终结原因:stop/length/tool_calls/content_filter)
 """
 LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05-27
 
@@ -78,7 +79,8 @@ class StreamChunk:
                  tool_calls: Optional[List[Dict]] = None,
                  raw_data: str = "",
                  usage: Optional[Dict] = None,
-                 truncated: bool = False):  # #34 fix: 超时截断标记 — 小欧 2026-07-18
+                 truncated: bool = False,  # #34 fix: 超时截断标记 — 小欧 2026-07-18
+                 finish_reason: Optional[str] = None):  # 2026-07-19 小欧 新增: API最后chunk的finish_reason(stop/length/tool_calls)
         self.content = content
         self.model = model
         self.is_done = is_done
@@ -89,7 +91,8 @@ class StreamChunk:
         self.tool_calls = tool_calls or []
         self.raw_data = raw_data
         self.usage = usage
-        self.truncated = truncated  # #34 fix: 超时截断标记 — 小欧 2026-07-18
+        self.truncated = truncated
+        self.finish_reason = finish_reason  # 2026-07-19 小欧
 
 
 def create_cancelled_chunk(model: str) -> StreamChunk:
