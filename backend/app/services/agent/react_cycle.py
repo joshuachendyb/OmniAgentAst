@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 记录 2026-07-01 chendyg 状态集中管理重构v2
+# 2026-07-01 chendyg 状态集中管理重构v2
 #   - 状态用 status_table, 数据 handler 自己写
 #   - _dispatch_handler 基于 event type 推断状态
 #   - handler 保留 add_observation/add_assistant_message, 不绕路
-# 记录 2026-07-17 小沈 FC重命名: import/LLMResponseError同步
-# 记录 2026-07-17 小欧 B3扩展+修正: 检测reasoning-only空转并软引导(修正has_tool_results屏蔽使已调工具后仍可警告); 改add_observation→add_assistant_message(避免空tool_call_id孤立tool消息致LLM参数不合法, 参照edca06261昨天修正); warning去具体工具名
+# 2026-07-17 小沈 FC重命名: import/LLMResponseError同步
+# 2026-07-17 小欧 B3扩展+修正: 检测reasoning-only空转并软引导(修正has_tool_results屏蔽使已调工具后仍可警告); 改add_observation→add_assistant_message(避免空tool_call_id孤立tool消息致LLM参数不合法, 参照edca06261昨天修正); warning去具体工具名
 # 2026-07-18 小欧 #27 fix: 删llm_client._cancelled死分支
 # 2026-07-18 小欧 #28 fix: 更新docstring状态推断规则
 # 2026-07-18 小欧 #29 fix: 抽取_EV_FINAL/_EV_RETRY/_EV_ERROR常量
-# 记录 2026-07-18 小欧 FinalStep多态自包含终态重构:
+# 2026-07-18 小欧 FinalStep多态自包含终态重构:
 #   【病根】原react_cycle中取消/截断/无终态等路径用MetaStep(cancelled)表示终态,
 #          与answer_handler的FinalStep(completed)不一致; _dispatch_handler基于event.type位置推断终态,
 #          逻辑分散且易遗漏(如空响应路径set_failed但不产出终态step)。
@@ -21,6 +21,8 @@
 # 2026-07-18 - 小欧 - 修复#7 _dispatch_handler 用循环内单独捕获的 final_event 读 outcome, 不取末事件last_event(末事件未必是final,脆弱); 修复#9 stale注释 MetaStep(cancelled)→FinalStep(outcome="cancelled")
 # 2026-07-18 - 小欧 - F1 fix: 可恢复异常从外层except移入per-step内层try, continue回卷while真重试, 不再误标failed
 # 2026-07-18 - 小欧 - F3 fix: _should_retry_truncated_tool O(n²)嵌套循环→单遍O(n)
+# 2026-07-19 小欧 控制台打印修复: if thought→if thought or reasoning(空content有reasoning的action step也能输出)
+
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -138,7 +140,7 @@ async def _dispatch_handler(agent, llm_response):
     step = agent.llm_call_count
     thought = llm_response.get("thought", "")
     reasoning = llm_response.get("reasoning", "")
-    if thought:
+    if thought or reasoning:  # 2026-07-19 小欧 修复: reason-only action step也输出控制台
         reasoning_part = f"\n{time.strftime('%H:%M:%S')} === 推理 ===\n{reasoning}" if reasoning else ""
         print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}")  # 小欧 2026-07-02 控制台
     if parsed_type == "action":
