@@ -23,6 +23,7 @@
 # 2026-07-18 - 小欧 - F3 fix: _should_retry_truncated_tool O(n²)嵌套循环→单遍O(n)
 # 2026-07-19 小欧 控制台打印修复: if thought→if thought or reasoning(空content有reasoning的action step也能输出)
 # 2026-07-19 小欧 推理空转不持久化: _finalize_cycle(finally出口)开头直调agent.message_builder.pop_temp_messages()弹掉残留标记推理再持久化; 落点单一收口(KISS-DIRECT), 生产直调无防御守卫, 测试mock缺message_builder属测试缺陷
+# 2026-07-19 小欧 R1优化: B3空转警告(场景C reasoning-only子分支)改幂等注入+复用_temp_reasoning标记收口; 已存在相同标记消息则跳过,杜绝连续空转累积重复警告(history堆积/持久化残留); 终态统一由pop_temp_messages弹掉,零新机制(DRY/KISS); 正常answer无工具分支(else)不变仍持久化
 
 """
 run_react_cycle — ReAct 循环核心（薄调度）
@@ -289,7 +290,19 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             logger.warning(f"[B3] LLM返回reasoning-only(空转)未调用工具(step={step})")
             obs_text = ("[Observation] 警告: 你当前仅在推理未调用工具, 若已掌握所需信息请直接给出最终答案, "
                         "否则应调用工具获取信息, 避免空转")
-            agent.message_builder.add_assistant_message(obs_text)  # 2026-07-17 - 小欧 - 改add_assistant_message(参照edca06261昨天修正: add_observation空tool_call_id会创建孤立tool消息致LLM参数不合法)
+            # 小欧 R1优化(2026-07-19): B3空转警告幂等注入+复用_temp_reasoning标记收口,
+            #   已存在相同标记消息则跳过,杜绝连续空转累积重复警告(history堆积/持久化残留);
+            #   终态由_finalize_cycle.pop_temp_messages统一弹掉,符合"空转不持久化"设计,零新机制(DRY/KISS)
+            _hist = agent.message_builder.conversation_history
+            if not any(m.get("role") == "assistant" and m.get("_temp_reasoning") and m.get("content") == obs_text
+                       for m in _hist):
+                _hist.append({
+                    "role": "assistant",
+                    "content": obs_text,
+                    "reasoning": "",
+                    "reasoning_content": "",
+                    "_temp_reasoning": True,
+                })
         else:
             has_tool_results = any(
                 msg.get("role") == "tool"
