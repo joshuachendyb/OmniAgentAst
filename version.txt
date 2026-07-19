@@ -1,3 +1,38 @@
+﻿v0.18.28
+更新时间: 2026-07-19 11:18:34 - 小欧-2026-07-19
+## v0.18.27→v0.18.28 变更汇总 - 小欧-2026-07-19
+
+### feat:
+- feat:core StreamChunk新增finish_reason字段(OpenAI兼容终结原因透传) - 小欧-2026-07-19
+- feat:base_service request_stream新增finish_reason提取与透传(_extract_finish_reason) - 小欧-2026-07-19
+- feat:llm_stream fc_context新增llm_reasoning; _build_answer_response透传finish_reason(None哨兵) - 小欧-2026-07-19
+- feat:fc_message_types AssistantMessage新增reasoning; message_to_dict提升reasoning_content(反向映射) - 小欧-2026-07-19
+- feat:message_builder add_assistant_tool_call/_append_observation新增reasoning参数 - 小欧-2026-07-19
+- feat:action_handler build_observation/_add_denial_feedback新增reasoning传递 - 小欧-2026-07-19
+- feat:message_builder 推理空转不持久化 pop_temp_messages全表扫描+prepare_messages_for_llm浅拷贝strip标记 - 小欧-2026-07-19
+- feat:answer_handler 推理空转不持久化 reasoning-only好/坏分支+双字段注入(OpenAI为主兼容DeepSeek) - 小欧-2026-07-19
+- feat:react_cycle 推理空转不持久化 _finalize_cycle单点收口直调pop_temp_messages(删防御式helper) - 小欧-2026-07-19
+
+### fix:
+- fix:base_service.py #38 空name tool_call delta不触发L2重试(幽灵delta直接过滤) - 小欧-2026-07-18
+- fix:dataanalysis_schema.py AnalyzeDataInput/FilterDataInput data类型str→Union[str,List[Dict]]对齐实现防假阳性WARNING - 小欧-2026-07-18
+- fix:base_service.py #7回归修正(按index合并非自增)+task_db.py补created_at - 小欧-2026-07-18
+- fix:llm_stream.py #39 XML兜底提取分支补WARNING提示(来源reasoning/content) - 小欧-2026-07-18
+- fix:shell_engine.py+shell_schema.py 修复多行命令-Command死锁(600s超时)+引导LLM用python - 小沈-2026-07-18
+- fix:grep_file_content.py 灰区后缀改为内容级探测(复用_detect_binary_content),修复日志轮转文件被误判二进制 - 小沈-2026-07-18
+- fix:react_cycle 推理打印条件thought or reasoning - 小欧-2026-07-19
+
+### refactor:
+- refactor:doc-7月优化 迁移多Session并发架构设计+日志错误分析文档 - 小欧-2026-07-18
+
+### docs:
+- docs:base_service.py+task_db.py 补全编辑历史(#38+#7回归+created_at) - 小欧-2026-07-18
+- docs:version.txt v0.18.25→v0.18.26 变更汇总 - 小欧-2026-07-18
+- docs:version.txt v0.18.26→v0.18.27 变更汇总 - 小欧-2026-07-18
+- docs:version.txt 还原文件头BOM字符 - 小欧-2026-07-18
+- docs:推理空转不持久化-Hermes字面做法 升v3.0对齐最终实现 - 小欧-2026-07-19
+
+> 注: v0.18.26/v0.18.27 曾在version.txt记录但未打tag(脱节); 本次v0.18.28补齐自v0.18.25以来全部22个提交。已知34个测试失败为近期提交引入的回归(SafetyResult/ChunkBuffer/error_classifier/edit_text/shell等模块), 待修。
 v0.18.27
 更新时间: 2026-07-18 19:30:18 - 小欧-2026-07-18
 ## v0.18.26→v0.18.27 变更汇总 - 小欧-2026-07-18
