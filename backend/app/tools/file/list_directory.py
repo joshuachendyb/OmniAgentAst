@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 目录遍历跳过名单(_SKIP_DIRS)合并为公用 SKIP_DIRS(从 tool_constants 导入), 去除 list_directory 与 grep 两处私有重复定义, 统一维护
 """
 F5: list_directory — 列出目录内容
 
@@ -8,6 +10,9 @@ F5: list_directory — 列出目录内容
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 编辑历史:
+# 2026-07-20 - 小欧 - _SKIP_DIRS 合并为公用 SKIP_DIRS(从 tool_constants 导入), 去除私有重复定义
+
 import asyncio
 import time as _time_mod
 import os
@@ -15,21 +20,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
+from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED, SKIP_DIRS
 from app.tools.tool_constants import TOOL_TIMEOUTS, LISTDIR_PAGE_SIZE
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
 
 
 # 文件系统遍历时跳过噪声目录 — 小欧 2026-07-05
-_SKIP_DIRS = frozenset({
-    '__pycache__', 'node_modules', 'bower_components',
-    '.git', '.svn', '.hg',
-    '.next', '.nuxt', 'dist', 'build', 'target', 'out',
-    '.venv', 'venv', '.env', 'env',
-    '.idea', '.vscode', '.yarn', '.pnp', 'coverage',
-    '.terraform', '.serverless', 'vendor',
-})
+
 
 
 def _classify_size(size: int) -> str:
@@ -75,7 +73,7 @@ def _scan_directory_sync(
                 try:
                     if not include_hidden and item.name.startswith('.'):
                         continue
-                    if item.name in _SKIP_DIRS:
+                    if item.name in SKIP_DIRS:
                         continue
                     st = item.stat()
                     entry = _build_entry(item, st)
@@ -103,7 +101,7 @@ def _scan_directory_sync(
             try:
                 if not include_hidden and item.name.startswith('.'):
                     continue
-                if item.name in _SKIP_DIRS:
+                if item.name in SKIP_DIRS:
                     continue
                 st = item.stat()
                 entry = _build_entry(item, st)
