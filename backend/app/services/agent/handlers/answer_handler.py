@@ -19,6 +19,7 @@
 #         agent_runner守卫兜底无final路径; derive读final.outcome。
 # 【增强】response_text全路径非空; 失败细节自包含; 内部set_failed全覆盖。
 # 2026-07-18 - 小欧 - 修复#6拼写错 yiled→yield (2处)
+# 2026-07-19 - 小欧 - 推理空转不持久化(Hermes字面): reasoning-only拆好/坏两分支; 好的带_temp_reasoning标记注入conversation_history(供模型续写, wire副本由prepare_messages_for_llm strip标记), 终端统一由react_cycle._finalize_cycle(finally出口)直调agent.message_builder.pop_temp_messages()弹掉标记再持久化, 落点单一收口(KISS-DIRECT)无防御守卫; 坏的(有去重)跳过不注入不持久不发射ThoughtStep。注: 生产直调message_builder为本代码既有假设, 单测MockMb缺该方法属测试缺陷
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -165,11 +166,22 @@ async def handle_answer(agent, parsed: Dict):
                 outcome="failed",
             ))
             return
-        logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入助理消息继续循环(连续reasoning-only={agent._consecutive_reasoning_only})")
-        agent.message_builder.add_assistant_message(_deduped)
-        yield agent._step_emitter.emit(ThoughtStep(
-            step=step, content=_deduped, reasoning="",
-        ))
+        if _deduped == reasoning:
+            # ── 好的: 无重复 → 贴便签(仿Hermes: content空 + 双字段reasoning/reasoning_content以OpenAI为主兼容DeepSeek) ── 小欧 2026-07-19
+            logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入临时推理(连续reasoning-only={agent._consecutive_reasoning_only})")
+            agent.message_builder.conversation_history.append({
+                "role": "assistant",
+                "content": "",
+                "reasoning": _deduped,
+                "reasoning_content": _deduped,
+                "_temp_reasoning": True,
+            })
+            yield agent._step_emitter.emit(ThoughtStep(
+                step=step, content=_deduped, reasoning="",
+            ))
+        else:
+            # ── 坏的: 有重复去重 → 不注入不持久不发射, 仅warning ── 小欧 2026-07-19
+            logger.warning(f"[handle_answer] reasoning检测到重复去重(step={step}), 跳过注入")
         return
 
     agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 正常final answer, 归零空转计数(防御残留)
