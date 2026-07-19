@@ -6,6 +6,7 @@ Timer Register - 定时器工具注册点 — 小欧 2026-06-17
 - timer_set: 设置定时器
 - timer_clear: 清除定时器
 - timer_list: 列出定时器
+【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 """
 
 from app.tools.registry import tool_registry
@@ -31,6 +32,9 @@ from app.tools.timer.timer_clear import timer_clear
 from app.tools.timer.timer_list import timer_list
 
 
+# 【描述规范】2026-07-20 北京老陈 — 工具描述(本 TIMER_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
+# 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
+# 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 TIMER_TOOL_DESCRIPTIONS = {
     "timer_set": """设置一个定时器,在指定的延迟后触发提醒。delay为延迟秒数(1~86400,最长24小时),callback为触发时的提醒内容。适用场景:需要延迟执行提醒、定时通知用户时使用。""",
 

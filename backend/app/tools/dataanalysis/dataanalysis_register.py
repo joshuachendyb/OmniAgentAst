@@ -4,6 +4,7 @@ DATAANALYSIS Register — 数据分析工具注册点
 
 【2026-06-18 小欧】从 document/ 独立为 dataanalysis/ 目录
 【2026-06-18 小健】添加TOOL_DEPENDENCIES常量管理工具依赖
+【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 
 6个工具:
 - analyze_data    — 数据统计分析 (依赖: pandas)
@@ -46,6 +47,9 @@ from app.tools.dataanalysis.query_sql import query_sql
 from app.tools.dataanalysis.execute_sql import execute_sql
 from app.tools.dataanalysis.get_db_schema import get_db_schema
 
+# 【描述规范】2026-07-20 北京老陈 — 工具描述(本 DESCRIPTIONS 字典)保持简洁、不冗余:
+# 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
+# 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 DESCRIPTIONS = {
     "analyze_data": """对数据集进行统计分析,支持均值/最值/计数等描述性统计和分组统计。适用场景:需要分析数据分布特征、获取统计数据时使用。""",
 

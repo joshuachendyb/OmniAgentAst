@@ -8,6 +8,7 @@ Network Register - 网络通信工具注册点
 - 使用 Pydantic 模型注册,自动生成 OpenAI Schema
 
 【工具列表】(共5个)— 【2026-05-17 小沈】P1: 6→5,ping+port_check→network_diagnose
+【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 1. httpget - 发起HTTP请求
 2. download - 下载文件到本地
 3. fetchpage - 获取和处理网页内容
@@ -92,6 +93,9 @@ from app.tools.network.search_web import searchweb
 from app.tools.network.network_diagnose import ping_port
 
 # 工具描述
+# 【描述规范】2026-07-20 北京老陈 — 工具描述(本 NETWORK_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
+# 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
+# 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 NETWORK_TOOL_DESCRIPTIONS = {
     "httpget": """发送HTTP请求到指定URL,支持GET/POST/PUT/DELETE等方法。适用场景:需要调用REST API获取数据、提交数据、调用Web服务时使用。""",
     "download": """从URL下载文件到本地磁盘。适用场景:需要下载图片、安装包、数据文件等到本地时使用。""",

@@ -16,6 +16,7 @@ Shell Register - Shell工具注册点
 - 合并2个:check_command_available+locate_command → find_command
 
 【2026-06-18 小健】删除两个包装器(execute_shell_command_foreground/background)，违反YAGNI原则
+【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 
 # Shell操作工具(共4个LLM工具)
 """
@@ -40,6 +41,9 @@ from app.tools.shell.shell_schema import (
 from app.tools.shell.execute_shell_command import shell
 from app.tools.shell.find_command import which
 
+# 【描述规范】2026-07-20 北京老陈 — 工具描述(本 SHELL_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
+# 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
+# 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 SHELL_TOOL_DESCRIPTIONS = {
     "shell": """在Windows环境中执行PowerShell/CMD命令。推荐使用PowerShell语法。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
 

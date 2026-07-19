@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-18 - 小欧 - #10 fix: compress/extract/copy/move/rename 的 examples 参数名 source→path、destination→dest,
 #    与 CompressInput/ExtractInput/MoveInput/CopyInput/RenameInput schema 对齐, 消除 example/schema 不一致
+# 2026-07-20 - 小欧 - 加【描述规范】注释:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 """
 File Register - 文件工具注册点 v3.0
 
@@ -84,7 +85,9 @@ FILE_TOOL_DEPENDENCIES["compress"] = ["pyzipper"]
 # ============================================================
 # 工具描述(14个)
 # ============================================================
-
+# 【描述规范】2026-07-20 北京老陈 — 工具描述(本 FILE_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
+# 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
+# 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 FILE_TOOL_DESCRIPTIONS = {
     "readtext": """读取文本文件内容。适用场景:需要查看或分析源代码、日志、配置文件等纯文本时使用。""",
 
@@ -158,10 +161,9 @@ FILE_TOOL_EXAMPLES = {
     "grep": [
         {"pattern": "def readtext", "path": "D:/backend"},
         {"pattern": "TODO", "path": "D:/src"},
-        {"pattern": "error", "path": "D:/logs", "output_mode": "only_files"},
         {"pattern": "class.*Component", "path": "D:/src", "glob": "*.py"},
-        {"pattern": "arr[0]", "path": "D:/src", "literal": True},
-        {"pattern": "def run", "path": "D:/backend", "context": 2}
+        {"pattern": "def run", "path": "D:/backend", "context": 2},
+        {"pattern": "error", "path": "D:/logs/app.log"},
     ],
     "compress": [
         {"path": "D:/project", "dest": "D:/backup.zip"},

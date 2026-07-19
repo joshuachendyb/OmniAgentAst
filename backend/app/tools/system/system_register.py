@@ -6,6 +6,7 @@ SYSTEM Register - 系统信息工具注册点
 
 【2026-06-18 小健】添加SYSTEM_TOOL_DEPENDENCIES常量管理工具依赖
 【2026-06-20 小健】删除list_processes/kill_process/service_control/get_env/set_env/net_connections
+【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 
 【工具列表】(本文件注册4个 + reg_register注册1个)
 1. event_log - 获取系统事件日志 (依赖: psutil)
@@ -39,6 +40,9 @@ from app.tools.system.create_task import create_task
 from app.tools.system.delete_task import delete_task
 from app.tools.system.list_tasks import list_tasks
 
+# 【描述规范】2026-07-20 北京老陈 — 工具描述(本 SYSTEM_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
+# 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
+# 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 SYSTEM_TOOL_DESCRIPTIONS = {
     "event_log": """获取系统事件日志,可按级别和时间范围过滤。适用场景:需要查看系统错误、诊断问题、审计安全事件时使用。""",
     "create_task": """创建Windows计划任务,定时执行脚本或程序。适用场景:需要定时备份、周期性维护、自动执行脚本时使用。""",

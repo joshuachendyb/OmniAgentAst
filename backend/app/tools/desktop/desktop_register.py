@@ -3,6 +3,7 @@
 DESKTOP Register - 桌面工具注册点
 
 【2026-06-22 小健】5个窗口状态tool合并为1个set_window_state，16→12
+【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 
 【工具列表】(11个) → DESKTOP分类:
 1. window_info - 列出所有窗口 (依赖: pywin32)
@@ -77,6 +78,9 @@ from app.tools.desktop.screen_capture import screen_capture
 from app.tools.desktop.clipboard_control import clipboard_control
 
 
+# 【描述规范】2026-07-20 北京老陈 — 工具描述(本 DESKTOP_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
+# 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
+# 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 DESKTOP_TOOL_DESCRIPTIONS = {
     "window_info": """列出当前系统所有可见窗口。可选include_minimized包含最小化窗口,filter_title按标题模糊过滤。返回窗口列表(含标题/状态/位置)。适用场景:需要查看当前打开了哪些窗口、确认窗口名称时使用。""",
 

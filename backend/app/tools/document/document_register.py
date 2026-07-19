@@ -4,6 +4,7 @@ Document Register - 文档操作工具注册点（仅DOCUMENT分类）
 
 【2026-06-18 小欧】DATAANALYSIS 6个工具已迁出到 dataanalysis/ 独立目录
 【2026-06-18 小健】添加TOOL_DEPENDENCIES常量管理工具依赖
+【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 
 【工具列表】(共8个) → DOCUMENT分类:
 1. read_pdf - 读取PDF文档 (依赖: pdfplumber)
@@ -62,6 +63,9 @@ from app.tools.document.write_xlsx import write_xlsx
 from app.tools.document.write_pdf import write_pdf
 from app.tools.document.write_pptx import write_pptx
 
+# 【描述规范】2026-07-20 北京老陈 — 工具描述(本 DESCRIPTIONS 字典)保持简洁、不冗余:
+# 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
+# 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 DESCRIPTIONS = {
     "read_pdf": """读取PDF(.pdf)文件内容。自动提取文本、表格和图片。适用场景:需要读取PDF文档内容时使用。""",
     "read_docx": """读取Word(.docx)文档内容。自动提取文本和表格。适用场景:需要读取Word文档内容时使用。""",

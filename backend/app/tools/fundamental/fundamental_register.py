@@ -3,6 +3,7 @@
 FUNDAMENTAL Register — 基础工具注册点
 
 【2026-06-18 小欧】从 meta/ 迁入, 匹配 ToolCategory.FUNDAMENTAL
+【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 
 7个工具:
 - searchtool — BM25全文检索搜索工具
@@ -47,6 +48,9 @@ from app.tools.fundamental.get_system_info import sysinfo
 from app.tools.fundamental.send_notification import notify
 
 
+# 【描述规范】2026-07-20 北京老陈 — 工具描述(本 FUNDAMENTAL_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
+# 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
+# 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 FUNDAMENTAL_TOOL_DESCRIPTIONS = {
     "searchtool": """搜索并注入未加载的工具。当前工具列表无匹配时优先调用此工具,按关键词检索并自动注入匹配的工具分类。适用场景:当前工具列表未找到对应的专用工具时使用。""",
     "timenow": """获取当前系统时间,返回ISO格式、时间戳、格式化字符串、时区、星期等信息。适用场景:需要获取当前时间时使用。""",

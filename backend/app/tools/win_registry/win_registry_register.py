@@ -3,6 +3,7 @@
 REGISTRY Register - 注册表工具注册点
 
 【2026-06-16 小沈】拆分registry_control为registry_read/registry_write/registry_delete
+【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 
 创建时间: 2026-05-02
 更新时间: 2026-06-16 小沈 - 1→3拆分
@@ -30,6 +31,9 @@ from app.tools.win_registry.registry_read import registry_read
 from app.tools.win_registry.registry_write import registry_write
 from app.tools.win_registry.registry_delete import registry_delete
 
+# 【描述规范】2026-07-20 北京老陈 — 工具描述(本 REGISTRY_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
+# 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
+# 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 REGISTRY_TOOL_DESCRIPTIONS = {
     "registry_read": """读取Windows注册表键值。适用场景:需要查看注册表配置、获取系统设置时使用。""",
     "registry_write": """写入Windows注册表键值,写入前自动备份。适用场景:需要修改注册表配置、设置程序路径时使用。需谨慎操作。""",
