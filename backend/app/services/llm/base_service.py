@@ -7,7 +7,7 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 
 编辑历史:
 # 格式规范: {日期} {署名} {修改内容}
-  2026-07-14 小欧 删除死代码_is_rate_limit_status(无调用方,限流由SystemErrorClassifier覆盖,功能零退化)
+   2026-07-14 小欧 删除死代码_is_rate_limit_status(无调用方,限流由SystemErrorClassifier覆盖,功能零退化)
    2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL至app.constants(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/测试导入)
     2026-07-16 小欧 新增三层防线——①LLM_MAX_TOKENS=16384(防无限长输出); ②STREAM_TOTAL_TIMEOUT=500s总时长硬超时(httpx idle timeout 在连续流式时不触发,用 wall-clock 兜底); ③tool_call流式超时=总时长3/5=300s(_parse_sse_data 对 tool_call delta 静默跳过, 专门卡此阶段). 三者超时后均 break→accumulator→截断修复, 不触发重试
    2026-07-17 小沈 FC重命名: FCFormatError→LLMResponseError, 导入路径同步更新
@@ -19,7 +19,8 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
    2026-07-18 小欧 #35 fix: _parse_sse_data改为generator,reasoning+content同chunk各yield一帧
     2026-07-18 小欧 #7 fix: 并行tool_calls累加器遇重复idx时自增去重(while idx in tool_call_accumulator: idx+=1), 缺index或全0的并行调用不再塌缩成一个
    2026-07-18 小欧 #38 fix: 流结束后过滤空name的幽灵tool_call delta（非真实工具调用,不触发L2重试）
-    2026-07-18 小欧 #7回归修正: 改while自增为if not in直接合并——OpenAI流式协议中单tool_call以稳定index跨多delta续传(首delta带name,后续仅arguments), 原#7自增致name与arguments撕裂不同槽位→解析失败→FC降级
+     2026-07-18 小欧 #7回归修正: 改while自增为if not in直接合并——OpenAI流式协议中单tool_call以稳定index跨多delta续传(首delta带name,后续仅arguments), 原#7自增致name与arguments撕裂不同槽位→解析失败→FC降级
+   2026-07-19 小欧 finish_reason字段提取/透传: _extract_finish_reason+主循环提取+final yield(与usage同级对称)
 """
 
 import asyncio
@@ -187,6 +188,7 @@ class BaseAIService:
                 _truncated = False  # #34 fix: 超时截断标记 — 小欧 2026-07-18
                 tool_call_streaming_start = None
                 deadline = time.monotonic() + STREAM_TOTAL_TIMEOUT
+                finish_reason = None  # 2026-07-19 小欧 新增: SSE最后chunk的finish_reason
                 async for data_str in self._llm_sdk.request_stream(
                     messages=messages,
                     tools=tools,
@@ -216,6 +218,10 @@ class BaseAIService:
                     usage_from_chunk = self._extract_usage(data_str)
                     if usage_from_chunk:
                         usage_data = usage_from_chunk
+
+                    fr_from_chunk = self._extract_finish_reason(data_str)  # 2026-07-19 小欧
+                    if fr_from_chunk:
+                        finish_reason = fr_from_chunk
 
                     # 跨chunk聚合tool_calls — FC-only: 含id — 小沈 2026-06-11
                     # #7 fix 回归修正(小欧 2026-07-18): OpenAI 流式协议里单个 tool_call 以「稳定 index」跨多个 delta 续传,
@@ -307,7 +313,7 @@ class BaseAIService:
                     yield StreamChunk(content="", model=self.model, is_done=False,
                                       tool_calls=tool_calls_list, raw_data=complete_raw)
 
-                yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw, usage=usage_data, truncated=_truncated)  # #34 fix — 小欧 2026-07-18
+                yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw, usage=usage_data, truncated=_truncated, finish_reason=finish_reason)  # #34 fix — 小欧 2026-07-18; finish_reason — 2026-07-19 小欧
                 return
 
             except LLMResponseError:
@@ -375,6 +381,23 @@ class BaseAIService:
             return None
         except Exception as e:
             logger.warning(f"[BaseAIService] _extract_usage异常: {e}")
+            return None
+
+    def _extract_finish_reason(self, data_str: str) -> Optional[str]:
+        """从SSE data中提取finish_reason(stop/length/tool_calls/content_filter) — 小欧 2026-07-19"""
+        try:
+            data = parse_json(data_str)
+            if not data:
+                return None
+            choices = data.get("choices", [])
+            if not choices or not isinstance(choices, list):
+                return None
+            fr = choices[0].get("finish_reason")
+            if fr and isinstance(fr, str) and fr.strip():
+                return fr.strip()
+            return None
+        except Exception as e:
+            logger.debug(f"[BaseAIService] _extract_finish_reason异常: {e}")
             return None
 
     def _parse_sse_data(self, data_str: str):  # → Generator[StreamChunk, None, None] — #35 fix
