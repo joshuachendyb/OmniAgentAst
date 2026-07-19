@@ -318,10 +318,7 @@ PARAM_ALIASES = {
 # 参数值别名:大众化旧枚举值→规范值 — 小欧 2026-07-11
 # 仅当旧值是大众化术语(LLM训练里常见,会自然使用)才需要兼容;自造的旧值不必处理
 PARAM_VALUE_ALIASES = {
-    "grep": {
-        # files_with_matches 是 grep/ripgrep 标准术语(-l/--files-with-matches),LLM常用
-        "output_mode": {"files_with_matches": "only_files"},
-    },
+    "grep": {},
 }
 
 

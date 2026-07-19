@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-15 - 小欧 - RenameInput新增overwrite字段(默认False): 配合rename工具支持覆盖, 对齐move/copy/compress/extract, 向后兼容(根因: rename原硬编码overwrite=False且不暴露该参数, 目标已存在时LLM无法用overwrite=True纠正)。
 # 2026-07-15 - 小欧 - 常量归一化治理: WritetextInput.content 入参校验上限改引用 tool_constants.WRITE_TEXT_MAX_CHARS(原 max_length=10000), 功能零退化
+# 2026-07-20 - 小欧 - GrepInput 类 docstring 改为仅写工具级默认能力(不重复字段描述);为 CompressInput/ExtractInput/MoveInput 补工具级默认能力 docstring(目录默认递归压缩/解压/移动)
 """
 File Schema - 文件工具参数模型
 
@@ -252,37 +253,29 @@ class FindInput(BaseModel):
 # ============================================================
 
 class GrepInput(BaseModel):
-    """使用技巧:
-- pattern 支持正则如 \"def \\w+\" 匹配函数定义
-- glob 可限制文件类型如 \"*.py\"
-- output_mode=\"only_files\" 只返回文件名列表,节省token
-- 结果按文件修改时间降序排列,最新修改的文件在最前"""
+    """默认返回匹配行的完整内容(含文件名与行号);结果按文件修改时间降序排列,最新修改的文件在最前。
+只查文件名列表或只计匹配数量等需求,由 LLM 基于返回的带文件路径内容自行去重或计数,无需额外参数。
+(各参数能力见对应字段 description)"""
     pattern: str = Field(
-        description="正则表达式搜索模式,支持中文内容搜索。如 \"def read_file\""
+        description="正则表达式搜索模式(Python re 语法),支持中文内容搜索。如 \"def read_file\";含 . ( ) [ ] * + ? $ 等特殊字符的纯文本请自行转义(如 foo\\.bar)"
     )
     path: str = Field(
-        description="搜索目录(绝对路径,必填)"
+        description="搜索文件或目录路径(绝对路径,必填);传文件则只搜该文件,传目录则递归搜索子目录"
     )
     glob: Optional[str] = Field(
         default=None,
-        description="文件过滤(glob通配符),如 \"*.py\""
+        description="文件名过滤(glob通配符),如 \"*.py\",仅对目录递归搜索生效"
     )
     ignore_case: bool = Field(
         default=True,
-        description="是否忽略大小写,默认True"
-    )
-    literal: bool = Field(
-        default=False,
-        description="是否按纯文本精确搜索,默认False(正则模式)。搜索带正则特殊字符的字符串时设为True,如 \"foo.bar()\" \"arr[0]\" \"price$\",会自动转义 . ( ) [ ] * + ? $ 等字符"
+        description="是否忽略大小写,默认True(等价于 pattern 前加 (?i))"
     )
     context: int = Field(
-        default=0, ge=0, le=10,
-        description="返回匹配行前后各N行上下文,默认0,上限10。仅output_mode=content生效,其余模式忽略。用于查看匹配代码的上下文"
+        default=0, ge=0,
+        description="返回匹配行前后各N行上下文,默认0(仅校验非负)。用于查看匹配代码的上下文"
     )
-    output_mode: Literal["content", "count", "only_files"] = Field(
-        default="content",
-        description="输出模式: content=返回匹配内容(默认), count=只返回匹配数量, only_files=只返回含匹配的文件名列表"
-    )
+
+
 
 
 
@@ -291,6 +284,7 @@ class GrepInput(BaseModel):
 # ============================================================
 
 class CompressInput(BaseModel):
+    """可压缩单文件、目录或通配符批量打包;压缩目录时默认递归包含子目录。默认 zip 格式,默认不覆盖已存在压缩包(需 overwrite=True),仅 ZIP 支持加密。"""
     path: str = Field(description="要压缩的文件/目录路径(绝对路径),支持通配符如*.txt")
     dest: str = Field(description="输出压缩包路径(绝对路径,必填)")
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
@@ -309,6 +303,7 @@ class CompressInput(BaseModel):
 # ============================================================
 
 class ExtractInput(BaseModel):
+    """解压 zip/tar/tar.gz/tar.bz2 到目标目录,默认递归展开所有层级并保留原目录结构。dest 默认自动创建同名目录,默认不覆盖(需 overwrite=True),ZIP 加密包需 password。"""
     path: str = Field(description="压缩包路径(绝对路径,必填)。支持格式:zip/tar/tar.gz/tar.bz2")
     dest: Optional[str] = Field(
         default=None, description="解压目标目录(绝对路径,可选,默认自动创建同名目录)"
@@ -322,6 +317,7 @@ class ExtractInput(BaseModel):
 # ============================================================
 
 class MoveInput(BaseModel):
+    """移动文件或目录到新位置;移动目录时默认递归。默认不覆盖已存在目标(需 overwrite=True)。"""
     path: str = Field(description="源文件路径(绝对路径)")
     dest: str = Field(description="目标路径(绝对路径)")
     overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
