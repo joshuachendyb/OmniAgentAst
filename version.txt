@@ -1,6 +1,6 @@
-﻿v0.18.28
+﻿v0.18.26
 更新时间: 2026-07-19 11:18:34 - 小欧-2026-07-19
-## v0.18.27→v0.18.28 变更汇总 - 小欧-2026-07-19
+## v0.18.25→v0.18.26 变更汇总 - 小欧-2026-07-19
 
 ### feat:
 - feat:core StreamChunk新增finish_reason字段(OpenAI兼容终结原因透传) - 小欧-2026-07-19
@@ -31,21 +31,6 @@
 - docs:version.txt v0.18.26→v0.18.27 变更汇总 - 小欧-2026-07-18
 - docs:version.txt 还原文件头BOM字符 - 小欧-2026-07-18
 - docs:推理空转不持久化-Hermes字面做法 升v3.0对齐最终实现 - 小欧-2026-07-19
-
-> 注: v0.18.26/v0.18.27 曾在version.txt记录但未打tag(脱节); 本次v0.18.28补齐自v0.18.25以来全部22个提交。已知34个测试失败为近期提交引入的回归(SafetyResult/ChunkBuffer/error_classifier/edit_text/shell等模块), 待修。
-v0.18.27
-更新时间: 2026-07-18 19:30:18 - 小欧-2026-07-18
-## v0.18.26→v0.18.27 变更汇总 - 小欧-2026-07-18
-
-### fix:
-- fix:dataanalysis_schema.py AnalyzeDataInput/FilterDataInput data类型str→Union[str,List[Dict]]对齐实现防假阳性WARNING -小欧-2026-07-18
-
-v0.18.26
-更新时间: 2026-07-18 18:05:25 - 小欧-2026-07-18
-## v0.18.25→v0.18.26 变更汇总 - 小欧-2026-07-18
-
-### fix:
-- fix:base_service.py #38 空name tool_call delta不触发L2重试(幽灵delta直接过滤) -小欧-2026-07-18
 
 v0.18.25
 更新时间: 2026-07-18 17:21:25 - 小欧-2026-07-18
