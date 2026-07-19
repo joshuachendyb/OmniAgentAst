@@ -22,6 +22,7 @@
 # 2026-07-18 - 小欧 - F1 fix: 可恢复异常从外层except移入per-step内层try, continue回卷while真重试, 不再误标failed
 # 2026-07-18 - 小欧 - F3 fix: _should_retry_truncated_tool O(n²)嵌套循环→单遍O(n)
 # 2026-07-19 小欧 控制台打印修复: if thought→if thought or reasoning(空content有reasoning的action step也能输出)
+# 2026-07-19 小欧 推理空转不持久化: _finalize_cycle(finally出口)开头直调agent.message_builder.pop_temp_messages()弹掉残留标记推理再持久化; 落点单一收口(KISS-DIRECT), 生产直调无防御守卫, 测试mock缺message_builder属测试缺陷
 
 """
 run_react_cycle — ReAct 循环核心（薄调度）
@@ -209,6 +210,7 @@ async def _dispatch_handler(agent, llm_response):
 
 def _finalize_cycle(agent):
     """循环后收尾: 状态回调+任务追踪 — 小健 2026-06-17 从finally提取"""
+    agent.message_builder.pop_temp_messages()  # 小欧 2026-07-19 安全网: 清除残留标记推理再持久化
     agent._on_after_loop()
     agent._step_emitter.complete_task(agent.status == AgentStatus.COMPLETED)
 
