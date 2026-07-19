@@ -1,4 +1,13 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-14 小欧 FC_FALLBACK_ENABLED/FC_MAX_RETRIES/LLM_TOOL_CHOICE导入源由base_service改为app.constants
+# 2026-07-15 小欧 修复call_llm_with_fallback:FC重试循环内拦截type:error响应
+# 2026-07-16 小欧 新增XML tool_call提取拦截点; M5解决空错误日志丢失根因
+# 2026-07-17 小沈 FCFormatError→LLMResponseError等重命名
+# 2026-07-18 小欧 #31 fix: fallback前reset cancel状态; #39 fix: XML兜底补WARNING
+# 2026-07-19 小欧 fc_context新增llm_reasoning字段(从stream reasoning累加结果传递)
+# 2026-07-19 小欧 _build_answer_response新增finish_reason参数(SSE最后chunk的stop/length/content_filter,与usage同级提取)
+# 2026-07-19 小欧 改善: _finish_reason用None哨兵(空值走_log_llm_response回退stop,日志正确)
 """
 llm_stream — LLM流式调用+响应构建
 
@@ -13,16 +22,6 @@ llm_stream — LLM流式调用+响应构建
 
 关键认知：LLM 原生输出（OpenAI SSE）不含 type 字段，type 是 agent 推理加上的。
 详见 llm/core.py 头部的完整分类说明。
-
-编辑历史:
-# 格式规范: {日期} {署名} {修改内容}
-   2026-07-14 小欧 FC_FALLBACK_ENABLED/FC_MAX_RETRIES/LLM_TOOL_CHOICE导入源由base_service改为app.constants(常量集中,非功能退化)
-   2026-07-15 小欧 修复call_llm_with_fallback:①FC重试循环内拦截type:"error"响应转FCFormatError触发L2重试(避免直抵set_failed) ②降级关闭分支last_error=None兜底防AttributeError崩溃
-     2026-07-16 小欧 新增XML tool_call提取拦截点: call_llm_stream在FC JSON tool_calls为空时,从reasoning/content检XML工具调用,合成tool_call_id走action路径(FC模式openai_tools清单校验防误提取,Text fallback由action_handler兜底)
-     2026-07-16 小欧 M5 解决空[FC]错误日志丢失根因问题: 此前_yield_error_response仅记录错误消息, 异常消息为空时(如测试垃圾输入/空串)无任何诊断上下文, 排障无据; 新增exc/exc_type可选参数。能力提升: 错误日志补全异常类型(exc=类名)或错误分类(type=分类)诊断上下文, 即使消息为空也能定位根因
-       2026-07-17 小沈 FCFormatError→LLMResponseError, FC_MAX_RETRIES→LLM_RESPONSE_RETRIES, FC_FALLBACK_ENABLED→LLM_RESPONSE_FALLBACK; [FC]→[LLM]并去冗余"LLM"
-    2026-07-18 小欧 #31 fix: fallback前llm_client._cancelled=False重置,消除cancel状态残留
-    2026-07-18 小欧 #39 fix: XML兜底提取分支补WARNING提示(含tool_name+来源reasoning/content),提升可观测性
 """
 
 import asyncio
@@ -67,7 +66,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
                       tool_name=first.get("tool_name", "?"), parallel_calls=len(_pending_calls))
     return ("response", {
         "type": "action", "thought": full_content, "reasoning": full_reasoning,
-        "fc_context": {"tool_call_id": first.get("tool_call_id") or "", "tool_calls": built_tool_calls, "llm_content": full_content},
+        "fc_context": {"tool_call_id": first.get("tool_call_id") or "", "tool_calls": built_tool_calls, "llm_content": full_content, "llm_reasoning": full_reasoning},  # 2026-07-19 小欧 新增/传递 llm_reasoning
         "_pending_calls": _pending_calls, "tool_name": first.get("tool_name", ""),
         "tool_params": first.get("tool_params") or {}, "tool_call_id": first.get("tool_call_id") or "",
         "_repair_warning": first.get("_repair_warning", ""),
@@ -104,17 +103,18 @@ def _yield_error_response(error_msg: str, agent, exc: Optional[BaseException] = 
     return ("response", {"type": "error", "content": error_msg})
 
 
-def _build_answer_response(full_content, full_reasoning, usage_data, agent):
+def _build_answer_response(full_content, full_reasoning, usage_data, agent, finish_reason=None):
     """构建answer类型响应 — 小欧 2026-06-25 抽取_log_llm_response
     
     type="answer" 的含义: agent 推断 LLM 已完成任务(无 tool_calls,仅文本输出),
-    将此文本作为任务最终答复,后续由 handle_answer() → FinalStep 结束循环。"""
+    将此文本作为任务最终答复,后续由 handle_answer() → FinalStep 结束循环。
+    — 小欧 2026-07-19 新增 finish_reason 参数(API最后chunk回传:stop/length/content_filter)"""
     logger.info(f"[LLM] 原始响应(answer):\n")
     full_content = full_content.strip()
     full_reasoning = full_reasoning.strip()
     assembled = {"content": full_content, "reasoning": full_reasoning}
-    _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "answer", usage_data)
-    return ("response", {"type": "answer", "content": full_content, "reasoning": full_reasoning})
+    _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "answer", usage_data, finish_reason=finish_reason)
+    return ("response", {"type": "answer", "content": full_content, "reasoning": full_reasoning, "finish_reason": finish_reason})
 
 
 
@@ -126,6 +126,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     stream_error = None
     usage_data = None
     tool_choice = LLM_TOOL_CHOICE if openai_tools else None
+    _finish_reason = None  # 2026-07-19 小欧 新增: SSE最后chunk的finish_reason(None→_log_llm_response回退stop)
 
     llm_start = time.time()
     try:
@@ -156,6 +157,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
             if chunk.is_done:
                 if chunk.usage:
                     usage_data = chunk.usage
+                _finish_reason = getattr(chunk, "finish_reason", None) or None  # 2026-07-19 小欧
                 break
         llm_elapsed = time.time() - llm_start
     except LLMResponseError:
@@ -245,7 +247,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     _c = usage_data.get('completion_tokens', '?') if usage_data else '?'
     _t = usage_data.get('total_tokens', '?') if usage_data else '?'
     logger.info(f"[LLM] 解析结果: answer, len={len(content)}, tokens={_t}(prompt={_p}+completion={_c}), llm_dur={llm_elapsed:.2f}s")
-    yield _build_answer_response(full_content, full_reasoning, usage_data, agent)
+    yield _build_answer_response(full_content, full_reasoning, usage_data, agent, _finish_reason)
 
 
 async def call_llm_with_fallback(agent, messages, openai_tools):
