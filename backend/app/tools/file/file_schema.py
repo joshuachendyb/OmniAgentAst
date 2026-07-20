@@ -224,7 +224,7 @@ class TreeInput(BaseModel):
 # ============================================================
 
 class FindInput(BaseModel):
-    """支持offset参数跳过前N条结果;工具返回全部匹配路径(无条数上限),显示域按行×列收口(OBS_FIND),offset仅用于跳过"""
+    """支持offset参数跳过前N条结果;工具返回显示域按行×列收口,offset仅用于跳过"""
     pattern: str = Field(
         description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\""
     )
@@ -241,7 +241,7 @@ class FindInput(BaseModel):
     )
     offset: int = Field(
         default=0,
-        description="分页偏移量,用于跳过前N条结果;工具返回全部匹配(无条数上限),显示域按行×列收口,offset仅跳过不限制总数"
+        description="分页偏移量,用于跳过前N条结果;offset仅跳过不限制总数"
     )
 
 

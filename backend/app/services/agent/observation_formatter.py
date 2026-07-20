@@ -13,6 +13,7 @@
 # 2026-07-20 小欧 章18 listdir: _format_entries 改专属行×列(OBS_LISTDIR_MAX_ROWS=200/OBS_LISTDIR_MAX_ROW_CHARS=300) + 两态说明(truncated=显示域行×列截断 或 Tool层deadline截断 data.truncated); 空目录独立分支返回"(空目录)"不显示两态行; 删除 OBS_MAX_DISPLAY_ITEMS 引用(已由 OBS_LISTDIR_* 专属取代)
 # 2026-07-20 小欧 门限复查: #11 _format_shell_result 移除 meta 行(shell_type/duration_ms/rc), 改由 _format_llm_data 在 llm_data 段统一呈现(退出码/耗时/shell类型); data 详情仅 stdout/stderr+两态, 严禁与 llm_data 段重复显示(原 #11 从 data 取恒为默认空值 powershell/0ms, 既错又重复)
 # 2026-07-20 小欧 门限复查: _format_llm_data 渲染 llm_data 顶层 "diff" 加行×列收口(OBS_EDITTEXT_MAX_ROWS/CHARS)+两态; writetext 的 diff 改放 llm_data 顶层经此呈现, edittext 的 diff 统一走 data["diff"]→#24, 二者均单行×列收口、严禁重复
+# 2026-07-20 小欧 httpget ②修复: _format_httpget_result 识别 _truncated 模式(安全截断), 醒目标示 _reason+⚠, 确保LLM知悉截断原因(零错觉); 正常 body 维持 json.dumps+行×列收口不变
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -1135,33 +1136,41 @@ def _extract_html_summary(html: str, max_len: int = OBS_HTML_SUMMARY_MAX_CHARS) 
 #   输入: {"status_code":200,"body":{"userId":1,"title":"hello"},"headers":{"content-type":"application/json","date":"2026-07-05"}}
 #   输出: ── HTTP GET ── 200\n── Body ──\n{\n  "userId": 1,\n  "title": "hello"\n}\n── Headers ──\n  content-type: application/json\n  date: 2026-07-05
 def _format_httpget_result(data: dict) -> str:
-    """httpget HTTP 响应 — 小欧 2026-07-05; 2026-07-20 门限治理(章9.4): 专属行×列 OBS_HTTPGET_MAX_ROWS/CHARS + 两态说明"""
+    """httpget HTTP 响应 — 小欧 2026-07-05; 2026-07-20 门限治理(章9.4): 专属行×列 OBS_HTTPGET_MAX_ROWS/CHARS + 两态说明; 2026-07-20 门限复查②: 识别 _truncated 模式, 醒目标示 _reason+⚠(零错觉)"""
     lines = [f"── HTTP GET ── {data.get('status_code', '?' )}"]
     truncated = False
 
     body = data.get("body")
     if body is not None:
-        lines.append("── Body ──")
-        if isinstance(body, (dict, list)):
-            body_str = json.dumps(body, ensure_ascii=False, indent=2)
-        elif isinstance(body, str):
-            body_str = _extract_html_summary(body)
-        else:
-            body_str = str(body)
-        # 行×列截断收口(章9.4): OBS_HTTPGET_MAX_ROWS 行 / OBS_HTTPGET_MAX_ROW_CHARS 字符
-        body_lines = body_str.split("\n")
-        total_lines = len(body_lines)
-        if total_lines > OBS_HTTPGET_MAX_ROWS:
+        if isinstance(body, dict) and body.get("_truncated"):
             truncated = True
-            body_lines = body_lines[:OBS_HTTPGET_MAX_ROWS]
-        for ln in body_lines:
-            if len(ln) > OBS_HTTPGET_MAX_ROW_CHARS:
-                truncated = True
-                lines.append(ln[:OBS_HTTPGET_MAX_ROW_CHARS] + "...(截断)")
+            lines.append("── Body (安全截断) ──")
+            lines.append(f"  ⚠ {body.get('_reason', '响应体过大')}")
+            preview = body.get("_preview", "")
+            if preview:
+                lines.append(preview)
+        else:
+            lines.append("── Body ──")
+            if isinstance(body, (dict, list)):
+                body_str = json.dumps(body, ensure_ascii=False, indent=2)
+            elif isinstance(body, str):
+                body_str = _extract_html_summary(body)
             else:
-                lines.append(ln)
-        if total_lines > OBS_HTTPGET_MAX_ROWS:
-            lines.append(f"  ... 还有 {total_lines - OBS_HTTPGET_MAX_ROWS} 行（仅展示前 {OBS_HTTPGET_MAX_ROWS} 行）")
+                body_str = str(body)
+            # 行×列截断收口(章9.4): OBS_HTTPGET_MAX_ROWS 行 / OBS_HTTPGET_MAX_ROW_CHARS 字符
+            body_lines = body_str.split("\n")
+            total_lines = len(body_lines)
+            if total_lines > OBS_HTTPGET_MAX_ROWS:
+                truncated = True
+                body_lines = body_lines[:OBS_HTTPGET_MAX_ROWS]
+            for ln in body_lines:
+                if len(ln) > OBS_HTTPGET_MAX_ROW_CHARS:
+                    truncated = True
+                    lines.append(ln[:OBS_HTTPGET_MAX_ROW_CHARS] + "...(截断)")
+                else:
+                    lines.append(ln)
+            if total_lines > OBS_HTTPGET_MAX_ROWS:
+                lines.append(f"  ... 还有 {total_lines - OBS_HTTPGET_MAX_ROWS} 行（仅展示前 {OBS_HTTPGET_MAX_ROWS} 行）")
 
     headers = data.get("headers")
     if headers:

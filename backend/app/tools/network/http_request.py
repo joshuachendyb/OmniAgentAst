@@ -4,6 +4,7 @@
 # 2026-07-15 - 小欧 - 常量归一化治理: JSON body 预览截断改引用 tool_constants.HTTP_JSON_PREVIEW_MAX_BYTES(原 _MAX_JSON_SIZE=10MB), 功能零退化
 # 2026-07-16 - 小欧 - 修复双层except吞异常(HTTP错误结构化返回LLM/429工具内Retry-After契约重试一次/瞬时故障抛引擎重试)+hint精准化
 # 2026-07-20 - 小欧 - httpget 门限治理(章9.4): HTTP_JSON_PREVIEW_MAX_BYTES 依3.5改名 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES(保留为3.4硬安全网防OOM); 删本地重复定义, 截断触发置 _truncated+_reason(显示域截断收口于 OBS_HTTPGET_MAX_ROWS/CHARS)
+# 2026-07-20 - 小欧 - httpget ②修复: data 超限时不内联5MB全文, 改200KB预览+_reason; INER_HTTPGET_JSON_PREVIEW_MAX_BYTES 下调至5MB
 """
 N1: httpget — 发起HTTP请求
 
@@ -37,6 +38,7 @@ from app.tools.tool_constants import (
     ERR_NETWORK_REQUEST_ERROR,
     ERR_NETWORK_TIMEOUT,
     INER_HTTPGET_JSON_PREVIEW_MAX_BYTES,
+    INER_HTTPGET_DATA_PREVIEW_MAX_CHARS,
 )
 
 
@@ -81,7 +83,9 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
 
     if "application/json" in content_type:
         if len(response.content) > INER_HTTPGET_JSON_PREVIEW_MAX_BYTES:
-            body = {"_truncated": True, "_reason": "响应体超过 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES(10MB) 3.4 安全上限, 仅预览前 10MB", "_preview": response.text[:INER_HTTPGET_JSON_PREVIEW_MAX_BYTES]}
+            full_preview = response.text[:INER_HTTPGET_JSON_PREVIEW_MAX_BYTES]
+            preview_for_data = full_preview[:INER_HTTPGET_DATA_PREVIEW_MAX_CHARS]
+            body = {"_truncated": True, "_reason": "响应体超过安全上限(5MB), 仅展示预览片段(~200KB), 其余已截断", "_preview": preview_for_data}
         else:
             try:
                 body = response.json()

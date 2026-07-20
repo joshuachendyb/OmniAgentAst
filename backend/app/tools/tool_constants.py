@@ -14,6 +14,7 @@
 # 2026-07-20 - 小欧 - fetchpage 门限治理(章10.4): 新增 OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500(fetchpage 专属行×列, 显示域截断收口); WEB_FETCH_MAX_CHARS 已删除(fetchpage 返回完整正文, 截断收口于 OBS_FETCHPAGE); MAX_READ_BYTES/MAX_CONTENT_LENGTH 依3.5改名 INER_FETCHPAGE_READ_BYTES/INER_FETCHPAGE_MAX_CONTENT_LENGTH(保留为3.4硬安全网防OOM/巨文件下载)
 # 2026-07-20 - 小欧 - readtext 门限治理(章11.4): 新增 OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000(readtext 专属行×列, 显示域截断收口); read_text_file 去除 _select_lines max_line_length 单行截断(Tool 层零限制); MAX_READ_SIZE 依3.5改名 INER_READTEXT_READ_SIZE(各 tool 独立不公用, readtext 自有; 保留为3.4硬安全网, 文件过大拒绝, 不截断)
 # 2026-07-20 - 小欧 - 门限复查: 删除僵尸常量 FIND_PAGE_SIZE 与 READ_FILE_DEFAULT_LIMIT(全代码仅定义处存在, 无任何工具引用; find 分页已由 OBS_FIND_MAX_ROWS 取代、file 读取默认行数已由 INER_READTEXT_READ_SIZE/INER_EDITTEXT_READ_SIZE 取代); 依3.6+章14/18同例直接删除定义, 不保留【已作废】占位
+# 2026-07-20 - 小欧 - httpget ②修复: 新增 INER_HTTPGET_DATA_PREVIEW_MAX_CHARS=200KB(data内联预览上限, 避免5MB全文进data浪费传输/存储); INER_HTTPGET_JSON_PREVIEW_MAX_BYTES 下调至5MB
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -121,11 +122,11 @@ FILE_OPERATION_TOOLS: set[str] = {  # 【tool 级】使用对象: 文件操作�
 #     与 tool 层面的截断上限相互独立(tool 层历史常量 FIND_PAGE_SIZE/READ_FILE_DEFAULT_LIMIT 已于门限复查删除, 由 OBS_*/INER_* 取代)。
 #     老陈 2026-07-15 裁定: OBS_* 逻辑属系统级(observation 统一截断层), 因与 tool 输出耦合紧历史置于本文件, 标注【系统级】以区分【tool 级】常量。
 # ============================================================
-OBS_MAX_DISPLAY_ITEMS: int = 500       # 【系统级】使用对象: observation_formatter.py(所有 list 类 handler 最大条目数; grep 搜索总开关) — 小沈 2026-07-14
+OBS_MAX_DISPLAY_ITEMS: int = 200       # 【系统级】使用对象: observation_formatter.py(所有 list 类 handler 最大条目数; grep 搜索总开关) — 小沈 2026-07-14
 # —— listdir 专属观察截断常量（显示域行×列；Tool 层 LISTDIR_PAGE_SIZE 依3.7作废, listdir 有 offset 可翻页, 显示域截断可恢复） ——
 OBS_LISTDIR_MAX_ROWS: int = 200         # 【系统级】使用对象: observation_formatter.py(_format_entries listdir 条目数上限, 匹配型短状态行)
 OBS_LISTDIR_MAX_ROW_CHARS: int = 300    # 【系统级】使用对象: observation_formatter.py(_format_entries listdir 单行上限, 深路径保文件名)
-OBS_MAX_STRING_LENGTH: int = 10000     # 【系统级】使用对象: observation_formatter.py(单个字符串值最大显示长度)
+OBS_MAX_STRING_LENGTH: int = 1000     # 【系统级】使用对象: observation_formatter.py(单个字符串值最大显示长度)
 OBS_DICT_MAX_KEYS: int = 100           # 【系统级】使用对象: observation_formatter.py(_format_key_value 最大键数)
 # —— 以下 B 组: 原 observation_formatter.py 内硬编码, 迁入统一(【系统级】) ——
 OBS_HTML_SUMMARY_MAX_CHARS: int = 500  # 【系统级】使用对象: observation_formatter.py(HTML→纯文本摘要上限; 原 _extract_html_summary max_len)
@@ -149,7 +150,7 @@ OBS_SEARCHWEB_MAX_ROW_CHARS: int = 500  # 【系统级】使用对象: observati
 
 # —— httpget 专属观察截断常量（显示域行×列；Tool 输出不截断, 仅显示域按行×列收口） ——
 OBS_HTTPGET_MAX_ROWS: int = 200          # 【系统级】使用对象: observation_formatter.py(_format_httpget_result httpget 行数上限, 结构化型保JSON不盲截)
-OBS_HTTPGET_MAX_ROW_CHARS: int = 2000    # 【系统级】使用对象: observation_formatter.py(_format_httpget_result httpget 单行上限, 保JSON不盲截)
+OBS_HTTPGET_MAX_ROW_CHARS: int = 1000    # 【系统级】使用对象: observation_formatter.py(_format_httpget_result httpget 单行上限, 保JSON不盲截)
 
 # —— fetchpage 专属观察截断常量（显示域行×列；Tool 输出不截断, 仅显示域按行×列收口） ——
 OBS_FETCHPAGE_MAX_ROWS: int = 200         # 【系统级】使用对象: observation_formatter.py(_format_fetchpage_result fetchpage 行数上限)
@@ -182,7 +183,8 @@ INER_FETCHPAGE_READ_BYTES: int = 5 * 1024 * 1024  # 【tool 级/私有内部常�
 INER_FETCHPAGE_MAX_CONTENT_LENGTH: int = 100 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: fetch_webpage.py(Content-Length 超阈值拒绝下载防 OOM, 3.4 硬安全网; 原 MAX_CONTENT_LENGTH=100MB; 依 3.5 改名 INER_ 前缀)
 INER_READ_XLSX_MAX_ROWS: int = 10000   # 【tool 级/私有内部常量】使用对象: read_xlsx.py(单次读取最大行数, 3.4 硬安全网防读超大表 OOM; 原 XLSX_MAX_ROWS=10000; 依 3.5 改名 INER_ 前缀, 触发置 data["truncated"]=True 非显示限制)
 # 注: read_xlsx 无 offset 分页, 显示域行/列均不截断(否则 LLM 永久丢失数据且无法翻页取回), 故不新增 OBS_XLSX_*(避免死代码); 全量展示由 Tool 读出的数据, 仅 3.4 硬安全网 INER_READ_XLSX_MAX_ROWS 兜底防 OOM
-INER_HTTPGET_JSON_PREVIEW_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: http_request.py(JSON body 预览截断, 3.4 硬安全网防响应体撑爆OOM/序列化溢出; 原 HTTP_JSON_PREVIEW_MAX_BYTES/_MAX_JSON_SIZE; 依 3.5 改名 INER_ 前缀)
+INER_HTTPGET_JSON_PREVIEW_MAX_BYTES: int = 5 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: http_request.py(JSON body 预览截断, 3.4 硬安全网防响应体撑爆OOM/序列化溢出; 原 HTTP_JSON_PREVIEW_MAX_BYTES/_MAX_JSON_SIZE; 依 3.5 改名 INER_ 前缀)
+INER_HTTPGET_DATA_PREVIEW_MAX_CHARS: int = 200 * 1024  # 【tool 级/私有内部常量】使用对象: http_request.py(data内联预览字符上限, 避免5MB全文进data浪费传输/存储; 进data的_preview截至此值, 足够LLM判断JSON结构)
 INER_DOWNLOAD_MAX_BYTES: int = 1 * 1024 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: download_file.py(下载文件大小上限防撑爆磁盘/内存, 3.4 硬安全网, 值提升至1GB 依 v3.26 老陈定; 原 DOWNLOAD_MAX_BYTES/_MAX_FILE_SIZE=100MB; 依 3.5 改名 INER_ 前缀)
 # 注: WRITE_TEXT_MAX_CHARS(原 max_length=10000) 依3.6作废删除(入参长度限制属多余叠加); 2026-07-20 用户裁定写结果预览恢复 Tool 层 _build_content_preview(文首50+文末50), 不新增 OBS_WRITETEXT_*(避免死代码); writetext 仍走 #21 fallback(_format_scalar_data)
 
