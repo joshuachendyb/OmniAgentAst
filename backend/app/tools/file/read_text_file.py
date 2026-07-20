@@ -4,6 +4,8 @@ F1: readtext — 读取文本文件
 
 从file_tools.py拆分而来，按工具分类聚合设计 — 小欧 2026-06-22
 """
+# 编辑历史:
+# 2026-07-20 - 小欧 - readtext 门限治理(章11.4): 去除 _select_lines 的 max_line_length 单行截断(Tool 层零限制, 截断收口于 observation_formatter OBS_READTEXT); MAX_READ_SIZE 依3.5改名 INER_READTEXT_READ_SIZE(readtext 自有内部常量, 各 tool 独立不公用; 保留为3.4硬安全网, 文件过大直接拒绝, 不截断)
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -16,7 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import MAX_READ_SIZE
+from app.tools.tool_constants import INER_READTEXT_READ_SIZE
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_path_checker import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
@@ -121,13 +123,11 @@ def _select_lines(
     offset: Optional[int] = None,
     limit: Optional[int] = None,
     tail: Optional[int] = None,
-    max_line_length: Optional[int] = 2000,
 ) -> Dict[str, Any]:
-    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 offset超范围返回warning — 小健 2026-06-25 空文件+offset返回warning — 小欧 2026-06-28 新增tail参数 — 小欧 2026-07-05 新增长行截断
+    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 offset超范围返回warning — 小健 2026-06-25 空文件+offset返回warning — 小欧 2026-06-28 新增tail参数 — 小欧 2026-07-20 去除 max_line_length 单行截断(Tool 层零限制, 截断收口于 observation_formatter OBS_READTEXT)
     offset: 起始行号(正数，必须配合limit)
     limit: 读取行数
-    tail: 读取尾部N行
-    max_line_length: 单行最大字符数，超长截断(默认2000)"""
+    tail: 读取尾部N行"""
     total = len(lines)
     params = {}
     warning = None
@@ -185,28 +185,12 @@ def _select_lines(
             "end_line": n,
         }
 
-    # 长行截断 — 小欧 2026-07-05 — 小欧 2026-07-05 保留原行结尾
-    truncated_count = 0
-    if max_line_length is not None and max_line_length > 0:
-        for i, line in enumerate(selected):
-            if len(line) > max_line_length:
-                suffix = f"... [截断, 原长{len(line)}字符]"
-                if line.endswith('\n'):
-                    suffix += '\n'
-                selected[i] = line[:max_line_length] + suffix
-                truncated_count += 1
-    if truncated_count:
-        result_extra = {"truncated_lines": truncated_count}
-    else:
-        result_extra = {}
-
     content = "".join(selected)
     result = {
         "content": content,
         "total_lines": total,
         "line_count": len(selected),
         **params,
-        **result_extra,
     }
     if warning:
         result["warning"] = warning
@@ -384,7 +368,7 @@ async def readtext(
         path = Path(file_path)
 
         file_size = path.stat().st_size
-        if file_size > MAX_READ_SIZE:
+        if file_size > INER_READTEXT_READ_SIZE:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data(
                 "error", duration_ms, file_path=file_path,

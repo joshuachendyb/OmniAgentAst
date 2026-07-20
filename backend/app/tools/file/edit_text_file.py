@@ -4,6 +4,7 @@
 # 2026-07-17 - 小欧 - 新增护栏3项: ①锚点重叠检查(before/after拒绝); ②语法校验(all拒绝+增量warning); ③all宽匹配/边界拦截(拒绝+warning)
 # 2026-07-17 - 小欧 - before/after 自动补空行(默认生效,无参数): 新增 _blank_line_sep, before/after 插入时与锚点/后续均隔一个空行(PEP8)
 # 2026-07-17 - 小欧 - DRY重构: 抽出 _is_dangerous_anchor(old_string), _safety_wide_replace 仅保留宽匹配warning, 三引号拒绝统一走 _is_dangerous_anchor+内联
+# 2026-07-20 - 小欧 - MAX_READ_SIZE 依3.5改名 INER_EDITTEXT_READ_SIZE(edittext 自有内部常量, 各 tool 独立不公用, INER_ 前缀; 3.4 硬安全网保留, 文件过大拒绝, 不截断)
 """
 F4: edittext — 编辑文本文件
 
@@ -22,7 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import MAX_READ_SIZE
+from app.tools.tool_constants import INER_EDITTEXT_READ_SIZE
 from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
 from app.services.task.task_context import _current_task_id
 from app.db.models.operation_models import OperationType
@@ -334,7 +335,7 @@ async def _precise_replace_in_file(
             logger.warning(f"[edittext] {warn}")
 
         path = Path(file_path).resolve()
-        if path.stat().st_size > MAX_READ_SIZE:
+        if path.stat().st_size > INER_EDITTEXT_READ_SIZE:
             return {"error_detail": f"文件过大({path.stat().st_size}字节)", "file_size": path.stat().st_size}
 
         # B2 fix: detect CRLF from raw bytes — 小欧 2026-06-27

@@ -9,6 +9,7 @@
 # 2026-07-20 小欧 _format_matches 无截断时仅输出"✓ 无截断-完整"一行, 不再附加冗余截断明细; 有截断明细行去除多余花括号与错配标点
 # 2026-07-20 小欧 _format_shell_result 改行×列(200行/1000字符): 仿 _format_matches 截断收口, 末尾追加两态说明(有截断⚠已截断/无截断✓无截断-完整); 删除 OBS_MAX_STRING_LENGTH 单串截断, 解决 shell 长输出被盲截尾部问题
 # 2026-07-20 小欧 _format_fetchpage_result 新增(fetchpage 专属行×列 OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500 + 两态说明); #2 raw str handler 按 action.tool=="fetchpage" 分流, readtext 维持 OBS_MAX_STRING_LENGTH 不变
+# 2026-07-20 小欧 _format_readtext_result 新增(readtext 专属行×列 OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000 + 两态说明); #2 raw str handler 按 action.tool=="readtext" 分流, OBS_MAX_STRING_LENGTH 退为未知 content 工具兜底
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -30,7 +31,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
 工具 → handler 映射（全部 63 个工具）:
  工具            data 键                        命中 handler              formatter上限(机器二)                  tool上限(机器一)
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  readtext        {content: str}                 #2 raw str               OBS_MAX_STRING_LENGTH=10000          无行数限制(仅10MB文件大小)
+   readtext        {content: str}                 #2-readtext             OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000  INER_READTEXT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断)
    fetchpage       {content: str}                 #2-fetchpage            OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500  WEB_FETCH_MAX_CHARS 已删除(正文零截断, 显示域行×列收口)
   clipboard_ctl   {text: str}                    #10 raw text            OBS_MAX_STRING_LENGTH=10000          N/A
   read_pdf        {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000          页数不限
@@ -87,6 +88,8 @@ from app.tools.tool_constants import (
     OBS_HTTPGET_MAX_ROW_CHARS,
     OBS_FETCHPAGE_MAX_ROWS,
     OBS_FETCHPAGE_MAX_ROW_CHARS,
+    OBS_READTEXT_MAX_ROWS,
+    OBS_READTEXT_MAX_ROW_CHARS,
 )
 
 
@@ -116,7 +119,8 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # handler          工具                              工具上限(机器一)                      formatter上限(机器二)
     # ────────────────  ───────────────────────────────  ──────────────────────────────────  ──────────────────────────────────────
     # non-dict          timer_list                       无限制                             直接 str()，无截断
-    # #2 raw str        readtext                         无行数限制(仅MAX_READ_SIZE=10MB)     OBS_MAX_STRING_LENGTH=10000
+    # #2 raw str        readtext                         无行数限制(仅INER_READTEXT_READ_SIZE=10MB)  OBS_MAX_STRING_LENGTH=10000
+    # #2-readtext      readtext                         无行数限制(仅INER_READTEXT_READ_SIZE=10MB, 3.4拒绝)  OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000
     # #2-fetchpage     fetchpage                        正文零截断(无 Tool 层上限)            OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500
     # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=10000
     # #3 entries        listdir                          LISTDIR_PAGE_SIZE=500                OBS_MAX_DISPLAY_ITEMS=500
@@ -169,6 +173,8 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
             _tool = (llm_data or {}).get("action", {}).get("tool", "")
             if _tool == "fetchpage":
                 return _format_fetchpage_result(data["content"], llm_data)
+            if _tool == "readtext":
+                return _format_readtext_result(data["content"], llm_data)
             content = data["content"]
             if len(content) > OBS_MAX_STRING_LENGTH:
                 content = content[:OBS_MAX_STRING_LENGTH] + _truncation_msg(llm_data)
@@ -1144,6 +1150,29 @@ def _format_fetchpage_result(content: str, llm_data: dict = None) -> str:
             lines.append(ln)
     if total_lines > OBS_FETCHPAGE_MAX_ROWS:
         lines.append(f"  ... 还有 {total_lines - OBS_FETCHPAGE_MAX_ROWS} 行（仅展示前 {OBS_FETCHPAGE_MAX_ROWS} 行）")
+    lines.append("⚠ 已截断" if truncated else "✓ 无截断-完整")
+    return "\n".join(lines)
+
+
+def _format_readtext_result(content: str, llm_data: dict = None) -> str:
+    """readtext 文件内容 — 2026-07-20 门限治理(章11.4): 专属行×列 OBS_READTEXT_MAX_ROWS/CHARS + 两态说明"""
+    _act = (llm_data or {}).get("action", {}) if llm_data else {}
+    _path = _act.get("target", "")
+    lines = [f"── 文件内容 ── {_path}"]
+    truncated = False
+    content_lines = content.split("\n")
+    total_lines = len(content_lines)
+    if total_lines > OBS_READTEXT_MAX_ROWS:
+        truncated = True
+        content_lines = content_lines[:OBS_READTEXT_MAX_ROWS]
+    for ln in content_lines:
+        if len(ln) > OBS_READTEXT_MAX_ROW_CHARS:
+            truncated = True
+            lines.append(ln[:OBS_READTEXT_MAX_ROW_CHARS] + "...(截断)")
+        else:
+            lines.append(ln)
+    if total_lines > OBS_READTEXT_MAX_ROWS:
+        lines.append(f"  ... 还有 {total_lines - OBS_READTEXT_MAX_ROWS} 行（仅展示前 {OBS_READTEXT_MAX_ROWS} 行）")
     lines.append("⚠ 已截断" if truncated else "✓ 无截断-完整")
     return "\n".join(lines)
 

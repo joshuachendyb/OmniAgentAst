@@ -12,6 +12,7 @@
 # 2026-07-20 - 小欧 - searchweb 门限治理(章8.4): 新增 OBS_SEARCHWEB_MAX_ROWS=100/OBS_SEARCHWEB_MAX_ROW_CHARS=500(searchweb 专属行×列, 显示域截断收口); SEARCH_SNIPPET_MAX_CHARS/OBS_SNIPPET_MAX_CHARS 已删除(由 OBS_SEARCHWEB_MAX_ROW_CHARS 取代, searchweb 返回完整snippet)
 # 2026-07-20 - 小欧 - httpget 门限治理(章9.4): 新增 OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=2000(httpget 专属行×列, 显示域截断收口); HTTP_JSON_PREVIEW_MAX_BYTES 依3.5改名 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES(保留为3.4硬安全网防OOM, 触发置 _truncated+_reason)
 # 2026-07-20 - 小欧 - fetchpage 门限治理(章10.4): 新增 OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500(fetchpage 专属行×列, 显示域截断收口); WEB_FETCH_MAX_CHARS 已删除(fetchpage 返回完整正文, 截断收口于 OBS_FETCHPAGE); MAX_READ_BYTES/MAX_CONTENT_LENGTH 依3.5改名 INER_FETCHPAGE_READ_BYTES/INER_FETCHPAGE_MAX_CONTENT_LENGTH(保留为3.4硬安全网防OOM/巨文件下载)
+# 2026-07-20 - 小欧 - readtext 门限治理(章11.4): 新增 OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000(readtext 专属行×列, 显示域截断收口); read_text_file 去除 _select_lines max_line_length 单行截断(Tool 层零限制); MAX_READ_SIZE 依3.5改名 INER_READTEXT_READ_SIZE(各 tool 独立不公用, readtext 自有; 保留为3.4硬安全网, 文件过大拒绝, 不截断)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -150,13 +151,18 @@ OBS_HTTPGET_MAX_ROW_CHARS: int = 2000    # 【系统级】使用对象: observat
 OBS_FETCHPAGE_MAX_ROWS: int = 200         # 【系统级】使用对象: observation_formatter.py(_format_fetchpage_result fetchpage 行数上限)
 OBS_FETCHPAGE_MAX_ROW_CHARS: int = 500    # 【系统级】使用对象: observation_formatter.py(_format_fetchpage_result fetchpage 单行上限)
 
+# —— readtext 专属观察截断常量（显示域行×列；Tool 输出不截断, 仅显示域按行×列收口） ——
+OBS_READTEXT_MAX_ROWS: int = 200        # 【系统级】使用对象: observation_formatter.py(_format_readtext_result readtext 行数上限)
+OBS_READTEXT_MAX_ROW_CHARS: int = 1000  # 【系统级】使用对象: observation_formatter.py(_format_readtext_result readtext 单行上限, 长行不多放宽至1000减少截断)
+
 # ============================================================
 # 【tool 级】工具读取/输出上限 — 老陈 2026-07-15 归一化治理
 #     与 tool 紧密相关的长度/上限常量集中于此(便于查看对比检查),
-#     每个常量注释使用对象。FILE/MEDIA 读取上限(MAX_READ_SIZE/MAX_MEDIA_READ_SIZE)保留原名不改名, 免改读取层引用。
+#     每个常量注释使用对象。FILE/MEDIA 读取上限依3.5改名 INER_ 前缀(私有内部常量, 各 tool 独立不公用): INER_READTEXT_READ_SIZE(readtext)/INER_EDITTEXT_READ_SIZE(edittext)/INER_READMEDIA_READ_SIZE(媒体类)。
 # ============================================================
 # —— 以下为工具文件读取/搜索上限(【tool 级】) ——
-MAX_READ_SIZE: int = 10 * 1024 * 1024          # 【tool 级】使用对象: readtext 读取文件字节上限(保留原名不改名, 免改读取层引用)
+INER_READTEXT_READ_SIZE: int = 10 * 1024 * 1024   # 【tool 级/私有内部常量】使用对象: read_text_file.py(读取文本文件字节上限防 OOM, 3.4 硬安全网; 原 MAX_READ_SIZE; 依 3.5 改名 INER_READTEXT_ 前缀, 各 tool 独立不公用)
+INER_EDITTEXT_READ_SIZE: int = 10 * 1024 * 1024   # 【tool 级/私有内部常量】使用对象: edit_text_file.py(编辑前读取文件字节上限防 OOM, 3.4 硬安全网; 原 MAX_READ_SIZE; 依 3.5 改名 INER_EDITTEXT_ 前缀, 各 tool 独立不公用)
 MAX_MEDIA_READ_SIZE: int = 50 * 1024 * 1024     # 【tool 级】使用对象: 媒体文件读取字节上限(保留原名不改名)
 MAX_BATCH_FILE_COUNT: int = 100                 # 【tool 级】使用对象: 批量文件操作单次文件数上限
 # SHELL_OUTPUT_MAX_CHARS 已作废(2026-07-20 小欧 shell 改行×列, Tool 层不再截断; 由 OBS_SHELL_MAX_ROW_CHARS 取代) — 原值 20000
