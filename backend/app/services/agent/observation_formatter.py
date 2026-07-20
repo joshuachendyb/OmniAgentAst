@@ -31,10 +31,11 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
 工具 → handler 映射（全部 63 个工具）:
  工具            data 键                        命中 handler              formatter上限(机器二)                  tool上限(机器一)
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   readtext        {content: str}                 #2-readtext             OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000  INER_READTEXT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断)
-   fetchpage       {content: str}                 #2-fetchpage            OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500  WEB_FETCH_MAX_CHARS 已删除(正文零截断, 显示域行×列收口)
-   edittext        {diff: str}                    #24 edittext            OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000  INER_EDITTEXT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断); diff 零截断, 显示域行×列收口
-  clipboard_ctl   {text: str}                    #10 raw text            OBS_MAX_STRING_LENGTH=10000          N/A
+  readtext        {content: str}                 #2-readtext              OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000  INER_READTEXT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断)
+  fetchpage       {content: str}                 #2-fetchpage             OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500  WEB_FETCH_MAX_CHARS 已删除(正文零截断, 显示域行×列收口)
+  edittext        {diff: str}                    #24 edittext             OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000  INER_EDITTEXT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断); diff 零截断, 显示域行×列收口
+  writetext       {content_preview: str}          #23 writetext           Tool 层 _build_content_preview 文首50+文末50 预览(用户裁定恢复); 简单拼接 "已写入内容\n"+preview, 无 OBS_WRITETEXT_*(无截断/无死代码)
+  clipboard_ctl   {text: str}                    #10 raw text             OBS_MAX_STRING_LENGTH=10000          N/A
   read_pdf        {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000          页数不限
   read_docx       {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000          字符数不限
   read_xlsx       {{headers, rows}}              #2b flat _format_table   行: OBS_MAX_DISPLAY_ITEMS=500         max_rows=10000
@@ -54,7 +55,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   read_pptx       {slide_count, slides}           #16 slides items        页: OBS_MAX_DISPLAY_ITEMS=500         页数不限
   sysinfo         {basic, cpu, ...}               #17 sysinfo sections     每段10项                             不限
   compress        {compression_ratio, ...}        _format_compress_result  OBS_MAX_STRING_LENGTH=10000          N/A
-   httpget         {status_code, ...}              _format_httpget_result   OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=2000  N/A
+  httpget         {status_code, ...}              _format_httpget_result   OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=2000  N/A
   analyze_data    {statistics, ...}               _format_analyze_data     转置表格(无行数限制)                    top_n(用户指定,默认None)
    ── _format_scalar_data ──
    36 tools        {key: scalar, ...}              _format_scalar_data     OBS_MAX_STRING_LENGTH=10000(值)       N/A
@@ -66,6 +67,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
 Author: 小欧 2026-06-21; 小欧 2026-07-04 更新映射表; 小欧 2026-07-05 修复4个Bug, 新增专用handler分组; 小欧 2026-07-05 拆分compress/httpget/analyze_data专用handler
   小欧 2026-07-20 章12 edittext 专属handler(#24 _format_edittext_result + OBS_EDITTEXT_MAX_ROWS/CHARS + 两态说明); edittext 由#21 fallback移出为专属handler; 映射表/截断对照表同步
   小欧 2026-07-20 章13 readmedia 专属handler(#13 _format_readmedia_result); base64 为二进制编码非可读文本, 用户裁定不按文本行×列处理, 回退为仅元数据+base64字符数摘要(原行为), 不新增 OBS_READMEDIA_*(避免死代码); INER_READMEDIA_READ_SIZE 保留3.4硬安全网
+   小欧 2026-07-20 章14 用户裁定回退: writetext 恢复 Tool 层 content_preview 预览(文首50+文末50, _build_content_preview), #23 专属简单拼接 "已写入内容\n"+preview(无 OBS_WRITETEXT_* 截断/无死代码); OBS_WRITETEXT_* 删除; WRITE_TEXT_MAX_CHARS 仍依3.6删除(入参长度限制)
 """
 
 import json
@@ -102,7 +104,7 @@ def _truncation_msg(llm_data: dict = None) -> str:
     """工具类型感知的截断消息 — 小沈 2026-07-08"""
     if llm_data:
         tool = llm_data.get("action", {}).get("tool", "")
-        if tool in ("readtext", "writetext", "edittext"):
+        if tool in ("readtext", "edittext"):
             return "\n... (截断，完整内容见文件)"
     return "\n... (截断)"
 
@@ -128,6 +130,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # #2-readtext      readtext                         无行数限制(仅INER_READTEXT_READ_SIZE=10MB, 3.4拒绝)  OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000
     # #2-fetchpage     fetchpage                        正文零截断(无 Tool 层上限)            OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500
     # #24 edittext     edittext                         diff 零截断(仅INER_EDITTEXT_READ_SIZE=10MB, 3.4拒绝)  OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000
+    # #23 writetext    writetext                       content_preview 为 Tool 层预览(文首50+文末50), 简单拼接 "已写入内容\n"+preview; 无 formatter 截断(无 OBS_WRITETEXT_*)
     # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=10000
     # #3 entries        listdir                          LISTDIR_PAGE_SIZE=500                OBS_MAX_DISPLAY_ITEMS=500
     # #4 items          searchweb                         返回全部(num_results≤50); 显示域行×列   OBS_SEARCHWEB_MAX_ROWS=200/CHARS=500
@@ -151,7 +154,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # #19 httpget       httpget                           N/A                                OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=2000
     # #2-fetchpage     fetchpage                        正文零截断(无 Tool 层上限)            OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500
     # #20 analyze_data  analyze_data                      top_n(用户指定,默认None)             转置表格(无行数限制)
-    # #21 fallback      36个scalar工具(见下方清单)          N/A                                OBS_MAX_STRING_LENGTH=10000(值)
+    # #21 fallback      33个scalar工具(见下方清单)          N/A                                OBS_MAX_STRING_LENGTH=10000(值)
     #                                                                                        OBS_DICT_MAX_KEYS=100(键)
     #
     # 说明:
@@ -266,21 +269,21 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
         if "statistics" in data or "grouped_statistics" in data:
             return _format_analyze_data(data)
 
-        # ── #23 content_preview — writetext 内容预览 ──
-        if "content_preview" in data:
-            return "已写入内容\n" + data["content_preview"]
-
         # ── #24 edittext — 1 tool: edittext（diff 专属行×列 + 两态） ──
         if "diff" in data:
             return _format_edittext_result(data["diff"], llm_data)
+
+        # ── #23 writetext — 1 tool: writetext（content_preview 简单拼接; Tool 层已生成预览, 不截断/无 OBS_WRITETEXT_*） ──
+        if "content_preview" in data:
+            return "已写入内容\n" + data["content_preview"]
 
         # ── #22 which result — 1 tool: which ──
         if "paths" in data:
             return _format_which_result(data)
 
         # ── #0 空data — 1 tool: mouse_click（走第 72 行 if not data: return ""）────
-        # ── #21 fallback — 34 tools（排除which/edittext） ──
-        #   writetext, move, copy, delete, rename, extract,
+        # ── #21 fallback — 33 tools（排除which/edittext/writetext） ──
+        #   move, copy, delete, rename, extract,
         #   download, ping_port, write_docx, write_xlsx, write_pdf, write_pptx,
         #   timenow, timeadd, timediff, calendar, notify, execute_sql, generate_chart,
         #   create_task, delete_task, timer_set, timer_clear,
@@ -1215,6 +1218,9 @@ def _format_edittext_result(diff: str, llm_data: dict = None) -> str:
         lines.append(f"  ... 还有 {total_lines - OBS_EDITTEXT_MAX_ROWS} 行（仅展示前 {OBS_EDITTEXT_MAX_ROWS} 行）")
     lines.append("⚠ 已截断" if truncated else "✓ 无截断-完整")
     return "\n".join(lines)
+
+
+
 
 
 # #20 analyze_data(转置表) 样式:

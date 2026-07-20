@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-17 - 小欧 - 早期encoding校验: writetext()中encoding确定后立即用codecs.lookup()校验，替代等open()才报错
+# 2026-07-20 - 小欧 - 章14 尝试将 content_preview 改为完整内容(3.7/6.4); 用户裁定 write 工具不需回显全文, 恢复 _build_content_preview 文首50+文末50 Tool 层预览; schema 入参 max_length 仍依3.6去除
 """
 F2: writetext — 写文本文件
 
@@ -23,7 +24,7 @@ from app.tools.tool_response import build_success, build_error, build_warning
 
 
 def _build_content_preview(content: str) -> str:
-    """文首50 + 文末50 预览 — 小沈 2026-07-08"""
+    """文首50 + 文末50 预览 — 小沈 2026-07-08；2026-07-20 用户裁定恢复此 Tool 层预览(write 工具不需回显全文)"""
     if len(content) <= 100:
         return content
     return f"文首(50字符):{content[:50]}\n...(中间省略)...\n文末(50字符):{content[-50:]}"
@@ -225,10 +226,10 @@ async def writetext(
                 )
                 llm_data["metrics"]["diff"] = {"value": "(无变更)", "text": "内容相同，无操作"}
                 # ---- observation_formatter route -------------------------------------------
-                # branch: #21 fallback (key:val) — skipped path
-                # trigger: 无上述20条分支匹配
-                # handler: _format_scalar_data(data) — key | value 单行列表
-                # file:    observation_formatter.py:214
+                # branch: #23 writetext (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
+                # trigger: "content_preview" in data
+                # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
+                # file:    observation_formatter.py
                 # ------------------------------------------------------------------------------
                 return build_success(data={"content_preview": _build_content_preview(checked_content)}, llm_data=llm_data)
         except Exception:
@@ -300,10 +301,10 @@ async def writetext(
             if diff_text:
                 llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
             # ---- observation_formatter route -------------------------------------------
-            # branch: #21 fallback (key:val)
-            # trigger: 无上述20条分支匹配 — operation_id 不命中任何专用分支
-            # handler: _format_scalar_data(data) — key | value 单行列表
-            # file:    observation_formatter.py:214
+            # branch: #23 writetext (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
+            # trigger: "content_preview" in data
+            # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
+            # file:    observation_formatter.py
             # ------------------------------------------------------------------------------
             return build_success(
                 data={"content_preview": _build_content_preview(checked_content)},

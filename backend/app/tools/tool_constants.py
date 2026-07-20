@@ -179,7 +179,7 @@ INER_FETCHPAGE_MAX_CONTENT_LENGTH: int = 100 * 1024 * 1024  # 【tool 级/私有
 XLSX_MAX_ROWS: int = 10000             # 【tool 级】使用对象: read_xlsx.py(单次读取最大行数; 原 max_rows=10000)
 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: http_request.py(JSON body 预览截断, 3.4 硬安全网防响应体撑爆OOM/序列化溢出; 原 HTTP_JSON_PREVIEW_MAX_BYTES/_MAX_JSON_SIZE; 依 3.5 改名 INER_ 前缀)
 DOWNLOAD_MAX_BYTES: int = 100 * 1024 * 1024  # 【tool 级】使用对象: download_file.py(下载文件大小上限; 原 _MAX_FILE_SIZE)
-WRITE_TEXT_MAX_CHARS: int = 10000      # 【tool 级】使用对象: file_schema.py(WritetextInput.content 入参校验上限; 原 max_length=10000)
+# 注: WRITE_TEXT_MAX_CHARS(原 max_length=10000) 依3.6作废删除(入参长度限制属多余叠加); 2026-07-20 用户裁定写结果预览恢复 Tool 层 _build_content_preview(文首50+文末50), 不新增 OBS_WRITETEXT_*(避免死代码); writetext 仍走 #21 fallback(_format_scalar_data)
 
 # 二进制文件扩展名 — 小健 2026-06-24 更新：补充媒体扩展名
 # 用途：read_text_file/write_text_file/edit_text_file等文本工具拒绝二进制文件
