@@ -111,8 +111,8 @@ FILE_OPERATION_TOOLS: set[str] = {  # 【tool 级】使用对象: 文件操作�
 }
 
 READ_FILE_DEFAULT_LIMIT: int = 500          # 【tool 级】使用对象: file 工具(readtext/edittext 等)读取默认行数上限
-LISTDIR_PAGE_SIZE: int = 500                  # 【tool 级】使用对象: listdir 分页每页条目数
 FIND_PAGE_SIZE: int = 500                     # 【tool 级】使用对象: find 分页每页条目数 — 【已作废】2026-07-20 小欧 find 改行×列返回全部匹配(OBS_FIND_MAX_ROWS), FIND_PAGE_SIZE 不再使用
+# 注: LISTDIR_PAGE_SIZE(原 listdir 分页每页条目数) 依3.7作废删除(2026-07-20 章18): Tool 层条数截断违反3.7, 改由 Format 层 OBS_LISTDIR_* 行×列收口; listdir 有 offset 可翻页, 显示域截断可恢复(区别于 read_xlsx 无offset)
 
 # ============================================================
 # 【系统级】观察截断常量（observation_formatter.py 统一使用）— 小欧 2026-07-04
@@ -121,6 +121,9 @@ FIND_PAGE_SIZE: int = 500                     # 【tool 级】使用对象: find
 #     老陈 2026-07-15 裁定: OBS_* 逻辑属系统级(observation 统一截断层), 因与 tool 输出耦合紧历史置于本文件, 标注【系统级】以区分【tool 级】常量。
 # ============================================================
 OBS_MAX_DISPLAY_ITEMS: int = 500       # 【系统级】使用对象: observation_formatter.py(所有 list 类 handler 最大条目数; grep 搜索总开关) — 小沈 2026-07-14
+# —— listdir 专属观察截断常量（显示域行×列；Tool 层 LISTDIR_PAGE_SIZE 依3.7作废, listdir 有 offset 可翻页, 显示域截断可恢复） ——
+OBS_LISTDIR_MAX_ROWS: int = 200         # 【系统级】使用对象: observation_formatter.py(_format_entries listdir 条目数上限, 匹配型短状态行)
+OBS_LISTDIR_MAX_ROW_CHARS: int = 300    # 【系统级】使用对象: observation_formatter.py(_format_entries listdir 单行上限, 深路径保文件名)
 OBS_MAX_STRING_LENGTH: int = 10000     # 【系统级】使用对象: observation_formatter.py(单个字符串值最大显示长度)
 OBS_DICT_MAX_KEYS: int = 100           # 【系统级】使用对象: observation_formatter.py(_format_key_value 最大键数)
 # —— 以下 B 组: 原 observation_formatter.py 内硬编码, 迁入统一(【系统级】) ——

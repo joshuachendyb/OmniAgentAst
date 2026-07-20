@@ -10,6 +10,7 @@
 # 2026-07-20 小欧 _format_shell_result 改行×列(200行/1000字符): 仿 _format_matches 截断收口, 末尾追加两态说明(有截断⚠已截断/无截断✓无截断-完整); 删除 OBS_MAX_STRING_LENGTH 单串截断, 解决 shell 长输出被盲截尾部问题
 # 2026-07-20 小欧 _format_fetchpage_result 新增(fetchpage 专属行×列 OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500 + 两态说明); #2 raw str handler 按 action.tool=="fetchpage" 分流, readtext 维持 OBS_MAX_STRING_LENGTH 不变
 # 2026-07-20 小欧 _format_readtext_result 新增(readtext 专属行×列 OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000 + 两态说明); #2 raw str handler 按 action.tool=="readtext" 分流, OBS_MAX_STRING_LENGTH 退为未知 content 工具兜底
+# 2026-07-20 小欧 章18 listdir: _format_entries 改专属行×列(OBS_LISTDIR_MAX_ROWS=200/OBS_LISTDIR_MAX_ROW_CHARS=300) + 两态说明(truncated=显示域行×列截断 或 Tool层deadline截断 data.truncated); 空目录独立分支返回"(空目录)"不显示两态行; 删除 OBS_MAX_DISPLAY_ITEMS 引用(已由 OBS_LISTDIR_* 专属取代)
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -41,7 +42,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   read_xlsx       {headers, rows}                #25 read_xlsx            无显示域截断(无offset分页, 行/列全展示); INER_READ_XLSX_MAX_ROWS=10000保留为3.4硬安全网(超上限置truncated, 不删)
   query_sql       {columns, rows}                #5 _format_rows          行: OBS_MAX_DISPLAY_ITEMS=500         limit=50
   filter_data     {columns, rows}                #5 _format_rows+columns  行: OBS_MAX_DISPLAY_ITEMS=500         top_n(用户指定,无默认)
-  listdir         {entries}                      #3 _format_entries       项: OBS_MAX_DISPLAY_ITEMS=500         LISTDIR_PAGE_SIZE=500
+  listdir         {entries}                      #3 _format_entries       项: OBS_LISTDIR_MAX_ROWS=200          返回全部条目(无Tool层分页, 有offset可翻页); 显示域行×列OBS_LISTDIR_*收口(3.7)
   find            {matches}                      #9b _format_find_results 项: OBS_FIND_MAX_ROWS=200        返回全部匹配(deadline超时保护), 显示域行×列收口
   grep            {matches}                      #9 _format_matches       项: OBS_MAX_DISPLAY_ITEMS=500         上限500(=OBS_MAX_DISPLAY_ITEMS,条目数)
   searchweb       {items}                        #4 _format_items         项: OBS_SEARCHWEB_MAX_ROWS=200     返回全部(num_results≤50); 显示域行×列(snippet 500字符)
@@ -98,6 +99,8 @@ from app.tools.tool_constants import (
     OBS_READTEXT_MAX_ROW_CHARS,
     OBS_EDITTEXT_MAX_ROWS,
     OBS_EDITTEXT_MAX_ROW_CHARS,
+    OBS_LISTDIR_MAX_ROWS,
+    OBS_LISTDIR_MAX_ROW_CHARS,
 )
 
 
@@ -133,7 +136,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # #24 edittext     edittext                         diff 零截断(仅INER_EDITTEXT_READ_SIZE=10MB, 3.4拒绝)  OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000
     # #23 writetext    writetext                       content_preview 为 Tool 层预览(文首50+文末50), 简单拼接 "已写入内容\n"+preview; 无 formatter 截断(无 OBS_WRITETEXT_*)
     # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=10000
-    # #3 entries        listdir                          LISTDIR_PAGE_SIZE=500                OBS_MAX_DISPLAY_ITEMS=500
+    # #3 entries        listdir                          返回全部条目(LISTDIR_PAGE_SIZE依3.7作废删除, 有offset可翻页); 显示域行×列  OBS_LISTDIR_MAX_ROWS=200/OBS_LISTDIR_MAX_ROW_CHARS=300(两态说明)
     # #4 items          searchweb                         返回全部(num_results≤50); 显示域行×列   OBS_SEARCHWEB_MAX_ROWS=200/CHARS=500
     # #25 read_xlsx    read_xlsx                        INER_READ_XLSX_MAX_ROWS=10000(3.4硬安全网, 超上限置truncated, 不删)  无显示域行/列截断(无offset, 全量展示)
     # #2b flat table    其他 headers+rows 形状             max_rows=10000                      OBS_MAX_DISPLAY_ITEMS=500
@@ -197,7 +200,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
 
         # ── #3 entries — 1 tool: listdir ──
         if "entries" in data:
-            return _format_entries(data["entries"])
+            return _format_entries(data, llm_data)
 
         # ── #4 items — 1 tool: searchweb ──
         if "items" in data:
@@ -608,29 +611,38 @@ def _format_table(headers: list, rows: list) -> str:
 # #3 entries 样式:
 #   输入: [{"name": "src", "type": "dir", "size": null}, {"name": "readme.md", "type": "file", "size": 2048}]
 #   输出:   src [目录]\n  readme.md [文件, 2048字节]
-def _format_entries(entries: list) -> str:
-    """格式化目录列表 — 小欧 2026-06-21 — 小沈 2026-07-08 加列表已展示提示（避免LLM重复请求）"""
+def _format_entries(data: dict, llm_data: dict = None) -> str:
+    """格式化目录列表 — 小欧 2026-06-21 — 小沈 2026-07-08 加列表已展示提示（避免LLM重复请求）
+    章18(2026-07-20) 门限治理: 依3.7 Tool层零截断(返回全部条目), 显示域改专属 OBS_LISTDIR_MAX_ROWS/CHARS 行×列收口;
+    两态说明(⚠已截断/✓无截断-完整): truncated = 显示域行×列截断 或 Tool层deadline截断(data.truncated); 空目录独立分支不显示两态行"""
+    entries = data.get("entries", []) if isinstance(data, dict) else (data or [])
+    tool_truncated = bool(data.get("truncated", False)) if isinstance(data, dict) else False
     if not entries:
-        return ""
+        return "(空目录)"
     total = len(entries)
     lines = []
-    for entry in entries[:OBS_MAX_DISPLAY_ITEMS]:
+    for entry in entries[:OBS_LISTDIR_MAX_ROWS]:
         if isinstance(entry, str):
             suffix = " [目录]" if entry.endswith("/") or entry.endswith("\\") else " [文件]"
-            lines.append(f"  {entry}{suffix}")
+            line = f"  {entry}{suffix}"
         elif isinstance(entry, dict):
             name = entry.get("name", "")
             etype_lower = (entry.get("type") or "").lower()
             size = entry.get("size")
             label = "目录" if etype_lower in ("dir", "directory") else "文件"
             size_str = f", {size}字节" if size not in (None, "") else ""
-            lines.append(f"  {name} [{label}{size_str}]")
-    if total > OBS_MAX_DISPLAY_ITEMS:
-        remaining = total - OBS_MAX_DISPLAY_ITEMS
-        lines.append(f"  ... 还有 {remaining} 项（使用 offset={OBS_MAX_DISPLAY_ITEMS} 查看下一页）")
-        lines.append(f"[已含目录结构: {total}项;列表已截断]")
-    else:
-        lines.append(f"[已含目录结构: {total}项;列表已完整展示]")
+            line = f"  {name} [{label}{size_str}]"
+        else:
+            line = f"  {entry}"
+        if len(line) > OBS_LISTDIR_MAX_ROW_CHARS:
+            line = line[:OBS_LISTDIR_MAX_ROW_CHARS] + "...(截断)"
+        lines.append(line)
+    format_truncated = total > OBS_LISTDIR_MAX_ROWS
+    if format_truncated:
+        remaining = total - OBS_LISTDIR_MAX_ROWS
+        lines.append(f"  ... 还有 {remaining} 项（使用 offset={OBS_LISTDIR_MAX_ROWS} 查看下一页）")
+    truncated = format_truncated or tool_truncated
+    lines.append("⚠ 已截断" if truncated else "✓ 无截断-完整")
     return "\n".join(lines)
 
 

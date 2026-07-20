@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-20 - 小欧 - 目录遍历跳过名单(_SKIP_DIRS)合并为公用 SKIP_DIRS(从 tool_constants 导入), 去除 list_directory 与 grep 两处私有重复定义, 统一维护
+# 2026-07-20 - 小欧 - 章18门限治理: 依3.7删除Tool层LISTDIR_PAGE_SIZE条数截断(返回全部条目, 由Format层OBS_LISTDIR_MAX_ROWS/CHARS行×列收口); 删除max_depth=10递归深度限制(3.6, TOOL_TIMEOUTS已兜底); data.truncated仅反映deadline截断; 新增OBS_LISTDIR_*专属观察常量(显示域两态)
 """
 F5: list_directory — 列出目录内容
 
@@ -10,8 +11,6 @@ F5: list_directory — 列出目录内容
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
-# 编辑历史:
-# 2026-07-20 - 小欧 - _SKIP_DIRS 合并为公用 SKIP_DIRS(从 tool_constants 导入), 去除私有重复定义
 
 import asyncio
 import time as _time_mod
@@ -21,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED, SKIP_DIRS
-from app.tools.tool_constants import TOOL_TIMEOUTS, LISTDIR_PAGE_SIZE
+from app.tools.tool_constants import TOOL_TIMEOUTS, OBS_LISTDIR_MAX_ROWS, OBS_LISTDIR_MAX_ROW_CHARS
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
 
@@ -121,14 +120,15 @@ def _scan_directory_sync(
 
 
 def _build_list_success(entries: List, total: int,
-                         start_offset: int,
-                         max_display: int) -> Dict[str, Any]:
-    """构建list模式的原始数据 — 小健 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-07-06 去statistics"""
-    truncated = total > max_display
-    display_entries = entries[start_offset:start_offset + max_display]
+                          start_offset: int,
+                          timed_out: bool = False) -> Dict[str, Any]:
+    """构建list模式的原始数据 — 小健 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-07-06 去statistics
+    章18(2026-07-20): 依3.7删除Tool层条数截断(max_display), 返回全部条目(跳过offset), 由Format层OBS_LISTDIR_*行×列收口;
+    truncated仅反映deadline超时截断(timed_out), 与显示域截断解耦"""
+    display_entries = entries[start_offset:]
     return {
         "entries": display_entries,
-        "truncated": truncated,
+        "truncated": timed_out,
     }
 
 
@@ -169,7 +169,7 @@ def _build_list_directory_llm_data(
     }
     if exec_code == "warning":
         m["truncated"] = {"value": True, "text": "已截断"}
-        warning_detail = detail if detail else f"总数{total}条, 输出前{LISTDIR_PAGE_SIZE}条"
+        warning_detail = detail if detail else f"目录扫描超时({_listdir_timeout_sec}秒), 仅返回部分结果(共{total}条)"
         warning_hint = hint if hint else "请使用更精确的路径或筛选条件"
         _summary_suffix = f"，超时({_listdir_timeout_sec}秒)" if timed_out else "，已截断"
         return {
@@ -181,7 +181,7 @@ def _build_list_directory_llm_data(
         }
     summary = f"列出目录{dir_path}，成功: {total}项，{file_count}个文件，{dir_count}个目录"
     if user_offset:
-        end_offset = min(user_offset + LISTDIR_PAGE_SIZE, total)
+        end_offset = min(user_offset + OBS_LISTDIR_MAX_ROWS, total)
         summary += f"，第{user_offset+1}-{end_offset}项"
     return {
         "summary": summary,
@@ -232,7 +232,7 @@ async def listdir(
 
         deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution, _scan_timed_out = await asyncio.to_thread(
-            _scan_directory_sync, path, False, 10, include_hidden, deadline,
+            _scan_directory_sync, path, False, 0, include_hidden, deadline,
         )
 
         if sort_by == "size":
@@ -244,10 +244,10 @@ async def listdir(
 
         total = len(all_entries)
 
-        if total > LISTDIR_PAGE_SIZE:
-            logger.warning(f"[listdir] Large directory truncated: path={path}, total={total}")
+        if total > OBS_LISTDIR_MAX_ROWS:
+            logger.warning(f"[listdir] Large directory: path={path}, total={total} (显示域将截断至{OBS_LISTDIR_MAX_ROWS}条, 可用offset翻页)")
 
-        list_data = _build_list_success(all_entries, total, start_offset, LISTDIR_PAGE_SIZE)
+        list_data = _build_list_success(all_entries, total, start_offset, _scan_timed_out)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         exec_code = "warning" if (list_data["truncated"] or _scan_timed_out) else "success"
         llm_data = _build_list_directory_llm_data(
