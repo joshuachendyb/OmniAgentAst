@@ -155,6 +155,10 @@ OBS_FETCHPAGE_MAX_ROW_CHARS: int = 500    # 【系统级】使用对象: observa
 OBS_READTEXT_MAX_ROWS: int = 200        # 【系统级】使用对象: observation_formatter.py(_format_readtext_result readtext 行数上限)
 OBS_READTEXT_MAX_ROW_CHARS: int = 1000  # 【系统级】使用对象: observation_formatter.py(_format_readtext_result readtext 单行上限, 长行不多放宽至1000减少截断)
 
+# —— edittext 专属观察截断常量（显示域行×列；diff 为大文本, Tool 输出不截断, 仅显示域按行×列收口） ——
+OBS_EDITTEXT_MAX_ROWS: int = 200        # 【系统级】使用对象: observation_formatter.py(_format_edittext_result edittext 行数上限)
+OBS_EDITTEXT_MAX_ROW_CHARS: int = 1000  # 【系统级】使用对象: observation_formatter.py(_format_edittext_result edittext 单行上限, 长行放宽至1000减少截断)
+
 # ============================================================
 # 【tool 级】工具读取/输出上限 — 老陈 2026-07-15 归一化治理
 #     与 tool 紧密相关的长度/上限常量集中于此(便于查看对比检查),

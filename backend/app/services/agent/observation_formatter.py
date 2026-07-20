@@ -33,6 +33,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
    readtext        {content: str}                 #2-readtext             OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000  INER_READTEXT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断)
    fetchpage       {content: str}                 #2-fetchpage            OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500  WEB_FETCH_MAX_CHARS 已删除(正文零截断, 显示域行×列收口)
+   edittext        {diff: str}                    #24 edittext            OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000  INER_EDITTEXT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断); diff 零截断, 显示域行×列收口
   clipboard_ctl   {text: str}                    #10 raw text            OBS_MAX_STRING_LENGTH=10000          N/A
   read_pdf        {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000          页数不限
   read_docx       {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000          字符数不限
@@ -63,6 +64,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   find 自 2026-07-20 起返回全部匹配(offset 仅作跳过, 无条数上限), formatter 按 OBS_FIND_MAX_ROWS 行×列收口。
 
 Author: 小欧 2026-06-21; 小欧 2026-07-04 更新映射表; 小欧 2026-07-05 修复4个Bug, 新增专用handler分组; 小欧 2026-07-05 拆分compress/httpget/analyze_data专用handler
+  小欧 2026-07-20 章12 edittext 专属handler(#24 _format_edittext_result + OBS_EDITTEXT_MAX_ROWS/CHARS + 两态说明); edittext 由#21 fallback移出为专属handler; 映射表/截断对照表同步
 """
 
 import json
@@ -90,6 +92,8 @@ from app.tools.tool_constants import (
     OBS_FETCHPAGE_MAX_ROW_CHARS,
     OBS_READTEXT_MAX_ROWS,
     OBS_READTEXT_MAX_ROW_CHARS,
+    OBS_EDITTEXT_MAX_ROWS,
+    OBS_EDITTEXT_MAX_ROW_CHARS,
 )
 
 
@@ -122,6 +126,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # #2 raw str        readtext                         无行数限制(仅INER_READTEXT_READ_SIZE=10MB)  OBS_MAX_STRING_LENGTH=10000
     # #2-readtext      readtext                         无行数限制(仅INER_READTEXT_READ_SIZE=10MB, 3.4拒绝)  OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000
     # #2-fetchpage     fetchpage                        正文零截断(无 Tool 层上限)            OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500
+    # #24 edittext     edittext                         diff 零截断(仅INER_EDITTEXT_READ_SIZE=10MB, 3.4拒绝)  OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000
     # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=10000
     # #3 entries        listdir                          LISTDIR_PAGE_SIZE=500                OBS_MAX_DISPLAY_ITEMS=500
     # #4 items          searchweb                         返回全部(num_results≤50); 显示域行×列   OBS_SEARCHWEB_MAX_ROWS=200/CHARS=500
@@ -264,13 +269,17 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
         if "content_preview" in data:
             return "已写入内容\n" + data["content_preview"]
 
+        # ── #24 edittext — 1 tool: edittext（diff 专属行×列 + 两态） ──
+        if "diff" in data:
+            return _format_edittext_result(data["diff"], llm_data)
+
         # ── #22 which result — 1 tool: which ──
         if "paths" in data:
             return _format_which_result(data)
 
         # ── #0 空data — 1 tool: mouse_click（走第 72 行 if not data: return ""）────
-        # ── #21 fallback — 35 tools（排除which） ──
-        #   writetext, edittext, move, copy, delete, rename, extract,
+        # ── #21 fallback — 34 tools（排除which/edittext） ──
+        #   writetext, move, copy, delete, rename, extract,
         #   download, ping_port, write_docx, write_xlsx, write_pdf, write_pptx,
         #   timenow, timeadd, timediff, calendar, notify, execute_sql, generate_chart,
         #   create_task, delete_task, timer_set, timer_clear,
@@ -1173,6 +1182,34 @@ def _format_readtext_result(content: str, llm_data: dict = None) -> str:
             lines.append(ln)
     if total_lines > OBS_READTEXT_MAX_ROWS:
         lines.append(f"  ... 还有 {total_lines - OBS_READTEXT_MAX_ROWS} 行（仅展示前 {OBS_READTEXT_MAX_ROWS} 行）")
+    lines.append("⚠ 已截断" if truncated else "✓ 无截断-完整")
+    return "\n".join(lines)
+
+
+def _format_edittext_result(diff: str, llm_data: dict = None) -> str:
+    """edittext 编辑差异 — 2026-07-20 门限治理(章12.4): 专属行×列 OBS_EDITTEXT_MAX_ROWS/CHARS + 两态说明
+    Tool 输出 diff 不截断(3.7); 仅显示域按行×列收口(6.4)。无 diff 时回退标量摘要。"""
+    _act = (llm_data or {}).get("action", {}) if llm_data else {}
+    _path = _act.get("target", "")
+    lines = [f"── 编辑差异 ── {_path}"]
+    if not diff:
+        lines.append("(无差异)")
+        lines.append("✓ 无截断-完整")
+        return "\n".join(lines)
+    truncated = False
+    diff_lines = diff.split("\n")
+    total_lines = len(diff_lines)
+    if total_lines > OBS_EDITTEXT_MAX_ROWS:
+        truncated = True
+        diff_lines = diff_lines[:OBS_EDITTEXT_MAX_ROWS]
+    for ln in diff_lines:
+        if len(ln) > OBS_EDITTEXT_MAX_ROW_CHARS:
+            truncated = True
+            lines.append(ln[:OBS_EDITTEXT_MAX_ROW_CHARS] + "...(截断)")
+        else:
+            lines.append(ln)
+    if total_lines > OBS_EDITTEXT_MAX_ROWS:
+        lines.append(f"  ... 还有 {total_lines - OBS_EDITTEXT_MAX_ROWS} 行（仅展示前 {OBS_EDITTEXT_MAX_ROWS} 行）")
     lines.append("⚠ 已截断" if truncated else "✓ 无截断-完整")
     return "\n".join(lines)
 
