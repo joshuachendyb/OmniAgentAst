@@ -1104,23 +1104,13 @@ def _format_matches(matches: list) -> str:
 #   输入: {"compression_ratio":0.45,"original_size":1024000,"compression_level":6,"encrypted":true,"compressed_files":["doc1.txt","doc2.txt"]}
 #   输出: ── 压缩完成 ── | 压缩比: 45.00% 原始: 1024000 bytes 级别: 6 已加密\n压缩文件: ["doc1.txt", "doc2.txt"]
 def _format_compress_result(data: dict) -> str:
-    """compress 压缩结果 — 小欧 2026-07-05"""
-    ratio = data.get("compression_ratio", 0)
-    original = data.get("original_size", 0)
+    """compress 压缩结果 — 小欧 2026-07-05; 2026-07-20 ratio/original_size归llm_data,data仅呈独有信息"""
     level = data.get("compression_level", "")
     encrypted = " 已加密" if data.get("encrypted") else ""
-    if ratio < 0:
-        desc = f"文件膨胀 {abs(ratio):.2%}"
-    else:
-        desc = f"压缩率 {ratio:.2%}"
-    header = f"{desc} 原始: {original} bytes 级别: {level}{encrypted}"
-
-    lines = [f"── 压缩完成 ── | {header}"]
-
+    lines = [f"── 压缩完成 ── | 级别: {level}{encrypted}"]
     files = data.get("compressed_files", [])
     if files:
         lines.append(f"压缩文件: {json.dumps(files, ensure_ascii=False)}")
-
     return "\n".join(lines)
 
 

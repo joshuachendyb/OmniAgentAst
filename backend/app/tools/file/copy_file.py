@@ -159,15 +159,6 @@ async def copy(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if success:
             extra_m = {}
-            src_size = None
-            src_mtime = None
-            if src.exists():
-                try:
-                    s = src.stat()
-                    src_size = s.st_size
-                    src_mtime = s.st_mtime
-                except Exception:
-                    pass
             if dst.exists():
                 try:
                     extra_m["bytes"] = {"value": dst.stat().st_size, "text": f"{dst.stat().st_size}字节"}
@@ -175,14 +166,12 @@ async def copy(
                     pass
             llm_data = _build_copy_file_llm_data("success", duration_ms, source, destination=destination, extra_metrics=extra_m, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
             # ---- observation_formatter route -------------------------------------------
-            # branch: #21 fallback (key:val)
-            # trigger: 无上述20条分支匹配 — operation_id/source/destination 不命中专用分支
-            # handler: _format_scalar_data(data) — key | value 单行列表
-            # file:    observation_formatter.py:214
+            # branch: #0 空data (L73)
+            # trigger: data 为 {} → if not data: return ""
+            # handler: 直接返回空字符串
+            # file:    observation_formatter.py:73-74
             # ------------------------------------------------------------------------------
-            return build_success(
-                data={"source_size": src_size, "mtime": src_mtime},
-                llm_data=llm_data)
+            return build_success(data={}, llm_data=llm_data)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": detail or "复制失败"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
         return build_error(data={}, llm_data=llm_data)
 

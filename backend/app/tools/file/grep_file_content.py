@@ -88,12 +88,7 @@ def _build_grep_file_content_llm_data(
             if truncated_by_deadline:
                 warning_hint = f"搜索超时（{_timeout_sec}秒），可缩小搜索范围或增加超时时间"
             else:
-                warning_hint = "可排除二进制文件路径或指定文件后缀过滤"
-        else:
-            summary_suffix = ""
-            warning_message = "跳过了部分二进制文件"
-            warning_detail = "跳过了部分二进制文件，无法进行内容搜索"
-            warning_hint = "可排除二进制文件路径或指定文件后缀过滤"
+                warning_hint = ""
         return {
             "summary": f"搜索内容'{pattern}'，成功,提示说明: {total_files}个文件{total_matches}行匹配{summary_suffix}",
             "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
@@ -305,19 +300,9 @@ async def grep(
     # =============================================================================
     data = {"matches": gr.results, "total_matches": gr.total_matches, "total_files": gr.total_files}
 
-    # 添加跳过的二进制文件信息 — 小健 2026-06-24
-    if gr.skipped_binaries:
-        data["skipped_binary_files"] = gr.skipped_binaries[:10]  # 最多返回10个
-        data["skipped_binary_count"] = len(gr.skipped_binaries)
-
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
-    # 如果跳过了二进制文件，添加提示 — 小健 2026-06-24
-    binary_hint = ""
-    if gr.skipped_binaries:
-        binary_hint = f"（跳过{len(gr.skipped_binaries)}个二进制文件，如: {Path(gr.skipped_binaries[0]).name}）"
-
-    exec_code = "warning" if (gr.truncated or gr.skipped_binaries) else "success"
+    exec_code = "warning" if gr.truncated else "success"
     llm_data = _build_grep_file_content_llm_data(
         exec_code, duration_ms, pattern=pattern, path=path,
         total_files=gr.total_files, total_matches=gr.total_matches, truncated=gr.truncated,
@@ -325,11 +310,6 @@ async def grep(
         truncated_by_deadline=gr.truncated_by_deadline,
         user_context=context,
     )
-
-    # 修改summary添加二进制文件提示 — 小健 2026-06-24
-    if binary_hint:
-        llm_data["summary"] = llm_data["summary"] + binary_hint
-        llm_data["status"]["detail"] = f"跳过了{len(gr.skipped_binaries)}个二进制文件，这些文件不是文本格式，无法进行内容搜索"
 
     if exec_code == "warning":
         # ---- observation_formatter route -------------------------------------------

@@ -349,7 +349,7 @@ async def compress(
                 user_destination=destination, user_format=format, user_overwrite=overwrite,
                 user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "",
             )
-            safe_data = {k: v for k, v in result.items() if k not in ("source_path", "destination_path", "format", "compressed_size", "file_count", "compressed_files")}
+            safe_data = {k: v for k, v in result.items() if k not in ("source_path", "destination_path", "format", "compressed_size", "file_count", "compressed_files", "original_size", "compression_ratio")}
             # ---- observation_formatter route -------------------------------------------
             # branch: #18 compress
             # trigger: "compression_ratio" in data

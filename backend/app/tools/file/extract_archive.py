@@ -222,19 +222,13 @@ async def extract(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("success", duration_ms, source, user_destination=destination, user_overwrite=overwrite, extracted_files=result.get("extracted_files", 0), skipped_files=result.get("skipped_files", 0), fmt=result.get("format", ""))
-        # =============================================================================
-        # 数据设计：extracted_files/skipped_files/format 仍保留在 data 中供 formatter 展示，
-        # 同时通过 llm_data.metrics 传入 summary，最终进入 LLM 观察文本
-        # summary 示例: "解压成功: /path/file.zip，解压10个文件，跳过2个文件"
-        # — 小欧 2026-07-06 18:46:13
-        # =============================================================================
+        # extracted_files/skipped_files/format 已由 llm_data 承载, data 中不重复(2026-07-20)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
-        # trigger: 无上述20条分支匹配 — result 含 output_dir/extracted_files/skipped_files/format
         # handler: _format_scalar_data(data) — key | value 单行列表
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
-        return build_success(data=result, llm_data=llm_data)
+        return build_success(data={"output_dir": result["output_dir"], "file_list": result.get("file_list", [])}, llm_data=llm_data)
 
     except zipfile.BadZipFile:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
