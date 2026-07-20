@@ -38,9 +38,9 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   query_sql       {columns, rows}                #5 _format_rows          行: OBS_MAX_DISPLAY_ITEMS=500         limit=50
   filter_data     {columns, rows}                #5 _format_rows+columns  行: OBS_MAX_DISPLAY_ITEMS=500         top_n(用户指定,无默认)
   listdir         {entries}                      #3 _format_entries       项: OBS_MAX_DISPLAY_ITEMS=500         LISTDIR_PAGE_SIZE=500
-   find            {matches}                      #9b _format_find_results 项: OBS_FIND_MAX_ROWS=200        返回全部匹配(deadline超时保护), 显示域行×列收口
-   grep            {matches}                      #9 _format_matches       项: OBS_MAX_DISPLAY_ITEMS=500         上限500(=OBS_MAX_DISPLAY_ITEMS,条目数)
-  searchweb       {items}                        #4 _format_items         项: OBS_MAX_DISPLAY_ITEMS=500        num_results≤50; snippet 300字符
+  find            {matches}                      #9b _format_find_results 项: OBS_FIND_MAX_ROWS=200        返回全部匹配(deadline超时保护), 显示域行×列收口
+  grep            {matches}                      #9 _format_matches       项: OBS_MAX_DISPLAY_ITEMS=500         上限500(=OBS_MAX_DISPLAY_ITEMS,条目数)
+  searchweb       {items}                        #4 _format_items         项: OBS_SEARCHWEB_MAX_ROWS=200     返回全部(num_results≤50); 显示域行×列(snippet 500字符)
   event_log       {events}                       #8 _format_events        条: OBS_MAX_DISPLAY_ITEMS=500         max_events=50
   searchtool      {matches}                      #9c _format_searchtool   项: OBS_MAX_DISPLAY_ITEMS=500         small(内置)
   get_db_schema   {tables}                       #6 _format_schema        张表: OBS_MAX_DISPLAY_ITEMS=500       不限
@@ -72,7 +72,6 @@ from app.tools.tool_constants import (
     OBS_MAX_DISPLAY_ITEMS,
     OBS_MAX_STRING_LENGTH,
     OBS_DICT_MAX_KEYS,
-    OBS_SNIPPET_MAX_CHARS,
     OBS_HTML_SUMMARY_MAX_CHARS,
     OBS_SYSINFO_FIELD_MAX_CHARS,
     OBS_GREP_MAX_ROWS,
@@ -81,6 +80,8 @@ from app.tools.tool_constants import (
     OBS_SHELL_MAX_ROW_CHARS,
     OBS_FIND_MAX_ROWS,
     OBS_FIND_MAX_ROW_CHARS,
+    OBS_SEARCHWEB_MAX_ROWS,
+    OBS_SEARCHWEB_MAX_ROW_CHARS,
 )
 
 
@@ -114,7 +115,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     #                   fetchpage                        max_tokens=8000 → 32000字符           OBS_MAX_STRING_LENGTH=10000
     # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=10000
     # #3 entries        listdir                          LISTDIR_PAGE_SIZE=500                OBS_MAX_DISPLAY_ITEMS=500
-    # #4 items          searchweb                         num_results=50(最大); snippet 300   OBS_MAX_DISPLAY_ITEMS=500
+    # #4 items          searchweb                         返回全部(num_results≤50); 显示域行×列   OBS_SEARCHWEB_MAX_ROWS=200/CHARS=500
     # #2b flat table    read_xlsx                         max_rows=10000                      OBS_MAX_DISPLAY_ITEMS=500
     # #5 rows           query_sql                         limit=50                            OBS_MAX_DISPLAY_ITEMS=500
     #                   filter_data                       top_n(用户指定,无默认值)              OBS_MAX_DISPLAY_ITEMS=500
@@ -600,25 +601,29 @@ def _format_entries(entries: list) -> str:
 #   输入: [{"title": "Python教程", "snippet": "学习Python编程...", "url": "https://...", "source": "web"}]
 #   输出:   Python教程: 学习Python编程... [web]
 def _format_items(items: list) -> str:
-    """格式化搜索结果/列表项 — 小欧 2026-06-21
-    更新: 2026-06-23 小欧 支持snippet/url/source字段，300字符截断"""
+    """格式化搜索结果/列表项(行×列: OBS_SEARCHWEB_MAX_ROWS/CHARS) — 小欧 2026-07-20"""
     if not items:
         return ""
     lines = []
-    for item in items[:OBS_MAX_DISPLAY_ITEMS]:
+    truncated = False
+    for i, item in enumerate(items):
+        if i >= OBS_SEARCHWEB_MAX_ROWS:
+            truncated = True
+            break
         if isinstance(item, str):
-            lines.append(f"  {item}")
+            s = item
+            if len(s) > OBS_SEARCHWEB_MAX_ROW_CHARS:
+                s = s[:OBS_SEARCHWEB_MAX_ROW_CHARS] + "...(截断)"
+            lines.append(f"  {s}")
         elif isinstance(item, dict):
             name = item.get("name", item.get("title", item.get("path", "")))
             desc = item.get("snippet", item.get("description", item.get("desc", "")))
-            if desc and len(desc) > OBS_SNIPPET_MAX_CHARS:
-                desc = desc[:OBS_SNIPPET_MAX_CHARS] + "..."
+            if desc and len(desc) > OBS_SEARCHWEB_MAX_ROW_CHARS:
+                desc = desc[:OBS_SEARCHWEB_MAX_ROW_CHARS] + "...(截断)"
             url = item.get("url", "")
             source = item.get("source", "")
             tag = f" [{source}]" if source else ""
-            # 2026-07-17 - 小欧 - 修复url丢弃: 原 if desc/elif url 二选一会吞掉url(有snippet时),
-            #   searchweb等items类工具返回的url是fetchpage必需入参, 丢失则LLM无法打开文章而空转(见task-2ffbc517)。
-            #   改为desc与url并存输出(url非空时附在desc下方一行), 通用惠及所有items类工具, 功能零退化。
+            # 2026-07-17 - 小欧 - 修复url丢弃: desc与url并存输出(url非空时附在desc下方一行), url为fetchpage必需入参, 保留
             if desc:
                 line = f"  {name}: {desc}{tag}"
                 if url:
@@ -628,8 +633,12 @@ def _format_items(items: list) -> str:
                 lines.append(f"  {name}: {url}{tag}")
             else:
                 lines.append(f"  {name}{tag}")
-    if len(items) > OBS_MAX_DISPLAY_ITEMS:
-        lines.append(f"  ... 还有 {len(items) - OBS_MAX_DISPLAY_ITEMS} 项")
+    total = len(items)
+    if truncated:
+        lines.append(f"  ... 还有 {total - OBS_SEARCHWEB_MAX_ROWS} 项（输入已全部返回, 仅展示前 {OBS_SEARCHWEB_MAX_ROWS} 项）")
+        lines.append("⚠ 已截断")
+    else:
+        lines.append("✓ 无截断-完整")
     return "\n".join(lines)
 
 

@@ -8,7 +8,8 @@
 # 2026-07-18 - 小欧 - TOOL_TIMEOUTS清理死键(合并的window_maximize/minimize/clipboard_read/write等),补真实注册名(set_window_state/clipboard)
 # 2026-07-20 - 小欧 - 删 MAX_SEARCH_FILE_SIZE(grep 搜索单文件大小不再设上限, 对齐 rg 无文件大小限制, 因无引用删除); 新增 OBS_GREP_MAX_ROWS=200/OBS_GREP_MAX_ROW_CHARS=150(grep 专属行×列, 显示域截断收口)
 # 2026-07-20 - 小欧 - shell 门限治理(章6.4): 新增 OBS_SHELL_MAX_ROWS=200/OBS_SHELL_MAX_ROW_CHARS=1000(shell 专属行×列, 显示域截断收口); SHELL_OUTPUT_MAX_CHARS 标记【已作废】由 OBS_SHELL_MAX_ROW_CHARS 取代
-# 2026-07-20 - 小欧 - find 门限治理(章7.4): 新增 OBS_FIND_MAX_ROWS=200/OBS_FIND_MAX_ROW_CHARS=300(find 专属行×列, 显示域截断收口); FIND_PAGE_SIZE/MAX_SEARCH_RESULTS 标记【已作废】由 OBS_FIND_MAX_ROWS 取代(find 返回全部匹配, deadline 超时保护)
+# 2026-07-20 - 小欧 - find 门限治理(章7.4): 新增 OBS_FIND_MAX_ROWS=200/OBS_FIND_MAX_ROW_CHARS=300(find 专属行×列, 显示域截断收口); FIND_PAGE_SIZE/MAX_SEARCH_RESULTS 已删除(由 OBS_FIND_MAX_ROWS 取代, find 返回全部匹配, deadline 超时保护)
+# 2026-07-20 - 小欧 - searchweb 门限治理(章8.4): 新增 OBS_SEARCHWEB_MAX_ROWS=100/OBS_SEARCHWEB_MAX_ROW_CHARS=500(searchweb 专属行×列, 显示域截断收口); SEARCH_SNIPPET_MAX_CHARS/OBS_SNIPPET_MAX_CHARS 已删除(由 OBS_SEARCHWEB_MAX_ROW_CHARS 取代, searchweb 返回完整snippet)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -120,7 +121,6 @@ OBS_MAX_DISPLAY_ITEMS: int = 500       # 【系统级】使用对象: observatio
 OBS_MAX_STRING_LENGTH: int = 10000     # 【系统级】使用对象: observation_formatter.py(单个字符串值最大显示长度)
 OBS_DICT_MAX_KEYS: int = 100           # 【系统级】使用对象: observation_formatter.py(_format_key_value 最大键数)
 # —— 以下 B 组: 原 observation_formatter.py 内硬编码, 迁入统一(【系统级】) ——
-OBS_SNIPPET_MAX_CHARS: int = 300       # 【系统级】使用对象: observation_formatter.py(搜索结果 snippet 截断; 原 SNIPPET_MAX)
 OBS_HTML_SUMMARY_MAX_CHARS: int = 500  # 【系统级】使用对象: observation_formatter.py(HTML→纯文本摘要上限; 原 _extract_html_summary max_len)
 OBS_SYSINFO_FIELD_MAX_CHARS: int = 120 # 【系统级】使用对象: observation_formatter.py(sysinfo 每节字段值截断)
 
@@ -136,6 +136,10 @@ OBS_SHELL_MAX_ROW_CHARS: int = 1000     # 【系统级】使用对象: observati
 OBS_FIND_MAX_ROWS: int = 200            # 【系统级】使用对象: observation_formatter.py(_format_find_results find 行数上限)
 OBS_FIND_MAX_ROW_CHARS: int = 300       # 【系统级】使用对象: observation_formatter.py(_format_find_results find 单行上限)
 
+# —— searchweb 专属观察截断常量（显示域行×列；Tool 输出不截断, 仅显示域按行×列收口） ——
+OBS_SEARCHWEB_MAX_ROWS: int = 100       # 【系统级】使用对象: observation_formatter.py(_format_items searchweb 行数上限)
+OBS_SEARCHWEB_MAX_ROW_CHARS: int = 500  # 【系统级】使用对象: observation_formatter.py(_format_items searchweb snippet/单行上限)
+
 # ============================================================
 # 【tool 级】工具读取/输出上限 — 老陈 2026-07-15 归一化治理
 #     与 tool 紧密相关的长度/上限常量集中于此(便于查看对比检查),
@@ -145,11 +149,9 @@ OBS_FIND_MAX_ROW_CHARS: int = 300       # 【系统级】使用对象: observati
 MAX_READ_SIZE: int = 10 * 1024 * 1024          # 【tool 级】使用对象: readtext 读取文件字节上限(保留原名不改名, 免改读取层引用)
 MAX_MEDIA_READ_SIZE: int = 50 * 1024 * 1024     # 【tool 级】使用对象: 媒体文件读取字节上限(保留原名不改名)
 MAX_BATCH_FILE_COUNT: int = 100                 # 【tool 级】使用对象: 批量文件操作单次文件数上限
-MAX_SEARCH_RESULTS: int = 1000                  # 【tool 级】使用对象: search_files(find) 结果收集上限 — 【已作废】2026-07-20 小欧 find 不再设收集上限(返回全部匹配, 唯一截断收口于 OBS_FIND_MAX_ROWS), 由 deadline 超时保护
 # SHELL_OUTPUT_MAX_CHARS 已作废(2026-07-20 小欧 shell 改行×列, Tool 层不再截断; 由 OBS_SHELL_MAX_ROW_CHARS 取代) — 原值 20000
 INER_SHELL_OUTPUT_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: shell_engine.py(引擎读 shell 临时输出文件防 OOM, 3.4 硬安全网; 原 _MAX_OUTPUT_SZ / SHELL_OUTPUT_FILE_MAX_BYTES; 依 3.5 改名 INER_ 前缀)
 WEB_FETCH_MAX_CHARS: int = 10000       # 【tool 级】使用对象: fetch_webpage.py(网页正文提取上限; 原 max_tokens=8000→32000字符, 对齐 OBS 10000)
-SEARCH_SNIPPET_MAX_CHARS: int = 300    # 【tool 级】使用对象: search_web.py(搜索结果 snippet 截断; 原 _SNIPPET_MAX_CHARS)
 XLSX_MAX_ROWS: int = 10000             # 【tool 级】使用对象: read_xlsx.py(单次读取最大行数; 原 max_rows=10000)
 HTTP_JSON_PREVIEW_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级】使用对象: http_request.py(JSON body 预览截断; 原 _MAX_JSON_SIZE)
 DOWNLOAD_MAX_BYTES: int = 100 * 1024 * 1024  # 【tool 级】使用对象: download_file.py(下载文件大小上限; 原 _MAX_FILE_SIZE)

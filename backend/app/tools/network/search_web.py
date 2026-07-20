@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: snippet 截断改引用 tool_constants.SEARCH_SNIPPET_MAX_CHARS(原硬编码300), 功能零退化
+# 2026-07-20 - 小欧 - searchweb 门限治理(章8.4): 删 SEARCH_SNIPPET_MAX_CHARS Tool层snippet截断(返回完整snippet, 3.7); 删 _MAX_SEARCH_DEPTH=3 递归深度限制(3.6); 删 len(query)<2 查询最小长度校验(3.6, 空/单字符现透传引擎); 截断唯一收口于 observation_formatter OBS_SEARCHWEB_MAX_ROWS/CHARS(两态说明); 保留 query is None 显式报错(防None透传Bing异常被吞为success空结果-正确性回归防护)
 """
 N4: searchweb — 搜索网络获取最新信息
 
@@ -30,7 +31,6 @@ from app.tools.tool_constants import TOOL_BROWSER_UA
 from app.tools.tool_constants import (
     ERR_NET_UNKNOWN,
     ERR_PARAM_INVALID,
-    SEARCH_SNIPPET_MAX_CHARS,
 )
 
 
@@ -68,7 +68,7 @@ def _split_long_query(query: str, max_keywords: int = 3) -> List[str]:
     return queries
 
 
-# 统一使用 SEARCH_SNIPPET_MAX_CHARS (tool_constants.py), 原硬编码 300 — 归一化治理 2026-07-15
+# 2026-07-20 - 小欧 - searchweb 门限治理: snippet 返回完整内容(3.7 Tool 输出零限制), 不再截断; 显示域行×列截断收口于 observation_formatter OBS_SEARCHWEB_MAX_ROWS/CHARS
 
 _CHALLENGE_KEYWORDS = ["captcha", "verify", "security", "robot", "automated",
                        "安全验证", "验证码", "机器人检测", "人机验证"]
@@ -222,9 +222,6 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
     return None
 
 
-_MAX_SEARCH_DEPTH = 3
-
-
 async def _search_bing(
     query: str,
     num_results: int,
@@ -233,9 +230,7 @@ async def _search_bing(
 ) -> List[dict]:
     """Bing搜索(HTML解析) — 小欧 2026-06-22
     更新: 2026-06-23 小欧 多域名降级+挑战页检测+长查询拆分
-          2026-06-24 小欧 增加递归深度限制"""
-    if _depth >= _MAX_SEARCH_DEPTH:
-        return []
+          2026-07-20 小欧 章8.4 按3.6去除递归深度限制(查询拆分自然收敛兜底)"""
 
     headers = {"User-Agent": TOOL_BROWSER_UA}
     params = {"q": query, "count": num_results}
@@ -367,13 +362,13 @@ async def searchweb(
         llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail=proxy_err, hint="请检查代理配置", proxy=proxy, num_results=num_results)
         return build_error(data={}, llm_data=llm_data)
 
+    # 2026-07-20 - 小欧 - None 显式报错(防None透传Bing引发NoneType异常被except吞为success空结果, 属正确性回归防护; 非长度/格式限制, 与3.6删除len(query)<2无关)
+    if query is None:
+        llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail="query 不能为 None, 请提供搜索关键词", hint="请提供搜索关键词", proxy=proxy, num_results=num_results)
+        return build_error(data={}, llm_data=llm_data)
+
     t0 = _time_mod.perf_counter()
     try:
-        if len(query) < 2:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail="搜索查询至少需要2个字符", hint="搜索词至少需要2个字符", proxy=proxy, num_results=num_results)
-            return build_error(data={}, llm_data=llm_data)
-
         if not isinstance(num_results, int) or num_results < 1 or num_results > 50:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail=f"num_results必须在1-50之间,当前值: {num_results}", hint="请将结果数量设置在1-50之间", proxy=proxy, num_results=num_results)
@@ -413,8 +408,6 @@ async def searchweb(
                 snippet = HTML_TAG_PATTERN.sub('', snippet)
                 snippet = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', snippet)
                 snippet = re.sub(r'\n{2,}', ' ', snippet).strip()
-                if len(snippet) > SEARCH_SNIPPET_MAX_CHARS:
-                    snippet = snippet[:SEARCH_SNIPPET_MAX_CHARS] + "..."
                 r["snippet"] = snippet
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
