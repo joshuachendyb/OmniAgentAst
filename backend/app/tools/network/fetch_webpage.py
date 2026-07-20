@@ -7,6 +7,7 @@
 # 2026-07-17 - 小欧 - 异常捕获增强: httpx.InvalidURL 不经 RequestError/HTTPError 继承链, 原先落入 except Exception 打印全量堆栈造成日志噪声; 在 except RequestError 前新增 except InvalidURL 专捕, 走受控 warning 并返回受控错误结构, 功能零退化
 # 2026-07-18 - 小欧 - 【病根】page.set_default_timeout() 是 Playwright 异步 API 中的同步方法, 原代码 `await page.set_default_timeout(...)` 对同步返回值(None)做 await 抛 TypeError, 致 JS 渲染回退分支崩溃。
 #            【解决思路】去掉误加的 await, 保留同步调用, 功能零退化。
+# 2026-07-20 - 小欧 - fetchpage 门限治理(章10.4): 去除 Tool 层正文截断(max_tokens/max_len 全链删除, _extract_html_content 返回完整正文 truncated=False); WEB_FETCH_MAX_CHARS 删除(常量移出 tool_constants, 由 OBS_FETCHPAGE 取代显示域截断); MAX_READ_BYTES=5_242_880/MAX_CONTENT_LENGTH=100MB 依3.5改名 INER_FETCHPAGE_READ_BYTES/INER_FETCHPAGE_MAX_CONTENT_LENGTH 迁 tool_constants(保留为3.4硬安全网防OOM/巨文件)
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -44,7 +45,7 @@ from app.tools.validate.timeout_validator import validate_timeout
 
 from app.constants import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
 from app.logger import logger
-from app.tools.tool_constants import TOOL_BROWSER_UA, WEB_FETCH_MAX_CHARS
+from app.tools.tool_constants import TOOL_BROWSER_UA, INER_FETCHPAGE_READ_BYTES, INER_FETCHPAGE_MAX_CONTENT_LENGTH
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
     ERR_NETWORK_DOWN,
@@ -456,8 +457,8 @@ def _build_fetch_webpage_llm_data(
     }
 
 
-def _extract_html_content(html_content: str, extract_format: str, max_tokens: int) -> Tuple[str, bool]:
-    """3路格式提取+截断检查 — 小欧 2026-06-22"""
+def _extract_html_content(html_content: str, extract_format: str) -> Tuple[str, bool]:
+    """3路格式提取(零截断, Tool 层不限制正文长度; 截断收口于 observation_formatter OBS_FETCHPAGE) — 小欧 2026-06-22 — 小欧 2026-07-20 去除 max_len 截断"""
     if extract_format == "html":
         content = html_content
     elif extract_format == "text":
@@ -467,11 +468,7 @@ def _extract_html_content(html_content: str, extract_format: str, max_tokens: in
         content = MULTI_WHITESPACE_PATTERN.sub(' ', content).strip()
     else:
         content = _html_to_markdown(html_content)
-    max_len = max_tokens * 4
-    truncated = len(content) > max_len
-    if truncated:
-        content = content[:max_len]
-    return content, truncated
+    return content, False
 
 
 def _build_media_result(url: str, mime: str, raw_bytes: bytes) -> Dict[str, Any]:
@@ -493,8 +490,8 @@ def _build_media_result(url: str, mime: str, raw_bytes: bytes) -> Dict[str, Any]
 
 
 def _pw_run(url: str, proxy: Optional[str], timeout: float,
-            extract_format: str, max_tokens: int) -> Dict[str, Any]:
-    """Playwright同步内核: 独立Proactor子循环跑, 规避主循环Selector约束 — 小欧 2026-07-17"""
+            extract_format: str) -> Dict[str, Any]:
+    """Playwright同步内核: 独立Proactor子循环跑, 规避主循环Selector约束 — 小欧 2026-07-17 — 小欧 2026-07-20 去除 max_tokens(正文零截断)"""
     async def _go() -> Dict[str, Any]:
         loop = asyncio.get_event_loop()
         loop.set_exception_handler(lambda loop, ctx: None)   # 吞掉transport后台Task泄漏(红字)
@@ -521,7 +518,7 @@ def _pw_run(url: str, proxy: Optional[str], timeout: float,
                     html_content = await page.content()
                 finally:
                     await browser.close()
-            content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
+            content, truncated = _extract_html_content(html_content, extract_format)
             return {
                 "html_content": html_content,
                 "extracted_content": content,
@@ -542,11 +539,11 @@ def _pw_run(url: str, proxy: Optional[str], timeout: float,
 
 
 async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout: float,
-                                extract_format: str, max_tokens: int) -> Dict[str, Any]:
-    """Playwright路径封装(隔离执行) — 小欧 2026-07-17 改为子循环隔离"""
+                                 extract_format: str) -> Dict[str, Any]:
+    """Playwright路径封装(隔离执行) — 小欧 2026-07-17 改为子循环隔离 — 小欧 2026-07-20 去除 max_tokens(正文零截断)"""
     try:
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, lambda: _pw_run(url, proxy, timeout, extract_format, max_tokens))
+        return await loop.run_in_executor(None, lambda: _pw_run(url, proxy, timeout, extract_format))
     except Exception as e:
         return {"error": True, "error_detail": str(e), "params": {"url": url}, "err_code": ERR_NETWORK_JS_RENDER, "detail": str(e)}
 
@@ -573,8 +570,7 @@ async def fetchpage(
     timeout: int = 30,
     proxy: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """获取网页内容 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
-    max_tokens = WEB_FETCH_MAX_CHARS // 4  # 字符上限=WEB_FETCH_MAX_CHARS(10000)→max_len=10000字符(原8000 token→32000字符已偏大, 归一化治理 2026-07-15)
+    """获取网页内容 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-20 去除 max_tokens(正文零截断, 截断收口于 OBS_FETCHPAGE)"""
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "fetchpage")
     if not timeout_valid:
         llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_INVALID_URL, detail=timeout_err, hint="请检查超时设置", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
@@ -611,7 +607,7 @@ async def fetchpage(
 
         playwright_result = None
         if js_render:
-            playwright_result = await _fetch_via_playwright(url, proxy, timeout, extract_format, max_tokens)
+            playwright_result = await _fetch_via_playwright(url, proxy, timeout, extract_format)
         if js_render and playwright_result.get("error"):
             # 浏览器渲染失败, 先尝试外部API兜底(Jina Reader) — 小欧 2026-07-17
             external_md = await _fetch_via_external_reader(url, timeout)
@@ -651,14 +647,13 @@ async def fetchpage(
                             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                             llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, cf_resp.status_code, mime_type=mime, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
                             return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
-                        html_content = cf_resp.text[:5_242_880]
+                        html_content = cf_resp.text[:INER_FETCHPAGE_READ_BYTES]
                         status_code = cf_resp.status_code
                     else:
                         resp.raise_for_status()
 
-                        MAX_CONTENT_LENGTH = 100 * 1024 * 1024
                         cl = resp.headers.get("content-length")
-                        if cl and int(cl) > MAX_CONTENT_LENGTH:
+                        if cl and int(cl) > INER_FETCHPAGE_MAX_CONTENT_LENGTH:
                             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                             return build_error(data={}, llm_data=_build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=f"内容过大({int(int(cl)/1024/1024)}MB)", hint="请使用更具体的URL或减少内容", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy))
 
@@ -669,10 +664,9 @@ async def fetchpage(
                             llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, resp.status_code, mime_type=mime, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
                             return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
 
-                        MAX_READ_BYTES = 5_242_880
                         chunks, total = [], 0
                         async for chunk in resp.aiter_bytes():
-                            remaining = MAX_READ_BYTES - total
+                            remaining = INER_FETCHPAGE_READ_BYTES - total
                             if remaining <= 0:
                                 break
                             chunks.append(chunk[:remaining] if len(chunk) > remaining else chunk)
@@ -684,7 +678,7 @@ async def fetchpage(
             pw_content = None
             if _needs_browser(html_content, status_code, mime)[0]:
                 logger.info(f"[fetchpage] SPA空壳检测,自动回退Playwright: {url}")
-                pw_res = await _fetch_via_playwright(url, proxy, timeout, extract_format, max_tokens)
+                pw_res = await _fetch_via_playwright(url, proxy, timeout, extract_format)
                 if not pw_res.get("error"):
                     pw_content = pw_res
                 else:
@@ -694,7 +688,7 @@ async def fetchpage(
 
             if pw_content:
                 # HTTP HTML先提取做fallback — 小沈 2026-07-08
-                http_extracted, http_truncated = _extract_html_content(html_content, extract_format, max_tokens)
+                http_extracted, http_truncated = _extract_html_content(html_content, extract_format)
                 pw_extracted = pw_content["extracted_content"]
                 # Playwright提取内容显著更好才用它,否则回退HTTP HTML
                 if len(pw_extracted) >= len(http_extracted) * 1.5:
@@ -705,7 +699,7 @@ async def fetchpage(
                 else:
                     extracted_content, truncated = http_extracted, http_truncated
             else:
-                extracted_content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
+                extracted_content, truncated = _extract_html_content(html_content, extract_format)
 
         # =============================================================================
         # 数据设计：data仅保留content纯数据，format/content_type/truncated通过summary传递
