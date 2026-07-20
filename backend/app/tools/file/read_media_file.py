@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - MAX_MEDIA_READ_SIZE 依3.5改名 INER_READMEDIA_READ_SIZE(readmedia 自有内部常量, 各 tool 独立不公用, INER_ 前缀; 3.4 硬安全网保留, 文件过大拒绝, 不截断)
 """
 F3: readmedia — 读媒体文件
 
@@ -16,7 +18,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import MAX_MEDIA_READ_SIZE
+from app.tools.tool_constants import INER_READMEDIA_READ_SIZE
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.validate.file_type_checker import check_for_media_tool
 from app.tools.validate.file_path_checker import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
@@ -88,11 +90,11 @@ async def readmedia(
         suffix = path.suffix.lower()
 
         file_size = path.stat().st_size
-        if file_size > MAX_MEDIA_READ_SIZE:
+        if file_size > INER_READMEDIA_READ_SIZE:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_media_file_llm_data(
                 "error", duration_ms, file_path=file_path,
-                detail=f"媒体文件过大({file_size}字节),超过读取上限{MAX_MEDIA_READ_SIZE // 1024 // 1024}MB",
+                detail=f"媒体文件过大({file_size}字节),超过读取上限{INER_READMEDIA_READ_SIZE // 1024 // 1024}MB",
                 hint="文件过大，请使用更小的文件",
             )
             return build_error(data={}, llm_data=llm_data)

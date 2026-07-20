@@ -65,6 +65,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
 
 Author: 小欧 2026-06-21; 小欧 2026-07-04 更新映射表; 小欧 2026-07-05 修复4个Bug, 新增专用handler分组; 小欧 2026-07-05 拆分compress/httpget/analyze_data专用handler
   小欧 2026-07-20 章12 edittext 专属handler(#24 _format_edittext_result + OBS_EDITTEXT_MAX_ROWS/CHARS + 两态说明); edittext 由#21 fallback移出为专属handler; 映射表/截断对照表同步
+  小欧 2026-07-20 章13 readmedia 专属handler(#13 _format_readmedia_result); base64 为二进制编码非可读文本, 用户裁定不按文本行×列处理, 回退为仅元数据+base64字符数摘要(原行为), 不新增 OBS_READMEDIA_*(避免死代码); INER_READMEDIA_READ_SIZE 保留3.4硬安全网
 """
 
 import json
@@ -140,7 +141,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     #                   searchtool                        小(内置)                            OBS_MAX_DISPLAY_ITEMS=500
     # #11 shell stdout  shell                             不限                                OBS_MAX_STRING_LENGTH=10000
     # #12 tree          tree                              不限                                无特定截断(嵌套渲染)
-    # #13 readmedia     readmedia                         MAX_MEDIA_READ_SIZE=50MB            仅元数据摘要
+    # #13 readmedia     readmedia                         INER_READMEDIA_READ_SIZE=50MB         仅元数据+base64字符数摘要(不按文本行×列, base64非可读文本)
     # #14 tasks table   list_tasks                        max_results=100                     OBS_MAX_DISPLAY_ITEMS=500
     # #15 windows table window_info                       不限                                OBS_MAX_DISPLAY_ITEMS=500
     # #16 slides items  read_pptx                         页数不限                            OBS_MAX_DISPLAY_ITEMS=500
@@ -235,7 +236,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
 
         # ── #13 readmedia — 1 tool: readmedia ──
         if "base64_data" in data:
-            return _format_readmedia(data)
+            return _format_readmedia_result(data, llm_data)
 
         # ── #14 tasks — 1 tool: list_tasks ──
         if "tasks" in data:
@@ -422,8 +423,10 @@ def _format_tree(data: dict) -> str:
 # #13 readmedia 样式:
 #   输入: {"file_name": "photo.jpg", "mime_type": "image/jpeg", "file_size": 204800, "base64_data": "/9j/4AAQ..."}
 #   输出: photo.jpg [image/jpeg, 204800 bytes] [base64: 273104 chars]
-def _format_readmedia(data: dict) -> str:
-    """#13 readmedia handler — 元数据 + base64 摘要 — 小欧 2026-07-05"""
+def _format_readmedia_result(data: dict, llm_data: dict = None) -> str:
+    """readmedia 媒体文件 — 2026-07-20 门限治理(章13.4): 仅元数据 + base64 字符数摘要
+    base64 为二进制编码, 非可读文本, 不可按文本行×列处理(LLM 无法消费截断 base64, 且体积大浪费 token);
+    Tool 输出零截断(3.7); observation 仅渲染元数据摘要, 不展开 base64(6.4)。"""
     name = data.get("file_name", "?")
     mime = data.get("mime_type", "?")
     size = data.get("file_size", 0)

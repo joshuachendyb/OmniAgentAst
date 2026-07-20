@@ -159,6 +159,9 @@ OBS_READTEXT_MAX_ROW_CHARS: int = 1000  # 【系统级】使用对象: observati
 OBS_EDITTEXT_MAX_ROWS: int = 200        # 【系统级】使用对象: observation_formatter.py(_format_edittext_result edittext 行数上限)
 OBS_EDITTEXT_MAX_ROW_CHARS: int = 1000  # 【系统级】使用对象: observation_formatter.py(_format_edittext_result edittext 单行上限, 长行放宽至1000减少截断)
 
+# 注: readmedia 的 base64 为二进制编码, 非可读文本, 不按文本行×列处理(章13.4 用户裁定回退为仅元数据+base64字符数摘要),
+#     故不新增 OBS_READMEDIA_* 常量(避免死代码); 若后续 readmedia 改返回转写文本, 再补 OBS_READMEDIA_* + 行×列 handler
+
 # ============================================================
 # 【tool 级】工具读取/输出上限 — 老陈 2026-07-15 归一化治理
 #     与 tool 紧密相关的长度/上限常量集中于此(便于查看对比检查),
@@ -167,7 +170,7 @@ OBS_EDITTEXT_MAX_ROW_CHARS: int = 1000  # 【系统级】使用对象: observati
 # —— 以下为工具文件读取/搜索上限(【tool 级】) ——
 INER_READTEXT_READ_SIZE: int = 10 * 1024 * 1024   # 【tool 级/私有内部常量】使用对象: read_text_file.py(读取文本文件字节上限防 OOM, 3.4 硬安全网; 原 MAX_READ_SIZE; 依 3.5 改名 INER_READTEXT_ 前缀, 各 tool 独立不公用)
 INER_EDITTEXT_READ_SIZE: int = 10 * 1024 * 1024   # 【tool 级/私有内部常量】使用对象: edit_text_file.py(编辑前读取文件字节上限防 OOM, 3.4 硬安全网; 原 MAX_READ_SIZE; 依 3.5 改名 INER_EDITTEXT_ 前缀, 各 tool 独立不公用)
-MAX_MEDIA_READ_SIZE: int = 50 * 1024 * 1024     # 【tool 级】使用对象: 媒体文件读取字节上限(保留原名不改名)
+INER_READMEDIA_READ_SIZE: int = 50 * 1024 * 1024   # 【tool 级/私有内部常量】使用对象: read_media_file.py(读取媒体文件字节上限防 OOM, 3.4 硬安全网; 原 MAX_MEDIA_READ_SIZE; 依 3.5 改名 INER_READMEDIA_ 前缀, 各 tool 独立不公用)
 MAX_BATCH_FILE_COUNT: int = 100                 # 【tool 级】使用对象: 批量文件操作单次文件数上限
 # SHELL_OUTPUT_MAX_CHARS 已作废(2026-07-20 小欧 shell 改行×列, Tool 层不再截断; 由 OBS_SHELL_MAX_ROW_CHARS 取代) — 原值 20000
 INER_SHELL_OUTPUT_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: shell_engine.py(引擎读 shell 临时输出文件防 OOM, 3.4 硬安全网; 原 _MAX_OUTPUT_SZ / SHELL_OUTPUT_FILE_MAX_BYTES; 依 3.5 改名 INER_ 前缀)
