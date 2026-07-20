@@ -176,7 +176,8 @@ MAX_BATCH_FILE_COUNT: int = 100                 # 【tool 级】使用对象: �
 INER_SHELL_OUTPUT_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: shell_engine.py(引擎读 shell 临时输出文件防 OOM, 3.4 硬安全网; 原 _MAX_OUTPUT_SZ / SHELL_OUTPUT_FILE_MAX_BYTES; 依 3.5 改名 INER_ 前缀)
 INER_FETCHPAGE_READ_BYTES: int = 5 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: fetch_webpage.py(流式读取正文硬截断防 OOM, 3.4 硬安全网; 原 MAX_READ_BYTES=5_242_880; 依 3.5 改名 INER_ 前缀)
 INER_FETCHPAGE_MAX_CONTENT_LENGTH: int = 100 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: fetch_webpage.py(Content-Length 超阈值拒绝下载防 OOM, 3.4 硬安全网; 原 MAX_CONTENT_LENGTH=100MB; 依 3.5 改名 INER_ 前缀)
-XLSX_MAX_ROWS: int = 10000             # 【tool 级】使用对象: read_xlsx.py(单次读取最大行数; 原 max_rows=10000)
+INER_READ_XLSX_MAX_ROWS: int = 10000   # 【tool 级/私有内部常量】使用对象: read_xlsx.py(单次读取最大行数, 3.4 硬安全网防读超大表 OOM; 原 XLSX_MAX_ROWS=10000; 依 3.5 改名 INER_ 前缀, 触发置 data["truncated"]=True 非显示限制)
+# 注: read_xlsx 无 offset 分页, 显示域行/列均不截断(否则 LLM 永久丢失数据且无法翻页取回), 故不新增 OBS_XLSX_*(避免死代码); 全量展示由 Tool 读出的数据, 仅 3.4 硬安全网 INER_READ_XLSX_MAX_ROWS 兜底防 OOM
 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: http_request.py(JSON body 预览截断, 3.4 硬安全网防响应体撑爆OOM/序列化溢出; 原 HTTP_JSON_PREVIEW_MAX_BYTES/_MAX_JSON_SIZE; 依 3.5 改名 INER_ 前缀)
 DOWNLOAD_MAX_BYTES: int = 100 * 1024 * 1024  # 【tool 级】使用对象: download_file.py(下载文件大小上限; 原 _MAX_FILE_SIZE)
 # 注: WRITE_TEXT_MAX_CHARS(原 max_length=10000) 依3.6作废删除(入参长度限制属多余叠加); 2026-07-20 用户裁定写结果预览恢复 Tool 层 _build_content_preview(文首50+文末50), 不新增 OBS_WRITETEXT_*(避免死代码); writetext 仍走 #21 fallback(_format_scalar_data)

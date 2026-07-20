@@ -38,7 +38,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   clipboard_ctl   {text: str}                    #10 raw text             OBS_MAX_STRING_LENGTH=10000          N/A
   read_pdf        {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000          页数不限
   read_docx       {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000          字符数不限
-  read_xlsx       {{headers, rows}}              #2b flat _format_table   行: OBS_MAX_DISPLAY_ITEMS=500         max_rows=10000
+  read_xlsx       {headers, rows}                #25 read_xlsx            无显示域截断(无offset分页, 行/列全展示); INER_READ_XLSX_MAX_ROWS=10000保留为3.4硬安全网(超上限置truncated, 不删)
   query_sql       {columns, rows}                #5 _format_rows          行: OBS_MAX_DISPLAY_ITEMS=500         limit=50
   filter_data     {columns, rows}                #5 _format_rows+columns  行: OBS_MAX_DISPLAY_ITEMS=500         top_n(用户指定,无默认)
   listdir         {entries}                      #3 _format_entries       项: OBS_MAX_DISPLAY_ITEMS=500         LISTDIR_PAGE_SIZE=500
@@ -68,6 +68,7 @@ Author: 小欧 2026-06-21; 小欧 2026-07-04 更新映射表; 小欧 2026-07-05 
   小欧 2026-07-20 章12 edittext 专属handler(#24 _format_edittext_result + OBS_EDITTEXT_MAX_ROWS/CHARS + 两态说明); edittext 由#21 fallback移出为专属handler; 映射表/截断对照表同步
   小欧 2026-07-20 章13 readmedia 专属handler(#13 _format_readmedia_result); base64 为二进制编码非可读文本, 用户裁定不按文本行×列处理, 回退为仅元数据+base64字符数摘要(原行为), 不新增 OBS_READMEDIA_*(避免死代码); INER_READMEDIA_READ_SIZE 保留3.4硬安全网
    小欧 2026-07-20 章14 用户裁定回退: writetext 恢复 Tool 层 content_preview 预览(文首50+文末50, _build_content_preview), #23 专属简单拼接 "已写入内容\n"+preview(无 OBS_WRITETEXT_* 截断/无死代码); OBS_WRITETEXT_* 删除; WRITE_TEXT_MAX_CHARS 仍依3.6删除(入参长度限制)
+   小欧 2026-07-20 章15 read_xlsx 门限治理: 新增 _format_xlsx_result 专属handler(#25, 按 action.tool=="read_xlsx" 分流 headers+rows); 无显示域行/列截断(read_xlsx 无offset分页, 截断会永久丢数据且无法翻页取回); 仅 3.4 硬安全网 INER_READ_XLSX_MAX_ROWS(原 XLSX_MAX_ROWS, 依3.5改名)兜底, 超上限置 data["truncated"]=True; 不新增 OBS_XLSX_*(死代码); 映射表/截断对照表同步
 """
 
 import json
@@ -134,7 +135,8 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=10000
     # #3 entries        listdir                          LISTDIR_PAGE_SIZE=500                OBS_MAX_DISPLAY_ITEMS=500
     # #4 items          searchweb                         返回全部(num_results≤50); 显示域行×列   OBS_SEARCHWEB_MAX_ROWS=200/CHARS=500
-    # #2b flat table    read_xlsx                         max_rows=10000                      OBS_MAX_DISPLAY_ITEMS=500
+    # #25 read_xlsx    read_xlsx                        INER_READ_XLSX_MAX_ROWS=10000(3.4硬安全网, 超上限置truncated, 不删)  无显示域行/列截断(无offset, 全量展示)
+    # #2b flat table    其他 headers+rows 形状             max_rows=10000                      OBS_MAX_DISPLAY_ITEMS=500
     # #5 rows           query_sql                         limit=50                            OBS_MAX_DISPLAY_ITEMS=500
     #                   filter_data                       top_n(用户指定,无默认值)              OBS_MAX_DISPLAY_ITEMS=500
     # #6 schema         get_db_schema                     不限                                OBS_MAX_DISPLAY_ITEMS=500
@@ -201,7 +203,12 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
         if "items" in data:
             return _format_items(data["items"])
 
-        # ── #2b flat table — 1 tool: read_xlsx (含CSV) ──
+        # ── #25 read_xlsx — 1 tool: read_xlsx（含CSV, 单sheet headers+rows 专属行×列 + 两态） ──
+        _act_tool = (llm_data or {}).get("action", {}).get("tool", "") if llm_data else ""
+        if _act_tool == "read_xlsx" and "headers" in data and "rows" in data:
+            return _format_xlsx_result(data, llm_data)
+
+        # ── #2b flat table — 其他工具的 headers+rows 形状（read_xlsx 已由 #25 专属处理） ──
         if "headers" in data and "rows" in data:
             return _format_table(data["headers"], data["rows"])
 
@@ -1221,6 +1228,39 @@ def _format_edittext_result(diff: str, llm_data: dict = None) -> str:
 
 
 
+
+
+def _format_xlsx_result(data: dict, llm_data: dict = None) -> str:
+    """read_xlsx 表格预览 — 2026-07-20 门限治理(章15)
+    read_xlsx 无 offset 分页, 显示域行/列均不截断(否则 LLM 永久丢失数据且无法翻页取回);
+    仅展示 Tool 已读出的全量数据(由 3.4 硬安全网 INER_READ_XLSX_MAX_ROWS 兜底防 OOM);
+    两态说明仅反映 Tool 层 truncated(命中硬安全网时 ⚠, 否则 ✓)。"""
+    headers = data.get("headers", []) or []
+    rows = data.get("rows", []) or []
+    tool_truncated = bool(data.get("truncated", False))
+    _act = (llm_data or {}).get("action", {}) if llm_data else {}
+    _path = _act.get("target", "")
+    lines = [f"── xlsx 表格预览 ── {_path}"]
+    if not headers or not rows:
+        # 分支一: 空表/无数据 —— 仅占位提示, 不显示两态说明行
+        lines.append("(空表或无数据)")
+        return "\n".join(lines)
+    lines.append(" | ".join(str(h) for h in headers))
+    # 不截断行/列: 展示 Tool 读出的全部行(上限由 INER_READ_XLSX_MAX_ROWS 硬安全网约束)
+    for row in rows:
+        if isinstance(row, (list, tuple)):
+            parts = ["" if v is None else str(v) for v in row]
+        elif isinstance(row, dict):
+            parts = ["" if row.get(h) is None else str(row.get(h)) for h in headers]
+        else:
+            parts = [str(row)]
+        lines.append(" | ".join(parts))
+    if tool_truncated:
+        reason = data.get("truncated_reason", "")
+        lines.append("⚠ 已截断" + (f"（{reason}）" if reason else ""))
+    else:
+        lines.append("✓ 无截断-完整")
+    return "\n".join(lines)
 
 
 # #20 analyze_data(转置表) 样式:

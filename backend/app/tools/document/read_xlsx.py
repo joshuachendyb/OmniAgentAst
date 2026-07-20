@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: 读取行数上限改引用 tool_constants.XLSX_MAX_ROWS(原硬编码10000), 功能零退化
+# 2026-07-20 - 小欧 - 章15 门限治理: XLSX_MAX_ROWS 依3.5改名 INER_READ_XLSX_MAX_ROWS(私有内部常量, 3.4 硬安全防OOM); 触发时置 data["truncated"]=True 并附 truncated_reason(非显示限制, 不删)
 """
 D4: read_xlsx — 读取Excel/CSV/XLS文档
 
@@ -20,7 +21,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.validate.file_path_checker import hint_for_read_error
-from app.tools.tool_constants import ERR_DOC_READ_XLSX, XLSX_MAX_ROWS
+from app.tools.tool_constants import ERR_DOC_READ_XLSX, INER_READ_XLSX_MAX_ROWS
 
 from app.logger import logger
 
@@ -57,7 +58,7 @@ def _build_read_xlsx_llm_data(
     }
 
 
-def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional[str] = None) -> Dict[str, Any]:
+def _read_xlsx_inner(file_path: str, max_rows: int = INER_READ_XLSX_MAX_ROWS, sheet_name: Optional[str] = None) -> Dict[str, Any]:
     """读取.xlsx文件(内部) — 小欧 2026-06-22
     辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22
     参数: sheet_name - 指定工作表名，None则读取所有工作表 — 小健 2026-06-24"""
@@ -86,6 +87,7 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional
 
         all_sheets_data = []
         total_rows = 0
+        truncated = False
 
         for sheet in target_sheets:
             ws = wb[sheet]
@@ -95,6 +97,7 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional
 
             for i, row in enumerate(ws.iter_rows(values_only=True)):
                 if i >= max_rows + 1:
+                    truncated = True
                     break
                 row_data = [_serialize_val(val) for val in row]
                 if i == 0:
@@ -117,13 +120,20 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional
     if len(all_sheets_data) == 1:
         result = all_sheets_data[0]
         result["sheet_names"] = sheet_names
+        if truncated:
+            result["truncated"] = True
+            result["truncated_reason"] = f"超过读取行数上限 INER_READ_XLSX_MAX_ROWS={max_rows}, 仅读取前 {max_rows} 行"
         return result
     else:
-        return {
+        out = {
             "sheets": all_sheets_data,
             "sheet_names": sheet_names,
             "row_count": total_rows,
         }
+        if truncated:
+            out["truncated"] = True
+            out["truncated_reason"] = f"超过读取行数上限 INER_READ_XLSX_MAX_ROWS={max_rows}, 仅读取前 {max_rows} 行"
+        return out
 
 
 def _read_csv_stdlib_inner(
@@ -131,7 +141,7 @@ def _read_csv_stdlib_inner(
     encoding: str = "utf-8",
     delimiter: str = ",",
     has_header: bool = True,
-    max_rows: int = 10000,
+    max_rows: int = INER_READ_XLSX_MAX_ROWS,
 ) -> Dict[str, Any]:
     """使用标准库csv读取CSV文件(内部) — 小欧 2026-06-22
     辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22"""
@@ -139,6 +149,7 @@ def _read_csv_stdlib_inner(
 
     rows = []
     headers = []
+    truncated = False
     encodings_to_try = [encoding, "gbk", "gb2312", "latin-1"] if encoding == "utf-8" else [encoding, "utf-8", "latin-1"]
     read_ok = False
     for enc in encodings_to_try:
@@ -147,6 +158,7 @@ def _read_csv_stdlib_inner(
                 reader = csv.reader(f, delimiter=delimiter)
                 for i, row in enumerate(reader):
                     if i >= max_rows:
+                        truncated = True
                         break
                     if i == 0:
                         if has_header:
@@ -163,7 +175,11 @@ def _read_csv_stdlib_inner(
     if not read_ok:
         return {"error_detail": "编码不匹配", "hint": "无法以常见编码读取,请确认文件编码格式", "params": {"file_path": file_path, "encodings_tried": encodings_to_try}}
 
-    return {"headers": headers, "rows": rows, "row_count": len(rows)}
+    result = {"headers": headers, "rows": rows, "row_count": len(rows)}
+    if truncated:
+        result["truncated"] = True
+        result["truncated_reason"] = f"超过读取行数上限 INER_READ_XLSX_MAX_ROWS={max_rows}, 仅读取前 {max_rows} 行"
+    return result
 
 
 def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
@@ -194,7 +210,7 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
 
     if suffix == ".csv":
         try:
-            result = _read_csv_stdlib_inner(path, encoding="utf-8", delimiter=",", has_header=True, max_rows=XLSX_MAX_ROWS)
+            result = _read_csv_stdlib_inner(path, encoding="utf-8", delimiter=",", has_header=True, max_rows=INER_READ_XLSX_MAX_ROWS)
         except Exception as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             # 小欧 2026-07-12: 此处path经Path()重赋值为WindowsPath,须str()化后传入builder,
@@ -209,7 +225,7 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
             llm_data = _build_read_xlsx_llm_data("error", duration_ms, str(path), detail="openpyxl库未安装", user_sheet_name=sheet_name or "", hint="请安装openpyxl库")
             return build_error(data={}, llm_data=llm_data)
         try:
-            result = _read_xlsx_inner(path, max_rows=XLSX_MAX_ROWS, sheet_name=sheet_name)
+            result = _read_xlsx_inner(path, max_rows=INER_READ_XLSX_MAX_ROWS, sheet_name=sheet_name)
         except Exception as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             # 小欧 2026-07-12: 此处path经Path()重赋值为WindowsPath,须str()化后传入builder,
@@ -237,11 +253,10 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
         # ---- observation_formatter route -------------------------------------------
-        # branch: #2b flat table (单sheet/CSV) / #21 scalar fallback (多sheet)
-        # trigger: "headers" in data and "rows" in data — 单sheet有headers+rows
-        # handler: _format_table(data["headers"], data["rows"])
-        # note:    多sheet返回 {"sheets": [...], "sheet_names": [...]}, 无headers/rows,
-        #          走 scalar fallback → _format_scalar_data(data)
-        # file:    observation_formatter.py:136-138
+        # branch: #25 read_xlsx 专属(单sheet/CSV headers+rows) / #21 scalar fallback(多sheet)
+        # trigger: action.tool=="read_xlsx" 且 "headers" in data and "rows" in data
+        # handler: _format_xlsx_result(data, llm_data) — 专属 #25 全量展示(无显示域行/列截断, read_xlsx 无offset分页); 两态说明仅反映 Tool 层 truncated
+        # note:    多sheet返回 {"sheets": [...], "sheet_names": [...]}, 无headers/rows, 走 #21 fallback
+        # file:    observation_formatter.py
         # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)
