@@ -174,7 +174,7 @@ OBS_EDITTEXT_MAX_ROW_CHARS: int = 1000  # 【系统级】使用对象: observati
 INER_READTEXT_READ_SIZE: int = 10 * 1024 * 1024   # 【tool 级/私有内部常量】使用对象: read_text_file.py(读取文本文件字节上限防 OOM, 3.4 硬安全网; 原 MAX_READ_SIZE; 依 3.5 改名 INER_READTEXT_ 前缀, 各 tool 独立不公用)
 INER_EDITTEXT_READ_SIZE: int = 10 * 1024 * 1024   # 【tool 级/私有内部常量】使用对象: edit_text_file.py(编辑前读取文件字节上限防 OOM, 3.4 硬安全网; 原 MAX_READ_SIZE; 依 3.5 改名 INER_EDITTEXT_ 前缀, 各 tool 独立不公用)
 INER_READMEDIA_READ_SIZE: int = 50 * 1024 * 1024   # 【tool 级/私有内部常量】使用对象: read_media_file.py(读取媒体文件字节上限防 OOM, 3.4 硬安全网; 原 MAX_MEDIA_READ_SIZE; 依 3.5 改名 INER_READMEDIA_ 前缀, 各 tool 独立不公用)
-MAX_BATCH_FILE_COUNT: int = 100                 # 【tool 级】使用对象: 批量文件操作单次文件数上限
+# 注: MAX_BATCH_FILE_COUNT(原批量文件操作单次文件数上限=100) 依3.6作废删除(2026-07-20 小欧): 全代码检索仅 tool_constants.py 定义处存在, 无任何批量工具(copy/move/delete/rename/compress/extract)引用, 属僵尸常量未生效; 与已删的 FIND_PAGE_SIZE/LISTDIR_PAGE_SIZE 同性质
 # SHELL_OUTPUT_MAX_CHARS 已作废(2026-07-20 小欧 shell 改行×列, Tool 层不再截断; 由 OBS_SHELL_MAX_ROW_CHARS 取代) — 原值 20000
 INER_SHELL_OUTPUT_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: shell_engine.py(引擎读 shell 临时输出文件防 OOM, 3.4 硬安全网; 原 _MAX_OUTPUT_SZ / SHELL_OUTPUT_FILE_MAX_BYTES; 依 3.5 改名 INER_ 前缀)
 INER_FETCHPAGE_READ_BYTES: int = 5 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: fetch_webpage.py(流式读取正文硬截断防 OOM, 3.4 硬安全网; 原 MAX_READ_BYTES=5_242_880; 依 3.5 改名 INER_ 前缀)
@@ -182,7 +182,7 @@ INER_FETCHPAGE_MAX_CONTENT_LENGTH: int = 100 * 1024 * 1024  # 【tool 级/私有
 INER_READ_XLSX_MAX_ROWS: int = 10000   # 【tool 级/私有内部常量】使用对象: read_xlsx.py(单次读取最大行数, 3.4 硬安全网防读超大表 OOM; 原 XLSX_MAX_ROWS=10000; 依 3.5 改名 INER_ 前缀, 触发置 data["truncated"]=True 非显示限制)
 # 注: read_xlsx 无 offset 分页, 显示域行/列均不截断(否则 LLM 永久丢失数据且无法翻页取回), 故不新增 OBS_XLSX_*(避免死代码); 全量展示由 Tool 读出的数据, 仅 3.4 硬安全网 INER_READ_XLSX_MAX_ROWS 兜底防 OOM
 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: http_request.py(JSON body 预览截断, 3.4 硬安全网防响应体撑爆OOM/序列化溢出; 原 HTTP_JSON_PREVIEW_MAX_BYTES/_MAX_JSON_SIZE; 依 3.5 改名 INER_ 前缀)
-DOWNLOAD_MAX_BYTES: int = 100 * 1024 * 1024  # 【tool 级】使用对象: download_file.py(下载文件大小上限; 原 _MAX_FILE_SIZE)
+INER_DOWNLOAD_MAX_BYTES: int = 1 * 1024 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: download_file.py(下载文件大小上限防撑爆磁盘/内存, 3.4 硬安全网, 值提升至1GB 依 v3.26 老陈定; 原 DOWNLOAD_MAX_BYTES/_MAX_FILE_SIZE=100MB; 依 3.5 改名 INER_ 前缀)
 # 注: WRITE_TEXT_MAX_CHARS(原 max_length=10000) 依3.6作废删除(入参长度限制属多余叠加); 2026-07-20 用户裁定写结果预览恢复 Tool 层 _build_content_preview(文首50+文末50), 不新增 OBS_WRITETEXT_*(避免死代码); writetext 仍走 #21 fallback(_format_scalar_data)
 
 # 二进制文件扩展名 — 小健 2026-06-24 更新：补充媒体扩展名

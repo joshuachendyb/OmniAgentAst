@@ -1,7 +1,8 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: 下载大小上限改引用 tool_constants.DOWNLOAD_MAX_BYTES(原 _MAX_FILE_SIZE=100MB), 功能零退化
 # 2026-07-17 - 小欧 - HTTPStatusError hint 按状态码精化(4xx/5xx/429)
+# 2026-07-20 - 小欧 - 常量依3.5改名: DOWNLOAD_MAX_BYTES→INER_DOWNLOAD_MAX_BYTES(私有内部常量前缀); 值依 v3.26 老陈定由100MB提升至1GB; 功能零退化
 """
 N2: download — 下载文件到本地
 
@@ -35,7 +36,7 @@ def _get_download_dir() -> str:
 
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
-    DOWNLOAD_MAX_BYTES,
+    INER_DOWNLOAD_MAX_BYTES,
     ERR_NETWORK_CREATE_DIR,
     ERR_NETWORK_DOWN,
     ERR_NETWORK_HTTP_ERROR,
@@ -108,16 +109,16 @@ async def _stream_download(client: HTTPClient, url: str, dest_path: str,
         raw_total = response.headers.get("content-length")
         total_bytes = int(raw_total) if raw_total else 0
 
-        if raw_total and int(raw_total) > DOWNLOAD_MAX_BYTES:
-            raise ValueError(f"文件过大: {raw_total}字节, 限制: {DOWNLOAD_MAX_BYTES}字节")
+        if raw_total and int(raw_total) > INER_DOWNLOAD_MAX_BYTES:
+            raise ValueError(f"文件过大: {raw_total}字节, 限制: {INER_DOWNLOAD_MAX_BYTES}字节")
 
         downloaded = 0
         try:
             with open(dest_path, "wb") as f:
                 async for chunk in response.aiter_bytes(chunk_size=chunk_size):
                     downloaded += len(chunk)
-                    if downloaded > DOWNLOAD_MAX_BYTES:
-                        raise ValueError(f"下载超过大小限制({DOWNLOAD_MAX_BYTES}字节)")
+                    if downloaded > INER_DOWNLOAD_MAX_BYTES:
+                        raise ValueError(f"下载超过大小限制({INER_DOWNLOAD_MAX_BYTES}字节)")
                     f.write(chunk)
         except Exception:
             try:
