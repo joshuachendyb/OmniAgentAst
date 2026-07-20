@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 """
+编辑历史:
+- 2026-07-20 小欧 新建: 从 read_text_file._select_lines 抽取共享行分页逻辑(DRY)
+- 2026-07-20 小欧 修复: content 拼接由 "".join 改为 "\\n".join, 否则丢失行/段落分隔符(导致 read_text_file/read_docx roundtrip 失败)
 行分页/截断工具 — 小欧 2026-07-20
 
 #10 去噪专用: 将已完整读入内存的文本内容, 按 行号窗口(offset/limit/tail) 选取子集,
@@ -76,7 +79,7 @@ def select_lines(
         n = len(selected)
         params = {"start_line": 1, "end_line": n}
 
-    content = "".join(selected)
+    content = "\n".join(selected)
     result = {
         "content": content,
         "total_lines": total,
