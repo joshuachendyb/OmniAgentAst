@@ -129,8 +129,6 @@ def searchtool(query: str) -> Dict[str, Any]:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         data = {
             "matches": [],
-            "total_matched": 0,
-            "total_tools": 0,
         }
         llm_data = _build_tool_search_llm_data("success", duration_ms, query, 0, 0, [])
         return build_success(data=data, llm_data=llm_data)
@@ -149,7 +147,6 @@ def searchtool(query: str) -> Dict[str, Any]:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         data = {
             "matches": top,
-            "total_matched": len(all_items), "total_tools": len(all_tools),
         }
         llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(all_items), len(all_tools), top)
         return build_success(data=data, llm_data=llm_data)
