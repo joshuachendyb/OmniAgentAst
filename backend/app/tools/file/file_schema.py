@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-15 - 小欧 - RenameInput新增overwrite字段(默认False): 配合rename工具支持覆盖, 对齐move/copy/compress/extract, 向后兼容(根因: rename原硬编码overwrite=False且不暴露该参数, 目标已存在时LLM无法用overwrite=True纠正)。
+# 2026-07-15 - 小欧 - RenameInput新增overwrite字段(默认False): 配合rename工具支持覆盖, 对齐move/copy/compress/extract(根因: rename原硬编码overwrite=False且不暴露该参数, 目标已存在时LLM无法用overwrite=True纠正); 按铁规禁止向后兼容, 此处为新增可选参数(默认False保持原行为), 非兼容旧接口
 # 2026-07-15 - 小欧 - 常量归一化治理: WritetextInput.content 入参校验上限改引用 tool_constants.WRITE_TEXT_MAX_CHARS(原 max_length=10000), 功能零退化
 # 2026-07-20 - 小欧 - GrepInput 类 docstring 改为仅写工具级默认能力(不重复字段描述);为 CompressInput/ExtractInput/MoveInput 补工具级默认能力 docstring(目录默认递归压缩/解压/移动)
 # 2026-07-20 - 小欧 - WritetextInput.content 删 max_length=WRITE_TEXT_MAX_CHARS 入参长度校验(依3.6去除多余叠加限制; 写结果预览由 Tool 层 _build_content_preview 文首50+文末50 生成, 不新增 OBS_WRITETEXT_*; 常量 WRITE_TEXT_MAX_CHARS 作废删除)
+# 2026-07-20 - 小欧 - 门限复查: FindInput docstring 去除"每页最多500条/仅返回offset后500条"误导(与治理后返回全部匹配、OBS_FIND显示域行×列收口冲突, LLM会误判工具能力上限); 改为"返回全部匹配, 显示域按行×列收口, offset仅跳过"
 """
 File Schema - 文件工具参数模型
 
@@ -223,7 +224,7 @@ class TreeInput(BaseModel):
 # ============================================================
 
 class FindInput(BaseModel):
-    """支持offset参数分页遍历大量搜索结果(每页最多500条)"""
+    """支持offset参数跳过前N条结果;工具返回全部匹配路径(无条数上限),显示域按行×列收口(OBS_FIND),offset仅用于跳过"""
     pattern: str = Field(
         description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\""
     )
@@ -240,7 +241,7 @@ class FindInput(BaseModel):
     )
     offset: int = Field(
         default=0,
-        description="分页偏移量,用于跳过前N条结果。仅返回第offset条开始的500条,支持分页遍历大量搜索结果"
+        description="分页偏移量,用于跳过前N条结果;工具返回全部匹配(无条数上限),显示域按行×列收口,offset仅跳过不限制总数"
     )
 
 

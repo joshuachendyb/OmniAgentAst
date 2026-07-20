@@ -11,6 +11,8 @@
 # 2026-07-20 小欧 _format_fetchpage_result 新增(fetchpage 专属行×列 OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500 + 两态说明); #2 raw str handler 按 action.tool=="fetchpage" 分流, readtext 维持 OBS_MAX_STRING_LENGTH 不变
 # 2026-07-20 小欧 _format_readtext_result 新增(readtext 专属行×列 OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000 + 两态说明); #2 raw str handler 按 action.tool=="readtext" 分流, OBS_MAX_STRING_LENGTH 退为未知 content 工具兜底
 # 2026-07-20 小欧 章18 listdir: _format_entries 改专属行×列(OBS_LISTDIR_MAX_ROWS=200/OBS_LISTDIR_MAX_ROW_CHARS=300) + 两态说明(truncated=显示域行×列截断 或 Tool层deadline截断 data.truncated); 空目录独立分支返回"(空目录)"不显示两态行; 删除 OBS_MAX_DISPLAY_ITEMS 引用(已由 OBS_LISTDIR_* 专属取代)
+# 2026-07-20 小欧 门限复查: #11 _format_shell_result 移除 meta 行(shell_type/duration_ms/rc), 改由 _format_llm_data 在 llm_data 段统一呈现(退出码/耗时/shell类型); data 详情仅 stdout/stderr+两态, 严禁与 llm_data 段重复显示(原 #11 从 data 取恒为默认空值 powershell/0ms, 既错又重复)
+# 2026-07-20 小欧 门限复查: _format_llm_data 渲染 llm_data 顶层 "diff" 加行×列收口(OBS_EDITTEXT_MAX_ROWS/CHARS)+两态; writetext 的 diff 改放 llm_data 顶层经此呈现, edittext 的 diff 统一走 data["diff"]→#24, 二者均单行×列收口、严禁重复
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -338,12 +340,15 @@ def _format_text_content(data: dict, llm_data: dict = None) -> str:
 
 
 # #11 shell stdout 样式:
-#   输入: {"stdout": "total 42\n-rw-r--r-- 1 root root 1024 ...", "stderr": "", "returncode": 0, "shell_type": "powershell", "duration_ms": 150}
-#   输出: total 42\n-rw-r--r-- 1 root root 1024 ...\n---\n[rc=0, powershell, 150ms]
+#   输入: {"stdout": "total 42\n-rw-r--r-- 1 root root 1024 ...", "stderr": ""}
+#   输出: total 42\n-rw-r--r-- 1 root root 1024 ...\n⚠ 已截断(或 ✓ 无截断-完整)
+#   注: shell_type/duration_ms/returncode 为结构化信息, 已由 llm_data(_format_llm_data)呈现给LLM;
+#       data 详情仅渲染 stdout/stderr 原始输出 + 两态截断说明, 严禁重复显示(避免与 llm_data 段重复且取错 data 默认值)
 def _format_shell_result(data: dict, llm_data: dict = None) -> str:
     """#11 shell handler — 行×列(200×1000): 自由文本档, 长日志/JSON 原样保头部, 不盲截尾部
     小欧 2026-07-05 初版; 小欧 2026-07-06 returncode从llm_data.metrics取;
-    小欧 2026-07-20 改行×列(200×1000)+截断说明行两态(Tool 输出不截断, 仅显示域按行×列收口, 见 6.4)"""
+    小欧 2026-07-20 改行×列(200×1000)+截断说明行两态(Tool 输出不截断, 仅显示域按行×列收口, 见 6.4)
+    小欧 2026-07-20 门限复查: #11 不再渲染 meta(shell_type/duration_ms/rc), 该结构化信息归 llm_data 段(_format_llm_data 统一呈现), data 详情仅 stdout/stderr + 两态, 严禁重复"""
     stdout = data.get("stdout", "") or ""
     stderr = data.get("stderr", "") or ""
     if not stdout and not stderr:
@@ -369,13 +374,7 @@ def _format_shell_result(data: dict, llm_data: dict = None) -> str:
     total = len(all_rows)
     truncated = total > max_rows
     shown = all_rows[:max_rows]
-    # metadata 一行（始终保留, 不参与行数截断）
-    rc_info = (llm_data or {}).get("metrics", {}).get("exit_code", {})
-    returncode = rc_info.get("value", "?")
-    shell_type = data.get("shell_type", "") or "powershell"
-    duration_ms = data.get("duration_ms", 0)
-    meta = f"[rc={returncode}, {shell_type}, {duration_ms}ms]"
-    shown.append(f"---\n{meta}")
+    # 注: shell_type/duration_ms/returncode 已由 llm_data 段呈现, data 详情不重复显示
     if truncated:
         shown.append("⚠ 已截断")
         shown.append("截断情况：保留%d行,实际 %d 行，截断 %d 行；单行上限 %d 字符（超宽 %d 行尾部截断）" % (max_rows, total, total - max_rows, max_chars, overwide))
@@ -547,7 +546,19 @@ def _format_llm_data(llm_data: Dict) -> str:
 
     diff = llm_data.get("diff", "")
     if diff:
-        text += f"\n差异:\n{diff}"
+        # diff 为文本改动对照, 行×列收口 + 两态(与 #24 edittext 一致), 防 observation 撑爆且 LLM 知是否完整
+        max_rows = OBS_EDITTEXT_MAX_ROWS
+        max_chars = OBS_EDITTEXT_MAX_ROW_CHARS
+        rows = diff.split("\n")
+        total = len(rows)
+        truncated = total > max_rows
+        shown = [r[:max_chars] for r in rows[:max_rows]]
+        text += "\n差异:\n" + "\n".join(shown)
+        if truncated:
+            text += "\n⚠ 已截断"
+            text += f"\n截断情况：保留{max_rows}行,实际 {total} 行，截断 {total - max_rows} 行；单行上限 {max_chars} 字符"
+        else:
+            text += "\n✓ 无截断-完整"
 
     return text
 

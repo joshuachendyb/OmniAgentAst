@@ -2,6 +2,8 @@
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: shell 输出超长截断改引用 tool_constants.SHELL_OUTPUT_MAX_CHARS(30000→20000), 功能零退化
 # 2026-07-20 - 小欧 - 门限治理(shell章6.4): 删除 SHELL_OUTPUT_MAX_CHARS 头尾截断, stdout/stderr 原样全量返回(Tool输出零限制3.7); 显示限量收口 observation_formatter 行×列(OBS_SHELL_MAX_ROWS/CHARS)
+# 2026-07-20 - 小欧 - 门限复查: data 仅 {stdout,stderr}(returncode/shell_type/duration_ms 归 llm_data); observation_formatter #11 不再重复渲染 meta(shell_type/duration_ms/rc), 改由 _format_llm_data 在 llm_data 段统一呈现(退出码/耗时/shell类型), 严禁 data 详情与 llm_data 段重复显示; #11 仅渲染 stdout/stderr 原始输出 + 两态截断说明
+# 2026-07-20 - 小欧 - 门限复查: cmd 分支补 3.4 硬安全网(与 powershell 分支 safe_read_file 对称): 新增 _safe_truncate_output 对 proc.communicate() 内存输出超 INER_SHELL_OUTPUT_FILE_MAX_BYTES 仅保留头尾各半, 防下游 OOM/序列化膨胀
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -96,6 +98,7 @@ from app.tools.tool_constants import (
     ERR_PARAMETER_EMPTY, ERR_PARAMETER_INVALID,
     ERR_SHELL_EXCEPTION, ERR_SHELL_EXEC,
     ERR_SHELL_INJECTION, ERR_SHELL_TIMEOUT,
+    INER_SHELL_OUTPUT_FILE_MAX_BYTES,
 )
 
 
@@ -297,6 +300,16 @@ def _fix_encoding(text: str) -> str:
         return text
 
 
+def _safe_truncate_output(raw: bytes) -> str:
+    """cmd 分支内存输出施 3.4 硬安全网(与 powershell 分支 safe_read_file 对称): 超 INER_SHELL_OUTPUT_FILE_MAX_BYTES 仅保留头尾各半, 防下游 OOM/序列化膨胀 — 门限复查 2026-07-20 小欧"""
+    if len(raw) <= INER_SHELL_OUTPUT_FILE_MAX_BYTES:
+        return _decode_bytes_safe(raw)
+    half = INER_SHELL_OUTPUT_FILE_MAX_BYTES // 2
+    head = _decode_bytes_safe(raw[:half])
+    tail = _decode_bytes_safe(raw[-half:])
+    return f"{head}\n...[巨大输出已截断]...\n{tail}"
+
+
 # 已知良性stderr模式白名单（不触发warning）— 小欧 2026-07-08
 _BENIGN_STDERR_PATTERNS = [
     "Non-authoritative answer",
@@ -342,8 +355,8 @@ def shell(
 
     返回:
         build_success / build_error / build_warning 标准格式
-        data: {stdout, stderr, returncode, shell_type, duration_ms}
-        llm_data: 完整 status/metrics/summary
+        data: {stdout, stderr}（原始输出; returncode/shell_type/duration_ms 仅在 llm_data, 不在 data）
+        llm_data: 完整 status/metrics/summary（含 returncode/exit_code、shell_type、duration_ms）
     """
     # ── 阶段 1: 参数校验 ──
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "shell")
@@ -450,8 +463,8 @@ def shell(
                     os.unlink(bat_path)
                 except OSError:
                     pass
-            stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
-            stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
+            stdout_str = _fix_encoding(_safe_truncate_output(stdout_b))
+            stderr_str = _fix_encoding(_safe_truncate_output(stderr_b))
             returncode = proc.returncode if proc.returncode is not None else -1
 
         # ── 阶段 4: 后处理 ──

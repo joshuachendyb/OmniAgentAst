@@ -13,6 +13,7 @@
 # 2026-07-20 - 小欧 - httpget 门限治理(章9.4): 新增 OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=2000(httpget 专属行×列, 显示域截断收口); HTTP_JSON_PREVIEW_MAX_BYTES 依3.5改名 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES(保留为3.4硬安全网防OOM, 触发置 _truncated+_reason)
 # 2026-07-20 - 小欧 - fetchpage 门限治理(章10.4): 新增 OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500(fetchpage 专属行×列, 显示域截断收口); WEB_FETCH_MAX_CHARS 已删除(fetchpage 返回完整正文, 截断收口于 OBS_FETCHPAGE); MAX_READ_BYTES/MAX_CONTENT_LENGTH 依3.5改名 INER_FETCHPAGE_READ_BYTES/INER_FETCHPAGE_MAX_CONTENT_LENGTH(保留为3.4硬安全网防OOM/巨文件下载)
 # 2026-07-20 - 小欧 - readtext 门限治理(章11.4): 新增 OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000(readtext 专属行×列, 显示域截断收口); read_text_file 去除 _select_lines max_line_length 单行截断(Tool 层零限制); MAX_READ_SIZE 依3.5改名 INER_READTEXT_READ_SIZE(各 tool 独立不公用, readtext 自有; 保留为3.4硬安全网, 文件过大拒绝, 不截断)
+# 2026-07-20 - 小欧 - 门限复查: 删除僵尸常量 FIND_PAGE_SIZE 与 READ_FILE_DEFAULT_LIMIT(全代码仅定义处存在, 无任何工具引用; find 分页已由 OBS_FIND_MAX_ROWS 取代、file 读取默认行数已由 INER_READTEXT_READ_SIZE/INER_EDITTEXT_READ_SIZE 取代); 依3.6+章14/18同例直接删除定义, 不保留【已作废】占位
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -110,14 +111,14 @@ FILE_OPERATION_TOOLS: set[str] = {  # 【tool 级】使用对象: 文件操作�
     "compress", "extract",
 }
 
-READ_FILE_DEFAULT_LIMIT: int = 500          # 【tool 级】使用对象: file 工具(readtext/edittext 等)读取默认行数上限
-FIND_PAGE_SIZE: int = 500                     # 【tool 级】使用对象: find 分页每页条目数 — 【已作废】2026-07-20 小欧 find 改行×列返回全部匹配(OBS_FIND_MAX_ROWS), FIND_PAGE_SIZE 不再使用
 # 注: LISTDIR_PAGE_SIZE(原 listdir 分页每页条目数) 依3.7作废删除(2026-07-20 章18): Tool 层条数截断违反3.7, 改由 Format 层 OBS_LISTDIR_* 行×列收口; listdir 有 offset 可翻页, 显示域截断可恢复(区别于 read_xlsx 无offset)
+# 注: FIND_PAGE_SIZE/READ_FILE_DEFAULT_LIMIT 依门限复查(2026-07-20)删除: 全代码检索仅定义处存在, 无任何工具引用(僵尸常量);
+#      find 分页已由 OBS_FIND_MAX_ROWS 取代、file 读取默认行数已由 INER_READTEXT_READ_SIZE/INER_EDITTEXT_READ_SIZE 取代, 二者均不再使用
 
 # ============================================================
 # 【系统级】观察截断常量（observation_formatter.py 统一使用）— 小欧 2026-07-04
 #     常量集中管理，便于后续统一调整。
-#     与 tool 层面的截断上限（如 READ_FILE_DEFAULT_LIMIT）相互独立。
+#     与 tool 层面的截断上限相互独立(tool 层历史常量 FIND_PAGE_SIZE/READ_FILE_DEFAULT_LIMIT 已于门限复查删除, 由 OBS_*/INER_* 取代)。
 #     老陈 2026-07-15 裁定: OBS_* 逻辑属系统级(observation 统一截断层), 因与 tool 输出耦合紧历史置于本文件, 标注【系统级】以区分【tool 级】常量。
 # ============================================================
 OBS_MAX_DISPLAY_ITEMS: int = 500       # 【系统级】使用对象: observation_formatter.py(所有 list 类 handler 最大条目数; grep 搜索总开关) — 小沈 2026-07-14

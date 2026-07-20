@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: snippet 截断改引用 tool_constants.SEARCH_SNIPPET_MAX_CHARS(原硬编码300), 功能零退化
 # 2026-07-20 - 小欧 - searchweb 门限治理(章8.4): 删 SEARCH_SNIPPET_MAX_CHARS Tool层snippet截断(返回完整snippet, 3.7); 删 _MAX_SEARCH_DEPTH=3 递归深度限制(3.6); 删 len(query)<2 查询最小长度校验(3.6, 空/单字符现透传引擎); 截断唯一收口于 observation_formatter OBS_SEARCHWEB_MAX_ROWS/CHARS(两态说明); 保留 query is None 显式报错(防None透传Bing异常被吞为success空结果-正确性回归防护)
+# 2026-07-20 - 小欧 - 门限复查: 删 _search_bing 的 _depth 递归死参(3.6 已去深度限制, _depth 不再校验, 递归由 _split_long_query 自然收敛兜底, 删除不影响行为)
 """
 N4: searchweb — 搜索网络获取最新信息
 
@@ -226,7 +227,6 @@ async def _search_bing(
     query: str,
     num_results: int,
     proxy_config: Optional[str] = None,
-    _depth: int = 0,
 ) -> List[dict]:
     """Bing搜索(HTML解析) — 小欧 2026-06-22
     更新: 2026-06-23 小欧 多域名降级+挑战页检测+长查询拆分
@@ -335,7 +335,7 @@ async def _search_bing(
         all_results = []
         seen_urls = set()
         for sq in sub_queries:
-            sub_results = await _search_bing(sq, max(3, num_results // len(sub_queries)), proxy_config, _depth + 1)
+            sub_results = await _search_bing(sq, max(3, num_results // len(sub_queries)), proxy_config)
             for r in sub_results:
                 u = r.get("url", "")
                 if u and u not in seen_urls:

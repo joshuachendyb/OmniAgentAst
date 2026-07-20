@@ -6,13 +6,13 @@ F1: readtext — 读取文本文件
 """
 # 编辑历史:
 # 2026-07-20 - 小欧 - readtext 门限治理(章11.4): 去除 _select_lines 的 max_line_length 单行截断(Tool 层零限制, 截断收口于 observation_formatter OBS_READTEXT); MAX_READ_SIZE 依3.5改名 INER_READTEXT_READ_SIZE(readtext 自有内部常量, 各 tool 独立不公用; 保留为3.4硬安全网, 文件过大直接拒绝, 不截断)
+# 2026-07-20 - 小欧 - 门限复查: 删未接入的 _find_similar_files 死代码(全局无调用)及未用 import difflib
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import asyncio
-import difflib
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,22 +27,6 @@ from app.utils.text_utils import add_line_numbers
 from app.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_read
-
-
-def _find_similar_files(file_path: str, max_suggestions: int = 3) -> str:
-    """文件不存在时，寻找同目录下的近似文件名 — 小欧 2026-07-05 — 小欧 2026-07-05 cutoff 0.5→0.6"""
-    path = Path(file_path)
-    parent = path.parent
-    if not parent.exists():
-        return ""
-    target = path.name
-    candidates = [p.name for p in parent.iterdir() if p.is_file()]
-    if not candidates:
-        candidates = [p.name for p in parent.iterdir()]
-    matches = difflib.get_close_matches(target, candidates, n=max_suggestions, cutoff=0.6)
-    if not matches:
-        return ""
-    return ", ".join(matches)
 
 
 def _looks_like_mojibake(content: str, file_path: str = "") -> bool:

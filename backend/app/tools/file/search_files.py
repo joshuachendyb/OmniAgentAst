@@ -2,13 +2,14 @@
 """find 文件搜索工具 — 文件名匹配搜索(支持正则/通配符/类型过滤)"""
 # 编辑历史:
 # 2026-07-20 - 小欧 - find 门限治理(章7.4): 移除 MAX_SEARCH_RESULTS 收集上限与 max_depth=50 递归限制; 移除 FIND_PAGE_SIZE 分页, 返回全部匹配(offset 仅作跳过); 截断唯一收口于 observation_formatter OBS_FIND_MAX_ROWS/CHARS(两态说明); deadline 超时保留为保护
+# 2026-07-20 - 小欧 - 门限复查: 删 _is_already_seen_or_skipped 去重/跳过死逻辑(seen_files/start_offset 恒0, os.walk 不重复致 dup/skip 永False)及未用 Tuple import; 直接 _collect_entry_result, 行为不变
 
 import asyncio
 import fnmatch
 import os
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional
 
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS
@@ -22,15 +23,6 @@ def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
     if ignore_case:
         return fnmatch.fnmatch(name.lower(), pattern.lower())
     return fnmatch.fnmatch(name, pattern)
-
-
-def _is_already_seen_or_skipped(name: str, seen: set, seen_count: int, start: int) -> Tuple[bool, bool]:
-    """去重和跳过逻辑 — 小欧 2026-06-22"""
-    if name in seen:
-        return True, False
-    if seen_count < start:
-        return False, True
-    return False, False
 
 
 def _collect_entry_result(relative_path: str, name: str, fpath: Path,
@@ -142,11 +134,8 @@ async def find(
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("find", TOOL_TIMEOUTS["default"]) - 2
     all_matches: List = []
     llm_preview: List = []
-    seen_files: set = set()
-    start_offset = 0
 
     def _search_sync():
-        nonlocal seen_files
         for root, dirs, files in os.walk(path):
             if _time_mod.monotonic() > deadline:
                 logger.warning(f"[find] 超时自检触发,提前返回{len(all_matches)}个匹配")
@@ -156,21 +145,13 @@ async def find(
                     if not _match_fnmatch(d, pattern, ignore_case):
                         continue
                     relative = os.path.relpath(os.path.join(root, d), path)
-                    dup, skip = _is_already_seen_or_skipped(relative, seen_files, len(all_matches), start_offset)
-                    if dup or skip:
-                        continue
                     _collect_entry_result(relative, d, Path(os.path.join(root, d)), all_matches, llm_preview)
-                    seen_files.add(relative)
             if type != "directory":
                 for f in files:
                     if not _match_fnmatch(f, pattern, ignore_case):
                         continue
                     relative = os.path.relpath(os.path.join(root, f), path)
-                    dup, skip = _is_already_seen_or_skipped(relative, seen_files, len(all_matches), start_offset)
-                    if dup or skip:
-                        continue
                     _collect_entry_result(relative, f, Path(os.path.join(root, f)), all_matches, llm_preview)
-                    seen_files.add(relative)
 
     try:
         await asyncio.to_thread(_search_sync)

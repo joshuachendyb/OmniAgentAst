@@ -5,6 +5,7 @@
 # 2026-07-17 - 小欧 - before/after 自动补空行(默认生效,无参数): 新增 _blank_line_sep, before/after 插入时与锚点/后续均隔一个空行(PEP8)
 # 2026-07-17 - 小欧 - DRY重构: 抽出 _is_dangerous_anchor(old_string), _safety_wide_replace 仅保留宽匹配warning, 三引号拒绝统一走 _is_dangerous_anchor+内联
 # 2026-07-20 - 小欧 - MAX_READ_SIZE 依3.5改名 INER_EDITTEXT_READ_SIZE(edittext 自有内部常量, 各 tool 独立不公用, INER_ 前缀; 3.4 硬安全网保留, 文件过大拒绝, 不截断)
+# 2026-07-20 - 小欧 - 门限复查: _build_edit_text_file_llm_data 移除顶层 "diff"(及 diff[:500] 截断, 违3.7); diff 统一经 data["diff"] → #24(已行×列收口+两态), 消除与 llm_data 段顶层 diff(:544)的重复渲染; 全/部分应用均置 data={"diff":...}
 """
 F4: edittext — 编辑文本文件
 
@@ -308,7 +309,6 @@ def _build_edit_text_file_llm_data(
             "applied": {"value": applied, "text": f"{applied}/{total}处"},
             "total_matches": {"value": total_matches, "text": f"共{total_matches}处"},
         },
-        "diff": diff[:500],
     }
 
 
@@ -597,9 +597,8 @@ async def edittext(
     _skipped = result.get("skipped", False)
     if _skipped or _applied == 0:
         data = {}
-    elif _applied >= _total_matches:
-        data = {}
     else:
+        # diff 统一经 data["diff"] → #24(已行×列收口+两态); 不在 llm_data 顶层重复渲染(严禁重复)
         data = {"diff": result.get("diff", "")}
     return build_success(data=data, llm_data=llm_data)
 

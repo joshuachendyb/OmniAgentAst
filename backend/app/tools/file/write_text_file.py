@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-17 - 小欧 - 早期encoding校验: writetext()中encoding确定后立即用codecs.lookup()校验，替代等open()才报错
 # 2026-07-20 - 小欧 - 章14 尝试将 content_preview 改为完整内容(3.7/6.4); 用户裁定 write 工具不需回显全文, 恢复 _build_content_preview 文首50+文末50 Tool 层预览; schema 入参 max_length 仍依3.6去除
+# 2026-07-20 - 小欧 - 门限复查: 删 diff 生成处 [:2000] 静默截断(违3.7 Tool零截断); diff 由 llm_data["metrics"]["diff"] 改放 llm_data 顶层 "diff", 交 observation_formatter #544 行×列收口+两态呈现; data 仅留 content_preview(#23), 严禁与 llm_data 段重复显示
 """
 F2: writetext — 写文本文件
 
@@ -15,7 +16,6 @@ F2: writetext — 写文本文件
 import asyncio
 import codecs
 import difflib
-import json
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -279,7 +279,7 @@ async def writetext(
                             old_content.splitlines(keepends=True),
                             new_content.splitlines(keepends=True),
                             fromfile=str(path), tofile=str(path), n=3,
-                        ))[:2000]
+                        ))
                 except Exception:
                     pass
 
@@ -292,14 +292,14 @@ async def writetext(
             if encoding_warning:
                 llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=encoding_warning, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
                 if diff_text:
-                    llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
+                    llm_data["diff"] = diff_text
                 return build_warning(
                     data={"content_preview": _build_content_preview(checked_content)},
                     llm_data=llm_data,
                 )
             llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
             if diff_text:
-                llm_data["metrics"]["diff"] = {"value": diff_text, "text": diff_text}
+                llm_data["diff"] = diff_text
             # ---- observation_formatter route -------------------------------------------
             # branch: #23 writetext (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
             # trigger: "content_preview" in data
