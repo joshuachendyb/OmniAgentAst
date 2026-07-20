@@ -7,6 +7,7 @@
 # 2026-07-18 小欧 修正注释与fallback顺序一致
 # 2026-07-20 小欧 _format_matches 改行×列(200行/150字符): 累计渲染行超出上限则截断并在末尾追加两态说明(有截断⚠已截断/无截断✓无截断-完整); 单行超宽尾部截断, 解决旧逻辑按单串10000字符截断致内容过大被整体丢弃、LLM 看不到匹配结果的问题
 # 2026-07-20 小欧 _format_matches 无截断时仅输出"✓ 无截断-完整"一行, 不再附加冗余截断明细; 有截断明细行去除多余花括号与错配标点
+# 2026-07-20 小欧 _format_shell_result 改行×列(200行/1000字符): 仿 _format_matches 截断收口, 末尾追加两态说明(有截断⚠已截断/无截断✓无截断-完整); 删除 OBS_MAX_STRING_LENGTH 单串截断, 解决 shell 长输出被盲截尾部问题
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -76,6 +77,8 @@ from app.tools.tool_constants import (
     OBS_SYSINFO_FIELD_MAX_CHARS,
     OBS_GREP_MAX_ROWS,
     OBS_GREP_MAX_ROW_CHARS,
+    OBS_SHELL_MAX_ROWS,
+    OBS_SHELL_MAX_ROW_CHARS,
 )
 
 
@@ -297,27 +300,47 @@ def _format_text_content(data: dict, llm_data: dict = None) -> str:
 #   输入: {"stdout": "total 42\n-rw-r--r-- 1 root root 1024 ...", "stderr": "", "returncode": 0, "shell_type": "powershell", "duration_ms": 150}
 #   输出: total 42\n-rw-r--r-- 1 root root 1024 ...\n---\n[rc=0, powershell, 150ms]
 def _format_shell_result(data: dict, llm_data: dict = None) -> str:
-    """#11 shell handler — stdout 直接展示 + stderr ⚠ + metadata 一行 — 小欧 2026-07-05 — 小欧 2026-07-06 returncode从llm_data.metrics取"""
+    """#11 shell handler — 行×列(200×1000): 自由文本档, 长日志/JSON 原样保头部, 不盲截尾部
+    小欧 2026-07-05 初版; 小欧 2026-07-06 returncode从llm_data.metrics取;
+    小欧 2026-07-20 改行×列(200×1000)+截断说明行两态(Tool 输出不截断, 仅显示域按行×列收口, 见 6.4)"""
     stdout = data.get("stdout", "") or ""
     stderr = data.get("stderr", "") or ""
-    if len(stdout) > OBS_MAX_STRING_LENGTH:
-        stdout = stdout[:OBS_MAX_STRING_LENGTH] + "\n... (截断)"
-    if len(stderr) > OBS_MAX_STRING_LENGTH:
-        stderr = stderr[:OBS_MAX_STRING_LENGTH] + "\n... (截断)"
     if not stdout and not stderr:
         return ""
-    lines = []
+    max_rows = OBS_SHELL_MAX_ROWS
+    max_chars = OBS_SHELL_MAX_ROW_CHARS
+    # 第一遍：按行构建全部渲染行，并统计超宽行数（用于截断说明行）
+    all_rows = []
+    overwide = 0
+
+    def _clip(text: str) -> str:
+        nonlocal overwide
+        if len(text) > max_chars:
+            overwide += 1
+        return text[:max_chars]
+
     if stdout:
-        lines.append(stdout)
+        for line in stdout.split("\n"):
+            all_rows.append(_clip(line))
     if stderr:
-        lines.append(f"⚠ {stderr}")
+        for line in stderr.split("\n"):
+            all_rows.append(_clip(f"⚠ {line}"))
+    total = len(all_rows)
+    truncated = total > max_rows
+    shown = all_rows[:max_rows]
+    # metadata 一行（始终保留, 不参与行数截断）
     rc_info = (llm_data or {}).get("metrics", {}).get("exit_code", {})
     returncode = rc_info.get("value", "?")
     shell_type = data.get("shell_type", "") or "powershell"
     duration_ms = data.get("duration_ms", 0)
     meta = f"[rc={returncode}, {shell_type}, {duration_ms}ms]"
-    lines.append(f"---\n{meta}" if (stdout or stderr) else meta)
-    return "\n".join(lines)
+    shown.append(f"---\n{meta}")
+    if truncated:
+        shown.append("⚠ 已截断")
+        shown.append("截断情况：保留%d行,实际 %d 行，截断 %d 行；单行上限 %d 字符（超宽 %d 行尾部截断）" % (max_rows, total, total - max_rows, max_chars, overwide))
+    else:
+        shown.append("✓ 无截断-完整")
+    return "\n".join(shown)
 
 
 def _format_which_result(data: dict) -> str:

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: shell 输出超长截断改引用 tool_constants.SHELL_OUTPUT_MAX_CHARS(30000→20000), 功能零退化
+# 2026-07-20 - 小欧 - 门限治理(shell章6.4): 删除 SHELL_OUTPUT_MAX_CHARS 头尾截断, stdout/stderr 原样全量返回(Tool输出零限制3.7); 显示限量收口 observation_formatter 行×列(OBS_SHELL_MAX_ROWS/CHARS)
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -95,7 +96,6 @@ from app.tools.tool_constants import (
     ERR_PARAMETER_EMPTY, ERR_PARAMETER_INVALID,
     ERR_SHELL_EXCEPTION, ERR_SHELL_EXEC,
     ERR_SHELL_INJECTION, ERR_SHELL_TIMEOUT,
-    SHELL_OUTPUT_MAX_CHARS,
 )
 
 
@@ -455,13 +455,9 @@ def shell(
             returncode = proc.returncode if proc.returncode is not None else -1
 
         # ── 阶段 4: 后处理 ──
+        # 小欧 2026-07-20: 依 3.7 铁律 Tool 输出零限制, 删除 SHELL_OUTPUT_MAX_CHARS 头尾截断, stdout/stderr 原样全量返回; 限量收口于 observation_formatter 行×列(见 6.4)
         if returncode == 0 and '>' in command:
             _convert_redirect_to_utf8(command, cwd)
-
-        if len(stdout_str) > SHELL_OUTPUT_MAX_CHARS:
-            stdout_str = stdout_str[:SHELL_OUTPUT_MAX_CHARS // 2] + "\n...[截断]...\n" + stdout_str[-SHELL_OUTPUT_MAX_CHARS // 2:]
-        if len(stderr_str) > SHELL_OUTPUT_MAX_CHARS:
-            stderr_str = stderr_str[:SHELL_OUTPUT_MAX_CHARS // 2] + "\n...[截断]...\n" + stderr_str[-SHELL_OUTPUT_MAX_CHARS // 2:]
 
         d = int((_time_mod.perf_counter() - t0) * 1000)
         data = {

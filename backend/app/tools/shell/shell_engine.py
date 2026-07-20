@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: 临时输出文件读取保护线改引用 tool_constants.SHELL_OUTPUT_FILE_MAX_BYTES(原 _MAX_OUTPUT_SZ=10MB), 功能零退化
 # 2026-07-18 - 小沈 - 修复多行命令(如 python -c "..." 含换行)经 -Command - 从stdin喂入导致PowerShell解析器卡死等待输入(见 logs 2026-07-18 21:34-21:44 step=15 跑满600s超时): 改为写入.ps1文件 + 向持久pwsh喂一句【单行】dot-source投递, 多行内容留在文件内不再经stdin流, 死锁消除; 功能零退化
+# 2026-07-20 - 小欧 - 门限治理(章6.4/3.5): SHELL_OUTPUT_FILE_MAX_BYTES 改名 INER_SHELL_OUTPUT_FILE_MAX_BYTES(私有内部常量加 INER_ 前缀); 删除 shell_engine.py 本地重复定义, 统一引用 tool_constants 单源
 """
 PersistentShell — 持久 PowerShell 进程引擎 — 小欧 2026-07-05
 
@@ -47,7 +48,7 @@ import time
 from typing import Any, Dict, Optional
 
 from app.logger import logger
-from app.tools.tool_constants import SHELL_OUTPUT_FILE_MAX_BYTES
+from app.tools.tool_constants import INER_SHELL_OUTPUT_FILE_MAX_BYTES
 
 
 # ═══════════════════════════════════════════════════════
@@ -58,7 +59,7 @@ _ERROR_NO_SHELL = {"stdout": "", "stderr": "PowerShell不可用", "exit_code": -
 _ERROR_TIMEOUT  = {"stdout": "", "stderr": "timeout", "exit_code": -1, "timed_out": True}
 _EXIT_PROCESS_DIED = -2          # 进程死亡 sentinel，外部重试用
 _IDLE_TIMEOUT   = 1800           # 30 分钟空闲自动清理
-SHELL_OUTPUT_FILE_MAX_BYTES  = 10 * 1024 * 1024  # 10MB 保护线
+# 2026-07-20 小欧 门限治理(章6.4/3.5): 删除本地重复定义, 改用 tool_constants.INER_SHELL_OUTPUT_FILE_MAX_BYTES(3.4 硬安全网)
 
 
 # ═══════════════════════════════════════════════════════
@@ -95,10 +96,10 @@ def safe_read_file(path: str) -> str:
         sz = os.path.getsize(path)
         if sz == 0:
             return ""
-        if sz <= SHELL_OUTPUT_FILE_MAX_BYTES:
+        if sz <= INER_SHELL_OUTPUT_FILE_MAX_BYTES:
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 return f.read()
-        half = SHELL_OUTPUT_FILE_MAX_BYTES // 2
+        half = INER_SHELL_OUTPUT_FILE_MAX_BYTES // 2
         with open(path, "rb") as f:
             head = f.read(half)
             f.seek(-half, os.SEEK_END)

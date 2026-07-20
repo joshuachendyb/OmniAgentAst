@@ -7,6 +7,7 @@
 # 注: 本文件数值型长度/上限/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 # 2026-07-18 - 小欧 - TOOL_TIMEOUTS清理死键(合并的window_maximize/minimize/clipboard_read/write等),补真实注册名(set_window_state/clipboard)
 # 2026-07-20 - 小欧 - 删 MAX_SEARCH_FILE_SIZE(grep 搜索单文件大小不再设上限, 对齐 rg 无文件大小限制, 因无引用删除); 新增 OBS_GREP_MAX_ROWS=200/OBS_GREP_MAX_ROW_CHARS=150(grep 专属行×列, 显示域截断收口)
+# 2026-07-20 - 小欧 - shell 门限治理(章6.4): 新增 OBS_SHELL_MAX_ROWS=200/OBS_SHELL_MAX_ROW_CHARS=1000(shell 专属行×列, 显示域截断收口); SHELL_OUTPUT_MAX_CHARS 标记【已作废】由 OBS_SHELL_MAX_ROW_CHARS 取代
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -126,6 +127,10 @@ OBS_SYSINFO_FIELD_MAX_CHARS: int = 120 # 【系统级】使用对象: observatio
 OBS_GREP_MAX_ROWS: int = 200            # 【系统级】使用对象: observation_formatter.py(_format_matches grep 行数上限)
 OBS_GREP_MAX_ROW_CHARS: int = 150       # 【系统级】使用对象: observation_formatter.py(_format_matches grep 单行上限)
 
+# —— shell 专属观察截断常量（显示域行×列；Tool 输出不截断, 仅显示域按行×列收口） ——
+OBS_SHELL_MAX_ROWS: int = 200           # 【系统级】使用对象: observation_formatter.py(_format_shell_result shell 行数上限, 自由文本档)
+OBS_SHELL_MAX_ROW_CHARS: int = 1000     # 【系统级】使用对象: observation_formatter.py(_format_shell_result shell 单行上限, 长日志/JSON 自由文本, 禁止150盲截尾部)
+
 # ============================================================
 # 【tool 级】工具读取/输出上限 — 老陈 2026-07-15 归一化治理
 #     与 tool 紧密相关的长度/上限常量集中于此(便于查看对比检查),
@@ -136,8 +141,8 @@ MAX_READ_SIZE: int = 10 * 1024 * 1024          # 【tool 级】使用对象: rea
 MAX_MEDIA_READ_SIZE: int = 50 * 1024 * 1024     # 【tool 级】使用对象: 媒体文件读取字节上限(保留原名不改名)
 MAX_BATCH_FILE_COUNT: int = 100                 # 【tool 级】使用对象: 批量文件操作单次文件数上限
 MAX_SEARCH_RESULTS: int = 1000                  # 【tool 级】使用对象: search_files(find) 结果收集上限, 按 FIND_PAGE_SIZE/页分页 — 小沈 2026-07-14
-SHELL_OUTPUT_MAX_CHARS: int = 20000    # 【tool 级】使用对象: execute_shell_command.py(shell 输出超长截断, 头尾各半; 原 MAX_OUTPUT=30000 调小)
-SHELL_OUTPUT_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级】使用对象: shell_engine.py(引擎读 shell 临时输出文件防 OOM; 原 _MAX_OUTPUT_SZ)
+# SHELL_OUTPUT_MAX_CHARS 已作废(2026-07-20 小欧 shell 改行×列, Tool 层不再截断; 由 OBS_SHELL_MAX_ROW_CHARS 取代) — 原值 20000
+INER_SHELL_OUTPUT_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: shell_engine.py(引擎读 shell 临时输出文件防 OOM, 3.4 硬安全网; 原 _MAX_OUTPUT_SZ / SHELL_OUTPUT_FILE_MAX_BYTES; 依 3.5 改名 INER_ 前缀)
 WEB_FETCH_MAX_CHARS: int = 10000       # 【tool 级】使用对象: fetch_webpage.py(网页正文提取上限; 原 max_tokens=8000→32000字符, 对齐 OBS 10000)
 SEARCH_SNIPPET_MAX_CHARS: int = 300    # 【tool 级】使用对象: search_web.py(搜索结果 snippet 截断; 原 _SNIPPET_MAX_CHARS)
 XLSX_MAX_ROWS: int = 10000             # 【tool 级】使用对象: read_xlsx.py(单次读取最大行数; 原 max_rows=10000)
