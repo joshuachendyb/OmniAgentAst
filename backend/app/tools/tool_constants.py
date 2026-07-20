@@ -8,6 +8,7 @@
 # 2026-07-18 - 小欧 - TOOL_TIMEOUTS清理死键(合并的window_maximize/minimize/clipboard_read/write等),补真实注册名(set_window_state/clipboard)
 # 2026-07-20 - 小欧 - 删 MAX_SEARCH_FILE_SIZE(grep 搜索单文件大小不再设上限, 对齐 rg 无文件大小限制, 因无引用删除); 新增 OBS_GREP_MAX_ROWS=200/OBS_GREP_MAX_ROW_CHARS=150(grep 专属行×列, 显示域截断收口)
 # 2026-07-20 - 小欧 - shell 门限治理(章6.4): 新增 OBS_SHELL_MAX_ROWS=200/OBS_SHELL_MAX_ROW_CHARS=1000(shell 专属行×列, 显示域截断收口); SHELL_OUTPUT_MAX_CHARS 标记【已作废】由 OBS_SHELL_MAX_ROW_CHARS 取代
+# 2026-07-20 - 小欧 - find 门限治理(章7.4): 新增 OBS_FIND_MAX_ROWS=200/OBS_FIND_MAX_ROW_CHARS=300(find 专属行×列, 显示域截断收口); FIND_PAGE_SIZE/MAX_SEARCH_RESULTS 标记【已作废】由 OBS_FIND_MAX_ROWS 取代(find 返回全部匹配, deadline 超时保护)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -107,7 +108,7 @@ FILE_OPERATION_TOOLS: set[str] = {  # 【tool 级】使用对象: 文件操作�
 
 READ_FILE_DEFAULT_LIMIT: int = 500          # 【tool 级】使用对象: file 工具(readtext/edittext 等)读取默认行数上限
 LISTDIR_PAGE_SIZE: int = 500                  # 【tool 级】使用对象: listdir 分页每页条目数
-FIND_PAGE_SIZE: int = 500                     # 【tool 级】使用对象: find 分页每页条目数
+FIND_PAGE_SIZE: int = 500                     # 【tool 级】使用对象: find 分页每页条目数 — 【已作废】2026-07-20 小欧 find 改行×列返回全部匹配(OBS_FIND_MAX_ROWS), FIND_PAGE_SIZE 不再使用
 
 # ============================================================
 # 【系统级】观察截断常量（observation_formatter.py 统一使用）— 小欧 2026-07-04
@@ -131,6 +132,10 @@ OBS_GREP_MAX_ROW_CHARS: int = 150       # 【系统级】使用对象: observati
 OBS_SHELL_MAX_ROWS: int = 200           # 【系统级】使用对象: observation_formatter.py(_format_shell_result shell 行数上限, 自由文本档)
 OBS_SHELL_MAX_ROW_CHARS: int = 1000     # 【系统级】使用对象: observation_formatter.py(_format_shell_result shell 单行上限, 长日志/JSON 自由文本, 禁止150盲截尾部)
 
+# —— find 专属观察截断常量（显示域行×列；Tool 输出不截断, 仅显示域按行×列收口） ——
+OBS_FIND_MAX_ROWS: int = 200            # 【系统级】使用对象: observation_formatter.py(_format_find_results find 行数上限)
+OBS_FIND_MAX_ROW_CHARS: int = 300       # 【系统级】使用对象: observation_formatter.py(_format_find_results find 单行上限)
+
 # ============================================================
 # 【tool 级】工具读取/输出上限 — 老陈 2026-07-15 归一化治理
 #     与 tool 紧密相关的长度/上限常量集中于此(便于查看对比检查),
@@ -140,7 +145,7 @@ OBS_SHELL_MAX_ROW_CHARS: int = 1000     # 【系统级】使用对象: observati
 MAX_READ_SIZE: int = 10 * 1024 * 1024          # 【tool 级】使用对象: readtext 读取文件字节上限(保留原名不改名, 免改读取层引用)
 MAX_MEDIA_READ_SIZE: int = 50 * 1024 * 1024     # 【tool 级】使用对象: 媒体文件读取字节上限(保留原名不改名)
 MAX_BATCH_FILE_COUNT: int = 100                 # 【tool 级】使用对象: 批量文件操作单次文件数上限
-MAX_SEARCH_RESULTS: int = 1000                  # 【tool 级】使用对象: search_files(find) 结果收集上限, 按 FIND_PAGE_SIZE/页分页 — 小沈 2026-07-14
+MAX_SEARCH_RESULTS: int = 1000                  # 【tool 级】使用对象: search_files(find) 结果收集上限 — 【已作废】2026-07-20 小欧 find 不再设收集上限(返回全部匹配, 唯一截断收口于 OBS_FIND_MAX_ROWS), 由 deadline 超时保护
 # SHELL_OUTPUT_MAX_CHARS 已作废(2026-07-20 小欧 shell 改行×列, Tool 层不再截断; 由 OBS_SHELL_MAX_ROW_CHARS 取代) — 原值 20000
 INER_SHELL_OUTPUT_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: shell_engine.py(引擎读 shell 临时输出文件防 OOM, 3.4 硬安全网; 原 _MAX_OUTPUT_SZ / SHELL_OUTPUT_FILE_MAX_BYTES; 依 3.5 改名 INER_ 前缀)
 WEB_FETCH_MAX_CHARS: int = 10000       # 【tool 级】使用对象: fetch_webpage.py(网页正文提取上限; 原 max_tokens=8000→32000字符, 对齐 OBS 10000)

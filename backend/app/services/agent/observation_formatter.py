@@ -38,7 +38,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   query_sql       {columns, rows}                #5 _format_rows          行: OBS_MAX_DISPLAY_ITEMS=500         limit=50
   filter_data     {columns, rows}                #5 _format_rows+columns  行: OBS_MAX_DISPLAY_ITEMS=500         top_n(用户指定,无默认)
   listdir         {entries}                      #3 _format_entries       项: OBS_MAX_DISPLAY_ITEMS=500         LISTDIR_PAGE_SIZE=500
-   find            {matches}                      #9b _format_find_results 项: OBS_MAX_DISPLAY_ITEMS=500         收集1000/每页FIND_PAGE_SIZE=500
+   find            {matches}                      #9b _format_find_results 项: OBS_FIND_MAX_ROWS=200        返回全部匹配(deadline超时保护), 显示域行×列收口
    grep            {matches}                      #9 _format_matches       项: OBS_MAX_DISPLAY_ITEMS=500         上限500(=OBS_MAX_DISPLAY_ITEMS,条目数)
   searchweb       {items}                        #4 _format_items         项: OBS_MAX_DISPLAY_ITEMS=500        num_results≤50; snippet 300字符
   event_log       {events}                       #8 _format_events        条: OBS_MAX_DISPLAY_ITEMS=500         max_events=50
@@ -57,8 +57,8 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
    36 tools        {key: scalar, ...}              _format_scalar_data     OBS_MAX_STRING_LENGTH=10000(值)       N/A
                                                                            OBS_DICT_MAX_KEYS=100(键)
 
-【注意】listdir/find 的 offset 分页由工具层自行处理（tools/file/），
-  formatter 仅展示当前 page（最多 OBS_MAX_DISPLAY_ITEMS 项）。
+【注意】listdir 的 offset 分页由工具层自行处理（tools/file/）, formatter 仅展示当前 page;
+  find 自 2026-07-20 起返回全部匹配(offset 仅作跳过, 无条数上限), formatter 按 OBS_FIND_MAX_ROWS 行×列收口。
 
 Author: 小欧 2026-06-21; 小欧 2026-07-04 更新映射表; 小欧 2026-07-05 修复4个Bug, 新增专用handler分组; 小欧 2026-07-05 拆分compress/httpget/analyze_data专用handler
 """
@@ -79,6 +79,8 @@ from app.tools.tool_constants import (
     OBS_GREP_MAX_ROW_CHARS,
     OBS_SHELL_MAX_ROWS,
     OBS_SHELL_MAX_ROW_CHARS,
+    OBS_FIND_MAX_ROWS,
+    OBS_FIND_MAX_ROW_CHARS,
 )
 
 
@@ -119,7 +121,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # #6 schema         get_db_schema                     不限                                OBS_MAX_DISPLAY_ITEMS=500
     # #8 events         event_log                         max_events=50                       OBS_MAX_DISPLAY_ITEMS=500
     # #9 matches        grep                              上限500(=OBS_MAX_DISPLAY_ITEMS,条目数)   OBS_MAX_DISPLAY_ITEMS=500
-    #                   find                              MAX_SEARCH_RESULTS=1000/每页200      OBS_MAX_DISPLAY_ITEMS=500
+    #                   find                              返回全部匹配(deadline超时)        OBS_FIND_MAX_ROWS=200/CHARS=300
     #                   searchtool                        小(内置)                            OBS_MAX_DISPLAY_ITEMS=500
     # #11 shell stdout  shell                             不限                                OBS_MAX_STRING_LENGTH=10000
     # #12 tree          tree                              不限                                无特定截断(嵌套渲染)
@@ -914,22 +916,33 @@ def _format_scalar_data(data: dict) -> str:
 #   输入: [{"name":"main.py","type":"file","size":2048,"path":"/project/src/main.py"}, {"name":"test","type":"dir","path":"/project/test"}]
 #   输出:   main.py [文件, 2048字节]\n    /project/src/main.py\n  test [目录]\n    /project/test
 def _format_find_results(matches: list) -> str:
-    """格式化 find 文件搜索结果 — 小欧 2026-07-05"""
+    """格式化 find 文件搜索结果(行×列: OBS_FIND_MAX_ROWS/CHARS) — 小欧 2026-07-20"""
     if not matches:
         return ""
     lines = []
+    truncated = False
     for i, m in enumerate(matches):
-        if i >= OBS_MAX_DISPLAY_ITEMS:
-            lines.append(f"  ... 还有 {len(matches) - OBS_MAX_DISPLAY_ITEMS} 个匹配项")
+        if i >= OBS_FIND_MAX_ROWS:
+            truncated = True
             break
-        name = m.get("name", "")
+        name = str(m.get("name", ""))
+        if len(name) > OBS_FIND_MAX_ROW_CHARS:
+            name = name[:OBS_FIND_MAX_ROW_CHARS] + "...(截断)"
         etype = m.get("type", "")
         size = m.get("size")
         size_str = f", {size}字节" if size is not None else ""
         lines.append(f"  {name} [{etype}{size_str}]")
-        p = m.get("path", "")
+        p = str(m.get("path", ""))
+        if len(p) > OBS_FIND_MAX_ROW_CHARS:
+            p = p[:OBS_FIND_MAX_ROW_CHARS] + "...(截断)"
         if p:
             lines.append(f"    {p}")
+    total = len(matches)
+    if truncated:
+        lines.append(f"  ... 还有 {total - OBS_FIND_MAX_ROWS} 个匹配项（输入已全部返回, 仅展示前 {OBS_FIND_MAX_ROWS} 项）")
+        lines.append("⚠ 已截断")
+    else:
+        lines.append("✓ 无截断-完整")
     return "\n".join(lines)
 
 
