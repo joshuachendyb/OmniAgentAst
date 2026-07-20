@@ -14,6 +14,7 @@
 # 2026-07-20 小欧 门限复查: #11 _format_shell_result 移除 meta 行(shell_type/duration_ms/rc), 改由 _format_llm_data 在 llm_data 段统一呈现(退出码/耗时/shell类型); data 详情仅 stdout/stderr+两态, 严禁与 llm_data 段重复显示(原 #11 从 data 取恒为默认空值 powershell/0ms, 既错又重复)
 # 2026-07-20 小欧 门限复查: _format_llm_data 渲染 llm_data 顶层 "diff" 加行×列收口(OBS_EDITTEXT_MAX_ROWS/CHARS)+两态; writetext 的 diff 改放 llm_data 顶层经此呈现, edittext 的 diff 统一走 data["diff"]→#24, 二者均单行×列收口、严禁重复
 # 2026-07-20 小欧 httpget ②修复: _format_httpget_result 识别 _truncated 模式(安全截断), 醒目标示 _reason+⚠, 确保LLM知悉截断原因(零错觉); 正常 body 维持 json.dumps+行×列收口不变
+# 2026-07-20 小欧 门限分工核查: 修正映射表+对照截断表4处注释常量值 10000→1000(OBS_MAX_STRING_LENGTH)/500→200(OBS_MAX_DISPLAY_ITEMS)/2000→1000(OBS_HTTPGET_MAX_ROW_CHARS)/200→100(OBS_SEARCHWEB_MAX_ROWS), 对齐 tool_constants.py 实际定义值
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -39,30 +40,30 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   fetchpage       {content: str}                 #2-fetchpage             OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500  WEB_FETCH_MAX_CHARS 已删除(正文零截断, 显示域行×列收口)
   edittext        {diff: str}                    #24 edittext             OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000  INER_EDITTEXT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断); diff 零截断, 显示域行×列收口
   writetext       {content_preview: str}          #23 writetext           Tool 层 _build_content_preview 文首50+文末50 预览(用户裁定恢复); 简单拼接 "已写入内容\n"+preview, 无 OBS_WRITETEXT_*(无截断/无死代码)
-  clipboard_ctl   {text: str}                    #10 raw text             OBS_MAX_STRING_LENGTH=10000          N/A
-  read_pdf        {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000          页数不限
-  read_docx       {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=10000          字符数不限
+  clipboard_ctl   {text: str}                    #10 raw text             OBS_MAX_STRING_LENGTH=1000          N/A
+  read_pdf        {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=1000          页数不限
+  read_docx       {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=1000          字符数不限
   read_xlsx       {headers, rows}                #25 read_xlsx            无显示域截断(无offset分页, 行/列全展示); INER_READ_XLSX_MAX_ROWS=10000保留为3.4硬安全网(超上限置truncated, 不删)
-  query_sql       {columns, rows}                #5 _format_rows          行: OBS_MAX_DISPLAY_ITEMS=500         limit=50
-  filter_data     {columns, rows}                #5 _format_rows+columns  行: OBS_MAX_DISPLAY_ITEMS=500         top_n(用户指定,无默认)
+  query_sql       {columns, rows}                #5 _format_rows          行: OBS_MAX_DISPLAY_ITEMS=200         limit=50
+  filter_data     {columns, rows}                #5 _format_rows+columns  行: OBS_MAX_DISPLAY_ITEMS=200         top_n(用户指定,无默认)
   listdir         {entries}                      #3 _format_entries       项: OBS_LISTDIR_MAX_ROWS=200          返回全部条目(无Tool层分页, 有offset可翻页); 显示域行×列OBS_LISTDIR_*收口(3.7)
   find            {matches}                      #9b _format_find_results 项: OBS_FIND_MAX_ROWS=200        返回全部匹配(deadline超时保护), 显示域行×列收口
-  grep            {matches}                      #9 _format_matches       项: OBS_MAX_DISPLAY_ITEMS=500         上限500(=OBS_MAX_DISPLAY_ITEMS,条目数)
-  searchweb       {items}                        #4 _format_items         项: OBS_SEARCHWEB_MAX_ROWS=200     返回全部(num_results≤50); 显示域行×列(snippet 500字符)
-  event_log       {events}                       #8 _format_events        条: OBS_MAX_DISPLAY_ITEMS=500         max_events=50
-  searchtool      {matches}                      #9c _format_searchtool   项: OBS_MAX_DISPLAY_ITEMS=500         small(内置)
-  get_db_schema   {tables}                       #6 _format_schema        张表: OBS_MAX_DISPLAY_ITEMS=500       不限
-  shell           {stdout, stderr, ...}          #11 shell stdout         OBS_MAX_STRING_LENGTH=10000          不限
+  grep            {matches}                      #9 _format_matches       项: OBS_MAX_DISPLAY_ITEMS=200         上限500(=OBS_MAX_DISPLAY_ITEMS,条目数)
+  searchweb       {items}                        #4 _format_items         项: OBS_SEARCHWEB_MAX_ROWS=100     返回全部(num_results≤50); 显示域行×列(snippet 500字符)
+  event_log       {events}                       #8 _format_events        条: OBS_MAX_DISPLAY_ITEMS=200         max_events=50
+  searchtool      {matches}                      #9c _format_searchtool   项: OBS_MAX_DISPLAY_ITEMS=200         small(内置)
+  get_db_schema   {tables}                       #6 _format_schema        张表: OBS_MAX_DISPLAY_ITEMS=200       不限
+  shell           {stdout, stderr, ...}          #11 shell stdout         OBS_MAX_STRING_LENGTH=1000          不限
   timer_list      bare list                      non-dict str()           N/A                                  N/A
-  list_tasks      {tasks, ...}                   #14 tasks table          行: OBS_MAX_DISPLAY_ITEMS=500         max_results=100
-  window_info     {windows}                      #15 windows table        行: OBS_MAX_DISPLAY_ITEMS=500         不限
-  read_pptx       {slide_count, slides}           #16 slides items        页: OBS_MAX_DISPLAY_ITEMS=500         页数不限
+  list_tasks      {tasks, ...}                   #14 tasks table          行: OBS_MAX_DISPLAY_ITEMS=200         max_results=100
+  window_info     {windows}                      #15 windows table        行: OBS_MAX_DISPLAY_ITEMS=200         不限
+  read_pptx       {slide_count, slides}           #16 slides items        页: OBS_MAX_DISPLAY_ITEMS=200         页数不限
   sysinfo         {basic, cpu, ...}               #17 sysinfo sections     每段10项                             不限
-  compress        {compression_ratio, ...}        _format_compress_result  OBS_MAX_STRING_LENGTH=10000          N/A
-  httpget         {status_code, ...}              _format_httpget_result   OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=2000  N/A
+  compress        {compression_ratio, ...}        _format_compress_result  OBS_MAX_STRING_LENGTH=1000          N/A
+  httpget         {status_code, ...}              _format_httpget_result   OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=1000  N/A
   analyze_data    {statistics, ...}               _format_analyze_data     转置表格(无行数限制)                    top_n(用户指定,默认None)
    ── _format_scalar_data ──
-   36 tools        {key: scalar, ...}              _format_scalar_data     OBS_MAX_STRING_LENGTH=10000(值)       N/A
+   36 tools        {key: scalar, ...}              _format_scalar_data     OBS_MAX_STRING_LENGTH=1000(值)       N/A
                                                                            OBS_DICT_MAX_KEYS=100(键)
 
 【注意】listdir 的 offset 分页由工具层自行处理（tools/file/）, formatter 仅展示当前 page;
@@ -133,36 +134,36 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # handler          工具                              工具上限(机器一)                      formatter上限(机器二)
     # ────────────────  ───────────────────────────────  ──────────────────────────────────  ──────────────────────────────────────
     # non-dict          timer_list                       无限制                             直接 str()，无截断
-    # #2 raw str        readtext                         无行数限制(仅INER_READTEXT_READ_SIZE=10MB)  OBS_MAX_STRING_LENGTH=10000
+    # #2 raw str        readtext                         无行数限制(仅INER_READTEXT_READ_SIZE=10MB)  OBS_MAX_STRING_LENGTH=1000
     # #2-readtext      readtext                         无行数限制(仅INER_READTEXT_READ_SIZE=10MB, 3.4拒绝)  OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000
     # #2-fetchpage     fetchpage                        正文零截断(无 Tool 层上限)            OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500
     # #24 edittext     edittext                         diff 零截断(仅INER_EDITTEXT_READ_SIZE=10MB, 3.4拒绝)  OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000
     # #23 writetext    writetext                       content_preview 为 Tool 层预览(文首50+文末50), 简单拼接 "已写入内容\n"+preview; 无 formatter 截断(无 OBS_WRITETEXT_*)
-    # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=10000
+    # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=1000
     # #3 entries        listdir                          返回全部条目(LISTDIR_PAGE_SIZE依3.7作废删除, 有offset可翻页); 显示域行×列  OBS_LISTDIR_MAX_ROWS=200/OBS_LISTDIR_MAX_ROW_CHARS=300(两态说明)
-    # #4 items          searchweb                         返回全部(num_results≤50); 显示域行×列   OBS_SEARCHWEB_MAX_ROWS=200/CHARS=500
+    # #4 items          searchweb                         返回全部(num_results≤50); 显示域行×列   OBS_SEARCHWEB_MAX_ROWS=100/CHARS=500
     # #25 read_xlsx    read_xlsx                        INER_READ_XLSX_MAX_ROWS=10000(3.4硬安全网, 超上限置truncated, 不删)  无显示域行/列截断(无offset, 全量展示)
-    # #2b flat table    其他 headers+rows 形状             max_rows=10000                      OBS_MAX_DISPLAY_ITEMS=500
-    # #5 rows           query_sql                         limit=50                            OBS_MAX_DISPLAY_ITEMS=500
-    #                   filter_data                       top_n(用户指定,无默认值)              OBS_MAX_DISPLAY_ITEMS=500
-    # #6 schema         get_db_schema                     不限                                OBS_MAX_DISPLAY_ITEMS=500
-    # #8 events         event_log                         max_events=50                       OBS_MAX_DISPLAY_ITEMS=500
-    # #9 matches        grep                              上限500(=OBS_MAX_DISPLAY_ITEMS,条目数)   OBS_MAX_DISPLAY_ITEMS=500
+    # #2b flat table    其他 headers+rows 形状             max_rows=10000                      OBS_MAX_DISPLAY_ITEMS=200
+    # #5 rows           query_sql                         limit=50                            OBS_MAX_DISPLAY_ITEMS=200
+    #                   filter_data                       top_n(用户指定,无默认值)              OBS_MAX_DISPLAY_ITEMS=200
+    # #6 schema         get_db_schema                     不限                                OBS_MAX_DISPLAY_ITEMS=200
+    # #8 events         event_log                         max_events=50                       OBS_MAX_DISPLAY_ITEMS=200
+    # #9 matches        grep                              上限500(=OBS_MAX_DISPLAY_ITEMS,条目数)   OBS_MAX_DISPLAY_ITEMS=200
     #                   find                              返回全部匹配(deadline超时)        OBS_FIND_MAX_ROWS=200/CHARS=300
-    #                   searchtool                        小(内置)                            OBS_MAX_DISPLAY_ITEMS=500
-    # #11 shell stdout  shell                             不限                                OBS_MAX_STRING_LENGTH=10000
+    #                   searchtool                        小(内置)                            OBS_MAX_DISPLAY_ITEMS=200
+    # #11 shell stdout  shell                             不限                                OBS_MAX_STRING_LENGTH=1000
     # #12 tree          tree                              不限                                无特定截断(嵌套渲染)
     # #13 readmedia     readmedia                         INER_READMEDIA_READ_SIZE=50MB         仅元数据+base64字符数摘要(不按文本行×列, base64非可读文本)
-    # #14 tasks table   list_tasks                        max_results=100                     OBS_MAX_DISPLAY_ITEMS=500
-    # #15 windows table window_info                       不限                                OBS_MAX_DISPLAY_ITEMS=500
-    # #16 slides items  read_pptx                         页数不限                            OBS_MAX_DISPLAY_ITEMS=500
+    # #14 tasks table   list_tasks                        max_results=100                     OBS_MAX_DISPLAY_ITEMS=200
+    # #15 windows table window_info                       不限                                OBS_MAX_DISPLAY_ITEMS=200
+    # #16 slides items  read_pptx                         页数不限                            OBS_MAX_DISPLAY_ITEMS=200
     # #17 sysinfo       sysinfo                           不限                                每段10项
     # #0 空data         mouse_click                       N/A                                直接返回""
-    # #18 compress      compress                          N/A                                OBS_MAX_STRING_LENGTH=10000
-    # #19 httpget       httpget                           N/A                                OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=2000
+    # #18 compress      compress                          N/A                                OBS_MAX_STRING_LENGTH=1000
+    # #19 httpget       httpget                           N/A                                OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=1000
     # #2-fetchpage     fetchpage                        正文零截断(无 Tool 层上限)            OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500
     # #20 analyze_data  analyze_data                      top_n(用户指定,默认None)             转置表格(无行数限制)
-    # #21 fallback      33个scalar工具(见下方清单)          N/A                                OBS_MAX_STRING_LENGTH=10000(值)
+    # #21 fallback      33个scalar工具(见下方清单)          N/A                                OBS_MAX_STRING_LENGTH=1000(值)
     #                                                                                        OBS_DICT_MAX_KEYS=100(键)
     #
     # 说明:
