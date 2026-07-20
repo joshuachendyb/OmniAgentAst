@@ -148,7 +148,7 @@
 
 ---
 
-## 三、工具层（app/services/tools/toolhelper/）
+## 三、工具层（app/tools/toolhelper/）
 
 | 文件 | 功能 |
 |------|------|
@@ -161,6 +161,7 @@
 | `file_helpers.py` | 文件辅助函数 |
 | `gui_helper.py` | GUI辅助函数 |
 | `hash_helper.py` | 哈希辅助函数 |
+| `line_pager.py` | 行分页/截断工具 `select_lines`(按 offset/limit/tail 选取行, 供 read_text_file/read_docx 复用, Tool 层零限制, 字符截断收口于 observation_formatter) — 小欧 2026-07-20 |
 | `network_helper.py` | 网络辅助函数 |
 | `service_helper.py` | 服务辅助函数 |
 | `shell_helper.py` | Shell辅助函数 |

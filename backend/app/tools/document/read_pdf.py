@@ -17,7 +17,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.validate.file_path_checker import hint_for_read_error
-from app.tools.tool_constants import ERR_DOC_READ_PDF
+from app.tools.tool_constants import ERR_DOC_READ_PDF, INER_READ_PDF_MAX_PAGES
 
 from app.logger import logger
 
@@ -28,6 +28,54 @@ def _is_garbled_text(text: str, threshold: float = 0.30) -> bool:
         return False
     q_count = sum(1 for c in text if c == '\ufffd' or c == '?')
     return (q_count / len(text)) > threshold
+
+
+def _parse_pdf_pages(page, pages, page_count: int):
+    """解析 page/pages 参数为选中页号列表(1-based, 升序去重); 无效返回 None
+    适用: read_pdf 自然单位翻页(2026-07-20 小欧)"""
+    want = []
+    if page is not None:
+        if not isinstance(page, int) or page < 1 or page > page_count:
+            return None
+        want.append(page)
+    if pages is not None:
+        if isinstance(pages, int):
+            if pages < 1 or pages > page_count:
+                return None
+            want.append(pages)
+        elif isinstance(pages, str):
+            m = pages.strip()
+            if "-" in m:
+                try:
+                    a, b = m.split("-", 1)
+                    a, b = int(a), int(b)
+                except ValueError:
+                    return None
+                if a < 1 or b > page_count or a > b:
+                    return None
+                want.extend(range(a, b + 1))
+            else:
+                try:
+                    v = int(m)
+                except ValueError:
+                    return None
+                if v < 1 or v > page_count:
+                    return None
+                want.append(v)
+        elif isinstance(pages, (list, tuple)):
+            for v in pages:
+                if not isinstance(v, int) or v < 1 or v > page_count:
+                    return None
+                want.append(v)
+        else:
+            return None
+    seen = set()
+    out = []
+    for p in want:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
 
 
 def _extract_with_fitz(file_path: str, page_count: int) -> Tuple[str, list, list]:
@@ -110,8 +158,9 @@ def _process_page(page, page_num: int, extract_tables: bool = True, extract_imag
     return text, tables, images
 
 
-def read_pdf(path: str) -> Dict[str, Any]:
-    """读取PDF文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查"""
+def read_pdf(path: str, page: Optional[int] = None, pages: Optional[Any] = None) -> Dict[str, Any]:
+    """读取PDF文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查
+    2026-07-20 自然单位治理(小欧): 新增 page/pages 参数按页读取; 无参数时返回前 INER_READ_PDF_MAX_PAGES 页(防OOM), 显示域窗口由 OBS_PDF_MAX_ROWS 收口; 彻底取代原"盲截1000字符"导致LLM只见片段且无法翻页的缺陷"""
     t0 = _time_mod.perf_counter()
     file_path = path
 
@@ -144,21 +193,21 @@ def read_pdf(path: str) -> Dict[str, Any]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail="文件不是有效的PDF格式（缺少%PDF头）", hint="请确认文件是PDF格式")
             return build_error(data={}, llm_data=llm_data)
-        all_text, pages_read, tables_data, images_data = [], [], [], []
+        pages_text: List[str] = []
+        read_page_nums: List[int] = []
+        tables_data: List[dict] = []
+        images_data: List[dict] = []
         with pdfplumber.open(path) as pdf:
             page_count = len(pdf.pages)
-            target = list(range(1, page_count + 1))
-            target = [p for p in target if 1 <= p <= page_count]
-
-            for pn in target:
-                page = pdf.pages[pn - 1]
-                text, tables, images = _process_page(page, pn, extract_tables=True, extract_images=True)
-                all_text.append(f"--- 第 {pn} 页 ---\n{text}")
-                pages_read.append(pn)
+            for pn in range(1, page_count + 1):
+                pdf_page = pdf.pages[pn - 1]
+                text, tables, images = _process_page(pdf_page, pn, extract_tables=True, extract_images=True)
+                pages_text.append(f"--- 第 {pn} 页 ---\n{text}")
+                read_page_nums.append(pn)
                 tables_data.extend(tables)
                 images_data.extend(images)
 
-        full_text = "\n\n".join(all_text)
+        full_text = "\n\n".join(pages_text)
 
         # CJK乱码检测: 当?/U+FFFD占比>30%时，尝试PyMuPDF后备提取 — 小欧 2026-07-08
         fitz_used = False
@@ -167,12 +216,41 @@ def read_pdf(path: str) -> Dict[str, Any]:
                 if _check_module("fitz"):
                     fitz_text, fitz_tables, fitz_images = _extract_with_fitz(file_path, page_count)
                     if not _is_garbled_text(fitz_text):
-                        full_text = fitz_text
+                        pages_text = fitz_text.split("\n\n")
                         tables_data = fitz_tables
                         images_data = fitz_images
                         fitz_used = True
             except Exception:
                 pass
+
+        # —— 自然单位治理(2026-07-20 小欧): 按页选取; 无参数时超 INER_READ_PDF_MAX_PAGES 仅取前 N 页防 OOM ——
+        selected: List[str] = []
+        selected_pages: List[int] = []
+        truncated_hint = ""
+        if page is not None or pages is not None:
+            want = _parse_pdf_pages(page, pages, page_count)
+            if want is None:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path,
+                                                    detail="page/pages 参数无效(超出范围或非数字)", hint="page 为 1..总页数 的整数; pages 可为整数/列表/'a-b'", page_count=page_count)
+                return build_error(data={}, llm_data=llm_data)
+            selected_pages = want
+            selected = [pages_text[i - 1] for i in want if 1 <= i <= len(pages_text)]
+        else:
+            if page_count > INER_READ_PDF_MAX_PAGES:
+                selected = pages_text[:INER_READ_PDF_MAX_PAGES]
+                selected_pages = read_page_nums[:INER_READ_PDF_MAX_PAGES]
+                truncated_hint = f"文档共 {page_count} 页, 仅提取前 {INER_READ_PDF_MAX_PAGES} 页(防内存溢出), 用 page=N 读取指定页"
+            else:
+                selected = pages_text
+                selected_pages = read_page_nums
+
+        full_text = "\n\n".join(selected)
+        # tables/images 仅保留所选页(按 page 号过滤; fitz 路径无 page 号则整体保留)
+        if selected_pages and not fitz_used:
+            sel_set = set(selected_pages)
+            tables_data = [t for t in tables_data if t.get("page") in sel_set]
+            images_data = [i for i in images_data if i.get("page") in sel_set]
 
         result = {"text": full_text}
         if tables_data:
@@ -188,8 +266,10 @@ def read_pdf(path: str) -> Dict[str, Any]:
             hint = "pdfplumber提取中文乱码,已使用PyMuPDF后备提取"
         elif _is_garbled_text(full_text):
             hint = "该PDF文档的中文文本在创建时已丢失编码信息,无法通过文本提取恢复,建议使用OCR工具"
+        if truncated_hint:
+            hint = (hint + "; " if hint else "") + truncated_hint
         llm_data = _build_read_pdf_llm_data(
-            "success", duration_ms, file_path, page_count, len(pages_read),
+            "success", duration_ms, file_path, page_count, len(selected_pages),
             len(full_text), table_cnt, image_cnt, hint=hint,
         )
         # =============================================================================
@@ -200,10 +280,10 @@ def read_pdf(path: str) -> Dict[str, Any]:
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
         # ---- observation_formatter route -------------------------------------------
-        # branch: #10 raw text
-        # trigger: "text" in data and isinstance(data["text"], str)
-        # handler: _format_text_content(data) — 正文+额外字段(key=value)
-        # file:    observation_formatter.py:124-126
+        # branch: #10a PDF页感知
+        # trigger: "text" in data and isinstance(data["text"], str) and action.tool=="read_pdf"
+        # handler: _format_pdf_result(data["text"]) — 行×列窗口(≈前3页), 保留 "--- 第 N 页 ---" 标记; 两态提示 page=N
+        # file:    observation_formatter.py:_format_pdf_result
         # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)
 

@@ -104,7 +104,14 @@ async def _get_directory_tree(
         return {"error_detail": "查询目录树失败", "params": {"path": dir_path}}
 
     fc, dc, ts = await asyncio.to_thread(_count_tree_fs, path)
-    return {"tree": tree}
+    return {
+        "tree": tree,
+        "statistics": {
+            "file_count": fc,
+            "dir_count": dc,
+            "total_size": ts,
+        },
+    }
 
 
 def _build_tree_llm_data(

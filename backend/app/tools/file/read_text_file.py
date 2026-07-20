@@ -24,6 +24,7 @@ from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_path_checker import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 
 from app.utils.text_utils import add_line_numbers
+from app.tools.toolhelper.line_pager import select_lines
 from app.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_read
@@ -100,85 +101,6 @@ async def _try_read_file_with_encodings(
         return None, None, f"无法读取文件: {path},已尝试编码: {encodings_to_try}"
     except Exception as e:
         return None, None, str(e)
-
-
-def _select_lines(
-    lines: list,
-    offset: Optional[int] = None,
-    limit: Optional[int] = None,
-    tail: Optional[int] = None,
-) -> Dict[str, Any]:
-    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 offset超范围返回warning — 小健 2026-06-25 空文件+offset返回warning — 小欧 2026-06-28 新增tail参数 — 小欧 2026-07-20 去除 max_line_length 单行截断(Tool 层零限制, 截断收口于 observation_formatter OBS_READTEXT)
-    offset: 起始行号(正数，必须配合limit)
-    limit: 读取行数
-    tail: 读取尾部N行"""
-    total = len(lines)
-    params = {}
-    warning = None
-
-    if tail is not None:
-        if total == 0:
-            warning = f"空文件无法使用tail参数(文件共0行)"
-            selected = []
-            n = 0
-            params = {"tail": tail, "start_line": 0, "end_line": 0}
-        else:
-            start_idx = max(0, total - tail)
-            selected = lines[start_idx:]
-            n = len(selected)
-            params = {
-                "tail": tail,
-                "start_line": start_idx + 1,
-                "end_line": total,
-            }
-    elif offset is not None:
-        if total == 0:
-            warning = f"空文件无法使用offset参数(文件共0行)"
-            selected = []
-            n = 0
-            params.update({
-                "offset": offset, "limit": limit,
-                "start_line": 0,
-                "end_line": 0,
-            })
-        else:
-            start_idx = offset - 1
-            if start_idx >= total:
-                warning = f"offset={offset}超出文件范围(共{total}行),返回空内容"
-            selected = lines[start_idx:start_idx + limit]
-            n = len(selected)
-            params.update({
-                "offset": offset, "limit": limit,
-                "start_line": start_idx + 1 if n > 0 else 0,
-                "end_line": start_idx + n if n > 0 else 0,
-            })
-    elif limit is not None:
-        selected = lines[:limit]
-        n = len(selected)
-        params = {
-            "offset": None,
-            "limit": limit,
-            "start_line": 1,
-            "end_line": n,
-        }
-    else:
-        selected = lines
-        n = len(selected)
-        params = {
-            "start_line": 1,
-            "end_line": n,
-        }
-
-    content = "".join(selected)
-    result = {
-        "content": content,
-        "total_lines": total,
-        "line_count": len(selected),
-        **params,
-    }
-    if warning:
-        result["warning"] = warning
-    return result
 
 
 def _build_read_text_file_llm_data(
@@ -352,7 +274,8 @@ async def readtext(
         path = Path(file_path)
 
         file_size = path.stat().st_size
-        if file_size > INER_READTEXT_READ_SIZE:
+        # 治理(2026-07-20 小欧): 仅拦截"全量读取"超大文件——分页读取(offset/limit/tail)已将 observation 收口, 不应被硬拦(原逻辑矛盾: 提示用 offset/limit 却又一并拦截)
+        if file_size > INER_READTEXT_READ_SIZE and offset is None and limit is None and tail is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data(
                 "error", duration_ms, file_path=file_path,
@@ -369,7 +292,7 @@ async def readtext(
             return build_error(data={}, llm_data=llm_data)
 
         lines = content.splitlines(keepends=True)
-        _data = _select_lines(lines, offset, limit, tail)
+        _data = select_lines(lines, offset, limit, tail)
         _data["encoding"] = used_encoding
         # =============================================================================
         # 数据设计：line_count/total_lines 从 data pop 出，通过 llm_data.metrics 传给 summary

@@ -15,6 +15,8 @@
 # 2026-07-20 小欧 门限复查: _format_llm_data 渲染 llm_data 顶层 "diff" 加行×列收口(OBS_EDITTEXT_MAX_ROWS/CHARS)+两态; writetext 的 diff 改放 llm_data 顶层经此呈现, edittext 的 diff 统一走 data["diff"]→#24, 二者均单行×列收口、严禁重复
 # 2026-07-20 小欧 httpget ②修复: _format_httpget_result 识别 _truncated 模式(安全截断), 醒目标示 _reason+⚠, 确保LLM知悉截断原因(零错觉); 正常 body 维持 json.dumps+行×列收口不变
 # 2026-07-20 小欧 门限分工核查: 修正映射表+对照截断表4处注释常量值 10000→1000(OBS_MAX_STRING_LENGTH)/500→200(OBS_MAX_DISPLAY_ITEMS)/2000→1000(OBS_HTTPGET_MAX_ROW_CHARS)/200→100(OBS_SEARCHWEB_MAX_ROWS), 对齐 tool_constants.py 实际定义值
+# 2026-07-20 小欧 读取类自然单位治理: #10 改路由→_format_pdf_result(#10a PDF页感知, read_pdf专属, page=N翻页+前3页预览+逐页"--- 第N页 ---", INER_READ_PDF_MAX_PAGES=200安全网) / _format_prose_result(#10b 段落/文本行窗口, read_docx+clipboard_ctl适用, 两态说明+取页提示); _format_tree 层级感知截断(每节点子项封顶OBS_TREE_MAX_CHILDREN+总行封顶OBS_TREE_MAX_ROWS, 基于statistics计数); _format_slides 单页改行×列(OBS_PPTX_*); 映射表注释同步更新
+# 2026-07-20 小欧 单行超宽标注: _format_prose_result 与 _format_readtext_result 对超宽行追加 "…(该行超宽已截断, 原N字符)" 标注, 避免 LLM 被静默截断误导(对应 test_long_lines 期望); 与 Tool 层零限制(3.7)一致——截断唯一收口于 formatter
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -40,9 +42,9 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   fetchpage       {content: str}                 #2-fetchpage             OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500  WEB_FETCH_MAX_CHARS 已删除(正文零截断, 显示域行×列收口)
   edittext        {diff: str}                    #24 edittext             OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000  INER_EDITTEXT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断); diff 零截断, 显示域行×列收口
   writetext       {content_preview: str}          #23 writetext           Tool 层 _build_content_preview 文首50+文末50 预览(用户裁定恢复); 简单拼接 "已写入内容\n"+preview, 无 OBS_WRITETEXT_*(无截断/无死代码)
-  clipboard_ctl   {text: str}                    #10 raw text             OBS_MAX_STRING_LENGTH=1000          N/A
-  read_pdf        {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=1000          页数不限
-  read_docx       {text: str, ...}               #10 raw text             OBS_MAX_STRING_LENGTH=1000          字符数不限
+   clipboard_ctl   {text: str}                    #10b 文本行窗口          OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000  N/A
+   read_pdf        {text: str, ...}               #10a PDF页感知          OBS_PDF_MAX_ROWS=150/OBS_PDF_MAX_ROW_CHARS=1000  页数不限(page=N取指定页, 保留"--- 第N页---"标记)
+   read_docx       {text: str, ...}               #10b 段落窗口           OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000  字符数不限(offset/limit续读)
   read_xlsx       {headers, rows}                #25 read_xlsx            无显示域截断(无offset分页, 行/列全展示); INER_READ_XLSX_MAX_ROWS=10000保留为3.4硬安全网(超上限置truncated, 不删)
   query_sql       {columns, rows}                #5 _format_rows          行: OBS_MAX_DISPLAY_ITEMS=200         limit=50
   filter_data     {columns, rows}                #5 _format_rows+columns  行: OBS_MAX_DISPLAY_ITEMS=200         top_n(用户指定,无默认)
@@ -105,6 +107,12 @@ from app.tools.tool_constants import (
     OBS_EDITTEXT_MAX_ROW_CHARS,
     OBS_LISTDIR_MAX_ROWS,
     OBS_LISTDIR_MAX_ROW_CHARS,
+    OBS_PDF_MAX_ROWS,
+    OBS_PDF_MAX_ROW_CHARS,
+    OBS_PPTX_MAX_ROWS,
+    OBS_PPTX_MAX_ROW_CHARS,
+    OBS_TREE_MAX_ROWS,
+    OBS_TREE_MAX_CHILDREN,
 )
 
 
@@ -139,7 +147,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # #2-fetchpage     fetchpage                        正文零截断(无 Tool 层上限)            OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500
     # #24 edittext     edittext                         diff 零截断(仅INER_EDITTEXT_READ_SIZE=10MB, 3.4拒绝)  OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000
     # #23 writetext    writetext                       content_preview 为 Tool 层预览(文首50+文末50), 简单拼接 "已写入内容\n"+preview; 无 formatter 截断(无 OBS_WRITETEXT_*)
-    # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=1000
+    # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=1000(旧, 已废除); 2026-07-20 改自然单位: read_pdf→#10a页感知(OBS_PDF_*), read_docx/clipboard→#10b段落/文本行窗口(OBS_READTEXT_*)
     # #3 entries        listdir                          返回全部条目(LISTDIR_PAGE_SIZE依3.7作废删除, 有offset可翻页); 显示域行×列  OBS_LISTDIR_MAX_ROWS=200/OBS_LISTDIR_MAX_ROW_CHARS=300(两态说明)
     # #4 items          searchweb                         返回全部(num_results≤50); 显示域行×列   OBS_SEARCHWEB_MAX_ROWS=100/CHARS=500
     # #25 read_xlsx    read_xlsx                        INER_READ_XLSX_MAX_ROWS=10000(3.4硬安全网, 超上限置truncated, 不删)  无显示域行/列截断(无offset, 全量展示)
@@ -152,11 +160,11 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     #                   find                              返回全部匹配(deadline超时)        OBS_FIND_MAX_ROWS=200/CHARS=300
     #                   searchtool                        小(内置)                            OBS_MAX_DISPLAY_ITEMS=200
     # #11 shell stdout  shell                             不限                                OBS_MAX_STRING_LENGTH=1000
-    # #12 tree          tree                              不限                                无特定截断(嵌套渲染)
+    # #12 tree          tree                              不限                                层级感知: OBS_TREE_MAX_ROWS=300/CHILDREN=50(每节点子项封顶; 两态提示 max_depth/进子目录)
     # #13 readmedia     readmedia                         INER_READMEDIA_READ_SIZE=50MB         仅元数据+base64字符数摘要(不按文本行×列, base64非可读文本)
     # #14 tasks table   list_tasks                        max_results=100                     OBS_MAX_DISPLAY_ITEMS=200
     # #15 windows table window_info                       不限                                OBS_MAX_DISPLAY_ITEMS=200
-    # #16 slides items  read_pptx                         页数不限                            OBS_MAX_DISPLAY_ITEMS=200
+    # #16 slides items  read_pptx                         页数不限                            OBS_MAX_DISPLAY_ITEMS=200(页上限); 单页正文 OBS_PPTX_MAX_ROWS=60/CHARS=1000 行×列收口
     # #17 sysinfo       sysinfo                           不限                                每段10项
     # #0 空data         mouse_click                       N/A                                直接返回""
     # #18 compress      compress                          N/A                                OBS_MAX_STRING_LENGTH=1000
@@ -198,7 +206,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
                 content = content[:OBS_MAX_STRING_LENGTH] + _truncation_msg(llm_data)
             return content
 
-        # ── #10 raw text — 3 tools: read_pdf, read_docx, clipboard_ctl ──
+        # ── #10 raw text — read_pdf/read_docx/clipboard_ctl: 按 tool 路由到 #10a/#10b(废除原单串盲截) ──
         if "text" in data and isinstance(data["text"], str):
             return _format_text_content(data, llm_data)
 
@@ -319,26 +327,82 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
 #   输入: {"text": "这是文档正文...", "page_count": 5, "metadata": {...}}
 #   输出: 这是文档正文...\npage_count=5, metadata={'author': '...'}
 def _format_text_content(data: dict, llm_data: dict = None) -> str:
-    """#10 text handler — read_pdf/read_docx 正文直接展示 — 小欧 2026-07-05 — 小沈 2026-07-08 工具感知截断消息 — 小欧 2026-07-10 fix: extra字段长度截断"""
-    content = data["text"]
-    if len(content) > OBS_MAX_STRING_LENGTH:
-        content = content[:OBS_MAX_STRING_LENGTH] + _truncation_msg(llm_data)
+    """#10 text handler 分发 — 2026-07-20 自然单位治理: 废除原单串盲截 content[:OBS_MAX_STRING_LENGTH](1000字符腰斩文档结构)
+    按 tool 路由到自然单位 handler: read_pdf→页感知 / read_docx→段落窗口 / clipboard→文本行窗口
+    — 小欧 2026-07-20"""
+    content = data.get("text", "")
+    tool = (llm_data or {}).get("action", {}).get("tool", "")
+    if tool == "read_pdf":
+        return _format_pdf_result(content, data, llm_data)
+    if tool == "read_docx":
+        total_lines = ((llm_data or {}).get("metrics", {}) or {}).get("total_lines", {}) or {}
+        total_lines = total_lines.get("value") if isinstance(total_lines, dict) else None
+        hint = f"共 {total_lines} 行，用 offset/limit 分段读取剩余" if total_lines else ""
+        return _format_prose_result(content, data, hint)
+    # clipboard 等纯文本: 文本行窗口(复用 readtext 行数/单行上限)
+    return _format_prose_result(content, data, "")
+
+
+def _format_pdf_result(content: str, data: dict, llm_data: dict = None) -> str:
+    """#10a PDF 页感知 handler — 适用于工具: read_pdf(专属) — 2026-07-20 自然单位治理: 按行×列窗口(≈前3页)展示, 保留 "--- 第 N 页 ---" 页标记;
+    两态提示用 page=N 取指定页(原盲截1000字符致 LLM 只见片段且无法翻页)
+    — 小欧 2026-07-20"""
+    lines = content.split("\n")
+    total = len(lines)
+    max_rows = OBS_PDF_MAX_ROWS
+    max_chars = OBS_PDF_MAX_ROW_CHARS
+    shown = []
+    truncated = total > max_rows
+    for ln in lines[:max_rows]:
+        shown.append(ln[:max_chars] if len(ln) > max_chars else ln)
+    shown_pages = sum(1 for ln in shown if ln.startswith("--- 第"))
     extra = {k: v for k, v in data.items() if k != "text"}
-    if extra:
-        parts = []
-        for k, v in extra.items():
-            if isinstance(v, list):
-                if len(v) > 5:
-                    parts.append(f"{k}: {len(v)}项")
-                else:
-                    parts.append(f"{k}={v}")
-            else:
-                v_str = str(v)
-                if len(v_str) > OBS_MAX_STRING_LENGTH:
-                    v_str = v_str[:OBS_MAX_STRING_LENGTH] + "..."
-                parts.append(f"{k}={v_str}")
-        content += "\n" + ", ".join(parts)
-    return content
+    extra_parts = []
+    for k, v in extra.items():
+        extra_parts.append(f"{k}: {len(v)}项" if isinstance(v, list) else f"{k}={v}")
+    if extra_parts:
+        shown.append(" | ".join(extra_parts))
+    total_pages = ((llm_data or {}).get("metrics", {}) or {}).get("page_count", {}) or {}
+    total_pages = total_pages.get("value") if isinstance(total_pages, dict) else None
+    if truncated:
+        shown.append("⚠ 已截断")
+        shown.append(f"截断情况：已显示前 {max_rows} 行(约 {shown_pages} 页), 实际 {total} 行；单行上限 {max_chars} 字符")
+        shown.append(f"共 {total_pages} 页，用 page=N 读取指定页(如 page=50)" if total_pages else "用 page=N 读取指定页")
+    else:
+        shown.append("✓ 无截断-完整")
+    return "\n".join(shown)
+
+
+def _format_prose_result(content: str, data: dict, retrieval_hint: str = "") -> str:
+    """#10b 纯文本/段落窗口 handler — 适用于工具: read_docx(段落窗口, offset/limit翻页) / clipboard_ctl(文本行窗口) — 2026-07-20 自然单位治理: 行×列窗口(复用 readtext 上限), 两态 + 取回提示;
+    保留段落/换行结构, 不再盲截1000字符
+    — 小欧 2026-07-20"""
+    lines = content.split("\n")
+    total = len(lines)
+    max_rows = OBS_READTEXT_MAX_ROWS
+    max_chars = OBS_READTEXT_MAX_ROW_CHARS
+    shown = []
+    truncated = total > max_rows
+    for ln in lines[:max_rows]:
+        if len(ln) > max_chars:
+            shown.append(f"{ln[:max_chars]} …(该行超宽已截断, 原{len(ln)}字符)")
+        else:
+            shown.append(ln)
+    extra = {k: v for k, v in data.items() if k != "text"}
+    for k, v in extra.items():
+        if isinstance(v, list):
+            shown.append(f"{k}: {len(v)}项")
+        else:
+            v_str = str(v)
+            shown.append(f"{k}={v_str[:max_chars]}" if len(v_str) > max_chars else f"{k}={v_str}")
+    if truncated:
+        shown.append("⚠ 已截断")
+        shown.append(f"截断情况：保留{max_rows}行,实际 {total} 行，截断 {total - max_rows} 行；单行上限 {max_chars} 字符")
+        if retrieval_hint:
+            shown.append(retrieval_hint)
+    else:
+        shown.append("✓ 无截断-完整")
+    return "\n".join(shown)
 
 
 # #11 shell stdout 样式:
@@ -396,39 +460,64 @@ def _format_which_result(data: dict) -> str:
 #   输入: {"tree": {"name": "project", "children": [{"name": "src", "children": [{"name": "main.py", "size": 1024}]}]}, ...}
 #   输出: project\n  └── src\n      └── main.py  (1024 bytes)\n---\n[1 files, 1 dirs, 1024 bytes total]
 def _format_tree(data: dict) -> str:
-    """#12 tree handler — 嵌套dict → 可视化树形字符串 — 小欧 2026-07-05"""
+    """#12 tree handler — 适用于工具: tree(专属) — 小欧 2026-07-05
+    2026-07-20 自然单位治理: 层级感知截断(非盲目行数) — 每节点子项封顶 OBS_TREE_MAX_CHILDREN + 总行数封顶 OBS_TREE_MAX_ROWS;
+    两态基于 statistics(文件/目录计数), 提示用更深的 max_depth 或对子目录再次调用 tree 展开(类资源管理器导航)
+    — 小欧 2026-07-20"""
     tree = data.get("tree", {})
     stats = data.get("statistics", {})
     if not tree or not isinstance(tree, dict):
         return ""
     lines = []
+    total_cap = OBS_TREE_MAX_ROWS
+    child_cap = OBS_TREE_MAX_CHILDREN
 
-    def _render(node: dict, prefix: str = "", is_last: bool = True) -> list:
+    def _render(node: dict, prefix: str = "", is_last: bool = True) -> None:
+        if len(lines) >= total_cap:
+            return
         if not node or not isinstance(node, dict):
-            return []
-        result = []
+            return
         name = node.get("name", "?")
         size = node.get("size")
         label = "/" if size is None else f"  ({size} bytes)"
-        children = node.get("children", [])
-        result.append(f"{prefix}{'└── ' if is_last else '├── '}{name}{label}")
+        children = node.get("children", []) or []
+        lines.append(f"{prefix}{'└── ' if is_last else '├── '}{name}{label}")
         if children:
+            shown = children[:child_cap]
             child_prefix = prefix + ("    " if is_last else "│   ")
-            for i, child in enumerate(children):
-                result.extend(_render(child, child_prefix, i == len(children) - 1))
-        return result
+            for i, child in enumerate(shown):
+                if len(lines) >= total_cap:
+                    break
+                _render(child, child_prefix, i == len(shown) - 1)
+            if len(children) > child_cap:
+                lines.append(f"{child_prefix}... 还有 {len(children) - child_cap} 个子项")
 
     root_name = tree.get("name", "root") if isinstance(tree, dict) else str(tree)
     lines.append(f"{root_name}")
-    children = tree.get("children", []) if isinstance(tree, dict) else []
-    for i, child in enumerate(children):
-        lines.extend(_render(child, "", i == len(children) - 1))
+    children = tree.get("children", []) or []
+    shown_top = children[:child_cap]
+    for i, child in enumerate(shown_top):
+        if len(lines) >= total_cap:
+            break
+        _render(child, "", i == len(shown_top) - 1)
+    if len(children) > child_cap:
+        lines.append(f"... 还有 {len(children) - child_cap} 个顶级子项")
+    capped = len(lines) >= total_cap
 
     if stats:
         fc = stats.get("file_count", 0)
         dc = stats.get("dir_count", 0)
         ts = stats.get("total_size", 0)
         lines.append(f"---\n[{fc} files, {dc} dirs, {ts} bytes total]")
+        if capped or len(children) > child_cap:
+            lines.append("⚠ 已截断（层级/子项封顶）: 用更深的 max_depth 或对子目录再次调用 tree 展开")
+        else:
+            lines.append("✓ 无截断-完整")
+    else:
+        if capped:
+            lines.append("⚠ 已截断（层级/子项封顶）")
+        else:
+            lines.append("✓ 无截断-完整")
     if len(lines) == 1 and not children and not stats:
         return ""
     return "\n".join(lines)
@@ -885,30 +974,41 @@ def _format_windows(data: dict) -> str:
 #   输入: {"slide_count":3,"slides":[{"slide_num":1,"text":"封面\n副标题","tables_count":0},{"slide_num":2,"text":"内容页","tables_count":1}]}
 #   输出:   幻灯片 1/3\n    封面\n    副标题\n   幻灯片 2/3\n    内容页  [1个表格]\n---\n[slide_count: 3]
 def _format_slides(data: dict, llm_data: dict = None) -> str:
-    """#16 slides handler — read_pptx items 块 — 小欧 2026-07-05 — 小欧 2026-07-10 fix: 加llm_data参数统一截断消息"""
+    """#16 slides handler — 适用于工具: read_pptx(专属) — 小欧 2026-07-05 — 小欧 2026-07-10 fix: 加llm_data参数统一截断消息 — 小欧 2026-07-20 自然单位治理: 单页行×列(OBS_PPTX_MAX_ROWS/CHARS)截断+整体两态说明, 提示 slide=N 翻页"""
     items = data.get("slides", [])
     if not items:
         return ""
     lines = []
+    truncated = False
     total = data.get("slide_count", len(items))
     for i, slide in enumerate(items):
         if i >= OBS_MAX_DISPLAY_ITEMS:
             lines.append(f"  ... 还有 {len(items) - OBS_MAX_DISPLAY_ITEMS} 页")
+            truncated = True
             break
         num = slide.get("slide_num", i + 1)
         lines.append(f"  幻灯片 {num}/{total}")
         text = slide.get("text", "")
         if text:
-            if len(text) > OBS_MAX_STRING_LENGTH:
-                text = text[:OBS_MAX_STRING_LENGTH] + _truncation_msg(llm_data)
-            for line in text.split("\n"):
-                lines.append(f"    {line}")
+            tlines = text.split("\n")
+            if len(tlines) > OBS_PPTX_MAX_ROWS:
+                truncated = True
+                shown_tlines = tlines[:OBS_PPTX_MAX_ROWS]
+                lines.append(f"    (该页正文过长, 仅显示前 {OBS_PPTX_MAX_ROWS} 行, 共 {len(tlines)} 行)")
+            else:
+                shown_tlines = tlines
+            for line in shown_tlines:
+                lines.append(f"    {line[:OBS_PPTX_MAX_ROW_CHARS]}" if len(line) > OBS_PPTX_MAX_ROW_CHARS else f"    {line}")
         tables = slide.get("tables")
         if tables:
             lines.append(f"    表格: {len(tables)}个")
     notes = data.get("notes")
     if notes:
         lines.append(f"  ---\n  备注: {len(notes)}条")
+    if truncated:
+        lines.append("⚠ 已截断（单页行×列 OBS_PPTX_MAX_ROWS/CHARS）: 单页超 OBS_PPTX_MAX_ROWS 行 或 单行超 OBS_PPTX_MAX_ROW_CHARS 字符，请使用 slide=N 参数查看指定页")
+    else:
+        lines.append("✓ 无截断-完整")
     lines.append(f"---\n[slide_count: {total}]")
     return "\n".join(lines)
 
@@ -1213,7 +1313,7 @@ def _format_readtext_result(content: str, llm_data: dict = None) -> str:
     for ln in content_lines:
         if len(ln) > OBS_READTEXT_MAX_ROW_CHARS:
             truncated = True
-            lines.append(ln[:OBS_READTEXT_MAX_ROW_CHARS] + "...(截断)")
+            lines.append(f"{ln[:OBS_READTEXT_MAX_ROW_CHARS]} …(该行超宽已截断, 原{len(ln)}字符)")
         else:
             lines.append(ln)
     if total_lines > OBS_READTEXT_MAX_ROWS:

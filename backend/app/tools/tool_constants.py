@@ -15,6 +15,7 @@
 # 2026-07-20 - 小欧 - readtext 门限治理(章11.4): 新增 OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000(readtext 专属行×列, 显示域截断收口); read_text_file 去除 _select_lines max_line_length 单行截断(Tool 层零限制); MAX_READ_SIZE 依3.5改名 INER_READTEXT_READ_SIZE(各 tool 独立不公用, readtext 自有; 保留为3.4硬安全网, 文件过大拒绝, 不截断)
 # 2026-07-20 - 小欧 - 门限复查: 删除僵尸常量 FIND_PAGE_SIZE 与 READ_FILE_DEFAULT_LIMIT(全代码仅定义处存在, 无任何工具引用; find 分页已由 OBS_FIND_MAX_ROWS 取代、file 读取默认行数已由 INER_READTEXT_READ_SIZE/INER_EDITTEXT_READ_SIZE 取代); 依3.6+章14/18同例直接删除定义, 不保留【已作废】占位
 # 2026-07-20 - 小欧 - httpget ②修复: 新增 INER_HTTPGET_DATA_PREVIEW_MAX_CHARS=200KB(data内联预览上限, 避免5MB全文进data浪费传输/存储); INER_HTTPGET_JSON_PREVIEW_MAX_BYTES 下调至5MB
+# 2026-07-20 - 小欧 - 自然单位治理: 新增 OBS_PDF_MAX_ROWS/CHARS(≈前3页起头, 保留页标记)/OBS_PPTX_MAX_ROWS/CHARS(单页行×列)/OBS_TREE_MAX_ROWS/CHILDREN(层级感知截断); 新增 INER_READ_PDF_MAX_PAGES=200(无page参数时提取页数硬安全网)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -164,6 +165,16 @@ OBS_READTEXT_MAX_ROW_CHARS: int = 1000  # 【系统级】使用对象: observati
 OBS_EDITTEXT_MAX_ROWS: int = 200        # 【系统级】使用对象: observation_formatter.py(_format_edittext_result edittext 行数上限)
 OBS_EDITTEXT_MAX_ROW_CHARS: int = 1000  # 【系统级】使用对象: observation_formatter.py(_format_edittext_result edittext 单行上限, 长行放宽至1000减少截断)
 
+# —— 读取类工具「按被读物自然单位」观察截断常量（2026-07-20 小欧 自然单位治理: PDF=页 / DOCX=段落 / PPTX=幻灯片 / tree=层级 / clipboard=文本行）
+#     设计原则: 显示域窗口以介质自然单位为粒度(如 PDF 前几页、PPTX 整本提纲), 非盲目按行数一刀切; 截断均可由原单位取回(page=N/slide=N/进子目录/offset段落)
+OBS_PDF_MAX_ROWS: int = 150            # 【系统级】使用对象: observation_formatter.py(_format_pdf_result PDF 显示行数上限, ≈前3页起头, 保留 "--- 第 N 页 ---" 页标记)
+OBS_PDF_MAX_ROW_CHARS: int = 1000      # 【系统级】使用对象: observation_formatter.py(_format_pdf_result PDF 单行上限)
+#   注: DOCX/clipboard 无页码, 复用 OBS_READTEXT_MAX_ROWS/CHARS(段落/文本行窗口, 与人类读 Word/文本方式一致), 不另增 OBS_DOCTEXT_*(避免死代码)
+OBS_PPTX_MAX_ROWS: int = 60            # 【系统级】使用对象: observation_formatter.py(_format_slides PPTX 单张幻灯片正文行数上限, 幻灯片本短, 仅超长单页收口)
+OBS_PPTX_MAX_ROW_CHARS: int = 1000     # 【系统级】使用对象: observation_formatter.py(_format_slides PPTX 单行上限)
+OBS_TREE_MAX_ROWS: int = 100           # 【系统级】使用对象: observation_formatter.py(_format_tree tree 显示总行数上限, 层级感知: 与 max_depth + 每节点子项封顶配合, 非盲目行数)
+OBS_TREE_MAX_CHILDREN: int = 50        # 【系统级】使用对象: observation_formatter.py(_format_tree 每个目录节点最多展示的子项数, 超出标 "…还有 N 个", 类资源管理器)
+
 # 注: readmedia 的 base64 为二进制编码, 非可读文本, 不按文本行×列处理(章13.4 用户裁定回退为仅元数据+base64字符数摘要),
 #     故不新增 OBS_READMEDIA_* 常量(避免死代码); 若后续 readmedia 改返回转写文本, 再补 OBS_READMEDIA_* + 行×列 handler
 
@@ -182,6 +193,7 @@ INER_SHELL_OUTPUT_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有�
 INER_FETCHPAGE_READ_BYTES: int = 5 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: fetch_webpage.py(流式读取正文硬截断防 OOM, 3.4 硬安全网; 原 MAX_READ_BYTES=5_242_880; 依 3.5 改名 INER_ 前缀)
 INER_FETCHPAGE_MAX_CONTENT_LENGTH: int = 100 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: fetch_webpage.py(Content-Length 超阈值拒绝下载防 OOM, 3.4 硬安全网; 原 MAX_CONTENT_LENGTH=100MB; 依 3.5 改名 INER_ 前缀)
 INER_READ_XLSX_MAX_ROWS: int = 10000   # 【tool 级/私有内部常量】使用对象: read_xlsx.py(单次读取最大行数, 3.4 硬安全网防读超大表 OOM; 原 XLSX_MAX_ROWS=10000; 依 3.5 改名 INER_ 前缀, 触发置 data["truncated"]=True 非显示限制)
+INER_READ_PDF_MAX_PAGES: int = 200      # 【tool 级/私有内部常量】使用对象: read_pdf.py(无 page 参数时单次提取最大页数, 3.4 硬安全网防整本超长 PDF 读入内存 OOM; 超此仅提取前 N 页并置 truncated_hint, 用 page=N 取后续; 显示域窗口由 OBS_PDF_MAX_ROWS 收口)
 # 注: read_xlsx 无 offset 分页, 显示域行/列均不截断(否则 LLM 永久丢失数据且无法翻页取回), 故不新增 OBS_XLSX_*(避免死代码); 全量展示由 Tool 读出的数据, 仅 3.4 硬安全网 INER_READ_XLSX_MAX_ROWS 兜底防 OOM
 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES: int = 5 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: http_request.py(JSON body 预览截断, 3.4 硬安全网防响应体撑爆OOM/序列化溢出; 原 HTTP_JSON_PREVIEW_MAX_BYTES/_MAX_JSON_SIZE; 依 3.5 改名 INER_ 前缀)
 INER_HTTPGET_DATA_PREVIEW_MAX_CHARS: int = 200 * 1024  # 【tool 级/私有内部常量】使用对象: http_request.py(data内联预览字符上限, 避免5MB全文进data浪费传输/存储; 进data的_preview截至此值, 足够LLM判断JSON结构)
