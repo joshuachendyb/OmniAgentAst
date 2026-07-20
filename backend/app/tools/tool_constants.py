@@ -10,6 +10,7 @@
 # 2026-07-20 - 小欧 - shell 门限治理(章6.4): 新增 OBS_SHELL_MAX_ROWS=200/OBS_SHELL_MAX_ROW_CHARS=1000(shell 专属行×列, 显示域截断收口); SHELL_OUTPUT_MAX_CHARS 标记【已作废】由 OBS_SHELL_MAX_ROW_CHARS 取代
 # 2026-07-20 - 小欧 - find 门限治理(章7.4): 新增 OBS_FIND_MAX_ROWS=200/OBS_FIND_MAX_ROW_CHARS=300(find 专属行×列, 显示域截断收口); FIND_PAGE_SIZE/MAX_SEARCH_RESULTS 已删除(由 OBS_FIND_MAX_ROWS 取代, find 返回全部匹配, deadline 超时保护)
 # 2026-07-20 - 小欧 - searchweb 门限治理(章8.4): 新增 OBS_SEARCHWEB_MAX_ROWS=100/OBS_SEARCHWEB_MAX_ROW_CHARS=500(searchweb 专属行×列, 显示域截断收口); SEARCH_SNIPPET_MAX_CHARS/OBS_SNIPPET_MAX_CHARS 已删除(由 OBS_SEARCHWEB_MAX_ROW_CHARS 取代, searchweb 返回完整snippet)
+# 2026-07-20 - 小欧 - httpget 门限治理(章9.4): 新增 OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=2000(httpget 专属行×列, 显示域截断收口); HTTP_JSON_PREVIEW_MAX_BYTES 依3.5改名 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES(保留为3.4硬安全网防OOM, 触发置 _truncated+_reason)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -140,6 +141,10 @@ OBS_FIND_MAX_ROW_CHARS: int = 300       # 【系统级】使用对象: observati
 OBS_SEARCHWEB_MAX_ROWS: int = 100       # 【系统级】使用对象: observation_formatter.py(_format_items searchweb 行数上限)
 OBS_SEARCHWEB_MAX_ROW_CHARS: int = 500  # 【系统级】使用对象: observation_formatter.py(_format_items searchweb snippet/单行上限)
 
+# —— httpget 专属观察截断常量（显示域行×列；Tool 输出不截断, 仅显示域按行×列收口） ——
+OBS_HTTPGET_MAX_ROWS: int = 200          # 【系统级】使用对象: observation_formatter.py(_format_httpget_result httpget 行数上限, 结构化型保JSON不盲截)
+OBS_HTTPGET_MAX_ROW_CHARS: int = 2000    # 【系统级】使用对象: observation_formatter.py(_format_httpget_result httpget 单行上限, 保JSON不盲截)
+
 # ============================================================
 # 【tool 级】工具读取/输出上限 — 老陈 2026-07-15 归一化治理
 #     与 tool 紧密相关的长度/上限常量集中于此(便于查看对比检查),
@@ -153,7 +158,7 @@ MAX_BATCH_FILE_COUNT: int = 100                 # 【tool 级】使用对象: �
 INER_SHELL_OUTPUT_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: shell_engine.py(引擎读 shell 临时输出文件防 OOM, 3.4 硬安全网; 原 _MAX_OUTPUT_SZ / SHELL_OUTPUT_FILE_MAX_BYTES; 依 3.5 改名 INER_ 前缀)
 WEB_FETCH_MAX_CHARS: int = 10000       # 【tool 级】使用对象: fetch_webpage.py(网页正文提取上限; 原 max_tokens=8000→32000字符, 对齐 OBS 10000)
 XLSX_MAX_ROWS: int = 10000             # 【tool 级】使用对象: read_xlsx.py(单次读取最大行数; 原 max_rows=10000)
-HTTP_JSON_PREVIEW_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级】使用对象: http_request.py(JSON body 预览截断; 原 _MAX_JSON_SIZE)
+INER_HTTPGET_JSON_PREVIEW_MAX_BYTES: int = 10 * 1024 * 1024  # 【tool 级/私有内部常量】使用对象: http_request.py(JSON body 预览截断, 3.4 硬安全网防响应体撑爆OOM/序列化溢出; 原 HTTP_JSON_PREVIEW_MAX_BYTES/_MAX_JSON_SIZE; 依 3.5 改名 INER_ 前缀)
 DOWNLOAD_MAX_BYTES: int = 100 * 1024 * 1024  # 【tool 级】使用对象: download_file.py(下载文件大小上限; 原 _MAX_FILE_SIZE)
 WRITE_TEXT_MAX_CHARS: int = 10000      # 【tool 级】使用对象: file_schema.py(WritetextInput.content 入参校验上限; 原 max_length=10000)
 

@@ -3,6 +3,7 @@
 # 2026-07-13 - 小欧 - #3 http请求异常详情丢失修复为类型:repr兜底
 # 2026-07-15 - 小欧 - 常量归一化治理: JSON body 预览截断改引用 tool_constants.HTTP_JSON_PREVIEW_MAX_BYTES(原 _MAX_JSON_SIZE=10MB), 功能零退化
 # 2026-07-16 - 小欧 - 修复双层except吞异常(HTTP错误结构化返回LLM/429工具内Retry-After契约重试一次/瞬时故障抛引擎重试)+hint精准化
+# 2026-07-20 - 小欧 - httpget 门限治理(章9.4): HTTP_JSON_PREVIEW_MAX_BYTES 依3.5改名 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES(保留为3.4硬安全网防OOM); 删本地重复定义, 截断触发置 _truncated+_reason(显示域截断收口于 OBS_HTTPGET_MAX_ROWS/CHARS)
 """
 N1: httpget — 发起HTTP请求
 
@@ -35,7 +36,7 @@ from app.tools.tool_constants import (
     ERR_NETWORK_INVALID_PARAM,
     ERR_NETWORK_REQUEST_ERROR,
     ERR_NETWORK_TIMEOUT,
-    HTTP_JSON_PREVIEW_MAX_BYTES,
+    INER_HTTPGET_JSON_PREVIEW_MAX_BYTES,
 )
 
 
@@ -70,7 +71,7 @@ def _build_http_request_llm_data(
     }
 
 
-HTTP_JSON_PREVIEW_MAX_BYTES = 10 * 1024 * 1024  # 10MB
+# 2026-07-20 - 小欧 - httpget 门限治理(章9.4): 删本地重复定义(改引用 tool_constants.INER_HTTPGET_JSON_PREVIEW_MAX_BYTES, 3.4 硬安全网); 截断触发置 _truncated+_reason
 
 
 def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
@@ -79,8 +80,8 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     content_type_short = content_type.split(";")[0].strip() if content_type else "unknown"
 
     if "application/json" in content_type:
-        if len(response.content) > HTTP_JSON_PREVIEW_MAX_BYTES:
-            body = {"_truncated": True, "_preview": response.text[:HTTP_JSON_PREVIEW_MAX_BYTES]}
+        if len(response.content) > INER_HTTPGET_JSON_PREVIEW_MAX_BYTES:
+            body = {"_truncated": True, "_reason": "响应体超过 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES(10MB) 3.4 安全上限, 仅预览前 10MB", "_preview": response.text[:INER_HTTPGET_JSON_PREVIEW_MAX_BYTES]}
         else:
             try:
                 body = response.json()

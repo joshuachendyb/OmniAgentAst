@@ -51,7 +51,7 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   read_pptx       {slide_count, slides}           #16 slides items        页: OBS_MAX_DISPLAY_ITEMS=500         页数不限
   sysinfo         {basic, cpu, ...}               #17 sysinfo sections     每段10项                             不限
   compress        {compression_ratio, ...}        _format_compress_result  OBS_MAX_STRING_LENGTH=10000          N/A
-  httpget         {status_code, ...}              _format_httpget_result   OBS_MAX_STRING_LENGTH=10000          N/A
+   httpget         {status_code, ...}              _format_httpget_result   OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=2000  N/A
   analyze_data    {statistics, ...}               _format_analyze_data     转置表格(无行数限制)                    top_n(用户指定,默认None)
    ── _format_scalar_data ──
    36 tools        {key: scalar, ...}              _format_scalar_data     OBS_MAX_STRING_LENGTH=10000(值)       N/A
@@ -82,6 +82,8 @@ from app.tools.tool_constants import (
     OBS_FIND_MAX_ROW_CHARS,
     OBS_SEARCHWEB_MAX_ROWS,
     OBS_SEARCHWEB_MAX_ROW_CHARS,
+    OBS_HTTPGET_MAX_ROWS,
+    OBS_HTTPGET_MAX_ROW_CHARS,
 )
 
 
@@ -133,7 +135,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # #17 sysinfo       sysinfo                           不限                                每段10项
     # #0 空data         mouse_click                       N/A                                直接返回""
     # #18 compress      compress                          N/A                                OBS_MAX_STRING_LENGTH=10000
-    # #19 httpget       httpget                           N/A                                OBS_MAX_STRING_LENGTH=10000
+    # #19 httpget       httpget                           N/A                                OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=2000
     # #20 analyze_data  analyze_data                      top_n(用户指定,默认None)             转置表格(无行数限制)
     # #21 fallback      36个scalar工具(见下方清单)          N/A                                OBS_MAX_STRING_LENGTH=10000(值)
     #                                                                                        OBS_DICT_MAX_KEYS=100(键)
@@ -1075,8 +1077,9 @@ def _extract_html_summary(html: str, max_len: int = OBS_HTML_SUMMARY_MAX_CHARS) 
 #   输入: {"status_code":200,"body":{"userId":1,"title":"hello"},"headers":{"content-type":"application/json","date":"2026-07-05"}}
 #   输出: ── HTTP GET ── 200\n── Body ──\n{\n  "userId": 1,\n  "title": "hello"\n}\n── Headers ──\n  content-type: application/json\n  date: 2026-07-05
 def _format_httpget_result(data: dict) -> str:
-    """httpget HTTP 响应 — 小欧 2026-07-05"""
+    """httpget HTTP 响应 — 小欧 2026-07-05; 2026-07-20 门限治理(章9.4): 专属行×列 OBS_HTTPGET_MAX_ROWS/CHARS + 两态说明"""
     lines = [f"── HTTP GET ── {data.get('status_code', '?' )}"]
+    truncated = False
 
     body = data.get("body")
     if body is not None:
@@ -1087,9 +1090,20 @@ def _format_httpget_result(data: dict) -> str:
             body_str = _extract_html_summary(body)
         else:
             body_str = str(body)
-        if len(body_str) > OBS_MAX_STRING_LENGTH:
-            body_str = body_str[:OBS_MAX_STRING_LENGTH] + "\n... (截断)"
-        lines.append(body_str)
+        # 行×列截断收口(章9.4): OBS_HTTPGET_MAX_ROWS 行 / OBS_HTTPGET_MAX_ROW_CHARS 字符
+        body_lines = body_str.split("\n")
+        total_lines = len(body_lines)
+        if total_lines > OBS_HTTPGET_MAX_ROWS:
+            truncated = True
+            body_lines = body_lines[:OBS_HTTPGET_MAX_ROWS]
+        for ln in body_lines:
+            if len(ln) > OBS_HTTPGET_MAX_ROW_CHARS:
+                truncated = True
+                lines.append(ln[:OBS_HTTPGET_MAX_ROW_CHARS] + "...(截断)")
+            else:
+                lines.append(ln)
+        if total_lines > OBS_HTTPGET_MAX_ROWS:
+            lines.append(f"  ... 还有 {total_lines - OBS_HTTPGET_MAX_ROWS} 行（仅展示前 {OBS_HTTPGET_MAX_ROWS} 行）")
 
     headers = data.get("headers")
     if headers:
@@ -1097,6 +1111,7 @@ def _format_httpget_result(data: dict) -> str:
         for k, v in sorted(headers.items()):
             lines.append(f"  {k}: {v}")
 
+    lines.append("⚠ 已截断" if truncated else "✓ 无截断-完整")
     return "\n".join(lines)
 
 
