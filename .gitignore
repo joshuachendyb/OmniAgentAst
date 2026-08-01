@@ -60,3 +60,6 @@ backend/config/
 chart_*.png
 *_scan_tools.py
 tmp_*
+
+# 远程对象副本(自包含用,不提交)
+.git-remote/
