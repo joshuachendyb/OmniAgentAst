@@ -39,6 +39,7 @@ from app.tools.validate.file_safety_checker import check_content_safety
 from app.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_write, check_conflict, is_unchanged
+from app.tools.toolhelper.syntax_validator import detect_language, validate_syntax  # 小欧 2026-07-21 (83379fbb) 多语言语法护栏:BOM去扰+BUG-002
 
 
 def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
@@ -241,6 +242,17 @@ async def writetext(
         if encoding != original_encoding:
             encoding_warning = f"文件原始编码为'{original_encoding}',当前使用'{encoding}'写入,可能导致文件编码混乱"
 
+    # 语法校验 — 多语言(detect_language+BOM去扰+BUG-002); unknown/文本文件fail-open放行 — 小欧 2026-07-21
+    _lang = detect_language(str(path), checked_content)
+    _syn = validate_syntax(checked_content, _lang, str(path))
+    _syntax_error = _syn.error_text() if not _syn.valid else None
+    if _syntax_error and not append:
+        # 非追加: 语法错误阻断写入 — 小欧 2026-07-21
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=str(path), detail=_syntax_error, hint="请修正语法错误后重试", user_encoding=encoding, user_append=append)
+        return build_error(data={}, llm_data=llm_data)
+    # append 模式语法错误不阻断写入, 降级为 warning(观察者可见) — 小欧 2026-07-21
+
     try:
         operation_id = record_operation(
             task_id=task_id,
@@ -289,8 +301,9 @@ async def writetext(
                 bytes_written = len(checked_content.encode(encoding))
             except (UnicodeEncodeError, LookupError):
                 bytes_written = len(checked_content.encode("utf-8"))
-            if encoding_warning:
-                llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=encoding_warning, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
+            if encoding_warning or _syntax_error:
+                _detail = _syntax_error if _syntax_error else encoding_warning
+                llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=_detail, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
                 if diff_text:
                     llm_data["diff"] = diff_text
                 return build_warning(

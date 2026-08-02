@@ -35,6 +35,7 @@ from app.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import check_conflict_strict, record_write
 from app.tools.file.fuzzy_match import fuzzy_find_replace  # 小欧 2026-07-11
+from app.tools.toolhelper.syntax_validator import validate_syntax  # 小欧 2026-07-21 (83379fbb) BOM去扰+BUG-002,统一多语言校验
 
 # U+FFFD replacement character threshold for encoding detection — 小欧 2026-06-27 — 小欧 2026-07-05 统一为readtext的>=3 && >3%逻辑
 _REPLACEMENT_CHAR_MIN_COUNT = 3
@@ -443,20 +444,12 @@ async def _precise_replace_in_file(
             except UnicodeEncodeError as e:
                 replace_result['encode_error'] = f"替换后内容含编码 {used_enc} 不支持的字符: {e}"
                 return False
-            # 语法校验 — 仅 .py 文件; all拒绝, 增量warning — 小欧 2026-07-17
+            # 语法校验 — 仅 .py 文件; 语法错误阻断写入(不论once/all, 防BUG-002误写) — 委托syntax_validator(BOM去扰) — 小欧 2026-07-21
             if path.suffix == '.py' and not replace_result.get('encode_error'):
-                try:
-                    compile(new_content, str(path), 'exec')
-                except SyntaxError as se:
-                    _syn_msg = f"编辑后语法错误(行{se.lineno}: {se.msg})"
-                    if mode == "all":
-                        replace_result['encode_error'] = f"{_syn_msg}, 已拒绝写入(mode=all要求语法完整)"
-                        return False
-                    else:
-                        _cur = replace_result.get('safety_hint', '')
-                        _merged = "；".join(filter(None, [_cur, _syn_msg]))
-                        if _merged:
-                            replace_result['safety_hint'] = _merged[:200]
+                _syn = validate_syntax(new_content, "python", str(path))
+                if not _syn.valid:
+                    replace_result['encode_error'] = _syn.error_text()
+                    return False
             with open(path, 'w', encoding=used_enc, newline='') as f:
                 f.write(write_content)
             record_write(file_path)

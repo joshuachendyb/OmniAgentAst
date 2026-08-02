@@ -41,6 +41,7 @@ from app.tools.tool_constants import QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
 from app.constants import UTC_OFFSET_PATTERN
 
 from app.logger import logger
+from app.tools.toolhelper.syntax_validator import validate_syntax  # 小欧 2026-07-21 (83379fbb/fbdbe775) 统一Python语法校验: BOM去扰+BUG-002, 去除str(e)截断(调用方自行决定)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -463,19 +464,9 @@ def validate_html_content(content: str) -> Optional[str]:
 
 
 def validate_python_content(content: str, file_path: Optional[str] = None) -> Optional[str]:
-    """验证Python语法 — 小健 2026-05-25"""
-    try:
-        compile(content, file_path or '<string>', 'exec')
-        return None
-    except SyntaxError as e:
-        error_msg = f"Python语法验证失败: 第{e.lineno}行 - {e.msg}"
-        if "unterminated string literal" in e.msg:
-            error_msg += ";建议:转义字符串请使用raw string r'...',如 r'\\\\' 代替 '\\\\'"
-        elif "invalid character" in e.msg:
-            error_msg += ";建议:Python不支持全角标点,请使用半角括号()、逗号,、冒号:、分号;"
-        elif "invalid escape sequence" in e.msg:
-            error_msg += ";建议:请在字符串前加r前缀使用raw string,或将转义字符双写如 \\d → r'\\d'"
-        return error_msg
+    """验证Python语法 — 委托syntax_validator: BOM去扰+BUG-002, 无str(e)截断(调用方自行决定) — 小欧 2026-07-21 (83379fbb / fbdbe775)"""
+    _syn = validate_syntax(content, "python", file_path)
+    return _syn.error_text() if not _syn.valid else None
 
 
 # ═══════════════════════════════════════════════════════════════

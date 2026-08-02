@@ -202,14 +202,28 @@ def my_parse_json(json_str):
 
 ---
 
-**最后更新时间**: 2026-07-16 07:30:00
-**维护人**: 小沈
+**最后更新时间**: 2026-08-03 00:06:44
+**维护人**: 小沈 (v2.1 语法护栏由 小欧 重建于 2026-07-21；v2.2 落地路径修正(toolhelper)+API更名(validate_syntax/detect_language/SyntaxCheckResult/VALIDATORS)由 小沈 于 2026-08-03 恢复提交)
+
+## 六、语法护栏（app/tools/toolhelper/syntax_validator.py）【v2.1新增 — 小欧 2026-07-21】
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `validate_syntax` | 多语言(py/pyw/pyi/json/yaml/yml)语法校验；BOM去扰(BOM-002)+BUG-002；OCP注册表+unknown fail-open；异常不500(降级invalid) | content: str, language: str, file_path: Optional[str]=None | SyntaxCheckResult(valid/language/error/line/suggestion)；error_text() 组装对外字串 |
+| `detect_language` | 探测语言(扩展名+_CODE_EXT, shebang回退, unknown fail-open) | file_path: str="", content: Optional[str]=None | str |
+| `SyntaxCheckResult` | 校验结果dataclass | — | .valid/.language/.error/.line/.suggestion + error_text() |
+| `VALIDATORS` | 语言→校验器 OCP 注册表 | — | dict |
+| `_strip_bom` | 去除行首UTF-8 BOM(efbbbf) | content | str |
+
+> 来源: 从 `file/edit_text_file.py` 内联 `compile()` 抽出为可复用模块；`file/write_text_file.py` 与 `tool_fc_helper.validate_python_content` 复用 — 小欧 2026-07-21 (83379fbb)。
 
 ## 版本历史
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v2.2 | 2026-08-03 00:06:44 | 修正语法护栏落地路径为 app/tools/toolhelper/syntax_validator.py（fundamental 为误建）+API更名为 validate_syntax/detect_language/SyntaxCheckResult/VALIDATORS；从 git-blob-loss archive/_rewrite 实文件恢复 | 小沈 |
 | v2.0 | 2026-07-16 | 新增1.7 text_utils.py章节：登记extract_tool_call_xml(XML提取,LLM旧格式恢复路径)与format_tool_call_markup；truncate_text/add_line_numbers归属修正至text_utils.py | 小欧 |
+| v2.1 | 2026-07-21 | 新增 语法护栏 章节（app/tools/toolhelper/syntax_validator.py）: validate_syntax/detect_language/SyntaxCheckResult/VALIDATORS+_strip_bom（从edit_text_file抽出,BOM去扰+BUG-002+OCP+防500,复用write_text_file+tool_fc_helper） | 小欧 |
 | v1.9 | 2026-07-14 | 新增storage.py步骤存储4函数(allocate_and_insert_message/append_execution_step/load_execution_steps/finalize_message) | 小欧 |
 | v1.8 | 2026-07-10 | 删除test_marker.py（已废弃） | 小沈 |
 | v1.7 | 2026-07-08 | table_helper新增dict_table_to_rows，增强normalize_table_data（支持dict/list[dict]/None） | 小欧 |
