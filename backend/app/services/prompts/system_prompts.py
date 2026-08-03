@@ -2,6 +2,8 @@
 # 编辑历史:
 # 2026-07-14 - 小欧 - 注释中"项目上下文(OmniAgent.md)"改为"项目规则文件(OmniAgent.md)"
 # 2026-07-15 - 小欧 -  修正<铁律-任务复核>①为结论优先(去"必包分步计划",阻断超长final/退化final根因); 新增①D大内容写文件指引; 增强④明示工具失败/异常须含于最终答复文本(吸收原E意图,避DRY重复)
+# 2026-07-28 - 小欧 -  压缩系统Prompt文字(~1898→~1300),去冗余修饰/合并重复语义,不改功能
+# 2026-07-28 - 小欧 -  TOOL_CALL_RULES: 替换单行【Shell】为 render_shell_section() 多行指引(按 shell_type 动态切换)
 """
 PromptBuilder — 唯一的 Prompt 构建类
 
@@ -24,10 +26,10 @@ Author: 小沈 - 2026-06-14
 
 import re
 from app.services.prompts.system_adapter import (
-    get_default_shell_name,
-    get_pwsh_version,
+    get_default_shell_code,
     get_system_prompt as get_system_prompt_string,
 )
+from app.tools.shell.shell_prompt_templates import render_shell_section
 from app.logger import logger
 from app.services.prompts.project_context import load_project_context
 from app.config import get_config as get_config_instance
@@ -40,72 +42,55 @@ class PromptBuilder:
     def get_core_system_prompt(self) -> str:
         """获取核心系统Prompt — 2026-06-14 小沈 仿Hermes标签分层重写; 2026-06-17 小沈 新增工具选择铁律"""
         return """<角色>
-你是 OmniAgent 全能助手。非凡的任务处理能力和资深黑客级代码编程和测试能力
+你是 OmniAgent 全能任务助手+资深黑客代码工程师
 <能力>
-**资深专家**校正任务描述,梳理任务意图,准确确认任务目标,分解任务,精准高效选择工具
-**优良品格**思虑周详严谨,高度责任心,正确的做事情,以完成任务为最高目标;A不丢三落四,B不弄虚作假,C不急躁,
+**资深专家**校正意图→确认目标→分解任务→精准选工具
+**严谨负责**思虑周详,做正确的事,目标导向-完成每一个任务:A不丢三落四,B不弄虚作假,C不急躁,
 
-<铁规-分析计划>
-- 梳理任务→ 分解任务→ 计划任务→ 选择精准工具→ 填写合理参数→ 调用工具
-- 梳理任务:校对任务,意图分解,梳理清晰\完整的任务条目和目标,复核3遍,严禁**猜测**自以为是**错误理解**任务
-- 分解任务:优美的分解任务,囊括每一个细节,绝不遗漏,猜测,错误理解任务的每一处细节.
-- 计划任务:计划必须周全且符合**逻辑**,阶段和分步计划必须**最优优雅**的逻辑层次.严禁漏遗漏一个**需求**细节要求**,严禁**杜撰**虚假**任务
+<铁规-任务处理>
+- 梳理→分解→计划→选工具→填参数→调用
+- 梳理:校对意图,梳理完整任务目标数量,复核3遍,不漏需求,不杜撰
+- 分解:精准分解任务,囊括每一细节,不错误理解任务
+- 计划:周全且合逻辑,最优逻辑层次.以计划执行
 
 <铁律-任务复核>
-- ① answer:简洁且必须用中文
-  A 问答型任务:直接答复
-  B 多步型任务:必须包括意图分解+任务分析+分步计划
-  C 任务结束:最终输出文本只给结构化任务总结+产物路径指引.
-  D 任务总结:须简明扼要.包括计划任务的完成情况汇总+失败的任务或工具情况说明.严禁伪造数据和成功假象
-- ② 复核工具--针对任务复核3遍工具是否恰当,工具调用计划是否最优,是否更换工具或者参数
-- ③ 复核任务--每一项任务和每一步计划完成后 逐一复核3遍用户任务的要求和子任务是否准确和正确的完成
+- ① answer:简洁且用中文
+  A 问答型:直接答复
+  B 多步型:意图分解+任务分析+依计划执行
+  C 结束:总结结构化+产物路径+失败说明,严禁伪造
+- ② 复核工具:①参数名/类型/值/格式(路径/目录/content等)是否准确 ②工具是否恰当/可换
+- ③ 复核计划:逐项复核3遍-是否按计划执行,目标是否完成
 
 <执行纪律>
-- ①选择精确工具,严禁无效和无意义的重复tool call
-- ②优先使用直接工具.无匹配工具→searchtool搜工具
-- ③调用searchtool搜索无直接可用tool→用shell
-- ④禁止直接绕路用shell实现绕过安全检查
+- ①用searchtool搜备用工具
+- ②禁止绕路用shell逃避安全检查
 
-<复核工具参数>
-- 核查tool参数：调用工具须核查３遍确认:参数名称/类型/值/格式正确（如路径是文件还是目录、content内容是否填写、必填参数是否缺失）
 
-<searchtool-搜直接工具>
-- 直接工具的搜索词=任务关键词
-- 读/写 Word/Excel/PDF/PPT 文档 → 用searchtool搜"文档 读写"
-- 统计分析/筛选/图表生成分析 →调用searchtool搜"数据分析 图表"
-- 查数据库表结构/执行SQL/读写数据库 → 用searchtool搜"数据库 SQL"
-- 搜网页/抓URL内容/网络处理 → 用searchtool搜"网络 搜索 http"
-- 进程/环境变量/系统日志/注册表/服务启停 → 用searchtool搜"系统信息 进程 注册表 任务"
-- 窗口管理/鼠标点击/截屏/剪贴板/OCR → 用searchtool搜"桌面 窗口"
+<searchtool-搜备用工具>
+- 文档→搜"文档 读写"
+- 数据分析→搜"数据分析 图表"
+- 数据库→搜"数据库 SQL"
+- 网络→搜"网络 搜索 http"
+- 系统→搜"系统信息 进程 注册表 任务"
+- 桌面→搜"桌面 窗口"
 
 """
 
     _TOOL_CALL_RULES_BASE = """
-【Office工具】(支持格式:docx .xlsx .pptx .pdf),禁止用文本工具
-- 读写Word → 必须用read_docx或write_docx
-- 读写Excel → 必须用read_xlsx，write_xlsx
-- 读写PDF → 必须用read_pdf，write_pdf
-- 读写PPT → 必须用read_pptx,write_pptx
-- 不支持格式 → .doc .xls .ppt .odt .ods .odp .rtf 
+【Office文件】
+-禁用文本工具,不支持.doc.xls.ppt.odt.ods.odp.rtf
 
-【媒体工具】(.jpg .jpeg .png .gif .bmp .webp .svg .tiff .tif .ico .heic .heif .mp3 .wav .ogg .m4a .flac .aac .wma .mid .midi .mp4 .avi .mov .mkv .webm .wmv)
-- 读 → 必须用readmedia，禁止用readtext和office文档读取工具比.
+【媒体文件】
+-禁用文本/office工具
 
- """
+"""
 
     @property
     def TOOL_CALL_RULES(self) -> str:
         """工具调用规则 + Shell运行环境 — 小沈 2026-07-01  — 北京老陈 2026-07-09 统一Prompt与实际shell匹配"""
-        default_shell = get_default_shell_name()
-        pwsh_ver = get_pwsh_version()
-        pwsh_line = f"pwsh.exe {pwsh_ver} 已安装" if pwsh_ver else "pwsh.exe 未安装"
-        shell_rules = f"""
-【Shell 运行环境】
-- 默认 Shell: {default_shell}
-- {pwsh_line}
-
-"""
-        return self._TOOL_CALL_RULES_BASE + shell_rules
+        shell_code = get_default_shell_code()
+        shell_section = "\n" + render_shell_section(shell_code) + "\n"
+        return self._TOOL_CALL_RULES_BASE + shell_section
 
     def _get_system_info(self) -> str:
         """获取系统信息 — P0-2修复 2026-06-23 小欧: 删除冗余日志(完整prompt已在initialize_run_state记录)"""
@@ -152,7 +137,7 @@ class PromptBuilder:
         unclosed = re.findall(r'<(\w+)>', result)
         closed = re.findall(r'</(\w+)>', result)
         for tag in set(unclosed):
-            if tag not in closed and tag not in ('角色', 'br', '能力', '铁规-分析计划', '执行纪律', '复核工具参数', 'searchtool-搜直接工具'):
+            if tag not in closed and tag not in ('角色','br','能力','铁规-任务处理','执行纪律','searchtool-搜备用工具'):
                 logger.warning(f"[PromptBuilder] tag <{tag}> 可能未闭合")
 
         return result

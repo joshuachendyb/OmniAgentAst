@@ -1,8 +1,11 @@
+
 """
 系统信息适配器 — 生成系统自适应的 Prompt 内容
 
 【功能】根据服务器 OS 生成路径格式提示
 【重构】2026-06-14 小沈 — COMMANDS移至shell_register.execute_shell_command描述
+【2026-07-28 小欧】压缩系统提示文字: 删路径格式(LLM已知)、合并环境信息、压缩路径规则
+【2026-07-28 小欧】新增 get_default_shell_code(): 返回内部 shell 编码(ps7/ps5/bash),供 system_prompts 动态切换
 
 Author: 小沈 - 2026-06-14
 """
@@ -44,17 +47,11 @@ def _get_environment_info() -> str:
     now = now_str()
     is_git = _check_is_git_repo(root)
     git_status = "是" if is_git else "否"
-    return f"""
-【环境信息】
-- 项目根目录: {root}
-- Git仓库: {git_status}
-- 当前时间: {now}
-"""
+    return f"""【环境】任务根目录={root}, Git={git_status}, 时间={now}"""
 
 
-_ALWAYS_RULES = """【路径规则】
-- 禁止用 ~ 表示家目录
-- ❌ 中文路径禁止翻译或转换!
+_ALWAYS_RULES = """【路径】
+- 勿用~; 中文路径禁翻译/转换
 
 """
 
@@ -103,22 +100,32 @@ def get_default_shell_name() -> str:
     """返回实际默认 Shell 名称（匹配 shell_engine.py 的启动优先级）— 北京老陈 2026-07-09"""
     pwsh_ver = get_pwsh_version()
     if pwsh_ver:
-        return f"PowerShell {pwsh_ver} (pwsh.exe)"
+        return f"PowerShell {pwsh_ver}"
     ps_ver = get_powershell_version()
-    return f"Windows PowerShell {ps_ver} (powershell.exe)"
+    return f"Windows PowerShell {ps_ver}"
+
+
+def get_default_shell_code() -> str:
+    """返回默认 shell 的内部编码 (ps7/ps5/bash) — 小欧 2026-07-28"""
+    system = platform.system()
+    if system != "Windows":
+        return "bash"
+    pwsh_ver = get_pwsh_version()
+    if pwsh_ver:
+        return "ps7"
+    return "ps5"
 
 
 def get_system_prompt() -> str:
     """获取系统 Prompt 字符串（带缓存）"""
     system = platform.system()
-    path_format = PATH_FORMATS.get(system, "/home/xxx/file.txt")
     env_info = _get_environment_info()
 
     logger.debug("[system_adapter] OS=%s", system)
 
     return "\n\n".join([
         env_info,
-        f"【当前系统】{system}",
-        f"【路径格式】{path_format}",
+        f"【系统】{system}",
         _ALWAYS_RULES,
     ])
+
