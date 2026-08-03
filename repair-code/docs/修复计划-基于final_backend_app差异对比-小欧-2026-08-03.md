@@ -4,6 +4,14 @@
 **编写时间**: 2026-08-03 09:38:46
 **状态**: 待评审
 
+### 修订历史
+| 版本 | 时间 | 修订人 | 内容 |
+|------|------|--------|------|
+| v1.0 | 2026-08-03 09:38 | 小欧 | 初始版（A/B/C/C' 档估计） |
+| v1.1 | 2026-08-03 09:55 | 小欧 | 证据档修正为权威 Tier1(152)/Tier2(35)/Tier3(0) |
+| v1.2 | 2026-08-03 10:10 | 小欧 | 来源确认(G 盘 backend/app 已空, final 封闭)；差异分层修正(25/7/7/32→10/30/40→11/92/103→0/8/8=46+137=183) |
+| v1.3 | 2026-08-03 10:28 | 小沧 | 修正批次文件清单计数: 3.1=14文件(5缺失+9不同), 3.2 validate=4(diff incl registry_path_checker), 移 registry_path_checker 从3.8 归入3.2 |
+
 ---
 
 ## 一、背景
@@ -34,13 +42,19 @@
 
 ## 三、差异总览
 
+> **来源确认**：G 盘 live repo `backend/app` 已全部清空 (0 py)；G 盘 08-02 12:00 后**无任何 py 更新**。
+> 因此 `final_backend_app`(283 py, 08-02 11:32 生成) 是**唯一封闭、完整**的正确形态，对照源。当前 F 盘 repair 工程 **不会引入超出 final_backend_app 的新增文件**。
+
 | 依赖层 | 缺失(MISSING) | 不同(DIFF) | 小计 |
 |--------|--------------|-----------|------|
-| L0 基础层 (utils/logger/db) | 18 | 12 | 30 |
-| L1 services 公共层 | 11 | 28 | 39 |
-| L2 tools 工具层 | 17 | 90 | 107 |
-| L3 API/入口层 | 0 | 7 | 7 |
+| L0 基础层 (utils/logger/db) | 25 | 7 | 32 |
+| L1 services 公共层 | 10 | 30 | 40 |
+| L2 tools 工具层 | 11 | 92 | 103 |
+| L3 api/入口层 | 0 | 8 | 8 |
 | **合计** | **46** | **137** | **183** |
+
+> 注：DIFF 为**内容不同**（字长不同即视为不同）。baseline 独有 `logger/setup_logger.py` 被 final 删除（拆为 utils/log_config/*）。
+
 
 ## 四、分批修复计划（按依赖层，每批含验证）
 
@@ -83,14 +97,14 @@
 
 | 批次号 | 模块（关联组） | 涉及文件 | 权威档位 | 验证目标（含现有测试） |
 |--------|--------------|---------|---------|------------------------|
-| 3.1 | **fundamental-shell 链（核心）** | execute_shell_command, execute_shell_command_safety, shell_engine, shell_prompt_templates（缺失 4）+ shell/下 execute_shell_command, execute_shell_command_safety, shell_engine, shell_prompt_templates, shell_schema, shell_register（不同 6）+ fundamental/__init__, send_notification, fundamental_register, fundamental_schema（不同 4） | **A 档（DB+commit 最密集）** | `test_execute_shell_command_bugs`、`test_shell_quality`、`test_persistent_shell_engine`、`test_shell_pool_manager`（当前收集 ERROR 根因） |
-| 3.2 | **file 链（含 schema）** | compress_files, copy_file, delete_file, edit_text_file, extract_archive, file_register, file_schema, grep_file_content, list_directory, move_file, read_media_file, read_text_file, search_files, tree, write_text_file, file/__init__（不同 16）+ file_path_checker, timeout_validator, url_validator（validate，不同 3） | A/B 档 | file 相关测试 |
+| 3.1 | **fundamental-shell 链（核心）** | execute_shell_command, execute_shell_command_safety, shell_engine, shell_prompt_templates（缺失 4）+ shell/下 execute_shell_command, execute_shell_command_safety, shell_engine, shell_prompt_templates, shell_schema, shell_register（不同 6）+ fundamental/__init__, send_notification, fundamental_register, fundamental_schema（不同 4）= **14 文件 (5 缺失+9 不同)** | **A 档（DB+commit 最密集）** | `test_execute_shell_command_bugs`、`test_shell_quality`、`test_persistent_shell_engine`、`test_shell_pool_manager`（当前收集 ERROR 根因） |
+| 3.2 | **file 链（含 schema）** | compress_files, copy_file, delete_file, edit_text_file, extract_archive, file_register, file_schema, grep_file_content, list_directory, move_file, read_media_file, read_text_file, search_files, tree, write_text_file, file/__init__（不同 16）+ validate: file_path_checker, registry_path_checker, timeout_validator, url_validator（不同 4） | A/B 档 | file 相关测试 |
 | 3.3 | **network 链（含 schema）** | connectivity, url_validator（缺失 2）+ download_file, fetch_webpage, http_request, network_diagnose, network_register, network_schema, search_web, network/__init__（不同 8）+ http_client_sdk（如依赖） | A/B 档 | `test_network_tools`、`test_http_request_v2` |
 | 3.4 | **document 链（含 schema）** | document_register, document_schema, md_inline_utils, read_docx, read_pdf, read_pptx, read_xlsx, write_docx, write_pdf, write_pptx, write_xlsx（不同 11） | A 档（DB 覆盖多） | document 相关测试 |
 | 3.5 | **dataanalysis 链（含 schema）** | data_loader（缺失 1）+ analyze_data, filter_data, execute_sql, get_db_schema, query_sql, generate_chart, dataanalysis_schema, dataanalysis_register（不同 8） | A 档 | `test_analyze_data`、`test_filter_data` |
 | 3.6 | **desktop 链（含 schema，07-31 三堂会审 19 bug）** | clipboard_control, desktop_register, desktop_schema, keyboard_control, mouse_click/move/position/scroll, screen_capture, set_window_state, window_focus/info/resize（不同 12） | B 档（07-31 有 `fix:desktop*13个文件`、`fix:desktop三堂会审19个真实bug`） | desktop 相关测试 |
 | 3.7 | **system + timer 链（含 schema）** | system: create_task, delete_task, event_log, list_tasks, system_schema（不同 5）；timer: query_calendar, time_add, time_diff（缺失 3）+ timer_register, timer_schema, timer_set, timer_list, timer/__init__（不同 5） | B/C 档 | system/timer 相关测试 |
-| 3.8 | **win_registry 链** | registry_delete, registry_read, registry_write（不同 3）+ registry_path_checker（validate） | A 档（07-31 有 `fix:win_registry registry_write BugB`） | `test_win_registry_deep` |
+| 3.8 | **win_registry 链** | registry_delete, registry_read, registry_write（不同 3） | A 档（07-31 有 `fix:win_registry registry_write BugB`） | `test_win_registry_deep` |
 | 3.9 | **工具根 + toolhelper + 其余** | registry, tool_constants, tool_description, tool_error_classifier, tool_fc_helper, param_alias_mapper, schema_utils（不同 7）+ toolhelper/__init__, syntax_validator（不同 2）+ 其余 validate | A/B 档 | 工具注册冒烟 + 全量测试 |
 | **每批验证** | — | `py_compile` + 该模块单测通过 + import 链 + 工具注册冒烟 | — | 不得引入新失败 |
 
