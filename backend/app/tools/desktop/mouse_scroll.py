@@ -3,6 +3,11 @@
 mouse_scroll — 鼠标滚轮滚动
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
 """
+# 2026-07-30 - 小欧 - #13:llm_data"单位→次"与schema描述对齐
+# 2026-07-30 - 小欧 - #26:summary方向改中文(向上/向下)
+# 2026-07-31 - 小欧 - 三堂会审修复B25:amount<=0静默无操作,改返回错误提示amount必须为正整数
+# 2026-07-31 - 小欧 - 三堂会审增强:schema层MouseScrollInput.amount加ge=1约束(由desktop_schema.py补),运行时guard与schema双重防御
+# 2026-07-31 - 小欧 - 三堂会审修复:amount非int(如"ten")时原 amount<=0 抛TypeError崩溃,加类型守卫返回错误提示(与schema ge=1双重防御,LLM直接调函数路径不受Pydantic保护)
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -14,6 +19,7 @@ from typing import Dict, Any
 from app.tools.tool_response import build_success, build_error
 from app.tools.desktop.desktop_register import check_pyautogui_available
 from app.tools.tool_constants import ERR_DESKTOP_MOUSE_SCROLL
+from app.logger import logger
 
 
 def _build_mouse_scroll_llm_data(exec_code: str, duration_ms: int, direction: str = "", amount: int = 0,
@@ -26,8 +32,9 @@ def _build_mouse_scroll_llm_data(exec_code: str, duration_ms: int, direction: st
             "status": {"exec_code": "error", "message": "滚动失败", "code": err_code or ERR_DESKTOP_MOUSE_SCROLL, "detail": detail, "hint": hint if hint else "请检查滚动参数"},
             "duration_ms": duration_ms, "metrics": {},
         }
+    direction_cn = {"up": "向上", "down": "向下"}.get(direction, direction)
     return {
-        "summary": f"滚动完成: 方向是{direction} ,滚动{amount}单位",
+        "summary": f"滚动完成: {direction_cn},滚动{amount}次",
         "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "target": "", "params": {"direction": direction, "amount": amount}},
         "status": {"exec_code": "success", "message": "滚动完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
@@ -37,9 +44,18 @@ def _build_mouse_scroll_llm_data(exec_code: str, duration_ms: int, direction: st
 def mouse_scroll(direction: str = "down", amount: int = 3) -> Dict[str, Any]:
     """鼠标滚轮滚动 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-22 修复计时铁规"""
     t0 = _time_mod.perf_counter()
+    if not isinstance(amount, int) or isinstance(amount, bool):
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_mouse_scroll_llm_data("error", duration_ms, direction, amount, err_code=ERR_DESKTOP_MOUSE_SCROLL, detail="amount必须为正整数", hint="请提供大于0的整数滚动次数,amount必须为正整数")
+        return build_error(data={}, llm_data=llm_data)
+    if amount <= 0:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_mouse_scroll_llm_data("error", duration_ms, direction, amount, err_code=ERR_DESKTOP_MOUSE_SCROLL, detail="amount必须为正整数", hint="请提供大于0的滚动次数,amount必须为正整数")
+        return build_error(data={}, llm_data=llm_data)
     if not check_pyautogui_available():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_error(data={}, llm_data=_build_mouse_scroll_llm_data("error", duration_ms, direction, amount, "ERR_NO_PYAUTOGUI", hint="请安装pyautogui库: pip install pyautogui"))
+        logger.error("mouse_scroll: pyautogui未安装,工具暂时不能使用。请执行: pip install pyautogui")
+        return build_error(data={}, llm_data=_build_mouse_scroll_llm_data("error", duration_ms, direction, amount, "ERR_NO_PYAUTOGUI", hint="工具暂时不能使用:需要安装pyautogui库,请执行: pip install pyautogui"))
     try:
         import pyautogui
         scroll_amount = -amount if direction == "down" else amount

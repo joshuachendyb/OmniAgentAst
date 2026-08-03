@@ -19,7 +19,11 @@ DESKTOP Register - 桌面工具注册点
 11. clipboard_control - 剪贴板操作(read/write) (依赖: pyperclip)
 
 创建时间: 2026-04-29
-更新时间: 2026-06-22 小健
+更新时间: 2026-07-30 小欧 — 整改:#2 amount,#3坐标,#4子串匹配,#5传0保持原大小
+# 2026-07-30 - 小欧 - #8补window_info默认值; #9/#13 mouse_click补"绝对"; #11补display:1示例; #12补width=0示例
+# 2026-07-30 - 小欧 - #12:screen_capture描述补充display/region/dest互斥说明
+# 2026-07-31 - 小欧 - 三堂会审修复B17:注册循环加异常隔离,单个工具注册失败不阻断其余11个工具
+# 2026-07-31 - 小欧 - 三堂会审增强:mouse_click描述/示例补clicks双击参数;keyboard_control描述与schema同步单键能力
 """
 
 import importlib
@@ -82,25 +86,25 @@ from app.tools.desktop.clipboard_control import clipboard_control
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
 # 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 DESKTOP_TOOL_DESCRIPTIONS = {
-    "window_info": """列出当前系统所有可见窗口。可选include_minimized包含最小化窗口,filter_title按标题模糊过滤。返回窗口列表(含标题/状态/位置)。适用场景:需要查看当前打开了哪些窗口、确认窗口名称时使用。""",
+    "window_info": """列出当前系统所有可见窗口。可选include_minimized包含最小化窗口(默认False=不包含),filter_title按标题子串过滤。返回窗口列表(含标题/状态/位置)。适用场景:需要查看当前打开了哪些窗口、确认窗口名称时使用。""",
 
-    "window_focus": """聚焦(激活)指定窗口,将其置于前台。window_title支持大小写不敏感的模糊匹配。适用场景:需要将特定窗口切换到前台进行操作时使用。""",
+    "window_focus": """聚焦(激活)指定窗口,将其置于前台。window_title支持大小写不敏感的子串匹配。适用场景:需要将特定窗口切换到前台进行操作时使用。""",
 
-    "window_resize": """调整指定窗口的大小。window_title为窗口标题,width/height为目标宽高(像素)。适用场景:需要精确控制窗口尺寸时使用。""",
+    "window_resize": """调整指定窗口的大小。window_title为窗口标题,width/height为目标宽高(像素),传0保持原大小。适用场景:需要精确控制窗口尺寸时使用。""",
 
-    "set_window_state": """窗口状态操作。action决定操作类型:maximize(最大化)/minimize(最小化)/restore(还原)/topmost(置顶)/unpin(取消置顶)。window_title支持大小写不敏感的模糊匹配。适用场景:需要控制窗口显示状态时使用。""",
+    "set_window_state": """窗口状态操作。action决定操作类型:maximize(最大化)/minimize(最小化)/restore(还原)/topmost(置顶)/unpin(取消置顶)。window_title支持大小写不敏感的子串匹配。适用场景:需要控制窗口显示状态时使用。""",
 
-    "mouse_click": """在指定位置进行鼠标单击。x/y为屏幕坐标(可选,不传则在当前位置点击),button为left/right/middle(默认left)。适用场景:需要模拟点击按钮、选择菜单项时使用。""",
+    "mouse_click": """在指定位置进行鼠标单击。x/y为屏幕绝对坐标(可选,不传则在当前位置点击),button为left/right/middle(默认left),clicks为点击次数(1=单击/2=双击,默认1)。适用场景:需要模拟点击按钮、选择菜单项、双击打开文件或单元格时使用。""",
 
-    "mouse_move": """移动鼠标到指定屏幕坐标位置。x/y为必填的目标坐标。适用场景:需要将鼠标移动到特定位置进行后续操作时使用。""",
+    "mouse_move": """移动鼠标到指定屏幕坐标位置。x/y为屏幕绝对坐标(像素,左上角为原点)。适用场景:需要将鼠标移动到特定位置进行后续操作时使用。""",
 
-    "mouse_scroll": """模拟鼠标滚轮滚动。direction为up/down(默认down),amount为滚动单位数(默认3)。适用场景:需要滚动页面、浏览长文档时使用。""",
+    "mouse_scroll": """模拟鼠标滚轮滚动。direction为up/down(默认down),amount为滚动次数(每次约3行文本,默认3)。适用场景:需要滚动页面、浏览长文档时使用。""",
 
     "mouse_position": """获取鼠标当前的屏幕坐标位置。适用场景:需要确认鼠标当前位置、获取坐标用于后续点击/移动时使用。""",
 
     "keyboard_control": """键盘控制工具。action=type(输入文本)、shortcut(快捷键，支持组合键如ctrl+shift+esc)。适用场景:需要模拟键盘输入、执行快捷键操作时使用。""",
 
-    "screen_capture": """截取屏幕截图,支持全屏、指定区域和多显示器。适用场景:需要截取屏幕内容用于记录或传递给LLM分析时使用。""",
+    "screen_capture": """截取屏幕截图,支持全屏、指定区域和多显示器。注意:display参数与region/dest互斥,指定display时不能传region或dest。适用场景:需要截取屏幕内容用于记录或传递给LLM分析时使用。""",
 
     "clipboard_control": """剪贴板操作。action决定操作类型:read(读取剪贴板内容)/write(写入内容到剪贴板)。action=write时content参数必填。适用场景:需要读取或写入剪贴板文本时使用。""",
 
@@ -131,6 +135,7 @@ DESKTOP_TOOL_EXAMPLES = {
     ],
     "window_resize": [
         {"window_title": "Chrome", "width": 1920, "height": 1080},
+        {"window_title": "Chrome", "width": 0, "height": 0},
     ],
     "set_window_state": [
         {"window_title": "Notepad", "action": "maximize"},
@@ -142,6 +147,7 @@ DESKTOP_TOOL_EXAMPLES = {
     "mouse_click": [
         {"x": 500, "y": 300},
         {"x": 500, "y": 300, "button": "right"},
+        {"x": 500, "y": 300, "clicks": 2},
     ],
     "mouse_move": [
         {"x": 500, "y": 300},
@@ -162,6 +168,7 @@ DESKTOP_TOOL_EXAMPLES = {
     "screen_capture": [
         {},
         {"region": {"x": 0, "y": 0, "width": 800, "height": 600}},
+        {"display": 1},
         {"display": 2},
     ],
     "clipboard_control": [
@@ -191,17 +198,20 @@ def _register_desktop_tools():
         desc = DESKTOP_TOOL_DESCRIPTIONS.get(name, "")
         input_model = DESKTOP_TOOL_INPUT_MODELS.get(name)
         examples = DESKTOP_TOOL_EXAMPLES.get(name, [])
-
-        tool_registry.register(
-            name=name,
-            description=desc,
-            category=ToolCategory.DESKTOP,
-            implementation=method,
-            version="1.0.0",
-            input_model=input_model,
-            examples=examples,
-            dependencies=DESKTOP_TOOL_DEPENDENCIES.get(name, []),
-        )
+        try:
+            tool_registry.register(
+                name=name,
+                description=desc,
+                category=ToolCategory.DESKTOP,
+                implementation=method,
+                version="1.0.0",
+                input_model=input_model,
+                examples=examples,
+                dependencies=DESKTOP_TOOL_DEPENDENCIES.get(name, []),
+            )
+        except Exception as e:
+            logger.error(f"[desktop_register] 注册工具失败: {name}, 错误: {e}")
+            continue
         logger.debug(
             f"[desktop_register] 已注册工具: {name}, "
             f"使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, "

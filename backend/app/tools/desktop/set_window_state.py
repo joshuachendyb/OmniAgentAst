@@ -7,9 +7,15 @@ set_window_state — 窗口状态操作(maximize/minimize/restore/topmost/unpin)
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-07-30 - 小欧 - #6:hint区分非Windows平台vs缺pywin32库
+# 2026-07-30 - 小欧 - #16:msg_fmt死代码改为_; #18:修正多余冒号"为:{→为{"
+# 2026-07-30 - 小欧 - 删除未使用的Optional import
+# 2026-07-30 - 小欧 - _WINDOW_ACTIONS删除未使用的第三元素(原msg_fmt字符串);解构由func,args,_→func,args
+# 2026-07-31 - 小欧 - 三堂会审修复B8:window_title校验失败分支action传""丢失操作名,改传action
+# 2026-07-31 - 小欧 - 三堂会审修复B32:移除未使用的List import
 
 import time as _time_mod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error
@@ -21,13 +27,13 @@ from app.tools.desktop.window_info import (
 
 
 _WINDOW_ACTIONS = {
-    "maximize": (_win32gui.ShowWindow, (_win32con.SW_MAXIMIZE,), "已最大化窗口") if _win32gui else None,
-    "minimize": (_win32gui.ShowWindow, (_win32con.SW_MINIMIZE,), "已最小化窗口") if _win32gui else None,
-    "restore": (_win32gui.ShowWindow, (_win32con.SW_RESTORE,), "已还原窗口") if _win32gui else None,
+    "maximize": (_win32gui.ShowWindow, (_win32con.SW_MAXIMIZE,)) if _win32gui else None,
+    "minimize": (_win32gui.ShowWindow, (_win32con.SW_MINIMIZE,)) if _win32gui else None,
+    "restore": (_win32gui.ShowWindow, (_win32con.SW_RESTORE,)) if _win32gui else None,
     "topmost": (_win32gui.SetWindowPos, (_win32con.HWND_TOPMOST, 0, 0, 0, 0,
-              _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE), "已置顶窗口") if _win32gui else None,
+              _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE)) if _win32gui else None,
     "unpin": (_win32gui.SetWindowPos, (_win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
-            _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE), "已取消置顶窗口") if _win32gui else None,
+            _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE)) if _win32gui else None,
 }
 
 
@@ -44,7 +50,7 @@ def _build_set_window_state_llm_data(exec_code: str, duration_ms: int, action: s
             "status": {"exec_code": "error", "message": f"窗口操作{action}失败", "code": err_code or ERR_WINDOW_SET_STATE, "detail": detail, "hint": hint if hint else "请检查窗口标题和操作类型"},
             "duration_ms": duration_ms, "metrics": {},
         }
-    summary = f"窗口操作{action}完成: 窗口标题为:{window_title}"
+    summary = f"窗口操作{action}完成: 窗口标题为{window_title}"
     metrics = {}
     if matched_count > 1:
         summary += f": 匹配{matched_count}个窗口"
@@ -63,12 +69,16 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
     err = validate_str_param(window_title, "window_title")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_set_window_state_llm_data("error", duration_ms, "", window_title, err_code=ERR_WINDOW_NOT_FOUND, detail=err, hint="请提供有效的窗口标题,window_title不能为空")
+        llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_WINDOW_NOT_FOUND, detail=err, hint="请提供有效的窗口标题,window_title不能为空")
         return build_error(data={}, llm_data=llm_data)
     err = check_win32_platform()
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_DESKTOP_GET_WINDOW_INFO, hint="请确保系统为Windows且已安装pywin32库")
+        err_msg = err.get("error_detail", "")
+        logger.error("set_window_state: %s", err_msg)
+        is_platform = "仅支持Windows" in err_msg
+        hint = "此功能仅支持Windows系统" if is_platform else "工具暂时不能使用:需要安装pywin32库,请执行: pip install pywin32"
+        llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_DESKTOP_GET_WINDOW_INFO, hint=hint)
         return build_error(data={}, llm_data=llm_data)
 
     try:
@@ -87,7 +97,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
         hwnd = matched_hwnds[0]
         title = _win32gui.GetWindowText(hwnd)
 
-        func, args, msg_fmt = _WINDOW_ACTIONS[action]
+        func, args = _WINDOW_ACTIONS[action]
         func(hwnd, *args)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

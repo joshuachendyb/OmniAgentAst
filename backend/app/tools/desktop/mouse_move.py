@@ -7,6 +7,7 @@ mouse_move — 移动鼠标到指定位置
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-07-30 - 小欧 - 运行时异常hint去掉"或pyautogui库是否可用"(pyautogui已通过检查)
 
 import time as _time_mod
 from typing import Dict, Any
@@ -14,6 +15,7 @@ from typing import Dict, Any
 from app.tools.tool_response import build_success, build_error
 from app.tools.desktop.desktop_register import check_pyautogui_available
 from app.tools.tool_constants import ERR_DESKTOP_MOUSE_MOVE
+from app.logger import logger
 
 
 def _build_mouse_move_llm_data(exec_code: str, duration_ms: int, x: int, y: int,
@@ -40,7 +42,8 @@ def mouse_move(x: int, y: int) -> Dict[str, Any]:
     duration = 0
     if not check_pyautogui_available():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_error(data={}, llm_data=_build_mouse_move_llm_data("error", duration_ms, x, y, "ERR_NO_PYAUTOGUI", hint="请安装pyautogui库: pip install pyautogui"))
+        logger.error("mouse_move: pyautogui未安装,工具暂时不能使用。请执行: pip install pyautogui")
+        return build_error(data={}, llm_data=_build_mouse_move_llm_data("error", duration_ms, x, y, "ERR_NO_PYAUTOGUI", hint="工具暂时不能使用:需要安装pyautogui库,请执行: pip install pyautogui"))
     try:
         import pyautogui
         pyautogui.moveTo(x, y, duration=duration)
@@ -56,7 +59,7 @@ def mouse_move(x: int, y: int) -> Dict[str, Any]:
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_mouse_move_llm_data("error", duration_ms, x, y, detail=str(e), hint="请检查坐标是否在屏幕范围内或pyautogui库是否可用")
+        llm_data = _build_mouse_move_llm_data("error", duration_ms, x, y, detail=str(e), hint="请检查坐标是否在屏幕范围内")
         return build_error(data={}, llm_data=llm_data)
 
 

@@ -3,31 +3,39 @@
 window_focus — 聚焦窗口
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
 """
+# 2026-07-30 - 小欧 - #10:修复错别字"围为→为" #11:params key"title→window_title"
+# 2026-07-30 - 小欧 - #21:llm_data参数title→window_title对齐schema; #22:所有调用改关键字参数
+# 2026-07-30 - 小欧 - ImportError加logger.error + hint改"工具暂时不能使用:需要安装pywin32库"
+# 2026-07-31 - 小欧 - 三堂会审修复B9:SetForegroundWindow返回值未检查,失败假成功→检查后返回ERR_FOCUS_WINDOW
+# 2026-07-31 - 小欧 - 三堂会审修复B2:非Windows平台ImportError时提示"仅支持Windows"而非"安装pywin32"
+# 2026-07-31 - 小欧 - CRITICAL: 补充缺失的 ERR_NO_WIN32GUI 导入(第21行), 原缺导入导致非Windows/无pywin32环境时 NameError 崩溃
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
+import platform
 import time as _time_mod
 from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_FOCUS_WINDOW, ERR_WINDOW_NOT_FOUND
+from app.tools.tool_constants import ERR_FOCUS_WINDOW, ERR_WINDOW_NOT_FOUND, ERR_NO_WIN32GUI  # 2026-07-31 小欧: 补充缺失的 ERR_NO_WIN32GUI(原缺导入导致 NameError 崩溃)
+from app.logger import logger
 
 
-def _build_window_focus_llm_data(exec_code: str, duration_ms: int, title: str = "",
+def _build_window_focus_llm_data(exec_code: str, duration_ms: int, window_title: str = "",
                                   err_code: str = "", detail: str = "", hint: str = "") -> dict:
     """window_focus的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
-            "summary": f"聚焦窗口失败,其窗口标题围为 {title}",
-            "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "target": title, "params": {"title": title}},
+            "summary": f"聚焦窗口失败,其窗口标题为 {window_title}",
+            "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "target": window_title, "params": {"window_title": window_title}},
             "status": {"exec_code": "error", "message": "聚焦窗口失败", "code": err_code or ERR_FOCUS_WINDOW, "detail": detail, "hint": hint if hint else "请检查窗口标题是否正确"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"窗口已聚焦: 其窗口标题围为 {title}",
-        "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "target": title, "params": {"title": title}},
+        "summary": f"窗口已聚焦: 其窗口标题为 {window_title}",
+        "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "target": window_title, "params": {"window_title": window_title}},
         "status": {"exec_code": "success", "message": "窗口聚焦完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }
@@ -38,10 +46,14 @@ def window_focus(window_title: str) -> Dict[str, Any]:
     try:
         import win32gui
     except ImportError:
-        llm_data = _build_window_focus_llm_data("error", 0, window_title, "ERR_NO_WIN32GUI", hint="请安装pywin32库: pip install pywin32")
+        if platform.system() != "Windows":
+            llm_data = _build_window_focus_llm_data("error", 0, window_title=window_title, err_code=ERR_NO_WIN32GUI, hint="此功能仅支持Windows系统")
+            return build_error(data={}, llm_data=llm_data)
+        logger.error("window_focus: pywin32未安装,工具暂时不能使用。请执行: pip install pywin32")
+        llm_data = _build_window_focus_llm_data("error", 0, window_title=window_title, err_code=ERR_NO_WIN32GUI, hint="工具暂时不能使用:需要安装pywin32库,请执行: pip install pywin32")
         return build_error(data={}, llm_data=llm_data)
     if not window_title or not isinstance(window_title, str) or not window_title.strip():
-        llm_data = _build_window_focus_llm_data("error", 0, "", "ERR_INVALID_PARAM", detail="window_title不能为空", hint="请提供有效的窗口标题,window_title不能为空")
+        llm_data = _build_window_focus_llm_data("error", 0, window_title="", err_code="ERR_INVALID_PARAM", detail="window_title不能为空", hint="请提供有效的窗口标题,window_title不能为空")
         return build_error(data={}, llm_data=llm_data)
     t0 = _time_mod.perf_counter()
     try:
@@ -57,9 +69,11 @@ def window_focus(window_title: str) -> Dict[str, Any]:
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if target_hwnd:
-            win32gui.SetForegroundWindow(target_hwnd)
+            if not win32gui.SetForegroundWindow(target_hwnd):
+                llm_data = _build_window_focus_llm_data("error", duration_ms, window_title=window_title, err_code=ERR_FOCUS_WINDOW, hint="窗口未能被聚焦,可能被系统前台锁定,请稍后重试或先点击桌面")
+                return build_error(data={}, llm_data=llm_data)
             data = {}
-            llm_data = _build_window_focus_llm_data("success", duration_ms, window_title)
+            llm_data = _build_window_focus_llm_data("success", duration_ms, window_title=window_title)
             # ---- observation_formatter route -------------------------------------------
             # branch: #0 空data
             # trigger: data 为 {}
@@ -68,11 +82,11 @@ def window_focus(window_title: str) -> Dict[str, Any]:
             # ------------------------------------------------------------------------------
             return build_success(data=data, llm_data=llm_data)
         else:
-            llm_data = _build_window_focus_llm_data("error", duration_ms, window_title, ERR_WINDOW_NOT_FOUND, hint="请检查窗口标题是否正确,当前未找到匹配窗口")
+            llm_data = _build_window_focus_llm_data("error", duration_ms, window_title=window_title, err_code=ERR_WINDOW_NOT_FOUND, hint="请检查窗口标题是否正确,当前未找到匹配窗口")
             return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_window_focus_llm_data("error", duration_ms, window_title, detail=str(e), hint="聚焦窗口时发生异常,请检查窗口状态后重试")
+        llm_data = _build_window_focus_llm_data("error", duration_ms, window_title=window_title, detail=str(e), hint="聚焦窗口时发生异常,请检查窗口状态后重试")
         return build_error(data={}, llm_data=llm_data)
 
 

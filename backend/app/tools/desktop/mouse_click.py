@@ -7,6 +7,11 @@ mouse_click — 鼠标单击
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-07-30 - 小欧 - #4:x/y=None时summary显示"当前位置"替代"None"
+# 2026-07-30 - 小欧 - 运行时异常hint去掉"或pyautogui库是否可用"(pyautogui已通过检查)
+# 2026-07-30 - 小欧 - 删除click_type冗余变量(YAGNI),直接clicks=1+内联"single"
+# 2026-07-31 - 小欧 - 三堂会审修复B7:metrics的click_type文本"single击"中英混用,改"单击"
+# 2026-07-31 - 小欧 - 三堂会审增强:支持双击,加clicks参数(默认1),click_type按clicks动态生成single/double
 
 import time as _time_mod
 from typing import Dict, Any, Optional
@@ -14,41 +19,45 @@ from typing import Dict, Any, Optional
 from app.tools.tool_response import build_success, build_error
 from app.tools.desktop.desktop_register import check_pyautogui_available
 from app.tools.tool_constants import ERR_DESKTOP_MOUSE_CLICK
+from app.logger import logger
 
 
-def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: str = "", click_type: str = "",
+def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: str = "", clicks: int = 1,
                                  err_code: str = "", detail: str = "", hint: str = "") -> dict:
-    """mouse_click的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数"""
+    """mouse_click的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-31 加clicks"""
+    x_str = str(x) if x is not None else "当前位置"
+    y_str = str(y) if y is not None else "当前位置"
+    click_type = "double" if clicks == 2 else "single"
+    click_type_text = "双击" if clicks == 2 else "单击"
     if exec_code == "error":
         return {
-            "summary": f"点击({x},{y})，失败: {detail}",
-            "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button}},
+            "summary": f"{click_type_text}({x_str},{y_str})，失败: {detail}",
+            "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x_str},{y_str})", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
             "status": {"exec_code": "error", "message": f"点击失败: {detail}", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"点击({x},{y})，成功",
-        "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button, "click_type": click_type}},
-        "status": {"exec_code": "success", "message": "点击成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"{click_type_text}({x_str},{y_str})，成功",
+        "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x_str},{y_str})", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
+        "status": {"exec_code": "success", "message": f"{click_type_text}成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {"x": {"value": x, "text": f"X={x}"}, "y": {"value": y, "text": f"Y={y}"}, "button": {"value": button, "text": f"{button}键"}, "click_type": {"value": click_type, "text": f"{click_type}击"}},
+        "metrics": {"x": {"value": x, "text": f"X={x_str}"}, "y": {"value": y, "text": f"Y={y_str}"}, "button": {"value": button, "text": f"{button}键"}, "click_type": {"value": click_type, "text": click_type_text}},
     }
 
 
-def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = "left") -> Dict[str, Any]:
-    """鼠标单击 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-22 修复计时铁规"""
+def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = "left", clicks: int = 1) -> Dict[str, Any]:
+    """鼠标点击 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-22 修复计时铁规 — 小欧 2026-07-31 支持双击"""
     t0 = _time_mod.perf_counter()
-    click_type = "single"
     if not check_pyautogui_available():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_error(data={}, llm_data=_build_mouse_click_llm_data("error", duration_ms, x, y, button, click_type, "ERR_NO_PYAUTOGUI", hint="请安装pyautogui库: pip install pyautogui"))
+        logger.error("mouse_click: pyautogui未安装,工具暂时不能使用。请执行: pip install pyautogui")
+        return build_error(data={}, llm_data=_build_mouse_click_llm_data("error", duration_ms, x, y, button, clicks, "ERR_NO_PYAUTOGUI", detail="pyautogui库未安装", hint="工具暂时不能使用:需要安装pyautogui库,请执行: pip install pyautogui"))
     try:
         import pyautogui
-        clicks = 2 if click_type == "double" else 1
         pyautogui.click(x=x, y=y, button=button, clicks=clicks)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {}
-        llm_data = _build_mouse_click_llm_data("success", duration_ms, x, y, button, click_type)
+        llm_data = _build_mouse_click_llm_data("success", duration_ms, x, y, button, clicks)
         # ---- observation_formatter route -------------------------------------------
         # branch: #0 空data (L73)
         # trigger: data 为 {} → if not data: return ""
@@ -58,7 +67,7 @@ def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = 
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_mouse_click_llm_data("error", duration_ms, x, y, button, click_type, detail=str(e), hint="请检查坐标是否在屏幕范围内或pyautogui库是否可用")
+        llm_data = _build_mouse_click_llm_data("error", duration_ms, x, y, button, clicks, detail=str(e), hint="请检查坐标是否在屏幕范围内")
         return build_error(data={}, llm_data=llm_data)
 
 

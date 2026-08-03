@@ -7,6 +7,9 @@ window_info — 列出所有窗口
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-07-30 - 小欧 - #17:get_window_rect返回None时补默认值防前端报错
+# 2026-07-30 - 小欧 - #14:删除check_win32_platform()重复日志,只保留模块加载时一次
+# 2026-07-30 - 小欧 - hint区分非Windows平台vs缺pywin32库
 import platform
 import time as _time_mod
 from typing import Any, Dict, List, Optional
@@ -33,7 +36,7 @@ if platform.system() == "Windows":
         _HAS_WIN32 = True
     except ImportError:
         _HAS_WIN32 = False
-        logger.warning("pywin32未安装,桌面工具将不可用。请执行: pip install pywin32")
+        logger.error("window_info: pywin32未安装,工具暂时不能使用。请执行: pip install pywin32")
 
 
 def check_win32_platform() -> Optional[Dict[str, Any]]:
@@ -104,6 +107,8 @@ def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> int:
             return 1
         rect = get_window_rect(hwnd)
         state = get_window_state(hwnd)
+        if rect is None:
+            rect = {"left": 0, "top": 0, "right": 0, "bottom": 0, "width": 0, "height": 0}
         windows.append({"hwnd": hwnd, "title": title, "state": state, "position": rect})
     except Exception:
         pass
@@ -140,7 +145,9 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         _err_detail = err.get("error_detail", "桌面工具不可用")
-        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", include_minimized, detail=_err_detail, hint="请确保系统为Windows且已安装pywin32库")
+        is_platform = "仅支持Windows" in _err_detail
+        hint = "此功能仅支持Windows系统" if is_platform else "工具暂时不能使用:需要安装pywin32库,请执行: pip install pywin32"
+        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", include_minimized, detail=_err_detail, hint=hint)
         return build_error(data={}, llm_data=llm_data)
 
     try:
