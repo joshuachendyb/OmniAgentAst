@@ -2,11 +2,12 @@
 
 **编写人**: 小欧
 **编写时间**: 2026-08-03 09:38:46
-**状态**: ✅ 批次0/1/2/3.1-3.9 全部完成并已提交（含timer提前同步）；死文件清理完成；已打 v0.19.1 tag；**待办**：批次4 L3、全量回归+E2E
+**状态**: ✅ 批次0/1/2/3.1-3.9/4 L3 全部完成并已提交（含timer提前同步）；死文件清理完成；已打 v0.19.1 tag；全量对齐final；**待办**：全量回归+E2E、version.txt累积打新tag
 
 ### 修订历史
 | 版本 | 时间 | 修订人 | 内容 |
 |------|------|--------|------|
+| v1.11 | 2026-08-03 22:00 | 小欧 | 批次4 L3完成：health/messages/model_routes/task_queries/chat_sse/config/main 7文件同步final（health加DB真实验证+config get_max_context_tokens重命名+main shell路径改fundamental+get_version BUG#4修复）；toolhelper 2文件同步（__init__补文档+syntax_validator注释完善）；全量diff核对=仅剩logger/config.py CRLF/LF非真DIFF，5个MISSING=已迁移timer/已清理死文件非遗漏；验证=import OK+工具63+收集5350/0 error+347 passed |
 | v1.10 | 2026-08-03 21:50 | 小欧 | 批次3全部完成：3.6 desktop 13文件（mouse_click加clicks双击参数+window_title重命名+三堂会审19bug）、3.7(b) system 5文件、3.8 win_registry 3文件、3.9 工具根4文件（registry加注册重试机制+param_alias删恒等映射BUG19+error_classifier修BUG8/9+tool_description空白对齐）；toolhelper已一致无需操作；每个模块3组提交（备份+repair同步+live同步）；工具注册63不变；收集5350/0 error；338 passed；备份新增 backup-36/37/38/39 |
 | v1.9 | 2026-08-03 21:27 | 小欧 | 标记完成状态：✅ 批次0/1/2/3.1-3.5 全部完成并提交；timer分类已提前同步（3.7部分完成）；死文件清理40个；已打tag v0.19.1；更新批次总览与E2E全链路 |
 | v1.8 | 2026-08-03 20:39 | 小欧 | 死文件清理：fundamental 删 time_add/time_diff/query_calendar（已迁timer分类，测试import更新至timer：test_bug_discovery 6处+test_edge_cases 9处）；shell 删 execute_shell_command+execute_shell_command_safety（shell分类仅注册which）；验证=import OK+工具注册63+收集5350 0 error+338 passed；live 提交 25bfadc44(e7a1d1214) |
@@ -135,13 +136,24 @@
 | 3.9 | **工具根 + toolhelper + 其余** ✅（tool_constants/tool_fc_helper已提前同步） | registry, tool_constants, tool_description, tool_error_classifier, tool_fc_helper, param_alias_mapper, schema_utils（不同 7）+ toolhelper/__init__, syntax_validator（不同 2）+ 其余 validate | A/B 档 | 工具注册冒烟 + 全量测试 |
 | **每批验证** | — | `py_compile` + 该模块单测通过 + import 链 + 工具注册冒烟 | — | 不得引入新失败 |
 
-### 批次 4：L3 API/入口层（7 个）— ⏳ 待办（openai.py 已随 L1 触达同步）
+> **✅ 批次 4 补充（2026-08-03 22:00 小欧，3.9 补完 toolhelper + 批次4 L3）**：
+> - **3.9 补**：toolhelper 2 文件（__init__.py 0b→395b 补架构文档、syntax_validator 注释完善同逻辑）同步 final；备份 backup-39-toolhelper
+> - **批次 4 L3**：health/messages/model_routes/task_queries/chat_sse/config/main 7文件同步 final；health 加 DB 真实验证（BUG#18/22/23 修复）；config `get_max_context_chars`→`get_max_context_tokens` 重命名（调用方 base_agent 已用新名）；main shell 导入改 `app.tools.fundamental.shell_engine` 新路径 + get_version 补 0.0.0 默认值（BUG#4）；备份 backup-40-L3
+> - **全量 diff 复核**：live(238) vs final(283) 剩 45 MISSING（全部=已删死文件备份于 backup-deadcode + 5个已迁移timer/已清理shell，非遗漏）+ 3 DIFF（logger/config.py=CRLF/LF 非真 DIFF 保持；toolhelper 2 文件已同步）→ **除 logger/config.py 外 live 与 final 完全对齐**
+
+### 批次 4：L3 API/入口层（7 个）— ✅ 已完成
 | 文件 | 依据 |
 |------|------|
 | api/v1/chat/openai, health, messages, model_routes, task_queries; config, constants, main | 等 L0-L2 就绪后处理，避免 import 断裂 |
-| **验证** | 全后端 `import app.main` + pytest 全量 + 启动冒烟 | |
+| **验证** | 全后端 `import app.main` + pytest 全量 + 启动冒烟 |
 
-> **✅ 批次完成状态总览（2026-08-03 21:50 小欧，批次3全部完成）**：
+> **✅ 批次 4 完成（2026-08-03 22:00 小欧）**：
+> - openai.py 已随 L1 同步（same）；health/messages/model_routes/task_queries/chat_sse/config/main 7文件同步 final 并提交
+> - 实质性变更：health 加 DB 真实验证（遍历 chat/operations/task_tracker 三库 SELECT 1，失败标志 degraded，BUG#18/22/23 修复；list_tools required_set 预计算）；config `get_max_context_chars`→`get_max_context_tokens` 重命名（默认 500000→200000，调用方 base_agent 已用新名）；main shell 导入改 `app.tools.fundamental.shell_engine`（shell 链搬迁后新路径）+ get_version 补 0.0.0 默认值（BUG#4）
+> - messages/task_queries/model_routes/chat_sse 仅空白差异（无逻辑变更）
+> - 验证：import app.main OK + 工具注册 63 + 收集 5350/0 error + 338 passed；备份 backup-40-L3
+
+> **✅ 批次完成状态总览（2026-08-03 22:00 小欧，批次0-4全部完成）**：
 > | 批次 | 状态 | 说明 |
 > |------|------|------|
 > | 批次0 准备 | ✅ 完成 | 差异清单+基线 4597/16err |
@@ -156,8 +168,8 @@
 > | 批次3.7(b) system | ✅ 完成 | 5文件，create_task/delete_task/event_log/list_tasks/schema |
 > | 批次3.7(a) timer | ✅ 已提前同步 | timeadd/timediff/calendar迁入TIMER，注册6工具（TIMER回归修复） |
 > | 批次3.8 win_registry | ✅ 完成 | 3文件，registry_delete/read/write |
-> | 批次3.9 工具根+toolhelper | ✅ 完成 | registry重试机制+param_alias删恒等映射+error_classifier修BUG8/9+toolhelper已一致 |
-> | 批次4 L3 | ⏳ 待办 | openai.py已随L1同步，剩余health/messages等 |
+> | 批次3.9 工具根+toolhelper | ✅ 完成 | registry重试机制+param_alias删恒等映射+error_classifier修BUG8/9+toolhelper已同步 |
+> | 批次4 L3 | ✅ 完成 | health/messages/model_routes/task_queries/chat_sse/config/main 7文件同步final |
 
 ## 五、每批验证标准（铁律）
 
@@ -178,12 +190,11 @@
 
 ## 七、下一步
 
-> ✅ 已完成并提交：批次0/1/2/3.1-3.9 全部完成（含timer提前同步）+ 死文件清理40个；已打tag v0.19.1并推送。
-> 当前收集基线：**5350 tests collected / 0 error**；handlers/steps/validate = **338 passed / 1 skipped**；工具注册 **63 个**。
+> ✅ 已完成并提交：批次0/1/2/3.1-3.9/4 L3 全部完成（含timer提前同步）+ 死文件清理40个；已打tag v0.19.1并推送。
+> 当前收集基线：**5350 tests collected / 0 error**；handlers/steps/validate = **338 passed / 1 skipped**；工具注册 **63 个**；除 logger/config.py（CRLF/LF 非真 DIFF）外 live 与 final 完全对齐。
 
-1. 批次 4 L3 API/入口层（openai.py 已随 L1 触达同步，剩余 health/messages/model_routes/task_queries/config/main）
-2. 全量回归 + E2E（真实 LLM）
-3. 累积 version.txt 打新 tag
+1. 全量回归 + E2E（真实 LLM）
+2. 累积 version.txt 打新 tag
 
 ### 已确认遗留项（✅ 已解决）
 - ~~`tests/handlers/test_observation_formatter_grep.py`(9) + `test_observation_formatter_shell.py`(2) = **11 个测试过时失败**~~：observation_formatter.py 07-20 已改 `_format_matches(ms)` 单参数+新截断文案，测试仍传双参数/旧文案。**2026-08-03 已按用户批准更新测试**（import 对齐新版：grep 单参/shell 截断两态），handlers/steps/validate = **338 passed / 1 skipped**。测试文件不 commit（项目规则）。
