@@ -1,0 +1,335 @@
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-17 - 小欧 - 早期encoding校验: writetext()中encoding确定后立即用codecs.lookup()校验，替代等open()才报错
+# 2026-07-20 - 小欧 - 章14 尝试将 content_preview 改为完整内容(3.7/6.4); 用户裁定 write 工具不需回显全文, 恢复 _build_content_preview 文首50+文末50 Tool 层预览; schema 入参 max_length 仍依3.6去除
+# 2026-07-20 - 小欧 - 门限复查: 删 diff 生成处 [:2000] 静默截断(违3.7 Tool零截断); diff 由 llm_data["metrics"]["diff"] 改放 llm_data 顶层 "diff", 交 observation_formatter #544 行×列收口+两态呈现; data 仅留 content_preview(#23), 严禁与 llm_data 段重复显示
+"""
+F2: writetext — 写文本文件
+
+从file_tools.py拆分而来 — 小欧 2026-06-22
+"""
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+
+import asyncio
+import codecs
+import difflib
+import time as _time_mod
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+
+from app.tools.tool_response import build_success, build_error, build_warning
+
+
+def _build_content_preview(content: str) -> str:
+    """文首50 + 文末50 预览 — 小沈 2026-07-08；2026-07-20 用户裁定恢复此 Tool 层预览(write 工具不需回显全文)"""
+    if len(content) <= 100:
+        return content
+    return f"文首(50字符):{content[:50]}\n...(中间省略)...\n文末(50字符):{content[-50:]}"
+from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
+from app.services.task.task_context import _current_task_id
+from app.db.models.operation_models import OperationType
+
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
+from app.services.safety import record_operation, execute_with_safety
+from app.tools.validate.file_type_checker import check_for_text_tool
+from app.tools.validate.file_safety_checker import check_content_safety
+from app.logger import logger
+from app.tools.file.file_encoding import get_file_encoding
+from app.tools.file.file_state import record_write, check_conflict, is_unchanged
+from app.tools.toolhelper.syntax_validator import detect_language, validate_syntax  # 小欧 2026-07-21 (83379fbb) 多语言语法护栏:BOM去扰+BUG-002
+
+
+def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
+    """统一编码检测 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-30 抽公用"""
+    if not append:
+        return "utf-8"
+    path = Path(file_path)
+    if not (path.exists() and path.is_file()):
+        return "utf-8"
+    try:
+        result = get_file_encoding(str(path))
+        if result and result.get("data", {}).get("encoding"):
+            return result["data"]["encoding"]
+    except Exception:
+        logger.warning(f"[writetext] 编码检测失败: {file_path}")
+    return "utf-8"
+
+
+def _write_file_atomic(content: str, path: Path, encoding: str,
+                        append: bool, create_parents: bool) -> Tuple[bool, str]:
+    """原子写入文件 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 返回具体错误信息"""
+    try:
+        if create_parents:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        mode = 'a' if append else 'w'
+        with open(path, mode, encoding=encoding, newline='') as f:
+            f.write(content)
+        return True, ""
+    except (UnicodeEncodeError, UnicodeDecodeError) as e:
+        error_msg = f"编码错误: {e}"
+        logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
+        return False, error_msg
+    except LookupError as e:
+        error_msg = f"未知编码: {e}"
+        logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
+        return False, error_msg
+    except TypeError as e:
+        error_msg = f"内容类型错误: {e}"
+        logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
+        return False, error_msg
+    except OSError as e:
+        error_msg = f"文件系统错误: {e}"
+        logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
+        return False, error_msg
+    except Exception as e:
+        error_msg = f"写入异常: {e}"
+        logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
+        return False, error_msg
+
+
+def _check_write_safety(file_path: str, content: str,
+                         encoding: Optional[str] = None,
+                         append: bool = False) -> Tuple[Optional[str], str]:
+    """写入前安全检查 — 委托到统一函数 check_content_safety
+    append时指定encoding会导致编码混乱：
+    - 原文件GBK + 追加UTF-8 = 混合编码文件（损坏）
+    - 正确做法：append时不指定encoding，自动检测原文件编码
+    北京老陈 2026-07-09
+    """
+    return check_content_safety(content, "text", encoding=encoding, append=append)
+
+
+def _build_write_text_file_llm_data(
+    exec_code: str, duration_ms: int,
+    file_path: str = "", bytes_written: int = 0, detail: str = "",
+    hint: str = "", mtime_warning: str = "",
+    user_encoding: Optional[str] = None, user_append: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """write_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-06-24 增加warning — 小欧 2026-07-05 增加mtime_warning"""
+    _act_params = {"path": file_path}
+    if user_encoding:
+        _act_params["encoding"] = user_encoding
+    if user_append is not None:
+        _act_params["append"] = user_append
+    if exec_code == "error":
+        return {
+            "summary": f"写入文件{file_path}，失败",
+            "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
+            "status": {"exec_code": "error", "message": "写入失败", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查路径和写入权限"},
+            "duration_ms": duration_ms,
+            "metrics": {},
+        }
+    if exec_code == "warning" or bool(mtime_warning):
+        if mtime_warning:
+            hint = ("；".join([hint, mtime_warning]) if hint else mtime_warning)
+        return {
+            "summary": f"写入文件{file_path}，成功,提示说明: {detail or mtime_warning}，{bytes_written}字节",
+            "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
+            "status": {"exec_code": "warning", "message": f"写入成功但有警告: {detail or mtime_warning}", "code": "", "detail": detail or mtime_warning, "hint": hint or "请确认编码是否正确"},
+            "duration_ms": duration_ms,
+            "metrics": {
+                "bytes_written": {"value": bytes_written, "text": f"{bytes_written}字节"},
+            },
+        }
+    return {
+        "summary": f"写入文件 {file_path}，成功，共 {bytes_written} 字节",
+        "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
+        "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {
+            "bytes_written": {"value": bytes_written, "text": f"{bytes_written}字节"},
+        },
+    }
+
+
+async def writetext(
+    path: str,
+    content: str,
+    encoding: Optional[str] = None,
+    append: bool = False,
+) -> Dict[str, Any]:
+    """写入文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-11 路径参数统一为path"""
+    # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
+    file_path = path
+    t0 = _time_mod.perf_counter()
+    # content验证+类型转换(dict/list→json)统一在_check_write_safety处理 — 小欧 2026-07-08
+    # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
+    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+    is_valid, err, warn = validate_path(OpCategory.WRITE, file_path, content=content, append=append)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, hint="请检查文件路径是否正确", user_encoding=encoding, user_append=append)
+        return build_error(data={}, llm_data=llm_data)
+    if warn:
+        logger.warning(warn)
+
+    create_parents = True
+
+    # 文件类型检查 — 北京老陈 2026-07-09
+    ft_valid, ft_detail, ft_tool = check_for_text_tool(file_path, check_content=False, allow_create=True, op_category=OpCategory.WRITE)
+    if not ft_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        if ft_tool:
+            _hint = f"建议使用{ft_tool}工具"
+        elif ft_tool == "":
+            _hint = "请检查文件路径和文件名是否正确"
+        else:
+            _hint = "请选择正确的工具类型"
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=ft_detail, hint=_hint, user_encoding=encoding, user_append=append)
+        return build_error(data={}, llm_data=llm_data)
+
+    error, checked_content = _check_write_safety(file_path, content, encoding, append)
+    if error:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, hint="请检查文件写入安全限制", user_encoding=encoding, user_append=append)
+        return build_error(data={}, llm_data=llm_data)
+
+    encoding = encoding or _detect_file_encoding_for_write(file_path, append)
+
+    # 早期encoding校验 — 小欧 2026-07-17
+    try:
+        codecs.lookup(encoding)
+    except LookupError:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"无效编码: {encoding}", hint="请使用正确的编码名称", user_encoding=encoding, user_append=append)
+        return build_error(data={}, llm_data=llm_data)
+
+    task_id = _current_task_id.get()
+    if not task_id:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail="当前没有活跃任务ID", hint="系统内部错误，请重试", user_encoding=encoding, user_append=append)
+        return build_error(data={}, llm_data=llm_data)
+
+    path = Path(file_path)
+
+    # mtime 冲突检查 — 小欧 2026-07-05
+    conflict_warning = check_conflict(file_path)
+    if conflict_warning:
+        logger.warning(f"[writetext] {conflict_warning}")
+
+    # 无操作跳过 + 预读旧内容供 diff — 小欧 2026-07-05
+    old_content = None
+    if not append and path.exists():
+        try:
+            old_raw = path.read_text(encoding=encoding)
+            old_content = old_raw
+            if is_unchanged(file_path, checked_content):
+                record_write(file_path)  # 更新mtime缓存 — 小欧 2026-07-05
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_write_text_file_llm_data(
+                    "success", duration_ms, file_path=str(path),
+                    bytes_written=0, detail="内容未变化，跳过写入",
+                    mtime_warning=conflict_warning or "",
+                    user_encoding=encoding, user_append=append,
+                )
+                llm_data["metrics"]["diff"] = {"value": "(无变更)", "text": "内容相同，无操作"}
+                # ---- observation_formatter route -------------------------------------------
+                # branch: #23 writetext (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
+                # trigger: "content_preview" in data
+                # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
+                # file:    observation_formatter.py
+                # ------------------------------------------------------------------------------
+                return build_success(data={"content_preview": _build_content_preview(checked_content)}, llm_data=llm_data)
+        except Exception:
+            old_content = None
+
+    encoding_warning = None
+    if append and path.exists() and path.is_file():
+        original_encoding = _detect_file_encoding_for_write(file_path, True)
+        if encoding != original_encoding:
+            encoding_warning = f"文件原始编码为'{original_encoding}',当前使用'{encoding}'写入,可能导致文件编码混乱"
+
+    # 语法校验 — 多语言(detect_language+BOM去扰+BUG-002); unknown/文本文件fail-open放行 — 小欧 2026-07-21
+    _lang = detect_language(str(path), checked_content)
+    _syn = validate_syntax(checked_content, _lang, str(path))
+    _syntax_error = _syn.error_text() if not _syn.valid else None
+    if _syntax_error and not append:
+        # 非追加: 语法错误阻断写入 — 小欧 2026-07-21
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=str(path), detail=_syntax_error, hint="请修正语法错误后重试", user_encoding=encoding, user_append=append)
+        return build_error(data={}, llm_data=llm_data)
+    # append 模式语法错误不阻断写入, 降级为 warning(观察者可见) — 小欧 2026-07-21
+
+    try:
+        operation_id = record_operation(
+            task_id=task_id,
+            operation_type=OperationType.CREATE,
+            destination_path=path,
+            sequence_number=0,
+        )
+
+        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+        if operation_id:
+            # 数据库可用，使用execute_with_safety
+            def _do_write():
+                return execute_with_safety(operation_id, lambda: _write_file_atomic(checked_content, path, encoding, append, create_parents))
+            write_result = await asyncio.to_thread(_do_write)
+        else:
+            # 数据库不可用，直接执行文件操作
+            logger.info("Database unavailable, executing file operation without recording")
+            def _do_write_direct():
+                return _write_file_atomic(checked_content, path, encoding, append, create_parents)
+            write_result = await asyncio.to_thread(_do_write_direct)
+
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        if isinstance(write_result, tuple):
+            success, error_detail = write_result
+        else:
+            success, error_detail = bool(write_result), ""
+
+        if success:
+            # diff 生成 — 小欧 2026-07-05
+            diff_text = ""
+            if old_content is not None:
+                try:
+                    new_content = checked_content
+                    if old_content != new_content:
+                        diff_text = "".join(difflib.unified_diff(
+                            old_content.splitlines(keepends=True),
+                            new_content.splitlines(keepends=True),
+                            fromfile=str(path), tofile=str(path), n=3,
+                        ))
+                except Exception:
+                    pass
+
+            record_write(file_path)
+
+            try:
+                bytes_written = len(checked_content.encode(encoding))
+            except (UnicodeEncodeError, LookupError):
+                bytes_written = len(checked_content.encode("utf-8"))
+            if encoding_warning or _syntax_error:
+                _detail = _syntax_error if _syntax_error else encoding_warning
+                llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=_detail, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
+                if diff_text:
+                    llm_data["diff"] = diff_text
+                return build_warning(
+                    data={"content_preview": _build_content_preview(checked_content)},
+                    llm_data=llm_data,
+                )
+            llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
+            if diff_text:
+                llm_data["diff"] = diff_text
+            # ---- observation_formatter route -------------------------------------------
+            # branch: #23 writetext (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
+            # trigger: "content_preview" in data
+            # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
+            # file:    observation_formatter.py
+            # ------------------------------------------------------------------------------
+            return build_success(
+                data={"content_preview": _build_content_preview(checked_content)},
+                llm_data=llm_data,
+            )
+        else:
+            detail = error_detail or "写入文件失败"
+            llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=detail, hint="请检查文件路径和写入权限", user_encoding=encoding, user_append=append)
+            return build_error(data={}, llm_data=llm_data)
+
+    except Exception as e:
+        logger.error(f"Failed to write file {file_path}: {e}")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint=hint_for_write_error(e, Path(file_path).name), user_encoding=encoding, user_append=append)  # 统一错误提示 - 小欧 2026-07-12
+        return build_error(data={}, llm_data=llm_data)
