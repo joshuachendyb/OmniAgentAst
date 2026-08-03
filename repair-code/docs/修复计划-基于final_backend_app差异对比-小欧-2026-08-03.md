@@ -2,11 +2,12 @@
 
 **编写人**: 小欧
 **编写时间**: 2026-08-03 09:38:46
-**状态**: ✅ 批次0/1/2/3.1-3.5 全部完成并已提交（含timer分类提前同步）；死文件清理完成；已打 v0.19.1 tag；**待办**：批次3.6 desktop、3.7(a) system、3.8 win_registry、3.9 工具根、批次4 L3、全量回归+E2E
+**状态**: ✅ 批次0/1/2/3.1-3.9 全部完成并已提交（含timer提前同步）；死文件清理完成；已打 v0.19.1 tag；**待办**：批次4 L3、全量回归+E2E
 
 ### 修订历史
 | 版本 | 时间 | 修订人 | 内容 |
 |------|------|--------|------|
+| v1.10 | 2026-08-03 21:50 | 小欧 | 批次3全部完成：3.6 desktop 13文件（mouse_click加clicks双击参数+window_title重命名+三堂会审19bug）、3.7(b) system 5文件、3.8 win_registry 3文件、3.9 工具根4文件（registry加注册重试机制+param_alias删恒等映射BUG19+error_classifier修BUG8/9+tool_description空白对齐）；toolhelper已一致无需操作；每个模块3组提交（备份+repair同步+live同步）；工具注册63不变；收集5350/0 error；338 passed；备份新增 backup-36/37/38/39 |
 | v1.9 | 2026-08-03 21:27 | 小欧 | 标记完成状态：✅ 批次0/1/2/3.1-3.5 全部完成并提交；timer分类已提前同步（3.7部分完成）；死文件清理40个；已打tag v0.19.1；更新批次总览与E2E全链路 |
 | v1.8 | 2026-08-03 20:39 | 小欧 | 死文件清理：fundamental 删 time_add/time_diff/query_calendar（已迁timer分类，测试import更新至timer：test_bug_discovery 6处+test_edge_cases 9处）；shell 删 execute_shell_command+execute_shell_command_safety（shell分类仅注册which）；验证=import OK+工具注册63+收集5350 0 error+338 passed；live 提交 25bfadc44(e7a1d1214) |
 | v1.0 | 2026-08-03 09:38 | 小欧 | 初始版（A/B/C/C' 档估计） |
@@ -128,10 +129,10 @@
 | 3.3 | **network 链（含 schema）** ✅ | connectivity, url_validator（缺失 2）+ download_file, fetch_webpage, http_request, network_diagnose, network_register, network_schema, search_web, network/__init__（不同 8）+ http_client_sdk（如依赖） | A/B 档 | `test_network_tools`、`test_http_request_v2` |
 | 3.4 | **document 链（含 schema）** ✅ | document_register, document_schema, md_inline_utils, read_docx, read_pdf, read_pptx, read_xlsx, write_docx, write_pdf, write_pptx, write_xlsx（不同 11） | A 档（DB 覆盖多） | document 相关测试 |
 | 3.5 | **dataanalysis 链（含 schema）** ✅ | data_loader（缺失 1）+ analyze_data, filter_data, execute_sql, get_db_schema, query_sql, generate_chart, dataanalysis_schema, dataanalysis_register（不同 8） | A 档 | `test_analyze_data`、`test_filter_data` |
-| 3.6 | **desktop 链（含 schema，07-31 三堂会审 19 bug）** ⏳ 待办 | clipboard_control, desktop_register, desktop_schema, keyboard_control, mouse_click/move/position/scroll, screen_capture, set_window_state, window_focus/info/resize（不同 12） | B 档（07-31 有 `fix:desktop*13个文件`、`fix:desktop三堂会审19个真实bug`） | desktop 相关测试 |
-| 3.7 | **system + timer 链（含 schema）** ⏳ system待办 / ✅ timer已提前同步 | system: create_task, delete_task, event_log, list_tasks, system_schema（不同 5）；timer: query_calendar, time_add, time_diff（缺失 3）+ timer_register, timer_schema, timer_set, timer_list, timer/__init__（不同 5） | B/C 档 | system/timer 相关测试 |
-| 3.8 | **win_registry 链** ⏳ 待办 | registry_delete, registry_read, registry_write（不同 3） | A 档（07-31 有 `fix:win_registry registry_write BugB`） | `test_win_registry_deep` |
-| 3.9 | **工具根 + toolhelper + 其余** ⏳ 待办（tool_constants/tool_fc_helper已提前同步） | registry, tool_constants, tool_description, tool_error_classifier, tool_fc_helper, param_alias_mapper, schema_utils（不同 7）+ toolhelper/__init__, syntax_validator（不同 2）+ 其余 validate | A/B 档 | 工具注册冒烟 + 全量测试 |
+| 3.6 | **desktop 链（含 schema，07-31 三堂会审 19 bug）** ✅ | clipboard_control, desktop_register, desktop_schema, keyboard_control, mouse_click/move/position/scroll, screen_capture, set_window_state, window_focus/info/resize（不同 12） | B 档（07-31 有 `fix:desktop*13个文件`、`fix:desktop三堂会审19个真实bug`） | desktop 相关测试 |
+| 3.7 | **system + timer 链（含 schema）** ✅ | system: create_task, delete_task, event_log, list_tasks, system_schema（不同 5）；timer: query_calendar, time_add, time_diff（缺失 3）+ timer_register, timer_schema, timer_set, timer_list, timer/__init__（不同 5） | B/C 档 | system/timer 相关测试 |
+| 3.8 | **win_registry 链** ✅ | registry_delete, registry_read, registry_write（不同 3） | A 档（07-31 有 `fix:win_registry registry_write BugB`） | `test_win_registry_deep` |
+| 3.9 | **工具根 + toolhelper + 其余** ✅（tool_constants/tool_fc_helper已提前同步） | registry, tool_constants, tool_description, tool_error_classifier, tool_fc_helper, param_alias_mapper, schema_utils（不同 7）+ toolhelper/__init__, syntax_validator（不同 2）+ 其余 validate | A/B 档 | 工具注册冒烟 + 全量测试 |
 | **每批验证** | — | `py_compile` + 该模块单测通过 + import 链 + 工具注册冒烟 | — | 不得引入新失败 |
 
 ### 批次 4：L3 API/入口层（7 个）— ⏳ 待办（openai.py 已随 L1 触达同步）
@@ -140,7 +141,7 @@
 | api/v1/chat/openai, health, messages, model_routes, task_queries; config, constants, main | 等 L0-L2 就绪后处理，避免 import 断裂 |
 | **验证** | 全后端 `import app.main` + pytest 全量 + 启动冒烟 | |
 
-> **✅ 批次完成状态总览（2026-08-03 21:27 小欧）**：
+> **✅ 批次完成状态总览（2026-08-03 21:50 小欧，批次3全部完成）**：
 > | 批次 | 状态 | 说明 |
 > |------|------|------|
 > | 批次0 准备 | ✅ 完成 | 差异清单+基线 4597/16err |
@@ -151,11 +152,11 @@
 > | 批次3.3 network | ✅ 完成 | 10文件（含新增connectivity/url_validator） |
 > | 批次3.4 document | ✅ 完成 | 11文件 |
 > | 批次3.5 dataanalysis | ✅ 完成 | 9文件（含新增data_loader） |
+> | 批次3.6 desktop | ✅ 完成 | 13文件，mouse_click加clicks支持双击+window_title重命名+三堂会审19bug |
+> | 批次3.7(b) system | ✅ 完成 | 5文件，create_task/delete_task/event_log/list_tasks/schema |
 > | 批次3.7(a) timer | ✅ 已提前同步 | timeadd/timediff/calendar迁入TIMER，注册6工具（TIMER回归修复） |
-> | 批次3.6 desktop | ⏳ 待办 | 12文件 B档 07-31三堂会审19bug |
-> | 批次3.7(b) system | ⏳ 待办 | 5文件 |
-> | 批次3.8 win_registry | ⏳ 待办 | 3文件 |
-> | 批次3.9 工具根+toolhelper | ⏳ 待办 | tool_constants/tool_fc_helper已提前同步，剩余registry等 |
+> | 批次3.8 win_registry | ✅ 完成 | 3文件，registry_delete/read/write |
+> | 批次3.9 工具根+toolhelper | ✅ 完成 | registry重试机制+param_alias删恒等映射+error_classifier修BUG8/9+toolhelper已一致 |
 > | 批次4 L3 | ⏳ 待办 | openai.py已随L1同步，剩余health/messages等 |
 
 ## 五、每批验证标准（铁律）
@@ -177,15 +178,12 @@
 
 ## 七、下一步
 
-> ✅ 已完成并提交：批次0/1/2/3.1-3.5（含timer提前同步）+ 死文件清理40个；已打tag v0.19.1并推送。
+> ✅ 已完成并提交：批次0/1/2/3.1-3.9 全部完成（含timer提前同步）+ 死文件清理40个；已打tag v0.19.1并推送。
 > 当前收集基线：**5350 tests collected / 0 error**；handlers/steps/validate = **338 passed / 1 skipped**；工具注册 **63 个**。
 
-1. 批次 3.6 desktop 链（12 文件，B 档，07-31 三堂会审 19 bug）
-2. 批次 3.7(b) system 链（5 文件）
-3. 批次 3.8 win_registry 链（3 文件）
-4. 批次 3.9 工具根 + toolhelper 剩余（registry.py、param_alias_mapper、tool_description、tool_error_classifier、toolhelper 等——注意 tool_constants/tool_fc_helper 已提前同步）
-5. 批次 4 L3 API/入口层（openai.py 已随 L1 触达同步，剩余 health/messages/model_routes/task_queries/config/main）
-6. 全量回归 + E2E（真实 LLM）
+1. 批次 4 L3 API/入口层（openai.py 已随 L1 触达同步，剩余 health/messages/model_routes/task_queries/config/main）
+2. 全量回归 + E2E（真实 LLM）
+3. 累积 version.txt 打新 tag
 
 ### 已确认遗留项（✅ 已解决）
 - ~~`tests/handlers/test_observation_formatter_grep.py`(9) + `test_observation_formatter_shell.py`(2) = **11 个测试过时失败**~~：observation_formatter.py 07-20 已改 `_format_matches(ms)` 单参数+新截断文案，测试仍传双参数/旧文案。**2026-08-03 已按用户批准更新测试**（import 对齐新版：grep 单参/shell 截断两态），handlers/steps/validate = **338 passed / 1 skipped**。测试文件不 commit（项目规则）。
