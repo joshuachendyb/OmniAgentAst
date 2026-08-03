@@ -13,6 +13,7 @@
 | v1.3 | 2026-08-03 10:28 | 小沧 | 修正批次文件清单计数: 3.1=14文件(5缺失+9不同), 3.2 validate=4(diff incl registry_path_checker), 移 registry_path_checker 从3.8 归入3.2 |
 | v1.4 | 2026-08-03 12:11 | 小沧 | 批次0收尾：记录 pytest 收集基线 = 4597 tests collected, 16 errors (16个collection-error文件清单) |
 | v1.5 | 2026-08-03 12:30 | 小沧 | 批次1 L0 权威清单核实：32=25缺失+7不同；`logger/config.py` 为 CRLF/LF 行尾差异非真 DIFF；api_logger diff=导入 setup_logger→shared_handler final 正确 |
+| v1.6 | 2026-08-03 13:25 | 小沧 | 批次1 L0 修复完成：32文件恢复+删遗留setup_logger.py+test_logger路径补漏修正+类内顺序依赖修复；验证 20+53 passed，收集基线不变 |
 
 ---
 
@@ -85,6 +86,13 @@
 | db 缺失(1) | models/operation_enums | B 档 | final 为准恢复 |
 | db 不同(1) | database(+35/-1) | A 档 | 有 commit，以 final 为准 |
 | **验证** | `py_compile` 全部 + 单测（logger/db 相关）+ import 链检查 | | |
+
+> **✅ 批次 1 完成（2026-08-03 13:25 小沧）**：
+> - 32 文件已恢复至 `repair-code/backend/app` 并应用至 live `backend/app`
+> - 删除遗留 `logger/setup_logger.py`（07-28 重构已删，final 对齐；备份至 `repair-code/forensics/backup-l0/`）
+> - **测试补漏修正**：`test_logger.py` 导入 `app.logger.setup_logger` → `app.logger.shared_handler`（G 盘测试修改时间 07/11，确认为 07-28 重构漏修的 case）；并修 `_loggers()` 唯一 logger 名规避类内顺序依赖（原 `test_size_rotation` 类内先跑 `shared_across_loggers` 会缓存旧 handler 致 FAIL，reverse 序则通过——测试隔离缺陷非系统代码）
+> - 验证：py_compile 全过；L0 import 链 27/27；新函数 log_and_print/normalize_list_dict/safe_utc_offset/truncate_summary 断言通过；`test_logger`+`test_prompt_log_fix`=**20 passed**；`test_bug_discovery`+`test_bug_hunting`=**53 passed**
+> - 收集基线复核：**4597 collected, 16 errors 不变**（16 error 仍为批次 3.1 缺失，L0 未引入新错误）
 
 ### 批次 2：L1 services 公共层（39 个）
 > 顺序：services/llm → services/agent/types,agent_utils → services/agent → services/safety → services/chat/task/lifecycle/model/prompts
