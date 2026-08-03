@@ -1,6 +1,9 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"移动文件失败"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
+# 2026-07-26 - 小沈 - _move_sync预期失败改raise为return(False,msg)并对齐6工具范式; else分支解包tuple对齐executor返回格式
+# 2026-07-26 - 小欧 - overwrite模式shutil.rmtree缺onerror,子目录只读文件导致WinError 5崩溃。增_remove_readonly闭包+onerror,对齐delete_file.py模式。
 """
 F10: move_file — 移动文件
 
@@ -83,27 +86,34 @@ async def _move_file_impl(
             source_path=src, destination_path=dst, sequence_number=0,
         )
 
+        def _remove_readonly(func, path, excinfo):
+            """解除只读属性后重试 — 小欧 2026-07-26"""
+            os.chmod(path, os.stat(path).st_mode | 0o200)
+            func(path)
+
         def _move_sync():
+            """返回(成功bool, 错误str) — 预期失败return而非raise,对齐6工具范式 — 小沈 2026-07-26"""
             if dst.exists():
                 if not overwrite:
-                    raise FileExistsError(f"目标路径已存在: {dst},请设置overwrite=True")
+                    return False, f"目标路径已存在: {dst},请设置overwrite=True"
                 if not os.access(str(dst), os.W_OK):
                     os.chmod(str(dst), os.stat(str(dst)).st_mode | 0o200)
                 if dst.is_dir():
                     logger.warning(f"[move] overwrite模式: 目标目录已存在,将删除后移动: {dst}")
-                    shutil.rmtree(str(dst))
+                    shutil.rmtree(str(dst), onerror=_remove_readonly)
                 else:
                     dst.unlink()
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(src), str(dst))
-            return True
+            return True, None
 
-        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24 — 小沈 2026-07-26 else分支解包tuple对齐executor
         if operation_id:
             success, detail = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_move_sync)
         else:
             logger.info("Database unavailable, executing move operation without recording")
-            success = await asyncio.to_thread(_move_sync)
+            raw = await asyncio.to_thread(_move_sync)
+            success, detail = raw if isinstance(raw, tuple) else (raw, None)
 
         if success:
             # 小欧 2026-07-16 移除未消费的 operation_id 返回值(YAGNI, 调用方不读取)
@@ -176,3 +186,4 @@ async def move(
         error_detail = result.get("error_detail", "移动文件失败")
         llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=error_detail, hint=result.get("hint", "请检查移动操作的参数和文件状态"), user_overwrite=overwrite)  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)
+

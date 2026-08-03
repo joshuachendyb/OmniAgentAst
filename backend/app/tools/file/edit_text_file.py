@@ -4,8 +4,16 @@
 # 2026-07-17 - 小欧 - 新增护栏3项: ①锚点重叠检查(before/after拒绝); ②语法校验(all拒绝+增量warning); ③all宽匹配/边界拦截(拒绝+warning)
 # 2026-07-17 - 小欧 - before/after 自动补空行(默认生效,无参数): 新增 _blank_line_sep, before/after 插入时与锚点/后续均隔一个空行(PEP8)
 # 2026-07-17 - 小欧 - DRY重构: 抽出 _is_dangerous_anchor(old_string), _safety_wide_replace 仅保留宽匹配warning, 三引号拒绝统一走 _is_dangerous_anchor+内联
-# 2026-07-20 - 小欧 - MAX_READ_SIZE 依3.5改名 INER_EDITTEXT_READ_SIZE(edittext 自有内部常量, 各 tool 独立不公用, INER_ 前缀; 3.4 硬安全网保留, 文件过大拒绝, 不截断)
+# 2026-07-20 - 小欧 - MAX_READ_SIZE 依3.5改名 EDITTEXT_INPUT_MAX_BYTES(edittext 自有内部常量, 各 tool 独立不公用, INER_ 前缀; 3.4 硬安全网保留, 文件过大拒绝, 不截断)
 # 2026-07-20 - 小欧 - 门限复查: _build_edit_text_file_llm_data 移除顶层 "diff"(及 diff[:500] 截断, 违3.7); diff 统一经 data["diff"] → #24(已行×列收口+两态), 消除与 llm_data 段顶层 diff(:544)的重复渲染; 全/部分应用均置 data={"diff":...}
+# 2026-07-21 - 小欧 - 修字段语义错位(SLAP/KISS-DIRECT): 阻断写入的校验错误字段 encode_error→validation_error(原误将语法错误存入编码错误字段), 全文件6处同步
+# 2026-07-21 - 小欧 - #9 文件外部修改错误增强: check_conflict_strict 失败时附文件当前内容前2000字符到错误消息
+# 2026-07-24 - 小欧 - 重构: 11处散落截断→main函数入口统一截断(3常量); helper/build函数去截断(北京老陈驱动)
+# 2026-07-25 - 小欧 - 修复: execute_with_safety返回值类型不匹配——病根: 2026-07-15 execute_with_safety改为返回(bool,str), edittext是唯一未解包的调用方, tuple永为true致not success永假, 保险失效
+# 2026-07-25 - 小欧 - 修复: edittext读文件后未调record_read——病根: conflict check无准确mtime基准, 使用前次操作(如writetext)的record_write mtime, Windows mtime波动致~50%误判
+# 2026-07-25 - 小欧 - 修复: None/空校验在截断之后——病根: 2026-07-24截断重构移到main入口, old_string/new_string在None检查前被截断(TypeError), 应先将None/空校验提前
+# 2026-07-25 - 小欧 - 清理: mtime_warning死变量——病根: 声明后从未赋值(YAGNI), 删除line 361声明、line 379/497返回值
+# 2026-07-29 - 小欧 - validation_error加强: 格式"行N；语法错误；建议:xxxx"替代纯error_text; 透传_syn_line/_syn_suggestion到main; metrics新增error_line+suggestion; _check_anchor_overlap报错简化: 去除冗余行引用, 统一"只包含新内容"表述
 """
 F4: edittext — 编辑文本文件
 
@@ -24,8 +32,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import INER_EDITTEXT_READ_SIZE
+from app.tools.tool_constants import EDITTEXT_INPUT_MAX_BYTES
 from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
+from app.tools.tool_constants import EDITTEXT_OUTPARM_LIMIT_OLD, EDITTEXT_OUTPARM_LIMIT_NEW, EDITTEXT_OUTPARM_LIMIT_SAFETY
 from app.services.task.task_context import _current_task_id
 from app.db.models.operation_models import OperationType
 from app.services.safety import record_operation, execute_with_safety
@@ -33,9 +42,9 @@ from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
-from app.tools.file.file_state import check_conflict_strict, record_write
+from app.tools.file.file_state import check_conflict_strict, record_write, record_read
 from app.tools.file.fuzzy_match import fuzzy_find_replace  # 小欧 2026-07-11
-from app.tools.toolhelper.syntax_validator import validate_syntax  # 小欧 2026-07-21 (83379fbb) BOM去扰+BUG-002,统一多语言校验
+from app.tools.toolhelper.syntax_validator import validate_syntax, detect_language  # 小欧 2026-07-21 统一语法检测接入
 
 # U+FFFD replacement character threshold for encoding detection — 小欧 2026-06-27 — 小欧 2026-07-05 统一为readtext的>=3 && >3%逻辑
 _REPLACEMENT_CHAR_MIN_COUNT = 3
@@ -200,15 +209,15 @@ def _check_anchor_overlap(mode: str, old_string: str, new_string: str) -> str:
     if mode == "before":
         _last_line = new_string.rstrip('\n').rsplit('\n')[-1].strip() if '\n' in new_string else new_string.strip()
         if _last_line and _last_line == _os:
-            return (f"new_string尾行('{_last_line}')与锚点old_string相同,"
-                    f"before模式会在锚点行前插入导致该行重复,"
-                    f"请从new_string末尾移除该行")
+            return (f"new_string尾行与锚点old_string相同,"
+                    f"插入后锚点行重复。"
+                    f"new_string只包含新内容即可,不要包含old_string整行")
     elif mode == "after":
         _first_line = new_string.strip('\n').split('\n')[0].strip() if '\n' in new_string else new_string.strip()
         if _first_line and _first_line == _os:
-            return (f"new_string首行('{_first_line}')与锚点old_string相同,"
-                    f"after模式会在锚点行后插入导致该行重复,"
-                    f"请从new_string开头移除该行")
+            return (f"new_string首行与锚点old_string相同,"
+                    f"插入后锚点行重复。"
+                    f"new_string只包含新内容即可,不要包含old_string整行")
     return ""
 
 
@@ -266,9 +275,9 @@ def _build_edit_text_file_llm_data(
     """edit_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 增加diff/total_matches/mtime_warning — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-06 diff移入other_data — 小欧 2026-07-06 diff移回metrics — 小欧 2026-07-11 replace_all→mode"""
     _act_params = {"path": file_path}
     if user_old_string:
-        _act_params["old_string"] = user_old_string[:50]  # 小欧 2026-07-06 100→50，减少返回给LLM的冗余参数
+        _act_params["old_string"] = user_old_string
     if user_new_string:
-        _act_params["new_string"] = user_new_string[:50]  # 小欧 2026-07-06 100→50，减少返回给LLM的冗余参数
+        _act_params["new_string"] = user_new_string
     if user_mode and user_mode != "once":
         _act_params["mode"] = user_mode
     if user_ignore_case is not None:
@@ -336,7 +345,7 @@ async def _precise_replace_in_file(
             logger.warning(f"[edittext] {warn}")
 
         path = Path(file_path).resolve()
-        if path.stat().st_size > INER_EDITTEXT_READ_SIZE:
+        if path.stat().st_size > EDITTEXT_INPUT_MAX_BYTES:
             return {"error_detail": f"文件过大({path.stat().st_size}字节)", "file_size": path.stat().st_size}
 
         # B2 fix: detect CRLF from raw bytes — 小欧 2026-06-27
@@ -350,13 +359,18 @@ async def _precise_replace_in_file(
         content, used_enc, err_msg = await _try_read_file_with_encodings(path, encoding)
         if err_msg:
             raise ValueError(err_msg)
+        record_read(file_path, content)
 
         # 编码预检移入 _replace_sync：验完整落盘内容(write_content)，
         # 覆盖 new_string + 原文 errors='replace' 残留的 U+FFFD，且在 open('w') 截断前失败 — 小欧 2026-07-11
 
-        mtime_warning = ""
         conflict_err = check_conflict_strict(file_path)
         if conflict_err:
+            try:
+                _preview = path.read_text("utf-8", errors="replace")[:2000]
+                conflict_err += f"\n文件当前内容(前2000字符):\n{_preview}"
+            except Exception:
+                pass
             return {"error_detail": conflict_err}
 
         # 无操作跳过（仅replace模式，插入模式即使内容相同也改变文件） — 小欧 2026-07-11
@@ -366,12 +380,12 @@ async def _precise_replace_in_file(
                 "file_path": str(path),
                 "applied_edits": 0, "total_edits": 0,
                 "total_matches": total_matches,
-                "diff": "", "mtime_warning": mtime_warning, "skipped": True,
+                "diff": "", "skipped": True,
             }
 
         # before/after 模式：new_string 不能为空(插入空内容无意义,否则误报成功) — 小欧 2026-07-11
         if mode in ("before", "after") and new_string == "":
-            return {"error_detail": f"mode={mode} 需要非空 new_string（插入内容不能为空）", "old_string": old_string[:50]}
+            return {"error_detail": f"mode={mode} 需要非空 new_string（插入内容不能为空）"}
 
         # before/after 模式：校验唯一匹配 — 小欧 2026-07-11
         if mode in ("before", "after"):
@@ -380,13 +394,13 @@ async def _precise_replace_in_file(
             else:
                 total_matches = content.count(old_string)
             if total_matches == 0:
-                return {"error_detail": f"未找到匹配内容: '{old_string[:80]}'（mode={mode}）", "old_string": old_string[:50]}
+                return {"error_detail": f"未找到匹配内容: '{old_string}'（mode={mode}）"}
             if total_matches > 1:
-                return {"error_detail": f"before/after模式要求唯一匹配，old_string在文件中出现{total_matches}次，请提供更多上下文以精确定位", "old_string": old_string[:50]}
+                return {"error_detail": f"before/after模式要求唯一匹配，old_string在文件中出现{total_matches}次，请提供更多上下文以精确定位"}
             # before/after 锚点重叠检查 — 小欧 2026-07-17
             _overlap_err = _check_anchor_overlap(mode, old_string, new_string)
             if _overlap_err:
-                return {"error_detail": _overlap_err, "old_string": old_string[:50]}
+                return {"error_detail": _overlap_err}
 
         operation_id = record_operation(
             task_id=task_id, operation_type=OperationType.MODIFY,
@@ -423,16 +437,16 @@ async def _precise_replace_in_file(
             sl_warn = _safety_structure_loss(content, new_content)
             so_warn = _safety_short_old(old_string, mode, total_matches)
             if sl_warn or so_warn:
-                replace_result['safety_hint'] = ("；".join(filter(None, [sl_warn, so_warn])))[:200]
+                replace_result['safety_hint'] = "；".join(filter(None, [sl_warn, so_warn]))
             # all 模式宽匹配/边界检查 — 小欧 2026-07-17
             if mode == "all":
                 wr_warn = _safety_wide_replace(old_string, mode, total_matches)
                 if wr_warn:
                     _cur_hint = replace_result.get('safety_hint', '')
-                    replace_result['safety_hint'] = ("；".join(filter(None, [_cur_hint, wr_warn])))[:200]
+                    replace_result['safety_hint'] = "；".join(filter(None, [_cur_hint, wr_warn]))
                 # 确定破坏(三引号) → 拒绝写入
                 if _is_dangerous_anchor(old_string):
-                    replace_result['encode_error'] = (
+                    replace_result['validation_error'] = (
                         f"拒绝 all 模式对 docstring 边界('{old_string}')的替换——将破坏所有文档字符串。"
                         f"请用 mode='once'+含上下文的精确 old_string 替换目标行"
                     )
@@ -442,13 +456,20 @@ async def _precise_replace_in_file(
             try:
                 write_content.encode(used_enc)
             except UnicodeEncodeError as e:
-                replace_result['encode_error'] = f"替换后内容含编码 {used_enc} 不支持的字符: {e}"
+                replace_result['validation_error'] = f"替换后内容含编码 {used_enc} 不支持的字符: {e}"
                 return False
-            # 语法校验 — 仅 .py 文件; 语法错误阻断写入(不论once/all, 防BUG-002误写) — 委托syntax_validator(BOM去扰) — 小欧 2026-07-21
-            if path.suffix == '.py' and not replace_result.get('encode_error'):
-                _syn = validate_syntax(new_content, "python", str(path))
+            # 语法校验 — 统一模块; 任意模式完整文件语法错→拒绝写入(防写坏) — 小欧 2026-07-21 — 小欧 2026-07-29 优化error_text带行号+建议
+            if not replace_result.get('validation_error'):
+                _syn = validate_syntax(new_content, detect_language(str(path), new_content), str(path))
                 if not _syn.valid:
-                    replace_result['encode_error'] = _syn.error_text()
+                    _parts = [_syn.error or "语法错误"]
+                    if _syn.line:
+                        _parts.insert(0, f"行{_syn.line}")
+                    if _syn.suggestion:
+                        _parts.append(f"建议:{_syn.suggestion}")
+                    replace_result['validation_error'] = "；".join(_parts)
+                    replace_result['_syn_line'] = _syn.line
+                    replace_result['_syn_suggestion'] = _syn.suggestion
                     return False
             with open(path, 'w', encoding=used_enc, newline='') as f:
                 f.write(write_content)
@@ -457,7 +478,8 @@ async def _precise_replace_in_file(
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
         if operation_id:
-            success = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_replace_sync)
+            raw = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_replace_sync)
+            success, _ = raw if isinstance(raw, tuple) else (raw, "")
         else:
             logger.info("Database unavailable, executing edit operation without recording")
             success = await asyncio.to_thread(_replace_sync)
@@ -465,20 +487,27 @@ async def _precise_replace_in_file(
         count = replace_result.get('count', 0)
 
         # 优先处理编码失败(count!=0但写入被拦),避免误判为"未找到匹配" — 小欧 2026-07-11
-        if replace_result.get('encode_error'):
-            return {"error_detail": replace_result['encode_error']}
+        if replace_result.get('validation_error'):
+            _err = replace_result['validation_error']
+            _line = replace_result.get('_syn_line')
+            _sugg = replace_result.get('_syn_suggestion')
+            _ret = {"error_detail": _err}
+            if _line:
+                _ret["_syn_line"] = _line
+            if _sugg:
+                _ret["_syn_suggestion"] = _sugg
+            return _ret
 
         if not success or count == 0:
             preview = replace_result.get('content_preview', '')
             total_lines = replace_result.get('total_lines', 0)
             if total_lines == 1 and not content.strip():
-                return {"error_detail": f"未找到匹配内容: 文件为空", "old_string": old_string[:50]}
-            _ed = f"未找到匹配内容: '{old_string[:80]}'。文件共{total_lines}行，前15行:\n{preview}"
+                return {"error_detail": f"未找到匹配内容: 文件为空"}
+            _ed = f"未找到匹配内容: '{old_string}'。文件共{total_lines}行，前15行:\n{preview}"
             if mode == "once" and count == 0 and new_string and new_string in content:
                 _ed += "。提示: new_string 在文件中但 old_string 未找到，可能参数填反"
             return {
                 "error_detail": _ed,
-                "old_string": old_string[:50],
             }
 
         return {
@@ -486,7 +515,6 @@ async def _precise_replace_in_file(
             "applied_edits": count, "total_edits": count,
             "total_matches": replace_result.get("total_matches", count),
             "diff": replace_result.get("diff", ""),
-            "mtime_warning": mtime_warning,
             "safety_hint": replace_result.get("safety_hint", ""),
         }
 
@@ -508,27 +536,33 @@ async def edittext(
     file_path = path
     t0 = _time_mod.perf_counter()
 
+    # None/空校验必须先于截断 — 小欧 2026-07-25 修复截断先于None检查的预存bug
+    if old_string is None:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为None", user_old_string="", user_new_string="", user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
+        return build_error(data={}, llm_data=llm_data)
+    if new_string is None:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="new_string不能为None", user_old_string="", user_new_string="", user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
+        return build_error(data={}, llm_data=llm_data)
+    if not old_string:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为空字符串", user_old_string="", user_new_string="", user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
+        return build_error(data={}, llm_data=llm_data)
+
+    # main函数入口统一截断(helper/build函数均不截断) — 小欧 2026-07-24
+    _old_preview = old_string[:EDITTEXT_OUTPARM_LIMIT_OLD]
+    _new_preview = new_string[:EDITTEXT_OUTPARM_LIMIT_NEW]
+
     # mode 有效性检查 — 小欧 2026-07-11
     if mode not in ("once", "all", "before", "after"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"无效mode: '{mode}'，可选值: once, all, before, after", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"无效mode: '{mode}'，可选值: once, all, before, after", user_old_string=_old_preview, user_new_string=_new_preview, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
 
     if '\x00' in file_path:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="file_path包含空字节", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
-        return build_error(data={}, llm_data=llm_data)
-    if old_string is None:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为None", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
-        return build_error(data={}, llm_data=llm_data)
-    if not old_string:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为空字符串", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
-        return build_error(data={}, llm_data=llm_data)
-    if new_string is None:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="new_string不能为None", user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="file_path包含空字节", user_old_string=_old_preview, user_new_string=_new_preview, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
 
     # 文件类型检查 — 北京老陈 2026-07-09
@@ -541,7 +575,7 @@ async def edittext(
             _hint = "请检查文件路径和文件名是否正确"
         else:
             _hint = "请选择正确的工具类型"
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=ft_detail, hint=_hint, user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=ft_detail, hint=_hint, user_old_string=_old_preview, user_new_string=_new_preview, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(
             data={"error_detail": ft_detail, "params": {"path": file_path}},
             llm_data=llm_data,
@@ -554,9 +588,16 @@ async def edittext(
         dry_run=dry_run, encoding=encoding,
     )
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    # 语法错误/其他错误处理 — 小欧 2026-07-29 加metrics error_line+suggestion
     error_detail = result.get("error_detail")
     if error_detail:
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=result.get("hint"), user_old_string=old_string, user_new_string=new_string, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)  # 统一错误提示 - 小欧 2026-07-12
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=result.get("hint"), user_old_string=_old_preview, user_new_string=_new_preview, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)  # 统一错误提示 - 小欧 2026-07-12
+        _syn_line = result.get("_syn_line")
+        _syn_sugg = result.get("_syn_suggestion")
+        if _syn_line:
+            llm_data["metrics"]["error_line"] = {"value": _syn_line, "text": f"第{_syn_line}行"}
+        if _syn_sugg:
+            llm_data["metrics"]["suggestion"] = {"value": _syn_sugg, "text": _syn_sugg}
         return build_error(
             data={"error_detail": error_detail, "params": {"path": file_path}},
             llm_data=llm_data,
@@ -567,8 +608,8 @@ async def edittext(
         diff=result.get("diff", ""),
         total_matches=result.get("total_matches", 0),
         mtime_warning=result.get("mtime_warning", "") or "",
-        safety_hint=result.get("safety_hint", ""),
-        user_old_string=old_string, user_new_string=new_string,
+        safety_hint=(result.get("safety_hint", "") or "")[:EDITTEXT_OUTPARM_LIMIT_SAFETY],
+        user_old_string=_old_preview, user_new_string=_new_preview,
         user_mode=mode, user_ignore_case=ignore_case,
         user_encoding=encoding,
     )

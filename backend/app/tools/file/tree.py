@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 自然单位页感知 feat:
+#   1. 新增 statistics(file/dir/size) 数据
+#   2. formatter 层级感知截断用
+# 2026-07-20 - 小欧 - 去噪去重 refactor:
+#   移除 statistics(data/llm_data 重复)
 """
 tree — 列出目录树 (从list_directory拆分，仅列目录)
 

@@ -1,8 +1,23 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-14 - 小沈 - grep搜索结果上限改用OBS_MAX_DISPLAY_ITEMS，区分"超时"与"达上限"两种截断
 # 2026-07-18 - 小沈 - 灰区后缀跳过逻辑改为内容级探测(复用_detect_binary_content),修复日志轮转文件.log.1/.2被误判二进制跳过
-# 2026-07-20 - 小欧 - 去除 grep 输入与输出限制: 删 pattern 长度校验/匹配条数上限(head_limit)/达上限标记, 工具返回全部匹配交显示域行×列; context 仅校验非负; 跳过目录名单改用公用 SKIP_DIRS; 文件读取走默认不限制大小
+# 2026-07-20 - 小欧 - 去噪去重 refactor:
+#   1. 删 pattern 长度校验
+#   2. 删匹配条数上限 head_limit/达上限标记
+#   3. 工具返回全部匹配交显示域行×列
+#   4. context 仅校验非负
+#   5. 跳过目录名单改用公用 SKIP_DIRS
+#   6. 文件读取走默认不限制大小
+# 2026-07-23 - 小欧 - 北京老陈驱动: 新增 Tool 层输出截断
+#    matches 超 GREP_OUTLIMIT_MATCHES_MAX=2000 截断 + data._truncated=True
+#    单条 content/before/after 字符串超 GREP_OUTLIMIT_MATCH_CONTENT_CHARS=2000 尾部截断
+#    total_matches 同步更新, 使 llm_data.summary 与实际 data 一致
+#    formatter #9 传递 data 参数以读取 _truncated 标记
+# 2026-07-23 - 小欧 - 北京老陈驱动第二轮增强: total_files 从截断结果重算
+#    _apply_grep_outlim 返回 _real_files, GrepSyncResult 用真实值重建
+#    summary.total_files 与实际匹配文件数一致, 避免误导 LLM 搜索范围判断
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -22,7 +37,10 @@ from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import TOOL_TIMEOUTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, SKIP_DIRS
+from app.tools.tool_constants import (
+    TOOL_TIMEOUTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, SKIP_DIRS,
+    GREP_OUTLIMIT_MATCHES_MAX, GREP_OUTLIMIT_MATCH_CONTENT_CHARS,
+)
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file, _detect_binary_content
@@ -292,13 +310,65 @@ async def grep(
     if gr.results:
         _sort_grep_results_by_mtime(gr.results)
 
+    # ── Tool 层输出截断 — 小欧 2026-07-23 ──
+    # 匹配条目数截断: 超 GREP_OUTLIMIT_MATCHES_MAX 截断 + _truncated=True
+    # 单条 content/before/after 字符串: 超 GREP_OUTLIMIT_MATCH_CONTENT_CHARS 尾部截断
+    # formatter #9 读 data._truncated 自动在行/列截断外追加 tool 截断说明
+    _tool_trunc = False
+    _trunc_matches = False
+    _trunc_content = False
+
+    def _apply_grep_outlim(rs: list) -> tuple:
+        """grep 内部: 行数截断+格截断+total_matches+total_files 重新计算 — 小欧 2026-07-23"""
+        nonlocal _tool_trunc, _trunc_matches, _trunc_content
+        if not rs:
+            return [], 0, 0
+        if len(rs) > GREP_OUTLIMIT_MATCHES_MAX:
+            rs = rs[:GREP_OUTLIMIT_MATCHES_MAX]
+            _tool_trunc = _trunc_matches = True
+        _real_total = 0
+        _out = []
+        for m in rs:
+            _nm = dict(m)
+            if isinstance(_nm.get("content"), str) and len(_nm["content"]) > GREP_OUTLIMIT_MATCH_CONTENT_CHARS:
+                _nm["content"] = _nm["content"][:GREP_OUTLIMIT_MATCH_CONTENT_CHARS] + "...(截断)"
+                _tool_trunc = _trunc_content = True
+            for _ctx_key in ("before", "after"):
+                _ctx = _nm.get(_ctx_key)
+                if _ctx:
+                    _new_ctx = []
+                    for _c in _ctx:
+                        if isinstance(_c.get("text"), str) and len(_c["text"]) > GREP_OUTLIMIT_MATCH_CONTENT_CHARS:
+                            _c = dict(_c)
+                            _c["text"] = _c["text"][:GREP_OUTLIMIT_MATCH_CONTENT_CHARS] + "...(截断)"
+                            _tool_trunc = _trunc_content = True
+                        _new_ctx.append(_c)
+                    _nm[_ctx_key] = _new_ctx
+            _matched = _nm.get("matched", [])
+            _real_total += len(_matched) if isinstance(_matched, list) else 1
+            _out.append(_nm)
+        _real_files = len({m.get("file", "") for m in _out if m.get("file")})
+        return _out, _real_total, _real_files
+
+    _truncated_results, _real_total_matches, _real_files = _apply_grep_outlim(gr.results)
+    gr = GrepSyncResult(
+        _truncated_results, _real_files, _real_total_matches,
+        gr.truncated, gr.truncated_by_deadline, gr.skipped_binaries,
+    )
+
     # =============================================================================
     # 数据设计：total_matches/total_files 既留在 data 中（供前端/断言读取），
     # 也通过 llm_data.metrics 传入 summary
     # summary 示例: "搜索完成: 匹配5行, 3个文件"
-    # — 小欧 2026-07-06 18:46:13 原始设计移除data；小欧 2026-07-12 修正: 重新加回data(count模式此前返回空data)
+    # — 小欧 2026-07-06 18:46:13 原始设计移除data；小欧 2026-07-12 修正: 重新加回data(count模式此前返回空数据)
     # =============================================================================
-    data = {"matches": gr.results, "total_matches": gr.total_matches, "total_files": gr.total_files}
+    data: Dict[str, Any] = {"matches": gr.results, "total_matches": gr.total_matches, "total_files": gr.total_files}
+    if _tool_trunc:
+        data["_truncated"] = True
+        _reason = []
+        if _trunc_matches: _reason.append(f"匹配数超{GREP_OUTLIMIT_MATCHES_MAX}")
+        if _trunc_content: _reason.append(f"匹配内容超{GREP_OUTLIMIT_MATCH_CONTENT_CHARS}字符")
+        data["truncated_reason"] = "、".join(_reason)
 
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
@@ -326,3 +396,4 @@ async def grep(
     # file:    observation_formatter.py:152-178
     # ------------------------------------------------------------------------------
     return build_success(data=data, llm_data=llm_data)
+

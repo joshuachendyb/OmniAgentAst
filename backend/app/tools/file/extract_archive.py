@@ -1,4 +1,10 @@
+
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 去噪去重 refactor:
+#   data 只保留 output_dir/file_list,
+#   移除 extracted_files/skipped_files/format
+#   (已由 llm_data 承载, data中不重复)
 """
 F9: extract_archive — 解压文件
 
@@ -243,3 +249,4 @@ async def extract(
         logger.error(f"[extract] 解压失败: {e}")
         llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=str(e), hint=hint_for_write_error(e, Path(source).name), user_destination=destination, user_overwrite=overwrite)  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)
+

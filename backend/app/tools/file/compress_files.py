@@ -1,4 +1,20 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 去噪 refactor:
+#   safe_data 排除 original_size 和
+#   compression_ratio(data/llm_data重复)
+# 2026-07-21 - 小欧 - safe_data 恢复 original_size 和 compressed_size 字段(供调用方直接获取)
+# 2026-07-26 - 小沈 - execute_with_safety传真实状态(op_ok)替代恒真lambda:result, 如实记录成功/超时
+# 2026-07-29 - 小欧 - 新增timeout参数暴露给LLM: 配合ToolRetryEngine保险丝拓宽逻辑, 消除双重叠加超时
+#    【病根】_cf_timeout硬编码TOOL_TIMEOUTS["compress"]=300, 保险丝同样300秒, LLM无法调大
+#    【解决】compress()函数新增timeout参数(默认300), 走validate_timeout校验后传内部_cf_deadline,
+#            ToolRetryEngine自动将保险丝拓宽到min(timeout+30, 630), 保险丝恒晚于内部超时
+# 2026-07-29 - 小欧 - 变量名统一: 函数体 source→path / destination→dest (与schema/参数名一致), 消除NameError
+# 2026-07-29 - 小欧 - 删除 import time as _time_mod 别名,统一用 time; f-string无插值改为普通字符串
+# 2026-07-29 - 小欧 - 清理未使用的import(TOOL_TIMEOUTS/validate_str_param);
+#                    简化_compress_sync中冗余的isinstance分支,两个raise合并为一个
+# 2026-07-29 - 小欧 - 超时反馈增强:删前从result抢救已压缩文件数/大小,计算进度%,
+#                     hint给出3条降级建议(增大timeout/排除大文件/分批压缩),metrics带进度数据
 """
 F8: compress_files — 压缩文件
 
@@ -17,17 +33,17 @@ import glob
 import os
 import tarfile
 import time
-import time as _time_mod
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, TOOL_TIMEOUTS
+from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INVALID
 from app.services.task.task_context import _current_task_id
 from app.utils.json_utils import coerce_json
-from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.validate.timeout_validator import validate_timeout  # 小欧 2026-07-29
 from app.logger import logger
 from app.services.safety import record_operation, execute_with_safety
 from app.db.models.operation_models import OperationType
@@ -37,11 +53,11 @@ def _build_compress_files_llm_data(
     exec_code: str, duration_ms: int,
     source: str = "", detail: str = "",
     original_size: int = 0, compressed_size: int = 0, file_count: int = 0,
-    fmt: str = "zip", hint: str = "",
+    fmt: str = "zip", hint: str = "", err_code: str = "",
     user_destination: str = "", user_format: str = "", user_overwrite: Optional[bool] = None,
     user_exclude_patterns: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """compress_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-22 重构：关键指标放入metrics — 小健 2026-06-24 hint参数化"""
+    """compress_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-22 重构：关键指标放入metrics — 小健 2026-06-24 hint参数化 — 小欧 2026-07-29 err_code参数化"""
     _act_params = {"source": source}
     if user_destination:
         _act_params["destination"] = user_destination
@@ -51,11 +67,12 @@ def _build_compress_files_llm_data(
         _act_params["overwrite"] = user_overwrite
     if user_exclude_patterns:
         _act_params["exclude_patterns"] = user_exclude_patterns
+    _code = err_code or ERR_FILE_COMPRESS_FAILED
     if exec_code == "error":
         return {
             "summary": f"压缩{source}，失败",
             "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": _act_params},
-            "status": {"exec_code": "error", "message": "压缩失败", "code": ERR_FILE_COMPRESS_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径及权限"},
+            "status": {"exec_code": "error", "message": "压缩失败", "code": _code, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径及权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -161,7 +178,7 @@ def _write_tar(source: Path, destination: Path, deadline: float,
     timed_out = False
     with tarfile.open(destination, mode) as tf:
         for file_path, arcname in _compress_entries(source, deadline, exclude_patterns):
-            if _time_mod.monotonic() > deadline:
+            if time.monotonic() > deadline:
                 timed_out = True
                 break
             tf.add(file_path, arcname)
@@ -224,60 +241,60 @@ async def compress(
     password: Optional[str] = None,
     overwrite: bool = False,
     exclude_patterns: Optional[List[str]] = None,
+    timeout: int = 300,
 ) -> Dict[str, Any]:
-    """压缩文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-11 路径参数统一为path/dest"""
-    t0 = _time_mod.perf_counter()
-    # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
-    source = path
-    destination = dest
-    err = validate_str_param(source, "source")
-    if err:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err, user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+    """压缩文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-11 路径参数统一为path/dest — 小欧 2026-07-29 新增timeout参数"""
+    t0 = time.perf_counter()
+    # timeout校验 — 小欧 2026-07-29
+    to_valid, to_err, _ = validate_timeout(timeout, "compress")
+    if not to_valid:
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        hint = "timeout必须在5-1800秒之间，建议使用300秒"
+        llm_data = _build_compress_files_llm_data("error", duration_ms, "", detail="", hint=hint, err_code=ERR_PARAMETER_INVALID)
         return build_error(data={}, llm_data=llm_data)
     exclude_patterns = coerce_json(exclude_patterns)
     compression_level = 6
 
     # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, _ = validate_path(OpCategory.WRITE, destination)
+    is_valid, err, _ = validate_path(OpCategory.WRITE, dest)
     if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err, user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
 
-    if not overwrite and os.path.exists(destination):
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"目标文件已存在: {destination}", hint="可设置overwrite=true覆盖", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+    if not overwrite and os.path.exists(dest):
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"目标文件已存在: {dest}", hint="可设置overwrite=true覆盖", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
 
     task_id = _current_task_id.get()
     if not task_id:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail="没有活跃的任务,请先开始一个任务", hint="请先开始一个任务", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail="没有活跃的任务,请先开始一个任务", hint="请先开始一个任务", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
 
     if format not in ("zip", "tar", "tar.gz", "tar.bz2"):
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {format}", hint="支持zip/tar/tar.gz/tar.bz2", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"不支持的压缩格式: {format}", hint="支持zip/tar/tar.gz/tar.bz2", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
 
-    src = Path(source)
-    dst = Path(destination)
+    src = Path(path)
+    dst = Path(dest)
 
     try:
-        if _has_wildcard(source):
-            if not glob.glob(source):
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"通配符无匹配: {source}", hint="请检查通配符是否正确", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+        if _has_wildcard(path):
+            if not glob.glob(path):
+                duration_ms = int((time.perf_counter() - t0) * 1000)
+                llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配符无匹配: {path}", hint="请检查通配符是否正确", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                 return build_error(data={}, llm_data=llm_data)
         else:
             # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/路径存在 — 小欧 2026-07-04
             # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-            is_valid, err, _ = validate_path(OpCategory.EXISTS, source)
+            is_valid, err, _ = validate_path(OpCategory.EXISTS, path)
             if not is_valid:
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=err, hint="请检查源路径是否存在", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+                duration_ms = int((time.perf_counter() - t0) * 1000)
+                llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, hint="请检查源路径是否存在", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                 return build_error(data={}, llm_data=llm_data)
 
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -288,28 +305,38 @@ async def compress(
             sequence_number=0,
         )
 
-        _cf_timeout = TOOL_TIMEOUTS.get("compress", TOOL_TIMEOUTS["default"])
-        _cf_deadline = time.monotonic() + _cf_timeout - 2
-        original_size = _get_total_size_sync(src, _cf_deadline)
+        _cf_timeout = timeout
+        _local_start = time.monotonic()
+        _local_deadline = _local_start + _cf_timeout - 2
+        original_size = _get_total_size_sync(src, _local_deadline)
 
         def _compress_sync():
             try:
                 _timed_out = False
                 if format == "zip":
-                    compressed_files, _timed_out = _write_zip(src, dst, compression_level, password, _cf_deadline, exclude_patterns)
+                    compressed_files, _timed_out = _write_zip(src, dst, compression_level, password, _local_deadline, exclude_patterns)
                 elif format == "tar":
-                    compressed_files, _timed_out = _write_tar(src, dst, _cf_deadline, "w", exclude_patterns)
+                    compressed_files, _timed_out = _write_tar(src, dst, _local_deadline, "w", exclude_patterns)
                 elif format == "tar.gz":
-                    compressed_files, _timed_out = _write_tar(src, dst, _cf_deadline, "w:gz", exclude_patterns)
+                    compressed_files, _timed_out = _write_tar(src, dst, _local_deadline, "w:gz", exclude_patterns)
                 elif format == "tar.bz2":
-                    compressed_files, _timed_out = _write_tar(src, dst, _cf_deadline, "w:bz2", exclude_patterns)
+                    compressed_files, _timed_out = _write_tar(src, dst, _local_deadline, "w:bz2", exclude_patterns)
                 compressed_size = dst.stat().st_size
                 result = _build_compress_result(
                     str(src), str(dst), format, compression_level,
                     password, original_size, compressed_size, compressed_files)
                 result["timed_out"] = _timed_out
                 return result
-            except Exception:
+            except (KeyboardInterrupt, SystemExit):
+                # 主动终止: 需要释放资源, 避免孤儿进程
+                if dst.exists():
+                    try:
+                        dst.unlink()
+                    except OSError:
+                        pass
+                raise
+            except Exception as e:
+                # 非预期异常: 先清理损坏文件,再抛出原始异常
                 if dst.exists():
                     try:
                         dst.unlink()
@@ -317,39 +344,52 @@ async def compress(
                         pass
                 raise
 
-        # execute_with_safety返回bool,先执行操作拿dict再记录safety — 小沈 2026-07-07
+        # 先执行操作，再如实记录操作状态 — 小沈 2026-07-07 — 小沈 2026-07-26 operation_func改lambda:op_ok传真实状态
         result = await asyncio.to_thread(_compress_sync)
         if operation_id:
-            await asyncio.to_thread(execute_with_safety, operation_id=operation_id, operation_func=lambda: result)
+            op_ok = bool(result) and not result.get("timed_out")
+            await asyncio.to_thread(execute_with_safety, operation_id=operation_id, operation_func=lambda _ok=op_ok: _ok)
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        duration_ms = int((time.perf_counter() - t0) * 1000)
         if result:
             _timed_out = result.pop("timed_out", False)
             if _timed_out:
+                # 删前从result抢救数据: 已压缩文件数和大小 — 小欧 2026-07-29
+                _done_files = result.get("file_count", 0)
+                _done_bytes = result.get("compressed_size", 0)
+                _orig_bytes = result.get("original_size", 0)
+                _progress = _done_bytes / max(_orig_bytes, 1) if _orig_bytes else 0
                 try:
                     dst.unlink()
                 except OSError:
                     pass
-                _timeout_msg = f"压缩超时({_cf_timeout}秒)，不完整文件已删除"
+                _hint = f"已压缩{_done_files}个文件(进度{_progress:.0%})，建议：①增大timeout重试；②排除大文件再试；③将大目录分成多个子目录分批压缩"
                 llm_data = _build_compress_files_llm_data(
-                    "error", duration_ms, source,
+                    "error", duration_ms, path,
                     detail="",
-                    user_destination=destination, user_format=format, user_overwrite=overwrite,
+                    hint=_hint,
+                    user_destination=dest, user_format=format, user_overwrite=overwrite,
                     user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "",
                 )
-                llm_data["summary"] = f"压缩{source}，失败: {_timeout_msg}"
-                llm_data["status"]["hint"] = ""
+                llm_data["summary"] = f"压缩{path}，失败: 压缩超时({timeout}秒)，不完整文件已删除"
+                llm_data["status"]["hint"] = _hint
+                llm_data["metrics"] = {
+                    "file_count": {"value": _done_files, "text": f"{_done_files}个文件"},
+                    "compressed_size": {"value": _done_bytes, "text": f"{_done_bytes}字节"},
+                    "progress": {"value": f"{_progress:.0%}", "text": f"进度{_progress:.0%}"},
+                    "timeout": {"value": timeout, "text": f"{timeout}秒"},
+                }
                 return build_error(data={}, llm_data=llm_data)
             llm_data = _build_compress_files_llm_data(
-                "success", duration_ms, source,
+                "success", duration_ms, path,
                 original_size=result.get("original_size", 0),
                 compressed_size=result.get("compressed_size", 0),
                 file_count=result.get("file_count", 0),
                 fmt=result.get("format", "zip"),
-                user_destination=destination, user_format=format, user_overwrite=overwrite,
+                user_destination=dest, user_format=format, user_overwrite=overwrite,
                 user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "",
             )
-            safe_data = {k: v for k, v in result.items() if k not in ("source_path", "destination_path", "format", "compressed_size", "file_count", "compressed_files", "original_size", "compression_ratio")}
+            safe_data = {k: v for k, v in result.items() if k not in ("source_path", "destination_path", "format", "file_count", "compressed_files", "compression_ratio")}
             # ---- observation_formatter route -------------------------------------------
             # branch: #18 compress
             # trigger: "compression_ratio" in data
@@ -357,10 +397,11 @@ async def compress(
             # file:    observation_formatter.py:193-194
             # ------------------------------------------------------------------------------
             return build_success(data=safe_data, llm_data=llm_data)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"压缩失败,源路径: {source}", hint="请检查源路径和目标路径是否正确", user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"压缩失败,源路径: {path}", hint="请检查源路径和目标路径是否正确", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
 
     except Exception as e:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=str(e), hint=hint_for_write_error(e, Path(source).name), user_destination=destination, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")  # 统一错误提示 - 小欧 2026-07-12
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        hint = hint_for_write_error(e, Path(path).name)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail="", hint=hint, user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")  # 统一错误提示 - 小欧 2026-07-12 — 小欧 2026-07-29 修正:detail=str(e)→detail="" 屏蔽内部异常详情
         return build_error(data={}, llm_data=llm_data)

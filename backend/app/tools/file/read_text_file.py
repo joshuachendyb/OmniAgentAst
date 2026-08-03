@@ -5,8 +5,23 @@ F1: readtext — 读取文本文件
 从file_tools.py拆分而来，按工具分类聚合设计 — 小欧 2026-06-22
 """
 # 编辑历史:
-# 2026-07-20 - 小欧 - readtext 门限治理(章11.4): 去除 _select_lines 的 max_line_length 单行截断(Tool 层零限制, 截断收口于 observation_formatter OBS_READTEXT); MAX_READ_SIZE 依3.5改名 INER_READTEXT_READ_SIZE(readtext 自有内部常量, 各 tool 独立不公用; 保留为3.4硬安全网, 文件过大直接拒绝, 不截断)
-# 2026-07-20 - 小欧 - 门限复查: 删未接入的 _find_similar_files 死代码(全局无调用)及未用 import difflib
+# 2026-07-20 - 小欧 - readtext 门限治理(章11.4):
+#   1. 去除 _select_lines max_line_length
+#     单行截断(Tool层零限制)
+#   2. 截断收口于 observation_formatter
+#     OBS_READTEXT
+#   3. MAX_READ_SIZE 依3.5改名
+#     READTEXT_INPUT_MAX_BYTES(各tool独立)
+#   4. 保留3.4硬安全网防OOM,过大拒读
+# 2026-07-20 - 小欧 - 门限复查:
+#   1. 删未接入 _find_similar_files 死代码
+#   2. 删未用 import difflib
+# 2026-07-21 - 小欧 - 入参即信任: limit 校验加 ≤1000 上限(原仅<1)
+# 2026-07-23 - 小欧 - 三堂会审5bug修复: outlimit 截断信息中原文长度错误(先存_orig_len再截断)
+# 2026-07-24 - 小欧 - 修复: warning summary嵌入full detail(三重重复) → 去掉detail
+# 2026-07-25 - 小欧 - 截断治理: content[:100] → READTEXT_INER_CJK_SAMPLE 命名常量
+# 2026-07-26 - 小欧 - OOD: 确认READTEXT_INPUT_MAX_BYTES未落地,OOM自然抛出被except捕获(同dataanalysis模式)
+# 2026-07-26 - 小沈 - BugFix #3: path参数不覆盖; #5: hint传完整路径
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -18,7 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import INER_READTEXT_READ_SIZE
+from app.tools.tool_constants import READTEXT_OUTLIMIT_CHARS, READTEXT_INER_CJK_SAMPLE
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_path_checker import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
@@ -37,7 +52,7 @@ def _looks_like_mojibake(content: str, file_path: str = "") -> bool:
     if not content or len(content) < 10:
         return False
     has_cjk = any('\u4e00' <= c <= '\u9fff' for c in file_path)
-    has_cjk = has_cjk or any('\u4e00' <= c <= '\u9fff' for c in content[:100])
+    has_cjk = has_cjk or any('\u4e00' <= c <= '\u9fff' for c in content[:READTEXT_INER_CJK_SAMPLE])
     if not has_cjk:
         return False
     total = len(content)
@@ -140,7 +155,7 @@ def _build_read_text_file_llm_data(
         }
     if exec_code == "warning":
         return {
-            "summary": f"读取文件{file_path}，成功,提示说明: {line_count}/{total_lines}行，{file_size}字节{_pi}，{detail}",
+            "summary": f"读取文件{file_path}，成功,提示说明: {line_count}/{total_lines}行，{file_size}字节{_pi}",
             "action": {"tool": "readtext", "tool_zh": "读取", "target": file_path, "params": _act_params},
             "status": {"exec_code": "warning", "message": f"读取成功但有警告: {detail}", "code": "", "detail": detail, "hint": hint if hint else "请检查offset参数是否超出文件范围"},
             "duration_ms": duration_ms,
@@ -193,7 +208,7 @@ async def readtext(
     file_path = path
     t0 = _time_mod.perf_counter()
     try:
-        # 文件类型前置检查 — 小健 2026-06-24
+        # 文件类型前置检查 — 小健 2026-06-24 — check_for_text_tool 内含 validate_path 存在性校验 — 小欧 2026-07-29
         is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=True)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -206,12 +221,12 @@ async def readtext(
             llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=_hint, user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
             return build_error(data={}, llm_data=llm_data)
 
-        if limit is not None and limit < 1:
+        if limit is not None and (limit < 1 or limit > 1000):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data(
                 "error", duration_ms, file_path=file_path,
-                detail=f"limit参数不能小于1,传入值: {limit}",
-                hint="limit参数不能小于1",
+                detail=f"limit参数必须在1-1000之间,传入值: {limit}",
+                hint="limit参数必须设置在1-1000之间",
                 user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
             )
             return build_error(data={}, llm_data=llm_data)
@@ -271,21 +286,17 @@ async def readtext(
                 )
                 return build_error(data={}, llm_data=llm_data)
 
-        path = Path(file_path)
+        _p = Path(file_path)
 
-        file_size = path.stat().st_size
-        # 治理(2026-07-20 小欧): 仅拦截"全量读取"超大文件——分页读取(offset/limit/tail)已将 observation 收口, 不应被硬拦(原逻辑矛盾: 提示用 offset/limit 却又一并拦截)
-        if file_size > INER_READTEXT_READ_SIZE and offset is None and limit is None and tail is None:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data(
-                "error", duration_ms, file_path=file_path,
-                detail=f"文件过大({file_size}字节),请使用offset+limit分段读取",
-                hint="请用offset+limit分段读取",
-                user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
-            )
-            return build_error(data={}, llm_data=llm_data)
+        file_size = _p.stat().st_size
 
-        content, used_encoding, error = await _try_read_file_with_encodings(path, encoding)
+        content, used_encoding, error = await _try_read_file_with_encodings(_p, encoding)
+        # outlimit: 仅全量读取(无翻页参数)截断, 翻页由用户参数控制
+        if content and offset is None and limit is None and tail is None:
+            _orig_len = len(content)
+            if _orig_len > READTEXT_OUTLIMIT_CHARS:
+                content = content[:READTEXT_OUTLIMIT_CHARS] + \
+                    f"\n... (内容已截断: 原文{_orig_len}字符, 保留{READTEXT_OUTLIMIT_CHARS}字符) ...\n"
         if error:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, hint=f"文件编码无法识别，请尝试指定 encoding 参数", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
@@ -349,5 +360,5 @@ async def readtext(
     except Exception as e:
         logger.error(f"readtext failed: {file_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint=hint_for_read_error(e, Path(file_path).name), user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)  # 统一错误提示 - 小欧 2026-07-12
+        llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint=hint_for_read_error(e, file_path), user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)

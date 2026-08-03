@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - RenameInput新增overwrite字段(默认False): 配合rename工具支持覆盖, 对齐move/copy/compress/extract(根因: rename原硬编码overwrite=False且不暴露该参数, 目标已存在时LLM无法用overwrite=True纠正); 按铁规禁止向后兼容, 此处为新增可选参数(默认False保持原行为), 非兼容旧接口
@@ -5,6 +6,16 @@
 # 2026-07-20 - 小欧 - GrepInput 类 docstring 改为仅写工具级默认能力(不重复字段描述);为 CompressInput/ExtractInput/MoveInput 补工具级默认能力 docstring(目录默认递归压缩/解压/移动)
 # 2026-07-20 - 小欧 - WritetextInput.content 删 max_length=WRITE_TEXT_MAX_CHARS 入参长度校验(依3.6去除多余叠加限制; 写结果预览由 Tool 层 _build_content_preview 文首50+文末50 生成, 不新增 OBS_WRITETEXT_*; 常量 WRITE_TEXT_MAX_CHARS 作废删除)
 # 2026-07-20 - 小欧 - 门限复查: FindInput docstring 去除"每页最多500条/仅返回offset后500条"误导(与治理后返回全部匹配、OBS_FIND显示域行×列收口冲突, LLM会误判工具能力上限); 改为"返回全部匹配, 显示域按行×列收口, offset仅跳过"
+# 2026-07-21 - 小欧 - ReadtextInput.limit/ReadDocxInput.limit/top_n description 引用tool_constants常量(非硬编码200), 加"建议不超过{MAX}"说明
+# 2026-07-21 - 小欧 - 入参即信任: ReadtextInput.limit le=1000000→1000, 支撑用户指定1000以内行数
+# 2026-07-25 - 小欧 - description去冗余: 27处必填/可选/默认/范围重复移除
+# 2026-07-25 - 小欧 - description去冗余+内部细节清理: encoding自动尝试/检测, AES-256, content LLM截断原因, context冗余; typo修: 盖覆→覆盖
+# 2026-07-25 - 小欧 - description肯定表述+ReadmediaInput docstring正面格式说明+注释修正
+# 2026-07-25 - 小欧 - 删content长度限制虚数建议,改为"超过建议分多次写入"
+# 2026-07-25 - 小欧 - MoveInput.overwrite 说明增强: 提示默认False不覆盖+目标存在时报错
+# 2026-07-28 - 小欧 - description精确化: writetext.content 去冗余精简至1行+点明"必填"; edittext.old_string 强调"必须精确匹配(含缩进)"; edittext.new_string 精简为"替换后的新文本"; EdittextInput docstring 开头加匹配提示
+# 2026-07-28 - 小欧 - 修复Bug-4: edittext.new_string description 恢复"替换/插入的新文本"(上次精简丢弃了插入/删除语义)
+# 2026-07-29 - 小欧 - 锚点重叠约束加schema desc: EdittextInput/old_string/new_string加说明, before/after模式new_string不能包含old_string整行
 """
 File Schema - 文件工具参数模型
 
@@ -25,19 +36,21 @@ Author: 小沈 - 2026-03-21
 
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal, Union
+from app.tools.tool_constants import OBS_READTEXT_MAX_ROWS
 
 # ============================================================
 # F1: readtext — 读取文本文件
 # ============================================================
 
 # ⚠️ Pydantic class docstring 会进入 JSON Schema 的 parameters.description 并发给 LLM
-# 禁止在这里写文档字符串。工具描述写在 file_register.py 的 FILE_TOOL_DESCRIPTIONS 里。
+# 工具描述写在 file_register.py 的 FILE_TOOL_DESCRIPTIONS 里。
+#禁止在docstring 里面行 非工具信息文字
 class ReadtextInput(BaseModel):
     """
-     不支持office类型.docx/.xlsx/.pptx/.PDF文件和媒体文件读取
+     不支持office类型.docx/.xlsx/.pptx/.PDF文件和媒体文件读取和编辑
     【四种模式】
     1. 读全文: 不传offset/limit/tail
-    2. 前N行: 只传limit（如limit=100读前100行）
+    2. 前N行: 只传limit（如limit=100读前100行）。建议limit不超过{}行，超出需用offset+limit分页
     3. 尾部N行: 只传tail（如tail=20读最后20行）
     4. 分页: offset+limit（如offset=10, limit=20读第10-29行）
 
@@ -49,6 +62,7 @@ class ReadtextInput(BaseModel):
     - limit=100: 读前100行
     - tail=20: 读最后20行
     - offset=10, limit=20: 读第10-29行"""
+    __doc__ = __doc__.format(OBS_READTEXT_MAX_ROWS)
     path: str = Field(
         description="要读取的文件路径(绝对路径)。支持文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
@@ -64,8 +78,8 @@ class ReadtextInput(BaseModel):
     limit: Optional[int] = Field(
         default=None,
         ge=1,
-        le=1000000,
-        description="""读取行数。
+        le=1000,
+        description=f"""读取行数。建议不超过{OBS_READTEXT_MAX_ROWS}行，超限需再次用offset+limit分页读取。
 
 【三种模式】
 1. 只传limit: 读前limit行（如limit=100读前100行）
@@ -85,7 +99,7 @@ class ReadtextInput(BaseModel):
     )
     encoding: Optional[str] = Field(
         default=None,
-        description="文件编码,默认utf-8。读取失败时自动尝试gbk/gb2312/utf-8-sig"
+        description="文件编码,默认utf-8。非utf-8编码文件需指定gbk/gb2312等"
     )
 
 
@@ -100,25 +114,11 @@ class WritetextInput(BaseModel):
         description="文件的完整路径(绝对路径,支持中文路径)。用于写入文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
     content: str = Field(
-        description="""要写入文件的文本内容。
-
-【格式要求】
-- 类型: 必须是字符串(string)，不支持dict/list/object
-- 换行: 使用\\n表示换行
-- 特殊字符: 双引号用\\"表示，反斜杠用\\\\表示
-
-【长度限制】
-- 建议: 单次调用不超过2000字符(避免LLM输出截断)
-- 超过2000字符: 建议分多次调用(第一次append=False，后续append=True)
-
-【示例】
-- 单行: "Hello World"
-- 多行: "第一行\\n第二行\\n第三行"
-- JSON: "{\\"key\\": \\"value\\"}" """,
+        description="要写入文件的正文,必填。换行用\\n表示。大文件建议分多次写入(首次append=False,后续append=True)",
     )
     encoding: Optional[str] = Field(
         default=None,
-        description="文件编码。追加时检测已有文件编码,新建时默认utf-8。也可指定gbk/gb2312等"
+        description="文件编码。追加时沿用已有编码,新建时默认utf-8。也可指定gbk/gb2312等"
     )
     append: bool = Field(
         default=False,
@@ -131,9 +131,9 @@ class WritetextInput(BaseModel):
 # ============================================================
 
 class ReadmediaInput(BaseModel):
-    """不支持PDF文件(请用read_pdf)"""
+    """支持本地图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)、音频(MP3/WAV/OGG/M4A/FLAC/AAC)、视频(MP4/AVI/MOV/MKV)。返回Base64编码数据。不支持PDF文件和URL——网页中的图片/PDF请用fetchpage获取"""
     path: str = Field(
-        description="媒体文件的完整路径。支持图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)、音频(MP3/WAV/OGG/M4A/FLAC/AAC)、视频(MP4/AVI/MOV/MKV)。返回Base64编码数据"
+        description="本地媒体文件的完整路径(不支持URL)"
     )
 
 
@@ -142,20 +142,21 @@ class ReadmediaInput(BaseModel):
 # ============================================================
 
 class EdittextInput(BaseModel):
-    """edit工具的替换模式说明:
-    mode="once"   -- 只替换第一个匹配的old_string
-    mode="all"    -- 替换全部匹配的old_string
-    mode="before" -- 在唯一锚点前插入
-    mode="after"  -- 在唯一锚点后插入"""
+    """old_string必须精确匹配(含缩进)。
+    mode说明:
+    once   -- 只替换第一个匹配
+    all    -- 替换全部匹配
+    before -- 在唯一锚点前插入(new_string不要包含old_string整行,否则重复)
+    after  -- 在唯一锚点后插入(new_string不要包含old_string整行,否则重复)"""
     path: str = Field(
         description="目标文件的绝对路径(仅支持文本文件)"
     )
     old_string: str = Field(
-        description="定位锚点字符串"
+        description="待替换/定位的旧文本,必填且必须精确匹配(含缩进和空格)。before/after模式下old_string是锚点定位行,new_string不要包含此行"
     )
     new_string: str = Field(
         default="",
-        description="替换/插入的字符串。mode=once时传空字符串''表示删除匹配文本"
+        description="替换/插入的新文本。传空串''表示删除匹配的old_string。before/after模式下new_string不能包含与old_string相同的整行(否则插入后锚点行会重复),只填新内容即可"
     )
     mode: str = Field(
         default="once",
@@ -163,7 +164,7 @@ class EdittextInput(BaseModel):
     )
     ignore_case: bool = Field(
         default=False,
-        description="是否忽略大小写,默认False"
+        description="是否忽略大小写"
     )
     encoding: Optional[str] = Field(
         default=None,
@@ -179,15 +180,15 @@ class EdittextInput(BaseModel):
 class ListdirInput(BaseModel):
     """支持offset参数分页遍历大目录(每页最多500项)"""
     path: str = Field(
-        description="目录路径(绝对路径,必填)。如 D:/项目代码"
+        description="目录路径(绝对路径)"
     )
     sort_by: Literal["name", "size", "mtime"] = Field(
         default="name",
-        description="排序方式:name/size/mtime,默认name"
+        description="排序方式:name/size/mtime"
     )
     include_hidden: bool = Field(
         default=False,
-        description="是否显示隐藏文件(以.开头的文件),默认False"
+        description="是否显示隐藏文件(以.开头的文件)"
     )
     offset: int = Field(
         default=0,
@@ -202,20 +203,20 @@ class ListdirInput(BaseModel):
 class TreeInput(BaseModel):
     """可设max_depth控制深度(默认5层,大目录如node_modules建议设3以下)"""
     path: str = Field(
-        description="目录路径(绝对路径,必填)。如 D:/项目代码"
+        description="目录路径(绝对路径)"
     )
     include_hidden: bool = Field(
         default=False,
-        description="是否显示隐藏文件(以.开头的文件),默认False"
+        description="是否显示隐藏文件(以.开头的文件)"
     )
     max_depth: int = Field(
         default=5,
         ge=1, le=20,
-        description="树的最大深度(1~20),默认5层"
+        description="树的最大深度"
     )
     sort_by: Literal["name", "mtime"] = Field(
         default="name",
-        description="排序方式:name/mtime(不支持size排序),默认name"
+        description="排序方式:name/mtime(不支持size排序)"
     )
 
 
@@ -229,11 +230,11 @@ class FindInput(BaseModel):
         description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\""
     )
     path: str = Field(
-        description="搜索的起始目录(绝对路径,必填)。如 D:/项目代码"
+        description="搜索的起始目录(绝对路径)。如 D:/项目代码"
     )
     ignore_case: bool = Field(
         default=True,
-        description="是否忽略大小写,默认True"
+        description="是否忽略大小写"
     )
     type: Optional[Literal["file", "directory"]] = Field(
         default=None,
@@ -265,11 +266,11 @@ class GrepInput(BaseModel):
     )
     ignore_case: bool = Field(
         default=True,
-        description="是否忽略大小写,默认True(等价于 pattern 前加 (?i))"
+        description="是否忽略大小写(等价于 pattern 前加 (?i))"
     )
     context: int = Field(
         default=0, ge=0,
-        description="返回匹配行前后各N行上下文,默认0(仅校验非负)。用于查看匹配代码的上下文"
+        description="匹配行前后各N行上下文"
     )
 
 
@@ -282,17 +283,18 @@ class GrepInput(BaseModel):
 
 class CompressInput(BaseModel):
     """可压缩单文件、目录或通配符批量打包;压缩目录时默认递归包含子目录。默认 zip 格式,默认不覆盖已存在压缩包(需 overwrite=True),仅 ZIP 支持加密。"""
-    path: str = Field(description="要压缩的文件/目录路径(绝对路径),支持通配符如*.txt")
-    dest: str = Field(description="输出压缩包路径(绝对路径,必填)")
+    path: str = Field(description="文件/目录路径(绝对路径),支持通配符如*.txt")
+    dest: str = Field(description="输出压缩包路径(绝对路径)")
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
-        default="zip", description="压缩格式:zip/tar/tar.gz/tar.bz2,默认zip"
+        default="zip", description="压缩格式:zip/tar/tar.gz/tar.bz2"
     )
 
-    password: Optional[str] = Field(default=None, description="ZIP加密密码,设置后创建AES-256加密ZIP,仅ZIP格式支持,可选")
-    overwrite: bool = Field(default=False, description="是否覆盖已存在文件,默认False")
+    password: Optional[str] = Field(default=None, description="ZIP加密密码,设置后创建加密ZIP,仅ZIP格式支持")
+    overwrite: bool = Field(default=False, description="是否覆盖已存在文件")
     exclude_patterns: Optional[List[str]] = Field(
         default=None, description="排除的文件/目录模式列表,如 ['node_modules', '__pycache__']"
     )
+    timeout: int = Field(default=300, description="超时秒数(5-1800秒),大目录/大文件压缩建议适当增大,默认300秒")
 
 
 # ============================================================
@@ -301,12 +303,12 @@ class CompressInput(BaseModel):
 
 class ExtractInput(BaseModel):
     """解压 zip/tar/tar.gz/tar.bz2 到目标目录,默认递归展开所有层级并保留原目录结构。dest 默认自动创建同名目录,默认不覆盖(需 overwrite=True),ZIP 加密包需 password。"""
-    path: str = Field(description="压缩包路径(绝对路径,必填)。支持格式:zip/tar/tar.gz/tar.bz2")
+    path: str = Field(description="压缩包路径(绝对路径)。支持格式:zip/tar/tar.gz/tar.bz2")
     dest: Optional[str] = Field(
-        default=None, description="解压目标目录(绝对路径,可选,默认自动创建同名目录)"
+        default=None, description="解压目标目录(绝对路径,默认自动创建同名目录)"
     )
-    password: Optional[str] = Field(default=None, description="解密密码(仅ZIP格式支持),可选")
-    overwrite: bool = Field(default=False, description="是否覆盖已存在文件,默认False")
+    password: Optional[str] = Field(default=None, description="解密密码(仅ZIP格式支持)")
+    overwrite: bool = Field(default=False, description="是否覆盖已存在文件")
 
 
 # ============================================================
@@ -317,7 +319,7 @@ class MoveInput(BaseModel):
     """移动文件或目录到新位置;移动目录时默认递归。默认不覆盖已存在目标(需 overwrite=True)。"""
     path: str = Field(description="源文件路径(绝对路径)")
     dest: str = Field(description="目标路径(绝对路径)")
-    overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
+    overwrite: bool = Field(default=False, description="是否覆盖目标文件(不覆盖时目标存在则报错)")
 
 
 # ============================================================
@@ -327,9 +329,9 @@ class MoveInput(BaseModel):
 class CopyInput(BaseModel):
     path: str = Field(description="源文件路径(绝对路径)")
     dest: str = Field(description="目标路径(绝对路径)")
-    recursive: bool = Field(default=False, description="复制目录时需True,默认False")
-    overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
-    preserve_metadata: bool = Field(default=True, description="是否保留文件元数据(修改时间等),默认True")
+    recursive: bool = Field(default=False, description="复制目录时需True")
+    overwrite: bool = Field(default=False, description="是否覆盖目标文件")
+    preserve_metadata: bool = Field(default=True, description="是否保留文件元数据")
 
 
 
@@ -338,9 +340,9 @@ class CopyInput(BaseModel):
 # ============================================================
 
 class DeleteInput(BaseModel):
-    path: str = Field(description="要删除的文件/目录路径(绝对路径)")
-    recursive: bool = Field(default=False, description="删除非空目录时需True,默认False")
-    force: bool = Field(default=False, description="True=跳过回收站永久删除,False=放入回收站。默认False")
+    path: str = Field(description="文件/目录路径(绝对路径)")
+    recursive: bool = Field(default=False, description="删除非空目录时需True")
+    force: bool = Field(default=False, description="True=跳过回收站永久删除,False=放入回收站")
 
 
 # ============================================================
@@ -350,7 +352,7 @@ class DeleteInput(BaseModel):
 class RenameInput(BaseModel):
     path: str = Field(min_length=1, description="原文件/目录路径(绝对路径)")
     dest: str = Field(min_length=1, description="新名称(仅文件名,不含目录路径)")
-    overwrite: bool = Field(default=False, description="目标文件已存在时是否覆盖,默认False")
+    overwrite: bool = Field(default=False, description="是否覆盖目标文件")
 
 
 # ============================================================
@@ -374,3 +376,4 @@ __all__ = [
     "DeleteInput",
     "RenameInput",
 ]
+

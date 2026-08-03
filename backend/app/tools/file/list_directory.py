@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-20 - 小欧 - 目录遍历跳过名单(_SKIP_DIRS)合并为公用 SKIP_DIRS(从 tool_constants 导入), 去除 list_directory 与 grep 两处私有重复定义, 统一维护
 # 2026-07-20 - 小欧 - 章18门限治理: 依3.7删除Tool层LISTDIR_PAGE_SIZE条数截断(返回全部条目, 由Format层OBS_LISTDIR_MAX_ROWS/CHARS行×列收口); 删除max_depth=10递归深度限制(3.6, TOOL_TIMEOUTS已兜底); data.truncated仅反映deadline截断; 新增OBS_LISTDIR_*专属观察常量(显示域两态)
+# 2026-07-29 - 小沈 - TOOL_TIMEOUTS key对齐: "list_directory"→"listdir"(真实注册名), 值30→60
 """
 F5: list_directory — 列出目录内容
 
@@ -145,7 +146,7 @@ def _build_list_directory_llm_data(
     timed_out: bool = False,
 ) -> Dict[str, Any]:
     """list_directory的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-06 statistics移入metrics/summary — 小欧 2026-07-07 超时秒数"""
-    _listdir_timeout_sec = TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"])
+    _listdir_timeout_sec = TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"])
     _act_params = {"path": dir_path}
     if user_sort_by:
         _act_params["sort_by"] = user_sort_by
@@ -230,7 +231,7 @@ async def listdir(
             llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=err, hint="请检查目录路径是否正确", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
             return build_error(data={}, llm_data=llm_data)
 
-        deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"]) - 2
+        deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution, _scan_timed_out = await asyncio.to_thread(
             _scan_directory_sync, path, False, 0, include_hidden, deadline,
         )

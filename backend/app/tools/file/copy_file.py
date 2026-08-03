@@ -1,6 +1,13 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"复制失败"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
+# 2026-07-20 - 小欧 - 去噪去重 refactor:
+#   移除 source_size/mtime 噪声(data空)
+#   data 改为空字典 {}，信息全由 llm_data
+#   承载，formatter 路由改走 #0 空data分支
+# 2026-07-26 - 小欧 - recursive模式删除已存在目标目录时,shutil.rmtree缺onerror,子目录中只读文件导致WinError 5拒绝访问崩溃。
+#   增_remove_readonly闭包函数+onerror参数,与delete_file.py/operation_cleanup.py保持一致。
 """
 F7: copy_file — 复制文件
 
@@ -129,6 +136,11 @@ async def copy(
             sequence_number=0,
         )
 
+        def _remove_readonly(func, path, excinfo):
+            """解除只读属性后重试 — 小欧 2026-07-26"""
+            os.chmod(path, os.stat(path).st_mode | 0o200)
+            func(path)
+
         def _copy_sync():
             dst.parent.mkdir(parents=True, exist_ok=True)
             copy_func = shutil.copy2 if preserve_metadata else shutil.copy
@@ -140,7 +152,7 @@ async def copy(
                         logger.warning(f"[copy] recursive模式: 目标目录已存在,将删除后重建: {dst}")
                         if not os.access(str(dst), os.W_OK):
                             os.chmod(str(dst), os.stat(str(dst)).st_mode | 0o200)
-                        shutil.rmtree(str(dst))
+                        shutil.rmtree(str(dst), onerror=_remove_readonly)
                     if preserve_metadata:
                         shutil.copytree(str(src), str(dst))
                     else:
@@ -179,3 +191,4 @@ async def copy(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": str(e)}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata, hint=hint_for_write_error(e, Path(source).name))  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)
+

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-20 - 小欧 - MAX_MEDIA_READ_SIZE 依3.5改名 INER_READMEDIA_READ_SIZE(readmedia 自有内部常量, 各 tool 独立不公用, INER_ 前缀; 3.4 硬安全网保留, 文件过大拒绝, 不截断)
+# 2026-07-20 - 小欧 - MAX_MEDIA_READ_SIZE 依3.5改名 READMEDIA_INPUT_MAX_BYTES(readmedia 自有内部常量, 各 tool 独立不公用, INER_ 前缀; 3.4 硬安全网保留, 文件过大拒绝, 不截断)
+# 2026-07-26 - 小欧 - OOD: 删 READMEDIA_INPUT_MAX_BYTES 常量+入口检查, OOM自然抛出被except捕获(同dataanalysis模式)
+# 2026-07-26 - 小沈 - BugFix #3: path参数不覆盖; #5: hint传完整路径
 """
 F3: readmedia — 读媒体文件
 
@@ -18,7 +20,6 @@ from pathlib import Path
 from typing import Any, Dict
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import INER_READMEDIA_READ_SIZE
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.validate.file_type_checker import check_for_media_tool
 from app.tools.validate.file_path_checker import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
@@ -73,7 +74,7 @@ async def readmedia(
     file_path = path
     t0 = _time_mod.perf_counter()
     try:
-        # 文件类型前置检查 — 小健 2026-06-24
+        # 文件类型前置检查 — 小健 2026-06-24 — check_for_media_tool 内含 validate_path 存在性校验 — 小欧 2026-07-29
         is_valid, error_detail, suggested_tool = check_for_media_tool(file_path)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -86,30 +87,21 @@ async def readmedia(
             llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=_hint)
             return build_error(data={}, llm_data=llm_data)
 
-        path = Path(file_path)
-        suffix = path.suffix.lower()
-
-        file_size = path.stat().st_size
-        if file_size > INER_READMEDIA_READ_SIZE:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_media_file_llm_data(
-                "error", duration_ms, file_path=file_path,
-                detail=f"媒体文件过大({file_size}字节),超过读取上限{INER_READMEDIA_READ_SIZE // 1024 // 1024}MB",
-                hint="文件过大，请使用更小的文件",
-            )
-            return build_error(data={}, llm_data=llm_data)
+        _p = Path(file_path)
+        suffix = _p.suffix.lower()
 
         mime_type = _MIME_MAP.get(suffix, "application/octet-stream")
+        file_size = _p.stat().st_size
 
         def _read_sync():
-            with open(path, 'rb') as f:
+            with open(_p, 'rb') as f:
                 return base64.b64encode(f.read()).decode('utf-8')
 
         b64_data = await asyncio.to_thread(_read_sync)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_media_file_llm_data(
-            "success", duration_ms, file_path=str(path),
-            file_name=path.name, mime_type=mime_type, file_size=file_size,
+            "success", duration_ms, file_path=file_path,
+            file_name=_p.name, mime_type=mime_type, file_size=file_size,
         )
         # ---- observation_formatter route -------------------------------------------
         # branch: #13 readmedia
@@ -123,11 +115,11 @@ async def readmedia(
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
         return build_success(
-            data={"file_name": path.name, "mime_type": mime_type, "base64_data": b64_data},
+            data={"file_name": _p.name, "mime_type": mime_type, "base64_data": b64_data},
             llm_data=llm_data,
         )
     except Exception as e:
         logger.error(f"readmedia failed: {file_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint=hint_for_read_error(e, Path(file_path).name))  # 统一错误提示 - 小欧 2026-07-12
+        llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint=hint_for_read_error(e, file_path))  # 统一错误提示 - 小欧 2026-07-12
         return build_error(data={}, llm_data=llm_data)
