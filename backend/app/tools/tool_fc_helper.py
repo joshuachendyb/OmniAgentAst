@@ -11,8 +11,11 @@ Tool函数公共辅助代码 — 纯逻辑函数集合
   - date_helper.py: parse_datetime_any, parse_datetime_string, is_holiday, calc_next_n_workday, get_holiday_date_by_name, resolve_timezone
   - shell_helper.py: _check_shell_injection, _read_stream_nonblocking
   - db_helper.py: check_db_exists
-   - content_validation.py: validate_csv_content, validate_xml_content, validate_html_content, validate_python_content
+   - content_validation.py: validate_csv_content, validate_xml_content, validate_html_content (validate_python_content 已迁出至 app.tools.toolhelper.syntax_validator)
 """
+# 2026-07-21 - 小欧 - 删除死代码 validate_python_content(全仓0调用方), 语法校验统一迁至 app.tools.toolhelper.syntax_validator.validate_syntax
+# 2026-07-24 - 小欧 - 修复: 去掉 validate_csv/xml 的 str(e)[:100]截断(helper层不截断, 调用方自行决定) — 北京老陈驱动
+
 # 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 
@@ -37,11 +40,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
-from app.tools.tool_constants import QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
+from app.tools.tool_constants import QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT, DEFAULT_TIMEOUT_SEC
 from app.constants import UTC_OFFSET_PATTERN
 
 from app.logger import logger
-from app.tools.toolhelper.syntax_validator import validate_syntax  # 小欧 2026-07-21 (83379fbb/fbdbe775) 统一Python语法校验: BOM去扰+BUG-002, 去除str(e)截断(调用方自行决定)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -420,7 +422,7 @@ def validate_csv_content(content: str, max_check_lines: int = 1000) -> Optional[
             return f"CSV格式警告: 列数不一致(发现{set(row_lengths)}种列数),写入可能导致数据错位"
         return None
     except Exception as e:
-        return f"CSV格式验证失败: {str(e)[:100]}"
+        return f"CSV格式验证失败: {str(e)}"
 
 
 def validate_xml_content(content: str) -> Optional[str]:
@@ -429,7 +431,7 @@ def validate_xml_content(content: str) -> Optional[str]:
         ET.fromstring(content)
         return None
     except ET.ParseError as e:
-        return f"XML格式验证失败: {str(e)[:100]}"
+        return f"XML格式验证失败: {str(e)}"
 
 
 class _SimpleHTMLValidator(HTMLParser):
@@ -463,10 +465,6 @@ def validate_html_content(content: str) -> Optional[str]:
     return None
 
 
-def validate_python_content(content: str, file_path: Optional[str] = None) -> Optional[str]:
-    """验证Python语法 — 委托syntax_validator: BOM去扰+BUG-002, 无str(e)截断(调用方自行决定) — 小欧 2026-07-21 (83379fbb / fbdbe775)"""
-    _syn = validate_syntax(content, "python", file_path)
-    return _syn.error_text() if not _syn.valid else None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -746,7 +744,7 @@ def backup_file(file_path: str, backup_dir: Optional[str] = None, suffix: str = 
     }
 
 
-def _get_connection(connection_type, connection_string=None, db_path=None, timeout=30000):
+def _get_connection(connection_type, connection_string=None, db_path=None, timeout=int(DEFAULT_TIMEOUT_SEC * 1000)):
     """获取数据库连接,返回 (conn, engine_or_none, error_message) — 小欧 2026-06-24 从dataanalysis提取到公共helper"""
     try:
         if connection_type == "sqlite":
@@ -782,6 +780,44 @@ def _close_connection(conn, engine=None):
         logger.warning(f"关闭数据库连接时出错: {e}")
 
 
+def _strip_sql_comments_and_strings(sql: str) -> str:
+    """剥离SQL注释与字符串字面量，仅保留结构与关键字，供安全检测使用 — 小欧 2026-07-31
+       Bug①/Bug⑤修复: "-- WHERE"注释绕过无WHERE检测、字符串字面量内分号/关键字误判
+       支持: --行注释 /*块注释*/ #行注释(MySQL, 紧跟'>'时保留以兼容PostgreSQL #>/#>> JSONB运算符)
+       字符串: '单引号' "双引号" `反引号` (SQL转义为连续引号)
+    """
+    result = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == '-' and i + 1 < n and sql[i + 1] == '-':
+            j = sql.find('\n', i + 2)
+            i = n if j == -1 else j
+        elif ch == '/' and i + 1 < n and sql[i + 1] == '*':
+            j = sql.find('*/', i + 2)
+            i = n if j == -1 else j + 2
+        elif ch == '#' and not (i + 1 < n and sql[i + 1] == '>'):
+            j = sql.find('\n', i + 1)
+            i = n if j == -1 else j
+        elif ch in ("'", '"', '`'):
+            quote = ch
+            i += 1
+            while i < n:
+                if sql[i] == quote:
+                    if i + 1 < n and sql[i + 1] == quote:
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            result.append(' ')
+        else:
+            result.append(ch)
+            i += 1
+    return ''.join(result)
+
+
 __all__ = [
     "_check_module",
     "_decode_bytes_safe",
@@ -805,7 +841,6 @@ __all__ = [
     "validate_csv_content",
     "validate_xml_content",
     "validate_html_content",
-    "validate_python_content",
     "_detect_encoding",
     "_detect_encoding_simple",
     "_write_json",
@@ -827,4 +862,5 @@ __all__ = [
     "HOLIDAY_ALIASES",
     "_get_connection",
     "_close_connection",
+    "_strip_sql_comments_and_strings",
 ]

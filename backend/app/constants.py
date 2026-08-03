@@ -26,9 +26,13 @@
   2026-07-14 小欧 加回HTTP_RATE_LIMIT=429并供error_classifier引用,消除裸魔法数429(代码变迁遗留,非功能退化)
   2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL(base_service.py)与MAX_PENDING_CONFIRMATIONS(hitl_confirmation.py)至constants.py(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/相关测试导入)
   2026-07-15 小欧 常量归一化治理: 删除11个零引用死常量(DEFAULT_*等), 新增系统级 PROJECT_CONTEXT_MAX_CHARS=10000; 现存数值型长度/上限/超时/阈值常量统一标注【使用对象】便于识别废弃
-   2026-07-15 老陈裁定+小欧: 删除 HTTP_RATE_LIMIT 常量(429 是 HTTP 状态码, 在 error_classifier 映射中以裸数字与其他状态码并列, 单独常量多余且 HTTP_ 前缀不准), error_classifier 改回裸 429, 功能零退化
-     2026-07-16 小欧 新增 LLM_MAX_TOKENS=16384(系统级max_tokens默认值,防LLM无限长输出致长时间静默)+STREAM_TOTAL_TIMEOUT=500(base_service总时长硬超时,弥补httpx idle timeout在连续流式时不触发的缺陷)
-     2026-07-17 小沈 FC重命名: LLM_RESPONSE_FALLBACK(原FC_FALLBACK_ENABLED)+LLM_RESPONSE_RETRIES(原FC_MAX_RETRIES)
+  2026-07-15 老陈裁定+小欧: 删除 HTTP_RATE_LIMIT 常量(429 是 HTTP 状态码, 在 error_classifier 映射中以裸数字与其他状态码并列, 单独常量多余且 HTTP_ 前缀不准), error_classifier 改回裸 429, 功能零退化
+  2026-07-16 小欧 新增 LLM_MAX_TOKENS=16384(系统级max_tokens默认值,防LLM无限长输出致长时间静默)+STREAM_TOTAL_TIMEOUT=500(base_service总时长硬超时,弥补httpx idle timeout在连续流式时不触发的缺陷)
+  2026-07-17 小沈 FC重命名: LLM_RESPONSE_FALLBACK(原FC_FALLBACK_ENABLED)+LLM_RESPONSE_RETRIES(原FC_MAX_RETRIES)
+  2026-07-22 小欧 MAX_CONTEXT_CHARS→MAX_CONTEXT_TOKENS 命名统一（值200000不变），注释同步更新
+  2026-07-23 小欧 新增 ACTION_LOG_RESULT_MAX_CHARS=5000(action_handler
+        日志result截断长度,防MemoryError); action_handler导入改为
+        from app.constants 引用
 # 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 """
 
@@ -86,11 +90,15 @@ DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://local
 # 4. 内容截断与字符限制
 # ============================================================
 
-MAX_CONTEXT_CHARS = 200000  # 【系统级】使用对象: Agent 总体上下文字符上限
+MAX_CONTEXT_TOKENS = 200000  # 【系统级】使用对象: Agent 总体上下文 Token 上限（默认值，配置可覆盖）
+MAX_CONTEXT_RATIO = 0.8      # 【系统级】使用对象: 裁剪绝对值安全网触发比例（默认80%，历史占满此比例即触发裁剪）
+COMPACTION_BUFFER = 20000    # 【系统级】使用对象: 输出预留缓冲区（OpenCode 式，用于增量触发和预算裁剪）
+CHARS_PER_TOKEN = 4          # 【系统级】使用对象: chars→token 换算系数
 TEMP_HISTORY_CHAR_LIMIT = 50000  # 【系统级】使用对象: 临时历史字符上限
 
 # 系统级长度常量(2026-07-15 归一化治理): 项目规则文件(OmniAgent.md)注入字符上限 — 小欧
 PROJECT_CONTEXT_MAX_CHARS = 10000   # 【系统级】使用对象: 项目规则文件(OmniAgent.md)注入 Prompt 字符上限
+ACTION_LOG_RESULT_MAX_CHARS = 5000  # 【系统级】使用对象: action_handler.py(日志 tool_result 截断长度, 防 MemoryError)
 
 # 注: 原 DEFAULT_*(11个) 经验证均为死常量(零引用), 已于 2026-07-15 删除;
 #     工具相关长度上限已统一迁至 app/tools/tool_constants.py (OBS_*/SHELL_*/WEB_*/XLSX_*/HTTP_*/DOWNLOAD_*/WRITE_TEXT_*)
