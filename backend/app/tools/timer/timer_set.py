@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-31 - 小欧 - 新增 CALLBACK_MAX_LENGTH 限制(4096字符), 防止回调内容过长导致执行失败
 """
 timer_set — 设置定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
@@ -26,6 +28,7 @@ _timer_counter = 0
 _timer_callbacks: Dict[str, Dict[str, Any]] = {}
 _timer_events: list[Dict[str, Any]] = []
 _timer_lock = asyncio.Lock()
+CALLBACK_MAX_LENGTH = 4096
 
 
 async def _invoke_timer_callback(timer_id: str, callback: str) -> Dict[str, Any]:
@@ -93,6 +96,11 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
         if delay > 86400:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间不能超过24小时", hint="延迟时间不能超过24小时")
+            return build_error(data={}, llm_data=llm_data)
+
+        if len(callback) > CALLBACK_MAX_LENGTH:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback[:50]+"...", detail=f"回调内容过长({len(callback)}字符)，限制{CALLBACK_MAX_LENGTH}字符", hint=f"回调内容不能超过{CALLBACK_MAX_LENGTH}字符")
             return build_error(data={}, llm_data=llm_data)
 
         async with _timer_lock:

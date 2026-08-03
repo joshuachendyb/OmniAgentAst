@@ -1,7 +1,10 @@
+
 # -*- coding: utf-8 -*-
 """
 timer_list — 列出所有定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
+编辑历史:
+# 2026-07-24 - 小欧 - timers[:5] → TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS(魔数→命名常量)
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -11,7 +14,7 @@ import time as _time_mod
 from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_TIMER_LIST
+from app.tools.tool_constants import ERR_TIMER_LIST, TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS
 from app.tools.timer.timer_set import _timer_callbacks, _timer_lock
 from app.db import db
 
@@ -67,7 +70,7 @@ async def timer_list() -> Dict[str, Any]:
         except Exception:
             pass
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_timer_list_llm_data("success", duration_ms, len(timers), [t["timer_id"] for t in timers[:5]])
+        llm_data = _build_timer_list_llm_data("success", duration_ms, len(timers), [t["timer_id"] for t in timers[:TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS]])
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback
         # trigger: 无专用分支匹配 — "timers" 键
@@ -82,3 +85,4 @@ async def timer_list() -> Dict[str, Any]:
 
 
 __all__ = ["timer_list"]
+
