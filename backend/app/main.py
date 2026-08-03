@@ -1,6 +1,7 @@
 # Windows需要ProactorEventLoop支持asyncio subprocess — 小沈 2026-06-28
 # 编辑历史:
 # 2026-07-15 小欧 修复后台清理闭包命名撞车: 原内部闭包 cleanup_task 与 task_registry.cleanup_task(删单个任务)同名不同义, 违反清晰命名/KISS; 展平为模块级 _periodic_cleanup_loop 并保存 task 引用, shutdown 时 cancel
+# 2026-07-28 - 小欧 - BUG#4: version.txt为空时get_version直奔for line in f, 无行进入时version未赋值致UnboundLocalError; 补version="0.0.0"默认值。
 import sys
 import asyncio
 from typing import Optional
@@ -22,7 +23,7 @@ import traceback
 from app.utils.time_utils import get_utc_timestamp
 from app.tools import ensure_tools_registered
 from app.config import get_config
-from app.tools.shell.shell_engine import cleanup_all_persistent_shells
+from app.tools.fundamental.shell_engine import shell_pool
 from pathlib import Path
 import os
 import logging
@@ -48,6 +49,7 @@ def get_version() -> str:
         version_file = project_root / "version.txt"
 
         if version_file.exists():
+            version = "0.0.0"
             with open(version_file, 'r', encoding='utf-8') as f:
                 for line in f:
                     version = line.strip().lstrip('\ufeff')
@@ -192,7 +194,7 @@ async def shutdown_event():
         _cleanup_task_ref.cancel()
     from app.services.lifecycle import reset
     reset()
-    count = cleanup_all_persistent_shells()
+    count = shell_pool.cleanup_all()
     logger.info(f"已清理 {count} 个持久shell进程")
 
 

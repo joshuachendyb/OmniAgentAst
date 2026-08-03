@@ -1,7 +1,10 @@
+
 """
 配置管理模块
 统一管理应用配置,支持从YAML文件和环境变量加载
 """
+# 编辑历史:
+# 2026-07-22 小欧 get_max_context_chars→get_max_context_tokens 重命名（语义纠正），默认值 500000→200000 对齐 constants.py
 
 import functools
 import os
@@ -140,9 +143,9 @@ class Config:
         """
         return self.get('app.max_steps', default)
 
-    def get_max_context_chars(self, default: int = 500000) -> int:
-        """获取max_context_chars配置 — 对话历史字符上限"""
-        return self.get('app.max_context_chars', default)
+    def get_max_context_tokens(self, default: int = 200000) -> int:
+        """获取max_context_tokens配置 — 对话历史 Token 上限"""
+        return self.get('app.max_context_tokens', default)
 
     def get_project_root(self) -> str:
         """获取项目根目录配置
@@ -205,3 +208,4 @@ def get_config_path(filename: str = "config.yaml") -> str:
 
 DEFAULT_CONFIG_FILENAME = "config.yaml"
 DEFAULT_TOOLS_CONFIG_FILENAME = "tools.yaml"
+

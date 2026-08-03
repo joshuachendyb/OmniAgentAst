@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-16 - 小欧 - 新增 rollback / file-operations / file-operations/report(text|html|json) 三API
@@ -91,3 +92,4 @@ def get_file_operations_report(
         return Response(content=content, media_type="application/json")
     content = generate_text_report(task_id, task_desc)
     return Response(content=content, media_type="text/plain; charset=utf-8")
+

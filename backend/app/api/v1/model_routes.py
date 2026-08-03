@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 model_routes - copy from ai_config/, only changed import paths
@@ -418,3 +419,4 @@ async def open_config_folder():
     )
     logger.info(f"已打开配置目录: {config_dir}")
     return api_success(path=config_dir)
+
