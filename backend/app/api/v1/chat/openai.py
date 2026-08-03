@@ -2,6 +2,11 @@
 # 编辑历史:
 # 2026-07-16 - 小欧 - StreamState 增 current_thought 字段, 运行期持有 thought 值
 # 2026-07-18 - 小欧 - 消费者完全退出日志层: 删除prompt_logger全部5处引用(start_request/mark_completed/mark_error/save/import)
+# 2026-07-22 - 小欧 - 修复: 模型不在 provider models 列表时, 不再抛 ValueError 致 ASGI 崩溃
+#   背景: _validate_model_in_list raise ValueError → get_service() 在 generate() 外 → FastAPI 全局异常 → 长篇 traceback + 前端500
+#   修复: get_service() 后通过 resolver.pop_model_warning() 获取 warning, 传入 step_start → send_start_step → MetaStep(warning=), 透传前端
+#   合规: DRY + KISS + SLAP + SRP
+# 2026-07-22 - 小欧 - 代码审查修复: import从函数内移至文件顶部(get_ai_config_resolver无循环依赖); validate_chat_config冗余import删除
 """
 chat_openai — Chat API层入口（路由+实现合一）
 
@@ -24,6 +29,7 @@ from typing import Optional
 from app.services.chat.storage import get_user_message_id
 
 from app.services import get_service
+from app.services.model.resolver import get_ai_config_resolver
 from app.logger import logger
 from app.services.chat.handlers import create_error_response, send_start_step
 from app.utils.sse_formatter import format_agent_sse
@@ -37,8 +43,10 @@ from app.services.task.task_runtime import (
 from app.services.chat.stream import stream_reader
 from app.services.agent.agent_runner import run_agent_in_background
 from app.services.agent.universal_agent import UniversalAgent
+from app.services.agent.steps.final_step import FinalStep
 from app.services.task.task_state import create_stream_buffer, get_stream_buffer
-from app.services.task.task_context import _current_task_id, session_id_var
+from app.services.task.task_context import _current_task_id
+from app.logger.shared_handler import set_session_id
 from app.services.task.hitl_confirmation import resolve_confirmation
 
 router = APIRouter()
@@ -58,7 +66,6 @@ def generate_task_id() -> str:
 async def validate_chat_config():
     """拷贝自 validate_chat_config.py — 内联入 chat_openai.py 小欧 2026-07-10"""
     from app.logger import logger
-    from app.services.model.resolver import get_ai_config_resolver
     try:
         resolver = get_ai_config_resolver()
         is_valid, final_provider, final_model, error_messages = resolver.validate_config()
@@ -119,12 +126,13 @@ async def validate_config_endpoint():
     return await validate_chat_config()
 
 
-async def step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):
+async def step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id, warning=None):
     """拷贝自 step_start.py"""
     try:
         start_step = await send_start_step(
             ai_service=ai_service, task_id=task_id, next_step=next_step,
             user_message=user_input, security_check_result={},
+            warning=warning,
         )
         start_dict = start_step.to_dict()
         execution_steps.append(start_dict)
@@ -186,12 +194,15 @@ async def chat_stream(request: ChatRequest):
     ai_service = get_service()
     session_id = request.session_id or str(uuid.uuid4())
 
+    # 获取模型校验warning透传给前端start step — 小欧 2026-07-22
+    _model_warning = get_ai_config_resolver().pop_model_warning()
+
     async def generate():
         """SSE 消费者生成器 — 小欧 2026-07-12"""
         task_id = generate_task_id()
         _current_task_id.set(task_id)
         # 注入会话标识到日志上下文, 使本轮请求全链路日志带 session_id, 便于按会话过滤排查 — 小欧 2026-07-17
-        session_id_var.set(session_id)
+        set_session_id(session_id)
         next_step = create_step_counter()
         execution_steps = []
         state = StreamState()
@@ -225,8 +236,21 @@ async def chat_stream(request: ChatRequest):
                 return
 
             # 发送 start 步骤 — 小沈 2026-06-08
-            async for event in step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):
+            async for event in step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id, warning=_model_warning):
                 yield event
+
+            # 模型不在列表时提示并停止，等用户改配置重新发起 — 小欧 2026-07-22
+            if _model_warning:
+                _final = FinalStep(
+                    step=next_step(), response="",
+                    outcome="failed",
+                    error_type="config_error",
+                    error_message=_model_warning,
+                    model=ai_service.model, provider=ai_service.provider,
+                    display_name=f"{ai_service.provider} ({ai_service.model})",
+                )
+                yield format_agent_sse(_final.to_dict())
+                return
 
             # 启动后台生产者(agent)，与 SSE 传输解耦 — 北京老陈 2026-07-12 小欧 2026-07-12
             agent = UniversalAgent(llm_client=ai_service, task_id=task_id)
