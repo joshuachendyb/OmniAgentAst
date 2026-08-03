@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-13 小欧 add_tool_result异常日志带类型与repr
@@ -25,7 +26,25 @@
 # 2026-07-18 小欧 #11+#12 fix: check_safety_and_confirm 重构 — 超时与拒绝分流(expired标记); 拒绝不return终止整批, 收
 #   集_denied后continue, 最终只执行通过的call(通过_out参数回传过滤后列表); 调用方对应改_exec_calls
 # 2026-07-19 小欧 build_observation/_add_denial_feedback新增reasoning参数传递
-
+# 2026-07-21 小欧 - #4 自动纠正: 新增 _auto_correct_file_tool + _EXT_TO_READ/WRITE_TOOL 映射, execute_tools 入口扩展名预检自动切换 tool_name, 结果中 llm_data.summary 追加"(工具自动纠正自:{原始名})"
+# 2026-07-23 小欧 - log_and_print统一: 删局部_log_and_print函数, 改为import from app.logger.log_and_print; execute_tools中3处logger.info()+print()替换为log_and_print()
+# 2026-07-23 小欧 - 局部常量迁移: 删 _MAX_LOG_RESULT_CHARS=5000,
+#            改为 from app.constants import ACTION_LOG_RESULT_MAX_CHARS
+# 2026-07-25 - 小欧 - 修复readmedia被自动纠错为readtext: _auto_correct_file_tool fallback硬编码"readtext"→tool_name, 无专用映射时不篡改原工具
+# 2026-07-25 小欧 - 三分类映射表重构: _EXT_TO_READ/WRITE_TOOL换用file_type_checker常量(TEXT_EXTENSIONS/MEDIA_EXTENSIONS)构建, 删fallback; _auto_correct_file_tool简化: None短路+!=判断; 文本→readtext/文档→专用工具/多媒体→readmedia 三分类全覆盖
+# 2026-07-25 小欧 - task006-issue1: operation_id候选查询加task_id类型守卫(isinstance str/int); 非str/int提前短路并降WARNING为DEBUG, 消除测试环境MagicMock刷52次WARNING噪声
+# 2026-07-25 小欧 - 回退上述类型守卫: 根因在测试fixture缺task_id而非生产代码(生产代码generate_task_id()永远返回str), 改为测试fixture源头修复; 生产代码恢复原始try-except
+# 2026-07-25 小欧 - 欧阳报告缺陷修复:
+# 2026-07-28 - 小欧 - BUG#3: _exec_calls原写法_safe_calls or call_result.all_calls, 当_safe_calls为空列表(所有调用均被安全拒绝)时回退到all_calls(含被拒绝调用), 完全绕过安全检查。改为_safe_calls if _safe_calls else [], 拒绝后执行空列表。
+#   缺陷1: 删_build_call_list中tool_name空检查的重复日志(DRY, handle_action已兜底ErrorStep+return)
+#   缺陷2: build_observation统一call字典访问为.get()防KeyError(与同函数内.get()混用修一致)
+#   缺陷3: _correction_map改用enumerate索引替代id(call)(更直观,符合KISS-DIRECT)
+#   缺陷4: check_safety_and_confirm拒绝反馈改为循环所有_denied(原只给第一个)
+#   缺陷5: _has_conflict跳过无别名工具时补path兜底冲突检测(漏报文件路径竞态)
+# 2026-07-30 - 小沈 - ContextVar注入: 导入set_current_task_id; handle_action入口加set_current_task_id(agent.task_id)
+# 2026-07-30 - 小沈 - except:pass补日志: add_tool_result双层catch失败改为logger.debug记录
+# 2026-07-30 - 小欧 - auto_confirm校验: SafetyResult.auto_confirm=True时不等确认直接通过, 提示照出但SUSPENDED不挂起 — 北京老陈驱动三堂会审
+# 2026-07-31 - 小欧 - 撤销auto_confirm: action_handler删auto_confirm判断块, 恢复wait_for_confirmation_result等待逻辑
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -44,18 +63,21 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 
-from app.logger import logger
+from app.logger import logger, log_and_print
+from app.constants import ACTION_LOG_RESULT_MAX_CHARS
 from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep（工具重试隐蔽，不再 emit）
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.observation_formatter import build_observation_text
 from app.constants import HITL_TIMEOUT
 from app.services.agent.tool_executor import execute_tool
+from app.services.task.task_context import set_current_task_id
 from app.db.models.operation_models import OperationStatus
 from app.db import db
 
 from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE_OPERATION_TOOLS
 from app.tools.param_alias_mapper import PARAM_ALIASES
+from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, MEDIA_EXTENSIONS
 
 
 # 【修复P2-5】封装observation构建上下文 — 北京老陈 2026-06-13
@@ -76,6 +98,42 @@ class ObservationContext:
 # 工具文件写操作集合（冲突检测用）— 北京老陈 2026-07-04
 _WRITE_OPS = FILE_OPERATION_TOOLS - {"readtext"}
 
+# #4 自动纠正: 文件扩展名→tool_name 映射（三分类: 文本→readtext, 文档→专用工具, 多媒体→readmedia）— 小欧 2026-07-25
+_EXT_TO_READ_TOOL = {ext: "readtext" for ext in TEXT_EXTENSIONS}
+_EXT_TO_READ_TOOL.update({ext: "readmedia" for ext in MEDIA_EXTENSIONS})
+_EXT_TO_READ_TOOL.update({
+    ".docx": "read_docx",
+    ".xlsx": "read_xlsx",
+    ".pdf": "read_pdf",
+    ".pptx": "read_pptx",
+})
+_EXT_TO_WRITE_TOOL = {ext: "writetext" for ext in TEXT_EXTENSIONS}
+_EXT_TO_WRITE_TOOL.update({
+    ".docx": "write_docx",
+    ".xlsx": "write_xlsx",
+    ".pdf": "write_pdf",
+    ".pptx": "write_pptx",
+})
+
+
+def _auto_correct_file_tool(tool_name: str, tool_params: dict) -> tuple:
+    """文件扩展名预检自动纠正tool_name — 返回 (纠正后名, 原始名或None)
+    三分类映射: 文本→readtext, 文档→专用工具, 多媒体→readmedia — 小欧 2026-07-25"""
+    _path = tool_params.get("path", "") if isinstance(tool_params, dict) else ""
+    if not _path or not isinstance(_path, str):
+        return tool_name, None
+    _ext = _path[_path.rfind("."):].lower() if "." in _path else ""
+    if not _ext:
+        return tool_name, None
+    if tool_name.startswith("read"):
+        _mapping = _EXT_TO_READ_TOOL
+    elif tool_name.startswith("write"):
+        _mapping = _EXT_TO_WRITE_TOOL
+    else:
+        return tool_name, None
+    if _ext in _mapping and tool_name != _mapping[_ext]:
+        return _mapping[_ext], tool_name
+    return tool_name, None
 
 
 async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None):
@@ -123,9 +181,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     safety_level=safety_result.safety_level,
                 ))
 
-                # 进入真挂起：等待用户确认（SUSPENDED=真挂起，区别于 RETRYING 错误重试）— 小欧 2026-07-12
                 set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认工具执行: {_cn}")
-
                 auth = await wait_for_confirmation_result(confirm_id, timeout=HITL_TIMEOUT)
 
                 if not auth.get("confirmed"):
@@ -151,8 +207,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
 
         if _denied:
-            _first = _denied[0]
-            _add_denial_feedback(agent, all_calls, fc_context, _first[0], _first[1])
+            for _cn, _reason in _denied:
+                _add_denial_feedback(agent, all_calls, fc_context, _cn, _reason)
         # 回传未被拒的call索引给调用方 — 小欧 2026-07-18 #12 fix
         if _out is not None:
             _denied_cns = {d[0] for d in _denied}
@@ -181,11 +237,12 @@ def _add_denial_feedback(agent, all_calls: List[Dict], fc_context: Dict, denied_
             _obs = f"[Observation] 工具 {_cn} 未执行(同批工具 {denied_tool} 未通过安全检查)。"
         try:
             agent.message_builder.add_tool_result(_tid, _obs)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"add_tool_result(_tid={_tid})失败, 尝试空ID: {e}")
             try:
                 agent.message_builder.add_tool_result("", _obs)
-            except Exception:
-                pass
+            except Exception as e2:
+                logger.debug(f"add_tool_result(空ID)也失败: {e2}")
 
 
 def _has_conflict(all_calls: List[Dict]) -> bool:
@@ -200,11 +257,14 @@ def _has_conflict(all_calls: List[Dict]) -> bool:
         name = c.get("tool_name", "")
         if name not in FILE_OPERATION_TOOLS:
             continue
+        params = c.get("tool_params", {})
         aliases = PARAM_ALIASES.get(name, {})
         if not aliases:
+            _path = params.get("path", "")
+            if _path and isinstance(_path, str):
+                path_ops.setdefault(_path, set()).add(name)
             continue
 
-        params = c.get("tool_params", {})
         resolved = {}
         for key, value in params.items():
             canon = aliases.get(key, key)
@@ -248,6 +308,21 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         """
         start_time = time.time()
 
+        # #4 自动纠正: 文件工具扩展名预检 — 小欧 2026-07-21
+        _correction_map = {}
+        for i, c in enumerate(all_calls):
+            _orig = c.get("tool_name", "")
+            _corrected, _raw = _auto_correct_file_tool(_orig, c.get("tool_params", {}))
+            if _raw:
+                logger.info(f"[action_handler] 自动纠正: {_raw}→{_corrected}")
+                c["tool_name"] = _corrected
+                _correction_map[i] = _raw
+        _corrected_tn, _raw_tn = _auto_correct_file_tool(tool_name, tool_params)
+        if _raw_tn:
+            tool_name = _corrected_tn
+            if all_calls:
+                _correction_map[0] = _raw_tn
+
         def _cn(c):
             return c.get("tool_name", "") if isinstance(c, dict) else ""
         def _cp(c):
@@ -255,16 +330,14 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
 
         if len(all_calls) == 1:
             # A: 单工具
-            _msg = f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={tool_name}"
-            logger.info(_msg); print(_msg)
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={tool_name}")
             result = await execute_tool(agent, tool_name, tool_params, on_retry_started=on_retry_started)
             results = [result]
 
         elif is_parallel and not _has_conflict(all_calls):
             # B: 多工具无冲突 → 并行（try_once，无重试）
             _names = [_cn(c) for c in all_calls]
-            _msg = f"{time.strftime('%H:%M:%S')} [action_handler] 并行执行: tools={_names}"
-            logger.info(_msg); print(_msg)
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 并行执行: tools={_names}")
             tasks = [execute_tool(agent, _cn(c), _cp(c), parallel=True) for c in all_calls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             # 并行分支不重试 — 失败信息传给LLM自己决策
@@ -272,8 +345,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             # C: 工具有冲突/非并行 → 顺序执行（一个不丢）
             _names = [_cn(c) for c in all_calls]
             _reason = "非并行模式" if not is_parallel else "文件路径冲突"
-            _msg = f"{time.strftime('%H:%M:%S')} [action_handler] 顺序执行({_reason}): tools={_names}"
-            logger.info(_msg); print(_msg)
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 顺序执行({_reason}): tools={_names}")
             results = []
             for call in all_calls:
                 try:
@@ -287,11 +359,19 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         tool_names = [_cn(c) for c in all_calls]
         logger.info(f"[action_handler] 工具执行完成: tools={tool_names}, 耗时={elapsed:.2f}s")
 
-        for call, result in zip(all_calls, results):
+        for i, (call, result) in enumerate(zip(all_calls, results)):
             if isinstance(result, Exception):
                 logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result=ERROR({result})")
             else:
-                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result={result}")
+                _r_str = str(result)
+                if len(_r_str) > ACTION_LOG_RESULT_MAX_CHARS:
+                    _r_str = _r_str[:ACTION_LOG_RESULT_MAX_CHARS] + f"...(截断{len(_r_str)}字符)"
+                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result={_r_str}")
+            _orig_tool = _correction_map.get(i)
+            if _orig_tool and isinstance(result, dict):
+                _llm = result.get("llm_data")
+                if isinstance(_llm, dict) and isinstance(_llm.get("summary"), str):
+                    _llm["summary"] += f"（工具自动纠正自:{_orig_tool}）"
 
         return results
 
@@ -459,11 +539,11 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
 
     for idx, (call, result) in enumerate(zip(ctx.all_calls, ctx.results)):
         if isinstance(result, Exception):
-            obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
+            obs_text = f"Observation: 工具{call.get('tool_name', '?')}执行异常: {result}"
             _ec = "error"
             _is_failed = True
         else:
-            obs_text = build_observation_text(result, call["tool_name"], call["tool_params"])
+            obs_text = build_observation_text(result, call.get("tool_name", ""), call.get("tool_params", {}))
             _llm_data = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
             _ec = _llm_data.get("status", {}).get("exec_code", "") if _llm_data else "error"
             _is_failed = _ec == "error"
@@ -471,8 +551,8 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
         get_prompt_logger().log_observation(
             step_name=f"步骤{ctx.step}: 工具执行结果",
             observation_content=obs_text,
-            tool_name=call["tool_name"],
-            tool_params=call["tool_params"],
+            tool_name=call.get("tool_name", ""),
+            tool_params=call.get("tool_params", {}),
             round_number=ctx.step,
             raw_data=result,
         )
@@ -492,8 +572,8 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
         repair_warning = call.get("_repair_warning", "")
         if repair_warning:
             obs_text = f"Observation: {repair_warning}\n{obs_text}"
-            print(f"{time.strftime('%H:%M:%S')} [Warning] step={ctx.step}, {call['tool_name']} 参数截断修复")
-            logger.warning(f"[action_handler] step={ctx.step}, {call['tool_name']} 参数截断修复: {repair_warning}")
+            print(f"{time.strftime('%H:%M:%S')} [Warning] step={ctx.step}, {call.get('tool_name', '?')} 参数截断修复")
+            logger.warning(f"[action_handler] step={ctx.step}, {call.get('tool_name', '?')} 参数截断修复: {repair_warning}")
         obs_parts.append(obs_text)
 
         try:
@@ -578,8 +658,7 @@ def _build_call_list(parsed: Dict) -> BuildCallListResult:
     pending_calls = parsed.get("_pending_calls", [])
 
     # 【P1-10修复】tool_name为空时直接FAILED — chendyg 2026-06-26
-    if not tool_name:
-        logger.warning(f"[_build_call_list] tool_name为空, parsed={parsed}")
+    # handle_action已兜底空检查(ErrorStep+return), 此处删除重复日志 — 小欧 2026-07-25
 
     all_calls = [{
         "tool_name": tool_name, "tool_params": tool_params,
@@ -623,6 +702,7 @@ async def handle_action(agent, parsed: Dict):
     小沈 2026-06-11
     小欧 2026-07-09: 新增重试通知注入（步骤4-6）
     """
+    set_current_task_id(agent.task_id)
     call_result = _build_call_list(parsed)
     step = agent.llm_call_count
 
@@ -652,7 +732,7 @@ async def handle_action(agent, parsed: Dict):
     async for event in check_safety_and_confirm(agent, call_result.all_calls, step,
                                                 call_result.fc_context, _out=_safe_calls):
         yield event
-    _exec_calls = _safe_calls or call_result.all_calls
+    _exec_calls = _safe_calls if _safe_calls else []
 
     # ── 工具重试（隐蔽，前端不可见）── 小欧 2026-07-13
     # 工具重试由 tool_retry_engine 内部执行，不向前端 emit 任何 step（北京老陈要求：tool 重试隐蔽）。
@@ -680,3 +760,4 @@ async def handle_action(agent, parsed: Dict):
             outcome="completed",  # 小欧 2026-07-18: 显式终态声明, 与FinalStep多态契约一致
         ))
         # chendyg 2026-07-01: 删set_completed，_dispatch_handler从FinalStep推断状态
+

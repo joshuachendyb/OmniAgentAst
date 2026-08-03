@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 小欧 FinalStep多态自包含终态重构:
@@ -13,6 +14,7 @@
 #          ④TYPE="final"不变, IS_DONE=True不变, 向后兼容旧数据。
 # 2026-07-18 小欧 #26 fix: outcome参数Literal["completed","failed","cancelled"]约束
 # 2026-07-18 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致
+# 2026-07-22 小欧 - 新增 accumulated_usage 可选字段(累计消耗统计), _extra_fields 输出供前端显示
 
 from typing import Any, Dict, Literal, Optional
 
@@ -42,7 +44,8 @@ class FinalStep(ReasoningStep):
         provider: Optional[str] = None,
         is_finished: bool = True,
         display_name: Optional[str] = None,
-        timestamp: Optional[str] = None
+        timestamp: Optional[str] = None,
+        accumulated_usage: Optional[Dict[str, int]] = None,  # 2026-07-22 - 小欧 - 累计消耗: prompt_tokens/completion_tokens/total_tokens
     ):
         ReasoningStep.__init__(self, step, timestamp)
         self._response = response
@@ -54,6 +57,7 @@ class FinalStep(ReasoningStep):
         self._provider = provider
         self._is_finished = is_finished
         self._display_name = display_name or (f"{provider} ({model})" if provider and model else provider or model or "")
+        self._accumulated_usage = accumulated_usage  # 2026-07-22 - 小欧
 
     def get_content(self) -> str:
         return self._response
@@ -97,4 +101,6 @@ class FinalStep(ReasoningStep):
             "provider": self._provider,
             "is_finished": self._is_finished,
             "display_name": self._display_name,
+            "accumulated_usage": self._accumulated_usage,  # 2026-07-22 - 小欧
         }
+

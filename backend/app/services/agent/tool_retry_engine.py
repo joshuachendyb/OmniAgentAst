@@ -1,27 +1,26 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-18 - 小欧 - #13 fix: _validate_params 增加参数类型校验(string/array/integer/boolean) against schema type,
-#    类型错配在调度层即被捕获, 不必进入工具内部 Pydantic 报错
+# 2026-05-27 - 小沈 - 创建文件
+# 2026-06-08 - 小沈 - P1-7/8/9: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
+# 2026-06-30 - 小欧 - 明确分层归属(工具的外部重试 → 工具层)，常量全部引自 tool_constants
+# 2026-07-15 - 小沈 - 外层超时恒>内层timeout+缓冲, 防状态工具进程孤儿化
+# 2026-07-17 - 小沈 - max_retries=0日志显示超时值; [Retry][L2]→[Retry][L3]重命名
+# 2026-07-18 - 小欧 - #13 fix: _validate_params增加参数类型校验
+# 2026-07-21 - 小欧 - #17 参数验证提示改进
+# 2026-07-23 - 小欧 - #8 fix: _validate_params扩展number/object类型+值范围clamp
+# 2026-07-23 - 小欧 - #11 fix: 智能类型容错(string参数传dict/list自动修复)
+# 2026-07-26 - 小沈 - 欧阳报告: 非必填None值自动丢弃
+# 2026-07-26 - 小沈 - Bug #7: None丢弃日志增强
+# 2026-07-29 - 小沈 - 超时hint注入: 导入TOOL_TIMEOUT_HINTS,try_once/_execute_with_retry的TIMEOUT路径查表传hint给LLM
+# 2026-07-30 - 小沈 - 保险丝常量重构: INSURANCE_CEILING=600(天花板), INSURANCE_BUFFER=30(缓冲), PROGRESSIVE_MAX=CEILING//2(无inner渐进上限); 两路径逻辑统一为: 有inner=max(inner,CEILING)+BUFFER, 无inner=min(base_timeout*(attempt+1),PROGRESSIVE_MAX)
+# 2026-07-30 - 小沈 - 备用工具命名统一: design注释+error hint中"搜索"→"搜索备用工具的类型(可选:文档/数据分析/数据库/网络/系统/桌面/时间定时)"; docstring渐进超时标注(无inner路径)并补(有inner路径)保险丝公式
 """
 统一工具重试引擎 — 工具的外部重试机制
 
 物理位置: Agent编排层(被 UniversalAgent.run_react_cycle 调用)
  归属分层: 【工具层】— 虽在编排层目录，但本质是工具的外部重试机制，引用工具层常量
 
-编辑历史:
-# 格式规范: {日期} {署名} {修改内容}
- 2026-06-08 小沈 P1-7/8/9: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
- 2026-06-30 小欧 明确分层归属(工具的外部重试 → 工具层)，常量全部引自 tool_constants
- 2026-07-15 小沈 外层超时恒>内层timeout+缓冲, 防状态工具(如shell)进程孤儿化. 改动: _execute_with_retry + try_once
-   2026-07-17 小沈 max_retries=0时日志显示超时值+秒(无重试), 免"1/1"混淆
-   2026-07-17 小沈 [Retry][L2]→[Retry][L3](工具执行重试属第3层,与LLM流式L1/LLM响应错误L2保持分层一致)
-          工具类型	timeout	旧outer	新outer	影响
-        shell (默认)	60	120	120	零变化
-        shell (死锁场景)	600	120	630	修复生效 ✅
-        httpget	300	60	330	wait_for仅+30s兜底
-        download	3600	120	630	cap限制，不再无视LLM意愿
-        readtext/write等	无timeout参	—	—	零变化 
-        
 【分层规范 - 小健 2026-05-27】
 本文件是工具的【外部重试】，使用 tool_result_utils.py 的 create_xxx 函数
 禁止使用 _response.py 的 build_xxx 函数(那是工具层内部响应用的)
@@ -32,17 +31,41 @@ Author: 小沈 - 2026-05-27
 
 import asyncio
 import inspect
+import json as _json
 from typing import Any, Callable, Dict, Optional
 
 from app.logger import logger
 from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
 from app.tools.tool_constants import (
     TOOL_TIMEOUTS, TOOL_RETRY_BACKOFF, TOOL_RETRY_CONFIG,
+    TOOL_TIMEOUT_HINTS,
     ERR_MISSING_PARAM, ERR_INVALID_PARAMS, ERR_TOOL_NOT_FOUND, ERR_UNKNOWN,
 )
 from app.tools.tool_response import build_error
 from app.tools.param_alias_mapper import normalize_params
 from app.tools.registry import tool_registry
+
+# ============================================================
+# 保险丝超时策略 — 设计逻辑（北京老陈 2026-07-30）
+#
+# 所有工具分两类，两类不同策略：
+#
+# 【有 inner timeout 参数的工具】（compress/shell/download 等）
+#   保险丝 = max(inner, INSURANCE_CEILING) + INSURANCE_BUFFER
+#   原因：工具有自己的内部超时 deadline，保险丝必须恒大于内部超时，
+#         否则保险丝抢先截杀，工具内部的 timed_out hint 来不及返回。
+#   CEILING=600：有inner的工具系统至少等10分钟，inner 超 600 则随它去。
+#   BUFFER=30：保险丝比内部超时多30秒，给内部 handler 退出窗口。
+#
+# 【无 inner timeout 参数的工具】（listdir/delete/find 等）
+#   保险丝 = min(base_timeout * (attempt+1), PROGRESSIVE_MAX)
+#   原因：工具没有内部超时概念，采用渐进递增，首次短快失败立即报错，
+#         后续逐步放宽，上限 PROGRESSIVE_MAX。
+#   PROGRESSIVE_MAX = CEILING // 2 = 300：无inner工具最长等5分钟。
+# ============================================================
+INSURANCE_CEILING = 600
+INSURANCE_BUFFER = 30
+PROGRESSIVE_MAX = INSURANCE_CEILING // 2
 
 
 class ToolRetryEngine:
@@ -72,15 +95,17 @@ class ToolRetryEngine:
         self, code: str, message: str, retry_count: int,
         *, error_type: Optional[str] = None,
         action_name: str = "", action_params: Optional[dict] = None,
+        hint: str = "",  # task007-欧阳: 可选hint参数,默认空 — 小欧 2026-07-23
     ) -> Dict[str, Any]:
         """统一构建重试相关错误响应 — 小欧 2026-06-21 适配新3字段result
-        小欧 2026-07-05: 新增 action_name/action_params 参数，LLM 能看到哪个工具/参数失败"""
+        小欧 2026-07-05: 新增 action_name/action_params 参数，LLM 能看到哪个工具/参数失败
+        小欧 2026-07-23: 新增 hint 参数"""
         return build_error(
             data={},
             llm_data={
                 "summary": message[:200],
                 "action": {"tool": action_name, "tool_zh": "", "target": "", "params": action_params or {}},
-                "status": {"exec_code": "error", "message": message[:200], "code": code, "detail": message, "hint": ""},
+                "status": {"exec_code": "error", "message": message[:200], "code": code, "detail": message, "hint": hint or ""},
                 "duration_ms": 0,
                 "metrics": {},
             },
@@ -113,7 +138,7 @@ class ToolRetryEngine:
             (None, error_dict) — 工具不存在或参数验证失败，error_dict包含给LLM的错误描述
          
         设计决策:
-        - 工具不存在时返回含hint的error_dict，提示LLM使用searchtool搜索
+        - 工具不存在时返回含hint的error_dict，提示LLM使用searchtool搜索备用工具的类型(如'网络 搜索')，系统会自动注入整个工具分类
         - 参数验证失败时返回含具体缺失/非法字段的错误，让LLM修正后重试
          
         小欧 2026-07-09
@@ -125,7 +150,7 @@ class ToolRetryEngine:
                 llm_data={
                     "summary": f"工具 '{action}' 未找到",
                     "action": {"tool": action, "tool_zh": "", "target": "", "params": {"action": action}},
-                    "status": {"exec_code": "error", "message": f"工具 '{action}' 未找到", "code": ERR_TOOL_NOT_FOUND, "detail": f"可用工具: {list(self._tools.keys())}", "hint": "该工具未注入。请先调用 searchtool 搜索该工具名称(如'网络 搜索')，系统会自动注入整个工具分类。"},
+                    "status": {"exec_code": "error", "message": f"工具 '{action}' 未找到", "code": ERR_TOOL_NOT_FOUND, "detail": f"可用工具: {list(self._tools.keys())}", "hint": "该工具未注入。请先调用 searchtool 搜索备用工具的类型(可选:文档/数据分析/数据库/网络/系统/桌面/时间定时)，如'网络 搜索'，系统会自动注入整个工具分类。"},
                     "duration_ms": 0,
                     "metrics": {},
                 },
@@ -160,13 +185,13 @@ class ToolRetryEngine:
             return params_or_error
         # 复用_get_retry_config的超时查询，消除与_execute_with_retry的DRY违规 — 小欧 2026-07-09
         _, _, _, base_timeout = self._get_retry_config(action)
-        timeout = min(base_timeout, 300)
-        # 同_execute_with_retry: 外层超时恒 > 内层timeout+缓冲 — 小沈 2026-07-15
         inner = params_or_error.get("timeout")
         if isinstance(inner, int) and inner > 0:
-            needed = inner + 30
-            if needed > timeout:
-                timeout = min(needed, 630)
+            # 有inner: 保险丝 = max(inner, CEILING) + BUFFER, 恒 > 内部超时 — 北京老陈 2026-07-30
+            timeout = max(inner, INSURANCE_CEILING) + INSURANCE_BUFFER
+        else:
+            # 无inner: 渐进 cap PROGRESSIVE_MAX — 北京老陈 2026-07-30
+            timeout = min(base_timeout, PROGRESSIVE_MAX)
         try:
             result = await self._execute_tool_once(tool, params_or_error, timeout)
             if isinstance(result, dict):
@@ -174,10 +199,12 @@ class ToolRetryEngine:
             return result
         except Exception as e:
             error_category = ToolErrorClassifier.classify_tool_error(e)
+            _hint = TOOL_TIMEOUT_HINTS.get(action, "") if error_category == ToolErrorCategory.TIMEOUT else ""
             return self._build_retry_error(
                 f"ERR_{error_category.name}", f"{error_category.description}: {str(e)[:200]}",
                 0, error_type=error_category.name.lower(),
                 action_name=action, action_params=params_or_error,
+                hint=_hint,
             )
 
     async def execute_tool_with_retry(
@@ -192,7 +219,8 @@ class ToolRetryEngine:
         - 有重试循环：按TOOL_RETRY_CONFIG配置的重试次数自动重试
         - 有指数退避：重试间隔backoff_factor^attempt
         - 有on_retry_started回调：每次重试前通知调用方（→前端显示重试状态）
-        - 有渐进超时：每次重试的超时递增base_timeout*(attempt+1)，上限300秒
+        - 有渐进超时(无inner路径): 每次重试的超时递增base_timeout*(attempt+1), 上限 PROGRESSIVE_MAX=300
+- 有inner超时参数工具: 保险丝 = max(inner, CEILING) + BUFFER, 恒大于内部超时
          
         Args:
             action: 工具名
@@ -221,10 +249,13 @@ class ToolRetryEngine:
                 valid_params = set(input_schema.get("properties", {}).keys())
                 invalid_keys = [k for k in params if k not in valid_params]
                 if invalid_keys:
+                    _props_desc = ", ".join(
+                        f"{k}: {v.get('type', '?')}" for k, v in input_schema.get("properties", {}).items()
+                    )
                     logger.warning(f"[参数验证] action={action} 含非法字段: {invalid_keys}")
                     return self._build_retry_error(
                         ERR_INVALID_PARAMS,
-                        f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}",
+                        f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}；合法参数: {_props_desc}",
                         0, error_type="invalid_params",
                         action_name=action, action_params=params,
                     )
@@ -232,35 +263,75 @@ class ToolRetryEngine:
                 required = input_schema.get("required", [])
                 missing = [p for p in required if p not in params]
                 if missing:
+                    props = input_schema.get("properties", {})
+                    _types = "; ".join(f"{p}(期望类型={props.get(p, {}).get('type', '?')})" for p in missing)
                     return self._build_retry_error(
                         ERR_MISSING_PARAM,
                         f"缺少必需参数: {action}, 缺失: {missing}",
                         0, error_type="missing_param",
                         action_name=action, action_params=params,
+                        hint=f"缺少参数 {missing}：{_types}。工具必需参数不可缺，请提供完整的参数后再试",  # task007-欧阳: 提示缺失参数的类型 — 小欧 2026-07-23
                     )
+                # 非必填参数的None值自动丢弃(欧阳报告), 类型校验前做 — 小沈 2026-07-26
+                _none_discarded = []
+                for k in list(params.keys()):
+                    if k not in required and params[k] is None:
+                        _none_discarded.append(k)
+                        del params[k]
                 # #13 fix: 参数类型校验 — 小欧 2026-07-18
+                # #8 fix: +number/object类型 + 值范围clamp — 三堂会审 小欧 2026-07-23
                 props = input_schema.get("properties", {})
+                # #11 fix: 智能类型容错(LLM常为string参数传dict/list,自动json.dumps/str修复减少重试) — 小欧 2026-07-23
                 for k, v in params.items():
                     spec = props.get(k)
                     if not spec:
                         continue
                     _t = spec.get("type")
                     if _t == "string" and not isinstance(v, str):
-                        invalid_keys.append(k)
+                        try:
+                            params[k] = _json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
+                        except Exception:
+                            pass
+                type_errors = []
+                for k, v in params.items():
+                    spec = props.get(k)
+                    if not spec:
+                        continue
+                    _t = spec.get("type")
+                    if _t == "string" and not isinstance(v, str):
+                        type_errors.append(f"{k}期望类型为{_t},实际类型为{type(v).__name__}")
                     elif _t == "array" and not isinstance(v, list):
-                        invalid_keys.append(k)
+                        type_errors.append(f"{k}期望类型为{_t},实际类型为{type(v).__name__}")
                     elif _t == "integer" and not isinstance(v, int):
-                        invalid_keys.append(k)
+                        type_errors.append(f"{k}期望类型为{_t},实际类型为{type(v).__name__}")
                     elif _t == "boolean" and not isinstance(v, bool):
-                        invalid_keys.append(k)
-                if invalid_keys:
-                    logger.warning(f"[参数验证] action={action} 含非法参数(含类型): {invalid_keys}")
+                        type_errors.append(f"{k}期望类型为{_t},实际类型为{type(v).__name__}")
+                    elif _t == "number" and not isinstance(v, (int, float)):
+                        type_errors.append(f"{k}期望类型为{_t},实际类型为{type(v).__name__}")
+                    elif _t == "object" and not isinstance(v, dict):
+                        type_errors.append(f"{k}期望类型为{_t},实际类型为{type(v).__name__}")
+                if type_errors:
+                    _extra = f", 已丢弃的None参数={_none_discarded}" if _none_discarded else ""
+                    logger.warning(f"[参数验证] action={action} 类型错误: {type_errors}{_extra}")
                     return self._build_retry_error(
                         ERR_INVALID_PARAMS,
-                        f"参数验证失败: {action} 含非法参数/类型错误, keys={list(params.keys())}",
+                        f"参数验证失败: {action} 参数类型错误: {'; '.join(type_errors)}",
                         0, error_type="invalid_params",
                         action_name=action, action_params=params,
                     )
+                # #8 fix: 值范围clamp(integer/number参数的minimum/maximum),防Pydantic ValidationError — 小欧 2026-07-23
+                for k, v in params.items():
+                    spec = props.get(k)
+                    if not spec:
+                        continue
+                    _t = spec.get("type")
+                    if _t == "integer":
+                        minimum = spec.get("minimum")
+                        maximum = spec.get("maximum")
+                        if minimum is not None and v < minimum:
+                            params[k] = minimum
+                        elif maximum is not None and v > maximum:
+                            params[k] = maximum
         except (ImportError, AttributeError) as e:
             logger.warning(f"[参数验证] action={action}, 获取schema失败: {e}", exc_info=True)
 
@@ -280,8 +351,10 @@ class ToolRetryEngine:
         """带重试执行工具 — 核心循环：渐进超时+重试前回调通知
          
         重试策略（遵守KISS-DIRECT原则，简单直线）：
-        1. 渐进超时: 每次尝试的超时 = base_timeout * (attempt + 1)，上限300秒
-           → 第一次60s超时，第二次给120s，第三次给180s（让网络问题有更长时间恢复）
+        1. 超时策略分两路:
+           - 有inner参数工具: 保险丝 = max(inner, CEILING) + BUFFER, 恒大于内部超时让工具先处理
+           - 无inner参数工具: 渐进超时 base_timeout * (attempt + 1), 上限 PROGRESSIVE_MAX
+           → 有inner: compress(600)=630, compress(1800)=1830; 无inner: listdir=60/120/180 cap 300
         2. 指数退避等待: 重试间隔 = backoff_factor^attempt（1s, 2s, 4s...）
            → 给小故障足够恢复时间，同时避免立即重试又失败
         3. 分类重试: 只有TOOL_RETRY_CONFIG中retryable列表里的错误类别才会重试
@@ -301,14 +374,13 @@ class ToolRetryEngine:
         last_error: Optional[Exception] = None
 
         for attempt in range(max_retries + 1):
-            # 渐进超时：首次base_timeout，后续递增，cap 300s防止过长阻塞
-            timeout = min(base_timeout * (attempt + 1), 300)
-            # 外层超时恒 > 内层timeout+缓冲, 防外层抢先取消致有状态工具(如shell)进程孤儿化 — 小沈 2026-07-15
             inner = params.get("timeout")
             if isinstance(inner, int) and inner > 0:
-                needed = inner + 30
-                if needed > timeout:
-                    timeout = min(needed, 630)
+                # 有inner: 保险丝 = max(inner, CEILING) + BUFFER, 恒 > 内部超时 — 北京老陈 2026-07-30
+                timeout = max(inner, INSURANCE_CEILING) + INSURANCE_BUFFER
+            else:
+                # 无inner: 渐进递增, cap PROGRESSIVE_MAX — 北京老陈 2026-07-30
+                timeout = min(base_timeout * (attempt + 1), PROGRESSIVE_MAX)
             if attempt > 0 and on_retry_started:
                 try:
                     on_retry_started(action, attempt, max_retries, str(last_error)[:100])
@@ -343,11 +415,13 @@ class ToolRetryEngine:
                     )
 
                 if not self._should_retry(e, retryable_errors, attempt, max_retries, error_category):
+                    _hint = TOOL_TIMEOUT_HINTS.get(action, "") if error_category == ToolErrorCategory.TIMEOUT else ""
                     return self._build_retry_error(
                         f"ERR_{error_category.name}",
                         f"{error_category.description}: {str(e)[:200]}",
                         attempt, error_type=error_category.name.lower(),
                         action_name=action, action_params=params,
+                        hint=_hint,
                     )
 
                 delay = backoff_factor ** attempt
@@ -358,4 +432,5 @@ class ToolRetryEngine:
             max_retries,
             action_name=action, action_params=params,
         )
+
 

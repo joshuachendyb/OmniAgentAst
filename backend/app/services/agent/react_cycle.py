@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-01 chendyg 状态集中管理重构v2
@@ -24,6 +25,10 @@
 # 2026-07-19 小欧 控制台打印修复: if thought→if thought or reasoning(空content有reasoning的action step也能输出)
 # 2026-07-19 小欧 推理空转不持久化: _finalize_cycle(finally出口)开头直调agent.message_builder.pop_temp_messages()弹掉残留标记推理再持久化; 落点单一收口(KISS-DIRECT), 生产直调无防御守卫, 测试mock缺message_builder属测试缺陷
 # 2026-07-19 小欧 R1优化: B3空转警告(场景C reasoning-only子分支)改幂等注入+复用_temp_reasoning标记收口; 已存在相同标记消息则跳过,杜绝连续空转累积重复警告(history堆积/持久化残留); 终态统一由pop_temp_messages弹掉,零新机制(DRY/KISS); 正常answer无工具分支(else)不变仍持久化
+# 2026-07-22 小欧 LLM 响应后提取 usage.total_tokens → message_builder.last_total_tokens，供下轮增量裁剪用
+# 2026-07-22 小欧 usage 扩展: 三字段(prompt/completion/total)累加 accumulated_usage; emit MetaStep(type="usage") 逐次报告本次消耗
+# 2026-07-22 小欧 MetaStep usage: 从 **_usage 解包改为手动三字段，精确控制输出
+# 2026-07-23 小欧 - log_and_print统一: 3处print()替换为log_and_print()(Thought/Error/Cancel控制台输出), 导入log_and_print
 
 """
 run_react_cycle — ReAct 循环核心（薄调度）
@@ -36,7 +41,7 @@ import asyncio
 import time
 from typing import Any, Dict, Optional, AsyncGenerator
 
-from app.logger import logger
+from app.logger import logger, log_and_print
 from app.services.llm.error_classifier import SystemErrorClassifier
 from app.logger.prompt_logger import get_prompt_logger
 from app.config import get_config
@@ -144,7 +149,7 @@ async def _dispatch_handler(agent, llm_response):
     reasoning = llm_response.get("reasoning", "")
     if thought or reasoning:  # 2026-07-19 小欧 修复: reason-only action step也输出控制台
         reasoning_part = f"\n{time.strftime('%H:%M:%S')} === 推理 ===\n{reasoning}" if reasoning else ""
-        print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}")  # 小欧 2026-07-02 控制台
+        log_and_print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}")  # 小欧 2026-07-02 控制台
     if parsed_type == "action":
         handler = handle_action(agent, llm_response)
     else:
@@ -258,6 +263,28 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         elif chunk_type == "response":
             llm_response = chunk_data
             chunk_buffer.clear()
+            # LLM usage 处理: 裁剪触发 + 累积消耗 + 逐次报告 — 小欧 2026-07-22
+            _usage = llm_response.get("usage") if isinstance(llm_response, dict) else None
+            if _usage and isinstance(_usage, dict):
+                # 裁剪触发: 记录精确 total_tokens 供下轮增量裁剪
+                _tt = _usage.get("total_tokens")
+                if _tt is not None:
+                    agent.message_builder.last_total_tokens = int(_tt)
+                # 累积消耗: 三个字段逐次累加
+                for _k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    _v = _usage.get(_k)
+                    if _v is not None:
+                        agent.accumulated_usage[_k] += int(_v)
+                # 逐次报告: emit MetaStep(type="usage") 带本次 usage 三个值
+                _usage_step = MetaStep(
+                    step=agent.llm_call_count,
+                    type="usage",
+                    content="",
+                    prompt_tokens=_usage.get("prompt_tokens"),
+                    completion_tokens=_usage.get("completion_tokens"),
+                    total_tokens=_usage.get("total_tokens"),
+                )
+                yield agent._step_emitter.emit(_usage_step)
 
     # ── Phase 3: 响应分发 ──────────────────────────────────────
     set_status(agent, AgentStatus.EXECUTING)
@@ -267,11 +294,11 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     # ── 场景A: 空响应 — LLM未返回有效数据 ──────────────────────
     if not llm_response or not isinstance(llm_response, dict):
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
-        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, empty_response")  # 小欧 2026-07-02 控制台
-        set_failed(agent, "LLM返回空响应")
+        log_and_print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, empty_response")  # 小欧 2026-07-02 控制台
+        set_failed(agent, "LLM返回空响应，任务终止")
         yield agent._step_emitter.emit(ErrorStep(
             step=step, error_type="empty_response",
-            error_message="LLM返回空响应"
+            error_message="LLM返回空响应，任务终止"  # Bug1: 不误导LLM(agent已fail),只陈述事实 — 小欧 2026-07-23
         ))
         return
 
@@ -321,7 +348,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
         if agent._consecutive_truncations >= _MAX_CONSECUTIVE_TRUNCATIONS:
             logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试")
-            print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, consecutive_truncation")  # 小欧 2026-07-02 控制台
+            log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, consecutive_truncation")  # 小欧 2026-07-02 控制台
             yield agent._step_emitter.emit(FinalStep(
                 step=step,
                 response=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
@@ -371,7 +398,7 @@ async def run_react_cycle(
         logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接终止")
         yield agent._step_emitter.emit(FinalStep(
             step=0,
-            response=f"max_steps={max_steps}, 无可用步骤",
+            response=f"最大步骤数({max_steps})，无可执行步骤，任务取消",  # Bug2+5: max_steps<=0不是"已耗尽"; outcome=cancelled→消息一致 — 小欧 2026-07-23
             outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, max_steps=0终态统一
         ))
         set_cancelled(agent)
@@ -419,7 +446,7 @@ async def run_react_cycle(
                     agent._retry_count = getattr(agent, '_retry_count', 0) + 1
                     if agent._retry_count > 3:
                         logger.error(f"[run_react_cycle] 可恢复错误重试超限: {_step_err}")
-                        set_failed(agent, f"重试超限: {_step_err}")
+                        set_failed(agent, f"可恢复错误重试已达上限(3次): {_step_err}")  # task007: 明确上限值 — 小欧 2026-07-23
                         break
                     logger.warning(f"[run_react_cycle] 可恢复异常, 第{agent._retry_count}次重试: {_step_err}")
                     yield agent._step_emitter.emit(MetaStep(
@@ -441,7 +468,7 @@ async def run_react_cycle(
             if agent.status == AgentStatus.RETRYING:
                 agent._retry_count = getattr(agent, '_retry_count', 0) + 1
                 if agent._retry_count > 3:
-                    set_failed(agent, "可恢复错误重试超限")
+                    set_failed(agent, "可恢复错误重试已达上限(3次)")  # task007: 明确上限值 — 小欧 2026-07-23
                     break
                 set_status(agent, AgentStatus.THINKING, f"第{agent._retry_count}次重试")
             elif agent.status == AgentStatus.EXECUTING:
@@ -450,7 +477,7 @@ async def run_react_cycle(
             if chunk_buffer.should_force_stop():
                 logger.warning(f"[run_react_cycle] chunk累积超时({agent.llm_call_count}步),强制停止")
                 set_failed(agent, f"chunk累积超时({agent.llm_call_count}步)")
-                yield agent._step_emitter.emit(ErrorStep(step=agent.llm_call_count, error_type="chunk_buffer_timeout", error_message="chunk buffer累积超时，强制停止"))
+                yield agent._step_emitter.emit(ErrorStep(step=agent.llm_call_count, error_type="chunk_buffer_timeout", error_message="响应累积超时，任务强制终止"))  # task007: 更友好 — 小欧 2026-07-23
                 break
 
         if agent.status not in (
@@ -461,7 +488,7 @@ async def run_react_cycle(
             logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 终止")
             yield agent._step_emitter.emit(FinalStep(
                 step=agent.llm_call_count,
-                response=f"ReAct循环结束但无终态(status={agent.status})",
+                response=f"任务循环结束未设终态(status={agent.status})",  # Bug3: 循环自然退出不是"异常",用事实描述 — 小欧 2026-07-23
                 outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 循环结束无终态兜底统一
             ))
             set_cancelled(agent)
@@ -474,3 +501,4 @@ async def run_react_cycle(
 
     finally:
         _finalize_cycle(agent)
+

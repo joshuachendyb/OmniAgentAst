@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-14 小欧 FC_FALLBACK_ENABLED/FC_MAX_RETRIES/LLM_TOOL_CHOICE导入源由base_service改为app.constants
@@ -8,6 +9,10 @@
 # 2026-07-19 小欧 fc_context新增llm_reasoning字段(从stream reasoning累加结果传递)
 # 2026-07-19 小欧 _build_answer_response新增finish_reason参数(SSE最后chunk的stop/length/content_filter,与usage同级提取)
 # 2026-07-19 小欧 改善: _finish_reason用None哨兵(空值走_log_llm_response回退stop,日志正确)
+# 2026-07-22 小欧 action/answer 响应 dict 加入 usage 字段，供 react_cycle 提取 prompt_tokens 做精确裁剪触发
+# 2026-07-22 小欧 修复: usage_data 为 None 时不添加 null 字段，条件添加 usage
+# 2026-07-26 小欧 L2重试加指数退避: 原 flat 0.5s → min(0.5 * 2^attempt, 30). 根因:429配额耗尽后快速原地重试只会反复失败, 指数退避给配额恢复机会.
+# 2026-07-28 - 小欧 - 欧阳BUG-10修复: call_llm_with_fallback fallback前agent.llm_client._cancelled=False改agent.llm_client.reset_cancel(), 确保_current_response一并重置
 """
 llm_stream — LLM流式调用+响应构建
 
@@ -64,13 +69,16 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
     assembled = {"content": full_content, "reasoning": full_reasoning, "tool_calls": built_tool_calls}
     _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "action", usage_data,
                       tool_name=first.get("tool_name", "?"), parallel_calls=len(_pending_calls))
-    return ("response", {
+    result = {
         "type": "action", "thought": full_content, "reasoning": full_reasoning,
         "fc_context": {"tool_call_id": first.get("tool_call_id") or "", "tool_calls": built_tool_calls, "llm_content": full_content, "llm_reasoning": full_reasoning},  # 2026-07-19 小欧 新增/传递 llm_reasoning
         "_pending_calls": _pending_calls, "tool_name": first.get("tool_name", ""),
         "tool_params": first.get("tool_params") or {}, "tool_call_id": first.get("tool_call_id") or "",
         "_repair_warning": first.get("_repair_warning", ""),
-    })
+    }
+    if usage_data is not None:  # 2026-07-22 - 小欧 - 修复: usage 为 None 时不添加 null 字段
+        result["usage"] = usage_data
+    return ("response", result)
 
 
 def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_reason=None, **extra):
@@ -87,7 +95,7 @@ def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_r
 
 def _format_response_error(e: "LLMResponseError") -> str:
     """格式化LLM响应错误为前端友好信息 — 小沈 2026-07-17"""
-    return f"解析失败: {e.message}"
+    return f"LLM响应解析失败: {e.message}"  # task007: 加LLM前缀明确来源 — 小欧 2026-07-23
 
 
 def _yield_error_response(error_msg: str, agent, exc: Optional[BaseException] = None, exc_type: str = ""):
@@ -114,7 +122,10 @@ def _build_answer_response(full_content, full_reasoning, usage_data, agent, fini
     full_reasoning = full_reasoning.strip()
     assembled = {"content": full_content, "reasoning": full_reasoning}
     _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "answer", usage_data, finish_reason=finish_reason)
-    return ("response", {"type": "answer", "content": full_content, "reasoning": full_reasoning, "finish_reason": finish_reason})
+    result = {"type": "answer", "content": full_content, "reasoning": full_reasoning, "finish_reason": finish_reason}
+    if usage_data is not None:  # 2026-07-22 - 小欧 - 修复: usage 为 None 时不添加 null 字段
+        result["usage"] = usage_data
+    return ("response", result)
 
 
 
@@ -267,13 +278,14 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
         except LLMResponseError as e:
             last_error = e
             logger.warning(f"[Retry][L2] LLM响应错误 第{attempt+1}/{LLM_RESPONSE_RETRIES}次: {e}")
-            await asyncio.sleep(0.5)
+            wait_time = min(0.5 * (2 ** attempt), 30)
+            await asyncio.sleep(wait_time)
             continue
 
     if LLM_RESPONSE_FALLBACK:
         logger.warning(f"[FC降级] FC模式{LLM_RESPONSE_RETRIES}次重试均失败，降级到Text模式")
         # #31 fix: fallback前reset事件，消cancel状态残留 — 小欧 2026-07-18
-        agent.llm_client._cancelled = False
+        agent.llm_client.reset_cancel()
         try:
             async for item in call_llm_stream(agent, messages, openai_tools=None):
                 yield item
@@ -284,7 +296,8 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
     else:
         # LLM_RESPONSE_RETRIES=0时for循环不执行,last_error恒为None,直接_format_response_error(None)会AttributeError崩溃,故兜底 — 小欧 2026-07-15
         if last_error is None:
-            error_msg = f"FC模式不可用: LLM_RESPONSE_RETRIES={LLM_RESPONSE_RETRIES}且降级通道关闭, 任务无法执行"
+            error_msg = f"功能调用模式不可用(重试次数={LLM_RESPONSE_RETRIES})，降级通道已关闭，无法继续执行任务"  # Bug4: 保留重试次数诊断信息 — 小欧 2026-07-23
         else:
             error_msg = _format_response_error(last_error)
         yield _yield_error_response(error_msg, agent)
+

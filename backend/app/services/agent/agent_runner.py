@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-13 - 小欧 - 移除事件循环内重复prompt日志写入(已由_append统一记录)
@@ -12,6 +13,15 @@
 #          ④finally守卫: 检测current_execution_steps无type=final时, 按agent.status补发FinalStep
 # 2026-07-18 - 小欧 - prompt-log生命周期归属修正: 生产者全权拥有创建(start_request)/写入(log_step_yield)/设态(set_terminal_status)/存盘(save), 消费者openai.py完全退出日志层
 # 2026-07-18 - 小欧 - #9 fix: 删除失败路径(219)与守卫路径(259)的手动log_step_yield调用;_append(:93)已统一记一次, 消除终态FinalStep prompt-log双写
+# 2026-07-22 - 小欧 - MAX_CONTEXT_CHARS→MAX_CONTEXT_TOKENS 运行时覆盖赋值同步
+# 2026-07-23 - 小欧 - #14 fix: 热循环+finally共5处db.get_conn→get_conn_with_retry(指数退避重试)
+#   【病根】每个ReAct步新建sqlite3连接写chat_history.db,多任务并发时写者间排他→锁30s超时→DB operation failed
+#   【改法】①5处"db.get_conn("chat")"改为"db.get_conn_with_retry("chat")"(database.py新增指数退避重试)
+#          ②finalize retry(L285)加except sqlite3.IntegrityError: break(UNIQUE不重试,YAGNI)
+#          ③新增"import sqlite3"
+#   【合规】KISS-DIRECT(不绕到上层重试引擎)+YAGNI(IntegrityError不重试)
+# 2026-07-30 - 小沈 - Shell池清理: 导入shell_pool; finally块加shell_pool.cleanup_by_task(task_id)
+# 2026-07-30 - 小沈 - except:pass补日志: reclaim_stream_buffer调度失败改为logger.debug记录
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -27,6 +37,7 @@ SSE 连接只从 event_log 按 seq 偏移读取，支持断线重连。 — 小�
 """
 
 import asyncio
+import sqlite3
 import time
 from typing import Any, Callable, Dict, List, Optional
 
@@ -38,6 +49,7 @@ from app.services.chat.handlers import save_execution_steps_to_db
 from app.services.chat.storage import allocate_and_insert_message, append_execution_step, finalize_message
 from app.services.chat.stream import _load_previous_messages, _log_task_end
 from app.services.task.task_registry import task_cleanup
+from app.tools.fundamental.shell_engine import shell_pool
 from app.services.task.task_state import (
     running_tasks, running_tasks_lock,
     agent_streams, reclaim_stream_buffer,
@@ -122,7 +134,7 @@ async def run_agent_in_background(
                 running_tasks[task_id]["agent"] = agent
         llm_service = getattr(agent, "llm_client", None)
         if llm_service is not None and hasattr(llm_service, "context_limit") and llm_service.context_limit:
-            agent.message_builder.MAX_CONTEXT_CHARS = llm_service.context_limit
+            agent.message_builder.MAX_CONTEXT_TOKENS = llm_service.context_limit
 
         # 注入停止检查回调，消除 llm→task 反向依赖 — 小沈 2026-06-17
         # 小欧 2026-07-13: 采用"循环粒度取消"(方案 B)。_stop_check 仅查取消(中断在飞 LLM 流);
@@ -162,13 +174,13 @@ async def run_agent_in_background(
                 current_execution_steps.append(event_dict)
                 # 每步独立事务, 渐进耐久 — 小欧 2026-07-14
                 if ai_message_id is None:
-                    with db.get_conn("chat") as conn:
+                    with db.get_conn_with_retry("chat") as conn:
                         ai_message_id = allocate_and_insert_message(conn, session_id)
                         get_prompt_logger().update_ai_message_id(str(ai_message_id))
                         append_execution_step(conn, ai_message_id, session_id,
                                               len(current_execution_steps) - 1, event_dict)
                 else:
-                    with db.get_conn("chat") as conn:
+                    with db.get_conn_with_retry("chat") as conn:
                         append_execution_step(conn, ai_message_id, session_id,
                                               len(current_execution_steps) - 1, event_dict)
             # 更新 current_content / current_thought — 小沈 2026-06-09; 小欧 2026-07-16 增 thought 持久化
@@ -214,7 +226,7 @@ async def run_agent_in_background(
         current_execution_steps.append(final_dict)
         # 终态 step 立即落库 — 小欧 2026-07-14
         if ai_message_id is not None:
-            with db.get_conn("chat") as conn:
+            with db.get_conn_with_retry("chat") as conn:
                 append_execution_step(conn, ai_message_id, session_id,
                                       len(current_execution_steps) - 1, final_dict)
         await _append(final_dict)
@@ -253,7 +265,7 @@ async def run_agent_in_background(
             _fd = _fs.to_dict()
             current_execution_steps.append(_fd)
             if ai_message_id is not None:
-                with db.get_conn("chat") as conn:
+                with db.get_conn_with_retry("chat") as conn:
                     append_execution_step(conn, ai_message_id, session_id,
                                           len(current_execution_steps) - 1, _fd)
             if stream_state is not None and _oc != "completed":
@@ -287,13 +299,16 @@ async def run_agent_in_background(
                     saved_thought = stream_state.current_thought if stream_state else ""
                     if ai_message_id is not None:
                         # 步骤已逐步落库, 仅 finalize content+status — 小欧 2026-07-14; 2026-07-16 小欧 增 thought 持久化
-                        with db.get_conn("chat") as conn:
+                        with db.get_conn_with_retry("chat") as conn:
                             finalize_message(conn, ai_message_id, saved_content, _terminal_status, thought=saved_thought)
                     else:
                         # 兜底: ai_message_id未分配时沿用原有写入逻辑 — 小欧 2026-07-14
                         ai_message_id = await save_execution_steps_to_db(
                             session_id, current_execution_steps, saved_content, status=_terminal_status)
                     break
+                except sqlite3.IntegrityError as _ie:
+                    logger.warning(f"[Runner] DB finalize IntegrityError (不重试): {_ie}")
+                    break  # #14: UNIQUE约束不重试(YAGNI) — 小欧 2026-07-23
                 except Exception as save_err:
                     if retry == 0:
                         logger.warning(f"[Runner] DB 保存/finalize 失败, 重试: {save_err}")
@@ -309,6 +324,9 @@ async def run_agent_in_background(
         # 生命周期清理：原 openai.py finally 的 task_cleanup 迁入此处 — 小欧 2026-07-12
         # 修复旧 bug：断线时不再误删在跑的 agent（cleanup 由生产者自身在结束时调用）
         await task_cleanup(task_id, getattr(agent, "llm_call_count", 0) if agent else 0)
+
+        # Shell 池清理：关闭该任务的所有 PersistentShell 实例 — 小沈 2026-07-30
+        shell_pool.cleanup_by_task(task_id)
 
         # 标记生产者结束，唤醒消费者；延迟回收缓冲以支持重连窗口 — 小欧 2026-07-12
         if buffer is not None:
@@ -328,5 +346,6 @@ async def run_agent_in_background(
             try:
                 loop = asyncio.get_event_loop()
                 loop.call_later(300, lambda: reclaim_stream_buffer(task_id))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"reclaim_stream_buffer调度失败: {e}")
+

@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-16 小欧 更新推理-only注入注释: 旧3条空tool_call_id消息→合法assistant(content)(工具调用意图由llm_stream XML提取接管)
@@ -214,3 +215,4 @@ __all__ = [
     "message_to_dict",
     "dict_to_message",
 ]
+

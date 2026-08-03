@@ -1,17 +1,20 @@
+
 # -*- coding: utf-8 -*-
 """
 step_emitter — 步骤发射和Task追踪
 
 task检查由 run_sse_stream 层处理,本层不碰
-
+编辑历史:
 Author: 小沈 - 2026-05-31
-统一: 小健 - 2026-05-31 — 删除check_cancelled调用
-更新: 小欧 - 2026-07-16 统一TaskID: _get_tracker只返回tracker, complete_task/record_operation直读agent.task_id
+2026-05-31 小健 — 删除check_cancelled调用
+2026-07-16 小欧  统一TaskID: _get_tracker只返回tracker, complete_task/record_operation直读agent.task_id
+2026-07-22 小欧  emit注入FinalStep._accumulated_usage: 自动从agent.accumulated_usage读取
+2026-07-22 小欧  emit注入加is None防御: 仅外部未设置时才注入
 """
 
 from typing import Any, Dict, Optional
 
-from app.services.agent.steps import ErrorStep
+from app.services.agent.steps import ErrorStep, FinalStep
 from app.logger import logger
 
 
@@ -23,6 +26,10 @@ class StepEmitter:
 
     def emit(self, step) -> 'ReasoningStep':
         """记录步骤到agent.steps并返回Step对象"""
+        # FinalStep 自动注入累积消耗 — 小欧 2026-07-22
+        # 仅当外部未设置时才注入，尊重外部传入值 — 小欧 2026-07-22
+        if isinstance(step, FinalStep) and step._accumulated_usage is None:
+            step._accumulated_usage = dict(self.agent.accumulated_usage)
         self.agent.steps.append(step)
         return step
 
@@ -61,3 +68,4 @@ class StepEmitter:
                 )
             except Exception as _e:
                 logger.warning(f"[TaskTracker] 记录操作失败: {_e}")
+

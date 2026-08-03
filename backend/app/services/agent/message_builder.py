@@ -1,8 +1,15 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-13 - 小欧 - #2 add_tool_result构造失败兜底追加最小tool消息防结果丢失
 # 2026-07-19 - 小欧 - add_assistant_tool_call/_append_observation新增reasoning参数传递
 # 2026-07-19 - 小欧 - 推理空转不持久化(Hermes字面): ①新增pop_temp_messages()弹掉所有_temp_reasoning标记消息(改更早仅尾部→全表,防B3穿插隔开); ②prepare_messages_for_llm浅拷贝[dict()]隔离篡改+strip _temp_reasoning防泄漏wire。逻辑: 好的reasoning注入时带标记, 终端路径pop弹掉后再持久化; 坏的不注入故无需清理
+# 2026-07-22 - 小欧 - MAX_CONTEXT_CHARS→MAX_CONTEXT_TOKENS 命名统一（值200000不变），构造参数+self属性+3处使用同步更新
+# 2026-07-22 - 小欧 - 新增 last_total_tokens + _estimate_tokens; trim_history 改增量+绝对值双条件; _trim_to_budget 全 token 单位
+# 2026-07-22 - 小欧 - 修复: reset_per_run 补充 self.last_total_tokens = None, 清除跨run残留
+# 2026-07-22 - 小欧 - 修复: trim_history 日志路径未覆盖 _rebuild_and_validate 返回 None 的情况，将日志移入 if 分支 + else warning
+# 2026-07-22 - 小欧 - 补充 assistant 消息四种存储形态类注释(源自对话梳理: action轮只存tool_calls, answer/reasoning-only/异常才存content)
+# 2026-07-23 - 小欧 - #13 react_cycle崩溃修复: trim_history 加 try/except 防御性保护(message_builder状态退化时跳过裁剪保留原历史, 不抛异常到 react_cycle 导致循环崩溃)
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -25,7 +32,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from app.config import get_config  # 小欧 2026-07-08
-from app.constants import MAX_CONTEXT_CHARS, TEMP_HISTORY_CHAR_LIMIT
+from app.constants import MAX_CONTEXT_TOKENS, MAX_CONTEXT_RATIO, COMPACTION_BUFFER, CHARS_PER_TOKEN, TEMP_HISTORY_CHAR_LIMIT
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
 from app.services.agent.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
@@ -34,18 +41,50 @@ from app.services.agent.fc_message_types import (
 
 
 class MessageBuilder:
-    """Prompt/Message组装的统一入口"""
+    """conversation_history 唯一状态管理器 — 组装/存储/裁剪/准备
 
-    def __init__(self, max_context_chars: int = MAX_CONTEXT_CHARS):
+    ═══════════════════════════════════════════════════════════════
+    assistant 消息进 conversation_history 的四种形态（DeepSeek实测）
+    ═══════════════════════════════════════════════════════════════
+
+    (a) Action 轮（调工具）── add_assistant_tool_call
+        content=_fc.get("llm_content","") or None  → "" or None = None
+        reasoning=_fc.get("llm_reasoning","") or None
+        DeepSeek 调工具时 SSE 不发射 content 块（仅 reasoning_content→tool_calls），
+        full_content="" → llm_content="" → content=None → model_dump(exclude_none=True) 排除。
+        存入 history：{"role":"assistant", "tool_calls":[{...}]}
+        → content 和 reasoning_content 都不进 history。
+
+    (b) Answer 轮（最终回答）── add_assistant_message(content)
+        content = full_content（LLM 的非推理文本）
+        存入 history：{"role":"assistant", "content":"最终答案文本"}
+
+    (c) Reasoning-only（thought-only）── 直接 append（answer_handler.py:172-178）
+        parsed["reasoning"] 有值、parsed["content"] 为空 → 推理链注入供下轮续写。
+        content 显式写 ""（非 None，不触发 exclude_none），带 _temp_reasoning 标记。
+        存入 history：{"role":"assistant", "content":"", "reasoning":"...", "reasoning_content":"...", "_temp_reasoning":true}
+        持久化前由 pop_temp_messages() 弹掉 _temp_reasoning 标记消息。
+
+    (d) 异常/警告轮 ── B3 空转/未调工具/error/unknown 等
+        存入 history：{"role":"assistant", "content":"[硬编码警告/错误文本]"}
+
+    一句话：action 轮只存 tool_calls，content 和 reasoning_content 都不进 history。
+            content（thought）仅在 answer / reasoning-only / 异常三种情况进 history。
+    — 小欧 2026-07-22
+    """
+
+    def __init__(self, max_context_tokens: int = MAX_CONTEXT_TOKENS):
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
-        self.MAX_CONTEXT_CHARS = max_context_chars
+        self.MAX_CONTEXT_TOKENS = max_context_tokens
         self._max_rounds: int = get_config().get_max_rounds()  # 最多保留FC轮数(默认100) — 小欧 2026-07-08
+        self.last_total_tokens: Optional[int] = None  # 上一轮 LLM 返回的精确 total_tokens（Provider 返回），用于增量触发 — 小欧 2026-07-22
 
     def reset_per_run(self) -> None:
         """每次 run_react_cycle 仅重置 conversation_history,缓存和计数保留跨会话"""
         self.conversation_history = []
         self.temp_history = []
+        self.last_total_tokens = None  # 2026-07-22 - 小欧 - 修复: 清除上一轮残留, 增量裁剪从零开始
 
     # =========================================================================
     # 第一组:conversation_history 写操作(统一入口)
@@ -213,48 +252,57 @@ class MessageBuilder:
     # =========================================================================
 
     def trim_history(self) -> None:
-        """对话历史裁剪 — 两个独立条件 — 小欧 2026-07-02
+        """对话历史裁剪 — 增量+绝对值双条件 — 小欧 2026-07-22
 
         裁剪策略:
-        - 条件1(轮次太多): 消息数 >self._max_rounds(100)*2+2 → 只保留最近 self._max_rounds 轮FC完整对 — 小欧 2026-07-08
-        - 条件2(字符太多): 字符 >160K → _trim_to_budget 按70%预算从旧到新裁
-        - system+user 消息永保
+        - 触发条件A(增量): 本轮粗估 - 上轮精确(last_total_tokens) > COMPACTION_BUFFER
+        - 触发条件B(绝对值): 历史 > MAX_CONTEXT_TOKENS × 0.8
+        - 第1轮无 last_total_tokens → 只走绝对值
+        - system+user 消息永保，剩余可用全给 _trim_to_budget
         - 配对不完整的 FC 对由 _trim_fc_pairs 清理
         """
-        total = self._total_chars(self.conversation_history)
-        msg_count = len(self.conversation_history)
+        try:
+            rough_current = self._estimate_tokens(self.conversation_history)
+            msg_count = len(self.conversation_history)
 
-        if msg_count <= 5:
-            return
+            if msg_count <= 5:
+                return
 
-        # 两个条件都不达标 → 不裁剪
-        if total < self.MAX_CONTEXT_CHARS * 0.8 and msg_count <= self._max_rounds * 2 + 5:
-            return
+            # 增量触发: 本轮粗估 - 上轮精确 > COMPACTION_BUFFER → 膨胀明显
+            delta_trigger = (self.last_total_tokens is not None and
+                             rough_current - self.last_total_tokens > COMPACTION_BUFFER)
+            # 绝对值安全网: 历史占满 80%
+            abs_trigger = rough_current > self.MAX_CONTEXT_TOKENS * MAX_CONTEXT_RATIO
 
-        system_msgs, user_msgs, obs_list, assistant_msgs = self._classify_messages()
-        original_order = {id(m): i for i, m in enumerate(self.conversation_history)}
+            if not (delta_trigger or abs_trigger) and msg_count <= self._max_rounds * 2 + 5:
+                return
 
-        # 条件1: 轮次太多 → 保留最近 self._max_rounds 轮FC完整对
-        if msg_count > self._max_rounds * 2 + 2:
-            all_fc = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
-            kept_fc = all_fc[-(self._max_rounds * 2):]
-            obs_list = [m for m in kept_fc if m.get("role") == "tool"]
-            assistant_msgs = [m for m in kept_fc if m.get("role") == "assistant"]
+            system_msgs, user_msgs, obs_list, assistant_msgs = self._classify_messages()
+            original_order = {id(m): i for i, m in enumerate(self.conversation_history)}
 
-        # 条件2: 字符太多 → 按预算裁(70%余量)
-        if total > self.MAX_CONTEXT_CHARS * 0.8:
-            always_keep_chars = self._total_chars(system_msgs) + self._total_chars(user_msgs)
-            available_budget = max(0, int(self.MAX_CONTEXT_CHARS * 0.7) - always_keep_chars)
+            # 条件1: 轮次太多 → 保留最近 self._max_rounds 轮FC完整对
+            if msg_count > self._max_rounds * 2 + 2:
+                all_fc = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
+                kept_fc = all_fc[-(self._max_rounds * 2):]
+                obs_list = [m for m in kept_fc if m.get("role") == "tool"]
+                assistant_msgs = [m for m in kept_fc if m.get("role") == "assistant"]
+
+            # 条件2: budget = context - COMPACTION_BUFFER - system/user 占用量
+            always_keep_tokens = self._estimate_tokens(system_msgs) + self._estimate_tokens(user_msgs)
+            available_budget = max(1, self.MAX_CONTEXT_TOKENS - COMPACTION_BUFFER - always_keep_tokens)
             trimmed = self._trim_to_budget(obs_list, assistant_msgs, available_budget)
-        else:
-            trimmed = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
 
-        rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed)
-        if rebuilt is not None:
-            self.conversation_history = rebuilt
-
-        logger.info(f"[trim_history] 裁剪: {msg_count}条({total} chars) "
-                    f"→ {len(rebuilt)}条(触发: {'消息数' if msg_count > self._max_rounds * 2 + 2 else '字符'})")
+            rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed)
+            if rebuilt is not None:
+                self.conversation_history = rebuilt
+                trigger_reason = "delta" if delta_trigger else "abs" if abs_trigger else "msg_count"
+                logger.info(f"[trim_history] 裁剪: {msg_count}条({rough_current} tokens) "
+                            f"→ {len(rebuilt)}条(触发: {trigger_reason})")
+            else:
+                logger.warning(f"[trim_history] 裁剪跳过: {msg_count}条({rough_current} tokens) "
+                              f"重建失败，保留原历史")
+        except Exception:
+            logger.warning(f"[trim_history] 异常, 跳过裁剪保留原历史", exc_info=True)
 
     def _classify_messages(self):
         """将消息分类为 system / user / observation(tool) / assistant 四组 — 2026-06-25 小欧 D-1修复"""
@@ -274,12 +322,13 @@ class MessageBuilder:
                 system_msgs.append(msg)
         return system_msgs, user_msgs, obs_list, assistant_msgs
 
-    def _trim_to_budget(self, obs_list, assistant_msgs, budget):
+    def _trim_to_budget(self, obs_list, assistant_msgs, budget_tokens):
         """FC-only: 从最新往最旧扫,按配对收集,简洁高效
 
         策略: 从最后一条消息往前遍历,遇到tool就找其配对assistant一起保留,
-        遇到独立消息直接保留,直到budget用完。剩余的全部丢弃。
+        遇到独立消息直接保留,直到budget_tokens用完。剩余的全部丢弃。
         小欧 2026-06-25: 去掉强制保留机制,纯预算裁剪,简单可靠。
+        2026-07-22 小欧: _total_chars→_estimate_tokens 统一为 token
         """
         tool_to_assistant = {}
         for msg in assistant_msgs:
@@ -292,9 +341,9 @@ class MessageBuilder:
         all_msgs = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
 
         kept = []
-        used_chars = 0
+        used_tokens = 0
         i = len(all_msgs) - 1
-        consumed_ids = set()  # 已作为配对加入 kept 的消息id，不再重复处理 — 小欧 2026-06-26
+        consumed_ids = set()
 
         while i >= 0:
             msg = all_msgs[i]
@@ -306,26 +355,25 @@ class MessageBuilder:
             if msg.get("role") == "tool" and tc_id and tc_id in tool_to_assistant:
                 asst = tool_to_assistant[tc_id]
                 asst_already_kept = id(asst) in consumed_ids
-                # 配对: 只加tool（assistant已存在）或加两者 — 小欧 2026-06-26
                 if asst_already_kept:
-                    need_chars = self._total_chars([msg])
+                    need_tokens = self._estimate_tokens([msg])
                 else:
-                    need_chars = self._total_chars([asst, msg])
-                if used_chars + need_chars <= budget:
+                    need_tokens = self._estimate_tokens([asst, msg])
+                if used_tokens + need_tokens <= budget_tokens:
                     kept.append(msg)
                     if not asst_already_kept:
                         kept.append(asst)
                         consumed_ids.add(id(asst))
-                    used_chars += need_chars
+                    used_tokens += need_tokens
                 i -= 1
                 continue
 
-            msg_chars = self._total_chars([msg])
-            if used_chars + msg_chars <= budget:
+            msg_tokens = self._estimate_tokens([msg])
+            if used_tokens + msg_tokens <= budget_tokens:
                 kept.append(msg)
                 if msg.get("role") == "assistant":
                     consumed_ids.add(id(msg))
-                used_chars += msg_chars
+                used_tokens += msg_tokens
             else:
                 break
             i -= 1
@@ -420,3 +468,12 @@ class MessageBuilder:
             if tool_calls:
                 total += len(json.dumps(tool_calls, ensure_ascii=False))
         return total
+
+    @staticmethod
+    def _estimate_tokens(messages: List[Dict]) -> int:
+        """纯数学估算 token 数 — chars//4，零外部依赖
+
+        对标 OpenCode Token.estimate / Hermes estimate_tokens_rough
+        """
+        return MessageBuilder._total_chars(messages) // CHARS_PER_TOKEN
+

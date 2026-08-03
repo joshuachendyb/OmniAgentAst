@@ -1,7 +1,10 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 记录 2026-07-16 小欧 统一TaskID: 删除_tracked_task_id, create_task传入self.task_id
-# 记录 2026-07-17 小欧 新增_consecutive_reasoning_only字段(空转检测防御: reasoning-only分支累加, 调工具/正常answer/真空/error/未知/action空名归零)
+# 2026-07-16 小欧 统一TaskID: 删除_tracked_task_id, create_task传入self.task_id
+# 2026-07-17 小欧 新增_consecutive_reasoning_only字段(空转检测防御: reasoning-only分支累加, 调工具/正常answer/真空/error/未知/action空名归零)
+# 2026-07-22 小欧 max_context_chars→max_context_tokens 构造传参同步
+# 2026-07-22 小欧 新增 accumulated_usage 字段(累积消耗统计: 逐次LLM调用累加, FinalStep终态输出)
 """
 Agent 核心基类 — 类骨架
 
@@ -58,10 +61,11 @@ class BaseAgent(ABC):
         self.status = AgentStatus.IDLE
         self.llm_call_count = 0
         self._consecutive_reasoning_only = 0  # 2026-07-17 - 小欧 - 连续reasoning-only计数(空转检测): reasoning-only分支累加, 调工具/正常answer/真空归零, 达上限终止
+        self.accumulated_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}  # 2026-07-22 - 小欧 - 累积消耗统计: 逐次LLM调用累加, FinalStep终态输出
 
         # 原 AgentInitializer._init_messages
         self.steps: List[ReasoningStep] = []
-        self.message_builder = MessageBuilder(max_context_chars=get_config().get_max_context_chars())
+        self.message_builder = MessageBuilder(max_context_tokens=get_config().get_max_context_tokens())
 
         self._loaded_categories: Set = set(initial_categories or [])
         self._tool_loader = ToolLoader(self)
@@ -142,3 +146,4 @@ class ToolLoader:
             self.agent._tools_dict.update(cat_tools)
             self.agent._loaded_categories.add(category)
             logger.info(f"[ToolLoader] 动态加载分类{category.value}, {len(cat_tools)}个工具")
+
