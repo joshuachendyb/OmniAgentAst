@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-21 - 小欧 - 入参即信任: _build_event_log_llm_data 加 user_max_events 参数, 入 action.params, 支撑 formatter 动态调行数上限
+# 2026-07-31 - 小欧 - 超时错误提示优化: 补充超时 hint 文本, user_max_events 参数传递到错误响应
 """
 event_log — 获取系统事件日志
 【2026-06-22 小健】从 system_tools.py 拆分为独立文件
@@ -26,11 +29,15 @@ from app.tools.tool_constants import (
 
 
 def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, event_count: int, level: str,
-                              detail: str = "", err_code: str = "", hint: str = "") -> dict:
-    """event_log的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
+                              detail: str = "", err_code: str = "", hint: str = "",
+                              user_max_events: Optional[int] = None) -> dict:
+    """event_log的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint
+    2026-07-21 入参即信任: 补 user_max_events 写入 action.params — 小欧"""
     _act_params = {"log_name": log_name}
     if level:
         _act_params["level"] = level
+    if user_max_events is not None:
+        _act_params["max_events"] = user_max_events
     if exec_code == "error":
         err_summary = f"获取事件{log_name}日志，失败,说明信息:" + (f": {detail}" if detail else "")
         return {
@@ -166,15 +173,15 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
             error_detail = result.get("error_detail", "")
             if error_code == ERR_SYSTEM_TIMEOUT:
                 timeout_sec = TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"])
-                llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail="", err_code=error_code, hint="")
+                llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail="", err_code=error_code, hint="查询超时，请检查事件日志查询条件或增大时间范围", user_max_events=max_events)
                 llm_data["summary"] = f"获取事件{log_name}日志，失败: 超时({timeout_sec}秒)"
             else:
-                llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail, err_code=error_code, hint="请检查日志名称和级别")
+                llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail, err_code=error_code, hint="请检查日志名称和级别", user_max_events=max_events)
             return build_error(data={}, llm_data=llm_data)
         else:
             events = list(result["events"])
             events_count = len(events)
-            llm_data = _build_event_log_llm_data("success", duration_ms, log_name, events_count, level)
+            llm_data = _build_event_log_llm_data("success", duration_ms, log_name, events_count, level, user_max_events=max_events)
             # =============================================================================
             # 数据设计：count 从 data 移除，通过 llm_data.metrics 传入 summary
             # summary 示例: "获取 System，X条事件"
