@@ -11,6 +11,7 @@
 | v1.1 | 2026-08-03 09:55 | 小欧 | 证据档修正为权威 Tier1(152)/Tier2(35)/Tier3(0) |
 | v1.2 | 2026-08-03 10:10 | 小欧 | 来源确认(G 盘 backend/app 已空, final 封闭)；差异分层修正(25/7/7/32→10/30/40→11/92/103→0/8/8=46+137=183) |
 | v1.3 | 2026-08-03 10:28 | 小沧 | 修正批次文件清单计数: 3.1=14文件(5缺失+9不同), 3.2 validate=4(diff incl registry_path_checker), 移 registry_path_checker 从3.8 归入3.2 |
+| v1.4 | 2026-08-03 12:11 | 小沧 | 批次0收尾：记录 pytest 收集基线 = 4597 tests collected, 16 errors (16个collection-error文件清单) |
 
 ---
 
@@ -62,7 +63,12 @@
 - [x] 确认 final_backend_app 三副本一致（md5 全等）
 - [x] 生成差异清单（46 缺失 + 137 不同）
 - [x] 判定 A/B/C 档可信度
-- [ ] 建立每批的验证基线（backend 现有 pytest 全量跑一遍，记录通过数）
+- [x] 建立每批的验证基线：
+  > **baseline pytest 收集基线（2026-08-03 12:11 小沧）**：`pytest --collect-only` 得 **4597 tests collected, 16 errors**（38s）。
+  > 16 个 ERROR 测试文件（全部因缺 `app.tools.fundamental.execute_shell_command` / `app.tools.fundamental.shell_engine`）：
+  > `tests/handlers/test_observation_formatter_shell.py`、`tests/test_critical_flow_deep_bugs.py`、`tests/test_shell_quality.py`、`tests/tools/param_combination/test_analyze_data.py`、`test_analyze_data_mutex.py`、`test_execute_shell_command_bugs.py`、`test_filter_data.py`、`test_filter_data_combo.py`、`test_http_request_v2.py`、`test_network_tools.py`、`test_persistent_shell_engine.py`、`test_shell_bugfixes_20260727.py`、`test_shell_bugs_wave2.py`、`test_shell_bugs_wave3.py`、`test_shell_pool_manager.py`、`test_shell_truncation_deep.py`
+  > 即 **批次 3.1 的缺失文件**。
+  > 后续每批的验证 = `py_compile 全部 + 相关模块单测通过 + import 链 + 工具注册冒烟`，并以**本基线**作对照，**不得引入新的 collection ERROR / 失败**。
 
 ### 批次 1：L0 基础层（30 个）— 先修底座
 > 顺序：utils → logger → db，因 services/tools 都依赖它们
