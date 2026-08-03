@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 小欧 #19 fix: convert_to_utc(None)返回None而非当前时间
@@ -18,6 +19,7 @@ Author: 小健 - 2026-05-28
 # 编辑历史:
 # 2026-07-14 - 小欧 - 修复ensure_timestamp_milliseconds: 13位epoch毫秒串被Python3.13宽松fromisoformat误解析为pre-1970 datetime致.timestamp()抛OSError[Errno22]; 数字串直接转int(判别毫秒/秒), 并对fromisoformat分支补充捕获OSError
 # 2026-07-18 - 小欧 - #19 fix: convert_to_utc(None) 返回 None 而非当前时间, 返回值类型改为 Optional[str]; 调用方 grep 确认均不受影响
+# 2026-07-26 - 小沈 - 欧阳报告: 新增safe_utc_offset安全获取本地UTC偏移(utcoffset()可能返回None)
 
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -104,6 +106,20 @@ def format_timestamp(val: Any) -> Optional[str]:
     return convert_to_utc(val)
 
 
+def safe_utc_offset() -> int:
+    """安全获取本地UTC偏移小时数 — 小沈 2026-07-26
+
+    datetime.now().astimezone().utcoffset() 在某些环境返回None(欧阳报告),
+    此时默认UTC+8。"""
+    try:
+        offset = datetime.now().astimezone().utcoffset()
+        if offset is None:
+            return 8
+        return int(offset.total_seconds() / 3600)
+    except (OSError, AttributeError, TypeError):
+        return 8
+
+
 __all__ = [
     "create_timestamp",
     "get_utc_timestamp",
@@ -112,4 +128,6 @@ __all__ = [
     "timestamp_for_filename",
     "now_str",
     "format_timestamp",
+    "safe_utc_offset",
 ]
+

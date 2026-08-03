@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 通用数据处理函数 — 小健 2026-05-28
@@ -11,6 +12,7 @@
 【小沈 2026-05-30】移除:safe_truncate → 移至 agent/tool_result_formatter.py 内部(唯一消费者)
 【小沈 2026-06-08】新增:raise_on_error参数，统一所有JSON解析场景
 【小沈 2026-07-02】迁移:_try_fix_incomplete_json,_normalize_tool_params从base_service.py迁入(集中JSON解析函数)
+【小沈 2026-07-26】新增:normalize_list_dict展平[[{...}]]→[{...}]; coerce_json内部调用该函数(容错LLM多包一层list)
 
 Author: 小健 - 2026-05-28
 """
@@ -52,16 +54,41 @@ def coerce_json(value: Any) -> Any:
     
     LLM经常将dict/list参数序列化为JSON字符串传入，此函数自动反序列化。
     若字符串不是有效JSON，原样返回（可能是文件路径等合法字符串）。
+    自动展平 [[{...}]] → [{...}] — 小沈 2026-07-26
     """
     if not isinstance(value, str):
-        return value
+        return normalize_list_dict(value)
     try:
         parsed = json.loads(value)
         if isinstance(parsed, (dict, list)):
-            return parsed
+            return normalize_list_dict(parsed)
     except (json.JSONDecodeError, ValueError):
         pass
-    return value
+    return normalize_list_dict(value)
+
+
+def normalize_list_dict(data: Any) -> Any:
+    """展平 [[{...}]] → [{...}], 容错LLM多包一层list — 小沈 2026-07-26
+    
+    【位置】参数归一化层,在coerce_json/load_data_to_df入口处调用,
+    对工具函数无感,不改写任何工具业务逻辑。
+    
+    【触发模式】LLM常将Dict行数据多包一层list,产生[[{a:1,b:2}]]而非[{a:1,b:2}]。
+    仅在所有元素都是"单元素list内含dict"时展平,否则原样返回,不误伤合法List[List]。
+    
+    【影响工具】
+    ① write_xlsx.data  — data → coerce_json  (crash修复)
+    ② analyze_data.data  — data → coerce_json → load_data_to_df  (数据正确修复)
+    ③ filter_data.data   — data → coerce_json → load_data_to_df  (数据正确修复)
+    ④ generate_chart.data  — data → load_data_to_df (不经coerce_json,双保险)
+    ⑤ write_pptx.slides  — slides → coerce_json  (潜在受益)
+    """
+    if not isinstance(data, list) or len(data) == 0:
+        return data
+    for item in data:
+        if not (isinstance(item, list) and len(item) == 1 and isinstance(item[0], dict)):
+            return data
+    return [item[0] for item in data]
 
 
 def read_json_file(file_path: str, label: str = "", raise_on_error: bool = False) -> Any:
@@ -179,9 +206,11 @@ def safe_json_dumps(obj, **kwargs) -> str:
 __all__ = [
     "parse_json",
     "coerce_json",
+    "normalize_list_dict",
     "read_json_file",
     "_try_fix_incomplete_json",
     "_normalize_tool_params",
     "SafeJSONEncoder",
     "safe_json_dumps",
 ]
+

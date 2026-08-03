@@ -1,7 +1,12 @@
+
 # 编辑历史:
 # 2026-07-18 - 小欧 - prompt-log生命周期归属修正: 删save()状态谎报升级分支; 新增set_terminal_status()供生产者按真实终态设态
 # 2026-07-18 - 小欧 - 修复#10 删除死代码 mark_completed/mark_error(openai.py消费者已退出日志层, 终态统一由生产者调 set_terminal_status)
 # 2026-07-18 - 小欧 - #48 fix: 文件名加uuid4().hex[:8]片段防覆蓋
+# 2026-07-26 - 小欧 - 修复log_llm_response更新路径漏写token信息字段(字段名"额外信息"→"token信息"); 新增if extra_info写call_entry["token信息"]
+# 2026-07-26 - 小欧 - 三堂会审欧阳task007报告: (1)去掉if extra_info守卫,改为extra_info or {},确保answer/error类型恒写token信息字段;
+#   (2) save()的"no_id"字面量fallback改为uuid4().hex[:8],并提import uuid到文件顶。
+# 2026-07-28 - 小欧 - 欧阳BUG-11修复: _user_id_from_db裸except Exception改except Exception as e + logger.debug, 避免错误静默丢失
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
@@ -16,6 +21,7 @@ Prompt 日志记录器 - 记录 Prompt 组装全过程
 """
 
 import json
+import uuid
 import contextvars
 from app.utils.time_utils import now_str, timestamp_for_filename
 from pathlib import Path
@@ -101,7 +107,8 @@ class PromptLogger:
                     (sid,)
                 ).fetchone()
                 return row[0] if row else None
-        except Exception:
+        except Exception as e:
+            logger.debug(f"[PromptLogger] 查询用户消息ID失败: {e}")
             return None
 
 
@@ -308,7 +315,7 @@ class PromptLogger:
             response_content: LLM返回的内容(截断版,便于预览)
             response_type: 返回类型(text/tools/thought/action_tool等)
             finish_reason: 结束原因
-            extra_info: 额外信息
+            extra_info: Token信息(usage等)
             raw_response: 原始响应(完整不截断)
         """
         current_log = self._get_current_log()
@@ -330,10 +337,10 @@ class PromptLogger:
             "结束原因": finish_reason,
         }
 
-        if extra_info:
-            entry["额外信息"] = extra_info
+        entry["token信息"] = extra_info or {}
 
         # 查找已有条目更新（不重复追加）— 北京老陈 2026-06-14 — 小欧 2026-07-10 C-08 修复
+        # 2026-07-26 小欧 修复更新路径漏写token信息bug，改字段名"额外信息"→"token信息"
         for call_entry in reversed(current_log.get("LLM调用记录", [])):
             if call_entry.get("轮次") == round_number:
                 call_entry["解析结果"] = response_content
@@ -341,6 +348,7 @@ class PromptLogger:
                 call_entry["原始响应"] = raw_response
                 call_entry["返回类型"] = response_type
                 call_entry["结束原因"] = finish_reason
+                call_entry["token信息"] = extra_info or {}
                 break
         else:
             current_log["LLM调用记录"].append(entry)
@@ -474,11 +482,10 @@ class PromptLogger:
             short_id = str(ai_id)[-6:]
         else:
             user_id = current_log["基本信息"].get("用户消息ID")
-            short_id = str(user_id)[-6:] if user_id else "no_id"
+            short_id = str(user_id)[-6:] if user_id else uuid.uuid4().hex[:8]
         
         file_timestamp = timestamp_for_filename()
         # #48 fix: 文件名加UUID片段防覆蓋 — 小欧 2026-07-18
-        import uuid
         _uid = uuid.uuid4().hex[:8]
         filename = f"prompt_{short_id}+{_uid}+{file_timestamp}.json"
         log_file_path = self.log_dir / filename
@@ -507,3 +514,4 @@ _prompt_logger = PromptLogger()
 def get_prompt_logger() -> PromptLogger:
     """获取全局 PromptLogger 实例"""
     return _prompt_logger
+

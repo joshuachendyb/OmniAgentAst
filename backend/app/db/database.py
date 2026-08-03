@@ -12,6 +12,10 @@
 # 2026-07-18 小沈 修复: _ParamSafeConnection.execute 显式传 None 触发 sqlite3.ProgrammingError(parameters are of unsupported type), 致后端启动失败(init_chat_db 的 CREATE INDEX/ALTER TABLE 均走包装且 params=None); 改为 params is None 时调 self._conn.execute(sql) 不传 None, 冗余最小、单一闸门复用(SRP/KISS)。
 # 2026-07-18 小欧 修复回归: _SAFE_PARAM_TYPES 增加 datetime/date/time; sqlite3原生支持此三类参数(内置适配器转ISO串), 原仅允许基元类型致 task_db.complete_task(datetime.now())被误拦(日志报"DB参数类型不被支持: datetime"), 属本次闸门引入的回归。
 # 2026-07-18 - 小欧 - _validate 改 datetime/date→convert_to_utc() 自动归一化 UTC Z; _SAFE_PARAM_TYPES 移除 datetime/date 不依赖 sqlite3 废弃适配器
+# 2026-07-23 - 小欧 - #14 fix: busy_timeout 30000→500ms + get_conn_with_retry指数退避(max_retries=3: 0.5/1/2s)
+#   【病根】busy_timeout=30000 + 无重试: 写竞争时sqlite内部先等30s才抛异常, 再retry等于31.5s比不修更差
+#   【改法】①busy_timeout=500(快速失败,不空等30s)②get_conn_with_retry: 仅对OperationalError+"locked"指数退避(0.5/1/2s),time.sleep总阻塞仅3.5s不拖事件循环; IntegrityError直抛不重试(YAGNI)
+#   【合规】SRP+KISS-DIRECT+YAGNI
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -145,7 +149,7 @@ class DatabaseManager:
             #   2026-07-17 E2E验证暴露DELETE模式在chat_message_steps膨胀185万行/2.7GB时写I/O拥塞(每次写journal+fsync),
             #   致create_session同步写>10s超时;故改回WAL统一三库,消除写拥塞。
             conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("PRAGMA busy_timeout=500")  # #14: 30000→500ms (快速失败, 应用层指数退避重试, 不空等30s) — 小欧 2026-07-23
             # M-05: SQLite默认OFF，外键约束不生效 — 小欧 2026-07-10
             conn.execute("PRAGMA foreign_keys=ON")
             
@@ -178,6 +182,36 @@ class DatabaseManager:
                 except Exception:
                     logger.warning(f"[db] 关闭连接失败: {db_name}")
     
+    @contextmanager
+    def get_conn_with_retry(self, db_name: str = "chat", max_retries: int = 3) -> Iterator[sqlite3.Connection]:  # max_retries=3 (0.5+1+2=3.5s总阻塞,time.sleep不阻塞事件循环过长) — 小欧 2026-07-23
+        """get_conn + 指数退避重试(仅对 database is locked) — 小欧 2026-07-23
+
+        为什么不用busy_timeout死等:
+            busy_timeout=30000时已空等30s, 再加retry总等待>31.5s, 比不修更差(KISS-DIRECT违规)
+        为什么不对IntegrityError重试:
+            UNIQUE约束冲突不因重试而消失, 重试会掩盖真实问题(YAGNI)
+        使用方式:
+            with db.get_conn_with_retry("chat") as conn:
+                conn.execute("INSERT INTO ...")
+        """
+        import time as _time
+        for attempt in range(max_retries + 1):
+            try:
+                with self.get_conn(db_name) as conn:
+                    yield conn
+                return  # 成功: 退出
+            except sqlite3.OperationalError as e:
+                if "locked" not in str(e):
+                    raise  # 非locked异常不重试
+                if attempt == max_retries:
+                    logger.error(f"[db] {db_name} locked, {max_retries}次重试后放弃")
+                    raise
+                delay = 0.5 * (2 ** attempt)  # 0.5, 1, 2 (max_retries=3, 总~3.5s, 控制time.sleep不阻塞事件循环过长) — 小欧 2026-07-23
+                logger.warning(f"[db] {db_name} locked, 第{attempt+1}/{max_retries}次重试, 等待{delay:.1f}s")
+                _time.sleep(delay)
+            except sqlite3.IntegrityError:
+                raise  # UNIQUE约束不重试(YAGNI)
+
     def init(self):
         """初始化所有数据库(应用启动时调用)"""
         import time as _time

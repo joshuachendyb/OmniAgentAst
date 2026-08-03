@@ -8,7 +8,7 @@
 
 Author: 小沈 - 2026-06-09
 v2.0: 新增format_tool_call_markup — 小欧 2026-07-12
-v2.1: 新增extract_tool_call_xml从reasoning/content提取XML tool_call(LLM降级旧格式时的恢复路径) + _format_xml_tool_block改调它(正则唯一源,DRY) — 小欧 2026-07-16
+v2.1: 新增extract_tool_call_xml(P1-04推理降级XML提取) + _format_xml_tool_block改调它(DRY) — 小欧 2026-07-16
 """
 import json
 import re
@@ -98,7 +98,7 @@ def _try_format_json_tool_call(obj):
 
 
 def extract_tool_call_xml(text: str) -> Optional[Dict[str, Any]]:
-    """从文本中提取 <tool_call> XML 格式的工具调用 — 小欧 2026-07-16
+    """从文本中提取 <tool_call> XML 格式的工具调用 — 小欧 2026-07-16 (P1-04)
 
     解析 <tool_call><function=name><parameter=k>v</parameter></function></tool_call>
     返回 {"tool_name": str, "tool_params": Dict[str, str]}
@@ -180,10 +180,25 @@ def format_tool_call_markup(text: str) -> str:
     return text.strip()
 
 
+def truncate_summary(detail: str, max_chars: int = 200) -> str:
+    """取 detail 首行作为简短摘要 — 小欧 2026-07-24(由document系列工具引用补回)
+
+    语义: 错误/警告摘要应嵌入 detail 的首行, 避免全文拖垮 summary。
+    若首行为空则退化为 smart_truncate_text 摘要; 超长则截断。
+    """
+    if not detail:
+        return ""
+    first_line = detail.strip().splitlines()[0].strip() if detail.strip() else ""
+    if len(first_line) <= max_chars:
+        return first_line
+    return first_line[:max_chars - 3] + "..."
+
+
 __all__ = [
     "truncate_text",
     "smart_truncate_text",
     "add_line_numbers",
     "extract_tool_call_xml",
     "format_tool_call_markup",
+    "truncate_summary",
 ]

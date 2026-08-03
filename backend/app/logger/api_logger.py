@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 APILogger — 从 setup.py 拷出
@@ -11,7 +12,7 @@ import uuid
 from typing import Optional
 
 from app.logger.config import LogConfig
-from app.logger.setup_logger import setup_logger
+from app.logger.shared_handler import setup_logger
 
 
 class APILogger:
@@ -98,3 +99,4 @@ class APILogger:
             self.logger.exception(f"[{provider}] 异常: {error}")
         else:
             self.logger.error(f"[{provider}] 错误: {error}")
+
