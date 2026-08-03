@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-20 - 小欧 - 删 output_mode 参数别名映射: grep 已去除 output_mode 参数(默认即 content 模式), 该别名失效, 删除死映射避免误导
+# 2026-07-28 - 小欧 - BUG#19: "value":"value"是恒等映射(输入=输出无转换), 空转别名删除
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -303,7 +304,6 @@ PARAM_ALIASES = {
         "regpath": "path",
         "key_path": "path",
         "key": "path",
-        "value": "value",
         "data": "value",
     },
     # 路径参数统一: registry_delete 键路径参数 key_path→path — 小欧 2026-07-12

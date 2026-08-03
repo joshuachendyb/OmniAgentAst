@@ -1,4 +1,8 @@
+
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-25 - 小欧 - ensure_tools_registered加即时重试(3次,500ms间隔),应对并发写导致的瞬态文件损坏
+# 2026-07-25 - 小欧 - 错误日志加filename:lineno上下文(欧阳建议)
 """
 工具注册表模块 - 统一入口
 
@@ -378,7 +382,7 @@ def _import_and_register(module_path: str, register_func_name: str) -> None:
 
 
 def ensure_tools_registered() -> None:
-    """确保所有工具已注册(全量注册) - 小沈 2026-05-15"""
+    """确保所有工具已注册(全量注册) - 小沈 2026-05-15; 小欧 2026-07-25 加即时重试应对瞬态文件损坏"""
     import time as _time
     global _registered_categories
 
@@ -387,18 +391,33 @@ def ensure_tools_registered() -> None:
     for cat_name, (module_path, register_func) in CATEGORY_MODULES.items():
         if cat_name not in _registered_categories:
             _t_cat = _time.time()
-            try:
-                count_before = len(tool_registry._tools)
-                _import_and_register(module_path, register_func)
-                count_after = len(tool_registry._tools)
-                _registered_categories.add(cat_name)
-                logger.info(f"[启动耗时] 工具分类 {cat_name} 注册: {_time.time()-_t_cat:.3f}s, {count_after - count_before}个工具")
-            except Exception as e:
-                logger.error(f"[Tools] 注册分类{cat_name}失败: {e}")
-                _failed = True
+            for _attempt in range(1, 4):
+                try:
+                    count_before = len(tool_registry._tools)
+                    _import_and_register(module_path, register_func)
+                    count_after = len(tool_registry._tools)
+                    _registered_categories.add(cat_name)
+                    if _attempt > 1:
+                        logger.info(f"[启动耗时] 工具分类 {cat_name} 注册成功(第{_attempt}次): {_time.time()-_t_cat:.3f}s, {count_after - count_before}个工具")
+                    else:
+                        logger.info(f"[启动耗时] 工具分类 {cat_name} 注册: {_time.time()-_t_cat:.3f}s, {count_after - count_before}个工具")
+                    break
+                except Exception as e:
+                    _ctx = getattr(e, 'filename', None)
+                    if _ctx:
+                        _ctx = f"{_ctx}:{getattr(e, 'lineno', '?')} - {e}"
+                    else:
+                        _ctx = f"{e}"
+                    if _attempt < 3:
+                        logger.warning(f"[Tools] 注册分类{cat_name}失败(第{_attempt}次),500ms后重试: {_ctx}")
+                        _time.sleep(0.5)
+                    else:
+                        logger.error(f"[Tools] 注册分类{cat_name}失败(已重试3次): {_ctx}")
+                        _failed = True
     logger.info(f"[启动耗时] ensure_tools_registered 合计: {_time.time()-_t_all:.3f}s")
     if _failed:
         logger.warning(f"[Tools] 部分分类注册失败,已注册{len(_registered_categories)}个分类,下次调用将重试")
     elif _registered_categories:
         total_tools = len(tool_registry._tools)
         logger.info(f"[Tools] 全部注册完成, {total_tools}个工具, {len(_registered_categories)}个分类")
+

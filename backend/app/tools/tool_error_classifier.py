@@ -1,3 +1,4 @@
+
 """
 【工具层】工具级错误分类器 — 小欧 2026-06-30
 
@@ -12,6 +13,9 @@
 
 作者: 小欧 - 2026-06-29
 """
+# 编辑历史:
+# 2026-07-28 - 小欧 - BUG#8: KeyError/AttributeError不应归为TOOL_NOT_FOUND(非工具未找到, 是代码内部错误), 删该映射后fallback到UNKNOWN。
+#   BUG#9: "not found"关键词应从FILE_NOT_FOUND改为TOOL_NOT_FOUND: "command not found"/"module not found"等非文件场景更匹配TOOL_NOT_FOUND; "no such file"/"file not found"已在上方先行匹配FILE_NOT_FOUND, 互不影响。
 
 import re
 from enum import Enum
@@ -82,8 +86,6 @@ EXCEPTION_TO_TOOL_ERROR: Dict[str, ToolErrorCategory] = {
     "FileNotFoundError": ToolErrorCategory.FILE_NOT_FOUND,
     "ValueError": ToolErrorCategory.INVALID_PARAMS,
     "TypeError": ToolErrorCategory.INVALID_PARAMS,
-    "KeyError": ToolErrorCategory.TOOL_NOT_FOUND,
-    "AttributeError": ToolErrorCategory.TOOL_NOT_FOUND,
     "ConnectError": ToolErrorCategory.CONNECT,
     "ConnectTimeout": ToolErrorCategory.CONNECT,
     "ReadTimeout": ToolErrorCategory.TIMEOUT,
@@ -111,7 +113,7 @@ KEYWORD_TO_TOOL_ERROR: Dict[str, ToolErrorCategory] = {
     "forbidden": ToolErrorCategory.PERMISSION_DENIED,
     "no such file": ToolErrorCategory.FILE_NOT_FOUND,
     "file not found": ToolErrorCategory.FILE_NOT_FOUND,
-    "not found": ToolErrorCategory.FILE_NOT_FOUND,
+    "not found": ToolErrorCategory.TOOL_NOT_FOUND,
     "invalid": ToolErrorCategory.INVALID_PARAMS,
     "missing": ToolErrorCategory.INVALID_PARAMS,
     "required": ToolErrorCategory.INVALID_PARAMS,
@@ -171,3 +173,4 @@ class ToolErrorClassifier:
             "original_error": str(error),
             "error_type": type(error).__name__,
         }
+

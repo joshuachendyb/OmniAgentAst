@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 工具格式转换 — 将注册表数据转换为各种展示格式
@@ -122,3 +123,4 @@ def generate_param_reminder(
                 lines.append("- " + name + ": " + ", ".join(param_parts))
     
     return "\n".join(lines)
+
