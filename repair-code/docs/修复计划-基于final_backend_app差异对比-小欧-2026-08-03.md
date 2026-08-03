@@ -77,21 +77,20 @@
 
 ### 批次 3：L2 tools 工具层（107 个）— **按模块分批，逐模块推进**
 > 原则：先修 register/schema（对外契约），再修工具实现，最后修依赖链；每模块独立验证通过后才进下一模块。
-> 推荐模块顺序按依赖强弱排列，**每行一个批次、单独 commit**。
+> **分组依据 = 功能关联性**（同链路工具放同批），每行一个批次、单独 commit。
+> **已知主线索**：shell 链是 7/20-31 变更最密集部分（50+ commit，含 07-28 shell 从 SHELL→FUNDAMENTAL 分类搬迁、07-30 Singleton→ShellPoolManager 分池并发两次大重构）；schema 类变更集中在 07-21/25（去冗余）与 07-29/30/31（增强/修复）两个浪潮。
 
-| 批次号 | 模块 | 涉及文件 | 权威档位 | 验证目标（含现有测试） |
-|--------|------|---------|---------|------------------------|
-| 3.1 | fundamental | execute_shell_command, execute_shell_command_safety, shell_engine, shell_prompt_templates（缺失 4）+ send_notification, tool_search, fundamental_register, fundamental_schema, __init__（不同 5） | **A 档** | `test_execute_shell_command_bugs`、`test_shell_quality`、`test_persistent_shell_engine`（当前收集 ERROR 的根因） |
-| 3.2 | shell | shell_engine, shell_schema, shell_register, shell_prompt_templates, execute_shell_command, execute_shell_command_safety（不同 6） | A/B 档 | shell 相关测试 |
-| 3.3 | network | connectivity, url_validator（缺失 2）+ download_file, fetch_webpage, http_request, network_diagnose, network_register, network_schema, search_web（不同 7）+ __init__ | A/B 档 | `test_network_tools`、`test_http_request_v2` |
-| 3.4 | timer | query_calendar, time_add, time_diff（缺失 3）+ timer_register, timer_schema, timer_set, timer_list, __init__（不同 5） | A 档 | timer 相关测试 |
-| 3.5 | dataanalysis | data_loader（缺失 1）+ analyze_data, filter_data, execute_sql, get_db_schema, query_sql, generate_chart, dataanalysis_schema, dataanalysis_register（不同 8） | A 档 | `test_analyze_data`、`test_filter_data` |
-| 3.6 | file（其余） | compress_files, copy_file, delete_file, edit_text_file, extract_archive, file_register, file_schema, grep_file_content, list_directory, move_file, read_media_file, read_text_file, search_files, tree, write_text_file, __init__（不同 16） | A/B 档 | file 相关测试 |
-| 3.7 | document | document_register, document_schema, md_inline_utils, read_docx, read_pdf, read_pptx, read_xlsx, write_docx, write_pdf, write_pptx, write_xlsx（不同 11） | A 档 | document 相关测试 |
-| 3.8 | desktop | clipboard_control, desktop_register, desktop_schema, keyboard_control, mouse_*, screen_capture, set_window_state, window_*（不同 12） | B/C 档 | desktop 相关测试 |
-| 3.9 | win_registry | registry_delete, registry_read, registry_write（不同 3） | A 档 | `test_win_registry_deep` |
-| 3.10 | system | create_task, delete_task, event_log, list_tasks, system_schema（不同 5） | B/C 档 | system 相关测试 |
-| 3.11 | timer（其余）/ validate / toolhelper / 工具根 | timer 余 + file_path_checker, registry_path_checker, timeout_validator, url_validator, toolhelper/__init__, syntax_validator, registry, tool_constants, tool_description, tool_error_classifier, tool_fc_helper, param_alias_mapper, schema_utils（不同 14） | A/B 档 | 工具注册冒烟 |
+| 批次号 | 模块（关联组） | 涉及文件 | 权威档位 | 验证目标（含现有测试） |
+|--------|--------------|---------|---------|------------------------|
+| 3.1 | **fundamental-shell 链（核心）** | execute_shell_command, execute_shell_command_safety, shell_engine, shell_prompt_templates（缺失 4）+ shell/下 execute_shell_command, execute_shell_command_safety, shell_engine, shell_prompt_templates, shell_schema, shell_register（不同 6）+ fundamental/__init__, send_notification, fundamental_register, fundamental_schema（不同 4） | **A 档（DB+commit 最密集）** | `test_execute_shell_command_bugs`、`test_shell_quality`、`test_persistent_shell_engine`、`test_shell_pool_manager`（当前收集 ERROR 根因） |
+| 3.2 | **file 链（含 schema）** | compress_files, copy_file, delete_file, edit_text_file, extract_archive, file_register, file_schema, grep_file_content, list_directory, move_file, read_media_file, read_text_file, search_files, tree, write_text_file, file/__init__（不同 16）+ file_path_checker, timeout_validator, url_validator（validate，不同 3） | A/B 档 | file 相关测试 |
+| 3.3 | **network 链（含 schema）** | connectivity, url_validator（缺失 2）+ download_file, fetch_webpage, http_request, network_diagnose, network_register, network_schema, search_web, network/__init__（不同 8）+ http_client_sdk（如依赖） | A/B 档 | `test_network_tools`、`test_http_request_v2` |
+| 3.4 | **document 链（含 schema）** | document_register, document_schema, md_inline_utils, read_docx, read_pdf, read_pptx, read_xlsx, write_docx, write_pdf, write_pptx, write_xlsx（不同 11） | A 档（DB 覆盖多） | document 相关测试 |
+| 3.5 | **dataanalysis 链（含 schema）** | data_loader（缺失 1）+ analyze_data, filter_data, execute_sql, get_db_schema, query_sql, generate_chart, dataanalysis_schema, dataanalysis_register（不同 8） | A 档 | `test_analyze_data`、`test_filter_data` |
+| 3.6 | **desktop 链（含 schema，07-31 三堂会审 19 bug）** | clipboard_control, desktop_register, desktop_schema, keyboard_control, mouse_click/move/position/scroll, screen_capture, set_window_state, window_focus/info/resize（不同 12） | B 档（07-31 有 `fix:desktop*13个文件`、`fix:desktop三堂会审19个真实bug`） | desktop 相关测试 |
+| 3.7 | **system + timer 链（含 schema）** | system: create_task, delete_task, event_log, list_tasks, system_schema（不同 5）；timer: query_calendar, time_add, time_diff（缺失 3）+ timer_register, timer_schema, timer_set, timer_list, timer/__init__（不同 5） | B/C 档 | system/timer 相关测试 |
+| 3.8 | **win_registry 链** | registry_delete, registry_read, registry_write（不同 3）+ registry_path_checker（validate） | A 档（07-31 有 `fix:win_registry registry_write BugB`） | `test_win_registry_deep` |
+| 3.9 | **工具根 + toolhelper + 其余** | registry, tool_constants, tool_description, tool_error_classifier, tool_fc_helper, param_alias_mapper, schema_utils（不同 7）+ toolhelper/__init__, syntax_validator（不同 2）+ 其余 validate | A/B 档 | 工具注册冒烟 + 全量测试 |
 | **每批验证** | — | `py_compile` + 该模块单测通过 + import 链 + 工具注册冒烟 | — | 不得引入新失败 |
 
 ### 批次 4：L3 API/入口层（7 个）
@@ -121,5 +120,5 @@
 
 1. 评审本计划（批次划分、顺序、判定规则）
 2. 批次 0 收尾：记录当前 backend 测试收集基线（当前 16 个 collection ERROR，根因缺 fundamental/shell 模块）
-3. 按模块分批推进：从**批次 3.1 fundamental**（shell 链核心，是多数测试收集失败的根因）开始，或先按依赖层做 L0/L1
+3. 按模块分批推进：从**批次 3.1 fundamental-shell 链**（变更最密集、且是多数测试收集失败的根因）开始
 4. 每模块完成提交一次，独立验证，逐个推进，不急于一次性完成
