@@ -1,3 +1,42 @@
+v0.19.1
+更新时间: 2026-08-03 21:22:39 - 小欧-2026-08-03
+## v0.19.0→v0.19.1 变更汇总(24个commit) - 小欧-2026-08-03
+
+### repair:
+- repair-code 批次1-2 L0/L1+批次3.1-3.5 工具链权威修复源同步final(services 40+constants+tool_constants/tool_fc_helper+fundamental/shell/file/validate/network/document/dataanalysis)+修复计划v1.7+backup-l1备份 - 小欧-2026-08-03
+- repair-code timer分类同步final(timeadd/timediff/calendar迁入TIMER, 三工具恢复注册) 修复三堂会审发现的fundamental注册迁移后工具消失回归 - 小欧-2026-08-03
+- forensics 备份36个死代码文件(backup-deadcode-20260803, 删除前备份) - 小欧-2026-08-03
+
+### feat:
+- constants+tool_constants+tool_fc_helper 共享常量契约同步final(MAX_CONTEXT_TOKENS重命名+TOOL_TIMEOUT_HINTS+_strip_sql_comments_and_strings, 移除作废INER_*常量) - 小欧-2026-08-03
+- services/llm 六文件同步final(base_service/client_sdk/error_classifier/reasoning/llm_constants/stream_parser, 补齐缺失stream_parser+llm_constants) - 小欧-2026-08-03
+- services/prompts+model 四文件同步final(system_prompts含render_shell_section+prompt_logger新增+system_adapter/resolver) - 小欧-2026-08-03
+- services/agent 17文件同步final(agent_runner/react_cycle/action_handler等核心ReAct链+补齐types/agent_utils) - 小欧-2026-08-03
+- services/chat+lifecycle+task+safety 13文件同步final(stream SSE编排/安全链operation_*+tool_safety_checker/任务task_db+task_context) - 小欧-2026-08-03
+- api/v1/chat/openai 同步final(session_id_var迁至logger.shared_handler.set_session_id) - 小欧-2026-08-03
+- tools/fundamental 9文件同步final(shell链迁入FUNDAMENTAL:execute_shell_command+shell_engine+shell_prompt_templates, 注册5工具) - 小欧-2026-08-03
+- tools/shell 7文件同步final(shell旧分类对齐:__init__移除execute_shell_command导入+find_command用SUBPROCESS_TIMEOUT_DEFAULT常量) - 小欧-2026-08-03
+- tools/file 17文件同步final(读写/增删/查改/压缩/树全链+file_register/schema对齐) - 小欧-2026-08-03
+- tools/validate 4文件同步final(file_path_checker+registry_path_checker+timeout_validator+url_validator) - 小欧-2026-08-03
+- tools/network 9文件同步final(http_request+search_web+download_file等+新增connectivity/url_validator) - 小欧-2026-08-03
+- tools/document 11文件同步final(read/write pdf/docx/xlsx/pptx全链+md_inline_utils) - 小欧-2026-08-03
+- tools/dataanalysis 9文件同步final(analyze_data+filter_data+execute_sql+generate_chart等+新增data_loader) - 小欧-2026-08-03
+- tools/timer 8文件同步final(timeadd/timediff/calendar迁入TIMER修复三工具消失回归, 注册6工具) - 小欧-2026-08-03
+
+### refactor:
+- tools/fundamental 删除time_add/time_diff/query_calendar死文件(已迁timer分类, 测试import已更新至timer) - 小欧-2026-08-03
+- tools/shell 删除execute_shell_command+execute_shell_command_safety死文件(shell分类仅注册which, 已迁fundamental) - 小欧-2026-08-03
+- tools 删除死文件3个(shell_prompt_templates+connectivity+url_validator, 无引用) - 小欧-2026-08-03
+- services 删除死文件11个(agent_utils/types/migrate_steps/llm/prompts/safety/visualization, 无引用) - 小欧-2026-08-03
+- utils+db 删除死文件17个(utils工具模块+log_config冗余+operation_enums, 无引用) - 小欧-2026-08-03
+- 清理死代码残留__init__.py(log_config/agent_utils/types包整体删除, 备份至backup-deadcode) - 小欧-2026-08-03
+
+### docs:
+- 修复计划-基于final_backend_app差异对比 v1.8(记录死文件清理) - 小欧-2026-08-03
+
+### 验证:
+- import app.main成功 + 工具注册63个(10分类) + 收集5350 tests 0 error + handlers/steps/validate 338 passed 1 skipped
+
 v0.19.0
 更新时间: 2026-08-03 15:35:54 - 小欧-2026-08-03
 ## v0.18.27→v0.19.0 变更汇总(26个commit) - 小欧-2026-08-03
