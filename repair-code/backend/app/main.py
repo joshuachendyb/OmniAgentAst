@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-15 小欧 修复后台清理闭包命名撞车: 原内部闭包 cleanup_task 与 task_registry.cleanup_task(删单个任务)同名不同义, 违反清晰命名/KISS; 展平为模块级 _periodic_cleanup_loop 并保存 task 引用, shutdown 时 cancel
 # 2026-07-28 - 小欧 - BUG#4: version.txt为空时get_version直奔for line in f, 无行进入时version未赋值致UnboundLocalError; 补version="0.0.0"默认值。
+# 2026-08-03 - 小欧 - 恢复7-30原设计(DB核实): 删shutdown里的shell_pool.cleanup_all()+日志与import; 该行系8-02恢复工程误加回, 7-30已决策main.py不清理(atexit+task完成清理全覆盖)。
 import sys
 import asyncio
 from typing import Optional
@@ -23,7 +24,6 @@ import traceback
 from app.utils.time_utils import get_utc_timestamp
 from app.tools import ensure_tools_registered
 from app.config import get_config
-from app.tools.fundamental.shell_engine import shell_pool
 from pathlib import Path
 import os
 import logging
@@ -194,8 +194,6 @@ async def shutdown_event():
         _cleanup_task_ref.cancel()
     from app.services.lifecycle import reset
     reset()
-    count = shell_pool.cleanup_all()
-    logger.info(f"已清理 {count} 个持久shell进程")
 
 
 @app.get("/")
