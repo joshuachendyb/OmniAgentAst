@@ -1,3 +1,33 @@
+v0.19.0
+更新时间: 2026-08-03 15:35:54 - 小欧-2026-08-03
+## v0.18.27→v0.19.0 变更汇总(26个commit) - 小欧-2026-08-03
+
+### feat:
+- 批次1 L0基础层修复完成: 32文件(25缺失+7不同)恢复至repair-code并应用live backend - 小沧-2026-08-03
+- logger层新增shared_handler.py(07-28重构替代setup_logger, final对齐) - 小沧-2026-08-03
+- db层新增models/operation_enums.py - 小沧-2026-08-03
+- utils新增log_config/ 8文件统一日志配置 - 小沧-2026-08-03
+- utils新增通用工具13个(common_patterns/content_quality/context_vars/counter_utils/error_parser/logger/message_id_tracker/next_actions_builder/paths/retry_engine/test_marker/version等) - 小沧-2026-08-03
+- utils日志扩展prompt_logger+sys_error_classifier - 小沧-2026-08-03
+- repair-code修复暂存区初始化(syntax_validator家族参考代码,与live backend一致) - 小沈-2026-08-03
+
+### fix:
+- syntax_validator.py 语法校验模块恢复(BOM去扰/BUG-002拦截/多语言/OCP注册/fail-open/异常不500)+3调用方(edit_text_file+write_text_file+tool_fc_helper)恢复写入拦截护栏 - 小沈-2026-08-03
+- 删除遗留logger/setup_logger.py(07-28重构已删, final对齐, 备份至repair-code/forensics/backup-l0) - 小沧-2026-08-03
+- test_logger.py 导入补漏(setup_logger→shared_handler)+类内顺序依赖修复(本地验证, 不入库) - 小沧-2026-08-03
+
+### docs:
+- 修复计划-基于final_backend_app差异对比 v1.0~v1.6(批次0/1完成+L0权威清单) - 小沧-2026-08-03
+- 分析记录-error_classifier三文件并存(仅services/llm版被引用, utils下两死代码, final亦同) - 小欧-2026-08-03
+- AGENTS.md 同步全局规则(编辑历史/三堂会审/编码规范) - 小欧-2026-08-01
+- doc目录 同步G盘最新5个设计文档(对话历史裁剪4+searchtool分词修复1) - 小欧-2026-08-01
+- version.txt 用G盘v0.18.39完整版覆盖v0.18.27基线(含0.18.28-0.18.39历史) - 小欧-2026-08-03
+
+### chore:
+- .gitignore 黑名单tests/output测试产物(junitxml/stdout/stderr), 防误提交 - 小沈-2026-08-03
+- .gitignore 黑名单repair-code修复暂存区→移除忽略(修复代码需入库管理) - 小沈-2026-08-03
+- .gitignore 移除误提交的.git-remote远程对象副本 - 小欧-2026-08-01
+
 v0.18.39
 更新时间: 2026-07-30 23:26:08 - 小欧-2026-07-30
 ## v0.18.38→v0.18.39 变更汇总(7个commit) - 小欧-2026-07-30
