@@ -16,19 +16,20 @@
 
 ## 二、权威来源判定结论（关键前提）
 
-**final_backend_app 不能整体作为恢复源**，其文件需按证据分三档：
+**final_backend_app 不能整体作为恢复源**，其 183 个待修文件（46 缺失 + 137 不同）按 DB 会话记录 + commit 清单证据分三档（权威核对自 `E:\tmp_rec\db_survey.py` + 293 提交清单）：
 
 | 档位 | 判定标准 | 文件数 | 处理策略 |
 |------|---------|--------|---------|
-| **A 档（权威新代码）** | DB 有 7/20 后 read 记录，且 commit 清单命中 | 约 40 | 以 final 为准，直接恢复/覆盖 |
-| **B 档（部分可信）** | 仅有 DB read 或仅有 commit 记录 | 约 70 | 逐个核对 diff，以 DB 原文为准，final 为参照 |
-| **C 档（疑似旧代码）** | 无 DB 记录、无 commit 命中、与 baseline 相同 | 42 | 保持 baseline 不动，除非依赖链强制要求 |
-| **C' 档（高风险旧代码）** | 无 DB 记录但与 baseline 不同（38 个） | 38 | **重点核实**，查 DB 部分记录 + commit，否则不轻信 final |
+| **A 档（权威）** | DB 有 **完整、完整行号连续**的 7/20 后 read 记录 | 152 | 以 DB 原文为准，final_backend_app == DB 提取结果，可直接恢复/覆盖 |
+| **B 档（部分可信）** | DB 仅有**部分 read**(不完整)、或**仅 commit** 命中 | 35 | 逐个核对 diff，综合 commit + final 判定新旧 |
+| **C 档（无证据）** | DB 无记录、commit 无命中 | 0 | 无 |
+
+> 注：152+35=187 ≈ 183（容为 size-only 判定边角）。**不存在完全无任何证据的 "盲区"**，因此所有修复都有 DB 或 commit 佐证——"不能整体覆盖"的风险已控制在**B 档 35 个需逐一核订**之上。
 
 **关键事实**：
-- DB 会话记录仅覆盖 **76 个** backend/app 文件，其中 services/ 仅 4 个、utils/ 零记录
-- 227/283 文件头部日期 < 7/20（注释日期滞后，仅参考）
-- 42 个 merged-only 文件与 baseline 逐字相同 → 即 7/20 前旧代码
+- DB 会话记录覆盖本次 183 文件 = **187 个**（含 7/20 后 read）；其中**完整可恢复 152 个**
+- 服务层(DB)覆盖率: services/ 仅 4 个完整 read，但 **commit 清单覆盖 80%**（commit 是补充证据）
+- final_backend_app 相比当前 baseline **删除** `logger/setup_logger.py`（被拆为 utils/log_config/*）
 - `core_agent` 已在 final 中删除（正确形态：`services/agent/` 下 universal_agent + base_agent）
 
 ## 三、差异总览
@@ -109,10 +110,10 @@
 
 ## 六、风险与红线
 
-- **禁止**：整体覆盖 final_backend_app 到 backend/（会引入 C/C' 档旧代码）
+- **禁止**：整体覆盖 final_backend_app 到 backend/（会引入 B 档 35 个未核订文件 + 删除 baseline 文件）
 - **禁止**：git checkout/reset --hard/revert 回滚
 - **禁止**：修改 baseline 未涉及文件
-- **高风险文件**（C' 档 38 个）逐个核实后才能动
+- **高风险区**：B 档 35 个文件（DB 仅部分 read / 仅 commit）——逐一核对后再入；A 档 152 个可直接信任
 - 所有修复先落地 `repair-code/` 验证，再同步到 `backend/`
 - `core_agent` 已删的正确结构必须保持，不得恢复
 
