@@ -5,19 +5,21 @@ Document Register - 文档操作工具注册点（仅DOCUMENT分类）
 【2026-06-18 小欧】DATAANALYSIS 6个工具已迁出到 dataanalysis/ 独立目录
 【2026-06-18 小健】添加TOOL_DEPENDENCIES常量管理工具依赖
 【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
+【2026-07-21 小欧】补 read_pdf/read_docx/read_pptx 翻页示例(page/pages/offset/limit/tail/slide), 对齐5259ef2ed新增参数; 此前schema漏更新致LLM看不到且校验拒收, 本次连schema一并修复
+【2026-07-31 小欧】TOOL_DEPENDENCIES 依赖修正: read_xlsx/write_xlsx 移除 pandas(实际仅用 openpyxl), write_pdf 移除 pdfplumber(实际仅用 reportlab); 同步修正文件头工具列表依赖注释
 
 【工具列表】(共8个) → DOCUMENT分类:
 1. read_pdf - 读取PDF文档 (依赖: pdfplumber)
 2. read_docx - 读取Word文档 (依赖: python-docx)
 3. read_pptx - 读取PPT文档 (依赖: python-pptx)
-4. read_xlsx - 读取Excel文档 (依赖: pandas, openpyxl)
+4. read_xlsx - 读取Excel文档 (依赖: openpyxl)
 5. write_docx - 写入Word文档 (依赖: python-docx)
-6. write_xlsx - 写入Excel文档 (依赖: pandas, openpyxl)
-7. write_pdf - 写入PDF文档 (依赖: reportlab, pdfplumber)
+6. write_xlsx - 写入Excel文档 (依赖: openpyxl)
+7. write_pdf - 写入PDF文档 (依赖: reportlab)
 8. write_pptx - 写入PPT文档 (依赖: python-pptx)
 
 创建时间: 2026-05-02
-更新时间: 2026-06-18 小健
+更新时间: 2026-07-31 小欧
 """
 
 from app.tools.registry import tool_registry
@@ -33,12 +35,11 @@ TOOL_DEPENDENCIES = {
     ],
     "read_pptx": [{"import_name": "pptx", "pip_package": "python-pptx"}],
     "read_xlsx": [
-        "pandas",
         "openpyxl",
     ],
     "write_docx": [{"import_name": "docx", "pip_package": "python-docx"}],
-    "write_xlsx": ["pandas", "openpyxl"],
-    "write_pdf": ["reportlab", "pdfplumber"],
+    "write_xlsx": ["openpyxl"],
+    "write_pdf": ["reportlab"],
     "write_pptx": [{"import_name": "pptx", "pip_package": "python-pptx"}],
 }
 
@@ -81,12 +82,17 @@ DESCRIPTIONS = {
 EXAMPLES = {
     "read_pdf": [
         {"path": "D:/documents/report.pdf"},
+        {"path": "D:/documents/report.pdf", "page": 3},
+        {"path": "D:/documents/report.pdf", "pages": "5-10"},
     ],
     "read_docx": [
         {"path": "D:/documents/report.docx"},
+        {"path": "D:/documents/report.docx", "offset": 1, "limit": 50},
+        {"path": "D:/documents/report.docx", "tail": 20},
     ],
     "read_pptx": [
         {"path": "D:/documents/presentation.pptx"},
+        {"path": "D:/documents/presentation.pptx", "slide": 2},
     ],
     "read_xlsx": [
         {"path": "D:/data/sales.xlsx"},

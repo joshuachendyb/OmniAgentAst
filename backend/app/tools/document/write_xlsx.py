@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
+# 2026-07-26 - 小欧 - summary加路径前空格
+# 2026-07-31 - 小欧 - Bug⑳修复: data非数组或元素非dict时返回明确错误(原list[list]触发row.keys() AttributeError, 错误信息晦涩) | py_compile ✓
 """
 D6: write_xlsx — 写入Excel文档
 
@@ -11,17 +15,16 @@ D6: write_xlsx — 写入Excel文档
 
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional  # 2026-07-31 小欧: 移除未使用 Union
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
-from app.tools.tool_constants import ERR_WRITE_XLSX, ERR_DOC_NO_OPENPYXL
+from app.tools.tool_constants import ERR_WRITE_XLSX  # 2026-07-31 小欧: 移除未使用 ERR_DOC_NO_OPENPYXL
 from app.utils.json_utils import coerce_json
-from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error
-from app.logger import logger
-from app.utils.table_helper import calculate_column_widths, get_table_header_style_config
+from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error  # 2026-07-31 小欧: 移除未使用 logger
+from app.utils.table_helper import get_table_header_style_config  # 2026-07-31 小欧: 移除未使用 calculate_column_widths
 
 
 def _set_xlsx_table_style(ws):
@@ -93,14 +96,14 @@ def _build_write_xlsx_llm_data(
         _act_params["sheet_name"] = user_sheet_name
     if exec_code == "error":
         return {
-            "summary": f"写入Excel{file_path}，失败: {detail}",
+            "summary": f"写入Excel {file_path}，失败: {detail}",
             "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "写入Excel失败", "code": ERR_WRITE_XLSX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入Excel{file_path}，成功: {row_count}行",
+        "summary": f"写入Excel {file_path}，成功: {row_count}行",
         "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入Excel成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -126,6 +129,16 @@ def write_xlsx(
         return build_error(data={}, llm_data=llm_data)
 
     data = coerce_json(data)
+    # 2026-07-31 小欧: Bug⑳修复 — 明确data结构约束(list[dict]), 防list[list]触发row.keys() AttributeError(晦涩错误)
+    if not isinstance(data, list):
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=f"data参数必须是JSON数组, 收到类型: {type(data).__name__}", user_sheet_name=sheet_name, hint="data应为对象数组,如[{\"col1\":1,\"col2\":2}]")
+        return build_error(data={}, llm_data=llm_data)
+    for _i, _row in enumerate(data):
+        if not isinstance(_row, dict):
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=f"data的第{_i + 1}项必须是JSON对象, 收到类型: {type(_row).__name__}", user_sheet_name=sheet_name, hint="data的每个元素应为对象,如{\"col1\":1,\"col2\":2}")
+            return build_error(data={}, llm_data=llm_data)
     cs_error, safe_data = check_content_safety(data, "xlsx", param_name="data")
     if cs_error:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

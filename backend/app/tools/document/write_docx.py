@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
+# 2026-07-05 - 小欧 - 加hint参数
+# 2026-07-26 - 小欧 - summary加路径前空格，加para_count指标供LLM验证内容写入
+# 2026-07-26 - 小欧 - 再加char_count指标，让LLM能区分一段长文 vs 多段短文的内容量级
+# 2026-07-26 - 小欧 - para_count排除Document()默认空段落；char_count含表格单元格文本；加table_count指标
+# 2026-07-31 - 小欧 - Bug⑯修复: 有序列表正则 ^\d+\.\s → ^\d{1,3}\.\s, 防"2026. 销售报告"数字开头散文被误当编号列表并剥数字 | py_compile ✓
 """
 D5: write_docx — 写入Word文档
 
@@ -21,8 +28,7 @@ from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
 from app.tools.tool_constants import ERR_WRITE_DOCX
 from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error
-from app.logger import logger
-from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config, normalize_table_data
+from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config, normalize_table_data  # 2026-07-31 小欧: 移除未使用 logger
 from app.tools.document.md_inline_utils import _parse_inline_md
 
 
@@ -95,7 +101,9 @@ def _set_docx_column_widths(table, table_data):
 
 def _build_write_docx_llm_data(
     exec_code: str, duration_ms: int,
-    file_path: str = "", detail: str = "", user_title: str = "", hint: str = "",
+    file_path: str = "", detail: str = "", user_title: str = "",
+    hint: str = "", para_count: int = 0, char_count: int = 0,
+    table_count: int = 0,
 ) -> Dict[str, Any]:
     """write_docx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     _act_params = {"file_path": file_path}
@@ -103,18 +111,22 @@ def _build_write_docx_llm_data(
         _act_params["title"] = user_title
     if exec_code == "error":
         return {
-            "summary": f"写入Word{file_path}，失败: {detail}",
+            "summary": f"写入Word {file_path}，失败: {detail}",
             "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "写入Word失败", "code": ERR_WRITE_DOCX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入Word{file_path}，成功",
+        "summary": f"写入Word {file_path}，成功: {para_count}段, {char_count}字符",
         "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入Word成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {},
+        "metrics": {
+            "para_count": {"value": para_count, "text": f"{para_count}段"},
+            "char_count": {"value": char_count, "text": f"{char_count}字符"},
+            "table_count": {"value": table_count, "text": f"{table_count}个表格"},
+        },
     }
 
 
@@ -184,7 +196,7 @@ def write_docx(
                 elif line.startswith('- ') or line.startswith('* '):
                     p = doc.add_paragraph(style='List Bullet')
                     _apply_inline_formatting(p, line[2:])
-                elif re.match(r'^\d+\.\s', line):
+                elif re.match(r'^\d{1,3}\.\s', line):  # 2026-07-31 小欧: Bug⑯修复 — 限1-3位编号, 防"2026. 销售报告"散文被误当列表并剥数字
                     p = doc.add_paragraph(style='List Number')
                     _apply_inline_formatting(p, re.sub(r'^\d+\.\s', '', line))
                 elif line.startswith('|') and '|' in line[1:]:
@@ -216,8 +228,17 @@ def write_docx(
         path.parent.mkdir(parents=True, exist_ok=True)
         doc.save(path)
 
+        # 段落数：排除 Document() 默认的空段落；char_count 含表格单元格文本 — 小欧 2026-07-26
+        paragraph_count = sum(1 for p in doc.paragraphs if p.text.strip())
+        docx_char_count = sum(len(p.text) for p in doc.paragraphs)
+        table_count = len(doc.tables)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for p in cell.paragraphs:
+                        docx_char_count += len(p.text)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("success", duration_ms, str(path), user_title=title or "")
+        llm_data = _build_write_docx_llm_data("success", duration_ms, str(path), user_title=title or "", para_count=paragraph_count, char_count=docx_char_count, table_count=table_count)
         # =============================================================================
         # 数据设计：file_path 从 data 移除，通过 llm_data.summary 传入 LLM observation。
         # summary 已包含文件路径: "写入Word成功: /path.docx"

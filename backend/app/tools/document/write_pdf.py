@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
+# 2026-07-05 - 小欧 - 加hint参数
+# 2026-07-26 - 小欧 - summary加路径前空格，加char_count指标供LLM验证内容写入
+# 2026-07-26 - 小欧 - char_count改为统计title+content+table_data全源；之前只统计content，遗漏表格和标题内容
+# 2026-07-31 - 小欧 - Bug⑧修复: CJK字体渐进回退(依次尝试simsun/msyh/simhei/Deng/simkai, 全部缺失才退默认并告警), 防simsun缺失时中文渲染方框; Bug⑯同型修复: 有序列表正则 ^\d+\.\s → ^\d{1,3}\.\s, 防"2026. 销售报告"被误当编号列表 | py_compile ✓
 """
 D7: write_pdf — 写入PDF文档
 
@@ -10,11 +16,13 @@ D7: write_pdf — 写入PDF文档
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
+import os
 import re
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, List
 
+from app.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_WRITE_PDF
@@ -22,9 +30,18 @@ from app.tools.validate.file_path_checker import permission_error_hint, hint_for
 from reportlab.lib.units import mm
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
-from app.logger import logger
-from app.utils.table_helper import parse_markdown_table, get_table_header_style_config, normalize_table_data
+from app.utils.table_helper import parse_markdown_table, get_table_header_style_config, normalize_table_data  # 2026-07-31 小欧: 移除未使用 logger
 from app.tools.document.md_inline_utils import _md_to_pdf_xml
+
+
+# 2026-07-31 小欧: Bug⑧ CJK字体候选列表(按优先级渐进回退) — (注册名, 字体文件路径)
+_CJK_FONT_CANDIDATES = [
+    ("SimSun", "C:/Windows/Fonts/simsun.ttc"),
+    ("MicrosoftYaHei", "C:/Windows/Fonts/msyh.ttc"),
+    ("SimHei", "C:/Windows/Fonts/simhei.ttf"),
+    ("DengXian", "C:/Windows/Fonts/Deng.ttf"),
+    ("KaiTi", "C:/Windows/Fonts/simkai.ttf"),
+]
 
 
 def _create_pdf_table(table_data, chinese_style):
@@ -57,7 +74,8 @@ def _create_pdf_table(table_data, chinese_style):
 
 def _build_write_pdf_llm_data(
     exec_code: str, duration_ms: int,
-    file_path: str = "", detail: str = "", user_title: str = "", hint: str = "",
+    file_path: str = "", detail: str = "", user_title: str = "",
+    hint: str = "", char_count: int = 0,
 ) -> Dict[str, Any]:
     """write_pdf的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     _act_params = {"file_path": file_path}
@@ -65,18 +83,20 @@ def _build_write_pdf_llm_data(
         _act_params["title"] = user_title
     if exec_code == "error":
         return {
-            "summary": f"写入PDF{file_path}，失败: {detail}",
+            "summary": f"写入PDF {file_path}，失败: {detail}",
             "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "写入PDF失败", "code": ERR_WRITE_PDF, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入PDF{file_path}，成功",
+        "summary": f"写入PDF {file_path}，成功: {char_count}字符",
         "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入PDF成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {},
+        "metrics": {
+            "char_count": {"value": char_count, "text": f"{char_count}字符"},
+        },
     }
 
 
@@ -127,22 +147,31 @@ def write_pdf(
         doc = SimpleDocTemplate(str(path), pagesize=A4)
         styles = getSampleStyleSheet()
 
-        try:
-            font_path = "C:/Windows/Fonts/simsun.ttc"
-            pdfmetrics.registerFont(TTFont('SimSun', font_path, subfontIndex=0))
-            chinese_style = ParagraphStyle(
-                'Chinese', parent=styles['Normal'],
-                fontName='SimSun', fontSize=10, leading=14,
-                wordWrap='CJK',
-            )
-            title_style = ParagraphStyle(
-                'ChineseTitle', parent=styles['Title'],
-                fontName='SimSun', fontSize=18, leading=24,
-                wordWrap='CJK',
-            )
-        except Exception:
+        chinese_style = None
+        title_style = None
+        # 2026-07-31 小欧: Bug⑧修复 — CJK字体渐进回退, 依次尝试候选字体, 全部缺失才退默认样式(并告警)
+        for font_name, font_path in _CJK_FONT_CANDIDATES:
+            try:
+                if not os.path.isfile(font_path):
+                    continue
+                pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=0))
+                chinese_style = ParagraphStyle(
+                    'Chinese', parent=styles['Normal'],
+                    fontName=font_name, fontSize=10, leading=14,
+                    wordWrap='CJK',
+                )
+                title_style = ParagraphStyle(
+                    'ChineseTitle', parent=styles['Title'],
+                    fontName=font_name, fontSize=18, leading=24,
+                    wordWrap='CJK',
+                )
+                break
+            except Exception:
+                continue
+        if chinese_style is None or title_style is None:
             chinese_style = styles['Normal']
             title_style = styles['Title']
+            logger.warning("[write_pdf] 未找到可用中文字体, 中文可能显示为方框, 建议安装simsun.ttc/msyh.ttc")
 
         elements = []
 
@@ -177,7 +206,7 @@ def write_pdf(
                 elif line.startswith('- ') or line.startswith('* '):
                     elements.append(Paragraph('• ' + _md_to_pdf_xml(line[2:]), chinese_style))
                     elements.append(Spacer(1, 2 * mm))
-                elif re.match(r'^\d+\.\s', line):
+                elif re.match(r'^\d{1,3}\.\s', line):  # 2026-07-31 小欧: Bug⑯同型 — 限1-3位编号, 防"2026. 报告"散文被误当列表
                     elements.append(Paragraph(_md_to_pdf_xml(re.sub(r'^\d+\.\s', '', line)), chinese_style))
                     elements.append(Spacer(1, 2 * mm))
                 elif line.startswith('|') and '|' in line[1:]:
@@ -201,10 +230,20 @@ def write_pdf(
         if not elements:
             elements.append(Paragraph(" ", chinese_style))
 
-        doc.build(elements)
+        # 统计所有输入源的字符数（含 title + content + table_data），供 LLM 验证内容量 — 小欧 2026-07-26
+        content_char_count = 0
+        if title:
+            content_char_count += len(title)
+        if content:
+            content_char_count += len(content)
+        if table_data:
+            for row in table_data:
+                for cell in row:
+                    content_char_count += len(str(cell))
 
+        doc.build(elements)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("success", duration_ms, str(path), user_title=title or "")
+        llm_data = _build_write_pdf_llm_data("success", duration_ms, str(path), user_title=title or "", char_count=content_char_count)
         # =============================================================================
         # 数据设计：file_path 从 data 移除，通过 llm_data.summary 传入 LLM observation。
         # summary 已包含文件路径: "写入PDF成功: /path.pdf"

@@ -9,19 +9,21 @@ D8: write_pptx — 写入PPT文档
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-07-31 - 小欧 - CRITICAL: _add_pptx_table 中 Inches 导入在使用之后(NameError崩溃)。移动 import 到函数顶部，确保 Inches(2) fallback 可用
+# 2026-07-31 - 小欧 - Bug④/⑥/⑭修复: 正文占位符按类型(BODY/OBJECT/VERTICAL_BODY)选择, 防封面SUBTITLE被content覆盖; falsy-zero改is not None; 表高超版心时跳过防负高度
 
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from app.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
-from app.tools.tool_constants import ERR_DOC_WRITE_PPTX, ERR_DOC_NO_PPTX
+from app.tools.tool_constants import ERR_DOC_WRITE_PPTX  # 2026-07-31 小欧: 移除未使用 ERR_DOC_NO_PPTX
 from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error
-from app.utils.json_utils import coerce_json
-from app.logger import logger
+from app.utils.json_utils import coerce_json  # 2026-07-31 小欧: 移除未使用 logger
 from app.utils.table_helper import calculate_column_widths, get_table_header_style_config, dict_table_to_rows
 from app.tools.document.md_inline_utils import _parse_inline_md
 
@@ -71,14 +73,19 @@ def _select_layout(prs, slide_type):
 
 
 def _add_pptx_content(slide, content):
-    """处理正文到 content placeholder — 小欧 2026-06-19; 小健 2026-06-24 修复跳过idx=1的bug"""
+    """处理正文到 content placeholder — 小欧 2026-06-19; 小健 2026-06-24 修复跳过idx=1的bug
+       2026-07-31 小欧: Bug④修复 — 按占位符类型(BODY/OBJECT/VERTICAL_BODY)选择正文占位符,
+       避免封面(Title Slide)布局中 idx==1 的 SUBTITLE 被 content 覆盖, 也避免误写进 DATE/FOOTER 等占位符
+    """
+    from pptx.enum.shapes import PP_PLACEHOLDER
     body = None
     for sh in slide.placeholders:
-        idx = sh.placeholder_format.idx
-        if idx >= 1:  # idx=1是Content Placeholder，不应跳过
+        ptype = sh.placeholder_format.type
+        if ptype in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT, PP_PLACEHOLDER.VERTICAL_BODY):
             body = sh.text_frame
             break
     if body is None:
+        logger.warning("[write_pptx] 当前布局无正文占位符, content被忽略(封面/标题类布局)")
         return
 
     def _get_para(is_first: bool):
@@ -124,19 +131,23 @@ def _add_pptx_content(slide, content):
 
 def _add_pptx_table(slide, table_data, start_top=None):
     """添加表格到幻灯片(独立shape) — 小欧 2026-06-19; 小健 2026-06-24 修复多表格重叠和超出边界、列宽自适应、表头样式"""
-    if not table_data or not table_data[0] or len(table_data[0]) == 0:
-        return start_top or Inches(2)
-    
-    from pptx.util import Inches, Emu, Pt
+    from pptx.util import Inches, Emu, Pt  # 2026-07-31 小欧: 修移至函数顶部(Inches 原在行130, 但行128先使用导致NameError)
     from pptx.dml.color import RGBColor
+    if not table_data or not table_data[0] or len(table_data[0]) == 0:
+        return start_top if start_top is not None else Inches(2)  # 2026-07-31 小欧: Bug⑥ falsy-zero → is not None
     
     rows, cols = len(table_data), len(table_data[0])
     left = Inches(1)
-    top = start_top if start_top else Inches(2)
+    top = start_top if start_top is not None else Inches(2)  # 2026-07-31 小欧: Bug⑥ falsy-zero → is not None
     width = Inches(6)
     
     slide_height = Inches(7.5)
     max_height = int(slide_height - top - Inches(0.5))
+    # 2026-07-31 小欧: Bug⑭ — 上方表格已把 top 推出版心时 max_height 为负, add_table 负高度崩溃/损坏XML。
+    # 可用高度不足0.5英寸时跳过该表格(保留当前 top, 供后续表格继续判断)
+    if max_height < int(Inches(0.5)):
+        logger.warning("[write_pptx] 表格超出版心范围, 跳过该表格")
+        return Emu(int(top))
     row_height = min(int(Inches(0.4)), max_height // rows)
     height = Emu(row_height * rows)
     

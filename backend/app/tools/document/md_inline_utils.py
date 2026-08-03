@@ -1,6 +1,7 @@
 """Markdown行内格式解析工具 — 小欧 2026-07-08
 
 提供跨 write_docx/write_pdf 的共享行内格式处理。
+2026-07-31 小欧: Bug⑱修复 — 链接正则支持 text内嵌套[]、URL内嵌套() | py_compile ✓
 """
 
 import re
@@ -39,8 +40,9 @@ def _parse_inline_md(text: str):
             segments.append((m.group(1), False, True, False, None))
             pos += m.end()
             continue
-        # 链接 [text](url)
-        m = re.match(r'\[([^\]]+)\]\(([^)]+)\)', text[pos:])
+        # 链接 [text](url) — 支持text内嵌套[]、URL内嵌套() — 小欧 2026-07-31 Bug⑱修复
+        # 旧正则 [^\]]+ / [^)]+ 遇 text含]或url含)时截断误判
+        m = re.match(r'\[((?:[^\[\]]|\[[^\[\]]*\])*)\]\(((?:[^()]|\([^()]*\))*)\)', text[pos:])
         if m:
             segments.append((m.group(1), False, False, False, m.group(2)))
             pos += m.end()

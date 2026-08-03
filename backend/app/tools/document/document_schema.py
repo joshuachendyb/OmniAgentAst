@@ -1,6 +1,21 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-20 - 小欧 - 复核schema docstring规范,WriteDocx/WritePdf保留既有docstring,其余工具默认行为均已在Field中体现,无需新增
+# 2026-07-21 - 小欧 - 补schema参数对齐(修BUG):
+#   1. ReadPdfInput 补 page/pages 字段
+#   2. ReadDocxInput 补 offset/limit/tail 字段
+#   3. ReadPptxInput 补 slide 字段
+#   说明: 工具函数已在5259ef2ed新增上述
+#   翻页参数,但schema漏更新致LLM看不到
+#   且tool_retry_engine校验拒收(非法参数)
+# 2026-07-21 - 小欧 - 修pages字段类型不安全(KISS-DIRECT): Optional[Any]→Optional[Union[int,str,List[int]]], 与运行时_parse_pdf_pages接受类型对齐, Pydantic层即拦截非法类型
+# 2026-07-21 - 小欧 - ReadDocxInput.limit description 引用 OBS_READTEXT_MAX_ROWS 常量, 加建议不超过上限说明
+# 2026-07-21 - 小欧 - 入参即信任: ReadDocxInput.limit 加 ge=1,le=1000, 支撑LLM指定1000以内段落数
+# 2026-07-25 - 小欧 - description去冗余+Field精简
+# 2026-07-26 - 小沈 - 欧阳报告: WriteDocxInput/WritePdfInput validator放宽, content+table_data都空时默认""而非报错
+# 2026-07-26 - 小沈 - Bug #6 DRY: 抽取_DocContentOrTableMixin消除WriteDocxInput/WritePdfInput的_check_content_or_table重复代码
+# 2026-07-28 - 小欧 - description精确化: write_pptx.path/write_docx.path/write_xlsx.path/write_pdf.path 全部加"必填"标注
+# 2026-07-31 - 小欧 - ReadPdfInput 补 page/pages 互斥校验(model_validator): 二者同时指定时报 ValueError, 与运行时逻辑对齐(Pydantic 层即拦截非法组合); 移除未使用 Literal 导入
 """
 Document Schema - 文档工具参数模型
 
@@ -20,18 +35,30 @@ Document Schema - 文档工具参数模型
 """
 
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, Any, List, Dict, Literal, Union
+from typing import Optional, Any, List, Dict, Union  # 2026-07-31 小欧: 移除未使用 Literal
 
 class ReadPdfInput(BaseModel):
     path: str = Field(..., description="文件名+路径(.pdf)")
+    page: Optional[int] = Field(default=None, description="1-based; 与pages互斥，二选一；不传则读取默认前几页")
+    pages: Optional[Union[int, str, List[int]]] = Field(default=None, description="1-based; 与page互斥")
+
+    @model_validator(mode="after")
+    def _check_page_pages_mutually_exclusive(self):
+        if self.page is not None and self.pages is not None:
+            raise ValueError("page 和 pages 互斥，不能同时指定")
+        return self
 
 
 class ReadDocxInput(BaseModel):
     path: str = Field(..., description="文件名+路径(.docx) — 不支持.doc格式")
+    offset: Optional[int] = Field(default=None, description="1-based; 须配合limit使用")
+    limit: Optional[int] = Field(default=None, ge=1, le=1000, description="与tail互斥")
+    tail: Optional[int] = Field(default=None, description="与offset/limit互斥")
 
 
 class ReadPptxInput(BaseModel):
     path: str = Field(..., description="文件名+路径(.pptx) — 不支持.ppt格式")
+    slide: Optional[int] = Field(default=None, description="1-based; 不传则读取全部幻灯片")
 
 
 class ReadXlsxInput(BaseModel):
@@ -43,82 +70,71 @@ class ReadXlsxInput(BaseModel):
 
 
 
-class WriteDocxInput(BaseModel):
+class _DocContentOrTableMixin:
+    """content/table_data互斥校验 — DRY (WriteDocxInput/WritePdfInput共用) — 小沈 2026-07-26"""
+    @model_validator(mode="after")
+    def _check_content_or_table(self):
+        if self.content and self.table_data:
+            raise ValueError("content和table_data互斥,只能传入其中一个")
+        if not self.content and not self.table_data:
+            self.content = ""  # 都为空时默认空文档(欧阳报告) — 小沈 2026-07-26
+        return self
+
+
+class WriteDocxInput(_DocContentOrTableMixin, BaseModel):
     """content和table_data互斥,只能传入其中一个"""
-    path: str = Field(..., min_length=1, description="文件名+路径(.docx)")
+    path: str = Field(..., min_length=1, description="输出文件完整路径(.docx),必填")
     title: Optional[str] = Field(default=None, description="文档标题（显示在文档开头）")
     content: Optional[str] = Field(
-        default=None, 
+        default=None,
         description="""正文内容(Markdown格式字符串)。语法说明：
 - 标题：# 一级标题  ## 二级标题  ### 三级标题  #### 四级标题  ##### 五级标题
 - 段落：直接写文本，空行分隔段落
 - 无序列表：- 列表项  或  * 列表项
 - 有序列表：1. 第一项  2. 第二项  （数字会自动重新编号）
 - 表格：| 列1 | 列2 |  （Markdown表格语法，第一行为表头）
-示例：\"# 报告标题\\n\\n第一段内容\\n\\n## 数据表格\\n\\n| 项目 | 数值 |\\n|------|------|\\n| A | 100 |\\n\\n## 章节\\n\\n- 要点1\\n- 要点2\"
 
 与table_data互斥,严禁同时传入"""
     )
     table_data: Optional[List[List[str]]] = Field(
         default=None,
         description="""表格数据(二维数组)。格式：[["列1", "列2"], ["A", "B"], ["C", "D"]]
-第一行为表头，后续为数据行。用于纯表格文档。与content互斥,严禁同时传入"""
+第一行为表头，后续为数据行。用于纯表格文档。与content互斥"""
     )
-
-    @model_validator(mode="after")
-    def _check_content_or_table(self):
-        if self.content and self.table_data:
-            raise ValueError("content和table_data互斥,只能传入其中一个")
-        if not self.content and not self.table_data:
-            raise ValueError("content和table_data必须传入其中一个")
-        return self
 
 
 class WriteXlsxInput(BaseModel):
-    path: str = Field(..., description="文件名+路径(.xlsx)")
+    path: str = Field(..., description="输出文件完整路径(.xlsx),必填")
     data: Optional[List[Dict[str, Any]]] = Field(
         default=None, 
         description="""写入的数据。对象数组格式:[{"列1":"a","列2":"b"},{"列1":"c","列2":"d"}]
 - key做列名，value做单元格内容
 - 自动合并所有对象的key作为表头（列顺序按首次出现顺序）
-- 不同对象的key可以不同，缺失的列自动填空
-
-示例：
-- [{"姓名":"张三","年龄":25},{"姓名":"李四","年龄":30}] → 表头:姓名,年龄 | 数据:张三,25 | 李四,30
-- [{"A":"1"},{"B":"2"}] → 表头:A,B | 数据:1,空 | 空,2"""
+- 不同对象的key可以不同，缺失的列自动填空"""
     )
     sheet_name: str = Field(default="Sheet1", description="工作表名")
 
 
-class WritePdfInput(BaseModel):
+class WritePdfInput(_DocContentOrTableMixin, BaseModel):
     """content和table_data互斥,只能传入其中一个"""
-    path: str = Field(..., min_length=1, description="文件名+路径(.pdf)")
+    path: str = Field(..., min_length=1, description="输出文件完整路径(.pdf),必填")
     title: Optional[str] = Field(default=None, description="文档标题（显示在文档开头）")
     content: Optional[str] = Field(
-        default=None, 
+        default=None,
         description="""正文内容(Markdown格式字符串)。语法说明：
 - 标题：# 一级标题  ## 二级标题  ### 三级标题  #### 四级标题
 - 段落：直接写文本，空行分隔段落
 - 无序列表：- 列表项  或  * 列表项
 - 有序列表：1. 第一项  2. 第二项  （数字会自动重新编号）
 - 表格：| 列1 | 列2 |  （Markdown表格语法，第一行为表头）
-示例：\"# 报告标题\\n\\n第一段内容\\n\\n## 数据表格\\n\\n| 项目 | 数值 |\\n|------|------|\\n| A | 100 |\\n\\n## 章节\\n\\n- 要点1\\n- 要点2\"
 
 与table_data互斥,严禁同时传入"""
     )
     table_data: Optional[List[List[str]]] = Field(
         default=None,
         description="""表格数据(二维数组)。格式：[["列1", "列2"], ["A", "B"], ["C", "D"]]
-第一行为表头，后续为数据行。用于纯表格文档。与content互斥,严禁同时传入"""
+第一行为表头，后续为数据行。用于纯表格文档。与content互斥"""
     )
-
-    @model_validator(mode="after")
-    def _check_content_or_table(self):
-        if self.content and self.table_data:
-            raise ValueError("content和table_data互斥,只能传入其中一个")
-        if not self.content and not self.table_data:
-            raise ValueError("content和table_data必须传入其中一个")
-        return self
 
 
 _SLIDE_DESC = """幻灯片列表。每项Dict包含：
@@ -129,16 +145,9 @@ _SLIDE_DESC = """幻灯片列表。每项Dict包含：
   1. 字符串：纯文本
   2. 列表：["段落1", "段落2"] 或 [{"type":"paragraph","text":"段落"}, {"type":"bullets","items":["要点1","要点2"]}]
   3. 字典：{"type":"bullets","items":["要点1","要点2"]}
-- tables（可选）：表格列表，每个表格为二维数组 [["列1","列2"],["A","B"]]
-
-示例：
-[
-  {"type":"cover","title":"封面","subtitle":"副标题"},
-  {"title":"目录","content":["一、背景","二、方案","三、总结"]},
-  {"title":"数据","tables":[[["项目","数值"],["A","100"],["B","200"]]]}
-]"""
+- tables（可选）：表格列表，每个表格为二维数组 [["列1","列2"],["A","B"]]"""
 class WritePptxInput(BaseModel):
-    path: str = Field(..., description="文件名+路径(.pptx)")
+    path: str = Field(..., description="输出文件完整路径(.pptx),必填")
     # slides允许List[Dict]或JSON字符串(LLM常把list序列化为字符串传入) — 小欧 2026-07-12 修问题4反序列化
     slides: Optional[Union[List[Dict], str]] = Field(default=None, description=_SLIDE_DESC)
 

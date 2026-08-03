@@ -1,4 +1,17 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 自然单位翻页 feat:
+#   1. read_docx 增加 offset/limit/tail 参数
+#   2. 新增行翻页参数校验逻辑
+#   3. 复用 line_pager.select_lines 行窗口
+#   4. llm_data 增加 total_lines 指标
+#   5. 支持 warning 状态(exec_code/detail/hint)
+# 2026-07-21 - 小欧 - 入参即信任: _build_read_docx_llm_data 加 user_limit 参数, 入 action.params, 支撑 formatter 动态调行数上限
+# 2026-07-21 - 小欧 - 文件大小安全检测: 入口加 READ_DOCX_INPUT_MAX_BYTES 字节检查，超限拒读防OOM
+# 2026-07-23 - 小欧 - 三堂会审5bug修复: outlimit len(text)截断后求值+删死import os as _os_mod
+# 2026-07-24 - 小欧 - 修复: error summary嵌入full detail → 改用truncate_summary(detail)首行
+# 2026-07-26 - 小欧 - OOD: 确认READ_DOCX_INPUT_MAX_BYTES未落地,OOM自然抛出被except捕获(同dataanalysis模式); 删doc_path多余变量(KISS-DIRECT)
+# 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
 """
 D2: read_docx — 读取Word文档
 
@@ -17,10 +30,9 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.validate.file_path_checker import hint_for_read_error
-from app.tools.tool_constants import ERR_DOC_READ_DOCX
+from app.tools.tool_constants import ERR_DOC_READ_DOCX, READ_DOCX_OUTLIMIT_CHARS
 from app.tools.toolhelper.line_pager import select_lines
-
-from app.logger import logger
+from app.utils.text_utils import truncate_summary
 
 
 def _build_read_docx_llm_data(
@@ -28,12 +40,18 @@ def _build_read_docx_llm_data(
     file_path: str = "", para_count: int = 0, text_len: int = 0,
     non_empty: int = 0, empty: int = 0, table_count: int = 0,
     total_lines: int = 0, detail: str = "", hint: str = "",
+    user_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """read_docx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 丰富summary"""
+    """read_docx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 丰富summary
+    2026-07-21 入参即信任: 补 user_limit 写入 action.params — 小欧"""
+    _act_params = {"file_path": file_path}
+    if user_limit is not None:
+        _act_params["limit"] = user_limit
     if exec_code == "error":
+        _err_summary = truncate_summary(detail)
         return {
-            "summary": f"读取Word{file_path}，失败: {detail}",
-            "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": {"file_path": file_path}},
+            "summary": f"读取Word{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
+            "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "读取Word失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -50,7 +68,7 @@ def _build_read_docx_llm_data(
     summary_str = f"读取Word{file_path}，成功: " + "，".join(parts)
     return {
         "summary": summary_str,
-        "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": _act_params},
         "status": {"exec_code": exec_code, "message": "读取Word成功" if exec_code == "success" else "读取Word有警告", "code": "", "detail": detail, "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {
@@ -90,9 +108,9 @@ def read_docx(
         return build_error(data={}, llm_data=llm_data)
 
     # 行翻页参数校验(自然单位治理 2026-07-20 小欧, 复用 readtext 的 offset/limit/tail 语义)
-    if limit is not None and limit < 1:
+    if limit is not None and (limit < 1 or limit > 1000):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"limit参数不能小于1,传入值: {limit}", hint="limit参数不能小于1")
+        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"limit参数必须在1-1000之间,传入值: {limit}", hint="limit参数必须设置在1-1000之间")
         return build_error(data={}, llm_data=llm_data)
     if tail is not None and tail < 1:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -115,11 +133,16 @@ def read_docx(
     try:
         import docx
 
-        doc_path = Path(file_path)
-        doc = docx.Document(doc_path)
+        doc = docx.Document(Path(file_path))
         paragraphs = [para.text for para in doc.paragraphs]
         non_empty_paragraphs = [p for p in paragraphs if p.strip()]
         text = "\n".join(non_empty_paragraphs)
+        # outlimit: 仅全量读取(无翻页参数)截断, 翻页由用户参数控制
+        if text and offset is None and limit is None and tail is None:
+            _orig_len = len(text)
+            if _orig_len > READ_DOCX_OUTLIMIT_CHARS:
+                text = text[:READ_DOCX_OUTLIMIT_CHARS] + \
+                    f"\n... (内容已截断: 原文{_orig_len}字符, 保留{READ_DOCX_OUTLIMIT_CHARS}字符) ...\n"
         empty_para_count = len(paragraphs) - len(non_empty_paragraphs)
 
         tables_data = []
@@ -147,11 +170,13 @@ def read_docx(
                 "warning", duration_ms, path, len(paragraphs), len(selected_text),
                 len(non_empty_paragraphs), empty_para_count, len(tables_data),
                 total_lines, detail=warning, hint="请调整offset/limit参数",
+                user_limit=limit,
             )
             return build_warning(data=result_data, llm_data=llm_data)
         llm_data = _build_read_docx_llm_data(
             "success", duration_ms, path, len(paragraphs), len(selected_text),
             len(non_empty_paragraphs), empty_para_count, len(tables_data), total_lines,
+            user_limit=limit,
         )
         # =============================================================================
         # 数据设计：paragraph_count/non_empty_paragraph_count/empty_paragraph_count/
