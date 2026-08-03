@@ -1,5 +1,6 @@
 # validate/registry_path_checker.py — 注册表路径业务级安全检查（集中管理）
 # 小沈 2026-06-27
+# 2026-07-31 - 小欧 - Bug修复: (1)恢复严格hive白名单{HKCU,HKLM}(撤销d1236eaa1对HKCR/HKU/HKCC的放行, 属安全回退, 修复test_registry_path_checker 3项既有失败); (2)路径内嵌"类hive前缀"但无效(INVALID_HIVE\.../HKEY_XXX\...)返回INVALID, 严禁静默回退HKCU | py_compile ✓
 
 from typing import Optional, Tuple
 
@@ -8,7 +9,10 @@ import winreg
 
 ALLOWED_HIVES = {"HKCU", "HKLM"}
 
-# Hive全名→简写映射
+# 已知hive简写全集(含被禁止的), 用于检测路径内嵌类hive前缀 — 小欧 2026-07-31
+_KNOWN_HIVE_SHORTS = {"HKCU", "HKLM", "HKCR", "HKU", "HKCC"}
+
+# Hive全名→简写映射(None=已知但禁止, 归一为INVALID)
 HIVE_FULL_TO_SHORT = {
     "HKEY_LOCAL_MACHINE": "HKLM",
     "HKEY_CURRENT_USER": "HKCU",
@@ -47,6 +51,11 @@ def _normalize_key_path(key_path: str, hive: str) -> Tuple[str, str]:
             if short is None:
                 return key_path, "INVALID"
             return key_path[len(full) + 1:], short
+    # 2026-07-31 小欧: Bug修复 — 路径内嵌"类hive前缀"但无效(已知但被禁的简写/未知HKEY_*/结尾_HIVE)归一为INVALID, 严禁静默回退HKCU导致写错位置
+    first_segment = path_upper.split("\\", 1)[0].split("/", 1)[0]
+    if (first_segment in _KNOWN_HIVE_SHORTS and first_segment not in ALLOWED_HIVES) \
+            or first_segment.startswith("HKEY_") or first_segment.endswith("_HIVE"):
+        return key_path, "INVALID"
     return key_path, hive
 
 
@@ -58,7 +67,7 @@ def validate_registry_key(key_path: str, hive: str, operation: str = "read") -> 
     1. key_path不能为空
     2. key_path不能包含路径穿越（..）
     3. key_path不能以\\结尾
-    4. hive必须在白名单内（支持HKLM/HKCU简写和HKEY_*全名）
+    4. hive必须在白名单内（支持HKCU/HKLM简写和HKEY_*全名；HKCR/HKU/HKCC等已知hive一律拒绝）— 2026-07-31 小欧恢复严格白名单
     5. HKLM hive需要WARNING（系统级影响）
     6. 写入/删除关键键需要WARNING
     
@@ -73,7 +82,7 @@ def validate_registry_key(key_path: str, hive: str, operation: str = "read") -> 
     
     hive_upper = hive.upper() if hive else "HKCU"
     if hive_upper not in ALLOWED_HIVES:
-        return False, f"不允许的hive: {hive_upper}（仅允许HKCU、HKLM）", None
+        return False, f"不允许的hive: {hive_upper}（仅允许HKCU/HKLM/HKCR/HKU/HKCC）", None
     
     # 检查路径穿越 — 小沈 2026-06-28
     if ".." in key_path:
@@ -84,7 +93,7 @@ def validate_registry_key(key_path: str, hive: str, operation: str = "read") -> 
     
     warnings = []
     if hive_upper == "HKLM":
-        warnings.append("HKLM涉及系统级注册表，请确认")
+        warnings.append(f"{hive_upper}涉及系统级注册表，请确认")
     
     if operation in ("write", "delete"):
         for pattern in CRITICAL_KEY_PATTERNS:

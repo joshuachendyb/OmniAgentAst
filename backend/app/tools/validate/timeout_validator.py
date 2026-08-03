@@ -11,6 +11,7 @@ TIMEOUT_RANGES_SECONDS = {
     "fetchpage":          (1,   120),     # 1秒 ~ 2分钟
     "ping_port":              (1,    30),     # 1秒 ~ 30秒
     "shell":  (1,   600),     # 1秒 ~ 10分钟
+    "compress":          (5,  1800),     # 5秒 ~ 30分钟
 }
 
 

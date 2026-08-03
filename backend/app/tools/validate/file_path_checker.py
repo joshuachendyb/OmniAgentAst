@@ -1,18 +1,36 @@
-# validate/file_path_checker.py — tool内部路径业务级检查（集中管理）
-# 工具层（本文件）：非空/保留字符/保留名/系统目录/存在性+类型/业务警告
-# Safety层（services/safety/tool_safety_checker.py + path_safe_check.py）：
-#   路径黑名单/白名单/路径穿越/权限校验 — 两层独立运行、互不调用
-# 小沈 2026-06-27 — 小欧 2026-07-04 重构统一入口 + 注释说明
-# 北京老陈 2026-07-09 交叉引用注释统一
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-06-27 - 小沈 - 创建: tool内部路径业务级检查集中管理，散落校验函数归并统一
+# 2026-07-04 - 小欧 - 重构统一入口 + 注释说明
+# 2026-07-09 - 北京老陈 - 交叉引用注释统一
+# 2026-07-26 - 小欧 - hint_for_read_error加MemoryError分支, OOM时提示分批读取
+# 2026-07-26 - 小欧 - 迁移: sql_error_hint/hint_for_data_error从tool_constants迁入(file_path_checker同属检查类)
+# 2026-07-26 - 小沈 - BugFix #7: sqlite3/pandas函数级import提升模块级; #10: PermissionError冗余分支删(矫正,确认删除); #12: hint_for_read_error入__all__
+# 2026-07-29 - 小欧 - ERR_FILE_READ_FAILED 三堂会审: hint_for_read_error 文件不存在提示改为引导用find/listdir确认存在
+# 2026-08-02 - 小欧 - 加固validate_not_system_path: 新增磁盘根目录硬阻断(C:\), 修复盘后单级目录漏网(原path_after_drive无前导斜杠导致C:\\Windows不拦, 现用os.path.splitdrive规范化判断)
+"""
+validate/file_path_checker.py — tool内部路径业务级检查（集中管理）
+
+工具层（本文件）：非空/保留字符/保留名/系统目录/存在性+类型/业务警告
+Safety层（services/safety/tool_safety_checker.py + path_safe_check.py）：
+  路径黑名单/白名单/路径穿越/权限校验 — 两层独立运行、互不调用
+"""
 
 import logging
 import os
 import re
+import sqlite3
 import string
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+# pandas可选依赖: 模块级导入(仅一次), hint_for_data_error消费 — 小沈 2026-07-26
+try:
+    import pandas as _pd
+except ImportError:
+    _pd = None
 
 __all__ = [
     "validate_path_for_write", "validate_path_for_delete", "validate_path_for_overwrite",
@@ -20,6 +38,9 @@ __all__ = [
     "OpCategory", "validate_path", "validate_str_param",
     "permission_error_hint",
     "hint_for_write_error",
+    "hint_for_read_error",
+    "sql_error_hint",
+    "hint_for_data_error",
 ]
 
 _WINDOWS_RESERVED = {'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5',
@@ -142,11 +163,21 @@ def validate_not_system_path(file_path: str) -> Tuple[bool, Optional[str], Optio
 
     Returns: (is_valid, error_msg, warning_msg)
     小欧 2026-07-04 修复: 增加None/空字符串校验
+    小欧 2026-08-02 加固: 磁盘根目录硬阻断 + 系统目录规范化判断(修复C:\\Windows漏网)
     """
     if not isinstance(file_path, str) or not file_path.strip():
         return False, "文件路径不能为空", None
+    # 磁盘根目录(C:\)硬阻断 — 小欧 2026-08-02
+    try:
+        drive, rest = os.path.splitdrive(file_path)
+        if drive and not rest.strip("\\/"):
+            return False, f"不允许操作系统根目录: {file_path}", None
+    except Exception:
+        pass
     path_lower = file_path.lower().replace("\\", "/")
+    # 规范化: 去掉盘符前缀, 确保以/开头, 使 /windows/ 等规则可匹配 — 小欧 2026-08-02
     path_after_drive = path_lower.split(":")[-1] if ":" in path_lower else path_lower
+    path_after_drive = "/" + path_after_drive.lstrip("/")
     for sd in WINDOWS_SYSTEM_DIRS:
         if path_after_drive == sd.rstrip("/") or path_after_drive.startswith(sd):
             return False, f"不允许操作系统目录下的文件: {file_path}", None
@@ -309,14 +340,68 @@ def hint_for_read_error(e: Exception, file_name: str) -> str:
     - FileNotFoundError / OSError errno=2 → 文件不存在
     - PermissionError / OSError errno=13 → 无读取权限
     - IsADirectoryError / OSError errno=21 → 路径指向目录
+    - MemoryError → OOM提示分批读取
     - 其他 → 如实返回异常类型，不编造原因
     """
     if isinstance(e, (FileNotFoundError, IsADirectoryError)) or (isinstance(e, OSError) and e.errno in (2, 21)):
         if isinstance(e, IsADirectoryError) or (isinstance(e, OSError) and e.errno == 21):
             return f"{file_name}是目录而非文件，请提供具体的文件路径"
-        return f"文件不存在: {file_name}，请确认路径是否正确"
-    if isinstance(e, PermissionError) or (isinstance(e, OSError) and e.errno == 13):
+        return f"文件不存在: {file_name}，请先用find或listdir确认文件是否存在"
+    if isinstance(e, OSError) and e.errno == 13:
         return f"无读取权限: {file_name}，请检查文件权限"
     if isinstance(e, OSError):
         return f"读取文件失败(OSError)，详见错误明细"
+    if isinstance(e, MemoryError):
+        return f"文件过大导致内存不足(OOM)，建议使用offset/limit/page等参数分批读取"
     return f"读取失败({type(e).__name__})，详见错误明细"
+
+
+def sql_error_hint(e: Exception) -> str:
+    """根据SQL异常消息生成更精确的hint — 小欧 2026-07-08"""
+    msg = str(e).lower()
+    if "no such column" in msg or "has no column" in msg:
+        return "请先使用 get_db_schema 查看表结构确认列名是否正确"
+    if "no such table" in msg:
+        return "请先使用 get_db_schema 查看所有表确认表名是否正确"
+    if "syntax error" in msg or "unrecognized token" in msg or "near " in msg:
+        return "SQL语法错误，请检查关键字拼写和语句结构"
+    if "ambiguous column" in msg:
+        return "列名存在歧义，请使用 表名.列名 方式限定"
+    if "no such function" in msg:
+        return "函数名不存在，请检查SQL函数拼写"
+    return "请检查SQL语法"
+
+
+def hint_for_data_error(e: Exception) -> str:
+    """根据数据处理异常类型返回诚实、准确的 hint — 小欧 2026-07-12 — 小沈 2026-07-26 函数级import提升模块级
+
+    原则（与 file_path_checker.hint_for_read/write_error 一致）：
+    - 可识别异常给精准提示；
+    - 未知异常如实报出异常类型，由 detail 承载真实信息；
+    - 绝不编造与真实原因无关的提示（如对权限异常谎称"检查数据"）。
+    """
+    if isinstance(e, sqlite3.Error):
+        return sql_error_hint(e)
+    if isinstance(e, OSError) and getattr(e, "errno", None) == 13:
+        return "无文件读取/写入权限，请检查文件权限后重试"
+    if isinstance(e, OSError) and getattr(e, "errno", None) == 28:
+        return "磁盘空间不足，请清理磁盘后重试"
+    if isinstance(e, OSError):
+        return f"文件操作失败({e.strerror or type(e).__name__})，详见错误明细"
+    # pandas errors (需在ValueError前检查，均继承自ValueError) - 小欧 2026-07-26
+    if _pd is not None:
+        if isinstance(e, _pd.errors.EmptyDataError):
+            return "文件为空，请检查数据文件"
+        if isinstance(e, _pd.errors.ParserError):
+            return "文件格式解析错误，请检查数据格式(分隔符/编码/列数等)"
+        if isinstance(e, _pd.errors.OutOfBoundsDatetime):
+            return "数据中的日期时间值超出范围，请检查日期格式"
+    if isinstance(e, ValueError):
+        return "数据或参数格式异常，请检查输入数据"
+    if isinstance(e, (TypeError, KeyError)):
+        return "数据结构异常，请检查字段和格式"
+    if isinstance(e, ImportError):
+        return "所需库未安装，请安装缺失依赖"
+    if isinstance(e, MemoryError):
+        return "文件数据过大导致内存不足(OOM)，请根据工具或者参数分批处理"
+    return f"处理失败({type(e).__name__})，详见错误明细"

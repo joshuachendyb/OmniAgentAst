@@ -1,12 +1,13 @@
 # validate/url_validator.py — URL业务级安全检查（集中管理）
 # 小沈 2026-06-27 — 从 tools/network/url_validator.py 迁移+重构
+# 2026-07-25 - 小欧 - 新增 transcode_url: 非ASCII URL转码(IDNA+percent-encoding), RFC 3987标准IRI→URI转换
 
 import ipaddress
 import re
 import socket
 import struct
 from typing import Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse, quote
 
 # 协议白名单：http/https/ftp 等标准网络协议
 ALLOWED_PROTOCOLS = {"http", "https", "ftp", "ftps"}
@@ -75,6 +76,37 @@ def _is_private_or_loopback_ip(hostname: str) -> bool:
         return True
 
     return False
+
+
+def transcode_url(url: str) -> str:
+    """非ASCII URL转码为ASCII等效形式(IDNA+percent-encoding) — 小欧 2026-07-25
+    RFC 3987 IRI→URI 标准转换:
+      域名 → IDNA/Punycode
+      路径/查询/片段 → Percent-encoding
+    在 validate_url 前调用, 确保 DNS/SSRF 检查在 ASCII URL 上执行。
+    """
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        return url
+    try:
+        hostname.encode("ascii")
+    except UnicodeEncodeError:
+        hostname = hostname.encode("idna").decode("ascii")
+    netloc = parsed.netloc.replace(parsed.hostname, hostname, 1)
+    def _pe(part, safe=''):
+        if not part:
+            return part
+        try:
+            part.encode("ascii")
+            return part
+        except UnicodeEncodeError:
+            return quote(part, safe=safe)
+    path = _pe(parsed.path, '/%@')
+    params = _pe(parsed.params, '%')
+    query = _pe(parsed.query, '=&%+')
+    fragment = _pe(parsed.fragment, '%')
+    return urlunparse((parsed.scheme, netloc, path, params, query, fragment))
 
 
 def validate_url(url: str) -> Tuple[bool, Optional[str], Optional[str]]:
