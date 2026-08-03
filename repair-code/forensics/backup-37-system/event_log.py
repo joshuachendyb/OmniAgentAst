@@ -1,0 +1,192 @@
+# -*- coding: utf-8 -*-
+"""
+event_log — 获取系统事件日志
+【2026-06-22 小健】从 system_tools.py 拆分为独立文件
+"""
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+import json as json_module
+import platform
+import subprocess
+import time as _time_mod
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
+
+from app.logger import logger
+from app.tools.tool_response import build_success, build_error
+from app.tools.tool_constants import TOOL_TIMEOUTS
+from app.tools.tool_constants import (
+    ERR_SHELL_COMMAND_NOT_FOUND,
+    ERR_SHELL_TIMEOUT,
+    ERR_SYSTEM_EVENT_LOG,
+    ERR_SYSTEM_TIMEOUT,
+)
+
+
+def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, event_count: int, level: str,
+                              detail: str = "", err_code: str = "", hint: str = "") -> dict:
+    """event_log的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
+    _act_params = {"log_name": log_name}
+    if level:
+        _act_params["level"] = level
+    if exec_code == "error":
+        err_summary = f"获取事件{log_name}日志，失败,说明信息:" + (f": {detail}" if detail else "")
+        return {
+            "summary": err_summary,
+            "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},
+            "status": {"exec_code": "error", "message": detail if detail else f"获取事件日志{log_name}，失败", "code": err_code or ERR_SYSTEM_EVENT_LOG, "detail": detail, "hint": hint if hint else "请检查日志名称、级别和权限"},
+            "duration_ms": duration_ms,
+            "metrics": {},
+        }
+    summary_text = f"获取事件{log_name}日志，成功,说明信息: {event_count}条事件" if event_count > 0 else f"获取事件日志{log_name}，成功,提示说明: 指定时间范围内无匹配事件"
+    return {
+        "summary": summary_text,
+        "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},
+        "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"events": {"value": event_count, "text": f"{event_count}条"}},
+    }
+
+
+def _get_windows_event_log(log_name: str, max_events: int, level: str,
+                           source: Optional[str], start_time: datetime) -> dict:
+    """Windows事件日志获取 — 小健 2026-06-22（返回原始dict，不含build3/llm_data）"""
+    try:
+        level_map = {"critical": "Critical", "error": "Error", "warning": "Warning", "info": "Information"}
+        win_level = level_map.get(level, "Error")
+
+        start_time_str = start_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        query_parts = [f"TimeCreated/@SystemTime >= '{start_time_str}'"]
+        if level and level != "info":
+            level_values = {"critical": "1", "error": "2", "warning": "3"}
+            if level in level_values:
+                query_parts.append(f"Level = {level_values[level]}")
+        xpath_query = " and ".join(query_parts)
+
+        cmd = ["wevtutil", "qe", log_name, f"/q:*[System[{xpath_query}]]", "/c:%d" % max_events, "/rd:true", "/f:text"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
+
+        if result.returncode != 0:
+            return {"error_detail": result.stderr, "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}
+
+        events = []
+        current_event = {}
+        for line in result.stdout.splitlines():
+            if line.startswith("Event["):
+                if current_event:
+                    events.append(current_event)
+                current_event = {}
+            elif ":" in line and current_event is not None:
+                key, value = line.split(":", 1)
+                current_event[key.strip()] = value.strip()
+        if current_event:
+            events.append(current_event)
+
+        filtered_events = []
+        for evt in events:
+            evt_level = evt.get("Level", "")
+            if level and win_level.lower() not in evt_level.lower():
+                continue
+            if source:
+                evt_source = evt.get("Source Name", "")
+                if source.lower() not in evt_source.lower():
+                    continue
+            filtered_events.append(evt)
+
+        _events = filtered_events[:max_events]
+        return {"events": _events}
+
+    except subprocess.TimeoutExpired:
+        return {"error_detail": "获取事件日志超时", "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_TIMEOUT}
+    except FileNotFoundError:
+        return {"error_detail": "wevtutil命令不存在", "params": {"log_name": log_name}, "_error_code": ERR_SHELL_COMMAND_NOT_FOUND}
+    except Exception as e:
+        return {"error_detail": str(e), "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}
+
+
+def _get_linux_event_log(log_name: str, max_events: int, level: str,
+                         source: Optional[str], start_time: datetime) -> dict:
+    """Linux事件日志获取 — 小健 2026-06-22（返回原始dict，不含build3/llm_data）"""
+    try:
+        level_map = {"critical": "emerg", "error": "err", "warning": "warning", "info": "info"}
+        journal_level = level_map.get(level, "err")
+        since_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        cmd = ["journalctl", f"--since={since_str}", f"--priority={journal_level}", f"--lines={max_events}", "--no-pager", "-o", "json"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
+
+        if result.returncode != 0:
+            return {"error_detail": result.stderr, "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}
+
+        events = []
+        for line in result.stdout.splitlines():
+            if line.strip():
+                try:
+                    evt = json_module.loads(line)
+                    events.append({
+                        "timestamp": evt.get("__REALTIME_TIMESTAMP", ""),
+                        "hostname": evt.get("_HOSTNAME", ""),
+                        "syslog_identifier": evt.get("SYSLOG_IDENTIFIER", ""),
+                        "message": evt.get("MESSAGE", ""),
+                        "priority": evt.get("PRIORITY", ""),
+                    })
+                except json_module.JSONDecodeError:
+                    continue
+
+        return {"events": events[:max_events]}
+
+    except subprocess.TimeoutExpired:
+        return {"error_detail": "获取事件日志超时", "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_TIMEOUT}
+    except FileNotFoundError:
+        return {"error_detail": "journalctl命令不存在", "params": {"log_name": log_name}, "_error_code": ERR_SHELL_COMMAND_NOT_FOUND}
+    except Exception as e:
+        return {"error_detail": str(e), "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}
+
+
+def event_log(log_name: str = "System", max_events: int = 50, level: str = "error",
+              source: Optional[str] = None, time_range: str = "1h") -> dict:
+    """获取系统事件日志 — 小健 2026-06-22 拆分独立文件"""
+    t0 = _time_mod.perf_counter()
+    try:
+        time_map = {"10m": timedelta(minutes=10), "1h": timedelta(hours=1), "24h": timedelta(hours=24), "7d": timedelta(days=7)}
+        time_delta = time_map.get(time_range, timedelta(hours=1))
+        start_time = datetime.now() - time_delta
+
+        if platform.system() == "Windows":
+            result = _get_windows_event_log(log_name, max_events, level, source, start_time)
+        else:
+            result = _get_linux_event_log(log_name, max_events, level, source, start_time)
+
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+
+        if "error_detail" in result:
+            error_code = result.pop("_error_code", ERR_SYSTEM_EVENT_LOG)
+            error_detail = result.get("error_detail", "")
+            if error_code == ERR_SYSTEM_TIMEOUT:
+                timeout_sec = TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"])
+                llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail="", err_code=error_code, hint="")
+                llm_data["summary"] = f"获取事件{log_name}日志，失败: 超时({timeout_sec}秒)"
+            else:
+                llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail, err_code=error_code, hint="请检查日志名称和级别")
+            return build_error(data={}, llm_data=llm_data)
+        else:
+            events = list(result["events"])
+            events_count = len(events)
+            llm_data = _build_event_log_llm_data("success", duration_ms, log_name, events_count, level)
+            # =============================================================================
+            # 数据设计：count 从 data 移除，通过 llm_data.metrics 传入 summary
+            # summary 示例: "获取 System，X条事件"
+            # — 小欧 2026-07-06 18:46:13
+            # =============================================================================
+            return build_success(data={"events": events}, llm_data=llm_data)
+
+    except Exception as e:
+        logger.error(f"[event_log] 获取事件日志失败: {e}")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=str(e), hint="获取事件日志异常,请检查系统状态")
+        return build_error(data={}, llm_data=llm_data)
+
+
+__all__ = ["event_log"]
