@@ -1,12 +1,355 @@
-﻿v0.18.27
-更新时间: 2026-07-20 19:33:21 - 小欧-2026-07-20
+v0.18.39
+更新时间: 2026-07-30 23:26:08 - 小欧-2026-07-30
+## v0.18.38→v0.18.39 变更汇总(7个commit) - 小欧-2026-07-30
+
+### fix:
+- execute_shell_command.py CMD模式.bat执行引号修复:去掉双重引号+隐式cmd.exe - 小沈-2026-07-30
+- 4文件(agent_runner/action_handler/write_text_file/shell_engine) except:pass补logger.debug - 小沈-2026-07-30
+- database.py,stream.py,execute_shell_command.py 后端卡死根因修复:CMD管道超时+DB休眠不阻塞事件循环+SSE cond超时 - 小欧-2026-07-30
+- desktop*13个文件 描述/示例整改:坐标明确绝对+子串匹配+传0保持原大小+display互斥说明 - 小欧-2026-07-30
+- execute_shell_command.py _kill_and_read_output proc.wait三堂会审加固异常捕获 - 小欧-2026-07-30
+
+### refactor:
+- mouse_click/keyboard_control/set_window_state YAGNI清理click_type/_key_combo/_WINDOW_ACTIONS第三元素 - 小欧-2026-07-30
+
+### docs:
+- Desktop工具Schema整改设计方案-小欧-2026-07-30.md 补充实施状态v4.0 - 小欧-2026-07-30
+
+v0.18.38
+更新时间: 2026-07-30 16:56:22 - 小沈-2026-07-30
+## v0.18.37→v0.18.38 变更汇总(4个commit) - 小沈-2026-07-30
+
+### refactor:
+- shell_engine Singleton→ShellPoolManager分池并发+5bug修复+session_id_var拆离 - 小沈-2026-07-30
+- fundamental/register/prompt/engine 备用工具命名统一 - 小沈-2026-07-30
+
+### fix:
+- tool_retry_engine+tool_constants 保险丝常量重构+compress hint — 小沈-2026-07-30
+
+### docs:
+- PersistentShell会话池并发执行设计文档v1.9 - 小沈-2026-07-30
+
+v0.18.37
+更新时间: 2026-07-29 22:52:57 - 小欧-2026-07-29
+## v0.18.36→v0.18.37 变更汇总(8个commit) - 小欧-2026-07-29
+
+### feat:
+- execute_shell_command.py 三路检测增强(PS/CMD/bash检测函数 + 三路路由 + 增强语法修正) - 小欧-2026-07-30
+- execute_shell_command.py 三路检测切换补充logger.warning日志 - 小欧-2026-07-30
+- writetext PYEOF容错-自动剥离Python文件末尾heredoc标记并注入summary使LLM可见 - 小欧-2026-07-29
+
+### fix:
+- delete_file.py+tool_constants.py 三堂会审修复:method闭包容器取实际mode+error分支metrics传extra_metrics+TOOL_TIMEOUTS去有timeout参数tool+TOOL_TIMEOUT_HINTS收口5项 - 小沈-2026-07-30
+
+### docs:
+- Shell类型自动检测与路由增强设计方案 v3.3(python3→python提至通用预处理+五轮三审) - 小欧-2026-07-29
+- Shell类型自动检测与路由增强设计方案 同步代码修改 - 小欧-2026-07-30
+- 设计更新 - 小欧-2026-07-29
+- 文档更新 - 小欧-2026-07-29
+
+v0.18.36
+更新时间: 2026-07-29 12:30:00 - 小欧-2026-07-29
+## v0.18.35→v0.18.36 变更汇总(13个commit) - 小欧-2026-07-29
+
+### feat:
+- execute_shell_command 新增bash特征检测(_looks_like_bash)自动路由到Git Bash,解决ERR_SHELL_EXEC(165次最高频) - 小欧-2026-07-29
+- fetch_webpage 反爬增强(方案A浏览器指纹headers+方案B 403降级Jina Reader) - 小欧-2026-07-29
+- writetext/edittext/file_schema 语法错误提示优化(动态行号+建议+metrics) + 锚点约束说明 - 小欧-2026-07-29
+- compress_files 新增timeout参数暴露给LLM消除双重叠加超时 + 超时反馈增强(抢救进度数据+metrics+hint降级建议) - 小欧-2026-07-29
+- fetchpage URL validation + e2e helpers traceback检查 - 小欧-2026-07-29
+
+### refactor:
+- compress_files 三堂会审修复(变量名统一+import清理+冗余分支简化+参数屏蔽+错误保护) - 小欧-2026-07-29
+
+### fix:
+- fetch_webpage.py 注释从docstring移到函数名前 - 小欧-2026-07-29
+- fetch_webpage.py+e2e_helpers.py 编辑历史补充 - 小欧-2026-07-29
+
+### docs:
+- app日志根因分析报告v4.7 三堂会审问题3+问题5确认已修复 - 小欧-2026-07-29
+- ERR_FILE_READ_FAILED 三堂会审+check_for_*_tool注释说明+hint改进 - 小欧-2026-07-29
+- fetch_webpage.py 注释说明多级降级架构L0-L3+Jina替换选项 - 小欧-2026-07-29
+- fetchpage/readmedia schema+register 补充图片/PDF/本地文件说明 - 小欧-2026-07-29
+
+---
+
+v0.18.35
+更新时间: 2026-07-28 23:47:12 - 北京老陈-2026-07-28
+## v0.18.34→v0.18.35 变更汇总 - 北京老陈-2026-07-28
+
+### refactor:
+- shell从SHELL迁至FUNDAMENTAL分类(文件物理搬迁+注册/引用更新) - 北京老陈-2026-07-28
+- timeadd/timediff/calendar从FUNDAMENTAL迁至TIMER分类 - 北京老陈-2026-07-28
+- universal_agent.py 默认注入去掉SHELL(仅保留FUNDAMENTAL+FILE) - 北京老陈-2026-07-28
+
+### fix:
+- 三堂会审 execute_shell_command.py 参数流重构(5处修复) - 北京老陈-2026-07-28
+- 补shell_prompt_templates编辑历史+shell_register签名+universal_agent默认注入说明 - 北京老陈-2026-07-28
+- tool_search.py BM25查询token有序去重优化+废弃脏改动 - 北京老陈-2026-07-28
+- execute_shell_command.py CMD中文命令未找到regex补充(不是内部|不是可运行) - 小欧-2026-07-28
+- execute_shell_command.py null字节检查被删除安全退化+sys未导入+空命令参数错乱修复 - 小欧-2026-07-28
+- execute_shell_command.py command=None传None崩(TypeError)修复 - 小欧-2026-07-28
+- execute_shell_command.py success路径第3参漏传command致位置参移位修复 - 小欧-2026-07-28
+- shell_prompt_templates.py 去除UTF-8 BOM(efbbbf)防SyntaxError - 小欧-2026-07-28
+- BUG#6热修复 shell_type=None崩/3处error路径command漏传 - 小欧-2026-07-28
+- health.py echo路由request→data不同步致NameError修复 - 小欧-2026-07-28
+- 系统提示词适配+Shell命令模板 - 小欧-2026-07-28
+- Shell引擎 死代码_remove_ampersand删除/shell_type ps7/ps5 - 小欧-2026-07-28
+- 工具层 BUG#8/#9/#10/#19/#30 错误分类/依赖/死映射/reasoning空串修复 - 小欧-2026-07-28
+- API路由 BUG#7/#20/#18/#22/#23/#24/#28/#12/#13/#16/#17 print/log/死代码/参数名修复 - 小欧-2026-07-28
+- 存储层 BUG#2/#21 utc_time crash/死赋值修复 - 小欧-2026-07-28
+- 安全模块 BUG#3/#6/#14 安全绕过/目录误判/死赋值修复 - 小欧-2026-07-28
+- LLM层 BUG#1/#4/#5/#20 crash/死代码/竞争条件修复 - 小欧-2026-07-28
+- execute_shell_command_safety.py 临时目录清理误伤降级+CMD del/rd/rmdir路径白名单 - 小欧-2026-07-28
+
+v0.18.34
+更新时间: 2026-07-28 08:02:11 - 小欧-2026-07-28
+## v0.18.33→v0.18.34 变更汇总 - 小欧-2026-07-28
+
+### fix:
+- shell_engine+execute_shell_command 6项代码质量修复 (反引号转义/引号感知/锁注释/DRY/深度计数/中英文匹配) - 小欧-2026-07-28
+- file_schema+shell_engine 修复Bug-2/3/4 (python3单词边界/&&引号外替换/new_string插入语义) - 小欧-2026-07-28
+- 欧阳task005-12bug全部修复(5文件) BUG-01~12 (RLock退避/CMD超时kill/截断诊断/深度简化/死参/死码/重日志/白名单/shell过滤/reset_cancel/裸except日志) - 小欧-2026-07-28
+- shell三文件 API key泄露/危险模式合并/cwd回退等11个bug修复 - 小欧-2026-07-27
+- llm_stream L2重试加指数退避 - 小欧-2026-07-26
+- prompt_logger token信息守卫+no_id fallback修复 - 小欧-2026-07-26
+- copy_file+move_file 只读文件崩溃修复(shutil.rmtree缺onerror) - 小欧-2026-07-26
+- data_loader docstring前置+compress_files lambda闭包+base_service/tool_retry_engine编辑历史格式统一 - 小欧-2026-07-26
+- write_tools summary加空格/char_count全源/para_count过滤空段/docx加table_count - 小欧-2026-07-26
+
+### refactor:
+- file_schema+document_schema+shell_engine description精确化+命令预处理 - 小欧-2026-07-28
+- shell 去LLM-facing PS提醒语言 - 小欧-2026-07-27
+- system_prompts.py+system_adapter.py 压缩系统Prompt文字860字符 - 小欧-2026-07-28
+- e2etests 调整任务指令顺序+补充断言关键词 - 小欧-2026-07-28
+
+v0.18.33
+更新时间: 2026-07-26 18:41:00 - 小欧-2026-07-26
+## v0.18.32→v0.18.33 变更汇总 - 小欧-2026-07-26
+
+### fix:
+- prompt_logger+base_service 修复日志漏写token信息+默认开启thinking模式 - 小欧-2026-07-26
+- operation_cleanup edit history format align + readonly file chmod before unlink - 小欧-2026-07-26
+- execute_shell_command,time_utils,document_schema,tool_retry_engine 修复欧阳报告7项Bug(#1~#7) - 小沈-2026-07-26
+- read_pptx/read_xlsx/readmedia/readtext/read_pdf/file_path_checker/generate_chart Bug#1-#12 三堂会审修复 - 小沈-2026-07-26
+- data_loader+3tools OOD抽取公用函数，Bug#A/B修复 - 小欧-2026-07-26
+- 3问题修复-删nrows硬安全网+operation注释优化+before变量else定义 - 小欧-2026-07-26
+- dataanalysis nrows=100000硬安全网+filter_data before变量修复 - 小欧-2026-07-26
+
+### refactor:
+- safety/ operation_executor/recorder 改名+合并+职责理顺 - 小沈-2026-07-26
+- timeout hardcoded timeout→constants in shell tools and fc_helper - 小欧-2026-07-26
+- tool_constants section reorganization 1→14 consecutive - 小欧-2026-07-26
+- tool_constants+analyze_data+filter_data+query_sql+execute_sql+get_db_schema+read_docx OOD删input常量 - 小欧-2026-07-26
+
+### feat:
+- utils+data_loader 新增normalize_list_dict展平[[{...}]]->[{...}] - 小沈-2026-07-26
+
+### docs:
+- AGENTS.md remove anchored summary section - 北京老陈-2026-07-26
+
+v0.18.32
+更新时间: 2026-07-25 20:03:49 - 小欧-2026-07-25
+## v0.18.31→v0.18.32 变更汇总 - 小欧-2026-07-25
+
+### fix:
+- file_schema+registry_read description去冗余+reg export日志WARNING降INFO - 小欧-2026-07-25
+- registry ensure_tools_registered加即时重试(3次x500ms)应对瞬态文件损坏 - 小欧-2026-07-25
+- dataanalysis em dash替换为ascii连字符+registry错误日志加文件行号上下文 - 小欧-2026-07-25
+
+v0.18.31
+更新时间: 2026-07-25 14:46:08 - 小欧-2026-07-25
+## v0.18.30→v0.18.31 变更汇总 - 小欧-2026-07-25
+
+### feat:
+- http_request 非ASCII URL自动转码(RFC3987 IDNA+percent-encoding) - 小欧-2026-07-25
+- transcode_url 公用函数迁入url_validator, http_request/download/fetch_webpage三工具接入 - 小欧-2026-07-25
+- text_utils/FUNCTIONS.md 新增truncate_summary公共函数(DRY) - 小欧-2026-07-24
+
+### fix:
+- operation_executor,operation_recorder 三段式改造(DB/文件/DB)+get_conn_with_retry 彻底解决并行delete database is locked - 小欧-2026-07-25
+- http_request Header非ASCII预检+URL非ASCII预检+自动转码+异常兜底 - 小欧-2026-07-25
+- network_schema headers描述精简去废词省token - 小欧-2026-07-25
+- action_handler 欧阳报告5项缺陷修复+三分类映射表重构+readmedia纠错+test.csv误判修复 - 小欧-2026-07-25
+- edit_text_file execute_with_safety返回值类型不匹配/record_read缺失/None校验顺序修复 - 小欧-2026-07-25
+- execute_shell_command summary去stderr关联+空命令fallback+9bug修复+hint丢失+phase5三分支合并 - 小欧-2026-07-24/25
+- read_text_file warning summary去掉三重重复detail - 小欧-2026-07-24
+- read_docx/pptx/pdf/xlsx error summary改用truncate_summary取首行 - 小欧-2026-07-24
+- syntax_validator/tool_fc_helper 去掉helper层str(e)截断 - 小欧-2026-07-24
+- 三堂会审系列: exec_shell+react_cycle+llm_stream+tool_retry #1/#5/#6/#7/#8/#11/#13/#14 修复 - 小欧-2026-07-23
+- database.py/agent_runner/health #14 DB operation failed修复(三堂会审修正版) - 小欧-2026-07-23
+- message_builder #13 react_cycle崩溃修复(trim_history try/except防御) - 小欧-2026-07-23
+- http_request httpx.UnsupportedProtocol异常处理 - 小欧-2026-07-23
+- search_web query校验从None扩展到空+空白检查 - 小欧-2026-07-23
+- tool_constants+shell_engine+execute_shell_command 三堂会审3bug修复 - 小欧-2026-07-23
+- read_text_file+read_docx+read_pptx+read_pdf+tool_constants 三堂会审5bug修复 - 小欧-2026-07-23
+- analyze_data,filter_data,observation_formatter,dataanalysis_schema 10个Bug修复 - 小欧-2026-07-25
+
+### refactor:
+- 10分类schema description去冗余+Field风格统一(fundamental/desktop/system/shell/timer/network/file/document/win_registry/dataanalysis) - 小欧-2026-07-25
+- operation_executor,operation_recorder get_conn→get_conn_with_retry + 三段式拆分消除长事务持锁 - 小欧-2026-07-25
+- action_handler _auto_correct_file_tool 去None短路+三分类映射表file_type_checker常量 - 小欧-2026-07-25
+- execute_shell_command cmd_short keyword-only强制传参+签名移末尾 - 小欧-2026-07-25
+- tool_constants 第2批outparam/iner常量(8分类) - 小欧-2026-07-24/25
+- 6个tool魔数→命名常量_OUTPARM_LIMIT_* - 小欧-2026-07-24
+- edit_text_file 11处散落截断→main入口统一3常量 - 小欧-2026-07-24
+- SQL工具截断归一化(execute_sql/query_sql/tool_constants) - 小欧-2026-07-24
+- send_notification+tool_search+query_sql message[:50]/[:10]/str(sql)[:50]→命名常量 - 小欧-2026-07-25
+- search_web+read_text_file+write_text_file block[:3000]/content[:100]/content[:50]→命名常量 - 小欧-2026-07-25
+
+### docs:
+- FUNCTIONS.md 登记transcode_url(validate/url_validator.py) - 小欧-2026-07-25
+- notes→doc-7月优化 问题006-16问题复核分析(移动文档位置) - 小欧-2026-07-25
+- AGENTS.md 编码铁规增加三堂会审说明+编辑历史规则修正 - 小欧-2026-07-24
+- execute_shell_command 补编辑历史第⑨条(truncate_summary迁移) - 小欧-2026-07-24
+
+### test:
+- test_e2e_p5_17/08 更新提示词+搜索数量调大 - 小欧-2026-07-25
+
+v0.18.30
+更新时间: 2026-07-23 19:54:30 - 小欧-2026-07-23
+## v0.18.29->v0.18.30 变更汇总 - 小欧-2026-07-23
+
+### refactor:
+- tool_constants+14tools INER_两分法重构(输入闸门INPUT_*/输出截断OUTLIMIT_*) - 小欧-2026-07-23
+- migrate ACTION_LOG_RESULT_MAX_CHARS to constants.py - 小欧-2026-07-23
+- 多处print替换为公共log_and_print统一日志双输出 - 小欧-2026-07-23
+- agent_runner+message_builder chars→tokens适配 - 小欧-2026-07-23
+- config+constants chars→tokens语义纠正 - 小欧-2026-07-23
+
+### feat:
+- grep工具层截断: OUTLIMIT_MATCHES_MAX=2000 + formatter#9_data._truncated+_clip标记 - 小欧-2026-07-23
+- xlsx output truncation: 行数超1000/单格超500 - 小欧-2026-07-23
+- shell output truncation: stdout=50K/stderr=20K - 小欧-2026-07-23
+- accumulated_usage 累积消耗+逐次报告+终态注入 - 小欧-2026-07-23
+- llm_stream 响应返回usage字段 - 小欧-2026-07-23
+- sse.ts+StepContent.tsx 前端warning字段+WarningBox渲染 - 小欧-2026-07-23
+- logger/__init__ 新增公共函数log_and_print统一日志双输出模式 - 小欧-2026-07-23
+
+### fix:
+- 3文件5bug: shell output_len原长/formatter双重截断+_clip标记/read_xlsx多sheet截断+truncated_reason - 小欧-2026-07-23
+- task_db #1修复+get_task风格统一sqlite3.Row.get改[] - 小欧-2026-07-23
+- action_handler _log_and_print→log_and_print函数名同步公共API - 小欧-2026-07-23
+- clipboard_control.py _read_clipboard pyperclip异常降级ctypes - 小欧-2026-07-23
+- message_builder+llm_stream 审查修复A+D reset_per_run重置+usage null跳过 - 小欧-2026-07-23
+- step_emitter+react_cycle C+E is None防御+手动三字段 - 小欧-2026-07-23
+- message_builder trim_history日志None防御 - 小欧-2026-07-23
+- line_pager.py+delete_file.py float防御+删除重试 - 小欧-2026-07-23
+- openai.py+service.py import移顶部+异常时清warning - 小欧-2026-07-23
+- handlers.py+openai.py warning透传start步骤+停止流程 - 小欧-2026-07-23
+- resolver.py 模型不在列表时warning提示而非崩溃 - 小欧-2026-07-23
+
+### perf:
+- OBS_READTEXT_MAX_ROWS 200→1000 - 小欧-2026-07-22
+- OBS_LISTDIR_MAX_ROWS 200→500 - 小欧-2026-07-22
+- OBS_READTEXT_MAX_ROW_CHARS 1000→2000 - 小欧-2026-07-22
+
+v0.18.29
+更新时间: 2026-07-21 21:49:53 - 小欧-2026-07-21
+## v0.18.28->v0.18.29 变更汇总 - 小欧-2026-07-21
+
+### fix:
+- fix+test:#4自动纠正+#9冲突增强+#14无条件翻译+#17参数提示+预存bug修复 - 小欧-2026-07-21
+- fix+feat:多文件 字节安全治理+SQLite截断+错误分类修正+编辑历史 - 小欧-2026-07-21
+- fix:storage.py storage层tool_result字符串截断防SQLite超限 - 小欧-2026-07-21
+- fix:增加持久化的截断处理 - 小欧-2026-07-21
+- fix:observation_formatter+clipboard+tool_constants 第二阶段门限治理修6bug - 小欧-2026-07-21
+- fix:observation_formatter _format_rows加truncated_reason显示 - 小欧-2026-07-21
+- fix:query_sql DRY_reason_public connection_type_if_x guard_append_before - 小欧-2026-07-21
+- fix:syntax_validator+edit_text_file+document_schema 修BOM字面量/字段语义错位/pages类型不安全 - 小欧-2026-07-21
+
+### refactor:
+- refactor:schemas+formatter+tools 入参即信任limit上限max(OBS,user_val)动态调行数+内部校验1-1000+简化冗余guard - 小欧-2026-07-21
+- refactor:document+file_schema 描述引用OBS常量非硬编码 - 小欧-2026-07-21
+- refactor:dataanalysis_schema+register 描述引用OBS常量/limit字段 - 小欧-2026-07-21
+
+### docs:
+- docs:4文件 编辑历史补充(入参即信任校验注释) - 小欧-2026-07-21
+- docs:storage.py 编辑历史补充常量值变更记录 - 小欧-2026-07-21
+
+v0.18.28
+更新时间: 2026-07-21 06:16:33 - 小欧-2026-07-21
+## v0.18.27->v0.18.28 变更汇总 - 小欧-2026-07-21
+
+### feat:
+- feat:syntax_validator+edit_text_file+write_text_file+tool_fc_helper 语法护栏接入与健壮性加固(防BUG-002写坏代码,OCP可扩展,异常兜底防500,BOM去扰) - 小欧-2026-07-21
+
+### fix:
+- fix:document_register.py 补read_pdf/read_docx/read_pptx翻页示例对齐5259ef2ed新增参数 - 小欧-2026-07-21
+- fix:document_schema.py 补翻页参数对齐ReadPdf/ReadDocx/ReadPptx(page/pages/offset/limit/tail/slide) - 小欧-2026-07-21
+- fix:read_pdf BUG-001 _process_page表格结构化为dict含page+rows,恢复pdfplumber/fitz双路径过滤正确性 - 小欧-2026-07-20
+- fix:read_xlsx+sse_formatter fix WindowsPath泄漏+sheet_name归一化+_break_circular兜底 - 小欧-2026-07-20
+
+### docs:
+- docs:FUNCTIONS.md 新增语法护栏章节(syntax_validator.py, 取代tool_fc_helper.validate_python_content死代码) - 小欧-2026-07-21
+- docs:7个文件 编辑历史统一为read_pdf.py序号分行格式(原长行改编号~50字符) - 小欧-2026-07-21
+- docs:fundamental_schema.py 补编辑历史(复核schema docstring规范) - 小欧-2026-07-21
+- docs:9个文件 补全2026-07-20下午编辑历史(自然单位翻页+去噪去重+参数治理) - 小欧-2026-07-21
+- docs:read_pdf.py 补全编辑历史(自然单位治理+BUG-001修复)序号分行格式 - 小欧-2026-07-21
+
+### revert:
+- Revert docs:fundamental_schema.py 补编辑历史(复核schema docstring规范) - 小欧-2026-07-21
+
+v0.18.27
+更新时间: 2026-07-20 19:53:26 - 小欧-2026-07-20
 ## v0.18.26→v0.18.27 变更汇总 - 小欧-2026-07-20
 
 ### feat:
-- feat:read_pdf/read_docx/read_pptx/tree 按自然单位翻页(page/slide/offset-limit)+formatter层级感知截断+单行超宽标注原长 - 小欧-2026-07-20
+- feat:core StreamChunk新增finish_reason字段(OpenAI兼容终结原因透传) - 小欧-2026-07-19
+- feat:base_service request_stream新增finish_reason提取与透传(_extract_finish_reason) - 小欧-2026-07-19
+- feat:llm_stream fc_context新增llm_reasoning; _build_answer_response透传finish_reason(None哨兵) - 小欧-2026-07-19
+- feat:fc_message_types AssistantMessage新增reasoning; message_to_dict提升reasoning_content(反向映射) - 小欧-2026-07-19
+- feat:message_builder add_assistant_tool_call/_append_observation新增reasoning参数 - 小欧-2026-07-19
+- feat:action_handler build_observation/_add_denial_feedback新增reasoning传递 - 小欧-2026-07-19
+- feat:message_builder 推理空转不持久化 pop_temp_messages全表扫描+prepare_messages_for_llm浅拷贝strip标记 - 小欧-2026-07-19
+- feat:answer_handler 推理空转不持久化 reasoning-only好/坏分支+双字段注入(OpenAI为主兼容DeepSeek) - 小欧-2026-07-19
+- feat:react_cycle 推理空转不持久化 _finalize_cycle单点收口直调pop_temp_messages(删防御式helper) - 小欧-2026-07-19
+- feat:shell门限治理(章6.4) Tool删SHELL_OUTPUT_MAX_CHARS截断+Format改行×列(200×1000)+INER_SHELL_OUTPUT_FILE_MAX_BYTES改名 - 小欧-2026-07-20
+- feat:search_files 第7章find门限治理落地(删MAX_SEARCH_RESULTS/FIND_PAGE_SIZE/max_depth,返回全部匹配;Format行×列OBS_FIND_MAX_ROWS/CHARS) - 小欧-2026-07-20
+- feat:searchweb 门限治理(章8.4)删Tool层snippet截断/_MAX_SEARCH_DEPTH/len(query)<2校验,Format专属行×列OBS_SEARCHWEB_MAX_ROWS/CHARS - 小欧-2026-07-20
+- feat:httpget 门限治理(章9.4) HTTP_JSON_PREVIEW_MAX_BYTES改名INER_HTTPGET_JSON_PREVIEW_MAX_BYTES,Format专属行×列OBS_HTTPGET_MAX_ROWS/CHARS - 小欧-2026-07-20
+- feat:fetchpage 门限治理(章10.4) 删Tool层max_len正文截断/去max_tokens全链/WEB_FETCH_MAX_CHARS删除, Format新增_format_fetchpage_result专属行×列OBS_FETCHPAGE_MAX_ROWS/CHARS - 小欧-2026-07-20
+- feat:readtext 门限治理(章11.4) 删_select_lines max_line_length单行截断/OBS_READTEXT专属行×列+两态; MAX_READ_SIZE拆分INER_READTEXT_READ_SIZE/INER_EDITTEXT_READ_SIZE - 小欧-2026-07-20
+- feat:tool_constants/observation_formatter 第12章edittext门限治理新增OBS_EDITTEXT_*与_format_edittext_result专属handler - 小欧-2026-07-20
+- feat:observation_formatter/read_media_file/tool_constants 第13章readmedia门限治理INER_READMEDIA_READ_SIZE改名+专属handler - 小欧-2026-07-20
+- feat:read_pdf,read_docx,read_pptx,tree 按自然单位翻页+formatter层级感知截断+单行超宽标注 - 小欧-2026-07-20
 
 ### fix:
-- fix:line_pager select_lines 行拼接由"".join改为"\n".join, 恢复行/段落分隔符, 修复 read_docx/read_text_file roundtrip 失败 - 小欧-2026-07-20
+- fix:dataanalysis_schema.py AnalyzeDataInput/FilterDataInput data类型str→Union[str,List[Dict]]对齐实现防假阳性WARNING - 小欧-2026-07-18
+- fix:base_service.py #7回归修正(按index合并非自增)+task_db.py补created_at - 小欧-2026-07-18
+- fix:llm_stream.py #39 XML兜底提取分支补WARNING提示(来源reasoning/content) - 小欧-2026-07-18
+- fix:shell_engine.py+shell_schema.py 修复多行命令-Command死锁(600s超时)+引导LLM用python - 小沈-2026-07-18
+- fix:grep_file_content.py 灰区后缀改为内容级探测(复用_detect_binary_content),修复日志轮转文件被误判二进制 - 小沈-2026-07-18
+- fix:react_cycle 推理打印条件thought or reasoning - 小欧-2026-07-19
+- fix:execute_shell_command_safety 删已废弃is_safe字段修复中危/destructive命令检查TypeError崩溃 - 小欧-2026-07-20
+- fix:http_request/tool_constants/observation_formatter+file_schema httpget data _preview 非5MB全文改200KB预览+_reason醒目+5MB常量 - 小欧-2026-07-20
+- fix:observation_formatter/tool_constants 注释4处常量值对齐实际定义(OBS_MAX_STRING_LENGTH=1000/OBS_MAX_DISPLAY_ITEMS=200等) - 小欧-2026-07-20
+- fix:line_pager 修复select_lines行拼接由`.join改为\n.join避免丢失行/段落分隔符导致read_docx/read_text_file roundtrip失败 - 小欧-2026-07-20
+
+### refactor:
+- refactor:observation_formatter,tool_constants 显示域改为行×列(200×150)截断并两态说明,去MAX_SEARCH_FILE_SIZE - 小欧-2026-07-20
+- refactor:list_directory 私有_SKIP_DIRS合并为公用SKIP_DIRS - 小欧-2026-07-20
+- refactor:grep_file_content 参数瘦身至5个+path支持文件目录+修缩进/nonlocal bug;file_schema GrepInput 5字段 - 小欧-2026-07-20
+- refactor:param_alias_mapper 补编辑历史(删grep output_mode死别名映射) - 小欧-2026-07-20
+- refactor:write_text_file.py writetext预览恢复Tool层文首50+文末50并新增#23专属简单拼接分支 - 小欧-2026-07-20
+- refactor:read_xlsx.py read_xlsx门限治理(仅3.4硬安全网INER_READ_XLSX_MAX_ROWS兜底,专属#25全量展示) - 小欧-2026-07-20
+- refactor:list_directory/observation_formatter/tool_constants 章18 listdir门限治理 删Tool层LISTDIR_PAGE_SIZE分页截断 改OBS_LISTDIR专属行×列 - 小欧-2026-07-20
+- refactor:tool_constants/download_file 章16-17门限治理 DOWNLOAD_MAX_BYTES改名INER_1GB 删MAX_BATCH_FILE_COUNT僵尸 - 小欧-2026-07-20
+- refactor:门限复查 observation_formatter/execute_shell_command/tool_constants 等9文件 僵尸常量删除+observation去重+diff收口+死代码清理 - 小欧-2026-07-20
+- refactor:file工具数据流去噪去重 - 小欧-2026-07-20
+- refactor:network_diagnose 去除_note噪声 - 小欧-2026-07-20
+- refactor:tool_search 去data total_matched/total_tools重复 - 小欧-2026-07-20
+- refactor:react_cycle B3空转警告改幂等注入复用_temp_reasoning标记避免连续空转重复累积 - 小欧-2026-07-19
+- refactor:doc-7月优化 迁移多Session并发架构设计+日志错误分析文档 - 小欧-2026-07-18
+
+### docs:
+- docs:规范-门限分工两阶段 v3.15 输入零限制+显示域行×列截断两态+验证结论 - 小欧-2026-07-20
+- docs:规范-门限分工两阶段 v3.16 规则对齐代码(3.2.2无截断一行/3.6 MAX_SEARCH_FILE_SIZE已删除/3.7 grep已落地)+5.x据实修订 - 小欧-2026-07-20
+- docs:规范-门限分工两阶段 全量订正同类错误(TOOL_TIMEOUTS行号off-by-one/现状INER_改名/B类D类对齐) - 小欧-2026-07-20
+- docs:各register文件加【描述规范】注释(工具描述简洁不冗余,能力详情在schema类docstring)+编辑历史 - 小欧-2026-07-20
+- docs:推理空转不持久化-Hermes字面做法 升v3.0对齐最终实现(双字段注入/全表pop/单点收口/删守卫helper) - 小欧-2026-07-19
+- docs:base_service.py+task_db.py 补全编辑历史(#38+#7回归+created_at) - 小欧-2026-07-18
+- docs:文档错误修正 - 小欧-2026-07-20
 
 v0.18.26
 更新时间: 2026-07-19 11:18:34 - 小欧-2026-07-19
