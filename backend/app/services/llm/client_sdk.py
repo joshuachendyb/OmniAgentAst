@@ -1,3 +1,4 @@
+
 """
 LLM 客户端 SDK
 Author: 小沈 - 2026-05-29
@@ -12,6 +13,7 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
 编辑历史: 2026-07-17 小欧 修复429/5xx限流日志污染: 可重试状态(429/5xx)由base_service L1重试处理, 降为WARNING; 仅不可重试客户端错误(400/401/403)记ERROR, 避免check_logs/测试误判FAIL
 编辑历史: 2026-07-18 小欧 #33 fix: 兼容data:无空格格式
 编辑历史: 2026-07-18 小欧 #37 fix: request新增request_timeout形参并传httpx.Timeout
+编辑历史: 2026-07-28 小欧 BUG#1: 非流式请求必崩(AttributeError: _default_timeout undefined)。__init__ 漏存 self._default_timeout = read_timeout, request() 引用时崩溃。新增存储。
 """
 
 import httpx
@@ -109,6 +111,7 @@ class LLMClient:
         self._base_url = base_url or self._default_base_url(provider)
 
         read_timeout = float(timeout) if timeout else DEFAULT_READ_TIMEOUT
+        self._default_timeout = read_timeout
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(
                 connect=DEFAULT_CONNECT_TIMEOUT,
@@ -247,3 +250,4 @@ def create_llm_client(
 ) -> LLMClient:
     """创建 LLM 客户端 — 唯一入口 - 小沈 2026-06-09"""
     return LLMClient(provider=provider, model=model, api_key=api_key, base_url=base_url, timeout=timeout)
+

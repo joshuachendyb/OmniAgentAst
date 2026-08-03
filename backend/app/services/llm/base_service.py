@@ -1,26 +1,26 @@
-﻿"""
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-14 - 小欧 - 删除死代码_is_rate_limit_status，集中LLM_*/FC_*/TOOL_CACHE_TTL至app.constants
+# 2026-07-16 - 小欧 - 新增三层防线：LLM_MAX_TOKENS/STREAM_TOTAL_TIMEOUT/tool_call流式超时
+# 2026-07-17 - 小沈 - FC重命名: FCFormatError→LLMResponseError
+# 2026-07-17 - 小欧 - 流式截断落库修复: tool_call.arguments改用已解析规范化后的params
+# 2026-07-17 - 小欧 - 429配额耗尽增强: 明确"配额/限流耗尽"提示
+# 2026-07-18 - 小欧 - #7 fix: 并行tool_calls累加器遇重复idx自增去重
+# 2026-07-18 - 小欧 - #32 fix: 空name tool_call delta加warning日志
+# 2026-07-18 - 小欧 - #34 fix: StreamChunk.truncated字段;超时截断时标记
+# 2026-07-18 - 小欧 - #35 fix: _parse_sse_data改为generator，同chunk各yield一帧
+# 2026-07-18 - 小欧 - #7 fix: 并行tool_calls累加器遇重复idx时自增去重
+# 2026-07-18 - 小欧 - #38 fix: 流结束后过滤空name幽灵tool_call delta
+# 2026-07-18 - 小欧 - #7回归修正: 改while自增为if not in直接合并
+# 2026-07-19 - 小欧 - finish_reason字段提取/透传
+# 2026-07-23 - 小欧 - #7三堂会审修复: 变量名/死代码/日志级别/非JSON行yield
+# 2026-07-26 - 小欧 - 默认开启thinking模式
+"""
 LLM 核心模块 — BaseAIService
 
 重构: 删除mixin继承, 统一为request/request_stream/chat + mode参数 - 小沈 2026-06-09
 FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 清理: 删除死代码_is_rate_limit_status(无调用方,限流由SystemErrorClassifier覆盖) - 小欧 2026-07-14
-
-编辑历史:
-# 格式规范: {日期} {署名} {修改内容}
-   2026-07-14 小欧 删除死代码_is_rate_limit_status(无调用方,限流由SystemErrorClassifier覆盖,功能零退化)
-   2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL至app.constants(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/测试导入)
-    2026-07-16 小欧 新增三层防线——①LLM_MAX_TOKENS=16384(防无限长输出); ②STREAM_TOTAL_TIMEOUT=500s总时长硬超时(httpx idle timeout 在连续流式时不触发,用 wall-clock 兜底); ③tool_call流式超时=总时长3/5=300s(_parse_sse_data 对 tool_call delta 静默跳过, 专门卡此阶段). 三者超时后均 break→accumulator→截断修复, 不触发重试
-   2026-07-17 小沈 FC重命名: FCFormatError→LLMResponseError, 导入路径同步更新
-   2026-07-17 小欧 流式截断落库修复: 落库 tool_call.arguments 改为使用已解析规范化后的 params(json.dumps), 而非原始流式串。原因: 流式总超时截断时原始串为非完整JSON, 直接落库会在下一轮回传给LLM API时触发参数校验失败; 以已成功解析(或已自动修补)的合法dict为准, 保证历史消息 arguments 永远合法, 工具已执行的结果得以保留, 功能零退化
-    2026-07-17 小欧 429配额耗尽增强: 重试耗尽后对前端输出"配额/限流耗尽"而非泛化"服务器错误", 提升可观测性
-   2026-07-18 小欧 #7 fix: 并行tool_calls累加器遇重复idx自增去重
-   2026-07-18 小欧 #32 fix: 空name tool_call delta加warning日志
-   2026-07-18 小欧 #34 fix: StreamChunk.truncated字段;超时截断时标记
-   2026-07-18 小欧 #35 fix: _parse_sse_data改为generator,reasoning+content同chunk各yield一帧
-    2026-07-18 小欧 #7 fix: 并行tool_calls累加器遇重复idx时自增去重(while idx in tool_call_accumulator: idx+=1), 缺index或全0的并行调用不再塌缩成一个
-   2026-07-18 小欧 #38 fix: 流结束后过滤空name的幽灵tool_call delta（非真实工具调用,不触发L2重试）
-     2026-07-18 小欧 #7回归修正: 改while自增为if not in直接合并——OpenAI流式协议中单tool_call以稳定index跨多delta续传(首delta带name,后续仅arguments), 原#7自增致name与arguments撕裂不同槽位→解析失败→FC降级
-   2026-07-19 小欧 finish_reason字段提取/透传: _extract_finish_reason+主循环提取+final yield(与usage同级对称)
 """
 
 import asyncio
@@ -66,7 +66,8 @@ class BaseAIService:
         self.max_tokens = max_tokens if max_tokens is not None else LLM_MAX_TOKENS
         self.temperature = temperature
         self.seed = seed
-        self.extra_body_params = extra_body_params
+        # 默认开启 thinking 模式；配置文件传参可覆盖（如 enable_thinking: false 可关）— 小欧 2026-07-26
+        self.extra_body_params = extra_body_params or {"chat_template_kwargs": {"enable_thinking": True}}
         self.context_limit = context_limit
         self._llm_sdk = None
         try:
@@ -366,7 +367,8 @@ class BaseAIService:
                     result[idx] = entry
             return result
         except Exception as e:
-            logger.warning(f"[BaseAIService] _extract_tool_calls异常: {e}")
+            # #7: 降级为DEBUG(异常时返回{},外层逻辑跳过tool_calls) — 三堂会审 小欧 2026-07-23
+            logger.debug(f"[BaseAIService] _extract_tool_calls异常: {e}")
             return {}
 
     def _extract_usage(self, data_str: str) -> Optional[Dict]:
@@ -380,7 +382,8 @@ class BaseAIService:
                 return usage
             return None
         except Exception as e:
-            logger.warning(f"[BaseAIService] _extract_usage异常: {e}")
+            # #7: 降级为DEBUG(异常时返回None,不影响主流程) — 三堂会审 小欧 2026-07-23
+            logger.debug(f"[BaseAIService] _extract_usage异常: {e}")
             return None
 
     def _extract_finish_reason(self, data_str: str) -> Optional[str]:
@@ -409,6 +412,9 @@ class BaseAIService:
         try:
             data = parse_json(data_str)
             if data is None:
+                # #7: 非JSON行(LLM非标准回复)尝试作为纯文本yield,防内容静默丢失 — 三堂会审 小欧 2026-07-23
+                if data_str and data_str.strip():
+                    yield StreamChunk(content=data_str.strip(), model=self.model, is_done=False, raw_data=data_str)
                 return
 
             choices = data.get("choices", [])
@@ -429,36 +435,10 @@ class BaseAIService:
                     return
                 # tool_calls delta 处理顺延至外层
                 yield None
-        except (json.JSONDecodeError, AttributeError, IndexError) as e:
-            logger.warning(f"[_parse_sse_data] 解析异常: {e}")
+        except (_json.JSONDecodeError, AttributeError, IndexError) as e:
+            # #7: 降级为DEBUG(parse_json已内部消化JSONDecodeError,异常路径有 None/{} fallback) — 三堂会审 小欧 2026-07-23
+            logger.debug(f"[_parse_sse_data] 解析异常: {e}")
             return
-
-            choices = data.get("choices", [])
-            if not choices:
-                return None
-
-            delta = choices[0].get("delta", {})
-            content = delta.get("content", "") or ""
-            # 这条消息是不是"思考"及多模型识别规则，统一见 reasoning.py 模块注释 — 小欧 2026-07-12
-            reasoning_text = extract_reasoning_from_chunk(delta) or ""
-
-            # 是思考 → 存进"思考区"；不是 → 存进"答案区"（详见 reasoning.py 第三节）
-            if reasoning_text:
-                return StreamChunk(content=reasoning_text, model=self.model, is_done=False, is_reasoning=True, raw_data=data_str)
-
-            if content:
-                return StreamChunk(content=content, model=self.model, is_done=False, is_reasoning=False, raw_data=data_str)
-
-            # tool_calls delta — _extract_tool_calls 已处理,跳过冗余空 chunk — 小沈 2026-06-14
-            tool_calls_delta = delta.get("tool_calls", [])
-            if tool_calls_delta:
-                return None
-
-            return None
-
-        except Exception as e:
-            logger.debug(f"[_parse_sse_data] 解析失败: {e}, data={data_str[:100]}")
-            return None
 
     def _should_retry(self, e: Exception) -> bool:
         """判断是否应该重试 — 委托给SystemErrorClassifier - 小沈 2026-06-17"""

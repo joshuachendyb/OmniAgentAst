@@ -1,6 +1,8 @@
+
 # 编辑历史:
 # 2026-07-18 小欧 #8 fix: 模块级try/except改为函数内lazy import,消除循环导入
 # 2026-07-18 小欧 #36 fix: _check_http_status_errors改用context-aware正则,防误匹配裸数字
+# 2026-07-21 - 小欧 - LLMResponseError分类修正: UNKNOWN→SERVER(LLM响应格式错误可重试, LLM可能自行纠正)
 """
 【系统层】系统级错误分类器 — 小欧 2026-06-30；小沈 2026-07-05 黑名单重构
 
@@ -118,7 +120,7 @@ class SystemErrorClassifier:
         try:
             from app.services.llm.core import LLMResponseError
             if LLMResponseError and isinstance(error, LLMResponseError):
-                return SystemErrorCategory.UNKNOWN  # LLM响应数据错误，重试无意义
+                return SystemErrorCategory.SERVER  # LLM响应格式错误, 归SERVER(可重试, LLM可能自行纠正)
         except ImportError:
             pass
         # EndOfStream 由黑名单默认SERVER处理，不需特殊case — 小沈 2026-07-05
@@ -229,3 +231,4 @@ class SystemErrorClassifier:
             "original_error": str(error),
             "error_type": type(error).__name__,
         }
+

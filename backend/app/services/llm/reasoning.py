@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 小欧 #49 fix: 删冗余getattr(delta,…),统一delta.get(…)
@@ -175,3 +176,4 @@ __all__ = [
     "extract_reasoning_from_chunk",
     "extract_reasoning_from_message",
 ]
+
