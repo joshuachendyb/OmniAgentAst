@@ -3,6 +3,7 @@
 registry_write — 写入Windows注册表键值
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
 """
+# 2026-07-31 - 小欧 - CRITICAL: auto_detect 对负整数判定错误。value.isdigit() 对 "-1" 返回 False, 导致 -1(0xFFFFFFFF) 被存为 REG_SZ 而非 REG_DWORD。改用 value.lstrip('-').isdigit() 修复
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -10,12 +11,12 @@ registry_write — 写入Windows注册表键值
 
 import time as _time_mod
 import winreg
-from typing import Optional, Dict, Any, Callable
+from typing import Any, Callable, Dict  # 2026-07-31 小欧: 移除未使用 Optional; Dict 实际仍在使用, 已恢复
 
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_REG_WRITE_FAILED, ERR_PARAMETER_INVALID
-from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_path, _backup_registry, _validate_root_key
+from app.tools.win_registry.registry_read import _parse_path, _backup_registry, _validate_root_key  # 2026-07-31 小欧: 移除未使用 ROOT_KEY_MAP
 from app.tools.validate.registry_path_checker import validate_registry_key
 
 _REG_TYPE_MAP: Dict[str, int] = {
@@ -102,7 +103,8 @@ def registry_write(path: str, value_name: str, value: str, value_type: str = "au
 
         actual_type = value_type
         if value_type == "auto_detect":
-            actual_type = "REG_DWORD" if value.isdigit() else "REG_SZ"
+            # 2026-07-31 小欧 CRITICAL: value.isdigit() 对负整数("-1")返回False, 导致存为REG_SZ。改用 lstrip('-') 处理负数
+            actual_type = "REG_DWORD" if value.lstrip('-').isdigit() else "REG_SZ"
 
         if actual_type not in _REG_TYPE_MAP:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

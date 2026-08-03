@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 registry_delete — 删除Windows注册表键值或子键
@@ -10,7 +11,7 @@ registry_delete — 删除Windows注册表键值或子键
 
 import time as _time_mod
 import winreg
-from typing import Optional, Dict, Any
+from typing import Optional  # 2026-07-31 小欧: 移除未使用 Dict, Any
 
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error
@@ -164,3 +165,4 @@ def registry_delete(path: str, value_name: Optional[str] = None, backup_before_d
 
 
 __all__ = ["registry_delete"]
+

@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-25 - 小欧 - 不存在的键reg export失败日志WARNING→INFO(正常业务场景不应报WARNING)
+# 2026-07-31 - 小欧 - CRITICAL: _backup_registry 失败路径不缓存备份路径(原在 returncode!=0/FileNotFoundError/Exception 3 处均缓存)。失败后续操作命中缓存跳过备份, 导致 registry_write/delete 丢失安全保障
 """
 registry_read — 读取Windows注册表键值
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
@@ -14,7 +17,7 @@ import tempfile
 import time as _time_mod
 import winreg
 from app.utils.time_utils import timestamp_for_filename
-from typing import Optional, Dict, Any
+from typing import Optional, Any  # 2026-07-31 小欧: 移除未使用 Dict
 
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error
@@ -69,14 +72,14 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
             _registry_session_backup[backup_key] = backup_file
             logger.info(f"[registry] 备份成功: {backup_key} -> {backup_file}")
         else:
-            logger.warning(f"[registry] reg export失败(返回码{result.returncode}): {result.stderr.strip()}")
-            _registry_session_backup[backup_key] = backup_file
+            logger.info(f"[registry] reg export失败(返回码{result.returncode}): {result.stderr.strip()}")
+            # 2026-07-31 小欧: 失败路径不缓存, 避免后续操作命中缓存跳过备份
     except FileNotFoundError:
         logger.warning("[registry] reg命令不存在,跳过备份")
-        _registry_session_backup[backup_key] = backup_file
+        # 2026-07-31 小欧: 失败路径不缓存
     except Exception as e:
         logger.warning(f"[registry] 备份失败: {e}")
-        _registry_session_backup[backup_key] = backup_file
+        # 2026-07-31 小欧: 失败路径不缓存
 
     return backup_file
 
