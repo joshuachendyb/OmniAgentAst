@@ -4,15 +4,15 @@ FUNDAMENTAL Register — 基础工具注册点
 
 【2026-06-18 小欧】从 meta/ 迁入, 匹配 ToolCategory.FUNDAMENTAL
 【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
+【2026-07-28 北京老陈】timeadd/timediff/calendar 迁至 TIMER 分类; shell 从 SHELL 迁入
+【2026-07-30 小沈】searchtool examp加"时间 定时"用例,补全7类备用工具
 
-7个工具:
+5个工具:
 - searchtool — BM25全文检索搜索工具
 - timenow — 获取当前时间
-- timeadd — 时间加减运算
-- timediff — 时间差值计算
-- calendar — 节日/日期查询
 - sysinfo — 获取系统信息 (从SYSTEM迁入)
 - notify — 发送系统通知 (从DESKTOP迁入)
+- shell — 执行系统命令(ps7/ps5/cmd/bash) (从SHELL迁入)
 """
 
 from app.tools.registry import tool_registry
@@ -23,9 +23,7 @@ from app.logger import logger
 FUNDAMENTAL_TOOL_DEPENDENCIES = {
     "searchtool": [],  # 使用内置库
     "timenow": [],  # 使用内置库
-    "timeadd": [],  # 使用内置库
-    "timediff": [],  # 使用内置库
-    "calendar": [],  # 使用内置库
+    "shell": [],  # 使用内置库
     "sysinfo": ["psutil"],  # 从SYSTEM迁入
     "notify": ["win10toast"],
 }
@@ -33,17 +31,13 @@ FUNDAMENTAL_TOOL_DEPENDENCIES = {
 from app.tools.fundamental.fundamental_schema import (
     ToolSearchInput,
     TimeNowInput,
-    TimeAddInput,
-    TimeDiffInput,
-    QueryCalendarInput,
+    ShellInput,
     SendNotificationInput,
     GetSystemInfoInput,
 )
 from app.tools.fundamental.tool_search import searchtool
 from app.tools.fundamental.time_now import timenow
-from app.tools.fundamental.time_add import timeadd
-from app.tools.fundamental.time_diff import timediff
-from app.tools.fundamental.query_calendar import calendar
+from app.tools.fundamental.execute_shell_command import shell
 from app.tools.fundamental.get_system_info import sysinfo
 from app.tools.fundamental.send_notification import notify
 
@@ -52,51 +46,31 @@ from app.tools.fundamental.send_notification import notify
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
 # 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 FUNDAMENTAL_TOOL_DESCRIPTIONS = {
-    "searchtool": """搜索并注入未加载的工具。当前工具列表无匹配时优先调用此工具,按关键词检索并自动注入匹配的工具分类。适用场景:当前工具列表未找到对应的专用工具时使用。""",
+    "searchtool": """搜索备用工具。按工具名称和类型关键词检索并自动注入匹配的工具分类。适用场景:当前工具列表无对应的专用工具时使用。""",
     "timenow": """获取当前系统时间,返回ISO格式、时间戳、格式化字符串、时区、星期等信息。适用场景:需要获取当前时间时使用。""",
-    "timeadd": """对时间进行加减偏移运算,支持天/小时/分钟/秒/月。适用场景:需要计算N个单位后的时间或某个时间点之前的时间时使用。""",
-    "timediff": """计算两个时间之间的差值。适用场景:需要计算日期差、距离某时间还有多久时使用。""",
-    "calendar": """查询节日日期和假期信息。适用场景:需要了解节日日期、判断日期类型(周末/节假日/工作日)时使用。""",
+    "shell": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
     "sysinfo": """获取系统信息,包括操作系统、CPU、内存、磁盘和网络。适用场景:需要诊断系统问题(CPU高、内存不足、磁盘满)、了解硬件规格时使用。""",
     "notify": """发送Windows系统通知弹窗。适用场景:需要向用户发送桌面通知时使用。""",
 }
 
 FUNDAMENTAL_TOOL_EXAMPLES = {
     "searchtool": [
-        {"query": "读取Word文档"},
-        {"query": "SQL查询 数据库"},
-        {"query": "生成图表 可视化"},
-        {"query": "搜索文件 内容查找"},
-        {"query": "系统信息 进程"},
-        {"query": "压缩解压 归档"},
+        {"query": "文档 读写"},
+        {"query": "数据分析 图表"},
+        {"query": "数据库 SQL"},
+        {"query": "网络 搜索 下载"},
+        {"query": "系统 进程 注册表 任务"},
+        {"query": "桌面 窗口"},
+        {"query": "时间 定时"},
     ],
     "timenow": [
         {},
-
     ],
-    "timeadd": [
-        {"delta": 7},
-        {"delta": 7, "unit": "days"},
-        {"delta": 3, "unit": "hours"},
-        {"delta": 30, "unit": "minutes"},
-        {"delta": 90, "unit": "seconds"},
-        {"delta": 2, "unit": "months"},
-        {"delta": -7, "unit": "days"},
-        {"start": "2026-05-18 10:00:00", "delta": 7, "unit": "days"},
-    ],
-    "timediff": [
-        {"start": "2026-05-01"},
-        {"start": "2026-05-01", "end": "2026-05-18"},
-        {"start": 1717200000, "end": 1717804800},
-    ],
-    "calendar": [
-        {"name": "端午节", "year": 2026},
-        {"name": "春节", "year": 2026},
-        {"name": "中秋节", "year": 2026},
-        {"name": "国庆节", "year": 2026},
-        {"name": "元旦", "year": 2026},
-        {"name": "2026-05-18"},
-        {"name": "2026-06-24"},
+    "shell": [
+        {"command": "dir", "timeout": 10},
+        {"command": "python --version", "shell_type": "ps7", "timeout": 10},
+        {"command": "ls -la", "shell_type": "bash", "timeout": 10},
+        {"command": "Get-ChildItem", "shell_type": "ps5", "timeout": 10},
     ],
     "sysinfo": [
         {},
@@ -117,13 +91,15 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
 
 
 def _register_fundamental_tools():
-    """注册7个基础工具到FUNDAMENTAL分类 — 小健 2026-06-18"""
+    """注册5个基础工具到FUNDAMENTAL分类 — 小健 2026-06-18"""
+    CONFIRMATION_MAP = {
+        "shell": {"write": True},
+    }
+    
     tool_methods = {
         "searchtool": searchtool,
         "timenow": timenow,
-        "timeadd": timeadd,
-        "timediff": timediff,
-        "calendar": calendar,
+        "shell": shell,
         "sysinfo": sysinfo,
         "notify": notify,
     }
@@ -131,9 +107,7 @@ def _register_fundamental_tools():
     TOOL_INPUT_MODELS = {
         "searchtool": ToolSearchInput,
         "timenow": TimeNowInput,
-        "timeadd": TimeAddInput,
-        "timediff": TimeDiffInput,
-        "calendar": QueryCalendarInput,
+        "shell": ShellInput,
         "sysinfo": GetSystemInfoInput,
         "notify": SendNotificationInput,
     }
@@ -151,6 +125,8 @@ def _register_fundamental_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
+            needs_confirmation=(name == "shell"),
+            action_confirmation=CONFIRMATION_MAP.get(name),
             dependencies=FUNDAMENTAL_TOOL_DEPENDENCIES.get(name, []),
         )
         logger.debug(f"[fundamental_register] 已注册工具: {name}, Pydantic模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
@@ -160,9 +136,7 @@ __all__ = [
     "_register_fundamental_tools",
     "searchtool",
     "timenow",
-    "timeadd",
-    "timediff",
-    "calendar",
+    "shell",
     "sysinfo",
     "notify",
 ]

@@ -1,6 +1,11 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-13 - 小欧 - win10toast改为独立子进程通知隔离Tk/WndProc窗口
+# 2026-07-25 - 小欧 - 截断治理: _build_send_notification_llm_data message[:50] → 删截断移至main函数入口 _msg_preview + SEND_NOTIFICATION_OUTPARM_LIMIT_MSG
+# 2026-07-25 - 小欧 - 三堂会审修复bug×2:
+#         ① _msg_preview = message[:50]无None守卫导致message=None时crash→改(message or "")[:50]
+#         ② build函数docstring仍写"message截断200→50 统一"→更新为"main函数入口统一截断"
 """
 send_notification — 发送Windows系统通知
 【2026-06-22 小健】从 desktop/desktop_gui_tools.py 迁入 fundamental 为独立文件
@@ -16,7 +21,7 @@ from typing import Dict, Any
 
 from app.tools.tool_fc_helper import _check_module_available
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_DESKTOP_NOTIFICATION, ERR_NO_WIN10TOAST
+from app.tools.tool_constants import ERR_DESKTOP_NOTIFICATION, ERR_NO_WIN10TOAST, SEND_NOTIFICATION_OUTPARM_LIMIT_MSG
 from app.tools.validate.file_path_checker import validate_str_param
 
 
@@ -29,10 +34,11 @@ def _check_module(module_name: str) -> bool:
 def _build_send_notification_llm_data(exec_code: str, duration_ms: int, title: str = "",
                                        notif_duration: int = 0, err_code: str = "",
                                        detail: str = "", message: str = "", hint: str = "") -> dict:
-    """send_notification的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加message参数 — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 message截断200→50 统一"""
+    """send_notification 的 llm_data 构建函数
+    message: 通知内容（由调用者构造传入）"""
     act_params = {"title": title}
     if message:
-        act_params["message"] = message[:50]  # 小欧 2026-07-06 200→50 统一截断
+        act_params["message"] = message
     if notif_duration:
         act_params["duration"] = notif_duration
     if exec_code == "error":
@@ -70,25 +76,26 @@ def _show_toast_detached(title: str, message: str, duration: int) -> None:
 def notify(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
     """发送Windows系统通知 — 小健 2026-06-22 迁入fundamental独立文件 — 小健 2026-06-22 修复计时铁规 — 小欧 2026-07-13 子进程隔离win10toast窗口"""
     t0 = _time_mod.perf_counter()
+    _msg_preview = (message or "")[:SEND_NOTIFICATION_OUTPARM_LIMIT_MSG]
     err = validate_str_param(title, "title")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_send_notification_llm_data("error", duration_ms, title, detail=err, hint="请检查通知标题", message=message)
+        llm_data = _build_send_notification_llm_data("error", duration_ms, title, detail=err, hint="请检查通知标题", message=_msg_preview)
         return build_error(data={}, llm_data=llm_data)
     err = validate_str_param(message, "message")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_send_notification_llm_data("error", duration_ms, title, detail=err, hint="请检查通知内容", message=message)
+        llm_data = _build_send_notification_llm_data("error", duration_ms, title, detail=err, hint="请检查通知内容", message=_msg_preview)
         return build_error(data={}, llm_data=llm_data)
     if not _check_module("win10toast"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_error(data={}, llm_data=_build_send_notification_llm_data("error", duration_ms, title, err_code=ERR_NO_WIN10TOAST, detail="win10toast库未安装", hint="请安装win10toast库", message=message))
+        return build_error(data={}, llm_data=_build_send_notification_llm_data("error", duration_ms, title, err_code=ERR_NO_WIN10TOAST, detail="win10toast库未安装", hint="请安装win10toast库", message=_msg_preview))
 
     try:
         _show_toast_detached(title, message, duration)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {}
-        llm_data = _build_send_notification_llm_data("success", duration_ms, title, duration, message=message)
+        llm_data = _build_send_notification_llm_data("success", duration_ms, title, duration, message=_msg_preview)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
         # trigger: 无上述20条分支匹配 — title/message/duration 不命中专用分支
@@ -98,8 +105,9 @@ def notify(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_send_notification_llm_data("error", duration_ms, title, detail=str(e), hint="发送通知异常，请重试", message=message)
+        llm_data = _build_send_notification_llm_data("error", duration_ms, title, detail=str(e), hint="发送通知异常，请重试", message=_msg_preview)
         return build_error(data={}, llm_data=llm_data)
 
 
 __all__ = ["notify"]
+

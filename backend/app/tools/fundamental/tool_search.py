@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 去噪 refactor:
+#   1. 移除非BM25路径 data 中
+#     total_matched/total_tools 重复字段
+#   2. BM25 路径同样移除(data/llm_data重复)
+# 2026-07-25 - 小欧 - 截断治理: all_items[:10]/meaningful[:10] → TOOL_SEARCH_INER_RESULTS_TOP 命名常量
+# 2026-07-28 - 北京老陈 - BM25查询token去重优化(ordered unique代替set)
 """
 searchtool — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
@@ -14,7 +21,7 @@ from typing import Dict, Any, List, Tuple
 
 from app.tools.registry import tool_registry
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_DOC_QUERY_EMPTY
+from app.tools.tool_constants import ERR_DOC_QUERY_EMPTY, TOOL_SEARCH_INER_RESULTS_TOP
 
 
 def _tokenize(text: str) -> List[str]:
@@ -78,7 +85,13 @@ def _bm25_scores(
     doc_tfs = [Counter(d) for d in docs]
     scores = [0.0] * N
 
-    for term in set(query_tokens):
+    unique_terms = []
+    seen_terms = set()
+    for term in query_tokens:
+        if term not in seen_terms:
+            seen_terms.add(term)
+            unique_terms.append(term)
+    for term in unique_terms:
         n = df.get(term, 0)
         if n == 0:
             continue
@@ -143,7 +156,7 @@ def searchtool(query: str) -> Dict[str, Any]:
             for m in all_tools.values()
         ]
         all_items.sort(key=lambda x: x["name"])
-        top = all_items[:10]
+        top = all_items[:TOOL_SEARCH_INER_RESULTS_TOP]
         duration_ms = int((time.perf_counter() - t0) * 1000)
         data = {
             "matches": top,
@@ -172,7 +185,7 @@ def searchtool(query: str) -> Dict[str, Any]:
         meaningful = [r for r in scored if r["_score"] >= threshold]
     else:
         meaningful = []
-    top_results = meaningful[:10]
+    top_results = meaningful[:TOOL_SEARCH_INER_RESULTS_TOP]
 
     duration_ms = int((time.perf_counter() - t0) * 1000)
     # =============================================================================
