@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-06-20 - 小健 - 提取_DbConnectionMixin基类,3个SQL Schema共用连接参数(DRY)
+# 2026-07-18 - 小欧 - AnalyzeDataInput.data+FilterDataInput.data 类型从str改为Union[str,List[Dict]](实现层coerce_json已支持list,schema对齐防假阳性WARNING)
 # 2026-07-20 - 小欧 - 复核schema docstring规范,既有docstring全部保留,GetDbSchemaInput默认行为已在Field中体现,无需新增
+# 2026-07-21 - 小欧 - AnalyzeDataInput/FilterDataInput.top_n description 引用 OBS_MAX_DISPLAY_ITEMS 常量, 加建议不超过上限说明
+# 2026-07-21 - 小欧 - QuerySqlInput 新增 limit 字段(1~OBS_MAX_DISPLAY_ITEMS), LLM可见可设置
+# 2026-07-21 - 小欧 - 入参即信任: AnalyzeDataInput + FilterDataInput top_n/max_rows 加 ge=1,le=1000; QuerySqlInput.limit le=200→1000
+# 2026-07-25 - 小欧 - description去冗余: 4处默认/可选重复移除
+# 2026-07-25 - 小欧 - 编辑历史归并+去冗余示例: AnalyzeDataInput/FilterDataInput.path移除示例
+# 2026-07-25 - 小欧 - 删除max_rows: top_n唯一行数控制, 统计在head之前计算
 """
 DataAnalysis Schema - 数据分析工具参数模型
-
-# 2026-07-18 小欧: AnalyzeDataInput.data+FilterDataInput.data 类型从str改为Union[str,List[Dict]](实现层coerce_json已支持list,schema对齐防假阳性WARNING)
 
 【Schema Docstring 规范】小健 2026-06-18
 一般情况下，严禁给Schema类加docstring。
@@ -18,18 +24,18 @@ DataAnalysis Schema - 数据分析工具参数模型
 - 添加过于冗长的说明
 - 添加与参数无关的内容
 
-【2026-06-20 小健】提取_DbConnectionMixin基类,3个SQL Schema共用连接参数(DRY)
 """
 
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Dict, Any, List, Union, Literal
+from app.tools.tool_constants import OBS_MAX_DISPLAY_ITEMS
 
 
 class _DbConnectionMixin(BaseModel):
     """connection_type决定使用path还是connection_string,严禁交叉传入"""
     connection_type: Literal["sqlite", "mysql", "postgresql"] = Field(
         default="sqlite",
-        description="数据库类型。可选值:sqlite/mysql/postgresql。默认为sqlite。connection_type=sqlite时用path,mysql/postgresql时用connection_string"
+        description="数据库类型。可选值:sqlite/mysql/postgresql。connection_type=sqlite时用path,mysql/postgresql时用connection_string"
     )
     connection_string: Optional[str] = Field(
         default=None,
@@ -73,7 +79,7 @@ class GenerateChartInput(BaseModel):
     )
     chart_type: Optional[Literal["bar", "line", "pie", "scatter"]] = Field(
         default="bar",
-        description="图表类型。可选值:bar(柱状图)/line(折线图)/pie(饼图)/scatter(散点图)。默认为bar"
+        description="图表类型。可选值:bar(柱状图)/line(折线图)/pie(饼图)/scatter(散点图)"
     )
     title: Optional[str] = Field(
         default=None,
@@ -81,7 +87,7 @@ class GenerateChartInput(BaseModel):
     )
     dest: Optional[str] = Field(
         default=None,
-        description="""输出图片路径(绝对路径,可选)。
+        description="""输出图片路径(绝对路径)。
 
 - 不传: 默认在数据文件同目录生成 chart_<时间戳>.png
 - 传入: 使用指定路径
@@ -94,7 +100,7 @@ class AnalyzeDataInput(BaseModel):
     """path和data参数互斥,只能传入其中一个 """
     path: Optional[str] = Field(
         default=None,
-        description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时使用。示例:D:/data/sales.csv"
+        description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时使用"
     )
     data: Optional[Union[str, List[Dict[str, Any]]]] = Field(
         default=None,
@@ -126,11 +132,8 @@ class AnalyzeDataInput(BaseModel):
     )
     top_n: Optional[int] = Field(
         default=None,
-        description="只返回前N条结果。不填则返回全部"
-    )
-    max_rows: Optional[int] = Field(
-        default=None,
-        description="最大读取行数。对于大文件,可以限制读取的行数以提高性能"
+        ge=1, le=1000,
+        description=f"只返回前N条结果，建议不超过{OBS_MAX_DISPLAY_ITEMS}条；不填则返回全部"
     )
 
     @model_validator(mode="after")
@@ -146,7 +149,7 @@ class FilterDataInput(BaseModel):
     """path和data参数互斥,只能传入其中一个 """
     path: Optional[str] = Field(
         default=None,
-        description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时传入。示例:D:/data/users.csv"
+        description="数据文件路径(绝对路径)。支持CSV/XLSX格式。严禁与data参数同时传入"
     )
     data: Optional[Union[str, List[Dict[str, Any]]]] = Field(
         default=None,
@@ -173,11 +176,7 @@ class FilterDataInput(BaseModel):
     )
     select_columns: Optional[List[str]] = Field(
         default=None,
-        description="选择返回的列(可选)。如 [\"name\", \"age\"]"
-    )
-    max_rows: Optional[int] = Field(
-        default=None,
-        description="最大读取行数。对于大文件,可以限制读取的行数以提高性能"
+        description="选择返回的列。如 [\"name\", \"age\"]"
     )
     sort_by: Optional[str] = Field(
         default=None,
@@ -185,7 +184,8 @@ class FilterDataInput(BaseModel):
     )
     top_n: Optional[int] = Field(
         default=None,
-        description="只返回前N条结果。不填则返回全部"
+        ge=1, le=1000,
+        description=f"只返回前N条结果，建议不超过{OBS_MAX_DISPLAY_ITEMS}条；不填则返回全部"
     )
 
     @model_validator(mode="after")
@@ -215,6 +215,12 @@ class QuerySqlInput(_DbConnectionMixin):
 ✅ 正确: SELECT name, COUNT(*) FROM orders GROUP BY name
 ❌ 错误: SELECT * FROM users; SELECT * FROM orders
 ❌ 错误: INSERT INTO users ...（写入操作不允许）"""
+    )
+    limit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=1000,
+        description=f"返回行数上限，建议不超过{OBS_MAX_DISPLAY_ITEMS}条，超限部分需分页"
     )
 
 

@@ -2,6 +2,10 @@
 """
 get_db_schema — 获取数据库结构元数据
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
+编辑历史:
+# 2026-07-24 - 小欧 - table_names[:5] → GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES(魔数→命名常量)
+# 2026-07-26 - 小欧 - 迁移: sql_error_hint导入从tool_constants改为file_path_checker(配合函数迁移)
+# 2026-07-31 - 小欧 - Bug⑨⑩⑰修复: postgres默认schema test→public(新增_resolve_schema); mysql/pg列/索引查询按schema过滤防跨库同名表错列; sqlite表名正则改Unicode单词字符支持中文表名 | py_compile ✓
 """
 # 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -10,7 +14,7 @@ import fnmatch
 import re
 import sqlite3
 import time as _time_mod
-from typing import Any, Dict, List, Optional, Union, Literal
+from typing import List, Optional, Dict  # 2026-07-31 小欧: 移除未使用 Any, Union, Literal; Dict 实际仍在使用(List[Dict]/-> Dict), 已恢复
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import (
@@ -18,50 +22,76 @@ from app.tools.tool_constants import (
     ERR_DOC_DB_TABLE_NOT_FOUND,
     ERR_SCHEMA_FAILED,
     ERR_SQL_EXEC,
-    sql_error_hint,
+    GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES,
 )
+from app.tools.validate.file_path_checker import sql_error_hint
 from app.tools.tool_fc_helper import _get_connection, _close_connection
 
 
+def _resolve_schema(conn, connection_type: str, db_name: Optional[str]) -> Optional[str]:
+    """解析有效schema/库名 — 小欧 2026-07-31 Bug⑨⑩修复
+       postgres默认schema为public(原硬编码"test"导致查空); mysql未传db_name时取连接当前库DATABASE()
+    """
+    if connection_type == "postgresql":
+        return db_name or "public"
+    if connection_type == "mysql":
+        if db_name:
+            return db_name
+        from sqlalchemy import text
+        return conn.execute(text("SELECT DATABASE()")).scalar()
+    return None
+
+
 def _get_tables(conn, connection_type: str, db_name: Optional[str]) -> List[str]:
-    """获取表列表(2路SQL) — 小沈 2026-05-25"""
+    """获取表列表(2路SQL) — 小沈 2026-05-25 — 小欧 2026-07-31 Bug⑨ 修正postgres默认schema为public"""
     if connection_type in ("mysql", "postgresql"):
         from sqlalchemy import text
-        result = conn.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema = :db_name"), {"db_name": db_name or "test"})
+        schema = _resolve_schema(conn, connection_type, db_name)
+        if not schema:
+            return []
+        result = conn.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema = :db_name"), {"db_name": schema})
         return [row[0] for row in result.fetchall()]
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     return [row[0] for row in cursor.fetchall()]
 
 
-def _get_columns(conn, connection_type: str, table_name: str) -> List[Dict]:
-    """获取列信息(2路SQL) — 小沈 2026-05-25 — 小欧 2026-06-24 修复SQL注入"""
+def _get_columns(conn, connection_type: str, table_name: str, schema: Optional[str] = None) -> List[Dict]:
+    """获取列信息(2路SQL) — 小沈 2026-05-25 — 小欧 2026-06-24 修复SQL注入 — 小欧 2026-07-31 Bug⑩ 加schema过滤防跨库同名表错列"""
     if connection_type == "mysql":
         from sqlalchemy import text
-        result = conn.execute(text("SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
+        if not schema:
+            return []
+        result = conn.execute(text("SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name=:t AND table_schema=:s"), {"t": table_name, "s": schema})
         return [{"name": r[0], "type": r[1], "nullable": r[2] == "YES", "pk": r[3] == "PRI", "default": r[4]} for r in result]
     if connection_type == "postgresql":
         from sqlalchemy import text
-        result = conn.execute(text("SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
+        if not schema:
+            return []
+        result = conn.execute(text("SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name=:t AND table_schema=:s"), {"t": table_name, "s": schema})
         return [{"name": r[0], "type": r[1], "nullable": r[2] == "YES", "pk": False, "default": r[3]} for r in result]
-    if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
+    if not re.match(r'^[\w]+$', table_name):  # 2026-07-31 小欧: Bug⑰ \w含Unicode中文, 支持中文表名(原仅[a-zA-Z0-9_])
         return []
     cursor = conn.cursor()
     cursor.execute(f"PRAGMA table_info('{table_name}')")
     return [{"name": r[1], "type": r[2], "nullable": not r[3], "default": r[4], "pk": bool(r[5])} for r in cursor.fetchall()]
 
 
-def _get_indexes(conn, connection_type: str, table_name: str) -> List[Dict]:
-    """获取索引信息(2路SQL) — 小沈 2026-05-25 — 小欧 2026-06-24 修复SQL注入"""
+def _get_indexes(conn, connection_type: str, table_name: str, schema: Optional[str] = None) -> List[Dict]:
+    """获取索引信息(2路SQL) — 小沈 2026-05-25 — 小欧 2026-06-24 修复SQL注入 — 小欧 2026-07-31 Bug⑩ 加schema过滤防跨库同名表错索引"""
     if connection_type == "mysql":
         from sqlalchemy import text
-        result = conn.execute(text("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name=:t GROUP BY index_name, non_unique"), {"t": table_name})
+        if not schema:
+            return []
+        result = conn.execute(text("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name=:t AND table_schema=:s GROUP BY index_name, non_unique"), {"t": table_name, "s": schema})
         return [{"name": r[0], "unique": not bool(r[1])} for r in result]
     if connection_type == "postgresql":
         from sqlalchemy import text
-        result = conn.execute(text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename=:t"), {"t": table_name})
+        if not schema:
+            return []
+        result = conn.execute(text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename=:t AND schemaname=:s"), {"t": table_name, "s": schema})
         return [{"name": r[0], "unique": "UNIQUE" in r[1].upper(), "definition": r[1]} for r in result]
-    if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
+    if not re.match(r'^[\w]+$', table_name):  # 2026-07-31 小欧: Bug⑰
         return []
     cursor = conn.cursor()
     cursor.execute(f"PRAGMA index_list('{table_name}')")
@@ -110,7 +140,7 @@ def _build_get_db_schema_llm_data(exec_code, duration_ms, total_tables=0, table_
         "action": {"tool": "get_db_schema", "tool_zh": "获取结构", "target": "database", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {"total": {"value": total_tables, "text": f"{total_tables}个表"}, "tables": {"value": table_names, "text": f"表: {', '.join(table_names[:5])}"}},
+        "metrics": {"total": {"value": total_tables, "text": f"{total_tables}个表"}, "tables": {"value": table_names, "text": f"表: {', '.join(table_names[:GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES])}"}},
     }
 
 
@@ -141,9 +171,10 @@ def get_db_schema(connection_type="sqlite", connection_string=None, path=None,
             return build_error(data={}, llm_data=llm_data)
 
         schema_info = []
+        schema = _resolve_schema(conn, connection_type, db_name)  # 2026-07-31 小欧: Bug⑩ 跨库同名表按schema过滤
         for t in tables:
-            columns = _get_columns(conn, connection_type, t)
-            indexes = _get_indexes(conn, connection_type, t)
+            columns = _get_columns(conn, connection_type, t, schema)
+            indexes = _get_indexes(conn, connection_type, t, schema)
             schema_info.append({"name": t, "columns": columns, "indexes": indexes})
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

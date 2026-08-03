@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-24 - 小欧 - 2处 data[:200] → GENERATE_CHART_OUTPARM_LIMIT_DATA(魔数→命名常量)
+# 2026-07-26 - 小欧 - OOD重构:文件路径读取改用load_data_to_df统一数据加载(analyze_data/filter_data共享),删内联pd.read_csv/read_excel(DRY+安全校验)
+# 2026-07-26 - 小欧 - 迁移: hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
+# 2026-07-26 - 小沈 - BugFix #6: file_path_checker两行import合并为一行
+# 2026-07-31 - 小欧 - Bug⑪修复: _registered字体快照addfont后实时更新, 防同名字体(msyh.ttc/msyh.ttf)重复addfont | py_compile ✓
 """
 generate_chart — 使用matplotlib生成数据可视化图表
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -14,15 +20,13 @@ import warnings
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, Literal
 
-import pandas as pd
-
 from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.utils.json_utils import coerce_json
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_data_error
 from app.logger import logger
-from app.tools.tool_constants import ERR_DOC_CHART_GENERATE, hint_for_data_error
+from app.tools.tool_constants import ERR_DOC_CHART_GENERATE, GENERATE_CHART_OUTPARM_LIMIT_DATA
+from app.tools.dataanalysis.data_loader import load_data_to_df
 
 
 def _get_output_dir() -> str:
@@ -47,7 +51,7 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", dest="
     """generate_chart的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 data字段加[:200]截断"""
     _act_params = {"chart_type": chart_type}
     if data:
-        _act_params["data"] = data[:200] if isinstance(data, str) else str(data)[:200]  # 小欧 2026-07-06 截断 chart data，防止大字段返回给LLM
+        _act_params["data"] = data[:GENERATE_CHART_OUTPARM_LIMIT_DATA] if isinstance(data, str) else str(data)[:GENERATE_CHART_OUTPARM_LIMIT_DATA]
     if title:
         _act_params["title"] = title
     if x_label:
@@ -137,21 +141,18 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         if inline is False:
             # data以"{"开头但JSON格式错误，不再误报为"文件不存在" — 小欧 2026-07-12
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"JSON格式错误: {data[:200]}", hint="数据JSON格式错误，请检查labels/values字段和JSON语法", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"JSON格式错误: {data[:GENERATE_CHART_OUTPARM_LIMIT_DATA]}", hint="数据JSON格式错误，请检查labels/values字段和JSON语法", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
             return build_error(data={}, llm_data=llm_data)
         if inline is not None:
             labels, values = inline["labels"], inline["values"]
         else:
-            # 向后兼容：文件路径读取
-            path = Path(data)
-            if not path.exists():
+            # 文件路径读取（交由data_loader统一处理：路径校验/openpyxl检查/异常自然抛出）
+            loaded = load_data_to_df(data)
+            if "error_detail" in loaded:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"文件不存在: {data}", hint="请检查数据文件路径", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=loaded["error_detail"], hint="请检查数据文件路径", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
                 return build_error(data={}, llm_data=llm_data)
-            if data.endswith('.xlsx'):
-                df = pd.read_excel(data, engine="openpyxl")
-            else:
-                df = pd.read_csv(data)
+            df = loaded["df"]
             if len(df.columns) < 2:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据至少需要2列(标签列+数值列)", hint="数据文件至少需要2列", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
@@ -192,6 +193,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
                 if _fn not in _registered and os.path.exists(_fp):
                     try:
                         fm.fontManager.addfont(_fp)
+                        _registered.add(_fn)  # 2026-07-31 小欧: Bug⑪修复 — 快照实时更新, 防同名字体(msyh.ttc/msyh.ttf)重复addfont
                     except Exception:
                         pass
             matplotlib.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']

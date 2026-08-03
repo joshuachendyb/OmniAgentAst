@@ -1,6 +1,17 @@
+
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-21 - 小欧 - 入参即信任: top_n/max_rows 加 ge=1,le=1000 校验
+# 2026-07-24 - 小欧 - str(conditions)[:200] → FILTER_DATA_OUTPARM_LIMIT_CONDITIONS(魔数→命名常量)
+# 2026-07-25 - 小欧 - 删除max_rows: top_n唯一行数控制,_load_data_to_df不再限制读取
+# 2026-07-25 - 小欧 - Bug修: head(top_n)截断加 truncated=True/truncated_reason, _load_data_to_df 加 TODO 大文件安全网注释
+# 2026-07-25 - 小欧 - em dash替换为ascii连字符- (欧阳建议，消除SyntaxError嫌疑)
+# 2026-07-26 - 小欧 - 加nrows=100000硬安全网防OOM+before变量在else分支正确定义(欧阳报告问题2/3修复)
+# 2026-07-26 - 小欧 - 删除nrows=100000:OOM让异常自然抛出被except捕获报error给LLM,不加硬限制(老陈方向)
+# 2026-07-26 - 小欧 - OOD重构:数据加载_load_data_to_df抽取至data_loader.load_data_to_df公用函数(analyze_data/filter_data共享)
+# 2026-07-26 - 小欧 - 迁移: hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
 """
-filter_data — 按条件筛选/过滤数据
+filter_data  按条件筛选/过滤数据
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
@@ -8,21 +19,21 @@ filter_data — 按条件筛选/过滤数据
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import time as _time_mod
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional
 
 import pandas as pd
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.tools.tool_fc_helper import _check_module, _serialize_rows
+from app.tools.dataanalysis.data_loader import load_data_to_df, validate_top_n
 from app.utils.json_utils import coerce_json
-from app.tools.tool_constants import ERR_FILTER_INVALID, hint_for_data_error
+from app.tools.tool_constants import ERR_FILTER_INVALID, FILTER_DATA_OUTPARM_LIMIT_CONDITIONS
+from app.tools.validate.file_path_checker import hint_for_data_error
 
 
 def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail="", hint="",
-                                 path="", data="", conditions=None, select_columns=None, sort_by="", top_n=0, max_rows=0):
-    """filter_data的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 去掉data/conditions字段，防止大字段返回给LLM — 小欧 2026-07-11 路径参数统一为path"""
+                                 path="", data="", conditions=None, select_columns=None, sort_by="", top_n=0):
+    """filter_data的llm_data构建函数 - 小健 2026-06-22 - 小欧 2026-07-05 新增user_params - 小欧 2026-07-05 加hint参数 - 小欧 2026-07-06 去掉data/conditions字段，防止大字段返回给LLM - 小欧 2026-07-11 路径参数统一为path"""
     columns = columns or []
     _act_params = {}
     if path:
@@ -33,8 +44,6 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
         _act_params["sort_by"] = sort_by
     if top_n:
         _act_params["top_n"] = top_n
-    if max_rows:
-        _act_params["max_rows"] = max_rows
     _target = path or "数据集"
     if exec_code == "error":
         return {
@@ -53,29 +62,9 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
     }
 
 
-def _load_data_to_df(data: Union[str, List[Dict[str, Any]]], max_rows: Optional[int] = None) -> dict:
-    """加载数据为 DataFrame — 小健 2026-06-22 拆分独立文件 — 小欧 2026-06-24 修复list分支max_rows无效"""
-    if isinstance(data, str):
-        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, _ = validate_path(OpCategory.READ_FILE, data)
-        if not is_valid:
-            return {"error_detail": err, "params": {"path": data}}
-        path = Path(data)
-        if data.endswith('.xlsx'):
-            if not _check_module("openpyxl"):
-                return {"error_detail": "openpyxl库未安装", "params": {"library": "openpyxl"}}
-            return {"df": pd.read_excel(data, engine="openpyxl", nrows=max_rows)}
-        return {"df": pd.read_csv(data, nrows=max_rows)}
-    if isinstance(data, list):
-        if max_rows is not None and len(data) > max_rows:
-            data = data[:max_rows]
-        return {"df": pd.DataFrame(data)}
-    return {"error_detail": "data参数必须是文件路径或数据数组", "params": {"data_type": type(data).__name__}}
-
 
 def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) -> dict:
-    """构建过滤掩码 — 小沈 2026-05-25"""
+    """构建过滤掩码 - 小沈 2026-05-25"""
     operator_map = {"eq": "__eq__", "ne": "__ne__", "gt": "__gt__", "gte": "__ge__", "lt": "__lt__", "lte": "__le__"}
     valid_operators = set(operator_map.keys()) | {"in", "contains", "not_contains"}
     mask = pd.Series([True] * len(df), index=df.index)
@@ -87,7 +76,7 @@ def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) 
         value = cond.get("value")
 
         if not column:
-            return {"error_detail": f"条件缺少column字段: {cond}", "params": {"conditions": str(conditions)[:200]}}
+            return {"error_detail": f"条件缺少column字段: {cond}", "params": {"conditions": str(conditions)[:FILTER_DATA_OUTPARM_LIMIT_CONDITIONS]}}
         if column not in df.columns:
             warnings.append(f"列'{column}'不存在,已跳过")
             continue
@@ -116,10 +105,10 @@ def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) 
 
 def filter_data(path: Optional[str] = None, data: Optional[str] = None,
                 conditions: List[Dict[str, Any]] = None,
-                select_columns: Optional[List[str]] = None, max_rows: Optional[int] = None,
+                select_columns: Optional[List[str]] = None,
                 sort_by: Optional[str] = None, top_n: Optional[int] = None) -> Dict[str, Any]:
-    """筛选数据 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除Union — 小欧 2026-06-27 file_path+data互斥拆分 — 小欧 2026-07-11 路径参数统一为path"""
-    # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
+    """筛选数据 - 小健 2026-06-22 拆分独立文件 - 小健 2026-06-26 删除Union - 小欧 2026-06-27 file_path+data互斥拆分 - 小欧 2026-07-11 路径参数统一为path"""
+    # 路径参数统一为path,桥接到内部变量file_path - 小欧 2026-07-11
     file_path = path
     if file_path and data:
         t0 = _time_mod.perf_counter()
@@ -136,6 +125,12 @@ def filter_data(path: Optional[str] = None, data: Optional[str] = None,
         conditions = coerce_json(conditions)
     else:
         conditions = []
+
+    err_msg = validate_top_n(top_n)
+    if err_msg:
+        llm_data = _build_filter_data_llm_data("error", 0, detail=err_msg, hint="top_n参数必须设置在1-1000之间", path=file_path, data=data, conditions=conditions)
+        return build_error(data={}, llm_data=llm_data)
+
     t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -144,11 +139,11 @@ def filter_data(path: Optional[str] = None, data: Optional[str] = None,
 
     try:
         if file_path:
-            loaded = _load_data_to_df(file_path, max_rows)
+            loaded = load_data_to_df(file_path)
         else:
             parsed_data = coerce_json(data)
             if isinstance(parsed_data, list):
-                loaded = _load_data_to_df(parsed_data, max_rows)
+                loaded = load_data_to_df(parsed_data)
             else:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_filter_data_llm_data("error", duration_ms, detail="data参数必须是JSON数组格式的字符串", hint="请提供JSON数组格式的数据", data=data)
@@ -177,25 +172,34 @@ def filter_data(path: Optional[str] = None, data: Optional[str] = None,
             filtered_df = filtered_df.sort_values(by=sort_by, ascending=True)
 
         if top_n and top_n > 0:
+            before = len(filtered_df)
             filtered_df = filtered_df.head(top_n)
+            # 工具层截断标记,供观察层区分"数据刚好这么多"vs"被top_n截断" - 小欧 2026-07-25
+            tool_truncated = before > top_n
+        else:
+            before = len(filtered_df)
+            tool_truncated = False
 
         columns = filtered_df.columns.tolist()
         rows = _serialize_rows(filtered_df)
         result_data = {"columns": columns, "rows": rows}
+        if tool_truncated:
+            result_data["truncated"] = True
+            result_data["truncated_reason"] = f"结果{before}行，仅返回前{top_n}行"
         if warnings:
             result_data["warnings"] = warnings
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_filter_data_llm_data("success", duration_ms, original_count, len(rows), columns,
-                                                  path=file_path, data=data, conditions=conditions, select_columns=select_columns, sort_by=sort_by, top_n=top_n or 0, max_rows=max_rows or 0)
+                                                   path=file_path, data=data, conditions=conditions, select_columns=select_columns, sort_by=sort_by, top_n=top_n or 0)
         # =============================================================================
         # 数据设计：original_count/filtered_count 从 data 移除，通过 llm_data.metrics 传入 summary
         # summary 示例: "筛选完成: 100行→50行"
-        # — 小欧 2026-07-06 18:46:13
+        # - 小欧 2026-07-06 18:46:13
         # =============================================================================
         # ---- observation_formatter route -------------------------------------------
         # branch: #5 rows
-        # trigger: "rows" in data — rows 是 List[list|dict]
+        # trigger: "rows" in data - rows 是 List[list|dict]
         # handler: _format_rows(data["rows"], data.get("columns"))
         # file:    observation_formatter.py:140-142
         # ------------------------------------------------------------------------------
@@ -207,3 +211,4 @@ def filter_data(path: Optional[str] = None, data: Optional[str] = None,
 
 
 __all__ = ["filter_data"]
+

@@ -5,6 +5,7 @@ DATAANALYSIS Register — 数据分析工具注册点
 【2026-06-18 小欧】从 document/ 独立为 dataanalysis/ 目录
 【2026-06-18 小健】添加TOOL_DEPENDENCIES常量管理工具依赖
 【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
+【2026-07-21 小欧】query_sql 示例改正 db_path→path; 加 limit=50 示例
 
 6个工具:
 - analyze_data    — 数据统计分析 (依赖: pandas)
@@ -78,8 +79,9 @@ EXAMPLES = {
         {"data": "{\"labels\": [\"1\u6708\", \"2\u6708\"], \"values\": [100, 200]}", "chart_type": "line", "output_path": "D:/output/chart.png"},
     ],
     "query_sql": [
-        {"sql": "SELECT * FROM users LIMIT 10", "db_path": "D:/data/app.db"},
+        {"sql": "SELECT * FROM users LIMIT 10", "path": "D:/data/app.db"},
         {"sql": "SELECT * FROM users", "connection_type": "mysql", "connection_string": "user:pass@host:3306/dbname"},
+        {"sql": "SELECT * FROM users", "path": "D:/data/app.db", "limit": 50},
     ],
     "execute_sql": [
         {"sql": "INSERT INTO logs (msg) VALUES ('test')", "db_path": "D:/data/app.db"},
