@@ -12,6 +12,7 @@
 | v1.2 | 2026-08-03 10:10 | 小欧 | 来源确认(G 盘 backend/app 已空, final 封闭)；差异分层修正(25/7/7/32→10/30/40→11/92/103→0/8/8=46+137=183) |
 | v1.3 | 2026-08-03 10:28 | 小沧 | 修正批次文件清单计数: 3.1=14文件(5缺失+9不同), 3.2 validate=4(diff incl registry_path_checker), 移 registry_path_checker 从3.8 归入3.2 |
 | v1.4 | 2026-08-03 12:11 | 小沧 | 批次0收尾：记录 pytest 收集基线 = 4597 tests collected, 16 errors (16个collection-error文件清单) |
+| v1.5 | 2026-08-03 12:30 | 小沧 | 批次1 L0 权威清单核实：32=25缺失+7不同；`logger/config.py` 为 CRLF/LF 行尾差异非真 DIFF；api_logger diff=导入 setup_logger→shared_handler final 正确 |
 
 ---
 
@@ -70,18 +71,20 @@
   > 即 **批次 3.1 的缺失文件**。
   > 后续每批的验证 = `py_compile 全部 + 相关模块单测通过 + import 链 + 工具注册冒烟`，并以**本基线**作对照，**不得引入新的 collection ERROR / 失败**。
 
-### 批次 1：L0 基础层（30 个）— 先修底座
+### 批次 1：L0 基础层（32 个 = 25 缺失 + 7 不同）— 先修底座
 > 顺序：utils → logger → db，因 services/tools 都依赖它们
+> **权威清单（2026-08-03 12:30 小沧，脚本 l0_tier.py 文本口径核实，无 C 档盲区）**：
+> `logger/config.py` 字节不同但文本相同（CRLF/LF）→ **非真 DIFF，不纳入**。
 
-| 子组 | 文件 | 依据 |
-|------|------|------|
-| utils 缺失(15) | common_patterns, content_quality, context_vars, counter_utils, error_classifier, error_parser, log_config/(init,api_logger,config,handler,setup/init,setup/api_logger,setup_logger_func,setup_logger_func), logger, message_id_tracker, next_actions_builder, paths, prompt_logger, retry_engine, sys_error_classifier, test_marker, version | C 档多，**先查 DB 部分记录与 commit** |
-| utils 不同(3) | json_utils, text_utils, time_utils | text_utils 有 commit(07-24/25)，以 final 为准 |
-| logger 缺失(1) | shared_handler | 查 commit e8014e3bf(07-23) 确认 |
-| logger 不同(3) | __init__, api_logger, prompt_logger | prompt_logger 有 commit(07-26) |
-| db 缺失(1) | models/operation_enums | C 档，核实 |
-| db 不同(1) | database | 有 commit，以 final 为准 |
-| **验证** | `py_compile` 全部 + 单测（logger/db 相关）+ import 链检查 | |
+| 子组 | 文件 | 档位 | 依据 |
+|------|------|------|------|
+| utils 缺失(23) | common_patterns, content_quality, context_vars, counter_utils, error_classifier, error_parser, log_config/(init,api_logger,config,handler,setup/init,setup/api_logger,setup/setup_logger_func,setup_logger_func), logger, message_id_tracker, next_actions_builder, paths, prompt_logger, retry_engine, sys_error_classifier, test_marker, version | B 档（DB 有部分 read）+ A 档 mixed | final 为准恢复 |
+| utils 不同(3) | json_utils(+32/-3), text_utils(+17/-2), time_utils(+18/-0) | A 档 | text_utils 有 commit(07-24/25)，以 final 为准 |
+| logger 缺失(1) | shared_handler | A 档（DB 完整 read） | 查 commit e8014e3bf(07-23) 确认 |
+| logger 不同(3) | __init__(+18/-1), api_logger(+3/-1), prompt_logger(+14/-6) | A 档 2 + B 档 1(api_logger) | api_logger diff 已核=改导入 setup_logger→shared_handler，final 正确 |
+| db 缺失(1) | models/operation_enums | B 档 | final 为准恢复 |
+| db 不同(1) | database(+35/-1) | A 档 | 有 commit，以 final 为准 |
+| **验证** | `py_compile` 全部 + 单测（logger/db 相关）+ import 链检查 | | |
 
 ### 批次 2：L1 services 公共层（39 个）
 > 顺序：services/llm → services/agent/types,agent_utils → services/agent → services/safety → services/chat/task/lifecycle/model/prompts
