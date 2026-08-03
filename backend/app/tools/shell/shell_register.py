@@ -17,8 +17,11 @@ Shell Register - Shell工具注册点
 
 【2026-06-18 小健】删除两个包装器(execute_shell_command_foreground/background)，违反YAGNI原则
 【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
+【2026-07-27 小欧】去PS提醒: description去"推荐使用PowerShell语法"
+【2026-07-28 小欧】shell_type名称改为ps7/ps5/cmd/bash; SHELL_TOOL_DESCRIPTIONS加类型标注; 示例新增bash/ps5
+【2026-07-28 北京老陈】shell 迁至 FUNDAMENTAL 分类
 
-# Shell操作工具(共4个LLM工具)
+# Shell操作工具(共1个LLM工具)
 """
 
 from app.tools.registry import register_tool, tool_registry
@@ -29,33 +32,24 @@ from app.logger import logger
 # Shell工具使用内置库，无第三方依赖
 SHELL_TOOL_DEPENDENCIES = {
     tool_name: [] for tool_name in [
-        "shell", "which"
+        "which"
     ]
 }
 
 from app.tools.shell.shell_schema import (
-    ShellInput,
     WhichInput,
 )
 
-from app.tools.shell.execute_shell_command import shell
 from app.tools.shell.find_command import which
 
 # 【描述规范】2026-07-20 北京老陈 — 工具描述(本 SHELL_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
 # 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 SHELL_TOOL_DESCRIPTIONS = {
-    "shell": """在Windows环境中执行PowerShell/CMD命令。推荐使用PowerShell语法。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
-
     "which": """查找系统命令的安装路径。适用场景:需要确认命令是否已安装、查看其安装路径时使用。""",
 }
 
 SHELL_TOOL_EXAMPLES = {
-    "shell": [
-        {"command": "dir", "timeout": 10},
-        {"command": "python --version", "shell_type": "powershell", "timeout": 10},
-    ],
-
     "which": [
         {"command": "python"},
         {"command": "python", "all_paths": True},
@@ -66,7 +60,6 @@ SHELL_TOOL_EXAMPLES = {
 
 
 TOOL_INPUT_MODELS = {
-    "shell": ShellInput,
     "which": WhichInput,
 }
 
@@ -80,12 +73,7 @@ def _register_shell_tools():
     【2026-06-18 小健】删除两个包装器，违反YAGNI原则
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
-    CONFIRMATION_MAP = {
-        "shell": {"write": True},
-    }
-    
     tool_methods = {
-        "shell": shell,
         "which": which,
     }
 
@@ -102,8 +90,6 @@ def _register_shell_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
-            needs_confirmation=(name == "shell"),
-            action_confirmation=CONFIRMATION_MAP.get(name),
             dependencies=SHELL_TOOL_DEPENDENCIES.get(name, []),
         )
         logger.debug(f"[shell_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
@@ -112,6 +98,5 @@ def _register_shell_tools():
 
 __all__ = [
     "_register_shell_tools",
-    "shell",
     "which",
 ]

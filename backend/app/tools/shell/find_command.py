@@ -16,7 +16,10 @@ import time as _time_mod
 from typing import Any, Dict
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import ERR_PARAMETER_EMPTY, ERR_SHELL_EXCEPTION, ERR_SHELL_FIND_COMMAND
+from app.tools.tool_constants import (
+    ERR_PARAMETER_EMPTY, ERR_SHELL_EXCEPTION, ERR_SHELL_FIND_COMMAND,
+    SUBPROCESS_TIMEOUT_DEFAULT,
+)
 
 
 def _build_find_command_llm_data(
@@ -95,9 +98,9 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
             return build_warning(data={}, llm_data=llm_data)
         else:
             if os.name == 'nt':
-                result = subprocess.run(['where', command], capture_output=True, text=True, shell=False, timeout=10)
+                result = subprocess.run(['where', command], capture_output=True, text=True, shell=False, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
             else:
-                result = subprocess.run(['which', '-a', command], capture_output=True, text=True, timeout=10)
+                result = subprocess.run(['which', '-a', command], capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             if result.returncode == 0:
                 paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
