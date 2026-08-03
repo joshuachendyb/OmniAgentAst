@@ -1,151 +1,146 @@
+
 # -*- coding: utf-8 -*-
-# 编辑历史:
-# 2026-07-21 - 小欧 - 新建: 从 file/edit_text_file.py 抽出内联 compile() 校验为可复用模块(83379fbb)
-#                  · BOM去扰: UTF-8 BOM(efbbbf)防SyntaxErrors/"invalid character"误报, 校验前strip — BUG-002
-#                  · 多语言: python/json/yaml, 未知语言fail-open放行(防误杀文本文件)
-#                  · OCP: VALIDATORS注册表, 新增语言仅加一行(调用方无感知)
-#                  · 健壮性: 校验器抛非预期异常不500, 优雅判invalid
-# 2026-07-21 - 小欧 - c4367cfb: BOM 字面量/字段语义统一(_strip_bom 返回纯str, error_text不含BOM残留); .pyw 不被.py吞
-# 2026-07-24 - 小欧 - fbdbe775: 去掉 str(e) 截断, 交由调用方决定呈现
+"""语法检测统一模块 — 小欧 2026-07-21
+编辑历史:
+# 2026-07-21 - 小欧 - 新建: 统一语法检测唯一真源; 注册表分发(VALIDATORS), 新增语言=加 _CODE_EXT+VALIDATORS 一行, 满足OCP/复用优先
+# 2026-07-21 - 小欧 - Phase1: python(compile)/json(json.loads)/yaml(yaml.safe_load,懒加载); 未知语言放行避免误杀文本文件
+    # 2026-07-21 - 小欧 - 由 app/utils/ 迁至 app/tools/toolhelper/(工具层共享函数合规落点)
+    # 2026-07-21 - 小欧 - 修BOM隐患: 抽 _strip_bom()(转义\ufeff替代源码字面量BOM, DRY消除json/yaml两处重复), 符合KISS-DIRECT/DRY/SRP
+    # 2026-07-24 - 小欧 - 修复: 去掉 str(e)[:120]截断(helper层不截断,调用方自行决定) — 北京老陈驱动
+    """
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 设计策略与逻辑(精要) — 小欧 2026-07-21
+# ═══════════════════════════════════════════════════════════════════════════
+# 【目标】防 LLM 把代码文件写坏(BUG-002类: 编辑/写入后语法错误落盘)
 #
-"""
-python/json/yaml 语法校验 — 从 file/edit_text_file.py 抽出内联 compile() 为可复用模块 — 小欧 2026-07-21 (83379fbb)
+# 【原则】不自己写解析器; 全部调用语言官方/成熟库; 零新增依赖; 可扩展(OCP)
+#   校验器复用标准库: python→compile()(CPython官方解析器)
+#                   json→json.loads()   yaml→yaml.safe_load()(懒加载避免硬依赖)
+#
+# 【阻断 vs 警告】
+#   edittext 任意模式         → 阻断(每次结果都是完整文件, 语法错即损坏)
+#   writetext append=False    → 阻断(整文件覆盖, 语法错=文件损坏)
+#   writetext append=True     → 仅警告(片段无法整体校验, 且为增量)
+#   未知扩展名(.md/.csv/.txt) → 放行(无语法可言, 防误杀)
+#
+# 【误杀防护】仅对可解析语言校验; 追加模式不阻断; 不引入风格类lint
+#
+# 【涉及的其他语法检测代码/工具 — 哪些加 / 哪些不加】
+#   本仓库现有(逐个点名):
+#     · tool_fc_helper.validate_python_content   →【加】已被本模块取代(删除该死代码, 统一到 validate_syntax)
+#     · edit_text_file.py 内联 compile 块        →【加】已被本模块取代(改调 validate_syntax, 消除重复)
+#     · tool_fc_helper._SimpleHTMLValidator / validate_html_content →【加】Phase2 经 VALIDATORS 注册接入(复用, 不重写)
+#     · 标准库 compile / json.loads / yaml.safe_load →【加】Phase1 已用(官方实现, 必用)
+#   本仓库现有但【不加 / 保持独立】(不并入写文件硬阻断层):
+#     · validate_xml_content / validate_csv_content(tool_fc_helper) → 数据格式校验, 非代码语法, 不并入
+#     · check_content_safety(file_safety_checker) → 内容安全检查(None/空/null字节/类型), 职责不同;
+#                                                    本模块是其之上的"新增语法层", 不替换、不耦合
+#     · execute_sql.py 的 syntax_valid → SQL 专用校验, 属 execute_sql 工具内部, 不并入通用写文件护栏
+#   外部 lint 库【不加进硬阻断】:
+#     · ruff / pyflakes → 轻量lint, 多抓"未定义名"但也会拦"未用导入"等合法可运行代码(误杀);
+#                         仅可作可选【非阻断 warning】层(须关掉风格规则), 不进硬阻断
+#     · pylint / mypy  → 重型/慢/噪音大/需类型标注, 绝不适合每次写文件实时跑, 不接
+#   一句话: 硬阻断只用"能否解析"(标准库+本仓库既有校验器); 数据格式/内容安全/SQL/风格语义lint 一律不并入硬阻断
+# ═══════════════════════════════════════════════════════════════════════════
 
-职责单一(SRP): BOM-strip + 多语言 compile/parse + 结构化返回。不做截断、不做注册。
-
-设计:
-1. BOM去扰: UTF-8 BOM(efbbbf -> \\ufeff)会干扰SyntaxErrors/触发"invalid character"误报, 校验前strip — BUG-002
-2. 多语言: python(compile) / json(json.loads) / yaml(yaml.safe_load); 未知语言fail-open放行
-3. OCP: VALIDATORS注册表, 新增语言仅加一行(_CODE_EXT + VALIDATORS), 调用方无感知
-4. 健壮性: 校验器抛非语法异常不500, 优雅返回 invalid(避免工具500)
-5. 无 str(e) 截断: 调用方自行决定如何呈现(fbdbe775, 2026-07-24)
-
-[注意] BUG-002 详情仅据 commit-message + test_bug002_repro_return_outside 推断(原树缺失):
-      原内联版 compile(new_content, ...) 未strip BOM -> BOM 被误判为 invalid character;
-      同类还有 'return outside function' 等 SyntaxError 未统一捕获。此模块先行strip+BOM去扰,
-      并在 validate_syntax 外层兜底所有异常防止 500。
-"""
-import json
-import os
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Callable, Optional
 
-import yaml  # PyYAML, requirements>=6.0
-
-
-# UTF-8 BOM 字面量(Python str 形, 即 efbbbf 解码后) — 校验前去除, 防SyntaxErrors误报 — 小欧 2026-07-21
-_UTF8_BOM = "\ufeff"
-
-
-# 扩展名 -> 语言映射 (lookup 用 os.path.splitext, 区分大小写不敏感) — 小欧 2026-07-21
-# c4367cfb: .pyw 独立映射(而非被 .py endswith 吞), 修正"字面量/字段语义"
-_CODE_EXT: Dict[str, str] = {
-    ".py": "python",
-    ".pyw": "python",
-    ".pyi": "python",
+# 扩展名 → 语言键(新增语言在此加一行, 零侵入) — 小欧 2026-07-21
+_CODE_EXT = {
+    ".py": "python", ".pyw": "python", ".pyi": "python",
     ".json": "json",
-    ".yaml": "yaml",
-    ".yml": "yaml",
+    ".yaml": "yaml", ".yml": "yaml",
 }
-
-
-def _strip_bom(content: str) -> str:
-    """去除行首 UTF-8 BOM(efbbbf) — 小欧 2026-07-21 (BOM去扰 / BUG-002)
-
-    字段语义(c4367cfb): 返回值类型始终为 str, 仅移除行首单个 BOM, 不改变其它任何字符。
-    """
-    if content and content[0] == _UTF8_BOM:
-        return content[1:]
-    return content
-
-
-def detect_language(file_path: str = "", content: Optional[str] = None) -> str:
-    """探测内容语言 — 小欧 2026-07-21
-
-    优先按扩展名(_CODE_EXT, 大小写不敏感, 用 splitext 而非 endswith 以避免 .pyw 被 .py 吞);
-    扩展名未命中且有 shebang(行首 #! 含 'python')时判为 python; 否则 unknown(fail-open)。
-    """
-    if file_path:
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext in _CODE_EXT:
-            return _CODE_EXT[ext]
-    if content:
-        first_line = content.split("\n", 1)[0]
-        if first_line.startswith("#!") and "python" in first_line:
-            return "python"
-    return "unknown"
 
 
 @dataclass
 class SyntaxCheckResult:
-    """语法校验结果 — 小欧 2026-07-21
-
-    字段语义: valid为bool, error/line/suggestion/language 均可为None。
-    error_text() 统一组装对外呈现字串(含'行'/'语法'), 供 edit_text_file/writetext 的 encode_error/detail 复用。
-    """
+    """语法校验结果 — 小欧 2026-07-21"""
     valid: bool
-    language: str = ""
+    language: str = "unknown"
     error: Optional[str] = None
     line: Optional[int] = None
     suggestion: Optional[str] = None
 
     def error_text(self) -> str:
-        """组装对外错误文本 — 小欧 2026-07-21 (c4367cfb: line None 不崩, suggestion 可空)"""
+        """组装友好中文报错(含行号+建议) — 小欧 2026-07-21"""
         if self.valid:
             return ""
-        segs = []
-        if self.line is not None:
-            segs.append(f"第{self.line}行")
-        if self.error:
-            segs.append(self.error)
-        text = "".join(segs)
+        parts = [self.error or "语法错误"]
         if self.suggestion:
-            text = f"{text}；建议:{self.suggestion}" if text else f"建议:{self.suggestion}"
-        return text
+            parts.append(f"建议:{self.suggestion}")
+        return "；".join(parts)
+
+
+def detect_language(file_path: str, content: str = "") -> str:
+    """识别内容语言: 扩展名优先, fallback 头部 shebang; 未知返回 'unknown'(放行) — 小欧 2026-07-21"""
+    if file_path:
+        _lower = file_path.lower()
+        for ext, lang in _CODE_EXT.items():
+            if _lower.endswith(ext):
+                return lang
+    if content:
+        _first = content.splitlines()[0] if content.splitlines() else ""
+        if _first.startswith("#!") and "python" in _first:
+            return "python"
+    return "unknown"
+
+
+def _strip_bom(content: str) -> str:
+    """去除UTF-8 BOM头(\ufeff) — 小欧 2026-07-21
+    用转义序列替代源码字面量BOM(防编辑器/编码转换吞掉); SRP: BOM处理单一落点, DRY消除json/yaml重复"""
+    return content[1:] if content.startswith("\ufeff") else content
 
 
 def _validate_python(content: str, file_path: Optional[str] = None) -> SyntaxCheckResult:
-    """python 校验: BOM-strip + compile(exec), 捕 SyntaxError/RecursionError — 小欧 2026-07-21 (BUG-002)"""
-    clean = _strip_bom(content)
+    """Python 语法校验(compile, CPython官方解析器) — 小欧 2026-07-21"""
     try:
-        compile(clean, file_path or "<string>", "exec")
+        compile(content, file_path or "<string>", "exec")
         return SyntaxCheckResult(valid=True, language="python")
     except SyntaxError as e:
-        error = f"Python语法错误: {e.msg}"
-        suggestion: Optional[str] = None
-        if "unterminated" in (e.msg or "") or "string literal" in (e.msg or ""):
-            suggestion = "转义字符串请使用raw string r'...',如 r'\\\\' 代替 '\\\\'"
-        elif "invalid character" in (e.msg or ""):
-            suggestion = "Python不支持全角标点,请使用半角括号()、逗号,、冒号:、分号;"
-        elif "invalid escape sequence" in (e.msg or ""):
-            suggestion = "请在字符串前加r前缀使用raw string,或将转义字符双写如 \\d → r'\\d'"
-        return SyntaxCheckResult(valid=False, language="python", error=error, line=e.lineno, suggestion=suggestion)
-    except RecursionError:
-        return SyntaxCheckResult(valid=False, language="python", error="Python语法错误: 递归嵌套过深(超过编译器限制)")
+        suggestion = None
+        if e.msg:
+            if "unterminated string literal" in e.msg:
+                suggestion = "转义字符串请使用raw string r'...', 如 r'\\\\' 代替 '\\\\'"
+            elif "invalid character" in e.msg:
+                suggestion = "Python不支持全角标点, 请使用半角括号()、逗号,、冒号:、分号;"
+            elif "invalid escape sequence" in e.msg:
+                suggestion = "请在字符串前加r前缀使用raw string, 或将转义字符双写如 \\d → r'\\d'"
+        return SyntaxCheckResult(
+            valid=False, language="python",
+            error=f"Python语法错误(行{e.lineno}: {e.msg})",
+            line=e.lineno, suggestion=suggestion,
+        )
 
 
 def _validate_json(content: str, file_path: Optional[str] = None) -> SyntaxCheckResult:
-    """json 校验: BOM-strip + json.loads — 小欧 2026-07-21 (BOM去扰)"""
-    clean = _strip_bom(content)
+    """JSON 语法校验(json.loads, 官方实现) — 小欧 2026-07-21"""
     try:
-        json.loads(clean)
+        import json as _json
+        # 去 BOM, 避免带 BOM 的 .json 被误判非法(常见 Windows 保存产物) — 小欧 2026-07-21
+        _content = _strip_bom(content)
+        _json.loads(_content)
         return SyntaxCheckResult(valid=True, language="json")
-    except ValueError as e:
-        return SyntaxCheckResult(valid=False, language="json", error=f"JSON语法错误: {e}")
+    except Exception as e:
+        return SyntaxCheckResult(valid=False, language="json", error=f"JSON语法错误: {str(e)}")
 
 
 def _validate_yaml(content: str, file_path: Optional[str] = None) -> SyntaxCheckResult:
-    """yaml 校验: BOM-strip + yaml.safe_load — 小欧 2026-07-21 (BOM去扰)"""
-    clean = _strip_bom(content)
+    """YAML 语法校验(yaml.safe_load, 懒加载避免硬依赖) — 小欧 2026-07-21"""
     try:
-        yaml.safe_load(clean)
+        import yaml
+        # 去 BOM, 同上避免误判 — 小欧 2026-07-21
+        _content = _strip_bom(content)
+        yaml.safe_load(_content)
         return SyntaxCheckResult(valid=True, language="yaml")
-    except yaml.YAMLError as e:
-        return SyntaxCheckResult(valid=False, language="yaml", error=f"YAML语法错误: {e}")
+    except Exception as e:
+        return SyntaxCheckResult(valid=False, language="yaml", error=f"YAML语法错误: {str(e)}")
 
 
-# OCP: 新增语言仅在此注册一行, 调用方 validate_syntax 无感知 — 小欧 2026-07-21
-VALIDATORS: Dict[str, callable] = {
+# 语言 → 校验器(新增语言=在此注册一行, 满足OCP开闭原则) — 小欧 2026-07-21
+VALIDATORS = {
     "python": _validate_python,
     "json": _validate_json,
     "yaml": _validate_yaml,
@@ -153,33 +148,20 @@ VALIDATORS: Dict[str, callable] = {
 
 
 def validate_syntax(content: str, language: str, file_path: Optional[str] = None) -> SyntaxCheckResult:
-    """多语言语法校验 — 小欧 2026-07-21 (83379fbb)
-
-    Args:
-        content: 源码/数据文本(可能含 UTF-8 BOM)。
-        language: 语言标识(来自 detect_language 或调用方显式传入)。
-        file_path: 用于 compile()/报错上下文。
-
-    Returns:
-        SyntaxCheckResult. unknown/unsupported 语言 fail-open(valid=True) — 防误杀文本文件。
-        校验器抛非预期异常也不500, 优雅返回 invalid(健壮性, test_validator_raising_runtimeerror)。
+    """统一语法校验入口 — 小欧 2026-07-21
+    language: 'python' | 'json' | 'yaml' | 'unknown'(放行)
+    未支持语言一律 valid(不拦截), 避免误杀 .md/.csv/.txt 等文本文件
+    扩展新语言: 在 _CODE_EXT 加扩展名映射 + 在 VALIDATORS 注册校验函数, 调用方无感知
     """
-    validator = VALIDATORS.get(language)
-    if validator is None:
-        # fail-open: 未注册语言放行(防误杀 .md/.txt 等文本) — 小欧 2026-07-21
+    if language == "unknown" or language not in VALIDATORS:
         return SyntaxCheckResult(valid=True, language=language)
     try:
-        return validator(content, file_path)
+        return VALIDATORS[language](content, file_path)
     except Exception as e:
-        # 健壮性: 校验器内部异常不应 500, 降级为 invalid — 小欧 2026-07-21
-        return SyntaxCheckResult(valid=False, language=language, error=f"校验器异常: {type(e).__name__}: {e}")
+        # 校验器意外崩溃(如 RecursionError / RuntimeError)不应让工具 500,
+        # 优雅降级为 invalid(阻断而非写坏), 避免 BUG-002 类损坏 — 小欧 2026-07-21
+        return SyntaxCheckResult(
+            valid=False, language=language,
+            error=f"校验器异常: {type(e).__name__}: {str(e)}",
+        )
 
-
-__all__ = [
-    "detect_language",
-    "validate_syntax",
-    "SyntaxCheckResult",
-    "VALIDATORS",
-    "_CODE_EXT",
-    "_strip_bom",
-]
