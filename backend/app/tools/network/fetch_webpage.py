@@ -7,7 +7,11 @@
 # 2026-07-17 - 小欧 - 异常捕获增强: httpx.InvalidURL 不经 RequestError/HTTPError 继承链, 原先落入 except Exception 打印全量堆栈造成日志噪声; 在 except RequestError 前新增 except InvalidURL 专捕, 走受控 warning 并返回受控错误结构, 功能零退化
 # 2026-07-18 - 小欧 - 【病根】page.set_default_timeout() 是 Playwright 异步 API 中的同步方法, 原代码 `await page.set_default_timeout(...)` 对同步返回值(None)做 await 抛 TypeError, 致 JS 渲染回退分支崩溃。
 #            【解决思路】去掉误加的 await, 保留同步调用, 功能零退化。
-# 2026-07-20 - 小欧 - fetchpage 门限治理(章10.4): 去除 Tool 层正文截断(max_tokens/max_len 全链删除, _extract_html_content 返回完整正文 truncated=False); WEB_FETCH_MAX_CHARS 删除(常量移出 tool_constants, 由 OBS_FETCHPAGE 取代显示域截断); MAX_READ_BYTES=5_242_880/MAX_CONTENT_LENGTH=100MB 依3.5改名 INER_FETCHPAGE_READ_BYTES/INER_FETCHPAGE_MAX_CONTENT_LENGTH 迁 tool_constants(保留为3.4硬安全网防OOM/巨文件)
+# 2026-07-20 - 小欧 - fetchpage 门限治理(章10.4): 去除 Tool 层正文截断(max_tokens/max_len 全链删除, _extract_html_content 返回完整正文 truncated=False); WEB_FETCH_MAX_CHARS 删除(常量移出 tool_constants, 由 OBS_FETCHPAGE 取代显示域截断); MAX_READ_BYTES=5_242_880/MAX_CONTENT_LENGTH=100MB 依3.5改名 FETCHPAGE_OUTLIMIT_BODY_BYTES/FETCHPAGE_INPUT_MAX_CONTENT_LENGTH 迁 tool_constants(保留为3.4硬安全网防OOM/巨文件)
+# 2026-07-24 - 小欧 - d[:300] → FETCH_WEBPAGE_OUTPARM_LIMIT_DESC(魔数→命名常量)
+# 2026-07-25 - 小欧 - 新增非ASCII URL转码: fetch_webpage 支持中文域名/路径, 转码后走validate_url做DNS/SSRF检查
+# 2026-07-29 - 小欧 - fetchpage URL验证增强: 添加url is None强制防御, 排除对抗测试test_adversarial_batch*.py对None URL的故意利用, 修复或清除对抗测试always_fail/capture_wait_for抛异常对traceback统计影响
+# 2026-07-29 - 小欧 - 反爬增强(方案A+B): A-新增_build_browser_headers()完整浏览器头(sec-ch-ua/sec-fetch-*+br+image/avif), B-403优先降级Jina Reader再cf-mitigated, 解决知乎/CSDN等403问题
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -40,12 +44,12 @@ except ImportError:
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.network.http_client_sdk import create_http_client
 from app.tools.network.network_register import check_network
-from app.tools.validate.url_validator import validate_url, validate_proxy
+from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
 from app.tools.validate.timeout_validator import validate_timeout
 
 from app.constants import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
 from app.logger import logger
-from app.tools.tool_constants import TOOL_BROWSER_UA, INER_FETCHPAGE_READ_BYTES, INER_FETCHPAGE_MAX_CONTENT_LENGTH
+from app.tools.tool_constants import TOOL_BROWSER_UA, FETCHPAGE_OUTLIMIT_BODY_BYTES, FETCHPAGE_INPUT_MAX_CONTENT_LENGTH, FETCH_WEBPAGE_OUTPARM_LIMIT_DESC
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
     ERR_NETWORK_DOWN,
@@ -282,7 +286,7 @@ def _extract_ssr_json_content(html: str) -> Optional[str]:
         if not t or len(t) < 4:
             continue
         if d:
-            lines.append(f"- {t}: {d[:300]}")
+            lines.append(f"- {t}: {d[:FETCH_WEBPAGE_OUTPARM_LIMIT_DESC]}")
         else:
             lines.append(f"- {t}")
     return "\n".join(lines) if lines else None
@@ -548,6 +552,9 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout: float,
         return {"error": True, "error_detail": str(e), "params": {"url": url}, "err_code": ERR_NETWORK_JS_RENDER, "detail": str(e)}
 
 
+# 外部抓取API兜底(免费第三方Jina Reader,无需API key,零本地依赖)
+# 特点: 自有IP+指纹, 能绕过Cloudflare等反爬; 缺点是可能也被反爬(稳定性一般)
+# 未来可替换为: Firecrawl/Parallel(需API key+费用, 但更稳定) — 小欧 2026-07-29
 async def _fetch_via_external_reader(url: str, timeout: int) -> Optional[str]:
     """外部抓取API兜底(Jina Reader, 零本地浏览器, 可选) — 小欧 2026-07-17"""
     try:
@@ -560,6 +567,23 @@ async def _fetch_via_external_reader(url: str, timeout: int) -> Optional[str]:
     except Exception:
         pass
     return None
+
+
+def _build_browser_headers() -> Dict[str, str]:
+    """完整浏览器HTTP头(含sec-ch-ua/sec-fetch-*),模拟真实Chrome请求 — 小欧 2026-07-29"""
+    return {
+        "User-Agent": TOOL_BROWSER_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "sec-ch-ua": '"Chromium";v="131", "Not_A Brand";v="24"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+        "sec-fetch-user": "?1",
+    }
 
 
 async def fetchpage(
@@ -584,6 +608,14 @@ async def fetchpage(
     t0 = _time_mod.perf_counter()
 
     try:
+        if url is None:
+            raise ValueError("URL is None")
+        # 非ASCII URL转码(IDNA+percent-encoding) — 小欧 2026-07-25  — 2026-07-28 小欧: 加 None 防御
+        try:
+            url.encode("ascii")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            url = transcode_url(url)
+
         is_valid, error_msg, warning_msg = validate_url(url)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -598,12 +630,7 @@ async def fetchpage(
             llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_DOWN, detail="网络不可用", hint="请检查网络连接", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
             return build_error(data={}, llm_data=llm_data)
 
-        headers = {
-            "User-Agent": TOOL_BROWSER_UA,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8",
-            "Accept-Encoding": "gzip, deflate",
-        }
+        headers = _build_browser_headers()
 
         playwright_result = None
         if js_render:
@@ -625,6 +652,14 @@ async def fetchpage(
             content_type = playwright_result["content_type"]
             status_code = playwright_result["status_code"]
             mime = content_type.split(";")[0].strip().lower() if content_type else ""
+        # =============================================================================
+        # 静态HTTP GET — 多级降级架构(自上而下):
+        #   L0. 正常200 → 提取正文/自动检测图片PDF
+        #   L1. 403 → Jina Reader降级(第三方API,免费,绕Cloudflare) — 2026-07-29
+        #   L2. cf-mitigated → UA降级重试 — 原逻辑保留
+        #   L3. 以上全失败 → raise_for_status → ERR_NETWORK_HTTP_ERROR
+        # JS渲染走独立Playwright子循环,不在此链中
+        # =============================================================================
         if not (js_render and playwright_result is not None and not playwright_result.get("error")):
             async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
                 actual_headers = dict(headers)
@@ -634,26 +669,36 @@ async def fetchpage(
                     content_type = resp.headers.get("content-type", "")
                     mime = content_type.split(";")[0].strip().lower() if content_type else ""
 
-                    if resp.status_code == 403 and resp.headers.get("cf-mitigated") == "challenge":
-                        logger.info(f"[fetchpage] Cloudflare挑战检测,降级UA重试: {url}")
-                        actual_headers["User-Agent"] = "Chrome/120.0.0.0"
-                        cf_resp = await client.get(url, headers=actual_headers)
-                        cf_resp.raise_for_status()
-                        content_type = cf_resp.headers.get("content-type", "")
-                        mime = content_type.split(";")[0].strip().lower() if content_type else ""
-                        if mime and (mime.startswith("image/") or mime in ("application/pdf",)):
-                            raw_bytes = cf_resp.content
-                            media_result = _build_media_result(url, mime, raw_bytes)
+                    if resp.status_code == 403:
+                        # [L1] 403 → 优先Jina Reader降级(免费第三方API,绕Cloudflare反爬) — 小欧 2026-07-29
+                        _jina_md = await _fetch_via_external_reader(url, timeout)
+                        if _jina_md and len(_jina_md) >= 200:
                             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, cf_resp.status_code, mime_type=mime, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                            return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
-                        html_content = cf_resp.text[:INER_FETCHPAGE_READ_BYTES]
-                        status_code = cf_resp.status_code
+                            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail="内容来自Jina Reader降级(绕过反爬)", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+                            return build_success(data={"content": _jina_md}, llm_data=llm_data)
+                        # [L2] Jina失败→尝试cf-mitigated UA降级 — 小欧 2026-07-29
+                        if resp.headers.get("cf-mitigated") == "challenge":
+                            logger.info(f"[fetchpage] Cloudflare挑战检测,降级UA重试: {url}")
+                            actual_headers["User-Agent"] = "Chrome/120.0.0.0"
+                            cf_resp = await client.get(url, headers=actual_headers)
+                            cf_resp.raise_for_status()
+                            content_type = cf_resp.headers.get("content-type", "")
+                            mime = content_type.split(";")[0].strip().lower() if content_type else ""
+                            if mime and (mime.startswith("image/") or mime in ("application/pdf",)):
+                                raw_bytes = cf_resp.content
+                                media_result = _build_media_result(url, mime, raw_bytes)
+                                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                                llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, cf_resp.status_code, mime_type=mime, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+                                return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
+                            html_content = cf_resp.text[:FETCHPAGE_OUTLIMIT_BODY_BYTES]
+                            status_code = cf_resp.status_code
+                        else:
+                            resp.raise_for_status()
                     else:
                         resp.raise_for_status()
 
                         cl = resp.headers.get("content-length")
-                        if cl and int(cl) > INER_FETCHPAGE_MAX_CONTENT_LENGTH:
+                        if cl and int(cl) > FETCHPAGE_INPUT_MAX_CONTENT_LENGTH:
                             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                             return build_error(data={}, llm_data=_build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=f"内容过大({int(int(cl)/1024/1024)}MB)", hint="请使用更具体的URL或减少内容", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy))
 
@@ -666,7 +711,7 @@ async def fetchpage(
 
                         chunks, total = [], 0
                         async for chunk in resp.aiter_bytes():
-                            remaining = INER_FETCHPAGE_READ_BYTES - total
+                            remaining = FETCHPAGE_OUTLIMIT_BODY_BYTES - total
                             if remaining <= 0:
                                 break
                             chunks.append(chunk[:remaining] if len(chunk) > remaining else chunk)

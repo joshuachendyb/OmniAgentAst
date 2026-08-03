@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 去噪 refactor:
+#   1. ping 路径移除 _note 噪声字段
+#   2. port 路径移除 _note 噪声字段
 """
 N5: ping_port — 网络连通性诊断(ping+端口检测)
 

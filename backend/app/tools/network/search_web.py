@@ -3,6 +3,10 @@
 # 2026-07-15 - 小欧 - 常量归一化治理: snippet 截断改引用 tool_constants.SEARCH_SNIPPET_MAX_CHARS(原硬编码300), 功能零退化
 # 2026-07-20 - 小欧 - searchweb 门限治理(章8.4): 删 SEARCH_SNIPPET_MAX_CHARS Tool层snippet截断(返回完整snippet, 3.7); 删 _MAX_SEARCH_DEPTH=3 递归深度限制(3.6); 删 len(query)<2 查询最小长度校验(3.6, 空/单字符现透传引擎); 截断唯一收口于 observation_formatter OBS_SEARCHWEB_MAX_ROWS/CHARS(两态说明); 保留 query is None 显式报错(防None透传Bing异常被吞为success空结果-正确性回归防护)
 # 2026-07-20 - 小欧 - 门限复查: 删 _search_bing 的 _depth 递归死参(3.6 已去深度限制, _depth 不再校验, 递归由 _split_long_query 自然收敛兜底, 删除不影响行为)
+# 2026-07-21 - 小欧 - 入参即信任: 内部 num_results 校验上界 50→1000（同步 schema le=1000）
+# 2026-07-22 - 小欧 - query 校验从 None 显式报错扩展为 not query or not query.strip()，空字符串/纯空白也报错而非透传搜索
+# 2026-07-24 - 小欧 - raw_text[:200]/str(e)[:200] → SEARCH_WEB_OUTPARM_LIMIT_RAW(魔数→命名常量)
+# 2026-07-25 - 小欧 - 截断治理: block[:3000](5处) → SEARCH_WEB_INER_HTML_PARSE 命名常量
 """
 N4: searchweb — 搜索网络获取最新信息
 
@@ -32,6 +36,8 @@ from app.tools.tool_constants import TOOL_BROWSER_UA
 from app.tools.tool_constants import (
     ERR_NET_UNKNOWN,
     ERR_PARAM_INVALID,
+    SEARCH_WEB_INER_HTML_PARSE,
+    SEARCH_WEB_OUTPARM_LIMIT_RAW,
 )
 
 
@@ -184,7 +190,7 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
                         except json.JSONDecodeError:
                             continue
                 else:
-                    _search_failed(engine, f"SSE无有效JSON帧: {raw_text[:200]}")
+                    _search_failed(engine, f"SSE无有效JSON帧: {raw_text[:SEARCH_WEB_OUTPARM_LIMIT_RAW]}")
                     return None
             else:
                 data = resp.json()
@@ -219,7 +225,7 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):
         raise  # 【小欧 2026-06-29】传播给ToolRetryEngine统一分类+重试
     except Exception as e:
-        _search_failed(engine, f"异常: {type(e).__name__}: {str(e)[:200]}")
+        _search_failed(engine, f"异常: {type(e).__name__}: {str(e)[:SEARCH_WEB_OUTPARM_LIMIT_RAW]}")
     return None
 
 
@@ -250,7 +256,7 @@ async def _search_bing(
         for block in algo_blocks[1:]:
             if len(results) >= num:
                 break
-            a_match = re.search(r'<a[^>]+href="(https?://[^"]+)"[^>]*>', block[:3000])
+            a_match = re.search(r'<a[^>]+href="(https?://[^"]+)"[^>]*>', block[:SEARCH_WEB_INER_HTML_PARSE])
             if not a_match:
                 continue
             url = a_match.group(1)
@@ -258,16 +264,16 @@ async def _search_bing(
                 pass
             elif "bing.com" in url or "microsoft.com" in url:
                 continue
-            h2_match = re.search(r'<h2[^>]*>(.*?)</h2>', block[:3000], re.DOTALL)
+            h2_match = re.search(r'<h2[^>]*>(.*?)</h2>', block[:SEARCH_WEB_INER_HTML_PARSE], re.DOTALL)
             if h2_match:
                 title = HTML_TAG_PATTERN.sub('', h2_match.group(1)).strip()
             else:
-                a_text_match = re.search(r'<a[^>]+href="[^"]+"[^>]*>(.*?)</a>', block[:3000], re.DOTALL)
+                a_text_match = re.search(r'<a[^>]+href="[^"]+"[^>]*>(.*?)</a>', block[:SEARCH_WEB_INER_HTML_PARSE], re.DOTALL)
                 title = HTML_TAG_PATTERN.sub('', a_text_match.group(1)).strip() if a_text_match else ""
             snippet = ""
-            p_match = re.search(r'<div\s+class="b_caption"[^>]*>.*?<p[^>]*>(.*?)</p>', block[:3000], re.DOTALL)
+            p_match = re.search(r'<div\s+class="b_caption"[^>]*>.*?<p[^>]*>(.*?)</p>', block[:SEARCH_WEB_INER_HTML_PARSE], re.DOTALL)
             if not p_match:
-                p_match = re.search(r'<p[^>]*>(.*?)</p>', block[:3000], re.DOTALL)
+                p_match = re.search(r'<p[^>]*>(.*?)</p>', block[:SEARCH_WEB_INER_HTML_PARSE], re.DOTALL)
             if p_match:
                 snippet = HTML_TAG_PATTERN.sub('', p_match.group(1)).strip()
                 snippet = re.sub(r'&ensp;|&#\d+;', ' ', snippet).strip()
@@ -362,16 +368,17 @@ async def searchweb(
         llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail=proxy_err, hint="请检查代理配置", proxy=proxy, num_results=num_results)
         return build_error(data={}, llm_data=llm_data)
 
-    # 2026-07-20 - 小欧 - None 显式报错(防None透传Bing引发NoneType异常被except吞为success空结果, 属正确性回归防护; 非长度/格式限制, 与3.6删除len(query)<2无关)
-    if query is None:
-        llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail="query 不能为 None, 请提供搜索关键词", hint="请提供搜索关键词", proxy=proxy, num_results=num_results)
+    # 2026-07-22 - 小欧 - None 显式报错(防None透传Bing引发NoneType异常被except吞为success空结果, 属正确性回归防护; 非长度/格式限制, 与3.6删除len(query)<2无关)
+    if not query or not query.strip():
+        detail = "query 不能为空, 请提供搜索关键词" if not query else "query 不能为纯空白, 请提供搜索关键词"
+        llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail=detail, hint="请提供搜索关键词", proxy=proxy, num_results=num_results)
         return build_error(data={}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
     try:
-        if not isinstance(num_results, int) or num_results < 1 or num_results > 50:
+        if not isinstance(num_results, int) or num_results < 1 or num_results > 1000:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail=f"num_results必须在1-50之间,当前值: {num_results}", hint="请将结果数量设置在1-50之间", proxy=proxy, num_results=num_results)
+            llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail=f"num_results必须在1-1000之间,当前值: {num_results}", hint="请将结果数量设置在1-1000之间", proxy=proxy, num_results=num_results)
             return build_error(data={}, llm_data=llm_data)
 
         results = await _search_mcp_engine("parallel", query, num_results, proxy)

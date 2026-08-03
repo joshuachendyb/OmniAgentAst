@@ -99,7 +99,7 @@ from app.tools.network.network_diagnose import ping_port
 NETWORK_TOOL_DESCRIPTIONS = {
     "httpget": """发送HTTP请求到指定URL,支持GET/POST/PUT/DELETE等方法。适用场景:需要调用REST API获取数据、提交数据、调用Web服务时使用。""",
     "download": """从URL下载文件到本地磁盘。适用场景:需要下载图片、安装包、数据文件等到本地时使用。""",
-    "fetchpage": """获取网页内容并提取正文,支持Markdown/HTML格式输出。适用场景:需要阅读网页文档、从网页提取信息时使用。""",
+    "fetchpage": """获取网页内容并提取正文,支持Markdown/HTML格式输出。当URL指向图片/PDF时自动返回Base64编码数据。适用场景:需要阅读网页文档、从网页提取信息、获取网页图片/PDF时使用。""",
     "searchweb": """使用搜索引擎查询最新信息。适用场景:需要获取实时新闻、技术文档、问题解决方案时使用。""",
     "ping_port": """检测网络连通性,支持ping和TCP端口检测。适用场景:需要排查网络连接问题时使用。""",
 }

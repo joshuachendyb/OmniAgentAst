@@ -3,8 +3,14 @@
 # 2026-07-13 - 小欧 - #3 http请求异常详情丢失修复为类型:repr兜底
 # 2026-07-15 - 小欧 - 常量归一化治理: JSON body 预览截断改引用 tool_constants.HTTP_JSON_PREVIEW_MAX_BYTES(原 _MAX_JSON_SIZE=10MB), 功能零退化
 # 2026-07-16 - 小欧 - 修复双层except吞异常(HTTP错误结构化返回LLM/429工具内Retry-After契约重试一次/瞬时故障抛引擎重试)+hint精准化
-# 2026-07-20 - 小欧 - httpget 门限治理(章9.4): HTTP_JSON_PREVIEW_MAX_BYTES 依3.5改名 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES(保留为3.4硬安全网防OOM); 删本地重复定义, 截断触发置 _truncated+_reason(显示域截断收口于 OBS_HTTPGET_MAX_ROWS/CHARS)
-# 2026-07-20 - 小欧 - httpget ②修复: data 超限时不内联5MB全文, 改200KB预览+_reason; INER_HTTPGET_JSON_PREVIEW_MAX_BYTES 下调至5MB
+# 2026-07-20 - 小欧 - httpget 门限治理(章9.4): HTTP_JSON_PREVIEW_MAX_BYTES 依3.5改名 HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES(保留为3.4硬安全网防OOM); 删本地重复定义, 截断触发置 _truncated+_reason(显示域截断收口于 OBS_HTTPGET_MAX_ROWS/CHARS)
+# 2026-07-20 - 小欧 - httpget ②修复: data 超限时不内联5MB全文, 改200KB预览+_reason; HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES 下调至5MB
+# 2026-07-23 - 小欧 - 新增 httpx.UnsupportedProtocol 异常处理(不支持的协议时返回结构化error, 不抛引擎)
+# 2026-07-25 - 小欧 - 新增URL非ASCII字符预检: httpx无法处理非ASCII URL, 在参数校验阶段拦截返结构化错误; 异常兜底补UnicodeEncodeError/UnicodeDecodeError拦截
+# 2026-07-25 - 小欧 - 新增Header非ASCII预检: httpx无法处理非ASCII Header值, 在create_http_client前拦截返结构化错误; 外层UnicodeEncodeError提示改通用(原只说URL, header也可能逃逸到此)
+# 2026-07-25 - 小欧 - 【重构】URL非ASCII处理: 拦截报错→转码(IDNA+percent-encoding), RFC 3987标准IRI→URI转换, 中文域名/路径自动兼容; _transcode_url函数抽离; 转码后走validate_url做DNS/SSRF安全检查
+# 2026-07-25 - 小欧 - 重构: _transcode_url 移入 validate/url_validator.py 作为公用函数 transcode_url(download/fetch_webpage 同用)
+# 2026-07-25 - 小欧 - 【重构】Header非ASCII处理: 拦截报错→值自动转码(UTF-8→latin-1, HTTP标准兼容方式), 键仍强制ASCII(RFC 7230)
 """
 N1: httpget — 发起HTTP请求
 
@@ -26,7 +32,7 @@ import httpx
 from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client
 from app.tools.network.network_register import check_network
-from app.tools.validate.url_validator import validate_url, validate_proxy
+from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
 from app.tools.validate.timeout_validator import validate_timeout
 from app.utils.json_utils import coerce_json
 from app.logger import logger
@@ -37,8 +43,8 @@ from app.tools.tool_constants import (
     ERR_NETWORK_INVALID_PARAM,
     ERR_NETWORK_REQUEST_ERROR,
     ERR_NETWORK_TIMEOUT,
-    INER_HTTPGET_JSON_PREVIEW_MAX_BYTES,
-    INER_HTTPGET_DATA_PREVIEW_MAX_CHARS,
+    HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES,
+    HTTPGET_OUTLIMIT_DATA_PREVIEW_CHARS,
 )
 
 
@@ -73,7 +79,7 @@ def _build_http_request_llm_data(
     }
 
 
-# 2026-07-20 - 小欧 - httpget 门限治理(章9.4): 删本地重复定义(改引用 tool_constants.INER_HTTPGET_JSON_PREVIEW_MAX_BYTES, 3.4 硬安全网); 截断触发置 _truncated+_reason
+# 2026-07-20 - 小欧 - httpget 门限治理(章9.4): 删本地重复定义(改引用 tool_constants.HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES, 3.4 硬安全网); 截断触发置 _truncated+_reason
 
 
 def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
@@ -82,9 +88,9 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     content_type_short = content_type.split(";")[0].strip() if content_type else "unknown"
 
     if "application/json" in content_type:
-        if len(response.content) > INER_HTTPGET_JSON_PREVIEW_MAX_BYTES:
-            full_preview = response.text[:INER_HTTPGET_JSON_PREVIEW_MAX_BYTES]
-            preview_for_data = full_preview[:INER_HTTPGET_DATA_PREVIEW_MAX_CHARS]
+        if len(response.content) > HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES:
+            full_preview = response.text[:HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES]
+            preview_for_data = full_preview[:HTTPGET_OUTLIMIT_DATA_PREVIEW_CHARS]
             body = {"_truncated": True, "_reason": "响应体超过安全上限(5MB), 仅展示预览片段(~200KB), 其余已截断", "_preview": preview_for_data}
         else:
             try:
@@ -184,6 +190,13 @@ async def httpget(
     t0 = _time_mod.perf_counter()
 
     try:
+        # 非ASCII URL转码(IDNA+percent-encoding) — 小欧 2026-07-25
+        # 将中文域名/路径等转成ASCII等效形式供httpx处理, 不拦截报错
+        try:
+            url.encode("ascii")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            url = transcode_url(url)
+
         is_valid, error_msg, warning_msg = validate_url(url)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -201,6 +214,29 @@ async def httpget(
         request_headers = {}
         if headers:
             request_headers.update(headers)
+
+        # Header非ASCII字符转码 — 小欧 2026-07-25
+        # 键: RFC要求ASCII-only, 非ASCII则报错. 值: UTF-8→latin-1转码供httpx传输
+        if request_headers:
+            _new_headers = {}
+            for _hk, _hv in request_headers.items():
+                try:
+                    _hk.encode("ascii")
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                    llm_data = _build_http_request_llm_data("error", duration_ms, url, method,
+                                                           err_code=ERR_NETWORK_INVALID_PARAM,
+                                                           detail="HTTP Header 名称包含非ASCII字符, RFC 7230 规定 Header 名称必须为 ASCII",
+                                                           hint="Header 名称请使用纯 ASCII 字符",
+                                                           timeout=timeout, proxy=proxy, headers=headers, body=body)
+                    return build_error(data={"error_detail": "Header名称包含非ASCII字符", "params": {"url": url}}, llm_data=llm_data)
+                if _hv is not None:
+                    try:
+                        _hv.encode("ascii")
+                    except (UnicodeEncodeError, UnicodeDecodeError):
+                        _hv = _hv.encode("utf-8").decode("latin-1")
+                _new_headers[_hk] = _hv
+            request_headers = _new_headers
 
         async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
             try:
@@ -228,6 +264,16 @@ async def httpget(
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
                 # —— HTTP 状态码错误: 确定性结果, 结构化返回 LLM, 不抛引擎 — 小欧 2026-07-16
                 # 仅 429 限流带 Retry-After 契约, 工具内按契约重试一次; 仍失败则回退结构化返回。
+                if isinstance(e, httpx.UnsupportedProtocol):
+                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                    llm_data = _build_http_request_llm_data("error", duration_ms, url, method,
+                                                           err_code=ERR_NETWORK_REQUEST_ERROR,
+                                                           detail=f"httpx不支持 {url} 的协议",
+                                                           hint="请使用http或https协议",
+                                                           timeout=timeout, proxy=proxy, headers=headers, body=body)
+                    return build_error(
+                        data={"error_detail": "不支持的协议", "params": {"url": url}},
+                        llm_data=llm_data)
                 if isinstance(e, httpx.HTTPStatusError):
                     status_code = e.response.status_code
                     if status_code == 429:
@@ -271,6 +317,15 @@ async def httpget(
         # (修复原双层 except 吞掉可重试异常的 bug: 原 199 无差别吞 Exception 导致异常从未到引擎)
         if isinstance(e, (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError)):
             raise
+        # UnicodeEncodeError: httpx内部编码异常(URL/Header预检未能覆盖的意外逃逸, URL已先经_transcode_url转码) — 小欧 2026-07-25
+        if isinstance(e, (UnicodeEncodeError, UnicodeDecodeError)):
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_http_request_llm_data("error", duration_ms, url, method,
+                                                   err_code=ERR_NETWORK_INVALID_PARAM,
+                                                   detail="请求参数包含不支持的字符编码",
+                                                   hint="请使用ASCII字符或百分号编码",
+                                                   timeout=timeout, proxy=proxy, headers=headers, body=body)
+            return build_error(data={"error_detail": "请求参数包含不支持的字符编码", "params": {"url": url}}, llm_data=llm_data)
         err_msg = f"{type(e).__name__}: {str(e) or repr(e)}"  # — 小欧 2026-07-13
         logger.error(f"[httpget] 意外错误: {err_msg}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
