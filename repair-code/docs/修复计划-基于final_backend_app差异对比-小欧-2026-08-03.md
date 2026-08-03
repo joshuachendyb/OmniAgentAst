@@ -2,11 +2,12 @@
 
 **编写人**: 小欧
 **编写时间**: 2026-08-03 09:38:46
-**状态**: 批次1-2完成、批次3.1-3.5完成，待提交
+**状态**: 批次1-2+3.1-3.5完成并已提交；死文件清理完成；待后续批次3.6-3.9与打tag
 
 ### 修订历史
 | 版本 | 时间 | 修订人 | 内容 |
 |------|------|--------|------|
+| v1.8 | 2026-08-03 20:39 | 小欧 | 死文件清理：fundamental 删 time_add/time_diff/query_calendar（已迁timer分类，测试import更新至timer：test_bug_discovery 6处+test_edge_cases 9处）；shell 删 execute_shell_command+execute_shell_command_safety（shell分类仅注册which）；验证=import OK+工具注册63+收集5350 0 error+338 passed；live 提交 25bfadc44(e7a1d1214) |
 | v1.0 | 2026-08-03 09:38 | 小欧 | 初始版（A/B/C/C' 档估计） |
 | v1.1 | 2026-08-03 09:55 | 小欧 | 证据档修正为权威 Tier1(152)/Tier2(35)/Tier3(0) |
 | v1.2 | 2026-08-03 10:10 | 小欧 | 来源确认(G 盘 backend/app 已空, final 封闭)；差异分层修正(25/7/7/32→10/30/40→11/92/103→0/8/8=46+137=183) |
