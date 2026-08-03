@@ -1,0 +1,211 @@
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-20 - 小欧 - 复核schema docstring规范,既有5个docstring全部保留,其余工具默认行为均已在Field中体现,无需新增
+# 2026-07-25 - 小欧 - description去冗余: 7处默认/可选重复移除
+# 2026-07-25 - 小欧 - 统一Field风格+description去冗余: 9处加..., 1处去冗余示例
+# 2026-07-30 - 小欧 - 整改15项:#1 content Optional,#2 amount滚动次数,#3 x/y绝对坐标,
+#   #4子串匹配,#5传0保持原大小,#6删docstring,#7region规范,#8display编号,
+#   #10-#14 llm_data修复,#15,#17
+# 2026-07-30 - 小欧 - #2/#3 ScreenCaptureInput互斥描述DRY+统一; #4删ClipboardControlInput docstring;
+#   #5补validator error默认行为; #6补direction默认值; #7改width/height描述加default
+# 2026-07-30 - 小欧 - #10:编辑历史折行,超120字符行拆分; 删除未使用的List import
+# 2026-07-31 - 小欧 - 三堂会审修复B5/B33:ClipboardControlInput补action=write时content必填校验validator,提前拦截防LLM传空
+# 2026-07-31 - 小欧 - 三堂会审修复:MouseScrollInput.amount加ge=1约束,KeyboardControlInput.text_or_keys加min_length=1,Window{Focus,Resize}Input.window_title description补非空提示
+# 2026-07-31 - 小欧 - 三堂会审增强:MouseClickInput加clicks(Literal[1,2],默认1=单击/2=双击);KeyboardControlInput docstring补单键示例(shortcut支持enter/esc等单键)
+"""
+DESKTOP Schema - 桌面工具参数模型
+
+【Schema Docstring 规范】小健 2026-06-18
+一般情况下，严禁给Schema类加docstring。
+仅在以下情况可以添加：
+1. 函数使用过于复杂，需要详细说明
+2. 多action的tool，需要说明不同action的用法
+3. 添加的是tool描述的增强信息，不是冗余信息
+
+禁止：
+- 重复register.py中的描述
+- 添加过于冗长的说明
+- 添加与参数无关的内容
+
+创建时间: 2026-04-29
+"""
+
+from typing import Optional, Literal, Dict
+from pydantic import BaseModel, Field, model_validator
+
+
+class WindowInfoInput(BaseModel):
+    include_minimized: bool = Field(
+        default=False,
+        description="是否包含最小化的窗口"
+    )
+    filter_title: Optional[str] = Field(
+        default=None,
+        description="按窗口标题过滤(大小写不敏感的子串匹配)"
+    )
+
+
+class WindowFocusInput(BaseModel):
+    window_title: str = Field(
+        ..., description="窗口标题(大小写不敏感的子串匹配,不能为空)"
+    )
+
+
+class WindowResizeInput(BaseModel):
+    window_title: str = Field(
+        ..., description="窗口标题(大小写不敏感的子串匹配,不能为空)"
+    )
+    width: int = Field(
+        default=800,
+        description="窗口宽度(像素,默认800)。传0表示不修改,保持原窗口宽度"
+    )
+    height: int = Field(
+        default=600,
+        description="窗口高度(像素,默认600)。传0表示不修改,保持原窗口高度"
+    )
+
+
+class SetWindowStateInput(BaseModel):
+    """窗口状态操作
+
+    【action参数】决定操作类型：
+    - maximize: 最大化窗口
+    - minimize: 最小化窗口
+    - restore: 还原窗口
+    - topmost: 窗口置顶
+    - unpin: 取消置顶
+    """
+    window_title: str = Field(
+        ..., description="窗口标题(大小写不敏感的子串匹配)"
+    )
+    action: Literal["maximize", "minimize", "restore", "topmost", "unpin"] = Field(
+        ..., description="窗口操作:maximize(最大化)/minimize(最小化)/restore(还原)/topmost(置顶)/unpin(取消置顶)"
+    )
+
+
+class MouseClickInput(BaseModel):
+    x: Optional[int] = Field(
+        default=None,
+        description="X坐标。必须与y同时传入或同时不传,不传则在当前鼠标位置点击"
+    )
+    y: Optional[int] = Field(
+        default=None,
+        description="Y坐标。必须与x同时传入或同时不传,不传则在当前鼠标位置点击"
+    )
+    button: Literal["left", "right", "middle"] = Field(
+        default="left",
+        description="鼠标按钮:left/right/middle"
+    )
+    clicks: Literal[1, 2] = Field(
+        default=1,
+        description="点击次数:1=单击(默认),2=双击(如打开文件/文件夹、双击单元格进入编辑)"
+    )
+
+    @model_validator(mode="after")
+    def _check_xy_together(self):
+        if (self.x is None) != (self.y is None):
+            raise ValueError("x和y必须同时传入或同时不传,不传则在当前鼠标位置点击")
+        return self
+
+
+class MouseMoveInput(BaseModel):
+    x: int = Field(
+        ..., description="屏幕绝对X坐标(像素,左上角为原点)"
+    )
+    y: int = Field(
+        ..., description="屏幕绝对Y坐标(像素,左上角为原点)"
+    )
+
+
+class MouseScrollInput(BaseModel):
+    direction: Literal["up", "down"] = Field(
+        default="down",
+        description="滚动方向:up/down,默认向下(down)"
+    )
+    amount: int = Field(
+        default=3,
+        ge=1,
+        description="滚动次数(每次约3行文本),必须为正整数"
+    )
+
+
+class MousePositionInput(BaseModel):
+    pass
+
+
+class KeyboardControlInput(BaseModel):
+    """键盘控制工具
+    
+    【action参数】决定操作类型：
+    - type: 输入文本
+    - shortcut: 执行快捷键（支持单键和组合键）
+      - 单键: enter/esc/tab/space/backspace/delete等, 如 text_or_keys="enter" 表示按回车
+      - 组合键: 用+连接, 如 "ctrl+shift+esc"
+    
+    【使用示例】
+    - 输入文本 → keyboard_control(action="type", text_or_keys="Hello World")
+    - 按回车 → keyboard_control(action="shortcut", text_or_keys="enter")
+    - 按ESC → keyboard_control(action="shortcut", text_or_keys="esc")
+    - 快捷键 → keyboard_control(action="shortcut", text_or_keys="ctrl+c")
+    - 组合键 → keyboard_control(action="shortcut", text_or_keys="ctrl+shift+esc")
+    """
+    action: Literal["type", "shortcut"] = Field(
+        ..., description="键盘操作:type(输入文本)、shortcut(快捷键，支持组合键)"
+    )
+    text_or_keys: str = Field(
+        ..., min_length=1, description="输入内容。action=type时为文本,action=shortcut时为快捷键组合"
+    )
+
+
+class ScreenCaptureInput(BaseModel):
+    """display与region/dest互斥,指定display时严禁传入region或dest"""
+    dest: Optional[str] = Field(
+        default=None,
+        description="输出文件路径(绝对路径)。不传则保存到系统临时目录"
+    )
+    region: Optional[Dict[str, int]] = Field(
+        default=None,
+        description="截取区域{x,y,width,height}(像素),不传的键使用默认值(0,0,800,600)"
+    )
+    display: Optional[int] = Field(
+        default=None,
+        description="显示器编号(1=主显示器,2~N=扩展显示器)"
+    )
+
+    @model_validator(mode="after")
+    def _check_display_exclusive(self):
+        if self.display is not None:
+            if self.region is not None or self.dest is not None:
+                raise ValueError("指定display时严禁传入region或dest")
+        return self
+
+
+class ClipboardControlInput(BaseModel):
+    action: Literal["read", "write"] = Field(
+        ..., description="剪贴板操作:read(读取)/write(写入)"
+    )
+    content: Optional[str] = Field(
+        default=None,
+        description="action=write时必填的写入内容"
+    )
+
+    @model_validator(mode="after")
+    def _check_write_content(self):
+        if self.action == "write" and not self.content:
+            raise ValueError("action=write时content为必填项")
+        return self
+
+
+__all__ = [
+    "WindowInfoInput",
+    "WindowFocusInput",
+    "WindowResizeInput",
+    "SetWindowStateInput",
+    "MouseClickInput",
+    "MouseMoveInput",
+    "MouseScrollInput",
+    "MousePositionInput",
+    "KeyboardControlInput",
+    "ScreenCaptureInput",
+    "ClipboardControlInput",
+]

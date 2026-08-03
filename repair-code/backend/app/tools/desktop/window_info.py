@@ -1,0 +1,178 @@
+# -*- coding: utf-8 -*-
+"""
+window_info — 列出所有窗口
+【2026-06-22 小健】从 desktop_tools.py 拆分为独立文件
+"""
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-07-30 - 小欧 - #17:get_window_rect返回None时补默认值防前端报错
+# 2026-07-30 - 小欧 - #14:删除check_win32_platform()重复日志,只保留模块加载时一次
+# 2026-07-30 - 小欧 - hint区分非Windows平台vs缺pywin32库
+import platform
+import time as _time_mod
+from typing import Any, Dict, List, Optional
+
+from app.logger import logger
+from app.tools.tool_response import build_success, build_error
+from app.tools.tool_constants import ERR_DESKTOP_GET_WINDOW_INFO, ERR_INVALID_ACTION, ERR_WINDOW_LIST, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE
+
+
+_HAS_WIN32 = False
+_win32gui = None
+_win32con = None
+_win32api = None
+
+if platform.system() == "Windows":
+    try:
+        import win32gui as _win32gui_mod
+        import win32con as _win32con_mod
+        import win32api as _win32api_mod
+
+        _win32gui = _win32gui_mod
+        _win32con = _win32con_mod
+        _win32api = _win32api_mod
+        _HAS_WIN32 = True
+    except ImportError:
+        _HAS_WIN32 = False
+        logger.error("window_info: pywin32未安装,工具暂时不能使用。请执行: pip install pywin32")
+
+
+def check_win32_platform() -> Optional[Dict[str, Any]]:
+    """检查Windows平台和pywin32依赖是否可用 — 小健 2026-06-22 — 小健 2026-06-22 重构：只返回raw dict，不含build3"""
+    if platform.system() != "Windows":
+        return {"error_detail": "此功能仅支持Windows系统", "params": {}}
+    if not _HAS_WIN32:
+        return {"error_detail": "pywin32库未安装,请先执行: pip install pywin32", "params": {}}
+    return None
+
+
+def get_window_rect(hwnd: int) -> Optional[Dict[str, int]]:
+    """获取窗口位置和大小 — 小健 2026-06-22"""
+    if not _win32gui:
+        return None
+    try:
+        rect = _win32gui.GetWindowRect(hwnd)
+        return {
+            "left": rect[0], "top": rect[1], "right": rect[2], "bottom": rect[3],
+            "width": rect[2] - rect[0], "height": rect[3] - rect[1],
+        }
+    except Exception:
+        return None
+
+
+def get_window_state(hwnd: int) -> str:
+    """获取窗口状态 — 小健 2026-06-22"""
+    if not _win32gui or not _win32con:
+        return "unknown"
+    try:
+        if not _win32gui.IsWindowVisible(hwnd):
+            return "minimized"
+        placement = _win32gui.GetWindowPlacement(hwnd)
+        if placement[1] == _win32con.SW_SHOWMAXIMIZED:
+            return "maximized"
+        elif placement[1] == _win32con.SW_SHOWMINIMIZED:
+            return "minimized"
+        else:
+            return "normal"
+    except Exception:
+        return "unknown"
+
+
+def find_windows_by_title(window_title: str) -> List[int]:
+    """按标题模糊匹配查找窗口句柄列表 — 小健 2026-06-22"""
+    if not _win32gui:
+        return []
+    windows = []
+    def callback(hwnd: int, _: List) -> int:
+        try:
+            title = _win32gui.GetWindowText(hwnd)
+            if title and window_title.lower() in title.lower():
+                windows.append(hwnd)
+        except Exception:
+            pass
+        return 1
+    _win32gui.EnumWindows(callback, [])
+    return windows
+
+
+def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> int:
+    """枚举窗口回调函数 — 小健 2026-06-22，小沈 2026-06-28修复返回类型"""
+    try:
+        if not _win32gui.IsWindowVisible(hwnd):
+            return 1
+        title = _win32gui.GetWindowText(hwnd)
+        if not title:
+            return 1
+        rect = get_window_rect(hwnd)
+        state = get_window_state(hwnd)
+        if rect is None:
+            rect = {"left": 0, "top": 0, "right": 0, "bottom": 0, "width": 0, "height": 0}
+        windows.append({"hwnd": hwnd, "title": title, "state": state, "position": rect})
+    except Exception:
+        pass
+    return 1
+
+
+def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: int, filter_title: str = "",
+                                 include_minimized: bool = False, detail: str = "", hint: str = "") -> dict:
+    """window_info的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增include_minimized — 小欧 2026-07-05 加hint参数"""
+    _act_params = {"filter_title": filter_title}
+    if include_minimized:
+        _act_params["include_minimized"] = include_minimized
+    _target = filter_title or "全部"
+    if exec_code == "error":
+        return {
+            "summary": f"获取窗口{_target}信息失败" + (f": {detail}" if detail else ""),
+            "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
+            "status": {"exec_code": "error", "message": f"获取窗口列表失败: {detail}" if detail else "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": detail, "hint": hint if hint else "请检查窗口筛选条件"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"获取窗口{_target}信息成功: 共{window_count}个窗口",
+        "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
+        "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"windows": {"value": window_count, "text": f"{window_count}个"}},
+    }
+
+
+def window_info(include_minimized: bool = False, filter_title: Optional[str] = None) -> Dict[str, Any]:
+    """列出所有窗口 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-22 重构：主函数负责builder+build3"""
+    t0 = _time_mod.perf_counter()
+    err = check_win32_platform()
+    if err:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        _err_detail = err.get("error_detail", "桌面工具不可用")
+        is_platform = "仅支持Windows" in _err_detail
+        hint = "此功能仅支持Windows系统" if is_platform else "工具暂时不能使用:需要安装pywin32库,请执行: pip install pywin32"
+        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", include_minimized, detail=_err_detail, hint=hint)
+        return build_error(data={}, llm_data=llm_data)
+
+    try:
+        windows = []
+        _win32gui.EnumWindows(_enum_windows_callback, windows)
+        if not include_minimized:
+            windows = [w for w in windows if w["state"] != "minimized"]
+        if filter_title:
+            windows = [w for w in windows if filter_title.lower() in w["title"].lower()]
+
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"windows": windows}
+        llm_data = _build_window_info_llm_data("success", duration_ms, len(windows), filter_title or "", include_minimized)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #15 windows table
+        # trigger: "windows" in data — windows 是 List[dict]
+        # handler: _format_windows(data)
+        # file:    observation_formatter.py:196-198
+        # ------------------------------------------------------------------------------
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        logger.error(f"window_info list error: {e}")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", include_minimized, detail=str(e), hint="获取窗口列表时发生异常,请检查系统窗口管理器状态后重试")
+        return build_error(data={}, llm_data=llm_data)
+
+
+__all__ = ["window_info", "check_win32_platform", "get_window_rect", "get_window_state", "find_windows_by_title", "_HAS_WIN32", "_win32gui", "_win32con", "_win32api"]
