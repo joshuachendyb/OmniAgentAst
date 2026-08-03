@@ -10,14 +10,23 @@
 # 2026-07-18 - 小欧 - 修复#1空步骤谎报完成: derive_status_from_steps 空/无final步默认"failed"(fail-safe, 对齐agent_runner兜底); 修复#6拼写错 ccancelled→cancelled
 # 2026-07-18 - 小欧 - #17 fix: allocate_and_insert_message 首行补 ensure_session_exists, 消除孤儿消息风险
 # 2026-07-18 - 小欧 - #22 fix: allocator锁范围扩大覆盖SELECT+dict写入,消除竞态
+# 2026-07-21 - 小欧 - SQLite存储适配: MAX_TOOL_RESULT_STR_LEN=100(0a054a05e)→10000(4ee3ff070), _truncate_tool_result_strings方法, 写入前截断tool_result超长字符串防SQLite行溢出; _truncate_step_dict调用链; 不碰observation字段
+# 2026-07-23 - 小欧 - 北京老陈驱动: 安全兜底 MAX_TOOL_RESULT_STR_LEN
+#         10000→100000 (各tool自行截断输出后, storage仅兜底,
+#         不再做激进取舍)
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
 小欧 2026-07-10
+
+编辑历史: 2026-07-21 小欧
+2026-07-21 小欧: 修复 _truncate_step_dict 漏掉 execution_result+parallel_results 截断;
+2026-07-21: 小欧 加 _truncate_tool_result_strings (带 tag 日志, 不碰 observation);
+2026-07-21  小欧: 移动 MAX_TOOL_RESULT_STR_LEN 等常量; 
 """
 
 import threading
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from sqlite3 import Connection
 
 from fastapi import HTTPException
@@ -233,9 +242,87 @@ def allocate_and_insert_message(conn: Connection, session_id: str) -> int:
     return ai_message_id
 
 
+# 工具结果截断阈值 — 小欧 2026-07-21
+# tool_result/parallel_results 中任何列表超过此数即截断,防止 SQLite TEXT 超限
+# 实验性的功能 :TODO做正式的持久化设计后进行更新
+MAX_TOOL_RESULT_ITEMS: int = 1000
+MAX_TOOL_RESULT_STR_LEN: int = 100000
+
+def _truncate_tool_result(tr: Any, tag: str = "") -> Any:
+    """递归截断 tool_result 中过大的列表 — 小欧 2026-07-21
+    2026-07-21 小欧: 修复短列表不递归元素内大列表+ActionStep execution_result 遗漏
+    """
+    if isinstance(tr, dict):
+        for key, val in list(tr.items()):
+            if isinstance(val, list) and len(val) > MAX_TOOL_RESULT_ITEMS:
+                tr[key] = val[:MAX_TOOL_RESULT_ITEMS]
+                logger.warning(f"[storage] {tag}tool_result.{key} 过大,截断至{MAX_TOOL_RESULT_ITEMS}条(原{len(val)}条)")
+            elif isinstance(val, (dict, list)):
+                _truncate_tool_result(val, tag)
+    elif isinstance(tr, list):
+        if len(tr) > MAX_TOOL_RESULT_ITEMS:
+            logger.warning(f"[storage] {tag}tool_result 列表过大,截断至{MAX_TOOL_RESULT_ITEMS}条(原{len(tr)}条)")
+            return tr[:MAX_TOOL_RESULT_ITEMS]
+        else:
+            for item in tr:
+                _truncate_tool_result(item, tag)
+    return tr
+
+
+def _truncate_step_dict(step_dict: dict) -> dict:
+    """截断 step_dict 中 tool/execution_result — 小欧 2026-07-21
+    2026-07-21 小欧: 补 ActionStep.execution_result 截断; 加字符串截断防 SQLite 撑爆(不碰 observation)
+    """
+    if not isinstance(step_dict, dict):
+        return step_dict
+    if "tool_result" in step_dict:
+        step_dict["tool_result"] = _truncate_tool_result(step_dict["tool_result"], "")
+        _truncate_tool_result_strings(step_dict["tool_result"])
+    if "execution_result" in step_dict:
+        step_dict["execution_result"] = _truncate_tool_result(step_dict["execution_result"], "")
+        _truncate_tool_result_strings(step_dict["execution_result"])
+    pr = step_dict.get("parallel_results")
+    if isinstance(pr, list):
+        for i, entry in enumerate(pr):
+            if isinstance(entry, dict):
+                if "tool_result" in entry:
+                    entry["tool_result"] = _truncate_tool_result(entry["tool_result"], f"parallel_results[{i}].")
+                    _truncate_tool_result_strings(entry["tool_result"])
+                if "execution_result" in entry:
+                    entry["execution_result"] = _truncate_tool_result(entry["execution_result"], f"parallel_results[{i}].")
+                    _truncate_tool_result_strings(entry["execution_result"])
+    return step_dict
+
+
+# tool_result 中单字符串最大字符数 — 小欧 2026-07-21
+# formatter 行×列门限(tool_constants)已控制 observation 大小;
+# tool_result 原始数据可能含超大字符串(如 base64/长文本), 在此做安全截断防 SQLite 撑爆
+
+
+
+def _truncate_tool_result_strings(obj: Any, tag: str = "") -> None:
+    """递归截 tool_result 中所有超长字符串 — 小欧 2026-07-21"""
+    if isinstance(obj, dict):
+        for key, val in list(obj.items()):
+            if isinstance(val, str) and len(val) > MAX_TOOL_RESULT_STR_LEN:
+                obj[key] = val[:MAX_TOOL_RESULT_STR_LEN] + "...(storage截断)"
+                logger.warning(f"[storage] {tag}tool_result.{key} 字符串过大({len(val)}字符),截断至{MAX_TOOL_RESULT_STR_LEN}")
+            elif isinstance(val, (dict, list)):
+                _truncate_tool_result_strings(val, tag)
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            if isinstance(item, str) and len(item) > MAX_TOOL_RESULT_STR_LEN:
+                obj[i] = item[:MAX_TOOL_RESULT_STR_LEN] + "...(storage截断)"
+                logger.warning(f"[storage] {tag}tool_result[{i}] 字符串过大({len(item)}字符),截断至{MAX_TOOL_RESULT_STR_LEN}")
+            elif isinstance(item, (dict, list)):
+                _truncate_tool_result_strings(item, tag)
+
+
 def append_execution_step(conn: Connection, message_id: int, session_id: str,
                           step_index: int, step_dict: dict) -> None:
-    """运行期逐步落库 — 小欧 2026-07-14"""
+    """运行期逐步落库 — 小欧 2026-07-14
+    小欧 2026-07-21: 落库前截断超大 tool_result(列表+字符串)防 SQLite 撑爆; 不碰 observation"""
+    step_dict = _truncate_step_dict(step_dict)
     conn.execute(
         "INSERT INTO chat_message_steps(message_id, session_id, step_index, step_json, created_at) "
         "VALUES (?, ?, ?, ?, ?)",

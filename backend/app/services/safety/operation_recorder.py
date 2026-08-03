@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-16 - 小欧 - record_operation 增 operation_id 可选参数, 操作ID生成统一交由 id_utils.generate_operation_id(DRY, 替代各处 f"op-{uuid4().hex}")
 # 2026-07-18 - 小欧 - created_at 改 get_utc_timestamp() 入库 UTC Z, 消除 datetime.now() 裸传 sqlite3
+# 2026-07-25 - 小欧 - db.get_conn→get_conn_with_retry 消除并行操作时 database is locked (配合 execute_with_safety 三段式改造)
 """
 operation_recorder — 操作记录和文件信息收集
 
@@ -64,7 +65,7 @@ def record_operation(
                 space_impact_bytes = -file_size
             elif op_enum == OperationType.DELETE:
                 space_impact_bytes = file_size
-        with db.get_conn("operations") as conn:
+        with db.get_conn_with_retry("operations") as conn:
             cursor = conn.cursor()
             op_type_str = operation_type.value if isinstance(operation_type, OperationType) else operation_type
             cursor.execute(

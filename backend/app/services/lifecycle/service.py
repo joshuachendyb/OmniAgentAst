@@ -1,4 +1,7 @@
+
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-22 - 小欧 - get_service 异常时清除 _model_warning 防止残留到下一请求(代码审查缺陷1边沿修复)
 """
 service — 服务创建与获取
 
@@ -89,26 +92,32 @@ def get_service() -> BaseAIService:
     """获取服务实例 — 小沈 2026-06-08
     P2-09修复: 删除未使用的config_path
     【修复P1-1 2026-06-09 小沈】threading.Lock保护多线程安全
+    【修复P-2026-07-22 小欧】异常时清除 _model_warning 防止残留到下一请求
     """
     global _instance, _current_provider
 
-    _, final_provider, final_model, ai_config = get_resolver_and_config()
+    resolver, final_provider, final_model, ai_config = get_resolver_and_config()
 
-    validate_provider_model(final_provider, final_model)
+    try:
+        validate_provider_model(final_provider, final_model)
 
-    if check_cache_valid(final_provider, final_model):
-        return _instance
-
-    with _instance_lock:
         if check_cache_valid(final_provider, final_model):
             return _instance
-        cleanup_old_instance(final_provider)
 
-        log_service_creation(final_provider, final_model)
+        with _instance_lock:
+            if check_cache_valid(final_provider, final_model):
+                return _instance
+            cleanup_old_instance(final_provider)
 
-        provider_config = get_provider_config(ai_config, final_provider)
+            log_service_creation(final_provider, final_model)
 
-        _instance = create_service_instance(provider_config, final_provider, final_model)
+            provider_config = get_provider_config(ai_config, final_provider)
+
+            _instance = create_service_instance(provider_config, final_provider, final_model)
+    except:
+        # get_service 异常时消费并丢弃 _model_warning，防止残留到下一请求— 小欧 2026-07-22
+        resolver.pop_model_warning()
+        raise
 
     return _instance
 
@@ -158,3 +167,4 @@ def get_service_for_model(provider: str, model: str):
     set_instance(instance, provider)
 
     return instance
+

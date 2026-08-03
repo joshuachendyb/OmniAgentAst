@@ -1,14 +1,18 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-06-18 - 小欧 - 创建文件, 从 operation_commands.py 拆分, 遵守 SRP
 # 2026-07-18 - 小欧 - backup_expires_at 比较改 get_utc_timestamp() 时间统一入库
+# 2026-07-26 - 小欧 - 清理过期备份时, 只读文件走 path.unlink() 加 os.chmod 解除只读属性再删除, 修复 [WinError 5]
+# 2026-07-26 - 小沈 - import 自 operation_executor→operation_record 对应改名
 """
 operation_cleanup — 操作清理
 
 职责: 清理过期备份文件
 小欧 2026-06-18 从operation_commands.py拆分，遵守SRP
 """
+import os
 import shutil
-from datetime import datetime
 from pathlib import Path
 
 from app.db import db
@@ -35,7 +39,7 @@ def _cleanup_by_size() -> int:
     (operation_cleanup→delete_file→file_safety→operation_cleanup)
     """
     from app.tools.file.delete_file import remove_readonly
-    from app.services.safety.operation_executor import FileSafetyConfig
+    from app.services.safety.operation_record import FileSafetyConfig
     config = FileSafetyConfig()
     max_bytes = config.RECYCLE_BIN_MAX_SIZE_GB * 1024 ** 3
     recycle_path = config.RECYCLE_BIN_PATH
@@ -90,7 +94,14 @@ def cleanup_expired_backups() -> int:
                             # onerror解决Windows下只读文件备份后无法删除的问题
                             shutil.rmtree(path, onerror=remove_readonly)
                         else:
-                            path.unlink()
+                            # 只读文件: chmod加写权限后再删(同remove_readonly逻辑) — 小欧 2026-07-26
+                            os.chmod(path, os.stat(path).st_mode | 0o200)
+                            try:
+                                path.unlink()
+                            except PermissionError:
+                                # 首次chmod可能不够(Windows只读属性), 再试一次更激进
+                                os.chmod(path, 0o666)
+                                path.unlink()
                         count += 1
                         logger.info(f"Cleaned up expired backup: {backup_path}")
                 except Exception as e:
@@ -100,3 +111,4 @@ def cleanup_expired_backups() -> int:
     except Exception as e:
         logger.error(f"Failed to cleanup expired backups: {e}")
         return count
+

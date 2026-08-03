@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-14 - 小欧 - _load_previous_messages改为从chat_message_steps组装(load_execution_steps), 多轮上下文读取新表
-# 2026-07-18 - 小欧 - #30 fix: _read_stream排空后复查len(buffer.event_log),防done前追加丢事件
-# 2026-07-18 - 小欧 - F4 fix: _parse_tool_calls try收窄到单步, 单步参数异常不株连整批
+# 2026-07-14 小欧 - _load_previous_messages改为从chat_message_steps组装(load_execution_steps), 多轮上下文读取新表
+# 2026-07-18 小欧 - #30 fix: _read_stream排空后复查len(buffer.event_log),防done前追加丢事件
+# 2026-07-18 小欧 - F4 fix: _parse_tool_calls try收窄到单步, 单步参数异常不株连整批
+# 2026-07-23 小欧 - log_and_print统一: print(_msg); logger.info(_msg)替换为log_and_print(_msg), 导入log_and_print; TASK_END消息追加时间串
+# 2026-07-30 - 小欧 - 后端卡死根因修复: cond.wait() 加 60s 超时(asyncio.wait_for)+超时后重检 buffer.done; 防止 SSE 消费者因 cond 永远不被 notify 而永久挂起占死 HTTP 连接
 """
 stream — SSE流运行器（消费者）
 
@@ -13,6 +15,7 @@ stream — SSE流运行器（消费者）
 小欧 2026-07-10 从 react_sse_wrapper/run_sse_stream.py 移入
 """
 
+import asyncio
 import json
 import time
 from typing import Any, Callable, Dict, List, Optional
@@ -20,7 +23,7 @@ from typing import Any, Callable, Dict, List, Optional
 from app.db import db
 from app.services.agent.steps import ErrorStep
 from app.services.task.task_state import agent_streams
-from app.logger import logger
+from app.logger import logger, log_and_print
 from app.utils.sse_formatter import format_agent_sse
 from app.utils.json_utils import safe_json_dumps  # steps序列化为JSON串供多轮上下文 — 小欧 2026-07-14
 from app.services.chat.storage import load_execution_steps  # 从chat_message_steps组装 — 小欧 2026-07-14
@@ -126,7 +129,15 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
                 continue
             if buffer.done.is_set():
                 return
-            await buffer.cond.wait()
+            # cond.wait()无超时: 若producer崩溃永不set.done, 消费者永久挂起泄漏HTTP连接
+            # 加60s超时, 超时后循环重检done — 北京老陈 2026-07-30
+            try:
+                await asyncio.wait_for(buffer.cond.wait(), timeout=60.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"[SSE] stream_reader cond.wait 60s超时, 重检done: task_id={task_id}")
+                if buffer.done.is_set():
+                    return
+                continue
 
 
 def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = None,
@@ -146,9 +157,8 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
         step_summary = ",".join(f"{k}={v}" for k, v in sorted(counter.items()))
         if step_summary:
             parts.append(f"steps=[{step_summary}]")
-    _msg = f"[TASK_END] {' | '.join(parts)}"
-    print(_msg)
-    logger.info(_msg)
+    _msg = f"[TASK_END] {time.strftime('%H:%M:%S')} {' | '.join(parts)}"
+    log_and_print(_msg)
 
 
 def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):

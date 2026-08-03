@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-22 - 小欧 - send_start_step 新增 warning 参数，透传给 MetaStep 供前端显示模型不在列表提示
 """
 handlers — SSE事件流处理模块
 从 react_sse_wrapper/chat_stream.py 移入
@@ -130,6 +132,7 @@ async def send_start_step(
     next_step: Callable,
     user_message: str,
     security_check_result: Dict[str, Any],
+    warning: Optional[str] = None,
 ) -> MetaStep:
     """发送 start 步骤 — 使用MetaStep统一构建"""
     return MetaStep(
@@ -145,5 +148,6 @@ async def send_start_step(
             'risk_level': security_check_result.get('risk_level'),
             'risk': security_check_result.get('risk'),
             'blocked': security_check_result.get('blocked', False)
-        }
+        },
+        warning=warning,
     )

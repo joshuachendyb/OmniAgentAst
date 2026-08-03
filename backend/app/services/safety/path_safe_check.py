@@ -1,7 +1,9 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 - 小欧 - #3 fix: 白名单盘符下增加系统保护目录拒绝(windows/program files/programdata等),
 #    用 Path.parts[1] 精确只查盘符后第一级, 避免 C:\Users\MyProject\Program Files 误杀
+# 2026-08-02 - 小欧 - 加固: _is_forbidden_path 新增磁盘根目录黑名单(C:\), 防止白名单盘符机制放行盘根删除
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -68,6 +70,14 @@ def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
         real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
         real_path_str = str(real_path)
         real_path_lower = real_path_str.lower()
+        
+        # 磁盘根目录(C:\)黑名单 — 白名单盘符机制允许盘根操作, 此处硬阻断 — 小欧 2026-08-02
+        try:
+            drive, rest = os.path.splitdrive(real_path_str)
+            if drive and not rest.strip("\\/"):
+                return True, f"禁止访问磁盘根目录: {file_path}"
+        except Exception:
+            pass
         
         if os.name == 'nt':
             for forbidden in FORBIDDEN_PATHS_WINDOWS_EXACT:
@@ -213,3 +223,4 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]) -> Tuple[bool, Op
 
 __all__ = ["ALLOWED_PATHS", "get_default_allowed_paths", "validate_path",
            "validate_tool_path", "_is_forbidden_path"]
+

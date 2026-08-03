@@ -1,9 +1,19 @@
+
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-16 - 小欧 - operations表重命名为task_operations(正名)+在线迁移(RENAME旧表)+操作ID统一generate_operation_id+新增mark_rolled_back方法
 # 2026-07-18 - 小欧 - complete_task 的 completed_at 改用 now_str() 序列化入库, 消除对已废弃默认 datetime 适配器(Python3.12+ DeprecationWarning)的依赖, 与 created_at(CURRENT_TIMESTAMP) 空格秒格式统一
 # 2026-07-18 - 小欧 - complete_task/create_task/add_operation 时间统一 get_utc_timestamp() UTC Z; TaskQueries 三返回方法 format_timestamp 对外兜底
 # 2026-07-18 - 小欧 - add_operation/complete_task INSERT补created_at列对齐第13值get_utc_timestamp()
+# 2026-07-23 - 小欧 - #1 fix: get_recent_tasks L210 r.get("completed_at") → r["completed_at"]
+#   病根: sqlite3.Row 不支持 .get() 方法(仅支持 [] 和 keys()),
+#         r.get("completed_at") 抛出 AttributeError(11次)→main.py全局异常处理器崩溃(10次),
+#         修正为 r["completed_at"] 与同方法 L209 r["created_at"] 风格一致。
+#         同一行 **dict(r) 已预展开全部列, completed_at 必然在 Row 中, r[] 安全无副作用。
+#   方案来源: 欧阳方案 #1 — 一文定位到确切bug行, KISS-DIRECT。
+# 2026-07-23 - 小欧 - #1补: get_task 风格统一, 删d=dict(row)临时变量, 改**dict(row) inline
+#   原由: L197-198 d.get() 虽不报错(因dict支持.get), 但与get_recent_tasks的**dict(row)+row[]风格不一致
+#         ; 保持两方法同一风格, 降低认知负担, KISS-DIRECT。
 """
 task_db — 任务DB持久化（tasks表 + operations表）
 
@@ -193,10 +203,11 @@ class TaskQueries:
             ).fetchone()
             if not row:
                 return None
-            d = dict(row)
-            d["created_at"] = format_timestamp(d.get("created_at"))
-            d["completed_at"] = format_timestamp(d.get("completed_at"))
-            return d
+            return {
+                **dict(row),
+                "created_at": format_timestamp(row["created_at"]),
+                "completed_at": format_timestamp(row["completed_at"]),
+            }
 
     def get_recent_tasks(self, limit: int = 10) -> List[Dict[str, Any]]:
         with db.get_conn("task_tracker") as conn:
@@ -207,7 +218,7 @@ class TaskQueries:
             return [{
                 **dict(r),
                 "created_at": format_timestamp(r["created_at"]),
-                "completed_at": format_timestamp(r.get("completed_at")),
+                "completed_at": format_timestamp(r["completed_at"]),
             } for r in rows]
 
     def get_operations(self, task_id: str) -> List[Dict[str, Any]]:
@@ -225,3 +236,4 @@ class TaskQueries:
                 d["created_at"] = format_timestamp(d.get("created_at"))
                 result.append(d)
             return result
+
