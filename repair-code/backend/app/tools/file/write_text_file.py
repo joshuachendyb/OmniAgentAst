@@ -3,6 +3,10 @@
 # 2026-07-17 - 小欧 - 早期encoding校验: writetext()中encoding确定后立即用codecs.lookup()校验，替代等open()才报错
 # 2026-07-20 - 小欧 - 章14 尝试将 content_preview 改为完整内容(3.7/6.4); 用户裁定 write 工具不需回显全文, 恢复 _build_content_preview 文首50+文末50 Tool 层预览; schema 入参 max_length 仍依3.6去除
 # 2026-07-20 - 小欧 - 门限复查: 删 diff 生成处 [:2000] 静默截断(违3.7 Tool零截断); diff 由 llm_data["metrics"]["diff"] 改放 llm_data 顶层 "diff", 交 observation_formatter #544 行×列收口+两态呈现; data 仅留 content_preview(#23), 严禁与 llm_data 段重复显示
+# 2026-07-25 - 小欧 - 截断治理: content[:50]/[-50:] → WRITETEXT_INER_PREVIEW_CHARS 命名常量
+# 2026-07-29 - 小欧 - hint优化: 语法错误hint从死的"请修复语法错误后重试"改为动态"Python语法错误(行N)，建议:xxxx"; metrics新增error_line+suggestion
+# 2026-07-29 - 小欧 - PYEOF容错: Python文件末尾整行PYEOF自动剥离(heredoc泄漏), 前置在validate_syntax之前; metrics新增auto_removed_pyeof
+# 2026-07-30 - 小沈 - except:pass补日志: diff生成失败改为logger.debug记录
 """
 F2: writetext — 写文本文件
 
@@ -21,13 +25,15 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
+from app.tools.tool_constants import WRITETEXT_INER_PREVIEW_CHARS
 
 
 def _build_content_preview(content: str) -> str:
-    """文首50 + 文末50 预览 — 小沈 2026-07-08；2026-07-20 用户裁定恢复此 Tool 层预览(write 工具不需回显全文)"""
-    if len(content) <= 100:
+    """文首+文末预览 — 小沈 2026-07-08；2026-07-20 用户裁定恢复此 Tool 层预览(write 工具不需回显全文)"""
+    _pc = WRITETEXT_INER_PREVIEW_CHARS
+    if len(content) <= _pc * 2:
         return content
-    return f"文首(50字符):{content[:50]}\n...(中间省略)...\n文末(50字符):{content[-50:]}"
+    return f"文首({_pc}字符):{content[:_pc]}\n...(中间省略)...\n文末({_pc}字符):{content[-_pc:]}"
 from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
 from app.services.task.task_context import _current_task_id
 from app.db.models.operation_models import OperationType
@@ -39,7 +45,7 @@ from app.tools.validate.file_safety_checker import check_content_safety
 from app.logger import logger
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_write, check_conflict, is_unchanged
-from app.tools.toolhelper.syntax_validator import detect_language, validate_syntax  # 小欧 2026-07-21 (83379fbb) 多语言语法护栏:BOM去扰+BUG-002
+from app.tools.toolhelper.syntax_validator import validate_syntax, detect_language  # 小欧 2026-07-21 统一语法检测接入
 
 
 def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
@@ -154,6 +160,7 @@ async def writetext(
     """写入文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-11 路径参数统一为path"""
     # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
     file_path = path
+    syntax_warn = None  # 追加模式语法警告(写入后仍提示, 不阻断) — 小欧 2026-07-21
     t0 = _time_mod.perf_counter()
     # content验证+类型转换(dict/list→json)统一在_check_write_safety处理 — 小欧 2026-07-08
     # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
@@ -186,6 +193,34 @@ async def writetext(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, hint="请检查文件写入安全限制", user_encoding=encoding, user_append=append)
         return build_error(data={}, llm_data=llm_data)
+
+    # 容错: 自动移除Python文件末尾的heredoc标记PYEOF — 小欧 2026-07-29（防止LLM把heredoc标记复制进文件）
+    auto_removed_pyeof = False
+    _lang = detect_language(file_path, checked_content)
+    if not append and _lang == "python":
+        _stripped = checked_content.rstrip()
+        if _stripped.endswith("\nPYEOF"):
+            checked_content = _stripped[:-5] + "\n"
+            auto_removed_pyeof = True
+            logger.warning(f"[writetext] 自动移除Python文件末尾的heredoc标记PYEOF: {file_path}")
+
+    # 语法检测 — 整文件代码写阻断; 追加仅警告(片段无法整体校验) — 小欧 2026-07-21 — 小欧 2026-07-29 优化hint带行号+建议
+    _syn = validate_syntax(checked_content, _lang, file_path)
+    if not _syn.valid:
+        _lang_name = {"python": "Python", "json": "JSON", "yaml": "YAML"}.get(_syn.language, _syn.language)
+        _line_info = f"(行{_syn.line})" if _syn.line else ""
+        _sugg = f"，{_syn.suggestion}" if _syn.suggestion else ""
+        _hint = f"{_lang_name}语法错误{_line_info}{_sugg}"
+        if not append:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=_syn.error_text(), hint=_hint, user_encoding=encoding, user_append=append)
+            if _syn.line:
+                llm_data["metrics"]["error_line"] = {"value": _syn.line, "text": f"第{_syn.line}行"}
+            if _syn.suggestion:
+                llm_data["metrics"]["suggestion"] = {"value": _syn.suggestion, "text": _syn.suggestion}
+            return build_error(data={}, llm_data=llm_data)
+        logger.warning(f"[writetext] 追加模式语法警告: {_syn.error_text()}")
+        syntax_warn = _syn.error_text()
 
     encoding = encoding or _detect_file_encoding_for_write(file_path, append)
 
@@ -242,17 +277,6 @@ async def writetext(
         if encoding != original_encoding:
             encoding_warning = f"文件原始编码为'{original_encoding}',当前使用'{encoding}'写入,可能导致文件编码混乱"
 
-    # 语法校验 — 多语言(detect_language+BOM去扰+BUG-002); unknown/文本文件fail-open放行 — 小欧 2026-07-21
-    _lang = detect_language(str(path), checked_content)
-    _syn = validate_syntax(checked_content, _lang, str(path))
-    _syntax_error = _syn.error_text() if not _syn.valid else None
-    if _syntax_error and not append:
-        # 非追加: 语法错误阻断写入 — 小欧 2026-07-21
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=str(path), detail=_syntax_error, hint="请修正语法错误后重试", user_encoding=encoding, user_append=append)
-        return build_error(data={}, llm_data=llm_data)
-    # append 模式语法错误不阻断写入, 降级为 warning(观察者可见) — 小欧 2026-07-21
-
     try:
         operation_id = record_operation(
             task_id=task_id,
@@ -292,8 +316,8 @@ async def writetext(
                             new_content.splitlines(keepends=True),
                             fromfile=str(path), tofile=str(path), n=3,
                         ))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"diff生成失败: {e}")
 
             record_write(file_path)
 
@@ -301,9 +325,21 @@ async def writetext(
                 bytes_written = len(checked_content.encode(encoding))
             except (UnicodeEncodeError, LookupError):
                 bytes_written = len(checked_content.encode("utf-8"))
-            if encoding_warning or _syntax_error:
-                _detail = _syntax_error if _syntax_error else encoding_warning
-                llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=_detail, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
+            if syntax_warn:
+                # 追加模式: 文件已写入, 但语法有问题需提示 LLM/用户 — 小欧 2026-07-21
+                llm_data = _build_write_text_file_llm_data(
+                    "warning", duration_ms, file_path=str(path),
+                    bytes_written=bytes_written, detail=syntax_warn,
+                    mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append,
+                )
+                if diff_text:
+                    llm_data["diff"] = diff_text
+                return build_warning(
+                    data={"content_preview": _build_content_preview(checked_content)},
+                    llm_data=llm_data,
+                )
+            if encoding_warning:
+                llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=encoding_warning, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
                 if diff_text:
                     llm_data["diff"] = diff_text
                 return build_warning(
@@ -311,6 +347,9 @@ async def writetext(
                     llm_data=llm_data,
                 )
             llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
+            if auto_removed_pyeof:
+                llm_data["summary"] += "（已自动移除末尾PYEOF标记）"
+                llm_data["metrics"]["auto_removed_pyeof"] = {"value": True, "text": "已自动移除文件末尾的heredoc标记PYEOF"}
             if diff_text:
                 llm_data["diff"] = diff_text
             # ---- observation_formatter route -------------------------------------------

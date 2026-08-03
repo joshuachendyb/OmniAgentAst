@@ -2,7 +2,7 @@
 
 **编写人**: 小欧
 **编写时间**: 2026-08-03 09:38:46
-**状态**: 待评审
+**状态**: 批次1-2完成、批次3.1-3.5完成，待提交
 
 ### 修订历史
 | 版本 | 时间 | 修订人 | 内容 |
@@ -14,6 +14,7 @@
 | v1.4 | 2026-08-03 12:11 | 小沧 | 批次0收尾：记录 pytest 收集基线 = 4597 tests collected, 16 errors (16个collection-error文件清单) |
 | v1.5 | 2026-08-03 12:30 | 小沧 | 批次1 L0 权威清单核实：32=25缺失+7不同；`logger/config.py` 为 CRLF/LF 行尾差异非真 DIFF；api_logger diff=导入 setup_logger→shared_handler final 正确 |
 | v1.6 | 2026-08-03 13:25 | 小沧 | 批次1 L0 修复完成：32文件恢复+删遗留setup_logger.py+test_logger路径补漏修正+类内顺序依赖修复；验证 20+53 passed，收集基线不变 |
+| v1.7 | 2026-08-03 18:58 | 小欧 | 批次1完成后推进：filter-repo遗留收尾(refs/archive 42坏引用删除、141 dangling保持基线)；批次2 L1 services 40文件完成；批次3.1 fundamental-shell 链前移并完成；3.2 file/validate、3.3 network、3.4 document、3.5 dataanalysis 因 L1 依赖被触达一并同步 final；tool_constants/tool_fc_helper 共享契约同步；验证=import app.main成功+工具注册60个+收集 5351 collected 0 error |
 
 ---
 
@@ -107,6 +108,12 @@
 | 其他 | lifecycle/service, model/resolver, prompts/system_adapter, system_prompts(不同) | system_prompts 有 DB+commit |
 | **验证** | import 全链 + 单元测试 + agent 初始化冒烟 | |
 
+> **✅ 批次 2 L1 完成（2026-08-03 18:58 小欧）**：
+> - 40 文件全部有 DB 证据（l1_tier_survey.py，无 C 档盲区），以 final 为准复制至 repair-code 并应用 live
+> - **跨层依赖逐轮解断点**：constants.py 用 final 覆盖（MAX_CONTEXT_CHARS→MAX_CONTEXT_TOKENS 重命名）；3.1 fundamental-shell 链因硬依赖提前；tool_constants 用 final 覆盖（784行，含 TOOL_TIMEOUT_HINTS，移除 7 个作废 INER_* 常量）；file 链 16 + validate 链 4 同步；openai.py 同步 final（session_id_var 迁至 logger.shared_handler.set_session_id）；network/document/dataanalysis 三分类链同步 final（消除注册失败）；tool_fc_helper 同步 final（新增 _strip_sql_comments_and_strings）
+> - **`import app.main` 成功**；工具注册 **60 个全成功**（10 分类）；live services 备份至 `repair-code/forensics/backup-l1`（80 py）
+> - 验证：handlers/steps/validate = **328 passed + 11 failed**（11 失败全为 observation_formatter 测试过时=基线既有，`_format_matches` 单参数 vs 旧测试传双参数，observation_formatter.py 未改动非本次引入）；收集基线 **5351 collected 0 error**（原始基线 4597/16 errors）
+
 ### 批次 3：L2 tools 工具层（107 个）— **按模块分批，逐模块推进**
 > 原则：先修 register/schema（对外契约），再修工具实现，最后修依赖链；每模块独立验证通过后才进下一模块。
 > **分组依据 = 功能关联性**（同链路工具放同批），每行一个批次、单独 commit。
@@ -114,11 +121,11 @@
 
 | 批次号 | 模块（关联组） | 涉及文件 | 权威档位 | 验证目标（含现有测试） |
 |--------|--------------|---------|---------|------------------------|
-| 3.1 | **fundamental-shell 链（核心）** | execute_shell_command, execute_shell_command_safety, shell_engine, shell_prompt_templates（缺失 4）+ shell/下 execute_shell_command, execute_shell_command_safety, shell_engine, shell_prompt_templates, shell_schema, shell_register（不同 6）+ fundamental/__init__, send_notification, fundamental_register, fundamental_schema（不同 4）= **14 文件 (5 缺失+9 不同)** | **A 档（DB+commit 最密集）** | `test_execute_shell_command_bugs`、`test_shell_quality`、`test_persistent_shell_engine`、`test_shell_pool_manager`（当前收集 ERROR 根因） |
-| 3.2 | **file 链（含 schema）** | compress_files, copy_file, delete_file, edit_text_file, extract_archive, file_register, file_schema, grep_file_content, list_directory, move_file, read_media_file, read_text_file, search_files, tree, write_text_file, file/__init__（不同 16）+ validate: file_path_checker, registry_path_checker, timeout_validator, url_validator（不同 4） | A/B 档 | file 相关测试 |
-| 3.3 | **network 链（含 schema）** | connectivity, url_validator（缺失 2）+ download_file, fetch_webpage, http_request, network_diagnose, network_register, network_schema, search_web, network/__init__（不同 8）+ http_client_sdk（如依赖） | A/B 档 | `test_network_tools`、`test_http_request_v2` |
-| 3.4 | **document 链（含 schema）** | document_register, document_schema, md_inline_utils, read_docx, read_pdf, read_pptx, read_xlsx, write_docx, write_pdf, write_pptx, write_xlsx（不同 11） | A 档（DB 覆盖多） | document 相关测试 |
-| 3.5 | **dataanalysis 链（含 schema）** | data_loader（缺失 1）+ analyze_data, filter_data, execute_sql, get_db_schema, query_sql, generate_chart, dataanalysis_schema, dataanalysis_register（不同 8） | A 档 | `test_analyze_data`、`test_filter_data` |
+| 3.1 | **fundamental-shell 链（核心）** ✅ | execute_shell_command, execute_shell_command_safety, shell_engine, shell_prompt_templates（缺失 4）+ shell/下 execute_shell_command, execute_shell_command_safety, shell_engine, shell_prompt_templates, shell_schema, shell_register（不同 6）+ fundamental/__init__, send_notification, fundamental_register, fundamental_schema（不同 4）= **14 文件 (5 缺失+9 不同)** | **A 档（DB+commit 最密集）** | `test_execute_shell_command_bugs`、`test_shell_quality`、`test_persistent_shell_engine`、`test_shell_pool_manager`（当前收集 ERROR 根因） |
+| 3.2 | **file 链（含 schema）** ✅ | compress_files, copy_file, delete_file, edit_text_file, extract_archive, file_register, file_schema, grep_file_content, list_directory, move_file, read_media_file, read_text_file, search_files, tree, write_text_file, file/__init__（不同 16）+ validate: file_path_checker, registry_path_checker, timeout_validator, url_validator（不同 4） | A/B 档 | file 相关测试 |
+| 3.3 | **network 链（含 schema）** ✅ | connectivity, url_validator（缺失 2）+ download_file, fetch_webpage, http_request, network_diagnose, network_register, network_schema, search_web, network/__init__（不同 8）+ http_client_sdk（如依赖） | A/B 档 | `test_network_tools`、`test_http_request_v2` |
+| 3.4 | **document 链（含 schema）** ✅ | document_register, document_schema, md_inline_utils, read_docx, read_pdf, read_pptx, read_xlsx, write_docx, write_pdf, write_pptx, write_xlsx（不同 11） | A 档（DB 覆盖多） | document 相关测试 |
+| 3.5 | **dataanalysis 链（含 schema）** ✅ | data_loader（缺失 1）+ analyze_data, filter_data, execute_sql, get_db_schema, query_sql, generate_chart, dataanalysis_schema, dataanalysis_register（不同 8） | A 档 | `test_analyze_data`、`test_filter_data` |
 | 3.6 | **desktop 链（含 schema，07-31 三堂会审 19 bug）** | clipboard_control, desktop_register, desktop_schema, keyboard_control, mouse_click/move/position/scroll, screen_capture, set_window_state, window_focus/info/resize（不同 12） | B 档（07-31 有 `fix:desktop*13个文件`、`fix:desktop三堂会审19个真实bug`） | desktop 相关测试 |
 | 3.7 | **system + timer 链（含 schema）** | system: create_task, delete_task, event_log, list_tasks, system_schema（不同 5）；timer: query_calendar, time_add, time_diff（缺失 3）+ timer_register, timer_schema, timer_set, timer_list, timer/__init__（不同 5） | B/C 档 | system/timer 相关测试 |
 | 3.8 | **win_registry 链** | registry_delete, registry_read, registry_write（不同 3） | A 档（07-31 有 `fix:win_registry registry_write BugB`） | `test_win_registry_deep` |
@@ -150,7 +157,13 @@
 
 ## 七、下一步
 
-1. 评审本计划（批次划分、顺序、判定规则）
-2. 批次 0 收尾：记录当前 backend 测试收集基线（当前 16 个 collection ERROR，根因缺 fundamental/shell 模块）
-3. 按模块分批推进：从**批次 3.1 fundamental-shell 链**（变更最密集、且是多数测试收集失败的根因）开始
-4. 每模块完成提交一次，独立验证，逐个推进，不急于一次性完成
+1. **提交本轮成果**：repair-code 一层一 commit + live 分组提交（L1 services 组 / 常量契约组 / 3.1+分类链组 / openai+L3 触达组）；更新 version.txt 并打 tag
+2. 批次 3.6 desktop 链（12 文件，B 档，07-31 三堂会审 19 bug）
+3. 批次 3.7 system + timer 链（8 文件 + 3 缺失）
+4. 批次 3.8 win_registry 链（3 文件）
+5. 批次 3.9 工具根 + toolhelper 剩余（registry.py、param_alias_mapper、tool_description、tool_error_classifier、toolhelper 等——注意 tool_constants/tool_fc_helper 已提前同步）
+6. 批次 4 L3 API/入口层（openai.py 已随 L1 触达同步，剩余 health/messages/model_routes/task_queries/config/main）
+7. 全量回归 + E2E（真实 LLM）
+
+### 已确认遗留项（基线既有，非本次引入）
+- `tests/handlers/test_observation_formatter_grep.py`(9) + `test_observation_formatter_shell.py`(2) = **11 个测试过时失败**：observation_formatter.py 07-20 已改 `_format_matches(ms)` 单参数+新截断文案，测试仍传双参数/旧文案；observation_formatter.py 本次未改动（git diff 空），为基线既有，**不改系统代码迎合旧测试**（遵守只前进原则）

@@ -1,0 +1,51 @@
+# 编辑历史:
+# 2026-07-18 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致
+
+from typing import Any, Dict, Optional
+
+from .base import ReasoningStep
+
+
+class ErrorStep(ReasoningStep):
+    """错误步骤 - 表示执行过程中出现错误"""
+
+    TYPE: str = "error"
+    IS_DONE: bool = True
+
+    def __init__(
+        self,
+        step: int,
+        error_type: str,
+        error_message: str,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+        timestamp: Optional[str] = None
+    ):
+        ReasoningStep.__init__(self, step, timestamp)
+        self._error_type = error_type
+        self._error_message = error_message
+        self._model = model
+        self._provider = provider
+
+    def get_content(self) -> str:
+        return self._error_message
+
+    @property
+    def error_type(self) -> str:
+        return self._error_type
+
+    @property
+    def error_message(self) -> str:
+        return self._error_message
+
+
+    def _extra_fields(self) -> Dict[str, Any]:
+        extra: Dict[str, Any] = {
+            "error_type": self._error_type,
+            "error_message": self._error_message,
+        }
+        if self._model:
+            extra["model"] = self._model
+        if self._provider:
+            extra["provider"] = self._provider
+        return extra

@@ -1,0 +1,261 @@
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-24 - 小欧 - 2处 data[:200] → GENERATE_CHART_OUTPARM_LIMIT_DATA(魔数→命名常量)
+# 2026-07-26 - 小欧 - OOD重构:文件路径读取改用load_data_to_df统一数据加载(analyze_data/filter_data共享),删内联pd.read_csv/read_excel(DRY+安全校验)
+# 2026-07-26 - 小欧 - 迁移: hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
+# 2026-07-26 - 小沈 - BugFix #6: file_path_checker两行import合并为一行
+# 2026-07-31 - 小欧 - Bug⑪修复: _registered字体快照addfont后实时更新, 防同名字体(msyh.ttc/msyh.ttf)重复addfont | py_compile ✓
+"""
+generate_chart — 使用matplotlib生成数据可视化图表
+【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
+"""
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+import json
+import os
+import time as _time_mod
+import warnings
+from pathlib import Path
+from typing import Dict, Any, Optional, Union, Literal
+
+from app.utils.time_utils import timestamp_for_filename
+from app.tools.tool_response import build_success, build_error
+from app.tools.tool_fc_helper import _check_module
+from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_data_error
+from app.logger import logger
+from app.tools.tool_constants import ERR_DOC_CHART_GENERATE, GENERATE_CHART_OUTPARM_LIMIT_DATA
+from app.tools.dataanalysis.data_loader import load_data_to_df
+
+
+def _get_output_dir() -> str:
+    """获取项目输出目录 — 优先从配置读取project_root，子目录output — 小欧 2026-07-09"""
+    from app.config import get_config
+    return os.path.join(get_config().get_project_root(), "output")
+
+
+def _validate_chart_data(chart_data: dict) -> dict:
+    """验证图表数据格式 — 小健 2026-06-22 内聚(原document_tools._validate_chart_data已删除)"""
+    labels = chart_data.get("labels", [])
+    values = chart_data.get("values", [])
+    if not labels or not values:
+        return {"code": "INVALID", "data": {"valid": False, "error": "数据必须包含labels和values字段"}}
+    if len(labels) != len(values):
+        return {"code": "INVALID", "data": {"valid": False, "error": f"labels({len(labels)})和values({len(values)})长度不一致"}}
+    return {"code": "SUCCESS", "data": {"valid": True}}
+
+
+def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", dest="", detail="", hint="",
+                                    data="", title="", x_label="", y_label="", file_size=0):
+    """generate_chart的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 data字段加[:200]截断"""
+    _act_params = {"chart_type": chart_type}
+    if data:
+        _act_params["data"] = data[:GENERATE_CHART_OUTPARM_LIMIT_DATA] if isinstance(data, str) else str(data)[:GENERATE_CHART_OUTPARM_LIMIT_DATA]
+    if title:
+        _act_params["title"] = title
+    if x_label:
+        _act_params["x_label"] = x_label
+    if y_label:
+        _act_params["y_label"] = y_label
+    if dest:
+        _act_params["dest"] = dest
+    _target = dest or chart_type
+    if exec_code == "error":
+        return {
+            "summary": f"生成图表{_target}，失败: {detail}",
+            "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": _act_params},
+            "status": {"exec_code": "error", "message": "生成图表失败", "code": ERR_DOC_CHART_GENERATE, "detail": detail, "hint": hint if hint else "请检查数据和参数"},
+            "duration_ms": duration_ms,
+            "metrics": {},
+        }
+    metrics = {}
+    if file_size:
+        metrics["file_size"] = {"value": file_size, "text": f"{file_size} bytes"}
+    return {
+        "summary": f"生成图表{_target}，成功: {chart_type}，已保存为{dest}",
+        "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": _act_params},
+        "status": {"exec_code": "success", "message": "图表生成成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": metrics,
+    }
+
+
+def _parse_inline_data(data: Union[str, dict, list]) -> Optional[dict]:
+    """尝试将内联JSON解析为{labels,values}格式 — 小欧 2026-07-07 加非string防御"""
+    if isinstance(data, dict):
+        labels = data.get("labels", [])
+        values = data.get("values", [])
+        if labels and values and len(labels) == len(values):
+            return {"labels": labels, "values": values}
+        return None
+    if isinstance(data, list):
+        return None
+    if not isinstance(data, str):
+        return None
+    data = data.strip()
+    if not data.startswith("{"):
+        return None
+    try:
+        parsed = json.loads(data)
+    except json.JSONDecodeError:
+        # 以"{"开头但JSON解析失败——返回 False 让调用方区分"非JSON"与"JSON格式错误" — 小欧 2026-07-12
+        return False
+    labels = parsed.get("labels", [])
+    values = parsed.get("values", [])
+    if labels and values and len(labels) == len(values):
+        return {"labels": labels, "values": values}
+    return None
+
+
+def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", "line", "pie", "scatter"] = "bar",
+                   title: Optional[str] = None, x_label: Optional[str] = None,
+                   y_label: Optional[str] = None, dest: Optional[str] = None) -> Dict[str, Any]:
+    """使用matplotlib生成数据可视化图表 — 小健 2026-06-22 拆分独立文件 — 小欧 2026-07-07 支持内联JSON数据"""
+    t0 = _time_mod.perf_counter()
+    if dest:
+        # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
+        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
+        is_valid, err, warn = validate_path(OpCategory.WRITE, dest)
+        if not is_valid:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err, hint="请检查输出路径", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+            return build_error(data={}, llm_data=llm_data)
+        if warn:
+            logger.warning(f"[generate_chart] {warn}")
+
+    if not _check_module("matplotlib"):
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="matplotlib库未安装", hint="请安装matplotlib库", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+        return build_error(data={}, llm_data=llm_data)
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        # 抑制matplotlib中文字形缺失警告(全局防御) — 小欧 2026-07-08
+        warnings.filterwarnings('ignore', message='Glyph.*missing from font')
+
+        # 支持两种数据输入：内联JSON或文件路径 — 小欧 2026-07-07
+        inline = _parse_inline_data(data)
+        if inline is False:
+            # data以"{"开头但JSON格式错误，不再误报为"文件不存在" — 小欧 2026-07-12
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"JSON格式错误: {data[:GENERATE_CHART_OUTPARM_LIMIT_DATA]}", hint="数据JSON格式错误，请检查labels/values字段和JSON语法", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+            return build_error(data={}, llm_data=llm_data)
+        if inline is not None:
+            labels, values = inline["labels"], inline["values"]
+        else:
+            # 文件路径读取（交由data_loader统一处理：路径校验/openpyxl检查/异常自然抛出）
+            loaded = load_data_to_df(data)
+            if "error_detail" in loaded:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=loaded["error_detail"], hint="请检查数据文件路径", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+                return build_error(data={}, llm_data=llm_data)
+            df = loaded["df"]
+            if len(df.columns) < 2:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据至少需要2列(标签列+数值列)", hint="数据文件至少需要2列", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+                return build_error(data={}, llm_data=llm_data)
+            labels = df.iloc[:, 0].tolist()
+            values = df.iloc[:, 1].tolist()
+        chart_data = {"labels": labels, "values": values}
+
+        validation = _validate_chart_data(chart_data)
+        if validation["code"] != "SUCCESS" or not validation["data"].get("valid", False):
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            err_detail = validation["data"].get("error", "数据格式错误")
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err_detail, hint="数据验证失败，请检查数据格式", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+            return build_error(data={}, llm_data=llm_data)
+
+        labels = chart_data.get("labels", [])
+        values = chart_data.get("values", [])
+
+        # ================================================================
+        # CJK字体按需加载逻辑 — 小欧 2026-07-08
+        # 1. 检查labels/title/x_label/y_label是否含中文(CJK统一表意文字范围 > 0x2E80)
+        # 2. 不含中文 → 跳过字体注册(用DejaVu Sans默认字体，无警告)
+        # 3. 含中文 → 检查字体是否已注册(避免重复addfont)，未注册则从C:/Windows/Fonts加载
+        # 4. addfont + rcParams.font.sans-serif让matplotlib渲染时优先命中中文字体
+        # 5. axes.unicode_minus=False防止负号被渲染为U+2212(显示为方块)
+        # ================================================================
+        _cjk_texts = [str(t) for t in (labels or [])] + [str(t or "") for t in (title, x_label, y_label)]
+        _needs_cjk = any(ord(c) > 0x2E80 for text in _cjk_texts for c in text)
+        if _needs_cjk:
+            import matplotlib.font_manager as fm
+            # 获取当前已注册字体名集合，避免重复addfont
+            _registered = {f.name for f in fm.fontManager.ttflist}
+            for _fp, _fn in [
+                ("C:/Windows/Fonts/msyh.ttc", "Microsoft YaHei"),
+                ("C:/Windows/Fonts/msyh.ttf", "Microsoft YaHei"),
+                ("C:/Windows/Fonts/simhei.ttf", "SimHei"),
+            ]:
+                if _fn not in _registered and os.path.exists(_fp):
+                    try:
+                        fm.fontManager.addfont(_fp)
+                        _registered.add(_fn)  # 2026-07-31 小欧: Bug⑪修复 — 快照实时更新, 防同名字体(msyh.ttc/msyh.ttf)重复addfont
+                    except Exception:
+                        pass
+            matplotlib.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']
+            matplotlib.rcParams['axes.unicode_minus'] = False
+
+        if not labels or not values:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据格式错误,需要包含labels和values字段", hint="数据需要labels和values字段", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+            return build_error(data={}, llm_data=llm_data)
+
+        if dest is None:
+            timestamp = timestamp_for_filename()
+            dest = os.path.join(_get_output_dir(), f"chart_{timestamp}.png")
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        chart_type_lower = chart_type.lower()
+
+        try:
+            if chart_type_lower == "pie":
+                ax.pie(values, labels=labels, autopct="%1.1f%%")
+            elif chart_type_lower == "bar":
+                ax.bar(labels, values)
+            elif chart_type_lower == "line":
+                ax.plot(labels, values, marker="o")
+            elif chart_type_lower == "scatter":
+                ax.scatter(labels, values)
+            else:
+                ax.bar(labels, values)
+
+            if title:
+                ax.set_title(title)
+            if x_label and chart_type_lower != "pie":
+                ax.set_xlabel(x_label)
+            if y_label and chart_type_lower != "pie":
+                ax.set_ylabel(y_label)
+
+            plt.tight_layout()
+            Path(dest).parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(dest, dpi=150, bbox_inches="tight")
+        finally:
+            plt.close(fig)
+
+        file_size = os.path.getsize(dest) if os.path.exists(dest) else 0
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_generate_chart_llm_data("success", duration_ms, chart_type_lower, dest, file_size=file_size,
+                                                    data=data, title=title, x_label=x_label, y_label=y_label)
+        # =============================================================================
+        # 数据设计：dest 从 data 移除，通过 llm_data.summary 传递给 LLM
+        # summary 示例: "成功生成bar图表: D:/chart.png"
+        # data 留空 (formatter #21 fallback 展示为空)
+        # — 小欧 2026-07-06
+        # =============================================================================
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #0 空data
+        # trigger: 无 key 可匹配
+        # handler: 直接返回 "" (空字符串)
+        # ------------------------------------------------------------------------------
+        return build_success(data={}, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=str(e), hint=hint_for_data_error(e), data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+        return build_error(data={}, llm_data=llm_data)
+
+
+__all__ = ["generate_chart"]

@@ -1,0 +1,140 @@
+# -*- coding: utf-8 -*-
+"""
+get_system_info — 获取系统信息
+【2026-06-22 小健】从 system/system_tools.py 迁入 fundamental 为独立文件
+"""
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+import platform
+import socket
+import time as _time_mod
+from typing import Dict, Any
+
+import psutil
+
+from app.tools.tool_response import build_success, build_error
+from app.logger import logger
+from app.tools.tool_constants import ERR_SYSTEM_INFO
+
+
+def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type: str,
+                                     detail: str = "", hint: str = "",
+                                     custom_summary: str = "") -> dict:
+    """get_system_info的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加detail — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 加custom_summary"""
+    if exec_code == "error":
+        return {
+            "summary": f"获取系统信息，{info_type}，失败",
+            "action": {"tool": "sysinfo", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
+            "status": {"exec_code": "error", "message": "获取系统信息失败", "code": ERR_SYSTEM_INFO, "detail": detail, "hint": hint if hint else "请检查info_type参数"},
+            "duration_ms": duration_ms,
+            "metrics": {},
+        }
+    _summary = custom_summary if custom_summary else f"获取系统信息，{info_type}，成功"
+    return {
+        "summary": _summary,
+        "action": {"tool": "sysinfo", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
+        "status": {"exec_code": "success", "message": "获取系统信息成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {},
+    }
+
+
+def sysinfo(info_type: str = "all") -> Dict[str, Any]:
+    """获取系统信息 — 小健 2026-06-22 迁入fundamental独立文件; 小健 2026-06-24 修复无效info_type返回success的bug"""
+    t0 = _time_mod.perf_counter()
+    
+    valid_types = ("basic", "cpu", "memory", "disk", "network", "all")
+    if info_type not in valid_types:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_get_system_info_llm_data("error", duration_ms, info_type, detail=f"无效的info_type: {info_type}", hint="请使用basic/cpu/memory/disk/network/all作为info_type")
+        return build_error(
+            data={"error_detail": f"无效的info_type: {info_type}", "valid_types": list(valid_types)},
+            llm_data=llm_data
+        )
+    
+    try:
+        data = {}
+
+        if info_type in ("basic", "all"):
+            data["basic"] = {
+                "platform": platform.system(),
+                "platform_release": platform.release(),
+                "platform_version": platform.version(),
+                "architecture": platform.machine(),
+                "processor": platform.processor(),
+                "hostname": socket.gethostname(),
+                "python_version": platform.python_version(),
+            }
+
+        if info_type in ("cpu", "all"):
+            cpu_freq = psutil.cpu_freq()
+            data["cpu"] = {
+                "physical_cores": psutil.cpu_count(logical=False),
+                "logical_cores": psutil.cpu_count(logical=True),
+                "current_frequency_mhz": cpu_freq.current if cpu_freq else None,
+                "min_frequency_mhz": cpu_freq.min if cpu_freq else None,
+                "max_frequency_mhz": cpu_freq.max if cpu_freq else None,
+                "cpu_usage_percent": psutil.cpu_percent(interval=0.5),
+            }
+
+        if info_type in ("memory", "all"):
+            mem = psutil.virtual_memory()
+            data["memory"] = {
+                "total_gb": round(mem.total / (1024**3), 2),
+                "available_gb": round(mem.available / (1024**3), 2),
+                "used_gb": round(mem.used / (1024**3), 2),
+                "percent": mem.percent,
+            }
+
+        if info_type in ("disk", "all"):
+            disk_info = []
+            for partition in psutil.disk_partitions():
+                try:
+                    usage = psutil.disk_usage(partition.mountpoint)
+                    disk_info.append({
+                        "device": partition.device,
+                        "mountpoint": partition.mountpoint,
+                        "filesystem": partition.fstype,
+                        "total_gb": round(usage.total / (1024**3), 2),
+                        "used_gb": round(usage.used / (1024**3), 2),
+                        "free_gb": round(usage.free / (1024**3), 2),
+                        "percent": usage.percent,
+                    })
+                except PermissionError:
+                    continue
+            data["disk"] = disk_info
+
+        if info_type in ("network", "all"):
+            net_io = psutil.net_io_counters()
+            data["network"] = {
+                "bytes_sent_mb": round(net_io.bytes_sent / (1024**2), 2),
+                "bytes_recv_mb": round(net_io.bytes_recv / (1024**2), 2),
+                "packets_sent": net_io.packets_sent,
+                "packets_recv": net_io.packets_recv,
+            }
+
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        # =============================================================================
+        # summary 简短化（详情走 data → _format_sysinfo 展示），避免观测行过长
+        # — 小沈 2026-07-08
+        # =============================================================================
+        _custom_summary = f"获取系统信息，{info_type}，成功（见下方详情）"
+        llm_data = _build_get_system_info_llm_data("success", duration_ms, info_type, custom_summary=_custom_summary)
+        # ---- observation_formatter route -------------------------------------------
+        # branch: #17 sysinfo sections
+        # trigger: "basic" in data and isinstance(data["basic"], dict)
+        # handler: _format_sysinfo(data) — 分节(basic/cpu/memory/disk/network)展示
+        # file:    observation_formatter.py:204-206
+        # ------------------------------------------------------------------------------
+        return build_success(data=data, llm_data=llm_data)
+
+    except Exception as e:
+        logger.error(f"[sysinfo] 获取系统信息失败: {e}")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_get_system_info_llm_data("error", duration_ms, info_type, detail=str(e), hint="获取系统信息失败，请重试")
+        return build_error(data={}, llm_data=llm_data)
+
+
+__all__ = ["sysinfo"]
