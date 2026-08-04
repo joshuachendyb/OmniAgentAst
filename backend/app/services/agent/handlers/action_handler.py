@@ -45,6 +45,8 @@
 # 2026-07-30 - 小沈 - except:pass补日志: add_tool_result双层catch失败改为logger.debug记录
 # 2026-07-30 - 小欧 - auto_confirm校验: SafetyResult.auto_confirm=True时不等确认直接通过, 提示照出但SUSPENDED不挂起 — 北京老陈驱动三堂会审
 # 2026-07-31 - 小欧 - 撤销auto_confirm: action_handler删auto_confirm判断块, 恢复wait_for_confirmation_result等待逻辑
+# 2026-08-03 - 小沈 - P0-01 E2E修复: 重加auto_confirm消费块(07-30加→07-31撤→重加缺失一半, 仅残留checker返回+字段)
+#           与tool_safety_checker.py:84返回的auto_confirm=True配对, 实现DB场景表#1(安全绕过时MetaStep照出但立即resolve不过SUSPENDED)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -147,7 +149,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         #   最终只执行通过的call(通过_out返回过滤后的call列表)
         """
         from app.services.safety.tool_safety_checker import get_tool_safety_checker
-        from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result
+        from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result, resolve_confirmation
         safety_checker = get_tool_safety_checker()
 
         _denied = []
@@ -180,6 +182,13 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     params=desensitized_params,
                     safety_level=safety_result.safety_level,
                 ))
+
+                if safety_result.auto_confirm:
+                    # P0-01修复: 安全绕过(security.enabled=false)时MetaStep照出但自动确认立即通过, 不挂起不等wait
+                    #   与tool_safety_checker.py bypass路径返回的auto_confirm=True配对 — 小沈 2026-08-03
+                    resolve_confirmation(confirm_id, confirmed=True, trust_session=True)
+                    set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
+                    continue
 
                 set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认工具执行: {_cn}")
                 auth = await wait_for_confirmation_result(confirm_id, timeout=HITL_TIMEOUT)

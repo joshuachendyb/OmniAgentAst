@@ -4,6 +4,8 @@
 # 2026-07-18 小欧 #15/#50 fix: 删SafetyResult.is_safe死字段
 # 2026-07-30 - 小欧 - auto_confirm+绕过时仍查needs_confirmation
 # 2026-07-31 - 小欧 - 撤销auto_confirm: 恢复security.enabled=false原绕过路径, 删auto_confirm字段
+# 2026-08-04 - 小欧 - 开关false仍拒绝已知风险: bypass只跳过确认询问不跳过危险防护, _check_known_risks(路径越权/写入保护/代码注入)检测到即blocked拒绝执行; 普通needs_confirmation仍auto_confirm放行 — 北京老陈驱动
+# 2026-08-04 - 小欧 - 重构DRY: _check_known_risks提到两分支共同入口(无条件防线), 未注册check前置统一; 开关只分流"确认策略", 危险防护与开关解耦 — 三堂会审驱动(合规SRP/DRY/KISS最优)
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -75,32 +77,31 @@ class ToolSafetyChecker:
         本函数负责：路径黑名单/白名单/路径穿越/写入大小保护/二元确认
 
         安全开关: config.yaml security.enabled=false 时跳过所有检查
+        2026-08-04 小欧: 已知风险(路径越权/写入保护/代码注入)无条件检测不管开关, 危险即拒绝执行(blocked);
+            开关false仅bypass各"确认询问"(普通needs_confirmation), 开关true则正常询问 — 北京老陈驱动重构
         """
-        if _is_skip_safety():
-            tool_meta = tool_registry.get_tool(tool_name)
-            if tool_meta:
-                needs_confirm = self._get_needs_confirmation(tool_meta, params or {})
-                if needs_confirm:
-                    return SafetyResult(requires_confirmation=True, auto_confirm=True,
-                            blocked=False, message="安全开关已绕过(提示照出)",
-                            safety_level="destructive")
-            return SafetyResult(requires_confirmation=False,
-                    blocked=False, message="安全开关已绕过",
-                    safety_level="safe")
-
         tool_meta = tool_registry.get_tool(tool_name)
         if tool_meta is None:
             return SafetyResult(blocked=True,
                     message=f"工具{tool_name}未注册",
                     safety_level="dangerous")
 
+        # 已知风险检测: 无条件防线(开关无关) — 路径越权/写入大小保护/代码注入即使开关false也拒绝 — 小欧 2026-08-04
         known_risk = self._check_known_risks(tool_name, params or {})
         if known_risk is not None:
-            # #14 fix: 已知风险只拦截，不触发确认（确认由 needs_confirm 路径驱动）— 小欧 2026-07-18
+            # #14 fix: 已知风险只拦截, 不触发确认(确认由 needs_confirm 路径驱动) — 小欧 2026-07-18
             known_risk.safety_level = "dangerous"
             return known_risk
 
-        needs_confirm = self._get_needs_confirmation(tool_meta, params or {})
+        # 确认策略分流: 开关只影响"是否询问确认", 不影响危险防护
+        if _is_skip_safety():
+            if self._get_needs_confirmation(tool_meta, params or {}):
+                return SafetyResult(requires_confirmation=True, auto_confirm=True,
+                        blocked=False, message="安全开关已绕过(提示照出)",
+                        safety_level="destructive")
+            return SafetyResult(requires_confirmation=False,
+                    blocked=False, message="安全开关已绕过",
+                    safety_level="safe")
 
         if tool_meta.check_fn:
             try:
@@ -117,6 +118,7 @@ class ToolSafetyChecker:
                         message=f"安全检查异常(已阻止): {e}",
                         safety_level="dangerous")
 
+        needs_confirm = self._get_needs_confirmation(tool_meta, params or {})
         safety_level = "destructive" if needs_confirm else "safe"
         return SafetyResult(requires_confirmation=needs_confirm,
                 blocked=False, message="", safety_level=safety_level)
