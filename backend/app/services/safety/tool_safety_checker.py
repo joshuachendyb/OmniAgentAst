@@ -7,6 +7,8 @@
 # 2026-08-04 - 小欧 - 开关false仍拒绝已知风险: bypass只跳过确认询问不跳过危险防护, _check_known_risks(路径越权/写入保护/代码注入)检测到即blocked拒绝执行; 普通needs_confirmation仍auto_confirm放行 — 北京老陈驱动
 # 2026-08-04 - 小欧 - 重构DRY: _check_known_risks提到两分支共同入口(无条件防线), 未注册check前置统一; 开关只分流"确认策略", 危险防护与开关解耦 — 三堂会审驱动(合规SRP/DRY/KISS最优)
 # 2026-08-04 - 小欧 - delete专属安全(双轨接入): check_before_execute 一次性计算 delete_risk; R1/R2 仍由 known_risks(_is_forbidden_path) 覆盖, R6 入 _check_known_risks 无条件拦截, R3-R5 入 _get_needs_confirmation 确认分流; 惰性导入 delete_safety 避免循环依赖 — 北京老陈驱动(设计文档 v1.15)
+# 2026-08-04 - 小欧 - fix: _check_known_risks 中 writetext 的 content 可能为 dict/list(LLM结构化传参), content.encode() 崩溃致误拦; 对齐工具层 check_content_safety 的 dict/list→json 转换 — E2E-P0-03a 回归发现
+# 2026-08-04 - 小欧 - 三堂会审(YAGNI)撤销转换方案: 写保护只需量字节数, content为dict/list(非str)走 isinstance(str) 判typeskip(new_size=0), 不崩不误拦且无需把dict转json; 与工具层json转换职责解耦 — 北京老陈审出多余转换
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -157,11 +159,12 @@ class ToolSafetyChecker:
         if tool_name == _WRITE_RISK_TOOL:
             try:
                 # 【#29修复】写入大小保护应优先用path参数（与路径检查一致），file_path兜底 — chendyg 2026-06-26
+                # 2026-08-04 小欧 fix: content 可能为 dict/list(LLM结构化传参), 用isinstance(str)判typeskip写保护, 不崩不误拦 — 北京老陈审出多余转换(YAGNI), 写保护只需量字节数无需转JSON
                 file_path = params.get("path") or params.get("file_path", "")
                 content = params.get("content", "")
                 p = Path(file_path)
                 old_size = p.stat().st_size if p.exists() and p.is_file() else 0
-                new_size = len(content.encode("utf-8")) if content else 0
+                new_size = len(content.encode("utf-8")) if isinstance(content, str) and content else 0
                 if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:
                     return SafetyResult(blocked=True,
                             message=f"数据保护:新内容({new_size}字节)远小于原始内容({old_size}字节)")

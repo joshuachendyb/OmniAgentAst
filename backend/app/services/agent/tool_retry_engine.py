@@ -15,6 +15,7 @@
 # 2026-07-29 - 小沈 - 超时hint注入: 导入TOOL_TIMEOUT_HINTS,try_once/_execute_with_retry的TIMEOUT路径查表传hint给LLM
 # 2026-07-30 - 小沈 - 保险丝常量重构: INSURANCE_CEILING=600(天花板), INSURANCE_BUFFER=30(缓冲), PROGRESSIVE_MAX=CEILING//2(无inner渐进上限); 两路径逻辑统一为: 有inner=max(inner,CEILING)+BUFFER, 无inner=min(base_timeout*(attempt+1),PROGRESSIVE_MAX)
 # 2026-07-30 - 小沈 - 备用工具命名统一: design注释+error hint中"搜索"→"搜索备用工具的类型(可选:文档/数据分析/数据库/网络/系统/桌面/时间定时)"; docstring渐进超时标注(无inner路径)并补(有inner路径)保险丝公式
+# 2026-08-04 - 小欧 - DRY收敛: 手写json.dumps → 复用公共safe_json_dumps(复用先查库), #11 fix行为不变(ensure_ascii=False) — 北京老陈驱动
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -31,11 +32,11 @@ Author: 小沈 - 2026-05-27
 
 import asyncio
 import inspect
-import json as _json
 from typing import Any, Callable, Dict, Optional
 
 from app.logger import logger
 from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
+from app.utils.json_utils import safe_json_dumps
 from app.tools.tool_constants import (
     TOOL_TIMEOUTS, TOOL_RETRY_BACKOFF, TOOL_RETRY_CONFIG,
     TOOL_TIMEOUT_HINTS,
@@ -289,7 +290,7 @@ class ToolRetryEngine:
                     _t = spec.get("type")
                     if _t == "string" and not isinstance(v, str):
                         try:
-                            params[k] = _json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
+                            params[k] = safe_json_dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
                         except Exception:
                             pass
                 type_errors = []

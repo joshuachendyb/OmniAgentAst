@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-09 - 北京老陈 - 创建文件(validate层 内容安全+模块安装检查; 架构分层说明注释)
+# 2026-08-04 - 小欧 - DRY收敛: _check_text_content 手写json.dumps → 复用公共safe_json_dumps(行为不变, dict/list自动转JSON供写入); 头部补编辑历史区对齐同目录规范 — 北京老陈驱动
 """
 工具级安全检查（validate层） — 内容安全 + 模块安装检查
 
@@ -21,10 +24,10 @@ Safety层（services/safety/tool_safety_checker.py + path_safe_check.py）独立
 
 北京老陈 2026-07-09
 """
-import json
 from typing import Any, Optional, Tuple
 
 from app.tools.tool_fc_helper import _check_module
+from app.utils.json_utils import safe_json_dumps
 from app.logger import logger
 
 _OFFICE_WRITE_MODULES = {
@@ -110,10 +113,11 @@ def check_content_safety(
 
 
 def _check_text_content(content: Any, options: dict, param_name: str) -> Tuple[Optional[str], Any]:
-    """文本内容特殊检查 — dict/list自动转JSON + append冲突"""
+    """文本内容特殊检查 — dict/list自动转JSON + append冲突
+    2026-08-04 小欧: 手写json.dumps → 复用公共safe_json_dumps(DRY复用先查库)"""
     if isinstance(content, (dict, list)):
         try:
-            content = json.dumps(content, ensure_ascii=False, indent=2)
+            content = safe_json_dumps(content, ensure_ascii=False, indent=2)
             logger.info(f"[check_content_safety] {param_name}参数为{type(content).__name__}，已自动转为JSON字符串")
         except Exception as e:
             return f"{param_name}序列化失败: {e}", content
