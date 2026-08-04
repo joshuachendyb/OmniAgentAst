@@ -1,3 +1,25 @@
+v0.19.3
+更新时间: 2026-08-04 19:25:12 - 小欧-2026-08-04
+## v0.19.2→v0.19.3 变更汇总(10个commit) - 小欧-2026-08-04
+
+### repair:
+- repair-code migrate_steps 恢复误删的execution_steps迁移模块(与final md5一致, 死文件清理漏引用, db_initializer启动依赖) - 小欧-2026-08-03
+
+### feat:
+- services/chat/migrate_steps 从final恢复误删的execution_steps迁移模块(死文件清理漏引用, db_initializer启动依赖) - 小欧-2026-08-03
+- delete_safety R1-R6删除安全判定+系统盘符动态化(get_existing_drives用于R2磁盘根递归删除判定) - 小欧-2026-08-04
+
+### fix:
+- action_handler+tool_safety_checker 重加auto_confirm消费块补齐配对+开关false仍拒已知风险与DRY重构 - 小欧-2026-08-04
+- file_safety_checker+tool_safety_checker+tool_retry_engine writetext dict不崩溃+DRY收敛safe_json_dumps - 小欧-2026-08-04
+
+### docs:
+- 新增安全机制中的删除确认策略需求与设计文档(含最终决策矩阵R1-R6) - 小欧-2026-08-04
+- 删除确认策略设计文档 v1.6(R1-R6矩阵+delete专属规则表+安全均衡原则+3遍复核一致) - 小欧-2026-08-04
+- 删除确认策略需求与设计文档 v1.14(系统盘符动态化: get_existing_drives 用于R2磁盘根递归删除判定) - 小欧-2026-08-04
+- 删除确认策略需求与设计文档 v1.15(实施前全文通读3遍核查修正) - 小欧-2026-08-04
+- PersistentShell会话池并发执行设计文档 v2.0 追加第9章P0-08卡死复盘+半死根因分析+根因级修复方案(杜绝看门狗) - 小欧-2026-08-04
+
 v0.19.2
 更新时间: 2026-08-03 22:48:30 - 小欧-2026-08-03
 ## v0.19.1→v0.19.2 变更汇总(23个commit) - 小欧-2026-08-03
