@@ -154,7 +154,8 @@ npm run test:e2e     # Playwright
 
 ## Architecture (Current)
 
-### Backend: `backend/app/main.py` → FastAPI
+> 架构详情（架构图、工具体系、Agent体系、安全体系、项目结构、技术栈）见 `README.md` 二~六章。
+> 此处仅保留 AGENTS.md 独有的技术要点。
 
 **Request flow**: FastAPI `/api/v1` → `services/chat/stream.py`(SSE 编排) → `UniversalAgent.run_react_cycle()` → SSE
 
@@ -194,36 +195,6 @@ npm run test:e2e     # Playwright
 
 ---
 
-## Project Structure
-
-```
-OmniAgentAs-desk/
-├── backend/
-│   ├── app/
-│   │   ├── api/v1/             # REST endpoints
-│   │   ├── main.py             # FastAPI entrypoint
-│   │   ├── config.py           # YAML+env config loader
-│   │   ├── db/models/          # SQLAlchemy + Pydantic
-│   │   ├── tools/              # Tool registry + categories (file/shell/fundamental/...)
-│   │   ├── services/
-│   │   │   ├── agent/          # base_agent + universal_agent + react_cycle + handlers/ + steps/（单一 UniversalAgent，无 AgentFactory）
-│   │   │   ├── tools/          # (deprecated, moved to app/tools/)
-│   │   │   ├── llm/            # LLM client (client_sdk.py, core.py, stream_parser.py)
-│   │   │   ├── safety/         # file_safety/, tool_safety_checker.py
-│   │   │   ├── task/           # task_tracker.py, task_pause/cancel/resume.py
-│   │   │   └── react_sse_wrapper/  # run_sse_stream.py, chat_stream.py
-│   │   └── utils/              # 公共工具函数
-│   ├── tests/                  # pytest
-│   └── ~/.omniagent/           # SQLite DBs (chat_history.db, operations.db)
-├── frontend/
-│   ├── src/
-│   └── package.json
-├── config/                     # YAML configs
-├── doc/                        # design docs
-├── notes/                      # debug notes
-├── version.txt                 # append-only version history
-└── AGENTS.md
-```
 
 ---
 
@@ -246,19 +217,12 @@ OmniAgentAs-desk/
 
 | Pitfall | Detail |
 |---------|--------|
-| **httpx version lock** | `httpx==0.26.0` + `httpcore==1.0.1` required. Don't upgrade. |
+| **httpx version lock** | `httpx==0.26.0` required. Don't upgrade — 0.28.1+ upgrades httpcore which breaks TLS. |
 | **Duplicate `__all__`** | Register files may have 2 `__all__` defs (second overwrites first). |
 | **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
 | **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{FUNDAMENTAL, SHELL, FILE}`. |
 
----
-##  编码口诀-严格遵守
-SRP 一件事，DRY 写一次
-KISS-DIRECT 简单直接，SLAP 同层级
-YAGNI 不过度，禁止向后兼容
-OCP 开封闭，LSP 子替父
-ISP 接口窄，复用先查库
-拆分和合并代码-先复制代码后修改
+
 
 ## Git Workflow
 
@@ -288,7 +252,4 @@ ISP 接口窄，复用先查库
 - Use `@/` alias for absolute imports
 - Run `npm run check` before commit
 
----
-
-
-> 架构描述以本区块与上方 `Architecture (Current)` 为准；历史 session 的临时进度摘要已不再保留。
+-

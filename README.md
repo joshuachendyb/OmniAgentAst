@@ -2,7 +2,7 @@
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**版本**: v0.18.14 | **更新时间**: 2026-07-12 17:21:14 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-07-12
+**版本**: v0.19.3 | **更新时间**: 2026-08-04 20:47:37 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-08-04
 
 ---
 
@@ -18,7 +18,7 @@ OmniAgentAs-desk 是一个基于 **ReAct (Reasoning + Acting)** 架构的智能�
 | **多AI Provider** | OpenCode、智谱AI、DeepSeek、Kimi等 OpenAI兼容API |
 | **流式响应** | SSE实时推送，推理过程即时可见 |
 | **会话管理** | 历史记录、搜索、标题自动生成、跨会话切换 |
-| **安全防护** | 四层安全体系：安全开关(config.yaml) → 工具安全级别 → 已知风险检测(路径越权/写入污染/代码注入) → file_safety DB事务编排 |
+| **安全防护** | 四层安全体系：安全开关(config.yaml) → 工具安全级别 → 已知风险检测(路径越权/写入污染/代码注入/删除安全R1-R6) → safety DB事务编排 |
 
 ---
 
@@ -35,7 +35,7 @@ OmniAgentAs-desk 是一个基于 **ReAct (Reasoning + Acting)** 架构的智能�
 | **任务执行** | 请求内流式（SSE），`run_react_cycle` 单请求驱动；无独立任务队列/Redis | — |
 | **测试** | pytest / Vitest / Playwright | — |
 
-### 2.2 当前架构图（代码实际，v0.18.14）
+### 2.2 当前架构图（代码实际，v0.19.3）
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -57,7 +57,7 @@ OmniAgentAs-desk 是一个基于 **ReAct (Reasoning + Acting)** 架构的智能�
 │         │                        │                      │
 │  ┌──────┴────────────────────────┴───────────────────┐  │
 │  │  ToolRegistry(单例) ── 10分类63工具               │  │
-│  │  Safety 四层：开关→安全级→已知风险→file_safety    │  │
+│  │  Safety 四层：开关→安全级→已知风险→safety    │  │
 │  │  LLM 客户端(httpx, 多Provider)                    │  │
 │  └────────────────────────────────────────────────────┘  │
 │  数据层：SQLite(chat_history.db/operations.db)+多库抽象    │
@@ -71,7 +71,7 @@ OmniAgentAs-desk 是一个基于 **ReAct (Reasoning + Acting)** 架构的智能�
 
 ### 2.3 架构现状与常见目标架构的偏差
 
-> 下表基于 v0.18.14 代码实际核查（grep + 运行时 registry 加载），如实标注与「网关认证/权限/限流 + 任务队列 + Redis + 多端接入」理想架构的差异。
+> 下表基于 v0.19.3 代码实际核查（grep + 运行时 registry 加载），如实标注与「网关认证/权限/限流 + 任务队列 + Redis + 多端接入」理想架构的差异。
 
 | 维度 | 现状（代码实际） | 与理想架构差异 |
 |------|----------------|---------------|
@@ -98,18 +98,18 @@ OmniAgentAs-desk 是一个基于 **ReAct (Reasoning + Acting)** 架构的智能�
 | 分类 | 数量 | 说明 |
 |------|------|------|
 | **FILE** | 14 | 文件读写、搜索、编辑、归档、树、校验等 |
-| **SHELL** | 2 | Shell命令执行、Python/JS代码执行 |
+| **SHELL** | 1 | 命令查找（which）；Shell/Python执行已迁入 FUNDAMENTAL |
 | **NETWORK** | 5 | HTTP请求、下载、网页抓取、网络诊断、搜索 |
 | **SYSTEM** | 4 | 系统计划任务、事件日志 |
 | **DESKTOP** | 11 | 窗口管理、截屏、剪贴板、键鼠、通知 |
 | **DOCUMENT** | 8 | PDF/Word/Excel/PPT 读写 |
 | **DATAANALYSIS** | 6 | SQL查询/执行、图表生成、数据筛选/分析 |
-| **FUNDAMENTAL** | 7 | 系统信息、时间日期、通知、工具搜索 |
+| **FUNDAMENTAL** | 5 | Shell命令执行、系统信息、时间日期、通知、工具搜索 |
 | **WIN_REGISTRY** | 3 | 注册表读/写/删 |
-| **TIMER** | 3 | 定时器设置/列出/清除 |
+| **TIMER** | 6 | 定时器设置/列出/清除 + 时间计算(timeadd/timediff/calendar) |
 | **合计** | **63** | |
 
-> **注**：分类与数量以 `backend/app/tools/tool_constants.py` 的 `CATEGORY_MODULES` + 运行时 `ensure_tools_registered()` 为准（上述为 v0.18.14 实际加载值）。`validate/` 为校验层（路径/URL/超时/注册表），不计入对外工具。
+> **注**：分类与数量以 `backend/app/tools/tool_constants.py` 的 `CATEGORY_MODULES` + 运行时 `ensure_tools_registered()` 为准（上述为 v0.19.3 实际加载值）。v0.18.35 起 Shell 命令执行迁入 FUNDAMENTAL（`execute_shell_command` 注册为 `shell` 工具），SHELL 分类仅保留 `which`；timeadd/timediff/calendar 自 FUNDAMENTAL 迁入 TIMER。`validate/` 为校验层（路径/URL/超时/注册表），不计入对外工具。
 
 ### 3.2 工具注册架构
 
@@ -122,15 +122,15 @@ backend/app/tools/
 ├── toolhelper/              # 工具辅助
 ├── validate/                # 校验层（路径/URL/超时/注册表，非对外工具）
 ├── file/                    # 文件操作（14）
-├── shell/                   # Shell命令（2）
+├── shell/                   # 命令查找 which（1）
 ├── network/                 # 网络通信（5）
 ├── system/                 # 系统计划任务/事件日志（4）
 ├── desktop/                # 桌面操作（11）
 ├── document/               # 文档处理（8）
 ├── dataanalysis/            # 数据分析（6）
-├── fundamental/             # 基础能力（7）
+├── fundamental/             # 基础能力（5，含 Shell 命令执行）
 ├── win_registry/            # 注册表（3）
-└── timer/                   # 定时器（3）
+└── timer/                   # 定时器 + 时间计算（6）
 ```
 
 每个分类目录结构（`{category}_register.py` 为注册入口，`{category}_tools.py` 为具体实现）：
@@ -160,17 +160,17 @@ UniversalAgent(BaseAgent)      ← 唯一实现类，配置驱动（意图/模�
 
 原设计的 `AgentFactory` 多类分发已移除。当前流程：请求经 `ChatRouter` → 意图识别（CRSS 正则 + LLM 兜底）→ 统一构造 `UniversalAgent` 并调用 `run_react_cycle`。意图类型只影响系统 Prompt 与工具集装配，不影响 Agent 类的选择。
 
-### 4.3 安全体系（v0.15.9）
+### 4.3 安全体系（v0.19.3）
 
 | 层 | 模块 | 职责 |
 |---|------|------|
 | L0 | config.yaml security.enabled | 全局开关，关闭后跳过所有安全检查 |
 | L1 | ToolSafetyLevel(read_only/safe/destructive/dangerous) | 工具声明式安全级别 |
-| L2 | ToolSafetyChecker._check_known_risks | 运行时已知风险检测：路径越权/写入污染/代码注入 |
-| L3 | file_safety.execute_with_safety | DB事务编排：操作记录写入→状态追踪→备份→文件hash→审计 |
-| L3 | file_safety.record_operation | 操作记录持久化(operations.db)，支持回滚 |
+| L2 | ToolSafetyChecker._check_known_risks | 运行时已知风险检测：路径越权/写入污染/代码注入/删除安全判定(delete_safety R1-R6) |
+| L3 | safety.operation_record.execute_with_safety | DB事务编排：操作记录写入→状态追踪→备份→文件hash→审计 |
+| L3 | safety.operation_record.record_operation | 操作记录持久化(operations.db)，支持回滚 |
 
-> L3 层在 v0.15.9 从空壳 stub（仅生成 UUID）重构为真实 file_safety 委托，恢复完整的 DB 事务编排和回滚能力。
+> L3 层在 v0.15.9 从空壳 stub（仅生成 UUID）重构为真实 file_safety 委托，恢复完整的 DB 事务编排和回滚能力；v0.19.3 已拍平为 `app/services/safety/`（`operation_record`/`operation_backup`/`operation_rollback`/`operation_cleanup`/`hash_helper`/`delete_safety`/`path_safe_check`），并新增删除确认策略矩阵 R1-R6 与系统盘符动态化（`get_existing_drives`）。
 
 ### 4.4 Agent 2.0（规划中）
 
@@ -179,7 +179,7 @@ UniversalAgent(BaseAgent)      ← 唯一实现类，配置驱动（意图/模�
 | SemanticRouter | 设计中 | LLM语义路由，替代CRSS正则匹配 |
 | ToolSafetyLayer | 设计中 | 工具声明式安全分级 |
 | ToolObserver | 设计中 | 全量审计日志 + 异常检测 |
-| HITL | 部分实现 | DANGEROUS 工具人机协同确认已落地（`action_handler.authorization_required` + `wait_for_confirmation_result`） |
+| HITL | 已实现 | DANGEROUS 工具人机协同确认已落地（`action_handler.authorization_required` + `wait_for_confirmation_result` + `hitl_confirmation.py`） |
 
 > 统一Agent（BaseAgent → UniversalAgent）已在 v0.14.0 完成，详见 `doc-agent2.0/`。HITL 确认机制在 v0.18.x 已接入。
 
@@ -192,27 +192,41 @@ OmniAgentAs-desk/
 ├── backend/                    # Python FastAPI 后端
 │   ├── app/
 │   │   ├── api/v1/             # API 端点（ChatRouter 等）
+│   │   ├── db/                 # SQLAlchemy + Pydantic 模型（chat/operation）
+│   │   ├── logger/             # 日志配置
 │   │   ├── tools/              # 工具函数（10分类63工具，含 validate 校验层）
 │   │   ├── services/
 │   │   │   ├── agent/          # Agent体系（base_agent + universal_agent + react_cycle + handlers + steps）
+│   │   │   ├── chat/           # 对话编排（stream / handlers / storage / migrate_steps）
+│   │   │   ├── lifecycle/      # 生命周期管理
 │   │   │   ├── llm/            # LLM 客户端（httpx 多Provider）
-│   │   │   ├── safety/         # 安全检查（tool_safety_checker / file_safety）
-│   │   │   ├── task/           # 任务追踪（task_tracker / pause/cancel/resume）
-│   │   │   └── chat/           # 对话编排（stream / chat_stream）
+│   │   │   ├── model/          # 模型解析/持久化
+│   │   │   ├── monitoring/     # 监控（middleware / collector）
+│   │   │   ├── prompts/        # 系统提示词适配
+│   │   │   ├── safety/         # 安全检查（tool_safety_checker / operation_record 等）
+│   │   │   ├── task/           # 任务追踪（task_tracker / pause/cancel/resume / hitl_confirmation）
+│   │   │   └── visualization/  # 可视化报告（mermaid/html/tree 等）
 │   │   └── utils/
+│   ├── e2etests/               # 端到端测试（P0/P1/P2 全链路）
+│   ├── logs/                   # 运行日志
+│   ├── migrations/             # DB 迁移
+│   ├── scripts/                # 辅助脚本
 │   ├── tests/                  # 后端测试（pytest）
 │   └── requirements.txt
 ├── frontend/                   # React + TypeScript 前端（Web App，非桌面/移动端）
 │   ├── src/
 │   │   ├── components/         # UI 组件（Chat / Security / Layout 等）
+│   │   ├── contexts/           # React Context（AppContext / SecurityContext）
 │   │   ├── pages/              # 页面
 │   │   ├── services/           # API 服务
 │   │   ├── hooks/              # 聊天流/任务控制等 Hook
+│   │   ├── types/              # TS 类型定义
 │   │   └── utils/              # 工具函数（SSE 处理等）
 │   ├── tests/                  # 前端测试（Vitest / Playwright）
 │   └── package.json
 ├── config/                     # 配置文件
 ├── doc-agent2.0/               # Agent 2.0架构重构设计文档
+├── doc-*/                      # 各月优化/专题设计文档目录
 ├── doc/                        # 系统设计文档
 ├── notes/                      # 调试笔记
 ├── version.txt                 # 版本变更记录（append-only）
@@ -447,6 +461,12 @@ cd backend
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| **v0.19.3** | 2026-08-04 | 修复工程全量对齐 final：L0基础层/L1工具链/L2 agent/L3 API 分批同步；migrate_steps 恢复；delete_safety R1-R6 删除安全判定+系统盘符动态化；死代码清理 |
+| **v0.19.0** | 2026-08-03 | 基于 final_backend_app 的修复工程批次0-4完成：services 40+文件/constants/工具链恢复至 repair-code 并应用 live backend，恢复 syntax_validator 语法护栏与全部工具注册 |
+| **v0.18.39** | 2026-07-30 | 后端卡死根因修复（CMD管道超时+DB休眠不阻塞+SSE cond超时）；shell_engine Singleton→ShellPoolManager 分池并发；desktop schema 坐标/参数整改 |
+| **v0.18.35** | 2026-07-28 | Shell 命令执行自 SHELL 迁入 FUNDAMENTAL（SHELL 仅保留 which）；timeadd/timediff/calendar 迁入 TIMER；系统级常量收敛至 app.constants |
+| **v0.18.31** | 2026-07-25 | operation_executor/recorder 三段式改造彻底解决并行 delete database is locked；工具输出截断归一化(OUTLIMIT_*)；URL 非ASCII自动转码 |
+| **v0.18.30** | 2026-07-23 | 工具输出截断治理（grep/xlsx/shell）；accumulated_usage 累积消耗报告；前端 WarningBox 渲染 warning 字段 |
 | **v0.18.14** | 2026-07-12 | README架构章节据代码现状重写：63工具10分类、UniversalAgent单一实现(移除AgentFactory)、架构图与现状偏差(2.3)如实标注(无独立网关/认证/RBAC/限流/任务队列/Redis/桌面移动端)、项目结构路径修正 - 小欧-2026-07-12 |
 | **v0.15.9** | 2026-06-12 | CRSS关键词修复(txt/md/json→FILE)、write_text_file参数text→content统一、JSON混合提取容错、safety stub→真实file_safety委托(禁止向后兼容+复用优先)、validate_config SLAP/DRY修复、version.txt空行跳过、P1 E2E测试 14/14通过(xfail清零)、README全面内容更新 |
 | **v0.15.8** | 2026-06-11 | 四层安全体系修复（P0平行调用丢失+P1字段重复+P2 fc_context共用） |
@@ -484,4 +504,4 @@ cd backend
 
 ---
 
-**许可**: 内部项目 | **最后更新**: 2026-07-12 17:21:14 | **版本**: v0.18.14
+**许可**: 内部项目 | **最后更新**: 2026-08-04 20:47:37 | **版本**: v0.19.3
