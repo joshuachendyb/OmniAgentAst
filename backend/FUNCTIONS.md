@@ -217,10 +217,31 @@ def my_parse_json(json_str):
 
 > 来源: 从 `file/edit_text_file.py` 内联 `compile()` 抽出为可复用模块；`file/write_text_file.py` 与 `tool_fc_helper.validate_python_content` 复用 — 小欧 2026-07-21 (83379fbb)。
 
+## 七、Safety层（app/services/safety/）【v2.3新增 — 小欧 2026-08-04】
+
+### 7.1 路径安全（path_safe_check.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `get_existing_drives` | 动态获取当前存在的磁盘符号列表（不写死，遍历A-Z探测，应对U盘插拔/盘符重映射；R2磁盘根递归删除判定时刻使用） | 无 | List[Path] |
+| `get_system_drive` | 动态获取真实系统盘符（SystemRoot/WINDIR环境变量→SystemDrive→探测存在\\Windows的盘符→兜底C:；系统目录判定C:模板动态替换） | 无 | str |
+| `_get_project_root_safety` | 推算真实项目根（复制delete_file._get_project_root上移Safety层，恒非None，消除工具层反向依赖） | 无 | Path |
+| `_is_forbidden_path` | 系统敏感路径黑名单（盘根splitdrive全盘符判定 + 系统目录FORBIDDEN_PATHS_WINDOWS_* C:模板动态盘符替换） | file_path: str | Tuple[bool, Optional[str]] |
+
+### 7.2 delete 专属差异判定（delete_safety.py）【新建 — 小欧 2026-08-04】
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `_as_bool` | 布尔强转（防LLM原始参数 'false'/'true' 字符串陷阱: bool('false')==True） | v: Any | bool |
+| `check_delete_risk` | delete 差异判定（R3-R6），恒返回 SafetyResult（R3→_PASS 免确认，不用None表示放行）；R1/R2 由 _check_known_risks 覆盖不重复 | params: dict | SafetyResult |
+
+> 消费链：tool_safety_checker.check_before_execute 对 delete 一次性计算 delete_risk，R6 入 _check_known_risks 无条件拦截，R3-R5 入 _get_needs_confirmation 确认分流 — 设计文档 v1.15
+
 ## 版本历史
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v2.3 | 2026-08-04 13:32:00 | 新增 七、Safety层章节：path_safe_check.py(get_existing_drives/get_system_drive/_get_project_root_safety/_is_forbidden_path动态盘符) + delete_safety.py(_as_bool/check_delete_risk R3-R6) | 小欧 |
 | v2.2 | 2026-08-03 00:06:44 | 修正语法护栏落地路径为 app/tools/toolhelper/syntax_validator.py（fundamental 为误建）+API更名为 validate_syntax/detect_language/SyntaxCheckResult/VALIDATORS；从 git-blob-loss archive/_rewrite 实文件恢复 | 小沈 |
 | v2.0 | 2026-07-16 | 新增1.7 text_utils.py章节：登记extract_tool_call_xml(XML提取,LLM旧格式恢复路径)与format_tool_call_markup；truncate_text/add_line_numbers归属修正至text_utils.py | 小欧 |
 | v2.1 | 2026-07-21 | 新增 语法护栏 章节（app/tools/toolhelper/syntax_validator.py）: validate_syntax/detect_language/SyntaxCheckResult/VALIDATORS+_strip_bom（从edit_text_file抽出,BOM去扰+BUG-002+OCP+防500,复用write_text_file+tool_fc_helper） | 小欧 |

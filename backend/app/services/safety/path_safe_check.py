@@ -4,6 +4,8 @@
 # 2026-07-18 - 小欧 - #3 fix: 白名单盘符下增加系统保护目录拒绝(windows/program files/programdata等),
 #    用 Path.parts[1] 精确只查盘符后第一级, 避免 C:\Users\MyProject\Program Files 误杀
 # 2026-08-02 - 小欧 - 加固: _is_forbidden_path 新增磁盘根目录黑名单(C:\), 防止白名单盘符机制放行盘根删除
+# 2026-08-04 - 小欧 - 盘符动态化(北京老陈驱动): 新增 get_existing_drives(当前磁盘符号列表)/get_system_drive(真实系统盘符)/_get_project_root_safety(项目根上移Safety层,恒非None);
+#    _is_forbidden_path 系统目录 C: 模板运行时动态替换真实系统盘符(不漏判不误伤); get_default_allowed_paths 盘符枚举 A-J 上限改动态(get_existing_drives) — 设计文档 v1.15
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -39,22 +41,72 @@ from app.tools.tool_constants import (
 from app.logger import logger
 
 
+def get_existing_drives() -> List[Path]:
+    """动态获取当前存在的磁盘符号列表 — 小欧 2026-08-04 (北京老陈驱动, 设计文档 v1.14/v1.15)
+    R2(磁盘根递归删除→拒绝) 判定时刻使用, 不写死盘符(遍历A-Z探测存在盘, 应对U盘插拔/盘符重映射)"""
+    drives: List[Path] = []
+    if os.name == "nt":
+        for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            drive = Path(f"{c}:/")
+            if drive.exists():
+                drives.append(drive)
+    return drives
+
+
+def get_system_drive() -> str:
+    """动态获取真实系统盘符(安全检查时刻) — 小欧 2026-08-04 (北京老陈驱动, 设计文档 v1.13)
+    写死C:作默认模板不足, 运行时动态替换为真实系统盘符(支持系统盘非C:/盘符重映射, 不漏判不误伤)。
+    优先级: SystemRoot/WINDIR 环境变量 → SystemDrive → 探测存在\\Windows的盘符 → 兜底 C:
+    返回带冒号的盘符如 "C:" 或 "D:"(无反斜杠)"""
+    for var in ("SystemRoot", "WINDIR"):
+        root = os.environ.get(var)
+        if root:
+            drive, _ = os.path.splitdrive(root)
+            if drive:
+                return drive
+    sdrive = os.environ.get("SystemDrive", "")
+    if sdrive:
+        return sdrive.rstrip("\\/")
+    if os.name == "nt":
+        for c in "CDEFGHIJKLMNOPQRSTUVWXYZ":
+            if os.path.isdir(f"{c}:\\Windows"):
+                return f"{c}:"
+    return "C:"
+
+
 def get_default_allowed_paths() -> List[Path]:
-    """获取默认允许的路径列表 — 小沈 2026-06-17 从file_tools提取"""
+    """获取默认允许的路径列表 — 小沈 2026-06-17 从file_tools提取
+    小欧 2026-08-04: 盘符枚举A-J硬编码上限改动态(get_existing_drives) — 北京老陈驱动"""
     paths = [
         Path.home(),
         Path("/tmp"),
         Path("/var/tmp"),
     ]
     if os.name == 'nt':
-        for letter in 'ABCDEFGHIJ':
-            drive = Path(f"{letter}:/")
-            if drive.exists():
-                paths.append(drive)
+        paths.extend(get_existing_drives())
     return paths
 
 
 ALLOWED_PATHS: List[Path] = get_default_allowed_paths()
+
+
+def _get_project_root_safety() -> Path:
+    """推算真实项目根(backend的父级) — 复制 delete_file._get_project_root 上移Safety层 — 小欧 2026-08-04
+    以代码位置推算为准(可靠), config配置的project_root仅作辅助(生产config可被改为测试目录,不可信)。
+    恒返回非None(各级兜底), 消除Safety层对工具层的反向依赖(设计文档评审项2)。
+    """
+    cur = Path(__file__).resolve()
+    for parent in cur.parents:
+        if parent.name == "backend":
+            return parent.parent
+    try:
+        from app.config import get_config
+        cfg_root = get_config().get_project_root()
+        if cfg_root and Path(cfg_root).exists():
+            return Path(cfg_root).resolve()
+    except Exception:
+        pass
+    return cur.parents[4]
 
 
 def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
@@ -80,11 +132,14 @@ def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
             pass
         
         if os.name == 'nt':
+            sys_drive = get_system_drive()  # 真实系统盘符(写死C:模板作默认, 运行时动态替换) — 小欧 2026-08-04
             for forbidden in FORBIDDEN_PATHS_WINDOWS_EXACT:
-                if real_path_lower == forbidden.lower():
+                _f = forbidden.replace("C:", sys_drive, 1) if forbidden.upper().startswith("C:") else forbidden
+                if real_path_lower == _f.lower():
                     return True, f"禁止访问系统敏感文件: {file_path}"
             for forbidden_prefix in FORBIDDEN_PATHS_WINDOWS_PREFIX:
-                if real_path_lower.startswith(forbidden_prefix.lower()):
+                _f = forbidden_prefix.replace("C:", sys_drive, 1) if forbidden_prefix.upper().startswith("C:") else forbidden_prefix
+                if real_path_lower.startswith(_f.lower()):
                     return True, f"禁止访问系统敏感目录: {file_path}"
         
         for forbidden in FORBIDDEN_PATHS_EXACT:
@@ -221,6 +276,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]) -> Tuple[bool, Op
         return False, f"路径安全检查异常: {e}"
 
 
-__all__ = ["ALLOWED_PATHS", "get_default_allowed_paths", "validate_path",
+__all__ = ["ALLOWED_PATHS", "get_default_allowed_paths", "get_existing_drives",
+           "get_system_drive", "_get_project_root_safety", "validate_path",
            "validate_tool_path", "_is_forbidden_path"]
 

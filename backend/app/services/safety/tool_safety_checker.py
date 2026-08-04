@@ -6,6 +6,7 @@
 # 2026-07-31 - 小欧 - 撤销auto_confirm: 恢复security.enabled=false原绕过路径, 删auto_confirm字段
 # 2026-08-04 - 小欧 - 开关false仍拒绝已知风险: bypass只跳过确认询问不跳过危险防护, _check_known_risks(路径越权/写入保护/代码注入)检测到即blocked拒绝执行; 普通needs_confirmation仍auto_confirm放行 — 北京老陈驱动
 # 2026-08-04 - 小欧 - 重构DRY: _check_known_risks提到两分支共同入口(无条件防线), 未注册check前置统一; 开关只分流"确认策略", 危险防护与开关解耦 — 三堂会审驱动(合规SRP/DRY/KISS最优)
+# 2026-08-04 - 小欧 - delete专属安全(双轨接入): check_before_execute 一次性计算 delete_risk; R1/R2 仍由 known_risks(_is_forbidden_path) 覆盖, R6 入 _check_known_risks 无条件拦截, R3-R5 入 _get_needs_confirmation 确认分流; 惰性导入 delete_safety 避免循环依赖 — 北京老陈驱动(设计文档 v1.15)
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -86,16 +87,22 @@ class ToolSafetyChecker:
                     message=f"工具{tool_name}未注册",
                     safety_level="dangerous")
 
-        # 已知风险检测: 无条件防线(开关无关) — 路径越权/写入大小保护/代码注入即使开关false也拒绝 — 小欧 2026-08-04
-        known_risk = self._check_known_risks(tool_name, params or {})
+        # ① delete 专属判定一次性计算, 供②③两处消费(DRY) — 小欧 2026-08-04
+        delete_risk = None
+        if tool_name == "delete":
+            from app.services.safety.delete_safety import check_delete_risk  # 惰性导入避免与delete_safety循环依赖 — 小欧 2026-08-04
+            delete_risk = check_delete_risk(params or {})
+
+        # ② 已知风险检测: 无条件防线(开关无关) — 路径越权(R1/R2)/delete R6/写入大小保护/代码注入即使开关false也拒绝 — 小欧 2026-08-04
+        known_risk = self._check_known_risks(tool_name, params or {}, delete_risk=delete_risk)
         if known_risk is not None:
             # #14 fix: 已知风险只拦截, 不触发确认(确认由 needs_confirm 路径驱动) — 小欧 2026-07-18
             known_risk.safety_level = "dangerous"
             return known_risk
 
-        # 确认策略分流: 开关只影响"是否询问确认", 不影响危险防护
+        # ③ 确认策略分流: 开关只影响"是否询问确认", 不影响危险防护
         if _is_skip_safety():
-            if self._get_needs_confirmation(tool_meta, params or {}):
+            if self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk):
                 return SafetyResult(requires_confirmation=True, auto_confirm=True,
                         blocked=False, message="安全开关已绕过(提示照出)",
                         safety_level="destructive")
@@ -118,14 +125,16 @@ class ToolSafetyChecker:
                         message=f"安全检查异常(已阻止): {e}",
                         safety_level="dangerous")
 
-        needs_confirm = self._get_needs_confirmation(tool_meta, params or {})
+        needs_confirm = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
         safety_level = "destructive" if needs_confirm else "safe"
         return SafetyResult(requires_confirmation=needs_confirm,
                 blocked=False, message="", safety_level=safety_level)
 
     @staticmethod
-    def _get_needs_confirmation(tool_meta, params: Dict) -> bool:
-        """获取生效的确认策略：action级 > 工具级"""
+    def _get_needs_confirmation(tool_meta, params: Dict, delete_risk: Optional["SafetyResult"] = None) -> bool:
+        """获取生效的确认策略：delete动态判定 > action级 > 工具级 — 小欧 2026-08-04"""
+        if delete_risk is not None:                       # delete: 动态判定(R3免/R4/R5确认)
+            return delete_risk.requires_confirmation      # R3→_PASS→False(免确认); R4/R5→True
         if tool_meta.action_confirmation and params.get("action"):
             return tool_meta.action_confirmation.get(
                 params["action"], tool_meta.needs_confirmation
@@ -133,13 +142,17 @@ class ToolSafetyChecker:
         return tool_meta.needs_confirmation
 
     @staticmethod
-    def _check_known_risks(tool_name: str, params: Dict) -> Optional["SafetyResult"]:
-        """已知风险检测：路径越权 / 写入大小保护 / 代码注入 — 小沈 2026-06-17 改用path_safe_check
+    def _check_known_risks(tool_name: str, params: Dict, delete_risk: Optional["SafetyResult"] = None) -> Optional["SafetyResult"]:
+        """已知风险检测：路径越权(R1/R2) / delete R6 / 写入大小保护 / 代码注入 — 小沈 2026-06-17
         小欧 2026-06-25: 返回SafetyResult替代raw dict
-        小欧 2026-06-27: 路径检查委托validate_tool_path(path_safe_check统一处理)"""
+        小欧 2026-06-27: 路径检查委托validate_tool_path(path_safe_check统一处理)
+        小欧 2026-08-04: 增 delete_risk 入参, R6(项目根外递归) 在此无条件拦截"""
         is_valid, msg = _validate_tool_path(tool_name, params)
         if not is_valid:
             return SafetyResult(blocked=True, message=f"路径越权: {msg}")
+
+        if delete_risk is not None and delete_risk.blocked:
+            return delete_risk                                # R6 项目根外递归 — 小欧 2026-08-04
 
         if tool_name == _WRITE_RISK_TOOL:
             try:
