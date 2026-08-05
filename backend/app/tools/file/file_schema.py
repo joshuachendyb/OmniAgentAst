@@ -16,6 +16,7 @@
 # 2026-07-28 - 小欧 - description精确化: writetext.content 去冗余精简至1行+点明"必填"; edittext.old_string 强调"必须精确匹配(含缩进)"; edittext.new_string 精简为"替换后的新文本"; EdittextInput docstring 开头加匹配提示
 # 2026-07-28 - 小欧 - 修复Bug-4: edittext.new_string description 恢复"替换/插入的新文本"(上次精简丢弃了插入/删除语义)
 # 2026-07-29 - 小欧 - 锚点重叠约束加schema desc: EdittextInput/old_string/new_string加说明, before/after模式new_string不能包含old_string整行
+# 2026-08-05 - 小欧 - BUG-2.5修复: CompressInput.timeout 补 ge=5/le=1800 (description写5-1800但Field缺约束,clamp失效;配合compress internal timeout-2 deadline,ge=5使internal≥3s安全,防LLM传≤2导致deadline过去拿不到信息)
 """
 File Schema - 文件工具参数模型
 
@@ -294,7 +295,10 @@ class CompressInput(BaseModel):
     exclude_patterns: Optional[List[str]] = Field(
         default=None, description="排除的文件/目录模式列表,如 ['node_modules', '__pycache__']"
     )
-    timeout: int = Field(default=300, description="超时秒数(5-1800秒),大目录/大文件压缩建议适当增大,默认300秒")
+    timeout: int = Field(
+        default=300, ge=5, le=1800,
+        description="超时秒数(5-1800秒),大目录/大文件压缩建议适当增大,默认300秒;LLM传入≤4时clamp到5,防compress内部timeout-2 deadline副本过期拿不到进度提示 — 小欧 2026-08-05 BUG-2.5"
+    )
 
 
 # ============================================================
