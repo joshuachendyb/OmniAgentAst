@@ -3,7 +3,7 @@
 **创建时间**: 2026-07-31 19:55:47
 **编写人**: 小欧
 **版本**: v1.8
-**状态**: 三堂会审进行中（v1.8 按北京老陈"单字就是单字、多字就是多字"修正去单字方案），待复核后实施
+**状态**: 已实施（2026-08-05 小欧按 v1.8 方案落地 4 处改动，详见 v1.9）
 
 ## 版本历史
 | 版本 | 时间 | 更新人 | 修改简介 |
@@ -17,6 +17,7 @@
 | v1.6 | 2026-07-31 20:26:45 | 小欧 | 北京老陈批评：缺设计目标与设计原则。新增 §一 设计目标、§二 设计原则，原章节编号整体顺延（问题描述→三、根因→四、修复方案→五、变更总结→六、回归测试→七、风险评估→八、无命中bug→九），全部交叉引用同步更新 |
 | v1.7 | 2026-07-31 20:33:20 | 小欧 | 北京老陈明确两个根本要求：①词不能拆开为字去匹配（G1 原则化）；②成功时给 LLM 的分类工具合计≤10 个；失败时正确告知 LLM 并给 hint。修正：G1 明确"词不拆字"；无命中/纯符号从 success 改为 warning + detail/hint（observation_formatter 仅 warning/error 显示 hint），同步 §六/§七/§八/§九 |
 | v1.8 | 2026-07-31 20:44:43 | 小欧 | 三堂会审（合规+合理+相关逻辑）对照实际代码核实行号无误，但发现核心矛盾：§5.1 保留单字 token 与根本要求①"严禁拆单字碰撞"冲突。北京老陈裁决："关键词是单字就是单字，是多字就是多字"。据此修正：中文片段≥2 字**只生成 bigram（去单字）**、=1 字保留单字。同步更新 §一 G1、§二 P1、§五 5.1/5.2/5.3/5.4、§六、§七；§7.2/§7.6.3 等与去单字关联处复核 |
+| v1.9 | 2026-08-05 12:42:38 | 小欧 | 实施完成：按 v1.8 方案落地 4 处改动（①_tokenize 中文≥2字只生成bigram去单字、=1字保留单字；②_build_tool_search_llm_data 增加 warning 分支；③searchtool 阈值无命中判断 scored[0]["_score"]>0 + 无命中返回空matches+warning；④空 token 分支不再返回全部 top10，返回空matches+warning）。修正 2 处行号引用：§六/§9.6.2"第 151 行"→"第 150 行"（修复前代码）；§9.3/§9.6.3"formatter:714-717"→"formatter:629-636"。验证：分词 15 项全过、搜索行为符合预期（无命中/纯符号→warning+空matches+hint）、现有测试 28 过 1 败（CACHE-007 断言"无命中返回全部工具"与修复目标冲突，待北京老陈决策测试更新） |
 
 ## 一、设计目标
 
@@ -168,7 +169,7 @@ def _tokenize(text: str) -> List[str]:
 | `app/tools/fundamental/tool_search.py` | `_tokenize` 中文处理逻辑（原第 27-49 行）| 中文处理改为片段分流：≥2 字生成相邻 bigram（去单字）、=1 字保留单字；英文/数字/下划线路径不变。新增 `chinese_buf` 累积与两处 flush（循环内非中文分支 + 循环末尾），`return tokens` 不变 |
 | `app/tools/fundamental/tool_search.py` | `_build_tool_search_llm_data`（第 109-127 行）| 增加 warning 分支：无命中/纯符号时 exec_code=warning，带 detail + hint（根本要求②：失败正确告知 LLM） |
 | `app/tools/fundamental/tool_search.py` | `searchtool` 阈值过滤（第 183 行 if 条件处）| 增加"无命中即空"判断：`scored[0]["_score"] > 0` 才计算阈值，否则 `meaningful=[]`，并走 warning 分支（修复无命中 bug，见 §9.3） |
-| `app/tools/fundamental/tool_search.py` | `searchtool` 空 token 分支（第 151 行起 `if not query_tokens:`）| 纯符号/空分词查询不再返回全部工具 top10，改为返回空 matches + warning + hint（修复纯符号注入 bug，见 §9.6） |
+| `app/tools/fundamental/tool_search.py` | `searchtool` 空 token 分支（第 150 行起 `if not query_tokens:`）| 纯符号/空分词查询不再返回全部工具 top10，改为返回空 matches + warning + hint（修复纯符号注入 bug，见 §9.6） |
 
 无新增常量、无新字段、无新函数（bigram 去单字逻辑内联在 `_tokenize` 中，无命中判断内联在 `searchtool` 中，warning 分支内联在 `_build_tool_search_llm_data` 中）。
 
@@ -265,7 +266,7 @@ if not meaningful:
     return build_success(data={"matches": []}, llm_data=llm_data)
 ```
 
-无命中时 `meaningful=[]` → `matches=[]` → `auto_inject_from_search` 见空 matches 直接 return（tool_executor.py:80）→ **不注入任何分类**；exec_code=warning → observation_formatter 显示 hint（formatter:714-717）。
+无命中时 `meaningful=[]` → `matches=[]` → `auto_inject_from_search` 见空 matches 直接 return（tool_executor.py:80）→ **不注入任何分类**；exec_code=warning → observation_formatter 显示 hint（formatter:629-636）。
 
 ### 9.4 修复后 LLM 观察结果
 
@@ -303,7 +304,7 @@ if not meaningful:
 
 #### 9.6.2 根因
 
-`tool_search.py:151-165` 的 `if not query_tokens:` 分支（第 151 行起），token 为空时**直接返回全部工具 top10**（按名称排序），summary 报"匹配 63 个"。
+`tool_search.py:150-165` 的 `if not query_tokens:` 分支（第 150 行起），token 为空时**直接返回全部工具 top10**（按名称排序），summary 报"匹配 63 个"。
 
 #### 9.6.3 修复
 
@@ -321,7 +322,7 @@ if not query_tokens:
 
 - `total_matched=0, total_tools=63` → summary"搜索 '?'未匹配到工具（共 63 个工具）"
 - `matches=[]` → `auto_inject_from_search` 见空 matches 直接 return，**不注入任何分类**
-- **exec_code=warning + detail + hint** → observation_formatter 显示"⚠ 警告"与"建议"（formatter:714-717），LLM 获明确指引（**根本要求②**）
+- **exec_code=warning + detail + hint** → observation_formatter 显示"⚠ 警告"与"建议"（formatter:629-636），LLM 获明确指引（**根本要求②**）
 - 原"返回全部工具 top10"路径删除（该路径无查询语义，纯误导）
 
 #### 9.6.4 单字母英文查询说明

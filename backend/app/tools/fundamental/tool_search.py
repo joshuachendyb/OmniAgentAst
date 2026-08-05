@@ -6,6 +6,11 @@
 #   2. BM25 路径同样移除(data/llm_data重复)
 # 2026-07-25 - 小欧 - 截断治理: all_items[:10]/meaningful[:10] → TOOL_SEARCH_INER_RESULTS_TOP 命名常量
 # 2026-07-28 - 北京老陈 - BM25查询token去重优化(ordered unique代替set)
+# 2026-08-05 - 小欧 - 实施《searchtool分词修复设计方案 v1.8》(共4处改动):
+#   1. _tokenize 中文片段分流: ≥2字只生成bigram去单字, =1字保留单字(词不拆字)
+#   2. _build_tool_search_llm_data 增加 warning 分支(无命中/纯符号: detail+hint)
+#   3. searchtool 阈值过滤增加无命中判断(scored[0]["_score"]>0), 无命中返回空matches+warning
+#   4. searchtool 空token分支(纯符号)不再返回全部工具top10, 返回空matches+warning
 """
 searchtool — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
@@ -25,25 +30,44 @@ from app.tools.tool_constants import ERR_DOC_QUERY_EMPTY, TOOL_SEARCH_INER_RESUL
 
 
 def _tokenize(text: str) -> List[str]:
-    """中英混合分词：中文按单字切分，英文按词切分，统一小写 — 小沈 2026-06-14"""
+    """中英混合分词：中文按词组切分，英文按词切分，统一小写 — 小沈 2026-06-14
+    小欧 2026-08-05 修复: 中文≥2字只生成bigram去单字; =1字保留单字(词不拆字)
+    """
     tokens: List[str] = []
     buf: List[str] = []
+    chinese_buf: List[str] = []
     for ch in text.lower():
         if '\u4e00' <= ch <= '\u9fff':
             if buf:
                 tokens.append("".join(buf))
                 buf.clear()
-            tokens.append(ch)
-        elif ch == '_':
-            if buf:
-                tokens.append("".join(buf))
-                buf.clear()
-        elif ch.isalnum():
-            buf.append(ch)
+            chinese_buf.append(ch)
         else:
-            if buf:
-                tokens.append("".join(buf))
-                buf.clear()
+            if chinese_buf:
+                # 中文片段收尾: ≥2字生成bigram, =1字保留单字 — 小欧 2026-08-05
+                if len(chinese_buf) >= 2:
+                    for i in range(len(chinese_buf) - 1):
+                        tokens.append(chinese_buf[i] + chinese_buf[i + 1])
+                else:
+                    tokens.append(chinese_buf[0])
+                chinese_buf.clear()
+            if ch == '_':
+                if buf:
+                    tokens.append("".join(buf))
+                    buf.clear()
+            elif ch.isalnum():
+                buf.append(ch)
+            else:
+                if buf:
+                    tokens.append("".join(buf))
+                    buf.clear()
+    if chinese_buf:
+        # 中文片段收尾: ≥2字生成bigram, =1字保留单字 — 小欧 2026-08-05
+        if len(chinese_buf) >= 2:
+            for i in range(len(chinese_buf) - 1):
+                tokens.append(chinese_buf[i] + chinese_buf[i + 1])
+        else:
+            tokens.append(chinese_buf[0])
     if buf:
         tokens.append("".join(buf))
     return tokens
@@ -118,6 +142,16 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    if exec_code == "warning":
+        # 无命中/纯符号: 正确告知LLM + hint, 避免误导LLM与错误注入 — 小欧 2026-08-05
+        return {
+            "summary": f"搜索 '{query}'未匹配到工具（共 {total_tools} 个工具）",
+            "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
+            "status": {"exec_code": "warning", "message": "搜索完成-未找到匹配工具", "code": "",
+                       "detail": "未找到与关键词匹配的工具", "hint": "建议更换关键词后重试，或直接描述你要完成的任务"},
+            "duration_ms": duration_ms,
+            "metrics": {"matched": {"value": 0, "text": "0个"}, "total": {"value": total_tools, "text": f"{total_tools}个"}},
+        }
     return {
         "summary": f"搜索 '{query}'成功:匹配 {total_matched} 个（共 {total_tools} 个工具）",
         "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
@@ -148,20 +182,13 @@ def searchtool(query: str) -> Dict[str, Any]:
 
     query_tokens = _tokenize(query.strip())
     if not query_tokens:
-        all_items = [
-            {
-                "name": m.name,
-                "category": m.category.value,
-            }
-            for m in all_tools.values()
-        ]
-        all_items.sort(key=lambda x: x["name"])
-        top = all_items[:TOOL_SEARCH_INER_RESULTS_TOP]
+        # 纯符号/空分词(如 '?'/'？？？'/'___'): token为空无查询语义, 不再返回全部工具top10,
+        # 返回空matches + warning(detail+hint), 不注入任何分类 — 小欧 2026-08-05
         duration_ms = int((time.perf_counter() - t0) * 1000)
         data = {
-            "matches": top,
+            "matches": [],
         }
-        llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(all_items), len(all_tools), top)
+        llm_data = _build_tool_search_llm_data("warning", duration_ms, query, 0, len(all_tools), [])
         return build_success(data=data, llm_data=llm_data)
 
     docs, tool_names, avgdl, df = _build_bm25()
@@ -180,12 +207,20 @@ def searchtool(query: str) -> Dict[str, Any]:
 
     scored.sort(key=lambda x: x["_score"], reverse=True)
     # P1-1修复 2026-06-23 小欧: 相对阈值过滤,只保留分数>=最高分10%的结果
-    if scored:
+    # 2026-08-05 小欧 无命中修复: 完全无命中时max_score=0→threshold=0→全部工具过阈值,
+    # 须先判"最高分>0"才计算阈值, 否则meaningful=[] (修复误报"匹配63个"并错误注入)
+    if scored and scored[0]["_score"] > 0:
         threshold = scored[0]["_score"] * 0.1
         meaningful = [r for r in scored if r["_score"] >= threshold]
     else:
         meaningful = []
     top_results = meaningful[:TOOL_SEARCH_INER_RESULTS_TOP]
+
+    if not meaningful:
+        # 无命中: 空matches + warning(detail+hint), auto_inject_from_search见空直接return不注入 — 小欧 2026-08-05
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        llm_data = _build_tool_search_llm_data("warning", duration_ms, query, 0, len(all_tools), [])
+        return build_success(data={"matches": []}, llm_data=llm_data)
 
     duration_ms = int((time.perf_counter() - t0) * 1000)
     # =============================================================================
