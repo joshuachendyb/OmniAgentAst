@@ -12,6 +12,7 @@ mouse_click — 鼠标单击
 # 2026-07-30 - 小欧 - 删除click_type冗余变量(YAGNI),直接clicks=1+内联"single"
 # 2026-07-31 - 小欧 - 三堂会审修复B7:metrics的click_type文本"single击"中英混用,改"单击"
 # 2026-07-31 - 小欧 - 三堂会审增强:支持双击,加clicks参数(默认1),click_type按clicks动态生成single/double
+# 2026-08-05 - 小欧 - 三堂会审修复#6: button/clicks 无运行时校验(绕过schema Literal直接调函数路径漏), 加 left/right/middle 与 1/2 校验
 
 import time as _time_mod
 from typing import Dict, Any, Optional
@@ -48,6 +49,15 @@ def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: 
 def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = "left", clicks: int = 1) -> Dict[str, Any]:
     """鼠标点击 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-22 修复计时铁规 — 小欧 2026-07-31 支持双击"""
     t0 = _time_mod.perf_counter()
+    # 2026-08-05 小欧 #6: button/clicks 运行时校验(防 LLM 直接调函数路径绕过 schema Literal)
+    if button not in ("left", "right", "middle"):
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_mouse_click_llm_data("error", duration_ms, x, y, button, clicks, detail="button必须为left/right/middle", hint="请提供有效的鼠标按钮:left(左)/right(右)/middle(中)")
+        return build_error(data={}, llm_data=llm_data)
+    if clicks not in (1, 2):
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_mouse_click_llm_data("error", duration_ms, x, y, button, clicks, detail="clicks必须为1或2", hint="请提供有效的点击次数:1(单击)/2(双击)")
+        return build_error(data={}, llm_data=llm_data)
     if not check_pyautogui_available():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         logger.error("mouse_click: pyautogui未安装,工具暂时不能使用。请执行: pip install pyautogui")

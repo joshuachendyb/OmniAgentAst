@@ -8,6 +8,7 @@ window_resize — 调整窗口大小
 # 2026-07-30 - 小欧 - ImportError加logger.error + hint改"工具暂时不能使用:需要安装pywin32库"
 # 2026-07-31 - 小欧 - 三堂会审修复B24:MoveWindow返回值未检查,失败假成功→检查后返回ERR_WINDOW_RESIZE
 # 2026-07-31 - 小欧 - 三堂会审修复B2:非Windows平台ImportError时提示"仅支持Windows"而非"安装pywin32"
+# 2026-08-05 - 小欧 - 三堂会审修复#2: 多窗口匹配取"最后一个"改"第一个"(匹配到即停止枚举), 与 set_window_state 行为一致; 修复#8 schema width/height 加 ge=0; 修复#9 "ERR_NO_WIN32GUI"字符串→常量
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -18,7 +19,7 @@ import time as _time_mod
 from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_WINDOW_NOT_FOUND, ERR_WINDOW_RESIZE
+from app.tools.tool_constants import ERR_WINDOW_NOT_FOUND, ERR_WINDOW_RESIZE, ERR_NO_WIN32GUI  # 2026-08-05 小欧 #9: 补ERR_NO_WIN32GUI导入, 原用字符串字面量
 from app.tools.validate.file_path_checker import validate_str_param
 from app.logger import logger
 
@@ -53,7 +54,7 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
             llm_data = _build_window_resize_llm_data("error", 0, window_title=window_title, err_code=ERR_WINDOW_RESIZE, hint="此功能仅支持Windows系统")
             return build_error(data={}, llm_data=llm_data)
         logger.error("window_resize: pywin32未安装,工具暂时不能使用。请执行: pip install pywin32")
-        llm_data = _build_window_resize_llm_data("error", 0, window_title=window_title, err_code="ERR_NO_WIN32GUI", hint="工具暂时不能使用:需要安装pywin32库,请执行: pip install pywin32")
+        llm_data = _build_window_resize_llm_data("error", 0, window_title=window_title, err_code=ERR_NO_WIN32GUI, hint="工具暂时不能使用:需要安装pywin32库,请执行: pip install pywin32")
         return build_error(data={}, llm_data=llm_data)
     t0 = _time_mod.perf_counter()
     err = validate_str_param(window_title, "window_title")
@@ -65,6 +66,8 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
         target_hwnd = None
         def _enum_cb(hwnd, _):
             nonlocal target_hwnd
+            if target_hwnd is not None:
+                return False  # 已找到第一个匹配, 停止枚举 — 2026-08-05 小欧 #2
             if win32gui.IsWindowVisible(hwnd):
                 win_title = win32gui.GetWindowText(hwnd)
                 if window_title.lower() in win_title.lower():

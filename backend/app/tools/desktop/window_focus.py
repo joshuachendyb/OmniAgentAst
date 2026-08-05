@@ -9,6 +9,8 @@ window_focus — 聚焦窗口
 # 2026-07-31 - 小欧 - 三堂会审修复B9:SetForegroundWindow返回值未检查,失败假成功→检查后返回ERR_FOCUS_WINDOW
 # 2026-07-31 - 小欧 - 三堂会审修复B2:非Windows平台ImportError时提示"仅支持Windows"而非"安装pywin32"
 # 2026-07-31 - 小欧 - CRITICAL: 补充缺失的 ERR_NO_WIN32GUI 导入(第21行), 原缺导入导致非Windows/无pywin32环境时 NameError 崩溃
+# 2026-08-05 - 小欧 - 三堂会审修复#2: 多窗口匹配取"最后一个"改"第一个"(匹配到即停止枚举), 与 set_window_state 取 matched_hwnds[0] 行为一致, 消除同标题多窗口时行为不可预期
+# 2026-08-05 - 小欧 - 三堂会审修复#10: "ERR_INVALID_PARAM"字符串字面量→ERR_INVALID_PARAMS常量(注意常量带S), 与同文件ERR_FOCUS_WINDOW/ERR_WINDOW_NOT_FOUND常量风格统一
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -19,7 +21,7 @@ import time as _time_mod
 from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_FOCUS_WINDOW, ERR_WINDOW_NOT_FOUND, ERR_NO_WIN32GUI  # 2026-07-31 小欧: 补充缺失的 ERR_NO_WIN32GUI(原缺导入导致 NameError 崩溃)
+from app.tools.tool_constants import ERR_FOCUS_WINDOW, ERR_WINDOW_NOT_FOUND, ERR_NO_WIN32GUI, ERR_INVALID_PARAMS  # 2026-08-05 小欧 #9: 补缺失的 ERR_NO_WIN32GUI(原缺导入导致 NameError 崩溃); 2026-08-05 #10: ERR_INVALID_PARAM字符串→ERR_INVALID_PARAMS常量
 from app.logger import logger
 
 
@@ -53,13 +55,15 @@ def window_focus(window_title: str) -> Dict[str, Any]:
         llm_data = _build_window_focus_llm_data("error", 0, window_title=window_title, err_code=ERR_NO_WIN32GUI, hint="工具暂时不能使用:需要安装pywin32库,请执行: pip install pywin32")
         return build_error(data={}, llm_data=llm_data)
     if not window_title or not isinstance(window_title, str) or not window_title.strip():
-        llm_data = _build_window_focus_llm_data("error", 0, window_title="", err_code="ERR_INVALID_PARAM", detail="window_title不能为空", hint="请提供有效的窗口标题,window_title不能为空")
+        llm_data = _build_window_focus_llm_data("error", 0, window_title="", err_code=ERR_INVALID_PARAMS, detail="window_title不能为空", hint="请提供有效的窗口标题,window_title不能为空")
         return build_error(data={}, llm_data=llm_data)
     t0 = _time_mod.perf_counter()
     try:
         target_hwnd = None
         def _enum_cb(hwnd, _):
             nonlocal target_hwnd
+            if target_hwnd is not None:
+                return False  # 已找到第一个匹配, 停止枚举 — 2026-08-05 小欧 #2
             if win32gui.IsWindowVisible(hwnd):
                 win_title = win32gui.GetWindowText(hwnd)
                 if window_title.lower() in win_title.lower():

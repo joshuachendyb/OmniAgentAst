@@ -9,6 +9,7 @@ screen_capture — 屏幕截图
 # 2026-07-30 - 小欧 - #7:region/dest类型hint统一Optional; #8:PIL import加ImportError处理
 # 2026-07-31 - 小欧 - 三堂会审修复B3:Pillow缺失时hint误导为装mss/pyautogui,改单独提示安装Pillow
 # 2026-07-31 - 小欧 - 三堂会审修复B23:data去掉"display": None冗余键(截图模式display_val为空)
+# 2026-08-05 - 小欧 - 三堂会审修复#5: dest=""空串绕过主函数校验后 Path("").mkdir() 报含糊错误, _screenshot/_snapshot 的 if dest is None 统一改 if not dest(空串也走临时路径)
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -71,7 +72,7 @@ def _screenshot(dest: Optional[str] = None, region: Optional[Dict[str, int]] = N
         logger.error("screen_capture._screenshot: pyautogui未安装,工具暂时不能使用。请执行: pip install pyautogui")
         return {"error_detail": "pyautogui库未安装,工具暂时不能使用", "params": {"library": "pyautogui"}}
     try:
-        if dest is None:
+        if not dest:  # dest为None或空串均生成临时路径 — 2026-08-05 小欧 #5
             timestamp = timestamp_for_filename()
             dest = os.path.join(tempfile.gettempdir(), f"screenshot_{timestamp}.png")
 
@@ -97,7 +98,7 @@ def _snapshot(display: int = 1, dest: Optional[str] = None) -> Dict[str, Any]:
     except ImportError:
         try:
             import pyautogui
-            if dest is None:
+            if not dest:  # 空串也生成临时路径 — 2026-08-05 小欧 #5
                 timestamp = timestamp_for_filename()
                 dest = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
             img = pyautogui.screenshot()
@@ -107,7 +108,7 @@ def _snapshot(display: int = 1, dest: Optional[str] = None) -> Dict[str, Any]:
             logger.error("screen_capture._snapshot: mss/pyautogui均未安装,工具暂时不能使用。请执行: pip install mss")
             return {"error_detail": "需要安装 mss 或 pyautogui 库,工具暂时不能使用", "params": {"libraries": ["mss", "pyautogui"]}}
     try:
-        if dest is None:
+        if not dest:  # 空串也生成临时路径 — 2026-08-05 小欧 #5
             timestamp = timestamp_for_filename()
             dest = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
         with mss.mss() as sct:
