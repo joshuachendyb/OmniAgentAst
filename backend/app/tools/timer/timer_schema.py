@@ -4,6 +4,7 @@
 # 2026-07-25 - 小欧 - description去冗?3处必填参数重复移除
 # 2026-07-25 - 小欧 - Field格式统一: callback/timer_id多余空格清理
 # 2026-07-31 - 小欧 - timer_set.callback加min_length=1防空字符串; time_add.delta加范围指引; query_calendar.year加ge/le约束
+# 2026-08-05 - 小欧 - Bug5: time_add.delta补范围指引description(与文档对齐); Bug10: delay描述错别字"最24小时"→"最多24小时"
 """
 Timer Schema - 定时器工具参数模型
 
@@ -27,7 +28,7 @@ from typing import Optional, Literal
 class TimerSetInput(BaseModel):
     delay: float = Field(
         ..., ge=1, le=86400,
-        description="延迟秒数(1~86400即最24小时)"
+        description="延迟秒数(1~86400即最多24小时)"
     )
     callback: str = Field(
         ..., min_length=1, description="定时器触发内容(文本消息)，不可为空"
@@ -47,7 +48,7 @@ class TimerListInput(BaseModel):
 class TimeAddInput(BaseModel):
     delta: float = Field(
         ...,
-        description="偏移量(秒)。正数增加,负数=减少"
+        description="偏移量(秒)。正数增加,负数=减少。建议范围±31536000(约±1年)"
     )
     start: Optional[str] = Field(
         default=None,

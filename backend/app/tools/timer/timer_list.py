@@ -5,6 +5,7 @@ timer_list — 列出所有定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
 编辑历史:
 # 2026-07-24 - 小欧 - timers[:5] → TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS(魔数→命名常量)
+# 2026-08-05 - 小欧 - Bug3: DB数据并入后统一按trigger_at排序(此前混排); data层保持完整列表(预览限制仅限metrics,见常量注释"预览数量")
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -52,7 +53,6 @@ async def timer_list() -> Dict[str, Any]:
                     "trigger_at": info.get("trigger_at", ""),
                     "status": "active",
                 })
-            timers.sort(key=lambda x: x.get("trigger_at", ""))
         try:
             with db.get_conn("operations") as conn:
                 rows = conn.execute("SELECT timer_id, callback, created_at, trigger_at, triggered_at, status FROM timers ORDER BY created_at DESC LIMIT 50").fetchall()
@@ -69,6 +69,9 @@ async def timer_list() -> Dict[str, Any]:
                         })
         except Exception:
             pass
+        # 内存与DB数据合并后统一按触发时间排序，保证整体有序 — 小欧 2026-08-05 Bug3
+        timers.sort(key=lambda x: x.get("trigger_at", ""))
+        # data 返回完整列表(含新建定时器,不被预览限制截断); 预览限制仅用于 metrics 的 timer_id 预览 — 小欧 2026-08-05
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_list_llm_data("success", duration_ms, len(timers), [t["timer_id"] for t in timers[:TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS]])
         # ---- observation_formatter route -------------------------------------------

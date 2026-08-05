@@ -2,6 +2,8 @@
 """
 time_add — 时间加减运算
 【2026-06-22 小健】从 time_tools.py 拆分为独立文件
+编辑历史:
+# 2026-08-05 - 小欧 - Bug6: months单位统一按30天/月近似计算,移除dateutil强依赖(两条路径精度不一致)
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -65,13 +67,8 @@ def timeadd(delta: float, start: Optional[str] = None, unit: Literal["days", "ho
         if unit_lower in _DELTA_BUILDERS:
             new_dt = start_dt + _DELTA_BUILDERS[unit_lower]
         elif unit_lower == "months":
-            try:
-                from dateutil.relativedelta import relativedelta
-                whole_months = int(delta)
-                frac_days = (delta - whole_months) * 30
-                new_dt = start_dt + relativedelta(months=whole_months) + timedelta(days=frac_days)
-            except ImportError:
-                new_dt = start_dt + timedelta(days=delta * 30)
+            # months 统一按 30天/月 近似计算，与 days/hours/minutes 口径一致(无需dateutil) — 小欧 2026-08-05 Bug6
+            new_dt = start_dt + timedelta(days=delta * 30)
         else:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_time_add_llm_data("error", duration_ms, "", unit, delta, detail=f"不支持的单位: {unit_lower}", hint="请使用days/hours/minutes/seconds/months作为单位", user_start=start)
