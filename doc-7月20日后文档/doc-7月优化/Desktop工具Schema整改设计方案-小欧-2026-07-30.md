@@ -572,3 +572,92 @@ def clipboard_control(action: Literal["read", "write"], content: Optional[str] =
 **编写人**: 小欧
 **更新人**: 小欧
 **完成时间**: 2026-07-30 23:04:29
+
+---
+
+## 附四：2026-08-05 落实复核说明
+
+**编写人**: 小欧
+**时间**: 2026-08-05 17:44:47
+**复核方法**: 逐一对照本方案原始15项+九章新增19项与本地 `F:\OmniAgentAs-repair\backend\app\tools\desktop` 实际源码（13个文件熟读3遍+AST语法检查+Pydantic边界值验证+llm_data结构一致性验证）。
+
+### 一、复核总体结论
+
+| 类别 | 数量 | 说明 |
+|------|------|------|
+| 原始15项全部实施 | 15 | schema/register/9个实现文件 |
+| 九章新增19项全部实施 | 19 | 代码Bug13+LLM输出2+hint精确化5（含标点H归入代码Bug） |
+| 未落地项 | 0 | — |
+| 文档未记录但代码已增强 | 若干 | 三堂会审增强（见下） |
+
+**核心结论**：本方案34项整改在本地代码**全部落地，无任何"声明已修但代码未修"的遗漏**。且代码存在文档未记录的后续三堂会审增强，实际比文档更完善。
+
+### 二、原始15项逐项落地证据
+
+| # | 整改 | 本地证据（文件:行号） |
+|---|------|----------------------|
+| 1 | clipboard content Optional+write必填 | `desktop_schema.py:187-196`(content Optional+validator) / `clipboard_control.py:140`(签名) |
+| 2 | mouse_scroll amount描述"次数" | `desktop_schema.py:125-129`(含ge=1) / `desktop_register.py:101` |
+| 3 | mouse_move x/y绝对坐标 | `desktop_schema.py:112-117` / `desktop_register.py:99` |
+| 4 | 四工具"子串匹配"统一 | `desktop_schema.py:44,50,56,79` / `desktop_register.py:89-95` |
+| 5 | window_resize传0保持原大小 | `desktop_schema.py:58-65` / `desktop_register.py:93` |
+| 6 | mouse_click删docstring+xy同传 | `desktop_schema.py:86-108`(model_validator) |
+| 7 | screen_capture region描述规范 | `desktop_schema.py:166-169` |
+| 8 | screen_capture display编号范围 | `desktop_schema.py:170-173` |
+| 9 | screen_capture summary"属于第"空洞Bug | `screen_capture.py:51-55`(monitor_count=0独立分支) |
+| 10 | window_focus错别字"围为"→"为" | `window_focus.py:31,37` |
+| 11 | window_focus params key title→window_title | `window_focus.py:32,38` |
+| 12 | window_resize params key title→window_title | `window_resize.py:30-31` |
+| 13 | mouse_scroll "单位"→"次" | `mouse_scroll.py:37` |
+| 14 | window_resize success summary标点 | `window_resize.py:40`("成功,分辨率为") |
+| 15 | clipboard函数签名+import | `clipboard_control.py:24`(Optional)/`:140`(签名) |
+| 17 | clipboard llm_data params补content | `clipboard_control.py:36-37`(成功/失败路径均含) |
+
+### 三、九章新增19项逐项落地证据
+
+**9.1 代码Bug修复（13项）**：
+
+| # | 文件 | 本地证据（文件:行号） |
+|---|------|----------------------|
+| 1 | clipboard GMEM_MOVEABLE | `clipboard_control.py:103`(`GMEM_MOVEABLE=0x0002`) |
+| 2 | screen_capture hint区分依赖/运行时 | `screen_capture.py:165-171` |
+| 4 | mouse_click x/y=None当前位置 | `mouse_click.py:28-29` |
+| 5 | mouse_position (0,0)不被跳过 | `mouse_position.py:26`(`if x is not None or y is not None`) |
+| 6 | set_window_state hint平台/缺库区分 | `set_window_state.py:79-80` |
+| 7 | screen_capture region/dest类型hint | `screen_capture.py:29-30`(Optional) |
+| 8 | screen_capture PIL import保护 | `screen_capture.py:122-126` |
+| 9 | keyboard hint统一 | `keyboard_control.py:98-99`(is_dep_error) |
+| 12 | register screen_capture互斥说明 | `desktop_register.py:107` |
+| 17 | window_info get_window_rect默认值 | `window_info.py:110-111` |
+| 10 | schema编辑历史折行+删List | `desktop_schema.py:11` |
+| 14 | window_info重复日志删除 | `window_info.py:27-39`(模块加载单次) |
+| 16 | set_window_state msg_fmt死代码→_ | `set_window_state.py:100`(`func, args =`) |
+
+**9.2 LLM输出格式（2项）**：keyboard status.message改"键盘操作{action}失败"(`keyboard_control.py:33`)；desktop_schema删List import(`desktop_schema.py:33`)。
+
+**9.3 失败路径hint精确化（5项）**：C(`mouse_click.py:70`)、D(`mouse_move.py:62`)、E(`mouse_position.py:58`)、F(`mouse_position.py:69`)、G(`window_info.py:149`) 全部修正。
+
+**9.4 标点修正（1项）**：set_window_state summary冒号(`set_window_state.py:53`)。
+
+### 四、文档未记录但代码已增强（代码超预期）
+
+| 文件 | 增强内容 |
+|------|---------|
+| desktop_schema.py | 2026-07-31 三堂会审：Clipboard write必填validator、MouseScroll ge=1、Keyboard min_length=1、MouseClick clicks双击参数、Window title非空提示 |
+| window_focus.py | B9(SetForegroundWindow返回值检查)、ERR_NO_WIN32GUI补导入 |
+| window_resize.py | B24(MoveWindow返回值检查)、width显式判0 |
+| mouse_scroll.py | B25(amount<=0拦截)、amount非int类型守卫 |
+| clipboard_control.py | B4(owned防double-free)、B10(char_count原始长度)、B15/B26(OpenClipboard检查+read warning) |
+| mouse_position.py | B19(补import ctypes.wintypes) |
+| desktop_register.py | B17(注册循环异常隔离) |
+
+### 五、验证结果
+
+| 验证项 | 结果 |
+|--------|------|
+| 13个文件AST语法检查 | ✅ 全部通过 |
+| Pydantic边界值（write无content/amount=0/xy同传/display互斥） | ✅ 全部正确拦截 |
+| llm_data params key与schema参数名一致性 | ✅ 完全对齐（window_focus/window_resize/mouse_scroll/clipboard实测） |
+| 34项整改逐项落地 | ✅ 全部实施 |
+
+**结论**：本方案（原始15项+九章19项）已在本地代码完整落地，无遗漏，且代码含文档未记录的后续增强，符合并超出方案预期。
