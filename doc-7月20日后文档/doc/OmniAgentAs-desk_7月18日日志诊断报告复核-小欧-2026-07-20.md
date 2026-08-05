@@ -12,6 +12,7 @@
 | 版本 | 时间 | 内容 | 作者 |
 |------|------|------|------|
 | v1.0 | 2026-07-20 12:04:28 | 首版：对照真实代码与 07-18 日志逐条复核欧阳诊断报告，核实统计数字、根因、修改方法及 10 大规范符合度 | 小欧 |
+| v1.1 | 2026-08-05 11:54:44 | 修正 #7/#10 引用符号：`tool_result_utils.format_file_content_llm`、`toolhelper/file_helpers.py` 均为不存在符号，更正为实际实现（详见 3.3 节）；核对结论另见《…核对结论-小欧-2026-08-05.md》 | 小欧 |
 
 ---
 
@@ -82,9 +83,9 @@
 
 ### 3.3 中/低级（#7、#8、#10、#11–#22）：多数为推测性，违反 YAGNI/复用优先
 
-- **#7 内存/readtext 5MB 上限**：readtext 已有截断（`tool_result_utils.format_file_content_llm` 带 max_chars）。新建 `read_file_safe` 可能重复。
+- **#7 内存/readtext 5MB 上限**：readtext 已有截断（`READTEXT_OUTLIMIT_CHARS=500K`，`tool_constants.py:307`）+ 行分页 `toolhelper/line_pager.py` + 2026-08-05 新增 `truncated`/`truncated_reason` 标记。新建 `read_file_safe` 可能重复。（v1.1 更正：原引用的 `tool_result_utils.format_file_content_llm` 为不存在符号 — 小欧 2026-08-05）
 - **#8 任务取消**：已有 task pause/cancel/resume + `status_table` 状态机，`run_with_cancellation` 属重复。
-- **#10 权限/ensure_writable**：`toolhelper/file_helpers.py` 已有路径处理，属重复。
+- **#10 权限/ensure_writable**：`validate/file_path_checker.py` 已有路径处理（`validate_path`/`validate_path_for_write` 等），属重复。（v1.1 更正：原引用的 `toolhelper/file_helpers.py` 为不存在文件 — 小欧 2026-08-05）
 - **#11–#22 通用 helper**（`safe_json_loads`/`validate_number`/`safe_get_attr`/`safe_dict_access`/`safe_list_access`/状态机/…）：
   - `safe_json_loads` → 已有 `parse_json`/`coerce_json`/`_try_fix_incomplete_json`（**复用优先违规**）；
   - 状态机 → 已有 `AgentStatus` 枚举 + `status_table`（**复用优先违规**）；
