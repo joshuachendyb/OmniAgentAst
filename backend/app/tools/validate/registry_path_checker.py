@@ -1,6 +1,7 @@
 # validate/registry_path_checker.py — 注册表路径业务级安全检查（集中管理）
 # 小沈 2026-06-27
 # 2026-07-31 - 小欧 - Bug修复: (1)恢复严格hive白名单{HKCU,HKLM}(撤销d1236eaa1对HKCR/HKU/HKCC的放行, 属安全回退, 修复test_registry_path_checker 3项既有失败); (2)路径内嵌"类hive前缀"但无效(INVALID_HIVE\.../HKEY_XXX\...)返回INVALID, 严禁静默回退HKCU | py_compile ✓
+# 2026-08-05 - 小欧 - Bug修复: 错误提示文案与实际白名单不一致(原文案"仅允许HKCU/HKLM/HKCR/HKU/HKCC"误导LLM以为5根键可用, 实际仅HKCU/HKLM), 改为"仅允许HKCU/HKLM" | py_compile ✓
 
 from typing import Optional, Tuple
 
@@ -82,7 +83,7 @@ def validate_registry_key(key_path: str, hive: str, operation: str = "read") -> 
     
     hive_upper = hive.upper() if hive else "HKCU"
     if hive_upper not in ALLOWED_HIVES:
-        return False, f"不允许的hive: {hive_upper}（仅允许HKCU/HKLM/HKCR/HKU/HKCC）", None
+        return False, f"不允许的hive: {hive_upper}（仅允许HKCU/HKLM）", None
     
     # 检查路径穿越 — 小沈 2026-06-28
     if ".." in key_path:
