@@ -30,6 +30,7 @@ def _build_schtasks_create_cmd(task_name: str, command: str, schedule: str,
                                interval: Optional[int] = None) -> list:
     """构建 schtasks /create 命令参数列表 — 纯函数,无IO — 小沈 2026-05-25
     小欧 2026-07-04 修复: 增加schedule空值和day范围校验
+    小欧 2026-08-05 修复: /day /monthly 缺数字或非数字时静默降级daily/透传非法值,改为友好报错
     """
     if not isinstance(schedule, str) or not schedule.strip():
         raise ValueError("schedule不能为空")
@@ -42,19 +43,24 @@ def _build_schtasks_create_cmd(task_name: str, command: str, schedule: str,
     if len(schedule_parts) > 1:
         if "/day" in schedule_parts:
             day_idx = schedule_parts.index("/day")
-            if day_idx + 1 < len(schedule_parts):
-                day_num = schedule_parts[day_idx + 1]
-                sc_type = "weekly"
-                if day_num.isdigit() and (int(day_num) < 1 or int(day_num) > 7):
-                    raise ValueError(f"day值必须在1-7之间，当前值: {day_num}")
-                day_name = "MON,TUE,WED,THU,FRI,SAT,SUN".split(",")[int(day_num)-1] if day_num.isdigit() else day_num
-                sc_extra = ["/d", day_name]
+            if day_idx + 1 >= len(schedule_parts) or not schedule_parts[day_idx + 1].isdigit():
+                raise ValueError("/day 后必须跟数字1-7，例如 09:00 /day 3")
+            day_num = schedule_parts[day_idx + 1]
+            day_val = int(day_num)
+            if day_val < 1 or day_val > 7:
+                raise ValueError(f"day值必须在1-7之间，当前值: {day_num}")
+            sc_type = "weekly"
+            sc_extra = ["/d", "MON,TUE,WED,THU,FRI,SAT,SUN".split(",")[day_val - 1]]
         elif "/monthly" in schedule_parts:
             monthly_idx = schedule_parts.index("/monthly")
-            if monthly_idx + 1 < len(schedule_parts):
-                day_num = schedule_parts[monthly_idx + 1]
-                sc_type = "monthly"
-                sc_extra = ["/d", day_num]
+            if monthly_idx + 1 >= len(schedule_parts) or not schedule_parts[monthly_idx + 1].isdigit():
+                raise ValueError("/monthly 后必须跟数字1-31，例如 09:00 /monthly 15")
+            day_num = schedule_parts[monthly_idx + 1]
+            day_val = int(day_num)
+            if day_val < 1 or day_val > 31:
+                raise ValueError(f"monthly天值必须在1-31之间，当前值: {day_num}")
+            sc_type = "monthly"
+            sc_extra = ["/d", str(day_val)]
 
     cmd.extend(["/sc", sc_type])
     cmd.extend(sc_extra)

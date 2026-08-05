@@ -32,7 +32,15 @@ _REG_CONVERTERS: Dict[str, Callable] = {
 
 
 def _convert_reg_value(value_type: str, value: str) -> Any:
-    """按注册表类型转换值 — 小健 2026-05-25"""
+    """按注册表类型转换值 — 小健 2026-05-25
+    小欧 2026-08-05 修复: REG_BINARY 非法hex抛ValueError被通用except捕获返回误导信息,改为单独校验并给准确hint
+    """
+    if value_type == "REG_BINARY":
+        hex_str = value.replace(" ", "")
+        try:
+            return bytes.fromhex(hex_str)
+        except ValueError:
+            raise ValueError(f"REG_BINARY的值不是合法十六进制: {value}")
     converter = _REG_CONVERTERS.get(value_type)
     return converter(value) if converter else value
 
@@ -132,6 +140,11 @@ def registry_write(path: str, value_name: str, value: str, value_type: str = "au
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_registry_write_llm_data("error", duration_ms, path, value_name, value, value_type, detail=f"权限不足: {path}", hint="请以管理员身份运行")
+        return build_error(data={}, llm_data=llm_data)
+    except ValueError as e:
+        # 2026-08-05 小欧: 区分值转换错误(如REG_BINARY非法hex),给出准确hint而非通用"系统状态"
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_registry_write_llm_data("error", duration_ms, path, value_name, value, value_type, detail=str(e), hint="请检查值内容是否与注册表类型匹配")
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

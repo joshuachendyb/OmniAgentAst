@@ -80,14 +80,21 @@ def _get_windows_event_log(log_name: str, max_events: int, level: str,
 
         events = []
         current_event = {}
+        last_key = None
         for line in result.stdout.splitlines():
             if line.startswith("Event["):
                 if current_event:
                     events.append(current_event)
                 current_event = {}
-            elif ":" in line and current_event is not None:
-                key, value = line.split(":", 1)
-                current_event[key.strip()] = value.strip()
+                last_key = None
+            elif current_event is not None:
+                if ":" in line:
+                    key, value = line.split(":", 1)
+                    current_event[key.strip()] = value.strip()
+                    last_key = key.strip()
+                elif last_key:
+                    # 2026-08-05 小欧: 多行Message续行(无冒号)此前被丢弃,现累计到上一字段,避免信息丢失
+                    current_event[last_key] = current_event[last_key] + " " + line.strip()
         if current_event:
             events.append(current_event)
 
