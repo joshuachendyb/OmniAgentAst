@@ -19,6 +19,22 @@
 # 2026-08-05 - 小欧 - BUG-3修复: _validate_params 值范围clamp 补 number 类型
 #   【病根】原仅钳 integer, 漏 number(float字段如 timer_schema.delay ge=1/le=86400), 超范围float仍抛Pydantic ValidationError, 与编辑历史"#8 fix扩展number"不符
 #   【解决】clamp 条件由 _t=="integer" 扩为 _t in ("integer","number"), 行为一致化
+# 2026-08-05 - 小欧 - BUG-2修复: 保险丝三路取值统一(北京老陈 2026-08-05 原则第3条)
+#   【病根】LLM未传timeout时, 有timeout参数的工具掉入"无inner"分支用 TOOL_TIMEOUTS default=60,
+#   而工具内部真实超时是schema默认值(如compress=300), 保险丝60<内部300 → 抢先截杀,
+#   compress内部的timed_out进度/hint永远回不来, 击穿7-30"保险丝恒晚于内部超时"修复
+#   【解决】新增 _get_schema_timeout_default(读schema timeout默认值) + _compute_fuse(三路统一):
+#     有inner分支: LLM传timeout用之(取max超600随它去); LLM未传直接用 schema默认值(tool值优先)
+#   try_once 与 _execute_with_retry 两处重复保险丝逻辑收敛至 _compute_fuse (DRY)
+#   【影响】compress: LLM未传时 60→630 修复; httpget/download/fetchpage/ping_port 同型一致性纠正,
+#     内部超时即schema默认(30/60/30/5), 保险丝恒覆盖不截杀; 无timeout参数工具(listdir/delete等)不变
+# 2026-08-05 - 小欧 - BUG-2修正(老陈审核): 原则3 inner 由 max(schema默认,base) 改为直接用 schema默认值
+#   【理由】tool 的 timeout 值要优先; 与 base 取 min/max 都会在 schema默认>base 时丢失 tool 真实值
+#   (如 schema默认=1800,base=60, 取min得60→保险丝630反小于内部1800截杀); 直接用 schema默认最贴近 tool 值优先
+# 2026-08-05 - 小欧 - 注释与文档对齐: 设计注释块"有inner参数工具"补上 shell(漏网), 与文档13.4.2"6个工具"一致
+# 2026-08-05 - 小欧 - 注释按4条原则重构(老陈审阅): 明确本保险丝是toolretry引擎外部超时(非工具自身超时);
+#   注释统一拆分为 inner取值来源(原则2 LLM值/原则3 schema默认) 与 保险丝公式(原则4 max(inner,CEILING)+BUFFER);
+#   "直接用LLM值+取max"旧表述有歧义, 实为 inner取LLM值后保险丝再max托底, 消除"未超CEILING是否托底"误解
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -52,19 +68,28 @@ from app.tools.registry import tool_registry
 # ============================================================
 # 保险丝超时策略 — 设计逻辑（北京老陈 2026-07-30）
 #
-# 所有工具分两类，两类不同策略：
+# 说明：本保险丝是【toolretry 引擎的外部超时】(asyncio.wait_for 掐整个工具调用)，
+#       不是工具自身的内部超时。保险丝必须恒 ≥ 工具内部超时，否则保险丝抢先截杀，
+#       工具内部的 timed_out hint/metrics 来不及返回。
 #
-# 【有 inner timeout 参数的工具】（compress/shell/download 等）
+# 工具分两类，两类不同策略：
+#
+# 【有 inner timeout 参数的工具】（compress/shell/httpget/download/fetchpage/ping_port 6个）
 #   保险丝 = max(inner, INSURANCE_CEILING) + INSURANCE_BUFFER
-#   原因：工具有自己的内部超时 deadline，保险丝必须恒大于内部超时，
-#         否则保险丝抢先截杀，工具内部的 timed_out hint 来不及返回。
-#   CEILING=600：有inner的工具系统至少等10分钟，inner 超 600 则随它去。
+#   inner = 工具的超时参数值，其取值按北京老陈 4 条原则：
+#     [原则2] LLM 显式传 timeout    → inner = LLM 给的值
+#     [原则3] LLM 未传 timeout      → inner = schema 默认值（tool 的 timeout 值优先；
+#              工具有 timeout 参数时其内部真实超时即 schema 默认值，如 compress=300，
+#              不能掉入 TOOL_TIMEOUTS default=60 被截杀）
+#   [原则4] 取 max：保险丝 = max(inner, CEILING)+BUFFER，inner 超 CEILING 则随它去。
+#   CEILING=600：有 inner 的工具系统至少等10分钟（即使 LLM 传 300，保险丝也托底到 630，
+#                保证外部超时恒大于工具内部 300s deadline）；inner 超 600 则直接用 inner。
 #   BUFFER=30：保险丝比内部超时多30秒，给内部 handler 退出窗口。
 #
 # 【无 inner timeout 参数的工具】（listdir/delete/find 等）
+#   [原则1] inner 必然没有 → 用 TOOL_TIMEOUTS 表里参数 或 default，渐进递增：
 #   保险丝 = min(base_timeout * (attempt+1), PROGRESSIVE_MAX)
-#   原因：工具没有内部超时概念，采用渐进递增，首次短快失败立即报错，
-#         后续逐步放宽，上限 PROGRESSIVE_MAX。
+#   原因：工具没有内部超时概念，首次短快失败立即报错，后续逐步放宽，上限 PROGRESSIVE_MAX。
 #   PROGRESSIVE_MAX = CEILING // 2 = 300：无inner工具最长等5分钟。
 # ============================================================
 INSURANCE_CEILING = 600
@@ -126,6 +151,43 @@ class ToolRetryEngine:
             config.get("retryable", []),  # 修正：使用 retryable 而不是 retryable_errors
             TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"]),
         )
+    
+    def _get_schema_timeout_default(self, action: str) -> Optional[int]:
+        """读工具schema的timeout参数默认值；无timeout参数或无有效默认值返回None — 小欧 2026-08-05
+        与 _validate_params 同一途径取 schema(遵守DRY复用 tool_registry.get_tool),
+        供 LLM 未传 timeout 时兜底: 工具有 timeout 参数则其内部真实超时即 schema 默认值"""
+        try:
+            metadata = tool_registry.get_tool(action)
+            if not metadata or not metadata.input_schema:
+                return None
+            spec = metadata.input_schema.get("properties", {}).get("timeout")
+            if not spec:
+                return None
+            default = spec.get("default")
+            return int(default) if isinstance(default, (int, float)) and default > 0 else None
+        except Exception:
+            return None
+
+    def _compute_fuse(self, action: str, params: Dict[str, Any],
+                      base_timeout: int, attempt: int) -> int:
+        """计算单次执行保险丝超时（toolretry 引擎外部超时）— 按北京老陈 4 条原则：
+        inner = 工具 timeout 参数值，取值来源：
+          [原则2] LLM 显式传 timeout → inner = LLM 给的值
+          [原则3] LLM 未传但工具有 timeout 参数 → inner = schema 默认值(tool 值优先)
+                 【修复BUG-2】LLM省略timeout时若掉入无inner用default=60, 可能<内部超时被截杀
+                 (如 compress schema默认300>60); 现用schema默认兜底, 保险丝恒覆盖内部超时
+        [原则4] 有 inner → 保险丝 = max(inner, CEILING)+BUFFER (取max, inner超CEILING随它去)
+        [原则1] 无 timeout 参数工具 → 渐进 base*(attempt+1) cap PROGRESSIVE_MAX (无inner)
+        try_once 与 _execute_with_retry 共用, 消除两处重复逻辑(DRY)
+        小欧 2026-08-05"""
+        inner = params.get("timeout")
+        if not (isinstance(inner, (int, float)) and inner > 0):
+            schema_default = self._get_schema_timeout_default(action)
+            if schema_default is not None:
+                inner = schema_default
+        if isinstance(inner, (int, float)) and inner > 0:
+            return max(int(inner), INSURANCE_CEILING) + INSURANCE_BUFFER
+        return min(base_timeout * (attempt + 1), PROGRESSIVE_MAX)
     
     def _prepare_execution(self, action: str, action_input: Dict[str, Any]):
         """查找工具+参数规范化+参数验证 — 统一入口，try_once与execute_tool_with_retry共享
@@ -189,13 +251,7 @@ class ToolRetryEngine:
             return params_or_error
         # 复用_get_retry_config的超时查询，消除与_execute_with_retry的DRY违规 — 小欧 2026-07-09
         _, _, _, base_timeout = self._get_retry_config(action)
-        inner = params_or_error.get("timeout")
-        if isinstance(inner, int) and inner > 0:
-            # 有inner: 保险丝 = max(inner, CEILING) + BUFFER, 恒 > 内部超时 — 北京老陈 2026-07-30
-            timeout = max(inner, INSURANCE_CEILING) + INSURANCE_BUFFER
-        else:
-            # 无inner: 渐进 cap PROGRESSIVE_MAX — 北京老陈 2026-07-30
-            timeout = min(base_timeout, PROGRESSIVE_MAX)
+        timeout = self._compute_fuse(action, params_or_error, base_timeout, 0)
         try:
             result = await self._execute_tool_once(tool, params_or_error, timeout)
             if isinstance(result, dict):
@@ -224,7 +280,7 @@ class ToolRetryEngine:
         - 有指数退避：重试间隔backoff_factor^attempt
         - 有on_retry_started回调：每次重试前通知调用方（→前端显示重试状态）
         - 有渐进超时(无inner路径): 每次重试的超时递增base_timeout*(attempt+1), 上限 PROGRESSIVE_MAX=300
-- 有inner超时参数工具: 保险丝 = max(inner, CEILING) + BUFFER, 恒大于内部超时
+        - 有inner超时参数工具: 保险丝 = max(inner, CEILING) + BUFFER, 恒大于内部超时(外部超时兜底); inner取值: LLM显式传→LLM值(原则2); LLM未传→schema默认值(tool值优先,原则3) — 小欧 2026-08-05
          
         Args:
             action: 工具名
@@ -356,10 +412,11 @@ class ToolRetryEngine:
         """带重试执行工具 — 核心循环：渐进超时+重试前回调通知
          
         重试策略（遵守KISS-DIRECT原则，简单直线）：
-        1. 超时策略分两路:
-           - 有inner参数工具: 保险丝 = max(inner, CEILING) + BUFFER, 恒大于内部超时让工具先处理
-           - 无inner参数工具: 渐进超时 base_timeout * (attempt + 1), 上限 PROGRESSIVE_MAX
-           → 有inner: compress(600)=630, compress(1800)=1830; 无inner: listdir=60/120/180 cap 300
+        1. 超时策略统一走 _compute_fuse (北京老陈 4条原则):
+           - [原则2] LLM显式传timeout → inner=LLM值 → max(inner, CEILING)+BUFFER (有inner)
+           - [原则3] 有timeout参数且LLM未传 → inner=schema默认值(tool值优先) → max(inner, CEILING)+BUFFER 【BUG-2修复】
+           - [原则1] 无timeout参数 → 渐进 base*(attempt+1) cap PROGRESSIVE_MAX (无inner)
+           → 有inner: compress(600)=630, compress(1800)=1830; LLM未传compress=630; 无inner: listdir=60/120/180 cap 300
         2. 指数退避等待: 重试间隔 = backoff_factor^attempt（1s, 2s, 4s...）
            → 给小故障足够恢复时间，同时避免立即重试又失败
         3. 分类重试: 只有TOOL_RETRY_CONFIG中retryable列表里的错误类别才会重试
@@ -379,13 +436,7 @@ class ToolRetryEngine:
         last_error: Optional[Exception] = None
 
         for attempt in range(max_retries + 1):
-            inner = params.get("timeout")
-            if isinstance(inner, int) and inner > 0:
-                # 有inner: 保险丝 = max(inner, CEILING) + BUFFER, 恒 > 内部超时 — 北京老陈 2026-07-30
-                timeout = max(inner, INSURANCE_CEILING) + INSURANCE_BUFFER
-            else:
-                # 无inner: 渐进递增, cap PROGRESSIVE_MAX — 北京老陈 2026-07-30
-                timeout = min(base_timeout * (attempt + 1), PROGRESSIVE_MAX)
+            timeout = self._compute_fuse(action, params, base_timeout, attempt)
             if attempt > 0 and on_retry_started:
                 try:
                     on_retry_started(action, attempt, max_retries, str(last_error)[:100])
