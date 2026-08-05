@@ -14,6 +14,7 @@ set_window_state — 窗口状态操作(maximize/minimize/restore/topmost/unpin)
 # 2026-07-31 - 小欧 - 三堂会审修复B8:window_title校验失败分支action传""丢失操作名,改传action
 # 2026-07-31 - 小欧 - 三堂会审修复B32:移除未使用的List import
 # 2026-08-05 - 小欧 - 三堂会审修复#1: ShowWindow/SetWindowPos返回值未检查失败假成功→topmost/unpin检查SetWindowPos返回, maximize/minimize/restore用IsZoomed/IsIconic验证目标状态(ShowWindow返回值不可靠)
+# 2026-08-05 - 小欧 - 三堂会审复核#1: restore验证由并查IsZoomed+IsIconic改只查not IsIconic(最小化前若处于最大化,restore会恢复为最大化,IsZoomed=True是正确结果,原判断产生假失败)
 
 import time as _time_mod
 from typing import Any, Dict
@@ -39,10 +40,13 @@ _WINDOW_ACTIONS = {
 
 
 def _window_state_reached(hwnd: int, action: str) -> bool:
-    """校验窗口是否达到目标状态 — 2026-08-05 小欧 #1
+    """校验窗口是否达到目标状态 — 2026-08-05 小欧 #1 — 2026-08-05 小欧 复核修正restore口径
 
     ShowWindow 返回值表示窗口先前可见状态(不可靠), 不能直接作为成败判断,
-    故对 ShowWindow 类操作(maximize/minimize/restore)用 IsZoomed/IsIconic 验证最终状态;
+    故对 ShowWindow 类操作验证最终状态:
+    - maximize/minimize: 用 IsZoomed/IsIconic 验证目标状态
+    - restore: 只验证不再最小化(not IsIconic); 最小化前若处于最大化,
+      restore 会恢复为最大化(IsZoomed=True是正确结果), 不能判失败
     SetWindowPos 类操作(topmost/unpin)返回 bool 可靠, 由调用方直接检查返回值。
     """
     if action == "maximize":
@@ -50,7 +54,7 @@ def _window_state_reached(hwnd: int, action: str) -> bool:
     if action == "minimize":
         return bool(_win32gui.IsIconic(hwnd))
     if action == "restore":
-        return not _win32gui.IsZoomed(hwnd) and not _win32gui.IsIconic(hwnd)
+        return not _win32gui.IsIconic(hwnd)
     # topmost/unpin 由 SetWindowPos 返回值校验, 此处不重复判断
     return True
 

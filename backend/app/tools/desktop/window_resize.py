@@ -9,6 +9,7 @@ window_resize — 调整窗口大小
 # 2026-07-31 - 小欧 - 三堂会审修复B24:MoveWindow返回值未检查,失败假成功→检查后返回ERR_WINDOW_RESIZE
 # 2026-07-31 - 小欧 - 三堂会审修复B2:非Windows平台ImportError时提示"仅支持Windows"而非"安装pywin32"
 # 2026-08-05 - 小欧 - 三堂会审修复#2: 多窗口匹配取"最后一个"改"第一个"(匹配到即停止枚举), 与 set_window_state 行为一致; 修复#8 schema width/height 加 ge=0; 修复#9 "ERR_NO_WIN32GUI"字符串→常量
+# 2026-08-05 - 小欧 - 三堂会审复核: width/height补运行时校验(负数/None/非int), 防直接调函数绕过schema ge=0, 与mouse_click/mouse_scroll"schema+运行时双重防御"口径一致
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -61,6 +62,15 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_window_resize_llm_data("error", duration_ms, window_title=window_title, err_code=ERR_WINDOW_NOT_FOUND, hint="请提供有效的窗口标题,window_title不能为空")
+        return build_error(data={}, llm_data=llm_data)
+    # 2026-08-05 小欧: width/height 运行时校验(防直接调函数绕过 schema ge=0)
+    if (not isinstance(width, int) or isinstance(width, bool) or width < 0
+            or not isinstance(height, int) or isinstance(height, bool) or height < 0):
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_window_resize_llm_data(
+            "error", duration_ms, window_title=window_title, err_code=ERR_WINDOW_RESIZE,
+            detail="width/height必须为非负整数,传0表示不修改保持原尺寸",
+            hint="请提供有效的窗口尺寸:width/height必须为0或正整数")
         return build_error(data={}, llm_data=llm_data)
     try:
         target_hwnd = None
