@@ -16,6 +16,9 @@
 # 2026-07-30 - 小沈 - 保险丝常量重构: INSURANCE_CEILING=600(天花板), INSURANCE_BUFFER=30(缓冲), PROGRESSIVE_MAX=CEILING//2(无inner渐进上限); 两路径逻辑统一为: 有inner=max(inner,CEILING)+BUFFER, 无inner=min(base_timeout*(attempt+1),PROGRESSIVE_MAX)
 # 2026-07-30 - 小沈 - 备用工具命名统一: design注释+error hint中"搜索"→"搜索备用工具的类型(可选:文档/数据分析/数据库/网络/系统/桌面/时间定时)"; docstring渐进超时标注(无inner路径)并补(有inner路径)保险丝公式
 # 2026-08-04 - 小欧 - DRY收敛: 手写json.dumps → 复用公共safe_json_dumps(复用先查库), #11 fix行为不变(ensure_ascii=False) — 北京老陈驱动
+# 2026-08-05 - 小欧 - BUG-3修复: _validate_params 值范围clamp 补 number 类型
+#   【病根】原仅钳 integer, 漏 number(float字段如 timer_schema.delay ge=1/le=86400), 超范围float仍抛Pydantic ValidationError, 与编辑历史"#8 fix扩展number"不符
+#   【解决】clamp 条件由 _t=="integer" 扩为 _t in ("integer","number"), 行为一致化
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -321,12 +324,13 @@ class ToolRetryEngine:
                         action_name=action, action_params=params,
                     )
                 # #8 fix: 值范围clamp(integer/number参数的minimum/maximum),防Pydantic ValidationError — 小欧 2026-07-23
+                # 2026-08-05 小欧 BUG-3修复: 原仅钳 integer,漏 number(float字段如timer_set delay),超范围float仍抛ValidationError; 补上 number — 小欧
                 for k, v in params.items():
                     spec = props.get(k)
                     if not spec:
                         continue
                     _t = spec.get("type")
-                    if _t == "integer":
+                    if _t in ("integer", "number"):
                         minimum = spec.get("minimum")
                         maximum = spec.get("maximum")
                         if minimum is not None and v < minimum:
