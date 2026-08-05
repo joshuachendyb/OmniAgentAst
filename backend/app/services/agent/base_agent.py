@@ -5,6 +5,7 @@
 # 2026-07-17 小欧 新增_consecutive_reasoning_only字段(空转检测防御: reasoning-only分支累加, 调工具/正常answer/真空/error/未知/action空名归零)
 # 2026-07-22 小欧 max_context_chars→max_context_tokens 构造传参同步
 # 2026-07-22 小欧 新增 accumulated_usage 字段(累积消耗统计: 逐次LLM调用累加, FinalStep终态输出)
+# 2026-08-05 小欧 修复BUG1/2(三堂会审通过): init_tools按实际加载结果重建_loaded_categories(消除initial_categories=None失配); load_category改为单一权威(同时写_tools_dict与_loaded_categories,空实现返回False), _loaded_categories仅含真正加载实现的分类
 """
 Agent 核心基类 — 类骨架
 
@@ -67,7 +68,7 @@ class BaseAgent(ABC):
         self.steps: List[ReasoningStep] = []
         self.message_builder = MessageBuilder(max_context_tokens=get_config().get_max_context_tokens())
 
-        self._loaded_categories: Set = set(initial_categories or [])
+        self._loaded_categories: Set = set()
         self._tool_loader = ToolLoader(self)
         self._tool_loader.init_tools(initial_categories=initial_categories)
         self._retry_engine = ToolRetryEngine(self._tools_dict)
@@ -129,21 +130,34 @@ class ToolLoader:
     def init_tools(self, initial_categories=None):
         """初始化工具,按分类注入工具给LLM"""
         self.agent._tools_dict = {}
+        # _loaded_categories 由实际加载结果重建, 保证与_tools_dict一致(单一权威: 只含真正加载了实现的分类)
+        # 2026-08-05 小欧: 修复BUG1/2 - 空实现分类不再被标记为已加载; 消除initial_categories=None时标记与实现失配
+        self.agent._loaded_categories = set()
         categories_to_load = initial_categories or list(ToolCategory)
         for cat in categories_to_load:
             cat_tools = tool_registry.get_implementations_by_category(cat)
-            self.agent._tools_dict.update(cat_tools)
+            if cat_tools:
+                self.agent._tools_dict.update(cat_tools)
+                self.agent._loaded_categories.add(cat)
         logger.info(f"[ToolLoader] 初始化完成,共{len(self.agent._tools_dict)}个工具")
 
     def get_tools(self) -> dict:
         """获取工具字典"""
         return self.agent._tools_dict
 
-    def load_category(self, category: ToolCategory) -> None:
-        """动态加载单个分类的工具到_tools_dict"""
+    def load_category(self, category: ToolCategory) -> bool:
+        """动态加载单个分类的工具到_tools_dict
+
+        单一权威(2026-08-05 小欧 修复BUG1/2):
+        - _tools_dict 与 _loaded_categories 同时写入, 保证标记=已实现
+        - 返回是否真正加载成功(空实现分类返回False), 供调用方跳过标记
+        """
         cat_tools = tool_registry.get_implementations_by_category(category)
-        if cat_tools:
-            self.agent._tools_dict.update(cat_tools)
-            self.agent._loaded_categories.add(category)
-            logger.info(f"[ToolLoader] 动态加载分类{category.value}, {len(cat_tools)}个工具")
+        if not cat_tools:
+            logger.info(f"[ToolLoader] 分类{category.value}无可用实现, 不标记为已加载")
+            return False
+        self.agent._tools_dict.update(cat_tools)
+        self.agent._loaded_categories.add(category)
+        logger.info(f"[ToolLoader] 动态加载分类{category.value}, {len(cat_tools)}个工具")
+        return True
 

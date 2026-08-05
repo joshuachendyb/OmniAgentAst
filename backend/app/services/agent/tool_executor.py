@@ -5,6 +5,8 @@ tool_executor — 工具执行逻辑
 从universal_agent拆出 — 小沈 2026-06-17
 """
 
+# 编辑历史:
+# 2026-08-05 小欧 修复BUG1/2(三堂会审通过): auto_inject_from_search只对未加载分类调load_category并尊重返回值, 去掉对已加载分类的多余重复调用; 空实现分类不再被误标为已加载
 import time
 from typing import Any, Callable, Dict, Optional, Set
 
@@ -93,15 +95,19 @@ def auto_inject_from_search(agent, result: Dict[str, Any]) -> None:
     if not new_categories:
         return
 
-    before = len(agent._loaded_categories)
-    agent._loaded_categories.update(new_categories)
-    after = len(agent._loaded_categories)
-    if after <= before:
+    # 只对尚未加载的分类调用load_category(单一权威, 见base_agent.load_category)
+    # 2026-08-05 小欧 修复BUG1/2: 空实现分类load_category返回False, 不再被标记为已加载;
+    #   同时去掉对已加载分类的多余重复调用
+    loaded_any = False
+    for cat in new_categories:
+        if cat in agent._loaded_categories:
+            continue
+        if agent._tool_loader.load_category(cat):
+            loaded_any = True
+
+    if not loaded_any:
         return
 
-    # 同时加载工具实现到_tools_dict，确保ToolRetryEngine可执行
-    for cat in new_categories:
-        agent._tool_loader.load_category(cat)
-
+    # 已加载分类的工具实现已在上方循环内写入_tools_dict
     invalidate_tool_cache(agent)
     patch_search_desc(agent)
