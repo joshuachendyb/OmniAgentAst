@@ -22,6 +22,8 @@ F1: readtext — 读取文本文件
 # 2026-07-25 - 小欧 - 截断治理: content[:100] → READTEXT_INER_CJK_SAMPLE 命名常量
 # 2026-07-26 - 小欧 - OOD: 确认READTEXT_INPUT_MAX_BYTES未落地,OOM自然抛出被except捕获(同dataanalysis模式)
 # 2026-07-26 - 小沈 - BugFix #3: path参数不覆盖; #5: hint传完整路径
+# 2026-08-05 - 小欧 - 文档20.3处置: READTEXT_OUTLIMIT_CHARS 截断补 data["truncated"]=True + truncated_reason 标记(20.3 read_text 决策项)
+# 2026-08-05 - 小欧 - 4bug修复: Bug1:total_lines统计被截断视图污染; Bug2:截断标记被编入行号; Bug3:record_read记录被截断内容; Bug4:select_lines双换行
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -291,18 +293,26 @@ async def readtext(
         file_size = _p.stat().st_size
 
         content, used_encoding, error = await _try_read_file_with_encodings(_p, encoding)
+        # Bug3修复: 保存原始content用于record_read — 小欧 2026-08-05 三堂会审4bug修复
+        _original_content = content
+        # Bug1修复: 截断前计算真实总行数(必须在if外初始化, 否则翻页/空文件场景NameError) — 小欧 2026-08-05
+        _real_total_lines = len(content.splitlines()) if content else 0
         # outlimit: 仅全量读取(无翻页参数)截断, 翻页由用户参数控制
+        _outlimit_truncated = False
+        _outlimit_marker = ""
         if content and offset is None and limit is None and tail is None:
             _orig_len = len(content)
             if _orig_len > READTEXT_OUTLIMIT_CHARS:
-                content = content[:READTEXT_OUTLIMIT_CHARS] + \
-                    f"\n... (内容已截断: 原文{_orig_len}字符, 保留{READTEXT_OUTLIMIT_CHARS}字符) ...\n"
+                # Bug2修复: 截断标记与正文分离, 编号后再追加(避免标记被编入行号) — 小欧 2026-08-05
+                content = content[:READTEXT_OUTLIMIT_CHARS]
+                _outlimit_marker = f"... (内容已截断: 原文{_orig_len}字符, 保留{READTEXT_OUTLIMIT_CHARS}字符) ..."
+                _outlimit_truncated = True
         if error:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, hint=f"文件编码无法识别，请尝试指定 encoding 参数", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
             return build_error(data={}, llm_data=llm_data)
 
-        lines = content.splitlines(keepends=True)
+        lines = content.splitlines(keepends=False)
         _data = select_lines(lines, offset, limit, tail)
         _data["encoding"] = used_encoding
         # =============================================================================
@@ -312,6 +322,9 @@ async def readtext(
         # =============================================================================
         _line_count = _data.pop("line_count", 0)
         _total_lines = _data.pop("total_lines", 0)
+        # Bug1修复: 使用真实total_lines而不是截断视图的total_lines
+        if _real_total_lines:
+            _total_lines = _real_total_lines
         _warning = _data.pop("warning", None)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -342,12 +355,18 @@ async def readtext(
         )
         raw = _data.get("content", "")
         if raw:
+            # Bug2修复: 正文与截断标记分离存储, 标记不编入行号, 编号后追加 — 小欧 2026-08-05
             _data["content"] = add_line_numbers(raw, offset=line_offset)
+            if _outlimit_marker:
+                _data["content"] = _data["content"] + "\n" + _outlimit_marker
 
         _data.pop("start_line", None); _data.pop("end_line", None)
         _data.pop("offset", None); _data.pop("limit", None); _data.pop("tail", None)
         _data.pop("encoding", None)
-        record_read(file_path, content)
+        if _outlimit_truncated:
+            _data["truncated"] = True
+            _data["truncated_reason"] = f"内容超{READTEXT_OUTLIMIT_CHARS}字符已截断(原文{_orig_len}字符)"
+        record_read(file_path, _original_content)
 
         # ---- observation_formatter route -------------------------------------------
         # branch: #2 raw str
