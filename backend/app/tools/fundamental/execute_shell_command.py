@@ -70,6 +70,21 @@
 #        +通用预处理stage1.0a: python3→python(防止重复转换)
 #        +三路检测切换时logger.warning日志输出(PS→CMD/PS→Bash/CMD→Bash/CMD→PS/Bash→CMD/Bash→PS)
 # 2026-07-29 - 小沈 - type加入CMD检测模式(\btype\b, CMD type=文件内容,bash type=命令类型); 修复遗留regex转义损坏(Format-Table行引号前多反斜杠)
+# 2026-08-06 - 小欧 - 最优重构stage结构(对照设计方案v3.3三堂会审):
+#        ①三路检测从ps7/ps5执行分支内(旧阶段1.5死代码, cmd/bash初始类型不生效)
+#         提至stage 1.1全局统一(所有shell_type生效), 先路由后校正杜绝做错方向
+#        ②删除旧bash-only路由(旧阶段1.4), 三路检测完整覆盖, 不再"追加elif"(禁止backward/OCP)
+#        ③python3→python收敛至stage 1.0a一处(DRY), 移除_auto_fix_bash_syntax内重复
+#        ④PS语法校正保留(优于文档: {.Property→$_.Property}精准+LLM高频错, 收益>风险)
+#        ⑤三路检测日志logger.warning→logger.info(路由是正常操作非异常)
+# 2026-08-06 - 小欧 - 注释清晰化: stage 总览改用清晰列表(1.0/1.0a/1.1/1.2/2/3/4); 清理重复的`#stage`草案残片; _auto_fix_bash_syntax docstring精简(拆出python3注), 无逻辑改动
+# 2026-08-06 - 小欧 - 三堂会审实证BugFix×4:
+#        Bug5: _looks_like_cmd `\btype\b`过宽(bash/python type误判)→改`type`后带文件路径才判CMD
+#        Bug6: _looks_like_ps Verb-Noun `\b[a-z]+-[a-z]+\b`过宽(foo-bar/project-x误判PS)
+#             →收敛为已知cmdlet动词前缀+Test-*确切cmdlet
+#        Bug7: stage 1.0a 简单re.sub替换python3破坏引号内容+DRY违规→改用shell_engine._replace_python3_safe(引号感知)
+#        Bug8: Verb-Noun/pip3/python引号内误判bash→`(?:^|[;&|])\s*(python|pip3)\b`仅命令token; `\bpython\b`同理
+#       修复后实证复验: test-case/echo "pip3"/echo "python is cool"不再误判; Test-Path/get-process/正常bash命令保留
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -169,7 +184,7 @@ from typing import Any, Dict, Optional, Literal
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
 from app.services.task.task_context import get_current_task_id
-from app.tools.fundamental.shell_engine import PersistentShell, shell_pool
+from app.tools.fundamental.shell_engine import PersistentShell, shell_pool, _replace_python3_safe
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.validate.timeout_validator import validate_timeout
@@ -553,20 +568,19 @@ def _auto_fix_powershell_syntax(command: str) -> str:
 
 
 def _auto_fix_bash_syntax(command: str) -> str:
-    """自动修复LLM生成的Bash命令中已知错误模式 — 小欧 2026-07-28
+    """自动修复LLM生成的Bash命令中已知错误模式 — 小欧 2026-07-28; 2026-08-06 精简
 
     当前覆盖：
-    - python3 → python（仅Windows，本机无python3命令）
-    - Windows反斜杠 → 正斜杠（Git Bash下\t会被解释为制表符）"""
+    - Windows反斜杠 → 正斜杠（Git Bash下\\t会被解释为制表符）
+
+    注: python3→python 已在 stage 1.0a 统一处理，此处不再重复（DRY）"""
     if not command or sys.platform != "win32":
         return command
     fixed = command
-    # 1. 路径分隔符：Windows反斜杠 → 正斜杠（防止\t被解释为制表符）
+    # 路径分隔符：Windows反斜杠 → 正斜杠（防止\\t被解释为制表符）
     fixed = fixed.replace('\\', '/')
-    # 2. python3→python（仅Windows，本机无python3命令）
-    fixed = re.sub(r'\bpython3\b', 'python', fixed)
     if fixed != command:
-        logger.warning(f"[Shell] 自动修复bash语法: python3→python, 路径转换\\→/, cmd={command[:100]}")
+        logger.warning(f"[Shell] 自动修复bash语法: 路径转换\\→/, cmd={command[:100]}")
         return fixed
     return command
 
@@ -647,9 +661,9 @@ def _looks_like_bash(command: str) -> bool:
         r'\bhead\b',              # head -n
         r'\btail\b',              # tail -n
         r'\bchmod\b',             # chmod
-        r'\bpython\b',           # python（python3 → python，因通用预处理已转换）
-        r'\bpip3\b',              # pip3
-        r'\bpython\s3\b',         # python 3 (space)
+        r'(?:^|[;&|])\s*python\b',    # python命令(要求python作为命令起始token, 避免echo "python is cool"误判) — 小欧 2026-08-06 Bug8修复
+        r'(?:^|[;&|])\s*pip3\b',    # pip3(要求作为命令起始token, 避免echo "pip3"误判) — 小欧 2026-08-06 Bug6修正
+        r'(?:^|[;&|])\s*python\s3\b', # python 3 (space)
         r'\bapt\b',               # apt
         r'\bapt-get\b',           # apt-get
         r'\bconda\b',             # conda
@@ -702,7 +716,9 @@ def _looks_like_ps(command: str) -> bool:
 
     # PowerShell特有命令（Windows PowerShell语法）— 正则匹配灵活覆盖各种变体
     ps_patterns = [
-        r'\b[a-z]+-[a-z]+\b',           # Verb-Noun cmdlet: Get-Process, Set-Content, Select-Object
+        # Verb-Noun cmdlet: 只匹配PowerShell已知动词前缀, 避免误判普通连字符命名(如project-x/hello-world) — 小欧 2026-08-06 Bug6修复
+        r'\b(?:get|set|new|add|remove|select|write|read|start|stop|restart|invoke|convert|copy|move|format|clear|output|enter|exit|wait|prompt|show|hide|ping|trace|assert|join|sort|group)-[a-z]{2,}\b',
+        r'\btest-(?:path|connection|json|netconnection|service|webrequest|modulemanifest)\b',  # Test-*确切cmdlet(避免test-case误判) — 小欧 2026-08-06
         r'\$env:\w+',                   # PS环境变量: $env:PATH, $env:USERPROFILE
         r'\$global:\w+',                # PS全局变量: $global:MyVar
         r'\bfunction\s+\w+',           # PS函数定义
@@ -759,7 +775,7 @@ def _looks_like_cmd(command: str) -> bool:
         r'\bset\s+\w+=',              # 变量定义: set MYVAR=value
         r'\bpushd\b\|\bpopd\b',       # 目录栈操作
         r'\bassoc\b\|\bftype\b',       # 文件关联: assoc, ftype
-        r'\btype\b',                   # 文件内容显示(CMD type=cat, bash type=命令类型) — 小沈 2026-07-29
+        r'\btype\s+\S+[.\/\\]\S+',     # 文件内容显示(CMD type=cat; 仅当带文件路径时判CMD, 避免bash/python type误判) — 小沈 2026-07-29, 小欧 2026-08-06 Bug5修复
         r'\bfindstr\b',                # 字符串搜索
         r'\bcmd\.exe\b',               # CMD入口点
         r'\b(copy|del|rd)\b',          # 文件操作
@@ -818,10 +834,9 @@ def shell(
     stripped_command = command.strip() if command else ""
     processed_command = stripped_command
     
-    # ── 阶段 1.0a【通用】: 通用预处理 — 小欧 2026-07-30
-    #  python3 → python（统一处理，防止bash/router重复转换）
-    if processed_command and re.search(r'\bpython3\b', processed_command):
-        processed_command = re.sub(r'\bpython3\b', 'python', processed_command)
+    # ── 阶段 1.0a【通用】: 通用预处理 — 小欧 2026-07-30; 2026-08-06 引号感知修复(Bug7) ──
+    #  python3 → python（引号感知，仅替换引号外的python3；复用shell_engine._replace_python3_safe，DRY）
+    processed_command, _python3_cnt = _replace_python3_safe(processed_command)
 
     if not stripped_command:
         d = int((_time_mod.perf_counter() - t0) * 1000)
@@ -840,45 +855,66 @@ def shell(
     if cwd and not os.path.isdir(cwd):
         cwd = _resolve_safe_cwd(cwd)
 
-    # ── 阶段 1【通用】: 参数校验与预处理 — 小欧 2026-07-30 重排编号: 1.1→1.4补齐 ──
-    #  1.0 参数校验（timeout/shell_type/empty/null/cwd）
-    #  1.1 PS7/PS5 语法修复  
-    #  1.2 CMD 语法修复  
-    #  1.3 Bash 语法修复
-    #  1.4 Bash 特征自动路由（检测→切换到 Git Bash）
-    #  1.5 三路自动检测与路由（PS→CMD→Bash, CMD→Bash→PS, Bash→CMD→PS）
-    # ── 阶段 1.1【PS7/PS5专属】: 语法自动修复 — 小沈 2026-07-26, 小欧 2026-07-27 ──
+    # ── 阶段总览 ── 小欧 2026-08-06
+    #   stage 1.0  参数校验
+    #   stage 1.0a 通用预处理（python3→python，仅此一处）
+    #   stage 1.1  三路检测+路由（所有 shell_type 统一、先路由后校正）
+    #   stage 1.2  按最终 shell_type 校正：
+    #                - cmd     → _auto_fix_cmd_syntax
+    #                - bash    → _auto_fix_bash_syntax
+    #                - ps7/ps5 → _auto_fix_powershell_syntax（保留，优于文档）
+    #   stage 2    安全检查
+    #   stage 3    执行（ps7/ps5引擎 / cmd.bat / bash登录shell，三路无嵌套检测）
+    #   stage 4    后处理
+    #
+    # ── 阶段 1.1【通用】: 三路类型检测 + 路由 ── 小欧 2026-07-29 v2.0; 2026-08-06 位置修正 ──
+    #  以LLM选的shell_type为"第一猜测"，匹配则直接执行；不匹配则尝试其他类型。
+    #  路由只改shell_type，不做语法校正（交由 stage 1.2）；"都不像"保持原type让LLM承担。
+    if shell_type in ("ps7", "ps5"):
+        # ── PS分支：最接近PS，其次CMD，最后Bash ──
+        if _looks_like_ps(processed_command):
+            pass  # 匹配PS语法→保持shell_type，直接执行
+        elif _looks_like_cmd(processed_command):
+            logger.info(f"[Shell] 三路检测: PS→CMD, cmd={cmd_short}")
+            shell_type = "cmd"
+        elif _looks_like_bash(processed_command) and _find_bash():
+            logger.info(f"[Shell] 三路检测: PS→Bash, cmd={cmd_short}")
+            shell_type = "bash"
+    elif shell_type == "cmd":
+        # ── CMD分支：最接近CMD，其次Bash，最后PS ──
+        if _looks_like_cmd(processed_command):
+            shell_type = "cmd"  # 保持不变
+        elif _looks_like_bash(processed_command) and _find_bash():
+            logger.info(f"[Shell] 三路检测: CMD→Bash, cmd={cmd_short}")
+            shell_type = "bash"
+        elif _looks_like_ps(processed_command):
+            logger.info(f"[Shell] 三路检测: CMD→PS, cmd={cmd_short}")
+            shell_type = "ps7"
+    elif shell_type == "bash":
+        # ── Bash分支：最接近Bash，其次CMD，最后PS ──
+        if _looks_like_bash(processed_command) and _find_bash():
+            shell_type = "bash"  # 保持不变
+        elif _looks_like_cmd(processed_command):
+            logger.info(f"[Shell] 三路检测: Bash→CMD, cmd={cmd_short}")
+            shell_type = "cmd"
+        elif _looks_like_ps(processed_command):
+            logger.info(f"[Shell] 三路检测: Bash→PS, cmd={cmd_short}")
+            shell_type = "ps7"
+
+    # ── 阶段 1.2【通用】: 语法自动修复（按最终shell_type校正，路由已完成） ──
+    # PS校正保留: {.Property→$_.Property}模式极精准(仅匹配{ .word缺$_)，LLM高频错误，收益>风险
     if shell_type in ("ps7", "ps5"):
         _fixed = _auto_fix_powershell_syntax(processed_command)
         if _fixed != processed_command:
             processed_command = _fixed
-
-    # ── 阶段 1.2【CMD专属】: 语法自动修复 — 小欧 2026-07-27 ──
-    if shell_type == "cmd":
+    elif shell_type == "cmd":
         _fixed = _auto_fix_cmd_syntax(processed_command)
         if _fixed != processed_command:
             processed_command = _fixed
-
-    # ── 阶段 1.3【bash专属】: 语法自动修复 — 小欧 2026-07-28 ──
-    if shell_type == "bash":
+    elif shell_type == "bash":
         _fixed = _auto_fix_bash_syntax(processed_command)
         if _fixed != processed_command:
             processed_command = _fixed
-
-    # ── 阶段 1.4【通用】: bash特征自动路由 — 小欧 2026-07-30 ──
-    # 检测命令是否像bash命令，如果是并且当前shell不是bash，且bash解释器存在，则自动切换到bash
-    if shell_type != "bash":
-        bash_exe = _find_bash()
-        if bash_exe and _looks_like_bash(processed_command):
-            # 检测到bash命令，自动路由到Git Bash
-            logger.info(f"[Shell] 检测到bash命令,自动路由到Git Bash: cmd={cmd_short}")
-            # 路径分隔符转换：Windows反斜杠->正斜杠（Git Bash下\t会被解释为制表符）
-            processed_command = processed_command.replace('\\', '/')
-            # python3 -> python（Git Bash可能没有python3）
-            processed_command = re.sub(r'\bpython3\b', 'python', processed_command)
-            # 检查是否需要执行安全检查
-            # 注意：安全检查将在阶段2进行，已经应用了新的shell_type
-            shell_type = "bash"
 
     # ── 阶段 2【通用】: 安全检查 ──
     safety = check_shell_command_risk(processed_command, shell_type, protected_pids=shell_pool.get_all_pids())
@@ -901,42 +937,6 @@ def shell(
             # Format-Table输出追加Out-String -Width 4096，避免PS5.1默认80列截断 — 小欧 2026-07-08
             if re.search(r'(?i)(?:^|\|)\s*Format-Table\b', processed_command):
                 processed_command += " | Out-String -Width 4096"
-
-            # ── 阶段 1.5【通用】: 三路自动检测与路由 — 小欧 2026-07-29 ──
-            #  1.5.1 PS → CMD → Bash 三路自动检测
-            #  1.5.2 CMD → Bash → PS 三路自动检测
-            #  1.5.3 Bash → CMD → PS 三路自动检测
-            #  1.5.4 "都不像"保持原type逻辑
-
-            if shell_type in ("ps7", "ps5"):
-                if _looks_like_ps(processed_command):
-                    pass  # PS特征匹配，保持原type
-                elif _looks_like_cmd(processed_command):
-                    logger.warning(f"[Shell] 三路检测: PS→CMD, cmd={cmd_short}")
-                    shell_type = "cmd"
-                elif _looks_like_bash(processed_command) and _find_bash():
-                    logger.warning(f"[Shell] 三路检测: PS→Bash, cmd={cmd_short}")
-                    shell_type = "bash"
-
-            elif shell_type == "cmd":
-                if _looks_like_cmd(processed_command):
-                    shell_type = "cmd"  # CMD特征匹配，保持原type
-                elif _looks_like_bash(processed_command) and _find_bash():
-                    logger.warning(f"[Shell] 三路检测: CMD→Bash, cmd={cmd_short}")
-                    shell_type = "bash"
-                elif _looks_like_ps(processed_command):
-                    logger.warning(f"[Shell] 三路检测: CMD→PS, cmd={cmd_short}")
-                    shell_type = "ps7"
-
-            elif shell_type == "bash":
-                if _looks_like_bash(processed_command) and _find_bash():
-                    shell_type = "bash"  # Bash特征匹配，保持原type
-                elif _looks_like_cmd(processed_command):
-                    logger.warning(f"[Shell] 三路检测: Bash→CMD, cmd={cmd_short}")
-                    shell_type = "cmd"
-                elif _looks_like_ps(processed_command):
-                    logger.warning(f"[Shell] 三路检测: Bash→PS, cmd={cmd_short}")
-                    shell_type = "ps7"
 
             task_id = get_current_task_id()
             engine = shell_pool.acquire(task_id, shell_type, workdir=cwd)
