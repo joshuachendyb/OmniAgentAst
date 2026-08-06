@@ -56,6 +56,7 @@
 #         ③null字节检查_build调用补全缺失的shell_type/err_code/detail三参(P0修复)
 #         ④语法修复/执行/安全检查/后处理统一使用processed_command
 #         ⑤预处理错误路径保留command,处理后路径统一用processed_command
+# 2026-07-29 - 小沈 - type加入CMD检测模式(\btype\b, CMD type=文件内容,bash type=命令类型); 修复遗留regex转义损坏(Format-Table行引号前多反斜杠)
 # 2026-07-30 - 小欧 - 新增bash特征自动路由(阶段1.4): _looks_like_bash检测Linux命令→自动切换到Git Bash
 #        +路径分隔符\→/转换+python3→python; 三堂会审修复: L649语法错误(\\\\n? not here),
 #        DRY合并bash_keywords/path_indicators进bash_patterns
@@ -69,7 +70,6 @@
 #        +更新bash_patterns: python3→python+ls/wc
 #        +通用预处理stage1.0a: python3→python(防止重复转换)
 #        +三路检测切换时logger.warning日志输出(PS→CMD/PS→Bash/CMD→Bash/CMD→PS/Bash→CMD/Bash→PS)
-# 2026-07-29 - 小沈 - type加入CMD检测模式(\btype\b, CMD type=文件内容,bash type=命令类型); 修复遗留regex转义损坏(Format-Table行引号前多反斜杠)
 # 2026-08-06 - 小欧 - 最优重构stage结构(对照设计方案v3.3三堂会审):
 #        ①三路检测从ps7/ps5执行分支内(旧阶段1.5死代码, cmd/bash初始类型不生效)
 #         提至stage 1.1全局统一(所有shell_type生效), 先路由后校正杜绝做错方向
@@ -85,6 +85,9 @@
 #        Bug7: stage 1.0a 简单re.sub替换python3破坏引号内容+DRY违规→改用shell_engine._replace_python3_safe(引号感知)
 #        Bug8: Verb-Noun/pip3/python引号内误判bash→`(?:^|[;&|])\s*(python|pip3)\b`仅命令token; `\bpython\b`同理
 #       修复后实证复验: test-case/echo "pip3"/echo "python is cool"不再误判; Test-Path/get-process/正常bash命令保留
+# 2026-08-06 - 小欧 - v2.7三堂会审BugFix: PS分支 shell_pool.acquire() 补传 env=_sanitize_env()(原acquire启动走os.environ含API key泄漏给子进程, exec时传的env因进程存活被_ensure_alive忽略) — 与shell_engine.py acquire加env参数配套
+# 2026-08-06 - 小欧 - 卡死场景日志补齐: C10(C11)分支超时/管道阻塞事件加[卡死C#]warning日志(CMD poll-loop超时/CMD communicate超时/Bash超时/taskkill异常/等退出超时), 与shell_engine.py C1-C14标注联动
+# 2026-08-06 - 小健 - v2.9打猎修复: _kill_and_read_output 的 proc.wait() 无try保护(taskkill失败且进程僵死时抛TimeoutExpired冒泡到shell()的except → 丢失超时语义, 且中断残存stdout/stderr读取), 补try+warning日志, 超时后仍读残存返回
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -606,15 +609,19 @@ def _find_bash() -> Optional[str]:
 # ═══════════════════════════════════════════════════════
 
 def _kill_and_read_output(proc: subprocess.Popen) -> tuple[bytes, bytes]:
-    """CMD超时后 杀进程树 + 等退出 + 读残存 stdout/stderr — 小欧 2026-07-28"""
+    """CMD超时后 杀进程树 + 等退出 + 读残存 stdout/stderr — 小欧 2026-07-28 — [卡死场景C11] 小欧 2026-08-06"""
     try:
         subprocess.run(
             ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
             capture_output=True, timeout=SUBPROCESS_TIMEOUT_SHORT,
         )
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[卡死C11] taskkill异常 → proc.kill()兜底 (pid={proc.pid}): {e}")
         proc.kill()
-    proc.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
+    try:
+        proc.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
+    except Exception as e:
+        logger.warning(f"[卡死C11] 等退出超时/异常 → 读残存继续 (pid={proc.pid}): {e}")
     try:
         stdout_b = proc.stdout.read() if proc.stdout else b""
     except Exception:
@@ -939,7 +946,9 @@ def shell(
                 processed_command += " | Out-String -Width 4096"
 
             task_id = get_current_task_id()
-            engine = shell_pool.acquire(task_id, shell_type, workdir=cwd)
+            # v2.7 BugFix(小欧 2026-08-06): acquire 传入 _sanitize_env(), 修复持久进程启动时
+            # 直接 copy os.environ(含 API key) 泄漏给子进程的问题(此前仅 exec 时传 env, 进程存活时被忽略)。
+            engine = shell_pool.acquire(task_id, shell_type, workdir=cwd, env=_sanitize_env())
             try:
                 result = engine.exec(processed_command, timeout, env=_sanitize_env())
             finally:
@@ -966,7 +975,7 @@ def shell(
                     stderr=subprocess.PIPE, cwd=cwd, env=child_env,)
                 timed_out = False
                 try:
-                    # poll loop代替communicate(timeout): 防止start /b子进程持管道
+                    # [卡死场景C10] poll loop代替communicate(timeout): 防止start /b子进程持管道
                     # 导致communicate挂满整个timeout — 参考Hermes _wait_for_process, 2026-07-27 小欧
                     _deadline = _time_mod.time() + timeout
                     _poll_sleep = 0.1
@@ -975,11 +984,14 @@ def shell(
                         _poll_sleep = min(_poll_sleep * 2, 1.0)
                     if proc.poll() is None:
                         timed_out = True
+                        logger.warning(f"[卡死C10] CMD命令超时{timeout}s(子进程持管道/死循环) → 杀进程树+读残存 (cmd={cmd_short})")
                         stdout_b, stderr_b = _kill_and_read_output(proc)
                     else:
+                        # [卡死场景C11] communicate有界: 防残留管道阻塞 — 小欧 2026-08-06
                         stdout_b, stderr_b = proc.communicate(timeout=SUBPROCESS_TIMEOUT_SHORT)
                 except subprocess.TimeoutExpired:
                     timed_out = True
+                    logger.warning(f"[卡死C10] CMD communicate超时 → 杀进程树+读残存 (cmd={cmd_short})")
                     stdout_b, stderr_b = _kill_and_read_output(proc)
             finally:
                 try:
@@ -1006,9 +1018,11 @@ def shell(
             )
             timed_out = False
             try:
+                # [卡死场景C10] bash分支: communicate有界timeout, 超时→_kill_and_read_output(杀进程树+读残存) — 小欧 2026-08-06
                 stdout_b, stderr_b = proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
                 timed_out = True
+                logger.warning(f"[卡死C10] Bash命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
                 stdout_b, stderr_b = _kill_and_read_output(proc)
             stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
             stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
