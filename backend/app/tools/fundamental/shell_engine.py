@@ -28,6 +28,7 @@
 # 2026-08-06 - 小欧 - 卡死场景代码标注: 系统梳理多shell并行「后台卡死」14类场景(C1-C14), 在文件头加【场景索引】总表, 并在各处理代码点加[卡死场景C#]标注(供三堂会审/回归对照)。零逻辑改动, 全测试通过
 # 2026-08-06 - 小欧 - 卡死场景日志补齐: 按C1-C14逐一核对各处理事件是否落地日志, 补齐缺漏(C2/C5/C8半死/C9/C10/C11/C13/C14), 统一[卡死C#]前缀标识分支序号, 级别用warning(卡死异常事件)/debug(正常淘汰/清理失败)。涉及shell_engine.py与execute_shell_command.py, 池测试19 passed
 # 2026-08-06 - 小健 - 打猎测试定位并修复v2.9三个真实Bug: ①_probe()超时路径引用self._proc.pid崩溃(_exec超时内部已_close置_proc=None, pid引用→AttributeError), 改getattr(self._proc,'pid',None); ②cleanup_by_task/cleanup_all "in检查+release"与release()锁外pop存在超归竞态(cleanup锁内判断True后、sem.release前, release线程已pop拿到key并release → 双归还BoundedSemaphore超归抛ValueError), 改原子pop(仅pop成功才release), 与release()同一所有权转移规则; ③acquire C6淘汰日志it._proc.pid对无_proc对象(Mock) AttributeError, 改getattr嵌套防御。测试: test_shell_pool_manager 19→28用例(新增半死剔除/exec自愈/槽位守恒/并发不超归/高并发sem守恒), 全shell套件266 passed
+# 2026-08-06 - 小健/小欧 - v2.10打猎第5~7个真实Bug: ⑤Bug#5(_start失败路径stderr临时文件泄漏,C12): Popen抛异常/进程立即退出两条失败路径残留ps_*.err(初测ps_0k3lbafn.err), 加_close()后_stderr_path置None但文件仍在磁盘(内联open()句柄泄漏→Windows句柄被占无法unlink) → 重构为self._stderr_handle持句柄, Popen异常时显式关闭并置None, Popen成功后置None交接子进程, _close()同步关闭句柄+unlink临时文件; ⑥Bug#6(C11,execute业务模块): taskkill失败后裸proc.kill()兜底, 进程已死时ProcessLookupError冒泡中断残存读取 → try/except包住+warning防丢失(execute_shell_command.py); ⑦Bug#7(acquire重试×并发cleanup超归): acquire Phase2阻塞期间并发cleanup原子pop+sem.release归还槽位, acquire Phase3重试注册新实例后调用方release再归一次 → BoundedSemaphore超归ValueError(shell_engine.py:633)。修复: acquire重试前用原子_inst_map.pop判定槽是否已归还(lost_slot), 已归还则sem.acquire重取一槽供新实例; owning_slot标记actual持槽, except仅实际持有才release, 杜绝空释/超归。hunt测试params_hunt_v3 2用例确定性复现→修后绿
 """
 PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-05
 
@@ -244,6 +245,7 @@ class PersistentShell:
         self._cwd = workdir or os.getcwd()
         self._shell_type = shell_type
         self._stderr_path: Optional[str] = None   # stderr 日志文件路径(半死可观测) — 小欧 2026-08-06
+        self._stderr_handle = None                # v2.10 BugFix(小健 2026-08-06): 持stderr句柄引用, Popen异常时显式关闭防句柄泄漏(详见_start)
 
     # ── 公共方法 ────────────────────────────────
 
@@ -314,19 +316,35 @@ class PersistentShell:
             # ① stderr: DEVNULL → 日志文件(可观测半死原因) — 治#2 小欧 2026-08-06
             fd, self._stderr_path = tempfile.mkstemp(suffix=".err", prefix="ps_", text=True)
             os.close(fd)
-            self._proc = subprocess.Popen(
-                [pwsh, "-NoProfile", "-Command", "-"],
-                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                stderr=open(self._stderr_path, "w", encoding="utf-8", errors="replace"),
-                cwd=self._cwd, env=child_env,
-            )
+            # [卡死C12] v2.10 BugFix(小健 2026-08-06): stderr句柄不再内联给Popen(否则Popen异常时句柄泄漏,
+            # Windows下已占用文件不可unlink → 临时文件泄漏累积); 存局部句柄供 _start 失败路径显式关闭
+            stderr_handle = open(self._stderr_path, "w", encoding="utf-8", errors="replace")
+            self._stderr_handle = stderr_handle
+            try:
+                self._proc = subprocess.Popen(
+                    [pwsh, "-NoProfile", "-Command", "-"],
+                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                    stderr=stderr_handle,
+                    cwd=self._cwd, env=child_env,
+                )
+            except Exception:
+                # Popen异常: 句柄尚在父进程未移交 → 显式关闭再抛出, 供外层except清理临时文件
+                try:
+                    stderr_handle.close()
+                except Exception:
+                    pass
+                self._stderr_handle = None
+                raise
+            self._stderr_handle = None   # 移交子进程后由 _close/进程代管
             for _ in range(40):
                 if self._proc.poll() is None:
                     break
                 time.sleep(0.025)
             else:
+                # [卡死C12] v2.10 BugFix(小健 2026-08-06): 进程启动后立即退出 → _close() 清理已mkstemp的_stderr_path临时文件, 防泄漏
+                logger.error("[PersistentShell] 进程启动后立即退出, 已清理临时stderr文件")
                 self._alive = False
-                logger.error("[PersistentShell] 进程启动后立即退出")
+                self._close()
                 return False
             self._alive = True
             # ② 就绪握手：启动后立即纯探测一次，未就绪则销毁(调用方重建) — 治#3 小欧 2026-08-06
@@ -341,6 +359,8 @@ class PersistentShell:
         except Exception as e:
             logger.error(f"[PersistentShell] 启动失败: {e}")
             self._alive = False
+            # [卡死C12] v2.10 BugFix(小健 2026-08-06): Popen异常时 _stderr_path 已在mkstemp创建但未清理 → _close() 清理临时文件, 防temp目录累积泄漏
+            self._close()
             return False
 
     # ── 命令预处理 ──────────────────────────────
@@ -449,6 +469,13 @@ class PersistentShell:
                 pass
             self._proc = None
             self._alive = False
+        # [卡死场景C12] v2.10 BugFix(小健 2026-08-06): Popen异常未移交句柄时 _stderr_handle 残留 → 显式关闭, 防Windows下临时文件被占用无法unlink
+        if self._stderr_handle is not None:
+            try:
+                self._stderr_handle.close()
+            except Exception:
+                pass
+            self._stderr_handle = None
         # [卡死场景C12] 半死可观测：close 前读取 stderr 残留并记录，随后清理临时文件 — 小欧 2026-08-06
         if self._stderr_path:
             tail = safe_read_file(self._stderr_path).strip()
@@ -515,6 +542,12 @@ class ShellPoolManager:
                 f"等待{ACQUIRE_WAIT_TIMEOUT}s未获槽位, 请降低并发或稍后重试"
             )
         max_attempts = self._max_per_type + 2   # 有界重试: 防 pwsh 不可用时无限循环 — 小欧 2026-08-06
+        # v2.10 BugFix(小健 2026-08-06): owning_slot 追踪本 acquire 当前是否持槽。
+        # 竞态根因: 本 acquire 已 acquire 1槽后, Phase2阻塞期间并发 cleanup 也可 pop 同一实例注册并
+        # sem.release()(槽被外部归还)。此后 acquire 若重试并注册新实例, 调用方 release(X) 会再归一次
+        # → BoundedSemaphore 超归 ValueError。修复: 重试前检测槽是否已被外部归还, 是则重新 acquire;
+        # except 仅释放实际持有的槽(owning_slot), 避免空释。 — 小健 2026-08-06
+        owning_slot = True
         try:
             for _ in range(max_attempts):
                 evict_to_close = []   # v2.7 BugFix(小欧 2026-08-06): 空闲超时淘汰的实例收集到锁外 close, 防持池锁阻塞全池
@@ -535,9 +568,6 @@ class ShellPoolManager:
                                     logger.debug(f"[卡死C6] 空闲超时淘汰实例(锁外close不阻塞全池) (pid={getattr(getattr(it, '_proc', None), 'pid', None)}, idle={self._idle_timeout}s)")
                                     continue
                             busy.add(id(it))
-                            # [卡死场景C1] v2.7 BugFix(小欧 2026-08-06): 复用路径必须重新注册 _inst_map。
-                            # release() 会 pop(id)，若复用后不重注册，下一次 release 拿到 key=None
-                            # 提前返回 → 信号量永不归还 → 槽位泄漏(并发下所有 acquire 等满超时)。
                             self._inst_map[id(it)] = key
                             inst = it
                             fresh = False
@@ -561,23 +591,34 @@ class ShellPoolManager:
                 if ok:
                     return inst
                 # [卡死场景C13] Phase3: 失败→销毁剔除→有界重试
-                # 剔除仅清 busy/_inst_map, 槽位由本acquire独占(最终成功返回或except统一归还), 不额外碰sem — 小欧 2026-08-06
-                logger.warning(f"[卡死C13] Phase2探活/启动失败 → 销毁剔除实例并重试 (shell_type={shell_type}, task_id={task_id}, pid={getattr(getattr(inst, '_proc', None), 'pid', None)})")
+                # v2.10 BugFix(小健 2026-08-06): 剔除实例时用原子 pop 判断槽是否已被外部(cleanup)归还。
+                #   - pop 返回 key(本acquire仍持有) → 槽归本 acquire, 重试继承持有, 不额外偿碰 sem
+                #   - pop 返回 None(cleanup已 pop+release) → 槽被外部归还, 重试前须重新 acquire, 否则
+                #     新实例 release 会再放一次 → 超归 ValueError
+                logger.warning(f"[卡死C13] Phase探活/启动失败 → 销毁剔除实例并重试 (shell={shell_type}, task_id={task_id}, pid={getattr(getattr(inst, '_proc', None), 'pid', None)})")
                 with self._lock:
                     pool = self._pool[key]
                     busy = self._busy[key]
                     if inst in pool:
                         pool.remove(inst)
                     busy.discard(id(inst))
-                    self._inst_map.pop(id(inst), None)
+                    lost_slot = self._inst_map.pop(id(inst), None) is None
                     self._last_used.pop(id(inst), None)
                 inst.close()
+                if lost_slot:
+                    # 槽已由外部(cleanup)归还 → 重新取得一槽, 供重试的新实例占用(不额外超归/泄漏)
+                    owning_slot = False
+                    if not sem.acquire(timeout=ACQUIRE_WAIT_TIMEOUT):
+                        logger.warning(f"[卡死C2] 重试前重新取槽超时(同 key 并acquire返回新并发) (key={key}, 上限={self._max_per_type}) → 明确失败")
+                        raise RuntimeError(f"[ShellPool] 重试重新取槽超时(key={key}, 上限={self._max_per_type})")
+                    owning_slot = True
             raise RuntimeError(
-                f"[ShellPool] 连续 {max_attempts} 次获取 Shell 失败 (shell_type={shell_type}, task_id={task_id})"
+                f"[ShellPool] 连续 {max_attempts} 次获取 Shell 失败 (shell={shell_type}, task_id={task_id})"
             )
         except Exception:
-            # [卡死场景C1] 异常路径归还槽位(本acquire占用的1槽), 防泄漏 → 限流器不枯零 — 小欧 2026-08-06
-            sem.release()
+            # [卡死场景C1] 异常路径归还实际持有的槽位, 防泄漏 → 限流器不枯零 — 小欧 2026-08-06
+            if owning_slot:
+                sem.release()
             raise
 
     def release(self, inst: PersistentShell):

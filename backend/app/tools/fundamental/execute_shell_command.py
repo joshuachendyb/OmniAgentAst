@@ -88,6 +88,7 @@
 # 2026-08-06 - 小欧 - v2.7三堂会审BugFix: PS分支 shell_pool.acquire() 补传 env=_sanitize_env()(原acquire启动走os.environ含API key泄漏给子进程, exec时传的env因进程存活被_ensure_alive忽略) — 与shell_engine.py acquire加env参数配套
 # 2026-08-06 - 小欧 - 卡死场景日志补齐: C10(C11)分支超时/管道阻塞事件加[卡死C#]warning日志(CMD poll-loop超时/CMD communicate超时/Bash超时/taskkill异常/等退出超时), 与shell_engine.py C1-C14标注联动
 # 2026-08-06 - 小健 - v2.9打猎修复: _kill_and_read_output 的 proc.wait() 无try保护(taskkill失败且进程僵死时抛TimeoutExpired冒泡到shell()的except → 丢失超时语义, 且中断残存stdout/stderr读取), 补try+warning日志, 超时后仍读残存返回
+# 2026-08-06 - 小健/小欧 - v2.10打猎Bug#6(C11): _kill_and_read_output taskkill失败后裸proc.kill()兜底无保护, 进程已死/句柄失效时抛ProcessLookupError冒泡 → 中断残存stdout/stderr读取。修复: proc.kill()包try/except补warning日志, 失败后仍继续读残存返回(与引擎_kill_tree已有保护对称)。与shell_engine.py v2.10 Bug#5/#7打猎联动
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -617,7 +618,10 @@ def _kill_and_read_output(proc: subprocess.Popen) -> tuple[bytes, bytes]:
         )
     except Exception as e:
         logger.warning(f"[卡死C11] taskkill异常 → proc.kill()兜底 (pid={proc.pid}): {e}")
-        proc.kill()
+        try:
+            proc.kill()   # v2.10 BugFix(小健 2026-08-06): 兜底kill本身可能抛(进程已死/句柄失效), 必须受保护, 否则异常冒泡中断残存读取
+        except Exception as ke:
+            logger.warning(f"[卡死C11] proc.kill()兜底也失败(进程可能已死/句柄失效), 直接读残存 (pid={proc.pid}): {ke}")
     try:
         proc.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
     except Exception as e:
