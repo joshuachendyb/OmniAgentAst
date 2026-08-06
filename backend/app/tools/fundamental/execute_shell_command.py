@@ -89,6 +89,16 @@
 # 2026-08-06 - 小欧 - 卡死场景日志补齐: C10(C11)分支超时/管道阻塞事件加[卡死C#]warning日志(CMD poll-loop超时/CMD communicate超时/Bash超时/taskkill异常/等退出超时), 与shell_engine.py C1-C14标注联动
 # 2026-08-06 - 小健 - v2.9打猎修复: _kill_and_read_output 的 proc.wait() 无try保护(taskkill失败且进程僵死时抛TimeoutExpired冒泡到shell()的except → 丢失超时语义, 且中断残存stdout/stderr读取), 补try+warning日志, 超时后仍读残存返回
 # 2026-08-06 - 小健/小欧 - v2.10打猎Bug#6(C11): _kill_and_read_output taskkill失败后裸proc.kill()兜底无保护, 进程已死/句柄失效时抛ProcessLookupError冒泡 → 中断残存stdout/stderr读取。修复: proc.kill()包try/except补warning日志, 失败后仍继续读残存返回(与引擎_kill_tree已有保护对称)。与shell_engine.py v2.10 Bug#5/#7打猎联动
+# 2026-08-06 - 小欧 - 卡死C13根因修复(北京老陈21:53:36报告): ps7原生&&虽合法, 但`&&/||后接赋值语句`(如
+#        `cd X && $env:PYTHONIOENCODING='utf-8'`)是PS7语法错误(ParserError), LLM高频生成 → ps1解析失败
+#        → 命令从未执行 → 假超时(C8/C14杀进程) → C12 stderr残留ParserError → 池中留死实例 → 下次复用
+#        探活失败C13(pid=None)。修复: 新增_fix_ps7_assignment_operators(引号感知检测&&/||后接$变量=赋值,
+#        命中才复用_translate_powershell_operators翻译, 普通&&/||保持ps7原生不动), ps7分支集成; ps5分支不变。
+# 2026-08-06 - 小欧 - 三路检测Bash误判修复(北京老陈22:02报告): `python "E:\test_dir\backup_integrity_check.py"`(ps7合法命令)
+#        被_looks_like_bash判为bash(唯一命中`(?:^|[;&|])\s*python\b`) → 路由bash → _auto_fix_bash_syntax路径\→/转换(误)。
+#        病根: 裸`python`是跨平台命令(Windows ps7/ps5/cmd同样合法), 绝非bash独有特征。修复: python判bash
+#        收敛为仅当后跟Linux风格路径(/|./|~/), 即`python(?=\s+(?:\.?/|~/))`; python3(Linux独有解释器)保持判bash。
+#        实证: 病根命令不再判bash留ps7; `python /tmp/x.py`/`python ./x.py`/`python3 /tmp/x.py`(经stage 1.0a转python)仍判bash。
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -332,6 +342,83 @@ def _translate_powershell_operators(command: str) -> str:
         translated = '$__ok=$true; ' + translated
         translated = _close_if_blocks(translated)
     return translated
+
+
+def _fix_ps7_assignment_operators(command: str) -> str:
+    """ps7专用: 仅当 &&/|| 后接赋值语句时复用 _translate_powershell_operators 翻译, 其余保持 ps7 原生 &&。
+
+    背景: ps7 原生支持 &&, 但 `cmd && $env:X='...'` 是 PS7 语法错误(ParserError) — LLM 高频生成
+    `cd X && $env:PYTHONIOENCODING='utf-8'; python ...` → ps1 解析失败 → 命令从未执行 → 假超时
+    (C8/C14 杀进程) → C12 stderr 残留 ParserError → 池中留死实例 → 下次复用探活失败(C13, pid=None)。
+    修复: 引号感知检测 &&/|| 后紧跟 `$变量=`, 命中才调用翻译器(与 ps5 同路径), 不命中原样返回(ps7 原生 && 保留)。
+    仅匹配赋值场景, 不匹配 `cmd && python x.py` 等合法 ps7 用法, 避免过度翻译。— 小欧 2026-08-06
+    """
+    if not _has_ps7_assignment_after_operator(command):
+        return command
+    return _translate_powershell_operators(command)
+
+
+def _has_ps7_assignment_after_operator(command: str) -> bool:
+    """引号感知检测: 是否存在 `&& $var=` / `|| $var=`(ps7 语法非法, LLM 高频赋值误用)。
+    检测到才翻译; 普通 `&& cmd` 不命中, ps7 原生 && 保持不动。— 小欧 2026-08-06"""
+    if '&&' not in command and '||' not in command:
+        return False
+    i = 0
+    n = len(command)
+    in_dq = False
+    in_sq = False
+    depth = 0
+    in_lc = False
+    in_bc = False
+    skip_one = False
+    stop = False
+    while i < n:
+        ch = command[i]
+        if skip_one:
+            i += 1; skip_one = False; continue
+        if in_lc:
+            if ch == '\n': in_lc = False
+            i += 1; continue
+        if in_bc:
+            if ch == '#' and i < n and command[i] == '>':
+                in_bc = False; i += 1; continue
+            i += 1; continue
+        if stop:
+            if ch == '\n': stop = False
+            i += 1; continue
+        if i + 3 <= n and command[i:i+3] == '--%':
+            i += 3; stop = True; continue
+        if ch == '<' and i + 1 < n and command[i+1] == '#':
+            i += 2; in_bc = True; continue
+        if ch == '$' and i + 1 < n and command[i+1] == '(':
+            i += 2; depth += 1; continue
+        if ch == ')' and depth > 0:
+            i += 1; depth -= 1; continue
+        if ch == '`':
+            i += 1; skip_one = True; continue
+        if ch == "'" and depth == 0:
+            i += 1; in_sq = not in_sq; continue
+        if ch == '"' and depth == 0:
+            i += 1; in_dq = not in_dq; continue
+        if ch == '#' and not in_dq and not in_sq and depth == 0:
+            i += 1; in_lc = True; continue
+        in_outer = not in_dq and not in_sq and depth == 0 and not in_lc and not in_bc and not stop
+        if in_outer and command[i:i+2] in ('&&', '||'):
+            j = i + 2
+            while j < n and command[j] in ' \t':
+                j += 1
+            if j < n and command[j] == '$':
+                k = j + 1
+                while k < n and (command[k].isalnum() or command[k] in '_.:'):
+                    k += 1
+                while k < n and command[k] in ' \t':
+                    k += 1
+                if k < n and command[k] == '=':
+                    return True
+            i += 2
+            continue
+        i += 1
+    return False
 
 
 def _close_if_blocks(s: str) -> str:
@@ -672,9 +759,10 @@ def _looks_like_bash(command: str) -> bool:
         r'\bhead\b',              # head -n
         r'\btail\b',              # tail -n
         r'\bchmod\b',             # chmod
-        r'(?:^|[;&|])\s*python\b',    # python命令(要求python作为命令起始token, 避免echo "python is cool"误判) — 小欧 2026-08-06 Bug8修复
+        r'(?:^|[;&|])\s*python(?=\s+(?:\.?/|~/))',  # python+Linux风格路径(/|./|~/): 裸python是跨平台命令(Windows ps7同样合法), 仅当带Linux风格路径才判bash — 小欧 2026-08-06 BugFix
+        r'(?:^|[;&|])\s*python3\b',      # python3(Linux独有解释器, Windows无python3可执行) — 小欧 2026-08-06
+        r'(?:^|[;&|])\s*python\s3\b',    # python 3 (space)
         r'(?:^|[;&|])\s*pip3\b',    # pip3(要求作为命令起始token, 避免echo "pip3"误判) — 小欧 2026-08-06 Bug6修正
-        r'(?:^|[;&|])\s*python\s3\b', # python 3 (space)
         r'\bapt\b',               # apt
         r'\bapt-get\b',           # apt-get
         r'\bconda\b',             # conda
@@ -942,9 +1030,13 @@ def shell(
     # ── 阶段 3【PS/CMD分支】: 执行 ──
     try:
         if shell_type in ("ps7", "ps5"):  # ── 【PS7/PS5专属】: 持久进程引擎 — 小欧 2026-07-28 ──
-            # BUG#2修复: ps7原生支持&&, 不需要翻译; ps5需要翻译&&→;if($?){cmd2} — 小欧 2026-07-28
+            # BUG#2修复: ps5需要翻译&&→;if($?){cmd2}; ps7原生支持&&无需翻译 — 小欧 2026-07-28
+            # v2.11 BugFix(小欧 2026-08-06): ps7 `&& $env:X='utf-8'`是PS7语法错误(ParserError)导致命令
+            # 从未执行→假超时(C8/C14)→连锁C13; 仅此赋值场景复用翻译器兜底, 其余&&保持ps7原生 — 小欧 2026-08-06
             if shell_type == "ps5":
                 processed_command = _translate_powershell_operators(processed_command)
+            else:
+                processed_command = _fix_ps7_assignment_operators(processed_command)
             # Format-Table输出追加Out-String -Width 4096，避免PS5.1默认80列截断 — 小欧 2026-07-08
             if re.search(r'(?i)(?:^|\|)\s*Format-Table\b', processed_command):
                 processed_command += " | Out-String -Width 4096"

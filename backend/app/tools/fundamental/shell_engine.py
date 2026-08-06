@@ -29,6 +29,7 @@
 # 2026-08-06 - 小欧 - 卡死场景日志补齐: 按C1-C14逐一核对各处理事件是否落地日志, 补齐缺漏(C2/C5/C8半死/C9/C10/C11/C13/C14), 统一[卡死C#]前缀标识分支序号, 级别用warning(卡死异常事件)/debug(正常淘汰/清理失败)。涉及shell_engine.py与execute_shell_command.py, 池测试19 passed
 # 2026-08-06 - 小健 - 打猎测试定位并修复v2.9三个真实Bug: ①_probe()超时路径引用self._proc.pid崩溃(_exec超时内部已_close置_proc=None, pid引用→AttributeError), 改getattr(self._proc,'pid',None); ②cleanup_by_task/cleanup_all "in检查+release"与release()锁外pop存在超归竞态(cleanup锁内判断True后、sem.release前, release线程已pop拿到key并release → 双归还BoundedSemaphore超归抛ValueError), 改原子pop(仅pop成功才release), 与release()同一所有权转移规则; ③acquire C6淘汰日志it._proc.pid对无_proc对象(Mock) AttributeError, 改getattr嵌套防御。测试: test_shell_pool_manager 19→28用例(新增半死剔除/exec自愈/槽位守恒/并发不超归/高并发sem守恒), 全shell套件266 passed
 # 2026-08-06 - 小健/小欧 - v2.10打猎第5~7个真实Bug: ⑤Bug#5(_start失败路径stderr临时文件泄漏,C12): Popen抛异常/进程立即退出两条失败路径残留ps_*.err(初测ps_0k3lbafn.err), 加_close()后_stderr_path置None但文件仍在磁盘(内联open()句柄泄漏→Windows句柄被占无法unlink) → 重构为self._stderr_handle持句柄, Popen异常时显式关闭并置None, Popen成功后置None交接子进程, _close()同步关闭句柄+unlink临时文件; ⑥Bug#6(C11,execute业务模块): taskkill失败后裸proc.kill()兜底, 进程已死时ProcessLookupError冒泡中断残存读取 → try/except包住+warning防丢失(execute_shell_command.py); ⑦Bug#7(acquire重试×并发cleanup超归): acquire Phase2阻塞期间并发cleanup原子pop+sem.release归还槽位, acquire Phase3重试注册新实例后调用方release再归一次 → BoundedSemaphore超归ValueError(shell_engine.py:633)。修复: acquire重试前用原子_inst_map.pop判定槽是否已归还(lost_slot), 已归还则sem.acquire重取一槽供新实例; owning_slot标记actual持槽, except仅实际持有才release, 杜绝空释/超归。hunt测试params_hunt_v3 2用例确定性复现→修后绿
+# 2026-08-06 - 小欧 - v2.11 BugFix(C13死实例放回池): C8/C14命令超时_exec_locked内部_close()置_proc=None后, release()仍将死实例放回池 → 下次acquire复用死实例_probe见_proc=None返回False → 反复[卡死C13]噪音(第二次卡死案例22:14-22:16 tasklist真实超时链的共因)。修复: release()放回池前判定实例存活(_proc is None或poll()非None即死), 死实例从池中移除+close, 杜绝复用死实例。验证: 池测试全绿(28用例)
 """
 PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-05
 
@@ -638,8 +639,15 @@ class ShellPoolManager:
                 if inst not in pool:
                     should_close = True
                 else:
-                    # 池实例放回: 记录时间戳供空闲超时兜底
-                    self._last_used[id(inst)] = time.time()
+                    # [卡死C13] v2.11 BugFix(小欧 2026-08-06): 死实例(C8/C14超时_close置_proc=None / 进程自然退出)
+                    # 一律不放回池, 直接close。否则下次acquire复用死实例 → _probe见_proc=None返回False → 反复C13噪音。
+                    if inst._proc is None or inst._proc.poll() is not None:
+                        pool.remove(inst)
+                        self._last_used.pop(id(inst), None)
+                        should_close = True
+                    else:
+                        # 池实例放回: 记录时间戳供空闲超时兜底
+                        self._last_used[id(inst)] = time.time()
         # [卡死场景C6] Bug#3 修复: close() 在锁外执行，不阻塞全池操作 — 小欧 2026-08-06
         if should_close:
             inst.close()
