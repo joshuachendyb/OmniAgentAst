@@ -7,6 +7,7 @@
 # 2026-07-29 - 小欧 - hint优化: 语法错误hint从死的"请修复语法错误后重试"改为动态"Python语法错误(行N)，建议:xxxx"; metrics新增error_line+suggestion
 # 2026-07-29 - 小欧 - PYEOF容错: Python文件末尾整行PYEOF自动剥离(heredoc泄漏), 前置在validate_syntax之前; metrics新增auto_removed_pyeof
 # 2026-07-30 - 小沈 - except:pass补日志: diff生成失败改为logger.debug记录
+# 2026-08-06 - 小欧 - 追加补换行: append且原文件非空且末尾非换行符时自动补换行, 避免追加内容与末行合并(仿edit_text_file末行处理)
 """
 F2: writetext — 写文本文件
 
@@ -66,10 +67,18 @@ def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
 
 def _write_file_atomic(content: str, path: Path, encoding: str,
                         append: bool, create_parents: bool) -> Tuple[bool, str]:
-    """原子写入文件 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 返回具体错误信息"""
+    """原子写入文件 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 返回具体错误信息 — 小欧 2026-08-06 追加补换行"""
     try:
         if create_parents:
             path.parent.mkdir(parents=True, exist_ok=True)
+        if append:
+            # 追加且原文件非空末尾非换行符: 自动补换行, 避免与末行合并 — 小欧 2026-08-06
+            if path.exists() and path.is_file() and path.stat().st_size > 0:
+                with open(path, 'rb') as _rf:
+                    _rf.seek(-1, 2)
+                    _last_byte = _rf.read(1)
+                if _last_byte not in (b'\n', b'\r'):
+                    content = '\n' + content
         mode = 'a' if append else 'w'
         with open(path, mode, encoding=encoding, newline='') as f:
             f.write(content)
