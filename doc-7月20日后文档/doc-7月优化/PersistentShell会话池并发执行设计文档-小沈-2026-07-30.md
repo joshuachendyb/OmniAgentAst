@@ -19,6 +19,8 @@
 | v2.3 | 2026-08-06 11:43:35 | 北京老陈要求第12章作为**整体更新设计**：整合第9/10/11章问题为完整方案；重写第12章为「整体更新设计」——问题全集+详细代码设计(完整代码+前后对照)+实施计划(阶段里程碑)+验收标准 | 小欧(代表北京老陈) |
 | v2.4 | 2026-08-06 12:10:03 | 北京老陈确认第12章代码须为**准确可实施 diff + 强调对现有代码的有机整合**；12.3 改为 diff 格式并新增「整合矩阵」表；**修正 12.3.6 acquire bug**：新建实例 _probe 必 False→原伪代码无限递归，且递归重复 acquire 信号量→改为 while 循环+start/复用双分支；信号量归一只在 release/cleanup | 小欧(代表北京老陈) |
 | v2.5 | 2026-08-06 12:13:23 | 北京老陈补充：12.2 架构须**把第2章(尤其2.1)既有架构同时纳入考虑**，在其上有机叠加优化，而非另画一套。重写 12.2：以2.1核心组件图为主线，标注「新增/优化」增量点与「不改变」的既有部分 | 小欧(代表北京老陈) |
+| v2.6 | 2026-08-06 12:38:36 | 三堂会审后修复 12.3 三处 bug + 12.5 补测试风险：①H6 重复导入(文件头已有 import threading, 删 from threading import BoundedSemaphore, 统一 threading.BoundedSemaphore)；②H7 while True 无最大重试→新建实例 _start 持续失败(pwsh 不可用)时无限循环, 改有界循环 max_per_type+2 + 耗尽 raise RuntimeError(触发异常路径归还信号量)；③H9 cleanup 对池中空闲实例重复归还信号量→BoundedSemaphore 超计数抛 ValueError(锁内无 try→cleanup 中断), 删池实例块两处 sem.release, 保留临时实例块(仅归未 release 实例, 防泄漏)；④12.5 补 2 个测试风险注意项(_probe 匹配可靠性、stderr 文件句柄未关闭) | 小欧 |
+| v2.7 | 2026-08-06 12:49:51 | 北京老陈合理检查复核后补 2 项：①**问题3 stderr 句柄泄漏**(半死场景 unlink 时 Popen 句柄未关→文件残留)→H5 `_close` 在 self._proc 置 None 前显式 `self._proc.stderr.close()`；②**遗漏1 acquire 超时未占用 slot 却归还**(计数虚高限流削弱)→H6 新增 `_slot_held` 映射, H7 `acquired=信号量返回值`+成功路径记录+异常路径仅 acquired 时归还, H8/H9 归还前查 `_slot_held`；12.5 风险②由"待验证"升级为"已设计处理+测试验证无残留" | 小欧 |
 
 ## 1. 概述与背景
 
@@ -2512,7 +2514,7 @@ self._proc = subprocess.Popen(
 | ShellPoolManager.acquire 两段式 | 【优化】 | 复用探活移出持池锁 + 新建/复用双分支(治#6) |
 | PersistentShell 实例(去单例) | 【优化】 | 新增 `_probe()` 响应性探活 + `_start` 就绪握手 + stderr 落日志(治#1/2/3) |
 | PersistentShell.exec 超时销毁(第2章已含) | 【保持】 | 保留兜底(治#4) |
-| cleanup_by_task / cleanup_all | 【优化】 | 归还信号量 |
+| cleanup_by_task / cleanup_all | 【优化】 | cleanup_by_task 临时实例归还信号量（池实例不归，v2.6） |
 | 死代码 `shell/shell_engine.py` | 【清理】 | 删除 |
 
 #### 12.2.1 总体链路（虚线上一行为第2章既有，实线为本设计新增/增强）
@@ -2565,10 +2567,10 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
 | 3 | `PersistentShell._start()` | shell_engine.py | 改造 | stderr落日志+就绪握手 | 增强 |
 | 4 | `PersistentShell._close()` | shell_engine.py | 改造 | stderr残留读取+清理 | 增强 |
 | 5 | `PersistentShell.exec()` | shell_engine.py | 不改 | 超时销毁兜底 | 保持 |
-| 6 | `ShellPoolManager.__init__` | shell_engine.py | 改造 | 新增 `_sem` 信号量 | 增强 |
+| 6 | `ShellPoolManager.__init__` | shell_engine.py | 改造 | 新增 `_sem` 信号量 + `_slot_held` 槽位记录(v2.7) | 增强 |
 | 7 | `ShellPoolManager.acquire()` | shell_engine.py | 重构 | 探活移锁外+双分支+while | 增强 |
-| 8 | `ShellPoolManager.release()` | shell_engine.py | 改造 | 归还信号量(治#5) | 增强 |
-| 9 | `cleanup_by_task`/`cleanup_all` | shell_engine.py | 改造 | 归还信号量 | 增强 |
+| 8 | `ShellPoolManager.release()` | shell_engine.py | 改造 | 归还信号量(治#5)；v2.7 归还前查 `_slot_held` 防虚高 | 增强 |
+| 9 | `cleanup_by_task` | shell_engine.py | 改造 | 仅临时实例归还信号量（池实例不归，v2.6）；v2.7 临时实例查 held + 池实例清 `_slot_held` 残留 | 增强 |
 | 10 | `shell/shell_engine.py` | 删除 | — | 死代码清理 | 清理 |
 
 > **结论**：第2章 action_handler 并行链路、exec/cleanup 已有兜底、失效仍处于快查——全部黑保留；本设计只在前先生成的 ShellPoolManager 与 PersistentShell 上做**最小增量**（信号量、探活、握手、锁外、stderr），不推翻第2.1架构。
@@ -2589,13 +2591,14 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
 | `PersistentShell._start` | **改造现有** | stderr DEVNULL→文件 + 启动后握手（改 Popen 参数与循环） | H4 |
 | `PersistentShell._close` | **改造现有** | 尾部加 stderr 残留读取+临时文件清理 | H5 |
 | `PersistentShell.exec` | **不改** | 保持（_ensure_alive 仍走 poll 快查，超时销毁兜底已存在） | — |
-| `ShellPoolManager.__init__` | **改造现有** | 加 `_sem` 信号量 + import `BoundedSemaphore` | H6 |
-| `ShellPoolManager.acquire` | **改造现有** | Phase1 移探活出锁、Phase2 双分支(start/probe)、while 循环 | H7 |
-| `ShellPoolManager.release` | **改造现有** | 尾部加 `_sem[key].release()` | H8 |
-| `ShellPoolManager.cleanup_by_task`/`cleanup_all` | **改造现有** | close 循环中归还信号量 | H9 |
+| `ShellPoolManager.__init__` | **改造现有** | 加 `_sem` 信号量(复用文件头已有 import threading, 用 threading.BoundedSemaphore, 不新增 import) + `_slot_held` 槽位记录(v2.7) | H6 |
+| `ShellPoolManager.acquire` | **改造现有** | Phase1 移探活出锁、Phase2 双分支(start/probe)、有界重试循环 | H7 |
+| `ShellPoolManager.release` | **改造现有** | 尾部加 `_sem[key].release()`(v2.7: 归还前查 `_slot_held` 防虚高) | H8 |
+| `ShellPoolManager.cleanup_by_task` | **改造现有** | 仅临时实例归还信号量（池实例不归，v2.6）+ `_slot_held` 清理(v2.7) | H9 |
 | 死代码 `shell/shell_engine.py` | 删除 | 整文件删除 | H10 |
 
-> **总结**：新增仅 1 个方法 `_probe()` + 3 个常量 + 1 个字段；**其余 8 处全部是对现有代码的原位改造/重构**。`_probe` 复用现有 `_exec`/`_poll_for_file` 机制，不重复造轮子。
+> **总结**：新增仅 1 个方法 `_probe()` + 3 个常量 + 2 个字段（`_stderr_path`/`_slot_held`）；**其余 8 处全部是对现有代码的原位改造/重构**。`_probe` 复用现有 `_exec`/`_poll_for_file` 机制，不重复造轮子。
+> **说明**：各 hunk 头（`@@ -旧起,旧行数 +新起,新行数 @@`）的行数为**参考值**，随 v2.6/v2.7 增量有偏移；实施以 diff 上下文行 + 精确缩进为准，人工对照应用（v2.7 — 小欧 2026-08-06）。
 
 #### 12.3.1 Hunk 1 — 新增常量（文件头部，`_EXIT_PROCESS_DIED` 之后）
 
@@ -2694,10 +2697,10 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
              return False
 ```
 
-#### 12.3.5 Hunk 5 — `_close()` 修改：关闭时读取 stderr 残留并清理临时文件
+#### 12.3.5 Hunk 5 — `_close()` 修改：关闭时读取 stderr 残留、显式关句柄并清理临时文件（v2.7）
 
 ```diff
-@@ -339,11 +358,20 @@
+@@ -339,11 +359,27 @@
      def _close(self):
          """内部关闭, 不持锁。调用方尽量持有 self._lock（close()超时5s未获取到锁也会force-kill）。"""
          if self._proc:
@@ -2707,6 +2710,12 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
                      self._proc.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
              except Exception as e:
                  logger.debug(f"关闭进程失败(pid={self._proc.pid}): {e}")
++            # v2.7 修复(问题3): 显式关闭 stderr 句柄(在置 None 前), 防半死场景 wait 超时后句柄残留→unlink 失败 — 小欧 2026-08-06
++            try:
++                if self._proc.stderr is not None:
++                    self._proc.stderr.close()
++            except Exception:
++                pass
              self._proc = None
              self._alive = False
 +        # 半死可观测：close 前读取 stderr 残留并记录，随后清理临时文件 — 小欧 2026-08-06
@@ -2720,31 +2729,26 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
 +                pass
 +            self._stderr_path = None
 
-#### 12.3.6 Hunk 6 — `ShellPoolManager.__init__` 加信号量 + 文件头 import
+#### 12.3.6 Hunk 6 — `ShellPoolManager.__init__` 加信号量（复用 import threading，不新增 import）
+
+> **v2.6 修复**：文件头已有 `import threading`（L65），直接 `threading.BoundedSemaphore`，**不新增** `from threading import BoundedSemaphore`（两种 import 并存违反 DRY）。
+> **v2.7 补充（遗漏1）**：新增 `_slot_held` 映射，记录每个实例是否**实际持有信号量槽位**（`acquire` 超时放行的实例不持有），供 `release()`/`cleanup_by_task` 归还前判断，防"未占用却归还→计数虚高、限流削弱"。
 
 ```diff
 --- a/backend/app/tools/fundamental/shell_engine.py
 +++ b/backend/app/tools/fundamental/shell_engine.py
-@@ -65,6 +65,7 @@
- import tempfile
- import threading
- import time
- from collections import defaultdict
- from typing import Any, Dict, List, Optional
-+from threading import BoundedSemaphore   # 并发限流(同key并发≤max_per_type) — 小欧 2026-08-06
- 
- from app.logger import logger
-@@ -364,6 +365,7 @@
+@@ -364,6 +365,8 @@
          self._temp_instances: Dict[str, List[PersistentShell]] = defaultdict(list)
          self._lock = threading.Lock()
          self._max_per_type = max_per_type
-+        self._sem: Dict[tuple, BoundedSemaphore] = defaultdict(lambda: BoundedSemaphore(self._max_per_type))
++        self._sem: Dict[tuple, threading.BoundedSemaphore] = defaultdict(lambda: threading.BoundedSemaphore(self._max_per_type))
++        self._slot_held: Dict[int, bool] = {}   # id(inst)→是否持有信号量槽位(超时放行的实例不持有, 防计数虚高) — 小欧 2026-08-06
          # 空闲超时兜底: 实例放回池后超过 idle_timeout 秒无人 acquire 则 close（防孤魂野鬼）
 ```
 
-#### 12.3.7 Hunk 7 — `acquire()` 重构：探活移出持池锁 + 双分支 + while 循环（治 #6/#5）
+#### 12.3.7 Hunk 7 — `acquire()` 重构：探活移出持池锁 + 双分支 + 有界重试循环（治 #6/#5）
 
-> **关键修正**：新建实例未启动时 `_probe()` 必返回 False → 不能对新建实例调 `_probe`，必须 `_start`；且不能用递归（会重复 acquire 信号量），改用 `while` 循环。
+> **关键修正**：新建实例未启动时 `_probe()` 必返回 False → 不能对新建实例调 `_probe`，必须 `_start`；且不能用递归（会重复 acquire 信号量），改用**有界 for 循环**（v2.6 进一步限定次数，防 pwsh 不可用时的无限循环）。
 
 ```diff
 @@ -377,28 +379,33 @@
@@ -2760,7 +2764,7 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
 +          Phase0: 信号量限流(同key并发≤max_per_type, 治#5)
 +          Phase1(持锁): 仅找空闲实例+空闲超时兜底, 零耗时(治#6)
 +          Phase2(解锁): 复用→_probe()探活; 新建→_start()启动
-+          Phase3: 探活/启动失败→剔除销毁→while循环重试
++          Phase3: 探活/启动失败→剔除销毁→有界重试
 +        """  # 小欧 2026-08-06
          key = self._pool_key(task_id, shell_type)
 -        # ── Phase1: 持锁检查 ──
@@ -2800,9 +2804,10 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
 -            self._temp_instances[task_id or ""].append(inst)
 -            return inst
 +        sem = self._sem[key]
-+        sem.acquire(timeout=ACQUIRE_WAIT_TIMEOUT)   # Phase0: 超时也继续(兜底创建) — 治#5
++        acquired = sem.acquire(timeout=ACQUIRE_WAIT_TIMEOUT)   # Phase0: 超时也继续(兜底创建) — 治#5; v2.7 记录是否实际占用槽位
++        max_attempts = self._max_per_type + 2   # 有界重试: 防 pwsh 不可用时无限循环 — 小欧 2026-08-06
 +        try:
-+            while True:
++            for _ in range(max_attempts):
 +                # ── Phase1(持锁): 仅找空闲实例+空闲超时兜底, 零耗时(治#6) ──
 +                with self._lock:
 +                    pool = self._pool[key]
@@ -2839,8 +2844,9 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
 +                # ── Phase2(解锁): 新建→_start; 复用→_probe ──
 +                ok = inst._start() if fresh else inst._probe()
 +                if ok:
++                    self._slot_held[id(inst)] = acquired   # 记录槽位持有状态, 供 release/cleanup 判断(v2.7) — 小欧 2026-08-06
 +                    return inst
-+                # ── Phase3: 失败→销毁剔除→while循环重试 ──
++                # ── Phase3: 失败→销毁剔除→有界重试 ──
 +                with self._lock:
 +                    pool = self._pool[key]
 +                    busy = self._busy[key]
@@ -2850,24 +2856,33 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
 +                    self._inst_map.pop(id(inst), None)
 +                    self._last_used.pop(id(inst), None)
 +                inst.close()
++            raise RuntimeError(
++                f"[ShellPool] 连续 {max_attempts} 次获取 Shell 失败 (shell_type={shell_type}, task_id={task_id})"
++            )
 +        except Exception:
-+            with contextlib.suppress(Exception):   # 异常路径归还槽位, 防泄漏
-+                sem.release()
++            if acquired:   # v2.7: 仅实际占用槽位时归还, 防超时未占用却虚高计数 — 小欧 2026-08-06
++                with contextlib.suppress(Exception):   # 异常路径归还槽位, 防泄漏
++                    sem.release()
 +            raise
 ```
 
-> 说明：信号量**槽位归一只在 `release()`/`cleanup_*`**（H8/H9）；acquire 仅在**异常抛出路径**归还一次，避免双归。`while` 循环重试次数受 `max_per_type` 自然限制（每次剔除一个坏实例），不会无限。
+> 说明：信号量**槽位归一只在 `release()`/`cleanup_by_task`（临时实例）**（H8/H9）；acquire 仅在**异常抛出路径**归还一次，避免双归。
+> **v2.7 补充（遗漏1）**：`acquired` 记录 `sem.acquire()` 返回值——超时返回 False（未占用槽位）的放行实例**不记录持有、异常路径不归还**；仅 `acquired=True` 的实例在成功路径写入 `_slot_held[id(inst)]=True`，供 release()/cleanup_by_task 归还前核对。彻底消除"未占用却归还→计数虚高、限流削弱"。
+> **v2.6 修复（有界重试）**：原 `while True` 在「新建实例 `_start()` 持续失败」（如 pwsh.exe 不存在 / 启动即退出 / 就绪握手失败）时 pool 恒空、每次新建→失败→销毁→再新建 → **无限循环**。"受 `max_per_type` 自然限制"只对池内坏实例剔除成立，不适用于新建失败。改为 `for _ in range(max_attempts)`（`max_attempts = max_per_type + 2`：覆盖池内最多 max_per_type 个坏实例逐个剔除 + 1 次新建兜底），循环耗尽 `raise RuntimeError` → 触发 except 异常路径归还信号量后向外抛出。正常场景 max_per_type+2 次足够，不误伤。
 
 #### 12.3.8 Hunk 8 — `release()` 归还信号量
 
+> **v2.7 补充（遗漏1）**：归还前 `held = self._slot_held.pop(id(inst), False)` 核对实例是否**实际持有槽位**——acquire 超时放行的实例在成功路径已写 `_slot_held[id(inst)]=False`，此处 pop 得 False → 不归还，防"未占用却归还→计数虚高"。默认 False 走安全侧（防超归 ValueError）。
+
 ```diff
-@@ -423,6 +430,7 @@
+@@ -423,6 +430,8 @@
      def release(self, inst: PersistentShell):
          """释放实例回池"""
          key = self._inst_map.pop(id(inst), None)
          if key is None:
              return
 +        sem = self._sem.get(key)
++        held = self._slot_held.pop(id(inst), False)   # v2.7: 是否实际持有槽位(正常必有记录; 默认False防超归崩溃) — 小欧 2026-08-06
          should_close = False
          with self._lock:
              busy_set = self._busy.get(key)
@@ -2875,30 +2890,51 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
          # Bug#3 修复: close() 在锁外执行，不阻塞全池操作
          if should_close:
              inst.close()
-+        if sem is not None:
-+            sem.release()   # 并发槽位归还（治#5） — 小欧 2026-08-06
++        if held and sem is not None:
++            sem.release()   # 并发槽位归还（治#5）; v2.7 held 防未占用虚高 — 小欧 2026-08-06
 ```
 
-#### 12.3.9 Hunk 9 — `cleanup_by_task`/`cleanup_all` 归还信号量
+#### 12.3.9 Hunk 9 — `cleanup_by_task` 临时实例归还 + `_slot_held` 清理（池实例不归还，v2.7）
+
+> **v2.6 修复（删池实例重复归还）**：池中**空闲实例已在 `release()` 归还槽位**，cleanup 若再 `sem.release()` → BoundedSemaphore 超计数抛 `ValueError`，且在 `with self._lock:` 内无 try 包裹 → **cleanup 中断、剩余实例无法关闭**。故 cleanup **只对未 release 的临时实例**归还槽位（防泄漏，安全：`_inst_map` 已 pop 则 `get` 返回 None 不归）；池实例一律不归。
+> **v2.7 补充（遗漏1 + 残留清理）**：临时实例归还前加 `held = self._slot_held.pop(id(inst), False)` 判断（仅实际持槽位才归还）；池实例不归还但需 `_slot_held.pop` 清残留（防 id 重用误判）；`cleanup_all` 加 `_slot_held.clear()`（atexit 兜底）。
 
 ```diff
-@@ -466,6 +479,8 @@
+@@ -455,6 +467,10 @@
+     def cleanup_by_task(self, task_id: str):
+         """关闭某个任务的所有实例 — 任务结束时调用"""
+         count = 0
+         close_list = []
+         with self._lock:
+             # ── 池中实例 ──
+             keys_to_remove = [k for k in self._pool if k[0] == task_id]
+             for key in keys_to_remove:
+                 for inst in self._pool[key]:
++                    self._slot_held.pop(id(inst), None)   # v2.7 清理槽位记录(池实例不归还, 仅清残留防 id 重用误判) — 小欧 2026-08-06
+                     self._inst_map.pop(id(inst), None)
+                     self._last_used.pop(id(inst), None)
+                     close_list.append(inst)
+                 del self._pool[key]
+                 self._busy.pop(key, None)
              # ── 临时实例（Bug#4 修复: 之前漏清理）──
              task_key = task_id or ""
              temp_list = self._temp_instances.pop(task_key, [])
              for inst in temp_list:
 +                sem = self._sem.get(self._inst_map.get(id(inst)))
-+                if sem: sem.release()   # 归还槽位 — 小欧 2026-08-06
++                held = self._slot_held.pop(id(inst), False)   # v2.7: 仅实际持槽位才归还 — 小欧 2026-08-06
++                if held and sem:
++                    sem.release()   # 仅归还未release且实际持槽位的临时实例, 防槽位泄漏 — 小欧 2026-08-06
                  self._inst_map.pop(id(inst), None)
                  self._last_used.pop(id(inst), None)
                  close_list.append(inst)
-@@ -487,6 +500,8 @@
-             for key, lst in list(self._pool.items()):
-                 for inst in lst:
-+                    sem = self._sem.get(key)
-+                    if sem: sem.release()   # 归还槽位 — 小欧 2026-08-06
-                     self._inst_map.pop(id(inst), None)
-                     close_list.append(inst)
+                 count += 1
+@@ -497,6 +510,8 @@
+             self._pool.clear()
+             self._busy.clear()
+             self._inst_map.clear()
++            self._slot_held.clear()   # v2.7 清理槽位记录(atexit 兜底) — 小欧 2026-08-06
+             self._temp_instances.clear()
+             self._last_used.clear()
 ```
 
 #### 12.3.10 Hunk 10 — 删除死代码（治 #8）
@@ -2915,9 +2951,9 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
 | 阶段 | 步骤 | 改动内容 | 验收标准 |
 |:---:|------|---------|---------|
 | Ⅰ 探活基础 | S1 | 常量 + `_probe()` | `pytest -k probe` 通过；`engine._probe()==True` |
-| Ⅰ | S2 | `_start()` stderr 落日志 + 就绪握手 | 启动日志出现 `stderr=...`；握手失败走重建 |
+| Ⅰ | S2 | `_start()` stderr 落日志 + 就绪握手 + `_close()` stderr 句柄关闭(v2.7) | 启动日志出现 `stderr=...`；握手失败走重建；半死关闭后 stderr 文件可 unlink 无残留 |
 | Ⅱ 并发强化 | S3 | `__init__` 新增 `_sem` + `acquire()` 重构 | 8 shell 并行不卡死，同 key busy ≤ max_per_type |
-| Ⅱ | S4 | `release()`/`cleanup_*` 信号量归还 | 压测信号量计数不泄漏、无双归 |
+| Ⅱ | S4 | `release()` 归还信号量(查 `_slot_held`) + `cleanup_by_task` 临时实例归还+`_slot_held` 清理(v2.7) | 压测信号量计数不泄漏、无双归、`_slot_held` 无残留 |
 | Ⅲ 清理 | S5 | 删除 `shell/shell_engine.py` | 全量测试通过，无 import 报错 |
 | Ⅲ | S6 | 测试进化（新增 T1-T6） | 见 12.5 |
 
@@ -2930,7 +2966,11 @@ shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
 | T3 多 shell 并行限流 | 同 key 并发 ≤ max_per_type | 8 并发 acquire，同时 busy ≤ 3，全部完成不卡死 |
 | T4 acquire 探活不移锁 | 池锁不阻塞并发 | 探活耗时时另一线程 acquire 不被长时间阻塞 |
 | T5 stderr 落日志 | 半死原因可观测 | 进程报错后 `_stderr_path` 非空 |
-| T6 cleanup 信号量归还 | 无泄漏 | 反复 acquire/release/cleanup 后 sem 计数平衡 |
+| T6 cleanup 信号量归还 | 池实例不双归、临时实例不泄漏 | 反复 acquire/release/cleanup 后 sem 计数平衡，cleanup 不抛 ValueError |
+
+> **测试风险注意项（三堂会审补充 — 小欧 2026-08-06）**：
+> ① `_probe` 匹配可靠性：`"__OMNI_PROBE__" in result.get("stdout", "")` 子串匹配已覆盖 PS 管道换行/前缀；T1/T2 需断言 stdout 精确内容，防 PS5.1 编码/管道格式差异导致误判（若不稳改去空白后比对）。
+> ② `_start` 的 `stderr=open(...)` 文件句柄：Popen 复制句柄，`_close()` 中 `os.unlink` 时句柄可能仍未关闭 → Windows 删除被占用文件失败（OSError 被 except 吞 → 文件残留）。**v2.7 已设计处理**：H5 `_close` 在 `self._proc = None` 前显式 `if self._proc.stderr is not None: self._proc.stderr.close()`（在锁内执行，释放 Popen 复制的句柄），再 `os.unlink` → 半死场景文件可正常清理。T5 验收：半死实例关闭后 stderr 文件已被删除、目录无残留（测试验证，非仅设计声明）。
 
 ### 12.6 验收门槛（整体）
 
