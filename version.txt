@@ -1,3 +1,31 @@
+v0.19.5
+更新时间: 2026-08-06 20:45:40 - 小欧-2026-08-06
+## v0.19.4→v0.19.5 变更汇总(20个commit) - 小欧-2026-08-06
+
+### fix:
+- fix:三堂会审6个bug修复 _to_unsigned负数下界/REG_BINARY死代码/DEFAULT_EXTRA_BODY深拷贝/http_detail文案/fetchpage None summary/auto_detect超大数 - 小欧-2026-08-06
+- fix:7/31未实现6项修复 重试基数2→3/REG_BINARY 0x清洗/_to_unsigned/url=None build_error/SKIP_DIRS/Header值拒绝 - 小欧-2026-08-06
+- fix:shell_engine+execute_shell_command v2.10打猎修复3真实Bug(Bug#5_stderr临时文件泄漏重构_stderr_handle句柄: Popen失败路径显式close防Windows句柄占unlink失败; Bug#6_kill_and_read_output的proc.kill兜底无保护补try防ProcessLookupError冒泡中断残存读取; Bug#7_acquire重试x并发cleanup超归竞态修复owning_slot/lost_slot原子pop判槽+重取槽防BoundedSemaphore超归ValueError) - 小健/小欧-2026-08-06
+
+### docs:
+- docs:更新核查文档v2.14 7/31 6项未实现全部修复 三堂会审6个bug全部修复 - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 修正总览统计(v2.13,忠实镜像各章结论行:已实现185/未实现6/部分实现6/跳过75,注明7-31交叉标注) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 总览完成(v2.13,264条:已实现192/未实现6/低风险跳过65/部分实现1,新增第十四章核查总览) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 填入7-21核查结论(v2.13,27条最后一章:功能类15条全实现-storage SQLite截断防溢出/syntax_validator统一收口/read_pdf BUG-001/次级读取limit 1000, docs10条+test1条+非规范1条跳过) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 填入7-22核查结论(v2.12,22条:功能类16条全实现-OBS常量扩容1000/500/2000/tokens双配置迁移/usage累积FinalStep/模型不存在warning透传前端WarningBox, docs5条+非规范1条跳过) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 填入7-23核查结论(v2.11,31条:功能类26条全实现-log_and_print统一双写/#14 DB退避重试busy_timeout500ms/task_db Row.get三连/xlsx 1000行500字符截断, docs4条+非规范1条跳过) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 填入7-24核查结论(v2.10,24条:功能类19条全实现-truncate_summary公用函数落地/6tool魔法数常量/edit_text与SQL截断统一main/action_handler工具映射重构, docs与test 5条跳过) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 填入7-25核查结论(v2.9,34条:功能类16条全实现-transcode_url三线接入/registry 3x500ms重试/operation事务写/action_handler欧阳5项, schema描述13条与docs test5条跳过) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 填入7-26核查结论(v2.8,21条:功能类16条全实现-token日志/no_id uuid4/rmtree onerror/OOD抽取/normalize_list_dict/欧阳7Bug/超时常量化, docs与stash 5条跳过) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 填入7-27核查结论(v2.7,4条全实现:API key过滤_sanitize_env/危险模式合并/safe_cwd/去LLM-facing PS提示/L2指数退避/bug-07-26聚合) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 7-30第二轮严格复查(v2.6):修正第一轮漏查清单首条3cce2d2cf(auto_confirm+safety bypass)补齐为已实现,总数13→14/已实现9→10,10个功能类逐行代码确认 - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 7-29第二轮严格复查(12个功能类逐行代码确认:PYEOF/delete参数化/三路检测/反爬增强/锚点metrics/compress timeout) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 7-28第二轮严格复查([14]BUG#8降级部分实现_L121 no attribute关键词残留; [10][11][12][13]代码逐行确认) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 填入7-28核查结论(30条全核查:已实现25/部分实现1[10]/docs测试类跳过4) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 填入7-29核查结论(23条全核查:已实现12/未实现0/docs类跳过11) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 填入7-30核查结论(13条全核查:已实现9/未实现0/docs类跳过4) - 小欧-2026-08-06
+- docs:731前丢失的commit修复核查文档 7-21至7-31丢失commit逐日核查v2.0框架(含7-31分析结果) - 小欧-2026-08-06
+
 v0.19.4
 更新时间: 2026-08-06 16:24:18 - 小欧-2026-08-06
 ## v0.19.3→v0.19.4 变更汇总(32个commit) - 小欧-2026-08-06
