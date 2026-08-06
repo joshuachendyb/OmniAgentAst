@@ -35,6 +35,8 @@
 # 2026-08-05 - 小欧 - 注释按4条原则重构(老陈审阅): 明确本保险丝是toolretry引擎外部超时(非工具自身超时);
 #   注释统一拆分为 inner取值来源(原则2 LLM值/原则3 schema默认) 与 保险丝公式(原则4 max(inner,CEILING)+BUFFER);
 #   "直接用LLM值+取max"旧表述有歧义, 实为 inner取LLM值后保险丝再max托底, 消除"未超CEILING是否托底"误解
+# 2026-08-06 10:05:21 - 小欧 - 注释补齐"两条超时线"(老陈梳理): ①传给tool的超时(tool内部用,LLM给→直接用值/未给→schema默认值)
+#   与②保险丝超时(wait_for掐整个调用)是独立两值; 注明①随params原样传tool(**params), ②由_compute_fuse算传wait_for
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -91,6 +93,15 @@ from app.tools.registry import tool_registry
 #   保险丝 = min(base_timeout * (attempt+1), PROGRESSIVE_MAX)
 #   原因：工具没有内部超时概念，首次短快失败立即报错，后续逐步放宽，上限 PROGRESSIVE_MAX。
 #   PROGRESSIVE_MAX = CEILING // 2 = 300：无inner工具最长等5分钟。
+#
+# 【两条超时】梳理（北京老陈 2026-08-06 10:05:21）—— 本引擎存在两条独立的超时线：
+#   ① 传给 tool 的超时（tool 内部执行用）→ 随 params 原样传给 tool(**params)
+#      有 timeout 参数工具：LLM 显式传 → 直接用 LLM 给的值(经 _validate_params clamp ge/le)；
+#                            LLM 未传   → tool 用自己函数(schema)的默认值
+#      无 timeout 参数工具    ：tool 无内部超时概念，靠外部 wait_for 截断
+#   ② 保险丝超时（asyncio.wait_for 掐整个 tool 调用）→ 由 _compute_fuse 计算，见上文两处
+#   ★ 两值是独立的：传给 tool 的值 ≠ 保险丝值。例：LLM 传 timeout=300，
+#     tool 内部实际收 300，但保险丝 = max(300, CEILING)+BUFFER = 630（托底恒≥内部超时）。
 # ============================================================
 INSURANCE_CEILING = 600
 INSURANCE_BUFFER = 30
@@ -110,6 +121,9 @@ class ToolRetryEngine:
         小健 2026-06-18 内联_is_async_tool/_execute_async_tool/_execute_sync_tool
         
         修复:纯同步工具通过 to_thread 移出事件循环,wait_for 超时保护生效。
+        参数说明(两条超时线交汇点, 北京老陈 2026-08-06 10:05:21):
+          normalized_input 是校验后参数, 内含 timeout 则随 tool(**normalized_input) 原样传给 tool(①线);
+          timeout 参数是保险丝(②线), 仅用于 asyncio.wait_for 掐整个调用, 不传给 tool 本身。
         """
         if inspect.iscoroutinefunction(tool):
             return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
@@ -170,7 +184,9 @@ class ToolRetryEngine:
 
     def _compute_fuse(self, action: str, params: Dict[str, Any],
                       base_timeout: int, attempt: int) -> int:
-        """计算单次执行保险丝超时（toolretry 引擎外部超时）— 按北京老陈 4 条原则：
+        """计算单次执行保险丝超时（toolretry 引擎外部超时②线）— 按北京老陈 4 条原则：
+        本方法只计算②保险丝超时(wait_for掐整个调用); ①传给 tool 的超时随 params 原样传 tool,
+        两条超时线见顶部设计注释块【两条超时】。— 小欧 2026-08-06 10:05:21
         inner = 工具 timeout 参数值，取值来源：
           [原则2] LLM 显式传 timeout → inner = LLM 给的值
           [原则3] LLM 未传但工具有 timeout 参数 → inner = schema 默认值(tool 值优先)
@@ -281,7 +297,9 @@ class ToolRetryEngine:
         - 有on_retry_started回调：每次重试前通知调用方（→前端显示重试状态）
         - 有渐进超时(无inner路径): 每次重试的超时递增base_timeout*(attempt+1), 上限 PROGRESSIVE_MAX=300
         - 有inner超时参数工具: 保险丝 = max(inner, CEILING) + BUFFER, 恒大于内部超时(外部超时兜底); inner取值: LLM显式传→LLM值(原则2); LLM未传→schema默认值(tool值优先,原则3) — 小欧 2026-08-05
-         
+        超时说明: 本方法负责②保险丝超时(由_compute_fuse计算); ①传给 tool 的超时随 params 原样传 tool,
+        两条超时线见顶部设计注释块【两条超时】。— 小欧 2026-08-06 10:05:21
+          
         Args:
             action: 工具名
             action_input: 原始参数字典
@@ -412,7 +430,7 @@ class ToolRetryEngine:
         """带重试执行工具 — 核心循环：渐进超时+重试前回调通知
          
         重试策略（遵守KISS-DIRECT原则，简单直线）：
-        1. 超时策略统一走 _compute_fuse (北京老陈 4条原则):
+        1. 超时策略统一走 _compute_fuse (北京老陈 4条原则)（②保险丝超时; ①传给tool超时随params走,见顶部【两条超时】）— 小欧 2026-08-06 10:05:21:
            - [原则2] LLM显式传timeout → inner=LLM值 → max(inner, CEILING)+BUFFER (有inner)
            - [原则3] 有timeout参数且LLM未传 → inner=schema默认值(tool值优先) → max(inner, CEILING)+BUFFER 【BUG-2修复】
            - [原则1] 无timeout参数 → 渐进 base*(attempt+1) cap PROGRESSIVE_MAX (无inner)
