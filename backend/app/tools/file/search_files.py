@@ -3,6 +3,7 @@
 # 编辑历史:
 # 2026-07-20 - 小欧 - find 门限治理(章7.4): 移除 MAX_SEARCH_RESULTS 收集上限与 max_depth=50 递归限制; 移除 FIND_PAGE_SIZE 分页, 返回全部匹配(offset 仅作跳过); 截断唯一收口于 observation_formatter OBS_FIND_MAX_ROWS/CHARS(两态说明); deadline 超时保留为保护
 # 2026-07-20 - 小欧 - 门限复查: 删 _is_already_seen_or_skipped 去重/跳过死逻辑(seen_files/start_offset 恒0, os.walk 不重复致 dup/skip 永False)及未用 Tuple import; 直接 _collect_entry_result, 行为不变
+# 2026-08-06 - 小欧 - 核查7/31未实现项[14]修复: 新增_SKIP_DIRS常量(os.walk剪枝跳过大目录), 避免node_modules/.git等大目录拖慢find超时
 
 import asyncio
 import fnmatch
@@ -16,6 +17,11 @@ from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
+
+_SKIP_DIRS = frozenset({
+    "node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build",
+    ".idea", ".vscode", ".svn", ".hg", ".pytest_cache", "site-packages",
+})  # find剪枝跳过大目录 — 小欧 2026-08-06
 
 
 def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
@@ -140,6 +146,9 @@ async def find(
             if _time_mod.monotonic() > deadline:
                 logger.warning(f"[find] 超时自检触发,提前返回{len(all_matches)}个匹配")
                 break
+            # 剪枝跳过大目录, 避免 node_modules/.git 等拖慢搜索 — 小欧 2026-08-06
+            if dirs:
+                dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
             if type != "file":
                 for d in dirs:
                     if not _match_fnmatch(d, pattern, ignore_case):

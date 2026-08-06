@@ -15,6 +15,9 @@
 # 2026-07-19 - 小欧 - finish_reason字段提取/透传
 # 2026-07-23 - 小欧 - #7三堂会审修复: 变量名/死代码/日志级别/非JSON行yield
 # 2026-07-26 - 小欧 - 默认开启thinking模式
+# 2026-08-06 - 小欧 - 核查7/31未实现项[01]修复: 重试退避基数2→3(2/4/8→3/9/27秒), 与7/31声称功能对齐
+# 2026-08-06 - 小欧 - 三堂会审修复: BUG-3 DEFAULT_EXTRA_BODY_PARAMS嵌套dict深拷贝防共享引用污染
+# 2026-08-06 - 小欧 - thinking配置增强(老陈审核后修复): ①默认extra_body提常量DEFAULT_EXTRA_BODY_PARAMS; ②config的model_params由整体替换改为合并(深合并chat_template_kwargs层), 保证enable_thinking:True兜底, 配thinking_budget等不再静默关闭思考
 """
 LLM 核心模块 — BaseAIService
 
@@ -39,6 +42,9 @@ from app.services.llm.reasoning import extract_reasoning_from_chunk, extract_rea
 from app.services.llm.error_classifier import SystemErrorClassifier
 
 from app.constants import DEFAULT_READ_TIMEOUT, LLM_TEMPERATURE, LLM_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS, STREAM_TOTAL_TIMEOUT, LLM_MAX_TOKENS
+
+# 默认extra_body: 开启thinking模式; 配置文件model_params可覆盖/扩展, 合并策略见__init__ — 小欧 2026-08-06
+DEFAULT_EXTRA_BODY_PARAMS: Dict = {"chat_template_kwargs": {"enable_thinking": True}}
 
 
 class BaseAIService:
@@ -66,8 +72,17 @@ class BaseAIService:
         self.max_tokens = max_tokens if max_tokens is not None else LLM_MAX_TOKENS
         self.temperature = temperature
         self.seed = seed
-        # 默认开启 thinking 模式；配置文件传参可覆盖（如 enable_thinking: false 可关）— 小欧 2026-07-26
-        self.extra_body_params = extra_body_params or {"chat_template_kwargs": {"enable_thinking": True}}
+        # 默认开启 thinking 模式；配置文件传参可覆盖（如 chat_template_kwargs.enable_thinking: false 可关）— 小欧 2026-07-26
+        # 2026-08-06 小欧 合并而非替换: 顶层键用户覆盖优先, chat_template_kwargs 层深合并保 enable_thinking:True 兜底
+        # 2026-08-06 小欧 BUG-3修复: 嵌套dict深拷贝, 避免与全局常量共享引用污染后续实例
+        merged_params = {"chat_template_kwargs": dict(DEFAULT_EXTRA_BODY_PARAMS["chat_template_kwargs"])}
+        if extra_body_params:
+            merged_params.update(extra_body_params)
+            default_ctk = DEFAULT_EXTRA_BODY_PARAMS.get("chat_template_kwargs", {})
+            user_ctk = extra_body_params.get("chat_template_kwargs")
+            if isinstance(user_ctk, dict) and default_ctk:
+                merged_params["chat_template_kwargs"] = {**default_ctk, **user_ctk}
+        self.extra_body_params = merged_params
         self.context_limit = context_limit
         self._llm_sdk = None
         try:
@@ -322,7 +337,7 @@ class BaseAIService:
             except Exception as e:
                 if self._should_retry(e) and retry_count < max_retries:
                     retry_count += 1
-                    wait_time = 2 ** retry_count
+                    wait_time = 3 ** retry_count
                     logger.warning(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {e}")
                     await asyncio.sleep(wait_time)
                     continue
