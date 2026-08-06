@@ -14,6 +14,11 @@
 | v1.8 | 2026-07-30 | 复用已有 task_context.py，路径改 app/services/task/，操作改"扩展" | 小沈 |
 | v1.9 | 2026-07-30 | 三堂会审修复：问题1 close()加self._lock timeout保护；问题2 workdir定义说明；问题3 release改为_inst_map O(1)查找 | 小沈 |
 | v2.0 | 2026-08-04 | 新增第9章「P0-08 E2E卡死复盘与持久进程半死根因分析」：半死pwsh误判健康(核心根因)、stdout/stderr丢弃、无就绪握手三缺陷 + 响应性探测等根因级修复方案 | 小欧(代表北京老陈) |
+| v2.1 | 2026-08-06 | 三堂会审+全面扫描确认第9章根因修复方案未落地(代码仍是旧"只查poll()"版本)；逐层扫描全部工具确认事件循环无阻塞；新增第10章「第9章方案三堂会审与后端堵死全景扫描」；新增第11章「ShellPoolManager实施对齐记录」 | 小欧 |
+| v2.2 | 2026-08-06 11:38:35 | 北京老陈补充判定：聚焦的"单个持久pwsh半死"是卡死原因之一，但非唯一；多shell并行线程池耗尽、(acquire持池锁做alive检查)均是叠加卡死来源。新增第12章「卡死来源全集汇总+综合修正设计」 | 小欧(代表北京老陈) |
+| v2.3 | 2026-08-06 11:43:35 | 北京老陈要求第12章作为**整体更新设计**：整合第9/10/11章问题为完整方案；重写第12章为「整体更新设计」——问题全集+详细代码设计(完整代码+前后对照)+实施计划(阶段里程碑)+验收标准 | 小欧(代表北京老陈) |
+| v2.4 | 2026-08-06 12:10:03 | 北京老陈确认第12章代码须为**准确可实施 diff + 强调对现有代码的有机整合**；12.3 改为 diff 格式并新增「整合矩阵」表；**修正 12.3.6 acquire bug**：新建实例 _probe 必 False→原伪代码无限递归，且递归重复 acquire 信号量→改为 while 循环+start/复用双分支；信号量归一只在 release/cleanup | 小欧(代表北京老陈) |
+| v2.5 | 2026-08-06 12:13:23 | 北京老陈补充：12.2 架构须**把第2章(尤其2.1)既有架构同时纳入考虑**，在其上有机叠加优化，而非另画一套。重写 12.2：以2.1核心组件图为主线，标注「新增/优化」增量点与「不改变」的既有部分 | 小欧(代表北京老陈) |
 
 ## 1. 概述与背景
 
@@ -2390,5 +2395,550 @@ self._proc = subprocess.Popen(
 3. 回归验证：同任务并行 shell、不同任务隔离、任务结束清理 3 项（对应第7章验证项）不受影响。
 
 ---
+
+## 10. 第9章方案三堂会审与后端"堵死"全景扫描（v2.1）
+
+**编写人：小欧　时间：2026-08-06 11:26:20**
+
+### 10.1 当前实施状态澄清（第9章未落地）
+
+对照本地代码 `backend/app/tools/fundamental/shell_engine.py`，第9章根因修复方案**全部未实施**：
+
+| # | 第9章方案 | 当前本地代码 | 判定 |
+|---|----------|--------------|------|
+| 1 | `_ensure_alive()` 响应性探测 | 仍仅查 `_proc.poll()`（L232-235），半死 pwsh 被误判健康复用 | ❌ 未修 |
+| 2 | 错误可见性（stderr 落日志） | 仍 `stdout=DEVNULL, stderr=DEVNULL`（L251-255） | ❌ 未修 |
+| 4 | 就绪握手（`_start` 后确认就绪再喂命令） | 无，`_start` 后直接写 stdin | ❌ 未修 |
+| 3 | exec 超时后强制销毁 | 已有 `_kill_tree + _close`（L309-312） | ✅ 已兜底 |
+
+故本设计 v2.1 将第9章方案确定为**本次必须实施的修复项**（见 11 章）。
+
+### 10.2 后端"堵死"全景扫描（逐层确认唯一卡点）
+
+对全部工具逐一核查是否可能同步阻塞事件循环（`asyncio.gather` 并行调度、`to_thread` 包裹情况）：
+
+| 工具层 | 排查方式 | 结论 |
+|--------|---------|------|
+| async 重IO工具（compress/extract/readtext/listdir/tree/find/grep/readmedia/write/edit/move/copy/delete） | 逐文件核查内部 | ✅ 全部用 `asyncio.to_thread` 包裹重IO，不阻塞事件循环 |
+| 同步工具（document读写/win_registry/system/validate/registry） | 同步 `def`，由 `tool_retry_engine._execute_tool_once` 统一 `to_thread` | ✅ 安全 |
+| network 诊断 `_ping`/`_port_check` | `to_thread(subprocess.run)` + `to_thread(socket)` | ✅ 安全 |
+| 启动期重试 `sleep`（registry.py:413） | 仅启动注册重试 | ✅ 非运行期，不构成卡死 |
+| **持久 pwsh 半死** | shell_engine.py:232 只查 `poll()` | ❌ **唯一真卡点** |
+
+**结论**：工具层均已正确 `to_thread`，事件循环不会因工具调用被同步阻塞。**唯一能造成"单个 shell 假死拖住一个线程池线程直到超时"的卡点，正是第9章所指的持久进程半死**——与"多个 shell 并行互堵"无关。故本设计实施对象收敛为第9章方案，无需为"工具层并行堵塞"做多余加固。
+
+### 10.3 并发安全性复核（各 shell 独立执行原则）
+
+确认本地代码严格满足"各 shell 独立执行、不公用"：
+
+- 每实例独立 `subprocess.Popen` 独立 pwsh（shell_engine.py:251）
+- 每实例独立 `threading.Lock`（:197）
+- 每次 exec 独立 `_TempFiles` 临时文件
+- 池锁 `self._lock` 仅短暂持有；`acquire` 两段式，子进程启动在锁外（:405-421）
+- shell 为同步函数，经 `_execute_tool_once` `asyncio.to_thread` 入线程池，不占事件循环；`asyncio.gather` 并发调度
+
+故多个 shell 并行时各跑各的实例/锁/线程，互不干扰，不互相堵塞，不杀死后端进程。
+
+### 10.4 失败记录合规检查（无演练）
+
+本次扫描发现的**历史设计文档 P0-08 卡死复盘**中，根因归属存在值得厘清之处：第9章将"worker 卡死 37 分钟"整体归因于持久 pwsh 假死。本次 v2.1 通过扫描确认：工具层无事件循环阻塞，持久进程半死是可直接观测到的确定性风险点，该归因方向正确，第9章方案可实施且不会造成回归。
+
+## 11. ShellPoolManager 实施对齐记录（v2.1）
+
+**编写人：小欧　时间：2026-08-06 11:26:20**
+
+本设计第7章实施已在 `backend/app/tools/fundamental/shell_engine.py` 落地，本次 v2.1 三堂会审确认第9章修复方案尚待实施。为将方案落实为"合规、合理、逻辑最优"的实现，按以下要点对齐：
+
+| 要点 | 方案 | 合规/合理依据 |
+|------|------|--------------|
+| 探活职责 | `_ensure_alive()` 增加响应性探活，复用 `_exec`/`_poll_for_file` 机制 | SRP（探活独立） + DRY（同机制）+ KISS（发命令等回执直线） |
+| 错误可见性 | `_start()` 将 stderr 由 DEVNULL 改为落日志 | 可观测，排错无需再靠 py-spy 推断 |
+| 就绪握手 | `_start` 后发一条确认命令再继续 | 杜绝"喂给未就绪进程" |
+| 超时销毁 | `_poll_for_file` 超时后强制 `close` 回池 | 避免坏实例污染池 |
+| 无 backward | 半死实例一律销毁重建 | 禁止向后兼容做法 |
+| **死代码清理** | 删除 `backend/app/tools/shell/shell_engine.py`（旧单例版，已无引用） | DRY：active 版在 `fundamental/`，旧版完全无用 |
+
+第7章新增的 `get_all_pids()`（进程自保护）与第9章方案天然互补：池化给了"多实例可弃"，探活给"该弃就弃"，pid 保护防自误中断。
+
+---
+
+## 12. 整体更新设计：卡死修复 + 并发强化（v2.3）
+
+**编写人：小欧（代表北京老陈）　时间：2026-08-06 11:43:35**
+
+> **本章定位**：作为**整体更新设计**，整合并落实第9/10/11章的全部问题为一份完整方案。
+> 本章自含「问题全集 → 详细代码设计 → 实施计划 → 验收」，无需回读 9/10/11 章即可实施。
+
+### 12.1 问题全集（整合第9/10/11章，8项逐一定性）
+
+**12.1.1 问题来源归类**
+
+| 章 | 原始问题 | 本章编号 |
+|----|---------|:---:|
+| 第9章-根因一 | 半死 pwsh 被 `_ensure_alive()` 只查 `poll()` 误判健康复用 | #1 |
+| 第9章-根因二 | stderr 被 DEVNULL 丢弃，半死无观测 | #2 |
+| 第9章-根因三 | 无就绪握手，命令喂给未就绪 pwsh | #3 |
+| 第9章-修复点 | exec 超时后强制销毁（已兜底） | #4 |
+| 第10章修正 | 多 shell 并行挤占共享 to_thread 线程池 | #5 |
+| 第10章修正 | acquire 持池锁时执行耗时 `_ensure_alive`/`_start` | #6 |
+| 第10章-已消除 | 工具层事件循环同步阻塞（全 to_thread） | #7 |
+| 第11章 | 死代码 `shell/shell_engine.py` 旧单例版残留 | #8 |
+
+**12.1.2 全集表**
+
+| # | 卡死来源 | 根因层级 | 代码现状 | 定性 |
+|---|---------|---------|---------|------|
+| 1 | 单个持久 pwsh 半死，`_ensure_alive()` 只查 `poll()` L232-235 | 进程级 | ❌未修 | 半死源 |
+| 2 | stderr DEVNULL 丢弃 L251-255 | 可观测性 | ❌未修 | 放大源 |
+| 3 | 无就绪握手 | 时序 | ❌未修 | 偶发源 |
+| 4 | exec 超时强制销毁 L309-312 | 兜底 | ✅已兜底 | 保留 |
+| 5 | 多 shell 并行挤占 to_thread 线程池 | 并发资源 | ❌未修 | **并发源(核心)** |
+| 6 | acquire 持池锁做耗时 alive/启动 :402 | 并发锁粒度 | ❌未修 | **并发源(核心)** |
+| 7 | 工具层事件循环同步阻塞 | 事件循环 | ✅已消除 | 无需动 |
+| 8 | 死代码 `shell/shell_engine.py` | 污染 | ❌未清理 | 清理项 |
+
+> **关键认识**：#1(半死) 与 #5/#6(并发挤占) 是**叠加关系**。老陈经验"只有多 shell 并行才卡死"≈ #6 持池锁排队被多线程并发放大；"单 shell 卡死"≈ #1 半死占一槽。两者都要修，方法互补，不可只修其一。
+
+### 12.2 整体方案设计（架构级，基于第2章 2.1 优化完善）
+
+> **本设计不改变第2章的骨架**，只在第2章既有架构节点上做**增量增强**。下图以 **2.1 核心组件架构图** 为基线，用 `【新增】`/`【增强】`标注本设计优化点，`【保持】` 为既有不变部分。未标注节点均为第2章原样复用。
+
+#### 12.2.0 与第2章架构的关系（导览）
+
+| 第2章(2.1)既有节点 | 第12章处理 | 说明 |
+|---|:---:|---|
+| 并行执行引擎 action_handler `asyncio.gather` | 【保持不动】 | 三分支、ContextVar 注入 taskId 均不变 |
+| ShellPoolManager 按 (task_id, shell_type) 分池、每池 max3 | 【优化】 | 新增 `_sem` 信号量并发限流(治#5) |
+| ShellPoolManager.acquire 两段式 | 【优化】 | 复用探活移出持池锁 + 新建/复用双分支(治#6) |
+| PersistentShell 实例(去单例) | 【优化】 | 新增 `_probe()` 响应性探活 + `_start` 就绪握手 + stderr 落日志(治#1/2/3) |
+| PersistentShell.exec 超时销毁(第2章已含) | 【保持】 | 保留兜底(治#4) |
+| cleanup_by_task / cleanup_all | 【优化】 | 归还信号量 |
+| 死代码 `shell/shell_engine.py` | 【清理】 | 删除 |
+
+#### 12.2.1 总体链路（虚线上一行为第2章既有，实线为本设计新增/增强）
+
+```
+LLM 请求(同任务多 shell) 携带 taskId
+   │
+   ▼
+并行执行引擎(action_handler 已有, 保持)【2.1】
+  └─ 并行检测 + asyncio.gather + _task_context.set(taskId)
+   │  taskId via ContextVar
+   ▼
+ShellPoolManager (第2章组件) ──【新增】BoundedSemaphore _sem 并发限流(治#5)
+  │  acquire(task_id, shell_type)
+  │  ┌───────────────────────────────────────────────────────┐
+  │  │ Phase0  并发信号量(同key并发≤max_per_type)  ← 新增 #5 │
+  │  │ Phase1  持锁: 仅找空闲实例+空闲超时兜底(零耗时) ← 优化#6│
+  │  │ Phase2  解锁: 复用→_probe() 新建→_start()            │
+  │  │         (探活/启动移出持池锁)              ← 优化#6    │
+  │  │ Phase3  失败→销毁剔除→while循环重试                   │
+  │  └───────────────────────────────────────────────────────┘
+   │  返回健康实例
+   ▼
+PersistentShell 实例 (第2章既有) ──【新增/优化】
+   │  _probe()  = _exec(_PROBE_CMD, timeout=3)  响应性探活(#1)
+   │  _start()  + 就绪握手 + stderr 落日志      (#2/#3)
+   │  exec()     超时强制销毁  (第2章既有, 保持)     (#4)
+   │
+   ▼
+shell_pool.release(engine)  ←【新增】归还信号量+回池(治#5)
+```
+
+#### 12.2.2 三层次架构演进（对照第2.1「隔离原则」逐条验证）
+
+第2.1「隔离原则」三条保持不变，本设计在其上**追加**并发与健康保障：
+
+| 第2.1 隔离原则(既有) | 本设计叠加保障 | 对应 |
+|---|----|:---:|
+| 同一任务内串行复用同实例(保留cd状态) | exec 前_ensure_alive仍走poll快查, 不加探活开销 | 治#1 |
+| 同一任务内并行取不同实例(防stdin串扰) | 复用实例走_probe()探活，半死即弃 | 治#1/#3 |
+| 不同任务间(tid,type)不同池完全隔离 | 每池独立信号量 `_sem[key]`，互不影响 | 治#5 |
+| 任务结束 cleanup_by_task 销毁整池 | cleanup 归还该key信号量，防槽位泄漏 | 治#5 |
+
+#### 12.2.3 新增/修改接口一览（对照第2.2 组件说明）
+
+| # | 接口 | 文件 | 类型 | 职责 | 对照第2章 |
+|---|------|------|:---:|------|:---:|
+| 1 | `_PROBE_TIMEOUT`/`_PROBE_CMD`/`ACQUIRE_WAIT_TIMEOUT` | shell_engine.py | 新增常量 | 探活/并发参数 | 新增 |
+| 2 | `PersistentShell._probe()` | shell_engine.py | 新增方法 | 响应性探活(复用_exec) | 新增 |
+| 3 | `PersistentShell._start()` | shell_engine.py | 改造 | stderr落日志+就绪握手 | 增强 |
+| 4 | `PersistentShell._close()` | shell_engine.py | 改造 | stderr残留读取+清理 | 增强 |
+| 5 | `PersistentShell.exec()` | shell_engine.py | 不改 | 超时销毁兜底 | 保持 |
+| 6 | `ShellPoolManager.__init__` | shell_engine.py | 改造 | 新增 `_sem` 信号量 | 增强 |
+| 7 | `ShellPoolManager.acquire()` | shell_engine.py | 重构 | 探活移锁外+双分支+while | 增强 |
+| 8 | `ShellPoolManager.release()` | shell_engine.py | 改造 | 归还信号量(治#5) | 增强 |
+| 9 | `cleanup_by_task`/`cleanup_all` | shell_engine.py | 改造 | 归还信号量 | 增强 |
+| 10 | `shell/shell_engine.py` | 删除 | — | 死代码清理 | 清理 |
+
+> **结论**：第2章 action_handler 并行链路、exec/cleanup 已有兜底、失效仍处于快查——全部黑保留；本设计只在前先生成的 ShellPoolManager 与 PersistentShell 上做**最小增量**（信号量、探活、握手、锁外、stderr），不推翻第2.1架构。
+
+### 12.3 详细代码设计（diff 格式，可直接实施）
+
+> **目标文件**：`backend/app/tools/fundamental/shell_engine.py`（active 版，527 行）
+> **不改动**：`execute_shell_command.py` / `action_handler.py` / `agent_runner.py`（acquire 签名不变，调用方零改动）
+> 每个 hunk 给出**上下文行 + 精确缩进**，按顺序应用即实施完成。
+
+#### 12.3.0 整合矩阵（哪些是「改造现有函数」，哪些是「新增」）
+
+| 目标函数/位置 | 改动类型 | 改动方式 | 对应 Hunk |
+|--------------|:---:|---------|:---:|
+| 文件头部常量区 | 新增 | 追加 `_PROBE_TIMEOUT`/`_PROBE_CMD`/`ACQUIRE_WAIT_TIMEOUT` | H1 |
+| `PersistentShell.__init__` | **改造现有** | 加 1 行 `self._stderr_path` 字段 | H2 |
+| `PersistentShell`（新方法） | 新增 | 新增 `_probe()`（唯一新方法） | H3 |
+| `PersistentShell._start` | **改造现有** | stderr DEVNULL→文件 + 启动后握手（改 Popen 参数与循环） | H4 |
+| `PersistentShell._close` | **改造现有** | 尾部加 stderr 残留读取+临时文件清理 | H5 |
+| `PersistentShell.exec` | **不改** | 保持（_ensure_alive 仍走 poll 快查，超时销毁兜底已存在） | — |
+| `ShellPoolManager.__init__` | **改造现有** | 加 `_sem` 信号量 + import `BoundedSemaphore` | H6 |
+| `ShellPoolManager.acquire` | **改造现有** | Phase1 移探活出锁、Phase2 双分支(start/probe)、while 循环 | H7 |
+| `ShellPoolManager.release` | **改造现有** | 尾部加 `_sem[key].release()` | H8 |
+| `ShellPoolManager.cleanup_by_task`/`cleanup_all` | **改造现有** | close 循环中归还信号量 | H9 |
+| 死代码 `shell/shell_engine.py` | 删除 | 整文件删除 | H10 |
+
+> **总结**：新增仅 1 个方法 `_probe()` + 3 个常量 + 1 个字段；**其余 8 处全部是对现有代码的原位改造/重构**。`_probe` 复用现有 `_exec`/`_poll_for_file` 机制，不重复造轮子。
+
+#### 12.3.1 Hunk 1 — 新增常量（文件头部，`_EXIT_PROCESS_DIED` 之后）
+
+```diff
+--- a/backend/app/tools/fundamental/shell_engine.py
++++ b/backend/app/tools/fundamental/shell_engine.py
+@@ -78,3 +78,6 @@
+ _ERROR_NO_SHELL = {"stdout": "", "stderr": "PowerShell不可用", "exit_code": -1}
+ _ERROR_TIMEOUT  = {"stdout": "", "stderr": "timeout", "exit_code": -1, "timed_out": True}
+ _EXIT_PROCESS_DIED = -2          # 进程死亡 sentinel，外部重试用
++_PROBE_TIMEOUT = 3               # 响应性探活超时(秒)：半死进程3秒内无回执即判死 — 小欧 2026-08-06
++_PROBE_CMD = "Write-Output __OMNI_PROBE__"   # 探活命令：轻量、无副作用、输出唯一标记 — 小欧 2026-08-06
++ACQUIRE_WAIT_TIMEOUT = 10        # acquire 并发限流等待超时(秒)：超时兜底创建，避免限流变成新卡死 — 小欧 2026-08-06
+```
+
+#### 12.3.2 Hunk 2 — `PersistentShell.__init__` 增加 stderr 路径字段
+
+```diff
+@@ -195,6 +195,7 @@
+         self._proc: Optional[subprocess.Popen] = None
+         self._alive = False
+         self._lock = threading.Lock()
+         self._cwd = workdir or os.getcwd()
+         self._shell_type = shell_type
++        self._stderr_path: Optional[str] = None   # stderr 日志文件路径(半死可观测) — 小欧 2026-08-06
+```
+
+#### 12.3.3 Hunk 3 — 新增 `_probe()` 响应性探活（插入在 `_ensure_alive` 与 `_start` 之间）
+
+> 设计：**纯探测，不重建**（避免 `_start`↔`_probe` 递归）；半死销毁由 `_exec` 超时兜底完成，重建由调用方 `acquire()` 循环负责。
+
+```diff
+@@ -235,6 +236,23 @@
+     def _ensure_alive(self, env: Optional[Dict[str, str]] = None) -> bool:
+         if self._alive and self._proc and self._proc.poll() is None:
+             return True
+         return self._start(env)
+ 
++    def _probe(self, env: Optional[Dict[str, str]] = None) -> bool:
++        """响应性探活(纯探测, 不重建)：进程死或半死返回 False, 由调用方决定重建。
++        复用 _exec 机制(DRY)：半死时 _exec 内部 _poll_for_file 超时 → 自动 _kill_tree+_close。
++        返回 True=健康可复用; False=进程不可用(可能已被 _exec 销毁)。 — 小欧 2026-08-06"""
++        if self._proc is None or self._proc.poll() is not None:
++            return False                     # 进程已死/未启动 → 不可复用
++        result = self._exec(_PROBE_CMD, timeout=_PROBE_TIMEOUT)   # 复用现有执行机制
++        if result.get("timed_out"):
++            logger.warning(f"[PersistentShell] 探活失败(半死)→已销毁 (pid={self._proc.pid})")
++            self._close()                    # 半死销毁(重建由调用方负责)
++            return False
++        return "__OMNI_PROBE__" in result.get("stdout", "")
++
+     def _start(self, env: Optional[Dict[str, str]] = None) -> bool:
+```
+
+#### 12.3.4 Hunk 4 — `_start()` 修改：stderr 落日志 + 就绪握手
+
+```diff
+@@ -249,6 +266,23 @@
+             base_env = env if env is not None else os.environ
+             child_env = {**base_env, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
++            # ① stderr: DEVNULL → 日志文件(可观测半死原因) — 治#2 小欧 2026-08-06
++            fd, self._stderr_path = tempfile.mkstemp(suffix=".err", prefix="ps_", text=True)
++            os.close(fd)
+             self._proc = subprocess.Popen(
+                 [pwsh, "-NoProfile", "-Command", "-"],
+                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+-                stderr=subprocess.DEVNULL, cwd=self._cwd, env=child_env,
++                stderr=open(self._stderr_path, "w", encoding="utf-8", errors="replace"),
++                cwd=self._cwd, env=child_env,
+             )
+             for _ in range(40):
+                 if self._proc.poll() is None:
+-                    self._alive = True
+-                    logger.info(f"[PersistentShell] 进程已启动 (pid={self._proc.pid}, cwd={self._cwd}, shell_type={self._shell_type})")
+-                    return True
++                    break
+                 time.sleep(0.025)
+-            self._alive = False
+-            logger.error("[PersistentShell] 进程启动后立即退出")
+-            return False
++            else:
++                self._alive = False
++                logger.error("[PersistentShell] 进程启动后立即退出")
++                return False
++            self._alive = True
++            # ② 就绪握手：启动后立即纯探测一次，未就绪则销毁(调用方重建) — 治#3 小欧 2026-08-06
++            if not self._probe(env):
++                logger.error("[PersistentShell] 就绪握手失败，进程未就绪")
++                self._close()
++                return False
++            logger.info(f"[PersistentShell] 进程就绪 (pid={self._proc.pid}, stderr={self._stderr_path}, cwd={self._cwd}, shell_type={self._shell_type})")
++            return True
+         except Exception as e:
+             logger.error(f"[PersistentShell] 启动失败: {e}")
+             self._alive = False
+             return False
+```
+
+#### 12.3.5 Hunk 5 — `_close()` 修改：关闭时读取 stderr 残留并清理临时文件
+
+```diff
+@@ -339,11 +358,20 @@
+     def _close(self):
+         """内部关闭, 不持锁。调用方尽量持有 self._lock（close()超时5s未获取到锁也会force-kill）。"""
+         if self._proc:
+             try:
+                 if self._proc.poll() is None:
+                     self._proc.kill()
+                     self._proc.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
+             except Exception as e:
+                 logger.debug(f"关闭进程失败(pid={self._proc.pid}): {e}")
+             self._proc = None
+             self._alive = False
++        # 半死可观测：close 前读取 stderr 残留并记录，随后清理临时文件 — 小欧 2026-08-06
++        if self._stderr_path:
++            tail = safe_read_file(self._stderr_path).strip()
++            if tail:
++                logger.warning(f"[PersistentShell] 关闭时 stderr 残留: {tail[:200]}")
++            try:
++                os.unlink(self._stderr_path)
++            except OSError:
++                pass
++            self._stderr_path = None
+
+#### 12.3.6 Hunk 6 — `ShellPoolManager.__init__` 加信号量 + 文件头 import
+
+```diff
+--- a/backend/app/tools/fundamental/shell_engine.py
++++ b/backend/app/tools/fundamental/shell_engine.py
+@@ -65,6 +65,7 @@
+ import tempfile
+ import threading
+ import time
+ from collections import defaultdict
+ from typing import Any, Dict, List, Optional
++from threading import BoundedSemaphore   # 并发限流(同key并发≤max_per_type) — 小欧 2026-08-06
+ 
+ from app.logger import logger
+@@ -364,6 +365,7 @@
+         self._temp_instances: Dict[str, List[PersistentShell]] = defaultdict(list)
+         self._lock = threading.Lock()
+         self._max_per_type = max_per_type
++        self._sem: Dict[tuple, BoundedSemaphore] = defaultdict(lambda: BoundedSemaphore(self._max_per_type))
+         # 空闲超时兜底: 实例放回池后超过 idle_timeout 秒无人 acquire 则 close（防孤魂野鬼）
+```
+
+#### 12.3.7 Hunk 7 — `acquire()` 重构：探活移出持池锁 + 双分支 + while 循环（治 #6/#5）
+
+> **关键修正**：新建实例未启动时 `_probe()` 必返回 False → 不能对新建实例调 `_probe`，必须 `_start`；且不能用递归（会重复 acquire 信号量），改用 `while` 循环。
+
+```diff
+@@ -377,28 +379,33 @@
+     def acquire(self, task_id: str, shell_type: str, workdir: str = None) -> PersistentShell:
+         """获取一个空闲 PersistentShell 实例（按 task_id + shell_type 分池）
+-        
+-        两段式设计:
+-          Phase1(持锁): 优先复用空闲实例(附带alive检查+空闲超时兜底), 判断是否需要新建
+-          Phase2(解锁): 创建实例(子进程启动不阻塞全池)
+-          Phase3(持锁): 入池或标记临时实例
+-        """
++        并发限流+探活移出锁:
++          Phase0: 信号量限流(同key并发≤max_per_type, 治#5)
++          Phase1(持锁): 仅找空闲实例+空闲超时兜底, 零耗时(治#6)
++          Phase2(解锁): 复用→_probe()探活; 新建→_start()启动
++          Phase3: 探活/启动失败→剔除销毁→while循环重试
++        """  # 小欧 2026-08-06
+         key = self._pool_key(task_id, shell_type)
+-        # ── Phase1: 持锁检查 ──
+-        with self._lock:
+-            pool = self._pool[key]
+-            busy = self._busy[key]
+-            # ① 复用空闲实例（带 alive 检查 — Bug#1 修复; 空闲超时兜底 — 老陈 2026-07-30）
+-            for inst in list(pool):
+-                if id(inst) not in busy:
+-                    # 空闲超时检查: 放回后超过 idle_timeout 秒无人 acquire → close 不放回
+-                    if self._idle_timeout is not None:
+-                        last = self._last_used.get(id(inst), 0)
+-                        if time.time() - last > self._idle_timeout:
+-                            pool.remove(inst)
+-                            self._inst_map.pop(id(inst), None)
+-                            self._last_used.pop(id(inst), None)
+-                            inst.close()
+-                            continue
+-                    if inst._ensure_alive():
+-                        busy.add(id(inst))
+-                        return inst
+-        # ── Phase2: 解锁创建（子进程启动不阻塞全池 — Bug#2 修复）──
+-        inst = self._make_shell(shell_type, workdir)
+-        # ── Phase3: 持锁入池 ──
+-        with self._lock:
+-            pool = self._pool[key]
+-            busy = self._busy[key]
+-            # ② 未达上限 → 入池（记录最后使用时间）
+-            if len(pool) < self._max_per_type:
+-                pool.append(inst)
+-                busy.add(id(inst))
+-                self._inst_map[id(inst)] = key
+-                self._last_used[id(inst)] = time.time()
+-                return inst
+-            # ③ 已达上限 → 临时实例（跟踪以便 cleanup_by_task 清理 — Bug#4 修复）
+-            self._inst_map[id(inst)] = key
+-            self._temp_instances[task_id or ""].append(inst)
+-            return inst
++        sem = self._sem[key]
++        sem.acquire(timeout=ACQUIRE_WAIT_TIMEOUT)   # Phase0: 超时也继续(兜底创建) — 治#5
++        try:
++            while True:
++                # ── Phase1(持锁): 仅找空闲实例+空闲超时兜底, 零耗时(治#6) ──
++                with self._lock:
++                    pool = self._pool[key]
++                    busy = self._busy[key]
++                    inst = None
++                    for it in list(pool):
++                        if id(it) not in busy:
++                            if self._idle_timeout is not None:
++                                last = self._last_used.get(id(it), 0)
++                                if time.time() - last > self._idle_timeout:
++                                    pool.remove(it)
++                                    self._inst_map.pop(id(it), None)
++                                    self._last_used.pop(id(it), None)
++                                    it.close()
++                                    continue
++                            busy.add(id(it))
++                            inst = it
++                            break
++                    if inst is None:
++                        inst = self._make_shell(shell_type, workdir)
++                        if len(pool) < self._max_per_type:
++                            pool.append(inst)
++                            busy.add(id(inst))
++                            self._inst_map[id(inst)] = key
++                            self._last_used[id(inst)] = time.time()
++                            fresh = True
++                        else:
++                            # 已达上限 → 临时实例（不入池, 用完close）
++                            self._inst_map[id(inst)] = key
++                            self._temp_instances[task_id or ""].append(inst)
++                            fresh = True
++                    else:
++                        fresh = False
++                # ── Phase2(解锁): 新建→_start; 复用→_probe ──
++                ok = inst._start() if fresh else inst._probe()
++                if ok:
++                    return inst
++                # ── Phase3: 失败→销毁剔除→while循环重试 ──
++                with self._lock:
++                    pool = self._pool[key]
++                    busy = self._busy[key]
++                    if inst in pool:
++                        pool.remove(inst)
++                    busy.discard(id(inst))
++                    self._inst_map.pop(id(inst), None)
++                    self._last_used.pop(id(inst), None)
++                inst.close()
++        except Exception:
++            with contextlib.suppress(Exception):   # 异常路径归还槽位, 防泄漏
++                sem.release()
++            raise
+```
+
+> 说明：信号量**槽位归一只在 `release()`/`cleanup_*`**（H8/H9）；acquire 仅在**异常抛出路径**归还一次，避免双归。`while` 循环重试次数受 `max_per_type` 自然限制（每次剔除一个坏实例），不会无限。
+
+#### 12.3.8 Hunk 8 — `release()` 归还信号量
+
+```diff
+@@ -423,6 +430,7 @@
+     def release(self, inst: PersistentShell):
+         """释放实例回池"""
+         key = self._inst_map.pop(id(inst), None)
+         if key is None:
+             return
++        sem = self._sem.get(key)
+         should_close = False
+         with self._lock:
+             busy_set = self._busy.get(key)
+@@ -446,6 +455,8 @@
+         # Bug#3 修复: close() 在锁外执行，不阻塞全池操作
+         if should_close:
+             inst.close()
++        if sem is not None:
++            sem.release()   # 并发槽位归还（治#5） — 小欧 2026-08-06
+```
+
+#### 12.3.9 Hunk 9 — `cleanup_by_task`/`cleanup_all` 归还信号量
+
+```diff
+@@ -466,6 +479,8 @@
+             # ── 临时实例（Bug#4 修复: 之前漏清理）──
+             task_key = task_id or ""
+             temp_list = self._temp_instances.pop(task_key, [])
+             for inst in temp_list:
++                sem = self._sem.get(self._inst_map.get(id(inst)))
++                if sem: sem.release()   # 归还槽位 — 小欧 2026-08-06
+                 self._inst_map.pop(id(inst), None)
+                 self._last_used.pop(id(inst), None)
+                 close_list.append(inst)
+@@ -487,6 +500,8 @@
+             for key, lst in list(self._pool.items()):
+                 for inst in lst:
++                    sem = self._sem.get(key)
++                    if sem: sem.release()   # 归还槽位 — 小欧 2026-08-06
+                     self._inst_map.pop(id(inst), None)
+                     close_list.append(inst)
+```
+
+#### 12.3.10 Hunk 10 — 删除死代码（治 #8）
+
+```diff
+--- a/backend/app/tools/shell/shell_engine.py
++++ b/backend/app/tools/shell/shell_engine.py
+@@ -1,387 +0,0 @@
+-（整文件删除，共 387 行；已核实无任何 import 引用）
+```
+
+### 12.4 实施计划（阶段里程碑 + 每步验收）
+
+| 阶段 | 步骤 | 改动内容 | 验收标准 |
+|:---:|------|---------|---------|
+| Ⅰ 探活基础 | S1 | 常量 + `_probe()` | `pytest -k probe` 通过；`engine._probe()==True` |
+| Ⅰ | S2 | `_start()` stderr 落日志 + 就绪握手 | 启动日志出现 `stderr=...`；握手失败走重建 |
+| Ⅱ 并发强化 | S3 | `__init__` 新增 `_sem` + `acquire()` 重构 | 8 shell 并行不卡死，同 key busy ≤ max_per_type |
+| Ⅱ | S4 | `release()`/`cleanup_*` 信号量归还 | 压测信号量计数不泄漏、无双归 |
+| Ⅲ 清理 | S5 | 删除 `shell/shell_engine.py` | 全量测试通过，无 import 报错 |
+| Ⅲ | S6 | 测试进化（新增 T1-T6） | 见 12.5 |
+
+### 12.5 测试计划（测试需进化，不得固步自封）
+
+| 用例 | 目标 | 断言 |
+|------|------|------|
+| T1 半死重建 | 半死实例复用被拦截 | `_probe()` 返回 False 后实例已重建、可正常 exec |
+| T2 就绪握手 | 启动后未就绪即重建 | 慢启动场景 `_start` 不返回"假就绪" |
+| T3 多 shell 并行限流 | 同 key 并发 ≤ max_per_type | 8 并发 acquire，同时 busy ≤ 3，全部完成不卡死 |
+| T4 acquire 探活不移锁 | 池锁不阻塞并发 | 探活耗时时另一线程 acquire 不被长时间阻塞 |
+| T5 stderr 落日志 | 半死原因可观测 | 进程报错后 `_stderr_path` 非空 |
+| T6 cleanup 信号量归还 | 无泄漏 | 反复 acquire/release/cleanup 后 sem 计数平衡 |
+
+### 12.6 验收门槛（整体）
+
+1. 三堂会审通过（合规/合理/关联互补，功能只增强不退化）
+2. S1-S6 全部完成，T1-T6 全部通过
+3. 全量 `pytest` 零回归；前端无改动，`npm run check` 不受影响
+4. 真实环境 E2E（按 AGENTS.md E2E 手册）验证"多 shell 并行不卡死"
+
+**下一步**：等老陈审核第12章整体设计确认后，再按 S1-S6 实施（当前不动任何代码）。
 
 END_of_Document
