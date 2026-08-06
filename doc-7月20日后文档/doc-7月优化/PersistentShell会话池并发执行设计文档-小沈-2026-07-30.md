@@ -20,7 +20,8 @@
 | v2.4 | 2026-08-06 12:10:03 | 北京老陈确认第12章代码须为**准确可实施 diff + 强调对现有代码的有机整合**；12.3 改为 diff 格式并新增「整合矩阵」表；**修正 12.3.6 acquire bug**：新建实例 _probe 必 False→原伪代码无限递归，且递归重复 acquire 信号量→改为 while 循环+start/复用双分支；信号量归一只在 release/cleanup | 小欧(代表北京老陈) |
 | v2.5 | 2026-08-06 12:13:23 | 北京老陈补充：12.2 架构须**把第2章(尤其2.1)既有架构同时纳入考虑**，在其上有机叠加优化，而非另画一套。重写 12.2：以2.1核心组件图为主线，标注「新增/优化」增量点与「不改变」的既有部分 | 小欧(代表北京老陈) |
 | v2.6 | 2026-08-06 12:38:36 | 三堂会审后修复 12.3 三处 bug + 12.5 补测试风险：①H6 重复导入(文件头已有 import threading, 删 from threading import BoundedSemaphore, 统一 threading.BoundedSemaphore)；②H7 while True 无最大重试→新建实例 _start 持续失败(pwsh 不可用)时无限循环, 改有界循环 max_per_type+2 + 耗尽 raise RuntimeError(触发异常路径归还信号量)；③H9 cleanup 对池中空闲实例重复归还信号量→BoundedSemaphore 超计数抛 ValueError(锁内无 try→cleanup 中断), 删池实例块两处 sem.release, 保留临时实例块(仅归未 release 实例, 防泄漏)；④12.5 补 2 个测试风险注意项(_probe 匹配可靠性、stderr 文件句柄未关闭) | 小欧 |
-| v2.7 | 2026-08-06 12:49:51 | 北京老陈合理检查复核后补 2 项：①**问题3 stderr 句柄泄漏**(半死场景 unlink 时 Popen 句柄未关→文件残留)→H5 `_close` 在 self._proc 置 None 前显式 `self._proc.stderr.close()`；②**遗漏1 acquire 超时未占用 slot 却归还**(计数虚高限流削弱)→H6 新增 `_slot_held` 映射, H7 `acquired=信号量返回值`+成功路径记录+异常路径仅 acquired 时归还, H8/H9 归还前查 `_slot_held`；12.5 风险②由"待验证"升级为"已设计处理+测试验证无残留" | 小欧 |
+| v2.7 | 2026-08-06 12:49:51 | 北京老陈合理检查复核后补 2 项：①**问题3 stderr 句柄泄漏**(半死场景 unlink 时 Popen 句柄未关→文件残留)→H5 `_close` 在 self._proc 置 None 前显式 `self._proc.stderr.close()`；②**遗漏1 acquire 超时未占用 slot 却归还**(计数虚高限流削弱)→H6 新增 `_slot_held` 映射, H7 `acquired=信号量返回值`+成功路径记录+异常路径仅 gotten 时归还, H8/H9 归还前查 `_slot_held`；12.5 风险②由"待验证"升级为"已设计处理+测试验证无残留" | 小欧 |
+| v2.8 | 2026-08-06 13:36:57 | 三堂会审复核补 2 项非阻塞遗漏：①12.1 问题全集补 #9「信号量归还判定缺陷」(v2.4 引入 BoundedSemaphore 限流后 release()/cleanup_by_task 无条件 `sem.release()`，acquire 超时未占用 slot 的实例被多归还→计数虚高、限流削弱；v2.7 H6-H9 已用 `_slot_held` 等设计修复, 本次补 root-cause 追溯)；②`safe_read_file` 补登 backend/FUNCTIONS.md(工具层公用函数, 本地定义于 shell_engine.py 且被 execute_shell_command.py 跨模块复用, 亦被 H5 复用读 stderr 残留, 原未登记违复用规范) | 小欧 |
 
 ## 1. 概述与背景
 
@@ -2471,7 +2472,7 @@ self._proc = subprocess.Popen(
 > **本章定位**：作为**整体更新设计**，整合并落实第9/10/11章的全部问题为一份完整方案。
 > 本章自含「问题全集 → 详细代码设计 → 实施计划 → 验收」，无需回读 9/10/11 章即可实施。
 
-### 12.1 问题全集（整合第9/10/11章，8项逐一定性）
+### 12.1 问题全集（整合第9/10/11章 8 项 + v2.7 补 1 项设计引入，共 9 项逐一定性）
 
 **12.1.1 问题来源归类**
 
@@ -2485,6 +2486,7 @@ self._proc = subprocess.Popen(
 | 第10章修正 | acquire 持池锁时执行耗时 `_ensure_alive`/`_start` | #6 |
 | 第10章-已消除 | 工具层事件循环同步阻塞（全 to_thread） | #7 |
 | 第11章 | 死代码 `shell/shell_engine.py` 旧单例版残留 | #8 |
+| v2.4/v2.6 信号量引入（非第9/10/11章原始问题） | 归还判定缺陷：acquire 超时未占用 slot 的实例在 release/cleanup 被无条件归还 → 计数虚高、限流削弱 | #9 |
 
 **12.1.2 全集表**
 
@@ -2498,6 +2500,7 @@ self._proc = subprocess.Popen(
 | 6 | acquire 持池锁做耗时 alive/启动 :402 | 并发锁粒度 | ❌未修 | **并发源(核心)** |
 | 7 | 工具层事件循环同步阻塞 | 事件循环 | ✅已消除 | 无需动 |
 | 8 | 死代码 `shell/shell_engine.py` | 污染 | ❌未清理 | 清理项 |
+| 9 | 信号量归还判定缺陷：acquire 超时未占用 slot 的实例在 v2.6 `release()`/`cleanup_by_task` 被无条件 `sem.release()` 多归还 → 计数虚高、限流削弱（v2.4 引入 BoundedSemaphore 限流的副作用，v2.7 H6-H9 用 `_slot_held` 设计修复） | 并发资源 | ❌未修(设计已修复) | **并发源** |
 
 > **关键认识**：#1(半死) 与 #5/#6(并发挤占) 是**叠加关系**。老陈经验"只有多 shell 并行才卡死"≈ #6 持池锁排队被多线程并发放大；"单 shell 卡死"≈ #1 半死占一槽。两者都要修，方法互补，不可只修其一。
 

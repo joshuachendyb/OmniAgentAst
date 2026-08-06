@@ -20,6 +20,8 @@
 # 2026-07-30 - 小沈 - 空闲超时兜底: ShellPoolManager 新增 idle_timeout=300s + _last_used 追踪; acquire()复用前检查超时则close不放回; release()/cleanup*同步清理_last_used
 # 2026-07-30 - 小沈 - except:pass补日志: _kill_tree/_close/cleanup_by_task/cleanup_all四处catch改为logger.debug记录
 # 2026-07-31 - 小欧 - Shell池进程保护: ShellPoolManager新增get_all_pids()返回所有活跃PID集合,供安全检查拦截Stop-Process/taskkill/kill保护自身进程; get_all_pids()加debug日志
+# 2026-08-06 - 小欧 - 按设计文档12章实施H1-H10: ①新增探活常量+_probe()响应性探活; ②_start() stderr落日志+就绪握手; ③_close()显式关stderr句柄+残留读取+清理临时文件; ④ShellPoolManager新增_sem并发限流+_slot_held槽位记录; ⑤acquire()重构(Phase0限流/Phase1持锁找空闲/Phase2解锁探活/Phase3有界重试); ⑥release()/cleanup_by_task归还前查_slot_held防计数虚高; ⑦删除死代码shell/shell_engine.py
+# 2026-08-06 - 小欧 - v2.7 BugFix: acquire()复用路径漏注册_inst_map(release()会pop, 复用后release拿key=None提前return → 信号量槽位泄漏, 并发下所有acquire等满ACQUIRE_WAIT_TIMEOUT); 由test_shell_pool_manager并发用例暴露(100.89s→41.21s); 复用路径补 self._inst_map[id(inst)] = key
 """
 PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-05
 
@@ -78,6 +80,9 @@ from app.tools.tool_constants import DEFAULT_TIMEOUT_SEC, SHELL_POOL_IDLE_TIMEOU
 _ERROR_NO_SHELL = {"stdout": "", "stderr": "PowerShell不可用", "exit_code": -1}
 _ERROR_TIMEOUT  = {"stdout": "", "stderr": "timeout", "exit_code": -1, "timed_out": True}
 _EXIT_PROCESS_DIED = -2          # 进程死亡 sentinel，外部重试用
+_PROBE_TIMEOUT = 3               # 响应性探活超时(秒)：半死进程3秒内无回执即判死 — 小欧 2026-08-06
+_PROBE_CMD = "Write-Output __OMNI_PROBE__"   # 探活命令：轻量、无副作用、输出唯一标记 — 小欧 2026-08-06
+ACQUIRE_WAIT_TIMEOUT = 10        # acquire 并发限流等待超时(秒)：超时兜底创建，避免限流变成新卡死 — 小欧 2026-08-06
 
 # ═══════════════════════════════════════════════════════
 #  _TempFiles — 临时文件 contextmanager
@@ -197,6 +202,7 @@ class PersistentShell:
         self._lock = threading.Lock()
         self._cwd = workdir or os.getcwd()
         self._shell_type = shell_type
+        self._stderr_path: Optional[str] = None   # stderr 日志文件路径(半死可观测) — 小欧 2026-08-06
 
     # ── 公共方法 ────────────────────────────────
 
@@ -234,6 +240,19 @@ class PersistentShell:
             return True
         return self._start(env)
 
+    def _probe(self, env: Optional[Dict[str, str]] = None) -> bool:
+        """响应性探活(纯探测, 不重建)：进程死或半死返回 False, 由调用方决定重建。
+        复用 _exec 机制(DRY)：半死时 _exec 内部 _poll_for_file 超时 → 自动 _kill_tree+_close。
+        返回 True=健康可复用; False=进程不可用(可能已被 _exec 销毁)。 — 小欧 2026-08-06"""
+        if self._proc is None or self._proc.poll() is not None:
+            return False                      # 进程已死/未启动 → 不可复用
+        result = self._exec(_PROBE_CMD, timeout=_PROBE_TIMEOUT)   # 复用现有执行机制
+        if result.get("timed_out"):
+            logger.warning(f"[PersistentShell] 探活失败(半死)→已销毁 (pid={self._proc.pid})")
+            self._close()                     # 半死销毁(重建由调用方负责)
+            return False
+        return "__OMNI_PROBE__" in result.get("stdout", "")
+
     def _start(self, env: Optional[Dict[str, str]] = None) -> bool:
         self._close()
         if self._shell_type == "ps7":
@@ -248,20 +267,31 @@ class PersistentShell:
             # PYTHONUTF8=1让open()默认用UTF-8而非gbk,避免读UTF-8代码文件乱码 — 小欧 2026-07-07
             base_env = env if env is not None else os.environ
             child_env = {**base_env, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+            # ① stderr: DEVNULL → 日志文件(可观测半死原因) — 治#2 小欧 2026-08-06
+            fd, self._stderr_path = tempfile.mkstemp(suffix=".err", prefix="ps_", text=True)
+            os.close(fd)
             self._proc = subprocess.Popen(
                 [pwsh, "-NoProfile", "-Command", "-"],
                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, cwd=self._cwd, env=child_env,
+                stderr=open(self._stderr_path, "w", encoding="utf-8", errors="replace"),
+                cwd=self._cwd, env=child_env,
             )
             for _ in range(40):
                 if self._proc.poll() is None:
-                    self._alive = True
-                    logger.info(f"[PersistentShell] 进程已启动 (pid={self._proc.pid}, cwd={self._cwd}, shell_type={self._shell_type})")
-                    return True
+                    break
                 time.sleep(0.025)
-            self._alive = False
-            logger.error("[PersistentShell] 进程启动后立即退出")
-            return False
+            else:
+                self._alive = False
+                logger.error("[PersistentShell] 进程启动后立即退出")
+                return False
+            self._alive = True
+            # ② 就绪握手：启动后立即纯探测一次，未就绪则销毁(调用方重建) — 治#3 小欧 2026-08-06
+            if not self._probe(env):
+                logger.error("[PersistentShell] 就绪握手失败，进程未就绪")
+                self._close()
+                return False
+            logger.info(f"[PersistentShell] 进程就绪 (pid={self._proc.pid}, stderr={self._stderr_path}, cwd={self._cwd}, shell_type={self._shell_type})")
+            return True
         except Exception as e:
             logger.error(f"[PersistentShell] 启动失败: {e}")
             self._alive = False
@@ -345,8 +375,24 @@ class PersistentShell:
                     self._proc.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
             except Exception as e:
                 logger.debug(f"关闭进程失败(pid={self._proc.pid}): {e}")
+            # v2.7 修复(问题3): 显式关闭 stderr 句柄(在置 None 前), 防半死场景 wait 超时后句柄残留→unlink 失败 — 小欧 2026-08-06
+            try:
+                if self._proc.stderr is not None:
+                    self._proc.stderr.close()
+            except Exception:
+                pass
             self._proc = None
             self._alive = False
+        # 半死可观测：close 前读取 stderr 残留并记录，随后清理临时文件 — 小欧 2026-08-06
+        if self._stderr_path:
+            tail = safe_read_file(self._stderr_path).strip()
+            if tail:
+                logger.warning(f"[PersistentShell] 关闭时 stderr 残留: {tail[:200]}")
+            try:
+                os.unlink(self._stderr_path)
+            except OSError:
+                pass
+            self._stderr_path = None
 
 
 # ═══════════════════════════════════════════════════════
@@ -363,6 +409,8 @@ class ShellPoolManager:
         self._temp_instances: Dict[str, List[PersistentShell]] = defaultdict(list)
         self._lock = threading.Lock()
         self._max_per_type = max_per_type
+        self._sem: Dict[tuple, threading.BoundedSemaphore] = defaultdict(lambda: threading.BoundedSemaphore(self._max_per_type))
+        self._slot_held: Dict[int, bool] = {}   # id(inst)→是否持有信号量槽位(超时放行的实例不持有, 防计数虚高) — 小欧 2026-08-06
         # 空闲超时兜底: 实例放回池后超过 idle_timeout 秒无人 acquire 则 close（防孤魂野鬼）
         self._idle_timeout = idle_timeout
         self._last_used: Dict[int, float] = {}  # id(inst) → release 时间戳
@@ -376,55 +424,86 @@ class ShellPoolManager:
 
     def acquire(self, task_id: str, shell_type: str, workdir: str = None) -> PersistentShell:
         """获取一个空闲 PersistentShell 实例（按 task_id + shell_type 分池）
-        
-        两段式设计:
-          Phase1(持锁): 优先复用空闲实例(附带alive检查+空闲超时兜底), 判断是否需要新建
-          Phase2(解锁): 创建实例(子进程启动不阻塞全池)
-          Phase3(持锁): 入池或标记临时实例
-        """
+        并发限流+探活移出锁:
+          Phase0: 信号量限流(同key并发≤max_per_type, 治#5)
+          Phase1(持锁): 仅找空闲实例+空闲超时兜底, 零耗时(治#6)
+          Phase2(解锁): 复用→_probe()探活; 新建→_start()启动
+          Phase3: 探活/启动失败→剔除销毁→有界重试
+        """  # 小欧 2026-08-06
         key = self._pool_key(task_id, shell_type)
-        # ── Phase1: 持锁检查 ──
-        with self._lock:
-            pool = self._pool[key]
-            busy = self._busy[key]
-            # ① 复用空闲实例（带 alive 检查 — Bug#1 修复; 空闲超时兜底 — 老陈 2026-07-30）
-            for inst in list(pool):
-                if id(inst) not in busy:
-                    # 空闲超时检查: 放回后超过 idle_timeout 秒无人 acquire → close 不放回
-                    if self._idle_timeout is not None:
-                        last = self._last_used.get(id(inst), 0)
-                        if time.time() - last > self._idle_timeout:
-                            pool.remove(inst)
-                            self._inst_map.pop(id(inst), None)
-                            self._last_used.pop(id(inst), None)
-                            inst.close()
-                            continue
-                    if inst._ensure_alive():
-                        busy.add(id(inst))
-                        return inst
-        # ── Phase2: 解锁创建（子进程启动不阻塞全池 — Bug#2 修复）──
-        inst = self._make_shell(shell_type, workdir)
-        # ── Phase3: 持锁入池 ──
-        with self._lock:
-            pool = self._pool[key]
-            busy = self._busy[key]
-            # ② 未达上限 → 入池（记录最后使用时间）
-            if len(pool) < self._max_per_type:
-                pool.append(inst)
-                busy.add(id(inst))
-                self._inst_map[id(inst)] = key
-                self._last_used[id(inst)] = time.time()
-                return inst
-            # ③ 已达上限 → 临时实例（跟踪以便 cleanup_by_task 清理 — Bug#4 修复）
-            self._inst_map[id(inst)] = key
-            self._temp_instances[task_id or ""].append(inst)
-            return inst
+        sem = self._sem[key]
+        acquired = sem.acquire(timeout=ACQUIRE_WAIT_TIMEOUT)   # Phase0: 超时也继续(兜底创建) — 治#5; v2.7 记录是否实际占用槽位
+        max_attempts = self._max_per_type + 2   # 有界重试: 防 pwsh 不可用时无限循环 — 小欧 2026-08-06
+        try:
+            for _ in range(max_attempts):
+                # ── Phase1(持锁): 仅找空闲实例+空闲超时兜底, 零耗时(治#6) ──
+                with self._lock:
+                    pool = self._pool[key]
+                    busy = self._busy[key]
+                    inst = None
+                    for it in list(pool):
+                        if id(it) not in busy:
+                            if self._idle_timeout is not None:
+                                last = self._last_used.get(id(it), 0)
+                                if time.time() - last > self._idle_timeout:
+                                    pool.remove(it)
+                                    self._inst_map.pop(id(it), None)
+                                    self._last_used.pop(id(it), None)
+                                    it.close()
+                                    continue
+                            busy.add(id(it))
+                            inst = it
+                            break
+                    if inst is None:
+                        inst = self._make_shell(shell_type, workdir)
+                        if len(pool) < self._max_per_type:
+                            pool.append(inst)
+                            busy.add(id(inst))
+                            self._inst_map[id(inst)] = key
+                            self._last_used[id(inst)] = time.time()
+                            fresh = True
+                        else:
+                            # 已达上限 → 临时实例（不入池, 用完close）
+                            self._inst_map[id(inst)] = key
+                            self._temp_instances[task_id or ""].append(inst)
+                            fresh = True
+                    else:
+                        # v2.7 BugFix(小欧 2026-08-06): 复用路径必须重新注册 _inst_map。
+                        # release() 会 pop(id)，若复用后不重注册，下一次 release 拿到 key=None
+                        # 提前返回 → 信号量永不归还 → 槽位泄漏(并发下所有 acquire 等满10s)。
+                        self._inst_map[id(inst)] = key
+                        fresh = False
+                # ── Phase2(解锁): 新建→_start; 复用→_probe ──
+                ok = inst._start() if fresh else inst._probe()
+                if ok:
+                    self._slot_held[id(inst)] = acquired   # 记录槽位持有状态, 供 release/cleanup 判断(v2.7) — 小欧 2026-08-06
+                    return inst
+                # ── Phase3: 失败→销毁剔除→有界重试 ──
+                with self._lock:
+                    pool = self._pool[key]
+                    busy = self._busy[key]
+                    if inst in pool:
+                        pool.remove(inst)
+                    busy.discard(id(inst))
+                    self._inst_map.pop(id(inst), None)
+                    self._last_used.pop(id(inst), None)
+                inst.close()
+            raise RuntimeError(
+                f"[ShellPool] 连续 {max_attempts} 次获取 Shell 失败 (shell_type={shell_type}, task_id={task_id})"
+            )
+        except Exception:
+            if acquired:   # v2.7: 仅实际占用槽位时归还, 防超时未占用却虚高计数 — 小欧 2026-08-06
+                with contextlib.suppress(Exception):   # 异常路径归还槽位, 防泄漏
+                    sem.release()
+            raise
 
     def release(self, inst: PersistentShell):
         """释放实例回池"""
         key = self._inst_map.pop(id(inst), None)
         if key is None:
             return
+        sem = self._sem.get(key)
+        held = self._slot_held.pop(id(inst), False)   # v2.7: 是否实际持有槽位(正常必有记录; 默认False防超归崩溃) — 小欧 2026-08-06
         should_close = False
         with self._lock:
             busy_set = self._busy.get(key)
@@ -447,6 +526,8 @@ class ShellPoolManager:
         # Bug#3 修复: close() 在锁外执行，不阻塞全池操作
         if should_close:
             inst.close()
+        if held and sem is not None:
+            sem.release()   # 并发槽位归还（治#5）; v2.7 held 防未占用虚高 — 小欧 2026-08-06
 
     def cleanup_by_task(self, task_id: str):
         """关闭某个任务的所有实例 — 任务结束时调用"""
@@ -457,6 +538,7 @@ class ShellPoolManager:
             keys_to_remove = [k for k in self._pool if k[0] == task_id]
             for key in keys_to_remove:
                 for inst in self._pool[key]:
+                    self._slot_held.pop(id(inst), None)   # v2.7 清理槽位记录(池实例不归还, 仅清残留防 id 重用误判) — 小欧 2026-08-06
                     self._inst_map.pop(id(inst), None)
                     self._last_used.pop(id(inst), None)
                     close_list.append(inst)
@@ -466,6 +548,10 @@ class ShellPoolManager:
             task_key = task_id or ""
             temp_list = self._temp_instances.pop(task_key, [])
             for inst in temp_list:
+                sem = self._sem.get(self._inst_map.get(id(inst)))
+                held = self._slot_held.pop(id(inst), False)   # v2.7: 仅实际持槽位才归还 — 小欧 2026-08-06
+                if held and sem:
+                    sem.release()   # 仅归还未release且实际持槽位的临时实例, 防槽位泄漏 — 小欧 2026-08-06
                 self._inst_map.pop(id(inst), None)
                 self._last_used.pop(id(inst), None)
                 close_list.append(inst)
@@ -495,6 +581,7 @@ class ShellPoolManager:
             self._pool.clear()
             self._busy.clear()
             self._inst_map.clear()
+            self._slot_held.clear()   # v2.7 清理槽位记录(atexit 兜底) — 小欧 2026-08-06
             self._temp_instances.clear()
             self._last_used.clear()
         for inst in close_list:
