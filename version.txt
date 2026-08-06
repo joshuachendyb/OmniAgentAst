@@ -1,3 +1,47 @@
+v0.19.4
+更新时间: 2026-08-06 16:24:18 - 小欧-2026-08-06
+## v0.19.3→v0.19.4 变更汇总(32个commit) - 小欧-2026-08-06
+
+### repair:
+- repair-code README+AGENTS更新v0.19.3(架构同步/分类修正/重复合并) - 小欧-2026-08-04
+
+### refactor:
+- execute_shell_command stage重构三路检测全局统一+删旧1.4/1.5死代码+python3收敛1.0a; 三堂会审BugFix×4(Bug5 type过宽/Bug6 Verb-Noun过宽/Bug7 python3引号感知复用_replace_python3_safe/Bug8 引号内python/pip3误判收敛为命令token) 注释清晰化 - 小欧-2026-08-06
+- searchtool注入机制 默认注入去SHELL(shell迁FUNDAMENTAL仅剩which)+描述/提示统一(多分类一次注入/备用工具类型一行枚举) - 小欧-2026-08-05
+- patch_search_desc BUG A去硬编码默认分类(改由_loaded_categories单一权威,消除与_INITIAL_CATEGORIES重复定义失配隐患) - 小欧-2026-08-05
+- shell_engine v2.7会话池H1-H10实施(探活_probe/start就绪握手+stderr落日志/close关stderr句柄+清临时文件/_sem并发限流+_slot_held槽位记录/acquire四阶段/cleanup槽位检查) + BugFix复用路径漏注册_inst_map致槽位泄漏 + 删死代码tools/shell/shell_engine.py + FUNCTIONS.md登记safe_read_file - 小欧-2026-08-06
+
+### fix:
+- shell_engine+execute_shell_command v2.9打猎修复4真实Bug(①_probe超时路径_proc已None引用pid致AttributeError改getattr ②cleanup_by_task/cleanup_all超归竞态in检查+release与release锁外pop双归还改原子pop ③C6淘汰日志it._proc对无_proc对象崩溃改getattr嵌套 ④_kill_and_read_output的proc.wait无try致TimeoutExpired冒泡丢超时语义补try) + C1-C14卡死场景日志补齐统一[卡死C#]前缀 - 小健-2026-08-06
+- read_text_file+line_pager 三堂会审4bug修复(真实total_lines/截断标记分离/双换行/record_read原始内容) - 小欧-2026-08-05
+- tool_search 分词修复4处改动实施(词不拆字bigram去单字/无命中warning+detail+hint/纯符号空matches+设计文档v1.9) - 小欧-2026-08-05
+- 注入分类单一权威BUG1/2(init_tools按实际加载重建_loaded_categories/load_category返回bool空实现不误标/auto_inject仅未加载分类调用且去冗余) - 小欧-2026-08-05
+- desktop三堂会审修复8项(#1状态验证/#2匹配统一取第一/#3可见性过滤/#4方向校验/#5空串路径/#6按钮次数校验/#7尺寸ge=0/#9/#10错误码常量/#11空title拦截) - 小欧-2026-08-05
+- desktop_tools 三堂会审复核修正4项(restore状态假失败+鼠标按钮中英混用+窗口标题描述口径+width/height运行时校验) - 小欧-2026-08-05
+- timer_tools 三堂会审修复6项(DB合并排序+delta范围指引+months统一近似+is_future方向修正+延迟描述错别字) - 小欧-2026-08-05
+- create_task.py event_log.py registry_write.py system/win_registry 三堂会审修复3项(schedule数字校验+REG_BINARY非法hex准确提示+多行Message累计) - 小欧-2026-08-05
+- timer_set.py registry_path_checker.py 修复2项真实缺陷(httpx except作用域UnboundLocalError+registry错误文案与实际白名单不一致) - 小欧-2026-08-05
+- Bug1/3/4 压缩观测格式化死代码+参数clamp漏number+tar.gz复合后缀识别; doc追加第十三章 - 小欧-2026-08-05
+- tool_retry_engine BUG-2保险丝三路取值(_compute_fuse收敛+_get_schema_timeout_default schema默认兜底)注释按4原则重构标注外部超时定位 - 小欧-2026-08-05
+- file_schema/tool_constants BUG-2.5 compress timeout补ge=5/le=1800使clamp生效+ping_port移出TOOL_TIMEOUTS(有timeout参数工具不入表) - 小欧-2026-08-05
+- tool_retry_engine/compress_files 注释统一两条超时线(①随params传tool/②由_compute_fuse算wait_for)+更正compress旧公式+全注释时间戳修正为08-06 - 小欧-2026-08-06
+
+### docs:
+- 删除确认策略设计文档v1.16 落地状态更新/T1-T7b全部✅/8项待评审已结案 - 小欧-2026-08-06
+- AGENTS.md+规范-门限分工两阶段 措辞修正+第20章代码核查结论 - 小欧-2026-08-05
+- constants.py DEFAULT_MAX_STEPS失真加注释说明(仅API schema默认值,运行时取config.yaml,不改逻辑) - 小欧-2026-08-05
+- FUNCTIONS.md v2.4全面修正登记错误(删僵尸条目/更正模块名路径/补登记tool_fc_helper 35函数/章节编号/版本历史重排) - 小欧-2026-08-05
+- 7月18日诊断报告复核v1.1修正2处引用瑕疵+新增核对结论报告(22项核对+真实发现) - 小欧-2026-08-05
+- searchtool分词修复设计方案 v1.9补三堂会审通过记录(合规/合理/关联逻辑+CACHE-007已更新29过0败) - 小欧-2026-08-05
+- 问题006复核分析附三补代码对齐复核说明(13项一致/3处说明遗漏/#10待办) - 小欧-2026-08-05
+- Desktop Schema整改方案附四补落实复核说明(34项全部落地+代码超预期增强) - 小欧-2026-08-05
+- desktop工具复核报告 追加2026-08-05第二轮复核4项Bug修复 - 小欧-2026-08-05
+- app日志根因分析报告 追加v6.5(保险丝外部超时定位澄清+BUG-2.5追加+13.4.6章节+版本历史) - 小欧-2026-08-05
+- app日志根因分析报告 追加v6.6(两条超时线①传给tool超时/②保险丝独立两值+13.4补说明与代码对齐) - 小欧-2026-08-06
+- Shell类型自动检测与路由增强设计方案 v3.4实施结果 主体定位改为结构重构+逻辑收敛(三路上提全局/删1.4.1.5死代码/校正分派stage1.2/python3收敛1.0a)+9.4措辞对齐 - 小欧-2026-08-06
+- PersistentShell会话池并发执行设计文档 新增第12章整体更新设计v2.2-2.5(卡死来源全集8项+整合第2/9/10/11章+12.3可实施diff 10 Hunk含整合矩阵+acquire双分支while修正+12.2基于2.1架构有机整合+实施计划S1-S6与验收) - 小欧-2026-08-06
+- PersistentShell会话池并发执行设计文档 v2.7补充stderr句柄关闭与_slot_held槽位归还防计数虚高 - 小欧-2026-08-06
+
 v0.19.3
 更新时间: 2026-08-04 19:25:12 - 小欧-2026-08-04
 ## v0.19.2→v0.19.3 变更汇总(10个commit) - 小欧-2026-08-04
