@@ -41,6 +41,17 @@
 #        R1枚举式命令名保护有别名盲区(fl/ft/fw漏网)。B6: 错误对象[void]$errs.Add($_)(不落盘)收集+成功对象原样
 #        下传→管道末端统一| Out-String -Width 4096 | Out-File(Out-String正确渲染Format对象), 错误最后单独
 #        Out-File -Encoding utf8(编码可控, 规避PS5 2>写UTF-16LE乱码)。分流语义等价旧结构, 别名/变体全覆盖。
+# 2026-08-07 - 小欧 - B6.1/B6.2 回归测试挖出四缺陷并根治(B6结构性缺陷, 三堂会审定稿):
+#        BUG#1: `;`复合命令前段出错, $?只反映最后一条→rc漏报0(错误进err但业务层判success) — test_error_after_success_pipeline
+#        BUG#2: PS5 native写stderr使$?变False→成功命令误报rc=1(PS7/PS5行为不一致) — test_ps5_native_stderr
+#        BUG#3: $LASTEXITCODE跨命令残留污染(先native exit3再跑cmdlet→rc误报3) — 探测复现
+#        BUG#4: throw终止性错误中断ps_cmd→rc文件不写→假超时(C8/C14)30s+杀进程+引擎重建 — 探测复现
+#        B6.1修复: ①前置$global:LASTEXITCODE=0清残留(治BUG#3) ②rc判定改errs分类: LASTEXITCODE非0→取其值
+#        (native真失败); errs含非NativeCommandError错误→1(cmdlet真错); NativeCommandError(native stderr)不计错
+#        (治BUG#1/2) ③try/catch兜底终止性错误, catch记录文本到errs+rc=1(治BUG#4)
+#        B6.2微调(探测发现B6.1块外catch致throw前stdout丢失): try/catch移入& {}块内, catch后管道不中断
+#        →throw前的stdout完整落盘(实测Write-Output before; throw→out保留before), 其余语义同B6.1
+#        验证: PS7/PS5双引擎9场景行为一致, B6+B6.1共41用例全绿(其中10例为四缺陷固化回归)
 """
 PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-05
 
@@ -409,12 +420,25 @@ class PersistentShell:
             # B6: 错误对象[void]$errs.Add($_)(不落盘), 成功对象原样下传→管道末端统一
             # | Out-String -Width 4096 | Out-File(Out-String正确渲染Format对象), 错误最后单独
             # Out-File -Encoding utf8(编码可控, 规避PS5 2>写UTF-16LE乱码)。分流语义等价旧结构。
+            # [B6.1] 2026-08-07 小欧 回归测试挖出B6四缺陷并根治(三堂会审定稿):
+            #   BUG#1: `;`复合命令前段出错,$?只反映最后一条→rc漏报0(错误进err但业务层判success)
+            #   BUG#2: PS5 native写stderr使$?变False→成功命令误报rc=1(PS7/PS5行为不一致)
+            #   BUG#3: $LASTEXITCODE跨命令残留污染(先native exit3再跑cmdlet→rc误报3)
+            #   BUG#4: throw终止性错误中断ps_cmd→rc文件不写→假超时(C8/C14)30s+杀进程+引擎重建
+            # 修复: ①前置$global:LASTEXITCODE=0清残留(BUG#3) ②rc判定改errs分类:
+            #   LASTEXITCODE非0→取其值(native真失败); errs含非NativeCommandError错误→1(cmdlet真错);
+            #   NativeCommandError(native stderr)不计错(BUG#1/2) ③try/catch移入& {}块内兜底
+            #   终止性错误, catch记录文本到errs+rc=1, 块内catch后管道不中断→throw前的stdout完整
+            #   落盘不丢失(BUG#4, 实测Write-Output before; throw→out保留before)
             ps_cmd = (
-                f'[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; $global:rc=0; '
-                f'$errs = New-Object System.Collections.ArrayList; '
-                f'& {{ {command}; if (-not $?) {{ $global:rc = if ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 1 }} }} }} 2>&1 | '
+                f'[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; '
+                f'$global:rc=0; $errs = New-Object System.Collections.ArrayList; $global:LASTEXITCODE = 0; '
+                f'& {{ try {{ {command} }} catch {{ $global:rc = 1; [void]$errs.Add($_) }} }} 2>&1 | '
                 f'ForEach-Object {{ if ($_ -is [System.Management.Automation.ErrorRecord]) {{ [void]$errs.Add($_) }} else {{ $_ }} }} | '
                 f'Out-String -Width 4096 | Out-File -FilePath "{paths.out}" -Encoding utf8 -Width 4096; '
+                f'if ($global:LASTEXITCODE -ne 0) {{ $global:rc = $global:LASTEXITCODE }} '
+                f'else {{ foreach ($ee in $errs) {{ if ($ee.FullyQualifiedErrorId -notlike "NativeCommandError") '
+                f'{{ $global:rc = 1; break }} }} }}; '
                 f'if ($errs.Count) {{ $errs | Out-String -Width 4096 | Out-File -FilePath "{paths.err}" -Encoding utf8 -Width 4096 }}; '
                 f'$global:rc | Out-File -FilePath "{paths.code}" -Encoding utf8; '
                 f'(Get-Location).Path | Out-File -FilePath "{paths.cwd}" -Encoding utf8'
