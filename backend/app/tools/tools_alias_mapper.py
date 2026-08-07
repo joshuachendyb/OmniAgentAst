@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-08-07 - 小欧 - 文件由 param_alias_mapper.py 重命名为 tools_alias_mapper.py(名实相符: 既有工具名别名也有参数别名); import处同步更新(registry/tool_retry_engine/action_handler/test)
 # 2026-07-20 - 小欧 - 删 output_mode 参数别名映射: grep 已去除 output_mode 参数(默认即 content 模式), 该别名失效, 删除死映射避免误导
 # 2026-07-28 - 小欧 - BUG#19: "value":"value"是恒等映射(输入=输出无转换), 空转别名删除
+# 2026-08-07 - 小欧 - 新增TOOL_NAME_ALIASES工具名别名映射+normalize_tool_name: LLM常生成变体名(write_text等), 映射到注册名(writetext), 防"工具未注册"误拦截(com-test 03暴露)
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -322,6 +324,35 @@ PARAM_ALIASES = {
 PARAM_VALUE_ALIASES = {
     "grep": {},
 }
+
+
+# 工具名别名: LLM生成的自然语言变体→注册名 — 小欧 2026-08-07
+# 实测: com-test 03中LLM调用"write_text"(带下划线)被系统以"工具未注册"误拦截3次致任务失败。
+# 与 PARAM_ALIASES 同款集中映射模式, 只收录实际发生+对称高频变体(YAGNI)。
+TOOL_NAME_ALIASES = {
+    "write_text": "writetext",
+    "read_text": "readtext",
+    "edit_text": "edittext",
+    "write_text_file": "writetext",
+    "read_text_file": "readtext",
+    "edit_text_file": "edittext",
+    "list_directory": "listdir",
+    "http_get": "httpget",
+    "http_request": "httpget",
+}
+
+
+def normalize_tool_name(tool_name: str) -> str:
+    """工具名别名归一化: LLM生成的变体名→注册名 — 小欧 2026-08-07
+
+    与 normalize_params 同模式: 集中映射表 + 日志记录, 便于监控LLM行为。
+    无别名命中时原样返回(不改变原工具名语义)。
+    """
+    if tool_name in TOOL_NAME_ALIASES:
+        _canonical = TOOL_NAME_ALIASES[tool_name]
+        logger.info(f"[tool_name_alias] {tool_name}→{_canonical}")
+        return _canonical
+    return tool_name
 
 
 def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:

@@ -64,7 +64,7 @@ from app.tools.tool_constants import (
     ERR_MISSING_PARAM, ERR_INVALID_PARAMS, ERR_TOOL_NOT_FOUND, ERR_UNKNOWN,
 )
 from app.tools.tool_response import build_error
-from app.tools.param_alias_mapper import normalize_params
+from app.tools.tools_alias_mapper import normalize_params
 from app.tools.registry import tool_registry
 
 # ============================================================

@@ -78,7 +78,7 @@ from app.db.models.operation_models import OperationStatus
 from app.db import db
 
 from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE_OPERATION_TOOLS
-from app.tools.param_alias_mapper import PARAM_ALIASES
+from app.tools.tools_alias_mapper import PARAM_ALIASES
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, MEDIA_EXTENSIONS
 
 
