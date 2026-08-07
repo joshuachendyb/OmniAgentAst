@@ -1,3 +1,27 @@
+v0.19.7
+更新时间: 2026-08-07 23:54:37 - 小欧-2026-08-07
+## v0.19.6→v0.19.7 变更汇总(12个commit) - 小欧-2026-08-07
+
+### feat:
+- feat:execute_shell_command.py+network_register.py task001-P08/P09优化(超时提示引导复杂代码先写脚本文件执行+timeout上限600; httpbin.org易503改泛用替代源myip.ipip.net/ip.sb/postman-echo.com) - 小欧-2026-08-07
+- feat:action_handler.py+system_prompts.py task001-P07/P05优化(action_handler: _EXT_TO_READ_TOOL排除.csv双域文本+表格, read_xlsx/readtext均不被自动改写; system_prompts: searchtool强化一次搜多类型引导禁止分多次调用) - 小欧-2026-08-07
+- feat:write_xlsx.py+document_schema.py 新增append_mode追加模式(task001-P04: load_workbook末尾追加+表头一致性校验+按已有表头列序取值防串列, else分支补mkdir防新建目录崩溃, error返回前补duration_ms防NameError) - 小欧-2026-08-07
+- feat:execute_sql.py+dataanalysis_schema.py 新增confirm_ddl危险DDL放行开关(task001-P01/P02: 白名单CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE防未来类型误放行, llm_data传参observation可见, 危险提示文案优化补WHERE引导+消除空warnings冗余逗号) - 小欧-2026-08-07
+- feat:tool_search.py+fundamental_register.py searchtool多类型搜索优化(分类级名额保底_apply_category_floor保证混合搜索注全10分类+examples精简4条2多类型2单类型) - 小欧-2026-08-07
+
+### fix:
+- fix:grep_file_content.py 返回前过滤已被删除/重命名的文件(task001-P06: _apply_grep_outlim后最终结果上过滤, 条件重建GrepSyncResult重算files/matches, 避免双重重建) - 小欧-2026-08-07
+- fix:database.py+read_text_file.py+write_text_file.py+http_request.py 日志WARNING五缺陷根治(BUG-01 float切片int强转/BUG-02 headers isinstance校验/BUG-03 重试下沉get_conn统一入口47处复用/BUG-04 get_conn_with_retry薄包装消generator throw/BUG-05 GBK+emoji降级utf-8; 文档v2.1新增非bug二次核实) - 小欧-2026-08-07
+- fix:shell_engine.py B6.1/B6.2回归测试挖出B6四缺陷并根治($;复合命令rc漏报/PS5 native stderr误报/LASTEXITCODE残留污染/throw假超时; 前置LASTEXITCODE=0重置+errs分类判定+try/catch入块内, PS7/PS5双引擎一致) - 小欧-2026-08-07
+
+### refactor:
+- refactor:tools_alias_mapper.py param_alias_mapper.py重命名为tools_alias_mapper.py(名实相符含工具名别名+参数别名) 同步更新registry/tool_retry_engine/action_handler/test四处import与注释, test_tools_alias_mapper.py 7 passed - 小欧-2026-08-07
+
+### docs:
+- docs:task001问题分析核实与优化建议文档 北京老陈驱动task001(P01~P09问题分析核实+优化建议落地记录) - 小欧-2026-08-07
+- docs:tool_retry_engine.py+action_handler.py 补2026-08-07编辑历史(param_alias_mapper→tools_alias_mapper改名import同步记录) - 小欧-2026-08-07
+- docs:日志WARNING深度分析报告核实修正版(v2.0,5个真实缺陷) - 小欧-2026-08-07
+
 v0.19.6
 更新时间: 2026-08-07 13:07:06 - 小欧-2026-08-07
 ## v0.19.5→v0.19.6 变更汇总(6个commit) - 小欧-2026-08-07
