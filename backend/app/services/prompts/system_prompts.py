@@ -5,6 +5,7 @@
 # 2026-07-28 - 小欧 -  压缩系统Prompt文字(~1898→~1300),去冗余修饰/合并重复语义,不改功能
 # 2026-07-28 - 小欧 -  TOOL_CALL_RULES: 替换单行【Shell】为 render_shell_section() 多行指引(按 shell_type 动态切换)
 # 2026-08-05 - 小欧 - <searchtool-搜备用工具>: 逐类示例改为精简"备用工具类型"一行枚举(文档\数据分析\数据库\网络\系统\进程\注册表\桌面\时间定时), 与tool_retry_engine备用工具命名/register描述对齐
+# 2026-08-07 - 小欧 - <searchtool-搜备用工具>: 强化"一次搜多类型"引导,禁止分多次调用searchtool搜不同类型(实测LLM发7个并行searchtool,应合并为1个)
 """
 PromptBuilder — 唯一的 Prompt 构建类
 
@@ -68,6 +69,7 @@ class PromptBuilder:
 
 
 <searchtool-搜备用工具>
+支持单类型和多类型备用工具搜索注入,可传入多类型关键词(如"文档 数据分析 网络")
 备用工具类型: 文档\数据分析\数据库\网络\系统\进程\注册表\桌面\时间定时
 
 
