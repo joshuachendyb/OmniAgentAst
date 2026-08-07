@@ -99,6 +99,18 @@
 #        病根: 裸`python`是跨平台命令(Windows ps7/ps5/cmd同样合法), 绝非bash独有特征。修复: python判bash
 #        收敛为仅当后跟Linux风格路径(/|./|~/), 即`python(?=\s+(?:\.?/|~/))`; python3(Linux独有解释器)保持判bash。
 #        实证: 病根命令不再判bash留ps7; `python /tmp/x.py`/`python ./x.py`/`python3 /tmp/x.py`(经stage 1.0a转python)仍判bash。
+# 2026-08-07 - 小欧 - 卡死日志三问五处修复(与shell_engine.py联动, 三堂会审定稿):
+#        R0: CMD poll loop大输出死锁根治 — 仅poll不读管道, 200KB输出写满管道缓冲→子进程write阻塞→与poll互锁至超时杀树
+#            且仅读回4096残存; 改非阻塞读管道(os.set_blocking(False))+自适应退避(有数据立即读/无数据指数退避上限50ms),
+#            实验铁证200KB 0.1s完整读取vs原15s超时丢4096字节; communicate仅作有界收尾读清残余
+#        R1: Format-Table正则扩展覆盖Format-List/Format-Wide根治C12 stderr残留(当日C12日志触发命令正是
+#            `Get-Service | Format-List *`/`Get-ItemProperty | Format-List *`, 不受原Format-Table保护)
+#        R2: systeminfo移出CMD特征(第4类命令列表+_looks_like_cmd正则)改走PS7根治C10表象
+# 2026-08-07 - 小欧 - 三堂会审8.8复核: R0非阻塞read语义None/b''均安全无bug(熟读3遍+边界实测),
+#        systeminfo三路入口均正常无退化(走PS7后无错误无卡死), 五处修改综合判定全部通过
+# 2026-08-07 - 小欧 - G2普遍性根治(B6) C12管道层根治: R1枚举式保护(Format-Table/List/Wide命令名)有别名盲区
+#        (fl/ft/fw漏网), 已由shell_engine.py _exec_locked ps_cmd B6管道层根治取代(命令名盲区全覆盖),
+#        此处移除R1枚举保护, 单一根治点(KISS/DRY), 管道末端统一Out-String等效解决80列截断 — 与shell_engine.py联动
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -1037,11 +1049,9 @@ def shell(
                 processed_command = _translate_powershell_operators(processed_command)
             else:
                 processed_command = _fix_ps7_assignment_operators(processed_command)
-            # Format-Table/List/Wide输出追加Out-String -Width 4096，避免PS5.1默认80列截断；
-            # 2026-08-07 小欧 三堂会审定稿: 扩展覆盖Format-List/Format-Wide(当日C12日志触发命令
-            # 正是 `Get-Service | Format-List *`/`Get-ItemProperty | Format-List *`, 不受原Format-Table保护)
-            if re.search(r'(?i)(?:^|\|)\s*Format-(?:Table|List|Wide)\b', processed_command):
-                processed_command += " | Out-String -Width 4096"
+            # [卡死C12] 2026-08-07 小欧: R1枚举式保护(Format-Table/List/Wide)已由shell_engine.py
+            # _exec_locked 的 B6 管道层根治取代(命令名盲区fl/ft/fw全部覆盖), 此处移除, 单一根治点(KISS)
+            # (B6管道末端统一| Out-String -Width 4096, 等效解决80列截断, 比命令层追加更彻底) — 小欧 2026-08-07
 
             task_id = get_current_task_id()
             # v2.7 BugFix(小欧 2026-08-06): acquire 传入 _sanitize_env(), 修复持久进程启动时
