@@ -10,6 +10,7 @@
 # 2026-07-22 - 小欧 - 修复: trim_history 日志路径未覆盖 _rebuild_and_validate 返回 None 的情况，将日志移入 if 分支 + else warning
 # 2026-07-22 - 小欧 - 补充 assistant 消息四种存储形态类注释(源自对话梳理: action轮只存tool_calls, answer/reasoning-only/异常才存content)
 # 2026-07-23 - 小欧 - #13 react_cycle崩溃修复: trim_history 加 try/except 防御性保护(message_builder状态退化时跳过裁剪保留原历史, 不抛异常到 react_cycle 导致循环崩溃)
+# 2026-08-08 - 小欧 - v1.6双阈值扩展: ①pop_temp_messages判断条件由_temp_reasoning改为通用_temp_*前缀(兼容_temp_same_tool_warn, 绝后新增标记漏清理); ②prepare_messages_for_llm剥离_temp_*内部标记防泄漏LLM
 """
 MessageBuilder — conversation_history 状态管理器
 
