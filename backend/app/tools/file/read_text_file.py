@@ -24,6 +24,9 @@ F1: readtext — 读取文本文件
 # 2026-07-26 - 小沈 - BugFix #3: path参数不覆盖; #5: hint传完整路径
 # 2026-08-05 - 小欧 - 文档20.3处置: READTEXT_OUTLIMIT_CHARS 截断补 data["truncated"]=True + truncated_reason 标记(20.3 read_text 决策项)
 # 2026-08-05 - 小欧 - 4bug修复: Bug1:total_lines统计被截断视图污染; Bug2:截断标记被编入行号; Bug3:record_read记录被截断内容; Bug4:select_lines双换行
+# 2026-08-07 - 小欧 - BUG-01修复: 翻页参数(offset/limit/tail)入口强制int(), 防直接调用(readtext)绕过Pydantic schema时 float 参数引发 line_pager slice 崩溃
+#   【病根】readtext(offset=1.5) 绕过 schema 验证, select_lines 收到 float → lines[start_idx:start_idx+limit] 抛 TypeError(日志09:07:09 ×2)
+#   【改法】入口处 offset/limit/tail 均为 None 时跳过, 否则 int() 强转; 保持既有校验逻辑不变(无退化)
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -208,6 +211,14 @@ async def readtext(
     tail: 读取尾部N行（不能与offset/limit同时使用）"""
     # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
     file_path = path
+    # BUG-01修复: 翻页参数强制int, 防直接调用(readtext)绕过Pydantic schema时 offset=1.5 引起 slice 崩溃 — 小欧 2026-08-07
+    #   日志证据: 09:07:09 line_pager.py:69 slice indices must be integers (Offset 1.5)
+    if offset is not None:
+        offset = int(offset)
+    if limit is not None:
+        limit = int(limit)
+    if tail is not None:
+        tail = int(tail)
     t0 = _time_mod.perf_counter()
     try:
         # 文件类型前置检查 — 小健 2026-06-24 — check_for_text_tool 内含 validate_path 存在性校验 — 小欧 2026-07-29

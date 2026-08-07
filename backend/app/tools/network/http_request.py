@@ -14,6 +14,9 @@
 # 2026-08-06 - 小欧 - 核查7/31未实现项[21]修复: Header值非ASCII由UTF-8→latin-1转码改为拒绝(与键处理对称, RFC 9110 Header须ASCII, 避免字节漂移致服务端解码错乱), 声称功能"转码改拒绝"
 # 2026-08-06 - 小欧 - 三堂会审修复: BUG-4 detail文案去"obs-text"暗示, 统一为"必须为ASCII"
 # 2026-08-06 - 小欧 - 核查8-05/8-06日志: url=None 在非ASCII转码块 url.encode 抛AttributeError落入catch-all记"意外错误"; 入口加url=None显式拦截(fetch_webpage同模式, 三网络工具统一), 返回ERR_INVALID_URL结构化错误, 不再落入catch-all
+# 2026-08-07 - 小欧 - BUG-02修复: headers仅接受dict, 防LLM传list引发 dict.update(list) ValueError
+#   【病根】coerce_json(headers)可能返回list, request_headers.update(list) 抛 ValueError: dictionary update sequence(日志09:05:38)
+#   【改法】if headers and isinstance(headers, dict): 才 update; 非dict自动忽略, 不抛异常(无退化)
 """
 N1: httpget — 发起HTTP请求
 
@@ -219,7 +222,9 @@ async def httpget(
             return build_error(data={}, llm_data=llm_data)
 
         request_headers = {}
-        if headers:
+        # BUG-02修复: headers仅接受dict, 防LLM传list引发 dict.update(list) ValueError — 小欧 2026-08-07
+        #   日志证据: 09:05:38 http_request.py:343 ValueError: dictionary update sequence
+        if headers and isinstance(headers, dict):
             request_headers.update(headers)
 
 # Header非ASCII字符拒绝 — 小欧 2026-07-25 — 2026-08-06 小欧: 值由转码改为拒绝(与键对称)
