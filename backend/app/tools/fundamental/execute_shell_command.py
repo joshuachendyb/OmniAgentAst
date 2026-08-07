@@ -841,7 +841,8 @@ def _looks_like_cmd(command: str) -> bool:
     检测Windows CMD特有语法特征，确定是否应该路由到CMD:
     - Windows特有环境变量: %PATH%, %TEMP%等（CMD才有的变量引用语法）
     - CMD特有循环语法: for %i in, for /f %i in
-    - CMD特有命令: where, wmic, reg query/add/delete/import/export, attrib, tasklist, taskkill, systeminfo, msieexec, diskpart, bcdedit, echo %var, set var=value, pushd/popd, assoc/ftype, findstr
+    - CMD特有命令: where, wmic, reg query/add/delete/import/export, attrib, tasklist, taskkill, msieexec, diskpart, bcdedit, echo %var, set var=value, pushd/popd, assoc/ftype, findstr
+      (注: systeminfo 已于 2026-08-07 移出CMD特征, 改走PS7引擎 — 小欧 三堂会审定稿)
     - CMD特有入口点: cmd.exe /c
     - CMD特有文件操作: copy, del, rd
     
@@ -866,7 +867,6 @@ def _looks_like_cmd(command: str) -> bool:
         r'\battrib\b',                 # 文件属性操作
         r'\btasklist\b',               # 进程列出
         r'\btaskkill\b',               # 进程终止
-        r'\bsysteminfo\b',            # 系统信息
         r'\bmsiexec\b',                # MSI安装程序
         r'\bdiskpart\b',               # 磁盘分区
         r'\bbcdedit\b',                # 启动配置
@@ -1037,8 +1037,10 @@ def shell(
                 processed_command = _translate_powershell_operators(processed_command)
             else:
                 processed_command = _fix_ps7_assignment_operators(processed_command)
-            # Format-Table输出追加Out-String -Width 4096，避免PS5.1默认80列截断 — 小欧 2026-07-08
-            if re.search(r'(?i)(?:^|\|)\s*Format-Table\b', processed_command):
+            # Format-Table/List/Wide输出追加Out-String -Width 4096，避免PS5.1默认80列截断；
+            # 2026-08-07 小欧 三堂会审定稿: 扩展覆盖Format-List/Format-Wide(当日C12日志触发命令
+            # 正是 `Get-Service | Format-List *`/`Get-ItemProperty | Format-List *`, 不受原Format-Table保护)
+            if re.search(r'(?i)(?:^|\|)\s*Format-(?:Table|List|Wide)\b', processed_command):
                 processed_command += " | Out-String -Width 4096"
 
             task_id = get_current_task_id()
@@ -1071,20 +1073,50 @@ def shell(
                     stderr=subprocess.PIPE, cwd=cwd, env=child_env,)
                 timed_out = False
                 try:
-                    # [卡死场景C10] poll loop代替communicate(timeout): 防止start /b子进程持管道
-                    # 导致communicate挂满整个timeout — 参考Hermes _wait_for_process, 2026-07-27 小欧
+                    # [卡死场景C10-v2] poll loop + 非阻塞读管道(防大输出写满缓冲死锁)
+                    # + 防start /b子进程持管道挂满communicate — 小欧 2026-08-07 三堂会审定稿
+                    # 实验铁证: 仅poll不读管道, 200KB输出写满管道缓冲→子进程write阻塞→
+                    # 与poll互锁至超时杀树且仅读回4096残存; 自适应读+递增退避则0.1s完整读取
                     _deadline = _time_mod.time() + timeout
-                    _poll_sleep = 0.1
+                    _drain_out: list = []
+                    _drain_err: list = []
+                    if proc.stdout:
+                        os.set_blocking(proc.stdout.fileno(), False)  # Windows管道支持非阻塞
+                    if proc.stderr:
+                        os.set_blocking(proc.stderr.fileno(), False)
+                    _poll_sleep = 0.001
                     while _time_mod.time() < _deadline and proc.poll() is None:
+                        _read_any = False
+                        for _stream, _buf in ((proc.stdout, _drain_out), (proc.stderr, _drain_err)):
+                            if _stream is None:
+                                continue
+                            try:
+                                while True:  # 一次读到空, 减少空轮询
+                                    _chunk = _stream.read(65536)
+                                    if not _chunk:
+                                        break
+                                    _buf.append(_chunk)
+                                    _read_any = True
+                            except (BlockingIOError, OSError):
+                                pass
+                        if _read_any:  # 有数据立即再读, 防子进程再次写满阻塞
+                            _poll_sleep = 0.001
+                        else:  # 无数据指数退避, 上限50ms防忙轮询
+                            _poll_sleep = min(_poll_sleep * 2, 0.05)
                         _time_mod.sleep(min(_poll_sleep, max(0, _deadline - _time_mod.time())))
-                        _poll_sleep = min(_poll_sleep * 2, 1.0)
                     if proc.poll() is None:
                         timed_out = True
                         logger.warning(f"[卡死C10] CMD命令超时{timeout}s(子进程持管道/死循环) → 杀进程树+读残存 (cmd={cmd_short})")
                         stdout_b, stderr_b = _kill_and_read_output(proc)
                     else:
-                        # [卡死场景C11] communicate有界: 防残留管道阻塞 — 小欧 2026-08-06
-                        stdout_b, stderr_b = proc.communicate(timeout=SUBPROCESS_TIMEOUT_SHORT)
+                        # [卡死场景C11] communicate有界收尾: 读清进程退出后残余管道 — 小欧 2026-08-06/08-07
+                        _tail_out, _tail_err = proc.communicate(timeout=SUBPROCESS_TIMEOUT_SHORT)
+                        if _tail_out:
+                            _drain_out.append(_tail_out)
+                        if _tail_err:
+                            _drain_err.append(_tail_err)
+                        stdout_b = b"".join(_drain_out)
+                        stderr_b = b"".join(_drain_err)
                 except subprocess.TimeoutExpired:
                     timed_out = True
                     logger.warning(f"[卡死C10] CMD communicate超时 → 杀进程树+读残存 (cmd={cmd_short})")

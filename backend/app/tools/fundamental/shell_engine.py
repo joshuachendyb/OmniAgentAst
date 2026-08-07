@@ -148,7 +148,9 @@ def _TempFiles():
             try:
                 os.unlink(p)
             except OSError:
-                logger.debug(f"[卡死C12] 临时文件清理失败(残留句柄?) (path={p})")
+                # 2026-08-07 小欧 三堂会审定稿: debug→warning 升级可见性, 清理失败=残留句柄/文件泄漏风险,
+                # 当日残留 tmpmsj4losd.cwd 即此场景, 需在info级日志留痕以便溯源
+                logger.warning(f"[卡死C12] 临时文件清理失败(残留句柄?) (path={p})")
 
 
 def safe_read_file(path: str) -> str:
@@ -722,7 +724,9 @@ class ShellPoolManager:
         return pids
 
 
-shell_pool = ShellPoolManager(max_per_type=3)
+# 2026-08-07 小欧 三堂会审定稿(R3): 3→8 — 当日C2日志实测同key并发达5(ps7池默认3放不下),
+# acquire排队超2s→ShellPoolBusyError; 8覆盖实测并发5并留余量(每实例约40MB内存, 8≈320MB可接受)
+shell_pool = ShellPoolManager(max_per_type=8)
 
 
 atexit.register(shell_pool.cleanup_all)
