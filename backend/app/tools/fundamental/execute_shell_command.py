@@ -111,6 +111,7 @@
 # 2026-08-07 - 小欧 - G2普遍性根治(B6) C12管道层根治: R1枚举式保护(Format-Table/List/Wide命令名)有别名盲区
 #        (fl/ft/fw漏网), 已由shell_engine.py _exec_locked ps_cmd B6管道层根治取代(命令名盲区全覆盖),
 #        此处移除R1枚举保护, 单一根治点(KISS/DRY), 管道末端统一Out-String等效解决80列截断 — 与shell_engine.py联动
+# 2026-08-07 - 小欧 - P08优化(北京老陈驱动 task001): 超时提示文案引导脚本化 — 复杂Python先写.py脚本文件执行(规避单行引号转义)+增大timeout(上限600); _detail已含实际超时值故hint不重复默认值 | py_compile ✓
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -1199,7 +1200,10 @@ def shell(
             _exec_code = "warning"
             _err_code = ERR_SHELL_TIMEOUT
             _detail = f"命令执行超时({timeout}秒)"
-            _hint = "命令执行超时，建议: 1. 增大timeout参数 2. 简化命令 3. 分步执行"
+            # 引导脚本化+增大超时 — 小欧 2026-08-07
+            _hint = ("命令执行超时，建议: "
+                     "1. 复杂代码请先写入相应的代码脚本文件再执行(规避单行引号转义) "
+                     "2. 增大timeout参数(上限600) 3. 分步执行")
         elif returncode == 0 or returncode in (success_codes or []):
             stderr_clean = stderr_str.strip()
             if stderr_clean:

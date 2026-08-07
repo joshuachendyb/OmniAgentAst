@@ -17,6 +17,7 @@ Network Register - 网络通信工具注册点
 
 创建时间: 2026-04-29
 更新时间: 2026-05-17 小沈
+【2026-08-07 小欧】P09优化(北京老陈驱动 task001): httpbin.org 易503, 泛用替代源 — 查IP提示改 myip.ipip.net/ip.sb, POST示例改 postman-echo.com
 """
 
 # ============================================================
@@ -45,7 +46,7 @@ def _http_request_failure_hint(tool_params: Optional[dict] = None) -> str:
     """http_request失败时的国内替代URL提示 — 小健 2026-05-24"""
     failed_url = (tool_params or {}).get("url", "")
     hint = "⚠️ 网络请求失败。如果是访问国外服务超时,请换用国内可达的替代地址:\n"
-    hint += "  - 查公网IP → 用 https://httpbin.org/ip 或 https://myip.ipip.net\n"
+    hint += "  - 查公网IP → 用 https://myip.ipip.net 或 https://ip.sb/api\n"   # 移除易503的 httpbin.org — 小欧 2026-08-07
     hint += "  - 查IP详情 → 用 https://ipapi.co/json/ 或 https://ip.sb/api/\n"
     hint += "  - DNS查询 → 用 https://dns.alidns.com/resolve?name=域名&type=A\n"
     hint += "  - 网络连通 → 用 ping 测试国内域名(如 baidu.com)\n"
@@ -126,7 +127,7 @@ NETWORK_TOOL_INPUT_MODELS = {
 NETWORK_TOOL_EXAMPLES = {
     "httpget": [
         {"url": "https://api.github.com/repos/python/cpython", "method": "GET"},
-        {"url": "https://httpbin.org/post", "method": "POST", "body": {"name": "test", "value": 123}},
+        {"url": "https://postman-echo.com/post", "method": "POST", "body": {"name": "test", "value": 123}},  # 移除易503的 httpbin.org — 小欧 2026-08-07
     ],
     "download": [
         {"url": "https://github.com/python/cpython/archive/refs/heads/main.zip", "destination_path": "D:/Downloads/cpython-main.zip"},
