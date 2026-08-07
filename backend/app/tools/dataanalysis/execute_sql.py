@@ -11,6 +11,7 @@ execute_sql — 执行写操作SQL
    【合规】DRY(常量消重)+KISS-DIRECT(if/elif直线扩展,不引入分级抽象)+YAGNI(模块常量不跨文件)
 【2026-07-24 小欧】修复: _sql_preview前置防空SQL漏截断 + timeout判断用is not None防0跳过
 【2026-07-26 小欧】迁移: sql_error_hint/hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
+【2026-08-07 小欧】P01+P02优化(北京老陈驱动 task001): ①新增confirm_ddl参数 — 显式确认后放行裸DDL(白名单_DDL_ONLY_TYPES: CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE, 防未来新增安全类型误放行); ②_build_execute_sql_llm_data补confirm_ddl传参(observation可见); ③危险提示文案优化 — 无WHERE时引导补WHERE/dry_run, 条件拼接消除warnings为空时的冗余逗号
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -65,13 +66,19 @@ def _check_sql_safety(sql: str) -> Tuple[bool, Optional[str], Optional[List[str]
             warnings.append(f"危险操作: {dangerous_to_show}")
         if 'NO_WHERE' in dangerous_matches:
             warnings.append("缺少 WHERE 条件")
-        return True, f"警告:检测到危险操作 {'+'.join(warnings)},已拦截执行。可使用dry_run=true预演", dangerous_matches
+            # 提示如何补充WHERE或dry_run预演 — 小欧 2026-08-07
+            hint = "已拦截整表操作。如需清空请带 WHERE（如 DELETE FROM t WHERE 1=1）或先 dry_run=true 确认"
+        else:
+            hint = "可使用 dry_run=true 预演"
+        # dangerous_to_show为空时(仅有NO_WHERE)warnings为空,'+'.join([])产生空串致冗余逗号,改用条件拼接 — 小欧 2026-08-07
+        _warn_str = f"危险操作: {'+'.join(warnings)}" if warnings else "整表操作"
+        return True, f"警告:检测到{_warn_str},已拦截执行。{hint}", dangerous_matches
     return False, None, None
 
 
 def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, detail="", hint="",
-                                 connection_type="", path="", dry_run=False, timeout=0):
-    """execute_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-24 主函数入口统一截断，build函数不再截断"""
+                                 connection_type="", path="", dry_run=False, timeout=0, confirm_ddl=False):
+    """execute_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-24 主函数入口统一截断，build函数不再截断 — 小欧 2026-08-07 新增confirm_ddl传参"""
     _act_params = {"sql": sql}
     if connection_type:
         _act_params["connection_type"] = connection_type
@@ -81,6 +88,8 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
         _act_params["dry_run"] = dry_run
     if timeout is not None:
         _act_params["timeout"] = timeout
+    if confirm_ddl:
+        _act_params["confirm_ddl"] = confirm_ddl
     _target = path or connection_type or "database"
     if exec_code == "error":
         return {
@@ -117,9 +126,11 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
 
 def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
                 connection_string: Optional[str] = None, path: Optional[str] = None,
-                dry_run: bool = False, timeout: int = 30000) -> Dict[str, Any]:
+                dry_run: bool = False, timeout: int = 30000,
+                confirm_ddl: bool = False) -> Dict[str, Any]:
     """执行写操作SQL — 小健 2026-06-22 拆分独立文件
     小欧 2026-07-04 修复: 增加None/空字符串校验
+    小欧 2026-08-07 新增confirm_ddl参数: 显式确认后放行裸DDL(白名单)
     """
     conn = None
     engine = None
@@ -143,7 +154,12 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
 
     try:
         has_danger, warning_msg, dangerous_list = _check_sql_safety(sql)
-        if has_danger and not dry_run:
+        # confirm_ddl=true: 用户显式确认后放行裸 CREATE/DROP（危险列表仅为已知 DDL 类型时）
+        # 白名单判断(非排除法): 只有 _DDL_ONLY_TYPES 中的类型才被 confirm_ddl 放行,
+        # 未来新增安全类型(如 SQL_INJECTION)不会误放行 — 小欧 2026-08-07
+        _DDL_ONLY_TYPES = {"CREATE", "DROP", "ALTER", "TRUNCATE", "GRANT", "REVOKE"}
+        _ddl_only = dangerous_list and all(d in _DDL_ONLY_TYPES for d in dangerous_list)
+        if has_danger and not dry_run and not (confirm_ddl and _ddl_only):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_execute_sql_llm_data("warning", duration_ms, _sql_preview, 0,
                                                      connection_type=connection_type, path=path, dry_run=dry_run, timeout=timeout)
@@ -249,7 +265,8 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
         _ar_success = affected_rows if isinstance(affected_rows, (int, float)) and affected_rows >= 0 else 0
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_execute_sql_llm_data("success", duration_ms, _sql_preview, _ar_success,
-                                                  connection_type=connection_type, path=path, dry_run=dry_run, timeout=timeout)
+                                                  connection_type=connection_type, path=path, dry_run=dry_run, timeout=timeout,
+                                                  confirm_ddl=confirm_ddl)  # confirm_ddl 传参, observation可见 — 小欧 2026-08-07
         # =============================================================================
         # 数据设计：affected_rows 从 data 移除，通过 llm_data.metrics 传入 summary
         # summary 示例: "SQL执行成功, 影响5行"

@@ -9,6 +9,7 @@
 # 2026-07-25 - 小欧 - description去冗余: 4处默认/可选重复移除
 # 2026-07-25 - 小欧 - 编辑历史归并+去冗余示例: AnalyzeDataInput/FilterDataInput.path移除示例
 # 2026-07-25 - 小欧 - 删除max_rows: top_n唯一行数控制, 统计在head之前计算
+# 2026-08-07 - 小欧 - ExecuteSqlInput 新增 confirm_ddl 字段(危险DDL放行开关): True=显式确认后放行裸CREATE/DROP等DDL, False=默认拦截; 与 execute_sql 实现层白名单联动 — 小欧 2026-08-07
 """
 DataAnalysis Schema - 数据分析工具参数模型
 
@@ -265,6 +266,15 @@ class ExecuteSqlInput(_DbConnectionMixin):
 - syntax_valid=False: 语法错误
 
 【注意】危险操作（DROP/TRUNCATE/ALTER/DELETE无WHERE等）会自动拦截返回WARNING，与dry_run无关"""
+    )
+    # confirm_ddl 危险DDL放行开关 — 小欧 2026-08-07
+    confirm_ddl: bool = Field(
+        default=False,
+        description="""危险DDL放行开关。
+【功能】
+- True: 允许执行裸 CREATE TABLE / DROP TABLE（无 IF EXISTS）等被拦截的 DDL
+- False: 默认拦截（保持安全护栏）
+【注意】仅在确认需要修改表结构时设为 True，操作会记录审计日志"""
     )
 
 
