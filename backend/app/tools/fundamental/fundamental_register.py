@@ -7,6 +7,7 @@ FUNDAMENTAL Register — 基础工具注册点
 【2026-07-28 北京老陈】timeadd/timediff/calendar 迁至 TIMER 分类; shell 从 SHELL 迁入
 【2026-07-30 小沈】searchtool examp加"时间 定时"用例,补全7类备用工具
 【2026-08-05 小欧】searchtool描述说明多分类关键词一次搜索即注入多个分类整类工具; 无命中提示换词重搜不注入
+【2026-08-07 小欧】searchtool examples精简为4条(2多类型+2单类型), 引导"一次搜索多个类型"并保留单类型用法
 
 5个工具:
 - searchtool — BM25全文检索搜索工具
@@ -56,13 +57,10 @@ FUNDAMENTAL_TOOL_DESCRIPTIONS = {
 
 FUNDAMENTAL_TOOL_EXAMPLES = {
     "searchtool": [
-        {"query": "文档 读写"},
-        {"query": "数据分析 图表"},
-        {"query": "数据库 SQL"},
-        {"query": "网络 搜索 下载"},
-        {"query": "系统 进程 注册表 任务"},
-        {"query": "桌面 窗口"},
-        {"query": "时间 定时"},
+        {"query": "网络 文档 数据分析 系统 桌面 时间"},   # 多类型混合示例1 - 小欧 2026-08-07
+        {"query": "数据库 SQL 注册表 定时"},             # 多类型混合示例2 - 小欧 2026-08-07
+        {"query": "文档 读写"},                          # 单类型示例
+        {"query": "桌面 窗口"},                          # 单类型示例
     ],
     "timenow": [
         {},

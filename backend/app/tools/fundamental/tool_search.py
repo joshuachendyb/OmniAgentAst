@@ -11,6 +11,8 @@
 #   2. _build_tool_search_llm_data 增加 warning 分支(无命中/纯符号: detail+hint)
 #   3. searchtool 阈值过滤增加无命中判断(scored[0]["_score"]>0), 无命中返回空matches+warning
 #   4. searchtool 空token分支(纯符号)不再返回全部工具top10, 返回空matches+warning
+# 2026-08-07 - 小欧 - searchtool结果选取增加"分类级名额保底"(_apply_category_floor):
+#   修复多类型混合搜索时高分类霸占top10名额, 低分分类被挤出导致一次搜索注不全分类(实测7类型混合仅命中4类)
 """
 searchtool — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
@@ -161,6 +163,30 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
     }
 
 
+def _apply_category_floor(meaningful: List[Dict[str, Any]], top_n: int) -> List[Dict[str, Any]]:
+    """分类级名额保底 — 小欧 2026-08-07
+
+    多类型混合搜索时, dataanalysis/fundamental 等高分类霸占 top_n 名额,
+    把 document/desktop/timer 等低分分类代表挤出 top10, 导致一次搜索注不全分类。
+    本函数保证每个"已过阈值"的分类至少 1 个代表入选, 再按分数填充剩余名额。
+    meaningful 必须已按 _score 降序排列(由调用方保证)。
+    """
+    if not meaningful:
+        return []
+
+    # 分类代表保底: 每分类最高分工具作为代表(meaningful 已降序, 首个即该分类最高分)
+    cat_rep: Dict[str, Dict[str, Any]] = {}
+    for r in meaningful:
+        c = r.get("category", "")
+        if c and c not in cat_rep:
+            cat_rep[c] = r
+
+    reps = sorted(cat_rep.values(), key=lambda x: x["_score"], reverse=True)
+    rep_names = {r["name"] for r in reps}
+    rest = [r for r in meaningful if r["name"] not in rep_names]
+    return (reps + rest)[:top_n]
+
+
 def searchtool(query: str) -> Dict[str, Any]:
     """按关键词搜索匹配的工具列表（BM25 全文检索） — 小健 2026-06-22 拆分独立文件
     小欧 2026-07-04 修复: 增加None/类型校验防止崩溃
@@ -214,7 +240,7 @@ def searchtool(query: str) -> Dict[str, Any]:
         meaningful = [r for r in scored if r["_score"] >= threshold]
     else:
         meaningful = []
-    top_results = meaningful[:TOOL_SEARCH_INER_RESULTS_TOP]
+    top_results = _apply_category_floor(meaningful, TOOL_SEARCH_INER_RESULTS_TOP)
 
     if not meaningful:
         # 无命中: 空matches + warning(detail+hint), auto_inject_from_search见空直接return不注入 — 小欧 2026-08-05
