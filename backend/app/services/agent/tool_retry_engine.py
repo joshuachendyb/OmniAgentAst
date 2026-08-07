@@ -37,6 +37,7 @@
 #   "直接用LLM值+取max"旧表述有歧义, 实为 inner取LLM值后保险丝再max托底, 消除"未超CEILING是否托底"误解
 # 2026-08-06 10:05:21 - 小欧 - 注释补齐"两条超时线"(老陈梳理): ①传给tool的超时(tool内部用,LLM给→直接用值/未给→schema默认值)
 #   与②保险丝超时(wait_for掐整个调用)是独立两值; 注明①随params原样传tool(**params), ②由_compute_fuse算传wait_for
+# 2026-08-07 - 小欧 - import同步: param_alias_mapper.py→tools_alias_mapper.py 重命名(名实相符), normalize_params引用处同步更新
 """
 统一工具重试引擎 — 工具的外部重试机制
 
