@@ -206,13 +206,15 @@ class MessageBuilder:
         return msg
 
     def pop_temp_messages(self) -> int:
-        """移除 conversation_history 中所有 _temp_reasoning 标记的临时消息,返回移除数量 — 小欧 2026-07-19
-        【要点】推理空转(thought-only)临时推理经此清理: 好的分支注入时带标记, 终端路径调用本方法弹掉再持久化; bad分支不注入故无需清理
+        """移除 conversation_history 中所有 _temp_* 标记的临时消息(兼容 _temp_reasoning/_temp_same_tool_warn),返回移除数量 — 小欧 2026-07-19 / 2026-08-08 扩展通用前缀
+        【要点】推理空转(thought-only)临时推理(标记_temp_reasoning)与相同工具纠偏(标记_temp_same_tool_warn)均经此清理:
+        好的分支注入时带标记, 终端路径调用本方法弹掉再持久化; bad分支不注入故无需清理
+        【v1.6扩展】判断条件由仅_temp_reasoning改为通用_temp_*前缀, 杜绝后续新增_temp_*标记漏清理(进化不退化)
         【修正】必须移除全部标记消息(非仅尾部): 因B3 warning(无标记)会插在连续reasoning-only轮之间, 仅弹尾部会遗留被B3隔开的早期标记推理"""
         removed = 0
         kept = []
         for _m in self.conversation_history:
-            if _m.get("_temp_reasoning"):
+            if any(k.startswith("_temp_") for k in _m):
                 removed += 1
             else:
                 kept.append(_m)
@@ -237,9 +239,10 @@ class MessageBuilder:
         messages = [dict(msg) for msg in self.conversation_history]   # 浅拷贝防篡改 — 小欧 2026-07-19
         if self.temp_history:
             messages = messages + [dict(msg) for msg in self.temp_history]
-        # 剥离内部标记防止泄漏到 LLM 请求 — 小欧 2026-07-19
+        # 剥离内部标记防止泄漏到 LLM 请求(_temp_reasoning/_temp_same_tool_warn) — 小欧 2026-07-19 / 2026-08-08 通用前缀
         for msg in messages:
-            msg.pop("_temp_reasoning", None)
+            for _k in [k for k in msg if k.startswith("_temp_")]:
+                msg.pop(_k, None)
         return messages
 
     def _cap_temp_history(self):

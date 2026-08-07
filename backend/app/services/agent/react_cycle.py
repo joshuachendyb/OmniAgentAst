@@ -29,6 +29,14 @@
 # 2026-07-22 小欧 usage 扩展: 三字段(prompt/completion/total)累加 accumulated_usage; emit MetaStep(type="usage") 逐次报告本次消耗
 # 2026-07-22 小欧 MetaStep usage: 从 **_usage 解包改为手动三字段，精确控制输出
 # 2026-07-23 小欧 - log_and_print统一: 3处print()替换为log_and_print()(Thought/Error/Cancel控制台输出), 导入log_and_print
+# 2026-08-08 小欧 相同工具调用死循环检测(场景F)新增:
+#   【病根】P6_01(file_not_found)超时根因: LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数
+#          (writetext写同一diff_tool.py), 每次工具均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具
+#          调用"空转, 本模式漏检, 致死循环直抵max_steps=10000。
+#   【方案】_tool_call_signature计算action调用签名(含并行pending); _check_same_tool_loop返回int连续计数(count=第N次),
+#           双阈值: count==3(_SAME_TOOL_WARN_ROUNDS)注入assistant role纠偏消息尝试唤醒, count>=5硬终止failed;
+#           签名变化重置count=1+清纠偏标记; 正常任务签名各异零误伤, 增强不退化。
+# 2026-08-08 小欧 v1.6 双阈值实施: 单阈值(bool终止)升级为双阈值(3纠偏+5硬终止), 新增_warn_same_tool_loop
 
 """
 run_react_cycle — ReAct 循环核心（薄调度）
@@ -38,6 +46,7 @@ run_react_cycle — ReAct 循环核心（薄调度）
 """
 
 import asyncio
+import json
 import time
 from typing import Any, Dict, Optional, AsyncGenerator
 
@@ -55,6 +64,15 @@ from app.services.agent.llm_stream import call_llm_with_fallback
 from app.services.agent.tool_cache_manager import get_openai_tools
 
 _MAX_CONSECUTIVE_TRUNCATIONS = 3
+
+# 相同工具调用死循环防御(双阈值纠偏/硬终止): LLM连续调用完全相同工具+相同参数时,
+# 第3次(count==3)注入assistant role纠偏消息尝试唤醒调整; 第5次(count>=5)判定死循环硬终止。
+# 2026-08-08 - 小欧 - P6_01(file_not_found)超时根因: LLM连续40+步逐字重复同一Thought并反复调用
+#   相同writetext(diff_tool.py), 每次均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具"
+#   空转, 本模式漏检, 致死循环直抵max_steps=10000。v1.6升级为由单阈值硬终止改为双阈值(纠偏+硬终止)。
+_ = None
+_SAME_TOOL_WARN_ROUNDS = 3             # 纠偏阈值: count==3(第3次相同调用)时注入警告消息 — 小欧 2026-08-08
+_MAX_CONSECUTIVE_SAME_TOOL_CALLS = 5   # 硬终止阈值: count>=5(第5次相同调用)时硬终止 — 小欧 2026-08-08
 
 # 可恢复的拒绝/拦截错误: 拒绝≠失败(符合人类认知, 助手应换工具继续) — 小欧 2026-07-13
 # 反馈已写入LLM历史(_add_denial_feedback), 循环回THINKING由主循环 EXECUTING→THINKING 处理;
@@ -116,6 +134,57 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
         elif role == "assistant" and msg.get("tool_calls"):
             return not _seen_response
     return False
+
+
+def _tool_call_signature(llm_response: Dict) -> str:
+    """计算action响应的工具调用签名(全部调用含并行) — 小欧 2026-08-08
+    用于相同工具调用死循环检测: 签名=tool_name+规范化tool_params的排序JSON,
+    连续多步完全相同签名即判死循环。sort_keys保证字典顺序无关, 参数内容变化即签名变化。"""
+    calls = []
+    _primary = (llm_response.get("tool_name", "") or "",
+                llm_response.get("tool_params") or {})
+    calls.append(_primary)
+    for _pc in llm_response.get("_pending_calls") or []:
+        calls.append((_pc.get("tool_name", "") or "", _pc.get("tool_params") or {}))
+    return json.dumps(calls, sort_keys=True, ensure_ascii=False)
+
+
+def _check_same_tool_loop(agent, llm_response: Dict) -> int:
+    """相同工具调用死循环检测(计数) — 小欧 2026-08-08
+    count语义="第几continuous相同调用": 首个相同签名(count基准起始)。
+    无上次签名(首调用)计count=1; 与上轮签名相同则count+1; 签名变化则重置count=1并清纠偏幂等标记。
+    返回int连续计数供调用方分支(count==3纠偏 / count>=5硬终止)。action语义下调用; 非action由调用方归零。"""
+    _sig = _tool_call_signature(llm_response)
+    if _sig and _sig == getattr(agent, "_last_tool_call_sig", None):
+        agent._consecutive_same_tool_calls = getattr(agent, "_consecutive_same_tool_calls", 0) + 1
+    else:
+        agent._consecutive_same_tool_calls = 1      # 新签名起点=1, 标记同步重置 — 小欧 2026-08-08
+        agent._warned_same_tool_loop = False
+    agent._last_tool_call_sig = _sig
+    return agent._consecutive_same_tool_calls
+
+
+def _warn_same_tool_loop(agent, llm_response: Dict, count: int) -> None:
+    """注入纠偏提醒(幂等, 带_temp_same_tool_warn标记, 终态统一清理) — 小欧 2026-08-08
+    连续相同调用达count==_SAME_TOOL_WARN_ROUNDS时调用, 注入assistant role观察消息尝试唤醒LLM调整;
+    同轮只注入1条(幂等), 标记供pop_temp_messages弹掉防止持久化污染。"""
+    if getattr(agent, "_warned_same_tool_loop", False):
+        return  # 幂等: 同一段相同循环只警告一次 — 小欧 2026-08-08
+    agent._warned_same_tool_loop = True
+    _tool = llm_response.get("tool_name", "") or ""
+    _sig = _tool_call_signature(llm_response)
+    obs_text = (
+        f"[Observation] 警告: 你刚才连续调用了相同的工具 {_tool} 且参数**完全相同**, "
+        f"已连续 {count} 次, 签名={_sig[:80]}... "
+        f"结果本质相同, 可能陷入思维循环。请检查: 1) 是否获得了新信息; 2) 是否需要更换策略。"
+    )
+    agent.message_builder.conversation_history.append({
+        "role": "assistant",
+        "content": obs_text,
+        "_temp_same_tool_warn": True,
+    })
+    logger.info(f"[run_react_cycle] LLM连续{count}次调用相同工具 {_tool}, 注入纠偏警告")
+    log_and_print(f"{time.strftime('%H:%M:%S')} [Loop] step={agent.llm_call_count} same tool warn={_tool}")
 
 
 async def _dispatch_handler(agent, llm_response):
@@ -374,6 +443,39 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             tool_result={},
         ))
         return
+
+# ── 场景F: 相同工具调用死循环检测(双阈值纠偏/硬终止) ──────────
+    # 2026-08-08 - 小欧 - P6_01(file_not_found)超时根因修复:
+    #   【病根】LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数(writetext写同一diff_tool.py),
+    #          每次工具执行均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具调用"空转, 本模式漏检,
+    #          致死循环直抵max_steps=10000(约40+分钟)。
+    #   【方案】对action响应计算工具调用签名(tool_name+规范化tool_params, 含并行pending),
+    #          _check_same_tool_loop返回int连续计数(count=第N次), 双阈值:
+    #          count==3(_SAME_TOOL_WARN_ROUNDS)注入assistant role纠偏消息(尝试唤醒调整, 幂等1条);
+    #          count>=5(_MAX_CONSECUTIVE_SAME_TOOL_CALLS)判定死循环硬终止failed。
+    #          正常任务LLM每轮工具/参数各异或需新信息, 签名必不同, count重置, 零误伤(增强不退化)。
+    if llm_response.get("type") == "action":
+        _cnt = _check_same_tool_loop(agent, llm_response)
+        if _cnt == _SAME_TOOL_WARN_ROUNDS:               # count==3(第3次相同调用): 纠偏 — 小欧 2026-08-08
+            _warn_same_tool_loop(agent, llm_response, _cnt)
+        elif _cnt >= _MAX_CONSECUTIVE_SAME_TOOL_CALLS:   # count>=5(第5次相同调用): 硬终止 — 小欧 2026-08-08
+            logger.warning(f"[run_react_cycle] LLM连续{_cnt}步调用相同工具(step={step}), 判定死循环, 终止")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, same_tool_loop")  # 小欧 2026-08-08 控制台
+            set_failed(agent, f"模型连续{_cnt}步重复调用相同工具, 疑似死循环, 任务终止")
+            yield agent._step_emitter.emit(FinalStep(
+                step=step,
+                response="模型反复调用相同工具未取得进展，任务已终止（疑似死循环）",
+                thought=llm_response.get("reasoning", "") or llm_response.get("thought", ""),
+                outcome="failed",
+                error_type="same_tool_loop",
+                error_message=f"模型连续{_cnt}步重复调用相同工具，疑似死循环",
+            ))
+            return
+    else:
+        # 非action(正常answer/final): 死循环检测仅在action语义下, 归零防残留(含纠偏标记) — 小欧 2026-08-08
+        agent._consecutive_same_tool_calls = 0
+        agent._last_tool_call_sig = None
+        agent._warned_same_tool_loop = False
 
     # ── 场景E: 正常分发 ─────────────────────────────────────────
     agent._consecutive_truncations = 0
