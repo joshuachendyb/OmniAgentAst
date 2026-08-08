@@ -267,7 +267,14 @@ async def _dispatch_handler(agent, llm_response):
                 _deny[_key] = _deny.get(_key, 0) + 1
                 agent._deny_counts = _deny
                 if _deny[_key] >= 3:
-                    set_failed(agent, f"工具 {_tool} 被反复{err_type}(≥3次), LLM陷入死胡同, 停止循环")
+                    # 2026-08-08 小欧 机制冲突修复: 场景F(双阈值 count==3 纠偏)已注入纠偏消息且LLM尚未调整
+                    #   (_warned_same_tool_loop=True)时, 本处累计口径让位给纠偏, 给LLM一次调整机会,
+                    #   避免"纠偏刚注入即被deny_counts判FAILED"致纠偏形同虚设(COM_03真实场景: 连续3次
+                    #   delete被R6拦截, step=22纠偏与FAILED同轮触发, 响应仅6字"任务执行失败")。
+                    #   连续同签名死循环由场景F count>=5硬终止兜底; 非连续死胡同(签名变化重置标记)
+                    #   仍由本处累计≥3次拦截, 语义不退化。 — 小欧 2026-08-08
+                    if not getattr(agent, "_warned_same_tool_loop", False):
+                        set_failed(agent, f"工具 {_tool} 被反复{err_type}(≥3次), LLM陷入死胡同, 停止循环")
         else:
             set_failed(agent, error_msg)
     else:
