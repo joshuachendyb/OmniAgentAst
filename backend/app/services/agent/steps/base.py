@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() (UTC Z 字符串), 消除 create_timestamp 毫秒 int 依赖
 # 2026-07-18 - 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致; property 返回类型 int→str
+# 2026-08-08 - 小欧 - 全程统一本地时区: 默认 timestamp 改 get_local_iso_timestamp() (本地ISO无Z), 消除 UTC Z
 """
 ReasoningStep 抽象基类
 
@@ -14,7 +15,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from app.utils.time_utils import get_utc_timestamp
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 
 class ReasoningStep(ABC):
@@ -25,7 +26,7 @@ class ReasoningStep(ABC):
 
     def __init__(self, step: int, timestamp: Optional[str] = None):
         self._step = step
-        self._timestamp = timestamp or get_utc_timestamp()  # 小欧 2026-07-18 时间归一化: 默认UTC Z字符串
+        self._timestamp = timestamp or get_local_iso_timestamp()  # 小欧 2026-08-08 全程统一本地时区: 默认本地ISO无Z
         self._model: Optional[str] = None
         self._provider: Optional[str] = None
 

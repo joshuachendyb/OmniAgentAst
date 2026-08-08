@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 - 小欧 - #23 fix: 删手动BEGIN/COMMIT，归属get_conn事务管理
+# 2026-08-08 - 小欧 - 全程统一本地时区: 3处写入改 get_local_iso_timestamp; title_updated_at 输出改 to_local_iso(不再转UTC)
 """
 sessions — merged from sessions/ 7 files
 COPY — 小欧 2026-07-10
@@ -14,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.logger import logger
 from app.utils.response_utils import handle_api_errors
-from app.utils.time_utils import get_utc_timestamp, now_str, format_timestamp, convert_to_utc
+from app.utils.time_utils import get_local_iso_timestamp, now_str, format_timestamp, to_local_iso  # 小欧 2026-08-08 全程统一本地时区
 from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionResponse, SessionListResponse, BatchTitleResponse
 from app.api.v1.messages import display_name_cache
@@ -30,8 +31,8 @@ async def create_session(session_create: Optional[SessionCreate] = None):
     """拷贝自 sessions.py 第70-122行"""
     session_id = str(uuid.uuid4())
     title = session_create.title if session_create and session_create.title else f"新会话 {now_str('%Y-%m-%d %H:%M')}"
-    utc_time = get_utc_timestamp()
     is_valid = session_create.is_valid if session_create and session_create.is_valid is not None else False
+    local_time = get_local_iso_timestamp()
 
     with db.get_conn("chat") as conn:
         cursor = conn.cursor()
@@ -39,7 +40,7 @@ async def create_session(session_create: Optional[SessionCreate] = None):
             '''INSERT INTO chat_sessions
                (id, title, created_at, updated_at, title_locked, title_updated_at, version, is_valid)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-            (session_id, title, utc_time, utc_time, False, utc_time, 1, is_valid)
+            (session_id, title, local_time, local_time, False, local_time, 1, is_valid)
         )
 
     logger.info(f"创建会话成功: id={session_id}, title={title}, is_valid={is_valid}")
@@ -47,8 +48,8 @@ async def create_session(session_create: Optional[SessionCreate] = None):
     return SessionResponse(
         session_id=session_id,
         title=title,
-        created_at=utc_time,
-        updated_at=utc_time,
+        created_at=local_time,
+        updated_at=local_time,
         message_count=0,
         is_valid=is_valid
     )
@@ -121,7 +122,7 @@ class SessionUpdate(BaseModel):
 
 def resolve_update_mode(
     update_data: SessionUpdate,
-    cursor, session_id: str, utc_time: str,
+    cursor, session_id: str, local_time: str,
 ) -> Tuple[str, str, tuple]:
     """拷贝自 sessions.py 第184-200行"""
     if update_data.version is not None:
@@ -153,17 +154,17 @@ def build_update_sql(mode: str) -> Tuple[str, str]:
 
 def build_update_params(
     mode: str, update_data: SessionUpdate,
-    utc_time: str, session_id: str,
+    local_time: str, session_id: str,
 ) -> tuple:
     """拷贝自 sessions.py 第203-210行"""
     if mode == "optimistic":
-        return (update_data.title, utc_time, 1, utc_time, session_id, update_data.version)
-    return (update_data.title, utc_time, 1, utc_time, session_id)
+        return (update_data.title, local_time, 1, local_time, session_id, update_data.version)
+    return (update_data.title, local_time, 1, local_time, session_id)
 
 
 def record_title_history(
     cursor, session_id: str, old_title: Optional[str],
-    utc_time: str, updated_by: str = "user",
+    local_time: str, updated_by: str = "user",
 ):
     """拷贝自 sessions.py 第230-255行 — 小健2026-05-31 改用try/except消除全局状态"""
     if not old_title:
@@ -173,7 +174,7 @@ def record_title_history(
             """INSERT INTO chat_session_title_history
                (session_id, title, created_at, updated_by, change_reason)
                VALUES (?, ?, ?, ?, ?)""",
-            (session_id, old_title, utc_time, updated_by, "user_edit"),
+            (session_id, old_title, local_time, updated_by, "user_edit"),
         )
         logger.info(f"记录标题历史: session_id={session_id}, old_title={old_title}")
     except Exception:
@@ -187,12 +188,12 @@ async def update_session(session_id: str, update_data: SessionUpdate):
     try:
         with db.get_conn("chat") as conn:
             cursor = conn.cursor()
-            utc_time = get_utc_timestamp()
-            mode, _, params = resolve_update_mode(update_data, cursor, session_id, utc_time)
+            local_time = get_local_iso_timestamp()
+            mode, _, params = resolve_update_mode(update_data, cursor, session_id, local_time)
             if mode == "not_found":
                 raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
             set_clause, where_clause = build_update_sql(mode)
-            update_params = build_update_params(mode, update_data, utc_time, session_id)
+            update_params = build_update_params(mode, update_data, local_time, session_id)
             cursor.execute(f"UPDATE chat_sessions {set_clause} WHERE id = ? {where_clause}", update_params)
             if mode == "optimistic":
                 if cursor.rowcount == 0:
@@ -205,7 +206,7 @@ async def update_session(session_id: str, update_data: SessionUpdate):
                 session, current_version = params
             old_title = session["title"] if session else ""
             new_version = current_version + 1
-            record_title_history(cursor, session_id, old_title, utc_time, update_data.updated_by or "user")
+            record_title_history(cursor, session_id, old_title, local_time, update_data.updated_by or "user")
         logger.info(f"更新会话成功: id={session_id}, title={update_data.title}, version={new_version}")
         return {"success": True, "title": update_data.title, "version": new_version}
     except HTTPException:
@@ -248,7 +249,7 @@ async def get_session_titles_batch(
             "session_id": row['id'],
             "title": row['title'],
             "title_locked": bool(row['title_locked']),
-            "title_updated_at": convert_to_utc(row['title_updated_at'])
+            "title_updated_at": to_local_iso(row['title_updated_at'])
         })
 
     logger.info(f"批量获取会话标题: count={len(sessions)}, session_ids={session_ids}")
@@ -268,10 +269,10 @@ async def delete_session(session_id: str):
         session = cursor.fetchone()
         if not session:
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-        utc_time = get_utc_timestamp()
+        local_time = get_local_iso_timestamp()
         cursor.execute(
             'UPDATE chat_sessions SET is_deleted = TRUE, updated_at = ? WHERE id = ?',
-            (utc_time, session_id)
+            (local_time, session_id)
         )
 
     display_name_cache.delete(session_id)
