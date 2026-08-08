@@ -112,6 +112,16 @@
 #        (fl/ft/fw漏网), 已由shell_engine.py _exec_locked ps_cmd B6管道层根治取代(命令名盲区全覆盖),
 #        此处移除R1枚举保护, 单一根治点(KISS/DRY), 管道末端统一Out-String等效解决80列截断 — 与shell_engine.py联动
 # 2026-08-07 - 小欧 - P08优化(北京老陈驱动 task001): 超时提示文案引导脚本化 — 复杂Python先写.py脚本文件执行(规避单行引号转义)+增大timeout(上限600); _detail已含实际超时值故hint不重复默认值 | py_compile ✓
+# 2026-08-08 - 小欧 - task007修正A落地(良性stderr误判为error, 实证150例→131/17/2):
+#        病根: error分支(returncode≠0)未过滤良性stderr, 任务成功但stderr带DeprecationWarning/Using CPU/MERG/notice等
+#        良性提示(且进程非零退出)被误报ERR_SHELL_EXEC, 实测ocr_recognition.py 1146字符detail 100%良性仍报error
+#        修复: error分支改双字段三分支判别(实证回归error=131/warning=17/保守error=2):
+#          ① stderr/stdout含真实错误信号(_REAL_ERROR_MARKERS词边界正则)→error(保留原detail+前缀识别)
+#          ② 无真实错误信号但stdout有产出(_has_output strip非空)→warning降级, detail保留产出前80字符
+#          ③ 无产出(仅pip notice/无输出)→保守error防掩盖
+#        新增纯函数: _REAL_ERROR_MARKERS(35项词边界正则, ERROR用(?<!no )防"no error"误伤)/_contains_real_error/_has_output
+#        关联: 原「未找到/语法/权限」前缀识别保留复用, _hint/_shell_mismatch_hint不变, 成功/超时分支未动
+#        验证: py_compile✓ 新增37用例全过(含真实命令三分支+markers覆盖) 既有shell测试106+103全过 150案例回归131/17/2
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -617,6 +627,45 @@ def _filter_benign_stderr(stderr: str) -> str:
     lines = stderr.splitlines()
     filtered = [l for l in lines if not any(p in l for p in _BENIGN_STDERR_PATTERNS)]
     return "\n".join(filtered)
+
+
+# 真实错误信号白名单(词边界正则, 防 "no error"/"Error-free" 误伤) — 小欧 2026-08-08 实证版
+# 用于 error 分支双字段判别: stderr/stdout 含真实错误才判 error, 无错误但 stdout 有产出降 warning
+_REAL_ERROR_MARKERS = (
+    # Python 异常
+    r"\bTraceback\b", r"\bSyntaxError\b", r"\bImportError\b",
+    r"\bModuleNotFoundError\b", r"\bFileNotFoundError\b", r"\bPermissionError\b",
+    r"\bUnicodeEncodeError\b", r"\bAttributeError\b", r"\bKeyError\b",
+    r"\bValueError\b", r"\bTypeError\b", r"\bIndexError\b", r"\bOSError\b",
+    # shell / 命令级错误
+    r"\bnot recognized\b", r"\bcommand not found\b", r"\bParserError\b",
+    r"\bfatal\b", r"\bunexpected EOF\b", r"\bcould not find\b",
+    r"\bArgument list too long\b", r"\bNo package found\b",
+    # Windows / 注册表
+    r"(?<!no )\bERROR\b", r"\bCannot find\b", r"\b无法找到\b",
+    r"\b0x[0-9a-fA-F]{8}\b",
+    # 中文命令未找到 / 可运行程序缺失
+    r"不是内部或外部命令", r"不是可运行的程序", r"无法将.*项识别为",
+    # PowerShell cmdlet 报错动词
+    r"\bInvalidOperation\b", r"\bMethodInvocationException\b", r"\bAdd-Type\b",
+    r"\bGet-ChildItem\b", r"\bForEach-Object\b", r"\bGet-CimInstance\b",
+    r"\bNew-Object\b", r"\bSort-Object\b", r"\bGet-WinEvent\b",
+    r"\bSet-ItemProperty\b", r"\bGet-Process\b",
+    # 中文
+    r"\b失败\b", r"\b读取失败\b",
+)
+
+def _contains_real_error(text: str) -> bool:
+    """检测文本是否含真实错误信号(词边界) — 小欧 2026-08-08 实证版
+    覆盖 stderr/stdout 双字段: 任一含真实错误信号即判 error, 防良性降级误伤真实失败"""
+    if not text:
+        return False
+    return any(re.search(m, text, re.IGNORECASE) for m in _REAL_ERROR_MARKERS)
+
+def _has_output(text: str) -> bool:
+    """stdout 是否有实质产出(strip 后非空) — 小欧 2026-08-08
+    用 strip 非空而非长度阈值, 规避 "PDF报告已生成" 等短产出被误判无产出"""
+    return bool(text and text.strip())
 
 
 def _shell_mismatch_hint(shell_type: str, stderr: str) -> str:
@@ -1214,18 +1263,30 @@ def shell(
                     _exec_code = "warning"
                     _detail = f"退出码{returncode}，标准错误{_stderr_orig_len}字符"
         else:
-            _exec_code = "error"
-            _err_code = ERR_SHELL_EXEC
-            _detail = (stderr_str if stderr_str.strip()
-                       else (stdout_str if stdout_str.strip()
-                             else f"退出码{returncode}({_EXIT_CODE_MEANING.get(returncode, '未知错误')})"))
-            if stderr_str.strip():
-                if re.search(r"(command not found|not recognized|'[^']+' is not recognized|不是内部|不是可运行)", stderr_str, re.IGNORECASE):
-                    _detail = f"[命令未找到] {_detail}"
-                elif re.search(r"(syntax error|语法错误|parse error|unexpected token)", stderr_str, re.IGNORECASE):
-                    _detail = f"[语法错误] {_detail}"
-                elif re.search(r"(permission denied|access denied|拒绝访问|elevated)", stderr_str, re.IGNORECASE):
-                    _detail = f"[权限错误] {_detail}"
+            # v1.2 双字段判别法: stderr+stdout 同时查真实错误信号; 无错误但 stdout 有产出降 warning — 小欧 2026-08-08
+            # 实证: 150 个 ERR_SHELL_EXEC 中 17 个任务成功却误报 error(ocr/统计/报告生成带良性warning), 均降 warning 纠正
+            if _contains_real_error(stderr_str) or _contains_real_error(stdout_str):
+                _exec_code = "error"
+                _err_code = ERR_SHELL_EXEC
+                _detail = (stderr_str if stderr_str.strip()
+                           else (stdout_str if stdout_str.strip()
+                                 else f"退出码{returncode}({_EXIT_CODE_MEANING.get(returncode, '未知错误')})"))
+                if stderr_str.strip():
+                    if re.search(r"(command not found|not recognized|'[^']+' is not recognized|不是内部|不是可运行)", stderr_str, re.IGNORECASE):
+                        _detail = f"[命令未找到] {_detail}"
+                    elif re.search(r"(syntax error|语法错误|parse error|unexpected token)", stderr_str, re.IGNORECASE):
+                        _detail = f"[语法错误] {_detail}"
+                    elif re.search(r"(permission denied|access denied|拒绝访问|elevated)", stderr_str, re.IGNORECASE):
+                        _detail = f"[权限错误] {_detail}"
+            elif _has_output(stdout_str):
+                _exec_code = "warning"          # stdout 有真实成果 + 无真实错误信号 → 降级, 不误判 error
+                _err_code = ERR_SHELL_EXEC
+                _detail = f"命令返回非零, 但stdout有产出({stdout_str.strip()[:80]})且无真实错误信号"
+            else:
+                _exec_code = "error"            # 无产出(如仅pip notice/命令失败无输出) → 保守保留 error 防掩盖
+                _err_code = ERR_SHELL_EXEC
+                _detail = (stderr_str if stderr_str.strip()
+                           else f"退出码{returncode}({_EXIT_CODE_MEANING.get(returncode, '未知错误')})")
             _hint = _shell_mismatch_hint(shell_type, _stderr_for_diag) or "请检查命令语法和参数"
 
         # 只调 1 次 _build_..._llm_data
