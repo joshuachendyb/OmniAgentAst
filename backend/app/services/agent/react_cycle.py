@@ -34,7 +34,7 @@
 #          (writetext写同一diff_tool.py), 每次工具均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具
 #          调用"空转, 本模式漏检, 致死循环直抵max_steps=10000。
 #   【方案】_tool_call_signature计算action调用签名(含并行pending); _check_same_tool_loop返回int连续计数(count=第N次),
-#           双阈值: count==3(_SAME_TOOL_WARN_ROUNDS)注入assistant role纠偏消息尝试唤醒, count>=5硬终止failed;
+#           双阈值: count==2/3/4(_SAME_TOOL_WARN_ROUNDS起)注入assistant role纠偏消息尝试唤醒, count>=5硬终止failed;
 #           签名变化重置count=1+清纠偏标记; 正常任务签名各异零误伤, 增强不退化。
 # 2026-08-08 小欧 v1.6 双阈值实施: 单阈值(bool终止)升级为双阈值(3纠偏+5硬终止), 新增_warn_same_tool_loop
 # 2026-08-08 小欧 v1.7 双阈值调整(北京老陈 2026-08-08 指示"第2次就发纠偏; 2/3/4次发, >=5结束"):
@@ -279,11 +279,11 @@ async def _dispatch_handler(agent, llm_response):
                 _deny[_key] = _deny.get(_key, 0) + 1
                 agent._deny_counts = _deny
                 if _deny[_key] >= 3:
-                    # 2026-08-08 小欧 机制冲突修复: 场景F(双阈值 count==3 纠偏)已注入纠偏消息且LLM尚未调整
+                    # 2026-08-08 小欧 机制冲突修复: 场景F(双阈值 count==2/3/4 纠偏)已注入纠偏消息且LLM尚未调整
                     #   (_warned_same_tool_loop>0)时, 本处累计口径让位给纠偏, 给LLM调整机会,
                     #   避免"纠偏刚注入即被deny_counts判FAILED"致纠偏形同虚设(COM_03真实场景: 连续3次
                     #   delete被R6拦截, step=22纠偏与FAILED同轮触发, 响应仅6字"任务执行失败")。
-                    #   连续同签名死循环由场景F count>5(第6次)硬终止兜底; 非连续死胡同(签名变化重置标记)
+                    #   连续同签名死循环由场景F count>=5(第5次)硬终止兜底; 非连续死胡同(签名变化重置标记)
                     #   仍由本处累计≥3次拦截, 语义不退化。 — 小欧 2026-08-08
                     if not getattr(agent, "_warned_same_tool_loop", 0):
                         set_failed(agent, f"工具 {_tool} 被反复{err_type}(≥3次), LLM陷入死胡同, 停止循环")
