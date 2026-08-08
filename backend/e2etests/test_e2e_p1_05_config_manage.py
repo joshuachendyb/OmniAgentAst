@@ -31,13 +31,14 @@ USER_INPUT = (
     "第三阶段——创建项目主配置settings.toml，包含项目名称、版本号、"
     "作者信息、依赖列表（至少包含pandas、numpy、fastapi、pydantic四个包）、"
     "以及引用上述三套环境配置的include指令。"
-    "第四阶段——生成一个Python脚本config_validator.py，"
+    "第四阶段——生成一个Python脚本config_validator+时间.py，"
     "能够读取并验证所有配置文件格式是否正确、必填字段是否完整、"
     "跨配置文件的依赖关系是否一致。"
-    "第五阶段——生成配置管理总报告保存到E:\\test_dir\\config_report.md，"
+    "第五阶段——生成配置管理总报告保存到E:\\test_dir\\config_report+时间.md，"
     "包含：数据质量分析结果、各环境配置说明、配置文件的目录结构、"
     "配置验证脚本的执行结果、配置管理的推荐最佳实践。"
     "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 from datetime import datetime

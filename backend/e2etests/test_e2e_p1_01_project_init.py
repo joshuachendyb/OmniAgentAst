@@ -32,9 +32,10 @@ USER_INPUT = (
     "第八步——在项目根目录创建package.json文件（react 18, react-dom 18, react-scripts 5）；"
     "第九步——创建.gitignore文件；"
     "第十步——创建README.md文件。"
-    "最后——列出完整目录树结构，生成init_report.md保存到report目录。"
+    "最后——列出完整目录树结构，生成init_report+时间.md保存到report目录。"
     "注意：所有文件内容必须是完整且有实际意义的，不能只是骨架或占位符。"
     "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 import os
