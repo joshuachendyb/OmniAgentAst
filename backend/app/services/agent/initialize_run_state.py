@@ -10,6 +10,7 @@ Author: 小沈 - 2026-05-31
 更新: 小欧 - 2026-07-16 统一TaskID: _tracked_task_id → agent.task_id
 更新: 小欧 - 2026-08-08 新增相同工具死循环检测状态初始化(_consecutive_same_tool_calls/_last_tool_call_sig)
 更新: 小欧 - 2026-08-08 v1.6 双阈值升级: 新增纠偏幂等标记初始化(_warned_same_tool_loop=False)
+更新: 小欧 - 2026-08-08 v1.7 阈值调整(北京老陈指示): _warned_same_tool_loop 由布尔幂等标记改 int 纠偏条数计数(第2/3/4次共3条), 初始化 False→0
 """
 
 from typing import Any, Dict, Optional
@@ -88,7 +89,7 @@ def initialize_run_state(
     # 2026-08-08 - 小欧 - 相同工具调用死循环检测状态初始化(防跨任务残留): 连续相同工具签名计数+上次签名+纠偏幂等标记
     agent._consecutive_same_tool_calls = 0
     agent._last_tool_call_sig = None
-    agent._warned_same_tool_loop = False   # v1.6双阈值: 纠偏注入幂等标记, 落码新增字段 — 小欧 2026-08-08
+    agent._warned_same_tool_loop = 0   # v1.7双阈值: 纠偏注入条数计数(int, 第2/3/4次共3条), 落码新增字段 — 小欧 2026-08-08
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent.task_id:
         try:

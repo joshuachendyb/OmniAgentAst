@@ -37,6 +37,14 @@
 #           双阈值: count==3(_SAME_TOOL_WARN_ROUNDS)注入assistant role纠偏消息尝试唤醒, count>=5硬终止failed;
 #           签名变化重置count=1+清纠偏标记; 正常任务签名各异零误伤, 增强不退化。
 # 2026-08-08 小欧 v1.6 双阈值实施: 单阈值(bool终止)升级为双阈值(3纠偏+5硬终止), 新增_warn_same_tool_loop
+# 2026-08-08 小欧 v1.7 双阈值调整(北京老陈 2026-08-08 指示"第2次就发纠偏; 2/3/4次发, >=5结束"):
+#   - 纠偏: 第2次(count==2)即发第1条(原第3次), 第2/3/4次各发1条共3条(原第3/4次共2条)
+#   - 硬终止: count>=5(原count>5第6次, 收紧回第5次)
+#   - 实现: _SAME_TOOL_WARN_ROUNDS 3→2, _SAME_TOOL_WARN_MAX 2→3; 判定改 _SAME_TOOL_WARN_ROUNDS<=cnt<5 区间发纠偏,
+#     cnt>=5 硬终止; _warned_same_tool_loop 为 int 计数(发纠偏条数, 上限_SAME_TOOL_WARN_MAX),
+#     重置/初始化点(签名变化/非action/initialize_run_state)由 False 改 0;
+#     deny_counts 让位判断 not _warned_same_tool_loop 真值语义不变(int>0即已发)
+
 
 """
 run_react_cycle — ReAct 循环核心（薄调度）
@@ -66,12 +74,15 @@ from app.services.agent.tool_cache_manager import get_openai_tools
 _MAX_CONSECUTIVE_TRUNCATIONS = 3
 
 # 相同工具调用死循环防御(双阈值纠偏/硬终止): LLM连续调用完全相同工具+相同参数时,
-# 第3次(count==3)注入assistant role纠偏消息尝试唤醒调整; 第5次(count>=5)判定死循环硬终止。
+# 第2次(count==2)、第3次(count==3)、第4次(count==4)各注入一条assistant role纠偏消息尝试唤醒调整(共3条);
+# count>=5(第5次)判定死循环硬终止。
 # 2026-08-08 - 小欧 - P6_01(file_not_found)超时根因: LLM连续40+步逐字重复同一Thought并反复调用
 #   相同writetext(diff_tool.py), 每次均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具"
 #   空转, 本模式漏检, 致死循环直抵max_steps=10000。v1.6升级为由单阈值硬终止改为双阈值(纠偏+硬终止)。
-_ = None
-_SAME_TOOL_WARN_ROUNDS = 3             # 纠偏阈值: count==3(第3次相同调用)时注入警告消息 — 小欧 2026-08-08
+# v1.7(北京老陈 2026-08-08): 纠偏起点提前——第2次(count==2)就发第1条纠偏(原第3次), 第2/3/4次共发3条,
+#   硬终止 count>=5(原count>5第6次)收紧; 给LLM尽早调整机会(第2次发现完全相同即提醒)。
+_SAME_TOOL_WARN_ROUNDS = 2             # 纠偏起点阈值: count==2(第2次相同调用)注入第1条警告 — 小欧 2026-08-08
+_SAME_TOOL_WARN_MAX = 3                # 纠偏最大条数: 第2/3/4次共3条 — 小欧 2026-08-08
 _MAX_CONSECUTIVE_SAME_TOOL_CALLS = 5   # 硬终止阈值: count>=5(第5次相同调用)时硬终止 — 小欧 2026-08-08
 
 # 可恢复的拒绝/拦截错误: 拒绝≠失败(符合人类认知, 助手应换工具继续) — 小欧 2026-07-13
@@ -152,25 +163,25 @@ def _tool_call_signature(llm_response: Dict) -> str:
 def _check_same_tool_loop(agent, llm_response: Dict) -> int:
     """相同工具调用死循环检测(计数) — 小欧 2026-08-08
     count语义="第几continuous相同调用": 首个相同签名(count基准起始)。
-    无上次签名(首调用)计count=1; 与上轮签名相同则count+1; 签名变化则重置count=1并清纠偏幂等标记。
-    返回int连续计数供调用方分支(count==3纠偏 / count>=5硬终止)。action语义下调用; 非action由调用方归零。"""
+    无上次签名(首调用)计count=1; 与上轮签名相同则count+1; 签名变化则重置count=1并清纠偏计数。
+    返回int连续计数供调用方分支(count==2/3/4纠偏 / count>=5硬终止)。action语义下调用; 非action由调用方归零。"""
     _sig = _tool_call_signature(llm_response)
     if _sig and _sig == getattr(agent, "_last_tool_call_sig", None):
         agent._consecutive_same_tool_calls = getattr(agent, "_consecutive_same_tool_calls", 0) + 1
     else:
         agent._consecutive_same_tool_calls = 1      # 新签名起点=1, 标记同步重置 — 小欧 2026-08-08
-        agent._warned_same_tool_loop = False
+        agent._warned_same_tool_loop = 0            # int计数(发纠偏次数)重置 — 小欧 2026-08-08
     agent._last_tool_call_sig = _sig
     return agent._consecutive_same_tool_calls
 
 
 def _warn_same_tool_loop(agent, llm_response: Dict, count: int) -> None:
-    """注入纠偏提醒(幂等, 带_temp_same_tool_warn标记, 终态统一清理) — 小欧 2026-08-08
-    连续相同调用达count==_SAME_TOOL_WARN_ROUNDS时调用, 注入assistant role观察消息尝试唤醒LLM调整;
-    同轮只注入1条(幂等), 标记供pop_temp_messages弹掉防止持久化污染。"""
-    if getattr(agent, "_warned_same_tool_loop", False):
-        return  # 幂等: 同一段相同循环只警告一次 — 小欧 2026-08-08
-    agent._warned_same_tool_loop = True
+    """注入纠偏提醒(带_temp_same_tool_warn标记, 终态统一清理) — 小欧 2026-08-08
+    连续相同调用达count==2/3/4(第2/3/4次)时各注入一条assistant role观察消息尝试唤醒LLM调整;
+    最多注入3条(第2/3/4次, _warned_same_tool_loop为int计数), 标记供pop_temp_messages
+    弹掉防止持久化污染。原布尔幂等→int计数(北京老陈 2026-08-08 指示"第2次就发纠偏")。"""
+    if getattr(agent, "_warned_same_tool_loop", 0) >= _SAME_TOOL_WARN_MAX:
+        return  # 最多警告3次(第2/3/4次) — 小欧 2026-08-08
     _tool = llm_response.get("tool_name", "") or ""
     _sig = _tool_call_signature(llm_response)
     obs_text = (
@@ -183,7 +194,8 @@ def _warn_same_tool_loop(agent, llm_response: Dict, count: int) -> None:
         "content": obs_text,
         "_temp_same_tool_warn": True,
     })
-    logger.info(f"[run_react_cycle] LLM连续{count}次调用相同工具 {_tool}, 注入纠偏警告")
+    agent._warned_same_tool_loop = getattr(agent, "_warned_same_tool_loop", 0) + 1
+    logger.info(f"[run_react_cycle] LLM连续{count}次调用相同工具 {_tool}, 注入纠偏警告(第{agent._warned_same_tool_loop}条)")
     log_and_print(f"{time.strftime('%H:%M:%S')} [Loop] step={agent.llm_call_count} same tool warn={_tool}")
 
 
@@ -268,12 +280,12 @@ async def _dispatch_handler(agent, llm_response):
                 agent._deny_counts = _deny
                 if _deny[_key] >= 3:
                     # 2026-08-08 小欧 机制冲突修复: 场景F(双阈值 count==3 纠偏)已注入纠偏消息且LLM尚未调整
-                    #   (_warned_same_tool_loop=True)时, 本处累计口径让位给纠偏, 给LLM一次调整机会,
+                    #   (_warned_same_tool_loop>0)时, 本处累计口径让位给纠偏, 给LLM调整机会,
                     #   避免"纠偏刚注入即被deny_counts判FAILED"致纠偏形同虚设(COM_03真实场景: 连续3次
                     #   delete被R6拦截, step=22纠偏与FAILED同轮触发, 响应仅6字"任务执行失败")。
-                    #   连续同签名死循环由场景F count>=5硬终止兜底; 非连续死胡同(签名变化重置标记)
+                    #   连续同签名死循环由场景F count>5(第6次)硬终止兜底; 非连续死胡同(签名变化重置标记)
                     #   仍由本处累计≥3次拦截, 语义不退化。 — 小欧 2026-08-08
-                    if not getattr(agent, "_warned_same_tool_loop", False):
+                    if not getattr(agent, "_warned_same_tool_loop", 0):
                         set_failed(agent, f"工具 {_tool} 被反复{err_type}(≥3次), LLM陷入死胡同, 停止循环")
         else:
             set_failed(agent, error_msg)
@@ -458,14 +470,15 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     #          致死循环直抵max_steps=10000(约40+分钟)。
     #   【方案】对action响应计算工具调用签名(tool_name+规范化tool_params, 含并行pending),
     #          _check_same_tool_loop返回int连续计数(count=第N次), 双阈值:
-    #          count==3(_SAME_TOOL_WARN_ROUNDS)注入assistant role纠偏消息(尝试唤醒调整, 幂等1条);
+    #          count==2/3/4(_SAME_TOOL_WARN_ROUNDS起)各注入assistant role纠偏消息(尝试唤醒调整, 最多3条);
     #          count>=5(_MAX_CONSECUTIVE_SAME_TOOL_CALLS)判定死循环硬终止failed。
     #          正常任务LLM每轮工具/参数各异或需新信息, 签名必不同, count重置, 零误伤(增强不退化)。
     if llm_response.get("type") == "action":
         _cnt = _check_same_tool_loop(agent, llm_response)
-        if _cnt == _SAME_TOOL_WARN_ROUNDS:               # count==3(第3次相同调用): 纠偏 — 小欧 2026-08-08
+        if _SAME_TOOL_WARN_ROUNDS <= _cnt < _MAX_CONSECUTIVE_SAME_TOOL_CALLS:
+            # count==2/3/4: 各发1条纠偏(共3条, 内部幂等上限_SAME_TOOL_WARN_MAX) — 小欧 2026-08-08
             _warn_same_tool_loop(agent, llm_response, _cnt)
-        elif _cnt >= _MAX_CONSECUTIVE_SAME_TOOL_CALLS:   # count>=5(第5次相同调用): 硬终止 — 小欧 2026-08-08
+        elif _cnt >= _MAX_CONSECUTIVE_SAME_TOOL_CALLS:    # count>=5(第5次相同调用): 硬终止 — 小欧 2026-08-08
             logger.warning(f"[run_react_cycle] LLM连续{_cnt}步调用相同工具(step={step}), 判定死循环, 终止")
             log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, same_tool_loop")  # 小欧 2026-08-08 控制台
             set_failed(agent, f"模型连续{_cnt}步重复调用相同工具, 疑似死循环, 任务终止")
@@ -482,7 +495,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         # 非action(正常answer/final): 死循环检测仅在action语义下, 归零防残留(含纠偏标记) — 小欧 2026-08-08
         agent._consecutive_same_tool_calls = 0
         agent._last_tool_call_sig = None
-        agent._warned_same_tool_loop = False
+        agent._warned_same_tool_loop = 0            # int计数归零 — 小欧 2026-08-08
 
     # ── 场景E: 正常分发 ─────────────────────────────────────────
     agent._consecutive_truncations = 0
