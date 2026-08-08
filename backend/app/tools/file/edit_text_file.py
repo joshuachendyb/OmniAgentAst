@@ -14,6 +14,8 @@
 # 2026-07-25 - 小欧 - 修复: None/空校验在截断之后——病根: 2026-07-24截断重构移到main入口, old_string/new_string在None检查前被截断(TypeError), 应先将None/空校验提前
 # 2026-07-25 - 小欧 - 清理: mtime_warning死变量——病根: 声明后从未赋值(YAGNI), 删除line 361声明、line 379/497返回值
 # 2026-07-29 - 小欧 - validation_error加强: 格式"行N；语法错误；建议:xxxx"替代纯error_text; 透传_syn_line/_syn_suggestion到main; metrics新增error_line+suggestion; _check_anchor_overlap报错简化: 去除冗余行引用, 统一"只包含新内容"表述
+# 2026-08-08 - 小欧 - task002问题1增强: 新增_anchor_signature_hint — before/after锚点为单行def/class签名行时给safety_hint提示(引导用方法体末行锚点), 不改插入逻辑(KISS), 与sl_warn/so_warn合并不覆盖 | py_compile ✓
+# 2026-08-08 - 小欧 - _anchor_signature_hint 三堂会审精简: 空串/多行两项卫兵合并为 first=old_string.strip() 单卫(not first or '\n' in first), 消除重复rstrip/strip, 职责唯一零回归 | 回归 pytest: before_after+internal+retest 169✓ v2+deep+twelfth 112✓ guardrail+perf 64✓
 """
 F4: edittext — 编辑文本文件
 
@@ -221,6 +223,25 @@ def _check_anchor_overlap(mode: str, old_string: str, new_string: str) -> str:
     return ""
 
 
+_SIG_ANCHOR_RE = re_mod.compile(r'^(?:async\s+)?(?:def|class)\s+\w+')
+
+
+def _anchor_signature_hint(old_string: str) -> str:
+    """检测 before/after 锚点是否为单行函数/类签名行(def/class), 返回引导提示或空串 — 小欧 2026-08-08 (task002问题1)
+
+    场景: LLM 常以 'def sort_data(self):' 单行签名作 after 锚点, 本工具按"所在行"定位,
+    插入会落在签名行后(即方法体之前)而非方法末尾, 导致新方法错位/旧方法体移位。
+    提示引导改用方法体末行(如 return 行)作锚点。仅提示不改插入逻辑(KISS-DIRECT)。
+    """
+    first = old_string.strip()
+    if not first or '\n' in first:
+        return ""
+    if _SIG_ANCHOR_RE.match(first):
+        return (f"锚点是函数/类定义签名行({first[:40]}…)，before/after 按'匹配行'定位插入，"
+                f"以签名行作锚点会插到方法体之前。建议改用方法体末行(如 return 行)作锚点。")
+    return ""
+
+
 def _safety_structure_loss(original: str, new_content: str) -> str:
     """检测替换是否导致函数/类定义丢失 — 小沈 2026-07-08"""
     orig_funcs = set(re_mod.findall(r'^\s*(?:async\s+)?def\s+(\w+)', original, re_mod.MULTILINE))
@@ -336,6 +357,7 @@ async def _precise_replace_in_file(
         return {"error_detail": "当前没有活跃任务ID"}
 
     try:
+        _anchor_hint = ""  # before/after 签名行锚点提示, 统一初始化防 NameError — 小欧 2026-08-08
         # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
         # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
         is_valid, err, warn = validate_path(OpCategory.READ_FILE, file_path, content=new_string)
@@ -402,12 +424,18 @@ async def _precise_replace_in_file(
             if _overlap_err:
                 return {"error_detail": _overlap_err}
 
+            # 签名行锚点提示: def/class 单行签名作为 before/after 锚点时,
+            # 插入位置为签名行后/前而非常规方法体之后, 易错位. 引导使用完整方法体末行锚点 — 小欧 2026-08-08 (task002问题1)
+            _anchor_hint = _anchor_signature_hint(old_string)
+
         operation_id = record_operation(
             task_id=task_id, operation_type=OperationType.MODIFY,
             destination_path=path, sequence_number=0,
         )
 
         replace_result = {}
+        if mode in ("before", "after") and _anchor_hint:
+            replace_result['safety_hint'] = _anchor_hint
 
         def _replace_sync() -> bool:
             new_content, count, total_matches = _apply_replacement(content, old_string, new_string, ignore_case, mode)
@@ -437,7 +465,8 @@ async def _precise_replace_in_file(
             sl_warn = _safety_structure_loss(content, new_content)
             so_warn = _safety_short_old(old_string, mode, total_matches)
             if sl_warn or so_warn:
-                replace_result['safety_hint'] = "；".join(filter(None, [sl_warn, so_warn]))
+                # 与签名行锚点提示合并, 不覆盖 (task002问题1增强) — 小欧 2026-08-08
+                replace_result['safety_hint'] = "；".join(filter(None, [_anchor_hint, sl_warn, so_warn]))
             # all 模式宽匹配/边界检查 — 小欧 2026-07-17
             if mode == "all":
                 wr_warn = _safety_wide_replace(old_string, mode, total_matches)

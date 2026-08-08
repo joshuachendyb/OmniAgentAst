@@ -6,6 +6,7 @@ registry_write — 写入Windows注册表键值
 # 2026-07-31 - 小欧 - CRITICAL: auto_detect 对负整数判定错误。value.isdigit() 对 "-1" 返回 False, 导致 -1(0xFFFFFFFF) 被存为 REG_SZ 而非 REG_DWORD。改用 value.lstrip('-').isdigit() 修复
 # 2026-08-06 - 小欧 - 核查7/31未实现项[03][02]修复: 新增_to_unsigned(REG_DWORD/QWORD负数转二补码无符号, 超限报错); REG_BINARY支持"0x1F 0x2A"0x前缀逐token清洗
 # 2026-08-06 - 小欧 - 三堂会审修复: BUG-1 _to_unsigned加负数下界校验(-2^(bits-1)..-1); BUG-2删_REG_CONVERTERS REG_BINARY死代码; BUG-6 auto_detect超32位正整数改REG_SZ兜底
+# 2026-08-08 - 小欧 - task002问题2修复: auto_detect 对 int() 失败的纯字符串/小数/hex 推断 REG_SZ 写入(原抛 ValueError 报错需显式指定类型), 三堂会审通过: 与整数字符串路径互斥, 无退化 | py_compile ✓
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -133,12 +134,17 @@ def registry_write(path: str, value_name: str, value: str, value_type: str = "au
         actual_type = value_type
         if value_type == "auto_detect":
             # 2026-07-31 小欧 CRITICAL: value.isdigit() 对 "-1" 返回 False, 导致 -1(0xFFFFFFFF) 被存为 REG_SZ 而非 REG_DWORD。改用 value.lstrip('-').isdigit() 修复
-            # 2026-08-06 小欧 BUG-6修复: auto_detect 超32位范围默认REG_SZ兜底, 不再误判REG_DWORD致_to_unsigned报错
-            num = int(value)
-            if -(1 << 31) <= num < (1 << 32):
-                actual_type = "REG_DWORD"
-            else:
+            # 2026-08-06 小欧 BUG-6修复: auto_detect 超32位范围默认 REG_SZ 兜底, 不再误判 REG_DWORD 致 _to_unsigned 报错
+            # 2026-08-08 小欧: auto_detect 对纯字符串 int() 失败 → 推断 REG_SZ(原抛 ValueError 报错, task002问题2), KISS-DIRECT 与整数路径互斥
+            try:
+                num = int(value)
+            except (ValueError, TypeError):
                 actual_type = "REG_SZ"
+            else:
+                if -(1 << 31) <= num < (1 << 32):
+                    actual_type = "REG_DWORD"
+                else:
+                    actual_type = "REG_SZ"
 
         if actual_type not in _REG_TYPE_MAP:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
