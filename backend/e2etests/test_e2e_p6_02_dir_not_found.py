@@ -36,7 +36,8 @@ USER_INPUT = (
     "第四阶段：检查一下E:\\test_dir\\backup目录是否存在，如果存在则用Python对比脚本对比E:\\test_dir和backup目录的内容差异。"
     ""
     "第五阶段：将目录清单、Python脚本、目录访问错误信息、目录对比结果汇总整理后保存到E:\\test_dir\\dir_operation_report.txt。"
-    "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下。你创建于于本次任务相关的目录存放报告"
+    "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 from pathlib import Path

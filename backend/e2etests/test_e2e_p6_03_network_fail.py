@@ -38,6 +38,7 @@ USER_INPUT = (
     ""
     "第五阶段：把天气搜索结果、天气预报详情、Python检测脚本、两个URL的检测结果汇总保存到E:\\test_dir\\network_report.txt。"
     "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 import pytest
