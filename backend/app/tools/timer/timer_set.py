@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-31 - 小欧 - 新增 CALLBACK_MAX_LENGTH 限制(4096字符), 防止回调内容过长导致执行失败
 # 2026-08-05 - 小欧 - 修复: _invoke_timer_callback 外层 except httpx.TimeoutException 在文本提醒(log_message)分支引用未导入的 httpx, 分支异常时触发 UnboundLocalError 掩盖真实错误; 将该 except 移入 http 分支内部(httpx 导入处), 文本分支异常统一由外层 except Exception 捕获
+# 2026-08-08 - 小欧 - 全程统一本地时区: 落盘/事件时间戳 astimezone()→本地ISO无Z(L39/L113/L117/L127/L143); trigger_at 改 naive 本地
 """
 timer_set — 设置定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
@@ -19,6 +20,7 @@ from typing import Dict, Any
 
 from app.logger import logger
 from app.utils.time_utils import create_timestamp
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import HTTPX_TIMEOUT_DEFAULT
 from app.tools.tool_constants import ERR_TIMER_SET
@@ -36,7 +38,7 @@ async def _invoke_timer_callback(timer_id: str, callback: str) -> Dict[str, Any]
     """定时器回调执行 — 小欧 2026-06-17 — 2026-08-05 小欧: except httpx.TimeoutException 移入 http 分支内修复 UnboundLocalError"""
     event = {
         "timer_id": timer_id,
-        "triggered_at": datetime.now().astimezone().isoformat(),
+        "triggered_at": get_local_iso_timestamp(),  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z
         "callback": callback,
         "status": "triggered",
     }
@@ -110,11 +112,11 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
             # — 小欧 2026-07-10 C-07
             _timer_counter += 1
             timer_id = f"timer_{_timer_counter}_{create_timestamp()}"
-            trigger_at = datetime.now().astimezone() + timedelta(seconds=delay)
+            trigger_at = datetime.now() + timedelta(seconds=delay)  # 小欧 2026-08-08 全程统一本地时区: naive本地, 后续 isoformat() 无偏移
 
             _timer_callbacks[timer_id] = {
                 "callback": callback,
-                "created_at": datetime.now().astimezone().isoformat(),
+                "created_at": get_local_iso_timestamp(),
                 "trigger_at": trigger_at.isoformat(),
             }
 
@@ -124,7 +126,7 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
                     _timer_events.append(event)
                 try:
                     with db.get_conn("operations") as conn:
-                        conn.execute("UPDATE timers SET status='triggered', triggered_at=? WHERE timer_id=?", (datetime.now().astimezone().isoformat(), timer_id))
+                        conn.execute("UPDATE timers SET status='triggered', triggered_at=? WHERE timer_id=?", (get_local_iso_timestamp(), timer_id))
                 except Exception:
                     pass
 
@@ -141,7 +143,7 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
         try:
             with db.get_conn("operations") as conn:
                 conn.execute("INSERT OR REPLACE INTO timers (timer_id, delay, callback, created_at, trigger_at, status) VALUES (?, ?, ?, ?, ?, 'active')",
-                             (timer_id, delay, callback, datetime.now().astimezone().isoformat(), trigger_at.isoformat()))
+                             (timer_id, delay, callback, get_local_iso_timestamp(), trigger_at.isoformat()))
         except Exception:
             pass
 
