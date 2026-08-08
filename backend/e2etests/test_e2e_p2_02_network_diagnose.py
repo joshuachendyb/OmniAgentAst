@@ -36,9 +36,10 @@ USER_INPUT = (
     "检查Windows防火墙状态（netsh advfirewall show allprofiles）。"
     "第五阶段——诊断总结和修复建议：汇总前四个阶段的发现，"
     "按严重程度列出所有网络问题，给出针对性的修复方案和操作步骤，"
-    "将完整的诊断报告保存到E:\\test_dir\\network_diagnosis\\diagnosis_report.txt，"
-    "同时生成结构化的JSON格式报告E:\\test_dir\\network_diagnosis\\diagnosis_summary.json。"
+    "将完整的诊断报告保存到E:\\test_dir\\network_diagnosis\\diagnosis_report+时间.txt，"
+    "同时生成结构化的JSON格式报告E:\\test_dir\\network_diagnosis\\diagnosis_summary+时间.json。"
     "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 import pytest

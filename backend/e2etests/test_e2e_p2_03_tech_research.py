@@ -1,4 +1,4 @@
-﻿"""E2E-P2-03: 技术调研流程（SHELL+NETWORK多工具）
+"""E2E-P2-03: 技术调研流程（SHELL+NETWORK多工具）
 操作手册: 搜索Python FastAPI异步+数据库异步技术，阅读网页，编写对比验证代码，生成结构化调研报告
 预期调用链: search_web(x2-3) -> fetch_webpage(x3-5) -> execute_code(x2) -> write_text_file(x3)
 前置条件: 网络连通；E:\test_dir\ 可写
@@ -32,10 +32,11 @@ USER_INPUT = (
     "第二步——使用fetch_webpage工具阅读搜索到的前3-5篇高质量文章，提取关键对比信息；"
     "第三步——编写简单的对比验证Python代码，测试各技术的核心功能。"
     "完成所有方向调研后，生成三份报告："
-    "E:\\test_dir\\tech_research\\research_report.md（面向开发者的详细技术对比报告），"
-    "E:\\test_dir\\tech_research\\research_summary.json（结构化对比数据），"
-    "E:\\test_dir\\tech_research\\recommendation.md（技术选型建议报告）。"
+    "E:\\test_dir\\tech_research\\research_report+时间.md（面向开发者的详细技术对比报告），"
+    "E:\\test_dir\\tech_research\\research_summary+时间.json（结构化对比数据），"
+    "E:\\test_dir\\tech_research\\recommendation+时间.md（技术选型建议报告）。"
     "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 import pytest

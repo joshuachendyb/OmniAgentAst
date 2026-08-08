@@ -36,10 +36,10 @@ USER_INPUT = (
     "使用Stop-Process或taskkill命令确保进程已结束，验证任务2和任务3的日志文件已不再增长。"
     "第六阶段——生成综合监控报告：读取所有任务产生的输出文件和数据，"
     "综合分析三个任务的运行过程、输出数据、资源使用情况，"
-    "生成E:\\test_dir\\bg_task\\monitor_report.md（完整的监控实验报告）"
-    "和E:\\test_dir\\bg_task\\monitor_data.json（结构化的监控数据汇总）。"
+    "生成E:\\test_dir\\bg_task\\monitor_report+时间.md（完整的监控实验报告）"
+    "和E:\\test_dir\\bg_task\\monitor_data+时间.json（结构化的监控数据汇总）。"
     "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
-)
+"最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 import pytest
 from e2emodel.e2e_helpers import (
