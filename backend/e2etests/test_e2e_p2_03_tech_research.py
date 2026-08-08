@@ -1,7 +1,7 @@
 """E2E-P2-03: 技术调研流程（SHELL+NETWORK多工具）
 操作手册: 搜索Python FastAPI异步+数据库异步技术，阅读网页，编写对比验证代码，生成结构化调研报告
 预期调用链: search_web(x2-3) -> fetch_webpage(x3-5) -> execute_code(x2) -> write_text_file(x3)
-前置条件: 网络连通；E:\test_dir\ 可写
+前置条件: 网络连通；E:\\test_dir\\ 可写
 验证原则：不限制中间工具调用链，只检查最终结果合理性 + DB/日志完整性
 中间过程（工具链、调用顺序）只记录不限制，如实写入测试报告
 

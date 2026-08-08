@@ -1,7 +1,7 @@
 ﻿"""E2E-P2-02: 网络诊断修复流程（SHELL+NETWORK多工具）
 操作手册: 多目标连通性测试+DNS解析+路由追踪+防火墙检查+连接状态+搜索排查询方案，生成综合诊断报告
 预期调用链: ping_host(x3-5) -> fetch_webpage -> execute_shell_command(nslookup/tracert/netstat) -> search_web -> write_text_file(x2-3)
-前置条件: 网络连通；E:\test_dir\ 可写
+前置条件: 网络连通；E:\\test_dir\\ 可写
 验证原则：不限制中间工具调用链，只检查最终结果合理性 + DB/日志完整性
 中间过程（工具链、调用顺序）只记录不限制，如实写入测试报告
 

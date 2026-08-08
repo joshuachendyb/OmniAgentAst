@@ -1,7 +1,7 @@
 """E2E-E2E-P5-02: 文件管理链
 操作手册: FILE组合-重命名+复制+备份
 预期调用链: rename_file->copy_file->read_text_file->get_file_info->list_directory
-前置数据: e2e_mc01.txt存在于E:\test_dir\；E:\test_dir\backup\ 可写
+前置数据: e2e_mc01.txt存在于E:\\test_dir\\；E:\\test_dir\\backup\\ 可写
 通过标准: 流正常结束；报告文件生成；DB记录完整
 失败标准: 流异常中止
 

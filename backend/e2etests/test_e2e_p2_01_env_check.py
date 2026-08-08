@@ -1,7 +1,7 @@
 ﻿"""E2E-P2-01: 开发环境检查流程（SHELL多工具）
 操作手册: 全面检查Python/Node/Go/Rust/Git/Docker等开发工具链，生成多格式环境报告
 预期调用链: execute_shell_command(x15+) -> write_text_file(x3)
-前置条件: python和git在PATH中；E:\test_dir\ 可写
+前置条件: python和git在PATH中；E:\\test_dir\\ 可写
 验证原则：不限制中间工具调用链，只检查最终结果合理性 + DB/日志完整性
 中间过程（工具链、调用顺序）只记录不限制，如实写入测试报告
 
