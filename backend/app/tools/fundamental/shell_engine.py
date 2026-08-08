@@ -59,6 +59,15 @@
 #        普遍性: dot-source延迟解析覆盖整类ParserError(尾逗号/括号不匹配/引号未闭合/操作符错误), 非特判;
 #        与BUG#4同族同根, 提炼设计原则"rc落盘无条件化"。回归护栏用例6个(4类ParserError+正常多行+throw)。
 #        回归: 本结构下try/catch语义等价B6.2(throw前stdout保留), 全shell套件需重跑266 passed核对。
+# 2026-08-08 - 小欧 - 临时文件.cwd竞态残留根治(v2.11, 北京老陈驱动, 实测复现): 整批shell测试全跑时
+#        tmpXXX.cwd残留(单独跑零残留/整文件全跑复现). 根因: ps_cmd最后一行才写.cwd, Python侧_poll_for_file
+#        (.code非空)即返回→立即unlink时PS的Out-File可能仍在写.cwd/句柄未释放→OSError→文件残留(仅.cwd泄漏,
+#        与ps1/out/err/code模式一致印证"最后写入者"竞态). 修复: ①_code成功后补等.cwd非空(_CWD_WAIT_TIMEOUT=3s,
+#        .cwd非空=PS完成最后Out-File句柄必已释放, 正常毫秒级不拖慢) ②抽取_safe_unlink复用函数(短退避重试
+#        _UNLINK_RETRY×50ms覆盖句柄延迟释放窗口, 仍失败才warning留痕R4语义不变): _TempFiles.finally(命令级6文件)
+#        与_close()(引擎级stderr文件, 原静默pass升级为重试+留痕)统一走此函数, 一处逻辑两处受益(DRY+复用优先).
+#        验证: 修复前整批51测试必现tmpXXX.cwd泄漏→修复后51 passed零新增残留; 泄漏测试连跑3轮全过; 全shell套件
+#        200 passed, 1 skipped零回归. 命名: _CWD_UNLINK_RETRY→_UNLINK_RETRY(作用于全部6文件, 去误导前缀, 三堂会审修正).
 """
 PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-05
 
@@ -155,10 +164,34 @@ _PROBE_TIMEOUT = 3               # 响应性探活超时(秒)：半死进程3秒
 _READY_PROBE_TIMEOUT = 10        # 就绪握手超时(秒)：首次启动慢(profile/杀软/慢盘)放宽到10s, 防误杀刚拉起进程 — 小欧 2026-08-06
 _PROBE_CMD = "Write-Output __OMNI_PROBE__"   # 探活命令：轻量、无副作用、输出唯一标记 — 小欧 2026-08-06
 ACQUIRE_WAIT_TIMEOUT = 2        # acquire 并发限流等待超时(秒)：有界排队, 超时明确抛ShellPoolBusyError(不temp不卡死) — v2.8 小欧 2026-08-06
+_CWD_WAIT_TIMEOUT = 3           # .cwd落地等待超时(秒)：ps_cmd最后一行才写.cwd, code有内容≠PS执行完, 等.cwd非空=PS已完成最后Out-File(句柄已释放) — v2.11 小欧 2026-08-08
+_UNLINK_RETRY = 3               # 临时文件unlink失败重试次数：覆盖Out-File句柄延迟释放竞态窗口(作用于全部6个临时文件) — v2.11 小欧 2026-08-08
+_UNLINK_RETRY_DELAY = 0.05      # unlink重试间隔(秒)：50ms×3≈150ms, 覆盖PS进程写完文件到句柄释放的毫秒级窗口 — v2.11 小欧 2026-08-08
 
 # ═══════════════════════════════════════════════════════
 #  _TempFiles — 临时文件 contextmanager
 # ═══════════════════════════════════════════════════════
+
+def _safe_unlink(path: str) -> bool:
+    """安全删除临时文件：unlink失败短退避重试, 覆盖句柄延迟释放竞态 — [卡死场景C12] v2.11 小欧 2026-08-08
+
+    背景: PS进程Out-File写完文件后句柄尚有毫秒级释放窗口, Python侧立即unlink会OSError→文件残留
+    (实测整批shell测试触发tmpXXX.cwd残留)。重试仍失败才warning留痕(R4语义), 返回False供调用方感知。
+    复用点: _TempFiles.finally(命令级6文件) 与 _close()(引擎级stderr文件) 统一走此函数, 一处逻辑两处受益。
+    """
+    for attempt in range(_UNLINK_RETRY):
+        try:
+            os.unlink(path)
+            return True
+        except OSError:
+            if attempt == _UNLINK_RETRY - 1:
+                # 2026-08-07 小欧 三堂会审定稿: debug→warning 升级可见性, 清理失败=残留句柄/文件泄漏风险,
+                # 当日残留 tmpmsj4losd.cwd 即此场景, 需在info级日志留痕以便溯源
+                logger.warning(f"[卡死C12] 临时文件清理失败(残留句柄?) (path={path})")
+                return False
+            time.sleep(_UNLINK_RETRY_DELAY)
+    return False
+
 
 @contextlib.contextmanager
 def _TempFiles():
@@ -181,12 +214,10 @@ def _TempFiles():
         yield type("Paths", (), paths)()
     finally:
         for p in paths.values():
-            try:
-                os.unlink(p)
-            except OSError:
-                # 2026-08-07 小欧 三堂会审定稿: debug→warning 升级可见性, 清理失败=残留句柄/文件泄漏风险,
-                # 当日残留 tmpmsj4losd.cwd 即此场景, 需在info级日志留痕以便溯源
-                logger.warning(f"[卡死C12] 临时文件清理失败(残留句柄?) (path={p})")
+            # v2.11 小欧 2026-08-08: unlink失败=句柄延迟释放竞态(实测整批shell测试触发tmpXXX.cwd残留) —
+            #   PS进程Out-File写完文件后句柄尚有毫秒级释放窗口, Python侧立即unlink会OSError→文件残留。
+            #   修复: 统一走_safe_unlink短退避重试覆盖该窗口(与_close()的stderr清理共享同一逻辑)
+            _safe_unlink(p)
 
 
 def safe_read_file(path: str) -> str:
@@ -487,6 +518,10 @@ class PersistentShell:
                 self._kill_tree()
                 self._close()
                 return dict(_ERROR_TIMEOUT)
+            # [卡死场景C12] v2.11 小欧 2026-08-08: .code有内容≠PS命令执行完 — ps_cmd最后一行才写.cwd,
+            #   此时立即读/unlink存在竞态: Out-File写.cwd中句柄未释放→unlink失败→文件残留(实测tmpXXX.cwd)。
+            #   等.cwd非空=PS已执行完最后一条Out-File(句柄必已释放), 再读/清理才安全; 超时仅3s不拖慢成功路径
+            _poll_for_file(paths.cwd, timeout=_CWD_WAIT_TIMEOUT)
 
             # .lstrip('\ufeff') 去掉PS5.1 Out-File -Encoding utf8写的BOM — 小欧 2026-07-07
             stdout = safe_read_file(paths.out).lstrip('\ufeff')
@@ -495,6 +530,11 @@ class PersistentShell:
             cwd_raw = safe_read_file(paths.cwd).strip().lstrip('\ufeff')
             if cwd_raw:
                 self._cwd = cwd_raw
+            # [B6.3] ParserError快速失败留痕(北京老陈指示"纠偏容错必须可见"): 解析期语法错误经dot-source
+            #   由外层catch捕获后rc=1+err落盘, 此处打warning标记"LLM命令语法错误快速失败", 供日志统计/
+            #   回溯(对齐C8/C14超时可见性; 正常命令与运行期错误不触发此日志, 不污染常规路径) — 小欧 2026-08-08
+            if "ParserError" in stderr:
+                logger.warning(f"[卡死B6.3] ParserError快速失败(LLM命令解析期语法错误) cmd={command[:100]!r} err={stderr[:200]!r}")
             return {
                 "stdout": stdout,
                 "stderr": stderr,
@@ -547,10 +587,9 @@ class PersistentShell:
             tail = safe_read_file(self._stderr_path).strip()
             if tail:
                 logger.warning(f"[卡死C12] 关闭时 stderr 残留(半死证据): {tail[:200]}")
-            try:
-                os.unlink(self._stderr_path)
-            except OSError:
-                pass
+            # v2.11 小欧 2026-08-08: 静默pass→_safe_unlink统一重试+留痕(引擎级stderr文件同样存在句柄延迟释放竞态,
+            # 升级为与命令级临时文件一致的健壮清理, 残留可见可溯源)
+            _safe_unlink(self._stderr_path)
             self._stderr_path = None
 
 
