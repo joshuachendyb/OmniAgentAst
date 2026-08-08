@@ -4,6 +4,7 @@
 # 2026-07-18 - 小欧 - rolled_back_at 改 get_utc_timestamp() 入库 UTC Z, 消除 datetime.now() 裸传 sqlite3
 # 2026-07-18 - 小欧 - #1 fix: 新增 MODIFY/COPY/COMPRESS 三条回滚分支(MODIFY用备份还原, COPY/COMPRESS删目标); #2 fix: MOVE回滚前检测source是否被新文件占用, 先备份再移回, 杜绝覆盖丢失
 # 2026-07-18 - 小欧 - #16 fix: rollback_session失败时添加warning提示而非静默
+# 2026-08-08 - 小欧 - 全程统一本地时区: rolled_back_at 改 get_local_iso_timestamp() 本地ISO无Z入库
 """
 operation_rollback — 操作回滚
 
@@ -15,7 +16,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 from app.db import db
-from app.utils.time_utils import get_utc_timestamp  # 小欧 2026-07-18 时间统一入库
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
 from app.services.task import get_tracker
@@ -100,7 +101,7 @@ def rollback_operation(operation_id: str) -> bool:
             if success:
                 cursor.execute(
                     'UPDATE file_operations SET status = ?, rolled_back_at = ? WHERE operation_id = ?',
-                    (OperationStatus.ROLLBACK.value, get_utc_timestamp(), operation_id),
+                    (OperationStatus.ROLLBACK.value, get_local_iso_timestamp(), operation_id),
                 )
                 logger.info(f"Operation rolled back: {operation_id}")
             return success

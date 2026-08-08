@@ -5,6 +5,7 @@
 # 2026-07-18 - 小欧 - backup_expires_at 比较改 get_utc_timestamp() 时间统一入库
 # 2026-07-26 - 小欧 - 清理过期备份时, 只读文件走 path.unlink() 加 os.chmod 解除只读属性再删除, 修复 [WinError 5]
 # 2026-07-26 - 小沈 - import 自 operation_executor→operation_record 对应改名
+# 2026-08-08 - 小欧 - 全程统一本地时区: backup_expires_at 比较基准改 get_local_iso_timestamp() 本地ISO无Z
 """
 operation_cleanup — 操作清理
 
@@ -17,7 +18,7 @@ from pathlib import Path
 
 from app.db import db
 from app.logger import logger
-from app.utils.time_utils import get_utc_timestamp  # 小欧 2026-07-18 时间统一入库
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 
 def _get_folder_size(path: Path) -> int:
@@ -83,7 +84,7 @@ def cleanup_expired_backups() -> int:
             cursor = conn.cursor()
             cursor.execute(
                 'SELECT backup_path FROM file_operations WHERE backup_expires_at < ? AND backup_path IS NOT NULL',
-                (get_utc_timestamp(),),
+                (get_local_iso_timestamp(),),
             )
             rows = cursor.fetchall()
             for (backup_path,) in rows:

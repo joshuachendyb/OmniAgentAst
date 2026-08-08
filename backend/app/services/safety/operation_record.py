@@ -9,6 +9,7 @@
 # 2026-07-26 - 小沈 - execute_with_safety三段try拆分: Phase 1/3 DB异常logger.error; Phase 2工具异常只透传不log(透明原则+SRP)
 # 2026-07-26 - 小沈 - operation_executor→operation_record改名, 名实对齐(主力职责为记录而非执行)
 # 2026-07-26 - 小沈 - 合并 operation_recorder 三函数(record_operation/collect_file_info/update_op_failed)入此文件; backup_to_recycle_bin迁至operation_backup, 彻底理顺职责
+# 2026-08-08 - 小欧 - 全程统一本地时区: 5处写入 get_utc_timestamp/convert_to_utc→get_local_iso_timestamp; duration修复: created_at_dt 先 astimezone() 转本地再去tzinfo, executed_at_dt 改 datetime.now() (naive本地), 两端类型一致
 """
 operation_record — 操作记录和DB状态管理
 
@@ -16,7 +17,7 @@ operation_record — 操作记录和DB状态管理
 小欧 2026-06-18 从operation_commands.py拆分，遵守SRP
 """
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
 
@@ -25,7 +26,7 @@ from app.db import db
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
 from app.utils.id_utils import generate_operation_id
-from app.utils.time_utils import get_utc_timestamp, convert_to_utc  # 小欧 2026-07-18 时间统一入库
+from app.utils.time_utils import get_local_iso_timestamp, to_local_iso  # 小欧 2026-08-08 全程统一本地时区
 from app.services.safety.hash_helper import compute_file_hash
 
 
@@ -102,7 +103,7 @@ def record_operation(
                   OperationStatus.PENDING.value,
                   str(source_path) if source_path else None,
                   str(destination_path) if destination_path else None,
-                  sequence_number, file_size, space_impact_bytes, get_utc_timestamp()),
+                  sequence_number, file_size, space_impact_bytes, get_local_iso_timestamp()),
             )
         logger.debug(f"Operation recorded: {operation_id} - {op_type_str}")
         return operation_id
@@ -144,12 +145,13 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> T
             source_path = Path(src_str) if src_str else None
             dest_path = Path(dst_str) if dst_str else None
             created_at_dt = datetime.fromisoformat(created_at_str.replace('Z', '+00:00')) if isinstance(created_at_str, str) else created_at_str
-            if created_at_dt.tzinfo is None:
-                created_at_dt = created_at_dt.replace(tzinfo=timezone.utc)
+            # 小欧 2026-08-08 v1.4修正: aware(迁移前UTC Z/+08:00旧数据)先 astimezone() 转本地再去tzinfo, 与 executed_at_dt(naive本地) 类型一致; naive(迁移后本地)保持不动
+            if created_at_dt.tzinfo is not None:
+                created_at_dt = created_at_dt.astimezone().replace(tzinfo=None)
 
             cursor.execute(
                 'UPDATE file_operations SET status = ?, executed_at = ? WHERE operation_id = ?',
-                (OperationStatus.EXECUTING.value, get_utc_timestamp(), operation_id),
+                (OperationStatus.EXECUTING.value, get_local_iso_timestamp(), operation_id),
             )
         # conn已提交+关闭，不持有数据库锁
     except Exception as e:
@@ -186,8 +188,8 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> T
                 else:
                     target = dest_path if dest_path and dest_path.exists() else source_path if source_path and source_path.exists() else None
                     info = collect_file_info(target) if target else {}
-                executed_at = get_utc_timestamp()
-                executed_at_dt = datetime.now(timezone.utc)
+                executed_at = get_local_iso_timestamp()
+                executed_at_dt = datetime.now()  # 小欧 2026-08-08 全程统一本地时区: naive本地, 与 created_at_dt(转本地naive) 类型一致
                 duration_ms = int((executed_at_dt - created_at_dt).total_seconds() * 1000) if created_at_dt else None
                 space_impact = 0
                 if op_type == OperationType.DELETE.value and info.get("size"):
@@ -201,9 +203,9 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> T
                     WHERE operation_id = ?''',
                     (OperationStatus.SUCCESS.value,
                      str(backup_path) if backup_path else None,
-                     convert_to_utc(datetime.now(timezone.utc) + timedelta(days=config.BACKUP_RETENTION_DAYS)) if backup_path else None,
+                     to_local_iso(datetime.now() + timedelta(days=config.BACKUP_RETENTION_DAYS)) if backup_path else None,
                      info.get("size"), info.get("hash"), info.get("is_directory", False),
-                     info.get("extension"), duration_ms, space_impact, get_utc_timestamp(), operation_id),
+                     info.get("extension"), duration_ms, space_impact, get_local_iso_timestamp(), operation_id),
                 )
                 logger.debug(f"Operation executed successfully: {operation_id}")
                 return True, None
