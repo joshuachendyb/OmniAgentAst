@@ -34,11 +34,11 @@ USER_INPUT = (
     "如果系统剪贴板中有文本内容，读取并保存到E:\\test_dir\\clipboard_content.txt。"
     "第四阶段——发送一条系统通知到Windows通知栏，标题'桌面自动化助手'，"
     "内容格式化为多行文本：窗口总数、截图数量、脚本文件路径。"
-    "第五阶段——汇总全部操作结果记录到E:\\test_dir\\desktop_op_log.md，"
+    "第五阶段——汇总全部操作结果记录到E:\\test_dir\\desktop_op_log+时间.md，"
     "包括：窗口分组列表和截图缩略图路径、桌面操作脚本的代码和功能说明、"
     "剪贴板内容摘要、通知发送状态。如果某个操作因环境限制失败了也要如实记录。"
     "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
-)
+    )
 
 import pytest
 from e2emodel.e2e_helpers import (
