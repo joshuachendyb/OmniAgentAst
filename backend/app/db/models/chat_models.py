@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-16 - 小欧 - MessageResponse 增 thought 字段, API 返回消息时携带 thought
+# 2026-08-08 - 小欧 - 全程统一本地时区: MessageResponse.timestamp 描述 `ISO 8601 UTC格式` → `本地ISO无Z`
 """
 聊天数据模型 (Chat Data Models)
 定义会话、消息等数据结构
@@ -65,7 +66,7 @@ class MessageResponse(BaseModel):
     session_id: str = Field(..., description="会话 ID")
     role: str = Field(..., description="角色")
     content: str = Field(..., description="消息内容")
-    timestamp: str = Field(..., description="时间戳(ISO 8601 UTC格式)")  # 小欧 2026-07-18 统一切换为format_timestamp字符串
+    timestamp: str = Field(..., description="时间戳(本地ISO无Z)")  # 小欧 2026-08-08 全程统一本地时区: 本地无Z
     execution_steps: Optional[list] = Field(None, description="执行步骤(数组格式)")
     display_name: Optional[str] = Field(None, description="模型显示名称(记录消息收发时使用的模型)")
     thought: Optional[str] = Field(None, description="LLM 推理过程")  # 小欧 2026-07-16
