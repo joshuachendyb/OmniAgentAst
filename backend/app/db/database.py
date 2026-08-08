@@ -50,7 +50,7 @@ from contextlib import contextmanager
 from datetime import datetime, date, timezone
 from typing import Iterator
 from app.logger import logger
-from app.utils.time_utils import convert_to_utc
+from app.utils.time_utils import to_local_iso  # 小欧 2026-08-08: datetime/date 归一化为本地ISO无Z
 from app.db.db_initializer import (
     init_chat_db, init_operations_db, init_task_tracker_db,
 )
@@ -76,14 +76,14 @@ class _ParamSafeConnection:
         if params is None:
             return None
         if isinstance(params, dict):
-            return {k: convert_to_utc(v) if isinstance(v, (datetime, date)) else v
+            return {k: to_local_iso(v) if isinstance(v, (datetime, date)) else v
                     for k, v in params.items()}
         if not isinstance(params, (tuple, list)):
             params = (params,)
         result = []
         for _p in params:
             if isinstance(_p, (datetime, date)):
-                _p = convert_to_utc(_p)  # 边界自动归一化: datetime→UTC ISO 8601 Z
+                _p = to_local_iso(_p)  # 小欧 2026-08-08: datetime→本地ISO无Z
             if not isinstance(_p, _ParamSafeConnection._SAFE_PARAM_TYPES):
                 raise ValueError(
                     f"DB 参数类型不被支持: {type(_p).__name__}, "
