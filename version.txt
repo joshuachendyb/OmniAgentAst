@@ -1,3 +1,40 @@
+v0.19.9
+更新时间: 2026-08-08 20:09:59 - 小欧-2026-08-08
+## v0.19.8→v0.19.9 变更汇总(26个commit) - 小欧-2026-08-08
+
+### feat:
+- feat:migrate_utc_to_local.py ETL迁移脚本: UTC Z/偏移→本地ISO无Z, 备份+幂等+dry-run - 小欧-2026-08-08
+- feat:main.py+health.py+metrics.py 全程统一本地时区: 启动/健康检查/指标响应改本地无Z - 小欧-2026-08-08
+- feat:timer_set.py+collector.py 全程统一本地时区: 定时器落盘naive/监控采集改本地无Z - 小欧-2026-08-08
+- feat:operation_record.py+rollback+cleanup 全程统一本地时区: 安全层落盘/备份过期/时长计算改本地 - 小欧-2026-08-08
+- feat:sse.py+sse_formatter.py+task_db.py 全程统一本地时区: SSE/任务落盘改本地ISO无Z - 小欧-2026-08-08
+- feat:storage.py+base.py+messages.py+sessions.py 全程统一本地时区: 落盘/显示改本地ISO无Z - 小欧-2026-08-08
+- feat:time_utils.py+database.py 全程统一本地时区: 新增get_local_iso_timestamp/to_local_iso, format_timestamp改本地无Z - 小欧-2026-08-08
+- feat:test_e2e_p6_*.py 4个P6异常容错用例USER_INPUT追加工具调用合理性分析报告提示(p6_01去BOM) - 小欧-2026-08-07
+- feat:test_e2e_p5_*.py 18个P5用例USER_INPUT追加工具调用合理性分析报告提示 - 小欧-2026-08-07
+- feat:test_e2e_p4_*.py 5个P4用例USER_INPUT追加工具调用合理性分析报告提示 - 小欧-2026-08-07
+- feat:test_e2e_p3_*.py 5个P3用例USER_INPUT追加工具调用合理性分析报告提示 - 小欧-2026-08-07
+- feat:test_e2e_p2_*.py 4个P2用例USER_INPUT追加工具调用合理性分析报告提示(p2_03去BOM+报告文件名加时间戳防覆盖) - 小欧-2026-08-07
+- feat:test_e2e_p1_*.py 5个P1用例USER_INPUT追加工具调用合理性分析报告提示(含report文件名加+时间戳防重复覆盖) - 小欧-2026-08-07
+- feat:test_e2e_p0_*.py 15个P0用例USER_INPUT追加工具调用合理性及冗余分析报告提示(末端新增'分析本次任务执行工具实际调用与计划是否一致+工具使用合理性'要求, 驱动LLM自我复盘工具调用链) - 小欧-2026-08-07
+
+### fix:
+- fix:write_xlsx.py append_mode全空dict追加返回warning防静默success - 小欧-2026-08-08
+- fix:react_cycle.py+initialize_run_state.py 场景F纠偏阈值v1.7(北京老陈指示:第2/3/4次发纠偏共3条count>=5硬终止)+注释修正(_=None删除/幂等2次改3次) - 小欧-2026-08-08
+- fix:react_cycle.py 场景F纠偏与deny_counts机制冲突修复(已注入纠偏且未调整时让位给纠偏,给LLM一次调整机会) - 小欧-2026-08-08
+- fix:shell_engine.py 临时文件.cwd竞态残留根治(v2.11 _safe_unlink复用函数+等.cwd落地)+日志挖掘报告v12.0(§10.8) - 小欧-2026-08-08
+
+### docs:
+- docs:db_initializer.py+chat_models.py 全程统一本地时区: 时间列注释UTC→本地ISO无Z - 小欧-2026-08-08
+- docs:时间戳全程统一本地时区方案-小欧-2026-08-08.md v1.6统一/不统一判定标准固化4.1.1+设计整体一致性复核8.7 - 小欧-2026-08-08
+- docs:时间戳全程统一本地时区方案-小欧-2026-08-08.md v1.5全方位漏查collector.py+timers_set.py L39及tool自有规则范围界定 - 小欧-2026-08-08
+- docs:时间戳全程统一本地时区方案-小欧-2026-08-08.md v1.4全文熟读3遍上上下下关联逻辑复核修正 - 小欧-2026-08-08
+- docs:时间戳全程统一本地时区方案-小欧-2026-08-08.md v1.3实施代码复核修正 - 小欧-2026-08-08
+- docs:react_cycle.py 场景F v1.7注释全面同步(count==2/3/4纠偏/count>=5硬终止,清理v1.6残留注释) - 小欧-2026-08-08
+
+### test:
+- test:e2etests 4个p5/p6用例任务描述增强(细化工具调用指令+报告保存加时间戳+网络用例确定城市) - 小欧-2026-08-08
+
 v0.19.8
 更新时间: 2026-08-08 11:07:19 - 小欧-2026-08-08
 ## v0.19.7→v0.19.8 变更汇总(6个commit) - 小欧-2026-08-08
