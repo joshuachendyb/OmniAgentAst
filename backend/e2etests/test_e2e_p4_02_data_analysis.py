@@ -33,9 +33,10 @@ USER_INPUT = (
     "第九步，根据相关性矩阵生成一张热力图，保存到E:\\test_dir\\correlation_heatmap.png。"
     ""
     "【阶段五：综合报告】"
-    "第十步，把以上所有分析结果整合成一份专业的Word分析报告保存到E:\\test_dir\\sales_report.docx，报告要包含数据质量表、统计特征表、相关系数矩阵、同比增长分析表和嵌入两张图表。"
+    "第十步，把以上所有分析结果整合成一份专业的Word分析报告保存到E:\\test_dir\\sales_report+时间.docx，报告要包含数据质量表、统计特征表、相关系数矩阵、同比增长分析表和嵌入两张图表。"
     "第十一步，独立生成四种版本的报告（TXT精简版、DOCX完整版、带图表的DOCX版、PDF版）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
-)
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
+    )
 
 import pytest
 from e2emodel.e2e_helpers import (
