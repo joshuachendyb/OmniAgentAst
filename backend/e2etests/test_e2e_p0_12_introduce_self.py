@@ -27,7 +27,8 @@ USER_INPUT = ("Tell me about yourself in depth. Please cover: "
                "(3) which file types and data formats you support; "
                "(4) scenarios where you will refuse or ask for confirmation. "
                "End with a comparison table of 'can do / cannot do / needs confirmation'. "
-               "Note: answer by conversation only, do not invoke any tools.")
+               "Note: answer by conversation only, do not invoke any tools."
+               "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 from datetime import datetime
 

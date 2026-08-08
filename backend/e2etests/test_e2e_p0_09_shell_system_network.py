@@ -22,7 +22,8 @@ TEST_CASE_ID = "E2E-P0-09"
 TEST_CASE_NAME = "SHELL+SYSTEM+NETWORK混合通路验证"
 USER_INPUT = ("请收集系统信息（OS、CPU、RAM、磁盘），列出E:\\test_dir下的文件，并网上搜索AI最新进展新闻（至少1次）。"
                "用Python把系统信息整理成结构化JSON保存到sys_ai.json，读取该JSON确认字段完整；"
-               "最后把系统概况、文件清单和AI新闻摘要汇总成comprehensive_report.md保存到E:\\test_dir，并用Shell确认该文件已生成。")
+               "最后把系统概况、文件清单和AI新闻摘要汇总成comprehensive_report.md保存到E:\\test_dir，并用Shell确认该文件已生成。"
+               "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 from datetime import datetime
 

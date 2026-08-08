@@ -30,6 +30,7 @@ USER_INPUT = (
     "第四阶段，把所有分析结果整合成一份完整的分析报告文档保存到E:\\test_dir\\analysis_report.docx。"
     "第五阶段，读取docx与png确认内容正确，再用Shell把报告复制到report目录；"
     "最后把本次任务的分析和完成过程总结以4种文档格式写到report目录下自建任务相关的目录下保存。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 from datetime import datetime

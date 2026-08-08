@@ -24,7 +24,8 @@ TEST_CASE_NAME = "工具调用通路验证"
 USER_INPUT = ("请在E盘根目录创建一个名为e2e_test_p0.txt的文件，文件内容写入hello。"
                "创建完成后读取该文件验证内容是否准确写入，再用Shell执行一条命令查看该文件的属性"
                "（大小与最后修改时间），最后把'创建—读取校验—属性查看'的完整操作过程与结果"
-               "汇总写入E:\\test_dir\\e2e_test_p0_report.md。所有步骤必须真实执行并相互对照验证。")
+               "汇总写入E:\\test_dir\\e2e_test_p0_report.md。所有步骤必须真实执行并相互对照验证。"
+               "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 from datetime import datetime
 from pathlib import Path

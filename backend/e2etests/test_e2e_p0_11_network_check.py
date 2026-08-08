@@ -23,7 +23,8 @@ TEST_CASE_NAME = "网络检测通路验证"
 USER_INPUT = ("请创建网络检测脚本network_check.py（检测本机IP、网关连通性、DNS解析www.baidu.com、记录各步耗时），"
                "用Python执行并捕获输出；网上搜索网络诊断最佳实践（至少1次）。"
                "读取脚本输出，对照最佳实践给出优化建议；最后把脚本输出、搜索要点与建议"
-               "汇总成summary_report.md保存到E:\\test_dir，并用Shell确认该文件已生成。")
+               "汇总成summary_report.md保存到E:\\test_dir，并用Shell确认该文件已生成。"
+               "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 from datetime import datetime
 

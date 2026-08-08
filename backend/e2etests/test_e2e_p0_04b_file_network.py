@@ -24,7 +24,8 @@ TEST_CASE_NAME = "FILE+NETWORK混合通路验证"
 USER_INPUT = ("请分别搜索Python、React、Go的优质学习资源（每个语言至少搜索1次），下载或整理每个语言的核心概念与示例代码，"
                "在E:\\test_dir下创建三个学习手册文件（python_manual.md、react_manual.md、go_manual.md）。"
                "然后用Python统计三个手册的总行数与代码示例数。最后把搜索来源、手册结构和统计结果"
-               "汇总成analysis_report.md保存到E:\\test_dir，并用Shell确认该报告已生成。")
+               "汇总成analysis_report.md保存到E:\\test_dir，并用Shell确认该报告已生成。"
+               "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 from datetime import datetime
 

@@ -23,7 +23,8 @@ TEST_CASE_NAME = "FILE+SHELL+DATA+SYSTEM混合通路验证"
 USER_INPUT = ("请读取E:\\test_dir\\data.csv，用Python写一段分析脚本计算各列均值、最值、缺失率并运行；"
                "收集系统信息（OS、CPU、RAM、磁盘），并用Shell执行命令显示磁盘剩余空间保存到disk_info.txt。"
                "读取data.csv前5行与disk_info.txt确认内容。最后把数据分析结果、系统信息与磁盘情况"
-               "汇总成combined_report.md保存到E:\\test_dir，并用Shell确认该文件已生成。")
+               "汇总成combined_report.md保存到E:\\test_dir，并用Shell确认该文件已生成。"
+               "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 from datetime import datetime
 

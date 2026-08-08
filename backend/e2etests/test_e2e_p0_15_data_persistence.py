@@ -25,7 +25,8 @@ TEST_CASE_ID = "E2E-P0-15"
 TEST_CASE_NAME = "数据持久化通路验证"
 USER_INPUT = ("请列出E:\\test_dir下的所有文件和子目录，显示名称、大小、类型与最后修改时间，并按扩展名分组。"
                "然后读取其中test.txt的内容并提取前3行。最后把目录清单和文件摘要汇总成一份"
-               "inventory_report.md保存到E:\\test_dir，并用Shell执行一条命令确认该报告文件已生成。")
+               "inventory_report+时间.md保存到E:\\test_dir，并用Shell执行一条命令确认该报告文件已生成。"
+               "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 from datetime import datetime
 from pathlib import Path

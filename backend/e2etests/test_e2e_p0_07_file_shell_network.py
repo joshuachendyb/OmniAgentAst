@@ -32,6 +32,7 @@ USER_INPUT = (
     "汇总整理成一份完整的网络诊断报告保存到E:\\test_dir\\network_diagnosis_report.txt。"
     "第五阶段，读取该报告确认内容完整，并将本次任务的分析和完成过程总结"
     "以4种文档格式写到report目录下自建任务相关的目录下保存。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 from datetime import datetime
