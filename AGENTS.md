@@ -77,6 +77,9 @@
 - **OS**: Windows only. Use PowerShell. No Linux/macOS commands.
 - **Shell**: PowerShell 7+. Use `Select-String` instead of `grep`.
 - **Python**: 3.13 at `E:\Appsw\python31311\`
+ **Prompt logging**: 
+`backend/logs/`
+`backend/logs/prompt-logs/`
 
 ---
 
@@ -182,7 +185,6 @@ npm run test:e2e     # Playwright
 - `tool_safety_checker.py` — 工具执行前安全检查
 - `file_safety/` — 文件操作安全(备份/回滚/查询)
 
-**Prompt logging**: `backend/logs/prompt-logs/`
 
 ### Frontend: `frontend/src/main.tsx` → Vite+React
 

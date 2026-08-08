@@ -52,6 +52,13 @@
 #        B6.2微调(探测发现B6.1块外catch致throw前stdout丢失): try/catch移入& {}块内, catch后管道不中断
 #        →throw前的stdout完整落盘(实测Write-Output before; throw→out保留before), 其余语义同B6.1
 #        验证: PS7/PS5双引擎9场景行为一致, B6+B6.1共41用例全绿(其中10例为四缺陷固化回归)
+# 2026-08-08 - 小欧 - ParserError快速失败(B6.3, 北京老陈驱动, 三堂会审通过): command从内联改独立cmd.ps1文件,
+#        ps_cmd内dot-source该文件+try/catch包在dot-source外层 → 解析期错误(ParserError)由运行时catch捕获
+#        → rc/err文件正常落盘 → 引擎立即返回build_error, 不再空等60s假超时(问题二真病根, 详见日志挖掘报告§10)。
+#        实证: 尾逗号语法错误命令, 裸ps1 0.68s返回 / 原内联结构空等11.77s假超时 / 本方案0.x秒rc=1+err原文。
+#        普遍性: dot-source延迟解析覆盖整类ParserError(尾逗号/括号不匹配/引号未闭合/操作符错误), 非特判;
+#        与BUG#4同族同根, 提炼设计原则"rc落盘无条件化"。回归护栏用例6个(4类ParserError+正常多行+throw)。
+#        回归: 本结构下try/catch语义等价B6.2(throw前stdout保留), 全shell套件需重跑266 passed核对。
 """
 PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-05
 
@@ -155,12 +162,19 @@ ACQUIRE_WAIT_TIMEOUT = 2        # acquire 并发限流等待超时(秒)：有界
 
 @contextlib.contextmanager
 def _TempFiles():
-    """安全创建 5 个临时文件并自动清理 — out/err/code/cwd/ps1  — [卡死场景C12] 小欧 2026-08-06"""
+    """安全创建 6 个临时文件并自动清理 — out/err/code/cwd/ps1/cmd  — [卡死场景C12] 小欧 2026-08-06"""
     paths = {}
     try:
         # ps1: 2026-07-18 小沈 新增, 存多行命令脚本(避免直接经stdin喂入导致PS卡死)
-        for name in ("out", "err", "code", "cwd", "ps1"):
-            f = tempfile.NamedTemporaryFile(delete=False, suffix=f".{name}",
+        # cmd: 2026-08-08 小欧 新增, 存LLM原始命令(独立文件), 供framework dot-source —
+        #   解析期错误(ParserError)在dot-source运行时抛出, 可被外层try/catch捕获(内联则catch接不住→假超时)
+        #   ⚠ 后缀必须.ps1(非.cmd): PowerShell dot-source对.cmd文件走cmd.exe批处理而非PS解析器,
+        #     ParserError捕获失效(回归测试10用例当场抓出, tmpXXX.cmd→"not recognized") — 小欧 2026-08-08
+        for name, suffix in (
+            ("out", ".out"), ("err", ".err"), ("code", ".code"),
+            ("cwd", ".cwd"), ("ps1", ".ps1"), ("cmd", ".ps1"),
+        ):
+            f = tempfile.NamedTemporaryFile(delete=False, suffix=suffix,
                                              mode="w", encoding="utf-8")
             f.close()
             paths[name] = f.name
@@ -430,10 +444,15 @@ class PersistentShell:
             #   NativeCommandError(native stderr)不计错(BUG#1/2) ③try/catch移入& {}块内兜底
             #   终止性错误, catch记录文本到errs+rc=1, 块内catch后管道不中断→throw前的stdout完整
             #   落盘不丢失(BUG#4, 实测Write-Output before; throw→out保留before)
+            # ① LLM原始命令(含可能语法错误) → 独立 cmd.ps1 (UTF-8-BOM, 与ps_cmd同)
+            #    解析期错误(ParserError)发生时, 错误属于cmd.ps1 → dot-source运行时抛出 → 外层catch可捕获
+            with open(paths.cmd, "w", encoding="utf-8-sig") as _cmd:
+                _cmd.write(command)
+            # ② 执行框架 ps_cmd: dot-source cmd.ps1 + try/catch在dot-source外层(B6.3)
             ps_cmd = (
                 f'[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; '
                 f'$global:rc=0; $errs = New-Object System.Collections.ArrayList; $global:LASTEXITCODE = 0; '
-                f'& {{ try {{ {command} }} catch {{ $global:rc = 1; [void]$errs.Add($_) }} }} 2>&1 | '
+                f'& {{ try {{ . "{paths.cmd}" }} catch {{ $global:rc = 1; [void]$errs.Add($_) }} }} 2>&1 | '
                 f'ForEach-Object {{ if ($_ -is [System.Management.Automation.ErrorRecord]) {{ [void]$errs.Add($_) }} else {{ $_ }} }} | '
                 f'Out-String -Width 4096 | Out-File -FilePath "{paths.out}" -Encoding utf8 -Width 4096; '
                 f'if ($global:LASTEXITCODE -ne 0) {{ $global:rc = $global:LASTEXITCODE }} '
