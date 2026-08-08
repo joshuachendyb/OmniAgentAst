@@ -1,3 +1,19 @@
+v0.19.8
+更新时间: 2026-08-08 11:07:19 - 小欧-2026-08-08
+## v0.19.7→v0.19.8 变更汇总(6个commit) - 小欧-2026-08-08
+
+### feat:
+- feat:react_cycle.py 相同工具调用死循环双阈值纠偏/硬终止升级(同tool+同参数签名count==3注入纠偏/count>=5硬终止failed, 集成回归61 passed确认能真实拦截c1e4603c死循环原形) - 小欧-2026-08-08
+
+### fix:
+- fix:shell_engine.py ParserError快速失败(B6.3)+AGENTS.md Prompt logging路径补全(命令从内联改独立cmd.ps1文件+dot-source外层try/catch, 解析期错误运行时捕获→rc/err正常落盘不再空等60s假超时; cmd后缀必须.ps1非.cmd否则dot-source走cmd.exe批处理失效; 护栏10用例+既有shell套件178 passed零回归; AGENTS.md Prompt logging路径移至System & Platform段) - 小欧-2026-08-08
+- fix:edit_text_file.py+registry_write.py task002两处真实问题修复(编辑历史) - 小欧-2026-08-08
+
+### docs:
+- docs:日志挖掘报告-小欧-2026-08-08 日志挖掘报告v11.0(问题一死循环修复+问题二ParserError假超时真病根+§10修正方法diff落码验证) - 小欧-2026-08-08
+- docs:相同tool及参数调用死循环纠偏与拦截方案设计 新增死循环纠偏与拦截方案设计文档 - 小欧-2026-08-08
+- docs:message_builder 补v1.6编辑历史 - 小欧-2026-08-08
+
 v0.19.7
 更新时间: 2026-08-07 23:54:37 - 小欧-2026-08-07
 ## v0.19.6→v0.19.7 变更汇总(12个commit) - 小欧-2026-08-07
