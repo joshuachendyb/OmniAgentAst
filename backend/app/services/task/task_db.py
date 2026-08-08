@@ -5,6 +5,7 @@
 # 2026-07-18 - 小欧 - complete_task 的 completed_at 改用 now_str() 序列化入库, 消除对已废弃默认 datetime 适配器(Python3.12+ DeprecationWarning)的依赖, 与 created_at(CURRENT_TIMESTAMP) 空格秒格式统一
 # 2026-07-18 - 小欧 - complete_task/create_task/add_operation 时间统一 get_utc_timestamp() UTC Z; TaskQueries 三返回方法 format_timestamp 对外兜底
 # 2026-07-18 - 小欧 - add_operation/complete_task INSERT补created_at列对齐第13值get_utc_timestamp()
+# 2026-08-08 - 小欧 - 全程统一本地时区: 3处写入 get_utc_timestamp→get_local_iso_timestamp (本地ISO无Z入库)
 # 2026-07-23 - 小欧 - #1 fix: get_recent_tasks L210 r.get("completed_at") → r["completed_at"]
 #   病根: sqlite3.Row 不支持 .get() 方法(仅支持 [] 和 keys()),
 #         r.get("completed_at") 抛出 AttributeError(11次)→main.py全局异常处理器崩溃(10次),
@@ -25,7 +26,7 @@ task_db — 任务DB持久化（tasks表 + operations表）
 import json
 import threading
 from app.utils.id_utils import generate_operation_id
-from app.utils.time_utils import get_utc_timestamp  # 小欧 2026-07-18: 时间统一入库 UTC Z
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08: 全程统一本地时区, 本地ISO无Z入库
 from app.utils.time_utils import format_timestamp  # 小欧 2026-07-18: API 对外契约统一兜底
 from typing import Optional, Dict, Any, List
 from enum import Enum
@@ -58,7 +59,7 @@ class TaskTracker:
                 """INSERT INTO tasks
                    (task_id, intent, agent_id, task_description, status, created_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (task_id, "", agent_id, description, TaskStatus.EXECUTING.value, get_utc_timestamp()),
+                (task_id, "", agent_id, description, TaskStatus.EXECUTING.value, get_local_iso_timestamp()),
             )
 
     def complete_task(self, task_id: str, success: bool = True) -> None:
@@ -72,7 +73,7 @@ class TaskTracker:
             conn.execute(
                 """UPDATE tasks SET status = ?, completed_at = ?,
                    success_count = ? WHERE task_id = ?""",
-                (status, get_utc_timestamp(), success_count, task_id),  # 小欧 2026-07-18: UTC Z 字符串入库, 边界自动归一化
+                (status, get_local_iso_timestamp(), success_count, task_id),  # 小欧 2026-08-08: 本地ISO无Z入库
             )
 
     # ===== 操作管理 =====
@@ -113,12 +114,12 @@ class TaskTracker:
                    (operation_id, task_id, operation_type, status,
                     source_path, destination_path, backup_path,
                     file_size, file_hash, sequence_number, details, error, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # 小欧 2026-07-18: created_at 列对齐第13值 get_utc_timestamp() UTC Z 入库
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # 小欧 2026-08-08: created_at 列对齐第13值 get_local_iso_timestamp() 本地ISO无Z入库
                 (
                     operation_id, task_id, operation_type, op_status,
                     source_path, destination_path, backup_path,
                     file_size, file_hash, seq_num,
-                     json.dumps(details) if details else None, error, get_utc_timestamp(),
+                     json.dumps(details) if details else None, error, get_local_iso_timestamp(),
                  ),
             )
             if op_status == OperationStatus.FAILED.value:
