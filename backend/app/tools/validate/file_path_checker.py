@@ -8,6 +8,7 @@
 # 2026-07-26 - 小沈 - BugFix #7: sqlite3/pandas函数级import提升模块级; #10: PermissionError冗余分支删(矫正,确认删除); #12: hint_for_read_error入__all__
 # 2026-07-29 - 小欧 - ERR_FILE_READ_FAILED 三堂会审: hint_for_read_error 文件不存在提示改为引导用find/listdir确认存在
 # 2026-08-02 - 小欧 - 加固validate_not_system_path: 新增磁盘根目录硬阻断(C:\), 修复盘后单级目录漏网(原path_after_drive无前导斜杠导致C:\\Windows不拦, 现用os.path.splitdrive规范化判断)
+# 2026-08-09 - 小欧 - task006 P1落地(sql_error_hint): 新增多语句识别分支"one statement at a time" → 精准hint"SQLite仅支持单条语句", 打破LLM多语句SQL低效重试循环
 """
 validate/file_path_checker.py — tool内部路径业务级检查（集中管理）
 
@@ -357,12 +358,16 @@ def hint_for_read_error(e: Exception, file_name: str) -> str:
 
 
 def sql_error_hint(e: Exception) -> str:
-    """根据SQL异常消息生成更精确的hint — 小欧 2026-07-08"""
+    """根据SQL异常消息生成更精确的hint — 小欧 2026-07-08
+       2026-08-09 小欧: 新增多语句识别 — sqlite3.execute仅支持单条, 多语句抛"You can only execute one statement at a time",
+       精准提示拆分, 打破LLM多语句SQL低效重试循环(依托sqlite3权威解析器, 不误伤CREATE TRIGGER含分号合法单条)"""
     msg = str(e).lower()
     if "no such column" in msg or "has no column" in msg:
         return "请先使用 get_db_schema 查看表结构确认列名是否正确"
     if "no such table" in msg:
         return "请先使用 get_db_schema 查看所有表确认表名是否正确"
+    if "one statement at a time" in msg:
+        return "SQLite仅支持单条语句执行，请将SQL拆分为单条语句后逐条执行"
     if "syntax error" in msg or "unrecognized token" in msg or "near " in msg:
         return "SQL语法错误，请检查关键字拼写和语句结构"
     if "ambiguous column" in msg:

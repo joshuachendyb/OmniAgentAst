@@ -12,6 +12,7 @@ execute_sql — 执行写操作SQL
 【2026-07-24 小欧】修复: _sql_preview前置防空SQL漏截断 + timeout判断用is not None防0跳过
 【2026-07-26 小欧】迁移: sql_error_hint/hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
 【2026-08-07 小欧】P01+P02优化(北京老陈驱动 task001): ①新增confirm_ddl参数 — 显式确认后放行裸DDL(白名单_DDL_ONLY_TYPES: CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE, 防未来新增安全类型误放行); ②_build_execute_sql_llm_data补confirm_ddl传参(observation可见); ③危险提示文案优化 — 无WHERE时引导补WHERE/dry_run, 条件拼接消除warnings为空时的冗余逗号
+【2026-08-09 小欧】task006 P1落地: dry_run分支保留sqlite3异常(dry_run_error), 校验失败detail带异常原文+hint走sql_error_hint精准分支(多语句识别), 替代笼统"SQL语法校验失败/请检查SQL语法"
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -176,13 +177,15 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 return build_error(data={}, llm_data=llm_data)
             syntax_valid = False
             dry_run_refused = None  # 2026-07-31 小欧: Bug③ MySQL DDL拒绝理由
+            dry_run_error = None  # 2026-08-09 小欧: task006 P1 保留校验异常供精准hint(多语句等)
             try:
                 if connection_type == "sqlite":
                     conn.execute("SAVEPOINT dry_run_check")
                     try:
                         conn.execute(sql)
-                    except Exception:
+                    except Exception as _e:
                         syntax_valid = False
+                        dry_run_error = _e  # 2026-08-09 小欧: 保留sqlite3异常, 供"one statement at a time"精准识别
                     else:
                         syntax_valid = True
                     finally:
@@ -199,12 +202,14 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                         try:
                             conn.execute(text(sql))
                             syntax_valid = True
-                        except Exception:
+                        except Exception as _e:
                             syntax_valid = False
+                            dry_run_error = _e  # 2026-08-09 小欧: 保留异常供精准hint
                         finally:
                             trans.rollback()
             except Exception as e:
                 syntax_valid = False
+                dry_run_error = e  # 2026-08-09 小欧: SAVEPOINT/外层异常同样保留
             finally:
                 try:
                     conn.close()
@@ -226,7 +231,10 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 # ------------------------------------------------------------------------------
                 return build_success(data={"syntax_valid": True}, llm_data=llm_data)
             else:
-                llm_data = _build_execute_sql_llm_data("error", duration_ms, _sql_preview, 0, detail="SQL语法校验失败", hint="请检查SQL语法",
+                # 2026-08-09 小欧: task006 P1 — detail带异常原文, hint走sql_error_hint精准分支(多语句等), 替代笼统提示
+                _dry_detail = f"SQL语法校验失败: {dry_run_error}" if dry_run_error else "SQL语法校验失败"
+                llm_data = _build_execute_sql_llm_data("error", duration_ms, _sql_preview, 0, detail=_dry_detail,
+                                                          hint=sql_error_hint(dry_run_error) if dry_run_error else "请检查SQL语法",
                                                           connection_type=connection_type, path=path, dry_run=dry_run, timeout=timeout)
                 return build_error(data={}, llm_data=llm_data)
 
