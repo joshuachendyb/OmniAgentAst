@@ -4,6 +4,7 @@
 # 2026-07-26 - 小欧 - summary加路径前空格
 # 2026-07-31 - 小欧 - Bug⑳修复: data非数组或元素非dict时返回明确错误(原list[list]触发row.keys() AttributeError, 错误信息晦涩) | py_compile ✓
 # 2026-08-07 - 小欧 - P04优化(北京老陈驱动 task001): 新增append_mode参数 — True=文件已存在时load_workbook末尾追加(表头一致性校验+按已有表头列序映射取值防串列), False=默认覆盖; else分支补mkdir防新建目录缺失崩溃; append分支error返回前补duration_ms计算防NameError | py_compile ✓
+# 2026-08-08 - 小欧 - P1修复(task005真实问题分析): append_mode追加模式data全为无字段空dict(如[{}])时, headers为空无法映射任何列, 返回warning"无有效字段可追加"而非静默success"N行", 让LLM感知追加无效; 空追加不save改动文件 | py_compile ✓
 """
 D6: write_xlsx — 写入Excel文档
 
@@ -18,7 +19,7 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional  # 2026-07-31 小欧: 移除未使用 Union
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
@@ -103,6 +104,15 @@ def _build_write_xlsx_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    if exec_code == "warning":
+        # 追加模式无数据可写等非致命异常: 走warning, 让LLM感知追加无效(非静默success) — 小欧 2026-08-08
+        return {
+            "summary": f"写入Excel {file_path}，警告: {detail}",
+            "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
+            "status": {"exec_code": "warning", "message": "写入Excel警告", "code": "", "detail": detail, "hint": hint if hint else "请检查传入的data参数"},
+            "duration_ms": duration_ms,
+            "metrics": {},
+        }
     return {
         "summary": f"写入Excel {file_path}，成功: {row_count}行",
         "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
@@ -172,6 +182,14 @@ def write_xlsx(
             from openpyxl import load_workbook
             wb = load_workbook(_path)
             ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.create_sheet(sheet_name)
+            if not headers:
+                # 追加模式但data全为无字段空dict(如[{}]): 无任何列可映射到已有表头, 返回warning
+                # 而非静默success"N行"(实际无有效数据), 让LLM感知追加无效 — 小欧 2026-08-08
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_write_xlsx_llm_data("warning", duration_ms, str(_path),
+                    detail="追加模式但data无任何字段(全空dict), 无数据可追加",
+                    hint="请提供含字段的非空 data 再追加", user_sheet_name=sheet_name)
+                return build_warning(data={}, llm_data=llm_data)
             # 表头一致性校验：已有表头缺失新列则拒绝（防静默错写）— 小欧 2026-08-07
             if headers and ws.max_row > 0:
                 existing = [c.value for c in ws[1]]
