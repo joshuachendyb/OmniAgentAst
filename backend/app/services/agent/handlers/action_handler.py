@@ -64,6 +64,9 @@
 #   [改法] ①进入B'后打印分组明细(每组工具+模式: 单工具/并行/串行) ②_run_group内计时,
 #          每组执行完打印"分组执行完成: tools=..., 模式=..., 耗时=x.xxs" ③执行逻辑零改动(仅return改为赋值_res后return)
 #   [验证] py_compile + verify_prod_smoke(生产代码直接import) + handlers/edittext测试
+# 2026-08-10 - 小欧 - BUG-E修复(补A"操作结束即清除"落地): handle_action 工具批执行结束后 finally 调 clear_temp_auth(),
+#   清空本请求作用域 ContextVar 临时授权, 杜绝"一次一申请"授权跨工具跨步骤残留复用;
+#   try/finally 保证执行异常时也清除(不残留授权) — 小欧 2026-08-10
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -231,6 +234,15 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     continue  # was: return  — 小欧 2026-07-18 #12 fix
 
                 # 用户已确认：恢复执行态继续工具执行（SUSPENDED→EXECUTING 合法）— 小欧 2026-07-12
+                # ⑮ 白名单外临时授权: 确认后授予本次操作权限(一次一申请, 支持递归, per-request) — 小欧 2026-08-10
+                if getattr(safety_result, "auth_path", None):
+                    from app.services.safety.temp_auth import grant_temp_auth
+                    grant_temp_auth(safety_result.auth_path, recursive=True)
+                    yield agent._step_emitter.emit(MetaStep(
+                        step=step,
+                        type="resumed",
+                        content=f"已临时授权白名单外路径: {safety_result.auth_path}"
+                    ))
                 set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
 
         if _denied:
@@ -856,8 +868,13 @@ async def handle_action(agent, parsed: Dict):
     # ── 工具重试（隐蔽，前端不可见）── 小欧 2026-07-13
     # 工具重试由 tool_retry_engine 内部执行，不向前端 emit 任何 step（北京老陈要求：tool 重试隐蔽）。
     # 重试回调不再收集/上报，仅后端内部重试。
-    results = await execute_tools(agent, _exec_calls, call_result.is_parallel,
-                                  call_result.tool_name, call_result.tool_params)
+    # BUG-E修复(补A): 工具批执行结束(含异常)即清除临时授权, 授权只覆盖本次操作 — 小欧 2026-08-10
+    from app.services.safety.temp_auth import clear_temp_auth  # 局部导入避免模块级循环依赖
+    try:
+        results = await execute_tools(agent, _exec_calls, call_result.is_parallel,
+                                      call_result.tool_name, call_result.tool_params)
+    finally:
+        clear_temp_auth()
 
     agent._consecutive_reasoning_only = 0  # 2026-07-17 - 小欧 - 本步LLM发起工具调用(非reasoning-only空转), 归零空转计数
 

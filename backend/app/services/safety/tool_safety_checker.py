@@ -9,6 +9,10 @@
 # 2026-08-04 - 小欧 - delete专属安全(双轨接入): check_before_execute 一次性计算 delete_risk; R1/R2 仍由 known_risks(_is_forbidden_path) 覆盖, R6 入 _check_known_risks 无条件拦截, R3-R5 入 _get_needs_confirmation 确认分流; 惰性导入 delete_safety 避免循环依赖 — 北京老陈驱动(设计文档 v1.15)
 # 2026-08-04 - 小欧 - fix: _check_known_risks 中 writetext 的 content 可能为 dict/list(LLM结构化传参), content.encode() 崩溃致误拦; 对齐工具层 check_content_safety 的 dict/list→json 转换 — E2E-P0-03a 回归发现
 # 2026-08-04 - 小欧 - 三堂会审(YAGNI)撤销转换方案: 写保护只需量字节数, content为dict/list(非str)走 isinstance(str) 判typeskip(new_size=0), 不崩不误拦且无需把dict转json; 与工具层json转换职责解耦 — 北京老陈审出多余转换
+# 2026-08-10 - 小欧 - 步骤1实施(⑮, 北京老陈驱动「项目根=tool工作区, 代码库根=tool禁区」): SafetyResult新增auth_path字段; _check_known_risks白名单外路径(非禁区/系统目录)转为临时授权请求(requires_confirmation+auth_path), 由action_handler HITL确认后grant_temp_auth放行
+# 2026-08-10 - 小欧 - BUG-A修复: delete R6(项目根/授权目录外递归)外层先于 _check_known_risks 判定(if delete_risk.blocked: return), 杜绝R6被白名单临时授权绕过
+# 2026-08-10 - 小欧 - BUG-D修复: _check_known_risks 白名单外授权请求的 auth_path 改用 validate_tool_path 返回的 failed_path(真正越权参数的真实路径),
+#   不再固定 params.get("path") or params.get("dest")(多路径参数工具 copy/move/compress/extract 越权在dest时原逻辑授权对象错误, 取到合法path) — 小欧 2026-08-10
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -54,12 +58,14 @@ _WRITE_RISK_TOOL = "writetext"
 @dataclass
 class SafetyResult:
     """安全检查结果 — 替代raw dict — 小欧 2026-06-25
-    #15 #50 fix: 删 is_safe 死字段(无人消费) — 小欧 2026-07-18"""
+    #15 #50 fix: 删 is_safe 死字段(无人消费) — 小欧 2026-07-18
+    # ⑮2026-08-10: 新增 auth_path(白名单外临时授权路径, None=普通确认/无)"""
     blocked: bool = False
     requires_confirmation: bool = False
     message: str = ""
     safety_level: str = "safe"
     auto_confirm: bool = False
+    auth_path: Optional[str] = None
 
 
 def _is_skip_safety() -> bool:
@@ -96,8 +102,15 @@ class ToolSafetyChecker:
             delete_risk = check_delete_risk(params or {})
 
         # ② 已知风险检测: 无条件防线(开关无关) — 路径越权(R1/R2)/delete R6/写入大小保护/代码注入即使开关false也拒绝 — 小欧 2026-08-04
+        # 先校验delete专属R6（项目根外递归删除），再校验白名单（临时授权）
+        if delete_risk is not None and delete_risk.blocked:
+            return delete_risk
         known_risk = self._check_known_risks(tool_name, params or {}, delete_risk=delete_risk)
         if known_risk is not None:
+            # ⑮ 白名单外临时授权请求(blocked=False, requires_confirmation=True, auth_path): 放行到确认流程 —
+            #    action_handler 识别 requires_confirmation 走 HITL, 用户确认后 grant_temp_auth; 不在此拦截 — 小欧 2026-08-10
+            if known_risk.requires_confirmation and not known_risk.blocked:
+                return known_risk
             # #14 fix: 已知风险只拦截, 不触发确认(确认由 needs_confirm 路径驱动) — 小欧 2026-07-18
             known_risk.safety_level = "dangerous"
             return known_risk
@@ -148,9 +161,19 @@ class ToolSafetyChecker:
         """已知风险检测：路径越权(R1/R2) / delete R6 / 写入大小保护 / 代码注入 — 小沈 2026-06-17
         小欧 2026-06-25: 返回SafetyResult替代raw dict
         小欧 2026-06-27: 路径检查委托validate_tool_path(path_safe_check统一处理)
-        小欧 2026-08-04: 增 delete_risk 入参, R6(项目根外递归) 在此无条件拦截"""
-        is_valid, msg = _validate_tool_path(tool_name, params)
+        小欧 2026-08-04: 增 delete_risk 入参, R6(项目根外递归) 在此无条件拦截
+        # ⑮2026-08-10: 白名单外路径(非禁区/系统目录)转为临时授权请求(requires_confirmation+auth_path),
+        #   禁区(代码库根/系统目录)仍硬拦 blocked —— 区分依据: validate_tool_path 返回的白名单外错误特征"""
+        is_valid, msg, failed_path = _validate_tool_path(tool_name, params)
         if not is_valid:
+            # ⑮ 白名单外(可临时授权) vs 禁区(硬拦): 错误含"不在允许的操作范围内" → 授权请求
+            if msg and "不在允许的操作范围内" in msg:
+                # BUG-D修复: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
+                #   (多路径参数工具 copy/move/compress/extract 越权在dest时, 原逻辑误取合法path) — 小欧 2026-08-10
+                return SafetyResult(requires_confirmation=True, blocked=False,
+                                    message=f"路径超出白名单,需临时授权: {msg}",
+                                    safety_level="destructive",
+                                    auth_path=failed_path or (params.get("path") or params.get("dest")))
             return SafetyResult(blocked=True, message=f"路径越权: {msg}")
 
         if delete_risk is not None and delete_risk.blocked:

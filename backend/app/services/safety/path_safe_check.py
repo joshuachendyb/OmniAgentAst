@@ -6,6 +6,10 @@
 # 2026-08-02 - 小欧 - 加固: _is_forbidden_path 新增磁盘根目录黑名单(C:\), 防止白名单盘符机制放行盘根删除
 # 2026-08-04 - 小欧 - 盘符动态化(北京老陈驱动): 新增 get_existing_drives(当前磁盘符号列表)/get_system_drive(真实系统盘符)/_get_project_root_safety(项目根上移Safety层,恒非None);
 #    _is_forbidden_path 系统目录 C: 模板运行时动态替换真实系统盘符(不漏判不误伤); get_default_allowed_paths 盘符枚举 A-J 上限改动态(get_existing_drives) — 设计文档 v1.15
+# 2026-08-10 - 小欧 - 步骤1实施(⑤⑦⑧⑨⑪, 北京老陈驱动「项目根=tool工作区, 代码库根=tool禁区」): ⑤get_project_root_safety收敛走config(兜底用户主目录); ⑦代码库根_unsafe_get_code_root_roots为禁区(含父子级); ⑧工具路径参数名补dest列表; ⑨validate_tool_path遍历所有命中参数逐一校验; ⑪废除「所有现存盘符」全盘放开, 白名单=主目录+tmp+项目根+授权目录(动态懒加载)
+# 2026-08-10 - 小欧 - BUG-B/C修复: 新增 _resolve_path_param 逻辑路径参数解析(download.dest=相对下载目录/rename.dest=仅文件名→真实文件系统路径),
+#    validate_tool_path 校验前先解析, 消除"相对/文件名语义被当绝对路径校验→resolve到cwd→误判代码库禁区拦截"(download/rename完全不可用);
+#    validate_tool_path 返回扩展为三元组 (is_valid, msg, failed_path), failed_path=首个校验失败的真实路径, 供临时授权定位真正越权参数(BUG-D修复) — 小欧 2026-08-10
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -76,14 +80,23 @@ def get_system_drive() -> str:
 
 def get_default_allowed_paths() -> List[Path]:
     """获取默认允许的路径列表 — 小沈 2026-06-17 从file_tools提取
-    小欧 2026-08-04: 盘符枚举A-J硬编码上限改动态(get_existing_drives) — 北京老陈驱动"""
+    小欧 2026-08-04: 盘符枚举A-J硬编码上限改动态(get_existing_drives) — 北京老陈驱动
+    小欧 2026-08-10 ⑪: 废除「所有现存盘符」全盘放开, 白名单=主目录+tmp+项目根+授权目录(3.3决策②);
+    get_existing_drives 不再拼入(各盘只有落在主目录/项目根/授权目录内的路径才允许)。
+    """
+    from app.config import get_config  # 局部导入避免模块级对 config 的耦合(补B lazy)
     paths = [
         Path.home(),
         Path("/tmp"),
         Path("/var/tmp"),
     ]
-    if os.name == 'nt':
-        paths.extend(get_existing_drives())
+    try:
+        cfg = get_config()
+        paths.append(Path(cfg.get_project_root()).resolve())
+        for d in cfg.get_allowed_dirs():
+            paths.append(Path(d))
+    except Exception:
+        pass
     return paths
 
 
@@ -91,22 +104,18 @@ ALLOWED_PATHS: List[Path] = get_default_allowed_paths()
 
 
 def _get_project_root_safety() -> Path:
-    """推算真实项目根(backend的父级) — 复制 delete_file._get_project_root 上移Safety层 — 小欧 2026-08-04
-    以代码位置推算为准(可靠), config配置的project_root仅作辅助(生产config可被改为测试目录,不可信)。
-    恒返回非None(各级兜底), 消除Safety层对工具层的反向依赖(设计文档评审项2)。
+    """获取项目根(tool工作区)供 Safety 层判定 — 小欧 2026-08-10 ⑤收敛走config
+    统一走 config.get_project_root(): 配置 app.project_root 优先, 未配置→用户主目录;
+    不再以代码位置推算(那是代码库根, 属tool禁区, 不得充当项目根)。
     """
-    cur = Path(__file__).resolve()
-    for parent in cur.parents:
-        if parent.name == "backend":
-            return parent.parent
+    from app.config import get_config
     try:
-        from app.config import get_config
         cfg_root = get_config().get_project_root()
-        if cfg_root and Path(cfg_root).exists():
+        if cfg_root:
             return Path(cfg_root).resolve()
     except Exception:
         pass
-    return cur.parents[4]
+    return Path.home()
 
 
 def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
@@ -141,7 +150,21 @@ def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
                 _f = forbidden_prefix.replace("C:", sys_drive, 1) if forbidden_prefix.upper().startswith("C:") else forbidden_prefix
                 if real_path_lower.startswith(_f.lower()):
                     return True, f"禁止访问系统敏感目录: {file_path}"
-        
+
+        # ⑦ 代码库根禁区(tool禁区, 开关无关硬拦截): 代码库根及其子/父级全部禁止 — 小欧 2026-08-10
+        try:
+            from app.config import get_code_root
+            code_root = get_code_root()
+            if code_root:
+                _cr = Path(os.path.realpath(code_root))
+                cr_lower = str(_cr).lower()
+                if (real_path_lower == cr_lower
+                        or real_path_lower.startswith(cr_lower + os.sep)
+                        or real_path_lower.startswith(cr_lower + "/")):
+                    return True, f"禁止访问代码库(tool禁区): {file_path}"
+        except Exception:
+            pass
+
         for forbidden in FORBIDDEN_PATHS_EXACT:
             if real_path_str == forbidden:
                 return True, f"禁止访问系统敏感文件: {file_path}"
@@ -194,7 +217,9 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
         logger.warning(f"[path_safe_check] 路径校验异常: {file_path}: {e}")
         return False, f"路径校验异常: {file_path}"
 
-    paths = allowed_paths or ALLOWED_PATHS
+    # 补B(2026-08-10): 白名单懒加载——每次调用动态计算(主目录+tmp+项目根+授权目录),
+    # 避免模块导入时 config 未就绪取错值; allowed_paths 显式传入时优先使用
+    paths = allowed_paths if allowed_paths is not None else get_default_allowed_paths()
     try:
         real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
 
@@ -227,6 +252,12 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
             except (ValueError, OSError):
                 pass
 
+        # ⑮ 临时授权(3.3决策⑤): 白名单未命中但当前作用域已被用户临时授权(本次放行, 支持递归) — 小欧 2026-08-10
+        # 注: 禁区(代码库根/系统目录)已在 _is_forbidden_path 拦截, 到不了这里, 不受临时授权影响
+        from app.services.safety.temp_auth import is_temp_authorized
+        if is_temp_authorized(file_path):
+            return True, None
+
         return False, f"路径 '{file_path}' 不在允许的操作范围内(仅允许:{', '.join(str(p) for p in paths[:5])}...)"
 
     except Exception as e:
@@ -240,18 +271,42 @@ _PATH_CATEGORIES = {
     ToolCategory.DESKTOP,
 }
 
-# 工具参数中可能的路径参数名
+# 工具参数中可能的路径参数名(⑧2026-08-10补dest: compress/extract/move/copy/rename/generate_chart/download/screen_capture 的目标/输出路径)
 _PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
-                    "directory", "file_name", "destination_path", "output_path")
+                    "directory", "file_name", "destination_path", "output_path",
+                    "dest")
 
 
-def validate_tool_path(tool_name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+def _resolve_path_param(tool_name: str, key: str, value: str, params: Dict[str, Any]) -> str:
+    """工具逻辑路径参数→真实文件系统路径(白名单校验前) — 小欧 2026-08-10
+    仅相对/文件名语义参数需要解析(BUG-B/C修复), 其余工具路径参数均为绝对路径原样返回:
+      - download.dest: 相对下载目录(project_root/download), 真实路径 = 下载目录/dest (network_schema.py:57);
+      - rename.dest:   仅文件名不含目录(file_schema.py:358), 工具内 dst = src.parent/新名 (rename_file.py:89), 真实路径 = 源文件同目录;
+    解析逻辑与工具内部真实落盘逻辑一一对应(对齐白名单校验对象与实际写入对象)。
+    """
+    if tool_name == "download" and key == "dest":
+        from app.config import get_config  # 局部导入避免模块级耦合
+        base = os.path.join(get_config().get_project_root(), "download")
+        return os.path.abspath(os.path.join(base, value.lstrip("/\\")))
+    if tool_name == "rename" and key == "dest":
+        src = params.get("path") or ""
+        if src:
+            return str(Path(src).parent / Path(value).name)
+        return value
+    return value
+
+
+def validate_tool_path(tool_name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[str], Optional[str]]:
     """
     工具路径检查：自动判断分类 + 找路径参数 + 调validate_path
+    返回三元组 (is_valid, error_message, failed_path):
+      failed_path = 首个校验失败的真实路径(临时授权auth_path用, 成功时为None)
     
     将调度逻辑从 tool_safety_checker._check_known_risks 迁移至此，
     path相关的事情全部在 path_safe_check 中处理。
-    小欧 2026-06-27
+    小欧 2026-06-27, 2026-08-10 ⑨改为遍历所有命中路径参数逐一校验(漏洞B修复)
+    ⑯2026-08-10: 逻辑路径参数先经 _resolve_path_param 解析为真实路径再校验(BUG-B/C);
+                 返回 failed_path 供临时授权定位真正越权参数, 而非固定 path-or-dest(BUG-D)
     """
     try:
         all_categories = tool_registry.get_categories()
@@ -260,20 +315,22 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]) -> Tuple[bool, Op
             path_tools.update(all_categories.get(cat, []))
 
         if tool_name not in path_tools:
-            return True, None
+            return True, None, None
 
-        real_path = None
-        for key in _PATH_PARAM_KEYS:
-            real_path = params.get(key)
-            if real_path is not None:
-                break
+        # ⑨ 遍历所有命中路径参数逐一校验, 任一越权即拒绝(原只取第一个命中参数的漏洞B修复)
+        hit_params = [key for key in _PATH_PARAM_KEYS if params.get(key) is not None]
+        if not hit_params:
+            return True, None, None
 
-        if real_path is None:
-            return True, None
+        for key in hit_params:
+            real_path = _resolve_path_param(tool_name, key, params[key], params)
+            valid, err = validate_path(real_path)
+            if not valid:
+                return False, err, real_path
 
-        return validate_path(real_path)
+        return True, None, None
     except Exception as e:
-        return False, f"路径安全检查异常: {e}"
+        return False, f"路径安全检查异常: {e}", None
 
 
 __all__ = ["ALLOWED_PATHS", "get_default_allowed_paths", "get_existing_drives",
