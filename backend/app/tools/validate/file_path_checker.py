@@ -12,6 +12,9 @@
 # 2026-08-09 - 小欧 - task006 P3落地(sql_error_hint): 新增 UNIQUE 分支 — "unique constraint"/"is not unique" → 引导查现值再UPDATE/INSERT
 #   病根: UNIQUE 约束失败回落"请检查SQL语法", LLM 无法据此自查(日志 `users.id` 重键 253 处), 陷入插重键低效循环
 #   方案: 一分支全覆盖 3 个 SQL 工具(execute_sql/query_sql/get_db_schema 共用 sql_error_hint, DRY); 验证不误伤其它6分支
+# 2026-08-09 - 小欧 - 三堂会审复审: UNIQUE 匹配词收紧 "unique constraint"→"unique constraint failed" — 原词会误命中
+#   "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint"(LLM写错ON CONFLICT子句), 收紧后精准只匹配
+#   sqlite 真实报错 "UNIQUE constraint failed: table.column"
 """
 validate/file_path_checker.py — tool内部路径业务级检查（集中管理）
 
@@ -370,7 +373,7 @@ def sql_error_hint(e: Exception) -> str:
         return "请先使用 get_db_schema 查看表结构确认列名是否正确"
     if "no such table" in msg:
         return "请先使用 get_db_schema 查看所有表确认表名是否正确"
-    if "unique constraint" in msg or "is not unique" in msg:
+    if "unique constraint failed" in msg or "is not unique" in msg:
         return "违反唯一约束(主键/唯一索引冲突)，请先查询该字段现有值，再决定用UPDATE还是INSERT，避免插入重复数据"
     if "one statement at a time" in msg:
         return "SQLite仅支持单条语句执行，请将SQL拆分为单条语句后逐条执行"

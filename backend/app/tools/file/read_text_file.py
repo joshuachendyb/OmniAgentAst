@@ -27,18 +27,20 @@ F1: readtext — 读取文本文件
 # 2026-08-07 - 小欧 - BUG-01修复: 翻页参数(offset/limit/tail)入口强制int(), 防直接调用(readtext)绕过Pydantic schema时 float 参数引发 line_pager slice 崩溃
 #   【病根】readtext(offset=1.5) 绕过 schema 验证, select_lines 收到 float → lines[start_idx:start_idx+limit] 抛 TypeError(日志09:07:09 ×2)
 #   【改法】入口处 offset/limit/tail 均为 None 时跳过, 否则 int() 强转; 保持既有校验逻辑不变(无退化)
+# 2026-08-09 - 小欧 - DRY合并: 本地 _try_read_file_with_encodings 与 _looks_like_mojibake 迁入公共 file_encoding.read_file_with_encodings(import别名保持调用点零改动)
+#   病根: readtext/edittext 各持一份同名编码回退读取实现且行为不一致(edittext对preferred也做替换符检查, readtext对preferred直接返回)
+#   方案: 合并为公共版(取增强语义: 所有编码统一替换符阈值+mojibake检查); 本文件删除本地两份, 以 read_file_with_encodings as _try_read_file_with_encodings 复用; 清理死import(asyncio/List/Tuple/READTEXT_INER_CJK_SAMPLE/get_file_encoding)
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
-import asyncio
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import READTEXT_OUTLIMIT_CHARS, READTEXT_INER_CJK_SAMPLE
+from app.tools.tool_constants import READTEXT_OUTLIMIT_CHARS
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_path_checker import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
@@ -46,81 +48,8 @@ from app.tools.validate.file_path_checker import hint_for_read_error  # 统一�
 from app.utils.text_utils import add_line_numbers
 from app.tools.toolhelper.line_pager import select_lines
 from app.logger import logger
-from app.tools.file.file_encoding import get_file_encoding
+from app.tools.file.file_encoding import read_file_with_encodings as _try_read_file_with_encodings  # 小欧 2026-08-09: 本地重复实现合并入公共file_encoding
 from app.tools.file.file_state import record_read
-
-
-def _looks_like_mojibake(content: str, file_path: str = "") -> bool:
-    """检测内容是否可能是编码错误造成的乱码 — 小欧 2026-06-30
-    GBK字节被误读为UTF-8时，内容中CJK字符极少、Latin-1补充字符极多
-    北京老陈 2026-06-30: 文件路径或内容中无中文时不检测，避免误判法文/德文"""
-    if not content or len(content) < 10:
-        return False
-    has_cjk = any('\u4e00' <= c <= '\u9fff' for c in file_path)
-    has_cjk = has_cjk or any('\u4e00' <= c <= '\u9fff' for c in content[:READTEXT_INER_CJK_SAMPLE])
-    if not has_cjk:
-        return False
-    total = len(content)
-    cjk = sum(1 for c in content if '\u4e00' <= c <= '\u9fff')
-    latin1_supp = sum(1 for c in content if '\u0080' <= c <= '\u00ff')
-    if cjk / total < 0.05 and latin1_supp / total > 0.30:
-        return True
-    return False
-
-
-async def _try_read_file_with_encodings(
-    path: Path,
-    preferred: Optional[str] = None,
-) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """编码检测+同步文件读取,返回 (content, used_encoding, error) — 小沈 2026-05-25 — 小欧 2026-06-22"""
-    try:
-        if preferred:
-            encodings_to_try = [preferred]
-        else:
-            auto = get_file_encoding(str(path))
-            encodings_to_try = ["utf-8", "gbk", "gb2312", "utf-8-sig"]
-            if auto and auto.get("data", {}).get("encoding"):
-                enc = auto["data"]["encoding"]
-                if enc not in encodings_to_try:
-                    encodings_to_try.insert(0, enc)
-
-        for enc in encodings_to_try:
-            if enc is None:
-                continue
-            try:
-                def _read(e=enc):
-                    with open(path, 'r', encoding=e, errors='replace') as f:
-                        return f.read()
-                content = await asyncio.to_thread(_read)
-                
-                # 用户指定了编码，直接返回（用户负责）
-                if preferred:
-                    return content, enc, None
-                
-                # 自动检测模式：检查是否有编码错误的标志
-                # �是替换字符，出现说明有无法解码的字节
-                # 但�也是合法Unicode字符，文件可能真的包含它
-                # 判断标准：
-                # 1. �数量 >= 3 且占比 > 3% → 编码错误
-                # 2. 否则 → 接受（可能是合法字符）
-                if '\ufffd' in content:
-                    replacement_count = content.count('\ufffd')
-                    replacement_ratio = replacement_count / max(len(content), 1)
-                    # �数量较多且占比高，认为是编码错误
-                    if replacement_count >= 3 and replacement_ratio > 0.03:
-                        continue  # 编码不对，尝试下一个
-
-                if _looks_like_mojibake(content, str(path)):
-                    continue
-
-                return content, enc, None
-            except Exception:
-                continue
-            
-
-        return None, None, f"无法读取文件: {path},已尝试编码: {encodings_to_try}"
-    except Exception as e:
-        return None, None, str(e)
 
 
 def _build_read_text_file_llm_data(

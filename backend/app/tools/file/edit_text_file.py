@@ -20,6 +20,10 @@
 #   病根: _try_read_file_with_encodings 第三参数err_msg非None即被调用方raise, 报告"子函数返回hint"方案会破坏
 #   该契约导致回退成功变失败(退化) → 改为调用方合成: encoding与used_enc不一致时生成encoding_fallback并入safety_hint, 增强不退化
 #   验证: 指定无效编码→回退提示; 一致/未指定/失败短路均无提示
+# 2026-08-09 - 小欧 - DRY合并: 本地 _try_read_file_with_encodings 迁入公共 file_encoding.read_file_with_encodings(import别名保持调用点零改动)
+#   病根: readtext/edittext 各持一份同名编码回退读取实现且行为不一致(本版对preferred做替换符检查, readtext对preferred直接返回)
+#   方案: 合并为公共版(取增强语义: 所有编码统一替换符阈值+mojibake检查); 本文件删除本地实现与本地阈值常量/get_file_encoding import;
+#         P1修正(拼接顺序)在下方success分支, 优先保safety_hint完整
 """
 F4: edittext — 编辑文本文件
 
@@ -47,56 +51,10 @@ from app.services.safety import record_operation, execute_with_safety
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
-from app.tools.file.file_encoding import get_file_encoding
+from app.tools.file.file_encoding import read_file_with_encodings as _try_read_file_with_encodings  # 小欧 2026-08-09: 本地重复实现合并入公共file_encoding
 from app.tools.file.file_state import check_conflict_strict, record_write, record_read
 from app.tools.file.fuzzy_match import fuzzy_find_replace  # 小欧 2026-07-11
 from app.tools.toolhelper.syntax_validator import validate_syntax, detect_language  # 小欧 2026-07-21 统一语法检测接入
-
-# U+FFFD replacement character threshold for encoding detection — 小欧 2026-06-27 — 小欧 2026-07-05 统一为readtext的>=3 && >3%逻辑
-_REPLACEMENT_CHAR_MIN_COUNT = 3
-_REPLACEMENT_CHAR_RATIO = 0.03
-
-
-async def _try_read_file_with_encodings(
-    path: Path, preferred: Optional[str] = None,
-) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """编码检测+同步文件读取 — 小欧 2026-06-22"""
-    try:
-        preferred_failed = False
-        if preferred:
-            encodings_to_try = [preferred]
-        else:
-            auto = get_file_encoding(str(path))
-            encodings_to_try = []
-            if auto and auto.get("data", {}).get("encoding"):
-                encodings_to_try.append(auto["data"]["encoding"])
-        fallbacks = ["utf-8", "gbk", "gb2312", "utf-8-sig"]
-        for enc in fallbacks:
-            if enc not in encodings_to_try:
-                encodings_to_try.append(enc)
-        for enc in encodings_to_try:
-            if enc is None:
-                continue
-            try:
-                def _read(e=enc):
-                    with open(path, 'r', encoding=e, errors='replace') as f:
-                        return f.read()
-                content = await asyncio.to_thread(_read)
-                if '\ufffd' in content:
-                    _repl_count = content.count('\ufffd')
-                    if _repl_count >= _REPLACEMENT_CHAR_MIN_COUNT and _repl_count > len(content) * _REPLACEMENT_CHAR_RATIO:
-                        content = None
-                        continue
-                if preferred_failed:
-                    logger.warning(f"User-specified encoding '{preferred}' failed for {path}, using '{enc}' instead")
-                return content, enc, None
-            except Exception:
-                if preferred and enc == preferred:
-                    preferred_failed = True
-                continue
-        return None, None, f"无法读取文件: {path},已尝试编码: {encodings_to_try}"
-    except Exception as e:
-        return None, None, str(e)
 
 
 def _insert_line_after(content: str, match_end: int, new_string: str) -> str:
@@ -642,13 +600,18 @@ async def edittext(
             data={"error_detail": error_detail, "params": {"path": file_path}},
             llm_data=llm_data,
         )
+    # P1修正(2026-08-09 - 小欧): 编码回退提示改放尾部, 优先保safety_hint完整(原200上限行为不变),
+    #   回退文案可截断(仅降级本轮新增提示, 不退化原安全提示); 边界: 单者存在不带多余";"
+    _sh = result.get("safety_hint", "") or ""
+    _fb = result.get("encoding_fallback", "") or ""
+    _merged_hint = f"{_sh}；{_fb}" if (_sh and _fb) else (_sh or _fb)
     llm_data = _build_edit_text_file_llm_data(
         "success", duration_ms, file_path=file_path,
         applied=result.get("applied_edits", 0), total=result.get("total_edits", 0),
         diff=result.get("diff", ""),
         total_matches=result.get("total_matches", 0),
         mtime_warning=result.get("mtime_warning", "") or "",
-        safety_hint=((result.get("encoding_fallback", "") or "") + ("；" + result.get("safety_hint", "") if result.get("safety_hint") else ""))[:EDITTEXT_OUTPARM_LIMIT_SAFETY],  # 编码回退并入safety_hint(LLM可见) — 小欧 2026-08-09
+        safety_hint=_merged_hint[:EDITTEXT_OUTPARM_LIMIT_SAFETY],  # 编码回退并入safety_hint(LLM可见) — 小欧 2026-08-09
         user_old_string=_old_preview, user_new_string=_new_preview,
         user_mode=mode, user_ignore_case=ignore_case,
         user_encoding=encoding,

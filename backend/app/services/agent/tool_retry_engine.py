@@ -126,10 +126,11 @@ _INVALID_PARAM_HINTS = {
 }
 
 
-def _build_invalid_param_hint(action: str, invalid_keys: list, props_desc: str) -> str:
+def _build_invalid_param_hint(action: str, invalid_keys: list) -> str:
     """构建非法参数智能hint: 先查混淆表给专项替代建议, 未命中给通用纠正指引 — 小欧 2026-08-09
     task007 病根: 非法参数分支hint为空(日志实证"hint":""), LLM拿不到纠正指引反复试错;
-    本函数只新增hint字段, 不改detail/缺失参数路径; hint只给纠正指令, 合法参数列表由detail承载, 不重复"""
+    本函数只新增hint字段, 不改detail/缺失参数路径; hint只给纠正指令, 合法参数列表由detail承载, 不重复
+    2026-08-09 - 小欧 - 三堂会审复审: 删除未使用的 props_desc 形参(死参数, 函数体从不消费), 调用处同步删实参"""
     _parts = []
     for _k in invalid_keys:
         _spec = _INVALID_PARAM_HINTS.get((action, _k))
@@ -365,7 +366,7 @@ class ToolRetryEngine:
                         f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}；合法参数: {_props_desc}",
                         0, error_type="invalid_params",
                         action_name=action, action_params=params,
-                        hint=_build_invalid_param_hint(action, invalid_keys, _props_desc),  # task007 补智能hint — 小欧 2026-08-09
+                        hint=_build_invalid_param_hint(action, invalid_keys),  # task007 补智能hint, 三审删死参数props_desc — 小欧 2026-08-09
                     )
                 
                 required = input_schema.get("required", [])
