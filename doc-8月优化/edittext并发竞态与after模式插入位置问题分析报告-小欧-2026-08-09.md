@@ -19,6 +19,7 @@
 | v1.6 | 2026-08-09 09:40 | 小欧 | **老陈确定选择方案二（分组调度版）**：① 第五章标题与 5.1/5.5 标注选定状态、5.6 建议→决策；② **新增 5.8 完整实施方案**：5.8.1 实施范围、5.8.2 完整落地代码（import 补 Set + 新增 `_parse_paths`/`_partition_calls` + `_has_conflict` 计数版复用 `_parse_paths` + 分支 B' 分组调度，共 5 处）、5.8.3 实施步骤（备份→落码→静态检查→单元验证→一致性回归→pytest→提交打 tag）、5.8.4 验证与验收标准 7 项；③ 六、总结顶部新增**一句话直白结论**（after 本身无问题、真正要修的是并发调度）；④ 结尾注更新为"已选定方案二、按 5.8 实施"；⑤ **行为一致性实测**：重构版 `_has_conflict`（复用 `_parse_paths`）vs 内联计数版 **14/14 全部一致**，5.8.3 步骤 5 已记录 |
 | v1.7 | 2026-08-09 10:32 | 小欧 | **全文三遍三堂会审修正**：① 5.5.3/5.5.5/5.6 **行数修正 70→约 115**（按 5.8.2 精确代码统计：`_parse_paths` 21 + `_partition_calls` 31 + `_has_conflict` 改造 28 + 分支 B 35 + import 1）；② **补异常处理等价性声明（L1）**到 5.8.2 说明：B' 失败语义与原 A/B/C 逐点等价，`results` 返回形态不变，build_observation/`_merge_llm_data` 零改动；③ 5.3 C4 补**07:57:53 日志出处**（app_2026-08-09.log 行15295-15319，会话 `4ae0302c` step7，属实）；④ 5.8.3 步骤2 强化Set依赖顺序 |
 | v1.8 | 2026-08-09 10:50 | 小欧 | **二轮三堂会审修正**：① **R4 歧义澄清**：5.1 代码块加"方案一独立版(inlining别名解析)，方案二落地版见 5.8.2 步骤3(复用_parse_paths)"，防止开发者误复制 5.1 落地方案二；② **C2 口径统一**：5.5.2 title 行数 50→53（代码块 346-398 实际 53 行）。三堂会审结论: 技术逻辑正确, 5.8.2 代码 14/14 一致可落地, 仅 2 处文档口径/歧义问题 (均低估/非虚报), 实测 0 处虚报 |
+| v1.9 | 2026-08-09 09:14 | 小欧 | **三轮三堂会审修正（老陈指令：全文熟读3遍，实施步骤必须绝对完整准确）**：① **行数数学错误修正 115→116**（5.5.3/5.5.5/5.6 共 4 处："约115"差 1，按 5.8.2 分项 `_parse_paths`21+`_partition_calls`31+`_has_conflict`28+分支B35+import1=**116**）；② **5.8.2 口径**：标题改"**5 处必改 + 1 处可选清理**"（C 分支 `_reason` 死代码清理为第 6 处**可选**改动，不列为必改）；③ **日志行号修正 14742→14743**（4.3 场景A：step=14 完整 after 参数实际在日志行 14743，14742 为"工具执行完成"行；复现参数本身正确）；④ **5.8.3 步骤4/5 补 verify 脚本路径**（`C:\Users\chend\AppData\Local\Temp\opencode\`，防临时目录清理后无法复跑；脚本内嵌逻辑与 5.8.2 逐字一致，若脚本缺失可按 5.8.2 代码重建）；⑤ 行数口径说明：5.8.2 代码块含空行排版 `_partition_calls` 31 行、verify 脚本紧凑排版 29 行，功能代码逐字一致。**三轮会审结论：逻辑/行为问题 0 处，5.8.2 落地代码与 verify 脚本逐字一致，实测 14/14 + 分组调度 10 项全 PASS，文档仅修正 5 处精确性/口径问题，均非虚报** |
 
 ---
 
@@ -209,7 +210,7 @@ divide 函数**确实插在 multiply 函数之后、greet 之前**，位置正�
 
 ### 4.3 实验复现（直接调用 `_apply_replacement`，mode=after）
 
-**场景A（多行锚点 = 整个函数）**——精确复现 step=14（日志 14742 确切参数）：
+**场景A（多行锚点 = 整个函数）**——精确复现 step=14（日志 14743 确切参数，14742 为"工具执行完成"行）：
 
 ```
 输入: old=multiply函数(含docstring), new=divide函数, mode=after
@@ -439,7 +440,7 @@ elif is_parallel:
             results[_i] = _r
 ```
 
-改造量合计约 **115 行**（按 5.8.2 精确代码统计：新增 `_parse_paths` 21 行 + `_partition_calls` 31 行，改造 `_has_conflict` 28 行 + 分支 B 35 行，import 1 行）。单工具（A）、非并行（C）两分支**业务逻辑完全不动**。
+改造量合计 **116 行**（按 5.8.2 精确代码统计：新增 `_parse_paths` 21 行 + `_partition_calls` 31 行，改造 `_has_conflict` 28 行 + 分支 B 35 行，import 1 行）。单工具（A）、非并行（C）两分支**业务逻辑完全不动**。
 
 > **注意**：方案二**包含方案一的核心改动**——组内无冲突/有冲突的判定复用计数版 `_has_conflict`（方案一代码）。且方案二实施时可顺手用 `_parse_paths` 重构 `_has_conflict` 的路径解析循环，消除两处重复（DRY 增强）。
 
@@ -457,7 +458,7 @@ elif is_parallel:
 | 维度 | 评估 |
 |------|------|
 | 时间复杂度 | 并查集近似线性（路径压缩），分组开销可忽略 |
-| 代码量 | 约 115 行新增/改造（按 5.8.2 代码块口径：`_parse_paths` 21 + `_partition_calls` 31 + `_has_conflict` 改造 28 + 分支 B 35 + import 1），集中在 `_partition_calls` 与分支 B，无跨模块改动 |
+| 代码量 | **116 行**新增/改造（按 5.8.2 代码块口径：`_parse_paths` 21 + `_partition_calls` 31 + `_has_conflict` 改造 28 + 分支 B 35 + import 1），集中在 `_partition_calls` 与分支 B，无跨模块改动 |
 | 空批次 | 分组空 → gather 空，安全 |
 | 无路径工具 | httpget 等无路径 → 独立成组 → 与其他组并行 ✅ |
 | 多读同路径 | 同组但组内无冲突 → 组内并行（与现状一致）✅ |
@@ -484,14 +485,14 @@ elif is_parallel:
 
 | 维度 | 方案一（计数整批降级） | 方案二（分组调度） |
 |------|----------------------|-------------------|
-| 改动量 | 只改 `_has_conflict`（约 25 行） | 方案一 + `_parse_paths`+`_partition_calls`+分支 B（共约 115 行） |
+| 改动量 | 只改 `_has_conflict`（约 25 行） | 方案一 + `_parse_paths`+`_partition_calls`+分支 B（共 **116 行**） |
 | 性能 | 冲突批次全串行（1.8s） | 仅冲突组串行（0.92s），提速约 50% |
 | 语义 | 冲突→整批串行（无辜被拖慢） | **该并行就并行**（摘出冲突的，剩余并行） |
 | 风险 | 低（三分支不动） | 中（重构分支 B） |
 | 验证 | 5 场景+一致性 10 项+补漏 4 项全过 | 分组 5 项+行为 4 项全过 |
 | 原则符合度 | 部分（判得准但调度粗） | **完全符合"该并行就并行"** |
 
-**决策**：老陈原则明确"该并行就并行"，且已于 **2026-08-09 明确选定方案二**（分组调度版）——完全贴合设计初衷；改动可控（约 115 行、单文件、无跨模块、无新依赖）。**5.8 即为最终实施清单**。
+**决策**：老陈原则明确"该并行就并行"，且已于 **2026-08-09 明确选定方案二**（分组调度版）——完全贴合设计初衷；改动可控（**116 行**、单文件、无跨模块、无新依赖）。**5.8 即为最终实施清单**。
 
 ### 5.7 影响面与注意事项
 
@@ -516,7 +517,7 @@ elif is_parallel:
 | 不动 | 分支 A（单工具）、分支 C（非并行/顺序）、工具实现、`edit_text_file.py`、LLM 层 |
 | 前置 | `git` 工作区干净；改前先 `git diff` 留档，实施后按铁规打 tag 前先写 `version.txt` |
 
-#### 5.8.2 完整代码改动（共 5 处，可直接落地）
+#### 5.8.2 完整代码改动（5 处必改 + 1 处可选清理，可直接落地）
 
 **步骤 1：import 补 `Set`**（action_handler.py 第 68 行）
 
@@ -661,7 +662,7 @@ def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
 
 > 原 `elif is_parallel and not _has_conflict(all_calls):` 中"有冲突则落入 C 整批串行"的逻辑，改为进入 B' 后**分组处理**：有冲突的组串行、无冲突的组并行，C 分支保留给 `is_parallel=False`。
 >
-> **顺手清理（KISS-DIRECT）**：进入 B' 后 C 分支只可能由 `is_parallel=False` 触发，其 `_reason = "非并行模式" if not is_parallel else "文件路径冲突"` 中的 `"文件路径冲突"` 分支成为**永假死代码**，实施时改为 `_reason = "非并行模式"`（或直接去掉三元表达式）。
+> **顺手清理（KISS-DIRECT，第 6 处·可选）**：进入 B' 后 C 分支只可能由 `is_parallel=False` 触发，其 `_reason = "非并行模式" if not is_parallel else "文件路径冲突"` 中的 `"文件路径冲突"` 分支成为**永假死代码**，实施时建议改为 `_reason = "非并行模式"`（或直接去掉三元表达式）。**此项为可选**——不改不影响功能与验收标准（C 分支仅在 `is_parallel=False` 时触发，日志文案仍正确），仅消除死代码（KISS-DIRECT）。
 >
 > **异常处理等价性（L1）**：B' 的失败语义与原分支**逐点等价**——① 组内冲突→组内串行，`try/except Exception as e` 后 `_res.append(e)`，与原 C 分支逐工具处理的产物**相同**；② 组内无冲突→组内并行，`asyncio.gather(return_exceptions=True)`，与原 B 分支一致；③ 外围 `asyncio.gather(*[_run_group(g)...], return_exceptions=True)` 只兜底 `_run_group` 自身异常（如 `_has_conflict` 崩溃），此时整组标记为该异常，语义与原 C 分支"该调用失败"一致。**不改变 `results` 列表（含 Exception 元素）的返回形态**，`build_observation`/`_merge_llm_data` 零改动。
 
@@ -670,8 +671,8 @@ def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
 1. **备份**：实施前确认 `git status` 干净；如需留档先 `git stash` 或记下当前 commit。
 2. **落码（必须按序）**：严格按照 5.8.2 的 1→2→3→4→5 顺序执行。**步骤 2 的 `_parse_paths -> Set[str]` 依赖步骤 1 补的 `Set` import**，若跳过步骤 1 会 NameError；步骤 3 的 `_has_conflict` 又依赖步骤 2 的 `_parse_paths`。故 5 处不可乱序。
 3. **静态检查**：`python -m py_compile backend/app/services/agent/handlers/action_handler.py` 无语法错误。
-4. **单元验证**：运行 `verify_partition_v13.py`（分组单元 5 项 + 执行行为 4 项 + 失败隔离 1 项，内嵌计数版 `_has_conflict` 与生产逻辑一致，见 5.5.6）。
-5. **行为一致性回归**：重跑"原版 vs 新版 `_has_conflict`"对比（竞态/多读/一写多读/不同路径/别名归一 5 场景 + 无关工具/空调用/单调用等 10 项），输出必须一致。
+4. **单元验证**：运行 `verify_partition_v13.py`（分组单元 5 项 + 执行行为 4 项 + 失败隔离 1 项，内嵌计数版 `_has_conflict` 与生产逻辑一致，见 5.5.6）。**脚本路径**：`C:\Users\chend\AppData\Local\Temp\opencode\verify_partition_v13.py`（临时目录，若已清理可按 5.8.2 代码重建——其内嵌 `_parse_paths`/`_partition_calls`/`_has_conflict`/B' 逻辑与 5.8.2 逐字一致）。运行：`E:\Appsw\python31311\python.exe -X utf8 <脚本路径>`（cwd 为 `backend/`）。
+5. **行为一致性回归**：重跑"原版 vs 新版 `_has_conflict`"对比（竞态/多读/一写多读/不同路径/别名归一 5 场景 + 无关工具/空调用/单调用等 10 项），输出必须一致。**脚本路径**：`C:\Users\chend\AppData\Local\Temp\opencode\verify_refactor_consistency.py`（同步骤 4 的运行方式，若缺失可按其 14 个 CASE 重建）。
    - **已在设计期实测**：重构版（复用 `_parse_paths`）vs 内联计数版 **14/14 全部一致**（verify_refactor_consistency.py，含 move 同源不同目标、edittext+copy+readtext 07:57:53 批次等），重构不改变判定行为。
 6. **全量回归**：`backend/` 目录跑 `pytest -x --tb=short`（既有测试不得出现回归失败）。
 7. **提交**：按铁规 `git commit`（标题含文件名+签名+日期）；打 tag 前在 `version.txt` 头部插入本次变更说明。
