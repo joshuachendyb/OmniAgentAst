@@ -148,14 +148,42 @@ class Config:
         return self.get('app.max_context_tokens', default)
 
     def get_project_root(self) -> str:
-        """获取项目根目录配置
-        
-        若未配置(空字符串),返回基于代码位置推算的默认值。
+        """获取项目根目录配置 — 小欧 2026-08-10 ①改兜底
+
+        项目根=tool工作区: 配置 `app.project_root` 优先;
+        未配置(空) → 用户主目录 `Path.home()`(不再用代码位置当项目根)。
+        代码库根另行由 `get_code_root()` 提供(定位 config/version.txt 等程序资源)。
         """
         root = self.get('app.project_root', '')
         if root:
             return root
-        return get_default_project_root()
+        return str(Path.home())
+
+    def get_allowed_dirs(self) -> list:
+        """获取授权目录列表(可多个) — 小欧 2026-08-10 ⑩新增
+
+        除项目根外, tool 额外授权访问的工作目录, 配置 `app.allowed_dirs`(列表)。
+        项目根天然在授权内, 无需重复列入。
+        边界约束: 任一授权目录指向代码库根或其父/子级 → 抛 ValueError 拒绝加载
+        (与⑦ tool禁区冲突, 防止授权目录变相开放代码库)。
+        """
+        raw = self.get('app.allowed_dirs', None)
+        if not raw:
+            return []
+        if not isinstance(raw, list):
+            raise ValueError("app.allowed_dirs 必须是列表(list)")
+        result = []
+        code_root = Path(_get_code_root()).resolve()
+        for item in raw:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(f"app.allowed_dirs 含非法条目: {item!r}, 必须是非空字符串路径")
+            d = Path(item).resolve()
+            if d == code_root:
+                raise ValueError(f"app.allowed_dirs 禁止指向代码库根: {item}")
+            if code_root in d.parents or d in code_root.parents:
+                raise ValueError(f"app.allowed_dirs 禁止指向代码库根的父/子级: {item}")
+            result.append(str(d))
+        return result
 
     def reload(self):
         """重新加载配置 - 强制清空缓存"""
@@ -185,25 +213,30 @@ def get_config() -> Config:
 # 路径计算函数（从 utils/paths.py 迁入）
 # ============================================================
 
-_PROJECT_ROOT: Optional[Path] = None
+_CODE_ROOT: Optional[Path] = None
 
 
-def _get_project_root() -> Path:
-    """唯一项目根目录计算入口——基于当前文件位置推算"""
-    global _PROJECT_ROOT
-    if _PROJECT_ROOT is None:
-        _PROJECT_ROOT = Path(__file__).parent.parent.parent
-    return _PROJECT_ROOT
+def _get_code_root() -> Path:
+    """代码库根(程序安装/代码所在目录)计算入口 — 小欧 2026-08-10 ②改名(原_get_project_root)
+    基于当前文件位置推算, 仅用于定位 config/config.yaml、version.txt、logs/、模板等程序自身资源。
+    tool 禁区: 任何tool操作触达此根一律禁止(Safety层⑦硬拦截)。
+    """
+    global _CODE_ROOT
+    if _CODE_ROOT is None:
+        _CODE_ROOT = Path(__file__).parent.parent.parent
+    return _CODE_ROOT
 
 
-def get_default_project_root() -> str:
-    """获取默认项目根目录(str) — 基于代码位置推算"""
-    return str(_get_project_root())
+def get_code_root() -> str:
+    """获取代码库根(str)公开API — 小欧 2026-08-10 ③改名(原get_default_project_root)
+    名实一致(代码库根, 非项目根); 项目根请用 get_project_root()。
+    """
+    return str(_get_code_root())
 
 
 def get_config_path(filename: str = "config.yaml") -> str:
-    """统一配置路径获取"""
-    return str(_get_project_root() / "config" / filename)
+    """统一配置路径获取 — 代码库根下 config 目录(非项目根) — 小欧 2026-08-10 ④内部改调"""
+    return str(_get_code_root() / "config" / filename)
 
 
 DEFAULT_CONFIG_FILENAME = "config.yaml"

@@ -32,7 +32,7 @@ from app.tools.validate.file_path_checker import validate_path, OpCategory, hint
 from app.logger import logger
 
 def _get_download_dir() -> str:
-    """获取下载目录 — 优先从配置读取project_root，未配则fallback到代码位置 — 小欧 2026-07-09"""
+    """获取下载目录 — 优先从配置读取project_root(未配→用户主目录)，子目录download — 小欧 2026-07-09, 2026-08-10 ⑭注释更正"""
     from app.config import get_config
     return os.path.join(get_config().get_project_root(), "download")
 

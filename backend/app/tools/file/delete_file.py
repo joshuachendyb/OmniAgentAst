@@ -33,29 +33,10 @@ from app.services.safety import record_operation, execute_with_safety
 from app.logger import logger
 
 
-def _get_project_root() -> Path:
-    """推算真实项目根(backend的父级) — 小欧 2026-08-02
-    以代码位置推算为准(可靠), config配置的project_root仅作辅助(生产config可被改为测试目录,不可信)。
-    """
-    # 1) 代码位置推算: 本文件位于 {root}/backend/app/tools/file/delete_file.py
-    cur = Path(__file__).resolve()
-    for parent in cur.parents:
-        if parent.name == "backend":
-            return parent.parent
-    # 2) config兜底
-    try:
-        from app.config import get_config
-        cfg_root = get_config().get_project_root()
-        if cfg_root and Path(cfg_root).exists():
-            return Path(cfg_root).resolve()
-    except Exception:
-        pass
-    return cur.parents[4]
-
-
 def _guard_forbidden_delete(file_path: str) -> Optional[str]:
-    """删除最后防线: 无条件禁止删除盘根/项目根/系统保护目录 — 小欧 2026-08-02
-    不依赖security.enabled与config, 在delete()最前方硬阻断。
+    """删除最后防线: 无条件禁止删除盘根/项目根+授权目录/系统保护目录 — 小欧 2026-08-02, 2026-08-10 ⑥收敛走config
+    不依赖security.enabled, 在delete()最前方硬阻断。
+    项目根统一走 config.get_project_root(), 代码库根删除保护由 Safety 层 _is_forbidden_path(⑦) 承接。
     返回blocked原因, 通过返回None表示允许删除。
     """
     try:
@@ -88,18 +69,22 @@ def _guard_forbidden_delete(file_path: str) -> Optional[str]:
             if path_after_drive == sd_norm or path_after_drive.startswith(sd):
                 return f"禁止删除系统目录: {file_path}"
 
-    # 3) 项目根本身及项目根的父级祖先(含盘根) — 保护项目根不被删除
-    #    项目根内的具体用户文件/目录仍允许删除, 只禁项目根及更上层。
+    # 3) 项目根本身及项目根的父级祖先(含盘根) + 授权目录 — 保护根不被删除
+    #    根内的具体用户文件/目录仍允许删除, 只禁各根自身及更上层。
     try:
-        proj_root = _get_project_root()
-        if proj_root:
-            # p 是项目根本身 → 禁
-            if p == proj_root:
-                return f"禁止删除项目根目录: {file_path}"
-            # p 是项目根的上层祖先 → 禁
-            for ancestor in proj_root.parents:
+        from app.config import get_config
+        protected_roots_ = [Path(get_config().get_project_root()).resolve()]
+        try:
+            allowed_dirs = get_config().get_allowed_dirs()
+            protected_roots_ += [Path(d).resolve() for d in allowed_dirs]
+        except Exception:
+            pass
+        for root_ in protected_roots_:
+            if p == root_:
+                return f"禁止删除项目根/授权根目录: {file_path}"
+            for ancestor in root_.parents:
                 if p == ancestor:
-                    return f"禁止删除项目根上级目录: {file_path}"
+                    return f"禁止删除项目根/授权根上级目录: {file_path}"
     except Exception:
         pass
     return None

@@ -25,7 +25,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 import traceback
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.tools import ensure_tools_registered
-from app.config import get_config
+from app.config import get_config, get_code_root
 from pathlib import Path
 import os
 import logging
@@ -44,11 +44,10 @@ logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 
 def get_version() -> str:
-    """从version.txt读取版本号 - 小沈 2026-05-27"""
+    """从version.txt读取版本号 - 小沈 2026-05-27 - 小欧 2026-08-10 ⑬改调get_code_root"""
     try:
-        current_file = Path(__file__).resolve()
-        project_root = current_file.parent.parent.parent  # 项目根目录 — 小欧 2026-07-04
-        version_file = project_root / "version.txt"
+        code_root = Path(get_code_root())  # 代码库根(定位version.txt) — ⑬ 2026-08-10
+        version_file = code_root / "version.txt"
 
         if version_file.exists():
             version = "0.0.0"
