@@ -4,6 +4,7 @@
 # 2026-07-20 - 小欧 - 删 output_mode 参数别名映射: grep 已去除 output_mode 参数(默认即 content 模式), 该别名失效, 删除死映射避免误导
 # 2026-07-28 - 小欧 - BUG#19: "value":"value"是恒等映射(输入=输出无转换), 空转别名删除
 # 2026-08-07 - 小欧 - 新增TOOL_NAME_ALIASES工具名别名映射+normalize_tool_name: LLM常生成变体名(write_text等), 映射到注册名(writetext), 防"工具未注册"误拦截(com-test 03暴露)
+# 2026-08-09 - 小欧 - write_xlsx 参数别名 append→append_mode: LLM 常按布尔语义传 append, 实际实现/SCHEMA参数为 append_mode(2026-08-07 P04优化), 无映射会因未知参数被忽略导致追加失效
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -214,6 +215,7 @@ PARAM_ALIASES = {
         "filepath": "path",
         "file": "path",
         "file_path": "path",
+        "append": "append_mode",  # LLM 常传 append(布尔), 实际参数为 append_mode — 小欧 2026-08-09
     },
     "write_pdf": {
         "file_name": "path",
