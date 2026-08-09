@@ -55,6 +55,11 @@
 #         ③新增_partition_calls(并查集连通分量分组) ④分支B改分组调度B': 冲突组内串行+无冲突组并行+组间失败隔离(results保序)
 #         ⑤C分支_reason死代码清理(进入B'后C分支仅is_parallel=False触发, "文件路径冲突"永假)
 #   [验证] verify_refactor_consistency 14/14一致 + verify_partition_v13 分组/执行/隔离10项全PASS + pytest全量回归
+# 2026-08-09 - 小欧 - B'分组调度监控日志(北京老陈驱动: 需监控时间运行情况):
+#   [目的] 原B'仅"分组并行执行"开头日志+总耗时, 无法观察每组是并行/串行及各组实际耗时
+#   [改法] ①进入B'后打印分组明细(每组工具+模式: 单工具/并行/串行) ②_run_group内计时,
+#          每组执行完打印"分组执行完成: tools=..., 模式=..., 耗时=x.xxs" ③执行逻辑零改动(仅return改为赋值_res后return)
+#   [验证] py_compile + verify_prod_smoke(生产代码直接import) + handlers/edittext测试
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -405,24 +410,35 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             _names = [_cn(c) for c in all_calls]
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组并行执行: tools={_names}")
             groups = _partition_calls(all_calls)
+            _gd = []
+            for _g in groups:
+                _gt = [_cn(all_calls[i]) for i in _g]
+                _gmode = "单工具" if len(_g) == 1 else ("并行" if not _has_conflict([all_calls[i] for i in _g]) else "串行")
+                _gd.append(f"[{'/'.join(_gt)}:{_gmode}]")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组明细({len(groups)}组): {' '.join(_gd)}")
 
             async def _run_group(indices: List[int]):
                 group = [all_calls[i] for i in indices]
+                _g_start = time.time()  # 监控: 每组执行耗时起点 — 小欧 2026-08-09
                 if len(group) == 1:  # 单工具, 语义同原A
-                    return [await execute_tool(agent, _cn(group[0]), _cp(group[0]),
+                    _res = [await execute_tool(agent, _cn(group[0]), _cp(group[0]),
                                                on_retry_started=on_retry_started)]
-                if not _has_conflict(group):  # 组内无冲突→并行(try_once), 语义同原B
+                    _gmode = "单工具"
+                elif not _has_conflict(group):  # 组内无冲突→并行(try_once), 语义同原B
                     tasks = [execute_tool(agent, _cn(c), _cp(c), parallel=True) for c in group]
-                    return await asyncio.gather(*tasks, return_exceptions=True)
-                # 组内冲突→组内串行(带重试), 语义同原C
-                _res = []
-                for call in group:
-                    try:
-                        _res.append(await execute_tool(agent, _cn(call), _cp(call),
-                                                       on_retry_started=on_retry_started))
-                    except Exception as e:
-                        logger.warning(f"[action_handler] 工具{_cn(call)}组内顺序执行失败: {e}")
-                        _res.append(e)
+                    _res = await asyncio.gather(*tasks, return_exceptions=True)
+                    _gmode = "并行"
+                else:  # 组内冲突→组内串行(带重试), 语义同原C
+                    _res = []
+                    for call in group:
+                        try:
+                            _res.append(await execute_tool(agent, _cn(call), _cp(call),
+                                                           on_retry_started=on_retry_started))
+                        except Exception as e:
+                            logger.warning(f"[action_handler] 工具{_cn(call)}组内顺序执行失败: {e}")
+                            _res.append(e)
+                    _gmode = "串行"
+                logger.info(f"[action_handler] 分组执行完成: tools={[_cn(c) for c in group]}, 模式={_gmode}, 耗时={time.time()-_g_start:.2f}s")
                 return _res
 
             _grouped = await asyncio.gather(*[_run_group(g) for g in groups],
