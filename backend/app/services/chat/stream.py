@@ -6,6 +6,9 @@
 # 2026-07-23 小欧 - log_and_print统一: print(_msg); logger.info(_msg)替换为log_and_print(_msg), 导入log_and_print; TASK_END消息追加时间串
 # 2026-07-30 - 小欧 - 后端卡死根因修复: cond.wait() 加 60s 超时(asyncio.wait_for)+超时后重检 buffer.done; 防止 SSE 消费者因 cond 永远不被 notify 而永久挂起占死 HTTP 连接
 # 2026-08-09 - 小欧 - TASK_END 追加真实累计token用量 usage_tokens=prompt_tokens=..,completion_tokens=..,total_tokens=..(读agent.accumulated_usage) 及 total_steps=N 总步骤数; steps 统计剔除 usage 类型计数(原 usage=N 恒等llm_calls 为 usage step 计数非 token, 曾误导读数)
+# 2026-08-09 - 小欧 - P3修正(见doc-8月优化修复代码三堂会审报告v1.1): total_steps 排除项由仅"usage"扩为非业务MetaStep集合
+#   (paused/resumed/retrying/cancelled/authorization_required/start + usage),与"Meta步骤非业务步骤"注释自洽;
+#   业务步骤(chunk/action/thought/observation/final/error)不计入排除不误伤; total在pop之后计算。ast语法✓
 """
 stream — SSE流运行器（消费者）
 
@@ -160,9 +163,13 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
         for s in steps:
             t = s.get("type", "?") if isinstance(s, dict) else "?"
             counter[t] = counter.get(t, 0) + 1
+        # 2026-08-09 - 小欧 - 三审收尾: usage 为非业务 Meta 步骤, 真实消耗由 usage_tokens 承担, 不混入业务统计;
+        #   同性质非业务 MetaStep(paused/resumed/retrying/cancelled/authorization_required/start) 一并剔除, 与
+        #   "Meta 步骤非业务步骤"注释自洽; 业务步骤(chunk/action/thought/observation/final/error)不计入排除,
+        #   不误伤。total 必须在 pop 之后计算, 否则 total_steps 含排除项与注释声明矛盾。
+        for _t in ("usage", "paused", "resumed", "retrying", "cancelled", "authorization_required", "start"):
+            counter.pop(_t, None)
         total = sum(counter.values())
-        # usage 为 Meta 步骤非业务步骤, 真实消耗由 usage_tokens 承担; 不混入业务统计 — 小欧 2026-08-09
-        counter.pop("usage", None)
         step_summary = ",".join(f"{k}={v}" for k, v in sorted(counter.items()))
         if step_summary:
             parts.append(f"steps=[{step_summary}]")

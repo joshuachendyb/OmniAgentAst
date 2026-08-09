@@ -122,6 +122,10 @@
 #        新增纯函数: _REAL_ERROR_MARKERS(35项词边界正则, ERROR用(?<!no )防"no error"误伤)/_contains_real_error/_has_output
 #        关联: 原「未找到/语法/权限」前缀识别保留复用, _hint/_shell_mismatch_hint不变, 成功/超时分支未动
 #        验证: py_compile✓ 新增37用例全过(含真实命令三分支+markers覆盖) 既有shell测试106+103全过 150案例回归131/17/2
+# 2026-08-09 - 小欧 - 修正A收尾三审(P1/P2, 见doc-8月优化修复代码三堂会审报告v1.1):
+#        P1: Add-Type 属cmdlet, 从"异常类型裸词组"移入"cmdlet名+冒号"组, 收紧为 \bAdd-Type\b[ \t]*:(原遗漏致正常输出含Add-Type字样误判error)
+#        P2: 全部cmdlet错误行首匹配 \s* 改 [ \t]*(	\s含换行可跨行误命中, 仅同行内空白的真实PS错误行首格式)
+#        验证: 5组用例实测全过(Add-Type:错→error / Add-Type裸词→不误判 / 跨行\n: →不命中), ast语法✓
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -646,11 +650,14 @@ _REAL_ERROR_MARKERS = (
     r"\b0x[0-9a-fA-F]{8}\b",
     # 中文命令未找到 / 可运行程序缺失
     r"不是内部或外部命令", r"不是可运行的程序", r"无法将.*项识别为",
-    # PowerShell cmdlet 报错动词
-    r"\bInvalidOperation\b", r"\bMethodInvocationException\b", r"\bAdd-Type\b",
-    r"\bGet-ChildItem\b", r"\bForEach-Object\b", r"\bGet-CimInstance\b",
-    r"\bNew-Object\b", r"\bSort-Object\b", r"\bGet-WinEvent\b",
-    r"\bSet-ItemProperty\b", r"\bGet-Process\b",
+    # PowerShell cmdlet 报错动词 — 小欧 2026-08-09 收紧: cmdlet 名后须紧跟冒号(真实错误消息行首格式)
+    # 原为"纯词边界(bare cmdlet 名)", 正常输出仅含 cmdlet 名会被误判 error; 收紧为 "名 : " 后仅命中真实报错。
+    # 2026-08-09 - 小欧 - 收尾三审: ①Add-Type 亦属 cmdlet 一并收紧(原遗漏于异常类型组);
+    #   ②\s* 含换行可跨行误命中, 统一改 [ \t]* 仅匹配同行内空白(ASCII冒号为PS错误分隔符, 全角不适用)。
+    r"\bInvalidOperation\b", r"\bMethodInvocationException\b",
+    r"\bAdd-Type\b[ \t]*:", r"\bGet-ChildItem\b[ \t]*:", r"\bForEach-Object\b[ \t]*:",
+    r"\bGet-CimInstance\b[ \t]*:", r"\bNew-Object\b[ \t]*:", r"\bSort-Object\b[ \t]*:",
+    r"\bGet-WinEvent\b[ \t]*:", r"\bSet-ItemProperty\b[ \t]*:", r"\bGet-Process\b[ \t]*:",
     # 中文
     r"\b失败\b", r"\b读取失败\b",
 )

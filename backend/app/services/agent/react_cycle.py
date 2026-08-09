@@ -44,6 +44,10 @@
 #     cnt>=5 硬终止; _warned_same_tool_loop 为 int 计数(发纠偏条数, 上限_SAME_TOOL_WARN_MAX),
 #     重置/初始化点(签名变化/非action/initialize_run_state)由 False 改 0;
 #     deny_counts 让位判断 not _warned_same_tool_loop 真值语义不变(int>0即已发)
+# 2026-08-09 - 小欧 - P4拆分(见doc-8月优化修复代码三堂会审报告v1.1): 用户暂停阻塞由 task_pause_check(产SSE) 改为
+#   wait_for_resume(纯阻塞不产SSE)。原 task_pause_check 在 react_cycle→agent_runner 路径产出的SSE字符串
+#   被 agent_runner 以"跳过非Step事件"丢弃(死路); 前端暂停/恢复提示由 openai._stream_with_control 的
+#   task_pause_check_and_yield 统一下发(职责单一无重复)。ast语法✓
 
 
 """
@@ -544,7 +548,7 @@ async def run_react_cycle(
             # 注: 原 react_cycle 场景B 依赖 llm_client._cancelled, 该属性全局从未赋值(死代码),
             # 曾导致用户取消误走 empty_response→ErrorStep(failed)。 — 小沈 2026-07-13
             if task_id:
-                from app.services.task.task_runtime import check_cancelled, task_pause_check
+                from app.services.task.task_runtime import check_cancelled, wait_for_resume
                 if await check_cancelled(task_id):
                     logger.info(f"[run_react_cycle] 检测到任务取消(task_id={task_id}), 终止为 cancelled")
                     yield agent._step_emitter.emit(FinalStep(
@@ -555,11 +559,14 @@ async def run_react_cycle(
                     break
                 # 用户暂停检测(循环粒度, 阻塞等待恢复) — 小欧 2026-07-13
                 # 符合人类认知: 你喊暂停, 助手原地等(真BLOCK), 不空转、不误判为取消/完成。
-                # 阻塞点在 task_pause_check 内 pause_event.wait(); 恢复后回 THINKING 继续。
+                # 阻塞点在 wait_for_resume 内 pause_event.wait(); 恢复后回 THINKING 继续。
                 # 注意: 此处只查暂停不查取消(取消已在上方处理); 暂停不再经 LLMClient._stop_check
                 # 中断流式(已在 agent_runner 改为仅查取消), 故暂停在"下一轮循环顶"干净生效。
-                async for pause_event in task_pause_check(task_id):
-                    yield pause_event
+                # 2026-08-09 - 小欧 - P4 拆分: 原 task_pause_check 在此产出 SSE 字符串被 agent_runner
+                #   以"跳过非Step事件"丢弃(死路), 改纯阻塞 wait_for_resume(不产 SSE);
+                #   暂停/恢复 SSE 统一由前端消费路径 openai._stream_with_control 的
+                #   task_pause_check_and_yield 下发, 职责单一无死路。
+                await wait_for_resume(task_id)
             try:
                 async for event in _process_single_step(agent, chunk_buffer):
                     yield event
