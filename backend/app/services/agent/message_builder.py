@@ -11,6 +11,9 @@
 # 2026-07-22 - 小欧 - 补充 assistant 消息四种存储形态类注释(源自对话梳理: action轮只存tool_calls, answer/reasoning-only/异常才存content)
 # 2026-07-23 - 小欧 - #13 react_cycle崩溃修复: trim_history 加 try/except 防御性保护(message_builder状态退化时跳过裁剪保留原历史, 不抛异常到 react_cycle 导致循环崩溃)
 # 2026-08-08 - 小欧 - v1.6双阈值扩展: ①pop_temp_messages判断条件由_temp_reasoning改为通用_temp_*前缀(兼容_temp_same_tool_warn, 绝后新增标记漏清理); ②prepare_messages_for_llm剥离_temp_*内部标记防泄漏LLM
+# 2026-08-09 - 小欧 - v1.7发送即清(北京老陈 2026-08-09 指示): prepare_messages_for_llm浅拷贝messages后, 由conversation_history源中
+#   立即剔除本轮已发送的_temp_*临时消息(纠偏/推理仅活"本轮发送这一次"), 防死循环长历史中残留/重复携带/污染压缩与持久化;
+#   与终态pop_temp_messages安全网双保险(reasoning-only/纠偏正常脱落)。ast语法✓
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -244,6 +247,10 @@ class MessageBuilder:
         for msg in messages:
             for _k in [k for k in msg if k.startswith("_temp_")]:
                 msg.pop(_k, None)
+        # 发送即清: 本轮发送的_temp_*临时消息(纠偏/推理)仅活"本轮发送这一次", 已浅拷贝进messages后
+        # 由conversation_history源中立即剔除, 防后续轮次/压缩/持久化残留(北京老陈 2026-08-09 指示) — 小欧 2026-08-09
+        self.conversation_history = [m for m in self.conversation_history
+                                     if not any(k.startswith("_temp_") for k in m)]
         return messages
 
     def _cap_temp_history(self):

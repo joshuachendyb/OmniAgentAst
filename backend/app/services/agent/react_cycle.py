@@ -48,6 +48,10 @@
 #   wait_for_resume(纯阻塞不产SSE)。原 task_pause_check 在 react_cycle→agent_runner 路径产出的SSE字符串
 #   被 agent_runner 以"跳过非Step事件"丢弃(死路); 前端暂停/恢复提示由 openai._stream_with_control 的
 #   task_pause_check_and_yield 统一下发(职责单一无重复)。ast语法✓
+# 2026-08-09 - 小欧 - task007核查问题A: 相同工具纠偏消息为"面向LLM的反馈指令", role由assistant改为user,
+#   文本增强紧迫感(点明"强制终止后果"+要求改工具/直接结束), 强化LLM服从。带_temp_same_tool_warn标记
+#   仍受通用_temp_*前缀清除(tool_retry_engine/pop_temp_messages v1.6)保护, 持久化前被pop_temp_messages
+#   统一弹掉, 不污染history/压缩。ast语法✓
 
 
 """
@@ -189,12 +193,13 @@ def _warn_same_tool_loop(agent, llm_response: Dict, count: int) -> None:
     _tool = llm_response.get("tool_name", "") or ""
     _sig = _tool_call_signature(llm_response)
     obs_text = (
-        f"[Observation] 警告: 你刚才连续调用了相同的工具 {_tool} 且参数**完全相同**, "
-        f"已连续 {count} 次, 签名={_sig[:80]}... "
-        f"结果本质相同, 可能陷入思维循环。请检查: 1) 是否获得了新信息; 2) 是否需要更换策略。"
+        f"[Warning] 你的上一次操作无效: 已连续 {count} 次调用相同的工具 {_tool} 且参数**完全相同**, "
+        f"签名={_sig[:80]}..., 并未获得任何新信息。这是较严重的重复循环。"
+        "请立即根据以下提示调整, 否则系统将强制终止本次任务: "
+        "1) 改用其他工具或不同的参数; 2) 若确无新进展, 请直接给出结论结束任务, 不要再次重复调用同一工具。"
     )
     agent.message_builder.conversation_history.append({
-        "role": "assistant",
+        "role": "user",
         "content": obs_text,
         "_temp_same_tool_warn": True,
     })
