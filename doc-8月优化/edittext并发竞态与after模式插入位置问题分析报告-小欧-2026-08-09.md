@@ -20,6 +20,7 @@
 | v1.7 | 2026-08-09 10:32 | 小欧 | **全文三遍三堂会审修正**：① 5.5.3/5.5.5/5.6 **行数修正 70→约 115**（按 5.8.2 精确代码统计：`_parse_paths` 21 + `_partition_calls` 31 + `_has_conflict` 改造 28 + 分支 B 35 + import 1）；② **补异常处理等价性声明（L1）**到 5.8.2 说明：B' 失败语义与原 A/B/C 逐点等价，`results` 返回形态不变，build_observation/`_merge_llm_data` 零改动；③ 5.3 C4 补**07:57:53 日志出处**（app_2026-08-09.log 行15295-15319，会话 `4ae0302c` step7，属实）；④ 5.8.3 步骤2 强化Set依赖顺序 |
 | v1.8 | 2026-08-09 10:50 | 小欧 | **二轮三堂会审修正**：① **R4 歧义澄清**：5.1 代码块加"方案一独立版(inlining别名解析)，方案二落地版见 5.8.2 步骤3(复用_parse_paths)"，防止开发者误复制 5.1 落地方案二；② **C2 口径统一**：5.5.2 title 行数 50→53（代码块 346-398 实际 53 行）。三堂会审结论: 技术逻辑正确, 5.8.2 代码 14/14 一致可落地, 仅 2 处文档口径/歧义问题 (均低估/非虚报), 实测 0 处虚报 |
 | v1.9 | 2026-08-09 09:14 | 小欧 | **三轮三堂会审修正（老陈指令：全文熟读3遍，实施步骤必须绝对完整准确）**：① **行数数学错误修正 115→116**（5.5.3/5.5.5/5.6 共 4 处："约115"差 1，按 5.8.2 分项 `_parse_paths`21+`_partition_calls`31+`_has_conflict`28+分支B35+import1=**116**）；② **5.8.2 口径**：标题改"**5 处必改 + 1 处可选清理**"（C 分支 `_reason` 死代码清理为第 6 处**可选**改动，不列为必改）；③ **日志行号修正 14742→14743**（4.3 场景A：step=14 完整 after 参数实际在日志行 14743，14742 为"工具执行完成"行；复现参数本身正确）；④ **5.8.3 步骤4/5 补 verify 脚本路径**（`C:\Users\chend\AppData\Local\Temp\opencode\`，防临时目录清理后无法复跑；脚本内嵌逻辑与 5.8.2 逐字一致，若脚本缺失可按 5.8.2 代码重建）；⑤ 行数口径说明：5.8.2 代码块含空行排版 `_partition_calls` 31 行、verify 脚本紧凑排版 29 行，功能代码逐字一致。**三轮会审结论：逻辑/行为问题 0 处，5.8.2 落地代码与 verify 脚本逐字一致，实测 14/14 + 分组调度 10 项全 PASS，文档仅修正 5 处精确性/口径问题，均非虚报** |
+| v1.10 | 2026-08-09 10:14 | 小欧 | **实施完成同步（老陈指令：监控日志 + TASK_END 修正，均三堂会审通过；本次不打 tag 只提交）**：① 5.8.2 步骤 5 B' 代码块同步为**落地版**（含分组调度监控日志：分组明细"分组明细(N组): [工具:模式]..."+ 每组"分组执行完成: tools=..., 模式=..., 耗时=x.xxs"，执行逻辑零改动仅 `return` 改 `_res` 赋值）；② 5.8.3 新增**步骤 6.5**：监控日志验证（`verify_bprime_logs.py`，输出已实证实：竞态批次 6 调用 0.32s mock、分组明细 4 组、每组完成日志落文件）+ **TASK_END 日志修正说明**（原 `steps=[...usage=N...]` 中 usage 为 usage 类型 step 计数恒等 `llm_calls`，非 token，曾误导读数 → 改为追加真实累计 `usage_tokens=prompt_tokens/completion_tokens/total_tokens` + steps 剔除 usage 计数 + 末尾 `total_steps=N` 总步骤数）；③ 结尾注更新（B' 已落地 commit 2e0e7a33c + 本次监控增补） |
 
 ---
 
@@ -628,24 +629,35 @@ def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
             _names = [_cn(c) for c in all_calls]
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组并行执行: tools={_names}")
             groups = _partition_calls(all_calls)
+            _gd = []  # 监控: 分组明细(每组工具+模式) — 小欧 2026-08-09
+            for _g in groups:
+                _gt = [_cn(all_calls[i]) for i in _g]
+                _gmode = "单工具" if len(_g) == 1 else ("并行" if not _has_conflict([all_calls[i] for i in _g]) else "串行")
+                _gd.append(f"[{'/'.join(_gt)}:{_gmode}]")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组明细({len(groups)}组): {' '.join(_gd)}")
 
             async def _run_group(indices: List[int]):
                 group = [all_calls[i] for i in indices]
+                _g_start = time.time()  # 监控: 每组执行耗时起点 — 小欧 2026-08-09
                 if len(group) == 1:  # 单工具, 语义同原A
-                    return [await execute_tool(agent, _cn(group[0]), _cp(group[0]),
+                    _res = [await execute_tool(agent, _cn(group[0]), _cp(group[0]),
                                                on_retry_started=on_retry_started)]
-                if not _has_conflict(group):  # 组内无冲突→并行(try_once), 语义同原B
+                    _gmode = "单工具"
+                elif not _has_conflict(group):  # 组内无冲突→并行(try_once), 语义同原B
                     tasks = [execute_tool(agent, _cn(c), _cp(c), parallel=True) for c in group]
-                    return await asyncio.gather(*tasks, return_exceptions=True)
-                # 组内冲突→组内串行(带重试), 语义同原C
-                _res = []
-                for call in group:
-                    try:
-                        _res.append(await execute_tool(agent, _cn(call), _cp(call),
-                                                       on_retry_started=on_retry_started))
-                    except Exception as e:
-                        logger.warning(f"[action_handler] 工具{_cn(call)}组内顺序执行失败: {e}")
-                        _res.append(e)
+                    _res = await asyncio.gather(*tasks, return_exceptions=True)
+                    _gmode = "并行"
+                else:  # 组内冲突→组内串行(带重试), 语义同原C
+                    _res = []
+                    for call in group:
+                        try:
+                            _res.append(await execute_tool(agent, _cn(call), _cp(call),
+                                                           on_retry_started=on_retry_started))
+                        except Exception as e:
+                            logger.warning(f"[action_handler] 工具{_cn(call)}组内顺序执行失败: {e}")
+                            _res.append(e)
+                    _gmode = "串行"
+                logger.info(f"[action_handler] 分组执行完成: tools={[_cn(c) for c in group]}, 模式={_gmode}, 耗时={time.time()-_g_start:.2f}s")
                 return _res
 
             _grouped = await asyncio.gather(*[_run_group(g) for g in groups],
@@ -665,6 +677,8 @@ def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
 > **顺手清理（KISS-DIRECT，第 6 处·可选）**：进入 B' 后 C 分支只可能由 `is_parallel=False` 触发，其 `_reason = "非并行模式" if not is_parallel else "文件路径冲突"` 中的 `"文件路径冲突"` 分支成为**永假死代码**，实施时建议改为 `_reason = "非并行模式"`（或直接去掉三元表达式）。**此项为可选**——不改不影响功能与验收标准（C 分支仅在 `is_parallel=False` 时触发，日志文案仍正确），仅消除死代码（KISS-DIRECT）。
 >
 > **异常处理等价性（L1）**：B' 的失败语义与原分支**逐点等价**——① 组内冲突→组内串行，`try/except Exception as e` 后 `_res.append(e)`，与原 C 分支逐工具处理的产物**相同**；② 组内无冲突→组内并行，`asyncio.gather(return_exceptions=True)`，与原 B 分支一致；③ 外围 `asyncio.gather(*[_run_group(g)...], return_exceptions=True)` 只兜底 `_run_group` 自身异常（如 `_has_conflict` 崩溃），此时整组标记为该异常，语义与原 C 分支"该调用失败"一致。**不改变 `results` 列表（含 Exception 元素）的返回形态**，`build_observation`/`_merge_llm_data` 零改动。
+>
+> **监控日志（v1.10 增补，北京老陈驱动）**：以上代码已含分组调度监控——① 入口打"分组并行执行: tools=[...]"；② 分组明细"分组明细(N组): [工具/工具:模式]..."（模式=单工具/并行/串行，便于核对每组调度决策）；③ 每组执行完打"分组执行完成: tools=[...], 模式=..., 耗时=x.xxs"（`logger.info` 写文件日志，console 仅 WARNING 不上屏，查 `backend/logs/app_*.log`）。**执行逻辑零改动**：仅 `return [...]` 改为 `_res=[...]; logger.info(...); return _res`，results 保序/组间隔离/异常语义全部不变。
 
 #### 5.8.3 实施步骤
 
@@ -675,6 +689,8 @@ def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
 5. **行为一致性回归**：重跑"原版 vs 新版 `_has_conflict`"对比（竞态/多读/一写多读/不同路径/别名归一 5 场景 + 无关工具/空调用/单调用等 10 项），输出必须一致。**脚本路径**：`C:\Users\chend\AppData\Local\Temp\opencode\verify_refactor_consistency.py`（同步骤 4 的运行方式，若缺失可按其 14 个 CASE 重建）。
    - **已在设计期实测**：重构版（复用 `_parse_paths`）vs 内联计数版 **14/14 全部一致**（verify_refactor_consistency.py，含 move 同源不同目标、edittext+copy+readtext 07:57:53 批次等），重构不改变判定行为。
 6. **全量回归**：`backend/` 目录跑 `pytest -x --tb=short`（既有测试不得出现回归失败）。
+6.5. **监控日志验证（v1.10 增补）**：运行 `C:\Users\chend\AppData\Local\Temp\opencode\verify_bprime_logs.py`（mock `execute_tool` 每工具 sleep 0.1s，走真实 `execute_tools`），应输出"分组并行执行 + 分组明细(N组)"，且 `backend/logs/app_*.log` 出现"分组执行完成: tools=[...], 模式=..., 耗时=..."；同时核对真实后端会话日志可见该监控链。
+   - **TASK_END 日志修正（v1.10 增补，独立小改进）**：`_log_task_end`（`app/services/chat/stream.py`）原 `steps=[...usage=N...]` 中 usage 是 usage 类型 step 计数（恒等 `llm_calls`），**非 token 数**，曾误导读数。已改为：① 追加真实累计 token `usage_tokens=prompt_tokens=..,completion_tokens=..,total_tokens=..`（读 `agent.accumulated_usage`）；② steps 统计剔除 usage 类型计数（业务步骤统计更纯）；③ 末尾追加 `total_steps=N` 总步骤数（含 usage）。输出示例：`[TASK_END] 10:11:29 task_id=... | end_type=final | duration=... | llm_calls=34 | usage_tokens=prompt_tokens=12345,completion_tokens=6789,total_tokens=19134 | steps=[action_tool=1,final=1,observation=1,thought=2] | total_steps=7`。
 7. **提交**：按铁规 `git commit`（标题含文件名+签名+日期）；打 tag 前在 `version.txt` 头部插入本次变更说明。
 
 #### 5.8.4 验证与验收标准
@@ -700,4 +716,4 @@ def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
 | ① 并发 edittext 竞态致内容丢失 | ✅ **真实 BUG（高）** | `_has_conflict` 用 set 存工具名不计数，同名工具多写同一路径漏检 → 走并行分支 → read-modify-write 丢失更新 | 修复 `_has_conflict` 按路径计数（方案一/方案二均含，见五） |
 | ② after 模式插入位置异常 | ⚪ **本次场景工具行为正确，报告误判**（step=14 多行锚点位置正确，精确复现）；边界：单行签名锚点确有错位风险，`_anchor_signature_hint` 已提示兜底（task002 已知项） | step=11 并发竞态导致 after 调用失败，LLM 延续失败记忆推理误判（step=15 无 readtext 实证） | 修复问题①后自然消失，无需单独改码；签名行锚点风险已有提示机制，不另立修复项 |
 
-> **注**：本报告已完成研究核实与两套修复方案设计验证。**老陈已于 2026-08-09 选定方案二（分组调度版）**，完整落地清单见 **5.8**。代码**尚未修改**，按 5.8.3 实施步骤执行。
+> **注**：本报告已完成研究核实与两套修复方案设计验证。**老陈已于 2026-08-09 选定方案二（分组调度版）**，完整落地清单见 **5.8**。B' 分组调度修复已落地（commit 2e0e7a33c），随后按老陈指令增补**分组调度监控日志**与 **TASK_END 真实 token 消耗统计**（见 5.8.2 步骤 5 监控日志说明、5.8.3 步骤 6.5，v1.10）。
