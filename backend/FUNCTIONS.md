@@ -242,17 +242,32 @@ def my_parse_json(json_str):
 |--------|------|------|--------|
 | `get_existing_drives` | 动态获取当前存在的磁盘符号列表（不写死，遍历A-Z探测，应对U盘插拔/盘符重映射；R2磁盘根递归删除判定时刻使用） | 无 | List[Path] |
 | `get_system_drive` | 动态获取真实系统盘符（SystemRoot/WINDIR环境变量→SystemDrive→探测存在\\Windows的盘符→兜底C:；系统目录判定C:模板动态替换） | 无 | str |
-| `_get_project_root_safety` | 推算真实项目根（复制delete_file._get_project_root上移Safety层，恒非None，消除工具层反向依赖） | 无 | Path |
-| `_is_forbidden_path` | 系统敏感路径黑名单（盘根splitdrive全盘符判定 + 系统目录FORBIDDEN_PATHS_WINDOWS_* C:模板动态盘符替换） | file_path: str | Tuple[bool, Optional[str]] |
+| `_get_project_root_safety` | 获取项目根供Safety层判定（2026-08-10 ⑤收敛：统一走 config.get_project_root() 配置优先、未配置→用户主目录；不再以代码位置推算） | 无 | Path |
+| `_is_forbidden_path` | 系统敏感路径黑名单（盘根splitdrive全盘符判定 + 系统目录FORBIDDEN_PATHS_WINDOWS_* C:模板动态盘符替换 + **⑦2026-08-10新增代码库根禁区**：代码库根及其子路径一律forbidden，tool禁区开关无关硬拦截） | file_path: str | Tuple[bool, Optional[str]] |
+| `validate_tool_path` | 工具路径校验统一入口（分类→找路径参数→调validate_path；**⑧补dest参数 + ⑨遍历所有命中路径参数逐一校验**，任一越权即拒；**⑯2026-08-10逻辑路径参数解析**：download.dest相对下载目录/rename.dest纯文件名先解析为真实路径再校验，消除误拦BUG-B/C） | tool_name, params | Tuple[bool, Optional[str], Optional[str]]（is_valid, msg, failed_path；failed_path=首个校验失败的真实路径，供临时授权auth_path用，成功时None） |
+| `get_default_allowed_paths` | 默认白名单（⑪2026-08-10：主目录+`/tmp`+`/var/tmp`+项目根+授权目录；**废除「所有现存盘符」全盘放开**，lazy动态计算(补B)） | 无 | List[Path] |
 
 ### 8.2 delete 专属差异判定（delete_safety.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `_as_bool` | 布尔强转（防LLM原始参数 'false'/'true' 字符串陷阱: bool('false')==True） | v: Any | bool |
-| `check_delete_risk` | delete 差异判定（R3-R6），恒返回 SafetyResult（R3→_PASS 免确认，不用None表示放行）；R1/R2 由 _check_known_risks 覆盖不重复 | params: dict | SafetyResult |
+| `check_delete_risk` | delete 差异判定（R3-R6），恒返回 SafetyResult（R3→_PASS 免确认，不用None表示放行）；R1/R2 由 _check_known_risks 覆盖不重复；**⑫2026-08-10扩展多授权域**（项目根+授权目录），授权目录内递归走R4不再误拦R6 | params: dict | SafetyResult |
+| `_get_allowed_roots` | 删除判定允许根列表 = [项目根] + 授权目录（⑫2026-08-10） | 无 | list |
+| `_is_inside_any` | 目标是否位于任一允许根内（⑫，含根自身与子级） | p: Path, roots: list | bool |
 
 > 消费链：tool_safety_checker.check_before_execute 对 delete 一次性计算 delete_risk，R6 入 _check_known_risks 无条件拦截，R3-R5 入 _get_needs_confirmation 确认分流 — 设计文档 v1.15
+
+### 8.3 白名单外临时授权（temp_auth.py, ⑮2026-08-10新增）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `grant_temp_auth` | 临时授权某路径（一次一申请、支持递归、per-request ContextVar隔离(补A)） | root: str, recursive: bool | None |
+| `clear_temp_auth` | 清空当前作用域临时授权 | 无 | None |
+| `is_temp_authorized` | 检查路径是否在临时授权范围内（含子目录树） | file_path: str | bool |
+| `get_authorized` | 获取当前作用域授权映射 | 无 | Dict[Path, bool] |
+
+> 消费链：tool_safety_checker._check_known_risks 检测到白名单外路径(非禁区) → SafetyResult(requires_confirmation+auth_path，**BUG-D修复: auth_path=failed_path真正越权参数**, 非固定path-or-dest) → action_handler 确认后 grant_temp_auth → validate_path 放行本次；**操作结束后 action_handler finally 调 clear_temp_auth() 清除(BUG-E修复, 补A一次一申请)**；禁区(代码库根/系统目录)不受临时授权影响永久封锁
 
 ---
 
@@ -260,6 +275,8 @@ def my_parse_json(json_str):
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v2.7 | 2026-08-10 | ⑦⑯ 2026-08-10 bug复核修复同步(小欧): `validate_tool_path` 返回扩展三元组+新增 `_resolve_path_param`(BUG-B/C: download/rename 逻辑路径参数解析); `_check_known_risks` auth_path 改 failed_path(BUG-D); action_handler 工具批后 finally clear_temp_auth(BUG-E, 补A落地) | 小欧 |
+| v2.6 | 2026-08-10 00:55:00 | ①2026-08-10 项目根目录混乱修复同步(小欧): 七章更新 `_get_project_root_safety`(⑤收敛走config)/`_is_forbidden_path`(⑦代码库禁区)/`validate_tool_path`(⑧⑨补dest+多参数全量校验)/`get_default_allowed_paths`(⑪白名单收紧); 8.2 delete_safety ⑫多授权域(_get_allowed_roots/_is_inside_any); 新增8.3 temp_auth.py临时授权(⑮) ②config.py命名分离(_get_project_root→_get_code_root, get_default_project_root→get_code_root, ①兜底改Path.home, ⑩get_allowed_dirs新增) ③delete_file ⑥删复刻+多授权根保护 | 小欧 |
 | v2.5 | 2026-08-06 13:36:57 | 补登记 4.3 基础工具(app/tools/fundamental/) safe_read_file（安全读取文件, utf-8 errors=replace, OSError→""；定义于 shell_engine.py，跨模块复用于 execute_shell_command.py，会话池设计 H5 复用读 stderr 残留） | 小欧 |
 | v2.4 | 2026-08-05 12:13:13 | 全面修正登记错误：①删除僵尸条目(1.5工具函数/2.2工具结果 tool_result_utils.py 共7函数、message_utils 无定义的4函数) ②更正模块名(1.2 common.py→display_utils.py、3.1 build_observation_text→observation_formatter.py) ③更正路径(2.1 _response.py→app/tools/tool_response.py、3.2 storage→app/services/chat/storage.py) ④补登记 tool_fc_helper.py(4.1节,原toolhelper/14个helper文件纯逻辑函数2026-06-22迁移合并于此,共35函数)；toolhelper清单(4.2节)更正为当前实际2文件 ⑤修正章节编号(消除两个"三"、1.4表体归位、6.1/6.2子节号) ⑥版本历史顺序重排(倒序) | 小欧 |
 | v2.3 | 2026-08-04 13:32:00 | 新增 七、Safety层章节：path_safe_check.py(get_existing_drives/get_system_drive/_get_project_root_safety/_is_forbidden_path动态盘符) + delete_safety.py(_as_bool/check_delete_risk R3-R6) | 小欧 |
