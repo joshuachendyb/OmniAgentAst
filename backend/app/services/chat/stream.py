@@ -5,6 +5,7 @@
 # 2026-07-18 小欧 - F4 fix: _parse_tool_calls try收窄到单步, 单步参数异常不株连整批
 # 2026-07-23 小欧 - log_and_print统一: print(_msg); logger.info(_msg)替换为log_and_print(_msg), 导入log_and_print; TASK_END消息追加时间串
 # 2026-07-30 - 小欧 - 后端卡死根因修复: cond.wait() 加 60s 超时(asyncio.wait_for)+超时后重检 buffer.done; 防止 SSE 消费者因 cond 永远不被 notify 而永久挂起占死 HTTP 连接
+# 2026-08-09 - 小欧 - TASK_END 追加真实累计token用量 usage_tokens=prompt_tokens=..,completion_tokens=..,total_tokens=..(读agent.accumulated_usage) 及 total_steps=N 总步骤数; steps 统计剔除 usage 类型计数(原 usage=N 恒等llm_calls 为 usage step 计数非 token, 曾误导读数)
 """
 stream — SSE流运行器（消费者）
 
@@ -142,21 +143,30 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
 
 def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = None,
                   steps: Optional[list] = None, agent: Any = None) -> None:
-    """输出 TASK_END 日志（结束方式+耗时+步骤统计+LLM调用次数）— 一行完整"""
+    """输出 TASK_END 日志（结束方式+耗时+步骤统计+LLM调用次数+累计token消耗）— 一行完整"""
     parts = [f"task_id={task_id}", f"end_type={end_type}"]
     if start_time is not None:
         elapsed = time.time() - start_time
         parts.append(f"duration={elapsed:.2f}s")
     if agent is not None:
         parts.append(f"llm_calls={getattr(agent, 'llm_call_count', 0)}")
+        # 累计 token 消耗(真实用量) — 小欧 2026-08-09: 修正 steps 中 usage=N 仅为 step 计数而非 token
+        _au = getattr(agent, "accumulated_usage", None)
+        if _au and isinstance(_au, dict):
+            parts.append("usage_tokens=" + ",".join(
+                f"{k}={_au.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
     if steps:
         counter: Dict[str, int] = {}
         for s in steps:
             t = s.get("type", "?") if isinstance(s, dict) else "?"
             counter[t] = counter.get(t, 0) + 1
+        total = sum(counter.values())
+        # usage 为 Meta 步骤非业务步骤, 真实消耗由 usage_tokens 承担; 不混入业务统计 — 小欧 2026-08-09
+        counter.pop("usage", None)
         step_summary = ",".join(f"{k}={v}" for k, v in sorted(counter.items()))
         if step_summary:
             parts.append(f"steps=[{step_summary}]")
+        parts.append(f"total_steps={total}")
     _msg = f"[TASK_END] {time.strftime('%H:%M:%S')} {' | '.join(parts)}"
     log_and_print(_msg)
 
