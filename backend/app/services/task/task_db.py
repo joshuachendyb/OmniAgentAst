@@ -15,6 +15,10 @@
 # 2026-07-23 - 小欧 - #1补: get_task 风格统一, 删d=dict(row)临时变量, 改**dict(row) inline
 #   原由: L197-198 d.get() 虽不报错(因dict支持.get), 但与get_recent_tasks的**dict(row)+row[]风格不一致
 #         ; 保持两方法同一风格, 降低认知负担, KISS-DIRECT。
+# 2026-08-09 - 小欧 - task006 P7: create_task 改 INSERT ... ON CONFLICT(task_id) DO NOTHING 幂等化
+#   病根: 同一 task_id 重复初始化(agent重建/重放)时裸INSERT抛 UNIQUE constraint failed (日志3个独立日期实据)
+#   方案: 仅忽略主键冲突保留首次记录; 验证实证 OR IGNORE 会吞掉CHECK/NOT NULL约束错误(掩盖真实问题),
+#         ON CONFLICT(task_id) 只忽略主键, 其它约束照常抛出; P7属agent内部事务, 不产生LLM可见提示
 """
 task_db — 任务DB持久化（tasks表 + operations表）
 
@@ -53,12 +57,16 @@ class TaskTracker:
     # ===== 任务生命周期 =====
 
     def create_task(self, task_id: str, agent_id: str, description: str) -> None:
-        """写入任务记录 — task_id 由调用方统一提供（SSE task_id），tracker 不再自编号 — 小欧 2026-07-16"""
+        """写入任务记录 — task_id 由调用方统一提供（SSE task_id），tracker 不再自编号 — 小欧 2026-07-16
+        2026-08-09 小欧: ON CONFLICT(task_id) DO NOTHING 幂等化 — 同一 task_id 重复初始化(agent重建/重放)
+        时保留已存在记录, 消除 UNIQUE 冲突(日志3次实据); 仅忽略主键冲突, 其它约束(CHECK/NOT NULL)照常抛出,
+        不掩盖真实问题(验证实证 OR IGNORE 会吞约束错误, 故不用)"""
         with db.get_conn("task_tracker") as conn:
             conn.execute(
                 """INSERT INTO tasks
                    (task_id, intent, agent_id, task_description, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(task_id) DO NOTHING""",
                 (task_id, "", agent_id, description, TaskStatus.EXECUTING.value, get_local_iso_timestamp()),
             )
 

@@ -16,6 +16,10 @@
 # 2026-07-29 - 小欧 - validation_error加强: 格式"行N；语法错误；建议:xxxx"替代纯error_text; 透传_syn_line/_syn_suggestion到main; metrics新增error_line+suggestion; _check_anchor_overlap报错简化: 去除冗余行引用, 统一"只包含新内容"表述
 # 2026-08-08 - 小欧 - task002问题1增强: 新增_anchor_signature_hint — before/after锚点为单行def/class签名行时给safety_hint提示(引导用方法体末行锚点), 不改插入逻辑(KISS), 与sl_warn/so_warn合并不覆盖 | py_compile ✓
 # 2026-08-08 - 小欧 - _anchor_signature_hint 三堂会审精简: 空串/多行两项卫兵合并为 first=old_string.strip() 单卫(not first or '\n' in first), 消除重复rstrip/strip, 职责唯一零回归 | 回归 pytest: before_after+internal+retest 169✓ v2+deep+twelfth 112✓ guardrail+perf 64✓
+# 2026-08-09 - 小欧 - task006 P4: 编码回退反馈 — 用户指定编码无效时原仅logger.warning, LLM感知不到
+#   病根: _try_read_file_with_encodings 第三参数err_msg非None即被调用方raise, 报告"子函数返回hint"方案会破坏
+#   该契约导致回退成功变失败(退化) → 改为调用方合成: encoding与used_enc不一致时生成encoding_fallback并入safety_hint, 增强不退化
+#   验证: 指定无效编码→回退提示; 一致/未指定/失败短路均无提示
 """
 F4: edittext — 编辑文本文件
 
@@ -381,6 +385,11 @@ async def _precise_replace_in_file(
         content, used_enc, err_msg = await _try_read_file_with_encodings(path, encoding)
         if err_msg:
             raise ValueError(err_msg)
+        # 编码回退反馈: 用户指定编码但实际以其它编码读取成功 → 生成提示(LLM可见, 增强不退化) — 小欧 2026-08-09
+        # 注意: 不能改 _try_read_file_with_encodings 第三参数(err_msg非None即raise, 会导致回退成功变失败)
+        _encoding_fallback = ""
+        if encoding and used_enc and used_enc != encoding:
+            _encoding_fallback = f"指定编码 '{encoding}' 无效或无法解码，已回退使用 '{used_enc}' 读取"
         record_read(file_path, content)
 
         # 编码预检移入 _replace_sync：验完整落盘内容(write_content)，
@@ -403,6 +412,7 @@ async def _precise_replace_in_file(
                 "applied_edits": 0, "total_edits": 0,
                 "total_matches": total_matches,
                 "diff": "", "skipped": True,
+                "encoding_fallback": _encoding_fallback,  # 编码回退提示 — 小欧 2026-08-09
             }
 
         # before/after 模式：new_string 不能为空(插入空内容无意义,否则误报成功) — 小欧 2026-07-11
@@ -545,6 +555,7 @@ async def _precise_replace_in_file(
             "total_matches": replace_result.get("total_matches", count),
             "diff": replace_result.get("diff", ""),
             "safety_hint": replace_result.get("safety_hint", ""),
+            "encoding_fallback": _encoding_fallback,  # 编码回退提示 — 小欧 2026-08-09
         }
 
     except Exception as e:
@@ -637,7 +648,7 @@ async def edittext(
         diff=result.get("diff", ""),
         total_matches=result.get("total_matches", 0),
         mtime_warning=result.get("mtime_warning", "") or "",
-        safety_hint=(result.get("safety_hint", "") or "")[:EDITTEXT_OUTPARM_LIMIT_SAFETY],
+        safety_hint=((result.get("encoding_fallback", "") or "") + ("；" + result.get("safety_hint", "") if result.get("safety_hint") else ""))[:EDITTEXT_OUTPARM_LIMIT_SAFETY],  # 编码回退并入safety_hint(LLM可见) — 小欧 2026-08-09
         user_old_string=_old_preview, user_new_string=_new_preview,
         user_mode=mode, user_ignore_case=ignore_case,
         user_encoding=encoding,
