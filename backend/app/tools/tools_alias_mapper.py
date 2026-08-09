@@ -5,6 +5,8 @@
 # 2026-07-28 - 小欧 - BUG#19: "value":"value"是恒等映射(输入=输出无转换), 空转别名删除
 # 2026-08-07 - 小欧 - 新增TOOL_NAME_ALIASES工具名别名映射+normalize_tool_name: LLM常生成变体名(write_text等), 映射到注册名(writetext), 防"工具未注册"误拦截(com-test 03暴露)
 # 2026-08-09 - 小欧 - write_xlsx 参数别名 append→append_mode: LLM 常按布尔语义传 append, 实际实现/SCHEMA参数为 append_mode(2026-08-07 P04优化), 无映射会因未知参数被忽略导致追加失效
+# 2026-08-09 - 小欧 - TOOL_NAME_ALIASES 新增 writefile/readfile 幻觉名→writetext/readtext: sensenova-flash-lite 将写/读文本工具幻觉为 writefile, 因未注册被安全检查拦截(工具未注册)致 P5-07 任务空转防循环失败; get_tool 归一化后走注册名正常执行, execute_tools 内扩展名纠正再兜底
+# 2026-08-09 - 小欧 - TOOL_NAME_ALIASES 新增 writeetext/readetext/editetext(多一个e的拼写幻觉)→writetext/readtext/edittext: sensenova-flash-lite 将 writetext 幻觉为 writeetext, 因未注册被拦截致 COM-08 任务尾部空转防循环失败(与 writefile 同源, 拼写变异变体)
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -338,6 +340,11 @@ TOOL_NAME_ALIASES = {
     "write_text_file": "writetext",
     "read_text_file": "readtext",
     "edit_text_file": "edittext",
+    "writefile": "writetext",
+    "readfile": "readtext",
+    "writeetext": "writetext",
+    "readetext": "readtext",
+    "editetext": "edittext",
     "list_directory": "listdir",
     "http_get": "httpget",
     "http_request": "httpget",
