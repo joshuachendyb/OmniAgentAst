@@ -38,6 +38,10 @@
 # 2026-08-06 10:05:21 - 小欧 - 注释补齐"两条超时线"(老陈梳理): ①传给tool的超时(tool内部用,LLM给→直接用值/未给→schema默认值)
 #   与②保险丝超时(wait_for掐整个调用)是独立两值; 注明①随params原样传tool(**params), ②由_compute_fuse算传wait_for
 # 2026-08-07 - 小欧 - import同步: param_alias_mapper.py→tools_alias_mapper.py 重命名(名实相符), normalize_params引用处同步更新
+# 2026-08-09 - 小欧 - task007: _validate_params 非法参数分支补智能hint(日志实证"hint":""全库参数验证失败1285次)
+#   病根: 非法参数分支调用_build_retry_error未传hint(默认""), LLM只能看到干列表"合法参数: k:type"反复试错
+#   方案: 新增_INVALID_PARAM_HINTS混淆表(仅日志实证grep.type→glob/find、find.top_n→offset, YAGNI) + 通用兜底
+#   直线设计: dict直查+兜底, 不改detail/返回结构/缺失参数路径, 增强不退化(验证PASS=10/10)
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -107,6 +111,30 @@ from app.tools.registry import tool_registry
 INSURANCE_CEILING = 600
 INSURANCE_BUFFER = 30
 PROGRESSIVE_MAX = INSURANCE_CEILING // 2
+
+# ============================================================
+# 非法参数智能提示表 — 小欧 2026-08-09 (task007)
+# 仅登记日志实证的 LLM 参数混淆(全库 参数验证失败 1285次/17文件), YAGNI 不臆造:
+#   002948 grep 收到 type=file(grep无type, 应改用glob或find工具)
+#   002938 find 收到 top_n=5(find无top_n, 应改用offset分页)
+# 其余非法参数走 _build_invalid_param_hint 通用兜底; hint专注纠正指引,
+# 合法参数列表 detail 已有, 不在 hint 重复(DRY/简洁)
+# ============================================================
+_INVALID_PARAM_HINTS = {
+    ("grep", "type"): "grep 无 type 参数；文件名过滤请用 glob，按文件/目录类型搜索请改用 find 工具(type=file/directory)",
+    ("find", "top_n"): "find 无 top_n 参数；如需限制结果数量请用 offset 分页",
+}
+
+
+def _build_invalid_param_hint(action: str, invalid_keys: list, props_desc: str) -> str:
+    """构建非法参数智能hint: 先查混淆表给专项替代建议, 未命中给通用纠正指引 — 小欧 2026-08-09
+    task007 病根: 非法参数分支hint为空(日志实证"hint":""), LLM拿不到纠正指引反复试错;
+    本函数只新增hint字段, 不改detail/缺失参数路径; hint只给纠正指令, 合法参数列表由detail承载, 不重复"""
+    _parts = []
+    for _k in invalid_keys:
+        _spec = _INVALID_PARAM_HINTS.get((action, _k))
+        _parts.append(_spec if _spec else f"参数 '{_k}' 不是 {action} 的合法参数，请删除该参数或改用正确参数名(合法参数见详情)")
+    return "；".join(_parts)
 
 
 class ToolRetryEngine:
@@ -337,6 +365,7 @@ class ToolRetryEngine:
                         f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}；合法参数: {_props_desc}",
                         0, error_type="invalid_params",
                         action_name=action, action_params=params,
+                        hint=_build_invalid_param_hint(action, invalid_keys, _props_desc),  # task007 补智能hint — 小欧 2026-08-09
                     )
                 
                 required = input_schema.get("required", [])
