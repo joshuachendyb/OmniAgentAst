@@ -5,6 +5,7 @@
 # 2026-07-20 - 小欧 - 常量依3.5改名: DOWNLOAD_MAX_BYTES→DOWNLOAD_INPUT_MAX_BYTES(私有内部常量前缀); 值依 v3.26 老陈定由100MB提升至1GB; 功能零退化
 # 2026-07-25 - 小欧 - 新增非ASCII URL转码: download 支持中文域名/路径, 转码后走validate_url做DNS/SSRF检查
 # 2026-08-06 - 小欧 - 核查8-05/8-06日志: url=None 在非ASCII转码块 url.encode 抛AttributeError落入catch-all记"意外错误"; 入口加url=None显式拦截(fetch_webpage/httpget同模式, 三网络工具统一), 返回ERR_INVALID_URL结构化错误, 不再落入catch-all
+# 2026-08-10 - 小欧 - ⑭注释更正: 下载目录未配置project_root时=用户主目录(不再是代码位置), 子目录download — 步骤1实施(北京老陈驱动「项目根目录定义混乱修复」)
 """
 N2: download — 下载文件到本地
 

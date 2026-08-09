@@ -5,6 +5,7 @@
 """
 # 编辑历史:
 # 2026-07-22 小欧 get_max_context_chars→get_max_context_tokens 重命名（语义纠正），默认值 500000→200000 对齐 constants.py
+# 2026-08-10 - 小欧 - 步骤1实施(①⑤⑩②③④, 北京老陈驱动「项目根=tool工作区, 代码库根=tool禁区」): ①get_project_root兜底改用户主目录(不再用代码位置当项目根); ⑩新增get_allowed_dirs授权目录列表(含代码库根/父子级边界约束); ②③④命名分离 _get_project_root→_get_code_root/get_default_project_root→get_code_root/get_config_path内部改调
 
 import functools
 import os

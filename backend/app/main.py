@@ -5,6 +5,7 @@
 # 2026-08-03 - 小欧 - 恢复7-30原设计(DB核实): 删shutdown里的shell_pool.cleanup_all()+日志与import; 该行系8-02恢复工程误加回, 7-30已决策main.py不清理(atexit+task完成清理全覆盖)。
 # 2026-08-08 - 小欧 - 全程统一本地时区: 3处异常响应 timestamp 改 get_local_iso_timestamp() (本地ISO无Z)
 # 2026-08-09 - 小欧 - task006 P7落地(日志级别优化): HTTP 4xx客户端错误与Validation(422)由ERROR降为WARNING, 5xx保持ERROR — 避免测试/非法请求噪音污染ERROR日志, 干扰真实故障排查
+# 2026-08-10 - 小欧 - ⑬get_version改调get_code_root(): 定位version.txt改走代码库根(名实分离, 不再用项目根路径推算) — 步骤1实施(北京老陈驱动)
 import sys
 import asyncio
 from typing import Optional
