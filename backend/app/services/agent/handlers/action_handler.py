@@ -49,6 +49,12 @@
 #           与tool_safety_checker.py:84返回的auto_confirm=True配对, 实现DB场景表#1(安全绕过时MetaStep照出但立即resolve不过SUSPENDED)
 # 2026-08-07 - 小欧 - import同步: param_alias_mapper.py→tools_alias_mapper.py 重命名(名实相符), PARAM_ALIASES引用处同步更新
 # 2026-08-07 - 小欧 - P07修复(北京老陈驱动 task001): _EXT_TO_READ_TOOL 从TEXT_EXTENSIONS排除.csv(双域: 文本+表格), 使 read_xlsx(csv)/readtext(csv) 均不被_auto_correct_file_tool自动改写 — 小欧 2026-08-07
+# 2026-08-09 - 小欧 - edittext并发竞态修复(北京老陈驱动, 方案二分组调度版):
+#   [BUG] 旧_has_conflict用set存工具名不计数, 3×edittext同文件被去重漏检→误走并行→read-modify-write竞态致内容丢失(after模式插入位置异常, log step=11)
+#   [改法] ①新增_parse_paths(从旧_has_conflict路径解析循环提取, DRY) ②_has_conflict改为计数版(count>=2且含写操作即冲突)
+#         ③新增_partition_calls(并查集连通分量分组) ④分支B改分组调度B': 冲突组内串行+无冲突组并行+组间失败隔离(results保序)
+#         ⑤C分支_reason死代码清理(进入B'后C分支仅is_parallel=False触发, "文件路径冲突"永假)
+#   [验证] verify_refactor_consistency 14/14一致 + verify_partition_v13 分组/执行/隔离10项全PASS + pytest全量回归
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -65,7 +71,7 @@ action_handler — action类型处理（SRP拆分，模块级函数）
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Set
 
 from app.logger import logger, log_and_print
 from app.constants import ACTION_LOG_RESULT_MAX_CHARS
@@ -257,42 +263,90 @@ def _add_denial_feedback(agent, all_calls: List[Dict], fc_context: Dict, denied_
                 logger.debug(f"add_tool_result(空ID)也失败: {e2}")
 
 
-def _has_conflict(all_calls: List[Dict]) -> bool:
-    """检测文件路径冲突 — 复用PARAM_ALIASES做别名→规范名解析 — 北京老陈 2026-07-04
-
-    冲突：同一路径被>=2个FILE_OPERATION_TOOLS访问，且至少一个是写操作
-    有冲突→顺序执行，无冲突→并行
+def _parse_paths(name: str, params: Dict) -> Set[str]:
+    """解析一个调用的路径集合(复用 PARAM_ALIASES 别名→规范名) — 小欧 2026-08-09
+    从旧 _has_conflict 的路径解析循环提取, 供 _has_conflict/_partition_calls 共用(DRY)
     """
-    path_ops = {}
+    if name not in FILE_OPERATION_TOOLS:
+        return set()
+    aliases = PARAM_ALIASES.get(name, {})
+    if not aliases:
+        p = params.get("path", "")
+        return {p} if p and isinstance(p, str) else set()
+    resolved = {}
+    for key, value in params.items():
+        canon = aliases.get(key, key)
+        if canon not in resolved:
+            resolved[canon] = value
+    out = set()
+    for pname in set(aliases.values()):
+        pval = resolved.get(pname)
+        if pval and isinstance(pval, str):
+            out.add(pval)
+    return out
+
+
+def _has_conflict(all_calls: List[Dict]) -> bool:
+    """检测文件路径冲突 — 北京老陈 2026-07-04 初版; 小欧 2026-08-09 计数版
+    冲突：同一路径被>=2次调用访问, 且至少一个是写操作
+    有冲突→顺序执行, 无冲突→并行
+    [2026-08-09 小欧] BUG修复: 旧实现用 set 存工具名不计数, 同名工具多次写
+    同一路径漏检(3×edittext 同文件)→误走并行→read-modify-write 竞态致内容丢失。
+    改为 path→(调用次数, 工具名set), 复用 _parse_paths 解析(与 _partition_calls 一致, DRY)。
+    """
+    path_ops: Dict[str, Dict[str, Any]] = {}
+
+    def _record(_path: str, _name: str) -> None:
+        entry = path_ops.setdefault(_path, {"count": 0, "tools": set()})
+        entry["count"] += 1
+        entry["tools"].add(_name)
 
     for c in all_calls:
         name = c.get("tool_name", "")
         if name not in FILE_OPERATION_TOOLS:
             continue
-        params = c.get("tool_params", {})
-        aliases = PARAM_ALIASES.get(name, {})
-        if not aliases:
-            _path = params.get("path", "")
-            if _path and isinstance(_path, str):
-                path_ops.setdefault(_path, set()).add(name)
-            continue
+        for _path in _parse_paths(name, c.get("tool_params", {})):
+            _record(_path, name)
 
-        resolved = {}
-        for key, value in params.items():
-            canon = aliases.get(key, key)
-            if canon not in resolved:
-                resolved[canon] = value
-
-        for pname in set(aliases.values()):
-            pval = resolved.get(pname)
-            if pval and isinstance(pval, str):
-                path_ops.setdefault(pval, set()).add(name)
-
-    for path, tools in path_ops.items():
-        if len(tools) > 1 and any(t in _WRITE_OPS for t in tools):
-            logger.info(f"[_has_conflict] 路径冲突: {path}, tools={tools}, 降级顺序执行")
+    for path, entry in path_ops.items():
+        tools = entry["tools"]
+        if entry["count"] >= 2 and any(t in _WRITE_OPS for t in tools):
+            logger.info(f"[_has_conflict] 路径冲突: {path}, tools={tools}, 调用数={entry['count']}, 降级顺序执行")
             return True
     return False
+
+
+def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
+    """按路径相关性分组(并查集连通分量): 共享路径的调用归一组, 组间无共享路径→可并行
+    返回: 组列表, 每组是 all_calls 的索引列表 — 小欧 2026-08-09
+    """
+    n = len(all_calls)
+    parent = list(range(n))
+
+    def _find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def _union(a, b):
+        ra, rb = _find(a), _find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    path_to_calls = {}
+    for i, c in enumerate(all_calls):
+        for p in _parse_paths(c.get("tool_name", ""), c.get("tool_params", {})):
+            path_to_calls.setdefault(p, []).append(i)
+    for _p, idxs in path_to_calls.items():
+        base = idxs[0]
+        for i in idxs[1:]:
+            _union(base, i)
+
+    groups = {}
+    for i in range(n):
+        groups.setdefault(_find(i), []).append(i)
+    return list(groups.values())
 
 
 async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
@@ -346,17 +400,45 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             result = await execute_tool(agent, tool_name, tool_params, on_retry_started=on_retry_started)
             results = [result]
 
-        elif is_parallel and not _has_conflict(all_calls):
-            # B: 多工具无冲突 → 并行（try_once，无重试）
+        elif is_parallel:
+            # B': 并行分组调度 — 冲突组内串行, 无冲突组并行("该并行就并行") — 小欧 2026-08-09
             _names = [_cn(c) for c in all_calls]
-            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 并行执行: tools={_names}")
-            tasks = [execute_tool(agent, _cn(c), _cp(c), parallel=True) for c in all_calls]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            # 并行分支不重试 — 失败信息传给LLM自己决策
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组并行执行: tools={_names}")
+            groups = _partition_calls(all_calls)
+
+            async def _run_group(indices: List[int]):
+                group = [all_calls[i] for i in indices]
+                if len(group) == 1:  # 单工具, 语义同原A
+                    return [await execute_tool(agent, _cn(group[0]), _cp(group[0]),
+                                               on_retry_started=on_retry_started)]
+                if not _has_conflict(group):  # 组内无冲突→并行(try_once), 语义同原B
+                    tasks = [execute_tool(agent, _cn(c), _cp(c), parallel=True) for c in group]
+                    return await asyncio.gather(*tasks, return_exceptions=True)
+                # 组内冲突→组内串行(带重试), 语义同原C
+                _res = []
+                for call in group:
+                    try:
+                        _res.append(await execute_tool(agent, _cn(call), _cp(call),
+                                                       on_retry_started=on_retry_started))
+                    except Exception as e:
+                        logger.warning(f"[action_handler] 工具{_cn(call)}组内顺序执行失败: {e}")
+                        _res.append(e)
+                return _res
+
+            _grouped = await asyncio.gather(*[_run_group(g) for g in groups],
+                                            return_exceptions=True)  # 组间失败隔离: 单组异常不取消其他组
+            results = [None] * len(all_calls)  # 结果按原顺序填回
+            for _indices, _res in zip(groups, _grouped):
+                if isinstance(_res, Exception):  # 整组失败: 组内全部标记为该异常(与原C分支单工具异常append语义一致)
+                    for _i in _indices:
+                        results[_i] = _res
+                    continue
+                for _i, _r in zip(_indices, _res):
+                    results[_i] = _r
         else:
-            # C: 工具有冲突/非并行 → 顺序执行（一个不丢）
+            # C: 非并行模式 → 顺序执行（一个不丢）
             _names = [_cn(c) for c in all_calls]
-            _reason = "非并行模式" if not is_parallel else "文件路径冲突"
+            _reason = "非并行模式"
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 顺序执行({_reason}): tools={_names}")
             results = []
             for call in all_calls:
