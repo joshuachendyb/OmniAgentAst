@@ -21,6 +21,11 @@
 # 2026-08-10 - 小欧 - 三堂会审 BUG-2 修复(v1.45): _check_known_risks 写保护判定原 `tool_name == _WRITE_RISK_TOOL("writetext")`
 #   用 LLM 原始名, 别名(write_text/writefile等) normalize 前不等于 writetext → 写入大小保护被绕过;
 #   统一走 normalize_tool_name 再判(P2 防别名漏检补齐, 与 T2 delete 判定同模式) — 小欧 2026-08-10
+# 2026-08-11 - 小欧 - P0-02回归修复: security.enabled=false(bypass)时 _check_known_risks 白名单外临时授权请求
+#   (requires_confirmation+auth_path) 未设 auto_confirm, 仍挂起HITL等确认; E2E自动化无人在线确认→确认超时→任务failed。
+#   修复: 白名单外授权请求在 _is_skip_safety()=true 时设 auto_confirm=True 直放(与普通确认bypass语义一致) — 北京老陈驱动E2E
+# 2026-08-11 - 小欧 - 全分支补日志留痕(北京老陈驱动): bypass自动放行+各硬拦截统一用log_and_print(日志+控制台双输出),
+#   覆盖 工具未注册/delete R6/授权请求bypass直放/已知风险拦截/普通确认bypass/check_fn拦截/系统禁区删拦/写入大小保护
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -53,7 +58,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
 
-from app.logger import logger
+from app.logger import logger, log_and_print
 from app.config import get_config
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
@@ -99,6 +104,7 @@ class ToolSafetyChecker:
         """
         tool_meta = tool_registry.get_tool(tool_name)
         if tool_meta is None:
+            log_and_print(f"[ToolSafetyChecker] 工具未注册,拒绝执行: {tool_name}")
             return SafetyResult(blocked=True,
                     message=f"工具{tool_name}未注册",
                     safety_level="dangerous")
@@ -112,23 +118,34 @@ class ToolSafetyChecker:
         # ② 已知风险检测: 无条件防线(开关无关) — 路径越权(R1/R2)/delete R6/写入大小保护/代码注入即使开关false也拒绝 — 小欧 2026-08-04
         # 先校验delete专属R6（项目根外递归删除），再校验白名单（临时授权）
         if delete_risk is not None and delete_risk.blocked:
+            log_and_print(f"[ToolSafetyChecker] delete R6硬拦截(项目根外递归删除): {delete_risk.message}")
             return delete_risk
         known_risk = self._check_known_risks(tool_name, params or {}, delete_risk=delete_risk)
         if known_risk is not None:
             # ⑮ 白名单外临时授权请求(blocked=False, requires_confirmation=True, auth_path): 放行到确认流程 —
             #    action_handler 识别 requires_confirmation 走 HITL, 用户确认后 grant_temp_auth; 不在此拦截 — 小欧 2026-08-10
             if known_risk.requires_confirmation and not known_risk.blocked:
+                # P0-02回归修复(安全开关false=bypass): 白名单外临时授权请求同样auto_confirm直放,
+                #   与L129-131普通确认bypass语义一致; 否则E2E自动化无人在线确认, HITL超时致任务failed — 小欧 2026-08-11
+                if _is_skip_safety():
+                    known_risk.auto_confirm = True
+                    log_and_print(f"[ToolSafetyChecker] bypass自动放行(白名单外临时授权请求): tool={tool_name}, auth_path={known_risk.auth_path}, {known_risk.message}")
+                else:
+                    log_and_print(f"[ToolSafetyChecker] 白名单外临时授权请求,转HITL确认: tool={tool_name}, auth_path={known_risk.auth_path}, {known_risk.message}")
                 return known_risk
             # #14 fix: 已知风险只拦截, 不触发确认(确认由 needs_confirm 路径驱动) — 小欧 2026-07-18
             known_risk.safety_level = "dangerous"
+            log_and_print(f"[ToolSafetyChecker] 已知风险拦截(危险拒绝执行): tool={tool_name}, {known_risk.message}")
             return known_risk
 
         # ③ 确认策略分流: 开关只影响"是否询问确认", 不影响危险防护
         if _is_skip_safety():
             if self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk):
+                log_and_print(f"[ToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
                 return SafetyResult(requires_confirmation=True, auto_confirm=True,
                         blocked=False, message="安全开关已绕过(提示照出)",
                         safety_level="destructive")
+            log_and_print(f"[ToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
             return SafetyResult(requires_confirmation=False,
                     blocked=False, message="安全开关已绕过",
                     safety_level="safe")
@@ -137,6 +154,7 @@ class ToolSafetyChecker:
             try:
                 custom_result = tool_meta.check_fn(params or {})
                 if not custom_result.get("is_safe", True):
+                    log_and_print(f"[ToolSafetyChecker] check_fn拦截: tool={tool_name}, {custom_result.get('message')}")
                     return SafetyResult(
                         blocked=True,
                         message=custom_result.get("message", "安全检查未通过"),
@@ -186,19 +204,23 @@ class ToolSafetyChecker:
                 # (validate_tool_path 已按 tool_name 推断 mode, 此处按注册名归一判断删除操作)
                 from app.tools.tools_alias_mapper import normalize_tool_name  # P2: 防别名漏判 — 小欧 2026-08-10
                 if normalize_tool_name(tool_name) == "delete":
+                    log_and_print(f"[ToolSafetyChecker] 路径越权硬拦(非系统禁区,禁止删除): tool={tool_name}, auth_path={failed_path}, {msg}")
                     return SafetyResult(blocked=True, message=f"路径越权(非系统禁区,禁止删除): {msg}",
                                         safety_level="dangerous", auth_path=failed_path)
                 # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
+                log_and_print(f"[ToolSafetyChecker] 路径越权转任务级授权请求: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
                 return SafetyResult(requires_confirmation=True, blocked=False,
                                     message=f"路径超出白名单,需任务级授权: {msg}",
                                     safety_level="destructive",
                                     auth_path=failed_path or (params.get("path") or params.get("dest")))
             if category == "system":
                 # 系统禁区写/删 → 硬拦永不授权
+                log_and_print(f"[ToolSafetyChecker] 路径越权硬拦(系统禁区): tool={tool_name}, auth_path={failed_path}, {msg}")
                 return SafetyResult(blocked=True, message=f"路径越权(系统禁区): {msg}",
                                     safety_level="dangerous", auth_path=failed_path)
             # category == None: 白名单外非禁区 → 临时授权请求
             # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
+            log_and_print(f"[ToolSafetyChecker] 路径越权转临时授权请求: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
             return SafetyResult(requires_confirmation=True, blocked=False,
                                 message=f"路径超出白名单,需临时授权: {msg}",
                                 safety_level="destructive",
@@ -218,6 +240,7 @@ class ToolSafetyChecker:
                 old_size = p.stat().st_size if p.exists() and p.is_file() else 0
                 new_size = len(content.encode("utf-8")) if isinstance(content, str) and content else 0
                 if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:
+                    log_and_print(f"[ToolSafetyChecker] 数据保护硬拦(新内容远小于原内容): tool={tool_name}, path={file_path}, new={new_size}, old={old_size}")
                     return SafetyResult(blocked=True,
                             message=f"数据保护:新内容({new_size}字节)远小于原始内容({old_size}字节)")
             except Exception as e:
