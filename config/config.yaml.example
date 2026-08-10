@@ -16,7 +16,7 @@ ai:
     models:
       - minimax-m2.5-free
       - kimi-k2.5-free
-      timeout: 120
+    timeout: 120
 
   longcat:
     api_base: https://api.longcat.chat/openai/v1
@@ -24,7 +24,7 @@ ai:
     models:
       - LongCat-Flash-Thinking
       - LongCat-Flash-Thinking
-      timeout: 120
+    timeout: 120
 
   zhipuai:
     api_base: https://test.com
@@ -33,7 +33,37 @@ ai:
     models:
       - glm-4.7-flash
       - cogview-3-flash
-      timeout: 90
+    timeout: 90
+
+# 应用配置
+app:
+  debug: true
+  language: zh-CN
+  max_context_tokens: 200000
+  max_history_length: 10
+  max_rounds: 100
+  max_steps: 10000
+  project_root: ""  # 项目根=tool工作区; 未配置(空)时兜底=用户主目录 — 小欧 2026-08-10 ①
+  # 授权目录列表(可多个): tool 在项目根之外额外授权访问的工作目录。
+  # 格式: YAML 列表, 每行一个绝对路径, 以 "- " 开头(不是逗号/分号分隔字符串), 例如:
+  #   allowed_dirs:
+  #     - D:\工作目录A
+  #     - D:\工作目录B
+  # 注意: 项目根天然在授权内, 无需重复列入; 指向代码库根或其父/子级 → 加载即拒(与⑦tool禁区冲突) — 小欧 2026-08-10 ⑩
+  allowed_dirs: []
+  theme: light
+
+# 安全配置
+security:
+  commandBlacklist: ''
+  commandWhitelist: ''
+  confirmDangerousOps: true
+  contentFilterEnabled: true
+  contentFilterLevel: medium
+  enabled: false
+  maxFileSize: 100
+  strict_mode: false
+  whitelistEnabled: false
 
 # 文件操作配置
 file_operations:
