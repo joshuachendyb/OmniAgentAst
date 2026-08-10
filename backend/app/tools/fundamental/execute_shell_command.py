@@ -126,6 +126,10 @@
 #        P1: Add-Type 属cmdlet, 从"异常类型裸词组"移入"cmdlet名+冒号"组, 收紧为 \bAdd-Type\b[ \t]*:(原遗漏致正常输出含Add-Type字样误判error)
 #        P2: 全部cmdlet错误行首匹配 \s* 改 [ \t]*(	\s含换行可跨行误命中, 仅同行内空白的真实PS错误行首格式)
 #        验证: 5组用例实测全过(Add-Type:错→error / Add-Type裸词→不误判 / 跨行\n: →不命中), ast语法✓
+# 2026-08-09 - 小欧 - task005核查P1落地: _REAL_ERROR_MARKERS 0x[0-9a-fA-F]{8} 收紧为
+#   \b0x(?:8[0-9a-fA-F]{3}|C[0-9a-fA-F]{3})[0-9a-fA-F]{4}\b (仅HRESULT失败段/NTSTATUS失败段)。
+#   病根: 任意8位hex误匹配校验和/内存地址/颜色值, returncode≠0但stdout有真实成果时被误判error(非warning)。
+#   白名单方案(8004/8007/C000列表)漏0x80004005(E_FAIL)等真实错误码, 故用段匹配; 实测用例全过 — 小欧 2026-08-09
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -647,7 +651,11 @@ _REAL_ERROR_MARKERS = (
     r"\bArgument list too long\b", r"\bNo package found\b",
     # Windows / 注册表
     r"(?<!no )\bERROR\b", r"\bCannot find\b", r"\b无法找到\b",
-    r"\b0x[0-9a-fA-F]{8}\b",
+    # 2026-08-09 - 小欧 - task005核查P1: 0x[0-9a-fA-F]{8} 过宽(任意8位hex误匹配哈希/内存地址/颜色值),
+    #   收紧为仅HRESULT失败段 0x8XXXXXXX 与 NTSTATUS失败段 0xCXXXXXXX (实测 0x80070005/0xC0000022 命中,
+    #   0x1a2b3c4d/0xFF0000FF/0x000002A1... 不命中); 前缀白名单(8004/8007/C000列表)会漏 0x80004005(E_FAIL)
+    #   等真实错误码, 故用段匹配替代白名单 — 小欧 2026-08-09
+    r"\b0x(?:8[0-9a-fA-F]{3}|C[0-9a-fA-F]{3})[0-9a-fA-F]{4}\b",
     # 中文命令未找到 / 可运行程序缺失
     r"不是内部或外部命令", r"不是可运行的程序", r"无法将.*项识别为",
     # PowerShell cmdlet 报错动词 — 小欧 2026-08-09 收紧: cmdlet 名后须紧跟冒号(真实错误消息行首格式)

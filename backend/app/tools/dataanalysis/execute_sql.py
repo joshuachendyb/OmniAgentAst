@@ -13,6 +13,7 @@ execute_sql — 执行写操作SQL
 【2026-07-26 小欧】迁移: sql_error_hint/hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
 【2026-08-07 小欧】P01+P02优化(北京老陈驱动 task001): ①新增confirm_ddl参数 — 显式确认后放行裸DDL(白名单_DDL_ONLY_TYPES: CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE, 防未来新增安全类型误放行); ②_build_execute_sql_llm_data补confirm_ddl传参(observation可见); ③危险提示文案优化 — 无WHERE时引导补WHERE/dry_run, 条件拼接消除warnings为空时的冗余逗号
 【2026-08-09 小欧】task006 P1落地: dry_run分支保留sqlite3异常(dry_run_error), 校验失败detail带异常原文+hint走sql_error_hint精准分支(多语句识别), 替代笼统"SQL语法校验失败/请检查SQL语法"
+【2026-08-09 小欧】task005核查P3落地: dry_run外层except加`if dry_run_error is None`保护 — 仅内层无异常时才用外层异常, 保留内层原始SQL语法错误(信息不丢失, 符合异常可追溯规范); 病根: SAVEPOINT/ROLLBACK失败(连接损坏)无条件覆盖内层已捕获异常
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -209,7 +210,10 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                             trans.rollback()
             except Exception as e:
                 syntax_valid = False
-                dry_run_error = e  # 2026-08-09 小欧: SAVEPOINT/外层异常同样保留
+                # 2026-08-09 小欧: task005核查P3 — 仅内层无异常时才用外层异常, 保留内层原始SQL错误(信息不丢失);
+                #   病根: SAVEPOINT/ROLLBACK等外层操作失败(连接损坏)会无条件覆盖内层已捕获的SQL语法异常
+                if dry_run_error is None:
+                    dry_run_error = e
             finally:
                 try:
                     conn.close()

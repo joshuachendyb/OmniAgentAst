@@ -19,6 +19,8 @@
 #   病根: 同一 task_id 重复初始化(agent重建/重放)时裸INSERT抛 UNIQUE constraint failed (日志3个独立日期实据)
 #   方案: 仅忽略主键冲突保留首次记录; 验证实证 OR IGNORE 会吞掉CHECK/NOT NULL约束错误(掩盖真实问题),
 #         ON CONFLICT(task_id) 只忽略主键, 其它约束照常抛出; P7属agent内部事务, 不产生LLM可见提示
+# 2026-08-09 - 小欧 - task005核查P7落地: create_task 幂等冲突(任务已存在)补 logger.info 日志
+#   病根: ON CONFLICT DO NOTHING 静默成功, 排查重放/agent重建场景无任何痕迹(可观测性缺失); 仅加日志不改语义
 """
 task_db — 任务DB持久化（tasks表 + operations表）
 
@@ -62,13 +64,16 @@ class TaskTracker:
         时保留已存在记录, 消除 UNIQUE 冲突(日志3次实据); 仅忽略主键冲突, 其它约束(CHECK/NOT NULL)照常抛出,
         不掩盖真实问题(验证实证 OR IGNORE 会吞约束错误, 故不用)"""
         with db.get_conn("task_tracker") as conn:
-            conn.execute(
+            cur = conn.execute(
                 """INSERT INTO tasks
                    (task_id, intent, agent_id, task_description, status, created_at)
                    VALUES (?, ?, ?, ?, ?, ?)
                    ON CONFLICT(task_id) DO NOTHING""",
                 (task_id, "", agent_id, description, TaskStatus.EXECUTING.value, get_local_iso_timestamp()),
             )
+            # 2026-08-09 - 小欧 - task005核查P7: 幂等冲突(任务已存在)补日志, 提升可观测性(排查重放/agent重建无痕迹)
+            if cur.rowcount == 0:
+                logger.info(f"[task_db] create_task 幂等跳过(任务已存在): task_id={task_id}")
 
     def complete_task(self, task_id: str, success: bool = True) -> None:
         status = TaskStatus.SUCCESS.value if success else TaskStatus.FAILED.value
