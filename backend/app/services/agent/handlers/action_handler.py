@@ -67,6 +67,8 @@
 # 2026-08-10 - 小欧 - BUG-E修复(补A"操作结束即清除"落地): handle_action 工具批执行结束后 finally 调 clear_temp_auth(),
 #   清空本请求作用域 ContextVar 临时授权, 杜绝"一次一申请"授权跨工具跨步骤残留复用;
 #   try/finally 保证执行异常时也清除(不残留授权) — 小欧 2026-08-10
+# 2026-08-10 - 小欧 - H1-H2 实施(第二次代码更新): H1 finally 清零移除(清零点迁移到 task 级 R1 react_cycle.run_react_cycle finally);
+#   H2 复用现有 HITL 模式: create_confirmation + wait_for_confirmation_result(前端零改动) — 小欧 2026-08-10
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -866,15 +868,15 @@ async def handle_action(agent, parsed: Dict):
     _exec_calls = _safe_calls if _safe_calls else []
 
     # ── 工具重试（隐蔽，前端不可见）── 小欧 2026-07-13
-    # 工具重试由 tool_retry_engine 内部执行，不向前端 emit 任何 step（北京老陈要求：tool 重试隐蔽）。
-    # 重试回调不再收集/上报，仅后端内部重试。
-    # BUG-E修复(补A): 工具批执行结束(含异常)即清除临时授权, 授权只覆盖本次操作 — 小欧 2026-08-10
-    from app.services.safety.temp_auth import clear_temp_auth  # 局部导入避免模块级循环依赖
+    # 工具重试由 tool_retry_engine 内部执行, 不向前端 emit 任何 step(北京老陈要求: tool 重试隐蔽)。
+    # 重试回调不再收集/上报, 仅后端内部重试。
+    # H1 (v1.43): 移除工具批 finally 的 clear_temp_auth() — 清零点迁移到 task 级(R1, react_cycle.run_react_cycle finally)
     try:
         results = await execute_tools(agent, _exec_calls, call_result.is_parallel,
                                       call_result.tool_name, call_result.tool_params)
-    finally:
-        clear_temp_auth()
+    except Exception as e:
+        logger.error(f"[action_handler] execute_tools 异常: {e}")
+        raise
 
     agent._consecutive_reasoning_only = 0  # 2026-07-17 - 小欧 - 本步LLM发起工具调用(非reasoning-only空转), 归零空转计数
 

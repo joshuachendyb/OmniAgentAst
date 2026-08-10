@@ -52,6 +52,17 @@
 #   文本增强紧迫感(点明"强制终止后果"+要求改工具/直接结束), 强化LLM服从。带_temp_same_tool_warn标记
 #   仍受通用_temp_*前缀清除(tool_retry_engine/pop_temp_messages v1.6)保护, 持久化前被pop_temp_messages
 #   统一弹掉, 不污染history/压缩。ast语法✓
+# 2026-08-10 - 小欧 - R1 实施(第二次代码更新): finally 新增 clear_temp_auth() (task 级清零点, 3.2.12/3.2.13); I1 授权段移入 try 内(见 I1/I2 v1.43 实现, 依赖本清零点)
+# 2026-08-10 - 小欧 - I2/I3/I4 实施(第二次代码更新, 第五批): 任务目录级临时授权确认(3.2.13) —
+#   I2 复用现有 HITL paused 流(前端零改动): try 内(while 前) 消费 agent._task_auth_paths(I1 挂载),
+#   create_confirmation → MetaStep(paused, confirm_id, tool_name="task_dir_authorization") →
+#   await wait_for_confirmation_result → 确认后批量 grant_temp_auth(recursive=True);
+#   I3 落区判定(授权前分流): 系统禁区不授权 / 非系统禁区仅写可授权(删硬拦) / 白名单外入单;
+#   I4 异常兜底: 确认超时/拒绝/异常 → 跳过不授权不阻塞, 任务继续(任务内仍可单点工具授权)
+# 2026-08-10 - 小欧 - 撤销 I2/I3/I4 (北京老陈 2026-08-10): 「任务中目录解析功能点去掉」—
+#   移除 try 内 while 前的任务目录级 HITL 批量授权段(create_confirmation/paused/grant_temp_auth);
+#   目录权限全部走 LLM 工具参数路径进临时名单(3.2.12); 保留 R1 clear_temp_auth(task 级清零点); 同步撤销 initialize_run_state 的 I1
+# 2026-08-10 - 小欧 - 撤销 I2 残留清理(三堂会审核查): 删除 L83 死 import HITL_TIMEOUT(I2 已撤销, react_cycle 内无任何引用, 死代码)
 
 
 """
@@ -635,4 +646,9 @@ async def run_react_cycle(
 
     finally:
         _finalize_cycle(agent)
+        # R1 (v1.43): task 级清零点 — clear_temp_auth 在 finally 收口, 使授权后所有提前 break/异常/循环自然退出
+        #   均走 finally; 注意 max_steps<=0 提前 return 在 try 之前(Bug4修正: 该分支 I2 尚未运行,
+        #   无任何授权产生, 故不经过 finally 也无泄漏; 注释已修正不再声称其走 finally)
+        from app.services.safety.temp_auth import clear_temp_auth
+        clear_temp_auth()
 
