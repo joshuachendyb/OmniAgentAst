@@ -6,6 +6,8 @@
 【重构】2026-06-14 小沈 — COMMANDS移至shell_register.execute_shell_command描述
 【2026-07-28 小欧】压缩系统提示文字: 删路径格式(LLM已知)、合并环境信息、压缩路径规则
 【2026-07-28 小欧】新增 get_default_shell_code(): 返回内部 shell 编码(ps7/ps5/bash),供 system_prompts 动态切换
+【2026-08-10 小欧】_get_environment_info 扩展: 环境行追加授权目录(allowed_dirs, 分号分隔), 与项目根一并告知LLM; 未配置时保持原样 — 北京老陈驱动
+【2026-08-10 小欧】git 状态判定固化: 只基于项目根(get_project_root), 严禁从代码库根推算 — 北京老陈裁定
 
 Author: 小沈 - 2026-06-14
 """
@@ -38,16 +40,22 @@ def _check_is_git_repo(path: str) -> bool:
 
 
 def _get_environment_info() -> str:
-    """获取环境信息（项目根目录/Git 状态/日期时间）— 小沈 2026-06-11
+    """获取环境信息（项目根目录/授权目录/Git 状态/日期时间）— 小沈 2026-06-11
     【2026-06-23 北京老陈】工作目录改为项目根目录,避免显示backend子目录
+    【2026-08-10 小欧】追加授权目录, 与项目根一并告知LLM
     """
 
     config = get_config_instance()
+    # git 状态只基于项目根(tool工作区), 严禁从代码库根推算 — 北京老陈 2026-08-10 裁定
     root = config.get_project_root()
+    allowed = config.get_allowed_dirs()
     now = now_str()
     is_git = _check_is_git_repo(root)
     git_status = "是" if is_git else "否"
-    return f"""【环境】任务根目录={root}, Git={git_status}, 时间={now}"""
+    env = f"【环境】任务根目录={root}, Git={git_status}, 时间={now}"
+    if allowed:
+        env += f", 授权目录={'; '.join(allowed)}"
+    return env
 
 
 _ALWAYS_RULES = """【路径】
