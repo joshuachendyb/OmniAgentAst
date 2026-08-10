@@ -10,6 +10,19 @@
 # 2026-08-10 - 小欧 - BUG-B/C修复: 新增 _resolve_path_param 逻辑路径参数解析(download.dest=相对下载目录/rename.dest=仅文件名→真实文件系统路径),
 #    validate_tool_path 校验前先解析, 消除"相对/文件名语义被当绝对路径校验→resolve到cwd→误判代码库禁区拦截"(download/rename完全不可用);
 #    validate_tool_path 返回扩展为三元组 (is_valid, msg, failed_path), failed_path=首个校验失败的真实路径, 供临时授权定位真正越权参数(BUG-D修复) — 小欧 2026-08-10
+# 2026-08-10 - 小欧 - P3 缺陷修复(三堂会审复核发现, 第二次代码更新): _SYSTEM_PROTECTED 系统保护目录(windows/program files等)
+#   写/删 返回 category 由 None → "system" — _is_forbidden_path 仅精确锁 WIN_EXACT 本身(C:\Windows), 其子路径漏过禁区判定,
+#   旧返回 None 使 T2 当"白名单外可临时授权"处理(系统目录可被授权写入, 违表五「系统禁区写❌硬拦永不授权」); 读 mode 放行(与禁区读一致, 3.2.9)
+# 2026-08-10 - 小欧 - 三堂会审 BUG-1/BUG-3 修复(v1.45): 
+#   BUG-1: validate_tool_path 原 `tool_name not in path_tools` 用 LLM 原始名判归属, 别名工具(list_directory/read_text_file等)
+#     不在注册名集合 → 直接 return True 放行, 绕过全部路径校验; 改归一化名 normal_name 判(与 mode 推断同源, P2 防别名漏检补齐)
+#   BUG-3: 原 hit_params 直接查原始 params, PARAM_ALIASES 参数别名(rename.new_name→dest/copy.src→path/dst→dest等)
+#     命中不了 _PATH_PARAM_KEYS → 该参数路径越权漏检; 校验前先 normalize_params 归一化(校验对象与工具实际落盘路径一致)
+#   _resolve_path_param 同步改用归一化名+归一化 params(download/rename 相对语义解析不受别名影响) — 小欧 2026-08-10
+# 2026-08-10 - 小欧 - T2 回归修复(三堂会审+回归测试复核发现, v1.45): 空路径/路径穿越返回 category 由 None → "system" —
+#   validate_path 对空路径/穿越返回 (False, msg, None), T2 将 category=None 一律当"白名单外非禁区→可授权请求",
+#   使空路径/穿越从 blocked 退化为可授权(违"无效/恶意路径应硬拦"); 归入 system 后 T2 硬拦永不授权,
+#   与 test_bug_empty_path_not_validated / test_f5_03_path_traversal_blocked 断言对齐 — 小欧 2026-08-10
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -42,6 +55,7 @@ from app.tools.tool_constants import (
     FORBIDDEN_PATHS_WINDOWS_EXACT,
     FORBIDDEN_PATHS_WINDOWS_PREFIX,
 )
+from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params  # P2/三堂会审BUG-3: 工具名+参数名别名归一防漏检 — 小欧 2026-08-10
 from app.logger import logger
 
 
@@ -118,14 +132,18 @@ def _get_project_root_safety() -> Path:
     return Path.home()
 
 
-def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
+def _is_forbidden_path(file_path: str) -> Tuple[Optional[str], Optional[str]]:
     """检查路径是否在系统敏感路径黑名单中 — 小健 2026-06-23
+    P1 (v1.43 修正): 返回值扩展为禁区类别(category, msg)
     
     Args:
         file_path: 待检查路径
         
     Returns:
-        (is_forbidden, error_message)
+        (category, error_message) — category ∈ {"system", "non_system", None}:
+            "system" = 系统敏感目录+磁盘根(3.2.8 第1-5类, 写/删永不授权)
+            "non_system" = 代码库根及父子级(3.2.8 第6类, 写可任务级授权, 删硬拦)
+            None = 非禁区(白名单外·非禁区)
     """
     try:
         real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
@@ -133,10 +151,11 @@ def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
         real_path_lower = real_path_str.lower()
         
         # 磁盘根目录(C:\)黑名单 — 白名单盘符机制允许盘根操作, 此处硬阻断 — 小欧 2026-08-02
+        # P1: 磁盘根属于系统禁区(system)
         try:
             drive, rest = os.path.splitdrive(real_path_str)
             if drive and not rest.strip("\\/"):
-                return True, f"禁止访问磁盘根目录: {file_path}"
+                return "system", f"禁止访问磁盘根目录: {file_path}"
         except Exception:
             pass
         
@@ -145,13 +164,14 @@ def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
             for forbidden in FORBIDDEN_PATHS_WINDOWS_EXACT:
                 _f = forbidden.replace("C:", sys_drive, 1) if forbidden.upper().startswith("C:") else forbidden
                 if real_path_lower == _f.lower():
-                    return True, f"禁止访问系统敏感文件: {file_path}"
+                    return "system", f"禁止访问系统敏感文件: {file_path}"
             for forbidden_prefix in FORBIDDEN_PATHS_WINDOWS_PREFIX:
                 _f = forbidden_prefix.replace("C:", sys_drive, 1) if forbidden_prefix.upper().startswith("C:") else forbidden_prefix
                 if real_path_lower.startswith(_f.lower()):
-                    return True, f"禁止访问系统敏感目录: {file_path}"
+                    return "system", f"禁止访问系统敏感目录: {file_path}"
 
         # ⑦ 代码库根禁区(tool禁区, 开关无关硬拦截): 代码库根及其子/父级全部禁止 — 小欧 2026-08-10
+        # P1: 代码库根属非系统禁区(non_system)
         try:
             from app.config import get_code_root
             code_root = get_code_root()
@@ -161,34 +181,42 @@ def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
                 if (real_path_lower == cr_lower
                         or real_path_lower.startswith(cr_lower + os.sep)
                         or real_path_lower.startswith(cr_lower + "/")):
-                    return True, f"禁止访问代码库(tool禁区): {file_path}"
+                    return "non_system", f"禁止访问代码库(tool禁区): {file_path}"
         except Exception:
             pass
 
         for forbidden in FORBIDDEN_PATHS_EXACT:
             if real_path_str == forbidden:
-                return True, f"禁止访问系统敏感文件: {file_path}"
+                return "system", f"禁止访问系统敏感文件: {file_path}"
         for forbidden_prefix in FORBIDDEN_PATHS_PREFIX:
             if real_path_str.startswith(forbidden_prefix):
-                return True, f"禁止访问系统敏感目录: {file_path}"
+                return "system", f"禁止访问系统敏感目录: {file_path}"
         
-        return False, None
+        return None, None
     except Exception as e:
         # 【P1-21修复】异常时拒绝访问而非放行 — chendyg 2026-06-26
-        return True, f"路径安全检查异常,拒绝访问: {file_path} ({e})"
+        # P1: 异常判定为system禁区(硬拦永不授权)
+        return "system", f"路径安全检查异常,拒绝访问: {file_path} ({e})"
 
 
-def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) -> Tuple[bool, Optional[str]]:
-    """验证文件路径是否在白名单内（Safety层）
-    工具层的 validate_path() 先于本函数执行，已拦截空/保留字符/保留名/系统目录/不存在/类型不匹配
-    本函数负责：黑名单/白名单/路径穿越拒绝
+def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
+                  mode: str = "write") -> Tuple[bool, Optional[str], Optional[str]]:
+    """验证文件路径是否在白名单内(安全层)
+    P3 (v1.43 修正): 增加 mode 分级判定, 返回值扩展为 (is_valid, msg, category)
 
     Args:
         file_path: 待验证路径
         allowed_paths: 白名单(默认使用 ALLOWED_PATHS)
+        mode: 操作类型('read'/'write'/'delete'), 默认 'write'
 
     Returns:
-        (is_valid, error_message)
+        (is_valid, error_message, category) — category ∈ {"system", "non_system", None}
+            用于 P4/T2 显式分流(P1 返回类别替代 msg 字符串特征)
+
+    判定规则(3.2.14/表五):
+        - 读: 白名单外非禁区/禁区全部放行(内容敏感性 contentFilter 兜底)
+        - 写: 系统禁区硬拦/非系统禁区写→查 is_temp_authorized(已任务级授权则放行)/白名单外写临时授权
+        - 删: 系统+非系统禁区一律硬拦/白名单外删临时授权
 
     小沈 2026-06-17 从 FileTools._validate_path 提取为纯函数
     小健 2026-06-23 增加黑名单优先检查
@@ -196,27 +224,49 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
     小欧 2026-06-26 拒绝空路径
     """
     if not file_path or not file_path.strip():
-        return False, "路径为空"
+        # T2 回归修复 (三堂会审复核发现, v1.45): 空路径是无效参数, 归入 category="system"(永不授权),
+        #   原返回 category=None → T2 当"白名单外非禁区→可授权请求", 空路径从 blocked 退化为可授权(退化);
+        #   与 test_bug_empty_path_not_validated 断言(空路径应 blocked)对齐 — 小欧 2026-08-10
+        return False, "路径为空", "system"
 
     is_forbidden, forbidden_msg = _is_forbidden_path(file_path)
     if is_forbidden:
-        return False, forbidden_msg
+        # P3: 读放行 — 禁区读✅放行(内容敏感性 contentFilter 兜底)
+        if mode == "read":
+            return True, None, is_forbidden
+        # P3: 写/删 — 系统禁区硬拦, 非系统禁区写查is_temp_authorized, 删硬拦
+        if is_forbidden == "system":
+            return False, forbidden_msg, "system"
+        if is_forbidden == "non_system":
+            # 非系统禁区删硬拦(删无授权分支)
+            if mode == "delete":
+                return False, forbidden_msg, "non_system"
+            # 非系统禁区写 → 查 is_temp_authorized(任务级授权)
+            from app.services.safety.temp_auth import is_temp_authorized
+            if is_temp_authorized(file_path):
+                return True, None, "non_system"
+            return False, forbidden_msg, "non_system"
+        # 兜底: 异常判定为 system 硬拦
+        return False, forbidden_msg, is_forbidden
 
     # 路径穿越拒绝: 包含..的路径直接拒绝 — 小欧 2026-06-25
+    # T2 回归修复 (v1.45): 穿越路径归入 category="system"(永不授权) — 原返回 None → T2 当白名单外可授权,
+    #   与 test_f5_03_path_traversal_blocked 断言(穿越应 blocked)对齐 — 小欧 2026-08-10
     try:
         # 检查原始路径的每个部分是否包含..
         path_parts = Path(file_path).parts
         if ".." in path_parts:
-            return False, f"路径包含..,禁止路径穿越: {file_path}"
+            return False, f"路径包含..,禁止路径穿越: {file_path}", "system"
         # 也检查规范化解析后的路径（处理绝对路径中的..）
         resolved = os.path.realpath(file_path)
         original_resolved = os.path.realpath(os.path.dirname(file_path))
         if not resolved.startswith(original_resolved) and file_path != resolved:
-            return False, f"路径穿越检测: {file_path} 解析为 {resolved}"
+            return False, f"路径穿越检测: {file_path} 解析为 {resolved}", "system"
     except Exception as e:
         logger.warning(f"[path_safe_check] 路径校验异常: {file_path}: {e}")
-        return False, f"路径校验异常: {file_path}"
+        return False, f"路径校验异常: {file_path}", "system"
 
+    # P3: 白名单判定 — 白名单内读/写/删都放行(删受 R3-R6)
     # 补B(2026-08-10): 白名单懒加载——每次调用动态计算(主目录+tmp+项目根+授权目录),
     # 避免模块导入时 config 未就绪取错值; allowed_paths 显式传入时优先使用
     paths = allowed_paths if allowed_paths is not None else get_default_allowed_paths()
@@ -230,7 +280,12 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
         })
         _real_parts = real_path.parts
         if len(_real_parts) > 1 and _real_parts[1].lower() in _SYSTEM_PROTECTED:
-            return False, f"路径位于系统保护目录,禁止操作: {file_path}"
+            # P3 (v1.43): 读放行(内容敏感性 contentFilter 兜底, 与禁区读一致);
+            #   写/删 → 系统禁区(category="system") — _is_forbidden_path 仅精确锁 WIN_EXACT 本身,
+            #   其子路径(如 C:\Windows\a.txt) 靠本处兜底, 归类 system 使 T2 硬拦永不授权(表五/3.2.9)
+            if mode == "read":
+                return True, None, "system"
+            return False, f"路径位于系统保护目录,禁止操作: {file_path}", "system"
 
         for allowed in paths:
             allowed_real = Path(os.path.realpath(allowed))
@@ -245,23 +300,28 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
 
                     if len(allowed_parts) == 1 and (allowed_parts[0].endswith(':') or allowed_parts[0].endswith(':\\') or allowed_parts[0].endswith(':/')):
                         if str(real_path) == str(allowed_real) or real_path.parts[0] == allowed_parts[0]:
-                            return True, None
+                            return True, None, None
                     else:
                         if len(real_parts) >= len(allowed_parts):
-                            return True, None
+                            return True, None, None
             except (ValueError, OSError):
                 pass
 
-        # ⑮ 临时授权(3.3决策⑤): 白名单未命中但当前作用域已被用户临时授权(本次放行, 支持递归) — 小欧 2026-08-10
-        # 注: 禁区(代码库根/系统目录)已在 _is_forbidden_path 拦截, 到不了这里, 不受临时授权影响
+        # P3: 白名单外判定 — temp_auth(3.2.12) 仅在非禁区生效(禁区已在_is_forbidden_path拦截)
+        # P3: 读 — 白名单外非禁区/禁区全部放行(contentFilter 兜底); 所以这里不用判mode, 直接放行
+        # P3: 写/删 — 白名单外(非禁区)走临时授权判定
         from app.services.safety.temp_auth import is_temp_authorized
+        if mode == "read":
+            # P3: 读放行 — 白名单外非禁区读✅直接放行(只读工具)
+            # (P1/P2 已拦截系统/代码库禁区, 此处剩白名单外·非禁区)
+            return True, None, None
+        # P3: 写/删 — 白名单外非禁区走临时授权
         if is_temp_authorized(file_path):
-            return True, None
-
-        return False, f"路径 '{file_path}' 不在允许的操作范围内(仅允许:{', '.join(str(p) for p in paths[:5])}...)"
+            return True, None, None
+        return False, f"路径 '{file_path}' 不在允许的操作范围内(仅允许:{', '.join(str(p) for p in paths[:5])}...)", None
 
     except Exception as e:
-        return False, f"路径验证失败: {str(e)}"
+        return False, f"路径验证失败: {str(e)}", None
 
 
 # 路径相关的工具分类 — 5类工具涉及文件路径操作
@@ -275,6 +335,12 @@ _PATH_CATEGORIES = {
 _PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
                     "directory", "file_name", "destination_path", "output_path",
                     "dest")
+
+# P2: 只读工具集合(3.2.15, 以真实注册名为准, stat 无对应注册工具已剔除) — 小欧 2026-08-10 v1.43
+_READ_ONLY_TOOLS = frozenset({
+    "listdir", "tree", "find", "grep", "readtext", "readmedia",
+    "read_pdf", "read_docx", "read_pptx", "read_xlsx",
+})
 
 
 def _resolve_path_param(tool_name: str, key: str, value: str, params: Dict[str, Any]) -> str:
@@ -296,11 +362,24 @@ def _resolve_path_param(tool_name: str, key: str, value: str, params: Dict[str, 
     return value
 
 
-def validate_tool_path(tool_name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[str], Optional[str]]:
+def validate_tool_path(tool_name: str, params: Dict[str, Any],
+                       mode: Optional[str] = None) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
     """
     工具路径检查：自动判断分类 + 找路径参数 + 调validate_path
-    返回三元组 (is_valid, error_message, failed_path):
-      failed_path = 首个校验失败的真实路径(临时授权auth_path用, 成功时为None)
+    P4 (v1.43): 增加 mode 参数, 返回值扩展为四元组 (is_valid, error_message, failed_path, category)
+    
+    Args:
+        tool_name: 工具名
+        params: 工具参数
+        mode: 操作模式(读/写/删), 若为None则按 tool_name 推断(3.2.15):
+            - tool_name ∈ _READ_ONLY_TOOLS → 'read'
+            - tool_name == 'delete' → 'delete'
+            - 其余路径工具 → 'write'
+
+    Returns:
+        (is_valid, error_message, failed_path, category) —
+            failed_path = 首个校验失败的真实路径(临时授权 auth_path 用, 成功时为 None)
+            category ∈ {"system", "non_system", None} — 供 T2 显式分流(P1 返回类别替代 msg 字符串特征)
     
     将调度逻辑从 tool_safety_checker._check_known_risks 迁移至此，
     path相关的事情全部在 path_safe_check 中处理。
@@ -309,31 +388,51 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]) -> Tuple[bool, Op
                  返回 failed_path 供临时授权定位真正越权参数, 而非固定 path-or-dest(BUG-D)
     """
     try:
+        # P4: mode 推断 — 按 tool_name 分组(3.2.15): 只读集合/read, delete/delete, 其余写工具/write
+        normal_name = normalize_tool_name(tool_name)  # P2: 防别名漏判
+        if mode is None:
+            if normal_name in _READ_ONLY_TOOLS:
+                mode = "read"
+            elif normal_name == "delete":
+                mode = "delete"
+            else:
+                mode = "write"
+        
+        # BUG-3 (三堂会审复核发现, v1.45): 参数别名先归一化再取路径参数 —
+        #   LLM 常传 PARAM_ALIASES 里的别名(如 rename.new_name→dest/copy.src→path/dst→dest),
+        #   原代码 hit_params 直接查原始 params, 别名参数命中不了 _PATH_PARAM_KEYS → 路径越权漏检。
+        #   此处用 normalize_params 归一化后找路径参数, 校验对象与工具实际落盘路径一致(增强不退化)。
+        normalized_params, _ = normalize_params(normal_name, params)
+        
         all_categories = tool_registry.get_categories()
         path_tools = set()
         for cat in _PATH_CATEGORIES:
             path_tools.update(all_categories.get(cat, []))
 
-        if tool_name not in path_tools:
-            return True, None, None
+        # BUG-1 (三堂会审复核发现, v1.45): path_tools 归属判断用归一化名 —
+        #   原代码 `tool_name not in path_tools` 用 LLM 原始名, 别名工具(如 list_directory/read_text_file)
+        #   不在 path_tools(注册名集合) → 直接 return True 放行, 绕过全部路径校验;
+        #   统一走 normalize_tool_name 归一化后再判, 与 mode 推断同源(P2 防别名漏检补齐)。
+        if normal_name not in path_tools:
+            return True, None, None, None
 
         # ⑨ 遍历所有命中路径参数逐一校验, 任一越权即拒绝(原只取第一个命中参数的漏洞B修复)
-        hit_params = [key for key in _PATH_PARAM_KEYS if params.get(key) is not None]
+        hit_params = [key for key in _PATH_PARAM_KEYS if normalized_params.get(key) is not None]
         if not hit_params:
-            return True, None, None
+            return True, None, None, None
 
         for key in hit_params:
-            real_path = _resolve_path_param(tool_name, key, params[key], params)
-            valid, err = validate_path(real_path)
+            real_path = _resolve_path_param(normal_name, key, normalized_params[key], normalized_params)
+            valid, err, category = validate_path(real_path, mode=mode)
             if not valid:
-                return False, err, real_path
+                return False, err, real_path, category
 
-        return True, None, None
+        return True, None, None, None
     except Exception as e:
-        return False, f"路径安全检查异常: {e}", None
+        return False, f"路径安全检查异常: {e}", None, None
 
 
 __all__ = ["ALLOWED_PATHS", "get_default_allowed_paths", "get_existing_drives",
            "get_system_drive", "_get_project_root_safety", "validate_path",
-           "validate_tool_path", "_is_forbidden_path"]
+           "validate_tool_path", "_is_forbidden_path", "_READ_ONLY_TOOLS"]
 

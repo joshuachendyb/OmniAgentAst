@@ -13,6 +13,14 @@
 # 2026-08-10 - 小欧 - BUG-A修复: delete R6(项目根/授权目录外递归)外层先于 _check_known_risks 判定(if delete_risk.blocked: return), 杜绝R6被白名单临时授权绕过
 # 2026-08-10 - 小欧 - BUG-D修复: _check_known_risks 白名单外授权请求的 auth_path 改用 validate_tool_path 返回的 failed_path(真正越权参数的真实路径),
 #   不再固定 params.get("path") or params.get("dest")(多路径参数工具 copy/move/compress/extract 越权在dest时原逻辑授权对象错误, 取到合法path) — 小欧 2026-08-10
+# 2026-08-10 - 小欧 - T1-T3 实施(第二次代码更新, 基于第3章设计框架): _check_known_risks 接收 validate_tool_path 4元组(is_valid, msg, failed_path, category);
+#   T2 按 category+mode 显式分流(替代 L167 msg 字符串特征判断): category=="system"写删硬拦永不授权 / category=="non_system"写→任务级授权请求(删在validate_path删除规则已硬拦到达不到) / category==None→白名单外临时授权 / category=="system"/"non_system"且读→放行(validate_path读mode已处理)
+# 2026-08-10 - 小欧 - T2 缺陷修复(三堂会审关联逻辑复核发现): category=="non_system" 分支未区分写/删——validate_path 删mode返回
+#   (False, msg, "non_system") 时, 原代码一律返回 requires_confirmation(可授权), 违反 3.2.10/表五「非系统禁区删❌硬拦永不授权」;
+#   修复: 按 normalize_tool_name 判断 delete 操作 → 硬拦 blocked; 写操作保持任务级授权请求(3.2.13)
+# 2026-08-10 - 小欧 - 三堂会审 BUG-2 修复(v1.45): _check_known_risks 写保护判定原 `tool_name == _WRITE_RISK_TOOL("writetext")`
+#   用 LLM 原始名, 别名(write_text/writefile等) normalize 前不等于 writetext → 写入大小保护被绕过;
+#   统一走 normalize_tool_name 再判(P2 防别名漏检补齐, 与 T2 delete 判定同模式) — 小欧 2026-08-10
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -161,25 +169,46 @@ class ToolSafetyChecker:
         """已知风险检测：路径越权(R1/R2) / delete R6 / 写入大小保护 / 代码注入 — 小沈 2026-06-17
         小欧 2026-06-25: 返回SafetyResult替代raw dict
         小欧 2026-06-27: 路径检查委托validate_tool_path(path_safe_check统一处理)
-        小欧 2026-08-04: 增 delete_risk 入参, R6(项目根外递归) 在此无条件拦截
-        # ⑮2026-08-10: 白名单外路径(非禁区/系统目录)转为临时授权请求(requires_confirmation+auth_path),
-        #   禁区(代码库根/系统目录)仍硬拦 blocked —— 区分依据: validate_tool_path 返回的白名单外错误特征"""
-        is_valid, msg, failed_path = _validate_tool_path(tool_name, params)
+        小欧 2026-06-28: 增 delete_risk 入参, R6(项目根外递归) 在此无条件拦截
+        # T1 (v1.43): 传递 mode 给 validate_tool_path(自动推断), 接收 4元组 (is_valid, msg, failed_path, category)
+        # T2 (v1.43): 按 category+mode 显式分流, 替代 msg 字符串特征匹配(L170):
+        #   - category=="system" 且写/删 → blocked 硬拦(永不授权)
+        #   - category=="non_system" 且删 → blocked 硬拦(永不授权)
+        #   - category=="non_system" 且写 → requires_confirmation+auth_path(任务级临时授权, 复用 L238-240)
+        #   - category==None 且白名单外msg → requires_confirmation+auth_path(现状已有)
+        #   - category=="system"/"non_system" 且读 → 放行(validate_path 读 mode 已处理)
+        """
+        is_valid, msg, failed_path, category = _validate_tool_path(tool_name, params)
         if not is_valid:
-            # ⑮ 白名单外(可临时授权) vs 禁区(硬拦): 错误含"不在允许的操作范围内" → 授权请求
-            if msg and "不在允许的操作范围内" in msg:
-                # BUG-D修复: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
-                #   (多路径参数工具 copy/move/compress/extract 越权在dest时, 原逻辑误取合法path) — 小欧 2026-08-10
+            # T2: 显式 category+mode 分流(替代 msg 字符串特征)
+            if category == "non_system":
+                # 非系统禁区: 删→硬拦永不授权(3.2.10/表五), 写→任务级临时授权请求
+                # (validate_tool_path 已按 tool_name 推断 mode, 此处按注册名归一判断删除操作)
+                from app.tools.tools_alias_mapper import normalize_tool_name  # P2: 防别名漏判 — 小欧 2026-08-10
+                if normalize_tool_name(tool_name) == "delete":
+                    return SafetyResult(blocked=True, message=f"路径越权(非系统禁区,禁止删除): {msg}",
+                                        safety_level="dangerous", auth_path=failed_path)
+                # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
                 return SafetyResult(requires_confirmation=True, blocked=False,
-                                    message=f"路径超出白名单,需临时授权: {msg}",
+                                    message=f"路径超出白名单,需任务级授权: {msg}",
                                     safety_level="destructive",
                                     auth_path=failed_path or (params.get("path") or params.get("dest")))
-            return SafetyResult(blocked=True, message=f"路径越权: {msg}")
+            if category == "system":
+                # 系统禁区写/删 → 硬拦永不授权
+                return SafetyResult(blocked=True, message=f"路径越权(系统禁区): {msg}",
+                                    safety_level="dangerous", auth_path=failed_path)
+            # category == None: 白名单外非禁区 → 临时授权请求
+            # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
+            return SafetyResult(requires_confirmation=True, blocked=False,
+                                message=f"路径超出白名单,需临时授权: {msg}",
+                                safety_level="destructive",
+                                auth_path=failed_path or (params.get("path") or params.get("dest")))
 
-        if delete_risk is not None and delete_risk.blocked:
-            return delete_risk                                # R6 项目根外递归 — 小欧 2026-08-04
-
-        if tool_name == _WRITE_RISK_TOOL:
+        # BUG-2 (三堂会审复核发现, v1.45): 写保护判定用归一化名 —
+        #   原代码 `tool_name == _WRITE_RISK_TOOL("writetext")` 用 LLM 原始名, 别名(write_text/writefile等)
+        #   normalize 前不等于 writetext → 写入大小保护被绕过; 统一走 normalize_tool_name 再判(P2 补齐)
+        from app.tools.tools_alias_mapper import normalize_tool_name as _norm_tool
+        if _norm_tool(tool_name) == _WRITE_RISK_TOOL:
             try:
                 # 【#29修复】写入大小保护应优先用path参数（与路径检查一致），file_path兜底 — chendyg 2026-06-26
                 # 2026-08-04 小欧 fix: content 可能为 dict/list(LLM结构化传参), 用isinstance(str)判typeskip写保护, 不崩不误拦 — 北京老陈审出多余转换(YAGNI), 写保护只需量字节数无需转JSON
