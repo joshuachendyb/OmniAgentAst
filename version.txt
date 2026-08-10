@@ -1,3 +1,49 @@
+v0.19.10
+更新时间: 2026-08-10 23:34:43 - 小欧-2026-08-10
+## v0.19.9(991e801f3)以来 变更汇总(31个commit) - 小欧-2026-08-10
+[2026-08-10 23:34 小欧] 汇总范围=v0.19.9(991e801f3)以来全部commit(version.txt流程commit并入本条不单列)
+
+### refactor:
+- refactor:action_handler/initialize_run_state/react_cycle 临时授权生命周期task级迁移(H1-H2/R1)+撤销任务目录解析I1-I4 - 小欧-2026-08-10
+
+### feat:
+- feat:system_prompts.py/system_adapter.py 授权目录(allowed_dirs)注入LLM系统Prompt(项目根同源, 分号/换行列出, 未配置零退化; git状态判定固化只基于项目根) - 小欧-2026-08-10
+- feat:config.yaml.example 补全app段(allowed_dirs授权目录列表,格式注释写完整:YAML列表每行一条非逗号分号+边界约束)+security段对齐真实配置,修复ai段models列表后timeout缩进YAML语法错误 - 小欧-2026-08-10
+- feat:config.py/main.py/delete_file.py/download_file.py/delete_safety.py/temp_auth.py 项目根收敛+授权目录+代码库禁区+白名单收紧+临时授权框架(步骤1①-⑮: ①兜底用户主目录 ②③④命名分离 ⑤Safety收敛走config ⑥删复刻 ⑩allowed_dirs ⑫多授权域 ⑬改调get_code_root ⑭注释更正 ⑮temp_auth) - 小欧-2026-08-10
+
+### fix:
+- fix:path_safe_check/tool_safety_checker/temp_auth 三堂会审BUG-1/2/3别名归一化+T2空路径穿越回归修复 - 小欧-2026-08-10
+- fix:path_safe_check.py/tool_safety_checker.py/action_handler.py 步骤1(⑦代码库根禁区⑧⑨路径参数逐校验⑪白名单收紧⑮授权请求)+BUG-A外层硬拦R6/BUG-B-C解析相对与文件名参数/BUG-D auth_path用failed_path/BUG-E finally清临时授权 - 小欧-2026-08-10
+- fix:execute_shell_command/execute_sql/task_db task005核查P1/P3/P7落地(0x正则收紧HRESULT/NTSTATUS段防哈希误判,dry_run外层异常保留内层SQL错误,create_task幂等冲突补日志,三审通过) - 小欧-2026-08-09
+- fix:message_builder.py/react_cycle.py task007问题A纠偏优化+发送即清v1.7(role改user+紧迫措辞,prepare_messages_for_llm浅拷贝后剔_temp_*源,纠偏/推理发完即弃不残留,三堂会审通过) - 小欧-2026-08-09
+- fix:edit_text_file.py 编码回退提示P1修复+safety_hint拼接顺序保完整 - 小欧-2026-08-09
+- fix:tools_alias_mapper.py TOOL_NAME_ALIASES新增writefile/readfile/writeetext/readetext/editetext幻觉名映射→注册名,防LLM拼写幻觉致工具未注册拦截(P5-07/COM-08空转防循环失败根因) - 小欧-2026-08-09
+- fix:tool_retry_engine.py task007非法参数分支补智能hint(_INVALID_PARAM_HINTS映射grep.type→glob/find、find.top_n→offset+通用兜底,验证14+49全过,三堂会审通过含hint去重优化) - 小欧-2026-08-09
+- fix:task_db/edit_text_file/file_path_checker task006修复P3/P4/P7(create_task改ON CONFLICT幂等化/sql_error_hint新增UNIQUE分支引导UPDATE/INSERT/编码回退提示并入safety_hint,验证20+6全过回归409,三堂会审通过) - 小欧-2026-08-09
+- fix:execute_shell_command/stream/react_cycle/task_runtime/action_handler 修复代码三审收尾P1-P4(Add-Type收紧|[ 't]*同行|Meta排除集|wait_for_resume拆分) - 小欧-2026-08-09
+- fix:prompt_logger.py task004核查修复A1/A2/A4(观察结果字段去冒号/log_llm_response冗余赋值移入else/删死代码log_tool_prompt,三堂会审通过) - 小欧-2026-08-09
+
+### fc:
+- fc:tools_alias_mapper.py write_xlsx参数别名append→append_mode(LLM常传append致追加模式失效) - 小欧-2026-08-09
+- fc:set_window_state.py maximize校验改GetWindowPlacement检测SW_SHOWMAXIMIZED(修复pywin32缺IsZoomed致maximize假失败COM05) - 小欧-2026-08-09
+- fc:stream.py TASK_END追加真实累计token消耗+total_steps统计(修正steps中usage=N为step计数非token的误导) - 小欧-2026-08-09
+- fc:action_handler.py B'分组调度增加监控日志(分组明细+每组耗时,执行逻辑零改动) - 小欧-2026-08-09
+
+### docs:
+- docs:目录及权限第3次分析设计 v1.46 三堂会审BUG-1/2/3别名归一化+T2空路径穿越回归修复回填 - 小欧-2026-08-10
+- docs:目录及权限第3次分析设计 v1.42-v1.43 三堂会审一致性修正+任务临时目录与临时名单关系澄清 - 小欧-2026-08-10
+- docs:目录及权限第3次分析设计 v1.41 三堂会审修正 - 小欧-2026-08-10
+- docs:项目根目录定义混乱分析报告 第3章定稿(v1.34判定流改为路径判定决策流+v1.35表一新增所属名单列+v1.36表结构重整5张表连续序号+表五矩阵判定汇总正源+v1.37判定流补全白名单组成·写删分支·触发源+v1.38表号引用修正) - 小欧-2026-08-10
+- docs:项目根目录定义混乱分析报告 第3章四轮定稿(v1.28触发源+v1.29临时名单正名+v1.30黑名单一张两套规则+v1.31临时名单task级+v1.32三堂会审修正) - 小欧-2026-08-10
+- docs:项目根目录定义混乱分析报告 第3章三表定稿(v1.25禁区说明独立成表+v1.26白名单递归删授权·黑名单拆写/删+v1.27三堂会审行号引用修正) - 小欧-2026-08-10
+- docs:项目根目录定义混乱分析报告 第3章重构定稿(v1.13-v1.24: 两层级两表概念定义vs技术实现+两表切合关系+三区互斥关系图+任务临时目录定位+系统目录/系统磁盘根补全+概念名精确化用户主目录/系统临时目录) - 小欧-2026-08-10
+- docs:config.py/main.py/delete_safety.py/delete_file.py/download_file.py 补全2026-08-10步骤1实施头部编辑历史(①⑤⑥⑩⑫⑬⑭⑯②③④逐项登记, 时间升序, 编辑历史铁规三堂会审) - 小欧-2026-08-10
+- docs:项目根目录定义混乱分析报告-小欧-2026-08-09.md/FUNCTIONS.md v1.11步骤1实施报告+v1.12七问题复核修复报告+FUNCTIONS v2.7同步validate_tool_path三元组与auth_path/clear_temp_auth消费链 - 小欧-2026-08-10
+- docs:doc-8月优化 项目根目录定义混乱分析报告v1.10(三堂会审完成+补A-F补正)+死循环报告v1.1+安全机制删除确认策略对齐 - 小欧-2026-08-10
+- docs:task007报告核查-A-B-C独立结论 v1.2(A已优化落地role改user+发送即清v1.7,措辞更正压缩不留残余,B/C证伪/违例不改) - 小欧-2026-08-09
+- docs:task005核查结论+修复代码三堂会审发现问题核实报告 v1.1(P1-P4修复记录) - 小欧-2026-08-09
+- docs:edittext并发竞态与after模式插入位置问题分析报告 同步v1.10(B'监控日志代码+TASK_END修正说明+步骤6.5监控验证) - 小欧-2026-08-09
+
 v0.19.9
 更新时间: 2026-08-09 09:49:14 - 小欧-2026-08-09
 ## 旧v0.19.9(676e0e6a1)以来 变更汇总(10个commit, 含本次edittext并发竞态修复) - 小欧-2026-08-09
