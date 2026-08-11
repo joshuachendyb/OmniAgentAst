@@ -69,6 +69,14 @@
 #   try/finally 保证执行异常时也清除(不残留授权) — 小欧 2026-08-10
 # 2026-08-10 - 小欧 - H1-H2 实施(第二次代码更新): H1 finally 清零移除(清零点迁移到 task 级 R1 react_cycle.run_react_cycle finally);
 #   H2 复用现有 HITL 模式: create_confirmation + wait_for_confirmation_result(前端零改动) — 小欧 2026-08-10
+# 2026-08-11 - 小欧 - task002 三堂会审修复A(北京老陈驱动, 问题A窗口并行竞态):
+#   [BUG] window_focus/window_resize/set_window_state 作用于同一窗口时状态变更非幂等, 同批并行调度产生竞态;
+#         实测 P2: set_window_state(restore)+window_resize 同批并行, resize 0.00s 返回 ERR_WINDOW_RESIZE
+#   [改法] ①新增 WINDOW_TARGET_TOOLS 常量 ②_parse_paths 新增窗口分支(返回 "window:{window_title}" 冲突键,
+#         缺 title 返回空集——工具参数校验必失败, 不会操作任何窗口, 无竞态风险)
+#         ③_has_conflict 遍历与判定条件纳入窗口工具(同标题≥2次调用即冲突→降级串行)
+#   [效果] 同批同标题窗口工具自动并入同组串行(_partition_calls 并查集本体零改动), 不同标题窗口仍可跨组并行
+#   [验证] py_compile + verify_partition_v13 + verify_refactor_consistency + pytest 回归 — 小欧 2026-08-11
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -121,6 +129,13 @@ class ObservationContext:
 
 # 工具文件写操作集合（冲突检测用）— 北京老陈 2026-07-04
 _WRITE_OPS = FILE_OPERATION_TOOLS - {"readtext"}
+
+# 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A
+# 窗口状态变更(restore/resize/focus)作用于同一窗口时非幂等, 同批并行会产生竞态
+# (实测 P2: set_window_state(restore)+window_resize 同批并行, resize 0.00s 莫名失败),
+# 需与文件工具同机制: 同键(同 window_title)互斥 → 并入同组串行。
+# 不含 window_info(只读枚举, 不改变窗口状态, 无竞态)。
+WINDOW_TARGET_TOOLS = {"window_focus", "window_resize", "set_window_state"}
 
 # #4 自动纠正: 文件扩展名→tool_name 映射（三分类: 文本→readtext, 文档→专用工具, 多媒体→readmedia）
 # P07修复: .csv 是双域(文本+表格), 从读取映射移除, 使 read_xlsx/readtext 均不被自动改写 — 小欧 2026-08-07
@@ -209,6 +224,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 if safety_result.auto_confirm:
                     # P0-01修复: 安全绕过(security.enabled=false)时MetaStep照出但自动确认立即通过, 不挂起不等wait
                     #   与tool_safety_checker.py bypass路径返回的auto_confirm=True配对 — 小沈 2026-08-03
+                    # 2026-08-11 小欧(P2-5): bypass模式(auto_confirm=True)下continue跳过下方grant_temp_auth —
+                    #   安全开关关闭时每次工具调用均auto_confirm直接放行, 无需累积临时授权, 跳过是正确语义
                     resolve_confirmation(confirm_id, confirmed=True, trust_session=True)
                     set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
                     continue
@@ -287,9 +304,16 @@ def _add_denial_feedback(agent, all_calls: List[Dict], fc_context: Dict, denied_
 
 
 def _parse_paths(name: str, params: Dict) -> Set[str]:
-    """解析一个调用的路径集合(复用 PARAM_ALIASES 别名→规范名) — 小欧 2026-08-09
-    从旧 _has_conflict 的路径解析循环提取, 供 _has_conflict/_partition_calls 共用(DRY)
+    """解析一个调用的路径/窗口冲突键集合(复用 PARAM_ALIASES 别名→规范名) — 小欧 2026-08-09 — 小欧 2026-08-11 窗口分支
+    文件工具: 解析 path 集合(与 _has_conflict/_partition_calls 共用, DRY)。
+    窗口工具: 以 "window:{window_title}" 为冲突键, 同标题窗口工具并入同组串行(状态变更非幂等);
+              缺 window_title 返回空集——窗口工具参数校验必失败, 不会操作任何窗口, 无竞态风险, 不参与分组。
     """
+    if name in WINDOW_TARGET_TOOLS:
+        title = params.get("window_title", "")
+        if title and isinstance(title, str):
+            return {f"window:{title}"}
+        return set()
     if name not in FILE_OPERATION_TOOLS:
         return set()
     aliases = PARAM_ALIASES.get(name, {})
@@ -310,12 +334,15 @@ def _parse_paths(name: str, params: Dict) -> Set[str]:
 
 
 def _has_conflict(all_calls: List[Dict]) -> bool:
-    """检测文件路径冲突 — 北京老陈 2026-07-04 初版; 小欧 2026-08-09 计数版
-    冲突：同一路径被>=2次调用访问, 且至少一个是写操作
+    """检测路径/窗口冲突 — 北京老陈 2026-07-04 初版; 小欧 2026-08-09 计数版; 小欧 2026-08-11 窗口工具纳入
+    冲突：同一键(文件路径/窗口标题)被>=2次调用访问, 且(至少一个文件写操作 或 含窗口工具)
     有冲突→顺序执行, 无冲突→并行
     [2026-08-09 小欧] BUG修复: 旧实现用 set 存工具名不计数, 同名工具多次写
     同一路径漏检(3×edittext 同文件)→误走并行→read-modify-write 竞态致内容丢失。
     改为 path→(调用次数, 工具名set), 复用 _parse_paths 解析(与 _partition_calls 一致, DRY)。
+    [2026-08-11 小欧] 扩展: 窗口工具(window_focus/window_resize/set_window_state)同标题即冲突,
+    消除 task002 实测 P2(restore+resize 同批并行→resize 0.00s 莫名失败)的并行竞态。
+    注: 文件路径键与 "window:" 键空间不重叠, 同一 entry 的 tools 不会混合文件与窗口工具。
     """
     path_ops: Dict[str, Dict[str, Any]] = {}
 
@@ -326,22 +353,23 @@ def _has_conflict(all_calls: List[Dict]) -> bool:
 
     for c in all_calls:
         name = c.get("tool_name", "")
-        if name not in FILE_OPERATION_TOOLS:
+        if name not in FILE_OPERATION_TOOLS and name not in WINDOW_TARGET_TOOLS:
             continue
         for _path in _parse_paths(name, c.get("tool_params", {})):
             _record(_path, name)
 
     for path, entry in path_ops.items():
         tools = entry["tools"]
-        if entry["count"] >= 2 and any(t in _WRITE_OPS for t in tools):
-            logger.info(f"[_has_conflict] 路径冲突: {path}, tools={tools}, 调用数={entry['count']}, 降级顺序执行")
+        if entry["count"] >= 2 and (any(t in _WRITE_OPS for t in tools) or any(t in WINDOW_TARGET_TOOLS for t in tools)):
+            logger.info(f"[_has_conflict] 操作冲突(路径/窗口): {path}, tools={tools}, 调用数={entry['count']}, 降级顺序执行")
             return True
     return False
 
 
 def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
-    """按路径相关性分组(并查集连通分量): 共享路径的调用归一组, 组间无共享路径→可并行
-    返回: 组列表, 每组是 all_calls 的索引列表 — 小欧 2026-08-09
+    """按路径/窗口相关性分组(并查集连通分量): 共享路径或同标题窗口的调用归一组, 组间无共享→可并行
+    返回: 组列表, 每组是 all_calls 的索引列表 — 小欧 2026-08-09 — 小欧 2026-08-11 窗口工具自动纳入
+    (窗口工具经 _parse_paths 返回 "window:标题" 冲突键, 同标题自动并组串行, 分组本体逻辑零改动)
     """
     n = len(all_calls)
     parent = list(range(n))

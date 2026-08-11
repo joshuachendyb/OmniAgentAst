@@ -9,6 +9,7 @@
 # 2026-08-10 - 小欧 - I1 (第二次代码更新): 新增任务文本目录解析(_parse_task_auth_paths), 仅解析不授权不产 SSE, 挂 agent._task_auth_paths; 同步新增 _TASK_PATH_RE 正则
 # 2026-08-10 - 小欧 - 撤销 I1 (北京老陈 2026-08-10): 「任务中目录解析功能点去掉」— 删除 _parse_task_auth_paths/_TASK_PATH_RE 及调用,
 #   目录权限全部走 LLM 工具参数路径进临时名单(3.2.12); 同步撤销 react_cycle 的 I2/I3/I4 任务级批量确认段; 保留 R1 clear_temp_auth
+# 2026-08-11 - 小欧 - 三堂会审复核落地(P2-3): I1撤销后 _parse_task_auth_paths 已删, List 无消费处, 移除死 import(代码卫生)
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
@@ -17,7 +18,7 @@ _initialize_run_state — 每次运行前初始化Agent状态
 Author: 小沈 - 2026-05-31
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from app.constants import MAX_CONSECUTIVE_CHUNKS
 from app.services.agent.status_table import AgentStatus, set_status

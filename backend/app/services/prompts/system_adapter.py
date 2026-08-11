@@ -8,6 +8,8 @@
 【2026-07-28 小欧】新增 get_default_shell_code(): 返回内部 shell 编码(ps7/ps5/bash),供 system_prompts 动态切换
 【2026-08-10 小欧】_get_environment_info 扩展: 环境行追加授权目录(allowed_dirs, 分号分隔), 与项目根一并告知LLM; 未配置时保持原样 — 北京老陈驱动
 【2026-08-10 小欧】git 状态判定固化: 只基于项目根(get_project_root), 严禁从代码库根推算 — 北京老陈裁定
+【2026-08-11 小欧】三堂会审复核落地(P2-8): 删除env行授权目录段(DRY) — 授权目录结构化块已由system_prompts._get_project_root_info()注入,
+    env行分号格式重复注入属DRY违反; 同步删allowed无消费变量
 
 Author: 小沈 - 2026-06-14
 """
@@ -48,13 +50,12 @@ def _get_environment_info() -> str:
     config = get_config_instance()
     # git 状态只基于项目根(tool工作区), 严禁从代码库根推算 — 北京老陈 2026-08-10 裁定
     root = config.get_project_root()
-    allowed = config.get_allowed_dirs()
     now = now_str()
     is_git = _check_is_git_repo(root)
     git_status = "是" if is_git else "否"
+    # 2026-08-11 小欧(P2-8): 授权目录不再注入env行(DRY) — 结构化块已由 system_prompts._get_project_root_info() 注入,
+    #   多行列表对LLM更友好且 build_full_system_prompt 总是append, env行分号格式重复注入属冗余
     env = f"【环境】任务根目录={root}, Git={git_status}, 时间={now}"
-    if allowed:
-        env += f", 授权目录={'; '.join(allowed)}"
     return env
 
 
