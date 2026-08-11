@@ -23,6 +23,9 @@
 #   validate_path 对空路径/穿越返回 (False, msg, None), T2 将 category=None 一律当"白名单外非禁区→可授权请求",
 #   使空路径/穿越从 blocked 退化为可授权(违"无效/恶意路径应硬拦"); 归入 system 后 T2 硬拦永不授权,
 #   与 test_bug_empty_path_not_validated / test_f5_03_path_traversal_blocked 断言对齐 — 小欧 2026-08-10
+# 2026-08-11 - 小欧 - fix D1: validate_path 末段except分支 category=None→"system"(永不授权硬拦),
+#   原category=None→T2当"白名单外非禁区→可授权请求"→异常/恶意路径可被grant_temp_auth放行(安全漏洞);
+#   与同文件_is_forbidden_path异常返回"system"(L197-199)/空路径"system"(L230)/穿越"system"(L259)/校验异常"system"(L267)/系统保护"system"(L288)一致 — 小欧 2026-08-11
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -321,7 +324,9 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
         return False, f"路径 '{file_path}' 不在允许的操作范围内(仅允许:{', '.join(str(p) for p in paths[:5])}...)", None
 
     except Exception as e:
-        return False, f"路径验证失败: {str(e)}", None
+        # 2026-08-11 小欧 fix D1: 异常路径归类为system(永不授权硬拦), 与_is_forbidden_path异常处理(L197-199)一致;
+        #   原category=None→T2当"白名单外非禁区→可授权请求"→异常/恶意路径可被grant_temp_auth放行(安全漏洞)
+        return False, f"路径验证失败: {str(e)}", "system"
 
 
 # 路径相关的工具分类 — 5类工具涉及文件路径操作
