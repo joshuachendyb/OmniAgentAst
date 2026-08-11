@@ -8,6 +8,8 @@
 #   承载，formatter 路由改走 #0 空data分支
 # 2026-07-26 - 小欧 - recursive模式删除已存在目标目录时,shutil.rmtree缺onerror,子目录中只读文件导致WinError 5拒绝访问崩溃。
 #   增_remove_readonly闭包函数+onerror参数,与delete_file.py/operation_cleanup.py保持一致。
+# 2026-08-11 - 小欧 - 防自嵌套(北京老陈驱动): recursive复制目标在源内部→copytree无限递归自复制生成套娃垃圾
+#   (shutil_demo/backup/shutil_demo/backup/... 历史事故源头), 并触发WinError206超长路径; 复制前拒绝目标在源内部
 """
 F7: copy_file — 复制文件
 
@@ -116,6 +118,17 @@ async def copy(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "源路径和目标路径相同"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
         return build_error(data={}, llm_data=llm_data)
+
+    # 2026-08-11 小欧 防自嵌套: 递归复制目标在源内部→copytree把dst当源子目录持续自我复制(套娃),
+    #   历史事故源头(shutil_demo\backup\shutil_demo\... 无限嵌套→备份WinError206); 拒绝目标在源内部
+    if recursive and src.is_dir():
+        try:
+            if dst.resolve().is_relative_to(src.resolve()):
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": f"目标路径位于源目录内部,禁止递归复制: {destination}"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
+                return build_error(data={}, llm_data=llm_data)
+        except ValueError:
+            pass
 
     if dst.exists() and not overwrite:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
