@@ -5,17 +5,22 @@
 # 2026-07-18 - 小欧 - #1 fix: 新增 MODIFY/COPY/COMPRESS 三条回滚分支(MODIFY用备份还原, COPY/COMPRESS删目标); #2 fix: MOVE回滚前检测source是否被新文件占用, 先备份再移回, 杜绝覆盖丢失
 # 2026-07-18 - 小欧 - #16 fix: rollback_session失败时添加warning提示而非静默
 # 2026-08-08 - 小欧 - 全程统一本地时区: rolled_back_at 改 get_local_iso_timestamp() 本地ISO无Z入库
+# 2026-08-11 - 小欧 - 三堂会审: 备份恢复链路长路径化 + MODIFY/DELETE恢复分支合并(DRY)。
+#   长路径备份(\\?\前缀写入回收站)用普通Path.exists()返回False→回滚失效, 与备份/清理长路径支持闭环;
+#   原MODIFY与DELETE恢复逻辑完全相同, 违反DRY, 合并为同一分支
 """
 operation_rollback — 操作回滚
 
 职责: 回滚单个操作、回滚整个会话
 小欧 2026-06-18 从operation_commands.py拆分，遵守SRP
 """
+import os
 import shutil
 from pathlib import Path
 from typing import Dict, Any
 
 from app.db import db
+from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
@@ -42,28 +47,21 @@ def rollback_operation(operation_id: str) -> bool:
                 return True
 
             success = False
-            if op_type == OperationType.MODIFY.value:
-                if backup and Path(backup).exists():
+            if op_type in (OperationType.MODIFY.value, OperationType.DELETE.value):
+                # 2026-08-11 小欧 三堂会审: 恢复链路长路径化(备份\\?\前缀写入, 普通Path.exists()对超长路径为False→回滚失效);
+                #   MODIFY/DELETE恢复逻辑相同, 合并为同一分支(DRY)
+                if backup and os.path.exists(to_win_long_path(Path(backup))):
                     backup_path = Path(backup)
                     source_path = Path(src)
-                    source_path.parent.mkdir(parents=True, exist_ok=True)
-                    if backup_path.is_dir():
-                        shutil.copytree(backup_path, source_path, dirs_exist_ok=True)
+                    os.makedirs(to_win_long_path(source_path.parent), exist_ok=True)
+                    backup_long = to_win_long_path(backup_path)
+                    src_long = to_win_long_path(source_path)
+                    if os.path.isdir(backup_long):
+                        shutil.copytree(backup_long, src_long, dirs_exist_ok=True)
                     else:
-                        shutil.copy2(backup_path, source_path)
+                        shutil.copy2(backup_long, src_long)
                     success = True
-                    logger.info(f"Restored edited file: {backup} -> {source_path}")
-            elif op_type == OperationType.DELETE.value:
-                if backup and Path(backup).exists():
-                    backup_path = Path(backup)
-                    source_path = Path(src)
-                    source_path.parent.mkdir(parents=True, exist_ok=True)
-                    if backup_path.is_dir():
-                        shutil.copytree(backup_path, source_path, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(backup_path, source_path)
-                    success = True
-                    logger.info(f"Restored deleted file: {backup} -> {source_path}")
+                    logger.info(f"Restored {op_type}: {backup} -> {source_path}")
             elif op_type == OperationType.MOVE.value:
                 dest_path = Path(dst)
                 source_path = Path(src)

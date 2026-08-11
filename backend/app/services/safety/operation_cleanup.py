@@ -6,6 +6,8 @@
 # 2026-07-26 - 小欧 - 清理过期备份时, 只读文件走 path.unlink() 加 os.chmod 解除只读属性再删除, 修复 [WinError 5]
 # 2026-07-26 - 小沈 - import 自 operation_executor→operation_record 对应改名
 # 2026-08-08 - 小欧 - 全程统一本地时区: backup_expires_at 比较基准改 get_local_iso_timestamp() 本地ISO无Z
+# 2026-08-11 - 小欧 - 全链路长路径支持(三堂会审): 过期清理/大小清理/大小统计均走 to_win_long_path,
+#   否则超长备份(递归自复制套娃/深嵌套)清理时 WinError 206 永远清不掉→回收站永久膨胀
 """
 operation_cleanup — 操作清理
 
@@ -18,14 +20,15 @@ from pathlib import Path
 
 from app.db import db
 from app.logger import logger
+from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 
 def _get_folder_size(path: Path) -> int:
-    """递归计算文件夹总字节数"""
+    """递归计算文件夹总字节数（长路径支持: 深嵌套子项普通Path无法遍历, 需\\?\前缀）"""
     total = 0
     try:
-        for entry in path.rglob("*"):
+        for entry in Path(to_win_long_path(path)).rglob("*"):
             if entry.is_file():
                 total += entry.stat().st_size
     except Exception:
@@ -61,8 +64,8 @@ def _cleanup_by_size() -> int:
             break
         try:
             folder_size = _get_folder_size(folder)
-            # onerror解决Windows下只读文件被copy2备份后属性锁死的问题
-            shutil.rmtree(folder, onerror=remove_readonly)
+            # onerror解决Windows下只读文件被copy2备份后属性锁死的问题; 长路径rmtree带\\?\前缀递归删内部超长子项
+            shutil.rmtree(to_win_long_path(folder), onerror=remove_readonly)
             total -= folder_size
             count += 1
             logger.info(f"Size cleanup: removed {folder.name} (saved {folder_size / 1024**3:.2f}GB)")
@@ -90,19 +93,20 @@ def cleanup_expired_backups() -> int:
             for (backup_path,) in rows:
                 try:
                     path = Path(backup_path)
-                    if path.exists():
-                        if path.is_dir():
-                            # onerror解决Windows下只读文件备份后无法删除的问题
-                            shutil.rmtree(path, onerror=remove_readonly)
+                    long_path = to_win_long_path(path)
+                    if os.path.exists(long_path):
+                        if os.path.isdir(long_path):
+                            # onerror解决Windows下只读文件备份后无法删除的问题; 长路径rmtree递归删内部超长子项
+                            shutil.rmtree(long_path, onerror=remove_readonly)
                         else:
                             # 只读文件: chmod加写权限后再删(同remove_readonly逻辑) — 小欧 2026-07-26
-                            os.chmod(path, os.stat(path).st_mode | 0o200)
+                            os.chmod(long_path, os.stat(long_path).st_mode | 0o200)
                             try:
-                                path.unlink()
+                                os.unlink(long_path)
                             except PermissionError:
                                 # 首次chmod可能不够(Windows只读属性), 再试一次更激进
-                                os.chmod(path, 0o666)
-                                path.unlink()
+                                os.chmod(long_path, 0o666)
+                                os.unlink(long_path)
                         count += 1
                         logger.info(f"Cleaned up expired backup: {backup_path}")
                 except Exception as e:

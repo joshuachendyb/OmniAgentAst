@@ -10,12 +10,17 @@
 # 2026-07-26 - 小沈 - operation_executor→operation_record改名, 名实对齐(主力职责为记录而非执行)
 # 2026-07-26 - 小沈 - 合并 operation_recorder 三函数(record_operation/collect_file_info/update_op_failed)入此文件; backup_to_recycle_bin迁至operation_backup, 彻底理顺职责
 # 2026-08-08 - 小欧 - 全程统一本地时区: 5处写入 get_utc_timestamp/convert_to_utc→get_local_iso_timestamp; duration修复: created_at_dt 先 astimezone() 转本地再去tzinfo, executed_at_dt 改 datetime.now() (naive本地), 两端类型一致
+# 2026-08-11 - 小欧 - 备份失败仅warning留痕不阻断(北京老陈驱动): 备份尽量成功(backup_to_recycle_bin长路径支持), 万一仍失败只提示不终止删除/修改
+#   (历史事故WinError206超长→部分备份→仍删除, 已由长路径支持+copy防自嵌套从源头缓解)
+# 2026-08-11 - 小欧 - 三堂会审: 长路径触发条件修复。source_path.exists()/backup_path.exists()对超长路径(>260)返回False,
+#   →超长源路径删除时备份被静默跳过(连warning都不触发, 复现"无备份删除"历史事故); 改os.path.exists(to_win_long_path(...))
 """
 operation_record — 操作记录和DB状态管理
 
 职责: 记录文件操作到DB、更新状态、文件信息收集
 小欧 2026-06-18 从operation_commands.py拆分，遵守SRP
 """
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -26,6 +31,7 @@ from app.db import db
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
 from app.utils.id_utils import generate_operation_id
+from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp, to_local_iso  # 小欧 2026-08-08 全程统一本地时区
 from app.services.safety.hash_helper import compute_file_hash
 
@@ -48,13 +54,16 @@ from app.services.safety.operation_backup import backup_to_recycle_bin
 
 
 def collect_file_info(path: Path) -> Dict[str, Any]:
-    """收集文件信息"""
-    if not path or not path.exists():
+    """收集文件信息（长路径兼容: 普通Path.exists/stat对超长路径失效, 走\\?\前缀）"""
+    if not path:
         return {"size": None, "hash": None, "extension": None, "is_directory": False}
-    info = {"size": path.stat().st_size, "is_directory": path.is_dir()}
-    if path.is_file():
-        info["hash"] = compute_file_hash(str(path))
-        info["extension"] = path.suffix.lower() if path.suffix else None
+    long_path = to_win_long_path(path)
+    if not os.path.exists(long_path):
+        return {"size": None, "hash": None, "extension": None, "is_directory": False}
+    info = {"size": os.stat(long_path).st_size, "is_directory": os.path.isdir(long_path)}
+    if os.path.isfile(long_path):
+        info["hash"] = compute_file_hash(long_path)
+        info["extension"] = Path(long_path).suffix.lower() if Path(long_path).suffix else None
     else:
         info["hash"] = None
         info["extension"] = None
@@ -160,11 +169,16 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> T
 
     # ================ 备份：DELETE/MODIFY 操作前备份原文件到回收站 ====================
     backup_path = None
-    if source_path and source_path.exists() and op_type in (
+    # 2026-08-11 小欧 三堂会审: source_path.exists()对超长路径(>260)返回False→备份被静默跳过(复现"无备份删除"历史事故), 改长路径判断
+    if source_path and os.path.exists(to_win_long_path(source_path)) and op_type in (
         OperationType.DELETE.value,
         OperationType.MODIFY.value,
     ):
         backup_path = backup_to_recycle_bin(source_path)
+        # 2026-08-11 小欧 备份失败仅warning留痕不阻断(北京老陈驱动): 备份尽量成功(长路径支持),
+        #   万一仍失败只提示, 不终止用户明确要求的删除/修改操作; 历史事故(WinError206超长)已由备份长路径支持缓解
+        if backup_path is None:
+            logger.warning(f"[Executor] 备份到回收站失败,继续执行(数据无回收站保护): op={operation_id}, source={source_path}")
 
     # ============= Phase 2: 工具执行（不 logger.error，只透传异常） ===================
     # 工具预期失败必须 return 而非 raise，真·意外异常（磁盘满/权限突变）才抛至此。
@@ -183,10 +197,11 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> T
         with db.get_conn_with_retry("operations") as conn:
             cursor = conn.cursor()
             if success:
-                if op_type == OperationType.DELETE.value and backup_path and backup_path.exists():
+                if op_type == OperationType.DELETE.value and backup_path and os.path.exists(to_win_long_path(backup_path)):
                     info = collect_file_info(backup_path)
                 else:
-                    target = dest_path if dest_path and dest_path.exists() else source_path if source_path and source_path.exists() else None
+                    # 2026-08-11 小欧 三堂会审: 目标/源exists()长路径兼容(超长路径普通Path.exists()为False)
+                    target = dest_path if dest_path and os.path.exists(to_win_long_path(dest_path)) else source_path if source_path and os.path.exists(to_win_long_path(source_path)) else None
                     info = collect_file_info(target) if target else {}
                 executed_at = get_local_iso_timestamp()
                 executed_at_dt = datetime.now()  # 小欧 2026-08-08 全程统一本地时区: naive本地, 与 created_at_dt(转本地naive) 类型一致
