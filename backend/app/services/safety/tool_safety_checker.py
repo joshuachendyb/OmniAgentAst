@@ -26,6 +26,7 @@
 #   修复: 白名单外授权请求在 _is_skip_safety()=true 时设 auto_confirm=True 直放(与普通确认bypass语义一致) — 北京老陈驱动E2E
 # 2026-08-11 - 小欧 - 全分支补日志留痕(北京老陈驱动): bypass自动放行+各硬拦截统一用log_and_print(日志+控制台双输出),
 #   覆盖 工具未注册/delete R6/授权请求bypass直放/已知风险拦截/普通确认bypass/check_fn拦截/系统禁区删拦/写入大小保护
+# 2026-08-11 - 小欧 - bypass自动放行(无需确认) 改为仅 logger.info 留痕不上控制台(北京老陈驱动: 高频路径刷屏, 只log不print)
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -145,7 +146,7 @@ class ToolSafetyChecker:
                 return SafetyResult(requires_confirmation=True, auto_confirm=True,
                         blocked=False, message="安全开关已绕过(提示照出)",
                         safety_level="destructive")
-            log_and_print(f"[ToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
+            logger.info(f"[ToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
             return SafetyResult(requires_confirmation=False,
                     blocked=False, message="安全开关已绕过",
                     safety_level="safe")
