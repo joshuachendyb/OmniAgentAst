@@ -251,7 +251,7 @@ def my_parse_json(json_str):
 | `get_existing_drives` | 动态获取当前存在的磁盘符号列表（不写死，遍历A-Z探测，应对U盘插拔/盘符重映射；R2磁盘根递归删除判定时刻使用） | 无 | List[Path] |
 | `get_system_drive` | 动态获取真实系统盘符（SystemRoot/WINDIR环境变量→SystemDrive→探测存在\\Windows的盘符→兜底C:；系统目录判定C:模板动态替换） | 无 | str |
 | `_get_project_root_safety` | 获取项目根供Safety层判定（2026-08-10 ⑤收敛：统一走 config.get_project_root() 配置优先、未配置→用户主目录；不再以代码位置推算） | 无 | Path |
-| `_is_forbidden_path` | 系统敏感路径黑名单（盘根splitdrive全盘符判定 + 系统目录FORBIDDEN_PATHS_WINDOWS_* C:模板动态盘符替换 + **⑦2026-08-10新增代码库根禁区**：代码库根及其子路径一律forbidden，tool禁区开关无关硬拦截） | file_path: str | Tuple[bool, Optional[str]] |
+| `_is_forbidden_path` | 系统敏感路径黑名单（盘根splitdrive全盘符判定 + 系统目录FORBIDDEN_PATHS_WINDOWS_* C:模板动态盘符替换 + **⑦2026-08-10新增代码库根禁区**：代码库根及其子路径一律forbidden，tool禁区开关无关硬拦截） | file_path: str | Tuple[Optional[str], Optional[str]] |
 | `validate_tool_path` | 工具路径校验统一入口（分类→找路径参数→调validate_path；**⑧补dest参数 + ⑨遍历所有命中路径参数逐一校验**，任一越权即拒；**⑯2026-08-10逻辑路径参数解析**：download.dest相对下载目录/rename.dest纯文件名先解析为真实路径再校验，消除误拦BUG-B/C） | tool_name, params | Tuple[bool, Optional[str], Optional[str]]（is_valid, msg, failed_path；failed_path=首个校验失败的真实路径，供临时授权auth_path用，成功时None） |
 | `get_default_allowed_paths` | 默认白名单（⑪2026-08-10：主目录+`/tmp`+`/var/tmp`+项目根+授权目录；**废除「所有现存盘符」全盘放开**，lazy动态计算(补B)） | 无 | List[Path] |
 
@@ -275,7 +275,7 @@ def my_parse_json(json_str):
 | `is_temp_authorized` | 检查路径是否在临时授权范围内（含子目录树） | file_path: str | bool |
 | `get_authorized` | 获取当前作用域授权映射 | 无 | Dict[Path, bool] |
 
-> 消费链：tool_safety_checker._check_known_risks 检测到白名单外路径(非禁区) → SafetyResult(requires_confirmation+auth_path，**BUG-D修复: auth_path=failed_path真正越权参数**, 非固定path-or-dest) → action_handler 确认后 grant_temp_auth → validate_path 放行本次；**操作结束后 action_handler finally 调 clear_temp_auth() 清除(BUG-E修复, 补A一次一申请)**；禁区(代码库根/系统目录)不受临时授权影响永久封锁
+> 消费链：tool_safety_checker._check_known_risks 检测到白名单外路径(非禁区) → SafetyResult(requires_confirmation+auth_path，**BUG-D修复: auth_path=failed_path真正越权参数**, 非固定path-or-dest) → action_handler 确认后 grant_temp_auth → validate_path 放行本次；**react_cycle.run_react_cycle task结束 finally 调 clear_temp_auth() 清除(R1, task级清零点, 2026-08-10迁移; 原action_handler工具批finally已移除H1, 补A一次一申请)**；禁区(代码库根/系统目录)不受临时授权影响永久封锁
 
 ---
 
@@ -283,6 +283,7 @@ def my_parse_json(json_str):
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v2.8 | 2026-08-11 | 三堂会审复核文档同步(小欧): 8.1 `_is_forbidden_path` 返回值更正为 `Tuple[Optional[str], Optional[str]]`(原误写Tuple[bool, Optional[str]]); 8.3 `clear_temp_auth` 清零点更新为 react_cycle task级 finally(R1, 原action_handler工具批finally已迁移H1) | 小欧 |
 | v2.7 | 2026-08-10 | ⑦⑯ 2026-08-10 bug复核修复同步(小欧): `validate_tool_path` 返回扩展三元组+新增 `_resolve_path_param`(BUG-B/C: download/rename 逻辑路径参数解析); `_check_known_risks` auth_path 改 failed_path(BUG-D); action_handler 工具批后 finally clear_temp_auth(BUG-E, 补A落地) | 小欧 |
 | v2.6 | 2026-08-10 00:55:00 | ①2026-08-10 项目根目录混乱修复同步(小欧): 七章更新 `_get_project_root_safety`(⑤收敛走config)/`_is_forbidden_path`(⑦代码库禁区)/`validate_tool_path`(⑧⑨补dest+多参数全量校验)/`get_default_allowed_paths`(⑪白名单收紧); 8.2 delete_safety ⑫多授权域(_get_allowed_roots/_is_inside_any); 新增8.3 temp_auth.py临时授权(⑮) ②config.py命名分离(_get_project_root→_get_code_root, get_default_project_root→get_code_root, ①兜底改Path.home, ⑩get_allowed_dirs新增) ③delete_file ⑥删复刻+多授权根保护 | 小欧 |
 | v2.5 | 2026-08-06 13:36:57 | 补登记 4.3 基础工具(app/tools/fundamental/) safe_read_file（安全读取文件, utf-8 errors=replace, OSError→""；定义于 shell_engine.py，跨模块复用于 execute_shell_command.py，会话池设计 H5 复用读 stderr 残留） | 小欧 |
