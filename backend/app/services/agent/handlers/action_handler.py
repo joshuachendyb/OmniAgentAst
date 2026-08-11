@@ -77,6 +77,13 @@
 #         ③_has_conflict 遍历与判定条件纳入窗口工具(同标题≥2次调用即冲突→降级串行)
 #   [效果] 同批同标题窗口工具自动并入同组串行(_partition_calls 并查集本体零改动), 不同标题窗口仍可跨组并行
 #   [验证] py_compile + verify_partition_v13 + verify_refactor_consistency + pytest 回归 — 小欧 2026-08-11
+# 2026-08-11 - 小欧 - fix D2: check_safety_and_confirm 同批同名工具误杀修复;
+#   _denied从2元组(tool_name,reason)扩展为3元组(tool_name,reason,call), 过滤从按tool_name改按id(call)对象标识;
+#   原按tool_name过滤→同批2×edittext(1被拒1通过)全被移除(误杀); 新逻辑仅移除被拒call对象, 保留同名合法调用 — 小欧 2026-08-11
+# 2026-08-11 - 小欧 - fix D2反馈层同步(北京老陈三堂会审驱动): 原_add_denial_feedback按tool_name粗粒度遍历all_calls写反馈,
+#   ①会执行的同名工具被误标"被安全策略拦截"(与真实执行矛盾) ②自行add_assistant_tool_call与build_observation重复写assistant;
+#   现改: check_safety_and_confirm经_denied_out回传被拒call(tool_name,reason,call), handle_action在build_observation之后
+#   由_add_denial_feedback精确到call对象补写tool result(assistant统一由build_observation写), 消除矛盾与重复 — 小欧 2026-08-11
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -176,7 +183,7 @@ def _auto_correct_file_tool(tool_name: str, tool_params: dict) -> tuple:
     return tool_name, None
 
 
-async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None):
+async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None, _denied_out: list = None):
         """安全检查+HITL确认 — async generator: MetaStep先yield给前端,再等确认 — 小沈 2026-06-10
 
         拒绝/拦截是可恢复的(符合人类认知: 拒绝≠失败), 不置终态FAILED:
@@ -185,6 +192,10 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         - 仅当同类拒绝累计>=3次才由 _dispatch_handler 置 FAILED。 — 小欧 2026-07-13
         # 2026-07-18 小欧 #11+#12 fix: 超时/拒绝分流; 拒绝不终止整批, 收集_denied后继续检查剩余工具,
         #   最终只执行通过的call(通过_out返回过滤后的call列表)
+        # 2026-08-11 小欧 fix D2: _denied从2元组(tool_name,reason)扩展为3元组(tool_name,reason,call),
+        #   _out过滤从按tool_name改按id(call)对象精确标识(同批同名工具1个被拒不再误杀);
+        #   反馈推迟到调用方build_observation之后(_denied_out回传), 由_add_denial_feedback精确到call写,
+        #   消除"会执行的同名工具被误标被拦截"与"assistant双重写入"的矛盾
         """
         from app.services.safety.tool_safety_checker import get_tool_safety_checker
         from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result, resolve_confirmation
@@ -202,7 +213,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     error_type="blocked",
                     error_message=safety_result.message
                 ))
-                _denied.append((_cn, f"被安全策略拦截: {safety_result.message}"))
+                _denied.append((_cn, f"被安全策略拦截: {safety_result.message}", call))
                 continue  # was: return  — 小欧 2026-07-18 #12 fix
 
             if safety_result.requires_confirmation:
@@ -241,14 +252,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                             error_type="timeout",
                             error_message=f"工具确认超时未响应: {_cn}"
                         ))
-                        _denied.append((_cn, "确认超时未响应"))
+                        _denied.append((_cn, "确认超时未响应", call))
                     else:
                         yield agent._step_emitter.emit(ErrorStep(
                             step=step,
                             error_type="user_rejected",
                             error_message=f"用户拒绝执行工具: {_cn}"
                         ))
-                        _denied.append((_cn, "被用户拒绝执行"))
+                        _denied.append((_cn, "被用户拒绝执行", call))
                     set_status(agent, AgentStatus.EXECUTING, "用户拒绝/超时，恢复执行态")
                     continue  # was: return  — 小欧 2026-07-18 #12 fix
 
@@ -264,35 +275,29 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     ))
                 set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
 
-        if _denied:
-            for _cn, _reason in _denied:
-                _add_denial_feedback(agent, all_calls, fc_context, _cn, _reason)
         # 回传未被拒的call索引给调用方 — 小欧 2026-07-18 #12 fix
+        # 2026-08-11 小欧 fix D2: 用call对象id标识被拒调用,而非tool_name;
+        #   原按tool_name过滤→同批同名工具(如2×edittext)1个被拒全部误杀
         if _out is not None:
-            _denied_cns = {d[0] for d in _denied}
-            _out[:] = [c for c in all_calls if c.get("tool_name", "") not in _denied_cns]
+            _denied_call_ids = {id(d[2]) for d in _denied}
+            _out[:] = [c for c in all_calls if id(c) not in _denied_call_ids]
+        # 2026-08-11 小欧 fix D2: _denied(含call对象)回传给调用方, 反馈在build_observation之后
+        #   由_add_denial_feedback精确到call写(避免在execute前写tool result导致assistant重复/同名误标)
+        if _denied_out is not None:
+            _denied_out[:] = list(_denied)
 
 
-def _add_denial_feedback(agent, all_calls: List[Dict], fc_context: Dict, denied_tool: str, reason: str):
+def _add_denial_feedback(agent, denied_items, fc_context=None):
     """HITL拒绝/拦截→把反馈写入LLM历史, 让LLM换方案(符合人类认知: 拒绝≠失败) — 小欧 2026-07-13
 
-    不置终态, 仅补充 observation:
-    1. 补 assistant(tool_calls) 使 tool result 能配对;
-    2. 被拒/被拦截的工具: 用 reason 说明原因;
-    3. 同批其他工具: 标记"未执行"(它们并非被拒, 不能错标)。
-    缺此反馈 LLM 会傻乎乎重复请求同一工具陷入死循环(受 max_steps 兜底)。
+    2026-08-11 小欧 fix D2: 精确到call对象, 只对被拒call写observation:
+      原实现遍历all_calls按tool_name匹配→同批同名工具(实际会执行)被误标"被拦截",
+      且自行add_assistant_tool_call→与build_observation的assistant双重写, LLM历史矛盾;
+      现assistant统一由build_observation写(L649), 本函数在execute_tools后只补被拒call的tool result。
     """
-    _fc = fc_context or {}
-    _tc = _fc.get("tool_calls", [])
-    if _tc:
-        agent.message_builder.add_assistant_tool_call(_tc, content=_fc.get("llm_content", "") or None, reasoning=_fc.get("llm_reasoning", "") or None)  # 2026-07-19 小欧 reasoning传递
-    for call in all_calls:
-        _tid = call.get("_tool_call_id", "")
-        _cn = call.get("tool_name", "")
-        if _cn == denied_tool:
-            _obs = f"[Observation] 工具 {_cn} {reason}. 请改用其他工具或方式完成用户任务。"
-        else:
-            _obs = f"[Observation] 工具 {_cn} 未执行(同批工具 {denied_tool} 未通过安全检查)。"
+    for _cn, _reason, _call in (denied_items or []):
+        _tid = _call.get("_tool_call_id", "")
+        _obs = f"[Observation] 工具 {_cn} {_reason}. 请改用其他工具或方式完成用户任务。"
         try:
             agent.message_builder.add_tool_result(_tid, _obs)
         except Exception as e:
@@ -889,9 +894,12 @@ async def handle_action(agent, parsed: Dict):
     ))
 
     # #11+#12 fix: 传_out收集通过安全检查的call, 拒绝不终止整批 — 小欧 2026-07-18
+    # 2026-08-11 小欧 fix D2: 传_denied_out收集被拒call(tool_name,reason,call), 反馈在build_observation后写
     _safe_calls = []
+    _denied_list = []
     async for event in check_safety_and_confirm(agent, call_result.all_calls, step,
-                                                call_result.fc_context, _out=_safe_calls):
+                                                call_result.fc_context,
+                                                _out=_safe_calls, _denied_out=_denied_list):
         yield event
     _exec_calls = _safe_calls if _safe_calls else []
 
@@ -917,6 +925,10 @@ async def handle_action(agent, parsed: Dict):
     merged_other = _merge_other_data([r.get("other_data", {}) for r in results if isinstance(r, dict)]) if results else {}
     for event in await build_observation(ctx, merged_other=merged_other):
         yield event
+    # 2026-08-11 小欧 fix D2: 被拒call反馈在build_observation后补写(assistant已由build_observation统一写),
+    #   精确到call对象, 不误标会执行的同名工具, 也不重复写assistant
+    if _denied_list:
+        _add_denial_feedback(agent, _denied_list, call_result.fc_context)
     if merged_other.get("return_direct"):
         merged_llm = _merge_llm_data([r.get("llm_data", {}) for r in results if isinstance(r, dict)]) if results else {}
         _status = merged_llm.get("status", {}) if isinstance(merged_llm, dict) else {}
