@@ -26,6 +26,9 @@
 # 2026-08-11 - 小欧 - fix D1: validate_path 末段except分支 category=None→"system"(永不授权硬拦),
 #   原category=None→T2当"白名单外非禁区→可授权请求"→异常/恶意路径可被grant_temp_auth放行(安全漏洞);
 #   与同文件_is_forbidden_path异常返回"system"(L197-199)/空路径"system"(L230)/穿越"system"(L259)/校验异常"system"(L267)/系统保护"system"(L288)一致 — 小欧 2026-08-11
+# 2026-08-11 - 小欧 - fix D1残留(实证补充, task005报告核验发现): validate_tool_path 自身兜底except分支 category=None→"system"(永不授权硬拦),
+#   原返回 (False, "路径安全检查异常", None, None) — category=None → T2 当"白名单外非禁区→可授权请求"(requires_confirmation+auth_path),
+#   异常/恶意路径理论上仍可被临时授权放行(与D1同源隐患); 归入"system"后 T2 硬拦永不授权, 与 validate_path 各异常分支"system"口径全链一致 — 小欧 2026-08-11
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -434,7 +437,10 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any],
 
         return True, None, None, None
     except Exception as e:
-        return False, f"路径安全检查异常: {e}", None, None
+        # 2026-08-11 小欧 fix D1残留: 兜底异常归 category="system"(永不授权硬拦) —
+        #   原返回 None → T2 当"白名单外非禁区→可授权请求", 异常/恶意路径可被临时授权放行(与D1同源隐患);
+        #   与 validate_path 各异常分支"system"口径全链一致(T2 硬拦永不授权)
+        return False, f"路径安全检查异常: {e}", None, "system"
 
 
 __all__ = ["ALLOWED_PATHS", "get_default_allowed_paths", "get_existing_drives",
