@@ -1,3 +1,31 @@
+v0.19.11
+更新时间: 2026-08-11 14:15:08 - 小欧-2026-08-11
+## v0.19.10(暂记为tag)以来 变更汇总(15个commit) - 小欧-2026-08-11
+[2026-08-11 14:15 小欧] 汇总范围=v0.19.10以来全部commit(version.txt流程commit并入本条不单列)
+
+### refactor:
+- refactor:initialize_run_state.py+action_handler.py+system_adapter.py P2-3删死import+P2-5补注释+P2-8授权目录DRY(三堂会审复核修复) - 小欧-2026-08-11
+- refactor:operation_backup/cleanup/record/rollback 长路径\\?\前缀支持+备份失败改warning+DRY合并回滚 - 小欧-2026-08-11
+- refactor:tool_safety_checker.py bypass自动放行(无需确认)改仅logger.info留痕 - 小欧-2026-08-11
+
+### feat:
+- feat:path_utils/FUNCTIONS 新增长路径公用函数to_win_long_path+清单更新 - 小欧-2026-08-11
+
+### fix:
+- fix:window_focus.py 三堂会审复核问题1/2修复(复用find_windows_by_title+check_win32_platform DRY统一+非Windows错误码改ERR_FOCUS_WINDOW) - 小欧-2026-08-11
+- fix:action_handler.py D2缺陷修复(同批同名工具按tool_name过滤误杀改id(call)精准标识+_add_denial_feedback重构精确到call对象) - 小欧-2026-08-11
+- fix:path_safe_check.py D1缺陷修复(validate_path except分支category=None改system硬拦,安全漏洞:异常路径可被临时授权放行) - 小欧-2026-08-11
+- fix:window_focus.py+window_resize.py task002三堂会审问题A/B实施(同批同标题窗口自动串行+window_resize最小化自恢复+MoveWindow假失败修复+focus引导文案三段式) - 小欧-2026-08-11
+- fix:execute_sql.py P2-7删外层except无条件syntax_valid覆写(内层校验通过时不再误报语法失败) - 小欧-2026-08-11
+- fix:operation_rollback.py+path_utils.py P1-1回滚四分支长路径化+remove_readonly延迟导入+P2-1长路径守卫补is_absolute(三堂会审复核修复) - 小欧-2026-08-11
+- fix:copy_file 防自嵌套:递归复制目标在源内部时拒绝(copytree无限递归→WinError206) - 小欧-2026-08-11
+- fix:tool_safety_checker.py P0-02回归修复(bypass时白名单外授权请求auto_confirm直放)+全分支log_and_print日志留痕(13处info放行/warning拦截,三审通过) - 小欧-2026-08-10
+
+### docs:
+- docs:FUNCTIONS.md P2-2_is_forbidden_path返回类型更正+P2-4clear_temp_auth清零点更新react_cycle(三堂会审复核) - 小欧-2026-08-11
+- docs:三堂会审-代码审查-2026-08-11.md 移入doc-8月优化目录+修复方法复核更新(含P2-6否决回归方案/补remove_readonly导入) - 小欧-2026-08-11
+- docs:.gitignore tests目录加入忽略(与backend/tests同待遇,防测试代码入库) - 小欧-2026-08-10
+
 v0.19.10
 更新时间: 2026-08-10 23:34:43 - 小欧-2026-08-10
 ## v0.19.9(991e801f3)以来 变更汇总(31个commit) - 小欧-2026-08-10
