@@ -11,6 +11,10 @@ window_focus — 聚焦窗口
 # 2026-07-31 - 小欧 - CRITICAL: 补充缺失的 ERR_NO_WIN32GUI 导入(第21行), 原缺导入导致非Windows/无pywin32环境时 NameError 崩溃
 # 2026-08-05 - 小欧 - 三堂会审修复#2: 多窗口匹配取"最后一个"改"第一个"(匹配到即停止枚举), 与 set_window_state 取 matched_hwnds[0] 行为一致, 消除同标题多窗口时行为不可预期
 # 2026-08-05 - 小欧 - 三堂会审修复#10: "ERR_INVALID_PARAM"字符串字面量→ERR_INVALID_PARAMS常量(注意常量带S), 与同文件ERR_FOCUS_WINDOW/ERR_WINDOW_NOT_FOUND常量风格统一
+# 2026-08-11 - 小欧 - task002 三堂会审修复B(问题B): ERR_FOCUS_WINDOW hint 文案改三段式引导
+#   —— ①先 set_window_state(action='restore') 还原窗口后重试 → ②仍失败重试一次 → ③再失败需用户手动点击激活。
+#   背景: 原"先点击桌面"建议实测无效(Windows 前台锁定仅真实用户输入可解除, pyautogui 模拟点击不产生真实输入事件,
+#   实测 mouse_click 先行成功 window_focus 仍失败), 会引导 LLM 空转, 与 retry_engine hint 语义(提供真实可用的下一步)相悖
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -74,7 +78,7 @@ def window_focus(window_title: str) -> Dict[str, Any]:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if target_hwnd:
             if not win32gui.SetForegroundWindow(target_hwnd):
-                llm_data = _build_window_focus_llm_data("error", duration_ms, window_title=window_title, err_code=ERR_FOCUS_WINDOW, hint="窗口未能被聚焦,可能被系统前台锁定,请稍后重试或先点击桌面")
+                llm_data = _build_window_focus_llm_data("error", duration_ms, window_title=window_title, err_code=ERR_FOCUS_WINDOW, hint="窗口未能被聚焦: ①请先调用 set_window_state(action='restore') 还原该窗口后重试; ②若仍失败,窗口可能被系统前台锁定,需用户手动点击该窗口激活后再试")
                 return build_error(data={}, llm_data=llm_data)
             data = {}
             llm_data = _build_window_focus_llm_data("success", duration_ms, window_title=window_title)
