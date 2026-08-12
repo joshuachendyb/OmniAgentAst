@@ -31,7 +31,7 @@ from app.services.agent.chunk_buffer import ChunkBuffer
 from app.services.agent.message_builder import MessageBuilder
 
 from app.services.agent.step_emitter import StepEmitter
-from app.services.agent.tool_retry_engine import ToolRetryEngine
+from app.tools.toolhelper.tool_retry_engine import ToolRetryEngine
 from app.services.agent.react_cycle import run_react_cycle as _run
 
 
