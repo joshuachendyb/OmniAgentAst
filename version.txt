@@ -1,3 +1,22 @@
+v0.19.12
+更新时间: 2026-08-12 11:06:06 - 小欧-2026-08-12
+## v0.19.11(暂记为tag)以来 变更汇总(9个commit) - 小欧-2026-08-12
+[2026-08-12 11:06 小欧] 汇总范围=v0.19.11以来全部commit(version.txt流程commit并入本条不单列)
+
+### test:
+- test:skip-case 37个平台限制skip case移出并归档至repair-code/skip-case(从backend/tests删除readonly/symlink/GUI/DNS等skip case,全量4858 passed 0 skipped;19个归档副本保留完整原代码,按原文件结构存放) - 小欧-2026-08-12
+- test:param_combination 6测试文件修正失败case与清理过时skip(test_mouse_move修正4失败case为结构化响应断言;删除16个API已变更/模块已删的过时case) - 小欧-2026-08-12
+- test:repair-code/backend tests+danger_cases 新增测试代码入库(tests 234个源码py+danger_cases 17个危险场景用例) - 小欧-2026-08-12
+
+### refactor:
+- refactor:repair-code/backend/danger_cases 迁移至backend/tests/danger_cases(713用例全过,全量6273收集无误;旧位置从git移除,新位置被.gitignore忽略不入库) - 小欧-2026-08-12
+
+### fix:
+- fix:base_service.py+storage.py+tool_retry_engine.py task006三方案落地(429尊重Retry-After头+截断附原长标记+JSON字符串反向类型容错复用coerce_json三堂会审修正DRY) - 小欧-2026-08-12
+- fix:prompt_logger.py task004缺陷1修复(log_observation补内容字段与log_system_prompt/log_task_prompt结构对齐) - 小欧-2026-08-12
+- fix:window_focus.py+path_safe_check.py task005报告核验补修真修复(SetForegroundWindow恒真假失败改GetForegroundWindow操作后验证+path_safe_check:D1残留兜底except返回None改system硬拦) - 小欧-2026-08-11
+
+---
 v0.19.11
 更新时间: 2026-08-11 14:15:08 - 小欧-2026-08-11
 ## v0.19.10(暂记为tag)以来 变更汇总(15个commit) - 小欧-2026-08-11
