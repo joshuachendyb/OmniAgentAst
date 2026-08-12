@@ -6,6 +6,8 @@
 #   M2 is_temp_authorized 前置禁区分类(深度防御, 无mode参数): system forbidden zone → 即使入单也返回False(永不授权);
 #   M3 生命周期注释更新: task 级(with task 绑定, task 结束 run_react_cycle finally clear_temp_auth 清零)
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
+# 2026-08-12 - 小欧 - A1 迁移(4.1.7 盲点五定案): 本文件由 app/safety/temp_auth.py 整体复制迁入 app/tools/security/(P6 移动,
+#   业务逻辑一字不改); 原 app.safety.path_safe_check 惰性导入改 app.tools.security.path_safe_check(同包内互引); 原编辑历史按规范保留。
 """
 temp_auth — 白名单外路径临时授权(3.3决策⑤, 文档7.8-5, 补A)
 
@@ -67,7 +69,7 @@ def is_temp_authorized(file_path: str) -> bool:
     """
     # M2: depth defense — 系统禁区永不授权(即使入单也False)
     try:
-        from app.safety.path_safe_check import _is_forbidden_path  # 惰性导入避免循环依赖
+        from app.tools.security.path_safe_check import _is_forbidden_path  # 惰性导入避免循环依赖
         category, _ = _is_forbidden_path(file_path)
         if category == "system":
             return False

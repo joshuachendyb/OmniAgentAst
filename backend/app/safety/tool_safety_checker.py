@@ -28,6 +28,8 @@
 #   覆盖 工具未注册/delete R6/授权请求bypass直放/已知风险拦截/普通确认bypass/check_fn拦截/系统禁区删拦/写入大小保护
 # 2026-08-11 - 小欧 - bypass自动放行(无需确认) 改为仅 logger.info 留痕不上控制台(北京老陈驱动: 高频路径刷屏, 只log不print)
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
+# 2026-08-12 - 小欧 - A1盲点二/四迁移: validate_tool_path 迁 app/tools/security/path_safe_check(import 同步),
+#   SafetyResult dataclass 迁 app/tools/security/safety_result(本文件删除本地定义改 import, __all__ 保留导出) — 小欧 2026-08-12
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -56,7 +58,6 @@ Layer 3: 已知风险检测(路径越权/写入污染/代码注入)
 """
 
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -64,23 +65,10 @@ from app.logger import logger, log_and_print
 from app.config import get_config
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.safety.path_safe_check import validate_tool_path as _validate_tool_path
+from app.tools.security.path_safe_check import validate_tool_path as _validate_tool_path
+from app.tools.security.safety_result import SafetyResult  # A1盲点四: SafetyResult 迁 tools/security — 小欧 2026-08-12
 
 _WRITE_RISK_TOOL = "writetext"
-
-
-
-@dataclass
-class SafetyResult:
-    """安全检查结果 — 替代raw dict — 小欧 2026-06-25
-    #15 #50 fix: 删 is_safe 死字段(无人消费) — 小欧 2026-07-18
-    # ⑮2026-08-10: 新增 auth_path(白名单外临时授权路径, None=普通确认/无)"""
-    blocked: bool = False
-    requires_confirmation: bool = False
-    message: str = ""
-    safety_level: str = "safe"
-    auto_confirm: bool = False
-    auth_path: Optional[str] = None
 
 
 def _is_skip_safety() -> bool:

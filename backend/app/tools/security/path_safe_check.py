@@ -30,6 +30,8 @@
 #   原返回 (False, "路径安全检查异常", None, None) — category=None → T2 当"白名单外非禁区→可授权请求"(requires_confirmation+auth_path),
 #   异常/恶意路径理论上仍可被临时授权放行(与D1同源隐患); 归入"system"后 T2 硬拦永不授权, 与 validate_path 各异常分支"system"口径全链一致 — 小欧 2026-08-11
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
+# 2026-08-12 - 小欧 - A1 迁移(4.1.7 盲点五定案): 本文件由 app/safety/path_safe_check.py 整体复制迁入 app/tools/security/(P6 移动,
+#   业务逻辑一字不改); 原 app.safety.temp_auth 惰性导入改 app.tools.security.temp_auth(同包内互引); 原编辑历史按规范保留。
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -249,7 +251,7 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
             if mode == "delete":
                 return False, forbidden_msg, "non_system"
             # 非系统禁区写 → 查 is_temp_authorized(任务级授权)
-            from app.safety.temp_auth import is_temp_authorized
+            from app.tools.security.temp_auth import is_temp_authorized
             if is_temp_authorized(file_path):
                 return True, None, "non_system"
             return False, forbidden_msg, "non_system"
@@ -317,7 +319,7 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
         # P3: 白名单外判定 — temp_auth(3.2.12) 仅在非禁区生效(禁区已在_is_forbidden_path拦截)
         # P3: 读 — 白名单外非禁区/禁区全部放行(contentFilter 兜底); 所以这里不用判mode, 直接放行
         # P3: 写/删 — 白名单外(非禁区)走临时授权判定
-        from app.safety.temp_auth import is_temp_authorized
+        from app.tools.security.temp_auth import is_temp_authorized
         if mode == "read":
             # P3: 读放行 — 白名单外非禁区读✅直接放行(只读工具)
             # (P1/P2 已拦截系统/代码库禁区, 此处剩白名单外·非禁区)
