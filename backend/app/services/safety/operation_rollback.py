@@ -11,10 +11,12 @@
 # 2026-08-11 - 小欧 - 三堂会审复核落地(P1-1): MOVE/CREATE/COPY/COMPRESS 回滚分支长路径化, 与MODIFY/DELETE恢复链路闭环
 #   (普通Path.exists()/rename()/rmtree()/unlink()对超长路径(>260字符)静默失效→回滚跳过→数据丢失/空间泄漏);
 #   补 remove_readonly 函数内延迟导入(防NameError+循环依赖, 对齐 operation_cleanup 模式)
+# 2026-08-12 - 小欧 - A2-越层(方案4.2.4): 删除 app.services.task.get_tracker 越层依赖,
+#   rollback_session 内 mark_rolled_back 统计逻辑下沉至 task 域 task_rollback_service.rollback_task_with_stats
 """
 operation_rollback — 操作回滚
 
-职责: 回滚单个操作、回滚整个会话
+职责: 回滚单个操作、回滚整个会话(文件侧)
 小欧 2026-06-18 从operation_commands.py拆分，遵守SRP
 """
 import os
@@ -27,7 +29,6 @@ from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
-from app.services.task import get_tracker
 
 
 def rollback_operation(operation_id: str) -> bool:
@@ -143,13 +144,8 @@ def rollback_session(task_id: str) -> Dict[str, Any]:
                 else:
                     result["failed"] += 1
 
-            # 串联 task_tracker 统计（消除死链, 小欧 2026-07-16）
-            # 注: 原UPDATE task_operations已删除(该表在task_tracker.db, 此处连operations.db必报错)
-            if success_op_ids:
-                try:
-                    get_tracker().mark_rolled_back(task_id, op_ids=success_op_ids)
-                except Exception as e:
-                    logger.error(f"Failed to update rollback stats for {task_id}: {e}")
+            # 小欧 2026-08-12 A2-越层: 原 task_tracker 统计串联(mark_rolled_back)已下沉
+            # 至 task 域 task_rollback_service.rollback_task_with_stats, 本函数只做文件回滚
         if result["failed"] > 0:
             result["warning"] = (
                 f"有 {result['failed']} 个操作回滚失败，可能不可恢复，"

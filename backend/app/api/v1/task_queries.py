@@ -4,6 +4,7 @@
 # 2026-07-16 - 小欧 - 新增 rollback / file-operations / file-operations/report(text|html|json) 三API
 # 2026-07-18 - 小欧 - file-operations API created_at 改 format_timestamp 对外兜底 UTC Z
 # 2026-07-18 - 小欧 - #44 fix: 消除dict(zip())双重调用，改用for...in d for d in [dict(...)]单次构建
+# 2026-08-12 - 小欧 - A2-越层(方案4.2.4): rollback 改调 task 域 task_rollback_service, 消除 api→safety 直连
 """Task 查询 API 路由
 
 提供任务查询接口:单个任务、最近任务列表、操作明细。
@@ -13,7 +14,7 @@ Author: 小沈 - 2026-05-29
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from app.services.task import TaskQueries
-from app.services.safety.operation_rollback import rollback_session
+from app.services.task.task_rollback_service import rollback_task_with_stats  # 小欧 2026-08-12 A2-越层
 from app.db.operation_queries import query_file_operations
 from app.services.visualization.text_report import generate_text_report
 from app.services.visualization.html_report import generate_html_report
@@ -52,11 +53,11 @@ def rollback_task(task_id: str):
     """回滚任务的所有文件操作(激活B功能, 小欧 2026-07-16)
 
     说明: 回滚为显式管理动作,由调用方(前端按钮)发起即代表用户确认。
-    直接同步执行 rollback_session,返回回滚统计。
+    经 task 域 rollback_task_with_stats 编排: 文件回滚 + task_tracker 统计贯通。
     """
     if not _queries.get_task(task_id):
         raise HTTPException(status_code=404, detail="Task not found")
-    result = rollback_session(task_id)
+    result = rollback_task_with_stats(task_id)
     return {"task_id": task_id, "rollback": result}
 
 
