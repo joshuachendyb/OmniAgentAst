@@ -8,17 +8,14 @@
 #   【合规】SRP(health只检查状态不修改)+KISS-DIRECT(直接连库查,不引入复杂健康指标)
 # 2026-07-28 - 小欧 - BUG#18: 删sqlite_master无用查询(SELECT COUNT(*)结果未赋值未使用); BUG#22: echo路由参数request改名data(避免与FastAPI内置Request类型变量混淆); BUG#23: 删死协程检查(iscoroutine永远为False, run_in_executor内同步函数不返回协程); 额外: list_tools中required_set预计算避免重复构建set
 # 2026-08-08 - 小欧 - 全程统一本地时区: 2处响应 timestamp 改 get_local_iso_timestamp() (本地ISO无Z)
-# 2026-08-12 - 小欧 - A1过渡红项(4.1.7/A4待消): /tool/execute API直调不走tool_executor, 注入 DefaultToolSecurityHooks
-#   到 ContextVar hooks, 防止 record_operation/execute_with_safety 空钩子 NPE; A4 将此直调过渡移除 — 小欧 2026-08-12
+# 2026-08-12 - 小欧 - A4(方案4.4.3步骤3): /tool/list + /tool/execute 迁出独立 tool_routes.py, health.py 回归健康检查单一职责;
+#   删除 from app.tools import tool_registry 等越层 import(守护测试 api禁tools 变绿)。工具执行改走 services/tool 门面。
+# 2026-08-12 - 小欧 - A1过渡红项历史(4.1.7/A4待消, 随A4迁出而移除代码, 历史按规范保留): /tool/execute 曾 API直调不走tool_executor,
+#   注入 DefaultToolSecurityHooks 到 ContextVar 防空钩子 NPE; A4 建成 services/tool 门面后该过渡注入由 facade 统一接管, 移除。
 """
 health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
 """
-
-import asyncio
-import inspect
-import uuid as _uuid
-import re as _re
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -26,10 +23,6 @@ from pydantic import BaseModel
 from app.db import db
 from app.logger import logger
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
-from app.tools import tool_registry
-from app.services.task.task_context import _current_task_id
-from app.tools.context import set_current_hooks, reset_current_hooks  # A1过渡红项 — 小欧 2026-08-12
-from app.safety.default_hooks import DefaultToolSecurityHooks  # A1过渡红项 — 小欧 2026-08-12
 
 router = APIRouter()
 
@@ -77,106 +70,4 @@ async def echo(data: EchoRequest):
         received=data.message,
         timestamp=get_local_iso_timestamp()
     )
-
-
-@router.get("/tool/list")
-async def list_tools():
-    """获取所有已注册的工具列表"""
-
-    tools = tool_registry.to_openai_tools()
-
-    tool_list = []
-    for t in tools:
-        func = t.get('function', {})
-        name = func.get('name', '')
-        desc = func.get('description', '')
-        params = func.get('parameters', {})
-        required = params.get('required', [])
-        props = list(params.get('properties', {}).keys())
-
-        required_set = set(required)
-
-        tool_list.append({
-            "name": name,
-            "description": desc[:100] if desc else "",
-            "required_params": required,
-            "optional_params": [p for p in props if p not in required_set],
-            "inputSchema": params,
-        })
-
-    return {
-        "total": len(tool_list),
-        "tools": tool_list
-    }
-
-
-# ===== execute_tool =====
-
-class ToolExecuteRequest(BaseModel):
-    tool_name: str
-    params: dict = {}
-
-class ToolExecuteResponse(BaseModel):
-    tool_name: str
-    success: bool
-    result: dict = {}
-    error: str = ""
-
-@router.post("/tool/execute", response_model=ToolExecuteResponse)
-async def execute_tool(request: ToolExecuteRequest):
-    """
-    direct execution of the tool's test interface
-    Usage: POST /api/v1/tool/execute
-    Body: {"tool_name": "readtext", "params": {"path": "app/main.py"}}
-    """
-    tool_name = request.tool_name
-    params = request.params
-
-    impl = tool_registry.get_implementation(tool_name)
-
-    if impl is None:
-        return ToolExecuteResponse(
-            tool_name=tool_name,
-            success=False,
-            error=f"Tool '{tool_name}' not found or not registered"
-        )
-
-    try:
-        _api_task_id = str(_uuid.uuid4())
-        _current_task_id.set(_api_task_id)
-        _hooks_token = set_current_hooks(DefaultToolSecurityHooks())  # A1过渡红项: 注入默认hooks — 小欧 2026-08-12
-
-        if inspect.iscoroutinefunction(impl):
-            result = await impl(**params)
-        else:
-            loop = asyncio.get_event_loop()
-            _captured_task_id = _current_task_id.get()
-            _captured_hooks = set_current_hooks(DefaultToolSecurityHooks())  # sync分支executor内需重注入 — 小欧 2026-08-12
-            def _run_with_task_context():
-                _current_task_id.set(_captured_task_id)
-                set_current_hooks(_captured_hooks)
-                return impl(**params)
-            result = await loop.run_in_executor(None, _run_with_task_context)
-
-        return ToolExecuteResponse(
-            tool_name=tool_name,
-            success=True,
-            result=result if isinstance(result, dict) else {"output": str(result)}
-        )
-    except Exception as e:
-        err_msg = str(e)
-        if "missing" in err_msg and "required positional argument" in err_msg:
-            match = _re.search(r"missing \d+ required positional argument[s]?:\s*(.+)", err_msg)
-            missing_params = match.group(1) if match else "未知参数"
-            err_msg = f"缺少必填参数: {missing_params}。请参考tool/list获取{tool_name}的inputSchema"
-        return ToolExecuteResponse(
-            tool_name=tool_name,
-            success=False,
-            error=err_msg
-        )
-    finally:
-        try:
-            reset_current_hooks(_hooks_token)
-        except Exception:
-            pass
 
