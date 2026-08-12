@@ -10,6 +10,9 @@
 #   增_remove_readonly闭包函数+onerror参数,与delete_file.py/operation_cleanup.py保持一致。
 # 2026-08-11 - 小欧 - 防自嵌套(北京老陈驱动): recursive复制目标在源内部→copytree无限递归自复制生成套娃垃圾
 #   (shutil_demo/backup/shutil_demo/backup/... 历史事故源头), 并触发WinError206超长路径; 复制前拒绝目标在源内部
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
+# 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
+#   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
 """
 F7: copy_file — 复制文件
 
@@ -30,7 +33,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
-from app.services.task.task_context import _current_task_id
+from app.tools.context import _current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger

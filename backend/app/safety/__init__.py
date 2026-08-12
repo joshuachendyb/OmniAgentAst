@@ -3,6 +3,7 @@
 # 2026-07-10 - 小欧 - 拍平 file_safety/ 目录到 safety/
 # 2026-07-26 - 小沈 - import 路径对应 operation_record/operation_backup 改名+职责理顺
 # 2026-08-12 - 小欧 - A2-内部环(方案4.2.3): FileSafetyConfig 导入改 models, cleanup_expired_backups 导入改 operation_maintenance
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件全部 import 由 app.services.safety.xxx 改 app.safety.xxx(配合 tools 禁 app.services 守护规则)
 """Safety 模块 — 安全检查 + 文件操作安全
 
 小欧 2026-07-10 拍平 file_safety/ 目录到 safety/

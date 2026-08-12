@@ -20,6 +20,9 @@
 #    【解决】仅改触发字段为 data 恒在且 compress 独有的 compression_level, 保持去噪不复原大文件列表/ratio, 分支恢复工作
 # 2026-08-06 10:05:21 - 小欧 - 更正"min(timeout+30,630)"旧公式表述(已过时): BUG-2 后现行保险丝为 max(inner, CEILING=600)+BUFFER=30,
 #    compress 保险丝恒=630 或 max(LLM值,600)+30, 恒晚于内部 _cf_deadline; 旧行按规范保留为历史记录
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
+# 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
+#   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
 """
 F8: compress_files — 压缩文件
 
@@ -45,7 +48,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INVALID
-from app.services.task.task_context import _current_task_id
+from app.tools.context import _current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.utils.json_utils import coerce_json
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.validate.timeout_validator import validate_timeout  # 小欧 2026-07-29

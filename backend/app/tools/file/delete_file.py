@@ -8,6 +8,9 @@
 # 2026-07-30 - 小沈 - 三堂会审修复: _delete_file_impl L200 method改用闭包容器_deleted_container[1]取实际mode(原用force标记计算,当send2trash fallback到永久删除时LLM观察mode与事实不符); error分支metrics改传extra_metrics(含deleted_files), LLM在删除超时/失败时也能看到已删文件列表
 # 2026-08-02 - 小欧 - 最后防线加固: 新增_guard_forbidden_delete, 在delete()最前方无条件硬阻断删除盘根/项目根/系统保护目录, 不依赖security.enabled与config(根因: config security.enabled=false + 07-31撤销auto_confirm后, test_dl4_delete_root_protection真删G盘根; 本防线保证任何路径下禁删)
 # 2026-08-10 - 小欧 - ⑥删复刻_get_project_root收敛走config: _guard_forbidden_delete 项目根统一 config.get_project_root()+get_allowed_dirs()(多授权根保护); 代码库根删除保护由Safety层_is_forbidden_path(⑦)承接 — 步骤1实施(北京老陈驱动「项目根目录定义混乱修复」)
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
+# 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
+#   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
 """
 F12: delete_file — 删除文件
 
@@ -26,7 +29,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
-from app.services.task.task_context import _current_task_id
+from app.tools.context import _current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.db.models.operation_models import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error, WINDOWS_SYSTEM_DIRS  # 统一错误提示 - 小欧 2026-07-12

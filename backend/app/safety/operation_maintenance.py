@@ -3,6 +3,7 @@
 # 编辑历史:
 # 2026-08-12 - 小欧 - 从 operation_cleanup.py 承接清理职责(A2-内部环, 方案4.2.3步骤2): cleanup_expired_backups/_get_folder_size/_cleanup_by_size 整体复制,
 #   FileSafetyConfig 导入改 app.services.safety.models(原 operation_record, 已独立); 其余逻辑一字不改
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件内部 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 """
 operation_maintenance — 备份回收站维护
 

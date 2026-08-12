@@ -16,6 +16,7 @@
 #   →超长源路径删除时备份被静默跳过(连warning都不触发, 复现"无备份删除"历史事故); 改os.path.exists(to_win_long_path(...))
 # 2026-08-12 - 小欧 - A2-内部环(方案4.2.3步骤1): FileSafetyConfig 整体复制迁至 models.py(逻辑一字不改),
 #   backup_to_recycle_bin 导入上移顶部; 本文件只保留记录职责(record/collect/update/execute_with_safety)
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件内部 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 """
 operation_record — 操作记录和DB状态管理
 

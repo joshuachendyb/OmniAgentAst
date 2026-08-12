@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-08-04 - 小欧 - 新建: delete 工具专属差异安全判定(R3-R6), 设计文档第六章 6.2(v1.15) — 北京老陈驱动
 # 2026-08-10 - 小欧 - ⑫多授权域(步骤1实施, 北京老陈驱动): 新增_get_allowed_roots=[项目根]+授权目录get_allowed_dirs()/_is_inside_any; R3-R6判定从单项目根扩展为多授权根, 授权目录内递归降级R4确认不再误拦R6
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 """
 delete_safety — delete 工具专属安全检查(差异层)
 

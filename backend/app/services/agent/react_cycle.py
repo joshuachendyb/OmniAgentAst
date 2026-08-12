@@ -65,6 +65,7 @@
 # 2026-08-10 - 小欧 - 撤销 I2 残留清理(三堂会审核查): 删除 L83 死 import HITL_TIMEOUT(I2 已撤销, react_cycle 内无任何引用, 死代码)
 
 
+# 2026-08-12 - 小欧 - A1越层前置: safety 提升为顶层 app.safety, clear_temp_auth 的 import 由 app.services.safety.temp_auth 改 app.safety.temp_auth(配合 tools 禁 app.services 守护规则)
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 

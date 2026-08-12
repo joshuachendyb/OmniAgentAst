@@ -11,6 +11,9 @@
 # 2026-08-07 - 小欧 - BUG-05修复: 编码无法编码(GBK+emoji/ascii+中文)时自动降级utf-8重写/追加, 不再崩溃
 #   【病根】append模式下_detect_file_encoding_for_write返回原文件编码(如gbk), user无法指定编码(file_safety_checker:126-127阻止), GBK无法编码emoji → 无fallback → 崩溃(日志09:11:34)
 #   【改法】_write_file_atomic 捕获 UnicodeEncodeError/UnicodeDecodeError 后, 非utf-8编码降级以utf-8整写(append先读回原内容防重复); utf-8也失败则返回错误
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
+# 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
+#   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
 """
 F2: writetext — 写文本文件
 
@@ -39,7 +42,7 @@ def _build_content_preview(content: str) -> str:
         return content
     return f"文首({_pc}字符):{content[:_pc]}\n...(中间省略)...\n文末({_pc}字符):{content[-_pc:]}"
 from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
-from app.services.task.task_context import _current_task_id
+from app.tools.context import _current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.db.models.operation_models import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12

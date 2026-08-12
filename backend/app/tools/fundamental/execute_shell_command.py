@@ -130,6 +130,8 @@
 #   \b0x(?:8[0-9a-fA-F]{3}|C[0-9a-fA-F]{3})[0-9a-fA-F]{4}\b (仅HRESULT失败段/NTSTATUS失败段)。
 #   病根: 任意8位hex误匹配校验和/内存地址/颜色值, returncode≠0但stdout有真实成果时被误判error(非warning)。
 #   白名单方案(8004/8007/C000列表)漏0x80004005(E_FAIL)等真实错误码, 故用段匹配; 实测用例全过 — 小欧 2026-08-09
+# 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, get_current_task_id import 由 app.services.task.task_context 改 app.tools.context,
+#   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -228,7 +230,7 @@ from typing import Any, Dict, Optional, Literal
 
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
-from app.services.task.task_context import get_current_task_id
+from app.tools.context import get_current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.tools.fundamental.shell_engine import PersistentShell, shell_pool, _replace_python3_safe
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe

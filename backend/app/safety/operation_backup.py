@@ -8,6 +8,7 @@
 # 2026-08-11 - 小欧 - _win_long_path 提为全局公用 app/utils/path_utils.to_win_long_path
 #   (三堂会审: 清理链路 operation_cleanup 需同用长路径, 否则超长备份永远清不掉; 提公共层避免循环依赖)
 # 2026-08-12 - 小欧 - A2-内部环(方案4.2.3步骤3): FileSafetyConfig 导入改 models.py, cleanup_expired_backups 导入改 operation_maintenance.py
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件内部 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 """
 operation_backup — 文件备份到回收站 + 备份路径管理
 

@@ -5,6 +5,7 @@
 # 2026-08-10 - 小欧 - M1-M3 实施(第二次代码更新): M1 边界注释更新(Code library root not in temp auth/ permanent block → non_system forbidden zone only write can task-level authorize, delete hard block; system forbidden zone never authorize);
 #   M2 is_temp_authorized 前置禁区分类(深度防御, 无mode参数): system forbidden zone → 即使入单也返回False(永不授权);
 #   M3 生命周期注释更新: task 级(with task 绑定, task 结束 run_react_cycle finally clear_temp_auth 清零)
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 """
 temp_auth — 白名单外路径临时授权(3.3决策⑤, 文档7.8-5, 补A)
 

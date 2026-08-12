@@ -29,6 +29,7 @@
 # 2026-08-11 - 小欧 - fix D1残留(实证补充, task005报告核验发现): validate_tool_path 自身兜底except分支 category=None→"system"(永不授权硬拦),
 #   原返回 (False, "路径安全检查异常", None, None) — category=None → T2 当"白名单外非禁区→可授权请求"(requires_confirmation+auth_path),
 #   异常/恶意路径理论上仍可被临时授权放行(与D1同源隐患); 归入"system"后 T2 硬拦永不授权, 与 validate_path 各异常分支"system"口径全链一致 — 小欧 2026-08-11
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 """
 path_safe_check — 文件路径越权校验（Safety层）
 

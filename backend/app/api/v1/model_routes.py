@@ -1,5 +1,8 @@
 
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-07-10 - 小欧 - 从 ai_config/ 复制, 仅改 import 路径
+# 2026-08-12 - 小欧 - A1越层前置: safety 提升为顶层 app.safety, clear_backup_paths 的 import 由 app.services.safety.operation_backup 改 app.safety.operation_backup(配合 api 禁 tools 守护规则)
 """
 model_routes - copy from ai_config/, only changed import paths
 小欧 2026-07-10

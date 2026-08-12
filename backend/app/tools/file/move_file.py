@@ -4,6 +4,9 @@
 # 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"移动文件失败"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
 # 2026-07-26 - 小沈 - _move_sync预期失败改raise为return(False,msg)并对齐6工具范式; else分支解包tuple对齐executor返回格式
 # 2026-07-26 - 小欧 - overwrite模式shutil.rmtree缺onerror,子目录只读文件导致WinError 5崩溃。增_remove_readonly闭包+onerror,对齐delete_file.py模式。
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
+# 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
+#   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
 """
 F10: move_file — 移动文件
 
@@ -23,7 +26,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_MOVE_FAILED
-from app.services.task.task_context import _current_task_id
+from app.tools.context import _current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.db.models.operation_models import OperationType
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.safety import record_operation, execute_with_safety

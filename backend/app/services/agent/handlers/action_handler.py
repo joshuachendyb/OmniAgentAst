@@ -84,6 +84,7 @@
 #   ①会执行的同名工具被误标"被安全策略拦截"(与真实执行矛盾) ②自行add_assistant_tool_call与build_observation重复写assistant;
 #   现改: check_safety_and_confirm经_denied_out回传被拒call(tool_name,reason,call), handle_action在build_observation之后
 #   由_add_denial_feedback精确到call对象补写tool result(assistant统一由build_observation写), 消除矛盾与重复 — 小欧 2026-08-11
+# 2026-08-12 - 小欧 - A1越层前置: safety 提升为顶层 app.safety, get_tool_safety_checker/grant_temp_auth 的 import 由 app.services.safety 改 app.safety(配合 tools 禁 app.services 守护规则)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 

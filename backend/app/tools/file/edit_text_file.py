@@ -24,6 +24,9 @@
 #   病根: readtext/edittext 各持一份同名编码回退读取实现且行为不一致(本版对preferred做替换符检查, readtext对preferred直接返回)
 #   方案: 合并为公共版(取增强语义: 所有编码统一替换符阈值+mojibake检查); 本文件删除本地实现与本地阈值常量/get_file_encoding import;
 #         P1修正(拼接顺序)在下方success分支, 优先保safety_hint完整
+# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
+# 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
+#   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
 """
 F4: edittext — 编辑文本文件
 
@@ -45,7 +48,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import EDITTEXT_INPUT_MAX_BYTES
 from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
 from app.tools.tool_constants import EDITTEXT_OUTPARM_LIMIT_OLD, EDITTEXT_OUTPARM_LIMIT_NEW, EDITTEXT_OUTPARM_LIMIT_SAFETY
-from app.services.task.task_context import _current_task_id
+from app.tools.context import _current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.db.models.operation_models import OperationType
 from app.safety import record_operation, execute_with_safety
 from app.tools.validate.file_type_checker import check_for_text_tool

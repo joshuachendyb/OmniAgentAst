@@ -8,6 +8,7 @@
 # 2026-07-28 - 小欧 - 临时目录清理误伤修复: 新增_TEMP_SAFE_PATTERNS+_is_temp_cleanup, Remove-Item类HIGH命中时检查目标路径, 若为已知安全临时目录则降级MEDIUM(日志放行), 非临时路径仍HIGH拦截
 # 2026-07-28 - 小欧 - shell_type名称改为ps7/ps5/cmd/bash; 新增6条bash安全规则; 过滤逻辑扩展支持ps7/ps5/bash/cmd; _TEMP_SAFE_PATTERNS扩展bash路径
 # 2026-07-31 - 小欧 - Shell池进程保护: 新增_extract_stop_process_pids/_extract_taskkill_pids/_extract_bash_kill_pids; check_shell_command_risk加protected_pids参数; Stop-Process/taskkill/kill命中受保护PID时BLOCKED; 三提取函数+拦截点加日志; message优化为"系统保护进程"避免泄露架构细节
+# 2026-08-12 - 小欧 - A1越层前置: SafetyResult import 由 app.services.safety.tool_safety_checker 改为 app.safety.tool_safety_checker(safety 提升为顶层目录, 配合 tools 禁 app.services 守护规则)
 """
 execute_shell_command 分级安全检查 — 独立safety模块
 
