@@ -4,6 +4,10 @@
 #   统一执行入口(tool_executor 内部已 ContextVar 注入 hooks), facade 只做安全预检 + task 上下文管理(try/finally reset)。
 #   按真实代码实现: 安全预检用 get_tool_safety_checker().check_before_execute(设计4.4.3示例 check_tool_safety 不存在, 已按实测落地);
 #   agent 构造带 _security_hooks(与 action_handler 对齐), 供 tool_executor getattr 通道识别。
+# 2026-08-13 - 小欧 - 三堂会审修复: ①_FacadeAgent 补 _tool_loader/_loaded_categories/_tool_cache(searchtool 注入路径
+#   需这些属性, 缺则 AttributeError)且复用以真实 ToolLoader(不假造); ②执行判定改 is_success(参数失败/工具未找到
+#   不再被误报 success=True, 与 chat 路径同源); ③捕获错误 message 回传 tool_routes 展示。
+#   2026-08-13 07:32 编写 — 小欧
 """
 tool_facade — 工具门面(API 适配层)
 
@@ -18,10 +22,14 @@ import uuid
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.tools.tool_retry_engine import ToolRetryEngine
+from app.tools.tool_response import is_success
 from app.safety.tool_safety_checker import get_tool_safety_checker
 from app.safety.default_hooks import DefaultToolSecurityHooks
 from app.services.task.task_context import _current_task_id
+from app.utils.cache import TTLCache
+from app.constants import TOOL_CACHE_TTL as _TOOL_CACHE_TTL
 from app.logger import logger
+from app.services.agent.tool_loader import ToolLoader
 
 # 模块级惰性缓存: 全量工具实现表(与 ToolLoader 同源的 registry 公共 API 构建, 不摸私有字段)。
 # 供 _FacadeAgent._retry_engine(→tool_executor 非并行分支)复用 — 小欧 2026-08-12
@@ -84,12 +92,27 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
         from app.services.agent.tool_executor import execute_tool as _exec
 
         class _FacadeAgent:
-            _security_hooks = DefaultToolSecurityHooks()
-            _tools_dict = _get_tool_dict()
-            _retry_engine = ToolRetryEngine(_tools_dict)
+            """工具执行所需的最小 agent 状态面(与 tool_executor/auto_inject 契约对齐), 统一_init — 小欧 2026-08-13"""
+
+            def __init__(self):
+                self._security_hooks = DefaultToolSecurityHooks()
+                self._tools_dict = _get_tool_dict()
+                self._retry_engine = ToolRetryEngine(self._tools_dict)
+                # searchtool 路径(tool_executor.auto_inject_from_search)依赖下述状态; 复用真实 ToolLoader,
+                # 注入到自身 _tools_dict(测试语义无害, 不假造) — 小欧 2026-08-13
+                self._loaded_categories = set()
+                self._tool_loader = ToolLoader(self)
+                self._tool_cache = TTLCache(ttl=_TOOL_CACHE_TTL)
+                # _searchtool_desc_override 经 getattr 缺省 None(tool_cache_manager 兼容), 无需预置
 
         result = await _exec(_FacadeAgent(), tool_name, params or {})
-        return {"tool_name": tool_name, "success": True,
-                "result": result if isinstance(result, dict) else {"output": str(result)}}
+        # 用 is_success 判定(与 chat 路径 tool_executor 同源), 避免参数失败/工具未找到被误报 success=True — 三堂会审 小欧 2026-08-13
+        ok = is_success(result) if isinstance(result, dict) else True
+        return {
+            "tool_name": tool_name,
+            "success": ok,
+            "result": result if ok else {},
+            "error": "" if ok else (result.get("llm_data", {}).get("status", {}).get("message", "") if isinstance(result, dict) else ""),
+        }
     finally:
         _current_task_id.reset(token)
