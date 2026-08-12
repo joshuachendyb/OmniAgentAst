@@ -8,6 +8,8 @@
 #   【合规】SRP(health只检查状态不修改)+KISS-DIRECT(直接连库查,不引入复杂健康指标)
 # 2026-07-28 - 小欧 - BUG#18: 删sqlite_master无用查询(SELECT COUNT(*)结果未赋值未使用); BUG#22: echo路由参数request改名data(避免与FastAPI内置Request类型变量混淆); BUG#23: 删死协程检查(iscoroutine永远为False, run_in_executor内同步函数不返回协程); 额外: list_tools中required_set预计算避免重复构建set
 # 2026-08-08 - 小欧 - 全程统一本地时区: 2处响应 timestamp 改 get_local_iso_timestamp() (本地ISO无Z)
+# 2026-08-12 - 小欧 - A1过渡红项(4.1.7/A4待消): /tool/execute API直调不走tool_executor, 注入 DefaultToolSecurityHooks
+#   到 ContextVar hooks, 防止 record_operation/execute_with_safety 空钩子 NPE; A4 将此直调过渡移除 — 小欧 2026-08-12
 """
 health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
@@ -26,6 +28,8 @@ from app.logger import logger
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.tools import tool_registry
 from app.services.task.task_context import _current_task_id
+from app.tools.context import set_current_hooks, reset_current_hooks  # A1过渡红项 — 小欧 2026-08-12
+from app.safety.default_hooks import DefaultToolSecurityHooks  # A1过渡红项 — 小欧 2026-08-12
 
 router = APIRouter()
 
@@ -140,14 +144,17 @@ async def execute_tool(request: ToolExecuteRequest):
     try:
         _api_task_id = str(_uuid.uuid4())
         _current_task_id.set(_api_task_id)
+        _hooks_token = set_current_hooks(DefaultToolSecurityHooks())  # A1过渡红项: 注入默认hooks — 小欧 2026-08-12
 
         if inspect.iscoroutinefunction(impl):
             result = await impl(**params)
         else:
             loop = asyncio.get_event_loop()
             _captured_task_id = _current_task_id.get()
+            _captured_hooks = set_current_hooks(DefaultToolSecurityHooks())  # sync分支executor内需重注入 — 小欧 2026-08-12
             def _run_with_task_context():
                 _current_task_id.set(_captured_task_id)
+                set_current_hooks(_captured_hooks)
                 return impl(**params)
             result = await loop.run_in_executor(None, _run_with_task_context)
 
@@ -167,4 +174,9 @@ async def execute_tool(request: ToolExecuteRequest):
             success=False,
             error=err_msg
         )
+    finally:
+        try:
+            reset_current_hooks(_hooks_token)
+        except Exception:
+            pass
 
