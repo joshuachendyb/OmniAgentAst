@@ -40,10 +40,10 @@ class MessageCreate(BaseModel):
 
 
 @router.get("/sessions/{session_id}/messages")
-async def get_session_messages_endpoint(session_id: str):
-    return await get_session_messages(session_id)
+def get_session_messages_endpoint(session_id: str):
+    return get_session_messages(session_id)
 
 
 @router.post("/sessions/{session_id}/messages")
-async def save_message_endpoint(session_id: str, message: MessageCreate):
-    return await save_message(session_id, message)
+def save_message_endpoint(session_id: str, message: MessageCreate):
+    return save_message(session_id, message)

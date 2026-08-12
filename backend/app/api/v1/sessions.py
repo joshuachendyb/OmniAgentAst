@@ -33,35 +33,35 @@ class _SessionCreate(SessionCreate):
 
 
 @router.post("/sessions")
-async def create_session_endpoint(session_create: Optional[SessionCreate] = None):
-    return await create_session(session_create)
+def create_session_endpoint(session_create: Optional[SessionCreate] = None):
+    return create_session(session_create)
 
 
 @router.get("/sessions")
-async def list_sessions_endpoint(
+def list_sessions_endpoint(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: Optional[str] = Query(None),
     is_valid: Optional[bool] = Query(None)
 ):
-    return await list_sessions(page, page_size, keyword, is_valid)
+    return list_sessions(page, page_size, keyword, is_valid)
 
 
 @router.put("/sessions/{session_id}")
-async def update_session_endpoint(session_id: str, update_data: SessionUpdate):
-    return await update_session(session_id, update_data)
+def update_session_endpoint(session_id: str, update_data: SessionUpdate):
+    return update_session(session_id, update_data)
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session_endpoint(session_id: str):
-    return await delete_session(session_id)
+def delete_session_endpoint(session_id: str):
+    return delete_session(session_id)
 
 
 @router.get("/sessions/titles/batch")
-async def get_session_titles_batch_endpoint(
+def get_session_titles_batch_endpoint(
     session_ids: str = Query(..., description="逗号分隔的会话ID列表")
 ):
-    return await get_session_titles_batch(session_ids)
+    return get_session_titles_batch(session_ids)
 
 
 @router.post("/sessions/{session_id}/execution_steps")
