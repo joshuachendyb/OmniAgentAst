@@ -6,6 +6,8 @@
 # 2026-07-25 - 小欧 - 新增非ASCII URL转码: download 支持中文域名/路径, 转码后走validate_url做DNS/SSRF检查
 # 2026-08-06 - 小欧 - 核查8-05/8-06日志: url=None 在非ASCII转码块 url.encode 抛AttributeError落入catch-all记"意外错误"; 入口加url=None显式拦截(fetch_webpage/httpget同模式, 三网络工具统一), 返回ERR_INVALID_URL结构化错误, 不再落入catch-all
 # 2026-08-10 - 小欧 - ⑭注释更正: 下载目录未配置project_root时=用户主目录(不再是代码位置), 子目录download — 步骤1实施(北京老陈驱动「项目根目录定义混乱修复」)
+# 2026-08-12 - 小欧 - 三堂会审补漏: download 与 httpget 同病根(重定向到内网被SSRF防护拦截抛httpx.InvalidURL落入catch-all记ERROR);
+#   用 http_client_sdk.is_ssrf_blocked_error 公用函数统一识别(httpget/fetch_webpage/download三工具一致), 返回ERR_INVALID_URL+warning
 """
 N2: download — 下载文件到本地
 
@@ -24,7 +26,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.network.http_client_sdk import create_http_client, HTTPClient
+from app.tools.network.http_client_sdk import create_http_client, HTTPClient, is_ssrf_blocked_error
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
 from app.tools.validate.timeout_validator import validate_timeout
@@ -237,6 +239,16 @@ async def download(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NETWORK_WRITE_FILE, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint=hint_for_write_error(e, dest_path), timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
+    except httpx.InvalidURL as e:
+        # httpx.InvalidURL: 重定向目标被SSRF防护拦截, 属预期防护, 返ERR_INVALID_URL+warning(不记ERROR) — 小欧 2026-08-12
+        # 识别统一用 http_client_sdk.is_ssrf_blocked_error 公用函数(httpget/fetch_webpage/download三工具一致)
+        _ssrf_info = is_ssrf_blocked_error(e)
+        if _ssrf_info:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            logger.warning(f"[download] URL安全拦截(SSRF防护): {e}")
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=_ssrf_info["err_code"], detail=_ssrf_info["detail"], hint=_ssrf_info["hint"], timeout=timeout, proxy=proxy, headers=headers)
+            return build_error(data={}, llm_data=llm_data)
+        raise
     except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _map_network_error(url, timeout, e, dest_path, duration_ms)

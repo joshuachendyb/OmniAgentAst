@@ -10,9 +10,14 @@ Author: 小沈 - 2026-05-29
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 编辑历史:
+# 2026-08-12 - 小欧 - 新增公用函数 is_ssrf_blocked_error: 识别httpx.InvalidURL(SSRF重定向拦截)并返回统一结构化错误信息,
+#   供 httpget/fetch_webpage/download 三个网络工具复用(原各自手写isinstance分支, DRY统一)
+# 2026-08-12 - 小欧 - _validate_redirect 新增 InvalidURL 抛出的文案标识前缀 "重定向目标被拦截", 供 is_ssrf_blocked_error 语义识别
 
 import os
 from typing import Optional
+
 from urllib.parse import urljoin
 
 import httpx
@@ -21,6 +26,33 @@ from app.tools.validate.url_validator import validate_url
 
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
 from app.tools.tool_constants import DEFAULT_TIMEOUT_SEC, NETWORK_MAX_CONNECTIONS, NETWORK_MAX_KEEPALIVE
+from app.tools.tool_constants import ERR_INVALID_URL
+
+# SSRF重定向拦截文案标识 — 小欧 2026-08-12 (_validate_redirect 抛出的 InvalidURL 统一带此前缀)
+_SSRF_REDIRECT_MARK = "重定向目标被拦截"
+
+
+def is_ssrf_blocked_error(error: Exception) -> Optional[dict]:
+    """判断异常是否为 SSRF 重定向拦截(httpx.InvalidURL) — 小欧 2026-08-12
+
+    三个网络工具(httpget/fetch_webpage/download)统一复用:
+    - httpx.InvalidURL 不经 RequestError/HTTPError 继承链(直接继承 Exception), 需显式捕获
+    - _validate_redirect 在 response hook 中对重定向到回环/内网地址抛 httpx.InvalidURL(SSRF主动防护)
+    - 属预期防护, 不应落入 catch-all 记 ERROR; 返回统一结构化错误信息供 build_error 使用
+
+    Args:
+        error: 捕获的异常
+
+    Returns:
+        dict(err_code/detail/hint) 若为 SSRF 拦截; None 否则
+    """
+    if isinstance(error, httpx.InvalidURL) and _SSRF_REDIRECT_MARK in str(error):
+        return {
+            "err_code": ERR_INVALID_URL,
+            "detail": f"URL安全拦截: {error}",
+            "hint": "该URL或其重定向目标被安全策略拦截, 请更换访问地址",
+        }
+    return None
 
 
 def resolve_proxy(proxy: Optional[str] = None) -> Optional[str]:
@@ -56,6 +88,7 @@ class HTTPClient:
                 redirect_url = urljoin(str(response.url), location)
                 is_valid, err, _ = validate_url(redirect_url)
                 if not is_valid:
+                    # 文案带 _SSRF_REDIRECT_MARK 前缀, 供 is_ssrf_blocked_error 语义识别 — 小欧 2026-08-12
                     raise httpx.InvalidURL(f"重定向目标被拦截: {err or 'URL无效'}")
 
     async def __aenter__(self):

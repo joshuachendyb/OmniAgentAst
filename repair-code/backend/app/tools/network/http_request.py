@@ -11,6 +11,16 @@
 # 2026-07-25 - 小欧 - 【重构】URL非ASCII处理: 拦截报错→转码(IDNA+percent-encoding), RFC 3987标准IRI→URI转换, 中文域名/路径自动兼容; _transcode_url函数抽离; 转码后走validate_url做DNS/SSRF安全检查
 # 2026-07-25 - 小欧 - 重构: _transcode_url 移入 validate/url_validator.py 作为公用函数 transcode_url(download/fetch_webpage 同用)
 # 2026-07-25 - 小欧 - 【重构】Header非ASCII处理: 拦截报错→值自动转码(UTF-8→latin-1, HTTP标准兼容方式), 键仍强制ASCII(RFC 7230)
+# 2026-08-06 - 小欧 - 核查7/31未实现项[21]修复: Header值非ASCII由UTF-8→latin-1转码改为拒绝(与键处理对称, RFC 9110 Header须ASCII, 避免字节漂移致服务端解码错乱), 声称功能"转码改拒绝"
+# 2026-08-06 - 小欧 - 三堂会审修复: BUG-4 detail文案去"obs-text"暗示, 统一为"必须为ASCII"
+# 2026-08-06 - 小欧 - 核查8-05/8-06日志: url=None 在非ASCII转码块 url.encode 抛AttributeError落入catch-all记"意外错误"; 入口加url=None显式拦截(fetch_webpage同模式, 三网络工具统一), 返回ERR_INVALID_URL结构化错误, 不再落入catch-all
+# 2026-08-07 - 小欧 - BUG-02修复: headers仅接受dict, 防LLM传list引发 dict.update(list) ValueError
+#   【病根】coerce_json(headers)可能返回list, request_headers.update(list) 抛 ValueError: dictionary update sequence(日志09:05:38)
+#   【改法】if headers and isinstance(headers, dict): 才 update; 非dict自动忽略, 不抛异常(无退化)
+# 2026-08-12 - 小欧 - 修复: httpget兜底except将httpx.InvalidURL(重定向目标被拦截=SSRF主动防护)记ERROR, 触发E2E"日志无非安全ERROR"断言失败
+#   【病根】http_client_sdk._validate_redirect对重定向到回环/内网地址抛httpx.InvalidURL(SSRF防护), 落入catch-all记"意外错误"ERROR级, 语义错误(属预期防护)
+#   【改法】显式捕获httpx.InvalidURL, 返回结构化错误(ERR_INVALID_URL)+warning日志, 不再记ERROR
+# 2026-08-12 - 小欧 - 三堂会审DRY: InvalidURL识别统一改用http_client_sdk.is_ssrf_blocked_error公用函数(httpget/fetch_webpage/download三工具一致)
 """
 N1: httpget — 发起HTTP请求
 
@@ -30,7 +40,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.network.http_client_sdk import create_http_client
+from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
 from app.tools.validate.timeout_validator import validate_timeout
@@ -177,6 +187,10 @@ async def httpget(
     headers = coerce_json(headers)
     body = coerce_json(body)
 
+    if url is None:
+        llm_data = _build_http_request_llm_data("error", 0, "", method, err_code=ERR_INVALID_URL, detail="URL不能为空", hint="请提供要请求的URL", timeout=timeout, proxy=proxy, headers=headers, body=body)
+        return build_error(data={}, llm_data=llm_data)
+
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "httpget")
     if not timeout_valid:
         llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=timeout_err, hint="请检查超时设置", timeout=timeout, proxy=proxy, headers=headers, body=body)
@@ -212,11 +226,13 @@ async def httpget(
             return build_error(data={}, llm_data=llm_data)
 
         request_headers = {}
-        if headers:
+        # BUG-02修复: headers仅接受dict, 防LLM传list引发 dict.update(list) ValueError — 小欧 2026-08-07
+        #   日志证据: 09:05:38 http_request.py:343 ValueError: dictionary update sequence
+        if headers and isinstance(headers, dict):
             request_headers.update(headers)
 
-        # Header非ASCII字符转码 — 小欧 2026-07-25
-        # 键: RFC要求ASCII-only, 非ASCII则报错. 值: UTF-8→latin-1转码供httpx传输
+# Header非ASCII字符拒绝 — 小欧 2026-07-25 — 2026-08-06 小欧: 值由转码改为拒绝(与键对称)
+        # 键/值: RFC要求ASCII-only, 非ASCII则报错, 不再UTF-8→latin-1转码(避免字节漂移致服务端解码错乱)
         if request_headers:
             _new_headers = {}
             for _hk, _hv in request_headers.items():
@@ -234,7 +250,13 @@ async def httpget(
                     try:
                         _hv.encode("ascii")
                     except (UnicodeEncodeError, UnicodeDecodeError):
-                        _hv = _hv.encode("utf-8").decode("latin-1")
+                        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                        llm_data = _build_http_request_llm_data("error", duration_ms, url, method,
+                                                               err_code=ERR_NETWORK_INVALID_PARAM,
+                                                               detail=f"HTTP Header 值包含非ASCII字符: {_hk}(RFC 7230 规定 Header 值必须为 ASCII)",
+                                                               hint=f"Header {_hk} 的值请使用纯 ASCII 字符",
+                                                               timeout=timeout, proxy=proxy, headers=headers, body=body)
+                        return build_error(data={"error_detail": f"Header值包含非ASCII字符: {_hk}", "params": {"url": url}}, llm_data=llm_data)
                 _new_headers[_hk] = _hv
             request_headers = _new_headers
 
@@ -326,6 +348,24 @@ async def httpget(
                                                    hint="请使用ASCII字符或百分号编码",
                                                    timeout=timeout, proxy=proxy, headers=headers, body=body)
             return build_error(data={"error_detail": "请求参数包含不支持的字符编码", "params": {"url": url}}, llm_data=llm_data)
+        # httpx.InvalidURL: URL/重定向目标校验失败(SSRF主动防护, 如重定向到回环/内网地址被拦截) — 小欧 2026-08-12
+        # 【病根】原落入catch-all记"意外错误"ERROR级, 语义错误(属预期防护); 现显式捕获返结构化错误+warning
+        # 三堂会审: 识别逻辑统一用 http_client_sdk.is_ssrf_blocked_error 公用函数 — 小欧 2026-08-12
+        _ssrf_info = is_ssrf_blocked_error(e)
+        if _ssrf_info:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            logger.warning(f"[httpget] URL安全拦截(SSRF防护): {e}")
+            llm_data = _build_http_request_llm_data(
+                "error", duration_ms, url, method,
+                err_code=_ssrf_info["err_code"],
+                detail=_ssrf_info["detail"],
+                hint=_ssrf_info["hint"],
+                timeout=timeout, proxy=proxy, headers=headers, body=body,
+            )
+            return build_error(
+                data={"error_detail": _ssrf_info["detail"], "params": {"url": url}},
+                llm_data=llm_data,
+            )
         err_msg = f"{type(e).__name__}: {str(e) or repr(e)}"  # — 小欧 2026-07-13
         logger.error(f"[httpget] 意外错误: {err_msg}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

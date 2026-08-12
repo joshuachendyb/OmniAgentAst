@@ -17,6 +17,10 @@
 # 2026-08-07 - 小欧 - BUG-02修复: headers仅接受dict, 防LLM传list引发 dict.update(list) ValueError
 #   【病根】coerce_json(headers)可能返回list, request_headers.update(list) 抛 ValueError: dictionary update sequence(日志09:05:38)
 #   【改法】if headers and isinstance(headers, dict): 才 update; 非dict自动忽略, 不抛异常(无退化)
+# 2026-08-12 - 小欧 - 修复: httpget兜底except将httpx.InvalidURL(重定向目标被拦截=SSRF主动防护)记ERROR, 触发E2E"日志无非安全ERROR"断言失败
+#   【病根】http_client_sdk._validate_redirect对重定向到回环/内网地址抛httpx.InvalidURL(SSRF防护), 落入catch-all记"意外错误"ERROR级, 语义错误(属预期防护)
+#   【改法】显式捕获httpx.InvalidURL, 返回结构化错误(ERR_INVALID_URL)+warning日志, 不再记ERROR
+# 2026-08-12 - 小欧 - 三堂会审DRY: InvalidURL识别统一改用http_client_sdk.is_ssrf_blocked_error公用函数(httpget/fetch_webpage/download三工具一致)
 """
 N1: httpget — 发起HTTP请求
 
@@ -36,7 +40,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.network.http_client_sdk import create_http_client
+from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
 from app.tools.validate.timeout_validator import validate_timeout
@@ -344,6 +348,24 @@ async def httpget(
                                                    hint="请使用ASCII字符或百分号编码",
                                                    timeout=timeout, proxy=proxy, headers=headers, body=body)
             return build_error(data={"error_detail": "请求参数包含不支持的字符编码", "params": {"url": url}}, llm_data=llm_data)
+        # httpx.InvalidURL: URL/重定向目标校验失败(SSRF主动防护, 如重定向到回环/内网地址被拦截) — 小欧 2026-08-12
+        # 【病根】原落入catch-all记"意外错误"ERROR级, 语义错误(属预期防护); 现显式捕获返结构化错误+warning
+        # 三堂会审: 识别逻辑统一用 http_client_sdk.is_ssrf_blocked_error 公用函数 — 小欧 2026-08-12
+        _ssrf_info = is_ssrf_blocked_error(e)
+        if _ssrf_info:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            logger.warning(f"[httpget] URL安全拦截(SSRF防护): {e}")
+            llm_data = _build_http_request_llm_data(
+                "error", duration_ms, url, method,
+                err_code=_ssrf_info["err_code"],
+                detail=_ssrf_info["detail"],
+                hint=_ssrf_info["hint"],
+                timeout=timeout, proxy=proxy, headers=headers, body=body,
+            )
+            return build_error(
+                data={"error_detail": _ssrf_info["detail"], "params": {"url": url}},
+                llm_data=llm_data,
+            )
         err_msg = f"{type(e).__name__}: {str(e) or repr(e)}"  # — 小欧 2026-07-13
         logger.error(f"[httpget] 意外错误: {err_msg}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

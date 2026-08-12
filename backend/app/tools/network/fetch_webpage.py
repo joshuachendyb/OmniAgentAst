@@ -14,6 +14,7 @@
 # 2026-07-29 - 小欧 - 反爬增强(方案A+B): A-新增_build_browser_headers()完整浏览器头(sec-ch-ua/sec-fetch-*+br+image/avif), B-403优先降级Jina Reader再cf-mitigated, 解决知乎/CSDN等403问题
 # 2026-08-06 - 小欧 - 核查7/31未实现项[08]修复: url=None由try内raise ValueError(落入except打traceback)改为函数入口直接build_error(ERR_INVALID_URL), 与timeout/proxy校验同级, 不再泄漏traceback
 # 2026-08-06 - 小欧 - 三堂会审修复: BUG-5 url=None时summary传空串""代替None
+# 2026-08-12 - 小欧 - 三堂会审DRY: InvalidURL识别统一改用http_client_sdk.is_ssrf_blocked_error公用函数(httpget/fetch_webpage/download三工具一致)
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -44,7 +45,7 @@ except ImportError:
     _TRAFILATURA = None
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.network.http_client_sdk import create_http_client
+from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
 from app.tools.validate.timeout_validator import validate_timeout
@@ -795,6 +796,18 @@ async def fetchpage(
     except (httpx.InvalidURL, httpx.RequestError) as e:
         # InvalidURL 不经 RequestError 继承链, 合并捕获后按类型区分错误码与提示;
         # 专捕 InvalidURL 避免其落入 except Exception 打印全量堆栈造成日志噪声 — 小欧 2026-07-17
+        # 三堂会审: SSRF重定向拦截(带前缀)优先用 http_client_sdk.is_ssrf_blocked_error 统一识别; 其余走原逻辑 — 小欧 2026-08-12
+        _ssrf_info = is_ssrf_blocked_error(e)
+        if _ssrf_info:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            logger.warning(f"[fetchpage] URL安全拦截(SSRF防护): {e}")
+            llm_data = _build_fetch_webpage_llm_data(
+                "error", duration_ms, url, extract_format,
+                err_code=_ssrf_info["err_code"],
+                detail=_ssrf_info["detail"],
+                hint=_ssrf_info["hint"],
+                prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+            return build_error(data={}, llm_data=llm_data)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         _is_invalid_url = isinstance(e, httpx.InvalidURL)
         llm_data = _build_fetch_webpage_llm_data(
