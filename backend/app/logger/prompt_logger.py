@@ -8,6 +8,7 @@
 #   (2) save()的"no_id"字面量fallback改为uuid4().hex[:8],并提import uuid到文件顶。
 # 2026-07-28 - 小欧 - 欧阳BUG-11修复: _user_id_from_db裸except Exception改except Exception as e + logger.debug, 避免错误静默丢失
 # 2026-08-09 - 小欧 - task004深度分析报告核查修复A1/A2/A4(三堂会审通过): (1)观察结果字段"格式化内容:"/"原始的内容:"去冒号改"格式化内容"/"原始内容", 历史日志不动仅新日志生效; (2)log_llm_response冗余赋值修复, entry构造移入else分支, 仅追加路径构造消除更新路径整包丢弃; (3)删除死代码log_tool_prompt(全库0调用, 与2026-07-18删mark_completed/mark_error先例一致)
+# 2026-08-12 - 小欧 - task004报告缺陷1核查修复(A1补全): log_observation补"内容"字段(与log_system_prompt/log_task_prompt结构对齐), 此前仅存"格式化内容"/"原始内容"致"内容"字段100%为空, 实测29文件窗口972/972观察步骤缺失, 历史日志不动仅新日志生效, 保留"格式化内容"兼容已有分析脚本
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
@@ -395,6 +396,7 @@ class PromptLogger:
             "步骤": step_name,
             "类型": "观察结果Prompt",
             "来源": f"工具执行结果: {tool_name}" if tool_name else "工具执行结果",
+            "内容": observation_content,  # 2026-08-12 小欧 补全: 与log_system_prompt/log_task_prompt结构对齐, 修复"内容"恒空
             "内容长度": len(observation_content),
             "时间戳": now_str(),
         }
