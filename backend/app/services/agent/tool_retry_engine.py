@@ -42,6 +42,11 @@
 #   病根: 非法参数分支调用_build_retry_error未传hint(默认""), LLM只能看到干列表"合法参数: k:type"反复试错
 #   方案: 新增_INVALID_PARAM_HINTS混淆表(仅日志实证grep.type→glob/find、find.top_n→offset, YAGNI) + 通用兜底
 #   直线设计: dict直查+兜底, 不改detail/返回结构/缺失参数路径, 增强不退化(验证PASS=10/10)
+# 2026-08-11 - 小欧 - task006方案4落地: _validate_params反向类型容错(期望array/object收到JSON字符串时解析,
+#   如write_docx的table_data LLM常传JSON字符串, 原报"期望类型为array,实际类型为str"; 解析失败保留原str走类型校验报错,
+#   与现有"对象→字符串"容错形成双向闭环, 不静默删除非法字段)
+# 2026-08-12 - 小欧 - 三堂会审修正: 反向容错由parse_json手写分支改为复用公共coerce_json(DRY铁规,
+#   与write_xlsx/analyze_data/filter_data共用同一参数归一化层; 非法JSON原样返回不误改, 二维List[List]不误伤, 行为等价更优)
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -62,7 +67,7 @@ from typing import Any, Callable, Dict, Optional
 
 from app.logger import logger
 from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
-from app.utils.json_utils import safe_json_dumps
+from app.utils.json_utils import safe_json_dumps, coerce_json  # coerce_json: 反向类型容错复用(DRY, 与write_xlsx/analyze_data共用) — 小欧 2026-08-12
 from app.tools.tool_constants import (
     TOOL_TIMEOUTS, TOOL_RETRY_BACKOFF, TOOL_RETRY_CONFIG,
     TOOL_TIMEOUT_HINTS,
@@ -401,6 +406,12 @@ class ToolRetryEngine:
                             params[k] = safe_json_dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
                         except Exception:
                             pass
+                    elif _t in ("array", "object") and isinstance(v, str):
+                        # 反向容错: 期望array/object收到JSON字符串时尝试解析(如write_docx table_data),
+                        # 复用公共coerce_json(DRY), 非法JSON原样返回不误改 — 小欧 2026-08-12
+                        _coerced = coerce_json(v)
+                        if isinstance(_coerced, (list, dict)) and _coerced is not v:
+                            params[k] = _coerced
                 type_errors = []
                 for k, v in params.items():
                     spec = props.get(k)

@@ -15,6 +15,7 @@
 #         10000→100000 (各tool自行截断输出后, storage仅兜底,
 #         不再做激进取舍)
 # 2026-08-08 - 小欧 - 全程统一本地时区: get_utc_timestamp→get_local_iso_timestamp (L147/189/232/329 4处写入), 本地ISO无Z入库
+# 2026-08-11 - 小欧 - task006方案5落地: 截断字符串附加"原长N字符"标记, 让LLM感知base64/长文本被截断, 影像分析类任务不被截断误导
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -306,14 +307,14 @@ def _truncate_tool_result_strings(obj: Any, tag: str = "") -> None:
     if isinstance(obj, dict):
         for key, val in list(obj.items()):
             if isinstance(val, str) and len(val) > MAX_TOOL_RESULT_STR_LEN:
-                obj[key] = val[:MAX_TOOL_RESULT_STR_LEN] + "...(storage截断)"
+                obj[key] = val[:MAX_TOOL_RESULT_STR_LEN] + f"...(storage截断,原长{len(val)}字符)"
                 logger.warning(f"[storage] {tag}tool_result.{key} 字符串过大({len(val)}字符),截断至{MAX_TOOL_RESULT_STR_LEN}")
             elif isinstance(val, (dict, list)):
                 _truncate_tool_result_strings(val, tag)
     elif isinstance(obj, list):
         for i, item in enumerate(obj):
             if isinstance(item, str) and len(item) > MAX_TOOL_RESULT_STR_LEN:
-                obj[i] = item[:MAX_TOOL_RESULT_STR_LEN] + "...(storage截断)"
+                obj[i] = item[:MAX_TOOL_RESULT_STR_LEN] + f"...(storage截断,原长{len(item)}字符)"
                 logger.warning(f"[storage] {tag}tool_result[{i}] 字符串过大({len(item)}字符),截断至{MAX_TOOL_RESULT_STR_LEN}")
             elif isinstance(item, (dict, list)):
                 _truncate_tool_result_strings(item, tag)
