@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_rename_deep.py
+# 归档原因: 包含 Windows 平台限制类 skip case(readonly),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台恢复运行。
+# ================================================================
 """
 rename工具深度测试 — 挖掘bug
 
@@ -123,6 +130,21 @@ class TestRenameInvalidScenarios:
         result = await rename(path=str(test_file), dest=str(other_dir / "new.txt"))
         assert is_success(result)
         assert (tmp_path / "new.txt").exists()
+    
+    async def test_rename_readonly_file(self, tmp_path):
+        """Bug8: 只读文件重命名应该处理"""
+        if os.name == 'nt':
+            pytest.skip("Windows只读文件测试跳过")
+        test_file = tmp_path / "readonly.txt"
+        test_file.write_text("test")
+        os.chmod(str(test_file), 0o444)
+        
+        try:
+            result = await rename(path=str(test_file), dest="new_readonly.txt")
+            assert is_success(result) or is_error(result)
+        finally:
+            if test_file.exists():
+                os.chmod(str(test_file), 0o644)
     
     async def test_rename_locked_file(self, tmp_path):
         """Bug9: 被锁定的文件重命名应该处理"""

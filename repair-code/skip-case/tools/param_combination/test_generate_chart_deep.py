@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_generate_chart_deep.py
+# 归档原因: 包含 Windows 平台限制类 skip case(readonly),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台恢复运行。
+# ================================================================
 """
 generate_chart工具深度测试 — 挖掘bug
 
@@ -194,6 +201,25 @@ class TestGenerateChartFileFormats:
 
 class TestGenerateChartOutputHandling:
     """输出处理测试 - 5个"""
+    
+    def test_output_to_readonly_directory(self, tmp_path):
+        """Bug9: 输出到只读目录应该报错"""
+        if os.name == 'nt':
+            pytest.skip("Windows readonly test skipped")
+        
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir()
+        os.chmod(str(readonly_dir), 0o444)
+        
+        try:
+            data_file = tmp_path / "data.csv"
+            data_file.write_text("category,value\nA,10")
+            
+            output = readonly_dir / "chart.png"
+            result = generate_chart(data=str(data_file), chart_type="bar", dest=str(output))
+            assert is_success(result) or is_error(result)
+        finally:
+            os.chmod(str(readonly_dir), 0o755)
     
     def test_output_overwrite_existing(self, tmp_path):
         """测试覆盖已存在文件"""

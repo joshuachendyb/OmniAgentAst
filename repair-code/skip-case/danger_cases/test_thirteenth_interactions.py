@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/danger_cases/test_thirteenth_interactions.py
+# 归档原因: 包含 Windows 平台限制类 skip case(symlink),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台(如 Linux)恢复运行。
+# ================================================================
 """第十三轮 - 工具交互深度测试
 目标:发现真实Bug,覆盖工具链交互,状态污染,错误恢复等高风险路径
 创建时间:2026-06-25
@@ -613,6 +620,20 @@ class TestSecurityBoundaries:
         from app.tools.file.write_text_file import writetext
         r = _run(writetext, path="C:\\Windows\\System32\\test.txt", content="PROTECTED")
         # 应该被拒绝
+
+    def test_symlink_path_traversal(self):
+        """SEC-006: 符号链接路径遍历"""
+        from app.tools.file.read_text_file import readtext
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / "target.txt"
+            target.write_text("TARGET_DATA")
+            link = Path(d) / "link.txt"
+            try:
+                link.symlink_to(target)
+            except OSError:
+                pytest.skip("Symlinks not supported")
+            r = _run(readtext, path=str(link))
+            # 符号链接应该被处理
 
     def test_special_chars_in_path(self):
         """SEC-007: 路径中的特殊字符"""

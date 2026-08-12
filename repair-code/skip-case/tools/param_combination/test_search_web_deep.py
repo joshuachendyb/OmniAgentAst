@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_search_web_deep.py
+# 归档原因: 包含需要 mock 网络的 skip case(并发搜索),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于补充 mock 后恢复运行。
+# ================================================================
 """
 search_web 第三轮深度BUG发现测试
 小健 2026-06-25
@@ -59,7 +66,12 @@ class TestSearchWebDeepBugs:
         result = _run(searchweb(long_query))
         # 应该成功或报错
 
+    @pytest.mark.skip(reason="需要mock网络,跳过并发测试")
+    def test_bug_13_concurrent_search(self):
+        pass
+
     def test_bug_14_query_with_unicode(self):
+        """BUG#14: query包含Unicode字符"""
         from app.tools.network.search_web import searchweb
         result = _run(searchweb("测试中文搜索"))
         # 应该正认处理

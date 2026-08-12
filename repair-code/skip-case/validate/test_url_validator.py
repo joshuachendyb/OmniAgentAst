@@ -1,3 +1,10 @@
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/validate/test_url_validator.py
+# 归档原因: 包含 DNS 不可用类 skip case(test_https_subdomain),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于在 DNS 可用环境恢复运行。
+# ================================================================
 # validate/url_validator.py 鍗曞厓测试 鈥?小欧矆 2026-06-27
 import pytest
 from app.tools.validate.url_validator import (
@@ -85,6 +92,12 @@ class TestValidateUrl:
 
     def test_url_with_fragment(self):
         assert validate_url("https://example.com/page#section") == (True, None, None)
+
+    def test_https_subdomain(self):
+        result = validate_url("https://sub.domain.example.com")
+        if result[0] is False and "DNS" in (result[1] or ""):
+            pytest.skip("DNS不可用,跳过")
+        assert result[0] is True
 
 
 class TestValidateProxy:

@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_tree_deep.py
+# 归档原因: 包含 Windows 平台限制类 skip case(symlink/权限/MAX_PATH),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台恢复运行。
+# ================================================================
 """
 tree工具深度测试 — 挖掘bug
 
@@ -117,6 +124,20 @@ class TestTreeInvalidParams:
         assert is_error(result)
         assert "不是目录" in result.get("llm_data", {}).get("status", {}).get("detail", "")
     
+    async def test_permission_denied(self, tmp_path):
+        """Bug6: 无权限目录应该处理"""
+        if os.name == 'nt':
+            pytest.skip("Windows权限测试跳过")
+        test_dir = tmp_path / "no_perm"
+        test_dir.mkdir()
+        try:
+            os.chmod(str(test_dir), 0o000)
+            result = await tree(path=str(test_dir))
+            # 应该能读取自己创建的目录
+            assert is_success(result) or is_error(result)
+        finally:
+            os.chmod(str(test_dir), 0o755)
+    
     async def test_sort_by_size_ignored(self, tmp_path):
         """Bug7: sort_by=size应该被忽略（tree只支持name/mtime）"""
         test_dir = tmp_path / "test_size"
@@ -183,6 +204,21 @@ class TestTreeDepthLimit:
         assert is_success(result)
         assert len(result["data"]["tree"]["children"]) == 1
     
+    async def test_circular_symlink(self, tmp_path):
+        """Bug10: 循环符号链接应该处理"""
+        if os.name == 'nt':
+            pytest.skip("Windows符号链接需要管理员权限")
+        test_dir = tmp_path / "circular"
+        test_dir.mkdir()
+        sub_dir = test_dir / "sub"
+        sub_dir.mkdir()
+        try:
+            (sub_dir / "link").symlink_to(test_dir)
+            result = await tree(path=str(test_dir))
+            assert is_success(result) or is_error(result)
+        except OSError:
+            pytest.skip("符号链接创建失败")
+
 
 @pytest.mark.asyncio
 class TestTreeHiddenFiles:
@@ -426,6 +462,19 @@ class TestTreeEdgeCases:
         
         result = await tree(path=str(test_dir))
         assert is_success(result)
+    
+    async def test_very_long_path(self, tmp_path):
+        """Bug20: 超长路径应该处理"""
+        import sys
+        # Windows 默认启用MAX_PATH限制(260字符), 构造200字符名+临时目录前缀易超限, 属系统约束 — 小欧 2026-07-12
+        if sys.platform == "win32":
+            pytest.skip("Windows MAX_PATH限制, 超长路径mkdir在系统层失败, 非代码问题")
+        long_name = "a" * 200
+        test_dir = tmp_path / long_name
+        test_dir.mkdir()
+        
+        result = await tree(path=str(test_dir))
+        assert is_success(result) or is_error(result)
     
     async def test_unicode_path(self, tmp_path):
         """测试Unicode路径"""

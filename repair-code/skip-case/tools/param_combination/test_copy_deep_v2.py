@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_copy_deep_v2.py
+# 归档原因: 包含 Windows 平台限制类 skip case(readonly/symlink),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台(如 Linux)恢复运行。
+# ================================================================
 """
 copy工具深度测试 — 挖掘bug
 
@@ -222,6 +229,38 @@ class TestCopyCrossBoundary:
 class TestCopyPermissions:
     """权限测试 - 4个"""
     
+    def test_copy_readonly_file(self, tmp_path):
+        """Bug12: 只读文件复制应该处理"""
+        if os.name == 'nt':
+            pytest.skip("Windows readonly test skipped")
+        src = tmp_path / "readonly.txt"
+        src.write_text("readonly")
+        os.chmod(str(src), 0o444)
+        
+        try:
+            dst = tmp_path / "copy_readonly.txt"
+            result = _run(copy(path=str(src), dest=str(dst)))
+            assert is_success(result) or is_error(result)
+        finally:
+            os.chmod(str(src), 0o644)
+    
+    def test_copy_to_readonly_directory(self, tmp_path):
+        """Bug13: 复制到只读目录应该处理"""
+        if os.name == 'nt':
+            pytest.skip("Windows readonly test skipped")
+        src = tmp_path / "source.txt"
+        src.write_text("test")
+        dst_dir = tmp_path / "readonly_dir"
+        dst_dir.mkdir()
+        os.chmod(str(dst_dir), 0o444)
+        
+        try:
+            dst = dst_dir / "dest.txt"
+            result = _run(copy(path=str(src), dest=str(dst)))
+            assert is_success(result) or is_error(result)
+        finally:
+            os.chmod(str(dst_dir), 0o755)
+    
     def test_copy_system_file(self, tmp_path):
         """Bug14: 系统文件复制应该报错"""
         if os.name == 'nt':
@@ -302,6 +341,20 @@ class TestCopyRealScenarios:
         assert is_success(result)
         assert (dst / "file.txt").exists()
         assert not (dst / "old_file.txt").exists()
+    
+    def test_copy_symlink(self, tmp_path):
+        """Bug18: 符号链接复制应该处理"""
+        if os.name == 'nt':
+            pytest.skip("Windows symlink needs admin")
+        
+        target = tmp_path / "target.txt"
+        target.write_text("target")
+        src = tmp_path / "link"
+        src.symlink_to(target)
+        
+        dst = tmp_path / "link_copy"
+        result = _run(copy(path=str(src), dest=str(dst)))
+        assert is_success(result) or is_error(result)
 
 
 class TestCopyEdgeCases:

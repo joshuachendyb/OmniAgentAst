@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_writetext_deep.py
+# 归档原因: 包含 Windows 平台限制类 skip case(readonly),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台恢复运行。
+# ================================================================
 """
 writetext工具深度测试 — 挖掘bug
 
@@ -106,6 +113,22 @@ class TestWritetextInvalidScenarios:
         """Bug4: 写入到目录路径应该报错"""
         result = _run(writetext(path=str(tmp_path), content="test"))
         assert is_error(result)
+    
+    def test_write_to_readonly_directory(self, tmp_path):
+        """Bug5: 写入到只读目录应该报错"""
+        if os.name == 'nt':
+            pytest.skip("Windows readonly test skipped")
+        
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir()
+        os.chmod(str(readonly_dir), 0o444)
+        
+        try:
+            dest = readonly_dir / "test.txt"
+            result = _run(writetext(path=str(dest), content="test"))
+            assert is_success(result) or is_error(result)
+        finally:
+            os.chmod(str(readonly_dir), 0o755)
     
     def test_write_to_system_directory(self, tmp_path):
         """Bug6: 写入到系统目录应该报错"""

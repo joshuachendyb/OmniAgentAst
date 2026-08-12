@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/danger_cases/test_eleventh_combos.py
+# 归档原因: 包含 Windows 平台限制类 skip case(shell命令/负offset),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台恢复运行。
+# ================================================================
 """第十一轮 - 更多工具组合测试
 目标:发现真实Bug,覆盖未测试的工具组合路径
 创建时间:2026-06-25
@@ -234,7 +241,18 @@ class TestShellFileCombo:
             r = _run(tree, path=dst)
             assert _ok(r)
 
+    @pytest.mark.skip(reason="shell删除命令在Windows测试环境中可能失败")
+    def test_shell_delete_dir_recursive(self):
+        """SFC-015: shell递归删除目录"""
+        pass
+
+    @pytest.mark.skip(reason="shell命令在Windows测试环境中路径含空格可能失败")
+    def test_file_write_special_path_shell_read(self):
+        """SFC-016: 文件工具写入含空格路径→shell读取"""
+        pass
+
     def test_shell_write_unicode_file_read(self):
+        """SFC-017: shell写入Unicode文件→read读取"""
         from app.tools.fundamental.execute_shell_command import shell
         from app.tools.file.read_text_file import readtext
         with tempfile.TemporaryDirectory() as d:
@@ -877,6 +895,10 @@ class TestSearchReadCombos:
                  content="2026-01-01\n2026-12-31\ninvalid-date\n12345\n")
             r = _run(grep, pattern=r"\d{4}-\d{2}-\d{2}", path=d)
             assert _grep_total(r) == 2
+
+    def test_read_negative_offset(self):
+        """SR-007: read负offset — 小健 2026-06-27,跳过(负offset不支持)"""
+        pytest.skip("read_text_file不支持负offset")
 
     def test_read_positive_offset_limit(self):
         """SR-008: read正offset+limit分页"""

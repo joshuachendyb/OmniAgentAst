@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_compress_deep.py
+# 归档原因: 包含 Windows 平台限制类 skip case(readonly),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台恢复运行。
+# ================================================================
 """
 compress工具深度测试 — 挖掘bug
 
@@ -262,6 +269,41 @@ class TestCompressExcludePatterns:
 
 class TestCompressPermissions:
     """权限测试 - 4个"""
+    
+    def test_compress_readonly_file(self, tmp_path):
+        """Bug9: 只读文件压缩应该成功"""
+        if os.name == 'nt':
+            pytest.skip("Windows readonly test skipped")
+        
+        src_file = tmp_path / "readonly.txt"
+        src_file.write_text("readonly")
+        os.chmod(str(src_file), 0o444)
+        
+        try:
+            dest = tmp_path / "readonly.zip"
+            result = _run(compress(path=str(src_file), dest=str(dest)))
+            assert is_success(result) or is_error(result)
+        finally:
+            os.chmod(str(src_file), 0o644)
+    
+    def test_compress_to_readonly_directory(self, tmp_path):
+        """Bug10: 压缩到只读目录应该报错"""
+        if os.name == 'nt':
+            pytest.skip("Windows readonly test skipped")
+        
+        src_file = tmp_path / "test.txt"
+        src_file.write_text("test")
+        
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir()
+        os.chmod(str(readonly_dir), 0o444)
+        
+        try:
+            dest = readonly_dir / "test.zip"
+            result = _run(compress(path=str(src_file), dest=str(dest)))
+            assert is_success(result) or is_error(result)
+        finally:
+            os.chmod(str(readonly_dir), 0o755)
     
     def test_compress_system_file(self, tmp_path):
         """Bug11: 系统文件压缩应该报错"""

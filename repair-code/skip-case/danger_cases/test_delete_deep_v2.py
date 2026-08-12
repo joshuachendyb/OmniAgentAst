@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/danger_cases/test_delete_deep_v2.py
+# 归档原因: 包含 Windows 平台限制类 skip case(readonly/symlink),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台(如 Linux)恢复运行。
+# ================================================================
 """
 delete工具深度测试 — 挖掘bug
 
@@ -127,6 +134,22 @@ class TestDeleteInvalidScenarios:
             result = _run(delete(path=str(test_file)))
             assert is_success(result) or is_error(result)
     
+    def test_delete_readonly_file_force(self, tmp_path):
+        """Bug6: 只读文件force删除应该成功"""
+        if os.name == 'nt':
+            pytest.skip("Windows readonly test skipped")
+        test_file = tmp_path / "readonly.txt"
+        test_file.write_text("readonly")
+        os.chmod(str(test_file), 0o444)
+        
+        try:
+            result = _run(delete(path=str(test_file), force=True))
+            assert is_success(result)
+            assert not test_file.exists()
+        except:
+            if test_file.exists():
+                os.chmod(str(test_file), 0o644)
+
 
 class TestDeleteCrossBoundary:
     """跨边界测试 - 5个"""
@@ -172,9 +195,57 @@ class TestDeleteCrossBoundary:
         assert is_success(result)
         assert not test_dir.exists()
     
+    def test_delete_symlink(self, tmp_path):
+        """Bug10: 符号链接删除应该处理"""
+        if os.name == 'nt':
+            pytest.skip("Windows symlink needs admin")
+        
+        target = tmp_path / "target.txt"
+        target.write_text("target")
+        link = tmp_path / "link"
+        link.symlink_to(target)
+        
+        result = _run(delete(path=str(link)))
+        assert is_success(result) or is_error(result)
+        if is_success(result):
+            assert not link.exists()
+            assert target.exists()
+
 
 class TestDeletePermissions:
     """权限测试 - 4个"""
+    
+    def test_delete_readonly_file(self, tmp_path):
+        """Bug11: 只读文件删除应该处理"""
+        if os.name == 'nt':
+            pytest.skip("Windows readonly test skipped")
+        test_file = tmp_path / "readonly.txt"
+        test_file.write_text("readonly")
+        os.chmod(str(test_file), 0o444)
+        
+        try:
+            result = _run(delete(path=str(test_file), force=True))
+            assert is_success(result)
+            assert not test_file.exists()
+        except:
+            if test_file.exists():
+                os.chmod(str(test_file), 0o644)
+    
+    def test_delete_in_readonly_directory(self, tmp_path):
+        """Bug12: 只读目录中的文件删除应该处理"""
+        if os.name == 'nt':
+            pytest.skip("Windows readonly test skipped")
+        test_dir = tmp_path / "readonly_dir"
+        test_dir.mkdir()
+        test_file = test_dir / "file.txt"
+        test_file.write_text("test")
+        os.chmod(str(test_dir), 0o444)
+        
+        try:
+            result = _run(delete(path=str(test_file), force=True))
+            assert is_success(result) or is_error(result)
+        finally:
+            os.chmod(str(test_dir), 0o755)
     
     def test_delete_system_file(self, tmp_path):
         """Bug13: 系统文件删除应该报错"""

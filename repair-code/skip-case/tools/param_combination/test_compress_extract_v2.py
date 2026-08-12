@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_compress_extract_v2.py
+# 归档原因: 包含 Known BUG 类 skip case(exclude_patterns 未生效),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于修复工具后恢复运行。
+# ================================================================
 """
 compress_files + extract_archive parameter combination and content test v2
 Schema driven, >100 lines, verify actual content, find issues
@@ -135,6 +142,20 @@ class TestCompressFilesParamCombinations:
         assert is_success(result1)
         result2 = _run(compress(base, dst, overwrite=False))
         assert is_error(result2)
+
+    @pytest.mark.skip(reason="Known BUG: is_excluded only matches file name (p.name) not path name, need to fix tool")
+    def test_compress_exclude_patterns(self, tmp_path):
+        """Exclude patterns -- BUG: is_excluded does not correctly exclude __pycache__ directory"""
+        base = _setup_compress_directory(tmp_path / "project")
+        dst = str(tmp_path / "output" / "backup.zip")
+        result = _run(compress(base, dst, exclude_patterns=["__pycache__", "node_modules"]))
+        assert is_success(result)
+        with zipfile.ZipFile(dst) as zf:
+            compressed_paths = zf.namelist()
+        has_pycache = any("__pycache__" in p for p in compressed_paths)
+        has_node_modules = any("node_modules" in p for p in compressed_paths)
+        if has_pycache or has_node_modules:
+            pytest.fail(f"BUG: exclude_patterns not effective: __pycache__={has_pycache}, node_modules={has_node_modules}")
 
 
 class TestCompressFilesContentVerification:

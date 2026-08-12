@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/danger_cases/test_delete_file_deep.py
+# 归档原因: 包含 Windows 平台限制类 skip case(symlink),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台(如 Linux)恢复运行。
+# ================================================================
 """
 delete_file 第?三杞?繁搴?UG名发现测试
 小健 2026-06-25
@@ -83,6 +90,18 @@ class TestDeleteFileDeepBugs:
         fp = tmp_path / "测试 文件[1].txt"
         fp.write_text("test", encoding="utf-8")
         result = _run(delete(str(fp)))
+
+    def test_bug_10_symlink(self, tmp_path):
+        """BUG#10: 第﹀彿閾炬接,圵indows名?兘闇查瑕佺?鐞嗗憳误冮檺,?"""
+        from app.tools.file.delete_file import delete
+        target = tmp_path / "target.txt"
+        target.write_text("test", encoding="utf-8")
+        link = tmp_path / "link.txt"
+        try:
+            link.symlink_to(target)
+        except (OSError, NotImplementedError):
+            pytest.skip("Windows中死敮鎸佺?名烽摼鎺?")
+        result = _run(delete(str(link)))
 
     def test_bug_11_concurrent_delete_same_file(self, tmp_path):
         """BUG#11: 并发删除同一文件不应崩溃"""

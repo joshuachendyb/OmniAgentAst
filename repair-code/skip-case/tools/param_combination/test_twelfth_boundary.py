@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_twelfth_boundary.py
+# 归档原因: 包含 OS 不支持 symlink 的 skip case(symlink 遍历),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台(如 Linux)恢复运行。
+# ================================================================
 """第十二轮 - 边界条件与安全深度测试
 目标:发现真实Bug,覆盖安全边界,编码边界,状态恢复等未测试路径
 创建时间:2026-06-25
@@ -88,6 +95,55 @@ class TestSSRFBlocking:
 # ============================================================
 # 2. 符号链接遍历测试 - 验证路径验证是否处理symlink
 # ============================================================
+class TestSymlinkTraversal:
+    """符号链接遍历测试"""
+
+    def test_symlink_outside_workspace(self):
+        """SEC-SYM-001: symlink指向workspace外应被拒绝"""
+        from app.tools.file.read_text_file import readtext
+        with tempfile.TemporaryDirectory() as d:
+            # 创建一个指向外部文件的symlink
+            outside_file = Path(d) / "outside.txt"
+            outside_file.write_text("OUTSIDE_DATA")
+            symlink_path = Path(d) / "link.txt"
+            try:
+                symlink_path.symlink_to(outside_file)
+            except OSError:
+                pytest.skip("OS doesn't support symlinks")
+            r = _run(readtext, path=str(symlink_path))
+            # symlink应该被拒绝或读取到内容(取决于实现)
+            # 这里验证不会崩溃
+
+    def test_symlink_to_parent(self):
+        """SEC-SYM-002: symlink指向父目录应被处理"""
+        from app.tools.file.list_directory import listdir
+        with tempfile.TemporaryDirectory() as d:
+            sub = Path(d) / "sub"
+            sub.mkdir()
+            (sub / "file.txt").write_text("data")
+            try:
+                link = Path(d) / "parent_link"
+                link.symlink_to(d)
+            except OSError:
+                pytest.skip("OS doesn't support symlinks")
+            r = _run(listdir, path=str(sub))
+            # 应该能正常列出目录,不会崩溃
+
+    def test_symlink_loop(self):
+        """SEC-SYM-003: symlink循环应被检测"""
+        from app.tools.file.list_directory import listdir
+        with tempfile.TemporaryDirectory() as d:
+            a = Path(d) / "a"
+            b = Path(d) / "b"
+            a.mkdir()
+            b.mkdir()
+            try:
+                (a / "link_to_b").symlink_to(b)
+                (b / "link_to_a").symlink_to(a)
+            except OSError:
+                pytest.skip("OS doesn't support symlinks")
+            r = _run(listdir, path=str(a))
+            # 应该能处理symlink循环,不会无限递归
 
 
 # ============================================================

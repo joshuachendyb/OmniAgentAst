@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_download_deep.py
+# 归档原因: 包含 Windows 平台限制类 skip case(readonly),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台恢复运行。
+# ================================================================
 """
 download工具深度测试 — 挖掘bug
 
@@ -152,6 +159,24 @@ class TestDownloadFileHandling:
         assert is_success(result) or is_error(result)
         if is_success(result):
             assert dest.exists()
+    
+    def test_download_to_readonly_directory(self, tmp_path):
+        """Bug9: 下载到只读目录应该报错"""
+        if os.name == 'nt':
+            pytest.skip("Windows readonly test skipped")
+        
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir()
+        os.chmod(str(readonly_dir), 0o444)
+        
+        try:
+            url = "https://httpbin.org/robots.txt"
+            dest = readonly_dir / "test.txt"
+            
+            result = asyncio.run(download(url=url, dest=str(dest), timeout=10))
+            assert is_success(result) or is_error(result)
+        finally:
+            os.chmod(str(readonly_dir), 0o755)
     
     def test_download_overwrite_existing(self, tmp_path):
         """测试覆盖已存在文件"""

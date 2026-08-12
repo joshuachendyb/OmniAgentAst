@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_fundamental.py
+# 归档原因: 包含 GUI 环境依赖类 skip case(TestSendNotification 类),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于在具备 GUI 环境时恢复运行。
+# ================================================================
 """
 fundamental工具参数组合测试 - 小健 2026-06-24
 
@@ -267,6 +274,46 @@ class TestGetSystemInfo:
         from app.tools.fundamental.get_system_info import sysinfo
         
         result = sysinfo(info_type="network")
+        assert is_success(result)
+
+
+@pytest.mark.skip(reason="send_notification需要GUI环境,win10toast在无GUI环境报DISPLAY错误")
+class TestSendNotification:
+    """send_notification参数组合测试"""
+    
+    def test_title_message_only(self, temp_output_dir):
+        """仅必填参数"""
+        from app.tools.fundamental.send_notification import notify
+        
+        result = notify(title="测试通知", message="这是测试内容")
+        assert is_success(result)
+    
+    def test_with_duration(self, temp_output_dir):
+        """带duration参数"""
+        from app.tools.fundamental.send_notification import notify
+        
+        result = notify(title="任务完成", message="全部操作已完成", duration=5)
+        assert is_success(result)
+    
+    def test_special_chars(self, temp_output_dir):
+        """特殊字符"""
+        from app.tools.fundamental.send_notification import notify
+        
+        result = notify(
+            title="特殊字符测试",
+            message="包含特殊字符<>&\"'的通知",
+            duration=3
+        )
+        assert is_success(result)
+    
+    def test_long_text(self, temp_output_dir):
+        """长文本(超过100字符)"""
+        from app.tools.fundamental.send_notification import notify
+        
+        long_title = "这是一个较长的通知标题用于测试系统对长文本的处理能力认保不会出现截断"
+        long_message = "这是一条较长的通知内容,用于测试系统对长文本的处理能力,认保不会出现截断或显示异常.测试内容超过100字符,验证系统的稳定性." * 2
+        
+        result = notify(title=long_title, message=long_message, duration=8)
         assert is_success(result)
 
 

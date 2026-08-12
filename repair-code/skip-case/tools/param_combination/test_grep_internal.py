@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_grep_internal.py
+# 归档原因: 包含 Windows 权限模型差异类 skip case(chmod 0o000 不阻止管理员),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于在非 Windows 平台恢复运行。
+# ================================================================
 """
 grep工具内部功能深度测试 — 挖掘内部逻辑bug
 
@@ -199,3 +206,21 @@ class TestGrepPerformanceHandling:
         assert result["llm_data"]["status"]["exec_code"] == "success"
         assert result["data"]["total_matches"] >= 1
         assert any("test content" in m.get("content", "") for m in result["data"].get("matches", []))
+    
+    def test_permission_denied_handling(self, tmp_path):
+        """Bug12: 权限拒绝处理"""
+        # Windows权限模型差异: os.chmod(0o000)不阻止管理员访问, 本机无法真实复现拒绝
+        # 可配置: 设 OMNI_RUN_PERMISSION_TESTS=1 在类Unix环境强制运行
+        if os.name == 'nt' and not os.environ.get("OMNI_RUN_PERMISSION_TESTS"):
+            pytest.skip("跳过:Windows权限模型差异(os.chmod 0o000不阻止管理员);设 OMNI_RUN_PERMISSION_TESTS=1 强制")
+        
+        no_perm_dir = tmp_path / "noperm"
+        no_perm_dir.mkdir()
+        (no_perm_dir / "file.txt").write_text("secret")
+        os.chmod(str(no_perm_dir), 0o000)
+        
+        try:
+            result = asyncio.run(grep(pattern="secret", path=str(tmp_path)))
+            assert is_success(result) or is_error(result)
+        finally:
+            os.chmod(str(no_perm_dir), 0o755)

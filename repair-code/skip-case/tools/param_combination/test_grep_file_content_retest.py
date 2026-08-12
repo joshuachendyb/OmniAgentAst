@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+# ================================================================
+# 【skip case 归档副本】 - 小欧 2026-08-12 10:43:59
+# 原路径: backend/tests/tools/param_combination/test_grep_file_content_retest.py
+# 归档原因: 包含 Windows 平台限制类 skip case(symlink),
+#           已从 backend/tests 原文件删除对应 skip case, 此处保留完整代码,
+#           便于未来在其他平台(如 Linux)恢复运行。
+# ================================================================
 """
 # grep_file_content 复测 -- 13维度 x 115+ 测试用例
 # 编写人: 小欧 2026-06-27
@@ -236,6 +243,22 @@ class TestD3PathSecurity:
             assert is_success(r), "点号表示当前目录"
         finally:
             os.chdir(saved)
+
+    def test_d3_29_symlink_directory(self, tmp_path):
+        """符号链接目录"""
+        real = _mkdir(tmp_path, "real")
+        _write(str(real / "a.txt"), "hello")
+        link = tmp_path / "link"
+        try:
+            os.symlink(str(real), str(link), target_is_directory=True)
+        except (OSError, NotImplementedError):
+            # 本机无创建符号链接权限(Windows WinError 1314 SeCreateSymbolicLinkPrivilege)
+            # 可配置: 设 OMNI_RUN_SYMLINK_TESTS=1 在支持符号链接的环境强制运行
+            if not os.environ.get("OMNI_RUN_SYMLINK_TESTS"):
+                pytest.skip("跳过:本机无符号链接创建权限(WinError 1314);设 OMNI_RUN_SYMLINK_TESTS=1 强制")
+            raise
+        r = _run(grep("hello", str(link)))
+        assert is_success(r), "符号链接目录应可遍历"
 
     def test_d3_30_very_deep_nesting(self, tmp_path):
         """深层嵌套目录 20层 (Windows MAX_PATH限制)"""
@@ -1018,6 +1041,23 @@ class TestD13BugVerification:
         _write(str(tmp_path / "outside.txt"), "public")
         r = _run(grep("public", str(tmp_path)))
         assert is_success(r), "不可访问目录不应阻塞整个搜索"
+
+    def test_bug_g13_symlink_loop_crashes(self, tmp_path):
+        """Bug: 符号链接环导致os.walk无限递类"""
+        a = _mkdir(tmp_path, "a")
+        b = _mkdir(tmp_path, "b")
+        try:
+            os.symlink(str(b), str(a / "link_to_b"), target_is_directory=True)
+            os.symlink(str(a), str(b / "link_to_a"), target_is_directory=True)
+        except (OSError, NotImplementedError):
+            # 本机无创建符号链接权限(Windows WinError 1314 SeCreateSymbolicLinkPrivilege)
+            # 可配置: 设 OMNI_RUN_SYMLINK_TESTS=1 在支持符号链接的环境强制运行
+            if not os.environ.get("OMNI_RUN_SYMLINK_TESTS"):
+                pytest.skip("跳过:本机无符号链接创建权限(WinError 1314);设 OMNI_RUN_SYMLINK_TESTS=1 强制")
+            raise
+        _write(str(tmp_path / "fix.txt"), "tgt")
+        r = _run(grep("tgt", str(tmp_path)))
+        assert is_success(r), "符号链接环不应崩溃"
 
     def test_bug_g14_case_sensitivity_non_ascii(self, tmp_path):
         """Bug: 非ASCII大小写匹配"""
