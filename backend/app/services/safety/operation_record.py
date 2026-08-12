@@ -14,6 +14,8 @@
 #   (历史事故WinError206超长→部分备份→仍删除, 已由长路径支持+copy防自嵌套从源头缓解)
 # 2026-08-11 - 小欧 - 三堂会审: 长路径触发条件修复。source_path.exists()/backup_path.exists()对超长路径(>260)返回False,
 #   →超长源路径删除时备份被静默跳过(连warning都不触发, 复现"无备份删除"历史事故); 改os.path.exists(to_win_long_path(...))
+# 2026-08-12 - 小欧 - A2-内部环(方案4.2.3步骤1): FileSafetyConfig 整体复制迁至 models.py(逻辑一字不改),
+#   backup_to_recycle_bin 导入上移顶部; 本文件只保留记录职责(record/collect/update/execute_with_safety)
 """
 operation_record — 操作记录和DB状态管理
 
@@ -26,7 +28,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
 
-from app.config import get_config
 from app.db import db
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
@@ -34,22 +35,7 @@ from app.utils.id_utils import generate_operation_id
 from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp, to_local_iso  # 小欧 2026-08-08 全程统一本地时区
 from app.services.safety.hash_helper import compute_file_hash
-
-
-class FileSafetyConfig:
-    """文件安全操作配置 — 小欧 2026-07-10 从 config.py 合并至此 C-10"""
-    RECYCLE_BIN_PATH: Path = Path.home() / ".omniagent" / "recycle_bin"
-    BACKUP_RETENTION_DAYS: int = 5
-    RECYCLE_BIN_MAX_SIZE_GB: int = 10
-    PROJECT_ROOT: Path = Path(get_config().get_project_root())
-    REPORT_PATH: Path = PROJECT_ROOT / "reports"
-
-    @classmethod
-    def ensure_directories(cls):
-        cls.RECYCLE_BIN_PATH.mkdir(parents=True, exist_ok=True)
-        cls.REPORT_PATH.mkdir(parents=True, exist_ok=True)
-
-
+from app.services.safety.models import FileSafetyConfig  # 小欧 2026-08-12 A2-内部环: 配置数据类独立
 from app.services.safety.operation_backup import backup_to_recycle_bin
 
 
