@@ -23,6 +23,8 @@
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
+# 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
+#   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 """
 F8: compress_files — 压缩文件
 
@@ -48,12 +50,11 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INVALID
-from app.tools.context import _current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
+from app.tools.context import _current_task_id, get_current_hooks  # A1: ContextVar hooks — 小欧 2026-08-12
 from app.utils.json_utils import coerce_json
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.validate.timeout_validator import validate_timeout  # 小欧 2026-07-29
 from app.logger import logger
-from app.safety import record_operation, execute_with_safety
 from app.db.models.operation_models import OperationType
 
 
@@ -307,7 +308,8 @@ async def compress(
 
         dst.parent.mkdir(parents=True, exist_ok=True)
 
-        operation_id = record_operation(
+        _hooks = get_current_hooks()  # A1: ContextVar 取安全 hooks — 小欧 2026-08-12
+        operation_id = _hooks.record_operation(
             task_id=task_id, operation_type=OperationType.COMPRESS,
             source_path=src, destination_path=dst,
             sequence_number=0,
@@ -356,7 +358,7 @@ async def compress(
         result = await asyncio.to_thread(_compress_sync)
         if operation_id:
             op_ok = bool(result) and not result.get("timed_out")
-            await asyncio.to_thread(execute_with_safety, operation_id=operation_id, operation_func=lambda _ok=op_ok: _ok)
+            await asyncio.to_thread(_hooks.execute_with_safety, operation_id=operation_id, operation_func=lambda _ok=op_ok: _ok)
 
         duration_ms = int((time.perf_counter() - t0) * 1000)
         if result:

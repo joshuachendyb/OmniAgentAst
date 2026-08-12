@@ -27,6 +27,8 @@
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
+# 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
+#   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 """
 F4: edittext — 编辑文本文件
 
@@ -48,9 +50,8 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import EDITTEXT_INPUT_MAX_BYTES
 from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
 from app.tools.tool_constants import EDITTEXT_OUTPARM_LIMIT_OLD, EDITTEXT_OUTPARM_LIMIT_NEW, EDITTEXT_OUTPARM_LIMIT_SAFETY
-from app.tools.context import _current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
+from app.tools.context import _current_task_id, get_current_hooks  # A1: ContextVar hooks — 小欧 2026-08-12
 from app.db.models.operation_models import OperationType
-from app.safety import record_operation, execute_with_safety
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
@@ -399,7 +400,8 @@ async def _precise_replace_in_file(
             # 插入位置为签名行后/前而非常规方法体之后, 易错位. 引导使用完整方法体末行锚点 — 小欧 2026-08-08 (task002问题1)
             _anchor_hint = _anchor_signature_hint(old_string)
 
-        operation_id = record_operation(
+        _hooks = get_current_hooks()  # A1: ContextVar 取安全 hooks — 小欧 2026-08-12
+        operation_id = _hooks.record_operation(
             task_id=task_id, operation_type=OperationType.MODIFY,
             destination_path=path, sequence_number=0,
         )
@@ -478,7 +480,7 @@ async def _precise_replace_in_file(
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
         if operation_id:
-            raw = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_replace_sync)
+            raw = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_replace_sync)
             success, _ = raw if isinstance(raw, tuple) else (raw, "")
         else:
             logger.info("Database unavailable, executing edit operation without recording")

@@ -7,13 +7,14 @@
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
+# 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
+#   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 """
 F10: move_file — 移动文件
 
 从file_tools.py拆分而来 — 小欧 2026-06-22
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
-# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
@@ -26,10 +27,9 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_MOVE_FAILED
-from app.tools.context import _current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
+from app.tools.context import _current_task_id, get_current_hooks  # A1: ContextVar hooks — 小欧 2026-08-12
 from app.db.models.operation_models import OperationType
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
-from app.safety import record_operation, execute_with_safety
 from app.logger import logger
 
 
@@ -84,7 +84,8 @@ async def _move_file_impl(
         if not task_id:
             return {"success": False, "error_detail": "当前没有活跃任务ID", "params": {"source": source_path}}
 
-        operation_id = record_operation(
+        _hooks = get_current_hooks()  # A1: ContextVar 取安全 hooks — 小欧 2026-08-12
+        operation_id = _hooks.record_operation(
             task_id=task_id, operation_type=OperationType.MOVE,
             source_path=src, destination_path=dst, sequence_number=0,
         )
@@ -112,7 +113,7 @@ async def _move_file_impl(
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24 — 小沈 2026-07-26 else分支解包tuple对齐executor
         if operation_id:
-            success, detail = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_move_sync)
+            success, detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_move_sync)
         else:
             logger.info("Database unavailable, executing move operation without recording")
             raw = await asyncio.to_thread(_move_sync)

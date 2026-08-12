@@ -3,8 +3,8 @@
 # 编辑历史:
 # 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"复制失败"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
 # 2026-07-20 - 小欧 - 去噪去重 refactor:
-#   移除 source_size/mtime 噪声(data空)
-#   data 改为空字典 {}，信息全由 llm_data
+#   移除 source_size/mtime 噪声(data={}
+#   data 改为空字典 {}，信息全部由 llm_data
 #   承载，formatter 路由改走 #0 空data分支
 # 2026-07-26 - 小欧 - recursive模式删除已存在目标目录时,shutil.rmtree缺onerror,子目录中只读文件导致WinError 5拒绝访问崩溃。
 #   增_remove_readonly闭包函数+onerror参数,与delete_file.py/operation_cleanup.py保持一致。
@@ -13,6 +13,8 @@
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
+# 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
+#   改为 get_current_hooks() 取安全 hooks(record_operation/execute_with_safety 两方法签名与 operation_record 一致), 消除 tools→safety 越层
 """
 F7: copy_file — 复制文件
 
@@ -33,11 +35,10 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
-from app.tools.context import _current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
+from app.tools.context import _current_task_id, get_current_hooks  # A1: ContextVar hooks — 小欧 2026-08-12
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger
-from app.safety import record_operation, execute_with_safety
 from app.db.models.operation_models import OperationType
 
 
@@ -144,7 +145,8 @@ async def copy(
         return build_error(data={}, llm_data=llm_data)
 
     try:
-        operation_id = record_operation(
+        _hooks = get_current_hooks()  # A1: ContextVar 取安全 hooks — 小欧 2026-08-12
+        operation_id = _hooks.record_operation(
             task_id=task_id,
             operation_type=OperationType.COPY,
             source_path=src,
@@ -179,7 +181,7 @@ async def copy(
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
         if operation_id:
-            success, detail = await asyncio.to_thread(execute_with_safety, operation_id=operation_id, operation_func=_copy_sync)
+            success, detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id=operation_id, operation_func=_copy_sync)
         else:
             logger.info("Database unavailable, executing copy operation without recording")
             success = await asyncio.to_thread(_copy_sync)

@@ -14,6 +14,8 @@
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
+# 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
+#   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 """
 F2: writetext — 写文本文件
 
@@ -42,11 +44,10 @@ def _build_content_preview(content: str) -> str:
         return content
     return f"文首({_pc}字符):{content[:_pc]}\n...(中间省略)...\n文末({_pc}字符):{content[-_pc:]}"
 from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
-from app.tools.context import _current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
+from app.tools.context import _current_task_id, get_current_hooks  # A1: ContextVar hooks — 小欧 2026-08-12
 from app.db.models.operation_models import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
-from app.safety import record_operation, execute_with_safety
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_safety_checker import check_content_safety
 from app.logger import logger
@@ -314,7 +315,8 @@ async def writetext(
             encoding_warning = f"文件原始编码为'{original_encoding}',当前使用'{encoding}'写入,可能导致文件编码混乱"
 
     try:
-        operation_id = record_operation(
+        _hooks = get_current_hooks()  # A1: ContextVar 取安全 hooks — 小欧 2026-08-12
+        operation_id = _hooks.record_operation(
             task_id=task_id,
             operation_type=OperationType.CREATE,
             destination_path=path,
@@ -325,7 +327,7 @@ async def writetext(
         if operation_id:
             # 数据库可用，使用execute_with_safety
             def _do_write():
-                return execute_with_safety(operation_id, lambda: _write_file_atomic(checked_content, path, encoding, append, create_parents))
+                return _hooks.execute_with_safety(operation_id, lambda: _write_file_atomic(checked_content, path, encoding, append, create_parents))
             write_result = await asyncio.to_thread(_do_write)
         else:
             # 数据库不可用，直接执行文件操作
