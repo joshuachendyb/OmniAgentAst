@@ -650,6 +650,6 @@ async def run_react_cycle(
         # R1 (v1.43): task 级清零点 — clear_temp_auth 在 finally 收口, 使授权后所有提前 break/异常/循环自然退出
         #   均走 finally; 注意 max_steps<=0 提前 return 在 try 之前(Bug4修正: 该分支 I2 尚未运行,
         #   无任何授权产生, 故不经过 finally 也无泄漏; 注释已修正不再声称其走 finally)
-        from app.safety.temp_auth import clear_temp_auth
+        from app.tools.security.temp_auth import clear_temp_auth
         clear_temp_auth()
 

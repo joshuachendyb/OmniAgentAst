@@ -267,7 +267,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 # 用户已确认：恢复执行态继续工具执行（SUSPENDED→EXECUTING 合法）— 小欧 2026-07-12
                 # ⑮ 白名单外临时授权: 确认后授予本次操作权限(一次一申请, 支持递归, per-request) — 小欧 2026-08-10
                 if getattr(safety_result, "auth_path", None):
-                    from app.safety.temp_auth import grant_temp_auth
+                    from app.tools.security.temp_auth import grant_temp_auth
                     grant_temp_auth(safety_result.auth_path, recursive=True)
                     yield agent._step_emitter.emit(MetaStep(
                         step=step,

@@ -7,6 +7,8 @@ tool_executor — 工具执行逻辑
 
 # 编辑历史:
 # 2026-08-05 小欧 修复BUG1/2(三堂会审通过): auto_inject_from_search只对未加载分类调load_category并尊重返回值, 去掉对已加载分类的多余重复调用; 空实现分类不再被误标为已加载
+# 2026-08-12 小欧 A1后半面(4.1.7定案): execute_tool 入口注入安全 hooks(经 ContextVar, try/finally reset),
+#   并行/顺序两分支工具内 get_current_hooks() 读到注入值; getattr 通道支持子类自定义 hooks(OCP)
 import time
 from typing import Any, Callable, Dict, Optional, Set
 
@@ -14,6 +16,8 @@ from app.tools.tool_types import ToolCategory
 from app.tools.tool_response import is_success
 from app.logger import logger
 from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_search_desc
+from app.safety.default_hooks import DefaultToolSecurityHooks  # A1: 默认 hooks 转发壳 — 小欧 2026-08-12
+from app.tools.context import set_current_hooks, reset_current_hooks  # A1: ContextVar 注入 — 小欧 2026-08-12
 
 
 async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
@@ -44,14 +48,21 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
     """
     
     start = time.time()
-    if parallel:
-        # 并行分支：一次执行不重试，失败信息直接返回给LLM决策
-        result = await agent._retry_engine.try_once(tool_name, tool_params)
-    else:
-        # 单工具/顺序分支：带重试+回调通知
-        result = await agent._retry_engine.execute_tool_with_retry(
-            tool_name, tool_params, on_retry_started=on_retry_started,
-        )
+    # A1(4.1.7 定案): 注入安全 hooks 到 ContextVar — 并行/顺序两分支统一覆盖。
+    #   getattr 通道: 子类可在 agent 上挂 _security_hooks 自定义实现(OCP), 缺省用 DefaultToolSecurityHooks。
+    _hooks = getattr(agent, "_security_hooks", None) or DefaultToolSecurityHooks()
+    _hook_token = set_current_hooks(_hooks)
+    try:
+        if parallel:
+            # 并行分支：一次执行不重试，失败信息直接返回给LLM决策
+            result = await agent._retry_engine.try_once(tool_name, tool_params)
+        else:
+            # 单工具/顺序分支：带重试+回调通知
+            result = await agent._retry_engine.execute_tool_with_retry(
+                tool_name, tool_params, on_retry_started=on_retry_started,
+            )
+    finally:
+        reset_current_hooks(_hook_token)
     elapsed = time.time() - start
     
     # 小健 2026-06-26: 使用is_success函数判断状态，而非错误的result.get("code")
