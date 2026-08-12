@@ -50,7 +50,7 @@ from app.utils.json_utils import coerce_json
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.validate.timeout_validator import validate_timeout  # 小欧 2026-07-29
 from app.logger import logger
-from app.services.safety import record_operation, execute_with_safety
+from app.safety import record_operation, execute_with_safety
 from app.db.models.operation_models import OperationType
 
 

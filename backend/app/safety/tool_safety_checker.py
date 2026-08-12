@@ -63,7 +63,7 @@ from app.logger import logger, log_and_print
 from app.config import get_config
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.services.safety.path_safe_check import validate_tool_path as _validate_tool_path
+from app.safety.path_safe_check import validate_tool_path as _validate_tool_path
 
 _WRITE_RISK_TOOL = "writetext"
 
@@ -113,7 +113,7 @@ class ToolSafetyChecker:
         # ① delete 专属判定一次性计算, 供②③两处消费(DRY) — 小欧 2026-08-04
         delete_risk = None
         if tool_name == "delete":
-            from app.services.safety.delete_safety import check_delete_risk  # 惰性导入避免与delete_safety循环依赖 — 小欧 2026-08-04
+            from app.safety.delete_safety import check_delete_risk  # 惰性导入避免与delete_safety循环依赖 — 小欧 2026-08-04
             delete_risk = check_delete_risk(params or {})
 
         # ② 已知风险检测: 无条件防线(开关无关) — 路径越权(R1/R2)/delete R6/写入大小保护/代码注入即使开关false也拒绝 — 小欧 2026-08-04

@@ -22,7 +22,7 @@ MEDIUM: requires_confirmation=True, 需用户确认（action_handler.py:70处理
 import re
 from typing import Optional
 
-from app.services.safety.tool_safety_checker import SafetyResult
+from app.safety.tool_safety_checker import SafetyResult
 from app.logger import logger
 
 

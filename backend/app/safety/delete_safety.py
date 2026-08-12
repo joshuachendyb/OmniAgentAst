@@ -18,8 +18,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from app.services.safety.tool_safety_checker import SafetyResult
-from app.services.safety.path_safe_check import _get_project_root_safety
+from app.safety.tool_safety_checker import SafetyResult
+from app.safety.path_safe_check import _get_project_root_safety
 
 
 def _as_bool(v: Any) -> bool:

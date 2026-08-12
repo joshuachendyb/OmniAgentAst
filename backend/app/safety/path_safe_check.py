@@ -248,7 +248,7 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
             if mode == "delete":
                 return False, forbidden_msg, "non_system"
             # 非系统禁区写 → 查 is_temp_authorized(任务级授权)
-            from app.services.safety.temp_auth import is_temp_authorized
+            from app.safety.temp_auth import is_temp_authorized
             if is_temp_authorized(file_path):
                 return True, None, "non_system"
             return False, forbidden_msg, "non_system"
@@ -316,7 +316,7 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
         # P3: 白名单外判定 — temp_auth(3.2.12) 仅在非禁区生效(禁区已在_is_forbidden_path拦截)
         # P3: 读 — 白名单外非禁区/禁区全部放行(contentFilter 兜底); 所以这里不用判mode, 直接放行
         # P3: 写/删 — 白名单外(非禁区)走临时授权判定
-        from app.services.safety.temp_auth import is_temp_authorized
+        from app.safety.temp_auth import is_temp_authorized
         if mode == "read":
             # P3: 读放行 — 白名单外非禁区读✅直接放行(只读工具)
             # (P1/P2 已拦截系统/代码库禁区, 此处剩白名单外·非禁区)

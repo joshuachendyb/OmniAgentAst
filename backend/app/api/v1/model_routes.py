@@ -25,7 +25,7 @@ from app.api.v1.model_schemas import (
     SecurityConfig,
 )
 from app.config import _make_safe_loader, get_config as get_config_instance
-from app.services.safety.operation_backup import clear_backup_paths
+from app.safety.operation_backup import clear_backup_paths
 from app.services.model.resolver import get_ai_config_resolver
 from app.services.model.persistence import (
     FIELD_HANDLERS,

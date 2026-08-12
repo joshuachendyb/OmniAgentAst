@@ -47,7 +47,7 @@ from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAIL
 from app.tools.tool_constants import EDITTEXT_OUTPARM_LIMIT_OLD, EDITTEXT_OUTPARM_LIMIT_NEW, EDITTEXT_OUTPARM_LIMIT_SAFETY
 from app.services.task.task_context import _current_task_id
 from app.db.models.operation_models import OperationType
-from app.services.safety import record_operation, execute_with_safety
+from app.safety import record_operation, execute_with_safety
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
 from app.logger import logger

@@ -12,7 +12,7 @@ task_rollback_service — 任务回滚编排服务(task 域)
 from typing import Dict, Any
 
 from app.logger import logger
-from app.services.safety.operation_rollback import rollback_session
+from app.safety.operation_rollback import rollback_session
 from app.services.task.task_db import get_tracker
 
 

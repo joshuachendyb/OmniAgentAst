@@ -43,7 +43,7 @@ from app.services.task.task_context import _current_task_id
 from app.db.models.operation_models import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
-from app.services.safety import record_operation, execute_with_safety
+from app.safety import record_operation, execute_with_safety
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_safety_checker import check_content_safety
 from app.logger import logger

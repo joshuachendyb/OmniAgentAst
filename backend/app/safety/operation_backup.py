@@ -24,8 +24,8 @@ from uuid import uuid4
 from app.logger import logger
 from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import timestamp_for_filename
-from app.services.safety.models import FileSafetyConfig
-from app.services.safety.operation_maintenance import cleanup_expired_backups
+from app.safety.models import FileSafetyConfig
+from app.safety.operation_maintenance import cleanup_expired_backups
 
 
 _backup_path = None
