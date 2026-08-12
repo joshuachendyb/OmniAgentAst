@@ -16,6 +16,10 @@
 # 编辑历史:
 # 2026-07-28 - 小欧 - BUG#8: KeyError/AttributeError不应归为TOOL_NOT_FOUND(非工具未找到, 是代码内部错误), 删该映射后fallback到UNKNOWN。
 #   BUG#9: "not found"关键词应从FILE_NOT_FOUND改为TOOL_NOT_FOUND: "command not found"/"module not found"等非文件场景更匹配TOOL_NOT_FOUND; "no such file"/"file not found"已在上方先行匹配FILE_NOT_FOUND, 互不影响。
+# 2026-08-12 - 小欧 - BUG#10: 补 "RemoteProtocolError"→PROTOCOL 映射(首版即遗留的漏判, 非退化): httpx/httpcore 服务器端断连异常类型名均为
+#   RemoteProtocolError(继承ProtocolError但分类器按 type().__name__ 字符串精确匹配), 原仅映射基类 "ProtocolError" 导致被归为UNKNOWN,
+#   UNKNOWN不在httpget/download/fetchpage的retryable列表 → "Server disconnected without sending a response."等瞬态断连不重试、报错误导LLM。
+#   实证: 修复前分类=UNKNOWN/httpget不重试; 修复后=PROTOCOL/重试=True。
 
 import re
 from enum import Enum
@@ -93,6 +97,7 @@ EXCEPTION_TO_TOOL_ERROR: Dict[str, ToolErrorCategory] = {
     "PoolTimeout": ToolErrorCategory.TIMEOUT,
     "NetworkError": ToolErrorCategory.NETWORK,
     "ProtocolError": ToolErrorCategory.PROTOCOL,
+    "RemoteProtocolError": ToolErrorCategory.PROTOCOL,  # httpx/httpcore 服务器端断连(继承ProtocolError,类型名不同需单列) - 小欧 2026-08-12
     "ProxyError": ToolErrorCategory.NETWORK,
     "SSLError": ToolErrorCategory.NETWORK,
     "InvalidURL": ToolErrorCategory.INVALID_PARAMS,
