@@ -4,6 +4,9 @@
 # 2026-07-15 - 小欧 -  修正<铁律-任务复核>①为结论优先(去"必包分步计划",阻断超长final/退化final根因); 新增①D大内容写文件指引; 增强④明示工具失败/异常须含于最终答复文本(吸收原E意图,避DRY重复)
 # 2026-07-28 - 小欧 -  压缩系统Prompt文字(~1898→~1300),去冗余修饰/合并重复语义,不改功能
 # 2026-07-28 - 小欧 -  TOOL_CALL_RULES: 替换单行【Shell】为 render_shell_section() 多行指引(按 shell_type 动态切换)
+# 2026-08-05 - 小欧 - <searchtool-搜备用工具>: 逐类示例改为精简"备用工具类型"一行枚举(文档\数据分析\数据库\网络\系统\进程\注册表\桌面\时间定时), 与tool_retry_engine备用工具命名/register描述对齐
+# 2026-08-07 - 小欧 - <searchtool-搜备用工具>: 强化"一次搜多类型"引导,禁止分多次调用searchtool搜不同类型(实测LLM发7个并行searchtool,应合并为1个)
+# 2026-08-10 - 小欧 - _get_project_root_info() 扩展: 项目根之外一并注入授权目录(allowed_dirs), 让LLM知晓可合法操作目录(与Safety白名单一致); 未配置allowed_dirs时保持原样只给项目根, 功能零退化 — 北京老陈驱动
 """
 PromptBuilder — 唯一的 Prompt 构建类
 
@@ -67,12 +70,9 @@ class PromptBuilder:
 
 
 <searchtool-搜备用工具>
-- 文档→搜"文档 读写"
-- 数据分析→搜"数据分析 图表"
-- 数据库→搜"数据库 SQL"
-- 网络→搜"网络 搜索 http"
-- 系统→搜"系统信息 进程 注册表 任务"
-- 桌面→搜"桌面 窗口"
+支持单类型和多类型备用工具搜索注入,可传入多类型关键词(如"文档 数据分析 网络")
+备用工具类型: 文档\数据分析\数据库\网络\系统\进程\注册表\桌面\时间定时
+
 
 """
 
@@ -99,10 +99,21 @@ class PromptBuilder:
         return system_info
 
     def _get_project_root_info(self) -> str:
-        """获取项目根目录信息 — 注入到系统Prompt"""
+        """获取项目根目录+授权目录信息 — 注入到系统Prompt — 小欧 2026-08-10
+        授权目录(app.allowed_dirs): tool在项目根外额外授权访问的工作目录,
+        LLM可据此在合法路径内选择操作对象, 避免误触未授权路径被Safety拦截。
+        """
         config = get_config_instance()
         root = config.get_project_root()
-        return f"【项目根目录】{root}"
+        allowed = config.get_allowed_dirs()
+        text = f"【项目根目录】{root}"
+        if allowed:
+            dirs = "\n".join(f"  - {d}" for d in allowed)
+            text += (
+                f"\n【授权目录】除项目根外, 以下目录同样授权 tool 读写删(受Safety边界约束):\n"
+                f"{dirs}"
+            )
+        return text
 
     def _get_project_context(self) -> str:
         """加载项目上下文"""
@@ -118,7 +129,7 @@ class PromptBuilder:
         ① get_core_system_prompt()  — 角色+业务规则
         ② _get_project_context()    — 项目规则文件(OmniAgent.md)
         ③ _get_system_info()        — 系统信息(OS/路径规则)
-        ④ _get_project_root_info()  — 项目根目录
+        ④ _get_project_root_info()  — 项目根目录+授权目录
         ⑤ TOOL_CALL_RULES           — 文件类型→工具映射
         """
         parts = [self.get_core_system_prompt()]

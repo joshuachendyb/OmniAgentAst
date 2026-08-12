@@ -8,6 +8,7 @@ mouse_scroll — 鼠标滚轮滚动
 # 2026-07-31 - 小欧 - 三堂会审修复B25:amount<=0静默无操作,改返回错误提示amount必须为正整数
 # 2026-07-31 - 小欧 - 三堂会审增强:schema层MouseScrollInput.amount加ge=1约束(由desktop_schema.py补),运行时guard与schema双重防御
 # 2026-07-31 - 小欧 - 三堂会审修复:amount非int(如"ten")时原 amount<=0 抛TypeError崩溃,加类型守卫返回错误提示(与schema ge=1双重防御,LLM直接调函数路径不受Pydantic保护)
+# 2026-08-05 - 小欧 - 三堂会审修复#4: direction 无运行时校验(非down值被静默当"上"), 加 up/down 校验与 schema Literal 双重防御
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -44,6 +45,11 @@ def _build_mouse_scroll_llm_data(exec_code: str, duration_ms: int, direction: st
 def mouse_scroll(direction: str = "down", amount: int = 3) -> Dict[str, Any]:
     """鼠标滚轮滚动 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-22 修复计时铁规"""
     t0 = _time_mod.perf_counter()
+    # 2026-08-05 小欧 #4: direction 运行时校验(防 LLM 传大写/非法方向被静默当"上")
+    if direction not in ("up", "down"):
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_mouse_scroll_llm_data("error", duration_ms, direction, amount, err_code=ERR_DESKTOP_MOUSE_SCROLL, detail="direction必须为up或down", hint="请提供有效的滚动方向:up(向上)或down(向下)")
+        return build_error(data={}, llm_data=llm_data)
     if not isinstance(amount, int) or isinstance(amount, bool):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_mouse_scroll_llm_data("error", duration_ms, direction, amount, err_code=ERR_DESKTOP_MOUSE_SCROLL, detail="amount必须为正整数", hint="请提供大于0的整数滚动次数,amount必须为正整数")

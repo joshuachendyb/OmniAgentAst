@@ -15,6 +15,11 @@
 #                    简化_compress_sync中冗余的isinstance分支,两个raise合并为一个
 # 2026-07-29 - 小欧 - 超时反馈增强:删前从result抢救已压缩文件数/大小,计算进度%,
 #                     hint给出3条降级建议(增大timeout/排除大文件/分批压缩),metrics带进度数据
+# 2026-08-05 - 小欧 - BUG-1修复: observation_formatter #18 触发字段由"compression_ratio"改为"compression_level"
+#    【病根】safe_data 去噪剥掉 compression_ratio(与llm_data ratio重复), 致 #18 分支永不触发, 压缩观测格式化成死代码
+#    【解决】仅改触发字段为 data 恒在且 compress 独有的 compression_level, 保持去噪不复原大文件列表/ratio, 分支恢复工作
+# 2026-08-06 10:05:21 - 小欧 - 更正"min(timeout+30,630)"旧公式表述(已过时): BUG-2 后现行保险丝为 max(inner, CEILING=600)+BUFFER=30,
+#    compress 保险丝恒=630 或 max(LLM值,600)+30, 恒晚于内部 _cf_deadline; 旧行按规范保留为历史记录
 """
 F8: compress_files — 压缩文件
 
@@ -392,7 +397,8 @@ async def compress(
             safe_data = {k: v for k, v in result.items() if k not in ("source_path", "destination_path", "format", "file_count", "compressed_files", "compression_ratio")}
             # ---- observation_formatter route -------------------------------------------
             # branch: #18 compress
-            # trigger: "compression_ratio" in data
+            # trigger: "compression_level" in data — 小欧 2026-08-05 21:13
+            #   (原 "compression_ratio" 被 safe_data 去噪剥掉永不成立, 改 data 恒在的 compression_level)
             # handler: _format_compress_result(data) — ratio/compression_level/encrypted/files
             # file:    observation_formatter.py:193-194
             # ------------------------------------------------------------------------------

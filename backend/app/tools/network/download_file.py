@@ -4,6 +4,8 @@
 # 2026-07-17 - 小欧 - HTTPStatusError hint 按状态码精化(4xx/5xx/429)
 # 2026-07-20 - 小欧 - 常量依3.5改名: DOWNLOAD_MAX_BYTES→DOWNLOAD_INPUT_MAX_BYTES(私有内部常量前缀); 值依 v3.26 老陈定由100MB提升至1GB; 功能零退化
 # 2026-07-25 - 小欧 - 新增非ASCII URL转码: download 支持中文域名/路径, 转码后走validate_url做DNS/SSRF检查
+# 2026-08-06 - 小欧 - 核查8-05/8-06日志: url=None 在非ASCII转码块 url.encode 抛AttributeError落入catch-all记"意外错误"; 入口加url=None显式拦截(fetch_webpage/httpget同模式, 三网络工具统一), 返回ERR_INVALID_URL结构化错误, 不再落入catch-all
+# 2026-08-10 - 小欧 - ⑭注释更正: 下载目录未配置project_root时=用户主目录(不再是代码位置), 子目录download — 步骤1实施(北京老陈驱动「项目根目录定义混乱修复」)
 """
 N2: download — 下载文件到本地
 
@@ -31,7 +33,7 @@ from app.tools.validate.file_path_checker import validate_path, OpCategory, hint
 from app.logger import logger
 
 def _get_download_dir() -> str:
-    """获取下载目录 — 优先从配置读取project_root，未配则fallback到代码位置 — 小欧 2026-07-09"""
+    """获取下载目录 — 优先从配置读取project_root(未配→用户主目录)，子目录download — 小欧 2026-07-09, 2026-08-10 ⑭注释更正"""
     from app.config import get_config
     return os.path.join(get_config().get_project_root(), "download")
 
@@ -139,6 +141,9 @@ async def download(
     proxy: Optional[str] = None,
 ) -> Dict[str, Any]:
     """从URL下载文件 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
+    if url is None:
+        llm_data = _build_download_file_llm_data("error", 0, "", dest_path=dest or "", err_code=ERR_INVALID_URL, detail="URL不能为空", hint="请提供要下载的URL", timeout=timeout, proxy=proxy, headers=headers)
+        return build_error(data={}, llm_data=llm_data)
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "download")
     if not timeout_valid:
         llm_data = _build_download_file_llm_data("error", 0, url, dest_path=dest or "", err_code=ERR_INVALID_URL, detail=timeout_err, hint="请检查超时设置", timeout=timeout, proxy=proxy, headers=headers)

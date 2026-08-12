@@ -49,7 +49,10 @@ from datetime import timedelta
 # 2. 重试与限流
 # ============================================================
 
-DEFAULT_MAX_STEPS = 100  # 【系统级】使用对象: universal_agent Agent 循环最大步数
+# DEFAULT_MAX_STEPS = 100 仅作 model_schemas.py 请求体默认值(API schema 层), 不参与 Agent 运行循环
+# 2026-08-05 小欧 核对说明(北京老陈 2026-08-05 裁定: max_steps 现为调试需要, 不改代码): 运行时 max_steps 由 config.yaml 的 app.max_steps 控制(当前=10000),
+# 创建 Agent 链路(openai.py:256 UniversalAgent 不传 max_steps)经 base_agent.py get_max_steps() 取配置; 本常量 100 与配置 10000 不一致系历史遗留, 禁止据其推断循环步数上限
+DEFAULT_MAX_STEPS = 100  # 【系统级】使用对象: 仅 model_schemas.py API 请求体默认值
 MAX_CONSECUTIVE_CHUNKS = 5  # 【系统级】使用对象: Agent 循环连续 chunk 上限
 MAX_CHUNKS_WITHOUT_PROMOTE = 50  # 【系统级】使用对象: Agent 循环无 promote 的 chunk 上限
 

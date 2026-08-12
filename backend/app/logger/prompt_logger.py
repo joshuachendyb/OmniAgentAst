@@ -7,6 +7,8 @@
 # 2026-07-26 - 小欧 - 三堂会审欧阳task007报告: (1)去掉if extra_info守卫,改为extra_info or {},确保answer/error类型恒写token信息字段;
 #   (2) save()的"no_id"字面量fallback改为uuid4().hex[:8],并提import uuid到文件顶。
 # 2026-07-28 - 小欧 - 欧阳BUG-11修复: _user_id_from_db裸except Exception改except Exception as e + logger.debug, 避免错误静默丢失
+# 2026-08-09 - 小欧 - task004深度分析报告核查修复A1/A2/A4(三堂会审通过): (1)观察结果字段"格式化内容:"/"原始的内容:"去冒号改"格式化内容"/"原始内容", 历史日志不动仅新日志生效; (2)log_llm_response冗余赋值修复, entry构造移入else分支, 仅追加路径构造消除更新路径整包丢弃; (3)删除死代码log_tool_prompt(全库0调用, 与2026-07-18删mark_completed/mark_error先例一致)
+# 2026-08-12 - 小欧 - task004报告缺陷1核查修复(A1补全): log_observation补"内容"字段(与log_system_prompt/log_task_prompt结构对齐), 此前仅存"格式化内容"/"原始内容"致"内容"字段100%为空, 实测29文件窗口972/972观察步骤缺失, 历史日志不动仅新日志生效, 保留"格式化内容"兼容已有分析脚本
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
@@ -328,19 +330,9 @@ class PromptLogger:
             raw_response = str(raw_response) if raw_response is not None else ""
 
         timestamp = now_str()
-        entry = {
-            "轮次": round_number,
-            "返回类型": response_type,
-            "原始响应时间": timestamp,
-            "解析结果": response_content,
-            "原始响应": raw_response,
-            "结束原因": finish_reason,
-        }
-
-        entry["token信息"] = extra_info or {}
-
         # 查找已有条目更新（不重复追加）— 北京老陈 2026-06-14 — 小欧 2026-07-10 C-08 修复
         # 2026-07-26 小欧 修复更新路径漏写token信息bug，改字段名"额外信息"→"token信息"
+        # 2026-08-09 小欧 task004-A2修复: entry构造移入else分支, 消除更新路径整包丢弃的冗余赋值(三堂会审通过)
         for call_entry in reversed(current_log.get("LLM调用记录", [])):
             if call_entry.get("轮次") == round_number:
                 call_entry["解析结果"] = response_content
@@ -351,7 +343,15 @@ class PromptLogger:
                 call_entry["token信息"] = extra_info or {}
                 break
         else:
-            current_log["LLM调用记录"].append(entry)
+            current_log["LLM调用记录"].append({
+                "轮次": round_number,
+                "返回类型": response_type,
+                "原始响应时间": timestamp,
+                "解析结果": response_content,
+                "原始响应": raw_response,
+                "结束原因": finish_reason,
+                "token信息": extra_info or {},
+            })
 
     def log_step_yield(self, step_dict: dict, round_number: int = 0):
         """记录每一步 yield 给前端的 JSON 数据 — 北京老陈 2026-06-14 — 小欧 2026-06-24 删除chunk跳过，所有step类型都记录"""
@@ -396,6 +396,7 @@ class PromptLogger:
             "步骤": step_name,
             "类型": "观察结果Prompt",
             "来源": f"工具执行结果: {tool_name}" if tool_name else "工具执行结果",
+            "内容": observation_content,  # 2026-08-12 小欧 补全: 与log_system_prompt/log_task_prompt结构对齐, 修复"内容"恒空
             "内容长度": len(observation_content),
             "时间戳": now_str(),
         }
@@ -405,45 +406,12 @@ class PromptLogger:
         if tool_params:
             entry["工具参数"] = tool_params
         
-        entry["格式化内容:"] = observation_content
+        entry["格式化内容"] = observation_content
         if raw_data is not None:
-            entry["原始的内容:"] = raw_data
+            entry["原始内容"] = raw_data
         
         current_log["Prompt组装过程"].append(entry)
-    
-    def log_tool_prompt(
-        self,
-        tool_name: str,
-        prompt_content: str,
-        source: str = "",
-        round_number: int = 0
-    ):
-        """
-        记录工具相关的 Prompt
-        
-        Args:
-            tool_name: 工具名称
-            prompt_content: Prompt 内容
-            source: 来源说明
-            round_number: LLM调用轮次 【2026-05-15 小健】
-        """
-        current_log = self._get_current_log()
-        if not current_log:
-            return
-        
-        entry = {
-            "步骤": f"工具Prompt: {tool_name}",
-            "类型": "工具Prompt",
-            "来源": source or f"工具: {tool_name}",
-            "内容": prompt_content,
-            "内容长度": len(prompt_content),
-            "时间戳": now_str()
-        }
-        if round_number > 0:
-            entry["轮次"] = round_number
-        
-        current_log["Prompt组装过程"].append(entry)
-    
+
     def log_status(self, old_status: str, new_status: str, reason: str = ""):
         """记录Agent状态变化到prompt log — 小欧 2026-07-01"""
         current_log = self._get_current_log()

@@ -3,6 +3,7 @@
 # 编辑历史:
 # 2026-07-25 - 小欧 - ensure_tools_registered加即时重试(3次,500ms间隔),应对并发写导致的瞬态文件损坏
 # 2026-07-25 - 小欧 - 错误日志加filename:lineno上下文(欧阳建议)
+# 2026-08-07 - 小欧 - get_tool工具名别名归一化: LLM常生成变体名(write_text等), 经tools_alias_mapper.normalize_tool_name映射到注册名(writetext), 防"工具未注册"误拦截(com-test 03暴露)
 """
 工具注册表模块 - 统一入口
 
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 from app.tools.tool_types import ToolCategory, ToolMetadata
 from app.tools.schema_utils import _generate_input_schema
 from app.tools.tool_description import to_openai_tools, generate_param_reminder
+from app.tools.tools_alias_mapper import normalize_tool_name
 from app.logger import setup_logger
 from app.utils.dependency import ensure_dependency
 from app.tools.tool_constants import CATEGORY_MODULES
@@ -245,8 +247,17 @@ class ToolRegistry:
     
 
     def get_tool(self, name: str) -> Optional[ToolMetadata]:
-        """获取工具元数据(返回dataclass)"""
-        return self._tools.get(name)
+        """获取工具元数据(返回dataclass)
+        2026-08-07 小欧: 工具名别名归一化——LLM常生成变体名(write_text等),
+        精确匹配失败时经 tools_alias_mapper.normalize_tool_name 映射到注册名(writetext),
+        防止"工具未注册"误拦截(com-test 03暴露)。
+        """
+        if not isinstance(name, str) or not name:
+            return None
+        tool = self._tools.get(name)
+        if tool is not None:
+            return tool
+        return self._tools.get(normalize_tool_name(name))
     
     def get_implementation(self, name: str) -> Optional[Callable]:
         """获取工具实现函数"""

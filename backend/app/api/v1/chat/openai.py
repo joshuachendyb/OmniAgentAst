@@ -7,6 +7,7 @@
 #   修复: get_service() 后通过 resolver.pop_model_warning() 获取 warning, 传入 step_start → send_start_step → MetaStep(warning=), 透传前端
 #   合规: DRY + KISS + SLAP + SRP
 # 2026-07-22 - 小欧 - 代码审查修复: import从函数内移至文件顶部(get_ai_config_resolver无循环依赖); validate_chat_config冗余import删除
+# 2026-08-06 - 小欧 - TASK_START日志收口log_and_print统一双写: 原4条裸print(时间/TASK_START/task_id/user_input)不上日志文件+logger.info仅文件, 合并为2条log_and_print(logger.info+print双写, 首行已带完整时间戳), 修复7-23统一治理遗漏
 """
 chat_openai — Chat API层入口（路由+实现合一）
 
@@ -30,7 +31,7 @@ from app.services.chat.storage import get_user_message_id
 
 from app.services import get_service
 from app.services.model.resolver import get_ai_config_resolver
-from app.logger import logger
+from app.logger import logger, log_and_print
 from app.services.chat.handlers import create_error_response, send_start_step
 from app.utils.sse_formatter import format_agent_sse
 from app.api.v1.chat.models import ChatRequest
@@ -214,14 +215,11 @@ async def chat_stream(request: ChatRequest):
             _user_msg_id = get_user_message_id(session_id)
         except Exception:
             logger.warning(f"[chat] 获取user_message_id失败: session_id={session_id}")
-        print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"[TASK_START]:provider={ai_service.provider} model={ai_service.model}")
-        print(f"task_id={task_id} session_id={session_id} user_message_id={_user_msg_id} |")
-        print(f"user_input={user_input}")
-        logger.info(
-            f"[TASK_START]:provider={ai_service.provider} model={ai_service.model} | "
+        log_and_print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        log_and_print(
+            f"[TASK_START] provider={ai_service.provider} model={ai_service.model} |\n "
             f"task_id={task_id} session_id={session_id} "
-            f"user_message_id={_user_msg_id} | "
+            f"user_message_id={_user_msg_id} |\n "
             f"user_input={user_input}"
         )
 

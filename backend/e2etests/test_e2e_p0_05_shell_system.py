@@ -22,7 +22,8 @@ TEST_CASE_ID = "E2E-P0-05"
 TEST_CASE_NAME = "SHELL+SYSTEM混合通路验证"
 USER_INPUT = ("请收集系统信息（OS、CPU、RAM、磁盘），列出E:\\test_dir下的文件；用Shell执行命令显示CPU占用Top5进程"
                "并将结果保存到sys_info_raw.txt。然后读取该文件，用Python解析出Top5进程名与CPU占比。"
-               "最后把系统概况、文件清单和进程解析结果汇总成sys_info.txt保存到E:\\test_dir，并用Shell确认该文件已生成。")
+               "最后把系统概况、文件清单和进程解析结果汇总成sys_info.txt保存到E:\\test_dir，并用Shell确认该文件已生成。"
+               "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 from datetime import datetime
 

@@ -3,6 +3,8 @@
 # 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
 # 2026-07-26 - 小欧 - summary加路径前空格
 # 2026-07-31 - 小欧 - Bug⑳修复: data非数组或元素非dict时返回明确错误(原list[list]触发row.keys() AttributeError, 错误信息晦涩) | py_compile ✓
+# 2026-08-07 - 小欧 - P04优化(北京老陈驱动 task001): 新增append_mode参数 — True=文件已存在时load_workbook末尾追加(表头一致性校验+按已有表头列序映射取值防串列), False=默认覆盖; else分支补mkdir防新建目录缺失崩溃; append分支error返回前补duration_ms计算防NameError | py_compile ✓
+# 2026-08-08 - 小欧 - P1修复(task005真实问题分析): append_mode追加模式data全为无字段空dict(如[{}])时, headers为空无法映射任何列, 返回warning"无有效字段可追加"而非静默success"N行", 让LLM感知追加无效; 空追加不save改动文件 | py_compile ✓
 """
 D6: write_xlsx — 写入Excel文档
 
@@ -17,7 +19,7 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional  # 2026-07-31 小欧: 移除未使用 Union
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
@@ -102,6 +104,15 @@ def _build_write_xlsx_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    if exec_code == "warning":
+        # 追加模式无数据可写等非致命异常: 走warning, 让LLM感知追加无效(非静默success) — 小欧 2026-08-08
+        return {
+            "summary": f"写入Excel {file_path}，警告: {detail}",
+            "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
+            "status": {"exec_code": "warning", "message": "写入Excel警告", "code": "", "detail": detail, "hint": hint if hint else "请检查传入的data参数"},
+            "duration_ms": duration_ms,
+            "metrics": {},
+        }
     return {
         "summary": f"写入Excel {file_path}，成功: {row_count}行",
         "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
@@ -117,8 +128,9 @@ def write_xlsx(
     path: str,
     data: Optional[List[Dict[str, Any]]] = None,
     sheet_name: str = "Sheet1",
+    append_mode: bool = False,
 ) -> Dict[str, Any]:
-    """写入Excel文件 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化 — 小欧 2026-06-24 增加文件类型前置检查"""
+    """写入Excel文件 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化 — 小欧 2026-06-24 增加文件类型前置检查 — 小欧 2026-08-07 新增append_mode追加模式"""
     t0 = _time_mod.perf_counter()
 
     # 文件类型前置检查（含路径检查+类型检查+模块安全检查）— 北京老陈 2026-07-09
@@ -163,28 +175,61 @@ def write_xlsx(
             # 按表头顺序填充，缺失填None
             rows = [[row.get(key) for key in headers] for row in data]
 
-        wb = Workbook()
-        ws = wb.active
-        ws.title = sheet_name
-
-        if headers:
-            for col_idx, header in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=col_idx, value=header)
-                cell.font = Font(bold=True)
-                cell.alignment = Alignment(horizontal="center")
-
-        if rows:
-            for row_idx, row_data in enumerate(rows, 2):
-                for col_idx, cell_data in enumerate(row_data, 1):
-                    ws.cell(row=row_idx, column=col_idx, value=cell_data)
-        
-        if headers or rows:
-            _set_xlsx_table_style(ws)
+        wb = None
+        ws = None
+        _path = Path(path)
+        if append_mode and _path.exists():
+            from openpyxl import load_workbook
+            wb = load_workbook(_path)
+            ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.create_sheet(sheet_name)
+            if not headers:
+                # 追加模式但data全为无字段空dict(如[{}]): 无任何列可映射到已有表头, 返回warning
+                # 而非静默success"N行"(实际无有效数据), 让LLM感知追加无效 — 小欧 2026-08-08
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_write_xlsx_llm_data("warning", duration_ms, str(_path),
+                    detail="追加模式但data无任何字段(全空dict), 无数据可追加",
+                    hint="请提供含字段的非空 data 再追加", user_sheet_name=sheet_name)
+                return build_warning(data={}, llm_data=llm_data)
+            # 表头一致性校验：已有表头缺失新列则拒绝（防静默错写）— 小欧 2026-08-07
+            if headers and ws.max_row > 0:
+                existing = [c.value for c in ws[1]]
+                unknown = [h for h in headers if h not in existing]
+                if unknown:
+                    # error 返回前补 duration_ms 计算, 否则用未定义变量致 NameError — 小欧 2026-08-07
+                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                    llm_data = _build_write_xlsx_llm_data("error", duration_ms, str(_path), detail=f"追加失败: 列 {unknown} 不在已有表头", user_sheet_name=sheet_name, hint="请保持 data 列与已有表头一致")
+                    return build_error(data={}, llm_data=llm_data)
+            # 按已有表头列序取值追加, 而非 rows(按 headers 顺序), 防止已有表头列序与 headers 不同导致串列 — 小欧 2026-08-07
+            if rows:
+                _cols = [c.value for c in ws[1]] if ws.max_row > 0 else headers
+                for row_data in data:
+                    ws.append([row_data.get(c) for c in _cols])
+            # 追加后重新调整列宽适配新数据 — 小欧 2026-08-07
             _adjust_xlsx_column_width(ws)
+            wb.save(_path)
+        else:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = sheet_name
 
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        wb.save(path)
+            if headers:
+                for col_idx, header in enumerate(headers, 1):
+                    cell = ws.cell(row=1, column=col_idx, value=header)
+                    cell.font = Font(bold=True)
+                    cell.alignment = Alignment(horizontal="center")
+
+            if rows:
+                for row_idx, row_data in enumerate(rows, 2):
+                    for col_idx, cell_data in enumerate(row_data, 1):
+                        ws.cell(row=row_idx, column=col_idx, value=cell_data)
+            
+            if headers or rows:
+                _set_xlsx_table_style(ws)
+                _adjust_xlsx_column_width(ws)
+
+            # 新建文件前补 mkdir, 否则目标目录不存在时 wb.save 抛 FileNotFoundError — 小欧 2026-08-07
+            _path.parent.mkdir(parents=True, exist_ok=True)
+            wb.save(_path)
 
         row_count = len(rows)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

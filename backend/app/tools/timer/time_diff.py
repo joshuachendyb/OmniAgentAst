@@ -3,6 +3,8 @@
 """
 time_diff — 时间差值计算
 【2026-06-22 小健】从 time_tools.py 拆分为独立文件
+编辑历史:
+# 2026-08-05 - 小欧 - Bug7: is_future方向判断改为基于start→end(delta>=0),修正start/end同在过去或未来时"前/后"错判; Bug8联动修正"刚刚/即将"
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -65,8 +67,8 @@ def timediff(start: str, end: Optional[str] = None) -> Dict[str, Any]:
 
         delta = end_dt - start_dt
         total_seconds = abs(delta.total_seconds())
-        now = datetime.now().astimezone()
-        is_future = end_dt > now
+        # 方向判断应基于 start→end 而非 end→now: end晚于start时is_future=True — 小欧 2026-08-05 Bug7
+        is_future = delta.total_seconds() >= 0
 
         seconds = int(total_seconds)
         minutes = total_seconds / 60.0

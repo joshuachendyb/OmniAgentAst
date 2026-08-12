@@ -18,6 +18,7 @@
 # 2026-07-23 - 小欧 - 北京老陈驱动第二轮增强: total_files 从截断结果重算
 #    _apply_grep_outlim 返回 _real_files, GrepSyncResult 用真实值重建
 #    summary.total_files 与实际匹配文件数一致, 避免误导 LLM 搜索范围判断
+# 2026-08-07 - 小欧 - P06优化(北京老陈驱动 task001): 返回前过滤已被删除/重命名的文件(_apply_grep_outlim后最终结果上做, 条件重建GrepSyncResult重算files/matches, 避免双重重建) | py_compile ✓
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -355,6 +356,16 @@ async def grep(
         _truncated_results, _real_files, _real_total_matches,
         gr.truncated, gr.truncated_by_deadline, gr.skipped_binaries,
     )
+
+    # P06优化: 过滤已被删除/重命名的文件(截断后最终结果上做,避免双重GrepSyncResult重建), 重算files/matches — 小欧 2026-08-07
+    if gr.results:
+        _alive = [m for m in gr.results if Path(m.get("file", "")).exists()]
+        if len(_alive) < len(gr.results):
+            gr = GrepSyncResult(
+                _alive,
+                len({m["file"] for m in _alive}),
+                sum(len(m.get("matched", [])) for m in _alive),
+                gr.truncated, gr.truncated_by_deadline, gr.skipped_binaries)
 
     # =============================================================================
     # 数据设计：total_matches/total_files 既留在 data 中（供前端/断言读取），

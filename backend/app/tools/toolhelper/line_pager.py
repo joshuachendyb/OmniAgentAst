@@ -3,6 +3,7 @@
 编辑历史:
 - 2026-07-20 小欧 新建: 从 read_text_file._select_lines 抽取共享行分页逻辑(DRY)
 - 2026-07-20 小欧 修复: content 拼接由 "".join 改为 "\\n".join, 否则丢失行/段落分隔符(导致 read_text_file/read_docx roundtrip 失败)
+- 2026-08-05 小欧 修复: select_lines双换行bug - splitlines(keepends=True) + "\\n".join导致空行翻倍(三堂会审Bug4)
 行分页/截断工具 — 小欧 2026-07-20
 
 #10 去噪专用: 将已完整读入内存的文本内容, 按 行号窗口(offset/limit/tail) 选取子集,
@@ -28,6 +29,9 @@ def select_lines(
     offset: 起始行号(正数, 必须配合 limit)
     limit:  读取行数
     tail:   读取尾部 N 行
+
+    注意: lines 参数应为不带行尾换行符的列表(如 splitlines(keepends=False) 或 split("\\n"))
+          避免 splitlines(keepends=True) + "\\n".join 导致空行翻倍 — 小欧 2026-08-05 三堂会审Bug4修复
 
     返回:
         content:      选取后的拼接文本

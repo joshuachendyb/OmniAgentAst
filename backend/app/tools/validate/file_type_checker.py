@@ -24,6 +24,10 @@ Safety层（services/safety/tool_safety_checker.py + path_safe_check.py）独立
 
 更新历史：
 2026-07-09 北京老陈 3个wrapper编排路径检查+类型检查+安全检查; 增加UNSUPPORTED分支
+2026-08-05 小欧 BUG-4修复: 复合压缩后缀(.tar.gz/.tar.bz2)识别 — 新增 _matches_archive_ext
+   【病根】Path(file_path).suffix 对 "x.tar.gz" 仅返回 ".gz", 致 ARCHIVE_EXTENSIONS 里的 .tar.gz/.tar.bz2 永不可命中,
+   get_file_category 返回 "unknown"、check_file_type(archive) 误判非法
+   【解决】_check_archive_file 与 get_file_category 增加 endswith 全串匹配, 复合后缀优先
 """
 from pathlib import Path
 from typing import Tuple, Optional, Literal
@@ -281,11 +285,23 @@ def _check_document_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[s
     return True, "", None
 
 
+def _matches_archive_ext(file_path: str) -> bool:
+    """路径是否命中压缩扩展名(含复合后缀.tar.gz/.tar.bz2) — 小欧 2026-08-05
+    Path.suffix 只返回最后一个扩展名(.gz), 对 .tar.gz/.tar.bz2 需 endswith 全串匹配(BUG-4)"""
+    if not file_path:
+        return False
+    _fp = file_path.lower()
+    return any(_fp.endswith(ext) for ext in ARCHIVE_EXTENSIONS)
+
+
 def _check_archive_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]]:
-    """检查是否为压缩文件 — 小健 2026-06-24 更新：引用UNSUPPORTED_FORMAT_HINTS"""
+    """检查是否为压缩文件 — 小健 2026-06-24 更新：引用UNSUPPORTED_FORMAT_HINTS — 小欧 2026-08-05 复合后缀(.tar.gz)识别"""
     if suffix in UNSUPPORTED_FORMAT_HINTS and suffix in ('.rar', '.7z'):
         hint = UNSUPPORTED_FORMAT_HINTS[suffix]
         return False, f"工具选择错误：'{suffix}'是不支持的压缩格式。{hint}。支持的格式: {', '.join(sorted(ARCHIVE_EXTENSIONS))}", None
+    # 复合后缀优先: .tar.gz/.tar.bz2 的 Path.suffix 仅得 .gz, 须 endswith 全串匹配 — 小欧 2026-08-05 BUG-4
+    if _matches_archive_ext(str(path)):
+        return True, "", None
     if suffix not in ARCHIVE_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
             return False, f"工具选择错误：'{suffix}'是文本文件，不是压缩文件。建议使用readtext工具", "readtext"
@@ -407,6 +423,9 @@ def get_file_category(file_path: str) -> Optional[str]:
         return "media"
     elif suffix in DOCUMENT_EXTENSIONS:
         return "document"
+    elif _matches_archive_ext(file_path):
+        # 复合后缀优先(Path.suffix 对 .tar.gz 只得 .gz) — 小欧 2026-08-05 BUG-4
+        return "archive"
     elif suffix in ARCHIVE_EXTENSIONS:
         return "archive"
     elif suffix in BINARY_EXTENSIONS:

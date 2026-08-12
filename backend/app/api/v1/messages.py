@@ -7,6 +7,7 @@
 # 2026-07-16 - 小欧 - SELECT 加 thought 列; MessageResponse 传 thought
 # 2026-07-18 - 小欧 - timestamp 改 format_timestamp 对外统一 UTC Z; save_message 传 get_utc_timestamp; created_at 补 format_timestamp 兜底
 # 2026-07-18 - 小欧 - timestamp配合MessageResponse.timestamp改为str, format_timestamp格式字符串正常传递
+# 2026-08-08 - 小欧 - 全程统一本地时区: save_message 传 get_local_iso_timestamp; title_updated_at 输出改 to_local_iso(不再转UTC)
  
 """
 消息管理API路由
@@ -30,7 +31,7 @@ from app.utils.response_utils import handle_api_errors
 from app.utils.cache import LRUCache
 from app.constants import MAX_CACHE_SIZE
 from app.utils.display_utils import extract_display_name_from_steps
-from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, get_utc_timestamp
+from app.utils.time_utils import ensure_timestamp_milliseconds, get_local_iso_timestamp, to_local_iso  # 小欧 2026-08-08 全程统一本地时区
 from app.utils.time_utils import format_timestamp
 from app.utils.json_utils import parse_json
 from app.db import db
@@ -87,7 +88,7 @@ async def get_session_messages(session_id: str):
             "updated_at": format_timestamp(session['updated_at']),
             "title_locked": title_locked,
             "title_source": "user" if title_locked else "auto",
-            "title_updated_at": convert_to_utc(session['title_updated_at']),
+            "title_updated_at": to_local_iso(session['title_updated_at']),
             "version": session['version'], "is_valid": session['is_valid'],
             "messages": messages,
         }
@@ -135,7 +136,7 @@ async def save_message(session_id: str, message: MessageCreate):
         if not session:
             raise HTTPException(status_code=404, detail="会话不存在")
 
-        utc_time = get_utc_timestamp()
+        local_time = get_local_iso_timestamp()
         new_message_count = session["message_count"] + 1
 
         display_name_to_save = message.display_name
@@ -145,7 +146,7 @@ async def save_message(session_id: str, message: MessageCreate):
         execution_steps_json = safe_json_dumps(message.execution_steps) if message.execution_steps is not None else None
         cursor.execute(
             "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, execution_steps, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (session_id, message.role, message.content, utc_time, display_name_to_save,
+            (session_id, message.role, message.content, local_time, display_name_to_save,
              execution_steps_json, message.client_os, message.browser, message.device, message.network))
         message_id = cursor.lastrowid
 
@@ -154,7 +155,7 @@ async def save_message(session_id: str, message: MessageCreate):
 
         cursor.execute(
             "UPDATE chat_sessions SET message_count = ?, updated_at = ? WHERE id = ?",
-            (new_message_count, utc_time, session_id))
+            (new_message_count, local_time, session_id))
 
         _try_mark_valid(cursor, session_id)
 

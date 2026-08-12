@@ -5,6 +5,7 @@
 # 2026-07-18 - 小欧 - complete_task 的 completed_at 改用 now_str() 序列化入库, 消除对已废弃默认 datetime 适配器(Python3.12+ DeprecationWarning)的依赖, 与 created_at(CURRENT_TIMESTAMP) 空格秒格式统一
 # 2026-07-18 - 小欧 - complete_task/create_task/add_operation 时间统一 get_utc_timestamp() UTC Z; TaskQueries 三返回方法 format_timestamp 对外兜底
 # 2026-07-18 - 小欧 - add_operation/complete_task INSERT补created_at列对齐第13值get_utc_timestamp()
+# 2026-08-08 - 小欧 - 全程统一本地时区: 3处写入 get_utc_timestamp→get_local_iso_timestamp (本地ISO无Z入库)
 # 2026-07-23 - 小欧 - #1 fix: get_recent_tasks L210 r.get("completed_at") → r["completed_at"]
 #   病根: sqlite3.Row 不支持 .get() 方法(仅支持 [] 和 keys()),
 #         r.get("completed_at") 抛出 AttributeError(11次)→main.py全局异常处理器崩溃(10次),
@@ -14,6 +15,12 @@
 # 2026-07-23 - 小欧 - #1补: get_task 风格统一, 删d=dict(row)临时变量, 改**dict(row) inline
 #   原由: L197-198 d.get() 虽不报错(因dict支持.get), 但与get_recent_tasks的**dict(row)+row[]风格不一致
 #         ; 保持两方法同一风格, 降低认知负担, KISS-DIRECT。
+# 2026-08-09 - 小欧 - task006 P7: create_task 改 INSERT ... ON CONFLICT(task_id) DO NOTHING 幂等化
+#   病根: 同一 task_id 重复初始化(agent重建/重放)时裸INSERT抛 UNIQUE constraint failed (日志3个独立日期实据)
+#   方案: 仅忽略主键冲突保留首次记录; 验证实证 OR IGNORE 会吞掉CHECK/NOT NULL约束错误(掩盖真实问题),
+#         ON CONFLICT(task_id) 只忽略主键, 其它约束照常抛出; P7属agent内部事务, 不产生LLM可见提示
+# 2026-08-09 - 小欧 - task005核查P7落地: create_task 幂等冲突(任务已存在)补 logger.info 日志
+#   病根: ON CONFLICT DO NOTHING 静默成功, 排查重放/agent重建场景无任何痕迹(可观测性缺失); 仅加日志不改语义
 """
 task_db — 任务DB持久化（tasks表 + operations表）
 
@@ -25,7 +32,7 @@ task_db — 任务DB持久化（tasks表 + operations表）
 import json
 import threading
 from app.utils.id_utils import generate_operation_id
-from app.utils.time_utils import get_utc_timestamp  # 小欧 2026-07-18: 时间统一入库 UTC Z
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08: 全程统一本地时区, 本地ISO无Z入库
 from app.utils.time_utils import format_timestamp  # 小欧 2026-07-18: API 对外契约统一兜底
 from typing import Optional, Dict, Any, List
 from enum import Enum
@@ -52,14 +59,21 @@ class TaskTracker:
     # ===== 任务生命周期 =====
 
     def create_task(self, task_id: str, agent_id: str, description: str) -> None:
-        """写入任务记录 — task_id 由调用方统一提供（SSE task_id），tracker 不再自编号 — 小欧 2026-07-16"""
+        """写入任务记录 — task_id 由调用方统一提供（SSE task_id），tracker 不再自编号 — 小欧 2026-07-16
+        2026-08-09 小欧: ON CONFLICT(task_id) DO NOTHING 幂等化 — 同一 task_id 重复初始化(agent重建/重放)
+        时保留已存在记录, 消除 UNIQUE 冲突(日志3次实据); 仅忽略主键冲突, 其它约束(CHECK/NOT NULL)照常抛出,
+        不掩盖真实问题(验证实证 OR IGNORE 会吞约束错误, 故不用)"""
         with db.get_conn("task_tracker") as conn:
-            conn.execute(
+            cur = conn.execute(
                 """INSERT INTO tasks
                    (task_id, intent, agent_id, task_description, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (task_id, "", agent_id, description, TaskStatus.EXECUTING.value, get_utc_timestamp()),
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(task_id) DO NOTHING""",
+                (task_id, "", agent_id, description, TaskStatus.EXECUTING.value, get_local_iso_timestamp()),
             )
+            # 2026-08-09 - 小欧 - task005核查P7: 幂等冲突(任务已存在)补日志, 提升可观测性(排查重放/agent重建无痕迹)
+            if cur.rowcount == 0:
+                logger.info(f"[task_db] create_task 幂等跳过(任务已存在): task_id={task_id}")
 
     def complete_task(self, task_id: str, success: bool = True) -> None:
         status = TaskStatus.SUCCESS.value if success else TaskStatus.FAILED.value
@@ -72,7 +86,7 @@ class TaskTracker:
             conn.execute(
                 """UPDATE tasks SET status = ?, completed_at = ?,
                    success_count = ? WHERE task_id = ?""",
-                (status, get_utc_timestamp(), success_count, task_id),  # 小欧 2026-07-18: UTC Z 字符串入库, 边界自动归一化
+                (status, get_local_iso_timestamp(), success_count, task_id),  # 小欧 2026-08-08: 本地ISO无Z入库
             )
 
     # ===== 操作管理 =====
@@ -113,12 +127,12 @@ class TaskTracker:
                    (operation_id, task_id, operation_type, status,
                     source_path, destination_path, backup_path,
                     file_size, file_hash, sequence_number, details, error, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # 小欧 2026-07-18: created_at 列对齐第13值 get_utc_timestamp() UTC Z 入库
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",  # 小欧 2026-08-08: created_at 列对齐第13值 get_local_iso_timestamp() 本地ISO无Z入库
                 (
                     operation_id, task_id, operation_type, op_status,
                     source_path, destination_path, backup_path,
                     file_size, file_hash, seq_num,
-                     json.dumps(details) if details else None, error, get_utc_timestamp(),
+                     json.dumps(details) if details else None, error, get_local_iso_timestamp(),
                  ),
             )
             if op_status == OperationStatus.FAILED.value:

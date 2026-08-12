@@ -16,6 +16,37 @@
 # 2026-07-30 - 小沈 - 保险丝常量重构: INSURANCE_CEILING=600(天花板), INSURANCE_BUFFER=30(缓冲), PROGRESSIVE_MAX=CEILING//2(无inner渐进上限); 两路径逻辑统一为: 有inner=max(inner,CEILING)+BUFFER, 无inner=min(base_timeout*(attempt+1),PROGRESSIVE_MAX)
 # 2026-07-30 - 小沈 - 备用工具命名统一: design注释+error hint中"搜索"→"搜索备用工具的类型(可选:文档/数据分析/数据库/网络/系统/桌面/时间定时)"; docstring渐进超时标注(无inner路径)并补(有inner路径)保险丝公式
 # 2026-08-04 - 小欧 - DRY收敛: 手写json.dumps → 复用公共safe_json_dumps(复用先查库), #11 fix行为不变(ensure_ascii=False) — 北京老陈驱动
+# 2026-08-05 - 小欧 - BUG-3修复: _validate_params 值范围clamp 补 number 类型
+#   【病根】原仅钳 integer, 漏 number(float字段如 timer_schema.delay ge=1/le=86400), 超范围float仍抛Pydantic ValidationError, 与编辑历史"#8 fix扩展number"不符
+#   【解决】clamp 条件由 _t=="integer" 扩为 _t in ("integer","number"), 行为一致化
+# 2026-08-05 - 小欧 - BUG-2修复: 保险丝三路取值统一(北京老陈 2026-08-05 原则第3条)
+#   【病根】LLM未传timeout时, 有timeout参数的工具掉入"无inner"分支用 TOOL_TIMEOUTS default=60,
+#   而工具内部真实超时是schema默认值(如compress=300), 保险丝60<内部300 → 抢先截杀,
+#   compress内部的timed_out进度/hint永远回不来, 击穿7-30"保险丝恒晚于内部超时"修复
+#   【解决】新增 _get_schema_timeout_default(读schema timeout默认值) + _compute_fuse(三路统一):
+#     有inner分支: LLM传timeout用之(取max超600随它去); LLM未传直接用 schema默认值(tool值优先)
+#   try_once 与 _execute_with_retry 两处重复保险丝逻辑收敛至 _compute_fuse (DRY)
+#   【影响】compress: LLM未传时 60→630 修复; httpget/download/fetchpage/ping_port 同型一致性纠正,
+#     内部超时即schema默认(30/60/30/5), 保险丝恒覆盖不截杀; 无timeout参数工具(listdir/delete等)不变
+# 2026-08-05 - 小欧 - BUG-2修正(老陈审核): 原则3 inner 由 max(schema默认,base) 改为直接用 schema默认值
+#   【理由】tool 的 timeout 值要优先; 与 base 取 min/max 都会在 schema默认>base 时丢失 tool 真实值
+#   (如 schema默认=1800,base=60, 取min得60→保险丝630反小于内部1800截杀); 直接用 schema默认最贴近 tool 值优先
+# 2026-08-05 - 小欧 - 注释与文档对齐: 设计注释块"有inner参数工具"补上 shell(漏网), 与文档13.4.2"6个工具"一致
+# 2026-08-05 - 小欧 - 注释按4条原则重构(老陈审阅): 明确本保险丝是toolretry引擎外部超时(非工具自身超时);
+#   注释统一拆分为 inner取值来源(原则2 LLM值/原则3 schema默认) 与 保险丝公式(原则4 max(inner,CEILING)+BUFFER);
+#   "直接用LLM值+取max"旧表述有歧义, 实为 inner取LLM值后保险丝再max托底, 消除"未超CEILING是否托底"误解
+# 2026-08-06 10:05:21 - 小欧 - 注释补齐"两条超时线"(老陈梳理): ①传给tool的超时(tool内部用,LLM给→直接用值/未给→schema默认值)
+#   与②保险丝超时(wait_for掐整个调用)是独立两值; 注明①随params原样传tool(**params), ②由_compute_fuse算传wait_for
+# 2026-08-07 - 小欧 - import同步: param_alias_mapper.py→tools_alias_mapper.py 重命名(名实相符), normalize_params引用处同步更新
+# 2026-08-09 - 小欧 - task007: _validate_params 非法参数分支补智能hint(日志实证"hint":""全库参数验证失败1285次)
+#   病根: 非法参数分支调用_build_retry_error未传hint(默认""), LLM只能看到干列表"合法参数: k:type"反复试错
+#   方案: 新增_INVALID_PARAM_HINTS混淆表(仅日志实证grep.type→glob/find、find.top_n→offset, YAGNI) + 通用兜底
+#   直线设计: dict直查+兜底, 不改detail/返回结构/缺失参数路径, 增强不退化(验证PASS=10/10)
+# 2026-08-11 - 小欧 - task006方案4落地: _validate_params反向类型容错(期望array/object收到JSON字符串时解析,
+#   如write_docx的table_data LLM常传JSON字符串, 原报"期望类型为array,实际类型为str"; 解析失败保留原str走类型校验报错,
+#   与现有"对象→字符串"容错形成双向闭环, 不静默删除非法字段)
+# 2026-08-12 - 小欧 - 三堂会审修正: 反向容错由parse_json手写分支改为复用公共coerce_json(DRY铁规,
+#   与write_xlsx/analyze_data/filter_data共用同一参数归一化层; 非法JSON原样返回不误改, 二维List[List]不误伤, 行为等价更优)
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -36,37 +67,80 @@ from typing import Any, Callable, Dict, Optional
 
 from app.logger import logger
 from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
-from app.utils.json_utils import safe_json_dumps
+from app.utils.json_utils import safe_json_dumps, coerce_json  # coerce_json: 反向类型容错复用(DRY, 与write_xlsx/analyze_data共用) — 小欧 2026-08-12
 from app.tools.tool_constants import (
     TOOL_TIMEOUTS, TOOL_RETRY_BACKOFF, TOOL_RETRY_CONFIG,
     TOOL_TIMEOUT_HINTS,
     ERR_MISSING_PARAM, ERR_INVALID_PARAMS, ERR_TOOL_NOT_FOUND, ERR_UNKNOWN,
 )
 from app.tools.tool_response import build_error
-from app.tools.param_alias_mapper import normalize_params
+from app.tools.tools_alias_mapper import normalize_params
 from app.tools.registry import tool_registry
 
 # ============================================================
 # 保险丝超时策略 — 设计逻辑（北京老陈 2026-07-30）
 #
-# 所有工具分两类，两类不同策略：
+# 说明：本保险丝是【toolretry 引擎的外部超时】(asyncio.wait_for 掐整个工具调用)，
+#       不是工具自身的内部超时。保险丝必须恒 ≥ 工具内部超时，否则保险丝抢先截杀，
+#       工具内部的 timed_out hint/metrics 来不及返回。
 #
-# 【有 inner timeout 参数的工具】（compress/shell/download 等）
+# 工具分两类，两类不同策略：
+#
+# 【有 inner timeout 参数的工具】（compress/shell/httpget/download/fetchpage/ping_port 6个）
 #   保险丝 = max(inner, INSURANCE_CEILING) + INSURANCE_BUFFER
-#   原因：工具有自己的内部超时 deadline，保险丝必须恒大于内部超时，
-#         否则保险丝抢先截杀，工具内部的 timed_out hint 来不及返回。
-#   CEILING=600：有inner的工具系统至少等10分钟，inner 超 600 则随它去。
+#   inner = 工具的超时参数值，其取值按北京老陈 4 条原则：
+#     [原则2] LLM 显式传 timeout    → inner = LLM 给的值
+#     [原则3] LLM 未传 timeout      → inner = schema 默认值（tool 的 timeout 值优先；
+#              工具有 timeout 参数时其内部真实超时即 schema 默认值，如 compress=300，
+#              不能掉入 TOOL_TIMEOUTS default=60 被截杀）
+#   [原则4] 取 max：保险丝 = max(inner, CEILING)+BUFFER，inner 超 CEILING 则随它去。
+#   CEILING=600：有 inner 的工具系统至少等10分钟（即使 LLM 传 300，保险丝也托底到 630，
+#                保证外部超时恒大于工具内部 300s deadline）；inner 超 600 则直接用 inner。
 #   BUFFER=30：保险丝比内部超时多30秒，给内部 handler 退出窗口。
 #
 # 【无 inner timeout 参数的工具】（listdir/delete/find 等）
+#   [原则1] inner 必然没有 → 用 TOOL_TIMEOUTS 表里参数 或 default，渐进递增：
 #   保险丝 = min(base_timeout * (attempt+1), PROGRESSIVE_MAX)
-#   原因：工具没有内部超时概念，采用渐进递增，首次短快失败立即报错，
-#         后续逐步放宽，上限 PROGRESSIVE_MAX。
+#   原因：工具没有内部超时概念，首次短快失败立即报错，后续逐步放宽，上限 PROGRESSIVE_MAX。
 #   PROGRESSIVE_MAX = CEILING // 2 = 300：无inner工具最长等5分钟。
+#
+# 【两条超时】梳理（北京老陈 2026-08-06 10:05:21）—— 本引擎存在两条独立的超时线：
+#   ① 传给 tool 的超时（tool 内部执行用）→ 随 params 原样传给 tool(**params)
+#      有 timeout 参数工具：LLM 显式传 → 直接用 LLM 给的值(经 _validate_params clamp ge/le)；
+#                            LLM 未传   → tool 用自己函数(schema)的默认值
+#      无 timeout 参数工具    ：tool 无内部超时概念，靠外部 wait_for 截断
+#   ② 保险丝超时（asyncio.wait_for 掐整个 tool 调用）→ 由 _compute_fuse 计算，见上文两处
+#   ★ 两值是独立的：传给 tool 的值 ≠ 保险丝值。例：LLM 传 timeout=300，
+#     tool 内部实际收 300，但保险丝 = max(300, CEILING)+BUFFER = 630（托底恒≥内部超时）。
 # ============================================================
 INSURANCE_CEILING = 600
 INSURANCE_BUFFER = 30
 PROGRESSIVE_MAX = INSURANCE_CEILING // 2
+
+# ============================================================
+# 非法参数智能提示表 — 小欧 2026-08-09 (task007)
+# 仅登记日志实证的 LLM 参数混淆(全库 参数验证失败 1285次/17文件), YAGNI 不臆造:
+#   002948 grep 收到 type=file(grep无type, 应改用glob或find工具)
+#   002938 find 收到 top_n=5(find无top_n, 应改用offset分页)
+# 其余非法参数走 _build_invalid_param_hint 通用兜底; hint专注纠正指引,
+# 合法参数列表 detail 已有, 不在 hint 重复(DRY/简洁)
+# ============================================================
+_INVALID_PARAM_HINTS = {
+    ("grep", "type"): "grep 无 type 参数；文件名过滤请用 glob，按文件/目录类型搜索请改用 find 工具(type=file/directory)",
+    ("find", "top_n"): "find 无 top_n 参数；如需限制结果数量请用 offset 分页",
+}
+
+
+def _build_invalid_param_hint(action: str, invalid_keys: list) -> str:
+    """构建非法参数智能hint: 先查混淆表给专项替代建议, 未命中给通用纠正指引 — 小欧 2026-08-09
+    task007 病根: 非法参数分支hint为空(日志实证"hint":""), LLM拿不到纠正指引反复试错;
+    本函数只新增hint字段, 不改detail/缺失参数路径; hint只给纠正指令, 合法参数列表由detail承载, 不重复
+    2026-08-09 - 小欧 - 三堂会审复审: 删除未使用的 props_desc 形参(死参数, 函数体从不消费), 调用处同步删实参"""
+    _parts = []
+    for _k in invalid_keys:
+        _spec = _INVALID_PARAM_HINTS.get((action, _k))
+        _parts.append(_spec if _spec else f"参数 '{_k}' 不是 {action} 的合法参数，请删除该参数或改用正确参数名(合法参数见详情)")
+    return "；".join(_parts)
 
 
 class ToolRetryEngine:
@@ -82,6 +156,9 @@ class ToolRetryEngine:
         小健 2026-06-18 内联_is_async_tool/_execute_async_tool/_execute_sync_tool
         
         修复:纯同步工具通过 to_thread 移出事件循环,wait_for 超时保护生效。
+        参数说明(两条超时线交汇点, 北京老陈 2026-08-06 10:05:21):
+          normalized_input 是校验后参数, 内含 timeout 则随 tool(**normalized_input) 原样传给 tool(①线);
+          timeout 参数是保险丝(②线), 仅用于 asyncio.wait_for 掐整个调用, 不传给 tool 本身。
         """
         if inspect.iscoroutinefunction(tool):
             return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
@@ -123,6 +200,45 @@ class ToolRetryEngine:
             config.get("retryable", []),  # 修正：使用 retryable 而不是 retryable_errors
             TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"]),
         )
+    
+    def _get_schema_timeout_default(self, action: str) -> Optional[int]:
+        """读工具schema的timeout参数默认值；无timeout参数或无有效默认值返回None — 小欧 2026-08-05
+        与 _validate_params 同一途径取 schema(遵守DRY复用 tool_registry.get_tool),
+        供 LLM 未传 timeout 时兜底: 工具有 timeout 参数则其内部真实超时即 schema 默认值"""
+        try:
+            metadata = tool_registry.get_tool(action)
+            if not metadata or not metadata.input_schema:
+                return None
+            spec = metadata.input_schema.get("properties", {}).get("timeout")
+            if not spec:
+                return None
+            default = spec.get("default")
+            return int(default) if isinstance(default, (int, float)) and default > 0 else None
+        except Exception:
+            return None
+
+    def _compute_fuse(self, action: str, params: Dict[str, Any],
+                      base_timeout: int, attempt: int) -> int:
+        """计算单次执行保险丝超时（toolretry 引擎外部超时②线）— 按北京老陈 4 条原则：
+        本方法只计算②保险丝超时(wait_for掐整个调用); ①传给 tool 的超时随 params 原样传 tool,
+        两条超时线见顶部设计注释块【两条超时】。— 小欧 2026-08-06 10:05:21
+        inner = 工具 timeout 参数值，取值来源：
+          [原则2] LLM 显式传 timeout → inner = LLM 给的值
+          [原则3] LLM 未传但工具有 timeout 参数 → inner = schema 默认值(tool 值优先)
+                 【修复BUG-2】LLM省略timeout时若掉入无inner用default=60, 可能<内部超时被截杀
+                 (如 compress schema默认300>60); 现用schema默认兜底, 保险丝恒覆盖内部超时
+        [原则4] 有 inner → 保险丝 = max(inner, CEILING)+BUFFER (取max, inner超CEILING随它去)
+        [原则1] 无 timeout 参数工具 → 渐进 base*(attempt+1) cap PROGRESSIVE_MAX (无inner)
+        try_once 与 _execute_with_retry 共用, 消除两处重复逻辑(DRY)
+        小欧 2026-08-05"""
+        inner = params.get("timeout")
+        if not (isinstance(inner, (int, float)) and inner > 0):
+            schema_default = self._get_schema_timeout_default(action)
+            if schema_default is not None:
+                inner = schema_default
+        if isinstance(inner, (int, float)) and inner > 0:
+            return max(int(inner), INSURANCE_CEILING) + INSURANCE_BUFFER
+        return min(base_timeout * (attempt + 1), PROGRESSIVE_MAX)
     
     def _prepare_execution(self, action: str, action_input: Dict[str, Any]):
         """查找工具+参数规范化+参数验证 — 统一入口，try_once与execute_tool_with_retry共享
@@ -186,13 +302,7 @@ class ToolRetryEngine:
             return params_or_error
         # 复用_get_retry_config的超时查询，消除与_execute_with_retry的DRY违规 — 小欧 2026-07-09
         _, _, _, base_timeout = self._get_retry_config(action)
-        inner = params_or_error.get("timeout")
-        if isinstance(inner, int) and inner > 0:
-            # 有inner: 保险丝 = max(inner, CEILING) + BUFFER, 恒 > 内部超时 — 北京老陈 2026-07-30
-            timeout = max(inner, INSURANCE_CEILING) + INSURANCE_BUFFER
-        else:
-            # 无inner: 渐进 cap PROGRESSIVE_MAX — 北京老陈 2026-07-30
-            timeout = min(base_timeout, PROGRESSIVE_MAX)
+        timeout = self._compute_fuse(action, params_or_error, base_timeout, 0)
         try:
             result = await self._execute_tool_once(tool, params_or_error, timeout)
             if isinstance(result, dict):
@@ -221,8 +331,10 @@ class ToolRetryEngine:
         - 有指数退避：重试间隔backoff_factor^attempt
         - 有on_retry_started回调：每次重试前通知调用方（→前端显示重试状态）
         - 有渐进超时(无inner路径): 每次重试的超时递增base_timeout*(attempt+1), 上限 PROGRESSIVE_MAX=300
-- 有inner超时参数工具: 保险丝 = max(inner, CEILING) + BUFFER, 恒大于内部超时
-         
+        - 有inner超时参数工具: 保险丝 = max(inner, CEILING) + BUFFER, 恒大于内部超时(外部超时兜底); inner取值: LLM显式传→LLM值(原则2); LLM未传→schema默认值(tool值优先,原则3) — 小欧 2026-08-05
+        超时说明: 本方法负责②保险丝超时(由_compute_fuse计算); ①传给 tool 的超时随 params 原样传 tool,
+        两条超时线见顶部设计注释块【两条超时】。— 小欧 2026-08-06 10:05:21
+          
         Args:
             action: 工具名
             action_input: 原始参数字典
@@ -259,6 +371,7 @@ class ToolRetryEngine:
                         f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}；合法参数: {_props_desc}",
                         0, error_type="invalid_params",
                         action_name=action, action_params=params,
+                        hint=_build_invalid_param_hint(action, invalid_keys),  # task007 补智能hint, 三审删死参数props_desc — 小欧 2026-08-09
                     )
                 
                 required = input_schema.get("required", [])
@@ -293,6 +406,12 @@ class ToolRetryEngine:
                             params[k] = safe_json_dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
                         except Exception:
                             pass
+                    elif _t in ("array", "object") and isinstance(v, str):
+                        # 反向容错: 期望array/object收到JSON字符串时尝试解析(如write_docx table_data),
+                        # 复用公共coerce_json(DRY), 非法JSON原样返回不误改 — 小欧 2026-08-12
+                        _coerced = coerce_json(v)
+                        if isinstance(_coerced, (list, dict)) and _coerced is not v:
+                            params[k] = _coerced
                 type_errors = []
                 for k, v in params.items():
                     spec = props.get(k)
@@ -321,12 +440,13 @@ class ToolRetryEngine:
                         action_name=action, action_params=params,
                     )
                 # #8 fix: 值范围clamp(integer/number参数的minimum/maximum),防Pydantic ValidationError — 小欧 2026-07-23
+                # 2026-08-05 小欧 BUG-3修复: 原仅钳 integer,漏 number(float字段如timer_set delay),超范围float仍抛ValidationError; 补上 number — 小欧
                 for k, v in params.items():
                     spec = props.get(k)
                     if not spec:
                         continue
                     _t = spec.get("type")
-                    if _t == "integer":
+                    if _t in ("integer", "number"):
                         minimum = spec.get("minimum")
                         maximum = spec.get("maximum")
                         if minimum is not None and v < minimum:
@@ -352,10 +472,11 @@ class ToolRetryEngine:
         """带重试执行工具 — 核心循环：渐进超时+重试前回调通知
          
         重试策略（遵守KISS-DIRECT原则，简单直线）：
-        1. 超时策略分两路:
-           - 有inner参数工具: 保险丝 = max(inner, CEILING) + BUFFER, 恒大于内部超时让工具先处理
-           - 无inner参数工具: 渐进超时 base_timeout * (attempt + 1), 上限 PROGRESSIVE_MAX
-           → 有inner: compress(600)=630, compress(1800)=1830; 无inner: listdir=60/120/180 cap 300
+        1. 超时策略统一走 _compute_fuse (北京老陈 4条原则)（②保险丝超时; ①传给tool超时随params走,见顶部【两条超时】）— 小欧 2026-08-06 10:05:21:
+           - [原则2] LLM显式传timeout → inner=LLM值 → max(inner, CEILING)+BUFFER (有inner)
+           - [原则3] 有timeout参数且LLM未传 → inner=schema默认值(tool值优先) → max(inner, CEILING)+BUFFER 【BUG-2修复】
+           - [原则1] 无timeout参数 → 渐进 base*(attempt+1) cap PROGRESSIVE_MAX (无inner)
+           → 有inner: compress(600)=630, compress(1800)=1830; LLM未传compress=630; 无inner: listdir=60/120/180 cap 300
         2. 指数退避等待: 重试间隔 = backoff_factor^attempt（1s, 2s, 4s...）
            → 给小故障足够恢复时间，同时避免立即重试又失败
         3. 分类重试: 只有TOOL_RETRY_CONFIG中retryable列表里的错误类别才会重试
@@ -375,13 +496,7 @@ class ToolRetryEngine:
         last_error: Optional[Exception] = None
 
         for attempt in range(max_retries + 1):
-            inner = params.get("timeout")
-            if isinstance(inner, int) and inner > 0:
-                # 有inner: 保险丝 = max(inner, CEILING) + BUFFER, 恒 > 内部超时 — 北京老陈 2026-07-30
-                timeout = max(inner, INSURANCE_CEILING) + INSURANCE_BUFFER
-            else:
-                # 无inner: 渐进递增, cap PROGRESSIVE_MAX — 北京老陈 2026-07-30
-                timeout = min(base_timeout * (attempt + 1), PROGRESSIVE_MAX)
+            timeout = self._compute_fuse(action, params, base_timeout, attempt)
             if attempt > 0 and on_retry_started:
                 try:
                     on_retry_started(action, attempt, max_retries, str(last_error)[:100])

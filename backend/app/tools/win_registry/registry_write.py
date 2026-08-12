@@ -4,6 +4,9 @@ registry_write — 写入Windows注册表键值
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
 """
 # 2026-07-31 - 小欧 - CRITICAL: auto_detect 对负整数判定错误。value.isdigit() 对 "-1" 返回 False, 导致 -1(0xFFFFFFFF) 被存为 REG_SZ 而非 REG_DWORD。改用 value.lstrip('-').isdigit() 修复
+# 2026-08-06 - 小欧 - 核查7/31未实现项[03][02]修复: 新增_to_unsigned(REG_DWORD/QWORD负数转二补码无符号, 超限报错); REG_BINARY支持"0x1F 0x2A"0x前缀逐token清洗
+# 2026-08-06 - 小欧 - 三堂会审修复: BUG-1 _to_unsigned加负数下界校验(-2^(bits-1)..-1); BUG-2删_REG_CONVERTERS REG_BINARY死代码; BUG-6 auto_detect超32位正整数改REG_SZ兜底
+# 2026-08-08 - 小欧 - task002问题2修复: auto_detect 对 int() 失败的纯字符串/小数/hex 推断 REG_SZ 写入(原抛 ValueError 报错需显式指定类型), 三堂会审通过: 与整数字符串路径互斥, 无退化 | py_compile ✓
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -24,15 +27,42 @@ _REG_TYPE_MAP: Dict[str, int] = {
     "REG_EXPAND_SZ": winreg.REG_EXPAND_SZ, "REG_MULTI_SZ": winreg.REG_MULTI_SZ, "REG_BINARY": winreg.REG_BINARY,
 }
 
+
+def _to_unsigned(value: str, bits: int) -> int:
+    """按位宽转换整数值: 负数转二补码无符号(REG_DWORD/QWORD存储语义), 超限正/负数均报错 — 小欧 2026-08-06"""
+    num = int(value)
+    if num < 0:
+        min_val = -(1 << (bits - 1))
+        if num < min_val:
+            raise ValueError(f"值{num}超出{bits}位有符号范围")
+        return (1 << bits) + num
+    if num >= (1 << bits):
+        raise ValueError(f"值{num}超出{bits}位无符号范围")
+    return num
+
+
+def _normalize_hex_input(value: str) -> str:
+    """清洗REG_BINARY十六进制输入: 去空白与0x/0X前缀, 支持"0x1F 0x2A"逐token形式 — 小欧 2026-08-06"""
+    return "".join(tok[2:] if tok[:2].lower() == "0x" else tok for tok in value.split())
+
+
 _REG_CONVERTERS: Dict[str, Callable] = {
-    "REG_DWORD": lambda v: int(v), "REG_QWORD": lambda v: int(v),
-    "REG_EXPAND_SZ": lambda v: v, "REG_BINARY": lambda v: bytes.fromhex(v.replace(" ", "")),
-    "REG_MULTI_SZ": lambda v: v.split(";") if isinstance(v, str) else v,
+    "REG_DWORD": lambda v: _to_unsigned(v, 32), "REG_QWORD": lambda v: _to_unsigned(v, 64),
+    "REG_EXPAND_SZ": lambda v: v, "REG_MULTI_SZ": lambda v: v.split(";") if isinstance(v, str) else v,
 }
 
 
 def _convert_reg_value(value_type: str, value: str) -> Any:
-    """按注册表类型转换值 — 小健 2026-05-25"""
+    """按注册表类型转换值 — 小健 2026-05-25
+    小欧 2026-08-05 修复: REG_BINARY 非法hex抛ValueError被通用except捕获返回误导信息,改为单独校验并给准确hint
+    小欧 2026-08-06 修复: REG_BINARY 支持"0x1F 0x2A"0x前缀输入(去前缀后统一bytes.fromhex)
+    """
+    if value_type == "REG_BINARY":
+        hex_str = _normalize_hex_input(value)
+        try:
+            return bytes.fromhex(hex_str)
+        except ValueError:
+            raise ValueError(f"REG_BINARY的值不是合法十六进制: {value}")
     converter = _REG_CONVERTERS.get(value_type)
     return converter(value) if converter else value
 
@@ -103,8 +133,18 @@ def registry_write(path: str, value_name: str, value: str, value_type: str = "au
 
         actual_type = value_type
         if value_type == "auto_detect":
-            # 2026-07-31 小欧 CRITICAL: value.isdigit() 对负整数("-1")返回False, 导致存为REG_SZ。改用 lstrip('-') 处理负数
-            actual_type = "REG_DWORD" if value.lstrip('-').isdigit() else "REG_SZ"
+            # 2026-07-31 小欧 CRITICAL: value.isdigit() 对 "-1" 返回 False, 导致 -1(0xFFFFFFFF) 被存为 REG_SZ 而非 REG_DWORD。改用 value.lstrip('-').isdigit() 修复
+            # 2026-08-06 小欧 BUG-6修复: auto_detect 超32位范围默认 REG_SZ 兜底, 不再误判 REG_DWORD 致 _to_unsigned 报错
+            # 2026-08-08 小欧: auto_detect 对纯字符串 int() 失败 → 推断 REG_SZ(原抛 ValueError 报错, task002问题2), KISS-DIRECT 与整数路径互斥
+            try:
+                num = int(value)
+            except (ValueError, TypeError):
+                actual_type = "REG_SZ"
+            else:
+                if -(1 << 31) <= num < (1 << 32):
+                    actual_type = "REG_DWORD"
+                else:
+                    actual_type = "REG_SZ"
 
         if actual_type not in _REG_TYPE_MAP:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -132,6 +172,11 @@ def registry_write(path: str, value_name: str, value: str, value_type: str = "au
     except PermissionError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_registry_write_llm_data("error", duration_ms, path, value_name, value, value_type, detail=f"权限不足: {path}", hint="请以管理员身份运行")
+        return build_error(data={}, llm_data=llm_data)
+    except ValueError as e:
+        # 2026-08-05 小欧: 区分值转换错误(如REG_BINARY非法hex),给出准确hint而非通用"系统状态"
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_registry_write_llm_data("error", duration_ms, path, value_name, value, value_type, detail=str(e), hint="请检查值内容是否与注册表类型匹配")
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

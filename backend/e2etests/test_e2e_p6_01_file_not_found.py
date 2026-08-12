@@ -42,8 +42,9 @@ USER_INPUT = (
     "文件头签名是否正确，把检查结果展示给我。"
     ""
     "第五阶段：将以上所有操作——文件清单、test.txt内容统计、diff_tool.py脚本、"
-    "对比结果和文件完整性检查——汇总整理后保存到E:\\test_dir\\file_processing_summary.txt。"
+    "对比结果和文件完整性检查——汇总整理后保存到E:\\test_dir\\file_processing_summary+时间.txt。"
     "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 from pathlib import Path

@@ -93,6 +93,11 @@
 # 2026-07-29 - 小沈 - TOOL_TIMEOUTS["delete"]=120; 新增TOOL_TIMEOUT_HINTS超时hint字典(仅含无timeout参数tool); TOOL_TIMEOUTS去除有timeout参数tool(shell/httpget/fetchpage/download/compress); listdir注册名对齐(list_directory→listdir),值30→60
 # 2026-07-30 - 小沈 - TOOL_TIMEOUT_HINTS加compress: 有timeout参数的tool也可能被保险丝截杀,内部timed_out路径来不及时返回,引擎TIMEOUT路径直接给hint避免LLM收到空串
 # 2026-07-30 - 小沈 - 新增 SHELL_POOL_IDLE_TIMEOUT=300: Shell池空闲超时兜底(防孤魂野鬼), 实例release回池后超过此值无人acquire则close
+# 2026-08-05 - 小欧 - 设计约定补齐: 移除 TOOL_TIMEOUTS 里的 ping_port(60)
+#   【病根】ping_port 的 schema 用 NetworkDiagnoseInput 含 timeout 参数, 属"有 timeout 参数"工具,
+#   按约定应移出 TOOL_TIMEOUTS(与 compress/shell/httpget/fetchpage/download 一致), 漏网遗留在表内(60)
+#   【影响】移除后 ping_port 未传 timeout 时 base 由显式60变为default 60, 值不变; 内部默认timeout仅5s,
+#   保险丝恒远大于内部, 无功能变化 —— 纯设计一致性清理
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -149,7 +154,6 @@ TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 保险丝超时（ToolRetryEngi
     "session": 60,
     "event_log": 60,
     "searchweb": 60,
-    "ping_port": 60,
     "window_info": 20,
     "window_focus": 20,
     "window_resize": 20,

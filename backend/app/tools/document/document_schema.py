@@ -16,6 +16,7 @@
 # 2026-07-26 - 小沈 - Bug #6 DRY: 抽取_DocContentOrTableMixin消除WriteDocxInput/WritePdfInput的_check_content_or_table重复代码
 # 2026-07-28 - 小欧 - description精确化: write_pptx.path/write_docx.path/write_xlsx.path/write_pdf.path 全部加"必填"标注
 # 2026-07-31 - 小欧 - ReadPdfInput 补 page/pages 互斥校验(model_validator): 二者同时指定时报 ValueError, 与运行时逻辑对齐(Pydantic 层即拦截非法组合); 移除未使用 Literal 导入
+# 2026-08-07 - 小欧 - WriteXlsxInput 新增 append_mode 字段(追加模式): True=文件已存在时末尾追加, False=默认覆盖; 与 write_xlsx 实现层同步 — 小欧 2026-08-07
 """
 Document Schema - 文档工具参数模型
 
@@ -113,6 +114,14 @@ class WriteXlsxInput(BaseModel):
 - 不同对象的key可以不同，缺失的列自动填空"""
     )
     sheet_name: str = Field(default="Sheet1", description="工作表名")
+    # append_mode 追加模式 — 小欧 2026-08-07
+    append_mode: bool = Field(
+        default=False,
+        description="""追加模式。
+- True: 文件已存在时在末尾追加行（保留已有内容/格式）；不存在则新建
+- False: 默认整篇覆盖
+【注意】追加时 data 的列名需与已有表头一致，不一致将返回错误"""
+    )
 
 
 class WritePdfInput(_DocContentOrTableMixin, BaseModel):

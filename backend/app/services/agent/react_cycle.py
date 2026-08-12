@@ -29,6 +29,41 @@
 # 2026-07-22 小欧 usage 扩展: 三字段(prompt/completion/total)累加 accumulated_usage; emit MetaStep(type="usage") 逐次报告本次消耗
 # 2026-07-22 小欧 MetaStep usage: 从 **_usage 解包改为手动三字段，精确控制输出
 # 2026-07-23 小欧 - log_and_print统一: 3处print()替换为log_and_print()(Thought/Error/Cancel控制台输出), 导入log_and_print
+# 2026-08-08 小欧 相同工具调用死循环检测(场景F)新增:
+#   【病根】P6_01(file_not_found)超时根因: LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数
+#          (writetext写同一diff_tool.py), 每次工具均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具
+#          调用"空转, 本模式漏检, 致死循环直抵max_steps=10000。
+#   【方案】_tool_call_signature计算action调用签名(含并行pending); _check_same_tool_loop返回int连续计数(count=第N次),
+#           双阈值: count==2/3/4(_SAME_TOOL_WARN_ROUNDS起)注入assistant role纠偏消息尝试唤醒, count>=5硬终止failed;
+#           签名变化重置count=1+清纠偏标记; 正常任务签名各异零误伤, 增强不退化。
+# 2026-08-08 小欧 v1.6 双阈值实施: 单阈值(bool终止)升级为双阈值(3纠偏+5硬终止), 新增_warn_same_tool_loop
+# 2026-08-08 小欧 v1.7 双阈值调整(北京老陈 2026-08-08 指示"第2次就发纠偏; 2/3/4次发, >=5结束"):
+#   - 纠偏: 第2次(count==2)即发第1条(原第3次), 第2/3/4次各发1条共3条(原第3/4次共2条)
+#   - 硬终止: count>=5(原count>5第6次, 收紧回第5次)
+#   - 实现: _SAME_TOOL_WARN_ROUNDS 3→2, _SAME_TOOL_WARN_MAX 2→3; 判定改 _SAME_TOOL_WARN_ROUNDS<=cnt<5 区间发纠偏,
+#     cnt>=5 硬终止; _warned_same_tool_loop 为 int 计数(发纠偏条数, 上限_SAME_TOOL_WARN_MAX),
+#     重置/初始化点(签名变化/非action/initialize_run_state)由 False 改 0;
+#     deny_counts 让位判断 not _warned_same_tool_loop 真值语义不变(int>0即已发)
+# 2026-08-09 - 小欧 - P4拆分(见doc-8月优化修复代码三堂会审报告v1.1): 用户暂停阻塞由 task_pause_check(产SSE) 改为
+#   wait_for_resume(纯阻塞不产SSE)。原 task_pause_check 在 react_cycle→agent_runner 路径产出的SSE字符串
+#   被 agent_runner 以"跳过非Step事件"丢弃(死路); 前端暂停/恢复提示由 openai._stream_with_control 的
+#   task_pause_check_and_yield 统一下发(职责单一无重复)。ast语法✓
+# 2026-08-09 - 小欧 - task007核查问题A: 相同工具纠偏消息为"面向LLM的反馈指令", role由assistant改为user,
+#   文本增强紧迫感(点明"强制终止后果"+要求改工具/直接结束), 强化LLM服从。带_temp_same_tool_warn标记
+#   仍受通用_temp_*前缀清除(tool_retry_engine/pop_temp_messages v1.6)保护, 持久化前被pop_temp_messages
+#   统一弹掉, 不污染history/压缩。ast语法✓
+# 2026-08-10 - 小欧 - R1 实施(第二次代码更新): finally 新增 clear_temp_auth() (task 级清零点, 3.2.12/3.2.13); I1 授权段移入 try 内(见 I1/I2 v1.43 实现, 依赖本清零点)
+# 2026-08-10 - 小欧 - I2/I3/I4 实施(第二次代码更新, 第五批): 任务目录级临时授权确认(3.2.13) —
+#   I2 复用现有 HITL paused 流(前端零改动): try 内(while 前) 消费 agent._task_auth_paths(I1 挂载),
+#   create_confirmation → MetaStep(paused, confirm_id, tool_name="task_dir_authorization") →
+#   await wait_for_confirmation_result → 确认后批量 grant_temp_auth(recursive=True);
+#   I3 落区判定(授权前分流): 系统禁区不授权 / 非系统禁区仅写可授权(删硬拦) / 白名单外入单;
+#   I4 异常兜底: 确认超时/拒绝/异常 → 跳过不授权不阻塞, 任务继续(任务内仍可单点工具授权)
+# 2026-08-10 - 小欧 - 撤销 I2/I3/I4 (北京老陈 2026-08-10): 「任务中目录解析功能点去掉」—
+#   移除 try 内 while 前的任务目录级 HITL 批量授权段(create_confirmation/paused/grant_temp_auth);
+#   目录权限全部走 LLM 工具参数路径进临时名单(3.2.12); 保留 R1 clear_temp_auth(task 级清零点); 同步撤销 initialize_run_state 的 I1
+# 2026-08-10 - 小欧 - 撤销 I2 残留清理(三堂会审核查): 删除 L83 死 import HITL_TIMEOUT(I2 已撤销, react_cycle 内无任何引用, 死代码)
+
 
 """
 run_react_cycle — ReAct 循环核心（薄调度）
@@ -38,6 +73,7 @@ run_react_cycle — ReAct 循环核心（薄调度）
 """
 
 import asyncio
+import json
 import time
 from typing import Any, Dict, Optional, AsyncGenerator
 
@@ -55,6 +91,18 @@ from app.services.agent.llm_stream import call_llm_with_fallback
 from app.services.agent.tool_cache_manager import get_openai_tools
 
 _MAX_CONSECUTIVE_TRUNCATIONS = 3
+
+# 相同工具调用死循环防御(双阈值纠偏/硬终止): LLM连续调用完全相同工具+相同参数时,
+# 第2次(count==2)、第3次(count==3)、第4次(count==4)各注入一条assistant role纠偏消息尝试唤醒调整(共3条);
+# count>=5(第5次)判定死循环硬终止。
+# 2026-08-08 - 小欧 - P6_01(file_not_found)超时根因: LLM连续40+步逐字重复同一Thought并反复调用
+#   相同writetext(diff_tool.py), 每次均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具"
+#   空转, 本模式漏检, 致死循环直抵max_steps=10000。v1.6升级为由单阈值硬终止改为双阈值(纠偏+硬终止)。
+# v1.7(北京老陈 2026-08-08): 纠偏起点提前——第2次(count==2)就发第1条纠偏(原第3次), 第2/3/4次共发3条,
+#   硬终止 count>=5(原count>5第6次)收紧; 给LLM尽早调整机会(第2次发现完全相同即提醒)。
+_SAME_TOOL_WARN_ROUNDS = 2             # 纠偏起点阈值: count==2(第2次相同调用)注入第1条警告 — 小欧 2026-08-08
+_SAME_TOOL_WARN_MAX = 3                # 纠偏最大条数: 第2/3/4次共3条 — 小欧 2026-08-08
+_MAX_CONSECUTIVE_SAME_TOOL_CALLS = 5   # 硬终止阈值: count>=5(第5次相同调用)时硬终止 — 小欧 2026-08-08
 
 # 可恢复的拒绝/拦截错误: 拒绝≠失败(符合人类认知, 助手应换工具继续) — 小欧 2026-07-13
 # 反馈已写入LLM历史(_add_denial_feedback), 循环回THINKING由主循环 EXECUTING→THINKING 处理;
@@ -116,6 +164,59 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
         elif role == "assistant" and msg.get("tool_calls"):
             return not _seen_response
     return False
+
+
+def _tool_call_signature(llm_response: Dict) -> str:
+    """计算action响应的工具调用签名(全部调用含并行) — 小欧 2026-08-08
+    用于相同工具调用死循环检测: 签名=tool_name+规范化tool_params的排序JSON,
+    连续多步完全相同签名即判死循环。sort_keys保证字典顺序无关, 参数内容变化即签名变化。"""
+    calls = []
+    _primary = (llm_response.get("tool_name", "") or "",
+                llm_response.get("tool_params") or {})
+    calls.append(_primary)
+    for _pc in llm_response.get("_pending_calls") or []:
+        calls.append((_pc.get("tool_name", "") or "", _pc.get("tool_params") or {}))
+    return json.dumps(calls, sort_keys=True, ensure_ascii=False)
+
+
+def _check_same_tool_loop(agent, llm_response: Dict) -> int:
+    """相同工具调用死循环检测(计数) — 小欧 2026-08-08
+    count语义="第几continuous相同调用": 首个相同签名(count基准起始)。
+    无上次签名(首调用)计count=1; 与上轮签名相同则count+1; 签名变化则重置count=1并清纠偏计数。
+    返回int连续计数供调用方分支(count==2/3/4纠偏 / count>=5硬终止)。action语义下调用; 非action由调用方归零。"""
+    _sig = _tool_call_signature(llm_response)
+    if _sig and _sig == getattr(agent, "_last_tool_call_sig", None):
+        agent._consecutive_same_tool_calls = getattr(agent, "_consecutive_same_tool_calls", 0) + 1
+    else:
+        agent._consecutive_same_tool_calls = 1      # 新签名起点=1, 标记同步重置 — 小欧 2026-08-08
+        agent._warned_same_tool_loop = 0            # int计数(发纠偏次数)重置 — 小欧 2026-08-08
+    agent._last_tool_call_sig = _sig
+    return agent._consecutive_same_tool_calls
+
+
+def _warn_same_tool_loop(agent, llm_response: Dict, count: int) -> None:
+    """注入纠偏提醒(带_temp_same_tool_warn标记, 终态统一清理) — 小欧 2026-08-08
+    连续相同调用达count==2/3/4(第2/3/4次)时各注入一条assistant role观察消息尝试唤醒LLM调整;
+    最多注入3条(第2/3/4次, _warned_same_tool_loop为int计数), 标记供pop_temp_messages
+    弹掉防止持久化污染。原布尔幂等→int计数(北京老陈 2026-08-08 指示"第2次就发纠偏")。"""
+    if getattr(agent, "_warned_same_tool_loop", 0) >= _SAME_TOOL_WARN_MAX:
+        return  # 最多警告3次(第2/3/4次) — 小欧 2026-08-08
+    _tool = llm_response.get("tool_name", "") or ""
+    _sig = _tool_call_signature(llm_response)
+    obs_text = (
+        f"[Warning] 你的上一次操作无效: 已连续 {count} 次调用相同的工具 {_tool} 且参数**完全相同**, "
+        f"签名={_sig[:80]}..., 并未获得任何新信息。这是较严重的重复循环。"
+        "请立即根据以下提示调整, 否则系统将强制终止本次任务: "
+        "1) 改用其他工具或不同的参数; 2) 若确无新进展, 请直接给出结论结束任务, 不要再次重复调用同一工具。"
+    )
+    agent.message_builder.conversation_history.append({
+        "role": "user",
+        "content": obs_text,
+        "_temp_same_tool_warn": True,
+    })
+    agent._warned_same_tool_loop = getattr(agent, "_warned_same_tool_loop", 0) + 1
+    logger.info(f"[run_react_cycle] LLM连续{count}次调用相同工具 {_tool}, 注入纠偏警告(第{agent._warned_same_tool_loop}条)")
+    log_and_print(f"{time.strftime('%H:%M:%S')} [Loop] step={agent.llm_call_count} same tool warn={_tool}")
 
 
 async def _dispatch_handler(agent, llm_response):
@@ -198,7 +299,14 @@ async def _dispatch_handler(agent, llm_response):
                 _deny[_key] = _deny.get(_key, 0) + 1
                 agent._deny_counts = _deny
                 if _deny[_key] >= 3:
-                    set_failed(agent, f"工具 {_tool} 被反复{err_type}(≥3次), LLM陷入死胡同, 停止循环")
+                    # 2026-08-08 小欧 机制冲突修复: 场景F(双阈值 count==2/3/4 纠偏)已注入纠偏消息且LLM尚未调整
+                    #   (_warned_same_tool_loop>0)时, 本处累计口径让位给纠偏, 给LLM调整机会,
+                    #   避免"纠偏刚注入即被deny_counts判FAILED"致纠偏形同虚设(COM_03真实场景: 连续3次
+                    #   delete被R6拦截, step=22纠偏与FAILED同轮触发, 响应仅6字"任务执行失败")。
+                    #   连续同签名死循环由场景F count>=5(第5次)硬终止兜底; 非连续死胡同(签名变化重置标记)
+                    #   仍由本处累计≥3次拦截, 语义不退化。 — 小欧 2026-08-08
+                    if not getattr(agent, "_warned_same_tool_loop", 0):
+                        set_failed(agent, f"工具 {_tool} 被反复{err_type}(≥3次), LLM陷入死胡同, 停止循环")
         else:
             set_failed(agent, error_msg)
     else:
@@ -375,6 +483,40 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         ))
         return
 
+# ── 场景F: 相同工具调用死循环检测(双阈值纠偏/硬终止) ──────────
+    # 2026-08-08 - 小欧 - P6_01(file_not_found)超时根因修复:
+    #   【病根】LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数(writetext写同一diff_tool.py),
+    #          每次工具执行均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具调用"空转, 本模式漏检,
+    #          致死循环直抵max_steps=10000(约40+分钟)。
+    #   【方案】对action响应计算工具调用签名(tool_name+规范化tool_params, 含并行pending),
+    #          _check_same_tool_loop返回int连续计数(count=第N次), 双阈值:
+    #          count==2/3/4(_SAME_TOOL_WARN_ROUNDS起)各注入assistant role纠偏消息(尝试唤醒调整, 最多3条);
+    #          count>=5(_MAX_CONSECUTIVE_SAME_TOOL_CALLS)判定死循环硬终止failed。
+    #          正常任务LLM每轮工具/参数各异或需新信息, 签名必不同, count重置, 零误伤(增强不退化)。
+    if llm_response.get("type") == "action":
+        _cnt = _check_same_tool_loop(agent, llm_response)
+        if _SAME_TOOL_WARN_ROUNDS <= _cnt < _MAX_CONSECUTIVE_SAME_TOOL_CALLS:
+            # count==2/3/4: 各发1条纠偏(共3条, 内部幂等上限_SAME_TOOL_WARN_MAX) — 小欧 2026-08-08
+            _warn_same_tool_loop(agent, llm_response, _cnt)
+        elif _cnt >= _MAX_CONSECUTIVE_SAME_TOOL_CALLS:    # count>=5(第5次相同调用): 硬终止 — 小欧 2026-08-08
+            logger.warning(f"[run_react_cycle] LLM连续{_cnt}步调用相同工具(step={step}), 判定死循环, 终止")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, same_tool_loop")  # 小欧 2026-08-08 控制台
+            set_failed(agent, f"模型连续{_cnt}步重复调用相同工具, 疑似死循环, 任务终止")
+            yield agent._step_emitter.emit(FinalStep(
+                step=step,
+                response="模型反复调用相同工具未取得进展，任务已终止（疑似死循环）",
+                thought=llm_response.get("reasoning", "") or llm_response.get("thought", ""),
+                outcome="failed",
+                error_type="same_tool_loop",
+                error_message=f"模型连续{_cnt}步重复调用相同工具，疑似死循环",
+            ))
+            return
+    else:
+        # 非action(正常answer/final): 死循环检测仅在action语义下, 归零防残留(含纠偏标记) — 小欧 2026-08-08
+        agent._consecutive_same_tool_calls = 0
+        agent._last_tool_call_sig = None
+        agent._warned_same_tool_loop = 0            # int计数归零 — 小欧 2026-08-08
+
     # ── 场景E: 正常分发 ─────────────────────────────────────────
     agent._consecutive_truncations = 0
     async for event in _dispatch_handler(agent, llm_response):
@@ -422,7 +564,7 @@ async def run_react_cycle(
             # 注: 原 react_cycle 场景B 依赖 llm_client._cancelled, 该属性全局从未赋值(死代码),
             # 曾导致用户取消误走 empty_response→ErrorStep(failed)。 — 小沈 2026-07-13
             if task_id:
-                from app.services.task.task_runtime import check_cancelled, task_pause_check
+                from app.services.task.task_runtime import check_cancelled, wait_for_resume
                 if await check_cancelled(task_id):
                     logger.info(f"[run_react_cycle] 检测到任务取消(task_id={task_id}), 终止为 cancelled")
                     yield agent._step_emitter.emit(FinalStep(
@@ -433,11 +575,14 @@ async def run_react_cycle(
                     break
                 # 用户暂停检测(循环粒度, 阻塞等待恢复) — 小欧 2026-07-13
                 # 符合人类认知: 你喊暂停, 助手原地等(真BLOCK), 不空转、不误判为取消/完成。
-                # 阻塞点在 task_pause_check 内 pause_event.wait(); 恢复后回 THINKING 继续。
+                # 阻塞点在 wait_for_resume 内 pause_event.wait(); 恢复后回 THINKING 继续。
                 # 注意: 此处只查暂停不查取消(取消已在上方处理); 暂停不再经 LLMClient._stop_check
                 # 中断流式(已在 agent_runner 改为仅查取消), 故暂停在"下一轮循环顶"干净生效。
-                async for pause_event in task_pause_check(task_id):
-                    yield pause_event
+                # 2026-08-09 - 小欧 - P4 拆分: 原 task_pause_check 在此产出 SSE 字符串被 agent_runner
+                #   以"跳过非Step事件"丢弃(死路), 改纯阻塞 wait_for_resume(不产 SSE);
+                #   暂停/恢复 SSE 统一由前端消费路径 openai._stream_with_control 的
+                #   task_pause_check_and_yield 下发, 职责单一无死路。
+                await wait_for_resume(task_id)
             try:
                 async for event in _process_single_step(agent, chunk_buffer):
                     yield event
@@ -501,4 +646,9 @@ async def run_react_cycle(
 
     finally:
         _finalize_cycle(agent)
+        # R1 (v1.43): task 级清零点 — clear_temp_auth 在 finally 收口, 使授权后所有提前 break/异常/循环自然退出
+        #   均走 finally; 注意 max_steps<=0 提前 return 在 try 之前(Bug4修正: 该分支 I2 尚未运行,
+        #   无任何授权产生, 故不经过 finally 也无泄漏; 注释已修正不再声称其走 finally)
+        from app.services.safety.temp_auth import clear_temp_auth
+        clear_temp_auth()
 

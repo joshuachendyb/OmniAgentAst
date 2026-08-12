@@ -24,7 +24,8 @@ TEST_CASE_NAME = "多步推理通路验证"
 USER_INPUT = ("请读取E:\\test_dir\\test.txt全文，统计字符数（含空格与不含空格）、单词数、行数、"
                "中文字符数与英文字符数，以及是否包含数字或特殊字符。然后基于文件内容用Python写一段脚本"
                "做词频Top10分析并运行它。最后把原始内容、统计特征与词频结果汇总成报告"
-               "保存到E:\\test_dir\\test_step_report.md。所有结论必须基于真实读取的内容。")
+               "保存到E:\\test_dir\\test_step_report.md。所有结论必须基于真实读取的内容。"
+               "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 from datetime import datetime
 from pathlib import Path
 

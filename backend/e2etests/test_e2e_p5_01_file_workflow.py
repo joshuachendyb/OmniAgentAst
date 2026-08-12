@@ -1,7 +1,7 @@
 """E2E-E2E-P5-01: 文件全流程
 操作手册: FILE多工具组合-创建/写入/读取/搜索/追加/文件信息
 预期调用链: write_text_file->read_text_file->grep_file->append_to_file->read_text_file->get_file_info->list_directory
-前置数据: E:\test_dir\ 可写
+前置数据: E:\\test_dir\\ 可写
 通过标准: 流正常结束；报告文件生成；DB记录完整
 失败标准: 流异常中止
 
@@ -34,6 +34,7 @@ USER_INPUT = (
     ""
     "【阶段五：四版本报告】"
     "第九步，把以上所有操作的过程和结果独立生成四种版本的报告（TXT版本、带表格的DOCX版、结构化DOCX版、PDF版）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性分析报告"
 )
 
 import pytest

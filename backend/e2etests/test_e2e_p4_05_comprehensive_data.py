@@ -31,13 +31,14 @@ USER_INPUT = (
     "第八步，根据年度汇总数据生成一张柱状图，对比2025和2026年的各月数据，保存到E:\\test_dir\\year_compare.png。"
     ""
     "【阶段四：多格式输出】"
-    "第九步，把完整统计数据写入Excel工作簿保存到E:\\test_dir\\data_report.xlsx，"
+    "第九步，把完整统计数据写入Excel工作簿保存到E:\\test_dir\\data_report+时间.xlsx，"
     "用多个Sheet组织数据：Sheet1原始数据预览、Sheet2描述性统计、Sheet3类别分布、Sheet4相关性矩阵、Sheet5数据质量。"
-    "第十步，基于所有分析结果撰写Word分析总结文档保存到E:\\test_dir\\analysis_summary.docx，"
+    "第十步，基于所有分析结果撰写Word分析总结文档保存到E:\\test_dir\\analysis_summary+时间.docx，"
     "嵌入三张图表，文档包含章节：数据概况、质量分析、统计特征、图表分析、结论建议。"
     "总结中要包含数据概况、关键发现、统计结论和可视化分析四大板块。"
     "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下你创建于于本次任务相关的目录存放报告。"
-)
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
+    )
 
 import pytest
 from e2emodel.e2e_helpers import (

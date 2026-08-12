@@ -1,7 +1,7 @@
 """E2E-E2E-P5-02: 文件管理链
 操作手册: FILE组合-重命名+复制+备份
 预期调用链: rename_file->copy_file->read_text_file->get_file_info->list_directory
-前置数据: e2e_mc01.txt存在于E:\test_dir\；E:\test_dir\backup\ 可写
+前置数据: e2e_mc01.txt存在于E:\\test_dir\\；E:\\test_dir\\backup\\ 可写
 通过标准: 流正常结束；报告文件生成；DB记录完整
 失败标准: 流异常中止
 
@@ -35,6 +35,7 @@ USER_INPUT = (
     ""
     "【阶段五：四版本报告】"
     "第十一步，把以上所有操作的过程和结果独立生成四种版本的报告（TXT版、带表格的DOCX版、结构化DOCX版、PDF版）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性分析报告"
 )
 
 import pytest

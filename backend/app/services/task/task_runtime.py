@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-09 - 小欧 - P4拆分(见doc-8月优化修复代码三堂会审报告v1.1): 暂停阻塞核心提取为 _pause_core,
+#   react_cycle后台路径改 wait_for_resume(纯阻塞不产SSE), task_pause_check 保留产SSE供前端消费路径
+#   (openai._stream_with_control 的 task_pause_check_and_yield)。职责单一, 消除后台死路SSE事件。ast语法✓
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -87,11 +91,17 @@ async def task_cancel_check(
     return False, ""
 
 
-async def task_pause_check(
+async def _pause_core(
     task_id: str,
+    timeout: Optional[float],
+    emit_sse: bool,
     next_step: Optional[Callable[[], int]] = None,
-    timeout: Optional[float] = None,
 ) -> AsyncGenerator[str, None]:
+    """暂停阻塞核心: 检测暂停→置SUSPENDED→阻塞等恢复→置THINKING。可选产出SSE。
+    拆分依据(三审, 小欧 2026-08-09): 原 task_pause_check 在 react_cycle→agent_runner 路径产出的
+    SSE 字符串被 agent_runner 以"跳过非Step事件"丢弃(死路), 但该 SSE 对前端消费路径(openai)是真实所需。
+    故拆为两薄封装: wait_for_resume(纯阻塞) / task_pause_check(阻塞+SSE), 职责单一无重复。
+    前端暂停提示由 openai._stream_with_control 的 task_pause_check_and_yield 统一下发。"""
     if await check_cancelled(task_id):
         return
     pause_event = await get_pause_event(task_id)
@@ -105,8 +115,9 @@ async def task_pause_check(
         _agent = running_tasks.get(task_id, {}).get("agent")
         if _agent is not None and _agent.status in (AgentStatus.THINKING, AgentStatus.EXECUTING):
             set_status(_agent, AgentStatus.SUSPENDED, "用户暂停任务")
-        step_value = next_step() if next_step else None
-        yield _emit_step_sse(step_value, "paused", '任务已暂停')
+        if emit_sse:
+            step_value = next_step() if next_step else None
+            yield _emit_step_sse(step_value, "paused", '任务已暂停')
     try:
         if timeout:
             await asyncio.wait_for(pause_event.wait(), timeout=timeout)
@@ -122,8 +133,26 @@ async def task_pause_check(
     _agent = running_tasks.get(task_id, {}).get("agent")
     if _agent is not None and _agent.status == AgentStatus.SUSPENDED:
         set_status(_agent, AgentStatus.THINKING, "任务已恢复")
-    step_value = next_step() if next_step else None
-    yield _emit_step_sse(step_value, "resumed", '任务已恢复')
+    if emit_sse:
+        step_value = next_step() if next_step else None
+        yield _emit_step_sse(step_value, "resumed", '任务已恢复')
+
+
+async def wait_for_resume(task_id: str, timeout: Optional[float] = None) -> None:
+    """仅阻塞等待暂停恢复(不产出SSE)。react_cycle 后台编排路径用 — 小欧 2026-08-09
+    SSE 上报统一由前端消费路径 task_pause_check 负责, 后台路径不再产出死路事件。"""
+    async for _ in _pause_core(task_id, timeout, emit_sse=False):
+        pass
+
+
+async def task_pause_check(
+    task_id: str,
+    next_step: Optional[Callable[[], int]] = None,
+    timeout: Optional[float] = None,
+) -> AsyncGenerator[str, None]:
+    """阻塞+产出暂停/恢复SSE。前端SSE消费路径(openai._stream_with_control)用 — 小欧 2026-08-09"""
+    async for sse in _pause_core(task_id, timeout, emit_sse=True, next_step=next_step):
+        yield sse
 
 
 async def task_pause_check_and_yield(

@@ -12,6 +12,8 @@
 # 2026-07-25 - 小欧 - 新增非ASCII URL转码: fetch_webpage 支持中文域名/路径, 转码后走validate_url做DNS/SSRF检查
 # 2026-07-29 - 小欧 - fetchpage URL验证增强: 添加url is None强制防御, 排除对抗测试test_adversarial_batch*.py对None URL的故意利用, 修复或清除对抗测试always_fail/capture_wait_for抛异常对traceback统计影响
 # 2026-07-29 - 小欧 - 反爬增强(方案A+B): A-新增_build_browser_headers()完整浏览器头(sec-ch-ua/sec-fetch-*+br+image/avif), B-403优先降级Jina Reader再cf-mitigated, 解决知乎/CSDN等403问题
+# 2026-08-06 - 小欧 - 核查7/31未实现项[08]修复: url=None由try内raise ValueError(落入except打traceback)改为函数入口直接build_error(ERR_INVALID_URL), 与timeout/proxy校验同级, 不再泄漏traceback
+# 2026-08-06 - 小欧 - 三堂会审修复: BUG-5 url=None时summary传空串""代替None
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -595,6 +597,9 @@ async def fetchpage(
     proxy: Optional[str] = None,
 ) -> Dict[str, Any]:
     """获取网页内容 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-20 去除 max_tokens(正文零截断, 截断收口于 OBS_FETCHPAGE)"""
+    if url is None:
+        llm_data = _build_fetch_webpage_llm_data("error", 0, "", extract_format, err_code=ERR_INVALID_URL, detail="URL不能为空", hint="请提供要获取的网页URL", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        return build_error(data={}, llm_data=llm_data)
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "fetchpage")
     if not timeout_valid:
         llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_INVALID_URL, detail=timeout_err, hint="请检查超时设置", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
@@ -608,8 +613,6 @@ async def fetchpage(
     t0 = _time_mod.perf_counter()
 
     try:
-        if url is None:
-            raise ValueError("URL is None")
         # 非ASCII URL转码(IDNA+percent-encoding) — 小欧 2026-07-25  — 2026-07-28 小欧: 加 None 防御
         try:
             url.encode("ascii")

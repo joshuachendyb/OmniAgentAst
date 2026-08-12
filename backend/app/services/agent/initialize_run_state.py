@@ -1,13 +1,21 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-07-16 - 小欧 - 统一TaskID: _tracked_task_id → agent.task_id
 # 2026-07-18 - 小欧 - 【病根】历史重载边界(_inject_conversation_history)把 DB(execution_steps)持久化的 assistant.tool_calls 原样注入 message_builder, 零校验; 若某条 tool_calls 含非dict元素(截断/畸形LLM响应落库), 下轮回传即触发 provider 400("Can only get item pairs from a mapping")并 FC 降级→AgentStatus.FAILED。
 #            【解决思路】注入边界对 tool_calls 逐元素 isinstance(t, dict) 校验: list仅留dict元素 / 单dict归一为[dict] / 其余置空回退content分支; 合法 list-of-dict 输入输出100%不变(增强不退化), 调用方零改动。
+# 2026-08-08 - 小欧 - 新增相同工具死循环检测状态初始化(_consecutive_same_tool_calls/_last_tool_call_sig)
+# 2026-08-08 - 小欧 - v1.6 双阈值升级: 新增纠偏幂等标记初始化(_warned_same_tool_loop=False)
+# 2026-08-08 - 小欧 - v1.7 阈值调整(北京老陈 2026-08-08 指示"第2次就发纠偏; 2/3/4次发, >=5结束"): _warned_same_tool_loop 由布尔幂等标记改 int 纠偏条数计数(第2/3/4次共3条), 初始化 False→0
+# 2026-08-10 - 小欧 - I1 (第二次代码更新): 新增任务文本目录解析(_parse_task_auth_paths), 仅解析不授权不产 SSE, 挂 agent._task_auth_paths; 同步新增 _TASK_PATH_RE 正则
+# 2026-08-10 - 小欧 - 撤销 I1 (北京老陈 2026-08-10): 「任务中目录解析功能点去掉」— 删除 _parse_task_auth_paths/_TASK_PATH_RE 及调用,
+#   目录权限全部走 LLM 工具参数路径进临时名单(3.2.12); 同步撤销 react_cycle 的 I2/I3/I4 任务级批量确认段; 保留 R1 clear_temp_auth
+# 2026-08-11 - 小欧 - 三堂会审复核落地(P2-3): I1撤销后 _parse_task_auth_paths 已删, List 无消费处, 移除死 import(代码卫生)
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
-职责: 重置steps/message_builder/status/llm_call_count,注入system prompt和task
+职责: 重置steps/message_builder/status/llm_call_count, 注入system prompt和task
+
 Author: 小沈 - 2026-05-31
-更新: 小欧 - 2026-07-16 统一TaskID: _tracked_task_id → agent.task_id
 """
 
 from typing import Any, Dict, Optional
@@ -83,6 +91,10 @@ def initialize_run_state(
     agent.llm_call_count = 0
     agent._consecutive_truncations = 0
     agent._retry_count = 0
+    # 2026-08-08 - 小欧 - 相同工具调用死循环检测状态初始化(防跨任务残留): 连续相同工具签名计数+上次签名+纠偏幂等标记
+    agent._consecutive_same_tool_calls = 0
+    agent._last_tool_call_sig = None
+    agent._warned_same_tool_loop = 0   # v1.7双阈值: 纠偏注入条数计数(int, 第2/3/4次共3条), 落码新增字段 — 小欧 2026-08-08
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent.task_id:
         try:

@@ -1,10 +1,13 @@
 """
 指标收集器模块
 负责指标类型定义、指标数据结构和收集逻辑
+
+编辑历史:
+# 2026-08-08 - 小欧 - 全程统一本地时区: Metric.timestamp / cutoff_time 由 aware UTC 改 naive 本地, 消除 metrics API summary 每指标 timestamp 的 +00:00 偏移; L30与L94必须同步改否则比较TypeError
 """
 
 from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -27,7 +30,7 @@ class Metric:
     type: MetricType
     value: float
     labels: Optional[Dict[str, str]] = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now())  # 小欧 2026-08-08 全程统一本地时区: naive本地
 
 
 class MetricsCollector:
@@ -91,7 +94,7 @@ class MetricsCollector:
     
     def _cleanup_old_metrics(self):
         """清理过期的指标"""
-        cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=self.retention_period)
+        cutoff_time = datetime.now() - timedelta(seconds=self.retention_period)  # 小欧 2026-08-08 同步naive本地, 与metric.timestamp比较不TypeError
         
         for name, metrics_list in list(self.metrics.items()):
             # 保留最近期的指标

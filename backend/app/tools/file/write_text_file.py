@@ -7,6 +7,10 @@
 # 2026-07-29 - 小欧 - hint优化: 语法错误hint从死的"请修复语法错误后重试"改为动态"Python语法错误(行N)，建议:xxxx"; metrics新增error_line+suggestion
 # 2026-07-29 - 小欧 - PYEOF容错: Python文件末尾整行PYEOF自动剥离(heredoc泄漏), 前置在validate_syntax之前; metrics新增auto_removed_pyeof
 # 2026-07-30 - 小沈 - except:pass补日志: diff生成失败改为logger.debug记录
+# 2026-08-06 - 小欧 - 追加补换行: append且原文件非空且末尾非换行符时自动补换行, 避免追加内容与末行合并(仿edit_text_file末行处理)
+# 2026-08-07 - 小欧 - BUG-05修复: 编码无法编码(GBK+emoji/ascii+中文)时自动降级utf-8重写/追加, 不再崩溃
+#   【病根】append模式下_detect_file_encoding_for_write返回原文件编码(如gbk), user无法指定编码(file_safety_checker:126-127阻止), GBK无法编码emoji → 无fallback → 崩溃(日志09:11:34)
+#   【改法】_write_file_atomic 捕获 UnicodeEncodeError/UnicodeDecodeError 后, 非utf-8编码降级以utf-8整写(append先读回原内容防重复); utf-8也失败则返回错误
 """
 F2: writetext — 写文本文件
 
@@ -66,15 +70,44 @@ def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
 
 def _write_file_atomic(content: str, path: Path, encoding: str,
                         append: bool, create_parents: bool) -> Tuple[bool, str]:
-    """原子写入文件 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 返回具体错误信息"""
+    """原子写入文件 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 返回具体错误信息 — 小欧 2026-08-06 追加补换行 — 小欧 2026-08-07 BUG-05修复: 编码无法编码时降级utf-8"""
     try:
         if create_parents:
             path.parent.mkdir(parents=True, exist_ok=True)
+        if append:
+            # 追加且原文件非空末尾非换行符: 自动补换行, 避免与末行合并 — 小欧 2026-08-06
+            if path.exists() and path.is_file() and path.stat().st_size > 0:
+                with open(path, 'rb') as _rf:
+                    _rf.seek(-1, 2)
+                    _last_byte = _rf.read(1)
+                if _last_byte not in (b'\n', b'\r'):
+                    content = '\n' + content
         mode = 'a' if append else 'w'
         with open(path, mode, encoding=encoding, newline='') as f:
             f.write(content)
         return True, ""
     except (UnicodeEncodeError, UnicodeDecodeError) as e:
+        # BUG-05修复(小欧 2026-08-07): GBK等编码无法编码emoji时, 自动降级以utf-8重写/追加
+        #   日志证据: 09:11:34 write_text_file.py:88 'gbk' codec can't encode '\U0001f602'
+        #   根因: _detect_file_encoding_for_write 对 append 返回文件原编码(如gbk), GBK无法编码emoji → 直接失败
+        #   设计: UTF-8是GBK超集, 追加模式下转utf-8写(仅当原文件内容可无损重读), 不再崩溃
+        if encoding and encoding.lower() != "utf-8":
+            try:
+                _fallback_mode = mode
+                if append and path.exists() and path.is_file() and path.stat().st_size > 0:
+                    # 追加且原文件非空: 先读回原内容, 再以utf-8整写(避免mode='a'+content重复原文件)
+                    with open(path, 'r', encoding=encoding, newline='') as _rf:
+                        _existing = _rf.read()
+                    content = _existing + content
+                    _fallback_mode = 'w'
+                with open(path, _fallback_mode, encoding="utf-8", newline='') as f:
+                    f.write(content)
+                logger.warning(f"[_write_file_atomic] 编码{encoding}无法编码,已降级为utf-8写入: {path}")
+                return True, ""
+            except (UnicodeEncodeError, UnicodeDecodeError) as e2:
+                error_msg = f"编码错误(utf-8降级也失败): {e2}"
+                logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
+                return False, error_msg
         error_msg = f"编码错误: {e}"
         logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
         return False, error_msg

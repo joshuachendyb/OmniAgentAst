@@ -11,6 +11,11 @@ execute_sql — 执行写操作SQL
    【合规】DRY(常量消重)+KISS-DIRECT(if/elif直线扩展,不引入分级抽象)+YAGNI(模块常量不跨文件)
 【2026-07-24 小欧】修复: _sql_preview前置防空SQL漏截断 + timeout判断用is not None防0跳过
 【2026-07-26 小欧】迁移: sql_error_hint/hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
+【2026-08-07 小欧】P01+P02优化(北京老陈驱动 task001): ①新增confirm_ddl参数 — 显式确认后放行裸DDL(白名单_DDL_ONLY_TYPES: CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE, 防未来新增安全类型误放行); ②_build_execute_sql_llm_data补confirm_ddl传参(observation可见); ③危险提示文案优化 — 无WHERE时引导补WHERE/dry_run, 条件拼接消除warnings为空时的冗余逗号
+【2026-08-09 小欧】task006 P1落地: dry_run分支保留sqlite3异常(dry_run_error), 校验失败detail带异常原文+hint走sql_error_hint精准分支(多语句识别), 替代笼统"SQL语法校验失败/请检查SQL语法"
+【2026-08-09 小欧】task005核查P3落地: dry_run外层except加`if dry_run_error is None`保护 — 仅内层无异常时才用外层异常, 保留内层原始SQL语法错误(信息不丢失, 符合异常可追溯规范); 病根: SAVEPOINT/ROLLBACK失败(连接损坏)无条件覆盖内层已捕获异常
+【2026-08-11 小欧】三堂会审复核落地(P2-7): 删除外层except无条件syntax_valid=False覆写 — 内层语法校验已通过(syntax_valid=True)时,
+   外层SAVEPOINT/ROLLBACK/RELEASE失败(连接异常)不再误报"SQL语法校验失败"; syntax_valid仅反映内层真实校验结果, 增强不退化
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -65,13 +70,19 @@ def _check_sql_safety(sql: str) -> Tuple[bool, Optional[str], Optional[List[str]
             warnings.append(f"危险操作: {dangerous_to_show}")
         if 'NO_WHERE' in dangerous_matches:
             warnings.append("缺少 WHERE 条件")
-        return True, f"警告:检测到危险操作 {'+'.join(warnings)},已拦截执行。可使用dry_run=true预演", dangerous_matches
+            # 提示如何补充WHERE或dry_run预演 — 小欧 2026-08-07
+            hint = "已拦截整表操作。如需清空请带 WHERE（如 DELETE FROM t WHERE 1=1）或先 dry_run=true 确认"
+        else:
+            hint = "可使用 dry_run=true 预演"
+        # dangerous_to_show为空时(仅有NO_WHERE)warnings为空,'+'.join([])产生空串致冗余逗号,改用条件拼接 — 小欧 2026-08-07
+        _warn_str = f"危险操作: {'+'.join(warnings)}" if warnings else "整表操作"
+        return True, f"警告:检测到{_warn_str},已拦截执行。{hint}", dangerous_matches
     return False, None, None
 
 
 def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, detail="", hint="",
-                                 connection_type="", path="", dry_run=False, timeout=0):
-    """execute_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-24 主函数入口统一截断，build函数不再截断"""
+                                 connection_type="", path="", dry_run=False, timeout=0, confirm_ddl=False):
+    """execute_sql的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增detail/hint参数 — 小欧 2026-07-05 新增user_params — 小欧 2026-07-24 主函数入口统一截断，build函数不再截断 — 小欧 2026-08-07 新增confirm_ddl传参"""
     _act_params = {"sql": sql}
     if connection_type:
         _act_params["connection_type"] = connection_type
@@ -81,6 +92,8 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
         _act_params["dry_run"] = dry_run
     if timeout is not None:
         _act_params["timeout"] = timeout
+    if confirm_ddl:
+        _act_params["confirm_ddl"] = confirm_ddl
     _target = path or connection_type or "database"
     if exec_code == "error":
         return {
@@ -117,9 +130,11 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
 
 def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
                 connection_string: Optional[str] = None, path: Optional[str] = None,
-                dry_run: bool = False, timeout: int = 30000) -> Dict[str, Any]:
+                dry_run: bool = False, timeout: int = 30000,
+                confirm_ddl: bool = False) -> Dict[str, Any]:
     """执行写操作SQL — 小健 2026-06-22 拆分独立文件
     小欧 2026-07-04 修复: 增加None/空字符串校验
+    小欧 2026-08-07 新增confirm_ddl参数: 显式确认后放行裸DDL(白名单)
     """
     conn = None
     engine = None
@@ -143,7 +158,12 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
 
     try:
         has_danger, warning_msg, dangerous_list = _check_sql_safety(sql)
-        if has_danger and not dry_run:
+        # confirm_ddl=true: 用户显式确认后放行裸 CREATE/DROP（危险列表仅为已知 DDL 类型时）
+        # 白名单判断(非排除法): 只有 _DDL_ONLY_TYPES 中的类型才被 confirm_ddl 放行,
+        # 未来新增安全类型(如 SQL_INJECTION)不会误放行 — 小欧 2026-08-07
+        _DDL_ONLY_TYPES = {"CREATE", "DROP", "ALTER", "TRUNCATE", "GRANT", "REVOKE"}
+        _ddl_only = dangerous_list and all(d in _DDL_ONLY_TYPES for d in dangerous_list)
+        if has_danger and not dry_run and not (confirm_ddl and _ddl_only):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_execute_sql_llm_data("warning", duration_ms, _sql_preview, 0,
                                                      connection_type=connection_type, path=path, dry_run=dry_run, timeout=timeout)
@@ -160,13 +180,15 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 return build_error(data={}, llm_data=llm_data)
             syntax_valid = False
             dry_run_refused = None  # 2026-07-31 小欧: Bug③ MySQL DDL拒绝理由
+            dry_run_error = None  # 2026-08-09 小欧: task006 P1 保留校验异常供精准hint(多语句等)
             try:
                 if connection_type == "sqlite":
                     conn.execute("SAVEPOINT dry_run_check")
                     try:
                         conn.execute(sql)
-                    except Exception:
+                    except Exception as _e:
                         syntax_valid = False
+                        dry_run_error = _e  # 2026-08-09 小欧: 保留sqlite3异常, 供"one statement at a time"精准识别
                     else:
                         syntax_valid = True
                     finally:
@@ -183,12 +205,18 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                         try:
                             conn.execute(text(sql))
                             syntax_valid = True
-                        except Exception:
+                        except Exception as _e:
                             syntax_valid = False
+                            dry_run_error = _e  # 2026-08-09 小欧: 保留异常供精准hint
                         finally:
                             trans.rollback()
             except Exception as e:
-                syntax_valid = False
+                # 2026-08-09 小欧: task005核查P3 — 仅内层无异常时才用外层异常, 保留内层原始SQL错误(信息不丢失);
+                #   病根: SAVEPOINT/ROLLBACK等外层操作失败(连接损坏)会无条件覆盖内层已捕获的SQL语法异常
+                # 2026-08-11 小欧(P2-7): 删除无条件 syntax_valid=False 覆写 — 内层语法校验已通过(syntax_valid=True)时,
+                #   外层SAVEPOINT/ROLLBACK/RELEASE失败属连接异常, 不再误报"SQL语法校验失败"; syntax_valid仅反映内层真实校验结果
+                if dry_run_error is None:
+                    dry_run_error = e
             finally:
                 try:
                     conn.close()
@@ -210,7 +238,10 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 # ------------------------------------------------------------------------------
                 return build_success(data={"syntax_valid": True}, llm_data=llm_data)
             else:
-                llm_data = _build_execute_sql_llm_data("error", duration_ms, _sql_preview, 0, detail="SQL语法校验失败", hint="请检查SQL语法",
+                # 2026-08-09 小欧: task006 P1 — detail带异常原文, hint走sql_error_hint精准分支(多语句等), 替代笼统提示
+                _dry_detail = f"SQL语法校验失败: {dry_run_error}" if dry_run_error else "SQL语法校验失败"
+                llm_data = _build_execute_sql_llm_data("error", duration_ms, _sql_preview, 0, detail=_dry_detail,
+                                                          hint=sql_error_hint(dry_run_error) if dry_run_error else "请检查SQL语法",
                                                           connection_type=connection_type, path=path, dry_run=dry_run, timeout=timeout)
                 return build_error(data={}, llm_data=llm_data)
 
@@ -249,7 +280,8 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
         _ar_success = affected_rows if isinstance(affected_rows, (int, float)) and affected_rows >= 0 else 0
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_execute_sql_llm_data("success", duration_ms, _sql_preview, _ar_success,
-                                                  connection_type=connection_type, path=path, dry_run=dry_run, timeout=timeout)
+                                                  connection_type=connection_type, path=path, dry_run=dry_run, timeout=timeout,
+                                                  confirm_ddl=confirm_ddl)  # confirm_ddl 传参, observation可见 — 小欧 2026-08-07
         # =============================================================================
         # 数据设计：affected_rows 从 data 移除，通过 llm_data.metrics 传入 summary
         # summary 示例: "SQL执行成功, 影响5行"

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() 时间统一
+# 2026-08-08 - 小欧 - 全程统一本地时区: 默认 timestamp 改 get_local_iso_timestamp()
 """
 sse_formatter — SSE事件格式化工具(纯函数)
 
@@ -13,7 +14,7 @@ SSE格式化是纯字符串操作,不依赖任何业务逻辑,属于utils层。
 import json
 from typing import Any, Dict, Optional
 
-from app.utils.time_utils import get_utc_timestamp
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 
 def _break_circular(obj: Any, seen: set = None) -> Any:
@@ -40,7 +41,7 @@ def format_sse_event(event_type: str, step: int, data: Dict[str, Any]) -> str:
     if 'timestamp' in data:
         base['timestamp'] = data['timestamp']
     else:
-        base['timestamp'] = get_utc_timestamp()
+        base['timestamp'] = get_local_iso_timestamp()
     base.update(data)
     try:
         return f"data: {json.dumps(base, ensure_ascii=False)}\n\n"

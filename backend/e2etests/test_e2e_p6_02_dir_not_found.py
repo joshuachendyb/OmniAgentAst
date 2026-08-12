@@ -29,14 +29,15 @@ USER_INPUT = (
     ""
     "第二阶段：写一个Python脚本用于目录内容对比分析，脚本功能：接受两个目录路径作为参数、"
     "分别列出两个目录下的文件清单、找出两个目录下相同的文件名和不同的文件名、"
-    "输出对比统计（总文件数差异、相同文件数、差异文件数），保存到E:\\test_dir\\dir_compare_tool.py。"
+    "输出对比统计（总文件数差异、相同文件数、差异文件数），保存到E:\\test_dir\\dir_compare_tool+时间.py。"
     ""
     "第三阶段：列出E:\\test_dir\\no_such_dir下的文件，这个目录不存在，访问它看看会有什么结果，如果报错请解释错误原因并告诉我该怎么办。"
     ""
     "第四阶段：检查一下E:\\test_dir\\backup目录是否存在，如果存在则用Python对比脚本对比E:\\test_dir和backup目录的内容差异。"
     ""
     "第五阶段：将目录清单、Python脚本、目录访问错误信息、目录对比结果汇总整理后保存到E:\\test_dir\\dir_operation_report.txt。"
-    "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下。你创建于于本次任务相关的目录存放报告"
+    "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 from pathlib import Path

@@ -9,13 +9,14 @@ sse — 执行步骤流式查看
 # 2026-07-18 - 小欧 - #18 fix: execution_steps 遍历加 step is None continue 防御, 单条 json 解析失败不触发 AttributeError
 # 2026-07-18 - 小欧 - #21 fix: 预读数据退出with再yield,连接不占SSE流
 # 2026-07-18 - 小欧 - ExecutionStep.timestamp 注解 int→str, 默认值 0→"" 与时间归一化 UTC Z 字符串对齐, 消除 int 注解与 str 实际值不一致
+# 2026-08-08 - 小欧 - 全程统一本地时区: 默认 timestamp 改 get_local_iso_timestamp()
 
 import json
 import asyncio
 from typing import Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from app.utils.time_utils import get_utc_timestamp
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.db import db
 from app.services.chat.storage import load_execution_steps  # 从chat_message_steps组装 — 小欧 2026-07-14
 
@@ -92,7 +93,7 @@ async def _generate_execution_stream(session_id: str):
                             tool=step.get('tool', ''),
                             params=step.get('params', {}),
                             result=step.get('result'),
-                            timestamp=step.get('timestamp', get_utc_timestamp())
+                            timestamp=step.get('timestamp', get_local_iso_timestamp())
                         ).to_dict()
                         yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
                 elif content:

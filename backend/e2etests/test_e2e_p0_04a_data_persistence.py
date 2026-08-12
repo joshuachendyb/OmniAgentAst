@@ -26,7 +26,8 @@ TEST_CASE_NAME = "数据持久化通路验证"
 USER_INPUT = ("请列出E:\\test_dir下所有文件和子目录（名称/大小/修改时间），按扩展名分组；"
                "读取其中test.txt的前5行；用Python统计目录下各类文件的数量与总大小；"
                "最后把目录清单、文件抽样内容和统计结果汇总成dir_inventory_report.md保存到E:\\test_dir，"
-               "并用Shell执行一条命令确认该报告文件已生成。")
+               "并用Shell执行一条命令确认该报告文件已生成。"
+               "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 from datetime import datetime
 from pathlib import Path

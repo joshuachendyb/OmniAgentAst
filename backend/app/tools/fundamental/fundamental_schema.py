@@ -4,6 +4,7 @@
 # 2026-07-25 - 小欧 - description去冗余: 移除与类型声明重复的必填/可选/默认描述(5处)
 # 2026-07-30 - 小沈 - ToolSearchInput: 新增类docstring(含分类列表示例), query description从"工具名称类型的关键词"改为"备用工具的关键词", 与注册端/prompt端语义对齐
 # 2026-07-31 - 小欧 - ShellInput: 新增Windows命令弃用提醒(wmic/w32tm), command description补充弃用命令注意事项
+# 2026-08-05 - 小欧 - ToolSearchInput: 说明多分类关键词一次搜索即注入多个分类整类工具; 补充"词不拆字"分词与无命中/纯符号返回未匹配提示
 """
 FUNDAMENTAL Schema - 基础工具参数模型
 
@@ -25,18 +26,21 @@ FUNDAMENTAL Schema - 基础工具参数模型
 
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
+#分词按"词不拆字": 中文词组整体匹配(如"定时"不再拆成'定'+'时'), 保证多类型关键词各按词组精准命中;
 
 class ToolSearchInput(BaseModel):
-    """当前工具列表缺少可用工具,搜索备用工具并注入工具列表, 关键词为工具或者类型的名称 
+    """当前工具列表缺少可用工具,搜索备用工具并注入工具列表, 关键词为工具或者类型的名称
+支持一次搜索多个类型的词, 命中几个分类就自动注入几个分类的整类工具(每分类全部工具)。
 - 数据分析→搜"数据分析 图表"
 - 数据库→搜"数据库 SQL"
 - 网络→搜"网络 搜索 http"
 - 系统→搜"系统 进程 注册表 任务"
 - 桌面→搜"桌面 窗口"
-- 时间- 搜"时间 定时"
-- 文档- 搜"文档读写"
+- 时间→搜"时间 定时"
+- 文档→搜"文档读写"
+ 结果最多返回10个工具; 完全无命中/纯符号查询返回"未匹配到工具"提示并建议换词, 不注入任何分类。
 """
-    query: str = Field(..., description="备用工具的关键词，1-3个词即可")
+    query: str = Field(..., description="备用工具的关键词,1-3个词即可,可混搜多个类型(如'网络 文档')")
 
 
 class TimeNowInput(BaseModel):

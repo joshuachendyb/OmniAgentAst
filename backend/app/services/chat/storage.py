@@ -14,6 +14,8 @@
 # 2026-07-23 - 小欧 - 北京老陈驱动: 安全兜底 MAX_TOOL_RESULT_STR_LEN
 #         10000→100000 (各tool自行截断输出后, storage仅兜底,
 #         不再做激进取舍)
+# 2026-08-08 - 小欧 - 全程统一本地时区: get_utc_timestamp→get_local_iso_timestamp (L147/189/232/329 4处写入), 本地ISO无Z入库
+# 2026-08-11 - 小欧 - task006方案5落地: 截断字符串附加"原长N字符"标记, 让LLM感知base64/长文本被截断, 影像分析类任务不被截断误导
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -35,7 +37,7 @@ from pydantic import BaseModel, Field
 from app.logger import logger
 from app.db import db
 from app.utils.json_utils import safe_json_dumps, parse_json
-from app.utils.time_utils import get_utc_timestamp  # 小欧 2026-07-18 时间统一入库 UTC Z
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
 from app.utils.display_utils import extract_metadata_from_steps
 
 # 存储每个session的消息ID
@@ -144,14 +146,14 @@ def insert_assistant_message(
 ) -> None:
     """拷贝自 conversation.py 第115-131行"""
     cursor = conn.cursor()
-    utc_time = get_utc_timestamp()
+    local_time = get_local_iso_timestamp()
     initial_content = update_data.content or ""
     reply_to = getattr(update_data, 'reply_to_message_id', None)
     cursor.execute(
         """INSERT INTO chat_messages
            (id, session_id, role, content, timestamp, display_name, reply_to_message_id)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (ai_message_id, session_id, "assistant", initial_content, utc_time, display_name, reply_to),
+        (ai_message_id, session_id, "assistant", initial_content, local_time, display_name, reply_to),
     )
     logger.info(f"新消息创建: ai_message_id={ai_message_id}, session_id={session_id}, display_name={display_name}")
 
@@ -186,16 +188,16 @@ def update_session_message_count(
 ) -> None:
     """拷贝自 conversation.py 第159-177行"""
     cursor = conn.cursor()
-    utc_time = get_utc_timestamp()
+    local_time = get_local_iso_timestamp()
     if increment:
         cursor.execute(
             "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
-            (utc_time, session_id),
+            (local_time, session_id),
         )
     else:
         cursor.execute(
             "UPDATE chat_sessions SET updated_at=? WHERE id=?",
-            (utc_time, session_id),
+            (local_time, session_id),
         )
 
 
@@ -229,15 +231,15 @@ def allocate_and_insert_message(conn: Connection, session_id: str) -> int:
     ensure_session_exists(session_id, conn)  # #17 fix: 写入前确保会话存在, 消除孤儿消息 — 小欧 2026-07-18
     ai_message_id, is_new = _allocator.allocate(session_id, conn)
     if is_new:
-        utc_time = get_utc_timestamp()
+        local_time = get_local_iso_timestamp()
         conn.execute(
             "INSERT INTO chat_messages(id, session_id, role, content, timestamp) "
             "VALUES (?, ?, 'assistant', ?, ?)",
-            (ai_message_id, session_id, "", utc_time),
+            (ai_message_id, session_id, "", local_time),
         )
     conn.execute(
         "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
-        (utc_time, session_id),
+        (local_time, session_id),
     )
     return ai_message_id
 
@@ -305,14 +307,14 @@ def _truncate_tool_result_strings(obj: Any, tag: str = "") -> None:
     if isinstance(obj, dict):
         for key, val in list(obj.items()):
             if isinstance(val, str) and len(val) > MAX_TOOL_RESULT_STR_LEN:
-                obj[key] = val[:MAX_TOOL_RESULT_STR_LEN] + "...(storage截断)"
+                obj[key] = val[:MAX_TOOL_RESULT_STR_LEN] + f"...(storage截断,原长{len(val)}字符)"
                 logger.warning(f"[storage] {tag}tool_result.{key} 字符串过大({len(val)}字符),截断至{MAX_TOOL_RESULT_STR_LEN}")
             elif isinstance(val, (dict, list)):
                 _truncate_tool_result_strings(val, tag)
     elif isinstance(obj, list):
         for i, item in enumerate(obj):
             if isinstance(item, str) and len(item) > MAX_TOOL_RESULT_STR_LEN:
-                obj[i] = item[:MAX_TOOL_RESULT_STR_LEN] + "...(storage截断)"
+                obj[i] = item[:MAX_TOOL_RESULT_STR_LEN] + f"...(storage截断,原长{len(item)}字符)"
                 logger.warning(f"[storage] {tag}tool_result[{i}] 字符串过大({len(item)}字符),截断至{MAX_TOOL_RESULT_STR_LEN}")
             elif isinstance(item, (dict, list)):
                 _truncate_tool_result_strings(item, tag)
@@ -326,7 +328,7 @@ def append_execution_step(conn: Connection, message_id: int, session_id: str,
     conn.execute(
         "INSERT INTO chat_message_steps(message_id, session_id, step_index, step_json, created_at) "
         "VALUES (?, ?, ?, ?, ?)",
-        (message_id, session_id, step_index, safe_json_dumps(step_dict), get_utc_timestamp()),
+        (message_id, session_id, step_index, safe_json_dumps(step_dict), get_local_iso_timestamp()),
     )
 
 

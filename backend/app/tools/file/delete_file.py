@@ -7,6 +7,7 @@
 # 2026-07-29 - 小沈 - 三改: 1)TOOL_TIMEOUTS["delete"]=120s; 2)_force_delete_sync逐文件删除+计数,返回3-tuple(bool,str,list); 3)LLM显式看到删文件数+列表(>30截断首15尾15); 4)超时提示hint指引缩范围
 # 2026-07-30 - 小沈 - 三堂会审修复: _delete_file_impl L200 method改用闭包容器_deleted_container[1]取实际mode(原用force标记计算,当send2trash fallback到永久删除时LLM观察mode与事实不符); error分支metrics改传extra_metrics(含deleted_files), LLM在删除超时/失败时也能看到已删文件列表
 # 2026-08-02 - 小欧 - 最后防线加固: 新增_guard_forbidden_delete, 在delete()最前方无条件硬阻断删除盘根/项目根/系统保护目录, 不依赖security.enabled与config(根因: config security.enabled=false + 07-31撤销auto_confirm后, test_dl4_delete_root_protection真删G盘根; 本防线保证任何路径下禁删)
+# 2026-08-10 - 小欧 - ⑥删复刻_get_project_root收敛走config: _guard_forbidden_delete 项目根统一 config.get_project_root()+get_allowed_dirs()(多授权根保护); 代码库根删除保护由Safety层_is_forbidden_path(⑦)承接 — 步骤1实施(北京老陈驱动「项目根目录定义混乱修复」)
 """
 F12: delete_file — 删除文件
 
@@ -33,29 +34,10 @@ from app.services.safety import record_operation, execute_with_safety
 from app.logger import logger
 
 
-def _get_project_root() -> Path:
-    """推算真实项目根(backend的父级) — 小欧 2026-08-02
-    以代码位置推算为准(可靠), config配置的project_root仅作辅助(生产config可被改为测试目录,不可信)。
-    """
-    # 1) 代码位置推算: 本文件位于 {root}/backend/app/tools/file/delete_file.py
-    cur = Path(__file__).resolve()
-    for parent in cur.parents:
-        if parent.name == "backend":
-            return parent.parent
-    # 2) config兜底
-    try:
-        from app.config import get_config
-        cfg_root = get_config().get_project_root()
-        if cfg_root and Path(cfg_root).exists():
-            return Path(cfg_root).resolve()
-    except Exception:
-        pass
-    return cur.parents[4]
-
-
 def _guard_forbidden_delete(file_path: str) -> Optional[str]:
-    """删除最后防线: 无条件禁止删除盘根/项目根/系统保护目录 — 小欧 2026-08-02
-    不依赖security.enabled与config, 在delete()最前方硬阻断。
+    """删除最后防线: 无条件禁止删除盘根/项目根+授权目录/系统保护目录 — 小欧 2026-08-02, 2026-08-10 ⑥收敛走config
+    不依赖security.enabled, 在delete()最前方硬阻断。
+    项目根统一走 config.get_project_root(), 代码库根删除保护由 Safety 层 _is_forbidden_path(⑦) 承接。
     返回blocked原因, 通过返回None表示允许删除。
     """
     try:
@@ -88,18 +70,22 @@ def _guard_forbidden_delete(file_path: str) -> Optional[str]:
             if path_after_drive == sd_norm or path_after_drive.startswith(sd):
                 return f"禁止删除系统目录: {file_path}"
 
-    # 3) 项目根本身及项目根的父级祖先(含盘根) — 保护项目根不被删除
-    #    项目根内的具体用户文件/目录仍允许删除, 只禁项目根及更上层。
+    # 3) 项目根本身及项目根的父级祖先(含盘根) + 授权目录 — 保护根不被删除
+    #    根内的具体用户文件/目录仍允许删除, 只禁各根自身及更上层。
     try:
-        proj_root = _get_project_root()
-        if proj_root:
-            # p 是项目根本身 → 禁
-            if p == proj_root:
-                return f"禁止删除项目根目录: {file_path}"
-            # p 是项目根的上层祖先 → 禁
-            for ancestor in proj_root.parents:
+        from app.config import get_config
+        protected_roots_ = [Path(get_config().get_project_root()).resolve()]
+        try:
+            allowed_dirs = get_config().get_allowed_dirs()
+            protected_roots_ += [Path(d).resolve() for d in allowed_dirs]
+        except Exception:
+            pass
+        for root_ in protected_roots_:
+            if p == root_:
+                return f"禁止删除项目根/授权根目录: {file_path}"
+            for ancestor in root_.parents:
                 if p == ancestor:
-                    return f"禁止删除项目根上级目录: {file_path}"
+                    return f"禁止删除项目根/授权根上级目录: {file_path}"
     except Exception:
         pass
     return None

@@ -22,7 +22,8 @@ TEST_CASE_ID = "E2E-P0-06"
 TEST_CASE_NAME = "NETWORK+DATA混合通路验证"
 USER_INPUT = ("请搜索今天科技新闻（用至少2个关键词），抓取搜索结果页面提取正文关键词并做词频统计，归纳3个热点话题；"
                "用Python把关键词频率画成条形图保存到E:\\test_dir\\news_freq.png；"
-               "最后把热点摘要、词频表和图表说明汇总成news_analysis.txt保存到E:\\test_dir，并读取确认内容完整。")
+               "最后把热点摘要、词频表和图表说明汇总成news_analysis.txt保存到E:\\test_dir，并读取确认内容完整。"
+               "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 from datetime import datetime
 

@@ -1,7 +1,7 @@
 ﻿"""E2E-P2-02: 网络诊断修复流程（SHELL+NETWORK多工具）
 操作手册: 多目标连通性测试+DNS解析+路由追踪+防火墙检查+连接状态+搜索排查询方案，生成综合诊断报告
 预期调用链: ping_host(x3-5) -> fetch_webpage -> execute_shell_command(nslookup/tracert/netstat) -> search_web -> write_text_file(x2-3)
-前置条件: 网络连通；E:\test_dir\ 可写
+前置条件: 网络连通；E:\\test_dir\\ 可写
 验证原则：不限制中间工具调用链，只检查最终结果合理性 + DB/日志完整性
 中间过程（工具链、调用顺序）只记录不限制，如实写入测试报告
 
@@ -36,9 +36,10 @@ USER_INPUT = (
     "检查Windows防火墙状态（netsh advfirewall show allprofiles）。"
     "第五阶段——诊断总结和修复建议：汇总前四个阶段的发现，"
     "按严重程度列出所有网络问题，给出针对性的修复方案和操作步骤，"
-    "将完整的诊断报告保存到E:\\test_dir\\network_diagnosis\\diagnosis_report.txt，"
-    "同时生成结构化的JSON格式报告E:\\test_dir\\network_diagnosis\\diagnosis_summary.json。"
+    "将完整的诊断报告保存到E:\\test_dir\\network_diagnosis\\diagnosis_report+时间.txt，"
+    "同时生成结构化的JSON格式报告E:\\test_dir\\network_diagnosis\\diagnosis_summary+时间.json。"
     "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 import pytest

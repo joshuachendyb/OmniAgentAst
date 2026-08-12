@@ -1,7 +1,7 @@
 ﻿"""E2E-P2-04: 后台任务监控流程（SHELL多工具，环境敏感）
 操作手册: 启动多个后台任务（网络+文件），多轮监控输出，资源追踪，生成监控报告
 预期调用链: execute_shell_command(后台x2) -> shell_session(读输出x3+) -> shell_session(终止x2) -> write_text_file(x2)
-前置条件: 网络连通；E:\test_dir\ 可写
+前置条件: 网络连通；E:\\test_dir\\ 可写
 验证原则：不限制中间工具调用链，只检查最终结果合理性 + DB/日志完整性
 中间过程（工具链、调用顺序）只记录不限制，如实写入测试报告
 
@@ -36,10 +36,10 @@ USER_INPUT = (
     "使用Stop-Process或taskkill命令确保进程已结束，验证任务2和任务3的日志文件已不再增长。"
     "第六阶段——生成综合监控报告：读取所有任务产生的输出文件和数据，"
     "综合分析三个任务的运行过程、输出数据、资源使用情况，"
-    "生成E:\\test_dir\\bg_task\\monitor_report.md（完整的监控实验报告）"
-    "和E:\\test_dir\\bg_task\\monitor_data.json（结构化的监控数据汇总）。"
+    "生成E:\\test_dir\\bg_task\\monitor_report+时间.md（完整的监控实验报告）"
+    "和E:\\test_dir\\bg_task\\monitor_data+时间.json（结构化的监控数据汇总）。"
     "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
-)
+"最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告")
 
 import pytest
 from e2emodel.e2e_helpers import (

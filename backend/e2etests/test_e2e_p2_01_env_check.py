@@ -1,7 +1,7 @@
 ﻿"""E2E-P2-01: 开发环境检查流程（SHELL多工具）
 操作手册: 全面检查Python/Node/Go/Rust/Git/Docker等开发工具链，生成多格式环境报告
 预期调用链: execute_shell_command(x15+) -> write_text_file(x3)
-前置条件: python和git在PATH中；E:\test_dir\ 可写
+前置条件: python和git在PATH中；E:\\test_dir\\ 可写
 验证原则：不限制中间工具调用链，只检查最终结果合理性 + DB/日志完整性
 中间过程（工具链、调用顺序）只记录不限制，如实写入测试报告
 
@@ -35,14 +35,15 @@ USER_INPUT = (
     "第四阶段——开发工具和版本控制检查：查找——"
     "Visual Studio Code的code命令路径和版本，GitHub CLI（gh.exe）路径和版本，"
     "Docker Desktop（docker.exe）路径和版本，SSH客户端（ssh.exe）路径和版本，"
-    "7-Zip或WinRAR等通用压缩工具，输出到E:\\test_dir\\env_check\\dev_tools.txt。"
+    "7-Zip或WinRAR等通用压缩工具，输出到E:\\test_dir\\env_check\\dev_tools+时间.txt。"
     "第五阶段——生成汇总报告：读取前面所有阶段生成的检查文件，"
-    "整合生成E:\\test_dir\\env_check\\env_summary.json"
+    "整合生成E:\\test_dir\\env_check\\env_summary+时间.json"
     "（结构化JSON，包含每个工具的name、path、version、status、category字段）"
-    "和E:\\test_dir\\env_check\\env_summary.md"
+    "和E:\\test_dir\\env_check\\env_summary+时间.md"
     "（面向人类阅读的Markdown报告，包含总览表、缺失工具清单、环境健康度评分）。"
     "最后，列出env_check目录的完整内容确认所有报告文件已正确生成。"
     "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 import pytest

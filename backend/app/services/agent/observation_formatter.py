@@ -17,6 +17,9 @@
 # 2026-07-20 小欧 门限分工核查: 修正映射表+对照截断表4处注释常量值 10000→1000(OBS_MAX_STRING_LENGTH)/500→200(OBS_MAX_DISPLAY_ITEMS)/2000→1000(OBS_HTTPGET_MAX_ROW_CHARS)/200→100(OBS_SEARCHWEB_MAX_ROWS), 对齐 tool_constants.py 实际定义值
 # 2026-07-20 小欧 读取类自然单位治理: #10 改路由→_format_pdf_result(#10a PDF页感知, read_pdf专属, page=N翻页+前3页预览+逐页"--- 第N页 ---", INER_READ_PDF_MAX_PAGES=200安全网) / _format_prose_result(#10b 段落/文本行窗口, read_docx+clipboard_ctl适用, 两态说明+取页提示); _format_tree 层级感知截断(每节点子项封顶OBS_TREE_MAX_CHILDREN+总行封顶OBS_TREE_MAX_ROWS, 基于statistics计数); _format_slides 单页改行×列(OBS_PPTX_*); 映射表注释同步更新
 # 2026-07-20 小欧 单行超宽标注: _format_prose_result 与 _format_readtext_result 对超宽行追加 "…(该行超宽已截断, 原N字符)" 标注, 避免 LLM 被静默截断误导(对应 test_long_lines 期望); 与 Tool 层零限制(3.7)一致——截断唯一收口于 formatter
+# 2026-08-05 小欧 BUG-1修复: #18 compress 触发字段 "compression_ratio"→"compression_level"
+#   【病根】compress_files.py safe_data 去噪剥掉 compression_ratio(与llm_data ratio重复), 原 trigger 永不成立 → #18 成死代码
+#   【解决】改 data 恒在且 compress 独有字段 compression_level, #18 分支恢复工作; 去噪不复原大文件列表/ratio
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -280,7 +283,10 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
             return _format_sysinfo(data)
 
         # ── #18 compress — 1 tool: compress ──
-        if "compression_ratio" in data:
+        # 触发字段: compression_level(data中恒在, compress独有) — 小欧 2026-08-05 21:13
+        #   原因: compress_files.py safe_data 去噪时剥掉了 compression_ratio(与llm_data ratio重复),
+        #   原 trigger "compression_ratio" in data 永不成立 → #18 分支成死代码; 改 data 独有字段
+        if "compression_level" in data:
             return _format_compress_result(data)
 
         # ── #19 httpget — 1 tool: httpget ──

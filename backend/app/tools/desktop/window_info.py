@@ -10,6 +10,7 @@ window_info — 列出所有窗口
 # 2026-07-30 - 小欧 - #17:get_window_rect返回None时补默认值防前端报错
 # 2026-07-30 - 小欧 - #14:删除check_win32_platform()重复日志,只保留模块加载时一次
 # 2026-07-30 - 小欧 - hint区分非Windows平台vs缺pywin32库
+# 2026-08-05 - 小欧 - 三堂会审修复#3: find_windows_by_title 加 IsWindowVisible 过滤, 与 window_focus/window_resize 枚举口径统一, 避免 set_window_state 操作隐藏窗口
 import platform
 import time as _time_mod
 from typing import Any, Dict, List, Optional
@@ -87,6 +88,8 @@ def find_windows_by_title(window_title: str) -> List[int]:
     windows = []
     def callback(hwnd: int, _: List) -> int:
         try:
+            if not _win32gui.IsWindowVisible(hwnd):
+                return 1  # 跳过不可见(隐藏)窗口 — 2026-08-05 小欧 #3 与 window_focus/window_resize 枚举口径一致, 避免操作隐藏窗口
             title = _win32gui.GetWindowText(hwnd)
             if title and window_title.lower() in title.lower():
                 windows.append(hwnd)

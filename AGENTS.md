@@ -10,10 +10,10 @@
 
 **严禁** 用PowerShell 脚本来操作代码编辑\替换,否则导致代码编码错误
 
-## 1.2 编码铁规（必须遵守）--代码落盘前和落盘后进行<三堂会审>= 合规\合理\相关逻辑审查
+## 1.2 编码铁规（必须遵守）--代码落盘前和落盘后进行<三堂会审>= 合规\合理\关联逻辑审查
 **合规检查**  严格检查代码是否遵守10大规范--合规检查,
 **合理检查**  逻辑流程是否最优雅/最佳,杜绝绕来绕去
-**相关逻辑检查**相关代码上上下下,前前后后的逻辑影响,必须全部逻辑 增强功能,严禁退化功能
+**关联逻辑检查**相关代码上上下下,前前后后的逻辑功能,必须增强且进化功能,严禁退化功能
 **10大规范**  日常6条 + 重构4条:
 
 **日常编码**  6 条规范
@@ -77,6 +77,9 @@
 - **OS**: Windows only. Use PowerShell. No Linux/macOS commands.
 - **Shell**: PowerShell 7+. Use `Select-String` instead of `grep`.
 - **Python**: 3.13 at `E:\Appsw\python31311\`
+ **Prompt logging**: 
+`backend/logs/`
+`backend/logs/prompt-logs/`
 
 ---
 
@@ -182,7 +185,6 @@ npm run test:e2e     # Playwright
 - `tool_safety_checker.py` — 工具执行前安全检查
 - `file_safety/` — 文件操作安全(备份/回滚/查询)
 
-**Prompt logging**: `backend/logs/prompt-logs/`
 
 ### Frontend: `frontend/src/main.tsx` → Vite+React
 

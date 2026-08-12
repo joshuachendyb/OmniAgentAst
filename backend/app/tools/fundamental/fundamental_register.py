@@ -6,6 +6,8 @@ FUNDAMENTAL Register — 基础工具注册点
 【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 【2026-07-28 北京老陈】timeadd/timediff/calendar 迁至 TIMER 分类; shell 从 SHELL 迁入
 【2026-07-30 小沈】searchtool examp加"时间 定时"用例,补全7类备用工具
+【2026-08-05 小欧】searchtool描述说明多分类关键词一次搜索即注入多个分类整类工具; 无命中提示换词重搜不注入
+【2026-08-07 小欧】searchtool examples精简为4条(2多类型+2单类型), 引导"一次搜索多个类型"并保留单类型用法
 
 5个工具:
 - searchtool — BM25全文检索搜索工具
@@ -46,7 +48,7 @@ from app.tools.fundamental.send_notification import notify
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
 # 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 FUNDAMENTAL_TOOL_DESCRIPTIONS = {
-    "searchtool": """搜索备用工具。按工具名称和类型关键词检索并自动注入匹配的工具分类。适用场景:当前工具列表无对应的专用工具时使用。""",
+    "searchtool": """搜索备用工具。按工具名称和类型关键词检索,支持一次搜索多个类型(如'网络 文档 时间'),命中几个分类就自动注入几个分类的整类工具;结果最多返回10个工具;无命中时提示更换关键词重搜,不注入分类。适用场景:当前工具列表无对应的专用工具时使用。""",
     "timenow": """获取当前系统时间,返回ISO格式、时间戳、格式化字符串、时区、星期等信息。适用场景:需要获取当前时间时使用。""",
     "shell": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
     "sysinfo": """获取系统信息,包括操作系统、CPU、内存、磁盘和网络。适用场景:需要诊断系统问题(CPU高、内存不足、磁盘满)、了解硬件规格时使用。""",
@@ -55,13 +57,10 @@ FUNDAMENTAL_TOOL_DESCRIPTIONS = {
 
 FUNDAMENTAL_TOOL_EXAMPLES = {
     "searchtool": [
-        {"query": "文档 读写"},
-        {"query": "数据分析 图表"},
-        {"query": "数据库 SQL"},
-        {"query": "网络 搜索 下载"},
-        {"query": "系统 进程 注册表 任务"},
-        {"query": "桌面 窗口"},
-        {"query": "时间 定时"},
+        {"query": "网络 文档 数据分析 系统 桌面 时间"},   # 多类型混合示例1 - 小欧 2026-08-07
+        {"query": "数据库 SQL 注册表 定时"},             # 多类型混合示例2 - 小欧 2026-08-07
+        {"query": "文档 读写"},                          # 单类型示例
+        {"query": "桌面 窗口"},                          # 单类型示例
     ],
     "timenow": [
         {},

@@ -2,12 +2,14 @@
 
 **文档名称**: system-timer-win_registry工具梳理与三堂会审报告-小欧-2026-07-31.md
 **创建时间**: 2026-07-31 10:32:04
-**更新时间**: 2026-07-31 17:00:00 小欧
+**更新时间**: 2026-08-05 19:33:00 小欧
 
 ## 版本历史
 | 版本 | 时间 | 更新信息 | 作者 |
 |------|------|---------|------|
 | v1.0 | 2026-07-31 10:32 | 初稿，包含三分类完整三堂会审+4项修复 | 小欧 |
+| v1.1 | 2026-08-05 19:13 | 补充2026-08-05 timer工具三堂会审第二轮复核修复6项 | 小欧 |
+| v1.2 | 2026-08-05 19:33 | 补充2026-08-05 system/win_registry工具三堂会审第三轮复核修复3项 | 小欧 |
 
 ---
 
@@ -239,6 +241,89 @@
 
 ### 仍未修复的观察项（低优先级）
 
-1. **time_add.delta** — 未加硬约束（纯计算），仅描述指引 — 如需约束可加 ge/le
+1. ~~**time_add.delta** — 未加硬约束（纯计算），仅描述指引 — 如需约束可加 ge/le~~（2026-08-05 已补范围指引，见第六章）
 2. **registry_write.value** — Union[str,int] 对 LLM 不够精确 — 如需增强可考虑拆分 description 提示 int→REG_DWORD
 3. **time_diff** — format 指引可更精确（如提供 ISO 示例）— 当前已有基本指引
+
+---
+
+# 六、2026-08-05 timer 工具三堂会审第二轮复核（6 项修复）
+
+> 编写人：小欧 2026-08-05 19:13:42
+> 说明：对 timer 分类 6 个工具代码全文熟读×3遍 + helper 依赖逐行核查，复核出 7 个真实 bug（含 1 项初判误判撤回），最终修复 6 项。commit `0d5380288`。
+
+## 6.1 修复清单
+
+| Bug 编号 | 严重度 | 文件 | 问题描述 | 修复方案 |
+|---|---|---|---|---|
+| Bug3 | MEDIUM | timer_list.py | 内存与DB数据合并后未统一排序，破坏"按触发时间排序"契约 | 合并后统一按 `trigger_at` 排序 |
+| Bug5 | MEDIUM | timer_schema.py | TimeAddInput.delta 缺范围指引（与文档声称不一致） | delta description 补"建议范围±31536000(约±1年)" |
+| Bug6 | LOW | time_add.py | months 两条路径精度不一致（dateutil精确月 vs fallback 30天/月） | 统一按 30天/月 近似，移除 dateutil 强依赖 |
+| Bug7 | MEDIUM | time_diff.py | is_future 基于 end>now，start/end 同在过去或未来时"前/后"方向错判 | 改为基于 start→end（`delta.total_seconds()>=0`） |
+| Bug8 | LOW | time_diff.py | <60s 时"刚刚/即将"语义随 Bug7 联动 | 随 Bug7 同源修正 |
+| Bug10 | LOW | timer_schema.py | delay description 错别字"最24小时" | 改为"最多24小时" |
+
+## 6.2 初判撤回项（诚实声明）
+
+- **Bug 1（loop NameError）**：`_safe_cb` 闭包延迟绑定，`call_later` 触发时 `loop` 已赋值，不会 NameError。撤回。
+- **Bug 2（httpx ImportError）**：`import httpx` 位于 `try` 块内，会被 `except Exception` 捕获。撤回。
+- **Bug 9（is_workday 不一致）**：节日名分支也调 `_is_holiday` 校验，与日期分支口径一致。撤回。
+- **Bug 4（data 截断）**：初判 `data["timers"]` 应同步截断，但 `TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS=5` 注释为"预览数量"，且截断会挤出新建定时器（trigger_at 最大）导致功能退化。实施中发现为误判，撤回截断，data 保留完整列表。
+
+## 6.3 验证结果
+
+- 4 文件 `python -m py_compile` 全部通过
+- timer 相关测试 **169 条全部通过**（timeadd/timediff/calendar/timenow/timer_fundamental_deep），无回归
+- commit: `0d5380288`（4 files，15+/12-）
+
+## 6.4 与原报告对比结论
+
+- 原报告（2026-07-31）称 timer 0 个真实 bug、4 项 schema 指引增强 — 经本轮更深复核，实际存在 6 个真实缺陷（排序/文档不一致/精度/方向/错别字）。
+- 其中 Bug5（delta 范围指引）正是原报告"修复 2"声称已实施但代码实际未落的项，本轮补全。
+
+---
+
+# 七、2026-08-05 system/win_registry 工具三堂会审第三轮复核（3 项修复）
+
+> 编写人：小欧 2026-08-05 19:33:00
+> 说明：对 system（4工具）+ win_registry（3工具）全部实现文件熟读×3遍 + 运行时边界验证，复核出 3 个确定性真实 bug 并修复。其余候选经复核判定为观察项/设计取舍，不强改（避免谎报军情）。
+
+## 7.1 修复清单
+
+| Bug 编号 | 严重度 | 文件 | 问题描述 | 修复方案 |
+|---|---|---|---|---|
+| Bug 10 | HIGH | create_task.py | `/day` 或 `/monthly` 缺数字时静默降级为 daily；`/day abc` 透传非法值 | 缺数字/非数字/越界统一抛 ValueError 友好报错 |
+| Bug 4 | MEDIUM | registry_write.py | REG_BINARY 非法 hex 抛 ValueError 被通用 except 捕获，返回误导"写入注册表异常" | `_convert_reg_value` 单独校验 hex + 新增 ValueError except 分支给准确 hint |
+| Bug 13 | MEDIUM | event_log.py | 多行 Message 续行（无冒号行）被直接丢弃，信息丢失 | 无冒号续行累计到上一字段 |
+
+## 7.2 复核验证过程（×3 遍）
+
+**Bug 10 — create_task schedule 解析**（运行时验证）
+- `09:00 /day` → 修复前静默降级 daily；修复后 RAISE "/day 后必须跟数字1-7"
+- `09:00 /day abc` → 修复前透传 abc；修复后 RAISE（非数字报错）
+- `09:00 /day 8` / `/day 0` → 越界报错（原有逻辑保留）
+- `09:00 /day 3` → 正常 weekly/WED
+- `09:00 /monthly 15` → 正常 monthly/15；`/monthly 32` → 越界报错
+- 合法 `09:00` → 正常 daily（无回归）
+
+**Bug 4 — registry_write REG_BINARY**（运行时验证）
+- `_convert_reg_value('REG_BINARY','hello world')` → 修复前 ValueError（被通用 except 吞成误导提示）；修复后 ValueError 带准确信息"REG_BINARY的值不是合法十六进制"
+- `_convert_reg_value('REG_BINARY','00 01 0A FF')` → 正常 bytes `00010aff`
+
+**Bug 13 — event_log 多行 Message**（mock subprocess 验证）
+- 多行 Message（`第一行` + 续行`多行详情A/B`）→ 修复后累计为 `第一行 多行详情A 多行详情B`（修复前续行丢失）
+
+## 7.3 观察项（诚实声明，不强行修改）
+
+以下候选经复核判定为观察项/设计取舍，非功能缺陷，遵循"不谎报、不凑数"原则不强改：
+
+- **registry_read bytes 展示**：auto 模式读 REG_BINARY，summary 显示 `b'...'` 可读性一般，但 JSON 序列化正常、无崩溃。
+- **SRP/DRY 类**：`_backup_registry` 定义在 registry_read.py 但被 write/delete 跨模块引用；win_registry_schema 三类的 `_check_path_hive` validator 重复三次。功能正常，改动风险中等，列入后续优化。
+- **dry_run 语义**：registry_write dry_run 仅验证键存在，不预演值转换。设计取舍。
+- **list_tasks 编码**：`encoding='gbk', errors='ignore'`，中文系统正常，非 GBK 系统可能有兼容性问题，非当前目标平台。
+
+## 7.4 验证结果
+
+- 3 文件 `python -m py_compile` 全部通过
+- create_task + event_log 测试 **51 条全部通过**，registry_path_checker 测试 **32 条全部通过**，合计 83 条无回归
+- commit: 待提交（沿用 `fix:system_tools.../win_registry... - 小欧-2026-08-05` 格式）

@@ -47,6 +47,43 @@
 # 2026-07-31 - 小欧 - 撤销auto_confirm: action_handler删auto_confirm判断块, 恢复wait_for_confirmation_result等待逻辑
 # 2026-08-03 - 小沈 - P0-01 E2E修复: 重加auto_confirm消费块(07-30加→07-31撤→重加缺失一半, 仅残留checker返回+字段)
 #           与tool_safety_checker.py:84返回的auto_confirm=True配对, 实现DB场景表#1(安全绕过时MetaStep照出但立即resolve不过SUSPENDED)
+# 2026-08-07 - 小欧 - import同步: param_alias_mapper.py→tools_alias_mapper.py 重命名(名实相符), PARAM_ALIASES引用处同步更新
+# 2026-08-07 - 小欧 - P07修复(北京老陈驱动 task001): _EXT_TO_READ_TOOL 从TEXT_EXTENSIONS排除.csv(双域: 文本+表格), 使 read_xlsx(csv)/readtext(csv) 均不被_auto_correct_file_tool自动改写 — 小欧 2026-08-07
+# 2026-08-09 - 小欧 - edittext并发竞态修复(北京老陈驱动, 方案二分组调度版):
+#   [BUG] 旧_has_conflict用set存工具名不计数, 3×edittext同文件被去重漏检→误走并行→read-modify-write竞态致内容丢失(after模式插入位置异常, log step=11)
+#   [改法] ①新增_parse_paths(从旧_has_conflict路径解析循环提取, DRY) ②_has_conflict改为计数版(count>=2且含写操作即冲突)
+#         ③新增_partition_calls(并查集连通分量分组) ④分支B改分组调度B': 冲突组内串行+无冲突组并行+组间失败隔离(results保序)
+#         ⑤C分支_reason死代码清理(进入B'后C分支仅is_parallel=False触发, "文件路径冲突"永假)
+#   [验证] verify_refactor_consistency 14/14一致 + verify_partition_v13 分组/执行/隔离10项全PASS + pytest全量回归
+# 2026-08-09 - 小欧 - B'分支DRY优化(规范6, 见doc-8月优化修复代码三堂会审报告): 每组冲突判定 _has_conflict 只算一次
+#   存入 _gconf 列表, 监控(_gmode拼接)与执行(_run_group冲突分支判定)共用该结果, 消除二次冗余调用;
+#   _has_conflict为确定性纯函数(同参数必同果), 判定一次监控与实际执行必然一致(无失真); _run_group加conflicted参数。
+#   验证: ast语法✓ + 三分支(单/并行/串行)语义逐字保留无退化
+# 2026-08-09 - 小欧 - B'分组调度监控日志(北京老陈驱动: 需监控时间运行情况):
+#   [目的] 原B'仅"分组并行执行"开头日志+总耗时, 无法观察每组是并行/串行及各组实际耗时
+#   [改法] ①进入B'后打印分组明细(每组工具+模式: 单工具/并行/串行) ②_run_group内计时,
+#          每组执行完打印"分组执行完成: tools=..., 模式=..., 耗时=x.xxs" ③执行逻辑零改动(仅return改为赋值_res后return)
+#   [验证] py_compile + verify_prod_smoke(生产代码直接import) + handlers/edittext测试
+# 2026-08-10 - 小欧 - BUG-E修复(补A"操作结束即清除"落地): handle_action 工具批执行结束后 finally 调 clear_temp_auth(),
+#   清空本请求作用域 ContextVar 临时授权, 杜绝"一次一申请"授权跨工具跨步骤残留复用;
+#   try/finally 保证执行异常时也清除(不残留授权) — 小欧 2026-08-10
+# 2026-08-10 - 小欧 - H1-H2 实施(第二次代码更新): H1 finally 清零移除(清零点迁移到 task 级 R1 react_cycle.run_react_cycle finally);
+#   H2 复用现有 HITL 模式: create_confirmation + wait_for_confirmation_result(前端零改动) — 小欧 2026-08-10
+# 2026-08-11 - 小欧 - task002 三堂会审修复A(北京老陈驱动, 问题A窗口并行竞态):
+#   [BUG] window_focus/window_resize/set_window_state 作用于同一窗口时状态变更非幂等, 同批并行调度产生竞态;
+#         实测 P2: set_window_state(restore)+window_resize 同批并行, resize 0.00s 返回 ERR_WINDOW_RESIZE
+#   [改法] ①新增 WINDOW_TARGET_TOOLS 常量 ②_parse_paths 新增窗口分支(返回 "window:{window_title}" 冲突键,
+#         缺 title 返回空集——工具参数校验必失败, 不会操作任何窗口, 无竞态风险)
+#         ③_has_conflict 遍历与判定条件纳入窗口工具(同标题≥2次调用即冲突→降级串行)
+#   [效果] 同批同标题窗口工具自动并入同组串行(_partition_calls 并查集本体零改动), 不同标题窗口仍可跨组并行
+#   [验证] py_compile + verify_partition_v13 + verify_refactor_consistency + pytest 回归 — 小欧 2026-08-11
+# 2026-08-11 - 小欧 - fix D2: check_safety_and_confirm 同批同名工具误杀修复;
+#   _denied从2元组(tool_name,reason)扩展为3元组(tool_name,reason,call), 过滤从按tool_name改按id(call)对象标识;
+#   原按tool_name过滤→同批2×edittext(1被拒1通过)全被移除(误杀); 新逻辑仅移除被拒call对象, 保留同名合法调用 — 小欧 2026-08-11
+# 2026-08-11 - 小欧 - fix D2反馈层同步(北京老陈三堂会审驱动): 原_add_denial_feedback按tool_name粗粒度遍历all_calls写反馈,
+#   ①会执行的同名工具被误标"被安全策略拦截"(与真实执行矛盾) ②自行add_assistant_tool_call与build_observation重复写assistant;
+#   现改: check_safety_and_confirm经_denied_out回传被拒call(tool_name,reason,call), handle_action在build_observation之后
+#   由_add_denial_feedback精确到call对象补写tool result(assistant统一由build_observation写), 消除矛盾与重复 — 小欧 2026-08-11
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -63,7 +100,7 @@ action_handler — action类型处理（SRP拆分，模块级函数）
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Set
 
 from app.logger import logger, log_and_print
 from app.constants import ACTION_LOG_RESULT_MAX_CHARS
@@ -78,7 +115,7 @@ from app.db.models.operation_models import OperationStatus
 from app.db import db
 
 from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE_OPERATION_TOOLS
-from app.tools.param_alias_mapper import PARAM_ALIASES
+from app.tools.tools_alias_mapper import PARAM_ALIASES
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, MEDIA_EXTENSIONS
 
 
@@ -100,8 +137,16 @@ class ObservationContext:
 # 工具文件写操作集合（冲突检测用）— 北京老陈 2026-07-04
 _WRITE_OPS = FILE_OPERATION_TOOLS - {"readtext"}
 
-# #4 自动纠正: 文件扩展名→tool_name 映射（三分类: 文本→readtext, 文档→专用工具, 多媒体→readmedia）— 小欧 2026-07-25
-_EXT_TO_READ_TOOL = {ext: "readtext" for ext in TEXT_EXTENSIONS}
+# 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A
+# 窗口状态变更(restore/resize/focus)作用于同一窗口时非幂等, 同批并行会产生竞态
+# (实测 P2: set_window_state(restore)+window_resize 同批并行, resize 0.00s 莫名失败),
+# 需与文件工具同机制: 同键(同 window_title)互斥 → 并入同组串行。
+# 不含 window_info(只读枚举, 不改变窗口状态, 无竞态)。
+WINDOW_TARGET_TOOLS = {"window_focus", "window_resize", "set_window_state"}
+
+# #4 自动纠正: 文件扩展名→tool_name 映射（三分类: 文本→readtext, 文档→专用工具, 多媒体→readmedia）
+# P07修复: .csv 是双域(文本+表格), 从读取映射移除, 使 read_xlsx/readtext 均不被自动改写 — 小欧 2026-08-07
+_EXT_TO_READ_TOOL = {ext: "readtext" for ext in TEXT_EXTENSIONS if ext != ".csv"}
 _EXT_TO_READ_TOOL.update({ext: "readmedia" for ext in MEDIA_EXTENSIONS})
 _EXT_TO_READ_TOOL.update({
     ".docx": "read_docx",
@@ -138,7 +183,7 @@ def _auto_correct_file_tool(tool_name: str, tool_params: dict) -> tuple:
     return tool_name, None
 
 
-async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None):
+async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None, _denied_out: list = None):
         """安全检查+HITL确认 — async generator: MetaStep先yield给前端,再等确认 — 小沈 2026-06-10
 
         拒绝/拦截是可恢复的(符合人类认知: 拒绝≠失败), 不置终态FAILED:
@@ -147,6 +192,10 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         - 仅当同类拒绝累计>=3次才由 _dispatch_handler 置 FAILED。 — 小欧 2026-07-13
         # 2026-07-18 小欧 #11+#12 fix: 超时/拒绝分流; 拒绝不终止整批, 收集_denied后继续检查剩余工具,
         #   最终只执行通过的call(通过_out返回过滤后的call列表)
+        # 2026-08-11 小欧 fix D2: _denied从2元组(tool_name,reason)扩展为3元组(tool_name,reason,call),
+        #   _out过滤从按tool_name改按id(call)对象精确标识(同批同名工具1个被拒不再误杀);
+        #   反馈推迟到调用方build_observation之后(_denied_out回传), 由_add_denial_feedback精确到call写,
+        #   消除"会执行的同名工具被误标被拦截"与"assistant双重写入"的矛盾
         """
         from app.services.safety.tool_safety_checker import get_tool_safety_checker
         from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result, resolve_confirmation
@@ -164,7 +213,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     error_type="blocked",
                     error_message=safety_result.message
                 ))
-                _denied.append((_cn, f"被安全策略拦截: {safety_result.message}"))
+                _denied.append((_cn, f"被安全策略拦截: {safety_result.message}", call))
                 continue  # was: return  — 小欧 2026-07-18 #12 fix
 
             if safety_result.requires_confirmation:
@@ -186,6 +235,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 if safety_result.auto_confirm:
                     # P0-01修复: 安全绕过(security.enabled=false)时MetaStep照出但自动确认立即通过, 不挂起不等wait
                     #   与tool_safety_checker.py bypass路径返回的auto_confirm=True配对 — 小沈 2026-08-03
+                    # 2026-08-11 小欧(P2-5): bypass模式(auto_confirm=True)下continue跳过下方grant_temp_auth —
+                    #   安全开关关闭时每次工具调用均auto_confirm直接放行, 无需累积临时授权, 跳过是正确语义
                     resolve_confirmation(confirm_id, confirmed=True, trust_session=True)
                     set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
                     continue
@@ -201,49 +252,52 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                             error_type="timeout",
                             error_message=f"工具确认超时未响应: {_cn}"
                         ))
-                        _denied.append((_cn, "确认超时未响应"))
+                        _denied.append((_cn, "确认超时未响应", call))
                     else:
                         yield agent._step_emitter.emit(ErrorStep(
                             step=step,
                             error_type="user_rejected",
                             error_message=f"用户拒绝执行工具: {_cn}"
                         ))
-                        _denied.append((_cn, "被用户拒绝执行"))
+                        _denied.append((_cn, "被用户拒绝执行", call))
                     set_status(agent, AgentStatus.EXECUTING, "用户拒绝/超时，恢复执行态")
                     continue  # was: return  — 小欧 2026-07-18 #12 fix
 
                 # 用户已确认：恢复执行态继续工具执行（SUSPENDED→EXECUTING 合法）— 小欧 2026-07-12
+                # ⑮ 白名单外临时授权: 确认后授予本次操作权限(一次一申请, 支持递归, per-request) — 小欧 2026-08-10
+                if getattr(safety_result, "auth_path", None):
+                    from app.services.safety.temp_auth import grant_temp_auth
+                    grant_temp_auth(safety_result.auth_path, recursive=True)
+                    yield agent._step_emitter.emit(MetaStep(
+                        step=step,
+                        type="resumed",
+                        content=f"已临时授权白名单外路径: {safety_result.auth_path}"
+                    ))
                 set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
 
-        if _denied:
-            for _cn, _reason in _denied:
-                _add_denial_feedback(agent, all_calls, fc_context, _cn, _reason)
         # 回传未被拒的call索引给调用方 — 小欧 2026-07-18 #12 fix
+        # 2026-08-11 小欧 fix D2: 用call对象id标识被拒调用,而非tool_name;
+        #   原按tool_name过滤→同批同名工具(如2×edittext)1个被拒全部误杀
         if _out is not None:
-            _denied_cns = {d[0] for d in _denied}
-            _out[:] = [c for c in all_calls if c.get("tool_name", "") not in _denied_cns]
+            _denied_call_ids = {id(d[2]) for d in _denied}
+            _out[:] = [c for c in all_calls if id(c) not in _denied_call_ids]
+        # 2026-08-11 小欧 fix D2: _denied(含call对象)回传给调用方, 反馈在build_observation之后
+        #   由_add_denial_feedback精确到call写(避免在execute前写tool result导致assistant重复/同名误标)
+        if _denied_out is not None:
+            _denied_out[:] = list(_denied)
 
 
-def _add_denial_feedback(agent, all_calls: List[Dict], fc_context: Dict, denied_tool: str, reason: str):
+def _add_denial_feedback(agent, denied_items, fc_context=None):
     """HITL拒绝/拦截→把反馈写入LLM历史, 让LLM换方案(符合人类认知: 拒绝≠失败) — 小欧 2026-07-13
 
-    不置终态, 仅补充 observation:
-    1. 补 assistant(tool_calls) 使 tool result 能配对;
-    2. 被拒/被拦截的工具: 用 reason 说明原因;
-    3. 同批其他工具: 标记"未执行"(它们并非被拒, 不能错标)。
-    缺此反馈 LLM 会傻乎乎重复请求同一工具陷入死循环(受 max_steps 兜底)。
+    2026-08-11 小欧 fix D2: 精确到call对象, 只对被拒call写observation:
+      原实现遍历all_calls按tool_name匹配→同批同名工具(实际会执行)被误标"被拦截",
+      且自行add_assistant_tool_call→与build_observation的assistant双重写, LLM历史矛盾;
+      现assistant统一由build_observation写(L649), 本函数在execute_tools后只补被拒call的tool result。
     """
-    _fc = fc_context or {}
-    _tc = _fc.get("tool_calls", [])
-    if _tc:
-        agent.message_builder.add_assistant_tool_call(_tc, content=_fc.get("llm_content", "") or None, reasoning=_fc.get("llm_reasoning", "") or None)  # 2026-07-19 小欧 reasoning传递
-    for call in all_calls:
-        _tid = call.get("_tool_call_id", "")
-        _cn = call.get("tool_name", "")
-        if _cn == denied_tool:
-            _obs = f"[Observation] 工具 {_cn} {reason}. 请改用其他工具或方式完成用户任务。"
-        else:
-            _obs = f"[Observation] 工具 {_cn} 未执行(同批工具 {denied_tool} 未通过安全检查)。"
+    for _cn, _reason, _call in (denied_items or []):
+        _tid = _call.get("_tool_call_id", "")
+        _obs = f"[Observation] 工具 {_cn} {_reason}. 请改用其他工具或方式完成用户任务。"
         try:
             agent.message_builder.add_tool_result(_tid, _obs)
         except Exception as e:
@@ -254,42 +308,101 @@ def _add_denial_feedback(agent, all_calls: List[Dict], fc_context: Dict, denied_
                 logger.debug(f"add_tool_result(空ID)也失败: {e2}")
 
 
-def _has_conflict(all_calls: List[Dict]) -> bool:
-    """检测文件路径冲突 — 复用PARAM_ALIASES做别名→规范名解析 — 北京老陈 2026-07-04
-
-    冲突：同一路径被>=2个FILE_OPERATION_TOOLS访问，且至少一个是写操作
-    有冲突→顺序执行，无冲突→并行
+def _parse_paths(name: str, params: Dict) -> Set[str]:
+    """解析一个调用的路径/窗口冲突键集合(复用 PARAM_ALIASES 别名→规范名) — 小欧 2026-08-09 — 小欧 2026-08-11 窗口分支
+    文件工具: 解析 path 集合(与 _has_conflict/_partition_calls 共用, DRY)。
+    窗口工具: 以 "window:{window_title}" 为冲突键, 同标题窗口工具并入同组串行(状态变更非幂等);
+              缺 window_title 返回空集——窗口工具参数校验必失败, 不会操作任何窗口, 无竞态风险, 不参与分组。
     """
-    path_ops = {}
+    if name in WINDOW_TARGET_TOOLS:
+        title = params.get("window_title", "")
+        if title and isinstance(title, str):
+            return {f"window:{title}"}
+        return set()
+    if name not in FILE_OPERATION_TOOLS:
+        return set()
+    aliases = PARAM_ALIASES.get(name, {})
+    if not aliases:
+        p = params.get("path", "")
+        return {p} if p and isinstance(p, str) else set()
+    resolved = {}
+    for key, value in params.items():
+        canon = aliases.get(key, key)
+        if canon not in resolved:
+            resolved[canon] = value
+    out = set()
+    for pname in set(aliases.values()):
+        pval = resolved.get(pname)
+        if pval and isinstance(pval, str):
+            out.add(pval)
+    return out
+
+
+def _has_conflict(all_calls: List[Dict]) -> bool:
+    """检测路径/窗口冲突 — 北京老陈 2026-07-04 初版; 小欧 2026-08-09 计数版; 小欧 2026-08-11 窗口工具纳入
+    冲突：同一键(文件路径/窗口标题)被>=2次调用访问, 且(至少一个文件写操作 或 含窗口工具)
+    有冲突→顺序执行, 无冲突→并行
+    [2026-08-09 小欧] BUG修复: 旧实现用 set 存工具名不计数, 同名工具多次写
+    同一路径漏检(3×edittext 同文件)→误走并行→read-modify-write 竞态致内容丢失。
+    改为 path→(调用次数, 工具名set), 复用 _parse_paths 解析(与 _partition_calls 一致, DRY)。
+    [2026-08-11 小欧] 扩展: 窗口工具(window_focus/window_resize/set_window_state)同标题即冲突,
+    消除 task002 实测 P2(restore+resize 同批并行→resize 0.00s 莫名失败)的并行竞态。
+    注: 文件路径键与 "window:" 键空间不重叠, 同一 entry 的 tools 不会混合文件与窗口工具。
+    """
+    path_ops: Dict[str, Dict[str, Any]] = {}
+
+    def _record(_path: str, _name: str) -> None:
+        entry = path_ops.setdefault(_path, {"count": 0, "tools": set()})
+        entry["count"] += 1
+        entry["tools"].add(_name)
 
     for c in all_calls:
         name = c.get("tool_name", "")
-        if name not in FILE_OPERATION_TOOLS:
+        if name not in FILE_OPERATION_TOOLS and name not in WINDOW_TARGET_TOOLS:
             continue
-        params = c.get("tool_params", {})
-        aliases = PARAM_ALIASES.get(name, {})
-        if not aliases:
-            _path = params.get("path", "")
-            if _path and isinstance(_path, str):
-                path_ops.setdefault(_path, set()).add(name)
-            continue
+        for _path in _parse_paths(name, c.get("tool_params", {})):
+            _record(_path, name)
 
-        resolved = {}
-        for key, value in params.items():
-            canon = aliases.get(key, key)
-            if canon not in resolved:
-                resolved[canon] = value
-
-        for pname in set(aliases.values()):
-            pval = resolved.get(pname)
-            if pval and isinstance(pval, str):
-                path_ops.setdefault(pval, set()).add(name)
-
-    for path, tools in path_ops.items():
-        if len(tools) > 1 and any(t in _WRITE_OPS for t in tools):
-            logger.info(f"[_has_conflict] 路径冲突: {path}, tools={tools}, 降级顺序执行")
+    for path, entry in path_ops.items():
+        tools = entry["tools"]
+        if entry["count"] >= 2 and (any(t in _WRITE_OPS for t in tools) or any(t in WINDOW_TARGET_TOOLS for t in tools)):
+            logger.info(f"[_has_conflict] 操作冲突(路径/窗口): {path}, tools={tools}, 调用数={entry['count']}, 降级顺序执行")
             return True
     return False
+
+
+def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
+    """按路径/窗口相关性分组(并查集连通分量): 共享路径或同标题窗口的调用归一组, 组间无共享→可并行
+    返回: 组列表, 每组是 all_calls 的索引列表 — 小欧 2026-08-09 — 小欧 2026-08-11 窗口工具自动纳入
+    (窗口工具经 _parse_paths 返回 "window:标题" 冲突键, 同标题自动并组串行, 分组本体逻辑零改动)
+    """
+    n = len(all_calls)
+    parent = list(range(n))
+
+    def _find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def _union(a, b):
+        ra, rb = _find(a), _find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    path_to_calls = {}
+    for i, c in enumerate(all_calls):
+        for p in _parse_paths(c.get("tool_name", ""), c.get("tool_params", {})):
+            path_to_calls.setdefault(p, []).append(i)
+    for _p, idxs in path_to_calls.items():
+        base = idxs[0]
+        for i in idxs[1:]:
+            _union(base, i)
+
+    groups = {}
+    for i in range(n):
+        groups.setdefault(_find(i), []).append(i)
+    return list(groups.values())
 
 
 async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
@@ -343,17 +456,61 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             result = await execute_tool(agent, tool_name, tool_params, on_retry_started=on_retry_started)
             results = [result]
 
-        elif is_parallel and not _has_conflict(all_calls):
-            # B: 多工具无冲突 → 并行（try_once，无重试）
+        elif is_parallel:
+            # B': 并行分组调度 — 冲突组内串行, 无冲突组并行("该并行就并行") — 小欧 2026-08-09
             _names = [_cn(c) for c in all_calls]
-            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 并行执行: tools={_names}")
-            tasks = [execute_tool(agent, _cn(c), _cp(c), parallel=True) for c in all_calls]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            # 并行分支不重试 — 失败信息传给LLM自己决策
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组并行执行: tools={_names}")
+            groups = _partition_calls(all_calls)
+            # DRY(规范6): 每组冲突判定只算一次, 监控(_gmode)与执行(_run_group)共用,
+            # 消除二次 _has_conflict 冗余调用; 纯函数确定性保证监控与实际执行必然一致(无失真) — 小欧 2026-08-09
+            _gd = []
+            _gconf = []  # 每组冲突判定结果, 按 groups 顺序对齐
+            for _g in groups:
+                _gt = [_cn(all_calls[i]) for i in _g]
+                _conflicted = len(_g) > 1 and _has_conflict([all_calls[i] for i in _g])
+                _gconf.append(_conflicted)
+                _gmode = "单工具" if len(_g) == 1 else ("并行" if not _conflicted else "串行")
+                _gd.append(f"[{'/'.join(_gt)}:{_gmode}]")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组明细({len(groups)}组): {' '.join(_gd)}")
+
+            async def _run_group(indices: List[int], conflicted: bool):
+                group = [all_calls[i] for i in indices]
+                _g_start = time.time()  # 监控: 每组执行耗时起点 — 小欧 2026-08-09
+                if len(group) == 1:  # 单工具, 语义同原A
+                    _res = [await execute_tool(agent, _cn(group[0]), _cp(group[0]),
+                                               on_retry_started=on_retry_started)]
+                    _gmode = "单工具"
+                elif not conflicted:  # 组内无冲突→并行(try_once), 语义同原B
+                    tasks = [execute_tool(agent, _cn(c), _cp(c), parallel=True) for c in group]
+                    _res = await asyncio.gather(*tasks, return_exceptions=True)
+                    _gmode = "并行"
+                else:  # 组内冲突→串行(带重试), 语义同原C
+                    _res = []
+                    for call in group:
+                        try:
+                            _res.append(await execute_tool(agent, _cn(call), _cp(call),
+                                                           on_retry_started=on_retry_started))
+                        except Exception as e:
+                            logger.warning(f"[action_handler] 工具{_cn(call)}组内顺序执行失败: {e}")
+                            _res.append(e)
+                    _gmode = "串行"
+                logger.info(f"[action_handler] 分组执行完成: tools={[_cn(c) for c in group]}, 模式={_gmode}, 耗时={time.time()-_g_start:.2f}s")
+                return _res
+
+            _grouped = await asyncio.gather(*[_run_group(g, _gconf[i]) for i, g in enumerate(groups)],
+                                            return_exceptions=True)  # 组间失败隔离: 单组异常不取消其他组
+            results = [None] * len(all_calls)  # 结果按原顺序填回
+            for _indices, _res in zip(groups, _grouped):
+                if isinstance(_res, Exception):  # 整组失败: 组内全部标记为该异常(与原C分支单工具异常append语义一致)
+                    for _i in _indices:
+                        results[_i] = _res
+                    continue
+                for _i, _r in zip(_indices, _res):
+                    results[_i] = _r
         else:
-            # C: 工具有冲突/非并行 → 顺序执行（一个不丢）
+            # C: 非并行模式 → 顺序执行（一个不丢）
             _names = [_cn(c) for c in all_calls]
-            _reason = "非并行模式" if not is_parallel else "文件路径冲突"
+            _reason = "非并行模式"
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 顺序执行({_reason}): tools={_names}")
             results = []
             for call in all_calls:
@@ -737,17 +894,25 @@ async def handle_action(agent, parsed: Dict):
     ))
 
     # #11+#12 fix: 传_out收集通过安全检查的call, 拒绝不终止整批 — 小欧 2026-07-18
+    # 2026-08-11 小欧 fix D2: 传_denied_out收集被拒call(tool_name,reason,call), 反馈在build_observation后写
     _safe_calls = []
+    _denied_list = []
     async for event in check_safety_and_confirm(agent, call_result.all_calls, step,
-                                                call_result.fc_context, _out=_safe_calls):
+                                                call_result.fc_context,
+                                                _out=_safe_calls, _denied_out=_denied_list):
         yield event
     _exec_calls = _safe_calls if _safe_calls else []
 
     # ── 工具重试（隐蔽，前端不可见）── 小欧 2026-07-13
-    # 工具重试由 tool_retry_engine 内部执行，不向前端 emit 任何 step（北京老陈要求：tool 重试隐蔽）。
-    # 重试回调不再收集/上报，仅后端内部重试。
-    results = await execute_tools(agent, _exec_calls, call_result.is_parallel,
-                                  call_result.tool_name, call_result.tool_params)
+    # 工具重试由 tool_retry_engine 内部执行, 不向前端 emit 任何 step(北京老陈要求: tool 重试隐蔽)。
+    # 重试回调不再收集/上报, 仅后端内部重试。
+    # H1 (v1.43): 移除工具批 finally 的 clear_temp_auth() — 清零点迁移到 task 级(R1, react_cycle.run_react_cycle finally)
+    try:
+        results = await execute_tools(agent, _exec_calls, call_result.is_parallel,
+                                      call_result.tool_name, call_result.tool_params)
+    except Exception as e:
+        logger.error(f"[action_handler] execute_tools 异常: {e}")
+        raise
 
     agent._consecutive_reasoning_only = 0  # 2026-07-17 - 小欧 - 本步LLM发起工具调用(非reasoning-only空转), 归零空转计数
 
@@ -760,6 +925,10 @@ async def handle_action(agent, parsed: Dict):
     merged_other = _merge_other_data([r.get("other_data", {}) for r in results if isinstance(r, dict)]) if results else {}
     for event in await build_observation(ctx, merged_other=merged_other):
         yield event
+    # 2026-08-11 小欧 fix D2: 被拒call反馈在build_observation后补写(assistant已由build_observation统一写),
+    #   精确到call对象, 不误标会执行的同名工具, 也不重复写assistant
+    if _denied_list:
+        _add_denial_feedback(agent, _denied_list, call_result.fc_context)
     if merged_other.get("return_direct"):
         merged_llm = _merge_llm_data([r.get("llm_data", {}) for r in results if isinstance(r, dict)]) if results else {}
         _status = merged_llm.get("status", {}) if isinstance(merged_llm, dict) else {}

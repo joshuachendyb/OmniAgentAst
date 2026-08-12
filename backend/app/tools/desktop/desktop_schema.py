@@ -12,6 +12,8 @@
 # 2026-07-31 - 小欧 - 三堂会审修复B5/B33:ClipboardControlInput补action=write时content必填校验validator,提前拦截防LLM传空
 # 2026-07-31 - 小欧 - 三堂会审修复:MouseScrollInput.amount加ge=1约束,KeyboardControlInput.text_or_keys加min_length=1,Window{Focus,Resize}Input.window_title description补非空提示
 # 2026-07-31 - 小欧 - 三堂会审增强:MouseClickInput加clicks(Literal[1,2],默认1=单击/2=双击);KeyboardControlInput docstring补单键示例(shortcut支持enter/esc等单键)
+# 2026-08-05 - 小欧 - 三堂会审修复#7/#11: WindowResizeInput width/height 加 ge=0(防负数尺寸); WindowFocus/WindowResize/SetWindowState window_title 加 min_length=1(防空串过schema); MouseMove x/y 保持不约束(多显示器负坐标合法,避免退化)
+# 2026-08-05 - 小欧 - 三堂会审复核: SetWindowStateInput.window_title description补",不能为空", 与WindowFocusInput/WindowResizeInput描述口径一致
 """
 DESKTOP Schema - 桌面工具参数模型
 
@@ -47,20 +49,22 @@ class WindowInfoInput(BaseModel):
 
 class WindowFocusInput(BaseModel):
     window_title: str = Field(
-        ..., description="窗口标题(大小写不敏感的子串匹配,不能为空)"
+        ..., min_length=1, description="窗口标题(大小写不敏感的子串匹配,不能为空)"  # 2026-08-05 小欧 #11: 加min_length=1
     )
 
 
 class WindowResizeInput(BaseModel):
     window_title: str = Field(
-        ..., description="窗口标题(大小写不敏感的子串匹配,不能为空)"
+        ..., min_length=1, description="窗口标题(大小写不敏感的子串匹配,不能为空)"  # 2026-08-05 小欧 #11: 加min_length=1
     )
     width: int = Field(
         default=800,
+        ge=0,
         description="窗口宽度(像素,默认800)。传0表示不修改,保持原窗口宽度"
     )
     height: int = Field(
         default=600,
+        ge=0,
         description="窗口高度(像素,默认600)。传0表示不修改,保持原窗口高度"
     )
 
@@ -76,7 +80,7 @@ class SetWindowStateInput(BaseModel):
     - unpin: 取消置顶
     """
     window_title: str = Field(
-        ..., description="窗口标题(大小写不敏感的子串匹配)"
+        ..., min_length=1, description="窗口标题(大小写不敏感的子串匹配,不能为空)"  # 2026-08-05 小欧 #11: 加min_length=1
     )
     action: Literal["maximize", "minimize", "restore", "topmost", "unpin"] = Field(
         ..., description="窗口操作:maximize(最大化)/minimize(最小化)/restore(还原)/topmost(置顶)/unpin(取消置顶)"

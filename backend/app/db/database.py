@@ -16,6 +16,10 @@
 #   【病根】busy_timeout=30000 + 无重试: 写竞争时sqlite内部先等30s才抛异常, 再retry等于31.5s比不修更差
 #   【改法】①busy_timeout=500(快速失败,不空等30s)②get_conn_with_retry: 仅对OperationalError+"locked"指数退避(0.5/1/2s),time.sleep总阻塞仅3.5s不拖事件循环; IntegrityError直抛不重试(YAGNI)
 #   【合规】SRP+KISS-DIRECT+YAGNI
+# 2026-08-07 - 小欧 - BUG-03/04修复: 重试下沉至get_conn统一入口(连接获取a段+commit b段, 单yield无re-yield)
+#   【病根】①BUG-03: 47处调用方用get_conn(无retry), 并发写锁死时静默失败; ②BUG-04: get_conn_with_retry在except内re-yield违反@contextmanager协议 → "generator didn't stop after throw()"(日志09:11:16)
+#   【改法】①get_conn新增max_retries: 连接获取期(a)与commit期(b)对"locked"指数退避(0.5/1/2s), 47处调用零改动即获重试能力(DRY); ②get_conn_with_retry改为get_conn薄包装(仅透传, 单次yield)
+#   【合规】DRY+KISS-DIRECT+SRP
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -46,7 +50,7 @@ from contextlib import contextmanager
 from datetime import datetime, date, timezone
 from typing import Iterator
 from app.logger import logger
-from app.utils.time_utils import convert_to_utc
+from app.utils.time_utils import to_local_iso  # 小欧 2026-08-08: datetime/date 归一化为本地ISO无Z
 from app.db.db_initializer import (
     init_chat_db, init_operations_db, init_task_tracker_db,
 )
@@ -72,14 +76,14 @@ class _ParamSafeConnection:
         if params is None:
             return None
         if isinstance(params, dict):
-            return {k: convert_to_utc(v) if isinstance(v, (datetime, date)) else v
+            return {k: to_local_iso(v) if isinstance(v, (datetime, date)) else v
                     for k, v in params.items()}
         if not isinstance(params, (tuple, list)):
             params = (params,)
         result = []
         for _p in params:
             if isinstance(_p, (datetime, date)):
-                _p = convert_to_utc(_p)  # 边界自动归一化: datetime→UTC ISO 8601 Z
+                _p = to_local_iso(_p)  # 小欧 2026-08-08: datetime→本地ISO无Z
             if not isinstance(_p, _ParamSafeConnection._SAFE_PARAM_TYPES):
                 raise ValueError(
                     f"DB 参数类型不被支持: {type(_p).__name__}, "
@@ -115,48 +119,88 @@ class DatabaseManager:
             "task_tracker": self._db_dir / "task_tracker.db",
         }
         self._db_dir.mkdir(parents=True, exist_ok=True)
-    
+
     @contextmanager
-    def get_conn(self, db_name: str = "chat") -> Iterator[sqlite3.Connection]:
-        """获取数据库连接(上下文管理器)
+    def get_conn(self, db_name: str = "chat", max_retries: int = 3) -> Iterator[sqlite3.Connection]:
+        """获取数据库连接(上下文管理器) — 统一入口(含locked指数退避重试)
         
         使用方式:
             with db.get_conn("chat") as conn:
                 conn.execute("SELECT ...")
         
         自动处理:
-            - 正常退出: commit + close
+            - 连接获取: 对"database is locked"指数退避重试(0.5/1/2s, 不阻塞事件循环过长 — 小欧 2026-08-07)
+            - 正常退出: commit + close (commit对lock重试, 无re-yield)
             - 异常退出: rollback + close
             - 无论如何: 都会关闭连接
         
         支持的db_name: chat, operations, observer, task_tracker
+        
+        BUG-04修复(小欧 2026-08-07): 原get_conn_with_retry为@contextmanager且在except块内re-yield,
+            @contextmanager协议禁止二次yield → 抛出"generator didn't stop after throw()"(日志09:11:16).
+            重构: 重试点只在【连接获取】与【commit】两处(均为单yield/无re-yield), 保证generator清洁退出.
+            BUG-03(小欧 2026-08-07): 重试逻辑下沉至get_conn统一入口, 47处调用方零改动即获重试能力(DRY).
         """
+        import time as _time
+        if db_name not in self._db_paths:
+            raise ValueError(
+                f"Unknown database: {db_name}. "
+                f"Supported: {list(self._db_paths.keys())}"
+            )
+
+        db_path = self._db_paths[db_name]
         conn = None
+
+        # (a) 连接获取: 对 connected前的 lock 指数退避重试(单次连接, 无re-yield) — 小欧 2026-08-07
+        for attempt in range(max_retries + 1):
+            try:
+                conn = sqlite3.connect(str(db_path))
+                conn.row_factory = sqlite3.Row
+
+                # 全部库统一WAL模式(含chat) — 小欧 2026-07-17
+                # 历史因果(经验累积,勿删): 2026-07-14曾将chat改为DELETE,系误诊"WAL-shm在Windows 2GB+库并发读写Errno22"所致;
+                #   同日《后端step单步保存设计说明书》v1.2已更正Errno22真实根因为time_utils潜伏bug(与WAL无关),DELETE属误诊白做但无害、当时未回退。
+                #   2026-07-17 E2E验证暴露DELETE模式在chat_message_steps膨胀185万行/2.7GB时写I/O拥塞(每次写journal+fsync),
+                #   致create_session同步写>10s超时;故改回WAL统一三库,消除写拥塞。
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA busy_timeout=500")  # #14: 30000→500ms (快速失败, 应用层指数退避重试, 不空等30s) — 小欧 2026-07-23
+                # M-05: SQLite默认OFF，外键约束不生效 — 小欧 2026-07-10
+                conn.execute("PRAGMA foreign_keys=ON")
+                break  # 连接成功
+            except sqlite3.OperationalError as _lock_e:
+                if "locked" not in str(_lock_e):
+                    raise  # 非locked异常不重试
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    conn = None
+                if attempt == max_retries:
+                    logger.error(f"[db] {db_name} 连接locked, {max_retries}次重试后放弃")
+                    raise
+                delay = 0.5 * (2 ** attempt)  # 0.5, 1, 2 (max_retries=3, 总~3.5s, 不阻塞事件循环过长) — 小欧 2026-07-23
+                logger.warning(f"[db] {db_name} 连接locked, 第{attempt+1}/{max_retries}次重试, 等待{delay:.1f}s")
+                _time.sleep(delay)
+
         try:
-            if db_name not in self._db_paths:
-                raise ValueError(
-                    f"Unknown database: {db_name}. "
-                    f"Supported: {list(self._db_paths.keys())}"
-                )
-            
-            db_path = self._db_paths[db_name]
-            conn = sqlite3.connect(str(db_path))
-            conn.row_factory = sqlite3.Row
-            
-            # 全部库统一WAL模式(含chat) — 小欧 2026-07-17
-            # 历史因果(经验累积,勿删): 2026-07-14曾将chat改为DELETE,系误诊"WAL-shm在Windows 2GB+库并发读写Errno22"所致;
-            #   同日《后端step单步保存设计说明书》v1.2已更正Errno22真实根因为time_utils潜伏bug(与WAL无关),DELETE属误诊白做但无害、当时未回退。
-            #   2026-07-17 E2E验证暴露DELETE模式在chat_message_steps膨胀185万行/2.7GB时写I/O拥塞(每次写journal+fsync),
-            #   致create_session同步写>10s超时;故改回WAL统一三库,消除写拥塞。
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=500")  # #14: 30000→500ms (快速失败, 应用层指数退避重试, 不空等30s) — 小欧 2026-07-23
-            # M-05: SQLite默认OFF，外键约束不生效 — 小欧 2026-07-10
-            conn.execute("PRAGMA foreign_keys=ON")
-            
             yield _ParamSafeConnection(conn)  # 小欧 2026-07-18: 参数安全闸门包装, 校验SQL参数类型(非基元类型抛清晰错误)
 
-            conn.commit()
-            
+            # (b) 提交: 对lock指数退避重试(无re-yield, 省去外层re-yield的Bug4) — 小欧 2026-08-07
+            for commit_attempt in range(max_retries + 1):
+                try:
+                    conn.commit()
+                    break
+                except sqlite3.OperationalError as _commit_e:
+                    if "locked" not in str(_commit_e):
+                        raise  # 非locked异常不重试
+                    if commit_attempt == max_retries:
+                        logger.error(f"[db] {db_name} commit locked, {max_retries}次重试后放弃")
+                        raise
+                    delay = 0.5 * (2 ** commit_attempt)
+                    logger.warning(f"[db] {db_name} commit locked, 第{commit_attempt+1}/{max_retries}次重试, 等待{delay:.1f}s")
+                    _time.sleep(delay)
+
         except sqlite3.Error as e:
             # DB级错误(连接/SQL/事务): 回滚 + 记"DB operation failed" — 小欧 2026-07-15
             if conn:
@@ -174,14 +218,14 @@ class DatabaseManager:
                 except Exception:
                     logger.warning(f"[db] rollback 失败: {db_name}")
             raise
-            
+
         finally:
             if conn:
                 try:
                     conn.close()
                 except Exception:
                     logger.warning(f"[db] 关闭连接失败: {db_name}")
-    
+
     @contextmanager
     def get_conn_with_retry(self, db_name: str = "chat", max_retries: int = 3) -> Iterator[sqlite3.Connection]:  # max_retries=3 (0.5+1+2=3.5s总阻塞,time.sleep不阻塞事件循环过长) — 小欧 2026-07-23
         """get_conn + 指数退避重试(仅对 database is locked) — 小欧 2026-07-23
@@ -193,24 +237,16 @@ class DatabaseManager:
         使用方式:
             with db.get_conn_with_retry("chat") as conn:
                 conn.execute("INSERT INTO ...")
+
+        小欧 2026-08-07 BUG-04修复: 原实现于except内re-yield, 违反@contextmanager协议 →
+            "generator didn't stop after throw()" (日志09:11:16 operation_record.py:156/214).
+            本方法现为get_conn薄包装(仅透传, 单次yield, 无re-yield), 重试逻辑已下沉至get_conn:
+              - 连接获取期: get_conn(a)段
+              - 提交期:    get_conn(b)段
+            调用方(body)异常锁(如execute阶段)不在此重试(见get_conn(b)注释).
         """
-        import time as _time
-        for attempt in range(max_retries + 1):
-            try:
-                with self.get_conn(db_name) as conn:
-                    yield conn
-                return  # 成功: 退出
-            except sqlite3.OperationalError as e:
-                if "locked" not in str(e):
-                    raise  # 非locked异常不重试
-                if attempt == max_retries:
-                    logger.error(f"[db] {db_name} locked, {max_retries}次重试后放弃")
-                    raise
-                delay = 0.5 * (2 ** attempt)  # 0.5, 1, 2 (max_retries=3, 总~3.5s, 控制time.sleep不阻塞事件循环过长) — 小欧 2026-07-23
-                logger.warning(f"[db] {db_name} locked, 第{attempt+1}/{max_retries}次重试, 等待{delay:.1f}s")
-                _time.sleep(delay)
-            except sqlite3.IntegrityError:
-                raise  # UNIQUE约束不重试(YAGNI)
+        with self.get_conn(db_name, max_retries=max_retries) as conn:
+            yield conn
 
     def init(self):
         """初始化所有数据库(应用启动时调用)"""

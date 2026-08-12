@@ -6,6 +6,10 @@ tool_cache_manager — 工具缓存管理
 【2026-06-18 小健】删除 tool_categories.json，直接从 registry 获取工具信息（DRY原则）
 """
 
+# 编辑历史:
+# 2026-08-05 小欧 patch_search_desc默认已注入分类去SHELL: shell工具已迁入FUNDAMENTAL, SHELL分类仅剩which, 不再列为默认注入(需要时经searchtool动态注入)
+# 2026-08-05 小欧 修复BUG A(DRY): unloaded计算删除硬编码默认分类{FUNDAMENTAL,FILE}, 改由_loaded_categories全权决定, 消除与_INITIAL_CATEGORIES重复定义失配隐患
+
 from app.tools.tool_types import ToolCategory
 from app.tools.registry import tool_registry
 from app.logger import logger
@@ -72,10 +76,12 @@ def patch_search_desc(agent):
     【Bug15修复】chendyg 2026-06-26: override变更后统一失效缓存，消除4处重复invalidate调用
     """
 
+    # 未加载分类 = 全集 - 已加载(_loaded_categories 由 init_tools/load_category 单一权威维护)
+    # 2026-08-05 小欧 修复BUG A(DRY): 删除硬编码默认分类{FUNDAMENTAL,FILE},
+    #   改由 _loaded_categories 全权决定, 消除与 _INITIAL_CATEGORIES 重复定义导致改一处忘一处失配
     unloaded = [
         cat for cat in ToolCategory
-        if cat not in {ToolCategory.FUNDAMENTAL, ToolCategory.SHELL, ToolCategory.FILE}
-        and cat not in agent._loaded_categories
+        if cat not in agent._loaded_categories
     ]
     
     if not unloaded:

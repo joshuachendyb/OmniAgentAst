@@ -1,7 +1,8 @@
 
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-18 小欧 #49 fix: 删冗余getattr(delta,…),统一delta.get(…)
+# 2026-07-18 - 小欧 - #49 fix: 删冗余getattr(delta,…),统一delta.get(…)
+# 2026-08-06 - 小欧 - 三堂会审修复: ①删extract_reasoning_from_chunk死代码(L146已链式取thinking/reasoning, 后置重复判断走不到); ②extract_reasoning_from_message补thinking(Claude非流式), 与chunk版三字段对齐
 """
 Reasoning内容处理适配器 — 思考(推理)的识别与流转，统一说明在此 — 小欧 2026-07-12
 
@@ -142,16 +143,10 @@ def extract_reasoning_from_chunk(delta: Dict) -> Optional[str]:
     Returns:
         思考文字（如果是思考），否则 None
     """
-    # 1) 思考在独立字段里：直接取
+    # 1) 思考在独立字段里：直接取(三字段链式一次取完, 任一非空即返回)
     rc = delta.get('reasoning_content') or delta.get('reasoning') or delta.get('thinking')
     if rc:
         return rc
-    thinking = delta.get('thinking')
-    if thinking:
-        return thinking
-    reasoning = delta.get('reasoning')
-    if reasoning not in (None, "", False):
-        return reasoning
     # 2) 思考混在 content 里，但打了"这是思考"的标记：取 content 当思考
     if delta.get('is_reasoning') is True or delta.get('reasoning_flag') is True:
         return delta.get('content') or ""
@@ -168,7 +163,8 @@ def extract_reasoning_from_message(message: Dict) -> str:
     Returns:
         reasoning内容字符串
     """
-    return message.get("reasoning_content", "") or message.get("reasoning", "")
+    # 2026-08-06 小欧 补 thinking(Claude非流式字段), 与extract_reasoning_from_chunk三字段链式对齐
+    return message.get("reasoning_content", "") or message.get("reasoning", "") or message.get("thinking", "")
 
 
 __all__ = [

@@ -9,6 +9,7 @@ Updated: 小健 - 2026-06-18 删除 _categories_config_cache（DRY原则）
 
 编辑历史:
   2026-07-14 小欧 TOOL_CACHE_TTL导入源由base_service改为app.constants(常量集中,非功能退化)
+  2026-08-05 小欧 默认注入分类去SHELL: shell工具已迁入FUNDAMENTAL, SHELL分类仅剩which, 不再默认注入(需要时经searchtool动态注入)
 """
 from typing import Any, Optional, Set
 
@@ -26,11 +27,11 @@ from app.constants import TOOL_CACHE_TTL as _TOOL_CACHE_TTL
 # 注意：注册(register)和注入(inject)是不同概念：
 # 1. 注册：在ToolRegistry中注册工具函数，所有工具都在启动时注册
 # 2. 注入：将工具描述注入给LLM，只有注入的工具LLM才能看到和使用
-_INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUNDAMENTAL, ToolCategory.SHELL, ToolCategory.FILE}
+_INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUNDAMENTAL, ToolCategory.FILE}
 
 
 class UniversalAgent(BaseAgent):
-    """通用 Agent — 初始仅注入 FUNDAMENTAL+SHELL+FILE 3个分类给LLM，其余分类通过 searchtool 动态注入"""
+    """通用 Agent — 初始仅注入 FUNDAMENTAL+FILE 2个分类给LLM，其余分类（含SHELL）通过 searchtool 动态注入"""
 
     TOOL_CACHE_TTL = _TOOL_CACHE_TTL
 

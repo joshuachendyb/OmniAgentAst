@@ -37,10 +37,11 @@ USER_INPUT = (
     "--level（按级别筛选）、--top（指定TOP N数量，默认5）。"
     "脚本应包含完整的函数定义和类型注解，并能独立运行输出JSON格式的分析结果。"
     "第六阶段——生成三份分析报告："
-    "1) E:\\test_dir\\analysis_report.txt——面向人工阅读的详细分析报告；"
-    "2) E:\\test_dir\\analysis_report.json——面向机器处理的JSON格式汇总数据；"
-    "3) E:\\test_dir\\analysis_report_summary.md——面向管理者的摘要报告。"
+    "1) E:\\test_dir\\analysis_report+时间.txt——面向人工阅读的详细分析报告；"
+    "2) E:\\test_dir\\analysis_report+时间.json——面向机器处理的JSON格式汇总数据；"
+    "3) E:\\test_dir\\analysis_report_summary+时间.md——面向管理者的摘要报告。"  
     "把本次任务的分析实施过程和分析结果独立生成四种版本的报告存入report目录下。"
+    "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
 
 import os
