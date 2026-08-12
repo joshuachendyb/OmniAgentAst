@@ -123,16 +123,6 @@ class TestDeepLogicBugs:
             assert metrics['file_count']['value'] == 2, f"file_count error: {metrics}"
             assert metrics['dir_count']['value'] == 1, f"dir_count error: {metrics}"
 
-    @pytest.mark.skip(reason="read_config_file deleted on 2026-06-24")
-    def test_read_config_file_ini_section(self):
-        """BUG candidate: INI file section parsing (module deleted)"""
-        pass
-
-    @pytest.mark.skip(reason="read_config_file deleted on 2026-06-24")
-    def test_read_config_file_xml_parse_error(self):
-        """BUG candidate: XML parse error (module deleted)"""
-        pass
-
     def test_read_media_file_text_file(self):
         """BUG candidate: read_media_file reads text file"""
         from app.tools.file.read_media_file import readmedia

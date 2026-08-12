@@ -126,11 +126,6 @@ class TestCopyFileDeepBugs:
         dest = tmp_path / "sub1" / "sub2" / "dest.txt"
         result = _run(copy(str(src), str(dest)))
 
-    @pytest.mark.skip(reason="asyncio.gather in sync context creates coroutine needs event loop")
-    def test_bug_14_concurrent_copy_same_source(self, tmp_path):
-        """BUG#14: concurrent copy same source"""
-        pass
-
     def test_bug_15_source_binary_file(self, tmp_path):
         """BUG#15: source is binary file"""
         from app.tools.file.copy_file import copy

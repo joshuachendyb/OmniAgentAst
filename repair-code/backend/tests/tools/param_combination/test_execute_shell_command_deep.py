@@ -82,24 +82,6 @@ class TestExecuteShellCommandDeepBugs:
         result = shell('echo "测试中文"')
         # 应该正认处理
 
-    @pytest.mark.skip(reason="shell无capture_output参数")
-    def test_bug_12_capture_output_false(self, tmp_path):
-        """BUG#12: capture_output=False不捕获输出"""
-        from app.tools.fundamental.execute_shell_command import shell
-        result = shell("echo test", capture_output=False)
-
-    @pytest.mark.skip(reason="shell无env参数")
-    def test_bug_13_env_vars(self, tmp_path):
-        """BUG#13: 环境变量设置"""
-        from app.tools.fundamental.execute_shell_command import shell
-        result = shell("echo $TEST_VAR", env={"TEST_VAR": "test_value"})
-
-    @pytest.mark.skip(reason="shell无shell参数")
-    def test_bug_14_shell_false(self, tmp_path):
-        """BUG#14: shell=False不使用shell"""
-        from app.tools.fundamental.execute_shell_command import shell
-        result = shell("echo test", shell=False)
-
     def test_bug_15_timeout_very_short(self, tmp_path):
         """BUG#15: timeout=1毫秒(非常短)"""
         from app.tools.fundamental.execute_shell_command import shell

@@ -46,18 +46,6 @@ class TestSearchWebDeepBugs:
         result = _run(searchweb("test", num_results=10000))
         # 应该限制最大结果数
 
-    @pytest.mark.skip(reason="schema无engine参数")
-    def test_bug_6_engine_invalid(self):
-        pass
-
-    @pytest.mark.skip(reason="schema无timeout参数")
-    def test_bug_7_timeout_zero(self):
-        pass
-
-    @pytest.mark.skip(reason="schema无timeout参数")
-    def test_bug_8_timeout_negative(self):
-        pass
-
     def test_bug_9_query_with_special_chars(self):
         """BUG#9: query包含特殊字符"""
         from app.tools.network.search_web import searchweb
@@ -71,14 +59,6 @@ class TestSearchWebDeepBugs:
         result = _run(searchweb(long_query))
         # 应该成功或报错
 
-    @pytest.mark.skip(reason="schema无language参数")
-    def test_bug_11_language_invalid(self):
-        pass
-
-    @pytest.mark.skip(reason="schema无safe_search参数")
-    def test_bug_12_safe_search_invalid(self):
-        pass
-
     @pytest.mark.skip(reason="需要mock网络,跳过并发测试")
     def test_bug_13_concurrent_search(self):
         pass
@@ -88,7 +68,3 @@ class TestSearchWebDeepBugs:
         from app.tools.network.search_web import searchweb
         result = _run(searchweb("测试中文搜索"))
         # 应该正认处理
-
-    @pytest.mark.skip(reason="schema无offset参数")
-    def test_bug_15_offset_negative(self):
-        pass
