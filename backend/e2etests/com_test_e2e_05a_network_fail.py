@@ -1,11 +1,11 @@
-﻿"""E2E-P6-02: 目录不存在容错
+﻿"""unit-05a: 网络请求失败容错
 
 操作手册:
-   用例: E2E-P6-02
-    用户输入: "先列出E:\\test_dir目录下的所有文件，然后再列出E:\\test_dir\\no_such_dir下的文件看看有什么区别，把两个目录的列表合并成一份目录对比报告保存到E:\\test_dir\\dir_comparison.txt"
-   前置数据: 该目录不存在
-   预期过程: 工具报错目录不存在-> Agent回复告知用户错误
-   通过标准: final事件存在; 回复包含错误提示; 不死循环(steps<50)
+   用例: unit-05a
+    用户输入: "先帮我搜索一下今天的天气情况，然后把搜索到的结果保存到E:\\test_dir\\weather.txt，最后再访问http://this-does-not-exist-12345.com看看这个网站的内容，如果访问不了就告诉我原因"
+   前置数据: 该域名不存在
+   预期过程: 工具报错无法解析域名-> Agent回复告知用户错误
+   通过标准: final事件存在; 回复包含"无法访问"/"连接失败"/"不存在"; 不死循环(steps<50)
    失败标准: Agent崩溃/死循环/无错误提示
 
 -- 小欧 2026-06-27
@@ -19,28 +19,27 @@
    6. 严禁在脚本内设任何超时 — 统一由pytest.ini的timeout=3000管理
 """
 
-TEST_CASE_ID = "E2E-P6-02"
-TEST_CASE_NAME = "目录不存在容错"
+TEST_CASE_ID = "unit-05a"
+TEST_CASE_NAME = "网络请求失败容错"
 USER_INPUT = (
-    "这是一项多阶段目录操作与容错处理任务，请严格按照阶段顺序执行。"
+    "这是一项多阶段网络请求与容错验证任务，请严格按照阶段顺序执行。"
     ""
-    "第一阶段：先列出E:\\test_dir目录下的所有文件和子目录，获取每个文件的大小和修改日期，"
-    "按文件类型（txt/docx/png等）分组统计各类型文件数量。"
+    "第一阶段：确定当地的城市是哪个,然后搜索当地的今天天气预报，获取并展示前3条搜索结果的标题和摘要。"
     ""
-    "第二阶段：写一个Python脚本用于目录内容对比分析，脚本功能：接受两个目录路径作为参数、"
-    "分别列出两个目录下的文件清单、找出两个目录下相同的文件名和不同的文件名、"
-    "输出对比统计（总文件数差异、相同文件数、差异文件数），保存到E:\\test_dir\\dir_compare_tool+时间.py。"
+    "第二阶段：打开搜索结果中的第一条，并搜索获取未来10天的天气趋势详细天气预报内容——温度范围、天气状况和风力信息。"
     ""
-    "第三阶段：列出E:\\test_dir\\no_such_dir下的文件，这个目录不存在，访问它看看会有什么结果，如果报错请解释错误原因并告诉我该怎么办。"
+    "第三阶段：写一个Python脚本用于网页可用性检测，脚本要求："
+    "接受一个URL参数、尝试用HTTP GET连接并记录HTTP状态码、"
+    "如果连接失败则捕获异常类型并分析失败原因（DNS解析失败/连接超时/连接被拒绝）、"
+    "输出检测结果到文件，保存Python脚本到E:\\test_dir\\web_checker.py。"
     ""
-    "第四阶段：检查一下E:\\test_dir\\backup目录是否存在，如果存在则用Python对比脚本对比E:\\test_dir和backup目录的内容差异。"
+    "第四阶段：先用web_checker.py检测http://this-does-not-exist-12345.com这个网站是否可达，"
+    "再用web_checker.py检测http://www.baidu.com是否可达，对比两者的检测结果差异。"
     ""
-    "第五阶段：将目录清单、Python脚本、目录访问错误信息、目录对比结果汇总整理后保存到E:\\test_dir\\dir_operation_report.txt。"
+    "第五阶段：把天气搜索结果、天气预报详情、Python检测脚本、两个URL的检测结果汇总保存到E:\\test_dir\\network_report.txt。"
     "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
     "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
-
-from pathlib import Path
 
 import pytest
 from e2emodel.e2e_helpers import (
@@ -53,13 +52,11 @@ from e2emodel.e2e_helpers import (
     register_pending_record,
 )
 
-TEST_DIR = Path("E:/test_dir")
-
 
 @pytest.mark.e2e_full_link
 @pytest.mark.asyncio
-async def test_e2e_p6_02_dir_not_found():
-    """E2E-P6-02: 目录不存在容错"""
+async def test_e2e_unit_05a_network_fail():
+    """unit-05a: 网络请求失败容错"""
     from datetime import datetime
 
     test_start = datetime.now()
@@ -75,7 +72,7 @@ async def test_e2e_p6_02_dir_not_found():
 
     try:
         register_pending_record(
-            "E2E-P6-02", "目录不存在容错",
+            "unit-05a", "网络请求失败容错",
             USER_INPUT, {}, {}, [], [], {"errors": [], "tracebacks": []}, False,
         )
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
@@ -95,9 +92,9 @@ async def test_e2e_p6_02_dir_not_found():
             print(f"  [WARN] 有Error事件(SHOULD)，流结束: {end_type}")
 
         resp = result.get("response_text", "")
-        err_keywords = ["不存在", "找不到", "无法", "没有", "失败", "错误"]
+        err_keywords = ["无法访问", "连接失败", "不存在", "无法", "失败", "错误", "超时", "解析"]
         found = [k for k in err_keywords if k in resp]
-        assert len(found) >= 1, f"回复应提示目录不存在(MUST), 实际回复前100字: {resp[:100]}"
+        assert len(found) >= 1, f"回复应提示网络访问失败(MUST), 实际回复前100字: {resp[:100]}"
 
         for issue in verify_response_quality(result):
             pass
@@ -136,7 +133,7 @@ async def test_e2e_p6_02_dir_not_found():
 
         tool_names = [t["tool_name"] for t in result["tool_calls"]]
         print_report(
-            "E2E-P6-02", "目录不存在容错", result, db, lc,
+            "unit-05a", "网络请求失败容错", result, db, lc,
             ci, si, True, elapsed,
             extra={
                 "Tools": tool_names,
@@ -156,7 +153,7 @@ async def test_e2e_p6_02_dir_not_found():
         raise
     finally:
         write_test_record(
-            "E2E-P6-02", "目录不存在容错",
+            "unit-05a", "网络请求失败容错",
             USER_INPUT, r or {}, db, ci, si, lc, passed, elapsed,
             error_info=error_info,
         )

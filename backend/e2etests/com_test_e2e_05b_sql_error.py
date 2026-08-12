@@ -1,17 +1,12 @@
-﻿# -*- coding: utf-8 -*-
-# 编辑历史:
-# 2026-07-18 - 小欧 - 修复工具结果dict子串匹配: tool_msgs可能为dict, 须json.dumps后再匹配
-#   【病根】k in dict按键匹配, 不按值匹配, 导致err_keywords永远匹配不到工具报错信息。
-#   【改法】tool_msgs先json.dumps转字符串, 再做子串匹配。
-"""E2E-P6-01: 文件不存在容错
+﻿"""unit-05b: SQL查询错误容错
 
 操作手册:
-   用例: E2E-P6-01
-    用户输入: "先读取E:\\test_dir\\test.txt看看内容，然后读取E:\\test_dir\\no_such_file.txt看看有什么，对比一下两个文件的内容差异，最后把对比结果保存到E:\\test_dir\\comparison_report.txt"
-   前置数据: 该文件不存在
-   预期过程: 工具报错文件不存在-> Agent回复告知用户错误
-   通过标准: final事件存在; 回复包含"不存在"/"找不到"/"无法"等提示; 不死循环(steps<50)
-   失败标准: Agent崩溃/死循环/无错误提示
+   用例: unit-05b
+    用户输入: "先连接到数据库chat_history.db查看它有哪些表，列出所有表名和每张表的记录数，然后查一下有没有user_settings这张表，如果这张表不存在就查一下sessions表的结构，把两个结果都保存到E:\\test_dir\\db_query_report.txt"
+   前置数据: chat_history.db存在但无user_settings表
+   预期过程: 工具执行SQL查询-> 表不存在-> Agent回复告知用户无此表
+   通过标准: final事件存在; 回复包含"不存在"/"没有"; 不死循环(steps<50)
+   失败标准: Agent崩溃/死循环
 
 -- 小欧 2026-06-27
 
@@ -24,30 +19,29 @@
    6. 严禁在脚本内设任何超时 — 统一由pytest.ini的timeout=3000管理
 """
 
-TEST_CASE_ID = "E2E-P6-01"
-TEST_CASE_NAME = "文件不存在容错"
+TEST_CASE_ID = "unit-05b"
+TEST_CASE_NAME = "SQL查询错误容错"
 USER_INPUT = (
-    "这是一项多阶段文件处理与容错验证任务，请严格按照阶段顺序执行。"
+    "这是一项多阶段数据库查询与错误处理任务，请严格按照阶段顺序执行。"
     ""
-    "第一阶段：先检查E:\\test_dir目录下有哪些txt文件，列出完整的文件清单。"
-    "然后读取test.txt的内容，统计其中的总字符数和总行数，展示内容摘要给我看。"
+    "第一阶段：连接到chat_history.db，获取所有表的列表，展示每张表的名称和表中的记录数。"
     ""
-    "第二阶段：写一个Python脚本用于文件的逐行读取和差异对比，"
-    "脚本要求支持指定两个文件路径并输出它们的行差异，保存到E:\\test_dir\\diff_tool.py。"
+    "第二阶段：写一个Python脚本用于数据库表结构分析，脚本要求："
+    "连接到SQLite数据库并获取所有表的CREATE TABLE语句、"
+    "解析出每张表中各个字段的名称和数据类型、输出所有表结构和字段类型，保存到E:\\test_dir\\schema_analyzer.py。"
     ""
-    "第三阶段：用Python脚本对比test.txt和no_such_file.txt的差异，但这个no_such_file.txt文件并不存在，"
-    "读取它的时候看看会发生什么情况，如果报错了请告诉我具体错误原因。"
+    "第三阶段：用schema_analyzer.py分析chat_history.db的表结构，展示分析结果给我。"
     ""
-    "第四阶段：检查test.txt的内容完整性——确认文件编码格式、最后修改时间、"
-    "文件头签名是否正确，把检查结果展示给我。"
+    "第四阶段：查询数据库中有没有user_settings这张表，不管是否存在都继续后续操作——"
+    "如果不存在则查看sessions表的完整结构（字段名、数据类型、是否为主键、默认值），"
+    "如果存在则查看user_settings表的结构和内容。"
     ""
-    "第五阶段：将以上所有操作——文件清单、test.txt内容统计、diff_tool.py脚本、"
-    "对比结果和文件完整性检查——汇总整理后保存到E:\\test_dir\\file_processing_summary+时间.txt。"
+    "第五阶段：查询messages表中按角色分组统计消息数量，再查询sessions表中按状态分组统计会话数量。"
+    ""
+    "第六阶段：把所有查询结果——表列表、表记录数、schema分析报告、表查询结果和消息/会话统计——汇总保存到E:\\test_dir\\db_query_report.txt。"
     "然后独立生成四种版本的报告（TXT/DOCX/结构化DOCX/PDF）存入E:\\test_dir\\report\\目录下你创建于于本次任务相关的目录存放报告。"
     "最后:分析本次任务的执行工具实际调用与计划是不是一致,工具使用是不是合理,并形成工具调用合理性及冗余分析报告"
 )
-
-from pathlib import Path
 
 import pytest
 from e2emodel.e2e_helpers import (
@@ -60,13 +54,11 @@ from e2emodel.e2e_helpers import (
     register_pending_record,
 )
 
-TEST_DIR = Path("E:/test_dir")
-
 
 @pytest.mark.e2e_full_link
 @pytest.mark.asyncio
-async def test_e2e_p6_01_file_not_found():
-    """E2E-P6-01: 文件不存在容错"""
+async def test_e2e_unit_05b_sql_error():
+    """unit-05b: SQL查询错误容错"""
     from datetime import datetime
 
     test_start = datetime.now()
@@ -82,7 +74,7 @@ async def test_e2e_p6_01_file_not_found():
 
     try:
         register_pending_record(
-            "E2E-P6-01", "文件不存在容错",
+            "unit-05b", "SQL查询错误容错",
             USER_INPUT, {}, {}, [], [], {"errors": [], "tracebacks": []}, False,
         )
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
@@ -102,24 +94,9 @@ async def test_e2e_p6_01_file_not_found():
             print(f"  [WARN] 有Error事件(SHOULD)，流结束: {end_type}")
 
         resp = result.get("response_text", "")
-        err_keywords = ["不存在", "找不到", "无法", "没有", "失败", "错误"]
+        err_keywords = ["不存在", "没有", "找不到", "无法", "失败", "错误"]
         found = [k for k in err_keywords if k in resp]
-        import json as _json
-        tool_msgs = [t.get("result", "") for t in result.get("tool_calls", [])
-                     if "result" in t]
-        if len(found) < 1:
-            # 工具结果可能是 dict（如 {"data":{"stdout":...},"llm_data":...}），
-            # 须序列化为字符串后再做子串匹配，否则 `k in dict` 按键匹配永远失败 — 小欧 2026-07-18
-            tool_msgs_str = [
-                _json.dumps(m, ensure_ascii=False) if not isinstance(m, str) else m
-                for m in tool_msgs
-            ]
-            found = [k for k in err_keywords if any(k in ms for ms in tool_msgs_str)]
-        assert len(found) >= 1, (
-            f"回复或工具结果应提示文件不存在(MUST), "
-            f"回复前100字: {resp[:100]}, "
-            f"工具结果条数: {len(tool_msgs)}"
-        )
+        assert len(found) >= 1, f"回复应提示表不存在(MUST), 实际回复前100字: {resp[:100]}"
 
         for issue in verify_response_quality(result):
             pass
@@ -158,12 +135,12 @@ async def test_e2e_p6_01_file_not_found():
 
         tool_names = [t["tool_name"] for t in result["tool_calls"]]
         print_report(
-            "E2E-P6-01", "文件不存在容错", result, db, lc,
+            "unit-05b", "SQL查询错误容错", result, db, lc,
             ci, si, True, elapsed,
             extra={
                 "Tools": tool_names,
                 "LLM calls": result["llm_call_count"],
-                "Error keywords": found,
+                "Keywords found": found,
             },
         )
 
@@ -178,7 +155,7 @@ async def test_e2e_p6_01_file_not_found():
         raise
     finally:
         write_test_record(
-            "E2E-P6-01", "文件不存在容错",
+            "unit-05b", "SQL查询错误容错",
             USER_INPUT, r or {}, db, ci, si, lc, passed, elapsed,
             error_info=error_info,
         )
