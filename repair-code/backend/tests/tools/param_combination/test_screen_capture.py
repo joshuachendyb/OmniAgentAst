@@ -3,6 +3,9 @@
 screen_capture 参数组合与边界测试
 发现BUG: display/region互斥验证、display=0处理
 小欧 2026-07-03
+
+编辑历史:
+2026-08-12 - 小欧 - 修复测试临时文件落错位置: test_display_with_output_path 裸相对路径 dest="test.png" 会写入运行目录(backend/)根下, 改用 tmp_path fixture; test_capture_with_output_path 的 tempfile.mktemp 一并统一为 tmp_path
 """
 import asyncio
 import pytest
@@ -30,11 +33,10 @@ class TestScreenCaptureParam:
         result = _run(screen_capture(region={"x": 0, "y": 0, "width": 800, "height": 600}))
         assert is_success(result) or is_error(result)
 
-    def test_capture_with_output_path(self):
+    def test_capture_with_output_path(self, tmp_path):
         """组合3: 指定输出路径"""
         from app.tools.desktop.screen_capture import screen_capture
-        import tempfile
-        tmp = tempfile.mktemp(suffix=".png")
+        tmp = str(tmp_path / "capture_test.png")
         result = _run(screen_capture(dest=tmp))
         assert is_success(result) or is_error(result)
 
@@ -83,10 +85,10 @@ class TestScreenCaptureMutex:
         result = _run(screen_capture(display=1, region={"x": 0, "y": 0, "width": 100, "height": 100}))
         assert is_success(result) or is_error(result)
 
-    def test_display_with_output_path(self):
+    def test_display_with_output_path(self, tmp_path):
         """互斥: display + output_path"""
         from app.tools.desktop.screen_capture import screen_capture
-        result = _run(screen_capture(display=1, dest="test.png"))
+        result = _run(screen_capture(display=1, dest=str(tmp_path / "display_test.png")))
         assert is_success(result) or is_error(result)
 
 
