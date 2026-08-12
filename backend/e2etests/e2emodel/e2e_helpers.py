@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-08-12 - 小欧 - COM_03记录误判修复: write_test_record按error_type区分可恢复/不可恢复错误
+#   【病根】LLM幻觉调用未注册工具write被SafetyChecker blocked拦截, action_handler发ErrorStep(error_type=blocked)
+#          进SSE流致has_error=True; 但blocked/user_rejected属可恢复错误(拒绝≠失败, 与react_cycle._RECOVERABLE_ERRORS
+#          语义一致, 任务最终正常completed, pytest断言全过), 原判定"有error即失败"误置FAILED(记录与pytest矛盾)。
+#   【改法】write_test_record遍历events按error_type判定: 仅不可恢复error(非blocked/user_rejected)才判失败。
 # 2026-07-18 - 小欧 - FinalStep多态自包含终态重构: assert_stream_ended+PASS/FAIL判断改为outcome驱动
 #   【病根】原assert_stream_ended仅靠final事件和has_error判断终态,
 #          FinalStep多态重构后失败终态统一发type=final+outcome=failed(不再发error事件),
@@ -1448,9 +1453,17 @@ def write_test_record(
     resp_has_error = False
 
     # 新的判断标准: 必须有final事件才通过; 终态失败/取消(error事件或outcome)→失败
+    # 2026-08-12 小欧 COM_03误判修复: has_error需按error_type区分可恢复/不可恢复。
+    #   blocked/user_rejected(拒绝≠失败, react_cycle._RECOVERABLE_ERRORS)不判失败, 与任务实际completed一致。
+    _RECOVERABLE_ERROR_TYPES = {"blocked", "user_rejected"}
+    _fatal_error = False
+    for _ev in result.get("events", []):
+        if _ev.get("type") == "error" and _ev.get("error_type", "") not in _RECOVERABLE_ERROR_TYPES:
+            _fatal_error = True
+            break
     if final_event is not None:
-        # 有final事件，检查是否有error或终态失败/取消
-        if has_error or _final_outcome in ("failed", "cancelled"):
+        # 有final事件，检查是否有不可恢复error或终态失败/取消
+        if _fatal_error or _final_outcome in ("failed", "cancelled"):
             passed = False
 
     else:
@@ -1627,7 +1640,14 @@ def write_test_record(
     lines.append("|--------|------|------|")
     stream_end_type = assert_stream_ended(result)
     lines.append(f"| 流结束 | {stream_end_type} | - |")
-    lines.append(f"| 是否有error事件 | {'PASS' if not result.get('has_error') else 'FAIL'} | - |")
+    # 2026-08-12 小欧 COM_03误判修复: error事件区分可恢复(blocked/user_rejected,拒绝≠失败)/不可恢复
+    _recoverable_errors = [
+        f"step={_e.get('step')}({_e.get('error_type','')})"
+        for _e in result.get("events", [])
+        if _e.get("type") == "error" and _e.get("error_type", "") in _RECOVERABLE_ERROR_TYPES
+    ]
+    _fatal_error_desc = "不可恢复error事件" if _fatal_error else ("无error事件" if not _recoverable_errors else f"仅可恢复拒绝事件({';'.join(_recoverable_errors)})")
+    lines.append(f"| 是否有error事件 | {'FAIL' if _fatal_error else 'PASS'} | {_fatal_error_desc} |")
     lines.append(f"| 回复内容 | {'FAIL' if not resp or resp_has_error else 'PASS'} | {len(resp)}字{' [含错误关键词]' if resp_has_error else ''} |")
     lines.append(f"| 数据库验证 | {'PASS' if db.get('session_exists') else 'FAIL'} | - |")
     lines.append(f"| SSE-DB一致性 | {'PASS' if len(consistency_issues) == 0 else 'FAIL'} | {len(consistency_issues)}个问题 |")
