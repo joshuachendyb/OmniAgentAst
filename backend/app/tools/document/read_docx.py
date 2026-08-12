@@ -12,6 +12,7 @@
 # 2026-07-24 - 小欧 - 修复: error summary嵌入full detail → 改用truncate_summary(detail)首行
 # 2026-07-26 - 小欧 - OOD: 确认READ_DOCX_INPUT_MAX_BYTES未落地,OOM自然抛出被except捕获(同dataanalysis模式); 删doc_path多余变量(KISS-DIRECT)
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 D2: read_docx — 读取Word文档
 
@@ -29,7 +30,7 @@ from typing import Any, Dict, Optional
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
-from app.tools.validate.file_path_checker import hint_for_read_error
+from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.tools.tool_constants import ERR_DOC_READ_DOCX, READ_DOCX_OUTLIMIT_CHARS
 from app.tools.toolhelper.line_pager import select_lines
 from app.utils.text_utils import truncate_summary

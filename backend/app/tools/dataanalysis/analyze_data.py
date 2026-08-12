@@ -9,6 +9,7 @@
 # 2026-07-26 - 小欧 - OOD重构:数据加载/convert_pd_value抽取至data_loader公用函数(analyze_data/filter_data共享),内联数据加载改用load_data_to_df
 # 2026-07-26 - 小欧 - 迁移: hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
 # 2026-07-31 - 小欧 - Bug⑫修复: group_by/sort_by列不存在时抛明确错误(原静默退回非分组统计/静默跳过排序, 误导LLM) | py_compile ✓
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 analyze_data  对数据集进行统计分析
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -24,7 +25,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.utils.json_utils import coerce_json
 from app.tools.tool_constants import ERR_DOC_ANALYZE_DATA
-from app.tools.validate.file_path_checker import hint_for_data_error
+from app.tools.toolhelper.error_hints import hint_for_data_error
 from app.tools.dataanalysis.data_loader import load_data_to_df, convert_pd_value, validate_top_n
 
 

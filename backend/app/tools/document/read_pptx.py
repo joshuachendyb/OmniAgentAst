@@ -13,6 +13,7 @@
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
 # 2026-07-26 - 小沈 - BugFix #1/#4: 截断前存_actual_slide_count,产_trunc_hint提示用slide=N读剩余页; 参数path不覆盖(Bug #3)
 # 2026-07-31 - 小欧 - Bug㉑修复: 全量读取成功summary的slide_count改传total_slides(实际返回页数), 截断后"提示页数"与返回数据口径一致; 完整页数由_trunc_hint告知 | py_compile ✓
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 D3: read_pptx — 读取PPT文档
 
@@ -30,7 +31,7 @@ from typing import Any, Dict, Optional
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
-from app.tools.validate.file_path_checker import hint_for_read_error
+from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.tools.tool_constants import ERR_DOC_READ_PPTX, READ_PPTX_OUTLIMIT_CHARS
 from app.utils.text_utils import truncate_summary
 

@@ -10,6 +10,7 @@
 # 2026-07-26 - 小欧 - 迁移: sql_error_hint/hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
 # 2026-07-31 - 小欧 - CRITICAL: WITH CTE体绕过只读检测修复。原代码跳过CTE括号体仅检查外层SELECT, 导致 `WITH malicious AS (DELETE FROM users) SELECT * FROM malicious` 通过检测。补充CTE体内容的DML/DDL关键字扫描 | py_compile ✓
 # 2026-07-31 - 小欧 - 只读安全增强(Bug②/⑤/⑲): PRAGMA写操作检测(赋值=或非只读白名单拒绝); 检测前剥离注释与字符串字面量(修复"-- SELECT"前导注释误拒、'a;b'字符串分号误判、SET note='WHERE'漏判); timeout None/<=0 防御
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 query_sql — 执行只读SQL查询
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
@@ -27,7 +28,7 @@ from typing import Any, Dict, Optional, Literal  # 2026-07-31 小欧: 移除未�
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_SQL_EXEC, QUERY_SQL_OUTPARM_LIMIT_SQL, OBS_QUERY_SQL_PREVIEW_COLUMNS, QUERY_SQL_INER_LOG_SQL  # 2026-07-31 小欧: 移除未使用 OBS_MAX_DISPLAY_ITEMS
-from app.tools.validate.file_path_checker import sql_error_hint, hint_for_data_error
+from app.tools.toolhelper.error_hints import sql_error_hint, hint_for_data_error
 from app.tools.tool_fc_helper import _get_connection, _close_connection, _strip_sql_comments_and_strings  # 2026-07-31 小欧: Bug②⑤注释/字符串剥离修复引入
 
 

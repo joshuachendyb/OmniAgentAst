@@ -5,6 +5,7 @@
 # 2026-07-31 - 小欧 - Bug⑳修复: data非数组或元素非dict时返回明确错误(原list[list]触发row.keys() AttributeError, 错误信息晦涩) | py_compile ✓
 # 2026-08-07 - 小欧 - P04优化(北京老陈驱动 task001): 新增append_mode参数 — True=文件已存在时load_workbook末尾追加(表头一致性校验+按已有表头列序映射取值防串列), False=默认覆盖; else分支补mkdir防新建目录缺失崩溃; append分支error返回前补duration_ms计算防NameError | py_compile ✓
 # 2026-08-08 - 小欧 - P1修复(task005真实问题分析): append_mode追加模式data全为无字段空dict(如[{}])时, headers为空无法映射任何列, 返回warning"无有效字段可追加"而非静默success"N行", 让LLM感知追加无效; 空追加不save改动文件 | py_compile ✓
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 D6: write_xlsx — 写入Excel文档
 
@@ -25,7 +26,7 @@ from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
 from app.tools.tool_constants import ERR_WRITE_XLSX  # 2026-07-31 小欧: 移除未使用 ERR_DOC_NO_OPENPYXL
 from app.utils.json_utils import coerce_json
-from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error  # 2026-07-31 小欧: 移除未使用 logger
+from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error  # 2026-07-31 小欧: 移除未使用 logger
 from app.utils.table_helper import get_table_header_style_config  # 2026-07-31 小欧: 移除未使用 calculate_column_widths
 
 

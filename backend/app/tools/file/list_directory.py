@@ -3,6 +3,7 @@
 # 2026-07-20 - 小欧 - 目录遍历跳过名单(_SKIP_DIRS)合并为公用 SKIP_DIRS(从 tool_constants 导入), 去除 list_directory 与 grep 两处私有重复定义, 统一维护
 # 2026-07-20 - 小欧 - 章18门限治理: 依3.7删除Tool层LISTDIR_PAGE_SIZE条数截断(返回全部条目, 由Format层OBS_LISTDIR_MAX_ROWS/CHARS行×列收口); 删除max_depth=10递归深度限制(3.6, TOOL_TIMEOUTS已兜底); data.truncated仅反映deadline截断; 新增OBS_LISTDIR_*专属观察常量(显示域两态)
 # 2026-07-29 - 小沈 - TOOL_TIMEOUTS key对齐: "list_directory"→"listdir"(真实注册名), 值30→60
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 F5: list_directory — 列出目录内容
 
@@ -22,7 +23,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED, SKIP_DIRS
 from app.tools.tool_constants import TOOL_TIMEOUTS, OBS_LISTDIR_MAX_ROWS, OBS_LISTDIR_MAX_ROW_CHARS
-from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.logger import logger
 
 

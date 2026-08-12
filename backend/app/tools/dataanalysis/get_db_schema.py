@@ -6,6 +6,7 @@ get_db_schema — 获取数据库结构元数据
 # 2026-07-24 - 小欧 - table_names[:5] → GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES(魔数→命名常量)
 # 2026-07-26 - 小欧 - 迁移: sql_error_hint导入从tool_constants改为file_path_checker(配合函数迁移)
 # 2026-07-31 - 小欧 - Bug⑨⑩⑰修复: postgres默认schema test→public(新增_resolve_schema); mysql/pg列/索引查询按schema过滤防跨库同名表错列; sqlite表名正则改Unicode单词字符支持中文表名 | py_compile ✓
+# 2026-08-13 - 小欧 - A5职责拆分: sql_error_hint 导入源从 app.tools.validate.file_path_checker 改为 app.tools.toolhelper.error_hints
 """
 # 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -24,7 +25,7 @@ from app.tools.tool_constants import (
     ERR_SQL_EXEC,
     GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES,
 )
-from app.tools.validate.file_path_checker import sql_error_hint
+from app.tools.toolhelper.error_hints import sql_error_hint
 from app.tools.tool_fc_helper import _get_connection, _close_connection
 
 

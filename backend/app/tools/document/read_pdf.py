@@ -20,6 +20,7 @@
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
 # 2026-07-26 - 小沈 - BugFix #3: path参数不覆盖
 # 2026-07-31 - 小欧 - Bug⑦修复: _is_garbled_text 仅统计 \ufffd 替换字符, 不再统计普通'?'(正文合法问号占比高时误触发fitz后备); Bug⑮修复: _extract_with_fitz 返回按页对齐文本列表, 防页内含空行 split("\n\n") 页码错位 | py_compile ✓
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 D1: read_pdf — 读取PDF文档
 
@@ -37,7 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
-from app.tools.validate.file_path_checker import hint_for_read_error
+from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.tools.tool_constants import ERR_DOC_READ_PDF, READ_PDF_OUTLIMIT_DEFAULT_PAGES
 from app.utils.text_utils import truncate_summary
 

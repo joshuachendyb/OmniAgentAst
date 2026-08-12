@@ -13,6 +13,7 @@
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 F12: delete_file — 删除文件
 
@@ -34,7 +35,8 @@ from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
 from app.tools.context import _current_task_id, get_current_hooks  # A1: ContextVar hooks — 小欧 2026-08-12
 from app.db.models.operation_models import OperationType
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error, WINDOWS_SYSTEM_DIRS  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.validate.file_path_checker import validate_path, OpCategory, WINDOWS_SYSTEM_DIRS  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
 
 

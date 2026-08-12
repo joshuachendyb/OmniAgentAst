@@ -3,6 +3,7 @@
 # 2026-07-20 - 小欧 - MAX_MEDIA_READ_SIZE 依3.5改名 READMEDIA_INPUT_MAX_BYTES(readmedia 自有内部常量, 各 tool 独立不公用, INER_ 前缀; 3.4 硬安全网保留, 文件过大拒绝, 不截断)
 # 2026-07-26 - 小欧 - OOD: 删 READMEDIA_INPUT_MAX_BYTES 常量+入口检查, OOM自然抛出被except捕获(同dataanalysis模式)
 # 2026-07-26 - 小沈 - BugFix #3: path参数不覆盖; #5: hint传完整路径
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 F3: readmedia — 读媒体文件
 
@@ -22,7 +23,7 @@ from typing import Any, Dict
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.validate.file_type_checker import check_for_media_tool
-from app.tools.validate.file_path_checker import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.toolhelper.error_hints import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 
 from app.logger import logger
 

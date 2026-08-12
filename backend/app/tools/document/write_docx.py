@@ -6,6 +6,7 @@
 # 2026-07-26 - 小欧 - 再加char_count指标，让LLM能区分一段长文 vs 多段短文的内容量级
 # 2026-07-26 - 小欧 - para_count排除Document()默认空段落；char_count含表格单元格文本；加table_count指标
 # 2026-07-31 - 小欧 - Bug⑯修复: 有序列表正则 ^\d+\.\s → ^\d{1,3}\.\s, 防"2026. 销售报告"数字开头散文被误当编号列表并剥数字 | py_compile ✓
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 D5: write_docx — 写入Word文档
 
@@ -27,7 +28,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
 from app.tools.tool_constants import ERR_WRITE_DOCX
-from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error
+from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
 from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config, normalize_table_data  # 2026-07-31 小欧: 移除未使用 logger
 from app.tools.document.md_inline_utils import _parse_inline_md
 

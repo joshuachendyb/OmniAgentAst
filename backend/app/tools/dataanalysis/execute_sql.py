@@ -16,6 +16,7 @@ execute_sql — 执行写操作SQL
 【2026-08-09 小欧】task005核查P3落地: dry_run外层except加`if dry_run_error is None`保护 — 仅内层无异常时才用外层异常, 保留内层原始SQL语法错误(信息不丢失, 符合异常可追溯规范); 病根: SAVEPOINT/ROLLBACK失败(连接损坏)无条件覆盖内层已捕获异常
 【2026-08-11 小欧】三堂会审复核落地(P2-7): 删除外层except无条件syntax_valid=False覆写 — 内层语法校验已通过(syntax_valid=True)时,
    外层SAVEPOINT/ROLLBACK/RELEASE失败(连接异常)不再误报"SQL语法校验失败"; syntax_valid仅反映内层真实校验结果, 增强不退化
+【2026-08-13 小欧】A5职责拆分: sql_error_hint/hint_for_data_error 导入源从 app.tools.validate.file_path_checker 改为 app.tools.toolhelper.error_hints
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -29,7 +30,7 @@ from typing import Any, Dict, List, Optional, Literal, Tuple  # 2026-07-31 小�
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_SQL_EXEC, EXECUTE_SQL_OUTPARM_LIMIT_SQL
-from app.tools.validate.file_path_checker import sql_error_hint, hint_for_data_error
+from app.tools.toolhelper.error_hints import sql_error_hint, hint_for_data_error
 from app.tools.tool_fc_helper import _get_connection, _close_connection, _strip_sql_comments_and_strings  # 2026-07-31 小欧: Bug①注释绕过修复引入
 
 # #6: 影响行数安全阈值(模块级常量,DRY消除3处硬编码) — 小欧 2026-07-23

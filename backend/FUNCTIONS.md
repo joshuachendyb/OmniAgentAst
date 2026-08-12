@@ -2,7 +2,7 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-08-11
+**最后更新时间**: 2026-08-13
 
 ---
 
@@ -179,12 +179,13 @@
 
 > 迁移来源(docstring)：common_helper/exec_helper/data_helper/date_helper/shell_helper/db_helper/content_validation 各helper文件的纯逻辑函数 — 小欧 2026-06-22
 
-### 4.2 工具辅助文件（app/tools/toolhelper/）【v2.4更正：原"三、工具层"登记16个文件，其中14个(common_helper/data_format_helper/data_helper/date_helper/db_helper/exec_helper/file_helpers/gui_helper/hash_helper/network_helper/service_helper/shell_helper/task_helper/window_helper)的纯逻辑函数已于2026-06-22迁移合并至 tool_fc_helper.py(见4.1)，原文件删除；当前目录仅剩以下2个】
+### 4.2 工具辅助文件（app/tools/toolhelper/）【v2.4更正：原"三、工具层"登记16个文件，其中14个(common_helper/data_format_helper/data_helper/date_helper/db_helper/exec_helper/file_helpers/gui_helper/hash_helper/network_helper/service_helper/shell_helper/task_helper/window_helper)的纯逻辑函数已于2026-06-22迁移合并至 tool_fc_helper.py(见4.1)，原文件删除；当前目录剩余以下文件】
 
 | 文件 | 功能 |
 |------|------|
 | `line_pager.py` | 行分页/截断工具 `select_lines`(按 offset/limit/tail 选取行, 供 read_text_file/read_docx 复用, Tool 层零限制, 字符截断收口于 observation_formatter) — 小欧 2026-07-20 |
 | `syntax_validator.py` | 语法护栏(多语言语法校验, 详见 七、语法护栏章节) — 小欧 2026-07-21 |
+| `error_hints.py` | 工具结果解释层错误提示: `permission_error_hint`(写入权限不足) / `hint_for_write_error`(写入异常按 errno/类型精准提示) / `hint_for_read_error`(读取异常) / `sql_error_hint`(SQL异常, 覆盖 no column/table/UNIQUE/多语句/语法等) / `hint_for_data_error`(数据处理异常, 含 pandas/sqlite3 分支) — 小欧 2026-08-13 A5 自 file_path_checker 迁入 |
 
 ### 4.3 基础工具（app/tools/fundamental/）【v2.5新增】
 
@@ -281,8 +282,9 @@ def my_parse_json(json_str):
 
 ## 版本历史
 
-| 版本 | 时间 | 更新内容 | 作者 |
+| version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v2.9 | 2026-08-13 | A5职责拆分同步(小欧): 4.2 补登记 `error_hints.py`(5个错误提示函数自 file_path_checker 迁移: permission/error_hint_for_write/read/sql/data, 供 dataanalysis/document/file/network 复用) | 小欧 |
 | v2.8 | 2026-08-11 | 三堂会审复核文档同步(小欧): 8.1 `_is_forbidden_path` 返回值更正为 `Tuple[Optional[str], Optional[str]]`(原误写Tuple[bool, Optional[str]]); 8.3 `clear_temp_auth` 清零点更新为 react_cycle task级 finally(R1, 原action_handler工具批finally已迁移H1) | 小欧 |
 | v2.7 | 2026-08-10 | ⑦⑯ 2026-08-10 bug复核修复同步(小欧): `validate_tool_path` 返回扩展三元组+新增 `_resolve_path_param`(BUG-B/C: download/rename 逻辑路径参数解析); `_check_known_risks` auth_path 改 failed_path(BUG-D); action_handler 工具批后 finally clear_temp_auth(BUG-E, 补A落地) | 小欧 |
 | v2.6 | 2026-08-10 00:55:00 | ①2026-08-10 项目根目录混乱修复同步(小欧): 七章更新 `_get_project_root_safety`(⑤收敛走config)/`_is_forbidden_path`(⑦代码库禁区)/`validate_tool_path`(⑧⑨补dest+多参数全量校验)/`get_default_allowed_paths`(⑪白名单收紧); 8.2 delete_safety ⑫多授权域(_get_allowed_roots/_is_inside_any); 新增8.3 temp_auth.py临时授权(⑮) ②config.py命名分离(_get_project_root→_get_code_root, get_default_project_root→get_code_root, ①兜底改Path.home, ⑩get_allowed_dirs新增) ③delete_file ⑥删复刻+多授权根保护 | 小欧 |

@@ -19,6 +19,7 @@
 #    _apply_grep_outlim 返回 _real_files, GrepSyncResult 用真实值重建
 #    summary.total_files 与实际匹配文件数一致, 避免误导 LLM 搜索范围判断
 # 2026-08-07 - 小欧 - P06优化(北京老陈驱动 task001): 返回前过滤已被删除/重命名的文件(_apply_grep_outlim后最终结果上做, 条件重建GrepSyncResult重算files/matches, 避免双重重建) | py_compile ✓
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -43,7 +44,8 @@ from app.tools.tool_constants import (
     GREP_OUTLIMIT_MATCHES_MAX, GREP_OUTLIMIT_MATCH_CONTENT_CHARS,
 )
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file, _detect_binary_content
 from app.tools.file.file_encoding import safe_read_lines
 from app.logger import logger

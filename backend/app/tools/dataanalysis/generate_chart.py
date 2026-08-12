@@ -5,6 +5,7 @@
 # 2026-07-26 - 小欧 - 迁移: hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
 # 2026-07-26 - 小沈 - BugFix #6: file_path_checker两行import合并为一行
 # 2026-07-31 - 小欧 - Bug⑪修复: _registered字体快照addfont后实时更新, 防同名字体(msyh.ttc/msyh.ttf)重复addfont | py_compile ✓
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 generate_chart — 使用matplotlib生成数据可视化图表
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -23,7 +24,8 @@ from typing import Dict, Any, Optional, Union, Literal
 from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_data_error
+from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.toolhelper.error_hints import hint_for_data_error
 from app.logger import logger
 from app.tools.tool_constants import ERR_DOC_CHART_GENERATE, GENERATE_CHART_OUTPARM_LIMIT_DATA
 from app.tools.dataanalysis.data_loader import load_data_to_df

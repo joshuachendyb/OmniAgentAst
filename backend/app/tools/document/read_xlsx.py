@@ -25,6 +25,7 @@
 # 2026-07-26 - 小欧 - OOD: 删 READ_XLSX_INPUT_MAX_BYTES 常量+入口检查, OOM自然抛出被except捕获(同dataanalysis模式)
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
 # 2026-07-26 - 小沈 - BugFix #2/#9: 更新stale docstring(删READ_XLSX_INPUT_MAX_BYTES引用); #3: path参数不覆盖
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 D4: read_xlsx — 读取Excel/CSV/XLS文档
 
@@ -43,7 +44,7 @@ from typing import Any, Dict, Optional  # 2026-07-31 小欧: 移除未使用 Lis
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
-from app.tools.validate.file_path_checker import hint_for_read_error
+from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.tools.tool_constants import (
     ERR_DOC_READ_XLSX,
     XLSX_OUTLIMIT_ROWS_MAX, XLSX_OUTLIMIT_CELL_CHARS,

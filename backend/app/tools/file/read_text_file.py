@@ -34,6 +34,7 @@ F1: readtext — 读取文本文件
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 
 import time as _time_mod
 from pathlib import Path
@@ -43,7 +44,7 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import READTEXT_OUTLIMIT_CHARS
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.validate.file_type_checker import check_for_text_tool
-from app.tools.validate.file_path_checker import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.toolhelper.error_hints import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
 
 from app.utils.text_utils import add_line_numbers
 from app.tools.toolhelper.line_pager import select_lines

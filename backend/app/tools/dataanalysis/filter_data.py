@@ -10,6 +10,7 @@
 # 2026-07-26 - 小欧 - 删除nrows=100000:OOM让异常自然抛出被except捕获报error给LLM,不加硬限制(老陈方向)
 # 2026-07-26 - 小欧 - OOD重构:数据加载_load_data_to_df抽取至data_loader.load_data_to_df公用函数(analyze_data/filter_data共享)
 # 2026-07-26 - 小欧 - 迁移: hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 filter_data  按条件筛选/过滤数据
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -28,7 +29,7 @@ from app.tools.tool_fc_helper import _check_module, _serialize_rows
 from app.tools.dataanalysis.data_loader import load_data_to_df, validate_top_n
 from app.utils.json_utils import coerce_json
 from app.tools.tool_constants import ERR_FILTER_INVALID, FILTER_DATA_OUTPARM_LIMIT_CONDITIONS
-from app.tools.validate.file_path_checker import hint_for_data_error
+from app.tools.toolhelper.error_hints import hint_for_data_error
 
 
 def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail="", hint="",

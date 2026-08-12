@@ -5,6 +5,7 @@
 #   data 只保留 output_dir/file_list,
 #   移除 extracted_files/skipped_files/format
 #   (已由 llm_data 承载, data中不重复)
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 F9: extract_archive — 解压文件
 
@@ -27,7 +28,8 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_EXTRACT
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
 
 

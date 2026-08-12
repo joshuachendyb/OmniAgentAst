@@ -11,6 +11,7 @@ D8: write_pptx — 写入PPT文档
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 # 2026-07-31 - 小欧 - CRITICAL: _add_pptx_table 中 Inches 导入在使用之后(NameError崩溃)。移动 import 到函数顶部，确保 Inches(2) fallback 可用
 # 2026-07-31 - 小欧 - Bug④/⑥/⑭修复: 正文占位符按类型(BODY/OBJECT/VERTICAL_BODY)选择, 防封面SUBTITLE被content覆盖; falsy-zero改is not None; 表高超版心时跳过防负高度
+# 2026-08-13 - 小欧 - A5职责拆分: permission_error_hint/hint_for_write_error 导入源从 app.tools.validate.file_path_checker 改为 app.tools.toolhelper.error_hints
 
 import time as _time_mod
 from pathlib import Path
@@ -22,7 +23,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
 from app.tools.tool_constants import ERR_DOC_WRITE_PPTX  # 2026-07-31 小欧: 移除未使用 ERR_DOC_NO_PPTX
-from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error
+from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
 from app.utils.json_utils import coerce_json  # 2026-07-31 小欧: 移除未使用 logger
 from app.utils.table_helper import calculate_column_widths, get_table_header_style_config, dict_table_to_rows
 from app.tools.document.md_inline_utils import _parse_inline_md

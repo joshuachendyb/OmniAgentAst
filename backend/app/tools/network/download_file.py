@@ -8,6 +8,7 @@
 # 2026-08-10 - 小欧 - ⑭注释更正: 下载目录未配置project_root时=用户主目录(不再是代码位置), 子目录download — 步骤1实施(北京老陈驱动「项目根目录定义混乱修复」)
 # 2026-08-12 - 小欧 - 三堂会审补漏: download 与 httpget 同病根(重定向到内网被SSRF防护拦截抛httpx.InvalidURL落入catch-all记ERROR);
 #   用 http_client_sdk.is_ssrf_blocked_error 公用函数统一识别(httpget/fetch_webpage/download三工具一致), 返回ERR_INVALID_URL+warning
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 N2: download — 下载文件到本地
 
@@ -30,7 +31,8 @@ from app.tools.network.http_client_sdk import create_http_client, HTTPClient, is
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
 from app.tools.validate.timeout_validator import validate_timeout
-from app.tools.validate.file_path_checker import validate_path, OpCategory, hint_for_write_error
+from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.toolhelper.error_hints import hint_for_write_error
 
 from app.logger import logger
 

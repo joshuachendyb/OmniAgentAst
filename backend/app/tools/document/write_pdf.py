@@ -5,6 +5,7 @@
 # 2026-07-26 - 小欧 - summary加路径前空格，加char_count指标供LLM验证内容写入
 # 2026-07-26 - 小欧 - char_count改为统计title+content+table_data全源；之前只统计content，遗漏表格和标题内容
 # 2026-07-31 - 小欧 - Bug⑧修复: CJK字体渐进回退(依次尝试simsun/msyh/simhei/Deng/simkai, 全部缺失才退默认并告警), 防simsun缺失时中文渲染方框; Bug⑯同型修复: 有序列表正则 ^\d+\.\s → ^\d{1,3}\.\s, 防"2026. 销售报告"被误当编号列表 | py_compile ✓
+# 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 D7: write_pdf — 写入PDF文档
 
@@ -26,7 +27,7 @@ from app.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_WRITE_PDF
-from app.tools.validate.file_path_checker import permission_error_hint, hint_for_write_error
+from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
 from reportlab.lib.units import mm
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
