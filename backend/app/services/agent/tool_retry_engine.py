@@ -47,6 +47,14 @@
 #   与现有"对象→字符串"容错形成双向闭环, 不静默删除非法字段)
 # 2026-08-12 - 小欧 - 三堂会审修正: 反向容错由parse_json手写分支改为复用公共coerce_json(DRY铁规,
 #   与write_xlsx/analyze_data/filter_data共用同一参数归一化层; 非法JSON原样返回不误改, 二维List[List]不误伤, 行为等价更优)
+# 2026-08-12 - 小欧 - 三堂会审修复: 值范围clamp兼容Pydantic v2 anyOf嵌套(日志实证2026-08-11 readtext limit=1200漏过引擎层)
+#   【病根】Pydantic v2对Optional[int]生成{"anyOf":[{...min/max},{"type":"null"}], "type":"integer"},
+#      maximum/minimum在anyOf[0]子结构, 顶层spec.get("minimum"/"maximum")取None→clamp全程失效,
+#      越界值(limit=1200等)直抵工具运行时靠read_text_file.py:166兜底报错
+#   【影响面】全部Optional数字+ge/le字段: readtext(offset/limit/tail)、analyze_data(top_n/limit)、
+#      read_docx/read_pdf(limit)、network port(1-65535)、timer year(1900-2100), 一并修复
+#   【解决】新增_extract_numeric_bounds(spec)范围提取helper(顶层优先, 无则取anyOf[0]),
+#      clamp逻辑与既有钳制语义完全一致(v<min→min, v>max→max), 仅提取路径修正, 增强无退化
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -350,6 +358,22 @@ class ToolRetryEngine:
             return params_or_error
         return await self._execute_with_retry(action, params_or_error, tool, on_retry_started=on_retry_started)
     
+    def _extract_numeric_bounds(self, spec: Dict[str, Any]) -> tuple:
+        """从工具schema提取数值范围(minimum/maximum), 兼容Pydantic v2 Optional字段的anyOf嵌套 — 小欧 2026-08-12
+        Pydantic v2对Optional[int]生成{"anyOf":[{...,"minimum"/"maximum"...},{"type":"null"}], "type":"integer"},
+        顶层不直接含min/max, 若直接spec.get("maximum")取None会导致clamp失效(日志实证readtext limit=1200漏过引擎层)。
+        提取顺序: 顶层优先(普通非Optional字段), 无则取anyOf[0](Optional字段), 再无返回(None,None)表示无范围约束。
+        """
+        if not isinstance(spec, dict):
+            return None, None
+        top_min, top_max = spec.get("minimum"), spec.get("maximum")
+        if top_min is not None or top_max is not None:
+            return top_min, top_max
+        any_of = spec.get("anyOf")
+        if isinstance(any_of, list) and any_of and isinstance(any_of[0], dict):
+            return any_of[0].get("minimum"), any_of[0].get("maximum")
+        return None, None
+
     def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
         """验证参数（非法参数+必需参数）— P1-05修复: 返回错误字典而非None
         小健 2026-06-18 合并_are_params_valid和_check_missing_params为一次查询"""
@@ -441,14 +465,15 @@ class ToolRetryEngine:
                     )
                 # #8 fix: 值范围clamp(integer/number参数的minimum/maximum),防Pydantic ValidationError — 小欧 2026-07-23
                 # 2026-08-05 小欧 BUG-3修复: 原仅钳 integer,漏 number(float字段如timer_set delay),超范围float仍抛ValidationError; 补上 number — 小欧
+                # 2026-08-12 小欧 三堂会审修复: 范围提取走_extract_numeric_bounds, 兼容Pydantic v2 anyOf嵌套
+                #   (Optional字段min/max在anyOf[0], 原顶层取None→clamp失效, limit=1200漏到运行时)
                 for k, v in params.items():
                     spec = props.get(k)
                     if not spec:
                         continue
                     _t = spec.get("type")
                     if _t in ("integer", "number"):
-                        minimum = spec.get("minimum")
-                        maximum = spec.get("maximum")
+                        minimum, maximum = self._extract_numeric_bounds(spec)
                         if minimum is not None and v < minimum:
                             params[k] = minimum
                         elif maximum is not None and v > maximum:
