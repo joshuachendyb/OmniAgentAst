@@ -19,6 +19,9 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
+# 2026-08-13 - 小欧 - 三堂会审修复#5: _write_file_atomic 的 open(读尾字节/写/降级重写)/mkdir/stat 全链
+#   to_win_long_path 长路径化(仅NT生效), 深嵌套目标不再 WinError 206; 编码降级回退分支同步;
+#   主函数/编码探测的 exists/is_file/read_text 探测同步长路径化(超长路径不误判"文件不存在")
 """
 F2: writetext — 写文本文件
 
@@ -32,6 +35,7 @@ F2: writetext — 写文本文件
 import asyncio
 import codecs
 import difflib
+import os
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -55,6 +59,7 @@ from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_safety_checker import check_content_safety
 from app.logger import logger
+from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_write, check_conflict, is_unchanged
 from app.tools.toolhelper.syntax_validator import validate_syntax, detect_language  # 小欧 2026-07-21 统一语法检测接入
@@ -65,7 +70,7 @@ def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
     if not append:
         return "utf-8"
     path = Path(file_path)
-    if not (path.exists() and path.is_file()):
+    if not (Path(to_win_long_path(path)).exists() and Path(to_win_long_path(path)).is_file()):  # #5长路径 — 小欧 2026-08-13
         return "utf-8"
     try:
         result = get_file_encoding(str(path))
@@ -80,18 +85,19 @@ def _write_file_atomic(content: str, path: Path, encoding: str,
                         append: bool, create_parents: bool) -> Tuple[bool, str]:
     """原子写入文件 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 返回具体错误信息 — 小欧 2026-08-06 追加补换行 — 小欧 2026-08-07 BUG-05修复: 编码无法编码时降级utf-8"""
     try:
+        _long = to_win_long_path(path)  # #5长路径: open/mkdir/stat 统一 \\?\ 前缀 — 小欧 2026-08-13
         if create_parents:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            os.makedirs(to_win_long_path(path.parent), exist_ok=True)
         if append:
             # 追加且原文件非空末尾非换行符: 自动补换行, 避免与末行合并 — 小欧 2026-08-06
-            if path.exists() and path.is_file() and path.stat().st_size > 0:
-                with open(path, 'rb') as _rf:
+            if Path(_long).exists() and Path(_long).is_file() and Path(_long).stat().st_size > 0:
+                with open(_long, 'rb') as _rf:
                     _rf.seek(-1, 2)
                     _last_byte = _rf.read(1)
                 if _last_byte not in (b'\n', b'\r'):
                     content = '\n' + content
         mode = 'a' if append else 'w'
-        with open(path, mode, encoding=encoding, newline='') as f:
+        with open(_long, mode, encoding=encoding, newline='') as f:
             f.write(content)
         return True, ""
     except (UnicodeEncodeError, UnicodeDecodeError) as e:
@@ -102,13 +108,13 @@ def _write_file_atomic(content: str, path: Path, encoding: str,
         if encoding and encoding.lower() != "utf-8":
             try:
                 _fallback_mode = mode
-                if append and path.exists() and path.is_file() and path.stat().st_size > 0:
+                if append and Path(_long).exists() and Path(_long).is_file() and Path(_long).stat().st_size > 0:
                     # 追加且原文件非空: 先读回原内容, 再以utf-8整写(避免mode='a'+content重复原文件)
-                    with open(path, 'r', encoding=encoding, newline='') as _rf:
+                    with open(_long, 'r', encoding=encoding, newline='') as _rf:
                         _existing = _rf.read()
                     content = _existing + content
                     _fallback_mode = 'w'
-                with open(path, _fallback_mode, encoding="utf-8", newline='') as f:
+                with open(_long, _fallback_mode, encoding="utf-8", newline='') as f:
                     f.write(content)
                 logger.warning(f"[_write_file_atomic] 编码{encoding}无法编码,已降级为utf-8写入: {path}")
                 return True, ""
@@ -288,9 +294,9 @@ async def writetext(
 
     # 无操作跳过 + 预读旧内容供 diff — 小欧 2026-07-05
     old_content = None
-    if not append and path.exists():
+    if not append and Path(to_win_long_path(path)).exists():  # #5长路径 — 小欧 2026-08-13
         try:
-            old_raw = path.read_text(encoding=encoding)
+            old_raw = Path(to_win_long_path(path)).read_text(encoding=encoding)
             old_content = old_raw
             if is_unchanged(file_path, checked_content):
                 record_write(file_path)  # 更新mtime缓存 — 小欧 2026-07-05
@@ -313,7 +319,7 @@ async def writetext(
             old_content = None
 
     encoding_warning = None
-    if append and path.exists() and path.is_file():
+    if append and Path(to_win_long_path(path)).exists() and Path(to_win_long_path(path)).is_file():  # #5长路径 — 小欧 2026-08-13
         original_encoding = _detect_file_encoding_for_write(file_path, True)
         if encoding != original_encoding:
             encoding_warning = f"文件原始编码为'{original_encoding}',当前使用'{encoding}'写入,可能导致文件编码混乱"

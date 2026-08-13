@@ -18,6 +18,9 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
+# 2026-08-13 - 小欧 - 三堂会审修复#5: _copy_sync 的 copy2/copytree/rmtree/mkdir/os调用全链
+#   to_win_long_path 长路径化(仅NT生效), 深嵌套路径不再 WinError 206; 主函数目标存在探测/成功stat
+#   同步长路径化, 探测与操作口径一致(超长路径不误报"目标已存在"或stat失败)
 """
 F7: copy_file — 复制文件
 
@@ -42,6 +45,7 @@ from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1:
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
+from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
 from app.db.models.operation_models import OperationType
 
@@ -138,7 +142,7 @@ async def copy(
         except ValueError:
             pass
 
-    if dst.exists() and not overwrite:
+    if Path(to_win_long_path(dst)).exists() and not overwrite:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": f"目标已存在且overwrite=False: {destination}"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
         return build_error(data={}, llm_data=llm_data)
@@ -160,27 +164,31 @@ async def copy(
 
         def _remove_readonly(func, path, excinfo):
             """解除只读属性后重试 — 小欧 2026-07-26"""
-            os.chmod(path, os.stat(path).st_mode | 0o200)
+            _lp = to_win_long_path(Path(path))
+            os.chmod(_lp, os.stat(_lp).st_mode | 0o200)
             func(path)
 
         def _copy_sync():
-            dst.parent.mkdir(parents=True, exist_ok=True)
+            # #5长路径: Windows下FS操作统一走 \\?\ 前缀, 深嵌套路径不再 WinError 206 — 小欧 2026-08-13
+            _src_lp = to_win_long_path(src)
+            _dst_lp = to_win_long_path(dst)
+            os.makedirs(to_win_long_path(dst.parent), exist_ok=True)
             copy_func = shutil.copy2 if preserve_metadata else shutil.copy
             if src.is_file():
-                copy_func(str(src), str(dst))
+                copy_func(_src_lp, _dst_lp)
             elif src.is_dir():
                 if recursive:
-                    if dst.exists():
+                    if Path(_dst_lp).exists():
                         logger.warning(f"[copy] recursive模式: 目标目录已存在,将删除后重建: {dst}")
-                        if not os.access(str(dst), os.W_OK):
-                            os.chmod(str(dst), os.stat(str(dst)).st_mode | 0o200)
-                        shutil.rmtree(str(dst), onerror=_remove_readonly)
+                        if not os.access(_dst_lp, os.W_OK):
+                            os.chmod(_dst_lp, os.stat(_dst_lp).st_mode | 0o200)
+                        shutil.rmtree(_dst_lp, onerror=_remove_readonly)
                     if preserve_metadata:
-                        shutil.copytree(str(src), str(dst))
+                        shutil.copytree(_src_lp, _dst_lp)
                     else:
-                        shutil.copytree(str(src), str(dst), copy_function=shutil.copy)
+                        shutil.copytree(_src_lp, _dst_lp, copy_function=shutil.copy)
                 else:
-                    dst.mkdir(exist_ok=True)
+                    Path(_dst_lp).mkdir(exist_ok=True)
             return True
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
@@ -193,9 +201,11 @@ async def copy(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if success:
             extra_m = {}
-            if dst.exists():
+            _dst_lp = to_win_long_path(dst)
+            if Path(_dst_lp).exists():
                 try:
-                    extra_m["bytes"] = {"value": dst.stat().st_size, "text": f"{dst.stat().st_size}字节"}
+                    _dst_stat = Path(_dst_lp).stat()
+                    extra_m["bytes"] = {"value": _dst_stat.st_size, "text": f"{_dst_stat.st_size}字节"}
                 except Exception:
                     pass
             llm_data = _build_copy_file_llm_data("success", duration_ms, source, destination=destination, extra_metrics=extra_m, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
