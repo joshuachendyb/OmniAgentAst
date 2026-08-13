@@ -21,6 +21,9 @@
 #   【病根】http_client_sdk._validate_redirect对重定向到回环/内网地址抛httpx.InvalidURL(SSRF防护), 落入catch-all记"意外错误"ERROR级, 语义错误(属预期防护)
 #   【改法】显式捕获httpx.InvalidURL, 返回结构化错误(ERR_INVALID_URL)+warning日志, 不再记ERROR
 # 2026-08-12 - 小欧 - 三堂会审DRY: InvalidURL识别统一改用http_client_sdk.is_ssrf_blocked_error公用函数(httpget/fetch_webpage/download三工具一致)
+# 2026-08-13 - 小欧 - 三堂会审修复#15: 429重试后若为超时, 原L319 status_code保留429 → L328误报"HTTP 429"+e.response.text对超时无.response抛异常被吞
+#   【病根】except分支仅对HTTPStatusError取真实status_code, 超时/RequestError时status_code沿用429, 错误标签与真实原因不符, 且误导重试引擎按"429限流"决策
+#   【改法】重试后异常为TimeoutException时单独分支返回ERR_NETWORK_TIMEOUT结构化错误(不计入429语义); 其余异常仍按HTTPStatusError取真实status_code
 """
 N1: httpget — 发起HTTP请求
 
@@ -315,6 +318,18 @@ async def httpget(
                                 return build_success(data=data, llm_data=llm_data)
                             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as _e2:
                                 logger.warning(f"[httpget] 429重试后仍失败: {type(_e2).__name__}, 回退结构化返回")
+                                if isinstance(_e2, httpx.TimeoutException):
+                                    # 超时是"可重试瞬时故障", 非429限流语义, 单独分类返给LLM, 不套HTTP 429标签 — 小欧 2026-08-13 #15
+                                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                                    llm_data = _build_http_request_llm_data(
+                                        "error", duration_ms, url, method,
+                                        err_code=ERR_NETWORK_TIMEOUT,
+                                        detail="请求超时(429重试后)",
+                                        hint="请增大 timeout 后重试",
+                                        timeout=timeout, proxy=proxy, headers=headers, body=body)
+                                    return build_error(
+                                        data={"error_detail": "请求超时(429重试后)", "params": {"url": url}},
+                                        llm_data=llm_data)
                                 e = _e2
                                 status_code = _e2.response.status_code if isinstance(_e2, httpx.HTTPStatusError) else status_code
                     _hint = _http_hint(status_code)

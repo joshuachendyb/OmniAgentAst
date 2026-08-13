@@ -15,6 +15,12 @@
 # 2026-08-06 - 小欧 - 核查7/31未实现项[08]修复: url=None由try内raise ValueError(落入except打traceback)改为函数入口直接build_error(ERR_INVALID_URL), 与timeout/proxy校验同级, 不再泄漏traceback
 # 2026-08-06 - 小欧 - 三堂会审修复: BUG-5 url=None时summary传空串""代替None
 # 2026-08-12 - 小欧 - 三堂会审DRY: InvalidURL识别统一改用http_client_sdk.is_ssrf_blocked_error公用函数(httpget/fetch_webpage/download三工具一致)
+# 2026-08-13 - 小欧 - 三堂会审修复#11: cf_resp分支(L697)字符切片`:N`与流式分支字节截断口径不一(UTF-8多字节字符下字符≠字节)
+#   【病根】FETCHPAGE_OUTLIMIT_BODY_BYTES=2MB是字节预算, 但cf_resp.text为str, `:N`按字符切, 多字节页面可超字节预算且与L716-723字节流截断行为不一致
+#   【改法】改`cf_resp.content[:FETCHPAGE_OUTLIMIT_BODY_BYTES]`字节切片后再decode("utf-8", errors="replace"), 与流式分支同一口径
+# 2026-08-13 - 小欧 - 三堂会审修复#32: js_render成功后L728仍重判_needs_browser可能二次Playwright渲染
+#   【病根】SPA空壳自检(原L726-728)对静态GET产物设计, 但js_render成功时html_content已是渲染产物, 无条件重判会对已渲染产物再渲染一次(浪费+可能发散)
+#   【改法】新增js_render_ok标志(js_render且playwright无error), 静态GET门控与SPA回退均以`not js_render_ok`为前提; js_render失败回落静态的路径仍保留自动回退, 无退化
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -637,8 +643,10 @@ async def fetchpage(
         headers = _build_browser_headers()
 
         playwright_result = None
+        js_render_ok = False
         if js_render:
             playwright_result = await _fetch_via_playwright(url, proxy, timeout, extract_format)
+            js_render_ok = not playwright_result.get("error")
         if js_render and playwright_result.get("error"):
             # 浏览器渲染失败, 先尝试外部API兜底(Jina Reader) — 小欧 2026-07-17
             external_md = await _fetch_via_external_reader(url, timeout)
@@ -664,7 +672,7 @@ async def fetchpage(
         #   L3. 以上全失败 → raise_for_status → ERR_NETWORK_HTTP_ERROR
         # JS渲染走独立Playwright子循环,不在此链中
         # =============================================================================
-        if not (js_render and playwright_result is not None and not playwright_result.get("error")):
+        if not js_render_ok:
             async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
                 actual_headers = dict(headers)
 
@@ -694,7 +702,8 @@ async def fetchpage(
                                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                                 llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, cf_resp.status_code, mime_type=mime, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
                                 return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
-                            html_content = cf_resp.text[:FETCHPAGE_OUTLIMIT_BODY_BYTES]
+                            raw = cf_resp.content[:FETCHPAGE_OUTLIMIT_BODY_BYTES]
+                            html_content = raw.decode("utf-8", errors="replace")
                             status_code = cf_resp.status_code
                         else:
                             resp.raise_for_status()
@@ -725,7 +734,7 @@ async def fetchpage(
 
             # 自动Playwright回退 — 小沈 2026-07-08 (从rolling-reader needs_browser() V4借鉴)
             pw_content = None
-            if _needs_browser(html_content, status_code, mime)[0]:
+            if not js_render_ok and _needs_browser(html_content, status_code, mime)[0]:
                 logger.info(f"[fetchpage] SPA空壳检测,自动回退Playwright: {url}")
                 pw_res = await _fetch_via_playwright(url, proxy, timeout, extract_format)
                 if not pw_res.get("error"):

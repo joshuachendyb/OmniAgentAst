@@ -9,6 +9,9 @@
 # 2026-08-12 - 小欧 - 三堂会审补漏: download 与 httpget 同病根(重定向到内网被SSRF防护拦截抛httpx.InvalidURL落入catch-all记ERROR);
 #   用 http_client_sdk.is_ssrf_blocked_error 公用函数统一识别(httpget/fetch_webpage/download三工具一致), 返回ERR_INVALID_URL+warning
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-08-13 - 小欧 - 三堂会审修复#16: _stream_download抛的ValueError(文件过大/超过大小限制)落入catch-all归ERR_NET_UNKNOWN
+#   【病根】L119-128大小超限抛ValueError, 外层仅except Exception归ERR_NET_UNKNOWN("未知网络错误"), 分类与成因不符, 重试引擎可能无谓重试
+#   【改法】外层新增`except ValueError`分支, 归ERR_INVALID_PARAMS(输入/参数错误), hint给出"换用更小资源或分片"; 置于httpx异常分支后、Exception兜底前
 """
 N2: download — 下载文件到本地
 
@@ -51,6 +54,7 @@ from app.tools.tool_constants import (
     ERR_NETWORK_REQUEST_ERROR,
     ERR_NETWORK_TIMEOUT,
     ERR_NETWORK_WRITE_FILE,
+    ERR_INVALID_PARAMS,
     ERR_NET_UNKNOWN,
 )
 
@@ -268,6 +272,12 @@ async def download(
         else:
             _hint = "可增大timeout参数重试" if error_info["err_code"] == ERR_NETWORK_TIMEOUT else "请检查URL和网络连接"
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=error_info["err_code"], detail=error_info["detail"], hint=_hint, timeout=timeout, proxy=proxy, headers=headers)
+        return build_error(data={}, llm_data=llm_data)
+    except ValueError as ve:
+        # 文件超DOWNLOAD_INPUT_MAX_BYTES属输入/参数错误, 归ERR_INVALID_PARAMS而非ERR_NET_UNKNOWN, 避免重试引擎无谓重试/误导LLM — 小欧 2026-08-13 #16
+        logger.error(f"[download] 下载大小超限: {ve}")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_INVALID_PARAMS, detail=str(ve), hint="文件超过下载大小限制,请换用更小资源或分片", timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[download] 未知错误: {e}")
