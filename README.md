@@ -252,16 +252,9 @@ BaseAgent(ABC)                 ← 抽象基类，含 run_react_cycle 编排钩�
 UniversalAgent(BaseAgent)      ← 唯一实现类，配置驱动（模型/系统提示词/工具集由配置决定，无意图分发）
 ```
 
-> 代码实际（`backend/app/services/agent/`）：`base_agent.py` 的 `BaseAgent(ABC)` + `universal_agent.py` 的 `UniversalAgent(BaseAgent)` 为核心，无 `AgentFactory` 分发。其余模块为 ReAct 循环与编排支撑：`agent_runner.py`（Agent 启动/驱动）、`react_cycle.py`（ReAct 循环核心）、`tool_loader.py`（per-agent 工具加载）、`tool_executor.py`、`handlers/`（action/answer）、`steps/`（Thought/Tool/Final 等 Step）+ `llm_stream`/`message_builder`/`observation_formatter`/`status_table`/`tool_cache_manager`/`initialize_run_state`/`chunk_buffer`/`step_emitter` 等。所有意图类型统一进入 `UniversalAgent.run_react_cycle` 完成 ReAct 循环。
-### 4.2 意图分发（代码实际：已移除）
+> 代码实际（`backend/app/services/agent/`）：`base_agent.py` 的 `BaseAgent(ABC)` + `universal_agent.py` 的 `UniversalAgent(BaseAgent)` 为核心，无 `AgentFactory` 分发、无意图识别/分发机制（CRSS 已移除）。请求经 `api/v1` 薄壳路由 → 编排层 `stream_orchestrator.chat_stream_orchestrator` → `agent_runner.run_agent_in_background` → 直接构造 `UniversalAgent` 调用 `run_react_cycle`。系统提示词由 `PromptBuilder.build_full_system_prompt` 统一构建，工具集由 `tool_loader` 按 Agent 预加载分类加载（`_loaded_categories`），均与意图无关；`intent` 仅作为 task DB 的 TEXT 字段记录，无调度语义。其余模块为 ReAct 循环与编排支撑：`react_cycle.py`（ReAct 循环核心）、`tool_executor.py`、`handlers/`（action/answer）、`steps/`（Thought/Tool/Final 等 Step）+ `llm_stream`/`message_builder`/`observation_formatter`/`status_table`/`tool_cache_manager`/`initialize_run_state`/`chunk_buffer`/`step_emitter` 等。
 
-原设计的 `AgentFactory` 多类分发与 CRSS 意图识别均已移除。当前代码实际（v0.19.14 核查）：**无意图识别/分发机制**，请求经 `api/v1` 薄壳路由 → 编排层 `stream_orchestrator.chat_stream_orchestrator` → `agent_runner.run_agent_in_background` → 直接构造 `UniversalAgent` 并调用 `run_react_cycle`。
-
-- 系统提示词由 `PromptBuilder.build_full_system_prompt` 统一构建（`universal_agent._get_system_prompt`），不再按意图类型分发
-- 工具集由 `tool_loader` 按 Agent 预加载分类加载（`_loaded_categories`），与意图无关
-- `intent` 仅作为 task DB 的 TEXT 字段记录（`task_db.py`/`db_initializer.py`），无调度语义
-
-### 4.3 安全体系（v0.19.14）
+### 4.2 安全体系（v0.19.14）
 
 | 层 | 模块 | 职责 |
 |---|------|------|
@@ -280,16 +273,16 @@ UniversalAgent(BaseAgent)      ← 唯一实现类，配置驱动（模型/系�
 > 
 > L3 层在 v0.15.9 从空壳 stub（仅生成 UUID）重构为真实 file_safety 委托，恢复完整的 DB 事务编排和回滚能力；并新增删除确认策略矩阵 R1-R6 与系统盘符动态化（`get_existing_drives`）。
 
-### 4.4 Agent 2.0（规划中）
+### 4.3 Agent 2.0（规划中）
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
 | SemanticRouter | 规划中 | 基于 LLM Function Calling 的工具子集推荐器（取代旧的 CRSS 正则意图分类；**当前代码未实现**，仅存于 `doc-5月优化/doc-5月agent2.0/` 设计文档） |
-| ToolSafetyLayer | 规划中 | 工具声明式安全分级（部分能力已由现有安全级别字符串 read_only/safe/destructive/dangerous 承载，见 4.3 L1） |
+| ToolSafetyLayer | 规划中 | 工具声明式安全分级（部分能力已由现有安全级别字符串 read_only/safe/destructive/dangerous 承载，见 4.2 L1） |
 | ToolObserver | 规划中 | 全量审计日志 + 异常检测 |
 | HITL | 已实现 | DANGEROUS 工具人机协同确认已落地（`action_handler.authorization_required` + `wait_for_confirmation_result` + `hitl_confirmation.py`） |
 
-> 统一Agent（BaseAgent → UniversalAgent）已在 v0.14.0 完成，方案设计见 `doc-5月优化/doc-5月agent2.0/`。HITL 确认机制在 v0.18.x 已接入。Agent 2.0 的语义路由为**历史规划**，当前 v0.19.14 代码**未实现任何意图/语义路由**（见 4.2）。
+> 统一Agent（BaseAgent → UniversalAgent）已在 v0.14.0 完成，方案设计见 `doc-5月优化/doc-5月agent2.0/`。HITL 确认机制在 v0.18.x 已接入。Agent 2.0 的语义路由为**历史规划**，当前 v0.19.14 代码**未实现任何意图/语义路由**。
 
 ---
 
