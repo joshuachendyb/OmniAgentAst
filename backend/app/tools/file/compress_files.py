@@ -28,6 +28,16 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
+# 2026-08-13 - 小欧 - 三堂会审修复#5: zip/tar/目标探测/stat/清理 全链 to_win_long_path 长路径化(仅NT):
+#   ZipFile/AESZipFile/tarfile.open 目标长路径; zf.write/tf.add 源文件长路径; _get_total_size_sync 各 stat 长路径;
+#   主函数 os.path.exists(dest)/dst.parent.mkdir/dst.stat/dst.exists/dst.unlink 长路径;
+#   深嵌套源目录不再 WinError 206; arcname 归档名保持相对不变
+# 2026-08-13 - 小欧 - 三堂会审修复#17: 通配分支仅glob判空, 不走validate_path系统目录校验, C:\Windows\*.txt可在工具层绕过拦截
+#   【病根】L305-309通配分支只查匹配非空, 未做validate_not_system_path(非通配分支L313有完整校验), 工具层/Safety层双重拒约定在通配源处纵深减弱
+#   【改法】通配命中后逐条validate_path(OpCategory.EXISTS, m), 任一命中系统目录即返回拦截错误, hint"通配命中路径被系统目录拦截"; 与非通配分支口径一致
+# 2026-08-13 - 小欧 - 三堂会审修复#18: 通配跨多顶层目录时arcname计算抛ValueError
+#   【病根】原base_dir=Path(matched_paths[0]).parent(仅取首匹配父目录), 第二个及以上匹配目录的项 relative_to(base_dir) 不在其下抛ValueError, 多目录通配静默失败
+#   【改法】删base_dir, 目录匹配项以 matched_path 自身为arcname根(relative_to(matched_path)), 文件匹配项仍用自身name; 单目录/多目录/仅驱动器场景均不再跨树
 """
 F8: compress_files — 压缩文件
 
@@ -55,6 +65,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INVALID
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
 from app.utils.json_utils import coerce_json
+from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.timeout_validator import validate_timeout  # 小欧 2026-07-29
@@ -121,7 +132,7 @@ def _compress_entries(source: Path, deadline: float,
     source_str = str(source)
     if _has_wildcard(source_str):
         matched_paths = glob.glob(source_str)
-        base_dir = Path(matched_paths[0]).parent if matched_paths else source.parent
+        # 每个匹配路径以自身为arcname根, 避免跨多顶层目录时 relative_to(base_dir=首匹配父目录) 抛ValueError — 小欧 2026-08-13 #18
         for matched in sorted(matched_paths):
             matched_path = Path(matched)
             if matched_path.is_file():
@@ -132,7 +143,7 @@ def _compress_entries(source: Path, deadline: float,
                     if time.monotonic() > deadline:
                         return True
                     if item.is_file() and not _is_excluded(item):
-                        yield item, str(item.relative_to(base_dir))
+                        yield item, str(item.relative_to(matched_path))
         return False
     if source.is_file():
         if not _is_excluded(source):
@@ -154,7 +165,7 @@ def _write_zip_entries(zf, source: Path, deadline: float, compressed_files: List
         if time.monotonic() > deadline:
             timed_out = True
             break
-        zf.write(file_path, arcname)
+        zf.write(to_win_long_path(file_path), arcname)  # #5长路径: 源文件\\?\前缀打开 — 小欧 2026-08-13
         compressed_files.append(str(file_path))
     return timed_out
 
@@ -172,13 +183,13 @@ def _write_zip(
             raise ImportError("pyzipper库未安装,无法创建加密ZIP,请先执行: pip install pyzipper")
         import pyzipper
         compression = pyzipper.ZIP_STORED if compression_level == 0 else pyzipper.ZIP_DEFLATED
-        with pyzipper.AESZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
+        with pyzipper.AESZipFile(to_win_long_path(destination), 'w', compression=compression, compresslevel=compression_level) as zf:  # #5长路径 — 小欧 2026-08-13
             zf.setpassword(password.encode('utf-8'))
             zf.setencryption(pyzipper.WZ_AES)
             timed_out = _write_zip_entries(zf, source, deadline, compressed_files, exclude_patterns)
     else:
         compression = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
-        with zipfile.ZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
+        with zipfile.ZipFile(to_win_long_path(destination), 'w', compression=compression, compresslevel=compression_level) as zf:  # #5长路径 — 小欧 2026-08-13
             timed_out = _write_zip_entries(zf, source, deadline, compressed_files, exclude_patterns)
     return compressed_files, timed_out
 
@@ -189,12 +200,12 @@ def _write_tar(source: Path, destination: Path, deadline: float,
     """写入tar压缩包 — 小健 2026-05-25 — 小健 2026-06-24 重命名并支持多种tar格式"""
     compressed_files: List[str] = []
     timed_out = False
-    with tarfile.open(destination, mode) as tf:
+    with tarfile.open(to_win_long_path(destination), mode) as tf:  # #5长路径 — 小欧 2026-08-13
         for file_path, arcname in _compress_entries(source, deadline, exclude_patterns):
             if time.monotonic() > deadline:
                 timed_out = True
                 break
-            tf.add(file_path, arcname)
+            tf.add(to_win_long_path(file_path), arcname)  # #5长路径: 源文件\\?\前缀读取 — 小欧 2026-08-13
             compressed_files.append(str(file_path))
     return compressed_files, timed_out
 
@@ -227,23 +238,24 @@ def _get_total_size_sync(path: Path, deadline: float) -> int:
         total_size = 0
         for matched in glob.glob(path_str):
             matched_path = Path(matched)
-            if matched_path.is_file():
-                total_size += matched_path.stat().st_size
-            elif matched_path.is_dir():
+            _mpl = to_win_long_path(matched_path)
+            if Path(_mpl).is_file():
+                total_size += Path(_mpl).stat().st_size
+            elif Path(_mpl).is_dir():
                 for file_path in matched_path.rglob("*"):
                     if time.monotonic() > deadline:
                         break
-                    if file_path.is_file():
-                        total_size += file_path.stat().st_size
+                    if Path(to_win_long_path(file_path)).is_file():
+                        total_size += Path(to_win_long_path(file_path)).stat().st_size
         return total_size
-    if path.is_file():
-        return path.stat().st_size
+    if Path(to_win_long_path(path)).is_file():
+        return Path(to_win_long_path(path)).stat().st_size
     total_size = 0
     for file_path in path.rglob("*"):
         if time.monotonic() > deadline:
             break
-        if file_path.is_file():
-            total_size += file_path.stat().st_size
+        if Path(to_win_long_path(file_path)).is_file():
+            total_size += Path(to_win_long_path(file_path)).stat().st_size
     return total_size
 
 
@@ -276,7 +288,7 @@ async def compress(
         llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
 
-    if not overwrite and os.path.exists(dest):
+    if not overwrite and os.path.exists(to_win_long_path(Path(dest))):  # #5长路径 — 小欧 2026-08-13
         duration_ms = int((time.perf_counter() - t0) * 1000)
         llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"目标文件已存在: {dest}", hint="可设置overwrite=true覆盖", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
@@ -297,10 +309,18 @@ async def compress(
 
     try:
         if _has_wildcard(path):
-            if not glob.glob(path):
+            _matched = glob.glob(path)
+            if not _matched:
                 duration_ms = int((time.perf_counter() - t0) * 1000)
                 llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配符无匹配: {path}", hint="请检查通配符是否正确", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                 return build_error(data={}, llm_data=llm_data)
+            # 通配命中后逐条校验系统目录(validate_path含validate_not_system_path硬拦), 与非通配分支口径一致 — 小欧 2026-08-13 #17
+            for _m in _matched:
+                is_valid, err, _ = validate_path(OpCategory.EXISTS, _m)
+                if not is_valid:
+                    duration_ms = int((time.perf_counter() - t0) * 1000)
+                    llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配命中路径被拦截: {_m}: {err}", hint="通配命中路径被系统目录拦截", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+                    return build_error(data={}, llm_data=llm_data)
         else:
             # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/路径存在 — 小欧 2026-07-04
             # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
@@ -310,7 +330,7 @@ async def compress(
                 llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, hint="请检查源路径是否存在", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                 return build_error(data={}, llm_data=llm_data)
 
-        dst.parent.mkdir(parents=True, exist_ok=True)
+        os.makedirs(to_win_long_path(dst.parent), exist_ok=True)  # #5长路径 — 小欧 2026-08-13
 
         _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
         operation_id = _hooks.record_operation(
@@ -335,7 +355,7 @@ async def compress(
                     compressed_files, _timed_out = _write_tar(src, dst, _local_deadline, "w:gz", exclude_patterns)
                 elif format == "tar.bz2":
                     compressed_files, _timed_out = _write_tar(src, dst, _local_deadline, "w:bz2", exclude_patterns)
-                compressed_size = dst.stat().st_size
+                compressed_size = Path(to_win_long_path(dst)).stat().st_size  # #5长路径 — 小欧 2026-08-13
                 result = _build_compress_result(
                     str(src), str(dst), format, compression_level,
                     password, original_size, compressed_size, compressed_files)
@@ -343,17 +363,17 @@ async def compress(
                 return result
             except (KeyboardInterrupt, SystemExit):
                 # 主动终止: 需要释放资源, 避免孤儿进程
-                if dst.exists():
+                if Path(to_win_long_path(dst)).exists():  # #5长路径 — 小欧 2026-08-13
                     try:
-                        dst.unlink()
+                        Path(to_win_long_path(dst)).unlink()
                     except OSError:
                         pass
                 raise
             except Exception as e:
                 # 非预期异常: 先清理损坏文件,再抛出原始异常
-                if dst.exists():
+                if Path(to_win_long_path(dst)).exists():  # #5长路径 — 小欧 2026-08-13
                     try:
-                        dst.unlink()
+                        Path(to_win_long_path(dst)).unlink()
                     except OSError:
                         pass
                 raise
@@ -374,7 +394,7 @@ async def compress(
                 _orig_bytes = result.get("original_size", 0)
                 _progress = _done_bytes / max(_orig_bytes, 1) if _orig_bytes else 0
                 try:
-                    dst.unlink()
+                    Path(to_win_long_path(dst)).unlink()  # #5长路径 — 小欧 2026-08-13
                 except OSError:
                     pass
                 _hint = f"已压缩{_done_files}个文件(进度{_progress:.0%})，建议：①增大timeout重试；②排除大文件再试；③将大目录分成多个子目录分批压缩"
