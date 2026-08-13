@@ -1,3 +1,84 @@
+v0.19.14
+更新时间: 2026-08-13 13:29:12 - 小欧-2026-08-13
+## v0.19.13(暂记为tag)以来 变更汇总(68个commit) - 小欧-2026-08-13
+[2026-08-13 13:29 小欧] 汇总范围=v0.19.13以来全部commit(version.txt流程commit并入本条不单列)
+
+### refactor(架构分层 A1-A7 + CRUD下沉 + 薄壳化):
+- refactor:A1安全hooks基建 security_hooks协议+context._current_hooks ContextVar+default_hooks纯转发壳 - 小欧-2026-08-12
+- refactor:A1安全模块迁移 path_safe_check+temp_auth+SafetyResult迁app.tools.security+删旧文件+引用方import更新 - 小欧-2026-08-12
+- refactor:A1服务层引用方 tool_executor注入hooks+react_cycle/action_handler临时授权import迁tools.security+task_context薄壳补_current_task_id - 小欧-2026-08-12
+- refactor:A1file工具6个迁移 get_current_hooks取安全hooks替换from app.safety import+编辑历史保留追加 - 小欧-2026-08-12
+- refactor:A1过渡红项 health.py /tool/execute注入DefaultToolSecurityHooks防NPE(A4待消除) - 小欧-2026-08-12
+- refactor:A1下沉 task_id ContextVar迁app.tools.context消除tools对app.services越层+全仓编辑历史补齐 - 小欧-2026-08-12
+- refactor:safety提升 services/safety整目录迁移app/safety+全仓导入替换 - 小欧-2026-08-12
+- refactor:A2越层 回滚统计下沉task域task_rollback_service - 小欧-2026-08-12
+- refactor:A2内部环 FileSafetyConfig独立models+清理职责归口operation_maintenance - 小欧-2026-08-12
+- refactor:ToolLoader独立tool_loader.py+retry_engine导入调整(A6+A3修正) - 小欧-2026-08-12
+- refactor:tool_retry_engine.py 重试引擎归位工具层 toolhelper(A3) - 小欧-2026-08-12
+- refactor:tool_constants.py 删除137个全仓无引用的ERR_*僵尸常量(239→102),保留全部活常量并验证工具注册/编译通过 - 小欧-2026-08-12
+- feat:tool_facade+tool_routes A4工具门面迁移 - 小欧-2026-08-12
+- fix:tool_facade A4三堂会审 searchtool状态面+is_success判定 - 小欧-2026-08-12
+- refactor:stream_orchestrator A7步骤1/2编排迁入+openai薄壳 - 小欧-2026-08-12
+- refactor:CRUD下沉 A7步骤3 session/message/config_service+API薄壳 - 小欧-2026-08-12
+- fix:sessions/messages薄壳 同步service去await调用 - 小欧-2026-08-12
+- refactor:A5 error_hints职责拆分 hint_*迁toolhelper+file_path_checker瘦身+27处导入改源+编辑历史逐文件补齐 - 小欧-2026-08-12
+- refactor:tool_executor+tool_facade+context+action_handler execute_tool显式retry_engine解耦,A4收尾+context标注ToolSecurityHooks对齐设计4.1.7 - 小欧-2026-08-12
+- fix:security_hooks+context+6文件工具 BUG-3修复 NoOpHooks兜底消除get_current_hooks()NPE - 小沈-2026-08-12
+- fix:tool_facade BUG-6/7/25修复 _FacadeAgent移模块级+retry_engine单例+非dict判失败 - 小沈-2026-08-12
+- fix:path_safe_check BUG-22修复 compress/extract/copy/move的src参数按参数名推断mode=read避免误拦合法读源 - 小沈-2026-08-12
+- fix:stream_orchestrator BUG-32修复 except Exception块内cancel bg_task避免后台继续运行但前端收到错误的状态不一致 - 小沈-2026-08-12
+- fix:task_rollback_service BUG-36修复 统计更新失败时附加stats_updated=False标记不静默吞没但不抛异常 - 小沈-2026-08-12
+- fix:action_handler BUG-40修复 bypass模式auto_confirm分支补grant_temp_auth避免白名单外路径工具内仍被拦截 - 小沈-2026-08-12
+- refactor:P1+P2+P5b+P5a 架构分层优化: remove_readonly迁utils+SUPPORTED_ALGORITHMS迁constants+backup_file迁utils+shell_pool门面 - 小沈-2026-08-12
+- refactor:shell_prompt_templates 从 tools/shell/ 迁入 tools/fundamental/ (Prompt模板是基础能力非shell专属) - 小沈-2026-08-12
+- refactor:model_routes+config_service P3 CRUD全量下沉(路由薄壳化)+三堂会审修复validate_config provider缺失致500/ModelInfo与get_config_path导入移顶部 - 小沈-2026-08-12
+- refactor:agent_runner+stream_orchestrator P4 agent-to-chat反向依赖解耦(db_ops命名空间注入)+补编辑历史 - 小沈-2026-08-12
+
+### fix(35项核查修复 + 补充bug修复):
+- fix:react_cycle.py #2可恢复超时/#36去重计数/#29finally对称reset_task_id - 小欧-2026-08-12
+- fix:tool_retry_engine.py #3clamp门控改边界存在为准/#31anyOf全量扫描取含min/max成员 - 小欧-2026-08-12
+- fix:move_file.py #4自嵌套防护双层/#34resolve统一口径/#5全链长路径化 - 小欧-2026-08-12
+- fix:copy_file.py/write_text_file.py #5目标/源全链to_win_long_path长路径化 - 小欧-2026-08-12
+- fix:compress_files.py #5长路径/#17通配命中逐条校验系统目录/#18各匹配路径为arcname根 - 小欧-2026-08-12
+- fix:delete_file.py/edit_text_file.py #5长路径/#22删死分支/#23移除死导入 - 小欧-2026-08-12
+- fix:model_routes.py #6校验文案不称已保存/#7api_key掩码/#8provider去全局model改写 - 小欧-2026-08-12
+- fix:safety #10回滚清理保全文件/#14删空时间戳目录/#25授权目录异常留痕/#26目录size递归求和 - 小欧-2026-08-12
+- fix:network #11字符切片改字节截断/#32js_render成功跳过重判/#15重试超时不套429/#16ValueError归参数错误 - 小欧-2026-08-12
+- fix:window_resize.py #12还原轮询消竞态/#13最大化先restore+尺寸容差/#33空标题错码统一 - 小欧-2026-08-12
+- fix:execute_shell_command_safety.py #20临时目录..穿越不降危/#21补PS字母flag规则 - 小欧-2026-08-12
+- fix:合规清理 #24删死常量/#28空集合语义区分/#30Retry-After浮点+HTTP-date/#35删重复字段 - 小欧-2026-08-12
+- fix:storage.py #1 local_time提前消NameError/#9 _truncate_tool_result list分支递归回写 - 小欧-2026-08-12
+- fix:http_client_sdk+http_request+download_file+fetch_webpage SSRF重定向拦截统一处理(新增公用函数is_ssrf_blocked_error识别httpx.InvalidURL,三网络工具返回ERR_INVALID_URL+warning不再记ERROR) - 小欧-2026-08-12
+- fix:e2e_helpers.py COM_03记录误判修复(write_test_record按error_type区分可恢复/不可恢复错误:blocked/user_rejected拒绝≠失败不判FAILED,与react_cycle._RECOVERABLE_ERRORS语义一致) - 小欧-2026-08-12
+- fix:tool_retry_engine.py 值范围clamp兼容Pydantic v2 anyOf嵌套(Optional字段min/max在anyOf[0]顶层取None致limit=1200等越界漏到工具运行时) - 小欧-2026-08-12
+- fix:tool_error_classifier.py 补RemoteProtocolError→PROTOCOL映射修复瞬态断连不重试漏判(BUG#10),保留活分类回归通过 - 小欧-2026-08-12
+
+### docs:
+- docs:backend架构分层违规问题分析与修复实施方案-小欧-2026-08-12.md 复核修订(P5/P6阶段收紧顺序按第6章A1/A2执行落地对齐, P6三处→所必需的编排壳, A5 re-export期限统一2026-08-20) - 小欧-2026-08-12
+- docs:backend架构分层违规问题分析与修复实施方案 全文核查+第9章严密计划完整性确认+修正A7手段速查歧义 - 小欧-2026-08-12
+- docs:backend架构分层违规问题分析与修复实施方案 待决策项全定案并落实到各相应章节+删除冗余第9章决策记录 - 小欧-2026-08-12
+- docs:backend架构分层违规问题分析与修复实施方案 待决策项5/6架构定案+整体架构与目录重组全局三堂会审+删除repair-code关联表述 - 小欧-2026-08-12
+- docs:backend架构分层违规问题分析与修复实施方案-小欧-2026-08-12 更新(明确API/接口适配层与编排层区别,补API层职责膨胀分析,新增A8问题及修复方案) - 小欧-2026-08-12
+- docs:backend架构分层违规方案 移除A5(tool_constants.py职责臃肿)问题及拆分方案,相关章节/表格/第5-9章计划全面清理并追加编辑历史 - 小欧-2026-08-12
+- docs:backend架构分层违规方案 安全层提升为独立顶层目录app/safety并通过三堂会审补漏(守护测试api禁safety,A1标题补services/safety,clear_backup_paths下沉) - 小欧-2026-08-12
+- docs:backend架构分层违规方案 三思三省复核修订4项(A1 hooks接口重设计覆盖execute_with_safety语义/A4 facade复用executor消双路径/A7 ContextVar泄漏修复/编号A6-A8重排为A5-A7) + security_hooks归tools根目录 + 第5章简化概要详细归第9章 - 小沈-2026-08-12
+- docs:backend架构分层违规方案 章节顺序理顺为5→6→7→8(概要→实施→验证→风险)编号连续并修正守护测试交叉引用 - 小欧-2026-08-12
+- docs:backend架构分层违规方案 三堂会审修复2矛盾(security_hooks路径根目录+删NoOp残留,守护测试收紧移至阶段二)并追加编辑历史 - 小欧-2026-08-12
+- docs:架构方案-4.2.3补operation_maintenance节点并消除backup-maintenance环 - 小欧-2026-08-12
+- docs:实施方案 tool_retry_engine.py目标位置由toolhelper调整为tools根目录 - 小欧-2026-08-12
+- docs:设计文档 6.8实施进度记录 A4实施情况+会审遗漏 - 小欧-2026-08-12
+- docs:backend架构分层方案 6.6验收表打勾+6.8验证结果(守护3规则/E2E P0/越权冒烟/SSE/A5回归) - 小欧-2026-08-12
+- docs:backend架构分层方案 4.1.3直接写实际代码删除4.1.7/4.1.8补丁章节+A5导入数27处修正+A7import路径修正 - 小欧-2026-08-12
+- docs:backend架构分层达标分析 A1~A7后全量审计+5个残留问题三堂会审修复方案 - 小沈-2026-08-12
+- docs:后端架构重构-代码核查与修复方案 36项全量复核确认34真实2误报(#19/#27)+修复方案 - 小欧-2026-08-12
+- docs:后端架构重构-代码核查与修复方案 移入doc-8月优化目录 - 小欧-2026-08-12
+- docs:后端架构重构-代码核查与修复方案 v1.3新增第八章修复实施记录(35项落地+13分组commit清单) - 小欧-2026-08-12
+
+### test:
+- test:e2e_04/05文件存在与目录容错用例 追加股票/财经多阶段任务扩展USER_INPUT验证长链路 - 小欧-2026-08-12
+- chore:tests 移除test_tool_executor.py跟踪(对齐.gitignore backend/tests/规则) - 小欧-2026-08-12
+
+---
 v0.19.13
 更新时间: 2026-08-12 11:42:37 - 小欧-2026-08-12
 ## v0.19.12(暂记为tag)以来 变更汇总(3个commit) - 小欧-2026-08-12
