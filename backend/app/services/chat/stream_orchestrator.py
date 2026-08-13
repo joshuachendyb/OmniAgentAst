@@ -7,6 +7,10 @@
 #   orchestrator 不依赖 api/v1 的 DTO(API 层解包 ChatRequest 后传原始参数)。
 # 2026-08-13 - 小沈 - BUG-32修复(三堂会审): except Exception 块内 cancel bg_task, 避免后台 agent 继续运行但前端收到错误的
 #   状态不一致; bg_task 预初始化 None 防 NameError; cancel 后 run_agent_in_background 的 finally 仍执行 DB 保存(已产出结果不丢失)
+# 2026-08-13 - 小沈 - P4 agent→chat反向引用回调解耦: agent_runner 删除对 chat 模块的直接 import,
+#   持久化回调(allocate_and_insert_message/append_execution_step/finalize_message/save_execution_steps_to_db/
+#   _load_previous_messages/_log_task_end)由本编排器构造 db_ops SimpleNamespace 注入 run_agent_in_background,
+#   依赖方向变为 chat→agent 单向。6个属性与原 agent_runner 直接 import 的6个chat函数一一对应,KISS-DIRECT。
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -36,7 +40,9 @@ from app.services.agent.steps.final_step import FinalStep
 from app.services.task.task_state import create_stream_buffer, get_stream_buffer
 from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
-from app.services.chat.storage import get_user_message_id
+from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, finalize_message
+from app.services.chat.handlers import save_execution_steps_to_db
+from app.services.chat.stream import _load_previous_messages, _log_task_end
 
 
 # 后台 agent 任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者(generate)断开后任务再无强引用,
@@ -160,9 +166,21 @@ async def chat_stream_orchestrator(
             return
 
         agent = UniversalAgent(llm_client=ai_service, task_id=task_id)
+        # P4: 构造 db_ops 命名空间注入 agent_runner, 消除 agent→chat 反向依赖 — 小沈 2026-08-13
+        #   6个属性对应原 agent_runner 直接 import 的6个chat函数, KISS-DIRECT(一个对象替代6个回调)
+        import types as _types
+        _db_ops = _types.SimpleNamespace(
+            allocate_and_insert=allocate_and_insert_message,
+            append_step=append_execution_step,
+            finalize=finalize_message,
+            save_steps=save_execution_steps_to_db,
+            load_previous=_load_previous_messages,
+            log_task_end=_log_task_end,
+        )
         # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
         bg_task = asyncio.create_task(run_agent_in_background(
-            agent, task_id, user_input, None, next_step, session_id, state, _task_start_time))
+            agent, task_id, user_input, None, next_step, session_id, state, _task_start_time,
+            db_ops=_db_ops))
         _agent_tasks.add(bg_task)
         bg_task.add_done_callback(_agent_tasks.discard)
 

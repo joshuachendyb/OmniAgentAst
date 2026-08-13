@@ -22,6 +22,11 @@
 #   【合规】KISS-DIRECT(不绕到上层重试引擎)+YAGNI(IntegrityError不重试)
 # 2026-07-30 - 小沈 - Shell池清理: 导入shell_pool; finally块加shell_pool.cleanup_by_task(task_id)
 # 2026-07-30 - 小沈 - except:pass补日志: reclaim_stream_buffer调度失败改为logger.debug记录
+# 2026-08-13 - 小沈 - P4 agent→chat反向引用回调解耦: 删除3条chat模块import(save_execution_steps_to_db/
+#   allocate_and_insert_message/append_execution_step/finalize_message/_load_previous_messages/_log_task_end),
+#   改为通过 db_ops 命名空间对象注入(调用方stream_orchestrator构造注入), 消除agent→chat反向依赖,
+#   依赖方向变为 chat→agent 单向。db_ops 为 types.SimpleNamespace, 6个属性对应原6个chat函数,
+#   KISS-DIRECT(一个参数替代6个回调, 不引入Protocol/ABC新抽象)。
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -31,9 +36,10 @@ SSE 连接只从 event_log 按 seq 偏移读取，支持断线重连。 — 小�
 
 设计原则：
 - SRP: 本模块是"生产者"单一职责，只负责运行 agent + 写事件缓冲
-- DRY: 复用 run_react_cycle / save_execution_steps_to_db / _log_task_end / _load_previous_messages
+- DRY: 复用 run_react_cycle / db_ops 持久化回调
 - KISS-DIRECT: 无注册表/无抽象层，直接写缓冲
 - 禁止 backward: 不保留旧 run_sse_stream 调用方式
+- P4: 不直接 import chat 模块, 持久化能力通过 db_ops 注入
 """
 
 import asyncio
@@ -44,10 +50,6 @@ from typing import Any, Callable, Dict, List, Optional
 from app.db import db
 from app.services.agent.steps import ErrorStep, MetaStep, FinalStep  # 小欧 2026-07-18: 加 FinalStep（多态自包含终态）
 from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed
-from app.services.chat.handlers import save_execution_steps_to_db
-# 独立步骤表操作 — 小欧 2026-07-14
-from app.services.chat.storage import allocate_and_insert_message, append_execution_step, finalize_message
-from app.services.chat.stream import _load_previous_messages, _log_task_end
 from app.services.task.task_registry import task_cleanup
 from app.tools import cleanup_shell_pool_by_task  # P5a: 从门面导入 — 小沈 2026-08-13
 from app.services.task.task_state import (
@@ -73,6 +75,7 @@ async def run_agent_in_background(
     session_id: str,
     stream_state: Any = None,
     start_time: Optional[float] = None,
+    db_ops: Any = None,  # P4: 持久化操作命名空间(由调用方注入), 消除agent→chat反向依赖 — 小沈 2026-08-13
 ) -> None:
     """后台运行 agent，事件追加到 event_log，结束置 done。
 
@@ -149,8 +152,8 @@ async def run_agent_in_background(
 
         # 加载会话历史，支持多轮对话 — 北京老陈 2026-06-13
         ctx = {}
-        if session_id:
-            prev = _load_previous_messages(session_id)
+        if session_id and db_ops and db_ops.load_previous:
+            prev = db_ops.load_previous(session_id)
             if prev:
                 ctx["previous_messages"] = prev
         run_context = context or ctx or None
@@ -175,13 +178,13 @@ async def run_agent_in_background(
                 # 每步独立事务, 渐进耐久 — 小欧 2026-07-14
                 if ai_message_id is None:
                     with db.get_conn_with_retry("chat") as conn:
-                        ai_message_id = allocate_and_insert_message(conn, session_id)
+                        ai_message_id = db_ops.allocate_and_insert(conn, session_id)
                         get_prompt_logger().update_ai_message_id(str(ai_message_id))
-                        append_execution_step(conn, ai_message_id, session_id,
+                        db_ops.append_step(conn, ai_message_id, session_id,
                                               len(current_execution_steps) - 1, event_dict)
                 else:
                     with db.get_conn_with_retry("chat") as conn:
-                        append_execution_step(conn, ai_message_id, session_id,
+                        db_ops.append_step(conn, ai_message_id, session_id,
                                               len(current_execution_steps) - 1, event_dict)
             # 更新 current_content / current_thought — 小沈 2026-06-09; 小欧 2026-07-16 增 thought 持久化
             if event_type == "final":
@@ -227,7 +230,7 @@ async def run_agent_in_background(
         # 终态 step 立即落库 — 小欧 2026-07-14
         if ai_message_id is not None:
             with db.get_conn_with_retry("chat") as conn:
-                append_execution_step(conn, ai_message_id, session_id,
+                db_ops.append_step(conn, ai_message_id, session_id,
                                       len(current_execution_steps) - 1, final_dict)
         await _append(final_dict)
         if stream_state is not None:
@@ -266,7 +269,7 @@ async def run_agent_in_background(
             current_execution_steps.append(_fd)
             if ai_message_id is not None:
                 with db.get_conn_with_retry("chat") as conn:
-                    append_execution_step(conn, ai_message_id, session_id,
+                    db_ops.append_step(conn, ai_message_id, session_id,
                                           len(current_execution_steps) - 1, _fd)
             if stream_state is not None and _oc != "completed":
                 stream_state.current_content = _resp or stream_state.current_content
@@ -300,10 +303,10 @@ async def run_agent_in_background(
                     if ai_message_id is not None:
                         # 步骤已逐步落库, 仅 finalize content+status — 小欧 2026-07-14; 2026-07-16 小欧 增 thought 持久化
                         with db.get_conn_with_retry("chat") as conn:
-                            finalize_message(conn, ai_message_id, saved_content, _terminal_status, thought=saved_thought)
+                            db_ops.finalize(conn, ai_message_id, saved_content, _terminal_status, thought=saved_thought)
                     else:
                         # 兜底: ai_message_id未分配时沿用原有写入逻辑 — 小欧 2026-07-14
-                        ai_message_id = await save_execution_steps_to_db(
+                        ai_message_id = await db_ops.save_steps(
                             session_id, current_execution_steps, saved_content, status=_terminal_status)
                     break
                 except sqlite3.IntegrityError as _ie:
@@ -319,7 +322,8 @@ async def run_agent_in_background(
             stream_state.llm_call_count = getattr(agent, "llm_call_count", 0)
 
         # Task 生命周期日志（结束）— 小欧 2026-06-26
-        _log_task_end(task_id, end_type, start_time, current_execution_steps, agent)
+        if db_ops and db_ops.log_task_end:
+            db_ops.log_task_end(task_id, end_type, start_time, current_execution_steps, agent)
 
         # 生命周期清理：原 openai.py finally 的 task_cleanup 迁入此处 — 小欧 2026-07-12
         # 修复旧 bug：断线时不再误删在跑的 agent（cleanup 由生产者自身在结束时调用）
