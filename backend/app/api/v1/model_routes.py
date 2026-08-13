@@ -10,13 +10,19 @@
 #   (该端点仅校验不落盘, 原文案误导); #7 GET /config/full 返回明文 api_key 改 _mask_api_key 掩码
 #   (保留前3后2, 安全不泄露密钥); #8 update_provider 删除对全局 config['ai']['model'] 的改写
 #   (更新provider信息时不再悄悄切换当前全局模型, 防模型被意外替换)
+# 2026-08-13 - 小沈 - P3 CRUD全量下沉: 12个CRUD业务逻辑迁入 services/model/config_service.py,
+#   本文件降为纯薄壳(路由+DTO+调service+返回), 与 sessions.py/messages.py 薄壳模式一致。
+#   DTO边界: API层负责DTO解包/构造响应, config_service 不 import api/v1/model_schemas。
+# 2026-08-13 - 小沈 - 三堂会审修复: ① validate_config 改传 request.provider(ConfigValidateRequest 无 model 字段,
+#   原传 request.model 在 service try 之外抛 AttributeError→500, 行为退化); ② ModelInfo/get_config_path 两处
+#   函数内局部 import 移顶部, 与其它 DTO/依赖并列(风格一致性)。
 """
-model_routes - copy from ai_config/, only changed import paths
+model_routes — 配置API路由薄壳 (P3 后路由+DTO 调 config_service)
+
 小欧 2026-07-10
 """
-import os
-import subprocess
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+
 from app.api.v1.model_schemas import (
     ConfigFixResponse,
     ConfigPathResponse,
@@ -33,74 +39,44 @@ from app.api.v1.model_schemas import (
     ProviderUpdate,
     SecurityConfig,
 )
-from app.config import get_config as get_config_instance
-from app.services.model.resolver import get_ai_config_resolver
-from app.services.model.persistence import (
-    _backup_config,
-    _fix_config_common_issues,
-    _validate_config_integrity,
-    ensure_model_exists,
-    ensure_model_not_duplicate,
-    ensure_provider_exists,
-    ensure_provider_not_duplicate,
-    get_config_path,
-    handle_config_errors,
-    is_provider_metadata_field,
-    load_config,
-    read_yaml_config,
-    save_config,
-    write_yaml_config,
+from app.services.model.config_service import (
+    add_model as svc_add_model,
+    add_provider as svc_add_provider,
+    delete_model as svc_delete_model,
+    delete_provider as svc_delete_provider,
+    fix_config as svc_fix_config,
+    get_full_config as svc_get_full_config,
+    get_model_list as svc_get_model_list,
+    get_system_config_data,
+    open_config_folder as svc_open_config_folder,
+    read_config_file as svc_read_config_file,
+    update_config as update_config_service,
+    update_model as svc_update_model,
+    update_provider as svc_update_provider,
+    validate_config as svc_validate_config,
 )
-from app.services.model.config_service import update_config as update_config_service
-from app.logger import logger
-from app.utils.response_utils import api_success, api_failure
+from app.services.model.persistence import get_config_path, handle_config_errors
 
 
 router = APIRouter()
-
-def _mask_api_key(api_key: str) -> str:
-    """掩码API Key: 非空时保留前3后2, 中间以*替换, 短于等于6位全掩码 — 小欧 2026-08-13 (#7)"""
-    if not api_key:
-        return ""
-    if len(api_key) <= 6:
-        return "*" * len(api_key)
-    return api_key[:3] + "*" * (len(api_key) - 5) + api_key[-2:]
 
 
 @router.get("/config", response_model=ConfigResponse)
 @handle_config_errors("获取配置")
 async def get_system_config():
-    config = get_config_instance()
-    final_provider, final_model = get_ai_config_resolver().resolve_provider_model()
-    ai_config = config.get('ai', {})
-    provider_config = ai_config.get(final_provider, {})
-    api_key = provider_config.get('api_key', '')
-    api_key_configured = bool(api_key and api_key.strip() != '')
-    theme = config.get('app.theme', 'light')
-    language = config.get('app.language', 'zh-CN')
-    security_config = config.get('security', {})
-    if not security_config:
-        security_config = SecurityConfig(
-            contentFilterEnabled=True,
-            contentFilterLevel="medium",
-            whitelistEnabled=False,
-            commandWhitelist="",
-            commandBlacklist="",
-            confirmDangerousOps=True,
-            maxFileSize=100
-        )
-    else:
+    data = get_system_config_data()
+    security_config = data["security"]
+    if isinstance(security_config, dict):
         security_config = SecurityConfig(**security_config)
-    logger.info(f"获取配置成功: provider={final_provider}, model={final_model}")
     return ConfigResponse(
-        ai_provider=final_provider,
-        ai_model=final_model,
-        api_key_configured=api_key_configured,
-        theme=theme,
-        language=language,
+        ai_provider=data["ai_provider"],
+        ai_model=data["ai_model"],
+        api_key_configured=data["api_key_configured"],
+        theme=data["theme"],
+        language=data["language"],
         security=security_config,
-        max_steps=config.get_max_steps(),
-        project_root=config.get_project_root()
+        max_steps=data["max_steps"],
+        project_root=data["project_root"]
     )
 
 
@@ -111,241 +87,79 @@ def update_config(config_update: ConfigUpdate):
 
 @router.put("/config/validate", response_model=ConfigValidateResponse)
 async def validate_config(request: ConfigValidateRequest):
-    try:
-        resolver = get_ai_config_resolver()
-        try:
-            provider_config = resolver.get_service_config(request.provider, request.model)
-        except ValueError as e:
-            return ConfigValidateResponse(
-                valid=False,
-                message=str(e),
-                model=None
-            )
-        final_provider, final_model = resolver.resolve_provider_model()
-        logger.info(f"配置校验通过: provider={final_provider}, model={final_model}")
-        return ConfigValidateResponse(
-            valid=True,
-            message=f"配置校验通过(未保存),将在首次使用时验证 {final_provider} ({final_model})",
-            model=final_model
-        )
-    except Exception as e:
-        logger.error(f"配置验证异常: {e}")
-        return ConfigValidateResponse(
-            valid=False,
-            message=f"验证过程出错: {str(e)}",
-            model=None
-        )
+    result = svc_validate_config(request.provider)
+    return ConfigValidateResponse(
+        valid=result["valid"],
+        message=result["message"],
+        model=result["model"]
+    )
 
 
 @router.get("/config/models", response_model=ModelListResponse)
 async def get_model_list():
-    try:
-        resolver = get_ai_config_resolver()
-        ai_config = resolver.get_ai_config()
-        final_provider, final_model = resolver.resolve_provider_model()
-        models = []
-        model_id = 1
-        for provider_name in ai_config.keys():
-            if is_provider_metadata_field(provider_name):
-                continue
-            provider_data = ai_config.get(provider_name, {})
-            if not isinstance(provider_data, dict):
-                continue
-            provider_models = provider_data.get('models', [])
-            if isinstance(provider_models, list) and provider_models:
-                for model_name in provider_models:
-                    display_name = f"{provider_name} ({model_name})"
-                    is_current = (final_provider == provider_name and final_model == model_name)
-                    models.append(ModelInfo(
-                        id=model_id,
-                        provider=provider_name,
-                        model=model_name,
-                        display_name=display_name,
-                        current_model=is_current
-                    ))
-                    model_id += 1
-        logger.info(f"获取模型列表成功: {len(models)}个模型")
-        return ModelListResponse(
-            models=models,
-            default_provider=final_provider
-        )
-    except Exception as e:
-        logger.error(f"获取模型列表失败: {e}")
-        return ModelListResponse(
-            models=[],
-            default_provider=''
-        )
+    result = svc_get_model_list()
+    models = [ModelInfo(**m) for m in result["models"]]
+    return ModelListResponse(
+        models=models,
+        default_provider=result["default_provider"]
+    )
 
 
 @router.get("/config/full", response_model=FullConfigResponse)
 @handle_config_errors("获取完整配置")
 async def get_full_config():
-    resolver = get_ai_config_resolver()
-    ai_config = resolver.get_ai_config()
-    final_provider, final_model = resolver.resolve_provider_model()
+    result = svc_get_full_config()
     providers = {}
-    for provider_name in ai_config.keys():
-        if is_provider_metadata_field(provider_name):
-            continue
-        provider_data = ai_config.get(provider_name, {})
-        if not isinstance(provider_data, dict):
-            continue
-        api_key = provider_data.get('api_key', '')
-        providers[provider_name] = ProviderInfo(
-            name=provider_name,
-            api_base=provider_data.get('api_base', ''),
-            api_key=_mask_api_key(api_key),  # #7安全: 明文api_key不外泄, 掩码后返回 — 小欧 2026-08-13
-            model='',
-            models=provider_data.get('models', []),
-            timeout=provider_data.get('timeout', 60),
-            max_retries=provider_data.get('max_retries', 3)
-        )
+    for name, p in result["providers"].items():
+        providers[name] = ProviderInfo(**p)
     return FullConfigResponse(
         providers=providers,
-        current_provider=final_provider,
-        current_model=final_model
+        current_provider=result["current_provider"],
+        current_model=result["current_model"]
     )
 
 
 @router.delete("/config/provider/{provider_name}")
 @handle_config_errors("删除Provider")
 async def delete_provider(provider_name: str):
-    config_path, config = load_config()
-    ensure_provider_exists(config, provider_name)
-    provider_keys = [k for k in config.get('ai', {}).keys() if k != 'provider']
-    if len(provider_keys) <= 1:
-        raise HTTPException(status_code=400, detail="至少保留一个Provider")
-    del config['ai'][provider_name]
-    if config['ai'].get('provider') == provider_name:
-        remaining = [k for k in config['ai'].keys() if k != 'provider']
-        if remaining:
-            config['ai']['provider'] = remaining[0]
-    save_config(str(config_path), config)
-    return api_success(f"Provider {provider_name} 已删除")
+    return svc_delete_provider(provider_name)
 
 
 @router.delete("/config/provider/{provider_name}/model/{model_name}")
 @handle_config_errors("删除模型")
 async def delete_model(provider_name: str, model_name: str):
-    config_path, config = load_config()
-    ensure_provider_exists(config, provider_name)
-    ensure_model_exists(config, provider_name, model_name)
-    models = config['ai'][provider_name].get('models', [])
-    if len(models) <= 1:
-        raise HTTPException(status_code=400, detail="至少保留一个模型")
-    models.remove(model_name)
-    config['ai'][provider_name]['models'] = models
-    save_config(str(config_path), config)
-    return api_success(f"模型 {model_name} 已删除")
+    return svc_delete_model(provider_name, model_name)
 
 
 @router.put("/config/provider/{provider_name}/model/{old_model_name}")
 @handle_config_errors("更新模型")
 async def update_model(provider_name: str, old_model_name: str, data: ModelAddRequest):
-    config_path, config = load_config()
-    ensure_provider_exists(config, provider_name)
-    models = config['ai'][provider_name].get('models', [])
-    new_model_name = ' '.join(data.model.split())
-    if old_model_name not in models:
-        raise HTTPException(status_code=404, detail=f"模型 {old_model_name} 不存在")
-    if new_model_name == old_model_name:
-        return api_success("模型名称未改变")
-    if new_model_name in models:
-        raise HTTPException(status_code=400, detail=f"模型 {new_model_name} 已存在")
-    index = models.index(old_model_name)
-    models[index] = new_model_name
-    config['ai'][provider_name]['models'] = models
-    save_config(str(config_path), config)
-    return api_success(f"模型已从 {old_model_name} 更新为 {new_model_name}")
+    return svc_update_model(provider_name, old_model_name, data)
 
 
 @router.put("/config/provider/{provider_name}")
 @handle_config_errors("更新Provider")
 async def update_provider(provider_name: str, data: ProviderUpdate):
-    config_path, config = load_config()
-    backup_path = _backup_config(config_path)
-    ensure_provider_exists(config, provider_name)
-    if data.api_base is not None:
-        config['ai'][provider_name]['api_base'] = data.api_base
-    if data.api_key is not None:
-        config['ai'][provider_name]['api_key'] = data.api_key.strip()
-    # #8修复: 移除全局 config['ai']['model'] 改写 — 更新Provider时不应悄悄切换当前使用的全局模型,
-    #   model 字段属 provider 级默认模型语义, 若需切换应走专门的模型切换接口; 原改写致前端
-    #   编辑provider信息后当前模型被意外替换 — 小欧 2026-08-13
-    if data.timeout is not None:
-        config['ai'][provider_name]['timeout'] = data.timeout
-    if data.max_retries is not None:
-        config['ai'][provider_name]['max_retries'] = data.max_retries
-    config = _fix_config_common_issues(config)
-    is_valid, errors, warnings = _validate_config_integrity(config)
-    if not is_valid:
-        return api_failure("配置验证失败", errors=errors, warnings=warnings, backup_path=str(backup_path))
-    save_config(str(config_path), config)
-    return api_success(f"Provider {provider_name} 已更新", warnings=warnings, backup_path=str(backup_path))
+    return svc_update_provider(provider_name, data)
 
 
 @router.post("/config/provider")
 @handle_config_errors("添加Provider")
 async def add_provider(data: ProviderAddRequest):
-    config_path, config = load_config()
-    backup_path = _backup_config(config_path)
-    ensure_provider_not_duplicate(config, data.name)
-    config['ai'][data.name] = {
-        'api_base': data.api_base.strip(),
-        'api_key': data.api_key.strip() if data.api_key else "",
-        'models': [m.strip() for m in (data.models if data.models else ([data.model] if data.model else []))],
-        'timeout': data.timeout,
-        'max_retries': data.max_retries
-    }
-    is_valid, errors, warnings = _validate_config_integrity(config)
-    if not is_valid:
-        return api_failure("配置验证失败", errors=errors, backup_path=str(backup_path))
-    save_config(str(config_path), config)
-    return api_success(f"Provider {data.name} 已添加", warnings=warnings)
+    return svc_add_provider(data)
 
 
 @router.post("/config/provider/{provider_name}/model")
 @handle_config_errors("添加模型")
 async def add_model(provider_name: str, data: ModelAddRequest):
-    config_path, config = load_config()
-    ensure_provider_exists(config, provider_name)
-    model_name = ' '.join(data.model.split())
-    ensure_model_not_duplicate(config, provider_name, model_name)
-    models = config['ai'][provider_name].get('models', [])
-    models.append(model_name)
-    config['ai'][provider_name]['models'] = models
-    if not config['ai'].get('model'):
-        config['ai']['model'] = model_name
-    save_config(str(config_path), config)
-    return api_success(f"模型 {data.model} 已添加")
+    return svc_add_model(provider_name, data)
 
 
 @router.post("/config/fix", response_model=ConfigFixResponse)
 @handle_config_errors("配置修复")
 async def fix_config():
-    config_path = get_config_path()
-    backup_path = _backup_config(config_path)
-    config_data = read_yaml_config(config_path)
-    config_data = _fix_config_common_issues(config_data)
-    fixed_issues = [f"删除 provider 下废弃的 model 字段"]
-    is_valid, errors, warnings = _validate_config_integrity(config_data)
-    if not is_valid:
-        return ConfigFixResponse(
-            success=False,
-            fixed_issues=fixed_issues,
-            warnings=warnings + errors,
-            backup_path=str(backup_path)
-        )
-    write_yaml_config(str(config_path), config_data)
-    config = get_config_instance()
-    config.reload()
-    logger.info(f"配置修复成功: 修复了 {len(fixed_issues)} 个问题")
-    return ConfigFixResponse(
-        success=True,
-        fixed_issues=fixed_issues,
-        warnings=warnings,
-        backup_path=str(backup_path)
-    )
+    result = svc_fix_config()
+    return ConfigFixResponse(**result)
 
 
 @router.get("/config/path", response_model=ConfigPathResponse)
@@ -358,28 +172,14 @@ async def get_config_path_endpoint():
         exists=config_path.exists(),
     )
 
+
 @router.get("/config/read")
 @handle_config_errors("读取配置文件")
 async def read_config_file():
-    config_path = get_config_path()
-    if not config_path.exists():
-        raise HTTPException(status_code=404, detail=f"配置文件不存在: {config_path}")
-    with open(config_path, "r", encoding="utf-8") as f:
-        content = f.read()
-    return {"config_content": content}
+    return svc_read_config_file()
+
 
 @router.post("/config/open-folder")
 @handle_config_errors("打开配置目录")
 async def open_config_folder():
-    config_path = get_config_path()
-    config_dir = str(config_path.parent)
-    if not os.path.exists(config_dir):
-        raise HTTPException(status_code=404, detail=f"配置目录不存在: {config_dir}")
-    subprocess.Popen(
-        ["explorer", "/e,", config_dir],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    logger.info(f"已打开配置目录: {config_dir}")
-    return api_success(path=config_dir)
-
+    return svc_open_config_folder()
