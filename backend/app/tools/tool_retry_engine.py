@@ -55,6 +55,10 @@
 #      read_docx/read_pdf(limit)、network port(1-65535)、timer year(1900-2100), 一并修复
 #   【解决】新增_extract_numeric_bounds(spec)范围提取helper(顶层优先, 无则取anyOf[0]),
 #      clamp逻辑与既有钳制语义完全一致(v<min→min, v>max→max), 仅提取路径修正, 增强无退化
+# 2026-08-13 - 小欧 - 三堂会审修复#3/#31: #31 _extract_numeric_bounds 的 anyOf 分支改全量扫描
+#   首个含 min/max 的成员, 消除"anyOf[0] 恰为 null 分支则取不到边界"的顺序依赖;
+#   #3 clamp 门控废除顶层 type 判定(数组形式如 ["integer","null"] 时 if _t=="integer" 整段跳过,
+#   clamp 全程失效), 改为"能取到数值边界即钳制", 并补 isinstance(v,(int,float)) 防类型不可比较异常
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -370,8 +374,13 @@ class ToolRetryEngine:
         if top_min is not None or top_max is not None:
             return top_min, top_max
         any_of = spec.get("anyOf")
-        if isinstance(any_of, list) and any_of and isinstance(any_of[0], dict):
-            return any_of[0].get("minimum"), any_of[0].get("maximum")
+        if isinstance(any_of, list):
+            # 2026-08-13 - 小欧 - 三堂会审修复#31: 全量扫描 anyOf 成员取首个含 min/max 者,
+            #   原固定 any_of[0] 顺序依赖(null分支在前时取不到边界 → clamp 静默失效); JSON-Schema
+            #   anyOf 成员顺序不保证。
+            for a in any_of:
+                if isinstance(a, dict) and ("minimum" in a or "maximum" in a):
+                    return a.get("minimum"), a.get("maximum")
         return None, None
 
     def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
@@ -467,13 +476,16 @@ class ToolRetryEngine:
                 # 2026-08-05 小欧 BUG-3修复: 原仅钳 integer,漏 number(float字段如timer_set delay),超范围float仍抛ValidationError; 补上 number — 小欧
                 # 2026-08-12 小欧 三堂会审修复: 范围提取走_extract_numeric_bounds, 兼容Pydantic v2 anyOf嵌套
                 #   (Optional字段min/max在anyOf[0], 原顶层取None→clamp失效, limit=1200漏到运行时)
+                # 2026-08-13 - 小欧 - 三堂会审修复#3: 门控不再依赖顶层type(数组形式type如["integer","null"]
+                #   时 _t in ("integer","number") 为False→整段clamp被跳过), 改为以"能取到数值边界"为准。
                 for k, v in params.items():
                     spec = props.get(k)
                     if not spec:
                         continue
-                    _t = spec.get("type")
-                    if _t in ("integer", "number"):
-                        minimum, maximum = self._extract_numeric_bounds(spec)
+                    minimum, maximum = self._extract_numeric_bounds(spec)
+                    if minimum is None and maximum is None:
+                        continue
+                    if isinstance(v, (int, float)):
                         if minimum is not None and v < minimum:
                             params[k] = minimum
                         elif maximum is not None and v > maximum:
