@@ -16,6 +16,9 @@
 #         不再做激进取舍)
 # 2026-08-08 - 小欧 - 全程统一本地时区: get_utc_timestamp→get_local_iso_timestamp (L147/189/232/329 4处写入), 本地ISO无Z入库
 # 2026-08-11 - 小欧 - task006方案5落地: 截断字符串附加"原长N字符"标记, 让LLM感知base64/长文本被截断, 影像分析类任务不被截断误导
+# 2026-08-13 - 小欧 - 三堂会审修复#1/#9: #1 allocate_and_insert_message 的 local_time 提前到 if is_new 外赋值,
+#   消除 is_new=False(同session二次任务 agent_runner路径)时 UPDATE 引用未绑定变量 NameError;
+#   #9 _truncate_tool_result 递归返回值统一回写父节点, 修复 list 内嵌超长 list 截断失效(如 {"rows":[[…1001…]]})
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -227,11 +230,13 @@ async def save_execution_steps(session_id: str, update_data):
 # ====================================================================
 
 def allocate_and_insert_message(conn: Connection, session_id: str) -> int:
-    """预分配 assistant 消息ID + 插入空白行 — 小欧 2026-07-14"""
+    """预分配 assistant 消息ID + 插入空白行 — 小欧 2026-07-14
+    2026-08-13 - 小欧 - 三堂会审修复#1: local_time 提前到 if is_new 之外赋值,
+      消除 is_new=False(同session二次任务, agent_runner路径)时 UPDATE 引用未绑定变量 NameError"""
     ensure_session_exists(session_id, conn)  # #17 fix: 写入前确保会话存在, 消除孤儿消息 — 小欧 2026-07-18
     ai_message_id, is_new = _allocator.allocate(session_id, conn)
+    local_time = get_local_iso_timestamp()
     if is_new:
-        local_time = get_local_iso_timestamp()
         conn.execute(
             "INSERT INTO chat_messages(id, session_id, role, content, timestamp) "
             "VALUES (?, ?, 'assistant', ?, ?)",
@@ -253,21 +258,18 @@ MAX_TOOL_RESULT_STR_LEN: int = 100000
 def _truncate_tool_result(tr: Any, tag: str = "") -> Any:
     """递归截断 tool_result 中过大的列表 — 小欧 2026-07-21
     2026-07-21 小欧: 修复短列表不递归元素内大列表+ActionStep execution_result 遗漏
+    2026-08-13 - 小欧 - 三堂会审修复#9: 递归返回值统一回写父节点(list分支return不再被丢弃),
+      彻底覆盖"list内嵌超长list"(如 {"rows":[[…1001…]]}) 截断失效场景
     """
     if isinstance(tr, dict):
         for key, val in list(tr.items()):
-            if isinstance(val, list) and len(val) > MAX_TOOL_RESULT_ITEMS:
-                tr[key] = val[:MAX_TOOL_RESULT_ITEMS]
-                logger.warning(f"[storage] {tag}tool_result.{key} 过大,截断至{MAX_TOOL_RESULT_ITEMS}条(原{len(val)}条)")
-            elif isinstance(val, (dict, list)):
-                _truncate_tool_result(val, tag)
+            tr[key] = _truncate_tool_result(val, tag)
     elif isinstance(tr, list):
         if len(tr) > MAX_TOOL_RESULT_ITEMS:
             logger.warning(f"[storage] {tag}tool_result 列表过大,截断至{MAX_TOOL_RESULT_ITEMS}条(原{len(tr)}条)")
-            return tr[:MAX_TOOL_RESULT_ITEMS]
-        else:
-            for item in tr:
-                _truncate_tool_result(item, tag)
+            tr = tr[:MAX_TOOL_RESULT_ITEMS]
+        for i, item in enumerate(tr):
+            tr[i] = _truncate_tool_result(item, tag)
     return tr
 
 
