@@ -5,6 +5,8 @@
 #   _agent_tasks / step_start), 仅改导入归属, 业务逻辑一字不改(禁止 backward, 无兼容 shim)。依赖路径以真实代码为准:
 #   create_stream_buffer/get_stream_buffer 取 app.services.task.task_state, task_cancel_check* 取 app.services.task.task_runtime。
 #   orchestrator 不依赖 api/v1 的 DTO(API 层解包 ChatRequest 后传原始参数)。
+# 2026-08-13 - 小沈 - BUG-32修复(三堂会审): except Exception 块内 cancel bg_task, 避免后台 agent 继续运行但前端收到错误的
+#   状态不一致; bg_task 预初始化 None 防 NameError; cancel 后 run_agent_in_background 的 finally 仍执行 DB 保存(已产出结果不丢失)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -132,6 +134,7 @@ async def chat_stream_orchestrator(
         f"user_input={user_input}"
     )
 
+    bg_task = None  # BUG-32修复: 预初始化, 防 except 块 NameError — 小沈 2026-08-13
     try:
         buffer = create_stream_buffer(task_id)
         await register_task(task_id, ai_service)
@@ -171,6 +174,14 @@ async def chat_stream_orchestrator(
         return
     except Exception as e:
         logger.error(f"[chat_stream_orchestrator] Error: {e}", exc_info=True)
+        # BUG-32修复(三堂会审 小沈 2026-08-13): orchestrator 异常时 cancel bg_task, 避免后台继续运行但前端收到错误的状态不一致;
+        #   bg_task 已启动(若进入 try 块内), cancel 后 run_agent_in_background 的 finally 仍会执行 DB 保存(已产出结果不丢失)。
+        try:
+            if bg_task and not bg_task.done():
+                bg_task.cancel()
+                logger.info(f"[chat_stream_orchestrator] 已取消后台 agent 任务: {task_id}")
+        except Exception as _ce:
+            logger.warning(f"[chat_stream_orchestrator] 取消 bg_task 失败: {_ce}")
         yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
     finally:
         _current_task_id.reset(_task_token)
