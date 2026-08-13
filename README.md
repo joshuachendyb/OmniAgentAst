@@ -2,7 +2,7 @@
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**版本**: v0.19.14 | **更新时间**: 2026-08-13 16:53:24 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-08-13
+**版本**: v0.19.14 | **更新时间**: 2026-08-13 17:27:50 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-08-13
 
 ---
 
@@ -102,7 +102,6 @@ API/接口适配层（api/v1，薄壳，只调 services）
 
 依赖方向恒为 **`api → services → safety → tools → utils/db/logger`**，单向无环。该铁律由守护测试 `tests/test_architecture_boundaries.py`（3 条规则）持续强制，防止腐化回退。
 
-
 ---
 
 ### 2.3 架构现状与初始设计蓝图的偏差
@@ -200,7 +199,7 @@ API/接口适配层（api/v1，薄壳，只调 services）
 | **FUNDAMENTAL** | 5 | Shell命令执行、系统信息、时间日期、通知、工具搜索 |
 | **WIN_REGISTRY** | 3 | 注册表读/写/删 |
 | **TIMER** | 6 | 定时器设置/列出/清除 + 时间计算(timeadd/timediff/calendar) |
-| **合计** | **63** | |
+| **合计** | 63 | |
 
 > **注**：分类与数量以 `backend/app/tools/tool_constants.py` 的 `CATEGORY_MODULES` + 运行时 `ensure_tools_registered()` 为准（上述为 v0.19.14 实际加载值，已验证 63 工具 10 分类）。v0.18.35 起 Shell 命令执行迁入 FUNDAMENTAL（`execute_shell_command` 注册为 `shell` 工具），SHELL 分类仅保留 `which`；timeadd/timediff/calendar 自 FUNDAMENTAL 迁入 TIMER。`validate/` 为校验层（路径/URL/超时/注册表），不计入对外工具。
 
@@ -239,7 +238,6 @@ backend/app/tools/
 
 > v0.19.14 说明：安全守卫 `path_safe_check`/`temp_auth`/`SafetyResult` 已由 `app/safety` 迁入 `app/tools/security`（A1），为独立安全守卫层，不计入对外工具数；工具门面 `tool_facade` 位于 `app/services/tool/`（A4）——日常对话主链路（`action_handler → tool_executor`）**不经过它**，它仅为 API 层合法暴露工具能力（`/tool/list` 随时可用；`/tool/execute` 仅测试用，生产开关默认关闭），详见 2.4.3。
 
-
 ---
 
 ## 四、Agent体系
@@ -270,7 +268,7 @@ UniversalAgent(BaseAgent)      ← 唯一实现类，配置驱动（模型/系�
 > - **职责更名**：原 `operation_cleanup.py` 更名为 **`operation_maintenance.py`**（负责过期备份+回收站超限清理）
 > - **安全守卫下沉**：`path_safe_check`/`temp_auth`/`SafetyResult` 迁入 **`app/tools/security/`**（A1），`security_hooks` 协议与 `context._current_hooks` ContextVar 提供工具层安全能力
 > - **hooks 兜底**（BUG-3）：新增 `get_current_hooks_or_noop()` 返回 `NoOpHooks`，消除入口未注入时 `get_current_hooks()` NPE
-> 
+>
 > L3 层在 v0.15.9 从空壳 stub（仅生成 UUID）重构为真实 file_safety 委托，恢复完整的 DB 事务编排和回滚能力；并新增删除确认策略矩阵 R1-R6 与系统盘符动态化（`get_existing_drives`）。
 
 ### 4.3 Agent 2.0（规划中）
@@ -354,7 +352,7 @@ OmniAgentAs-desk/
 
 ### 6.2 初次安装（新人从零开始）
 
-> **前提**：已下载项目代码，打开命令行（PowerShell / cmd），`cd` 到项目文件夹（如 `cd D:\OmniAgentAs-desk`）。
+> **前提**：已下载项目代码，打开命令行（PowerShell / cmd），`cd` 到项目根目录（本仓库根目录，含 backend/、frontend/）。
 
 后端和前端需要**同时运行**，所以要开**两个命令行窗口**。
 
@@ -512,7 +510,6 @@ cd backend
 | `pytest --cov=app` | 测试并生成覆盖率 |
 | `pytest --runxfail` | 运行所有测试（含标记为xfail的） |
 | `pytest tests/test_e2e_full_link.py -k "f01 or f03" -v --runxfail` | 指定E2E测试运行 |
-</details>
 
 不激活时，每条命令加 `.venv\Scripts\` 前缀：
 
@@ -565,18 +562,18 @@ cd backend
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
-| **v0.19.14** | 2026-08-13 | A1-A7 架构分层重构完成 + 35 项核查修复全部落地：safety 提升顶层 app/safety + tools/security hooks 协议、api/v1 薄壳化（CRUD 下沉 service）、stream_orchestrator 编排、tool_facade 门面、tool_loader/tool_retry_engine 归位；操作并发竞态修复（cleanup 加锁幂等）；全量测试通过 - 小欧/小沈-2026-08-13 |
-| **v0.19.13** | 2026-08-12 | 架构分层违规方案落地（A1 安全 hooks/迁移、A2 回滚统计下沉、A3 retry_engine 归位、A5 error_hints 拆分、A7 编排下沉）；僵尸常量清理（ERR_* 239→102） - 小欧/小沈-2026-08-12 |
-| **v0.19.6** | 2026-08-12 | 架构分层违规问题分析（7 项）+ 修复实施方案（A1-A7 分阶段）；SSRF 重定向拦截统一；e2e_helpers 记录误判修复 - 小欧-2026-08-12 |
-| **v0.19.3** | 2026-08-04 | 修复工程全量对齐 final：L0基础层/L1工具链/L2 agent/L3 API 分批同步；migrate_steps 恢复；delete_safety R1-R6 删除安全判定+系统盘符动态化；死代码清理 |
-| **v0.19.0** | 2026-08-03 | 基于 final_backend_app 的修复工程批次0-4完成：services 40+文件/constants/工具链恢复至 repair-code 并应用 live backend，恢复 syntax_validator 语法护栏与全部工具注册 |
-| **v0.18.39** | 2026-07-30 | 后端卡死根因修复（CMD管道超时+DB休眠不阻塞+SSE cond超时）；shell_engine Singleton→ShellPoolManager 分池并发；desktop schema 坐标/参数整改 |
-| **v0.18.35** | 2026-07-28 | Shell 命令执行自 SHELL 迁入 FUNDAMENTAL（SHELL 仅保留 which）；timeadd/timediff/calendar 迁入 TIMER；系统级常量收敛至 app.constants |
-| **v0.18.31** | 2026-07-25 | operation_executor/recorder 三段式改造彻底解决并行 delete database is locked；工具输出截断归一化(OUTLIMIT_*)；URL 非ASCII自动转码 |
-| **v0.18.30** | 2026-07-23 | 工具输出截断治理（grep/xlsx/shell）；accumulated_usage 累积消耗报告；前端 WarningBox 渲染 warning 字段 |
-| **v0.18.14** | 2026-07-12 | README架构章节据代码现状重写：63工具10分类、UniversalAgent单一实现(移除AgentFactory)、架构图与现状偏差(2.3)如实标注(无独立网关/认证/RBAC/限流/任务队列/Redis/桌面移动端)、项目结构路径修正 - 小欧-2026-07-12 |
-| **v0.15.9** | 2026-06-12 | CRSS关键词修复(txt/md/json→FILE)、write_text_file参数text→content统一、JSON混合提取容错、safety stub→真实file_safety委托(禁止向后兼容+复用优先)、validate_config SLAP/DRY修复、version.txt空行跳过、P1 E2E测试 14/14通过(xfail清零)、README全面内容更新 |
-| **v0.15.8** | 2026-06-11 | 四层安全体系修复（P0平行调用丢失+P1字段重复+P2 fc_context共用） |
+| v0.19.14 | 2026-08-13 | A1-A7 架构分层重构完成 + 35 项核查修复全部落地：safety 提升顶层 app/safety + tools/security hooks 协议、api/v1 薄壳化（CRUD 下沉 service）、stream_orchestrator 编排、tool_facade 门面、tool_loader/tool_retry_engine 归位；操作并发竞态修复（cleanup 加锁幂等）；全量测试通过 - 小欧/小沈-2026-08-13 |
+| v0.19.13 | 2026-08-12 | 架构分层违规方案落地（A1 安全 hooks/迁移、A2 回滚统计下沉、A3 retry_engine 归位、A5 error_hints 拆分、A7 编排下沉）；僵尸常量清理（ERR_* 239→102） - 小欧/小沈-2026-08-12 |
+| v0.19.6 | 2026-08-12 | 架构分层违规问题分析（7 项）+ 修复实施方案（A1-A7 分阶段）；SSRF 重定向拦截统一；e2e_helpers 记录误判修复 - 小欧-2026-08-12 |
+| v0.19.3 | 2026-08-04 | 修复工程全量对齐 final：L0基础层/L1工具链/L2 agent/L3 API 分批同步；migrate_steps 恢复；delete_safety R1-R6 删除安全判定+系统盘符动态化；死代码清理 |
+| v0.19.0 | 2026-08-03 | 基于 final_backend_app 的修复工程批次0-4完成：services 40+文件/constants/工具链恢复至 repair-code 并应用 live backend，恢复 syntax_validator 语法护栏与全部工具注册 |
+| v0.18.39 | 2026-07-30 | 后端卡死根因修复（CMD管道超时+DB休眠不阻塞+SSE cond超时）；shell_engine Singleton→ShellPoolManager 分池并发；desktop schema 坐标/参数整改 |
+| v0.18.35 | 2026-07-28 | Shell 命令执行自 SHELL 迁入 FUNDAMENTAL（SHELL 仅保留 which）；timeadd/timediff/calendar 迁入 TIMER；系统级常量收敛至 app.constants |
+| v0.18.31 | 2026-07-25 | operation_executor/recorder 三段式改造彻底解决并行 delete database is locked；工具输出截断归一化(OUTLIMIT_*)；URL 非ASCII自动转码 |
+| v0.18.30 | 2026-07-23 | 工具输出截断治理（grep/xlsx/shell）；accumulated_usage 累积消耗报告；前端 WarningBox 渲染 warning 字段 |
+| v0.18.14 | 2026-07-12 | README架构章节据代码现状重写：63工具10分类、UniversalAgent单一实现(移除AgentFactory)、架构图与现状偏差(2.3)如实标注(无独立网关/认证/RBAC/限流/任务队列/Redis/桌面移动端)、项目结构路径修正 - 小欧-2026-07-12 |
+| v0.15.9 | 2026-06-12 | CRSS关键词修复(txt/md/json→FILE)、write_text_file参数text→content统一、JSON混合提取容错、safety stub→真实file_safety委托(禁止向后兼容+复用优先)、validate_config SLAP/DRY修复、version.txt空行跳过、P1 E2E测试 14/14通过(xfail清零)、README全面内容更新 |
+| v0.15.8 | 2026-06-11 | 四层安全体系修复（P0平行调用丢失+P1字段重复+P2 fc_context共用） |
 | v0.13.46 | 2026-05-25 | feature/prompt-optimization 全量变更合并 |
 | v0.13.11 | 2026-05-20 | Agent架构重构设计文档；README全面更新 |
 | v0.13.0 | 2026-05-18 | ToolCategory从13类精简为7类 |
@@ -611,4 +608,4 @@ cd backend
 
 ---
 
-**许可**: 内部项目 | **最后更新**: 2026-08-13 16:53:24 | **版本**: v0.19.14
+**许可**: 内部项目 | **最后更新**: 2026-08-13 17:27:50 | **版本**: v0.19.14
