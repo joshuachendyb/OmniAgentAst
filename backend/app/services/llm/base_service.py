@@ -19,6 +19,9 @@
 # 2026-08-06 - 小欧 - 三堂会审修复: BUG-3 DEFAULT_EXTRA_BODY_PARAMS嵌套dict深拷贝防共享引用污染
 # 2026-08-06 - 小欧 - thinking配置增强(老陈审核后修复): ①默认extra_body提常量DEFAULT_EXTRA_BODY_PARAMS; ②config的model_params由整体替换改为合并(深合并chat_template_kwargs层), 保证enable_thinking:True兜底, 配thinking_budget等不再静默关闭思考
 # 2026-08-11 - 小欧 - task006方案1落地: 429限流重试优先尊重服务端Retry-After头(秒), 未提供才用指数退避3^n; 避免LLM限流后仍按固定退避撞限流窗口, 增强限流场景恢复效率(不新增重试次数, 不触碰配额耗尽提示)
+# 2026-08-13 - 小欧 - 三堂会审修复#30: Retry-After仅支持整数秒, "1.5"/HTTP-date静默回落指数退避
+#   【病根】原 `if _ra and _ra.strip().isdigit():` 仅解析整数秒, RFC 7231允许整数/浮点秒与HTTP-date, 违背"尊重服务端Retry-After提示"意图
+#   【改法】整数/浮点秒取max(int(float(_ra)),1); 否则尝试email.utils.parsedate_to_datetime解析HTTP-date(距当前秒数), 解析失败静默回落指数退避; time模块已有顶层导入
 """
 LLM 核心模块 — BaseAIService
 
@@ -342,8 +345,18 @@ class BaseAIService:
                     wait_time = 3 ** retry_count
                     if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
                         _ra = e.response.headers.get("Retry-After")
-                        if _ra and _ra.strip().isdigit():
-                            wait_time = max(int(_ra.strip()), 1)
+                        if _ra:
+                            _ra = _ra.strip()
+                            # 2026-08-13 小欧 三堂会审修复#30: RFC 7231允许整数/浮点秒与HTTP-date, 原仅isdigit整数秒("1.5"/日期静默回落指数退避)
+                            if _ra.replace(".", "", 1).isdigit():
+                                wait_time = max(int(float(_ra)), 1)
+                            else:
+                                try:
+                                    import email.utils as _eu
+                                    _dt = _eu.parsedate_to_datetime(_ra)
+                                    wait_time = max(int(time.mktime(_dt.timetuple()) - time.time()), 1)
+                                except Exception:
+                                    pass
                     logger.warning(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {e}")
                     await asyncio.sleep(wait_time)
                     continue

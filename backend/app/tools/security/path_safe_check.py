@@ -35,6 +35,10 @@
 # 2026-08-13 - 小沈 - BUG-22修复(三堂会审): validate_tool_path 遍历命中路径参数时, compress/extract/copy/move 的 src 参数
 #   语义是读, 原统一用工具级 mode=write 对 src 做写校验, 白名单外 src 被要求临时授权(误拦合法读源);
 #   按参数名分别推断 mode: src/source_path→read, 其余沿用工具级 mode, 增强不退化
+# 2026-08-13 - 小欧 - 三堂会审修复#24: 删除死常量 ALLOWED_PATHS(合规/DRY)
+#   【病根】ALLOWED_PATHS=get_default_allowed_paths() 模块级导入时计算, 仅被__all__导出(L458), 逻辑层从未引用(validate_path每次重调函数),
+#     既死代码又有"配置变更后陈旧白名单"潜在风险(file_register.py:4注释亦证移除意图)
+#   【改法】删除L129常量定义及__all__导出; get_default_allowed_paths 函数保留(逻辑在用), 无任何引用方依赖该常量(grep全仓仅注释/__all__)
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -124,9 +128,6 @@ def get_default_allowed_paths() -> List[Path]:
     except Exception:
         pass
     return paths
-
-
-ALLOWED_PATHS: List[Path] = get_default_allowed_paths()
 
 
 def _get_project_root_safety() -> Path:
@@ -455,7 +456,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any],
         return False, f"路径安全检查异常: {e}", None, "system"
 
 
-__all__ = ["ALLOWED_PATHS", "get_default_allowed_paths", "get_existing_drives",
+__all__ = ["get_default_allowed_paths", "get_existing_drives",
            "get_system_drive", "_get_project_root_safety", "validate_path",
            "validate_tool_path", "_is_forbidden_path", "_READ_ONLY_TOOLS"]
 

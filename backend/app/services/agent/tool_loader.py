@@ -3,6 +3,9 @@
 # 2026-08-12 - 小欧 - 从 base_agent.py 独立为独立文件(方案A6: ToolLoader与抽象基类解耦):
 #   类定义/init_tools/get_tools/load_category 整体复制, 业务逻辑一字不改, 仅新增依赖导入;
 #   base_agent.py 同步删除原类定义与 tool_registry 依赖, 工具加载逻辑改由 UniversalAgent.__init__ 驱动
+# 2026-08-13 - 小欧 - 三堂会审修复#28: `initial_categories or list(ToolCategory)` 显式空set()为假值→回退"全部"
+#   【病根】调用方传空集合意图"加载指定(空)"却加载全量, 语义反转; 当前_INITIAL_CATEGORIES非空故潜伏
+#   【改法】`list(initial_categories) if initial_categories is not None else list(ToolCategory)`: 空集合=加载指定, None=加载全部
 """
 tool_loader — 工具加载器
 
@@ -28,7 +31,8 @@ class ToolLoader:
         # _loaded_categories 由实际加载结果重建, 保证与_tools_dict一致(单一权威: 只含真正加载了实现的分类)
         # 2026-08-05 小欧: 修复BUG1/2 - 空实现分类不再被标记为已加载; 消除initial_categories=None时标记与实现失配
         self.agent._loaded_categories = set()
-        categories_to_load = initial_categories or list(ToolCategory)
+        # 2026-08-13 小欧 三堂会审修复#28: 区分None与空集合 — 显式空set()为假值会回退"全部", 与"加载指定(空)"意图反转
+        categories_to_load = list(initial_categories) if initial_categories is not None else list(ToolCategory)
         for cat in categories_to_load:
             cat_tools = tool_registry.get_implementations_by_category(cat)
             if cat_tools:

@@ -9,6 +9,9 @@
 # 2026-07-28 - 小欧 - 欧阳BUG-11修复: _user_id_from_db裸except Exception改except Exception as e + logger.debug, 避免错误静默丢失
 # 2026-08-09 - 小欧 - task004深度分析报告核查修复A1/A2/A4(三堂会审通过): (1)观察结果字段"格式化内容:"/"原始的内容:"去冒号改"格式化内容"/"原始内容", 历史日志不动仅新日志生效; (2)log_llm_response冗余赋值修复, entry构造移入else分支, 仅追加路径构造消除更新路径整包丢弃; (3)删除死代码log_tool_prompt(全库0调用, 与2026-07-18删mark_completed/mark_error先例一致)
 # 2026-08-12 - 小欧 - task004报告缺陷1核查修复(A1补全): log_observation补"内容"字段(与log_system_prompt/log_task_prompt结构对齐), 此前仅存"格式化内容"/"原始内容"致"内容"字段100%为空, 实测29文件窗口972/972观察步骤缺失, 历史日志不动仅新日志生效, 保留"格式化内容"兼容已有分析脚本
+# 2026-08-13 - 小欧 - 三堂会审修复#35: 删除观察条目重复字段"格式化内容"(与"内容"逐字节相同, 每个观察步骤存两份全文)
+#   【病根】2026-08-12补"内容"后L409 `entry["格式化内容"]=observation_content` 与"内容"完全重复, 大工具结果(读文件/长SQL输出)日志体积/IO/磁盘双倍开销, 违DRY
+#   【改法】删除"格式化内容"赋值, 保留"原始内容"兼容分析脚本; 已grep确认全仓无调用方依赖"格式化内容"键
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
@@ -405,8 +408,9 @@ class PromptLogger:
         
         if tool_params:
             entry["工具参数"] = tool_params
-        
-        entry["格式化内容"] = observation_content
+
+        # 2026-08-13 小欧 三堂会审修复#35: 删除重复字段"格式化内容"(与"内容"逐字节相同, 每个观察步骤存两份全文),
+        #   大工具结果(读文件/长SQL输出)日志体积/IO/磁盘翻倍; 保留"原始内容"兼容分析脚本
         if raw_data is not None:
             entry["原始内容"] = raw_data
         
