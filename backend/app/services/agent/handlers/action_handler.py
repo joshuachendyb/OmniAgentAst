@@ -89,6 +89,13 @@
 # 2026-08-13 - 小沈 - BUG-40修复(三堂会审): bypass 模式(auto_confirm)下白名单外路径(auth_path 存在)仍需 grant_temp_auth,
 #   否则工具内 validate_path 会拦截(write 模式白名单外未授权返回 False), 工具返回错误, 违背 bypass"直放"语义;
 #   在 auto_confirm 分支内补 grant_temp_auth(若有 auth_path), 与下方确认后授权逻辑对齐, 不退化
+# 2026-08-13 - 小欧 - unit-06 三堂会审(北京老陈驱动): FILE_OPERATION_TOOLS 扩展纳入8个office读写工具(见tool_constants.py)
+#   [BUG] write_xlsx+read_xlsx 同路径同批误走并行 → read 先于 write 执行, validate_path 的 p.exists()=False 报"路径不存在"
+#         (实测 prompt_003749 LLM[5] parallel_calls=7: write 67ms后 read 2ms失败, 重试成功)
+#   [根因] _parse_paths/_has_conflict 仅认 FILE_OPERATION_TOOLS(文本工具), 8个office工具不在其中→空冲突键→并行
+#   [改法] ①tool_constants.FILE_OPERATION_TOOLS 并入8个office工具 ②_WRITE_OPS 排除集 {"readtext"}→_READ_TOOLS
+#         (含4个office读工具, 防 read_xlsx 等被误判写操作致读-读并行退化串行)
+#   [效果] 同路径写+读/写×2 并组串行, 同路径读×2/不同路径 仍并行, 无性能退化
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -139,8 +146,11 @@ class ObservationContext:
     fc_context: Dict = None
 
 
+# 工具文件读操作集合（冲突检测用）— 小欧 2026-08-13
+# 同路径多次调用判定: 读-读无竞态不冲突(仍并行), 仅需从写集合排除, 防 read_xlsx 等被误判写操作致并行退化串行
+_READ_TOOLS = {"readtext", "read_xlsx", "read_docx", "read_pdf", "read_pptx"}
 # 工具文件写操作集合（冲突检测用）— 北京老陈 2026-07-04
-_WRITE_OPS = FILE_OPERATION_TOOLS - {"readtext"}
+_WRITE_OPS = FILE_OPERATION_TOOLS - _READ_TOOLS
 
 # 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A
 # 窗口状态变更(restore/resize/focus)作用于同一窗口时非幂等, 同批并行会产生竞态

@@ -358,7 +358,14 @@ FILE_OPERATION_TOOLS: set[str] = {  # 【tool 级】使用对象: 文件操作�
     "readtext", "writetext", "edittext",
     "move", "copy", "delete", "rename",
     "compress", "extract",
+    # office 8工具(读写) — 小欧 2026-08-13: 与文本文件工具同机制参与路径冲突检测, 消除并行读写竞态
+    "read_xlsx", "read_docx", "read_pdf", "read_pptx",
+    "write_xlsx", "write_docx", "write_pdf", "write_pptx",
 }
+# 2026-08-13 - 小欧 - 扩展纳入8个office读写工具(unit-06 三堂会审, 北京老陈驱动):
+#   原集合仅文本文件工具, 致 action_handler 冲突检测对同路径 write_xlsx+read_xlsx 误判无冲突→并行→read 先跑报"路径不存在"
+#   (实测 prompt_003749 LLM[5] parallel_calls=7: write 67ms后 read 2ms失败, 重试成功);
+#   并入后与文本工具同机制: 同路径写+读/写×2 并组串行, 读×2/不同路径仍并行, 无性能退化
 
 # 注: LISTDIR_PAGE_SIZE(原 listdir 分页每页条目数) 依3.7作废删除(2026-07-20 章18): Tool 层条数截断违反3.7, 改由 Format 层 OBS_LISTDIR_* 行×列收口; listdir 有 offset 可翻页, 显示域截断可恢复(区别于 read_xlsx 无offset)
 # 注: FIND_PAGE_SIZE/READ_FILE_DEFAULT_LIMIT 依门限复查(2026-07-20)删除: 全代码检索仅定义处存在, 无任何工具引用(僵尸常量);
