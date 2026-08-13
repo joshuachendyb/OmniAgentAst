@@ -32,6 +32,12 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
+# 2026-08-13 - 小欧 - 三堂会审修复#5: _precise_replace_in_file 的 stat/read_bytes/read_text/open('w')
+#   全链 to_win_long_path 长路径化(仅NT生效), 深嵌套目标不再 WinError 206; 编码回退读取传 \\?\ 前缀 Path;
+#   报告/diff/语法检测仍用原路径(不暴露 \\?\ 前缀, detect_language 只按扩展名判断不受影响)
+# 2026-08-13 - 小欧 - 三堂会审修复#23: 移除死导入 validate_str_param(合规/DRY)
+#   【病根】from app.tools.validate.file_path_checker import validate_str_param 全文件零调用(grep仅导入处1处), 冗余导入
+#   【改法】从导入行移除, 保留validate_path/OpCategory
 """
 F4: edittext — 编辑文本文件
 
@@ -56,8 +62,9 @@ from app.tools.tool_constants import EDITTEXT_OUTPARM_LIMIT_OLD, EDITTEXT_OUTPAR
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 from app.tools.validate.file_type_checker import check_for_text_tool
-from app.tools.validate.file_path_checker import validate_path, OpCategory, validate_str_param  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12; 2026-08-13 #23: 移除validate_str_param(全文件零调用)
 from app.tools.toolhelper.error_hints import hint_for_write_error
+from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
 from app.tools.file.file_encoding import read_file_with_encodings as _try_read_file_with_encodings  # 小欧 2026-08-09: 本地重复实现合并入公共file_encoding
 from app.tools.file.file_state import check_conflict_strict, record_write, record_read
@@ -337,18 +344,19 @@ async def _precise_replace_in_file(
             logger.warning(f"[edittext] {warn}")
 
         path = Path(file_path).resolve()
-        if path.stat().st_size > EDITTEXT_INPUT_MAX_BYTES:
-            return {"error_detail": f"文件过大({path.stat().st_size}字节)", "file_size": path.stat().st_size}
+        _long = to_win_long_path(path)  # #5长路径: stat/read/open 统一 \\?\ 前缀 — 小欧 2026-08-13
+        if Path(_long).stat().st_size > EDITTEXT_INPUT_MAX_BYTES:
+            return {"error_detail": f"文件过大({Path(_long).stat().st_size}字节)", "file_size": Path(_long).stat().st_size}
 
         # B2 fix: detect CRLF from raw bytes — 小欧 2026-06-27
         _has_crlf = False
         try:
-            _raw = path.read_bytes()[:8192]
+            _raw = Path(_long).read_bytes()[:8192]
             _has_crlf = b'\r\n' in _raw
         except Exception:
             pass
 
-        content, used_enc, err_msg = await _try_read_file_with_encodings(path, encoding)
+        content, used_enc, err_msg = await _try_read_file_with_encodings(Path(_long), encoding)
         if err_msg:
             raise ValueError(err_msg)
         # 编码回退反馈: 用户指定编码但实际以其它编码读取成功 → 生成提示(LLM可见, 增强不退化) — 小欧 2026-08-09
@@ -364,7 +372,7 @@ async def _precise_replace_in_file(
         conflict_err = check_conflict_strict(file_path)
         if conflict_err:
             try:
-                _preview = path.read_text("utf-8", errors="replace")[:2000]
+                _preview = Path(_long).read_text("utf-8", errors="replace")[:2000]  # #5长路径 — 小欧 2026-08-13
                 conflict_err += f"\n文件当前内容(前2000字符):\n{_preview}"
             except Exception:
                 pass
@@ -477,7 +485,7 @@ async def _precise_replace_in_file(
                     replace_result['_syn_line'] = _syn.line
                     replace_result['_syn_suggestion'] = _syn.suggestion
                     return False
-            with open(path, 'w', encoding=used_enc, newline='') as f:
+            with open(_long, 'w', encoding=used_enc, newline='') as f:  # #5长路径 — 小欧 2026-08-13
                 f.write(write_content)
             record_write(file_path)
             return True

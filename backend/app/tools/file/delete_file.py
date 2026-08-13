@@ -17,6 +17,13 @@
 # 2026-08-13 - 小沈 - P1: remove_readonly 函数迁移至 app/utils/file_utils.py(消除 safety→tools 实现依赖), 本文件改为从 utils 导入
 # 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
+# 2026-08-13 - 小欧 - 三堂会审修复#5: _force_delete_sync/os.walk/rmdir/unlink/chmod 全链 to_win_long_path
+#   长路径化(仅NT生效), 深嵌套目录不再 WinError 206; impl 层 is_dir/exists 探测同步长路径化
+#   (超长路径不误判"已不存在"→already_deleted); 报告仍用原始路径不暴露 \\?\ 前缀;
+#   send2trash 仍传原始路径(失败自动回退到已长路径化的永久删除)
+# 2026-08-13 - 小欧 - 三堂会审修复#22: _guard_forbidden_delete 删除死分支 `if p is None: return None`
+#   【病根】p = raw.expanduser().resolve() 恒返回Path(异常已被前try捕获返回), resolve()绝不返回None, L58-59分支永不可达(死代码, 违KISS)
+#   【改法】删除该分支; 无任何行为变化(resolve成功则p恒为Path)
 """
 F12: delete_file — 删除文件
 
@@ -41,6 +48,7 @@ from app.db.models.operation_models import OperationType
 from app.tools.validate.file_path_checker import validate_path, OpCategory, WINDOWS_SYSTEM_DIRS  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
+from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.utils.file_utils import remove_readonly  # P1: 从 utils 导入 — 小沈 2026-08-13
 
 
@@ -55,8 +63,6 @@ def _guard_forbidden_delete(file_path: str) -> Optional[str]:
         p = raw.expanduser().resolve()
     except Exception as e:
         return f"安全校验: 路径解析失败({e})"
-    if p is None:
-        return None
     try:
         if not p.exists() and not p.parent.exists():
             return None
@@ -109,41 +115,45 @@ def _force_delete_sync(path: Path, recursive: bool = False,
     last_err: Optional[Exception] = None
     deleted_files: list[str] = []  # 在循环外初始化，retry不丢失已删文件 — 小沈 2026-07-30 三堂会审修复
 
+    # #5长路径: FS操作统一走 \\?\ 前缀(仅NT), 深嵌套路径不再 WinError 206; 报告仍用原始 path — 小欧 2026-08-13
+    _long = to_win_long_path(path)
+
     for attempt in range(max_retries):
         try:
-            if path.is_dir():
+            if Path(_long).is_dir():
                 if not recursive:
-                    path.rmdir()
+                    Path(_long).rmdir()
                     deleted_files.append(str(path))
                     return True, "permanent", deleted_files
                 # recursive: 自底向上walk,先删文件再删目录
-                for root, dirs, files in os.walk(str(path), topdown=False):
+                for root, dirs, files in os.walk(_long, topdown=False):
                     for name in files:
                         fp = Path(root, name)
+                        _fpl = to_win_long_path(fp)
                         try:
-                            if not os.access(str(fp), os.W_OK):
-                                fp.chmod(fp.stat().st_mode | 0o200)  # 只读→加写权限
-                            fp.unlink()
+                            if not os.access(_fpl, os.W_OK):
+                                Path(_fpl).chmod(Path(_fpl).stat().st_mode | 0o200)  # 只读→加写权限
+                            Path(_fpl).unlink()
                             deleted_files.append(str(fp))
                         except FileNotFoundError:
                             pass  # retry时已删的跳过
                     for name in dirs:
                         dp = Path(root, name)
                         try:
-                            dp.rmdir()
+                            Path(to_win_long_path(dp)).rmdir()
                             deleted_files.append(str(dp))
                         except (FileNotFoundError, OSError):
                             pass  # 非空目录跳过
                 try:
-                    path.rmdir()
+                    Path(_long).rmdir()
                     deleted_files.append(str(path))
                 except (FileNotFoundError, OSError):
                     pass
                 return True, "permanent", deleted_files
             # 单文件
-            if path.exists() and not os.access(str(path), os.W_OK):
-                path.chmod(path.stat().st_mode | 0o200)
-            path.unlink()
+            if Path(_long).exists() and not os.access(_long, os.W_OK):
+                Path(_long).chmod(Path(_long).stat().st_mode | 0o200)
+            Path(_long).unlink()
             deleted_files.append(str(path))
             return True, "permanent", deleted_files
         except PermissionError as e:
@@ -230,9 +240,11 @@ async def _delete_file_impl(
 
     path = Path(file_path)
     try:
-        if path.is_dir() and not recursive:
+        # #5长路径: 探测统一 \\?\ 前缀, 超长路径不误判"不存在" — 小欧 2026-08-13
+        _long = to_win_long_path(path)
+        if Path(_long).is_dir() and not recursive:
             return {"success": False, "error_detail": "删除非空目录需要设置recursive=True", "params": {"source": file_path}}
-        if not path.exists():
+        if not Path(_long).exists():
             return {"success": True, "action": "delete", "source": file_path, "already_deleted": True, "deleted_files": []}
 
         task_id = _current_task_id.get()
