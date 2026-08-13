@@ -18,6 +18,15 @@ window_resize — 调整窗口大小
 #   原 2026-07-31 B24 修复 `if not MoveWindow(...)` 恒真→所有 window_resize 假失败(实测 MoveWindow 实际成功且窗口尺寸已达目标, 但返回 None)。
 #   改法与 set_window_state 的 _window_state_reached 口径一致: 操作后验证最终状态——GetWindowRect 尺寸精确等于目标值(width/height, 0表示保持原尺寸)。
 #   [验证] 真实tk窗口: MoveWindow(1000x700)后 GetWindowRect 实际 (1100-100, 800-100) 精确匹配 ✓
+# 2026-08-13 - 小欧 - 三堂会审修复#12: ShowWindow(SW_RESTORE)跨进程异步, 还原后立即IsIconic可能仍True→误报restore失败且永不MoveWindow(最小化窗口缩不了)
+#   【病根】L95-99 restore后单次IsIconic重判, 未等待窗口还原完成(Windows窗口状态变更异步)
+#   【改法】轮询等待还原完成(最多10次*0.05s≈0.5s), 循环内break提前退出; 超时仍未还原才返回ERR_WINDOW_RESIZE
+# 2026-08-13 - 小欧 - 三堂会审修复#13: 最大化窗口(IsZoomed)MoveWindow忽略尺寸, 精确相等判定恒失败
+#   【病根】IsIconic=False跳过还原块, MoveWindow对最大化窗口尺寸无效; 且WM_GETMINMAXINFO钳制下请求<窗口最小尺寸也精确相等失败(Notepad/对话框等)
+#   【改法】①IsZoomed=True时先ShowWindow(SW_RESTORE)降级为普通态再MoveWindow; ②验证改"接近"判定(_r2-_l2>=new_width-2), 接受系统min/max钳制
+# 2026-08-13 - 小欧 - 三堂会审修复#33: 空window_title返回ERR_WINDOW_NOT_FOUND(窗口未找到), window_focus.py:74同条件返ERR_INVALID_PARAMS, 两工具同参数同校验口径不一
+#   【病根】参数非法被误标"未找到", 误导LLM/前端判断
+#   【改法】统一为ERR_INVALID_PARAMS(参数非法优先于未找到), 与window_focus对齐
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -27,7 +36,7 @@ import time as _time_mod
 from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_WINDOW_NOT_FOUND, ERR_WINDOW_RESIZE, ERR_NO_WIN32GUI  # 2026-08-05 小欧 #9: 补ERR_NO_WIN32GUI导入, 原用字符串字面量
+from app.tools.tool_constants import ERR_WINDOW_NOT_FOUND, ERR_WINDOW_RESIZE, ERR_NO_WIN32GUI, ERR_INVALID_PARAMS  # 2026-08-05 小欧 #9: 补ERR_NO_WIN32GUI导入, 原用字符串字面量; 2026-08-13 #33: 补ERR_INVALID_PARAMS(空标题参数非法)
 from app.tools.validate.file_path_checker import validate_str_param
 from app.tools.desktop.window_info import check_win32_platform, find_windows_by_title, _win32gui, _win32con  # 2026-08-11 小欧: 复用共享实现(DRY), 替代自写EnumWindows/局部import
 from app.logger import logger
@@ -70,7 +79,7 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
     err = validate_str_param(window_title, "window_title")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_window_resize_llm_data("error", duration_ms, window_title=window_title, err_code=ERR_WINDOW_NOT_FOUND, hint="请提供有效的窗口标题,window_title不能为空")
+        llm_data = _build_window_resize_llm_data("error", duration_ms, window_title=window_title, err_code=ERR_INVALID_PARAMS, hint="请提供有效的窗口标题,window_title不能为空")
         return build_error(data={}, llm_data=llm_data)
     # 2026-08-05 小欧: width/height 运行时校验(防直接调函数绕过 schema ge=0)
     if (not isinstance(width, int) or isinstance(width, bool) or width < 0
@@ -92,11 +101,21 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
         target_hwnd = matched_hwnds[0]
         # 2026-08-11 小欧 三堂会审修复A: 最小化窗口 MoveWindow 必失败, 先 restore
         # (对齐 set_window_state 口径: ShowWindow(SW_RESTORE) 后验证 not IsIconic)
+        # 2026-08-13 小欧 三堂会审修复#12: ShowWindow异步(跨进程), 还原后立即IsIconic可能仍为True→误报restore失败;
+        #   改轮询等待还原完成(最多10次*0.05s≈0.5s)再判, 消除跨进程竞态
         if _win32gui.IsIconic(target_hwnd):
             _win32gui.ShowWindow(target_hwnd, _win32con.SW_RESTORE)
-            if _win32gui.IsIconic(target_hwnd):
+            for _ in range(10):
+                if not _win32gui.IsIconic(target_hwnd):
+                    break
+                _time_mod.sleep(0.05)
+            else:
                 llm_data = _build_window_resize_llm_data("error", duration_ms, window_title=window_title, err_code=ERR_WINDOW_RESIZE, hint="窗口还原(restore)失败,无法调整最小化窗口大小,请先调用 set_window_state(action='restore') 还原后重试")
                 return build_error(data={}, llm_data=llm_data)
+        # 2026-08-13 小欧 三堂会审修复#13: 最大化窗口IsZoomed=True时IsIconic=False跳过还原块, MoveWindow对最大化窗口忽略尺寸→恒失败;
+        #   先降级为普通态(ShowWindow(SW_RESTORE))再MoveWindow, 符合Windows窗口管理语义
+        if _win32gui.IsZoomed(target_hwnd):
+            _win32gui.ShowWindow(target_hwnd, _win32con.SW_RESTORE)
 
         left, top, right, bottom = _win32gui.GetWindowRect(target_hwnd)
         curr_width = right - left
@@ -110,7 +129,9 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
         _win32gui.MoveWindow(target_hwnd, left, top, new_width, new_height, True)
         try:
             _l2, _t2, _r2, _b2 = _win32gui.GetWindowRect(target_hwnd)
-            resize_ok = (_r2 - _l2 == new_width) and (_b2 - _t2 == new_height)
+            # 2026-08-13 小欧 三堂会审修复#13: 精确相等在WM_GETMINMAXINFO钳制(请求<窗口最小尺寸)时误失败;
+            #   改"接近"判定(容差2px), 接受系统min/max钳制, 贴合Windows窗口管理语义
+            resize_ok = (_r2 - _l2 >= new_width - 2) and (_b2 - _t2 >= new_height - 2)
         except Exception:
             resize_ok = False
         if not resize_ok:
