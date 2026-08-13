@@ -6,6 +6,10 @@
 # 2026-08-13 - 小欧 - A7(方案4.7.3步骤3): update_config 业务编排迁入 services/model/config_service.py; 删除
 #   from app.safety.operation_backup import clear_backup_paths 越层 import(随 update_config 迁出, API→safety 越层消除,
 #   守护测试 api 规则可启用)。本文件保留其余 config 路由与 DTO。
+# 2026-08-13 - 小欧 - 三堂会审修复#6/#7/#8: #6 validate_config 谎报"配置已保存"改"配置校验通过(未保存)"
+#   (该端点仅校验不落盘, 原文案误导); #7 GET /config/full 返回明文 api_key 改 _mask_api_key 掩码
+#   (保留前3后2, 安全不泄露密钥); #8 update_provider 删除对全局 config['ai']['model'] 的改写
+#   (更新provider信息时不再悄悄切换当前全局模型, 防模型被意外替换)
 """
 model_routes - copy from ai_config/, only changed import paths
 小欧 2026-07-10
@@ -53,6 +57,15 @@ from app.utils.response_utils import api_success, api_failure
 
 
 router = APIRouter()
+
+def _mask_api_key(api_key: str) -> str:
+    """掩码API Key: 非空时保留前3后2, 中间以*替换, 短于等于6位全掩码 — 小欧 2026-08-13 (#7)"""
+    if not api_key:
+        return ""
+    if len(api_key) <= 6:
+        return "*" * len(api_key)
+    return api_key[:3] + "*" * (len(api_key) - 5) + api_key[-2:]
+
 
 @router.get("/config", response_model=ConfigResponse)
 @handle_config_errors("获取配置")
@@ -109,10 +122,10 @@ async def validate_config(request: ConfigValidateRequest):
                 model=None
             )
         final_provider, final_model = resolver.resolve_provider_model()
-        logger.info(f"配置已保存: provider={final_provider}, model={final_model}")
+        logger.info(f"配置校验通过: provider={final_provider}, model={final_model}")
         return ConfigValidateResponse(
             valid=True,
-            message=f"配置已保存,将在首次使用时验证 {final_provider} ({final_model})",
+            message=f"配置校验通过(未保存),将在首次使用时验证 {final_provider} ({final_model})",
             model=final_model
         )
     except Exception as e:
@@ -181,7 +194,7 @@ async def get_full_config():
         providers[provider_name] = ProviderInfo(
             name=provider_name,
             api_base=provider_data.get('api_base', ''),
-            api_key=api_key,
+            api_key=_mask_api_key(api_key),  # #7安全: 明文api_key不外泄, 掩码后返回 — 小欧 2026-08-13
             model='',
             models=provider_data.get('models', []),
             timeout=provider_data.get('timeout', 60),
@@ -256,8 +269,9 @@ async def update_provider(provider_name: str, data: ProviderUpdate):
         config['ai'][provider_name]['api_base'] = data.api_base
     if data.api_key is not None:
         config['ai'][provider_name]['api_key'] = data.api_key.strip()
-    if data.model is not None:
-        config['ai']['model'] = data.model.strip()
+    # #8修复: 移除全局 config['ai']['model'] 改写 — 更新Provider时不应悄悄切换当前使用的全局模型,
+    #   model 字段属 provider 级默认模型语义, 若需切换应走专门的模型切换接口; 原改写致前端
+    #   编辑provider信息后当前模型被意外替换 — 小欧 2026-08-13
     if data.timeout is not None:
         config['ai'][provider_name]['timeout'] = data.timeout
     if data.max_retries is not None:
