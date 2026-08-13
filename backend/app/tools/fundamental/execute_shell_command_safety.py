@@ -10,6 +10,13 @@
 # 2026-07-31 - 小欧 - Shell池进程保护: 新增_extract_stop_process_pids/_extract_taskkill_pids/_extract_bash_kill_pids; check_shell_command_risk加protected_pids参数; Stop-Process/taskkill/kill命中受保护PID时BLOCKED; 三提取函数+拦截点加日志; message优化为"系统保护进程"避免泄露架构细节
 # 2026-08-12 - 小欧 - A1越层前置: SafetyResult import 由 app.services.safety.tool_safety_checker 改为 app.safety.tool_safety_checker(safety 提升为顶层目录, 配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1盲点四: SafetyResult 定义迁入 app/tools/security/safety_result, flow自包含相关工具层, import 同步更新 — 小欧 2026-08-12
+# 2026-08-13 - 小欧 - 三堂会审修复#20: 临时目录清理降级被`..`穿越逃逸, Temp\..\important 可降危为MEDIUM确认
+#   【病根】_is_temp_cleanup仅对命令串做_TEMP_SAFE_PATTERNS子串匹配, 含 ...\Temp\..\important 仍命中→HIGH递归删除降MEDIUM, 实际目标已逃出临时根
+#   【改法】降级前检查normalized含`..`路径穿越标记则不予降危, 直接返回HIGH拦截(blocked=True); 无`..`的明确临时目录清理(如rm -rf $env:TEMP\*)仍降MEDIUM, 无退化
+# 2026-08-13 - 小欧 - 三堂会审修复#21: ps7下`rm -rf C:\x`漏检(PS别名Remove-Item -Recurse -Force, 原始串无Recurse/Force词)
+#   【病根】PS HIGH规则(原L37-38)要求字面Recurse/Force词, MEDIUM L67也需Force词, `rm -rf`字母flag在ps7下无规则命中(bash规则L57被shell_type过滤)
+#   【改法】PS HIGH新增两条字母flag规则: `-[rR][fF]`合并形态与`-[rR]\b.*?-[fF]\b`分离形态; desc含"递归"故临时目录降级逻辑同样生效; 与bash L57口径对齐
+#   【说明】文档方案第二条正则(?:Remove-Item|rm|ri|erase|del)\s+.*?\brm\s+-rf\b 需再次rm不成立(首rm已消费), 修正为`-[rR][fF]`合并flag形态
 """
 execute_shell_command 分级安全检查 — 独立safety模块
 
@@ -36,6 +43,10 @@ SHELL_DANGEROUS_PATTERNS = [
     # ---- PS: PowerShell专属高风险 ----
     (r"(?:Remove-Item|rm|del|ri|erase)\s+.*\bRecurse\b.*\bForce\b", "递归+强制删除", "HIGH", "ps"),
     (r"(?:Remove-Item|rm|del|ri|erase)\s+(?:.*\bRecurse\b(?!:\$false\b))", "递归删除目录", "HIGH", "ps"),
+    # 2026-08-13 小欧 #21: PS字母flag(rm -rf等价-Recurse -Force)补规则, 覆盖ps7别名解析前原始串无Recurse/Force词的情况
+    #   与bash规则L57口径对齐; 临时目录清理降级依赖desc含"递归", 本规则描述含"递归"故降级逻辑同样生效
+    (r"(?:Remove-Item|rm|ri|erase|del)\s+.*?-[rR][fF]\b", "递归+强制删除(PS字母flag -rf)", "HIGH", "ps"),
+    (r"(?:Remove-Item|rm|ri|erase|del)\s+.*?-[rR]\b.*?-[fF]\b", "递归+强制删除(PS字母flag -r -f)", "HIGH", "ps"),
     (r"Invoke-Command", "远程/本地执行命令", "HIGH", "ps"),
     (r"Format-Volume", "格式化卷", "HIGH", "ps"),
     (r"Stop-Computer", "关机", "HIGH", "ps"),
@@ -153,6 +164,14 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
                 # 临时目录清理降级: 递归删除命令(PS Remove-Item / CMD del/rd/rmdir)目标为已知安全临时目录时降为MEDIUM
                 # 其他HIGH操作(Format-Volume等)即使命令中包含临时路径也依然拦截 — 小欧 2026-07-28
                 if _is_temp_cleanup(normalized) and ('递归' in desc or 'rm -rf' in desc):
+                    # 2026-08-13 小欧 三堂会审修复#20: 命令含`..`路径穿越标记时实际解析目标可能逃出临时根
+                    #   (如 ...\Temp\..\important 匹配_TEMP_SAFE_PATTERNS被降级, 实际删除临时根外文件), 不予降危维持HIGH拦截
+                    if '..' in normalized:
+                        return SafetyResult(
+                            blocked=True,
+                            message=f"高风险Shell操作: {desc}(临时目录清理含..路径穿越,不予降危)",
+                            safety_level="dangerous",
+                        )
                     medium_hits.append(desc)
                     continue
                 return SafetyResult(
