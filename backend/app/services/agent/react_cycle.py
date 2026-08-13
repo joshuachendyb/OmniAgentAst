@@ -66,6 +66,14 @@
 
 
 # 2026-08-12 - 小欧 - A1越层前置: safety 提升为顶层 app.safety, clear_temp_auth 的 import 由 app.services.safety.temp_auth 改 app.safety.temp_auth(配合 tools 禁 app.services 守护规则)
+# 2026-08-13 - 小欧 - 三堂会审修复#2/#36: #2 _RECOVERABLE_ERRORS 补 "timeout"(HITL确认超时是用户侧软拒绝,
+#   原判FAILED与 _add_denial_feedback 注入的"改用其他工具"引导自相矛盾; 纳入后由 _deny_counts 累计>=3才FAILED);
+#   #36 可恢复异常路径不再 set RETRYING(计数已在 except 内+1), 消除与主循环 RETRYING 处理双累加
+#   (一次异常计2次→上限3实际第2次即FAILED, 重试机会减半); 来源B(_dispatch_handler retrying)仍走L614计数, 两来源各自单计
+# 2026-08-13 - 小欧 - 三堂会审修复#29: finally 新增 reset_current_task_id()(与 set 对称, set在action_handler.py:882)
+#   【病根】set_current_task_id 全仓唯一set点, reset_current_task_id(context.py:38)零调用; 当前每SSE请求独立asyncio.Task,
+#     ContextVar随任务结束丢弃故不漏, 但长连接/复用context(手动测试/常驻入口)会跨请求泄漏task_id
+#   【改法】与 clear_temp_auth 并列在 task 级 finally 调 reset_current_task_id(), 对称set/reset, 行为零退化
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -108,7 +116,10 @@ _MAX_CONSECUTIVE_SAME_TOOL_CALLS = 5   # 硬终止阈值: count>=5(第5次相同
 # 可恢复的拒绝/拦截错误: 拒绝≠失败(符合人类认知, 助手应换工具继续) — 小欧 2026-07-13
 # 反馈已写入LLM历史(_add_denial_feedback), 循环回THINKING由主循环 EXECUTING→THINKING 处理;
 # 仅当"同一工具+同类型错误"累计>=3次才置 FAILED(说明LLM陷入死胡同) — 北京老陈 2026-07-13。
-_RECOVERABLE_ERRORS = {"user_rejected", "blocked"}
+# 2026-08-13 - 小欧 - 三堂会审修复#2: 补 "timeout" — 确认超时(action_handler:263 发 error_type="timeout")
+#   是用户侧等待超时(软拒绝, 应换工具/重试继续), 判 FAILED 与 _add_denial_feedback 注入的"改用其他工具"
+#   引导自相矛盾; 纳入可恢复后由 _deny_counts 累计>=3 才 FAILED(与 user_rejected 同语义)。
+_RECOVERABLE_ERRORS = {"user_rejected", "blocked", "timeout"}
 
 
 def handle_react_error(agent, error, step):
@@ -282,7 +293,7 @@ async def _dispatch_handler(agent, llm_response):
         else:
             set_completed(agent)
     elif _EV_ERROR in seen_types:
-        # 无 final → 可恢复错误(blocked/user_rejected, 循环继续)或原子异常(旧数据)
+        # 无 final → 可恢复错误(blocked/user_rejected/timeout, 循环继续)或原子异常(旧数据)
         error_event = last_error_event
         err_type = getattr(error_event, "error_type", "")
         error_msg = error_event.get_content() if hasattr(error_event, 'get_content') else ""
@@ -600,7 +611,10 @@ async def run_react_cycle(
                         step=agent.llm_call_count,
                         content=f"LLM请求异常，准备重试: {_step_err}",
                     ))
-                    set_status(agent, AgentStatus.RETRYING, str(_step_err)[:200])
+                    # 2026-08-13 - 小欧 - 三堂会审修复#36: 此处不再 set RETRYING(计数已在上方+1),
+                    #   直接 continue 回循环顶重试; 否则主循环 L614 RETRYING 处理再+1 → 一次异常计2次,
+                    #   上限3实际第2次异常即FAILED。来源B(_dispatch_handler L273 retrying)仍走
+                    #   set RETRYING + L614 计数, 两来源各自单计互不干扰。
                     continue
                 raise
             if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED):
@@ -652,4 +666,8 @@ async def run_react_cycle(
         #   无任何授权产生, 故不经过 finally 也无泄漏; 注释已修正不再声称其走 finally)
         from app.tools.security.temp_auth import clear_temp_auth
         clear_temp_auth()
+        # 2026-08-13 小欧 三堂会审修复#29: task结束对称清task_id(set在action_handler.py:882),
+        #   防长连接/复用context时跨请求泄漏(当前独立asyncio.Task场景无泄漏, 属潜伏修复)
+        from app.tools.context import reset_current_task_id
+        reset_current_task_id()
 
