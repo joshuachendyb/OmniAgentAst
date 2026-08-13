@@ -14,7 +14,7 @@ OmniAgentAs-desk 是一个基于 **ReAct (Reasoning + Acting)** 架构的智能�
 |------|------|
 | **63个工具函数** | 覆盖 file/shell/network/system/desktop/document/dataanalysis/fundamental/win_registry/timer 共10个分类 |
 | **ReAct推理引擎** | thought → action → observation 循环推理 |
-| **统一Agent调度** | 单一 UniversalAgent（BaseAgent 子类，配置驱动），无 AgentFactory 分发 |
+| **统一Agent调度** | 单一 UniversalAgent（BaseAgent 子类，配置驱动） |
 | **多AI Provider** | OpenCode、智谱AI、DeepSeek、Kimi等 OpenAI兼容API |
 | **流式响应** | SSE实时推送，推理过程即时可见 |
 | **会话管理** | 历史记录、搜索、标题自动生成、跨会话切换 |
@@ -249,10 +249,10 @@ backend/app/tools/
 ```
 BaseAgent(ABC)                 ← 抽象基类，含 run_react_cycle 编排钩子
     ↓ 继承
-UniversalAgent(BaseAgent)      ← 唯一实现类，配置驱动（模型/系统提示词/工具集由配置决定，无意图分发）
+UniversalAgent(BaseAgent)      ← 唯一实现类，配置驱动（模型/系统提示词/工具集由配置决定）
 ```
 
-> 代码实际（`backend/app/services/agent/`）：`base_agent.py` 的 `BaseAgent(ABC)` + `universal_agent.py` 的 `UniversalAgent(BaseAgent)` 为核心，无 `AgentFactory` 分发、无意图识别/分发机制（CRSS 已移除）。请求经 `api/v1` 薄壳路由 → 编排层 `stream_orchestrator.chat_stream_orchestrator` → `agent_runner.run_agent_in_background` → 直接构造 `UniversalAgent` 调用 `run_react_cycle`。系统提示词由 `PromptBuilder.build_full_system_prompt` 统一构建，工具集由 `tool_loader` 按 Agent 预加载分类加载（`_loaded_categories`），均与意图无关；`intent` 仅作为 task DB 的 TEXT 字段记录，无调度语义。其余模块为 ReAct 循环与编排支撑：`react_cycle.py`（ReAct 循环核心）、`tool_executor.py`、`handlers/`（action/answer）、`steps/`（Thought/Tool/Final 等 Step）+ `llm_stream`/`message_builder`/`observation_formatter`/`status_table`/`tool_cache_manager`/`initialize_run_state`/`chunk_buffer`/`step_emitter` 等。
+> 代码实际（`backend/app/services/agent/`）：`base_agent.py` 的 `BaseAgent(ABC)` + `universal_agent.py` 的 `UniversalAgent(BaseAgent)` 为系统唯一 Agent 实现。请求经 `api/v1` 薄壳路由 → 编排层 `stream_orchestrator.chat_stream_orchestrator` → `agent_runner.run_agent_in_background` → 直接构造 `UniversalAgent` 调用 `run_react_cycle`。系统提示词由 `PromptBuilder.build_full_system_prompt` 统一构建，工具集由 `tool_loader` 按 Agent 预加载分类加载（`_loaded_categories`）。其余模块为 ReAct 循环与编排支撑：`react_cycle.py`（ReAct 循环核心）、`tool_executor.py`、`handlers/`（action/answer）、`steps/`（Thought/Tool/Final 等 Step）+ `llm_stream`/`message_builder`/`observation_formatter`/`status_table`/`tool_cache_manager`/`initialize_run_state`/`chunk_buffer`/`step_emitter` 等。
 
 ### 4.2 安全体系（v0.19.14）
 
@@ -277,12 +277,12 @@ UniversalAgent(BaseAgent)      ← 唯一实现类，配置驱动（模型/系�
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| SemanticRouter | 规划中 | 基于 LLM Function Calling 的工具子集推荐器（取代旧的 CRSS 正则意图分类；**当前代码未实现**，仅存于 `doc-5月优化/doc-5月agent2.0/` 设计文档） |
+| SemanticRouter | 规划中 | 基于 LLM Function Calling 的工具子集推荐器（**当前代码未实现**，仅存于 `doc-5月优化/doc-5月agent2.0/` 设计文档） |
 | ToolSafetyLayer | 规划中 | 工具声明式安全分级（部分能力已由现有安全级别字符串 read_only/safe/destructive/dangerous 承载，见 4.2 L1） |
 | ToolObserver | 规划中 | 全量审计日志 + 异常检测 |
 | HITL | 已实现 | DANGEROUS 工具人机协同确认已落地（`action_handler.authorization_required` + `wait_for_confirmation_result` + `hitl_confirmation.py`） |
 
-> 统一Agent（BaseAgent → UniversalAgent）已在 v0.14.0 完成，方案设计见 `doc-5月优化/doc-5月agent2.0/`。HITL 确认机制在 v0.18.x 已接入。Agent 2.0 的语义路由为**历史规划**，当前 v0.19.14 代码**未实现任何意图/语义路由**。
+> 统一Agent（BaseAgent → UniversalAgent）已在 v0.14.0 完成，方案设计见 `doc-5月优化/doc-5月agent2.0/`。HITL 确认机制在 v0.18.x 已接入。Agent 2.0 的语义路由为**历史规划**，未在当前代码实现。
 
 ---
 
