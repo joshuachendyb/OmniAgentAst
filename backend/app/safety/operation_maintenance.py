@@ -4,6 +4,7 @@
 # 2026-08-12 - 小欧 - 从 operation_cleanup.py 承接清理职责(A2-内部环, 方案4.2.3步骤2): cleanup_expired_backups/_get_folder_size/_cleanup_by_size 整体复制,
 #   FileSafetyConfig 导入改 app.services.safety.models(原 operation_record, 已独立); 其余逻辑一字不改
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件内部 import 路径同步更新(配合 tools 禁 app.services 守护规则)
+# 2026-08-13 - 小沈 - P1: remove_readonly 延迟导入改从 app.utils.file_utils 直接导入(消除 safety→tools 实现依赖)
 """
 operation_maintenance — 备份回收站维护
 
@@ -18,6 +19,7 @@ from app.db import db
 from app.logger import logger
 from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
+from app.utils.file_utils import remove_readonly  # P1: 从 utils 导入 — 小沈 2026-08-13
 
 
 def _get_folder_size(path: Path) -> int:
@@ -33,12 +35,7 @@ def _get_folder_size(path: Path) -> int:
 
 
 def _cleanup_by_size() -> int:
-    """总大小超过上限时，从最旧的备份开始删
-    
-    说明：延迟导入remove_readonly是为了避免循环依赖
-    (operation_cleanup→delete_file→file_safety→operation_cleanup)
-    """
-    from app.tools.file.delete_file import remove_readonly
+    """总大小超过上限时，从最旧的备份开始删"""
     from app.safety.models import FileSafetyConfig
     config = FileSafetyConfig()
     max_bytes = config.RECYCLE_BIN_MAX_SIZE_GB * 1024 ** 3
@@ -73,10 +70,8 @@ def _cleanup_by_size() -> int:
 def cleanup_expired_backups() -> int:
     """清理过期的备份文件 + 超出大小上限时清理最旧的
     
-    说明：延迟导入remove_readonly避免循环依赖；
     shutil.rmtree加onerror是因为Windows下只读文件+备份文件属性继承会导致[WinError 5]
     """
-    from app.tools.file.delete_file import remove_readonly
     count = 0
     try:
         with db.get_conn("operations") as conn:

@@ -15,6 +15,7 @@ Tool函数公共辅助代码 — 纯逻辑函数集合
 """
 # 2026-07-21 - 小欧 - 删除死代码 validate_python_content(全仓0调用方), 语法校验统一迁至 app.tools.toolhelper.syntax_validator.validate_syntax
 # 2026-07-24 - 小欧 - 修复: 去掉 validate_csv/xml 的 str(e)[:100]截断(helper层不截断, 调用方自行决定) — 北京老陈驱动
+# 2026-08-13 - 小沈 - P5b: backup_file 迁移至 app/utils/file_utils.py(消除 services/model/persistence→tools 实现依赖), 本文件 re-export 保持下游兼容
 
 # 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -719,29 +720,7 @@ FORMAT_DISPATCH = {
 }
 
 
-def backup_file(file_path: str, backup_dir: Optional[str] = None, suffix: str = ".bak") -> Dict[str, Any]:
-    """备份文件，返回纯dict — 小沈 2026-05-02
-    【注意】本函数返回纯dict，不含build3结构。
-    """
-    from app.utils.time_utils import timestamp_for_filename
-    file_path = os.path.abspath(file_path)
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"文件不存在: {file_path}")
-    timestamp = timestamp_for_filename()
-    file_name = os.path.basename(file_path)
-    backup_name = f"{file_name}{suffix}_{timestamp}"
-    if backup_dir is None:
-        backup_dir = os.path.dirname(file_path)
-    else:
-        backup_dir = os.path.abspath(backup_dir)
-        os.makedirs(backup_dir, exist_ok=True)
-    backup_path = os.path.join(backup_dir, backup_name)
-    shutil.copy2(file_path, backup_path)
-    return {
-        "original_path": file_path,
-        "backup_path": backup_path,
-        "backup_size": os.path.getsize(backup_path),
-    }
+from app.utils.file_utils import backup_file  # P5b: 迁入 utils, 此处 re-export — 小沈 2026-08-13
 
 
 def _get_connection(connection_type, connection_string=None, db_path=None, timeout=int(DEFAULT_TIMEOUT_SEC * 1000)):

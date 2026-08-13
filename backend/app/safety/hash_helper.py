@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-13 - 小沈 - P2: SUPPORTED_ALGORITHMS 改从 app.constants 导入(消除 safety→tools 常量依赖)
 """
 哈希计算公共Helper - 统一哈希算法选择和计算
 【创建时间】2026-05-18 小沈
@@ -17,7 +19,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-from app.tools.tool_constants import SUPPORTED_ALGORITHMS
+from app.constants import SUPPORTED_ALGORITHMS  # P2: 从系统常量导入 — 小沈 2026-08-13
 
 
 def select_hasher(algorithm: str) -> Any:

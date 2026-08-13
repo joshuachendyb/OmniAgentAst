@@ -102,6 +102,7 @@
 #   逐条按分类小节(文件/Shell/参数/Meta/网络/系统/注册表/桌面/文档/数据/迁移补充)删除, 保留全部活常量;
 #   删除后py_compile通过, 全部工具ensure_tools_registered()注册成功, 活常量均有工具真实引用(REF>=1),
 #   唯一含已删常量名的backend/scripts/fix_error_codes.py为一次性迁移脚本(FIXES字符串对照表,纯文本替换,不依赖本文件常量)
+# 2026-08-13 - 小沈 - P2: SUPPORTED_ALGORITHMS 迁入 constants.py(系统级常量), 本文件 re-export 保持下游兼容
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -122,7 +123,7 @@
     供 SystemErrorClassifier 和 LLM 客户端使用。
 
 禁止：
-  ❌ 本文件 import constants.py 的任何内容
+  ❌ 本文件 import constants.py 的任何内容（SUPPORTED_ALGORITHMS re-export 除外 — 小沈 2026-08-13 P2 迁移过渡）
   ❌ 本文件的常量被系统层代码引用（系统层应引用 constants.py 的 SYS_* 常量）
 """
 
@@ -445,7 +446,7 @@ QINGMING_DATES: dict[int, tuple[int, int]] = {  # 【tool 级】使用对象: �
     2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
 }
 
-SUPPORTED_ALGORITHMS: set[str] = {"md5", "sha1", "sha256", "sha512"}  # 【tool 级】使用对象: hash 工具支持的算法集合
+from app.constants import SUPPORTED_ALGORITHMS  # P2: 迁入 constants.py, 此处 re-export — 小沈 2026-08-13
 
 # ============================================================
 # 🕐 11. 工具重试配置(从 tool_config.py 迁移 + HTTP 可重试状态码归并) — 【工具层】

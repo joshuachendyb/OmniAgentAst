@@ -13,6 +13,7 @@
 #   补 remove_readonly 函数内延迟导入(防NameError+循环依赖, 对齐 operation_cleanup 模式)
 # 2026-08-12 - 小欧 - A2-越层(方案4.2.4): 删除 app.services.task.get_tracker 越层依赖,
 #   rollback_session 内 mark_rolled_back 统计逻辑下沉至 task 域 task_rollback_service.rollback_task_with_stats
+# 2026-08-13 - 小沈 - P1: remove_readonly 延迟导入改从 app.utils.file_utils 直接导入(消除 safety→tools 实现依赖)
 """
 operation_rollback — 操作回滚
 
@@ -29,12 +30,12 @@ from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
+from app.utils.file_utils import remove_readonly  # P1: 从 utils 导入 — 小沈 2026-08-13
 
 
 def rollback_operation(operation_id: str) -> bool:
     """回滚单个文件操作"""
-    # 函数内延迟导入 remove_readonly, 避免循环依赖(delete_file→app.services.safety→operation_record→operation_backup→operation_cleanup) — 小欧 2026-08-11
-    from app.tools.file.delete_file import remove_readonly
+
     try:
         with db.get_conn("operations") as conn:
             cursor = conn.cursor()

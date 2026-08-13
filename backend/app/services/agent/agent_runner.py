@@ -49,7 +49,7 @@ from app.services.chat.handlers import save_execution_steps_to_db
 from app.services.chat.storage import allocate_and_insert_message, append_execution_step, finalize_message
 from app.services.chat.stream import _load_previous_messages, _log_task_end
 from app.services.task.task_registry import task_cleanup
-from app.tools.fundamental.shell_engine import shell_pool
+from app.tools import cleanup_shell_pool_by_task  # P5a: 从门面导入 — 小沈 2026-08-13
 from app.services.task.task_state import (
     running_tasks, running_tasks_lock,
     agent_streams, reclaim_stream_buffer,
@@ -326,7 +326,7 @@ async def run_agent_in_background(
         await task_cleanup(task_id, getattr(agent, "llm_call_count", 0) if agent else 0)
 
         # Shell 池清理：关闭该任务的所有 PersistentShell 实例 — 小沈 2026-07-30
-        shell_pool.cleanup_by_task(task_id)
+        cleanup_shell_pool_by_task(task_id)
 
         # 标记生产者结束，唤醒消费者；延迟回收缓冲以支持重连窗口 — 小欧 2026-07-12
         if buffer is not None:

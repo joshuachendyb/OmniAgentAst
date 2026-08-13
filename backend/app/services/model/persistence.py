@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.config import get_config as get_config_instance, _make_safe_loader
-from app.tools.tool_fc_helper import backup_file
+from app.utils.file_utils import backup_file  # P5b: 从 utils 导入 — 小沈 2026-08-13
 
 from app.config import get_config_path as _get_config_path
 from app.services.lifecycle.lifecycle import reset

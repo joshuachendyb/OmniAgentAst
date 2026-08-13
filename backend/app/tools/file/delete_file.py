@@ -14,6 +14,7 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-08-13 - 小沈 - P1: remove_readonly 函数迁移至 app/utils/file_utils.py(消除 safety→tools 实现依赖), 本文件改为从 utils 导入
 # 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
 """
@@ -40,6 +41,7 @@ from app.db.models.operation_models import OperationType
 from app.tools.validate.file_path_checker import validate_path, OpCategory, WINDOWS_SYSTEM_DIRS  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
+from app.utils.file_utils import remove_readonly  # P1: 从 utils 导入 — 小沈 2026-08-13
 
 
 def _guard_forbidden_delete(file_path: str) -> Optional[str]:
@@ -98,17 +100,6 @@ def _guard_forbidden_delete(file_path: str) -> Optional[str]:
         pass
     return None
 
-
-
-def remove_readonly(func, path, excinfo):
-    """解除只读属性后重试（共用函数，operation_cleanup也使用）— 小沈 2026-07-07
-    
-    说明：Windows下shutil.rmtree遇到只读文件会[WinError 5]拒绝访问。
-    因为备份用的是shutil.copy2，原文件的只读属性被完整保留。
-    onerror回调先chmod加写权限再重新执行删除，解决此问题。
-    """
-    os.chmod(path, os.stat(path).st_mode | 0o200)
-    func(path)
 
 
 def _force_delete_sync(path: Path, recursive: bool = False,

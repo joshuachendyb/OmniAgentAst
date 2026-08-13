@@ -136,4 +136,10 @@ STYLE_TAG_PATTERN = re.compile(r'<style[^>]*>.*?</style>', re.DOTALL)  # 【系�
 MULTI_WHITESPACE_PATTERN = re.compile(r'\s+')  # 【系统级】使用对象: 多空白压缩正则(fetch_webpage/observation)
 UTC_OFFSET_PATTERN = re.compile(r'([+-]\d{2}):?(\d{2})')  # 【系统级】使用对象: 时区偏移解析正则
 
+# ============================================================
+# 8. 算法与安全白名单
+# ============================================================
+
+SUPPORTED_ALGORITHMS: set[str] = {"md5", "sha1", "sha256", "sha512"}  # 【系统级】使用对象: hash工具+safety/hash_helper 哈希算法白名单 — 从 tools/tool_constants.py 迁入 小沈 2026-08-13
+
 
