@@ -16,6 +16,8 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks(record_operation/execute_with_safety 两方法签名与 operation_record 一致), 消除 tools→safety 越层
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+#   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
 """
 F7: copy_file — 复制文件
 
@@ -36,7 +38,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
-from app.tools.context import _current_task_id, get_current_hooks  # A1: ContextVar hooks — 小欧 2026-08-12
+from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
@@ -147,7 +149,7 @@ async def copy(
         return build_error(data={}, llm_data=llm_data)
 
     try:
-        _hooks = get_current_hooks()  # A1: ContextVar 取安全 hooks — 小欧 2026-08-12
+        _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
         operation_id = _hooks.record_operation(
             task_id=task_id,
             operation_type=OperationType.COPY,
