@@ -8,6 +8,9 @@
 #   需这些属性, 缺则 AttributeError)且复用以真实 ToolLoader(不假造); ②执行判定改 is_success(参数失败/工具未找到
 #   不再被误报 success=True, 与 chat 路径同源); ③捕获错误 message 回传 tool_routes 展示。
 #   2026-08-13 07:32 编写 — 小欧
+# 2026-08-13 小欧 A4收尾解耦: _FacadeAgent 去除 _tools_dict/_retry_engine 伪造字段, retry_engine 由 facade 显式构建
+#   (ToolRetryEngine(_get_tool_dict())) 经 execute_tool 的 retry_engine 显式依赖传入; _FacadeAgent 仅保留 _security_hooks
+#   + searchtool 注入所需 _loaded_categories/_tool_loader/_tool_cache(领域正确, 非 YAGNI 过度供给), 消除 hot-path 私有字段耦合
 """
 tool_facade — 工具门面(API 适配层)
 
@@ -92,20 +95,23 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
         from app.services.agent.tool_executor import execute_tool as _exec
 
         class _FacadeAgent:
-            """工具执行所需的最小 agent 状态面(与 tool_executor/auto_inject 契约对齐), 统一_init — 小欧 2026-08-13"""
+            """工具执行所需的最小 agent 状态面(仅保留 execute_tool 真实依赖的字段) — 小欧 2026-08-13
+
+            - _security_hooks: execute_tool 经 getattr(agent,"_security_hooks") 读取(OCP 自定义 hooks 通道);
+            - _loaded_categories/_tool_loader/_tool_cache: searchtool 自动注入路径(auto_inject_from_search)
+              依赖 agent 内部状态, 属领域正确需求, 非 YAGNI 过度供给;
+            - retry_engine 不再伪造为 agent 字段, 由 facade 显式构建并经 execute_tool 的 retry_engine
+              显式依赖传入(A4 收尾解耦, 去除 hot-path 私有字段耦合)。
+            """
 
             def __init__(self):
                 self._security_hooks = DefaultToolSecurityHooks()
-                self._tools_dict = _get_tool_dict()
-                self._retry_engine = ToolRetryEngine(self._tools_dict)
-                # searchtool 路径(tool_executor.auto_inject_from_search)依赖下述状态; 复用真实 ToolLoader,
-                # 注入到自身 _tools_dict(测试语义无害, 不假造) — 小欧 2026-08-13
                 self._loaded_categories = set()
                 self._tool_loader = ToolLoader(self)
                 self._tool_cache = TTLCache(ttl=_TOOL_CACHE_TTL)
-                # _searchtool_desc_override 经 getattr 缺省 None(tool_cache_manager 兼容), 无需预置
 
-        result = await _exec(_FacadeAgent(), tool_name, params or {})
+        _engine = ToolRetryEngine(_get_tool_dict())
+        result = await _exec(_FacadeAgent(), tool_name, params or {}, _engine)
         # 用 is_success 判定(与 chat 路径 tool_executor 同源), 避免参数失败/工具未找到被误报 success=True — 三堂会审 小欧 2026-08-13
         ok = is_success(result) if isinstance(result, dict) else True
         return {

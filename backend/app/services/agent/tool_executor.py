@@ -9,6 +9,8 @@ tool_executor — 工具执行逻辑
 # 2026-08-05 小欧 修复BUG1/2(三堂会审通过): auto_inject_from_search只对未加载分类调load_category并尊重返回值, 去掉对已加载分类的多余重复调用; 空实现分类不再被误标为已加载
 # 2026-08-12 小欧 A1后半面(4.1.7定案): execute_tool 入口注入安全 hooks(经 ContextVar, try/finally reset),
 #   并行/顺序两分支工具内 get_current_hooks() 读到注入值; getattr 通道支持子类自定义 hooks(OCP)
+# 2026-08-13 小欧 A4收尾解耦: execute_tool 显式接收 retry_engine 依赖(去除对 agent._retry_engine 私有字段的强耦合, KISS-DIRECT);
+#   两调用方(action_handler/tool_facade)显式传入同一引擎对象, 行为不变, 无退化; searchtool 自动注入仍走 agent 内部状态(领域正确)
 import time
 from typing import Any, Callable, Dict, Optional, Set
 
@@ -21,6 +23,7 @@ from app.tools.context import set_current_hooks, reset_current_hooks  # A1: Cont
 
 
 async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
+                       retry_engine: Any,
                        parallel: bool = False,
                        on_retry_started: Optional[Callable] = None) -> Dict[str, Any]:
     """执行工具（单入口）— 根据parallel参数分派try_once或带重试执行
@@ -55,10 +58,10 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
     try:
         if parallel:
             # 并行分支：一次执行不重试，失败信息直接返回给LLM决策
-            result = await agent._retry_engine.try_once(tool_name, tool_params)
+            result = await retry_engine.try_once(tool_name, tool_params)
         else:
             # 单工具/顺序分支：带重试+回调通知
-            result = await agent._retry_engine.execute_tool_with_retry(
+            result = await retry_engine.execute_tool_with_retry(
                 tool_name, tool_params, on_retry_started=on_retry_started,
             )
     finally:

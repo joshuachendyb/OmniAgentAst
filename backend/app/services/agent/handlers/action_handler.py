@@ -85,6 +85,7 @@
 #   现改: check_safety_and_confirm经_denied_out回传被拒call(tool_name,reason,call), handle_action在build_observation之后
 #   由_add_denial_feedback精确到call对象补写tool result(assistant统一由build_observation写), 消除矛盾与重复 — 小欧 2026-08-11
 # 2026-08-12 - 小欧 - A1越层前置: safety 提升为顶层 app.safety, get_tool_safety_checker/grant_temp_auth 的 import 由 app.services.safety 改 app.safety(配合 tools 禁 app.services 守护规则)
+# 2026-08-13 小欧 A4收尾解耦: execute_tools 内 5 处 execute_tool 调用显式传入 agent._retry_engine(对齐 tool_executor.execute_tool 新增 retry_engine 显式依赖, 去除对 agent 私有字段强耦合, 行为不变, 无退化)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -454,7 +455,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         if len(all_calls) == 1:
             # A: 单工具
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={tool_name}")
-            result = await execute_tool(agent, tool_name, tool_params, on_retry_started=on_retry_started)
+            result = await execute_tool(agent, tool_name, tool_params, agent._retry_engine, on_retry_started=on_retry_started)
             results = [result]
 
         elif is_parallel:
@@ -478,18 +479,18 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 group = [all_calls[i] for i in indices]
                 _g_start = time.time()  # 监控: 每组执行耗时起点 — 小欧 2026-08-09
                 if len(group) == 1:  # 单工具, 语义同原A
-                    _res = [await execute_tool(agent, _cn(group[0]), _cp(group[0]),
+                    _res = [await execute_tool(agent, _cn(group[0]), _cp(group[0]), agent._retry_engine,
                                                on_retry_started=on_retry_started)]
                     _gmode = "单工具"
                 elif not conflicted:  # 组内无冲突→并行(try_once), 语义同原B
-                    tasks = [execute_tool(agent, _cn(c), _cp(c), parallel=True) for c in group]
+                    tasks = [execute_tool(agent, _cn(c), _cp(c), agent._retry_engine, parallel=True) for c in group]
                     _res = await asyncio.gather(*tasks, return_exceptions=True)
                     _gmode = "并行"
                 else:  # 组内冲突→串行(带重试), 语义同原C
                     _res = []
                     for call in group:
                         try:
-                            _res.append(await execute_tool(agent, _cn(call), _cp(call),
+                            _res.append(await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine,
                                                            on_retry_started=on_retry_started))
                         except Exception as e:
                             logger.warning(f"[action_handler] 工具{_cn(call)}组内顺序执行失败: {e}")
@@ -516,7 +517,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             results = []
             for call in all_calls:
                 try:
-                    result = await execute_tool(agent, _cn(call), _cp(call), on_retry_started=on_retry_started)
+                    result = await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine, on_retry_started=on_retry_started)
                     results.append(result)
                 except Exception as e:
                     logger.warning(f"[action_handler] 工具{_cn(call)}顺序执行失败: {e}")

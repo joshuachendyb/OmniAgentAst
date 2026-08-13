@@ -4,6 +4,8 @@
 #   消除 tools→app.services.task 越层依赖(守护测试 tools 禁 app.services 规则); services/task/task_context 改为此处的薄壳
 # 2026-08-12 - 小欧 - A1后半面(4.1.7 定案): 新增 _current_hooks ContextVar(get/set/reset), 承载入口层注入的安全 hooks。
 #   默认值 None, 不预置 safety 实现(避免 tools→safety 违规), 由 tool_executor/health.py 两入口显式注入。
+# 2026-08-13 - 小欧 - A1 类型对齐(三堂会审: 合规无环/合理类型增强/关联零行为变化): _current_hooks 标注 object→ToolSecurityHooks,
+#   与设计 4.1.7 硬伤一保持一致(Protocol 仅 import typing, 同 tools 层无越层); 默认值仍 None, tool_executor getattr or 兜底不变。
 """
 tools/context — 工具层运行上下文
 
@@ -14,8 +16,10 @@ tools/context — 工具层运行上下文
 from contextvars import ContextVar
 from typing import Optional
 
+from app.tools.security_hooks import ToolSecurityHooks
+
 _current_task_id: ContextVar[Optional[str]] = ContextVar("tool_task_id", default=None)
-_current_hooks: ContextVar[Optional[object]] = ContextVar("current_hooks", default=None)
+_current_hooks: ContextVar[Optional[ToolSecurityHooks]] = ContextVar("current_hooks", default=None)
 
 
 def get_current_task_id() -> Optional[str]:
@@ -33,14 +37,14 @@ def reset_current_task_id():
     _current_task_id.set(None)
 
 
-def get_current_hooks() -> Optional[object]:
+def get_current_hooks() -> Optional[ToolSecurityHooks]:
     """获取当前作用域的安全 hooks(入口层注入) — 小欧 2026-08-12
     返回 None 表示入口未注入(正常流程下 tool_executor/health.py 均已注入)。
     """
     return _current_hooks.get()
 
 
-def set_current_hooks(hooks: object):
+def set_current_hooks(hooks: ToolSecurityHooks):
     """设置当前作用域 hooks, 返回 token 供 reset — 小欧 2026-08-12"""
     return _current_hooks.set(hooks)
 
