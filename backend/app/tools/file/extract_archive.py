@@ -6,6 +6,9 @@
 #   移除 extracted_files/skipped_files/format
 #   (已由 llm_data 承载, data中不重复)
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-08-13 - 小欧 - 修复task006核实: 格式支持性判断提前到 _resolve_output_dir/os.makedirs 之前,
+#   无效格式(如 .rar)直接返回"不支持的压缩格式", 不再对未知扩展名推断出与源文件同名的 out_dir,
+#   消除 os.makedirs 在已存在文件上建目录抛 FileExistsError(WinError 183) 的误导性错误
 """
 F9: extract_archive — 解压文件
 
@@ -211,9 +214,18 @@ async def extract(
 
     try:
 
+        lower_path = source.lower()
+
+        # 格式支持性判断提前到 _resolve_output_dir/os.makedirs 之前:
+        # 无效格式(如 .rar)直接返回"不支持的压缩格式", 避免 _resolve_output_dir 对未知扩展名
+        # 推断出与源文件同名的 out_dir, 触发 os.makedirs(FileExistsError/WinError 183) — 小欧 2026-08-13
+        if not any(lower_path.endswith(ext) for ext in ('.zip', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar')):
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {source}", user_destination=destination, user_overwrite=overwrite)
+            return build_error(data={}, llm_data=llm_data)
+
         out_dir = _resolve_output_dir(source, destination)
         os.makedirs(out_dir, exist_ok=True)
-        lower_path = source.lower()
 
         if lower_path.endswith('.zip'):
             result = _extract_zip_archive(source, out_dir, overwrite, password)
@@ -223,10 +235,6 @@ async def extract(
             result = _extract_tar_archive(source, out_dir, overwrite, True, 'r:bz2', 'tar.bz2')
         elif lower_path.endswith('.tar'):
             result = _extract_tar_archive(source, out_dir, overwrite, True, 'r', 'tar')
-        else:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {source}", user_destination=destination, user_overwrite=overwrite)
-            return build_error(data={}, llm_data=llm_data)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("success", duration_ms, source, user_destination=destination, user_overwrite=overwrite, extracted_files=result.get("extracted_files", 0), skipped_files=result.get("skipped_files", 0), fmt=result.get("format", ""))
