@@ -12,6 +12,10 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
+# 2026-08-13 - 小欧 - 三堂会审修复#34/#4/#5: #34 同路径判定 abspath 统一 resolve()(解析盘符大小写/符号链接,
+#   与 impl 口径一致); #4 自嵌套防护(目标在源目录子树内拒绝, 主函数+impl 双层, 防 shutil.move 递归复制进自身子树,
+#   对齐 copy_file 防护); #5 目标存在探测/删除/移动/os 调用全链 to_win_long_path 长路径化(仅NT生效),
+#   深嵌套路径不再触发 WinError 206
 """
 F10: move_file — 移动文件
 
@@ -34,6 +38,7 @@ from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1:
 from app.db.models.operation_models import OperationType
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
+from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
 
 
@@ -77,6 +82,10 @@ async def _move_file_impl(
     if src.resolve() == dst.resolve():
         return {"success": False, "error_detail": f"源路径和目标路径相同: {source_path}", "params": {"source": source_path, "destination": destination_path}}
 
+    # 2026-08-13 - 小欧 - 三堂会审修复#4: 自嵌套防护(主函数 move() 同款, impl 层兜底防直调函数绕过)
+    if src.is_dir() and dst.resolve() != src.resolve() and src.resolve() in dst.resolve().parents:
+        return {"success": False, "error_detail": f"目标路径位于源目录内部,禁止移动造成递归: {source_path}", "params": {"source": source_path, "destination": destination_path}}
+
     if src.is_dir() and dst.is_file():
         return {"success": False, "error_detail": "不能移动目录到文件路径", "params": {"source": source_path, "destination": destination_path}}
 
@@ -96,23 +105,26 @@ async def _move_file_impl(
 
         def _remove_readonly(func, path, excinfo):
             """解除只读属性后重试 — 小欧 2026-07-26"""
-            os.chmod(path, os.stat(path).st_mode | 0o200)
+            _lp = to_win_long_path(Path(path))
+            os.chmod(_lp, os.stat(_lp).st_mode | 0o200)
             func(path)
 
         def _move_sync():
             """返回(成功bool, 错误str) — 预期失败return而非raise,对齐6工具范式 — 小沈 2026-07-26"""
-            if dst.exists():
+            # #5长路径: Windows下目标已存在探测/删除/移动统一走 \\?\ 前缀, 避免深嵌套路径WinError 206 — 小欧 2026-08-13
+            _dst_lp = to_win_long_path(dst)
+            if Path(_dst_lp).exists():
                 if not overwrite:
                     return False, f"目标路径已存在: {dst},请设置overwrite=True"
-                if not os.access(str(dst), os.W_OK):
-                    os.chmod(str(dst), os.stat(str(dst)).st_mode | 0o200)
-                if dst.is_dir():
+                if not os.access(_dst_lp, os.W_OK):
+                    os.chmod(_dst_lp, os.stat(_dst_lp).st_mode | 0o200)
+                if Path(_dst_lp).is_dir():
                     logger.warning(f"[move] overwrite模式: 目标目录已存在,将删除后移动: {dst}")
-                    shutil.rmtree(str(dst), onerror=_remove_readonly)
+                    shutil.rmtree(_dst_lp, onerror=_remove_readonly)
                 else:
-                    dst.unlink()
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(src), str(dst))
+                    Path(_dst_lp).unlink()
+            os.makedirs(to_win_long_path(dst.parent), exist_ok=True)
+            shutil.move(to_win_long_path(src), _dst_lp)
             return True, None
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24 — 小沈 2026-07-26 else分支解包tuple对齐executor
@@ -170,9 +182,18 @@ async def move(
         return build_error(data={}, llm_data=llm_data)
     if warn:
         logger.warning(warn)
-    if os.path.abspath(source) == os.path.abspath(destination):
+    # 2026-08-13 - 小欧 - 三堂会审修复#34/#4: 同路径判定统一用 resolve()(原 abspath 不解析盘符
+    #   大小写/符号链接, 与 _move_file_impl 口径不一); 并补自嵌套防护(目标在源子树内时
+    #   shutil.move 会 copytree 进自身子树→递归/WinError206/数据丢失, 与 copy_file 防护对齐)
+    _src_p = Path(source)
+    _dst_p = Path(destination)
+    if _src_p.resolve() == _dst_p.resolve():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=f"源路径和目标路径相同: {source}", hint="源路径和目标路径不能相同", user_overwrite=overwrite)
+        return build_error(data={}, llm_data=llm_data)
+    if _src_p.is_dir() and _dst_p.resolve() != _src_p.resolve() and _src_p.resolve() in _dst_p.resolve().parents:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=f"目标路径位于源目录内部,禁止移动造成递归: {source}", hint="目标路径不能是源目录的子目录", user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
 
     result = await _move_file_impl(source_path=source, destination_path=destination, overwrite=overwrite)
