@@ -7,6 +7,10 @@
 # 2026-08-13 - 小沈 - P1: remove_readonly 延迟导入改从 app.utils.file_utils 直接导入(消除 safety→tools 实现依赖)
 # 2026-08-13 - 小欧 - 三堂会审修复#14: cleanup_expired_backups 删完过期备份(形态 backup_dir时间戳uuid/源名)后,
 #   父时间戳目录若空则顺手删除(原仅靠超限清理 _cleanup_by_size 兜底, 空时间戳目录残留); 长路径+空判定
+# 2026-08-13 - 小沈 - 三堂会审修复#15: E2E p0_08 发现并发竞态(多工具并行各自 backup→各自 cleanup 同批过期记录):
+#   (1)加进程内锁 _cleanup_lock 串行化 cleanup, 锁内重查DB, 后进线程见文件已删→exists=False跳过, 天然幂等
+#   (2)FileNotFoundError(目标已删=目标达成) 降为 debug, 不再报 ERROR
+#   (3)PermissionError(文件被占用/只读残留) 降为 warning, 下次再清; 与 backup_to_recycle_bin 备份失败降warning策略一致
 """
 operation_maintenance — 备份回收站维护
 
@@ -15,7 +19,10 @@ operation_maintenance — 备份回收站维护
 """
 import os
 import shutil
+import threading
 from pathlib import Path
+
+_cleanup_lock = threading.Lock()  # #15: 并发串行化清理, 防多工具并行 backup 各自 cleanup 竞态 — 小沈 2026-08-13
 
 from app.db import db
 from app.logger import logger
@@ -73,7 +80,13 @@ def cleanup_expired_backups() -> int:
     """清理过期的备份文件 + 超出大小上限时清理最旧的
     
     shutil.rmtree加onerror是因为Windows下只读文件+备份文件属性继承会导致[WinError 5]
+    #15: 加锁串行化, 防多工具并行 backup 各自 cleanup 同批过期记录竞态(见文件头编辑历史) — 小沈 2026-08-13
     """
+    with _cleanup_lock:
+        return _cleanup_expired_backups_locked()
+
+
+def _cleanup_expired_backups_locked() -> int:
     count = 0
     try:
         with db.get_conn("operations") as conn:
@@ -111,6 +124,12 @@ def cleanup_expired_backups() -> int:
                                 logger.info(f"Cleaned up empty backup dir: {path.parent}")
                         except Exception as _e:
                             logger.debug(f"Empty backup dir cleanup skipped: {_e}")
+                except FileNotFoundError:
+                    # #15: 目标已不存在 = 清理目标已达成(并发其他线程已删/上次已删), 幂等视为成功 — 小沈 2026-08-13
+                    logger.debug(f"Backup already gone (idempotent skip): {backup_path}")
+                except PermissionError as e:
+                    # #15: 文件被占用/只读残留, 本次删不动, 留待下次清理; 不视为严重错误 — 小沈 2026-08-13
+                    logger.warning(f"Backup cleanup deferred (access denied): {backup_path}: {e}")
                 except Exception as e:
                     logger.error(f"Failed to cleanup backup {backup_path}: {e}")
         count += _cleanup_by_size()
