@@ -22,6 +22,9 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#30: Retry-After仅支持整数秒, "1.5"/HTTP-date静默回落指数退避
 #   【病根】原 `if _ra and _ra.strip().isdigit():` 仅解析整数秒, RFC 7231允许整数/浮点秒与HTTP-date, 违背"尊重服务端Retry-After提示"意图
 #   【改法】整数/浮点秒取max(int(float(_ra)),1); 否则尝试email.utils.parsedate_to_datetime解析HTTP-date(距当前秒数), 解析失败静默回落指数退避; time模块已有顶层导入
+# 2026-08-13 - 小欧 - 三堂会审复核#30修复方法(老陈要求): HTTP-date分支time.mktime(_dt.timetuple())丢弃时区,
+#   按本地时区解释UTC字段→东八区偏移8小时, 实测Retry-After正确3600秒被clamp成1秒(限流后狂重试);
+#   改_dt.timestamp()(aware datetime直接给UTC epoch)与time.time()相减, 时区无关
 """
 LLM 核心模块 — BaseAIService
 
@@ -354,7 +357,9 @@ class BaseAIService:
                                 try:
                                     import email.utils as _eu
                                     _dt = _eu.parsedate_to_datetime(_ra)
-                                    wait_time = max(int(time.mktime(_dt.timetuple()) - time.time()), 1)
+                                    # 2026-08-13 小欧 三堂会审复核#30修复方法: mktime(timetuple())丢弃时区→东八区偏移8h(实测3600→1秒);
+                                    #   改 _dt.timestamp()(aware→UTC epoch)与 time.time() 直接相减, 时区无关
+                                    wait_time = max(int(_dt.timestamp() - time.time()), 1)
                                 except Exception:
                                     pass
                     logger.warning(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {e}")

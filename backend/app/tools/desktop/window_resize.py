@@ -27,6 +27,9 @@ window_resize — 调整窗口大小
 # 2026-08-13 - 小欧 - 三堂会审修复#33: 空window_title返回ERR_WINDOW_NOT_FOUND(窗口未找到), window_focus.py:74同条件返ERR_INVALID_PARAMS, 两工具同参数同校验口径不一
 #   【病根】参数非法被误标"未找到", 误导LLM/前端判断
 #   【改法】统一为ERR_INVALID_PARAMS(参数非法优先于未找到), 与window_focus对齐
+# 2026-08-13 - 小欧 - 三堂会审复核#13修复方法(老陈要求): 原resize_ok单向判定(_r2-_l2>=new_width-2)只防大不防小,
+#   缩小请求完全失败(MoveWindow无效, 实际尺寸=旧尺寸>目标)时恒真误判成功; 改"精确达目标(容差2) 或
+#   尺寸确实发生变化"双条件, 保留钳制容忍的同时检出缩小失败(模拟8场景实证: 修复OLD两处X!无新退化)
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -131,7 +134,12 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
             _l2, _t2, _r2, _b2 = _win32gui.GetWindowRect(target_hwnd)
             # 2026-08-13 小欧 三堂会审修复#13: 精确相等在WM_GETMINMAXINFO钳制(请求<窗口最小尺寸)时误失败;
             #   改"接近"判定(容差2px), 接受系统min/max钳制, 贴合Windows窗口管理语义
-            resize_ok = (_r2 - _l2 >= new_width - 2) and (_b2 - _t2 >= new_height - 2)
+            # 2026-08-13 小欧 三堂会审复核#13修复方法(老陈要求): 原单向判定(_r2-_l2 >= new_width-2)只防大不防小,
+            #   缩小请求完全失败(实际=旧尺寸>目标)误判成功; 改"精确达目标(容差2) 或 尺寸确实变化(接受钳制)"双条件
+            _target_reached = abs((_r2 - _l2) - new_width) <= 2 and abs((_b2 - _t2) - new_height) <= 2
+            _width_changed = (_r2 - _l2) != curr_width
+            _height_changed = (_b2 - _t2) != curr_height
+            resize_ok = _target_reached or _width_changed or _height_changed
         except Exception:
             resize_ok = False
         if not resize_ok:
