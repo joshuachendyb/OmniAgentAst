@@ -4,6 +4,8 @@
 # 2026-08-10 - 小欧 - ⑫多授权域(步骤1实施, 北京老陈驱动): 新增_get_allowed_roots=[项目根]+授权目录get_allowed_dirs()/_is_inside_any; R3-R6判定从单项目根扩展为多授权根, 授权目录内递归降级R4确认不再误拦R6
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1盲点二/四: SafetyResult 与 _get_project_root_safety 均迁 app/tools/security, import 同步更新 — 小欧 2026-08-12
+# 2026-08-13 - 小欧 - 三堂会审修复#25: _get_allowed_roots 读取授权目录的 except pass 静默吞→logger.warning 留痕
+#   (授权目录读取失败致删除判定根集缺失无任何日志, 排查无迹)
 """
 delete_safety — delete 工具专属安全检查(差异层)
 
@@ -22,6 +24,7 @@ from typing import Any
 
 from app.tools.security.safety_result import SafetyResult  # A1盲点四 — 小欧 2026-08-12
 from app.tools.security.path_safe_check import _get_project_root_safety  # A1盲点二 — 小欧 2026-08-12
+from app.logger import logger  # #25: 授权目录丢失留痕 — 小欧 2026-08-13
 
 
 def _as_bool(v: Any) -> bool:
@@ -42,8 +45,9 @@ def _get_allowed_roots() -> list:
     try:
         for d in get_config().get_allowed_dirs():
             roots.append(Path(d).resolve())
-    except Exception:
-        pass
+    except Exception as e:
+        # #25修复: 授权目录读取失败不再静默吞, 留warning日志(避免安全判定根集缺失无痕) — 小欧 2026-08-13
+        logger.warning(f"[delete_safety] 读取授权目录失败, 授权根集不完整: {e}")
     return roots
 
 

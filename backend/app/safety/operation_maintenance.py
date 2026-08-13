@@ -5,6 +5,8 @@
 #   FileSafetyConfig 导入改 app.services.safety.models(原 operation_record, 已独立); 其余逻辑一字不改
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件内部 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-13 - 小沈 - P1: remove_readonly 延迟导入改从 app.utils.file_utils 直接导入(消除 safety→tools 实现依赖)
+# 2026-08-13 - 小欧 - 三堂会审修复#14: cleanup_expired_backups 删完过期备份(形态 backup_dir时间戳uuid/源名)后,
+#   父时间戳目录若空则顺手删除(原仅靠超限清理 _cleanup_by_size 兜底, 空时间戳目录残留); 长路径+空判定
 """
 operation_maintenance — 备份回收站维护
 
@@ -100,6 +102,15 @@ def cleanup_expired_backups() -> int:
                                 os.unlink(long_path)
                         count += 1
                         logger.info(f"Cleaned up expired backup: {backup_path}")
+                        # #14修复: 备份形态为 backup_dir(时间戳uuid)/源名, 删完源后父时间戳目录可能变空,
+                        #   原仅靠超限清理(_cleanup_by_size)兜底才清 → 此处删空父目录, 不留空壳 — 小欧 2026-08-13
+                        _parent_lp = to_win_long_path(path.parent)
+                        try:
+                            if os.path.isdir(_parent_lp) and not os.listdir(_parent_lp):
+                                os.rmdir(_parent_lp)
+                                logger.info(f"Cleaned up empty backup dir: {path.parent}")
+                        except Exception as _e:
+                            logger.debug(f"Empty backup dir cleanup skipped: {_e}")
                 except Exception as e:
                     logger.error(f"Failed to cleanup backup {backup_path}: {e}")
         count += _cleanup_by_size()

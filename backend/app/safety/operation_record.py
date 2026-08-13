@@ -17,6 +17,8 @@
 # 2026-08-12 - 小欧 - A2-内部环(方案4.2.3步骤1): FileSafetyConfig 整体复制迁至 models.py(逻辑一字不改),
 #   backup_to_recycle_bin 导入上移顶部; 本文件只保留记录职责(record/collect/update/execute_with_safety)
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件内部 import 路径同步更新(配合 tools 禁 app.services 守护规则)
+# 2026-08-13 - 小欧 - 三堂会审修复#26: collect_file_info 对目录 os.stat().st_size(Windows 常为0)
+#   → DELETE 空间回收统计 space_impact=0 失真; 改目录 size 递归求和(长路径rglob), 遍历失败回退原值
 """
 operation_record — 操作记录和DB状态管理
 
@@ -52,6 +54,15 @@ def collect_file_info(path: Path) -> Dict[str, Any]:
         info["hash"] = compute_file_hash(long_path)
         info["extension"] = Path(long_path).suffix.lower() if Path(long_path).suffix else None
     else:
+        # #26修复: 目录size递归求和(原os.stat目录自身大小Windows常为0, DELETE空间回收统计失真→space_impact=0) — 小欧 2026-08-13
+        _total = 0
+        try:
+            for _entry in Path(long_path).rglob("*"):
+                if _entry.is_file():
+                    _total += _entry.stat().st_size
+        except Exception:
+            _total = info["size"]  # 遍历失败回退目录自身大小
+        info["size"] = _total
         info["hash"] = None
         info["extension"] = None
     return info

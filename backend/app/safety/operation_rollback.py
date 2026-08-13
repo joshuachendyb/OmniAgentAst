@@ -14,6 +14,9 @@
 # 2026-08-12 - 小欧 - A2-越层(方案4.2.4): 删除 app.services.task.get_tracker 越层依赖,
 #   rollback_session 内 mark_rolled_back 统计逻辑下沉至 task 域 task_rollback_service.rollback_task_with_stats
 # 2026-08-13 - 小沈 - P1: remove_readonly 延迟导入改从 app.utils.file_utils 直接导入(消除 safety→tools 实现依赖)
+# 2026-08-13 - 小欧 - 三堂会审修复#10: MOVE回滚"source被新文件占用→rename为.rollback_bak→移回"链路中,
+#   L87 移回后无清理, .rollback_bak 永久残留; 新增 _bak_renamed 记录并在移回成功后删除
+#   (目录走 rmtree onerror=remove_readonly, 文件走 unlink), 回滚不留残留
 """
 operation_rollback — 操作回滚
 
@@ -76,17 +79,29 @@ def rollback_operation(operation_id: str) -> bool:
                 src_long = to_win_long_path(source_path)
                 if os.path.exists(dest_long):
                     # 先保全当前 source（若被新文件占用）再移回，杜绝覆盖丢失 — 小欧 2026-07-18 #2 fix; 2026-08-11 长路径化
+                    _bak_renamed = None  # #10: 记录被占位改名的路径, 移回后需清理 — 小欧 2026-08-13
                     if os.path.exists(src_long):
                         _bak = source_path.with_name(source_path.name + ".rollback_bak")
                         _bak_long = to_win_long_path(_bak)
                         try:
                             os.rename(src_long, _bak_long)
+                            _bak_renamed = _bak_long
                         except Exception as _e:
                             logger.error(f"MOVE rollback: backup occupied source failed: {_e}")
                             return False
                     os.rename(dest_long, src_long)
                     success = True
                     logger.info(f"Moved back: {dest_path} -> {source_path}")
+                    # #10修复: 移回后删除被占位改名的 .rollback_bak, 回滚不留残留文件 — 小欧 2026-08-13
+                    if _bak_renamed:
+                        try:
+                            if os.path.isdir(_bak_renamed):
+                                shutil.rmtree(_bak_renamed, onerror=remove_readonly)
+                            else:
+                                os.unlink(_bak_renamed)
+                            logger.info(f"MOVE rollback: removed occupied-source bak: {_bak_renamed}")
+                        except Exception as _e:
+                            logger.error(f"MOVE rollback: cleanup .rollback_bak failed: {_e}")
             elif op_type == OperationType.CREATE.value:
                 dest_path = Path(dst) if dst else Path(src)
                 dest_long = to_win_long_path(dest_path)
