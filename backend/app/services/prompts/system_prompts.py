@@ -32,7 +32,7 @@ from app.services.prompts.system_adapter import (
     get_default_shell_code,
     get_system_prompt as get_system_prompt_string,
 )
-from app.tools.shell.shell_prompt_templates import render_shell_section
+from app.tools.fundamental.shell_prompt_templates import render_shell_section
 from app.logger import logger
 from app.services.prompts.project_context import load_project_context
 from app.config import get_config as get_config_instance

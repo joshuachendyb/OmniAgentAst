@@ -2,6 +2,7 @@
 """Shell Prompt Templates — 按 shell_type 输出 shell 语法指引 (不含 TOOL_CALL_RULES_BASE 工具映射, 纯语法提示)
 
 【创建时间】2026-07-28 小欧
+【迁移】2026-08-13 小沈 - 从 tools/shell/ 迁入 tools/fundamental/ (Prompt模板是基础能力, 非shell工具专属)
 """
 
 from typing import Final
