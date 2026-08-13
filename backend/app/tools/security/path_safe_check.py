@@ -32,6 +32,9 @@
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1 迁移(4.1.7 盲点五定案): 本文件由 app/safety/path_safe_check.py 整体复制迁入 app/tools/security/(P6 移动,
 #   业务逻辑一字不改); 原 app.safety.temp_auth 惰性导入改 app.tools.security.temp_auth(同包内互引); 原编辑历史按规范保留。
+# 2026-08-13 - 小沈 - BUG-22修复(三堂会审): validate_tool_path 遍历命中路径参数时, compress/extract/copy/move 的 src 参数
+#   语义是读, 原统一用工具级 mode=write 对 src 做写校验, 白名单外 src 被要求临时授权(误拦合法读源);
+#   按参数名分别推断 mode: src/source_path→read, 其余沿用工具级 mode, 增强不退化
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -434,7 +437,13 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any],
 
         for key in hit_params:
             real_path = _resolve_path_param(normal_name, key, normalized_params[key], normalized_params)
-            valid, err, category = validate_path(real_path, mode=mode)
+            # BUG-22修复(三堂会审 小沈 2026-08-13): compress/extract/copy/move 的 src 参数语义是读,
+            #   原统一用工具级 mode=write 对 src 做写校验, 白名单外 src 会被要求临时授权(误拦合法读源);
+            #   按参数名分别推断 mode: src/source_path→read, 其余沿用工具级 mode, 增强不退化。
+            _param_mode = mode
+            if key in ("src", "source_path") and normal_name in ("compress", "extract", "copy", "move"):
+                _param_mode = "read"
+            valid, err, category = validate_path(real_path, mode=_param_mode)
             if not valid:
                 return False, err, real_path, category
 
