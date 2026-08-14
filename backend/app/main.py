@@ -7,6 +7,7 @@
 # 2026-08-09 - 小欧 - task006 P7落地(日志级别优化): HTTP 4xx客户端错误与Validation(422)由ERROR降为WARNING, 5xx保持ERROR — 避免测试/非法请求噪音污染ERROR日志, 干扰真实故障排查
 # 2026-08-10 - 小欧 - ⑬get_version改调get_code_root(): 定位version.txt改走代码库根(名实分离, 不再用项目根路径推算) — 步骤1实施(北京老陈驱动)
 # 2026-08-12 - 小欧 - A4(方案4.4.3): 注册 tool_routes router(工具测试路由由 health.py 迁出), include_router 加 /api/v1 tags=tools — 小欧 2026-08-12
+# 2026-08-14 - 小欧 - 改名名实相符: model_routes→config_routes(import与挂载变量model_router→config_router); api/v1/chat/sse→execution_stream(chat_execution_router导入同步)
 import sys
 import asyncio
 from typing import Optional
@@ -33,9 +34,9 @@ import os
 import logging
 
 from app.api.v1 import health, sessions, messages, metrics
-from app.api.v1.model_routes import router as model_router
+from app.api.v1.config_routes import router as config_router
 from app.api.v1.tool_routes import router as tool_routes_router  # A4: 工具测试路由迁出 health.py — 小欧 2026-08-12
-from app.api.v1.chat import router as chat_router, task_router, sse as chat_execution_router
+from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
 from app.api.v1.task_queries import router as task_queries_router
 from app.logger import logger
 from app.services.monitoring import setup_monitoring
@@ -144,7 +145,7 @@ app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(tool_routes_router, prefix="/api/v1", tags=["tools"])  # A4: 工具测试路由 — 小欧 2026-08-12
 app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
 app.include_router(task_router, prefix="/api/v1", tags=["chat"])
-app.include_router(model_router, prefix="/api/v1", tags=["config"])
+app.include_router(config_router, prefix="/api/v1", tags=["config"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(messages.router, prefix="/api/v1", tags=["sessions"])
 
