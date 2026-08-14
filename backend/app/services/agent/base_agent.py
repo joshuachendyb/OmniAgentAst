@@ -7,6 +7,7 @@
 # 2026-07-22 小欧 新增 accumulated_usage 字段(累积消耗统计: 逐次LLM调用累加, FinalStep终态输出)
 # 2026-08-05 小欧 修复BUG1/2(三堂会审通过): init_tools按实际加载结果重建_loaded_categories(消除initial_categories=None失配); load_category改为单一权威(同时写_tools_dict与_loaded_categories,空实现返回False), _loaded_categories仅含真正加载实现的分类
 # 2026-08-12 小欧 A6: ToolLoader 独立为 tool_loader.py; 删除 tool_registry/ToolCategory 导入与 ToolLoader 类定义; __init__ 不再初始化工具状态(改由 UniversalAgent.__init__ 驱动)
+# 2026-08-14 小欧 修正注释名不副实: _create_cancelled_chunk docstring 中"stream_parser函数"改为"core.py 的 create_cancelled_chunk"(实际调用名)
 """
 Agent 核心基类 — 类骨架
 
@@ -104,7 +105,7 @@ class BaseAgent(ABC):
     # chendyg 2026-07-01: 删除这三个方法，强制使用 status_table.set_failed/set_completed/set_cancelled
 
     def _create_cancelled_chunk(self):
-        """创建取消chunk — 直接使用stream_parser函数
+        """创建取消chunk — 直接使用 core.py 的 create_cancelled_chunk 函数 — 小欧 2026-08-14
          【修复P2-6】移除对llm_client私有方法的依赖 — 北京老陈 2026-06-13
         """
         from app.services.llm.core import create_cancelled_chunk

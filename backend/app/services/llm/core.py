@@ -35,7 +35,7 @@ LLM 响应 → type 分类链（知识备忘 — 小欧 2026-07-15）:
    2026-07-17 小沈 FCFormatError→LLMResponseError(FC概念改名,对应用户LLM响应数据错误语义)
 
 拆分原则:数据/辅助定义与BaseAIService主服务类分离,遵循SRP。
-对外透明:llm_core.py重新导出这些类,外部import路径不变。
+对外透明:本模块由 app/services/llm/__init__.py 对外导出(ChatResponse/StreamChunk/create_cancelled_chunk等),外部import路径不变。 — 小欧 2026-08-14 更正(原"llm_core.py重新导出"失效,该文件已合并入 llm)
 """
 
 from typing import List, Dict, Optional
