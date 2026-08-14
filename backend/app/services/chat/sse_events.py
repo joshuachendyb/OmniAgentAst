@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-22 - 小欧 - send_start_step 新增 warning 参数，透传给 MetaStep 供前端显示模型不在列表提示
 # 2026-08-14 - 小欧 - 改名名实相符: handlers.py → sse_events.py(实为SSE事件构建+错误处理+落库; "handlers"过宽且与agent/handlers同名歧义)
+# 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 """
 sse_events — SSE事件流处理模块
 从 react_sse_wrapper/chat_stream.py 移入
@@ -15,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.utils.sse_formatter import format_sse_event, format_agent_sse
 from app.services.agent.steps import MetaStep, ErrorStep, FinalStep
-from app.services.llm.error_classifier import SystemErrorClassifier
+from app.llm.error_classifier import SystemErrorClassifier
 from app.logger import logger
 from app.services.chat.storage import save_execution_steps
 from app.services.chat.storage import ExecutionStepsUpdate

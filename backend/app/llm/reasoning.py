@@ -3,6 +3,7 @@
 # 编辑历史:
 # 2026-07-18 - 小欧 - #49 fix: 删冗余getattr(delta,…),统一delta.get(…)
 # 2026-08-06 - 小欧 - 三堂会审修复: ①删extract_reasoning_from_chunk死代码(L146已链式取thinking/reasoning, 后置重复判断走不到); ②extract_reasoning_from_message补thinking(Claude非流式), 与chunk版三字段对齐
+# 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件为包内文件移动(无 import 改动)
 """
 Reasoning内容处理适配器 — 思考(推理)的识别与流转，统一说明在此 — 小欧 2026-07-12
 

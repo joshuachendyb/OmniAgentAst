@@ -4,6 +4,7 @@
 
 编辑历史:
 # 2026-08-08 - 小欧 - 全程统一本地时区: 4处响应 timestamp 改 get_local_iso_timestamp() (本地ISO无Z)
+# 2026-08-14 - 小欧 - monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
 """
 
 from fastapi import APIRouter, HTTPException
@@ -11,7 +12,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
-from app.services.monitoring import get_metrics_summary, get_raw_metrics, reset_metrics
+from app.monitoring import get_metrics_summary, get_raw_metrics, reset_metrics
 from app.logger import logger
 from app.utils.response_utils import handle_api_errors
 

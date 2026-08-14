@@ -9,6 +9,9 @@ XML工具调用适配器
 Author: 小沈 - 2026-05-27
 """
 
+# 编辑历史:
+# 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件为包内文件移动(无 import 改动)
+
 import json
 import re
 from typing import Optional

@@ -74,6 +74,7 @@
 #   【病根】set_current_task_id 全仓唯一set点, reset_current_task_id(context.py:38)零调用; 当前每SSE请求独立asyncio.Task,
 #     ContextVar随任务结束丢弃故不漏, 但长连接/复用context(手动测试/常驻入口)会跨请求泄漏task_id
 #   【改法】与 clear_temp_auth 并列在 task 级 finally 调 reset_current_task_id(), 对称set/reset, 行为零退化
+# 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -87,7 +88,7 @@ import time
 from typing import Any, Dict, Optional, AsyncGenerator
 
 from app.logger import logger, log_and_print
-from app.services.llm.error_classifier import SystemErrorClassifier
+from app.llm.error_classifier import SystemErrorClassifier
 from app.logger.prompt_logger import get_prompt_logger
 from app.config import get_config
 from app.services.agent.steps import ChunkStep, MetaStep, ObservationStep, ErrorStep, FinalStep
@@ -133,7 +134,7 @@ def handle_react_error(agent, error, step):
 def _is_recoverable_error(error) -> bool:
     """判断错误是否可恢复（FC格式错误/网络错误/超时） — chendyg 2026-07-01"""
     try:
-        from app.services.llm.core import LLMResponseError
+        from app.llm.core import LLMResponseError
         if isinstance(error, LLMResponseError):
             return True
     except ImportError:

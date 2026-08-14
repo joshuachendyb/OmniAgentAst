@@ -1,13 +1,14 @@
 """
 监控中间件模块
 负责HTTP请求监控和门面函数
+小欧 2026-08-14 monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
 """
 
 import time
 from typing import Dict, List, Optional, Any
 
 from app.logger import logger
-from app.services.monitoring.collector import MetricsCollector, Metric
+from app.monitoring.collector import MetricsCollector, Metric
 
 
 # 全局指标收集器实例

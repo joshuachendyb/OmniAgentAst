@@ -33,13 +33,14 @@ LLM 响应 → type 分类链（知识备忘 — 小欧 2026-07-15）:
 # 格式规范: {日期} {署名} {修改内容}
    2026-07-15 小欧 FCFormatError.__init__加self.message=message,补缺失的实例属性(写测试挖出的预存bug)
    2026-07-17 小沈 FCFormatError→LLMResponseError(FC概念改名,对应用户LLM响应数据错误语义)
+   2026-08-14 小欧 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 
 拆分原则:数据/辅助定义与BaseAIService主服务类分离,遵循SRP。
-对外透明:本模块由 app/services/llm/__init__.py 对外导出(ChatResponse/StreamChunk/create_cancelled_chunk等),外部import路径不变。 — 小欧 2026-08-14 更正(原"llm_core.py重新导出"失效,该文件已合并入 llm)
+对外透明:本模块由 app/llm/__init__.py 对外导出(ChatResponse/StreamChunk/create_cancelled_chunk等),外部import路径不变。 — 小欧 2026-08-14 更正(原"llm_core.py重新导出"失效,该文件已合并入 llm; 2026-08-14 llm 已独立为 app 顶层目录, 路径由 app/services/llm 改 app/llm)
 """
 
 from typing import List, Dict, Optional
-from app.services.llm.error_classifier import SystemErrorClassifier
+from app.llm.error_classifier import SystemErrorClassifier
 
 
 class LLMResponseError(Exception):

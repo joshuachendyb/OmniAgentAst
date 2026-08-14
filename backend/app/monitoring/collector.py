@@ -4,6 +4,7 @@
 
 编辑历史:
 # 2026-08-08 - 小欧 - 全程统一本地时区: Metric.timestamp / cutoff_time 由 aware UTC 改 naive 本地, 消除 metrics API summary 每指标 timestamp 的 +00:00 偏移; L30与L94必须同步改否则比较TypeError
+# 2026-08-14 - 小欧 - monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件为包内文件移动(无 import 改动)
 """
 
 from typing import Dict, List, Optional, Any

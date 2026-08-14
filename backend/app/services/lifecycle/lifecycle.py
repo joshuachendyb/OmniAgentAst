@@ -4,13 +4,14 @@ lifecycle — 服务生命周期管理
 
 合并: close_instance + close_instance_sync + reset
 小沈 2026-06-17
+小欧 2026-08-14 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 """
 
 import asyncio
 from typing import Optional
 
 from app.logger import setup_logger
-from app.services.llm import BaseAIService
+from app.llm import BaseAIService
 
 logger = setup_logger(__name__)
 

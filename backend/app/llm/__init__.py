@@ -13,27 +13,28 @@ LLM服务包
 - reasoning.py: reasoning_content处理
 
 小沈 2026-06-17 llm_core目录合并入llm,消除冗余分层
+小欧 2026-08-14 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 包内 import 路径同步
 """
 
-from app.services.llm.base_service import BaseAIService
+from app.llm.base_service import BaseAIService
 
-from app.services.llm.xml_adapter import (
+from app.llm.xml_adapter import (
     convert_xml_tool_call_to_json,
     is_xml_tool_call,
 )
-from app.services.llm.reasoning import (
+from app.llm.reasoning import (
     fix_thinking_messages,
     extract_reasoning_from_chunk,
     extract_reasoning_from_message,
 )
 
-from app.services.llm.core import (
+from app.llm.core import (
     ChatResponse,
     StreamChunk,
     _resolve_exception,
 )
 
-from app.services.llm.core import (
+from app.llm.core import (
     create_cancelled_chunk,
     create_error_chunk,
 )

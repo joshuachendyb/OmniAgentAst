@@ -8,6 +8,7 @@
 # 2026-08-10 - 小欧 - ⑬get_version改调get_code_root(): 定位version.txt改走代码库根(名实分离, 不再用项目根路径推算) — 步骤1实施(北京老陈驱动)
 # 2026-08-12 - 小欧 - A4(方案4.4.3): 注册 tool_routes router(工具测试路由由 health.py 迁出), include_router 加 /api/v1 tags=tools — 小欧 2026-08-12
 # 2026-08-14 - 小欧 - 改名名实相符: model_routes→config_routes(import与挂载变量model_router→config_router); api/v1/chat/sse→execution_stream(chat_execution_router导入同步)
+# 2026-08-14 - 小欧 - monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
 import sys
 import asyncio
 from typing import Optional
@@ -39,7 +40,7 @@ from app.api.v1.tool_routes import router as tool_routes_router  # A4: 工具测
 from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
 from app.api.v1.task_queries import router as task_queries_router
 from app.logger import logger
-from app.services.monitoring import setup_monitoring
+from app.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS
 from app.services.task.task_registry import cleanup_expired_tasks
 from app.db import db

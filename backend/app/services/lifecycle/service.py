@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-22 - 小欧 - get_service 异常时清除 _model_warning 防止残留到下一请求(代码审查缺陷1边沿修复)
+# 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 """
 service — 服务创建与获取
 
@@ -13,7 +14,7 @@ from typing import Optional
 import threading
 
 from app.logger import setup_logger
-from app.services.llm import BaseAIService
+from app.llm import BaseAIService
 from app.services.lifecycle.lifecycle import close_instance_sync
 
 logger = setup_logger(__name__)

@@ -25,6 +25,7 @@
 # 2026-08-13 - 小欧 - 三堂会审复核#30修复方法(老陈要求): HTTP-date分支time.mktime(_dt.timetuple())丢弃时区,
 #   按本地时区解释UTC字段→东八区偏移8小时, 实测Retry-After正确3600秒被clamp成1秒(限流后狂重试);
 #   改_dt.timestamp()(aware datetime直接给UTC epoch)与time.time()相减, 时区无关
+# 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 """
 LLM 核心模块 — BaseAIService
 
@@ -41,12 +42,12 @@ from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 import httpx
 from app.logger import logger
 from app.utils.json_utils import parse_json, _try_fix_incomplete_json, _normalize_tool_params
-from app.services.llm.core import ChatResponse, LLMResponseError, StreamChunk, _resolve_exception
+from app.llm.core import ChatResponse, LLMResponseError, StreamChunk, _resolve_exception
 # 注: LLM_*/FC_*/TOOL_CACHE_TTL 已集中迁移至 app.constants(2026-07-14 小欧)
-from app.services.llm.core import create_cancelled_chunk
-from app.services.llm.client_sdk import create_llm_client
-from app.services.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
-from app.services.llm.error_classifier import SystemErrorClassifier
+from app.llm.core import create_cancelled_chunk
+from app.llm.client_sdk import create_llm_client
+from app.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
+from app.llm.error_classifier import SystemErrorClassifier
 
 from app.constants import DEFAULT_READ_TIMEOUT, LLM_TEMPERATURE, LLM_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS, STREAM_TOTAL_TIMEOUT, LLM_MAX_TOKENS
 

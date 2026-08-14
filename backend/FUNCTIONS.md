@@ -203,7 +203,7 @@
 
 ---
 
-## 五、LLM核心层（app/services/llm/）
+## 五、LLM核心层（app/llm/）
 
 ---
 

@@ -13,6 +13,7 @@
 # 2026-07-22 小欧 修复: usage_data 为 None 时不添加 null 字段，条件添加 usage
 # 2026-07-26 小欧 L2重试加指数退避: 原 flat 0.5s → min(0.5 * 2^attempt, 30). 根因:429配额耗尽后快速原地重试只会反复失败, 指数退避给配额恢复机会.
 # 2026-07-28 - 小欧 - 欧阳BUG-10修复: call_llm_with_fallback fallback前agent.llm_client._cancelled=False改agent.llm_client.reset_cancel(), 确保_current_response一并重置
+# 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 """
 llm_stream — LLM流式调用+响应构建
 
@@ -36,7 +37,7 @@ from typing import Any, Optional
 
 from app.services.agent.steps import ChunkStep
 from app.constants import LLM_RESPONSE_FALLBACK, LLM_RESPONSE_RETRIES, LLM_TOOL_CHOICE
-from app.services.llm.core import LLMResponseError
+from app.llm.core import LLMResponseError
 from app.utils.text_utils import extract_tool_call_xml
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
