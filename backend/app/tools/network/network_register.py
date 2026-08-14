@@ -18,6 +18,7 @@ Network Register - 网络通信工具注册点
 创建时间: 2026-04-29
 更新时间: 2026-05-17 小沈
 【2026-08-07 小欧】P09优化(北京老陈驱动 task001): httpbin.org 易503, 泛用替代源 — 查IP提示改 myip.ipip.net/ip.sb, POST示例改 postman-echo.com
+【2026-08-14 小欧】改名名实相符: network_diagnose.py → ping_port.py(注册名与主函数已为 ping_port), 同步 import
 """
 
 # ============================================================
@@ -91,7 +92,7 @@ from app.tools.network.http_request import httpget
 from app.tools.network.download_file import download
 from app.tools.network.fetch_webpage import fetchpage
 from app.tools.network.search_web import searchweb
-from app.tools.network.network_diagnose import ping_port
+from app.tools.network.ping_port import ping_port
 
 # 工具描述
 # 【描述规范】2026-07-20 北京老陈 — 工具描述(本 NETWORK_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:

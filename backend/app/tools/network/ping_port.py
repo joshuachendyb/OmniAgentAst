@@ -3,13 +3,14 @@
 # 2026-07-20 - 小欧 - 去噪 refactor:
 #   1. ping 路径移除 _note 噪声字段
 #   2. port 路径移除 _note 噪声字段
+# 2026-08-14 - 小欧 - 改名名实相符: network_diagnose.py → ping_port.py(主函数与注册名已为 ping_port); 内部 _build_network_diagnose_llm_data 同步改名 _build_ping_port_llm_data
 """
 N5: ping_port — 网络连通性诊断(ping+端口检测)
 
 从network_tools.py拆分而来 — 小欧 2026-06-22
 内聚: _ping / _port_check / _build_ping_cmd / _parse_ping_output 等辅助函数
 注意: _build_ping_llm_data和_build_port_check_llm_data是内部函数的builder,
-     不是注册tool的builder。注册tool的builder只有_build_network_diagnose_llm_data。
+     不是注册tool的builder。注册tool的builder只有_build_ping_port_llm_data。
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -53,12 +54,12 @@ well_known_ports = {
 }
 
 
-def _build_network_diagnose_llm_data(
+def _build_ping_port_llm_data(
     exec_code: str, duration_ms: int, host: str = "", mode: str = "ping",
     err_code: str = "", detail: str = "", hint: str = "",
     port: Optional[int] = None, count: int = 4, timeout: int = 5,
 ) -> Dict[str, Any]:
-    """network_diagnose的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 过滤None值"""
+    """ping_port的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 过滤None值"""
     _act_params = {"mode": mode, "host": host, "count": count, "timeout": timeout}
     if port is not None:
         _act_params["port"] = port
@@ -245,18 +246,18 @@ async def ping_port(
     """网络连通性诊断(ping+端口检测) — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复铁规违反 — 小欧 2026-06-30 更名为ping_port"""
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "ping_port")
     if not timeout_valid:
-        llm_data = _build_network_diagnose_llm_data("error", 0, host, mode, ERR_NETWORK_INVALID_HOST, timeout_err, hint="请检查超时设置", port=port, count=count, timeout=timeout)
+        llm_data = _build_ping_port_llm_data("error", 0, host, mode, ERR_NETWORK_INVALID_HOST, timeout_err, hint="请检查超时设置", port=port, count=count, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
     err = validate_str_param(host, "host")
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_NETWORK_INVALID_HOST, err, hint="请检查主机地址", port=port, count=count, timeout=timeout)
+        llm_data = _build_ping_port_llm_data("error", duration_ms, host, mode, ERR_NETWORK_INVALID_HOST, err, hint="请检查主机地址", port=port, count=count, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
     if _is_private_or_loopback_ip(host):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_NETWORK_INVALID_HOST, f"禁止访问内网地址: {host}", hint="请使用公网地址", port=port, count=count, timeout=timeout)
+        llm_data = _build_ping_port_llm_data("error", duration_ms, host, mode, ERR_NETWORK_INVALID_HOST, f"禁止访问内网地址: {host}", hint="请使用公网地址", port=port, count=count, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
 
     # SSRF防护：DNS解析后校验解析IP是否为内网（防hostname绕过）
@@ -266,7 +267,7 @@ async def ping_port(
             ip = addr[4][0]
             if _is_private_or_loopback_ip(ip):
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_NETWORK_INVALID_HOST, f"DNS解析到内网地址: {ip}", hint="请使用公网地址", port=port, count=count, timeout=timeout)
+                llm_data = _build_ping_port_llm_data("error", duration_ms, host, mode, ERR_NETWORK_INVALID_HOST, f"DNS解析到内网地址: {ip}", hint="请使用公网地址", port=port, count=count, timeout=timeout)
                 return build_error(data={}, llm_data=llm_data)
     except socket.gaierror:
         pass
@@ -302,7 +303,7 @@ async def ping_port(
     elif mode == "port":
         if port is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_MISSING_PARAM, "缺少port参数", hint="端口模式需要提供port参数", port=port, count=count, timeout=timeout)
+            llm_data = _build_ping_port_llm_data("error", duration_ms, host, mode, ERR_MISSING_PARAM, "缺少port参数", hint="端口模式需要提供port参数", port=port, count=count, timeout=timeout)
             return build_error(data={}, llm_data=llm_data)
         try:
             result = await _port_check(host=host, port=port, timeout=timeout)
@@ -339,5 +340,5 @@ async def ping_port(
             return build_error(data={}, llm_data=llm_data)
     else:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_INVALID_MODE, f"无效的诊断模式: {mode}", hint="请使用ping或port模式", port=port, count=count, timeout=timeout)
+        llm_data = _build_ping_port_llm_data("error", duration_ms, host, mode, ERR_INVALID_MODE, f"无效的诊断模式: {mode}", hint="请使用ping或port模式", port=port, count=count, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
