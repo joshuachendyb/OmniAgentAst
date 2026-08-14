@@ -16,14 +16,15 @@
 # 2026-08-13 - 小沈 - 三堂会审修复: ① validate_config 改传 request.provider(ConfigValidateRequest 无 model 字段,
 #   原传 request.model 在 service try 之外抛 AttributeError→500, 行为退化); ② ModelInfo/get_config_path 两处
 #   函数内局部 import 移顶部, 与其它 DTO/依赖并列(风格一致性)。
+# 2026-08-14 - 小欧 - 改名名实相符: model_routes.py → config_routes.py(实为配置API路由薄壳, /config/* /provider/*)
 """
-model_routes — 配置API路由薄壳 (P3 后路由+DTO 调 config_service)
+config_routes — 配置API路由薄壳 (P3 后路由+DTO 调 config_service)
 
 小欧 2026-07-10
 """
 from fastapi import APIRouter
 
-from app.api.v1.model_schemas import (
+from app.api.v1.config_schemas import (
     ConfigFixResponse,
     ConfigPathResponse,
     ConfigResponse,
@@ -55,7 +56,7 @@ from app.services.model.config_service import (
     update_provider as svc_update_provider,
     validate_config as svc_validate_config,
 )
-from app.services.model.persistence import get_config_path, handle_config_errors
+from app.services.model.config_helpers import get_config_path, handle_config_errors
 
 
 router = APIRouter()

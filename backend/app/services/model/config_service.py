@@ -12,10 +12,11 @@
 #   ConfigValidateRequest 无 model 字段, 迁移后 route 访问 request.model 在 service try 之外抛
 #   AttributeError→500(原代码在 try 内被吞返回 valid=False)。get_service_config(provider, model) 的
 #   model 参数实际未使用, 改传 "" 保持语义不变。校验接口第一次真正可用(原实现永远走假报错分支)。
+# 2026-08-14 - 小欧 - 改名名实相符: model_routes.py→config_routes.py, persistence.py→config_helpers.py(import与docstring同步)
 """
 config_service — 配置业务服务(services/model)
 
-职责: 配置CRUD业务编排。YAML底层I/O归属persistence.py, 本服务只做编排。
+职责: 配置CRUD业务编排。YAML底层I/O归属config_helpers.py, 本服务只做编排。
 A7(小欧 2026-08-13): update_config 业务编排。
 P3(小沈 2026-08-13): 全量CRUD下沉, model_routes 降为纯薄壳。
 """
@@ -28,7 +29,7 @@ from fastapi import HTTPException
 from app.config import _make_safe_loader, get_config as get_config_instance
 from app.safety.operation_backup import clear_backup_paths
 from app.services.model.resolver import get_ai_config_resolver
-from app.services.model.persistence import (
+from app.services.model.config_helpers import (
     FIELD_HANDLERS,
     _auto_fix_and_validate,
     _backup_config,

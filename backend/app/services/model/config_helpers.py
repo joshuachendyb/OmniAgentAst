@@ -6,6 +6,8 @@ _restore_backup_if_needed.py, _fix_config_common_issues.py, _auto_fix_and_valida
 _validate_config_integrity.py, _decorators.py
 F10合并: 小欧 - 2026-06-08
 """
+# 编辑历史:
+# 2026-08-14 - 小欧 - 改名名实相符: persistence.py → config_helpers.py("persistence"只盖住持久化一面, 实为配置域公用杂集: I/O+修复+验证+备份+装饰器)
 
 import shutil
 import yaml

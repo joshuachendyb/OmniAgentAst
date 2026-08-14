@@ -1,4 +1,7 @@
-"""Pydantic模型定义"""
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-14 - 小欧 - 改名名实相符: model_schemas.py → config_schemas.py(实为配置DTO定义: ConfigUpdate/SecurityConfig/ProviderInfo等)
+"""配置DTO定义（Pydantic模型）"""
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 from app.constants import DEFAULT_MAX_STEPS
