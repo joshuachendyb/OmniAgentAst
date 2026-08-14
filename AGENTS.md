@@ -176,7 +176,7 @@ npm run test:e2e     # Playwright
 - Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `fundamental`, `dataanalysis`, `timer`, `win_registry`
 - Each `{category}/` has: `{category}_register.py`, `{category}_tools.py`, `{category}_schema.py` (+ optional extras)
 
-**LLM client** (`backend/app/services/llm/`):
+**LLM client** (`backend/app/llm/`):
 - `client_sdk.py` — LLMClient(httpx封装)
 - `core.py` — BaseAIService(基类)
 - `stream_parser.py` — 流式响应解析
