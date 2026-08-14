@@ -11,6 +11,7 @@
 #   持久化回调(allocate_and_insert_message/append_execution_step/finalize_message/save_execution_steps_to_db/
 #   _load_previous_messages/_log_task_end)由本编排器构造 db_ops SimpleNamespace 注入 run_agent_in_background,
 #   依赖方向变为 chat→agent 单向。6个属性与原 agent_runner 直接 import 的6个chat函数一一对应,KISS-DIRECT。
+# 2026-08-14 - 小欧 - 改名名实相符引用同步: handlers.py→sse_events.py, stream.py→stream_reader.py(4处import更新, 行为不变)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -26,14 +27,14 @@ from typing import Optional, AsyncGenerator
 from app.services import get_service
 from app.services.model.resolver import get_ai_config_resolver
 from app.logger import logger, log_and_print
-from app.services.chat.handlers import create_error_response, send_start_step
+from app.services.chat.sse_events import create_error_response, send_start_step
 from app.utils.sse_formatter import format_agent_sse
 from app.services.agent.steps.base import create_step_counter
 from app.services.task.task_registry import register_task
 from app.services.task.task_runtime import (
     task_cancel_check, task_pause_check_and_yield, task_cancel_check_and_yield,
 )
-from app.services.chat.stream import stream_reader
+from app.services.chat.stream_reader import stream_reader
 from app.services.agent.agent_runner import run_agent_in_background
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.agent.steps.final_step import FinalStep
@@ -41,8 +42,8 @@ from app.services.task.task_state import create_stream_buffer, get_stream_buffer
 from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
 from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, finalize_message
-from app.services.chat.handlers import save_execution_steps_to_db
-from app.services.chat.stream import _load_previous_messages, _log_task_end
+from app.services.chat.sse_events import save_execution_steps_to_db
+from app.services.chat.stream_reader import _load_previous_messages, _log_task_end
 
 
 # 后台 agent 任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者(generate)断开后任务再无强引用,

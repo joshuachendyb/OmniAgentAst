@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-22 - 小欧 - send_start_step 新增 warning 参数，透传给 MetaStep 供前端显示模型不在列表提示
+# 2026-08-14 - 小欧 - 改名名实相符: handlers.py → sse_events.py(实为SSE事件构建+错误处理+落库; "handlers"过宽且与agent/handlers同名歧义)
 """
-handlers — SSE事件流处理模块
+sse_events — SSE事件流处理模块
 从 react_sse_wrapper/chat_stream.py 移入
 小欧 2026-07-10
 """

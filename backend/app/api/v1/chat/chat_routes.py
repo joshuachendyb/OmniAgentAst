@@ -11,8 +11,9 @@
 # 2026-08-13 - 小欧 - A7(方案4.7.3步骤2): 编排逻辑一次性迁入 services/chat/stream_orchestrator.py, 本文件降为路由薄壳
 #   (路由+DTO解包+调 orchestrator); 删除编排主体 generate/step_start/StreamState/_stream_with_control/chat_stream/
 #   chat_stream_reconnect/generate_task_id/validate_chat_config 实现/_agent_tasks。无兼容 shim, 业务逻辑单一归属 orchestrator。
+# 2026-08-14 - 小欧 - 改名名实相符: openai.py → chat_routes.py(实为自定义Chat路由薄壳, 无OpenAI协议)
 """
-chat_openai — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
+chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
 编排逻辑迁至 services/chat/stream_orchestrator.py（方案4.7.3）
 小健 - 2026-06-07 清理:删除save_step_to_db调用,改用统一save_execution_steps_to_db

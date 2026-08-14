@@ -9,8 +9,9 @@
 # 2026-08-09 - 小欧 - P3修正(见doc-8月优化修复代码三堂会审报告v1.1): total_steps 排除项由仅"usage"扩为非业务MetaStep集合
 #   (paused/resumed/retrying/cancelled/authorization_required/start + usage),与"Meta步骤非业务步骤"注释自洽;
 #   业务步骤(chunk/action/thought/observation/final/error)不计入排除不误伤; total在pop之后计算。ast语法✓
+# 2026-08-14 - 小欧 - 改名名实相符: stream.py → stream_reader.py(实为SSE流运行器/消费者 stream_reader; "stream"过宽且与api/v1/chat/execution_stream语义重叠)
 """
-stream — SSE流运行器（消费者）
+stream_reader — SSE流运行器（消费者）
 
 北京老陈 2026-07-12: 将原 run_sse_stream（生产者+消费者合一）拆为：
 - agent_runner.run_agent_in_background: 生产者（后台运行 agent，写事件缓冲）

@@ -1,5 +1,5 @@
 """
-sse — 执行步骤流式查看
+execution_stream — 执行步骤流式查看
 提供从DB读取执行步骤并通过SSE流式输出的端点
 小欧 2026-07-10
 """
@@ -10,6 +10,7 @@ sse — 执行步骤流式查看
 # 2026-07-18 - 小欧 - #21 fix: 预读数据退出with再yield,连接不占SSE流
 # 2026-07-18 - 小欧 - ExecutionStep.timestamp 注解 int→str, 默认值 0→"" 与时间归一化 UTC Z 字符串对齐, 消除 int 注解与 str 实际值不一致
 # 2026-08-08 - 小欧 - 全程统一本地时区: 默认 timestamp 改 get_local_iso_timestamp()
+# 2026-08-14 - 小欧 - 改名名实相符: sse.py → execution_stream.py(实为执行步骤流式查看业务端点, 非通用SSE设施)
 
 import json
 import asyncio
