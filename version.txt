@@ -1,3 +1,34 @@
+v0.19.16
+更新时间: 2026-08-14 09:52:04 - 小欧-2026-08-14
+## v0.19.15(暂记为tag)以来 变更汇总(21个commit) - 小欧-2026-08-14
+[2026-08-14 09:52:04 小欧] 汇总范围=v0.19.15以来全部commit(version.txt流程commit并入本条不单列)
+
+### refactor(名实相符改名 + llm/monitoring 顶层能力层迁移):
+- refactor:config_routes/config_schemas/config_helpers+config_service/model/__init__/constants 配置域改名名实相符 - 小欧-2026-08-14
+- refactor:chat_routes/execution_stream/sse_events/stream_reader+stream_orchestrator/chat/__init__ Chat域改名引用同步与留痕 - 小欧-2026-08-14
+- refactor:ping_port+network_register/network/__init__ network域改名引用同步与留痕 - 小欧-2026-08-14
+- refactor:main.py 路由挂载同步config_router/chat_execution_router - 小欧-2026-08-14
+- refactor:app/llm与app/monitoring独立为顶层能力层 迁移services/llm及services/monitoring并同步全部引用及FUNCTIONS路径 - 小欧-2026-08-14
+
+### docs(数据存储及yield前端消息及数据设计迭代 + 文档同步):
+- docs:数据存储及yield前端消息数据设计 v2.2 三堂复核一致性修正 - 小欧-2026-08-13
+- docs:数据存储及yield前端消息数据设计 v2.6 问题与更好的方案补齐小节号 - 小欧-2026-08-13
+- docs:数据存储及yield前端消息数据设计 v2.7 删除冗余结论章节 - 小欧-2026-08-13
+- docs:数据存储及yield前端消息数据设计 v2.8 两大部分补齐实施计划 - 小欧-2026-08-13
+- docs:数据存储及yield前端消息数据设计 v2.9 大节编号改全局连续1-8 - 小欧-2026-08-13
+- docs:数据存储及yield前端消息数据设计 v2.10 全文十遍复核修正5处事实性行号路径 - 小欧-2026-08-13
+- docs:数据存储及yield前端消息数据设计 v2.11 新增1.4前后端事件总览+全文去表格化 - 小欧-2026-08-13
+- docs:数据存储及yield前端消息数据设计 v2.12 新增2.7 chunk与thought重复问题+3.5前端去重方案 - 小欧-2026-08-13
+- docs:数据存储及yield前端消息数据设计 v2.13 新增2.8+3.6前端流水线式展示重写定案 - 小欧-2026-08-13
+- docs:数据存储及yield前端消息及数据设计 v2.14 流水线式展示完整设计(3.6.1~3.6.8) - 小欧-2026-08-13
+- docs:数据存储及yield前端消息及数据设计 版本历史精简为一条 - 小欧-2026-08-13
+- docs:数据存储及yield前端消息及数据设计 新增1.2后端代码分层+全文去加粗改小编号+章节号规范 - 小欧-2026-08-14
+- docs:base_agent.py+core.py 注释名不副实修正(create_cancelled_chunk/llm对外导出) - 小欧-2026-08-14
+- docs:FUNCTIONS.md+数据存储及yield前端消息及数据设计 正文清除历史痕迹只留当前真实情况(v3.5)+六层图修正handlers.py归属 - 小欧-2026-08-14
+- docs:backend架构分层达标分析与残留问题修复方案+数据存储及yield前端消息及数据设计 代码名称同步名实相符改名 - 小欧-2026-08-14
+- docs:架构与数据设计文档同步llm/monitoring顶层能力层路径及正文代码名称(正文不含历史信息) - 小欧-2026-08-14
+
+---
 v0.19.15
 更新时间: 2026-08-13 21:23:33 - 小欧-2026-08-13
 ## v0.19.14(暂记为tag)以来 变更汇总(10个commit) - 小欧-2026-08-13
