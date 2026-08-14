@@ -2,7 +2,7 @@
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**版本**: v0.19.14 | **更新时间**: 2026-08-13 17:27:50 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-08-13
+**版本**: v0.19.16 | **更新时间**: 2026-08-14 09:55:52 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-08-14
 
 ---
 
@@ -64,7 +64,7 @@ OmniAgentAs-desk 是一个基于 **ReAct (Reasoning + Acting)** 架构的智能�
 │  │         react_cycle + tool_loader                │  │
 │  │  Tool:  tool_facade ─→ tool_executor(统一执行入口)│  │
 │  │         ─→ ToolRegistry 10分类63工具 + security守卫│  │
-│  │  LLM 客户端(httpx, 多Provider)                   │  │
+│  │  LLM 客户端(app/llm, httpx 多Provider)            │  │
 │  └──────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │  安全层（app/safety，独立顶层）L0-L3:             │  │
@@ -88,7 +88,7 @@ API/接口适配层（api/v1，薄壳，只调 services）
 编排层（services/agent + services/chat/stream_orchestrator）
    │  允许：services 子域 + safety + tools公共接口 + utils + db
    ▼
-业务服务层（services/chat·task·llm·model·tool·prompts·lifecycle·monitoring·visualization）
+业务服务层（services/chat·task·model·tool·prompts·lifecycle·visualization；llm/monitoring 属 app 顶层能力层）
    │  允许：safety + tools公共接口 + utils + db；禁止：tools具体实现模块
    ▼
 安全层（app/safety，独立顶层目录）
@@ -290,18 +290,18 @@ UniversalAgent(BaseAgent)      ← 唯一实现类，配置驱动（模型/系�
 OmniAgentAs-desk/
 ├── backend/                    # Python FastAPI 后端
 │   ├── app/
-│   │   ├── api/v1/             # API 薄壳路由（chat/task/execution/health/messages/sessions/model/tool/task-queries/metrics）
+│   │   ├── api/v1/             # API 薄壳路由（config/chat/task/execution/health/messages/sessions/tool/task-queries/metrics）
 │   │   ├── db/                 # 数据库（原生 sqlite3 连接：database.py / db_initializer.py / operation_queries.py）
 │   │   ├── logger/             # 日志配置
 │   │   ├── safety/             # 安全体系（顶层，A1/A2 提升）：operation_record/operation_backup/operation_rollback/operation_maintenance/delete_safety/hash_helper/tool_safety_checker/default_hooks/models
 │   │   ├── tools/              # 工具函数（10分类63工具，含 security 安全守卫 + validate 校验层 + toolhelper）
+│   │   ├── llm/                # LLM 客户端（httpx 多Provider，顶层能力层）
+│   │   ├── monitoring/         # 监控（collector / middleware，顶层能力层）
 │   │   ├── services/
 │   │   │   ├── agent/          # Agent体系（base_agent + universal_agent + agent_runner + react_cycle + tool_loader + handlers + steps）
-│   │   │   ├── chat/           # 对话编排（stream_orchestrator 编排 + stream + handlers + storage + session/message_service + migrate_steps）
+│   │   │   ├── chat/           # 对话编排（stream_orchestrator 编排 + stream_reader + sse_events + storage + session/message_service + migrate_steps）
 │   │   │   ├── lifecycle/      # 生命周期管理
-│   │   │   ├── llm/            # LLM 客户端（httpx 多Provider）
-│   │   │   ├── model/          # 模型解析/持久化
-│   │   │   ├── monitoring/     # 监控（middleware / collector）
+│   │   │   ├── model/          # 模型/配置解析（config_service + config_helpers）
 │   │   │   ├── prompts/        # 系统提示词适配
 │   │   │   ├── task/           # 任务追踪（TaskTracker + task_db/task_state/task_registry/task_runtime，暂停/取消/恢复 / hitl_confirmation）
 │   │   │   ├── tool/           # 工具门面（tool_facade，A4）
@@ -562,6 +562,8 @@ cd backend
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| v0.19.16 | 2026-08-14 | 代码名称名实相符改名（config_routes/config_schemas/config_helpers、chat_routes/execution_stream/stream_reader/sse_events、network 域、main 挂载）；llm/monitoring 独立为 app 顶层能力层（services/llm→app/llm、services/monitoring→app/monitoring）并同步全部引用 - 小欧-2026-08-14 |
+| v0.19.15 | 2026-08-13 | 数据存储及yield前端消息及数据设计文档迭代（v2.2-v2.14）+ 新增 1.2 后端代码分层 - 小欧-2026-08-13 |
 | v0.19.14 | 2026-08-13 | A1-A7 架构分层重构完成 + 35 项核查修复全部落地：safety 提升顶层 app/safety + tools/security hooks 协议、api/v1 薄壳化（CRUD 下沉 service）、stream_orchestrator 编排、tool_facade 门面、tool_loader/tool_retry_engine 归位；操作并发竞态修复（cleanup 加锁幂等）；全量测试通过 - 小欧/小沈-2026-08-13 |
 | v0.19.13 | 2026-08-12 | 架构分层违规方案落地（A1 安全 hooks/迁移、A2 回滚统计下沉、A3 retry_engine 归位、A5 error_hints 拆分、A7 编排下沉）；僵尸常量清理（ERR_* 239→102） - 小欧/小沈-2026-08-12 |
 | v0.19.6 | 2026-08-12 | 架构分层违规问题分析（7 项）+ 修复实施方案（A1-A7 分阶段）；SSRF 重定向拦截统一；e2e_helpers 记录误判修复 - 小欧-2026-08-12 |
@@ -608,4 +610,4 @@ cd backend
 
 ---
 
-**许可**: 内部项目 | **最后更新**: 2026-08-13 17:27:50 | **版本**: v0.19.14
+**许可**: 内部项目 | **最后更新**: 2026-08-14 09:55:52 | **版本**: v0.19.16
