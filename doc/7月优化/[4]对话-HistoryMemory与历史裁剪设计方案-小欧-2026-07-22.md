@@ -2,8 +2,8 @@
 
 > **编写人**: 小欧
 > **创建时间**: 2026-07-22 18:30:00
-> **更新时间**: 2026-07-22 17:35:08
-> **版本**: v4.0
+> **更新时间**: 2026-08-16 14:09:18
+> **版本**: v5.2
 > 
 > **核心定位**：History Memory（结构化记忆供给）是主，历史裁剪（T1/T3 压缩旧 tool 输出）是辅。先解决"LLM 每轮能看到决策链"，再解决"窗口不够用时腾空间"。
 
@@ -636,11 +636,211 @@ platform（OpenAI 内置规则，用户改不了）
 
 ---
 
-## 十四、变更记录
+## 十四、opencode 压缩方法深度研究（compaction.ts / overflow.ts / summary.ts）
+
+> **本章来源**：北京老陈 2026-08-16 指示——深挖 `F:\agenttool\opencode`（opencode 源码）的上下文压缩实现，弄清每个文件的逻辑与原理功能，评估**我们能否使用、怎么使用**，研究结论补入本文档。以下为代码级实况（2026-08-16 研读 `packages/opencode/src/session/` 下 compaction.ts / overflow.ts / summary.ts 及关联的 message-v2.ts / processor.ts / prompt.ts / session.ts / config.ts）。
+>
+> **一句话总览**：opencode 的"上下文压缩"是一个**以 LLM 摘要为核心、以工具输出清零为轻量前置、以保尾为兜底**的三级机制。与我们 v4.0 的最大差异：**opencode 有真·LLM 语义摘要（anchored 锚定式），我们当时因"零 LLM 成本"原则刻意放弃**。本章研究清楚后给出逐文件原理 + 可借鉴性评估 + 落地建议。
+
+### 14.1 三个文件的分工总览
+
+| 文件 | 职责 | 一句话原理 | 触发时机 |
+|------|------|-----------|---------|
+| `overflow.ts` | **是否溢出的判定器** | 实际可用上下文 `usable = model.limit.input - reserved`，`total >= usable` → 溢出 | 每轮 LLM 返回后、异常 ContextOverflowError 时 |
+| `compaction.ts` | **压缩编排核心**（create / select / prune / process） | 建压缩任务 → 选保尾区 → 轻量清零旧工具输出 → **LLM 锚定摘要**替换旧历史 → 自动续跑 | 溢出时 |
+| `summary.ts` | 会话级 git diff 统计（**非上下文压缩**） | 计算 step-start/step-finish 快照间文件增删改，写入会话摘要 | 每轮 LLM 完成后异步 fork |
+
+> ⚠️ **关键澄清（易误解）**：`summary.ts` 名字像"摘要"，但它做的是**文件变更统计（additions/deletions/files + diff）**，服务于 UI 展示"这个会话改了哪些文件"，**与上下文压缩无关**。真正的压缩逻辑全在 `compaction.ts`。下文详述。
+
+### 14.2 overflow.ts — 溢出判定器（触发压缩的第一道闸门）
+
+**功能**：判定当前对话上下文是否已满，满则触发压缩。
+
+**核心逻辑**（overflow.ts:9-33）：
+
+```python
+# 可用上下文 = 模型输入上限 - 预留缓冲
+def usable(cfg, model, outputTokenMax):
+    reserved = cfg.compaction.reserved or min(COMPACTION_BUFFER=20000, maxOutputTokens)
+    return model.limit.input - reserved if model.limit.input else max(0, context - maxOutputTokens)
+
+def isOverflow(cfg, tokens, model):
+    if cfg.compaction.auto is False: return False   # 配置关闭则不触发
+    if model.limit.context == 0: return False
+    count = tokens.total or tokens.input + tokens.output + tokens.cache.read + tokens.cache.write
+    return count >= usable(cfg, model)
+```
+
+**要点**：
+1. **按模型实际窗口算，不是固定比例**——`model.limit.input` 是多少用多少（deepseek 900K 就用 900K 算），预留 20K 缓冲（`reserved`）防压缩本身溢出。
+2. **tokens 来自 Provider 真实返回**的 `tokens.total`，不是本地估算。
+3. **`auto=false` 可关闭**自动触发（保留手动 `/compact` 命令路径）。
+
+### 14.3 compaction.ts — 压缩编排核心（本文件是"压缩"本体）
+
+分四个函数，对应压缩的四个阶段：
+
+#### 14.3.1 `create()` — 建压缩任务（打标）
+在会话中插入一个带 `type="compaction"` part 的 **user 消息**作为压缩任务标记（compaction.ts:586-616）。压缩不是"马上执行"，而是**作为一个消息插入会话队列**，由主循环（prompt.ts:1312-1322）下轮取到该任务后调用 `process()` 真正执行。auto/overflow 标志随任务携带。
+
+#### 14.3.2 `select()` — 选保尾区（先决定"哪些保留不动"）
+**功能**：从会话中选出最近 N 轮（tail）保留 verbatim，其余（head）交给压缩。是"先定保底，再定压缩范围"。
+
+**核心逻辑**（compaction.ts:144-294）：
+1. `turns()` 按 user 消息切分轮次（跳过带 compaction part 的 user）。
+2. `preserveRecentBudget()`：保尾预算 = `min(8000, max(2000, usable*0.25))`——**不是固定轮数，是 token 预算上限 8K**，默认 `tail_turns=2` 轮。
+3. 从最新往前逐轮累计 token：预算内整轮保留；超预算则 `splitTurn()` 在该轮内部"劈分"——只保留该轮后半段消息（compaction.ts:162-185），返回 `{head, tail_start_id}`。
+4. 返回：`head`（要压缩的旧消息）+ `tail_start_id`（保尾区起点消息 ID，用于装配时从它开始原样保留）。
+
+> **与我们 v4.0 的对照**：这就是"保尾 KEEP_TAIL_ROUNDS=3"的进阶版——**opencode 用 token 预算约束保尾（上限 8K），而不是死磕轮数**；还多了 `splitTurn` 半轮劈分（一整个 user 轮太大时只保该轮尾部）。
+
+#### 14.3.3 `prune()` — 轻量前置：清零旧工具输出（零 LLM 成本）
+**功能**：把旧 tool 消息的**输出内容**清掉（打 `time.compacted` 时间戳标记），**保留 tool_call 参数与 FC 配对结构**，腾出空间。这是"压缩第一步"，不调 LLM。
+
+**核心逻辑**（compaction.ts:296-342 + message-v2.ts:301-306）：
+1. 从后往前扫，**保护最近 2 轮**（`turns < 2 continue`）+ **遇到 summary 消息就停**（前面已压缩过，不再处理）+ **`skill` 工具豁免**。
+2. 累计 token：`total <= PRUNE_PROTECT=40000` 之前不动（保护近期 40K 的工具输出细节）；超过后才开始收集待清。
+3. 只有总节省 > `PRUNE_MINIMUM=20000` 才真正执行清零（防抖动，省得少不值当）。
+4. 清零动作：`part.state.time.compacted = Date.now()`。之后装配时（message-v2.ts:304-306）该 tool 输出显示为 `[Old tool result content cleared]`，attachments 一并移除；但 **tool_call 参数仍在**（LLM 仍知道"调过什么工具、传了什么参数"）。
+
+> **与我们 v4.0 的对照**：这对应我们的 **T1 工具摘要**，但实现路径完全不同——
+> - 我们 T1：**逐工具写摘要模板**（readtext/listdir/grep/shell/edittext/fetchpage 各一个模板），把 obs 内容替换成一行摘要。
+> - opencode prune：**通用清零**，不维护任何 per-tool 模板，保留 tool_call 参数即可，`_compressed` 标记由 `time.compacted` 时间戳承担。
+> - **判定：opencode 的做法明显更优**——零模板、零维护、不破坏 FC 配对（参数还在），且 `skill` 豁免 + PRUNE_PROTECT 保护近期细节的设计更精细。
+
+#### 14.3.4 `process()` — LLM 锚定摘要（压缩的本体）
+**功能**：用一次独立 LLM 调用，把旧历史总结成**固定结构的 Markdown 摘要**，替换掉 head 部分。这是 opencode 压缩的"灵魂"。
+
+> **⚠️ 澄清（北京老陈 2026-08-16 确认）**：压缩**核心是 LLM 生成摘要**，agent 只是组织本次 LLM 调用的"壳"——**agent 壳（约束层）+ 底层 LLM（生成层）**，不能"只用 agent 不用 LLM"：
+> - **agent 壳**（agent.ts:236-250）：专用 `name="compaction"` agent，`mode="primary"`、`hidden`（用户不可见）、专属系统提示词 `compaction.txt`、`permission "*": "deny"` 全拒 + `tools: {}` 不携带任何工具——**压缩只说话、不干活，绝不触发工具调用**；
+> - **LLM 芯**（compaction.ts:445 → processor.ts:791）：`processor.process({ messages: [...modelMessages, user: nextPrompt] })` 内部 `llm.stream()` 做**一次 LLM 流式调用**，真正产出摘要文本的是底层 LLM 推理；
+> - **结论**：opencode 用专用 agent 来"组织"这次 LLM 调用（提供锚定规则 + 锁死无工具 + 携带 previous-summary），**摘要文本仍由 LLM 生成**——与我们落地时"用当前模型（或可配置小模型）调一次 LLM"是同一件事，agent 是约束层、LLM 是生成层。
+
+**核心逻辑**（compaction.ts:344-584）：
+1. **取独立 compaction agent**：`agents.get("compaction")`——压缩用**专门的 agent**（可配置不同模型），LLM 不可见、不污染主对话（compaction.ts:385-388）。**该 agent 无工具、权限全 deny，仅通过系统提示词约束摘要输出，摘要文本由底层 LLM 流式生成（见上澄清）。**
+2. **过滤已压缩对**：跳过之前已完成压缩的 user/assistant 消息对（`hidden` 集合），只压缩新增部分（compaction.ts:391-398）。
+3. **anchored 锚定式提示词**（compaction.ts:124-135）——**这是本机制最精妙的一点**：
+   - 有 `previousSummary`（上次摘要）：提示词 = "**更新**锚定摘要，保留仍成立的事实，删除过期事实，合并新事实" + `<previous-summary>`。
+   - 无 previousSummary（首次）：提示词 = "从对话历史**新建**锚定摘要"。
+   - → 摘要**可累积、不重复丢失**，每次只在旧摘要基础上增量更新，而非从零重写。
+4. **固定结构模板** `SUMMARY_TEMPLATE`（compaction.ts:43-78）：强制输出 Markdown 结构——Goal（单句目标）/ Constraints & Preferences（约束偏好）/ Progress（Done / In Progress / Blocked）/ Key Decisions（关键决策+原因）/ Next Steps（下一步）/ Critical Context（关键技术事实/错误/未决问题）/ Relevant Files（涉及文件路径）。且规定：**保留精确文件路径/命令/错误串/标识符**，用简短 bullet 不用长段落，**不提及压缩过程本身**。
+5. **压缩喂给 LLM 的历史被截断，但原库不破坏**（message-v2.ts:52-56, 301-306）：`toModelMessagesEffect(head, {stripMedia: true, toolOutputMaxChars: 2000})`——压缩用的工具输出截到 2000 字符（`[Tool output truncated for compaction: omitted N chars]`），**原始输出仍完整存库**，回放可查原文（与我们"回放走 DB"理念一致）。
+6. **摘要以 assistant 消息落库**：`mode="compaction"`、`summary=true` 标记，作为对话的一部分持久化，UI 可展示"已压缩摘要"。
+7. **结果判定**：
+   - `"compact"` → 压缩后仍超限 → 记 `ContextOverflowError`（"会话太大，压缩后仍超模型限制"），返回 stop（compaction.ts:461-470）。
+   - `"continue"` → 成功。若 auto 自动压缩：**自动续跑**——要么回放溢出前最近的 user 消息（overflow 场景），要么发一条合成消息 `"Continue if you have next steps, or stop and ask for clarification..."` 让 LLM 继续干活（compaction.ts:479-561）。**用户无感知，无需重新输入。**
+
+> **与我们 v4.0 的对照**：这是**我们完全没有的一层**。我们 v4.0 的 R4 明确"零额外 LLM 调用"，所以只有 T1（字符级替换）+ T3（删消息）+ History Memory（规则级提取），**没有语义理解级的摘要**。opencode 证明了：一次独立 LLM 调用 + 锚定增量更新，能做到"信息密度高、决策链可累积"的真压缩。**代价**：额外一次 LLM 调用（成本 + 延迟）。这是当年我们主动放弃、而 opencode 选择承担的成本。
+
+### 14.4 summary.ts — 澄清：它不是上下文压缩，是会话文件变更统计
+
+**功能**（summary.ts:103-128）：`summarize()` 计算 `step-start` → `step-finish` 快照之间的 **git diff**（additions/deletions/files），写入 `session.summary`；`diff()` 提供查询。用于 UI 顶部展示"这个会话改了多少文件"。
+
+**结论**：与上下文压缩**无关**，不参与压缩决策。我们若做压缩，**无需照搬此文件**；它对应的是我们文档2 中"会话级聚合信息"展示，非压缩职责。**判定：不借鉴。**
+
+### 14.5 触发与装配闭环（理解全貌必看）
+
+| 环节 | 代码位置 | 动作 |
+|------|---------|------|
+| 每轮 LLM 返回后 | processor.ts:611-616 | `isOverflow()` 为真 → `ctx.needsCompaction = true` |
+| 异常溢出（413/ContextOverflow） | processor.ts:755-756 | 也置 `needsCompaction`，走压缩 |
+| 主循环检测 | prompt.ts:1324-1331 | `lastFinished.summary !== true && isOverflow` → `compaction.create({auto: true})` 插压缩任务 |
+| 任务消费 | prompt.ts:1312-1322 | 取到 compaction 任务 → `compaction.process()` |
+| 装配过滤 | message-v2.ts:543-590 | 找最后一个带 `tail_start_id` 的 compaction part：**tail_start_id 之后原样保留，之前被摘要覆盖** |
+
+### 14.6 我们可以使用吗？可以怎么使用（可借鉴性评估）
+
+**总体结论：可借鉴，且有多处明显优于我们 v4.0 的现成做法。**
+
+| # | opencode 机制 | 我们能否用 | 怎么用（映射到我们的代码） | 优先级 |
+|---|--------------|-----------|--------------------------|--------|
+| 1 | **prune 通用清零旧工具输出**（保留 tool_call 参数、清 output、`time.compacted` 标记） | ✅ 完全可用 | **替换 T1 逐工具摘要模板**：改 `message_builder.py`，对超预算的旧 tool 消息输出置 `compacted` 标记，装配时输出 `[旧工具结果已清除]`；tool_call 参数保留。删掉 6 个 per-tool 摘要模板（DRY/KISS 双赢） | **P0 立即** |
+| 2 | **LLM 锚定摘要**（独立 compaction agent + previousSummary 增量更新 + 固定结构模板） | ✅ 可用，需放开"零 LLM 成本"原则 | 新增压缩入口：用当前模型（或可配置小模型）调一次，输出 Goal/Progress/Decisions/Next Steps/Critical Context 结构摘要，`previousSummary` 累积注入；摘要以 assistant 消息落库 + 前端可展示"已压缩" | P1（需北京老陈定夺是否接受一次 LLM 调用成本） |
+| 3 | **按模型窗口触发**（`usable = model.limit.input - reserved`，真实 tokens） | ✅ 完全可用 | 改 `trim_history` 触发：`MAX_CONTEXT_TOKENS` 改为按当前模型 `limit.input` 动态取，减去 reserved 缓冲；tokens 用 Provider 返回的真实值（我们有 `last_total_tokens`） | **P0 立即** |
+| 4 | **保尾 token 预算 + splitTurn 半轮劈分** | ✅ 可用 | 增强 T3 保尾：KEEP_TAIL_ROUNDS 基础上加 `preserve_recent_tokens` 上限（如 8K）；整轮超预算时只保该轮尾部消息 | P1 |
+| 5 | **压缩用截断不破坏原库**（toolOutputMaxChars=2000） | ✅ 完全可用 | 压缩喂 LLM 时对历史工具输出截断，原库完整保留（我们 7.1 A5 / 回放走 DB 已同理念） | **P0 立即** |
+| 6 | **自动续跑**（压缩后发 "Continue..." 合成消息） | ✅ 可用 | 压缩完成后在流内继续跑原任务，无需用户重发 | P1 |
+| 7 | **`auto=false` 可关闭 + 手动命令** | ✅ 可用 | 配置项开关自动压缩 | P2 |
+| 8 | summary.ts（git diff 统计） | ❌ 不借鉴 | 与上下文压缩无关，属会话统计展示职责 | — |
+
+### 14.7 对照结论与修订建议
+
+**我们的 v4.0 方案在 opencode 面前呈现的差距，集中在两点：**
+
+1. **T1 逐工具摘要模板是过度设计**：opencode 的 prune 已证明工具输出压缩可以**通用清零 + 保 FC 配对**，零模板零维护。建议 **T1 → prune 式清理** 改造。
+2. **缺真·语义摘要层**：我们 T1 之后直接 T3 删消息，信息靠 History Memory 规则提取兜底，但**没有"理解级"的压缩**。opencode 的 anchored LLM 摘要（独立 agent + previousSummary 增量 + 固定结构）是经过验证的成熟方案，**建议评估放开"零 LLM 成本"原则，采纳为高层压缩**（一次压缩一次调用，可配置小模型控制成本）。
+
+**保留我们方案的合理部分**：History Memory（决策链主动注入，zero-cost 且 opencode 没有同等机制）、防抖动、保尾思路。
+
+**本版修订动作**：本章仅为**深度研究与借鉴评估**（记录 opencode 实况 + 可借鉴性结论），**不改变 v4.0 既有设计定案**。是否按 14.6 落地改造（尤其 P0 三项 + P1 锚定摘要）由北京老陈另行裁定，落地方案再开新版本。
+
+### 14.8 两种方法对照分析（本 v4.0 纯规则 vs opencode 分层压缩）
+
+> **北京老陈 2026-08-16 要求**：把本项目 [4] v4.0 的方法 与 opencode 的方法 放在一起对照分析，并给出**我的推荐方法**，写入本文档。
+
+#### 14.8.1 两种方法的一句话定性
+
+| 方法 | 一句话定性 | 核心思想 |
+|------|-----------|---------|
+| **我们 [4] v4.0** | **纯规则处理、零 LLM** | "删之前把值钱的东西搬出来"——用纯规则（字符串替换 / 删消息 / Step 提取）腾空间，**全程不调 LLM**（R4 硬约束） |
+| **opencode** | **零 LLM 前置 + 调用 LLM 的锚定摘要** | "先轻量清工具输出，再让 LLM 真正理解并归档旧历史"——prune 零成本先行，锚定摘要用 LLM 做语义压缩 |
+
+> **精修（北京老陈 2026-08-16 澄清）**：不能说"纯 agent 函数 vs 调 LLM 的 agent"——我们 v4.0 **根本没用到 agent 参与压缩**，是 message_builder 的纯规则函数在干活；opencode 的 LLM 摘要里 agent 只是"壳"（约束层）、**LLM 才是"芯"（生成层）**。核心差异只在一个点：**opencode 多了一层"真·LLM 语义摘要"，我们因 R4 刻意放弃。**
+
+#### 14.8.2 逐层对照表（五层机制逐一对比）
+
+| 维度 | 我们 v4.0 | opencode | 判定 |
+|------|----------|----------|------|
+| **① 压缩触发** | 固定比例（T1 50% / T3 95%） | 按模型窗口 `usable = limit.input - reserved`（真实 tokens） | **opencode 更合理**——不同模型窗口自适应，deepseek 900K 也能正确触发（我们 50% 在 900K 下到不了，文档 12.2 已自省） |
+| **② 工具输出压缩** | **T1 逐工具摘要模板**（readtext/listdir/grep 等 6 模板） | **prune 通用清零**（保留 tool_call、清 output、`time.compacted` 标记，skill 豁免 + PRUNE_PROTECT 保近 40K） | **opencode 明显更优**——零模板零维护、不破坏 FC 配对（参数还在）、防抖动（省 <20K 不做） |
+| **③ 语义压缩** | ❌ **无**（R4 拒绝 LLM）→ History Memory 规则拼接 + T3 删消息 | ✅ **anchored 锚定式 LLM 摘要**（独立 compaction agent + previousSummary 增量更新 + 固定 Markdown 结构 Goal/Progress/Decisions/NextSteps/CriticalContext/Files） | **opencode 是完整能力，我们缺失这一环**——这是最本质差距 |
+| **④ 决策链保留** | ✅ **History Memory**（从 Step 提取 thought→action→result→answer，注入独立 user 消息，500 行上限） | 摘要模板含 Key Decisions / Critical Context / Progress 段（靠 LLM 归纳） | **各有千秋**——我们 zero-cost 且 opencode 无同等机制；但 History Memory 500 行后变字符截断（文档 12.1 自省），opencode 靠 LLM 语义归纳更持久 |
+| **⑤ 保尾兜底** | KEEP_TAIL_ROUNDS=3（固定轮数，从最旧删） | **token 预算 + splitTurn**：preserveRecentTokens 上限 8K，整轮超预算只保该轮尾部半轮 | **opencode 更细**——token 预算优于固定轮数，多 splitTurn 半轮劈分 |
+
+#### 14.8.3 本质差异一句话
+
+```
+我们 v4.0 = 纯规则、零 LLM（把压缩当"字符/列表操作"）
+opencode  = prune 零 LLM + LLM 锚定摘要（把压缩当"语义归档"）
+```
+
+- **我们的长处**：History Memory 主动决策链（zero-cost）+ 零额外延迟 + 防抖动。
+- **opencode 的长处**：真·语义摘要（信息密度高、可累积、不重复丢失）+ 按模型窗口自适应 + prune 零模板 + 保尾 token 预算。
+
+#### 14.8.4 我的推荐方法（融合式，分两阶段落地）
+
+> **推荐原则**：不是二选一，而是**保留我们 History Memory 的 zero-cost 长处，吸收 opencode 的 prune 简化 + LLM 锚定摘要能力**。分两阶段，P0 零成本先落地、P1 引入 LLM 摘要（需老陈定夺成本）。
+
+**P0 第一阶段（纯规则、零成本，立即可做）——把"多余"改掉，不动 LLM**：
+
+| 改造 | 现 v4.0 | 改为（借鉴 opencode） | 收益 |
+|------|---------|---------------------|------|
+| ① 触发改造 | T1 50% / T3 95% 固定比例 | `usable = 当前模型 limit.input - reserved`，真实 tokens | 各模型窗口自适应，900K 也正确触发 |
+| ② T1 → prune 式 | 逐工具摘要模板（6 个） | 通用清零旧 tool output、保留 tool_call 参数、`time.compacted` 标记 | 删 6 模板，零维护，不破坏 FC 配对 |
+| ③ 保尾增强 | KEEP_TAIL_ROUNDS=3 固定轮数 | 加 `preserve_recent_tokens` 上限（如 8K）+ splitTurn 半轮劈分 | 保护更精准 |
+
+**P1 第二阶段（引入 LLM 锚定摘要，需老陈评估成本）**：
+
+- 放开"零 LLM 调用"原则（文件头注明：原 R4 基于当时无 LLM 摘要能力，现评估放开）。
+- 新增一次 LLM 调用：用**当前模型（或可配置小模型，如 deepseek-flash）**把超限旧历史总结为固定结构 Markdown（Goal / Progress(Done·InProgress·Blocked) / Key Decisions / Next Steps / Critical Context / Relevant Files）。
+- **anchored 锚定**：`previousSummary` 带进提示词"更新既有摘要、保留仍成立、合并新事实"——摘要可累积、不重复丢失。
+- **不破坏原库**：压缩喂 LLM 时对历史工具输出截断（如 2000 字符），原始输出完整存库（与 7.1 A5 / 回放走 DB 一致）。
+- 摘要以消息落库 + 前端可展示"已压缩"；压缩后自动续跑（发 "Continue..." 合成消息）。
+- **History Memory 保留**：作为 zero-cost 的决策链兜底，与 LLM 摘要互补（LLM 摘要管语义归档、History Memory 管逐条推理链）。
+
+**推荐落地顺序**：P0 三项立即可做（零成本、纯增强不退化）→ P1 锚定摘要（一次压缩一次 LLM 调用，可配小模型，成本可控）→ 用 E2E 对话实测验证摘要信息密度与成本，再定是否默认开启。
+
+**不推荐**：只保留纯规则删删减减（丢语义）、或完全照抄 opencode 丢掉 History Memory（丢 zero-cost 决策链）。融合式最优。
+
+---
+
+## 十五、变更记录
 
 | 版本 | 时间 | 变更人 | 变更内容 |
 |------|------|--------|---------|
-| v4.0 | 2026-07-22 17:35:08 | 小欧 | 概念升级：Context Log → History Memory（从"日志记录"提升为"结构化记忆供给"）；新增 3.1 概念升级说明；全篇 s/Context Log/History Memory/、s/context_log/history_mem/、s/_context_log/_history_mem/、s/CONTEXT_LOG_/HISTORY_MEM_/ |
+| v5.2 | 2026-08-16 14:09:18 | 小欧 | 14.8 新增"两种方法对照分析与推荐方法"（北京老陈 2026-08-16 要求对照分析并给推荐，写入本文档）：①14.8.1 一句话定性（我们=纯规则零 LLM / opencode=零 LLM 前置+调 LLM 锚定摘要；精修措辞：我们没用到 agent 参与压缩、opencode 中 agent 是壳 LLM 是芯）；②14.8.2 五层逐层对照表（触发固定比例 vs 按模型窗口 / T1 逐工具模板 vs prune 通用清零 / 无语义压缩 vs anchored LLM 摘要 / History Memory vs 摘要模板决策段 / KEEP3 固定轮数 vs token预算+splitTurn）；③14.8.3 本质差异（纯规则 vs 语义归档）+ 双方长处；④14.8.4 推荐融合式两阶段——P0 立即（触发按模型窗口 + T1→prune 式清零 + 保尾 token预算+splitTurn，纯规则零成本不退化）→ P1 引入 LLM 锚定摘要（放开 R4 零 LLM 原则，需老陈定夺成本，当前/小模型一次调用、anchored 累积、不破坏原库、History Memory 保留作 zero-cost 兜底、压缩后自动续跑）；不推荐纯删删减减或照抄丢掉 History Memory |
+| v5.1 | 2026-08-16 14:04:49 | 小欧 | 14.3.4 补澄清（北京老陈 2026-08-16 确认：压缩核心是 LLM 生成摘要，不能只是 agent）——压缩 = agent 壳（约束层：专用 compaction agent、无工具、权限全 deny、专属提示词 compaction.txt）+ 底层 LLM（生成层：processor.process → llm.stream 一次流式调用产出摘要）；opencode 用专用 agent 组织本次 LLM 调用，摘要文本仍由 LLM 生成 |
+| v5.0 | 2026-08-16 13:59:53 | 小欧 | 新增第十四章"opencode 压缩方法深度研究（compaction.ts / overflow.ts / summary.ts）"（北京老陈 2026-08-16 指示深挖 opencode 压缩实现并评估可借鉴性）：①澄清 summary.ts 非上下文压缩（是 git diff 会话统计）；②overflow.ts = 按模型窗口 usable() 判定溢出（非固定比例）；③compaction.ts 四函数拆解（create 打标 / select 保尾区 token 预算+splitTurn / prune 通用清零旧工具输出保 tool_call / process 独立 agent+anchored 锚定式 LLM 摘要+压缩截断不破坏原库+auto 自动续跑）；④14.6 可借鉴性评估 8 项（P0 立即：prune 清零替换 T1 模板、按模型窗口触发、压缩截断不破坏原库；P1：锚定 LLM 摘要需老陈定夺成本、保尾 token 预算+splitTurn、自动续跑；P2：auto 开关；summary.ts 不借鉴）；⑤14.7 对照结论——T1 逐工具模板属过度设计建议改 prune 式、缺语义摘要层建议评估放开零 LLM 成本原则；本章仅研究评估不改 v4.0 既有定案。原第十四章"变更记录"顺延为第十五章 |
 | v3.0 | 2026-07-22 16:33:34 | 小欧 | History Memory 注入方式从 system 改为独立 user 消息（北京老陈裁定：user 角色语义更对）；新增 3.4 保护机制（`_history_mem` 标记 + 每轮重注入）；新增第十一章"关于 role 选择的分析" |
 | v2.0 | 2026-07-22 18:30:00 | 小欧 | 融合方案[3]保尾逻辑：KEEP_TAIL_ROUNDS=5→3、从最旧往最新删、保尾定位方式借鉴方案[3]找第N个assistant消息；新增第十章"推荐落地组合"总结全文 |
 | v1.0 | 2026-07-22 18:30:00 | 小欧 | 初版：History Memory（从 Step 提取推理链注入 system prompt）+ T1 工具摘要 + T3 紧急裁剪（借鉴 OpenCode/Hermes 的 6 种机制） |
