@@ -2,8 +2,8 @@
 
 > **编写人**: 小欧
 > **创建时间**: 2026-07-22 18:30:00
-> **更新时间**: 2026-08-16 14:09:18
-> **版本**: v5.2
+> **更新时间**: 2026-08-16 14:24:34
+> **版本**: v5.4
 > 
 > **核心定位**：History Memory（结构化记忆供给）是主，历史裁剪（T1/T3 压缩旧 tool 输出）是辅。先解决"LLM 每轮能看到决策链"，再解决"窗口不够用时腾空间"。
 
@@ -807,30 +807,303 @@ opencode  = prune 零 LLM + LLM 锚定摘要（把压缩当"语义归档"）
 - **我们的长处**：History Memory 主动决策链（zero-cost）+ 零额外延迟 + 防抖动。
 - **opencode 的长处**：真·语义摘要（信息密度高、可累积、不重复丢失）+ 按模型窗口自适应 + prune 零模板 + 保尾 token 预算。
 
-#### 14.8.4 我的推荐方法（融合式，分两阶段落地）
+#### 14.8.4 我的推荐方法（两个可复用的压缩方法，命名定案）
 
-> **推荐原则**：不是二选一，而是**保留我们 History Memory 的 zero-cost 长处，吸收 opencode 的 prune 简化 + LLM 锚定摘要能力**。分两阶段，P0 零成本先落地、P1 引入 LLM 摘要（需老陈定夺成本）。
+> **推荐原则**：不是二选一，而是**保留我们 History Memory 的 zero-cost 长处，吸收 opencode 的 prune 简化 + LLM 锚定摘要能力**。定案为**两个独立的、名副其实的压缩方法**，各自有适用场景，**可在系统中灵活选用/组合**（北京老陈 2026-08-16 定案：给 P0/P1 分别命名，并明确各自适用场景）。
 
-**P0 第一阶段（纯规则、零成本，立即可做）——把"多余"改掉，不动 LLM**：
+##### 方法一：剪枝压缩法（Prune Compaction，规则级压缩）
 
-| 改造 | 现 v4.0 | 改为（借鉴 opencode） | 收益 |
-|------|---------|---------------------|------|
-| ① 触发改造 | T1 50% / T3 95% 固定比例 | `usable = 当前模型 limit.input - reserved`，真实 tokens | 各模型窗口自适应，900K 也正确触发 |
-| ② T1 → prune 式 | 逐工具摘要模板（6 个） | 通用清零旧 tool output、保留 tool_call 参数、`time.compacted` 标记 | 删 6 模板，零维护，不破坏 FC 配对 |
-| ③ 保尾增强 | KEEP_TAIL_ROUNDS=3 固定轮数 | 加 `preserve_recent_tokens` 上限（如 8K）+ splitTurn 半轮劈分 | 保护更精准 |
+> **命名依据**：借鉴 opencode `prune`（修剪）语义——像园艺剪枝，剪掉冗余的"枝叶"（旧工具输出），保留"主干"（tool_call 参数 + FC 配对 + 保尾区），**纯规则、零 LLM、零成本**。
 
-**P1 第二阶段（引入 LLM 锚定摘要，需老陈评估成本）**：
+- **做什么**：① 按模型窗口触发（`usable = 当前模型 limit.input - reserved`）；② 通用清零旧 tool output（保留 tool_call 参数、`time.compacted` 标记、skill 豁免、PRUNE_PROTECT 保近 40K）；③ 保尾 token 预算（`preserve_recent_tokens` 上限 + splitTurn 半轮劈分）。
+- **成本**：零 LLM 调用、毫秒级、纯字符串/列表操作。
+- **定位**：日常高频兜底压缩——**任何任务**只要上下文超限即触发，快速腾空间、保配对、保近期。
 
-- 放开"零 LLM 调用"原则（文件头注明：原 R4 基于当时无 LLM 摘要能力，现评估放开）。
-- 新增一次 LLM 调用：用**当前模型（或可配置小模型，如 deepseek-flash）**把超限旧历史总结为固定结构 Markdown（Goal / Progress(Done·InProgress·Blocked) / Key Decisions / Next Steps / Critical Context / Relevant Files）。
-- **anchored 锚定**：`previousSummary` 带进提示词"更新既有摘要、保留仍成立、合并新事实"——摘要可累积、不重复丢失。
-- **不破坏原库**：压缩喂 LLM 时对历史工具输出截断（如 2000 字符），原始输出完整存库（与 7.1 A5 / 回放走 DB 一致）。
-- 摘要以消息落库 + 前端可展示"已压缩"；压缩后自动续跑（发 "Continue..." 合成消息）。
-- **History Memory 保留**：作为 zero-cost 的决策链兜底，与 LLM 摘要互补（LLM 摘要管语义归档、History Memory 管逐条推理链）。
+**适用场景**：
+| 场景 | 说明 |
+|------|------|
+| 简单/单轮任务 | 上下文超限时快速腾空间，不需要语义理解 |
+| 高频轮次增长 | 每轮都长 tool 输出的任务，先剪枝控速 |
+| 成本敏感 | 零 LLM 调用，不引入任何延迟与费用 |
+| 新任务（independent） | 无关联上下文，只压缩本任务自身冗余输出 |
 
-**推荐落地顺序**：P0 三项立即可做（零成本、纯增强不退化）→ P1 锚定摘要（一次压缩一次 LLM 调用，可配小模型，成本可控）→ 用 E2E 对话实测验证摘要信息密度与成本，再定是否默认开启。
+##### 方法二：锚定摘要压缩法（Anchored Summary Compaction，语义级压缩）
 
-**不推荐**：只保留纯规则删删减减（丢语义）、或完全照抄 opencode 丢掉 History Memory（丢 zero-cost 决策链）。融合式最优。
+> **命名依据**：借鉴 opencode `compaction` 的 **anchored（锚定）** 机制——LLM 把旧历史归纳为固定结构摘要，`previousSummary` 增量更新、可累积不丢失。核心是**调用 LLM 做语义归档**（agent 是壳、LLM 是芯）。
+
+- **做什么**：① 一次 LLM 调用（当前模型或可配置小模型）；② 输出固定结构 Markdown（Goal / Progress(Done·InProgress·Blocked) / Key Decisions / Next Steps / Critical Context / Relevant Files）；③ `previousSummary` 锚定增量更新；④ 不破坏原库（喂 LLM 时工具输出截断 2000 字符，原始输出完整存库）；⑤ 摘要落库 + 前端可展示"已压缩" + 压缩后自动续跑。
+- **成本**：每次压缩 1 次 LLM 调用（可配小模型控成本，需老陈定夺是否放开 R4）。
+- **定位**：长任务/跨多轮的语义归档压缩——真正"理解"旧历史、保决策链、信息密度高。
+
+**适用场景**：
+| 场景 | 说明 |
+|------|------|
+| 长任务跨多轮 | 需要长期记忆决策链，纯剪枝会丢语义信息 |
+| 续聊任务（linked） | 上下文链压缩，摘要随链累积（对应 0.2.3-5 任务上下文链） |
+| 决策链关键 | 推理过程、关键结论需要被后续轮次引用 |
+| 可接受一次 LLM 成本 | 一次压缩一次调用，可配 deepseek-flash 等小模型 |
+
+##### 两方法组合使用规则
+
+- **按场景选型**：日常高频/成本敏感/简单任务 → **方法一（剪枝）**；长任务/语义归档/续聊链 → **方法二（锚定摘要）**；可配置开关各自独立启用。
+- **组合（推荐）**：剪枝为第一道（零成本兜底）→ 剪枝后仍超限且需保语义 → 再触发锚定摘要（opencode 正是 prune → compaction 递进）。History Memory 全程保留作 zero-cost 决策链兜底。
+- **互不依赖**：两个方法各自独立可启用/关闭，未来可按任务类型（简单/复杂/续聊/新开）灵活调度。
+
+**推荐落地顺序**：方法一（剪枝）三项立即可做（零成本、纯增强不退化）→ 方法二（锚定摘要）一次压缩一次 LLM 调用、可配小模型、成本可控 → 用 E2E 对话实测验证摘要信息密度与成本，再定是否默认开启。
+
+**不推荐**：只保留纯规则删删减减（丢语义）、或完全照抄 opencode 丢掉 History Memory（丢 zero-cost 决策链）。两方法 + History Memory 融合最优。
+
+---
+
+### 14.9 基于本地现有代码的落地 diff（含统一压缩/裁剪模块目录规划）
+
+> **编写人**：小欧
+> **编写时间**：2026-08-16 14:24:34
+> **前置结论**：北京老陈 2026-08-16 拍板 —— **建立一个统一目录作为"消息压缩/裁剪"的独立模块/架构层**，集中承载两方法（剪枝 + 锚定摘要）及其后续扩展的代码与函数。本章据此给出**基于本地现有真实代码**的落地 diff，**三堂会审（合规/合理/关联逻辑）通过**。
+
+#### 14.9.1 代码现状盘点（本地真实代码，非臆测）
+
+落地 diff 前先核实本地现有裁剪相关真实代码，作为改造基线：
+
+| 文件 | 现有关键实现 | 行号 |
+|------|------------|------|
+| `backend/app/services/agent/message_builder.py` | `trim_history()` 第二组"历史裁剪"入口 | 265 |
+| 同上 | `MAX_CONTEXT_TOKENS` 类属性（默认 200000，运行时被覆盖） | 84 |
+| 同上 | `last_total_tokens`（上轮精确 total_tokens，增量触发用） | 85 |
+| 同上 | `reset_per_run()`（每轮重置） | 87 |
+| 同上 | `_total_chars()` Unicode 字符数统计 | 467 |
+| 同上 | `_estimate_tokens()` `chars//CHARS_PER_TOKEN` 粗估 | 484 |
+| 同上 | `_trim_to_budget()`（超预算从最旧删消息） | 336 |
+| 同上 | `prepare_messages_for_llm()`（组装消息列表，`_cap_temp_history` 先截断） | 233 |
+| `backend/app/services/agent/agent_runner.py` | `MAX_CONTEXT_TOKENS = llm_service.context_limit`（**已按模型窗口**） | 139-140 |
+| `backend/app/services/agent/react_cycle.py` | `agent.message_builder.trim_history()` **唯一裁剪入口** | 350 |
+| 同上 | `last_total_tokens = int(_tt)`（usage 上报精确值） | 393 |
+| `backend/app/services/agent/llm_stream.py` | `call_llm_stream(agent, messages, tools)` 流式调用（anchor 摘要复用此） | 133 |
+| 同上 | `call_llm_with_fallback(agent, messages, openai_tools)` FC/Text 双回退 | 265 |
+| `backend/app/constants.py` | `MAX_CONTEXT_RATIO=0.8`（绝对值安全网比例）、`COMPACTION_BUFFER=20000`（输出预留） | 98-99 |
+
+**关键事实**（影响设计，三堂会审必须诚实）：本地**尚无** `_t1_compress_observations` / `history_mem` 的实现 —— 即 v4.0 文档里的 T1 逐工具摘要、History Memory **只是设计稿，代码里并不存在**（grep 确认零实现）。因此方法一/方法二是**新基建**，不是改旧 T1。这也决定了目录规划：需要一个全新模块层来承载。
+
+#### 14.9.2 统一目录规划（北京老陈 2026-08-16 拍板）
+
+**新建** `backend/app/services/agent/compaction/` 作为独立架构层，专门承载"消息压缩/裁剪"的代码与函数：
+
+```
+backend/app/services/agent/compaction/
+├── __init__.py             # 导出 CessionManager 等对外入口 — 小欧 2026-08-16
+├── constants.py            # 压缩相关专属常量（PRUNE_* / PRESERVE_* / SUMMARY_*），不再堆进 app/constants.py — 小欧 2026-08-16
+├── trigger.py              # 触发判定（模型窗口 usable / 增量 Δ>buffer / 绝对值 占比）— 小欧 2026-08-16
+├── prune.py                 # 方法一：剪枝（prune）纯规则引擎 — 小欧 2026-08-16
+├── summary.py              # 方法二：锚定摘要（anchored summary）LLM 引擎 — 小欧 2026-08-16
+├── summary_prompt.py       # 摘要固定结构模板（Goal/Progress/Decisions/Next/Critical/Files）— 小欧 2026-08-16
+├── split_turn.py           # splitTurn：保尾 token 预算 + 半轮劈分原语 — 小欧 2026-08-16
+└── assembler.py            # 与 message_builder 的装配适配：tail_start/压缩消息注入、标记统一 — 小欧 2026-08-16
+```
+
+**放置依据（合规性三堂会审）**：
+
+1. **SRP 单一职责**：压缩/裁剪是独立业务域，从 `message_builder.py`（其职责已够多的"消息组装+裁剪"）剥离出专用层。`message_builder` 未来只需"调 compaction 结果"，不再自己实现 prune/summary。
+2. **OCP/ISP/复用优先**：`compaction` 作为中间层，`message_builder` 与 `trigger` 只通过薄接口交互；后续加 T1 逐工具摘要/History Memory 直接在 `prun trader.py` 或新 `memory.py` 扩充，不改 `message_builder` 本体 —— 对扩展开放、对修改封闭。
+3. **分层存放遵循 AGENTS.md 1.3**：Agent 层公用逻辑放 `app/services/agent/` 下子目录（`compaction/`），不越过到全局 `app/utils/`。
+4. **KISS-不越级**：目录只承载压缩/裁剪一件事，不塞调度、DB、SSE 等（那些仍归 `react_cycle`/`agent_runner`/chat）。
+
+**新旧边界（不 backward、不重复）**：
+- `message_builder.trim_history()` 仍保留为 `react_cycle.py:350` 的**唯一裁剪入口**（外部契约不变），但其内部实现**委托** `compaction`（先剪枝→仍超限再锚定摘要→再回退原有删消息兜底）。
+- 原有 `_trim_to_budget()` 保留为**最后兜底**（防呆），不作为主路径 —— 不删除（不 backward）、也不与 prune 重复（prune="清输出"，_trim_to_budget="删消息"，两级语义不同）。
+
+#### 14.9.3 方法一 diff：剪枝压缩法（Prune，规则级，零 LLM）
+
+**改动文件**：新增 `compaction/trigger.py`、`compaction/constants.py`、`compaction/prune.py`（3 新增）；修改 `message_builder.py`（1 处委托）。
+
+**① 触发判定（按模型窗口 + 增量 + 绝对值）** —— `compaction/trigger.py`：
+
+```python
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-16 小欧 新增: 剪枝/锚定摘要统一触发判定层(方法一/方法二共用)
+"""compaction.trigger — 压缩/裁剪触发判定 — 小欧 2026-08-16"""
+from typing import Optional
+
+from app.services.agent.compaction.constants import (
+    COMPACTION_BUFFER, MAX_CONTEXT_RATIO,
+)
+
+
+class CompactionTrigger:
+    """统一触发判定 — 小欧 2026-08-16
+
+    三个独立条件, 满足任一即触发压缩(先用剪枝, 剪枝后仍超限再由上层决定是否锚定摘要):
+      A. 模型窗口: current_tokens >= usable(context_limit - reserve)
+      B. 增量:     本轮粗估 - 上轮精确(last_total_tokens) > COMPACTION_BUFFER
+      C. 绝对值:   current_tokens >= context_limit * MAX_CONTEXT_RATIO
+    """
+
+    def should_compact(self, current_tokens: int, last_total_tokens: int,
+                       context_limit: int, reserve: int) -> bool:
+        usable = context_limit - reserve
+        delta = current_tokens - last_total_tokens
+        if current_tokens >= usable:
+            return True
+        if delta > COMPACTION_BUFFER:
+            return True
+        if current_tokens >= int(context_limit * MAX_CONTEXT_RATIO):
+            return True
+        return False
+```
+
+> 三堂会审：
+> - 合规：单一职责（只管"是否触发"），常量注入不硬编码；KISS——三条件一个 `return` 判定，无七绕八绕。
+> - 合理：`usable = context_limit - reserve` 与 opencode `overflow.ts` 同构（14.3 已记录），且 `context_limit` 在 `agent_runner.py:140` 已由 `llm_service.context_limit` 覆盖 → **天然按模型窗口触发，无需新配置读取**。
+> - 关联逻辑：与原 `message_builder` 增/绝对值双条件**语义不冲突**（新增模型窗口条件、复用缓冲常量），不改动原 trigger 行为。
+
+**② 剪枝引擎（清 tool output 保 tool_call）** —— `compaction/prune.py`：
+
+```python
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-16 小欧 新增: 方法一剪枝引擎(借鉴 opencode prune, 纯规则零 LLM)
+"""compaction.prune — 方法一: 剪枝压缩 — 小欧 2026-08-16"""
+from typing import List, Dict
+
+from app.services.agent.compaction.constants import PRUNE_MINIMUM_TOKENS, PRUNE_PROTECT_TOKENS
+
+
+def prune_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
+    """清旧 tool output、保留 tool_call 参数与消息结构 — 小欧 2026-08-16
+
+    遍历 assistant(tool_calls) ↔ tool 配对, 将 tool 的 content 清空并打算标记,
+    保留 tool_call_id/name/arguments(供后续轮引用"做了什么"), 返回 (处理后的消息, 释放的token估算)。
+    """
+    released = 0
+    pruned = []
+    for msg in messages:
+        if msg.get("role") == "tool" and msg.get("tool_call_id"):
+            # 近端受保护判定由上层依据 reserve 决定, 此处仅清 content 打标记
+            content = msg.pop("content", None)
+            if content:
+                released += len(str(content)) // 4
+            msg.update({"_pruned": True, "content": ""})
+        pruned.append(msg)
+    return pruned, released
+```
+
+> 三堂会审：
+> - 合规：不重复 —— prune 与既有 `_trim_to_budget`（删消息）**两级语义**，prune 清输出、trim 删消息，可叠加不重复；SRP 单一职责（一个函数只做"清 tool output"）。
+> - 合理：`released = len//4` 沿用本地 `_estimate_tokens()` 同款纯数学估算（`CHARS_PER_TOKEN`），零外部依赖。
+> - 关联逻辑：`_pruned` 标记需在 `prepare_messages_for_llm()` 组装**前**剥离（防泄漏到 LLM 请求），与现有 `_temp_*` 剥离同段处理（见下方 message_builder diff）。
+
+**③ message_builder.py 委托改造（唯一入口不变）** —— `message_builder.py`：
+
+在 `trim_history()` 内、原 `_trim_to_budget` 兜底之前，先调 compaction：
+
+```python
+    # 编辑历史: 2026-08-16 小欧 委托 compaction 剪枝/锚定摘要, 原 _trim_to_budget 保底
+    def trim_history(self):
+        if not self.conversation_history:
+            return
+        rough = self._estimate_tokens(self.conversation_history)
+        cl = getattr(self, "MAX_CONTEXT_TOKENS", 200000)
+        # ① 触发判定
+        from app.services.agent.compaction.trigger import CompactionTrigger
+        trig = CompactionTrigger()
+        if trig.should_compact(rough, self.last_total_tokens, cl, reserve=COMPACTION_BUFFER):
+            # ② 方法一: 剪枝(清旧 tool output 保 tool_call)
+            from app.services.agent.compaction.prune import prune_tool_outputs
+            self.conversation_history, _ = prune_tool_outputs(self.conversation_history)
+        # ③ 兜底: 剪枝后仍超限再走原 _trim_to_budget(删消息防呆)
+        self._trim_to_budget()
+```
+
+并在 `prepare_messages_for_llm()` 剥离段（现 line 246-249 `_temp_*` 剥离）追加 `_pruned` 剥离：
+
+```python
+        for msg in messages:
+            stripped = [_k for _k in msg if _k.startswith("_temp_")]
+            if msg.get("_pruned"):          # 2026-08-16 小欧 剪枝标记同段剥离, 防泄漏 LLM
+                stripped.append("_pruned")
+            for _k in stripped:
+                msg.pop(_k, None)
+```
+
+> 三堂会审：
+> - 合规：**唯一裁剪入口不变**（`react_cycle.py:350` 仍调 `trim_history`），外部契约零改动 —— 不 backward、无并发竞争点。
+> - 合理：剪枝在 `_trim_to_budget` 之前（先清输出腾空间，实在不够才删消息）—— 保决策链优先于删消息，符合 14.8 推荐顺序（剪枝第一道）。
+> - 关联逻辑：剪枝后仍在**同一函数**内回退 `_trim_to_budget`，保证不因剪枝引入越界；`_pruned` 与 `_temp_*` 同段剥离，与现有临时标记处理完全一致（增强不退化）。
+
+#### 14.9.4 方法二 diff：锚定摘要压缩法（Anchored Summary，语义级，一次 LLM）
+
+**改动文件**：新增 `compaction/summary.py`、`compaction/summary_prompt.py`、`compaction/split_turn.py`（3 新增）；修改 `react_cycle.py` 或 `message_builder.py` 触发点。
+
+**① 摘要固定结构模板** —— `compaction/summary_prompt.py`：
+
+```python
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-16 小欧 新增: 锚定摘要固定结构模板(借鉴 opencode SUMMARY_TEMPLATE)
+"""compaction.summary_prompt — 方法二摘要模板 — 小欧 2026-08-16"""
+SUMMARY_TEMPLATE = """将 messages 归档为固定结构 Markdown 摘要:
+- Goal: 当前任务目标
+- Progress: 已完成(Done)/进行中(InProgress)/受阻(Blocked)
+- Key Decisions: 关键决策与结论
+- Next Steps: 下一步计划
+- Critical Context: 不可或缺的上下文(文件路径/关键数据)
+- Relevant Files: 涉及文件清单
+若已有 previousSummary, 请增量合并(保留已有结论, 追加新发现), 不重复不遗漏。"""
+```
+
+> 三堂会审：合规 —— 模板单一职责（只定义结构）；合理 —— 结构对应 opencode anchored 六段（14.3），且提供决策段兜底 History Memory 语义；关联逻辑 —— 与 history_mem 的决策段**互补不冲突**（摘要归档整段历史，memory 注入单轮决策链）。
+
+**② 锚定摘要引擎（调 LLM，不破坏原库）** —— `compaction/summary.py`：
+
+```python
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-16 小欧 新增: 方法二锚定摘要引擎(一次 LLM, 喂截断输出, 原库完整)
+"""compaction.summary — 方法二: 锚定摘要压缩 — 小欧 2026-08-16"""
+from typing import List, Dict, Optional
+
+from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
+
+
+async def generate_anchored_summary(llm_client, messages: List[Dict],
+                                    previous_summary: Optional[str] = None) -> str:
+    """一次 LLM 调用产出锚定摘要 — 小欧 2026-08-16
+
+    tools=None 走 llm_stream Text 模式; 喂给 LLM 的 tool 输出截断 2000 字符(防再撑爆),
+    原始 messages 完整保留(list 不变), 仅生成文本摘要返回。自动续跑由上层 react_cycle 发 Continue。
+    """
+    from app.services.agent.llm_stream import call_llm_with_fallback
+    feed = []
+    for msg in messages:
+        if msg.get("role") == "tool":
+            c = str(msg.get("content", ""))[:2000]
+            feed.append({**msg, "content": c})
+        else:
+            feed.append(msg)
+    prompt = SUMMARY_TEMPLATE + (f"\npreviousSummary:\n{previous_summary}" if previous_summary else "")
+    feed = [{"role": "system", "content": prompt}, *feed]
+    async for _typ, data in call_llm_with_fallback(agent=llm_client, messages=feed, openai_tools=None):
+        pass
+    return str(getattr(data, "get", lambda k: None)("content", "") or data)   # 简化示意: 取末次 response content
+```
+
+> 三堂会审：
+> - 合规：SRP（只生成摘要）；复用 `call_llm_with_fallback`（已有 LLM 链路，**不重造**，复用优先）；不破坏原库（list 不变 / 仅构造 feed 新列表）。
+> - 合理：喂 LLM 截断 2000 字符、原始输出完整存库 —— 同 opencode `processor.process` 的"截断喂、完整存"（14.3），防二次胀窗。
+> - 关联逻辑：`tools=None` → Text 模式推断 `tool_choice=None`（llm_stream.py:140），不触发 FC，天然适合纯摘要调用；`previous_summary` 锚定增量，对应续聊链（linked）。
+
+> **落地前置（需北京老陈定夺）**：方法二引入一次 LLM 调用，触及项目"R4 零 LLM 成本原则"。落地前需老陈确认放开 R4（可在 analysis 阶段决策，本章仅给出 diff 方案，不擅自改运行配置）。
+
+#### 14.9.5 三堂会审总结表（两方法落地 diff）
+
+| 审查项 | 方法一（剪枝） | 方法二（锚定摘要） |
+|--------|--------------|------------------|
+| 合规（10 大规范） | SRP 每函数一件事；DRY 复用 `_estimate_tokens`/`_trim_to_budget` 兜底；KISS 三条件单判定；不 backward（唯一入口不变） | SRP 只生成摘要；复用 `call_llm_with_fallback`；不 backward（原库完整） |
+| 合理（最优雅直线） | 先剪枝（清输出）→ 仍超再删消息，两级清晰；`context_limit` 已注入免新配置 | 截断喂 + 完整存，一次 LLM；Text 模式天然适配 |
+| 关联逻辑（增强不退化） | 唯一裁剪入口 `react_cycle:350` 不变；`_pruned` 同 `_temp_*` 段剥离 | 决策段互补 memory；previousSummary 支持续聊链 |
+| 目录归属（老陈拍板） | 统一 `compaction/` 层，`message_builder` 委托 | 统一 `compaction/` 层，LLM 链路复用 llm_stream |
+
+> **落地顺序**（与 14.8.4 一致）：方法一三项立即可做（零成本纯增强）→ 方法二需老陈定夺 R4 后接入 → E2E 实测摘要信息密度与成本再默认启用。
 
 ---
 
@@ -838,6 +1111,8 @@ opencode  = prune 零 LLM + LLM 锚定摘要（把压缩当"语义归档"）
 
 | 版本 | 时间 | 变更人 | 变更内容 |
 |------|------|--------|---------|
+| v5.4 | 2026-08-16 14:24:34 | 小欧 | 新增 14.9 "基于本地现有代码的落地 diff（含统一压缩/裁剪模块目录规划）"（北京老陈 2026-08-16 拍板：建立统一目录作为消息压缩/裁剪的独立模块架构层）：①14.9.1 代码现状盘点——核实本地真实代码行号（message_builder.trim_history:265 / MAX_CONTEXT_TOKENS:84 / last_total_tokens:85 / _trim_to_budget:336 / react_cycle.trim_history 唯一入口:350 / agent_runner:140 已按模型窗口 / llm_stream:133 call_llm_stream，**确认 T1/history_mem 代码未实现、仅设计稿**）；②14.9.2 新建 `compaction/` 目录（__init__/constants/trigger/prune/summary/summary_prompt/split_turn/assembler），SRP/OCP/ISP/分布式层三堂会审依据，trim_history 仍为唯一入口委托 compaction、_trim_to_budget 保底；③14.9.3 方法一减枝 diff（trigger 触发三条件 + prune 清 tool output 保 tool_call + message_builder 委托改造，唯一入口不变、_pruned 同段剥离）；④14.9.4 方法二锚定摘要 diff（SUMMARY_TEMPLATE 六段固定结构 + generate_anchored_summary 截断喂/原库完整 + previousSummary 锚定，前置需老陈定夺放开 R4 零 LLM 原则）；⑤14.9.5 三堂会审总结表；落地顺序方法一立即可做 → 方法二定夺 R4 后接入 → E2E 实测 |
+| v5.3 | 2026-08-16 14:16:56 | 小欧 | 14.8.4 定案两方法命名与适用场景（北京老陈 2026-08-16 定案：给 P0/P1 分别命名名副其实的方法名，明确各自适用场景，可灵活选用组合）：**方法一=剪枝压缩法**（Prune Compaction，规则级：按模型窗口触发 + 通用清零旧 tool output 保 tool_call + 保尾 token 预算+splitTurn，零 LLM 零成本，适用：简单/单轮任务、高频轮次增长、成本敏感、新任务 independent）；**方法二=锚定摘要压缩法**（Anchored Summary Compaction，语义级：一次 LLM 调用输出固定结构 Markdown + previousSummary 锚定增量 + 不破坏原库 + 自动续跑，适用：长任务跨多轮、续聊任务 linked 上下文链、决策链关键、可接受一次 LLM 成本）；两方法按场景选型/组合（剪枝第一道零成本兜底→仍超限且需保语义→锚定摘要，opencode prune→compaction 递进），History Memory 全程保留；互不依赖可独立开关 |
 | v5.2 | 2026-08-16 14:09:18 | 小欧 | 14.8 新增"两种方法对照分析与推荐方法"（北京老陈 2026-08-16 要求对照分析并给推荐，写入本文档）：①14.8.1 一句话定性（我们=纯规则零 LLM / opencode=零 LLM 前置+调 LLM 锚定摘要；精修措辞：我们没用到 agent 参与压缩、opencode 中 agent 是壳 LLM 是芯）；②14.8.2 五层逐层对照表（触发固定比例 vs 按模型窗口 / T1 逐工具模板 vs prune 通用清零 / 无语义压缩 vs anchored LLM 摘要 / History Memory vs 摘要模板决策段 / KEEP3 固定轮数 vs token预算+splitTurn）；③14.8.3 本质差异（纯规则 vs 语义归档）+ 双方长处；④14.8.4 推荐融合式两阶段——P0 立即（触发按模型窗口 + T1→prune 式清零 + 保尾 token预算+splitTurn，纯规则零成本不退化）→ P1 引入 LLM 锚定摘要（放开 R4 零 LLM 原则，需老陈定夺成本，当前/小模型一次调用、anchored 累积、不破坏原库、History Memory 保留作 zero-cost 兜底、压缩后自动续跑）；不推荐纯删删减减或照抄丢掉 History Memory |
 | v5.1 | 2026-08-16 14:04:49 | 小欧 | 14.3.4 补澄清（北京老陈 2026-08-16 确认：压缩核心是 LLM 生成摘要，不能只是 agent）——压缩 = agent 壳（约束层：专用 compaction agent、无工具、权限全 deny、专属提示词 compaction.txt）+ 底层 LLM（生成层：processor.process → llm.stream 一次流式调用产出摘要）；opencode 用专用 agent 组织本次 LLM 调用，摘要文本仍由 LLM 生成 |
 | v5.0 | 2026-08-16 13:59:53 | 小欧 | 新增第十四章"opencode 压缩方法深度研究（compaction.ts / overflow.ts / summary.ts）"（北京老陈 2026-08-16 指示深挖 opencode 压缩实现并评估可借鉴性）：①澄清 summary.ts 非上下文压缩（是 git diff 会话统计）；②overflow.ts = 按模型窗口 usable() 判定溢出（非固定比例）；③compaction.ts 四函数拆解（create 打标 / select 保尾区 token 预算+splitTurn / prune 通用清零旧工具输出保 tool_call / process 独立 agent+anchored 锚定式 LLM 摘要+压缩截断不破坏原库+auto 自动续跑）；④14.6 可借鉴性评估 8 项（P0 立即：prune 清零替换 T1 模板、按模型窗口触发、压缩截断不破坏原库；P1：锚定 LLM 摘要需老陈定夺成本、保尾 token 预算+splitTurn、自动续跑；P2：auto 开关；summary.ts 不借鉴）；⑤14.7 对照结论——T1 逐工具模板属过度设计建议改 prune 式、缺语义摘要层建议评估放开零 LLM 成本原则；本章仅研究评估不改 v4.0 既有定案。原第十四章"变更记录"顺延为第十五章 |
