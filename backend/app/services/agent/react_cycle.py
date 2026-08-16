@@ -75,6 +75,9 @@
 #     ContextVar随任务结束丢弃故不漏, 但长连接/复用context(手动测试/常驻入口)会跨请求泄漏task_id
 #   【改法】与 clear_temp_auth 并列在 task 级 finally 调 reset_current_task_id(), 对称set/reset, 行为零退化
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+# 2026-08-16 - 小欧 - S4(10.1.1③/10.1.7④): start 装配进 agent.steps(占 step 0), 取消 orchestrator 旁路。
+#   P4 注入模式: 工厂由 orchestrator 注入 agent._start_step_factory(chat 层数据闭包捕获), 本处只读 agent 属性
+#   (system_prompt=_sys_prompt, previous_messages=context), 不 import chat 层; start 落库走 agent_runner 事件流
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -549,10 +552,23 @@ async def run_react_cycle(
 
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
 
+    # S4(10.1.7④): start 装配进 agent.steps(占 step 0) — 取消 orchestrator 旁路(step_start)。
+    #   P4 注入模式: 工厂由 orchestrator 注入 agent._start_step_factory(chat 层数据闭包捕获),
+    #   本处只读 agent 属性(system_prompt=_sys_prompt, previous_messages=context), 不 import chat 层。
+    #   落库: start 作为首个事件 yield → agent_runner 事件流分配 ai_message_id 并 append_step, 不再 execution_steps 双写。 — 小欧 2026-08-16
+    _start_factory = getattr(agent, "_start_step_factory", None)
+    if _start_factory is not None:
+        _prev_msgs = context.get("previous_messages") if isinstance(context, dict) else None
+        _start_step = await _start_factory(
+            system_prompt=getattr(agent, "_sys_prompt", ""),
+            previous_messages=_prev_msgs or [],
+        )
+        yield agent._step_emitter.emit(_start_step)
+
     if max_steps <= 0:
         logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接终止")
         yield agent._step_emitter.emit(FinalStep(
-            step=0,
+            step=len(agent.steps),  # S4: start 已 emit(step=0), 终态接续步号, 避免同消息下双 step=0 — 小欧 2026-08-16
             response=f"最大步骤数({max_steps})，无可执行步骤，任务取消",  # Bug2+5: max_steps<=0不是"已耗尽"; outcome=cancelled→消息一致 — 小欧 2026-07-23
             outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, max_steps=0终态统一
         ))

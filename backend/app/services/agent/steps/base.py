@@ -3,6 +3,8 @@
 # 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() (UTC Z 字符串), 消除 create_timestamp 毫秒 int 依赖
 # 2026-07-18 - 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致; property 返回类型 int→str
 # 2026-08-08 - 小欧 - 全程统一本地时区: 默认 timestamp 改 get_local_iso_timestamp() (本地ISO无Z), 消除 UTC Z
+# 2026-08-16 - 小欧 - S4(10.1.7④/10.1.8 S4): create_step_counter 起始改 -1, 首次 next_step() 返回 0
+#   (start 显式占 step 0, 业务步骤从 1 起; 设计文档 2222 行遗留项要求)
 """
 ReasoningStep 抽象基类
 
@@ -82,8 +84,9 @@ class ReasoningStep(ABC):
 
 
 def create_step_counter() -> Callable[[], int]:
-    """创建统一的步骤计数器函数 — 小欧 2026-06-08"""
-    step_counter = 0
+    """创建统一的步骤计数器函数 — 小欧 2026-06-08
+    2026-08-16 - 小欧 - S4(10.1.7④): 起始改 -1, 首次 next_step() 返回 0(start 显式占 step 0, 业务步骤从 1 起)"""
+    step_counter = -1  # S4: 起始-1, 首次调用返回0 — start 占 step 0
 
     def next_step() -> int:
         nonlocal step_counter
