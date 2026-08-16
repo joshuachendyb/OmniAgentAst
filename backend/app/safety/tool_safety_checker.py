@@ -30,6 +30,9 @@
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1盲点二/四迁移: validate_tool_path 迁 app/tools/security/path_safe_check(import 同步),
 #   SafetyResult dataclass 迁 app/tools/security/safety_result(本文件删除本地定义改 import, __all__ 保留导出) — 小欧 2026-08-12
+# 2026-08-16 - 小欧 - S2(10.1.7②-5/10.1.8 S2, 北京老陈驱动): 会话信任豁免读取接入——
+#   check_before_execute 增 session_id 可选参; check_fn 后、needs_confirm 前查 check_session_trust(chat_session_trust),
+#   会话已信任该工具则豁免二次确认(跳 HITL); 危险防护(known_risk/check_fn blocked)不受豁免仍拦截(功能只增强不退化)
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -82,7 +85,8 @@ def _is_skip_safety() -> bool:
 class ToolSafetyChecker:
     """工具执行前安全检查 — 确认判定 + 已知风险检测"""
 
-    def check_before_execute(self, tool_name: str, params: Optional[Dict] = None) -> SafetyResult:
+    def check_before_execute(self, tool_name: str, params: Optional[Dict] = None,
+                             session_id: Optional[str] = None) -> SafetyResult:
         """
         执行前安全检查入口（Safety层）
         工具层的 validate_path() 先于本函数执行，已拦截空/保留字符/保留名/系统目录/不存在/类型不匹配
@@ -91,6 +95,8 @@ class ToolSafetyChecker:
         安全开关: config.yaml security.enabled=false 时跳过所有检查
         2026-08-04 小欧: 已知风险(路径越权/写入保护/代码注入)无条件检测不管开关, 危险即拒绝执行(blocked);
             开关false仅bypass各"确认询问"(普通needs_confirmation), 开关true则正常询问 — 北京老陈驱动重构
+        2026-08-16 小欧 S2(10.1.7②-5): 增 session_id 可选参, 确认分流前查 chat_session_trust,
+            会话已信任该工具则豁免二次确认(跳 HITL); 危险防护(known_risk/check_fn blocked)不受豁免仍拦截 — 小欧 2026-08-16
         """
         tool_meta = tool_registry.get_tool(tool_name)
         if tool_meta is None:
@@ -155,6 +161,23 @@ class ToolSafetyChecker:
                 return SafetyResult(blocked=True,
                         message=f"安全检查异常(已阻止): {e}",
                         safety_level="dangerous")
+
+        # ②-5 S2(10.1.7②-5): 会话已信任该工具 → 豁免确认询问(跳 HITL)。放 check_fn 之后:
+        #   known_risk 危险拦截(blocked)与 check_fn 内容安全拦截先于豁免, 不被信任绕过(危险防护不豁免) — 小欧 2026-08-16
+        if session_id:
+            _trusted = False
+            try:
+                from app.db import db
+                from app.services.chat.storage import check_session_trust
+                with db.get_conn_with_retry("chat") as _conn:
+                    _trusted = check_session_trust(_conn, session_id, tool_name)
+            except Exception as _te:
+                logger.warning(f"[ToolSafetyChecker] 会话信任查询失败,按需确认处理: session={session_id}, tool={tool_name}, err={_te}")
+            if _trusted:
+                logger.info(f"[ToolSafetyChecker] 会话信任豁免确认(跳HITL): tool={tool_name}, session={session_id}")
+                return SafetyResult(requires_confirmation=False,
+                        blocked=False, message="会话已信任该工具",
+                        safety_level="safe")
 
         needs_confirm = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
         safety_level = "destructive" if needs_confirm else "safe"

@@ -2,6 +2,10 @@
 # 编辑历史:
 # 2026-07-18 - 小欧 - #11 fix: wait_for_confirmation_result 超时返回加 expired=True 标记, 供 action_handler 分流超时/拒绝
 # 2026-07-18 - 小欧 - #42 fix: _pending_confirmations 加 threading.Lock 防并发读写
+# 2026-08-16 - 小欧 - S2(10.1.7②-5/10.1.8 S2, 北京老陈驱动): "信任本次会话"落库闭环——
+#   _PendingConfirmation 加 tool_name 字段; create_confirmation 增 tool_name 透传参数;
+#   resolve_confirmation confirm 成功+trust_session=True 时, 经 confirm_id 拆 task_id 反查 session_id(禁伪 agent.session_id)
+#   落 insert_session_trust(chat_session_trust), 落库失败只留日志不影响确认结果
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -32,6 +36,7 @@ class _PendingConfirmation:
     """待确认请求"""
     future: asyncio.Future
     created_at: float
+    tool_name: str = ""  # ②-5 S2(10.1.7②-5): tool_name 随 create_confirmation 透传, 供 trust 落库 — 小欧 2026-08-16
 # 注: MAX_PENDING_CONFIRMATIONS 已集中迁移至 app.constants(2026-07-14 小欧)
 # #42 fix: 加锁防并发读写_pending_confirmations — 小欧 2026-07-18
 _pending_confirmations: Dict[str, _PendingConfirmation] = {}
@@ -56,13 +61,15 @@ def _cleanup_stale_confirmations():
             _pending_confirmations.pop(k, None)
 
 
-async def create_confirmation(task_id: str) -> str:
+async def create_confirmation(task_id: str, tool_name: str = "") -> str:
     """
     创建确认请求，返回confirm_id
 
     在action_handler中调用，先创建再发射MetaStep
 
     小沈 2026-06-17 从confirm_operation.py下沉
+    2026-08-16 小欧 S2(10.1.7②-5): 增 tool_name 透传参数, 存入 _PendingConfirmation
+    供 trust 落库(confirm 成功回调经 task_id 反查 session_id 后写 chat_session_trust)
     """
     _cleanup_stale_confirmations()
     with _pending_lock:
@@ -73,7 +80,7 @@ async def create_confirmation(task_id: str) -> str:
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         _pending_confirmations[confirm_id] = _PendingConfirmation(
-            future=future, created_at=time.time()
+            future=future, created_at=time.time(), tool_name=tool_name
         )
     return confirm_id
 
@@ -137,6 +144,25 @@ def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: bool) 
         return False
 
     entry.future.set_result({"confirmed": confirmed, "trust_session": trust_session})
+
+    # ②-5 S2(10.1.7②-5/文档2 6.1.3): "信任本次会话" confirm 成功回调落 chat_session_trust。
+    #   session_id 由 confirm_id 的 task_id 前缀反查(禁止伪 agent.session_id), tool_name 经 create_confirmation 透传。
+    #   落库失败只留日志不影响确认结果(confirm 已 set_result, 主流程不阻塞)。 — 小欧 2026-08-16
+    if confirmed and trust_session and entry.tool_name:
+        _task_id = confirm_id.split(":")[0] if ":" in confirm_id else ""
+        if _task_id:
+            try:
+                from app.db import db
+                from app.services.chat.storage import get_session_id_by_task, insert_session_trust
+                with db.get_conn_with_retry("chat") as _conn:
+                    _sid = get_session_id_by_task(_conn, _task_id)
+                    if _sid:
+                        insert_session_trust(_conn, _sid, entry.tool_name)
+                        logger.info(f"[HITL] 会话信任落库: task_id={_task_id}, session_id={_sid}, tool_name={entry.tool_name}")
+                    else:
+                        logger.warning(f"[HITL] 会话信任落库跳过: task_id={_task_id} 无 session_id 可反查")
+            except Exception as _te:
+                logger.warning(f"[HITL] 会话信任落库失败: task_id={_task_id}, tool_name={entry.tool_name}, err={_te}")
 
     _cleanup_stale_confirmations()
 
