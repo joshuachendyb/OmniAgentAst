@@ -19,6 +19,12 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#1/#9: #1 allocate_and_insert_message 的 local_time 提前到 if is_new 外赋值,
 #   消除 is_new=False(同session二次任务 agent_runner路径)时 UPDATE 引用未绑定变量 NameError;
 #   #9 _truncate_tool_result 递归返回值统一回写父节点, 修复 list 内嵌超长 list 截断失效(如 {"rows":[[…1001…]]})
+# 2026-08-16 - 小欧 - S2(10.1.7②, 北京老陈 2026-08-16 定案): 任务级读写落库扩展——
+#   ②-1 insert_task/update_task(chat_tasks 建行+终态, update 幂等缺省不覆盖); ②-2 allocate_and_insert_message/
+#   append_execution_step 增 task_id 列(任务级贯通), load_execution_steps 增 task_id 双条件(未传退化按 message_id);
+#   ②-3 token_usage_insert; ②-4 get_session_model_override; ②-5 insert_session_trust/check_session_trust +
+#   get_session_id_by_task(task_id→session_id 反查, HITL trust 落库/豁免用, 禁伪 agent.session_id);
+#   ②-6 query_token_usage 四维聚合 + get_previous_task_chain(S1 链根计算)
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -229,18 +235,19 @@ async def save_execution_steps(session_id: str, update_data):
 # 独立步骤表操作 — 小欧 2026-07-14
 # ====================================================================
 
-def allocate_and_insert_message(conn: Connection, session_id: str) -> int:
+def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Optional[str] = None) -> int:
     """预分配 assistant 消息ID + 插入空白行 — 小欧 2026-07-14
     2026-08-13 - 小欧 - 三堂会审修复#1: local_time 提前到 if is_new 之外赋值,
-      消除 is_new=False(同session二次任务, agent_runner路径)时 UPDATE 引用未绑定变量 NameError"""
+      消除 is_new=False(同session二次任务, agent_runner路径)时 UPDATE 引用未绑定变量 NameError
+    2026-08-16 - 小欧 - S2②-2: chat_messages 补 task_id 列（任务级贯通，10.1.7②-2）"""
     ensure_session_exists(session_id, conn)  # #17 fix: 写入前确保会话存在, 消除孤儿消息 — 小欧 2026-07-18
     ai_message_id, is_new = _allocator.allocate(session_id, conn)
     local_time = get_local_iso_timestamp()
     if is_new:
         conn.execute(
-            "INSERT INTO chat_messages(id, session_id, role, content, timestamp) "
-            "VALUES (?, ?, 'assistant', ?, ?)",
-            (ai_message_id, session_id, "", local_time),
+            "INSERT INTO chat_messages(id, task_id, session_id, role, content, timestamp) "
+            "VALUES (?, ?, ?, 'assistant', ?, ?)",
+            (ai_message_id, task_id, session_id, "", local_time),
         )
     conn.execute(
         "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
@@ -323,23 +330,33 @@ def _truncate_tool_result_strings(obj: Any, tag: str = "") -> None:
 
 
 def append_execution_step(conn: Connection, message_id: int, session_id: str,
-                          step_index: int, step_dict: dict) -> None:
+                          step_index: int, step_dict: dict, task_id: Optional[str] = None) -> None:
     """运行期逐步落库 — 小欧 2026-07-14
-    小欧 2026-07-21: 落库前截断超大 tool_result(列表+字符串)防 SQLite 撑爆; 不碰 observation"""
+    小欧 2026-07-21: 落库前截断超大 tool_result(列表+字符串)防 SQLite 撑爆; 不碰 observation
+    2026-08-16 - 小欧 - S2②-2: chat_message_steps 补 task_id 列（任务级贯通，10.1.7②-2）"""
     step_dict = _truncate_step_dict(step_dict)
     conn.execute(
-        "INSERT INTO chat_message_steps(message_id, session_id, step_index, step_json, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (message_id, session_id, step_index, safe_json_dumps(step_dict), get_local_iso_timestamp()),
+        "INSERT INTO chat_message_steps(message_id, task_id, session_id, step_index, step_json, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (message_id, task_id, session_id, step_index, safe_json_dumps(step_dict), get_local_iso_timestamp()),
     )
 
 
-def load_execution_steps(conn: Connection, message_id: int) -> Optional[list]:
-    """从 chat_message_steps 表组装步骤列表,无数据时从chat_messages.execution_steps列读取 — 小欧 2026-07-14"""
-    rows = conn.execute(
-        "SELECT step_json FROM chat_message_steps WHERE message_id=? ORDER BY step_index ASC",
-        (message_id,),
-    ).fetchall()
+def load_execution_steps(conn: Connection, message_id: int, task_id: Optional[str] = None) -> Optional[list]:
+    """从 chat_message_steps 表组装步骤列表,无数据时从chat_messages.execution_steps列读取 — 小欧 2026-07-14
+    2026-08-16 - 小欧 - S2②-2: 双条件任务隔离（10.1.7②-2）
+      - 传 task_id 时按 (message_id, task_id) 过滤（防同 session 多任务消息步骤混淆）
+      - 未传 task_id 时（如 stream_reader 回放仅按 msg_id 加载）退化为仅按 message_id——禁止硬双条件导致回放丢步骤（退化）"""
+    if task_id is not None:
+        rows = conn.execute(
+            "SELECT step_json FROM chat_message_steps WHERE message_id=? AND task_id=? ORDER BY step_index ASC",
+            (message_id, task_id),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT step_json FROM chat_message_steps WHERE message_id=? ORDER BY step_index ASC",
+            (message_id,),
+        ).fetchall()
     if rows:
         return [parse_json(r["step_json"], label="step_json") for r in rows]
     row = conn.execute(
@@ -356,3 +373,150 @@ def finalize_message(conn: Connection, message_id: int, content: str, status: st
         "UPDATE chat_messages SET content=?, status=?, thought=? WHERE id=?",
         (content, status, thought or None, message_id),
     )
+
+
+# ====================================================================
+# S2 任务级读写落库（10.1.7②，北京老陈 2026-08-16 定案）— 小欧 2026-08-16
+# ====================================================================
+
+# ---- ②-1 chat_tasks 任务行落库 ----
+
+def insert_task(
+    conn: Connection, *,
+    task_id: str, session_id: str, user_message_id: Optional[int],
+    user_input: str, context_link_mode: str, context_root_task_id: str,
+    provider: str, model: str, display_name: str,
+) -> None:
+    """chat_tasks 任务行创建 INSERT（随任务启动，stream_orchestrator 建 task_id 后调用）— 小欧 2026-08-16"""
+    now = get_local_iso_timestamp()
+    conn.execute(
+        """INSERT INTO chat_tasks
+           (task_id, session_id, user_message_id, user_input, context_link_mode,
+            context_root_task_id, provider, model, display_name, start_time, status, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (task_id, session_id, user_message_id, user_input,
+         context_link_mode, context_root_task_id,
+         provider, model, display_name, now, "executing", now, now),
+    )
+
+
+def update_task(
+    conn: Connection, *,
+    task_id: str, response: str = "", status: str = None,
+    end_time: Optional[str] = None, duration: Optional[float] = None,
+    accumulated_usage: Optional[Dict] = None, llm_call_count: Optional[int] = None,
+    total_steps: Optional[int] = None, retry_count: Optional[int] = None,
+    error_type: Optional[str] = None, error_message: Optional[str] = None,
+) -> None:
+    """chat_tasks 任务终态 UPDATE（随任务结束，agent_runner finally 落库）— 幂等、缺省字段不覆盖 — 小欧 2026-08-16"""
+    _f, _v = [], []
+    for _k, _val in (("response", response), ("status", status), ("end_time", end_time),
+                     ("duration", duration), ("accumulated_usage", accumulated_usage),
+                     ("llm_call_count", llm_call_count), ("total_steps", total_steps),
+                     ("retry_count", retry_count), ("error_type", error_type),
+                     ("error_message", error_message)):
+        if _val is not None:
+            _f.append(f"{_k} = ?")
+            _v.append(safe_json_dumps(_val) if _k == "accumulated_usage" else _val)
+    if not _f:
+        return
+    _f.append("updated_at = ?"); _v.append(get_local_iso_timestamp())
+    _v.append(task_id)
+    conn.execute(f"UPDATE chat_tasks SET {', '.join(_f)} WHERE task_id = ?", _v)
+
+
+# ---- ②-3 token_usage 落库 ----
+
+def token_usage_insert(
+    conn: Connection, *,
+    session_id: str, task_id: str, llm_call_count: int,
+    model: str, provider: Optional[str],
+    prompt_tokens: int, completion_tokens: int, total_tokens: int,
+) -> None:
+    """token_usage 每轮 LLM 调用一行 INSERT — 小欧 2026-08-16"""
+    conn.execute(
+        """INSERT INTO token_usage
+           (session_id, task_id, llm_call_count, model, provider,
+            prompt_tokens, completion_tokens, total_tokens, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (session_id, task_id, llm_call_count, model, provider,
+         prompt_tokens or 0, completion_tokens or 0, total_tokens or 0,
+         get_local_iso_timestamp()),
+    )
+
+
+# ---- ②-4 chat_sessions model_override 生效 ----
+
+def get_session_model_override(conn: Connection, session_id: str) -> Optional[str]:
+    """读 chat_sessions.model_override（L2 会话级模型覆盖）— 小欧 2026-08-16"""
+    row = conn.execute(
+        "SELECT model_override FROM chat_sessions WHERE id=? AND is_deleted=FALSE",
+        (session_id,),
+    ).fetchone()
+    return row["model_override"] if row and row["model_override"] else None
+
+
+# ---- ②-5 chat_session_trust 落库 ----
+
+def insert_session_trust(conn: Connection, session_id: str, tool_name: str) -> None:
+    """HITL"信任本次会话"落库（UNIQUE(session_id, tool_name) 幂等）— 小欧 2026-08-16"""
+    conn.execute(
+        "INSERT OR IGNORE INTO chat_session_trust(session_id, tool_name, created_at) VALUES (?,?,?)",
+        (session_id, tool_name, get_local_iso_timestamp()),
+    )
+
+
+def check_session_trust(conn: Connection, session_id: str, tool_name: str) -> bool:
+    """工具安全检查豁免查询：会话已信任该工具则免二次 HITL 确认 — 小欧 2026-08-16"""
+    row = conn.execute(
+        "SELECT 1 FROM chat_session_trust WHERE session_id=? AND tool_name=?",
+        (session_id, tool_name),
+    ).fetchone()
+    return row is not None
+
+
+def get_session_id_by_task(conn: Connection, task_id: str) -> Optional[str]:
+    """按 task_id 反查 session_id（chat_tasks 已建行时）— HITL trust 落库/豁免用, 禁止伪 agent.session_id — 小欧 2026-08-16"""
+    row = conn.execute(
+        "SELECT session_id FROM chat_tasks WHERE task_id=?",
+        (task_id,),
+    ).fetchone()
+    return row["session_id"] if row else None
+
+
+# ---- ②-6 token_usage 四维度查询 API ----
+
+def query_token_usage(
+    conn: Connection, *, session_id: Optional[str] = None,
+    task_id: Optional[str] = None, model: Optional[str] = None,
+) -> Dict:
+    """token 四维度聚合查询（按 session/task/model 过滤 + 三个 token 求和）— 口径同 9.7 — 小欧 2026-08-16"""
+    _w, _v = [], []
+    for _k in ("session_id", "task_id", "model"):
+        _x = {"session_id": session_id, "task_id": task_id, "model": model}[_k]
+        if _x:
+            _w.append(f"{_k} = ?"); _v.append(_x)
+    _where = ("WHERE " + " AND ".join(_w)) if _w else ""
+    row = conn.execute(
+        f"SELECT COUNT(*) AS calls, "
+        f"COALESCE(SUM(prompt_tokens),0) AS prompt_tokens, "
+        f"COALESCE(SUM(completion_tokens),0) AS completion_tokens, "
+        f"COALESCE(SUM(total_tokens),0) AS total_tokens "
+        f"FROM token_usage {_where}", _v,
+    ).fetchone()
+    return dict(row)
+
+
+def get_previous_task_chain(conn: Connection, session_id: str) -> Optional[Dict]:
+    """取本会话最近一条成功(final 终态=completed)任务的链根 — S1 ④⑧(10.1.4)
+    链根计算取最近一条 success 任务；cancelled/failed 跳过不继承(避免链到失败任务) — 北京老陈 2026-08-16
+    返回 {task_id, context_root_task_id}；无成功任务返回 None(调用方使自身为链根)"""
+    row = conn.execute(
+        "SELECT task_id, context_root_task_id FROM chat_tasks "
+        "WHERE session_id=? AND status='completed' ORDER BY id DESC LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    if row:
+        return {"task_id": row["task_id"],
+                "context_root_task_id": row["context_root_task_id"] or row["task_id"]}
+    return None
