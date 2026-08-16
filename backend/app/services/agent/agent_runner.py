@@ -27,6 +27,12 @@
 #   改为通过 db_ops 命名空间对象注入(调用方stream_orchestrator构造注入), 消除agent→chat反向依赖,
 #   依赖方向变为 chat→agent 单向。db_ops 为 types.SimpleNamespace, 6个属性对应原6个chat函数,
 #   KISS-DIRECT(一个参数替代6个回调, 不引入Protocol/ABC新抽象)。
+# 2026-08-16 - 小欧 - S2(10.1.7②-1/②-3): finally log_task_end 旁 UPDATE chat_tasks 终态(update_task)+
+#   token_usage 收终态逐 usage 入库(insert_token); total_steps 剔全部非业务MetaStep(对齐 _log_task_end 口径);
+#   error 从末条 final 实算(无伪 _final_err); token llm_call_count 取 usage 的 step 序号(=agent.llm_call_count)
+# 2026-08-16 - 小欧 - 三堂会审修复(S2): update_task 的 error 提取原条件 `not stream_state` 恒 False(orchestrator 正常路径
+#   stream_state 恒为 StreamState 实例 truthy)→任务失败时 chat_tasks error_type/error_message 永远为空(信息丢失);
+#   改为按 `_terminal_status == "failed"` 判定后从末条 final 实取(异常分支必先 append final_dict, 取数可靠)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -58,6 +64,7 @@ from app.services.task.task_state import (
 )
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
+from app.utils.time_utils import get_local_iso_timestamp  # S2 update_task end_time(10.1.7②-1) — 小欧 2026-08-16
 
 
 # 后台任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者断开后任务再无强引用,
@@ -324,6 +331,48 @@ async def run_agent_in_background(
         # Task 生命周期日志（结束）— 小欧 2026-06-26
         if db_ops and db_ops.log_task_end:
             db_ops.log_task_end(task_id, end_type, start_time, current_execution_steps, agent)
+
+        # S2 chat_tasks 终态 UPDATE(10.1.7②-1, 设计1914-1932) — 小欧 2026-08-16
+        if db_ops and db_ops.update_task:
+            try:
+                _terminal = stream_state.current_content if stream_state else ""
+                # total_steps 口径对齐 stream_reader._log_task_end: 剔全部非业务 MetaStep(usage/paused/resumed/retrying/cancelled/authorization_required/start)
+                _m_skip = {"usage", "paused", "resumed", "retrying", "cancelled", "authorization_required", "start"}
+                _total = sum(1 for s in current_execution_steps if s.get("type") not in _m_skip)
+                _err_type, _err_msg = "", ""
+                # 三堂会审修复(小欧 2026-08-16): 原条件 `not stream_state` 恒 False(orchestrator 正常路径
+                #   stream_state 恒为 StreamState 实例 truthy), error_type/error_message 永远提取不到→任务失败
+                #   时 chat_tasks 错误信息丢失。改为按终态判定: failed 时从末条 final 实取(异常分支必先 append final_dict)
+                if _terminal_status == "failed" and current_execution_steps:
+                    _last = current_execution_steps[-1]  # 末条 final 取错误, 避免伪 _final_err_type/_final_err_msg
+                    _err_type, _err_msg = str(_last.get("error_type") or ""), str(_last.get("error_message") or "")
+                with db.get_conn_with_retry("chat") as _conn:
+                    db_ops.update_task(
+                        _conn, status=_terminal_status, response=_terminal,
+                        end_time=get_local_iso_timestamp(),
+                        duration=round(time.time() - start_time, 1) if start_time else None,
+                        accumulated_usage=getattr(agent, "accumulated_usage", None),
+                        llm_call_count=getattr(agent, "llm_call_count", 0),
+                        total_steps=_total, retry_count=getattr(agent, "_retry_count", 0),
+                        error_type=_err_type, error_message=_err_msg)
+            except Exception as _task_e:
+                logger.warning(f"[Runner] chat_tasks 终态 UPDATE 失败(task={task_id}): {_task_e}")
+
+        # S2 token_usage 收终态逐 usage 统一 INSERT(10.1.7②-3, 设计2020-2031; 每个 usage 独立 with) — 小欧 2026-08-16
+        if db_ops and db_ops.insert_token:
+            try:
+                for _s in current_execution_steps:
+                    if _s.get("type") == "usage":
+                        with db.get_conn_with_retry("chat") as _conn:
+                            db_ops.insert_token(
+                                _conn,  # 闭包绑 task_id/session_id/model/provider(见 ②-1 db_ops)
+                                # llm_call_count 取 usage 步骤的 step 序号(=agent.llm_call_count, react_cycle.py:401)
+                                llm_call_count=int(_s.get("step") or agent.llm_call_count or 0),
+                                prompt_tokens=int(_s.get("prompt_tokens") or 0),
+                                completion_tokens=int(_s.get("completion_tokens") or 0),
+                                total_tokens=int(_s.get("total_tokens") or 0))
+            except Exception as _tok_e:
+                logger.warning(f"[Runner] token_usage 落库失败(task={task_id}): {_tok_e}")
 
         # 生命周期清理：原 openai.py finally 的 task_cleanup 迁入此处 — 小欧 2026-07-12
         # 修复旧 bug：断线时不再误删在跑的 agent（cleanup 由生产者自身在结束时调用）

@@ -96,6 +96,10 @@
 #   [改法] ①tool_constants.FILE_OPERATION_TOOLS 并入8个office工具 ②_WRITE_OPS 排除集 {"readtext"}→_READ_TOOLS
 #         (含4个office读工具, 防 read_xlsx 等被误判写操作致读-读并行退化串行)
 #   [效果] 同路径写+读/写×2 并组串行, 同路径读×2/不同路径 仍并行, 无性能退化
+# 2026-08-16 - 小欧 - S2(10.1.7②-5/10.1.8 S2, 北京老陈驱动): HITL 确认链 tool_name 透传 + 豁免读取 session_id 接入——
+#   ①create_confirmation(agent.task_id) 增传 _cn(tool_name), 供 resolve_confirmation trust 落库;
+#   ②check_safety_and_confirm 入口经 agent.task_id 反查 session_id(禁伪 agent.session_id, chat_tasks 已建行),
+#     传 check_before_execute(session_id=) 做会话信任豁免(信任过的工具跳二次 HITL)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -216,11 +220,22 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result, resolve_confirmation
         safety_checker = get_tool_safety_checker()
 
+        # S2(10.1.7②-5): session_id 经 task_id 反查(agent 无 session_id 属性, 禁止伪变量),
+        #   一次反查供本循环所有工具豁免读取复用; 反查失败置 None 不豁免(按需确认) — 小欧 2026-08-16
+        _session_id = None
+        try:
+            from app.services.chat.storage import get_session_id_by_task
+            from app.db import db
+            with db.get_conn_with_retry("chat") as _conn:
+                _session_id = get_session_id_by_task(_conn, agent.task_id)
+        except Exception:
+            _session_id = None
+
         _denied = []
         for call in all_calls:
             _cn = call.get("tool_name", "?")
             _cp = call.get("tool_params", {})
-            safety_result = safety_checker.check_before_execute(_cn, _cp)
+            safety_result = safety_checker.check_before_execute(_cn, _cp, session_id=_session_id)
 
             if safety_result.blocked:
                 yield agent._step_emitter.emit(ErrorStep(
@@ -235,7 +250,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 desensitized_params = {k: v for k, v in _cp.items()
                                        if k not in _SENSITIVE_FIELDS}
 
-                confirm_id = await create_confirmation(agent.task_id)
+                confirm_id = await create_confirmation(agent.task_id, _cn)  # S2: tool_name 透传供 trust 落库(10.1.7②-5) — 小欧 2026-08-16
 
                 yield agent._step_emitter.emit(MetaStep(
                     step=step,
