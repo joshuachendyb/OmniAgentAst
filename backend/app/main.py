@@ -9,6 +9,7 @@
 # 2026-08-12 - 小欧 - A4(方案4.4.3): 注册 tool_routes router(工具测试路由由 health.py 迁出), include_router 加 /api/v1 tags=tools — 小欧 2026-08-12
 # 2026-08-14 - 小欧 - 改名名实相符: model_routes→config_routes(import与挂载变量model_router→config_router); api/v1/chat/sse→execution_stream(chat_execution_router导入同步)
 # 2026-08-14 - 小欧 - monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
+# 2026-08-16 - 小欧 - S2(10.1.7②-6/10.1.8 S2): 注册 token_usage_router(token 四维度查询 API, 新建 app/api/v1/token_usage.py), include_router 加 /api/v1 tags=token-usage
 import sys
 import asyncio
 from typing import Optional
@@ -37,6 +38,7 @@ import logging
 from app.api.v1 import health, sessions, messages, metrics
 from app.api.v1.config_routes import router as config_router
 from app.api.v1.tool_routes import router as tool_routes_router  # A4: 工具测试路由迁出 health.py — 小欧 2026-08-12
+from app.api.v1.token_usage import router as token_usage_router  # S2(10.1.7②-6): token 四维度查询 API — 小欧 2026-08-16
 from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
 from app.api.v1.task_queries import router as task_queries_router
 from app.logger import logger
@@ -153,6 +155,7 @@ app.include_router(messages.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(chat_execution_router.router, prefix="/api/v1", tags=["execution"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 app.include_router(task_queries_router, prefix="/api/v1", tags=["task-queries"])
+app.include_router(token_usage_router, prefix="/api/v1", tags=["token-usage"])  # S2(10.1.7②-6) — 小欧 2026-08-16
 
 
 _cleanup_task_ref: Optional[asyncio.Task] = None  # 后台清理循环 task 引用, 供 shutdown 时 cancel
