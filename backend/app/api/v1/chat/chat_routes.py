@@ -12,6 +12,7 @@
 #   (路由+DTO解包+调 orchestrator); 删除编排主体 generate/step_start/StreamState/_stream_with_control/chat_stream/
 #   chat_stream_reconnect/generate_task_id/validate_chat_config 实现/_agent_tasks。无兼容 shim, 业务逻辑单一归属 orchestrator。
 # 2026-08-14 - 小欧 - 改名名实相符: openai.py → chat_routes.py(实为自定义Chat路由薄壳, 无OpenAI协议)
+# 2026-08-16 - 小欧 - S1(10.1.4②): chat_stream_endpoint 透传 request.context_link_mode 给 orchestrator(任务上下文链)
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -41,7 +42,7 @@ task_router = APIRouter()
 async def chat_stream_endpoint(request: ChatRequest):
     # DTO 在 API 层解包，避免 services 层反向依赖 api/v1 — 方案4.7.3 DTO边界约定
     return StreamingResponse(
-        chat_stream_orchestrator(request.messages, request.session_id),
+        chat_stream_orchestrator(request.messages, request.session_id, request.context_link_mode),
         media_type="text/event-stream",
     )
 
