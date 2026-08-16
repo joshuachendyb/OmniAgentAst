@@ -2,10 +2,10 @@
 
 > **编写人**: 小欧
 > **创建时间**: 2026-07-22 18:30:00
-> **更新时间**: 2026-08-16 14:24:34
-> **版本**: v5.4
+> **更新时间**: 2026-08-16 15:41:02
+> **版本**: v5.9
 > 
-> **核心定位**：History Memory（结构化记忆供给）是主，历史裁剪（T1/T3 压缩旧 tool 输出）是辅。先解决"LLM 每轮能看到决策链"，再解决"窗口不够用时腾空间"。
+> **核心定位**：M1 历史记忆注入法（History Memory，结构化记忆供给）是主，历史裁剪（C3 的轻量实现函数 t1_compress_observations（工具摘要压缩）/T1 紧急裁剪法 压缩旧 tool 输出）是辅。先解决"LLM 每轮能看到决策链"，再解决"窗口不够用时腾空间"。
 
 ---
 
@@ -80,36 +80,36 @@ OpenCode 和 Hermes 都有 **LLM 摘要压缩**——把旧历史用 LLM 重新�
 因此策略是**三管齐下**：
 
 ```
-T1 工具摘要（50% 触发）
+C3 的轻量实现函数 t1_compress_observations（Tool-Summary，50% 触发）
   └── 对 observation 做一行摘要 → 腾出空间，消息数不变
   └── 解决 R1（主动压缩 tool obs）
   └── 解决 R4（纯字符串替换，零 LLM 成本）
 
-History Memory（每轮追加）
+M1 历史记忆注入法（History Memory，每轮追加）
   └── 把推理链提取为结构化记忆注入独立 user 消息
   └── 解决 R2（保推理链）+ R3（决策全景）
   └── 解决 R4（纯规则，零 LLM 成本）
 
-T3 紧急裁剪（95% 触发）
-  └── 加深 T1 + 参数截断 + 删除最早消息
+T1 紧急裁剪法（Emergency Trim，95% 触发）
+  └── 加深 t1_compress_observations（C3 轻量实现） + 参数截断 + 删除最早消息
   └── 解决 R5（最后安全网）
-  └── History Memory 不受影响，R2 仍然满足
+  └── M1 历史记忆注入法 不受影响，R2 仍然满足
 ```
 
 ---
 
-## 二、术语说明：T1 / T3
+## 二、术语说明：t1_compress_observations（C3 轻量实现）/ T1
 
 本方案包含两个裁剪级别，按触发阈值编号：
 
 | 级别 | 全称 | 触发时机 | 做什么 | 通俗理解 |
 |------|------|---------|--------|---------|
-| **T1** | Tier 1 — 工具摘要 | total > 窗口 50% | tool 观察结果内容 → 一行摘要，**不删消息** | **轻量：把大段工具输出压缩成一句话** |
-| **T3** | Tier 3 — 紧急裁剪 | total > 窗口 95% | 加深 T1 + 参数截断 + **删消息**（保尾 3 轮） | **重度：窗口快爆了，删旧消息腾空间** |
+| **t1_compress_observations** | C3 的轻量实现函数 — 工具摘要压缩法（Tool-Summary） | total > 窗口 50% | tool 观察结果内容 → 一行摘要，**不删消息** | **轻量：把大段工具输出压缩成一句话** |
+| **T1** | Trim 1 — 紧急裁剪法（Emergency Trim） | total > 窗口 95% | 加深 t1_compress_observations（C3 轻量实现）+ 参数截断 + **删消息**（保尾 3 轮） | **重度：窗口快爆了，删旧消息腾空间** |
 
-**为什么没有 T2？** 之前方案[2]有过 T2（冷区合并），因为不可控放弃了。现方案只有 T1（轻量压缩）+ T3（重度裁剪），中间 50%~95% 只做 T1，不够时才触发 T3。
+**为什么没有 T2？** 之前方案[2]有过 T2（冷区合并），因为不可控放弃了。现方案只有 t1_compress_observations（C3 轻量实现，轻量压缩）+ T1（重度裁剪），中间 50%~95% 只做 t1_compress_observations，不够时才触发 T1。
 
-T1 和 T3 的设计细节见第四章和第五章。
+t1_compress_observations（C3 轻量实现） 和 T1 的设计细节见第四章和第五章。
 
 ---
 
@@ -119,20 +119,20 @@ T1 和 T3 的设计细节见第四章和第五章。
 
 | 机制 | 用在哪 | 原始实现 |
 |------|--------|---------|
-| **Prune** 替换旧 tool output 为占位符 | T1 工具摘要（替换 obs content） | `compaction.ts` Prune |
-| **tail_turns** 轮次保尾 | T3 裁剪保尾 KEEP_TAIL_ROUNDS=3 | `compaction.ts select()` |
-| **splitTurn** 部分保留一轮 | T3 如果整轮太大，只保尾部几条 | `compaction.ts` L162-185 |
-| **溢出回退** 裁了还不够→继续缩小保尾 | T3 的 KEEP_TAIL_ROUNDS 递减回退 | `compaction.ts` overflow 模式 |
-| **PRUNE_MINIMUM=20K** 节省太少不执行 | T3 防抖动 | `compaction.ts` L36 |
+| **Prune** 替换旧 tool output 为占位符 | C3 的轻量实现函数 t1_compress_observations（Tool-Summary）（替换 obs content） | `compaction.ts` Prune |
+| **tail_turns** 轮次保尾 | T1 裁剪保尾 KEEP_TAIL_ROUNDS=3 | `compaction.ts select()` |
+| **splitTurn** 部分保留一轮 | T1 如果整轮太大，只保尾部几条 | `compaction.ts` L162-185 |
+| **溢出回退** 裁了还不够→继续缩小保尾 | T1 的 KEEP_TAIL_ROUNDS 递减回退 | `compaction.ts` overflow 模式 |
+| **PRUNE_MINIMUM=20K** 节省太少不执行 | T1 防抖动 | `compaction.ts` L36 |
 
 ### 2.2 借鉴 Hermes
 
 | 机制 | 用在哪 | 原始实现 |
 |------|--------|---------|
-| **Pass2 工具感知摘要** | T1 工具摘要模板 | `context_compressor.py` L880-892 |
-| **Pass3 截断 tool_call 参数** | T3 加深压缩 | `context_compressor.py` L894-918 |
-| **should_compress 防抖动** 连续2次节省<10%跳过 | T3 防抖动 | `context_compressor.py` L728-748 |
-| **413/overflow 回退 + compress + retry** | T3 溢出重试 | `conversation_loop.py` L2817-3024 |
+| **Pass2 工具感知摘要** | C3 的轻量实现函数 t1_compress_observations（Tool-Summary）模板 | `context_compressor.py` L880-892 |
+| **Pass3 截断 tool_call 参数** | T1 加深压缩 | `context_compressor.py` L894-918 |
+| **should_compress 防抖动** 连续2次节省<10%跳过 | T1 防抖动 | `context_compressor.py` L728-748 |
+| **413/overflow 回退 + compress + retry** | T1 溢出重试 | `conversation_loop.py` L2817-3024 |
 
 ### 2.3 我们自己创造
 
@@ -149,7 +149,7 @@ T1 和 T3 的设计细节见第四章和第五章。
 每轮 ReAct 循环:
 ┌─────────────────────────────────────────────────────────────┐
 │ Phase 1: LLM 调用前                                          │
-│   trim_history() — 检查是否需要 T1/T3                         │
+│   trim_history() — 检查是否需要 t1_compress_observations/T1                         │
 │   inject_history_mem() — 把 History Memory 注入 user 消息     │
 ├─────────────────────────────────────────────────────────────┤
 │ Phase 2: LLM 返回后                                          │
@@ -159,7 +159,9 @@ T1 和 T3 的设计细节见第四章和第五章。
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 3.1 History Memory — 概念升级：从"日志"到"记忆"
+### 3.1 M1 历史记忆注入法（History Memory）— 概念升级：从"日志"到"记忆"
+
+> **适用场景/场合**：① 每轮追加，零成本决策链供给；② 所有任务默认启用（独立 user 消息，_history_mem 保护）；③ 与任何压缩法组合，作 zero-cost 兜底记忆。
 
 **Context Log（旧）** = 被动追加的"记录"，写进去就完了，LLM 自己从长文本里找有用信息。
 
@@ -173,7 +175,7 @@ T1 和 T3 的设计细节见第四章和第五章。
 | **关注** | 不丢数据 | LLM 能否快速定位决策链 |
 | **信息量** | 全量 step 内容 | 提炼过的结构（结论+关键参数） |
 
-### 3.2 History Memory — 维护在哪、怎么注入
+### 3.2 M1 历史记忆注入法（History Memory）— 维护在哪、怎么注入
 
 **维护位置**：在 `MessageBuilder` 中以 `history_mem: List[str]` 属性存在
 
@@ -200,7 +202,7 @@ T1 和 T3 的设计细节见第四章和第五章。
 - DeepSeek 对 role 的敏感度低于 OpenAI，内容本身 > role 标签
 - 详见文档末尾《关于 role 选择的分析》
 
-### 3.3 History Memory — 追加内容
+### 3.3 M1 历史记忆注入法（History Memory）— 追加内容
 
 在 `react_cycle.py` Phase 2 处理每个 Step 后调用：
 
@@ -223,19 +225,23 @@ def append_history_mem(step):
 
 **限制**：最多 500 行，超了从最早两行开始合并。
 
-### 3.4 History Memory — 保护机制
+### 3.4 M1 历史记忆注入法（History Memory）— 保护机制
 
 History Memory 以独立 `user` 消息存在（紧挨 system 之后），在 `trim_history` 中通过以下机制保护：
 
-1. **保尾定位跳过**：T3 保尾从末尾找第 3 个 assistant 消息，History Memory 是 user 消息，不会被纳入轮次计数
-2. **system+user 锁死**：T3 裁剪的中间区是 system 之后、保尾区之前，而 History Memory 紧挨 system，属于中间区最旧的部分——但 History Memory 的 token 极小（数百字符），在"从最旧往最新保留"的扫描中，预算内一定能保留
+1. **保尾定位跳过**：T1 保尾从末尾找第 3 个 assistant 消息，History Memory 是 user 消息，不会被纳入轮次计数
+2. **system+user 锁死**：T1 裁剪的中间区是 system 之后、保尾区之前，而 History Memory 紧挨 system，属于中间区最旧的部分——但 History Memory 的 token 极小（数百字符），在"从最旧往最新保留"的扫描中，预算内一定能保留
 3. **`_history_mem` 标记**：History Memory 消息带 `_history_mem=True` 标记，trim_history 遇到此标记强制保留
 
 **万一被裁了怎么办？** History Memory 是**每轮重新注入**的。即使本轮被裁剪，下一轮 `prepare_messages_for_llm()` 会重新生成 History Memory 消息（从 `MessageBuilder.history_mem` 列表中提取最新 N 条）。因此 History Memory 实际是**逻辑持久**的——message_builder 的属性不随 trim_history 消失。
 
 ---
 
-## 五、T1 工具摘要（50% 触发，必须做）
+## 五、C3 剪枝压缩法的轻量实现：工具摘要压缩（t1_compress_observations）
+
+> **说明**：本轻量实现（函数 `t1_compress_observations`，原 C1 工具摘要压缩法 Tool-Summary Compaction）归 **C3 剪枝压缩法**策略族，与 14.9.3 的 `prune_tool_outputs`（prune 清输出）并列两种轻量压缩策略——前者逐工具写一行摘要、后者通用清零旧 tool output。其 DRY 升级为 `t1_reuse_summary`（原 C2 摘要复用压缩法，推荐，复用工具层已有 `llm_data.summary`，避免 per-tool 模板）。
+
+> **适用场景/场合**：① 轻量主动压缩首选，obs 粗估超窗口 50% 触发；② 简单/单轮任务、成本敏感（零 LLM）；③ 不删消息、不破坏 FC 配对，适合需保留完整消息数的场景。
 
 ### 4.1 触发条件
 
@@ -264,8 +270,8 @@ History Memory 以独立 `user` 消息存在（紧挨 system 之后），在 `tr
 
 **收益估算**：
 - 原始 100 轮 readtext obs（1000行×100字符）：100×100K=10M chars=2.5M tokens
-- T1 压缩后 100 轮 obs 摘要：100×80=8K chars=2K tokens
-- 200 轮 T1 后 total（含 system+user+asst）：~336K chars=**84K tokens**，窗口 200K 仅占 **42%**
+- t1_compress_observations 压缩后 100 轮 obs 摘要：100×80=8K chars=2K tokens
+- 200 轮 t1_compress_observations 后 total（含 system+user+asst）：~336K chars=**84K tokens**，窗口 200K 仅占 **42%**
 
 ### 4.4 防重复压缩
 
@@ -273,7 +279,9 @@ History Memory 以独立 `user` 消息存在（紧挨 system 之后），在 `tr
 
 ---
 
-## 六、T3 紧急裁剪（95% 触发，借鉴 OpenCode+Hermes）
+## 六、T1 紧急裁剪法（Emergency Trim）（95% 触发，借鉴 OpenCode+Hermes）
+
+> **适用场景/场合**：① 窗口快爆（>95%）最后安全网；② 防 LLM API 413 溢出；③ 加深 t1_compress_observations（C3 轻量实现） + Pass3 参数截断 + 保尾 + 回退 + 溢出重试。
 
 ### 5.1 触发条件
 
@@ -284,11 +292,11 @@ History Memory 以独立 `user` 消息存在（紧挨 system 之后），在 `tr
 ### 5.2 流程
 
 ```
-T3 入口:
+T1 入口:
   1. [加深T1] 对尚未压缩的 obs 全部做工具摘要（确保每一条 obs 最小化）
   2. [Hermes Pass3] 截断旧 assistant 中 tool_call 参数 JSON
      args > 500 chars → 字符串字段截到 200 chars（保持 JSON 合法）
-  3. [防抖动] 上次 T3 节省 < 10% → 跳过本次（Hermes should_compress）
+  3. [防抖动] 上次 T1 节省 < 10% → 跳过本次（Hermes should_compress）
   4. [保尾] 保尾 KEEP_TAIL_ROUNDS=3 轮完整 FC 对不动
      └─ 定位方式（借鉴方案[3]简化设计）:
           从消息列表末尾往前找第 3 个 assistant 消息，该消息及之后的内容
@@ -299,7 +307,7 @@ T3 入口:
            在预算内尽量保留，超预算则丢弃。
   6. [回退] 如果保尾 3 轮 + system 已超预算 → KEEP_TAIL_ROUNDS -= 1
           递减到 2 轮、1 轮，直到 budget > 0
-  7. [溢出重试] 如果 LLM API 返回 413 → 触发 T3 后重试
+  7. [溢出重试] 如果 LLM API 返回 413 → 触发 T1 后重试
   8. _rebuild_and_validate → _trim_fc_pairs 清理孤儿 FC 对
 ```
 
@@ -330,7 +338,7 @@ if self._t3_ineffective_count >= 2:
 
 ---
 
-## 七、History Memory vs 其他压缩方式对比
+## 七、M1 历史记忆注入法（History Memory）vs 其他压缩方式对比
 
 | 对比 | OpenCode Process(LLM摘要) | Hermes _generate_summary(LLM) | 本方案 History Memory(纯自动) |
 |------|--------------------------|------------------------------|-----------------------------|
@@ -351,11 +359,11 @@ if self._t3_ineffective_count >= 2:
 |------|-----|------|------|
 | `MAX_CONTEXT_TOKENS` | 200000 | 上下文窗口上限（配置可覆盖） | 原 constants.py |
 | `CHARS_PER_TOKEN` | 4 | chars→token 换算 | 原 constants.py |
-| `TRIGGER_T1_RATIO` | 0.50 | T1 工具摘要触发比例 | 新增 |
-| `TRIGGER_T3_RATIO` | 0.95 | T3 紧急裁剪触发比例 | 新增 |
+| `TRIGGER_T1_RATIO` | 0.50 | C3 的轻量实现函数 t1_compress_observations（Tool-Summary）触发比例 | 新增 |
+| `TRIGGER_T3_RATIO` | 0.95 | T1 紧急裁剪法（Emergency Trim）触发比例 | 新增 |
 | `TRIM_TARGET_RATIO` | 0.50 | 裁剪目标比例 | 新增 |
 | `KEEP_TAIL_ROUNDS` | 3 | 保尾轮数（借鉴方案[3]：保留最近 3 轮） | 新增 |
-| `COMPRESS_MINIMUM` | 20000 | T3 最少需释放这么多 token，否则跳过 | 借鉴 OpenCode PRUNE_MINIMUM |
+| `COMPRESS_MINIMUM` | 20000 | T1 最少需释放这么多 token，否则跳过 | 借鉴 OpenCode PRUNE_MINIMUM |
 | `PASS3_ARGS_THRESHOLD` | 500 | tool_call 参数超过此长度才截断 | 借鉴 Hermes Pass3 |
 | `PASS3_ARG_MAX_CHARS` | 200 | 截断后字符串字段最大长度 | 借鉴 Hermes Pass3 |
 | `HISTORY_MEM_MAX_LINES` | 500 | History Memory 最大行数 | 新增 |
@@ -385,7 +393,7 @@ if self._t3_ineffective_count >= 2:
   ...（更多轮次，History Memory 持续增长）...
 
   轮N:
-    Phase 1: trim_history() → total > 50%, 触发 T1
+    Phase 1: trim_history() → total > 50%, 触发 t1_compress_observations
               旧 tool obs → "[readtext] config.py (120行)"
               total 降至 < 50%
               inject_history_mem() → History Memory 已有 N 行
@@ -393,8 +401,8 @@ if self._t3_ineffective_count >= 2:
   ...（继续增长）...
 
   轮M:
-    Phase 1: trim_history() → total > 95%, 触发 T3
-              加深 T1 + Pass3 参数截断 → 仍超
+    Phase 1: trim_history() → total > 95%, 触发 T1
+              加深 t1_compress_observations（C3 轻量实现） + Pass3 参数截断 → 仍超
               保尾 3 轮，从最旧往最新删 → total 降至 < 50%
               History Memory 在 user 消息中，_history_mem 标记保护
               inject_history_mem() 正常执行
@@ -407,7 +415,7 @@ if self._t3_ineffective_count >= 2:
 | 维度 | [3] 简单裁剪 | [2] 三级压缩 | 原[4] v1.0 | **最终方案(本文件 v3.0)** |
 |------|------------|-------------|-----------|------------------------|
 | **推理链保留** | ❌ 丢弃 | ⚠️ 工具调用链 | ✅ **从 Step 提取** | ✅ **History Memory 注入 user** |
-| **obs 压缩** | ❌ 直接删 | ✅ T1 摘要 | ✅ **T1 摘要** | ✅ **T1 摘要** |
+| **obs 压缩** | ❌ 直接删 | ✅ t1_compress_observations 摘要 | ✅ **t1_compress_observations 摘要** | ✅ **t1_compress_observations 摘要** |
 | **冷区合并** | — | ⚠️ 不可控 | ❌ 不做 | ❌ **不做** |
 | **防抖动** | ❌ | ❌ | ✅ **Hermes** | ✅ **Hermes should_compress** |
 | **参数截断** | ❌ | ❌ | ✅ **Pass3** | ✅ **Hermes Pass3** |
@@ -415,7 +423,7 @@ if self._t3_ineffective_count >= 2:
 | **保尾策略** | ✅ KEEP=3 从最旧删 | ⚠️ KEEP=5 | KEEP=5 | ✅ **KEEP=3 + 从最旧删（融合[3]）** |
 | **保尾定位方式** | ✅ 找第N个user消息 | — | — | ✅ **找第N个assistant消息（融合[3]）** |
 | **History Memory 位置** | — | — | system 注入 | ✅ **独立 user 消息** |
-| **总级别** | 1 | 3 | 2 + History Memory | **2 级（T1 + T3）+ History Memory** |
+| **总级别** | 1 | 3 | 2 + M1 历史记忆注入法（History Memory） | **2 级（t1_compress_observations（C3 轻量实现） + T1）+ M1 历史记忆注入法（History Memory）** |
 | **复杂程度** | 低 | 高 | 中 | **中（融合[3]后略降）** |
 
 ---
@@ -423,14 +431,14 @@ if self._t3_ineffective_count >= 2:
 ## 十一、推荐落地组合（最终方案）
 
 > 本方案是 **[4] History Memory 设计** 与 **[3] 简化保尾逻辑** 的有机融合。
-> History Memory 提供"推理链永不丢"的保障，T1 做主动压缩，T3 做最后安全网，
+> History Memory 提供"推理链永不丢"的保障，t1_compress_observations 做主动压缩，T1 做最后安全网，
 > 保尾逻辑借鉴[3]的简洁可靠方式（KEEP=3、从最旧删）。
 
 ### 11.1 组合全景
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    最终方案：History Memory + T1 + T3                 │
+│                    最终方案：M1 历史记忆注入法（History Memory） + t1_compress_observations（C3 轻量实现） + T1                 │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  [History Memory] ─── 每轮自动追加，独立 user 消息，_history_mem 保护  │
@@ -439,19 +447,19 @@ if self._t3_ineffective_count >= 2:
 │  └─ 来源: Step 体系（非 assistant message，FC 模式也总有内容）         │
 │  └─ role=user，紧挨 system 之后，语义对（对话历史）                   │
 │                                                                     │
-│  [T1 工具摘要] ─── total > 50% 触发，零 LLM 成本                   │
+│  [C3 的轻量实现函数 t1_compress_observations（Tool-Summary）] ─── total > 50% 触发，零 LLM 成本                   │
 │  └─ tool observation 内容 → 工具感知一行摘要                         │
 │  └─ 不删消息、不破坏 FC 配对                                         │
 │  └─ 已压缩消息标记 _compressed=True，防重复压缩                      │
 │                                                                     │
-│  [T3 紧急裁剪] ─── total > 95% 触发，最后安全网                      │
-│  ├─ 加深 T1 + Pass3 参数截断                                         │
+│  [T1 紧急裁剪法（Emergency Trim）] ─── total > 95% 触发，最后安全网                      │
+│  ├─ 加深 t1_compress_observations（C3 轻量实现） + Pass3 参数截断                                         │
 │  ├─ should_compress 防抖动（连续 2 次节省 < 10% 跳过）               │
 │  ├─ 保尾 KEEP_TAIL_ROUNDS=3 轮完整 FC 对（借鉴方案[3]）              │
 │  │    定位: 从末尾往前找第 3 个 assistant 消息，之后全部保留          │
 │  ├─ 从最旧往最新删，直到 total < 窗口×50%（借鉴方案[3]）              │
 │  ├─ 回退: 保尾 3 轮超预算 → 递减到 2→1 轮                           │
-│  └─ 溢出重试: LLM API 返回 413 → T3 后重试                          │
+│  └─ 溢出重试: LLM API 返回 413 → T1 后重试                          │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -461,8 +469,8 @@ if self._t3_ineffective_count >= 2:
 | 阈值 | 动作 | 效果 | 信息丢失 |
 |------|------|------|---------|
 | < 50% | 不触发 | 全部保留 | 无 |
-| 50%~95% | **T1** 工具摘要 | obs 内容→一行摘要，消息数不变 | 仅 obs 细节，决策链完整 |
-| > 95% | **T3** 紧急裁剪 | 加深 T1 + Pass3 + 保尾 3 轮 + 从最旧删 | 旧轮次丢弃，但 History Memory 中有推理链 |
+| 50%~95% | **C3 的轻量实现函数 t1_compress_observations（Tool-Summary）** | obs 内容→一行摘要，消息数不变 | 仅 obs 细节，决策链完整 |
+| > 95% | **T1** 紧急裁剪法 | 加深 t1_compress_observations（C3 轻量实现） + Pass3 + 保尾 3 轮 + 从最旧删 | 旧轮次丢弃，但 History Memory 中有推理链 |
 
 ### 11.3 保尾逻辑详解（融合方案[3]）
 
@@ -491,7 +499,7 @@ if self._t3_ineffective_count >= 2:
 |------|---------------|----------------|----------------|------------|
 | **设计哲学** | 理论上完美 | 优中选优+自创 | 只解决当下 | **方案[4]为主+方案[3]保尾** |
 | **推理链保留** | ⚠️ 压缩不丢决策 | ⚠️ 冷区合并不可控 | ❌ 直接丢 | **✅ History Memory 始终在** |
-| **obs 压缩** | ❌ 零收益 | ✅ T1 摘要 | ❌ 直接删 | **✅ T1 摘要** |
+| **obs 压缩** | ❌ 零收益 | ✅ t1_compress_observations 摘要 | ❌ 直接删 | **✅ t1_compress_observations 摘要** |
 | **保尾** | 3/1 轮 | 5 轮 | 3 轮从最旧删 | **✅ 3 轮 + 从最旧删** |
 | **防抖动** | ❌ | ❌ | ❌ | **✅ Hermes should_compress** |
 | **实用度** | ❌ 过度设计 | ⚠️ 冷区合并不成熟 | ✅ 够用但风险 | **✅ 够用 + 安全网完善** |
@@ -502,7 +510,7 @@ if self._t3_ineffective_count >= 2:
 | 模块 | 改动 |
 |------|------|
 | `constants.py` | 新增 `COMPRESS_T1_RATIO=0.50`、`TRIM_T3_RATIO=0.95`、`TRIM_TARGET_RATIO=0.50`、`KEEP_TAIL_ROUNDS=3`、`HISTORY_MEM_MAX_LINES=500`、`HISTORY_MEM_LINE_MAX_CHARS=120`、`T3_MINIMUM_SAVINGS=20000`、`PASS3_ARGS_THRESHOLD=500`、`PASS3_ARG_MAX_CHARS=200` |
-| `message_builder.py` | ① 新增 `history_mem` 属性 + 追加/注入方法 ② 新增 `_t1_compress_observations()` T1 工具摘要 ③ 新增 `_trim_t3()` 从最旧删+保尾 3 轮 ④ `trim_history()` 重写为 T1→T3 流水线 ⑤ `prepare_messages_for_llm()` 浅拷贝时插入独立 user 消息(History Memory)，带 `_history_mem=True` 标记 ⑥ `trim_history()` 识别 `_history_mem` 标记强制保留 |
+| `message_builder.py` | ① 新增 `history_mem` 属性 + 追加/注入方法 ② 新增 `_t1_compress_observations()`（C3 的轻量实现函数 t1_compress_observations，工具摘要压缩） ③ 新增 `_trim_t3()` 从最旧删+保尾 3 轮 ④ `trim_history()` 重写为 t1_compress_observations（C3 轻量实现）→T1 流水线 ⑤ `prepare_messages_for_llm()` 浅拷贝时插入独立 user 消息(History Memory)，带 `_history_mem=True` 标记 ⑥ `trim_history()` 识别 `_history_mem` 标记强制保留 |
 | `react_cycle.py` | `_process_single_step()` Phase 3 末尾追加 History Memory |
 
 ---
@@ -511,9 +519,9 @@ if self._t3_ineffective_count >= 2:
 
 ### 12.1 第一省：需求覆盖检查 — 方案真的解决了四个问题吗？
 
-**R1（主动压缩 obs）→ T1**
+**R1（主动压缩 obs）→ t1_compress_observations（C3 轻量实现）**
 - ✅ 大 obs（readtext 200行、shell 200行）→ 一行摘要，压缩比 >99%
-- ⚠️ **但：obs 已被行×列收口，如果收口后本身很小（grep 3行匹配），T1 无收益**。此时 total 仍可能 >50% 但 T1 压缩率为零，白白走了一遍扫描。代价是 O(n) 遍历 + _estimate_tokens 重算，几十微秒级别，可接受。真正的问题是：**T1 没省出空间，后续轮次仍然会触发 T3。**
+- ⚠️ **但：obs 已被行×列收口，如果收口后本身很小（grep 3行匹配），t1_compress_observations 无收益**。此时 total 仍可能 >50% 但 t1_compress_observations 压缩率为零，白白走了一遍扫描。代价是 O(n) 遍历 + _estimate_tokens 重算，几十微秒级别，可接受。真正的问题是：**t1_compress_observations 没省出空间，后续轮次仍然会触发 T1。**
 
 **R2（保推理链不丢）→ History Memory**
 - ✅ thought→action→result→answer 结构，每轮追加
@@ -524,28 +532,28 @@ if self._t3_ineffective_count >= 2:
 - ⚠️ **但：History Memory 增长到 500 行上限后，本身也成了"长文本噪音"**。500 行按平均 60 字符/行 ≈ 30K chars ≈ 7.5K tokens，相当于又多了一条大 obs。**History Memory 的压缩策略（合并最早两行）只是字符截断，不是语义摘要**——越往后 History Memory 的信息密度越低。
 
 **R4（零 LLM 成本）→ 全部**
-- ✅ T1 纯字符串替换，History Memory 纯规则拼接，T3 纯列表操作，全程无 LLM 调用
+- ✅ t1_compress_observations 纯字符串替换，History Memory 纯规则拼接，T1 纯列表操作，全程无 LLM 调用
 - ✅ 没有任何隐藏的 LLM 调用路径
 
-**R5（最后安全网）→ T3**
+**R5（最后安全网）→ T1**
 - ✅ 95% 触发，保尾 3 轮，从最旧删，递减回退
 - ✅ 防抖动 + 溢出重试，不会"裁了还超"
-- ⚠️ **但：T3 的裁剪方向是从最旧往最新删，budget = target(50%) - 锁定区。如果保尾 3 轮 + system 已经占了 60%，available < 0，直接走回退。而回退递减保尾轮数**——极端情况保尾 1 轮，可能把关键决策轮裁掉。此时 History Memory 是唯一保留的推理链。
+- ⚠️ **但：T1 的裁剪方向是从最旧往最新删，budget = target(50%) - 锁定区。如果保尾 3 轮 + system 已经占了 60%，available < 0，直接走回退。而回退递减保尾轮数**——极端情况保尾 1 轮，可能把关键决策轮裁掉。此时 History Memory 是唯一保留的推理链。
 
 ### 12.2 第二省：假设风险 — 哪些假设可能不成立？
 
 **假设 1：50% 和 95% 阈值在真实场景中合理**
 
-| 窗口配置 | T1 50% 触发线 | T3 95% 触发线 | 5-15轮能否触发 |
+| 窗口配置 | t1_compress_observations 50% 触发线 | T1 95% 触发线 | 5-15轮能否触发 |
 |---------|--------------|--------------|--------------|
-| 默认 200K | 100K tokens | 190K tokens | **T1 可能触，T3 几乎不触**（除非超大 obs） |
+| 默认 200K | 100K tokens | 190K tokens | **t1_compress_observations 可能触，T1 几乎不触**（除非超大 obs） |
 | deepseek 900K | 450K tokens | 855K tokens | **都不触发**（5-15轮到不了 450K） |
 
-**风险**：窗口越大（900K），T1 和 T3 越不触发，整个裁剪机制在 deepseek 大窗口下**可能形同虚设**。
+**风险**：窗口越大（900K），t1_compress_observations 和 T1 越不触发，整个裁剪机制在 deepseek 大窗口下**可能形同虚设**。
 
 **对策**：触发阈值应基于**实际窗口**而不是固定比例。或者加一个备用触发条件：**消息数 > N 条**（类似之前方案的条件 C）。但消息数触发又回到了"删消息"的老路——没有压缩先行。
 
-**需要北京老陈裁定**：deepseek-v4-flash 的 900K 窗口下，T1/T3 不触发是否可接受？还是需要基于消息数的备用触发？
+**需要北京老陈裁定**：deepseek-v4-flash 的 900K 窗口下，t1_compress_observations/T1 不触发是否可接受？还是需要基于消息数的备用触发？
 
 **假设 2：保尾 3 轮 + History Memory 足够 LLM 理解任务全局**
 
@@ -571,11 +579,11 @@ LLM 看到 messages 中有一条独立的 `user` 消息（History Memory），�
 
 | 场景 | 预期行为 | 风险 | 对策 |
 |------|---------|------|------|
-| **1 轮完成** | 不触发 T1/T3，History Memory 正常工作 | 无 | — |
-| **30 轮长任务** | T1 多次触发，同一 obs 被 Repeatedly 压缩 | _compressed 标记防重复，但标记本身不清理 | 每轮 prepare_messages_for_llm 剥离 `_compressed` 标记（只剥离副本，原始标记保留） |
+| **1 轮完成** | 不触发 t1_compress_observations/T1，History Memory 正常工作 | 无 | — |
+| **30 轮长任务** | t1_compress_observations 多次触发，同一 obs 被 Repeatedly 压缩 | _compressed 标记防重复，但标记本身不清理 | 每轮 prepare_messages_for_llm 剥离 `_compressed` 标记（只剥离副本，原始标记保留） |
 | **LLM 空转（reasoning-only）** | B3 注入临时 reasoning 消息，然后被 pop_temp_messages 清除 | 空转也会被 append_history_mem 记录到 History Memory | 空转的 reasoning 没有对应的 action/observation，History Memory 中记录的是"thought: xxx"但没有后续的 tool/result，**LLM 自己看得出来这是空转**。但连续多次空转会污染 History Memory。对策：`append_history_mem` 检测到**连续 2 条 thought 没有中间 action** 时合并为一条 |
-| **T3 + 回退到保尾 1 轮** | system + 最后 1 轮 + History Memory 保留 | 中间轮全丢，完全依赖 History Memory | **可接受**。History Memory 记录了所有轮次的推理链，LLM 虽看不到原始 tool 输出，但知道推理过程。这是裁剪的代价 |
-| **History Memory 本身超 500 行上限** | 合并最早两行 | 合并后信息密度下降，但仍是纯文本保留 | 500 行 × 60 字符 ≈ 30K chars ≈ 7.5K tokens，约窗口的 3.75%。**在 History Memory 达到 500 行之前，T1 早就触发了（50%）。** 所以 History Memory 超限在前，T1 压缩在后——T1 腾出空间后，History Memory 的 7.5K 占比反而更小了。无害 |
+| **T1 + 回退到保尾 1 轮** | system + 最后 1 轮 + History Memory 保留 | 中间轮全丢，完全依赖 History Memory | **可接受**。History Memory 记录了所有轮次的推理链，LLM 虽看不到原始 tool 输出，但知道推理过程。这是裁剪的代价 |
+| **History Memory 本身超 500 行上限** | 合并最早两行 | 合并后信息密度下降，但仍是纯文本保留 | 500 行 × 60 字符 ≈ 30K chars ≈ 7.5K tokens，约窗口的 3.75%。**在 History Memory 达到 500 行之前，t1_compress_observations 早就触发了（50%）。** 所以 History Memory 超限在前，t1_compress_observations 压缩在后——t1_compress_observations 腾出空间后，History Memory 的 7.5K 占比反而更小了。无害 |
 | **多轮对话（历史注入）** | `inject_history` 插入 system 和 task 之间 | History Memory 紧挨 system，历史注入也在 system 之后，两者的相对位置？| 顺序应该是：`[0]system` → `[1]History Memory` → `[2]历史消息` → `[3]task prompt`。需要在 `prepare_messages_for_llm` 中正确处理 |
 | **`_history_mem` 标记被意外剥离** | trim_history 不识别，当成普通 user 消息 | 中间区扫描时 History Memory 可能被删 | 在 `prepare_messages_for_llm` 剥离标记时，当前设计只剥离 `_temp_reasoning` 和 `_compressed`，`_history_mem` 不下发到 LLM 但保留在 conversation_history。**实现时必须加 `msg.pop("_history_mem", None)`** |
 
@@ -583,11 +591,11 @@ LLM 看到 messages 中有一条独立的 `user` 消息（History Memory），�
 
 | 检查项 | 结论 |
 |--------|------|
-| **需求全覆盖** | R1-R5 均有对应机制，但有 2 个风险点（900K 窗口下 T1 不触发、reasoning 字段不记录） |
+| **需求全覆盖** | R1-R5 均有对应机制，但有 2 个风险点（900K 窗口下 t1_compress_observations 不触发、reasoning 字段不记录） |
 | **无非受迫假设** | 3 个假设均做了分析，风险可控 |
 | **边界有兜底** | 7 个边界场景均有对策 |
 | **零退化** | 当前 `trim_history` 代码会被完全重写，但保尾+FC配对保留，功能不退化 |
-| **可测试** | 每层（History Memory / T1 / T3）可独立构造测试：构造超大 obs → T1 压缩 → 验证摘要格式；构造 95%+ → T3 裁剪 → 验证保尾 3 轮 + FC 配对完整性 |
+| **可测试** | 每层（M1 历史记忆注入法（History Memory） / t1_compress_observations（C3 轻量实现）/ T1）可独立构造测试：构造超大 obs → t1_compress_observations 压缩 → 验证摘要格式；构造 95%+ → T1 裁剪 → 验证保尾 3 轮 + FC 配对完整性 |
 
 ---
 
@@ -703,8 +711,8 @@ def isOverflow(cfg, tokens, model):
 3. 只有总节省 > `PRUNE_MINIMUM=20000` 才真正执行清零（防抖动，省得少不值当）。
 4. 清零动作：`part.state.time.compacted = Date.now()`。之后装配时（message-v2.ts:304-306）该 tool 输出显示为 `[Old tool result content cleared]`，attachments 一并移除；但 **tool_call 参数仍在**（LLM 仍知道"调过什么工具、传了什么参数"）。
 
-> **与我们 v4.0 的对照**：这对应我们的 **T1 工具摘要**，但实现路径完全不同——
-> - 我们 T1：**逐工具写摘要模板**（readtext/listdir/grep/shell/edittext/fetchpage 各一个模板），把 obs 内容替换成一行摘要。
+> **与我们 v4.0 的对照**：这对应我们的 **C3 的轻量实现函数 t1_compress_observations（Tool-Summary）**，但实现路径完全不同——
+> - 我们 t1_compress_observations（C3 轻量实现）：**逐工具写摘要模板**（readtext/listdir/grep/shell/edittext/fetchpage 各一个模板），把 obs 内容替换成一行摘要。
 > - opencode prune：**通用清零**，不维护任何 per-tool 模板，保留 tool_call 参数即可，`_compressed` 标记由 `time.compacted` 时间戳承担。
 > - **判定：opencode 的做法明显更优**——零模板、零维护、不破坏 FC 配对（参数还在），且 `skill` 豁免 + PRUNE_PROTECT 保护近期细节的设计更精细。
 
@@ -730,7 +738,7 @@ def isOverflow(cfg, tokens, model):
    - `"compact"` → 压缩后仍超限 → 记 `ContextOverflowError`（"会话太大，压缩后仍超模型限制"），返回 stop（compaction.ts:461-470）。
    - `"continue"` → 成功。若 auto 自动压缩：**自动续跑**——要么回放溢出前最近的 user 消息（overflow 场景），要么发一条合成消息 `"Continue if you have next steps, or stop and ask for clarification..."` 让 LLM 继续干活（compaction.ts:479-561）。**用户无感知，无需重新输入。**
 
-> **与我们 v4.0 的对照**：这是**我们完全没有的一层**。我们 v4.0 的 R4 明确"零额外 LLM 调用"，所以只有 T1（字符级替换）+ T3（删消息）+ History Memory（规则级提取），**没有语义理解级的摘要**。opencode 证明了：一次独立 LLM 调用 + 锚定增量更新，能做到"信息密度高、决策链可累积"的真压缩。**代价**：额外一次 LLM 调用（成本 + 延迟）。这是当年我们主动放弃、而 opencode 选择承担的成本。
+> **与我们 v4.0 的对照**：这是**我们完全没有的一层**。我们 v4.0 的 R4 明确"零额外 LLM 调用"，所以只有 t1_compress_observations（字符级替换）+ T1（删消息）+ History Memory（规则级提取），**没有语义理解级的摘要**。opencode 证明了：一次独立 LLM 调用 + 锚定增量更新，能做到"信息密度高、决策链可累积"的真压缩。**代价**：额外一次 LLM 调用（成本 + 延迟）。这是当年我们主动放弃、而 opencode 选择承担的成本。
 
 ### 14.4 summary.ts — 澄清：它不是上下文压缩，是会话文件变更统计
 
@@ -754,10 +762,10 @@ def isOverflow(cfg, tokens, model):
 
 | # | opencode 机制 | 我们能否用 | 怎么用（映射到我们的代码） | 优先级 |
 |---|--------------|-----------|--------------------------|--------|
-| 1 | **prune 通用清零旧工具输出**（保留 tool_call 参数、清 output、`time.compacted` 标记） | ✅ 完全可用 | **替换 T1 逐工具摘要模板**：改 `message_builder.py`，对超预算的旧 tool 消息输出置 `compacted` 标记，装配时输出 `[旧工具结果已清除]`；tool_call 参数保留。删掉 6 个 per-tool 摘要模板（DRY/KISS 双赢） | **P0 立即** |
+| 1 | **prune 通用清零旧工具输出**（保留 tool_call 参数、清 output、`time.compacted` 标记） | ✅ 完全可用 | **替换 t1_compress_observations 逐工具摘要模板**：改 `message_builder.py`，对超预算的旧 tool 消息输出置 `compacted` 标记，装配时输出 `[旧工具结果已清除]`；tool_call 参数保留。删掉 6 个 per-tool 摘要模板（DRY/KISS 双赢） | **P0 立即** |
 | 2 | **LLM 锚定摘要**（独立 compaction agent + previousSummary 增量更新 + 固定结构模板） | ✅ 可用，需放开"零 LLM 成本"原则 | 新增压缩入口：用当前模型（或可配置小模型）调一次，输出 Goal/Progress/Decisions/Next Steps/Critical Context 结构摘要，`previousSummary` 累积注入；摘要以 assistant 消息落库 + 前端可展示"已压缩" | P1（需北京老陈定夺是否接受一次 LLM 调用成本） |
 | 3 | **按模型窗口触发**（`usable = model.limit.input - reserved`，真实 tokens） | ✅ 完全可用 | 改 `trim_history` 触发：`MAX_CONTEXT_TOKENS` 改为按当前模型 `limit.input` 动态取，减去 reserved 缓冲；tokens 用 Provider 返回的真实值（我们有 `last_total_tokens`） | **P0 立即** |
-| 4 | **保尾 token 预算 + splitTurn 半轮劈分** | ✅ 可用 | 增强 T3 保尾：KEEP_TAIL_ROUNDS 基础上加 `preserve_recent_tokens` 上限（如 8K）；整轮超预算时只保该轮尾部消息 | P1 |
+| 4 | **保尾 token 预算 + splitTurn 半轮劈分** | ✅ 可用 | 增强 T1 保尾：KEEP_TAIL_ROUNDS 基础上加 `preserve_recent_tokens` 上限（如 8K）；整轮超预算时只保该轮尾部消息 | P1 |
 | 5 | **压缩用截断不破坏原库**（toolOutputMaxChars=2000） | ✅ 完全可用 | 压缩喂 LLM 时对历史工具输出截断，原库完整保留（我们 7.1 A5 / 回放走 DB 已同理念） | **P0 立即** |
 | 6 | **自动续跑**（压缩后发 "Continue..." 合成消息） | ✅ 可用 | 压缩完成后在流内继续跑原任务，无需用户重发 | P1 |
 | 7 | **`auto=false` 可关闭 + 手动命令** | ✅ 可用 | 配置项开关自动压缩 | P2 |
@@ -767,8 +775,8 @@ def isOverflow(cfg, tokens, model):
 
 **我们的 v4.0 方案在 opencode 面前呈现的差距，集中在两点：**
 
-1. **T1 逐工具摘要模板是过度设计**：opencode 的 prune 已证明工具输出压缩可以**通用清零 + 保 FC 配对**，零模板零维护。建议 **T1 → prune 式清理** 改造。
-2. **缺真·语义摘要层**：我们 T1 之后直接 T3 删消息，信息靠 History Memory 规则提取兜底，但**没有"理解级"的压缩**。opencode 的 anchored LLM 摘要（独立 agent + previousSummary 增量 + 固定结构）是经过验证的成熟方案，**建议评估放开"零 LLM 成本"原则，采纳为高层压缩**（一次压缩一次调用，可配置小模型控制成本）。
+1. **t1_compress_observations 逐工具摘要模板是过度设计**：opencode 的 prune 已证明工具输出压缩可以**通用清零 + 保 FC 配对**，零模板零维护。建议 **t1_compress_observations → prune 式清理** 改造。
+2. **缺真·语义摘要层**：我们 t1_compress_observations 之后直接 T1 删消息，信息靠 History Memory 规则提取兜底，但**没有"理解级"的压缩**。opencode 的 anchored LLM 摘要（独立 agent + previousSummary 增量 + 固定结构）是经过验证的成熟方案，**建议评估放开"零 LLM 成本"原则，采纳为高层压缩**（一次压缩一次调用，可配置小模型控制成本）。
 
 **保留我们方案的合理部分**：History Memory（决策链主动注入，zero-cost 且 opencode 没有同等机制）、防抖动、保尾思路。
 
@@ -791,9 +799,9 @@ def isOverflow(cfg, tokens, model):
 
 | 维度 | 我们 v4.0 | opencode | 判定 |
 |------|----------|----------|------|
-| **① 压缩触发** | 固定比例（T1 50% / T3 95%） | 按模型窗口 `usable = limit.input - reserved`（真实 tokens） | **opencode 更合理**——不同模型窗口自适应，deepseek 900K 也能正确触发（我们 50% 在 900K 下到不了，文档 12.2 已自省） |
-| **② 工具输出压缩** | **T1 逐工具摘要模板**（readtext/listdir/grep 等 6 模板） | **prune 通用清零**（保留 tool_call、清 output、`time.compacted` 标记，skill 豁免 + PRUNE_PROTECT 保近 40K） | **opencode 明显更优**——零模板零维护、不破坏 FC 配对（参数还在）、防抖动（省 <20K 不做） |
-| **③ 语义压缩** | ❌ **无**（R4 拒绝 LLM）→ History Memory 规则拼接 + T3 删消息 | ✅ **anchored 锚定式 LLM 摘要**（独立 compaction agent + previousSummary 增量更新 + 固定 Markdown 结构 Goal/Progress/Decisions/NextSteps/CriticalContext/Files） | **opencode 是完整能力，我们缺失这一环**——这是最本质差距 |
+| **① 压缩触发** | 固定比例（t1_compress_observations 50% / T1 95%） | 按模型窗口 `usable = limit.input - reserved`（真实 tokens） | **opencode 更合理**——不同模型窗口自适应，deepseek 900K 也能正确触发（我们 50% 在 900K 下到不了，文档 12.2 已自省） |
+| **② 工具输出压缩** | **t1_compress_observations 逐工具摘要模板**（readtext/listdir/grep 等 6 模板） | **prune 通用清零**（保留 tool_call、清 output、`time.compacted` 标记，skill 豁免 + PRUNE_PROTECT 保近 40K） | **opencode 明显更优**——零模板零维护、不破坏 FC 配对（参数还在）、防抖动（省 <20K 不做） |
+| **③ 语义压缩** | ❌ **无**（R4 拒绝 LLM）→ History Memory 规则拼接 + T1 删消息 | ✅ **anchored 锚定式 LLM 摘要**（独立 compaction agent + previousSummary 增量更新 + 固定 Markdown 结构 Goal/Progress/Decisions/NextSteps/CriticalContext/Files） | **opencode 是完整能力，我们缺失这一环**——这是最本质差距 |
 | **④ 决策链保留** | ✅ **History Memory**（从 Step 提取 thought→action→result→answer，注入独立 user 消息，500 行上限） | 摘要模板含 Key Decisions / Critical Context / Progress 段（靠 LLM 归纳） | **各有千秋**——我们 zero-cost 且 opencode 无同等机制；但 History Memory 500 行后变字符截断（文档 12.1 自省），opencode 靠 LLM 语义归纳更持久 |
 | **⑤ 保尾兜底** | KEEP_TAIL_ROUNDS=3（固定轮数，从最旧删） | **token 预算 + splitTurn**：preserveRecentTokens 上限 8K，整轮超预算只保该轮尾部半轮 | **opencode 更细**——token 预算优于固定轮数，多 splitTurn 半轮劈分 |
 
@@ -811,7 +819,9 @@ opencode  = prune 零 LLM + LLM 锚定摘要（把压缩当"语义归档"）
 
 > **推荐原则**：不是二选一，而是**保留我们 History Memory 的 zero-cost 长处，吸收 opencode 的 prune 简化 + LLM 锚定摘要能力**。定案为**两个独立的、名副其实的压缩方法**，各自有适用场景，**可在系统中灵活选用/组合**（北京老陈 2026-08-16 定案：给 P0/P1 分别命名，并明确各自适用场景）。
 
-##### 方法一：剪枝压缩法（Prune Compaction，规则级压缩）
+##### C3 剪枝压缩法（Prune Compaction，规则级压缩）
+
+> **适用场景/场合**：① 日常高频兜底压缩，任何任务上下文超限即触发；② 简单/单轮任务、高频轮次增长、成本敏感、新任务（independent）；③ 零 LLM 零成本，快速腾空间保配对保近期。
 
 > **命名依据**：借鉴 opencode `prune`（修剪）语义——像园艺剪枝，剪掉冗余的"枝叶"（旧工具输出），保留"主干"（tool_call 参数 + FC 配对 + 保尾区），**纯规则、零 LLM、零成本**。
 
@@ -827,7 +837,9 @@ opencode  = prune 零 LLM + LLM 锚定摘要（把压缩当"语义归档"）
 | 成本敏感 | 零 LLM 调用，不引入任何延迟与费用 |
 | 新任务（independent） | 无关联上下文，只压缩本任务自身冗余输出 |
 
-##### 方法二：锚定摘要压缩法（Anchored Summary Compaction，语义级压缩）
+##### C4 锚定摘要压缩法（Anchored Summary Compaction，语义级压缩）
+
+> **适用场景/场合**：① 长任务跨多轮需保决策链；② 续聊任务（linked）上下文链压缩；③ 决策链关键、可接受一次 LLM 成本；④ 需老陈定夺放开 R4 零 LLM 原则后启用。
 
 > **命名依据**：借鉴 opencode `compaction` 的 **anchored（锚定）** 机制——LLM 把旧历史归纳为固定结构摘要，`previousSummary` 增量更新、可累积不丢失。核心是**调用 LLM 做语义归档**（agent 是壳、LLM 是芯）。
 
@@ -845,11 +857,11 @@ opencode  = prune 零 LLM + LLM 锚定摘要（把压缩当"语义归档"）
 
 ##### 两方法组合使用规则
 
-- **按场景选型**：日常高频/成本敏感/简单任务 → **方法一（剪枝）**；长任务/语义归档/续聊链 → **方法二（锚定摘要）**；可配置开关各自独立启用。
+- **按场景选型**：日常高频/成本敏感/简单任务 → **C3（剪枝）**；长任务/语义归档/续聊链 → **C4（锚定摘要）**；可配置开关各自独立启用。
 - **组合（推荐）**：剪枝为第一道（零成本兜底）→ 剪枝后仍超限且需保语义 → 再触发锚定摘要（opencode 正是 prune → compaction 递进）。History Memory 全程保留作 zero-cost 决策链兜底。
 - **互不依赖**：两个方法各自独立可启用/关闭，未来可按任务类型（简单/复杂/续聊/新开）灵活调度。
 
-**推荐落地顺序**：方法一（剪枝）三项立即可做（零成本、纯增强不退化）→ 方法二（锚定摘要）一次压缩一次 LLM 调用、可配小模型、成本可控 → 用 E2E 对话实测验证摘要信息密度与成本，再定是否默认开启。
+**推荐落地顺序**：C3（剪枝）三项立即可做（零成本、纯增强不退化）→ C4（锚定摘要）一次压缩一次 LLM 调用、可配小模型、成本可控 → 用 E2E 对话实测验证摘要信息密度与成本，再定是否默认开启。
 
 **不推荐**：只保留纯规则删删减减（丢语义）、或完全照抄 opencode 丢掉 History Memory（丢 zero-cost 决策链）。两方法 + History Memory 融合最优。
 
@@ -882,7 +894,7 @@ opencode  = prune 零 LLM + LLM 锚定摘要（把压缩当"语义归档"）
 | 同上 | `call_llm_with_fallback(agent, messages, openai_tools)` FC/Text 双回退 | 265 |
 | `backend/app/constants.py` | `MAX_CONTEXT_RATIO=0.8`（绝对值安全网比例）、`COMPACTION_BUFFER=20000`（输出预留） | 98-99 |
 
-**关键事实**（影响设计，三堂会审必须诚实）：本地**尚无** `_t1_compress_observations` / `history_mem` 的实现 —— 即 v4.0 文档里的 T1 逐工具摘要、History Memory **只是设计稿，代码里并不存在**（grep 确认零实现）。因此方法一/方法二是**新基建**，不是改旧 T1。这也决定了目录规划：需要一个全新模块层来承载。
+**关键事实**（影响设计，三堂会审必须诚实）：本地**尚无** `_t1_compress_observations` / `history_mem` 的实现 —— 即 v4.0 文档里的 t1_compress_observations 逐工具摘要、History Memory **只是设计稿，代码里并不存在**（grep 确认零实现）。因此 C3/C4 是**新基建**，不是改旧 C1。这也决定了目录规划：需要一个全新模块层来承载。
 
 #### 14.9.2 统一目录规划（北京老陈 2026-08-16 拍板）
 
@@ -890,20 +902,20 @@ opencode  = prune 零 LLM + LLM 锚定摘要（把压缩当"语义归档"）
 
 ```
 backend/app/services/agent/compaction/
-├── __init__.py             # 导出 CessionManager 等对外入口 — 小欧 2026-08-16
-├── constants.py            # 压缩相关专属常量（PRUNE_* / PRESERVE_* / SUMMARY_*），不再堆进 app/constants.py — 小欧 2026-08-16
-├── trigger.py              # 触发判定（模型窗口 usable / 增量 Δ>buffer / 绝对值 占比）— 小欧 2026-08-16
-├── prune.py                 # 方法一：剪枝（prune）纯规则引擎 — 小欧 2026-08-16
-├── summary.py              # 方法二：锚定摘要（anchored summary）LLM 引擎 — 小欧 2026-08-16
-├── summary_prompt.py       # 摘要固定结构模板（Goal/Progress/Decisions/Next/Critical/Files）— 小欧 2026-08-16
-├── split_turn.py           # splitTurn：保尾 token 预算 + 半轮劈分原语 — 小欧 2026-08-16
-└── assembler.py            # 与 message_builder 的装配适配：tail_start/压缩消息注入、标记统一 — 小欧 2026-08-16
+├── __init__.py             # 导出各函数: CompactionTrigger / prune_tool_outputs / t1_reuse_summary / generate_anchored_summary / generate_chunked_summary / should_compact_window / CompactionCooldown / value_first_prune / trim_orphan_pairs_proactive — 小欧 2026-08-16(2026-08-16 精确化)
+├── constants.py            # 压缩专属常量(PRUNE_*/PRESERVE_*/SUMMARY_*/COMPACTION_*/COOLDOWN_ROUNDS), 不再堆进 app/constants.py
+├── trigger.py              # 触发判定: CompactionTrigger(14.9.3①) + 支撑函数 should_compact_window(动态窗口触发, 14.9.6 K1) + CompactionCooldown(冷却节流, 14.9.6 K2)
+├── prune.py                # C3 轻量/剪枝实现: prune_tool_outputs(14.9.3②) + t1_compress_observations(第五章 C3 轻量) + t1_reuse_summary(14.9.6 C3 DRY升级) + value_first_prune(14.9.6 T1 保真策略)
+├── summary.py              # C4 语义实现: generate_anchored_summary(14.9.4②) + generate_chunked_summary(14.9.6 C4 降本变体)
+├── summary_prompt.py       # SUMMARY_TEMPLATE 固定结构(Goal/Progress/Decisions/Next/Critical/Files, 14.9.4①)
+├── split_turn.py           # splitTurn 原语(保尾 token 预算 + 半轮劈分) — 【待补代码】14.9 各章未写具体函数, 仅规划占位
+└── assembler.py            # 装配适配: tail_start/压缩消息注入/标记统一 + trim_orphan_pairs_proactive(配对修剪, 14.9.6 K3); 【待补装配代码】new_block 切分与注入未写
 ```
 
 **放置依据（合规性三堂会审）**：
 
 1. **SRP 单一职责**：压缩/裁剪是独立业务域，从 `message_builder.py`（其职责已够多的"消息组装+裁剪"）剥离出专用层。`message_builder` 未来只需"调 compaction 结果"，不再自己实现 prune/summary。
-2. **OCP/ISP/复用优先**：`compaction` 作为中间层，`message_builder` 与 `trigger` 只通过薄接口交互；后续加 T1 逐工具摘要/History Memory 直接在 `prun trader.py` 或新 `memory.py` 扩充，不改 `message_builder` 本体 —— 对扩展开放、对修改封闭。
+2. **OCP/ISP/复用优先**：`compaction` 作为中间层，`message_builder` 与 `trigger` 只通过薄接口交互；后续加 t1_compress_observations 逐工具摘要/History Memory 直接在 `prun trader.py` 或新 `memory.py` 扩充，不改 `message_builder` 本体 —— 对扩展开放、对修改封闭。
 3. **分层存放遵循 AGENTS.md 1.3**：Agent 层公用逻辑放 `app/services/agent/` 下子目录（`compaction/`），不越过到全局 `app/utils/`。
 4. **KISS-不越级**：目录只承载压缩/裁剪一件事，不塞调度、DB、SSE 等（那些仍归 `react_cycle`/`agent_runner`/chat）。
 
@@ -911,7 +923,9 @@ backend/app/services/agent/compaction/
 - `message_builder.trim_history()` 仍保留为 `react_cycle.py:350` 的**唯一裁剪入口**（外部契约不变），但其内部实现**委托** `compaction`（先剪枝→仍超限再锚定摘要→再回退原有删消息兜底）。
 - 原有 `_trim_to_budget()` 保留为**最后兜底**（防呆），不作为主路径 —— 不删除（不 backward）、也不与 prune 重复（prune="清输出"，_trim_to_budget="删消息"，两级语义不同）。
 
-#### 14.9.3 方法一 diff：剪枝压缩法（Prune，规则级，零 LLM）
+#### 14.9.3 C3 剪枝压缩法 diff（Prune，规则级，零 LLM）
+
+> **适用场景/场合**：① 日常高频兜底压缩，任何任务上下文超限即触发；② 简单/单轮任务、高频轮次增长、成本敏感、新任务（independent）；③ 零 LLM 零成本，快速腾空间保配对保近期。
 
 **改动文件**：新增 `compaction/trigger.py`、`compaction/constants.py`、`compaction/prune.py`（3 新增）；修改 `message_builder.py`（1 处委托）。
 
@@ -920,7 +934,7 @@ backend/app/services/agent/compaction/
 ```python
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-16 小欧 新增: 剪枝/锚定摘要统一触发判定层(方法一/方法二共用)
+# 2026-08-16 小欧 新增: 剪枝/锚定摘要统一触发判定层(C3/C4 共用)
 """compaction.trigger — 压缩/裁剪触发判定 — 小欧 2026-08-16"""
 from typing import Optional
 
@@ -961,8 +975,8 @@ class CompactionTrigger:
 ```python
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-16 小欧 新增: 方法一剪枝引擎(借鉴 opencode prune, 纯规则零 LLM)
-"""compaction.prune — 方法一: 剪枝压缩 — 小欧 2026-08-16"""
+# 2026-08-16 小欧 新增: C3 剪枝引擎(借鉴 opencode prune, 纯规则零 LLM)
+"""compaction.prune — C3: 剪枝压缩 — 小欧 2026-08-16"""
 from typing import List, Dict
 
 from app.services.agent.compaction.constants import PRUNE_MINIMUM_TOKENS, PRUNE_PROTECT_TOKENS
@@ -1007,7 +1021,7 @@ def prune_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
         from app.services.agent.compaction.trigger import CompactionTrigger
         trig = CompactionTrigger()
         if trig.should_compact(rough, self.last_total_tokens, cl, reserve=COMPACTION_BUFFER):
-            # ② 方法一: 剪枝(清旧 tool output 保 tool_call)
+            # ② C3: 剪枝(清旧 tool output 保 tool_call)
             from app.services.agent.compaction.prune import prune_tool_outputs
             self.conversation_history, _ = prune_tool_outputs(self.conversation_history)
         # ③ 兜底: 剪枝后仍超限再走原 _trim_to_budget(删消息防呆)
@@ -1030,7 +1044,9 @@ def prune_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
 > - 合理：剪枝在 `_trim_to_budget` 之前（先清输出腾空间，实在不够才删消息）—— 保决策链优先于删消息，符合 14.8 推荐顺序（剪枝第一道）。
 > - 关联逻辑：剪枝后仍在**同一函数**内回退 `_trim_to_budget`，保证不因剪枝引入越界；`_pruned` 与 `_temp_*` 同段剥离，与现有临时标记处理完全一致（增强不退化）。
 
-#### 14.9.4 方法二 diff：锚定摘要压缩法（Anchored Summary，语义级，一次 LLM）
+#### 14.9.4 C4 锚定摘要压缩法 diff（Anchored Summary，语义级，一次 LLM）
+
+> **适用场景/场合**：① 长任务跨多轮需保决策链；② 续聊任务（linked）上下文链压缩；③ 决策链关键、可接受一次 LLM 成本；④ 需老陈定夺放开 R4 零 LLM 原则后启用。
 
 **改动文件**：新增 `compaction/summary.py`、`compaction/summary_prompt.py`、`compaction/split_turn.py`（3 新增）；修改 `react_cycle.py` 或 `message_builder.py` 触发点。
 
@@ -1040,7 +1056,7 @@ def prune_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-08-16 小欧 新增: 锚定摘要固定结构模板(借鉴 opencode SUMMARY_TEMPLATE)
-"""compaction.summary_prompt — 方法二摘要模板 — 小欧 2026-08-16"""
+"""compaction.summary_prompt — C4 摘要模板 — 小欧 2026-08-16"""
 SUMMARY_TEMPLATE = """将 messages 归档为固定结构 Markdown 摘要:
 - Goal: 当前任务目标
 - Progress: 已完成(Done)/进行中(InProgress)/受阻(Blocked)
@@ -1058,8 +1074,8 @@ SUMMARY_TEMPLATE = """将 messages 归档为固定结构 Markdown 摘要:
 ```python
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-16 小欧 新增: 方法二锚定摘要引擎(一次 LLM, 喂截断输出, 原库完整)
-"""compaction.summary — 方法二: 锚定摘要压缩 — 小欧 2026-08-16"""
+# 2026-08-16 小欧 新增: C4 锚定摘要引擎(一次 LLM, 喂截断输出, 原库完整)
+"""compaction.summary — C4: 锚定摘要压缩 — 小欧 2026-08-16"""
 from typing import List, Dict, Optional
 
 from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
@@ -1092,18 +1108,280 @@ async def generate_anchored_summary(llm_client, messages: List[Dict],
 > - 合理：喂 LLM 截断 2000 字符、原始输出完整存库 —— 同 opencode `processor.process` 的"截断喂、完整存"（14.3），防二次胀窗。
 > - 关联逻辑：`tools=None` → Text 模式推断 `tool_choice=None`（llm_stream.py:140），不触发 FC，天然适合纯摘要调用；`previous_summary` 锚定增量，对应续聊链（linked）。
 
-> **落地前置（需北京老陈定夺）**：方法二引入一次 LLM 调用，触及项目"R4 零 LLM 成本原则"。落地前需老陈确认放开 R4（可在 analysis 阶段决策，本章仅给出 diff 方案，不擅自改运行配置）。
+> **落地前置（需北京老陈定夺）**：C4 引入一次 LLM 调用，触及项目"R4 零 LLM 成本原则"。落地前需老陈确认放开 R4（可在 analysis 阶段决策，本章仅给出 diff 方案，不擅自改运行配置）。
 
 #### 14.9.5 三堂会审总结表（两方法落地 diff）
 
-| 审查项 | 方法一（剪枝） | 方法二（锚定摘要） |
+| 审查项 | C3（剪枝） | C4（锚定摘要） |
 |--------|--------------|------------------|
 | 合规（10 大规范） | SRP 每函数一件事；DRY 复用 `_estimate_tokens`/`_trim_to_budget` 兜底；KISS 三条件单判定；不 backward（唯一入口不变） | SRP 只生成摘要；复用 `call_llm_with_fallback`；不 backward（原库完整） |
 | 合理（最优雅直线） | 先剪枝（清输出）→ 仍超再删消息，两级清晰；`context_limit` 已注入免新配置 | 截断喂 + 完整存，一次 LLM；Text 模式天然适配 |
 | 关联逻辑（增强不退化） | 唯一裁剪入口 `react_cycle:350` 不变；`_pruned` 同 `_temp_*` 段剥离 | 决策段互补 memory；previousSummary 支持续聊链 |
 | 目录归属（老陈拍板） | 统一 `compaction/` 层，`message_builder` 委托 | 统一 `compaction/` 层，LLM 链路复用 llm_stream |
 
-> **落地顺序**（与 14.8.4 一致）：方法一三项立即可做（零成本纯增强）→ 方法二需老陈定夺 R4 后接入 → E2E 实测摘要信息密度与成本再默认启用。
+> **落地顺序**（与 14.8.4 一致）：C3 三项立即可做（零成本纯增强）→ C4 需老陈定夺 R4 后接入 → E2E 实测摘要信息密度与成本再默认启用。
+
+#### 14.9.6 支撑函数库与策略实现（归并到 4 主干方法）
+
+> **编写人**：小欧
+> **编写时间**：2026-08-16 15:21:13
+> **编写动机**：北京老陈 2026-08-16 指示——在 4 主干方法（M1 历史记忆注入法 / C3 剪枝压缩法 / C4 锚定摘要压缩法 / T1 紧急裁剪法）之外，再研究更多可取思路（含 trim 新方法），写出**更好、可落地的函数**，归并到对应主干方法的策略实现或独立支撑函数库，不再设平级编号。每个函数均基于本地真实代码、经三堂会审（合规/合理/关联逻辑）。
+
+**归并总览（候选函数 → 归属主干 / 支撑库，不再设平级编号）**：
+
+| 函数 | 归属 | 解决的问题维度 | 成本 | 备注 |
+|------|------|--------------|------|------|
+| `t1_compress_observations` | C3 策略实现函数 | 主动压缩 tool obs（逐工具摘要） | 零 | 原 C1，详第五章 |
+| `t1_reuse_summary` | C3 策略实现函数 | 逐工具模板重复造轮子（DRY 升级） | 零 | 原 C2，推荐 |
+| `generate_chunked_summary` | C4 策略实现函数 | C4 全量重算成本高 | 1 次 LLM/块 | 原 C5 |
+| `value_first_prune` | T1 策略实现函数 | 保尾=保最近 N 轮不保真 | 零 | 原 T2 |
+| `should_compact_window` | 支撑函数库 | 900K 大窗口下不触发 | 零 | 原 K1 |
+| `CompactionCooldown` | 支撑函数库 | 连续轮次反复压缩抖动 | 零 | 原 K2 |
+| `trim_orphan_pairs_proactive` | 支撑函数库 | 裁剪后配对残留 | 零 | 原 K3 |
+
+**C3 策略实现函数**（归 C3 剪枝压缩法）
+
+- `t1_compress_observations`（原 C1 工具摘要压缩法 Tool-Summary Compaction）：C3 的逐工具摘要轻量实现，详见第五章；与 14.9.3 的 `prune_tool_outputs`（prune 清输出）并列两种轻量压缩策略，其 DRY 升级为 `t1_reuse_summary`（推荐）。
+
+
+
+##### `t1_reuse_summary`（原 C2 摘要复用压缩法，归 C3 策略实现函数，DRY 升级）
+
+> **归属/场合**：① 作为 t1_compress_observations 的 DRY 升级替代，当工具已返回 `llm_data.summary` 时优先用 `t1_reuse_summary` 而非 t1_compress_observations 逐工具模板；② 零 LLM、零模板维护；③ 与 t1_compress_observations 互斥（二选一，推荐 `t1_reuse_summary`）。
+
+> **关键发现（本地真实代码）**：grep 确认每个工具的 `llm_data` 都自带一行 `summary` 字段（如 `read_text_file.py:93 "读取 /path，20/200行"`、`execute_shell_command.py:582 "执行Shell命令 cmd，成功: 退出码0，输出N字符"`、`list_directory.py:179` 等 100+ 处）。**即工具层早已产出"一行语义摘要"，t1_compress_observations 不必再写 per-tool 模板**——直接复用该字段替换 tool 的 content。
+
+```python
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-16 小欧 新增: T1 升级替代, 复用工具层已有 llm_data.summary 做一行摘要
+# 2026-08-16 小欧 修正: tool 消息字典无独立 summary 字段(已拼进 content),
+#                       需先在 add_tool_result stash _summary, 此处复用 _summary(三堂会审去臆测)
+"""compaction.t1_reuse — 复用工具 summary 的 t1_compress_observations 摘要法 — 小欧 2026-08-16"""
+from typing import List, Dict
+
+
+def t1_reuse_summary(messages: List[Dict]) -> List[Dict]:
+    """用工具返回自带 summary 替换 tool content — 小欧 2026-08-16
+
+    前置(必做, 见下方改动点): tool 消息构造时把 llm_data.summary 存为 _summary 字段。
+    依据本地真实代码: observation_formatter.py:603/627 已将 summary 拼进 content 文本,
+    tool 消息字典本身只有 role/tool_call_id/content, 无独立 summary 字段 —— 此为三堂会审
+    修正(杜绝臆测不存在的 msg["summary"])。复用 _summary(各 tool_*_tools.py 已产出一行语义摘要),
+    不写 per-tool 模板(DRY, 消除 14.3 指出的 C1 逐工具模板过度设计)。
+    """
+    for msg in messages:
+        if msg.get("role") == "tool" and not msg.get("_compressed"):
+            summ = msg.get("_summary")
+            raw = msg.get("content", "")
+            if summ and raw and len(raw) > len(summ):
+                msg["_raw"] = raw
+                msg["content"] = f"[tool-summary] {summ}"
+                msg["_compressed"] = True
+    return messages
+```
+
+> **前置改动点（基于本地代码，必须随本法一起落地）**：
+> - `message_builder.add_tool_result()`（:124）增加 `summary: str = ""` 形参，构造字典时写入 `"_summary": summary`（含 line 139-143 兜底分支同步加）；由 handler 调 `add_observation` 处把 `llm_data.summary` 透传（action_handler 已有 `llm_data.summary`，observation_formatter.py:603）。
+
+> 三堂会审：
+> - 合规：**复用优先**（AGENTS 1.3）——复用工具层已产出的 `llm_data.summary`，禁止局部重造模板；消除 14.3 指出的"C1 逐工具模板属过度设计"；前置改动仅在构造点 stash 一个字段，不破坏 add_tool_result 既有契约（无 backward）。
+> - 合理：一条 `if` 取已 stash 的 `_summary`，零模板维护；比 14.9 prune 更轻（prune 清空 content，本法保留一行语义）；长度保护 `len(raw) > len(summ)` 避免小输出反向膨胀。
+> - 关联逻辑：与现有 `_compressed` 防重复压缩标记**完全兼容**（沿用现有标记）；`_raw` 落库不破坏原库（对应 14.3 "压缩截断不破坏原库"）；`_summary` 属内部标记，须在 `prepare_messages_for_llm()` 与 `_compressed`/`_temp_*` 同段剥离（沿用 14.9.3 ③ 的剥离逻辑，增强不退化）。
+
+**C4 策略实现函数**（归 C4 锚定摘要压缩法）
+
+##### `generate_chunked_summary`（原 C5 增量块式锚定摘要法，归 C4 策略实现函数，降本变体）
+
+> **归属/场合**：① 长任务且会多次压缩，C4 降本变体；② 成本敏感又需语义归档；③ 只摘要新增块+previousSummary 增量合并，成本随压缩次数线性而非累积。
+
+> **改进点**：C4（14.9.4）每次对全量历史做摘要，长任务多次压缩会**全量重算**成本高。本法改为**只摘要"新增块"（上次 compact 之后的新轮次），与 `previousSummary` 增量合并**——LLM 调用量从 O(全量) 降到 O(增量块)。
+
+```python
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-16 小欧 新增: C4 降本变体, 只摘要新增块 + 增量合并
+"""compaction.chunked_summary — 增量块式锚定摘要 — 小欧 2026-08-16"""
+from typing import List, Dict, Optional
+
+
+async def generate_chunked_summary(llm_client, new_block: List[Dict],
+                                   previous_summary: Optional[str] = None) -> str:
+    """只把新增块喂 LLM, 与 previousSummary 合并 — 小欧 2026-08-16
+
+    与 C4 区别: 不重喂全量历史, 仅 new_block(tool 输出截断 2000) + previousSummary,
+    成本随压缩次数线性而非累积。其余(截断喂/原库完整/previousSummary 锚定)同 14.9.4。
+    """
+    from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
+    from app.services.agent.llm_stream import call_llm_with_fallback
+    feed = [{"role": "system", "content": SUMMARY_TEMPLATE}]
+    if previous_summary:
+        feed.append({"role": "user", "content": f"已有摘要:\n{previous_summary}"})
+    for msg in new_block:
+        c = str(msg.get("content", ""))[:2000] if msg.get("role") == "tool" else str(msg.get("content", ""))
+        feed.append({**msg, "content": c})
+    async for _typ, data in call_llm_with_fallback(agent=llm_client, messages=feed, openai_tools=None):
+        pass
+    return str(getattr(data, "get", lambda k: None)("content", "") or data)
+```
+
+> 三堂会审：
+> - 合规：复用 `SUMMARY_TEMPLATE` / `call_llm_with_fallback`（DRY）；不 backward（C4 仍可全量版并存）。
+> - 合理：增量块摘要，成本可控，契合老陈"成本敏感"诉求；与 History Memory 续聊链同理（增量不丢）。
+> - 关联逻辑：`new_block` 由 assembler 切分（tail_start 之后的增量）；`previous_summary` 落库锚定（14.9.4）。
+
+**T1 策略实现函数**（归 T1 紧急裁剪法）
+
+##### `value_first_prune`（原 T2 知识密度优先裁剪法，归 T1 策略实现函数，保真增强）
+
+> **归属/场合**：① 关键决策发生在早期轮（保尾 N 轮保不住）；② 替代"保最近 N 轮"，按消息价值权重保留 thought/answer、先丢低价值 tool 输出；③ 与 T1 组合增强保真。
+
+> **痛点**：现有保尾=保留最近 N 轮（KEEP_TAIL_ROUNDS=3），但关键决策可能发生在第 1 轮。本法改为**按消息语义价值权重**保留，先删低价值纯 tool 大输出，再删低价值轮，最后才动高价值 thought/answer。
+
+```python
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-16 小欧 新增: 替代"保最近N轮", 按价值权重保留消息
+"""compaction.value_prune — 知识密度优先保留 — 小欧 2026-08-16"""
+from typing import List, Dict
+
+
+def _value_weight(msg: Dict) -> int:
+    role = msg.get("role")
+    if msg.get("_history_mem"):
+        return 100          # History Memory 最高
+    if role == "system":
+        return 90
+    if role == "assistant" and msg.get("tool_calls"):
+        return 80          # 决策: 调了什么工具
+    if role == "assistant":
+        return 70          # thought/answer
+    if role == "tool":
+        return 10          # 纯输出, 价值最低, 先删
+    return 50
+
+
+def value_first_prune(messages: List[Dict], budget_tokens: int) -> List[Dict]:
+    """按价值权重保留, 预算内先丢低价值 tool 输出 — 小欧 2026-08-16"""
+    # 用 enumerate 记原始下标, 避免 dict 重复导致 index() 错位(三堂会审: 关联逻辑保时序)
+    indexed = list(enumerate(messages))
+    kept_idx = []
+    used = 0
+    for i, msg in sorted(indexed, key=lambda t: _value_weight(t[1]), reverse=True):
+        cost = len(str(msg.get("content", ""))) // 4
+        if used + cost <= budget_tokens or _value_weight(msg) >= 70:
+            kept_idx.append(i); used += cost
+    # 按原始下标升序还原(保 LLM 阅读时序)
+    return [messages[i] for i in sorted(kept_idx)]
+```
+
+> 三堂会审：
+> - 合规：SRP（只做"按价值排序取舍"）；不 backward（可与剪枝/T1 组合，非替换保尾机制）。
+> - 合理：权重表直观，先丢 tool 输出保 thought/answer，直击"丢值钱的留笨重的"痛点（14.1 问题 2）。
+> - 关联逻辑：`_history_mem`/`system` 高权重与 3.4 保护机制**同频**；`system` 不丢保证指令完整；不破坏 FC 配对需配合 `trim_orphan_pairs_proactive` 前置修剪。
+
+**支撑函数库**（独立支撑函数，供主干方法组合调用）
+
+##### `should_compact_window`（原 K1 动态窗口触发法，归支撑函数库，Window-Aware Trigger）
+
+> **归属/场合**：① 大窗口模型（如 deepseek 900K）下防 t1_compress_observations/T1 不触发；② 消息数 > N 兜底触发；③ 解决固定比例阈值在超大窗口形同虚设的问题。
+
+> **痛点**（12.2 假设 1）：deepseek 900K 窗口下，t1_compress_observations(50%)=450K、T1(95%)=855K，5~15 轮根本触不到，裁剪形同虚设。本法完善 `usable = context_limit - reserve`，`reserve` 可配，并在大窗口下加"消息数 > N"备用触发。
+
+```python
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-16 小欧 新增: 动态窗口触发, 解决大窗口不触发 + 消息数备用触发
+"""compaction.window_trigger — 动态窗口触发 — 小欧 2026-08-16"""
+from typing import List
+
+
+def should_compact_window(current_tokens: int, context_limit: int,
+                           reserve: int, msg_count: int,
+                           max_msgs: int = 80) -> bool:
+    usable = context_limit - reserve
+    if current_tokens >= usable:
+        return True
+    if msg_count >= max_msgs:        # 大窗口下消息数兜底触发, 防"不触发"
+        return True
+    return False
+```
+
+> 三堂会审：
+> - 合规：与 14.9 trigger 三条件**不重复**（本法补"消息数兜底"这一维）；KISS（一个 return 判定）。
+> - 合理：直击 12.2 已识别风险（大窗口不触发），`max_msgs` 默认 80 给长任务兜底。
+> - 关联逻辑：`context_limit` 已由 `agent_runner.py:140` 注入，零新配置；`reserve` 复用 `COMPACTION_BUFFER` 语义一致。
+
+##### `CompactionCooldown`（原 K2 触发冷却节流法，归支撑函数库，Cooldown Throttle）
+
+> **归属/场合**：① 启用 C4（LLM 压缩）时防连续轮次反复烧 LLM；② 压缩后冷却若干轮再评估；③ 与防抖动（节省率）互补（一个看时间间隔、一个看节省率）。
+
+> **痛点**：压缩触发后下一轮立刻又满，可能连续压缩抖动（尤其 C4 每次 1 LLM 调用，反复触发=成本失控）。本法在压缩后设冷却轮次，冷却期内不重复触发。
+
+```python
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-16 小欧 新增: 压缩冷却节流, 防连续轮次反复压缩
+"""compaction.cooldown — 触发冷却节流 — 小欧 2026-08-16"""
+from typing import Optional
+
+
+class CompactionCooldown:
+    def __init__(self, cooldown_rounds: int = 2):
+        self._cooldown_rounds = cooldown_rounds
+        self._since_last = 0
+
+    def allow(self) -> bool:
+        self._since_last += 1
+        return self._since_last > self._cooldown_rounds
+
+    def mark_compacted(self) -> None:
+        self._since_last = 0
+```
+
+> 三堂会审：
+> - 合规：单一职责（只管冷却）；与 14.9 trigger 解耦（trigger 管"是否该"，cooldown 管"刚压过没"）。
+> - 合理：冷却 2 轮足够让压缩生效后再评估，避免 C4 每轮烧 LLM。
+> - 关联逻辑：`mark_compacted()` 在 trim_history 委托 compaction 后调用，与 `_t3_savings_pct` 防抖（5.4）**互补不冲突**（一个看节省率、一个看时间间隔）。
+
+##### `trim_orphan_pairs_proactive`（原 K3 孤儿FC对前置修剪法，归支撑函数库，Pre-Pair Trim）
+
+> **归属/场合**：① 凡做删除式裁剪（C3 prune / value_first_prune / T1）必配；② 每次裁剪后立即保 FC 配对，防孤儿 assistant(tool_calls) 无对应 tool 致 LLM 400；③ 与现有 `_trim_fc_pairs` 思路一致、前置化。
+
+> **痛点**：现有 `_trim_fc_pairs` 在 T1 末尾（5.2 步骤 8）收尾清理。若先清 tool output（C3 prune）或按值删除（value_first_prune），可能中途产生孤儿 assistant(tool_calls) 无对应 tool。本法**每次 prune/删除后立即前置修剪**，保 FC 配对贯穿全程。
+
+```python
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-16 小欧 新增: FC 配对前置修剪, 每次裁剪后立即保配对
+"""compaction.pair_trim — 孤儿 FC 对前置修剪 — 小欧 2026-08-16"""
+from typing import List, Dict
+
+
+def trim_orphan_pairs_proactive(messages: List[Dict]) -> List[Dict]:
+    """保留有对应 tool_call_id 的工具消息, 删孤儿 assistant/tool — 小欧 2026-08-16"""
+    seen_ids = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
+    result = []
+    for m in messages:
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            keep = all(tc.get("id") in seen_ids for tc in m["tool_calls"])
+            if keep:
+                result.append(m)
+            continue
+        if m.get("role") == "tool":
+            if m.get("tool_call_id") in seen_ids:
+                result.append(m)
+            continue
+        result.append(m)
+    return result
+```
+
+> 三堂会审：
+> - 合规：复用现有 `_trim_fc_pairs` 思路（Hermes `_sanitize_tool_pairs` 借鉴），前置化不重造；SRP（只管配对）。
+> - 合理：配对残留是 LLM API 400 根因，前置比收尾更稳。
+> - 关联逻辑：与 C3 prune（清 tool output 不删消息，配对天然在）、value_first_prune（可能删 tool）**协同**——value_first_prune 删 tool 后由本法清孤儿 assistant，闭环。
+
+**14.9.6 选型建议**：`t1_reuse_summary` 直接替代 t1_compress_observations 逐工具模板（DRY 升级，强烈推荐）；`value_first_prune` 与 T1 组合保真；`should_compact_window` 必配（解决大窗口不触发）；`generate_chunked_summary` 长任务用 C4 时替代全量版；`CompactionCooldown` 启用 C4 时必配（控成本）；`trim_orphan_pairs_proactive` 凡做删除式裁剪必配。以上函数与 C3/C4/T1 共同构成 `compaction/` 模块完整能力集，不再设平级方法编号。
 
 ---
 
@@ -1111,11 +1389,16 @@ async def generate_anchored_summary(llm_client, messages: List[Dict],
 
 | 版本 | 时间 | 变更人 | 变更内容 |
 |------|------|--------|---------|
+| v5.9 | 2026-08-16 15:41:02 | 小欧 | 14.9.2 目录树精确化(老陈 2026-08-16 核对: 并非所有写出函数都在原目录树里): 每文件行尾标注实际承载函数; value_first_prune 归 prune.py(T1 保真策略); trim_orphan_pairs_proactive 归 assembler.py(配对修剪, K3); should_compact_window/CompactionCooldown 标入 trigger.py; 修正 __init__ 笔误 CessionManager→导出各函数; 注明 split_turn.py/assembler.py 仅规划占位待补代码; 目录树与 14.9.3/14.9.4/14.9.6 实际函数落点一一对应 |
+| v5.8 | 2026-08-16 15:21:13 | 小欧 | 编号重构：方法体系从"11 个平级方法"重构为"4 主干方法 + 策略实现函数 + 支撑函数库"。保留 4 主干：M1 历史记忆注入法 / C3 剪枝压缩法 / C4 锚定摘要压缩法 / T1 紧急裁剪法；降级归并 7 项：原 C1 工具摘要压缩法→C3 轻量实现函数 t1_compress_observations（第五章）、原 C2 摘要复用压缩法→C3 策略实现函数 t1_reuse_summary（DRY 升级）、原 C5 增量块式锚定摘要法→C4 策略实现函数 generate_chunked_summary、原 T2 知识密度优先裁剪法→T1 策略实现函数 value_first_prune、原 K1 动态窗口触发法→支撑函数 should_compact_window、原 K2 触发冷却节流法→支撑函数 CompactionCooldown、原 K3 孤儿FC对前置修剪法→支撑函数 trim_orphan_pairs_proactive；14.9.6 整章重构为"支撑函数库与策略实现（归并到 4 主干方法）"四块，6 法总览表改为归并总览表，正文交叉引用按新归属改写；代码标识符（TRIGGER_T1_RATIO/TRIGGER_T3_RATIO/KEEP_TAIL_ROUNDS/PASS3_*/HISTORY_MEM_*/MAX_CONTEXT_TOKENS 等）保持不变 |
+| v5.7 | 2026-08-16 14:40:17 | 小欧 | 全文方法统一编号命名(C功能域前缀+序号) + 各方法头部加适用场景：C1工具摘要压缩法(原T1)/C2摘要复用压缩法(原14.9.6①)/C3剪枝压缩法(原方法一)/C4锚定摘要压缩法(原方法二)/C5增量块式锚定摘要法(原14.9.6④)/T1紧急裁剪法(原T3)/T2知识密度优先裁剪法(原14.9.6②)/M1历史记忆注入法(原History Memory)/K1动态窗口触发法(原14.9.6③)/K2触发冷却节流法(原14.9.6⑤)/K3孤儿FC对前置修剪法(原14.9.6⑥)；名称名副其实、交叉引用统一编号、各方法定义段加适用场景/场合段 |
+| v5.6 | 2026-08-16 14:35:58 | 小欧 | 14.9.6 备选方法库三堂会审修正（北京老陈 2026-08-16 要求新方法务必满足"基于本地真实代码+经得起三堂会审+统一compaction/目录"三点要求）：①修正方法①——核实 observation_formatter.py:603/627 已把 summary 拼进 content, tool 消息字典无独立 summary 字段, 原 `msg.get("summary")` 属臆测; 改为先 stash `_summary`(add_tool_result:124 加形参+handler 透传 llm_data.summary)再复用, 去臆测保合规; ②方法②原始顺序还原由 messages.index(m) 改 enumerate 下标(防重复 dict 错位) |
+| v5.5 | 2026-08-16 14:31:58 | 小欧 | 新增 14.9.6 "备选方法库（更多可取思路 + 更优函数，供后续选型）"：①工具层 summary 复用摘要法(复用 llm_data.summary 替代 C1 模板, DRY) ②知识密度优先保留法(按价值权重替保最近N轮) ③动态窗口触发完善法(解决900K大窗口不触发+消息数兜底) ④增量块式锚定摘要法(方法二降本变体, 只摘要新增块) ⑤触发冷却节流法(压缩冷却防抖深化) ⑥孤儿 FC 对前置修剪法(每次裁剪后立即保配对); 六法均基于本地真实代码行号 + 三堂会审(合规/合理/关联逻辑) + 归入 compaction/ 模块; 附选型建议 |
 | v5.4 | 2026-08-16 14:24:34 | 小欧 | 新增 14.9 "基于本地现有代码的落地 diff（含统一压缩/裁剪模块目录规划）"（北京老陈 2026-08-16 拍板：建立统一目录作为消息压缩/裁剪的独立模块架构层）：①14.9.1 代码现状盘点——核实本地真实代码行号（message_builder.trim_history:265 / MAX_CONTEXT_TOKENS:84 / last_total_tokens:85 / _trim_to_budget:336 / react_cycle.trim_history 唯一入口:350 / agent_runner:140 已按模型窗口 / llm_stream:133 call_llm_stream，**确认 T1/history_mem 代码未实现、仅设计稿**）；②14.9.2 新建 `compaction/` 目录（__init__/constants/trigger/prune/summary/summary_prompt/split_turn/assembler），SRP/OCP/ISP/分布式层三堂会审依据，trim_history 仍为唯一入口委托 compaction、_trim_to_budget 保底；③14.9.3 方法一减枝 diff（trigger 触发三条件 + prune 清 tool output 保 tool_call + message_builder 委托改造，唯一入口不变、_pruned 同段剥离）；④14.9.4 方法二锚定摘要 diff（SUMMARY_TEMPLATE 六段固定结构 + generate_anchored_summary 截断喂/原库完整 + previousSummary 锚定，前置需老陈定夺放开 R4 零 LLM 原则）；⑤14.9.5 三堂会审总结表；落地顺序方法一立即可做 → 方法二定夺 R4 后接入 → E2E 实测 |
 | v5.3 | 2026-08-16 14:16:56 | 小欧 | 14.8.4 定案两方法命名与适用场景（北京老陈 2026-08-16 定案：给 P0/P1 分别命名名副其实的方法名，明确各自适用场景，可灵活选用组合）：**方法一=剪枝压缩法**（Prune Compaction，规则级：按模型窗口触发 + 通用清零旧 tool output 保 tool_call + 保尾 token 预算+splitTurn，零 LLM 零成本，适用：简单/单轮任务、高频轮次增长、成本敏感、新任务 independent）；**方法二=锚定摘要压缩法**（Anchored Summary Compaction，语义级：一次 LLM 调用输出固定结构 Markdown + previousSummary 锚定增量 + 不破坏原库 + 自动续跑，适用：长任务跨多轮、续聊任务 linked 上下文链、决策链关键、可接受一次 LLM 成本）；两方法按场景选型/组合（剪枝第一道零成本兜底→仍超限且需保语义→锚定摘要，opencode prune→compaction 递进），History Memory 全程保留；互不依赖可独立开关 |
 | v5.2 | 2026-08-16 14:09:18 | 小欧 | 14.8 新增"两种方法对照分析与推荐方法"（北京老陈 2026-08-16 要求对照分析并给推荐，写入本文档）：①14.8.1 一句话定性（我们=纯规则零 LLM / opencode=零 LLM 前置+调 LLM 锚定摘要；精修措辞：我们没用到 agent 参与压缩、opencode 中 agent 是壳 LLM 是芯）；②14.8.2 五层逐层对照表（触发固定比例 vs 按模型窗口 / T1 逐工具模板 vs prune 通用清零 / 无语义压缩 vs anchored LLM 摘要 / History Memory vs 摘要模板决策段 / KEEP3 固定轮数 vs token预算+splitTurn）；③14.8.3 本质差异（纯规则 vs 语义归档）+ 双方长处；④14.8.4 推荐融合式两阶段——P0 立即（触发按模型窗口 + T1→prune 式清零 + 保尾 token预算+splitTurn，纯规则零成本不退化）→ P1 引入 LLM 锚定摘要（放开 R4 零 LLM 原则，需老陈定夺成本，当前/小模型一次调用、anchored 累积、不破坏原库、History Memory 保留作 zero-cost 兜底、压缩后自动续跑）；不推荐纯删删减减或照抄丢掉 History Memory |
 | v5.1 | 2026-08-16 14:04:49 | 小欧 | 14.3.4 补澄清（北京老陈 2026-08-16 确认：压缩核心是 LLM 生成摘要，不能只是 agent）——压缩 = agent 壳（约束层：专用 compaction agent、无工具、权限全 deny、专属提示词 compaction.txt）+ 底层 LLM（生成层：processor.process → llm.stream 一次流式调用产出摘要）；opencode 用专用 agent 组织本次 LLM 调用，摘要文本仍由 LLM 生成 |
-| v5.0 | 2026-08-16 13:59:53 | 小欧 | 新增第十四章"opencode 压缩方法深度研究（compaction.ts / overflow.ts / summary.ts）"（北京老陈 2026-08-16 指示深挖 opencode 压缩实现并评估可借鉴性）：①澄清 summary.ts 非上下文压缩（是 git diff 会话统计）；②overflow.ts = 按模型窗口 usable() 判定溢出（非固定比例）；③compaction.ts 四函数拆解（create 打标 / select 保尾区 token 预算+splitTurn / prune 通用清零旧工具输出保 tool_call / process 独立 agent+anchored 锚定式 LLM 摘要+压缩截断不破坏原库+auto 自动续跑）；④14.6 可借鉴性评估 8 项（P0 立即：prune 清零替换 T1 模板、按模型窗口触发、压缩截断不破坏原库；P1：锚定 LLM 摘要需老陈定夺成本、保尾 token 预算+splitTurn、自动续跑；P2：auto 开关；summary.ts 不借鉴）；⑤14.7 对照结论——T1 逐工具模板属过度设计建议改 prune 式、缺语义摘要层建议评估放开零 LLM 成本原则；本章仅研究评估不改 v4.0 既有定案。原第十四章"变更记录"顺延为第十五章 |
+| v5.0 | 2026-08-16 13:59:53 | 小欧 | 新增第十四章"opencode 压缩方法深度研究（compaction.ts / overflow.ts / summary.ts）"（北京老陈 2026-08-16 指示深挖 opencode 压缩实现并评估可借鉴性）：①澄清 summary.ts 非上下文压缩（是 git diff 会话统计）；②overflow.ts = 按模型窗口 usable() 判定溢出（非固定比例）；③compaction.ts 四函数拆解（create 打标 / select 保尾区 token 预算+splitTurn / prune 通用清零旧工具输出保 tool_call / process 独立 agent+anchored 锚定式 LLM 摘要+压缩截断不破坏原库+auto 自动续跑）；④14.6 可借鉴性评估 8 项（P0 立即：prune 清零替换 C1 模板、按模型窗口触发、压缩截断不破坏原库；P1：锚定 LLM 摘要需老陈定夺成本、保尾 token 预算+splitTurn、自动续跑；P2：auto 开关；summary.ts 不借鉴）；⑤14.7 对照结论——T1 逐工具模板属过度设计建议改 prune 式、缺语义摘要层建议评估放开零 LLM 成本原则；本章仅研究评估不改 v4.0 既有定案。原第十四章"变更记录"顺延为第十五章 |
 | v3.0 | 2026-07-22 16:33:34 | 小欧 | History Memory 注入方式从 system 改为独立 user 消息（北京老陈裁定：user 角色语义更对）；新增 3.4 保护机制（`_history_mem` 标记 + 每轮重注入）；新增第十一章"关于 role 选择的分析" |
 | v2.0 | 2026-07-22 18:30:00 | 小欧 | 融合方案[3]保尾逻辑：KEEP_TAIL_ROUNDS=5→3、从最旧往最新删、保尾定位方式借鉴方案[3]找第N个assistant消息；新增第十章"推荐落地组合"总结全文 |
 | v1.0 | 2026-07-22 18:30:00 | 小欧 | 初版：History Memory（从 Step 提取推理链注入 system prompt）+ T1 工具摘要 + T3 紧急裁剪（借鉴 OpenCode/Hermes 的 6 种机制） |
