@@ -12,6 +12,11 @@
 #          ③DROP+RENAME使迁移在任何状态都收敛到唯一task_operations, 幂等自愈
 # 2026-07-18 - 小欧 - 所有时间列 TIMESTAMP→TEXT, 去 DEFAULT CURRENT_TIMESTAMP; _ensure_column title_updated_at TEXT; backup_expires_at TEXT
 # 2026-08-08 - 小欧 - 全程统一本地时区: 时间列注释 `-- UTC ISO 8601` → `-- 本地ISO无Z` (13处)
+# 2026-08-16 - 小欧 - S0 表结构先行(10.1.7①-a, 北京老陈 2026-08-16 定案, 幂等 DDL):
+#   ①chat_tasks 新建(B1, 含 context_link_mode/context_root_task_id 链列) ②chat_messages/chat_message_steps 补 task_id、
+#   chat_messages 补 metadata、chat_sessions 补 metadata/model_override 五列(_ensure_column 只 ADD 缺列) ③token_usage 新建(B2)+五索引
+#   ④chat_session_trust 新建(B3) ⑤索引: idx_tasks_session/idx_steps_task/idx_msg_task/idx_msg_timestamp/idx_trust_session;
+#   与 10.1.9 迁移章节对齐(现网老库幂等补建不丢数据)
 """
 db_initializer — 数据库初始化
 
@@ -69,6 +74,46 @@ def init_chat_db(get_conn):
                 created_at TEXT,  -- 本地ISO无Z
                 FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE
             );
+
+            -- ===== S0 新增 3 表（10.1.7① 表结构先行，北京老陈 2026-08-16 定案，幂等）— 小欧 2026-08-16 =====
+            -- ① chat_tasks 新建（B1：任务级存储 + 上下文链落库列；字段以文档2 3.1.2/3.5.3 权威为准）
+            CREATE TABLE IF NOT EXISTS chat_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT UNIQUE NOT NULL,
+                session_id TEXT NOT NULL,
+                user_message_id INTEGER, user_input TEXT, response TEXT,
+                artifacts TEXT DEFAULT '[]',
+                status TEXT DEFAULT 'executing',
+                start_time TEXT, end_time TEXT, duration REAL,          -- 开始/结束/耗时（文档2 3.1.2 时间三字段）
+                context_link_mode TEXT, context_root_task_id TEXT,   -- 上下文链：续聊/新任务 + 链根任务id
+                provider TEXT, model TEXT, display_name TEXT,
+                accumulated_usage TEXT DEFAULT '{}',
+                llm_call_count INTEGER DEFAULT 0, total_steps INTEGER DEFAULT 0,
+                retry_count INTEGER DEFAULT 0, max_steps INTEGER DEFAULT 0,   -- 最大步骤数上限（文档2 3.5.3）
+                error_type TEXT, error_message TEXT, metadata TEXT,
+                created_at TEXT, updated_at TEXT,
+                FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+            );
+
+            -- ④ token_usage 新建（B2：token 四维度归属落库，权威=9.3）
+            CREATE TABLE IF NOT EXISTS token_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL, task_id TEXT NOT NULL,
+                llm_call_count INTEGER NOT NULL,   -- 直取 react_cycle 既有 agent.llm_call_count, 与 chat_tasks 同名同值
+                model TEXT NOT NULL, provider TEXT,
+                prompt_tokens INTEGER DEFAULT 0, completion_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0,
+                created_at TEXT
+            );
+
+            -- ⑤ chat_session_trust 新建（B3：HITL 会话信任清单，权威=文档2 3.1.7）
+            CREATE TABLE IF NOT EXISTS chat_session_trust (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                tool_name TEXT NOT NULL,
+                created_at TEXT,
+                UNIQUE(session_id, tool_name),
+                FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+            );
         ''')
         
         _ensure_column(conn, "chat_sessions", "message_count", "INTEGER DEFAULT 0")
@@ -88,7 +133,16 @@ def init_chat_db(get_conn):
         # 小欧 2026-07-13: 终态列(status), 记录一次请求的任务终态, 供前端/迁移直接读取
         _ensure_column(conn, "chat_messages", "status", "TEXT")
         _ensure_column(conn, "chat_messages", "thought", "TEXT")  # 小欧 2026-07-16
-        
+
+        # ===== S0 补列（10.1.7① ②③，幂等只 ADD 缺列、老行 NULL 不丢数据）— 小欧 2026-08-16 =====
+        # ② chat_messages / chat_message_steps 补 task_id 列（B1 挂任务；对齐文档2 3.1.8-⑥）
+        _ensure_column(conn, "chat_messages", "task_id", "TEXT")
+        _ensure_column(conn, "chat_messages", "metadata", "TEXT")   # 发展性兼容列(5.3.1, 文档2 3.1.3)
+        _ensure_column(conn, "chat_message_steps", "task_id", "TEXT")
+        # ③ chat_sessions 补 metadata / model_override 列
+        _ensure_column(conn, "chat_sessions", "metadata", "TEXT")          # 扩展列(0.2.4-1)
+        _ensure_column(conn, "chat_sessions", "model_override", "TEXT")    # L2 会话级模型覆盖落库点
+
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON chat_sessions(updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON chat_sessions(is_deleted)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id)")
@@ -97,6 +151,22 @@ def init_chat_db(get_conn):
         # steps 表索引 — 小欧 2026-07-14
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_message ON chat_message_steps(message_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_session ON chat_message_steps(session_id, step_index)")
+
+        # ===== S0 新增索引（10.1.7①，对齐文档2 3.1.8-⑥）— 小欧 2026-08-16 =====
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_session ON chat_tasks(session_id)")
+        # chat_message_steps 复合索引：按 message_id 与 (task_id, step_index)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_task ON chat_message_steps(task_id, step_index)")
+        # chat_messages 索引：按 task_id / timestamp（10.1.7① ② 权威=idx_msg_timestamp）— 小欧 2026-08-16
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_task ON chat_messages(task_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_timestamp ON chat_messages(timestamp)")
+        # token_usage 五索引
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_token_session ON token_usage(session_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_token_task ON token_usage(task_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_token_llm_call ON token_usage(llm_call_count)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_token_model ON token_usage(model)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_token_created ON token_usage(created_at)")
+        # chat_session_trust 索引
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_session ON chat_session_trust(session_id)")
 
         # 小欧 2026-07-13: 一次性迁移旧 execution_steps(幂等)
         from app.services.chat.migrate_steps import migrate_execution_steps_status
