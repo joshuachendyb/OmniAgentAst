@@ -12,6 +12,16 @@
 #   _load_previous_messages/_log_task_end)由本编排器构造 db_ops SimpleNamespace 注入 run_agent_in_background,
 #   依赖方向变为 chat→agent 单向。6个属性与原 agent_runner 直接 import 的6个chat函数一一对应,KISS-DIRECT。
 # 2026-08-14 - 小欧 - 改名名实相符引用同步: handlers.py→sse_events.py, stream.py→stream_reader.py(4处import更新, 行为不变)
+# 2026-08-16 - 小欧 - S1/S2(10.1.4⑤⑥/10.1.7②): db_ops 扩展9属性(insert_task/update_task/insert_token 任务级读写),
+#   白名单 context_link_mode + 链根计算注入 load_previous 闭包; load_previous 补传上界 upper_message_id=_user_msg_id;
+#   agent 创建后 INSERT chat_tasks 任务行(provider/model 取 agent.llm_client); S2 model_override 编排层覆盖
+# 2026-08-16 - 小欧 - S4(10.1.1③/10.1.7④): 取消 orchestrator 旁路(step_start 调用+函数删除), start 构造/emit 移入
+#   react_cycle(initialize_run_state 后、while 前, 占 step 0); P4 注入模式: agent._start_step_factory 闭包捕获
+#   chat 层装配数据(send_start_step/next_step/链字段/warning), react_cycle 内注入 system_prompt/context_summary 调用,
+#   agent 层不 import chat 层; start 落库走 agent_runner 事件流(不再 execution_steps 双写)
+# 2026-08-16 - 小欧 - S4 修正(三堂会审/老陈驱动): 删 _model_warning 提前 return 终态分支——S4 后 start 由 react_cycle
+#   emit(带 warning 字段), 该分支会不发 start 直接 failed(config_error), 与 start 进 steps 设计冲突(退化);
+#   warning 仅作 start 提示字段下传(不终止任务), 同步删 FinalStep/format_agent_sse 死 import
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -22,14 +32,14 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Optional, AsyncGenerator
+from typing import Optional, AsyncGenerator, Dict, List
 
 from app.services import get_service
 from app.services.model.resolver import get_ai_config_resolver
 from app.logger import logger, log_and_print
 from app.services.chat.sse_events import create_error_response, send_start_step
-from app.utils.sse_formatter import format_agent_sse
-from app.services.agent.steps.base import create_step_counter
+from app.services.agent.steps.base import create_step_counter, MetaStep
+from app.services.agent.message_builder import MessageBuilder  # S4: context_summary total_tokens 估算(chat→agent 合法方向) — 小欧 2026-08-16
 from app.services.task.task_registry import register_task
 from app.services.task.task_runtime import (
     task_cancel_check, task_pause_check_and_yield, task_cancel_check_and_yield,
@@ -37,11 +47,11 @@ from app.services.task.task_runtime import (
 from app.services.chat.stream_reader import stream_reader
 from app.services.agent.agent_runner import run_agent_in_background
 from app.services.agent.universal_agent import UniversalAgent
-from app.services.agent.steps.final_step import FinalStep
 from app.services.task.task_state import create_stream_buffer, get_stream_buffer
 from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
 from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, finalize_message
+from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_session_model_override, get_previous_task_chain  # S1/S2 任务级读写(10.1.4/10.1.7②) — 小欧 2026-08-16
 from app.services.chat.sse_events import save_execution_steps_to_db
 from app.services.chat.stream_reader import _load_previous_messages, _log_task_end
 
@@ -103,11 +113,19 @@ class StreamState:
 async def chat_stream_orchestrator(
     messages: list,
     session_id: Optional[str] = None,
+    context_link_mode: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """聊天流编排入口：负责任务生命周期、Agent 启动、SSE 消费。
 
     由 API 层解包 ChatRequest 后以 (messages, session_id) 调用；services 层不反向依赖 api/v1 DTO。
+    2026-08-16 - 小欧 - S1: 增 context_link_mode(任务上下文链, 10.1.4);
+      白名单校验(10.1.4⑧): 非法值/缺失一律按 independent, 防误灌历史(防退化)
     """
+    # 白名单校验(10.1.4⑧): {"linked","independent"} 之外的非法值按 independent 处理并记 warning
+    if context_link_mode not in ("linked", "independent"):
+        if context_link_mode is not None:
+            logger.warning(f"[chat] context_link_mode 非法值 '{context_link_mode}', 按 independent 处理")
+        context_link_mode = "independent"
     if not messages:
         yield create_error_response(error_type="invalid_request", error_message="消息列表不能为空")
         return
@@ -121,6 +139,20 @@ async def chat_stream_orchestrator(
     _model_warning = get_ai_config_resolver().pop_model_warning()
 
     task_id = generate_task_id()
+    # S1 上下文链计算(10.1.4④⑧)：context_root_task_id
+    #   linked=续聊(需显式): 继承本会话最近一条成功任务的链根(曾续则沿链根); 无成功任务则=自身
+    #   independent=新任务(默认): =自身(从零自为链根)；cancelled/failed 不继承(防链到失败任务)
+    _context_root_task_id = task_id
+    if context_link_mode == "linked" and session_id:
+        _prev_chain = None
+        try:
+            from app.db import db as _db
+            with _db.get_conn("chat") as _conn:
+                _prev_chain = get_previous_task_chain(_conn, session_id)
+        except Exception as _e:
+            logger.warning(f"[chat] 取上一任务链根失败(session={session_id}): {_e}")
+        if _prev_chain:
+            _context_root_task_id = _prev_chain["context_root_task_id"]
     _task_token = _current_task_id.set(task_id)  # try/finally reset, 防 ContextVar 泄漏(方案4.7.3与A4对齐)
     set_session_id(session_id)
     next_step = create_step_counter()
@@ -151,33 +183,69 @@ async def chat_stream_orchestrator(
             yield cancel_msg
             return
 
-        async for event in step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id, warning=_model_warning):
-            yield event
-
-        if _model_warning:
-            _final = FinalStep(
-                step=next_step(), response="",
-                outcome="failed",
-                error_type="config_error",
-                error_message=_model_warning,
-                model=ai_service.model, provider=ai_service.provider,
-                display_name=f"{ai_service.provider} ({ai_service.model})",
-            )
-            yield format_agent_sse(_final.to_dict())
-            return
-
         agent = UniversalAgent(llm_client=ai_service, task_id=task_id)
+        # S2 model_override 生效(10.1.7②-4/文档2 6.1.1/6.1.8)：编排层读会话覆盖写 ai_service.model(非 resolver 混 DB) — 小欧 2026-08-16
+        if session_id:
+            try:
+                from app.db import db as _db2
+                with _db2.get_conn("chat") as _conn2:
+                    _ov = get_session_model_override(_conn2, session_id)
+                if _ov:
+                    ai_service.model = _ov
+            except Exception as _ov_e:
+                logger.warning(f"[chat] 读会话model_override失败(session={session_id}): {_ov_e}")
         # P4: 构造 db_ops 命名空间注入 agent_runner, 消除 agent→chat 反向依赖 — 小沈 2026-08-13
-        #   6个属性对应原 agent_runner 直接 import 的6个chat函数, KISS-DIRECT(一个对象替代6个回调)
+        #   10.1.7②-1 9属性(任务级读写扩展) — 小欧 2026-08-16
         import types as _types
         _db_ops = _types.SimpleNamespace(
-            allocate_and_insert=allocate_and_insert_message,
-            append_step=append_execution_step,
+            allocate_and_insert=lambda c, sid: allocate_and_insert_message(c, sid, task_id),  # task_id 闭包绑定(10.1.7②-2)
+            append_step=lambda c, mid, sid, idx, d: append_execution_step(c, mid, sid, idx, d, task_id),  # task_id 闭包绑定(②-2)
             finalize=finalize_message,
             save_steps=save_execution_steps_to_db,
-            load_previous=_load_previous_messages,
+            load_previous=lambda sid: _load_previous_messages(  # 任务上下文过滤(10.1.4⑤⑥)，经闭包注入链路计算的 context 两字段+上界(_user_msg_id)
+                sid, context_link_mode=context_link_mode, context_root_task_id=_context_root_task_id,
+                upper_message_id=_user_msg_id),
             log_task_end=_log_task_end,
+            insert_task=lambda c: insert_task(  # ②-1 chat_tasks 创建
+                c, task_id=task_id, session_id=session_id, user_message_id=_user_msg_id,
+                user_input=user_input, context_link_mode=context_link_mode,
+                context_root_task_id=_context_root_task_id,
+                provider=agent.llm_client.provider, model=agent.llm_client.model,
+                display_name=f"{agent.llm_client.provider} ({agent.llm_client.model})"),
+            update_task=lambda c, **kw: update_task(c, task_id=task_id, **kw),  # ②-1 chat_tasks 终态
+            insert_token=lambda c, **kw: token_usage_insert(  # ②-3 共用
+                c, task_id=task_id, session_id=session_id,
+                model=agent.llm_client.model, provider=agent.llm_client.provider, **kw),
         )
+        # S4(10.1.1③/10.1.7④): start 装配数据注入 agent — 取消 orchestrator 旁路(step_start),
+        #   start 构造/emit 移到 react_cycle 内(initialize_run_state 后、while 前);
+        #   P4 注入模式(与 db_ops 同款): 闭包捕获 chat 层装配数据(send_start_step/链字段/warning),
+        #   react_cycle 内调 agent._start_step_factory(system_prompt, previous_messages) 构造,
+        #   不 import chat 层(消除 agent→chat 反向依赖) — 小欧 2026-08-16
+        async def _start_step_factory(system_prompt: str,
+                                      previous_messages: Optional[List[Dict]]) -> MetaStep:
+            # ② context_summary: 概要不入库不装历史原文(仅快照)。会话级元数据由本闭包捕获,
+            #   message_count/total_tokens 由 react_cycle 注入的 previous_messages 即时估算(来源=load_previous) — 小欧 2026-08-16
+            _prev = previous_messages or []
+            _ctx_summary = {
+                "session_id": session_id,
+                "context_link_mode": context_link_mode,
+                "context_root_task_id": _context_root_task_id,
+                "message_count": len(_prev),
+                "total_tokens": MessageBuilder._estimate_tokens(_prev),
+            }
+            return await send_start_step(
+                ai_service=ai_service, task_id=task_id, next_step=next_step,
+                user_message=user_input, system_prompt=system_prompt,
+                context_summary=_ctx_summary, warning=_model_warning,
+            )
+        agent._start_step_factory = _start_step_factory
+        # ②-1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) — 小欧 2026-08-16
+        try:
+            with db.get_conn_with_retry("chat") as _conn3:
+                _db_ops.insert_task(_conn3)
+        except Exception as _task_e:
+            logger.warning(f"[chat] chat_tasks INSERT 失败(task={task_id}): {_task_e}")
         # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
         bg_task = asyncio.create_task(run_agent_in_background(
             agent, task_id, user_input, None, next_step, session_id, state, _task_start_time,
@@ -204,21 +272,6 @@ async def chat_stream_orchestrator(
         yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
     finally:
         _current_task_id.reset(_task_token)
-
-
-async def step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id, warning=None):
-    """发送 start 步骤 — 自 openai.py 迁入 — 小欧 2026-08-13"""
-    try:
-        start_step = await send_start_step(
-            ai_service=ai_service, task_id=task_id, next_step=next_step,
-            user_message=user_input, security_check_result={},
-            warning=warning,
-        )
-        start_dict = start_step.to_dict()
-        execution_steps.append(start_dict)
-        yield format_agent_sse(start_dict)
-    except Exception as e:
-        yield create_error_response(error_type="start_failed", error_message=f"start步骤失败: {e}")
 
 
 async def _stream_with_control(buffer, task_id: str, next_step, session_id: str,

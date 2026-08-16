@@ -10,6 +10,8 @@
 #   (paused/resumed/retrying/cancelled/authorization_required/start + usage),与"Meta步骤非业务步骤"注释自洽;
 #   业务步骤(chunk/action/thought/observation/final/error)不计入排除不误伤; total在pop之后计算。ast语法✓
 # 2026-08-14 - 小欧 - 改名名实相符: stream.py → stream_reader.py(实为SSE流运行器/消费者 stream_reader; "stream"过宽且与api/v1/chat/execution_stream语义重叠)
+# 2026-08-16 - 小欧 - S1(10.1.4⑤): _load_previous_messages 加 context_link_mode/context_root_task_id/upper_message_id 参数+
+#   按任务链范围过滤(BETWEEN 链根首条user消息id AND 本任务user消息id); independent新任务直接返回[](从零),链外消息不进LLM
 """
 stream_reader — SSE流运行器（消费者）
 
@@ -85,17 +87,53 @@ def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
         return []
 
 
-def _load_previous_messages(session_id: str) -> List[Dict[str, Any]]:
+def _load_previous_messages(session_id: str, context_link_mode: str = "independent",
+                            context_root_task_id: Optional[str] = None,
+                            upper_message_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """从DB加载会话历史消息 — 小健 2026-06-17 委托db层，消除SQLite越界
     小欧 2026-06-25: 抽取_parse_tool_calls/_parse_observations消除嵌套try/except
-    小欧 2026-07-14: 从chat_message_steps组装"""
+    小欧 2026-07-14: 从chat_message_steps组装
+    2026-08-16 - 小欧 - S1(10.1.4⑤): 按任务链范围过滤——
+      independent(新任务,默认): 直接返回[](从零,不带链上历史,防误灌);
+      linked(续聊): 沿"链根任务首条user消息id → 本任务用户消息id前"范围加载(BETWEEN 下界 AND 上界),链外消息不进LLM;
+      upper_message_id=本任务user消息id(上界,由 orchestrator _user_msg_id 闭包注入;设计1643 SQL语义要求,签名补充该参)"""
+    # S1 判断兜底(10.1.4⑧)：非法/缺失值由 orchestrator 已归一为 independent；此处二次兜底(仅接受 linked/independent)
+    if context_link_mode not in ("linked", "independent"):
+        context_link_mode = "independent"
+    if context_link_mode == "independent":
+        return []
     try:
         with db.get_conn("chat") as conn:
-            rows = conn.execute(
-                "SELECT id, role, content FROM chat_messages "
-                "WHERE session_id=? ORDER BY id ASC",
-                (session_id,),
-            ).fetchall()
+            # linked: 按链根范围过滤。链根首条user消息id = chat_tasks(chain_root).user_message_id 起
+            _lo = context_root_task_id  # 链根task_id(=context_root_task_id 自身或其根)
+            _lower_id = None
+            if _lo:
+                _r = conn.execute(
+                    "SELECT user_message_id FROM chat_tasks WHERE task_id=?",
+                    (_lo,),
+                ).fetchone()
+                if _r and _r["user_message_id"]:
+                    _lower_id = _r["user_message_id"]
+            if _lower_id is not None and upper_message_id is not None:
+                # 设计1643: id BETWEEN 链根首消息id AND 本任务消息id前(链外消息不进LLM)
+                rows = conn.execute(
+                    "SELECT id, role, content FROM chat_messages "
+                    "WHERE session_id=? AND id BETWEEN ? AND ? ORDER BY id ASC",
+                    (session_id, _lower_id, upper_message_id),
+                ).fetchall()
+            elif _lower_id is not None:  # 链根存在但无上界(异常兜底): 仅下界过滤
+                rows = conn.execute(
+                    "SELECT id, role, content FROM chat_messages "
+                    "WHERE session_id=? AND id>=? ORDER BY id ASC",
+                    (session_id, _lower_id),
+                ).fetchall()
+            else:  # 链根无 user_message_id(异常兜底)时退化为按会话加载, 防回退丢历史的退化
+                logger.warning(f"[SSE] linked 链根 {_lo} 无 user_message_id, 退化为按会话加载(session={session_id})")
+                rows = conn.execute(
+                    "SELECT id, role, content FROM chat_messages "
+                    "WHERE session_id=? ORDER BY id ASC",
+                    (session_id,),
+                ).fetchall()
             messages = []
             for msg_id, role, content in rows:
                 if role == "user":

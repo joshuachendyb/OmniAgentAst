@@ -3,6 +3,10 @@
 # 2026-07-22 - 小欧 - send_start_step 新增 warning 参数，透传给 MetaStep 供前端显示模型不在列表提示
 # 2026-08-14 - 小欧 - 改名名实相符: handlers.py → sse_events.py(实为SSE事件构建+错误处理+落库; "handlers"过宽且与agent/handlers同名歧义)
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+# 2026-08-16 - 小欧 - S3(10.1.7③/10.1.2③): send_start_step 增 system_prompt/context_summary 两字段、
+#   删 security_check 空占位死代码(真实安全拦截归 tools/security 域 / HITL confirm 链路)、保留 warning(有前端消费);
+#   参数收敛为 (ai_service, task_id, next_step, user_message, system_prompt, context_summary, warning) —
+#   MetaStep **kwargs 透传(base.py:114), 无需新建 StartStep 类
 """
 sse_events — SSE事件流处理模块
 从 react_sse_wrapper/chat_stream.py 移入
@@ -133,10 +137,14 @@ async def send_start_step(
     task_id: str,
     next_step: Callable,
     user_message: str,
-    security_check_result: Dict[str, Any],
+    *,
+    system_prompt: str = "",                  # 新增：_get_system_prompt（initialize_run_state.py:111-112）
+    context_summary: Optional[Dict] = None,    # 新增：{session_id, context_link_mode, context_root_task_id, message_count, total_tokens}
     warning: Optional[str] = None,
 ) -> MetaStep:
-    """发送 start 步骤 — 使用MetaStep统一构建"""
+    """发送 start 步骤 — 使用MetaStep统一构建
+    小欧 2026-08-16 S3(10.1.7③): 删 security_check 空占位、保留 warning、
+    增 system_prompt/context_summary 字段, 无新建类(MetaStep **kwargs 透传, base.py:114)"""
     return MetaStep(
         step=next_step(),
         type="start",
@@ -145,11 +153,7 @@ async def send_start_step(
         provider=ai_service.provider,
         model=ai_service.model,
         task_id=task_id,
-        security_check={
-            'is_safe': security_check_result.get('is_safe', True),
-            'risk_level': security_check_result.get('risk_level'),
-            'risk': security_check_result.get('risk'),
-            'blocked': security_check_result.get('blocked', False)
-        },
+        system_prompt=system_prompt,           # 新增字段(10.1.2③)
+        context_summary=context_summary or {}, # 新增字段(10.1.2③)
         warning=warning,
     )
