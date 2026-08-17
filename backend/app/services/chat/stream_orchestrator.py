@@ -42,6 +42,11 @@
 # 2026-08-17 - 小健 - 全系统DRY扫描收敛(老陈指示按10大规范): _start_meta 再删 task_id 键(task_id 由 agent.task_id
 #   权威持有, base_agent:59, 构造时注入); 仅保留 react_cycle 拿不到的必需运行数据(next_step/session_id/user_input/
 #   链字段/warning); 与 ai_service 删除同属真冗余收敛(单一归属, 不退化) — 小健 2026-08-17
+# 2026-08-17 - 小健 - 编排分区分号注释(老陈要求按编排步骤注清逻辑): chat_stream_orchestrator 增 ①~⑪ 分区分号
+#   注释头(输入校验/取全局服务/算链根/建基元/取续聊边界/建agent/db_ops组装/_start_meta注入/后台任务/流式转发/
+#   异常收尾); 仅加注释不改逻辑, 标明编排对象与依赖顺序 — 小健 2026-08-17
+# 2026-08-17 - 小健 - 三堂会审深挖(北京老陈): task_cancel_check_and_yield 已删死参数, 调用点同步收敛,
+#   不再白算 state.current_content 传入 — 小健 2026-08-17
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -141,6 +146,7 @@ async def chat_stream_orchestrator(
     2026-08-16 - 小欧 - S1: 增 context_link_mode(任务上下文链, 10.1.4);
       白名单校验(10.1.4⑧): 非法值/缺失一律按 independent, 防误灌历史(防退化)
     """
+    # ── 编排①输入校验(链模式白名单 + 消息非空) ———————————————————————————— 小健 2026-08-17
     # 白名单校验(10.1.4⑧): {"linked","independent"} 之外的非法值按 independent 处理并记 warning
     if context_link_mode not in ("linked", "independent"):
         if context_link_mode is not None:
@@ -154,11 +160,13 @@ async def chat_stream_orchestrator(
         yield create_error_response(error_type="invalid_request", error_message="消息内容不能为空")
         return
 
+    # ── 编排②取全局服务(LLM单例/model警告/task_id) ————————————————————————— 小健 2026-08-17
     ai_service = get_service()
     session_id = session_id or str(uuid.uuid4())
     _model_warning = get_ai_config_resolver().pop_model_warning()
 
     task_id = generate_task_id()
+    # ── 编排③算任务上下文链根(linked继承 / independent自为链根) ————————————————— 小健 2026-08-17
     # S1 上下文链计算(10.1.4④⑧)：context_root_task_id
     #   linked=续聊(需显式): 继承本会话最近一条成功任务的链根(曾续则沿链根); 无成功任务则=自身
     #   independent=新任务(默认): =自身(从零自为链根)；cancelled/failed 不继承(防链到失败任务)
@@ -174,10 +182,12 @@ async def chat_stream_orchestrator(
             _context_root_task_id = _prev_chain["context_root_task_id"]
     _task_token = _current_task_id.set(task_id)  # try/finally reset, 防 ContextVar 泄漏(方案4.7.3与A4对齐)
     set_session_id(session_id)
+    # ── 编排④建运行基元(步号计数器 + SSE流状态容器) ———————————————————————————— 小健 2026-08-17
     next_step = create_step_counter()
     execution_steps = []
     state = StreamState()
 
+    # ── 编排⑤取续聊历史边界(user_msg_id 上界, 服务重启DB兜底) ——————————————————— 小健 2026-08-17
     _task_start_time = time.time()
     _user_msg_id = None
     _orig_model = None  # 小健 2026-08-17 三堂会审-AE修复: 预初始化, 供 finally 还原单例 model(防取消/无覆盖时 NameError)
@@ -215,6 +225,7 @@ async def chat_stream_orchestrator(
             yield cancel_msg
             return
 
+        # ── 编排⑥建 UniversalAgent + 会话model_override(先建才有 llm_client) ——— 小健 2026-08-17
         agent = UniversalAgent(llm_client=ai_service, task_id=task_id)
         # S2 model_override 生效(10.1.7②-4/文档2 6.1.1/6.1.8)：编排层读会话覆盖写 ai_service.model(非 resolver 混 DB) — 小欧 2026-08-16
         if session_id:
@@ -226,6 +237,7 @@ async def chat_stream_orchestrator(
                     ai_service.model = _ov
             except Exception as _ov_e:
                 logger.warning(f"[chat] 读会话model_override失败(session={session_id}): {_ov_e}")
+        # ── 编排⑦组装 db_ops 持久化回调命名空间(经闭包注入后台, 依赖 ⑥ agent) ——— 小健 2026-08-17
         # P4: 构造 db_ops 命名空间注入 agent_runner, 消除 agent→chat 反向依赖 — 小沈 2026-08-13
         #   10.1.7②-1 9属性(任务级读写扩展) — 小欧 2026-08-16
         import types as _types
@@ -249,6 +261,7 @@ async def chat_stream_orchestrator(
                 c, task_id=task_id, session_id=session_id,
                 model=agent.llm_client.model, provider=agent.llm_client.provider, **kw),
         )
+        # ── 编排⑧注入 start 运行元数据(_start_meta, start_step 装配用) ———————— 小健 2026-08-17
         # S4/S5(10.1.1③/10.1.7④): start 运行元数据注入 agent — 取消 orchestrator 旁路(step_start),
         #   start 业务完整归 start_step 模块(chat 层仅 P4 捕获运行数据注入 agent._start_meta),
         #   react_cycle 经 assemble_start_step 从 _start_meta 读齐装配, 不再有 chat 层 start 构造逻辑 — 小健 2026-08-17
@@ -263,6 +276,7 @@ async def chat_stream_orchestrator(
             "context_root_task_id": _context_root_task_id,
             "warning": _model_warning,
         }
+        # ── 编排⑨落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) ——— 小健 2026-08-17
         # ②-1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) — 小欧 2026-08-16
         try:
             with db.get_conn_with_retry("chat") as _conn3:
@@ -276,8 +290,10 @@ async def chat_stream_orchestrator(
         _agent_tasks.add(bg_task)
         bg_task.add_done_callback(_agent_tasks.discard)
 
+        # ── 编排⑩流式转发(消费后台 agent 产出的 SSE → 转前端) ————————————————— 小健 2026-08-17
         async for sse_chunk in _stream_with_control(buffer, task_id, next_step, session_id, execution_steps, state):
             yield sse_chunk
+    # ── 编排⑪异常/收尾(断连静默/异常取消后台/还原model/reset ContextVar) ———— 小健 2026-08-17
     except asyncio.CancelledError:
         # 客户端断开：静默返回，agent 后台继续运行 — 北京老陈 2026-07-12 小欧 2026-07-12
         logger.info(f"[chat_stream_orchestrator] 客户端断开(task={task_id})，agent 后台继续")
@@ -312,8 +328,7 @@ async def _stream_with_control(buffer, task_id: str, next_step, session_id: str,
         async for pause_event in task_pause_check_and_yield(task_id, next_step):
             yield pause_event
         cancelled_sse = await task_cancel_check_and_yield(
-            task_id, next_step, session_id, execution_steps,
-            state.current_content if state else "")
+            task_id, next_step, execution_steps)
         if cancelled_sse:
             yield cancelled_sse
             return

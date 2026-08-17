@@ -3,6 +3,9 @@
 # 2026-08-09 - 小欧 - P4拆分(见doc-8月优化修复代码三堂会审报告v1.1): 暂停阻塞核心提取为 _pause_core,
 #   react_cycle后台路径改 wait_for_resume(纯阻塞不产SSE), task_pause_check 保留产SSE供前端消费路径
 #   (openai._stream_with_control 的 task_pause_check_and_yield)。职责单一, 消除后台死路SSE事件。ast语法✓
+# 2026-08-17 - 小健 - 三堂会审收敛(北京老陈深挖db_ops/_stream_with_control): task_cancel_check_and_yield 删
+#   死参数 session_id/current_content(函数体从未使用, 调用点 stream_orchestrator 曾白算 current_content 传入);
+#   签名收窄为 (task_id, next_step, current_execution_steps), 消除 KISS-DIRECT 透传无用参数 — 小健 2026-08-17
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -58,9 +61,9 @@ async def cancel_task(task_id: str, session_id=None) -> dict:
 # ============================================================
 
 async def task_cancel_check_and_yield(
-    task_id: str, next_step: Callable[[], int], session_id: str,
-    current_execution_steps: list, current_content: str
+    task_id: str, next_step: Callable[[], int], current_execution_steps: list
 ) -> Optional[str]:
+    # 小健 2026-08-17 三堂会审收敛(KISS-DIRECT): 删死参数 session_id/current_content(函数体从未使用, 调用点白算)
     if await check_cancelled(task_id):
         has_cancelled = any(
             s.get('incident_value') == 'cancelled' or s.get('type') == 'cancelled'
