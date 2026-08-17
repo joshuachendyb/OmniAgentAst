@@ -22,6 +22,15 @@
 # 2026-08-16 - 小欧 - S4 修正(三堂会审/老陈驱动): 删 _model_warning 提前 return 终态分支——S4 后 start 由 react_cycle
 #   emit(带 warning 字段), 该分支会不发 start 直接 failed(config_error), 与 start 进 steps 设计冲突(退化);
 #   warning 仅作 start 提示字段下传(不终止任务), 同步删 FinalStep/format_agent_sse 死 import
+# 2026-08-17 - 小健 - 三堂会审修复(北京老陈驱动, 11 bug 复核3遍):
+#   A1: line55 模块级统一 `from app.db import db`, 消除原 line245 裸引用 db 的 NameError(chat_tasks 永不建行)。
+#   E2: line168-178 track(_user_message_ids) 内存 dict 重启即丢时, 从 DB 兜底取本会话最后一条 user 消息 id 作
+#       linked 续聊 upper 上界(防链外/全部消息进上下文)。
+#   AE: 覆盖共享单例 ai_service.model 前保存原值 _orig_model, finally 统一还原(消除单例持久污染/并发会话串 model);
+#       _orig_model 预初始化 None 防无覆盖/取消时 NameError(边修 AE 时补该缺陷)。
+# 测试: tests/test_s2_s4_review_bugs.py 16 passed, 相关4文件 52 passed。
+# 2026-08-17 - 小健 - 必备日志补齐(老陈驱动): AE finally 还原单例 model 打 logger.info(并发审计点);
+#   E2 DB 兜底恢复 upper 打 logger.info(诊断 track 缺失)。均仅落文件不刷 console。
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -52,6 +61,7 @@ from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
 from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, finalize_message
 from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_session_model_override, get_previous_task_chain  # S1/S2 任务级读写(10.1.4/10.1.7②) — 小欧 2026-08-16
+from app.db import db  # 小健 2026-08-17 三堂会审-A1修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
 from app.services.chat.sse_events import save_execution_steps_to_db
 from app.services.chat.stream_reader import _load_previous_messages, _log_task_end
 
@@ -146,8 +156,7 @@ async def chat_stream_orchestrator(
     if context_link_mode == "linked" and session_id:
         _prev_chain = None
         try:
-            from app.db import db as _db
-            with _db.get_conn("chat") as _conn:
+            with db.get_conn("chat") as _conn:
                 _prev_chain = get_previous_task_chain(_conn, session_id)
         except Exception as _e:
             logger.warning(f"[chat] 取上一任务链根失败(session={session_id}): {_e}")
@@ -161,10 +170,23 @@ async def chat_stream_orchestrator(
 
     _task_start_time = time.time()
     _user_msg_id = None
+    _orig_model = None  # 小健 2026-08-17 三堂会审-AE修复: 预初始化, 供 finally 还原单例 model(防取消/无覆盖时 NameError)
     try:
         _user_msg_id = get_user_message_id(session_id)
     except Exception:
         logger.warning(f"[chat] 获取user_message_id失败: session_id={session_id}")
+    # 小健 2026-08-17 三堂会审-E2修复: track 为内存 dict(重启即丢), 缺失时从 DB 兜底取本会话最后一条
+    #   user 消息 id 作为 linked 上界, 修复"服务重启后用第二任务续聊"时 upper=None 上界失效令链外/全部消息进上下文
+    if not _user_msg_id and session_id:
+        try:
+            from app.services.chat.storage import get_last_user_message_id
+            with db.get_conn("chat") as _conn_u:
+                _row_u_id = get_last_user_message_id(_conn_u, session_id)
+                if _row_u_id:
+                    _user_msg_id = _row_u_id
+                    logger.info(f"[chat] E2 track缺失, DB兜底恢复upper: session={session_id}, user_msg_id={_user_msg_id}")
+        except Exception as _eu:
+            logger.warning(f"[chat] DB兜底取user消息id失败(session={session_id}): {_eu}")
     log_and_print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     log_and_print(
         f"[TASK_START] provider={ai_service.provider} model={ai_service.model} |\n "
@@ -187,10 +209,10 @@ async def chat_stream_orchestrator(
         # S2 model_override 生效(10.1.7②-4/文档2 6.1.1/6.1.8)：编排层读会话覆盖写 ai_service.model(非 resolver 混 DB) — 小欧 2026-08-16
         if session_id:
             try:
-                from app.db import db as _db2
-                with _db2.get_conn("chat") as _conn2:
+                with db.get_conn("chat") as _conn2:
                     _ov = get_session_model_override(_conn2, session_id)
                 if _ov:
+                    _orig_model = ai_service.model  # 小健 2026-08-17 三堂会审-AE修复: 覆盖前保存单例原值, finally 还原
                     ai_service.model = _ov
             except Exception as _ov_e:
                 logger.warning(f"[chat] 读会话model_override失败(session={session_id}): {_ov_e}")
@@ -272,6 +294,10 @@ async def chat_stream_orchestrator(
         yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
     finally:
         _current_task_id.reset(_task_token)
+        # 小健 2026-08-17 三堂会审-AE修复: 还原被本任务覆盖的共享单例 model, 避免单例持久污染/并发会话串model
+        if _orig_model is not None and getattr(ai_service, "model", None) != _orig_model:
+            ai_service.model = _orig_model
+            logger.info(f"[chat_stream_orchestrator] AE还原共享单例model: task={task_id}, restore={_orig_model}")
 
 
 async def _stream_with_control(buffer, task_id: str, next_step, session_id: str,
