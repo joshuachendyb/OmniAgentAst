@@ -98,6 +98,8 @@
 #   本文件对 start 的接缝不变——仍『initialize_run_state → assemble_start_step(agent, context) → emit → 超窗 C4 回填』,
 #   仅数据来源改读 _start_meta(build_start_step 逻辑已在 start_step 模块内直接构造, 详见 start_step.py) — 小健 2026-08-17
 # 2026-08-17 - 小健 - 最合理核查(老陈追问): assemble_start_step 改同步(内部零 await), 调用点去 await — 小健 2026-08-17
+# 2026-08-17 - 小健 - 注释纠偏(北京老陈 2026-08-17): S5 超窗回填段注释去掉「依赖 COMPACTION_ENABLED 放开 R4」表述——
+#   开关仅限 start 超窗判定(start_step)使用; 触发条件只据 start 超窗置的 _needs_compact 标记(getattr 判断) — 小健 2026-08-17
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -583,9 +585,9 @@ async def run_react_cycle(
         yield agent._step_emitter.emit(_start_step)
 
     # S5(10.1.7⑤/10.1.8): C4 超窗锚定摘要回填 —— start 装配后、while 前一次性清洗注入的历史。
-    #   仅当 initialize_run_state 置 _needs_compact(=True) 才触发(依赖 COMPACTION_ENABLED 放开 R4);
+    #   仅当 start 超窗判定(start_step._maybe_compact_injected_history)置 _needs_compact(=True) 才触发;
     #   摘要以 assistant 消息回填, 保 system + 摘要 + 最新 task; 原库 conversation_history 被替换为新列表。
-    #   关联逻辑(增强不退化): R4 未放开时 _needs_compact=False, 本段跳过, 主链路零改动。 — 小健 2026-08-17
+    #   关联逻辑(增强不退化): 未超窗时 _needs_compact=False, 本段跳过, 主链路零改动。 — 小健 2026-08-17
     if getattr(agent, "_needs_compact", False):
         await _compact_injected_history(agent)
 

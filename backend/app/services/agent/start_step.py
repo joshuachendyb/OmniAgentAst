@@ -19,6 +19,10 @@
 # 2026-08-17 小健 常量归属迁移(北京老陈驱动, 压缩/裁剪常量融入专场常量文件): 本模块 import 的压缩/裁剪常量源头
 #   MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_ENABLED 由 app.constants / compaction 包迁至 agent 层根
 #   compaction_constants.py, 导入路径随之更新为 app.services.agent.compaction_constants(局部导入防包级依赖)
+# 2026-08-17 小健 阈值重构(北京老陈 2026-08-17 定案, start超窗=上下文×1/2): 超窗基准改读运行时窗口
+#   agent.message_builder.MAX_CONTEXT_TOKENS(agent_runner 已用 llm_service.context_limit 覆盖, 与 loop 同基准),
+#   不再读全局常量; 门限=运行时窗口 × START_TRIGGER_RATIO; 删除 MAX_CONTEXT_TOKENS=200000 死值兜底
+# 2026-08-17 小健 开关定名(北京老陈 2026-08-17): COMPACTION_ENABLED→START_COMPACTION_ENABLED(仅限 start 域), 值 True
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -103,25 +107,28 @@ def _maybe_compact_injected_history(agent) -> None:
     使用方法: 直接调用, 传 agent; 超窗置 agent._needs_compact=True(仅标记不触发 LLM)。
     输入: agent 含 message_builder.conversation_history。
     输出: 无(置 agent._needs_compact 布尔标记)。
-    前置条件: 注入历史已装载; COMPACTION_ENABLED=False 期间置 False 行为同现状(零退化)。
-    关联逻辑: 估算复用 MessageBuilder._estimate_tokens(DRY); 阈值对齐全局 MAX_CONTEXT_TOKENS × MAX_CONTEXT_RATIO。
+    前置条件: 注入历史已装载。
+    关联逻辑: 估算复用 MessageBuilder._estimate_tokens(DRY); 门限=运行时上下文窗口 × START_TRIGGER_RATIO(北京老陈 2026-08-17 定案, start 超窗=上下文×1/2)。
     """
     agent._needs_compact = False
     from app.services.agent.compaction_constants import (  # 小健 2026-08-17: 常量权威迁 agent/compaction_constants(局部导入防包级依赖)
-        COMPACTION_ENABLED,
-        MAX_CONTEXT_RATIO,
-        MAX_CONTEXT_TOKENS,
+        START_COMPACTION_ENABLED,
+        START_TRIGGER_RATIO,
     )
-    if not COMPACTION_ENABLED:
+    if not START_COMPACTION_ENABLED:
         return
     from app.services.agent.message_builder import MessageBuilder
     history = agent.message_builder.conversation_history
     if not history:
         return
+    # 上下文窗口基准 = 运行时 context_limit(agent_runner 已覆盖 message_builder.MAX_CONTEXT_TOKENS, 与 loop 同基准);
+    # MessageBuilder 构造自带默认无需兜底 — 小健 2026-08-17
+    _ctx = agent.message_builder.MAX_CONTEXT_TOKENS
+    _threshold = int(_ctx * START_TRIGGER_RATIO)
     rough = MessageBuilder._estimate_tokens(history)
-    if rough > int(MAX_CONTEXT_TOKENS * MAX_CONTEXT_RATIO):
+    if rough > _threshold:
         agent._needs_compact = True
-        logger.debug(f"[start_step] 历史超窗({rough}>{int(MAX_CONTEXT_TOKENS*MAX_CONTEXT_RATIO)}), 置 _needs_compact")
+        logger.debug(f"[start_step] 历史超窗({rough}>{_threshold}=ctx{_ctx}×{START_TRIGGER_RATIO}), 置 _needs_compact")
 
 
 async def _compact_injected_history(agent) -> None:

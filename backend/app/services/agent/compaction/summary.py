@@ -7,6 +7,7 @@
 #   2026-08-17 小健 新增: generate_chunked_summary + _extract_response_content(C4 降本变体, 复用统一提取)
 #   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
 #   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪常量权威迁至 agent 层根 compaction_constants.py, 本模块导入路径由 compaction.compaction_constants 改为 app.services.agent.compaction_constants
+#   2026-08-17 小健 注释纠偏(北京老陈 2026-08-17): 前置条件去掉「须放开 R4(COMPACTION_ENABLED=True)」表述——开关仅限 start 超窗判定使用, 本摘要函数由 react_cycle._compact_injected_history 在超窗判定后 await 调用
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。
@@ -47,8 +48,8 @@ async def generate_anchored_summary(llm_agent, messages: List[Dict],
     输入: llm_agent Agent 对象(须含 .llm_client, 用于发起流式调用); messages 对话消息列表;
           previous_summary 可选上一轮摘要文本(用于增量锚定)。
     输出: str 锚定摘要文本(SUMMARY_TEMPLATE 六段 Markdown); 为空表示未产出(上层原样保留历史, 零退化)。
-    前置条件: 须放开 R4(COMPACTION_ENABLED=True); tools=None 走 Text 模式不触发工具; 首参必须是 agent 对象而非 llm_client
-              (否则 call_llm_with_fallback 缺 agent 上下文无法调用); 自动续跑由上层 react_cycle 发 Continue。
+    前置条件: 由 react_cycle._compact_injected_history await 调用(仅在 start 超窗判定后), 不放宽安全门;
+              tools=None 走 Text 模式不触发工具; 首参必须是 agent 对象而非 llm_client
     """
     feed: List[Dict] = []
     for msg in messages:
