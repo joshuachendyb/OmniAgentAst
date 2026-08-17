@@ -5,7 +5,7 @@
 更新时间: 2026-08-16 21:42:46
 创建人: 小欧
 更新人: 小欧
-状态: 方案定案（北京老陈定案：仅设计文档，代码落地另立任务）**【 start（任务输入契约）已落地 2026-08-17，见 10.1；S0-S4 代码已落地；S5 C4+compaction、3.12 未实施；现网数据库迁移见 10.2 】**
+状态: 方案定案（北京老陈定案：仅设计文档，代码落地另立任务）**【 S0-S4 代码已落地 2026-08-17，见 10.1.8 表标注；S5 C4+compaction、3.12 未实施】**
 
 > 定位：本设计的核心收益落在「历史回放保真 + 排查」与「前端展示重写为流水线式」两条主线。存储侧：完整 observation 文本主要供多轮回放与排查使用，前端 observation 步骤仅展示摘要即够（后端产出为准）；展示侧（2.3/3.7，完整设计见 3.7.1~3.7.8）：推翻"分步卡片"式展示，按后端事件流顺序流水线式自然流出、去掉全部框框，实时与回放同一套渲染。第一章节标题"yield 前端消息数据"沿用最初命名，实际以回放、取数修正与展示重写为主。
 
@@ -325,7 +325,7 @@ step_dict（同一份对象，双路分发）
 
 关键结论：SSE 消息 == step_dict 本身（format_agent_sse 只加 type/step/timestamp 头，其余字段原样透传），yield 与落库是同一份 step_dict，两路同构。因此「前端能看到的字段」==「落库能还原的字段」==「to_dict() 序列化的字段」。前端看不到的字段，历史回放也还原不了。
 
-> **start 事件（当前状态：已落地为非旁路，见 10.1）**：start 现经 react_cycle 装配 emit（react_cycle.py:581-583，initialize_run_state 之后、while 之前），由 `start_step.assemble_start_step` 构造任务输入契约 MetaStep 后经 `_step_emitter.emit` 进 agent.steps（占 step 0）、走正常双路分发（前端 SSE + 落库 append_step），不再是旁路——2016-08-17 已实施，详见 10.1。
+> **start 事件（当前状态：已落地为非旁路，见 10.1）**：start 现经 react_cycle 装配 emit（react_cycle.py:581-583，initialize_run_state 之后、while 之前），由 `start_step.assemble_start_step` 构造任务输入契约 MetaStep 后经 `_step_emitter.emit` 进 agent.steps（占 step 0）、走正常双路分发（前端 SSE + 落库 append_step），不再是旁路——2016-08-17 已实施，见 10.1.1~/10.1.8 S4。
 
 ##### 1.1.1 源头：LLM 流式 chunk 的逐片转发与事后分类
 
@@ -503,7 +503,7 @@ data: {"type":"<type>","step":<N>,"timestamp":"<本地ISO>", ...step_dict其余�
 ##### 1.5.1 start（任务开始）
 
 ① 含义：一次任务开始。
-② 产出时机：start 任务输入契约（含 system_prompt / context_summary / warning，step 0）由 react_cycle 在 initialize_run_state 之后、while 之前装配 emit（react_cycle.py:581-583，内部 start_step.assemble_start_step），进 agent.steps 走双路分发——2016-08-17 已落地，设计定案与业务流程详见 **10.1**（start 已从旁路升级为任务输入契约）。
+② 产出时机：start 任务输入契约（含 system_prompt / context_summary / warning，step 0）由 react_cycle 在 initialize_run_state 之后、while 之前装配 emit（react_cycle.py:581-583，内部 start_step.assemble_start_step），进 agent.steps 走双路分发——2016-08-17 已落地，设计定案见 **10.1.1 / 10.1.2 / 10.1.7**（start 已从旁路升级为任务输入契约）。
 ③ 前端消费：case 'start'（sse.ts:1150）映射 startStep 到执行步骤列表，创建"AI 正在思考..."占位。
 
 ##### 1.5.2 thought（思考过程）
@@ -1286,7 +1286,7 @@ ObservationStep 保留 content（summary）用于前端展示。理由——前�
 
 **需求**：token 消耗按四维度（哪个模型 / 哪个会话 / 哪个任务 / 哪个事件=每次 LLM 调用）归属落库，可逐条查询与聚合。
 
-**方案概要（存储视角，指路 3.9）**：新增 `token_usage` 表，每次 LLM 调用一行（session_id / task_id / model / provider / prompt_tokens / completion_tokens / total_tokens / created_at）；**落库点/落库实施见 9.7 与文档2 6.1.4**（定案=agent_runner 收 usage 终态经 db_ops.insert_token 统一 INSERT，非 react_cycle 内同源追加——旧"复用 react_cycle 既有 usage 提取处同源追加"方案已废弃，含伪 `agent.session_id`）。
+**方案概要（存储视角，指路 3.9）**：新增 `token_usage` 表，每次 LLM 调用一行（session_id / task_id / model / provider / prompt_tokens / completion_tokens / total_tokens / created_at）；**落库点/落库实施见 10.1.7 ②-3 与 10.1.8 S2**（②-3 定案=agent_runner 收 usage 终态经 db_ops.insert_token 统一 INSERT，非 react_cycle 内同源追加——旧"复用 react_cycle 既有 usage 提取处同源追加"方案已废弃，含伪 `agent.session_id`）。
 
 **落点**：表结构权威 = 本文档 9.3，粒度对齐 9.4；落库实施 = 9.7 / 文档2 6.1.4；概要定案 = 第二部分 3.9。
 
@@ -1397,7 +1397,7 @@ token_usage
 
 索引：`session_id`、`task_id`、`llm_call_count`、`model` 各建索引（按会话/任务/轮次/模型聚合查询）。
 
-**落库点**：**统一以 11.8 / 9.7 为权威——agent_runner 收 usage 终态经 db_ops.insert_token 统一 INSERT（不改 react_cycle）**；react_cycle 的 usage 处理处（现第 388 行起）仅累加 + emit `MetaStep(type="usage")`，不再直接 INSERT（废除此处旧"同源追加"方案，P4 经 db_ops 注入解耦）。INSERT 使用 get_conn（数据库访问机制见 5.4）。
+**落库点**：**统一以 10.1.7②-3 与 11.8 为权威——agent_runner 收 usage 终态经 db_ops.insert_token 统一 INSERT（不改 react_cycle）**；react_cycle 的 usage 处理处（现第 388 行起）仅累加 + emit `MetaStep(type="usage")`，不再直接 INSERT（废除此处旧"同源追加"方案，P4 经 db_ops 注入解耦）。INSERT 使用 get_conn（数据库访问机制见 5.4）。
 
 **llm_call_count/session_id/model 来源**：llm_call_count **取 `MetaStep(type="usage")` 的 step 键**（react_cycle.py:401 `step=agent.llm_call_count`，同一数字、同源，**不另设计算规则**；与 chat_tasks.llm_call_count 同名同值）；session_id 由 stream_orchestrator 传入（现 TASK_END 已用）；model/provider 从 llm_response 或 agent 配置取（start 步骤已产出模型标识，同源）。
 
@@ -1433,122 +1433,894 @@ token_usage
 | 步骤 | 内容 | 验证 |
 |------|------|------|
 | 1 | db_initializer 注册 token_usage 表 + 索引 | 新库启动建表成功 |
-| 2 | agent_runner 收 usage 终态经 db_ops.insert_token 统一 INSERT（权威=11.8，非 react_cycle 内追加） | 一次多步任务后 token_usage 每轮 LLM 调用一行 |
+| 2 | agent_runner 收 usage 终态经 db_ops.insert_token 统一 INSERT（权威=10.1.7②-3/11.8，非 react_cycle 内追加） | 一次多步任务后 token_usage 每轮 LLM 调用一行 |
 | 3 | API：按事件/任务/会话/模型四维度查询 | 各维度 SUM 与 TASK_END usage_tokens 一致 |
 
 ---
 
 ### 10 架构提升设计
 
-> **定位**：本部分承接第三部分（存储数据）与第二部分的 yield 链路，收录**架构层面的提升设计**——不解决具体 bug，而是从**系统逻辑整体**的角度，把现有机制中"只是能用、但不符合理想架构"的部分提升为更自洽、更对称、更可回放的形态。当前已落地提升项：**start 前置环节**（10.1，实际落地情况 + 业务流程）；10.2 记录 **chat 域数据库现状（实测）**。
+> **定位**：本部分承接第三部分（存储数据）与第二部分的 yield 链路，收录**架构层面的提升设计**——不解决具体 bug，而是从**系统逻辑整体**的角度，把现有机制中"只是能用、但不符合理想架构"的部分提升为更自洽、更对称、更可回放的形态。当前先落一个提升项：**start 前置环节**（10.1，已定案方向）；10.2 及之后的架构提升项按北京老陈后续要求陆续补充。
 >
 > 与第二部分 2.4.5（设计目标契约）的关系：2.4.5 承载的是"具体事件字段级的待实施目标"（start security_check 清除 / final 统计字段 / stats / context_overview 等），**本节承载的是"架构级提升设计"**——比字段级更高一层，从 start/final 的对称性、输入/输出契约的整体结构出发。两者不冲突：本节的设计实施时，2.4.5 ①（start security_check 清除）随 start 重构一并落地。
 
-#### 10.1 start 前置环节：任务输入契约（实际落地情况，2026-08-17）
+#### 10.1 start 前置环节：从旁路占位升级为任务输入契约（loop 前置装配）
 
-> **一句话**：start 已从"旁路占位"升级为 **loop 的前置装配环节（任务输入契约）**——在 agent 建好后、循环开始前，把任务输入（系统提示词、用户消息、续聊历史上下文、任务头部）**装配成第 0 步 MetaStep（type=start, step=0），emit 进 agent.steps**，与 final（任务输出契约）对称。原设计定案（10.1.1~10.1.8 含实施计划/验证清单）见版本历史 v2.66~v2.86 记录；**代码已落地**，当前实际情况如下。
+> **一句话**：现状 start 是"旁路占位"——agent 还没创建就先 `yield` 一个空壳头给前端，不进步骤链、不落库、断线不重放；设计目标是把 start 提升为 **loop 的前置装配环节**——在 agent 建好后、循环开始前，把任务输入（系统提示词、用户消息、续聊历史上下文、任务头部）**装配成第 0 步 StartStep，emit 进 agent.steps，与 final（任务输出契约）对称**：start = 任务输入契约、final = 任务输出契约，一头一尾锁定一次任务的输入与输出。
 
-**实际落地情况（2026-08-17，S3/S4）**：
+##### 10.1.1 start 新的功能逻辑设计
 
-- **装配模块**：`backend/app/services/agent/start_step.py` 单模块承载 start 全部业务——`assemble_start_step(agent, context)` 唯一入口（① `_inject_conversation_history` 注入会话历史 → ② `_maybe_compact_injected_history` C4 超窗判定置 `_needs_compact` → ③ `_build_start_contract` 构造任务输入契约 MetaStep）。
-- **装配落点**：react_cycle.py:581-583，`initialize_run_state` 之后、while 循环之前，`_assemble_start_step(agent, context)` 同步装配后 `_step_emitter.emit` 进 agent.steps（占 step 0、业务步骤从 1 起），走正常双路分发（SSE 下发 + agent_runner 事件流 append_step 落库，可重放）。
-- **运行元数据**：orchestrator 注入 `agent._start_meta`（next_step/session_id/user_input/context_link_mode/context_root_task_id/warning）；task_id 读 `agent.task_id`（base_agent.py:59 权威持有）；llm_client（provider/model）在 orchestrator 构造 agent 时注入，不重复装配。
-- **字段承载**：任务头部（display_name/provider/model/task_id）+ system_prompt + user_message + context_summary 快照（session_id/context_link_mode/context_root_task_id/message_count/total_tokens）+ warning（模型不在列表提示，保留）。**不装**：执行统计（归 final，见 2.4.5 ②）、security_check（已清除，真实安全拦截归 tools/security 域 / HITL confirm 链路）、历史消息原文（回放走 DB，见 5.1）。
-- **步号**：`create_step_counter`（base.py:86-94）起始 -1、首次 `next_step()` 返回 0（start 显式占 step 0）。
-- **原旁路代码已删**：sse_events.py 的 `send_start_step`/`build_start_step` 已删除（现仅 create_error_response/get_error_info/save_execution_steps_to_db/create_final_response 四函数）；orchestrator 层 `step_start` 旁路已取消；`execution_steps` 兜底数组不再承担 start 双写。
+> **定位**：本子节给出 **start 升级后的"新的功能逻辑设计"**——start 从"旁路占位"升级为 **loop 的前置装配环节（任务输入契约）**后，它在整个任务里的新功能逻辑（何时装配、装什么、走什么通路、占哪个号、能否重放、边界在哪、与既有机制怎么衔接）。10.1.2 再给 StartStep 的**具体字段明细**。本子节只讲"逻辑怎么跑"，不重复列字段。
 
-**任务输入契约字段明细（actual，`start_step._build_start_contract` 实码，2026-08-17 核实）**
+**① 升级动机（从现状的三个问题出发）**
 
-> 来源均复用既有数据、不新增数据流。task_id 读 `agent.task_id`（base_agent.py:59 权威持有）；provider/model 读 `agent.llm_client`（orchestrator 构造 agent 时注入）；user_message 读 `_start_meta["user_input"]`；system_prompt 读 `agent._sys_prompt`（initialize_run_state 已取）。**不装**：执行统计（归 final）、security_check（已清除）、历史消息原文（回放走 DB）。
+改造前现状（已核实 2026-08-16 代码，系升级动机；已于 2016-08-17 落地改造，见下）：原 `step_start`（旧 stream_orchestrator.py）→ `send_start_step`（旧 sse_events.py）构造 `MetaStep(step=next_step(), type="start")`，只带 5 个展示字段，在 **agent 创建之前**就 `execution_steps.append` + `yield format_agent_sse` 下发，**不经 `StepEmitter.emit`**、不进 agent.steps、不进缓冲、不落库、断线不重放。由此产生三个问题（均已随 2016-08-17 S3/S4 落地消除）：
 
-| 字段 | 值含义 | 实际来源（start_step.py 实码） |
-|------|--------|------------------------------|
-| **task_id** | 任务 ID | `agent.task_id`（base_agent.py:59 权威持有，orchestrator 构造 agent 时注入） |
-| **display_name** | 模型展示名，`provider (model)` | `agent.llm_client.provider (agent.llm_client.model)`（orchestrator 注入 llm_client） |
-| **provider** | 服务商 | `agent.llm_client.provider` |
-| **model** | 模型 | `agent.llm_client.model` |
-| **user_message** | 用户本次消息全文 | `_start_meta["user_input"]`（orchestrator 注入，源自 `messages[-1].content`） |
-| **system_prompt** | 系统提示词全文 | `agent._sys_prompt`（initialize_run_state 已取，start 前置装配时读出） |
-| **context_summary** | 续聊上下文概要 | 字段名 = `session_id / context_link_mode / context_root_task_id / message_count / total_tokens`；前三来自 `_start_meta`（orchestrator 注入），message_count/total_tokens 由 previous_messages 实算（`MessageBuilder._estimate_tokens`），不装历史原文（回放走 DB，见 5.1） |
-| **warning** | 模型不在列表提示 | `_start_meta["warning"]`（resolver.pop_model_warning → orchestrator 注入；有前端消费，保留） |
+1. **start 与 final 不对称**：final 是 emit 进 agent.steps 的正式步骤、可落库可重放，是"任务输出契约"；start 却是旁路空壳，没有"任务输入契约"与之对应——任务输入（系统提示词、用户原话、续聊上下文）散落在 initialize_run_state 里临时装配，没有正式承载。
+2. **start 与输入内容脱节**：start 下发时 agent 尚未创建、上下文尚未装配，只发 5 个展示字段；前端拿到 start 只能建"AI 正在思考..."占位，看不到"本次任务喂了什么"。
+3. **步数含义混乱**：`send_start_step` 消耗了 `next_step()` 第一步，但 start 又不进 agent.steps——计数器的 step 1 被"占位但不存在"，业务步骤实际从 step 2 起，逻辑不干净。
 
-**start 业务流程（当前实际调用链，2026-08-17 核实）**：
+**② 新功能逻辑（升级后 start 如何跑）**
 
+把 start 从"旁路占位"提升为 **loop 的前置装配环节**，使之与 final 形成**输入/输出契约对称**（start = 任务输入契约、final = 任务输出契约）。升级后的功能逻辑定点如下：
+
+| 逻辑环节 | 升级后设计 | 相比现状的变化 |
+|---------|-----------|---------------|
+| **装配时机** | 在 **agent 建好后、`initialize_run_state` 之后、loop 开始前**装配（此时 system prompt 与历史上下文已可取得；**必须在其 `agent.steps = []` 重置之后**，否则 start 被清空） | 现状"agent 创建前下发"（提前了） |
+| **装配内容** | 把**任务输入**装进 StartStep：任务头部 + system prompt + user_message 全文 + 续聊上下文概要（字段清单见 10.1.2） | 现状只装 5 个展示字段 |
+| **通路** | 走正常 `StepEmitter.emit`（step_emitter.py:27-34）进 `agent.steps`，再走 1.1 双路分发（yield 下发 + 落库） | 现状旁路（不经 emit、不落库） |
+| **step 编号** | start 占 **step 0**（前置装配、不消耗业务步数），业务步骤从 **step 1** 起 | 现状消耗 next_step() 第一步但步骤不存 |
+| **落库/重放** | start 进 agent.steps + 落库后，**断线重连/历史回放可恢复 start**（前端幂等：已见则跳过，不重复建占位） | 现状不落库、断线不重放 |
+| **承载边界** | 只承载**任务输入契约**（头部 + 系统提示词 + 用户原话 + 续聊概要），**不承载执行统计**（统计归 final / stats，见 2.4.5 ②⑤） | 现状无边界概念，混占位 |
+
+一句话记牢：**start 从"发一个空壳头"升级为"正式装配一次任务的输入"**——在 loop 开始前把这次任务"喂给了 LLM 什么"固化成第 0 步、emit 进步骤链、可落库可重放，与 final"这次产出了什么"一头一尾对称。
+
+**③ 与既有机制的新衔接点（功能逻辑落地的三条线）**
+
+- **上下文注入衔接**：system prompt + user message 现状经 `init_history`（message_builder.py:146-152）在 `initialize_run_state`（initialize_run_state.py:111-128，react_cycle.py:550 调用）注入；多轮历史经 `_load_previous_messages`（stream_reader.py:88）在 agent_runner.py:155-158 读入 ctx 再传 run_react_cycle。**新功能逻辑**：把这些既取好的输入数据在 `run_react_cycle` 内 `initialize_run_state` **之后**、while 循环**之前**装配成 StartStep（第 0 步 emit）——**注意落点必须在 `initialize_run_state` 之后**，因其 :88 有 `agent.steps = []` 重置，前置会清空 start；**start 与 LLM 输入同源、不新增数据流**。
+- **security_check 清除（已落地）**：随 start 重构一并落地——start 字段收敛为输入契约字段，删除 security_check/warning 空占位中 security_check 部分（warning 保留，2.4.5 ①），落点已迁至独立 `start_step.py` 模块（原 send_start_step 已删除）。
+- **旁路说明改写（已落地）**：本设计实施后，1.1"start 是唯一旁路事件"的表述已**改写**（start 不再旁路，见 1.1/1.5/1.7 当前状态）；2.4.3 写法③ start 行已迁移到写法①（yield emit）。
+
+> 状态（10.1.1）：本节为设计定案（**start 新的功能逻辑** = loop 前置装配环节、任务输入契约）；具体字段明细见 10.1.2。 **【已实施 2026-08-17：start 升级为任务输入契约，落地见 10.1.7/S4，react_cycle.py:581-583 via start_step.assemble_start_step】**
+
+##### 10.1.2 StartStep 具体字段清单
+
+> **定位**：本子节给出 StartStep（第 0 步、任务输入契约）的**承载字段明细**——它装什么、不装什么、每份从哪取。字段清单分三块：①公共四键（与所有 Step 一样）；②任务输入契约（本次新增的承载内容）；③明确"不装什么"（边界，防止把执行统计塞进来）。**与 final 对照看**：start 从「任务头部 + 输入（系统提示词、用户原话、续聊上下文）」宣称"这次喂了什么"，final 从「应答 + 输出统计」宣称"这次产出了什么"，一头一尾对称。
+
+**① 公共四键（所有 Step 统一，to_dict 基础输出，见 1.6 / base.py:70-78）**
+
+| 键 | 值 | 说明 |
+|----|----|----|
+| **type** | `"start"` | 本步骤类型 |
+| **step** | `0` | 前置装配第 0 步（不消耗业务步数，业务步骤从 1 起，见 10.1.1 ③） |
+| **timestamp** | 本地 ISO | 本步骤发生时间（get_local_iso_timestamp） |
+| **content** | `""` | 空正文（start 是输入契约，正文不承载消息文本，user_message 单独成字段） |
+
+**② 任务输入契约（本次新增承载，来源均复用既有数据、不新增数据流）**
+
+| 字段 | 值含义 | 来源（现状已取好的数据） |
+|------|--------|--------------------------|
+| **task_id** | 任务 ID | orchestrator 生成（stream_orchestrator.py:123 generate_task_id，现状已带） |
+| **display_name** | 模型展示名，`provider (model)` | `get_service()` / ai_service（sse_events.py:144，现状已带） |
+| **provider** | 服务商 | ai_service.provider（sse_events.py:145，现状已带） |
+| **model** | 模型 | ai_service.model（sse_events.py:146，现状已带） |
+| **user_message** | 用户本次消息全文 | `messages[-1].content`（stream_orchestrator.py:114 user_input，现状 start 已带 content=user_message） |
+| **system_prompt** | 系统提示词全文 | `initialize_run_state` 内 `_get_system_prompt`（initialize_run_state.py:111-112，现状在 loop 内装配，start 重构后改在前置装配拿到） |
+| **context_summary** | 续聊上下文概要 | `_load_previous_messages(session_id)`（stream_reader.py:88，agent_runner.py:155-158 已读入 ctx）——概要字段 = `{session_id, mode(context_link_mode), root_task_id, message_count, total_tokens 估算}`，不装历史原文（历史回放仍走 DB，见 5.1 载体一） |
+
+> 说明：现状 start 已有 task_id / display_name / provider / model / user_message（5 个展示字段）；本次**新增承载 system_prompt + context_summary**，把散落在 initialize_run_state 里的"任务输入"正式装进 start，实现与 final 对称。`context_link_mode` / `context_root_task_id` 即 0.2.3-5 任务上下文链的落点字段（independent 新任务默认 / linked 续聊需显式），从上下文链读取。
+
+**③ 明确"不装什么"（承载边界，防止职责混乱）**
+
+| 不装 | 原因 | 归属 |
+|------|------|------|
+| **执行统计**（total_steps / llm_call_count / tool_stats / retry_count / duration / artifacts） | start 是"输入契约"，统计是"输出结果"，装了职责越界；且 start 走第 0 步时统计尚未产生 | final 终值（2.4.5 ②）/ stats 流式（2.4.5 ⑤） |
+| **security_check** | 历史空占位无实际消费，随 start 重构一并清除（2.4.5 ①） | 删除；真实安全拦截归 tools/security 域 / HITL confirm 链路 |
+| **warning** | 模型不在列表提示，有实际消费，**保留**（不删，否则退化） | 保留：resolver.pop_model_warning → orchestrator 注入 `agent._start_meta["warning"]` → `start_step._build_start_contract` 装 MetaStep(warning=)，真实链路（chat_routes.py:3-8 编辑历史） |
+| **历史消息原文**（previous_messages 逐条全文） | 回放保真仍走 DB（5.1 载体一铁律2），start 只带概要条数/根，不带原文，避免 start 成为第二个存储载体 | DB conversation（5.1）|
+
+> 一句话记牢：**start = "这次喂了什么"（任务头部 + 系统提示词 + 用户原话 + 续聊概要），不碰"这次产出了什么"（统计）**。字段全来自现状已取好的数据（get_service / messages[-1] / initialize_run_state / _load_previous_messages），**只做"把散装输入收进 StartStep 信封"，不新增数据流**。
+
+**④ start 字段落库与后续任务上下文污染分析（北京老陈 2026-08-16 重点：必须考虑 start 落库后是否污染后续任务上下文）**
+
+**回放加载链实况**（stream_reader.py:88-117，已核实 2026-08-16）：`_load_previous_messages` 只读 `chat_messages` 表（role=user/assistant 消息），对 assistant 消息经 `load_execution_steps`（storage.py:337）读步骤时**只提取 type=action_tool（→tool_calls，_parse_tool_calls :37-65）和 type=observation（→tool 消息，_parse_observations :68-85）**，其余类型步骤一律跳过。
+
+**结论：start 落库**chat_message_steps**后，不会污染后续任务上下文**，三层保证：
+1. **表隔离**：start 是步骤（chat_message_steps），不是消息（chat_messages）；回放按消息角色（user/assistant）加载，start 不在其内；
+2. **类型过滤**：即使 start 挂到某消息的 message_id 下，回放提取只认 action_tool/observation，start（type="start"）被 `_parse_tool_calls`/`_parse_observations` 直接跳过；
+3. **正文不重复**：start 的 user_message 即使落库也不会重复注入——回放 user 正文只从 `chat_messages.content` 读，不读 start。
+
+**start 各字段落库决策（哪些入 DB、入哪、为何）：**
+
+| start 字段 | 需落库？ | 落库位置 | 理由 |
+|------|---------|---------|------|
+| **type / step / timestamp** | ✅ 需要 | chat_message_steps（step_index / created_at 承载） | 重放 step 链必需，断线重连回放 start 用 |
+| **task_id** | ✅ 需要 | chat_tasks.task_id（主键）+ chat_messages/chat_message_steps 挂列（B1/11.7） | 任务级贯通，start 归属哪个任务 |
+| **display_name / provider / model** | ✅ 需要 | chat_tasks（provider/model/display_name 列，11.7）+ chat_messages.display_name | 任务级生效模型信息，回放展示 |
+| **user_message** | ⚠️ 不单独落 | 正文已存 chat_messages（role=user）；chat_tasks.user_input 快照可留 | 重复落库冗余；回放正文只从 chat_messages 读，start 落 user_message 无消费方 |
+| **system_prompt** | ❌ 不落全文 | 不落（如需留痕放 chat_tasks.metadata 摘要） | 每次任务运行时 `_get_system_prompt`（initialize_run_state.py:111-112）现取现装，落库陈旧且冗余；回放不读 |
+| **context_summary** | 🔀 拆字段落 | context_link_mode / context_root_task_id → chat_tasks 列（10.1.4 ④落库）；message_count / total_tokens 快照不落 | 链根/模式是任务级权威数据必须落；快照量是运行时瞬态，无需持久化，回放按任务链重新计算 |
+
+**一句话**：start 只落"步骤骨架 + 任务归属 + 生效模型"三类，正文（user_message/system_prompt/context_summary 快照）不落库——既满足断线重放 start、又保证后续任务回放时**不污染**（表隔离 + 类型过滤 + 正文不重复三层保证）。
+
+> 状态（10.1.2）：字段清单为设计定案；`StartStep` 装配/字段承载已随代码落地（S3/S4），实现从 `send_start_step`/`initialize_run_state` 装配时序收敛至独立 `start_step.py`（assemble_start_step / _build_start_contract，2016-08-17），实施前以当时最新代码复核。 **【已实施 2026-08-17：start_step.py 单模块承载 start 装配（system_prompt/context_summary/warning/step=0），见 S3/S4】**
+
+##### 10.1.3 连续任务 vs 新任务：接口与处理
+
+> **定位**：本子节回答"**任务**（task）是**续上一次**（连续任务 linked）还是**另起一段**（新任务 independent）——这个判断在**后端接口**和**后端处理**上分别在哪儿、现在是什么样、升级后是什么样"。**连续/新任务是任务级概念，与会话（session）无关**——同一会话里可以有多个任务，靠 `context_link_mode` 区分；会话只是消息/任务落库的容器。它是第 10 章架构提升的另一条主线：**start 管"一次任务喂了什么"（10.1.1/10.1.2），本子节管"一次任务从哪接续、是否接续"**。
+
+**① 接口（现状）：唯一入口、无任务级"续聊/新任务"标识**
+
+- 发送入口只有一个：`POST /api/v1/chat/stream`（chat_routes.py:40-46），入参 `ChatRequest`（models.py:18-25）仅三件：`messages`（消息列表）、`session_id`（会话 ID）、`stream`/`temperature`/`provider`/`model`（可选参数）。
+- **现状入参里没有任何任务级"这次是续聊（linked）还是新任务（independent）"的标识**——既没有 `context_link_mode`，也没有 `context_root_task_id`。
+
+**② 处理现状：无任务级上下文链机制，历史全量混载**
+
+- 现状**没有**任务级"续聊/新任务"处理：`_load_previous_messages(session_id)`（stream_reader.py:88-117）按 `session_id` 执行 `SELECT id, role, content FROM chat_messages WHERE session_id=?`，把该会话**全部历史全量加载**，经 agent_runner.py:155-158 读入 `context` 后喂给 LLM。
+- 于是现状是"**一个会话的所有消息混在一起当上下文**"：没有 `context_link_mode`（linked/independent）、没有 `context_root_task_id`（链根），**区分不了"这个任务是接着上一个任务的链、还是从零开始"**——这些字段与逻辑在代码里**不存在**，只存在于本文档设计目标（0.2.3-5 任务上下文链）。
+
+**③ 升级设计定案：任务级显式上下文链 + start 亮明"是否接续"（指路文档2 2.3 / 6.1.2 / 6.1.5）**
+
+- **接口**：`ChatRequest`（models.py:18-25）增 `context_link_mode`（`independent` 新任务默认 / `linked` 续聊需显式，文档2 6.1.5），路由薄壳透传 orchestrator——**任务级**标识，随每次发任务携带。
+- **处理**：后端按 `context_link_mode` 计算本任务上下文链（文档2 6.1.2）——
+  - `linked` = 本任务**续聊**（需显式声明，非默认），沿用上一任务的 `context_root_task_id`（链根），LLM 带链上历史一起看；
+  - `independent` = 本任务**新任务**，自为链根（context_root_task_id = 自身），LLM 只看本任务自身；
+  - 两者都落在**同一会话**内，落库 `chat_tasks`（context_link_mode / context_root_task_id，文档2 3.1.2 / 3.5.3）；`_load_previous_messages` 按"链根 → 本任务"范围过滤，链外消息不进 LLM（文档2 6.1.2 / 2.3）。
+- 该机制与 **start** 挂钩（对称收口）：StartStep 第 0 步（10.1.2）的 `context_summary` 显式带上 `{mode, root_task_id, message_count}`——**start 一眼可读"这次是续聊还是新开、链根是谁、续了几条"**，与 final 的"产出"一头一尾对称。
+- 后端为主、前端迎合（AGENTS 1.5）：入参标识由后端定义，前端按后端契约传入（TaskTypeToggle 续聊/新任务勾选随 E1 携带 context_link_mode，文档2 4.6.1 / 6.2.10）。
+
+> 状态（10.1.3）：本子节为设计定案；`context_link_mode` / `context_root_task_id` 的 request 入参、任务链落库、`_load_previous_messages` 按链范围过滤随代码落地另立任务（与 10.1.1/10.1.2 的 StartStep 落地同批，权威实现见文档2 6.1.5 / 6.1.2），实施前以当时最新代码复核。 **【后端已实施 2026-08-17：chat_routes/models 入参 + stream_orchestrator 链计算 + stream_reader 链过滤 + agent_runner 透传，见 S1；前端 sse.ts 未动】**
+
+##### 10.1.4 连续/新任务：代码级修改说明（落地）
+
+> **定位**：承接 10.1.3 设计定案，把"任务级上下文链（连续 linked / 新任务 independent）"落到**代码级修改说明**。涉及后端 6 处 + 前端 1 处，逐条给当前代码形态 + 改成什么样。落库表/列骨架以第 11 章 11.7（chat_tasks 建表 + task_id 挂列）与文档2 3.1.2 权威为准，本节只讲"上下文链的逻辑代码改动"，不重复 11.7 的建表细节（DRY）。
+
+**① db_initializer.py — 任务上下文链落库列（承接 11.7）**
+
+- **当前**：db_initializer.py:28-72 仅四表，无 `chat_tasks`、消息/步骤无 `task_id` 列。
+- **改为**：按 11.7 新增 `chat_tasks` 建表（骨架已含 `context_link_mode` / `context_root_task_id` 列，db_initializer.py:1957）+ 幂等补 `chat_messages.task_id` / `chat_message_steps.task_id` 列 + `idx_steps_task` 索引。本节依赖此列，先 11.7 后本节（单向依赖）。
+
+**② models.py（api/v1/chat）— ChatRequest 增任务类型入参**
+
+- **当前**（models.py:18-25）：`ChatRequest` 只有 `messages / stream / temperature / provider / model / session_id`，无任务类型。
+- **改为**：
+  ```python
+  context_link_mode: Optional[str] = Field(default="independent",
+      description="任务类型: independent新任务(默认)/linked续聊需显式")
+  ```
+
+**③ chat_routes.py — 路由薄壳透传 context_link_mode**
+
+- **当前**（chat_routes.py:43-46）：`chat_stream_orchestrator(request.messages, request.session_id)`，不带任务类型。
+- **改为**：`chat_stream_orchestrator(request.messages, request.session_id, request.context_link_mode)`。
+
+**④ stream_orchestrator.py — 计算 context_root_task_id + 落库 chat_tasks**
+
+- **当前**（stream_orchestrator.py:123 `generate_task_id()`）：只生成 task_id，无任务链计算。
+- **改为**：`chat_stream_orchestrator(messages, session_id, context_link_mode="independent")` 收参；在 agent 创建前（task_id 生成处）按链式继承计算 `context_root_task_id`：
+  - `linked`（需显式）：查 `chat_tasks` 取本会话上一任务的 `context_root_task_id` 沿用（曾续则沿链根），无上一任务则 `= 自身 task_id`；
+  - `independent`：`= 自身 task_id`（从零自为链根）。
+  - 同时落库 `chat_tasks` 一条任务行（含 `context_link_mode` / `context_root_task_id`，任务开始/结束属性见文档2 6.1.2）。
+
+**⑤ stream_reader.py — `_load_previous_messages` 按任务链范围过滤**
+
+- **当前**（stream_reader.py:88-117）：`_load_previous_messages(session_id)` 按 session_id 全量加载该会话全部历史当上下文。
+- **改为**：签名增 `_load_previous_messages(session_id, context_link_mode="independent", context_root_task_id=None)`：
+  - `independent`：直接返回 `[]`（新任务从零开始，不带任何链上历史）；
+  - `linked`：按"链根任务的首条 user 消息 id → 本任务用户消息之前"范围加载——`SELECT id, role, content FROM chat_messages WHERE session_id=? AND id BETWEEN 链根首消息id AND 本任务消息id前`，**链外消息不进 LLM**。
+
+**⑥ agent_runner.py — db_ops.load_previous 透传任务上下文**
+
+- **当前**（agent_runner.py:155-158）：`prev = db_ops.load_previous(session_id)`，不带任务上下文。
+- **改为**：透传链参数——`db_ops.load_previous(session_id, context_link_mode=..., context_root_task_id=...)`。db_ops 命名空间在 stream_orchestrator.py:172-180 构造，注参一并在此补上；`_load_previous_messages` 的 task 上下文来源即 10.1.3 ④ 算好的 `context_link_mode` / `context_root_task_id`。
+
+**⑦ 前端 sse.ts — 请求体增 context_link_mode（后端为主、前端迎合）**
+
+- **当前**（sse.ts:739-743）：请求体 `{ messages, stream, session_id }`，无任务类型。
+- **改为**：请求体增 `context_link_mode`（`body: { messages, stream, session_id, context_link_mode }`）；前端 TaskTypeToggle 续聊/新任务勾选随 E1 传入（文档2 4.6.1 / 6.2.10），默认 independent（仅显式勾选续聊才 linked）。
+
+**⑧ 判断全面性补全（三思三省补遗 — 北京老陈 2026-08-16 指出原判断仅靠前端 `context_link_mode` 声明、不全面）**
+
+原 10.1.3 / 10.1.4 判断 new（independent）/ continuous（linked）仅依赖前端 `context_link_mode` 显式声明、后端不自主判断，存在缺口；本⑧补全定案：
+
+| 缺口 | 补全定案 |
+|------|---------|
+| ① 默认 linked 风险：前端漏传/旧客户端 → 后端全当续聊灌历史，真·新任务识别不了 | `context_link_mode` **缺失不默认 linked，改默认 independent**（新任务从零）；仅显式 linked 才续聊（防误灌历史）。文档2 6.1.5 默认 linked → 改 independent |
+| ④ 终态任务进链未明确：cancelled/failed 是否算"上一任务"参与链根 | 链根计算取"本会话**最近一条成功（final 终态 success）任务**"；cancelled/failed 跳过不继承（避免链到失败任务） |
+| ⑤ 非法值无校验：`context_link_mode` 传 `"xxx"` 无兜底 | 后端收参校验白名单 `{"linked","independent"}`，非法值按 **independent** 处理并记 warning |
+| ⑦ 重跑（L3）场景未纳入：重跑 = 新建任务 + 继承原链 | 重跑请求带 `reply_to_message_id`，`context_root_task_id` 继承**原消息所在任务链**（文档2 6.1.13），等同 linked 特例，显式写入判断流程 |
+| ② 线性链不支持分支 / ③ 跨 session 续聊 / ⑥ 后端零自主语义判断 | **当前不支持，标后续扩展**：分支派生（从中间任务开新链）、跨会话 `context_root`、后端内容语义兜底判断，均不在本期，后续版本扩展（不退化现有线性链） |
+
+> 补全影响：10.1.3 ② 处理现状"默认全量"改"默认 independent 空历史"；10.1.4 ④ 链根计算加"成功任务过滤" + 收参校验；前端默认 linked → independent（文档2 6.1.5 同步改）。三思三省：合规（白名单校验）/ 合理（缺省改 independent 防误灌）/ 关联（与文档2 6.1.5/6.1.13 闭合）。
+
+> 状态（10.1.4）：为**代码级修改说明定案**；实施顺序建议 = 11.7（建表/挂列）→ ④ 编排计算链 → ⑤ 加载过滤 → ⑥ 透传 → ②③ 接口 → ⑦ 前端，每步以后端启动验证（发送 independent 任务 → LLM 无历史上下文；发送 linked 任务 → LLM 带链上历史）；实施前以当时最新代码复核行号。 **【后端①②③④⑤⑥已实施 2026-08-17，见 S0/S1；⑦ 前端 sse.ts 未动】**
+
+##### 10.1.5 现状：历史上下文注入逻辑（代码实况）
+
+> **定位**：回答"**现在历史上下文是怎么注入的、历史数据存在哪**"。承接 10.1.3（设计）/ 10.1.4（落地），本节讲**现状代码实况**，作为 10.1.4 ⑤ 为何要改的对照底稿。
+
+**① 整个会话注入（不是按前一个任务）**
+
+起点 `_load_previous_messages(session_id)`，链路如下：
+
+```text
+_load_previous_messages(session_id)      # stream_reader.py:88-117，按 session_id 全量取该会话全部消息
+    │  SELECT id, role, content FROM chat_messages WHERE session_id=?
+    │  （assistant 消息再查 chat_message_steps 组装 tool_calls + observation 工具结果）
+    ▼
+ctx["previous_messages"] = prev          # agent_runner.py:155-158
+    ▼
+initialize_run_state(context=ctx)        # react_cycle 调 → initialize_run_state.py:128
+    ▼
+_inject_conversation_history(agent, context)   # 跳过最后一条 user，防与 task 重复（:47-48）
+    ▼
+agent.message_builder.inject_history(history_msgs)  # :81，注入整个会话历史
 ```
-① orchestration 入口  POST /api/v1/chat/stream
-     └─ chat_stream_orchestrator(messages, session_id, ...)
-          ├─ 取服务：chat_service / llm_client(provider, model) 等全局服务
-          ├─ 算任务链根：按 context_link_mode / context_root_task_id 计算（linked 沿用链根 / independent 自为链根）
-          ├─ 建 Agent：UniversalAgent(chat_service=..., llm_client=...)（task_id 注入 agent.task_id）
-          ├─ 注入运行元数据：agent._start_meta = {
-          │      next_step,            # create_step_counter 闭包，起始 -1、首次返 0
-          │      session_id,           # 会话
-          │      user_input,           # 本次用户消息
-          │      context_link_mode,    # 续聊链接方式
-          │      context_root_task_id, # 链根任务
-          │      warning,              # 模型不在列表提示（resolver.pop_model_warning → 注入）
-          │   }
-          └─ 起后台：run_agent_in_background(...)  →  agent_runner 事件流
 
-② 装配  run_agent_in_background → run_react_cycle(agent, task, task_id, context)
-     ├─ initialize_run_state(agent, task, task_id, context)   # :575
-     │    ├─ agent.steps = []        # :88 重置（start 必须在其后 emit，否则被清空）
-     │    ├─ init_history()          # system + task 装载
-     │    └─ _sys_prompt 就绪
-     ├─ _assemble_start_step(agent, context)                  # :581 同步装配
-     │    ├─ _inject_conversation_history(agent, context)     # ① 注入多轮会话历史（跳过最后一条 user 防重复）
-     │    ├─ _maybe_compact_injected_history(agent)           # ② C4 超窗判定 → 置 agent._needs_compact
-     │    └─ _build_start_contract(agent, prev)               # ③ 读 _start_meta + _sys_prompt + llm_client
-     │         └─ 构造 MetaStep(type="start", step=0,          # 任务输入契约
-     │              content=user_input, display_name, provider, model, task_id,
-     │              system_prompt, context_summary{...}, warning)
-     ├─ yield agent._step_emitter.emit(_start_step)           # :583 进 agent.steps（占 step 0）
-     └─ 若 _needs_compact: await _compact_injected_history(agent)  # :589-590 C4 摘要回填（超窗时）
+**要害**：它是**按整个会话（session）全量取**，不是按"前一个任务"——该会话**所有任务的所有轮次全部混在一起塞给 LLM**，分不清哪些属于上一个任务链、哪些是更早的独立任务。这正是 10.1.3 ②"一个会话所有消息混载"的实况，也是 10.1.4 ⑤ 要改成"链根 → 本任务"范围过滤的原因。
 
-③ 下发/落库  agent.steps[0]=start 走正常双路分发
-     ├─ 前端 SSE：format_agent_sse(start.to_dict()) → stream_reader → orchestrator 下发
-     │    └─ 前端 sse.ts case 'start' 建"AI 正在思考..."占位（已见则幂等跳过）
-     └─ 落库：agent_runner 事件流收 emit → db_ops.append_step 落 chat_message_steps
-          （含 task_id，随消息序列分配 ai_message_id；execution_steps 仅为内存兜底、不再双写）
-```
+**② 历史数据存储位置**
 
-> 关键时序保证：start **必须在 `initialize_run_state` 之后、while 循环之前** emit，因 `initialize_run_state` 内 `agent.steps = []` 会清空在此之前 emit 的步骤（react_cycle.py:575→:581-583 顺序）；start 占 **step 0** 由 `create_step_counter` 起始 -1（base.py:86-94）保证，业务步骤从 **1** 起。断线重放时前端对已经是 start 的步骤做幂等跳过（归文档2 6.2），不重复建占位。
+历史存在 SQLite `~/.omniagent/chat_history.db` 两张表：
 
-#### 10.2 数据库现状（chat 域，实测 2026-08-17）
-
-> **定位**：本节记录 **chat 域数据库的当前实际状态**（非迁移过程——S0 表结构 2026-08-16 已全部落地，部署新代码后 `init_chat_db()` 启动即自动幂等建齐，无需任何手工建表/加列/迁移）。实测 `~/.omniagent/chat_history.db`（约 1.3GB，2026-08-17 清理 20 天前数据后由 1.6GB 回收）。
-
-**现网库结构（实测通过）**
-
-| 项 | 状态 | 实测 |
+| 表 | 承载 | 用途 |
 |----|------|------|
-| chat_sessions / chat_messages / chat_session_title_history / chat_message_steps 4 老表 | 已建 | ✅ |
-| chat_tasks / token_usage / chat_session_trust 3 新表 | 已建（S0） | ✅ |
-| chat_messages.task_id/metadata、chat_message_steps.task_id、chat_sessions.metadata/model_override 5 新列 | 已加（S0） | ✅ |
-| 全部新索引（idx_tasks_session/idx_steps_task/idx_msg_task/idx_msg_timestamp/token_usage 五索引/idx_trust_session） | 已建（S0） | ✅ |
-| 一次性数据迁移 migrate_execution_steps_status | 已执行并守卫登记 | ✅ applied_at=2026-07-13 |
-| 旧 execution_steps 表示残留（recoverable/authorization_required/incident） | 零残留 | ✅ |
+| `chat_messages` | 每轮 user 消息正文 + assistant 回复正文（role/content/status） | 上下文 text 正文 |
+| `chat_message_steps` | assistant 每一步执行步骤（action_tool 参数、observation 结果） | 重建 tool_calls 回传 |
 
-**落地实码**（全部幂等 DDL，启动自愈，无手工过程）：
+> 状态（10.1.5）：本节为**现状代码实况记录**（已核实 2026-08-16 代码），非设计定案；升级方向见 10.1.3 / 10.1.4。
 
-- 建 3 新表：`backend/app/db/db_initializer.py:80-116` `executescript`（chat_tasks 含 context_link_mode/context_root_task_id 链列、token_usage 四维度归属、chat_session_trust 的 UNIQUE(session_id,tool_name)）
-- 加 5 新列：`db_initializer.py:137-144` `_ensure_column`（只 ADD 缺列，老行 NULL 不丢数据）
-- 建全部新索引：`db_initializer.py:155-169` `CREATE INDEX IF NOT EXISTS`
-- 索引并存说明：chat_message_steps 三索引 `idx_steps_message` / `idx_steps_session` / `idx_steps_task` 键不同、查询场景不同，非冗余、并存不删
-- 数据级迁移守卫范式：`backend/app/services/chat/migrate_steps.py`（schema_migrations，登记"已执行"，二次启动跳过全表扫描）
+##### 10.1.6 历史注入后的清洗处理（用 C4 锚定摘要压缩法）
 
-**现状数据形态（2026-08-17 实测）**：
+> **定位**：承接 10.1.5（现状：注入原始历史原文）与 10.1.1 / 10.1.2（start 升级为任务输入契约），本子节定案"**start 注入的历史消息不能直接进 conversation_history 就用，须经消息清洗/压缩处理后再回填**"。清洗方法按北京老陈 2026-08-16 定案：**用 [4] 的 C4 锚定摘要压缩法**（小欧 2026-08-16 整理）。
 
-- 三新表行数=0：新任务未产生，旧库无历史任务/用量/信任数据可搬，空表等新任务写入属正常
-- 五新列全 NULL：老消息/老步骤/老会话在 task 体系建立前产生，无历史值可回填，新任务才写、老行 NULL 兜底展示
-- chat 域数据量：chat_sessions 1025 / chat_messages 2039 / chat_message_steps 150 万行（20 天前已清）
+**① 完整链路（装载层 → 压缩层 → 回填）**
+
+```text
+_load_previous_messages / 10.1.4 ⑤ 按"链根→本任务"范围过滤   # 装载层：先过滤范围（linked 带历史 / independent 返回 []）
+    ▼
+_inject_conversation_history（initialize_run_state.py:128）
+    ▼
+agent.message_builder.inject_history(history_msgs)   # :81，注入原始历史原文到 conversation_history
+    ▼
+conversation_history
+    ▼ 满足条件：message_builder 估算 token 超 MAX_CONTEXT_TOKENS / llm_service.context_limit（agent_runner.py:139-140 已按模型窗口）
+[4] C4 锚定摘要压缩法（generate_anchored_summary，14.9.4）
+    │  一次 LLM 调用，截断喂旧历史、原库完整，输出固定结构锚定摘要（Goal/Progress/Decisions/Next Steps/Critical Context）
+    │  previousSummary 锚定增量（续聊链累积）
+    ▼
+摘要以 assistant 消息回填 conversation_history（替换被压缩的旧历史段）
+```
+
+**② 为何用 C4 而非 M1/C3/T1（北京老陈 2026-08-16 定案依据）**
+
+| 方法 | 是否选用 | 原因 |
+|------|---------|------|
+| **C4 锚定摘要压缩法** | ✅ 主用 | 唯一专为"旧历史整体超长语义压缩"设计——LLM 提炼锚定摘要保留关键决策/结论/上下文锚点，回填 conversation_history；适用长任务/续聊链 linked（[4] v5.3 适用场景） |
+| M1 历史记忆注入法 | ❌ 非清洗 | 运行时每轮从 Step 提炼新推理链注入，是"生成新记忆"不是"清洗旧历史"，场景不对口 |
+| C3 剪枝压缩法 | ⚠️ 第一道零成本 | 任务内步骤价值裁剪（value_first_prune 硬删低价值段），可作零成本第一道；对"已落库整段历史"硬删丢信息、不对口整体压缩，故非主选 |
+| T1 紧急裁剪法 | ⚠️ 仅兜底 | 超限保命暴力截断，不保真，只在 C4 来不及/硬超限时兜底 |
+
+**③ 与 10.1.4 ⑤ 两层串联**
+
+装载层先按"链根→本任务"范围过滤（linked 带链上历史、independent 返回 []，不混载），过滤后的历史再进压缩层走 C4 清洗——**范围过滤在前、C4 语义压缩在后**，两层串联不冲突。C4 仍受 [4] 触发条件约束（按模型窗口触发，should_compact_window 支撑函数），非每次都压；触发顺序按 [4] 14.8.4 组合推荐：C3 零成本第一道 → 仍超限且需保语义 → C4 锚定摘要 → T1 兜底。
+
+**④ 前置定夺（R4 零 LLM 原则）**
+
+C4 引入一次 LLM 调用，触及 [4] "R4 零 LLM 成本原则"。落地前需北京老陈确认放开 R4（同 [4] 14.9.4 前置结论，可在 analysis 阶段决策）；未放开前 C4 不接入、历史超长仅由 C3/T1 兜底。
+
+> 状态（10.1.6）：本节为**设计定案**（北京老陈 2026-08-16 拍板：start 注入历史清洗用 C4 锚定摘要压缩法）；与 [4] 文档 14.9.4（C4 diff）/ 14.8.4（两方法适用场景）交叉引用一致。代码落地随 [4] C4 接入一并实施（[4] 14.9.4 已给出 diff）。
+
+##### 10.1.7 实施计划与补充代码（前未覆盖部分）
+
+> **定位**：承接 10.1.1（start 功能逻辑）/ 10.1.2（StartStep 字段）/ 10.1.6（C4 清洗），给出**前面 10.1.4 未覆盖、需落地的补充代码**。10.1.4 只写了 context_link_mode 7 处（db_initializer / models / chat_routes / stream_orchestrator 编排 / stream_reader / agent_runner / 前端），本节约补 **start 升级为任务输入契约 + 历史注入 C4 清洗**两块代码；**整体实施顺序（S0~S6）与验证清单见 10.1.8**，本节只列代码不重复顺序表。10.1.4 已覆盖的落点本节不再重复，指路 10.1.4。代码均基于 2026-08-16 实测行号，实施前以当时最新代码复核。
+
+**① 表结构先行完整代码（db_initializer.py — S0 落地，北京老陈 2026-08-16 定案）**
+
+现状（db_initializer.py:28-72 仅四表，无 chat_tasks/token_usage/chat_session_trust）：
+```python
+# db_initializer.py — 当前真实代码（四表基线）
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id TEXT PRIMARY KEY, title TEXT NOT NULL,
+    created_at TEXT, updated_at TEXT,
+    message_count INTEGER DEFAULT 0,
+    is_deleted BOOLEAN DEFAULT FALSE, is_valid BOOLEAN DEFAULT FALSE,
+    title_locked BOOLEAN DEFAULT FALSE, title_updated_at TEXT,
+    version INTEGER DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS chat_message_steps (...);  # 同 11.7 现状代码
+```
+
+改为（同一批 `CREATE + _ensure_column` 内新增/补列，幂等可反复执行，老库升级不丢数据，列清单权威=文档2 3.1.x / 本文档 5.3.1）：
+```python
+# db_initializer.py — 新增（表结构先行 S0）— 小欧 2026-08-16
+# ============ ① chat_tasks 新建（B1：任务级存储 + 上下文链落库列；字段以文档2 3.1.2/3.5.3 权威为准）============
+CREATE TABLE IF NOT EXISTS chat_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT UNIQUE NOT NULL,
+    session_id TEXT NOT NULL,
+    user_message_id INTEGER, user_input TEXT, response TEXT,
+    artifacts TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'executing',
+    start_time TEXT, end_time TEXT, duration REAL,          # 开始/结束/耗时（文档2 3.1.2 时间三字段）
+    context_link_mode TEXT, context_root_task_id TEXT,   # 上下文链：续聊/新任务 + 链根任务id
+    provider TEXT, model TEXT, display_name TEXT,
+    accumulated_usage TEXT DEFAULT '{}',
+    llm_call_count INTEGER DEFAULT 0, total_steps INTEGER DEFAULT 0,
+    retry_count INTEGER DEFAULT 0, max_steps INTEGER DEFAULT 0,   # 最大步骤数上限（文档2 3.5.3）
+    error_type TEXT, error_message TEXT, metadata TEXT,
+    created_at TEXT, updated_at TEXT,
+    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_session ON chat_tasks(session_id);
+
+# ============ ② chat_messages / chat_message_steps 补 task_id 列（B1 挂任务；索引对齐文档2 3.1.8-⑥）============
+_ensure_column(conn, "chat_messages", "task_id", "TEXT")
+_ensure_column(conn, "chat_messages", "metadata", "TEXT")   # 发展性兼容列(5.3.1, 文档2 3.1.3)
+_ensure_column(conn, "chat_message_steps", "task_id", "TEXT")
+# chat_message_steps 索引：文档2 3.1.8-⑥ 权威 = 按 message_id 与 (task_id, step_index)
+conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_task ON chat_message_steps(task_id, step_index)")
+# chat_messages 索引：文档2 3.1.8-⑥ 权威 = 按 task_id / timestamp
+conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_task ON chat_messages(task_id)")
+conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_timestamp ON chat_messages(timestamp)")
+
+# ============ ③ chat_sessions 补 metadata / model_override 列 ============
+_ensure_column(conn, "chat_sessions", "metadata", "TEXT")          # 扩展列(0.2.4-1)
+_ensure_column(conn, "chat_sessions", "model_override", "TEXT")    # L2 会话级模型覆盖落库点
+
+# ============ ④ token_usage 新建（B2：token 四维度归属落库，权威=9.3）============
+CREATE TABLE IF NOT EXISTS token_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL, task_id TEXT NOT NULL,
+    llm_call_count INTEGER NOT NULL,   # 直取 react_cycle 既有 agent.llm_call_count, 与 chat_tasks 同名同值
+    model TEXT NOT NULL, provider TEXT,
+    prompt_tokens INTEGER DEFAULT 0, completion_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0,
+    created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_token_session ON token_usage(session_id);
+CREATE INDEX IF NOT EXISTS idx_token_task ON token_usage(task_id);
+CREATE INDEX IF NOT EXISTS idx_token_llm_call ON token_usage(llm_call_count);
+CREATE INDEX IF NOT EXISTS idx_token_model ON token_usage(model);
+CREATE INDEX IF NOT EXISTS idx_token_created ON token_usage(created_at);   # 时间维度聚合(0.2.6-5)
+
+# ============ ⑤ chat_session_trust 新建（B3：HITL 会话信任清单，权威=文档2 3.1.7）============
+CREATE TABLE IF NOT EXISTS chat_session_trust (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    created_at TEXT,
+    UNIQUE(session_id, tool_name),
+    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_trust_session ON chat_session_trust(session_id);
+```
+
+> 落地要点：S0 全部为幂等 DDL（`CREATE TABLE IF NOT EXISTS` + `_ensure_column`），新库启动 chat 域 7 表全建（现状 4 表 chat_sessions/chat_messages/chat_session_title_history/chat_message_steps + 新增 3 表 chat_tasks/token_usage/chat_session_trust）、老库重复执行只补缺列不重建不丢数据；上下文链列（context_link_mode / context_root_task_id）随 chat_tasks 建好，S1 链路打通 / S2 读写落库即可往 chat_tasks 落库。token_usage/chat_session_trust 虽非 start 必需，但北京老陈 2026-08-16 定案一次先行落齐全表。
+
+**② 表结构对应的读写代码（S0 配套落库/读取实现，北京老陈 2026-08-16 定案：S0 建了表，从上个 tag 起是"只建表、无读写代码"，必须把每个字段"谁写/谁读"落实到本小节，全面准确）**
+
+> **原则**：S0 的 DDL 只是地基，必须有对应的 `INSERT/UPDATE/SELECT`。本小节把 6 张表/字段的读写代码全部落地（写=INSERT/UPDATE，读=SELECT/过滤），均基于 2026-08-16 实测代码形态；**每个函数/代码的位置遵守目录和架构设计**——DB 读写函数统一放 `app/services/chat/storage.py`（chat 存储层，与既有 `allocate_and_insert_message/append_execution_step/finalize_message/load_execution_steps` 同类，不散落他处）；编排/调用点放对应职责文件（stream_orchestrator=任务生命周期、agent_runner=运行落库闸口、hitl_confirmation=confirm 链路、resolver=配置解析）；context_link_mode/context_root_task_id 的**计算逻辑**指路 10.1.4（S1），本处只落库骨架，不重复（DRY）。落库统一经 `db_ops` 命名空间注入（P4 解耦，agent 层不反向依赖 chat 层，stream_orchestrator.py:173-180 现构造 6 属性，本处扩展）。落点与文档2 6.1.1~6.1.4/6.1.8/6.1.10/6.1.11 指定的修改要求逐条对齐（每个函数对应文档2 哪一条已标注）。
+
+**②-1 chat_tasks 任务行落库（写=创建 INSERT + 结束 UPDATE；读=任务级查询/链根）**
+
+现状：全仓无 chat_tasks 表、无一行任务落库（stream_orchestrator.py:123 生成 task_id 后仅 TASK_START 日志，agent_runner.py:326 仅 log_task_end 日志）。
+
+改为（任务创建时 INSERT 一行、任务结束时 UPDATE 终态/统计；落库函数放 storage.py，调用点经 db_ops 注入；context_link_mode/context_root_task_id 取值指路 10.1.4⑤/S1，不重复）——**新增 storage.py 两个函数**：
+
+```python
+# storage.py — 新增 — 小欧 2026-08-16
+def insert_task(
+    conn: Connection, *,
+    task_id: str, session_id: str, user_message_id: Optional[int],
+    user_input: str, context_link_mode: str, context_root_task_id: str,
+    provider: str, model: str, display_name: str,
+) -> None:
+    """chat_tasks 任务行创建 INSERT（随任务启动，stream_orchestrator 建 task_id 后调用）"""
+    now = get_local_iso_timestamp()
+    conn.execute(
+        """INSERT INTO chat_tasks
+           (task_id, session_id, user_message_id, user_input, context_link_mode,
+            context_root_task_id, provider, model, display_name, start_time, status, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (task_id, session_id, user_message_id, user_input,
+         context_link_mode, context_root_task_id,
+         provider, model, display_name, now, "executing", now, now),
+    )
+
+def update_task(
+    conn: Connection, *,
+    task_id: str, response: str = "", status: str = None,
+    end_time: Optional[str] = None, duration: Optional[float] = None,
+    accumulated_usage: Optional[Dict] = None, llm_call_count: Optional[int] = None,
+    total_steps: Optional[int] = None, retry_count: Optional[int] = None,
+    error_type: Optional[str] = None, error_message: Optional[str] = None,
+) -> None:
+    """chat_tasks 任务终态 UPDATE（随任务结束，agent_runner finally 落库）— 幂等、缺省字段不覆盖"""
+    _f, _v = [], []
+    for _k, _val in (("response", response), ("status", status), ("end_time", end_time),
+                     ("duration", duration), ("accumulated_usage", accumulated_usage),
+                     ("llm_call_count", llm_call_count), ("total_steps", total_steps),
+                     ("retry_count", retry_count), ("error_type", error_type),
+                     ("error_message", error_message)):
+        if _val is not None:
+            _f.append(f"{_k} = ?")
+            _v.append(safe_json_dumps(_val) if _k == "accumulated_usage" else _val)
+    if not _f:
+        return
+    _f.append("updated_at = ?"); _v.append(get_local_iso_timestamp())
+    _v.append(task_id)
+    conn.execute(f"UPDATE chat_tasks SET {', '.join(_f)} WHERE task_id = ?", _v)
+```
+
+调用点（经 db_ops 注入；**insert_task 落点在 stream_orchestrator**（建 task_id 后、任务启动前，文档2 6.1.2「任务创建」），**update_task 落点在 agent_runner finally**（紧贴 log_task_end 现有闸口，文档2 6.1.2「任务结束」）；context 两字段取值指路 10.1.4⑤/S1，provider/model 从 `agent.llm_client` 取，非 ai_service）——**stream_orchestrator.py db_ops 扩展 + 调用点**：
+
+```python
+# stream_orchestrator.py:173-180 现 6 属性 SimpleNamespace 扩展为 9 属性 — 小欧 2026-08-16
+_db_ops = _types.SimpleNamespace(
+    allocate_and_insert=lambda c, sid: allocate_and_insert_message(c, sid, task_id),  # task_id 闭包绑定
+    append_step=lambda c, mid, sid, idx, d: append_execution_step(c, mid, sid, idx, d, task_id),  # task_id 闭包绑定
+    finalize=finalize_message,
+    save_steps=save_execution_steps_to_db,
+    load_previous=lambda sid: _load_previous_messages(sid, context_link_mode=...,
+                                                      context_root_task_id=...),  # 任务上下文过滤(10.1.4⑤⑥)，经闭包注入链路计算的 context 两字段
+    log_task_end=_log_task_end,
+    insert_task=lambda c: insert_task(
+        c, task_id=task_id, session_id=session_id, user_message_id=_user_msg_id,
+        user_input=user_input, context_link_mode=..., context_root_task_id=...,  # 取值指路 10.1.4⑤/S1
+        provider=agent.llm_client.provider, model=agent.llm_client.model,  # base_service.py:77-79 self.provider/self.model
+        display_name=f"{agent.llm_client.provider} ({agent.llm_client.model})"),
+    update_task=lambda c, **kw: update_task(c, task_id=task_id, **kw),
+    insert_token=lambda c, **kw: token_usage_insert(  # ②-3 共用
+        c, task_id=task_id, session_id=session_id,
+        model=agent.llm_client.model, provider=agent.llm_client.provider, **kw),
+)
+# stream_orchestrator：建 task_id（:123）后、step_start 前 INSERT 任务行（文档2 6.1.2 任务创建）— 小欧 2026-08-16
+with db.get_conn_with_retry("chat") as _conn:
+    _db_ops.insert_task(_conn)
+```
+```python
+# agent_runner.py:326 finally 落库处（finalize 之后、log_task_end 旁）UPDATE 终态 — 小欧 2026-08-16
+_terminal = stream_state.current_content if stream_state else ""
+# total_steps 口径对齐 stream_reader._log_task_end(:171)：剔全部非业务 MetaStep（usage/paused/resumed/retrying/cancelled/authorization_required/start），非仅 usage
+_m_skip = {"usage", "paused", "resumed", "retrying", "cancelled", "authorization_required", "start"}
+_total = sum(1 for s in current_execution_steps if s.get("type") not in _m_skip)  # 终结步骤数剔 Meta，避免伪变量 _total
+_err_type, _err_msg = "", ""
+if not stream_state and current_execution_steps:
+    _last = current_execution_steps[-1]  # 末条 final 取错误，避免伪变量 _final_err_type/_final_err_msg
+    _err_type, _err_msg = str(_last.get("error_type") or ""), str(_last.get("error_message") or "")
+with db.get_conn_with_retry("chat") as _conn:
+    _db_ops.update_task(_conn, status=_terminal_status,
+        response=_terminal,
+        end_time=get_local_iso_timestamp(),
+        duration=round(time.time() - start_time, 1) if start_time else None,
+        accumulated_usage=getattr(agent, "accumulated_usage", None),
+        llm_call_count=getattr(agent, "llm_call_count", 0),
+        total_steps=_total, retry_count=getattr(agent, "_retry_count", 0),
+        error_type=_err_type, error_message=_err_msg)
+```
+
+> **读**（任务级）：链根/上下文过滤 = `SELECT task_id, session_id, context_link_mode, context_root_task_id, status FROM chat_tasks WHERE session_id=? ORDER BY id`（S1 链路打通用，算法指路 10.1.4⑧）；任务详情查询 = 文档2 6.1.10（按 task_id 静态统计回放数据源）。
+
+**②-2 chat_messages / chat_message_steps 挂 task_id（写=落库带 task_id；读=按任务范围过滤）**
+
+现状：storage.py `allocate_and_insert_message`(:232, INSERT chat_messages **无 task_id**)、`append_execution_step`(:325, INSERT chat_message_steps **无 task_id**)、`load_execution_steps`(:337, 仅按 message_id)。
+
+改为（两落库函数加 task_id 列，任务范围读时过滤；task_id 经 db_ops 闭包绑定，agent_runner 落库调用点**不改拗**）：
+
+```python
+# storage.py — 修改 — 小欧 2026-08-16
+def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Optional[str] = None) -> int:
+    ensure_session_exists(session_id, conn)  # #17 fix 保留
+    ai_message_id, is_new = _allocator.allocate(session_id, conn)
+    local_time = get_local_iso_timestamp()
+    if is_new:
+        conn.execute(
+            "INSERT INTO chat_messages(id, task_id, session_id, role, content, timestamp) "
+            "VALUES (?, ?, ?, 'assistant', ?, ?)",
+            (ai_message_id, task_id, session_id, "", local_time),
+        )
+    conn.execute(  # message_count 更新不变
+        "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
+        (local_time, session_id))
+    return ai_message_id
+
+def append_execution_step(conn: Connection, message_id: int, session_id: str,
+                          step_index: int, step_dict: dict, task_id: Optional[str] = None) -> None:
+    step_dict = _truncate_step_dict(step_dict)  # 截断逻辑不变
+    conn.execute(
+        "INSERT INTO chat_message_steps(message_id, task_id, session_id, step_index, step_json, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (message_id, task_id, session_id, step_index, safe_json_dumps(step_dict), get_local_iso_timestamp()),
+    )
+
+def load_execution_steps(conn: Connection, message_id: int, task_id: Optional[str] = None) -> Optional[list]:
+    # 双条件任务隔离：传 task_id 时按 (message_id, task_id) 过滤（防同 session 多任务消息步骤混淆）
+    # 未传 task_id 时（如 stream_reader.py:104 回放仅按 msg_id 加载）退化为仅按 message_id——禁止硬双条件导致回放丢步骤（退化）
+    if task_id is not None:
+        rows = conn.execute(
+            "SELECT step_json FROM chat_message_steps WHERE message_id=? AND task_id=? "
+            "ORDER BY step_index ASC",
+            (message_id, task_id),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT step_json FROM chat_message_steps WHERE message_id=? ORDER BY step_index ASC",
+            (message_id,),
+        ).fetchall()
+    if rows:
+        return [parse_json(r["step_json"], label="step_json") for r in rows]
+    row = conn.execute(
+        "SELECT execution_steps FROM chat_messages WHERE id=?", (message_id,),
+    ).fetchone()
+    if row and row["execution_steps"]:
+        return parse_json(row["execution_steps"], label="execution_steps")
+    return []
+```
+
+> 调用链：stream_orchestrator db_ops 闭包已带 task_id（②-1），agent_runner.py:179-188 append_step/allocate_and_insert 落库调用**不用逐处改**（KISS-DIRECT）；此改动接通后 chat_tasks 建任务行 → 该任务全部消息/步骤挂同一 task_id → 任务级取数与回放的地基贯通。
+
+**②-3 token_usage 落库（写=agent_runner finally 遍历 usage 步骤统一 INSERT；读=9.7 四维查询 API）**
+
+现状：react_cycle.py:387-408 usage 仅累加+emit、不落库；全仓无 token_usage 表无 INSERT。落点=文档2 6.1.4（token_usage 落库随 agent 结束收 usage 步骤一次性写，不每轮写）。
+
+改为（新增 storage.py `token_usage_insert`；aggregate 处 `db_ops.insert_token` 闭包逐 usage 步骤 INSERT，agent_runner 收已有最终 usage 事件，不新增数据流、不改 react_cycle）：
+
+```python
+# storage.py — 新增 — 小欧 2026-08-16
+def token_usage_insert(
+    conn: Connection, *,
+    session_id: str, task_id: str, llm_call_count: int,
+    model: str, provider: Optional[str],
+    prompt_tokens: int, completion_tokens: int, total_tokens: int,
+) -> None:
+    conn.execute(
+        """INSERT INTO token_usage
+           (session_id, task_id, llm_call_count, model, provider,
+            prompt_tokens, completion_tokens, total_tokens, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (session_id, task_id, llm_call_count, model, provider,
+         prompt_tokens or 0, completion_tokens or 0, total_tokens or 0,
+         get_local_iso_timestamp()),
+    )
+```
+
+```python
+# agent_runner.py:155-197 run_agent_in_background 收事件闸口，usage 步骤统一 INSERT（不改 react_cycle，P4 经 db_ops 注入）— 小欧 2026-08-16
+# 在 state_collector.append_step 之后、collector.publish 结束时，逐条 usage 落库（文档2 6.1.4）：
+for _s in current_execution_steps:
+    if _s.get("type") == "usage":
+        with db.get_conn_with_retry("chat") as _conn:
+            db_ops.insert_token(_conn,  # ① 闭包绑 task_id/session_id/model/provider（见 ②-1 db_ops）
+                # llm_call_count 取 usage 步骤的 step 序号(=agent.llm_call_count，react_cycle.py:401)，非缺失的 llm_call_count 键
+                llm_call_count=int(_s.get("step") or agent.llm_call_count or 0),
+                prompt_tokens=int(_s.get("prompt_tokens") or 0),
+                completion_tokens=int(_s.get("completion_tokens") or 0),
+                total_tokens=int(_s.get("total_tokens") or 0))
+# insert_token 闭包定义见 ②-1 db_ops 扩展（第 9 属性）
+```
+
+**②-4 chat_sessions model_override 生效（读=编排层读会话覆盖，写入=文档2 6.1.1 上层字段透传）**
+
+现状：resolver.py:115 `get_ai_config_resolver()` 构建 AI config 纯配置解析（**无 DB 依赖，SRP 不上 DB**），不读 chat_sessions.model_override；db_initializer.py:29-40 chat_sessions 无 model_override 列；stream_orchestrator.py:121 `pop_model_warning()` 仅本地模型警告。
+
+改为（**只新增 storage.py 一个读函数**；覆盖生效点在 stream_orchestrator 建 agent 后、消费 llm_client 前，写 `ai_service.model`；model_override 的上游写入/透传与补列按文档2 6.1.1/6.1.8（chat_models/session_service/sessions API）实施，本处不重造）：
+
+```python
+# storage.py — 新增 — 小欧 2026-08-16
+def get_session_model_override(conn: Connection, session_id: str) -> Optional[str]:
+    """读 chat_sessions.model_override（L2 会话级模型覆盖）"""
+    row = conn.execute(
+        "SELECT model_override FROM chat_sessions WHERE id=? AND is_deleted=FALSE",
+        (session_id,),
+    ).fetchone()
+    return row["model_override"] if row and row["model_override"] else None
+```
+
+```python
+# stream_orchestrator.py：建 agent（:169）后、进入 agent 前读会话覆盖并写 ai_service.model（文档2 6.1.1/6.1.8）— 小欧 2026-08-16
+_ov = get_session_model_override(conn, session_id) if session_id else None
+if _ov:
+    ai_service.model = _ov  # model_override 覆盖默认 model；provider 不变（Agent.llm_client.model 随 ai_service.model 同步）
+```
+
+**②-5 chat_session_trust 落库（写=HITL"信任本次会话"INSERT；读=工具安全豁免）**
+
+现状：HITL 信任仅 `grant_temp_auth`（task 级内存）+ `trust_session` 布尔应答不落库（action_handler.py:238-266 仅置应答，chat_routes.py:74 `resolve_confirmation` 收 trust_session 但只 set_result 不落库，见 hitl_confirmation.py:122）。全仓无 chat_session_trust 表无 INSERT。**agent 无 session_id 属性（base_agent.py:42-84），session_id 必须经 task_id→agent 反查，不能写伪变量 `agent.session_id`**；落点按文档2 6.1.3（confirm 成功回调处落库）。
+
+改为（**storage.py 两个函数** + confirm 链路落库 + 安全豁免复用；tool_name 随 confirm 透传，session_id 由 task_id 反查 agent，均在 confirm 回调内取得）：
+
+```python
+# storage.py — 新增 — 小欧 2026-08-16
+def insert_session_trust(conn: Connection, session_id: str, tool_name: str) -> None:
+    """HITL"信任本次会话"落库（UNIQUE(session_id, tool_name) 幂等）"""
+    conn.execute(
+        "INSERT OR IGNORE INTO chat_session_trust(session_id, tool_name, created_at) VALUES (?,?,?)",
+        (session_id, tool_name, get_local_iso_timestamp()),
+    )
+
+def check_session_trust(conn: Connection, session_id: str, tool_name: str) -> bool:
+    """工具安全检查豁免查询：会话已信任该工具则免二次 HITL 确认"""
+    row = conn.execute(
+        "SELECT 1 FROM chat_session_trust WHERE session_id=? AND tool_name=?",
+        (session_id, tool_name),
+    ).fetchone()
+    return row is not None
+```
+
+```python
+# 配套 R1：create_confirmation（action_handler.py:238-266）透传 tool_name 存入 _PendingConfirmation（dataclass 加 tool_name 字段、create_confirmation 增参）— 小欧 2026-08-16
+# 落点：resolve_confirmation（hitl_confirmation.py:122，confirm 成功回调，文档2 6.1.3）内：
+#   agent = running_tasks[task_id]["agent"];  session_id = task_id 反查会话  # 禁止伪 agent.session_id，agent 无session_id属性
+#   反查法：hitl_confirmation confirm_id 采用 "task_id:{hash}"（:72/:100），拆出 task_id 后经 storage 按 task_id 查 session_id
+#   if auth.get("trust_session"):        # trust_session=True 才落库，且 session_id 有效才写
+#       with db.get_conn_with_retry("chat") as _conn:
+#           insert_session_trust(_conn, session_id, pending.tool_name)
+# 豁免读取：tool_safety_checker.py（app/safety/）执行前查 check_session_trust(conn, session_id, tool_name) → True 则直放(跳 HITL)
+```
+
+**②-6 token_usage 四维度查询 API（读=9.7 聚合 + 任务/会话 4 维度取数）**
+
+现状：9.7 设计四维查询，全仓无查询函数与接口。改为（storage.py `query_token_usage` + 一个 API 路由；维度=session / task / model / llm_call）：
+
+```python
+# storage.py — 新增 — 小欧 2026-08-16
+def query_token_usage(
+    conn: Connection, *, session_id: Optional[str] = None,
+    task_id: Optional[str] = None, model: Optional[str] = None,
+) -> Dict:
+    """token 四维度聚合查询（按 session/task/model 过滤 + 三个 token 求和）— 口径同 9.7"""
+    _w, _v = [], []
+    for _k in ("session_id", "task_id", "model"):
+        _x = {"session_id": session_id, "task_id": task_id, "model": model}[_k]
+        if _x:
+            _w.append(f"{_k} = ?"); _v.append(_x)
+    _where = ("WHERE " + " AND ".join(_w)) if _w else ""
+    row = conn.execute(
+        f"SELECT COUNT(*) AS calls, "
+        f"COALESCE(SUM(prompt_tokens),0) AS prompt_tokens, "
+        f"COALESCE(SUM(completion_tokens),0) AS completion_tokens, "
+        f"COALESCE(SUM(total_tokens),0) AS total_tokens "
+        f"FROM token_usage {_where}", _v,
+    ).fetchone()
+    return dict(row)
+# API 路由：新建 app/api/v1/token_usage.py（chat 域），GET /api/v1/token-usage?session_id=&task_id=&model= → query_token_usage；
+# 亦可被文档2 6.1.7（上下文链 token 聚合接口）复用
+```
+
+> **② 落地设计要点**
+> - **落点原则**：DRY——落库统一经 db_ops 注入、task_id 闭包绑定一处不散、insert_token 与 update_task 共用 db_ops；KISS-DIRECT——agent_runner 落库调用点不改拗，靠闭包；usage 收终态不新增数据流；P4——agent 层经注入回调与 task_id 反查，不反向 import chat；resolver 守 SRP 不混 DB（覆盖生效点在编排层）；新增公用函数遵循 FUNCTIONS.md 先查后建；select 一律严格 `task_id=?`，无 backward 分支（老数据以历史 blob 列 `execution_steps` 回退，属既有机制非向后兼容补丁）。
+> - **落点路径**：每子项落点全部贴既有闸口（任务创建/结束、消息步骤落库、usage 终态汇总、HITL confirm 成功回调 `resolve_confirmation`、工具安全检查豁免），读点贴既有消费点，不新增旁路、逻辑直线；**伪变量已校准**——insert_task 的 model/provider 取 `agent.llm_client`（非 ai_service）、insert_task 落点在 stream_orchestrator（非 agent_runner 前）、total_steps/error 从 current_execution_steps 末条 final 实算（无 `_total/_final_err`）、model_override 覆盖点在编排层写 ai_service.model（非 resolver 混 DB）、trust 落点在 confirm 回调经 task_id 反查 session_id（无伪 `agent.session_id`）；chat_tasks 建行 → 消息步骤挂 task_id → 取数回放链贯通（S0→S1 依赖正确）。
+> - **关联逻辑**：与 10.1.4（context_link_mode 计算/⑤ 落点）、9.7/11.8（token 落库）、11.11（trust/model_override）、文档2 6.1.1/6.1.2（chat_tasks 创建+结束=stream_orchestrator+log_task_end）、6.1.3（trust=confirm 回调）、6.1.4（token_usage）、6.1.8（model_override）、6.1.10（任务详情）、6.1.11（chat_sessions 原表）交叉引用一致，功能只增强不退化；10.1.8 验证清单应补本 ② 的落库/读取验证项。
+
+**③ 补充代码①：StartStep 字段扩充（start_step.py，业务原在 sse_events.py send_start_step，已迁出并删除）**
+
+历史现状（旧 sse_events.py:131-155）：仅 5 展示字段 + `security_check` + `warning`，无 system_prompt / context_summary。
+改为（扩字段、清 security_check 空占位死代码，2.4.5 ①；**2016-08-17 已落地至独立 `start_step.py` 的 `_build_start_contract`**，其签名/取值与实际代码不同，以下为设计示意不再精确核对）：
+
+```python
+# sse_events.py — send_start_step 改造 — 小欧 2026-08-16
+async def send_start_step(
+    ai_service: Any,
+    task_id: str,
+    next_step: Callable,
+    user_message: str,
+    *,
+    system_prompt: str = "",                  # 新增：_get_system_prompt（initialize_run_state.py:111-112）
+    context_summary: Optional[Dict] = None,    # 新增：{session_id, context_link_mode, context_root_task_id, message_count, total_tokens}
+    warning: Optional[str] = None,
+) -> MetaStep:
+    """StartStep = 任务输入契约（第 0 步）：承载任务头部 + system prompt + user_message + 续聊上下文概要"""
+    return MetaStep(
+        step=next_step(),                      # start 显式占 step 0（业务步骤从 1 起，见 10.1.1 ③）
+        type="start",
+        content=user_message if user_message else "",
+        display_name=f"{ai_service.provider} ({ai_service.model})",
+        provider=ai_service.provider,
+        model=ai_service.model,
+        task_id=task_id,
+        system_prompt=system_prompt,           # 新增字段（MetaStep **kwargs 透传，base.py:114）
+        context_summary=context_summary or {}, # 新增字段
+        warning=warning,
+        # 删除 security_check=...（空占位死代码，随 10.1.1 重构清除，2.4.5 ①）
+    )
+```
+
+> 说明：MetaStep（base.py:114）已支持 `**kwargs` 经 `_extra_fields()` 透传任意字段，**无需新建 StartStep 类**，扩字段只传 kwargs 即可（10.1.2 字段清单的承载边界不变）。
+
+**④ 补充代码②：start 进 agent.steps + 装配时序（react_cycle.py 内 emit，取消 orchestrator 旁路）**
+
+现状（stream_orchestrator.py:209-221）：start 在 agent 创建前（:154）下发，只 `execution_steps.append` 落库，**不进 agent.steps、不走 StepEmitter.emit**（证实 10.1.1 "旁路"）。
+改为（**start 构造与 emit 全部移到 react_cycle.py run_react_cycle 内 `initialize_run_state` 之后、while 循环之前**——因 initialize_run_state.py:88 `agent.steps = []` 会清空前置 emit，orchestrator 层 emit 必然丢失；取消旁路，start 占 step 0、业务步骤从 1 起）：
+```python
+# react_cycle.py — run_react_cycle 内 initialize_run_state 返回后、while(:564) 前插入 — 小欧 2026-08-16
+await initialize_run_state(agent, task, task_id, context)   # :550，返回后 agent.steps 已重置为空（:88）
+# —— start 装配落点（agent 已建、历史已注入、steps 已重置，emit 不会再被清空）——
+start_step = await send_start_step(
+    ai_service=ai_service, task_id=task_id, next_step=agent._next_step,  # 或 next_step 注入
+    user_message=user_input, system_prompt=_sys_prompt,
+    context_summary=_ctx_summary, warning=warning,
+)
+agent._step_emitter.emit(start_step)                       # 进 agent.steps（step 0），走双路分发（可落库可重放）
+# start 落库：走 agent_runner 既有事件落库流（start 作为步骤经 db_ops.append_step 落 chat_message_steps），不再 orchestrator execution_steps 旁路
+while not agent.should_stop:                                # :564
+    ...
+```
+> 说明：start 的 `step=0` 由 `next_step` 首次调用返回 0 保证——**2026-08-16 S4 已落地：`create_step_counter`（base.py:86-94）起始改 -1（`step_counter=-1`），首次 `next_step()` 返回 0（start 显式占 step 0）**；orchestrator 层 `step_start` 调用删除（旁路取消，S4 已实施，start 实际经 `start_step.assemble_start_step` 同步装配 + `_step_emitter.emit`，见 react_cycle.py:581-583），`execution_steps` 兜底数组不再承担 start 双写。
+
+装配时序（10.1.1 ③ 定点，**2026-08-16 复核修正：start 必须插在 initialize_run_state 之后、循环前，而非其前**）：调用链实况 = orchestrator（:169 建 agent）→ run_agent_in_background（agent_runner.py:161 run_react_cycle）→ react_cycle.py:550 `initialize_run_state` → initialize_run_state.py:88 **`agent.steps = []`（重置清空）** → :127 init_history → :128 `_inject_conversation_history`（历史注入）。**start 在 initialize_run_state 前 emit 会被 :88 清空丢失**（故 step_start 不能在 orchestrator 层调用，见上代码——start 构造/emit 已在 react_cycle 内、initialize_run_state 返回后、while 循环（:564）前）。前端幂等重放跳过已见 start 归文档2 6.2（本节约不重复代码）。
+
+**⑤ 补充代码③：历史注入后 C4 清洗接入（initialize_run_state / message_builder）**
+
+现状：`_inject_conversation_history`（initialize_run_state.py:128）→ `message_builder.inject_history`（:154）注入原始历史；`trim_history`（message_builder.py:265）仅轮次/budget 裁剪，**无 C4**（compaction 模块不存在，印证 [4] 14.9.4 仅 diff 未落地）。**【设计代码已补全 2026-08-17：[4] 14.9.4② generate_anchored_summary 改真实协议、14.9.7 补 split_turn/assembler、14.9.6 C2 补 add_tool_result stash；运行代码 compaction 模块仍未落地】**
+改为（C4 触发点放 agent 层——initialize_run_state 标记待压、react_cycle 内 async 清洗；compaction 模块按 [4] 14.9.4 新建）：
+
+```python
+# initialize_run_state.py — _inject_conversation_history 末尾追加 C4 触发 — 小欧 2026-08-16
+# 触发点放 agent 层（initialize_run_state）：C4 需 async + llm_client，message_builder 无 llm_client（注入），同步方法不能 await
+def _inject_conversation_history(self, agent, history_msgs: List[Dict]) -> None:
+    ...
+    # 原有插入逻辑不变（system 后、task 前，message_builder.inject_history :154 内部 :165-172）
+    agent.message_builder.inject_history(history_msgs)
+    # 新增：注入后若超窗，触发 C4 锚定摘要清洗再回填（[4] 14.9.4）— async 桥接：由 run_react_cycle await
+    #   标记待压，await 点统一在 react_cycle.py:550 initialize_run_state 返回后、while(:564) 前处理
+    agent._needs_compact = agent.message_builder._estimate_tokens(
+        agent.message_builder.conversation_history) > agent.message_builder.MAX_CONTEXT_TOKENS * MAX_CONTEXT_RATIO
+
+# react_cycle.py — initialize_run_state 返回后、while 循环前，统一 async 清洗（前置：R4 已放开才执行）— 小欧 2026-08-16
+#   agent.llm_client 已就绪；generate_anchored_summary 为 async，这里可 await
+if getattr(agent, "_needs_compact", False):
+    from app.services.agent.compaction.summary import generate_anchored_summary
+    _sum = await generate_anchored_summary(
+        agent.llm_client, agent.message_builder.conversation_history)  # [4] 14.9.4：一次 LLM、previousSummary 锚定增量、返回 str
+    if _sum:
+        # 摘要包装为 assistant 消息，替换 system 之后、最新 user/task 之前的旧历史段（保 system + 最新 task）
+        agent.message_builder.conversation_history = (
+            agent.message_builder.conversation_history[:1]
+            + [{"role": "assistant", "content": _sum}]
+            + agent.message_builder.conversation_history[-1:])
+```
+
+`compaction/summary.py` 的 `generate_anchored_summary` 实现 diff 见 [4] 14.9.4（`async def generate_anchored_summary(llm_client, messages, previous_summary=None) -> str`：一次 LLM、截断喂旧历史、`previousSummary` 锚定增量、返回**文本 str**——**不是历史消息 dict，须包装成 `{"role":"assistant","content":_sum}` 再回填**），本节不重复；前置需北京老陈放开 R4（同 [4] 14.9.4 前置结论），未放开前 `_needs_compact` 不置位、不调用、行为同现状（不退化）。
+
+**⑥ 落库/重放说明**
+
+start 步骤经 **S4 纳入 react_cycle 事件流后，由 agent_runner 既有事件落库闸口（run_agent_in_background 收 emit → db_ops.append_step 落 chat_message_steps）统一落库**（orchestrator 的 `execution_steps` 只是内存兜底数组、从不落库，start 不能只经它，否则断线无痕迹；落库机制=现状 agent_runner.py:177-188 事件流，非 :218 内存数组）；历史清洗后的摘要消息随 `conversation_history` 参与后续 LLM 调用，**不单独落 `chat_messages`**（原库完整、摘要仅运行时回填，[4] 14.9.4）。前端幂等跳过已见 start 归文档2 6.2。
+
+**遗留（step 编号 + 装配落点，均已落地 2026-08-17）**：start 显式占 step 0（10.1.2）——`create_step_counter`（base.py:86-94）起始已改 -1、首次 `next_step()` 返回 0（S4 已实施）；**S4 start 落点已落地在 react_cycle.py:581-583 `initialize_run_state` 之后（避免被其 :88 `agent.steps = []` 清空）、while 循环（:564）之前**；S4 落地确认 `agent.steps[0].type == "start"` 后，`execution_steps` 与 `agent.steps` 的步号一致性以当前最新代码（react_cycle/start_step）为准。
+
+> 状态（10.1.7）：本节为**实施计划 + 补充代码定案**（北京老陈 2026-08-16 要求：写详细实施计划 + 补前未覆盖代码）；与 10.1.4（context_link_mode 7 处）/ 10.1.6（C4 定案）/ [4] 14.9.4（C4 diff）交叉引用一致。代码未实落，实施前以当时最新代码复核行号。 **【S0-S4 已实施 2026-08-17（表结构/链路/读写/StartStep字段/start进steps）；S5 C4+compaction 未实施；S6 部分验证】**
+
+##### 10.1.8 实施顺序（10.1 全部设计修改的整体落地顺序，北京老陈 2026-08-16 定案：10.1.8 是 10.1 里所有设计修改的实施顺序）
+
+> **原则**：10.1.8 汇总 **10.1.1~10.1.7 全部设计修改**为一条依赖驱动的**整体实施顺序**——覆盖三条主线：A 主线（start 升级为任务输入契约，10.1.1/10.1.2）、B 主线（任务上下文链 + 历史 C4 清洗，10.1.3/10.1.4/10.1.5/10.1.6）、C 主线（表结构 + 读写落库，10.1.7 ①/②）。每阶段标注**涉及文件（真实路径）、新增/修改函数、依赖上游、验证手段**；每阶段完成即按本节后"验证清单"对应项自检，全绿才进入下一阶段。**所有 DB 读写函数归 chat 存储层 `app/services/chat/storage.py`，不散落他处**；编排/调用点放各自职责文件，遵守 10.1.7 ②（-x）目录归属与文档2 6.1 落点。
+
+| 阶段 | 修改内容 | 覆盖设计 | 涉及文件（路径） | 新增/修改函数 | 依赖 | 验证（对齐下方验证清单） |
+|------|---------|---------|------------------|----------------|------|----------------|
+| **S0** | 建 7 张表/字段 DDL 一次性落地 | 10.1.7 ① | `backend/app/models/db_initializer.py` | CREATE TABLE / `_ensure_column` / CREATE INDEX 幂等 DDL | 无（地基先行） | 启动建库 chat 域 7 表全建、四核心表列齐（task_id/metadata/model_override/context_link_mode/context_root_task_id）；老库幂等补列无报错 ⚠️【已实施 app/db/db_initializer.py，3新表+_ensure_column 幂等 DDL】 |
+| **S1** | context_link_mode 链路打通：接口入参+编排计算链+加载过滤+判断兜底 | 10.1.4 ②③④⑤⑥⑦⑧ | `models.py(api/v1/chat)` + `chat_routes.py` + `stream_orchestrator.py` + `stream_reader.py` + `agent_runner.py` + 前端 `sse.ts` | ChatRequest 增字段；`context_root_task_id` 链式计算；`_load_previous_messages` 按链范围过滤；白名单校验/缺省 independent | S0（chat_tasks 已建、task_id 已挂） | 缺省/非法值任务无历史灌入；cancelled 任务不被链继承；重跑带 reply_to_message_id 继承原链 ⚠️【已实施 chat_routes/models/stream_orchestrator/stream_reader/agent_runner 后端】 |
+| **S2** | ② 读写代码落库：chat_tasks 建/终 + 消息步骤挂 task_id + token_usage + model_override + trust + 查询 API | 10.1.7 ② | `storage.py` + `stream_orchestrator.py` + `agent_runner.py` + `hitl_confirmation.py` + `tool_safety_checker.py` + 新建 `app/api/v1/token_usage.py` | `insert_task`/`update_task`/`token_usage_insert`/`get_session_model_override`/`insert_session_trust`/`check_session_trust`/`query_token_usage`；db_ops 扩为 9 属性 | S0；chat_tasks 建行依赖 S1 算出的 context 两字段 | 任务后 chat_tasks 一行 executing→终态；同任务消息步骤 task_id 一致；token_usage SUM 对齐；trust 免二次确认；model_override 生效 ⚠️【已实施 storage/orchestrator/agent_runner/hitl/tool_safety 7读写函数+db_ops9属性；⚠️查询API token_usage.py 未建】 |
+| **S3** | StartStep 字段扩充（增 system_prompt/context_summary，删 security_check） | 10.1.2 / 10.1.7 ③ | `start_step.py`（业务自 sse_events.py 迁入；sse_events.py 原 `send_start_step` 已删） | `assemble_start_step` / `_build_start_contract` 增字段、清空占位（MetaStep **kwargs 透传） | S0；context_summary 的链字段依赖 S1 | start SSE 带全字段、无 security_check 键 ⚠️【已实施 start_step.py 承载 start 装配（system_prompt/context_summary/warning/step=0，2016-08-17）】 |
+| **S4** | start 进 agent.steps + 装配时序调整（emit 双路分发，落点=initialize_run_state 后、循环前） | 10.1.1 ③ / 10.1.7 ④ | `react_cycle.py` + `start_step.py` + `step_emitter.py`（或chestrator 旁路已取消） | `assemble_start_step` + `emit`；取消旁路，`create_step_counter` 起始 -1 首返 0 | S3；S0；先建 agent | `agent.steps[0].type=="start"`、断线重放幂等 ⚠️【已实施 react_cycle.py:581-583 start 进 steps（assemble_start_step + _step_emitter.emit）+ 装配时序，2016-08-17】 |
+| **S5** | 历史注入后 C4 清洗接入（超窗锚定摘要回填）+ **compaction 全模块一并实现备用** | 10.1.6 / 10.1.7 ⑤；[4] 14.9（compaction 模块） | `initialize_run_state.py` + `message_builder.py` + **新建 `compaction/` 模块**（`trigger.py`/`compaction_constants.py`/`prune.py`/`summary.py`/`summary_prompt.py`/`split_turn.py`/`assembler.py`，按 [4] 14.9.2 目录；constants 已更名 compaction_constants，老陈 2026-08-17 拍板） | C4 接入：`_maybe_compact_injected_history`；`generate_anchored_summary`（[4] 14.9.4）；**一并实现备用**：`CompactionTrigger`/`should_compact_window`/`CompactionCooldown`（[4] 14.9.3/14.9.6）、`prune_tool_outputs`/`t1_compress_observations`/`t1_reuse_summary`/`value_first_prune`（[4] prune）、`generate_chunked_summary`（[4] 14.9.6 C4 降本）、`trim_orphan_pairs_proactive`（[4] assembler）、`SUMMARY_TEMPLATE`（[4] summary_prompt） | [4] 14.9.2 建 compaction 模块 + 放开 R4（前置需老陈确认） | linked 长历史被摘要回填、independent 不触发；compaction 全方法一次性就绪备用；R4 未放开前行为同现状不退化 ✅【运行代码已落地 2026-08-17 小健：compaction/ 8 文件全落地 + C4 接入（initialize_run_state 置 _needs_compact + react_cycle await 摘要回填）+ add_tool_result stash _summary；COMPACTION_ENABLED=False（R4 未放开，行为同现状）；py_compile 全过、test_message_builder 21 passed 无退化；详见 [4] v5.11 落地修正】 |
+| **S6** | 全量验证 | 10.1.7 全部 | `backend/e2etests/` 既有清单 + 下方验证清单 | 逐项 ③④ 双向验证 + 落库读取 | S0~S5 | 见下方验证清单（含 ② 落库/读取项 + compaction 全模块用例） ⚠️【部分验证 tests/test_s2_s4_review_bugs.py 52 passed；e2etests 未全量跑】 |
+
+> **顺序说明**：全程按"**先地基（S0 表）→ 再链路（S1 上下文链）→ 再落库（S2 读写）→ 再装配（S3 start 字段 → S4 start 进 steps）→ 再清洗（S5 C4 + compaction 全模块）→ 后验证（S6）**"的依赖驱动推进——S0 是全部后续的表依赖；S1 算出的 context_link_mode/context_root_task_id 是 S2 建行与 S3 context_summary 的数据源；S4 start 装配依赖 S3 字段就绪；S5 复用 [4] 14.9 compaction 模块实现 C4 清洗接入（该模块的核心接口、C3 剪枝/支撑函数等一并实现、备用，不额外另立任务），依赖 [4] 14.9.2 建模块且需放开 R4（未放开不退化）。此顺序覆盖 10.1 全部设计，避免半成品表、避免 A/B/C 三主线交错错位（KISS-DIRECT）。每阶段改动遵守合规/合理/关联审查，函数/代码位置遵守目录与架构设计（见 10.1.7 ② 原则）。
+
+**验证清单（S0~S6 全量 + compaction 全模块测试用例，北京老陈 2026-08-16 要求：置于 10.1.8 之后的归属检查项）**
+
+> 每阶段完成按下列对应项自检，全绿才进入下一阶段；均为真实后端 + 真实 LLM + 真实工具 + 真实 SQLite（`~/.omniagent/chat_history.db`）验证，禁止 Mock。
+
+| 阶段 | 验证项 | 通过标准 |
+|------|--------|---------|
+| S0 | 表结构先行 | 新库启动 chat 域 7 表全建（chat_tasks / token_usage / chat_session_trust 新建，chat_messages/chat_message_steps/chat_sessions 补列）；四核心表列齐（task_id/metadata/model_override/context_link_mode/context_root_task_id）；老库重复执行幂等补列无报错、不丢数据 |
+| S0 | 索引齐备 | chat_message_steps (task_id, step_index)、chat_messages task_id / timestamp、token_usage 五索引 均建立 |
+| S1 | 链路打通 | 缺省/非法值任务无历史灌入；cancelled 任务不被链继承；重跑带 reply_to_message_id 继承原链；independent 缺省生效、linked 需显式声明 |
+| S2 | chat_tasks 落库 | 任务创建 chat_tasks 一行 executing→终态；同任务消息/步骤 task_id 一致；end_time/duration 有值 |
+| S2 | token_usage 落库 | agent 结束收 usage 一遍入库；session/task/model/llm_call 4 维查询 API 返回正确；insert_token 经 db_ops 绑 task_id 一处不散 |
+| S2 | model_override | 编排层覆盖生效（stream_orchestrator 写 ai_service.model），resolver 不混 DB |
+| S2 | trust 落库 | HITL"信任本次会话"confirm 成功回调落 chat_session_trust；工具安全检查豁免生效；无伪 `agent.session_id`（经 task_id 反查） |
+| S3 | StartStep 字段 | start SSE 带 system_prompt/context_summary 全字段、无 security_check 键 |
+| S4 | start 进 steps | `agent.steps[0].type=="start"`；断线重放幂等；next_step 首次返回 0 |
+| S5 | C4 接入 | linked 长历史被锚定摘要回填、independent 不触发；R4 未放开前行为同现状不退化 |
+| S5 | compaction-C4 | `generate_anchored_summary`：一次 LLM、截断喂旧历史、`previousSummary` 锚定增量正确回填、原库完整（[4] 14.9.4） |
+| S5 | compaction-触发 | `CompactionTrigger`/`should_compact_window`：窗口阈值边界（恰好超/恰好不超 MAX_CONTEXT_TOKENS×MAX_CONTEXT_RATIO）判断正确 |
+| S5 | compaction-冷却 | `CompactionCooldown`：冷却期 prompt 数内不重复压缩、期满恢复 |
+| S5 | compaction-剪枝 | `prune_tool_outputs`：超长工具输出被剪、保留 action 摘要；`t1_compress_observations`：观测压缩前后语义保留；`value_first_prune`：按价值序剪、不误删关键消息 |
+| S5 | compaction-摘要复用 | `t1_reuse_summary`：前轮已有摘要时直接复用、不再二次 LLM（DRY） |
+| S5 | compaction-分块 | `generate_chunked_summary`：大历史分块摘要拼接正确、顺序不乱（C4 降本变体） |
+| S5 | compaction-装配 | `trim_orphan_pairs_proactive`：孤立工具/观测对主动修剪、不回退引用的真身；`SUMMARY_TEMPLATE` 模板占位渲染无报错 |
+| S5 | compaction-支撑 | `split_turn.py`：历史按轮次切块正确（sys+user 起始到末轮完整归组、不拆散 tool_call 与其结果）；`constants.py`：窗口/冷却常量可配置、取值正确 |
+| S6 | 全量验证 | backend/e2etests/ 既有清单逐项通过；① 表结构 / ② 读写 / ③ StartStep / ④ start 装配 / ⑤ C4+compaction 双向验证 + 落库读取全绿 |
+
+#### 10.1.9 现网（老库）数据库迁移/升级操作过程（北京老陈 2026-08-16 命令：数据库需要迁移或升级的操作过程吗？需要就写上）
+
+> **定位**：10.1.7①/S0（表结构 DDL）与 10.1.8 S0~S6（实施顺序/验证清单）描述的是**设计目标态**。本节补充**从现网老库升级到目标态的具体可执行操作过程**。现网实测：`~/.omniagent/` 下 4 库真实存在——`chat_history.db` 约 1.6GB、`operations.db` 约 81MB、`task_tracker.db` 约 92MB（另各有 `.bak` 历史备份）；chat 域现状 4 表（chat_sessions/chat_messages/chat_session_title_history/chat_message_steps）已建，**缺 chat_tasks / token_usage / chat_session_trust 三新表**，且 **chat_messages 缺 task_id/metadata、chat_message_steps 缺 task_id、chat_sessions 缺 metadata/model_override**。迁移全程**不丢历史数据、不手工删表、不改老行**，靠幂等 DDL + 一次性守卫自愈。**遵循既有 migrate_steps.py schema_migrations 守卫范式（DRY，不另造迁移轮子）。**
+
+**第 0 步｜备份（铁律先备份再动库）**
+
+停服升级前，用项目既有备份机制（现网已有 `.bak` 佐证，落点 db_initializer/database.py 的备份逻辑）对目标库做冷备份，四库都备：
+
+```bash
+# chat_history.db / operations.db / task_tracker.db 迁移窗口前各做一次冷备份，命名带时间戳
+copy ~/.omniagent\chat_history.db    ~/.omniagent\chat_history.db.pre_mig_<YYYYMMDD>.bak
+copy ~/.omniagent\operations.db      ~/.omniagent\operations.db.pre_mig_<YYYYMMDD>.bak
+copy ~/.omniagent\task_tracker.db    ~/.omniagent\task_tracker.db.pre_mig_<YYYYMMDD>.bak
+```
+
+> 原则：备份必须能**完整回滚**。迁移全程若出错，删掉被改库、还原 `.pre_mig_*.bak` 即回退到迁移前，零丢数据。operations/task_tracker 两库本节**不动**（新表全在 chat 域），仅备份兜底。
+
+**第 1 步｜停机窗口**
+
+迁移需对 `chat_history.db` 做 DDL（建表/加列），SQLite 加列不能并发热写。选择业务低峰窗口，先停后端服务（杀 uvicorn 进程），迁移完成、验证通过后再起服。**禁止热库迁移**（运行中改表可能锁库/触发 database is locked）。
+
+**第 2 步｜幂等建 3 新表（chat_tasks / token_usage / chat_session_trust）**
+
+新表并入 `db_initializer.py init_chat_db()` 的 `executescript`，全部 `CREATE TABLE IF NOT EXISTS`（DDL 权威=10.1.7①/S0 代码，此处给落地执行的 SQL 摘要，详表结构不重复——指路 10.1.7①）。老库首次启动执行即建齐：
+
+```sql
+-- db_initializer.py init_chat_db() 追加（幂等，老库重复启动只建缺表不重建不丢数据）— 小欧 2026-08-16
+CREATE TABLE IF NOT EXISTS chat_tasks (...);          -- 任务行，含 context_link_mode/context_root_task_id
+CREATE TABLE IF NOT EXISTS token_usage  (...);        -- LLM 用量，五索引
+CREATE TABLE IF NOT EXISTS chat_session_trust (...);  -- HITL 信任，UNIQUE(session_id,tool_name)
+CREATE INDEX IF NOT EXISTS idx_trust_session ON chat_session_trust(session_id);
+```
+
+**第 3 步｜幂等加 3 新列（chat_messages.task_id/metadata、chat_message_steps.task_id、chat_sessions.metadata/model_override）**
+
+用既有 `_ensure_column()`（db_initializer.py:218）对老表补列，只 ADD 缺列、不碰已有列与老行：
+
+```sql
+-- init_chat_db() 追加 _ensure_column：
+_ensure_column(conn, "chat_messages",      "task_id",  "TEXT");   -- 同任务消息挂任务，链根定位
+_ensure_column(conn, "chat_messages",      "metadata", "TEXT");   -- 消息元数据
+_ensure_column(conn, "chat_message_steps", "task_id",  "TEXT");   -- 步骤挂任务（关联 10.1.8 S0）
+_ensure_column(conn, "chat_sessions",      "metadata", "TEXT");   -- 会话元数据
+_ensure_column(conn, "chat_sessions",      "model_override", "TEXT");  -- 按会话覆盖模型
+```
+
+> 新列对老数据为 NULL/空，**不回填**（老消息无 task_id 属正常，新建任务才写）；前端/查询按 NULL 兜底跳过，不因加列中断老数据展示（防退化）。加列后可选补 `CREATE INDEX IF NOT EXISTS`（chat_messages task_id 索引）提升链查询。
+
+**第 4 步｜旧索引清理（唯一非幂等点）**
+
+> 依据：chat_message_steps 现网实际索引为 `idx_steps_session(session_id, step_index)` + `idx_steps_message(message_id)`（本次实测）。10.1.7① 目标态若定义 `(task_id, step_index)` 新复合索引，须先判旧索引再删，避免重复冗余索引残留。**只删索引不删数据，属 DDL 非数据迁移。**
+
+```python
+# 迁移守卫内：查 PRAGMA index_list，若旧单列索引存在则 DROP（幂等收敛），再建目标复合索引
+if 旧索引存在: conn.execute("DROP INDEX IF EXISTS <旧索引名>")   # 只删冗余索引，不动数据
+conn.execute("CREATE INDEX IF NOT EXISTS <目标复合索引> ...")
+```
+
+**第 5 步｜一次性迁移守卫登记（schema_migrations，遵循 migrate_steps.py 范式）**
+
+新增的建表/加列属幂等 DDL 本身可重复执行；但**涉及全表扫描的数据迁移**（如未来 chat_messages→chat_message_steps 步骤拆分、旧 execution_steps→步骤表）必须套 `schema_migrations` 一次性守卫，登记"已执行"，二次启动跳过全表扫描（migrate_steps.py:117-190 既定范式：`_ensure_migrations_table` / `_is_migration_applied` / `_mark_migration_applied` / `MIGRATION_NAME`）。本节新表/新列**无数据迁移、靠幂等 DDL 即可**，故不需新登记项；但**任何后续数据级迁移一律循此守卫范式**（DRY，不另造）。
+
+**第 6 步｜启动自愈 + 迁移结果校验**
+
+起服后 `init_chat_db()` 自动执行上述幂等 DDL；随即按 10.1.8 验证清单 S0 项核对（见 2247-2248 行）：
+
+| 校验项 | 校验 SQL/方法 | 通过标准 |
+|--------|--------------|---------|
+| 三新表已建 | `SELECT name FROM sqlite_master WHERE type='table'` | chat_tasks / token_usage / chat_session_trust 均在 |
+| 三新列已加 | `PRAGMA table_info(chat_messages/steps/sessions)` | 5 列（messages.task_id/metadata、steps.task_id、sessions.metadata/model_override）均在 |
+| 老数据未丢 | 迁移前后 `SELECT COUNT(*) FROM chat_messages / chat_sessions` 对账 | 历史消息/会话数一致，无删减 |
+| 老索引收敛 | `PRAGMA index_list(chat_message_steps)` | 无重复冗余索引，目标复合索引唯一生效 |
+| 前端不退化 | 老会话回放 | 历史消息正常展示，新列 NULL 兜底不报错 |
+| 守卫就绪 | `SELECT * FROM schema_migrations` | 既有登记项保持，新迁移如需则已登记 |
+
+**回滚方案**：任一步异常 → 停服 → 还原 `chat_history.db.pre_mig_*.bak` → 起服，即完全回退（强制未提交前不与新版本代码混跑）。
+
+**落地文件**：`backend/app/db/db_initializer.py`（建表/加列/索引并入 init_chat_db）+ `backend/app/services/chat/migrate_steps.py` 范式（数据级迁移守卫）；无新迁移框架、不引 alembic（YAGNI，SQLite 幂等 DDL 已足够）。
+
+#### 10.2 预留（待补充）
+
+> 本节及之后按北京老陈后续要求陆续补充架构提升项，当前留空占位。
 
 ---
 
 ## 第四部分　后端-综合设计汇总及实施详细说明和计划
 
 > **定位**：本部分汇总全文设计为**可落地实施**的综合说明。第11章按"一个问题一小节"组织，对治理区问题全量（第2章 observation 问题总览 2.1 及六个侧面 2.1.1~2.1.6 + 2.2/2.3 + 第6章 6.1~6.2 共10个；其中前端 2.1.6/2.2/2.3 修改说明指向文档2 6.2）与升级区需求全量（3.8~3.13 / 7.6~7.9 共6项）逐条给出**以当前代码为基础的代码级修改说明**（涉及文件+函数+当前代码形态+改成什么样+验证）；第12章为修改汇总的实施计划（分组、顺序、风险、验证）。问题/方案概要已在第3/7章定案，本章一律指路引用、不重复（DRY）。
-> **状态**：本部分为设计定案（代码落地另立任务）；代码形态以当前代码为准。 **【部分落地 2026-08-17：升级区 3.8 任务级存储 / 3.9 token_usage 四维度落库 / 3.10 stats 流式与终态 / 3.11 context_overview / 3.13 文件载体 tool_raw+conversation_history 中的 S0-S4 部分已实施；3.12 chat_session_trust+model_override 未实施】**
+> **状态**：本部分为设计定案（代码落地另立任务）；代码形态以 2026-08-16 代码核实为准（行号随代码演进可能漂移，落地时须以当时最新代码复核）。 **【部分落地 2026-08-17：升级区 3.8 任务级存储 / 3.9 token_usage 四维度落库 / 3.10 stats 流式与终态 / 3.11 context_overview / 3.13 文件载体 tool_raw+conversation_history 中的 S0-S4 部分已实施；3.12 chat_session_trust+model_override 及 10.1.6/S5 C4+compaction 未实施】**
 
 ### 11 汇总修改详细说明（治理区问题全量 + 升级区需求全量；仅后端代码级修改）
 
@@ -1877,7 +2649,7 @@ MAX_TOOL_RESULT_STR_LEN: int = 100000
 
 **需求概要**：现仅四表、无任务级存储，消息/步骤无 task_id 列，任务级属性（状态/统计/耗时/产出物）散落、无法按任务取数。
 
-**修改方法要点**：新增 chat_tasks 建表 + 幂等补 chat_messages / chat_message_steps 的 task_id 列（+metadata 扩展列）+ task_id 索引；列清单以文档2 3.1.2 权威为准；表结构现状见 10.2（chat 域数据库现状，S0 已落地）；读写落库（insert_task/update_task/load_execution_steps）以当前 `backend/app/services/chat/storage.py` 实码为准；落库实施见文档2 6.1.2/6.1.11（agent_runner.py:179-188 `append_step` 增 task_id 参数）。本节不再重复贴表结构/读写代码。
+**修改方法要点**：新增 chat_tasks 建表 + 幂等补 chat_messages / chat_message_steps 的 task_id 列（+metadata 扩展列）+ task_id 索引；列清单以文档2 3.1.2 权威为准；**完整表结构/索引 DDL 见 10.1.7 ①（S0 表结构先行）与 10.1.8 S0，读写落库见 10.1.7 ②（insert_task/update_task/load_execution_steps）与 10.1.8 S2**；落库实施见文档2 6.1.2/6.1.11（agent_runner.py:179-188 `append_step` 增 task_id 参数）。本节不再重复贴表结构/读写代码。
 
 **验证**：新库启动 chat_tasks 建表成功、chat_messages/chat_message_steps 含 task_id 列；一次任务后 task_id 贯通（消息→步骤→chat_tasks 一致）。
 
@@ -1885,11 +2657,11 @@ MAX_TOOL_RESULT_STR_LEN: int = 100000
 
 **需求概要**：现 usage 仅累加 + emit、不落库，token 无法按 session / task / model 四维度归属查询。
 
-**修改方法要点**：db_initializer 新增 token_usage 建表（表结构权威=9.3、粒度对齐 9.4）；表结构现状见 10.2（S0 已落地）；读写落库见 9.7（落点=agent_runner.py 收 usage 终态经 db_ops.insert_token 统一 INSERT，非 react_cycle 内同源追加——旧"react_cycle 内追加"方案含伪 `agent.session_id` 已废弃）；补 created_at 时间维度索引（0.2.6-5）。本节不再重复贴表结构/落库代码。
+**修改方法要点**：db_initializer 新增 token_usage 建表（表结构权威=9.3、粒度对齐 9.4）；**表结构/索引 DDL 见 10.1.7 ① ④与 10.1.8 S0；读写落库见 10.1.7 ②-3 与 10.1.8 S2**（②-3 落点=agent_runner.py 收 usage 终态经 db_ops.insert_token 统一 INSERT，非 react_cycle 内同源追加——旧"react_cycle 内追加"方案含伪 `agent.session_id` 已废弃）；补 created_at 时间维度索引（0.2.6-5）。本节不再重复贴表结构/落库代码。
 
 **验证**：一次多步任务后 token_usage 每轮 LLM 调用一行；各维度 SUM 与 TASK_END usage_tokens 一致（9.7 验证项）。
 
-**依赖**：无（独立落地）；表结构现状见 10.2，落库实施见 9.7 / 文档2 6.1.4。
+**依赖**：无（独立落地）；表结构实施见 10.1.8 S0，读写实施见 10.1.8 S2；落库实施见 9.7 / 文档2 6.1.4。
 
 #### 11.9 升级：任务级统计字段统一下发（stats 流式 + FinalStep 终态；对应需求 3.10，设计目标待实施）
 
@@ -1997,11 +2769,11 @@ yield agent._step_emitter.emit(MetaStep(
 
 **需求概要**：chat_sessions 无 model_override / metadata，且无 chat_session_trust 表，HITL"信任本次会话"与会话级模型覆盖无法落库生效。
 
-**修改方法要点**：幂等补 chat_sessions 的 model_override / metadata 列 + 新增 chat_session_trust 表（UNIQUE(session_id, tool_name)，字段权威=文档2 3.1.7）；表结构现状见 10.2（S0 已落地）；读写落库以当前实码为准（trust 落点=hitl_confirmation.py `resolve_confirmation` confirm 成功回调 + 豁免读=tool_safety_checker.py；model_override 生效点=编排层 stream_orchestrator 写 ai_service.model——非 resolver；旧的"action_handler 回调 INSERT/resolver 生效"方案已废弃）。本节不再重复贴表结构/落库代码。
+**修改方法要点**：幂等补 chat_sessions 的 model_override / metadata 列 + 新增 chat_session_trust 表（UNIQUE(session_id, tool_name)，字段权威=文档2 3.1.7）；**表结构/索引 DDL 见 10.1.7 ① ③/⑤与 10.1.8 S0；读写落库见 10.1.7 ②-4/5 与 10.1.8 S2**（②-5 落点=hitl_confirmation.py `resolve_confirmation` confirm 成功回调 + 豁免读=tool_safety_checker.py；②-4 model_override 生效点=编排层 stream_orchestrator 写 ai_service.model——非 resolver；旧的"action_handler 回调 INSERT/resolver 生效"方案已废弃）。本节不再重复贴表结构/落库代码。
 
 **验证**：新库启动 chat_session_trust 建表成功、chat_sessions 含 model_override/metadata 列；HITL 授权过的工具免重复确认（文档2 验证项）。
 
-**依赖**：无（独立落地）；表结构见 10.2 迁移操作；落点对齐=本文档 5.3.1，落库实施=文档2 6.1.1 / 6.1.3 / 6.1.8。
+**依赖**：无（独立落地）；表结构实施见 10.1.8 S0，读写实施见 10.1.8 S2；落点对齐=本文档 5.3.1，落库实施=文档2 6.1.1 / 6.1.3 / 6.1.8。
 
 #### 11.12 升级：文件载体 tool_raw + conversation_history（对应需求 3.13 / 7.9；完整设计=本文档 5.1）
 
