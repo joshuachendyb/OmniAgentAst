@@ -31,6 +31,14 @@
 # 测试: tests/test_s2_s4_review_bugs.py 16 passed, 相关4文件 52 passed。
 # 2026-08-17 - 小健 - 必备日志补齐(老陈驱动): AE finally 还原单例 model 打 logger.info(并发审计点);
 #   E2 DB 兜底恢复 upper 打 logger.info(诊断 track 缺失)。均仅落文件不刷 console。
+# 2026-08-17 - 小健 - start 业务过程收敛(老陈驱动): 闭包 _start_step_factory 只做 P4 捕获传参,
+#   context_summary 计算与 StartStep 构造收拢到 sse_events.build_start_step(单一归属); 删本文件 MessageBuilder 死 import
+# 2026-08-17 - 小健 - start 业务彻底单归属(老陈驱动, 三思三省): 契约构造逻辑自 sse_events 迁入 start_step 模块,
+#   本文件不再承载任何 start 业务——删除 _start_step_factory 闭包与 build_start_step/send_start_step import,
+#   改将运行元数据 dict 注入 agent._start_meta(ai_service/task_id/next_step/user_input/session_id/链字段/warning),
+#   react_cycle 经 assemble_start_step 从 _start_meta 读齐装配(chat 层退化为纯数据捕获, P4 方向不变)
+# 2026-08-17 - 小健 - 最合理核查(老陈追问): _start_meta 删除 ai_service 键(DRY, 与 agent.llm_client 同对象),
+#   仅保留 agent 拿不到的 chat 数据; start_step 直接读 agent.llm_client.provider/model — 小健 2026-08-17
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -46,9 +54,8 @@ from typing import Optional, AsyncGenerator, Dict, List
 from app.services import get_service
 from app.services.model.resolver import get_ai_config_resolver
 from app.logger import logger, log_and_print
-from app.services.chat.sse_events import create_error_response, send_start_step
+from app.services.chat.sse_events import create_error_response
 from app.services.agent.steps.base import create_step_counter, MetaStep
-from app.services.agent.message_builder import MessageBuilder  # S4: context_summary total_tokens 估算(chat→agent 合法方向) — 小欧 2026-08-16
 from app.services.task.task_registry import register_task
 from app.services.task.task_runtime import (
     task_cancel_check, task_pause_check_and_yield, task_cancel_check_and_yield,
@@ -239,29 +246,19 @@ async def chat_stream_orchestrator(
                 c, task_id=task_id, session_id=session_id,
                 model=agent.llm_client.model, provider=agent.llm_client.provider, **kw),
         )
-        # S4(10.1.1③/10.1.7④): start 装配数据注入 agent — 取消 orchestrator 旁路(step_start),
-        #   start 构造/emit 移到 react_cycle 内(initialize_run_state 后、while 前);
-        #   P4 注入模式(与 db_ops 同款): 闭包捕获 chat 层装配数据(send_start_step/链字段/warning),
-        #   react_cycle 内调 agent._start_step_factory(system_prompt, previous_messages) 构造,
-        #   不 import chat 层(消除 agent→chat 反向依赖) — 小欧 2026-08-16
-        async def _start_step_factory(system_prompt: str,
-                                      previous_messages: Optional[List[Dict]]) -> MetaStep:
-            # ② context_summary: 概要不入库不装历史原文(仅快照)。会话级元数据由本闭包捕获,
-            #   message_count/total_tokens 由 react_cycle 注入的 previous_messages 即时估算(来源=load_previous) — 小欧 2026-08-16
-            _prev = previous_messages or []
-            _ctx_summary = {
-                "session_id": session_id,
-                "context_link_mode": context_link_mode,
-                "context_root_task_id": _context_root_task_id,
-                "message_count": len(_prev),
-                "total_tokens": MessageBuilder._estimate_tokens(_prev),
-            }
-            return await send_start_step(
-                ai_service=ai_service, task_id=task_id, next_step=next_step,
-                user_message=user_input, system_prompt=system_prompt,
-                context_summary=_ctx_summary, warning=_model_warning,
-            )
-        agent._start_step_factory = _start_step_factory
+        # S4/S5(10.1.1③/10.1.7④): start 运行元数据注入 agent — 取消 orchestrator 旁路(step_start),
+        #   start 业务完整归 start_step 模块(chat 层仅 P4 捕获运行数据注入 agent._start_meta),
+        #   react_cycle 经 assemble_start_step 从 _start_meta 读齐装配, 不再有 chat 层 start 构造逻辑 — 小健 2026-08-17
+        #   ai_service 不注入(DRY): agent.llm_client 即同一对象, start_step 直接读 llm_client.provider/model
+        agent._start_meta = {
+            "task_id": task_id,
+            "next_step": next_step,
+            "user_input": user_input,
+            "session_id": session_id,
+            "context_link_mode": context_link_mode,
+            "context_root_task_id": _context_root_task_id,
+            "warning": _model_warning,
+        }
         # ②-1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) — 小欧 2026-08-16
         try:
             with db.get_conn_with_retry("chat") as _conn3:

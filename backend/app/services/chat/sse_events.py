@@ -7,6 +7,12 @@
 #   删 security_check 空占位死代码(真实安全拦截归 tools/security 域 / HITL confirm 链路)、保留 warning(有前端消费);
 #   参数收敛为 (ai_service, task_id, next_step, user_message, system_prompt, context_summary, warning) —
 #   MetaStep **kwargs 透传(base.py:114), 无需新建 StartStep 类
+# 2026-08-17 - 小健 - start 业务过程收敛(北京老陈驱动, 痛斥四处散落): 新增 build_start_step 集中函数,
+#   start 全部业务(算 context_summary 快照 message_count/total_tokens + 构造任务输入契约 StartStep)收拢一处,
+#   orchestrator 闭包只负责 P4 捕获传参; 依赖方向 chat→agent(MessageBuilder 估算, 合法方向)
+# 2026-08-17 - 小健 - start 业务彻底迁出(老陈驱动, 三思三省): 契约构造逻辑迁入 start_step 模块(_build_start_contract),
+#   删除本文件 send_start_step/build_start_step 两函数及 MetaStep/MessageBuilder import(死代码清除);
+#   start 业务完整单归属 start_step.py, sse_events 不再承载任何 start 构造 — 小健 2026-08-17
 """
 sse_events — SSE事件流处理模块
 从 react_sse_wrapper/chat_stream.py 移入
@@ -19,7 +25,7 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.utils.sse_formatter import format_sse_event, format_agent_sse
-from app.services.agent.steps import MetaStep, ErrorStep, FinalStep
+from app.services.agent.steps import ErrorStep, FinalStep
 from app.llm.error_classifier import SystemErrorClassifier
 from app.logger import logger
 from app.services.chat.storage import save_execution_steps
@@ -126,34 +132,3 @@ def create_final_response(
         provider=provider
     )
     return format_agent_sse(final_step.to_dict())
-
-
-# ====================================================================
-# Start步骤
-# ====================================================================
-
-async def send_start_step(
-    ai_service: Any,
-    task_id: str,
-    next_step: Callable,
-    user_message: str,
-    *,
-    system_prompt: str = "",                  # 新增：_get_system_prompt（initialize_run_state.py:111-112）
-    context_summary: Optional[Dict] = None,    # 新增：{session_id, context_link_mode, context_root_task_id, message_count, total_tokens}
-    warning: Optional[str] = None,
-) -> MetaStep:
-    """发送 start 步骤 — 使用MetaStep统一构建
-    小欧 2026-08-16 S3(10.1.7③): 删 security_check 空占位、保留 warning、
-    增 system_prompt/context_summary 字段, 无新建类(MetaStep **kwargs 透传, base.py:114)"""
-    return MetaStep(
-        step=next_step(),
-        type="start",
-        content=user_message if user_message else "",
-        display_name=f"{ai_service.provider} ({ai_service.model})",
-        provider=ai_service.provider,
-        model=ai_service.model,
-        task_id=task_id,
-        system_prompt=system_prompt,           # 新增字段(10.1.2③)
-        context_summary=context_summary or {}, # 新增字段(10.1.2③)
-        warning=warning,
-    )
