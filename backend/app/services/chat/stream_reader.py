@@ -12,6 +12,13 @@
 # 2026-08-14 - 小欧 - 改名名实相符: stream.py → stream_reader.py(实为SSE流运行器/消费者 stream_reader; "stream"过宽且与api/v1/chat/execution_stream语义重叠)
 # 2026-08-16 - 小欧 - S1(10.1.4⑤): _load_previous_messages 加 context_link_mode/context_root_task_id/upper_message_id 参数+
 #   按任务链范围过滤(BETWEEN 链根首条user消息id AND 本任务user消息id); independent新任务直接返回[](从零),链外消息不进LLM
+# 2026-08-17 - 小健 - 三堂会审修复(北京老陈驱动, 11 bug 复核3遍):
+#   E1: _load_previous_messages 原 BETWEEN lo AND upper 含上界, 把本任务自身 user 消息(id=upper)也装入上下文与
+#       本次 user_input 重复; 改 `id>=lo AND id<upper`(不含本任务user消息), 语义对齐"本任务前"。
+#   PARALLEL: _parse_tool_calls/_parse_observations 的 tool_call/observation id 追加 step 值组内序号(_c),
+#       解决一轮内并行多工具同 step 致 call_{msg}_{step} 重复 → 历史回放 FC 配对错乱; 两函数同规则(_step_count)
+#       保证 assistant.tool_calls 与对应 tool 消息 tool_call_id 对齐。经数据实测3遍: 空content observation 被跳过
+#       时该工具无响应(非错位), tc/obs id 严格配对无交叉错配。
 """
 stream_reader — SSE流运行器（消费者）
 
@@ -48,6 +55,7 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
         logger.warning(f"[_parse_tool_calls] exec_steps非list, 跳过: {type(exec_steps)}")
         return []
     tool_calls = []
+    _step_count: Dict[int, int] = {}
     for step in exec_steps:
         if step.get("type") != "action_tool":
             continue
@@ -56,8 +64,14 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
         except (TypeError, ValueError):
             arguments = "{}"
             logger.warning(f"[_parse_tool_calls] tool_params不可序列化, 降级为{{}}: {step.get('tool_name')}")
+        _s = step.get("step", 0)
+        _c = _step_count.get(_s, 0)
+        _step_count[_s] = _c + 1
+        # 2026-08-17 - 小健 - 三堂会审-PARALLEL修复: id 追加"step值组内序号"(_c),
+        #   解决一轮内并行多工具同 step 造成 call_{msg}_{step} 重复 -> 历史回放 FC 配对错乱;
+        #   _parse_observations 用同规则(_step_count), 保证 assistant.tool_calls 与对应 tool 消息 tool_call_id 对齐
         tool_calls.append({
-            "id": f"call_{msg_id}_{step.get('step', 0)}",
+            "id": f"call_{msg_id}_{_s}_{_c}",
             "type": "function",
             "function": {
                 "name": step.get("tool_name", ""),
@@ -73,14 +87,20 @@ def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
     try:
         exec_steps = json.loads(exec_steps_json)
         observations = []
+        _step_count: Dict[int, int] = {}
         for step in exec_steps:
             if step.get("type") == "observation":
+                _s = step.get("step", 0)
+                _c = _step_count.get(_s, 0)
+                _step_count[_s] = _c + 1
                 content = step.get("content", "")
                 if content:
+                    # 2026-08-17 - 小健 - 三堂会审-PARALLEL修复: 与 _parse_tool_calls 同规则追加组内序号,
+                    #   使 tool_call_id 与对应 tool_call 对齐且不重复(并行同 step 场景)
                     observations.append({
                         "role": "tool",
                         "content": content,
-                        "tool_call_id": f"call_{msg_id}_{step.get('step', 0)}"
+                        "tool_call_id": f"call_{msg_id}_{_s}_{_c}"
                     })
         return observations
     except Exception:
@@ -115,10 +135,13 @@ def _load_previous_messages(session_id: str, context_link_mode: str = "independe
                 if _r and _r["user_message_id"]:
                     _lower_id = _r["user_message_id"]
             if _lower_id is not None and upper_message_id is not None:
-                # 设计1643: id BETWEEN 链根首消息id AND 本任务消息id前(链外消息不进LLM)
+                # 设计1643: 链根首消息id → 本任务user消息id"前"(链外消息不进LLM)
+                # 2026-08-17 - 小健 - 三堂会审-E1修复: 原 BETWEEN lo AND upper 含上界,
+                #   把本任务自身的 user 消息(id=upper)也装入上下文, 与本次 user_input 重复;
+                #   改 id < upper(不含本任务 user 消息), 语义对齐"本任务前"
                 rows = conn.execute(
                     "SELECT id, role, content FROM chat_messages "
-                    "WHERE session_id=? AND id BETWEEN ? AND ? ORDER BY id ASC",
+                    "WHERE session_id=? AND id >= ? AND id < ? ORDER BY id ASC",
                     (session_id, _lower_id, upper_message_id),
                 ).fetchall()
             elif _lower_id is not None:  # 链根存在但无上界(异常兜底): 仅下界过滤

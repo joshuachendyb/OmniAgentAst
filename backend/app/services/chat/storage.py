@@ -25,6 +25,14 @@
 #   ②-3 token_usage_insert; ②-4 get_session_model_override; ②-5 insert_session_trust/check_session_trust +
 #   get_session_id_by_task(task_id→session_id 反查, HITL trust 落库/豁免用, 禁伪 agent.session_id);
 #   ②-6 query_token_usage 四维聚合 + get_previous_task_chain(S1 链根计算)
+# 2026-08-17 - 小健 - 三堂会审修复(北京老陈驱动, 11 bug 复核3遍):
+#   E2: line69-77 新增 get_last_user_message_id(DB兜底), 供 orchestrator 在 track 缺失时为 linked 续聊恢复 upper 上界。
+#   AM2/STORAGE_1: AssistantMessageIdAllocator.allocate 增 always_new 参数(默认False保留legacy复用语义);
+#       allocate_and_insert_message 设 always_new=True 每任务独立新行——绝 user 未track时 expected 命中已存在
+#       assistant 行导致内容覆盖(is_new=False仍message_count+1虚高, 同session多任务共用一行)。
+#   STORAGE_2: 每任务独立行后, load_execution_steps 按 task_id 双条件不再混任务步骤。
+# 2026-08-17 - 小健 - 必备日志补齐(老陈驱动「昨天今天提交代码都必须加」): allocate 的 always_new 递增寻空位
+#   打 logger.warning 留痕(异常回落/越界审计点, 仅落文件不刷 console)。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -66,6 +74,17 @@ def get_user_message_id(session_id: str) -> Optional[int]:
     return _user_message_ids.get(session_id)
 
 
+def get_last_user_message_id(conn: Connection, session_id: str) -> Optional[int]:
+    """取本会话最后一条 user 消息 id(DB兜底) — 小健 2026-08-17 三堂会审-E2修复:
+    track(_user_message_ids) 为内存 dict, 服务重启即丢; 该函数从 DB 恢复,
+    供 orchestrator 在 track 缺失时为 linked 续聊提供 upper 上界(防链外/全部消息进上下文)"""
+    row = conn.execute(
+        "SELECT id FROM chat_messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    return row["id"] if row else None
+
+
 class ExecutionStepsUpdate(BaseModel):
     """执行步骤更新请求体 — 小欧 2026-07-10"""
     execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
@@ -97,13 +116,18 @@ class AssistantMessageIdAllocator:
         self._assistant_ids: Dict[str, int] = {}
         self._lock = lock
 
-    def allocate(self, session_id: str, conn: Connection) -> Tuple[int, bool]:
+    def allocate(self, session_id: str, conn: Connection,
+                 always_new: bool = False) -> Tuple[int, bool]:
         """拷贝自 conversation.py 第48-79行
 
         10规范(SRP): 只负责分配assistant消息ID
         10规范(DRY): 复用conn执行查询
         修复: 并发场景下检查session_id归属+递增寻空位
         #22 fix: 锁范围扩大覆盖 SELECT+dict写,消除竞态 — 小欧 2026-07-18
+        2026-08-17 小健 三堂会审-AM2/STORAGE_1修复: 增 always_new 参数——
+          always_new=True(任务级 allocate_and_insert_message)时, 若 expected 命中已存在的
+          assistant 行(多为 user 未 track/未落库导致 expected 回落为1), 递增寻新空位而非复用,
+          使每个任务独立成行(杜绝内容覆盖/虚高); 默认 False 保留 legacy save_execution_steps 复用语义
         """
         with self._lock:
             user_id = self._user_ids.get(session_id)
@@ -126,7 +150,13 @@ class AssistantMessageIdAllocator:
                 if existing is None:
                     break
                 if existing["role"] == "assistant" and existing["session_id"] == session_id:
-                    return expected, False
+                    if not always_new:
+                        return expected, False
+                    # always_new: 跳过本会话已占用的行, 递增寻新空位(每任务独立成行)
+                    logger.warning(f"[allocator] {session_id} id={expected} 本会话行已占用, always_new 递增寻空位(防复用/覆盖)")
+                    expected += 1
+                    continue
+                logger.warning(f"[allocator] {session_id} id={expected} 被占用(role={existing['role']}, sid={existing['session_id']}), 递增寻空位")
                 expected += 1
             else:
                 c.execute("SELECT id FROM chat_messages ORDER BY id DESC LIMIT 1")
@@ -239,9 +269,13 @@ def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Opti
     """预分配 assistant 消息ID + 插入空白行 — 小欧 2026-07-14
     2026-08-13 - 小欧 - 三堂会审修复#1: local_time 提前到 if is_new 之外赋值,
       消除 is_new=False(同session二次任务, agent_runner路径)时 UPDATE 引用未绑定变量 NameError
-    2026-08-16 - 小欧 - S2②-2: chat_messages 补 task_id 列（任务级贯通，10.1.7②-2）"""
+    2026-08-16 - 小欧 - S2②-2: chat_messages 补 task_id 列（任务级贯通，10.1.7②-2）
+    2026-08-17 - 小健 - 三堂会审-AM2/STORAGE_1修复: 任务级分配新行(always_new=True),
+      杜绝同 session 多任务复用同一 assistant 行(内容互相覆盖)与 is_new=False 仍 message_count+1(虚高);
+      is_new 恒 True 后每次+1 正确, 且各任务独立行 -> load_execution_steps 不再混任务步骤(STORAGE_2)
+    """
     ensure_session_exists(session_id, conn)  # #17 fix: 写入前确保会话存在, 消除孤儿消息 — 小欧 2026-07-18
-    ai_message_id, is_new = _allocator.allocate(session_id, conn)
+    ai_message_id, is_new = _allocator.allocate(session_id, conn, always_new=True)
     local_time = get_local_iso_timestamp()
     if is_new:
         conn.execute(
