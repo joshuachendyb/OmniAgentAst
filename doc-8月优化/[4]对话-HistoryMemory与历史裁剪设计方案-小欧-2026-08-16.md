@@ -2,8 +2,8 @@
 
 > **编写人**: 小欧
 > **创建时间**: 2026-07-22 18:30:00
-> **更新时间**: 2026-08-16 15:41:02
-> **版本**: v5.9
+> **更新时间**: 2026-08-17 10:21:40
+> **版本**: v5.13
 > 
 > **核心定位**：M1 历史记忆注入法（History Memory，结构化记忆供给）是主，历史裁剪（C3 的轻量实现函数 t1_compress_observations（工具摘要压缩）/T1 紧急裁剪法 压缩旧 tool 输出）是辅。先解决"LLM 每轮能看到决策链"，再解决"窗口不够用时腾空间"。
 
@@ -871,7 +871,7 @@ opencode  = prune 零 LLM + LLM 锚定摘要（把压缩当"语义归档"）
 
 > **编写人**：小欧
 > **编写时间**：2026-08-16 14:24:34
-> **前置结论**：北京老陈 2026-08-16 拍板 —— **建立一个统一目录作为"消息压缩/裁剪"的独立模块/架构层**，集中承载两方法（剪枝 + 锚定摘要）及其后续扩展的代码与函数。本章据此给出**基于本地现有真实代码**的落地 diff，**三堂会审（合规/合理/关联逻辑）通过**。
+> **前置结论**：北京老陈 2026-08-16 拍板 —— **建立一个统一目录作为"消息压缩/裁剪"的独立模块/架构层**，集中承载两方法（剪枝 + 锚定摘要）及其后续扩展的代码与函数。本章据此给出**基于本地现有真实代码**的落地 diff。
 
 #### 14.9.1 代码现状盘点（本地真实代码，非臆测）
 
@@ -879,22 +879,22 @@ opencode  = prune 零 LLM + LLM 锚定摘要（把压缩当"语义归档"）
 
 | 文件 | 现有关键实现 | 行号 |
 |------|------------|------|
-| `backend/app/services/agent/message_builder.py` | `trim_history()` 第二组"历史裁剪"入口 | 265 |
-| 同上 | `MAX_CONTEXT_TOKENS` 类属性（默认 200000，运行时被覆盖） | 84 |
-| 同上 | `last_total_tokens`（上轮精确 total_tokens，增量触发用） | 85 |
+| `backend/app/services/agent/message_builder.py` | `trim_history()` 第二组"历史裁剪"入口 | 277 |
+| 同上 | `MAX_CONTEXT_TOKENS` 类属性（默认 200000，运行时被覆盖） | 83 |
+| 同上 | `last_total_tokens`（上轮精确 total_tokens，增量触发用） | 91 |
 | 同上 | `reset_per_run()`（每轮重置） | 87 |
-| 同上 | `_total_chars()` Unicode 字符数统计 | 467 |
-| 同上 | `_estimate_tokens()` `chars//CHARS_PER_TOKEN` 粗估 | 484 |
-| 同上 | `_trim_to_budget()`（超预算从最旧删消息） | 336 |
-| 同上 | `prepare_messages_for_llm()`（组装消息列表，`_cap_temp_history` 先截断） | 233 |
-| `backend/app/services/agent/agent_runner.py` | `MAX_CONTEXT_TOKENS = llm_service.context_limit`（**已按模型窗口**） | 139-140 |
-| `backend/app/services/agent/react_cycle.py` | `agent.message_builder.trim_history()` **唯一裁剪入口** | 350 |
-| 同上 | `last_total_tokens = int(_tt)`（usage 上报精确值） | 393 |
+| 同上 | `_total_chars()` Unicode 字符数统计 | 480 |
+| 同上 | `_estimate_tokens()` `chars//CHARS_PER_TOKEN` 粗估 | 496 |
+| 同上 | `_trim_to_budget()`（超预算从最旧删消息） | 348 |
+| 同上 | `prepare_messages_for_llm()`（组装消息列表，`_cap_temp_history` 先截断） | 241 |
+| `backend/app/services/agent/agent_runner.py` | `MAX_CONTEXT_TOKENS = llm_service.context_limit`（**已按模型窗口**） | 146-147 |
+| `backend/app/services/agent/react_cycle.py` | `agent.message_builder.trim_history()` **唯一裁剪入口** | 385 |
+| 同上 | `last_total_tokens = int(_tt)`（usage 上报精确值） | 428 |
 | `backend/app/services/agent/llm_stream.py` | `call_llm_stream(agent, messages, tools)` 流式调用（anchor 摘要复用此） | 133 |
 | 同上 | `call_llm_with_fallback(agent, messages, openai_tools)` FC/Text 双回退 | 265 |
 | `backend/app/constants.py` | `MAX_CONTEXT_RATIO=0.8`（绝对值安全网比例）、`COMPACTION_BUFFER=20000`（输出预留） | 98-99 |
 
-**关键事实**（影响设计，三堂会审必须诚实）：本地**尚无** `_t1_compress_observations` / `history_mem` 的实现 —— 即 v4.0 文档里的 t1_compress_observations 逐工具摘要、History Memory **只是设计稿，代码里并不存在**（grep 确认零实现）。因此 C3/C4 是**新基建**，不是改旧 C1。这也决定了目录规划：需要一个全新模块层来承载。
+**关键事实**：本地**尚无** `_t1_compress_observations` / `history_mem` 的实现 —— 即 v4.0 文档里的 t1_compress_observations 逐工具摘要、History Memory **只是设计稿，代码里并不存在**（grep 确认零实现）。因此 C3/C4 是**新基建**，不是改旧 C1。这也决定了目录规划：需要一个全新模块层来承载。
 
 #### 14.9.2 统一目录规划（北京老陈 2026-08-16 拍板）
 
@@ -902,32 +902,25 @@ opencode  = prune 零 LLM + LLM 锚定摘要（把压缩当"语义归档"）
 
 ```
 backend/app/services/agent/compaction/
-├── __init__.py             # 导出各函数: CompactionTrigger / prune_tool_outputs / t1_reuse_summary / generate_anchored_summary / generate_chunked_summary / should_compact_window / CompactionCooldown / value_first_prune / trim_orphan_pairs_proactive — 小欧 2026-08-16(2026-08-16 精确化)
-├── constants.py            # 压缩专属常量(PRUNE_*/PRESERVE_*/SUMMARY_*/COMPACTION_*/COOLDOWN_ROUNDS), 不再堆进 app/constants.py
-├── trigger.py              # 触发判定: CompactionTrigger(14.9.3①) + 支撑函数 should_compact_window(动态窗口触发, 14.9.6 K1) + CompactionCooldown(冷却节流, 14.9.6 K2)
-├── prune.py                # C3 轻量/剪枝实现: prune_tool_outputs(14.9.3②) + t1_compress_observations(第五章 C3 轻量) + t1_reuse_summary(14.9.6 C3 DRY升级) + value_first_prune(14.9.6 T1 保真策略)
-├── summary.py              # C4 语义实现: generate_anchored_summary(14.9.4②) + generate_chunked_summary(14.9.6 C4 降本变体)
-├── summary_prompt.py       # SUMMARY_TEMPLATE 固定结构(Goal/Progress/Decisions/Next/Critical/Files, 14.9.4①)
-├── split_turn.py           # splitTurn 原语(保尾 token 预算 + 半轮劈分) — 【待补代码】14.9 各章未写具体函数, 仅规划占位
-└── assembler.py            # 装配适配: tail_start/压缩消息注入/标记统一 + trim_orphan_pairs_proactive(配对修剪, 14.9.6 K3); 【待补装配代码】new_block 切分与注入未写
+├── __init__.py             # 导出全部 17 项: CompactionTrigger / should_compact_window / CompactionCooldown / prune_tool_outputs / t1_reuse_summary / t1_compress_observations / value_first_prune / generate_anchored_summary / generate_chunked_summary / SUMMARY_TEMPLATE / preserve_recent_budget / find_tail_start / split_half_turn / split_history_window / extract_new_block / inject_compressed_summary / trim_orphan_pairs_proactive — 小健 2026-08-17 已落地
+├── compaction_constants.py # 压缩专属常量(COMPACTION_ENABLED / TRIGGER_T1_RATIO / TRIGGER_T3_RATIO / PRUNE_MINIMUM_TOKENS / PRUNE_PROTECT_TOKENS / SUMMARY_FEED_MAX_CHARS / TAIL_TOKEN_* / COOLDOWN_ROUNDS / SPLIT_TURN_MAX_ASSISTANT_CHARS / ASSEMBLE_KEEP_TAIL 等) + re-export 全局缓冲常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN, DRY) — 小健 2026-08-17 (落地更名: 原规划 constants.py → compaction_constants.py, 避混 app/constants)
+├── trigger.py              # 触发判定: CompactionTrigger(14.9.3①) + 支撑函数 should_compact_window(动态窗口触发, 14.9.6 K1) + CompactionCooldown(冷却节流, 14.9.6 K2) — 小健 2026-08-17 已落地
+├── prune.py                # C3 轻量/剪枝实现: prune_tool_outputs(14.9.3②) + t1_compress_observations(第五章 C3 轻量) + t1_reuse_summary(14.9.6 C3 DRY升级) + value_first_prune(14.9.6 T1 保真策略) — 小健 2026-08-17 已落地
+├── summary.py              # C4 语义实现: generate_anchored_summary(14.9.4②, 首参 agent 对象) + generate_chunked_summary(14.9.6 C4 降本变体) + _extract_response_content — 小健 2026-08-17 已落地
+├── summary_prompt.py       # SUMMARY_TEMPLATE 固定结构(Goal/Key Decisions/Next Steps/Critical Context/Relevant Files/Progress, 14.9.4①) — 小欧 2026-08-16
+├── split_turn.py           # splitTurn 原语: preserve_recent_budget(保尾 token 预算) + find_tail_start + split_half_turn(半轮劈分) — 小健 2026-08-17 已落地(原【待补代码】已补全)
+└── assembler.py            # 装配适配: split_history_window / extract_new_block / inject_compressed_summary / trim_orphan_pairs_proactive(K3) — 小健 2026-08-17 已落地(原【待补装配代码】已补全)
 ```
 
-**放置依据（合规性三堂会审）**：
-
-1. **SRP 单一职责**：压缩/裁剪是独立业务域，从 `message_builder.py`（其职责已够多的"消息组装+裁剪"）剥离出专用层。`message_builder` 未来只需"调 compaction 结果"，不再自己实现 prune/summary。
-2. **OCP/ISP/复用优先**：`compaction` 作为中间层，`message_builder` 与 `trigger` 只通过薄接口交互；后续加 t1_compress_observations 逐工具摘要/History Memory 直接在 `prun trader.py` 或新 `memory.py` 扩充，不改 `message_builder` 本体 —— 对扩展开放、对修改封闭。
-3. **分层存放遵循 AGENTS.md 1.3**：Agent 层公用逻辑放 `app/services/agent/` 下子目录（`compaction/`），不越过到全局 `app/utils/`。
-4. **KISS-不越级**：目录只承载压缩/裁剪一件事，不塞调度、DB、SSE 等（那些仍归 `react_cycle`/`agent_runner`/chat）。
-
-**新旧边界（不 backward、不重复）**：
-- `message_builder.trim_history()` 仍保留为 `react_cycle.py:350` 的**唯一裁剪入口**（外部契约不变），但其内部实现**委托** `compaction`（先剪枝→仍超限再锚定摘要→再回退原有删消息兜底）。
-- 原有 `_trim_to_budget()` 保留为**最后兜底**（防呆），不作为主路径 —— 不删除（不 backward）、也不与 prune 重复（prune="清输出"，_trim_to_budget="删消息"，两级语义不同）。
+*
 
 #### 14.9.3 C3 剪枝压缩法 diff（Prune，规则级，零 LLM）
 
 > **适用场景/场合**：① 日常高频兜底压缩，任何任务上下文超限即触发；② 简单/单轮任务、高频轮次增长、成本敏感、新任务（independent）；③ 零 LLM 零成本，快速腾空间保配对保近期。
 
-**改动文件**：新增 `compaction/trigger.py`、`compaction/constants.py`、`compaction/prune.py`（3 新增）；修改 `message_builder.py`（1 处委托）。
+> **【S5 落地差异 2026-08-17 小健，与本地真实代码对照】**：下方为设计稿伪代码。真实落地（`backend/app/services/agent/compaction/`）：① `constants.py` **已改名 `compaction_constants.py`**（避混 app/constants）；② `trigger.py`（CompactionTrigger/should_compact_window/CompactionCooldown）与 `prune.py`（prune_tool_outputs/t1_compress_observations/t1_reuse_summary/value_first_prune）**已作为可运行函数库落地**；③ **主链路未接入**——`message_builder.trim_history()`（:277）仍是"增量/绝对值触发 + `_trim_to_budget`"原逻辑，`react_cycle.py:385` 仍是唯一裁剪入口，下方"③ trim_history 委托 compaction"代码为设计稿、尚未实现（C3 待 R4 后由老陈决定是否替换/叠加）。`prune_tool_outputs` 释放 token 估算真实用 `CHARS_PER_TOKEN` 系数而非下方硬编码 `//4`。
+
+**改动文件**：新增 `compaction/trigger.py`、`compaction/compaction_constants.py`、`compaction/prune.py`（3 新增）；修改 `message_builder.py`（1 处委托，设计稿未实现）。
 
 **① 触发判定（按模型窗口 + 增量 + 绝对值）** —— `compaction/trigger.py`：
 
@@ -938,7 +931,7 @@ backend/app/services/agent/compaction/
 """compaction.trigger — 压缩/裁剪触发判定 — 小欧 2026-08-16"""
 from typing import Optional
 
-from app.services.agent.compaction.constants import (
+from app.services.agent.compaction.compaction_constants import (
     COMPACTION_BUFFER, MAX_CONTEXT_RATIO,
 )
 
@@ -965,11 +958,6 @@ class CompactionTrigger:
         return False
 ```
 
-> 三堂会审：
-> - 合规：单一职责（只管"是否触发"），常量注入不硬编码；KISS——三条件一个 `return` 判定，无七绕八绕。
-> - 合理：`usable = context_limit - reserve` 与 opencode `overflow.ts` 同构（14.3 已记录），且 `context_limit` 在 `agent_runner.py:140` 已由 `llm_service.context_limit` 覆盖 → **天然按模型窗口触发，无需新配置读取**。
-> - 关联逻辑：与原 `message_builder` 增/绝对值双条件**语义不冲突**（新增模型窗口条件、复用缓冲常量），不改动原 trigger 行为。
-
 **② 剪枝引擎（清 tool output 保 tool_call）** —— `compaction/prune.py`：
 
 ```python
@@ -979,7 +967,7 @@ class CompactionTrigger:
 """compaction.prune — C3: 剪枝压缩 — 小欧 2026-08-16"""
 from typing import List, Dict
 
-from app.services.agent.compaction.constants import PRUNE_MINIMUM_TOKENS, PRUNE_PROTECT_TOKENS
+from app.services.agent.compaction.compaction_constants import PRUNE_MINIMUM_TOKENS, PRUNE_PROTECT_TOKENS
 
 
 def prune_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
@@ -1000,11 +988,6 @@ def prune_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
         pruned.append(msg)
     return pruned, released
 ```
-
-> 三堂会审：
-> - 合规：不重复 —— prune 与既有 `_trim_to_budget`（删消息）**两级语义**，prune 清输出、trim 删消息，可叠加不重复；SRP 单一职责（一个函数只做"清 tool output"）。
-> - 合理：`released = len//4` 沿用本地 `_estimate_tokens()` 同款纯数学估算（`CHARS_PER_TOKEN`），零外部依赖。
-> - 关联逻辑：`_pruned` 标记需在 `prepare_messages_for_llm()` 组装**前**剥离（防泄漏到 LLM 请求），与现有 `_temp_*` 剥离同段处理（见下方 message_builder diff）。
 
 **③ message_builder.py 委托改造（唯一入口不变）** —— `message_builder.py`：
 
@@ -1039,11 +1022,6 @@ def prune_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
                 msg.pop(_k, None)
 ```
 
-> 三堂会审：
-> - 合规：**唯一裁剪入口不变**（`react_cycle.py:350` 仍调 `trim_history`），外部契约零改动 —— 不 backward、无并发竞争点。
-> - 合理：剪枝在 `_trim_to_budget` 之前（先清输出腾空间，实在不够才删消息）—— 保决策链优先于删消息，符合 14.8 推荐顺序（剪枝第一道）。
-> - 关联逻辑：剪枝后仍在**同一函数**内回退 `_trim_to_budget`，保证不因剪枝引入越界；`_pruned` 与 `_temp_*` 同段剥离，与现有临时标记处理完全一致（增强不退化）。
-
 #### 14.9.4 C4 锚定摘要压缩法 diff（Anchored Summary，语义级，一次 LLM）
 
 > **适用场景/场合**：① 长任务跨多轮需保决策链；② 续聊任务（linked）上下文链压缩；③ 决策链关键、可接受一次 LLM 成本；④ 需老陈定夺放开 R4 零 LLM 原则后启用。
@@ -1065,57 +1043,19 @@ SUMMARY_TEMPLATE = """将 messages 归档为固定结构 Markdown 摘要:
 - Critical Context: 不可或缺的上下文(文件路径/关键数据)
 - Relevant Files: 涉及文件清单
 若已有 previousSummary, 请增量合并(保留已有结论, 追加新发现), 不重复不遗漏。"""
+
 ```
 
-> 三堂会审：合规 —— 模板单一职责（只定义结构）；合理 —— 结构对应 opencode anchored 六段（14.3），且提供决策段兜底 History Memory 语义；关联逻辑 —— 与 history_mem 的决策段**互补不冲突**（摘要归档整段历史，memory 注入单轮决策链）。
+> **落地前置（需北京老陈定夺）**：C4 引入一次 LLM 调用，触及项目"R4 零 LLM 成本原则"。落地前需老陈确认放开 R4。
 
-**② 锚定摘要引擎（调 LLM，不破坏原库）** —— `compaction/summary.py`：
+> **【S5 运行代码已落地 2026-08-17 小健】真实签名/协议已按本地代码修正**（见 14.9.7 落地实施情况）：`generate_anchored_summary(llm_agent, messages, previous_summary=None) -> str`（首参为 agent 对象，非 llm_client）；真实调用协议为 `call_llm_with_fallback(agent=llm_agent, messages=feed, openai_tools=None)` async-generator 产 `("response", resp)` tuple，文本在 `resp["content"]`；`tools=None` 走 Text 模式，tool 输出截断 `SUMMARY_FEED_MAX_CHARS` 喂 LLM、原库完整。运行代码落地于 `backend/app/services/agent/compaction/summary.py`。
 
-```python
-# -*- coding: utf-8 -*-
-# 编辑历史:
-# 2026-08-16 小欧 新增: C4 锚定摘要引擎(一次 LLM, 喂截断输出, 原库完整)
-"""compaction.summary — C4: 锚定摘要压缩 — 小欧 2026-08-16"""
-from typing import List, Dict, Optional
+#### 14.9.5 落地设计要点对照（两方法落地 diff）
 
-from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
-
-
-async def generate_anchored_summary(llm_client, messages: List[Dict],
-                                    previous_summary: Optional[str] = None) -> str:
-    """一次 LLM 调用产出锚定摘要 — 小欧 2026-08-16
-
-    tools=None 走 llm_stream Text 模式; 喂给 LLM 的 tool 输出截断 2000 字符(防再撑爆),
-    原始 messages 完整保留(list 不变), 仅生成文本摘要返回。自动续跑由上层 react_cycle 发 Continue。
-    """
-    from app.services.agent.llm_stream import call_llm_with_fallback
-    feed = []
-    for msg in messages:
-        if msg.get("role") == "tool":
-            c = str(msg.get("content", ""))[:2000]
-            feed.append({**msg, "content": c})
-        else:
-            feed.append(msg)
-    prompt = SUMMARY_TEMPLATE + (f"\npreviousSummary:\n{previous_summary}" if previous_summary else "")
-    feed = [{"role": "system", "content": prompt}, *feed]
-    async for _typ, data in call_llm_with_fallback(agent=llm_client, messages=feed, openai_tools=None):
-        pass
-    return str(getattr(data, "get", lambda k: None)("content", "") or data)   # 简化示意: 取末次 response content
-```
-
-> 三堂会审：
-> - 合规：SRP（只生成摘要）；复用 `call_llm_with_fallback`（已有 LLM 链路，**不重造**，复用优先）；不破坏原库（list 不变 / 仅构造 feed 新列表）。
-> - 合理：喂 LLM 截断 2000 字符、原始输出完整存库 —— 同 opencode `processor.process` 的"截断喂、完整存"（14.3），防二次胀窗。
-> - 关联逻辑：`tools=None` → Text 模式推断 `tool_choice=None`（llm_stream.py:140），不触发 FC，天然适合纯摘要调用；`previous_summary` 锚定增量，对应续聊链（linked）。
-
-> **落地前置（需北京老陈定夺）**：C4 引入一次 LLM 调用，触及项目"R4 零 LLM 成本原则"。落地前需老陈确认放开 R4（可在 analysis 阶段决策，本章仅给出 diff 方案，不擅自改运行配置）。
-
-#### 14.9.5 三堂会审总结表（两方法落地 diff）
-
-| 审查项 | C3（剪枝） | C4（锚定摘要） |
+| 设计要点 | C3（剪枝） | C4（锚定摘要） |
 |--------|--------------|------------------|
-| 合规（10 大规范） | SRP 每函数一件事；DRY 复用 `_estimate_tokens`/`_trim_to_budget` 兜底；KISS 三条件单判定；不 backward（唯一入口不变） | SRP 只生成摘要；复用 `call_llm_with_fallback`；不 backward（原库完整） |
-| 合理（最优雅直线） | 先剪枝（清输出）→ 仍超再删消息，两级清晰；`context_limit` 已注入免新配置 | 截断喂 + 完整存，一次 LLM；Text 模式天然适配 |
+| 单一职责（10 大规范） | SRP 每函数一件事；DRY 复用 `_estimate_tokens`/`_trim_to_budget` 兜底；KISS 三条件单判定；不 backward（唯一入口不变） | SRP 只生成摘要；复用 `call_llm_with_fallback`；不 backward（原库完整） |
+| 逻辑直线 | 先剪枝（清输出）→ 仍超再删消息，两级清晰；`context_limit` 已注入免新配置 | 截断喂 + 完整存，一次 LLM；Text 模式天然适配 |
 | 关联逻辑（增强不退化） | 唯一裁剪入口 `react_cycle:350` 不变；`_pruned` 同 `_temp_*` 段剥离 | 决策段互补 memory；previousSummary 支持续聊链 |
 | 目录归属（老陈拍板） | 统一 `compaction/` 层，`message_builder` 委托 | 统一 `compaction/` 层，LLM 链路复用 llm_stream |
 
@@ -1125,7 +1065,7 @@ async def generate_anchored_summary(llm_client, messages: List[Dict],
 
 > **编写人**：小欧
 > **编写时间**：2026-08-16 15:21:13
-> **编写动机**：北京老陈 2026-08-16 指示——在 4 主干方法（M1 历史记忆注入法 / C3 剪枝压缩法 / C4 锚定摘要压缩法 / T1 紧急裁剪法）之外，再研究更多可取思路（含 trim 新方法），写出**更好、可落地的函数**，归并到对应主干方法的策略实现或独立支撑函数库，不再设平级编号。每个函数均基于本地真实代码、经三堂会审（合规/合理/关联逻辑）。
+> **编写动机**：北京老陈 2026-08-16 指示——在 4 主干方法（M1 历史记忆注入法 / C3 剪枝压缩法 / C4 锚定摘要压缩法 / T1 紧急裁剪法）之外，再研究更多可取思路（含 trim 新方法），写出**更好、可落地的函数**，归并到对应主干方法的策略实现或独立支撑函数库，不再设平级编号。每个函数均基于本地真实代码，归入 `compaction/` 模块。
 
 **归并总览（候选函数 → 归属主干 / 支撑库，不再设平级编号）**：
 
@@ -1156,7 +1096,7 @@ async def generate_anchored_summary(llm_client, messages: List[Dict],
 # 编辑历史:
 # 2026-08-16 小欧 新增: T1 升级替代, 复用工具层已有 llm_data.summary 做一行摘要
 # 2026-08-16 小欧 修正: tool 消息字典无独立 summary 字段(已拼进 content),
-#                       需先在 add_tool_result stash _summary, 此处复用 _summary(三堂会审去臆测)
+#                       需先在 add_tool_result stash _summary, 此处复用 _summary(去臆测)
 """compaction.t1_reuse — 复用工具 summary 的 t1_compress_observations 摘要法 — 小欧 2026-08-16"""
 from typing import List, Dict
 
@@ -1166,8 +1106,8 @@ def t1_reuse_summary(messages: List[Dict]) -> List[Dict]:
 
     前置(必做, 见下方改动点): tool 消息构造时把 llm_data.summary 存为 _summary 字段。
     依据本地真实代码: observation_formatter.py:603/627 已将 summary 拼进 content 文本,
-    tool 消息字典本身只有 role/tool_call_id/content, 无独立 summary 字段 —— 此为三堂会审
-    修正(杜绝臆测不存在的 msg["summary"])。复用 _summary(各 tool_*_tools.py 已产出一行语义摘要),
+    tool 消息字典本身只有 role/tool_call_id/content, 无独立 summary 字段, 杜绝臆测不存在的 msg["summary"]。
+    复用 _summary(各 tool_*_tools.py 已产出一行语义摘要),
     不写 per-tool 模板(DRY, 消除 14.3 指出的 C1 逐工具模板过度设计)。
     """
     for msg in messages:
@@ -1183,11 +1123,6 @@ def t1_reuse_summary(messages: List[Dict]) -> List[Dict]:
 
 > **前置改动点（基于本地代码，必须随本法一起落地）**：
 > - `message_builder.add_tool_result()`（:124）增加 `summary: str = ""` 形参，构造字典时写入 `"_summary": summary`（含 line 139-143 兜底分支同步加）；由 handler 调 `add_observation` 处把 `llm_data.summary` 透传（action_handler 已有 `llm_data.summary`，observation_formatter.py:603）。
-
-> 三堂会审：
-> - 合规：**复用优先**（AGENTS 1.3）——复用工具层已产出的 `llm_data.summary`，禁止局部重造模板；消除 14.3 指出的"C1 逐工具模板属过度设计"；前置改动仅在构造点 stash 一个字段，不破坏 add_tool_result 既有契约（无 backward）。
-> - 合理：一条 `if` 取已 stash 的 `_summary`，零模板维护；比 14.9 prune 更轻（prune 清空 content，本法保留一行语义）；长度保护 `len(raw) > len(summ)` 避免小输出反向膨胀。
-> - 关联逻辑：与现有 `_compressed` 防重复压缩标记**完全兼容**（沿用现有标记）；`_raw` 落库不破坏原库（对应 14.3 "压缩截断不破坏原库"）；`_summary` 属内部标记，须在 `prepare_messages_for_llm()` 与 `_compressed`/`_temp_*` 同段剥离（沿用 14.9.3 ③ 的剥离逻辑，增强不退化）。
 
 **C4 策略实现函数**（归 C4 锚定摘要压缩法）
 
@@ -1225,10 +1160,7 @@ async def generate_chunked_summary(llm_client, new_block: List[Dict],
     return str(getattr(data, "get", lambda k: None)("content", "") or data)
 ```
 
-> 三堂会审：
-> - 合规：复用 `SUMMARY_TEMPLATE` / `call_llm_with_fallback`（DRY）；不 backward（C4 仍可全量版并存）。
-> - 合理：增量块摘要，成本可控，契合老陈"成本敏感"诉求；与 History Memory 续聊链同理（增量不丢）。
-> - 关联逻辑：`new_block` 由 assembler 切分（tail_start 之后的增量）；`previous_summary` 落库锚定（14.9.4）。
+> **【S5 运行代码已落地 2026-08-17 小健】真实签名/协议修正**（见 14.9.7）：上方为设计稿伪代码；实际落地于 `backend/app/services/agent/compaction/summary.py`。真实签名 `generate_chunked_summary(llm_agent, new_block, previous_summary=None)`（首参为 **agent 对象**，非 llm_client），真实协议复用统一 `_extract_response_content`（`call_llm_with_fallback(agent=llm_agent, messages=feed, openai_tools=None)` async-generator 产 `("response", resp)` tuple，文本在 `resp["content"]`），不再用上方 `getattr(data,...)` 取数。
 
 **T1 策略实现函数**（归 T1 紧急裁剪法）
 
@@ -1263,7 +1195,7 @@ def _value_weight(msg: Dict) -> int:
 
 def value_first_prune(messages: List[Dict], budget_tokens: int) -> List[Dict]:
     """按价值权重保留, 预算内先丢低价值 tool 输出 — 小欧 2026-08-16"""
-    # 用 enumerate 记原始下标, 避免 dict 重复导致 index() 错位(三堂会审: 关联逻辑保时序)
+    # 用 enumerate 记原始下标, 避免 dict 重复导致 index() 错位(保时序)
     indexed = list(enumerate(messages))
     kept_idx = []
     used = 0
@@ -1274,11 +1206,6 @@ def value_first_prune(messages: List[Dict], budget_tokens: int) -> List[Dict]:
     # 按原始下标升序还原(保 LLM 阅读时序)
     return [messages[i] for i in sorted(kept_idx)]
 ```
-
-> 三堂会审：
-> - 合规：SRP（只做"按价值排序取舍"）；不 backward（可与剪枝/T1 组合，非替换保尾机制）。
-> - 合理：权重表直观，先丢 tool 输出保 thought/answer，直击"丢值钱的留笨重的"痛点（14.1 问题 2）。
-> - 关联逻辑：`_history_mem`/`system` 高权重与 3.4 保护机制**同频**；`system` 不丢保证指令完整；不破坏 FC 配对需配合 `trim_orphan_pairs_proactive` 前置修剪。
 
 **支撑函数库**（独立支撑函数，供主干方法组合调用）
 
@@ -1307,11 +1234,6 @@ def should_compact_window(current_tokens: int, context_limit: int,
     return False
 ```
 
-> 三堂会审：
-> - 合规：与 14.9 trigger 三条件**不重复**（本法补"消息数兜底"这一维）；KISS（一个 return 判定）。
-> - 合理：直击 12.2 已识别风险（大窗口不触发），`max_msgs` 默认 80 给长任务兜底。
-> - 关联逻辑：`context_limit` 已由 `agent_runner.py:140` 注入，零新配置；`reserve` 复用 `COMPACTION_BUFFER` 语义一致。
-
 ##### `CompactionCooldown`（原 K2 触发冷却节流法，归支撑函数库，Cooldown Throttle）
 
 > **归属/场合**：① 启用 C4（LLM 压缩）时防连续轮次反复烧 LLM；② 压缩后冷却若干轮再评估；③ 与防抖动（节省率）互补（一个看时间间隔、一个看节省率）。
@@ -1338,11 +1260,6 @@ class CompactionCooldown:
     def mark_compacted(self) -> None:
         self._since_last = 0
 ```
-
-> 三堂会审：
-> - 合规：单一职责（只管冷却）；与 14.9 trigger 解耦（trigger 管"是否该"，cooldown 管"刚压过没"）。
-> - 合理：冷却 2 轮足够让压缩生效后再评估，避免 C4 每轮烧 LLM。
-> - 关联逻辑：`mark_compacted()` 在 trim_history 委托 compaction 后调用，与 `_t3_savings_pct` 防抖（5.4）**互补不冲突**（一个看节省率、一个看时间间隔）。
 
 ##### `trim_orphan_pairs_proactive`（原 K3 孤儿FC对前置修剪法，归支撑函数库，Pre-Pair Trim）
 
@@ -1376,12 +1293,48 @@ def trim_orphan_pairs_proactive(messages: List[Dict]) -> List[Dict]:
     return result
 ```
 
-> 三堂会审：
-> - 合规：复用现有 `_trim_fc_pairs` 思路（Hermes `_sanitize_tool_pairs` 借鉴），前置化不重造；SRP（只管配对）。
-> - 合理：配对残留是 LLM API 400 根因，前置比收尾更稳。
-> - 关联逻辑：与 C3 prune（清 tool output 不删消息，配对天然在）、value_first_prune（可能删 tool）**协同**——value_first_prune 删 tool 后由本法清孤儿 assistant，闭环。
-
 **14.9.6 选型建议**：`t1_reuse_summary` 直接替代 t1_compress_observations 逐工具模板（DRY 升级，强烈推荐）；`value_first_prune` 与 T1 组合保真；`should_compact_window` 必配（解决大窗口不触发）；`generate_chunked_summary` 长任务用 C4 时替代全量版；`CompactionCooldown` 启用 C4 时必配（控成本）；`trim_orphan_pairs_proactive` 凡做删除式裁剪必配。以上函数与 C3/C4/T1 共同构成 `compaction/` 模块完整能力集，不再设平级方法编号。
+
+#### 14.9.7 S5 运行代码落地实施情况（小健 2026-08-17 10:02:25）
+
+> 本章 14.9.1~14.9.6 为落地方案；本节记录 **S5 运行代码已实际落地**的最终实施情况（对应当前本地真实代码，非方案示意）。
+>
+> **接入边界（本地核实 2026-08-17 小健）**：`compaction/` 8 文件全模块落地为**可运行函数库**，但**主链路接入状态分两条**——① **C4 锚定摘要已接入**：`initialize_run_state._maybe_compact_injected_history` 置 `_needs_compact` + `react_cycle` 在 start 装配后、while 前 `await _compact_injected_history` 回填摘要（`COMPACTION_ENABLED=False` 时不触发，行为同现状）；② **C3 剪枝（prune_tool_outputs/should_compact_window/CompactionTrigger）目前仅在 `prune.py`/`trigger.py` 作为函数库落地，未接入 `trim_history` 主链路**——`message_builder.trim_history()`（:277）仍走"增量/绝对值触发 + `_trim_to_budget`"，`react_cycle.py:385` 仍是唯一裁剪入口，14.9.3③ 的"trim_history 委托 compaction"为设计稿、尚未实现。C3 待 R4 落实后由老陈决定是否替换/叠加进 trim_history 委托链。
+
+**① 目录树落地（8 文件全落地）** —— `backend/app/services/agent/compaction/`：
+
+| 文件 | 落地状态 | 实际承载函数 |
+|------|---------|-------------|
+| `compaction_constants.py` | ✅ 已落地 | `COMPACTION_ENABLED` / `MAX_CONTEXT_TOKENS` / `MAX_CONTEXT_RATIO` / `COMPACTION_BUFFER` / `CHARS_PER_TOKEN`（re-export 全局 app/constants，DRY）/ `TRIGGER_T1_RATIO` / `TRIGGER_T3_RATIO` / `TRIM_TARGET_RATIO` / `KEEP_TAIL_ROUNDS` / `PRUNE_MINIMUM_TOKENS` / `PRUNE_PROTECT_TOKENS` / `PASS3_ARGS_THRESHOLD` / `PASS3_ARG_MAX_CHARS` / `SUMMARY_FEED_MAX_CHARS` / `TRIGGER_MAX_MSGS` / `COOLDOWN_ROUNDS` / `TAIL_TOKEN_RATIO` / `TAIL_TOKEN_MIN` / `TAIL_TOKEN_MAX` / `SPLIT_TURN_MAX_ASSISTANT_CHARS` / `ASSEMBLE_KEEP_TAIL` |
+| `trigger.py` | ✅ 已落地 | `CompactionTrigger` / `should_compact_window` / `CompactionCooldown` |
+| `prune.py` | ✅ 已落地 | `prune_tool_outputs` / `t1_reuse_summary` / `t1_compress_observations` / `value_first_prune` |
+| `summary.py` | ✅ 已落地 | `generate_anchored_summary` / `generate_chunked_summary` / `_extract_response_content` |
+| `summary_prompt.py` | ✅ 已落地 | `SUMMARY_TEMPLATE` |
+| `split_turn.py` | ✅ 已落地 | `preserve_recent_budget` / `find_tail_start` / `split_half_turn` |
+| `assembler.py` | ✅ 已落地 | `split_history_window` / `extract_new_block` / `inject_compressed_summary` / `trim_orphan_pairs_proactive` |
+| `__init__.py` | ✅ 已落地 | 导出以上 17 个函数（`__all__`） |
+
+> 目录树按 14.9.2 规划落地；`constants.py` 落地时更名为 `compaction_constants.py`（北京老陈 2026-08-17 拍板，避免与全局 app/constants 混淆，全引用同步）。`split_turn.py`/`assembler.py` 由 v5.9 标注的"规划占位待补代码"已补全为真实可运行代码（见 ②）。
+
+**② 保尾切分与装配线（新增补全，真实代码）** —— `split_turn.py` / `assembler.py`（14.9.2 目录树【待补代码】已落地）：
+
+- `split_turn.py`：`preserve_recent_budget(usable_tokens)` = `min(TAIL_TOKEN_MAX, max(TAIL_TOKEN_MIN, usable_tokens * TAIL_TOKEN_RATIO))`（依 14.3.2 select）；`find_tail_start`（保尾 token 预算下找最后一组 FC 配对起点）；`split_half_turn`（后半轮劈分防拆散 FC 对）。
+- `assembler.py`：`split_history_window`（按 tail_start 切出 old_head / tail_part / absolute_tail_start）；`extract_new_block`（取 tail_start 之后增量，供 C5 `generate_chunked_summary` 消费）；`inject_compressed_summary`（保 system + 摘要 + 最新 task，不回写原参数 list 不破坏原库）；`trim_orphan_pairs_proactive`（FC 配对前置修剪，与 value_first_prune 协同闭环——删 tool 后清孤儿 assistant）。
+- 真实实现见 `backend/app/services/agent/compaction/split_turn.py` / `assembler.py`。
+
+**③ C4 主链路接入（真实代码）** —— C4 锚定摘要压缩已接入主链路：
+
+- `initialize_run_state.py:132`：历史注入后调 `_maybe_compact_injected_history(agent)`（:137）：仅当 `COMPACTION_ENABLED` 且历史超窗（`_estimate_tokens > MAX_CONTEXT_TOKENS × MAX_CONTEXT_RATIO`）置 `agent._needs_compact=True`；否则置 `False`（R4 未放开行为同现状，零退化）。
+- `react_cycle.py:604-605`：start 装配后、while 前 `if getattr(agent, "_needs_compact", False): await _compact_injected_history(agent)`。
+- `react_cycle.py:132-158 _compact_injected_history`：调 `await generate_anchored_summary(agent, history)`；成功则以 assistant 消息回填 `history[:1] + [{"role":"assistant","content":summary}] + history[-1:]`（保 system + 摘要 + 最新 task）；摘要失败/为空则原样保留原历史（零退化）。
+- 真实协议：`summary.py:_extract_response_content`（:20）按 `call_llm_with_fallback(agent=llm_agent, messages=feed, openai_tools=None)` async-generator 产 `("response", resp)`，文本取 `resp["content"]`（Text 模式，见 llm_stream.py _build_answer_response:126-129）。
+
+**④ 前置改动（stash `_summary` + 剥离补齐，真实代码）**：
+
+- `message_builder.add_tool_result()`（:124）增加 `summary: str = ""` 形参，构造字典写入 `"_summary": summary`（含 :139-143 兜底分支同步）；handler 调 `add_observation` 处把 `llm_data.summary` 透传（action_handler 已有，observation_formatter.py:603）。stash 为 `t1_reuse_summary` 提供前置，未透传则 `_summary` 不写入、空转安全。
+- `prepare_messages_for_llm` 剥离补齐：剥离循环扩展 `_COMPACTION_TEMP_KEYS = ("_summary","_pruned","_compressed","_raw","_truncated")`，与 `_temp_*` 同段剥离，防 compaction 内部标记泄漏到 LLM 请求（未启用时字段不存在，纯剥离零影响）。
+
+**⑤ 验证**：py_compile 全通过；17 函数导出/导入 OK；触发边界/冷却/剪枝/复用/分块/装配/孤儿修剪行为正确；标记剥离零泄漏；`test_message_builder` 21 passed（无退化）。R4 待北京老陈拍板放开后置 `COMPACTION_ENABLED=True` 即 C4 生效；放开前行为同现状。
 
 ---
 
@@ -1389,12 +1342,14 @@ def trim_orphan_pairs_proactive(messages: List[Dict]) -> List[Dict]:
 
 | 版本 | 时间 | 变更人 | 变更内容 |
 |------|------|--------|---------|
+| v5.13 | 2026-08-17 10:20:56 | 小健 | **本地代码实施情况核对补全（北京老陈 2026-08-17 指令：本地代码实施情况更新到文档）**——①**补 14.9.7 接入边界**：`compaction/` 8 文件为**可运行函数库**，主链路接入分两条——C4 锚定摘要已接入（initialize_run_state 置 `_needs_compact` + react_cycle `_compact_injected_history` await 回填，`COMPACTION_ENABLED=False` 不触发）；**C3 剪枝（prune/trigger）未接入 `trim_history` 主链路**（message_builder.trim_history:277 仍走增量/绝对值触发 + `_trim_to_budget`，react_cycle:385 仍是唯一裁剪入口，14.9.3③ 委托为设计稿）；②**补 14.9.6 `generate_chunked_summary` 真实签名**（首参 agent 对象非 llm_client，复用 `_extract_response_content` 取 `resp["content"]`）；③**补 14.9.2 `compaction_constants.py` 实际承载常量补全**（TRIGGER_T1_RATIO/TRIGGER_T3_RATIO/TRIM_TARGET_RATIO/KEEP_TAIL_ROUNDS/PASS3_ARGS_THRESHOLD/PASS3_ARG_MAX_CHARS/SPLIT_TURN_MAX_ASSISTANT_CHARS/ASSEMBLE_KEEP_TAIL 等）；④**14.9.2 目录树更新**：原 `constants.py` 更名 `compaction_constants.py`、`__init__.py` 导出补全 17 项、`split_turn.py`/`assembler.py` 由"【待补代码】"标注改为"已落地+实际函数"；⑤**14.9.1 现状盘点行号精确化**（trim_history 265→277、MAX_CONTEXT_TOKENS 84→83、last_total_tokens 85→91、_total_chars 467→480、_estimate_tokens 484→496、_trim_to_budget 336→348、prepare_messages_for_llm 233→241、agent_runner 139-140→146-147、react_cycle 350→385、393→428）；⑥**14.9.3 伪代码 import 修正**：`compaction.constants` → `compaction.compaction_constants`（与真实名对齐）+ 落地差异说明。 |
+| v5.12 | 2026-08-17 10:02:25 | 小健 | **S5 运行代码落地实施情况补回 + 全文档审查措辞清理（北京老陈 2026-08-17 指令：正文及编辑历史中相关复核过程说明删除，复核结果不出现在设计文档；再补回 S5 实施情况到文档）**——①**审查措辞清理**：正文全部复核过程说明块、前置结论/关键事实/放置依据/代码注释中复核字样、14.9.5 表（"复核总结表"→"落地设计要点对照"，各行措辞调整）、14.9.6 编写说明、编辑历史 v5.4/v5.5/v5.6 行中复核字样全部删除/改写，改为非复核措辞（章节结构、版本行、其余内容保留）；②**新增 14.9.7 S5 落地实施情况**：目录树 8 文件全落地（compaction_constants 等）、split_turn/assembler 待补代码已落地（保尾切分/装配线）、C4 主链路接入（initialize_run_state._maybe_compact_injected_history 置 `_needs_compact` + react_cycle._compact_injected_history await 回填 `[:1]+[摘要]+[-1:]`）、add_tool_result stash `_summary` + prepare_messages_for_llm 剥离补齐、真实协议（`call_llm_with_fallback(agent,messages,openai_tools)` 产 `("response",resp)` 取 `resp["content"]`）；③**14.9.4 落地前置补真实签名说明**（`generate_anchored_summary(llm_agent,...)`，首参 agent 对象）。代码已落地（见 v2.86/[1]、commit 943a77917）；R4 待放开后置 COMPACTION_ENABLED=True 即 C4 生效。 |
 | v5.9 | 2026-08-16 15:41:02 | 小欧 | 14.9.2 目录树精确化(老陈 2026-08-16 核对: 并非所有写出函数都在原目录树里): 每文件行尾标注实际承载函数; value_first_prune 归 prune.py(T1 保真策略); trim_orphan_pairs_proactive 归 assembler.py(配对修剪, K3); should_compact_window/CompactionCooldown 标入 trigger.py; 修正 __init__ 笔误 CessionManager→导出各函数; 注明 split_turn.py/assembler.py 仅规划占位待补代码; 目录树与 14.9.3/14.9.4/14.9.6 实际函数落点一一对应 |
 | v5.8 | 2026-08-16 15:21:13 | 小欧 | 编号重构：方法体系从"11 个平级方法"重构为"4 主干方法 + 策略实现函数 + 支撑函数库"。保留 4 主干：M1 历史记忆注入法 / C3 剪枝压缩法 / C4 锚定摘要压缩法 / T1 紧急裁剪法；降级归并 7 项：原 C1 工具摘要压缩法→C3 轻量实现函数 t1_compress_observations（第五章）、原 C2 摘要复用压缩法→C3 策略实现函数 t1_reuse_summary（DRY 升级）、原 C5 增量块式锚定摘要法→C4 策略实现函数 generate_chunked_summary、原 T2 知识密度优先裁剪法→T1 策略实现函数 value_first_prune、原 K1 动态窗口触发法→支撑函数 should_compact_window、原 K2 触发冷却节流法→支撑函数 CompactionCooldown、原 K3 孤儿FC对前置修剪法→支撑函数 trim_orphan_pairs_proactive；14.9.6 整章重构为"支撑函数库与策略实现（归并到 4 主干方法）"四块，6 法总览表改为归并总览表，正文交叉引用按新归属改写；代码标识符（TRIGGER_T1_RATIO/TRIGGER_T3_RATIO/KEEP_TAIL_ROUNDS/PASS3_*/HISTORY_MEM_*/MAX_CONTEXT_TOKENS 等）保持不变 |
 | v5.7 | 2026-08-16 14:40:17 | 小欧 | 全文方法统一编号命名(C功能域前缀+序号) + 各方法头部加适用场景：C1工具摘要压缩法(原T1)/C2摘要复用压缩法(原14.9.6①)/C3剪枝压缩法(原方法一)/C4锚定摘要压缩法(原方法二)/C5增量块式锚定摘要法(原14.9.6④)/T1紧急裁剪法(原T3)/T2知识密度优先裁剪法(原14.9.6②)/M1历史记忆注入法(原History Memory)/K1动态窗口触发法(原14.9.6③)/K2触发冷却节流法(原14.9.6⑤)/K3孤儿FC对前置修剪法(原14.9.6⑥)；名称名副其实、交叉引用统一编号、各方法定义段加适用场景/场合段 |
-| v5.6 | 2026-08-16 14:35:58 | 小欧 | 14.9.6 备选方法库三堂会审修正（北京老陈 2026-08-16 要求新方法务必满足"基于本地真实代码+经得起三堂会审+统一compaction/目录"三点要求）：①修正方法①——核实 observation_formatter.py:603/627 已把 summary 拼进 content, tool 消息字典无独立 summary 字段, 原 `msg.get("summary")` 属臆测; 改为先 stash `_summary`(add_tool_result:124 加形参+handler 透传 llm_data.summary)再复用, 去臆测保合规; ②方法②原始顺序还原由 messages.index(m) 改 enumerate 下标(防重复 dict 错位) |
-| v5.5 | 2026-08-16 14:31:58 | 小欧 | 新增 14.9.6 "备选方法库（更多可取思路 + 更优函数，供后续选型）"：①工具层 summary 复用摘要法(复用 llm_data.summary 替代 C1 模板, DRY) ②知识密度优先保留法(按价值权重替保最近N轮) ③动态窗口触发完善法(解决900K大窗口不触发+消息数兜底) ④增量块式锚定摘要法(方法二降本变体, 只摘要新增块) ⑤触发冷却节流法(压缩冷却防抖深化) ⑥孤儿 FC 对前置修剪法(每次裁剪后立即保配对); 六法均基于本地真实代码行号 + 三堂会审(合规/合理/关联逻辑) + 归入 compaction/ 模块; 附选型建议 |
-| v5.4 | 2026-08-16 14:24:34 | 小欧 | 新增 14.9 "基于本地现有代码的落地 diff（含统一压缩/裁剪模块目录规划）"（北京老陈 2026-08-16 拍板：建立统一目录作为消息压缩/裁剪的独立模块架构层）：①14.9.1 代码现状盘点——核实本地真实代码行号（message_builder.trim_history:265 / MAX_CONTEXT_TOKENS:84 / last_total_tokens:85 / _trim_to_budget:336 / react_cycle.trim_history 唯一入口:350 / agent_runner:140 已按模型窗口 / llm_stream:133 call_llm_stream，**确认 T1/history_mem 代码未实现、仅设计稿**）；②14.9.2 新建 `compaction/` 目录（__init__/constants/trigger/prune/summary/summary_prompt/split_turn/assembler），SRP/OCP/ISP/分布式层三堂会审依据，trim_history 仍为唯一入口委托 compaction、_trim_to_budget 保底；③14.9.3 方法一减枝 diff（trigger 触发三条件 + prune 清 tool output 保 tool_call + message_builder 委托改造，唯一入口不变、_pruned 同段剥离）；④14.9.4 方法二锚定摘要 diff（SUMMARY_TEMPLATE 六段固定结构 + generate_anchored_summary 截断喂/原库完整 + previousSummary 锚定，前置需老陈定夺放开 R4 零 LLM 原则）；⑤14.9.5 三堂会审总结表；落地顺序方法一立即可做 → 方法二定夺 R4 后接入 → E2E 实测 |
+| v5.6 | 2026-08-16 14:35:58 | 小欧 | 14.9.6 备选方法库修正（北京老陈 2026-08-16 要求新方法务必满足"基于本地真实代码+统一compaction/目录"）：①修正方法①——核实 observation_formatter.py:603/627 已把 summary 拼进 content, tool 消息字典无独立 summary 字段, 原 `msg.get("summary")` 属臆测; 改为先 stash `_summary`(add_tool_result:124 加形参+handler 透传 llm_data.summary)再复用, 去臆测; ②方法②原始顺序还原由 messages.index(m) 改 enumerate 下标(防重复 dict 错位) |
+| v5.5 | 2026-08-16 14:31:58 | 小欧 | 新增 14.9.6 "备选方法库（更多可取思路 + 更优函数，供后续选型）"：①工具层 summary 复用摘要法(复用 llm_data.summary 替代 C1 模板, DRY) ②知识密度优先保留法(按价值权重替保最近N轮) ③动态窗口触发完善法(解决900K大窗口不触发+消息数兜底) ④增量块式锚定摘要法(方法二降本变体, 只摘要新增块) ⑤触发冷却节流法(压缩冷却防抖深化) ⑥孤儿 FC 对前置修剪法(每次裁剪后立即保配对); 六法均基于本地真实代码行号, 归入 compaction/ 模块; 附选型建议 |
+| v5.4 | 2026-08-16 14:24:34 | 小欧 | 新增 14.9 "基于本地现有代码的落地 diff（含统一压缩/裁剪模块目录规划）"（北京老陈 2026-08-16 拍板：建立统一目录作为消息压缩/裁剪的独立模块架构层）：①14.9.1 代码现状盘点——核实本地真实代码行号（message_builder.trim_history:265 / MAX_CONTEXT_TOKENS:84 / last_total_tokens:85 / _trim_to_budget:336 / react_cycle.trim_history 唯一入口:350 / agent_runner:140 已按模型窗口 / llm_stream:133 call_llm_stream，**确认 T1/history_mem 代码未实现、仅设计稿**）；②14.9.2 新建 `compaction/` 目录（__init__/constants/trigger/prune/summary/summary_prompt/split_turn/assembler），SRP/OCP/ISP/分布式层依据，trim_history 仍为唯一入口委托 compaction、_trim_to_budget 保底；③14.9.3 方法一减枝 diff（trigger 触发三条件 + prune 清 tool output 保 tool_call + message_builder 委托改造，唯一入口不变、_pruned 同段剥离）；④14.9.4 方法二锚定摘要 diff（SUMMARY_TEMPLATE 六段固定结构 + generate_anchored_summary 截断喂/原库完整 + previousSummary 锚定，前置需老陈定夺放开 R4 零 LLM 原则）；⑤14.9.5 落地设计要点对照；落地顺序方法一立即可做 → 方法二定夺 R4 后接入 → E2E 实测 |
 | v5.3 | 2026-08-16 14:16:56 | 小欧 | 14.8.4 定案两方法命名与适用场景（北京老陈 2026-08-16 定案：给 P0/P1 分别命名名副其实的方法名，明确各自适用场景，可灵活选用组合）：**方法一=剪枝压缩法**（Prune Compaction，规则级：按模型窗口触发 + 通用清零旧 tool output 保 tool_call + 保尾 token 预算+splitTurn，零 LLM 零成本，适用：简单/单轮任务、高频轮次增长、成本敏感、新任务 independent）；**方法二=锚定摘要压缩法**（Anchored Summary Compaction，语义级：一次 LLM 调用输出固定结构 Markdown + previousSummary 锚定增量 + 不破坏原库 + 自动续跑，适用：长任务跨多轮、续聊任务 linked 上下文链、决策链关键、可接受一次 LLM 成本）；两方法按场景选型/组合（剪枝第一道零成本兜底→仍超限且需保语义→锚定摘要，opencode prune→compaction 递进），History Memory 全程保留；互不依赖可独立开关 |
 | v5.2 | 2026-08-16 14:09:18 | 小欧 | 14.8 新增"两种方法对照分析与推荐方法"（北京老陈 2026-08-16 要求对照分析并给推荐，写入本文档）：①14.8.1 一句话定性（我们=纯规则零 LLM / opencode=零 LLM 前置+调 LLM 锚定摘要；精修措辞：我们没用到 agent 参与压缩、opencode 中 agent 是壳 LLM 是芯）；②14.8.2 五层逐层对照表（触发固定比例 vs 按模型窗口 / T1 逐工具模板 vs prune 通用清零 / 无语义压缩 vs anchored LLM 摘要 / History Memory vs 摘要模板决策段 / KEEP3 固定轮数 vs token预算+splitTurn）；③14.8.3 本质差异（纯规则 vs 语义归档）+ 双方长处；④14.8.4 推荐融合式两阶段——P0 立即（触发按模型窗口 + T1→prune 式清零 + 保尾 token预算+splitTurn，纯规则零成本不退化）→ P1 引入 LLM 锚定摘要（放开 R4 零 LLM 原则，需老陈定夺成本，当前/小模型一次调用、anchored 累积、不破坏原库、History Memory 保留作 zero-cost 兜底、压缩后自动续跑）；不推荐纯删删减减或照抄丢掉 History Memory |
 | v5.1 | 2026-08-16 14:04:49 | 小欧 | 14.3.4 补澄清（北京老陈 2026-08-16 确认：压缩核心是 LLM 生成摘要，不能只是 agent）——压缩 = agent 壳（约束层：专用 compaction agent、无工具、权限全 deny、专属提示词 compaction.txt）+ 底层 LLM（生成层：processor.process → llm.stream 一次流式调用产出摘要）；opencode 用专用 agent 组织本次 LLM 调用，摘要文本仍由 LLM 生成 |
