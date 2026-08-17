@@ -25,14 +25,26 @@
   2026-08-17 小健 移址: 自 compaction/ 包内迁至 agent/ 层根(compaction_constants.py)——因 message_builder 导入本文件会
                         触发 compaction/__init__→assembler→split_turn→message_builder 循环导入, 迁出 compaction 包避开
                         __init__ 重链; 全部引用方(start_step/message_builder/compaction 各模块)导入路径同步更新
+  2026-08-17 小健 阈值重构(北京老陈 2026-08-17 定案): ①新增 START_TRIGGER_RATIO=0.5(start超窗=上下文×1/2)与
+                        TRIM_TRIGGER_RATIO=0.75(loop裁剪=上下文×3/4), 删除死值 MAX_CONTEXT_TOKENS=200000 与
+                        MAX_CONTEXT_RATIO=0.8; ②DEFAULT_CONTEXT_LIMIT=262144(256K) 自 service.py:74 迁入为
+                        「未配置 context_limit 时的唯一兜底」, 配置优先否则本默认; ③门限一律自运行时变量(context_limit)
+                        ×比例计算. 引用方(start_step/message_builder/trigger)同步改导入与公式
+  2026-08-17 小健 开关定名开放(北京老陈 2026-08-17 拍板): COMPACTION_ENABLED→START_COMPACTION_ENABLED(仅限 start 超窗
+                        判定使用, 其他任何模块不得引用); 值置 True(放开 R4 锚定摘要); start_step 超窗 gate 同步改名
 """
 # ============================================================
 # A. 压缩/裁剪核心阈值(自 app/constants.py 第4节迁入, 2026-08-17) — 小健
 # ============================================================
-# 意义: 上下文总体 Token 上限(默认值, 配置可覆盖 = MessageBuilder 构造默认/max_tokens)
-MAX_CONTEXT_TOKENS = 200000
-# 意义: 裁剪绝对值安全网触发比例(默认80%, 历史占满此比例即触发)
-MAX_CONTEXT_RATIO = 0.8
+# 意义: LLM 上下文窗口默认上限(未在 model_params.context_limit 配置时兜底)
+#       自 app/services/lifecycle/service.py:74 迁入; 压缩/裁剪以运行时 context_limit(配置优先, 否则本默认)作基准 — 小健 2026-08-17
+DEFAULT_CONTEXT_LIMIT = 262144   # = 256K
+# 意义: start 超窗触发比例(=上下文×1/2, 北京老陈 2026-08-17 定案)——start 一次性注入历史更保守, 门限更低
+#       (start 超窗于此比例即置 _needs_compact 触发 C4 锚定摘要)
+START_TRIGGER_RATIO = 0.5
+# 意义: loop 执行中裁剪触发比例(=上下文×3/4, 北京老陈 2026-08-17 定案)——渐进增长允许更高占用,
+#       历史占满此比例才触发 trim_history / CompactionTrigger 绝对值安全网
+TRIM_TRIGGER_RATIO = 0.75
 # 意义: 输出预留缓冲区(OpenCode 式, 用于增量触发和预算裁剪)
 COMPACTION_BUFFER = 20000
 # 意义: chars→token 换算系数
@@ -42,9 +54,9 @@ TEMP_HISTORY_CHAR_LIMIT = 50000
 
 # ---- C4 接入开关(10.1.8 S5, R4 前置) ———————————————————————————————
 # 意义: 控制 C4 锚定摘要是否接入主链路。False=行为同现状(trim_history 原逻辑), True=历史超窗时 await 摘要回填。
-# 默认值依据: R4「零额外 LLM 调用」原则未放开前必须 False, 防意外烧 LLM; 北京老陈未拍板前保持 False。
-# 可选范围: 仅 False/True 二值; 放开 R4 后置 True 即生效。 — 小健 2026-08-17
-COMPACTION_ENABLED = False
+# 归属: 仅 start 超窗判定(start_step._maybe_compact_injected_history)使用, 限 start 域(北京老陈 2026-08-17 定名)。
+# 默认值依据: R4「零额外 LLM 调用」原则放开, 北京老陈 2026-08-17 拍板置 True。 — 小健 2026-08-17
+START_COMPACTION_ENABLED = True
 
 # ---- 触发比例(C3 轻量/T1 紧急裁剪, [4] 第八章节) ———————————————————————————
 # 意义: TRIGGER_T1_RATIO/compress_long_tool_output 触发阈值; TRIGGER_T3_RATIO/keep_valuable_messages 紧急裁剪最后安全网;

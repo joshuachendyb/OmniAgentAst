@@ -20,6 +20,7 @@
 #   浅拷贝后一并剥离, 与 _temp_* 同段清空, 防泄漏 LLM 请求/污染 wire(对齐 [4] 14.9.3②/14.9.6 C2 剥离要求)。
 # 2026-08-17 - 小健 - compaction 函数改名同步: add_tool_result 注释3处 t1_reuse_summary→use_tool_summary(供 compaction.use_tool_summary 复用/防空转)
 # 2026-08-17 - 小健 - 常量归属迁移(北京老陈驱动): 压缩/裁剪常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 由 app.constants 迁至 app.services.agent.compaction_constants, 导入路径同步改
+# 2026-08-17 - 小健 - 阈值重构(北京老陈 2026-08-17 定案, loop裁剪=上下文×3/4): trim_history 绝对值触发 self.MAX_CONTEXT_TOKENS(skip覆盖后运行时窗口)×TRIM_TRIGGER_RATIO 替换原×MAX_CONTEXT_RATIO; 构造默认 self.MAX_CONTEXT_TOKENS 由全局 MAX_CONTEXT_TOKENS(200000) 改 DEFAULT_CONTEXT_LIMIT(262144), 运行时仍被 agent_runner 覆盖为 context_limit
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -44,7 +45,7 @@ from typing import Any, Dict, List, Optional
 from app.config import get_config  # 小欧 2026-07-08
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
 from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
-    COMPACTION_BUFFER, CHARS_PER_TOKEN, MAX_CONTEXT_RATIO, MAX_CONTEXT_TOKENS, TEMP_HISTORY_CHAR_LIMIT,
+    COMPACTION_BUFFER, CHARS_PER_TOKEN, DEFAULT_CONTEXT_LIMIT, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
 )
 from app.services.agent.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
@@ -85,7 +86,7 @@ class MessageBuilder:
     — 小欧 2026-07-22
     """
 
-    def __init__(self, max_context_tokens: int = MAX_CONTEXT_TOKENS):
+    def __init__(self, max_context_tokens: int = DEFAULT_CONTEXT_LIMIT):
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
         self.MAX_CONTEXT_TOKENS = max_context_tokens
@@ -287,7 +288,7 @@ class MessageBuilder:
 
         裁剪策略:
         - 触发条件A(增量): 本轮粗估 - 上轮精确(last_total_tokens) > COMPACTION_BUFFER
-        - 触发条件B(绝对值): 历史 > MAX_CONTEXT_TOKENS × 0.8
+        - 触发条件B(绝对值): 历史 > MAX_CONTEXT_TOKENS × TRIM_TRIGGER_RATIO(上下文×3/4, 北京老陈 2026-08-17 定案)
         - 第1轮无 last_total_tokens → 只走绝对值
         - system+user 消息永保，剩余可用全给 _trim_to_budget
         - 配对不完整的 FC 对由 _trim_fc_pairs 清理
@@ -303,7 +304,7 @@ class MessageBuilder:
             delta_trigger = (self.last_total_tokens is not None and
                              rough_current - self.last_total_tokens > COMPACTION_BUFFER)
             # 绝对值安全网: 历史占满 80%
-            abs_trigger = rough_current > self.MAX_CONTEXT_TOKENS * MAX_CONTEXT_RATIO
+            abs_trigger = rough_current > self.MAX_CONTEXT_TOKENS * TRIM_TRIGGER_RATIO
 
             if not (delta_trigger or abs_trigger) and msg_count <= self._max_rounds * 2 + 5:
                 return

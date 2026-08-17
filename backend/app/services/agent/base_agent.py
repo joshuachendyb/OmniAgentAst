@@ -9,6 +9,7 @@
 # 2026-08-12 小欧 A6: ToolLoader 独立为 tool_loader.py; 删除 tool_registry/ToolCategory 导入与 ToolLoader 类定义; __init__ 不再初始化工具状态(改由 UniversalAgent.__init__ 驱动)
 # 2026-08-14 小欧 修正注释名不副实: _create_cancelled_chunk docstring 中"stream_parser函数"改为"core.py 的 create_cancelled_chunk"(实际调用名)
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+# 2026-08-17 - 小健 - 门限基准唯一化(北京老陈驱动): MessageBuilder 改默认构造, 移除 get_config().get_max_context_tokens() 传参(该配置方法已删); max_context_tokens 运行时由 agent_runner 用 llm_service.context_limit 覆盖
 """
 Agent 核心基类 — 类骨架
 
@@ -65,7 +66,7 @@ class BaseAgent(ABC):
 
         # 原 AgentInitializer._init_messages
         self.steps: List[ReasoningStep] = []
-        self.message_builder = MessageBuilder(max_context_tokens=get_config().get_max_context_tokens())
+        self.message_builder = MessageBuilder()
 
         # 工具相关状态(_tools_dict/_tool_loader/_retry_engine/_loaded_categories)
         # A6(2026-08-12): 由子类 UniversalAgent.__init__ 驱动 tool_loader 初始化, 抽象基类不依赖工具注册表

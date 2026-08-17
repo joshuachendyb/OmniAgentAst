@@ -5,6 +5,7 @@
 #   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
 #   2026-08-17 小健 改名: should_compact_window→should_compact_now(名符其实); 函数关系/设计文档引用同步
 #   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪常量权威迁至 agent 层根 compaction_constants.py, 本模块导入路径由 compaction.compaction_constants 改为 app.services.agent.compaction_constants
+#   2026-08-17 小健 阈值重构(北京老陈 2026-08-17 定案, loop裁剪=上下文×3/4): 绝对值安全网条件C int(context_limit*MAX_CONTEXT_RATIO)→int(context_limit*TRIM_TRIGGER_RATIO); 导入 MAX_CONTEXT_RATIO→TRIM_TRIGGER_RATIO
 """compaction.trigger — 触发判定(统一/窗口/冷却) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「是否该压缩」的三类判定, 不含任何压缩/裁剪执行逻辑。
@@ -21,8 +22,8 @@ from typing import List
 from app.services.agent.compaction_constants import (
     COMPACTION_BUFFER,
     COOLDOWN_ROUNDS,
-    MAX_CONTEXT_RATIO,
     TRIGGER_MAX_MSGS,
+    TRIM_TRIGGER_RATIO,
 )
 
 # ---- CompactionTrigger: 统一触发判定(14.9.3①) ————————————————————————————
@@ -38,7 +39,7 @@ class CompactionTrigger:
     三个独立条件, 满足任一即触发压缩(先用剪枝, 剪枝后仍超限再由上层决定是否锚定摘要):
       A. 模型窗口: current_tokens >= usable(context_limit - reserve)
       B. 增量:     本轮粗估 - 上轮精确(last_total_tokens) > COMPACTION_BUFFER
-      C. 绝对值:   current_tokens >= context_limit * MAX_CONTEXT_RATIO
+      C. 绝对值:   current_tokens >= context_limit * TRIM_TRIGGER_RATIO(上下文×3/4, 北京老陈 2026-08-17 定案)
     """
 
     def should_compact(self, current_tokens: int, last_total_tokens: int,
@@ -56,7 +57,7 @@ class CompactionTrigger:
             return True
         if delta > COMPACTION_BUFFER:
             return True
-        if current_tokens >= int(context_limit * MAX_CONTEXT_RATIO):
+        if current_tokens >= int(context_limit * TRIM_TRIGGER_RATIO):
             return True
         return False
 

@@ -3,6 +3,7 @@
 # 编辑历史:
 # 2026-07-22 - 小欧 - get_service 异常时清除 _model_warning 防止残留到下一请求(代码审查缺陷1边沿修复)
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+# 2026-08-17 - 小健 - DEFAULT_CONTEXT_LIMIT(262144) 迁 app.services.agent.compaction_constants; create_service_instance 局部导入引用, 取值顺序不变(配置 model_params.context_limit 优先, 否则默认兜底)
 """
 service — 服务创建与获取
 
@@ -70,8 +71,8 @@ def get_provider_config(ai_config: dict, final_provider: str) -> dict:
 
 
 def create_service_instance(provider_config: dict, final_provider: str, final_model: str) -> BaseAIService:
-    """创建服务实例 — 小沈 2026-06-08; 2026-06-17 去除_前缀+透传层; 小欧 2026-07-09 新增model_params透传"""
-    DEFAULT_CONTEXT_LIMIT = 262144
+    """创建服务实例 — 小沈 2026-06-08; 2026-06-17 去除_前缀+透传层; 小欧 2026-07-09 新增model_params透传; 小健 2026-08-17 DEFAULT_CONTEXT_LIMIT 迁 agent.compaction_constants"""
+    from app.services.agent.compaction_constants import DEFAULT_CONTEXT_LIMIT  # 小健 2026-08-17: 常量权威归一 agent/compaction_constants
     model_params = provider_config.get("model_params", {}) or {}
     specific_params = dict(model_params.get(final_model, {})) if model_params else {}
     context_limit = specific_params.pop("context_limit", DEFAULT_CONTEXT_LIMIT)
