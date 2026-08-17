@@ -3,6 +3,7 @@
 #   2026-08-17 小健 新建: 14.9.2 目录树【待补代码】落地, 依据 14.3.2 select + 14.5 装配过滤
 #   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
 #   2026-08-17 小健 改名: split_half_turn→truncate_oversized_message(名符其实); 模块函数引用同步
+#   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪常量权威迁至 agent 层根 compaction_constants.py, 本模块导入路径由 compaction.compaction_constants 改为 app.services.agent.compaction_constants
 """compaction.split_turn — 保尾切分原语(tail_start + 半轮劈分) — 小健 2026-08-17
 
 职责(SRP): 仅承载「保尾 token 预算 + 半轮劈分」的切分原语, 供 assembler 装配线切分历史窗口。
@@ -14,7 +15,7 @@ absolute_start 供 assembler 定位 new_block(对应 generate_chunked_summary �
 """
 from typing import List, Dict, Tuple
 
-from app.services.agent.compaction.compaction_constants import (
+from app.services.agent.compaction_constants import (
     SPLIT_TURN_MAX_ASSISTANT_CHARS,
     TAIL_TOKEN_MAX,
     TAIL_TOKEN_MIN,

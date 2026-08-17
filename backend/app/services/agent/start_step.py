@@ -16,6 +16,9 @@
 # 2026-08-17 小健 全系统DRY扫描收敛(老陈指示按10大规范): task_id 改读 agent.task_id(base_agent:59 权威持有,
 #   orchestrator 构造时注入), 不再依赖 _start_meta["task_id"]; _start_meta 只承载 next_step/session_id/user_input/
 #   链字段/warning(react_cycle 拿不到的必需运行数据), 与 ai_service 删除同属真冗余收敛(单一归属) — 小健 2026-08-17
+# 2026-08-17 小健 常量归属迁移(北京老陈驱动, 压缩/裁剪常量融入专场常量文件): 本模块 import 的压缩/裁剪常量源头
+#   MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_ENABLED 由 app.constants / compaction 包迁至 agent 层根
+#   compaction_constants.py, 导入路径随之更新为 app.services.agent.compaction_constants(局部导入防包级依赖)
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -104,7 +107,7 @@ def _maybe_compact_injected_history(agent) -> None:
     关联逻辑: 估算复用 MessageBuilder._estimate_tokens(DRY); 阈值对齐全局 MAX_CONTEXT_TOKENS × MAX_CONTEXT_RATIO。
     """
     agent._needs_compact = False
-    from app.services.agent.compaction.compaction_constants import (  # 局部导入避免包级新依赖
+    from app.services.agent.compaction_constants import (  # 小健 2026-08-17: 常量权威迁 agent/compaction_constants(局部导入防包级依赖)
         COMPACTION_ENABLED,
         MAX_CONTEXT_RATIO,
         MAX_CONTEXT_TOKENS,

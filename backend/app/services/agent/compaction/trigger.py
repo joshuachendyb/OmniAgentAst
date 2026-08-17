@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 #   2026-08-16 小欧 新增: 统一触发判定(14.9.3① 三条件) + 动态窗口触发(14.9.6 K1) + 冷却节流(14.9.6 K2)
-#   2026-08-17 小健 落地: 三函数合并 trigger.py, 常量自 compaction.compaction_constants(DRY re-export 全局缓冲常量)
+#   2026-08-17 小健 落地: 三函数合并 trigger.py, 常量自 agent.compaction_constants(DRY)
 #   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
 #   2026-08-17 小健 改名: should_compact_window→should_compact_now(名符其实); 函数关系/设计文档引用同步
+#   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪常量权威迁至 agent 层根 compaction_constants.py, 本模块导入路径由 compaction.compaction_constants 改为 app.services.agent.compaction_constants
 """compaction.trigger — 触发判定(统一/窗口/冷却) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「是否该压缩」的三类判定, 不含任何压缩/裁剪执行逻辑。
@@ -17,7 +18,7 @@
 """
 from typing import List
 
-from app.services.agent.compaction.compaction_constants import (
+from app.services.agent.compaction_constants import (
     COMPACTION_BUFFER,
     COOLDOWN_ROUNDS,
     MAX_CONTEXT_RATIO,

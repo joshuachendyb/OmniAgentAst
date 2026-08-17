@@ -2,7 +2,7 @@
 # 编辑历史:
 #   2026-08-16 小欧 新增: C3 剪枝引擎 prune_tool_outputs(借鉴 opencode prune, 纯规则零 LLM)
 #   2026-08-16 小欧 新增: t1_reuse_summary(复用工具层 llm_data.summary) + value_first_prune(按价值权重保留)
-#   2026-08-17 小健 落地: 四函数合并 prune.py, 常量自 compaction.compaction_constants(DRY re-export)
+#   2026-08-17 小健 落地: 四函数合并 prune.py, 常量自 agent.compaction_constants(DRY)
 #                        t1_compress_observations 实现为通用字符串级摘要兜底(去 per-tool 模板过度设计,
 #                        [4] 14.9.6 明示 t1_reuse_summary 强推荐替代逐工具模板; 本版为无 _summary 时的兜底)
 #   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出, 常量注释补意义/依据/可选范围
@@ -10,6 +10,7 @@
 #   2026-08-17 小健 改名: 8 函数名符其实——prune_tool_outputs→clear_tool_outputs, t1_reuse_summary→use_tool_summary,
 #                        t1_compress_observations→compress_long_tool_output, value_first_prune→keep_valuable_messages;
 #                        模块级注释/函数关系/设计文档引用同步, 编辑历史保留原名(历史事实)
+#   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪常量权威迁至 agent 层根 compaction_constants.py, 本模块导入路径由 compaction.compaction_constants 改为 app.services.agent.compaction_constants
 """compaction.prune — C3 剪枝压缩 + use_tool_summary + 价值优先保留 — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「同一窗口内的消息级压缩/剪枝取舍」, 不含触发判定(归 trigger)与语义摘要(归 summary)。
@@ -28,7 +29,7 @@
 import logging
 from typing import List, Dict
 
-from app.services.agent.compaction.compaction_constants import (
+from app.services.agent.compaction_constants import (
     CHARS_PER_TOKEN,
     PRUNE_MINIMUM_TOKENS,
     PRUNE_PROTECT_TOKENS,

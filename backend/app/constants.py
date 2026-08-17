@@ -34,6 +34,7 @@
         日志result截断长度,防MemoryError); action_handler导入改为
         from app.constants 引用
    2026-08-14 小欧 改名名实相符: model_schemas.py → config_schemas.py(注释同步)
+   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪相关常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 迁至 app/services/agent/compaction_constants.py(随用方集中到 agent 域), 本源删除, 引用方(start_step/message_builder/compaction 各模块)导入路径同步改
 # 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 """
 
@@ -94,11 +95,8 @@ DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://local
 # 4. 内容截断与字符限制
 # ============================================================
 
-MAX_CONTEXT_TOKENS = 200000  # 【系统级】使用对象: Agent 总体上下文 Token 上限（默认值，配置可覆盖）
-MAX_CONTEXT_RATIO = 0.8      # 【系统级】使用对象: 裁剪绝对值安全网触发比例（默认80%，历史占满此比例即触发裁剪）
-COMPACTION_BUFFER = 20000    # 【系统级】使用对象: 输出预留缓冲区（OpenCode 式，用于增量触发和预算裁剪）
-CHARS_PER_TOKEN = 4          # 【系统级】使用对象: chars→token 换算系数
-TEMP_HISTORY_CHAR_LIMIT = 50000  # 【系统级】使用对象: 临时历史字符上限
+# 压缩/裁剪相关常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT)
+# 已迁移到 app/services/agent/compaction_constants.py (见 2026-08-17 编辑历史) — 小健 2026-08-17
 
 # 系统级长度常量(2026-07-15 归一化治理): 项目规则文件(OmniAgent.md)注入字符上限 — 小欧
 PROJECT_CONTEXT_MAX_CHARS = 10000   # 【系统级】使用对象: 项目规则文件(OmniAgent.md)注入 Prompt 字符上限

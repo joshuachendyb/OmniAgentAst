@@ -19,6 +19,7 @@
 #   ②prepare_messages_for_llm 新增 _COMPACTION_TEMP_KEYS=("_summary","_pruned","_compressed","_raw","_truncated"),
 #   浅拷贝后一并剥离, 与 _temp_* 同段清空, 防泄漏 LLM 请求/污染 wire(对齐 [4] 14.9.3②/14.9.6 C2 剥离要求)。
 # 2026-08-17 - 小健 - compaction 函数改名同步: add_tool_result 注释3处 t1_reuse_summary→use_tool_summary(供 compaction.use_tool_summary 复用/防空转)
+# 2026-08-17 - 小健 - 常量归属迁移(北京老陈驱动): 压缩/裁剪常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 由 app.constants 迁至 app.services.agent.compaction_constants, 导入路径同步改
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -41,8 +42,10 @@ import json
 from typing import Any, Dict, List, Optional
 
 from app.config import get_config  # 小欧 2026-07-08
-from app.constants import MAX_CONTEXT_TOKENS, MAX_CONTEXT_RATIO, COMPACTION_BUFFER, CHARS_PER_TOKEN, TEMP_HISTORY_CHAR_LIMIT
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
+from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
+    COMPACTION_BUFFER, CHARS_PER_TOKEN, MAX_CONTEXT_RATIO, MAX_CONTEXT_TOKENS, TEMP_HISTORY_CHAR_LIMIT,
+)
 from app.services.agent.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
     message_to_dict, dict_to_message,

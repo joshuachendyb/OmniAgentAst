@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
-"""compaction.compaction_constants — 消息压缩/裁剪专属常量 — 小健 2026-08-17
+"""app.services.agent.compaction_constants — 消息压缩/裁剪专属常量 — 小健 2026-08-17
 
-职责(单一职责): 仅承载「消息压缩/裁剪」业务域常量 + 复用全局系统常量(DRY, 不重写)。
+职责(单一职责): 承载「消息压缩/裁剪」业务域全部常量——原全局压缩/裁剪常量(MAX_CONTEXT_TOKENS 等 5 个)
+2026-08-17 从 app/constants.py 迁入本文件(归属随用方集中到 agent/compaction 域), 不重复定义(DRY)。
 依据: doc-8月优化/[4]对话-HistoryMemory与历史裁剪设计方案 v5.10(14.9.2「压缩专属常量不堆进 app/constants.py」
       + 第八章节常量表 + 14.9.3 trigger 代码 import 全局缓冲常量)。设计文档: 10.1.8 S5 C4+compaction 全模块。
 
 与 app/constants.py 边界(DRY 不重复):
-  全局系统常量 MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN 定义在 app/constants.py
-  (react_cycle/message_builder 既有引用), 本法仅 re-export 供 compaction 模块用, 不重复定义;
-  其余「压缩裁剪专属」常量(PRUNE_*/SUMMARY_*/TRIGGER_*/COOLDOWN_*/TAIL_*/SPLIT_*/ASSEMBLE_*)定义在本文件。
+  压缩/裁剪核心阈值本文件权威定义(自 app/constants.py 迁入 2026-08-17):
+    MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT
+  其余「压缩裁剪专属」常量(PRUNE_*/SUMMARY_*/TRIGGER_*/COOLDOWN_*/TAIL_*/SPLIT_*/ASSEMBLE_*)亦定义在本文件。
+  app/constants.py 不再承载压缩/裁剪相关常量。
 
 编辑历史:
 # 格式规范: {日期} {署名} {修改内容}
@@ -17,13 +19,26 @@
   2026-08-17 小健 改名: TRIGGER_T1_RATIO 注释同步 compress_long_tool_output(旧 t1_compress_observations 已改名)
   2026-08-17 小健 修正: 移除本文件自实现的 preserve_recent_budget(与 split_turn.py 权威版本重复, DRY 违反),
                        保尾预算实现收敛到 split_turn.preserve_recent_budget([4] 14.9.7)
+  2026-08-17 小健 重构(北京老陈驱动): 压缩/裁剪核心阈值本色权威定义——MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/
+                        COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT 自 app/constants.py 迁入本文件,
+                        由 re-export 改为直接 define(与用方同域, 消除跨层引用)
+  2026-08-17 小健 移址: 自 compaction/ 包内迁至 agent/ 层根(compaction_constants.py)——因 message_builder 导入本文件会
+                        触发 compaction/__init__→assembler→split_turn→message_builder 循环导入, 迁出 compaction 包避开
+                        __init__ 重链; 全部引用方(start_step/message_builder/compaction 各模块)导入路径同步更新
 """
-from app.constants import (  # noqa: F401 — re-export 全局缓冲常量, 供 compaction 模块复用(DRY)
-    MAX_CONTEXT_RATIO,
-    MAX_CONTEXT_TOKENS,
-    COMPACTION_BUFFER,
-)
-from app.constants import CHARS_PER_TOKEN  # noqa: F401 — token 估算系数
+# ============================================================
+# A. 压缩/裁剪核心阈值(自 app/constants.py 第4节迁入, 2026-08-17) — 小健
+# ============================================================
+# 意义: 上下文总体 Token 上限(默认值, 配置可覆盖 = MessageBuilder 构造默认/max_tokens)
+MAX_CONTEXT_TOKENS = 200000
+# 意义: 裁剪绝对值安全网触发比例(默认80%, 历史占满此比例即触发)
+MAX_CONTEXT_RATIO = 0.8
+# 意义: 输出预留缓冲区(OpenCode 式, 用于增量触发和预算裁剪)
+COMPACTION_BUFFER = 20000
+# 意义: chars→token 换算系数
+CHARS_PER_TOKEN = 4
+# 意义: 临时历史字符上限
+TEMP_HISTORY_CHAR_LIMIT = 50000
 
 # ---- C4 接入开关(10.1.8 S5, R4 前置) ———————————————————————————————
 # 意义: 控制 C4 锚定摘要是否接入主链路。False=行为同现状(trim_history 原逻辑), True=历史超窗时 await 摘要回填。

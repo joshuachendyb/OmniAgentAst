@@ -6,6 +6,7 @@
 #                       文本在 resp["content"]; 首参是 agent 对象(含 .llm_client)。按真实协议重写。
 #   2026-08-17 小健 新增: generate_chunked_summary + _extract_response_content(C4 降本变体, 复用统一提取)
 #   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
+#   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪常量权威迁至 agent 层根 compaction_constants.py, 本模块导入路径由 compaction.compaction_constants 改为 app.services.agent.compaction_constants
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。
@@ -14,7 +15,7 @@
 """
 from typing import List, Dict, Optional
 
-from app.services.agent.compaction.compaction_constants import SUMMARY_FEED_MAX_CHARS
+from app.services.agent.compaction_constants import SUMMARY_FEED_MAX_CHARS
 from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
 
 
