@@ -27,6 +27,7 @@ from app.services.agent.chunk_buffer import ChunkBuffer
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 from app.db import db
+from app.services.agent.compaction.compaction_constants import COMPACTION_ENABLED  # S5(10.1.8): C4 接入开关(R4 前置) — 小健 2026-08-17
 
 
 def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> None:
@@ -128,5 +129,30 @@ def initialize_run_state(
     agent._on_before_loop(sys_prompt, task, context)
     agent.message_builder.init_history(sys_prompt, task)
     _inject_conversation_history(agent, context)
+    _maybe_compact_injected_history(agent)   # S5(10.1.8): 历史注入后 C4 超窗标记 — 小健 2026-08-17
 
     return ChunkBuffer(MAX_CONSECUTIVE_CHUNKS)
+
+
+def _maybe_compact_injected_history(agent) -> None:
+    """C4 超窗标记(10.1.7⑤ / 10.1.8 S5): 注入历史后估算 token, 超窗则置 _needs_compact — 小健 2026-08-17
+
+    仅置标记, 不在此触发 LLM; 实际压缩由 react_cycle 在 start 装配后、while 前 await 摘要回填。
+    关联逻辑(增强不退化): 估算复用 MessageBuilder._estimate_tokens(DRY); 阈值对齐全局
+    MAX_CONTEXT_TOKENS × MAX_CONTEXT_RATIO; R4 未放开(COMPACTION_ENABLED=False)置 False, 行为同现状。
+    """
+    agent._needs_compact = False
+    if not COMPACTION_ENABLED:
+        return
+    from app.services.agent.compaction.compaction_constants import (  # 局部导入避免包级新依赖
+        MAX_CONTEXT_RATIO,
+        MAX_CONTEXT_TOKENS,
+    )
+    from app.services.agent.message_builder import MessageBuilder
+    history = agent.message_builder.conversation_history
+    if not history:
+        return
+    rough = MessageBuilder._estimate_tokens(history)
+    if rough > int(MAX_CONTEXT_TOKENS * MAX_CONTEXT_RATIO):
+        agent._needs_compact = True
+        logger.debug(f"[initialize_run_state] 历史超窗({rough}>{int(MAX_CONTEXT_TOKENS*MAX_CONTEXT_RATIO)}), 置 _needs_compact")

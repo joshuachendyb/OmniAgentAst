@@ -129,6 +129,35 @@ _MAX_CONSECUTIVE_SAME_TOOL_CALLS = 5   # 硬终止阈值: count>=5(第5次相同
 _RECOVERABLE_ERRORS = {"user_rejected", "blocked", "timeout"}
 
 
+async def _compact_injected_history(agent) -> None:
+    """C4 超窗锚定摘要回填(10.1.7⑤/10.1.8 S5) — 小健 2026-08-17
+
+    仅在 initialize_run_state 已置 agent._needs_compact=True(即 COMPACTION_ENABLED 放开 R4 且历史超窗)时被调用。
+    对 conversation_history 做一次 LLM 锚定摘要, 以 assistant 消息回填: 保 system[:1] + 摘要 + 最新 task[-1:]。
+    - tools=None 走 llm_stream Text 模式(不触发工具); generate_anchored_summary 内部截断喂防二次胀窗。
+    - 回填新列表赋回 agent.message_builder.conversation_history(替代原历史, 压缩生效)。
+    - 失败兜底: 摘要为空/异常则原样保留(不删任何消息), 行为零退化。
+    KISS-DIRECT: 取摘要 → 三明治组合 → 回填, 直线无绕; 摘要生成/模板/截断全归 compaction 模块(SRP)。
+    """
+    from app.services.agent.compaction.summary import generate_anchored_summary
+
+    history = agent.message_builder.conversation_history
+    if not history:
+        agent._needs_compact = False
+        return
+    try:
+        summary_text = await generate_anchored_summary(agent, history)
+    except Exception as e:
+        logger.warning(f"[_compact_injected_history] 锚定摘要失败, 保留原历史(零退化): {type(e).__name__}: {e!r}")
+        summary_text = ""
+    if summary_text:
+        agent.message_builder.conversation_history = (
+            history[:1] + [{"role": "assistant", "content": summary_text}] + history[-1:]
+        )
+        logger.debug(f"[_compact_injected_history] 摘要回填完成 (tok={len(summary_text)}, 历史 {len(history)}→{3})")
+    agent._needs_compact = False
+
+
 def handle_react_error(agent, error, step):
     """统一处理ReAct循环中的错误 — 只创建 ErrorStep，不设状态 — chendyg 2026-07-01
     小欧 2026-07-13: 删 recoverable（终态由 ErrorStep 表示，不再用 flag 区分可恢复）"""
@@ -567,6 +596,13 @@ async def run_react_cycle(
             previous_messages=_prev_msgs or [],
         )
         yield agent._step_emitter.emit(_start_step)
+
+    # S5(10.1.7⑤/10.1.8): C4 超窗锚定摘要回填 —— start 装配后、while 前一次性清洗注入的历史。
+    #   仅当 initialize_run_state 置 _needs_compact(=True) 才触发(依赖 COMPACTION_ENABLED 放开 R4);
+    #   摘要以 assistant 消息回填, 保 system + 摘要 + 最新 task; 原库 conversation_history 被替换为新列表。
+    #   关联逻辑(增强不退化): R4 未放开时 _needs_compact=False, 本段跳过, 主链路零改动。 — 小健 2026-08-17
+    if getattr(agent, "_needs_compact", False):
+        await _compact_injected_history(agent)
 
     if max_steps <= 0:
         logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接终止")

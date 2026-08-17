@@ -121,26 +121,34 @@ class MessageBuilder:
         self.conversation_history.append(message_to_dict(msg))
         return msg
 
-    def add_tool_result(self, tool_call_id: str, content: str) -> ToolResultMessage:
+    def add_tool_result(self, tool_call_id: str, content: str, summary: str = "") -> ToolResultMessage:
         """添加工具执行结果消息 — 北京老陈 2026-06-25
 
         与add_assistant_tool_call配对使用:
           每条tool通过tool_call_id关联回assistant中的某一条tool_call.id。
           同一轮的所有tool共用同一个assistant父消息。
         — 小欧 2026-07-12 — 小欧 2026-07-13 防御: 构造/序列化失败也兜底追加最小合法tool消息, 保证工具结果绝不丢失
+        — 小健 2026-08-17 (14.9.6 C2 前置): 新增 summary 形参, 工具层 llm_data.summary 透传 stash 为 _summary,
+          供 compaction.t1_reuse_summary 复用(DRY); 内部标记由 prepare_messages_for_llm 与 _temp_* 同段剥离。
         """
         try:
             msg = ToolResultMessage(content=content, tool_call_id=tool_call_id)
-            self.conversation_history.append(message_to_dict(msg))
+            d = message_to_dict(msg)
+            if summary:
+                d["_summary"] = summary          # 供 compaction.t1_reuse_summary 读取; 内部标记由 prepare_messages_for_llm 剥离
+            self.conversation_history.append(d)
             return msg
         except Exception as e:
             logger.warning(f"[message_builder] add_tool_result构造失败(tool_call_id={tool_call_id}): {type(e).__name__}: {e!r}")
             # 兜底: 直接追加最小合法tool消息, 保证对话历史完整(结果不丢失) — 小欧 2026-07-13
-            self.conversation_history.append({
+            d = {
                 "role": "tool",
                 "content": content,
                 "tool_call_id": tool_call_id,
-            })
+            }
+            if summary:
+                d["_summary"] = summary          # 兜底分支同步 stash, 防 t1_reuse_summary 空转
+            self.conversation_history.append(d)
             return None
 
     def init_history(self, sys_prompt: str, task_prompt: str) -> None:
@@ -244,8 +252,12 @@ class MessageBuilder:
         if self.temp_history:
             messages = messages + [dict(msg) for msg in self.temp_history]
         # 剥离内部标记防止泄漏到 LLM 请求(_temp_reasoning/_temp_same_tool_warn) — 小欧 2026-07-19 / 2026-08-08 通用前缀
+        # 2026-08-17 - 小健 - S5(compaction): 一并剥离 compaction 内部标记(_summary/_pruned/_compressed/_raw/_truncated),
+        #   因 _pruned/_summary 现为短下划线而非 _temp_ 前缀(compaction 模块落地备用后这些标记留 bool/短名前缀),
+        #   统一在此浅拷贝后清空, 防泄漏 LLM 请求/污染 wire(对齐 [4] 14.9.3③/14.9.6 C2 剥离要求)。纯剥离不存在的字段零影响。
+        _COMPACTION_TEMP_KEYS = ("_summary", "_pruned", "_compressed", "_raw", "_truncated")
         for msg in messages:
-            for _k in [k for k in msg if k.startswith("_temp_")]:
+            for _k in [k for k in msg if k.startswith("_temp_") or k in _COMPACTION_TEMP_KEYS]:
                 msg.pop(_k, None)
         # 发送即清: 本轮发送的_temp_*临时消息(纠偏/推理)仅活"本轮发送这一次", 已浅拷贝进messages后
         # 由conversation_history源中立即剔除, 防后续轮次/压缩/持久化残留(北京老陈 2026-08-09 指示) — 小欧 2026-08-09
