@@ -85,6 +85,19 @@
 #   已置 agent._needs_compact=True 且 COMPACTION_ENABLED 放开 R4 时: 对 conversation_history 做一次 LLM 锚定
 #   摘要, 以 assistant 消息回填(system[:1] + 摘要 + 最新 task[-1:]); tools=None 走 llm_stream Text 模式;
 #   回填新列表赋值 conversation_history(压缩生效); 摘要为空/异常则原样保留零退化; 主循环 while 前 await 调用
+# 2026-08-17 - 小健 - start 业务过程收敛(老陈驱动, 痛斥输入装配割裂): start 装配段(initialize_run_state 后、
+#   while 前)扩展为任务输入装配完整段——注入会话历史(_inject_conversation_history) → 超窗判定(_maybe_compact)
+#   → context_summary 快照 → 构造 StartStep → emit, 一气呵成; 历史注入/超窗标记自 initialize_run_state 收拢至此
+# 2026-08-17 - 小健 - start 业务物理独立模块(老陈驱动, 痛斥"一个事情到处乱放"): 新增 start_step.py 单一承载 start
+#   全部业务(_inject_conversation_history/_maybe_compact_injected_history/_compact_injected_history/assemble_start_step),
+#   自本文件移除 _assemble_start_step 与 _compact_injected_history 定义, 改为模块级薄 import(assemble_start_step
+#   as _assemble_start_step / _compact_injected_history); 主流程调用点不动(L569 _assemble_start_step / L578 _compact)
+#   MaxSteps 语义、编辑历史条目名不变; 本文件退回启动编排薄层 — 小健 2026-08-17
+# 2026-08-17 - 小健 - start 业务彻底单归属(老陈驱动, 三思三省): 契约构造迁入 start_step(_build_start_contract),
+#   装配数据来源由 chat 层 _start_step_factory 闭包改为 orchestrator 注入的 agent._start_meta(dict 运行元数据);
+#   本文件对 start 的接缝不变——仍『initialize_run_state → assemble_start_step(agent, context) → emit → 超窗 C4 回填』,
+#   仅数据来源改读 _start_meta(build_start_step 逻辑已在 start_step 模块内直接构造, 详见 start_step.py) — 小健 2026-08-17
+# 2026-08-17 - 小健 - 最合理核查(老陈追问): assemble_start_step 改同步(内部零 await), 调用点去 await — 小健 2026-08-17
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -104,6 +117,8 @@ from app.config import get_config
 from app.services.agent.steps import ChunkStep, MetaStep, ObservationStep, ErrorStep, FinalStep
 from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_completed, set_cancelled
 from app.services.agent.initialize_run_state import initialize_run_state
+from app.services.agent.start_step import assemble_start_step as _assemble_start_step
+from app.services.agent.start_step import _compact_injected_history  # S5(10.1.8): C4 摘要回填, 独立模块 — 小健 2026-08-17
 from app.services.agent.handlers import (
     handle_action, handle_answer,
 )
@@ -131,35 +146,6 @@ _MAX_CONSECUTIVE_SAME_TOOL_CALLS = 5   # 硬终止阈值: count>=5(第5次相同
 #   是用户侧等待超时(软拒绝, 应换工具/重试继续), 判 FAILED 与 _add_denial_feedback 注入的"改用其他工具"
 #   引导自相矛盾; 纳入可恢复后由 _deny_counts 累计>=3 才 FAILED(与 user_rejected 同语义)。
 _RECOVERABLE_ERRORS = {"user_rejected", "blocked", "timeout"}
-
-
-async def _compact_injected_history(agent) -> None:
-    """C4 超窗锚定摘要回填(10.1.7⑤/10.1.8 S5) — 小健 2026-08-17
-
-    仅在 initialize_run_state 已置 agent._needs_compact=True(即 COMPACTION_ENABLED 放开 R4 且历史超窗)时被调用。
-    对 conversation_history 做一次 LLM 锚定摘要, 以 assistant 消息回填: 保 system[:1] + 摘要 + 最新 task[-1:]。
-    - tools=None 走 llm_stream Text 模式(不触发工具); generate_anchored_summary 内部截断喂防二次胀窗。
-    - 回填新列表赋回 agent.message_builder.conversation_history(替代原历史, 压缩生效)。
-    - 失败兜底: 摘要为空/异常则原样保留(不删任何消息), 行为零退化。
-    KISS-DIRECT: 取摘要 → 三明治组合 → 回填, 直线无绕; 摘要生成/模板/截断全归 compaction 模块(SRP)。
-    """
-    from app.services.agent.compaction.summary import generate_anchored_summary
-
-    history = agent.message_builder.conversation_history
-    if not history:
-        agent._needs_compact = False
-        return
-    try:
-        summary_text = await generate_anchored_summary(agent, history)
-    except Exception as e:
-        logger.warning(f"[_compact_injected_history] 锚定摘要失败, 保留原历史(零退化): {type(e).__name__}: {e!r}")
-        summary_text = ""
-    if summary_text:
-        agent.message_builder.conversation_history = (
-            history[:1] + [{"role": "assistant", "content": summary_text}] + history[-1:]
-        )
-        logger.debug(f"[_compact_injected_history] 摘要回填完成 (tok={len(summary_text)}, 历史 {len(history)}→{3})")
-    agent._needs_compact = False
 
 
 def handle_react_error(agent, error, step):
@@ -588,17 +574,12 @@ async def run_react_cycle(
 
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
 
-    # S4(10.1.7④): start 装配进 agent.steps(占 step 0) — 取消 orchestrator 旁路(step_start)。
-    #   P4 注入模式: 工厂由 orchestrator 注入 agent._start_step_factory(chat 层数据闭包捕获),
-    #   本处只读 agent 属性(system_prompt=_sys_prompt, previous_messages=context), 不 import chat 层。
-    #   落库: start 作为首个事件 yield → agent_runner 事件流分配 ai_message_id 并 append_step, 不再 execution_steps 双写。 — 小欧 2026-08-16
-    _start_factory = getattr(agent, "_start_step_factory", None)
-    if _start_factory is not None:
-        _prev_msgs = context.get("previous_messages") if isinstance(context, dict) else None
-        _start_step = await _start_factory(
-            system_prompt=getattr(agent, "_sys_prompt", ""),
-            previous_messages=_prev_msgs or [],
-        )
+    # S4/S5(10.1.7④⑤/10.1.8): start 装配进 agent.steps(占 step 0) — 任务输入装配完整过程收拢为一个模块。
+    #   P4 注入模式: 运行元数据由 orchestrator 注入 agent._start_meta(chat 层纯数据捕获),
+    #   start_step.assemble_start_step 从 _start_meta/_sys_prompt/context 读齐装配, 不 import chat 层。
+    #   落库: start 作为首个事件 yield → agent_runner 事件流分配 ai_message_id 并 append_step, 不再 execution_steps 双写。 — 小欧/小健 2026-08-17
+    _start_step = _assemble_start_step(agent, context)  # 同步装配(内部零 await, KISS — 小健 2026-08-17)
+    if _start_step is not None:
         yield agent._step_emitter.emit(_start_step)
 
     # S5(10.1.7⑤/10.1.8): C4 超窗锚定摘要回填 —— start 装配后、while 前一次性清洗注入的历史。
