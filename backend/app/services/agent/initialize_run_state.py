@@ -15,6 +15,14 @@
 #   超窗(MAX_CONTEXT_TOKENS×MAX_CONTEXT_RATIO)置 agent._needs_compact=True; 仅置标记不触发 LLM(实际压缩
 #   归 react_cycle _compact_injected_history); COMPACTION_ENABLED=False 期间行为同现状零退化; 估算复用
 #   MessageBuilder._estimate_tokens(DRY)
+# 2026-08-17 - 小健 - start 业务过程收敛(老陈驱动, 痛斥输入装配割裂): 从 initialize_run_state() 移除
+#   历史注入 _inject_conversation_history 与超窗标记 _maybe_compact_injected_history 两处调用, 收拢到
+#   react_cycle 的 start 装配段(emit 前一气呵成); 本文件退化为纯状态重置 + init_history(system+task 装载);
+#   两函数仍保留本模块供 react_cycle 延迟导入复用(单一归属不变)
+# 2026-08-17 - 小健 - start 业务物理独立模块(老陈驱动, 痛斥"一个事情到处乱放"): 新增 start_step.py 承载 start
+#   全部业务(inject/超窗判定/C4回填/装配入口), 自本文件移除 _inject_conversation_history 与
+#   _maybe_compact_injected_history 两函数定义(迁入 start_step.py)及 COMPACTION_ENABLED import;
+#   本文件退化为纯状态重置 + init_history, 不再持有任何 start 装配私有逻辑(单一归属, 依赖不反向)
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
@@ -31,60 +39,6 @@ from app.services.agent.chunk_buffer import ChunkBuffer
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 from app.db import db
-from app.services.agent.compaction.compaction_constants import COMPACTION_ENABLED  # S5(10.1.8): C4 接入开关(R4 前置) — 小健 2026-08-17
-
-
-def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> None:
-    """注入会话历史(多轮对话支持) — 北京老陈 2026-06-13; 小沈 2026-06-17 参数名self→agent
-    小健 2026-06-26: 修复丢失tool消息和带tool_calls的assistant消息的bug(P0-1)，保留FC协议完整性
-    chendyg 2026-06-30: 修复重复user消息bug——previous_messages中最后一条user与init_history注入的task重复"""
-    if not context or not isinstance(context, dict):
-        return
-    prev = context.get("previous_messages")
-    if not prev or not isinstance(prev, list):
-        return
-    last_user_idx = -1
-    for i in range(len(prev) - 1, -1, -1):
-        if prev[i].get("role") == "user":
-            last_user_idx = i
-            break
-    history_msgs = []
-    for i, msg in enumerate(prev):
-        if i == last_user_idx:
-            continue
-        role = msg.get("role")
-        if role == "tool":
-            entry = {"role": "tool", "tool_call_id": msg.get("tool_call_id", ""), "content": msg.get("content", "")}
-            # M-04: FC协议需要name字段 — 小欧 2026-07-10
-            name = msg.get("name")
-            if name:
-                entry["name"] = name
-            history_msgs.append(entry)
-        elif role == "assistant":
-            tc_raw = msg.get("tool_calls")
-            # 历史重载边界校验 — 小欧 2026-07-18
-            # 病根: 持久化 assistant.tool_calls 若含非dict元素(截断/畸形LLM响应落库),
-            #       原样回传致 provider 400("Can only get item pairs from a mapping")并触发FC降级。
-            # 修复: 仅保留dict元素, 非dict一律剥离; 剥离后为空则回退content分支(无退化)。
-            if isinstance(tc_raw, list):
-                tc = [t for t in tc_raw if isinstance(t, dict)]
-            elif isinstance(tc_raw, dict):
-                tc = [tc_raw]
-            else:
-                tc = []
-            if tc:
-                history_msgs.append({
-                    "role": "assistant",
-                    "tool_calls": tc,
-                    "content": msg.get("content"),
-                })
-            elif msg.get("content"):
-                history_msgs.append({"role": "assistant", "content": msg["content"]})
-        elif role == "user" and msg.get("content"):
-            history_msgs.append({"role": "user", "content": msg["content"]})
-        elif role == "system" and msg.get("content"):
-            history_msgs.append({"role": "system", "content": msg["content"]})
-    agent.message_builder.inject_history(history_msgs)
 
 
 def initialize_run_state(
@@ -132,31 +86,5 @@ def initialize_run_state(
 
     agent._on_before_loop(sys_prompt, task, context)
     agent.message_builder.init_history(sys_prompt, task)
-    _inject_conversation_history(agent, context)
-    _maybe_compact_injected_history(agent)   # S5(10.1.8): 历史注入后 C4 超窗标记 — 小健 2026-08-17
 
     return ChunkBuffer(MAX_CONSECUTIVE_CHUNKS)
-
-
-def _maybe_compact_injected_history(agent) -> None:
-    """C4 超窗标记(10.1.7⑤ / 10.1.8 S5): 注入历史后估算 token, 超窗则置 _needs_compact — 小健 2026-08-17
-
-    仅置标记, 不在此触发 LLM; 实际压缩由 react_cycle 在 start 装配后、while 前 await 摘要回填。
-    关联逻辑(增强不退化): 估算复用 MessageBuilder._estimate_tokens(DRY); 阈值对齐全局
-    MAX_CONTEXT_TOKENS × MAX_CONTEXT_RATIO; R4 未放开(COMPACTION_ENABLED=False)置 False, 行为同现状。
-    """
-    agent._needs_compact = False
-    if not COMPACTION_ENABLED:
-        return
-    from app.services.agent.compaction.compaction_constants import (  # 局部导入避免包级新依赖
-        MAX_CONTEXT_RATIO,
-        MAX_CONTEXT_TOKENS,
-    )
-    from app.services.agent.message_builder import MessageBuilder
-    history = agent.message_builder.conversation_history
-    if not history:
-        return
-    rough = MessageBuilder._estimate_tokens(history)
-    if rough > int(MAX_CONTEXT_TOKENS * MAX_CONTEXT_RATIO):
-        agent._needs_compact = True
-        logger.debug(f"[initialize_run_state] 历史超窗({rough}>{int(MAX_CONTEXT_TOKENS*MAX_CONTEXT_RATIO)}), 置 _needs_compact")
