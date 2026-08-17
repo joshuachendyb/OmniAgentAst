@@ -100,6 +100,10 @@
 #   ①create_confirmation(agent.task_id) 增传 _cn(tool_name), 供 resolve_confirmation trust 落库;
 #   ②check_safety_and_confirm 入口经 agent.task_id 反查 session_id(禁伪 agent.session_id, chat_tasks 已建行),
 #     传 check_before_execute(session_id=) 做会话信任豁免(信任过的工具跳二次 HITL)
+# 2026-08-17 - 小健 - 三堂会审架构修复(北京老陈驱动): 会话信任预查由 safety 层上移到本 services 层——
+#   check_safety_and_confirm 循环内查 check_session_trust(_conn, _session_id, normalize_tool_name(_cn)),
+#   查得信任后传 check_before_execute(skip_confirmation=True) 豁免二次确认; 消除 safety→services 反向
+#   依赖违规(test_layer_boundaries 护栏); T1 normalize 语义随查询落在本层, 与写保护 BUG-2 同模式(防别名漏检)。
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -220,8 +224,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result, resolve_confirmation
         safety_checker = get_tool_safety_checker()
 
-        # S2(10.1.7②-5): session_id 经 task_id 反查(agent 无 session_id 属性, 禁止伪变量),
-        #   一次反查供本循环所有工具豁免读取复用; 反查失败置 None 不豁免(按需确认) — 小欧 2026-08-16
+        # 小健 2026-08-17 三堂会审-架构修复: session_id 经 task_id 反查(agent 无 session_id 属性, 禁止伪变量),
+        #   反查失败置 None 不豁免(按需确认); 会话信任预查由本 services 层负责(消除 safety→services 违规),
+        #   查得信任后传 skip_confirmation=True 给 check_before_execute 豁免二次确认(跳 HITL) — 小健 2026-08-17
         _session_id = None
         try:
             from app.services.chat.storage import get_session_id_by_task
@@ -235,7 +240,21 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         for call in all_calls:
             _cn = call.get("tool_name", "?")
             _cp = call.get("tool_params", {})
-            safety_result = safety_checker.check_before_execute(_cn, _cp, session_id=_session_id)
+
+            # 会话信任预查(本 services 层, 合法依赖 app.services.chat.storage) — 小健 2026-08-17
+            _skip = False
+            if _session_id:
+                try:
+                    from app.db import db
+                    from app.services.chat.storage import check_session_trust
+                    from app.tools.tools_alias_mapper import normalize_tool_name
+                    with db.get_conn_with_retry("chat") as _conn:
+                        _skip = check_session_trust(_conn, _session_id, normalize_tool_name(_cn))
+                except Exception as _te:
+                    logger.warning(f"[action_handler] 会话信任查询失败,按需确认: session={_session_id}, tool={_cn}, err={_te}")
+                    _skip = False
+
+            safety_result = safety_checker.check_before_execute(_cn, _cp, skip_confirmation=_skip)
 
             if safety_result.blocked:
                 yield agent._step_emitter.emit(ErrorStep(

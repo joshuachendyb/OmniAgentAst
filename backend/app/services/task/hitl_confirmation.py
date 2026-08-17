@@ -6,6 +6,9 @@
 #   _PendingConfirmation 加 tool_name 字段; create_confirmation 增 tool_name 透传参数;
 #   resolve_confirmation confirm 成功+trust_session=True 时, 经 confirm_id 拆 task_id 反查 session_id(禁伪 agent.session_id)
 #   落 insert_session_trust(chat_session_trust), 落库失败只留日志不影响确认结果
+# 2026-08-17 - 小健 - 三堂会审-T1修复(北京老陈驱动): 落库用 normalize_tool_name(entry.tool_name) 规范名,
+#   与豁免查询侧(action_handler 端 normalize)一致, 防止 LLM 以别名(write_text/writefile)提名时信任落库别名、
+#   而查询用规范名导致漏配失效仍触发二次 HITL(与写保护 BUG-2 同模式)。
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -154,11 +157,12 @@ def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: bool) 
             try:
                 from app.db import db
                 from app.services.chat.storage import get_session_id_by_task, insert_session_trust
+                from app.tools.tools_alias_mapper import normalize_tool_name  # 2026-08-17 小健 三堂会审-T1修复: 落库用规范名, 与豁免查询(normalize)一致防别名漏配
                 with db.get_conn_with_retry("chat") as _conn:
                     _sid = get_session_id_by_task(_conn, _task_id)
                     if _sid:
-                        insert_session_trust(_conn, _sid, entry.tool_name)
-                        logger.info(f"[HITL] 会话信任落库: task_id={_task_id}, session_id={_sid}, tool_name={entry.tool_name}")
+                        insert_session_trust(_conn, _sid, normalize_tool_name(entry.tool_name))
+                        logger.info(f"[HITL] 会话信任落库: task_id={_task_id}, session_id={_sid}, tool_name={normalize_tool_name(entry.tool_name)}")
                     else:
                         logger.warning(f"[HITL] 会话信任落库跳过: task_id={_task_id} 无 session_id 可反查")
             except Exception as _te:
