@@ -13,6 +13,9 @@
 #   agent.llm_client 同对象, orchestrator 构造 agent 时注入), _build_start_contract 直接读 agent.llm_client;
 #   _start_meta 仅装 agent 拿不到的 chat 数据(task_id/next_step/user_input/session_id/链字段/warning);
 #   ② KISS/SLAP——assemble_start_step/_build_start_contract 去掉无谓 async(内部零 await), 同步函数直线返回
+# 2026-08-17 小健 全系统DRY扫描收敛(老陈指示按10大规范): task_id 改读 agent.task_id(base_agent:59 权威持有,
+#   orchestrator 构造时注入), 不再依赖 _start_meta["task_id"]; _start_meta 只承载 next_step/session_id/user_input/
+#   链字段/warning(react_cycle 拿不到的必需运行数据), 与 ai_service 删除同属真冗余收敛(单一归属) — 小健 2026-08-17
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -184,7 +187,7 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
         display_name=f"{_ai.provider} ({_ai.model})",
         provider=_ai.provider,
         model=_ai.model,
-        task_id=_meta.get("task_id"),
+        task_id=getattr(agent, "task_id", None),  # DRY: agent.task_id 权威持有(base_agent:59), 不重复注入 _start_meta — 小健 2026-08-17
         system_prompt=getattr(agent, "_sys_prompt", ""),
         context_summary=context_summary,
         warning=_meta.get("warning"),
