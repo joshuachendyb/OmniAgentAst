@@ -78,6 +78,9 @@
 # 2026-08-16 - 小欧 - S4(10.1.1③/10.1.7④): start 装配进 agent.steps(占 step 0), 取消 orchestrator 旁路。
 #   P4 注入模式: 工厂由 orchestrator 注入 agent._start_step_factory(chat 层数据闭包捕获), 本处只读 agent 属性
 #   (system_prompt=_sys_prompt, previous_messages=context), 不 import chat 层; start 落库走 agent_runner 事件流
+# 2026-08-17 - 小健 - 三堂会审修复(北京老陈驱动, 11 bug 复核3遍):
+#   S4(步号唯一): 首轮前取消(llm_call_count 尚未在 _process_single_step 开头 +1 =0)时, FinalStep step=0 与
+#       start(占 step0) 双 step0 冲突; 改用 `step=agent.llm_call_count or 1` 接续唯一步号, 消除与 start 重复。
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -597,7 +600,9 @@ async def run_react_cycle(
                 if await check_cancelled(task_id):
                     logger.info(f"[run_react_cycle] 检测到任务取消(task_id={task_id}), 终止为 cancelled")
                     yield agent._step_emitter.emit(FinalStep(
-                        step=agent.llm_call_count,
+                        # 2026-08-17 - 小健 - 三堂会审-S4修复: 首轮前取消(llm_call_count 尚未+1=0)时,
+                        #   step=0 与 start(step=0)双 step0(与 S4"start占0,业务从1起"矛盾); or 1 接续唯一步号
+                        step=agent.llm_call_count or 1,
                         response="任务已被用户取消", outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 用户取消终态统一
                     ))
                     set_cancelled(agent)
