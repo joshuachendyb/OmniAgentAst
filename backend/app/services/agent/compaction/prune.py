@@ -5,17 +5,22 @@
 #   2026-08-17 小健 落地: 四函数合并 prune.py, 常量自 compaction.compaction_constants(DRY re-export)
 #                        t1_compress_observations 实现为通用字符串级摘要兜底(去 per-tool 模板过度设计,
 #                        [4] 14.9.6 明示 t1_reuse_summary 强推荐替代逐工具模板; 本版为无 _summary 时的兜底)
-"""compaction.prune — C3 剪枝压缩 + t1_reuse_summary + 价值优先保留 — 小欧 2026-08-16 / 小健 2026-08-17
+#   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出, 常量注释补意义/依据/可选范围
+#                        (043ed9c54, 对齐老陈函数名符其实要求), 并清除模块头"三堂会审"残留措辞
+#   2026-08-17 小健 改名: 8 函数名符其实——prune_tool_outputs→clear_tool_outputs, t1_reuse_summary→use_tool_summary,
+#                        t1_compress_observations→compress_long_tool_output, value_first_prune→keep_valuable_messages;
+#                        模块级注释/函数关系/设计文档引用同步, 编辑历史保留原名(历史事实)
+"""compaction.prune — C3 剪枝压缩 + use_tool_summary + 价值优先保留 — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「同一窗口内的消息级压缩/剪枝取舍」, 不含触发判定(归 trigger)与语义摘要(归 summary)。
-依据: [4] 14.9.3②(prune_tool_outputs) / 14.9.6 C2(t1_reuse_summary) / 14.9.6 T1 策略(value_first_prune)
-      / 第五章(t1_compress_observations 设计)。
+依据: [4] 14.9.3②(clear_tool_outputs) / 14.9.6 C2(use_tool_summary) / 14.9.6 T1 策略(keep_valuable_messages)
+      / 第五章(compress_long_tool_output 设计)。
 
 函数关系:
-  - prune_tool_outputs: 通用清零旧 tool output, 保留 tool_call 参数(零 LLM, [4] 14.9.3②)。
-  - t1_reuse_summary: 复用工具层已 stash 的 `_summary` 做一行语义摘要(DRY 升级, [4] 14.9.6 C2 推荐)。
-  - t1_compress_observations: 通用字符串级摘要兜底(无 per-tool 模板, 依赖前置 stash `_summary` 缺位时回溯首段)。
-  - value_first_prune: 按价值权重保留, 预算内先丢低价值 tool 输出(T1 保真增强)。
+  - clear_tool_outputs: 通用清零旧 tool output, 保留 tool_call 参数(零 LLM, [4] 14.9.3②)。
+  - use_tool_summary: 复用工具层已 stash 的 `_summary` 做一行语义摘要(DRY 升级, [4] 14.9.6 C2 推荐)。
+  - compress_long_tool_output: 通用字符串级摘要兜底(无 per-tool 模板, 依赖前置 stash `_summary` 缺位时回溯首段)。
+  - keep_valuable_messages: 按价值权重保留, 预算内先丢低价值 tool 输出(T1 保真增强)。
 
 全部纯规则零 LLM; 复用既有 `_compressed` 防重复标记; 常量不硬编码(DRY);
 内部标记 `_summary`/`_compressed`/`_pruned`/`_raw` 由 prepare_messages_for_llm 与 `_temp_*` 同段剥离。
@@ -37,10 +42,10 @@ def _released_tokens(content: str) -> int:
     return len(str(content)) // CHARS_PER_TOKEN
 
 
-# ---- C3 策略实现: prune 通用清零(14.9.3②) ————————————————————————————————
+# ---- C3 策略实现: clear_tool_outputs 通用清零(14.9.3②) ————————————————————————————————
 
 
-def prune_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
+def clear_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
     """清旧 tool output、保留 tool_call 参数与消息结构 — 小欧 2026-08-16
 
     适用场景: C3 剪枝压缩核心; 上下文超窗但无需语义保真时, 快速释放 tool 输出 token。
@@ -61,13 +66,13 @@ def prune_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
     return pruned, released
 
 
-# ---- C3 策略实现: t1_reuse_summary(14.9.6 C2, DRY 升级) —————————————————————
+# ---- C3 策略实现: use_tool_summary(14.9.6 C2, DRY 升级) —————————————————————
 
 
-def t1_reuse_summary(messages: List[Dict]) -> List[Dict]:
+def use_tool_summary(messages: List[Dict]) -> List[Dict]:
     """用工具返回自带 summary 替换 tool content — 小欧 2026-08-16
 
-    适用场景: 作为 t1_compress_observations 的 DRY 升级替代; 当工具已返回 llm_data.summary 时优先用本法。
+    适用场景: 作为 compress_long_tool_output 的 DRY 升级替代; 当工具已返回 llm_data.summary 时优先用本法。
     使用方法: 对消息列表调用, 原地替换 content 为 `[tool-summary] {_summary}`, 返回同一列表。
     输入: messages 消息列表。
     输出: 处理后的同一列表; 被替换的 tool 消息带 `_raw`(原 content) 与 `_compressed=True` 标记。
@@ -88,24 +93,24 @@ def t1_reuse_summary(messages: List[Dict]) -> List[Dict]:
     return messages
 
 
-# ---- C3 策略实现: t1_compress_observations 通用摘要兜底(第五章) —————————————
+# ---- C3 策略实现: compress_long_tool_output 通用摘要兜底(第五章) —————————————
 
 
-def t1_compress_observations(messages: List[Dict],
+def compress_long_tool_output(messages: List[Dict],
                              min_release: int = PRUNE_MINIMUM_TOKENS,
                              protect_tokens: int = PRUNE_PROTECT_TOKENS) -> tuple[List[Dict], int]:
     """逐工具观测压缩：超长 tool 输出压缩为一行通用摘要 — 小健 2026-08-17
 
-    适用场景: t1_reuse_summary 的兜底——当工具未 stash `_summary` 时, 对超长 tool 输出做字符串级一行摘要。
+    适用场景: use_tool_summary 的兜底——当工具未 stash `_summary` 时, 对超长 tool 输出做字符串级一行摘要。
     使用方法: 对消息列表调用, 返回 (新列表, 释放 token 估算); 默认受保护/最小释放阈值由常量控制。
     输入: messages 消息列表; min_release 最小需释放 token(默认 PRUNE_MINIMUM_TOKENS=20000);
           protect_tokens 受保护 token 阈值(默认 PRUNE_PROTECT_TOKENS=40000, 短输出不压缩防反向膨胀)。
     输出: (处理后的消息列表, 释放的 token 估算 int); 被压缩消息带 `_raw` 与 `_compressed=True` 标记。
     前置条件: 无; 只处理 role=tool 且未 `_compressed` 的消息, 已压缩/短输出自动跳过。
 
-    设计文档: [4] 第五章(t1_compress_observations Tool-Summary) + 14.9.6 C2(t1_reuse_summary 强推荐替代,
+    设计文档: [4] 第五章(compress_long_tool_output Tool-Summary) + 14.9.6 C2(use_tool_summary 强推荐替代,
     本函数为其兜底: 无 `_summary` 时仍可为长 tool 输出做字符串级摘要)。
-    相对于 t1_reuse_summary: 后者依赖工具层已 stash 的 `_summary`; 本函数不依赖, 直接用
+    相对于 use_tool_summary: 后者依赖工具层已 stash 的 `_summary`; 本函数不依赖, 直接用
     内容首段 + 长度标记生成"一行摘要"(零 per-tool 模板, 去 14.7 指出的过度设计)。
     """
     released = 0
@@ -126,7 +131,7 @@ def t1_compress_observations(messages: List[Dict],
     return messages, released
 
 
-# ---- T1 策略实现: value_first_prune(14.9.6, 保真增强) ——————————————————————
+# ---- T1 策略实现: keep_valuable_messages(14.9.6, 保真增强) ——————————————————————
 
 
 def _value_weight(msg: Dict) -> int:
@@ -145,7 +150,7 @@ def _value_weight(msg: Dict) -> int:
     return 50
 
 
-def value_first_prune(messages: List[Dict], budget_tokens: int) -> List[Dict]:
+def keep_valuable_messages(messages: List[Dict], budget_tokens: int) -> List[Dict]:
     """按价值权重保留, 预算内先丢低价值 tool 输出 — 小欧 2026-08-16
 
     适用场景: 关键决策发生在早期轮时, 替代"保最近 N 轮"; 与 T1 组合增强保真。

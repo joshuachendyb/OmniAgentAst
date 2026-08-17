@@ -13,6 +13,8 @@
 编辑历史:
 # 格式规范: {日期} {署名} {修改内容}
   2026-08-17 小健 新建: 压缩裁剪专属常量 + re-export 全局缓冲常量(DRY, 不重复 app/constants)
+  2026-08-17 小健 补全: 每常量注释补全意义/默认值依据/可选范围(043ed9c54)
+  2026-08-17 小健 改名: TRIGGER_T1_RATIO 注释同步 compress_long_tool_output(旧 t1_compress_observations 已改名)
   2026-08-17 小健 修正: 移除本文件自实现的 preserve_recent_budget(与 split_turn.py 权威版本重复, DRY 违反),
                        保尾预算实现收敛到 split_turn.preserve_recent_budget([4] 14.9.7)
 """
@@ -30,11 +32,11 @@ from app.constants import CHARS_PER_TOKEN  # noqa: F401 — token 估算系数
 COMPACTION_ENABLED = False
 
 # ---- 触发比例(C3 轻量/T1 紧急裁剪, [4] 第八章节) ———————————————————————————
-# 意义: TRIGGER_T1_RATIO/t1_compress_observations 触发阈值; TRIGGER_T3_RATIO/T1 紧急裁剪最后安全网;
+# 意义: TRIGGER_T1_RATIO/compress_long_tool_output 触发阈值; TRIGGER_T3_RATIO/keep_valuable_messages 紧急裁剪最后安全网;
 #       TRIM_TARGET_RATIO/裁剪到目标占用比例; KEEP_TAIL_ROUNDS/保尾完整 FC 轮数。
 # 默认值依据: 借鉴 opencode/历史方案口径(50% 常规触发、95% 濒危安全网、保留最近 3 轮)。
 # 可选范围: 比例取 (0,1), 越大越迟触发; 建议常规 0.4~0.6、安全网 0.9~0.98; KEEP_TAIL_ROUNDS 取 1~5 轮。
-TRIGGER_T1_RATIO = 0.50   # C3 的轻量实现函数 t1_compress_observations 触发比例
+TRIGGER_T1_RATIO = 0.50   # C3 的轻量实现函数 compress_long_tool_output 触发比例
 TRIGGER_T3_RATIO = 0.95   # T1 紧急裁剪法(触发比例, 窗口快爆最后安全网)
 TRIM_TARGET_RATIO = 0.50  # 裁剪目标比例
 KEEP_TAIL_ROUNDS = 3      # 保尾轮数(T1: 保留最近 3 轮完整 FC 对, [4] 5.2 步骤4)

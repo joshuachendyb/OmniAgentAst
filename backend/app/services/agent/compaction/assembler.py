@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 #   2026-08-17 小健 新建: 14.9.2 目录树【待补代码】装配线 + 14.9.6 K3 trim_orphan_pairs_proactive
+#   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
+#   2026-08-17 小健 改名: extract_new_block→get_new_messages_since, trim_orphan_pairs_proactive→remove_dangling_tool_calls;
+#                        模块职责/函数引用/与 prune 协同描述同步(编辑历史保留原名)
 """compaction.assembler — 装配适配(保尾区保留 + 压缩消息注入 + 配对修剪) — 小健 2026-08-17
 
 职责(SRP): 仅承载「装配」三步:
   - split_history_window: 按 tail_start 切出 {old_head, tail_part, absolute_tail_start}
   - inject_compressed_summary: 用摘要 assistant 消息替换 old_head, 保 system + 摘要 + tail + 最新 task
-  - trim_orphan_pairs_proactive: FC 配对前置修剪(K3, 设计文档 [4] 14.9.6 K3)
+  - remove_dangling_tool_calls: FC 配对前置修剪(K3, 设计文档 [4] 14.9.6 K3)
 设计文档: [4] 14.5 装配过滤(tail_start_id 之后原样保留、之前被摘要覆盖) + 14.9.6 K3 + 10.1.8 S5。
 
 装配只编排注入/保留, 摘要生成归 summary; K3 复用既有 _trim_fc_pairs 思路(不重造);
 old_head 原样保留(不破坏原库), 摘要仅运行时回填(list 组合新列表, 不改入参);
-trim_orphan_pairs_proactive 与 value_first_prune(C3 prune 删 tool)协同闭环保配对。
+remove_dangling_tool_calls 与 keep_valuable_messages(C3 prune 删 tool)协同闭环保配对。
 """
 from typing import List, Dict, Tuple
 
@@ -36,7 +39,7 @@ def split_history_window(messages: List[Dict], context_limit: int,
     return old_head, tail_part, tail_start
 
 
-def extract_new_block(messages: List[Dict], last_tail_start: int) -> List[Dict]:
+def get_new_messages_since(messages: List[Dict], last_tail_start: int) -> List[Dict]:
     """提取 tail_start 之后的增量块(供 generate_chunked_summary) — 小健 2026-08-17
 
     适用场景: C5 增量块式摘要时, 取上次压缩之后新增的对话段喂 LLM(降本)。
@@ -71,10 +74,10 @@ def inject_compressed_summary(messages: List[Dict], summary_text: str,
     return system_msgs + [{"role": "assistant", "content": summary_text}] + tail_msgs
 
 
-def trim_orphan_pairs_proactive(messages: List[Dict]) -> List[Dict]:
+def remove_dangling_tool_calls(messages: List[Dict]) -> List[Dict]:
     """保留有对应 tool_call_id 的工具消息, 删孤儿 assistant/tool — 小健 2026-08-17
 
-    适用场景: 凡做删除式裁剪(C3 prune 删 tool / value_first_prune)必须随后调用, 保 FC 配对。
+    适用场景: 凡做删除式裁剪(C3 prune 删 tool / keep_valuable_messages)必须随后调用, 保 FC 配对。
     使用方法: 对裁剪后的消息列表调用, 返回清理孤儿后的新列表。
     输入: messages 消息列表。
     输出: 过滤后的新列表——只保留有对应 tool_call_id 的 tool 消息、及 tool_calls 全部有对应 tool 的 assistant。

@@ -5,6 +5,7 @@
 #                       取不到文本。真实协议(llm_stream.py:265)为 async generator 产 ("response", resp) tuple,
 #                       文本在 resp["content"]; 首参是 agent 对象(含 .llm_client)。按真实协议重写。
 #   2026-08-17 小健 新增: generate_chunked_summary + _extract_response_content(C4 降本变体, 复用统一提取)
+#   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。

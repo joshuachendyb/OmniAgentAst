@@ -2,6 +2,8 @@
 # 编辑历史:
 #   2026-08-16 小欧 新增: 统一触发判定(14.9.3① 三条件) + 动态窗口触发(14.9.6 K1) + 冷却节流(14.9.6 K2)
 #   2026-08-17 小健 落地: 三函数合并 trigger.py, 常量自 compaction.compaction_constants(DRY re-export 全局缓冲常量)
+#   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
+#   2026-08-17 小健 改名: should_compact_window→should_compact_now(名符其实); 函数关系/设计文档引用同步
 """compaction.trigger — 触发判定(统一/窗口/冷却) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「是否该压缩」的三类判定, 不含任何压缩/裁剪执行逻辑。
@@ -9,7 +11,7 @@
 
 三个函数关系:
   - CompactionTrigger.should_compact: 三条件(模型窗口/增量/绝对值)统一判定, 供 C3 剪枝触发。
-  - should_compact_window: 大窗口下消息数兜底触发(K1), 供 t1_compress_observations/T1 补触发。
+  - should_compact_now: 大窗口下消息数兜底触发(K1), 供 compress_long_tool_output/keep_valuable_messages 补触发。
   - CompactionCooldown: 压缩后冷却节流(K2), 防 C4 每轮烧 LLM; 与 trigger 解耦(trigger 管"该不该",
     cooldown 管"刚压过没")。
 """
@@ -58,15 +60,15 @@ class CompactionTrigger:
         return False
 
 
-# ---- should_compact_window: 动态窗口触发(14.9.6 K1) —————————————————————————
+# ---- should_compact_now: 动态窗口触发(14.9.6 K1) —————————————————————————
 
 
-def should_compact_window(current_tokens: int, context_limit: int,
-                          reserve: int, msg_count: int,
-                          max_msgs: int = TRIGGER_MAX_MSGS) -> bool:
+def should_compact_now(current_tokens: int, context_limit: int,
+                       reserve: int, msg_count: int,
+                       max_msgs: int = TRIGGER_MAX_MSGS) -> bool:
     """动态窗口触发, 大窗口下消息数兜底 — 小欧 2026-08-16
 
-    适用场景: 超大上下文窗口模型(如 900K)下, 固定比例阈值形同虚设时用; 供 t1_compress_observations/T1 补触发。
+    适用场景: 超大上下文窗口模型(如 900K)下, 固定比例阈值形同虚设时用; 供 compress_long_tool_output/keep_valuable_messages 补触发。
     使用方法: 直接调用, 传窗口 token 数 + 消息数, 返回是否该压缩。
     输入: current_tokens 当前 token 数; context_limit 模型上限; reserve 输出预留;
           msg_count 当前消息条数; max_msgs 消息数兜底阈值(默认 TRIGGER_MAX_MSGS=80)。

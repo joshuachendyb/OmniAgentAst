@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 #   2026-08-17 小健 新建: 14.9.2 目录树【待补代码】落地, 依据 14.3.2 select + 14.5 装配过滤
+#   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
+#   2026-08-17 小健 改名: split_half_turn→truncate_oversized_message(名符其实); 模块函数引用同步
 """compaction.split_turn — 保尾切分原语(tail_start + 半轮劈分) — 小健 2026-08-17
 
 职责(SRP): 仅承载「保尾 token 预算 + 半轮劈分」的切分原语, 供 assembler 装配线切分历史窗口。
@@ -68,7 +70,7 @@ def find_tail_start(messages: List[Dict], budget_tokens: int) -> int:
     return tail_start
 
 
-def split_half_turn(tool_msgs: List[Dict]) -> List[Dict]:
+def truncate_oversized_message(tool_msgs: List[Dict]) -> List[Dict]:
     """半轮劈分: 单一 tool 消息超长时压缩其 content(不拆配对外散) — 小健 2026-08-17
 
     适用场景: 超长单条 tool/assistant 消息需控窗但又不想拆散 FC 对时, 对该条做头部截断。
