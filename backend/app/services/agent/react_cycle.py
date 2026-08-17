@@ -81,6 +81,10 @@
 # 2026-08-17 - 小健 - 三堂会审修复(北京老陈驱动, 11 bug 复核3遍):
 #   S4(步号唯一): 首轮前取消(llm_call_count 尚未在 _process_single_step 开头 +1 =0)时, FinalStep step=0 与
 #       start(占 step0) 双 step0 冲突; 改用 `step=agent.llm_call_count or 1` 接续唯一步号, 消除与 start 重复。
+# 2026-08-17 - 小健 - S5(10.1.8, 943a77917): 新增 _compact_injected_history(agent), 当 initialize_run_state
+#   已置 agent._needs_compact=True 且 COMPACTION_ENABLED 放开 R4 时: 对 conversation_history 做一次 LLM 锚定
+#   摘要, 以 assistant 消息回填(system[:1] + 摘要 + 最新 task[-1:]); tools=None 走 llm_stream Text 模式;
+#   回填新列表赋值 conversation_history(压缩生效); 摘要为空/异常则原样保留零退化; 主循环 while 前 await 调用
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 

@@ -11,6 +11,10 @@
 #   目录权限全部走 LLM 工具参数路径进临时名单(3.2.12); 同步撤销 react_cycle 的 I2/I3/I4 任务级批量确认段; 保留 R1 clear_temp_auth
 # 2026-08-11 - 小欧 - 三堂会审复核落地(P2-3): I1撤销后 _parse_task_auth_paths 已删, List 无消费处, 移除死 import(代码卫生)
 # 2026-08-16 - 小欧 - S4(10.1.2②): sys_prompt 取到后存 agent._sys_prompt, 供 react_cycle 前置装配 start 读取(start 的 system_prompt 字段, 10.1.1③ 装配时机=initialize_run_state 后 loop 前)
+# 2026-08-17 - 小健 - S5(10.1.8, 943a77917): 新增 _maybe_compact_injected_history(agent), 注入历史后估 token
+#   超窗(MAX_CONTEXT_TOKENS×MAX_CONTEXT_RATIO)置 agent._needs_compact=True; 仅置标记不触发 LLM(实际压缩
+#   归 react_cycle _compact_injected_history); COMPACTION_ENABLED=False 期间行为同现状零退化; 估算复用
+#   MessageBuilder._estimate_tokens(DRY)
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 

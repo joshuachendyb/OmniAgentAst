@@ -14,6 +14,11 @@
 # 2026-08-09 - 小欧 - v1.7发送即清(北京老陈 2026-08-09 指示): prepare_messages_for_llm浅拷贝messages后, 由conversation_history源中
 #   立即剔除本轮已发送的_temp_*临时消息(纠偏/推理仅活"本轮发送这一次"), 防死循环长历史中残留/重复携带/污染压缩与持久化;
 #   与终态pop_temp_messages安全网双保险(reasoning-only/纠偏正常脱落)。ast语法✓
+# 2026-08-17 - 小健 - S5(compaction 落地 943a77917): ①add_tool_result 新增 summary 形参, 工具层 llm_data.summary
+#   透传 stash `_summary` 供 compaction.use_tool_summary 复用(DRY, 14.9.6 C2 前置, 与 observation_formatter 拼接解耦);
+#   ②prepare_messages_for_llm 新增 _COMPACTION_TEMP_KEYS=("_summary","_pruned","_compressed","_raw","_truncated"),
+#   浅拷贝后一并剥离, 与 _temp_* 同段清空, 防泄漏 LLM 请求/污染 wire(对齐 [4] 14.9.3②/14.9.6 C2 剥离要求)。
+# 2026-08-17 - 小健 - compaction 函数改名同步: add_tool_result 注释3处 t1_reuse_summary→use_tool_summary(供 compaction.use_tool_summary 复用/防空转)
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -129,13 +134,13 @@ class MessageBuilder:
           同一轮的所有tool共用同一个assistant父消息。
         — 小欧 2026-07-12 — 小欧 2026-07-13 防御: 构造/序列化失败也兜底追加最小合法tool消息, 保证工具结果绝不丢失
         — 小健 2026-08-17 (14.9.6 C2 前置): 新增 summary 形参, 工具层 llm_data.summary 透传 stash 为 _summary,
-          供 compaction.t1_reuse_summary 复用(DRY); 内部标记由 prepare_messages_for_llm 与 _temp_* 同段剥离。
+          供 compaction.use_tool_summary 复用(DRY); 内部标记由 prepare_messages_for_llm 与 _temp_* 同段剥离。
         """
         try:
             msg = ToolResultMessage(content=content, tool_call_id=tool_call_id)
             d = message_to_dict(msg)
             if summary:
-                d["_summary"] = summary          # 供 compaction.t1_reuse_summary 读取; 内部标记由 prepare_messages_for_llm 剥离
+                d["_summary"] = summary          # 供 compaction.use_tool_summary 读取; 内部标记由 prepare_messages_for_llm 剥离
             self.conversation_history.append(d)
             return msg
         except Exception as e:
@@ -147,7 +152,7 @@ class MessageBuilder:
                 "tool_call_id": tool_call_id,
             }
             if summary:
-                d["_summary"] = summary          # 兜底分支同步 stash, 防 t1_reuse_summary 空转
+                d["_summary"] = summary          # 兜底分支同步 stash, 防 use_tool_summary 空转
             self.conversation_history.append(d)
             return None
 
