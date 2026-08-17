@@ -17,11 +17,8 @@
   - t1_compress_observations: 通用字符串级摘要兜底(无 per-tool 模板, 依赖前置 stash `_summary` 缺位时回溯首段)。
   - value_first_prune: 按价值权重保留, 预算内先丢低价值 tool 输出(T1 保真增强)。
 
-三堂会审:
-  合规: 全部纯规则零 LLM; 复用既有 `_compressed` 防重复标记; 常量不硬编码(DRY)。
-  合理(KISS): 各自一条 if/循环直线, 无绕路; t1_compress_observations 不重造 per-tool 模板(去过度设计)。
-  关联(增强不退化): `_summary`/`_compressed` 属内部标记, 由 prepare_messages_for_llm 与 `_temp_*` 同段剥离;
-                    value_first_prune 删 tool 后由 assembler.trim_orphan_pairs_proactive 闭环保配对。
+全部纯规则零 LLM; 复用既有 `_compressed` 防重复标记; 常量不硬编码(DRY);
+内部标记 `_summary`/`_compressed`/`_pruned`/`_raw` 由 prepare_messages_for_llm 与 `_temp_*` 同段剥离。
 """
 import logging
 from typing import List, Dict
@@ -46,9 +43,11 @@ def _released_tokens(content: str) -> int:
 def prune_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
     """清旧 tool output、保留 tool_call 参数与消息结构 — 小欧 2026-08-16
 
-    遍历 assistant(tool_calls) ↔ tool 配对, 将 tool 的 content 清空并打 _pruned 标记,
-    保留 tool_call_id/name/arguments(供后续轮引用"做了什么"), 返回 (处理后的消息, 释放的token估算)。
-    近端受保护判定由上层依据 reserve 决定(PRUNE_PROTECT_TOKENS), 此处仅清 content 打标记。
+    适用场景: C3 剪枝压缩核心; 上下文超窗但无需语义保真时, 快速释放 tool 输出 token。
+    使用方法: 直接对消息列表调用, 返回 (新列表, 释放 token 估算); 近端受保护由上层依 reserve 决定。
+    输入: messages 消息列表(含 role/tool_call_id/content 等字段)。
+    输出: (处理后消息列表, 释放的 token 估算 int)。被清 tool 打 `_pruned=True` 标记。
+    前置条件: 无; 只清 role=tool 且有 tool_call_id 的消息的 content, 保留结构与 tool_call 参数。
     """
     released = 0
     pruned = []
@@ -68,9 +67,14 @@ def prune_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
 def t1_reuse_summary(messages: List[Dict]) -> List[Dict]:
     """用工具返回自带 summary 替换 tool content — 小欧 2026-08-16
 
-    前置(必做, 见 message_builder.add_tool_result): tool 消息构造时把 llm_data.summary 存为 _summary 字段。
+    适用场景: 作为 t1_compress_observations 的 DRY 升级替代; 当工具已返回 llm_data.summary 时优先用本法。
+    使用方法: 对消息列表调用, 原地替换 content 为 `[tool-summary] {_summary}`, 返回同一列表。
+    输入: messages 消息列表。
+    输出: 处理后的同一列表; 被替换的 tool 消息带 `_raw`(原 content) 与 `_compressed=True` 标记。
+    前置条件(必做): tool 消息构造时必须先 stash `_summary`(见 message_builder.add_tool_result 的 summary 形参);
+                   否则无 _summary 时函数空转安全(仅跳过不报错)。
     依据本地真实代码: observation_formatter.py:603/627 已将 summary 拼进 content 文本, tool 消息字典本身只有
-    role/tool_call_id/content, 无独立 summary 字段 —— 复用已 stash 的 _summary(三堂会审去臆测 msg["summary"])。
+    role/tool_call_id/content, 无独立 summary 字段 —— 复用已 stash 的 _summary(去臆测 msg["summary"])。
     不写 per-tool 模板(DRY, 消除 14.3 指出的 C1 逐工具模板过度设计)。
     """
     for msg in messages:
@@ -92,11 +96,17 @@ def t1_compress_observations(messages: List[Dict],
                              protect_tokens: int = PRUNE_PROTECT_TOKENS) -> tuple[List[Dict], int]:
     """逐工具观测压缩：超长 tool 输出压缩为一行通用摘要 — 小健 2026-08-17
 
+    适用场景: t1_reuse_summary 的兜底——当工具未 stash `_summary` 时, 对超长 tool 输出做字符串级一行摘要。
+    使用方法: 对消息列表调用, 返回 (新列表, 释放 token 估算); 默认受保护/最小释放阈值由常量控制。
+    输入: messages 消息列表; min_release 最小需释放 token(默认 PRUNE_MINIMUM_TOKENS=20000);
+          protect_tokens 受保护 token 阈值(默认 PRUNE_PROTECT_TOKENS=40000, 短输出不压缩防反向膨胀)。
+    输出: (处理后的消息列表, 释放的 token 估算 int); 被压缩消息带 `_raw` 与 `_compressed=True` 标记。
+    前置条件: 无; 只处理 role=tool 且未 `_compressed` 的消息, 已压缩/短输出自动跳过。
+
     设计文档: [4] 第五章(t1_compress_observations Tool-Summary) + 14.9.6 C2(t1_reuse_summary 强推荐替代,
     本函数为其兜底: 无 `_summary` 时仍可为长 tool 输出做字符串级摘要)。
     相对于 t1_reuse_summary: 后者依赖工具层已 stash 的 `_summary`; 本函数不依赖, 直接用
     内容首段 + 长度标记生成"一行摘要"(零 per-tool 模板, 去 14.7 指出的过度设计)。
-    返回 (处理后的消息, 释放的token估算)。
     """
     released = 0
     for msg in messages:
@@ -136,8 +146,14 @@ def _value_weight(msg: Dict) -> int:
 
 
 def value_first_prune(messages: List[Dict], budget_tokens: int) -> List[Dict]:
-    """按价值权重保留, 预算内先丢低价值 tool 输出 — 小欧 2026-08-16"""
-    # 用 enumerate 记原始下标, 避免 dict 重复导致 index() 错位(三堂会审: 关联逻辑保时序)
+    """按价值权重保留, 预算内先丢低价值 tool 输出 — 小欧 2026-08-16
+
+    适用场景: 关键决策发生在早期轮时, 替代"保最近 N 轮"; 与 T1 组合增强保真。
+    使用方法: 对消息列表 + 预算 token 调用, 返回按原始时序还原的保留列表。
+    输入: messages 消息列表; budget_tokens 允许保留的 token 预算上限。
+    输出: 保留的消息列表(原始顺序); 高价值(>=70: system/history_mem/assistant 决策)在预算外仍保留。
+    前置条件: 无; 用 enumerate 记原始下标, 避免 dict 重复导致 index() 错位(保时序)。
+    """
     indexed = list(enumerate(messages))
     kept_idx = []
     used = 0

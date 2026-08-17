@@ -40,11 +40,13 @@ async def generate_anchored_summary(llm_agent, messages: List[Dict],
                                     previous_summary: Optional[str] = None) -> str:
     """一次 LLM 调用产出锚定摘要 — 小欧 2026-08-16
 
-    tools=None 走 llm_stream Text 模式; 喂给 LLM 的 tool 输出截断 2000 字符(防再撑爆),
-    原始 messages 完整保留(list 不变), 仅生成文本摘要返回。
-    【签名修正 2026-08-17】首参由 llm_client 改为 llm_agent(agent 对象): 因 call_llm_with_fallback
-    需要 agent.llm_client 发起流式调用, 传 llm_client 会缺 agent 上下文、无法正确调用。
-    自动续跑由上层 react_cycle 发 Continue。
+    适用场景: C4 锚定摘要压缩(当前唯一接入主链路); 长任务跨多轮/续聊需保决策链, 且已放开 R4 零 LLM 原则。
+    使用方法: 由 react_cycle._compact_injected_history await 调用(传 agent + 对话历史); 也可独立对任意消息列表调用。
+    输入: llm_agent Agent 对象(须含 .llm_client, 用于发起流式调用); messages 对话消息列表;
+          previous_summary 可选上一轮摘要文本(用于增量锚定)。
+    输出: str 锚定摘要文本(SUMMARY_TEMPLATE 六段 Markdown); 为空表示未产出(上层原样保留历史, 零退化)。
+    前置条件: 须放开 R4(COMPACTION_ENABLED=True); tools=None 走 Text 模式不触发工具; 首参必须是 agent 对象而非 llm_client
+              (否则 call_llm_with_fallback 缺 agent 上下文无法调用); 自动续跑由上层 react_cycle 发 Continue。
     """
     feed: List[Dict] = []
     for msg in messages:
@@ -62,9 +64,13 @@ async def generate_chunked_summary(llm_agent, new_block: List[Dict],
                                    previous_summary: Optional[str] = None) -> str:
     """只把新增块喂 LLM, 与 previousSummary 合并 — 小欧 2026-08-16
 
-    与 C4 区别: 不重喂全量历史, 仅 new_block(tool 输出截断 2000) + previousSummary,
-    成本随压缩次数线性而非累积。其余(截断喂/原库完整/previousSummary 锚定)同 14.9.4。
-    【签名修正 2026-08-17】首参 llm_client→llm_agent(同 14.9.4②), 复用 _extract_response_content(DRY)。
+    适用场景: C4 降本变体(备选); 长任务且会多次压缩时, 只摘要"新增块"避免全量重算, 成本随压缩次数线性。
+    使用方法: 传 llm_agent + 新增块消息列表 + 可选上一轮摘要, await 返回摘要文本。
+    输入: llm_agent Agent 对象(含 .llm_client); new_block 新增块消息列表(上次 compact 之后的新轮次);
+          previous_summary 可选上一轮摘要。
+    输出: str 增量合并后的摘要文本。
+    前置条件: 同 generate_anchored_summary(须放开 R4、首参 agent 对象); 与 C4 区别仅在不重喂全量历史,
+          只 new_block(tool 输出截断 2000) + previousSummary。
     """
     feed: List[Dict] = [{"role": "system", "content": SUMMARY_TEMPLATE}]
     if previous_summary:
