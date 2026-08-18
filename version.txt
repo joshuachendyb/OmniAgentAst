@@ -1,3 +1,26 @@
+v0.19.19
+更新时间: 2026-08-18 20:19:29 - 小欧-2026-08-18
+## v0.19.18以来 变更汇总(14个commit) - 小欧-2026-08-18
+[2026-08-18 20:19:29 小欧] 汇总范围=v0.19.18以来全部commit(version.txt流程commit并入本条不单列)
+
+### docs(数据存储yield设计 10.4 全章节+P1-P7 diff 落地 + target字段推导实施记录):
+- docs:[1]数据存储及yield设计 新增10.4 error及其他Step类型升级及优化章节(10.4.1现状三来源代码核实+usage双写矛盾标注) - 小欧-2026-08-18
+- docs:[1]数据存储及yield设计 10.4新增问题P2双计数器混用+方案P2统一轮数及方案P1同步total_steps口径 - 小欧-2026-08-18
+- docs:[1]数据存储及yield设计 10.4.4标题改优化的代码修正设计 - 小欧-2026-08-18
+- docs:[1]数据存储及yield设计 start重设计(startinfo拆分+StartStep独立类+content存context_summary+删security_check)+落库污染分析修正(1391-1401)+三堂会审3约束+ai_message_id时序重排 - 小欧-2026-08-18
+- docs:[1]数据存储及yield前端消息及数据设计 v2.90 P3修正 error统一仅SSE+错误信息随final落一份 - 小欧-2026-08-18
+- docs:[1]数据存储及yield前端消息及数据设计 v2.91 P5通知类剔落库+P6 usage收敛双写 - 小欧-2026-08-18
+- docs:[1]数据存储及yield前端消息及数据设计 v2.92 10.4通读三堂会审一致性修正 - 小欧-2026-08-18
+- docs:[1]数据存储及yield前端消息及数据设计 v2.93 10.4.4写入P1-P7真实代码diff+问题P7方案P7(start=P7) - 小欧-2026-08-18
+- docs:[1]数据存储设计文档 10.4 清除三堂会审/检查注记只留设计内容+修正A/B/C/E/H落正文+v2.93历史行清理(保留v2.92/v2.89) - 小欧-2026-08-18
+- docs: target字段推导重构与截断收敛设计实施记录+数据存储yield设计更新 - 小欧-2026-08-18
+- docs:target字段推导重构与截断收敛设计实施记录 补充v1.1实施方案代码应用详解(action_handler/tool_types+registry/file_register/observation_formatter逐函数落地标注) - 小欧-2026-08-18
+
+### refactor/fix(步骤体系重构 + target字段推导 + Bug#1-8修复):
+- refactor: §10.3.3步骤体系重构 steps/agent_runner/answer_handler/react_cycle/sse_events/storage/stream_reader(ThoughtStartStep新增+FinalStep多态+ObservationStep仅tool_result+通道路由) - 小欧-2026-08-18
+- refactor: target字段推导重构+截断收敛 action_handler/observation_formatter/registry/tool_types/file_register(删硬编码_TARGE_FIELD改schema推导+find target_param=path+truncate_text收敛+_tool_target去重) - 小欧-2026-08-18
+- fix: Bug#1-8/P1修复 tool_facade/delete_file/tool_response/tool_retry_engine(status str防御+op_id+重试参数校验) - 小欧-2026-08-18
+
 v0.19.18
 更新时间: 2026-08-18 09:01:12 - 小欧-2026-08-18
 ## v0.19.17(暂记为tag)以来 变更汇总(39个commit) - 小欧-2026-08-18
