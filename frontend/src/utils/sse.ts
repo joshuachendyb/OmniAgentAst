@@ -19,6 +19,7 @@
  *          前端无法区分final事件的具体终态结果(completed/failed/cancelled)。
  *   【改法】①ExecutionStep加outcome/error_type/error_message三个可选字段
  *          ②processSSEData: 从rawData同步解析outcome和error_type到step对象
+ * 2026-08-18 小欧 三堂会审(P7/P4): ① case 'startinfo' 并入 case 'start' 渲染, 修复后端实时事件由 start 改 startinfo 后任务头部占位失效; ② error 分支优先读 content 再回退 error_message, 修复 error_message 已迁 content 后实时错误显示退化'未知错误'
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -1147,7 +1148,11 @@ const processSSEData = (
     }
 
     switch (rawData.type) {
-      case 'start': {
+      case 'start':
+      // 【小欧 2026-08-18 三堂会审 P7】后端实时事件由 start 改为 startinfo(轻量占位, 复用 start 渲染)。
+      //   startinfo 字段 = task_id/display_name/provider/model/timestamp/ai_message_id(无 user_message/security_check),
+      //   复用下方 start 占位构造(security_check 缺省 undefined、user_message 缺省 ''、onShowSteps 触发), 渲染路径完全一致。
+      case 'startinfo': {
         const stepNum = rawData.step || 1;
         console.log(
           `%c[STEP] [type=start] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
@@ -1399,7 +1404,9 @@ const processSSEData = (
         );
 
         // 【小强修复 2026-04-15】后端error类型只有以下字段，只解析后端存在的字段
-        const errorMsg = rawData.error_message || '未知错误';
+        // 【小欧 2026-08-18 三堂会审】P4 起 error 文本统一由 MetaStep.content 承载(新)，
+        //   兼容读 content，再回退旧 ErrorStep 的 error_message，杜绝实时显示退化为'未知错误'
+        const errorMsg = rawData.content || rawData.error_message || '未知错误';
         step.content = errorMsg;
         step.error_message = errorMsg;
         step.error_type = rawData.error_type || '';
