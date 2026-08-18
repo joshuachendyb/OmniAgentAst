@@ -59,6 +59,7 @@
 #   首个含 min/max 的成员, 消除"anyOf[0] 恰为 null 分支则取不到边界"的顺序依赖;
 #   #3 clamp 门控废除顶层 type 判定(数组形式如 ["integer","null"] 时 if _t=="integer" 整段跳过,
 #   clamp 全程失效), 改为"能取到数值边界即钳制", 并补 isinstance(v,(int,float)) 防类型不可比较异常
+# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): params.llm_data.status 可能为 str, 防御 isinstance, 防 AttributeError
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -290,7 +291,14 @@ class ToolRetryEngine:
         normalized_input, _ = normalize_params(action, action_input)
         params = self._validate_params(action, normalized_input, tool)
         # 验证失败（非法参数/缺失必需参数）→ 返回error_dict，不继续执行
-        _ec = params.get("llm_data", {}).get("status", {}).get("exec_code", "") if isinstance(params, dict) else ""
+        # 2026-08-18 小健 三堂会审 Bug#7(同源): llm_data.status 可能为 str, 防御 isinstance
+        _ec = ""
+        if isinstance(params, dict):
+            _ld = params.get("llm_data")
+            if isinstance(_ld, dict):
+                _st = _ld.get("status")
+                if isinstance(_st, dict):
+                    _ec = _st.get("exec_code", "")
         if _ec == "error":
             return None, params
         return tool, params

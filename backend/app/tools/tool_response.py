@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): is_success/is_warning/is_error 的 llm_data.status 可能为 str, 防御 AttributeError; 抽 _exec_code 统一取值, 保留 is_error 畸形结果(无llm_data)视为错误语义不退化
 """
 统一工具返回结构定义 — 小健 2026-05-21
 
@@ -69,28 +72,28 @@ def build_warning(data: Any = None, llm_data: Optional[Dict] = None,
     return result
 
 
-def is_success(result: Dict[str, Any]) -> bool:
-    """判断返回是否成功 — 从llm_data.status.exec_code判断 — 小欧 2026-06-21"""
+def _exec_code(result: Dict[str, Any]) -> str:
+    """2026-08-18 小健 三堂会审 Bug#7(同源): llm_data.status 可能为 str, 防御 .get AttributeError"""
     llm_data = result.get("llm_data")
     if not isinstance(llm_data, dict):
-        return False
-    exec_code = llm_data.get("status", {}).get("exec_code", "")
-    return exec_code in ("success", "warning")
+        return ""
+    _st = llm_data.get("status")
+    return _st.get("exec_code", "") if isinstance(_st, dict) else ""
+
+
+def is_success(result: Dict[str, Any]) -> bool:
+    """判断返回是否成功 — 从llm_data.status.exec_code判断 — 小欧 2026-06-21"""
+    return _exec_code(result) in ("success", "warning")
 
 
 def is_warning(result: Dict[str, Any]) -> bool:
     """判断返回是否为warning — 小健 2026-06-25"""
-    llm_data = result.get("llm_data")
-    if not isinstance(llm_data, dict):
-        return False
-    exec_code = llm_data.get("status", {}).get("exec_code", "")
-    return exec_code == "warning"
+    return _exec_code(result) == "warning"
 
 
 def is_error(result: Dict[str, Any]) -> bool:
     """判断返回是否失败 — 从llm_data.status.exec_code判断 — 小欧 2026-06-21 — 小欧 2026-06-24 畸形结果视为错误"""
-    llm_data = result.get("llm_data")
+    llm_data = result.get("llm_data") if isinstance(result, dict) else None
     if not isinstance(llm_data, dict):
-        return True
-    exec_code = llm_data.get("status", {}).get("exec_code", "")
-    return exec_code == "error"
+        return True  # 畸形结果(无llm_data)视为错误
+    return _exec_code(result) == "error"
