@@ -47,6 +47,8 @@
 #   异常收尾); 仅加注释不改逻辑, 标明编排对象与依赖顺序 — 小健 2026-08-17
 # 2026-08-17 - 小健 - 三堂会审深挖(北京老陈): task_cancel_check_and_yield 已删死参数, 调用点同步收敛,
 #   不再白算 state.current_content 传入 — 小健 2026-08-17
+# 2026-08-18 - 小欧 - §10.4.4 P2(弃用 next_step): 删 next_step = create_step_counter() 赋值; _start_meta 删 next_step 键;
+#   run_agent_in_background 去 next_step 传参; _stream_with_control 签名/调用去 next_step; 删 create_step_counter import
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -63,7 +65,6 @@ from app.services import get_service
 from app.services.model.resolver import get_ai_config_resolver
 from app.logger import logger, log_and_print
 from app.services.chat.sse_events import create_error_response
-from app.services.agent.steps.base import create_step_counter, MetaStep
 from app.services.task.task_registry import register_task
 from app.services.task.task_runtime import (
     task_cancel_check, task_pause_check_and_yield, task_cancel_check_and_yield,
@@ -183,7 +184,7 @@ async def chat_stream_orchestrator(
     _task_token = _current_task_id.set(task_id)  # try/finally reset, 防 ContextVar 泄漏(方案4.7.3与A4对齐)
     set_session_id(session_id)
     # ── 编排④建运行基元(步号计数器 + SSE流状态容器) ———————————————————————————— 小健 2026-08-17
-    next_step = create_step_counter()
+    # 2026-08-18 小欧 P2(§10.4.4): 删 next_step = create_step_counter()(step 统一 agent.llm_call_count 口径)
     execution_steps = []
     state = StreamState()
 
@@ -269,7 +270,6 @@ async def chat_stream_orchestrator(
         #   已持有)、user_input? 见下——next_step/session_id/链字段/warning 为必需 (react_cycle 无权威源)
         #   2026-08-17 小健 收敛真冗余: task_id 由 agent.task_id 权威持有(base_agent:59), 不重复注入; 余键保留
         agent._start_meta = {
-            "next_step": next_step,
             "user_input": user_input,
             "session_id": session_id,
             "context_link_mode": context_link_mode,
@@ -285,13 +285,13 @@ async def chat_stream_orchestrator(
             logger.warning(f"[chat] chat_tasks INSERT 失败(task={task_id}): {_task_e}")
         # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
         bg_task = asyncio.create_task(run_agent_in_background(
-            agent, task_id, user_input, None, next_step, session_id, state, _task_start_time,
+            agent, task_id, user_input, None, session_id, state, _task_start_time,
             db_ops=_db_ops))
         _agent_tasks.add(bg_task)
         bg_task.add_done_callback(_agent_tasks.discard)
 
         # ── 编排⑩流式转发(消费后台 agent 产出的 SSE → 转前端) ————————————————— 小健 2026-08-17
-        async for sse_chunk in _stream_with_control(buffer, task_id, next_step, session_id, execution_steps, state):
+        async for sse_chunk in _stream_with_control(buffer, task_id, session_id, execution_steps, state):
             yield sse_chunk
     # ── 编排⑪异常/收尾(断连静默/异常取消后台/还原model/reset ContextVar) ———— 小健 2026-08-17
     except asyncio.CancelledError:
@@ -317,18 +317,19 @@ async def chat_stream_orchestrator(
             logger.info(f"[chat_stream_orchestrator] AE还原共享单例model: task={task_id}, restore={_orig_model}")
 
 
-async def _stream_with_control(buffer, task_id: str, next_step, session_id: str,
+async def _stream_with_control(buffer, task_id: str, session_id: str,
                                execution_steps: list, state=None, after_seq: int = 0):
     """SSE 消费者包装：读缓冲 + 注入 pause/cancel 检查 — 自 openai.py 迁入 — 小欧 2026-08-13
 
     首次请求(after_seq=0)与重连请求(after_seq=N)共用本函数，DRY。
     客户端断开时 CancelledError 向上传播，由 orchestrator 捕获。
+    2026-08-18 小欧 P2(§10.4.4): 删 next_step, task_pause/cancel_check 步号统一 _current_step(task_id)
     """
     async for sse_chunk in stream_reader(buffer, task_id, after_seq):
-        async for pause_event in task_pause_check_and_yield(task_id, next_step):
+        async for pause_event in task_pause_check_and_yield(task_id):
             yield pause_event
         cancelled_sse = await task_cancel_check_and_yield(
-            task_id, next_step, execution_steps)
+            task_id, execution_steps)
         if cancelled_sse:
             yield cancelled_sse
             return
@@ -343,8 +344,7 @@ async def chat_stream_reconnect_orchestrator(
     if not buffer:
         yield create_error_response(error_type="not_found", error_message="任务不存在或已结束")
         return
-    next_step = create_step_counter()
     async for sse_chunk in _stream_with_control(
-        buffer, task_id, next_step, session_id or "", [], None, after_seq
+        buffer, task_id, session_id or "", [], None, after_seq
     ):
         yield sse_chunk

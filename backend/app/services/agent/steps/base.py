@@ -5,6 +5,8 @@
 # 2026-08-08 - 小欧 - 全程统一本地时区: 默认 timestamp 改 get_local_iso_timestamp() (本地ISO无Z), 消除 UTC Z
 # 2026-08-16 - 小欧 - S4(10.1.7④/10.1.8 S4): create_step_counter 起始改 -1, 首次 next_step() 返回 0
 #   (start 显式占 step 0, 业务步骤从 1 起; 设计文档 2222 行遗留项要求)
+# 2026-08-18 - 小欧 - §10.4.4 P2(弃用 next_step): 删 create_step_counter 整段(step 统一取 agent.llm_call_count);
+#   Callable import 同步删除 — 小欧 2026-08-18
 """
 ReasoningStep 抽象基类
 
@@ -15,7 +17,7 @@ Date: 2026-04-15
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
@@ -81,19 +83,6 @@ class ReasoningStep(ABC):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(step={self._step}, type={self.get_type()})"
-
-
-def create_step_counter() -> Callable[[], int]:
-    """创建统一的步骤计数器函数 — 小欧 2026-06-08
-    2026-08-16 - 小欧 - S4(10.1.7④): 起始改 -1, 首次 next_step() 返回 0(start 显式占 step 0, 业务步骤从 1 起)"""
-    step_counter = -1  # S4: 起始-1, 首次调用返回0 — start 占 step 0
-
-    def next_step() -> int:
-        nonlocal step_counter
-        step_counter += 1
-        return step_counter
-
-    return next_step
 
 
 @dataclass

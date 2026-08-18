@@ -37,7 +37,6 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 from app.db import db
-from app.services.agent.steps import ErrorStep
 from app.services.task.task_state import agent_streams
 from app.logger import logger, log_and_print
 from app.utils.sse_formatter import format_agent_sse
@@ -277,9 +276,10 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
         #   同性质非业务 MetaStep(paused/resumed/retrying/cancelled/authorization_required/start) 一并剔除, 与
         #   "Meta 步骤非业务步骤"注释自洽; 业务步骤(action/thought/observation/final/error)不计入排除,
         #   不误伤。total 必须在 pop 之后计算, 否则 total_steps 含排除项与注释声明矛盾。
-        # 2026-08-18 小健 P1(§10.4.3): chunk 已改为仅SSE不落库, 不入 current_execution_steps,
-        #   total_steps 自然剔除 chunk 虚高(实时逐字由 thought/final 承载, 此处无需再显式排除)。
-        for _t in ("usage", "paused", "resumed", "retrying", "cancelled", "authorization_required", "start"):
+        # 2026-08-18 小欧 P1/P3/P5/P6: chunk/error/usage/paused/resumed/retrying/cancelled 均仅SSE不落库,
+        #   不入 current_execution_steps, total_steps 自然剔除; cancelled 经 task_runtime.task_cancel_check_and_yield(:90) append 进内存 steps 须显式剔除,
+        #   收敛剔除集={cancelled,authorization_required,start}与 agent_runner:388 口径一致(10.4.4 第0步) — 小欧 2026-08-18(修正)
+        for _t in ("cancelled", "authorization_required", "start"):
             counter.pop(_t, None)
         total = sum(counter.values())
         step_summary = ",".join(f"{k}={v}" for k, v in sorted(counter.items()))
@@ -288,16 +288,3 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
         parts.append(f"total_steps={total}")
     _msg = f"[TASK_END] {time.strftime('%H:%M:%S')} {' | '.join(parts)}"
     log_and_print(_msg)
-
-
-def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):
-    """内联错误SSE生成(避免外部模块依赖) — P2-18 使用ErrorStep替代手工dict"""
-    step_num = next_step()
-    error_step = ErrorStep(
-        step=step_num,
-        error_type=error_type,
-        error_message=str(e),
-    )
-    current_execution_steps.append(error_step.to_dict())
-    # 【修改 2026-06-09 小沈】删除_save调用，统一在finally块中保存
-    return format_agent_sse(error_step.to_dict())

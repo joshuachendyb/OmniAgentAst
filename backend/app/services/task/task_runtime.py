@@ -6,6 +6,8 @@
 # 2026-08-17 - 小健 - 三堂会审收敛(北京老陈深挖db_ops/_stream_with_control): task_cancel_check_and_yield 删
 #   死参数 session_id/current_content(函数体从未使用, 调用点 stream_orchestrator 曾白算 current_content 传入);
 #   签名收窄为 (task_id, next_step, current_execution_steps), 消除 KISS-DIRECT 透传无用参数 — 小健 2026-08-17
+# 2026-08-18 - 小欧 - §10.4.4 P2(弃用 next_step): 各函数删 next_step 参数, 统一经 _current_step(task_id)
+#   读 running_tasks[task_id].agent.llm_call_count(or 1 兜底); 删 Callable import — 小欧 2026-08-18
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -14,7 +16,7 @@ task_runtime — 运行态任务管理（内存）
 """
 
 from datetime import datetime
-from typing import Optional, Callable, AsyncGenerator
+from typing import Optional, AsyncGenerator
 
 from app.logger import logger
 from app.utils.sse_formatter import format_agent_sse
@@ -33,6 +35,15 @@ from app.services.agent.status_table import set_status, AgentStatus
 # ============================================================
 # 取消/暂停操作（从 task_cancel 迁入）
 # ============================================================
+
+def _current_step(task_id: str) -> int:
+    """取任务的当前轮数(统一步号口径) — 小欧 2026-08-18
+    §10.4.4 P2(弃用 next_step): 统一读 running_tasks[task_id].agent.llm_call_count,
+    or 1 兜底(消费路径可能先于 agent 注册, 防 0 异常)。"""
+    _agent = running_tasks.get(task_id, {}).get("agent")
+    if _agent is not None:
+        return getattr(_agent, "llm_call_count", None) or 1
+    return 1
 
 async def cancel_task(task_id: str, session_id=None) -> dict:
     cancel_time = datetime.now()
@@ -61,9 +72,10 @@ async def cancel_task(task_id: str, session_id=None) -> dict:
 # ============================================================
 
 async def task_cancel_check_and_yield(
-    task_id: str, next_step: Callable[[], int], current_execution_steps: list
+    task_id: str, current_execution_steps: list
 ) -> Optional[str]:
     # 小健 2026-08-17 三堂会审收敛(KISS-DIRECT): 删死参数 session_id/current_content(函数体从未使用, 调用点白算)
+    # 小欧 2026-08-18 P2(§10.4.4): 删 next_step, 步号统一 _current_step(task_id)
     if await check_cancelled(task_id):
         has_cancelled = any(
             s.get('incident_value') == 'cancelled' or s.get('type') == 'cancelled'
@@ -73,7 +85,7 @@ async def task_cancel_check_and_yield(
             logger.info(f"[CancelCheck] 任务 {task_id} 已有cancelled step,跳过")
             return None
         logger.info(f"[CancelCheck] 任务 {task_id} 取消状态: True")
-        step_dict = build_step_dict(next_step(), "cancelled", '任务已被取消')
+        step_dict = build_step_dict(_current_step(task_id), "cancelled", '任务已被取消')
         logger.info(f"[Step] 发送 cancelled 步骤")
         current_execution_steps.append(step_dict)
         return format_agent_sse(step_dict)
@@ -86,10 +98,9 @@ def _emit_step_sse(step: Optional[int], step_type: str, message: str) -> str:
 
 async def task_cancel_check(
     task_id: str,
-    next_step: Optional[Callable[[], int]] = None
 ) -> tuple:
     if await check_cancelled(task_id):
-        step_value = next_step() if next_step else None
+        step_value = _current_step(task_id)
         return True, _emit_step_sse(step_value, "cancelled", '任务已被取消')
     return False, ""
 
@@ -98,7 +109,6 @@ async def _pause_core(
     task_id: str,
     timeout: Optional[float],
     emit_sse: bool,
-    next_step: Optional[Callable[[], int]] = None,
 ) -> AsyncGenerator[str, None]:
     """暂停阻塞核心: 检测暂停→置SUSPENDED→阻塞等恢复→置THINKING。可选产出SSE。
     拆分依据(三审, 小欧 2026-08-09): 原 task_pause_check 在 react_cycle→agent_runner 路径产出的
@@ -119,7 +129,7 @@ async def _pause_core(
         if _agent is not None and _agent.status in (AgentStatus.THINKING, AgentStatus.EXECUTING):
             set_status(_agent, AgentStatus.SUSPENDED, "用户暂停任务")
         if emit_sse:
-            step_value = next_step() if next_step else None
+            step_value = _current_step(task_id)
             yield _emit_step_sse(step_value, "paused", '任务已暂停')
     try:
         if timeout:
@@ -137,7 +147,7 @@ async def _pause_core(
     if _agent is not None and _agent.status == AgentStatus.SUSPENDED:
         set_status(_agent, AgentStatus.THINKING, "任务已恢复")
     if emit_sse:
-        step_value = next_step() if next_step else None
+        step_value = _current_step(task_id)
         yield _emit_step_sse(step_value, "resumed", '任务已恢复')
 
 
@@ -150,17 +160,16 @@ async def wait_for_resume(task_id: str, timeout: Optional[float] = None) -> None
 
 async def task_pause_check(
     task_id: str,
-    next_step: Optional[Callable[[], int]] = None,
     timeout: Optional[float] = None,
 ) -> AsyncGenerator[str, None]:
-    """阻塞+产出暂停/恢复SSE。前端SSE消费路径(openai._stream_with_control)用 — 小欧 2026-08-09"""
-    async for sse in _pause_core(task_id, timeout, emit_sse=True, next_step=next_step):
+    """阻塞+产出暂停/恢复SSE。前端SSE消费路径(openai._stream_with_control)用 — 小欧 2026-08-09
+    小欧 2026-08-18 P2(§10.4.4): 删 next_step, 步号统一 _current_step(task_id)"""
+    async for sse in _pause_core(task_id, timeout, emit_sse=True):
         yield sse
 
 
 async def task_pause_check_and_yield(
     task_id: str,
-    next_step: Optional[Callable[[], int]] = None
 ) -> AsyncGenerator[str, None]:
-    async for event in task_pause_check(task_id, next_step, timeout=300):
+    async for event in task_pause_check(task_id, timeout=300):
         yield event

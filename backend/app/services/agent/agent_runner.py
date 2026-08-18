@@ -35,6 +35,10 @@
 #   改为按 `_terminal_status == "failed"` 判定后从末条 final 实取(异常分支必先 append final_dict, 取数可靠)
 # 2026-08-18 小欧 - §10.3.3(1/4): 通道路由(thought仅落库/thought-start仅SSE/其余SSE+落库); final短信号(completed不带response); reasoning替代thought
 # 2026-08-18 - 小健 - 三堂会审修复(Bug#2+P1): ①通道路由新增 chunk 仅SSE不落库(§10.4.3 P1, total_steps自动剔除chunk虚高); ②final短信号改 step+action轮判定(_has_chunk_steps/_action_steps), 根治 return_direct 同轮先发正文chunk致response被剥的边界; ③短信号只改SSE, 落库与 stream_state.current_content 仍用完整 response 不退化
+# 2026-08-18 - 小欧 - §10.4.4 P2(弃用next_step): 删 next_step 参数; s=agent.llm_call_count or 1; 守卫 FinalStep(step=agent.llm_call_count or 1)
+# 2026-08-18 - 小欧 - §10.4.4 P3/P5/P6: 通道路由 error/usage/paused/resumed/retrying/cancelled 划入仅SSE集合分支(不落库); 守卫改读 agent._last_error 填充final; insert_token 改读 agent._usage_events
+# 2026-08-18 - 小欧 - §10.4.4 P5: _m_skip 收敛为 {cancelled,authorization_required,start}
+# 2026-08-18 - 小欧 - §10.4.4 P7③: 通道路由新增 start 分支(_persist落库分配ai_message_id后合成 startinfo 仅SSE复用同id)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -53,7 +57,7 @@ SSE 连接只从 event_log 按 seq 偏移读取，支持断线重连。 — 小�
 import asyncio
 import sqlite3
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.db import db
 from app.services.agent.steps import ErrorStep, MetaStep, FinalStep  # 小欧 2026-07-18: 加 FinalStep（多态自包含终态）
@@ -80,7 +84,6 @@ async def run_agent_in_background(
     task_id: str,
     last_message: str,
     context: Optional[dict],
-    next_step: Callable[[], int],
     session_id: str,
     stream_state: Any = None,
     start_time: Optional[float] = None,
@@ -212,6 +215,21 @@ async def run_agent_in_background(
                 if not event_dict.get("is_reasoning"):
                     _has_chunk_steps.add(event_dict.get("step", 0))
                 await _append(event_dict)
+            elif event_type == "start":
+                _persist(event_dict)   # P7: StartStep 落库, _persist 内惰性分配 ai_message_id — 小欧 2026-08-18
+                _startinfo = {
+                    "type": "startinfo", "step": event_dict.get("step", 0),
+                    "timestamp": event_dict.get("timestamp"),
+                    "content": "任务开始", "severity": "info",
+                    "task_id": event_dict.get("task_id"),
+                    "display_name": event_dict.get("display_name"),
+                    "provider": event_dict.get("provider"),
+                    "model": event_dict.get("model"),
+                    "ai_message_id": ai_message_id,
+                }
+                await _append(_startinfo)   # 轻量 MetaStep 仅 SSE, 复用同一 ai_message_id — 小欧 2026-08-18
+            elif event_type in {"error", "usage", "paused", "resumed", "retrying", "cancelled"}:
+                await _append(event_dict)   # P3(error)/P5(通知类)/P6(usage): 一律仅 SSE 不落库 — 小欧 2026-08-18
             else:
                 _persist(event_dict)              # 落库（始终完整 dict）
                 # ── final & completed SSE 短信号（§10.3.3(4)）── 2026-08-18 小欧
@@ -266,7 +284,7 @@ async def run_agent_in_background(
     except Exception as e:
         # 失败终态改为自包含 FinalStep(outcome="failed") — 小欧 2026-07-18
         logger.error(f"[Runner] 任务 {task_id} 异常: {e}", exc_info=True)
-        s = next_step()
+        s = agent.llm_call_count or 1  # P2(§10.4.4): 弃 next_step, 统一 agent 轮数
         error_content = str(e)[:200]
         final_step = FinalStep(
             step=s, response="任务执行失败", reasoning=error_content,
@@ -301,16 +319,11 @@ async def run_agent_in_background(
             elif agent and agent.status == AgentStatus.COMPLETED:
                 # 防御性: 正常流程成功必有 FinalStep, 此处仅兜底, 不误标 failed — 小欧 2026-07-18
                 _oc, _resp, _et, _em = "completed", "任务执行完成", "", ""
-            else:  # FAILED / RETRYING / SUSPENDED → 提取最后一条 ErrorStep
-                _last_err = next(
-                    (s for s in reversed(current_execution_steps)
-                     if isinstance(s, dict) and s.get("type") == "error"),
-                    None
-                )
+            else:  # FAILED / RETRYING / SUSPENDED → 读 agent._last_error（error仅SSE不落current_execution_steps）
+                _last_err = getattr(agent, "_last_error", None) if agent else None
                 if _last_err:
-                    _em = _last_err.get("error_message", "")
-                    _et = _last_err.get("error_type", "") or "agent_operation_error"
-            _fs = FinalStep(step=next_step(), response=_resp, reasoning=_em or _resp,
+                    _et, _em = _last_err[0] or "agent_operation_error", _last_err[1] or ""
+            _fs = FinalStep(step=agent.llm_call_count or 1, response=_resp, reasoning=_em or _resp,  # P2(§10.4.4): 弃 next_step, 统一 agent 轮数
                             outcome=_oc, error_type=_et, error_message=_em)
             _fd = _fs.to_dict()
             current_execution_steps.append(_fd)
@@ -376,8 +389,8 @@ async def run_agent_in_background(
         if db_ops and db_ops.update_task:
             try:
                 _terminal = stream_state.current_content if stream_state else ""
-                # total_steps 口径对齐 stream_reader._log_task_end: 剔全部非业务 MetaStep(usage/paused/resumed/retrying/cancelled/authorization_required/start)
-                _m_skip = {"usage", "paused", "resumed", "retrying", "cancelled", "authorization_required", "start"}
+                # total_steps 口径对齐 stream_reader._log_task_end: P5/P6后仅剩cancelled/authorization_required/start需剔 — 小欧 2026-08-18
+                _m_skip = {"cancelled", "authorization_required", "start"}
                 _total = sum(1 for s in current_execution_steps if s.get("type") not in _m_skip)
                 _err_type, _err_msg = "", ""
                 # 三堂会审修复(小欧 2026-08-16): 原条件 `not stream_state` 恒 False(orchestrator 正常路径
@@ -398,19 +411,17 @@ async def run_agent_in_background(
             except Exception as _task_e:
                 logger.warning(f"[Runner] chat_tasks 终态 UPDATE 失败(task={task_id}): {_task_e}")
 
-        # S2 token_usage 收终态逐 usage 统一 INSERT(10.1.7②-3, 设计2020-2031; 每个 usage 独立 with) — 小欧 2026-08-16
+        # S2 token_usage 改读 agent._usage_events(§10.4.4 P6): usage剔step_json, _usage_events为唯一明细来源 — 小欧 2026-08-18
         if db_ops and db_ops.insert_token:
             try:
-                for _s in current_execution_steps:
-                    if _s.get("type") == "usage":
-                        with db.get_conn_with_retry("chat") as _conn:
-                            db_ops.insert_token(
-                                _conn,  # 闭包绑 task_id/session_id/model/provider(见 ②-1 db_ops)
-                                # llm_call_count 取 usage 步骤的 step 序号(=agent.llm_call_count, react_cycle.py:401)
-                                llm_call_count=int(_s.get("step") or agent.llm_call_count or 0),
-                                prompt_tokens=int(_s.get("prompt_tokens") or 0),
-                                completion_tokens=int(_s.get("completion_tokens") or 0),
-                                total_tokens=int(_s.get("total_tokens") or 0))
+                for _u in getattr(agent, "_usage_events", []) if agent else []:
+                    with db.get_conn_with_retry("chat") as _conn:
+                        db_ops.insert_token(
+                            _conn,  # 闭包绑 task_id/session_id/model/provider(见 ②-1 db_ops)
+                            llm_call_count=int(_u.get("step") or agent.llm_call_count or 0),
+                            prompt_tokens=int(_u.get("prompt_tokens") or 0),
+                            completion_tokens=int(_u.get("completion_tokens") or 0),
+                            total_tokens=int(_u.get("total_tokens") or 0))
             except Exception as _tok_e:
                 logger.warning(f"[Runner] token_usage 落库失败(task={task_id}): {_tok_e}")
 
