@@ -21,6 +21,7 @@
 #       时该工具无响应(非错位), tc/obs id 严格配对无交叉错配。
 # 2026-08-18 小欧 - §10.3.5(3)④: _parse_tool_calls 兼容 action(tools数组)+老 action_tool(单工具); _parse_observations 读 tool_result 数组+老 content 回退
 # 2026-08-18 - 小健 - 三堂会审 Bug#8: _parse_observations 预扫描 action 的 FC id 集合(_action_ids), 截断场景 truncated_output observation 无对应 action(运行时 id 不可恢复)回放生成孤儿 tool 消息→OpenAI历史不合法, 跳过防非法; _log_task_end 注释同步(P1后chunk不入steps)
+# 2026-08-19 - 小欧 - 老格式回退 BUG: _parse_observations 老 content 回退分支 同一 step 多条 observation 时 tool_call_id 恒 _0, 与同轮 action_tool(FC)多条 tool_call.id 顺序错配→历史回放 OpenAI 工具消息配对错乱; 新增 _legacy_seq 按 step 递增组内序号, tc/obs id 严格配对(与 _action_ids/PARALLEL 同源规则)
 """
 stream_reader — SSE流运行器（消费者）
 
@@ -117,6 +118,7 @@ def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
                 for _i in range(len(_tools)):
                     _action_ids.add(f"call_{msg_id}_{_st.get('step',0)}_{_i}")
         observations = []
+        _legacy_seq: Dict[int, int] = {}  # 2026-08-19 小欧 Bug#: 老格式content回退分支同step多observation时tool_call_id唯一
         for step in exec_steps:
             if not isinstance(step, dict) or step.get("type") != "observation":
                 continue
@@ -144,10 +146,12 @@ def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
                 # 2026-08-18 小欧 兼容老数据: 旧 ObservationStep 以 content(summary) 承载单次结果
                 content = step.get("content", "")
                 if content:
+                    _seq = _legacy_seq.get(_s, 0)
+                    _legacy_seq[_s] = _seq + 1
                     observations.append({
                         "role": "tool",
                         "content": content,
-                        "tool_call_id": f"call_{msg_id}_{_s}_0",
+                        "tool_call_id": f"call_{msg_id}_{_s}_{_seq}",
                     })
         return observations
     except Exception:

@@ -23,6 +23,7 @@
 # 2026-08-18 - 小健 - 三堂会审 Bug#7(同源补全): status/action 可能为 str(工具实现不规范), 全文件 .get("action",{}).get("tool")/.get("status",{}).get 共4处 + _format_llm_data 统一收敛 _safe_llm_sub 防御 AttributeError; 实测 _truncation_msg({"action":"...STR"}) 原崩已修
 # 2026-08-18 - 小健 - 三堂会审(target截断收敛): _format_llm_data 中 target 截断由手写[:200]+"..."改为公共 truncate_text(target,200,suffix="..."), 与action侧(按设计不截断)消除手写分歧, 满足复用优先
 # 2026-08-18 - 小健 - 三堂会审(target去重): 新增 _tool_target(llm_data) 助手, 收敛 _format_llm_data 与 4 个 per-tool formatter 共 5 处 llm_data.action.target 重复读取(DRY), 并补齐 per-tool formatter 缺失的 Bug#7(str action)防御
+# 2026-08-18 - 小欧 - 三堂会审 Bug#7补全(同源防御): _safe_llm_sub / _format_llm_data / format_llm_observation 三处入口补 llm_data 顶层非 dict(str 等工具实现不规范真值) 前置归一为空 dict, 防下游 .get('…') 崩——原 (llm_data or {}) 仅防 None/空值, 真值 str 仍触发, 与 _safe_llm_sub 同源
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -125,8 +126,12 @@ from app.tools.tool_constants import (
 
 def _safe_llm_sub(llm_data, key: str) -> dict:
     """2026-08-18 小健 三堂会审 Bug#7(同源补全): llm_data.status/action 可能为 str(工具实现不规范),
-    防御 .get 前 isinstance, 否则 'str' object has no attribute 'get' 崩溃。统一收敛所有同类取值点(DRY)。"""
-    _v = (llm_data or {}).get(key)
+    防御 .get 前 isinstance, 否则 'str' object has no attribute 'get' 崩溃。统一收敛所有同类取值点(DRY)。
+    2026-08-18 小欧 Bug#7补全: 顶层 llm_data 本身非 dict(工具实现不规范) 时同样防御——原 (llm_data or {})
+    仅防 None/空值, str 等真值类型仍触发 .get 崩溃, 现统一 isinstance 前置判定。"""
+    if not isinstance(llm_data, dict):
+        return {}
+    _v = llm_data.get(key)
     return _v if isinstance(_v, dict) else {}
 
 
@@ -618,7 +623,10 @@ def _format_readmedia_result(data: dict, llm_data: dict = None) -> str:
 
 def _format_llm_data(llm_data: Dict) -> str:
     """格式化llm_data为observation文本（精简版: 合并观察+结果为一行,去掉统计,保留建议）— 小沈 2026-07-06 — 小沈 2026-07-08 修复空target/前置空格/缺空格/空parts
-    2026-08-18 小健 三堂会审 Bug#7: status/action 可能为 str(工具实现不规范), 防御防 AttributeError(实测 build_observation 链路因 status='FAILED_STR' 崩溃)"""
+    2026-08-18 小健 三堂会审 Bug#7: status/action 可能为 str(工具实现不规范), 防御防 AttributeError(实测 build_observation 链路因 status='FAILED_STR' 崩溃)
+    2026-08-18 小欧 Bug#7补全: llm_data 顶层非 dict 时入口归一为空 dict, 防后续 summary/action 等 .get 崩(与 _safe_llm_sub 同源防御)"""
+    if not isinstance(llm_data, dict):
+        llm_data = {}
     status = _safe_llm_sub(llm_data, "status")
     action = _safe_llm_sub(llm_data, "action")
     summary = llm_data.get("summary", "")
@@ -696,6 +704,10 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     最终给LLM的文本中必然包含。data中不再重复存放这些字段。
     — 小欧 2026-07-06 18:39:02
     """
+    # 2026-08-18 小欧 Bug#7补全: 顶层 llm_data 非 dict(工具实现不规范) 时入口归一为空 dict,
+    #   防下游 _format_llm_data 与自身 status 取值等多处 .get 崩(与 _safe_llm_sub 同源防御)
+    if not isinstance(llm_data, dict):
+        llm_data = {}
     text = _format_llm_data(llm_data)
 
     # error 统一兜底: 主通道是 llm_data.status.detail(各工具已构造);
