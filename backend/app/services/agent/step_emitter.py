@@ -10,6 +10,7 @@ Author: 小沈 - 2026-05-31
 2026-07-16 小欧  统一TaskID: _get_tracker只返回tracker, complete_task/record_operation直读agent.task_id
 2026-07-22 小欧  emit注入FinalStep._accumulated_usage: 自动从agent.accumulated_usage读取
 2026-07-22 小欧  emit注入加is None防御: 仅外部未设置时才注入
+2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): emit 内记录 _last_error(type=="error" 时读 _kwargs 取 error_type/error_message, 赋值 agent._last_error, KISS-DIRECT单一出口)
 """
 
 from typing import Any, Dict, Optional
@@ -31,6 +32,10 @@ class StepEmitter:
         if isinstance(step, FinalStep) and step._accumulated_usage is None:
             step._accumulated_usage = dict(self.agent.accumulated_usage)
         self.agent.steps.append(step)
+        # 2026-08-18 - 小欧 - P3: error全仅SSE, emit统一出口记录_last_error供守卫填充final(KISS-DIRECT单一出口)
+        if getattr(step, "type", "") == "error":
+            _kw = getattr(step, "_kwargs", {}) or {}
+            self.agent._last_error = (_kw.get("error_type", "") or "agent_operation_error", step.get_content())
         return step
 
     def exit_with_error(self, step_count: int, error_type: str, error_message: str) -> 'ReasoningStep':

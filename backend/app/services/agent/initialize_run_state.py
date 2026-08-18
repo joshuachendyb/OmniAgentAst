@@ -23,6 +23,8 @@
 #   全部业务(inject/超窗判定/C4回填/装配入口), 自本文件移除 _inject_conversation_history 与
 #   _maybe_compact_injected_history 两函数定义(迁入 start_step.py)及 COMPACTION_ENABLED import;
 #   本文件退化为纯状态重置 + init_history, 不再持有任何 start 装配私有逻辑(单一归属, 依赖不反向)
+# 2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): 重置区加 agent._last_error=None(防跨任务残留)
+# 2026-08-18 - 小欧 - §10.4.4 P6(usage剔step_json): 重置区加 agent._usage_events=[]
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
@@ -55,6 +57,8 @@ def initialize_run_state(
     agent._consecutive_same_tool_calls = 0
     agent._last_tool_call_sig = None
     agent._warned_same_tool_loop = 0   # v1.7双阈值: 纠偏注入条数计数(int, 第2/3/4次共3条), 落码新增字段 — 小欧 2026-08-08
+    agent._last_error = None  # 2026-08-18 - 小欧 - P3: 每轮重置, step_emitter.emit统一出口记录, 守卫读此填充final
+    agent._usage_events = []  # 2026-08-18 - 小欧 - P6: 每轮重置, react_cycle usage emit时append, agent_runner终态insert_token读
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent.task_id:
         try:

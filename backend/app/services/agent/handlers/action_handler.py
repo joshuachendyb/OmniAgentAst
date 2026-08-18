@@ -108,6 +108,8 @@
 # 2026-08-18 - 小健 - 三堂会审修复: ①删除无调用点的死代码 _merge_llm_data/_merge_other_data(编排收集改由 build_observation 按 tool_result[i].other_data 1:1 取代); ②删除 build_observation 死变量 _data(原始 data 已由 data_text/dl 承载); ③Bug#7 status/action 可能为 str 防御(isinstance 前判), 防 AttributeError
 # 2026-08-18 - 小健 - 恢复 op_id 双表贯通设计说明注释块(此前某次编辑被误删, 仅留行660短注释); 置于 _file_tool_names 逻辑正上方, 逐条核对当前代码(6文件工具白名单/预取队列/pop(0)分配)一致, 描述准确予以保留
 # 2026-08-18 - 小健 - 三堂会审修复(target推导): 删除硬编码_TARGE_FIELD(文件类工具+键read/web_search失配致_extract_target回退工具名真bug), 改为_resolve_target_field从tool_registry真实input_schema.properties按_TARGET_PARAM_PRIORITY推导字段名(target值取call入参LLM确定值); ActionStep.target极少截断; 预留ToolMetadata.target_param显式扩展点(OCP)
+# 2026-08-18 - 小欧 - §10.4.4 P3(错误全仅SSE): blocked/timeout/user_rejected/invalid_action 四处 ErrorStep→MetaStep(type="error", content=错误信息, error_type=); 删 ErrorStep import
+# 2026-08-18 - 小欧 - §10.4.4 P4(severity): error 四处加 severity="warn"; paused 加 severity="attention"; resumed 加 severity="info"
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -130,7 +132,7 @@ from typing import Dict, List, Any, Optional, Set
 from app.logger import logger, log_and_print
 from app.constants import ACTION_LOG_RESULT_MAX_CHARS
 from app.logger.prompt_logger import get_prompt_logger
-from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep（工具重试隐蔽，不再 emit）; 2026-08-18 ThoughtStartStep新增
+from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error") P3
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.observation_formatter import build_observation_text
 from app.constants import HITL_TIMEOUT
@@ -263,10 +265,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             safety_result = safety_checker.check_before_execute(_cn, _cp, skip_confirmation=_skip)
 
             if safety_result.blocked:
-                yield agent._step_emitter.emit(ErrorStep(
-                    step=step,
-                    error_type="blocked",
-                    error_message=safety_result.message
+                yield agent._step_emitter.emit(MetaStep(
+                    step=step, type="error", content=safety_result.message, error_type="blocked", severity="warn"
                 ))
                 _denied.append((_cn, f"被安全策略拦截: {safety_result.message}", call))
                 continue  # was: return  — 小欧 2026-07-18 #12 fix
@@ -285,6 +285,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     tool_name=_cn,
                     params=desensitized_params,
                     safety_level=safety_result.safety_level,
+                    severity="attention",
                 ))
 
                 if safety_result.auto_confirm:
@@ -308,17 +309,13 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 if not auth.get("confirmed"):
                     if auth.get("expired"):
                         # #11 fix: 超时与拒绝分流 — 小欧 2026-07-18
-                        yield agent._step_emitter.emit(ErrorStep(
-                            step=step,
-                            error_type="timeout",
-                            error_message=f"工具确认超时未响应: {_cn}"
+                        yield agent._step_emitter.emit(MetaStep(
+                            step=step, type="error", content=f"工具确认超时未响应: {_cn}", error_type="timeout", severity="warn"
                         ))
                         _denied.append((_cn, "确认超时未响应", call))
                     else:
-                        yield agent._step_emitter.emit(ErrorStep(
-                            step=step,
-                            error_type="user_rejected",
-                            error_message=f"用户拒绝执行工具: {_cn}"
+                        yield agent._step_emitter.emit(MetaStep(
+                            step=step, type="error", content=f"用户拒绝执行工具: {_cn}", error_type="user_rejected", severity="warn"
                         ))
                         _denied.append((_cn, "被用户拒绝执行", call))
                     set_status(agent, AgentStatus.EXECUTING, "用户拒绝/超时，恢复执行态")
@@ -332,7 +329,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     yield agent._step_emitter.emit(MetaStep(
                         step=step,
                         type="resumed",
-                        content=f"已临时授权白名单外路径: {safety_result.auth_path}"
+                        content=f"已临时授权白名单外路径: {safety_result.auth_path}",
+                        severity="info",
                     ))
                 set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
 
@@ -866,10 +864,9 @@ async def handle_action(agent, parsed: Dict):
     if not call_result.tool_name:
         logger.warning(f"[handle_action] tool_name为空, parsed={parsed}")
         agent._consecutive_reasoning_only = 0  # 2026-07-17 - 小欧 - action空名异常非reasoning-only, 归零防残留
-        # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态
-        yield agent._step_emitter.emit(ErrorStep(
-            step=step, error_type="invalid_action",
-            error_message="LLM返回的action中tool_name为空",
+        # chendyg 2026-07-01: 删set_failed，_dispatch_handler从MetaStep(type="error")推断状态
+        yield agent._step_emitter.emit(MetaStep(
+            step=step, type="error", content="LLM返回的action中tool_name为空", error_type="invalid_action", severity="warn"
         ))
         return
 

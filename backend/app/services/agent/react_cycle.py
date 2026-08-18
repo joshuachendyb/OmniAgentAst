@@ -101,6 +101,7 @@
 # 2026-08-17 - 小健 - 注释纠偏(北京老陈 2026-08-17): S5 超窗回填段注释去掉「依赖 COMPACTION_ENABLED 放开 R4」表述——
 #   开关仅限 start 超窗判定(start_step)使用; 触发条件只据 start 超窗置的 _needs_compact 标记(getattr 判断) — 小健 2026-08-17
 # 2026-08-18 小欧 - §10.3.3(4): same_tool_loop终止FinalStep的 thought= 改 reasoning=(FinalStep已删thought参数)
+# 2026-08-18 - 小欧 - §10.4.4 P2/P3/P4/P5/P6: handle_react_error/empty_response/chunk_buffer_timeout 改 MetaStep(type="error")(删ErrorStep import); _dispatch_handler 改读 _kwargs 取 error_type; usage emit 处 append _usage_events; 各 error/retrying/usage 加 severity(warn/info)
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -117,7 +118,7 @@ from app.logger import logger, log_and_print
 from app.llm.error_classifier import SystemErrorClassifier
 from app.logger.prompt_logger import get_prompt_logger
 from app.config import get_config
-from app.services.agent.steps import ChunkStep, MetaStep, ObservationStep, ErrorStep, FinalStep
+from app.services.agent.steps import ChunkStep, MetaStep, ObservationStep, FinalStep  # 2026-08-18 小欧 P3: ErrorStep→MetaStep(type="error"), 删ErrorStep import
 from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_completed, set_cancelled
 from app.services.agent.initialize_run_state import initialize_run_state
 from app.services.agent.start_step import assemble_start_step as _assemble_start_step
@@ -152,11 +153,11 @@ _RECOVERABLE_ERRORS = {"user_rejected", "blocked", "timeout"}
 
 
 def handle_react_error(agent, error, step):
-    """统一处理ReAct循环中的错误 — 只创建 ErrorStep，不设状态 — chendyg 2026-07-01
-    小欧 2026-07-13: 删 recoverable（终态由 ErrorStep 表示，不再用 flag 区分可恢复）"""
+    """统一处理ReAct循环中的错误 — 返回MetaStep(type="error")仅SSE不落库 — 小欧 2026-08-18 P3
+    _last_error由step_emitter.emit统一出口记录, 守卫读此填充final"""
     error_type = SystemErrorClassifier.classify_error(error).name.lower()
     logger.error(f"[ErrorHandler] 错误类型={error_type}: {error}")
-    return ErrorStep(step=step, error_type=error_type, error_message=str(error))
+    return MetaStep(step=step, type="error", content=str(error), error_type=error_type, severity="warn")
 
 
 def _is_recoverable_error(error) -> bool:
@@ -324,7 +325,8 @@ async def _dispatch_handler(agent, llm_response):
     elif _EV_ERROR in seen_types:
         # 无 final → 可恢复错误(blocked/user_rejected/timeout, 循环继续)或原子异常(旧数据)
         error_event = last_error_event
-        err_type = getattr(error_event, "error_type", "")
+        _kw = getattr(error_event, "_kwargs", {}) or {}
+        err_type = _kw.get("error_type", "")
         error_msg = error_event.get_content() if hasattr(error_event, 'get_content') else ""
         if err_type in _RECOVERABLE_ERRORS:
             # 拒绝/拦截是可恢复的(拒绝≠失败, 符合人类认知): 不置终态, 反馈已进LLM历史,
@@ -425,6 +427,10 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                     if _v is not None:
                         agent.accumulated_usage[_k] += int(_v)
                 # 逐次报告: emit MetaStep(type="usage") 带本次 usage 三个值
+                # 2026-08-18 小欧 P6: usage剔step_json, append _usage_events明细供agent_runner终态insert_token读
+                _ue = getattr(agent, "_usage_events", None)
+                if _ue is not None:
+                    _ue.append({"step": agent.llm_call_count, "prompt_tokens": _usage.get("prompt_tokens"), "completion_tokens": _usage.get("completion_tokens"), "total_tokens": _usage.get("total_tokens")})
                 _usage_step = MetaStep(
                     step=agent.llm_call_count,
                     type="usage",
@@ -432,6 +438,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                     prompt_tokens=_usage.get("prompt_tokens"),
                     completion_tokens=_usage.get("completion_tokens"),
                     total_tokens=_usage.get("total_tokens"),
+                    severity="info",
                 )
                 yield agent._step_emitter.emit(_usage_step)
 
@@ -445,9 +452,8 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
         log_and_print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, empty_response")  # 小欧 2026-07-02 控制台
         set_failed(agent, "LLM返回空响应，任务终止")
-        yield agent._step_emitter.emit(ErrorStep(
-            step=step, error_type="empty_response",
-            error_message="LLM返回空响应，任务终止"  # Bug1: 不误导LLM(agent已fail),只陈述事实 — 小欧 2026-07-23
+        yield agent._step_emitter.emit(MetaStep(
+            step=step, type="error", content="LLM返回空响应，任务终止", error_type="empty_response", severity="warn"
         ))
         return
 
@@ -655,6 +661,7 @@ async def run_react_cycle(
                         type="retrying",
                         step=agent.llm_call_count,
                         content=f"LLM请求异常，准备重试: {_step_err}",
+                        severity="info",
                     ))
                     # 2026-08-13 - 小欧 - 三堂会审修复#36: 此处不再 set RETRYING(计数已在上方+1),
                     #   直接 continue 回循环顶重试; 否则主循环 L614 RETRYING 处理再+1 → 一次异常计2次,
@@ -682,7 +689,7 @@ async def run_react_cycle(
             if chunk_buffer.should_force_stop():
                 logger.warning(f"[run_react_cycle] chunk累积超时({agent.llm_call_count}步),强制停止")
                 set_failed(agent, f"chunk累积超时({agent.llm_call_count}步)")
-                yield agent._step_emitter.emit(ErrorStep(step=agent.llm_call_count, error_type="chunk_buffer_timeout", error_message="响应累积超时，任务强制终止"))  # task007: 更友好 — 小欧 2026-07-23
+                yield agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="error", content="响应累积超时，任务强制终止", error_type="chunk_buffer_timeout", severity="warn"))  # P3+P4: error全仅SSE+severity — 小欧 2026-08-18
                 break
 
         if agent.status not in (
