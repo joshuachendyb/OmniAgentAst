@@ -2,7 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-08-14 09:02:09
+**最后更新时间**: 2026-08-19 05:35:10
+**最近更新**: 2026-08-19 小欧 三堂会审复核: 删除已移除的 `create_step_counter` 过期登记条目及对应空章节(该函数已从工具注册表移除, 保留会误导复用, DRY/清单及时更新规范)
 
 ---
 
@@ -135,12 +136,6 @@
 | `append_execution_step` | 逐步落库:一行=一步 | conn, message_id, session_id, step_index, step_dict | None |
 | `load_execution_steps` | 从 steps 表组装步骤列表(无数据时从chat_messages.execution_steps列读取) | conn, message_id | Optional[list] |
 | `finalize_message` | finally 轻量终态更新(content+status) | conn, message_id, content, status | None |
-
-### 3.3 步骤计数器（steps/base.py）
-
-| 函数名 | 功能 | 参数 | 返回值 |
-|--------|------|------|--------|
-| `create_step_counter` | 创建自增步骤计数器(闭包)，供 step 序号分配 | 无 | Callable[[], int] |
 
 ---
 
