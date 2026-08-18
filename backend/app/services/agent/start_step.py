@@ -23,6 +23,7 @@
 #   agent.message_builder.MAX_CONTEXT_TOKENS(agent_runner 已用 llm_service.context_limit 覆盖, 与 loop 同基准),
 #   不再读全局常量; 门限=运行时窗口 × START_TRIGGER_RATIO; 删除 MAX_CONTEXT_TOKENS=200000 死值兜底
 # 2026-08-17 小健 开关定名(北京老陈 2026-08-17): COMPACTION_ENABLED→START_COMPACTION_ENABLED(仅限 start 域), 值 True
+# 2026-08-18 - 小欧 - §10.4.4 P7②(§10.1.2): _build_start_contract 改产 StartStep(删 next_step 依赖, step 固定 0, content=context_summary, user_message 顶层化); assemble_start_step 返回类型改 StartStep
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -30,7 +31,7 @@ start_step — start 任务输入装配完整过程(单一模块, 一个入口)
   - _inject_conversation_history: 注入会话历史(多轮对话上下文回填 message_builder)
   - _maybe_compact_injected_history: 超窗判定(C4, 置 _needs_compact 标记)
   - _compact_injected_history: C4 锚定摘要回填(超窗时一次性清洗注入历史)
-  - _build_start_contract: 契约构造(context_summary 快照 + MetaStep 任务输入契约, 自 sse_events 迁入)
+  - _build_start_contract: 契约构造(context_summary 快照 + StartStep 任务输入契约, 自 sse_events 迁入; P7 改产 StartStep)
   - assemble_start_step: 唯一对外入口(注入历史 → 超窗判定 → 契约构造)
 依据: [1] 10.1.1(功能逻辑) / 10.1.2(字段清单) / 10.1.6(C4 清洗) / 10.1.7④⑤(装配落点) / 10.1.8 S3/S4/S5。
 """
@@ -160,28 +161,27 @@ async def _compact_injected_history(agent) -> None:
     agent._needs_compact = False
 
 
-def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional["MetaStep"]:
-    """构造 start 任务输入契约 MetaStep(单一归属) — 小健 2026-08-17
+def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional["StartStep"]:
+    """构造 start 任务输入契约 StartStep(单一归属) — 小健 2026-08-17; 小欧 2026-08-18 P7 改产 StartStep
 
     适用场景: start 装配第③步——据 orchestrator 注入的运行元数据(_start_meta)算 context_summary 快照,
-    构造 MetaStep(type="start", step=0); 自 sse_events 迁入(start 契约构造业务完整归此模块)。
+    构造 StartStep(type="start", step=0, content=context_summary); 自 sse_events 迁入(start 契约构造业务完整归此模块)。
     使用方法: 由 assemble_start_step 调用; previous_messages 用于快照 message_count/total_tokens。
     输入: agent 含 _sys_prompt(initialize_run_state 已取) / llm_client(orchestrator 构造时注入, provider/model)
-          + _start_meta(dict: task_id/next_step/user_input/session_id/context_link_mode/context_root_task_id/warning,
+          + _start_meta(dict: user_input/session_id/context_link_mode/context_root_task_id/warning,
           orchestrator 注入); previous_messages 历史消息列表(空列表则快照 message_count=0)。
-    输出: MetaStep(type="start", step=0) —— 任务输入契约: 任务头部 + system_prompt + user_message + context_summary。
-    前置条件: _start_meta 已注入(缺则返回 None 旁路兼容); next_step 首次调用须返 0。
-    依赖方向: 仅 agent 属性 + MetaStep/MessageBuilder(俱 agent 层), 不 import chat 层(P4 解耦)。
-    设计文档: [1] 10.1.1 / 10.1.2 / 10.1.7④ / 10.1.8 S3/S4。
+    输出: StartStep(type="start", step=0) —— 任务输入契约: 任务头部 + system_prompt + user_message(顶层) + context_summary。
+    前置条件: _start_meta 已注入(缺则返回 None 旁路兼容); step 固定 0(P2 弃用 next_step, 不再依赖轮数)。
+    依赖方向: 仅 agent 属性 + StartStep/MessageBuilder(俱 agent 层), 不 import chat 层(P4 解耦)。
+    设计文档: [1] 10.1.1 / 10.1.2 / 10.1.7④ / 10.1.8 S3/S4 / 10.4.4 P7。
     """
-    from app.services.agent.steps import MetaStep  # 局部导入防包级环
+    from app.services.agent.steps import StartStep  # 局部导入防包级环
     from app.services.agent.message_builder import MessageBuilder
 
     _meta = getattr(agent, "_start_meta", None)
     _ai = getattr(agent, "llm_client", None)
-    _next = _meta.get("next_step") if isinstance(_meta, dict) else None
-    if _ai is None or _next is None:
-        return None
+    if _ai is None:
+        return None   # P7: 不再依赖 next_step(P2 弃用)，仅需 llm_client 供 provider/model
     _prev = previous_messages or []
     context_summary = {
         "session_id": _meta.get("session_id"),
@@ -190,39 +190,37 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
         "message_count": len(_prev),
         "total_tokens": MessageBuilder._estimate_tokens(_prev),
     }
-    return MetaStep(
-        step=_next(),
-        type="start",
-        content=_meta.get("user_input") or "",
+    return StartStep(
+        step=0,                                   # P2: start 固定轮数 0（不再调 next_step）
+        context_summary=context_summary,          # content 承载 context_summary(10.1.2 <第2步>3)
+        user_message=_meta.get("user_input") or "",   # user_input 顶层化(<第2步>4)
+        task_id=getattr(agent, "task_id", None),
         display_name=f"{_ai.provider} ({_ai.model})",
-        provider=_ai.provider,
-        model=_ai.model,
-        task_id=getattr(agent, "task_id", None),  # DRY: agent.task_id 权威持有(base_agent:59), 不重复注入 _start_meta — 小健 2026-08-17
+        provider=_ai.provider, model=_ai.model,
         system_prompt=getattr(agent, "_sys_prompt", ""),
-        context_summary=context_summary,
         warning=_meta.get("warning"),
     )
 
 
-def assemble_start_step(agent, context: Optional[Dict]) -> Optional["MetaStep"]:
-    """start 任务输入装配完整过程(唯一对外入口, 单模块单归属) — 小健 2026-08-17
+def assemble_start_step(agent, context: Optional[Dict]) -> Optional["StartStep"]:
+    """start 任务输入装配完整过程(唯一对外入口, 单模块单归属) — 小健 2026-08-17; 小欧 2026-08-18 P7 改产 StartStep
 
     适用场景: run_react_cycle 在 initialize_run_state 之后、while 之前调用一次, 完成 start 全部业务。
-    使用方法: 传 agent + context, 返回构造好的 MetaStep(调用方 emit); 无 _start_meta 时返回 None。
-    业务顺序(不可乱): ① 注入会话历史 → ② 超窗判定(C4 置 _needs_compact) → ③ 构造任务输入契约 MetaStep
+    使用方法: 传 agent + context, 返回构造好的 StartStep(调用方 emit); 无 _start_meta 时返回 None。
+    业务顺序(不可乱): ① 注入会话历史 → ② 超窗判定(C4 置 _needs_compact) → ③ 构造任务输入契约 StartStep
     (语境 summary 快照 + 任务输入契约); 超窗时由调用方在 while 前 await _compact_injected_history 回填。
     输入: agent 含 _sys_prompt(initialize_run_state 已取) / llm_client / _start_meta(orchestrator 注入的运行元数据);
           context 含 previous_messages(注入历史 + 快照 message_count/total_tokens)。
-    输出: MetaStep(type="start", step=0) 或 None(无 _start_meta 时保持旁路兼容)。
+    输出: StartStep(type="start", step=0) 或 None(无 _start_meta 时保持旁路兼容)。
     前置条件: initialize_run_state 已执行(agent.steps 已重置、init_history 已装载、_sys_prompt 已就绪)。
     依赖方向: 只读 agent 属性 + context, 不 import chat 层(P4 解耦); 运行元数据由 orchestrator 注入 _start_meta。
-    设计文档: [1] 10.1.1 / 10.1.2 / 10.1.7④⑤ / 10.1.8 S3/S4/S5。
+    设计文档: [1] 10.1.1 / 10.1.2 / 10.1.7④⑤ / 10.1.8 S3/S4/S5 / 10.4.4 P7。
     """
     # ① 注入会话历史(任务输入装配第一步)
     _inject_conversation_history(agent, context)
     # ② 超窗判定(C4, 注入后立即判定, 置 _needs_compact 供 while 前回填用)
     _maybe_compact_injected_history(agent)
 
-    # ③ 构造任务输入契约(MetaStep): 据 _start_meta 运行元数据 + previous_messages 快照, 缺 _start_meta 则 None
+    # ③ 构造任务输入契约(StartStep): 据 _start_meta 运行元数据 + previous_messages 快照, 缺 _start_meta 则 None
     _prev_msgs = context.get("previous_messages") if isinstance(context, dict) else None
     return _build_start_contract(agent, _prev_msgs)
