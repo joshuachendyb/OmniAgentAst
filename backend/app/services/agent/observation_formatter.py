@@ -20,6 +20,9 @@
 # 2026-08-05 小欧 BUG-1修复: #18 compress 触发字段 "compression_ratio"→"compression_level"
 #   【病根】compress_files.py safe_data 去噪剥掉 compression_ratio(与llm_data ratio重复), 原 trigger 永不成立 → #18 成死代码
 #   【解决】改 data 恒在且 compress 独有字段 compression_level, #18 分支恢复工作; 去噪不复原大文件列表/ratio
+# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源补全): status/action 可能为 str(工具实现不规范), 全文件 .get("action",{}).get("tool")/.get("status",{}).get 共4处 + _format_llm_data 统一收敛 _safe_llm_sub 防御 AttributeError; 实测 _truncation_msg({"action":"...STR"}) 原崩已修
+# 2026-08-18 - 小健 - 三堂会审(target截断收敛): _format_llm_data 中 target 截断由手写[:200]+"..."改为公共 truncate_text(target,200,suffix="..."), 与action侧(按设计不截断)消除手写分歧, 满足复用优先
+# 2026-08-18 - 小健 - 三堂会审(target去重): 新增 _tool_target(llm_data) 助手, 收敛 _format_llm_data 与 4 个 per-tool formatter 共 5 处 llm_data.action.target 重复读取(DRY), 并补齐 per-tool formatter 缺失的 Bug#7(str action)防御
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -86,6 +89,7 @@ import re
 from typing import Any, Dict, Optional
 
 from app.logger import logger
+from app.utils.text_utils import truncate_text  # 2026-08-18 小健 三堂会审: target展示截断收敛到公共函数(消除120/200手写分歧)
 from app.tools.tool_constants import (
     OBS_MAX_DISPLAY_ITEMS,
     OBS_MAX_STRING_LENGTH,
@@ -119,10 +123,26 @@ from app.tools.tool_constants import (
 )
 
 
+def _safe_llm_sub(llm_data, key: str) -> dict:
+    """2026-08-18 小健 三堂会审 Bug#7(同源补全): llm_data.status/action 可能为 str(工具实现不规范),
+    防御 .get 前 isinstance, 否则 'str' object has no attribute 'get' 崩溃。统一收敛所有同类取值点(DRY)。"""
+    _v = (llm_data or {}).get(key)
+    return _v if isinstance(_v, dict) else {}
+
+
+def _tool_target(llm_data) -> str:
+    """2026-08-18 小健 三堂会审: 统一从 llm_data.action.target 取展示目标(收敛 _format_llm_data 与
+    4 个 per-tool formatter 共 5 处重复读取, DRY); 防御 action 为 str(见 Bug#7), 顺带补齐 per-tool
+    formatter 原缺失的该防御。返回未截断原始串, 截断由调用方按需处理。"""
+    _action = _safe_llm_sub(llm_data, "action")
+    _t = _action.get("target", "") if isinstance(_action, dict) else ""
+    return str(_t) if _t else ""
+
+
 def _truncation_msg(llm_data: dict = None) -> str:
     """工具类型感知的截断消息 — 小沈 2026-07-08"""
     if llm_data:
-        tool = llm_data.get("action", {}).get("tool", "")
+        tool = _safe_llm_sub(llm_data, "action").get("tool", "")
         if tool in ("readtext", "edittext"):
             return "\n... (截断，完整内容见文件)"
     return "\n... (截断)"
@@ -199,7 +219,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
 
         # ── #2 raw str — readtext / #2-fetchpage — fetchpage ──
         if "content" in data and isinstance(data["content"], str):
-            _tool = (llm_data or {}).get("action", {}).get("tool", "")
+            _tool = _safe_llm_sub(llm_data, "action").get("tool", "")
             if _tool == "fetchpage":
                 return _format_fetchpage_result(data["content"], llm_data)
             if _tool == "readtext":
@@ -222,7 +242,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
             return _format_items(data["items"])
 
         # ── #25 read_xlsx — 1 tool: read_xlsx（含CSV, 单sheet headers+rows 专属行×列 + 两态） ──
-        _act_tool = (llm_data or {}).get("action", {}).get("tool", "") if llm_data else ""
+        _act_tool = _safe_llm_sub(llm_data, "action").get("tool", "") if llm_data else ""
         if _act_tool == "read_xlsx" and "headers" in data and "rows" in data:
             return _format_xlsx_result(data, llm_data)
 
@@ -337,7 +357,7 @@ def _format_text_content(data: dict, llm_data: dict = None) -> str:
     按 tool 路由到自然单位 handler: read_pdf→页感知 / read_docx→段落窗口 / clipboard→文本行窗口
     — 小欧 2026-07-20"""
     content = data.get("text", "")
-    tool = (llm_data or {}).get("action", {}).get("tool", "")
+    tool = _safe_llm_sub(llm_data, "action").get("tool", "")
     if tool == "read_pdf":
         return _format_pdf_result(content, data, llm_data)
     if tool == "read_docx":
@@ -597,9 +617,10 @@ def _format_readmedia_result(data: dict, llm_data: dict = None) -> str:
 #     return text
 
 def _format_llm_data(llm_data: Dict) -> str:
-    """格式化llm_data为observation文本（精简版: 合并观察+结果为一行,去掉统计,保留建议）— 小沈 2026-07-06 — 小沈 2026-07-08 修复空target/前置空格/缺空格/空parts"""
-    status = llm_data.get("status", {})
-    action = llm_data.get("action", {})
+    """格式化llm_data为observation文本（精简版: 合并观察+结果为一行,去掉统计,保留建议）— 小沈 2026-07-06 — 小沈 2026-07-08 修复空target/前置空格/缺空格/空parts
+    2026-08-18 小健 三堂会审 Bug#7: status/action 可能为 str(工具实现不规范), 防御防 AttributeError(实测 build_observation 链路因 status='FAILED_STR' 崩溃)"""
+    status = _safe_llm_sub(llm_data, "status")
+    action = _safe_llm_sub(llm_data, "action")
     summary = llm_data.get("summary", "")
     exec_code = status.get("exec_code", "success")
     message = status.get("message", "")
@@ -607,9 +628,11 @@ def _format_llm_data(llm_data: Dict) -> str:
     tool_zh = action.get("tool_zh", "")
     # 小欧 2026-07-12: 防御性转换 — action.target可能为非str类型(如文档工具泄漏的WindowsPath),
     # 直接len()会触发TypeError,统一str()化兜底
-    target = str(action.get("target", ""))
-    if len(target) > 200:
-        target = target[:200] + "..."
+    # 2026-08-18 小健 三堂会审: target展示截断收敛到公共 truncate_text(复用优先); 原两处手写截断(此处200/action侧120)消除,
+    #   action侧按设计不截断(保留完整入参值), 此处统一200截断供LLM观察; target 取值收敛到 _tool_target
+    target = _tool_target(llm_data)
+    if target:
+        target, _ = truncate_text(target, 200, suffix="...")
 
     # 第1行: 工具执行结果 — 小欧 2026-07-07 — 北京老陈 2026-07-07
     _target_part = f",处理对象-{target}" if target else ""
@@ -678,8 +701,10 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     # error 统一兜底: 主通道是 llm_data.status.detail(各工具已构造);
     # 仅当 detail 为空且 data 含诊断信息时,受控渲染 data(复用既有 format_data_detail),
     # 收敛 build_error(data={}) 不一致且不退化已有 detail 的工具 — 小欧 2026-07-13
-    if llm_data.get("status", {}).get("exec_code") == "error":
-        _detail = llm_data.get("status", {}).get("detail", "")
+    # 2026-08-18 小健 Bug#7: status 可能为 str, .get 前防御
+    _status = llm_data.get("status") if isinstance(llm_data.get("status"), dict) else {}
+    if _status.get("exec_code") == "error":
+        _detail = _status.get("detail", "")
         if (not _detail or not str(_detail).strip()) and data:
             _extra = format_data_detail(data, llm_data)
             if _extra:
@@ -1282,7 +1307,7 @@ def _format_httpget_result(data: dict) -> str:
 def _format_fetchpage_result(content: str, llm_data: dict = None) -> str:
     """fetchpage 网页正文 — 2026-07-20 门限治理(章10.4): 专属行×列 OBS_FETCHPAGE_MAX_ROWS/CHARS + 两态说明"""
     _act = (llm_data or {}).get("action", {}) if llm_data else {}
-    _url = _act.get("target", "")
+    _url = _tool_target(llm_data)
     _fmt = _act.get("params", {}).get("extract_format", "")
     lines = [f"── 网页正文 ── {_url}"]
     if _fmt:
@@ -1307,8 +1332,7 @@ def _format_fetchpage_result(content: str, llm_data: dict = None) -> str:
 
 def _format_readtext_result(content: str, llm_data: dict = None) -> str:
     """readtext 文件内容 — 2026-07-20 门限治理(章11.4): 专属行×列 OBS_READTEXT_MAX_ROWS/CHARS + 两态说明"""
-    _act = (llm_data or {}).get("action", {}) if llm_data else {}
-    _path = _act.get("target", "")
+    _path = _tool_target(llm_data)
     lines = [f"── 文件内容 ── {_path}"]
     truncated = False
     content_lines = content.split("\n")
@@ -1331,8 +1355,7 @@ def _format_readtext_result(content: str, llm_data: dict = None) -> str:
 def _format_edittext_result(diff: str, llm_data: dict = None) -> str:
     """edittext 编辑差异 — 2026-07-20 门限治理(章12.4): 专属行×列 OBS_EDITTEXT_MAX_ROWS/CHARS + 两态说明
     Tool 输出 diff 不截断(3.7); 仅显示域按行×列收口(6.4)。无 diff 时回退标量摘要。"""
-    _act = (llm_data or {}).get("action", {}) if llm_data else {}
-    _path = _act.get("target", "")
+    _path = _tool_target(llm_data)
     lines = [f"── 编辑差异 ── {_path}"]
     if not diff:
         lines.append("(无差异)")
@@ -1367,8 +1390,7 @@ def _format_xlsx_result(data: dict, llm_data: dict = None) -> str:
     headers = data.get("headers", []) or []
     rows = data.get("rows", []) or []
     tool_truncated = bool(data.get("truncated", False))
-    _act = (llm_data or {}).get("action", {}) if llm_data else {}
-    _path = _act.get("target", "")
+    _path = _tool_target(llm_data)
     lines = [f"── xlsx 表格预览 ── {_path}"]
     if not headers or not rows:
         # 分支一: 空表/无数据 —— 仅占位提示, 不显示两态说明行

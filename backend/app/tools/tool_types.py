@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-18 - 小健 - 三堂会审: ToolMetadata 新增 target_param 字段(操作对象/主参数显式声明扩展点), 供 action_handler._resolve_target_field 优先采用; 留空则按schema属性自动推导(DRY/OCP)
 """
 工具类型定义 — 单一定义源(OCP:新增分类只需在此文件添加)
 - ToolCategory 枚举
@@ -89,6 +91,10 @@ class ToolMetadata:
     
     # 【2026-06-18 小健】工具依赖管理
     dependencies: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
+
+    # 【2026-08-18 小健 三堂会审】主参数(操作对象字段名): target展示自动推导的显式声明扩展点;
+    # 留空则由action_handler._TARGET_PARAM_PRIORITY按input_schema.properties自动推导(DRY/OCP)
+    target_param: Optional[str] = None
 
 
     def get_failure_hint(self, tool_params: Optional[dict] = None) -> str:

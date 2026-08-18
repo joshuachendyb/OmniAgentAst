@@ -104,6 +104,10 @@
 #   check_safety_and_confirm 循环内查 check_session_trust(_conn, _session_id, normalize_tool_name(_cn)),
 #   查得信任后传 check_before_execute(skip_confirmation=True) 豁免二次确认; 消除 safety→services 反向
 #   依赖违规(test_layer_boundaries 护栏); T1 normalize 语义随查询落在本层, 与写保护 BUG-2 同模式(防别名漏检)。
+# 2026-08-18 小欧 - §10.3.3(1/2/3): 新增ThoughtStartStep; handle_action发射新ActionStep(exec_type/tools); build_observation重写为tool_result数组+orchestration收集; 删_merge_llm_data/_merge_other_data
+# 2026-08-18 - 小健 - 三堂会审修复: ①删除无调用点的死代码 _merge_llm_data/_merge_other_data(编排收集改由 build_observation 按 tool_result[i].other_data 1:1 取代); ②删除 build_observation 死变量 _data(原始 data 已由 data_text/dl 承载); ③Bug#7 status/action 可能为 str 防御(isinstance 前判), 防 AttributeError
+# 2026-08-18 - 小健 - 恢复 op_id 双表贯通设计说明注释块(此前某次编辑被误删, 仅留行660短注释); 置于 _file_tool_names 逻辑正上方, 逐条核对当前代码(6文件工具白名单/预取队列/pop(0)分配)一致, 描述准确予以保留
+# 2026-08-18 - 小健 - 三堂会审修复(target推导): 删除硬编码_TARGE_FIELD(文件类工具+键read/web_search失配致_extract_target回退工具名真bug), 改为_resolve_target_field从tool_registry真实input_schema.properties按_TARGET_PARAM_PRIORITY推导字段名(target值取call入参LLM确定值); ActionStep.target极少截断; 预留ToolMetadata.target_param显式扩展点(OCP)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -118,6 +122,7 @@ action_handler — action类型处理（SRP拆分，模块级函数）
 小沈 2026-06-13 移除ActionHandler类,改为模块级函数
 """
 import asyncio
+import json   # 2026-08-18 小欧 新增(供 _format_llm_data_text)
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Set
@@ -125,7 +130,7 @@ from typing import Dict, List, Any, Optional, Set
 from app.logger import logger, log_and_print
 from app.constants import ACTION_LOG_RESULT_MAX_CHARS
 from app.logger.prompt_logger import get_prompt_logger
-from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep（工具重试隐蔽，不再 emit）
+from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep（工具重试隐蔽，不再 emit）; 2026-08-18 ThoughtStartStep新增
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.observation_formatter import build_observation_text
 from app.constants import HITL_TIMEOUT
@@ -137,6 +142,7 @@ from app.db import db
 from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE_OPERATION_TOOLS
 from app.tools.tools_alias_mapper import PARAM_ALIASES
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, MEDIA_EXTENSIONS
+from app.tools.registry import tool_registry  # 2026-08-18 小健 三堂会审: target字段从工具schema主参数自动推导(取代硬编码_TARGE_FIELD)
 
 
 # 【修复P2-5】封装observation构建上下文 — 北京老陈 2026-06-13
@@ -597,119 +603,81 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         return results
 
 
-def _merge_llm_data(all_llm_data: List[Dict]) -> Dict:
-    """并行场景llm_data合并 — 小健 2026-06-22"""
-    if not all_llm_data:
-        return {}
-    # 过滤非dict条目，防止崩溃 — 小欧 2026-06-22
-    all_llm_data = [d for d in all_llm_data if isinstance(d, dict)]
-    if not all_llm_data:
-        return {}
-    if len(all_llm_data) == 1:
-        return all_llm_data[0]
+# 2026-08-18 小健 三堂会审: 删除硬编码_TARGE_FIELD——该映射对文件类工具及部分键失配, 使_extract_target回退为工具名(真实bug):
+#   ①键失配: 映射键"read"/"web_search"与注册名"readtext"/未注册不符, _TARGET_FIELD.get()返回None→回退tool_name;
+#   ②字段失配: 文件类映射值file_path/dir_path/search_dir 与真实schema属性名path/pattern不符, _params.get(...)取到空串→回退tool_name;
+#   (注: grep/shell/httpget/fetchpage/download/ping_port/query_sql/execute_sql 映射值恰与schema一致, 旧代码本可工作; 推导化后统一正确且新增工具自动获得)
+#   字段名由_resolve_target_field从tool_registry真实input_schema.properties推导; target值取自call["tool_params"]的LLM已回传确定入参值(非结果)。
+# 2026-08-18 小欧 - §10.3.3(2) target 提取: 来源=工具调用入参(与observation展示的llm_data.action.target同源, 后者经工具内部转发)
+# 规范化主参数优先级: 用于在工具真实input_schema.properties中选定"操作对象"字段;
+# pattern置于path之前以区分搜索类(grep/find取pattern)与路径类(其余取path); 新增工具若含这些标准字段即自动获得target(DRY)
+_TARGET_PARAM_PRIORITY = (
+    "command", "sql", "url", "host", "pattern",
+    "path", "dir_path", "file_path", "source_path", "query", "content",
+)
 
-    severity_order = {"error": 3, "warning": 2, "success": 1}
 
-    def _severity_key(d):
-        status = d.get("status")
-        if not isinstance(status, dict):
-            return 0
-        exec_code = status.get("exec_code", "success")
-        return severity_order.get(exec_code, 0)
+def _resolve_target_field(tool_name: str) -> Optional[str]:
+    """2026-08-18 小健 三堂会审: 从工具schema主参数自动推导target字段名(取代硬编码映射, DRY/OCP)
+    ①显式声明tool.target_param优先(扩展点, 无需改动本函数) ②否则按_TARGET_PARAM_PRIORITY匹配真实properties
+    ③兜底: 必填参数→首参数; 均未命中返回None(调用方回退为工具名)"""
+    _tool = tool_registry.get_tool(tool_name)
+    if _tool is None:
+        return None
+    _props = (_tool.input_schema or {}).get("properties") or {}
+    if not _props:
+        return None
+    _explicit = getattr(_tool, "target_param", None)
+    if _explicit and _explicit in _props:
+        return _explicit
+    for _cand in _TARGET_PARAM_PRIORITY:
+        if _cand in _props:
+            return _cand
+    for _r in (_tool.input_schema or {}).get("required", []) or []:
+        if _r in _props:
+            return _r
+    return next(iter(_props))
 
-    sorted_data = sorted(all_llm_data, key=_severity_key, reverse=True)
 
-    most_severe = sorted_data[0]
+def _extract_target(call: Dict[str, Any]) -> str:
+    """2026-08-18 小欧 - §10.3.3(2) 从工具调用入参提取展示用target(ActionStep结构化, 极少截断保留完整值; 截断收敛见observation_formatter)"""
+    _name = call.get("tool_name", "")
+    _params = call.get("tool_params", {}) or {}
+    _field = _resolve_target_field(_name)
+    if not _field:
+        return _name
+    _val = _params.get(_field, "")
+    return str(_val) if _val != "" else _name
 
-    merged_metrics = {}
-    for llm_d in all_llm_data:
-        action = llm_d.get("action") if isinstance(llm_d.get("action"), dict) else {}
-        tool_name = action.get("tool", "unknown")
-        metrics = llm_d.get("metrics") if isinstance(llm_d.get("metrics"), dict) else {}
-        for k, v in metrics.items():
-            merged_metrics[f"{tool_name}.{k}"] = v
 
-    def _safe_str(val):
-        if val is None:
+async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
+    """构建 observation - tool_result 数组方案（§10.3.3(3)）— 2026-08-18 小欧
+
+    职责不变: 1条assistant(tool_calls)+逐工具add_tool_result喂LLM; record_operation双表同号
+    变更: 删 ActionStep 发射/删 _merge_other_data/删顶层 llm_data/tool_result/other_data/parallel_results
+          ObservationStep 仅 tool_result 数组; 编排层从各 tool_result[i].other_data 收集(return_direct/attachment/warning)
+    返回: (events, orchestration)  orchestration={"return_direct","attachments","warning","return_direct_message"}
+    """
+    def _format_llm_data_text(llm_data: Dict[str, Any]) -> str:
+        """2026-08-18 小欧 - JSON格式化llm_data供前端展示"""
+        if not llm_data:
             return ""
-        return str(val) if not isinstance(val, str) else val
+        try:
+            return json.dumps(llm_data, ensure_ascii=False, indent=2)
+        except (TypeError, ValueError):
+            return str(llm_data)
 
-    return {
-        "summary": "\n\n".join([_safe_str(d.get("summary", "")) for d in all_llm_data]),
-        "action": most_severe.get("action") if isinstance(most_severe.get("action"), dict) else {},
-        "status": most_severe.get("status") if isinstance(most_severe.get("status"), dict) else {},
-        "duration_ms": max([d.get("duration_ms", 0) for d in all_llm_data]),
-        "metrics": merged_metrics,
-    }
+    events: List = []
+    tool_result: List[Dict[str, Any]] = []
+    orchestration = {"return_direct": False, "attachments": [], "warning": "", "return_direct_message": ""}
 
-
-def _merge_other_data(all_other_data: List[Dict]) -> Dict:
-    """并行场景other_data合并 — 小健 2026-06-22; 小欧 2026-06-22 过滤None条目"""
-    valid = [od for od in all_other_data if od is not None]
-    if not valid:
-        return {}
-
-    merged: Dict[str, Any] = {}
-    warnings = []
-    attachments = []
-    return_direct = False
-
-    for od in valid:
-        w = od.get("warning")
-        if w:
-            warnings.append(str(w) if not isinstance(w, str) else w)
-        if od.get("attachment") is not None:
-            attachments.append(od["attachment"])
-        if od.get("return_direct"):
-            return_direct = True
-        if "retry_count" not in merged and od.get("retry_count") is not None:
-            merged["retry_count"] = od["retry_count"]
-
-    if warnings:
-        merged["warning"] = "\n\n".join(warnings)
-    if attachments:
-        merged["attachment"] = attachments if len(attachments) > 1 else attachments[0]
-    if return_direct:
-        merged["return_direct"] = True
-    return merged
-
-
-async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict] = None) -> List:
-    """构建observation — FC-only: 传递fc_context,删除add_assistant — 小沈 2026-06-11
-    【修复P2-5】使用ObservationContext封装参数 — 北京老陈 2026-06-13"""
-    events = []
-
-    for call, result in zip(ctx.all_calls, ctx.results):
-        if isinstance(result, Exception):
-            _ec = "error"
-        elif isinstance(result, dict):
-            _llm_data = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
-            _ec = _llm_data.get("status", {}).get("exec_code", "") if _llm_data else "error"
-        else:
-            _ec = "error"
-        action_step = ActionStep(
-            step=ctx.step,
-            tool_name=call.get("tool_name", ""),
-            tool_params=call.get("tool_params", {}),
-            execution_result=result,
-            execution_status=_ec if _ec else "",
-        )
-        events.append(ctx.agent._step_emitter.emit(action_step))
-
-    obs_parts = []
-
-    # 【Bug A修复】循环前：建1条assistant带所有tool_calls — 小沈 2026-07-06
-    # assistant+tool 配对规则:
-    #   1条assistant(带本轮N个tool_calls) + N条tool(每个tool_call_id对应1条)
-    #   历史结构: ...→assistant(tool_calls=[id1,id2])→tool(id1)→tool(id2)→...
-    #   注: 同一assistant的所有tool_calls是一次性发给LLM的"并行"请求
-    # — 小欧 2026-07-12
+    # assistant+tool 配对 — 建1条assistant带所有tool_calls
     _fc = ctx.fc_context or {}
     _shared_tc = _fc.get("tool_calls", [])
     if _shared_tc:
         ctx.agent.message_builder.add_assistant_tool_call(
             _shared_tc, content=_fc.get("llm_content", "") or None,
-            reasoning=_fc.get("llm_reasoning", "") or None  # 2026-07-19 小欧 reasoning传递
+            reasoning=_fc.get("llm_reasoning", "") or None,
         )
 
     # ==========================================================================
@@ -736,49 +704,41 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
     #   [写入] 用取出的 op_id 调 record_operation 写 task_operations，实现双表同号。
     #   文件工具 call 顺序 == file_operations 写入顺序，故 pop 精确一一对应，不撞车。
     # ==========================================================================
-    _file_tool_names = {
-        "delete", "copy", "move", "edittext",
-        "writetext", "compress",
-    }
+    # op_id 双表贯通 — 预取未消耗候选队列
+    _file_tool_names = {"delete", "copy", "move", "edittext", "writetext", "compress"}
     _pending_op_ids = []
     try:
         with db.get_conn("operations") as _cf:
             _fo = _cf.execute(
                 "SELECT operation_id FROM file_operations WHERE task_id = ? "
-                "ORDER BY created_at ASC, rowid ASC",
-                (ctx.agent.task_id,),
+                "ORDER BY created_at ASC, rowid ASC", (ctx.agent.task_id,),
             ).fetchall()
         with db.get_conn("task_tracker") as _ct:
             _used = set(r[0] for r in _ct.execute(
                 "SELECT operation_id FROM task_operations WHERE task_id = ?",
-                (ctx.agent.task_id,),
-            ).fetchall())
+                (ctx.agent.task_id,)).fetchall())
         _pending_op_ids = [r[0] for r in _fo if r[0] not in _used]
     except Exception as _e:
         logger.warning(f"[action_handler] 查询 operation_id 候选失败: {_e}")
         _pending_op_ids = []
 
-    for idx, (call, result) in enumerate(zip(ctx.all_calls, ctx.results)):
+    for call, result in zip(ctx.all_calls, ctx.results):
         if isinstance(result, Exception):
             obs_text = f"Observation: 工具{call.get('tool_name', '?')}执行异常: {result}"
-            _ec = "error"
             _is_failed = True
         else:
             obs_text = build_observation_text(result, call.get("tool_name", ""), call.get("tool_params", {}))
             _llm_data = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
-            _ec = _llm_data.get("status", {}).get("exec_code", "") if _llm_data else "error"
+            # 2026-08-18 小健 三堂会审 Bug#7: status 可能为 str(工具实现不规范), 防御防 AttributeError
+            _status = _llm_data.get("status") if isinstance(_llm_data.get("status"), dict) else {}
+            _ec = _status.get("exec_code", "")
             _is_failed = _ec == "error"
 
         get_prompt_logger().log_observation(
             step_name=f"步骤{ctx.step}: 工具执行结果",
-            observation_content=obs_text,
-            tool_name=call.get("tool_name", ""),
-            tool_params=call.get("tool_params", {}),
-            round_number=ctx.step,
-            raw_data=result,
+            observation_content=obs_text, tool_name=call.get("tool_name", ""),
+            tool_params=call.get("tool_params", {}), round_number=ctx.step, raw_data=result,
         )
-        # 取 op_id：文件类工具(白名单内)从候选队列按 call 顺序 pop(0) 取一个 → 双表同号；
-        #          非文件类工具为 None → record_operation 内部自生成。绝不读取工具返回值/LLM 字段(纯内部) — 小欧 2026-07-16
         _tool = call.get("tool_name", "?")
         _op_id = None
         if _tool in _file_tool_names and _pending_op_ids:
@@ -786,77 +746,53 @@ async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict
         ctx.agent.record_operation(
             _tool,
             status=OperationStatus.FAILED.value if _is_failed else OperationStatus.SUCCESS.value,
-            error=str(result) if _is_failed else None,
-            operation_id=_op_id,
+            error=str(result) if _is_failed else None, operation_id=_op_id,
         )
-
         repair_warning = call.get("_repair_warning", "")
         if repair_warning:
             obs_text = f"Observation: {repair_warning}\n{obs_text}"
-            print(f"{time.strftime('%H:%M:%S')} [Warning] step={ctx.step}, {call.get('tool_name', '?')} 参数截断修复")
-            logger.warning(f"[action_handler] step={ctx.step}, {call.get('tool_name', '?')} 参数截断修复: {repair_warning}")
-        obs_parts.append(obs_text)
-
+            logger.warning(f"[action_handler] step={ctx.step}, {_tool} 参数截断修复: {repair_warning}")
         try:
             tc_id = call.get("_tool_call_id", "")
             ctx.agent.message_builder.add_tool_result(tc_id, obs_text)
         except Exception as e:
-            logger.warning(f"[action_handler] add_tool_result异常: {type(e).__name__}: {e!r}")  # — 小欧 2026-07-13
+            logger.warning(f"[action_handler] add_tool_result异常: {type(e).__name__}: {e!r}")
             try:
                 ctx.agent.message_builder.add_tool_result("", obs_text)
             except Exception as e2:
-                logger.warning(f"[action_handler] add_tool_result最终异常: {type(e2).__name__}: {e2!r}")  # — 小欧 2026-07-13
+                logger.warning(f"[action_handler] add_tool_result最终异常: {type(e2).__name__}: {e2!r}")
 
-    if not obs_parts:
-        obs_parts = ["Observation: 无结果"]
-
-    merged_obs = "\n\n".join(obs_parts) if len(obs_parts) > 1 else obs_parts[0]
-
-    _all_llm_data = []
-    _all_tool_results = []
-    _all_other_data = []
-    _parallel_results = []
-    is_parallel = len(ctx.all_calls) > 1
-    for call, result in zip(ctx.all_calls, ctx.results):
+        # ── 构建 tool_result[i]（每元素自包含, other_data 1:1 不合并）── 2026-08-18 小欧
+        # 2026-08-18 小健 三堂会审 Bug#4: 删除死变量 _data(只赋值未使用, 原始 data 已由 data_text/dl 承载)
         if isinstance(result, dict):
-            _all_llm_data.append(result.get("llm_data", {}))
-            _all_tool_results.append(result.get("data"))
-            _all_other_data.append(result.get("other_data", {}))
+            _llm = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
+            _other = result.get("other_data") if isinstance(result.get("other_data"), dict) else {}
         else:
-            _all_tool_results.append(result)
-        if is_parallel:
-            _parallel_results.append({
-                "tool_name": call["tool_name"],
-                "tool_params": call.get("tool_params", {}),
-                "llm_data": result.get("llm_data", {}) if isinstance(result, dict) else {},
-                "tool_result": result.get("data") if isinstance(result, dict) else result,
-                "other_data": result.get("other_data", {}) if isinstance(result, dict) else {},
-            })
+            _llm, _other = {}, {}
+        tool_result.append({
+            "tool_name": _tool,
+            "llm_data": _llm,
+            "llm_data_text": _format_llm_data_text(_llm),
+            "data_text": obs_text,
+            "other_data": _other,
+        })
+        # ── 编排层收集（取代旧 _merge_other_data 盲目合并）── 2026-08-18 小欧
+        if _other.get("return_direct"):
+            orchestration["return_direct"] = True
+            # 2026-08-18 小健 Bug#7: status 可能非 dict, .get 前防御 (line 732 同各 status 取值点)
+            _rd_status = _llm.get("status") if isinstance(_llm.get("status"), dict) else {}
+            orchestration["return_direct_message"] = _rd_status.get("message", "") or obs_text
+        if _other.get("attachment") is not None:
+            orchestration["attachments"].append(_other["attachment"])
+        if _other.get("warning"):
+            _w = str(_other["warning"])
+            orchestration["warning"] = (orchestration["warning"] + "\n\n" + _w).strip() if orchestration["warning"] else _w
 
-    # 直接列表传递，不merge（各是各的，与parallel_results索引1:1）— 北京老陈 2026-07-08
-    llm_data_list = _all_llm_data if _all_llm_data else None
+    if not tool_result:
+        return events, orchestration
 
-    if llm_data_list:
-        for i, ld in enumerate(llm_data_list):
-            _st = ld.get("status", {}) if isinstance(ld, dict) else {}
-            _ac = ld.get("action", {}) if isinstance(ld, dict) else {}
-            _sm = (ld.get("summary", "") if isinstance(ld, dict) else "")[:120]
-            logger.info(f"[Observation] step={ctx.step}[{i}], tool={_ac.get('tool','')}, code={_st.get('exec_code','?')}, summary={_sm}")
-
-    if merged_other is None:
-        merged_other = _all_other_data[0] if _all_other_data else None
-        if len(_all_other_data) > 1:
-            merged_other = _merge_other_data(_all_other_data)
-
-    events.append(ctx.agent._step_emitter.emit(ObservationStep(
-        step=ctx.step,
-        llm_data=llm_data_list,
-        tool_result=_all_tool_results[0] if len(_all_tool_results) == 1 else _all_tool_results,
-        other_data=merged_other,
-        parallel_results=_parallel_results or None,
-    )))
-
-    return events
+    events.append(ctx.agent._step_emitter.emit(ObservationStep(step=ctx.step, tool_result=tool_result)))
+    return events, orchestration
 
 
 @dataclass
@@ -941,10 +877,10 @@ async def handle_action(agent, parsed: Dict):
     print(f"{time.strftime('%H:%M:%S')} [Action]step={step} ={call_result.tool_name}, pars:{params_short}")  # 小欧 2026-07-01 控制台 — 小沈 2026-07-05 =→:
 
     # thought 步骤 — content=LLM推理内容, reasoning=内部思维过程 — 小欧 2026-07-01
+    yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
     yield agent._step_emitter.emit(ThoughtStep(
         step=step,
         content=parsed.get("thought", ""),
-        tool_name=call_result.tool_name, tool_params=call_result.tool_params,
         reasoning=parsed.get("reasoning", ""),
     ))
 
@@ -957,6 +893,18 @@ async def handle_action(agent, parsed: Dict):
                                                 _out=_safe_calls, _denied_out=_denied_list):
         yield event
     _exec_calls = _safe_calls if _safe_calls else []
+
+    # ── 新 action step: execute_tools 执行前 yield 一次（§10.3.3(2)）── 2026-08-18 小欧
+    _action_tools = [{
+        "tool": c.get("tool_name", ""),
+        "target": _extract_target(c),
+        "params": c.get("tool_params", {}) or {},
+    } for c in _exec_calls]
+    yield agent._step_emitter.emit(ActionStep(
+        step=step,
+        exec_type="single" if len(_action_tools) == 1 else "multi",
+        tools=_action_tools,
+    ))
 
     # ── 工具重试（隐蔽，前端不可见）── 小欧 2026-07-13
     # 工具重试由 tool_retry_engine 内部执行, 不向前端 emit 任何 step(北京老陈要求: tool 重试隐蔽)。
@@ -977,20 +925,17 @@ async def handle_action(agent, parsed: Dict):
         is_parallel=call_result.is_parallel, pending_calls=call_result.pending_calls,
         fc_context=call_result.fc_context,
     )
-    merged_other = _merge_other_data([r.get("other_data", {}) for r in results if isinstance(r, dict)]) if results else {}
-    for event in await build_observation(ctx, merged_other=merged_other):
+    # 2026-08-18 小欧 - build_observation 返回 (events, orchestration); 不再传 merged_other
+    events, orchestration = await build_observation(ctx)
+    for event in events:
         yield event
     # 2026-08-11 小欧 fix D2: 被拒call反馈在build_observation后补写(assistant已由build_observation统一写),
     #   精确到call对象, 不误标会执行的同名工具, 也不重复写assistant
     if _denied_list:
         _add_denial_feedback(agent, _denied_list, call_result.fc_context)
-    if merged_other.get("return_direct"):
-        merged_llm = _merge_llm_data([r.get("llm_data", {}) for r in results if isinstance(r, dict)]) if results else {}
-        _status = merged_llm.get("status", {}) if isinstance(merged_llm, dict) else {}
+    if orchestration.get("return_direct"):
         yield agent._step_emitter.emit(FinalStep(
-            step=step, response=_status.get("message", ""),
-            thought=parsed.get("thought", ""),
-            outcome="completed",  # 小欧 2026-07-18: 显式终态声明, 与FinalStep多态契约一致
+            step=step, response=orchestration.get("return_direct_message", ""),
+            outcome="completed", reasoning="",
         ))
-        # chendyg 2026-07-01: 删set_completed，_dispatch_handler从FinalStep推断状态
 
