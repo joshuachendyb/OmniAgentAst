@@ -1,3 +1,51 @@
+v0.19.18
+更新时间: 2026-08-18 09:01:12 - 小欧-2026-08-18
+## v0.19.17(暂记为tag)以来 变更汇总(39个commit) - 小欧-2026-08-18
+[2026-08-18 09:01:12 小欧] 汇总范围=v0.19.17以来全部commit(version.txt流程commit并入本条不单列)
+
+### feat/fix/refactor(S0-S5 compaction/start/token_usage 落地+编排收敛):
+- feat:db_initializer S0表结构先行建chat_tasks/token_usage/chat_session_trust及补列索引 - 小欧-2026-08-17
+- feat:chat_routes/models S1上下文链参数context_link_mode透传与请求模型 - 小欧-2026-08-17
+- feat:stream S1链编排/S3 start事件/S4 start进yield编排 - 小欧-2026-08-17
+- feat:storage S1链load_previous BETWEEN+S2任务级读写落库create_task/allocate/append/track - 小欧-2026-08-17
+- feat:agent_runner/action_handler S2任务落库贯通+S4 start事件流 - 小沈-2026-08-17
+- feat:react_cycle/steps S4 start占step0事件流+闭包注入 - 小欧-2026-08-17
+- feat:safety/hitl S2工具安全检查与HITL信任落库 - 小欧-2026-08-17
+- feat:main S2注册token_usage路由启动项 - 小欧-2026-08-17
+- feat:token_usage 新建S2 token四维度归属落库接口 - 小欧-2026-08-17
+- fix:storage/stream_reader E2 DB兜底上界+AM2/STORAGE_1/2 always_new独立行+E1排除本任务user+PARALLEL id组内序号+allocator寻空位日志 - 小健-2026-08-17
+- fix:stream_orchestrator A1模块级db导入+E2 track兜底恢复upper+AE单例model还原(含日志) - 小健-2026-08-17
+- fix:react_cycle S4首轮前取消FinalStep步号or 1消除双step0 - 小健-2026-08-17
+- fix:safety/action_handler/hitl 信任预查上移services层消除safety→services违规+skip_confirmation+T1 normalize双侧 - 小健-2026-08-17
+- feat:compaction模块 S5 C4锚定摘要压缩全模块落地+主链路接入 - 小健-2026-08-17
+- feat:start业务装配核心迁入独立start_step模块(注入历史/超窗判定/C4回填/装配入口单归属, initialize_run_state退化为纯状态重置+init_history, 移除两函数与COMPACTION_ENABLED import)-小健-2026-08-17
+- feat:react_cycle改为start薄调度(移除_assemble_start_step/_compact_injected_history定义改薄import, start数据来源改读_start_meta, 同步去除async无谓包袱)-小健-2026-08-17
+- feat:start契约构造自sse_events迁出(删send_start_step/build_start_step及死import), orchestrator改_start_meta纯数据注入(删_start_step_factory闭包, ai_service冗余键删除)-小健-2026-08-17
+- feat:start_step与orchestrator task_id冗余收敛(_start_meta删task_id键, 改读agent.task_id权威持有, 单一归属DRY)-小健-2026-08-17
+- refactor:编排分区分号注释①~⑪ + task_cancel_check_and_yield删死参数(session_id/current_content)签名收窄KISS-DIRECT-小健-2026-08-17
+- refactor:压缩/裁剪常量归属迁移至agent层compaction_constants.py(5常量自app.constants迁入,消除跨层引用;message_builder导入compaction_constants避免compaction包__init__循环,迁出载体避开重链;6引用方导入路径同步)-小健-2026-08-17
+- refactor:上下文门限基准唯一化+双比例定案(删死值MAX_CONTEXT_TOKENS=200000与MAX_CONTEXT_RATIO=0.8, DEFAULT_CONTEXT_LIMIT=262144迁入compaction_constants为唯一默认且配置优先;新增START_TRIGGER_RATIO=0.5与TRIM_TRIGGER_RATIO=0.75,门限一律自运行时context_limit×比例计算;删get_max_context_tokens配置方法,MessageBuilder构造默认改262144,trigger/message_builder绝对值安全网改×0.75;start_step超窗基准改运行时窗口)-小健-2026-08-17
+- refactor:C4开关定名并开放(COMPACTION_ENABLED→START_COMPACTION_ENABLED,限定start超窗判定唯一使用且置True放开R4锚定摘要;start_step超窗门限改运行时窗口×START_TRIGGER_RATIO;summary/react_cycle注释去开关依赖表述)-小健-2026-08-17
+
+### docs(数据存储/会话架构/HistoryMemory 落地同步+10.1-10.3优化设计):
+- docs:数据存储设计文档 全文标注S0-S4已实施状态块+升级区3.8/3.9/3.12+5.3.1表结构就地标注(仅标注不追加内容) - 小健-2026-08-17
+- docs:数据存储设计 10.1.8 S5运行代码落地状态同步+compaction_constants更名 - 小健-2026-08-17
+- docs:[4]HistoryMemory设计方案 S5本地代码实施情况更新到文档+目录树/行号/import与真实代码对齐 - 小健-2026-08-17
+- docs:[1][2]数据存储/会话架构设计 清除正文及编辑历史中三堂会审审查措辞说明 - 小健-2026-08-17
+- docs:README 项目结构 services/agent 目录树补 compaction 子模块 - 小健-2026-08-17
+- docs:compaction模块 各函数docstring补全适用场景/使用方法/前置条件/输入输出+删三堂会审残留+常量注释补意义/依据/可选范围 - 小健-2026-08-17
+- feat:compaction模块 8函数名符其实改名(clear_tool_outputs/use_tool_summary/compress_long_tool_output/keep_valuable_messages/should_compact_now/get_new_messages_since/truncate_oversized_message/remove_dangling_tool_calls)+docstring补全编辑历史补记 - 小健-2026-08-17
+- docs:主链路3文件 S5压缩编辑历史补记(react_cycle._compact_injected_history/initialize_run_state._maybe_compact_injected_history/message_builder summary形参+_COMPACTION_TEMP_KEYS)-小健-2026-08-17
+- docs:数据存储设计 FinalStep优化定案 - 小欧-2026-08-17
+- docs:数据存储设计 10.3审查修正+概要说明补充 - 小欧-2026-08-17
+- docs:[1]数据存储及yield前端消息及数据设计 10.3优化定案补充-thought-start/observation/llm_data澄清 - 小欧-2026-08-17
+- docs:[1]数据存储及yield前端消息及数据设计 10.3缺陷修复(笔误thoght/staep+编号格式+标题更新) - 小欧-2026-08-17
+- docs:[1]数据存储及yield前端消息及数据设计 observation设计全文一致性修订对齐§10.3.3(3) - 小欧-2026-08-18
+- docs:[1]数据存储及yield前端消息及数据设计 10.3.5 thought/action/observation/final详细代码设计(覆盖§10.3.4全要求,三堂会审通过) - 小欧-2026-08-18
+- docs:[1]数据存储及yield前端消息及数据设计 10.3.5三堂会审修复(老数据回放兼容+截断核实+关联影响清单) - 小欧-2026-08-18
+- docs:[1]数据存储及yield前端消息及数据设计 10.3.6实施计划与验证标准(6批分阶段+回归) - 小欧-2026-08-18
+
+---
 v0.19.17
 更新时间: 2026-08-16 21:55:45 - 小欧-2026-08-16
 ## v0.19.16(暂记为tag)以来 变更汇总(40个commit) - 小欧-2026-08-16
