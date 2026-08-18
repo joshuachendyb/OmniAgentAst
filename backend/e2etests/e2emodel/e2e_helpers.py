@@ -11,6 +11,7 @@
 #          导致失败任务的end_type返回"final"而非"failed", PASS/FAIL判断无error事件→误判PASSED(unit-07)。
 #   【改法】①assert_stream_ended: 读final_event.outcome区分failed/cancelled/failed
 #          ②write_test_record: 读_final_outcome, 失败/取消时passed=False
+# 2026-08-19 - 小欧 - §10.4.4 流重构(chunk 承载 answer 文本, 同步 e2e 断言): send_chat 的 response_text 改由累加 chunk.content 得到(排除 is_reasoning), 不再依赖 final.content/response——final 现仅作终止符(只含 outcome/seq)。(注: 本文件为测试辅助, 按规不提交, 此条仅供本地可追溯)
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
@@ -374,9 +375,13 @@ async def send_chat(
                         if event_type == "error":
                             error_occurred = True
 
+                        if event_type == "chunk" and not event.get("is_reasoning", False):
+                            # §10.4.4 流重构: answer文本经 chunk 事件流式承载, final 仅作终止符
+                            # (仅含 outcome/seq, 不再带 content/response) -- 小欧 2026-08-19
+                            response_text += event.get("content", "")
+
                         if event_type == "final":
                             final_event = event
-                            response_text = event.get("content") or event.get("response", "")
 
                         if event_type == "action_tool":
                             tool_calls.append({
