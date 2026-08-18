@@ -24,6 +24,7 @@
 #   不再读全局常量; 门限=运行时窗口 × START_TRIGGER_RATIO; 删除 MAX_CONTEXT_TOKENS=200000 死值兜底
 # 2026-08-17 小健 开关定名(北京老陈 2026-08-17): COMPACTION_ENABLED→START_COMPACTION_ENABLED(仅限 start 域), 值 True
 # 2026-08-18 - 小欧 - §10.4.4 P7②(§10.1.2): _build_start_contract 改产 StartStep(删 next_step 依赖, step 固定 0, content=context_summary, user_message 顶层化); assemble_start_step 返回类型改 StartStep
+# 2026-08-18 - 小欧 - 三堂会审复核(回归修复): _build_start_contract 补 _start_meta None/非 dict 防御, 防 _meta.get AttributeError, 兑现既声明的「无 _start_meta 返回 None 旁路兼容」契约
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -180,8 +181,9 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
 
     _meta = getattr(agent, "_start_meta", None)
     _ai = getattr(agent, "llm_client", None)
-    if _ai is None:
-        return None   # P7: 不再依赖 next_step(P2 弃用)，仅需 llm_client 供 provider/model
+    if _ai is None or not isinstance(_meta, dict):
+        return None   # P7: 不再依赖 next_step(P2 弃用)，仅需 llm_client 供 provider/model;
+                      # 三堂会审复核(小欧 2026-08-18): 缺 _start_meta 或非 dict 亦旁路返回 None, 防下方 _meta.get AttributeError(回归修复)
     _prev = previous_messages or []
     context_summary = {
         "session_id": _meta.get("session_id"),

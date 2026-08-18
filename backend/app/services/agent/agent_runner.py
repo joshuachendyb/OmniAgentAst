@@ -39,6 +39,7 @@
 # 2026-08-18 - 小欧 - §10.4.4 P3/P5/P6: 通道路由 error/usage/paused/resumed/retrying/cancelled 划入仅SSE集合分支(不落库); 守卫改读 agent._last_error 填充final; insert_token 改读 agent._usage_events
 # 2026-08-18 - 小欧 - §10.4.4 P5: _m_skip 收敛为 {cancelled,authorization_required,start}
 # 2026-08-18 - 小欧 - §10.4.4 P7③: 通道路由新增 start 分支(_persist落库分配ai_message_id后合成 startinfo 仅SSE复用同id)
+# 2026-08-18 - 小欧 - 三堂会审复核: 守卫(:326)/异常分支(:287) FinalStep step 取值的 agent 空防御统一(与 :322 getattr 防御对齐), 防 agent=None 时 AttributeError
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -239,6 +240,7 @@ async def run_agent_in_background(
                 #   → 有 chunk 才短信号; 无 chunk 发完整(含 response)。
                 if event_type == "action":
                     _action_steps.add(event_dict.get("step", 0))   # 工具执行轮标记
+                    await _append(event_dict)                      # §10.3.3 其余 SSE+落库: action 实时下发前端(yield 才到前端) — 小欧 2026-08-18
                 elif event_type == "final" and event_dict.get("outcome") == "completed":
                     # 短信号仅当: 该 step 是普通answer轮且已发正文 chunk(非推理)。
                     # 若该 step 是 action/return_direct 轮(final=工具结果,response即正文),
@@ -284,7 +286,7 @@ async def run_agent_in_background(
     except Exception as e:
         # 失败终态改为自包含 FinalStep(outcome="failed") — 小欧 2026-07-18
         logger.error(f"[Runner] 任务 {task_id} 异常: {e}", exc_info=True)
-        s = agent.llm_call_count or 1  # P2(§10.4.4): 弃 next_step, 统一 agent 轮数
+        s = (agent.llm_call_count if agent else None) or 1  # P2(§10.4.4): 弃 next_step, 统一 agent 轮数; 三堂会审复核(小欧): agent 空防御统一
         error_content = str(e)[:200]
         final_step = FinalStep(
             step=s, response="任务执行失败", reasoning=error_content,
@@ -323,7 +325,7 @@ async def run_agent_in_background(
                 _last_err = getattr(agent, "_last_error", None) if agent else None
                 if _last_err:
                     _et, _em = _last_err[0] or "agent_operation_error", _last_err[1] or ""
-            _fs = FinalStep(step=agent.llm_call_count or 1, response=_resp, reasoning=_em or _resp,  # P2(§10.4.4): 弃 next_step, 统一 agent 轮数
+            _fs = FinalStep(step=(agent.llm_call_count if agent else None) or 1, response=_resp, reasoning=_em or _resp,  # P2(§10.4.4): 弃 next_step, 统一 agent 轮数; 三堂会审复核(小欧): agent 空防御统一
                             outcome=_oc, error_type=_et, error_message=_em)
             _fd = _fs.to_dict()
             current_execution_steps.append(_fd)

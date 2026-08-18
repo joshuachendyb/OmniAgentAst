@@ -11,11 +11,12 @@ Author: 小沈 - 2026-05-31
 2026-07-22 小欧  emit注入FinalStep._accumulated_usage: 自动从agent.accumulated_usage读取
 2026-07-22 小欧  emit注入加is None防御: 仅外部未设置时才注入
 2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): emit 内记录 _last_error(type=="error" 时读 _kwargs 取 error_type/error_message, 赋值 agent._last_error, KISS-DIRECT单一出口)
+2026-08-18 - 小欧 - 三堂会审复核: ①emit._last_error 兼容 ErrorStep 载体(_kwargs 为空时回退读 error_type 属性), 防 error_type 丢失; ②删除死码 exit_with_error 及 ErrorStep import(YAGNI, 全仓无真实调用点)
 """
 
 from typing import Any, Dict, Optional
 
-from app.services.agent.steps import ErrorStep, FinalStep
+from app.services.agent.steps import FinalStep
 from app.logger import logger
 
 
@@ -34,18 +35,12 @@ class StepEmitter:
         self.agent.steps.append(step)
         # 2026-08-18 - 小欧 - P3: error全仅SSE, emit统一出口记录_last_error供守卫填充final(KISS-DIRECT单一出口)
         if getattr(step, "type", "") == "error":
-            _kw = getattr(step, "_kwargs", {}) or {}
-            self.agent._last_error = (_kw.get("error_type", "") or "agent_operation_error", step.get_content())
+            # 2026-08-18 - 小欧 - 三堂会审复核: 兼容两种 error 载体——MetaStep(type="error") 走 _kwargs,
+            #   ErrorStep 走 error_type 属性(遗留); 单一出口记录, 保证 error_type 不丢
+            _kw = getattr(step, "_kwargs", None) or {}
+            _et = _kw.get("error_type", "") or getattr(step, "error_type", "") or "agent_operation_error"
+            self.agent._last_error = (_et, step.get_content())
         return step
-
-    def exit_with_error(self, step_count: int, error_type: str, error_message: str) -> 'ReasoningStep':
-        """创建error_step,返回Step对象 — chendyg 2026-07-01: 不设状态，只创建 ErrorStep；小欧 2026-07-13: 删 recoverable（终态由 ErrorStep 表示，不再用 flag 区分可恢复）"""
-        error_step = ErrorStep(
-            step=step_count,
-            error_type=error_type,
-            error_message=error_message
-        )
-        return self.emit(error_step)
 
     def _get_tracker(self):
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""
