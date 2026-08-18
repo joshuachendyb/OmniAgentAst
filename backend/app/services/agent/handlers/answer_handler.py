@@ -21,6 +21,7 @@
 # 2026-07-18 - 小欧 - 修复#6拼写错 yiled→yield (2处)
 # 2026-07-19 - 小欧 - 推理空转不持久化(Hermes字面): reasoning-only拆好/坏两分支; 好的带_temp_reasoning标记注入conversation_history(供模型续写, wire副本由prepare_messages_for_llm strip标记), 终端统一由react_cycle._finalize_cycle(finally出口)直调agent.message_builder.pop_temp_messages()弹掉标记再持久化, 落点单一收口(KISS-DIRECT)无防御守卫; 坏的(有去重)跳过不注入不持久不发射ThoughtStep。注: 生产直调message_builder为本代码既有假设, 单测MockMb缺该方法属测试缺陷
 # 2026-08-18 小欧 - §10.3.3(1): 所有分支(error/unknown/reasoning-only终止/正常answer)前发射ThoughtStartStep; FinalStep删thought=加reasoning=
+# 2026-08-18 - 小欧 - §10.4.4 P4(severity): retrying MetaStep 加 severity="info"
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -142,6 +143,7 @@ async def handle_answer(agent, parsed: Dict):
             step=step,
             content="LLM返回空内容，触发重试",
             wait_time=1,
+            severity="info",
         ))
         return
 
