@@ -33,6 +33,8 @@
 # 2026-08-16 - 小欧 - 三堂会审修复(S2): update_task 的 error 提取原条件 `not stream_state` 恒 False(orchestrator 正常路径
 #   stream_state 恒为 StreamState 实例 truthy)→任务失败时 chat_tasks error_type/error_message 永远为空(信息丢失);
 #   改为按 `_terminal_status == "failed"` 判定后从末条 final 实取(异常分支必先 append final_dict, 取数可靠)
+# 2026-08-18 小欧 - §10.3.3(1/4): 通道路由(thought仅落库/thought-start仅SSE/其余SSE+落库); final短信号(completed不带response); reasoning替代thought
+# 2026-08-18 - 小健 - 三堂会审修复(Bug#2+P1): ①通道路由新增 chunk 仅SSE不落库(§10.4.3 P1, total_steps自动剔除chunk虚高); ②final短信号改 step+action轮判定(_has_chunk_steps/_action_steps), 根治 return_direct 同轮先发正文chunk致response被剥的边界; ③短信号只改SSE, 落库与 stream_state.current_content 仍用完整 response 不退化
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -102,6 +104,9 @@ async def run_agent_in_background(
     current_execution_steps: List[Dict] = []
     end_type = "unknown"
     ai_message_id: Optional[int] = None  # 首步分配后复用 — 小欧 2026-07-14
+    _has_chunk_steps: set = set()  # 2026-08-18 小健 Bug#2: 按 step 记录已发正文 chunk(短信号仅当非action轮的正文chunk)
+    _action_steps: set = set() # 2026-08-18 小健 Bug#2 边界: 记录执行过action的step, 供return_direct final识别
+    # (旧任务级 _has_chunk_sent 结论被多轮 return_direct 边界推翻, 改 step 粒度更精确 — 小健)
 
     # [新] 生产者全权拥有 prompt-log 生命周期(创建) — 小欧 2026-07-18
     get_prompt_logger().start_request(last_message, session_id)
@@ -176,36 +181,71 @@ async def run_agent_in_background(
             else:
                 logger.warning(f"[Runner] 跳过非Step事件: {type(event)}")
                 continue
+            if not event_dict:
+                continue
             event_type = event_dict.get("type", "")
-            # prompt 日志统一在 _append 漏斗记一次(见 line 75), 此处禁止再记,
-            # 否则每事件双写导致 DB步数=Prompt日志/2 的一致性失败 — 小欧 2026-07-13
-            # 累积 execution_steps
-            if event_dict:
-                current_execution_steps.append(event_dict)
-                # 每步独立事务, 渐进耐久 — 小欧 2026-07-14
+
+            # ── 通道路由（§10.3.3(1) + §10.4.3 P1）：thought 仅落库 / thought-start 仅SSE / chunk 仅SSE / 其余 SSE+落库 ──
+            # 2026-08-18 小健 P1实施: chunk 与 thought-start 同类(仅实时、不可回放), 改仅SSE不落库,
+            #   total_steps 自动剔除chunk虚高(stream_reader._log_task_end 按 current_execution_steps 统计);
+            #   正文回放由 thought/final 承载(response 完整落库), 重连续传走 event_log 缓冲不受影响。
+            def _persist(ed: Dict):
+                current_execution_steps.append(ed)
+                nonlocal ai_message_id
                 if ai_message_id is None:
                     with db.get_conn_with_retry("chat") as conn:
                         ai_message_id = db_ops.allocate_and_insert(conn, session_id)
                         get_prompt_logger().update_ai_message_id(str(ai_message_id))
                         db_ops.append_step(conn, ai_message_id, session_id,
-                                              len(current_execution_steps) - 1, event_dict)
+                                           len(current_execution_steps) - 1, ed)
                 else:
                     with db.get_conn_with_retry("chat") as conn:
                         db_ops.append_step(conn, ai_message_id, session_id,
-                                              len(current_execution_steps) - 1, event_dict)
-            # 更新 current_content / current_thought — 小沈 2026-06-09; 小欧 2026-07-16 增 thought 持久化
+                                           len(current_execution_steps) - 1, ed)
+
+            if event_type == "thought":
+                _persist(event_dict)              # 仅落库（历史回放用, 实时不重复发）
+            elif event_type == "thought-start":
+                await _append(event_dict)         # 仅 SSE（纯实时信号, 不落库）
+            elif event_type == "chunk":
+                # 仅 SSE（§10.4.3 P1）: chunk 纯实时逐字流, 不落库; 仅维护正文chunk标记供 final 短信号判定
+                if not event_dict.get("is_reasoning"):
+                    _has_chunk_steps.add(event_dict.get("step", 0))
+                await _append(event_dict)
+            else:
+                _persist(event_dict)              # 落库（始终完整 dict）
+                # ── final & completed SSE 短信号（§10.3.3(4)）── 2026-08-18 小欧
+                # 2026-08-18 小健 三堂会审 Bug#2: 短信号前提是"chunk 已发正文"。
+                #   return_direct 等无 chunk 场景, final.response 是前端唯一正文载体,
+                #   剥离后前端正文丢失(测试 test_return_direct_response_lost 捕获)。
+                #   → 有 chunk 才短信号; 无 chunk 发完整(含 response)。
+                if event_type == "action":
+                    _action_steps.add(event_dict.get("step", 0))   # 工具执行轮标记
+                elif event_type == "final" and event_dict.get("outcome") == "completed":
+                    # 短信号仅当: 该 step 是普通answer轮且已发正文 chunk(非推理)。
+                    # 若该 step 是 action/return_direct 轮(final=工具结果,response即正文),
+                    #   一律完整发——即使该轮LLM曾先输出正文chunk("我来查询...")也不剥离真正的工具答案。
+                    _s = event_dict.get("step", 0)
+                    if _s not in _action_steps and _s in _has_chunk_steps:
+                        _short = {k: event_dict[k] for k in ("type", "step", "timestamp", "outcome")}
+                        await _append(_short)     # SSE：短信号（chunk已发正文, 不重复带response）
+                    else:
+                        await _append(event_dict) # SSE：完整（return_direct/action轮 或 无正文chunk, response 即正文）
+                else:
+                    await _append(event_dict)     # SSE：完整 / failed / cancelled 等
+
+            # 更新 current_content / current_thought
             if event_type == "final":
                 content = event_dict.get("response", "") or ""
                 if stream_state is not None:
                     stream_state.current_content = content or stream_state.current_content
-                    thought_val = event_dict.get("thought", "") or ""
-                    if thought_val:
-                        stream_state.current_thought = thought_val
+                    _reasoning_val = event_dict.get("reasoning", "") or ""   # 2026-08-18 小欧 改读 reasoning(原 thought 已删)
+                    if _reasoning_val:
+                        stream_state.current_thought = _reasoning_val
             elif event_type == "chunk":
                 chunk_text = event_dict.get("content", "")
                 if stream_state is not None and chunk_text:
                     stream_state.current_content += chunk_text
-            await _append(event_dict)
 
         # 正常结束：终态由 react_cycle 内部设置(agent.status), 无需在此补发
 
@@ -229,7 +269,7 @@ async def run_agent_in_background(
         s = next_step()
         error_content = str(e)[:200]
         final_step = FinalStep(
-            step=s, response="任务执行失败", thought=error_content,
+            step=s, response="任务执行失败", reasoning=error_content,
             outcome="failed", error_type="agent_operation_error", error_message=error_content,
         )
         final_dict = final_step.to_dict()
@@ -270,7 +310,7 @@ async def run_agent_in_background(
                 if _last_err:
                     _em = _last_err.get("error_message", "")
                     _et = _last_err.get("error_type", "") or "agent_operation_error"
-            _fs = FinalStep(step=next_step(), response=_resp, thought=_em or _resp,
+            _fs = FinalStep(step=next_step(), response=_resp, reasoning=_em or _resp,
                             outcome=_oc, error_type=_et, error_message=_em)
             _fd = _fs.to_dict()
             current_execution_steps.append(_fd)

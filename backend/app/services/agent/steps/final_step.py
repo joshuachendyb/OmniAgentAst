@@ -15,6 +15,7 @@
 # 2026-07-18 小欧 #26 fix: outcome参数Literal["completed","failed","cancelled"]约束
 # 2026-07-18 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致
 # 2026-07-22 小欧 - 新增 accumulated_usage 可选字段(累计消耗统计), _extra_fields 输出供前端显示
+# 2026-08-18 小欧 - §10.3.3(4): 删 thought/is_finished/display_name(冗余); 新增 reasoning(历史回放推理载体)
 
 from typing import Any, Dict, Literal, Optional
 
@@ -22,12 +23,7 @@ from .base import ReasoningStep
 
 
 class FinalStep(ReasoningStep):
-    """最终回答步骤 - Agent完成,最终给出答案
-
-    2026-07-18 小欧 多态自包含终态重构:
-    outcome字段声明终态结果: completed(成功)/failed(失败)/cancelled(取消)
-    error_type/error_message在失败时承载错误详情, 成功/取消时为空。
-    """
+    """最终回答步骤 - 多态自包含终态（§10.3.3(4）"""
 
     TYPE: str = "final"
     IS_DONE: bool = True
@@ -35,29 +31,25 @@ class FinalStep(ReasoningStep):
     def __init__(
         self,
         step: int,
-        response: str,
-        thought: str = "",
-        outcome: Literal["completed", "failed", "cancelled"] = "completed",  # #26 fix: Literal约束 — 小欧 2026-07-18
-        error_type: str = "",  # 小欧 2026-07-18: 失败时的错误类型(如llm_error/agent_operation_error)
-        error_message: str = "",  # 小欧 2026-07-18: 失败/取消时的错误信息
+        response: str = "",
+        outcome: Literal["completed", "failed", "cancelled"] = "completed",
+        error_type: str = "",
+        error_message: str = "",
         model: Optional[str] = None,
         provider: Optional[str] = None,
-        is_finished: bool = True,
-        display_name: Optional[str] = None,
+        accumulated_usage: Optional[Dict[str, int]] = None,
+        reasoning: str = "",
         timestamp: Optional[str] = None,
-        accumulated_usage: Optional[Dict[str, int]] = None,  # 2026-07-22 - 小欧 - 累计消耗: prompt_tokens/completion_tokens/total_tokens
     ):
         ReasoningStep.__init__(self, step, timestamp)
         self._response = response
-        self._thought = thought
         self._outcome = outcome
         self._error_type = error_type
         self._error_message = error_message
         self._model = model
         self._provider = provider
-        self._is_finished = is_finished
-        self._display_name = display_name or (f"{provider} ({model})" if provider and model else provider or model or "")
-        self._accumulated_usage = accumulated_usage  # 2026-07-22 - 小欧
+        self._accumulated_usage = accumulated_usage
+        self._reasoning = reasoning
 
     def get_content(self) -> str:
         return self._response
@@ -67,40 +59,33 @@ class FinalStep(ReasoningStep):
         return self._response
 
     @property
-    def thought(self) -> str:
-        return self._thought
-
-    @property
-    def outcome(self) -> str:  # 小欧 2026-07-18: 终态声明读取器
+    def outcome(self) -> str:
         return self._outcome
 
     @property
-    def error_type(self) -> str:  # 小欧 2026-07-18: 错误类型读取器
+    def error_type(self) -> str:
         return self._error_type
 
     @property
-    def error_message(self) -> str:  # 小欧 2026-07-18: 错误信息读取器
+    def error_message(self) -> str:
         return self._error_message
 
     @property
-    def is_finished(self) -> bool:
-        return self._is_finished
+    def reasoning(self) -> str:
+        return self._reasoning
 
     @property
-    def display_name(self) -> str:
-        return self._display_name
+    def accumulated_usage(self) -> Optional[Dict[str, int]]:
+        return self._accumulated_usage
 
     def _extra_fields(self) -> Dict[str, Any]:
         return {
             "response": self._response,
-            "thought": self._thought,
-            "outcome": self._outcome,  # 小欧 2026-07-18: 输出终态声明
-            "error_type": self._error_type,  # 小欧 2026-07-18: 输出错误类型
-            "error_message": self._error_message,  # 小欧 2026-07-18: 输出错误信息
+            "outcome": self._outcome,
+            "error_type": self._error_type,
+            "error_message": self._error_message,
             "model": self._model,
             "provider": self._provider,
-            "is_finished": self._is_finished,
-            "display_name": self._display_name,
-            "accumulated_usage": self._accumulated_usage,  # 2026-07-22 - 小欧
+            "accumulated_usage": self._accumulated_usage,
+            "reasoning": self._reasoning,
         }
-

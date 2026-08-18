@@ -100,6 +100,7 @@
 # 2026-08-17 - 小健 - 最合理核查(老陈追问): assemble_start_step 改同步(内部零 await), 调用点去 await — 小健 2026-08-17
 # 2026-08-17 - 小健 - 注释纠偏(北京老陈 2026-08-17): S5 超窗回填段注释去掉「依赖 COMPACTION_ENABLED 放开 R4」表述——
 #   开关仅限 start 超窗判定(start_step)使用; 触发条件只据 start 超窗置的 _needs_compact 标记(getattr 判断) — 小健 2026-08-17
+# 2026-08-18 小欧 - §10.3.3(4): same_tool_loop终止FinalStep的 thought= 改 reasoning=(FinalStep已删thought参数)
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -500,7 +501,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             yield agent._step_emitter.emit(FinalStep(
                 step=step,
                 response=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
-                outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 连续截断终态统一
+                outcome="cancelled",
             ))
             set_cancelled(agent)
             return
@@ -518,8 +519,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         )
         yield agent._step_emitter.emit(ObservationStep(
             step=step,
-            llm_data=[{"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}}],
-            tool_result={},
+            tool_result=[{"tool_name": "truncated_output", "llm_data": {"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}}, "llm_data_text": "", "data_text": obs_text, "other_data": {}}],
         ))
         return
 
@@ -545,7 +545,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             yield agent._step_emitter.emit(FinalStep(
                 step=step,
                 response="模型反复调用相同工具未取得进展，任务已终止（疑似死循环）",
-                thought=llm_response.get("reasoning", "") or llm_response.get("thought", ""),
+                reasoning=llm_response.get("reasoning", "") or llm_response.get("thought", ""),
                 outcome="failed",
                 error_type="same_tool_loop",
                 error_message=f"模型连续{_cnt}步重复调用相同工具，疑似死循环",

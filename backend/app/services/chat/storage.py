@@ -33,6 +33,7 @@
 #   STORAGE_2: 每任务独立行后, load_execution_steps 按 task_id 双条件不再混任务步骤。
 # 2026-08-17 - 小健 - 必备日志补齐(老陈驱动「昨天今天提交代码都必须加」): allocate 的 always_new 递增寻空位
 #   打 logger.warning 留痕(异常回落/越界审计点, 仅落文件不刷 console)。
+# 2026-08-18 - 小健 - 三堂会审 Bug#5: _truncate_step_dict 补新 ActionStep 字段 tools[i].params 超长字符串截断(旧实现仅截断 execution_result/parallel_results, 漏 tools 致长SQL/content撑爆SQLite); 已核实 ActionStep.to_dict() 输出键为 tools, 非死代码
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -326,6 +327,14 @@ def _truncate_step_dict(step_dict: dict) -> dict:
     if "execution_result" in step_dict:
         step_dict["execution_result"] = _truncate_tool_result(step_dict["execution_result"], "")
         _truncate_tool_result_strings(step_dict["execution_result"])
+    # 2026-08-18 小健 三堂会审 Bug#5: 新 ActionStep 字段已由 execution_result 改名 tools,
+    #   须对新 tools[i].params 做超长字符串截断, 防长 SQL/content 撑爆 SQLite(旧实现遗漏此键)
+    tools = step_dict.get("tools")
+    if isinstance(tools, list):
+        for i, entry in enumerate(tools):
+            if isinstance(entry, dict) and "params" in entry:
+                entry["params"] = _truncate_tool_result(entry["params"], f"tools[{i}].params.")
+                _truncate_tool_result_strings(entry["params"])
     pr = step_dict.get("parallel_results")
     if isinstance(pr, list):
         for i, entry in enumerate(pr):

@@ -19,6 +19,8 @@
 #       解决一轮内并行多工具同 step 致 call_{msg}_{step} 重复 → 历史回放 FC 配对错乱; 两函数同规则(_step_count)
 #       保证 assistant.tool_calls 与对应 tool 消息 tool_call_id 对齐。经数据实测3遍: 空content observation 被跳过
 #       时该工具无响应(非错位), tc/obs id 严格配对无交叉错配。
+# 2026-08-18 小欧 - §10.3.5(3)④: _parse_tool_calls 兼容 action(tools数组)+老 action_tool(单工具); _parse_observations 读 tool_result 数组+老 content 回退
+# 2026-08-18 - 小健 - 三堂会审 Bug#8: _parse_observations 预扫描 action 的 FC id 集合(_action_ids), 截断场景 truncated_output observation 无对应 action(运行时 id 不可恢复)回放生成孤儿 tool 消息→OpenAI历史不合法, 跳过防非法; _log_task_end 注释同步(P1后chunk不入steps)
 """
 stream_reader — SSE流运行器（消费者）
 
@@ -46,7 +48,8 @@ from app.services.chat.storage import load_execution_steps  # 从chat_message_st
 def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
     """从execution_steps JSON提取tool_calls列表
     小欧 2026-06-25 从_load_previous_messages提取
-    小欧 2026-07-18 F4修复: try收窄到单步, 单步参数异常不株连整批"""
+    小欧 2026-07-18 F4修复: try收窄到单步, 单步参数异常不株连整批
+    2026-08-18 小欧 §10.3.5(3)④: 兼容新 action(tools数组) + 老 action_tool(单工具)"""
     try:
         exec_steps = json.loads(exec_steps_json)
     except Exception:
@@ -55,52 +58,97 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
         logger.warning(f"[_parse_tool_calls] exec_steps非list, 跳过: {type(exec_steps)}")
         return []
     tool_calls = []
-    _step_count: Dict[int, int] = {}
+    _step_count: Dict[int, int] = {}   # 2026-08-18 小欧 兼容老 action_tool: 同 step 多工具追加组内序号
     for step in exec_steps:
-        if step.get("type") != "action_tool":
+        _type = step.get("type", "")
+        if _type not in ("action", "action_tool"):   # 兼容老数据 action_tool
             continue
-        try:
-            arguments = json.dumps(step.get("tool_params", {}), ensure_ascii=False)
-        except (TypeError, ValueError):
-            arguments = "{}"
-            logger.warning(f"[_parse_tool_calls] tool_params不可序列化, 降级为{{}}: {step.get('tool_name')}")
         _s = step.get("step", 0)
-        _c = _step_count.get(_s, 0)
-        _step_count[_s] = _c + 1
-        # 2026-08-17 - 小健 - 三堂会审-PARALLEL修复: id 追加"step值组内序号"(_c),
-        #   解决一轮内并行多工具同 step 造成 call_{msg}_{step} 重复 -> 历史回放 FC 配对错乱;
-        #   _parse_observations 用同规则(_step_count), 保证 assistant.tool_calls 与对应 tool 消息 tool_call_id 对齐
-        tool_calls.append({
-            "id": f"call_{msg_id}_{_s}_{_c}",
-            "type": "function",
-            "function": {
-                "name": step.get("tool_name", ""),
-                "arguments": arguments,
-            }
-        })
+        if _type == "action":
+            tools = step.get("tools") or []
+            if not isinstance(tools, list):
+                continue
+            for _i, t in enumerate(tools):
+                if not isinstance(t, dict):
+                    continue
+                _name = t.get("tool", "")
+                _params = t.get("params") or {}
+                try:
+                    arguments = json.dumps(_params, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    arguments = "{}"
+                tool_calls.append({
+                    "id": f"call_{msg_id}_{_s}_{_i}",
+                    "type": "function",
+                    "function": {"name": _name, "arguments": arguments},
+                })
+        else:  # 老 action_tool: 逐个 step 一工具, 同 step 用 _step_count 补序号, 与老 observation 对齐
+            _c = _step_count.get(_s, 0)
+            _step_count[_s] = _c + 1
+            try:
+                arguments = json.dumps(step.get("tool_params", {}), ensure_ascii=False)
+            except (TypeError, ValueError):
+                arguments = "{}"
+                logger.warning(f"[_parse_tool_calls] tool_params不可序列化, 降级为{{}}: {step.get('tool_name')}")
+            tool_calls.append({
+                "id": f"call_{msg_id}_{_s}_{_c}",
+                "type": "function",
+                "function": {"name": step.get("tool_name", ""), "arguments": arguments},
+            })
     return tool_calls
 
 
 def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
     """从execution_steps JSON提取observation tool消息 — 小欧 2026-06-25 从_load_previous_messages提取
-    小欧 2026-07-10 M-12: content已扁平到顶层，不再从observation包装读取"""
+    小欧 2026-07-10 M-12: content已扁平到顶层，不再从observation包装读取
+    2026-08-18 小欧 §10.3.5(3)④: 直接读 tool_result 数组(新格式) + 老 content 回退
+    2026-08-18 小健 Bug#8: 截断场景的 truncated_output observation 无对应 action(运行时 id 为上次
+      assistant 的 _retry_tc_id, 无法从 step_json 恢复), 回放一律生成孤儿 tool 消息 → 跳过, 防 OpenAI 历史不合法"""
     try:
         exec_steps = json.loads(exec_steps_json)
+        # 预扫描全部对应 action 的 FC id, 供孤儿截断观测跳过
+        _action_ids = set()
+        for _st in exec_steps:
+            if not isinstance(_st, dict):
+                continue
+            if _st.get("type") != "action":
+                continue
+            _tools = _st.get("tools") or []
+            if isinstance(_tools, list):
+                for _i in range(len(_tools)):
+                    _action_ids.add(f"call_{msg_id}_{_st.get('step',0)}_{_i}")
         observations = []
-        _step_count: Dict[int, int] = {}
         for step in exec_steps:
-            if step.get("type") == "observation":
-                _s = step.get("step", 0)
-                _c = _step_count.get(_s, 0)
-                _step_count[_s] = _c + 1
-                content = step.get("content", "")
-                if content:
-                    # 2026-08-17 - 小健 - 三堂会审-PARALLEL修复: 与 _parse_tool_calls 同规则追加组内序号,
-                    #   使 tool_call_id 与对应 tool_call 对齐且不重复(并行同 step 场景)
+            if not isinstance(step, dict) or step.get("type") != "observation":
+                continue
+            _s = step.get("step", 0)
+            tool_result = step.get("tool_result")
+            if isinstance(tool_result, list) and tool_result:
+                # 新格式: 直接读 tool_result 数组（每元素 tool_call_id 与 _parse_tool_calls 同 _s/_i 对齐）
+                for _i, el in enumerate(tool_result):
+                    if not isinstance(el, dict):
+                        continue
+                    content = el.get("data_text") or el.get("llm_data_text") or ""
+                    if not content:
+                        continue
+                    _cum = el.get("tool_name", "") == "truncated_output"
+                    _cid = f"call_{msg_id}_{_s}_{_i}"
+                    # Bug#8: 截断观测量接管回放孤儿(无对应 action assistant), 跳过防 LLM 历史不合法
+                    if _cum and _cid not in _action_ids:
+                        continue
                     observations.append({
                         "role": "tool",
                         "content": content,
-                        "tool_call_id": f"call_{msg_id}_{_s}_{_c}"
+                        "tool_call_id": _cid,
+                    })
+            else:
+                # 2026-08-18 小欧 兼容老数据: 旧 ObservationStep 以 content(summary) 承载单次结果
+                content = step.get("content", "")
+                if content:
+                    observations.append({
+                        "role": "tool",
+                        "content": content,
+                        "tool_call_id": f"call_{msg_id}_{_s}_0",
                     })
         return observations
     except Exception:
@@ -227,8 +275,10 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
             counter[t] = counter.get(t, 0) + 1
         # 2026-08-09 - 小欧 - 三审收尾: usage 为非业务 Meta 步骤, 真实消耗由 usage_tokens 承担, 不混入业务统计;
         #   同性质非业务 MetaStep(paused/resumed/retrying/cancelled/authorization_required/start) 一并剔除, 与
-        #   "Meta 步骤非业务步骤"注释自洽; 业务步骤(chunk/action/thought/observation/final/error)不计入排除,
+        #   "Meta 步骤非业务步骤"注释自洽; 业务步骤(action/thought/observation/final/error)不计入排除,
         #   不误伤。total 必须在 pop 之后计算, 否则 total_steps 含排除项与注释声明矛盾。
+        # 2026-08-18 小健 P1(§10.4.3): chunk 已改为仅SSE不落库, 不入 current_execution_steps,
+        #   total_steps 自然剔除 chunk 虚高(实时逐字由 thought/final 承载, 此处无需再显式排除)。
         for _t in ("usage", "paused", "resumed", "retrying", "cancelled", "authorization_required", "start"):
             counter.pop(_t, None)
         total = sum(counter.values())

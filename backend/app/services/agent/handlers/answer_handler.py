@@ -20,6 +20,7 @@
 # 【增强】response_text全路径非空; 失败细节自包含; 内部set_failed全覆盖。
 # 2026-07-18 - 小欧 - 修复#6拼写错 yiled→yield (2处)
 # 2026-07-19 - 小欧 - 推理空转不持久化(Hermes字面): reasoning-only拆好/坏两分支; 好的带_temp_reasoning标记注入conversation_history(供模型续写, wire副本由prepare_messages_for_llm strip标记), 终端统一由react_cycle._finalize_cycle(finally出口)直调agent.message_builder.pop_temp_messages()弹掉标记再持久化, 落点单一收口(KISS-DIRECT)无防御守卫; 坏的(有去重)跳过不注入不持久不发射ThoughtStep。注: 生产直调message_builder为本代码既有假设, 单测MockMb缺该方法属测试缺陷
+# 2026-08-18 小欧 - §10.3.3(1): 所有分支(error/unknown/reasoning-only终止/正常answer)前发射ThoughtStartStep; FinalStep删thought=加reasoning=
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -37,7 +38,7 @@ import time
 from collections import Counter
 from typing import Dict
 
-from app.services.agent.steps import ThoughtStep, FinalStep, MetaStep
+from app.services.agent.steps import ThoughtStep, ThoughtStartStep, FinalStep, MetaStep  # 2026-08-18 小欧 ThoughtStartStep新增
 from app.utils.text_utils import format_tool_call_markup
 from app.logger import logger
 
@@ -104,10 +105,9 @@ async def handle_answer(agent, parsed: Dict):
         agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - error非reasoning-only, 归零防残留(不变量: 仅reasoning-only分支累加)
         agent.message_builder.add_assistant_message(content)
         print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, error={content}")
-        # 小欧 2026-07-18: 失败终态改为单条自包含 FinalStep(outcome="failed");
-        # response_text 由 final 事件填充→全路径非空; derive 读 final.outcome 判 failed 不翻转。
+        yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
         yield agent._step_emitter.emit(FinalStep(
-            step=step, response="任务执行失败", thought=content,
+            step=step, response="任务执行失败",
             outcome="failed", error_type="llm_error", error_message=content,
         ))
         return
@@ -120,9 +120,9 @@ async def handle_answer(agent, parsed: Dict):
         print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, type={parsed_type}, content={content}")
         if content:
             agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
-        # 小欧 2026-07-18: 未知响应类型同样改单条自包含 FinalStep(outcome="failed", 同error分支)
+        yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
         yield agent._step_emitter.emit(FinalStep(
-            step=step, response="任务执行失败", thought=content,
+            step=step, response="任务执行失败",
             outcome="failed", error_type="unknown_response",
             error_message=f"LLM返回未知响应类型: {parsed_type}",
         ))
@@ -159,10 +159,11 @@ async def handle_answer(agent, parsed: Dict):
         agent._consecutive_reasoning_only += 1
         if agent._consecutive_reasoning_only > REASONING_ONLY_MAX_ROUNDS:
             logger.warning(f"[handle_answer] 连续{agent._consecutive_reasoning_only}轮reasoning-only无进展(step={step}), 终止任务")
+            yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
             yield agent._step_emitter.emit(FinalStep(
                 step=step,
                 response="模型反复思考未产出有效结果，任务已终止（疑似陷入无效循环）",
-                thought=_deduped,
+                reasoning=_deduped,
                 outcome="failed",
             ))
             return
@@ -187,6 +188,8 @@ async def handle_answer(agent, parsed: Dict):
     agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 正常final answer, 归零空转计数(防御残留)
     thought = parsed.get("thought", content)
 
+    yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
+
     if thought:
         yield agent._step_emitter.emit(ThoughtStep(
             step=step, content=thought, reasoning=reasoning,
@@ -200,7 +203,7 @@ async def handle_answer(agent, parsed: Dict):
 
     print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response={content}")  # 小欧 2026-07-12 恢复answer分支终态日志(94eac9723合并时误删)
     yield agent._step_emitter.emit(FinalStep(
-        step=step, response=content, thought=thought,
-        outcome="completed",
+        step=step, response=content,
+        outcome="completed", reasoning=reasoning,
     ))
     agent.message_builder.add_assistant_message(content)

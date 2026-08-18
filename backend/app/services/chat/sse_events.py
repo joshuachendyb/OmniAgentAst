@@ -13,6 +13,7 @@
 # 2026-08-17 - 小健 - start 业务彻底迁出(老陈驱动, 三思三省): 契约构造逻辑迁入 start_step 模块(_build_start_contract),
 #   删除本文件 send_start_step/build_start_step 两函数及 MetaStep/MessageBuilder import(死代码清除);
 #   start 业务完整单归属 start_step.py, sse_events 不再承载任何 start 构造 — 小健 2026-08-17
+# 2026-08-18 小欧 - §10.3.3(4): create_final_response 参数 thought→reasoning(FinalStep已删thought字段)
 """
 sse_events — SSE事件流处理模块
 从 react_sse_wrapper/chat_stream.py 移入
@@ -119,7 +120,7 @@ def create_final_response(
     step: Optional[int] = None,
     provider: Optional[str] = None,
     model: Optional[str] = None,
-    thought: str = '',
+    reasoning: str = '',   # 2026-08-18 小欧 thought→reasoning
 ) -> str:
     """创建最终的SSE响应 — 使用 FinalStep + format_agent_sse
     【修复P0-4 2026-06-08 小沈】删除StepFactory，直接调用FinalStep构造函数
@@ -127,7 +128,7 @@ def create_final_response(
     final_step = FinalStep(
         step=step or 0,
         response=content,
-        thought=thought,
+        reasoning=reasoning,
         model=model,
         provider=provider
     )
