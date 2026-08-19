@@ -1,3 +1,25 @@
+v0.19.20
+更新时间: 2026-08-19 16:21:27 - 小欧-2026-08-19
+## v0.19.19以来 变更汇总(28个commit) - 小欧-2026-08-19
+[2026-08-19 16:21:27 小欧] 汇总范围=v0.19.19以来全部commit(version.txt流程commit并入本条不单列)
+
+### feat/refactor(§10.4.4 P1-P7 落地 + 步骤体系重构 + target字段推导 + 数据存储任务级表重构):
+- feat:start_step _build_start_contract改产StartStep + start_content_step StartStep类新建导出(P7③) - 小欧-2026-08-18
+- refactor:steps base弃用next_step统一轮数llm_call_count(P2) - 小欧-2026-08-18
+- feat:agent error全仅SSE + _last_error守卫读取(P3/P5) - 小欧-2026-08-18
+- feat:answer_handler retrying加severity=info(P4) - 小欧-2026-08-18
+- fix:start_step/step_emitter/agent_runner 三堂会审复核修复(_start_meta非dict防御+ErrorStep载体兼容+agent空防御统一+action仅SSE改为SSE+落库) - 小欧-2026-08-19
+- fix:stream_reader/observation_formatter 回放tool_call配对+顶层非dict防御 - 小欧-2026-08-19
+- fix:sse.ts startinfo实时占位+error兼容content - 小欧-2026-08-19
+
+### docs(数据存储任务级表重构 + yield设计 P1-P7 落地):
+- docs:[3]数据存储任务级表重构修改方案 全方位修订(v2.0/v2.1核心数据模型定稿/章节重排/12问题修复/死字段冗余索引清理/DDL遗漏补齐) - 北京老陈/小欧-2026-08-19
+- docs:[3][1]数据存储重构方案 三堂会审P0/P1修复与版本同步 - 小欧-2026-08-19
+- docs:FUNCTIONS.md 删除create_step_counter过期条目 - 小欧-2026-08-19
+
+### test(§10.4.4 P1-P7 全面深入测试 + action新协议适配):
+- test:e2e_helpers 三方一致性DB侧适配action新协议(tools[]规整/独立observation步)+工具调用链适配(tools[]取tool/params)+末轮正文chunk+reason两段显示+chunk流式answer-text断言 - 小欧-2026-08-19
+
 v0.19.19
 更新时间: 2026-08-18 20:19:29 - 小欧-2026-08-18
 ## v0.19.18以来 变更汇总(14个commit) - 小欧-2026-08-18
