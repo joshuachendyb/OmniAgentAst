@@ -715,6 +715,34 @@ def _obs_to_text(obs) -> str:
 
 
 # ─── 步骤8: SSE vs DB一致性验证 (verify_consistency) ────────────
+# 2026-08-19 小欧 工具调用协议适配(§10.3.3(2)废除action_tool→action):
+#   新增统一判定/规整辅助, DB侧从 tools[] {tool,params} 或旧 tool_name/tool_params 归一为 tool_name/tool_params。
+def _is_action_step(step: Any) -> bool:
+    """新旧协议工具步骤统一判定 - 小欧 2026-08-19"""
+    return isinstance(step, dict) and step.get("type") in ("action", "action_tool")
+
+
+def _action_entries(step: Any) -> List[Dict[str, Any]]:
+    """把工具步骤规整为 {tool_name, tool_params} 列表 - 小欧 2026-08-19
+    新协议 action: tools[] 每元素 {tool, params}; 旧协议 action_tool: 直接 tool_name/tool_params"""
+    if not isinstance(step, dict):
+        return []
+    if step.get("type") == "action":
+        out: List[Dict[str, Any]] = []
+        for t in step.get("tools") or []:
+            if isinstance(t, dict):
+                out.append({
+                    "tool_name": t.get("tool") or t.get("tool_name") or "",
+                    "tool_params": t.get("params") or t.get("tool_params") or {},
+                })
+        return out
+    if step.get("type") == "action_tool":
+        return [{
+            "tool_name": step.get("tool_name", ""),
+            "tool_params": step.get("tool_params", {}),
+        }]
+    return []
+
 
 def verify_consistency(
     result: Dict[str, Any], session_id: str
@@ -740,10 +768,10 @@ def verify_consistency(
     sse_tool_calls = result.get("tool_calls", [])
     db_steps = db.get("execution_steps", [])
 
-    db_tool_calls = [
-        s for s in db_steps
-        if s.get("type") == "action_tool" and s.get("tool_name")
-    ]
+    db_tool_calls = []
+    for s in db_steps:
+        if _is_action_step(s):
+            db_tool_calls.extend(_action_entries(s))
 
     # ── 数量对比(偏差<=2) ──
     sse_count = len(sse_tool_calls)
@@ -763,13 +791,19 @@ def verify_consistency(
     sse_obs_list = [
         e.get("observation") or e.get("content", "")
         for e in result["events"]
-        if e.get("type") == "action_tool"
+        if e.get("type") in ("action", "action_tool")
         and (e.get("observation") or e.get("content"))
     ]
+    # 新协议 observation为独立step; 旧协议嵌入action_tool步骤
     db_obs_list = [
+        s.get("observation") or s.get("execution_result") or s.get("content", "")
+        for s in db_steps
+        if s.get("type") == "observation"
+        and (s.get("observation") or s.get("execution_result") or s.get("content"))
+    ] + [
         s.get("observation") or s.get("execution_result", "")
         for s in db_steps
-        if s.get("type") == "action_tool"
+        if _is_action_step(s)
         and (s.get("observation") or s.get("execution_result"))
     ]
     if sse_obs_list and db_obs_list:
@@ -1772,8 +1806,13 @@ def write_test_record(
     lines.append("## 7 三方一致性（DB/应用日志/Prompt日志）")
     lines.append("")
 
-    db_tool_names = [s.get("tool_name", "") for s in db_steps if s.get("type") == "action_tool"]
-    db_obs_count = sum(1 for s in db_steps if s.get("type") == "action_tool" and (s.get("observation") or s.get("execution_result")))
+    # 2026-08-19 小欧 新协议适配: 工具名从 tools[]规整, 观察数按独立observation step计
+    db_tool_names = [
+        en["tool_name"]
+        for s in db_steps if _is_action_step(s)
+        for en in _action_entries(s)
+    ]
+    db_obs_count = sum(1 for s in db_steps if s.get("type") == "observation")
     sse_tool_names = [t.get("tool_name", "") for t in tool_calls]
     log_llm_calls = log_check.get("llm_calls_found", 0)
     prompt_log_files = log_check.get("prompt_log_files", [])
