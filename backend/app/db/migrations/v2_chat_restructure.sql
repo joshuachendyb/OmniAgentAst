@@ -83,7 +83,7 @@ DROP INDEX IF EXISTS idx_messages_timestamp;
 --          steps = parse_json(row['execution_steps']) or []
 --          for idx, d in enumerate(steps, start=1):
 --              conn.execute(
---                  "INSERT INTO chat_task_steps(task_id, ai_message_id, session_id, step_index, step_data, usage, user_message_id) "
+--                  "INSERT INTO chat_task_steps(task_id, ai_message_id, session_id, step_index, step_json, usage, user_message_id) "
 --                  "VALUES(?,?,?,?,?,?,?)",
 --                  (row['task_id'], row['id'], row['session_id'], idx,
 --                   json.dumps(d, ensure_ascii=False), d.get('usage'), row['user_message_id']))
