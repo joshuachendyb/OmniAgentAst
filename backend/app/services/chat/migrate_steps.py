@@ -9,6 +9,8 @@
 # 2026-08-19 小欧 v2.0迁移补全: 补第8步 删 chat_sessions.metadata/chat_tasks.metadata/idx_messages_timestamp
 #   (对齐 v2_chat_restructure.sql 第7步, 首版漏实现); 第7步 execution_steps 回灌加"ai_message_id 已有行即跳过"
 #   幂等守卫(对齐文档9.6 line407, 防登记丢失重跑导致重复回灌)
+# 2026-08-19 小欧 v2.0迁移补全2: 步骤6 回灌 chat_user_message 后新增 6.5 反向回填 task_id
+#   (由 chat_tasks.user_message_id 关联补上, 历史回灌只复制 content 无 task_id, 否则 C1 按 task_id 查 user 消息全落空)
 """
 migrate_steps — execution_steps 一次性数据迁移
 
@@ -291,6 +293,13 @@ def migrate_v2_chat_restructure(get_conn) -> bool:
                     (row["id"], row["session_id"], row["content"], row["client_os"],
                      row["browser"], row["device"], row["network"], row["timestamp"]),
                 )
+            # 6.5 反向回填 task_id: chat_user_message 由 chat_tasks.user_message_id 关联补上
+            #     (历史回灌只复制了 content, task_id 未带, 否则 C1 按 task_id 查 user 消息全落空; 对齐改动5 关联) — 小欧 2026-08-19
+            conn.execute(
+                "UPDATE chat_user_message SET task_id = (SELECT t.task_id FROM chat_tasks t "
+                " WHERE t.user_message_id = chat_user_message.id) "
+                "WHERE EXISTS(SELECT 1 FROM chat_tasks t WHERE t.user_message_id = chat_user_message.id)"
+            )
 
         # 7. 历史 execution_steps 回灌 chat_task_steps(改动2 保底, P1-6) — 小欧 2026-08-19
         #    ai_message_id 取该 assistant 消息 id; user_message_id 取 chat_messages.user_message_id
