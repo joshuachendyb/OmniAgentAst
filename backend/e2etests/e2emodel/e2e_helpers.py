@@ -382,12 +382,25 @@ async def send_chat(
                         if event_type == "final":
                             final_event = event
 
-                        if event_type == "action_tool":
-                            tool_calls.append({
-                                "type": event_type,
-                                "tool_name": event.get("tool_name", ""),
-                                "tool_params": event.get("tool_params", {}),
-                            })
+                        # 2026-08-19 小欧 协议适配(§10.3.3(2)废除action_tool→action): 工具调用事件改从 action.tools[] 取,
+                        #   每元素含 tool(工具名)/params(参数), 兼容旧 action_tool(tool_name/tool_params)。
+                        if event_type in ("action", "action_tool"):
+                            tools_raw = event.get("tools") or []
+                            if tools_raw:
+                                for _it in tools_raw:
+                                    if not isinstance(_it, dict):
+                                        continue
+                                    tool_calls.append({
+                                        "type": "action",
+                                        "tool_name": _it.get("tool") or _it.get("tool_name") or "",
+                                        "tool_params": _it.get("params") or _it.get("tool_params") or {},
+                                    })
+                            else:
+                                tool_calls.append({
+                                    "type": event_type,
+                                    "tool_name": event.get("tool_name", ""),
+                                    "tool_params": event.get("tool_params", {}),
+                                })
             except httpx.TimeoutException:
                 pass
             except Exception:
@@ -1567,7 +1580,9 @@ def write_test_record(
     lines.append("## 2 LLM回复内容")
     lines.append("")
     lines.append("```")
-    lines.append(resp if resp else "(空)")
+    # 2026-08-19 小欧 转义: LLM答复内嵌的 ``` 会提前打断外层围栏致记录排版错位, 替换为 ~~~ 防冲突
+    _resp_cell = (resp or "").replace("```", "~~~")
+    lines.append(_resp_cell if resp else "(空)")
     lines.append("```")
     lines.append("")
 
