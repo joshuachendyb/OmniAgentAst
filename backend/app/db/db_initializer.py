@@ -21,6 +21,13 @@
 #   (message_id→ai_message_id)、删chat_messages.execution_steps列、删chat_session_title_history DDL、
 #   删migrate_steps调用、reply_to_message_id→user_message_id ensure(改动7)、删metadata×2+冗余索引、
 #   chat_tasks加ai_message_id(改动9)、新建chat_user_message表(改动1)
+# 2026-08-19 - 小欧 - 恢复 migrate_v2_chat_restructure 调用(必须在建 idx_steps_message 索引之前):
+#   现网库处于 v2.0 中间态(chat_task_steps 旧结构空表重名), init_chat_db 在 executescript 建表后
+#   CREATE INDEX idx_steps_message ON chat_task_steps(ai_message_id) 必报 no such column,
+#   故将结构迁移前移到建索引之前执行, 幂等收敛到新结构后再建索引
+# 2026-08-19 - 小欧 - 迁移调用位置修正: 从 executescript 后移到 _ensure_column 之后、建索引之前,
+#   因 v2 迁移回灌 SET comprehension SELECT 依赖 _ensure_column 补的 client_os/timestamp 等列; 且
+#   建 chat_task_steps(ai_message_id) 索引需迁移改名后的新列, 故必须晚于补列、早于索引(修正初版时序错误)
 """
 db_initializer — 数据库初始化
 
@@ -132,7 +139,7 @@ def init_chat_db(get_conn):
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
         ''')
-        
+
         _ensure_column(conn, "chat_sessions", "message_count", "INTEGER DEFAULT 0")
         _ensure_column(conn, "chat_sessions", "is_deleted", "BOOLEAN DEFAULT FALSE")
         _ensure_column(conn, "chat_sessions", "is_valid", "BOOLEAN DEFAULT FALSE")
@@ -158,6 +165,13 @@ def init_chat_db(get_conn):
         # ③ chat_sessions 补 model_override 列
         _ensure_column(conn, "chat_sessions", "model_override", "TEXT")    # L2 会话级模型覆盖落库点
 
+        # v2.0 结构迁移 — 小欧 2026-08-19
+        #  ①必须在 _ensure_column 之后(_ensure_column 为回灌 SELECT 补齐 client_os/timestamp 等列)
+        #  ②必须在建 idx_steps_message 索引之前(索引依赖迁移改名后的 ai_message_id 列)
+        #  ③migrate_steps 顶层依赖 storage→db→database→db_initializer 存在循环导入, 采用函数内延迟 import
+        from app.services.chat.migrate_steps import migrate_v2_chat_restructure
+        migrate_v2_chat_restructure(get_conn)
+
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON chat_sessions(updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON chat_sessions(is_deleted)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id)")
@@ -182,7 +196,7 @@ def init_chat_db(get_conn):
         # chat_session_trust 索引
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_session ON chat_session_trust(session_id)")
 
-        # v2.0: 旧 execution_steps 列退役，migrate_steps 调用已移除 — 小欧 2026-08-19
+        # v2.0: 旧 execution_steps 列退役(结构迁移已前移至索引之前执行) — 小欧 2026-08-19
 
 
 def init_operations_db(get_conn):

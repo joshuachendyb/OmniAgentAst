@@ -3,6 +3,9 @@
 # 2026-07-18 小欧 #5 fix: _needs_migration final分支补response字段
 # 2026-08-19 小欧 v2.0: chat_messages.execution_steps 列随冻结废弃删除, migrate_execution_steps_status
 #   加"列存在"守卫(PRAGMA table_info 判断), 新库无此列直接跳过, 防触发时报 no such column
+# 2026-08-19 小欧 v2.0结构迁移: 新增 migrate_v2_chat_restructure, 复用 schema_migrations 登记机制,
+#   完成 chat_message_steps→chat_task_steps 改名/列改名/加列、metadata 清理、title_history 清死表、
+#   execution_steps→chat_task_steps 回灌、chat_user_message 回灌, 支持现网中间态库幂等收敛
 """
 migrate_steps — execution_steps 一次性数据迁移
 
@@ -197,3 +200,121 @@ def migrate_execution_steps_status(get_conn) -> int:
         logger.info(f"[migrate] 迁移旧 execution_steps 记录数={updated}")
     logger.info(f"[启动耗时] migrate_execution_steps_status: {_time.time()-_t0:.3f}s")
     return updated
+
+
+V2_MIGRATION_NAME = "migrate_v2_chat_restructure"
+
+
+def _table_exists(conn, table: str) -> bool:
+    """表是否存在 — 小欧 2026-08-19"""
+    cur = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    )
+    return cur.fetchone() is not None
+
+
+def _col_exists(conn, table: str, column: str) -> bool:
+    """表中列是否存在 — 小欧 2026-08-19"""
+    cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    return column in cols
+
+
+def migrate_v2_chat_restructure(get_conn) -> bool:
+    """v2.0 核心数据模型结构迁移(现网中间态库幂等收敛) — 小欧 2026-08-19
+
+    背景: 现网库处于 v2.0 冻结"中间态" — 新代码 db_initializer 已建新结构表,
+    但旧库存的 chat_message_steps(150万行)/chat_task_steps(旧结构空表)/双列并存等
+    未收敛, 导致新代码写库报 no such column。本迁移在 init_chat_db 末尾幂等执行:
+      1. 改名 chat_message_steps→chat_task_steps(撞表先 DROP 空表)
+      2. chat_task_steps 列 message_id→ai_message_id
+      3. chat_task_steps 加 usage / user_message_id 列
+      4. chat_tasks 加 ai_message_id 列
+      5. chat_messages 双列并存处理: 已存在 user_message_id 则 DROP reply_to_message_id
+      6. 回灌 chat_user_message(历史 user 消息)
+      7. 历史 execution_steps 回灌 chat_task_steps(改动2 保底)
+      8. 清 chat_session_title_history 死表
+      9. 返值: 本次是否实际执行迁移(False=已登记跳过)
+
+    一次性守卫: 复用 schema_migrations 登记, 跑过一次后续启动直接跳过。
+    10规范(复用优先): 复用 _is_migration_applied / _mark_migration_applied。
+    """
+    import time as _time
+    _t0 = _time.time()
+    with get_conn("chat") as conn:
+        if _is_migration_applied(conn, V2_MIGRATION_NAME):
+            logger.info(f"[migrate] {V2_MIGRATION_NAME} 已执行过, 跳过")
+            logger.info(f"[启动耗时] migrate_v2_chat_restructure: {_time.time()-_t0:.3f}s (skipped)")
+            return False
+
+        # 1. chat_message_steps→chat_task_steps 改名(撞表守卫) — 小欧 2026-08-19
+        if _table_exists(conn, "chat_message_steps"):
+            if _table_exists(conn, "chat_task_steps"):
+                conn.execute("DROP TABLE chat_task_steps")  # 仅旧结构空表, 无数据安全
+            conn.execute("ALTER TABLE chat_message_steps RENAME TO chat_task_steps")
+
+        # 2. chat_task_steps 列 message_id→ai_message_id — 小欧 2026-08-19
+        if _table_exists(conn, "chat_task_steps") and _col_exists(conn, "chat_task_steps", "message_id"):
+            conn.execute("ALTER TABLE chat_task_steps RENAME COLUMN message_id TO ai_message_id")
+
+        # 3. chat_task_steps 加 usage / user_message_id — 小欧 2026-08-19
+        if _table_exists(conn, "chat_task_steps"):
+            if not _col_exists(conn, "chat_task_steps", "usage"):
+                conn.execute("ALTER TABLE chat_task_steps ADD COLUMN usage TEXT")
+            if not _col_exists(conn, "chat_task_steps", "user_message_id"):
+                conn.execute("ALTER TABLE chat_task_steps ADD COLUMN user_message_id INTEGER")
+
+        # 4. chat_tasks 加 ai_message_id 列(与 chat_task_steps 同名贯通) — 小欧 2026-08-19
+        if _table_exists(conn, "chat_tasks") and not _col_exists(conn, "chat_tasks", "ai_message_id"):
+            conn.execute("ALTER TABLE chat_tasks ADD COLUMN ai_message_id INTEGER")
+
+        # 5. chat_messages 双列并存: 已存在 user_message_id 则 DROP reply_to_message_id(不能同名列 RENAME) — 小欧 2026-08-19
+        if _table_exists(conn, "chat_messages"):
+            if _col_exists(conn, "chat_messages", "reply_to_message_id"):
+                if not _col_exists(conn, "chat_messages", "user_message_id"):
+                    conn.execute("ALTER TABLE chat_messages RENAME COLUMN reply_to_message_id TO user_message_id")
+                else:
+                    conn.execute("ALTER TABLE chat_messages DROP COLUMN reply_to_message_id")
+
+        # 6. 回灌 chat_user_message(历史 user 消息, 改动3 保底 C1 详情可读) — 小欧 2026-08-19
+        if _table_exists(conn, "chat_user_message") and _table_exists(conn, "chat_messages"):
+            for row in conn.execute(
+                "SELECT id, session_id, content, client_os, browser, device, network, timestamp "
+                "FROM chat_messages WHERE role='user'"
+            ):
+                conn.execute(
+                    "INSERT OR IGNORE INTO chat_user_message"
+                    "(id, session_id, content, client_os, browser, device, network, created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?)",
+                    (row["id"], row["session_id"], row["content"], row["client_os"],
+                     row["browser"], row["device"], row["network"], row["timestamp"]),
+                )
+
+        # 7. 历史 execution_steps 回灌 chat_task_steps(改动2 保底, P1-6) — 小欧 2026-08-19
+        #    ai_message_id 取该 assistant 消息 id; user_message_id 取 chat_messages.user_message_id
+        if (_table_exists(conn, "chat_task_steps") and _table_exists(conn, "chat_messages")
+                and _col_exists(conn, "chat_messages", "execution_steps")):
+            for row in conn.execute(
+                "SELECT id, session_id, task_id, execution_steps, user_message_id FROM chat_messages "
+                "WHERE role='assistant' AND execution_steps IS NOT NULL"
+            ):
+                steps = parse_json(row["execution_steps"], label="execution_steps")
+                if not isinstance(steps, list) or not steps:
+                    continue
+                for idx, d in enumerate(steps, start=1):
+                    conn.execute(
+                        "INSERT INTO chat_task_steps"
+                        "(task_id, ai_message_id, session_id, step_index, step_json, usage, user_message_id) "
+                        "VALUES(?,?,?,?,?,?,?)",
+                        (row["task_id"], row["id"], row["session_id"], idx,
+                         safe_json_dumps(d), d.get("usage") if isinstance(d, dict) else None,
+                         row["user_message_id"]),
+                    )
+
+        # 8. 清 chat_session_title_history 死表 — 小欧 2026-08-19
+        if _table_exists(conn, "chat_session_title_history"):
+            conn.execute("DROP TABLE chat_session_title_history")
+
+        _mark_migration_applied(conn, V2_MIGRATION_NAME)
+    logger.info(f"[migrate] {V2_MIGRATION_NAME} 结构迁移完成")
+    logger.info(f"[启动耗时] migrate_v2_chat_restructure: {_time.time()-_t0:.3f}s")
+    return True
