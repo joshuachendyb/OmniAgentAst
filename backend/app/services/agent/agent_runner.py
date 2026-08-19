@@ -201,16 +201,32 @@ async def run_agent_in_background(
             def _persist(ed: Dict):
                 current_execution_steps.append(ed)
                 nonlocal ai_message_id
+                # ① 2026-08-19 小欧(改动8 补齐): 从 _usage_events 取本落库步骤所属 LLM 轮的 usage,
+                #   使 chat_task_steps.usage 列真正生效(设计: 每行一步、带所属轮 token {prompt/completion/total});
+                #   usage 事件本身仅 SSE 不落库(通道路由 P6), 本列承载同轮明细副本, 与 token_usage 同口径
+                _step_no = ed.get("step", 0)
+                _usage_json = None
+                if _step_no is not None:
+                    for _u in (getattr(agent, "_usage_events", None) or []):
+                        if int(_u.get("step") or 0) == int(_step_no):
+                            _usage_json = safe_json_dumps({
+                                "prompt_tokens": _u.get("prompt_tokens"),
+                                "completion_tokens": _u.get("completion_tokens"),
+                                "total_tokens": _u.get("total_tokens"),
+                            })
+                            break
                 if ai_message_id is None:
                     with db.get_conn_with_retry("chat") as conn:
                         ai_message_id = db_ops.allocate_and_insert(conn, session_id)
                         get_prompt_logger().update_ai_message_id(str(ai_message_id))
                         db_ops.append_step(conn, ai_message_id, session_id,
-                                           len(current_execution_steps) - 1, ed)
+                                           len(current_execution_steps) - 1, ed,
+                                           usage=_usage_json)
                 else:
                     with db.get_conn_with_retry("chat") as conn:
                         db_ops.append_step(conn, ai_message_id, session_id,
-                                           len(current_execution_steps) - 1, ed)
+                                           len(current_execution_steps) - 1, ed,
+                                           usage=_usage_json)
 
             if event_type == "thought":
                 _persist(event_dict)              # 仅落库（历史回放用, 实时不重复发）
