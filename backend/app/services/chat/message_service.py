@@ -21,6 +21,7 @@ from app.utils.time_utils import ensure_timestamp_milliseconds, get_local_iso_ti
 from app.db import db
 from app.db.models.chat_models import MessageResponse
 from app.services.chat.storage import track_user_message, get_user_message_id, load_execution_steps
+from app.services.chat.storage import insert_user_message  # v2.0 改动2: user消息同步写chat_user_message — 小欧 2026-08-19
 
 
 # 消息模块共享的 display_name 缓存(A7 迁移边界: 归 message_service 独占) — 小欧 2026-08-13
@@ -117,12 +118,28 @@ def save_message(session_id: str, message):
         if message.role == "assistant" and not display_name_to_save:
             display_name_to_save = display_name_cache.get(session_id)
 
-        execution_steps_json = safe_json_dumps(message.execution_steps) if message.execution_steps is not None else None
         cursor.execute(
-            "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, execution_steps, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?)",
             (session_id, message.role, message.content, local_time, display_name_to_save,
-             execution_steps_json, message.client_os, message.browser, message.device, message.network))
+             message.client_os, message.browser, message.device, message.network))
         message_id = cursor.lastrowid
+
+        # v2.0 改动2: user消息同步写chat_user_message — 小欧 2026-08-19
+        # 关键：chat_user_message.id 显式取 chat_messages.id（一对一贯通），根除两套自增id错位 — 小健 2026-08-19 三堂会审P0-2
+        if message.role == "user":
+            try:
+                insert_user_message(
+                    conn,
+                    user_message_id=message_id,
+                    session_id=session_id,
+                    content=message.content,
+                    client_os=message.client_os,
+                    browser=message.browser,
+                    device=message.device,
+                    network=message.network,
+                )
+            except Exception as _um_e:
+                logger.warning(f"[save_message] 写chat_user_message失败(session={session_id}): {_um_e}")
 
         if message.role == "user":
             _track_user_message(session_id, message_id)

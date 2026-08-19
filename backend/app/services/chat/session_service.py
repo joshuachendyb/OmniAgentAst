@@ -87,25 +87,6 @@ def build_update_params(
     return (update_data.title, local_time, 1, local_time, session_id)
 
 
-def record_title_history(
-    cursor, session_id: str, old_title: Optional[str],
-    local_time: str, updated_by: str = "user",
-):
-    """拷贝自 sessions.py 第230-255行 — 小健2026-05-31 改用try/except消除全局状态"""
-    if not old_title:
-        return
-    try:
-        cursor.execute(
-            """INSERT INTO chat_session_title_history
-               (session_id, title, created_at, updated_by, change_reason)
-               VALUES (?, ?, ?, ?, ?)""",
-            (session_id, old_title, local_time, updated_by, "user_edit"),
-        )
-        logger.info(f"记录标题历史: session_id={session_id}, old_title={old_title}")
-    except Exception:
-        logger.debug("chat_session_title_history表不存在,跳过标题历史记录")
-
-
 # ===== CRUD 业务函数 =====
 
 def create_session(session_create):
@@ -202,7 +183,6 @@ def update_session(session_id: str, update_data: SessionUpdate):
                 session, current_version = params
             old_title = session["title"] if session else ""
             new_version = current_version + 1
-            record_title_history(cursor, session_id, old_title, local_time, update_data.updated_by or "user")
         logger.info(f"更新会话成功: id={session_id}, title={update_data.title}, version={new_version}")
         return {"success": True, "title": update_data.title, "version": new_version}
     except HTTPException:

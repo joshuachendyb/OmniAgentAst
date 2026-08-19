@@ -206,9 +206,6 @@ def update_message_fields(
     cursor = conn.cursor()
     fields: list = []
     values: list = []
-    if update_data.execution_steps:
-        fields.append("execution_steps = ?")
-        values.append(safe_json_dumps(update_data.execution_steps))
     if update_data.content is not None:
         fields.append("content = ?")
         values.append(update_data.content)
@@ -266,7 +263,8 @@ async def save_execution_steps(session_id: str, update_data):
 # 独立步骤表操作 — 小欧 2026-07-14
 # ====================================================================
 
-def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Optional[str] = None) -> int:
+def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Optional[str] = None,
+                                user_message_id: Optional[int] = None) -> int:
     """预分配 assistant 消息ID + 插入空白行 — 小欧 2026-07-14
     2026-08-13 - 小欧 - 三堂会审修复#1: local_time 提前到 if is_new 之外赋值,
       消除 is_new=False(同session二次任务, agent_runner路径)时 UPDATE 引用未绑定变量 NameError
@@ -274,15 +272,15 @@ def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Opti
     2026-08-17 - 小健 - 三堂会审-AM2/STORAGE_1修复: 任务级分配新行(always_new=True),
       杜绝同 session 多任务复用同一 assistant 行(内容互相覆盖)与 is_new=False 仍 message_count+1(虚高);
       is_new 恒 True 后每次+1 正确, 且各任务独立行 -> load_execution_steps 不再混任务步骤(STORAGE_2)
-    """
+    2026-08-19 - 小欧 - v2.0: 加 user_message_id 参数，INSERT 同步写入 assistant→user 互指"""
     ensure_session_exists(session_id, conn)  # #17 fix: 写入前确保会话存在, 消除孤儿消息 — 小欧 2026-07-18
     ai_message_id, is_new = _allocator.allocate(session_id, conn, always_new=True)
     local_time = get_local_iso_timestamp()
     if is_new:
         conn.execute(
-            "INSERT INTO chat_messages(id, task_id, session_id, role, content, timestamp) "
-            "VALUES (?, ?, ?, 'assistant', ?, ?)",
-            (ai_message_id, task_id, session_id, "", local_time),
+            "INSERT INTO chat_messages(id, task_id, session_id, role, content, timestamp, user_message_id) "
+            "VALUES (?, ?, ?, 'assistant', ?, ?, ?)",
+            (ai_message_id, task_id, session_id, "", local_time, user_message_id),
         )
     conn.execute(
         "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
@@ -372,41 +370,39 @@ def _truncate_tool_result_strings(obj: Any, tag: str = "") -> None:
                 _truncate_tool_result_strings(item, tag)
 
 
-def append_execution_step(conn: Connection, message_id: int, session_id: str,
-                          step_index: int, step_dict: dict, task_id: Optional[str] = None) -> None:
+def append_execution_step(conn: Connection, ai_message_id: int, session_id: str,
+                          step_index: int, step_dict: dict, task_id: Optional[str] = None,
+                          usage: Optional[str] = None,
+                          user_message_id: Optional[int] = None) -> None:
     """运行期逐步落库 — 小欧 2026-07-14
     小欧 2026-07-21: 落库前截断超大 tool_result(列表+字符串)防 SQLite 撑爆; 不碰 observation
-    2026-08-16 - 小欧 - S2②-2: chat_message_steps 补 task_id 列（任务级贯通，10.1.7②-2）"""
+    2026-08-16 - 小欧 - S2②-2: chat_task_steps 补 task_id 列（任务级贯通，10.1.7②-2）
+    2026-08-19 - 小欧 - v2.0: 表改名 chat_task_steps + 参数 message_id→ai_message_id + 新增 usage/user_message_id 列"""
     step_dict = _truncate_step_dict(step_dict)
     conn.execute(
-        "INSERT INTO chat_message_steps(message_id, task_id, session_id, step_index, step_json, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (message_id, task_id, session_id, step_index, safe_json_dumps(step_dict), get_local_iso_timestamp()),
+        "INSERT INTO chat_task_steps(ai_message_id, task_id, session_id, step_index, step_json, created_at, usage, user_message_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (ai_message_id, task_id, session_id, step_index, safe_json_dumps(step_dict),
+         get_local_iso_timestamp(), usage, user_message_id),
     )
 
 
-def load_execution_steps(conn: Connection, message_id: int, task_id: Optional[str] = None) -> Optional[list]:
-    """从 chat_message_steps 表组装步骤列表,无数据时从chat_messages.execution_steps列读取 — 小欧 2026-07-14
-    2026-08-16 - 小欧 - S2②-2: 双条件任务隔离（10.1.7②-2）
-      - 传 task_id 时按 (message_id, task_id) 过滤（防同 session 多任务消息步骤混淆）
-      - 未传 task_id 时（如 stream_reader 回放仅按 msg_id 加载）退化为仅按 message_id——禁止硬双条件导致回放丢步骤（退化）"""
+def load_execution_steps(conn: Connection, ai_message_id: int, task_id: Optional[str] = None) -> Optional[list]:
+    """从 chat_task_steps 表组装步骤列表（v2.0: 不再回退读 chat_messages.execution_steps）
+    返回结构与原签名完全一致：命中返回 list[step_dict]（按 step_index 升序），未命中返回 []，
+    调用方（_load_previous_messages / stream_reader 回放）行为不变 — 小欧 2026-08-19 P1-8"""
     if task_id is not None:
         rows = conn.execute(
-            "SELECT step_json FROM chat_message_steps WHERE message_id=? AND task_id=? ORDER BY step_index ASC",
-            (message_id, task_id),
+            "SELECT step_json FROM chat_task_steps WHERE ai_message_id=? AND task_id=? ORDER BY step_index ASC",
+            (ai_message_id, task_id),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT step_json FROM chat_message_steps WHERE message_id=? ORDER BY step_index ASC",
-            (message_id,),
+            "SELECT step_json FROM chat_task_steps WHERE ai_message_id=? ORDER BY step_index ASC",
+            (ai_message_id,),
         ).fetchall()
     if rows:
         return [parse_json(r["step_json"], label="step_json") for r in rows]
-    row = conn.execute(
-        "SELECT execution_steps FROM chat_messages WHERE id=?", (message_id,),
-    ).fetchone()
-    if row and row["execution_steps"]:
-        return parse_json(row["execution_steps"], label="execution_steps")
     return []
 
 
@@ -426,7 +422,7 @@ def finalize_message(conn: Connection, message_id: int, content: str, status: st
 
 def insert_task(
     conn: Connection, *,
-    task_id: str, session_id: str, user_message_id: Optional[int],
+    task_id: str, session_id: str, user_message_id: Optional[int], ai_message_id: Optional[int] = None,
     user_input: str, context_link_mode: str, context_root_task_id: str,
     provider: str, model: str, display_name: str,
 ) -> None:
@@ -434,10 +430,10 @@ def insert_task(
     now = get_local_iso_timestamp()
     conn.execute(
         """INSERT INTO chat_tasks
-           (task_id, session_id, user_message_id, user_input, context_link_mode,
+           (task_id, session_id, user_message_id, ai_message_id, user_input, context_link_mode,
             context_root_task_id, provider, model, display_name, start_time, status, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (task_id, session_id, user_message_id, user_input,
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (task_id, session_id, user_message_id, ai_message_id, user_input,
          context_link_mode, context_root_task_id,
          provider, model, display_name, now, "executing", now, now),
     )
@@ -563,3 +559,89 @@ def get_previous_task_chain(conn: Connection, session_id: str) -> Optional[Dict]
         return {"task_id": row["task_id"],
                 "context_root_task_id": row["context_root_task_id"] or row["task_id"]}
     return None
+
+
+# ====================================================================
+# v2.0 chat_user_message 读写（2026-08-19）
+# ====================================================================
+
+def insert_user_message(
+    conn: Connection, *,
+    user_message_id: int,
+    session_id: str, content: str,
+    client_os: str = None, browser: str = None,
+    device: str = None, network: str = None,
+) -> int:
+    """新建 chat_user_message 行（用户发消息时落库）。
+    user_message_id 显式传入 chat_messages 的 user 消息 id（一对一贯通：
+    chat_user_message.id == chat_messages.id），避免两套自增 id 错位
+    （小健 2026-08-19 三堂会审 P0-2 根因修复）。"""
+    now = get_local_iso_timestamp()
+    cursor = conn.execute(
+        """INSERT OR REPLACE INTO chat_user_message
+           (id, session_id, content, client_os, browser, device, network, created_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (user_message_id, session_id, content, client_os, browser, device, network, now),
+    )
+    return user_message_id
+
+
+def update_user_message_final(
+    conn: Connection, *,
+    user_message_id: int, task_id: str,
+    response: str, reasoning: str = None,
+    outcome: str = None, model: str = None,
+    provider: str = None, accumulated_usage: str = None,
+) -> None:
+    """任务完成后回填 final 字段到 chat_user_message"""
+    conn.execute(
+        """UPDATE chat_user_message
+           SET task_id=?, response=?, reasoning=?, outcome=?,
+               model=?, provider=?, accumulated_usage=?
+           WHERE id=?""",
+        (task_id, response, reasoning, outcome, model, provider,
+         accumulated_usage, user_message_id),
+    )
+
+
+def load_user_message_by_task(conn: Connection, task_id: str) -> Optional[dict]:
+    """按 task_id 读 chat_user_message（C1 详情用）"""
+    row = conn.execute(
+        "SELECT * FROM chat_user_message WHERE task_id=?", (task_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+# ====================================================================
+# v2.0 C1/C2 任务级回放与统计存储（2026-08-19）
+# ====================================================================
+
+def get_task_detail(conn: Connection, task_id: str) -> Optional[dict]:
+    """C1: 按 task_id 读 chat_tasks 单行详情"""
+    row = conn.execute(
+        "SELECT * FROM chat_tasks WHERE task_id=?", (task_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_task_tool_stats(conn: Connection, task_id: str) -> list:
+    """C1: 从 chat_task_steps 统计该任务的工具调用次数"""
+    rows = conn.execute(
+        """SELECT
+             json_extract(step_json, '$.tools[0].name') as tool_name,
+             COUNT(*) as call_count
+           FROM chat_task_steps
+           WHERE task_id=? AND json_extract(step_json, '$.type')='action'
+           GROUP BY tool_name""",
+        (task_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def load_steps_by_task(conn: Connection, task_id: str) -> list:
+    """C2: 按 task_id 读全部步骤（升序）"""
+    rows = conn.execute(
+        "SELECT step_json FROM chat_task_steps WHERE task_id=? ORDER BY step_index ASC",
+        (task_id,),
+    ).fetchall()
+    return [parse_json(r["step_json"], label="step_json") for r in rows]

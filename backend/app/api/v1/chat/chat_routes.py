@@ -33,9 +33,11 @@ from app.services.chat.stream_orchestrator import (
 from app.services.task.task_runtime import cancel_task
 from app.services.task.task_registry import pause_task, resume_task
 from app.services.task.hitl_confirmation import resolve_confirmation
+from app.api.v1.chat.task_execution import router as task_execution_router  # v2.0 C1/C2 — 小欧 2026-08-19
 
 router = APIRouter()
 task_router = APIRouter()
+router.include_router(task_execution_router, tags=["task-execution"])  # v2.0 C1/C2 注册 — 小欧 2026-08-19
 
 
 @router.post("/chat/stream")

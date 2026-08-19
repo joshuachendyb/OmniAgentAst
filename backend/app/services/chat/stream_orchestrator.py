@@ -243,8 +243,8 @@ async def chat_stream_orchestrator(
         #   10.1.7②-1 9属性(任务级读写扩展) — 小欧 2026-08-16
         import types as _types
         _db_ops = _types.SimpleNamespace(
-            allocate_and_insert=lambda c, sid: allocate_and_insert_message(c, sid, task_id),  # task_id 闭包绑定(10.1.7②-2)
-            append_step=lambda c, mid, sid, idx, d: append_execution_step(c, mid, sid, idx, d, task_id),  # task_id 闭包绑定(②-2)
+            allocate_and_insert=lambda c, sid: allocate_and_insert_message(c, sid, task_id, user_message_id=_user_msg_id),  # v2.0 9.4: 加 user_message_id — 小欧 2026-08-19
+            append_step=lambda c, mid, sid, idx, d, usage=None: append_execution_step(c, mid, sid, idx, d, task_id, usage=usage, user_message_id=_user_msg_id),  # _user_msg_id即chat_user_message.id（与chat_messages.id一对一）— 小健 2026-08-19 P1-4
             finalize=finalize_message,
             save_steps=save_execution_steps_to_db,
             load_previous=lambda sid: _load_previous_messages(  # 任务上下文过滤(10.1.4⑤⑥)，经闭包注入链路计算的 context 两字段+上界(_user_msg_id)
@@ -253,6 +253,7 @@ async def chat_stream_orchestrator(
             log_task_end=_log_task_end,
             insert_task=lambda c: insert_task(  # ②-1 chat_tasks 创建
                 c, task_id=task_id, session_id=session_id, user_message_id=_user_msg_id,
+                ai_message_id=None,  # agent_runner 分配后回填 — 小欧 2026-08-19
                 user_input=user_input, context_link_mode=context_link_mode,
                 context_root_task_id=_context_root_task_id,
                 provider=agent.llm_client.provider, model=agent.llm_client.model,
@@ -261,6 +262,7 @@ async def chat_stream_orchestrator(
             insert_token=lambda c, **kw: token_usage_insert(  # ②-3 共用
                 c, task_id=task_id, session_id=session_id,
                 model=agent.llm_client.model, provider=agent.llm_client.provider, **kw),
+            user_msg_id=_user_msg_id,  # v2.0 改动2: 供agent_runner回填chat_user_message — 小欧 2026-08-19
         )
         # ── 编排⑧注入 start 运行元数据(_start_meta, start_step 装配用) ———————— 小健 2026-08-17
         # S4/S5(10.1.1③/10.1.7④): start 运行元数据注入 agent — 取消 orchestrator 旁路(step_start),
@@ -281,6 +283,12 @@ async def chat_stream_orchestrator(
         try:
             with db.get_conn_with_retry("chat") as _conn3:
                 _db_ops.insert_task(_conn3)
+                # v2.0 改动7: user 消息回填 task_id — 小欧 2026-08-19
+                if _user_msg_id:
+                    _conn3.execute(
+                        "UPDATE chat_messages SET task_id=? WHERE id=?",
+                        (task_id, _user_msg_id),
+                    )
         except Exception as _task_e:
             logger.warning(f"[chat] chat_tasks INSERT 失败(task={task_id}): {_task_e}")
         # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13

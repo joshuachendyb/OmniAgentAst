@@ -72,6 +72,8 @@ from app.services.task.task_state import (
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 from app.utils.time_utils import get_local_iso_timestamp  # S2 update_task end_time(10.1.7②-1) — 小欧 2026-08-16
+from app.services.chat.storage import update_user_message_final  # v2.0 改动2 — 小欧 2026-08-19
+from app.utils.json_utils import safe_json_dumps  # v2.0 改动2: accumulated_usage序列化 — 小欧 2026-08-19
 
 
 # 后台任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者断开后任务再无强引用,
@@ -357,11 +359,11 @@ async def run_agent_in_background(
         # 此时该任务并非真正完成, 若误标 completed 会让崩溃/异常任务在 DB 被当成成功,
         # 前端会话列表与历史回放都会显示错误终态。失败默认失败, 完成必须显式完成。
         _terminal_status = _STATUS_MAP.get(end_type, "failed")
+        saved_content = stream_state.current_content if stream_state else ""
+        saved_thought = stream_state.current_thought if stream_state else ""
         if current_execution_steps:
             for retry in range(2):
                 try:
-                    saved_content = stream_state.current_content if stream_state else ""
-                    saved_thought = stream_state.current_thought if stream_state else ""
                     if ai_message_id is not None:
                         # 步骤已逐步落库, 仅 finalize content+status — 小欧 2026-07-14; 2026-07-16 小欧 增 thought 持久化
                         with db.get_conn_with_retry("chat") as conn:
@@ -410,8 +412,39 @@ async def run_agent_in_background(
                         llm_call_count=getattr(agent, "llm_call_count", 0),
                         total_steps=_total, retry_count=getattr(agent, "_retry_count", 0),
                         error_type=_err_type, error_message=_err_msg)
+
+                    # v2.0 改动2: 任务完成后回填 chat_user_message final 字段 — 小欧 2026-08-19
+                    try:
+                        _last_final = None
+                        for _s in (current_execution_steps or [])[::-1]:
+                            if isinstance(_s, dict) and _s.get("type") == "final":
+                                _last_final = _s
+                                break
+                        update_user_message_final(
+                            _conn,
+                            user_message_id=db_ops.user_msg_id,
+                            task_id=task_id,
+                            response=saved_content or "",
+                            reasoning=saved_thought or "",
+                            outcome=_terminal_status,
+                            model=_last_final.get("model") if _last_final else None,
+                            provider=_last_final.get("provider") if _last_final else None,
+                            accumulated_usage=safe_json_dumps(getattr(agent, "accumulated_usage", None)),
+                        )
+                    except Exception as _um_e:
+                        logger.warning(f"[Runner] 回填chat_user_message final失败(task={task_id}): {_um_e}")
+
+                    # v2.0 改动9: 回填 chat_tasks.ai_message_id — 小欧 2026-08-19
+                    if ai_message_id is not None:
+                        try:
+                            _conn.execute(
+                                "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
+                                (ai_message_id, task_id),
+                            )
+                        except Exception as _aim_e:
+                            logger.warning(f"[Runner] 回填chat_tasks.ai_message_id失败(task={task_id}): {_aim_e}")
             except Exception as _task_e:
-                logger.warning(f"[Runner] chat_tasks 终态 UPDATE 失败(task={task_id}): {_task_e}")
+                logger.warning(f"[Runner] 回填task_id失败: {_task_e}", exc_info=True)
 
         # S2 token_usage 改读 agent._usage_events(§10.4.4 P6): usage剔step_json, _usage_events为唯一明细来源 — 小欧 2026-08-18
         if db_ops and db_ops.insert_token:
