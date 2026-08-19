@@ -11,6 +11,9 @@
 #   幂等守卫(对齐文档9.6 line407, 防登记丢失重跑导致重复回灌)
 # 2026-08-19 小欧 v2.0迁移补全2: 步骤6 回灌 chat_user_message 后新增 6.5 反向回填 task_id
 #   (由 chat_tasks.user_message_id 关联补上, 历史回灌只复制 content 无 task_id, 否则 C1 按 task_id 查 user 消息全落空)
+# 2026-08-19 小欧 v2.0迁移补全3: 新增 6.6 回填 chat_tasks.ai_message_id
+#   (由同session内相邻 assistant 消息补上 user+1; user↔assistant id 相邻配对对齐 storage.allocate;
+#    历史迁移漏带此列导致 ai_message_id 全空, 幂等仅回填为空的行)
 """
 migrate_steps — execution_steps 一次性数据迁移
 
@@ -299,6 +302,18 @@ def migrate_v2_chat_restructure(get_conn) -> bool:
                 "UPDATE chat_user_message SET task_id = (SELECT t.task_id FROM chat_tasks t "
                 " WHERE t.user_message_id = chat_user_message.id) "
                 "WHERE EXISTS(SELECT 1 FROM chat_tasks t WHERE t.user_message_id = chat_user_message.id)"
+            )
+            # 6.6 回填 chat_tasks.ai_message_id: 由同session内相邻 assistant 消息补上(user+1)
+            #     (user↔assistant id 相邻配对, 对齐 storage.allocate expected=user_id+1;
+            #      历史迁移漏带此列, 幂等: 仅回填 ai_message_id 为空的 task) — 小欧 2026-08-19
+            conn.execute(
+                "UPDATE chat_tasks SET ai_message_id = (SELECT cm.id FROM chat_messages cm "
+                " WHERE cm.role='assistant' AND cm.session_id = chat_tasks.session_id "
+                "   AND cm.id = chat_tasks.user_message_id + 1) "
+                "WHERE user_message_id IS NOT NULL AND ai_message_id IS NULL "
+                "AND EXISTS(SELECT 1 FROM chat_messages cm "
+                " WHERE cm.role='assistant' AND cm.session_id = chat_tasks.session_id "
+                "   AND cm.id = chat_tasks.user_message_id + 1)"
             )
 
         # 7. 历史 execution_steps 回灌 chat_task_steps(改动2 保底, P1-6) — 小欧 2026-08-19
