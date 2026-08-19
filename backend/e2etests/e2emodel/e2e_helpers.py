@@ -375,10 +375,9 @@ async def send_chat(
                         if event_type == "error":
                             error_occurred = True
 
-                        if event_type == "chunk" and not event.get("is_reasoning", False):
-                            # §10.4.4 流重构: answer文本经 chunk 事件流式承载, final 仅作终止符
-                            # (仅含 outcome/seq, 不再带 content/response) -- 小欧 2026-08-19
-                            response_text += event.get("content", "")
+                        # 2026-08-19 小欧 方法2修正(老陈驱动): chunk 不再边收边拼——全部事件已入 events(line373),
+                        #   最终答复待 stream 结束后按 final.step 取该轮非 reasoning 正文 chunk 拼接,
+                        #   避免把前几轮 thought 过渡话术混入(原全量拼接致02/03脏/01空)。
 
                         if event_type == "final":
                             final_event = event
@@ -398,6 +397,27 @@ async def send_chat(
         event_types = [e.get("type", "") for e in events]
         logical_events = [e for e in events if e.get("type") != "chunk"]
         unique_step_numbers = len({e.get("step") for e in events if e.get("step") is not None})
+
+        # 2026-08-19 小欧 方法2修正(老陈驱动): 最终答复 = 最后一轮(fin_step)的 chunk 两类拼接——
+        #   reason(推理, is_reasoning 正文) + resp(最终答复, 非 reasoning), 用 [最后总结] 分隔线拼进记录 ## 2;
+        #   解决原全量拼接把前几轮 thought 过渡话术混入(02/03脏)+ 全 reasoning 被滤空(01)的问题;
+        #   若该轮无正文 chunk(return_direct/action轮), resp 回退 final.response/content。
+        fin_step = (final_event or {}).get("step")
+        reason = "".join(
+            e.get("content", "") for e in events
+            if e.get("type") == "chunk" and e.get("step") == fin_step and e.get("is_reasoning")
+        )
+        resp = "".join(
+            e.get("content", "") for e in events
+            if e.get("type") == "chunk" and e.get("step") == fin_step and not e.get("is_reasoning")
+        )
+        if not (resp or "").strip():
+            resp = (final_event or {}).get("response") or (final_event or {}).get("content") or ""
+        if (reason or "").strip():
+            response_text = reason.rstrip() + "\n[最后总结]: ------------\n" + resp
+        else:
+            response_text = resp
+
         ret = {
             "events": events,
             "final_event": final_event,
