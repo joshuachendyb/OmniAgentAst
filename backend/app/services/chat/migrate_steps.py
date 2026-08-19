@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 小欧 #5 fix: _needs_migration final分支补response字段
+# 2026-08-19 小欧 v2.0: chat_messages.execution_steps 列随冻结废弃删除, migrate_execution_steps_status
+#   加"列存在"守卫(PRAGMA table_info 判断), 新库无此列直接跳过, 防触发时报 no such column
 """
 migrate_steps — execution_steps 一次性数据迁移
 
@@ -159,6 +161,12 @@ def migrate_execution_steps_status(get_conn) -> int:
     _t0 = _time.time()
     updated = 0
     with get_conn("chat") as conn:
+        # v2.0 守卫(2026-08-19): chat_messages.execution_steps 列已随冻结废弃删除,
+        # 新库无此列, 若触发迁移将报 no such column; 列不存在直接跳过 — 小欧 2026-08-19
+        _cols = {r["name"] for r in conn.execute("PRAGMA table_info(chat_messages)").fetchall()}
+        if "execution_steps" not in _cols:
+            logger.info("[migrate] chat_messages.execution_steps 列已废弃(无此列), 跳过迁移")
+            return 0
         # 一次性迁移守卫: 已执行过则跳过整段扫描(核心修复) — 小欧 2026-07-13
         if _is_migration_applied(conn, MIGRATION_NAME):
             logger.info(f"[migrate] {MIGRATION_NAME} 已执行过, 跳过全表扫描")

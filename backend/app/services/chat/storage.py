@@ -34,6 +34,12 @@
 # 2026-08-17 - 小健 - 必备日志补齐(老陈驱动「昨天今天提交代码都必须加」): allocate 的 always_new 递增寻空位
 #   打 logger.warning 留痕(异常回落/越界审计点, 仅落文件不刷 console)。
 # 2026-08-18 - 小健 - 三堂会审 Bug#5: _truncate_step_dict 补新 ActionStep 字段 tools[i].params 超长字符串截断(旧实现仅截断 execution_result/parallel_results, 漏 tools 致长SQL/content撑爆SQLite); 已核实 ActionStep.to_dict() 输出键为 tools, 非死代码
+# 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.1→9.4→9.6→9.9): append_execution_step参数message_id→ai_message_id
+#   +新增usage/user_message_id列、load_execution_steps去掉chat_messages.execution_steps回退、allocate_and_insert_message
+#   加user_message_id参数、insert_task加ai_message_id参数、新增6函数(insert_user_message/update_user_message_final/
+#   load_user_message_by_task/get_task_detail/get_task_tool_stats/load_steps_by_task)
+# 2026-08-19 - 小欧 - 三堂会审Bug#2修复: insert_assistant_message INSERT列 reply_to_message_id→user_message_id
+#   (v2.2列改名后旧列名新库不存在, 执行即OperationalError; 模型字段名保留API层, DB列名对齐v2改名)
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -191,7 +197,7 @@ def insert_assistant_message(
     reply_to = getattr(update_data, 'reply_to_message_id', None)
     cursor.execute(
         """INSERT INTO chat_messages
-           (id, session_id, role, content, timestamp, display_name, reply_to_message_id)
+           (id, session_id, role, content, timestamp, display_name, user_message_id)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (ai_message_id, session_id, "assistant", initial_content, local_time, display_name, reply_to),
     )

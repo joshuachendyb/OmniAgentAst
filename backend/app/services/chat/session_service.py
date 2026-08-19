@@ -4,6 +4,8 @@
 #   update_session/get_session_titles_batch/delete_session + 辅助函数(build_list_where/resolve_update_mode/build_update_sql/
 #   build_update_params/record_title_history), 仅改导入归属, 业务逻辑一字不改。删除会话的 display_name 清理改为调
 #   message_service.delete_session_display_names(经方法调用, 不 direct import 缓存对象, 单向方法调用)。API 层薄壳化改调本服务。
+# 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.5): 删record_title_history函数及update_session内调用
+#   (chat_session_title_history死表退役, 系统已不消费该历史)
 """
 session_service — 会话业务服务(services/chat)
 

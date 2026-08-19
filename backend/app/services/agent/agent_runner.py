@@ -40,6 +40,9 @@
 # 2026-08-18 - 小欧 - §10.4.4 P5: _m_skip 收敛为 {cancelled,authorization_required,start}
 # 2026-08-18 - 小欧 - §10.4.4 P7③: 通道路由新增 start 分支(_persist落库分配ai_message_id后合成 startinfo 仅SSE复用同id)
 # 2026-08-18 - 小欧 - 三堂会审复核: 守卫(:326)/异常分支(:287) FinalStep step 取值的 agent 空防御统一(与 :322 getattr 防御对齐), 防 agent=None 时 AttributeError
+# 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.6+9.9): import update_user_message_final/safe_json_dumps;
+#   update_task同with块内新增chat_user_message final回填(改动2)+chat_tasks.ai_message_id回填(改动9);
+#   saved_content/saved_thought提前到if current_execution_steps外定义(修复作用域, backfill需要)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 

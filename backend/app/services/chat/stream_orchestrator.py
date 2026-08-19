@@ -49,6 +49,9 @@
 #   不再白算 state.current_content 传入 — 小健 2026-08-17
 # 2026-08-18 - 小欧 - §10.4.4 P2(弃用 next_step): 删 next_step = create_step_counter() 赋值; _start_meta 删 next_step 键;
 #   run_agent_in_background 去 next_step 传参; _stream_with_control 签名/调用去 next_step; 删 create_step_counter import
+# 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.2+9.4+9.6+9.9): db_ops.append_step加usage参数、
+#   allocate_and_insert加user_message_id、insert_task加ai_message_id=None(agent_runner分配后回填)、
+#   insert_task后回填chat_messages.task_id(改动7)、_db_ops注入user_msg_id(供agent_runner回填chat_user_message)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 

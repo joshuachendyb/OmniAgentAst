@@ -17,6 +17,10 @@
 #   chat_messages 补 metadata、chat_sessions 补 metadata/model_override 五列(_ensure_column 只 ADD 缺列) ③token_usage 新建(B2)+五索引
 #   ④chat_session_trust 新建(B3) ⑤索引: idx_tasks_session/idx_steps_task/idx_msg_task/idx_msg_timestamp/idx_trust_session;
 #   与 10.1.9 迁移章节对齐(现网老库幂等补建不丢数据)
+# 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.1→9.5→9.7): chat_message_steps→chat_task_steps全局改名
+#   (message_id→ai_message_id)、删chat_messages.execution_steps列、删chat_session_title_history DDL、
+#   删migrate_steps调用、reply_to_message_id→user_message_id ensure(改动7)、删metadata×2+冗余索引、
+#   chat_tasks加ai_message_id(改动9)、新建chat_user_message表(改动1)
 """
 db_initializer — 数据库初始化
 
@@ -178,8 +182,7 @@ def init_chat_db(get_conn):
         # chat_session_trust 索引
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_session ON chat_session_trust(session_id)")
 
-        # 小欧 2026-07-13: 一次性迁移旧 execution_steps(幂等)
-        # v2.0: 旧列退役，迁移脚本已无意义，移除调用 — 小欧 2026-08-19
+        # v2.0: 旧 execution_steps 列退役，migrate_steps 调用已移除 — 小欧 2026-08-19
 
 
 def init_operations_db(get_conn):

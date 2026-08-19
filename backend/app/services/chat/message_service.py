@@ -3,6 +3,9 @@
 # 2026-08-13 - 小欧 - 新建: A7 消息业务服务(方案4.7.3步骤3)。从 api/v1/messages.py 复制 get_session_messages/save_message
 #   + display_name_cache(缓存归本服务独占), 仅改导入归属, 业务逻辑一字不改; 新增 delete_session_display_names 供
 #   session_service 删除会话时联动清理(经方法调用, 不直接 import 本服务缓存对象, 单向方法调用)。API 层薄壳化改调本服务。
+# 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.3+9.6): save_message删除execution_steps列写入;
+#   user消息同步写chat_user_message(user_message_id=cursor.lastrowid一对一贯通, 根除两套自增id错位P0-2);
+#   合并重复的 if role=="user" 判断块(DRY, 三堂会审Bug#9)
 """
 message_service — 消息业务服务(services/chat)
 
@@ -55,7 +58,7 @@ def get_session_messages(session_id: str):
         messages = []
         for row in cursor.fetchall():
             msg_id = row['id']
-            # 从 chat_message_steps 表读取步骤列表 — 小欧 2026-07-14
+            # 从 chat_task_steps 表读取步骤列表 — 小欧 2026-07-14; v2.0 表改名 chat_task_steps — 2026-08-19
             steps = load_execution_steps(conn, msg_id)
             display_name = row['display_name']
             if not display_name and steps:
@@ -140,8 +143,6 @@ def save_message(session_id: str, message):
                 )
             except Exception as _um_e:
                 logger.warning(f"[save_message] 写chat_user_message失败(session={session_id}): {_um_e}")
-
-        if message.role == "user":
             _track_user_message(session_id, message_id)
 
         cursor.execute(
