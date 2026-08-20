@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-08 - 小欧 - 全程统一本地时区: 4处响应 timestamp 改 get_local_iso_timestamp() (本地ISO无Z)
+# 2026-08-14 - 小欧 - monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
+# 2026-08-20 - 小欧 - 遥测收敛: 本文件仅暴露运行指标API, 任务/LLM/工具/裁剪遥测由 monitoring 独立库查询, 无业务改动仅补标准编辑历史头
 """
 监控指标API路由
 提供运行时指标和性能监控数据

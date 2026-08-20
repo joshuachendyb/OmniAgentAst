@@ -20,6 +20,7 @@
 #   【病根】①BUG-03: 47处调用方用get_conn(无retry), 并发写锁死时静默失败; ②BUG-04: get_conn_with_retry在except内re-yield违反@contextmanager协议 → "generator didn't stop after throw()"(日志09:11:16)
 #   【改法】①get_conn新增max_retries: 连接获取期(a)与commit期(b)对"locked"指数退避(0.5/1/2s), 47处调用零改动即获重试能力(DRY); ②get_conn_with_retry改为get_conn薄包装(仅透传, 单次yield)
 #   【合规】DRY+KISS-DIRECT+SRP
+# 2026-08-20 - 小欧 - 11.2-C 监控独立库: _db_paths["monitoring"] 注册 monitoring.db + import init_monitoring_db(启动统一初始化), 复用 get_conn/get_conn_with_retry 闸门
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -54,6 +55,7 @@ from app.utils.time_utils import to_local_iso  # 小欧 2026-08-08: datetime/dat
 from app.db.db_initializer import (
     init_chat_db, init_operations_db, init_task_tracker_db,
 )
+from app.monitoring.storage import init_monitoring_db  # 11.2-C 监控独立库 init — 小欧 2026-08-20
 
 
 class _ParamSafeConnection:
@@ -117,6 +119,7 @@ class DatabaseManager:
             "operations": self._db_dir / "operations.db",
             "observer": self._db_dir / "tool_observer.db",
             "task_tracker": self._db_dir / "task_tracker.db",
+            "monitoring": self._db_dir / "monitoring.db",   # 11.2-C 监控独立库 — 小欧 2026-08-20
         }
         self._db_dir.mkdir(parents=True, exist_ok=True)
 
@@ -261,6 +264,9 @@ class DatabaseManager:
         _tc = _time.time()
         init_task_tracker_db(self.get_conn)
         logger.info(f"[启动耗时] init_task_tracker_db: {_time.time()-_tc:.3f}s")
+        _tm = _time.time()
+        init_monitoring_db(self.get_conn)
+        logger.info(f"[启动耗时] init_monitoring_db: {_time.time()-_tm:.3f}s")
         logger.info(f"[启动耗时] db.init 合计: {_time.time()-_ta:.3f}s")
         logger.info("All databases initialized successfully")
     
