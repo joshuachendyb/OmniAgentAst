@@ -103,6 +103,7 @@
 # 2026-08-18 小欧 - §10.3.3(4): same_tool_loop终止FinalStep的 thought= 改 reasoning=(FinalStep已删thought参数)
 # 2026-08-18 - 小欧 - §10.4.4 P2/P3/P4/P5/P6: handle_react_error/empty_response/chunk_buffer_timeout 改 MetaStep(type="error")(删ErrorStep import); _dispatch_handler 改读 _kwargs 取 error_type; usage emit 处 append _usage_events; 各 error/retrying/usage 加 severity(warn/info)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: 任务起点(run_react_cycle)读 DB 一次缓存 _session_acc_base/_chain_acc_base 到 agent 并初始化 session/chain 累计=基线(无 LLM 调用任务也正确反映历史累计, 杜绝日志/前端误显 0); usage 块改用缓存基线(消除每轮双 DB 连接冗余读取); DB 异常降级为零基线不阻断主链路
+# 2026-08-20 - 小欧 - 真实缺陷复核三遍修复(review 3x 确认后按最佳不退化): ①A(遥测 usage 门控): on_llm_call/build_stats_step/context_overview 原置于 `if _usage` 内, 无 usage 响应时 llm_calls/stats/context_overview 全丢; 移出到 response 分支末尾必发(usage 存在行为完全不变, 纯增强), 补 isinstance 守卫 error/finish_reason 计算; ②C2(裁剪token死活): on_trim 原只传 bool -> 透传 message_builder._trimmed_tokens_this_round, 裁掉token数不再恒0。
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -381,6 +382,11 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     # ── Phase 1: LLM 调用准备 ──────────────────────────────────
     agent.llm_call_count += 1
     agent.message_builder.trim_history()  # 唯一裁剪入口 — 小欧 2026-07-01
+    agent.telemetry.on_trim(
+        getattr(agent.message_builder, "_trimmed_this_round", False),
+        getattr(agent.message_builder, "_trimmed_tokens_this_round", 0),
+    )  # 11.3 C2修复(复核确认): 透传裁剪token数, 防 on_trim 恒0死数据 — 小欧 2026-08-20
+    _first_token_marked = False           # 11.2-B 首 chunk 只记一次首包时延 — 小欧 2026-08-20
     messages = agent.message_builder.prepare_messages_for_llm()
     openai_tools = get_openai_tools(agent)
 
@@ -401,6 +407,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
     # ── Phase 2: LLM 流式调用 ──────────────────────────────────
     llm_response = None
+    _call_start = time.time()                   # 11.2-C LLM 调用计时 — 小欧 2026-08-20
     async for chunk_or_response in call_llm_with_fallback(agent, messages, openai_tools):
         chunk_type, chunk_data = chunk_or_response
 
@@ -408,6 +415,9 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             content = chunk_data.content if hasattr(chunk_data, 'content') else str(chunk_data)
             is_reasoning = getattr(chunk_data, 'is_reasoning', False)
             chunk_buffer.append(content)
+            if not _first_token_marked:          # 首 chunk 记首包时延 — 小欧 2026-08-20
+                agent.telemetry.mark_first_token()
+                _first_token_marked = True
             chunk_step = ChunkStep(
                 step=agent.llm_call_count,
                 content=content,
@@ -416,6 +426,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             yield agent._step_emitter.emit(chunk_step)
         elif chunk_type == "response":
             llm_response = chunk_data
+            _call_dur = time.time() - _call_start
             chunk_buffer.clear()
             # LLM usage 处理: 裁剪触发 + 累积消耗 + 逐次报告 — 小欧 2026-07-22
             _usage = llm_response.get("usage") if isinstance(llm_response, dict) else None
@@ -465,6 +476,36 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                     chain_accumulated_tokens=agent.chain_accumulated_tokens,       # 11.1 新增
                 )
                 yield agent._step_emitter.emit(_usage_step)
+
+            # 11.2-C 遥测 + 11.2-B stats/11.3 context_overview —— 不依赖 usage，每次 LLM 响应必发（11.2-C 逐次明细）
+            # 修复A(小欧 2026-08-20 复核确认): 原置于 usage 门控内, 无 usage 的响应 llm_calls/stats/context_overview 全丢,
+            #   违背 11.2-C"每次调用一行"、11.2-B"每轮 stats"契约; 移出后 usage 存在不改变行为(纯增强不退化) — 小欧 2026-08-20
+            _llm_err = None
+            _fin = llm_response.get("finish_reason") if isinstance(llm_response, dict) else None
+            if isinstance(llm_response, dict) and llm_response.get("error"):
+                _llm_err = str(llm_response["error"])[:80]
+            agent.telemetry.on_llm_call(
+                _usage, duration=_call_dur,
+                model=getattr(agent.llm_client, "model", None),
+                provider=getattr(agent.llm_client, "provider", None),
+                error_type=_llm_err, finish_reason=_fin,
+            )
+            # 11.2-B stats 事件（独立模块产出 MetaStep(type="stats", ...)）— 小欧 2026-08-20
+            _stats_step = agent.telemetry.build_stats_step()   # → MetaStep(type="stats", step_count/llm_call_count/retry_count/duration)
+            yield agent._step_emitter.emit(_stats_step)
+            # 11.3 context_overview 事件（独立模块产出 MetaStep(type="context_overview", ...)）
+            _overview = agent.telemetry.build_context_overview()
+            _llm_n = agent.llm_call_count
+            if _llm_n == 1 or getattr(agent.message_builder, "_trimmed_this_round", False) or _llm_n % 5 == 0:
+                yield agent._step_emitter.emit(MetaStep(
+                    step=_llm_n, type="context_overview", content=_overview.get("summary", ""),
+                    message_count=_overview["message_count"], estimated_tokens=_overview["estimated_tokens"],
+                    truncated=_overview["truncated"],
+                    injected_message_count=_overview["injected_message_count"],
+                    injected_estimated_tokens=_overview["injected_estimated_tokens"],
+                    injected_ratio=_overview["injected_ratio"],
+                    severity="info",
+                ))
 
     # ── Phase 3: 响应分发 ──────────────────────────────────────
     set_status(agent, AgentStatus.EXECUTING)
@@ -599,12 +640,24 @@ async def run_react_cycle(
     context: Optional[Dict[str, Any]] = None,
     max_steps: Optional[int] = None,
     task_id: Optional[str] = None,
+    start_time: Optional[float] = None,   # 11.2-B 同源起点（stream_orchestrator:198 → agent_runner → 此处）— 小欧 2026-08-20
 ):
     """ReAct循环:调用LLM→解析→分派handler→产出Step — chendyg 2026-07-01 状态集中管理重构v2"""
     if max_steps is None:
         max_steps = get_config().get_max_steps()
 
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
+
+    # 11.2/11.3 监控采集器（独立模块 app/monitoring/agent_telemetry.py）— 小欧 2026-08-20
+    from app.monitoring.agent_telemetry import TaskTelemetry
+    _start_meta = getattr(agent, "_start_meta", None) or {}
+    _agent_tele = TaskTelemetry(
+        task_id=task_id or getattr(agent, "task_id", ""),
+        session_id=_start_meta.get("session_id", "") or "",
+        agent=agent,
+    )
+    _agent_tele.on_start(start_time)
+    agent.telemetry = _agent_tele
 
     # 11.1 token 四层同构：会话级/链级累计基线(任务开始前历史累计)读 DB 一次并缓存到 agent,
     #   任务内恒定; 同步初始化 session/chain 累计=基线(无 LLM 调用时也正确反映历史累计, 杜绝日志/前端误显 0) — 小欧 2026-08-20
@@ -752,6 +805,9 @@ async def run_react_cycle(
 
     finally:
         _finalize_cycle(agent)
+        _tele = getattr(agent, "telemetry", None)   # 11.2-C 监控落库（独立模块，非阻塞降级）— 小欧 2026-08-20
+        if _tele is not None:
+            _tele.finalize_and_persist()
         # R1 (v1.43): task 级清零点 — clear_temp_auth 在 finally 收口, 使授权后所有提前 break/异常/循环自然退出
         #   均走 finally; 注意 max_steps<=0 提前 return 在 try 之前(Bug4修正: 该分支 I2 尚未运行,
         #   无任何授权产生, 故不经过 finally 也无泄漏; 注释已修正不再声称其走 finally)

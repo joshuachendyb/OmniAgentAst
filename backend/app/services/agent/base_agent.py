@@ -13,6 +13,7 @@
 # 2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): 新增 _last_error: Optional[tuple]=None(step_emitter.emit 统一出口记录, 守卫读此填充 final)
 # 2026-08-18 - 小欧 - §10.4.4 P6(usage剔step_json): 新增 _usage_events: List[Dict]=[](--每轮usage明细, agent_runner终态insert_token读)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: 新增 task_accumulated_tokens/session_accumulated_tokens/chain_accumulated_tokens 三字段初始化({prompt/completion/total}=0), 跨轮/跨任务保持不重置, 供 react_cycle 内存态累计与 SSE/FinalStep/日志输出
+# 2026-08-20 - 小欧 - 11.2-B start_time 透传: run_react_cycle 增 start_time 参数并透传 _run(同源起点, stream_orchestrator→agent_runner→此处), 调方不传时保持 None 行为不变
 """
 Agent 核心基类 — 类骨架
 
@@ -122,8 +123,9 @@ class BaseAgent(ABC):
         from app.llm.core import create_cancelled_chunk
         return create_cancelled_chunk(getattr(self, 'model', 'unknown'))
 
-    async def run_react_cycle(self, task, context=None, max_steps=None, task_id=None):
-        """直接从模块导入 — 小沈 2026-06-09 替代纯委托"""
-        async for event in _run(self, task, context, max_steps, task_id):
+    async def run_react_cycle(self, task, context=None, max_steps=None, task_id=None, start_time=None):
+        """直接从模块导入 — 小沈 2026-06-09 替代纯委托
+        2026-08-20 - 小欧 - 11.2-B 增 start_time 透传(同源起点, stream_orchestrator→agent_runner→此处)"""
+        async for event in _run(self, task, context, max_steps, task_id, start_time):
             yield event
 

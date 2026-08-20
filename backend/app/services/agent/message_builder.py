@@ -21,6 +21,7 @@
 # 2026-08-17 - 小健 - compaction 函数改名同步: add_tool_result 注释3处 t1_reuse_summary→use_tool_summary(供 compaction.use_tool_summary 复用/防空转)
 # 2026-08-17 - 小健 - 常量归属迁移(北京老陈驱动): 压缩/裁剪常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 由 app.constants 迁至 app.services.agent.compaction_constants, 导入路径同步改
 # 2026-08-17 - 小健 - 阈值重构(北京老陈 2026-08-17 定案, loop裁剪=上下文×3/4): trim_history 绝对值触发 self.MAX_CONTEXT_TOKENS(skip覆盖后运行时窗口)×TRIM_TRIGGER_RATIO 替换原×MAX_CONTEXT_RATIO; 构造默认 self.MAX_CONTEXT_TOKENS 由全局 MAX_CONTEXT_TOKENS(200000) 改 DEFAULT_CONTEXT_LIMIT(262144), 运行时仍被 agent_runner 覆盖为 context_limit
+# 2026-08-20 - 小欧 - C2修复(真实缺陷复核确认): trim_history 新增瞬时裁剪token指标 `_trimmed_tokens_this_round`(每轮重置0, 实际裁剪时= rough_current-裁剪后估算, 与 `_trimmed_this_round` 同周期), 供 react_cycle on_trim 透传落 task_metrics.trim_tokens; 原 on_trim 只拿到 bool、token 数恒0 且 finalize 丢弃 → 裁剪遥测死链路。
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -293,6 +294,8 @@ class MessageBuilder:
         - system+user 消息永保，剩余可用全给 _trim_to_budget
         - 配对不完整的 FC 对由 _trim_fc_pairs 清理
         """
+        self._trimmed_this_round = False            # 11.3 瞬时标志（每轮重置）— 小欧 2026-08-20
+        self._trimmed_tokens_this_round = 0         # 11.3 裁剪 token 数（每轮重置，随 _trimmed_this_round 一并提供）— 小欧 2026-08-20
         try:
             rough_current = self._estimate_tokens(self.conversation_history)
             msg_count = len(self.conversation_history)
@@ -327,6 +330,9 @@ class MessageBuilder:
             rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed)
             if rebuilt is not None:
                 self.conversation_history = rebuilt
+                self._trimmed_this_round = True     # 11.3 实际裁剪置真 — 小欧 2026-08-20
+                _trimmed_now = max(0, rough_current - self._estimate_tokens(rebuilt))  # 11.3 裁剪释放的 token 数 — 小欧 2026-08-20
+                self._trimmed_tokens_this_round = int(_trimmed_now)
                 trigger_reason = "delta" if delta_trigger else "abs" if abs_trigger else "msg_count"
                 logger.info(f"[trim_history] 裁剪: {msg_count}条({rough_current} tokens) "
                             f"→ {len(rebuilt)}条(触发: {trigger_reason})")

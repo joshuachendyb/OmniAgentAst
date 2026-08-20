@@ -110,6 +110,7 @@
 # 2026-08-18 - 小健 - 三堂会审修复(target推导): 删除硬编码_TARGE_FIELD(文件类工具+键read/web_search失配致_extract_target回退工具名真bug), 改为_resolve_target_field从tool_registry真实input_schema.properties按_TARGET_PARAM_PRIORITY推导字段名(target值取call入参LLM确定值); ActionStep.target极少截断; 预留ToolMetadata.target_param显式扩展点(OCP)
 # 2026-08-18 - 小欧 - §10.4.4 P3(错误全仅SSE): blocked/timeout/user_rejected/invalid_action 四处 ErrorStep→MetaStep(type="error", content=错误信息, error_type=); 删 ErrorStep import
 # 2026-08-18 - 小欧 - §10.4.4 P4(severity): error 四处加 severity="warn"; paused 加 severity="attention"; resumed 加 severity="info"
+# 2026-08-20 - 小欧 - 11.2-C 工具遥测回调(P0-2 修复): handle_action 执行结果处调用 agent.telemetry.on_tool_call(tool_name, success, duration), 供 tool_execution_seconds/task_tool_metrics 聚合(原未调用 → tool_execution_seconds 恒 0)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -597,6 +598,18 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 _llm = result.get("llm_data")
                 if isinstance(_llm, dict) and isinstance(_llm.get("summary"), str):
                     _llm["summary"] += f"（工具自动纠正自:{_orig_tool}）"
+
+        # 11.2-C 工具遥测回调（P0-2 修复：on_tool_call 未调用 → tool_execution_seconds 恒 0）— 小欧 2026-08-20
+        _tele = getattr(agent, "telemetry", None)
+        if _tele is not None:
+            for _call, _res in zip(all_calls, results):
+                _tname = _call.get("tool_name", "") if isinstance(_call, dict) else ""
+                _ok = not isinstance(_res, Exception)
+                _dur = 0.0
+                if _ok and isinstance(_res, dict):
+                    _llm_d = (_res.get("llm_data") or {})
+                    _dur = float(_llm_d.get("duration_ms", 0) or 0) / 1000.0
+                _tele.on_tool_call(_tname, _ok, _dur)
 
         return results
 

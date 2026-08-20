@@ -25,6 +25,7 @@
 # 2026-08-17 小健 开关定名(北京老陈 2026-08-17): COMPACTION_ENABLED→START_COMPACTION_ENABLED(仅限 start 域), 值 True
 # 2026-08-18 - 小欧 - §10.4.4 P7②(§10.1.2): _build_start_contract 改产 StartStep(删 next_step 依赖, step 固定 0, content=context_summary, user_message 顶层化); assemble_start_step 返回类型改 StartStep
 # 2026-08-18 - 小欧 - 三堂会审复核(回归修复): _build_start_contract 补 _start_meta None/非 dict 防御, 防 _meta.get AttributeError, 兑现既声明的「无 _start_meta 返回 None 旁路兼容」契约
+# 2026-08-20 - 小欧 - 11.3-A 跨任务注入基线快照: assemble_start_step 完成时调 TaskTelemetry 记录注入上下文基线(固定不漂移), 供后续任务 context_overview/injected 对比
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -220,6 +221,16 @@ def assemble_start_step(agent, context: Optional[Dict]) -> Optional["StartStep"]
     """
     # ① 注入会话历史(任务输入装配第一步)
     _inject_conversation_history(agent, context)
+    # 11.3-A 跨任务注入基线快照（独立模块 TaskTelemetry 存储，固定不漂移）— 小欧 2026-08-20
+    _tele = getattr(agent, "telemetry", None)
+    if _tele is not None:
+        _prev = context.get("previous_messages") if isinstance(context, dict) else None
+        _prev = _prev or []
+        from app.services.agent.message_builder import MessageBuilder
+        _tele.set_injected_context({
+            "message_count": len(_prev),
+            "estimated_tokens": MessageBuilder._estimate_tokens(_prev),
+        })
     # ② 超窗判定(C4, 注入后立即判定, 置 _needs_compact 供 while 前回填用)
     _maybe_compact_injected_history(agent)
 

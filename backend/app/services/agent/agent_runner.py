@@ -44,6 +44,7 @@
 #   update_task同with块内新增chat_user_message final回填(改动2)+chat_tasks.ai_message_id回填(改动9);
 #   saved_content/saved_thought提前到if current_execution_steps外定义(修复作用域, backfill需要)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: token_usage 落库 llm_call_count 去掉 agent.llm_call_count 终值回退(改 `or 0`), 用记录时步号, 防多事件同名 step 致 token_usage 重复行
+# 2026-08-20 - 小欧 - 11.2-B start_time 同源透传: run_agent_in_background 将 stream_orchestrator 的 start_time 透传给 agent.run_react_cycle(原漏传 None), 任务真实起点同源, 供遥测首包时延/耗时计算与 stream_orchestrator 一致
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -181,7 +182,7 @@ async def run_agent_in_background(
         run_context = context or ctx or None
 
         async for event in agent.run_react_cycle(
-            task=last_message, context=run_context, task_id=task_id
+            task=last_message, context=run_context, task_id=task_id, start_time=start_time  # 11.2-B start_time 同源透传 — 小欧 2026-08-20
         ):
             # event 可能为 dict 或 Step，统一 to_dict — chendyg 2026-06-26
             if isinstance(event, dict):
