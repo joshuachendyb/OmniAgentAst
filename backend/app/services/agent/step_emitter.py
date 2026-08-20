@@ -51,6 +51,11 @@ class StepEmitter:
             self.agent._last_error = (_et, step.get_content())
         return step
 
+    async def emit_final_with_stats(self, final_step):
+        """final 后单独 yield 终态统计事件 —— 先 .emit(final) 再 .emit(final_stats)，两事件分开、不塞进 final 键体（async 生成器，调用方 async for 转发）— 小欧 2026-08-20"""
+        yield self.emit(final_step)
+        yield self.emit(self.agent.telemetry.build_final_stats_step())
+
     def _get_tracker(self):
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""
         return getattr(self.agent, '_task_tracker', None)

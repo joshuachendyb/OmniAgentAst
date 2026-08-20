@@ -107,10 +107,11 @@ async def handle_answer(agent, parsed: Dict):
         agent.message_builder.add_assistant_message(content)
         print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, error={content}")
         yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-        yield agent._step_emitter.emit(FinalStep(
+        async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
             step=step, response="任务执行失败",
             outcome="failed", error_type="llm_error", error_message=content,
-        ))
+        )):
+            yield _s
         return
 
     # ── 未知类型 │ yield FinalStep(outcome=failed) ──
@@ -122,11 +123,12 @@ async def handle_answer(agent, parsed: Dict):
         if content:
             agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
         yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-        yield agent._step_emitter.emit(FinalStep(
+        async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
             step=step, response="任务执行失败",
             outcome="failed", error_type="unknown_response",
             error_message=f"LLM返回未知响应类型: {parsed_type}",
-        ))
+        )):
+            yield _s
         return
 
     # ── type="answer" ──
@@ -162,12 +164,13 @@ async def handle_answer(agent, parsed: Dict):
         if agent._consecutive_reasoning_only > REASONING_ONLY_MAX_ROUNDS:
             logger.warning(f"[handle_answer] 连续{agent._consecutive_reasoning_only}轮reasoning-only无进展(step={step}), 终止任务")
             yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-            yield agent._step_emitter.emit(FinalStep(
+            async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=step,
                 response="模型反复思考未产出有效结果，任务已终止（疑似陷入无效循环）",
                 reasoning=_deduped,
                 outcome="failed",
-            ))
+            )):
+                yield _s
             return
         if _deduped == reasoning:
             # ── 好的: 无重复 → 贴便签(仿Hermes: content空 + 双字段reasoning/reasoning_content以OpenAI为主兼容DeepSeek) ── 小欧 2026-07-19
@@ -204,8 +207,9 @@ async def handle_answer(agent, parsed: Dict):
             content = deduped
 
     print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response={content}")  # 小欧 2026-07-12 恢复answer分支终态日志(94eac9723合并时误删)
-    yield agent._step_emitter.emit(FinalStep(
+    async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
         step=step, response=content,
         outcome="completed", reasoning=reasoning,
-    ))
+    )):
+        yield _s
     agent.message_builder.add_assistant_message(content)

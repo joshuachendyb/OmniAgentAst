@@ -28,7 +28,7 @@ from app.monitoring import storage  # 落库层（独立，storage 内部惰性�
 # 统计 step_count 时剔除的全部非业务 MetaStep type（与 11.2-B / 12.17 完全一致，单一来源）
 _M_SKIP = {
     "usage", "paused", "resumed", "retrying", "cancelled",
-    "authorization_required", "start", "stats", "context_overview",
+    "authorization_required", "start", "stats", "context_overview", "final_stats",
 }
 
 
@@ -110,6 +110,20 @@ class TaskTelemetry:
             llm_call_count=getattr(_agent, "llm_call_count", 0),
             retry_count=getattr(_agent, "_retry_count", 0),
             duration=_duration,
+            severity="info",
+        )
+
+    def build_final_stats_step(self):
+        """产出 MetaStep(type="final_stats") —— 终态统计单独事件（final 后单发；duration 与流式 stats 同 _run_start_ts 同源）— 小欧 2026-08-20"""
+        from app.services.agent.steps.base import MetaStep  # 局部导入防环
+        _agent = self.agent
+        _duration = round(time.time() - self._run_start_ts, 1) if self._run_start_ts else 0.0
+        return MetaStep(
+            step=getattr(_agent, "llm_call_count", 0),
+            type="final_stats",
+            content="",
+            duration=_duration,
+            artifacts=[],   # 现状恒 []（工具产出物收集未实施）；问题2 落地后从 agent 内存态收集的产物读取
             severity="info",
         )
 

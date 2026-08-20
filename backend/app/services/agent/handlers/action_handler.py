@@ -944,8 +944,9 @@ async def handle_action(agent, parsed: Dict):
     if _denied_list:
         _add_denial_feedback(agent, _denied_list, call_result.fc_context)
     if orchestration.get("return_direct"):
-        yield agent._step_emitter.emit(FinalStep(
+        async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
             step=step, response=orchestration.get("return_direct_message", ""),
             outcome="completed", reasoning="",
-        ))
+        )):
+            yield _s
 
