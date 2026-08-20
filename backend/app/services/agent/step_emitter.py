@@ -11,6 +11,7 @@ Author: 小沈 - 2026-05-31
 2026-07-22 小欧  emit注入FinalStep._accumulated_usage: 自动从agent.accumulated_usage读取
 2026-07-22 小欧  emit注入加is None防御: 仅外部未设置时才注入
 2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): emit 内记录 _last_error(type=="error" 时读 _kwargs 取 error_type/error_message, 赋值 agent._last_error, KISS-DIRECT单一出口)
+# 2026-08-20 - 小欧 - 11.1 token 四层同构: emit FinalStep 时自动注入 task/session/chain_accumulated_tokens 三层累计(读 agent 内存态, 与 react_cycle yield 值一致); 仅 FinalStep 触发, 仅外部未设置时注入
 2026-08-18 - 小欧 - 三堂会审复核: ①emit._last_error 兼容 ErrorStep 载体(_kwargs 为空时回退读 error_type 属性), 防 error_type 丢失; ②删除死码 exit_with_error 及 ErrorStep import(YAGNI, 全仓无真实调用点)
 """
 
@@ -28,10 +29,18 @@ class StepEmitter:
 
     def emit(self, step) -> 'ReasoningStep':
         """记录步骤到agent.steps并返回Step对象"""
-        # FinalStep 自动注入累积消耗 — 小欧 2026-07-22
-        # 仅当外部未设置时才注入，尊重外部传入值 — 小欧 2026-07-22
-        if isinstance(step, FinalStep) and step._accumulated_usage is None:
-            step._accumulated_usage = dict(self.agent.accumulated_usage)
+        # FinalStep 自动注入三层 token 用量 — 小欧 2026-08-20
+        # 仅当外部未设置时才注入，尊重外部传入值
+        if isinstance(step, FinalStep):
+            if step._accumulated_usage is None:
+                step._accumulated_usage = dict(self.agent.accumulated_usage)
+            # 11.1 新增：注入任务级/会话级/链级累计（读 agent 内存态，与 react_cycle yield 值一致）
+            if step._task_accumulated_tokens is None:
+                step._task_accumulated_tokens = dict(getattr(self.agent, "task_accumulated_tokens", {}))
+            if step._session_accumulated_tokens is None:
+                step._session_accumulated_tokens = dict(getattr(self.agent, "session_accumulated_tokens", {}))
+            if step._chain_accumulated_tokens is None:
+                step._chain_accumulated_tokens = dict(getattr(self.agent, "chain_accumulated_tokens", {}))
         self.agent.steps.append(step)
         # 2026-08-18 - 小欧 - P3: error全仅SSE, emit统一出口记录_last_error供守卫填充final(KISS-DIRECT单一出口)
         if getattr(step, "type", "") == "error":

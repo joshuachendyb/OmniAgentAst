@@ -16,6 +16,7 @@
 # 2026-07-18 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致
 # 2026-07-22 小欧 - 新增 accumulated_usage 可选字段(累计消耗统计), _extra_fields 输出供前端显示
 # 2026-08-18 小欧 - §10.3.3(4): 删 thought/is_finished/display_name(冗余); 新增 reasoning(历史回放推理载体)
+# 2026-08-20 - 小欧 - 11.1 token 四层同构: FinalStep 新增 task/session/chain_accumulated_tokens 三参数+三@property+_extra_fields 三键输出, 承载四层 token 累计透传至前端
 
 from typing import Any, Dict, Literal, Optional
 
@@ -38,6 +39,9 @@ class FinalStep(ReasoningStep):
         model: Optional[str] = None,
         provider: Optional[str] = None,
         accumulated_usage: Optional[Dict[str, int]] = None,
+        task_accumulated_tokens: Optional[Dict[str, int]] = None,    # 11.1 新增 — 小欧 2026-08-20
+        session_accumulated_tokens: Optional[Dict[str, int]] = None, # 11.1 新增
+        chain_accumulated_tokens: Optional[Dict[str, int]] = None,   # 11.1 新增（计算派生，不落库）
         reasoning: str = "",
         timestamp: Optional[str] = None,
     ):
@@ -49,6 +53,9 @@ class FinalStep(ReasoningStep):
         self._model = model
         self._provider = provider
         self._accumulated_usage = accumulated_usage
+        self._task_accumulated_tokens = task_accumulated_tokens       # 11.1 新增
+        self._session_accumulated_tokens = session_accumulated_tokens # 11.1 新增
+        self._chain_accumulated_tokens = chain_accumulated_tokens     # 11.1 新增
         self._reasoning = reasoning
 
     def get_content(self) -> str:
@@ -78,6 +85,18 @@ class FinalStep(ReasoningStep):
     def accumulated_usage(self) -> Optional[Dict[str, int]]:
         return self._accumulated_usage
 
+    @property
+    def task_accumulated_tokens(self) -> Optional[Dict[str, int]]:  # 11.1 新增 — 小欧 2026-08-20
+        return self._task_accumulated_tokens
+
+    @property
+    def session_accumulated_tokens(self) -> Optional[Dict[str, int]]:  # 11.1 新增
+        return self._session_accumulated_tokens
+
+    @property
+    def chain_accumulated_tokens(self) -> Optional[Dict[str, int]]:  # 11.1 新增
+        return self._chain_accumulated_tokens
+
     def _extra_fields(self) -> Dict[str, Any]:
         return {
             "response": self._response,
@@ -87,5 +106,8 @@ class FinalStep(ReasoningStep):
             "model": self._model,
             "provider": self._provider,
             "accumulated_usage": self._accumulated_usage,
+            "task_accumulated_tokens": self._task_accumulated_tokens,       # 11.1 新增
+            "session_accumulated_tokens": self._session_accumulated_tokens, # 11.1 新增
+            "chain_accumulated_tokens": self._chain_accumulated_tokens,     # 11.1 新增
             "reasoning": self._reasoning,
         }

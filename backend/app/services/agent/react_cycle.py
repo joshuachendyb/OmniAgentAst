@@ -102,6 +102,7 @@
 #   开关仅限 start 超窗判定(start_step)使用; 触发条件只据 start 超窗置的 _needs_compact 标记(getattr 判断) — 小健 2026-08-17
 # 2026-08-18 小欧 - §10.3.3(4): same_tool_loop终止FinalStep的 thought= 改 reasoning=(FinalStep已删thought参数)
 # 2026-08-18 - 小欧 - §10.4.4 P2/P3/P4/P5/P6: handle_react_error/empty_response/chunk_buffer_timeout 改 MetaStep(type="error")(删ErrorStep import); _dispatch_handler 改读 _kwargs 取 error_type; usage emit 处 append _usage_events; 各 error/retrying/usage 加 severity(warn/info)
+# 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: 任务起点(run_react_cycle)读 DB 一次缓存 _session_acc_base/_chain_acc_base 到 agent 并初始化 session/chain 累计=基线(无 LLM 调用任务也正确反映历史累计, 杜绝日志/前端误显 0); usage 块改用缓存基线(消除每轮双 DB 连接冗余读取); DB 异常降级为零基线不阻断主链路
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -128,6 +129,8 @@ from app.services.agent.handlers import (
 )
 from app.services.agent.llm_stream import call_llm_with_fallback
 from app.services.agent.tool_cache_manager import get_openai_tools
+from app.db import db                                          # 11.1 新增: 读 DB 会话/链历史累计 — 小欧 2026-08-20
+from app.services.chat import storage                          # 11.1 新增: query_session_accumulation / query_chain_accumulation — 小欧 2026-08-20
 
 _MAX_CONSECUTIVE_TRUNCATIONS = 3
 
@@ -431,6 +434,23 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                 _ue = getattr(agent, "_usage_events", None)
                 if _ue is not None:
                     _ue.append({"step": agent.llm_call_count, "prompt_tokens": _usage.get("prompt_tokens"), "completion_tokens": _usage.get("completion_tokens"), "total_tokens": _usage.get("total_tokens")})
+                # 11.1 token 四层同构累计 — 任务级用 agent 内存态逐轮累加(跨轮累计,不读DB,避免任务内DB未回写致不累计);
+                #   会话级/链级在缓存基线(任务开始前历史累计, 见 run_react_cycle 初始化, 任务内恒定)上叠加当前任务运行累计 — 小欧 2026-08-20
+                _llm_call_count_token = {
+                    "prompt_tokens": int(_usage.get("prompt_tokens") or 0),
+                    "completion_tokens": int(_usage.get("completion_tokens") or 0),
+                    "total_tokens": int(_usage.get("total_tokens") or 0),
+                }
+                _K = ("prompt_tokens", "completion_tokens", "total_tokens")
+                # 任务级: agent 内存态(初始0)逐轮 += 本轮 → 任务内天然累计
+                agent.task_accumulated_tokens = {k: agent.task_accumulated_tokens[k] + _llm_call_count_token[k] for k in _K}
+                # 会话级: 基线(历史累计, 任务内恒定, 见 run_react_cycle 初始化) + 当前任务运行累计
+                _ZERO = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                _sess_base = getattr(agent, "_session_acc_base", None) or _ZERO
+                agent.session_accumulated_tokens = {k: _sess_base[k] + agent.task_accumulated_tokens[k] for k in _K}
+                # 链累计（计算派生，不落库）— 基线(历史链累计, 任务内恒定) + 当前任务运行累计
+                _chain_base = getattr(agent, "_chain_acc_base", None) or _ZERO
+                agent.chain_accumulated_tokens = {k: _chain_base[k] + agent.task_accumulated_tokens[k] for k in _K}
                 _usage_step = MetaStep(
                     step=agent.llm_call_count,
                     type="usage",
@@ -439,6 +459,10 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                     completion_tokens=_usage.get("completion_tokens"),
                     total_tokens=_usage.get("total_tokens"),
                     severity="info",
+                    llm_call_count_token=_llm_call_count_token,                  # 11.1 新增 — 小欧 2026-08-20
+                    task_accumulated_tokens=agent.task_accumulated_tokens,         # 11.1 新增
+                    session_accumulated_tokens=agent.session_accumulated_tokens,   # 11.1 新增
+                    chain_accumulated_tokens=agent.chain_accumulated_tokens,       # 11.1 新增
                 )
                 yield agent._step_emitter.emit(_usage_step)
 
@@ -581,6 +605,21 @@ async def run_react_cycle(
         max_steps = get_config().get_max_steps()
 
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
+
+    # 11.1 token 四层同构：会话级/链级累计基线(任务开始前历史累计)读 DB 一次并缓存到 agent,
+    #   任务内恒定; 同步初始化 session/chain 累计=基线(无 LLM 调用时也正确反映历史累计, 杜绝日志/前端误显 0) — 小欧 2026-08-20
+    if getattr(agent, "_start_meta", None):
+        try:
+            _chain_root = agent._start_meta.get("context_root_task_id") or agent.task_id
+            with db.get_conn_with_retry("chat") as _conn0:
+                agent._session_acc_base = storage.query_session_accumulation(_conn0, session_id=agent._start_meta.get("session_id"))
+                agent._chain_acc_base = storage.query_chain_accumulation(_conn0, context_root_task_id=_chain_root, current_task_id=agent.task_id)
+            agent.session_accumulated_tokens = {k: agent._session_acc_base[k] for k in ("prompt_tokens", "completion_tokens", "total_tokens")}
+            agent.chain_accumulated_tokens = {k: agent._chain_acc_base[k] for k in ("prompt_tokens", "completion_tokens", "total_tokens")}
+        except Exception as _e:
+            logger.warning(f"[run_react_cycle] 初始化 token 累计基线失败(降级为零基线): {_e}")
+            agent._session_acc_base = None
+            agent._chain_acc_base = None
 
     # S4/S5(10.1.7④⑤/10.1.8): start 装配进 agent.steps(占 step 0) — 任务输入装配完整过程收拢为一个模块。
     #   P4 注入模式: 运行元数据由 orchestrator 注入 agent._start_meta(chat 层纯数据捕获),

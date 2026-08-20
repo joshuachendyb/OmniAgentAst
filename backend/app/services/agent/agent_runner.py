@@ -43,6 +43,7 @@
 # 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.6+9.9): import update_user_message_final/safe_json_dumps;
 #   update_task同with块内新增chat_user_message final回填(改动2)+chat_tasks.ai_message_id回填(改动9);
 #   saved_content/saved_thought提前到if current_execution_steps外定义(修复作用域, backfill需要)
+# 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: token_usage 落库 llm_call_count 去掉 agent.llm_call_count 终值回退(改 `or 0`), 用记录时步号, 防多事件同名 step 致 token_usage 重复行
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -469,13 +470,22 @@ async def run_agent_in_background(
         if db_ops and db_ops.insert_token:
             try:
                 for _u in getattr(agent, "_usage_events", []) if agent else []:
+                    _llm_call_count_token = {
+                        "prompt_tokens": int(_u.get("prompt_tokens") or 0),
+                        "completion_tokens": int(_u.get("completion_tokens") or 0),
+                        "total_tokens": int(_u.get("total_tokens") or 0),
+                    }
                     with db.get_conn_with_retry("chat") as _conn:
                         db_ops.insert_token(
                             _conn,  # 闭包绑 task_id/session_id/model/provider(见 ②-1 db_ops)
-                            llm_call_count=int(_u.get("step") or agent.llm_call_count or 0),
-                            prompt_tokens=int(_u.get("prompt_tokens") or 0),
-                            completion_tokens=int(_u.get("completion_tokens") or 0),
-                            total_tokens=int(_u.get("total_tokens") or 0))
+                            llm_call_count=int(_u.get("step") or 0),  # 11.1 修正: 去掉 agent.llm_call_count 回退(应为记录时步号, 非任务终值), 避免多事件同名 step 致 token_usage 重复行 — 小欧 2026-08-20
+                            prompt_tokens=_llm_call_count_token["prompt_tokens"],
+                            completion_tokens=_llm_call_count_token["completion_tokens"],
+                            total_tokens=_llm_call_count_token["total_tokens"])
+                        # 11.1 新增：持久化累计字段（与 react_cycle yield 值一致） — 小欧 2026-08-20
+                        if _llm_call_count_token["total_tokens"]:
+                            db_ops.update_task_accumulation(_conn, task_id=task_id, llm_call_count_token=_llm_call_count_token)
+                            db_ops.update_session_accumulation(_conn, session_id=session_id, llm_call_count_token=_llm_call_count_token)
             except Exception as _tok_e:
                 logger.warning(f"[Runner] token_usage 落库失败(task={task_id}): {_tok_e}")
 

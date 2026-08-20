@@ -12,6 +12,7 @@
 # 2026-08-17 - 小健 - 门限基准唯一化(北京老陈驱动): MessageBuilder 改默认构造, 移除 get_config().get_max_context_tokens() 传参(该配置方法已删); max_context_tokens 运行时由 agent_runner 用 llm_service.context_limit 覆盖
 # 2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): 新增 _last_error: Optional[tuple]=None(step_emitter.emit 统一出口记录, 守卫读此填充 final)
 # 2026-08-18 - 小欧 - §10.4.4 P6(usage剔step_json): 新增 _usage_events: List[Dict]=[](--每轮usage明细, agent_runner终态insert_token读)
+# 2026-08-20 - 小欧 - 11.1 token 四层同构: 新增 task_accumulated_tokens/session_accumulated_tokens/chain_accumulated_tokens 三字段初始化({prompt/completion/total}=0), 跨轮/跨任务保持不重置, 供 react_cycle 内存态累计与 SSE/FinalStep/日志输出
 """
 Agent 核心基类 — 类骨架
 
@@ -67,6 +68,10 @@ class BaseAgent(ABC):
         self._usage_events: List[Dict] = []  # 2026-08-18 - 小欧 - P6 usage剔step_json: 每轮emit时append明细, agent_runner终态insert_token改读此处
         self._consecutive_reasoning_only = 0  # 2026-07-17 - 小欧 - 连续reasoning-only计数(空转检测): reasoning-only分支累加, 调工具/正常answer/真空归零, 达上限终止
         self.accumulated_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}  # 2026-07-22 - 小欧 - 累积消耗统计: 逐次LLM调用累加, FinalStep终态输出
+        # 11.1 token 四层同构：任务级/会话级/链级实时累计(跨轮/跨任务保持, 不在 initialize_run_state 重置) — 小欧 2026-08-20
+        self.task_accumulated_tokens = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self.session_accumulated_tokens = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self.chain_accumulated_tokens = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
         # 原 AgentInitializer._init_messages
         self.steps: List[ReasoningStep] = []
