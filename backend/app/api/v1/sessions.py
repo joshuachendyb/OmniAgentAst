@@ -5,14 +5,17 @@
 # 2026-08-13 - 小欧 - A7(方案4.7.3步骤3): 业务逻辑(create/list/update/delete/titles_batch + 辅助函数)迁入
 #   services/chat/session_service.py; 删除会话的 display_name 缓存清理改经 message_service.delete_session_display_names
 #   (不再 direct import messages 缓存对象)。本文件降为路由薄壳(DTO+路由+调service)。
+# 2026-08-20 - 小欧 - 10.5 问题4/6 三堂会审落地: 新增 GET /sessions/{id}/tasks(B1会话任务列表+任务数=用户消息数) +
+#   GET /sessions/{id}/trust(D1信任清单) + DELETE /sessions/{id}/trust/{tool}(D3撤销信任)。
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
 """
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionListResponse  # noqa: F401 DTO 透传
 from app.services.chat.session_service import (
     create_session,
@@ -23,6 +26,11 @@ from app.services.chat.session_service import (
     SessionUpdate,
 )
 from app.services.chat.storage import save_execution_steps, ExecutionStepsUpdate  # noqa: F401
+from app.services.chat.storage import (
+    list_session_tasks,
+    list_session_trust,
+    delete_session_trust,
+)
 
 router = APIRouter()
 
@@ -67,3 +75,29 @@ def get_session_titles_batch_endpoint(
 @router.post("/sessions/{session_id}/execution_steps")
 async def save_execution_steps_endpoint(session_id: str, update_data: ExecutionStepsUpdate):
     return await save_execution_steps(session_id, update_data)
+
+
+@router.get("/sessions/{session_id}/tasks")
+def list_session_tasks_endpoint(session_id: str):
+    """B1/问题6(10.5): 会话任务列表 + 任务数（任务数=用户消息数, chat_tasks 行数新口径）— 小欧 2026-08-20"""
+    with db.get_conn("chat") as conn:
+        tasks, total = list_session_tasks(conn, session_id)
+    return {"session_id": session_id, "total": total, "tasks": tasks}
+
+
+@router.get("/sessions/{session_id}/trust")
+def list_session_trust_endpoint(session_id: str):
+    """D1(10.5 问题4): 会话已信任工具清单 — 小欧 2026-08-20"""
+    with db.get_conn("chat") as conn:
+        rows = list_session_trust(conn, session_id)
+    return {"session_id": session_id, "total": len(rows), "trusted_tools": rows}
+
+
+@router.delete("/sessions/{session_id}/trust/{tool_name}")
+def delete_session_trust_endpoint(session_id: str, tool_name: str):
+    """D3(10.5 问题4): 撤销会话对指定工具的信任 — 小欧 2026-08-20"""
+    with db.get_conn("chat") as conn:
+        removed = delete_session_trust(conn, session_id, tool_name)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Trust not found")
+    return {"success": True, "session_id": session_id, "tool_name": tool_name}

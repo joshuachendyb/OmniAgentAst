@@ -42,6 +42,7 @@
 #   (v2.2列改名后旧列名新库不存在, 执行即OperationalError; 模型字段名保留API层, DB列名对齐v2改名)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: ①import types; ②_EMPTY_TOKEN 改 types.MappingProxyType 冻结(防外部 mutate 污染全局); ③新增 _normalize_acc() 显式判键归一(parse_json('{}') 返 truthy 空对象, 原 `or dict` 不兜底致下游 _old['prompt_tokens'] KeyError 致命bug, 现统一归一含3键零值); ④query_task/session_accumulation 加 row 缺失守卫+改调 _normalize_acc; ⑤update_task/session_accumulation 加 rowcount==0 告警(检测累计静默丢失)
 # 2026-08-20 - 小欧 - 11.1 测试驱动修复(_normalize_acc, 小欧单测 tests/test_token_accumulation_11_1.py 锁定): 原仅对非法/空对象归一, 对"含部分键"的 JSON(如 {'prompt_tokens':5})原样返回 → query 返回缺键 dict(违反设计11.1.2含3键零值)、update 下游 _old[k] KeyError 崩溃、react_cycle 基线 [k] KeyError 被 except 吞致历史累计静默清零; 现改为缺键统一补零并 int 强转, 保留已存键。3 用例(部分键归一/update不崩/基线)已加。
+# 2026-08-20 - 小欧 - 10.5 问题4/6 三堂会审落地: 新增 list_session_tasks(会话任务列表+总数, B1/问题6 任务数=用户消息数, chat_tasks 行数新口径) + list_session_trust(D1 信任清单) + delete_session_trust(D3 撤销信任)。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -598,6 +599,25 @@ def check_session_trust(conn: Connection, session_id: str, tool_name: str) -> bo
     return row is not None
 
 
+def list_session_trust(conn: Connection, session_id: str) -> list:
+    """D1(10.5 问题4): 会话已信任工具清单（HITL 信任列表, 供前端展示/撤销）— 小欧 2026-08-20"""
+    rows = conn.execute(
+        "SELECT tool_name, created_at FROM chat_session_trust "
+        "WHERE session_id=? ORDER BY id DESC",
+        (session_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_session_trust(conn: Connection, session_id: str, tool_name: str) -> bool:
+    """D3(10.5 问题4): 撤销会话对指定工具的信任（HITL 解除豁免）— 小欧 2026-08-20"""
+    cur = conn.execute(
+        "DELETE FROM chat_session_trust WHERE session_id=? AND tool_name=?",
+        (session_id, tool_name),
+    )
+    return cur.rowcount > 0
+
+
 def get_session_id_by_task(conn: Connection, task_id: str) -> Optional[str]:
     """按 task_id 反查 session_id（chat_tasks 已建行时）— HITL trust 落库/豁免用, 禁止伪 agent.session_id — 小欧 2026-08-16"""
     row = conn.execute(
@@ -706,6 +726,22 @@ def get_task_detail(conn: Connection, task_id: str) -> Optional[dict]:
         "SELECT * FROM chat_tasks WHERE task_id=?", (task_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int]:
+    """B1/问题6(10.5): 会话任务列表 + 总数（任务数=用户消息数, 一条用户消息=一个任务;
+    失败/取消亦计入, 与文档2 3.5.3 口径一致）。chat_tasks 行数即新统计口径 — 小欧 2026-08-20"""
+    total = conn.execute(
+        "SELECT COUNT(*) FROM chat_tasks WHERE session_id=?",
+        (session_id,),
+    ).fetchone()[0]
+    rows = conn.execute(
+        """SELECT task_id, user_input, status, duration, model, provider,
+                  total_steps, llm_call_count, created_at, updated_at
+           FROM chat_tasks WHERE session_id=? ORDER BY id DESC""",
+        (session_id,),
+    ).fetchall()
+    return [dict(r) for r in rows], total
 
 
 def get_task_tool_stats(conn: Connection, task_id: str) -> list:
