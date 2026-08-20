@@ -136,6 +136,11 @@
 | `append_execution_step` | 逐步落库:一行=一步 | conn, message_id, session_id, step_index, step_dict | None |
 | `load_execution_steps` | 从 steps 表组装步骤列表(无数据时从chat_messages.execution_steps列读取) | conn, message_id | Optional[list] |
 | `finalize_message` | finally 轻量终态更新(content+status) | conn, message_id, content, status | None |
+| `query_task_accumulation` | 读取任务级 token 累计(JSON, 缺行/缺键归一3键零值) | conn, task_id | dict |
+| `query_session_accumulation` | 读取会话级 token 累计(JSON, 缺行/缺键归一) | conn, session_id | dict |
+| `update_task_accumulation` | 任务级 token 实时累计(Db读-加-写, 影响0行显式告警) | conn, task_id, llm_call_count_token | None |
+| `update_session_accumulation` | 会话级 token 实时累计(Db读-加-写, 影响0行显式告警) | conn, session_id, llm_call_count_token | None |
+| `query_chain_accumulation` | 上下文链 token 累计(按context_root聚合, 排除当前任务, 计算派生不落库) | conn, context_root_task_id, current_task_id | dict |
 
 ---
 
@@ -281,6 +286,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v3.6 | 2026-08-20 20:17:29 | 补登记 3.2 步骤存储(storage.py) 11.1 token 四层同构累计公用函数 5 个: query_task_accumulation/query_session_accumulation/query_chain_accumulation/update_task_accumulation/update_session_accumulation（供 react_cycle 每轮即时落库、agent_runner S2、token_usage API 复用；先查后建, 禁止重造） | 小欧 |
 | v3.5 | 2026-08-14 09:02:09 | 正文清除历史痕迹(小欧, 用户要求): 删除正文全部"迁/更正/误登记/来源/已迁"等历史过程说明、BUG编号(BOM-002/BUG-002/BUG-B/C/D)、设计编号(补A/R1/R2/R3-R6/⑦⑧⑨⑪⑫⑯)、署名时间戳(仅版本历史表保留历史信息)；正文只保留当前真实情况 | 小欧 |
 | v3.4 | 2026-08-14 08:53:31 | 三遍全文核查修正(小欧): ①1.1 删除不存在的 get_timestamp_ms(全仓无定义) ②create_step_counter 从 1.1 移至 3.3 Agent 层(实际定义于 agent/steps/base.py:84) ③第八章标题 app/services/safety/→app/safety/(safety 为顶层目录) ④⑤8.1 path_safe_check/8.3 temp_auth 标注实际位置 app/tools/security/(A1 2026-08-12 迁入) ⑥4.1 backup_file 注明已迁 app/utils/file_utils.py(P5b re-export) | 小欧 |
 | v2.9 | 2026-08-13 | A5职责拆分同步(小欧): 4.2 补登记 `error_hints.py`(5个错误提示函数自 file_path_checker 迁移: permission/error_hint_for_write/read/sql/data, 供 dataanalysis/document/file/network 复用) | 小欧 |
