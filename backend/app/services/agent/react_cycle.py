@@ -105,6 +105,7 @@
 # 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: 任务起点(run_react_cycle)读 DB 一次缓存 _session_acc_base/_chain_acc_base 到 agent 并初始化 session/chain 累计=基线(无 LLM 调用任务也正确反映历史累计, 杜绝日志/前端误显 0); usage 块改用缓存基线(消除每轮双 DB 连接冗余读取); DB 异常降级为零基线不阻断主链路
 # 2026-08-20 - 小欧 - 真实缺陷复核三遍修复(review 3x 确认后按最佳不退化): ①A(遥测 usage 门控): on_llm_call/build_stats_step/context_overview 原置于 `if _usage` 内, 无 usage 响应时 llm_calls/stats/context_overview 全丢; 移出到 response 分支末尾必发(usage 存在行为完全不变, 纯增强), 补 isinstance 守卫 error/finish_reason 计算; ②C2(裁剪token死活): on_trim 原只传 bool -> 透传 message_builder._trimmed_tokens_this_round, 裁掉token数不再恒0。
 # 2026-08-20 - 小欧 - 11.1b 运行中DB即时落库(北京老陈裁定"每轮即时落库"): 每轮 emit usage(MetaStep type=usage) 后同步 update_task/session_accumulation 落库, 供运行中他方查询/断线中间态读取实时累计; DB 读-加-写(当前DB值+本轮token)与内存态基线口径一致, 会话缺 session_id 守卫跳过; DB 异常降级 warning 不阻断主链路; 配套 agent_runner S2 移除重复 update 防同批 token 翻倍累加
+# 2026-08-20 - 小欧 - 解决问题18(2.4④ truncated): 新增 MetaStep(type="truncated") 统一"输出截断"事件, 仅触发于 LLM 输出截断 2 处(场景D)——重试分支(content=连续第N次+已注入重试Observation)与连续截断取消分支(content=连续N次+任务取消, 于 FinalStep 前下发), severity=warn; 上下文裁剪/工具结果截断已有 context_overview.truncated / observation data.truncated 通道, 不重复新增(DRY); MetaStep 不落库不占 steps, 不影响 total_steps
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -581,6 +582,12 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         if agent._consecutive_truncations >= _MAX_CONSECUTIVE_TRUNCATIONS:
             logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试")
             log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, consecutive_truncation")  # 小欧 2026-07-02 控制台
+            # 解决问题18(2.4④): 连续截断取消前发 MetaStep(type="truncated") 统一"输出被截断"事件 — 小欧 2026-08-20
+            yield agent._step_emitter.emit(MetaStep(
+                step=step, type="truncated",
+                content=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断，任务取消",
+                severity="warn",
+            ))
             yield agent._step_emitter.emit(FinalStep(
                 step=step,
                 response=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
@@ -600,6 +607,12 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         agent.message_builder.add_observation(
             obs_text, {"tool_call_id": _retry_tc_id, "tool_calls": [], "llm_content": content},
         )
+        # 解决问题18(2.4④): 输出截断重试前发 MetaStep(type="truncated") 统一"输出被截断"事件 — 小欧 2026-08-20
+        yield agent._step_emitter.emit(MetaStep(
+            step=step, type="truncated",
+            content=f"LLM输出截断(连续第{agent._consecutive_truncations}次)，已注入重试Observation",
+            severity="warn",
+        ))
         yield agent._step_emitter.emit(ObservationStep(
             step=step,
             tool_result=[{"tool_name": "truncated_output", "llm_data": {"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}}, "llm_data_text": "", "data_text": obs_text, "other_data": {}}],
