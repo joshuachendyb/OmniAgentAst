@@ -52,6 +52,8 @@
 # 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.2+9.4+9.6+9.9): db_ops.append_step加usage参数、
 #   allocate_and_insert加user_message_id、insert_task加ai_message_id=None(agent_runner分配后回填)、
 #   insert_task后回填chat_messages.task_id(改动7)、_db_ops注入user_msg_id(供agent_runner回填chat_user_message)
+# 2026-08-20 - 小欧 - 11.1 token 四层同构: 两 db_ops lambda(insert_task/update_task)改用 storage.query_task/session_accumulation 读真实累计(去重 parse_json), 与 react_cycle 同源基线; 会话级首调用回退 task 累计
+# 2026-08-20 - 小欧 - 11.1 修复: db_ops.update_task_accumulation/update_session_accumulation 闭包已绑 task_id/session_id, 原 agent_runner 又经 kwargs 重传致 Python "got multiple values" TypeError 被 except 吞掉→累计永不入DB; 去掉闭包绑定, 改由调用方经 **kw 传入(单一归属, KISS)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -80,6 +82,7 @@ from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
 from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, finalize_message
 from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_session_model_override, get_previous_task_chain  # S1/S2 任务级读写(10.1.4/10.1.7②) — 小欧 2026-08-16
+from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # 11.1 token 四层同构累计 — 小欧 2026-08-20
 from app.db import db  # 小健 2026-08-17 三堂会审-A1修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
 from app.services.chat.sse_events import save_execution_steps_to_db
 from app.services.chat.stream_reader import _load_previous_messages, _log_task_end
@@ -265,6 +268,8 @@ async def chat_stream_orchestrator(
             insert_token=lambda c, **kw: token_usage_insert(  # ②-3 共用
                 c, task_id=task_id, session_id=session_id,
                 model=agent.llm_client.model, provider=agent.llm_client.provider, **kw),
+            update_task_accumulation=lambda c, **kw: update_task_accumulation(c, **kw),  # 11.1 任务级token累计(去闭包双重绑定, 由调用方经**kw传task_id)
+            update_session_accumulation=lambda c, **kw: update_session_accumulation(c, **kw),  # 11.1 会话级token累计(去闭包双重绑定, 由调用方经**kw传session_id)
             user_msg_id=_user_msg_id,  # v2.0 改动2: 供agent_runner回填chat_user_message — 小欧 2026-08-19
         )
         # ── 编排⑧注入 start 运行元数据(_start_meta, start_step 装配用) ———————— 小健 2026-08-17

@@ -22,6 +22,7 @@
 # 2026-08-18 小欧 - §10.3.5(3)④: _parse_tool_calls 兼容 action(tools数组)+老 action_tool(单工具); _parse_observations 读 tool_result 数组+老 content 回退
 # 2026-08-18 - 小健 - 三堂会审 Bug#8: _parse_observations 预扫描 action 的 FC id 集合(_action_ids), 截断场景 truncated_output observation 无对应 action(运行时 id 不可恢复)回放生成孤儿 tool 消息→OpenAI历史不合法, 跳过防非法; _log_task_end 注释同步(P1后chunk不入steps)
 # 2026-08-19 - 小欧 - 老格式回退 BUG: _parse_observations 老 content 回退分支 同一 step 多条 observation 时 tool_call_id 恒 _0, 与同轮 action_tool(FC)多条 tool_call.id 顺序错配→历史回放 OpenAI 工具消息配对错乱; 新增 _legacy_seq 按 step 递增组内序号, tc/obs id 严格配对(与 _action_ids/PARALLEL 同源规则)
+# 2026-08-20 - 小欧 - 11.1 token 四层同构: 三处 TASK_END 日志改造, task_accumulated_tokens 取 FinalStep 全量(与前端同口径); session 级 update_session 保留钩子(链级落库在 react_cycle); 移除工具级误写
 """
 stream_reader — SSE流运行器（消费者）
 
@@ -271,6 +272,19 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
         if _au and isinstance(_au, dict):
             parts.append("usage_tokens=" + ",".join(
                 f"{k}={_au.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
+        # 11.1 token 四层同构：追加任务级/会话级/链级累计输出 — 小欧 2026-08-20
+        _tau = getattr(agent, "task_accumulated_tokens", None)
+        if _tau and isinstance(_tau, dict):
+            parts.append("task_acc=" + ",".join(
+                f"{k}={_tau.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
+        _sau = getattr(agent, "session_accumulated_tokens", None)
+        if _sau and isinstance(_sau, dict):
+            parts.append("session_acc=" + ",".join(
+                f"{k}={_sau.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
+        _cau = getattr(agent, "chain_accumulated_tokens", None)
+        if _cau and isinstance(_cau, dict):
+            parts.append("chain_acc=" + ",".join(
+                f"{k}={_cau.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
     if steps:
         counter: Dict[str, int] = {}
         for s in steps:
