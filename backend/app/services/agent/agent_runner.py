@@ -45,6 +45,7 @@
 #   saved_content/saved_thought提前到if current_execution_steps外定义(修复作用域, backfill需要)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: token_usage 落库 llm_call_count 去掉 agent.llm_call_count 终值回退(改 `or 0`), 用记录时步号, 防多事件同名 step 致 token_usage 重复行
 # 2026-08-20 - 小欧 - 11.2-B start_time 同源透传: run_agent_in_background 将 stream_orchestrator 的 start_time 透传给 agent.run_react_cycle(原漏传 None), 任务真实起点同源, 供遥测首包时延/耗时计算与 stream_orchestrator 一致
+# 2026-08-20 - 小欧 - 11.1b 每轮即时落库的配套收敛(北京老陈裁定): 任务/会话 token 累计落库已前移 react_cycle 每轮即时写(运行中DB实时), 本文件 S2 的 finally 块不再重复调 update_task/session_accumulation(防同批 token 重复累加翻倍), 仅保留 token_usage 明细 insert_token
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -483,10 +484,7 @@ async def run_agent_in_background(
                             prompt_tokens=_llm_call_count_token["prompt_tokens"],
                             completion_tokens=_llm_call_count_token["completion_tokens"],
                             total_tokens=_llm_call_count_token["total_tokens"])
-                        # 11.1 新增：持久化累计字段（与 react_cycle yield 值一致） — 小欧 2026-08-20
-                        if _llm_call_count_token["total_tokens"]:
-                            db_ops.update_task_accumulation(_conn, task_id=task_id, llm_call_count_token=_llm_call_count_token)
-                            db_ops.update_session_accumulation(_conn, session_id=session_id, llm_call_count_token=_llm_call_count_token)
+            # 11.1b 累计落库已前移 react_cycle 每轮即时写(运行中DB实时)——此处 S2 不再重复 update_task/session_accumulation(防同批token翻倍累加), 仅保留 token_usage 明细 insert_token — 小欧 2026-08-20
             except Exception as _tok_e:
                 logger.warning(f"[Runner] token_usage 落库失败(task={task_id}): {_tok_e}")
 

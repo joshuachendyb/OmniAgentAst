@@ -104,6 +104,7 @@
 # 2026-08-18 - 小欧 - §10.4.4 P2/P3/P4/P5/P6: handle_react_error/empty_response/chunk_buffer_timeout 改 MetaStep(type="error")(删ErrorStep import); _dispatch_handler 改读 _kwargs 取 error_type; usage emit 处 append _usage_events; 各 error/retrying/usage 加 severity(warn/info)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: 任务起点(run_react_cycle)读 DB 一次缓存 _session_acc_base/_chain_acc_base 到 agent 并初始化 session/chain 累计=基线(无 LLM 调用任务也正确反映历史累计, 杜绝日志/前端误显 0); usage 块改用缓存基线(消除每轮双 DB 连接冗余读取); DB 异常降级为零基线不阻断主链路
 # 2026-08-20 - 小欧 - 真实缺陷复核三遍修复(review 3x 确认后按最佳不退化): ①A(遥测 usage 门控): on_llm_call/build_stats_step/context_overview 原置于 `if _usage` 内, 无 usage 响应时 llm_calls/stats/context_overview 全丢; 移出到 response 分支末尾必发(usage 存在行为完全不变, 纯增强), 补 isinstance 守卫 error/finish_reason 计算; ②C2(裁剪token死活): on_trim 原只传 bool -> 透传 message_builder._trimmed_tokens_this_round, 裁掉token数不再恒0。
+# 2026-08-20 - 小欧 - 11.1b 运行中DB即时落库(北京老陈裁定"每轮即时落库"): 每轮 emit usage(MetaStep type=usage) 后同步 update_task/session_accumulation 落库, 供运行中他方查询/断线中间态读取实时累计; DB 读-加-写(当前DB值+本轮token)与内存态基线口径一致, 会话缺 session_id 守卫跳过; DB 异常降级 warning 不阻断主链路; 配套 agent_runner S2 移除重复 update 防同批 token 翻倍累加
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -476,6 +477,17 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                     chain_accumulated_tokens=agent.chain_accumulated_tokens,       # 11.1 新增
                 )
                 yield agent._step_emitter.emit(_usage_step)
+
+                # 11.1b 运行中DB即时落库（每轮 update 任务/会话累计，供运行中他方查询/断线中间态读取）— 小欧 2026-08-20
+                #   用户裁定"每轮即时落库"; DB 读-加-写(当前DB值+本轮token) 与内存态基线口径一致;
+                #   DB 异常降级不阻断主链路; agent_runner S2 已同步移除 update 防重复累加(翻倍)。
+                try:
+                    with db.get_conn_with_retry("chat") as _conn_r:
+                        storage.update_task_accumulation(_conn_r, task_id=agent.task_id, llm_call_count_token=_llm_call_count_token)
+                        if getattr(agent, "_start_meta", None) and agent._start_meta.get("session_id"):
+                            storage.update_session_accumulation(_conn_r, session_id=agent._start_meta.get("session_id"), llm_call_count_token=_llm_call_count_token)
+                except Exception as _sce_e:
+                    logger.warning(f"[react_cycle] 每轮token累计落库失败(降级, 不影响主链路): {_sce_e}")
 
             # 11.2-C 遥测 + 11.2-B stats/11.3 context_overview —— 不依赖 usage，每次 LLM 响应必发（11.2-C 逐次明细）
             # 修复A(小欧 2026-08-20 复核确认): 原置于 usage 门控内, 无 usage 的响应 llm_calls/stats/context_overview 全丢,
