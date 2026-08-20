@@ -40,6 +40,7 @@
 #   load_user_message_by_task/get_task_detail/get_task_tool_stats/load_steps_by_task)
 # 2026-08-19 - 小欧 - 三堂会审Bug#2修复: insert_assistant_message INSERT列 reply_to_message_id→user_message_id
 #   (v2.2列改名后旧列名新库不存在, 执行即OperationalError; 模型字段名保留API层, DB列名对齐v2改名)
+# 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: ①import types; ②_EMPTY_TOKEN 改 types.MappingProxyType 冻结(防外部 mutate 污染全局); ③新增 _normalize_acc() 显式判键归一(parse_json('{}') 返 truthy 空对象, 原 `or dict` 不兜底致下游 _old['prompt_tokens'] KeyError 致命bug, 现统一归一含3键零值); ④query_task/session_accumulation 加 row 缺失守卫+改调 _normalize_acc; ⑤update_task/session_accumulation 加 rowcount==0 告警(检测累计静默丢失)
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -52,6 +53,7 @@ storage — 会话存储业务逻辑
 """
 
 import threading
+import types  # 11.1 冻结 token 零值常量, 防外部 mutate 污染全局 — 小欧 2026-08-20
 from typing import Any, Dict, Optional, Tuple
 from sqlite3 import Connection
 
@@ -488,6 +490,75 @@ def token_usage_insert(
          prompt_tokens or 0, completion_tokens or 0, total_tokens or 0,
          get_local_iso_timestamp()),
     )
+
+
+# ---- 11.1 token 四层同构：任务级/会话级实时累计 + 链级计算派生 — 小欧 2026-08-20 ----
+
+_EMPTY_TOKEN = types.MappingProxyType({"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})  # 11.1 冻结常量: 防外部 mutate 污染全局 — 小欧 2026-08-20
+
+
+def _normalize_acc(raw, label):
+    """解析 token 累计 JSON, 空对象/缺键/非法统一归一为含3键零值 — 小欧 2026-08-20
+    注: parse_json('{}') 返回 {} 为 truthy, 不能用 `or` 兜底(会漏 KeyError), 故显式判键"""
+    _p = parse_json(raw, label=label) if raw else None
+    if not isinstance(_p, dict) or "prompt_tokens" not in _p:
+        return dict(_EMPTY_TOKEN)
+    return _p
+
+
+def query_task_accumulation(conn: Connection, *, task_id: str) -> dict:
+    """读取任务级 token 当前累计值（JSON）— 11.1"""
+    row = conn.execute(
+        "SELECT task_accumulated_tokens FROM chat_tasks WHERE task_id = ?",
+        (task_id,)).fetchone()
+    if not row:  # 11.1 增强: 任务行缺失时返回零值, 避免 None 下标 TypeError 崩溃 — 小欧 2026-08-20
+        return dict(_EMPTY_TOKEN)
+    return _normalize_acc(row["task_accumulated_tokens"], label="task_acc")
+
+
+def query_session_accumulation(conn: Connection, *, session_id: str) -> dict:
+    """读取会话级 token 当前累计值（JSON）— 11.1"""
+    row = conn.execute(
+        "SELECT session_accumulated_tokens FROM chat_sessions WHERE id = ?",
+        (session_id,)).fetchone()
+    if not row:  # 11.1 增强: 会话行缺失时返回零值, 避免 None 下标 TypeError 崩溃 — 小欧 2026-08-20
+        return dict(_EMPTY_TOKEN)
+    return _normalize_acc(row["session_accumulated_tokens"], label="session_acc")
+
+
+def update_task_accumulation(conn: Connection, *, task_id: str, llm_call_count_token: dict) -> None:
+    """任务级 token 实时累计 — 11.1"""
+    _old = query_task_accumulation(conn, task_id=task_id)
+    _new = {k: _old[k] + int(llm_call_count_token.get(k) or 0)
+            for k in ("prompt_tokens", "completion_tokens", "total_tokens")}
+    _rc = conn.execute("UPDATE chat_tasks SET task_accumulated_tokens = ? WHERE task_id = ?",
+                       (safe_json_dumps(_new), task_id)).rowcount
+    if _rc == 0:  # 11.1 增强: 任务行缺失时 UPDATE 影响0行致累计静默丢失, 显式告警 — 小欧 2026-08-20
+        logger.warning(f"[storage] update_task_accumulation 影响0行(task={task_id}): 任务行可能缺失或列未落库")
+
+
+def update_session_accumulation(conn: Connection, *, session_id: str, llm_call_count_token: dict) -> None:
+    """会话级 token 实时累计 — 11.1"""
+    _old = query_session_accumulation(conn, session_id=session_id)
+    _new = {k: _old[k] + int(llm_call_count_token.get(k) or 0)
+            for k in ("prompt_tokens", "completion_tokens", "total_tokens")}
+    _rc = conn.execute("UPDATE chat_sessions SET session_accumulated_tokens = ? WHERE id = ?",
+                       (safe_json_dumps(_new), session_id)).rowcount
+    if _rc == 0:  # 11.1 增强: 会话行缺失时 UPDATE 影响0行致累计静默丢失, 显式告警 — 小欧 2026-08-20
+        logger.warning(f"[storage] update_session_accumulation 影响0行(session={session_id}): 会话行可能缺失或列未落库")
+
+
+def query_chain_accumulation(conn: Connection, *, context_root_task_id: str, current_task_id: str) -> dict:
+    """上下文链 token 累计（计算派生，不落库）— 11.1 满足 10.5-2 链根聚合语义
+    对同 context_root_task_id 的所有「已完成」任务聚合 token_usage（排除当前运行中任务），
+    independent 任务 context_root_task_id=自身 → 仅自身（清零重算）；linked 任务链根共享 → 全链 SUM。
+    """
+    _row = conn.execute(
+        "SELECT COALESCE(SUM(prompt_tokens),0) AS p, COALESCE(SUM(completion_tokens),0) AS c, COALESCE(SUM(total_tokens),0) AS t "
+        "FROM token_usage WHERE task_id IN (SELECT task_id FROM chat_tasks WHERE context_root_task_id = ?) "
+        "AND task_id <> ?",
+        (context_root_task_id, current_task_id)).fetchone()
+    return {"prompt_tokens": int(_row["p"] or 0), "completion_tokens": int(_row["c"] or 0), "total_tokens": int(_row["t"] or 0)}
 
 
 # ---- ②-4 chat_sessions model_override 生效 ----

@@ -28,6 +28,7 @@
 # 2026-08-19 - 小欧 - 迁移调用位置修正: 从 executescript 后移到 _ensure_column 之后、建索引之前,
 #   因 v2 迁移回灌 SET comprehension SELECT 依赖 _ensure_column 补的 client_os/timestamp 等列; 且
 #   建 chat_task_steps(ai_message_id) 索引需迁移改名后的新列, 故必须晚于补列、早于索引(修正初版时序错误)
+# 2026-08-20 - 小欧 - 11.1 token 四层同构: 新增 task_accumulated_tokens/session_accumulated_tokens 实时累计列(落库口径与 react_cycle 同源); 新增 _verify_acc_columns() 复核落库, 防 _ensure_column 隐性失败致隐性 OperationalError
 """
 db_initializer — 数据库初始化
 
@@ -164,6 +165,11 @@ def init_chat_db(get_conn):
         _ensure_column(conn, "chat_task_steps", "task_id", "TEXT")
         # ③ chat_sessions 补 model_override 列
         _ensure_column(conn, "chat_sessions", "model_override", "TEXT")    # L2 会话级模型覆盖落库点
+        # 11.1 token 四层同构：任务级/会话级实时累计列 — 小欧 2026-08-20
+        _ensure_column(conn, "chat_tasks", "task_accumulated_tokens", "TEXT DEFAULT '{}'")
+        _ensure_column(conn, "chat_sessions", "session_accumulated_tokens", "TEXT DEFAULT '{}'")
+        # 11.1 增强: 复核新增列确已落库, 缺失则显式抛出, 避免后续 SELECT/UPDATE 隐性 OperationalError 致任务链崩溃 — 小欧 2026-08-20
+        _verify_acc_columns(conn)
 
         # v2.0 结构迁移 — 小欧 2026-08-19
         #  ①必须在 _ensure_column 之后(_ensure_column 为回灌 SELECT 补齐 client_os/timestamp 等列)
@@ -321,3 +327,12 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, col_type: 
             logger.info(f"Added column {column} to table {table}")
     except Exception as e:
         logger.warning(f"Ensure column failed [{table}.{column}]: {e}")
+
+
+def _verify_acc_columns(conn: sqlite3.Connection) -> None:
+    """复核 11.1 token 累计列确已落库(防止 _ensure_column 隐性失败致后续 SELECT/UPDATE 隐性 OperationalError 崩溃) — 小欧 2026-08-20"""
+    _checks = [("chat_tasks", "task_accumulated_tokens"), ("chat_sessions", "session_accumulated_tokens")]
+    for _t, _c in _checks:
+        _rows = conn.execute(f"PRAGMA table_info({_t})").fetchall()
+        if _c.lower() not in {r["name"].lower() for r in _rows}:
+            raise RuntimeError(f"token 累计列缺失(迁移失败): {_t}.{_c}")
