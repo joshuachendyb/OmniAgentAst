@@ -41,6 +41,7 @@
 # 2026-08-19 - 小欧 - 三堂会审Bug#2修复: insert_assistant_message INSERT列 reply_to_message_id→user_message_id
 #   (v2.2列改名后旧列名新库不存在, 执行即OperationalError; 模型字段名保留API层, DB列名对齐v2改名)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: ①import types; ②_EMPTY_TOKEN 改 types.MappingProxyType 冻结(防外部 mutate 污染全局); ③新增 _normalize_acc() 显式判键归一(parse_json('{}') 返 truthy 空对象, 原 `or dict` 不兜底致下游 _old['prompt_tokens'] KeyError 致命bug, 现统一归一含3键零值); ④query_task/session_accumulation 加 row 缺失守卫+改调 _normalize_acc; ⑤update_task/session_accumulation 加 rowcount==0 告警(检测累计静默丢失)
+# 2026-08-20 - 小欧 - 11.1 测试驱动修复(_normalize_acc, 小欧单测 tests/test_token_accumulation_11_1.py 锁定): 原仅对非法/空对象归一, 对"含部分键"的 JSON(如 {'prompt_tokens':5})原样返回 → query 返回缺键 dict(违反设计11.1.2含3键零值)、update 下游 _old[k] KeyError 崩溃、react_cycle 基线 [k] KeyError 被 except 吞致历史累计静默清零; 现改为缺键统一补零并 int 强转, 保留已存键。3 用例(部分键归一/update不崩/基线)已加。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -499,11 +500,17 @@ _EMPTY_TOKEN = types.MappingProxyType({"prompt_tokens": 0, "completion_tokens": 
 
 def _normalize_acc(raw, label):
     """解析 token 累计 JSON, 空对象/缺键/非法统一归一为含3键零值 — 小欧 2026-08-20
-    注: parse_json('{}') 返回 {} 为 truthy, 不能用 `or` 兜底(会漏 KeyError), 故显式判键"""
+    注: parse_json('{}') 返回 {} 为 truthy, 不能用 `or` 兜底(会漏 KeyError), 故显式判键
+    11.1 增强(2026-08-20 小欧): 已存 dict 若只含部分键(如 {'prompt_tokens':5}), 缺键统一补零并强转 int,
+        保留已存键, 杜绝下游 update 的 _old[k] KeyError 与 react_cycle 基线 [k] KeyError(历史累计被静默清零)"""
     _p = parse_json(raw, label=label) if raw else None
     if not isinstance(_p, dict) or "prompt_tokens" not in _p:
         return dict(_EMPTY_TOKEN)
-    return _p
+    return {
+        "prompt_tokens": int(_p.get("prompt_tokens") or 0),
+        "completion_tokens": int(_p.get("completion_tokens") or 0),
+        "total_tokens": int(_p.get("total_tokens") or 0),
+    }
 
 
 def query_task_accumulation(conn: Connection, *, task_id: str) -> dict:
