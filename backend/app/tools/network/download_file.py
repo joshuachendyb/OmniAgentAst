@@ -12,6 +12,7 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#16: _stream_download抛的ValueError(文件过大/超过大小限制)落入catch-all归ERR_NET_UNKNOWN
 #   【病根】L119-128大小超限抛ValueError, 外层仅except Exception归ERR_NET_UNKNOWN("未知网络错误"), 分类与成因不符, 重试引擎可能无谓重试
 #   【改法】外层新增`except ValueError`分支, 归ERR_INVALID_PARAMS(输入/参数错误), hint给出"换用更小资源或分片"; 置于httpx异常分支后、Exception兜底前
+# 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(下载文件)
 """
 N2: download — 下载文件到本地
 
@@ -29,7 +30,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.network.http_client_sdk import create_http_client, HTTPClient, is_ssrf_blocked_error
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
@@ -234,6 +235,7 @@ async def download(
         # data = {}，无需额外字段 — 小欧 2026-07-06
         # =============================================================================
         llm_data = _build_download_file_llm_data("success", duration_ms, url, dest_path, downloaded, total_bytes, content_type, timeout=timeout, proxy=proxy, headers=headers)
+        with_artifact_file(llm_data, dest_path)   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # ---- observation_formatter route -------------------------------------------
         # branch: A-#0 empty data — 无字段，输出"详情:\n" + 空
         # trigger: data == {}

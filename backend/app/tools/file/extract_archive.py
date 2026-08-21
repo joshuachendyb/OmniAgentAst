@@ -9,6 +9,7 @@
 # 2026-08-13 - 小欧 - 修复task006核实: 格式支持性判断提前到 _resolve_output_dir/os.makedirs 之前,
 #   无效格式(如 .rar)直接返回"不支持的压缩格式", 不再对未知扩展名推断出与源文件同名的 out_dir,
 #   消除 os.makedirs 在已存在文件上建目录抛 FileExistsError(WinError 183) 的误导性错误
+# 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(解压输出目录)
 """
 F9: extract_archive — 解压文件
 
@@ -27,7 +28,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_EXTRACT
 
@@ -238,6 +239,7 @@ async def extract(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("success", duration_ms, source, user_destination=destination, user_overwrite=overwrite, extracted_files=result.get("extracted_files", 0), skipped_files=result.get("skipped_files", 0), fmt=result.get("format", ""))
+        with_artifact_file(llm_data, result["output_dir"])   # 11.6.1 产出物声明(解压目录) — 小欧 2026-08-21
         # extracted_files/skipped_files/format 已由 llm_data 承载, data 中不重复(2026-07-20)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)

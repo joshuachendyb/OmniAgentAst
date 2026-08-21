@@ -6,6 +6,7 @@
 # 2026-07-26 - 小沈 - BugFix #6: file_path_checker两行import合并为一行
 # 2026-07-31 - 小欧 - Bug⑪修复: _registered字体快照addfont后实时更新, 防同名字体(msyh.ttc/msyh.ttf)重复addfont | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(图表文件)
 """
 generate_chart — 使用matplotlib生成数据可视化图表
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -22,7 +23,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Union, Literal
 
 from app.utils.time_utils import timestamp_for_filename
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.tools.toolhelper.error_hints import hint_for_data_error
@@ -242,6 +243,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_generate_chart_llm_data("success", duration_ms, chart_type_lower, dest, file_size=file_size,
                                                     data=data, title=title, x_label=x_label, y_label=y_label)
+        with_artifact_file(llm_data, dest)   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # =============================================================================
         # 数据设计：dest 从 data 移除，通过 llm_data.summary 传递给 LLM
         # summary 示例: "成功生成bar图表: D:/chart.png"

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(截图文件)
 """
 screen_capture — 屏幕截图
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
@@ -21,7 +23,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from app.utils.time_utils import timestamp_for_filename
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 from app.logger import logger
 from app.tools.tool_constants import ERR_SCREENSHOT, ERR_SCREEN_SNAPSHOT
@@ -183,6 +185,7 @@ def screen_capture(dest: Optional[str] = None, region: Optional[Dict[str, int]] 
     monitor_count = result.pop("monitors", 0)
     display_val = result.pop("display", None)
     llm_data = _build_screen_capture_llm_data("success", duration_ms, image_path, region=region_val, display=display_val, monitor_count=monitor_count)
+    with_artifact_file(llm_data, image_path)   # 11.6.1 产出物声明 — 小欧 2026-08-21
     # ---- observation_formatter route -------------------------------------------
     # branch: #21 fallback (key:val)
     # trigger: 无上述20条分支匹配 — image_path/display/monitors 不命中专用分支

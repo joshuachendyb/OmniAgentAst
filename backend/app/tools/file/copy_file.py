@@ -21,6 +21,7 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#5: _copy_sync 的 copy2/copytree/rmtree/mkdir/os调用全链
 #   to_win_long_path 长路径化(仅NT生效), 深嵌套路径不再 WinError 206; 主函数目标存在探测/成功stat
 #   同步长路径化, 探测与操作口径一致(超长路径不误报"目标已存在"或stat失败)
+# 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
 """
 F7: copy_file — 复制文件
 
@@ -39,7 +40,7 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
 
@@ -209,6 +210,7 @@ async def copy(
                 except Exception:
                     pass
             llm_data = _build_copy_file_llm_data("success", duration_ms, source, destination=destination, extra_metrics=extra_m, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
+            with_artifact_file(llm_data, destination)   # 11.6.1 产出物声明 — 小欧 2026-08-21
             # ---- observation_formatter route -------------------------------------------
             # branch: #0 空data (L73)
             # trigger: data 为 {} → if not data: return ""
