@@ -11,6 +11,7 @@
 # 2026-08-20 - 小欧 - 真实缺陷复核三遍修复: ①B1: finalize 的 context_truncated 改任务级判定(self._trim_count>0),
 #   原读 _overview["truncated"]=末轮瞬时标志, 裁剪早于末轮漏报(现场 event 的 truncated 仍按 11.3 每轮语义不变);
 #   ②C1: finalize 新增输出 trim_count/trim_tokens, 原 on_trim 采集数据不进 finalize 成死链路。
+# 2026-08-21 - 小欧 - 11.6.3: _artifacts内存态收集+on_tool_call扩展artifacts参数+_merge_artifacts去重上限+build_final_stats_step真值
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -46,6 +47,7 @@ class TaskTelemetry:
         self._injected_context: Optional[Dict[str, int]] = None  # 跨任务注入基线（固定快照）
         self._trim_count = 0
         self._trim_tokens = 0
+        self._artifacts: List[Dict[str, str]] = []   # 任务产出物收集（内存态，终态随 final_stats / update_task 下发）— 小欧 2026-08-21
 
     # ── 生命周期钩子（由核心薄钩子调用）─────────────────────
     def on_start(self, start_time: Optional[float]) -> None:
@@ -87,13 +89,27 @@ class TaskTelemetry:
             self._trim_count += 1
             self._trim_tokens += int(trimmed_tokens or 0)
 
-    def on_tool_call(self, tool_name: str, success: bool, duration_seconds: float = 0.0) -> None:
+    def on_tool_call(self, tool_name: str, success: bool, duration_seconds: float = 0.0,
+                     artifacts: Optional[List[Dict[str, str]]] = None) -> None:
         """action 工具执行后聚合（权威数据源 = execution_result.llm_data.duration_ms/1000）"""
         _t = self._tool_stats.setdefault(tool_name, {"call_count": 0, "error_count": 0, "latency": 0.0})
         _t["call_count"] += 1
         if not success:
             _t["error_count"] += 1
         _t["latency"] += float(duration_seconds or 0)
+        if artifacts and isinstance(artifacts, list):
+            self._merge_artifacts(artifacts)
+
+    def _merge_artifacts(self, new_items: list) -> None:
+        """合并新产出物到内存态（去重+上限50）— 小欧 2026-08-21 SRP: 独立方法便于单测"""
+        for _a in new_items:
+            if not isinstance(_a, dict):
+                continue
+            _p = _a.get("path")
+            if _p and _p not in {x.get("path") for x in self._artifacts}:
+                self._artifacts.append(_a)
+        if len(self._artifacts) > 50:
+            self._artifacts = self._artifacts[:50]
 
     # ── 产出（SSE 事件，独立计算）─────────────────────────
     def build_stats_step(self):
@@ -123,7 +139,7 @@ class TaskTelemetry:
             type="final_stats",
             content="",
             duration=_duration,
-            artifacts=[],   # 现状恒 []（工具产出物收集未实施）；问题2 落地后从 agent 内存态收集的产物读取
+            artifacts=list(self._artifacts),   # 任务产出物：action_handler 经 on_tool_call 收集（内存态，单一来源）— 小欧 2026-08-21
             severity="info",
         )
 

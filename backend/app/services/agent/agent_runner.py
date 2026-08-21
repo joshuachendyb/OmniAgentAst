@@ -46,6 +46,7 @@
 # 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: token_usage 落库 llm_call_count 去掉 agent.llm_call_count 终值回退(改 `or 0`), 用记录时步号, 防多事件同名 step 致 token_usage 重复行
 # 2026-08-20 - 小欧 - 11.2-B start_time 同源透传: run_agent_in_background 将 stream_orchestrator 的 start_time 透传给 agent.run_react_cycle(原漏传 None), 任务真实起点同源, 供遥测首包时延/耗时计算与 stream_orchestrator 一致
 # 2026-08-20 - 小欧 - 11.1b 每轮即时落库的配套收敛(北京老陈裁定): 任务/会话 token 累计落库已前移 react_cycle 每轮即时写(运行中DB实时), 本文件 S2 的 finally 块不再重复调 update_task/session_accumulation(防同批 token 重复累加翻倍), 仅保留 token_usage 明细 insert_token
+# 2026-08-21 - 小欧 - 11.6.4: 终态 update_task 补传 artifacts(telemetry._artifacts 内存态)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -433,7 +434,8 @@ async def run_agent_in_background(
                         accumulated_usage=getattr(agent, "accumulated_usage", None),
                         llm_call_count=getattr(agent, "llm_call_count", 0),
                         total_steps=_total, retry_count=getattr(agent, "_retry_count", 0),
-                        error_type=_err_type, error_message=_err_msg)
+                        error_type=_err_type, error_message=_err_msg,
+                        artifacts=getattr(getattr(agent, "telemetry", None), "_artifacts", None))
 
                     # v2.0 改动2: 任务完成后回填 chat_user_message final 字段 — 小欧 2026-08-19
                     try:

@@ -43,6 +43,7 @@
 # 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: ①import types; ②_EMPTY_TOKEN 改 types.MappingProxyType 冻结(防外部 mutate 污染全局); ③新增 _normalize_acc() 显式判键归一(parse_json('{}') 返 truthy 空对象, 原 `or dict` 不兜底致下游 _old['prompt_tokens'] KeyError 致命bug, 现统一归一含3键零值); ④query_task/session_accumulation 加 row 缺失守卫+改调 _normalize_acc; ⑤update_task/session_accumulation 加 rowcount==0 告警(检测累计静默丢失)
 # 2026-08-20 - 小欧 - 11.1 测试驱动修复(_normalize_acc, 小欧单测 tests/test_token_accumulation_11_1.py 锁定): 原仅对非法/空对象归一, 对"含部分键"的 JSON(如 {'prompt_tokens':5})原样返回 → query 返回缺键 dict(违反设计11.1.2含3键零值)、update 下游 _old[k] KeyError 崩溃、react_cycle 基线 [k] KeyError 被 except 吞致历史累计静默清零; 现改为缺键统一补零并 int 强转, 保留已存键。3 用例(部分键归一/update不崩/基线)已加。
 # 2026-08-20 - 小欧 - 10.5 问题4/6 三堂会审落地: 新增 list_session_tasks(会话任务列表+总数, B1/问题6 任务数=用户消息数, chat_tasks 行数新口径) + list_session_trust(D1 信任清单) + delete_session_trust(D3 撤销信任)。
+# 2026-08-21 - 小欧 - 11.6.4: update_task 新增 artifacts 参数+safe_json_dumps 写库; get_task_detail parse_json 反序列化 artifacts 为 list
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -456,6 +457,7 @@ def update_task(
     accumulated_usage: Optional[Dict] = None, llm_call_count: Optional[int] = None,
     total_steps: Optional[int] = None, retry_count: Optional[int] = None,
     error_type: Optional[str] = None, error_message: Optional[str] = None,
+    artifacts: Optional[list] = None,
 ) -> None:
     """chat_tasks 任务终态 UPDATE（随任务结束，agent_runner finally 落库）— 幂等、缺省字段不覆盖 — 小欧 2026-08-16"""
     _f, _v = [], []
@@ -463,10 +465,10 @@ def update_task(
                      ("duration", duration), ("accumulated_usage", accumulated_usage),
                      ("llm_call_count", llm_call_count), ("total_steps", total_steps),
                      ("retry_count", retry_count), ("error_type", error_type),
-                     ("error_message", error_message)):
+                     ("error_message", error_message), ("artifacts", artifacts)):
         if _val is not None:
             _f.append(f"{_k} = ?")
-            _v.append(safe_json_dumps(_val) if _k == "accumulated_usage" else _val)
+            _v.append(safe_json_dumps(_val) if _k in ("accumulated_usage", "artifacts") else _val)
     if not _f:
         return
     _f.append("updated_at = ?"); _v.append(get_local_iso_timestamp())
@@ -725,7 +727,11 @@ def get_task_detail(conn: Connection, task_id: str) -> Optional[dict]:
     row = conn.execute(
         "SELECT * FROM chat_tasks WHERE task_id=?", (task_id,),
     ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    _r = dict(row)
+    _r["artifacts"] = parse_json(_r.get("artifacts")) if _r.get("artifacts") else []
+    return _r
 
 
 def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int]:

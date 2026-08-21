@@ -111,6 +111,7 @@
 # 2026-08-18 - 小欧 - §10.4.4 P3(错误全仅SSE): blocked/timeout/user_rejected/invalid_action 四处 ErrorStep→MetaStep(type="error", content=错误信息, error_type=); 删 ErrorStep import
 # 2026-08-18 - 小欧 - §10.4.4 P4(severity): error 四处加 severity="warn"; paused 加 severity="attention"; resumed 加 severity="info"
 # 2026-08-20 - 小欧 - 11.2-C 工具遥测回调(P0-2 修复): handle_action 执行结果处调用 agent.telemetry.on_tool_call(tool_name, success, duration), 供 tool_execution_seconds/task_tool_metrics 聚合(原未调用 → tool_execution_seconds 恒 0)
+# 2026-08-21 - 小欧 - 11.6.2: 回调循环扩展收集artifacts(工具自声明+target兜底派生); import os/extract_ext
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -126,7 +127,9 @@ action_handler — action类型处理（SRP拆分，模块级函数）
 """
 import asyncio
 import json   # 2026-08-18 小欧 新增(供 _format_llm_data_text)
+import os
 import time
+from app.tools.tool_response import extract_ext  # 2026-08-21 小欧 11.6.2 DRY: 扩展名提取复用 tool_response
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Set
 
@@ -606,10 +609,18 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 _tname = _call.get("tool_name", "") if isinstance(_call, dict) else ""
                 _ok = not isinstance(_res, Exception)
                 _dur = 0.0
+                _arts = None
                 if _ok and isinstance(_res, dict):
                     _llm_d = (_res.get("llm_data") or {})
                     _dur = float(_llm_d.get("duration_ms", 0) or 0) / 1000.0
-                _tele.on_tool_call(_tname, _ok, _dur)
+                    _act = _llm_d.get("action")
+                    if isinstance(_act, dict):
+                        # 工具自声明优先（with_artifacts 写入）；否则从 target 兜底派生 — 小欧 2026-08-20
+                        _arts = _act.get("artifacts")
+                        if not _arts and isinstance(_act.get("target"), str) and _act["target"]:
+                            _tgt = _act["target"]
+                            _arts = [{"name": os.path.basename(_tgt), "path": _tgt, "type": extract_ext(_tgt)}]
+                _tele.on_tool_call(_tname, _ok, _dur, artifacts=_arts)
 
         return results
 
