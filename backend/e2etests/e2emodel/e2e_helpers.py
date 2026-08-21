@@ -12,6 +12,18 @@
 #   【改法】①assert_stream_ended: 读final_event.outcome区分failed/cancelled/failed
 #          ②write_test_record: 读_final_outcome, 失败/取消时passed=False
 # 2026-08-19 - 小欧 - §10.4.4 流重构(chunk 承载 answer 文本, 同步 e2e 断言): send_chat 的 response_text 改由累加 chunk.content 得到(排除 is_reasoning), 不再依赖 final.content/response——final 现仅作终止符(只含 outcome/seq)。(注: 本文件为测试辅助, 按规不提交, 此条仅供本地可追溯)
+# 2026-08-21 - 小欧 - 北京老陈驱动: 对照v0.19.15→v0.19.21后端存储优化, 修正E2E记录/校验侧失配(M1-M5)。
+#   【病根】v0.19.18废除action_tool→action(tools[]={tool,target,params}); ObservationStep仅带tool_result;
+#          v0.19.19删chat_messages.execution_steps列; v0.19.21新增artifacts/token累计。但DB校验/记录侧仍按旧
+#          type=="action_tool"判断并读tool_name/tool_params/observation/execution_result/status顶层键, 致对真实
+#          action步骤完全不触发检查(假通过), 且observation/llm_call_count读错键恒空/恒1。
+#   【改法】check_db/verify_db_steps_data_completeness/verify_steps/verify_db_prompt_consistency 改用
+#          _is_action_step + _action_entries(读tools[].tool/params); observation读tool_result; 去掉步骤status检查;
+#          check_logs的llm_call_count改 len(LLM调用记录); write_test_record §5.2/§5.3 同步新字段。
+#          + verify_db_prompt_consistency 步骤数对比由全量(non-start/chunk)改为仅对齐 action+observation 数据步骤
+#            (prompt日志还记录 startinfo/usage/thought-start/chunk 等DB不持久化步骤, 全量对比为假阳性FAIL);
+#          + §7 观察结果数基线由 SSE工具数 改为 action步数(新协议单action步批量多工具, 观察按action步计)。
+#          (SSE/工具链侧 send_chat/_action_entries 已于2026-08-19适配, 本次不动; case脚本不动 — 北京老陈 2026-08-21 要求只改核心代码)
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
@@ -439,7 +451,10 @@ async def send_chat(
             "logical_step_count": len(logical_events),
             "unique_step_numbers": unique_step_numbers,
             "tool_calls": tool_calls,
-            "llm_call_count": len(tool_calls) + 1,
+            # 2026-08-21 小欧 修正: llm_call_count 应为「LLM调用次数」而非工具调用次数。
+            #   旧值 len(tool_calls)+1 把批量工具数当成LLM轮次(9_02误为5, 实3; com04误为39, 实13)。
+            #   真实LLM调用次数 = SSE中 usage 事件数(每次LLM完成必带一个usage), 与Prompt日志«LLM调用记录»一致。
+            "llm_call_count": sum(1 for e in events if e.get("type") == "usage") or (len(tool_calls) + 1),
             "total_time_ms": total_time_ms,
             "response_text": response_text,
             "reply": response_text,
@@ -577,7 +592,9 @@ def check_db(session_id: str) -> Dict[str, Any]:
     验证项:
       - session存在 + is_valid + created_at/updated_at合理
       - user message + assistant message都存在 + 顺序正确
-      - execution_steps中每个step的tool_name/tool_params/observation/status字段完整性
+      - execution_steps中每个step字段完整性:
+        action/action_tool步骤: tools[].tool/params 非空; observation步骤: tool_result 非空
+        (v0.19.18起 action_tool→action, observation 仅带 tool_result, 步骤无 status 字段)
     """
     result: Dict[str, Any] = {
         "session_exists": False,
@@ -637,26 +654,30 @@ def check_db(session_id: str) -> Dict[str, Any]:
 
                     for si, step in enumerate(steps):
                         step_type = step.get("type", "")
-                        if step_type == "action_tool":
-                            if not step.get("tool_name"):
+                        if _is_action_step(step):
+                            # 新协议 action: tools[]={tool,target,params}; 旧协议 action_tool: tool_name/tool_params
+                            _entries = _action_entries(step)
+                            if not _entries:
                                 result["step_field_issues"].append(
-                                    f"step[{si}]: tool_name empty(MUST)"
+                                    f"step[{si}](type={step_type}): 无工具调用信息(MUST)"
                                 )
-                            tp = step.get("tool_params")
-                            if not isinstance(tp, dict):
+                            for _ei, _en in enumerate(_entries):
+                                if not _en.get("tool_name"):
+                                    result["step_field_issues"].append(
+                                        f"step[{si}]#{_ei}: tool_name empty(MUST)"
+                                    )
+                                _tp = _en.get("tool_params")
+                                if not isinstance(_tp, dict):
+                                    result["step_field_issues"].append(
+                                        f"step[{si}]#{_ei}: tool_params非dict(MUST)"
+                                    )
+                        elif step_type == "observation":
+                            # 新协议 observation: 观察结果在 tool_result[]
+                            if not step.get("tool_result"):
                                 result["step_field_issues"].append(
-                                    f"step[{si}]: tool_params非dict(MUST)"
+                                    f"step[{si}]: tool_result empty(MUST)"
                                 )
-                            obs = step.get("observation") or step.get("execution_result")
-                            if not obs:
-                                result["step_field_issues"].append(
-                                    f"step[{si}]: observation empty(MUST)"
-                                )
-                        status = step.get("status")
-                        if status is not None and status not in ("success", "error"):
-                            result["step_field_issues"].append(
-                                f"step[{si}]: status abnormal={status}"
-                            )
+                        # 注: 步骤无 status 字段(终态由 final.outcome 表达), 不再校验 status
 
         # ── message order ──
         if user_first_idx is not None and assistant_first_idx is not None:
@@ -787,24 +808,19 @@ def verify_consistency(
         issues.append(f"tool_name完全不一致: SSE={sse_names}, DB={db_names}")
 
     # ── observation相似度>=80% ──
-    # SSE event有observation字段(dict)和content字段(格式化字符串), DB存的是dict
+    # 新协议 observation为独立 step, 观察结果在 tool_result[]; action 步骤不再内嵌 observation
     sse_obs_list = [
-        e.get("observation") or e.get("content", "")
+        e.get("tool_result") or e.get("observation") or e.get("content", "")
         for e in result["events"]
-        if e.get("type") in ("action", "action_tool")
-        and (e.get("observation") or e.get("content"))
+        if e.get("type") in ("action", "action_tool", "observation")
+        and (e.get("tool_result") or e.get("observation") or e.get("content"))
     ]
-    # 新协议 observation为独立step; 旧协议嵌入action_tool步骤
+    # 新协议 observation为独立 step, 观察结果在 tool_result[]
     db_obs_list = [
-        s.get("observation") or s.get("execution_result") or s.get("content", "")
+        s.get("tool_result") or s.get("observation") or s.get("execution_result") or s.get("content", "")
         for s in db_steps
         if s.get("type") == "observation"
-        and (s.get("observation") or s.get("execution_result") or s.get("content"))
-    ] + [
-        s.get("observation") or s.get("execution_result", "")
-        for s in db_steps
-        if _is_action_step(s)
-        and (s.get("observation") or s.get("execution_result"))
+        and (s.get("tool_result") or s.get("observation") or s.get("execution_result") or s.get("content"))
     ]
     if sse_obs_list and db_obs_list:
         for sse_obs in sse_obs_list:
@@ -852,14 +868,15 @@ def verify_db_prompt_consistency(
     session_id: str,
     user_msg_id: Optional[int] = None,
 ) -> List[str]:
-    """验证DB execution_steps与Prompt日志«执行步骤»严格一致性 -- 小健 2026-06-24
+    """验证DB execution_steps与Prompt日志«步骤产出»严格一致性 -- 小健 2026-06-24
 
     严格比较项:
       - 非chunk/start步骤数量必须完全一致
-      - 同步骤号: type, tool_name, tool_params必须完全一致
-      - action_tool步骤的execution_result必须完全一致
+      - 同步骤号: action 的 tool_name/tool_params 必须完全一致
+      - 同步骤号: observation 的 tool_result(错误码/状态) 必须一致
       - 步骤顺序必须完全一致
-    
+
+    v0.19.18起 action_tool→action(tools[]={tool,target,params}); observation 仅带 tool_result。
     v2.2: 增强严格性，不允许偏差
     """
     issues: List[str] = []
@@ -900,48 +917,76 @@ def verify_db_prompt_consistency(
         issues.append("Prompt日志«步骤产出»为空")
         return issues
 
-    # 非start/chunk步骤数对比
-    db_main = [s for s in db_steps if s.get("type") not in ("start", "chunk")]
-    log_main = [s for s in log_steps if s.get("步骤类型") not in ("start", "chunk")]
+    # action/observation步骤数对比(对齐到双方都有意义的数据步骤)
+    # v0.19.18起 prompt日志还会记录 startinfo/usage/thought-start/chunk 等 DB不持久化的步骤,
+    # 故不能用全量步骤数对比, 只能对齐 action/observation 两类数据步骤。
+    db_main = [s for s in db_steps if _is_action_step(s) or s.get("type") == "observation"]
+    log_main = [
+        s for s in log_steps
+        if s.get("步骤类型") in ("action", "observation")
+        or (isinstance(s.get("数据"), dict) and _is_action_step(s.get("数据")))
+    ]
 
     if len(db_main) != len(log_main):
         issues.append(
-            f"非chunk/start步骤数不一致(DB={len(db_main)}, Prompt日志={len(log_main)})(MUST)"
+            f"action/observation步骤数不一致(DB={len(db_main)}, Prompt日志={len(log_main)})(MUST)"
         )
 
-    # 按步骤号分组，只取action_tool，按位置对比
-    db_by_step: Dict[int, List[Dict]] = {}
-    log_by_step: Dict[int, List[Dict]] = {}
+    # 按步骤号分组: 收集每个 step 的 action 工具项(tool_name/tool_params) 与 observation 文本
+    # v0.19.18起 action/action_tool: tools[]={tool,target,params}; observation: tool_result[]
+    def _collect(step):
+        _acts = _action_entries(step) if _is_action_step(step) else []
+        _obs = ""
+        if step.get("type") == "observation":
+            _tr = step.get("tool_result")
+            _obs = _obs_to_text(_tr) if _tr else ""
+        return _acts, _obs
+
+    db_acts: Dict[int, List[Dict]] = {}
+    db_obs: Dict[int, str] = {}
     for s in db_steps:
         sn = s.get("step")
-        if sn is not None and s.get("type") == "action_tool":
-            db_by_step.setdefault(sn, []).append(s)
+        if sn is None:
+            continue
+        _a, _o = _collect(s)
+        if _a:
+            db_acts.setdefault(sn, []).extend(_a)
+        if _o:
+            db_obs[sn] = _o
+    log_acts: Dict[int, List[Dict]] = {}
+    log_obs: Dict[int, str] = {}
     for s in log_steps:
         sn = s.get("步骤")
-        if sn is not None:
-            evt = s.get("数据", {})
-            if isinstance(evt, dict) and evt.get("type") == "action_tool":
-                log_by_step.setdefault(sn, []).append(evt)
+        if sn is None:
+            continue
+        evt = s.get("数据", {})
+        if not isinstance(evt, dict):
+            continue
+        _a, _o = _collect(evt)
+        if _a:
+            log_acts.setdefault(sn, []).extend(_a)
+        if _o:
+            log_obs[sn] = _o
 
-    all_step_nums = set(db_by_step.keys()) | set(log_by_step.keys())
+    all_step_nums = set(db_acts.keys()) | set(log_acts.keys()) | set(db_obs.keys()) | set(log_obs.keys())
     for sn in sorted(all_step_nums):
-        db_actions = db_by_step.get(sn, [])
-        log_actions = log_by_step.get(sn, [])
+        db_actions = db_acts.get(sn, [])
+        log_actions = log_acts.get(sn, [])
 
-        # 数量对比
+        # action 数量对比
         if len(db_actions) != len(log_actions):
             issues.append(
-                f"步骤{sn} action_tool数量不一致(DB={len(db_actions)}, Prompt日志={len(log_actions)})(MUST)"
+                f"步骤{sn} action数量不一致(DB={len(db_actions)}, Prompt日志={len(log_actions)})(MUST)"
             )
 
         max_len = max(len(db_actions), len(log_actions))
         for i in range(max_len):
             # 哪边多出
             if i >= len(db_actions):
-                issues.append(f"步骤{sn} DB少第{i+1}个action_tool, Prompt日志多出(MUST)")
+                issues.append(f"步骤{sn} DB少第{i+1}个action, Prompt日志多出(MUST)")
                 continue
             if i >= len(log_actions):
-                issues.append(f"步骤{sn} DB多出第{i+1}个action_tool, Prompt日志缺少(MUST)")
+                issues.append(f"步骤{sn} DB多出第{i+1}个action, Prompt日志缺少(MUST)")
                 continue
 
             db_s = db_actions[i]
@@ -968,22 +1013,20 @@ def verify_db_prompt_consistency(
                     f"步骤{sn} 第{i+1}个tool_params不一致(DB={db_tp}, Prompt日志={log_tp})(MUST)"
                 )
 
-            # observation对比(仅位置匹配)
-            db_obs = db_s.get("observation") or db_s.get("execution_result", "")
-            log_obs = log_evt.get("execution_result") or log_evt.get("observation") or ""
-            db_str = str(db_obs)
-            log_str = str(log_obs)
-            if db_str and log_str:
-                db_upper = ''.join(c for c in db_str if c.isupper() or c == '_')
-                log_upper = ''.join(c for c in log_str if c.isupper() or c == '_')
-                if 'ERR' in db_upper and 'ERR' not in log_upper:
-                    issues.append(
-                        f"步骤{sn} 第{i+1}个observation错误码不匹配: DB含错误码, Prompt日志未含(MUST)"
-                    )
-                elif 'SUCCESS' in db_upper and 'SUCCESS' not in log_upper:
-                    issues.append(
-                        f"步骤{sn} 第{i+1}个observation状态不匹配: DB含SUCCESS, Prompt日志未含(MUST)"
-                    )
+        # observation 对比(同 step 号)
+        db_o = db_obs.get(sn, "")
+        log_o = log_obs.get(sn, "")
+        if db_o and log_o:
+            db_upper = ''.join(c for c in db_o if c.isupper() or c == '_')
+            log_upper = ''.join(c for c in log_o if c.isupper() or c == '_')
+            if 'ERR' in db_upper and 'ERR' not in log_upper:
+                issues.append(
+                    f"步骤{sn} observation错误码不匹配: DB含错误码, Prompt日志未含(MUST)"
+                )
+            elif 'SUCCESS' in db_upper and 'SUCCESS' not in log_upper:
+                issues.append(
+                    f"步骤{sn} observation状态不匹配: DB含SUCCESS, Prompt日志未含(MUST)"
+                )
 
     return issues
 
@@ -993,12 +1036,12 @@ def verify_db_steps_data_completeness(
 ) -> List[str]:
     """验证DB执行步骤数据完整性 -- 小健 2026-06-24
 
-    严格检查每个action_tool步骤的:
-      - tool_name不能为空
-      - tool_params必须存在且为dict
-      - observation/execution_result必须存在
-      - status必须为success或error
-      - step号必须存在
+    严格检查每个 action/action_tool 步骤的:
+      - tools[].tool 不能为空
+      - tools[].params 必须存在且为dict
+    每个 observation 步骤的:
+      - tool_result 不能为空
+    (v0.19.18起废除action_tool→action(tools[]={tool,target,params}); observation仅带tool_result; 步骤无status字段)
     """
     issues: List[str] = []
     
@@ -1012,32 +1055,28 @@ def verify_db_steps_data_completeness(
     for i, step in enumerate(db_steps):
         step_type = step.get("type", "")
         step_num = step.get("step", "")
-        
-        if step_type == "action_tool":
-            # tool_name检查
-            tool_name = step.get("tool_name", "")
-            if not tool_name:
-                issues.append(f"步骤{step_num}(index={i}): tool_name为空(MUST)")
-            
-            # tool_params检查
-            tool_params = step.get("tool_params")
-            if tool_params is None or not isinstance(tool_params, dict):
-                issues.append(f"步骤{step_num}(index={i}): tool_params为空或非dict(MUST)")
-            
-            # observation检查
-            obs = step.get("observation") or step.get("execution_result")
-            if not obs:
-                issues.append(f"步骤{step_num}(index={i}): observation/execution_result为空(MUST)")
-            
-            # status检查
-            status = step.get("status")
-            if status is not None and status not in ("success", "error"):
-                issues.append(f"步骤{step_num}(index={i}): status异常={status}(MUST)")
-            
-            # step号检查
-            if step_num is None:
-                issues.append(f"步骤(index={i}): step号缺失(MUST)")
-    
+
+        if _is_action_step(step):
+            # action/action_tool: 工具信息在 tools[]={tool,target,params}
+            _entries = _action_entries(step)
+            if not _entries:
+                issues.append(f"步骤{step_num}(index={i}): 无工具调用信息(MUST)")
+            for _ei, _en in enumerate(_entries):
+                tool_name = _en.get("tool_name", "")
+                if not tool_name:
+                    issues.append(f"步骤{step_num}(index={i})#{_ei}: tool_name为空(MUST)")
+                tool_params = _en.get("tool_params")
+                if tool_params is None or not isinstance(tool_params, dict):
+                    issues.append(f"步骤{step_num}(index={i})#{_ei}: tool_params为空或非dict(MUST)")
+        elif step_type == "observation":
+            # observation: 观察结果在 tool_result[]
+            if not step.get("tool_result"):
+                issues.append(f"步骤{step_num}(index={i}): tool_result为空(MUST)")
+
+        # step号检查
+        if step_num is None:
+            issues.append(f"步骤(index={i}): step号缺失(MUST)")
+
     return issues
 
 
@@ -1061,11 +1100,11 @@ def verify_steps(
 
     steps = db["execution_steps"]
 
-    # ── 步骤编号连续性(仅检查action_tool步骤,允许并行调用共享step号) ──
+    # ── 步骤编号连续性(仅检查action/action_tool步骤,允许并行调用共享step号) ──
     # 小欧 2026-06-16: LLM可以在一次响应中返回多个并行tool_call,共享同一个step号
     tool_step_nums = [
         s.get("step") for s in steps
-        if s.get("type") == "action_tool" and s.get("step") is not None
+        if _is_action_step(s) and s.get("step") is not None
     ]
     if len(tool_step_nums) >= 2:
         for i in range(len(tool_step_nums) - 1):
@@ -1074,12 +1113,16 @@ def verify_steps(
             if tool_step_nums[i + 1] < tool_step_nums[i]:
                 issues.append(f"工具步骤编号不递增: {tool_step_nums[i]}->{tool_step_nums[i+1]}")
 
-    # ── observation完整性 ──
+    # ── observation完整性: 每个 action 步骤应有同 step 号的 observation 步骤且 tool_result 非空 ──
+    obs_by_step = {
+        s.get("step"): s for s in steps if s.get("type") == "observation"
+    }
     for i, step in enumerate(steps):
-        if step.get("type") == "action_tool" and step.get("tool_name"):
-            obs = step.get("observation") or step.get("execution_result")
-            if not obs:
-                issues.append(f"step[{i}]({step.get('tool_name')}): 缺observation")
+        if _is_action_step(step):
+            sn = step.get("step")
+            obs = obs_by_step.get(sn)
+            if obs is None or not obs.get("tool_result"):
+                issues.append(f"step[{i}]({step.get('type')} step={sn}): 缺对应observation(tool_result)")
 
     return issues
 
@@ -1235,7 +1278,8 @@ def check_logs(
             for pf in recent[:1]:
                 try:
                     pdata = json.loads(pf.read_text(encoding="utf-8", errors="ignore"))
-                    result["llm_calls_found"] += pdata.get("llm_call_count", 0) or 1
+                    # Prompt日志顶层无 llm_call_count; LLM调用次数 = «LLM调用记录»数组长度
+                    result["llm_calls_found"] += len(pdata.get("LLM调用记录", [])) or 1
                 except Exception:
                     pass
 
@@ -1679,28 +1723,38 @@ def write_test_record(
         for i, s in enumerate(db_steps[:15]):
             s_step = s.get("step", "")
             s_type = s.get("type", "")
-            s_tool = s.get("tool_name", "")
-            s_status = s.get("status", "")
+            s_tool = ""
+            _entries = _action_entries(s) if _is_action_step(s) else []
+            if _entries:
+                s_tool = ", ".join(e.get("tool_name", "") for e in _entries)
+            # 步骤无 status 字段(终态由 final.outcome 表达); 此处留空
+            s_status = ""
             lines.append(f"| {i+1} | {s_step} | {s_type} | {s_tool} | {s_status} |")
         remaining = len(db_steps) - 15
         if remaining > 0:
             lines.append(f"| ... | (剩余{remaining}条) | | | |")
         lines.append("")
 
-        # 第5.3节：步骤数据内容（action_tool步骤）
-        action_steps = [s for s in db_steps if s.get("type") == "action_tool"]
-        if action_steps:
-            lines.append("### 5.3 步骤数据内容(action_tool)")
+        # 第5.3节：步骤数据内容（action 工具调用 + observation 观察结果）
+        action_steps = [s for s in db_steps if _is_action_step(s)]
+        obs_steps = [s for s in db_steps if s.get("type") == "observation"]
+        if action_steps or obs_steps:
+            lines.append("### 5.3 步骤数据内容(action/observation)")
             lines.append("")
-            for i, s in enumerate(action_steps):
-                tn = s.get("tool_name", "?")
-                tp = json.dumps(s.get("tool_params", {}), ensure_ascii=False)
-                obs_raw = s.get("observation") or s.get("execution_result", "")
-                obs_str = _obs_to_text(obs_raw) if obs_raw else "(空)"
-                lines.append(f"**步骤{s.get('step', '?')}: {tn}**")
-                lines.append(f"- 参数: `{tp}`")
+            for s in action_steps:
+                sn = s.get("step", "?")
+                for _en in _action_entries(s):
+                    tn = _en.get("tool_name", "?")
+                    tp = json.dumps(_en.get("tool_params", {}), ensure_ascii=False)
+                    lines.append(f"**步骤{sn}: {tn}**")
+                    lines.append(f"- 参数: `{tp}`")
+            for s in obs_steps:
+                sn = s.get("step", "?")
+                tr = s.get("tool_result")
+                obs_str = _obs_to_text(tr) if tr else "(空)"
+                lines.append(f"**步骤{sn}: observation**")
                 lines.append(f"- 观察结果: `{obs_str}`")
-                lines.append("")
+            lines.append("")
 
     # DB↔Prompt日志一致性(来自dpi参数或extra)
     db_prompt_issues = dpi if dpi is not None else (extra or {}).get("DbPromptIssues", [])
@@ -1813,6 +1867,7 @@ def write_test_record(
         for en in _action_entries(s)
     ]
     db_obs_count = sum(1 for s in db_steps if s.get("type") == "observation")
+    db_action_step_count = sum(1 for s in db_steps if _is_action_step(s))
     sse_tool_names = [t.get("tool_name", "") for t in tool_calls]
     log_llm_calls = log_check.get("llm_calls_found", 0)
     prompt_log_files = log_check.get("prompt_log_files", [])
@@ -1821,7 +1876,10 @@ def write_test_record(
     lines.append("|--------|-----|-----|------|----------|")
     lines.append(f"| 工具数量 | {len(db_tool_names)} | {len(sse_tool_names)} | {log_llm_calls}次LLM调用 | {'PASS' if abs(len(db_tool_names) - len(sse_tool_names)) <= 2 else 'FAIL'} |")
     lines.append(f"| 工具名称 | {db_tool_names[:5]} | {sse_tool_names[:5]} | - | {'PASS' if set(db_tool_names) & set(sse_tool_names) or (not db_tool_names and not sse_tool_names) else 'FAIL'} |")
-    lines.append(f"| 观察结果数 | {db_obs_count} | {len(tool_calls)} | - | {'PASS' if db_obs_count >= len(tool_calls) - 1 else 'WARN'} |")
+    # v0.19.18起 单action步骤可批量多工具, 观察结果按 action步骤 计(每action步1个observation), 故比对基线用 action步数 而非 工具数
+    # 纯对话(无action步)时无观察可比对, 直接PASS
+    _obs_ok = True if db_action_step_count == 0 else db_obs_count >= max(1, db_action_step_count - 1)
+    lines.append(f"| 观察结果数 | {db_obs_count} | {len(tool_calls)} (action步={db_action_step_count}) | - | {'PASS' if _obs_ok else 'WARN'} |")
     lines.append(f"| Prompt日志文件 | - | - | {prompt_log_files} | {'PASS' if prompt_log_files else 'WARN'} |")
     lines.append("")
 
