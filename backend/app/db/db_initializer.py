@@ -29,6 +29,7 @@
 #   因 v2 迁移回灌 SET comprehension SELECT 依赖 _ensure_column 补的 client_os/timestamp 等列; 且
 #   建 chat_task_steps(ai_message_id) 索引需迁移改名后的新列, 故必须晚于补列、早于索引(修正初版时序错误)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: 新增 task_accumulated_tokens/session_accumulated_tokens 实时累计列(落库口径与 react_cycle 同源); 新增 _verify_acc_columns() 复核落库, 防 _ensure_column 隐性失败致隐性 OperationalError
+# 2026-08-21 - 小欧 - 12.2-C1/C2/C5/Q7/Q8(按文档[1]12.2 diff设计落地): ①C1-D1 chat_task_steps去重+唯一索引(idx_steps_unique); ②C2-D1 token_usage去重+唯一索引(idx_token_usage_task_call); ③C5-D1 启动期空白AI行清扫(标败不删行); ④Q7-D2 init_operations_db拆分——移除timers DDL+新增init_timers_db独立函数(新库TEXT时间列=Q8落地); ⑤Q8-D1 新库timers.db三列TEXT(老列不动, SQLite不支持ALTER COLUMN)
 """
 db_initializer — 数据库初始化
 
@@ -202,11 +203,42 @@ def init_chat_db(get_conn):
         # chat_session_trust 索引
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_session ON chat_session_trust(session_id)")
 
+        # ===== 12.2-C1: 步骤唯一性下沉DB — 同一AI行×同一任务×同一序号恰一行 =====
+        # 老库先去重(保首行)再建唯一索引(均幂等); append_execution_step 保持裸INSERT不改,
+        # UNIQUE冲突即bug, fail-loud暴露(与database.py get_conn_with_retry 哲学一致) — 小欧 2026-08-21
+        conn.execute(
+            "DELETE FROM chat_task_steps WHERE rowid NOT IN ("
+            "  SELECT MIN(rowid) FROM chat_task_steps"
+            "  GROUP BY ai_message_id, IFNULL(task_id,''), step_index)")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_steps_unique "
+            "ON chat_task_steps(ai_message_id, task_id, step_index)")
+
+        # ===== 12.2-C2: token明细唯一性 — 同任务×同步号(llm_call_count实为记录时步号)恰一行 =====
+        # 老库先去重再建唯一索引(均幂等); task_id为NOT NULL列无NULL分组歧义 — 小欧 2026-08-21
+        conn.execute(
+            "DELETE FROM token_usage WHERE rowid NOT IN ("
+            "  SELECT MIN(rowid) FROM token_usage GROUP BY task_id, llm_call_count)")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_task_call "
+            "ON token_usage(task_id, llm_call_count)")
+
+        # ===== 12.2-C5: 启动期清扫崩溃残留空白AI行 =====
+        # 标败不删行(保引用完整性/message_count诚实), 幂等可重复执行;
+        # 与 derive_status_from_steps"空/无final判failed"同哲学(fail-safe) — 小欧 2026-08-21
+        conn.execute(
+            "UPDATE chat_messages SET status='failed', "
+            "content=CASE WHEN content='' THEN '(任务中断，未产生输出)' ELSE content END "
+            "WHERE role='assistant' AND status IS NULL")
+
         # v2.0: 旧 execution_steps 列退役(结构迁移已前移至索引之前执行) — 小欧 2026-08-19
 
 
 def init_operations_db(get_conn):
-    """初始化操作数据库"""
+    """初始化操作数据库（文件操作域）
+    历史遗留说明(12.2-Q8): 老 operations.db 中 file_operations 时间列为 TEXT(本地ISO无Z)、
+    timers 表时间列为 TIMESTAMP(实存本地ISO TEXT, NUMERIC亲和) — 类型混用为历史遗留,
+    SQLite 不支持 ALTER COLUMN 故老列不动; 新库一律 TEXT。— 小欧 2026-08-21 (12.2-Q7 拆分)"""
     with get_conn("operations") as conn:
         conn.executescript('''
             CREATE TABLE IF NOT EXISTS file_operations (
@@ -233,19 +265,25 @@ def init_operations_db(get_conn):
                 sequence_number INTEGER DEFAULT 0
             );
             
+            CREATE INDEX IF NOT EXISTS idx_operations_session ON file_operations(task_id);
+            CREATE INDEX IF NOT EXISTS idx_operations_created ON file_operations(created_at);
+        ''')
+
+
+def init_timers_db(get_conn):
+    """初始化定时器数据库（独立域）— 12.2-Q7 新增 — 小欧 2026-08-21"""
+    with get_conn("timers") as conn:
+        conn.executescript('''
             CREATE TABLE IF NOT EXISTS timers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timer_id TEXT UNIQUE NOT NULL,
                 delay REAL NOT NULL,
                 callback TEXT NOT NULL DEFAULT '',
-                created_at TIMESTAMP NOT NULL,
-                trigger_at TIMESTAMP NOT NULL,
-                triggered_at TIMESTAMP,
+                created_at TEXT NOT NULL,   -- 本地ISO无Z (12.2-Q8: 新表一律TEXT)
+                trigger_at TEXT NOT NULL,   -- 本地ISO无Z (12.2-Q8)
+                triggered_at TEXT,          -- 本地ISO无Z (12.2-Q8)
                 status TEXT NOT NULL DEFAULT 'active'
             );
-
-            CREATE INDEX IF NOT EXISTS idx_operations_session ON file_operations(task_id);
-            CREATE INDEX IF NOT EXISTS idx_operations_created ON file_operations(created_at);
         ''')
 
 

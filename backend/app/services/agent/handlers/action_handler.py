@@ -112,6 +112,11 @@
 # 2026-08-18 - 小欧 - §10.4.4 P4(severity): error 四处加 severity="warn"; paused 加 severity="attention"; resumed 加 severity="info"
 # 2026-08-20 - 小欧 - 11.2-C 工具遥测回调(P0-2 修复): handle_action 执行结果处调用 agent.telemetry.on_tool_call(tool_name, success, duration), 供 tool_execution_seconds/task_tool_metrics 聚合(原未调用 → tool_execution_seconds 恒 0)
 # 2026-08-21 - 小欧 - 11.6.2: 回调循环扩展收集artifacts(工具自声明+target兜底派生); import os/extract_ext
+# 2026-08-21 - 小欧 - 12.2-Q1-D2(已撤销): 原设计将_operation_id经build_extra传action_handler双表贯通,
+#   但_operation_id是内部ID不应出现在给LLM的工具返回中(违反SRP:工具返回只服务LLM观察)。
+#   撤销: 删除result.get/pop _operation_id逻辑+白名单_file_tool_names+operation_id参数传递;
+#   record_operation不再传operation_id(由内部UUID生成, 双表贯通暂断, 后续如需恢复应改用side channel而非LLM可见返回)
+#   连带: 删除db导入依赖(operations/task_tracker仅预取块使用, 删除后无其他消费点)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -702,48 +707,6 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
             reasoning=_fc.get("llm_reasoning", "") or None,
         )
 
-    # ==========================================================================
-    # op_id 双表贯通（纯内部逻辑，与 LLM 返回结构零耦合） — 小欧 2026-07-16
-    # 目标：让同一文件操作在 file_operations 与 task_operations 两表共享同一
-    #       operation_id（双表同号），实现"一个文件操作、两个维度"的精确关联。
-    # 为什么需要 _file_tool_names 白名单（硬编码 6 个文件工具名）？
-    #   - 只有这 6 个文件工具会在内部调用 record_operation 写入 file_operations；
-    #   - 非文件工具（searchtool/sysinfo/timer/sql…）不写 file_operations，
-    #     若也去取 op_id 会"误关联"文件操作的 op_id；
-    #   - 白名单用于判定"当前 call 是否参与贯通"，把贯通精准限定在文件类工具维度。
-    #   - 硬编码而非查 registry：action_handler 只有 tool_name 字符串，查 category
-    #     需额外引入/遍历；硬编码最直接(KISS/YAGNI)。代价：新增文件工具需同步此集合。
-    # 解决的两个真实 bug（unit-02 暴露）：
-    #   1) 非文件工具误关联：原实现每个 call 都查 file_operations「最新」op_id，
-    #      导致 searchtool 抢走 write_docx 的 op_id 写进 task_operations（错误关联）；
-    #   2) 多文件工具同轮撞 UNIQUE：同轮多个文件工具抢同一 op_id →
-    #      "UNIQUE constraint failed: task_operations.operation_id"。
-    # 处理逻辑（三步）：
-    #   [预取] 取本 task 在 file_operations 中「尚未写入 task_operations」的 op_id，
-    #          按 created_at/rowid 升序排成候选队列 _pending_op_ids；
-    #   [分配] 循环内：仅文件类工具(call 在白名单)按 call 顺序 pop(0) 取一个候选，
-    #          非文件类工具 op_id=None 由 record_operation 内部自生成；
-    #   [写入] 用取出的 op_id 调 record_operation 写 task_operations，实现双表同号。
-    #   文件工具 call 顺序 == file_operations 写入顺序，故 pop 精确一一对应，不撞车。
-    # ==========================================================================
-    # op_id 双表贯通 — 预取未消耗候选队列
-    _file_tool_names = {"delete", "copy", "move", "edittext", "writetext", "compress"}
-    _pending_op_ids = []
-    try:
-        with db.get_conn("operations") as _cf:
-            _fo = _cf.execute(
-                "SELECT operation_id FROM file_operations WHERE task_id = ? "
-                "ORDER BY created_at ASC, rowid ASC", (ctx.agent.task_id,),
-            ).fetchall()
-        with db.get_conn("task_tracker") as _ct:
-            _used = set(r[0] for r in _ct.execute(
-                "SELECT operation_id FROM task_operations WHERE task_id = ?",
-                (ctx.agent.task_id,)).fetchall())
-        _pending_op_ids = [r[0] for r in _fo if r[0] not in _used]
-    except Exception as _e:
-        logger.warning(f"[action_handler] 查询 operation_id 候选失败: {_e}")
-        _pending_op_ids = []
-
     for call, result in zip(ctx.all_calls, ctx.results):
         if isinstance(result, Exception):
             obs_text = f"Observation: 工具{call.get('tool_name', '?')}执行异常: {result}"
@@ -762,13 +725,10 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
             tool_params=call.get("tool_params", {}), round_number=ctx.step, raw_data=result,
         )
         _tool = call.get("tool_name", "?")
-        _op_id = None
-        if _tool in _file_tool_names and _pending_op_ids:
-            _op_id = _pending_op_ids.pop(0)
         ctx.agent.record_operation(
             _tool,
             status=OperationStatus.FAILED.value if _is_failed else OperationStatus.SUCCESS.value,
-            error=str(result) if _is_failed else None, operation_id=_op_id,
+            error=str(result) if _is_failed else None,
         )
         repair_warning = call.get("_repair_warning", "")
         if repair_warning:

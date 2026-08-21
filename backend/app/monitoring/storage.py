@@ -6,6 +6,11 @@
 # 2026-08-20 - 小欧 - 真实缺陷复核三遍修复: ①C1: task_metrics 增 trim_count/trim_tokens 列(DDL + persist _cols + PRAGMA 幂等补列迁移, 兼容老库);
 #   ②F: persist_tool_metrics 的 ON CONFLICT 由累积(`+=excluded`)改 latest-wins(`=excluded`), 与 persist_task_metrics 的 REPLACE 语义一致,
 #   消除冗余持久化(同一 task_id 落两次)时 tool 指标翻倍而汇总只留最新的不一致。
+# 2026-08-21 - 小欧 - 12.2-Q5/Q2/Q9(按文档[1]12.2 diff设计落地): ①Q5-D1 init_monitoring_db executescript 追加
+#   llm_calls 老库去重(task_id IS NOT NULL 限定防NULL分组误删)+唯一索引 idx_llm_calls_task_call(task_id,call_index);
+#   ②Q5-D2 persist_llm_calls INSERT→INSERT OR IGNORE(finalize_and_persist 重入不再翻倍, 与 task_metrics REPLACE/
+#   task_tool_metrics latest-wins 三表防重语义对齐); ③Q9-D1 persist_http_request docstring 补服务级指标定位声明;
+#   ④Q2-D4 http flush 失败 warning→error 提级留痕(保持降级不阻断)。
 """监控独立库 monitoring.db 落库层（独立模块）—— 小欧 2026-08-20
 
 - 库路径由 database.py._db_paths["monitoring"] 注册，复用 get_conn("monitoring")（WAL+闸门+退避全复用）。
@@ -66,6 +71,10 @@ def init_monitoring_db(get_conn) -> None:
             CREATE INDEX IF NOT EXISTS idx_http_path_ts ON http_requests(path, timestamp);
             CREATE INDEX IF NOT EXISTS idx_llm_task_ts ON llm_calls(task_id, timestamp);
             CREATE INDEX IF NOT EXISTS idx_metrics_name_ts ON metrics(name, timestamp);
+            -- 12.2-Q5: llm_calls 防重入重复行 — 老库先去重(保首行)再建唯一索引(均幂等) — 小欧 2026-08-21
+            DELETE FROM llm_calls WHERE task_id IS NOT NULL AND rowid NOT IN
+                (SELECT MIN(rowid) FROM llm_calls WHERE task_id IS NOT NULL GROUP BY task_id, call_index);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_calls_task_call ON llm_calls(task_id, call_index);
         ''')
         conn.execute("INSERT OR IGNORE INTO monitoring_meta(version) VALUES (1)")
         # C1修复(小欧 2026-08-20 复核确认): task_metrics 增 trim_count/trim_tokens 列 —— 老库幂等补列迁移
@@ -112,7 +121,7 @@ def persist_llm_calls(rows: List[Dict[str, Any]]) -> None:
     with _db.get_conn_with_retry("monitoring") as conn:
         for r in rows:
             conn.execute(
-                "INSERT INTO llm_calls(task_id, session_id, model, provider, call_index, duration_seconds, "
+                "INSERT OR IGNORE INTO llm_calls(task_id, session_id, model, provider, call_index, duration_seconds, "  # 12.2-Q5: 重入安全(依赖idx_llm_calls_task_call唯一索引) — 小欧 2026-08-21
                 "prompt_tokens, completion_tokens, total_tokens, error_type, finish_reason, timestamp) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (r["task_id"], r["session_id"], r["model"], r["provider"], r["call_index"],
@@ -123,7 +132,10 @@ def persist_llm_calls(rows: List[Dict[str, Any]]) -> None:
 
 def persist_http_request(method: str, path: str, status_code: int, kind: str,
                          duration: float, request_size: int = 0, response_size: int = 0) -> None:
-    """middleware 每请求后 flush 一行（原始 + 计数器入 metrics 表）；非阻塞降级"""
+    """middleware 每请求后 flush 一行（原始 + 计数器入 metrics 表）；非阻塞降级
+    定位声明(12.2-Q9): 本表为服务级流量指标, 不关联 task_id/session_id —— middleware
+    运行于任务上下文之外; 如需任务级 HTTP 关联, 另立 ContextVar 方案设计再实施。
+    — 小欧 2026-08-21"""
     from datetime import datetime
     from app.db import db as _db   # DatabaseManager 单例 — 小欧 2026-08-20 修正
     try:
@@ -141,4 +153,4 @@ def persist_http_request(method: str, path: str, status_code: int, kind: str,
             )
     except Exception as _e:
         from app.logger import logger
-        logger.warning(f"[monitoring.storage] http flush 失败(降级): {_e!r}")
+        logger.error(f"[monitoring.storage] http flush 失败(降级不阻塞主链路, 数据缺失可凭此日志追溯): {_e!r}")  # 12.2-Q2: warning→error提级留痕 — 小欧 2026-08-21

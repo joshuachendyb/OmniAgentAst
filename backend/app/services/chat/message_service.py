@@ -6,6 +6,8 @@
 # 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.3+9.6): save_message删除execution_steps列写入;
 #   user消息同步写chat_user_message(user_message_id=cursor.lastrowid一对一贯通, 根除两套自增id错位P0-2);
 #   合并重复的 if role=="user" 判断块(DRY, 三堂会审Bug#9)
+# 2026-08-21 - 小欧 - 12.2-Q6-D1(按文档[1]12.2 diff设计落地): chat_sessions.message_count 绝对值覆盖→SQL自增
+#   (message_count + 1), 与 storage.py allocate 路径同口径, 消除并发写入丢计数; new_message_count 保留供返回值
 """
 message_service — 消息业务服务(services/chat)
 
@@ -145,9 +147,10 @@ def save_message(session_id: str, message):
                 logger.warning(f"[save_message] 写chat_user_message失败(session={session_id}): {_um_e}")
             _track_user_message(session_id, message_id)
 
+        # 12.2-Q6附带修复: 绝对值覆盖→SQL自增(与storage.py:297 allocate路径同口径), 消除并发丢计数 — 小欧 2026-08-21
         cursor.execute(
-            "UPDATE chat_sessions SET message_count = ?, updated_at = ? WHERE id = ?",
-            (new_message_count, local_time, session_id))
+            "UPDATE chat_sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?",
+            (local_time, session_id))
 
         _try_mark_valid(cursor, session_id)
 

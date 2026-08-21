@@ -3,6 +3,10 @@
 # 2026-07-31 - 小欧 - 新增 CALLBACK_MAX_LENGTH 限制(4096字符), 防止回调内容过长导致执行失败
 # 2026-08-05 - 小欧 - 修复: _invoke_timer_callback 外层 except httpx.TimeoutException 在文本提醒(log_message)分支引用未导入的 httpx, 分支异常时触发 UnboundLocalError 掩盖真实错误; 将该 except 移入 http 分支内部(httpx 导入处), 文本分支异常统一由外层 except Exception 捕获
 # 2026-08-08 - 小欧 - 全程统一本地时区: 落盘/事件时间戳 astimezone()→本地ISO无Z(L39/L113/L117/L127/L143); trigger_at 改 naive 本地
+# 2026-08-21 - 小欧 - 12.2-Q2-D1/D2(按文档[1]12.2 diff设计落地): _timer_cb 触发状态 UPDATE 与 INSERT OR REPLACE
+#   两处 except 静默 pass→logger.error 提级留痕(带 timer_id+失败后果说明), 内存定时器行为零改动, 仅补可追溯性
+# 2026-08-21 - 小欧 - 12.2-Q7-D4(按文档[1]12.2 diff设计落地): 两处 db.get_conn("operations")→db.get_conn("timers"),
+#   定时器写入切换到 timers.db 独立库(SRP); 文档漏 timer_list.py 同款修改(读者一致性) — 小欧 2026-08-21
 """
 timer_set — 设置定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
@@ -125,10 +129,10 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
                 async with _timer_lock:
                     _timer_events.append(event)
                 try:
-                    with db.get_conn("operations") as conn:
+                    with db.get_conn("timers") as conn:
                         conn.execute("UPDATE timers SET status='triggered', triggered_at=? WHERE timer_id=?", (get_local_iso_timestamp(), timer_id))
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.error(f"[timer_set] 触发状态落库失败 timer_id={timer_id}(定时器已触发, 仅DB状态残留active, 可凭此日志追溯): {_e!r}")  # 12.2-Q2: 静默pass→error提级留痕 — 小欧 2026-08-21
 
             def _safe_cb():
                 try:
@@ -141,11 +145,11 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
             _timers[timer_id] = timer_handle
 
         try:
-            with db.get_conn("operations") as conn:
+            with db.get_conn("timers") as conn:
                 conn.execute("INSERT OR REPLACE INTO timers (timer_id, delay, callback, created_at, trigger_at, status) VALUES (?, ?, ?, ?, ?, 'active')",
                              (timer_id, delay, callback, get_local_iso_timestamp(), trigger_at.isoformat()))
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.error(f"[timer_set] 定时器落库失败 timer_id={timer_id}(内存定时器仍会触发, 重启后丢失, 可凭此日志追溯): {_e!r}")  # 12.2-Q2: 静默pass→error提级留痕 — 小欧 2026-08-21
 
         trigger_at_str = trigger_at.strftime("%Y-%m-%d %H:%M:%S")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

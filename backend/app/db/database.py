@@ -21,6 +21,7 @@
 #   【改法】①get_conn新增max_retries: 连接获取期(a)与commit期(b)对"locked"指数退避(0.5/1/2s), 47处调用零改动即获重试能力(DRY); ②get_conn_with_retry改为get_conn薄包装(仅透传, 单次yield)
 #   【合规】DRY+KISS-DIRECT+SRP
 # 2026-08-20 - 小欧 - 11.2-C 监控独立库: _db_paths["monitoring"] 注册 monitoring.db + import init_monitoring_db(启动统一初始化), 复用 get_conn/get_conn_with_retry 闸门
+# 2026-08-21 - 小欧 - 12.2-Q7/Q10(按文档[1]12.2 diff设计落地): ①Q10-D1 删observer条目+Q10-D2删init_observer方法(零调用方); ②Q7-D1 _db_paths加timers条目(timers.db独立库); ③Q7-D3 import加init_timers_db+init()内注册(紧跟init_operations_db之后) — 小欧 2026-08-21
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -53,7 +54,7 @@ from typing import Iterator
 from app.logger import logger
 from app.utils.time_utils import to_local_iso  # 小欧 2026-08-08: datetime/date 归一化为本地ISO无Z
 from app.db.db_initializer import (
-    init_chat_db, init_operations_db, init_task_tracker_db,
+    init_chat_db, init_operations_db, init_task_tracker_db, init_timers_db,  # 12.2-Q7: 加 init_timers_db — 小欧 2026-08-21
 )
 from app.monitoring.storage import init_monitoring_db  # 11.2-C 监控独立库 init — 小欧 2026-08-20
 
@@ -117,7 +118,7 @@ class DatabaseManager:
         self._db_paths = {
             "chat": self._db_dir / "chat_history.db",
             "operations": self._db_dir / "operations.db",
-            "observer": self._db_dir / "tool_observer.db",
+            "timers": self._db_dir / "timers.db",   # 12.2-Q7: 定时器独立库(SRP一库一域) — 小欧 2026-08-21
             "task_tracker": self._db_dir / "task_tracker.db",
             "monitoring": self._db_dir / "monitoring.db",   # 11.2-C 监控独立库 — 小欧 2026-08-20
         }
@@ -261,6 +262,9 @@ class DatabaseManager:
         _tb = _time.time()
         init_operations_db(self.get_conn)
         logger.info(f"[启动耗时] init_operations_db: {_time.time()-_tb:.3f}s")
+        _tt = _time.time()
+        init_timers_db(self.get_conn)
+        logger.info(f"[启动耗时] init_timers_db: {_time.time()-_tt:.3f}s")
         _tc = _time.time()
         init_task_tracker_db(self.get_conn)
         logger.info(f"[启动耗时] init_task_tracker_db: {_time.time()-_tc:.3f}s")
@@ -269,10 +273,6 @@ class DatabaseManager:
         logger.info(f"[启动耗时] init_monitoring_db: {_time.time()-_tm:.3f}s")
         logger.info(f"[启动耗时] db.init 合计: {_time.time()-_ta:.3f}s")
         logger.info("All databases initialized successfully")
-    
-    def init_observer(self):
-        """初始化observer数据库(后续实现ToolObserver时调用)"""
-        logger.info("Observer database initialized (placeholder)")
 
 
 # 全局SDK实例(唯一入口)

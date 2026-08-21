@@ -54,6 +54,11 @@
 #   insert_task后回填chat_messages.task_id(改动7)、_db_ops注入user_msg_id(供agent_runner回填chat_user_message)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: 两 db_ops lambda(insert_task/update_task)改用 storage.query_task/session_accumulation 读真实累计(去重 parse_json), 与 react_cycle 同源基线; 会话级首调用回退 task 累计
 # 2026-08-20 - 小欧 - 11.1 修复: db_ops.update_task_accumulation/update_session_accumulation 闭包已绑 task_id/session_id, 原 agent_runner 又经 kwargs 重传致 Python "got multiple values" TypeError 被 except 吞掉→累计永不入DB; 去掉闭包绑定, 改由调用方经 **kw 传入(单一归属, KISS)
+# 2026-08-21 - 小欧 - 12.2-Q3/C4(按文档[1]12.2 diff设计落地): ①Q3-D1 :83 导入追加 query_task_accumulation +
+#   db_ops 命名空间新增 query_task_acc 条目(终态快照从权威累计列派生); ②C4-D1 编排⑨ eager 分配 assistant 行
+#   (allocate_and_insert_message)+创建时即 UPDATE chat_tasks.ai_message_id, _ai_message_id 经 run_agent_in_background
+#   新参注入; ③C4 连带清理——db_ops 删 allocate_and_insert 条目(唯一消费点 agent_runner 惰性分支已随 C4-D3 删除)、
+#   删 save_steps 条目及 :87 save_execution_steps_to_db 导入(grep 证实仅服务该条目; sse_events 函数本体保留)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -80,11 +85,10 @@ from app.services.agent.universal_agent import UniversalAgent
 from app.services.task.task_state import create_stream_buffer, get_stream_buffer
 from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
-from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, finalize_message
+from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, finalize_message, query_task_accumulation  # 12.2-Q3: 追加权威累计查询 — 小欧 2026-08-21
 from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_session_model_override, get_previous_task_chain  # S1/S2 任务级读写(10.1.4/10.1.7②) — 小欧 2026-08-16
 from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # 11.1 token 四层同构累计 — 小欧 2026-08-20
 from app.db import db  # 小健 2026-08-17 三堂会审-A1修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
-from app.services.chat.sse_events import save_execution_steps_to_db
 from app.services.chat.stream_reader import _load_previous_messages, _log_task_end
 
 
@@ -249,10 +253,8 @@ async def chat_stream_orchestrator(
         #   10.1.7②-1 9属性(任务级读写扩展) — 小欧 2026-08-16
         import types as _types
         _db_ops = _types.SimpleNamespace(
-            allocate_and_insert=lambda c, sid: allocate_and_insert_message(c, sid, task_id, user_message_id=_user_msg_id),  # v2.0 9.4: 加 user_message_id — 小欧 2026-08-19
             append_step=lambda c, mid, sid, idx, d, usage=None: append_execution_step(c, mid, sid, idx, d, task_id, usage=usage, user_message_id=_user_msg_id),  # _user_msg_id即chat_user_message.id（与chat_messages.id一对一）— 小健 2026-08-19 P1-4
             finalize=finalize_message,
-            save_steps=save_execution_steps_to_db,
             load_previous=lambda sid: _load_previous_messages(  # 任务上下文过滤(10.1.4⑤⑥)，经闭包注入链路计算的 context 两字段+上界(_user_msg_id)
                 sid, context_link_mode=context_link_mode, context_root_task_id=_context_root_task_id,
                 upper_message_id=_user_msg_id),
@@ -270,6 +272,7 @@ async def chat_stream_orchestrator(
                 model=agent.llm_client.model, provider=agent.llm_client.provider, **kw),
             update_task_accumulation=lambda c, **kw: update_task_accumulation(c, **kw),  # 11.1 任务级token累计(去闭包双重绑定, 由调用方经**kw传task_id)
             update_session_accumulation=lambda c, **kw: update_session_accumulation(c, **kw),  # 11.1 会话级token累计(去闭包双重绑定, 由调用方经**kw传session_id)
+            query_task_acc=lambda c, **kw: query_task_accumulation(c, **kw),  # 12.2-Q3/C3: 终态快照从权威累计列派生 — 小欧 2026-08-21
             user_msg_id=_user_msg_id,  # v2.0 改动2: 供agent_runner回填chat_user_message — 小欧 2026-08-19
         )
         # ── 编排⑧注入 start 运行元数据(_start_meta, start_step 装配用) ———————— 小健 2026-08-17
@@ -288,6 +291,7 @@ async def chat_stream_orchestrator(
         }
         # ── 编排⑨落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) ——— 小健 2026-08-17
         # ②-1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) — 小欧 2026-08-16
+        _ai_message_id = None
         try:
             with db.get_conn_with_retry("chat") as _conn3:
                 _db_ops.insert_task(_conn3)
@@ -297,12 +301,20 @@ async def chat_stream_orchestrator(
                         "UPDATE chat_messages SET task_id=? WHERE id=?",
                         (task_id, _user_msg_id),
                     )
+                # 12.2-C4: eager分配assistant行+创建时即写chat_tasks.ai_message_id —
+                #   任务启动即分配(原首步惰性), 消除agent_runner finally legacy save_steps分支
+                #   (步骤丢失/覆写旧消息双风险根除) — 小欧 2026-08-21
+                _ai_message_id = allocate_and_insert_message(_conn3, session_id, task_id, user_message_id=_user_msg_id)
+                _conn3.execute(
+                    "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
+                    (_ai_message_id, task_id),
+                )
         except Exception as _task_e:
-            logger.warning(f"[chat] chat_tasks INSERT 失败(task={task_id}): {_task_e}")
+            logger.warning(f"[chat] chat_tasks INSERT/eager分配失败(task={task_id}): {_task_e}")
         # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
         bg_task = asyncio.create_task(run_agent_in_background(
             agent, task_id, user_input, None, session_id, state, _task_start_time,
-            db_ops=_db_ops))
+            db_ops=_db_ops, ai_message_id=_ai_message_id))
         _agent_tasks.add(bg_task)
         bg_task.add_done_callback(_agent_tasks.discard)
 

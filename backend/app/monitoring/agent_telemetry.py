@@ -12,6 +12,9 @@
 #   原读 _overview["truncated"]=末轮瞬时标志, 裁剪早于末轮漏报(现场 event 的 truncated 仍按 11.3 每轮语义不变);
 #   ②C1: finalize 新增输出 trim_count/trim_tokens, 原 on_trim 采集数据不进 finalize 成死链路。
 # 2026-08-21 - 小欧 - 11.6.3: _artifacts内存态收集+on_tool_call扩展artifacts参数+_merge_artifacts去重上限+build_final_stats_step真值
+# 2026-08-21 - 小欧 - 12.2-Q5/Q2(按文档[1]12.2 diff设计落地): ①Q5-D3 新增 checkpoint_llm_calls() 运行中每轮
+#   增量持久化 llm_calls(整表重写+唯一索引幂等去重), 中途崩溃监控数据最多丢最后一轮不再全丢;
+#   ②Q2-D5 finalize_and_persist 落库失败 warning→error 提级留痕(保持降级不阻塞主链路)。
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -235,6 +238,13 @@ class TaskTelemetry:
             "created_at": datetime.now().isoformat(sep=" "),
         }
 
+    def checkpoint_llm_calls(self) -> None:
+        """运行中每轮增量持久化 llm_calls(整表重写+唯一索引幂等去重;中途崩溃最多丢最后一轮,不再全丢) — 12.2-Q5 小欧 2026-08-21"""
+        try:
+            storage.persist_llm_calls(self._llm_calls)
+        except Exception as _e:
+            logger.warning(f"[TaskTelemetry] llm_calls checkpoint 失败(降级): {_e!r}")
+
     def finalize_and_persist(self) -> None:
         """任务结束：task_metrics / task_tool_metrics / llm_calls 落 monitoring.db（非阻塞降级）"""
         try:
@@ -248,4 +258,4 @@ class TaskTelemetry:
             ])
             storage.persist_llm_calls(self._llm_calls)
         except Exception as _e:
-            logger.warning(f"[TaskTelemetry] 落库 monitoring.db 失败(降级不阻塞主链路): {_e!r}")
+            logger.error(f"[TaskTelemetry] 落库 monitoring.db 失败(降级不阻塞主链路, 监控数据缺失可凭此日志追溯): {_e!r}")  # 12.2-Q2: warning→error提级留痕 — 小欧 2026-08-21

@@ -47,6 +47,14 @@
 # 2026-08-20 - 小欧 - 11.2-B start_time 同源透传: run_agent_in_background 将 stream_orchestrator 的 start_time 透传给 agent.run_react_cycle(原漏传 None), 任务真实起点同源, 供遥测首包时延/耗时计算与 stream_orchestrator 一致
 # 2026-08-20 - 小欧 - 11.1b 每轮即时落库的配套收敛(北京老陈裁定): 任务/会话 token 累计落库已前移 react_cycle 每轮即时写(运行中DB实时), 本文件 S2 的 finally 块不再重复调 update_task/session_accumulation(防同批 token 重复累加翻倍), 仅保留 token_usage 明细 insert_token
 # 2026-08-21 - 小欧 - 11.6.4: 终态 update_task 补传 artifacts(telemetry._artifacts 内存态)
+# 2026-08-21 - 小欧 - 12.2-Q3/C4(按文档[1]12.2 diff设计落地): ①Q3-D2 终态 update_task 的 accumulated_usage 改
+#   db_ops.query_task_acc 从 chat_tasks.task_accumulated_tokens 权威列读出写入(不再取 agent 内存快照, C3 单权威账);
+#   ②Q3-D3 finally 新增对账告警——token_usage 明细 SUM vs 权威累计列不一致即 warning(不阻断, DB 故障降级 warning);
+#   ③C4-D2 签名新增 ai_message_id 参数(orchestrator eager 注入), 局部 None 初始化删除, prompt-logger 绑定
+#   update_ai_message_id 迁至函数头 eager 执行; ④C4-D3 _persist 惰性分配双分支塌缩为单分支(恒 append_step);
+#   ⑤C4-D4 finally legacy save_steps 兜底分支删除+chat_tasks.ai_message_id 终态回填块删除(创建时已写, 冗余 UPDATE 移除)
+# 2026-08-21 - 小欧 - 12.2-Q3-D3 三堂会审修复: 对账告警块补 db_ops 守卫(if db_ops and hasattr(db_ops, 'query_task_acc')),
+#   防 db_ops=None/注入不完整时 AttributeError; 守卫风格与 update_task/insert_token 块一致(KISS/合规)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -98,6 +106,7 @@ async def run_agent_in_background(
     stream_state: Any = None,
     start_time: Optional[float] = None,
     db_ops: Any = None,  # P4: 持久化操作命名空间(由调用方注入), 消除agent→chat反向依赖 — 小沈 2026-08-13
+    ai_message_id: Optional[int] = None,  # 12.2-C4: orchestrator eager分配注入(原首步惰性) — 小欧 2026-08-21
 ) -> None:
     """后台运行 agent，事件追加到 event_log，结束置 done。
 
@@ -116,7 +125,10 @@ async def run_agent_in_background(
     buffer = agent_streams.get(task_id)
     current_execution_steps: List[Dict] = []
     end_type = "unknown"
-    ai_message_id: Optional[int] = None  # 首步分配后复用 — 小欧 2026-07-14
+    # 12.2-C4: ai_message_id 局部初始化删除(参数即初值, eager注入) — 小欧 2026-08-21
+    # 12.2-C4: eager绑定prompt-logger(原惰性分支内update_ai_message_id迁至此) — 小欧 2026-08-21
+    if ai_message_id is not None:
+        get_prompt_logger().update_ai_message_id(str(ai_message_id))
     _has_chunk_steps: set = set()  # 2026-08-18 小健 Bug#2: 按 step 记录已发正文 chunk(短信号仅当非action轮的正文chunk)
     _action_steps: set = set() # 2026-08-18 小健 Bug#2 边界: 记录执行过action的step, 供return_direct final识别
     # (旧任务级 _has_chunk_sent 结论被多轮 return_direct 边界推翻, 改 step 粒度更精确 — 小健)
@@ -219,18 +231,10 @@ async def run_agent_in_background(
                                 "total_tokens": _u.get("total_tokens"),
                             })
                             break
-                if ai_message_id is None:
-                    with db.get_conn_with_retry("chat") as conn:
-                        ai_message_id = db_ops.allocate_and_insert(conn, session_id)
-                        get_prompt_logger().update_ai_message_id(str(ai_message_id))
-                        db_ops.append_step(conn, ai_message_id, session_id,
-                                           len(current_execution_steps) - 1, ed,
-                                           usage=_usage_json)
-                else:
-                    with db.get_conn_with_retry("chat") as conn:
-                        db_ops.append_step(conn, ai_message_id, session_id,
-                                           len(current_execution_steps) - 1, ed,
-                                           usage=_usage_json)
+                with db.get_conn_with_retry("chat") as conn:  # 12.2-C4: ai_message_id已eager注入,惰性分支移除 — 小欧 2026-08-21
+                    db_ops.append_step(conn, ai_message_id, session_id,
+                                       len(current_execution_steps) - 1, ed,
+                                       usage=_usage_json)
 
             if event_type == "thought":
                 _persist(event_dict)              # 仅落库（历史回放用, 实时不重复发）
@@ -384,17 +388,12 @@ async def run_agent_in_background(
         _terminal_status = _STATUS_MAP.get(end_type, "failed")
         saved_content = stream_state.current_content if stream_state else ""
         saved_thought = stream_state.current_thought if stream_state else ""
-        if current_execution_steps:
+        if current_execution_steps and ai_message_id is not None:  # 12.2-C4: eager注入后恒有id,None仅剩启动DB故障场景(步骤无从落库,finalize同样无意义) — 小欧 2026-08-21
             for retry in range(2):
                 try:
-                    if ai_message_id is not None:
-                        # 步骤已逐步落库, 仅 finalize content+status — 小欧 2026-07-14; 2026-07-16 小欧 增 thought 持久化
-                        with db.get_conn_with_retry("chat") as conn:
-                            db_ops.finalize(conn, ai_message_id, saved_content, _terminal_status, thought=saved_thought)
-                    else:
-                        # 兜底: ai_message_id未分配时沿用原有写入逻辑 — 小欧 2026-07-14
-                        ai_message_id = await db_ops.save_steps(
-                            session_id, current_execution_steps, saved_content, status=_terminal_status)
+                    # 步骤已逐步落库, 仅 finalize content+status — 小欧 2026-07-14; legacy save_steps兜底分支整体移除(禁止backward) — 小欧 2026-08-21
+                    with db.get_conn_with_retry("chat") as conn:
+                        db_ops.finalize(conn, ai_message_id, saved_content, _terminal_status, thought=saved_thought)
                     break
                 except sqlite3.IntegrityError as _ie:
                     logger.warning(f"[Runner] DB finalize IntegrityError (不重试): {_ie}")
@@ -431,7 +430,7 @@ async def run_agent_in_background(
                         _conn, status=_terminal_status, response=_terminal,
                         end_time=get_local_iso_timestamp(),
                         duration=round(time.time() - start_time, 1) if start_time else None,
-                        accumulated_usage=getattr(agent, "accumulated_usage", None),
+                        accumulated_usage=safe_json_dumps(db_ops.query_task_acc(_conn, task_id=task_id)),  # 12.2-Q3/C3: 从chat_tasks.task_accumulated_tokens读出写入,不再取agent内存 — 小欧 2026-08-21
                         llm_call_count=getattr(agent, "llm_call_count", 0),
                         total_steps=_total, retry_count=getattr(agent, "_retry_count", 0),
                         error_type=_err_type, error_message=_err_msg,
@@ -457,16 +456,6 @@ async def run_agent_in_background(
                         )
                     except Exception as _um_e:
                         logger.warning(f"[Runner] 回填chat_user_message final失败(task={task_id}): {_um_e}")
-
-                    # v2.0 改动9: 回填 chat_tasks.ai_message_id — 小欧 2026-08-19
-                    if ai_message_id is not None:
-                        try:
-                            _conn.execute(
-                                "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
-                                (ai_message_id, task_id),
-                            )
-                        except Exception as _aim_e:
-                            logger.warning(f"[Runner] 回填chat_tasks.ai_message_id失败(task={task_id}): {_aim_e}")
             except Exception as _task_e:
                 logger.warning(f"[Runner] 回填task_id失败: {_task_e}", exc_info=True)
 
@@ -489,6 +478,21 @@ async def run_agent_in_background(
             # 11.1b 累计落库已前移 react_cycle 每轮即时写(运行中DB实时)——此处 S2 不再重复 update_task/session_accumulation(防同批token翻倍累加), 仅保留 token_usage 明细 insert_token — 小欧 2026-08-20
             except Exception as _tok_e:
                 logger.warning(f"[Runner] token_usage 落库失败(task={task_id}): {_tok_e}")
+
+        # 12.2-Q3 对账告警: token_usage明细SUM vs 权威累计列不一致即告警(不阻断) — 小欧 2026-08-21
+        if db_ops and hasattr(db_ops, 'query_task_acc'):  # 防御: db_ops=None/注入不完整时跳过(与 insert_token/update_task 同守卫风格) — 小欧 2026-08-21 三堂会审修复
+            try:
+                with db.get_conn_with_retry("chat") as _conn_a:
+                    _sum_row = _conn_a.execute(
+                        "SELECT COALESCE(SUM(total_tokens),0) FROM token_usage WHERE task_id=?",
+                        (task_id,)).fetchone()
+                    _auth_acc = db_ops.query_task_acc(_conn_a, task_id=task_id)
+                if int(_sum_row[0]) != int(_auth_acc.get("total_tokens") or 0):
+                    logger.warning(
+                        f"[Runner] token对账不一致(task={task_id}): 明细SUM={_sum_row[0]} "
+                        f"权威累计={_auth_acc.get('total_tokens')}")
+            except Exception as _rec_e:
+                logger.warning(f"[Runner] token对账查询失败(task={task_id}): {_rec_e!r}")
 
         # 生命周期清理：原 openai.py finally 的 task_cleanup 迁入此处 — 小欧 2026-07-12
         # 修复旧 bug：断线时不再误删在跑的 agent（cleanup 由生产者自身在结束时调用）
