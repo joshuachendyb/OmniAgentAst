@@ -18,6 +18,7 @@
 
 -- 小健 2026-06-15
 -- 更新: 2026-07-03(铁律6: 超时统一管理) 小欧
+-- 更新: 2026-08-22 - 小欧 - §10.3适配: 本case旧action_tool取数块(type过滤+顶层tool_name+observation字段)收敛为verify_db_tool_usage单点校验(e2e_helpers FUNCTIONS.md九.1), 协议再变只改helper一处
 """
 
 from datetime import datetime
@@ -29,6 +30,7 @@ from e2emodel.e2e_helpers import (
     print_report, write_test_record,
     assert_stream_ended, verify_consistency, verify_steps, filter_safety_errors,
     register_pending_record,
+    verify_db_tool_usage,
 )
 
 
@@ -78,12 +80,9 @@ async def test_e2e_p0_02_tool_call():
         assert db["message_order_correct"], "消息顺序必须user在前(MUST)"
         assert len(db["step_field_issues"]) == 0, f"DB步骤字段异常(MUST): {db['step_field_issues']}"
         assert db["execution_steps_count"] > 0, f"必须有execution_steps(MUST P0-02)"
-        db_tool_steps = [s for s in db["execution_steps"] if s.get("type") == "action_tool"]
-        assert len(db_tool_steps) > 0, "DB steps中必须有action_tool(MUST P0-02)"
-        for step in db_tool_steps:
-            assert step.get("tool_name"), f"tool_name不能为空(MUST)"
-            obs = step.get("observation") or step.get("execution_result")
-            assert obs, f"工具结果不能为空(MUST): {step.get('tool_name')}"
+        # 2026-08-22 小欧 §10.3适配: 旧action_tool取数块收敛为verify_db_tool_usage单点校验(FUNCTIONS.md 9.1)
+        _ti = verify_db_tool_usage(db)
+        assert len(_ti) == 0, f"DB steps中必须有action步骤(MUST P0-02): {_ti}"
 
         # 2026-08-07 小欧: 原assert_data_consistency→verify_consistency+verify_steps
         ci = verify_consistency(result, sid)

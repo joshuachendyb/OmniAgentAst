@@ -19,6 +19,7 @@
 -- 小沈 2026-06-22
 -- 更新: 2026-07-03(铁律6: 超时统一管理) 小欧
 -- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
+-- 更新: 2026-08-22 - 小欧 - §10.3适配: 本case旧action_tool取数块(type过滤+顶层tool_name+observation字段)收敛为verify_db_tool_usage单点校验(e2e_helpers FUNCTIONS.md九.1), 协议再变只改helper一处
 """
 
 TEST_CASE_ID = "E2E-P0-03a"
@@ -46,6 +47,7 @@ from e2emodel.e2e_helpers import (
     verify_consistency, verify_steps, verify_db_prompt_consistency, check_logs,
     print_report, write_test_record,
     assert_stream_ended, register_pending_record, filter_safety_errors,
+    verify_db_tool_usage,
 )
 
 TEST_FILE = Path("E:/test_dir/system_check.py")
@@ -110,8 +112,9 @@ async def test_e2e_p0_03a_file_shell():
         assert db["message_order_correct"], "消息顺序必须user在前(MUST)"
         assert db["execution_steps_count"] >= 2, f"必须有>=2步(MUST P0-03)"
 
-        db_tool_steps = [s for s in db["execution_steps"] if s.get("type") == "action_tool"]
-        assert len(db_tool_steps) >= 2, "DB steps中必须有写文件和执行命令两步(MUST)"
+        # 2026-08-22 小欧 §10.3适配: 旧action_tool取数块收敛为verify_db_tool_usage单点校验(FUNCTIONS.md 9.1)
+        _ti = verify_db_tool_usage(db, min_tool_steps=2)
+        assert len(_ti) == 0, f"DB steps中必须有写文件和执行命令两步(MUST): {_ti}"
 
         ci = verify_consistency(result, sid)
         assert len(ci) == 0, f"一致性验证失败(MUST): {ci}"

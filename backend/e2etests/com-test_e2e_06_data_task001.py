@@ -19,6 +19,7 @@
 
 -- 小健 2026-06-15
 -- 更新: 2026-07-03(铁律6: 超时统一管理) 小欧
+-- 更新: 2026-08-22 - 小欧 - §10.3适配: 本case旧action_tool取数块(type过滤+顶层tool_name+observation字段)收敛为verify_db_tool_usage单点校验(e2e_helpers FUNCTIONS.md九.1), 协议再变只改helper一处
 """
 
 from datetime import datetime
@@ -30,6 +31,7 @@ from e2emodel.e2e_helpers import (
     print_report, write_test_record,
     assert_stream_ended, verify_consistency, verify_steps, filter_safety_errors,
     register_pending_record,
+    verify_db_tool_usage,
 )
 
 TEST_DIR = Path("E:/test_dir")
@@ -100,13 +102,9 @@ async def test_e2e_unit_06_data_persistence():
         assert db["execution_steps_count"] >= 1, (
             f"execution_steps必须有记录(MUST P0-04), 实际={db['execution_steps_count']}"
         )
-        db_tool_steps = [s for s in db["execution_steps"] if s.get("type") == "action_tool"]
-        db_list_steps = [s for s in db_tool_steps if s.get("tool_name") in list_tools]
-        assert len(db_list_steps) > 0, "DB steps中应有list操作(MUST P0-04)"
-
-        for step in db_tool_steps:
-            obs = step.get("observation") or step.get("execution_result")
-            assert obs, f"工具结果不能为空(MUST): {step.get('tool_name')}"
+        # 2026-08-22 小欧 §10.3适配: 旧action_tool取数块收敛为verify_db_tool_usage单点校验(FUNCTIONS.md 9.1)
+        _ti = verify_db_tool_usage(db, expect_any_tools=list_tools)
+        assert len(_ti) == 0, f"DB steps中应有list操作(MUST P0-04): {_ti}"
 
         # 2026-08-07 小欧: 原assert_data_consistency→verify_consistency+verify_steps
         ci = verify_consistency(result, sid)
@@ -128,7 +126,6 @@ async def test_e2e_unit_06_data_persistence():
                 "LLM calls": result["llm_call_count"],
                 "Tools": tool_names,
                 "DB steps": db["execution_steps_count"],
-                "DB tool_steps": len(db_tool_steps),
             },
         )
 

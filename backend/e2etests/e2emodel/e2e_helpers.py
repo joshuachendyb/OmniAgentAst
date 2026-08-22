@@ -126,6 +126,7 @@ E2E测试核心测试脚本和代码
   3.4 回复语义(相关性)   → 与指令是否相关需人工
 
 -- 小健 2026-06-14
+-- 更新: 2026-08-22 - 小欧 - 新增verify_db_tool_usage()公共函数(case侧DB工具步骤校验唯一入口, 复用_is_action_step/_action_entries新旧协议自适应; 登记FUNCTIONS.md v3.7 九.1)
 """
 
 import asyncio
@@ -816,6 +817,43 @@ def _fmt_tok(d: Any) -> str:
         f"/出{d.get('completion_tokens', '?')}"
         f"/总{d.get('total_tokens', '?')}"
     )
+
+
+def verify_db_tool_usage(
+    db: Dict[str, Any],
+    expect_any_tools: Optional[List[str]] = None,
+    min_tool_steps: int = 1,
+) -> List[str]:
+    """DB侧工具步骤统一校验(case脚本唯一入口, 杜绝各case自写取数块) - 小欧 2026-08-22
+
+    病根定案: 19个case曾复制粘贴"action_tool过滤+顶层tool_name+observation字段"旧取数块,
+    §10.3模型变更即全量碎裂; 现收敛本函数单点维护, 内部复用_is_action_step/_action_entries
+    新旧协议自适应。校验三项:
+      ①工具步骤数≥min_tool_steps
+      ②expect_any_tools给定时, 全部工具步骤中至少命中一个期望工具
+      ③每个工具步骤: actions归一后工具名非空, 且按step号配对的observation步骤tool_result[]非空
+    返回问题列表(空=通过); 参数db为check_db()返回值。
+    """
+    issues: List[str] = []
+    steps = db.get("execution_steps", []) or []
+    tool_steps = [s for s in steps if _is_action_step(s)]
+    if len(tool_steps) < min_tool_steps:
+        issues.append(f"工具步骤数{len(tool_steps)}<{min_tool_steps}")
+        return issues
+    if expect_any_tools:
+        _used = {e.get("tool_name") for s in tool_steps for e in _action_entries(s)}
+        if not (_used & set(expect_any_tools)):
+            issues.append(f"期望工具未使用: 期望{sorted(set(expect_any_tools))} 实际{sorted(_used)}")
+    _obs_by_step = {s.get("step"): (s.get("tool_result") or [])
+                    for s in steps if s.get("type") == "observation"}
+    for s in tool_steps:
+        _names = [e.get("tool_name") for e in _action_entries(s)]
+        if not _names or not all(_names):
+            issues.append(f"step{s.get('step')}工具名缺失: {_names}")
+            continue
+        if not _obs_by_step.get(s.get("step")):
+            issues.append(f"step{s.get('step')}工具结果缺失: {_names}")
+    return issues
 
 
 def _step_brief(step: Any, limit: int = 40) -> str:
