@@ -117,6 +117,10 @@
 #   撤销: 删除result.get/pop _operation_id逻辑+白名单_file_tool_names+operation_id参数传递;
 #   record_operation不再传operation_id(由内部UUID生成, 双表贯通暂断, 后续如需恢复应改用side channel而非LLM可见返回)
 #   连带: 删除db导入依赖(operations/task_tracker仅预取块使用, 删除后无其他消费点)
+# 2026-08-22 - 小欧 - artifacts结构补充tool_name字段(4字段: tool_name/name/path/type): 收集时注入_tname到每个artifact
+# 2026-08-22 - 小欧 - 三堂会审F1定案(北京老陈): 删兜底派生, artifacts仅认写工具with_artifacts自声明;
+#   读工具(read_*/query_sql/analyze_data等)也构造action.target, 兜底派生会把读取对象误落为伪产出物(违反"art只能是写的tool"铁律);
+#   14个写工具均已自声明零丢失; 连带删除仅服务派生的import os/extract_ext
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -132,9 +136,7 @@ action_handler — action类型处理（SRP拆分，模块级函数）
 """
 import asyncio
 import json   # 2026-08-18 小欧 新增(供 _format_llm_data_text)
-import os
 import time
-from app.tools.tool_response import extract_ext  # 2026-08-21 小欧 11.6.2 DRY: 扩展名提取复用 tool_response
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Set
 
@@ -620,11 +622,13 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                     _dur = float(_llm_d.get("duration_ms", 0) or 0) / 1000.0
                     _act = _llm_d.get("action")
                     if isinstance(_act, dict):
-                        # 工具自声明优先（with_artifacts 写入）；否则从 target 兜底派生 — 小欧 2026-08-20
+                        # 仅认写工具 with_artifacts 自声明；兜底派生已删(三堂会审F1: 读工具也构造action.target, 派生会把读取对象误落为伪产出物) — 小欧 2026-08-22 北京老陈定案
                         _arts = _act.get("artifacts")
-                        if not _arts and isinstance(_act.get("target"), str) and _act["target"]:
-                            _tgt = _act["target"]
-                            _arts = [{"name": os.path.basename(_tgt), "path": _tgt, "type": extract_ext(_tgt)}]
+                        # 注入 tool_name 到每个 artifact — 小欧 2026-08-22 设计补充（4字段: tool_name/name/path/type）
+                        if _arts and isinstance(_arts, list):
+                            for _a in _arts:
+                                if isinstance(_a, dict) and "tool_name" not in _a:
+                                    _a["tool_name"] = _tname
                 _tele.on_tool_call(_tname, _ok, _dur, artifacts=_arts)
 
         return results

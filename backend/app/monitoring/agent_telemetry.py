@@ -15,6 +15,7 @@
 # 2026-08-21 - 小欧 - 12.2-Q5/Q2(按文档[1]12.2 diff设计落地): ①Q5-D3 新增 checkpoint_llm_calls() 运行中每轮
 #   增量持久化 llm_calls(整表重写+唯一索引幂等去重), 中途崩溃监控数据最多丢最后一轮不再全丢;
 #   ②Q2-D5 finalize_and_persist 落库失败 warning→error 提级留痕(保持降级不阻塞主链路)。
+# 2026-08-22 - 小欧 - _merge_artifacts去重改为 tool_name+path 组合去重（设计补充：同路径不同工具应分别收集）
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -104,12 +105,12 @@ class TaskTelemetry:
             self._merge_artifacts(artifacts)
 
     def _merge_artifacts(self, new_items: list) -> None:
-        """合并新产出物到内存态（去重+上限50）— 小欧 2026-08-21 SRP: 独立方法便于单测"""
+        """合并新产出物到内存态（去重按 tool_name+path 组合+上限50）— 小欧 2026-08-21"""
         for _a in new_items:
             if not isinstance(_a, dict):
                 continue
-            _p = _a.get("path")
-            if _p and _p not in {x.get("path") for x in self._artifacts}:
+            _key = (_a.get("tool_name", ""), _a.get("path", ""))
+            if _key[1] and _key not in {(x.get("tool_name", ""), x.get("path", "")) for x in self._artifacts}:
                 self._artifacts.append(_a)
         if len(self._artifacts) > 50:
             self._artifacts = self._artifacts[:50]
