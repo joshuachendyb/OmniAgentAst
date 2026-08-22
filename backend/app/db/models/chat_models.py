@@ -3,6 +3,8 @@
 # 2026-07-16 - 小欧 - MessageResponse 增 thought 字段, API 返回消息时携带 thought
 # 2026-08-08 - 小欧 - 全程统一本地时区: MessageResponse.timestamp 描述 `ISO 8601 UTC格式` → `本地ISO无Z`
 # 2026-08-22 - 小欧 - 6.1.1 L2 会话级 sessionModel 回读字段(SessionResponse/Session)落地，与 SessionUpdate 写入口、storage.get_session_model 执行侧读取闭环
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.1: SessionModelOverride 增 api_base 可选字段(端点定位,私有/本地必需),
+#   新增全系统统一别名 ModelRef = SessionModelOverride; display_name 收敛为仅用户自定义别名(系统不拼接)
 """
 聊天数据模型 (Chat Data Models)
 定义会话、消息等数据结构
@@ -15,12 +17,17 @@ from typing import Optional
 
 class SessionModelOverride(BaseModel):
     """会话级模型覆盖结构(L2) — 北京老陈 2026-08-22
-    系统内【首次】以结构化方式定义 model 变量: 至少 provider + model, 可选 display_name。
-    后续其他 model 类字段(如全局当前模型、任务级模型等)将逐步统一为同一结构(provider+model),
-    本类即规范模板, 新增/改造 model 字段应复用此结构而非裸字符串。"""
+    即全系统通用 ModelRef 规范模板(provider+model+api_base?+display_name?):
+    所有承载 provider+model 组合的变量一律复用本结构, 变量名须 前导+model 且名副其实(如 task_model/llm_model),
+    严禁裸 model/provider 承载组合。display_name 仅用户自定义别名, 系统零依赖, 缺省由前端派生。"""
     provider: str = Field(..., description="模型供应商, 如 openai / anthropic")
     model: str = Field(..., description="模型名, 如 gpt-4o")
-    display_name: Optional[str] = Field(None, description="展示名(可选, 缺省由 provider+model 构建)")
+    api_base: Optional[str] = Field(None, description="端点定位(私有/本地模型必需), 缺省走 provider 默认")
+    display_name: Optional[str] = Field(None, description="展示名(仅用户自定义别名, 系统不拼接, 缺省前端派生)")
+
+
+# 全系统统一别名 — 归一化后所有"模型身份"语义用 ModelRef 标注 — 小欧 2026-08-22 报告v1.25 6.1
+ModelRef = SessionModelOverride
 
 
 class Session(BaseModel):

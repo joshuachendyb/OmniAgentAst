@@ -34,6 +34,12 @@
 #   ①_ensure_column 补 sessionModel TEXT(会话级模型覆盖落库点); ②旧列 model_override 兼容: 存在则 RENAME COLUMN 到 sessionModel(现代 SQLite),
 #     回退路径先建 sessionModel 列再尝试 DROP 旧列(失败保留无害); 旧裸字符串数据缺 provider 不复制(免污染 JSON 解析);
 #   ③修正初版回退缺陷(原 UPDATE 引用尚未创建的 sessionModel 列致初始化崩溃)
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.2: 三表归一幂等迁移——chat_tasks(provider/model/display_name→
+#   sessionModel JSON)、token_usage(model/provider→task_model JSON)、chat_user_message(model/provider→chat_model JSON),
+#   老库 PRAGMA 查列后 ALTER 补列+旧行数据回灌(旧列废弃保留不删); idx_token_model 改 json_extract 表达式索引
+# 2026-08-23 - 小欧 - 三轮三堂会审修复: ①P0 新增 _verify_model_ref_columns fail-loud 硬校验(迁移吞异常则三写路径
+#   全线崩, 仿 _verify_acc_columns 先例); ②P1 chat_tasks.sessionModel 新建 DDL 补 NOT NULL(insert_task 必填,
+#   与 token_usage.task_model 约束对称)
 """
 db_initializer — 数据库初始化
 
@@ -41,6 +47,7 @@ db_initializer — 数据库初始化
 小欧 2026-06-18 从database.py拆分，遵守SRP
 """
 import sqlite3
+import json as _json
 from app.logger import logger
 
 
@@ -99,7 +106,7 @@ def init_chat_db(get_conn):
                 status TEXT DEFAULT 'executing',
                 start_time TEXT, end_time TEXT, duration REAL,          -- 开始/结束/耗时（文档2 3.1.2 时间三字段）
                 context_link_mode TEXT, context_root_task_id TEXT,   -- 上下文链：续聊/新任务 + 链根任务id
-                provider TEXT, model TEXT, display_name TEXT,
+                sessionModel TEXT NOT NULL,                          -- 归一 JSON(ModelRef) 单列; display_name 列废弃(设计要求2); 三堂会审 P1: 任务行创建必有模型, 与 token_usage.task_model 约束对称 — 小欧 2026-08-22
                 accumulated_usage TEXT DEFAULT '{}',
                 llm_call_count INTEGER DEFAULT 0, total_steps INTEGER DEFAULT 0,
                 retry_count INTEGER DEFAULT 0, max_steps INTEGER DEFAULT 0,   -- 最大步骤数上限（文档2 3.5.3）
@@ -114,7 +121,7 @@ def init_chat_db(get_conn):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL, task_id TEXT NOT NULL,
                 llm_call_count INTEGER NOT NULL,   -- 直取 react_cycle 既有 agent.llm_call_count, 与 chat_tasks 同名同值
-                model TEXT NOT NULL, provider TEXT,
+                task_model TEXT NOT NULL,          -- 归一 JSON(ModelRef) 单列(设计6.2: NOT NULL) — 小欧 2026-08-22
                 prompt_tokens INTEGER DEFAULT 0, completion_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0,
                 created_at TEXT
             );
@@ -138,8 +145,7 @@ def init_chat_db(get_conn):
                 response TEXT,
                 reasoning TEXT,
                 outcome TEXT,
-                model TEXT,
-                provider TEXT,
+                chat_model TEXT,   -- 归一 JSON(ModelRef) 单列 — 小欧 2026-08-22
                 accumulated_usage TEXT,
                 client_os TEXT,
                 browser TEXT,
@@ -201,6 +207,13 @@ def init_chat_db(get_conn):
         # 11.1 增强: 复核新增列确已落库, 缺失则显式抛出, 避免后续 SELECT/UPDATE 隐性 OperationalError 致任务链崩溃 — 小欧 2026-08-20
         _verify_acc_columns(conn)
 
+        # ===== 归一迁移(小欧 2026-08-22 报告v1.25 6.2): 三表旧分离列 → JSON 单列, 幂等(查列→补列→回灌) =====
+        # 旧 model/provider/display_name 列废弃保留不删(SQLite DROP 兼容性差, 保留无害), 读写一律走新 JSON 列
+        _migrate_model_ref_columns(conn)
+        # 三堂会审修复(P0·小欧): 三写路径(insert_task/token_usage_insert/update_user_message_final)每任务强依赖
+        #   新 JSON 列, 补列失败若静默降级则全部任务落库崩溃——仿 _verify_acc_columns 先例 fail-loud 硬校验
+        _verify_model_ref_columns(conn)
+
         # v2.0 结构迁移 — 小欧 2026-08-19
         #  ①必须在 _ensure_column 之后(_ensure_column 为回灌 SELECT 补齐 client_os/timestamp 等列)
         #  ②必须在建 idx_steps_message 索引之前(索引依赖迁移改名后的 ai_message_id 列)
@@ -227,7 +240,10 @@ def init_chat_db(get_conn):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_token_session ON token_usage(session_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_token_task ON token_usage(task_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_token_llm_call ON token_usage(llm_call_count)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_token_model ON token_usage(model)")
+        # 归一(小欧 2026-08-22): 旧 model 裸列索引 → task_model JSON 表达式索引(query_token_usage json_extract 过滤走此索引)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_token_model "
+            "ON token_usage(json_extract(task_model,'$.provider'), json_extract(task_model,'$.model'))")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_token_created ON token_usage(created_at)")
         # chat_session_trust 索引
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_session ON chat_session_trust(session_id)")
@@ -403,3 +419,64 @@ def _verify_acc_columns(conn: sqlite3.Connection) -> None:
         _rows = conn.execute(f"PRAGMA table_info({_t})").fetchall()
         if _c.lower() not in {r["name"].lower() for r in _rows}:
             raise RuntimeError(f"token 累计列缺失(迁移失败): {_t}.{_c}")
+
+
+def _verify_model_ref_columns(conn: sqlite3.Connection) -> None:
+    """复核归一 JSON 列确已落库(仿 _verify_acc_columns: 缺失显式抛出, 防写路径隐性 OperationalError 全线崩) — 三堂会审 P0 修复 小欧"""
+    _checks = [("chat_tasks", "sessionModel"), ("token_usage", "task_model"), ("chat_user_message", "chat_model")]
+    for _t, _c in _checks:
+        _rows = conn.execute(f"PRAGMA table_info({_t})").fetchall()
+        if _c.lower() not in {r["name"].lower() for r in _rows}:
+            raise RuntimeError(f"model 归一列缺失(迁移失败): {_t}.{_c}")
+
+
+def _migrate_model_ref_columns(conn: sqlite3.Connection) -> None:
+    """归一迁移(小欧 2026-08-22 报告v1.25 6.2): 三表旧分离列旧行 → JSON(ModelRef) 单列, 幂等可重复执行。
+    策略与设计一致: PRAGMA 查列→缺则 ALTER 补列→旧行回灌 JSON; 旧列废弃保留不删, 读写一律走新 JSON 列。
+    chat_tasks: provider/model/display_name → sessionModel;
+    token_usage: model/provider → task_model; chat_user_message: model/provider → chat_model。"""
+    # 1) chat_tasks: 三列 → sessionModel JSON
+    try:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(chat_tasks)").fetchall()]
+        if ("provider" in cols or "model" in cols) and "sessionModel" not in cols:
+            conn.execute("ALTER TABLE chat_tasks ADD COLUMN sessionModel TEXT")
+            cols = [r["name"] for r in conn.execute("PRAGMA table_info(chat_tasks)").fetchall()]
+        if "sessionModel" in cols and "provider" in cols:
+            for r in conn.execute(
+                    "SELECT task_id, provider, model, display_name FROM chat_tasks "
+                    "WHERE sessionModel IS NULL AND (provider IS NOT NULL OR model IS NOT NULL)").fetchall():
+                j = _json.dumps({"provider": r["provider"], "model": r["model"],
+                                 "display_name": r["display_name"]})
+                conn.execute("UPDATE chat_tasks SET sessionModel=? WHERE task_id=?", (j, r["task_id"]))
+    except Exception as e:
+        logger.warning(f"[归一迁移] chat_tasks 回灌失败(降级不阻断启动): {e}")
+
+    # 2) token_usage: 两列 → task_model JSON
+    try:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(token_usage)").fetchall()]
+        if "model" in cols and "task_model" not in cols:
+            conn.execute("ALTER TABLE token_usage ADD COLUMN task_model TEXT")
+            cols = [r["name"] for r in conn.execute("PRAGMA table_info(token_usage)").fetchall()]
+        if "task_model" in cols and "model" in cols:
+            for r in conn.execute(
+                    "SELECT id, model, provider FROM token_usage "
+                    "WHERE task_model IS NULL AND (model IS NOT NULL OR provider IS NOT NULL)").fetchall():
+                j = _json.dumps({"provider": r["provider"], "model": r["model"]})
+                conn.execute("UPDATE token_usage SET task_model=? WHERE id=?", (j, r["id"]))
+    except Exception as e:
+        logger.warning(f"[归一迁移] token_usage 回灌失败(降级不阻断启动): {e}")
+
+    # 3) chat_user_message: 两列 → chat_model JSON
+    try:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(chat_user_message)").fetchall()]
+        if "model" in cols and "chat_model" not in cols:
+            conn.execute("ALTER TABLE chat_user_message ADD COLUMN chat_model TEXT")
+            cols = [r["name"] for r in conn.execute("PRAGMA table_info(chat_user_message)").fetchall()]
+        if "chat_model" in cols and "model" in cols:
+            for r in conn.execute(
+                    "SELECT id, model, provider FROM chat_user_message "
+                    "WHERE chat_model IS NULL AND (model IS NOT NULL OR provider IS NOT NULL)").fetchall():
+                j = _json.dumps({"provider": r["provider"], "model": r["model"]})
+                conn.execute("UPDATE chat_user_message SET chat_model=? WHERE id=?", (j, r["id"]))
+    except Exception as e:
+        logger.warning(f"[归一迁移] chat_user_message 回灌失败(降级不阻断启动): {e}")
