@@ -5,6 +5,9 @@
 #   亦可被文档2 6.1.7(上下文链 token 聚合接口)复用。
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: query_token_usage 聚合链路改用 storage.query_task/session_accumulation 读真实累计(去重 parse_json), 与 react_cycle 同源基线; 三层累计口径统一
 # 2026-08-20 - 小欧 - 11.1 测试驱动修复(chain 语义, 小欧单测 tests/test_token_accumulation_11_1.py 2 用例锁定): 原 GET /token-usage 的 chain_accumulated_tokens 直接返回 query_chain_accumulation(排除当前任务), 与 SSE 终态(含当前任务运行累计)口径不一致(独立任务恒为0、NULL context_root 返 None); 改为对 token_usage 全链(含当前任务)求和, 与 SSE 实时口径一致; 同步删未用 import query_chain_accumulation。
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.3: GET /token-usage ?model= 裸名过滤 → 组装
+#   ModelRef(provider+model) 结构传 query_token_usage(model_ref=), 落 task_model JSON 列 json_extract 双键过滤;
+#   import 补 ModelRef — 方案B 契约随归一
 """
 token_usage — LLM token 用量四维度查询 API（chat 域）
 
@@ -16,6 +19,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.db import db
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.services.chat.storage import query_token_usage, query_task_accumulation, query_session_accumulation  # 11.1 复用查询函数统一口径+缺行兜底 — 小欧 2026-08-20
 from app.utils.response_utils import handle_api_errors
 
@@ -42,14 +46,21 @@ async def get_token_usage(session_id: Optional[str] = None,
                           model: Optional[str] = None):
     """
     查询 LLM token 用量（四维度：session / task / model / llm_call 聚合）
+    2026-08-22 小欧 归一报告v1.25 6.3: ?model= 裸名过滤 → 组装 ModelRef(provider+model) 结构过滤
+      (task_model 为 JSON 单列, 需 provider+model 成对定位; 仅传 model 时 provider 取 None 通配)
 
     Args:
         session_id: 按会话过滤
         task_id: 按任务过滤
-        model: 按模型名过滤
+        model: 按模型名过滤(与当前 provider 组合成对过滤)
     """
+    from app.config import get_config as _get_cfg   # 归一: 取当前 provider 与 model 组成 ModelRef — 小欧 2026-08-22
+    _model_ref = None
+    if model:
+        _provider = _get_cfg().get("ai", {}).get("provider", "")
+        _model_ref = ModelRef(provider=_provider, model=model)
     with db.get_conn("chat") as conn:
-        row = query_token_usage(conn, session_id=session_id, task_id=task_id, model=model)
+        row = query_token_usage(conn, session_id=session_id, task_id=task_id, model_ref=_model_ref)
         # 11.1 新增：读 DB 累计值(复用 storage 查询函数, 统一口径+缺行兜底) + chain 计算派生 — 小欧 2026-08-20
         _task_acc = query_task_accumulation(conn, task_id=task_id) if task_id else None
         _sess_acc = query_session_accumulation(conn, session_id=session_id) if session_id else None

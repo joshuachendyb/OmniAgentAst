@@ -26,6 +26,11 @@
 #   按本地时区解释UTC字段→东八区偏移8小时, 实测Retry-After正确3600秒被clamp成1秒(限流后狂重试);
 #   改_dt.timestamp()(aware datetime直接给UTC epoch)与time.time()相减, 时区无关
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.4: __init__ (model/api_base/provider 三参)→ llm_model: ModelRef
+#   单结构承载(F8 不留 self.model/self.provider/self.api_base 兼容别名); 内部16处自用点随改读 self.llm_model.*;
+#   ChatResponse/StreamChunk 构造传参同步归一(chat_model/chunk_model)
+# 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): 新增 reset_sdk()——L2 会话级整体换模后 _ensure_client 的 SDK 缓存
+#   仍绑旧 api_base/model, 不重置则"记录身份与实际 HTTP 连接不一致"(编排层换模/还原两处已随调)
 """
 LLM 核心模块 — BaseAIService
 
@@ -42,6 +47,7 @@ from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 import httpx
 from app.logger import logger
 from app.utils.json_utils import parse_json, _try_fix_incomplete_json, _normalize_tool_params
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.llm.core import ChatResponse, LLMResponseError, StreamChunk, _resolve_exception
 # 注: LLM_*/FC_*/TOOL_CACHE_TTL 已集中迁移至 app.constants(2026-07-14 小欧)
 from app.llm.core import create_cancelled_chunk
@@ -61,9 +67,7 @@ class BaseAIService:
     def __init__(
         self,
         api_key: str,
-        model: str,
-        api_base: str,
-        provider: str = "",
+        llm_model: ModelRef,
         timeout: int = DEFAULT_READ_TIMEOUT,
         max_tokens: Optional[int] = None,
         temperature: float = None,
@@ -74,9 +78,7 @@ class BaseAIService:
         if temperature is None:
             temperature = LLM_TEMPERATURE
         self.api_key = api_key
-        self.model = model
-        self.api_base = api_base
-        self.provider = provider
+        self.llm_model = llm_model   # 归一唯一模型身份结构(provider+model+api_base) — 小欧 2026-08-22
         self.max_tokens = max_tokens if max_tokens is not None else LLM_MAX_TOKENS
         self.temperature = temperature
         self.seed = seed
@@ -105,15 +107,21 @@ class BaseAIService:
     def _ensure_client(self):
         if self._llm_sdk is None:
             self._llm_sdk = create_llm_client(
-                provider=self.provider or "openai",
-                model=self.model,
+                provider=self.llm_model.provider or "openai",
+                model=self.llm_model.model,
                 api_key=self.api_key,
-                base_url=self.api_base,
+                base_url=self.llm_model.api_base,
                 timeout=self.timeout,
             )
 
+    def reset_sdk(self):
+        """重置底层 SDK 缓存 — L2 会话级换模(整体替换 llm_model, 可能变更 api_base)后必须调用:
+        _ensure_client 只在首次创建 SDK 时读取 llm_model, 不重置则新 api_base/model 不生效,
+        造成"记录身份与实际 HTTP 连接不一致" — 三堂会审 P1 修复 小欧 2026-08-22"""
+        self._llm_sdk = None
+
     async def cancel(self):
-        logger.info(f"[BaseAIService.cancel] 正在强制取消请求, model={self.model}")
+        logger.info(f"[BaseAIService.cancel] 正在强制取消请求, model={self.llm_model.model}")
         self._cancelled = True
         if self._current_response:
             try:
@@ -144,7 +152,7 @@ class BaseAIService:
         msg, err_type = _resolve_exception(e)
         if err_type == "unknown":
             logger.warning(f"[{type(e).__name__}] 未分类异常: {e}")
-        return StreamChunk(content="", model=self.model, is_done=True, stream_error=msg, stream_error_type=err_type)
+        return StreamChunk(content="", chunk_model=self.llm_model, is_done=True, stream_error=msg, stream_error_type=err_type)
 
     async def request(
         self,
@@ -166,7 +174,7 @@ class BaseAIService:
             )
             choices = response.get("choices", [])
             if not choices:
-                return ChatResponse(content="", model=self.model, provider=self.provider, error="无响应")
+                return ChatResponse(content="", chat_model=self.llm_model, error="无响应")
 
             msg = choices[0].get("message", {})
             content = msg.get("content", "") or ""
@@ -176,13 +184,12 @@ class BaseAIService:
 
             return ChatResponse(
                 content=content,
-                model=self.model,
-                provider=self.provider,
+                chat_model=self.llm_model,
                 tool_calls=tool_calls,
                 reasoning=reasoning,
             )
         except Exception as e:
-            return ChatResponse(content="", model=self.model, provider=self.provider, error=str(e))
+            return ChatResponse(content="", chat_model=self.llm_model, error=str(e))
 
     async def request_stream(
         self,
@@ -225,7 +232,7 @@ class BaseAIService:
                     extra_body=self.extra_body_params,
                 ):
                     if await self._check_stop():
-                        yield create_cancelled_chunk(self.model)
+                        yield create_cancelled_chunk(self.llm_model)
                         return
 
                     # ② 总时长硬超时 — 2026-07-16 小欧
@@ -334,10 +341,10 @@ class BaseAIService:
                             message="所有tool_calls参数解析失败",
                             details={"failed_parses": failed_parses}
                         )
-                    yield StreamChunk(content="", model=self.model, is_done=False,
+                    yield StreamChunk(content="", chunk_model=self.llm_model, is_done=False,
                                       tool_calls=tool_calls_list, raw_data=complete_raw)
 
-                yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw, usage=usage_data, truncated=_truncated, finish_reason=finish_reason)  # #34 fix — 小欧 2026-07-18; finish_reason — 2026-07-19 小欧
+                yield StreamChunk(content="", chunk_model=self.llm_model, is_done=True, raw_data=complete_raw, usage=usage_data, truncated=_truncated, finish_reason=finish_reason)  # #34 fix — 小欧 2026-07-18; finish_reason — 2026-07-19 小欧
                 return
 
             except LLMResponseError:
@@ -370,7 +377,7 @@ class BaseAIService:
                     # 检出 429 重试耗尽 → 明确"配额/限流"提示, 非泛化"服务器错误" — 小欧 2026-07-17
                     if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
                         yield StreamChunk(
-                            content="", model=self.model, is_done=True,
+                            content="", chunk_model=self.llm_model, is_done=True,
                             stream_error="API配额/速率限制已耗尽(rpm exhausted)，请稍后重试或升级配额",
                             stream_error_type="quota_exceeded",
                         )
@@ -454,7 +461,7 @@ class BaseAIService:
             if data is None:
                 # #7: 非JSON行(LLM非标准回复)尝试作为纯文本yield,防内容静默丢失 — 三堂会审 小欧 2026-07-23
                 if data_str and data_str.strip():
-                    yield StreamChunk(content=data_str.strip(), model=self.model, is_done=False, raw_data=data_str)
+                    yield StreamChunk(content=data_str.strip(), chunk_model=self.llm_model, is_done=False, raw_data=data_str)
                 return
 
             choices = data.get("choices", [])
@@ -466,9 +473,9 @@ class BaseAIService:
             reasoning_text = extract_reasoning_from_chunk(delta) or ""
 
             if reasoning_text:
-                yield StreamChunk(content=reasoning_text, model=self.model, is_done=False, is_reasoning=True, raw_data=data_str)
+                yield StreamChunk(content=reasoning_text, chunk_model=self.llm_model, is_done=False, is_reasoning=True, raw_data=data_str)
             if content:
-                yield StreamChunk(content=content, model=self.model, is_done=False, is_reasoning=False, raw_data=data_str)
+                yield StreamChunk(content=content, chunk_model=self.llm_model, is_done=False, is_reasoning=False, raw_data=data_str)
             if not reasoning_text and not content:
                 tool_calls_delta = delta.get("tool_calls", [])
                 if not tool_calls_delta:

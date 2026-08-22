@@ -34,12 +34,16 @@ LLM 响应 → type 分类链（知识备忘 — 小欧 2026-07-15）:
    2026-07-15 小欧 FCFormatError.__init__加self.message=message,补缺失的实例属性(写测试挖出的预存bug)
    2026-07-17 小沈 FCFormatError→LLMResponseError(FC概念改名,对应用户LLM响应数据错误语义)
    2026-08-14 小欧 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+   2026-08-22 小欧 model结构化归一报告v1.25 6.4: ChatResponse(model/provider分离→chat_model:ModelRef)、
+     StreamChunk(单字段model形态④→chunk_model:ModelRef补provider)、create_cancelled_chunk/create_error_chunk
+     入参归一 chunk_model:ModelRef — F8 不留兼容别名, 消费点随改
 
 拆分原则:数据/辅助定义与BaseAIService主服务类分离,遵循SRP。
 对外透明:本模块由 app/llm/__init__.py 对外导出(ChatResponse/StreamChunk/create_cancelled_chunk等),外部import路径不变。 — 小欧 2026-08-14 更正(原"llm_core.py重新导出"失效,该文件已合并入 llm; 2026-08-14 llm 已独立为 app 顶层目录, 路径由 app/services/llm 改 app/llm)
 """
 
 from typing import List, Dict, Optional
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.llm.error_classifier import SystemErrorClassifier
 
 
@@ -60,12 +64,13 @@ def _resolve_exception(e: Exception) -> tuple:
 
 
 class ChatResponse:
-    """聊天响应类 - 非流式响应"""
-    def __init__(self, content: str, model: str, provider: str = "", error: Optional[str] = None,
+    """聊天响应类 - 非流式响应
+    2026-08-22 小欧 归一报告v1.25 6.4: model/provider 分离 → chat_model: ModelRef 结构承载
+    (F8 禁 backward, 不留 self.model/self.provider 兼容别名)"""
+    def __init__(self, content: str, chat_model: "ModelRef", error: Optional[str] = None,
                  reasoning: Optional[str] = None, tool_calls: Optional[List[Dict]] = None):
         self.content = content
-        self.model = model
-        self.provider = provider
+        self.chat_model = chat_model   # 前导+model 命名铁律(设计要求4)
         self.error = error
         self.success = error is None
         self.reasoning = reasoning or ""
@@ -73,8 +78,9 @@ class ChatResponse:
 
 
 class StreamChunk:
-    """流式响应片段 — FC-only: tool_calls原生传递,不走JSON roundtrip — 小沈 2026-06-12; 小健 2026-06-17 新增usage"""
-    def __init__(self, content: str, model: str, is_done: bool = False,
+    """流式响应片段 — FC-only: tool_calls原生传递,不走JSON roundtrip — 小沈 2026-06-12; 小健 2026-06-17 新增usage
+    2026-08-22 小欧 归一报告v1.25 6.4: 单字段 model(形态④缺provider) → chunk_model: ModelRef(补 provider)"""
+    def __init__(self, content: str, chunk_model: "ModelRef", is_done: bool = False,
                  stream_error: Optional[str] = None, stream_error_type: Optional[str] = None,
                  reasoning: Optional[str] = None, is_reasoning: bool = False,
                  tool_calls: Optional[List[Dict]] = None,
@@ -83,7 +89,7 @@ class StreamChunk:
                  truncated: bool = False,  # #34 fix: 超时截断标记 — 小欧 2026-07-18
                  finish_reason: Optional[str] = None):  # 2026-07-19 小欧 新增: API最后chunk的finish_reason(stop/length/tool_calls)
         self.content = content
-        self.model = model
+        self.chunk_model = chunk_model   # 前导+model; 补 provider(F8 不留 self.model 兼容别名)
         self.is_done = is_done
         self.stream_error = stream_error
         self.stream_error_type = stream_error_type
@@ -96,16 +102,16 @@ class StreamChunk:
         self.finish_reason = finish_reason  # 2026-07-19 小欧
 
 
-def create_cancelled_chunk(model: str) -> StreamChunk:
-    """创建取消响应片段 — 小健 2026-05-27"""
-    return StreamChunk(content="", model=model, is_done=True,
+def create_cancelled_chunk(chunk_model: "ModelRef") -> StreamChunk:
+    """创建取消响应片段 — 小健 2026-05-27; 2026-08-22 小欧 归一: 入参 model:str → chunk_model: ModelRef"""
+    return StreamChunk(content="", chunk_model=chunk_model, is_done=True,
                        stream_error="Request cancelled",
                        stream_error_type="cancelled")
 
 
-def create_error_chunk(model: str, error: str, error_type: str = "http_error") -> StreamChunk:
-    """创建错误响应片段 — 小健 2026-05-27"""
-    return StreamChunk(content="", model=model, is_done=True,
+def create_error_chunk(chunk_model: "ModelRef", error: str, error_type: str = "http_error") -> StreamChunk:
+    """创建错误响应片段 — 小健 2026-05-27; 2026-08-22 小欧 归一: 入参归一"""
+    return StreamChunk(content="", chunk_model=chunk_model, is_done=True,
                        stream_error=error,
                        stream_error_type=error_type)
 

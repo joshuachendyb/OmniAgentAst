@@ -11,6 +11,11 @@
 #   ②Q5-D2 persist_llm_calls INSERT→INSERT OR IGNORE(finalize_and_persist 重入不再翻倍, 与 task_metrics REPLACE/
 #   task_tool_metrics latest-wins 三表防重语义对齐); ③Q9-D1 persist_http_request docstring 补服务级指标定位声明;
 #   ④Q2-D4 http flush 失败 warning→error 提级留痕(保持降级不阻断)。
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.2/6.7: task_metrics(model/provider→task_model JSON 单列)、
+#   llm_calls(model/provider→llm_model JSON 单列); 老库幂等补列迁移(PRAMA 查列后 ALTER, 同 C1 模式);
+#   persist 层序列化 ModelRef.model_dump_json(), 旧两列废弃保留不删
+# 2026-08-23 - 小欧 - 三轮三堂会审修复(P2): ModelRef 改 persist_llm_calls 函数内惰性导入——本文件设计声明
+#   "不依赖、纯 DB 操作、惰性导入防环", 顶层 app import 破坏该隔离承诺
 """监控独立库 monitoring.db 落库层（独立模块）—— 小欧 2026-08-20
 
 - 库路径由 database.py._db_paths["monitoring"] 注册，复用 get_conn("monitoring")（WAL+闸门+退避全复用）。
@@ -18,6 +23,9 @@
 - 惰性导入 database 防环（database→db_initializer→storage→database）。
 """
 from typing import Dict, Any, List
+
+# 三堂会审修复(P2·小欧 2026-08-22): ModelRef 改 persist_llm_calls 函数内惰性导入——
+#   本文件设计声明"不依赖、纯 DB 操作", 顶层 app import 破坏该隔离承诺
 
 
 def init_monitoring_db(get_conn) -> None:
@@ -29,7 +37,7 @@ def init_monitoring_db(get_conn) -> None:
                 session_id TEXT, task_id TEXT UNIQUE,
                 context_root_task_id TEXT, context_link_mode TEXT,
                 outcome TEXT, error_type TEXT,
-                model TEXT, provider TEXT,
+                task_model TEXT,   -- 归一 JSON(ModelRef) 单列(设计6.2 替换旧 model/provider) — 小欧 2026-08-22
                 total_steps INTEGER, llm_call_count INTEGER, retry_count INTEGER,
                 trim_count INTEGER, trim_tokens INTEGER,
                 tool_call_count INTEGER, tool_error_count INTEGER,
@@ -56,7 +64,8 @@ def init_monitoring_db(get_conn) -> None:
             );
             CREATE TABLE IF NOT EXISTS llm_calls (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id TEXT, session_id TEXT, model TEXT, provider TEXT,
+                task_id TEXT, session_id TEXT,
+                llm_model TEXT,   -- 归一 JSON(ModelRef) 单列(设计6.2 替换旧 model/provider) — 小欧 2026-08-22
                 call_index INTEGER, duration_seconds REAL,
                 prompt_tokens INTEGER, completion_tokens INTEGER, total_tokens INTEGER,
                 error_type TEXT, finish_reason TEXT, timestamp TEXT
@@ -84,12 +93,18 @@ def init_monitoring_db(get_conn) -> None:
         for _c in _need_cols:
             if _c not in _has_cols:
                 conn.execute(f"ALTER TABLE task_metrics ADD COLUMN {_c} INTEGER")
+        # 归一迁移(小欧 2026-08-22 报告v1.25 6.2): task_metrics/llm_calls 老库幂等补 JSON 单列(旧列废弃保留不删)
+        _norm_cols = {"task_metrics": "task_model", "llm_calls": "llm_model"}
+        for _t, _c in _norm_cols.items():
+            if _c not in {r[1] for r in conn.execute(f"PRAGMA table_info({_t})").fetchall()}:
+                conn.execute(f"ALTER TABLE {_t} ADD COLUMN {_c} TEXT")
 
 
 def persist_task_metrics(row: Dict[str, Any]) -> None:
     from app.db import db as _db   # DatabaseManager 单例（get_conn_with_retry 是实例方法）— 小欧 2026-08-20 修正
+    # 归一(小欧 2026-08-22 报告v1.25 6.7): 删 model/provider, 统一 task_model JSON 单列 — 小欧 2026-08-22
     _cols = ["session_id", "task_id", "context_root_task_id", "context_link_mode", "outcome", "error_type",
-             "model", "provider", "total_steps", "llm_call_count", "retry_count", "trim_count", "trim_tokens",
+             "task_model", "total_steps", "llm_call_count", "retry_count", "trim_count", "trim_tokens",
              "tool_call_count", "tool_error_count",
              "duration_seconds", "llm_latency_seconds", "tool_execution_seconds", "first_token_latency_seconds",
              "estimated_cost",
@@ -118,13 +133,18 @@ def persist_tool_metrics(task_id: str, rows: List[Dict[str, Any]]) -> None:
 
 def persist_llm_calls(rows: List[Dict[str, Any]]) -> None:
     from app.db import db as _db   # DatabaseManager 单例 — 小欧 2026-08-20 修正
+    from app.db.models.chat_models import ModelRef   # 归一(惰性导入, 保持本模块零依赖声明) — 小欧 2026-08-22
     with _db.get_conn_with_retry("monitoring") as conn:
         for r in rows:
+            # 归一(小欧 2026-08-22 报告v1.25 6.7): model/provider 两列 → llm_model JSON 单列(tele_model 序列化)
+            _tm = r.get("tele_model")
             conn.execute(
-                "INSERT OR IGNORE INTO llm_calls(task_id, session_id, model, provider, call_index, duration_seconds, "  # 12.2-Q5: 重入安全(依赖idx_llm_calls_task_call唯一索引) — 小欧 2026-08-21
+                "INSERT OR IGNORE INTO llm_calls(task_id, session_id, llm_model, call_index, duration_seconds, "  # 12.2-Q5: 重入安全(依赖idx_llm_calls_task_call唯一索引) — 小欧 2026-08-21
                 "prompt_tokens, completion_tokens, total_tokens, error_type, finish_reason, timestamp) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (r["task_id"], r["session_id"], r["model"], r["provider"], r["call_index"],
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (r["task_id"], r["session_id"],
+                 _tm.model_dump_json() if isinstance(_tm, ModelRef) else None,
+                 r["call_index"],
                  r["duration_seconds"], r["prompt_tokens"], r["completion_tokens"], r["total_tokens"],
                  r["error_type"], r["finish_reason"], r["timestamp"]),
             )

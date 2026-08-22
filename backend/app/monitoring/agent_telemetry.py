@@ -16,6 +16,11 @@
 #   增量持久化 llm_calls(整表重写+唯一索引幂等去重), 中途崩溃监控数据最多丢最后一轮不再全丢;
 #   ②Q2-D5 finalize_and_persist 落库失败 warning→error 提级留痕(保持降级不阻塞主链路)。
 # 2026-08-22 - 小欧 - _merge_artifacts去重改为 tool_name+path 组合去重（设计补充：同路径不同工具应分别收集）
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.7: on_llm_call 形参 (model, provider) → tele_model: ModelRef
+#   结构(dict 内保留 model/provider 单值派生键, 落库由 persist 层序列化); finalize 的 model/provider 两键 →
+#   task_model=llm_model.model_dump_json()(F1 补 task_metrics 写入源); import 补 ModelRef
+# 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): finalize 的 task_model 改任务快照优先(_agent._task_llm_model,
+#   回退 llm_client.llm_model)——防共享单例被并发任务还原后记录到他人模型(既有竞态一并根治)
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -27,6 +32,7 @@ import time
 from datetime import datetime
 
 from app.logger import logger
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.monitoring import storage  # 落库层（独立，storage 内部惰性导入 database 防环）
 
 
@@ -69,16 +75,19 @@ class TaskTelemetry:
             self._first_token_ts = time.time()
 
     def on_llm_call(self, usage: Optional[Dict[str, Any]], duration: float = 0.0,
-                    model: Optional[str] = None, provider: Optional[str] = None,
+                    tele_model: Optional[ModelRef] = None,
                     error_type: Optional[str] = None, finish_reason: Optional[str] = None) -> None:
+        """2026-08-22 小欧 归一报告v1.25 6.7: (model, provider) 分离形参 → tele_model: ModelRef 结构;
+        dict 内保留 model/provider 单值派生键(设计 diff 明示), 落库由 persist 层序列化 tele_model"""
         _idx = len(self._llm_calls) + 1
         _u = usage or {}
         self._llm_calls.append({
             "task_id": self.task_id,
             "session_id": self.session_id,
             "call_index": _idx,
-            "model": model,
-            "provider": provider,
+            "tele_model": tele_model,
+            "model": tele_model.model if tele_model else None,
+            "provider": tele_model.provider if tele_model else None,
             "duration_seconds": round(duration, 3),
             "prompt_tokens": int(_u.get("prompt_tokens") or 0),
             "completion_tokens": int(_u.get("completion_tokens") or 0),
@@ -207,6 +216,8 @@ class TaskTelemetry:
         _overview = self.build_context_overview()
         _llm_client = getattr(_agent, "llm_client", None)
         _meta = getattr(_agent, "_start_meta", None)
+        # 三堂会审修复(P1): 任务快照优先——防单例被并发还原后 finalize 记录到他人模型 — 小欧 2026-08-22
+        _tm = getattr(_agent, "_task_llm_model", None) or getattr(_llm_client, "llm_model", None)
         return {
             "task_id": self.task_id,
             "session_id": self.session_id,
@@ -214,8 +225,8 @@ class TaskTelemetry:
             "context_link_mode": (_meta or {}).get("context_link_mode"),
             "outcome": _outcome,
             "error_type": _error_type,
-            "model": getattr(_llm_client, "model", None),
-            "provider": getattr(_llm_client, "provider", None),
+            # 归一(小欧 2026-08-22 报告v1.25 6.7): model/provider 两键 → task_model JSON 串(F1 补写入源)
+            "task_model": _tm.model_dump_json() if _tm else None,
             "total_steps": len([s for s in _agent.steps if getattr(s, "TYPE", "") not in _M_SKIP]),
             "llm_call_count": getattr(_agent, "llm_call_count", 0),
             "retry_count": getattr(_agent, "_retry_count", 0),
