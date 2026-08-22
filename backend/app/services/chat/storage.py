@@ -44,6 +44,7 @@
 # 2026-08-20 - 小欧 - 11.1 测试驱动修复(_normalize_acc, 小欧单测 tests/test_token_accumulation_11_1.py 锁定): 原仅对非法/空对象归一, 对"含部分键"的 JSON(如 {'prompt_tokens':5})原样返回 → query 返回缺键 dict(违反设计11.1.2含3键零值)、update 下游 _old[k] KeyError 崩溃、react_cycle 基线 [k] KeyError 被 except 吞致历史累计静默清零; 现改为缺键统一补零并 int 强转, 保留已存键。3 用例(部分键归一/update不崩/基线)已加。
 # 2026-08-20 - 小欧 - 10.5 问题4/6 三堂会审落地: 新增 list_session_tasks(会话任务列表+总数, B1/问题6 任务数=用户消息数, chat_tasks 行数新口径) + list_session_trust(D1 信任清单) + delete_session_trust(D3 撤销信任)。
 # 2026-08-21 - 小欧 - 11.6.4: update_task 新增 artifacts 参数+safe_json_dumps 写库; get_task_detail parse_json 反序列化 artifacts 为 list
+# 2026-08-22 - 小欧 - 新增 load_user_messages_by_session (按 session_id 读 chat_user_message 列表，替代 chat_messages)
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -716,6 +717,15 @@ def load_user_message_by_task(conn: Connection, task_id: str) -> Optional[dict]:
         "SELECT * FROM chat_user_message WHERE task_id=?", (task_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def load_user_messages_by_session(conn: Connection, session_id: str) -> list:
+    """按 session_id 读 chat_user_message 列表（替代 chat_messages 读取）— 小欧 2026-08-21"""
+    rows = conn.execute(
+        "SELECT * FROM chat_user_message WHERE session_id=? ORDER BY created_at ASC",
+        (session_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ====================================================================
