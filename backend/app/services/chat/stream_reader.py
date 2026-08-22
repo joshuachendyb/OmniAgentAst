@@ -23,6 +23,8 @@
 # 2026-08-18 - 小健 - 三堂会审 Bug#8: _parse_observations 预扫描 action 的 FC id 集合(_action_ids), 截断场景 truncated_output observation 无对应 action(运行时 id 不可恢复)回放生成孤儿 tool 消息→OpenAI历史不合法, 跳过防非法; _log_task_end 注释同步(P1后chunk不入steps)
 # 2026-08-19 - 小欧 - 老格式回退 BUG: _parse_observations 老 content 回退分支 同一 step 多条 observation 时 tool_call_id 恒 _0, 与同轮 action_tool(FC)多条 tool_call.id 顺序错配→历史回放 OpenAI 工具消息配对错乱; 新增 _legacy_seq 按 step 递增组内序号, tc/obs id 严格配对(与 _action_ids/PARALLEL 同源规则)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: 三处 TASK_END 日志改造, task_accumulated_tokens 取 FinalStep 全量(与前端同口径); session 级 update_session 保留钩子(链级落库在 react_cycle); 移除工具级误写
+# 2026-08-22 - 小欧 - 北京老陈 2026-08-22 铁律(chat_messages 只写严禁读): _load_previous_messages 改读 fetch_session_user_message_pairs
+#     (chat_user_message+chat_tasks 重建"用户+AI"历史, assistant 正文取 response、thought 从 execution_steps 派生; 不退化/不加列/不读 chat_messages)
 """
 stream_reader — SSE流运行器（消费者）
 
@@ -44,6 +46,7 @@ from app.logger import logger, log_and_print
 from app.utils.sse_formatter import format_agent_sse
 from app.utils.json_utils import safe_json_dumps  # steps序列化为JSON串供多轮上下文 — 小欧 2026-07-14
 from app.services.chat.storage import load_execution_steps  # 从chat_message_steps组装 — 小欧 2026-07-14
+from app.services.chat.storage import fetch_session_user_message_pairs  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律)
 
 
 def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
@@ -191,38 +194,28 @@ def _load_previous_messages(session_id: str, context_link_mode: str = "independe
                 # 2026-08-17 - 小健 - 三堂会审-E1修复: 原 BETWEEN lo AND upper 含上界,
                 #   把本任务自身的 user 消息(id=upper)也装入上下文, 与本次 user_input 重复;
                 #   改 id < upper(不含本任务 user 消息), 语义对齐"本任务前"
-                rows = conn.execute(
-                    "SELECT id, role, content FROM chat_messages "
-                    "WHERE session_id=? AND id >= ? AND id < ? ORDER BY id ASC",
-                    (session_id, _lower_id, upper_message_id),
-                ).fetchall()
+                # 北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 改读 chat_user_message+chat_tasks(复用 fetch_session_user_message_pairs)
+                pairs = fetch_session_user_message_pairs(conn, session_id, lower_id=_lower_id, upper_id=upper_message_id)
             elif _lower_id is not None:  # 链根存在但无上界(异常兜底): 仅下界过滤
-                rows = conn.execute(
-                    "SELECT id, role, content FROM chat_messages "
-                    "WHERE session_id=? AND id>=? ORDER BY id ASC",
-                    (session_id, _lower_id),
-                ).fetchall()
+                pairs = fetch_session_user_message_pairs(conn, session_id, lower_id=_lower_id)
             else:  # 链根无 user_message_id(异常兜底)时退化为按会话加载, 防回退丢历史的退化
                 logger.warning(f"[SSE] linked 链根 {_lo} 无 user_message_id, 退化为按会话加载(session={session_id})")
-                rows = conn.execute(
-                    "SELECT id, role, content FROM chat_messages "
-                    "WHERE session_id=? ORDER BY id ASC",
-                    (session_id,),
-                ).fetchall()
+                pairs = fetch_session_user_message_pairs(conn, session_id)
             messages = []
-            for msg_id, role, content in rows:
-                if role == "user":
-                    messages.append({"role": "user", "content": content or ""})
-                elif role == "assistant":
-                    steps = load_execution_steps(conn, msg_id)
-                    steps_json = safe_json_dumps(steps) if steps else None
-                    tool_calls = _parse_tool_calls(msg_id, steps_json) if steps_json else []
-                    if tool_calls:
-                        messages.append({"role": "assistant", "content": content or "", "tool_calls": tool_calls})
-                    else:
-                        messages.append({"role": "assistant", "content": content or ""})
-                    if steps_json:
-                        messages.extend(_parse_observations(msg_id, steps_json))
+            for p in pairs:
+                messages.append({"role": "user", "content": p["user_content"] or ""})
+                ai_id = p["ai_message_id"]
+                if ai_id is None:
+                    continue
+                steps = load_execution_steps(conn, ai_id)
+                steps_json = safe_json_dumps(steps) if steps else None
+                tool_calls = _parse_tool_calls(ai_id, steps_json) if steps_json else []
+                if tool_calls:
+                    messages.append({"role": "assistant", "content": p["ai_content"] or "", "tool_calls": tool_calls})
+                else:
+                    messages.append({"role": "assistant", "content": p["ai_content"] or ""})
+                if steps_json:
+                    messages.extend(_parse_observations(ai_id, steps_json))
         return messages
     except Exception as e:
         # 【P1-14修复】DB异常加日志而非静默吞掉 — chendyg 2026-06-26

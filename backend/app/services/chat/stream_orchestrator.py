@@ -58,7 +58,11 @@
 #   db_ops 命名空间新增 query_task_acc 条目(终态快照从权威累计列派生); ②C4-D1 编排⑨ eager 分配 assistant 行
 #   (allocate_and_insert_message)+创建时即 UPDATE chat_tasks.ai_message_id, _ai_message_id 经 run_agent_in_background
 #   新参注入; ③C4 连带清理——db_ops 删 allocate_and_insert 条目(唯一消费点 agent_runner 惰性分支已随 C4-D3 删除)、
-#   删 save_steps 条目及 :87 save_execution_steps_to_db 导入(grep 证实仅服务该条目; sse_events 函数本体保留)
+#   删 save_steps 条目及 :87 save_execution_steps_to_db 导入(grep 证实仅服务该条目;    sse_events 函数本体保留)
+# 2026-08-22 - 小欧 - 北京老陈 2026-08-22 两处定: ①chat_messages 只写铁律: 编排⑥ _load_previous_messages 调用点改读
+#     fetch_session_user_message_pairs(经 chat_user_message+chat_tasks 重建历史, 不读 chat_messages); ②L2 sessionModel 结构化: 读 get_session_model
+#     覆盖 ai_service.provider+model(替原单 model_override), finally 双还原 provider+model(防单例污染)
+# 2026-08-22 - 小欧 - 三堂会审复核整改(北京老陈 2026-08-22): 编排⑥消费点调用名由残留的 get_session_model_override 修正为 get_session_model(2026-08-22 改名后 import 已改、唯独调用点漏改, 此前任一会话请求必 NameError 崩溃, P0 修复); 因 get_session_model 现返回 SessionModelOverride(非 dict), 消费点改属性访问(.model/.provider, 去 .get/下标); 同步修正 line92 import 注释标明改名
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -86,7 +90,7 @@ from app.services.task.task_state import create_stream_buffer, get_stream_buffer
 from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
 from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, finalize_message, query_task_accumulation  # 12.2-Q3: 追加权威累计查询 — 小欧 2026-08-21
-from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_session_model_override, get_previous_task_chain  # S1/S2 任务级读写(10.1.4/10.1.7②) — 小欧 2026-08-16
+from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_session_model, get_previous_task_chain  # S1/S2 任务级读写(10.1.4/10.1.7②); get_session_model 为 2026-08-22 由 get_session_model_override 改名(北京老陈 2026-08-22 L2 结构化)
 from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # 11.1 token 四层同构累计 — 小欧 2026-08-20
 from app.db import db  # 小健 2026-08-17 三堂会审-A1修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
 from app.services.chat.stream_reader import _load_previous_messages, _log_task_end
@@ -202,6 +206,7 @@ async def chat_stream_orchestrator(
     _task_start_time = time.time()
     _user_msg_id = None
     _orig_model = None  # 小健 2026-08-17 三堂会审-AE修复: 预初始化, 供 finally 还原单例 model(防取消/无覆盖时 NameError)
+    _orig_provider = None  # 北京老陈 2026-08-22: sessionModel 结构化(provider+model), 还原单例 provider 同源
     try:
         _user_msg_id = get_user_message_id(session_id)
     except Exception:
@@ -236,18 +241,23 @@ async def chat_stream_orchestrator(
             yield cancel_msg
             return
 
-        # ── 编排⑥建 UniversalAgent + 会话model_override(先建才有 llm_client) ——— 小健 2026-08-17
+        # ── 编排⑥建 UniversalAgent + 会话sessionModel(先建才有 llm_client) ——— 小健 2026-08-17
         agent = UniversalAgent(llm_client=ai_service, task_id=task_id)
-        # S2 model_override 生效(10.1.7②-4/文档2 6.1.1/6.1.8)：编排层读会话覆盖写 ai_service.model(非 resolver 混 DB) — 小欧 2026-08-16
+        # S2 sessionModel 生效(10.1.7②-4/文档2 6.1.1/6.1.8)：编排层读会话覆盖写 ai_service.provider+model(L2 结构化) — 北京老陈 2026-08-22
         if session_id:
             try:
                 with db.get_conn("chat") as _conn2:
-                    _ov = get_session_model_override(_conn2, session_id)
-                if _ov:
-                    _orig_model = ai_service.model  # 小健 2026-08-17 三堂会审-AE修复: 覆盖前保存单例原值, finally 还原
-                    ai_service.model = _ov
+                    _ov = get_session_model(_conn2, session_id)
+                if _ov and (_ov.model or _ov.provider):
+                    if _ov.model:
+                        _orig_model = ai_service.model  # 小健 2026-08-17 三堂会审-AE修复: 覆盖前保存单例原值, finally 还原
+                        ai_service.model = _ov.model
+                    if _ov.provider:
+                        _orig_provider = ai_service.provider  # 北京老陈 2026-08-22: provider 同源保留还原
+                        ai_service.provider = _ov.provider
+                    logger.info(f"[chat] L2 sessionModel 已生效: session={session_id}, provider={_ov.provider}, model={_ov.model}")
             except Exception as _ov_e:
-                logger.warning(f"[chat] 读会话model_override失败(session={session_id}): {_ov_e}")
+                logger.warning(f"[chat] 读会话sessionModel失败(session={session_id}): {_ov_e}")
         # ── 编排⑦组装 db_ops 持久化回调命名空间(经闭包注入后台, 依赖 ⑥ agent) ——— 小健 2026-08-17
         # P4: 构造 db_ops 命名空间注入 agent_runner, 消除 agent→chat 反向依赖 — 小沈 2026-08-13
         #   10.1.7②-1 9属性(任务级读写扩展) — 小欧 2026-08-16
@@ -343,6 +353,10 @@ async def chat_stream_orchestrator(
         if _orig_model is not None and getattr(ai_service, "model", None) != _orig_model:
             ai_service.model = _orig_model
             logger.info(f"[chat_stream_orchestrator] AE还原共享单例model: task={task_id}, restore={_orig_model}")
+        # 北京老陈 2026-08-22: 同源还原 provider(结构化 sessionModel)
+        if _orig_provider is not None and getattr(ai_service, "provider", None) != _orig_provider:
+            ai_service.provider = _orig_provider
+            logger.info(f"[chat_stream_orchestrator] AE还原共享单例provider: task={task_id}, restore={_orig_provider}")
 
 
 async def _stream_with_control(buffer, task_id: str, session_id: str,

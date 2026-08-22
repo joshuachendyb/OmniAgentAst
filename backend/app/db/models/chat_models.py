@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-07-16 - 小欧 - MessageResponse 增 thought 字段, API 返回消息时携带 thought
 # 2026-08-08 - 小欧 - 全程统一本地时区: MessageResponse.timestamp 描述 `ISO 8601 UTC格式` → `本地ISO无Z`
+# 2026-08-22 - 小欧 - 6.1.1 L2 会话级 sessionModel 回读字段(SessionResponse/Session)落地，与 SessionUpdate 写入口、storage.get_session_model 执行侧读取闭环
 """
 聊天数据模型 (Chat Data Models)
 定义会话、消息等数据结构
@@ -12,6 +13,16 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 
+class SessionModelOverride(BaseModel):
+    """会话级模型覆盖结构(L2) — 北京老陈 2026-08-22
+    系统内【首次】以结构化方式定义 model 变量: 至少 provider + model, 可选 display_name。
+    后续其他 model 类字段(如全局当前模型、任务级模型等)将逐步统一为同一结构(provider+model),
+    本类即规范模板, 新增/改造 model 字段应复用此结构而非裸字符串。"""
+    provider: str = Field(..., description="模型供应商, 如 openai / anthropic")
+    model: str = Field(..., description="模型名, 如 gpt-4o")
+    display_name: Optional[str] = Field(None, description="展示名(可选, 缺省由 provider+model 构建)")
+
+
 class Session(BaseModel):
     """会话模型"""
     id: str = Field(..., description="会话ID")
@@ -19,6 +30,7 @@ class Session(BaseModel):
     created_at: str = Field(..., description="创建时间")
     updated_at: str = Field(..., description="更新时间")
     message_count: int = Field(0, description="消息数量")
+    sessionModel: Optional[SessionModelOverride] = Field(None, description="会话级模型覆盖(L2)，空=跟随全局")
 
 
 class Message(BaseModel):
@@ -44,6 +56,7 @@ class SessionResponse(BaseModel):
     created_at: str = Field(..., description="创建时间")
     updated_at: str = Field(..., description="更新时间")
     message_count: int = Field(..., description="消息数量")
+    sessionModel: Optional[SessionModelOverride] = Field(None, description="会话级模型覆盖(L2)，空=跟随全局")
     is_valid: Optional[bool] = Field(None, description="是否为有效会话")
 
 

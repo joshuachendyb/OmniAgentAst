@@ -30,6 +30,10 @@
 #   建 chat_task_steps(ai_message_id) 索引需迁移改名后的新列, 故必须晚于补列、早于索引(修正初版时序错误)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: 新增 task_accumulated_tokens/session_accumulated_tokens 实时累计列(落库口径与 react_cycle 同源); 新增 _verify_acc_columns() 复核落库, 防 _ensure_column 隐性失败致隐性 OperationalError
 # 2026-08-21 - 小欧 - 12.2-C1/C2/C5/Q7/Q8(按文档[1]12.2 diff设计落地): ①C1-D1 chat_task_steps去重+唯一索引(idx_steps_unique); ②C2-D1 token_usage去重+唯一索引(idx_token_usage_task_call); ③C5-D1 启动期空白AI行清扫(标败不删行); ④Q7-D2 init_operations_db拆分——移除timers DDL+新增init_timers_db独立函数(新库TEXT时间列=Q8落地); ⑤Q8-D1 新库timers.db三列TEXT(老列不动, SQLite不支持ALTER COLUMN)
+# 2026-08-22 - 小欧 - 北京老陈 2026-08-22 定: chat_sessions.sessionModel 结构化落地 + 旧 model_override 兼容迁移:
+#   ①_ensure_column 补 sessionModel TEXT(会话级模型覆盖落库点); ②旧列 model_override 兼容: 存在则 RENAME COLUMN 到 sessionModel(现代 SQLite),
+#     回退路径先建 sessionModel 列再尝试 DROP 旧列(失败保留无害); 旧裸字符串数据缺 provider 不复制(免污染 JSON 解析);
+#   ③修正初版回退缺陷(原 UPDATE 引用尚未创建的 sessionModel 列致初始化崩溃)
 """
 db_initializer — 数据库初始化
 
@@ -57,6 +61,10 @@ def init_chat_db(get_conn):
                 version INTEGER DEFAULT 1
             );
             
+            -- ⚠️【北京老陈 2026-08-22 铁律：chat_messages = 只写表】本表仅供写入（INSERT 消息 / UPDATE content|status|thought|task_id|user_message_id），
+            --   严禁任何 SELECT 读取！读取会话/消息/步骤/任务数据必须走结构化读表：
+            --   chat_user_message（用户消息+AI最终回答：response/reasoning/model/provider/task_id）、chat_task_steps（步骤）、chat_tasks（任务，含 ai_message_id）、
+            --   chat_sessions（会话）、token_usage（token）、chat_session_trust（信任）。违反此铁律 = 退化。
             CREATE TABLE IF NOT EXISTS chat_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
@@ -164,8 +172,29 @@ def init_chat_db(get_conn):
         # ② chat_messages / chat_task_steps 补 task_id 列（B1 挂任务；对齐文档2 3.1.8-⑥）
         _ensure_column(conn, "chat_messages", "task_id", "TEXT")
         _ensure_column(conn, "chat_task_steps", "task_id", "TEXT")
-        # ③ chat_sessions 补 model_override 列
-        _ensure_column(conn, "chat_sessions", "model_override", "TEXT")    # L2 会话级模型覆盖落库点
+        # ③ chat_sessions 补 sessionModel 列(会话级模型覆盖落库点, 结构化 provider+model 的 JSON)
+        # 旧列 model_override 兼容迁移: 存在则改名(现代 SQLite); 老 SQLite 不支持 RENAME 时降级为
+        # 先建目标列再尝试删旧列(失败则保留, 无害)。旧 model_override 是裸字符串(缺 provider),
+        # 无法映射结构化, 故不复制数据(复制会污染 sessionModel 致解析失败) — 北京老陈 2026-08-22
+        _cur = conn.execute("PRAGMA table_info(chat_sessions)")
+        _cols = [r[1] for r in _cur.fetchall()]
+        if "model_override" in _cols:
+            if "sessionModel" not in _cols:
+                try:
+                    conn.execute("ALTER TABLE chat_sessions RENAME COLUMN model_override TO sessionModel")
+                except Exception:
+                    _ensure_column(conn, "chat_sessions", "sessionModel", "TEXT")
+                    try:
+                        conn.execute("ALTER TABLE chat_sessions DROP COLUMN model_override")
+                    except Exception:
+                        pass  # 老 SQLite 不支持 DROP COLUMN, 保留旧列无害
+            else:
+                # sessionModel 已存在, 旧列冗余, 尝试删除
+                try:
+                    conn.execute("ALTER TABLE chat_sessions DROP COLUMN model_override")
+                except Exception:
+                    pass
+        _ensure_column(conn, "chat_sessions", "sessionModel", "TEXT")    # L2 会话级模型覆盖落库点
         # 11.1 token 四层同构：任务级/会话级实时累计列 — 小欧 2026-08-20
         _ensure_column(conn, "chat_tasks", "task_accumulated_tokens", "TEXT DEFAULT '{}'")
         _ensure_column(conn, "chat_sessions", "session_accumulated_tokens", "TEXT DEFAULT '{}'")

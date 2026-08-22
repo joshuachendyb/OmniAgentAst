@@ -8,25 +8,30 @@
 #   合并重复的 if role=="user" 判断块(DRY, 三堂会审Bug#9)
 # 2026-08-21 - 小欧 - 12.2-Q6-D1(按文档[1]12.2 diff设计落地): chat_sessions.message_count 绝对值覆盖→SQL自增
 #   (message_count + 1), 与 storage.py allocate 路径同口径, 消除并发写入丢计数; new_message_count 保留供返回值
+# 2026-08-22 - 小欧 - 北京老陈铁律(chat_messages 只写严禁读): get_session_messages 改读 chat_user_message+chat_tasks(复用 fetch_session_user_message_pairs);
+#   assistant 正文取 response、thought 从 execution_steps 的 thought 类型步骤派生(不退化/不加列/不读 chat_messages)
+# 2026-08-22 - 小欧 - 北京老陈 2026-08-22 定: L2 会话级模型覆盖 sessionModel 结构化对齐: ①import SessionModelOverride; ②get_session_messages
+#     SELECT sessionModel 列(替原 model_override); ③新增 _parse_session_model(dict→SessionModelOverride, 容错返 None); ④返回 sessionModel 结构(替原 model_override 字符串)
+# 2026-08-22 - 小欧 - 三堂会审复核整改(北京老陈 2026-08-22): 删除本文件重复的 _parse_session_model, 改从 storage 导入全系统唯一 parse_session_model(DRY); 同步移除不再使用的 json/SessionModelOverride 导入
 """
 message_service — 消息业务服务(services/chat)
 
 职责(方案4.7.3, 小欧 2026-08-13): 会话消息历史读取/保存 + display_name 缓存(独占)。
 API 层仅路由薄壳 + DTO, 业务逻辑单一归属本服务(SRP)。
 """
-import json
 from typing import Optional
 
 from app.logger import logger
 from app.utils.json_utils import safe_json_dumps, parse_json
 from app.utils.cache import LRUCache
 from app.constants import MAX_CACHE_SIZE
-from app.utils.display_utils import extract_display_name_from_steps
 from app.utils.time_utils import ensure_timestamp_milliseconds, get_local_iso_timestamp, to_local_iso, format_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.db import db
 from app.db.models.chat_models import MessageResponse
 from app.services.chat.storage import track_user_message, get_user_message_id, load_execution_steps
 from app.services.chat.storage import insert_user_message  # v2.0 改动2: user消息同步写chat_user_message — 小欧 2026-08-19
+from app.services.chat.storage import fetch_session_user_message_pairs, parse_session_model  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律) + 结构化 sessionModel 统一解析(DRY)
+from app.utils.display_utils import extract_display_name_from_steps, build_display_name
 
 
 # 消息模块共享的 display_name 缓存(A7 迁移边界: 归 message_service 独占) — 小欧 2026-08-13
@@ -47,31 +52,49 @@ def get_session_messages(session_id: str):
         cursor.execute('''SELECT id, title, created_at, updated_at,
                           COALESCE(title_locked, 0) as title_locked,
                           COALESCE(title_updated_at, created_at) as title_updated_at,
-                          COALESCE(version, 1) as version, COALESCE(is_valid, 1) as is_valid
+                           COALESCE(version, 1) as version, COALESCE(is_valid, 1) as is_valid,
+                          sessionModel
                        FROM chat_sessions WHERE id = ? AND is_deleted = FALSE''', (session_id,))
 
         session = cursor.fetchone()
         if not session:
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
 
-        cursor.execute('''SELECT id, session_id, role, content, timestamp, display_name, thought  -- 小欧 2026-07-16 增 thought
-                       FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC''', (session_id,))
+        # 北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 改读 chat_user_message+chat_tasks(复用 fetch_session_user_message_pairs)
+        pairs = fetch_session_user_message_pairs(conn, session_id)
 
         messages = []
-        for row in cursor.fetchall():
-            msg_id = row['id']
+        for p in pairs:
+            # 用户消息气泡
+            messages.append(MessageResponse(
+                id=p['user_id'], session_id=session_id,
+                role="user", content=p['user_content'] or "",
+                timestamp=format_timestamp(p['created_at']),
+                execution_steps=[], display_name=None, thought=None,
+            ))
+            ai_id = p['ai_message_id']
+            if ai_id is None:
+                continue
             # 从 chat_task_steps 表读取步骤列表 — 小欧 2026-07-14; v2.0 表改名 chat_task_steps — 2026-08-19
-            steps = load_execution_steps(conn, msg_id)
-            display_name = row['display_name']
+            steps = load_execution_steps(conn, ai_id)
+            display_name = build_display_name(p['provider'], p['model']) if p['provider'] or p['model'] else None
             if not display_name and steps:
                 display_name = extract_display_name_from_steps(steps)
+            # thought 派生: 从 execution_steps 的 thought 类型步骤取(北京老陈 2026-08-22: 不读 chat_messages)
+            thought = None
+            if steps:
+                for s in steps:
+                    if isinstance(s, dict) and s.get("type") == "thought":
+                        thought = s.get("content") or s.get("reasoning")
+                        if thought:
+                            break
 
             messages.append(MessageResponse(
-                id=row['id'], session_id=row['session_id'],
-                role=row['role'], content=row['content'],
-                timestamp=format_timestamp(row['timestamp']),
+                id=ai_id, session_id=session_id,
+                role="assistant", content=p['ai_content'] or "",
+                timestamp=format_timestamp(p['created_at']),
                 execution_steps=steps, display_name=display_name,
-                thought=row['thought'],  # 小欧 2026-07-16
+                thought=thought,
             ))
 
         title_locked = bool(session['title_locked'])
@@ -83,6 +106,7 @@ def get_session_messages(session_id: str):
             "title_source": "user" if title_locked else "auto",
             "title_updated_at": to_local_iso(session['title_updated_at']),
             "version": session['version'], "is_valid": session['is_valid'],
+            "sessionModel": parse_session_model(session['sessionModel']),
             "messages": messages,
         }
 

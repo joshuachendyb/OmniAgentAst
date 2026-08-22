@@ -12,6 +12,7 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#35: 删除观察条目重复字段"格式化内容"(与"内容"逐字节相同, 每个观察步骤存两份全文)
 #   【病根】2026-08-12补"内容"后L409 `entry["格式化内容"]=observation_content` 与"内容"完全重复, 大工具结果(读文件/长SQL输出)日志体积/IO/磁盘双倍开销, 违DRY
 #   【改法】删除"格式化内容"赋值, 保留"原始内容"兼容分析脚本; 已grep确认全仓无调用方依赖"格式化内容"键
+# 2026-08-22 - 小欧 - 北京老陈 2026-08-22 铁律(chat_messages 只写严禁读): _user_id_from_db 查询由 chat_messages(role='user' AND 序) 改读 chat_user_message(与全系统改读新表一致, 不退化/不读 chat_messages)
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
@@ -108,7 +109,7 @@ class PromptLogger:
         try:
             with db.get_conn("chat") as conn:
                 row = conn.execute(
-                    "SELECT id FROM chat_messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+                    "SELECT id FROM chat_user_message WHERE session_id=? ORDER BY id DESC LIMIT 1",
                     (sid,)
                 ).fetchone()
                 return row[0] if row else None

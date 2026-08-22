@@ -45,6 +45,9 @@
 # 2026-08-20 - 小欧 - 10.5 问题4/6 三堂会审落地: 新增 list_session_tasks(会话任务列表+总数, B1/问题6 任务数=用户消息数, chat_tasks 行数新口径) + list_session_trust(D1 信任清单) + delete_session_trust(D3 撤销信任)。
 # 2026-08-21 - 小欧 - 11.6.4: update_task 新增 artifacts 参数+safe_json_dumps 写库; get_task_detail parse_json 反序列化 artifacts 为 list
 # 2026-08-22 - 小欧 - 新增 load_user_messages_by_session (按 session_id 读 chat_user_message 列表，替代 chat_messages)
+# 2026-08-22 - 小欧 - 北京老陈 2026-08-22 定: L2 会话级模型覆盖 sessionModel 结构化: ① get_session_model_override 改名 get_session_model,
+#     读 sessionModel 列(JSON)→dict(provider+model, 用 parse_json 容错); ②关联调用点 stream_orchestrator 同步改名引用
+# 2026-08-22 - 小欧 - 三堂会审复核整改(北京老陈 2026-08-22): ①新增全系统唯一 parse_session_model(消除 message_service/session_service 重复实现, DRY), 返回 SessionModelOverride; ②get_session_model 返回值由 dict 改为 SessionModelOverride(类型统一, 杜绝调用方误用 .get 致 AttributeError); 关联 stream_orchestrator 消费点改属性访问(.model/.provider)
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -54,18 +57,21 @@ storage — 会话存储业务逻辑
 2026-07-21 小欧: 修复 _truncate_step_dict 漏掉 execution_result+parallel_results 截断;
 2026-07-21: 小欧 加 _truncate_tool_result_strings (带 tag 日志, 不碰 observation);
 2026-07-21  小欧: 移动 MAX_TOOL_RESULT_STR_LEN 等常量; 
+2026-08-22 - 小欧 - BUG修复(北京老陈 2026-08-22 铁律"系统代码不得退化"): 铁律后占用检查改读 chat_user_message+chat_tasks(禁读 chat_messages), 若 chat_messages 已存在该 id(如 legacy 直写助手消息未镜像至 chat_tasks)落库时 UNIQUE 撞键→500; save_execution_steps 改为撞键时退化为复用该消息(UPDATE, is_new 置 False 不重复计数), 与铁律前 chat_messages 占用检查"复用而非新建"语义一致, 不读 chat_messages、不污染 chat_tasks
 """
 
+import json
 import threading
 import types  # 11.1 冻结 token 零值常量, 防外部 mutate 污染全局 — 小欧 2026-08-20
 from typing import Any, Dict, Optional, Tuple
-from sqlite3 import Connection
+from sqlite3 import Connection, IntegrityError
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from app.logger import logger
 from app.db import db
+from app.db.models.chat_models import SessionModelOverride
 from app.utils.json_utils import safe_json_dumps, parse_json
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
 from app.utils.display_utils import extract_metadata_from_steps
@@ -92,7 +98,7 @@ def get_last_user_message_id(conn: Connection, session_id: str) -> Optional[int]
     track(_user_message_ids) 为内存 dict, 服务重启即丢; 该函数从 DB 恢复,
     供 orchestrator 在 track 缺失时为 linked 续聊提供 upper 上界(防链外/全部消息进上下文)"""
     row = conn.execute(
-        "SELECT id FROM chat_messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+        "SELECT id FROM chat_user_message WHERE session_id=? ORDER BY id DESC LIMIT 1",
         (session_id,),
     ).fetchone()
     return row["id"] if row else None
@@ -150,7 +156,7 @@ class AssistantMessageIdAllocator:
             else:
                 c = conn.cursor()
                 c.execute(
-                    "SELECT id FROM chat_messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+                    "SELECT id FROM chat_user_message WHERE session_id=? ORDER BY id DESC LIMIT 1",
                     (session_id,),
                 )
                 row = c.fetchone()
@@ -158,7 +164,13 @@ class AssistantMessageIdAllocator:
 
             c = conn.cursor()
             for _ in range(10):
-                c.execute("SELECT id, role, session_id FROM chat_messages WHERE id=?", (expected,))
+                # 北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 占用检查改查 chat_user_message(id) + chat_tasks(ai_message_id)
+                c.execute(
+                    "SELECT 'user' AS role, session_id FROM chat_user_message WHERE id=? "
+                    "UNION ALL "
+                    "SELECT 'assistant' AS role, session_id FROM chat_tasks WHERE ai_message_id=?",
+                    (expected, expected),
+                )
                 existing = c.fetchone()
                 if existing is None:
                     break
@@ -172,9 +184,14 @@ class AssistantMessageIdAllocator:
                 logger.warning(f"[allocator] {session_id} id={expected} 被占用(role={existing['role']}, sid={existing['session_id']}), 递增寻空位")
                 expected += 1
             else:
-                c.execute("SELECT id FROM chat_messages ORDER BY id DESC LIMIT 1")
+                # 全局最大 id = chat_user_message.id 与 chat_tasks.ai_message_id 的并集中最大者
+                c.execute(
+                    "SELECT MAX(m) AS m FROM ("
+                    "SELECT MAX(id) AS m FROM chat_user_message "
+                    "UNION ALL SELECT MAX(ai_message_id) AS m FROM chat_tasks)"
+                )
                 max_row = c.fetchone()
-                expected = (max_row["id"] + 1) if max_row else 1
+                expected = (max_row["m"] + 1) if max_row and max_row["m"] is not None else 1
 
             self._assistant_ids[session_id] = expected
         return expected, True
@@ -258,8 +275,15 @@ async def save_execution_steps(session_id: str, update_data):
             ai_message_id, is_new = _allocator.allocate(session_id, conn)
             metadata = extract_metadata_from_steps(update_data.execution_steps)
             display_name = metadata.get("display_name")
-            if is_new:
-                insert_assistant_message(conn, ai_message_id, session_id, display_name, update_data)
+            try:
+                if is_new:
+                    insert_assistant_message(conn, ai_message_id, session_id, display_name, update_data)
+            except IntegrityError as _ie:
+                # 北京老陈 2026-08-22 铁律回归修复: 铁律后占用检查改读 chat_user_message+chat_tasks(禁读 chat_messages),
+                # 若 chat_messages 已存在该 id(如 legacy 直写助手消息未镜像至 chat_tasks)落库时 UNIQUE 撞键;
+                # 退化为复用该消息(与 铁律前 chat_messages 占用检查语义一致: 复用而非新建), 改走 UPDATE, 不读 chat_messages、不污染 chat_tasks
+                logger.warning(f"[save_execution_steps] id={ai_message_id} 已存在, 复用(UPDATE)而非新建: {_ie}")
+                is_new = False
             update_message_fields(conn, ai_message_id, update_data, display_name)
             update_session_message_count(conn, session_id, is_new)
         logger.info(f"保存执行步骤成功: session_id={session_id}, ai_message_id={ai_message_id}, is_new={is_new}")
@@ -572,15 +596,34 @@ def query_chain_accumulation(conn: Connection, *, context_root_task_id: str, cur
     return {"prompt_tokens": int(_row["p"] or 0), "completion_tokens": int(_row["c"] or 0), "total_tokens": int(_row["t"] or 0)}
 
 
-# ---- ②-4 chat_sessions model_override 生效 ----
+# ---- ②-4 chat_sessions sessionModel 生效 ---- 北京老陈 2026-08-22 L2 会话级模型覆盖(结构化 provider+model)
 
-def get_session_model_override(conn: Connection, session_id: str) -> Optional[str]:
-    """读 chat_sessions.model_override（L2 会话级模型覆盖）— 小欧 2026-08-16"""
+def parse_session_model(raw) -> Optional[SessionModelOverride]:
+    """chat_sessions.sessionModel 列(JSON 文本)反序列化为结构化模型; 空/非法→None — 北京老陈 2026-08-22
+    全系统唯一解析点(消除 message_service/session_service 重复实现, DRY), 返回 SessionModelOverride"""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+        if not data:
+            return None
+        return SessionModelOverride(**data)
+    except Exception:
+        logger.warning(f"[session] sessionModel 解析失败, 视为未设置: {raw}")
+        return None
+
+
+def get_session_model(conn: Connection, session_id: str) -> Optional[SessionModelOverride]:
+    """读 chat_sessions.sessionModel（L2 会话级模型覆盖, 结构化）— 北京老陈 2026-08-22 改结构化 JSON:
+    返回 SessionModelOverride(provider+model) 或 None（未设置）"""
     row = conn.execute(
-        "SELECT model_override FROM chat_sessions WHERE id=? AND is_deleted=FALSE",
+        "SELECT sessionModel FROM chat_sessions WHERE id=? AND is_deleted=FALSE",
         (session_id,),
     ).fetchone()
-    return row["model_override"] if row and row["model_override"] else None
+    raw = row["sessionModel"] if row and row["sessionModel"] else None
+    if not raw:
+        return None
+    return parse_session_model(raw)
 
 
 # ---- ②-5 chat_session_trust 落库 ----
@@ -726,6 +769,43 @@ def load_user_messages_by_session(conn: Connection, session_id: str) -> list:
         (session_id,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def fetch_session_user_message_pairs(conn: Connection, session_id: str,
+                           lower_id: Optional[int] = None,
+                           upper_id: Optional[int] = None) -> list:
+    """北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 本函数从 chat_user_message
+    LEFT JOIN chat_tasks 重建"用户+AI"有序消息对(彻底去 chat_messages 读)。
+    供 get_session_messages / _load_previous_messages / execution_stream 复用(10规范 DRY/复用优先)。
+    返回 list[dict]: 每行一条 user 消息及其配对 assistant(ai_message_id 为 None 表示暂无 AI 回答),
+    字段: user_id, user_content, ai_reasoning, model, provider, task_id, created_at, ai_message_id"""
+    sql = """SELECT cum.id AS user_id, cum.content AS user_content, cum.response AS ai_content,
+                    cum.reasoning AS ai_reasoning,
+                    cum.model AS model, cum.provider AS provider, cum.task_id AS task_id,
+                    cum.created_at AS created_at, ct.ai_message_id AS ai_message_id
+             FROM chat_user_message cum
+             LEFT JOIN chat_tasks ct ON ct.user_message_id = cum.id
+             WHERE cum.session_id = ?"""
+    params: list = [session_id]
+    if lower_id is not None:
+        sql += " AND cum.id >= ?"
+        params.append(lower_id)
+    if upper_id is not None:
+        sql += " AND cum.id < ?"
+        params.append(upper_id)
+    sql += " ORDER BY cum.id ASC"
+    rows = conn.execute(sql, params).fetchall()
+    return [{
+        "user_id": r["user_id"],
+        "user_content": r["user_content"],
+        "ai_content": r["ai_content"],
+        "ai_reasoning": r["ai_reasoning"],
+        "model": r["model"],
+        "provider": r["provider"],
+        "task_id": r["task_id"],
+        "created_at": r["created_at"],
+        "ai_message_id": r["ai_message_id"],
+    } for r in rows]
 
 
 # ====================================================================
