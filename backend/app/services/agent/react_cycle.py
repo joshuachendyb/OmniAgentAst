@@ -109,6 +109,11 @@
 # 2026-08-21 - 小欧 - 12.2-Q5-D3(按文档[1]12.2 diff设计落地): 每轮 token 累计落库块之后新增运行中 checkpoint——
 #   调 agent.telemetry.checkpoint_llm_calls() 增量持久化 llm_calls(整表重写+idx_llm_calls_task_call 唯一索引幂等去重);
 #   目的: 任务中途崩溃时监控数据最多丢最后一轮, 不再全丢; getattr 守卫无 telemetry 场景零影响, 主链路零改动
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.5/6.7: 三处 F8 属性迁移——:398 LLM 调用日志行改读
+#   llm_client.llm_model.model; :401 log_llm_call 改传 llm_model=llm_client.llm_model(prompt_logger 签名归一);
+#   :508 telemetry.on_llm_call 改传 tele_model=llm_client.llm_model — 全链 ModelRef 归一
+# 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): :398/:404/:509 三处改读任务快照 agent._task_llm_model 优先——
+#   防共享单例被并发还原后本任务后续轮次记录到他人模型(与 base_agent 快照/telemetry.finalize 同步落地)
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -395,14 +400,14 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     messages = agent.message_builder.prepare_messages_for_llm()
     openai_tools = get_openai_tools(agent)
 
-    logger.info(f"[LLM] 调用#{agent.llm_call_count}, messages={len(messages)}, tools={len(openai_tools)}, model={getattr(agent.llm_client, 'model', '?')}")
+    _task_llm = getattr(agent, "_task_llm_model", None) or getattr(agent.llm_client, "llm_model", None)   # 任务快照优先(三堂会审 P1) — 小欧 2026-08-22
+    logger.info(f"[LLM] 调用#{agent.llm_call_count}, messages={len(messages)}, tools={len(openai_tools)}, model={getattr(_task_llm, 'model', '?')}")
 
     prompt_logger = get_prompt_logger()
     prompt_logger.log_llm_call(
         round_number=agent.llm_call_count,
         messages=messages,
-        model=getattr(agent.llm_client, 'model', 'unknown'),
-        provider=getattr(agent.llm_client, 'provider', 'unknown'),
+        llm_model=_task_llm,   # 归一: 传 ModelRef 结构(任务级快照, 防单例还原竞态) — 小欧 2026-08-22
         call_type="tools",
         tools=openai_tools,
     )
@@ -507,8 +512,8 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                 _llm_err = str(llm_response["error"])[:80]
             agent.telemetry.on_llm_call(
                 _usage, duration=_call_dur,
-                model=getattr(agent.llm_client, "model", None),
-                provider=getattr(agent.llm_client, "provider", None),
+                tele_model=getattr(agent, "_task_llm_model", None)
+                           or getattr(agent.llm_client, "llm_model", None),   # 任务快照优先(三堂会审 P1 防还原竞态) — 小欧 2026-08-22
                 error_type=_llm_err, finish_reason=_fin,
             )
             # 11.2-B stats 事件（独立模块产出 MetaStep(type="stats", ...)）— 小欧 2026-08-20

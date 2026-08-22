@@ -26,6 +26,9 @@
 # 2026-08-18 - 小欧 - §10.4.4 P7②(§10.1.2): _build_start_contract 改产 StartStep(删 next_step 依赖, step 固定 0, content=context_summary, user_message 顶层化); assemble_start_step 返回类型改 StartStep
 # 2026-08-18 - 小欧 - 三堂会审复核(回归修复): _build_start_contract 补 _start_meta None/非 dict 防御, 防 _meta.get AttributeError, 兑现既声明的「无 _start_meta 返回 None 旁路兼容」契约
 # 2026-08-20 - 小欧 - 11.3-A 跨任务注入基线快照: assemble_start_step 完成时调 TaskTelemetry 记录注入上下文基线(固定不漂移), 供后续任务 context_overview/injected 对比
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.5: _build_start_contract 构造 StartStep 改传
+#   start_model=_ai.llm_model(ModelRef 单结构), 删 display_name=f"{provider} ({model})" 拼装与
+#   provider=/model= 分离入参(设计要求2: display_name 不再落库, 前端派生)
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -198,8 +201,7 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
         context_summary=context_summary,          # content 承载 context_summary(10.1.2 <第2步>3)
         user_message=_meta.get("user_input") or "",   # user_input 顶层化(<第2步>4)
         task_id=getattr(agent, "task_id", None),
-        display_name=f"{_ai.provider} ({_ai.model})",
-        provider=_ai.provider, model=_ai.model,
+        start_model=_ai.llm_model,                # 归一: 直接传 ModelRef, 不再拼 display_name(设计要求2) — 小欧 2026-08-22
         system_prompt=getattr(agent, "_sys_prompt", ""),
         warning=_meta.get("warning"),
     )

@@ -7,6 +7,9 @@
 #   (start 显式占 step 0, 业务步骤从 1 起; 设计文档 2222 行遗留项要求)
 # 2026-08-18 - 小欧 - §10.4.4 P2(弃用 next_step): 删 create_step_counter 整段(step 统一取 agent.llm_call_count);
 #   Callable import 同步删除 — 小欧 2026-08-18
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.5: 基类 _model/_provider 两分离属性 → _step_model: Optional[ModelRef]
+#   单结构承载(用户裁定: step 只承载 ModelRef, 不留裸 model/provider 属性与兼容别名);
+#   SSE 输出由各子类 _extra_fields 从 step_model 派生裸键(前端随之后端)
 """
 ReasoningStep 抽象基类
 
@@ -19,11 +22,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 
 class ReasoningStep(ABC):
-    """所有Step类的抽象基类 — 小健 2026-06-18 添加model/provider property"""
+    """所有Step类的抽象基类 — 小健 2026-06-18 添加model/provider property;
+    2026-08-22 小欧 归一: 改由 _step_model(ModelRef) 单结构承载, 原裸 model/provider property 删除"""
 
     TYPE: str = ""
     IS_DONE: bool = False
@@ -31,8 +36,7 @@ class ReasoningStep(ABC):
     def __init__(self, step: int, timestamp: Optional[str] = None):
         self._step = step
         self._timestamp = timestamp or get_local_iso_timestamp()  # 小欧 2026-08-08 全程统一本地时区: 默认本地ISO无Z
-        self._model: Optional[str] = None
-        self._provider: Optional[str] = None
+        self._step_model: Optional[ModelRef] = None   # 归一唯一承载 — 小欧 2026-08-22
 
     @property
     def step(self) -> int:
@@ -43,12 +47,9 @@ class ReasoningStep(ABC):
         return self._timestamp
 
     @property
-    def model(self) -> Optional[str]:
-        return self._model
-
-    @property
-    def provider(self) -> Optional[str]:
-        return self._provider
+    def step_model(self) -> Optional[ModelRef]:
+        """步骤级模型身份(ModelRef 结构) — 归一唯一读取口 — 小欧 2026-08-22"""
+        return self._step_model
 
     @property
     def type(self) -> str:

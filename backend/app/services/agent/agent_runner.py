@@ -55,6 +55,12 @@
 #   ⑤C4-D4 finally legacy save_steps 兜底分支删除+chat_tasks.ai_message_id 终态回填块删除(创建时已写, 冗余 UPDATE 移除)
 # 2026-08-21 - 小欧 - 12.2-Q3-D3 三堂会审修复: 对账告警块补 db_ops 守卫(if db_ops and hasattr(db_ops, 'query_task_acc')),
 #   防 db_ops=None/注入不完整时 AttributeError; 守卫风格与 update_task/insert_token 块一致(KISS/合规)
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.3/6.5: ①startinfo 删 display_name 键(设计要求2:
+#   display_name 后端零依赖仅前端派生); ②update_user_message_final 回填改传 task_model=ModelRef(provider,model)
+#   (chat_user_message 落 chat_model JSON 单列); import 补 ModelRef
+# 2026-08-23 - 小欧 - 三轮三堂会审修复(P0): update_user_message_final 回填处 ModelRef(provider=None) 必抛
+#   ValidationError——现网 FinalStep 均未传 final_model 致键值恒 None, 回填整体失败连带丢 response/reasoning;
+#   改仅 provider/model 均非空才构造 ModelRef, 否则落 NULL(与旧行为等价)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -76,6 +82,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from app.db import db
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.services.agent.steps import ErrorStep, MetaStep, FinalStep  # 小欧 2026-07-18: 加 FinalStep（多态自包含终态）
 from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed
 from app.services.task.task_registry import task_cleanup
@@ -252,7 +259,7 @@ async def run_agent_in_background(
                     "timestamp": event_dict.get("timestamp"),
                     "content": "任务开始", "severity": "info",
                     "task_id": event_dict.get("task_id"),
-                    "display_name": event_dict.get("display_name"),
+                    # display_name 键消亡(归一设计要求2: 后端零依赖仅前端派生, 前端随 startinfo.provider/model 自行派生) — 小欧 2026-08-22
                     "provider": event_dict.get("provider"),
                     "model": event_dict.get("model"),
                     "ai_message_id": ai_message_id,
@@ -443,6 +450,12 @@ async def run_agent_in_background(
                             if isinstance(_s, dict) and _s.get("type") == "final":
                                 _last_final = _s
                                 break
+                        # 归一(小欧 2026-08-22 报告v1.25 6.3): model/provider 两键 → task_model: ModelRef 结构
+                        # 三堂会审修复(P0): 现网 FinalStep 均未传 final_model → 键值为 None,
+                        #   ModelRef(provider=None) 必抛 ValidationError 致回填整体失败(response/reasoning 连带丢失),
+                        #   仅 provider/model 均非空才构造, 否则落 NULL(与旧行为等价)
+                        _tf_p = _last_final.get("provider") if _last_final else None
+                        _tf_m = _last_final.get("model") if _last_final else None
                         update_user_message_final(
                             _conn,
                             user_message_id=db_ops.user_msg_id,
@@ -450,8 +463,8 @@ async def run_agent_in_background(
                             response=saved_content or "",
                             reasoning=saved_thought or "",
                             outcome=_terminal_status,
-                            model=_last_final.get("model") if _last_final else None,
-                            provider=_last_final.get("provider") if _last_final else None,
+                            task_model=ModelRef(provider=_tf_p, model=_tf_m)
+                                       if (_tf_p and _tf_m) else None,
                             accumulated_usage=safe_json_dumps(getattr(agent, "accumulated_usage", None)),
                         )
                     except Exception as _um_e:
