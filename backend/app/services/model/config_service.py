@@ -13,6 +13,11 @@
 #   AttributeError→500(原代码在 try 内被吞返回 valid=False)。get_service_config(provider, model) 的
 #   model 参数实际未使用, 改传 "" 保持语义不变。校验接口第一次真正可用(原实现永远走假报错分支)。
 # 2026-08-14 - 小欧 - 改名名实相符: model_routes.py→config_routes.py, persistence.py→config_helpers.py(import与docstring同步)
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.6: 全文件 resolve_provider_model 拆包 → resolve_model_ref
+#   (4处); get_system_config_data 返回 ai_model_ref=resolved_model、get_full_config 返回 current_model_ref=
+#   resolved_model、update_config 返回 current_model_ref 结构(方案B 前端 api.ts 契约已同步改)
+# 2026-08-23 - 小欧 - 三轮三堂会审修复(P2): update_config 的 updated_fields 内嵌 ai_model_ref 的
+#   api_base/display_name null 键剔除(模型转 dict 后过滤 None), 免前端/日志噪声
 """
 config_service — 配置业务服务(services/model)
 
@@ -88,12 +93,21 @@ def update_config(config_update):
                 logger.warning(f"删除备份文件失败:{e}")
         clear_backup_paths()
 
-        current_provider = config_data.get('ai', {}).get('provider', '')
-        current_model = config_data.get('ai', {}).get('model', '')
+        # 归一(小欧 2026-08-22 报告v1.25 6.6): current_provider/current_model → current_model_ref 结构(PUT /config 直接返回前端, 方案B)
+        # 三堂会审修复(P2): updated_fields 内嵌 ModelRef 的 api_base/display_name null 键剔除, 免前端噪声 — 小欧
+        _updated_fields = config_update.model_dump(exclude_none=True)
+        if isinstance(_updated_fields.get("ai_model_ref"), dict):
+            _updated_fields["ai_model_ref"] = {
+                k: v for k, v in _updated_fields["ai_model_ref"].items() if v is not None}
         return {
             "success": True, "message": "配置更新成功,请验证服务可用性",
-            "updated_fields": config_update.model_dump(exclude_none=True), "warnings": warnings,
-            "backup_path": str(backup_path) if backup_path else None, "current_provider": current_provider, "current_model": current_model,
+            "updated_fields": _updated_fields,
+            "warnings": warnings,
+            "backup_path": str(backup_path) if backup_path else None,
+            "current_model_ref": {
+                "provider": config_data.get('ai', {}).get('provider', ''),
+                "model": config_data.get('ai', {}).get('model', ''),
+            },
         }
 
     except HTTPException:
@@ -119,11 +133,12 @@ def _mask_api_key(api_key: str) -> str:
 
 
 def get_system_config_data() -> dict:
-    """获取系统配置数据 — 自 model_routes.py 迁入 — 小沈 2026-08-13"""
+    """获取系统配置数据 — 自 model_routes.py 迁入 — 小沈 2026-08-13
+    2026-08-22 小欧 归一报告v1.25 6.6: ai_provider/ai_model → ai_model_ref: ModelRef 结构"""
     config = get_config_instance()
-    final_provider, final_model = get_ai_config_resolver().resolve_provider_model()
+    resolved_model = get_ai_config_resolver().resolve_model_ref()
     ai_config = config.get('ai', {})
-    provider_config = ai_config.get(final_provider, {})
+    provider_config = ai_config.get(resolved_model.provider, {})
     api_key = provider_config.get('api_key', '')
     api_key_configured = bool(api_key and api_key.strip() != '')
     theme = config.get('app.theme', 'light')
@@ -139,10 +154,9 @@ def get_system_config_data() -> dict:
             "confirmDangerousOps": True,
             "maxFileSize": 100
         }
-    logger.info(f"获取配置成功: provider={final_provider}, model={final_model}")
+    logger.info(f"获取配置成功: provider={resolved_model.provider}, model={resolved_model.model}")
     return {
-        "ai_provider": final_provider,
-        "ai_model": final_model,
+        "ai_model_ref": resolved_model,
         "api_key_configured": api_key_configured,
         "theme": theme,
         "language": language,
@@ -153,19 +167,20 @@ def get_system_config_data() -> dict:
 
 
 def validate_config(provider: str) -> dict:
-    """配置校验 — 自 model_routes.py 迁入; 三堂会审修复: 只收provider(get_service_config的model参数未使用) — 小沈 2026-08-13"""
+    """配置校验 — 自 model_routes.py 迁入; 三堂会审修复: 只收provider(get_service_config的model参数未使用) — 小沈 2026-08-13
+    2026-08-22 小欧 归一: resolve_provider_model 拆包 → resolve_model_ref"""
     try:
         resolver = get_ai_config_resolver()
         try:
             resolver.get_service_config(provider, "")
         except ValueError as e:
             return {"valid": False, "message": str(e), "model": None}
-        final_provider, final_model = resolver.resolve_provider_model()
-        logger.info(f"配置校验通过: provider={final_provider}, model={final_model}")
+        resolved_model = resolver.resolve_model_ref()
+        logger.info(f"配置校验通过: provider={resolved_model.provider}, model={resolved_model.model}")
         return {
             "valid": True,
-            "message": f"配置校验通过(未保存),将在首次使用时验证 {final_provider} ({final_model})",
-            "model": final_model
+            "message": f"配置校验通过(未保存),将在首次使用时验证 {resolved_model.provider} ({resolved_model.model})",
+            "model": resolved_model.model
         }
     except Exception as e:
         logger.error(f"配置验证异常: {e}")
@@ -173,11 +188,12 @@ def validate_config(provider: str) -> dict:
 
 
 def get_model_list() -> dict:
-    """获取模型列表 — 自 model_routes.py 迁入 — 小沈 2026-08-13"""
+    """获取模型列表 — 自 model_routes.py 迁入 — 小沈 2026-08-13
+    2026-08-22 小欧 归一: resolve_model_ref 属性访问"""
     try:
         resolver = get_ai_config_resolver()
         ai_config = resolver.get_ai_config()
-        final_provider, final_model = resolver.resolve_provider_model()
+        resolved_model = resolver.resolve_model_ref()
         models = []
         model_id = 1
         for provider_name in ai_config.keys():
@@ -190,7 +206,7 @@ def get_model_list() -> dict:
             if isinstance(provider_models, list) and provider_models:
                 for model_name in provider_models:
                     display_name = f"{provider_name} ({model_name})"
-                    is_current = (final_provider == provider_name and final_model == model_name)
+                    is_current = (resolved_model.provider == provider_name and resolved_model.model == model_name)
                     models.append({
                         "id": model_id,
                         "provider": provider_name,
@@ -200,17 +216,18 @@ def get_model_list() -> dict:
                     })
                     model_id += 1
         logger.info(f"获取模型列表成功: {len(models)}个模型")
-        return {"models": models, "default_provider": final_provider}
+        return {"models": models, "default_provider": resolved_model.provider}
     except Exception as e:
         logger.error(f"获取模型列表失败: {e}")
         return {"models": [], "default_provider": ''}
 
 
 def get_full_config() -> dict:
-    """获取完整配置 — 自 model_routes.py 迁入 — 小沈 2026-08-13"""
+    """获取完整配置 — 自 model_routes.py 迁入 — 小沈 2026-08-13
+    2026-08-22 小欧 归一报告v1.25 6.6: current_provider/current_model → current_model_ref 结构"""
     resolver = get_ai_config_resolver()
     ai_config = resolver.get_ai_config()
-    final_provider, final_model = resolver.resolve_provider_model()
+    resolved_model = resolver.resolve_model_ref()
     providers = {}
     for provider_name in ai_config.keys():
         if is_provider_metadata_field(provider_name):
@@ -230,8 +247,7 @@ def get_full_config() -> dict:
         }
     return {
         "providers": providers,
-        "current_provider": final_provider,
-        "current_model": final_model
+        "current_model_ref": resolved_model
     }
 
 

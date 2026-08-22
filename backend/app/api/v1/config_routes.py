@@ -17,6 +17,8 @@
 #   原传 request.model 在 service try 之外抛 AttributeError→500, 行为退化); ② ModelInfo/get_config_path 两处
 #   函数内局部 import 移顶部, 与其它 DTO/依赖并列(风格一致性)。
 # 2026-08-14 - 小欧 - 改名名实相符: model_routes.py → config_routes.py(实为配置API路由薄壳, /config/* /provider/*)
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B: GET /config 落 DTO 改 ai_model_ref=data["ai_model_ref"]、
+#   GET /config/full 改 current_model_ref=result["current_model_ref"](后端 DTO 字段变更, 前端 api.ts 契约已同步改)
 """
 config_routes — 配置API路由薄壳 (P3 后路由+DTO 调 config_service)
 
@@ -69,9 +71,9 @@ async def get_system_config():
     security_config = data["security"]
     if isinstance(security_config, dict):
         security_config = SecurityConfig(**security_config)
+    # 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): ai_provider/ai_model → ai_model_ref: ModelRef
     return ConfigResponse(
-        ai_provider=data["ai_provider"],
-        ai_model=data["ai_model"],
+        ai_model_ref=data["ai_model_ref"],
         api_key_configured=data["api_key_configured"],
         theme=data["theme"],
         language=data["language"],
@@ -113,10 +115,10 @@ async def get_full_config():
     providers = {}
     for name, p in result["providers"].items():
         providers[name] = ProviderInfo(**p)
+    # 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): current_provider/current_model → current_model_ref
     return FullConfigResponse(
         providers=providers,
-        current_provider=result["current_provider"],
-        current_model=result["current_model"]
+        current_model_ref=result["current_model_ref"]
     )
 
 

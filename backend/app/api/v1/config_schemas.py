@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-08-14 - 小欧 - 改名名实相符: model_schemas.py → config_schemas.py(实为配置DTO定义: ConfigUpdate/SecurityConfig/ProviderInfo等)
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.6 方案B(前端随后端修改): ConfigUpdate.ai_provider/ai_model、
+#   ConfigResponse.ai_provider/ai_model、FullConfigResponse.current_provider/current_model 分离字段归一为
+#   ai_model_ref/current_model_ref: ModelRef 封装字段(前端 api.ts 契约同步改); FullConfigValidationResponse
+#   死DTO(全仓无引用)按 YAGNI 删除
 """配置DTO定义（Pydantic模型）"""
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 from app.constants import DEFAULT_MAX_STEPS
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 
 
 class SecurityConfig(BaseModel):
@@ -14,14 +19,13 @@ class SecurityConfig(BaseModel):
     whitelistEnabled: bool = Field(False, description="是否启用命令白名单")
     commandWhitelist: str = Field("", description="命令白名单,每行一个命令")
     commandBlacklist: str = Field("", description="命令黑名单,每行一个命令")
-    confirmDangerousOps: bool = Field(True, description="危险操作是否需要二次确认")
+    confirmDangerousOps: bool = Field(True, description="危险操作需要二次确认")
     maxFileSize: int = Field(100, description="最大文件操作大小(MB)")
 
 
 class ConfigUpdate(BaseModel):
-    """配置更新请求"""
-    ai_provider: Optional[str] = Field(None, description="AI提供商")
-    ai_model: Optional[str] = Field(None, description="AI模型名称")
+    """配置更新请求 — 归一: provider+model 成对语义由 ModelRef 单字段承载(原子切换)"""
+    ai_model_ref: Optional[ModelRef] = Field(None, description="AI模型(provider+model 结构)")
     provider_api_keys: Optional[Dict[str, str]] = Field(None, description="Provider API Key字典: {provider_name: api_key}")
     theme: Optional[str] = Field("light", description="主题: light | dark")
     language: Optional[str] = Field("zh-CN", description="语言: zh-CN | en-US")
@@ -31,9 +35,8 @@ class ConfigUpdate(BaseModel):
 
 
 class ConfigResponse(BaseModel):
-    """配置响应"""
-    ai_provider: str = Field(..., description="当前AI提供商")
-    ai_model: str = Field(..., description="当前AI模型")
+    """配置响应 — 归一: ai_provider/ai_model → ai_model_ref: ModelRef"""
+    ai_model_ref: ModelRef = Field(..., description="当前AI模型(provider+model 结构)")
     api_key_configured: bool = Field(..., description="API Key是否已配置")
     theme: str = Field(..., description="当前主题")
     language: str = Field(..., description="当前语言")
@@ -82,10 +85,9 @@ class ProviderInfo(BaseModel):
 
 
 class FullConfigResponse(BaseModel):
-    """完整配置响应"""
+    """完整配置响应 — 归一: current_provider/current_model → current_model_ref: ModelRef"""
     providers: dict[str, ProviderInfo] = Field(..., description="所有Provider配置")
-    current_provider: str = Field(..., description="当前使用的Provider")
-    current_model: str = Field(..., description="当前使用的模型")
+    current_model_ref: ModelRef = Field(..., description="当前使用的模型(provider+model 结构)")
 
 
 class ProviderUpdate(BaseModel):
@@ -119,16 +121,6 @@ class ConfigFixResponse(BaseModel):
     fixed_issues: List[str] = Field(default_factory=list, description="修复的问题列表")
     warnings: List[str] = Field(default_factory=list, description="警告列表")
     backup_path: str = Field("", description="备份文件路径")
-
-
-class FullConfigValidationResponse(BaseModel):
-    """完整配置验证响应"""
-    success: bool = Field(..., description="验证是否成功")
-    provider: str = Field(..., description="当前Provider")
-    model: str = Field(..., description="当前Model")
-    message: str = Field(..., description="验证消息")
-    errors: list[str] = Field(default_factory=list, description="错误列表")
-    warnings: list[str] = Field(default_factory=list, description="警告列表")
 
 
 class ConfigPathResponse(BaseModel):

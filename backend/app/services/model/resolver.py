@@ -10,6 +10,9 @@
 #     4. send_start_step(handlers.py) + step_start(openai.py) 接收 warning 参数传入 MetaStep
 #     5. validate_config 使用返回值, warning 出现在验证结果中
 #   合规: SRP + KISS + DRY + SLAP
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.6: resolve_provider_model 二元组改 resolve_model_ref 返回
+#   ModelRef(provider+model 结构, F8 禁 backward 不留旧签名); validate_config 返回值同步归一为
+#   (is_valid, config_model: ModelRef, errors) — 调用点 lifecycle/config_service/stream_orchestrator 已随改
 """
 AI配置解析器 — 直接读配置,无效就报错
 
@@ -19,6 +22,7 @@ Author: 小沈 - 2026-06-07
 
 from typing import Dict, Any, Tuple, Optional
 from app.config import Config, get_config
+from app.db.models.chat_models import ModelRef
 from app.logger import logger
 
 
@@ -69,19 +73,20 @@ class AIConfigResolver:
         self._model_warning = None
         return msg
     
-    def resolve_provider_model(self) -> Tuple[str, str]:
-        """直接读配置的provider和model,无效就报错"""
+    def resolve_model_ref(self) -> ModelRef:
+        """直接读配置的provider和model,无效就报错 — 返回 ModelRef 结构(归一, 禁二元组拆包) — 小欧 2026-08-22
+        api_base 当前无调用方需求(F7), 不在此读取; 构造服务实例时由 provider_config 补齐(lifecycle 6.6)"""
         ai_config = self.get_ai_config()
         provider, model = self._extract_provider_model(ai_config)
-        
+
         self._validate_provider_model_not_empty(provider, model)
         self._validate_provider_exists(ai_config, provider)
         provider_config = self._get_provider_config(ai_config, provider)
         warning = self._validate_model_in_list(provider_config, provider, model)
         if warning:
             self._model_warning = warning
-        
-        return provider, model
+
+        return ModelRef(provider=provider, model=model)
     
     def get_service_config(self, provider: str, model: str) -> Dict[str, Any]:
         ai_config = self.get_ai_config()
@@ -90,9 +95,9 @@ class AIConfigResolver:
         return ai_config[provider]
 
     def validate_config(self) -> tuple:
-        """验证AI配置有效性 — 完全复用已有方法
+        """验证AI配置有效性 — 完全复用已有方法 — 小欧 2026-08-22 返回值归一 ModelRef
         Returns:
-            (is_valid, provider, model, error_messages)
+            (is_valid, config_model: ModelRef, error_messages)
         """
         ai_config = self.get_ai_config()
         provider, model = self._extract_provider_model(ai_config)
@@ -106,7 +111,7 @@ class AIConfigResolver:
                 errors.append(warning)
         except ValueError as e:
             errors.append(str(e))
-        return (len(errors) == 0, provider or "unknown", model or "", errors)
+        return (len(errors) == 0, ModelRef(provider=provider or "unknown", model=model or ""), errors)
 
 
 _global_resolver: Optional[AIConfigResolver] = None
