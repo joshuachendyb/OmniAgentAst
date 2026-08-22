@@ -14,11 +14,12 @@
  * @author 小强
  * @version 2.0.0
  * @since 2026-04-21
+ * @updated 2026-08-22 小欧 - sessionModel 结构化: state 类型 SessionModelOverride | null; loadSession/initializeSession 读 result.sessionModel
  */
 
 import { useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { Message } from "../../types/chat";
+import type { Message, SessionModelOverride } from "../../types/chat";
 import type { UseChatStateReturn } from "./useChatState";
 import type { UseChatStreamingReturn } from "./useChatStreaming";
 import { sessionApi } from "../../services/api";
@@ -48,6 +49,8 @@ export interface UseChatSessionReturn {
   editingTitle: boolean;
   titleInput: string;
   lastSavedTitle: string;
+  sessionModelOverride: SessionModelOverride | null;
+  setSessionModelOverride: (v: SessionModelOverride | null) => void;
   
   // 会话函数
   loadSession: (sessionId: string) => Promise<Message[]>;
@@ -130,6 +133,7 @@ export const useChatSession = (
     editingTitle, setEditingTitle,
     titleInput, setTitleInput,
     lastSavedTitle, setLastSavedTitle,
+    sessionModelOverride, setSessionModelOverride,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     messages, setMessages,
     currentSessionIdRef,
@@ -153,6 +157,7 @@ export const useChatSession = (
         setSessionVersion(result.version || 1);
         setTitleLocked(result.title_locked || false);
         setLastSavedTitle(result.title || "新会话");
+        setSessionModelOverride(result.sessionModel ?? null);
         return result.messages || [];
       }
       return [];
@@ -237,7 +242,8 @@ export const useChatSession = (
             setTitleLocked(result.title_locked);
           }
           setLastSavedTitle(result.title || "新会话");
-          
+          setSessionModelOverride(result.sessionModel ?? null);
+           
           onLoadingEnd();
           onRenderEnd();
           onMessageListLoadingEnd();
@@ -252,10 +258,11 @@ export const useChatSession = (
           setSessionId(null);
           currentSessionIdRef.current = null;
           setMessages([]);
-          setSessionTitle("新会话");
-          setSessionVersion(1);
-          setTitleLocked(false);
-          setLastSavedTitle("新会话");
+    setSessionTitle("新会话");
+    setSessionVersion(1);
+    setTitleLocked(false);
+    setSessionModelOverride(null);
+    setLastSavedTitle("新会话");
           window.history.replaceState({}, "", "/");
           
           onLoadingEnd();
@@ -419,6 +426,7 @@ export const useChatSession = (
       setSessionTitle(newTitle);
       setSessionVersion(1);
       setTitleLocked(false);
+      setSessionModelOverride(null);
       setLastSavedTitle(newTitle);
       
       // 断开之前的SSE连接
@@ -464,6 +472,7 @@ export const useChatSession = (
     setTitleLocked,
     setMessages,
     setLastSavedTitle,
+    setSessionModelOverride,
     currentSessionIdRef,
     streaming,
   ]);
@@ -504,10 +513,11 @@ export const useChatSession = (
     setTitleLocked,
     setMessages,
     setLastSavedTitle,
+    setSessionModelOverride,
     currentSessionIdRef,
     streaming,
   ]);
-  
+
   // ========================================
   // 标题管理函数
   // ========================================
@@ -643,7 +653,11 @@ export const useChatSession = (
     setEditingTitle,
     setTitleInput,
     setLastSavedTitle,
-    
+
+    // 会话级模型覆盖(L2)
+    sessionModelOverride,
+    setSessionModelOverride,
+
     // Refs
     currentSessionIdRef,
   };

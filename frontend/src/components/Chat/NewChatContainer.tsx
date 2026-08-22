@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 接入 ModelPicker 组件(L2 会话级模型覆盖), 解构 sessionModelOverride/setSessionModelOverride
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { message, Card } from 'antd';
 import { useSearchParams } from 'react-router-dom';
@@ -8,6 +9,7 @@ import ChatInput from './ChatInput';
 import MessageArea from './MessageArea';
 import ChatHeader from './ChatHeader';
 import ChatToolbar from './ChatToolbar';
+import ModelPicker from './ModelPicker';
 import AuthorizationModal, {
   AuthorizationRequest,
 } from '../AuthorizationModal';
@@ -61,6 +63,8 @@ const NewChatContainer: React.FC = () => {
     setEditingTitle,
     titleInput,
     setTitleInput,
+    sessionModelOverride,
+    setSessionModelOverride,
     // Refs
     messagesEndRef,
     messagesRef,
@@ -437,21 +441,31 @@ const NewChatContainer: React.FC = () => {
     <Card
       styles={{ body: { padding: '0 4px 4px' } }}
       title={
-        <ChatHeader
-          sessionId={sessionId}
-          sessionTitle={sessionTitle}
-          titleLocked={titleLocked}
-          editingTitle={editingTitle}
-          titleInput={titleInput}
-          sessionVersion={sessionVersion}
-          setSessionTitle={setSessionTitle}
-          setTitleLocked={setTitleLocked}
-          setEditingTitle={setEditingTitle}
-          setTitleInput={setTitleInput}
-          setSessionVersion={setSessionVersion}
-          onEditingStart={handleEditingStart}
-          onEditingCancel={handleEditingCancel}
-        />
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+          <ChatHeader
+            sessionId={sessionId}
+            sessionTitle={sessionTitle}
+            titleLocked={titleLocked}
+            editingTitle={editingTitle}
+            titleInput={titleInput}
+            sessionVersion={sessionVersion}
+            setSessionTitle={setSessionTitle}
+            setTitleLocked={setTitleLocked}
+            setEditingTitle={setEditingTitle}
+            setTitleInput={setTitleInput}
+            setSessionVersion={setSessionVersion}
+            onEditingStart={handleEditingStart}
+            onEditingCancel={handleEditingCancel}
+          />
+          <ModelPicker
+            sessionId={sessionId}
+            sessionTitle={sessionTitle}
+            sessionVersion={sessionVersion}
+            sessionModelOverride={sessionModelOverride}
+            setSessionModelOverride={setSessionModelOverride}
+            setSessionVersion={setSessionVersion}
+          />
+        </span>
       }
       extra={
         <ChatToolbar

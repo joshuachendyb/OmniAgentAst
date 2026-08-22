@@ -12,10 +12,12 @@
  * @version 2.0.0
  * @since 2026-02-17
  * @update 添加配置管理、会话管理接口 - by 小新
+ * @update 2026-08-22 小欧 - sessionModel 结构化(L2 会话级模型覆盖): GetSessionMessagesResponse/UpdateSessionResponse 字段 model_override→sessionModel(SessionModelOverride 类型); updateSession 签名加 sessionModel 参数并发送
  */
 
 import axios from "axios";
 import type { ExecutionStep } from "../utils/sse";
+import type { SessionModelOverride } from "../types/chat";
 import { handleApiError } from "../utils/errorHandler";
 
 // 【小新修复 2026-03-14】统一API地址配置，支持环境变量
@@ -525,6 +527,7 @@ export interface GetSessionMessagesResponse {
   title_source: "user" | "auto";
   title_updated_at: string | null;
   version?: number;
+  sessionModel?: SessionModelOverride | null;
   messages: Message[];
 }
 
@@ -542,6 +545,7 @@ export interface UpdateSessionResponse {
   version?: number;
   title_locked?: boolean;
   title_updated_at?: string;
+  sessionModel?: SessionModelOverride | null;
 }
 
 // ⭐ 新增：批量获取会话标题响应
@@ -716,15 +720,20 @@ export const sessionApi = {
   updateSession: async (
     sessionId: string,
     title: string,
-    version: number // ⭐ 必须参数：版本号
+    version: number, // ⭐ 必须参数：版本号
+    sessionModel?: SessionModelOverride | null // 北京老陈 2026-08-22: L2 会话级模型覆盖(结构化)
   ): Promise<UpdateSessionResponse> => {
+    const body: Record<string, unknown> = {
+      title,
+      version, // ⭐ 必须传递
+      updated_by: "user", // ⭐ 可选：标记用户修改
+    };
+    if (sessionModel !== undefined) {
+      body.sessionModel = sessionModel; // 显式传 null=清空跟随全局
+    }
     const response = await api.put<UpdateSessionResponse>(
       `/sessions/${sessionId}`,
-      {
-        title,
-        version, // ⭐ 必须传递
-        updated_by: "user", // ⭐ 可选：标记用户修改
-      }
+      body
     );
     return response.data;
   },

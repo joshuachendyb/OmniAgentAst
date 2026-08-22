@@ -8,6 +8,7 @@
  * @version 1.0.0
  * @since 2026-03-13
  * @updated 2026-07-16 小欧 - parseMessage 解析 thought 字段
+ * @updated 2026-08-22 小欧 - sessionModel 结构化: 两返回点字段 model_override→sessionModel
  */
 
 import { sessionApi } from "../services/api";
@@ -132,6 +133,7 @@ console.log("%c└───── 历史消息加载 END", "color: blue; font-we
           title: sessionData.title,
           sessionId: sessionData.session_id,
           version: sessionData.version,
+          sessionModel: sessionData.sessionModel ?? null,
         };
       }
       console.log("%c│ 无历史消息", "color: blue; font-size: 12px;");
@@ -169,6 +171,7 @@ const messages = sessionData.messages.map((rawMsg: unknown, index: number) => {
       sessionId: sessionId,
       version: sessionData.version,
       title_locked: sessionData.title_locked,
+      sessionModel: sessionData.sessionModel ?? null,
     };
 
   } catch (error) {

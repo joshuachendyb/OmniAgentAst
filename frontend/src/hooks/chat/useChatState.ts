@@ -15,10 +15,11 @@
  * @author 小强
  * @version 1.0.0
  * @since 2026-04-21
+ * @updated 2026-08-22 小欧 - sessionModel 结构化: sessionModelOverride state 类型 string | null → SessionModelOverride | null
  */
 
 import { useState, useRef, useEffect } from 'react';
-import type { Message } from '../../types/chat';
+import type { Message, SessionModelOverride } from '../../types/chat';
 import type { ExecutionStep } from '../../utils/sse';
 
 // ============================================================================
@@ -72,6 +73,8 @@ export interface UseChatStateReturn {
   setSessionVersion: React.Dispatch<React.SetStateAction<number>>;
   titleLocked: boolean;
   setTitleLocked: React.Dispatch<React.SetStateAction<boolean>>;
+  sessionModelOverride: SessionModelOverride | null;
+  setSessionModelOverride: React.Dispatch<React.SetStateAction<SessionModelOverride | null>>;
 
   // 标题编辑状态
   editingTitle: boolean;
@@ -196,6 +199,7 @@ export const useChatState = (): UseChatStateReturn => {
   const [sessionTitle, setSessionTitle] = useState<string>('新会话');
   const [sessionVersion, setSessionVersion] = useState<number>(1);
   const [titleLocked, setTitleLocked] = useState<boolean>(false);
+  const [sessionModelOverride, setSessionModelOverride] = useState<SessionModelOverride | null>(null);
 
   // 标题编辑状态
   const [editingTitle, setEditingTitle] = useState(false);
@@ -317,6 +321,8 @@ export const useChatState = (): UseChatStateReturn => {
     setSessionVersion,
     titleLocked,
     setTitleLocked,
+    sessionModelOverride,
+    setSessionModelOverride,
     editingTitle,
     setEditingTitle,
     titleInput,

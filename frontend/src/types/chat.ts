@@ -8,6 +8,7 @@
  * @version 1.0.0
  * @since 2026-03-09
  * @updated 2026-07-16 小欧 - Message 接口增 thought 字段
+ * @updated 2026-08-22 小欧 - sessionModel 结构化: 新增 SessionModelOverride 接口(provider+model+display_name?); HistoryLoadResult 字段 model_override→sessionModel
  */
 
 import type { ExecutionStep } from '../utils/sse';
@@ -341,6 +342,15 @@ export interface Message extends ChatMessage {
 }
 
 /**
+ * 会话级模型覆盖(L2) — 结构化 provider+model, 与后端 SessionModelOverride 对齐
+ */
+export interface SessionModelOverride {
+  provider: string;
+  model: string;
+  display_name?: string;
+}
+
+/**
  * 历史消息加载结果
  */
 export interface HistoryLoadResult {
@@ -349,4 +359,5 @@ export interface HistoryLoadResult {
   sessionId: string;
   version?: number;
   title_locked?: boolean;
+  sessionModel?: SessionModelOverride | null;
 }
