@@ -7,6 +7,7 @@
  * @version 1.1.0
  * @since 2026-02-17
  * @update 2026-02-18 添加移动端响应式支持
+ * @update 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B(前端随后端修改): updateConfig 改传 ai_model_ref 结构; serviceStatus 的 provider/model 读取点(4处)改经 status.model_ref 派生
  */
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
@@ -197,9 +198,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     if (currentModel) {
       return `${currentModel.provider}-${currentModel.model}`;
     }
-    // 其次从 serviceStatus 获取（验证后的当前模型）
-    if (serviceStatus?.provider && serviceStatus?.model) {
-      return `${serviceStatus.provider}-${serviceStatus.model}`;
+    // 其次从 serviceStatus 获取（验证后的当前模型）— 归一: model_ref 结构派生(方案B 前端随后端) — 小欧 2026-08-22
+    if (serviceStatus?.model_ref?.provider && serviceStatus?.model_ref?.model) {
+      return `${serviceStatus.model_ref.provider}-${serviceStatus.model_ref.model}`;
     }
     // 如果都没有，返回空字符串
     return "";
@@ -221,8 +222,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     
     // 只有当 serviceStatus 发生变化且有消息时才显示弹框
     if (statusChanged && serviceStatus && serviceStatus.message) {
-      // 获取模型信息
-      const modelInfo = `${serviceStatus.provider} (${serviceStatus.model})`;
+      // 获取模型信息 — 归一: model_ref 结构派生 — 小欧 2026-08-22
+      const modelInfo = serviceStatus.model_ref
+        ? `${serviceStatus.model_ref.provider} (${serviceStatus.model_ref.model})`
+        : "";
       
       // 根据状态类型显示不同的弹框内容
       if (serviceStatus.status === "warning") {
@@ -282,9 +285,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         display_name: selectedModel.display_name,
       });
       
+      // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): ai_provider/ai_model → ai_model_ref 结构
       const result = await configApi.updateConfig({
-        ai_provider: selectedModel.provider,
-        ai_model: selectedModel.model,
+        ai_model_ref: {
+          provider: selectedModel.provider,
+          model: selectedModel.model,
+        },
       });
       console.log("[切换模型] API返回:", result);
       
@@ -321,10 +327,11 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     setCheckingStatus(true);
     try {
       const status = await refreshServiceStatus();
+      // 归一: model_ref 结构派生 — 小欧 2026-08-22
       if (status && status.success) {
-        showMessage(ErrorType.INFO, `${status.provider} (${status.model}) 服务连接正常`);
+        showMessage(ErrorType.INFO, `${status.model_ref?.provider || "未知"} (${status.model_ref?.model || "未知"}) 服务连接正常`);
       } else {
-        showMessage(ErrorType.WARNING, `${status?.provider || "未知"} (${status?.model || "未知"}) 验证失败: ${status?.message || "请检查配置"}`);
+        showMessage(ErrorType.WARNING, `${status?.model_ref?.provider || "未知"} (${status?.model_ref?.model || "未知"}) 验证失败: ${status?.message || "请检查配置"}`);
       }
     } catch {
       showMessage(ErrorType.WARNING, "服务验证失败，请检查网络连接");
@@ -616,8 +623,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
               if (serviceStatus && !serviceStatus.success) {
                 return (
                   <Tag color="error" style={{ cursor: "pointer" }} onClick={checkingStatus ? undefined : handleCheckService}>
-                    <CheckCircleOutlined /> {serviceStatus.provider}{" "}
-                    {serviceStatus.model && `(${serviceStatus.model})`}
+                    <CheckCircleOutlined /> {serviceStatus.model_ref?.provider}{" "}
+                    {serviceStatus.model_ref?.model && `(${serviceStatus.model_ref.model})`}
                     <span style={{ marginLeft: 8, fontSize: 12 }}>(已失效)</span>
                   </Tag>
                 );

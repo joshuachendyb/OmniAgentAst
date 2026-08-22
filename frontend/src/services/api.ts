@@ -13,6 +13,7 @@
  * @since 2026-02-17
  * @update 添加配置管理、会话管理接口 - by 小新
  * @update 2026-08-22 小欧 - sessionModel 结构化(L2 会话级模型覆盖): GetSessionMessagesResponse/UpdateSessionResponse 字段 model_override→sessionModel(SessionModelOverride 类型); updateSession 签名加 sessionModel 参数并发送
+ * @update 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B(前端随后端修改): Config.ai_provider/ai_model→ai_model_ref、ConfigUpdate 同、FullConfigResponse.current_provider/current_model→current_model_ref(均 SessionModelOverride=后端 ModelRef 镜像, 补 api_base?); ValidateResponse.provider/model→model_ref?; types/chat.ts SessionModelOverride 补 api_base?
  */
 
 import axios from "axios";
@@ -117,8 +118,8 @@ export interface ChatRequest {
 
 export interface ValidateResponse {
   success: boolean;
-  provider: string;
-  model: string;
+  // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): 后端 /chat/validate 响应 provider/model 键归一 model_ref 结构, 前端随之后端
+  model_ref?: { provider: string; model: string; api_base?: string; display_name?: string } | null;
   message: string;
   status?: 'success' | 'failed' | 'warning';
 }
@@ -158,8 +159,8 @@ export const chatApi = {
 // @update 2026-02-18 已对接真实API
 // ============================================
 export interface Config {
-  ai_provider: "zhipuai" | "opencode" | "longcat";
-  ai_model: string;
+  // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): ai_provider/ai_model → ai_model_ref 结构(SessionModelOverride=后端ModelRef镜像)
+  ai_model_ref: SessionModelOverride;
   api_key_configured: boolean;
   theme: "light" | "dark";
   language: string;
@@ -179,13 +180,9 @@ export interface SecurityConfig {
 }
 
 export interface ConfigUpdate {
-  // ⭐⭐⭐ 重要：provider 和 model 必须成对使用！⭐⭐⭐
-  // 切换模型时，必须同时提供 ai_provider 和 ai_model
-  // 原因：同一个 model 名称可能属于多个 provider（如 kimi-k2.5-free 可能在多个 provider 下）
-  // 只有 provider+model 组合才能唯一确定一个模型
-  // 设计原则：发送时两个字段，接收时两个字段，使用时两个字段必须同时使用
-  ai_provider?: string;
-  ai_model?: string;
+  // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): provider+model 成对语义由 SessionModelOverride 单结构承载(原子切换),
+  // 后端 _update_model_ref 单 handler 原子写入, 不再拆两字段依赖处理顺序
+  ai_model_ref?: SessionModelOverride;
 
   // ⭐ 修复：使用统一的 provider_api_keys，不硬编码 provider 名称
   provider_api_keys?: Record<string, string>; // {provider_name: api_key}
@@ -221,8 +218,8 @@ export interface ProviderInfo {
 
 export interface FullConfigResponse {
   providers: Record<string, ProviderInfo>;
-  current_provider: string;
-  current_model: string;
+  // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): current_provider/current_model → current_model_ref 结构
+  current_model_ref: SessionModelOverride;
 }
 
 export interface ProviderUpdate {

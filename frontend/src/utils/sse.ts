@@ -20,6 +20,8 @@
  *   【改法】①ExecutionStep加outcome/error_type/error_message三个可选字段
  *          ②processSSEData: 从rawData同步解析outcome和error_type到step对象
  * 2026-08-18 小欧 三堂会审(P7/P4): ① case 'startinfo' 并入 case 'start' 渲染, 修复后端实时事件由 start 改 startinfo 后任务头部占位失效; ② error 分支优先读 content 再回退 error_message, 修复 error_message 已迁 content 后实时错误显示退化'未知错误'
+ * 2026-08-23 小欧 三堂会审修复: ExecutionStep 接口 error_type(:153)/error_message(:154) 历史遗留重复声明
+ *   (TS2300 Duplicate identifier, tsc --noEmit 失败), 删除 :172/:177 处重复定义保留终态声明处单一权威
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -169,12 +171,12 @@ export interface ExecutionStep {
   reasoning?: string; // 思考过程内容（当 is_reasoning=true 时使用）
 
   // === 错误/中断字段 ===
-  error_message?: string; // error 类型的错误信息 【修改2026-04-15】优先使用error_message
+  // 【三堂会审修复 2026-08-23 小欧】error_message/error_type 原在此重复声明(:153/:154 已定义),
+  //   TS2300 Duplicate identifier 致 tsc --noEmit 失败, 删重复保留终态声明处单一权威定义
   message?: string; // interrupted 类型的中断信息
 
   // 【小新修复 2026-03-14】error类型完整字段（避免使用 as any）
-  // 【小沈修改2026-04-15】删除code字段，统一使用error_message
-  error_type?: string; // 业务错误类型（如 empty_response）
+  // 【小沈修改2026-04-15】删除code字段，统一使用error_message(字段定义见上 :153/:154)
   details?: string; // 详细错误信息
   stack?: string; // 堆栈信息
   retryable?: boolean; // 是否可重试

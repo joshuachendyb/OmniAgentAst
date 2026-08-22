@@ -1,3 +1,9 @@
+/**
+ * ProviderSettings — Provider/模型设置页
+ * @update 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B(前端随后端修改):
+ *   getFullConfig 消费点 data.current_provider → data.current_model_ref.provider(3处);
+ *   updateConfig 改传 ai_model_ref 结构(替 ai_provider/ai_model 分离字段)
+ */
 import React, {
   useState,
   useEffect,
@@ -117,20 +123,21 @@ export const ProviderSettings: React.FC<{
       if (currentModelOption) {
         setCurrentDisplayName(currentModelOption.display_name);
       } else {
+        // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): data.current_provider → data.current_model_ref.provider
         const currentProviderInfo = providerList.find(
-          (p: ProviderInfo) => p.name === data.current_provider
+          (p: ProviderInfo) => p.name === data.current_model_ref?.provider
         );
         if (currentProviderInfo && currentProviderInfo.display_name) {
           setCurrentDisplayName(currentProviderInfo.display_name + ' (默认)');
-        } else if (data.current_provider) {
-          setCurrentDisplayName(data.current_provider);
+        } else if (data.current_model_ref?.provider) {
+          setCurrentDisplayName(data.current_model_ref.provider);
         } else {
           setCurrentDisplayName('未设置');
         }
       }
 
       const current =
-        providerList.find((p) => p.name === data.current_provider) ||
+        providerList.find((p) => p.name === data.current_model_ref?.provider) ||
         (providerList.length > 0 ? providerList[0] : null);
       setSelectedProvider(current);
     } catch (error) {
@@ -418,9 +425,12 @@ export const ProviderSettings: React.FC<{
     try {
       setCurrentDisplayName(option.display_name);
 
+      // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): ai_provider/ai_model → ai_model_ref 结构
       await configApi.updateConfig({
-        ai_provider: option.provider,
-        ai_model: option.model,
+        ai_model_ref: {
+          provider: option.provider,
+          model: option.model,
+        },
       });
 
       await loadConfig();
