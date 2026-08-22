@@ -1,3 +1,81 @@
+v0.19.22
+更新时间: 2026-08-22 20:43:37 - 小欧-2026-08-22
+## v0.19.21以来 变更汇总(56个commit) - 小欧-2026-08-22
+[2026-08-22 20:43:37 小欧] 汇总范围=v0.19.21以来全部commit(version.txt流程commit并入本条不单列)
+
+### feat(14个):
+- feat:sessionModel结构化+铁律chat_messages只写改造+BUG修复(后端9文件) - 小欧-2026-08-22
+- feat:sessionModel结构化前端对齐(L2会话级模型覆盖) ModelPicker新组件+三堂会审P0 setter类型修复(前端7文件) - 小欧-2026-08-22
+- feat:storage+messages 新增load_user_messages_by_session+GET /sessions/{session_id}/user_messages端点(chat_user_message读取替代chat_messages) - 小欧-2026-08-22
+- feat:产出型工具14个 success分支调with_artifact_file声明产出物(11.6.1全量落地) - 小欧-2026-08-21
+- feat:11.6 artifacts收集全链路:tool_response三helper+action_handler回调+telemetry内存态+storage落库 - 小欧-2026-08-21
+- feat:agent_telemetry,step_emitter,react_cycle,answer/action_handler 新增 final_stats 终态统计事件承载 duration/artifacts - 小欧-2026-08-20
+- feat:api-sessions/storage 10.5问题4/6 B1会话任务列表+D1-D3信任接口 - 小欧-2026-08-20
+- feat:agent-core react_cycle 解决问题18(2.4④)新增MetaStep(type=truncated)输出截断统一事件(重试/连续截断取消两处emit,severity=warn) - 小欧-2026-08-20
+- feat:agent-core react_cycle+agent_runner 11.1b运行中DB每轮即时落库(task/session累计)+agent_runner S2去重复update防翻倍只有insert_token明细 - 小欧-2026-08-20
+- feat:agent-core 11.2-B/C+11.3 agent遥测钩子 start_time透传+首包时延+工具/LLM/裁剪/上下文遥测 - 小欧-2026-08-20
+- feat:monitoring 11.2-C/11.3 监控层独立收敛 agent_telemetry+storage新建+middleware落库+db注册+metrics收敛 - 小欧-2026-08-20
+- feat:api/orchestrator 11.1 token四层同构: token_usage查询复用+stream编排/日志改造(含三堂会审修复) - 小欧-2026-08-20
+- feat:agent-core 11.1 token四层同构: 四层内存态累计+FinalStep透传+SSE注入+基线缓存(含三堂会审修复) - 小欧-2026-08-20
+- feat:storage/db_initializer 11.1 token四层同构: 累计列+查询+归一+_verify_acc_columns复核(含三堂会审修复) - 小欧-2026-08-20
+
+### fix(7个):
+- fix:tools_alias_mapper.py TOOL_NAME_ALIASES新增裸名write/read/edit→writetext/readtext/edittext(COM-05b实证LLM三轮幻觉调用裸名write被拦截3次触发防死循环熔断致任务FAILED) - 小欧-2026-08-22
+- fix:action_handler+agent_telemetry artifacts仅认写工具with_artifacts自声明(三堂会审F1定案删target兜底派生防读工具伪产出物) - 小欧-2026-08-22
+- fix:backend数据存储12.2十五问题代码diff落地(Q2-Q10/C1-C5)+撤销Q1双表贯通内部ID泄露 - 小欧-2026-08-21
+- fix:pytest.ini 默认pytest纳入e2e_full_link用例(需后端常驻方可运行) - 小欧-2026-08-21
+- fix:grep_file_content 删除根目录搜索拒绝护栏(允许从根递归搜索) - 小欧-2026-08-21
+- fix:[1]数据存储及yield前端消息及数据设计 13.2三堂会审9项修复 - 小欧-2026-08-20
+- fix:storage.py,token_usage.py 11.1 token累计归一缺键补零与API chain口径对齐SSE - 小欧-2026-08-20
+
+### refactor(1个):
+- refactor:e2etests 19个case旧action_tool取数块收敛verify_db_tool_usage单点校验+05b断言措辞脆弱性修正(DB证据双通道)+20文件编辑历史补齐 - 小欧-2026-08-22
+
+### test(2个):
+- test:e2e_helpers.py §5.2 SSE侧六类事件补行混排+对齐守卫+usage独立行+stats行去重+新增_fmt_tok公共函数 - 小欧-2026-08-22
+- test:e2e_helpers.py Q7-Q8拆分库timers适配+Q3 token双列归一 - 小欧-2026-08-21
+
+### docs(32个):
+- docs:[1]数据存储及yield前端消息及数据设计 11.6.2兜底派生撤销设计纠错说明(北京老陈2026-08-22定案)+升v3.14 - 小欧-2026-08-22
+- docs:[2]会话任务前后端架构设计2.0 小欧-2026-08-22
+- docs:FUNCTIONS.md v3.7新增九.E2E测试层章节(verify_db_tool_usage登记) - 小欧-2026-08-22
+- docs:调试笔记-小欧-2026-08-22.md sessionModel结构化+三堂会审+BUG修复全过程记录 - 小欧-2026-08-22
+- docs:[2]会话任务前后端架构设计2.0 第六章续校+实施总览/映射表纠错 - 小欧-2026-08-21
+- docs:[1]数据存储及yield前端消息及数据设计 Q1双表贯通错误设计彻底删除(原分析+错误diff)+升v3.13 - 小欧-2026-08-21
+- docs:[1]数据存储及yield前端消息及数据设计 12.1其余14问题大白话重写+新增12.2十五问题可落地代码diff设计并10轮三堂会审修正7处(v3.10-v3.12) - 小欧-2026-08-21
+- docs:[1]数据存储及yield前端消息及数据设计 新增12.1五库写入流程与时机核查15问题(含chat库专项C1-C5)并三遍核查修正(v3.07-v3.09) - 小欧-2026-08-21
+- docs:[1]数据存储及yield前端消息及数据设计 第五章落库DB说明清晰度与准确性修正 - 小欧-2026-08-21
+- docs:[2]会话任务前后端架构设计2.0 v1.69 标注后端章节属性及6.1后端清单实施情况(14/14已实施) - 小欧-2026-08-21
+- docs:[1]数据存储及yield前端消息及数据设计 10.5三堂会审重标(◐前端待改+前端修改要点)+10.6后端问题汇总分析 - 小欧-2026-08-21
+- docs:[1]数据存储及yield前端消息及数据设计 11.6三堂会审优化:extract_ext/with_artifact_file/_merge_artifacts函数化 - 小欧-2026-08-21
+- docs:[1]数据存储及yield前端消息及数据设计 11.5/11.6 全部改为子章节号(11.5.1~11.5.6/11.6.1~11.6.5)+真实代码diff+跨引用修正 - 小欧-2026-08-21
+- docs:[1]数据存储及yield前端消息及数据设计 11.6 三思三省补全(type约定/兜底派生/去重/上限/持久化决策/自动化测试) - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计 11.6 修正 artifacts 读写 JSON 序列化(写库safe_json_dumps/读库parse_json) - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计 11.6 问题2 artifacts收集落地详细设计 - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计 11.5 同步 final_stats 实现(async for 替代 yield from) - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计 前端final_stats分支标注为遗漏项目归前端文档单独处理 - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计 11.4/11.5 final_stats 承载 duration/artifacts 设计定稿 - 小欧-2026-08-20
+- docs:doc-8月[1] 新增11.4 final问题(duration/artifacts)汇总+删12.17+10.5问题8/16/24及引用精简指路11.4 - 小欧-2026-08-20
+- docs:doc-8月[1] 10.5问题清单 4/5/6/7+17/18/19/9/10/11 精简标注 - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计 问题18(2.4④ truncated)精简标注已实施 - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计+FUNCTIONS.md 问题1精简只留未解决前端消费+10.5删除4条已解决并重编号+11.1b每轮即时落库说明+FUNCTIONS登记5个token累计函数v3.6 - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计 13.2实施计划(监控逻辑独立收敛app/monitoring)+14.2前端适配stats/context_overview+11.3-A勘误 - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计 章节号12.14/12.15重排至11.2/11.3+全文引用对齐+删除空桩 - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计 11.1/13.1同步三堂会审与测试结论(v2.96) - 小欧-2026-08-20
+- docs:13.1 S1-S6删除重复代码块改为引用11.1 - 小欧-2026-08-20
+- docs:11.1 token三层同构设计+13.1实施计划+14.1前端适配 - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计 11.1/13.1三堂会审修正(任务级内存累计+chain四层对齐)+14.1前端建议 - 小欧-2026-08-20
+- docs:[1]数据存储及yield前端消息及数据设计 第10.5章序号重排+标题去**+12章链接+第11章状态标注复核 - 小欧-2026-08-20
+- docs:version.txt v0.19.21变更汇总写成头部 - 小欧-2026-08-20
+
+### 本次核心特性:
+1. **sessionModel结构化** — provider+model+display_name 结构化模型覆盖(L2会话级)
+2. **铁律chat_messages只写** — chat_messages只写不读，读取走chat_user_message LEFT JOIN chat_tasks
+3. **artifacts全链路** — 14个产出型工具with_artifact_file声明+收集+落库
+4. **token四层同构** — 内存态累计+FinalStep透传+SSE注入+基线缓存+DB落库
+5. **三堂会审P0修复** — useChatState setter类型不匹配、409参数顺序、execution_steps撞键退化复用
+
+---
 v0.19.21
 更新时间: 2026-08-20 08:26:05 - 小欧-2026-08-20
 ## v0.19.20以来 变更汇总(1个commit) - 小欧-2026-08-20
