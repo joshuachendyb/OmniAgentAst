@@ -14,6 +14,10 @@
 #   删除本文件 send_start_step/build_start_step 两函数及 MetaStep/MessageBuilder import(死代码清除);
 #   start 业务完整单归属 start_step.py, sse_events 不再承载任何 start 构造 — 小健 2026-08-17
 # 2026-08-18 小欧 - §10.3.3(4): create_final_response 参数 thought→reasoning(FinalStep已删thought字段)
+# 2026-08-22 小欧 - model结构化归一报告v1.25 6.8: create_error_response 的 model/provider 分离形参 →
+#   error_model: Optional[ModelRef] 结构承载(设计要求1)
+# 2026-08-23 小欧 - 三轮三堂会审修复(P1·YAGNI): create_final_response 全仓零调用(终态实际由
+#   step_emitter.emit_final_with_stats 产出), 死函数删除不改造, FinalStep import 随删
 """
 sse_events — SSE事件流处理模块
 从 react_sse_wrapper/chat_stream.py 移入
@@ -26,7 +30,8 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.utils.sse_formatter import format_sse_event, format_agent_sse
-from app.services.agent.steps import ErrorStep, FinalStep
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
+from app.services.agent.steps import ErrorStep   # 三堂会审 P1: create_final_response 死函数删除, FinalStep import 随删 — 小欧 2026-08-22
 from app.llm.error_classifier import SystemErrorClassifier
 from app.logger import logger
 from app.services.chat.storage import save_execution_steps
@@ -42,17 +47,16 @@ from app.services.chat.storage import get_user_message_id
 def create_error_response(
     error_type: str,
     error_message: str,
-    model: Optional[str] = None,
-    provider: Optional[str] = None,
+    error_model: Optional[ModelRef] = None,
     step: Optional[int] = None
 ) -> str:
-    """创建统一的错误响应格式 — 使用 ErrorStep + format_agent_sse — 小欧 2026-07-13 删 recoverable（终态由 ErrorStep 表示）"""
+    """创建统一的错误响应格式 — 使用 ErrorStep + format_agent_sse — 小欧 2026-07-13 删 recoverable（终态由 ErrorStep 表示）
+    2026-08-22 小欧 归一报告v1.25 6.8: model/provider 分离形参 → error_model: ModelRef"""
     error_step = ErrorStep(
         step=step or 0,
         error_type=error_type,
         error_message=error_message,
-        model=model,
-        provider=provider,
+        error_model=error_model,
     )
     return format_agent_sse(error_step.to_dict())
 
@@ -110,26 +114,6 @@ async def save_execution_steps_to_db(
             logger.error(f"[Save] 保存失败: {e}", exc_info=True)
         return None
 
-
-# ====================================================================
-# 辅助函数
-# ====================================================================
-
-def create_final_response(
-    content: str,
-    step: Optional[int] = None,
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
-    reasoning: str = '',   # 2026-08-18 小欧 thought→reasoning
-) -> str:
-    """创建最终的SSE响应 — 使用 FinalStep + format_agent_sse
-    【修复P0-4 2026-06-08 小沈】删除StepFactory，直接调用FinalStep构造函数
-    """
-    final_step = FinalStep(
-        step=step or 0,
-        response=content,
-        reasoning=reasoning,
-        model=model,
-        provider=provider
-    )
-    return format_agent_sse(final_step.to_dict())
+# 三堂会审修复(P1·YAGNI·小欧 2026-08-22): create_final_response 经全仓 grep 零调用
+#   (终态实际由 step_emitter.emit_final_with_stats 产出 FinalStep, 见 react_cycle/agent_runner/handlers),
+#   死函数按 YAGNI 直接删除不改造; FinalStep import 随之仅余 ErrorStep 使用方 — 已同步删除 import

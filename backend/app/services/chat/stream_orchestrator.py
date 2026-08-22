@@ -63,6 +63,12 @@
 #     fetch_session_user_message_pairs(经 chat_user_message+chat_tasks 重建历史, 不读 chat_messages); ②L2 sessionModel 结构化: 读 get_session_model
 #     覆盖 ai_service.provider+model(替原单 model_override), finally 双还原 provider+model(防单例污染)
 # 2026-08-22 - 小欧 - 三堂会审复核整改(北京老陈 2026-08-22): 编排⑥消费点调用名由残留的 get_session_model_override 修正为 get_session_model(2026-08-22 改名后 import 已改、唯独调用点漏改, 此前任一会话请求必 NameError 崩溃, P0 修复); 因 get_session_model 现返回 SessionModelOverride(非 dict), 消费点改属性访问(.model/.provider, 去 .get/下标); 同步修正 line92 import 注释标明改名
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.3/6.5/6.8: 全链 ModelRef 归一——validate_chat_config 响应
+#   provider/model 键归一 model_ref 结构; _orig_model/_orig_provider 双变量 → _orig_llm_model 单 ModelRef
+#   原子覆盖/还原(KISS: 消除半覆盖中间态); [TASK_START] 日志 F8 属性迁移; insert_task/token_usage_insert
+#   闭包改传 task_model=agent.llm_client.llm_model(ModelRef), display_name 不再拼装落库(设计要求2)
+# 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): L2 覆盖与 finally 还原后各调 ai_service.reset_sdk()——SDK 缓存重建,
+#   保 api_base/model 实连一致(配 base_service.reset_sdk 新方法)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -77,6 +83,7 @@ from typing import Optional, AsyncGenerator, Dict, List
 
 from app.services import get_service
 from app.services.model.resolver import get_ai_config_resolver
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.logger import logger, log_and_print
 from app.services.chat.sse_events import create_error_response
 from app.services.task.task_registry import register_task
@@ -109,31 +116,31 @@ def generate_task_id() -> str:
 
 
 async def validate_chat_config():
-    """聊天配置校验 — 自 api/v1/chat/openai.py 迁入 orchestrator — 小欧 2026-08-13"""
+    """聊天配置校验 — 自 api/v1/chat/openai.py 迁入 orchestrator — 小欧 2026-08-13
+    2026-08-22 小欧 归一报告v1.25 6.6: resolver.validate_config 返回 (is_valid, ModelRef, errors);
+    响应键 provider/model 归一为 model_ref 结构(方案B 前端随后端)"""
     from app.logger import logger
     try:
         resolver = get_ai_config_resolver()
-        is_valid, final_provider, final_model, error_messages = resolver.validate_config()
+        is_valid, config_model, error_messages = resolver.validate_config()
         if not is_valid:
             return {
                 "valid": False,
                 "message": f"配置验证失败: {', '.join(error_messages)}",
-                "provider": final_provider or "unknown",
-                "model": final_model or ""
+                "model_ref": {"provider": config_model.provider or "unknown",
+                              "model": config_model.model or ""},
             }
         return {
             "valid": True,
-            "message": f"配置验证通过: {final_provider} ({final_model})",
-            "provider": final_provider,
-            "model": final_model
+            "message": f"配置验证通过: {config_model.provider} ({config_model.model})",   # 文本派生, 允许
+            "model_ref": {"provider": config_model.provider, "model": config_model.model},
         }
     except Exception as e:
         logger.error(f"验证AI服务配置失败: {e}")
         return {
             "valid": False,
             "message": f"验证失败: {str(e)}",
-            "provider": "unknown",
-            "model": ""
+            "model_ref": None,
         }
 
 
@@ -205,8 +212,7 @@ async def chat_stream_orchestrator(
     # ── 编排⑤取续聊历史边界(user_msg_id 上界, 服务重启DB兜底) ——————————————————— 小健 2026-08-17
     _task_start_time = time.time()
     _user_msg_id = None
-    _orig_model = None  # 小健 2026-08-17 三堂会审-AE修复: 预初始化, 供 finally 还原单例 model(防取消/无覆盖时 NameError)
-    _orig_provider = None  # 北京老陈 2026-08-22: sessionModel 结构化(provider+model), 还原单例 provider 同源
+    _orig_llm_model: Optional[ModelRef] = None  # 归一: 覆盖前保存单例原 ModelRef, finally 整体还原(替原 _orig_model/_orig_provider 双变量) — 小欧 2026-08-22
     try:
         _user_msg_id = get_user_message_id(session_id)
     except Exception:
@@ -225,7 +231,7 @@ async def chat_stream_orchestrator(
             logger.warning(f"[chat] DB兜底取user消息id失败(session={session_id}): {_eu}")
     log_and_print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     log_and_print(
-        f"[TASK_START] provider={ai_service.provider} model={ai_service.model} |\n "
+        f"[TASK_START] provider={ai_service.llm_model.provider} model={ai_service.llm_model.model} |\n "   # 归一: F8 属性迁移 — 小欧 2026-08-22
         f"task_id={task_id} session_id={session_id} "
         f"user_message_id={_user_msg_id} |\n "
         f"user_input={user_input}"
@@ -243,19 +249,24 @@ async def chat_stream_orchestrator(
 
         # ── 编排⑥建 UniversalAgent + 会话sessionModel(先建才有 llm_client) ——— 小健 2026-08-17
         agent = UniversalAgent(llm_client=ai_service, task_id=task_id)
-        # S2 sessionModel 生效(10.1.7②-4/文档2 6.1.1/6.1.8)：编排层读会话覆盖写 ai_service.provider+model(L2 结构化) — 北京老陈 2026-08-22
+        # S2 sessionModel 生效(10.1.7②-4/文档2 6.1.1/6.1.8)：编排层读会话覆盖写 ai_service.llm_model(L2 结构化)
+        #   归一(小欧 2026-08-22 报告v1.25 6.5): 整个 ModelRef 单变量原子切换——缺省键回退原值合并,
+        #   消除原逐属性赋值的半覆盖中间态(KISS-DIRECT 纯增强)
         if session_id:
             try:
                 with db.get_conn("chat") as _conn2:
                     _ov = get_session_model(_conn2, session_id)
                 if _ov and (_ov.model or _ov.provider):
-                    if _ov.model:
-                        _orig_model = ai_service.model  # 小健 2026-08-17 三堂会审-AE修复: 覆盖前保存单例原值, finally 还原
-                        ai_service.model = _ov.model
-                    if _ov.provider:
-                        _orig_provider = ai_service.provider  # 北京老陈 2026-08-22: provider 同源保留还原
-                        ai_service.provider = _ov.provider
-                    logger.info(f"[chat] L2 sessionModel 已生效: session={session_id}, provider={_ov.provider}, model={_ov.model}")
+                    _orig_llm_model = ai_service.llm_model          # 整体保存, finally 整体还原
+                    ai_service.llm_model = ModelRef(
+                        provider=_ov.provider or _orig_llm_model.provider,
+                        model=_ov.model or _orig_llm_model.model,
+                        api_base=_ov.api_base or _orig_llm_model.api_base,
+                        display_name=_ov.display_name,
+                    )
+                    ai_service.reset_sdk()   # 三堂会审 P1 修复: 换模后重建 SDK, 保 api_base/model 实连一致 — 小欧 2026-08-22
+                    logger.info(f"[chat] L2 sessionModel 已生效: session={session_id}, "
+                                f"provider={ai_service.llm_model.provider}, model={ai_service.llm_model.model}")
             except Exception as _ov_e:
                 logger.warning(f"[chat] 读会话sessionModel失败(session={session_id}): {_ov_e}")
         # ── 编排⑦组装 db_ops 持久化回调命名空间(经闭包注入后台, 依赖 ⑥ agent) ——— 小健 2026-08-17
@@ -269,17 +280,16 @@ async def chat_stream_orchestrator(
                 sid, context_link_mode=context_link_mode, context_root_task_id=_context_root_task_id,
                 upper_message_id=_user_msg_id),
             log_task_end=_log_task_end,
-            insert_task=lambda c: insert_task(  # ②-1 chat_tasks 创建
+            insert_task=lambda c: insert_task(  # ②-1 chat_tasks 创建 — 归一: task_model 传 ModelRef, display_name 不再拼装落库(设计要求2) — 小欧 2026-08-22
                 c, task_id=task_id, session_id=session_id, user_message_id=_user_msg_id,
                 ai_message_id=None,  # agent_runner 分配后回填 — 小欧 2026-08-19
                 user_input=user_input, context_link_mode=context_link_mode,
                 context_root_task_id=_context_root_task_id,
-                provider=agent.llm_client.provider, model=agent.llm_client.model,
-                display_name=f"{agent.llm_client.provider} ({agent.llm_client.model})"),
+                task_model=agent.llm_client.llm_model),
             update_task=lambda c, **kw: update_task(c, task_id=task_id, **kw),  # ②-1 chat_tasks 终态
-            insert_token=lambda c, **kw: token_usage_insert(  # ②-3 共用
+            insert_token=lambda c, **kw: token_usage_insert(  # ②-3 共用 — 归一: task_model 传 ModelRef — 小欧 2026-08-22
                 c, task_id=task_id, session_id=session_id,
-                model=agent.llm_client.model, provider=agent.llm_client.provider, **kw),
+                task_model=agent.llm_client.llm_model, **kw),
             update_task_accumulation=lambda c, **kw: update_task_accumulation(c, **kw),  # 11.1 任务级token累计(去闭包双重绑定, 由调用方经**kw传task_id)
             update_session_accumulation=lambda c, **kw: update_session_accumulation(c, **kw),  # 11.1 会话级token累计(去闭包双重绑定, 由调用方经**kw传session_id)
             query_task_acc=lambda c, **kw: query_task_accumulation(c, **kw),  # 12.2-Q3/C3: 终态快照从权威累计列派生 — 小欧 2026-08-21
@@ -349,14 +359,12 @@ async def chat_stream_orchestrator(
         yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
     finally:
         _current_task_id.reset(_task_token)
-        # 小健 2026-08-17 三堂会审-AE修复: 还原被本任务覆盖的共享单例 model, 避免单例持久污染/并发会话串model
-        if _orig_model is not None and getattr(ai_service, "model", None) != _orig_model:
-            ai_service.model = _orig_model
-            logger.info(f"[chat_stream_orchestrator] AE还原共享单例model: task={task_id}, restore={_orig_model}")
-        # 北京老陈 2026-08-22: 同源还原 provider(结构化 sessionModel)
-        if _orig_provider is not None and getattr(ai_service, "provider", None) != _orig_provider:
-            ai_service.provider = _orig_provider
-            logger.info(f"[chat_stream_orchestrator] AE还原共享单例provider: task={task_id}, restore={_orig_provider}")
+        # 小健 2026-08-17 三堂会审-AE修复: 还原被本任务覆盖的共享单例, 避免单例持久污染/并发会话串model
+        # 归一(小欧 2026-08-22): 双变量两段还原 → 单 ModelRef 整体还原
+        if _orig_llm_model is not None and ai_service.llm_model != _orig_llm_model:
+            ai_service.llm_model = _orig_llm_model
+            ai_service.reset_sdk()   # 还原后同步重建 SDK(与覆盖侧对称) — 小欧 2026-08-22
+            logger.info(f"[chat_stream_orchestrator] AE还原共享单例llm_model: task={task_id}, restore={_orig_llm_model.model}")
 
 
 async def _stream_with_control(buffer, task_id: str, session_id: str,

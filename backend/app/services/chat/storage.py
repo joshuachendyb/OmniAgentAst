@@ -58,6 +58,14 @@ storage — 会话存储业务逻辑
 2026-07-21: 小欧 加 _truncate_tool_result_strings (带 tag 日志, 不碰 observation);
 2026-07-21  小欧: 移动 MAX_TOOL_RESULT_STR_LEN 等常量; 
 2026-08-22 - 小欧 - BUG修复(北京老陈 2026-08-22 铁律"系统代码不得退化"): 铁律后占用检查改读 chat_user_message+chat_tasks(禁读 chat_messages), 若 chat_messages 已存在该 id(如 legacy 直写助手消息未镜像至 chat_tasks)落库时 UNIQUE 撞键→500; save_execution_steps 改为撞键时退化为复用该消息(UPDATE, is_new 置 False 不重复计数), 与铁律前 chat_messages 占用检查"复用而非新建"语义一致, 不读 chat_messages、不污染 chat_tasks
+2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.3: 写侧三函数归一——insert_task(provider/model/display_name
+  三参→task_model: ModelRef 必填, 落 sessionModel JSON 单列)、token_usage_insert(model/provider→task_model:
+  ModelRef 必填, NOT NULL)、update_user_message_final(model/provider→task_model: Optional[ModelRef], SET chat_model);
+  六读者派生——query_token_usage(model=→model_ref: json_extract 双键)、load_user_message_by_task/
+  load_user_messages_by_session/fetch_session_user_message_pairs/get_task_detail/list_session_tasks
+  (chat_model/sessionModel JSON→parse_session_model 派生 model/provider 键, 键名不变); import 补 ModelRef
+2026-08-23 - 小欧 - 三轮三堂会审修复(P1): insert_task 删 `if task_model else None` 死防御——参数已必填,
+  Pydantic 实例恒真值, else 分支永不可达(SLAP); 直取 model_dump_json()
 """
 
 import json
@@ -71,7 +79,7 @@ from pydantic import BaseModel, Field
 
 from app.logger import logger
 from app.db import db
-from app.db.models.chat_models import SessionModelOverride
+from app.db.models.chat_models import SessionModelOverride, ModelRef   # 归一: ModelRef=SessionModelOverride 别名 — 小欧 2026-08-22
 from app.utils.json_utils import safe_json_dumps, parse_json
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
 from app.utils.display_utils import extract_metadata_from_steps
@@ -460,18 +468,21 @@ def insert_task(
     conn: Connection, *,
     task_id: str, session_id: str, user_message_id: Optional[int], ai_message_id: Optional[int] = None,
     user_input: str, context_link_mode: str, context_root_task_id: str,
-    provider: str, model: str, display_name: str,
+    task_model: ModelRef,
 ) -> None:
-    """chat_tasks 任务行创建 INSERT（随任务启动，stream_orchestrator 建 task_id 后调用）— 小欧 2026-08-16"""
+    """chat_tasks 任务行创建 INSERT（随任务启动，stream_orchestrator 建 task_id 后调用）— 小欧 2026-08-16
+    2026-08-22 小欧 归一报告v1.25 6.3: provider/model/display_name 三分离入参 → task_model: ModelRef 单结构,
+    落 sessionModel JSON 单列(display_name 列废弃不写, 设计要求2)"""
     now = get_local_iso_timestamp()
     conn.execute(
         """INSERT INTO chat_tasks
            (task_id, session_id, user_message_id, ai_message_id, user_input, context_link_mode,
-            context_root_task_id, provider, model, display_name, start_time, status, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            context_root_task_id, sessionModel, start_time, status, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (task_id, session_id, user_message_id, ai_message_id, user_input,
          context_link_mode, context_root_task_id,
-         provider, model, display_name, now, "executing", now, now),
+         task_model.model_dump_json(),   # 必填参数直取(三堂会审: 删永不可达的 else None 死防御) — 小欧 2026-08-22
+         now, "executing", now, now),
     )
 
 
@@ -506,16 +517,18 @@ def update_task(
 def token_usage_insert(
     conn: Connection, *,
     session_id: str, task_id: str, llm_call_count: int,
-    model: str, provider: Optional[str],
+    task_model: ModelRef,
     prompt_tokens: int, completion_tokens: int, total_tokens: int,
 ) -> None:
-    """token_usage 每轮 LLM 调用一行 INSERT — 小欧 2026-08-16"""
+    """token_usage 每轮 LLM 调用一行 INSERT — 小欧 2026-08-16
+    2026-08-22 小欧 归一报告v1.25 6.3: model/provider 两分离入参 → task_model: ModelRef 单结构落 JSON 单列"""
     conn.execute(
         """INSERT INTO token_usage
-           (session_id, task_id, llm_call_count, model, provider,
+           (session_id, task_id, llm_call_count, task_model,
             prompt_tokens, completion_tokens, total_tokens, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
-        (session_id, task_id, llm_call_count, model, provider,
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (session_id, task_id, llm_call_count,
+         task_model.model_dump_json(),
          prompt_tokens or 0, completion_tokens or 0, total_tokens or 0,
          get_local_iso_timestamp()),
     )
@@ -677,14 +690,18 @@ def get_session_id_by_task(conn: Connection, task_id: str) -> Optional[str]:
 
 def query_token_usage(
     conn: Connection, *, session_id: Optional[str] = None,
-    task_id: Optional[str] = None, model: Optional[str] = None,
+    task_id: Optional[str] = None, model_ref: Optional[ModelRef] = None,
 ) -> Dict:
-    """token 四维度聚合查询（按 session/task/model 过滤 + 三个 token 求和）— 口径同 9.7 — 小欧 2026-08-16"""
+    """token 四维度聚合查询（按 session/task/model 过滤 + 三个 token 求和）— 口径同 9.7 — 小欧 2026-08-16
+    2026-08-22 小欧 归一报告v1.25 6.3: model 裸列过滤 → task_model JSON 列 json_extract 双键过滤"""
     _w, _v = [], []
-    for _k in ("session_id", "task_id", "model"):
-        _x = {"session_id": session_id, "task_id": task_id, "model": model}[_k]
+    for _k in ("session_id", "task_id"):
+        _x = {"session_id": session_id, "task_id": task_id}[_k]
         if _x:
             _w.append(f"{_k} = ?"); _v.append(_x)
+    if model_ref:
+        _w.append("json_extract(task_model,'$.provider')=? AND json_extract(task_model,'$.model')=?")
+        _v.extend([model_ref.provider, model_ref.model])
     _where = ("WHERE " + " AND ".join(_w)) if _w else ""
     row = conn.execute(
         f"SELECT COUNT(*) AS calls, "
@@ -740,35 +757,53 @@ def update_user_message_final(
     conn: Connection, *,
     user_message_id: int, task_id: str,
     response: str, reasoning: str = None,
-    outcome: str = None, model: str = None,
-    provider: str = None, accumulated_usage: str = None,
+    outcome: str = None, task_model: Optional[ModelRef] = None,
+    accumulated_usage: str = None,
 ) -> None:
-    """任务完成后回填 final 字段到 chat_user_message"""
+    """任务完成后回填 final 字段到 chat_user_message
+    2026-08-22 小欧 归一报告v1.25 6.3: model/provider 两分离入参 → task_model: ModelRef 落 chat_model JSON 单列"""
     conn.execute(
         """UPDATE chat_user_message
            SET task_id=?, response=?, reasoning=?, outcome=?,
-               model=?, provider=?, accumulated_usage=?
+               chat_model=?, accumulated_usage=?
            WHERE id=?""",
-        (task_id, response, reasoning, outcome, model, provider,
+        (task_id, response, reasoning, outcome,
+         task_model.model_dump_json() if task_model else None,
          accumulated_usage, user_message_id),
     )
 
 
 def load_user_message_by_task(conn: Connection, task_id: str) -> Optional[dict]:
-    """按 task_id 读 chat_user_message（C1 详情用）"""
+    """按 task_id 读 chat_user_message（C1 详情用）
+    2026-08-22 小欧 归一报告v1.25 6.3: chat_model JSON 派生 model/provider 键(键名不变)"""
     row = conn.execute(
         "SELECT * FROM chat_user_message WHERE task_id=?", (task_id,),
     ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    d = dict(row)
+    _cm = parse_session_model(d.pop("chat_model", None))
+    d["model"] = _cm.model if _cm else None        # 键名保留供消费方渐进迁移 — 小欧 2026-08-22
+    d["provider"] = _cm.provider if _cm else None
+    return d
 
 
 def load_user_messages_by_session(conn: Connection, session_id: str) -> list:
-    """按 session_id 读 chat_user_message 列表（替代 chat_messages 读取）— 小欧 2026-08-21"""
+    """按 session_id 读 chat_user_message 列表（替代 chat_messages 读取）— 小欧 2026-08-21
+    2026-08-22 小欧 归一报告v1.25 6.3: model/provider 键改由 chat_model JSON 列派生(旧列不再读取),
+    复用 parse_session_model 唯一解析点(DRY)"""
     rows = conn.execute(
         "SELECT * FROM chat_user_message WHERE session_id=? ORDER BY created_at ASC",
         (session_id,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        _cm = parse_session_model(d.pop("chat_model", None))
+        d["model"] = _cm.model if _cm else None       # 键名保留, 值源自新 JSON 列 — 小欧 2026-08-22
+        d["provider"] = _cm.provider if _cm else None
+        out.append(d)
+    return out
 
 
 def fetch_session_user_message_pairs(conn: Connection, session_id: str,
@@ -778,10 +813,12 @@ def fetch_session_user_message_pairs(conn: Connection, session_id: str,
     LEFT JOIN chat_tasks 重建"用户+AI"有序消息对(彻底去 chat_messages 读)。
     供 get_session_messages / _load_previous_messages / execution_stream 复用(10规范 DRY/复用优先)。
     返回 list[dict]: 每行一条 user 消息及其配对 assistant(ai_message_id 为 None 表示暂无 AI 回答),
-    字段: user_id, user_content, ai_reasoning, model, provider, task_id, created_at, ai_message_id"""
+    字段: user_id, user_content, ai_reasoning, model, provider, task_id, created_at, ai_message_id
+    2026-08-22 小欧 归一报告v1.25 6.3: cum.model/cum.provider 两列 → cum.chat_model JSON 单列,
+    返回 dict 的 model/provider 键由 chat_model 派生(键名不变, 旧列不再读取)"""
     sql = """SELECT cum.id AS user_id, cum.content AS user_content, cum.response AS ai_content,
                     cum.reasoning AS ai_reasoning,
-                    cum.model AS model, cum.provider AS provider, cum.task_id AS task_id,
+                    cum.chat_model AS chat_model, cum.task_id AS task_id,
                     cum.created_at AS created_at, ct.ai_message_id AS ai_message_id
              FROM chat_user_message cum
              LEFT JOIN chat_tasks ct ON ct.user_message_id = cum.id
@@ -795,17 +832,21 @@ def fetch_session_user_message_pairs(conn: Connection, session_id: str,
         params.append(upper_id)
     sql += " ORDER BY cum.id ASC"
     rows = conn.execute(sql, params).fetchall()
-    return [{
-        "user_id": r["user_id"],
-        "user_content": r["user_content"],
-        "ai_content": r["ai_content"],
-        "ai_reasoning": r["ai_reasoning"],
-        "model": r["model"],
-        "provider": r["provider"],
-        "task_id": r["task_id"],
-        "created_at": r["created_at"],
-        "ai_message_id": r["ai_message_id"],
-    } for r in rows]
+    out = []
+    for r in rows:
+        _cm = parse_session_model(r["chat_model"])
+        out.append({
+            "user_id": r["user_id"],
+            "user_content": r["user_content"],
+            "ai_content": r["ai_content"],
+            "ai_reasoning": r["ai_reasoning"],
+            "model": _cm.model if _cm else None,      # 由 chat_model 派生 — 小欧 2026-08-22
+            "provider": _cm.provider if _cm else None,
+            "task_id": r["task_id"],
+            "created_at": r["created_at"],
+            "ai_message_id": r["ai_message_id"],
+        })
+    return out
 
 
 # ====================================================================
@@ -813,7 +854,9 @@ def fetch_session_user_message_pairs(conn: Connection, session_id: str,
 # ====================================================================
 
 def get_task_detail(conn: Connection, task_id: str) -> Optional[dict]:
-    """C1: 按 task_id 读 chat_tasks 单行详情"""
+    """C1: 按 task_id 读 chat_tasks 单行详情
+    2026-08-22 小欧 归一报告v1.25 6.3: 与 list_session_tasks 同模式——sessionModel JSON 派生
+    model/provider 键(键名不变), 复用 parse_session_model 唯一解析点(DRY)"""
     row = conn.execute(
         "SELECT * FROM chat_tasks WHERE task_id=?", (task_id,),
     ).fetchone()
@@ -821,23 +864,34 @@ def get_task_detail(conn: Connection, task_id: str) -> Optional[dict]:
         return None
     _r = dict(row)
     _r["artifacts"] = parse_json(_r.get("artifacts")) if _r.get("artifacts") else []
+    _sm = parse_session_model(_r.pop("sessionModel", None))
+    _r["model"] = _sm.model if _sm else None       # 键名保留供消费方渐进迁移 — 小欧 2026-08-22
+    _r["provider"] = _sm.provider if _sm else None
     return _r
 
 
 def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int]:
     """B1/问题6(10.5): 会话任务列表 + 总数（任务数=用户消息数, 一条用户消息=一个任务;
-    失败/取消亦计入, 与文档2 3.5.3 口径一致）。chat_tasks 行数即新统计口径 — 小欧 2026-08-20"""
+    失败/取消亦计入, 与文档2 3.5.3 口径一致）。chat_tasks 行数即新统计口径 — 小欧 2026-08-20
+    2026-08-22 小欧 归一报告v1.25 6.3: model/provider 两列 → sessionModel JSON 列派生(键名不变)"""
     total = conn.execute(
         "SELECT COUNT(*) FROM chat_tasks WHERE session_id=?",
         (session_id,),
     ).fetchone()[0]
     rows = conn.execute(
-        """SELECT task_id, user_input, status, duration, model, provider,
+        """SELECT task_id, user_input, status, duration, sessionModel,
                   total_steps, llm_call_count, created_at, updated_at
            FROM chat_tasks WHERE session_id=? ORDER BY id DESC""",
         (session_id,),
     ).fetchall()
-    return [dict(r) for r in rows], total
+    out = []
+    for r in rows:
+        d = dict(r)
+        _sm = parse_session_model(d.pop("sessionModel", None))
+        d["model"] = _sm.model if _sm else None       # 键名保留供消费方渐进迁移 — 小欧 2026-08-22
+        d["provider"] = _sm.provider if _sm else None
+        out.append(d)
+    return out, total
 
 
 def get_task_tool_stats(conn: Connection, task_id: str) -> list:
