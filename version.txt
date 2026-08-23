@@ -1,3 +1,58 @@
+v0.19.24
+更新时间: 2026-08-23 22:41:11 - 小欧-2026-08-23
+## v0.19.23以来 变更汇总(35个commit) - 小欧-2026-08-23
+[2026-08-23 22:41:11 小欧] 汇总范围=v0.19.23以来全部commit
+
+### feat(6个):
+- feat:file_persist 新建旁路排查文件A/B持久化模块(TaskFileWriter单写者FIFO/create_task_writer工厂/purge_task+purge_session GC备函数/_files_root调试分流) - 小欧-2026-08-23
+- feat:message_builder,react_cycle 文件B增量落盘链(D2b单点惰性_msg_id计数器+D2 prepare后append_conv_blocks并剥离wire标记) - 小欧-2026-08-23
+- feat:base_service,llm_stream params_raw_str采集与两跳透传(D0聚合处原始arguments串+D0b result与_pending_calls) - 小欧-2026-08-23
+- feat:action_handler,tool_retry_engine,tool_executor 文件A每次尝试实时落盘回调链(D3c引擎成败回调+D3工厂闭包params_raw权威源+三分支全局序号透传#16/#18/#20/#21) - 小欧-2026-08-23
+- feat:stream_orchestrator,db_initializer,agent_runner 任务挂接与终态收口(D1 H1创建挂载agent.file_persist+D7 chat_tasks.files_dir列与同事务落库+D5 footer成功路径与finally幂等兜底#15) - 小欧-2026-08-23
+- feat,docs:chat_messages写保留当空气落地(4文件)+文档v3.34同步(A1-A4三轮核实W3已修复) - 小欧-2026-08-23
+
+### refactor(1个):
+- refactor:storage D4截断退役(删_truncate三函数与MAX_TOOL_RESULT两常量,换_warn_oversize_step_dict超限error告警不砍数据,append_execution_step完整step_json落库保回放源,签名->None不变,11.7.14-1 TODO随块清理) - 小欧-2026-08-23
+
+### fix(3个):
+- fix:db_initializer.py token_usage旧列NOT NULL回归修复 迁移收尾DROP model/provider并重建idx_token_model表达式索引 - 小欧-2026-08-23
+- fix:base_service.py create_llm_client调用点旧签名回归修复 改传llm_model单参 - 小欧-2026-08-23
+- fix:client_sdk.py 三堂会审复核加固 _base_url回退链补provider空值兜底+base_agent注释缩进勘误 - 小欧-2026-08-23
+
+### docs(24个):
+- docs:[1]数据存储及yield前端消息及数据设计 v3.39 11.9每步完成情况标注(P0-P8九项✅)+11.9.4四项验证标注 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.38 11.7/11.8全量实施完成(12文件编辑历史+三轮会审+246+全量6302 passed) - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.37 11.9计划核查(补异步测试环境/覆盖矩阵) - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.36 新增11.9实施计划(P0-P8) - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.35 三堂会审修正6项 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.34 A1-A4三轮核实W3已修复 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 11.8.12改写为写保留当空气裁定说明 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 11.8.12标题恢复为暂停实施 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 11.8.12由暂缓升级为完整可落地停写切换设计 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.30终审11.7对11.8一致性三堂会审+v3.31 11.7.11落点对照补全 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.29第五轮A/B独立化最小侵入落地 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.28第四轮严格三堂会审修正7项 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.27三轮三遍核查#B闭环 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.26三轮三遍核查修正文件B重复写漏洞 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.25版本号+write_headers同源修正 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 11.8三遍核查修正7项+2项误报撤回 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 11.8详细设计落地(七钩子H1-H7) - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 删除失效12.11/12.12/12.13/12.16四节+悬空指针清零 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 11.7文件A/B概要深化+宽松jsonl格式总则 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 11.7文件A/B概要完善(主体data+llm_data) - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 model结构化归一全文档同步v3.15 - 小欧-2026-08-23
+- docs:[2]会话任务前后端架构设计2.0 v1.75 chat_messages清除计划全文档清理 - 小欧-2026-08-23
+- docs:.gitignore 新增backend/files/忽略(旁路排查文件A/B) - 小欧-2026-08-23
+- docs:base_agent.py 补记注释卫生勘误编辑历史 - 小欧-2026-08-23
+
+### test(1个):
+- test:e2e_helpers.py 测试记录增强-新增model结构信息行+token_usage落库主动硬核查+跨任务注入上下文行+tok估算标注 - 小欧-2026-08-23
+
+### 合计
+- feat: 6项 | refactor: 1项 | fix: 3项 | docs: 24项 | test: 1项 = 共35项
+
+---
+
 v0.19.23
 更新时间: 2026-08-23 08:19:55 - 小欧-2026-08-23
 ## v0.19.22以来 变更汇总(14个commit) - 小欧-2026-08-23
