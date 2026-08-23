@@ -66,6 +66,10 @@ storage — 会话存储业务逻辑
   (chat_model/sessionModel JSON→parse_session_model 派生 model/provider 键, 键名不变); import 补 ModelRef
 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): insert_task 删 `if task_model else None` 死防御——参数已必填,
   Pydantic 实例恒真值, else 分支永不可达(SLAP); 直取 model_dump_json()
+2026-08-23 - 小欧 - 锚A解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): insert_user_message
+  id 分配锚迁移——user_message_id 显式入参退役(原=chat_messages.lastrowid 一对一贯通), 改 chat_user_message
+  AUTOINCREMENT 原生自增并返回 lastrowid; INSERT OR REPLACE 随显式 id 退役(自增无撞键)改普通 INSERT;
+  W2/W3/W4/W5 四个镜像写点加 TODO 删除注释(写保留, 系统零依赖 chat_messages)
 """
 
 import json
@@ -136,7 +140,18 @@ def derive_status_from_steps(steps: Optional[list]) -> str:
 
 
 class AssistantMessageIdAllocator:
-    """拷贝自 conversation.py 第34-79行"""
+    """拷贝自 conversation.py 第34-79行
+
+    【id 枢纽架构(北京老陈 2026-08-23 定调: chat_tasks 是任务中心表)】— 小欧 2026-08-23
+      用户侧 id: chat_user_message AUTOINCREMENT 原生自增分配(锚迁移, 本表=回放权威源);
+                 登记于 chat_tasks.user_message_id。
+      助手侧 id(ai_message_id): 本 allocator 分配, 占用检查并查 chat_user_message.id ∪
+                 chat_tasks.ai_message_id 两表——两 id 同属一个历史序列, 必须防撞号
+                 (前端同一消息列表渲染 user/assistant 两种气泡 id 不可重号);
+                 chat_tasks.ai_message_id 是中心登记点(orchestrator eager 创建任务即写入)。
+      引用方: chat_task_steps.ai_message_id/user_message_id(步骤挂靠)、chat_messages(纯镜像行同id,
+              北京老陈 2026-08-23 裁定"写保留当空气", 系统零依赖、外键已解除)。
+      chat_tasks 持双 id 登记+任务全部终态, 所有回放/统计以它为枢纽——中心地位不动。"""
 
     def __init__(self, user_ids: Dict[str, int], lock: threading.Lock):
         self._user_ids = user_ids
@@ -221,7 +236,9 @@ def insert_assistant_message(
     conn: Connection, ai_message_id: int, session_id: str,
     display_name: Optional[str], update_data,
 ) -> None:
-    """拷贝自 conversation.py 第115-131行"""
+    """拷贝自 conversation.py 第115-131行
+    【chat_messages 只写镜像写点 W2】北京老陈 2026-08-23 裁定: 写保留当空气, 系统零依赖本表
+    (id 锚已迁 chat_user_message 自增/allocator 已查新表); TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23"""
     cursor = conn.cursor()
     local_time = get_local_iso_timestamp()
     initial_content = update_data.content or ""
@@ -239,7 +256,9 @@ def update_message_fields(
     conn: Connection, ai_message_id: int,
     update_data, display_name: str,
 ) -> None:
-    """拷贝自 conversation.py 第134-156行"""
+    """拷贝自 conversation.py 第134-156行
+    【chat_messages 只写镜像写点 W4】北京老陈 2026-08-23 裁定: 写保留当空气;
+    TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23"""
     cursor = conn.cursor()
     fields: list = []
     values: list = []
@@ -321,11 +340,21 @@ def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Opti
     ai_message_id, is_new = _allocator.allocate(session_id, conn, always_new=True)
     local_time = get_local_iso_timestamp()
     if is_new:
-        conn.execute(
-            "INSERT INTO chat_messages(id, task_id, session_id, role, content, timestamp, user_message_id) "
-            "VALUES (?, ?, ?, 'assistant', ?, ?, ?)",
-            (ai_message_id, task_id, session_id, "", local_time, user_message_id),
-        )
+        # 【chat_messages 只写镜像写点 W3】北京老陈 2026-08-23 裁定: 写保留当空气
+        # (id 由 allocator 经 chat_user_message∪chat_tasks 分配, 本 INSERT 纯镜像);
+        # 镜像失败仅留痕不中断(三堂会审 A1·小欧 2026-08-23): 存量库 chat_messages 残留历史高 id 行,
+        # ai_message_id 可能撞其 UNIQUE 键——若不捕获会中止 with 块连带 insert_task 回滚,
+        # 致任务行/步骤/ai_message_id 全灭; 镜像是空气, 绝不允许它反噬主流程;
+        # 不把 chat_messages 加回占用检查(违反只写禁读铁律)。
+        # TODO 删除: 镜像退役时移除(注意保留 message_count UPDATE) — 小欧 2026-08-23
+        try:
+            conn.execute(
+                "INSERT INTO chat_messages(id, task_id, session_id, role, content, timestamp, user_message_id) "
+                "VALUES (?, ?, ?, 'assistant', ?, ?, ?)",
+                (ai_message_id, task_id, session_id, "", local_time, user_message_id),
+            )
+        except Exception as _mir_e:
+            logger.warning(f"[allocate] 镜像写chat_messages失败(session={session_id}, id={ai_message_id}): {_mir_e}")
     conn.execute(
         "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
         (local_time, session_id),
@@ -451,7 +480,9 @@ def load_execution_steps(conn: Connection, ai_message_id: int, task_id: Optional
 
 
 def finalize_message(conn: Connection, message_id: int, content: str, status: str, thought: str = "") -> None:
-    """finally 轻量终态 — 小欧 2026-07-14; 2026-07-16 小欧 增 thought 持久化"""
+    """finally 轻量终态 — 小欧 2026-07-14; 2026-07-16 小欧 增 thought 持久化
+    【chat_messages 只写镜像写点 W5】北京老陈 2026-08-23 裁定: 写保留当空气;
+    TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23"""
     conn.execute(
         "UPDATE chat_messages SET content=?, status=?, thought=? WHERE id=?",
         (content, status, thought or None, message_id),
@@ -734,23 +765,22 @@ def get_previous_task_chain(conn: Connection, session_id: str) -> Optional[Dict]
 
 def insert_user_message(
     conn: Connection, *,
-    user_message_id: int,
     session_id: str, content: str,
     client_os: str = None, browser: str = None,
     device: str = None, network: str = None,
 ) -> int:
-    """新建 chat_user_message 行（用户发消息时落库）。
-    user_message_id 显式传入 chat_messages 的 user 消息 id（一对一贯通：
-    chat_user_message.id == chat_messages.id），避免两套自增 id 错位
-    （小健 2026-08-19 三堂会审 P0-2 根因修复）。"""
+    """新建 chat_user_message 行（用户发消息时落库），返回本表原生自增 id。
+    锚迁移(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): id 分配锚由
+    chat_messages.lastrowid 显式指定 → 本表 AUTOINCREMENT 原生自增, user_message_id 入参退役;
+    原 INSERT OR REPLACE 随显式 id 一并退役——自增 id 无撞键场景, 退化为普通 INSERT — 小欧 2026-08-23"""
     now = get_local_iso_timestamp()
     cursor = conn.execute(
-        """INSERT OR REPLACE INTO chat_user_message
-           (id, session_id, content, client_os, browser, device, network, created_at)
-           VALUES (?,?,?,?,?,?,?,?)""",
-        (user_message_id, session_id, content, client_os, browser, device, network, now),
+        """INSERT INTO chat_user_message
+           (session_id, content, client_os, browser, device, network, created_at)
+           VALUES (?,?,?,?,?,?,?)""",
+        (session_id, content, client_os, browser, device, network, now),
     )
-    return user_message_id
+    return cursor.lastrowid
 
 
 def update_user_message_final(
