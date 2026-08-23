@@ -114,6 +114,9 @@
 #   :508 telemetry.on_llm_call 改传 tele_model=llm_client.llm_model — 全链 ModelRef 归一
 # 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): :398/:404/:509 三处改读任务快照 agent._task_llm_model 优先——
 #   防共享单例被并发还原后本任务后续轮次记录到他人模型(与 base_agent 快照/telemetry.finalize 同步落地)
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.4 D2/11.9 P2): _process_single_step 在 prepare_messages_for_llm()
+#   之后调 agent.file_persist.append_conv_blocks(llm_call_count, messages) 增量落文件B(稳定 _msg_id 去重),
+#   随即 pop("_msg_id") 防泄漏 LLM wire; getattr 守卫 writer 未挂载空转, 旁路不阻塞主链路
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -398,6 +401,14 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     )  # 11.3 C2修复(复核确认): 透传裁剪token数, 防 on_trim 恒0死数据 — 小欧 2026-08-20
     _first_token_marked = False           # 11.2-B 首 chunk 只记一次首包时延 — 小欧 2026-08-20
     messages = agent.message_builder.prepare_messages_for_llm()
+    # 11.8-H2: 文件B 增量落盘(loop顺序/结构保真/增量前缀) — 小欧 2026-08-23
+    # call_no = agent.llm_call_count(本次调用序号, 上方刚自增) — 文档[1]11.7.10-2
+    # 经注入的 agent.file_persist 调用(与 telemetry 同模式, agent 层零 chat 依赖); writer 未挂载时空转 — 小欧 2026-08-23
+    _fp = getattr(agent, "file_persist", None)
+    if _fp is not None:
+        _fp.append_conv_blocks(agent.llm_call_count, messages)   # 读 _msg_id 去重(#10 修正)
+    for _m in messages:
+        _m.pop("_msg_id", None)        # 剥离内部标记后再发 LLM(防泄漏 wire) — #10 修正 小欧 2026-08-23
     openai_tools = get_openai_tools(agent)
 
     _task_llm = getattr(agent, "_task_llm_model", None) or getattr(agent.llm_client, "llm_model", None)   # 任务快照优先(三堂会审 P1) — 小欧 2026-08-22
