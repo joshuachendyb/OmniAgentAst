@@ -61,7 +61,7 @@ class BaseAgent(ABC):
     ):
         # 原 AgentInitializer._init_llm — 归一后模型身份唯一入口 llm_client.llm_model, 不再接受散装 kwargs 覆写
         self.llm_client = llm_client
-        #         三堂会审修复(P1·小欧 2026-08-23): 任务级模型身份快照——构造时(L2 sessionModel 已生效)定格,
+        # 三堂会审修复(P1·小欧 2026-08-23): 任务级模型身份快照——构造时(L2 sessionModel 已生效)定格,
         #   防共享单例被并发任务覆盖/还原后, 本任务后续轮次 on_llm_call/finalize 记录到他人模型
         self._task_llm_model = getattr(llm_client, "llm_model", None)
 

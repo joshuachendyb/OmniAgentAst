@@ -17,6 +17,8 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
 编辑历史: 2026-08-22 小欧 model结构化归一报告v1.25 6.4: LLMClient 构造 (provider, model) 分离入参 → llm_model: ModelRef
   单结构; base_url 取 llm_model.api_base(缺省回退 _default_base_url(llm_model.provider)); 请求体拼
   self.llm_model.model 属裸单值调API场景(设计要求4允许并注释)
+编辑历史: 2026-08-23 小欧 三堂会审复核加固(P2): _base_url 回退链补 provider or "openai" 兜底——
+  防空 provider 时 _DEFAULT_URLS.get("","") 返回空串致 httpx base_url 为空(防御性语义与归一前对齐, 不弱化)
 """
 
 import httpx
@@ -112,7 +114,9 @@ class LLMClient:
     ):
         self.llm_model = llm_model   # 前导+model 命名铁律 — 小欧 2026-08-22
         self._api_key = api_key
-        self._base_url = llm_model.api_base or self._default_base_url(llm_model.provider)
+        # 三堂会审复核加固(小欧 2026-08-23): 保留原 provider or "openai" 兜底语义(防空 provider 时
+        # _default_base_url 返回空串致 httpx base_url 为空; 当前可达路径虽恒非空, 防御不弱化)
+        self._base_url = llm_model.api_base or self._default_base_url(llm_model.provider or "openai")
 
         read_timeout = float(timeout) if timeout else DEFAULT_READ_TIMEOUT
         self._default_timeout = read_timeout
