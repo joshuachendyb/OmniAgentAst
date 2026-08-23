@@ -64,6 +64,14 @@
 #   仅SSE不落库(P1~P6)原表格无行, 现按流序与落库步骤混排成行; chunk量大/thought_start纯信号不补;
 #   落库类型分布实测8种(start/context_overview/thought/action/observation/stats/final_stats/final);
 #   usage独立成行显本轮入/出/总三数, stats行去重只留任务/会话累计两组(北京老陈裁定)
+# 2026-08-23 - 小欧 - §1测试基本信息表新增"model 结构信息"行(北京老陈指示): 展示归一后模型身份=ModelRef JSON,
+#   取自chat_tasks.sessionModel(回退token_usage.task_model), 解析 provider/model/display_name; 佐证ModelRef归一落库正确
+# 2026-08-23 - 小欧 - 消除测试记录"假PASSED"盲区: 新增 verify_token_usage 主动核查 token_usage 真实落库
+#   (原 passed 仅依赖日志ERROR扫描, 落库静默失败不打ERROR则假PASS); 有LLM调用时 token_usage 行数须≥1且与
+#   llm_call_count 一致, 否则 passed=False; 测试记录终态判定纳入此硬核查
+# 2026-08-23 - 小欧 - §1测试基本信息表新增"跨任务注入上下文"行(北京老陈指示): 展示本任务之前注入的连续对话历史体量,
+#   取自context_overview事件的injected_message_count/injected_estimated_tokens(多轮历史注入机制, 单轮任务为0显示"无");
+#   §5.2 context_overview行与跨任务行的tok统一标注"(估算)"(chars//4纯数学估算, 非真实LLM token, 防误解)
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
@@ -872,7 +880,7 @@ def _step_brief(step: Any, limit: int = 40) -> str:
     if t == "start":
         return _cut(step.get("user_message"))
     if t == "context_overview":
-        return f"消息{step.get('message_count', 0)}条/{step.get('estimated_tokens', 0)}tok" + ("/已裁剪" if step.get("truncated") else "")
+        return f"消息{step.get('message_count', 0)}条/≈{step.get('estimated_tokens', 0)}tok(估算)" + ("/已裁剪" if step.get("truncated") else "")
     if t == "stats":
         # 2026-08-22 小欧 补展示retry_count(仅非零追加): stats落库字段=llm_call_count/duration/
         #   retry_count/step_count(轮次预算常量100)/severity(恒info), 后两字段无展示价值不显示
@@ -1628,6 +1636,33 @@ def verify_test_record_exists(test_id: str) -> bool:
     return exists
 
 
+def verify_token_usage(session_id: str, expected_calls: int) -> List[str]:
+    """主动验证 token_usage 真实落库(消除"日志无ERROR即PASS"盲区) — 小欧 2026-08-23
+    原 write_test_record 的 passed 仅依赖日志ERROR扫描; 若 token_usage_insert 静默失败(不打ERROR),
+    测试记录会假PASSED。本函数直接查DB确认 token_usage 行数, 与 llm_call_count 比对。
+    返回 issue 列表(空=通过); expected_calls<=0 时不强制(任务可能无LLM调用)。"""
+    issues: List[str] = []
+    if not session_id:
+        return issues
+    try:
+        _c = sqlite3.connect(str(DB_PATH))
+        _c.row_factory = sqlite3.Row
+        _n = _c.execute(
+            "SELECT count(*) n FROM token_usage WHERE session_id=?", (session_id,)
+        ).fetchone()["n"]
+        _c.close()
+        if expected_calls and expected_calls > 0:
+            if _n == 0:
+                issues.append(
+                    f"token_usage 落库失败(静默): session={session_id} 期望≥{expected_calls}行, 实际0行")
+            elif _n < expected_calls:
+                issues.append(
+                    f"token_usage 落库不全: session={session_id} 期望{expected_calls}行, 实际{_n}行")
+    except Exception as _e:
+        issues.append(f"token_usage 核查异常: {_e}")
+    return issues
+
+
 def write_test_record(
     test_id: str,
     test_name: str,
@@ -1742,6 +1777,13 @@ def write_test_record(
             passed = False
         if len(log_check.get("tracebacks", [])) > 0:
             passed = False
+    # 2026-08-23 小欧: 主动核查 token_usage 落库(消除"日志无ERROR即PASS"盲区)
+    if passed:
+        _tu_sid = result.get("session_id", "")
+        if _tu_sid:
+            _tu_issues = verify_token_usage(_tu_sid, result.get("llm_call_count", 0))
+            if _tu_issues:
+                passed = False
     tool_calls = result.get("tool_calls", [])
     tool_names = [t.get("tool_name", "") for t in tool_calls]
     event_types = result.get("event_types", [])
@@ -1788,6 +1830,42 @@ def write_test_record(
     lines.append("---")
     lines.append("")
 
+    # model 结构信息(小欧 2026-08-23): 归一后模型身份=ModelRef JSON, 取自 chat_tasks.sessionModel(回退 token_usage.task_model)
+    _model_info = "-"
+    try:
+        if _sid:
+            _mc = sqlite3.connect(str(DB_PATH))
+            _mc.row_factory = sqlite3.Row
+            _mr = _mc.execute(
+                "SELECT sessionModel FROM chat_tasks WHERE session_id=? ORDER BY rowid DESC LIMIT 1",
+                (_sid,)).fetchone()
+            _mj = None
+            if _mr and _mr["sessionModel"]:
+                _mj = json.loads(_mr["sessionModel"])
+            else:
+                _mt = _mc.execute(
+                    "SELECT task_model FROM token_usage WHERE session_id=? ORDER BY rowid DESC LIMIT 1",
+                    (_sid,)).fetchone()
+                if _mt and _mt["task_model"]:
+                    _mj = json.loads(_mt["task_model"])
+            _mc.close()
+            if _mj:
+                _model_info = (f"provider={_mj.get('provider')}, model={_mj.get('model')}, "
+                               f"display_name={_mj.get('display_name')}")
+    except Exception:
+        _model_info = "-"
+
+    # 跨任务注入上下文(小欧 2026-08-23): 取自 context_overview 事件的 injected_message_count/injected_estimated_tokens,
+    # 展示本任务之前注入的连续对话历史体量(多轮历史注入机制, 单轮任务为0)
+    _inj_info = "无(本任务单轮/无历史注入)"
+    for _ev in result.get("events", []):
+        if isinstance(_ev, dict) and _ev.get("type") == "context_overview":
+            _inj_n = _ev.get("injected_message_count", 0) or 0
+            _inj_tok = _ev.get("injected_estimated_tokens", 0) or 0
+            if _inj_n or _inj_tok:
+                _inj_info = f"消息{_inj_n}条/≈{_inj_tok}tok(估算)"
+            break
+
     # 第1节：测试基本信息
     lines.append("## 1 测试基本信息")
     lines.append("")
@@ -1811,6 +1889,8 @@ def write_test_record(
     else:
         _usage_cell = "-"
     lines.append(f"| Token使用(prompt/completion/total) | {_usage_cell} |")
+    lines.append(f"| model 结构信息 | {_model_info} |")
+    lines.append(f"| 跨任务注入上下文 | {_inj_info} |")
     lines.append(f"| 逻辑步数 | {len(logical_events)} |")
     lines.append(f"| 不重复步骤号数 | {unique_step_nums} |")
     lines.append(f"| 测试结果 | **{status}** |")
