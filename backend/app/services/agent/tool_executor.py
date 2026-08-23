@@ -11,6 +11,8 @@ tool_executor — 工具执行逻辑
 #   并行/顺序两分支工具内 get_current_hooks() 读到注入值; getattr 通道支持子类自定义 hooks(OCP)
 # 2026-08-13 小欧 A4收尾解耦: execute_tool 显式接收 retry_engine 依赖(去除对 agent._retry_engine 私有字段的强耦合, KISS-DIRECT);
 #   两调用方(action_handler/tool_facade)显式传入同一引擎对象, 行为不变, 无退化; searchtool 自动注入仍走 agent 内部状态(领域正确)
+# 2026-08-23 小欧 落盘文件A/B 实施(文档[1]11.8.5 D3 #18/11.9 P4): execute_tool 加 on_attempt_recorded 形参并
+#   双分支透传(parallel→try_once / 顺序→execute_tool_with_retry)——补透传链缺跳, 缺此 kwargs 调用必 TypeError
 import time
 from typing import Any, Callable, Dict, Optional, Set
 
@@ -25,7 +27,8 @@ from app.tools.context import set_current_hooks, reset_current_hooks  # A1: Cont
 async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
                        retry_engine: Any,
                        parallel: bool = False,
-                       on_retry_started: Optional[Callable] = None) -> Dict[str, Any]:
+                       on_retry_started: Optional[Callable] = None,
+                       on_attempt_recorded: Optional[Callable] = None) -> Dict[str, Any]:
     """执行工具（单入口）— 根据parallel参数分派try_once或带重试执行
      
     职责（SRP：只决定「执行方式」，不重写重试逻辑）：
@@ -58,11 +61,13 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
     try:
         if parallel:
             # 并行分支：一次执行不重试，失败信息直接返回给LLM决策
-            result = await retry_engine.try_once(tool_name, tool_params)
+            result = await retry_engine.try_once(tool_name, tool_params,
+                                                 on_attempt_recorded=on_attempt_recorded)   # #18 — 小欧 2026-08-23
         else:
             # 单工具/顺序分支：带重试+回调通知
             result = await retry_engine.execute_tool_with_retry(
                 tool_name, tool_params, on_retry_started=on_retry_started,
+                on_attempt_recorded=on_attempt_recorded,   # #18 — 小欧 2026-08-23
             )
     finally:
         reset_current_hooks(_hook_token)

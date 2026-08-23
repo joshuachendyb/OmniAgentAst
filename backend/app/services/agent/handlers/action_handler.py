@@ -121,6 +121,10 @@
 # 2026-08-22 - 小欧 - 三堂会审F1定案(北京老陈): 删兜底派生, artifacts仅认写工具with_artifacts自声明;
 #   读工具(read_*/query_sql/analyze_data等)也构造action.target, 兜底派生会把读取对象误落为伪产出物(违反"art只能是写的tool"铁律);
 #   14个写工具均已自声明零丢失; 连带删除仅服务派生的import os/extract_ext
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.5 D3/D3b/11.9 P3-P4): ①handle_action 先定义 _fp_factory 闭包
+#   (按全局序号注入 tool_no; params_raw 权威源=闭包携带的 params_raw_str, #16/#20)再传 on_attempt_recorded 调 execute_tools;
+#   ②execute_tools 三分支(A单/B'分组并行/C顺序)全部以全局序号取号透传(#18); ③_build_call_list 透传 params_raw_str(D3b);
+#   build_observation 零改动(H3 已移入引擎回调, 防重复记)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -477,7 +481,7 @@ def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
 
 async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                         tool_name: str, tool_params: Dict,
-                        on_retry_started=None) -> List[Any]:
+                        on_retry_started=None, on_attempt_recorded=None) -> List[Any]:
         """工具执行调度 — 三分支策略（遵守SLAP：本层只做决策不分派执行细节）
          
         三分支说明：
@@ -523,7 +527,10 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         if len(all_calls) == 1:
             # A: 单工具
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={tool_name}")
-            result = await execute_tool(agent, tool_name, tool_params, agent._retry_engine, on_retry_started=on_retry_started)
+            # #18(2026-08-23): 文件A 每次尝试回调按【全局序号】取号 — 小欧 2026-08-23
+            _cb = on_attempt_recorded(1) if on_attempt_recorded else None
+            result = await execute_tool(agent, tool_name, tool_params, agent._retry_engine,
+                                        on_retry_started=on_retry_started, on_attempt_recorded=_cb)
             results = [result]
 
         elif is_parallel:
@@ -547,19 +554,25 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 group = [all_calls[i] for i in indices]
                 _g_start = time.time()  # 监控: 每组执行耗时起点 — 小欧 2026-08-09
                 if len(group) == 1:  # 单工具, 语义同原A
+                    # #18(2026-08-23): 工厂实参=全局序号(indices[0]+1), 禁用组内局部下标 — 小欧 2026-08-23
+                    _cb = on_attempt_recorded(indices[0] + 1) if on_attempt_recorded else None
                     _res = [await execute_tool(agent, _cn(group[0]), _cp(group[0]), agent._retry_engine,
-                                               on_retry_started=on_retry_started)]
+                                               on_retry_started=on_retry_started, on_attempt_recorded=_cb)]
                     _gmode = "单工具"
                 elif not conflicted:  # 组内无冲突→并行(try_once), 语义同原B
-                    tasks = [execute_tool(agent, _cn(c), _cp(c), agent._retry_engine, parallel=True) for c in group]
+                    # #18(2026-08-23): zip(indices, group) 对齐全局下标取号 — 小欧 2026-08-23
+                    tasks = [execute_tool(agent, _cn(c), _cp(c), agent._retry_engine, parallel=True,
+                                          on_attempt_recorded=(on_attempt_recorded(_gi + 1) if on_attempt_recorded else None))
+                             for _gi, c in zip(indices, group)]
                     _res = await asyncio.gather(*tasks, return_exceptions=True)
                     _gmode = "并行"
                 else:  # 组内冲突→串行(带重试), 语义同原C
                     _res = []
-                    for call in group:
+                    for _gi, call in zip(indices, group):
                         try:
+                            _cb = on_attempt_recorded(_gi + 1) if on_attempt_recorded else None
                             _res.append(await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine,
-                                                           on_retry_started=on_retry_started))
+                                                           on_retry_started=on_retry_started, on_attempt_recorded=_cb))
                         except Exception as e:
                             logger.warning(f"[action_handler] 工具{_cn(call)}组内顺序执行失败: {e}")
                             _res.append(e)
@@ -583,9 +596,12 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             _reason = "非并行模式"
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 顺序执行({_reason}): tools={_names}")
             results = []
-            for call in all_calls:
+            for _gi, call in enumerate(all_calls, 1):
                 try:
-                    result = await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine, on_retry_started=on_retry_started)
+                    # #18(2026-08-23): 顺序分支按全局序号取号 — 小欧 2026-08-23
+                    _cb = on_attempt_recorded(_gi) if on_attempt_recorded else None
+                    result = await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine,
+                                                on_retry_started=on_retry_started, on_attempt_recorded=_cb)
                     results.append(result)
                 except Exception as e:
                     logger.warning(f"[action_handler] 工具{_cn(call)}顺序执行失败: {e}")
@@ -807,6 +823,7 @@ def _build_call_list(parsed: Dict) -> BuildCallListResult:
         "tool_name": tool_name, "tool_params": tool_params,
         "_tool_call_id": fc_context.get("tool_call_id", "") if fc_context else "",
         "_repair_warning": parsed.get("_repair_warning", ""),
+        "params_raw_str": parsed.get("params_raw_str", ""),   # #3 透传 LLM 原始参数串(11.7.9-2③) — 小欧 2026-08-23
     }]
     # 【P1-11修复】pending_calls条目缺tool_name时跳过 — chendyg 2026-06-26
     for pc in pending_calls:
@@ -818,6 +835,7 @@ def _build_call_list(parsed: Dict) -> BuildCallListResult:
             "tool_name": pc_name, "tool_params": pc.get("tool_params") or {},
             "_tool_call_id": pc.get("_tool_call_id", ""),
             "_repair_warning": pc.get("_repair_warning", ""),
+            "params_raw_str": pc.get("params_raw_str", ""),   # #3 并行调用各自原始串 — 小欧 2026-08-23
         })
 
     return BuildCallListResult(
@@ -895,9 +913,38 @@ async def handle_action(agent, parsed: Dict):
     # 工具重试由 tool_retry_engine 内部执行, 不向前端 emit 任何 step(北京老陈要求: tool 重试隐蔽)。
     # 重试回调不再收集/上报, 仅后端内部重试。
     # H1 (v1.43): 移除工具批 finally 的 clear_temp_auth() — 清零点迁移到 task 级(R1, react_cycle.run_react_cycle finally)
+
+    # 2026-08-23 #B 闭环(北京老陈 裁定②): 文件A 工厂回调, 每次重试尝试各写一块, 闭合 11.7.9-2 — 小欧 2026-08-23
+    # v3.29: 回调内直接落盘(write_tool_block), step=本步 llm_call_count(系统既有字段名); 工厂按全局工具序号闭包注入 tool_no,
+    # 引擎每次尝试回调(action, attempt, params, result_or_exc, ok) 内调用 write_tool_block
+    def _fp_factory(_tno: int):
+        _call = _exec_calls[_tno - 1] if 0 < _tno <= len(_exec_calls) else {}
+        # #16 修正(2026-08-23): params_raw 权威源=_call["params_raw_str"](D0→D0b→D3b 链路的 LLM 原始 arguments 串),
+        #   必须由本闭包携带——引擎不持有原始串; or 回退防空串击穿(#16 同轮修正口径) — 小欧 2026-08-23
+        def _cb(_action, _attempt, _params, _res_or_exc, _ok):
+            _fp = getattr(agent, "file_persist", None)
+            if _fp is None:
+                return
+            if isinstance(_res_or_exc, dict):
+                _fp_llm = _res_or_exc.get("llm_data") if isinstance(_res_or_exc.get("llm_data"), dict) else {}
+                _fp_other = _res_or_exc.get("other_data") if isinstance(_res_or_exc.get("other_data"), dict) else None
+                _fp_data = _res_or_exc
+            else:
+                _fp_llm, _fp_other, _fp_data = {}, None, {"exception": str(_res_or_exc)}
+            _fp.write_tool_block(
+                step=step, tool_no=_tno, retry_no=_attempt,
+                tool_name=_action,
+                params_raw=(_call.get("params_raw_str") or _call.get("tool_params")),
+                params_final=_params,
+                llm_data=_fp_llm, data=_fp_data, other_data=_fp_other,
+            )
+        return _cb
+
     try:
+        # #20 修正(2026-08-23 终审): 先定义工厂、调用时传参, 回调内部 file_persist=None 守卫保证无文件任务空转安全 — 小欧 2026-08-23
         results = await execute_tools(agent, _exec_calls, call_result.is_parallel,
-                                      call_result.tool_name, call_result.tool_params)
+                                      call_result.tool_name, call_result.tool_params,
+                                      on_attempt_recorded=_fp_factory)
     except Exception as e:
         logger.error(f"[action_handler] execute_tools 异常: {e}")
         raise

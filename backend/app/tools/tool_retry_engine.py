@@ -60,6 +60,11 @@
 #   #3 clamp 门控废除顶层 type 判定(数组形式如 ["integer","null"] 时 if _t=="integer" 整段跳过,
 #   clamp 全程失效), 改为"能取到数值边界即钳制", 并补 isinstance(v,(int,float)) 防类型不可比较异常
 # 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): params.llm_data.status 可能为 str, 防御 isinstance, 防 AttributeError
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.5.2 D3c/11.9 P4, #B 闭环 北京老陈 裁定②):
+#   try_once/_execute_with_retry 加 on_attempt_recorded 回调——每次实际执行(成功/失败)各回调一次,
+#   供文件A 排查副本 format 前直落盘(前端不可见铁律不变); execute_tool_with_retry 签名接收+:371 透传最后一跳(#21);
+#   实施修正: 失败回调置于 _should_retry 判定之前——中间可重试失败尝试也必须成块(11.7.9-2「每次尝试各写一块」),
+#   设计 diff 原只记末次失败与需求不符, 按需求权威执行
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -303,19 +308,22 @@ class ToolRetryEngine:
             return None, params
         return tool, params
 
-    async def try_once(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
+    async def try_once(self, action: str, action_input: Dict[str, Any],
+                       on_attempt_recorded: Optional[Callable] = None) -> Dict[str, Any]:
         """单次执行，不重试 — 专供action_handler并行分支使用
-         
-        与execute_tool_with_retry的区别：
-        - 无重试循环：只调一次_execute_tool_once，失败直接返回错误
-        - 无等待退避：不调用asyncio.sleep
-        - 无on_retry_started回调：一次执行不需要通知
-         
-        设计理由（action_handler并行分支场景）：
-        并行工具失败的瞬态概率低，让LLM从observation看到失败后可自行决定是否重试，
-        不需要引擎层自动重试。这避免了asyncio.gather内部的重试复杂性。
-         
-        小欧 2026-07-09
+
+         与execute_tool_with_retry的区别：
+         - 无重试循环：只调一次_execute_tool_once，失败直接返回错误
+         - 无等待退避：不调用asyncio.sleep
+         - 无on_retry_started回调：一次执行不需要通知
+
+         设计理由（action_handler并行分支场景）：
+         并行工具失败的瞬态概率低，让LLM从observation看到失败后可自行决定是否重试，
+         不需要引擎层自动重试。这避免了asyncio.gather内部的重试复杂性。
+
+         小欧 2026-07-09
+         2026-08-23 小欧: 新增 on_attempt_recorded 回调(文档[1]11.8.5.2 D3c/#B 闭环 北京老陈 裁定②):
+           每次实际执行(成功/失败)回调一次, 供文件A 排查副本落盘(format 前原始现场), 前端不可见不变
         """
         tool, params_or_error = self._prepare_execution(action, action_input)
         if tool is None:
@@ -327,8 +335,12 @@ class ToolRetryEngine:
             result = await self._execute_tool_once(tool, params_or_error, timeout)
             if isinstance(result, dict):
                 result.setdefault("other_data", {})["retry_count"] = 0
+            if on_attempt_recorded:
+                on_attempt_recorded(action, 0, params_or_error, result, True)  # #B 无重试首试成功 — 小欧 2026-08-23
             return result
         except Exception as e:
+            if on_attempt_recorded:
+                on_attempt_recorded(action, 0, params_or_error, e, False)  # #B 无重试首试失败 — 小欧 2026-08-23
             error_category = ToolErrorClassifier.classify_tool_error(e)
             _hint = TOOL_TIMEOUT_HINTS.get(action, "") if error_category == ToolErrorCategory.TIMEOUT else ""
             return self._build_retry_error(
@@ -343,6 +355,7 @@ class ToolRetryEngine:
         action: str,
         action_input: Dict[str, Any],
         on_retry_started: Optional[Callable] = None,
+        on_attempt_recorded: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """统一工具执行方法（带重试）— action_handler单工具/顺序分支使用
          
@@ -368,7 +381,9 @@ class ToolRetryEngine:
         tool, params_or_error = self._prepare_execution(action, action_input)
         if tool is None:
             return params_or_error
-        return await self._execute_with_retry(action, params_or_error, tool, on_retry_started=on_retry_started)
+        # #21 修正(2026-08-23): on_attempt_recorded 透传最后一跳(缺此跳回调失效) — 小欧 2026-08-23
+        return await self._execute_with_retry(action, params_or_error, tool, on_retry_started=on_retry_started,
+                                              on_attempt_recorded=on_attempt_recorded)
     
     def _extract_numeric_bounds(self, spec: Dict[str, Any]) -> tuple:
         """从工具schema提取数值范围(minimum/maximum), 兼容Pydantic v2 Optional字段的anyOf嵌套 — 小欧 2026-08-12
@@ -513,7 +528,8 @@ class ToolRetryEngine:
         return is_retryable and attempt < max_retries
 
     async def _execute_with_retry(self, action: str, params: Dict[str, Any], tool: Callable,
-                                   on_retry_started: Optional[Callable] = None) -> Dict[str, Any]:
+                                   on_retry_started: Optional[Callable] = None,
+                                   on_attempt_recorded: Optional[Callable] = None) -> Dict[str, Any]:
         """带重试执行工具 — 核心循环：渐进超时+重试前回调通知
          
         重试策略（遵守KISS-DIRECT原则，简单直线）：
@@ -555,11 +571,17 @@ class ToolRetryEngine:
                         other = {}
                     other["retry_count"] = attempt
                     result["other_data"] = other
-                    return result
+                if on_attempt_recorded:
+                    on_attempt_recorded(action, attempt, params, result, True)  # #B 本次尝试成功 — 小欧 2026-08-23
                 return result
             except Exception as e:
                 last_error = e
                 error_category = ToolErrorClassifier.classify_tool_error(e)
+
+                if on_attempt_recorded:
+                    # #B 每次失败尝试均回调(置于 _should_retry 之前)——11.7.9-2「重试=多次执行=多个独立记录块,
+                    #   中间失败尝试也保留」; 实施修正: 设计 diff 原只记末次失败, 与需求不符, 按需求权威执行 — 小欧 2026-08-23
+                    on_attempt_recorded(action, attempt, params, e, False)
 
                 # 超时/网络错误不打印堆栈，只有未知错误才打印 — 小沈 2026-06-28
                 should_print_traceback = error_category.name in ("UNKNOWN", "INTERNAL")
