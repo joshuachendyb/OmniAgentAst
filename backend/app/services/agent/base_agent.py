@@ -49,7 +49,7 @@ from app.services.agent.react_cycle import run_react_cycle as _run
 
 class BaseAgent(ABC):
     """Agent 核心基类 — 小沈 2026-03-25
-    三堂会审修复(P2·小欧 2026-08-22): 删 _ALLOWED_KWARGS={'model','provider','api_base','api_key'} 白名单——
+    三堂会审修复(P2·小欧 2026-08-23): 删 _ALLOWED_KWARGS={'model','provider','api_base','api_key'} 白名单——
     它把裸 model/provider 设为 agent 属性, 构成绕过 ModelRef 归一的暗道(命名铁律违反), 且全仓无调用方传参(死代码)"""
 
     def __init__(
@@ -61,7 +61,7 @@ class BaseAgent(ABC):
     ):
         # 原 AgentInitializer._init_llm — 归一后模型身份唯一入口 llm_client.llm_model, 不再接受散装 kwargs 覆写
         self.llm_client = llm_client
-        # 三堂会审修复(P1·小欧 2026-08-22): 任务级模型身份快照——构造时(L2 sessionModel 已生效)定格,
+        #         三堂会审修复(P1·小欧 2026-08-23): 任务级模型身份快照——构造时(L2 sessionModel 已生效)定格,
         #   防共享单例被并发任务覆盖/还原后, 本任务后续轮次 on_llm_call/finalize 记录到他人模型
         self._task_llm_model = getattr(llm_client, "llm_model", None)
 

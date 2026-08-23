@@ -9,7 +9,7 @@ config — 配置管理模块
 """
 # 编辑历史:
 # 2026-08-14 - 小欧 - 改名名实相符: persistence.py → config_helpers.py(包内re-export同步)
-# 2026-08-22 - 小欧 - 三堂会审 P2: docstring resolve_provider_model → resolve_model_ref(F8 改名后名实同步)
+# 2026-08-23 - 小欧 - 三轮三堂会审修复(P2): docstring resolve_provider_model → resolve_model_ref(F8 改名后名实同步)
 
 from app.services.model.resolver import AIConfigResolver, get_ai_config_resolver
 from app.services.model.config_helpers import (
