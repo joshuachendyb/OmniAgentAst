@@ -50,6 +50,9 @@
 #   老库经幂等表重建迁移(查 sqlite_master DDL 含旧引用→建新表→复制→DROP子表→RENAME), 位于索引创建之前。
 #   动因: foreign_keys=ON 下该外键是硬依赖(步骤落库要求 chat_messages 行存在/删行级联删步骤),
 #   解除后 ai_message_id 为纯贯通键, chat_messages 对系统彻底无结构性约束; W7 启动清扫 UPDATE 加 TODO 删除注释
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.7.1 D7/11.9 P5): chat_tasks 加 files_dir 列
+#   (TEXT DEFAULT '', _ensure_column 幂等)——任务级文件A/B 目录引用 $dir=files/{session_id}/{task_id}/,
+#   排查定位锚: 任务→files_dir→文件A 按 step/tool_no/retry_no 三键组定位→顺链文件B; orchestrator 同事务写入
 """
 db_initializer — 数据库初始化
 
@@ -216,6 +219,8 @@ def init_chat_db(get_conn):
         # 11.1 token 四层同构：任务级/会话级实时累计列 — 小欧 2026-08-20
         _ensure_column(conn, "chat_tasks", "task_accumulated_tokens", "TEXT DEFAULT '{}'")
         _ensure_column(conn, "chat_sessions", "session_accumulated_tokens", "TEXT DEFAULT '{}'")
+        # 文件A/B 排查目录引用(文档[1]11.7.5-1 $dir / 11.8.7.1 D7 #5) — 物理目录 = files/{session_id}/{task_id}/
+        _ensure_column(conn, "chat_tasks", "files_dir", "TEXT DEFAULT ''")   # 11.9 P5 — 小欧 2026-08-23
         # 11.1 增强: 复核新增列确已落库, 缺失则显式抛出, 避免后续 SELECT/UPDATE 隐性 OperationalError 致任务链崩溃 — 小欧 2026-08-20
         _verify_acc_columns(conn)
 

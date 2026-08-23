@@ -73,6 +73,10 @@
 # 2026-08-23 - 小欧 - 锚迁移(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): W6 镜像写点
 #   (user 消息回填 task_id 的 UPDATE chat_messages)加 TODO 删除注释; :278 _user_msg_id 注释修正为
 #   "chat_user_message.id 原生自增权威锚"(原"与chat_messages.id一对一"口径随锚迁移过时)
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.3 D1/11.8.7.1 D7/11.9 P5): 编排⑨事务内
+#   allocate_and_insert_message 之后调 create_task_writer 建 A/B 双文件+header 并挂载 agent.file_persist
+#   (局部导入 file_persist/time_utils, #11 必需); model 取 agent.llm_client.llm_model(ModelRef dump);
+#   同事务 UPDATE chat_tasks SET files_dir='files/{session_id}/{task_id}/'($dir 排查定位锚, 不重复落文件名)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -334,6 +338,24 @@ async def chat_stream_orchestrator(
                 _conn3.execute(
                     "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
                     (_ai_message_id, task_id),
+                )
+                # 11.8-H1/D1: 文件A/B 创建(header)——assistant 分配即建(11.7.4-4); 创建后挂载
+                #   agent.file_persist 供 agent 层钩子使用(telemetry 同模式, agent 零 chat 依赖) — 11.9 P5 — 小欧 2026-08-23
+                from app.file_persist import create_task_writer
+                from app.utils.time_utils import get_local_iso_timestamp  # 局部导入必需(#11: 顶层无该符号, 缺则 NameError 被吞降级无文件)
+                _mr = getattr(getattr(agent, "llm_client", None), "llm_model", None)
+                agent.file_persist = create_task_writer(
+                    session_id=session_id,
+                    task_id=task_id,
+                    ai_message_id=_ai_message_id,
+                    start_time_iso=get_local_iso_timestamp(),
+                    model=(_mr.model_dump(exclude_none=True) if hasattr(_mr, "model_dump") else None),
+                )
+                # D7/#5(2026-08-23): 11.7.5-1 落库 $dir 引用(物理目录 = files/{session_id}/{task_id}/),
+                #   供排查定位(任务→files_dir→文件A 按 step/tool_no/retry_no 定位块→文件B); 不重复落库文件名 — 小欧 2026-08-23
+                _conn3.execute(
+                    "UPDATE chat_tasks SET files_dir=? WHERE task_id=?",
+                    (f"files/{session_id}/{task_id}/", task_id),
                 )
         except Exception as _task_e:
             logger.warning(f"[chat] chat_tasks INSERT/eager分配失败(task={task_id}): {_task_e}")

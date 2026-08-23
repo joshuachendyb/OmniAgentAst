@@ -61,6 +61,9 @@
 # 2026-08-23 - 小欧 - 三轮三堂会审修复(P0): update_user_message_final 回填处 ModelRef(provider=None) 必抛
 #   ValidationError——现网 FinalStep 均未传 final_model 致键值恒 None, 回填整体失败连带丢 response/reasoning;
 #   改仅 provider/model 均非空才构造 ModelRef, 否则落 NULL(与旧行为等价)
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.7 D5/11.9 P6): update_task 成功后 agent.file_persist.finalize(status)
+#   写 A/B footer(getattr 守卫+try/except); 补 finally 级兜底(#15)——db_ops 缺失/update_task 抛异常时
+#   finalize("failed") 幂等收口(_closed 守卫), 杜绝 worker 协程悬挂
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -443,6 +446,14 @@ async def run_agent_in_background(
                         error_type=_err_type, error_message=_err_msg,
                         artifacts=getattr(getattr(agent, "telemetry", None), "_artifacts", None))
 
+                    # 11.8-H5: 文件A/B footer(终态回填 end_time/status/record_count; 注入对象) — 11.9 P6 小欧 2026-08-23
+                    _fp = getattr(agent, "file_persist", None)
+                    if _fp is not None:
+                        try:
+                            _fp.finalize(status=_terminal_status)
+                        except Exception as _fp_e:
+                            logger.warning(f"[Runner] 文件A/B footer 失败(task={task_id}): {_fp_e}")
+
                     # v2.0 改动2: 任务完成后回填 chat_user_message final 字段 — 小欧 2026-08-19
                     try:
                         _last_final = None
@@ -471,6 +482,16 @@ async def run_agent_in_background(
                         logger.warning(f"[Runner] 回填chat_user_message final失败(task={task_id}): {_um_e}")
             except Exception as _task_e:
                 logger.warning(f"[Runner] 回填task_id失败: {_task_e}", exc_info=True)
+
+        # #15 修正(2026-08-23): H5 兜底——db_ops 缺失/update_task 抛异常时 footer 永不写且
+        #   worker 协程悬挂(哨兵永不投递); 补 finally 级兜底: finalize 幂等(_closed 守卫),
+        #   主落点已写则此处空转, 零副作用 — 11.9 P6 小欧 2026-08-23
+        _fp_fb = getattr(agent, "file_persist", None)
+        if _fp_fb is not None and not getattr(_fp_fb, "_closed", False):
+            try:
+                _fp_fb.finalize(status="failed")   # 走到兜底即主终态链路未正常完成
+            except Exception as _fp_e2:
+                logger.warning(f"[Runner] 文件A/B footer 兜底失败(task={task_id}): {_fp_e2}")
 
         # S2 token_usage 改读 agent._usage_events(§10.4.4 P6): usage剔step_json, _usage_events为唯一明细来源 — 小欧 2026-08-18
         if db_ops and db_ops.insert_token:
