@@ -40,6 +40,11 @@
 # 2026-08-23 - 小欧 - 三轮三堂会审修复: ①P0 新增 _verify_model_ref_columns fail-loud 硬校验(迁移吞异常则三写路径
 #   全线崩, 仿 _verify_acc_columns 先例); ②P1 chat_tasks.sessionModel 新建 DDL 补 NOT NULL(insert_task 必填,
 #   与 token_usage.task_model 约束对称)
+# 2026-08-23 - 小欧 - 回归bug#2修复(token_usage.model NOT NULL): 原"旧列废弃保留不删"对 token_usage 不完整——
+#   旧 model 列带 NOT NULL 约束, token_usage_insert 只写 task_model 不写 model → 新行 model=NULL 触发
+#   NOT NULL constraint failed, 全部任务落库失败; 旧 idx_token_model 为 model 裸列索引(DDL:CREATE INDEX IF NOT EXISTS
+#   因重名跳过未替换为 json_extract), DROP 列前须先删; 故迁移收尾: DROP 旧 idx_token_model → 建 json_extract 表达式索引
+#   (与 DDL:245 对齐) → ALTER DROP COLUMN model/provider(已无代码引用, 干净归一并解除 NOT NULL 约束)
 """
 db_initializer — 数据库初始化
 
@@ -432,7 +437,10 @@ def _verify_model_ref_columns(conn: sqlite3.Connection) -> None:
 
 def _migrate_model_ref_columns(conn: sqlite3.Connection) -> None:
     """归一迁移(小欧 2026-08-22 报告v1.25 6.2): 三表旧分离列旧行 → JSON(ModelRef) 单列, 幂等可重复执行。
-    策略与设计一致: PRAGMA 查列→缺则 ALTER 补列→旧行回灌 JSON; 旧列废弃保留不删, 读写一律走新 JSON 列。
+    策略: PRAGMA 查列→缺则 ALTER 补列→旧行回灌 JSON; 旧列默认废弃保留不删, 读写一律走新 JSON 列。
+    例外(小欧 2026-08-23): token_usage.model 带 NOT NULL 约束, token_usage_insert 只写 task_model 不写 model →
+    新行 model=NULL 触发 NOT NULL 约束失败, 故 token_usage 分支回灌后 DROP 旧 model/provider 列(解约束+彻底归一);
+    chat_tasks/chat_user_message 旧列本就可空, 保留不删(最小改动, YAGNI)。
     chat_tasks: provider/model/display_name → sessionModel;
     token_usage: model/provider → task_model; chat_user_message: model/provider → chat_model。"""
     # 1) chat_tasks: 三列 → sessionModel JSON
@@ -463,6 +471,17 @@ def _migrate_model_ref_columns(conn: sqlite3.Connection) -> None:
                     "WHERE task_model IS NULL AND (model IS NOT NULL OR provider IS NOT NULL)").fetchall():
                 j = _json.dumps({"provider": r["provider"], "model": r["model"]})
                 conn.execute("UPDATE token_usage SET task_model=? WHERE id=?", (j, r["id"]))
+            # 归一收尾(小欧 2026-08-23): 删旧 model 列 — 其 NOT NULL 约束致 token_usage_insert 只写 task_model 不写
+            # model → 新行 model=NULL 触发 NOT NULL constraint failed, 全部任务落库失败; 旧 idx_token_model 为 model 裸列
+            # 索引(DDL:CREATE INDEX IF NOT EXISTS 因重名跳过未替换为 json_extract), DROP 列前须先删; 故: 删旧索引 →
+            # 建 json_extract 表达式索引(与 DDL:245 对齐) → ALTER DROP COLUMN model/provider(已无代码引用, 干净解约束)
+            conn.execute("DROP INDEX IF EXISTS idx_token_model")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_token_model "
+                "ON token_usage(json_extract(task_model,'$.provider'), json_extract(task_model,'$.model'))")
+            conn.execute("ALTER TABLE token_usage DROP COLUMN model")
+            if "provider" in cols:
+                conn.execute("ALTER TABLE token_usage DROP COLUMN provider")
     except Exception as e:
         logger.warning(f"[归一迁移] token_usage 回灌失败(降级不阻断启动): {e}")
 
