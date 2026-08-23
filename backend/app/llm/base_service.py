@@ -34,6 +34,9 @@
 # 2026-08-23 - 小欧 - 修复回归bug(P0): _ensure_client 调 create_llm_client 仍传 provider/model 旧签名,
 #   致 create_llm_client() got an unexpected keyword argument 'provider' TypeError(93dc95bc4 提交漏改此调用点);
 #   改为传 llm_model=self.llm_model(ModelRef), base_url 由 LLMClient.__init__ 从 llm_model.api_base 派生
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.2 D0/11.9 P3): request_stream 工具调用聚合处
+#   tool_calls_list 条目加 params_raw_str=args_str(:309 原始 arguments 串)——文件A③「LLM 原始参数」权威源,
+#   无论是否走截断修复分支 raw 都以它为准; 下游经 llm_stream D0b/_build_call_list D3b 两跳透传至落盘闭包
 """
 LLM 核心模块 — BaseAIService
 
@@ -325,6 +328,7 @@ class BaseAIService:
                             tool_calls_list.append({
                                 "tool_name": tc["name"],
                                 "tool_params": params,
+                                "params_raw_str": args_str,      # LLM 原始 arguments 串(文档[1]11.8.2 D0/文件A③) — 小欧 2026-08-23
                                 "tool_call_id": tc.get("id"),
                                 "_repair_warning": tc.get("_repair_warning", ""),
                                 "tool_calls": [{

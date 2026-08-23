@@ -14,6 +14,9 @@
 # 2026-07-26 小欧 L2重试加指数退避: 原 flat 0.5s → min(0.5 * 2^attempt, 30). 根因:429配额耗尽后快速原地重试只会反复失败, 指数退避给配额恢复机会.
 # 2026-07-28 - 小欧 - 欧阳BUG-10修复: call_llm_with_fallback fallback前agent.llm_client._cancelled=False改agent.llm_client.reset_cancel(), 确保_current_response一并重置
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.2.1 D0b/11.9 P3): _build_tool_calls_response 的
+#   result 与 _pending_calls 两处透传 params_raw_str(源=D0 base_service)——补 #3 链路缺口,
+#   缺此跳 D3 落盘闭包永远 fallback 到已解析 tool_params, 违背 11.7.9-2③「LLM 原始参数」
 """
 llm_stream — LLM流式调用+响应构建
 
@@ -62,6 +65,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
             "tool_name": tc.get("tool_name", ""), "tool_params": tc.get("tool_params") or {},
             "_tool_call_id": tc.get("tool_call_id") or "",
             "_repair_warning": tc.get("_repair_warning", ""),
+            "params_raw_str": tc.get("params_raw_str", ""),   # #3 并行调用各自原始串透传(11.7.9-2③) — 小欧 2026-08-23
         })
 
     logger.info(f"[LLM] 原始响应(action): tool={first.get('tool_name','?')}, parallel={len(_pending_calls)}")
@@ -75,6 +79,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
         "fc_context": {"tool_call_id": first.get("tool_call_id") or "", "tool_calls": built_tool_calls, "llm_content": full_content, "llm_reasoning": full_reasoning},  # 2026-07-19 小欧 新增/传递 llm_reasoning
         "_pending_calls": _pending_calls, "tool_name": first.get("tool_name", ""),
         "tool_params": first.get("tool_params") or {}, "tool_call_id": first.get("tool_call_id") or "",
+        "params_raw_str": first.get("params_raw_str", ""),   # #3 主调用原始 arguments 串透传(11.7.9-2③); 源=D0 base_service — 小欧 2026-08-23
         "_repair_warning": first.get("_repair_warning", ""),
     }
     if usage_data is not None:  # 2026-07-22 - 小欧 - 修复: usage 为 None 时不添加 null 字段
