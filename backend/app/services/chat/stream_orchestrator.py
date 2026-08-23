@@ -69,6 +69,7 @@
 #   闭包改传 task_model=agent.llm_client.llm_model(ModelRef), display_name 不再拼装落库(设计要求2)
 # 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): L2 覆盖与 finally 还原后各调 ai_service.reset_sdk()——SDK 缓存重建,
 #   保 api_base/model 实连一致(配 base_service.reset_sdk 新方法)
+# 2026-08-23 - 小欧 - 修复P3-2: L265 display_name 补 fallback 逻辑，session 未设置时继承原配置 display_name
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -262,7 +263,7 @@ async def chat_stream_orchestrator(
                         provider=_ov.provider or _orig_llm_model.provider,
                         model=_ov.model or _orig_llm_model.model,
                         api_base=_ov.api_base or _orig_llm_model.api_base,
-                        display_name=_ov.display_name,
+                        display_name=_ov.display_name or _orig_llm_model.display_name,
                     )
                     ai_service.reset_sdk()   # 三堂会审 P1 修复: 换模后重建 SDK, 保 api_base/model 实连一致 — 小欧 2026-08-22
                     logger.info(f"[chat] L2 sessionModel 已生效: session={session_id}, "
