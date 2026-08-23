@@ -70,6 +70,10 @@ storage — 会话存储业务逻辑
   id 分配锚迁移——user_message_id 显式入参退役(原=chat_messages.lastrowid 一对一贯通), 改 chat_user_message
   AUTOINCREMENT 原生自增并返回 lastrowid; INSERT OR REPLACE 随显式 id 退役(自增无撞键)改普通 INSERT;
   W2/W3/W4/W5 四个镜像写点加 TODO 删除注释(写保留, 系统零依赖 chat_messages)
+2026-08-23 - 小欧 - D4 截断退役(文档[1]11.8.6/11.8.11/11.9 P7, 10.6.2 定案"现役表不截断"):
+  删 _truncate_tool_result/_truncate_step_dict/_truncate_tool_result_strings 三函数+两 MAX_TOOL_RESULT_* 常量,
+  新增 _warn_oversize_step_dict 超限 error 告警扫描(安全网不砍数据); append_execution_step 改完整 step_json
+  落库保历史回放权威源(5.1 铁律), 签名/返回值 -> None 原样零感知; 原"实验性的功能:TODO"占位随删除块一并清理(11.7.14-1)
 """
 
 import json
@@ -362,85 +366,29 @@ def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Opti
     return ai_message_id
 
 
-# 工具结果截断阈值 — 小欧 2026-07-21
-# tool_result/parallel_results 中任何列表超过此数即截断,防止 SQLite TEXT 超限
-# 实验性的功能 :TODO做正式的持久化设计后进行更新
-MAX_TOOL_RESULT_ITEMS: int = 1000
-MAX_TOOL_RESULT_STR_LEN: int = 100000
+# 告警线(原截断阈值转告警线) — 10.6.2 定案(北京老陈 2026-08-23): 现役表不截断 — 小欧 2026-08-23
+# (原"实验性的功能:TODO做正式的持久化设计后进行更新"占位随截断退役一并清理, 正式定案=文档[1]11.7/11.8 — 11.7.14-1)
+_ALARM_STEP_ITEMS: int = 1000
+_ALARM_STEP_STR_LEN: int = 100000
 
-def _truncate_tool_result(tr: Any, tag: str = "") -> Any:
-    """递归截断 tool_result 中过大的列表 — 小欧 2026-07-21
-    2026-07-21 小欧: 修复短列表不递归元素内大列表+ActionStep execution_result 遗漏
-    2026-08-13 - 小欧 - 三堂会审修复#9: 递归返回值统一回写父节点(list分支return不再被丢弃),
-      彻底覆盖"list内嵌超长list"(如 {"rows":[[…1001…]]}) 截断失效场景
-    """
-    if isinstance(tr, dict):
-        for key, val in list(tr.items()):
-            tr[key] = _truncate_tool_result(val, tag)
-    elif isinstance(tr, list):
-        if len(tr) > MAX_TOOL_RESULT_ITEMS:
-            logger.warning(f"[storage] {tag}tool_result 列表过大,截断至{MAX_TOOL_RESULT_ITEMS}条(原{len(tr)}条)")
-            tr = tr[:MAX_TOOL_RESULT_ITEMS]
-        for i, item in enumerate(tr):
-            tr[i] = _truncate_tool_result(item, tag)
-    return tr
-
-
-def _truncate_step_dict(step_dict: dict) -> dict:
-    """截断 step_dict 中 tool/execution_result — 小欧 2026-07-21
-    2026-07-21 小欧: 补 ActionStep.execution_result 截断; 加字符串截断防 SQLite 撑爆(不碰 observation)
-    """
-    if not isinstance(step_dict, dict):
-        return step_dict
-    if "tool_result" in step_dict:
-        step_dict["tool_result"] = _truncate_tool_result(step_dict["tool_result"], "")
-        _truncate_tool_result_strings(step_dict["tool_result"])
-    if "execution_result" in step_dict:
-        step_dict["execution_result"] = _truncate_tool_result(step_dict["execution_result"], "")
-        _truncate_tool_result_strings(step_dict["execution_result"])
-    # 2026-08-18 小健 三堂会审 Bug#5: 新 ActionStep 字段已由 execution_result 改名 tools,
-    #   须对新 tools[i].params 做超长字符串截断, 防长 SQL/content 撑爆 SQLite(旧实现遗漏此键)
-    tools = step_dict.get("tools")
-    if isinstance(tools, list):
-        for i, entry in enumerate(tools):
-            if isinstance(entry, dict) and "params" in entry:
-                entry["params"] = _truncate_tool_result(entry["params"], f"tools[{i}].params.")
-                _truncate_tool_result_strings(entry["params"])
-    pr = step_dict.get("parallel_results")
-    if isinstance(pr, list):
-        for i, entry in enumerate(pr):
-            if isinstance(entry, dict):
-                if "tool_result" in entry:
-                    entry["tool_result"] = _truncate_tool_result(entry["tool_result"], f"parallel_results[{i}].")
-                    _truncate_tool_result_strings(entry["tool_result"])
-                if "execution_result" in entry:
-                    entry["execution_result"] = _truncate_tool_result(entry["execution_result"], f"parallel_results[{i}].")
-                    _truncate_tool_result_strings(entry["execution_result"])
-    return step_dict
-
-
-# tool_result 中单字符串最大字符数 — 小欧 2026-07-21
-# formatter 行×列门限(tool_constants)已控制 observation 大小;
-# tool_result 原始数据可能含超大字符串(如 base64/长文本), 在此做安全截断防 SQLite 撑爆
-
-
-
-def _truncate_tool_result_strings(obj: Any, tag: str = "") -> None:
-    """递归截 tool_result 中所有超长字符串 — 小欧 2026-07-21"""
-    if isinstance(obj, dict):
-        for key, val in list(obj.items()):
-            if isinstance(val, str) and len(val) > MAX_TOOL_RESULT_STR_LEN:
-                obj[key] = val[:MAX_TOOL_RESULT_STR_LEN] + f"...(storage截断,原长{len(val)}字符)"
-                logger.warning(f"[storage] {tag}tool_result.{key} 字符串过大({len(val)}字符),截断至{MAX_TOOL_RESULT_STR_LEN}")
-            elif isinstance(val, (dict, list)):
-                _truncate_tool_result_strings(val, tag)
-    elif isinstance(obj, list):
-        for i, item in enumerate(obj):
-            if isinstance(item, str) and len(item) > MAX_TOOL_RESULT_STR_LEN:
-                obj[i] = item[:MAX_TOOL_RESULT_STR_LEN] + f"...(storage截断,原长{len(item)}字符)"
-                logger.warning(f"[storage] {tag}tool_result[{i}] 字符串过大({len(item)}字符),截断至{MAX_TOOL_RESULT_STR_LEN}")
-            elif isinstance(item, (dict, list)):
-                _truncate_tool_result_strings(item, tag)
+# 10.6.2 定案(北京老陈 2026-08-23): 截断整体退役 → 仅超限 error 告警扫描(安全网不砍数据)
+# 2026-08-23 - 小欧 - D4(文档[1]11.8.6/11.8.11): 删 _truncate_tool_result/_truncate_step_dict/
+#   _truncate_tool_result_strings 三函数, 换 _warn_oversize_step_dict 告警扫描 —
+#   step_json.tool_result 数组是历史回放唯一权威数据源(5.1 铁律), storage 二次截断=砍坏回放源;
+#   工具层自截断(5.7)为唯一合法截断层, 文件A 全量落盘不截断
+def _warn_oversize_step_dict(step_dict, tag: str = "") -> None:
+    """递归统计超限(列表>1000项/字符串>10万字符)仅 error 告警 — 安全网不砍数据 — 小欧 2026-08-23"""
+    if isinstance(step_dict, dict):
+        for k, v in step_dict.items():
+            _warn_oversize_step_dict(v, f"{tag}{k}.")
+    elif isinstance(step_dict, list):
+        if len(step_dict) > _ALARM_STEP_ITEMS:
+            logger.error(f"[storage]{tag}列表超大({len(step_dict)}项>告警线{_ALARM_STEP_ITEMS}), 请核查工具层自截断")
+        for i, item in enumerate(step_dict):
+            _warn_oversize_step_dict(item, f"{tag}[{i}].")
+    elif isinstance(step_dict, str):
+        if len(step_dict) > _ALARM_STEP_STR_LEN:
+            logger.error(f"[storage]{tag}字符串超长({len(step_dict)}字符>告警线{_ALARM_STEP_STR_LEN}), 请核查工具层自截断")
 
 
 def append_execution_step(conn: Connection, ai_message_id: int, session_id: str,
@@ -450,8 +398,11 @@ def append_execution_step(conn: Connection, ai_message_id: int, session_id: str,
     """运行期逐步落库 — 小欧 2026-07-14
     小欧 2026-07-21: 落库前截断超大 tool_result(列表+字符串)防 SQLite 撑爆; 不碰 observation
     2026-08-16 - 小欧 - S2②-2: chat_task_steps 补 task_id 列（任务级贯通，10.1.7②-2）
-    2026-08-19 - 小欧 - v2.0: 表改名 chat_task_steps + 参数 message_id→ai_message_id + 新增 usage/user_message_id 列"""
-    step_dict = _truncate_step_dict(step_dict)
+    2026-08-19 - 小欧 - v2.0: 表改名 chat_task_steps + 参数 message_id→ai_message_id + 新增 usage/user_message_id 列
+    2026-08-23 - 小欧 - D4(文档[1]11.8.6/11.9 P7): 截断退役→超限 error 告警(10.6.2 现役表不截断);
+      完整 step_json 落库保回放源(5.1); 签名/返回值保持原样(-> None)——文件A 定位键已改
+      step/tool_no/retry_no 三键组(实时落盘), 不再需要本函数返回主键"""
+    _warn_oversize_step_dict(step_dict)
     conn.execute(
         "INSERT INTO chat_task_steps(ai_message_id, task_id, session_id, step_index, step_json, created_at, usage, user_message_id) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
