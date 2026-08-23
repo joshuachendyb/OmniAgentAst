@@ -70,6 +70,9 @@
 # 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): L2 覆盖与 finally 还原后各调 ai_service.reset_sdk()——SDK 缓存重建,
 #   保 api_base/model 实连一致(配 base_service.reset_sdk 新方法)
 # 2026-08-23 - 小欧 - 修复P3-2: L265 display_name 补 fallback 逻辑，session 未设置时继承原配置 display_name
+# 2026-08-23 - 小欧 - 锚迁移(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): W6 镜像写点
+#   (user 消息回填 task_id 的 UPDATE chat_messages)加 TODO 删除注释; :278 _user_msg_id 注释修正为
+#   "chat_user_message.id 原生自增权威锚"(原"与chat_messages.id一对一"口径随锚迁移过时)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -275,7 +278,7 @@ async def chat_stream_orchestrator(
         #   10.1.7②-1 9属性(任务级读写扩展) — 小欧 2026-08-16
         import types as _types
         _db_ops = _types.SimpleNamespace(
-            append_step=lambda c, mid, sid, idx, d, usage=None: append_execution_step(c, mid, sid, idx, d, task_id, usage=usage, user_message_id=_user_msg_id),  # _user_msg_id即chat_user_message.id（与chat_messages.id一对一）— 小健 2026-08-19 P1-4
+            append_step=lambda c, mid, sid, idx, d, usage=None: append_execution_step(c, mid, sid, idx, d, task_id, usage=usage, user_message_id=_user_msg_id),  # _user_msg_id即chat_user_message.id（原生自增权威锚, 北京老陈 2026-08-23 锚迁移）— 小健 2026-08-19 P1-4
             finalize=finalize_message,
             load_previous=lambda sid: _load_previous_messages(  # 任务上下文过滤(10.1.4⑤⑥)，经闭包注入链路计算的 context 两字段+上界(_user_msg_id)
                 sid, context_link_mode=context_link_mode, context_root_task_id=_context_root_task_id,
@@ -318,6 +321,8 @@ async def chat_stream_orchestrator(
                 _db_ops.insert_task(_conn3)
                 # v2.0 改动7: user 消息回填 task_id — 小欧 2026-08-19
                 if _user_msg_id:
+                    # 【chat_messages 只写镜像写点 W6】北京老陈 2026-08-23 裁定: 写保留当空气;
+                    # TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23
                     _conn3.execute(
                         "UPDATE chat_messages SET task_id=? WHERE id=?",
                         (task_id, _user_msg_id),

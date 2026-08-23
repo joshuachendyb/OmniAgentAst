@@ -13,6 +13,10 @@
 # 2026-08-22 - 小欧 - 北京老陈 2026-08-22 定: L2 会话级模型覆盖 sessionModel 结构化对齐: ①import SessionModelOverride; ②get_session_messages
 #     SELECT sessionModel 列(替原 model_override); ③新增 _parse_session_model(dict→SessionModelOverride, 容错返 None); ④返回 sessionModel 结构(替原 model_override 字符串)
 # 2026-08-22 - 小欧 - 三堂会审复核整改(北京老陈 2026-08-22): 删除本文件重复的 _parse_session_model, 改从 storage 导入全系统唯一 parse_session_model(DRY); 同步移除不再使用的 json/SessionModelOverride 导入
+# 2026-08-23 - 小欧 - 锚A解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): save_message user 分支
+#   重构——权威源 chat_user_message 先落库(insert_user_message 原生自增分配 id), 再镜像写 chat_messages
+#   (同 id 对齐/失败仅留痕); 权威写失败改 fail-loud 抛 HTTPException(旧路径吞异常返 success 但权威缺行,
+#   历史回放丢消息属假成功); assistant legacy 直存分支行为不变; W1 两处镜像 INSERT 加 TODO 删除注释
 """
 message_service — 消息业务服务(services/chat)
 
@@ -147,29 +151,37 @@ def save_message(session_id: str, message):
         if message.role == "assistant" and not display_name_to_save:
             display_name_to_save = display_name_cache.get(session_id)
 
-        cursor.execute(
-            "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?)",
-            (session_id, message.role, message.content, local_time, display_name_to_save,
-             message.client_os, message.browser, message.device, message.network))
-        message_id = cursor.lastrowid
-
-        # v2.0 改动2: user消息同步写chat_user_message — 小欧 2026-08-19
-        # 关键：chat_user_message.id 显式取 chat_messages.id（一对一贯通），根除两套自增id错位 — 小健 2026-08-19 三堂会审P0-2
         if message.role == "user":
-            try:
-                insert_user_message(
-                    conn,
-                    user_message_id=message_id,
-                    session_id=session_id,
-                    content=message.content,
-                    client_os=message.client_os,
-                    browser=message.browser,
-                    device=message.device,
-                    network=message.network,
-                )
-            except Exception as _um_e:
-                logger.warning(f"[save_message] 写chat_user_message失败(session={session_id}): {_um_e}")
+            # 锚迁移(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): 权威源 chat_user_message
+            # 先落库, id 由本表 AUTOINCREMENT 原生自增分配(不再取 chat_messages.lastrowid 一对一贯通);
+            # 权威写失败即保存失败 fail-loud(杜绝旧路径"镜像成功但权威缺行→历史回放丢消息"的假成功) — 小欧 2026-08-23
+            message_id = insert_user_message(
+                conn,
+                session_id=session_id,
+                content=message.content,
+                client_os=message.client_os,
+                browser=message.browser,
+                device=message.device,
+                network=message.network,
+            )
             _track_user_message(session_id, message_id)
+            # 【chat_messages 只写镜像写点 W1-user】镜像行与权威源同 id 对齐; 失败仅留痕(纯副本无读者);
+            # TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23
+            try:
+                cursor.execute(
+                    "INSERT INTO chat_messages(id, session_id, role, content, timestamp, display_name, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (message_id, session_id, message.role, message.content, local_time, display_name_to_save,
+                     message.client_os, message.browser, message.device, message.network))
+            except Exception as _mir_e:
+                logger.warning(f"[save_message] 镜像写chat_messages失败(session={session_id}, id={message_id}): {_mir_e}")
+        else:
+            # 【chat_messages 只写镜像写点 W1-assistant】legacy API 直存助手消息路径(纯镜像域, 无锚意义);
+            # TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23
+            cursor.execute(
+                "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?)",
+                (session_id, message.role, message.content, local_time, display_name_to_save,
+                 message.client_os, message.browser, message.device, message.network))
+            message_id = cursor.lastrowid
 
         # 12.2-Q6附带修复: 绝对值覆盖→SQL自增(与storage.py:297 allocate路径同口径), 消除并发丢计数 — 小欧 2026-08-21
         cursor.execute(

@@ -45,6 +45,11 @@
 #   NOT NULL constraint failed, 全部任务落库失败; 旧 idx_token_model 为 model 裸列索引(DDL:CREATE INDEX IF NOT EXISTS
 #   因重名跳过未替换为 json_extract), DROP 列前须先删; 故迁移收尾: DROP 旧 idx_token_model → 建 json_extract 表达式索引
 #   (与 DDL:245 对齐) → ALTER DROP COLUMN model/provider(已无代码引用, 干净归一并解除 NOT NULL 约束)
+# 2026-08-23 - 小欧 - 锚B解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): chat_task_steps 外键退役——
+#   新建 DDL 删 FOREIGN KEY(ai_message_id) REFERENCES chat_messages(id) ON DELETE CASCADE 行;
+#   老库经幂等表重建迁移(查 sqlite_master DDL 含旧引用→建新表→复制→DROP子表→RENAME), 位于索引创建之前。
+#   动因: foreign_keys=ON 下该外键是硬依赖(步骤落库要求 chat_messages 行存在/删行级联删步骤),
+#   解除后 ai_message_id 为纯贯通键, chat_messages 对系统彻底无结构性约束; W7 启动清扫 UPDATE 加 TODO 删除注释
 """
 db_initializer — 数据库初始化
 
@@ -87,6 +92,9 @@ def init_chat_db(get_conn):
             );
             
             -- 独立步骤表 — 小欧 2026-07-14; v2.0 改名 chat_task_steps — 小欧 2026-08-19
+            -- 锚B解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): 外键 REFERENCES chat_messages(id)
+            --   已退役(旧库经下方幂等表重建迁移); ai_message_id 为纯贯通键, 与 chat_tasks.ai_message_id 同名同值,
+            --   不再外键引用任何表 — 小欧 2026-08-23
             CREATE TABLE IF NOT EXISTS chat_task_steps (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ai_message_id INTEGER NOT NULL,  -- v2.0 改名: message_id → ai_message_id, 与代码变量同名贯通
@@ -96,8 +104,7 @@ def init_chat_db(get_conn):
                 created_at TEXT,  -- 本地ISO无Z
                 task_id TEXT,
                 usage TEXT,
-                user_message_id INTEGER,  -- v2.0 冗余：免 JOIN 直达 user 消息 — 小欧 2026-08-19
-                FOREIGN KEY (ai_message_id) REFERENCES chat_messages(id) ON DELETE CASCADE
+                user_message_id INTEGER  -- v2.0 冗余：免 JOIN 直达 user 消息 — 小欧 2026-08-19
             );
 
             -- ===== S0 新增 3 表（10.1.7① 表结构先行，北京老陈 2026-08-16 定案，幂等）— 小欧 2026-08-16 =====
@@ -226,6 +233,41 @@ def init_chat_db(get_conn):
         from app.services.chat.migrate_steps import migrate_v2_chat_restructure
         migrate_v2_chat_restructure(get_conn)
 
+        # ===== 锚B解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): chat_task_steps 外键退役 =====
+        # 旧 DDL: FOREIGN KEY(ai_message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+        # 在 PRAGMA foreign_keys=ON(database.py:172) 下是硬依赖: 步骤落库要求 chat_messages 行存在,
+        # 删 chat_messages 行会 CASCADE 级联删步骤数据。解除后 ai_message_id 为纯贯通键
+        # (与 chat_tasks.ai_message_id 同名同值), 不再外键引用任何表。
+        # SQLite 不支持 ALTER 外键 → 幂等表重建(建新表→复制→DROP子表→RENAME), 仅当 sqlite_master DDL
+        # 仍含旧引用时执行一次; 被重建的是子表, FK=ON 下 DROP 子表不违规, 无需摆弄 foreign_keys pragma。
+        # 时序(三堂会审实证修正 小欧 2026-08-23): 必须位于 migrate_v2_chat_restructure 之后
+        #   (message_id→ai_message_id 改名收敛后, 重建 SELECT 才能引用新列名)、
+        #   位于本函数索引创建(idx_steps_*)之前——DROP TABLE 会连带删旧索引
+        _fk_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='chat_task_steps'"
+        ).fetchone()
+        if _fk_sql and _fk_sql["sql"] and "REFERENCES chat_messages" in _fk_sql["sql"]:
+            conn.executescript("""
+                CREATE TABLE chat_task_steps_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ai_message_id INTEGER NOT NULL,
+                    session_id TEXT NOT NULL,
+                    step_index INTEGER NOT NULL,
+                    step_json TEXT NOT NULL,
+                    created_at TEXT,
+                    task_id TEXT,
+                    usage TEXT,
+                    user_message_id INTEGER
+                );
+                INSERT INTO chat_task_steps_new
+                    SELECT id, ai_message_id, session_id, step_index, step_json,
+                           created_at, task_id, usage, user_message_id
+                    FROM chat_task_steps;
+                DROP TABLE chat_task_steps;
+                ALTER TABLE chat_task_steps_new RENAME TO chat_task_steps;
+            """)
+            logger.info("[init] chat_task_steps 外键已退役(不再 REFERENCES chat_messages), 幂等表重建完成")
+
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON chat_sessions(updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON chat_sessions(is_deleted)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id)")
@@ -276,6 +318,8 @@ def init_chat_db(get_conn):
         # ===== 12.2-C5: 启动期清扫崩溃残留空白AI行 =====
         # 标败不删行(保引用完整性/message_count诚实), 幂等可重复执行;
         # 与 derive_status_from_steps"空/无final判failed"同哲学(fail-safe) — 小欧 2026-08-21
+        # 【chat_messages 只写镜像写点 W7】北京老陈 2026-08-23 裁定: 写保留当空气, 系统零依赖本表;
+        #   TODO 删除: chat_messages 退役时随镜像策略整体移除 — 小欧 2026-08-23
         conn.execute(
             "UPDATE chat_messages SET status='failed', "
             "content=CASE WHEN content='' THEN '(任务中断，未产生输出)' ELSE content END "
