@@ -33,6 +33,9 @@ backend/temp_calc.py
 backend/thought_steps.txt
 backend/xc10_thoughts.txt
 
+# file persist (旁路排查文件A/B)
+backend/files/
+
 # frontend build
 frontend/dist/
 frontend/backup/
