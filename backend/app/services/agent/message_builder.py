@@ -22,6 +22,10 @@
 # 2026-08-17 - 小健 - 常量归属迁移(北京老陈驱动): 压缩/裁剪常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 由 app.constants 迁至 app.services.agent.compaction_constants, 导入路径同步改
 # 2026-08-17 - 小健 - 阈值重构(北京老陈 2026-08-17 定案, loop裁剪=上下文×3/4): trim_history 绝对值触发 self.MAX_CONTEXT_TOKENS(skip覆盖后运行时窗口)×TRIM_TRIGGER_RATIO 替换原×MAX_CONTEXT_RATIO; 构造默认 self.MAX_CONTEXT_TOKENS 由全局 MAX_CONTEXT_TOKENS(200000) 改 DEFAULT_CONTEXT_LIMIT(262144), 运行时仍被 agent_runner 覆盖为 context_limit
 # 2026-08-20 - 小欧 - C2修复(真实缺陷复核确认): trim_history 新增瞬时裁剪token指标 `_trimmed_tokens_this_round`(每轮重置0, 实际裁剪时= rough_current-裁剪后估算, 与 `_trimmed_this_round` 同周期), 供 react_cycle on_trim 透传落 task_metrics.trim_tokens; 原 on_trim 只拿到 bool、token 数恒0 且 finalize 丢弃 → 裁剪遥测死链路。
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.4.1 D2b/11.9 P2): __init__ 加 _msg_id_counter 自增计数 +
+#   prepare_messages_for_llm 开头单点惰性补 _msg_id(不进 LLM wire, 由 react_cycle 写盘后 pop)——文件B 稳定去重依赖;
+#   v3.29 单点化定案: conversation_history 全程同批 dict 引用(trim/inject/rebuild 不复制), 补标一次永久携带,
+#   各 add_*/inject_history/trim_history 零改动(最小侵入)
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -93,6 +97,7 @@ class MessageBuilder:
         self.MAX_CONTEXT_TOKENS = max_context_tokens
         self._max_rounds: int = get_config().get_max_rounds()  # 最多保留FC轮数(默认100) — 小欧 2026-07-08
         self.last_total_tokens: Optional[int] = None  # 上一轮 LLM 返回的精确 total_tokens（Provider 返回），用于增量触发 — 小欧 2026-07-22
+        self._msg_id_counter: int = 0  # 自增计数器(#10 文件B 去重 — 文档[1]11.8.4.1 D2b v3.29 单点化) — 小欧 2026-08-23
 
     def reset_per_run(self) -> None:
         """每次 run_react_cycle 仅重置 conversation_history,缓存和计数保留跨会话"""
@@ -258,6 +263,13 @@ class MessageBuilder:
         """
         # temp_history容量保护:总字符超50000时从最旧截断,再构建messages
         self._cap_temp_history()
+        # 惰性补 _msg_id(单点): conversation_history 内尚未打标的消息在此统一分配自增 id;
+        # dict 引用全程稳定(trim/inject/rebuild 不复制), 补一次永久携带; 新增消息每轮被此处兜住
+        # — 文档[1]11.8.4.1 D2b v3.29 单点化(北京老陈 裁定:A/B 独立化最小侵入) — 小欧 2026-08-23
+        for _m in self.conversation_history:
+            if "_msg_id" not in _m:
+                _m["_msg_id"] = self._msg_id_counter
+                self._msg_id_counter += 1
         messages = [dict(msg) for msg in self.conversation_history]   # 浅拷贝防篡改 — 小欧 2026-07-19
         if self.temp_history:
             messages = messages + [dict(msg) for msg in self.temp_history]
