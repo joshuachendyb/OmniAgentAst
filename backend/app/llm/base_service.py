@@ -31,6 +31,9 @@
 #   ChatResponse/StreamChunk 构造传参同步归一(chat_model/chunk_model)
 # 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): 新增 reset_sdk()——L2 会话级整体换模后 _ensure_client 的 SDK 缓存
 #   仍绑旧 api_base/model, 不重置则"记录身份与实际 HTTP 连接不一致"(编排层换模/还原两处已随调)
+# 2026-08-23 - 小欧 - 修复回归bug(P0): _ensure_client 调 create_llm_client 仍传 provider/model 旧签名,
+#   致 create_llm_client() got an unexpected keyword argument 'provider' TypeError(93dc95bc4 提交漏改此调用点);
+#   改为传 llm_model=self.llm_model(ModelRef), base_url 由 LLMClient.__init__ 从 llm_model.api_base 派生
 """
 LLM 核心模块 — BaseAIService
 
@@ -106,11 +109,11 @@ class BaseAIService:
 
     def _ensure_client(self):
         if self._llm_sdk is None:
+            # 归一(小欧 2026-08-23): create_llm_client 入参已改 llm_model: ModelRef,
+            # 不再接受 provider/model 拆包; base_url 由 LLMClient.__init__ 从 llm_model.api_base 派生
             self._llm_sdk = create_llm_client(
-                provider=self.llm_model.provider or "openai",
-                model=self.llm_model.model,
+                llm_model=self.llm_model,
                 api_key=self.api_key,
-                base_url=self.llm_model.api_base,
                 timeout=self.timeout,
             )
 
