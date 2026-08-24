@@ -9,6 +9,9 @@
 # 2026-08-17 - 小健 - 三堂会审-T1修复(北京老陈驱动): 落库用 normalize_tool_name(entry.tool_name) 规范名,
 #   与豁免查询侧(action_handler 端 normalize)一致, 防止 LLM 以别名(write_text/writefile)提名时信任落库别名、
 #   而查询用规范名导致漏配失效仍触发二次 HITL(与写保护 BUG-2 同模式)。
+# 2026-08-24 - 小欧 - 后端卡死修复收尾(offload): resolve_confirmation 为同步函数(API层直调),
+#   "信任本次会话"旁路落库块改 daemon 线程投递(本块原为 fire-and-forget: 失败只留日志不影响确认结果),
+#   调用线程零 sqlite3 I/O+锁重试 sleep, 落库语义不变
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -154,19 +157,28 @@ def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: bool) 
     if confirmed and trust_session and entry.tool_name:
         _task_id = confirm_id.split(":")[0] if ":" in confirm_id else ""
         if _task_id:
-            try:
-                from app.db import db
-                from app.services.chat.storage import get_session_id_by_task, insert_session_trust
-                from app.tools.tools_alias_mapper import normalize_tool_name  # 2026-08-17 小健 三堂会审-T1修复: 落库用规范名, 与豁免查询(normalize)一致防别名漏配
-                with db.get_conn_with_retry("chat") as _conn:
-                    _sid = get_session_id_by_task(_conn, _task_id)
-                    if _sid:
-                        insert_session_trust(_conn, _sid, normalize_tool_name(entry.tool_name))
-                        logger.info(f"[HITL] 会话信任落库: task_id={_task_id}, session_id={_sid}, tool_name={normalize_tool_name(entry.tool_name)}")
-                    else:
-                        logger.warning(f"[HITL] 会话信任落库跳过: task_id={_task_id} 无 session_id 可反查")
-            except Exception as _te:
-                logger.warning(f"[HITL] 会话信任落库失败: task_id={_task_id}, tool_name={entry.tool_name}, err={_te}")
+            # 信任落库改 daemon 线程投递(后端卡死修复收尾 小欧 2026-08-24):
+            #   resolve_confirmation 为同步函数(API层直调, 可能无运行中loop), 原同步写会在调用线程
+            #   执行 sqlite3 I/O+锁重试 sleep; 本块本就是"失败只留日志"的 fire-and-forget 旁路,
+            #   投递后台线程后主路径零阻塞, 落库语义不变(幂等单行 insert, 失败仅告警)。
+            #   已知时序微变(知悉级): 原同步写完成后才返回 True, 现 API 先返回、落库异步完成;
+            #   极端下"确认后毫秒级下一个工具调用"可能因信任行未落而多弹一次确认窗
+            #   (人速操作+LLM秒级耗时, 实际不可达), 失败兜底仍是重新确认。
+            def _persist_session_trust():
+                try:
+                    from app.db import db
+                    from app.services.chat.storage import get_session_id_by_task, insert_session_trust
+                    from app.tools.tools_alias_mapper import normalize_tool_name  # 2026-08-17 小健 三堂会审-T1修复: 落库用规范名, 与豁免查询(normalize)一致防别名漏配
+                    with db.get_conn_with_retry("chat") as _conn:
+                        _sid = get_session_id_by_task(_conn, _task_id)
+                        if _sid:
+                            insert_session_trust(_conn, _sid, normalize_tool_name(entry.tool_name))
+                            logger.info(f"[HITL] 会话信任落库: task_id={_task_id}, session_id={_sid}, tool_name={normalize_tool_name(entry.tool_name)}")
+                        else:
+                            logger.warning(f"[HITL] 会话信任落库跳过: task_id={_task_id} 无 session_id 可反查")
+                except Exception as _te:
+                    logger.warning(f"[HITL] 会话信任落库失败: task_id={_task_id}, tool_name={entry.tool_name}, err={_te}")
+            threading.Thread(target=_persist_session_trust, name=f"hitl-trust-{_task_id}", daemon=True).start()
 
     _cleanup_stale_confirmations()
 

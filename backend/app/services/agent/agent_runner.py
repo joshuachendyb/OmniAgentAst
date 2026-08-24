@@ -65,7 +65,11 @@
 #   写 A/B footer(getattr 守卫+try/except); 补 finally 级兜底(#15)——db_ops 缺失/update_task 抛异常时
 #   finalize("failed") 幂等收口(_closed 守卫), 杜绝 worker 协程悬挂
 # 2026-08-24 - 小欧 - 后端卡死修复: 落库热路径(append_step/append_step失败终态/finalize/update_task+回填chat_user_message/insert_token/token对账)全部经 db.atxn 进子线程 offload 出事件循环,
-#   loop 不再被同步 sqlite3 I/O + time.sleep 锁重试独占, 根治 /health 超时/console 冻结; _fp.finalize(非DB文件写)移出事务块, 行为等价; storage.* 与连接管理零改动复用
+#   loop 不再被同步 sqlite3 I/O + time.sleep 锁重试独占, 根治 /health 超时/console 冻结; storage.* 与连接管理零改动复用;
+#   _fp.finalize(非DB文件写)移出事务块: 成功路径等价, 失败路径更稳(footer 失败不再连坐回滚 update_task 事务, 仅告警)
+# 2026-08-24 - 小欧 - 终态必达加固: 新增 _persist_final(shield薄壳), 包裹 finally 内两处终态关键写
+#   (finalize / update_task+回填chat_user_message)——finally 期间再收 cancel 时内层事务脱离外层继续执行,
+#   重试 await 保终态落库必达(等待有界: 锁退避上限~3.5s); insert_token明细/对账告警非关键写不包(YAGNI)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -107,6 +111,29 @@ from app.utils.json_utils import safe_json_dumps  # v2.0 改动2: accumulated_us
 # 会被 GC 回收并取消, 导致 finally 的 save_execution_steps_to_db 被打断、结果丢失。
 # 集中持有强引用, done 时 discard 防内存泄漏 — 小欧 2026-07-13
 _background_tasks: set = set()
+
+
+async def _persist_final(coro):
+    """终态落库防二次 cancel 薄壳(shield) — 小欧 2026-08-24
+
+    为什么需要它:
+        run_agent_in_background 的 finally 内改为 await db.atxn 后, 若 finally 期间
+        任务再次收到 cancel, await 被打断 → 终态 finalize/update_task 可能未落库。
+        (旧同步写在 cancel 下必完成, 此处补齐等价保证。)
+    设计要点:
+        - shield 首次被 cancel 打断时, 内层事务 task 已脱离外层继续执行;
+        - 立即重试 await 内层一次(此时取消已消费, 通常直接等到完成);
+        - 极端下再次被 cancel, 内层 task 仍独立跑完(loop 存活即必达);
+        - 等待有界: get_conn 锁退避上限 ~3.5s + 单条 SQL, 不会悬挂回收。
+    已知边缘(知悉级):
+        双重 cancel 下内层 task 被遗弃为孤儿, 若其完成后无人取结果且落库本身失败,
+        可能出现一条 "Task exception never retrieved" 日志噪声, 不影响数据正确性。
+    """
+    _t = asyncio.ensure_future(coro)
+    try:
+        return await asyncio.shield(_t)
+    except asyncio.CancelledError:
+        return await _t
 
 
 async def run_agent_in_background(
@@ -407,9 +434,9 @@ async def run_agent_in_background(
             for retry in range(2):
                 try:
                     # 步骤已逐步落库, 仅 finalize content+status — 小欧 2026-07-14; legacy save_steps兜底分支整体移除(禁止backward) — 小欧 2026-08-21
-                    # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
-                    await db.atxn("chat", lambda conn: db_ops.finalize(
-                        conn, ai_message_id, saved_content, _terminal_status, thought=saved_thought))
+                    # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24); 终态必达防二次cancel(_persist_final 小欧 2026-08-24)
+                    await _persist_final(db.atxn("chat", lambda conn: db_ops.finalize(
+                        conn, ai_message_id, saved_content, _terminal_status, thought=saved_thought)))
                     break
                 except sqlite3.IntegrityError as _ie:
                     logger.warning(f"[Runner] DB finalize IntegrityError (不重试): {_ie}")
@@ -479,9 +506,12 @@ async def run_agent_in_background(
                         )
                     except Exception as _um_e:
                         logger.warning(f"[Runner] 回填chat_user_message final失败(task={task_id}): {_um_e}")
-                await db.atxn("chat", _finalize_task_db)
+                # 终态必达防二次cancel(_persist_final 小欧 2026-08-24)
+                await _persist_final(db.atxn("chat", _finalize_task_db))
                 # 11.8-H5: 文件A/B footer(终态回填 end_time/status/record_count) — 11.9 P6 小欧 2026-08-23
-                #   非DB文件写, 移出DB事务块(后端卡死修复 offload 小欧 2026-08-24), 行为等价
+                #   非DB文件写, 移出DB事务块(后端卡死修复 offload 小欧 2026-08-24):
+                #   成功路径等价; 失败路径更稳——旧代码 footer 写失败会连坐回滚整个 update_task 事务,
+                #   现 DB 先提交、footer 失败仅告警, 终态不再被文件写失败吞掉
                 _fp = getattr(agent, "file_persist", None)
                 if _fp is not None:
                     try:

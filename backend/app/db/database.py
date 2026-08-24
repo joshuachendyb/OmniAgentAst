@@ -21,8 +21,8 @@
 #   【改法】①get_conn新增max_retries: 连接获取期(a)与commit期(b)对"locked"指数退避(0.5/1/2s), 47处调用零改动即获重试能力(DRY); ②get_conn_with_retry改为get_conn薄包装(仅透传, 单次yield)
 #   【合规】DRY+KISS-DIRECT+SRP
 # 2026-08-20 - 小欧 - 11.2-C 监控独立库: _db_paths["monitoring"] 注册 monitoring.db + import init_monitoring_db(启动统一初始化), 复用 get_conn/get_conn_with_retry 闸门
- # 2026-08-21 - 小欧 - 12.2-Q7/Q10(按文档[1]12.2 diff设计落地): ①Q10-D1 删observer条目+Q10-D2删init_observer方法(零调用方); ②Q7-D1 _db_paths加timers条目(timers.db独立库); ③Q7-D3 import加init_timers_db+init()内注册(紧跟init_operations_db之后) — 小欧 2026-08-21
- # 2026-08-24 - 小欧 - 后端卡死修复(offload薄壳): 新增 atxn/_run_txn 异步事务壳, 将同步 sqlite3 I/O + 锁重试 time.sleep(get_conn:188/206) 整体 offload 出事件循环; 根治 agent 落库热路径在 loop 主线程同步阻塞致 /health 超时/console 冻结。storage.* 与连接管理零改动(复用既有一切), 唯一入口仍 db。
+# 2026-08-21 - 小欧 - 12.2-Q7/Q10(按文档[1]12.2 diff设计落地): ①Q10-D1 删observer条目+Q10-D2删init_observer方法(零调用方); ②Q7-D1 _db_paths加timers条目(timers.db独立库); ③Q7-D3 import加init_timers_db+init()内注册(紧跟init_operations_db之后) — 小欧 2026-08-21
+# 2026-08-24 - 小欧 - 后端卡死修复(offload薄壳): 新增 atxn/_run_txn 异步事务壳, 将同步 sqlite3 I/O + 锁重试 time.sleep(get_conn:188/206) 整体 offload 出事件循环; 根治 agent 落库热路径在 loop 主线程同步阻塞致 /health 超时/console 冻结。storage.* 与连接管理零改动(复用既有一切), 唯一入口仍 db。
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:

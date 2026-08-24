@@ -78,7 +78,10 @@
 #   (局部导入 file_persist/time_utils, #11 必需); model 取 agent.llm_client.llm_model(ModelRef dump);
 #   同事务 UPDATE chat_tasks SET files_dir='files/{session_id}/{task_id}/'($dir 排查定位锚, 不重复落文件名)
 # 2026-08-24 - 小欧 - 后端卡死修复: 编排⑨事务内落库(insert_task/user消息回填/eager分配assistant+写chat_tasks.ai_message_id/files_dir)整体经 db.atxn 进子线程 offload 出事件循环,
-#   loop 不再被同步写大blob+time.sleep锁重试独占, 根治 /health 超时/console 冻结; create_task_writer(非DB文件写)移出事务块, 行为等价; storage.* 与连接管理零改动复用
+#   loop 不再被同步写大blob+time.sleep锁重试独占, 根治 /health 超时/console 冻结; storage.* 与连接管理零改动复用;
+#   create_task_writer(非DB文件写)移出事务块: 成功路径等价, 失败路径更稳(writer 创建失败不再连坐回滚任务落库事务, 任务行保留、file_persist 缺失由 getattr 守卫兜底)
+# 2026-08-24 - 小欧 - 后端卡死修复收尾(offload): 编排③链根查询/编排⑤DB兜底user_msg_id/编排⑥sessionModel读取 三处同步 db.get_conn
+#   改经 db.atxn 进子线程 offload 出事件循环(复用既有薄壳, 行为等价), 请求编排期 loop 零同步 DB I/O
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -206,8 +209,8 @@ async def chat_stream_orchestrator(
     if context_link_mode == "linked" and session_id:
         _prev_chain = None
         try:
-            with db.get_conn("chat") as _conn:
-                _prev_chain = get_previous_task_chain(_conn, session_id)
+            # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
+            _prev_chain = await db.atxn("chat", lambda conn: get_previous_task_chain(conn, session_id))
         except Exception as _e:
             logger.warning(f"[chat] 取上一任务链根失败(session={session_id}): {_e}")
         if _prev_chain:
@@ -232,11 +235,11 @@ async def chat_stream_orchestrator(
     if not _user_msg_id and session_id:
         try:
             from app.services.chat.storage import get_last_user_message_id
-            with db.get_conn("chat") as _conn_u:
-                _row_u_id = get_last_user_message_id(_conn_u, session_id)
-                if _row_u_id:
-                    _user_msg_id = _row_u_id
-                    logger.info(f"[chat] E2 track缺失, DB兜底恢复upper: session={session_id}, user_msg_id={_user_msg_id}")
+            # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
+            _row_u_id = await db.atxn("chat", lambda conn: get_last_user_message_id(conn, session_id))
+            if _row_u_id:
+                _user_msg_id = _row_u_id
+                logger.info(f"[chat] E2 track缺失, DB兜底恢复upper: session={session_id}, user_msg_id={_user_msg_id}")
         except Exception as _eu:
             logger.warning(f"[chat] DB兜底取user消息id失败(session={session_id}): {_eu}")
     log_and_print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -264,8 +267,8 @@ async def chat_stream_orchestrator(
         #   消除原逐属性赋值的半覆盖中间态(KISS-DIRECT 纯增强)
         if session_id:
             try:
-                with db.get_conn("chat") as _conn2:
-                    _ov = get_session_model(_conn2, session_id)
+                # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
+                _ov = await db.atxn("chat", lambda conn: get_session_model(conn, session_id))
                 if _ov and (_ov.model or _ov.provider):
                     _orig_llm_model = ai_service.llm_model          # 整体保存, finally 整体还原
                     ai_service.llm_model = ModelRef(
@@ -354,7 +357,9 @@ async def chat_stream_orchestrator(
             _ai_message_id = await db.atxn("chat", _setup_task_db)
             # 11.8-H1/D1: 文件A/B 创建(header)——assistant 分配即建(11.7.4-4); 创建后挂载
             #   agent.file_persist 供 agent 层钩子使用(telemetry 同模式, agent 零 chat 依赖) — 11.9 P5 — 小欧 2026-08-23
-            #   非DB文件写, 移出DB事务块(后端卡死修复 offload 小欧 2026-08-24), 行为等价
+            #   非DB文件写, 移出DB事务块(后端卡死修复 offload 小欧 2026-08-24):
+            #   成功路径等价; 失败路径更稳——writer 创建失败不再连坐回滚任务落库事务(仅告警),
+            #   任务行/ai_message_id 已持久化, agent.file_persist 缺失由下游 getattr 守卫兜底
             from app.file_persist import create_task_writer
             from app.utils.time_utils import get_local_iso_timestamp  # 局部导入必需(#11: 顶层无该符号, 缺则 NameError 被吞降级无文件)
             _mr = getattr(getattr(agent, "llm_client", None), "llm_model", None)

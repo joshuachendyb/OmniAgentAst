@@ -125,6 +125,9 @@
 #   (按全局序号注入 tool_no; params_raw 权威源=闭包携带的 params_raw_str, #16/#20)再传 on_attempt_recorded 调 execute_tools;
 #   ②execute_tools 三分支(A单/B'分组并行/C顺序)全部以全局序号取号透传(#18); ③_build_call_list 透传 params_raw_str(D3b);
 #   build_observation 零改动(H3 已移入引擎回调, 防重复记)
+# 2026-08-24 - 小欧 - 后端卡死修复收尾(offload): check_safety_and_confirm 的 session 反查与每工具信任预查
+#   两处同步 db.get_conn_with_retry 改经 db.atxn 进子线程 offload 出事件循环(复用既有薄壳, 行为等价),
+#   ReAct 执行期 loop 不再被锁重试 time.sleep 短暂独占
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -254,8 +257,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         try:
             from app.services.chat.storage import get_session_id_by_task
             from app.db import db
-            with db.get_conn_with_retry("chat") as _conn:
-                _session_id = get_session_id_by_task(_conn, agent.task_id)
+            # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
+            _session_id = await db.atxn("chat", lambda conn: get_session_id_by_task(conn, agent.task_id))
         except Exception:
             _session_id = None
 
@@ -271,8 +274,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     from app.db import db
                     from app.services.chat.storage import check_session_trust
                     from app.tools.tools_alias_mapper import normalize_tool_name
-                    with db.get_conn_with_retry("chat") as _conn:
-                        _skip = check_session_trust(_conn, _session_id, normalize_tool_name(_cn))
+                    # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
+                    _skip = await db.atxn("chat", lambda conn: check_session_trust(conn, _session_id, normalize_tool_name(_cn)))
                 except Exception as _te:
                     logger.warning(f"[action_handler] 会话信任查询失败,按需确认: session={_session_id}, tool={_cn}, err={_te}")
                     _skip = False
