@@ -749,7 +749,7 @@ SAFETY_KEYWORDS = [
     "create_task", "delete_task",
     "Permission denied", "DB operation failed",
     "NoneType", "Errno 13", "ERR_SQL_EXEC",
-    "UNIQUE constraint", "拒绝访问", "WinError 5",
+    "UNIQUE constraint", "拒绝访问", "WinError 5", "WinError 32",
     "readtext failed", "unable to open database",
 ]
 

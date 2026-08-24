@@ -70,6 +70,9 @@
 # 2026-08-24 - 小欧 - 终态必达加固: 新增 _persist_final(shield薄壳), 包裹 finally 内两处终态关键写
 #   (finalize / update_task+回填chat_user_message)——finally 期间再收 cancel 时内层事务脱离外层继续执行,
 #   重试 await 保终态落库必达(等待有界: 锁退避上限~3.5s); insert_token明细/对账告警非关键写不包(YAGNI)
+# 2026-08-24 - 小欧 - 问题报告三堂会审修复: ①ISS-005 过时注释修正(save_execution_steps_to_db→DB落库finalize/update_task, P4重构后函数已删除); ②ISS-001 孤儿task日志噪声抑制(_persist_final双重cancel下try/except捕获二次CancelledError, return None降级, logger.debug记知悉级, 不re-raise防重入)
+# 2026-08-24 - 小沈 - ISS-001 根治: 原修复仅catch二次CancelledError但未retrieve孤儿task异常(注释自承认"异常由loop兜底记WARNING"即日志噪声仍在);
+#   改用 add_done_callback 无条件调 t.exception() 确保异常必达retrieve, 从源头杜绝 "Task exception never retrieved" 日志噪声(三堂会审: CancelledError继承BaseException非Exception, 原报告建议except Exception有缺陷不采用)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -108,7 +111,7 @@ from app.utils.json_utils import safe_json_dumps  # v2.0 改动2: accumulated_us
 
 
 # 后台任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者断开后任务再无强引用,
-# 会被 GC 回收并取消, 导致 finally 的 save_execution_steps_to_db 被打断、结果丢失。
+# 会被 GC 回收并取消, 导致 finally 的 DB落库finalize/update_task 被打断、结果丢失。
 # 集中持有强引用, done 时 discard 防内存泄漏 — 小欧 2026-07-13
 _background_tasks: set = set()
 
@@ -125,15 +128,25 @@ async def _persist_final(coro):
         - 立即重试 await 内层一次(此时取消已消费, 通常直接等到完成);
         - 极端下再次被 cancel, 内层 task 仍独立跑完(loop 存活即必达);
         - 等待有界: get_conn 锁退避上限 ~3.5s + 单条 SQL, 不会悬挂回收。
-    已知边缘(知悉级):
-        双重 cancel 下内层 task 被遗弃为孤儿, 若其完成后无人取结果且落库本身失败,
-        可能出现一条 "Task exception never retrieved" 日志噪声, 不影响数据正确性。
+    已修复(原知悉级边缘):
+        双重 cancel 下内层 task 被遗弃为孤儿, 其完成时异常无人 retrieve →
+        "Task exception never retrieved" 日志噪声。现 add_done_callback 确保异常必达 retrieve,
+        杜绝日志噪声, 不影响数据正确性。 — 小沈 2026-08-24
     """
     _t = asyncio.ensure_future(coro)
+    # 孤儿task异常必达retrieve: 双重cancel下 await _t 被 cancel 时内层 task 仍独立跑完,
+    # done_callback 无条件调 t.exception() 标记异常已retrieve, 杜绝 "Task exception never retrieved" 日志噪声 — 小沈 2026-08-24
+    _t.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
     try:
         return await asyncio.shield(_t)
     except asyncio.CancelledError:
-        return await _t
+        try:
+            return await _t
+        except asyncio.CancelledError:
+            # 双重cancel: _t 已脱离外层继续运行(loop存活即必达), add_done_callback 已确保异常被 retrieve
+            # 不 re-raise 避免外层 CancelledError 重入; return None 等价终态降级 — 小沈 2026-08-24
+            logger.debug(f"[Shield] 双重cancel, 孤儿task异常已由done_callback retrieve")
+            return None
 
 
 async def run_agent_in_background(
