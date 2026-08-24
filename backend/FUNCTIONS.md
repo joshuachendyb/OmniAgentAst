@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-08-24 11:53:30
-**最近更新**: 2026-08-24 11:53 小欧 后端卡死修复收尾: action_handler(2处)/stream_orchestrator(3处) 同步DB读改经 atxn offload; hitl_confirmation 信任落库改 daemon 线程投递; agent_runner 新增模块内私有 _persist_final(shield薄壳, 非公用函数, 不单列条目)保终态落库必达
+**最后更新时间**: 2026-08-24 12:19:40
+**最近更新**: 2026-08-24 12:19 小欧 目录前导(北京老陈裁定): file_persist 新增 SESSION_DIR_PREFIX("Sion_")/TASK_DIR_PREFIX("Task_") 常量唯一源, 物理目录与 chat_tasks.files_dir 落库锚同源拼装
 
 ---
 
@@ -297,6 +297,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v3.11 | 2026-08-24 12:19:40 | 目录前导(北京老陈裁定): file_persist 新增常量 SESSION_DIR_PREFIX="Sion_" / TASK_DIR_PREFIX="Task_"(唯一源, DRY); 物理目录(TaskFileWriter._dir/purge_task/purge_session)与 chat_tasks.files_dir 落库锚(stream_orchestrator 编排⑨)全部经常量同源拼装, 排查定位链不断; 旧目录不迁移不兼容(禁止backward) | 小欧 |
 | v3.10 | 2026-08-24 11:53:30 | 后端卡死修复收尾: ①action_handler check_safety_and_confirm 的 session 反查+信任预查(2处)、stream_orchestrator 编排③链根/⑤DB兜底user_msg_id/⑥sessionModel(3处) 同步 db.get_conn(_with_retry) 改经 atxn offload; ②hitl_confirmation resolve_confirmation(同步函数)信任落库旁路块改 daemon 线程投递(fire-and-forget 语义不变); ③agent_runner 新增模块内私有 _persist_final(shield薄壳, 包 finalize/update_task 两处终态写防二次cancel, 非公用函数不单列条目)。全部复用 v3.9 atxn 既有薄壳, 零新抽象 | 小欧 |
 | v3.9 | 2026-08-24 10:30:00 | 新增 3.3 数据库SDK(app/db/database.py): atxn/_run_txn 异步事务壳(整段 get_conn 进 to_thread 子线程, 将同步 sqlite3 I/O + 锁重试 time.sleep offload 出事件循环, 根治后端卡死); 同步 3.2 已登记落库函数统一经 atxn 调用边界 offload | 小欧 |
 | v3.8 | 2026-08-22 14:10:48 | 3.2 新增 fetch_session_user_message_pairs（北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 从 chat_user_message LEFT JOIN chat_tasks 重建"用户消息+其配对AI回答"有序列表, 供 get_session_messages/_load_previous_messages/execution_stream 复用, DRY/复用优先; 不含 execution steps）; 更正 load_execution_steps 描述(v2.0 起不再回退 chat_messages) | 小欧 |

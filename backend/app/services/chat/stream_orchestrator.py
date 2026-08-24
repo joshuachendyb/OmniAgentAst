@@ -82,6 +82,8 @@
 #   create_task_writer(非DB文件写)移出事务块: 成功路径等价, 失败路径更稳(writer 创建失败不再连坐回滚任务落库事务, 任务行保留、file_persist 缺失由 getattr 守卫兜底)
 # 2026-08-24 - 小欧 - 后端卡死修复收尾(offload): 编排③链根查询/编排⑤DB兜底user_msg_id/编排⑥sessionModel读取 三处同步 db.get_conn
 #   改经 db.atxn 进子线程 offload 出事件循环(复用既有薄壳, 行为等价), 请求编排期 loop 零同步 DB I/O
+# 2026-08-24 - 小欧 - 目录前导(北京老陈裁定): chat_tasks.files_dir 落库锚同步改为 files/Sion_{session_id}/Task_{task_id}/,
+#   与 TaskFileWriter 物理目录经 file_persist 前缀常量同源拼装(DRY), 排查定位链不断; 旧目录不迁移(禁止backward)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -326,6 +328,8 @@ async def chat_stream_orchestrator(
         # ②-1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) — 小欧 2026-08-16
         _ai_message_id = None
         try:
+            # 目录前导常量局部导入(北京老陈 2026-08-24): files_dir 落库锚与物理目录唯一同源(DRY, 前缀定义于 file_persist)
+            from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
             # ②-1 落库热路径 offload 出事件循环(后端卡死修复 小欧 2026-08-24):
             #   原 `with db.get_conn_with_retry` 在 loop 主线程同步写大 blob + time.sleep 锁重试,
             #   致 loop 被独占、/health 超时; 整段 DB 操作经 db.atxn 进子线程, conn 同线程闭环零跨线程。
@@ -347,11 +351,12 @@ async def chat_stream_orchestrator(
                     "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
                     (_aid, task_id),
                 )
-                # D7/#5(2026-08-23): 11.7.5-1 落库 $dir 引用(物理目录 = files/{session_id}/{task_id}/),
+                # D7/#5(2026-08-23): 11.7.5-1 落库 $dir 引用(物理目录 = files/Sion_{session_id}/Task_{task_id}/,
+                #   前导 2026-08-24 北京老陈裁定, 与 TaskFileWriter._dir 同源常量拼装),
                 #   供排查定位(任务→files_dir→文件A 按 step/tool_no/retry_no 定位块→文件B); 不重复落库文件名 — 小欧 2026-08-23
                 conn.execute(
                     "UPDATE chat_tasks SET files_dir=? WHERE task_id=?",
-                    (f"files/{session_id}/{task_id}/", task_id),
+                    (f"files/{SESSION_DIR_PREFIX}{session_id}/{TASK_DIR_PREFIX}{task_id}/", task_id),
                 )
                 return _aid
             _ai_message_id = await db.atxn("chat", _setup_task_db)

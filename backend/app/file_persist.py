@@ -2,8 +2,8 @@
 # 旁路排查文件持久化（文件A/B）— 11.7 概要的代码级实现 — 小欧 2026-08-23
 #
 # 定案要点(11.7):
-#   目录 分流(11.8 实现说明④): 调试 app.debug=True → backend/files/{session_id}/{task_id}/
-#         正式 → ~/.omniagent/files/{session_id}/{task_id}/  (完整id)
+#   目录 分流(11.8 实现说明④): 调试 app.debug=True → backend/files/Sion_{session_id}/Task_{task_id}/
+#         正式 → ~/.omniagent/files/Sion_{session_id}/Task_{task_id}/  (完整id, 前导 2026-08-24 北京老陈裁定)
 #   文件名 tool_data_{task短12}_{ai_message_id}_{start_time_fs}.jsonl /
 #          conv_hist_{task短12}_{ai_message_id}_{start_time_fs}.jsonl
 #          (start_time_fs = ISO 冒号':'→'-', Windows 文件名禁':'; header 内 start_time 仍保留 ISO)
@@ -14,6 +14,8 @@
 #   2026-08-23 - 小欧 - 初版落地(文档[1] v3.36 11.9 P1 / 设计=11.8.1 全量代码):
 #       TaskFileWriter(A/B双文件单写者FIFO)/create_task_writer(H1工厂)/
 #       purge_task+purge_session(H7 GC备函数,挂接待物理删除入口)/_files_root(调试分流)
+#   2026-08-24 - 小欧 - 目录前导(北京老陈裁定): session/task 目录名加 Sion_/Task_ 前缀
+#       (常量唯一源, 物理目录与 files_dir 落库锚同源; 旧目录不迁移不兼容, 禁止backward)
 # ============================================================================
 from __future__ import annotations
 
@@ -39,6 +41,13 @@ def _files_root() -> Path:
     except Exception:
         pass
     return Path.home() / ".omniagent" / "files"
+
+# 目录前导(北京老陈 2026-08-24 裁定): session/task 目录名加前缀, 目录树一眼可辨类型。
+# 唯一源(DRY): 物理目录(TaskFileWriter/purge_task/purge_session)与 chat_tasks.files_dir 落库锚(stream_orchestrator)
+# 全部经此常量拼装, 禁止各处硬编码。旧目录(无前缀)不迁移不兼容(禁止backward)。— 小欧 2026-08-24
+SESSION_DIR_PREFIX = "Sion_"
+TASK_DIR_PREFIX = "Task_"
+
 _SCHEMA_VERSION = "v1"
 # 告警线(原 storage 截断阈值转告警线, 10.6.2 定案) — 仅提示不砍数据
 _ALARM_ITEMS = 1000
@@ -67,7 +76,7 @@ class TaskFileWriter:
         self.session_id = session_id
         self.task_id = task_id
         self.ai_message_id = ai_message_id
-        self._dir = _files_root() / session_id / task_id          # 目录用完整id; 根目录按 app.debug 分流(11.7.4-3)
+        self._dir = _files_root() / f"{SESSION_DIR_PREFIX}{session_id}" / f"{TASK_DIR_PREFIX}{task_id}"   # 目录用完整id+前导(北京老陈 2026-08-24); 根目录按 app.debug 分流(11.7.4-3)
         self._short = _short_task_id(task_id)
         # #1 修正(2026-08-23): 文件名用 FS 安全时间戳——get_local_iso_timestamp() 含 ':' (如 2026-08-23T09:30:12.123456),
         #   Windows 禁止 ':' 作文件名 → open() 抛 OSError 致文件永远建不出; 故 ':'→'-' 仅作用于文件名,
@@ -256,11 +265,13 @@ def purge_task(session_id: str, task_id: str) -> None:
     且 GC 时已无 writer 引用, footer 随目录删除无意义, 故直接 rmtree. 终态任务已由 H5 finalize 写 footer 并
     关闭 writer; 活跃任务遭物理删属异常路径, 残留未落盘块随目录删除, 不补救(best-effort). — 小欧 2026-08-23
     """
-    shutil.rmtree(_files_root() / session_id / task_id, ignore_errors=True)
-    logger.info(f"[file_persist] purge_task: {_files_root() / session_id / task_id}")
+    _dir = _files_root() / f"{SESSION_DIR_PREFIX}{session_id}" / f"{TASK_DIR_PREFIX}{task_id}"   # 与 TaskFileWriter._dir 同源拼装 — 小欧 2026-08-24
+    shutil.rmtree(_dir, ignore_errors=True)
+    logger.info(f"[file_persist] purge_task: {_dir}")
 
 
 def purge_session(session_id: str) -> None:
     """彻底删除整个会话目录(会话物理 DELETE / 保留策略清理时调用)"""
-    shutil.rmtree(_files_root() / session_id, ignore_errors=True)
-    logger.info(f"[file_persist] purge_session: {_files_root() / session_id}")
+    _dir = _files_root() / f"{SESSION_DIR_PREFIX}{session_id}"   # 与 TaskFileWriter._dir 同源拼装 — 小欧 2026-08-24
+    shutil.rmtree(_dir, ignore_errors=True)
+    logger.info(f"[file_persist] purge_session: {_dir}")
