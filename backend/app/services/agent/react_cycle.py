@@ -166,6 +166,8 @@ _MAX_CONSECUTIVE_SAME_TOOL_CALLS = 5   # 硬终止阈值: count>=5(第5次相同
 # 2026-08-13 - 小欧 - 三堂会审修复#2: 补 "timeout" — 确认超时(action_handler:263 发 error_type="timeout")
 #   是用户侧等待超时(软拒绝, 应换工具/重试继续), 判 FAILED 与 _add_denial_feedback 注入的"改用其他工具"
 #   引导自相矛盾; 纳入可恢复后由 _deny_counts 累计>=3 才 FAILED(与 user_rejected 同语义)。
+# 2026-08-24 - 小欧 - 后端卡死修复: 每轮 token 累计落库(update_task_accumulation/update_session_accumulation)与任务启动 token 基线读取(query_session/query_chain_accumulation)
+#   经 db.atxn 进子线程 offload 出事件循环, loop 不再被同步 sqlite3 I/O + time.sleep 锁重试独占, 根治 /health 超时/console 冻结; storage.* 与连接管理零改动复用
 _RECOVERABLE_ERRORS = {"user_rejected", "blocked", "timeout"}
 
 
@@ -502,10 +504,11 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                 #   用户裁定"每轮即时落库"; DB 读-加-写(当前DB值+本轮token) 与内存态基线口径一致;
                 #   DB 异常降级不阻断主链路; agent_runner S2 已同步移除 update 防重复累加(翻倍)。
                 try:
-                    with db.get_conn_with_retry("chat") as _conn_r:
-                        storage.update_task_accumulation(_conn_r, task_id=agent.task_id, llm_call_count_token=_llm_call_count_token)
-                        if getattr(agent, "_start_meta", None) and agent._start_meta.get("session_id"):
-                            storage.update_session_accumulation(_conn_r, session_id=agent._start_meta.get("session_id"), llm_call_count_token=_llm_call_count_token)
+                    # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
+                    await db.atxn("chat", lambda conn: (
+                        storage.update_task_accumulation(conn, task_id=agent.task_id, llm_call_count_token=_llm_call_count_token),
+                        storage.update_session_accumulation(conn, session_id=agent._start_meta.get("session_id"), llm_call_count_token=_llm_call_count_token)
+                        if (getattr(agent, "_start_meta", None) and agent._start_meta.get("session_id")) else None))
                 except Exception as _sce_e:
                     logger.warning(f"[react_cycle] 每轮token累计落库失败(降级, 不影响主链路): {_sce_e}")
 
@@ -715,9 +718,12 @@ async def run_react_cycle(
     if getattr(agent, "_start_meta", None):
         try:
             _chain_root = agent._start_meta.get("context_root_task_id") or agent.task_id
-            with db.get_conn_with_retry("chat") as _conn0:
-                agent._session_acc_base = storage.query_session_accumulation(_conn0, session_id=agent._start_meta.get("session_id"))
-                agent._chain_acc_base = storage.query_chain_accumulation(_conn0, context_root_task_id=_chain_root, current_task_id=agent.task_id)
+            # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
+            _session_acc_base, _chain_acc_base = await db.atxn("chat", lambda conn: (
+                storage.query_session_accumulation(conn, session_id=agent._start_meta.get("session_id")),
+                storage.query_chain_accumulation(conn, context_root_task_id=_chain_root, current_task_id=agent.task_id)))
+            agent._session_acc_base = _session_acc_base
+            agent._chain_acc_base = _chain_acc_base
             agent.session_accumulated_tokens = {k: agent._session_acc_base[k] for k in ("prompt_tokens", "completion_tokens", "total_tokens")}
             agent.chain_accumulated_tokens = {k: agent._chain_acc_base[k] for k in ("prompt_tokens", "completion_tokens", "total_tokens")}
         except Exception as _e:

@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-08-22 14:10:48
-**最近更新**: 2026-08-22 小欧 三堂会审复核: 3.2 新增 fetch_session_user_message_pairs(替代 chat_messages 运行期读取, 只写铁律), 更正 load_execution_steps 描述
+**最后更新时间**: 2026-08-24 10:30:00
+**最近更新**: 2026-08-24 小欧 后端卡死修复: 新增 3.3 数据库SDK atxn/_run_txn 异步事务壳(整段 get_conn 进 to_thread 子线程, 将同步 sqlite3 I/O + 锁重试 time.sleep offload 出事件循环); 同步 3.2 已登记的落库函数统一经 atxn 调用
 
 ---
 
@@ -297,6 +297,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v3.9 | 2026-08-24 10:30:00 | 新增 3.3 数据库SDK(app/db/database.py): atxn/_run_txn 异步事务壳(整段 get_conn 进 to_thread 子线程, 将同步 sqlite3 I/O + 锁重试 time.sleep offload 出事件循环, 根治后端卡死); 同步 3.2 已登记落库函数统一经 atxn 调用边界 offload | 小欧 |
 | v3.8 | 2026-08-22 14:10:48 | 3.2 新增 fetch_session_user_message_pairs（北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 从 chat_user_message LEFT JOIN chat_tasks 重建"用户消息+其配对AI回答"有序列表, 供 get_session_messages/_load_previous_messages/execution_stream 复用, DRY/复用优先; 不含 execution steps）; 更正 load_execution_steps 描述(v2.0 起不再回退 chat_messages) | 小欧 |
 | v3.7 | 2026-08-22 10:40:00 | 新增 九、E2E测试层 章节: 登记 e2e_helpers.verify_db_tool_usage（19个case曾复制粘贴旧action_tool取数块, §10.3模型变更即全量碎裂; 收敛单点校验入口, case瘦身为2行调用, 先查后建禁止重造） | 小欧 |
 | v3.6 | 2026-08-20 20:17:29 | 补登记 3.2 步骤存储(storage.py) 11.1 token 四层同构累计公用函数 5 个: query_task_accumulation/query_session_accumulation/query_chain_accumulation/update_task_accumulation/update_session_accumulation（供 react_cycle 每轮即时落库、agent_runner S2、token_usage API 复用；先查后建, 禁止重造） | 小欧 |

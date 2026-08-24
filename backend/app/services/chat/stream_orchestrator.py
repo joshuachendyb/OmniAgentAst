@@ -77,6 +77,8 @@
 #   allocate_and_insert_message 之后调 create_task_writer 建 A/B 双文件+header 并挂载 agent.file_persist
 #   (局部导入 file_persist/time_utils, #11 必需); model 取 agent.llm_client.llm_model(ModelRef dump);
 #   同事务 UPDATE chat_tasks SET files_dir='files/{session_id}/{task_id}/'($dir 排查定位锚, 不重复落文件名)
+# 2026-08-24 - 小欧 - 后端卡死修复: 编排⑨事务内落库(insert_task/user消息回填/eager分配assistant+写chat_tasks.ai_message_id/files_dir)整体经 db.atxn 进子线程 offload 出事件循环,
+#   loop 不再被同步写大blob+time.sleep锁重试独占, 根治 /health 超时/console 冻结; create_task_writer(非DB文件写)移出事务块, 行为等价; storage.* 与连接管理零改动复用
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -321,42 +323,48 @@ async def chat_stream_orchestrator(
         # ②-1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) — 小欧 2026-08-16
         _ai_message_id = None
         try:
-            with db.get_conn_with_retry("chat") as _conn3:
-                _db_ops.insert_task(_conn3)
+            # ②-1 落库热路径 offload 出事件循环(后端卡死修复 小欧 2026-08-24):
+            #   原 `with db.get_conn_with_retry` 在 loop 主线程同步写大 blob + time.sleep 锁重试,
+            #   致 loop 被独占、/health 超时; 整段 DB 操作经 db.atxn 进子线程, conn 同线程闭环零跨线程。
+            def _setup_task_db(conn):
+                _db_ops.insert_task(conn)
                 # v2.0 改动7: user 消息回填 task_id — 小欧 2026-08-19
                 if _user_msg_id:
                     # 【chat_messages 只写镜像写点 W6】北京老陈 2026-08-23 裁定: 写保留当空气;
                     # TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23
-                    _conn3.execute(
+                    conn.execute(
                         "UPDATE chat_messages SET task_id=? WHERE id=?",
                         (task_id, _user_msg_id),
                     )
                 # 12.2-C4: eager分配assistant行+创建时即写chat_tasks.ai_message_id —
                 #   任务启动即分配(原首步惰性), 消除agent_runner finally legacy save_steps分支
                 #   (步骤丢失/覆写旧消息双风险根除) — 小欧 2026-08-21
-                _ai_message_id = allocate_and_insert_message(_conn3, session_id, task_id, user_message_id=_user_msg_id)
-                _conn3.execute(
+                _aid = allocate_and_insert_message(conn, session_id, task_id, user_message_id=_user_msg_id)
+                conn.execute(
                     "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
-                    (_ai_message_id, task_id),
-                )
-                # 11.8-H1/D1: 文件A/B 创建(header)——assistant 分配即建(11.7.4-4); 创建后挂载
-                #   agent.file_persist 供 agent 层钩子使用(telemetry 同模式, agent 零 chat 依赖) — 11.9 P5 — 小欧 2026-08-23
-                from app.file_persist import create_task_writer
-                from app.utils.time_utils import get_local_iso_timestamp  # 局部导入必需(#11: 顶层无该符号, 缺则 NameError 被吞降级无文件)
-                _mr = getattr(getattr(agent, "llm_client", None), "llm_model", None)
-                agent.file_persist = create_task_writer(
-                    session_id=session_id,
-                    task_id=task_id,
-                    ai_message_id=_ai_message_id,
-                    start_time_iso=get_local_iso_timestamp(),
-                    model=(_mr.model_dump(exclude_none=True) if hasattr(_mr, "model_dump") else None),
+                    (_aid, task_id),
                 )
                 # D7/#5(2026-08-23): 11.7.5-1 落库 $dir 引用(物理目录 = files/{session_id}/{task_id}/),
                 #   供排查定位(任务→files_dir→文件A 按 step/tool_no/retry_no 定位块→文件B); 不重复落库文件名 — 小欧 2026-08-23
-                _conn3.execute(
+                conn.execute(
                     "UPDATE chat_tasks SET files_dir=? WHERE task_id=?",
                     (f"files/{session_id}/{task_id}/", task_id),
                 )
+                return _aid
+            _ai_message_id = await db.atxn("chat", _setup_task_db)
+            # 11.8-H1/D1: 文件A/B 创建(header)——assistant 分配即建(11.7.4-4); 创建后挂载
+            #   agent.file_persist 供 agent 层钩子使用(telemetry 同模式, agent 零 chat 依赖) — 11.9 P5 — 小欧 2026-08-23
+            #   非DB文件写, 移出DB事务块(后端卡死修复 offload 小欧 2026-08-24), 行为等价
+            from app.file_persist import create_task_writer
+            from app.utils.time_utils import get_local_iso_timestamp  # 局部导入必需(#11: 顶层无该符号, 缺则 NameError 被吞降级无文件)
+            _mr = getattr(getattr(agent, "llm_client", None), "llm_model", None)
+            agent.file_persist = create_task_writer(
+                session_id=session_id,
+                task_id=task_id,
+                ai_message_id=_ai_message_id,
+                start_time_iso=get_local_iso_timestamp(),
+                model=(_mr.model_dump(exclude_none=True) if hasattr(_mr, "model_dump") else None),
+            )
         except Exception as _task_e:
             logger.warning(f"[chat] chat_tasks INSERT/eager分配失败(task={task_id}): {_task_e}")
         # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
