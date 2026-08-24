@@ -1,3 +1,45 @@
+v0.19.25
+更新时间: 2026-08-24 23:44:58 - 小欧-2026-08-24
+## v0.19.24以来 变更汇总(24个commit) - 小欧-2026-08-24
+[2026-08-24 23:44:58 小欧] 汇总范围=v0.19.24以来全部commit(注: v0.19.24 标签位于另一分支, 本分支 optimize-0.19.17 自分叉点累积24个commit)
+
+### docs(12个):
+- docs:设计-沙箱执行方案-小欧-2026-08-24.md 沙箱预检v1.25 F4回归修正(shell路由改显式归一名集合frozenset删误用ToolCategory.SHELL判定并校准F4删2行import的行号引用) - 小欧-2026-08-24
+- docs:设计-沙箱执行方案-小欧-2026-08-24.md 沙箱预检v1.24总开关专项审查+三轮会审四项全修(F1双开关措辞收口+F2进程杀网络盲区补录+F3registry恒放行明示+F4 shell路由改注册表分类判定) - 小欧-2026-08-24
+- docs:设计-沙箱执行方案-小欧-2026-08-24.md 沙箱预检v1.23三项全修(V-A动词正则前瞻修复W1失效+V-B file_op白名单防假通过+V-C删M5登记章节)+六链路端到端反证 - 小欧-2026-08-24
+- docs:设计-沙箱执行方案-小欧-2026-08-24.md 沙箱预检v1.22三轮会审六项全修(W1注册表写穿透动词即拦+file_op异常兜底+replay复用backend.run+stderr_tail承载+check_capacity接线+根键归一) - 小欧-2026-08-24
+- docs:设计-沙箱执行方案-小欧-2026-08-24.md 沙箱预检v1.21三轮会审十项全修(Z1重定向逃逸扫描+Z2死分支明示+Z3幽灵函数实现+Z4孤儿进程+Z5best-effort销毁+Z6条件收口+Z7句柄声明+Z8uuid+Z9异常兜底+Z10词表扩充)+五段游离说明收编代码注释+第七章风险表只留代码落点删R2 - 小欧-2026-08-24
+- docs:设计-沙箱执行方案-小欧-2026-08-24.md 沙箱预检v1.17-v1.20三轮会审全修(10处N1-N10+判定规则代码化+七处缺口P1-P7全代码化+executor.py整体化单一权威版本) - 小欧-2026-08-24
+- docs:设计-沙箱执行方案-小欧-2026-08-24.md 沙箱预检v1.14-v1.16三堂会审修订(F-A/F-B/F-C全修+外部复核F1-F6+伪代码合规整改为真实代码骨架) - 小欧-2026-08-24
+- docs:设计-沙箱执行方案-小欧-2026-08-24.md 沙箱预检完整设计方案v1.13(轻量隔离JobObject唯一后端/复用安全分级destructive触发/三处汇合点插桩含超时HITL裁决与bypass免打扰语义/误判4类处置/检查与测试方案12格矩阵+对抗性攻击库)历经13版三轮三堂会审 - 小欧-2026-08-24
+- docs:version.txt v0.19.24升级说明(35个commit) - 小欧-2026-08-23
+- docs:.gitignore 新增backend/files/忽略(旁路排查文件A/B) - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.39 11.9每步完成情况标注(P0-P8九项✅)+11.9.4四项验证标注 - 小欧-2026-08-23
+- docs:[1]数据存储及yield前端消息及数据设计 v3.35三堂会审修正6项+v3.36新增11.9实施计划(P0-P8)+v3.37计划核查(补异步测试环境/覆盖矩阵) - 小欧-2026-08-23
+
+### feat(8个):
+- feat:file_persist+stream_orchestrator+db_initializer 目录前导-文件落盘session/task目录名加Sion_/Task_前缀(常量唯一源DRY,物理目录与files_dir落库锚同源拼装,旧目录不迁移禁止backward) - 小欧-2026-08-24
+- feat:stream_orchestrator,db_initializer,agent_runner 任务挂接与终态收口(D1 H1创建挂载agent.file_persist+D7 chat_tasks.files_dir列与同事务落库+D5 footer成功路径与finally幂等兜底#15) - 小欧-2026-08-23
+- feat:action_handler,tool_retry_engine,tool_executor 文件A每次尝试实时落盘回调链(D3c引擎成败回调+D3工厂闭包params_raw权威源+三分支全局序号透传#16/#18/#20/#21) - 小欧-2026-08-23
+- feat:base_service,llm_stream params_raw_str采集与两跳透传(D0聚合处原始arguments串+D0b result与_pending_calls) - 小欧-2026-08-23
+- feat:message_builder,react_cycle 文件B增量落盘链(D2b单点惰性_msg_id计数器+D2 prepare后append_conv_blocks并剥离wire标记) - 小欧-2026-08-23
+- feat:file_persist 新建旁路排查文件A/B持久化模块(TaskFileWriter单写者FIFO/create_task_writer工厂/purge_task+purge_session GC备函数/_files_root调试分流) - 小欧-2026-08-23
+- feat,docs:chat_messages写保留当空气落地(4文件)+文档v3.34同步(A1-A4三轮核实W3已修复) - 小欧-2026-08-23
+- feat,docs:chat_messages写保留当空气落地(4文件)+文档v3.34同步(A1-A4三轮核实W3已修复) - 小欧-2026-08-23
+
+### fix(3个):
+- fix:agent_runner.py 问题报告三堂会审修复(ISS-001孤儿task异常必达+ISS-005过时注释修正) - 小欧-2026-08-24; fix:e2e_helpers.py SAFETY_KEYWORDS补WinError 32 - 小欧-2026-08-24
+- fix:database.py+agent_runner+action_handler+hitl_confirmation+stream_orchestrator 后端卡死修复收尾-残留同步DB点经atxn offload(action_handler2处/orchestrator3处)+hitl信任落库daemon线程投递+_persist_final shield薄壳保终态落库必达+注释措辞更正 - 小欧-2026-08-24
+- fix:database.py 后端卡死修复-落库热路径经atxn offload出事件循环(agent_runner/react_cycle/health/stream_orchestrator同步改造,storage与连接管理零改动复用) - 小欧-2026-08-24
+
+### refactor(1个):
+- refactor:storage D4截断退役(删_truncate三函数与MAX_TOOL_RESULT两常量,换_warn_oversize_step_dict超限error告警不砍数据,append_execution_step完整step_json落库保回放源,签名->None不变,11.7.14-1 TODO随块清理) - 小欧-2026-08-23
+
+### 合计
+- feat: 8项 | fix: 3项 | refactor: 1项 | docs: 12项 = 共24项
+
+---
+
 v0.19.24
 更新时间: 2026-08-23 22:41:11 - 小欧-2026-08-23
 ## v0.19.23以来 变更汇总(35个commit) - 小欧-2026-08-23
