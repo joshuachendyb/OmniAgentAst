@@ -81,7 +81,7 @@ class SandboxJob:
     def kill_tree(self) -> None:
         """TerminateJobObject 内核一键杀全树(8.2.1: 杀后须 poll 确认全树退出)"""
         if self._handle:
-            logger.warning(f"[sandbox][job] TerminateJobObject 杀全树")
+            logger.info(f"[sandbox][job] TerminateJobObject 杀全树(清理契约)")
             _kernel32.TerminateJobObject(self._handle, 1)
 
     def close(self) -> None:

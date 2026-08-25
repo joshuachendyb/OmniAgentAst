@@ -59,6 +59,7 @@ class JobObjectBackend:
             out_b, err_b = self._proc.communicate(timeout=timeout_sec)
         except subprocess.TimeoutExpired:
             timed_out = True                            # 规则2 数据来源(N4)
+            logger.warning(f"[sandbox][backend] run 超时截断(timed_out), 触发 kill_tree 防失控: timeout={timeout_sec}s")
             self.kill_tree()                            # 超时防失控第一道闸(4.1/M4)
             out_b, err_b = self._proc.communicate()
         finally:
@@ -73,7 +74,7 @@ class JobObjectBackend:
 
     def kill_tree(self) -> None:
         if self._job is not None:
-            logger.warning(f"[sandbox][backend] kill_tree 触发(超时/安全兜底)")
+            logger.info(f"[sandbox][backend] kill_tree 触发(清理契约/超时兜底)")
             self._job.kill_tree()
 
     def cleanup(self) -> None:
