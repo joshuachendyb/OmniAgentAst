@@ -12,11 +12,11 @@
 依赖方向: handlers → sandbox(单向), 故本模块可安全 import sandbox, 反之不可。
 """
 from app.logger import logger
-from app.services.agent.steps import MetaStep
-from app.services.agent.status_table import AgentStatus, set_status
-from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result
-from app.constants import HITL_TIMEOUT
-from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS
+# 延迟导入: MetaStep/AgentStatus/set_status/create_confirmation/wait_for_confirmation_result/HITL_TIMEOUT/SENSITIVE_FIELDS
+#   均延迟到函数内导入(小欧 2026-08-25 修复循环import回归): 本模块被 action_handler 顶层 import,
+#   若在模块顶层 import agent.steps / task.hitl_confirmation 会构成
+#   action_handler→sandbox_gate→hitl_confirmation→task_runtime→task_registry→...→action_handler 环,
+#   致后端启动 ImportError(原内联实现为函数内局部 import, 拆分时误改为顶层 import 引入回归)
 
 
 async def sandbox_precheck(safety_result, tool_name, params):
@@ -36,6 +36,12 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     """预检结果处置(DRY: 三处插入点共用)。返回(放行bool, 待下发steps列表)
     危险型失败→denied登记+error步骤; 未完成有效验证(超时/环境性)→复用HITL原语请用户裁决;
     杜绝LLM原样重发死循环"""
+    # 延迟导入(修复循环import回归, 见模块顶部注释)
+    from app.services.agent.steps import MetaStep
+    from app.services.agent.status_table import AgentStatus, set_status
+    from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result
+    from app.constants import HITL_TIMEOUT
+    from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS
     if pre.passed:
         return True, []
     if pre.needs_ruling and safety_result.auto_confirm:
