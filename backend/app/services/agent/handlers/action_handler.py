@@ -128,6 +128,8 @@
 # 2026-08-24 - 小欧 - 后端卡死修复收尾(offload): check_safety_and_confirm 的 session 反查与每工具信任预查
 #   两处同步 db.get_conn_with_retry 改经 db.atxn 进子线程 offload 出事件循环(复用既有薄壳, 行为等价),
 #   ReAct 执行期 loop 不再被锁重试 time.sleep 短暂独占
+# 2026-08-25 - 小欧 - 合规重构(北京老陈驱动): M3 沙箱闸门逻辑从 check_safety_and_confirm 内嵌闭包(_sandbox_precheck/_sandbox_resolve)拆出至新建 app/services/agent/handlers/sandbox_gate.py(模块级函数+显式参数, 去隐式捕获约10个外层变量的"七绕八绕", 修正违反1.3公用函数规范-分层/先查后建/登记FUNCTIONS.md 与 KISS-DIRECT); 三处汇合点(①auto_confirm ②用户确认 ③循环体兜底)改显式调用; 业务语义/分支/状态机零改动(复制不重写)
+# 2026-08-25 - 小欧 - 合规重构: build_observation 内嵌闭包 _format_llm_data_text(纯展示格式化函数被囚为闭包, 违反1.3/复用优先)拆出至全局层 app/utils/display_utils.format_llm_data_text; 同步删除仅服务于该闭包的死 import json; 逻辑零改动(复制不重写)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -142,13 +144,14 @@ action_handler — action类型处理（SRP拆分，模块级函数）
 小沈 2026-06-13 移除ActionHandler类,改为模块级函数
 """
 import asyncio
-import json   # 2026-08-18 小欧 新增(供 _format_llm_data_text)
+
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Set
-
 from app.logger import logger, log_and_print
+
 from app.constants import ACTION_LOG_RESULT_MAX_CHARS
+from app.utils.display_utils import format_llm_data_text  # 小欧 2026-08-25 合规重构: 纯展示格式化函数拆至全局层 display_utils(去内嵌闭包)
 from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error") P3
 from app.services.agent.status_table import AgentStatus, set_status
@@ -163,6 +166,7 @@ from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE
 from app.tools.tools_alias_mapper import PARAM_ALIASES
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, MEDIA_EXTENSIONS
 from app.tools.registry import tool_registry  # 2026-08-18 小健 三堂会审: target字段从工具schema主参数自动推导(取代硬编码_TARGE_FIELD)
+from app.services.agent.handlers.sandbox_gate import sandbox_precheck, sandbox_resolve  # 小欧 2026-08-25 沙箱闸门逻辑拆分(合规重构: 去闭包隐式耦合, Agent编排层落点)
 
 
 # 【修复P2-5】封装observation构建上下文 — 北京老陈 2026-06-13
@@ -282,6 +286,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
 
             safety_result = safety_checker.check_before_execute(_cn, _cp, skip_confirmation=_skip)
 
+            # v1.25 M3(设计文档 3.2.3): 沙箱预检闸门 — 逻辑已拆分至 sandbox_gate.sandbox_precheck/sandbox_resolve
+            # (2026-08-25 合规重构: 去嵌套闭包隐式耦合, Agent编排层落点, 三处汇合点共用, 每 call 恰好预检一次不重复)
+
             if safety_result.blocked:
                 yield agent._step_emitter.emit(MetaStep(
                     step=step, type="error", content=safety_result.message, error_type="blocked", severity="warn"
@@ -319,6 +326,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         grant_temp_auth(safety_result.auth_path, recursive=True)
                     resolve_confirmation(confirm_id, confirmed=True, trust_session=True)
                     set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
+                    # v1.25 M3 插入点①: auto_confirm 汇合路径(continue 之前) — 沙箱预检最后闸门
+                    _pre = await sandbox_precheck(safety_result, _cn, _cp)
+                    if _pre is not None:
+                        _ok, _steps = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
+                        for _st in _steps:
+                            yield _st
+                        if not _ok:
+                            continue
                     continue
 
                 set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认工具执行: {_cn}")
@@ -351,6 +366,24 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         severity="info",
                     ))
                 set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
+                # v1.25 M3 插入点②: 用户确认汇合路径(末尾加 continue, 防落入③重复预检)
+                _pre = await sandbox_precheck(safety_result, _cn, _cp)
+                if _pre is not None:
+                    _ok, _steps = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
+                    for _st in _steps:
+                        yield _st
+                    if not _ok:
+                        continue
+                continue
+
+            # v1.25 M3 插入点③: 循环体末尾兜底(仅 safe 直通/会话信任豁免触达) — 沙箱预检最后闸门
+            _pre = await sandbox_precheck(safety_result, _cn, _cp)
+            if _pre is not None:
+                _ok, _steps = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
+                for _st in _steps:
+                    yield _st
+                if not _ok:
+                    continue
 
         # 回传未被拒的call索引给调用方 — 小欧 2026-07-18 #12 fix
         # 2026-08-11 小欧 fix D2: 用call对象id标识被拒调用,而非tool_name;
@@ -708,15 +741,6 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
           ObservationStep 仅 tool_result 数组; 编排层从各 tool_result[i].other_data 收集(return_direct/attachment/warning)
     返回: (events, orchestration)  orchestration={"return_direct","attachments","warning","return_direct_message"}
     """
-    def _format_llm_data_text(llm_data: Dict[str, Any]) -> str:
-        """2026-08-18 小欧 - JSON格式化llm_data供前端展示"""
-        if not llm_data:
-            return ""
-        try:
-            return json.dumps(llm_data, ensure_ascii=False, indent=2)
-        except (TypeError, ValueError):
-            return str(llm_data)
-
     events: List = []
     tool_result: List[Dict[str, Any]] = []
     orchestration = {"return_direct": False, "attachments": [], "warning": "", "return_direct_message": ""}
@@ -777,7 +801,7 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
         tool_result.append({
             "tool_name": _tool,
             "llm_data": _llm,
-            "llm_data_text": _format_llm_data_text(_llm),
+            "llm_data_text": format_llm_data_text(_llm),
             "data_text": obs_text,
             "other_data": _other,
         })

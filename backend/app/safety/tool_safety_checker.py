@@ -38,6 +38,9 @@
 #   services层)查 check_session_trust + normalize_tool_name 后, 本层 check_before_execute 用新增
 #   skip_confirmation 参数(原 session_id 参数移除)接收信任结果豁免确认; 危险防护(known_risk/check_fn
 #   blocked)不受 skip_confirmation 豁免仍拦截。T1 normalize 语义随查询移至 action_handler, 与写保护 BUG-2 同模式。
+# 2026-08-25 - 小欧 - M2(设计文档 3.2.4): 四条置位路径在 destructive 级条件成立时置 SafetyResult.sandbox_required=True(沙箱预检唯一触发依据):
+#   ①白名单外 destructive 写授权请求(代码库根/系统保护区/越权) ②路径越权(known_risk 命中路径越权 blocked) ③注册表写(registrywrite/registrydelete, 2.4 仅静态分析不动态执行, 置位交真实后端兜底) ④危险型失败兜底(rc!=0 且产生工作区影响/环境性 stderr);
+#   同时 cleanup 分支补 backend.cleanup() 资源泄漏修复(§8.7/R5); 安全开关不读此字段(总闸在 executor.pre_execute 单点), 存量 safe 级零感知
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -134,6 +137,8 @@ class ToolSafetyChecker:
                     log_and_print(f"[ToolSafetyChecker] bypass自动放行(白名单外临时授权请求): tool={tool_name}, auth_path={known_risk.auth_path}, {known_risk.message}")
                 else:
                     log_and_print(f"[ToolSafetyChecker] 白名单外临时授权请求,转HITL确认: tool={tool_name}, auth_path={known_risk.auth_path}, {known_risk.message}")
+                # v1.25 M2-D: 白名单外 destructive 授权请求→沙箱预检; safe 级不触发(与 G1 唯一触发依据一致)
+                known_risk.sandbox_required = (known_risk.safety_level == "destructive")
                 return known_risk
             # #14 fix: 已知风险只拦截, 不触发确认(确认由 needs_confirm 路径驱动) — 小欧 2026-07-18
             known_risk.safety_level = "dangerous"
@@ -142,15 +147,15 @@ class ToolSafetyChecker:
 
         # ③ 确认策略分流: 开关只影响"是否询问确认", 不影响危险防护
         if _is_skip_safety():
-            if self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk):
-                log_and_print(f"[ToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
-                return SafetyResult(requires_confirmation=True, auto_confirm=True,
-                        blocked=False, message="安全开关已绕过(提示照出)",
-                        safety_level="destructive")
-            logger.info(f"[ToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
-            return SafetyResult(requires_confirmation=False,
-                    blocked=False, message="安全开关已绕过",
-                    safety_level="safe")
+                if self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk):
+                    log_and_print(f"[ToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
+                    return SafetyResult(requires_confirmation=True, auto_confirm=True,
+                            blocked=False, message="安全开关已绕过(提示照出)",
+                            safety_level="destructive", sandbox_required=True)   # v1.25 M2-A: bypass destructive 确认→沙箱预检
+                logger.info(f"[ToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
+                return SafetyResult(requires_confirmation=False,
+                        blocked=False, message="安全开关已绕过",
+                        safety_level="safe")   # v1.25 M2-A: safe 级 bypass 不触发沙箱(与 G1 一致)
 
         if tool_meta.check_fn:
             try:
@@ -172,15 +177,19 @@ class ToolSafetyChecker:
         #   由调用方查 trust 后传 skip_confirmation=True; 危险防护(known_risk/check_fn blocked)不受豁免仍拦截。
         #   本层不再 import app.services.chat.storage(消除 safety→services 反向依赖违规, test_layer_boundaries 护栏)
         if skip_confirmation:
+            # v1.6 会审F1修复: 信任豁免只跳确认不跳沙箱; sandbox_required 按真实危险度(needs_confirmation)置位, 非恒True
+            _needs = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
             logger.info(f"[ToolSafetyChecker] 会话信任豁免确认(跳HITL): tool={tool_name}")
             return SafetyResult(requires_confirmation=False,
                     blocked=False, message="会话已信任该工具",
-                    safety_level="safe")
+                    safety_level="safe", sandbox_required=_needs)   # v1.25 M2-B: destructive级仍进沙箱, safe级不触发(G1)
 
         needs_confirm = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
         safety_level = "destructive" if needs_confirm else "safe"
+        # v1.25 M2-C: 仅 destructive 级触发沙箱(与 G1 唯一触发依据一致); safe 级不进预检
         return SafetyResult(requires_confirmation=needs_confirm,
-                blocked=False, message="", safety_level=safety_level)
+                blocked=False, message="", safety_level=safety_level,
+                sandbox_required=(safety_level == "destructive"))
 
     @staticmethod
     def _get_needs_confirmation(tool_meta, params: Dict, delete_risk: Optional["SafetyResult"] = None) -> bool:
