@@ -1347,6 +1347,12 @@ def check_logs(
         else:
             content = raw_content
 
+        # ── 会话隔离(方案B: 不扫全量日志, 只认本会话) — 北京老陈 2026-08-25 ————
+        # 每行日志已带 session_id(shared_handler.SessionFilter 注入 %(session_id)s); 只保留含本会话标识的行,
+        # reload/别的任务的脏 ERROR(其 session_id 为 '-' 或不匹配) → 被排除, 不再误判本测试 FAIL
+        if session_id:
+            content = "\n".join(l for l in content.splitlines() if session_id in l)
+
         # ── ERROR检查(MUST) ──
         # 只匹配ERROR级别日志(格式: timestamp - ERROR - ...)，不匹配内容中的ERROR字样
         # 锚定时间戳+级别字段,避免INFO行消息体含" - ERROR - "被贪婪误判 - 小沈 2026-07-17
