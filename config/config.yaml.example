@@ -65,6 +65,17 @@ security:
   strict_mode: false
   whitelistEnabled: false
 
+# 【新增】沙箱预检配置节（与 config.yaml 同步, 2026-08-25 小欧）
+sandbox:
+  enabled: true                    # 总开关(逃生门): false=完全关闭预检, 行为与实施前一致
+  backend: "job_object"            # 后端选择键(预留扩展位): 当前唯一实现 job_object
+  max_concurrent_sandboxes: 3      # 并发预检信号量上限(防N×内存上限叠加)
+  max_workspace_mb: 500            # 工作区大小上限; 超限拒绝预检转HITL强确认
+  max_shadow_mb: 100               # 影子副本单文件上限; 超限跳过副本仅统计影响面
+  process_memory_limit_mb: 2048    # Job Object 进程树内存上限(误杀时调大此值)
+  default_timeout_sec: 60          # 预检默认超时(LLM未声明timeout时生效)
+  max_timeout_sec: 300             # 预检硬上限5分钟; 声明超上限直接转HITL强确认
+
 # 文件操作配置
 file_operations:
   # 工作目录（文件操作的根目录）
