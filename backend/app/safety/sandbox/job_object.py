@@ -4,6 +4,8 @@ import ctypes
 import subprocess
 from ctypes import wintypes
 
+from app.logger import logger
+
 _JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
 _JobObjectExtendedLimitInformation = 9   # JobObjectInformationClass 枚举值
 
@@ -68,19 +70,23 @@ class SandboxJob:
                 ctypes.byref(info), ctypes.sizeof(info)):
             self.close()
             raise OSError(f"SetInformationJobObject failed: {ctypes.GetLastError()}")
+        logger.info(f"[sandbox][job] JobObject 创建成功, 进程内存上限={process_memory_limit_mb}MB")
 
     def assign(self, proc: subprocess.Popen) -> None:
         """收编子进程及其全部孙进程; R3: 返回值必校验, 失败上抛非静默(executor 转 HITL)"""
         if not _kernel32.AssignProcessToJobObject(self._handle, int(proc._handle)):
             raise OSError(f"AssignProcessToJobObject failed(pids={proc.pid}): {ctypes.GetLastError()}")
+        logger.info(f"[sandbox][job] 进程收编入 Job: pid={proc.pid}")
 
     def kill_tree(self) -> None:
         """TerminateJobObject 内核一键杀全树(8.2.1: 杀后须 poll 确认全树退出)"""
         if self._handle:
+            logger.warning(f"[sandbox][job] TerminateJobObject 杀全树")
             _kernel32.TerminateJobObject(self._handle, 1)
 
     def close(self) -> None:
         """CloseHandle(8.2.1: 千次 create/close 句柄数守恒)"""
         if self._handle:
             _kernel32.CloseHandle(self._handle)
+            logger.info(f"[sandbox][job] CloseHandle 释放 Job")
             self._handle = None

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from app.logger import logger
+
 _MAX_UNLINK_RETRY = 5        # 销毁重试次数(复用 shell_engine _safe_unlink 同款思路)
 _RETRY_INTERVAL_SEC = 0.2
 
@@ -33,6 +35,7 @@ class SandboxWorkspace:
     def create(self) -> Path:
         self.path = Path(tempfile.gettempdir()) / "omniagent_sandbox" / f"{uuid.uuid4().hex}_{int(time.time() * 1000)}"
         self.path.mkdir(parents=True)
+        logger.info(f"[sandbox][workspace] 创建工作区: {self.path}")
         return self.path
 
     def shadow_copy(self, target: Path) -> Path:
@@ -40,10 +43,12 @@ class SandboxWorkspace:
         dest = self.path / target.name
         if target.is_file():
             if target.stat().st_size > self._max_shadow_bytes:
+                logger.warning(f"[sandbox][workspace] 单文件超影子副本上限({self._max_shadow_bytes}B), 跳过副本仅统计影响面: {target}")
                 return target
             shutil.copy2(target, dest)
         else:
             shutil.copytree(target, dest, dirs_exist_ok=True)
+        logger.info(f"[sandbox][workspace] 影子副本: {target} -> {dest}")
         return dest
 
     def snapshot_files(self) -> None:
@@ -76,6 +81,7 @@ class SandboxWorkspace:
         for _ in range(_MAX_UNLINK_RETRY):
             try:
                 shutil.rmtree(self.path)
+                logger.info(f"[sandbox][workspace] 销毁成功: {self.path}")
                 self.path = None
                 return
             except OSError as exc:

@@ -3,6 +3,7 @@
 import os
 import subprocess
 import tempfile
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +49,8 @@ class JobObjectBackend:
         argv = ["pwsh", "-NoProfile", "-NoLogo", "-NonInteractive",
                 "-ExecutionPolicy", "Bypass", "-File", str(script)]
         timed_out = False
+        _start = time.monotonic()
+        logger.info(f"[sandbox][backend] run 启动: timeout={timeout_sec}s, workspace={workspace}, command_head={command[:120]!r}")
         try:
             self._job = SandboxJob()
             self._proc = subprocess.Popen(argv, cwd=str(workspace),
@@ -61,12 +64,16 @@ class JobObjectBackend:
         finally:
             script.unlink(missing_ok=True)              # 临时脚本即用即删(自我指涉攻击面最小化)
         decode = lambda b: (b or b"").decode("utf-8", errors="replace")[-_TAIL_CHARS:]
+        _elapsed = round(time.monotonic() - _start, 3)
+        logger.info(f"[sandbox][backend] run 结束: rc={self._proc.returncode if not timed_out else -1}, "
+                    f"timed_out={timed_out}, elapsed={_elapsed}s, stdout_len={len(out_b)}, stderr_len={len(err_b)}")
         return BackendResult(rc=self._proc.returncode if not timed_out else -1,
                              stdout_tail=decode(out_b), stderr_tail=decode(err_b),
                              timed_out=timed_out)
 
     def kill_tree(self) -> None:
         if self._job is not None:
+            logger.warning(f"[sandbox][backend] kill_tree 触发(超时/安全兜底)")
             self._job.kill_tree()
 
     def cleanup(self) -> None:

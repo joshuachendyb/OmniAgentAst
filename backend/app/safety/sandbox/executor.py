@@ -148,7 +148,9 @@ class SandboxExecutor:
         # 4.1#5 总开关唯一判定点(v1.10): 入口单点短路——checker 四条置位路径不读配置,
         # 开关在唯一入口生效不存在遗漏分支; False 时返回 passed=True, 行为与实施前完全一致
         if not get_config().get("sandbox.enabled", True):
+            logger.info(f"[sandbox][exec] 总开关关闭, 直通免预检: tool={tool_name}")
             return PreCheckResult(passed=True)
+        logger.info(f"[sandbox][exec] 预检开始: tool={tool_name}, 类型={'shell' if _is_shell_tool(tool_name) else 'file_op'}")
         async with _semaphore:   # 并发限流(3.1.3, 默认3 可配置)
             if _is_shell_tool(tool_name):   # BUG修复: 原为 self._is_shell_tool(实例无此法, 致每次预检抛 AttributeError 被 M4 兜底静默绕过)
                 # 统一入口(action_handler 唯一调用点): shell 类→_pre_execute_shell
@@ -213,18 +215,21 @@ class SandboxExecutor:
             except (TypeError, ValueError):
                 declared = None
         if declared and declared > self.max_timeout_sec:
+            logger.warning(f"[sandbox][exec] 声明timeout超硬上限转HITL: declared={declared}s, 上限={self.max_timeout_sec}s")
             return PreCheckResult(
                 passed=False, needs_ruling=True,
                 blocked_reason=f"工具声明 timeout={declared}s 超硬上限 {self.max_timeout_sec}s, 等待不可接受, 转用户裁决",
             )
         # 守卫②(F-B): 命令文本越界写意图扫描 -> 不运行 backend, 直接转 HITL(保 2.1 预检不改状态)
         if _scan_command_write_intent(command):
+            logger.warning(f"[sandbox][exec] 命令含越界写意图, 转HITL: command_head={command[:120]!r}")
             return PreCheckResult(
                 passed=False, needs_ruling=True,
                 blocked_reason="命令含越界写意图(绝对路径/UNC/注册表驱动器/$env/~/), sandbox 不执行, 转用户裁决",
             )
         # 白名单快速通道(v1.17 N3/N5 定序: 必须在 F-B 扫描之后判定, 防重定向逃逸绕过扫描)
         if _is_readonly_whitelisted(command):
+            logger.info(f"[sandbox][exec] 只读白名单直通放行真机: command_head={command[:120]!r}")
             return PreCheckResult(passed=True)   # 只读直通: 免预检放行真机(4.1#4)
         backend = self._dispatch_backend()
         workspace = SandboxWorkspace(max_workspace_mb=self.max_workspace_mb,
@@ -236,11 +241,14 @@ class SandboxExecutor:
                 _to = int(timeout_sec)
             except (TypeError, ValueError):
                 _to = self.default_timeout_sec
+            logger.info(f"[sandbox][exec] shell 预检 run 启动: timeout={min(_to, self.max_timeout_sec)}s")
             result = backend.run(command, workspace.path, min(_to, self.max_timeout_sec))
+            logger.info(f"[sandbox][exec] shell 预检 run 结束: rc={result.rc}, timed_out={result.timed_out}")
             impacts = workspace.diff_impacts()
             used = self._disk_usage(workspace.path)   # 以工作区真实磁盘占用来判定容量(防副本自身漏算/删除误算)
             if not workspace.check_capacity(used):
                 # v1.22 W5: 3.1.1 工作区上限接线(原方法存在但无人调用)——超限拒绝预检转 HITL 强确认
+                logger.warning(f"[sandbox][exec] 工作区超上限转HITL: used={used}B, 上限={self.max_workspace_mb}MB")
                 return PreCheckResult(passed=False, needs_ruling=True,
                                        blocked_reason=f"沙箱工作区写入 {used} 字节超上限 {self.max_workspace_mb}MB, 转用户裁决",
                                        impacts=impacts,
@@ -248,11 +256,13 @@ class SandboxExecutor:
             return self._classify(result, impacts)   # 4.2 判定分流算法(规则2-7)
         except OSError as exc:
             # R3(v1.19 P6): Job Object 收编失败(进程已提权等, assign 上抛非静默) → 升级 HITL 强确认而非静默放行
+            logger.warning(f"[sandbox][exec] Job Object 收编失败转HITL: {exc}")
             return PreCheckResult(passed=False, needs_ruling=True,
                                   blocked_reason=f"Job Object 收编失败, 转用户裁决: {exc}")
         except Exception as exc:
             # v1.21 Z9: 非 OSError 异常(编码/内部错误/注入测试)不得穿透到 action_handler 炸掉整批调用,
             # 统一转 needs_ruling 交用户裁决(资源由下方 finally 回收, 对齐 8.5 异常注入用例)
+            logger.warning(f"[sandbox][exec] 预检内部异常转HITL: {exc}")
             return PreCheckResult(passed=False, needs_ruling=True,
                                   blocked_reason=f"预检器内部异常, 未完成有效验证: {exc}")
         finally:
@@ -270,6 +280,7 @@ class SandboxExecutor:
         if normalized not in ("registrywrite", "registrydelete", "delete", "copy", "move"):
             # v1.23 V-B: 未支持的操作类型不猜分支——原 writetext/extractarchive 落入 else 被当 move
             # 重演副本, rc=0 产生虚假 passed=True 放行(预检形同虚设); 一律转用户裁决
+            logger.warning(f"[sandbox][exec] 未支持操作类型转HITL: op={normalized}")
             return PreCheckResult(passed=False, needs_ruling=True,
                                   blocked_reason=f"沙箱预检器未支持该操作类型: {normalized}, 转用户裁决")
         # 参数别名归一(与真实工具分发一致: tools_alias_mapper.PARAM_ALIASES 将 src/file/target/source
@@ -287,6 +298,7 @@ class SandboxExecutor:
         src = Path(params.get("path") or params.get("source_path") or "")
         if not src.exists():
             # 源不存在: 无法做有效预演(复制不存在的源无任何意义), 转 HITL 裁决而非退化为复制 cwd 误放行(BUG-A/BUG-D)
+            logger.info(f"[sandbox][exec] 源不存在转HITL: {src}")
             return PreCheckResult(passed=False, needs_ruling=True,
                                   blocked_reason=f"源不存在，沙箱预检未完成有效验证: {src}")
         _backend = self._dispatch_backend()   # _backend=None 兜底: 若此处异常, finally 判 None 不误清
@@ -297,6 +309,7 @@ class SandboxExecutor:
             replica = workspace.shadow_copy(src)
             if replica == src:
                 # 超限跳过副本 → 未完成有效验证转裁决(3.1.1 降级规则, FP4 同通道)
+                logger.warning(f"[sandbox][exec] 目标超影子副本上限转HITL: {src}, 上限={self.max_shadow_mb}MB")
                 return PreCheckResult(passed=False, needs_ruling=True,
                                       blocked_reason=f"目标超过影子副本上限{self.max_shadow_mb}MB, 未完成有效验证: {src}")
             workspace.snapshot_files()   # v1.21 Z3: 以副本为 diff 基线, 防副本自身被误报为 added 影响面
@@ -305,16 +318,19 @@ class SandboxExecutor:
             used = self._disk_usage(workspace.path)   # 以工作区真实磁盘占用来判定容量(防副本自身漏算/删除误算)
             if not workspace.check_capacity(used):
                 # v1.22 W5: 工作区上限接线(同 shell 流程)
+                logger.warning(f"[sandbox][exec] 工作区超上限转HITL(file_op): used={used}B, 上限={self.max_workspace_mb}MB")
                 return PreCheckResult(passed=False, needs_ruling=True,
-                                      blocked_reason=f"沙箱工作区写入 {used} 字节超上限 {self.max_workspace_mb}MB, 转用户裁决",
-                                      impacts=impacts, stderr_tail=op_result.stderr_tail)
+                                       blocked_reason=f"沙箱工作区写入 {used} 字节超上限 {self.max_workspace_mb}MB, 转用户裁决",
+                                       impacts=impacts, stderr_tail=op_result.stderr_tail)
             return self._classify(op_result, impacts)   # 复用同一套判定分流算法(DRY)
         except OSError as exc:
             # v1.22 W2: 影子副本/重演失败(源被占用/不可读等) → 未完成有效验证转裁决, 不穿透炸批(对齐 shell 流 Z9)
+            logger.warning(f"[sandbox][exec] 影子副本预演失败转HITL: {exc}")
             return PreCheckResult(passed=False, needs_ruling=True,
                                   blocked_reason=f"影子副本预演失败, 转用户裁决: {exc}")
         except Exception as exc:
             # v1.22 W2: 非 OSError 异常同样不穿透(对齐 shell 流 Z9)
+            logger.warning(f"[sandbox][exec] 文件预检内部异常转HITL: {exc}")
             return PreCheckResult(passed=False, needs_ruling=True,
                                   blocked_reason=f"文件预检器内部异常, 未完成有效验证: {exc}")
         finally:
@@ -332,6 +348,7 @@ class SandboxExecutor:
         v1.22 W3: 复用 backend.run(原为手写 Popen——无 Job 包裹、TimeoutExpired 未接会泄漏进程、
         且经 self 调用模块函数本会 AttributeError), Job 包裹/超时杀树/cleanup 契约全部复用(DRY)。
         delete→删除副本树; copy/move→在副本内重演目标变换。"""
+        logger.info(f"[sandbox][exec] 重演文件操作: op={normalized}, replica={replica}")
         if normalized == "delete":
             replay_cmd = f"Remove-Item -LiteralPath {_ps_literal_path(replica)} -Recurse -Force"
         elif normalized == "copy":

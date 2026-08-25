@@ -25,7 +25,10 @@ async def sandbox_precheck(safety_result, tool_name, params):
         return None
     try:
         from app.safety.sandbox import get_sandbox_executor
-        return await get_sandbox_executor().pre_execute(tool_name, params)
+        pre = await get_sandbox_executor().pre_execute(tool_name, params)
+        logger.info(f"[sandbox] 预检结果: tool={tool_name}, passed={pre.passed}, "
+                    f"needs_ruling={pre.needs_ruling}, reason={pre.blocked_reason[:200]}")
+        return pre
     except Exception as exc:
         # M4 兜底: 预检异常不阻断(降级为实施前行为直接放行执行), 绝不炸整批调用链
         logger.warning(f"[action_handler] 沙箱预检异常(M4兜底直接执行): tool={tool_name}, err={exc}")
@@ -43,6 +46,7 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     from app.constants import HITL_TIMEOUT
     from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS
     if pre.passed:
+        logger.info(f"[sandbox] 放行执行: tool={tool_name}")
         return True, []
     if pre.needs_ruling and safety_result.auto_confirm:
         # bypass免打扰语义(v1.13 V2): security.enabled=false即用户要求全自动,
@@ -50,12 +54,14 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         logger.info(f"[sandbox] bypass下未完成有效验证,按bypass语义直接放行: tool={tool_name}, reason={pre.blocked_reason}")
         return True, []
     if not pre.needs_ruling:
+        logger.warning(f"[sandbox] 危险型拦截拒绝: tool={tool_name}, reason={pre.blocked_reason[:200]}")
         denied_list.append((tool_name, f"沙箱预检未通过: {pre.blocked_reason}", call))
         return False, [agent._step_emitter.emit(MetaStep(
             step=step, type="error",
             content=f"沙箱预检未通过: {pre.blocked_reason}",
             error_type="blocked", severity="warn"))]
     # needs_ruling: 走现有确认机制(create_confirmation/wait_for_confirmation_result, 本函数上方已import)
+    logger.info(f"[sandbox] 转HITL用户裁决: tool={tool_name}")
     confirm_id = await create_confirmation(agent.task_id, tool_name)
     steps = [agent._step_emitter.emit(MetaStep(
         step=step, type="paused",
@@ -67,7 +73,9 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     auth = await wait_for_confirmation_result(confirm_id, timeout=HITL_TIMEOUT)
     set_status(agent, AgentStatus.EXECUTING, "沙箱预检用户裁决完成")
     if auth.get("confirmed"):
+        logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")
         return True, steps
+    logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
     denied_list.append((tool_name, "沙箱预检未完成验证且用户拒绝执行", call))
     steps.append(agent._step_emitter.emit(MetaStep(
         step=step, type="error",
