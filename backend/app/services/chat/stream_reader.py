@@ -245,7 +245,7 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
             try:
                 await asyncio.wait_for(buffer.cond.wait(), timeout=60.0)
             except asyncio.TimeoutError:
-                logger.warning(f"[SSE] stream_reader cond.wait 60s超时, 重检done: task_id={task_id}")
+                logger.debug(f"[SSE] stream_reader cond.wait 60s超时, 重检done: task_id={task_id}")
                 if buffer.done.is_set():
                     return
                 continue

@@ -148,7 +148,7 @@ class ToolSafetyChecker:
         # ③ 确认策略分流: 开关只影响"是否询问确认", 不影响危险防护
         if _is_skip_safety():
                 if self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk):
-                    log_and_print(f"[ToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
+                    logger.info(f"[ToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
                     return SafetyResult(requires_confirmation=True, auto_confirm=True,
                             blocked=False, message="安全开关已绕过(提示照出)",
                             safety_level="destructive", sandbox_required=True)   # v1.25 M2-A: bypass destructive 确认→沙箱预检

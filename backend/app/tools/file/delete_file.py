@@ -320,7 +320,7 @@ async def delete(
         llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=err, user_recursive=recursive, user_force=force)
         return build_error(data={}, llm_data=llm_data)
     if warn:
-        logger.warning(warn)
+        logger.info(warn)
 
     result = await _delete_file_impl(file_path=source, recursive=recursive, force=force)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
