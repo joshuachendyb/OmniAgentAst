@@ -1809,8 +1809,8 @@ def write_test_record(
                 pass
 
     # 自动调用 Prompt日志 vs DB步骤对比（用例脚本无需手动调用）
+    _sid = result.get("session_id", "")  # 小欧 2026-08-25 修复: 必须无条件赋值,否则下方model提取在dpi非None时抛UnboundLocalError被吞→model字段偶发为空
     if dpi is None:
-        _sid = result.get("session_id", "")
         _umid = result.get("user_msg_id")
         if _sid:
             try:
