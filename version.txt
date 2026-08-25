@@ -1,3 +1,21 @@
+v0.19.26
+更新时间: 2026-08-25 21:26:28 - 小欧-2026-08-25
+## v0.19.25以来 变更汇总(7个commit) - 小欧-2026-08-25
+[2026-08-25 21:26:28 小欧] 汇总范围=v0.19.25以来全部commit(本分支 optimize-0.19.17 自v0.19.25累积7个commit)
+
+### docs(4个):
+- docs:notes 删除废弃E2E-P9-01/02/03记录文件 - 小欧-2026-08-25
+- docs:[2]会话任务前后端架构设计2.0 第六章前端抽出为独立第七章(7.1~7.15)并同步正文编号引用 - 小欧-2026-08-25
+- docs:[1]数据存储及yield前端消息及数据设计,[2]会话任务前后端架构设计2.0 按本地代码实测修正后端需求状态标注(终态统计final_stats步/文件载体/截断TODO/context_overview已落地) - 小欧-2026-08-25
+- docs:设计-沙箱执行方案-小欧-2026-08-24.md,config.yaml.example,notes 交叉核对标注完成状态+修正文档错误+同步sandbox节+E2E会话记录 - 小欧-2026-08-25
+
+### feat(1个):
+- feat:沙箱执行 sandbox包,sandbox_gate,tool_safety_checker,action_handler,safety_result,display_utils,FUNCTIONS 新增沙箱预检框架(M1-M4/P1-P7/Phase2) - 小欧-2026-08-25
+
+### fix(2个):
+- fix:sandbox_gate.py 延迟导入修复沙箱门循环import回归 - 小欧-2026-08-25
+- fix:e2e_helpers.py check_logs按session_id隔离避免误捕获全天日志 - 小欧-2026-08-25
+
 v0.19.25
 更新时间: 2026-08-24 23:44:58 - 小欧-2026-08-24
 ## v0.19.24以来 变更汇总(24个commit) - 小欧-2026-08-24
