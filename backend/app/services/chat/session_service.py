@@ -11,6 +11,11 @@
 #     sessionModel 以 JSON 落库(替原 model_override 字符串); ③list_sessions SELECT sessionModel 列 + _parse_session_model 还原结构; ④新增 _parse_session_model(容错返 None)
 # 2026-08-22 - 小欧 - 三堂会审复核整改(北京老陈 2026-08-22): ①删除本文件重复的 _parse_session_model, 改从 storage 导入全系统唯一 parse_session_model(DRY, 杜绝双份实现漂移); ②update_session 乐观锁加固: UPDATE WHERE 追加 `AND version = ?`(比对 SELECT 时的旧版本)+ rowcount==0 抛 409, 兜住 SELECT→UPDATE 并发竞态窗口的丢失更新(与 line160 客户端版本检查互补)
 # 2026-08-22 - 小欧 - BUG修复(北京老陈 2026-08-22 铁律"系统代码不得退化"): 三堂会审乐观锁加固引入的参数顺序错乱——params 先 append session["version"] 后 append session_id, 而 SQL WHERE 为 `id = ? ... version = ?`, 致 id 占位被填成版本号→恒 rowcount==0→所有 update_session 必 409。修正: 先 append session_id 再 append session["version"], 与 WHERE 占位顺序一致。冒烟测试(临时脚本)捕获此回归
+# 2026-08-26 - 小欧 - D-2(文档2 8.D): 新增 get_session_info(session_id), GET /sessions/{session_id} 单会话信息路由,
+#   使用场景: 设置界面读取会话级信息(title/created_at/updated_at/sessionModel), 现有端点无单会话详情。
+# 2026-08-26 - 小欧 - 三堂会审整改(get_session_info): ①SELECT 删除未消费的 title_locked/title_updated_at 两列(YAGNI,
+#   SessionResponse 无此二字段, 查了不用); ②conn.cursor() 两步改为 conn.execute 直取, 与本文件 update/delete 路径风格一致;
+#   ③docstring 使用场景补顶栏时间悬浮(文档2 8.B 已知事项①), 与设置界面并列。pytest -k "task or session" 158 passed 回归通过。
 """
 session_service — 会话业务服务(services/chat)
 
@@ -241,3 +246,26 @@ def get_session_titles_batch(session_ids: str):
 
     logger.info(f"批量获取会话标题: count={len(sessions)}, session_ids={session_ids}")
     return BatchTitleResponse(sessions=sessions)
+
+
+def get_session_info(session_id: str):
+    """D-2(文档2 8.D): 单会话信息 — 返回 chat_sessions 单行(title/created_at/updated_at/message_count/is_valid/sessionModel)。
+    使用场景: 设置界面读取会话级信息(文档2 8.D-2 验收) + 顶栏创建/更新时间悬浮数据源(8.B 已知事项①), 现有端点无单会话信息 — 小欧 2026-08-26"""
+    with db.get_conn("chat") as conn:
+        row = conn.execute(
+            "SELECT id, title, created_at, updated_at, message_count, is_valid, "
+            "sessionModel "
+            "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE",
+            (session_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+    return SessionResponse(
+        session_id=row['id'],
+        title=row['title'],
+        created_at=format_timestamp(row['created_at']),
+        updated_at=format_timestamp(row['updated_at']),
+        message_count=row['message_count'],
+        is_valid=row['is_valid'],
+        sessionModel=parse_session_model(row['sessionModel']),
+    )

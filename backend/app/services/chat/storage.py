@@ -48,6 +48,7 @@
 # 2026-08-22 - 小欧 - 北京老陈 2026-08-22 定: L2 会话级模型覆盖 sessionModel 结构化: ① get_session_model_override 改名 get_session_model,
 #     读 sessionModel 列(JSON)→dict(provider+model, 用 parse_json 容错); ②关联调用点 stream_orchestrator 同步改名引用
 # 2026-08-22 - 小欧 - 三堂会审复核整改(北京老陈 2026-08-22): ①新增全系统唯一 parse_session_model(消除 message_service/session_service 重复实现, DRY), 返回 SessionModelOverride; ②get_session_model 返回值由 dict 改为 SessionModelOverride(类型统一, 杜绝调用方误用 .get 致 AttributeError); 关联 stream_orchestrator 消费点改属性访问(.model/.provider)
+# 2026-08-26 - 小欧 - D-1(文档2 8.D): list_session_tasks SELECT 补 context_link_mode 列, 前端左列"续聊/新任务"类型徽标数据源(4.8.3-B 契约已含该字段, 后端 SELECT 遗漏)
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -861,7 +862,8 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int]:
     ).fetchone()[0]
     rows = conn.execute(
         """SELECT task_id, user_input, status, duration, sessionModel,
-                  total_steps, llm_call_count, created_at, updated_at
+                  total_steps, llm_call_count, context_link_mode,
+                  created_at, updated_at
            FROM chat_tasks WHERE session_id=? ORDER BY id DESC""",
         (session_id,),
     ).fetchall()
