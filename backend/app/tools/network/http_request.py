@@ -24,6 +24,9 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#15: 429重试后若为超时, 原L319 status_code保留429 → L328误报"HTTP 429"+e.response.text对超时无.response抛异常被吞
 #   【病根】except分支仅对HTTPStatusError取真实status_code, 超时/RequestError时status_code沿用429, 错误标签与真实原因不符, 且误导重试引擎按"429限流"决策
 #   【改法】重试后异常为TimeoutException时单独分支返回ERR_NETWORK_TIMEOUT结构化错误(不计入429语义); 其余异常仍按HTTPStatusError取真实status_code
+# 2026-08-26 - 小欧 - 修复: httpget请求外部API时对端提前断流抛 anyio.EndOfStream(裸Exception非httpx体系)落入catch-all记"意外错误"ERROR, 触发E2E"日志无非安全ERROR"断言失败
+#   【病根】line355仅对Timeout/RequestError等httpx异常raise交引擎重试, anyio.EndOfStream不属httpx体系被漏过, 落到catch-all记致命ERROR(语义错误, 属瞬时连接故障)
+#   【改法】line355重抛元组追加 anyio.EndOfStream, 归入瞬时故障抛ToolRetryEngine重试(重试耗尽则返回结构化错误+warning, 不再记ERROR), 与Timeout/RequestError同处理
 """
 N1: httpget — 发起HTTP请求
 
@@ -41,6 +44,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 import httpx
+import anyio  # 小欧 2026-08-26: 引入以识别对端提前断流的瞬时连接故障 anyio.EndOfStream
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
@@ -352,8 +356,8 @@ async def httpget(
     except Exception as e:
         # 仅兜底"真正的意外异常"; 瞬时故障(Timeout/RequestError)已在上方 raise, 此处再 raise 使其逃出 httpget 交 ToolRetryEngine — 小欧 2026-07-16
         # (修复原双层 except 吞掉可重试异常的 bug: 原 199 无差别吞 Exception 导致异常从未到引擎)
-        if isinstance(e, (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError)):
-            raise
+        if isinstance(e, (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError, anyio.EndOfStream)):
+            raise  # 小欧 2026-08-26: EndOfStream(对端提前断流)属瞬时连接故障, 同Timeout/RequestError抛引擎重试, 消除catch-all误记致命ERROR
         # UnicodeEncodeError: httpx内部编码异常(URL/Header预检未能覆盖的意外逃逸, URL已先经_transcode_url转码) — 小欧 2026-07-25
         if isinstance(e, (UnicodeEncodeError, UnicodeDecodeError)):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
