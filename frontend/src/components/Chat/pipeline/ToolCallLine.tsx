@@ -29,7 +29,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   const tools = action.tools || [];
   const params =
     action.tool_params ||
-    (action.tools && action.tools.length > 0 ? action.tools[0].params : undefined) ||
+    (action.tools && action.tools.length > 0
+      ? action.tools[0].params
+      : undefined) ||
     {};
   const paramText = JSON.stringify(params);
   const toolName = tools.map((t) => t.tool).join(', ');
@@ -37,7 +39,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   // 优先 observation.summary，其次 obs.content(纯文本)
   const obsSummary = obs0?.summary || obs0?.content || '';
   const retryCount = action.action_retry_count;
-  const attemptLabel = retryCount != null && retryCount > 0 ? `(重试${retryCount})` : '';
+  const attemptLabel =
+    retryCount != null && retryCount > 0 ? `(重试${retryCount})` : '';
 
   return (
     <div
@@ -51,10 +54,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         background: highlight ? 'rgba(250,173,20,0.08)' : 'transparent',
       }}
     >
-      <span
-        style={{ cursor: 'pointer' }}
-        onClick={() => setOpen((v) => !v)}
-      >
+      <span style={{ cursor: 'pointer' }} onClick={() => setOpen((v) => !v)}>
         🔧 {toolName} {attemptLabel}
         <span style={{ color: '#8c8c8c' }}>
           {' '}
@@ -64,7 +64,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         {obsSummary && (
           <span style={{ color: '#389e0d' }}> → {obsSummary.slice(0, 40)}</span>
         )}
-        <span style={{ marginLeft: 6, color: '#1677ff' }}>{open ? '▲' : '▼'}</span>
+        <span style={{ marginLeft: 6, color: '#1677ff' }}>
+          {open ? '▲' : '▼'}
+        </span>
       </span>
       {open && (
         <div style={{ marginTop: 6, paddingLeft: 12 }}>

@@ -17,13 +17,13 @@
  * @update 2026-08-26 小欧 - 8.2.1 任务清单(B1)/任务详情(C1)/执行步骤(C2)/信任(D1/D2) API 命名空间+类型+adaptTaskDetail 纯函数落地
  */
 
-import axios from "axios";
-import type { ExecutionStep } from "../utils/sse";
-import type { SessionModelOverride } from "../types/chat";
-import { handleApiError } from "../utils/errorHandler";
+import axios from 'axios';
+import type { ExecutionStep } from '../utils/sse';
+import type { SessionModelOverride } from '../types/chat';
+import { handleApiError } from '../utils/errorHandler';
 
 // 【小新修复 2026-03-14】统一API地址配置，支持环境变量
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 /**
  * Axios实例配置
@@ -33,7 +33,7 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
-    "Content-Type": "application/json",
+    'Content-Type': 'application/json',
   },
   timeout: 120000, // 2分钟超时（免费模型响应慢）
 });
@@ -47,7 +47,7 @@ api.interceptors.request.use(
     return config;
   },
   (error) => {
-    console.error("[API Request Error]", error);
+    console.error('[API Request Error]', error);
     return Promise.reject(error);
   }
 );
@@ -62,7 +62,7 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error("[API Response Error]", error);
+    console.error('[API Response Error]', error);
 
     // 使用统一错误处理中心
     handleApiError(error, {
@@ -93,12 +93,12 @@ export interface EchoResponse {
 
 export const healthApi = {
   checkHealth: async (): Promise<HealthStatus> => {
-    const response = await api.get<HealthStatus>("/health");
+    const response = await api.get<HealthStatus>('/health');
     return response.data;
   },
 
   echo: async (message: string): Promise<EchoResponse> => {
-    const response = await api.post<EchoResponse>("/echo", { message });
+    const response = await api.post<EchoResponse>('/echo', { message });
     return response.data;
   },
 };
@@ -107,7 +107,7 @@ export const healthApi = {
 // 对话接口
 // ============================================
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
+  role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
@@ -120,7 +120,12 @@ export interface ChatRequest {
 export interface ValidateResponse {
   success: boolean;
   // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): 后端 /chat/validate 响应 provider/model 键归一 model_ref 结构, 前端随之后端
-  model_ref?: { provider: string; model: string; api_base?: string; display_name?: string } | null;
+  model_ref?: {
+    provider: string;
+    model: string;
+    api_base?: string;
+    display_name?: string;
+  } | null;
   message: string;
   status?: 'success' | 'failed' | 'warning';
 }
@@ -148,10 +153,11 @@ export const chatApi = {
    * @author 小新
    */
   validateService: async (): Promise<ValidateResponse> => {
-    const response = await api.get<ValidateResponse>("/chat/validate", { timeout: 30000 });
+    const response = await api.get<ValidateResponse>('/chat/validate', {
+      timeout: 30000,
+    });
     return response.data;
   },
-
 };
 
 // ============================================
@@ -163,7 +169,7 @@ export interface Config {
   // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): ai_provider/ai_model → ai_model_ref 结构(SessionModelOverride=后端ModelRef镜像)
   ai_model_ref: SessionModelOverride;
   api_key_configured: boolean;
-  theme: "light" | "dark";
+  theme: 'light' | 'dark';
   language: string;
   // 安全配置
   security?: SecurityConfig;
@@ -171,7 +177,7 @@ export interface Config {
 
 export interface SecurityConfig {
   contentFilterEnabled: boolean;
-  contentFilterLevel: "low" | "medium" | "high";
+  contentFilterLevel: 'low' | 'medium' | 'high';
   whitelistEnabled: boolean;
   commandWhitelist: string;
   blacklistEnabled: boolean;
@@ -187,7 +193,7 @@ export interface ConfigUpdate {
 
   // ⭐ 修复：使用统一的 provider_api_keys，不硬编码 provider 名称
   provider_api_keys?: Record<string, string>; // {provider_name: api_key}
-  theme?: "light" | "dark";
+  theme?: 'light' | 'dark';
   language?: string; // ⭐ 新增：language 字段
   // 安全配置
   security?: SecurityConfig;
@@ -282,7 +288,7 @@ export const configApi = {
    * @author 小新
    */
   getConfig: async (): Promise<Config> => {
-    const response = await api.get<Config>("/config");
+    const response = await api.get<Config>('/config');
     return response.data;
   },
 
@@ -293,7 +299,7 @@ export const configApi = {
   updateConfig: async (
     config: ConfigUpdate
   ): Promise<{ success: boolean; message: string }> => {
-    const response = await api.put("/config", config);
+    const response = await api.put('/config', config);
     return response.data;
   },
 
@@ -305,7 +311,7 @@ export const configApi = {
     data: ConfigValidateRequest
   ): Promise<ConfigValidateResponse> => {
     const response = await api.put<ConfigValidateResponse>(
-      "/config/validate",
+      '/config/validate',
       data
     );
     return response.data;
@@ -344,7 +350,7 @@ export const configApi = {
         current_model: boolean;
       }[];
       default_provider: string;
-    }>("/config/models");
+    }>('/config/models');
     return response.data;
   },
 
@@ -353,7 +359,7 @@ export const configApi = {
    * @author 小欧
    */
   getFullConfig: async (): Promise<FullConfigResponse> => {
-    const response = await api.get<FullConfigResponse>("/config/full");
+    const response = await api.get<FullConfigResponse>('/config/full');
     return response.data;
   },
 
@@ -435,7 +441,7 @@ export const configApi = {
   addProvider: async (
     data: ProviderAddRequest
   ): Promise<{ success: boolean; message: string }> => {
-    const response = await api.post("/config/provider", data);
+    const response = await api.post('/config/provider', data);
     return response.data;
   },
 
@@ -446,7 +452,7 @@ export const configApi = {
    * @update 2026-02-26 对接小沈新接口
    */
   fixConfig: async (): Promise<ConfigFixResponse> => {
-    const response = await api.post<ConfigFixResponse>("/config/fix");
+    const response = await api.post<ConfigFixResponse>('/config/fix');
     return response.data;
   },
 
@@ -456,7 +462,7 @@ export const configApi = {
    * @update 2026-03-03 新增
    */
   getConfigPath: async (): Promise<ConfigPathResponse> => {
-    const response = await api.get<ConfigPathResponse>("/config/path");
+    const response = await api.get<ConfigPathResponse>('/config/path');
     return response.data;
   },
 
@@ -467,7 +473,9 @@ export const configApi = {
    * @update 2026-03-04 新增
    */
   openConfigFolder: async (): Promise<{ success: boolean; path: string }> => {
-    const response = await api.post<{ success: boolean; path: string }>("/config/open-folder");
+    const response = await api.post<{ success: boolean; path: string }>(
+      '/config/open-folder'
+    );
     return response.data;
   },
 
@@ -475,7 +483,7 @@ export const configApi = {
    * 读取配置文件原文内容
    */
   readConfigFile: async (): Promise<{ config_content: string }> => {
-    const response = await api.get<{ config_content: string }>("/config/read");
+    const response = await api.get<{ config_content: string }>('/config/read');
     return response.data;
   },
 };
@@ -490,7 +498,7 @@ export interface Session {
   session_id: string;
   title: string;
   title_locked: boolean; // ⭐ 新增：标题是否被用户锁定
-  title_source: "user" | "auto"; // ⭐ 新增：标题来源（用户手动/自动生成）
+  title_source: 'user' | 'auto'; // ⭐ 新增：标题来源（用户手动/自动生成）
   title_updated_at: string | null; // ⭐ 新增：标题最后更新时间
   version?: number; // ⭐ 新增：乐观锁版本号
   created_at: string;
@@ -509,7 +517,7 @@ export interface SessionListResponse {
 export interface Message {
   id: number;
   session_id: string;
-  role: "user" | "assistant" | "system";
+  role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
   execution_steps?: ExecutionStep[];
@@ -522,7 +530,7 @@ export interface GetSessionMessagesResponse {
   session_id: string;
   title: string;
   title_locked: boolean;
-  title_source: "user" | "auto";
+  title_source: 'user' | 'auto';
   title_updated_at: string | null;
   version?: number;
   sessionModel?: SessionModelOverride | null;
@@ -585,7 +593,7 @@ export const sessionApi = {
       created_at: string;
       updated_at: string;
       message_count: number;
-    }>("/sessions", { title, is_valid: true });
+    }>('/sessions', { title, is_valid: true });
     return response.data;
   },
 
@@ -598,13 +606,13 @@ export const sessionApi = {
     page: number = 1,
     pageSize: number = 20,
     keyword?: string,
-    isValid?: boolean  // ⭐ 新增参数：true=有效会话，false=无效会话，undefined=全部
+    isValid?: boolean // ⭐ 新增参数：true=有效会话，false=无效会话，undefined=全部
   ): Promise<SessionListResponse> => {
     const params: Record<string, unknown> = { page, page_size: pageSize };
     if (keyword) params.keyword = keyword;
     // 只有明确传入 true 或 false 时才添加 is_valid 参数
     if (isValid === true || isValid === false) params.is_valid = isValid;
-    const response = await api.get<SessionListResponse>("/sessions", {
+    const response = await api.get<SessionListResponse>('/sessions', {
       params,
     });
     return response.data;
@@ -625,7 +633,7 @@ export const sessionApi = {
     return {
       ...response.data,
       title_locked: response.data.title_locked ?? false,
-      title_source: response.data.title_source ?? "auto",
+      title_source: response.data.title_source ?? 'auto',
       title_updated_at: response.data.title_updated_at ?? null,
       version: response.data.version ?? 1,
     };
@@ -634,9 +642,9 @@ export const sessionApi = {
   /**
    * 保存消息到会话
    * @author 小新
-    * @update 2026-03-16: 添加 display_name 字段
-    * @update 2026-03-24: 添加 client_os 等客户端信息（小沈）
-    */
+   * @update 2026-03-16: 添加 display_name 字段
+   * @update 2026-03-24: 添加 client_os 等客户端信息（小沈）
+   */
   saveMessage: async (
     sessionId: string,
     message: {
@@ -655,18 +663,23 @@ export const sessionApi = {
       timestamp?: string;
       model?: string;
       provider?: string;
-      display_name?: string;  // 【小新修改 2026-03-16】添加display_name字段
+      display_name?: string; // 【小新修改 2026-03-16】添加display_name字段
       // 客户端信息（小沈 2026-03-24）
       client_os?: string;
       browser?: string;
       device?: string;
       network?: string;
     }
-  ): Promise<{ success: boolean; message_id?: number; message_count?: number }> => {
-    const response = await api.post<{ success: boolean; message_id?: number; message_count?: number }>(
-      `/sessions/${sessionId}/messages`,
-      message
-    );
+  ): Promise<{
+    success: boolean;
+    message_id?: number;
+    message_count?: number;
+  }> => {
+    const response = await api.post<{
+      success: boolean;
+      message_id?: number;
+      message_count?: number;
+    }>(`/sessions/${sessionId}/messages`, message);
     return response.data;
   },
 
@@ -683,19 +696,28 @@ export const sessionApi = {
     sessionId: string,
     executionSteps: unknown[],
     content?: string,
-    replyUserMessageId?: number  // 新增：回复的用户消息ID
-  ): Promise<{ success: boolean; message_id?: number; is_new_message?: boolean }> => {
+    replyUserMessageId?: number // 新增：回复的用户消息ID
+  ): Promise<{
+    success: boolean;
+    message_id?: number;
+    is_new_message?: boolean;
+  }> => {
     // ⭐ 【调试】记录前端保存
-    console.log(`💾 [前端保存] sessionId=${sessionId}, stepsCount=${executionSteps.length}, contentLen=${content?.length || 0}, replyUserMessageId=${replyUserMessageId}`);
-    
-    const response = await api.post<{ success: boolean; message_id?: number; is_new_message?: boolean }>(
-      `/sessions/${sessionId}/execution_steps`,
-      { 
-        execution_steps: executionSteps,
-        ...(content !== undefined && { content }),
-        ...(replyUserMessageId !== undefined && { reply_to_message_id: replyUserMessageId })
-      }
+    console.log(
+      `💾 [前端保存] sessionId=${sessionId}, stepsCount=${executionSteps.length}, contentLen=${content?.length || 0}, replyUserMessageId=${replyUserMessageId}`
     );
+
+    const response = await api.post<{
+      success: boolean;
+      message_id?: number;
+      is_new_message?: boolean;
+    }>(`/sessions/${sessionId}/execution_steps`, {
+      execution_steps: executionSteps,
+      ...(content !== undefined && { content }),
+      ...(replyUserMessageId !== undefined && {
+        reply_to_message_id: replyUserMessageId,
+      }),
+    });
     return response.data;
   },
 
@@ -724,7 +746,7 @@ export const sessionApi = {
     const body: Record<string, unknown> = {
       title,
       version, // ⭐ 必须传递
-      updated_by: "user", // ⭐ 可选：标记用户修改
+      updated_by: 'user', // ⭐ 可选：标记用户修改
     };
     if (sessionModel !== undefined) {
       body.sessionModel = sessionModel; // 显式传 null=清空跟随全局
@@ -747,24 +769,24 @@ export const sessionApi = {
   ): Promise<BatchTitleResponse> => {
     // 验证1：检查数组是否为空
     if (!sessionIds || sessionIds.length === 0) {
-      throw new Error("会话ID列表不能为空");
+      throw new Error('会话ID列表不能为空');
     }
 
     // 验证2：检查数组长度（最多50个）
     if (sessionIds.length > 50) {
-      throw new Error("批量获取标题最多支持50个会话ID");
+      throw new Error('批量获取标题最多支持50个会话ID');
     }
 
     // 验证3：检查每个ID的有效性并过滤
     const validIds = sessionIds.filter((id) => id && id.trim());
     if (validIds.length === 0) {
-      throw new Error("没有有效的会话ID");
+      throw new Error('没有有效的会话ID');
     }
 
     // 验证4：检查URL长度
-    const url = `/sessions/titles/batch?session_ids=${validIds.join(",")}`;
+    const url = `/sessions/titles/batch?session_ids=${validIds.join(',')}`;
     if (url.length > 2000) {
-      throw new Error("请求URL过长，请减少会话数量");
+      throw new Error('请求URL过长，请减少会话数量');
     }
 
     const response = await api.get<BatchTitleResponse>(url);
@@ -801,13 +823,16 @@ export const taskControlApi = {
   /**
    * 取消任务
    * POST /api/v1/chat/stream/cancel/{task_id}
-   * 
+   *
    * @param taskId 任务ID
    * @param sessionId 会话ID（可选）
    * @returns 取消结果
    */
-  cancel: async (taskId: string, sessionId?: string): Promise<TaskControlResponse> => {
-    const url = sessionId 
+  cancel: async (
+    taskId: string,
+    sessionId?: string
+  ): Promise<TaskControlResponse> => {
+    const url = sessionId
       ? `/chat/stream/cancel/${taskId}?session_id=${sessionId}`
       : `/chat/stream/cancel/${taskId}`;
     const response = await api.post<TaskControlResponse>(url);
@@ -817,13 +842,16 @@ export const taskControlApi = {
   /**
    * 暂停任务
    * POST /api/v1/chat/stream/pause/{task_id}
-   * 
+   *
    * @param taskId 任务ID
    * @param sessionId 会话ID（可选）
    * @returns 暂停结果
    */
-  pause: async (taskId: string, sessionId?: string): Promise<TaskControlResponse> => {
-    const url = sessionId 
+  pause: async (
+    taskId: string,
+    sessionId?: string
+  ): Promise<TaskControlResponse> => {
+    const url = sessionId
       ? `/chat/stream/pause/${taskId}?session_id=${sessionId}`
       : `/chat/stream/pause/${taskId}`;
     const response = await api.post<TaskControlResponse>(url);
@@ -833,13 +861,16 @@ export const taskControlApi = {
   /**
    * 恢复任务
    * POST /api/v1/chat/stream/resume/{task_id}
-   * 
+   *
    * @param taskId 任务ID
    * @param sessionId 会话ID（可选）
    * @returns 恢复结果
    */
-  resume: async (taskId: string, sessionId?: string): Promise<TaskControlResponse> => {
-    const url = sessionId 
+  resume: async (
+    taskId: string,
+    sessionId?: string
+  ): Promise<TaskControlResponse> => {
+    const url = sessionId
       ? `/chat/stream/resume/${taskId}?session_id=${sessionId}`
       : `/chat/stream/resume/${taskId}`;
     const response = await api.post<TaskControlResponse>(url);
@@ -849,30 +880,32 @@ export const taskControlApi = {
   /**
    * 用户确认操作
    * POST /api/v1/chat/stream/confirm
-   * 
+   *
    * @param confirmId 确认ID
    * @param confirmed 用户选择：true=确认执行，false=拒绝执行
    * @param trustSession 可选，是否信任本次会话
    * @returns 确认结果
    */
   confirm: async (
-    confirmId: string, 
-    confirmed: boolean, 
+    confirmId: string,
+    confirmed: boolean,
     trustSession?: boolean
   ): Promise<TaskControlResponse> => {
     const body: ConfirmRequest = {
       confirm_id: confirmId,
       confirmed: confirmed,
     };
-    
+
     if (trustSession !== undefined) {
       body.trust_session = trustSession;
     }
-    
-    const response = await api.post<TaskControlResponse>('/chat/stream/confirm', body);
+
+    const response = await api.post<TaskControlResponse>(
+      '/chat/stream/confirm',
+      body
+    );
     return response.data;
   },
-
 };
 
 // ============================================================
@@ -944,9 +977,10 @@ export interface TaskDetail {
  * C1 响应适配纯函数（8.C-③）：JSON 兜底解析 accumulated_usage + tool_stats 数组转 dict。
  * 纯函数无副作用，供 StaticStatsBlock 前统一调用；解析失败静默回退空对象/null。
  */
-export function adaptTaskDetail(
-  raw: { task: Record<string, unknown>; tool_stats: Array<{ tool_name: string; call_count: number }> }
-): TaskDetail {
+export function adaptTaskDetail(raw: {
+  task: Record<string, unknown>;
+  tool_stats: Array<{ tool_name: string; call_count: number }>;
+}): TaskDetail {
   const t = raw.task ?? {};
   let usage: TaskDetail['accumulated_usage'] = null;
   if (typeof t.accumulated_usage === 'string' && t.accumulated_usage) {
@@ -990,7 +1024,9 @@ export const executionApi = {
     const r = await api.get(`/chat/execution/task/${taskId}`);
     return adaptTaskDetail(r.data); // 入口即适配，消费方拿到的永远是归一形状
   },
-  getTaskSteps: (taskId: string): Promise<{ task_id: string; steps: unknown[]; count: number }> =>
+  getTaskSteps: (
+    taskId: string
+  ): Promise<{ task_id: string; steps: unknown[]; count: number }> =>
     api.get(`/chat/execution/task/${taskId}/steps`).then((r) => r.data),
 };
 
@@ -998,10 +1034,48 @@ export const executionApi = {
 export const trustApi = {
   getTrust: async (sessionId: string): Promise<string[]> => {
     const r = await api.get(`/sessions/${sessionId}/trust`);
-    return ((r.data?.trusted_tools ?? []) as Array<{ tool_name: string }>).map((x) => x.tool_name);
+    return ((r.data?.trusted_tools ?? []) as Array<{ tool_name: string }>).map(
+      (x) => x.tool_name
+    );
   },
   revokeTrust: (sessionId: string, toolName: string): Promise<void> =>
-    api.delete(`/sessions/${sessionId}/trust/${encodeURIComponent(toolName)}`).then(() => undefined),
+    api
+      .delete(`/sessions/${sessionId}/trust/${encodeURIComponent(toolName)}`)
+      .then(() => undefined),
+};
+
+/**
+ * token 消费（A6）：GET /token-usage（根级路由，token_usage.py:42）
+ * chain 口径必须传 task_id：后端按该任务 context_root_task_id 全链(含当前)求和；
+ * 不传 task_id 时 chain_accumulated_tokens=null，退化为 session 全量 SUM。
+ */
+export interface ChainTokenLayer {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+export interface ChainTokenResponse {
+  success: boolean;
+  calls: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  task_accumulated_tokens: ChainTokenLayer | null;
+  session_accumulated_tokens: ChainTokenLayer | null;
+  chain_accumulated_tokens: ChainTokenLayer | null;
+}
+export const tokenUsageApi = {
+  getChainTokens: async (params: {
+    sessionId: string;
+    taskId?: string;
+  }): Promise<ChainTokenResponse> => {
+    const q: string[] = [`session_id=${encodeURIComponent(params.sessionId)}`];
+    if (params.taskId) q.push(`task_id=${encodeURIComponent(params.taskId)}`);
+    const response = await api.get<ChainTokenResponse>(
+      `/token-usage?${q.join('&')}`
+    );
+    return response.data;
+  },
 };
 
 export default api;

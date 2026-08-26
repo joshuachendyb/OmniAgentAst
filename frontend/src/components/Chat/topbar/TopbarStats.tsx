@@ -25,7 +25,9 @@ const TopbarStats: React.FC<TopbarStatsProps> = ({
   updatedAt,
 }) => {
   const timeTip =
-    createdAt || updatedAt ? `创建：${createdAt ?? '-'}\n更新：${updatedAt ?? '-'}` : '';
+    createdAt || updatedAt
+      ? `创建：${createdAt ?? '-'}\n更新：${updatedAt ?? '-'}`
+      : '';
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -35,7 +37,9 @@ const TopbarStats: React.FC<TopbarStatsProps> = ({
         累计 token {chainTokens ?? '-'}
       </Typography.Text>
       {timeTip && (
-        <Tooltip title={<span style={{ whiteSpace: 'pre-line' }}>{timeTip}</span>}>
+        <Tooltip
+          title={<span style={{ whiteSpace: 'pre-line' }}>{timeTip}</span>}
+        >
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             ⓘ
           </Typography.Text>

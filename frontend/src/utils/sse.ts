@@ -264,7 +264,11 @@ export interface ExecutionStep {
 
   // === 【小欧 2026-08-26 8.4】action 新结构字段（exec_type single/multi + tools 数组）===
   exec_type?: 'single' | 'multi';
-  tools?: Array<{ tool: string; target?: string; params?: Record<string, unknown> }>;
+  tools?: Array<{
+    tool: string;
+    target?: string;
+    params?: Record<string, unknown>;
+  }>;
 
   // === 【小欧 2026-08-26 8.4/8.6】MetaStep 扩展字段（旧任务 null 须 ?. 防空）===
   severity?: 'info' | 'warn' | 'error';
@@ -326,7 +330,11 @@ export interface UseSSEReturn {
   setIsReceiving?: (value: boolean) => void; // 【方案3】暴露setter用于中断时立即更新状态
   executionSteps: ExecutionStep[];
   currentResponse: string;
-  sendMessage: (content: string, sessionId?: string) => void;
+  sendMessage: (
+    content: string,
+    sessionId?: string,
+    contextLinkMode?: 'linked' | 'independent'
+  ) => void;
   disconnect: (
     manualDisconnect?: boolean,
     clearStorage?: boolean,
@@ -616,7 +624,8 @@ export const useSSE = (
   const isProcessingRef = useRef(false);
 
   // 【小欧 2026-08-26 8.4.14】任务元信息帧状态 + usage 续传去重
-  const [metaFrames, setMetaFrames] = useState<TaskMetaFrames>(emptyMetaFrames());
+  const [metaFrames, setMetaFrames] =
+    useState<TaskMetaFrames>(emptyMetaFrames());
   const usageAccumRef = useRef({ prompt: 0, completion: 0, total: 0 });
   const lastUsageSeqRef = useRef<number>(-1);
   const [serverTaskId, setServerTaskId] = useState<string | null>(null);
@@ -636,6 +645,10 @@ export const useSSE = (
     content: string;
     sessionId?: string;
   } | null>(null);
+  // 【小欧 2026-08-26 8.14】记录最近一次发送的任务上下文模式，重连后新发送保持同一模式
+  const lastContextLinkModeRef = useRef<'linked' | 'independent'>(
+    'independent'
+  );
 
   // 【小强添加 2026-03-18】性能指标相关（小欧 2026-08-26 8.4.6 移除 PerformanceMetrics 估算消费）
   const ttftRef = useRef<number>(0); // 存储 TTFT 值（保留引用避免误删关联逻辑）
@@ -777,7 +790,11 @@ export const useSSE = (
    * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
    */
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const sendMessageInternal = async (content: string, sessionId?: string) => {
+  const sendMessageInternal = async (
+    content: string,
+    sessionId?: string,
+    contextLinkMode?: 'linked' | 'independent'
+  ) => {
     const connectStartTime = new Date().toLocaleTimeString();
     console.log(`[SSE] [连接建立] 时间=${connectStartTime}`);
     disconnect(false, false); // 重连时：非手动断开 + 不清空 sessionStorage
@@ -831,6 +848,7 @@ export const useSSE = (
             messages: [{ role: 'user', content: content }],
             stream: true,
             session_id: sessionId || undefined,
+            context_link_mode: contextLinkMode ?? 'independent',
           }),
           signal: controller.signal,
         });
@@ -1036,7 +1054,7 @@ export const useSSE = (
 
     reconnectTimeoutRef.current = setTimeout(() => {
       reconnectAttemptsRef.current++;
-      sendMessageInternal(content, sessionId);
+      sendMessageInternal(content, sessionId, lastContextLinkModeRef.current);
     }, delay);
   }, [sendMessageInternal]);
 
@@ -1044,7 +1062,11 @@ export const useSSE = (
    * 发送消息建立SSE连接
    */
   const sendMessage = useCallback(
-    async (content: string, sessionId?: string) => {
+    async (
+      content: string,
+      sessionId?: string,
+      contextLinkMode?: 'linked' | 'independent'
+    ) => {
       // 【修复小查问题】防止并发调用
       if (isProcessingRef.current) {
         console.warn('[SSE] 已有进行中的请求，等待完成后重试');
@@ -1064,10 +1086,11 @@ export const useSSE = (
 
       // 保存待重连的消息
       pendingMessageRef.current = { content, sessionId };
+      lastContextLinkModeRef.current = contextLinkMode ?? 'independent';
       reconnectAttemptsRef.current = 0;
 
       try {
-        await sendMessageInternal(content, sessionId);
+        await sendMessageInternal(content, sessionId, contextLinkMode);
       } finally {
         // 【修复 2026-05-11 小健】用finally保证重置，防止异常时isProcessingRef永远true
         isProcessingRef.current = false;
@@ -1159,7 +1182,11 @@ const processSSEData = (
     onSeq?: (seq: number) => void;
     // 【小欧 2026-08-26 8.4.14】元信息帧状态注入（useSSE 闭包 state/ref 透传进模块级 processSSEData）
     setMetaFrames?: React.Dispatch<React.SetStateAction<TaskMetaFrames>>;
-    usageAccumRef?: React.MutableRefObject<{ prompt: number; completion: number; total: number }>;
+    usageAccumRef?: React.MutableRefObject<{
+      prompt: number;
+      completion: number;
+      total: number;
+    }>;
     lastUsageSeqRef?: React.MutableRefObject<number>;
   },
   _isProcessingRef: React.MutableRefObject<boolean>
@@ -1256,8 +1283,13 @@ const processSSEData = (
       case 'start':
       case 'startinfo': {
         if (rawData.type === 'start') {
-          const summary = typeof rawData.content === 'string' ? rawData.content : '';
-          handlers.setMetaFrames?.((prev) => ({ ...prev, contextSummary: summary, startTimestamp: Date.now() }));
+          const summary =
+            typeof rawData.content === 'string' ? rawData.content : '';
+          handlers.setMetaFrames?.((prev) => ({
+            ...prev,
+            contextSummary: summary,
+            startTimestamp: Date.now(),
+          }));
           break;
         }
         handlers.setMetaFrames?.((prev) => ({
@@ -1301,16 +1333,27 @@ const processSSEData = (
       case 'usage': {
         if (typeof rawData.seq === 'number') {
           if (rawData.seq <= (handlers.lastUsageSeqRef?.current ?? -1)) break;
-          if (handlers.lastUsageSeqRef) handlers.lastUsageSeqRef.current = rawData.seq;
+          if (handlers.lastUsageSeqRef)
+            handlers.lastUsageSeqRef.current = rawData.seq;
         }
         if (handlers.usageAccumRef) {
           handlers.usageAccumRef.current = {
-            prompt: handlers.usageAccumRef.current.prompt + (rawData.prompt_tokens ?? 0),
-            completion: handlers.usageAccumRef.current.completion + (rawData.completion_tokens ?? 0),
-            total: handlers.usageAccumRef.current.total + (rawData.total_tokens ?? 0),
+            prompt:
+              handlers.usageAccumRef.current.prompt +
+              (rawData.prompt_tokens ?? 0),
+            completion:
+              handlers.usageAccumRef.current.completion +
+              (rawData.completion_tokens ?? 0),
+            total:
+              handlers.usageAccumRef.current.total +
+              (rawData.total_tokens ?? 0),
           };
         }
-        const acc = handlers.usageAccumRef?.current ?? { prompt: 0, completion: 0, total: 0 };
+        const acc = handlers.usageAccumRef?.current ?? {
+          prompt: 0,
+          completion: 0,
+          total: 0,
+        };
         handlers.setMetaFrames?.((prev) => ({ ...prev, usage: { ...acc } }));
         break;
       }
@@ -1643,19 +1686,27 @@ const processSSEData = (
         const stepLabel = ` [type=action] [step=${actionStepNum}]`;
 
         step.exec_type = rawData.exec_type === 'multi' ? 'multi' : 'single';
-        const tools: Array<{ tool: string; target?: string; params?: Record<string, unknown> }> =
-          Array.isArray(rawData.tools)
-            ? rawData.tools.map(
-                (t: { tool: string; target?: string; params?: Record<string, unknown> }) => ({
-                  tool: t.tool,
-                  target: t.target,
-                  params: t.params,
-                })
-              )
-            : [];
+        const tools: Array<{
+          tool: string;
+          target?: string;
+          params?: Record<string, unknown>;
+        }> = Array.isArray(rawData.tools)
+          ? rawData.tools.map(
+              (t: {
+                tool: string;
+                target?: string;
+                params?: Record<string, unknown>;
+              }) => ({
+                tool: t.tool,
+                target: t.target,
+                params: t.params,
+              })
+            )
+          : [];
         step.tools = tools;
-        step.content =
-          tools.map((t) => (t.target ? `${t.tool}(${t.target})` : t.tool)).join(' + ');
+        step.content = tools
+          .map((t) => (t.target ? `${t.tool}(${t.target})` : t.tool))
+          .join(' + ');
 
         // 【红色】收到数据
         console.log(

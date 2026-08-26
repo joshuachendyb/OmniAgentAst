@@ -13,12 +13,20 @@
 import type { ExecutionStep } from '../../../utils/sse';
 
 export const META_STEP_TYPES = [
-  'start', 'startinfo', 'paused', 'resumed', 'retrying',
-  'usage', 'stats', 'final_stats', 'context_overview', 'truncated',
+  'start',
+  'startinfo',
+  'paused',
+  'resumed',
+  'retrying',
+  'usage',
+  'stats',
+  'final_stats',
+  'context_overview',
+  'truncated',
 ] as const;
 
 export const isBusinessStep = (s: ExecutionStep): boolean =>
-  !((META_STEP_TYPES as readonly string[]).includes(s.type));
+  !(META_STEP_TYPES as readonly string[]).includes(s.type);
 
 export interface SplitResult {
   /** 查看区流水线输入：业务步骤 + thought-start 标记，按到达顺序 */

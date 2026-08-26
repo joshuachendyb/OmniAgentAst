@@ -229,9 +229,7 @@ export function isThoughtMessage(msg: StreamMessage): msg is ThoughtMessage {
   return msg.type === 'thought';
 }
 
-export function isActionMessage(
-  msg: StreamMessage
-): msg is ActionMessage {
+export function isActionMessage(msg: StreamMessage): msg is ActionMessage {
   return msg.type === 'action';
 }
 
@@ -285,6 +283,7 @@ export interface ChatRequest {
   model?: string;
   task_id?: string;
   session_id?: string;
+  context_link_mode?: 'linked' | 'independent'; // 默认 independent（后端 ChatRequest 同名默认）
 }
 
 /**

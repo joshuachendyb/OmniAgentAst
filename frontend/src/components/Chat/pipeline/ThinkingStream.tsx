@@ -15,7 +15,10 @@ interface ThinkingStreamProps {
   cursor?: boolean; // 实时思考末段光标
 }
 
-const ThinkingStream: React.FC<ThinkingStreamProps> = ({ text, cursor = false }) => {
+const ThinkingStream: React.FC<ThinkingStreamProps> = ({
+  text,
+  cursor = false,
+}) => {
   if (!text && !cursor) return null;
   return (
     <div

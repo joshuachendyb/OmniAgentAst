@@ -1,171 +1,75 @@
 /**
- * ChatInput组件 - 独立输入框组件
+ * ChatInput - 输入框组合根（8.12 六组件组合）
  *
- * 目的：将输入框逻辑从NewChatContainer中分离，避免每次按键触发整个2328行组件重渲染
+ * 【小欧 2026-08-26 8.12】单体拆分为 InputCore/TaskTypeToggle/CommandPanel/
+ * AttachmentArea/SubmitBar 组合；对外 Props 保持 loading/isReceiving/isPaused/
+ * onCancel/onTogglePause 兼容父级，新增 modelPickerSlot 与 onSend 第二参
+ * contextLinkMode（8.14 E1）。
  *
- * @author 小强
- * @version 1.0.0
- * @since 2026-03-31
+ * @author 小欧
+ * @date 2026-08-26
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
-import { Input, Button, Space, Tag } from 'antd';
-import {
-  SendOutlined,
-  CloseCircleOutlined,
-  PauseCircleOutlined,
-  PlayCircleOutlined,
-} from '@ant-design/icons';
-import PropTypes from 'prop-types';
-
-const { TextArea } = Input;
+import React, { useState } from 'react';
+import { InputCore } from './input/InputCore';
+import { TaskTypeToggle } from './input/TaskTypeToggle';
+import { CommandPanel } from './input/CommandPanel';
+import { SubmitBar } from './input/SubmitBar';
 
 interface ChatInputProps {
   loading: boolean;
   isReceiving: boolean;
   isPaused: boolean;
-  isRetrying: boolean;
-  waitTime: number;
-  useStream: boolean;
-  onSend: (value: string) => void;
+  onSend: (content: string, contextLinkMode?: 'linked' | 'independent') => void;
   onCancel: () => void;
   onTogglePause: () => void;
+  modelPickerSlot?: React.ReactNode;
 }
 
-/**
- * ChatInput - 独立的聊天输入组件
- *
- * 性能优化：
- * - 使用React.memo避免父组件重渲染时不必要的重渲染
- * - 内部维护inputValue状态，避免每次按键都通知父组件
- * - useMemo缓存style对象，避免每次渲染创建新对象
- */
-const ChatInput: React.FC<ChatInputProps> = React.memo(
-  ({
-    loading,
-    isReceiving,
-    isPaused,
-    isRetrying,
-    waitTime,
-    useStream,
-    onSend,
-    onCancel,
-    onTogglePause,
-  }) => {
-    const [inputValue, setInputValue] = useState('');
+const ChatInput: React.FC<ChatInputProps> = ({
+  loading,
+  isReceiving,
+  isPaused,
+  onSend,
+  onCancel,
+  onTogglePause,
+  modelPickerSlot,
+}) => {
+  const [draft, setDraft] = useState('');
+  const [linked, setLinked] = useState(false); // 默认新任务 independent
 
-    const handleSend = useCallback(() => {
-      if (!inputValue.trim() || loading || isReceiving) return;
-      onSend(inputValue.trim());
-      setInputValue('');
-    }, [inputValue, loading, isReceiving, onSend]);
+  const handleSendInternal = () => {
+    const content = draft.trim();
+    if (!content || loading || isReceiving) return;
+    onSend(content, linked ? 'linked' : 'independent'); // context_link_mode 随 E1（8.14）
+    setDraft('');
+    setLinked(false); // 发送后复位为新任务（4.6.1）
+  };
 
-    const handleKeyPress = useCallback(
-      (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (!e.shiftKey) {
-          e.preventDefault();
-          handleSend();
-        }
-      },
-      [handleSend]
-    );
-
-    const hasText = useMemo(() => inputValue.trim().length > 0, [inputValue]);
-
-    const buttonStyle = useMemo(
-      () => ({
-        backgroundColor: hasText ? '#0066cc' : '#e6e6e6',
-        borderColor: hasText ? '#0066cc' : '#d0d0d0',
-        color: hasText ? '#fff' : 'rgba(0,0,0,0.4)',
-        fontWeight: 500,
-      }),
-      [hasText]
-    );
-
-    const inputStyle = useMemo(
-      () => ({
-        borderColor: '#a8a8a8',
-        boxShadow: 'none',
-      }),
-      []
-    );
-
-    return (
-      <Space direction="vertical" style={{ width: '100%' }}>
-        {/* 等待时间显示 */}
-        {loading && waitTime > 0 && (
-          <div style={{ marginTop: 8, marginBottom: 4 }}>
-            <Tag
-              color={
-                waitTime > 30
-                  ? 'error'
-                  : waitTime > 15
-                    ? 'warning'
-                    : 'processing'
-              }
-            >
-              {isRetrying ? '🔄 正在重试...' : `已等待 ${waitTime} 秒`}
-            </Tag>
-          </div>
-        )}
-
-        {/* 中断和暂停按钮 */}
-        {(loading || isReceiving) && (
-          <Space style={{ marginTop: 8, marginBottom: 8 }}>
-            <Button danger icon={<CloseCircleOutlined />} onClick={onCancel}>
-              中断
-            </Button>
-            <Button
-              icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
-              onClick={onTogglePause}
-            >
-              {isPaused ? '继续' : '暂停'}
-            </Button>
-          </Space>
-        )}
-
-        <TextArea
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          placeholder={
-            useStream
-              ? '输入消息... (流式模式可实时查看思考过程)'
-              : '输入消息...'
-          }
-          autoSize={{ minRows: 2, maxRows: 4 }}
-          onPressEnter={handleKeyPress}
-          disabled={loading || isReceiving}
-          style={inputStyle}
-        />
-
-        <Button
-          type="primary"
-          icon={<SendOutlined />}
-          onClick={handleSend}
-          loading={loading || isReceiving}
-          disabled={!hasText}
-          block
-          style={buttonStyle}
-        >
-          {isReceiving ? '接收中...' : '发送消息'}
-        </Button>
-      </Space>
-    );
-  }
-);
-
-ChatInput.displayName = 'ChatInput';
-
-ChatInput.propTypes = {
-  loading: PropTypes.bool.isRequired,
-  isReceiving: PropTypes.bool.isRequired,
-  isPaused: PropTypes.bool.isRequired,
-  isRetrying: PropTypes.bool.isRequired,
-  waitTime: PropTypes.number.isRequired,
-  useStream: PropTypes.bool.isRequired,
-  onSend: PropTypes.func.isRequired,
-  onCancel: PropTypes.func.isRequired,
-  onTogglePause: PropTypes.func.isRequired,
+  return (
+    <div style={{ padding: '4px 0' }}>
+      <CommandPanel onPick={(c) => setDraft((d) => (d ? `${d}\n${c}` : c))} />
+      <InputCore
+        value={draft}
+        onChange={setDraft}
+        onPressEnter={handleSendInternal}
+        disabled={loading}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <TaskTypeToggle checked={linked} onChange={setLinked} />
+        <span style={{ flex: 1 }} />
+      </div>
+      <SubmitBar
+        loading={loading}
+        isReceiving={isReceiving}
+        isPaused={isPaused}
+        modelPickerSlot={modelPickerSlot ?? null}
+        onSend={handleSendInternal}
+        onCancel={onCancel}
+        onTogglePause={onTogglePause}
+      />
+    </div>
+  );
 };
 
-export default ChatInput;
+export { ChatInput };

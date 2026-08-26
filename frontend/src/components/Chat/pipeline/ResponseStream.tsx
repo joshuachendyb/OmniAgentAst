@@ -17,17 +17,35 @@ interface ResponseStreamProps {
   cancelled?: boolean;
 }
 
-const ResponseStream: React.FC<ResponseStreamProps> = ({ text, cancelled = false }) => {
+const ResponseStream: React.FC<ResponseStreamProps> = ({
+  text,
+  cancelled = false,
+}) => {
   if (!text && !cancelled) return null;
   if (cancelled) {
     return (
-      <div style={{ color: '#bfbfbf', fontSize: 13, fontStyle: 'italic', margin: '6px 0' }}>
+      <div
+        style={{
+          color: '#bfbfbf',
+          fontSize: 13,
+          fontStyle: 'italic',
+          margin: '6px 0',
+        }}
+      >
         已取消
       </div>
     );
   }
   return (
-    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '6px 0', fontSize: 14, lineHeight: 1.8 }}>
+    <div
+      style={{
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        margin: '6px 0',
+        fontSize: 14,
+        lineHeight: 1.8,
+      }}
+    >
       <CollapsibleText text={text} />
     </div>
   );

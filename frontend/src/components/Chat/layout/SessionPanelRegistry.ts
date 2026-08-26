@@ -28,7 +28,11 @@ export interface SessionPanel {
 
 const PANEL_VISIBLE_PREFIX = 'session_panel_visible:';
 
-export const readPanelVisible = (key: string, def = true, persist = false): boolean => {
+export const readPanelVisible = (
+  key: string,
+  def = true,
+  persist = false
+): boolean => {
   if (!persist) return def; // 未声明持久化的面板不受存储影响
   const raw = localStorage.getItem(PANEL_VISIBLE_PREFIX + key);
   return raw === null ? def : raw === '1';

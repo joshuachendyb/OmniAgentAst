@@ -88,7 +88,8 @@ export const useTaskInfo = (
 
     // ② startinfo 帧 -> "任务已开始"过程条首行 + 执行中徽标（B33：有帧才亮）
     // startinfo 仅存在于 metaFrames（8.4.3），时间戳取 start 事件的 startTimestamp
-    if (hasStartInfo && badge === 'idle') badge = receiving ? 'running' : 'idle';
+    if (hasStartInfo && badge === 'idle')
+      badge = receiving ? 'running' : 'idle';
     if (hasStartInfo) {
       processEvents.unshift({
         kind: 'started',
@@ -101,7 +102,9 @@ export const useTaskInfo = (
     const llmCallCount = stats?.llm_call_count ?? 0;
     const stepCount = stats?.step_count ?? 0;
     const stuckWarning =
-      llmCallCount > 0 && stepCount > 0 && llmCallCount >= stepCount * STUCK_RATIO;
+      llmCallCount > 0 &&
+      stepCount > 0 &&
+      llmCallCount >= stepCount * STUCK_RATIO;
 
     return {
       badge,

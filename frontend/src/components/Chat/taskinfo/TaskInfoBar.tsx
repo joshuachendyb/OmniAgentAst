@@ -29,7 +29,11 @@ const BADGE_MAP = {
   cancelled: { status: 'default' as const, text: '已取消' },
 };
 
-const TaskInfoBar: React.FC<TaskInfoBarProps> = ({ steps, frames, receiving }) => {
+const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
+  steps,
+  frames,
+  receiving,
+}) => {
   const [collapsed, setCollapsed] = useState(false);
   const info = useTaskInfo(steps, frames, receiving);
   const b = BADGE_MAP[info.badge];
@@ -46,7 +50,13 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({ steps, frames, receiving }) =
       }}
     >
       <div
-        style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', flexWrap: 'wrap' }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          cursor: 'pointer',
+          flexWrap: 'wrap',
+        }}
         onClick={() => setCollapsed((v) => !v)}
       >
         <Badge status={b.status} text={b.text} />

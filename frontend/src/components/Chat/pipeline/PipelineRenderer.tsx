@@ -93,7 +93,10 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         }
         if (seg.kind === 'text') {
           return (
-            <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            <div
+              key={i}
+              style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+            >
               {seg.text}
             </div>
           );
@@ -123,7 +126,10 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         if (seg.kind === 'obs') {
           // 孤儿观察：无前置 action，独立弱化行展示摘要
           return (
-            <div key={i} style={{ color: '#389e0d', fontSize: 13, margin: '4px 0' }}>
+            <div
+              key={i}
+              style={{ color: '#389e0d', fontSize: 13, margin: '4px 0' }}
+            >
               📋 {seg.step.summary || seg.step.content || ''}
             </div>
           );

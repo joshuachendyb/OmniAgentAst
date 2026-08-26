@@ -14,7 +14,9 @@ import React from 'react';
 import { Descriptions, Tag, Typography } from 'antd';
 import type { TaskDetail } from '../../../services/api';
 
-const StaticStatsBlock: React.FC<{ detail: TaskDetail | null }> = ({ detail }) => {
+const StaticStatsBlock: React.FC<{ detail: TaskDetail | null }> = ({
+  detail,
+}) => {
   if (!detail) return null;
   const statusColor =
     detail.status === 'completed'

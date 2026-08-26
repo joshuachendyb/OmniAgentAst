@@ -12,7 +12,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Spin } from 'antd';
 import type { ExecutionStep } from '../../../utils/sse';
-import { executionApi, sessionApi, type TaskDetail } from '../../../services/api';
+import {
+  executionApi,
+  sessionApi,
+  type TaskDetail,
+} from '../../../services/api';
 import { PipelineRenderer } from '../pipeline';
 import { splitSteps } from '../pipeline/steps';
 import { StaticStatsBlock } from './StaticStatsBlock';
@@ -43,7 +47,8 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const [loading, setLoading] = useState(false);
   const prevReceivingRef = useRef(false);
 
-  const isCurrentLive = activeTaskId != null && activeTaskId === serverTaskId && receiving;
+  const isCurrentLive =
+    activeTaskId != null && activeTaskId === serverTaskId && receiving;
 
   // 拉取历史任务：C1+C2 并行；C2 空则 C3 按 message 降级（静态块降级为空，契约无通道）
   useEffect(() => {
@@ -82,7 +87,12 @@ const RightViewer: React.FC<RightViewerProps> = ({
 
   // B16：锚定的当前任务结束沿 -> 补取 C1 终态详情并刷新外层列表
   useEffect(() => {
-    if (prevReceivingRef.current && !receiving && activeTaskId === serverTaskId && activeTaskId) {
+    if (
+      prevReceivingRef.current &&
+      !receiving &&
+      activeTaskId === serverTaskId &&
+      activeTaskId
+    ) {
       executionApi
         .getTaskDetail(activeTaskId)
         .then((d) => setDetail(d))

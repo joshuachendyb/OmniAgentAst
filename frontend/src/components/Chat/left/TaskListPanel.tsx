@@ -21,7 +21,10 @@ interface TaskListPanelProps {
 /** 实测枚举（storage.py:467 初始 executing / :128 终态四值），未知值兜底灰色 */
 const STATUS_MAP: Record<
   string,
-  { text: string; color: 'processing' | 'success' | 'error' | 'default' | 'warning' }
+  {
+    text: string;
+    color: 'processing' | 'success' | 'error' | 'default' | 'warning';
+  }
 > = {
   executing: { text: '执行中', color: 'processing' },
   paused: { text: '已暂停', color: 'warning' },
@@ -45,7 +48,10 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   return (
     <div style={{ overflowY: 'auto', height: '100%' }}>
       {tasks.map((t) => {
-        const st = STATUS_MAP[t.status] ?? { text: t.status, color: 'default' as const };
+        const st = STATUS_MAP[t.status] ?? {
+          text: t.status,
+          color: 'default' as const,
+        };
         const active = t.task_id === activeTaskId;
         return (
           <div
@@ -55,7 +61,9 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               padding: '6px 8px',
               cursor: 'pointer',
               background: active ? '#e6f4ff' : 'transparent',
-              borderLeft: active ? '3px solid #1890ff' : '3px solid transparent',
+              borderLeft: active
+                ? '3px solid #1890ff'
+                : '3px solid transparent',
               wordBreak: 'break-all', // 不截断可折返
             }}
           >

@@ -31,7 +31,11 @@ const renderSlot = (panels: SessionPanel[], slot: SlotName) =>
   panels
     .filter((p) => p.slot === slot)
     .filter((p) =>
-      readPanelVisible(p.key, p.defaultVisible ?? true, p.persistVisible ?? false)
+      readPanelVisible(
+        p.key,
+        p.defaultVisible ?? true,
+        p.persistVisible ?? false
+      )
     )
     .map((p) => <React.Fragment key={p.key}>{p.component}</React.Fragment>);
 
@@ -40,7 +44,15 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
   rightOpen,
   onToggleRight,
 }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 4, minWidth: 0 }}>
+  <div
+    style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      gap: 4,
+      minWidth: 0,
+    }}
+  >
     {/* ① 顶栏区 */}
     <div
       style={{
@@ -68,7 +80,14 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
       </div>
 
       {rightOpen ? (
-        <div style={{ flex: '1 1 75%', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <div
+          style={{
+            flex: '1 1 75%',
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
           <Button
             size="small"
             type="text"
@@ -81,8 +100,20 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
           </div>
         </div>
       ) : (
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
-          <Button size="small" type="text" icon={<DoubleLeftOutlined />} onClick={onToggleRight} />
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <Button
+            size="small"
+            type="text"
+            icon={<DoubleLeftOutlined />}
+            onClick={onToggleRight}
+          />
         </div>
       )}
     </div>

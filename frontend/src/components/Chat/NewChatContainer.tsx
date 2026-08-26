@@ -1,12 +1,21 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 接入 ModelPicker 组件(L2 会话级模型覆盖), 解构 sessionModelOverride/setSessionModelOverride
-import React, { useEffect, useCallback, useState, useRef } from 'react';
-import { message, Card } from 'antd';
+import React, {
+  useEffect,
+  useCallback,
+  useState,
+  useRef,
+  useMemo,
+} from 'react';
+import { message, Card, Tag } from 'antd';
 import { useSearchParams } from 'react-router-dom';
-import { API_BASE_URL, taskControlApi } from '../../services/api';
+import {
+  API_BASE_URL,
+  taskControlApi,
+  tokenUsageApi,
+} from '../../services/api';
 import { STORAGE_KEY } from '../../utils/chatHistory';
 
-import ChatInput from './ChatInput';
-import MessageArea from './MessageArea';
+import { ChatInput } from './ChatInput';
 import ChatHeader from './ChatHeader';
 import ChatToolbar from './ChatToolbar';
 import ModelPicker from './ModelPicker';
@@ -14,6 +23,15 @@ import AuthorizationModal, {
   AuthorizationRequest,
 } from '../AuthorizationModal';
 import { useChatFacade } from '../../hooks/chat/useChatFacade';
+import { useSessionTasks } from '../../hooks/chat/useSessionTasks';
+import { useModelLayer } from '../../hooks/chat/useModelLayer';
+import { SessionLayout } from './layout/SessionLayout';
+import type { SessionPanel } from './layout/SessionPanelRegistry';
+import { TopbarStats } from './topbar/TopbarStats';
+import { TaskListPanel } from './left/TaskListPanel';
+import { RightViewer } from './right/RightViewer';
+import { TaskInfoBar } from './taskinfo/TaskInfoBar';
+import { TrustPanel } from './config/TrustPanel';
 import { useLoadingMessage } from '../../hooks/useLoadingMessage';
 import { useBeforeUnload } from '../../hooks/useBeforeUnload';
 
@@ -76,7 +94,13 @@ const NewChatContainer: React.FC = () => {
   } = chatState;
 
   // 解构chatStreaming
-  const { isReceiving, executionSteps, currentResponse } = chatStreaming;
+  const {
+    isReceiving,
+    executionSteps,
+    currentResponse,
+    metaFrames,
+    serverTaskId,
+  } = chatStreaming;
 
   // 解构chatTaskControl
   const { handleCancel, handleTogglePause } = chatTaskControl;
@@ -159,6 +183,51 @@ const NewChatContainer: React.FC = () => {
     console.log('🔍 [handleNewSession] 按钮被点击');
     chatSession.handleNewSession(0);
   }, [chatSession]);
+
+  // —— 8.3.3 插槽化组装新增状态与数据源 ——
+  const [rightOpen, setRightOpen] = useState(false);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [chainTokens, setChainTokens] = useState<number | null>(null); // 顶栏会话累计 token（A6 链口径）
+  const [liveErrorText, setLiveErrorText] = useState<string | null>(null);
+  const { tasks, total, refresh: refreshTasks } = useSessionTasks(sessionId);
+  const { effective } = useModelLayer({
+    sessionId,
+    sessionTitle,
+    sessionVersion,
+    setSessionVersion,
+  });
+
+  // 任务结束沿（isReceiving true→false）统一刷新：任务列表 / 顶栏链累计 token
+  const prevReceivingRef = useRef(false);
+  useEffect(() => {
+    if (prevReceivingRef.current && !isReceiving) {
+      void refreshTasks();
+      if (sessionId) {
+        const anchorTaskId = serverTaskId ?? tasks[0]?.task_id;
+        tokenUsageApi
+          .getChainTokens({ sessionId, taskId: anchorTaskId })
+          .then((r) =>
+            setChainTokens(
+              r.chain_accumulated_tokens?.total_tokens ?? r.total_tokens
+            )
+          )
+          .catch(() => undefined);
+      }
+    }
+    prevReceivingRef.current = isReceiving;
+  }, [isReceiving, refreshTasks, sessionId, tasks]);
+
+  const handleSelectTask = useCallback((id: string) => {
+    setActiveTaskId(id);
+    setRightOpen(true);
+  }, []);
+
+  const handleSendWithMode = useCallback(
+    (content: string, mode?: 'linked' | 'independent') => {
+      void handleSend(content, mode);
+    },
+    [handleSend]
+  );
 
   // 清空对话
   const handleClear = useCallback(() => {
@@ -437,69 +506,167 @@ const NewChatContainer: React.FC = () => {
     [authorizationPending]
   );
 
+  // —— 8.3.3 panels 组装（prop 注入 SessionLayout，R1-B25）——
+  const panels = useMemo<SessionPanel[]>(
+    () => [
+      {
+        slot: 'topbar',
+        key: 'topbar.header',
+        component: (
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}
+          >
+            <ChatHeader
+              sessionId={sessionId}
+              sessionTitle={sessionTitle}
+              titleLocked={titleLocked}
+              editingTitle={editingTitle}
+              titleInput={titleInput}
+              sessionVersion={sessionVersion}
+              setSessionTitle={setSessionTitle}
+              setTitleLocked={setTitleLocked}
+              setEditingTitle={setEditingTitle}
+              setTitleInput={setTitleInput}
+              setSessionVersion={setSessionVersion}
+              onEditingStart={handleEditingStart}
+              onEditingCancel={handleEditingCancel}
+            />
+            <TopbarStats taskCount={total} chainTokens={chainTokens} />
+            {effective && (
+              <Tag color={effective.source === 'session' ? 'blue' : 'default'}>
+                {effective.display_name ||
+                  `${effective.provider} (${effective.model})`}
+                ·{effective.source === 'session' ? '会话' : '全局'}
+              </Tag>
+            )}
+          </span>
+        ),
+        defaultVisible: true,
+      },
+      {
+        slot: 'topbar',
+        key: 'topbar.toolbar',
+        component: <ChatToolbar onNewSession={handleNewSession} />,
+        defaultVisible: true,
+      },
+      {
+        slot: 'left',
+        key: 'left.taskList',
+        component: (
+          <TaskListPanel
+            tasks={tasks}
+            activeTaskId={activeTaskId}
+            onSelect={handleSelectTask}
+          />
+        ),
+        defaultVisible: true,
+      },
+      {
+        slot: 'right',
+        key: 'right.viewer',
+        component: (
+          <RightViewer
+            activeTaskId={activeTaskId}
+            sessionId={sessionId}
+            serverTaskId={serverTaskId}
+            receiving={isReceiving}
+            liveSteps={executionSteps}
+            liveErrorText={liveErrorText}
+            highlightToolName={authorizationPending?.toolName ?? null}
+            onSettledRefresh={refreshTasks}
+          />
+        ),
+        defaultVisible: true,
+      },
+      {
+        slot: 'taskinfo',
+        key: 'taskinfo.bar',
+        component: (
+          <TaskInfoBar
+            steps={executionSteps}
+            frames={metaFrames}
+            receiving={isReceiving}
+          />
+        ),
+        defaultVisible: true,
+      },
+      {
+        slot: 'config',
+        key: 'config.trust',
+        component: <TrustPanel sessionId={sessionId} />,
+        defaultVisible: false,
+      },
+      {
+        slot: 'input',
+        key: 'input.chat',
+        component: (
+          <ChatInput
+            loading={loading}
+            isReceiving={isReceiving}
+            isPaused={isPaused}
+            onSend={handleSendWithMode}
+            onCancel={handleCancel}
+            onTogglePause={handleTogglePause}
+            modelPickerSlot={
+              <ModelPicker
+                sessionId={sessionId}
+                sessionTitle={sessionTitle}
+                sessionVersion={sessionVersion}
+                sessionModelOverride={sessionModelOverride}
+                setSessionModelOverride={setSessionModelOverride}
+                setSessionVersion={setSessionVersion}
+              />
+            }
+          />
+        ),
+        defaultVisible: true,
+      },
+    ],
+    [
+      sessionId,
+      sessionTitle,
+      titleLocked,
+      editingTitle,
+      titleInput,
+      sessionVersion,
+      setSessionTitle,
+      setTitleLocked,
+      setEditingTitle,
+      setTitleInput,
+      setSessionVersion,
+      total,
+      chainTokens,
+      effective,
+      handleNewSession,
+      tasks,
+      activeTaskId,
+      handleSelectTask,
+      serverTaskId,
+      isReceiving,
+      executionSteps,
+      liveErrorText,
+      authorizationPending,
+      metaFrames,
+      loading,
+      isPaused,
+      handleSendWithMode,
+      handleCancel,
+      handleTogglePause,
+      refreshTasks,
+      sessionModelOverride,
+      setSessionModelOverride,
+    ]
+  );
+
   return (
     <Card
-      styles={{ body: { padding: '0 4px 4px' } }}
-      title={
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
-          <ChatHeader
-            sessionId={sessionId}
-            sessionTitle={sessionTitle}
-            titleLocked={titleLocked}
-            editingTitle={editingTitle}
-            titleInput={titleInput}
-            sessionVersion={sessionVersion}
-            setSessionTitle={setSessionTitle}
-            setTitleLocked={setTitleLocked}
-            setEditingTitle={setEditingTitle}
-            setTitleInput={setTitleInput}
-            setSessionVersion={setSessionVersion}
-            onEditingStart={handleEditingStart}
-            onEditingCancel={handleEditingCancel}
-          />
-          <ModelPicker
-            sessionId={sessionId}
-            sessionTitle={sessionTitle}
-            sessionVersion={sessionVersion}
-            sessionModelOverride={sessionModelOverride}
-            setSessionModelOverride={setSessionModelOverride}
-            setSessionVersion={setSessionVersion}
-          />
-        </span>
-      }
-      extra={
-        <ChatToolbar
-          useStream={useStream}
-          showExecution={showExecution}
-          onNewSession={handleNewSession}
-          onClear={handleClear}
-          onToggleStream={handleToggleStream}
-          onToggleExecution={handleToggleExecution}
-        />
-      }
+      styles={{ body: { padding: '0 4px 4px', height: 'calc(100vh - 120px)' } }}
     >
-      <MessageArea
-        messages={messages}
-        showExecution={showExecution}
-        sessionId={sessionId}
-        sessionTitle={sessionTitle}
-        useStream={useStream}
-        isMessageListLoading={isMessageListLoading}
-        messagesEndRef={messagesEndRef}
+      <SessionLayout
+        panels={panels}
+        rightOpen={rightOpen}
+        onToggleRight={() => setRightOpen((v) => !v)}
       />
-
-      <ChatInput
-        loading={loading}
-        isReceiving={isReceiving}
-        isPaused={isPaused}
-        isRetrying={isRetrying}
-        waitTime={waitTime}
-        useStream={useStream}
-        onSend={handleSend}
-        onCancel={handleCancel}
-        onTogglePause={handleTogglePause}
-      />
-
       <AuthorizationModal
         visible={!!authorizationPending}
         request={authorizationPending}
