@@ -37,11 +37,11 @@ interface UseChatSendOptions {
   waitTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
   currentSessionIdRef: React.MutableRefObject<string | null>;
   // 发送方法
-  executeSend: (userMessage: Message) => Promise<void>;
+  executeSend: (userMessage: Message, contextLinkMode?: 'linked' | 'independent') => Promise<void>;
 }
 
 interface UseChatSendReturn {
-  handleSend: (messageContent: string) => Promise<void>;
+  handleSend: (messageContent: string, contextLinkMode?: 'linked' | 'independent') => Promise<void>;
 }
 
 /**
@@ -63,7 +63,8 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   // 临时存储新创建的消息ID，用于错误回滚
   const pendingMessageIdRef = useRef<string | null>(null);
 
-  const handleSend = useCallback(async (messageContent: string) => {
+  const handleSend = useCallback(
+    async (messageContent: string, contextLinkMode?: 'linked' | 'independent') => {
     // 1. 基础验证
     if (!messageContent.trim() || loading) return;
 
@@ -126,7 +127,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
       }
 
       // 8. 发送消息
-      await executeSend(userMessage);
+      await executeSend(userMessage, contextLinkMode);
 
       // 9. 发送成功，不需要额外操作（用户消息已在列表中）
 

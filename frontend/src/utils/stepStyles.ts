@@ -25,7 +25,7 @@ export const isDarkMode = (): boolean => {
 /**
  * 深色模式配色 - 9种浅色方案精简版
  * 设计原则：3种色系×3种深浅=9种浅色，绝对不用深色
- * 兼容说明：保留StepRow组件需要的临时属性，后续框层合并时删除
+ * 兼容说明：保留旧步骤行组件需要的临时属性，后续框层合并时删除
  */
 export const darkModeColors = {
   // 基础3色（容器/边框/文字）
@@ -36,7 +36,7 @@ export const darkModeColors = {
   success: '#52c41a',
   error: '#cf1322',
   warning: '#d97706',
-  // StepRow临时使用的属性（后续框层合并时删除）
+  // 旧步骤行临时使用的属性（后续框层合并时删除）
   headerBg: '#2a2a2a',
   contentBg: '#141414',
   footerBg: '#1a1a1a',

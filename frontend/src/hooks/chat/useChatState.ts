@@ -74,7 +74,9 @@ export interface UseChatStateReturn {
   titleLocked: boolean;
   setTitleLocked: React.Dispatch<React.SetStateAction<boolean>>;
   sessionModelOverride: SessionModelOverride | null;
-  setSessionModelOverride: React.Dispatch<React.SetStateAction<SessionModelOverride | null>>;
+  setSessionModelOverride: React.Dispatch<
+    React.SetStateAction<SessionModelOverride | null>
+  >;
 
   // 标题编辑状态
   editingTitle: boolean;
@@ -85,8 +87,6 @@ export interface UseChatStateReturn {
   setLastSavedTitle: React.Dispatch<React.SetStateAction<string>>;
 
   // 显示相关状态
-  showExecution: boolean;
-  setShowExecution: React.Dispatch<React.SetStateAction<boolean>>;
   useStream: boolean;
   setUseStream: React.Dispatch<React.SetStateAction<boolean>>;
 
@@ -199,7 +199,8 @@ export const useChatState = (): UseChatStateReturn => {
   const [sessionTitle, setSessionTitle] = useState<string>('新会话');
   const [sessionVersion, setSessionVersion] = useState<number>(1);
   const [titleLocked, setTitleLocked] = useState<boolean>(false);
-  const [sessionModelOverride, setSessionModelOverride] = useState<SessionModelOverride | null>(null);
+  const [sessionModelOverride, setSessionModelOverride] =
+    useState<SessionModelOverride | null>(null);
 
   // 标题编辑状态
   const [editingTitle, setEditingTitle] = useState(false);
@@ -207,7 +208,6 @@ export const useChatState = (): UseChatStateReturn => {
   const [lastSavedTitle, setLastSavedTitle] = useState<string>('');
 
   // 显示相关状态
-  const [showExecution, setShowExecution] = useState(true);
   const [useStream, setUseStream] = useState(true);
 
   // 初始化状态
@@ -329,8 +329,6 @@ export const useChatState = (): UseChatStateReturn => {
     setTitleInput,
     lastSavedTitle,
     setLastSavedTitle,
-    showExecution,
-    setShowExecution,
     useStream,
     setUseStream,
     isInitialized,

@@ -128,7 +128,6 @@ export type StreamingGroupReturn = StreamingGroupState &
 // ============================================================================
 
 export interface UIGroupState {
-  showExecution: boolean;
   useStream: boolean;
   isInitialized: boolean;
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
@@ -153,7 +152,6 @@ export interface UIGroupRefs {
 
 export type UIGroupReturn = UIGroupState &
   UIGroupRefs & {
-    setShowExecution: React.Dispatch<React.SetStateAction<boolean>>;
     setUseStream: React.Dispatch<React.SetStateAction<boolean>>;
     setIsInitialized: React.Dispatch<React.SetStateAction<boolean>>;
     setSaveStatus: React.Dispatch<

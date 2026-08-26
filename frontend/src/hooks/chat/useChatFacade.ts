@@ -72,12 +72,10 @@ export interface UseChatFacadeReturn {
   };
 
   ui: {
-    showExecution: boolean;
     useStream: boolean;
     isInitialized: boolean;
     sessionJumpLoading: boolean;
     isMessageListLoading: boolean;
-    setShowExecution: React.Dispatch<React.SetStateAction<boolean>>;
     setUseStream: React.Dispatch<React.SetStateAction<boolean>>;
     setIsInitialized: React.Dispatch<React.SetStateAction<boolean>>;
     setSessionJumpLoading: React.Dispatch<React.SetStateAction<boolean>>;
@@ -88,7 +86,10 @@ export interface UseChatFacadeReturn {
 
   // ===== 操作组 =====
   send: {
-    handleSend: (content: string) => Promise<void>;
+    handleSend: (
+      content: string,
+      contextLinkMode?: 'linked' | 'independent'
+    ) => Promise<void>;
   };
 
   interrupt: {
@@ -141,6 +142,7 @@ export interface UseChatFacadeReturn {
 export const useChatFacade = (options?: {
   baseURL?: string;
   sessionId?: string | null;
+  onError?: (message: string) => void;
 }): UseChatFacadeReturn => {
   const { baseURL = '', sessionId } = options || {};
 
@@ -150,8 +152,26 @@ export const useChatFacade = (options?: {
   // 2. 回调函数（始终加载）
   const chatCallbacks = useChatCallbacks(chatState);
 
+  // 2.1 透传 SSE 错误给上层（RightViewer liveErrorText 红字直显，8.10）
+  const chatCallbacksWithError = useMemo<ReturnType<typeof useChatCallbacks>>(
+    () => ({
+      ...chatCallbacks,
+      onError: (error: Parameters<typeof chatCallbacks.onError>[0]) => {
+        chatCallbacks.onError(error);
+        if (options?.onError) {
+          const msg =
+            typeof error === 'string'
+              ? error
+              : error.error_message || '未知错误';
+          options.onError(msg);
+        }
+      },
+    }),
+    [chatCallbacks, options]
+  );
+
   // 3. 流式处理（始终加载，但可UI按需显示）
-  const chatStreaming = useChatStreaming(chatState, chatCallbacks, {
+  const chatStreaming = useChatStreaming(chatState, chatCallbacksWithError, {
     baseURL,
     sessionId: sessionId || chatState.sessionId,
   });
@@ -249,12 +269,10 @@ export const useChatFacade = (options?: {
 
       // UI状态
       ui: {
-        showExecution: chatState.showExecution,
         useStream: chatState.useStream,
         isInitialized: chatState.isInitialized,
         sessionJumpLoading: chatState.sessionJumpLoading,
         isMessageListLoading: chatState.isMessageListLoading,
-        setShowExecution: chatState.setShowExecution,
         setUseStream: chatState.setUseStream,
         setIsInitialized: chatState.setIsInitialized,
         setSessionJumpLoading: chatState.setSessionJumpLoading,
@@ -343,12 +361,10 @@ export const useChatFacade = (options?: {
       chatState.setIsPaused,
       chatState.setWaitTime,
       // ===== UI状态 =====
-      chatState.showExecution,
       chatState.useStream,
       chatState.isInitialized,
       chatState.sessionJumpLoading,
       chatState.isMessageListLoading,
-      chatState.setShowExecution,
       chatState.setUseStream,
       chatState.setIsInitialized,
       chatState.setSessionJumpLoading,

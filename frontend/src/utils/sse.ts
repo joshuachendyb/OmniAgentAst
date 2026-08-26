@@ -22,9 +22,9 @@
  * 2026-08-18 小欧 三堂会审(P7/P4): ① case 'startinfo' 并入 case 'start' 渲染, 修复后端实时事件由 start 改 startinfo 后任务头部占位失效; ② error 分支优先读 content 再回退 error_message, 修复 error_message 已迁 content 后实时错误显示退化'未知错误'
  * 2026-08-23 小欧 三堂会审修复: ExecutionStep 接口 error_type(:153)/error_message(:154) 历史遗留重复声明
  *   (TS2300 Duplicate identifier, tsc --noEmit 失败), 删除 :172/:177 处重复定义保留终态声明处单一权威
- * 2026-08-26 小欧 8.4/8.4.14 实施: ①ExecutionStep.type 移除 action_tool 改 action + 新增 startinfo/thought-start/usage/stats/final_stats/context_overview/truncated;
- *   ②移除 SecurityCheck 字段与 import; ③移除 PerformanceMetrics 估算消费(state/重置/返回/接口); ④start/startinfo 拆双 + usage/stats/final_stats/context_overview/truncated/thought-start 六新 case(统计类经 handlers.setMetaFrames 入 metaFrames 帧,不落库不导出);
- *   ⑤final 解析 accumulated_usage + 四维累计; ⑥error 不进 executionSteps(收敛为事件); ⑦metaFrames/usageAccumRef/lastUsageSeqRef 入 useSSE 闭包并经 handlers 注入模块级 processSSEData; ⑧全仓 action_tool→action 同步改名
+ * 2026-08-26 小欧 8.4/8.4.14 实施: ①ExecutionStep.type 移除旧动作类型名 改 action + 新增 startinfo/thought-start/usage/stats/final_stats/context_overview/truncated;
+ *   ②移除安全校验旧字段与 import; ③移除性能估算态 估算消费(state/重置/返回/接口); ④start/startinfo 拆双 + usage/stats/final_stats/context_overview/truncated/thought-start 六新 case(统计类经 handlers.setMetaFrames 入 metaFrames 帧,不落库不导出);
+ *   ⑤final 解析 accumulated_usage + 四维累计; ⑥error 不进 executionSteps(收敛为事件); ⑦metaFrames/usageAccumRef/lastUsageSeqRef 入 useSSE 闭包并经 handlers 注入模块级 processSSEData; ⑧全仓 旧动作类型名→action 同步改名
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -146,12 +146,12 @@ export interface SSEMetadata {
  * 【重要】8种type说明：
  * - 内容步骤：start（开始）、chunk（AI流式回复的内容片段）、final（最终回答）
  *   【chunk是AI流式输出的内容片段，不是执行步骤，显示在AI回复区域，不在步骤列表】
- * - 执行步骤：thought（思考）、action_tool（工具调用）、observation（工具结果）
+ * - 执行步骤：thought（思考）、action（工具调用）、observation（工具结果）
  * - 异常步骤：error（错误）、status（生命周期：cancelled/paused/retrying/resumed）
  */
 export interface ExecutionStep {
   // === 通用字段 ===
-  // 【小欧 2026-08-26 8.4】①'action_tool'全链替换为'action'（后端 ActionStep.TYPE 已改，
+  // 【小欧 2026-08-26 8.4】①'动作类型名'全链替换为'action'（后端 ActionStep.TYPE 已改，
   //   禁止 backward，见 4.9.2.9）；②新增 MetaStep 类事件 type：
   //   thought-start/usage/stats/final_stats/context_overview/truncated/startinfo
   //   （数据源仍是一条 executionSteps 不拆流，渲染入口按 7.10 分流）
@@ -184,7 +184,7 @@ export interface ExecutionStep {
 
   // === 思考/动作提示字段（后端字段拆分） ===
   thinking_prompt?: string; // thought 类型的提示文本
-  action_description?: string; // action_tool 类型的描述文本
+  action_description?: string; // action 类型的描述文本
   action?: string; // 执行动作名称（历史兼容，保留原始字段）
   action_input?: unknown; // 工具调用参数（历史兼容，保留原始字段）
 
@@ -199,7 +199,7 @@ export interface ExecutionStep {
   result?: string;
   code?: string; // 【新增2026-05-22】状态码（SUCCESS/ERROR/WARNING）
 
-  // === 【小新重构】type=action_tool 新字段（与thought类型共用tool_name/tool_params）===
+  // === 【小新重构】type=action 新字段（与thought类型共用tool_name/tool_params）===
   execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
   summary?: string; // 执行摘要（新）
   execution_result?: Record<string, unknown> | null; // 执行结果 【修改2026-04-15】raw_data → execution_result
@@ -208,9 +208,9 @@ export interface ExecutionStep {
 
   // === type=observation 字段（精简版，2026-04-07 小资修改） ===
   // 后端删除第二次LLM调用后，observation只保留基础字段
-  // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/execution_result）
-  // 【注意】obs_* 字段已删除，如需使用工具结果请从 action_tool 阶段获取
-  // tool_name 已在上面 action_tool 字段定义（第97行），此处不再重复
+  // 工具执行结果已在 action 阶段完整显示（execution_status/summary/execution_result）
+  // 【注意】obs_* 字段已删除，如需使用工具结果请从 action 阶段获取
+  // tool_name 已在上面 动作类型 字段定义（第97行），此处不再重复
 
   // === type=chunk/final/start 字段 ===
   model?: string; // AI模型
@@ -598,7 +598,6 @@ export const useSSE = (
   onError?: (error: string | SSEError) => void,
   onPaused?: () => void,
   onResumed?: () => void,
-  onShowSteps?: (show: boolean) => void, // 新增：控制步骤显示/隐藏
   // ⭐ 新增：重试回调 - 【小查修复2026-03-13】添加wait_time参数
   onRetry?: (message: string, waitTime?: number) => void,
   // 【v3.4新增 2026-06-09 小沈】授权请求回调
@@ -650,7 +649,7 @@ export const useSSE = (
     'independent'
   );
 
-  // 【小强添加 2026-03-18】性能指标相关（小欧 2026-08-26 8.4.6 移除 PerformanceMetrics 估算消费）
+  // 【小强添加 2026-03-18】性能指标相关（小欧 2026-08-26 8.4.6 移除性能估算态 估算消费）
   const ttftRef = useRef<number>(0); // 存储 TTFT 值（保留引用避免误删关联逻辑）
   const requestStartTimeRef = useRef<number>(0);
   const chunkCountRef = useRef<number>(0);
@@ -805,7 +804,7 @@ export const useSSE = (
       clearSteps(); // 新请求：完全清空 steps
     }
 
-    // 【小强添加 2026-03-18】重置性能指标并记录开始时间（小欧 2026-08-26 8.4.6 移除 PerformanceMetrics 估算消费）
+    // 【小强添加 2026-03-18】重置性能指标并记录开始时间（小欧 2026-08-26 8.4.6 移除性能估算态 估算消费）
     requestStartTimeRef.current = Date.now();
     ttftRef.current = 0;
     chunkCountRef.current = 0;
@@ -904,7 +903,6 @@ export const useSSE = (
                 onError,
                 onPaused,
                 onResumed,
-                onShowSteps,
                 onRetry,
                 onAuthorizationRequired,
                 setCurrentResponse,
@@ -947,7 +945,6 @@ export const useSSE = (
               onError,
               onPaused,
               onResumed,
-              onShowSteps,
               onRetry,
               onAuthorizationRequired,
               setCurrentResponse,
@@ -1160,7 +1157,6 @@ const processSSEData = (
     onError?: (error: string | SSEError) => void;
     onPaused?: () => void;
     onResumed?: () => void;
-    onShowSteps?: (show: boolean) => void;
     onRetry?: (message: string, waitTime?: number) => void;
     onAuthorizationRequired?: (data: {
       confirm_id: string;
@@ -1200,7 +1196,6 @@ const processSSEData = (
     onError,
     onPaused,
     onResumed,
-    onShowSteps,
     onRetry,
     setCurrentResponse,
     responseBufferRef,
@@ -1428,7 +1423,7 @@ const processSSEData = (
         step.content = rawData.content || ''; // 完整思考内容
         step.thought = rawData.thought || ''; // parsed的thought
         step.reasoning = rawData.reasoning || '';
-        step.tool_name = rawData.tool_name || rawData.action_tool || ''; // 兼容旧字段
+        step.tool_name = rawData.tool_name || '';
         step.tool_params = rawData.tool_params || rawData.params || {}; // 兼容旧字段
         // console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
         // 添加到步骤数组，显示思考过程
@@ -1450,8 +1445,6 @@ const processSSEData = (
           return newSteps;
         });
         onStep?.(step);
-        // 【小查修复】收到thought时显示步骤UI
-        onShowSteps?.(true);
         break;
       }
 
@@ -1490,7 +1483,7 @@ const processSSEData = (
 
         // 【小沈带小强修改 2026-03-17】
         // 问题描述：前端导出 JSON 时只有 3 个步骤（start, thought, chunk），但数据库有 55 个步骤
-        // 【小强修复 2026-04-10】使用回调函数模式，与 start/thought/action_tool/observation 保持一致
+        // 【小强修复 2026-04-10】使用回调函数模式，与 start/thought/action/observation 保持一致
         // 问题：之前使用直接同步更新，导致 ref 和 state 不同步
         // 解决：在 setExecutionSteps 回调函数内部更新 ref，确保同步
         setExecutionSteps((prev) => {
@@ -1507,13 +1500,6 @@ const processSSEData = (
           return newSteps;
         });
         onStep?.(step);
-        // 【小查修复】收到 chunk 时关闭步骤 UI，开始显示回复内容（必须在 onStep 之后）
-        // 【小强修复 2026-03-17】根据 is_reasoning 区分：true=显示步骤 UI，false=关闭步骤 UI
-        if (is_reasoning) {
-          onShowSteps?.(true); // 思考过程的 chunk
-        } else {
-          onShowSteps?.(false); // 最终答案的 chunk
-        }
         break;
       }
 
@@ -1581,8 +1567,6 @@ const processSSEData = (
           return newSteps;
         });
         onStep?.(step);
-        // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保直接返回 final 时步骤列表显示
-        onShowSteps?.(true);
 
         // 【关键修复 2026-04-13】在onComplete调用前手动构建完整的steps数组
         // 问题：setExecutionSteps回调是异步的，handlers.executionStepsRef.current已更新为最新值
@@ -1679,7 +1663,7 @@ const processSSEData = (
       }
 
       // 【小欧 2026-08-26 8.4】action 新结构：exec_type(single/multi) + tools 数组
-      // 单工具也是一个元素不做特判（4.9.2.9）；禁止保留 'action_tool' 兼容分支
+      // 单工具也是一个元素不做特判（4.9.2.9）；禁止保留 旧动作类型名 兼容分支
       case 'action': {
         const receiveTime = Date.now(); // 【收到数据】时间
         const actionStepNum = step.step; // step 序号
@@ -1765,7 +1749,6 @@ const processSSEData = (
         );
 
         onStep?.(step);
-        onShowSteps?.(true);
 
         // 【青色】渲染完成时间点
         const renderDoneTime = Date.now();
@@ -1881,7 +1864,6 @@ const processSSEData = (
           return newSteps;
         });
         onStep?.(step);
-        onShowSteps?.(true);
         break;
       }
 
@@ -1923,7 +1905,6 @@ const processSSEData = (
         // 根据type调用对应的回调
         switch (rawData.type) {
           case 'cancelled':
-            onShowSteps?.(true);
             onComplete?.(
               responseBufferRef.current,
               undefined,

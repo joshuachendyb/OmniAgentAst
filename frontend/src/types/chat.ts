@@ -10,7 +10,7 @@
  * @updated 2026-07-16 小欧 - Message 接口增 thought 字段
  * @updated 2026-08-22 小欧 - sessionModel 结构化: 新增 SessionModelOverride 接口(provider+model+display_name?); HistoryLoadResult 字段 model_override→sessionModel
  * @updated 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.1: SessionModelOverride 补 api_base?(端点定位, 与后端 ModelRef 形态一致)
- * @updated 2026-08-26 小欧 - 8.4.7 移除 SecurityCheck、ActionToolMessage→ActionMessage、新增 StartInfoMessage、StartMessage.content
+ * @updated 2026-08-26 小欧 - 8.4.7 移除安全校验旧字段、ActionToolMessage→ActionMessage、新增 StartInfoMessage、StartMessage.content
  */
 
 import type { ExecutionStep } from '../utils/sse';
@@ -48,7 +48,7 @@ export interface StartInfoMessage {
 /**
  * thought类型 - LLM思考
  * 发送时机：ReAct第1阶段，LLM分析任务
- * 【小查修复2026-03-09】action_tool和params改为可选
+ * 【小查修复2026-03-09】动作类型字段和params改为可选
  */
 export interface ThoughtMessage {
   type: 'thought';
@@ -61,7 +61,7 @@ export interface ThoughtMessage {
 }
 
 /**
- * action类型 - 工具调用步骤新结构（4.9.2.9，禁止保留 action_tool）
+ * action类型 - 工具调用步骤新结构（4.9.2.9，禁止保留旧动作类型名）
  * 【小欧 2026-08-26 8.4】exec_type single/multi + tools 数组（单工具也一个元素）
  */
 export interface ActionMessage {

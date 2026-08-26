@@ -40,6 +40,7 @@ const NewChatContainer: React.FC = () => {
   const chatFacade = useChatFacade({
     baseURL: API_BASE_URL,
     sessionId: searchParams.get('session_id'),
+    onError: (message: string) => setLiveErrorText(message),
   });
   const {
     chatState,
@@ -53,8 +54,6 @@ const NewChatContainer: React.FC = () => {
   // 解构chatState
   const {
     // 独立状态
-    showExecution,
-    setShowExecution,
     useStream,
     setUseStream,
     setIsInitialized,
@@ -224,22 +223,11 @@ const NewChatContainer: React.FC = () => {
 
   const handleSendWithMode = useCallback(
     (content: string, mode?: 'linked' | 'independent') => {
+      setLiveErrorText(null);
       void handleSend(content, mode);
     },
     [handleSend]
   );
-
-  // 清空对话
-  const handleClear = useCallback(() => {
-    console.log('🔍 [handleClear] 清空对话按钮被点击');
-    setIsPaused(false);
-    logFlagsRef.current = {
-      chunkFirstDone: false,
-      showStepsFalseDone: false,
-      showStepsTrueDone: false,
-    };
-    chatSession.handleClear();
-  }, [chatSession, logFlagsRef, setIsPaused]);
 
   // 滚动控制参数
   const SCROLL_THRESHOLD = 150;
@@ -437,11 +425,6 @@ const NewChatContainer: React.FC = () => {
   // 全局快捷键
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + K 清空对话
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        handleClear();
-      }
       // Ctrl/Cmd + N 新建会话
       if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
         e.preventDefault();
@@ -453,7 +436,7 @@ const NewChatContainer: React.FC = () => {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [handleClear, handleNewSession]);
+  }, [handleNewSession]);
 
   // ChatHeader回调
   const handleEditingStart = useCallback(() => {
@@ -466,23 +449,6 @@ const NewChatContainer: React.FC = () => {
   const handleEditingCancel = useCallback(() => {
     setEditingTitle(false);
   }, [setEditingTitle]);
-
-  // ChatToolbar回调
-  const handleToggleStream = useCallback(
-    (checked: boolean) => {
-      console.log('🔍 [流式开关] 被点击，新状态:', checked);
-      setUseStream(checked);
-      if (!checked) {
-        setShowExecution(false);
-      }
-    },
-    [setUseStream, setShowExecution]
-  );
-
-  const handleToggleExecution = useCallback(() => {
-    console.log('🔍 [显示过程] 按钮被点击');
-    setShowExecution(!showExecution);
-  }, [showExecution, setShowExecution]);
 
   // 【v3.4新增 2026-06-09 小沈】授权确认处理
   const handleAuthorizationConfirm = useCallback(

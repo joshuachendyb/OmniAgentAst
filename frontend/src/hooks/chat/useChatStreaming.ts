@@ -18,15 +18,15 @@
  * @update 2026-04-22 添加executeSend方法，迁移executeStreamSend逻辑
  */
 
-import { useCallback } from "react";
-import type { UseChatStateReturn } from "./useChatState";
-import type { UseChatCallbacksReturn } from "./useChatCallbacks";
-import type { ExecutionStep } from "../../utils/sse";
-import type { Message } from "../../types/chat";
-import { useSSE } from "../../utils/sse";
-import { sessionApi } from "../../services/api";
-import { getClientInfo } from "../../utils/clientInfo";
-import { handleError } from "../../utils/errorHandler";
+import { useCallback } from 'react';
+import type { UseChatStateReturn } from './useChatState';
+import type { UseChatCallbacksReturn } from './useChatCallbacks';
+import type { ExecutionStep } from '../../utils/sse';
+import type { Message } from '../../types/chat';
+import { useSSE } from '../../utils/sse';
+import { sessionApi } from '../../services/api';
+import { getClientInfo } from '../../utils/clientInfo';
+import { handleError } from '../../utils/errorHandler';
 
 // ============================================================================
 // 类型定义
@@ -47,26 +47,33 @@ export interface UseChatStreamingReturn {
   // 流式接收状态
   isReceiving: boolean;
   setIsReceiving: (receiving: boolean) => void;
-  
+
   // 执行步骤
   executionSteps: ExecutionStep[];
-  
+
   // 当前响应
   currentResponse: string;
-  
+
   // SSE操作
   sendMessage: (content: string, sessionId?: string) => Promise<void>;
-  disconnect: (stopServer?: boolean, force?: boolean, callback?: () => void) => void;
+  disconnect: (
+    stopServer?: boolean,
+    force?: boolean,
+    callback?: () => void
+  ) => void;
   clearSteps: () => void;
-  
+
   // 服务器任务ID
   serverTaskId: string | null;
-  
+
+  // 任务元信息帧（8.4.14 透传）
+  metaFrames: import('../../utils/sse').TaskMetaFrames;
+
   // Refs - 用于累积流式内容（供外部访问）
   streamingContentRef: React.MutableRefObject<string>;
   streamingStepsRef: React.MutableRefObject<ExecutionStep[]>;
   executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
-  
+
   // 【小强 2026-04-22】executeSend - 完整的发送流程
   executeSend: (userMessage: Message) => Promise<void>;
 }
@@ -77,13 +84,13 @@ export interface UseChatStreamingReturn {
 
 /**
  * useChatStreaming - SSE协议与流式状态管理
- * 
+ *
  * 迁移自：NewChatContainer.tsx 中的SSE相关逻辑
  * - useSSE Hook配置和调用
  * - 发送消息、中断任务等操作
  * - 流式状态管理
  * - executeStreamSend 完整逻辑（2026-04-22迁移）
- * 
+ *
  * @param state - useChatState返回的状态对象
  * @param callbacks - useChatCallbacks返回的回调函数
  * @param config - SSE配置（baseURL, sessionId）
@@ -95,8 +102,17 @@ export const useChatStreaming = (
   config: SSEConfig
 ): UseChatStreamingReturn => {
   const { sessionId, setSessionId } = state;
-  const { onStep, onChunk, onComplete, onError, onPaused, onResumed, onShowSteps, onRetry, onAuthorizationRequired } = callbacks;
-  
+  const {
+    onStep,
+    onChunk,
+    onComplete,
+    onError,
+    onPaused,
+    onResumed,
+    onRetry,
+    onAuthorizationRequired,
+  } = callbacks;
+
   // 使用useSSE Hook
   const {
     isReceiving,
@@ -107,10 +123,11 @@ export const useChatStreaming = (
     disconnect,
     clearSteps,
     serverTaskId,
+    metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
   } = useSSE(
     {
       baseURL: config.baseURL,
-      sessionId: sessionId || "default-session",
+      sessionId: sessionId || 'default-session',
     },
     onStep,
     onChunk,
@@ -118,11 +135,10 @@ export const useChatStreaming = (
     onError,
     onPaused,
     onResumed,
-    onShowSteps,
     onRetry,
-    onAuthorizationRequired  // 【v3.4新增 2026-06-09 小沈】
+    onAuthorizationRequired // 【v3.4新增 2026-06-09 小沈】
   );
-  
+
   // 从state中获取Refs
   const {
     streamingContentRef,
@@ -133,168 +149,219 @@ export const useChatStreaming = (
     replyUserMessageIdRef,
     waitTimerRef,
   } = state;
-  
+
   // 【小强 2026-04-22】从state解构需要的setters
-  const {
-    setLoading,
-    setWaitTime,
-    setIsRetrying,
-    setMessages,
-  } = state;
-  
+  const { setLoading, setWaitTime, setIsRetrying, setMessages } = state;
+
   // 发送消息函数（包装useSSE的sendMessage）
-  const sendMessage = useCallback(async (content: string, customSessionId?: string) => {
-    try {
-      // 清理之前的流式内容
+  const sendMessage = useCallback(
+    async (
+      content: string,
+      customSessionId?: string,
+      contextLinkMode?: 'linked' | 'independent'
+    ) => {
+      try {
+        // 清理之前的流式内容
+        streamingContentRef.current = '';
+        streamingStepsRef.current = [];
+
+        // 调用useSSE的sendMessage
+        return await sendStreamMessage(
+          content,
+          customSessionId,
+          contextLinkMode
+        );
+      } catch (error) {
+        console.error('发送消息失败:', error);
+        throw error;
+      }
+    },
+    [sendStreamMessage, streamingContentRef, streamingStepsRef]
+  );
+
+  // 【小沈 2026-04-22】中断任务函数
+  const disconnectWithParams = useCallback(
+    (stopServer?: boolean, force?: boolean, callback?: () => void) => {
+      disconnect();
+      // 清理流式状态
       streamingContentRef.current = '';
       streamingStepsRef.current = [];
-      
-      // 调用useSSE的sendMessage
-      return await sendStreamMessage(content, customSessionId);
-    } catch (error) {
-      console.error("发送消息失败:", error);
-      throw error;
-    }
-  }, [sendStreamMessage, streamingContentRef, streamingStepsRef]);
-   
-   // 【小沈 2026-04-22】中断任务函数
-   const disconnectWithParams = useCallback((stopServer?: boolean, force?: boolean, callback?: () => void) => {
-    disconnect();
-    // 清理流式状态
-    streamingContentRef.current = '';
-    streamingStepsRef.current = [];
-    if (callback) callback();
-  }, [disconnect, streamingContentRef, streamingStepsRef]);
-  
+      if (callback) callback();
+    },
+    [disconnect, streamingContentRef, streamingStepsRef]
+  );
+
   // 【小强 2026-04-22】executeSend - 完整的发送流程
   // 迁移自：NewChatContainer.tsx 的 executeStreamSend 函数
-  const executeSend = useCallback(async (userMessage: Message) => {
-    console.log("📡 [executeSend] 开始发送消息");
-    
-    // 1. 启动等待计时器
-    setLoading(true);
-    setWaitTime(0);
-    setIsRetrying(false);
-    if (waitTimerRef.current) {
-      clearInterval(waitTimerRef.current);
-    }
-    waitTimerRef.current = setInterval(() => {
-      setWaitTime((t: number) => t + 1);
-    }, 1000);
-    clearSteps();
+  const executeSend = useCallback(
+    async (
+      userMessage: Message,
+      contextLinkMode?: 'linked' | 'independent'
+    ) => {
+      console.log('📡 [executeSend] 开始发送消息');
 
-    // 2. 保存用户消息到后端
-    const currentSessionId = currentSessionIdRef.current || sessionId;
-    
-    let backendUserMessageId: number | null = null;
-    
-    if (currentSessionId) {
-      try {
-        // 获取客户端信息
-        const clientInfo = getClientInfo();
-        console.log("🔍 [executeSend] 客户端信息:", clientInfo);
-        
-        console.log("🔍 [executeSend] 在调用AI之前先保存用户消息:", userMessage);
-        const saveResult = await sessionApi.saveMessage(currentSessionId, {
-          role: "user",
-          content: userMessage.content,
-          client_os: clientInfo.client_os,
-          browser: clientInfo.browser,
-          device: clientInfo.device,
-          network: clientInfo.network,
-        });
-        
-        // 保存用户消息ID，用于AI消息关联
-        backendUserMessageId = saveResult?.message_id || null;
-        replyUserMessageIdRef.current = backendUserMessageId;
-        
-        // 用后端返回的ID更新用户消息ID
-        if (backendUserMessageId) {
-          setMessages((prev) => {
-            const newMessages = [...prev];
-            const userMsgIndex = newMessages.findIndex(m => m.id === userMessage.id);
-            if (userMsgIndex !== -1) {
-              newMessages[userMsgIndex] = {
-                ...newMessages[userMsgIndex],
-                id: String(backendUserMessageId)
-              };
-              console.log("✅ [executeSend] 用户消息ID已更新:", backendUserMessageId);
-            }
-            return newMessages;
+      // 1. 启动等待计时器
+      setLoading(true);
+      setWaitTime(0);
+      setIsRetrying(false);
+      if (waitTimerRef.current) {
+        clearInterval(waitTimerRef.current);
+      }
+      waitTimerRef.current = setInterval(() => {
+        setWaitTime((t: number) => t + 1);
+      }, 1000);
+      clearSteps();
+
+      // 2. 保存用户消息到后端
+      const currentSessionId = currentSessionIdRef.current || sessionId;
+
+      let backendUserMessageId: number | null = null;
+
+      if (currentSessionId) {
+        try {
+          // 获取客户端信息
+          const clientInfo = getClientInfo();
+          console.log('🔍 [executeSend] 客户端信息:', clientInfo);
+
+          console.log(
+            '🔍 [executeSend] 在调用AI之前先保存用户消息:',
+            userMessage
+          );
+          const saveResult = await sessionApi.saveMessage(currentSessionId, {
+            role: 'user',
+            content: userMessage.content,
+            client_os: clientInfo.client_os,
+            browser: clientInfo.browser,
+            device: clientInfo.device,
+            network: clientInfo.network,
           });
-        }
-        
-        console.log("✅ [executeSend] 用户消息保存成功, message_id:", saveResult?.message_id);
-      } catch (error) {
-        console.error("❌ [executeSend] 保存用户消息失败:", error);
-        const is404 = (error as { response?: { status?: number } })?.response?.status === 404;
-        if (is404) {
-          console.warn("🔴 [executeSend] sessionId无效(404)，清空sessionId，SSE将不带sessionId");
-          currentSessionIdRef.current = null;
-          setSessionId(null);
-        } else {
-          const result = handleError(error, { source: "api", continueOnError: true });
-          if (!result.shouldContinue) {
-            console.warn("   └─ 保存失败且不能继续");
+
+          // 保存用户消息ID，用于AI消息关联
+          backendUserMessageId = saveResult?.message_id || null;
+          replyUserMessageIdRef.current = backendUserMessageId;
+
+          // 用后端返回的ID更新用户消息ID
+          if (backendUserMessageId) {
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              const userMsgIndex = newMessages.findIndex(
+                (m) => m.id === userMessage.id
+              );
+              if (userMsgIndex !== -1) {
+                newMessages[userMsgIndex] = {
+                  ...newMessages[userMsgIndex],
+                  id: String(backendUserMessageId),
+                };
+                console.log(
+                  '✅ [executeSend] 用户消息ID已更新:',
+                  backendUserMessageId
+                );
+              }
+              return newMessages;
+            });
+          }
+
+          console.log(
+            '✅ [executeSend] 用户消息保存成功, message_id:',
+            saveResult?.message_id
+          );
+        } catch (error) {
+          console.error('❌ [executeSend] 保存用户消息失败:', error);
+          const is404 =
+            (error as { response?: { status?: number } })?.response?.status ===
+            404;
+          if (is404) {
+            console.warn(
+              '🔴 [executeSend] sessionId无效(404)，清空sessionId，SSE将不带sessionId'
+            );
+            currentSessionIdRef.current = null;
+            setSessionId(null);
+          } else {
+            const result = handleError(error, {
+              source: 'api',
+              continueOnError: true,
+            });
+            if (!result.shouldContinue) {
+              console.warn('   └─ 保存失败且不能继续');
+            }
           }
         }
+      } else {
+        console.warn(
+          '⚠️ [executeSend] 未找到sessionId，无法保存用户消息:',
+          userMessage.id
+        );
       }
-    } else {
-      console.warn("⚠️ [executeSend] 未找到sessionId，无法保存用户消息:", userMessage.id);
-    }
 
-    // 3. 创建assistant占位消息
-    const assistantId = backendUserMessageId 
-      ? (backendUserMessageId + 1).toString() 
-      : (Date.now() + 1).toString();
-    console.log("🔍 [executeSend] assistant消息ID:", assistantId, "(后端ID:", backendUserMessageId, "+1)");
+      // 3. 创建assistant占位消息
+      const assistantId = backendUserMessageId
+        ? (backendUserMessageId + 1).toString()
+        : (Date.now() + 1).toString();
+      console.log(
+        '🔍 [executeSend] assistant消息ID:',
+        assistantId,
+        '(后端ID:',
+        backendUserMessageId,
+        '+1)'
+      );
 
-    const assistantMessage: Message = {
-      id: assistantId,
-      role: "assistant",
-      content: "🤔 AI 正在思考...",
-      timestamp: new Date(),
-      executionSteps: [],
-      isStreaming: true,
-      model: undefined,
-    };
-    setMessages((prev) => [...prev, assistantMessage]);
+      const assistantMessage: Message = {
+        id: assistantId,
+        role: 'assistant',
+        content: '🤔 AI 正在思考...',
+        timestamp: new Date(),
+        executionSteps: [],
+        isStreaming: true,
+        model: undefined,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
 
-    // 4. 调用sendMessage发送
-    sendMessage(userMessage.content, currentSessionIdRef.current ?? sessionId ?? undefined);
-    console.log("✅ [executeSend] sendStreamMessage已调用");
-  }, [
-    sessionId,
-    setSessionId,
-    setLoading,
-    setWaitTime,
-    setIsRetrying,
-    setMessages,
-    waitTimerRef,
-    currentSessionIdRef,
-    replyUserMessageIdRef,
-    clearSteps,
-    sendMessage,
-  ]);
+      // 4. 调用sendMessage发送
+      sendMessage(
+        userMessage.content,
+        currentSessionIdRef.current ?? sessionId ?? undefined,
+        contextLinkMode
+      );
+      console.log('✅ [executeSend] sendStreamMessage已调用');
+    },
+    [
+      sessionId,
+      setSessionId,
+      setLoading,
+      setWaitTime,
+      setIsRetrying,
+      setMessages,
+      waitTimerRef,
+      currentSessionIdRef,
+      replyUserMessageIdRef,
+      clearSteps,
+      sendMessage,
+    ]
+  );
 
   return {
     // 流式状态
     isReceiving,
-    setIsReceiving: setIsReceiving || ((_: boolean) => { /* no-op */ }),
+    setIsReceiving:
+      setIsReceiving ||
+      ((_: boolean) => {
+        /* no-op */
+      }),
     executionSteps,
     currentResponse,
-    
+
     // SSE操作
     sendMessage,
     disconnect: disconnectWithParams,
     clearSteps,
     serverTaskId: serverTaskId || null,
-    
+    metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
+
     // Refs
     streamingContentRef,
     streamingStepsRef,
     executionStepsRef,
-    
+
     // 【小强 2026-04-22】executeSend
     executeSend,
   };

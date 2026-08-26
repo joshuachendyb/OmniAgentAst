@@ -85,7 +85,6 @@ export interface UseChatCallbacksReturn {
   onError: (error: string | SSEError) => void;
   onPaused: () => void;
   onResumed: () => void;
-  onShowSteps: (show: boolean) => void;
   onRetry: (message: string, waitTime?: number) => void;
   onAuthorizationRequired: (data: {
     confirm_id: string;
@@ -137,7 +136,6 @@ export const useChatCallbacks = (
     setIsPaused,
     sessionId,
     setSessionTitle,
-    setShowExecution,
 
     // Refs
     messagesEndRef,
@@ -729,15 +727,6 @@ export const useChatCallbacks = (
     }
   }, [setMessages, setIsPaused, onError, streaming, displayBufferRef]);
 
-  // ==================== onShowSteps回调 ====================
-
-  const onShowSteps = useCallback(
-    (show: boolean) => {
-      setShowExecution(show);
-    },
-    [setShowExecution]
-  );
-
   // ==================== onRetry回调 ====================
 
   const onRetry = useCallback(
@@ -779,7 +768,6 @@ export const useChatCallbacks = (
     onError,
     onPaused,
     onResumed,
-    onShowSteps,
     onRetry,
     onAuthorizationRequired, // 【v3.4新增】
   };
