@@ -118,7 +118,7 @@ export const exportMessage = async (
             tool_name: step.tool_name,
             tool_params: step.tool_params,
           };
-        case 'action_tool':
+        case 'action':
           return {
             ...baseExport,
             step: step.step,
@@ -180,7 +180,6 @@ export const exportMessage = async (
             ...baseExport,
             task_id: step.task_id,
             step: step.step,
-            security_check: step.security_check,
             user_message: step.user_message,
             display_name: step.display_name,
             model: step.model,

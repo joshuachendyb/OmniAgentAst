@@ -9,8 +9,8 @@
  * 因为有时候从当前步骤到下一个步骤（比如调用LLM）需要较长时间，给用户一个心理预期。
  *
  * 例如：
- * - 当前是 thought（思考）步骤时，提示"Agent 正在执行工具" → 下一个是 action_tool
- * - 当前是 action_tool（执行工具）步骤时，提示"Agent 正在执行观察" → 下一个是 observation
+ * - 当前是 thought（思考）步骤时，提示"Agent 正在执行工具" → 下一个是 action
+ * - 当前是 action（执行工具）步骤时，提示"Agent 正在执行观察" → 下一个是 observation
  * - 当前是 observation（观察结果）步骤时，提示"AI 正在思考" → 下一个是 thought（再次调用LLM）
  *
  * 所以这里的文字不是描述当前步骤，而是描述下一个步骤！不要改错了！
@@ -32,7 +32,7 @@ import React, { useState, useEffect } from 'react';
 
 // 状态配置表
 // 【重要】这里的 text 描述的是"下一个步骤"，不是当前步骤！
-// 例如：thought 步骤时显示的是"下一个是 action_tool"，action_tool 步骤时显示的是"下一个是 observation"
+// 例如：thought 步骤时显示的是"下一个是 action"，action 步骤时显示的是"下一个是 observation"
 const statusConfig: Record<
   string,
   { icon: string; text: string; animate: boolean }
@@ -40,7 +40,7 @@ const statusConfig: Record<
   waiting: { icon: '🚀', text: 'AI开始执行任务', animate: true },
   start: { icon: '🤔', text: 'AI 正在思考', animate: true },
   thought: { icon: '🛠️', text: 'Agent 正在执行"tool_name"', animate: true },
-  action_tool: {
+  action: {
     icon: '👁️',
     text: 'Agent 正在执行"observation"',
     animate: true,

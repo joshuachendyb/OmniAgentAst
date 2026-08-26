@@ -10,23 +10,10 @@
  * @updated 2026-07-16 小欧 - Message 接口增 thought 字段
  * @updated 2026-08-22 小欧 - sessionModel 结构化: 新增 SessionModelOverride 接口(provider+model+display_name?); HistoryLoadResult 字段 model_override→sessionModel
  * @updated 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.1: SessionModelOverride 补 api_base?(端点定位, 与后端 ModelRef 形态一致)
+ * @updated 2026-08-26 小欧 - 8.4.7 移除 SecurityCheck、ActionToolMessage→ActionMessage、新增 StartInfoMessage、StartMessage.content
  */
 
 import type { ExecutionStep } from '../utils/sse';
-
-// ============================================================
-// 安全检查相关类型
-// ============================================================
-
-/**
- * 安全检查结果
- */
-export interface SecurityCheck {
-  is_safe: boolean;
-  risk_level: 'low' | 'medium' | 'high' | 'critical' | null;
-  risk: string | null;
-  blocked: boolean;
-}
 
 // ============================================================
 // 消息类型定义（8种）
@@ -42,7 +29,20 @@ export interface StartMessage {
   model: string;
   provider: string;
   task_id: string;
-  security_check?: SecurityCheck;
+  content?: string; // context_summary 上下文摘要（4.9.2.7）
+}
+
+/**
+ * startinfo类型 - 轻量占位（仅 SSE 不落库）
+ * 【小欧 2026-08-26 8.4】驱动任务信息条状态徽标（4.9.2.7）
+ */
+export interface StartInfoMessage {
+  type: 'startinfo';
+  task_id: string;
+  display_name?: string;
+  provider?: string;
+  model?: string;
+  ai_message_id?: string;
 }
 
 /**
@@ -61,20 +61,18 @@ export interface ThoughtMessage {
 }
 
 /**
- * action_tool类型 - 执行动作
- * 发送时机：ReAct第2阶段，工具执行时
- * 【小强修改2026-04-15】删除raw_data，统一使用execution_result
+ * action类型 - 工具调用步骤新结构（4.9.2.9，禁止保留 action_tool）
+ * 【小欧 2026-08-26 8.4】exec_type single/multi + tools 数组（单工具也一个元素）
  */
-export interface ActionToolMessage {
-  type: 'action_tool';
+export interface ActionMessage {
+  type: 'action';
   step: number;
-  tool_name: string;
-  tool_params: Record<string, unknown>;
-  execution_status: 'success' | 'error' | 'warning';
-  summary: string;
-  execution_result?: Record<string, unknown> | null; // 【修改2026-04-15】raw_data → execution_result
-  execution_time_ms?: number; // 【新增2026-04-15】
-  action_retry_count: number;
+  exec_type: 'single' | 'multi';
+  tools: Array<{
+    tool: string;
+    target?: string; // file→file_path / shell→command / network→url 等（后端已提取）
+    params?: Record<string, unknown>; // 供回放重建 FC 参数
+  }>;
 }
 
 /**
@@ -209,7 +207,7 @@ export interface StatusMessage {
 export type StreamMessage =
   | StartMessage
   | ThoughtMessage
-  | ActionToolMessage
+  | ActionMessage
   | ObservationMessage
   | ChunkMessage
   | FinalMessage
@@ -231,10 +229,10 @@ export function isThoughtMessage(msg: StreamMessage): msg is ThoughtMessage {
   return msg.type === 'thought';
 }
 
-export function isActionToolMessage(
+export function isActionMessage(
   msg: StreamMessage
-): msg is ActionToolMessage {
-  return msg.type === 'action_tool';
+): msg is ActionMessage {
+  return msg.type === 'action';
 }
 
 export function isObservationMessage(

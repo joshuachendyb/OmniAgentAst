@@ -37,7 +37,7 @@ import { getTimestampStyle } from '../../../utils/stepStyles';
 const stepIconMap: Record<string, React.ReactNode> = {
   start: <RocketOutlined />,
   thought: <BulbOutlined />,
-  action_tool: <ToolOutlined />,
+  action: <ToolOutlined />,
   observation: <FileTextOutlined />,
   chunk: <MessageOutlined />,
   final: <CheckCircleOutlined />,

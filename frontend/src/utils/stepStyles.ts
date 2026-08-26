@@ -8,6 +8,7 @@
  * @version 2.1.0
  * @since 2026-03-24
  * @update 2026-04-28 小强 - 第七步添加深色模式支持
+ * @update 2026-08-26 小欧 - 8.4.14(5) StepType action 改名+覆盖7个meta类型+补 colorSchemes 条目
  */
 
 import React from 'react';
@@ -48,6 +49,13 @@ export const darkModeColors = {
 export type StepType =
   | 'thought'
   | 'start'
+  | 'startinfo'
+  | 'thought-start'
+  | 'usage'
+  | 'stats'
+  | 'final_stats'
+  | 'context_overview'
+  | 'truncated'
   | 'final'
   | 'error'
   | 'cancelled'
@@ -55,7 +63,7 @@ export type StepType =
   | 'resumed'
   | 'retrying'
   | 'observation'
-  | 'action_tool'
+  | 'action'
   | 'chunk'
   | 'report';
 
@@ -196,7 +204,7 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     priority: 'secondary',
     layout: 'inline',
   },
-  action_tool: {
+  action: {
     bg1: '#f5f5f5',
     bg2: '#fafafa',
     border: '#d9d9d9',
@@ -274,6 +282,71 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     label: '📝 内容',
     priority: 'primary',
     layout: 'block', // 内容片段需要换行显示
+  },
+
+  // ===== 元信息类（灰色系，8.4.14 新增；不进右侧流水线，仅任务信息条消费）=====
+  startinfo: {
+    bg1: '#fafafa',
+    bg2: '#f5f5f5',
+    border: '#d9d9d9',
+    text: '#595959',
+    label: '🚀 开始信息',
+    priority: 'secondary',
+    layout: 'inline',
+  },
+  'thought-start': {
+    bg1: '#fff7e6',
+    bg2: '#fffbe6',
+    border: '#ffd591',
+    text: '#ad4e00',
+    label: '💭 开始思考',
+    priority: 'secondary',
+    layout: 'block',
+  },
+  usage: {
+    bg1: '#f5f5f5',
+    bg2: '#f0f0f0',
+    border: '#d9d9d9',
+    text: '#595959',
+    label: '🔢 Token',
+    priority: 'secondary',
+    layout: 'inline',
+  },
+  stats: {
+    bg1: '#f5f5f5',
+    bg2: '#f0f0f0',
+    border: '#d9d9d9',
+    text: '#595959',
+    label: '📊 统计',
+    priority: 'secondary',
+    layout: 'inline',
+  },
+  final_stats: {
+    bg1: '#f6ffed',
+    bg2: '#f5f5f5',
+    border: '#b7eb8f',
+    text: '#389e0d',
+    label: '📊 终态统计',
+    priority: 'secondary',
+    layout: 'inline',
+  },
+  context_overview: {
+    bg1: '#fafafa',
+    bg2: '#f5f5f5',
+    border: '#d9d9d9',
+    text: '#595959',
+    label: '🧭 上下文概况',
+    priority: 'secondary',
+    layout: 'inline',
+  },
+  truncated: {
+    bg1: '#fff1f0',
+    bg2: '#fff',
+    border: '#ffa39e',
+    text: '#cf1322',
+    label: '✂️ 截断',
+    priority: 'secondary',
+    layout: 'inline',
   },
 };
 

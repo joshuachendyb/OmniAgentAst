@@ -120,7 +120,7 @@ const StepContent: React.FC<StepContentProps> = ({
 
   return (
     <div style={{ ...contentStyle, marginTop: 4, marginLeft: 0 }}>
-      {step.type === 'action_tool' && (
+      {step.type === 'action' && (
         <>
           {renderToolInfo(
             step.tool_name,
@@ -357,45 +357,6 @@ const StepContent: React.FC<StepContentProps> = ({
                 {step.task_id || '无'}
               </span>
             </span>
-            {step.security_check && (
-              <span style={{ marginRight: 16 }}>
-                <span
-                  style={{
-                    color: Colors.TEXT.SECONDARY,
-                    fontWeight: FontWeight.MEDIUM,
-                  }}
-                >
-                  安全：
-                </span>
-                <span
-                  style={{
-                    color: step.security_check.is_safe
-                      ? Colors.SUCCESS
-                      : Colors.ERROR,
-                    fontWeight: FontWeight.BOLD,
-                    backgroundColor: step.security_check.is_safe
-                      ? 'rgba(82,196,26,0.1)'
-                      : 'rgba(255,77,79,0.1)',
-                    padding: '2px 8px',
-                    borderRadius: 4,
-                    fontSize: FontSize.SMALL,
-                  }}
-                >
-                  {step.security_check.is_safe ? '✅ 通过' : '⚠️ 拦截'}
-                </span>
-                {!step.security_check.is_safe && step.security_check.risk && (
-                  <span
-                    style={{
-                      color: Colors.ERROR,
-                      marginLeft: 6,
-                      fontSize: FontSize.TERTIARY,
-                    }}
-                  >
-                    ({step.security_check.risk})
-                  </span>
-                )}
-              </span>
-            )}
             <span style={{ flex: 1 }} />
           </div>
           {step.provider || step.model || step.display_name ? (

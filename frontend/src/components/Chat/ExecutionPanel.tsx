@@ -319,7 +319,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
               </div>
             );
 
-          case 'action_tool':
+          case 'action':
             return (
               <div className="step-item">
                 <div className="action-step">

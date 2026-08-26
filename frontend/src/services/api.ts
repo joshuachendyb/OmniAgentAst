@@ -14,6 +14,7 @@
  * @update 添加配置管理、会话管理接口 - by 小新
  * @update 2026-08-22 小欧 - sessionModel 结构化(L2 会话级模型覆盖): GetSessionMessagesResponse/UpdateSessionResponse 字段 model_override→sessionModel(SessionModelOverride 类型); updateSession 签名加 sessionModel 参数并发送
  * @update 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B(前端随后端修改): Config.ai_provider/ai_model→ai_model_ref、ConfigUpdate 同、FullConfigResponse.current_provider/current_model→current_model_ref(均 SessionModelOverride=后端 ModelRef 镜像, 补 api_base?); ValidateResponse.provider/model→model_ref?; types/chat.ts SessionModelOverride 补 api_base?
+ * @update 2026-08-26 小欧 - 8.2.1 任务清单(B1)/任务详情(C1)/执行步骤(C2)/信任(D1/D2) API 命名空间+类型+adaptTaskDetail 纯函数落地
  */
 
 import axios from "axios";
@@ -872,6 +873,135 @@ export const taskControlApi = {
     return response.data;
   },
 
+};
+
+// ============================================================
+// 【小欧 2026-08-26 8.2/8.5/8.7/8.C】任务清单(B1)/任务详情(C1)/执行步骤(C2)/信任(D1/D2)
+// 全部对齐后端实测路由与响应形状（2026-08-26 实读 sessions.py/task_execution.py/
+// storage.py 核验，见 8.C 对照表）；不再使用拟定形状。
+// 【R1 二轮 A6 补全】本节此前仅有类型 SessionTaskItem，三个 API 命名空间与
+// adaptTaskDetail 有名无体——现补齐全部真实定义。
+// ============================================================
+
+/**
+ * 任务清单行（GET /sessions/{session_id}/tasks 实测字段，storage.list_session_tasks）
+ * ⚠ 8.C-①：context_link_mode 后端补列（D-1 已实现）后为必填；
+ *   补列部署前左列类型徽标守卫不渲染（不阻塞其余字段）。
+ */
+export interface SessionTaskItem {
+  task_id: string;
+  user_input: string;
+  status: string; // 实测枚举：executing(初始,storage.py:467) → completed/failed/cancelled/paused(:128)；未知值前端兜底灰色
+  duration: number | null;
+  model: string | null; // sessionModel JSON 派生键（后端已派生）
+  provider: string | null;
+  total_steps: number;
+  llm_call_count: number;
+  created_at: string;
+  updated_at: string;
+  /** ⚠ 8.C-①/D-1：B1 SELECT 已补列；后端未部署该版本前字段缺失，前端守卫不渲染 */
+  context_link_mode?: 'linked' | 'independent';
+}
+
+/** B1 响应（task_queries/sessions.py list_tasks 包装：{tasks,total}） */
+export interface SessionTasksResponse {
+  tasks: SessionTaskItem[];
+  total: number;
+}
+
+/** 产出物条目（chat_tasks.artifacts 元素 / final_stats.artifacts 同构） */
+export interface TaskArtifact {
+  name: string;
+  path: string;
+  type: string;
+}
+
+/**
+ * 任务详情视图模型（C1 GET /chat/execution/task/{task_id} 经 adaptTaskDetail 适配后）
+ * 【8.C-③】实测原始形状为嵌套 {task(chat_tasks 全列), tool_stats(数组!), user_message}，
+ * 且 task.accumulated_usage 为 JSON 文本（SELECT * 未解析）——统一在本适配层归一。
+ */
+export interface TaskDetail {
+  task_id: string;
+  session_id: string;
+  status: string;
+  duration: number | null;
+  total_steps: number;
+  llm_call_count: number;
+  retry_count: number;
+  error_type: string | null;
+  error_message: string | null;
+  accumulated_usage: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
+  artifacts: TaskArtifact[] | null;
+  tool_stats: Record<string, number>; // 数组→dict 归一后
+}
+
+/**
+ * C1 响应适配纯函数（8.C-③）：JSON 兜底解析 accumulated_usage + tool_stats 数组转 dict。
+ * 纯函数无副作用，供 StaticStatsBlock 前统一调用；解析失败静默回退空对象/null。
+ */
+export function adaptTaskDetail(
+  raw: { task: Record<string, unknown>; tool_stats: Array<{ tool_name: string; call_count: number }> }
+): TaskDetail {
+  const t = raw.task ?? {};
+  let usage: TaskDetail['accumulated_usage'] = null;
+  if (typeof t.accumulated_usage === 'string' && t.accumulated_usage) {
+    try {
+      usage = JSON.parse(t.accumulated_usage);
+    } catch {
+      usage = null; // JSON 文本损坏时兜底
+    }
+  } else if (t.accumulated_usage && typeof t.accumulated_usage === 'object') {
+    usage = t.accumulated_usage as TaskDetail['accumulated_usage'];
+  }
+  const toolStats: Record<string, number> = {};
+  for (const it of raw.tool_stats ?? []) {
+    toolStats[it.tool_name] = it.call_count;
+  }
+  return {
+    task_id: String(t.task_id ?? ''),
+    session_id: String(t.session_id ?? ''),
+    status: String(t.status ?? ''),
+    duration: (t.duration as number | null) ?? null,
+    total_steps: Number(t.total_steps ?? 0),
+    llm_call_count: Number(t.llm_call_count ?? 0),
+    retry_count: Number(t.retry_count ?? 0),
+    error_type: (t.error_type as string | null) ?? null,
+    error_message: (t.error_message as string | null) ?? null,
+    accumulated_usage: usage,
+    artifacts: (t.artifacts as TaskArtifact[] | null) ?? null,
+    tool_stats: toolStats,
+  };
+}
+
+/** B1 会话任务清单（sessions.py:80 → storage.list_session_tasks） */
+export const sessionTaskApi = {
+  listTasks: (sessionId: string): Promise<SessionTasksResponse> =>
+    api.get(`/sessions/${sessionId}/tasks`).then((r) => r.data),
+};
+
+/** C1/C2 任务详情与步骤回放（chat/task_execution.py:16/:32） */
+export const executionApi = {
+  getTaskDetail: async (taskId: string): Promise<TaskDetail> => {
+    const r = await api.get(`/chat/execution/task/${taskId}`);
+    return adaptTaskDetail(r.data); // 入口即适配，消费方拿到的永远是归一形状
+  },
+  getTaskSteps: (taskId: string): Promise<{ task_id: string; steps: unknown[]; count: number }> =>
+    api.get(`/chat/execution/task/${taskId}/steps`).then((r) => r.data),
+};
+
+/** D1/D2 信任清单（sessions.py:88/:96；实测 {session_id,total,trusted_tools:[{tool_name,created_at}]}） */
+export const trustApi = {
+  getTrust: async (sessionId: string): Promise<string[]> => {
+    const r = await api.get(`/sessions/${sessionId}/trust`);
+    return ((r.data?.trusted_tools ?? []) as Array<{ tool_name: string }>).map((x) => x.tool_name);
+  },
+  revokeTrust: (sessionId: string, toolName: string): Promise<void> =>
+    api.delete(`/sessions/${sessionId}/trust/${encodeURIComponent(toolName)}`).then(() => undefined),
 };
 
 export default api;

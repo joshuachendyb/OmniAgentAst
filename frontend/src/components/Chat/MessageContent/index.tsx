@@ -75,7 +75,7 @@ const ContentFallback: React.FC<{
 
   let hasAction = 0;
   for (const step of executionSteps) {
-    if (step.type === 'action_tool') {
+    if (step.type === 'action') {
       hasAction = 1;
       break;
     }

@@ -22,11 +22,13 @@
  * 2026-08-18 小欧 三堂会审(P7/P4): ① case 'startinfo' 并入 case 'start' 渲染, 修复后端实时事件由 start 改 startinfo 后任务头部占位失效; ② error 分支优先读 content 再回退 error_message, 修复 error_message 已迁 content 后实时错误显示退化'未知错误'
  * 2026-08-23 小欧 三堂会审修复: ExecutionStep 接口 error_type(:153)/error_message(:154) 历史遗留重复声明
  *   (TS2300 Duplicate identifier, tsc --noEmit 失败), 删除 :172/:177 处重复定义保留终态声明处单一权威
+ * 2026-08-26 小欧 8.4/8.4.14 实施: ①ExecutionStep.type 移除 action_tool 改 action + 新增 startinfo/thought-start/usage/stats/final_stats/context_overview/truncated;
+ *   ②移除 SecurityCheck 字段与 import; ③移除 PerformanceMetrics 估算消费(state/重置/返回/接口); ④start/startinfo 拆双 + usage/stats/final_stats/context_overview/truncated/thought-start 六新 case(统计类经 handlers.setMetaFrames 入 metaFrames 帧,不落库不导出);
+ *   ⑤final 解析 accumulated_usage + 四维累计; ⑥error 不进 executionSteps(收敛为事件); ⑦metaFrames/usageAccumRef/lastUsageSeqRef 入 useSSE 闭包并经 handlers 注入模块级 processSSEData; ⑧全仓 action_tool→action 同步改名
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
-import type { SecurityCheck } from '../types/chat';
 import {
   handleSSEError as errorHandlerHandleSSE,
   ErrorType,
@@ -38,6 +40,67 @@ import { taskControlApi } from '../services/api';
 // 问题：浏览器降频导致回调延迟执行，标签页可能被丢弃
 // 解决：同时保存到 ref + sessionStorage，即使标签页丢弃数据也不会丢失
 const SSE_STORAGE_KEY = 'sse_execution_steps_backup';
+
+// ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
+export interface StartInfoFrame {
+  task_id?: string;
+  display_name?: string;
+  provider?: string;
+  model?: string;
+  ai_message_id?: string;
+}
+export interface StatsFrame {
+  step_count?: number;
+  llm_call_count?: number;
+  retry_count?: number;
+  duration?: number;
+}
+export interface FinalStatsFrame {
+  duration?: number;
+  tool_stats?: Record<string, number>;
+  artifacts?: Array<{ name: string; path: string; type: string }> | null;
+  final_status?: 'completed' | 'failed' | 'cancelled';
+  retry_count?: number;
+}
+export interface ContextOverviewFrame {
+  summary: string;
+  message_count?: number;
+  estimated_tokens?: number;
+  truncated: boolean;
+  injected_ratio?: number;
+}
+export interface TaskMetaFrames {
+  contextSummary: string; // start.content
+  startInfo: StartInfoFrame | null;
+  startTimestamp: number; // start 事件时间戳（供 useTaskInfo 过程条首行使用）
+  usage: { prompt: number; completion: number; total: number }; // 逐帧累加
+  stats: StatsFrame | null; // 保留上一帧
+  finalStats: FinalStatsFrame | null;
+  contextOverview: ContextOverviewFrame | null; // 保留上一帧
+  truncated: { content: string; severity: 'info' | 'warn' | 'error' } | null;
+}
+export const emptyMetaFrames = (): TaskMetaFrames => ({
+  contextSummary: '',
+  startInfo: null,
+  startTimestamp: 0,
+  usage: { prompt: 0, completion: 0, total: 0 },
+  stats: null,
+  finalStats: null,
+  contextOverview: null,
+  truncated: null,
+});
+
+/** 持久化黑名单：统计类通知不落库不导出（生命周期类仍随步骤流落库，见 8.4.14 口径） */
+export const PERSIST_BLOCKLIST = [
+  'startinfo',
+  'usage',
+  'stats',
+  'final_stats',
+  'context_overview',
+  'truncated',
+] as const;
+export const isPersistBlocked = (type: string): boolean =>
+  (PERSIST_BLOCKLIST as readonly string[]).includes(type);
 
 /**
  * SSE错误类型 - 用于 onError 回调函数参数
@@ -88,16 +151,25 @@ export interface SSEMetadata {
  */
 export interface ExecutionStep {
   // === 通用字段 ===
-  // ⭐ 新增action_tool类型，替换原来的action
-  // 【北京老陈 2026-07-13 小欧】生命周期 Step 统一约定：type 直接为 cancelled/paused/retrying/resumed
+  // 【小欧 2026-08-26 8.4】①'action_tool'全链替换为'action'（后端 ActionStep.TYPE 已改，
+  //   禁止 backward，见 4.9.2.9）；②新增 MetaStep 类事件 type：
+  //   thought-start/usage/stats/final_stats/context_overview/truncated/startinfo
+  //   （数据源仍是一条 executionSteps 不拆流，渲染入口按 7.10 分流）
   type:
     | 'thought'
-    | 'action_tool'
+    | 'action'
     | 'observation'
     | 'chunk'
     | 'final'
     | 'error'
     | 'start'
+    | 'startinfo'
+    | 'thought-start'
+    | 'usage'
+    | 'stats'
+    | 'final_stats'
+    | 'context_overview'
+    | 'truncated'
     | 'cancelled'
     | 'paused'
     | 'resumed'
@@ -190,13 +262,39 @@ export interface ExecutionStep {
   };
   wait_time?: number; // 等待时间（秒）
 
+  // === 【小欧 2026-08-26 8.4】action 新结构字段（exec_type single/multi + tools 数组）===
+  exec_type?: 'single' | 'multi';
+  tools?: Array<{ tool: string; target?: string; params?: Record<string, unknown> }>;
+
+  // === 【小欧 2026-08-26 8.4/8.6】MetaStep 扩展字段（旧任务 null 须 ?. 防空）===
+  severity?: 'info' | 'warn' | 'error';
+  ai_message_id?: string;
+  // usage（每轮 LLM 响应 usage）+ 四维累计（final._extra_fields 同名）
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  llm_call_count_token?: number;
+  task_accumulated_tokens?: number;
+  session_accumulated_tokens?: number;
+  chain_accumulated_tokens?: number;
+  // stats 流式统计
+  step_count?: number;
+  llm_call_count?: number;
+  retry_count?: number;
+  duration?: number; // 秒
+  // final_stats 终态统计
+  tool_stats?: Record<string, number>;
+  artifacts?: Array<{ name: string; path: string; type: string }> | null;
+  final_status?: 'completed' | 'failed' | 'cancelled';
+  // context_overview
+  message_count?: number;
+  estimated_tokens?: number;
+  injected_ratio?: number;
+
   // === 前端额外字段 ===
   timestamp: number; // 前端生成的时间戳
   contentStart?: number; // content起始位置（用于流式定位）
   contentEnd?: number; // content结束位置
-
-  // === 安全检查字段 ===
-  security_check?: SecurityCheck;
 }
 
 /**
@@ -241,20 +339,8 @@ export interface UseSSEReturn {
   reconnectStatus: 'idle' | 'connecting' | 'reconnecting' | 'failed';
   /** 手动重连 */
   reconnect: () => void;
-  /** 性能指标 */
-  performanceMetrics?: PerformanceMetrics | null;
-}
-
-/**
- * SSE性能指标
- * 【小强添加 2026-03-18】用于追踪用户体验
- */
-export interface PerformanceMetrics {
-  ttft: number; // Time To First Token 首token时间（毫秒）
-  totalTokens: number; // 估算总token数
-  tokensPerSecond: number; // 每秒token数
-  totalTime: number; // 总响应时间（毫秒）
-  chunkCount: number; // chunk数量
+  /** 任务元信息帧快照（usage/stats/final_stats/context_overview/truncated/startInfo/上下文摘要） */
+  metaFrames: TaskMetaFrames;
 }
 
 /**
@@ -528,6 +614,11 @@ export const useSSE = (
   const abortControllerRef = useRef<AbortController | null>(null); // 【修复 2026-05-11 小健】fetch AbortController ref，disconnect时可abort
   const responseBufferRef = useRef('');
   const isProcessingRef = useRef(false);
+
+  // 【小欧 2026-08-26 8.4.14】任务元信息帧状态 + usage 续传去重
+  const [metaFrames, setMetaFrames] = useState<TaskMetaFrames>(emptyMetaFrames());
+  const usageAccumRef = useRef({ prompt: 0, completion: 0, total: 0 });
+  const lastUsageSeqRef = useRef<number>(-1);
   const [serverTaskId, setServerTaskId] = useState<string | null>(null);
 
   // 重连相关
@@ -546,10 +637,8 @@ export const useSSE = (
     sessionId?: string;
   } | null>(null);
 
-  // 【小强添加 2026-03-18】性能指标相关
-  const [performanceMetrics, setPerformanceMetrics] =
-    useState<PerformanceMetrics | null>(null);
-  const ttftRef = useRef<number>(0); // 存储 TTFT 值
+  // 【小强添加 2026-03-18】性能指标相关（小欧 2026-08-26 8.4.6 移除 PerformanceMetrics 估算消费）
+  const ttftRef = useRef<number>(0); // 存储 TTFT 值（保留引用避免误删关联逻辑）
   const requestStartTimeRef = useRef<number>(0);
   const chunkCountRef = useRef<number>(0);
 
@@ -699,11 +788,10 @@ export const useSSE = (
       clearSteps(); // 新请求：完全清空 steps
     }
 
-    // 【小强添加 2026-03-18】重置性能指标并记录开始时间
+    // 【小强添加 2026-03-18】重置性能指标并记录开始时间（小欧 2026-08-26 8.4.6 移除 PerformanceMetrics 估算消费）
     requestStartTimeRef.current = Date.now();
     ttftRef.current = 0;
     chunkCountRef.current = 0;
-    setPerformanceMetrics(null);
 
     setIsReceiving(true);
     setIsConnected(true);
@@ -810,6 +898,9 @@ export const useSSE = (
                 onSeq: (s: number) => {
                   if (s > lastSeqRef.current) lastSeqRef.current = s;
                 },
+                setMetaFrames,
+                usageAccumRef,
+                lastUsageSeqRef,
               },
               isProcessingRef
             );
@@ -850,6 +941,9 @@ export const useSSE = (
               onSeq: (s: number) => {
                 if (s > lastSeqRef.current) lastSeqRef.current = s;
               },
+              setMetaFrames,
+              usageAccumRef,
+              lastUsageSeqRef,
             },
             isProcessingRef
           );
@@ -1019,7 +1113,7 @@ export const useSSE = (
     setServerTaskId,
     reconnectStatus,
     reconnect,
-    performanceMetrics, // 【小强添加 2026-03-18】性能指标
+    metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照
   };
 };
 
@@ -1063,6 +1157,10 @@ const processSSEData = (
     setServerTaskId?: (taskId: string) => void;
     // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，用于断线重连 after_seq 续传
     onSeq?: (seq: number) => void;
+    // 【小欧 2026-08-26 8.4.14】元信息帧状态注入（useSSE 闭包 state/ref 透传进模块级 processSSEData）
+    setMetaFrames?: React.Dispatch<React.SetStateAction<TaskMetaFrames>>;
+    usageAccumRef?: React.MutableRefObject<{ prompt: number; completion: number; total: number }>;
+    lastUsageSeqRef?: React.MutableRefObject<number>;
   },
   _isProcessingRef: React.MutableRefObject<boolean>
 ) => {
@@ -1150,66 +1248,126 @@ const processSSEData = (
     }
 
     switch (rawData.type) {
+      // 【小欧 2026-08-26 8.4.3】start/startinfo 拆双（4.9.2.7）：
+      //  - start.content=context_summary -> 元信息帧 contextSummary（任务信息条上下文概况，三分归位③），
+      //    不进右侧查看区流水线（4.4.4）；user_message 对话界面已可见不重复渲染（4.9.1）；
+      //    model/provider 由顶栏徽标承载（4.8.3-A）。
+      //  - startinfo -> 元信息帧 startInfo（驱动状态徽标），同样不入步骤列表。
       case 'start':
-      // 【小欧 2026-08-18 三堂会审 P7】后端实时事件由 start 改为 startinfo(轻量占位, 复用 start 渲染)。
-      //   startinfo 字段 = task_id/display_name/provider/model/timestamp/ai_message_id(无 user_message/security_check),
-      //   复用下方 start 占位构造(security_check 缺省 undefined、user_message 缺省 ''、onShowSteps 触发), 渲染路径完全一致。
       case 'startinfo': {
-        const stepNum = rawData.step || 1;
-        console.log(
-          `%c[STEP] [type=start] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
-          'color: red; font-weight: bold;'
-        );
-        let displayName = rawData.display_name;
-        if (!displayName && rawData.model && rawData.provider) {
-          displayName = `${rawData.provider} (${rawData.model})`;
+        if (rawData.type === 'start') {
+          const summary = typeof rawData.content === 'string' ? rawData.content : '';
+          handlers.setMetaFrames?.((prev) => ({ ...prev, contextSummary: summary, startTimestamp: Date.now() }));
+          break;
         }
+        handlers.setMetaFrames?.((prev) => ({
+          ...prev,
+          startInfo: {
+            task_id: rawData.task_id,
+            display_name: rawData.display_name,
+            provider: rawData.provider,
+            model: rawData.model,
+            ai_message_id: rawData.ai_message_id,
+          },
+        }));
+        break;
+      }
 
-        const startStep: ExecutionStep = {
-          type: 'start',
-          content: '🤔 AI 正在思考...',
-          // 【小资修复 2026-03-18】使用后端返回的timestamp，而不是前端生成
-          timestamp: timestampValue,
-          model: rawData.model,
-          provider: rawData.provider,
-          display_name: displayName,
-          // 【小新修复2026-03-10】添加task_id字段映射
-          task_id: rawData.task_id,
-          // 【小强添加 2026-03-24】添加user_message字段映射
-          user_message: rawData.user_message || '',
-          // 【小强修复 2026-03-18】添加step字段映射，后端已返回step值
+      // thought-start："开始思考"实时信号 —— 业务流标记，入列且同步 ref（ThinkingStream 光标）
+      case 'thought-start': {
+        const ts: ExecutionStep = {
+          type: 'thought-start',
+          content: '',
           step: rawData.step || 1,
-          // 【小查修复2026-03-10】添加security_check字段处理
-          security_check: rawData.security_check
-            ? {
-                is_safe: rawData.security_check.is_safe,
-                risk_level: rawData.security_check.risk_level,
-                risk: rawData.security_check.risk,
-                blocked: rawData.security_check.blocked,
-              }
-            : undefined,
+          timestamp: timestampValue,
         };
-
-        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
-        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
-        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
-        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
         setExecutionSteps((prev) => {
-          const newSteps = [...prev, startStep];
-          handlers.executionStepsRef.current = newSteps;
-          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
+          const next = [...prev, ts];
+          handlers.executionStepsRef.current = next;
           setTimeout(() => {
             try {
-              saveStepsToStorage?.(newSteps);
+              saveStepsToStorage?.(next);
             } catch (e) {
               console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
             }
           }, 0);
-          return newSteps;
+          return next;
         });
-        onStep?.(startStep);
-        // 【小查修复】收到start时显示步骤UI（必须在onStep之后）
-        onShowSteps?.(true);
+        onStep?.(ts);
+        break;
+      }
+
+      // usage：单任务 token 帧 —— 断线续传(E2)按 seq 去重防重复累加【R1-B13】
+      case 'usage': {
+        if (typeof rawData.seq === 'number') {
+          if (rawData.seq <= (handlers.lastUsageSeqRef?.current ?? -1)) break;
+          if (handlers.lastUsageSeqRef) handlers.lastUsageSeqRef.current = rawData.seq;
+        }
+        if (handlers.usageAccumRef) {
+          handlers.usageAccumRef.current = {
+            prompt: handlers.usageAccumRef.current.prompt + (rawData.prompt_tokens ?? 0),
+            completion: handlers.usageAccumRef.current.completion + (rawData.completion_tokens ?? 0),
+            total: handlers.usageAccumRef.current.total + (rawData.total_tokens ?? 0),
+          };
+        }
+        const acc = handlers.usageAccumRef?.current ?? { prompt: 0, completion: 0, total: 0 };
+        handlers.setMetaFrames?.((prev) => ({ ...prev, usage: { ...acc } }));
+        break;
+      }
+
+      // stats：耗时/轮次流式帧
+      case 'stats': {
+        handlers.setMetaFrames?.((prev) => ({
+          ...prev,
+          stats: {
+            step_count: rawData.step_count,
+            llm_call_count: rawData.llm_call_count,
+            retry_count: rawData.retry_count,
+            duration: rawData.duration,
+          },
+        }));
+        break;
+      }
+
+      // final_stats：终态统计独立步（duration/tool_stats/artifacts）
+      case 'final_stats': {
+        handlers.setMetaFrames?.((prev) => ({
+          ...prev,
+          finalStats: {
+            duration: rawData.duration,
+            tool_stats: rawData.tool_stats,
+            artifacts: rawData.artifacts,
+            final_status: rawData.final_status,
+            retry_count: rawData.retry_count,
+          },
+        }));
+        break;
+      }
+
+      // context_overview：上下文概况帧
+      case 'context_overview': {
+        handlers.setMetaFrames?.((prev) => ({
+          ...prev,
+          contextOverview: {
+            summary: rawData.summary ?? '',
+            message_count: rawData.message_count,
+            estimated_tokens: rawData.estimated_tokens,
+            truncated: rawData.truncated === true,
+            injected_ratio: rawData.injected_ratio,
+          },
+        }));
+        break;
+      }
+
+      // truncated：输出截断提示帧（severity=warn，字段=content）
+      case 'truncated': {
+        handlers.setMetaFrames?.((prev) => ({
+          ...prev,
+          truncated: {
+            content: rawData.content ?? '',
+            severity: rawData.severity ?? 'warn',
+          },
+        }));
         break;
       }
 
@@ -1349,6 +1507,15 @@ const processSSEData = (
         step.model = rawData.model;
         step.provider = rawData.provider;
 
+        // 【小欧 2026-08-26 8.4/8.8】FinalStep._extra_fields：token 终值 + 四维累计
+        step.prompt_tokens = rawData.accumulated_usage?.prompt_tokens;
+        step.completion_tokens = rawData.accumulated_usage?.completion_tokens;
+        step.total_tokens = rawData.accumulated_usage?.total_tokens;
+        step.llm_call_count_token = rawData.llm_call_count_token;
+        step.task_accumulated_tokens = rawData.task_accumulated_tokens;
+        step.session_accumulated_tokens = rawData.session_accumulated_tokens;
+        step.chain_accumulated_tokens = rawData.chain_accumulated_tokens;
+
         const displayName = rawData.display_name;
 
         // 【关键修复 2026-04-13】在回调之前先更新ref，确保onComplete获取完整数据
@@ -1443,28 +1610,10 @@ const processSSEData = (
         if (rawData.timestamp) {
           step.timestamp = rawData.timestamp;
         }
-        // 【小沈修复 2026-03-17】先调用onStep，将error步骤添加到executionSteps
-        // 问题：之前只调用onError，没有调用onStep，导致error步骤丢失
-        // 【小强修复 2026-04-03】error步骤也需要保存到sessionStorage，否则页面切换后丢失
-        // 【小强修复 2026-04-10】使用回调函数模式 + 添加 onShowSteps?.(true) + setTimeout延迟保存
-        // 问题：之前使用直接同步更新，导致 ref 和 state 不同步
-        // 解决：在 setExecutionSteps 回调函数内部更新 ref，确保同步
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
-          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
-          setTimeout(() => {
-            try {
-              saveStepsToStorage?.(newSteps);
-            } catch (e) {
-              console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-            }
-          }, 0);
-          return newSteps;
-        });
-        onStep?.(step);
-        // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保 error 步骤显示
-        onShowSteps?.(true);
+        // 【小欧 2026-08-26 8.4】error 收敛为事件通知：不进执行步骤列表、不落库不回放
+        // （4.9.2.6）；失败态展示 = 任务信息条状态徽标(final.outcome=failed) + RightViewer
+        // 经 onError→liveErrorText 直渲错误行（8.10，非 StatusLine）+ 静态统计块错误项。
+        // 文本读 content（P4 已收敛），回退 error_message。
         // 【小沈修改2026-04-15】传递完整的错误对象，统一使用error_message，删除code字段
         onError?.({
           type: 'error',
@@ -1486,31 +1635,38 @@ const processSSEData = (
         break;
       }
 
-      // 【小沈修复 2026-04-11】新增：action_tool类型处理
-      case 'action_tool': {
+      // 【小欧 2026-08-26 8.4】action 新结构：exec_type(single/multi) + tools 数组
+      // 单工具也是一个元素不做特判（4.9.2.9）；禁止保留 'action_tool' 兼容分支
+      case 'action': {
         const receiveTime = Date.now(); // 【收到数据】时间
         const actionStepNum = step.step; // step 序号
-        const stepLabel = ` [type=action_tool] [step=${actionStepNum}]`;
+        const stepLabel = ` [type=action] [step=${actionStepNum}]`;
 
-        step.tool_name = rawData.tool_name || '';
-        step.tool_params = rawData.tool_params || {};
-        step.execution_status = rawData.execution_status;
-        step.summary = rawData.summary;
-        // 【小强修改2026-04-15】直接使用execution_result
-        step.execution_result = rawData.execution_result || null;
-        step.execution_time_ms = rawData.execution_time_ms;
-        step.action_retry_count = rawData.action_retry_count;
+        step.exec_type = rawData.exec_type === 'multi' ? 'multi' : 'single';
+        const tools: Array<{ tool: string; target?: string; params?: Record<string, unknown> }> =
+          Array.isArray(rawData.tools)
+            ? rawData.tools.map(
+                (t: { tool: string; target?: string; params?: Record<string, unknown> }) => ({
+                  tool: t.tool,
+                  target: t.target,
+                  params: t.params,
+                })
+              )
+            : [];
+        step.tools = tools;
+        step.content =
+          tools.map((t) => (t.target ? `${t.tool}(${t.target})` : t.tool)).join(' + ');
 
         // 【红色】收到数据
         console.log(
-          `%c[ACTION_TOOL]${stepLabel} [收到数据] 时间=${new Date(receiveTime).toLocaleTimeString()}`,
+          `%c[ACTION]${stepLabel} [收到数据] 时间=${new Date(receiveTime).toLocaleTimeString()}`,
           'color: red; font-weight: bold;'
         );
 
         // 【蓝色】ExecutionSteps保存开始时间
         const execStepsStartTime = Date.now();
         console.log(
-          `%c[ACTION_TOOL]${stepLabel} [ExecutionSteps保存开始] 时间=${new Date(execStepsStartTime).toLocaleTimeString()}`,
+          `%c[ACTION]${stepLabel} [ExecutionSteps保存开始] 时间=${new Date(execStepsStartTime).toLocaleTimeString()}`,
           'color: blue;'
         );
 
@@ -1519,7 +1675,7 @@ const processSSEData = (
           const execStepsDoneTime = Date.now();
           const execStepsDuration = execStepsDoneTime - execStepsStartTime;
           console.log(
-            `%c[ACTION_TOOL]${stepLabel} [ExecutionSteps保存完成] 完成=${new Date(execStepsDoneTime).toLocaleTimeString()} 耗时=${execStepsDuration}ms`,
+            `%c[ACTION]${stepLabel} [ExecutionSteps保存完成] 完成=${new Date(execStepsDoneTime).toLocaleTimeString()} 耗时=${execStepsDuration}ms`,
             'color: blue;'
           );
 
@@ -1529,7 +1685,7 @@ const processSSEData = (
           // 【紫色】sessionStorage保存开始时间
           const storageStartTime = Date.now();
           console.log(
-            `%c[ACTION_TOOL]${stepLabel} [sessionStorage保存开始] 时间=${new Date(storageStartTime).toLocaleTimeString()}`,
+            `%c[ACTION]${stepLabel} [sessionStorage保存开始] 时间=${new Date(storageStartTime).toLocaleTimeString()}`,
             'color: #006400; font-weight: bold;'
           );
 
@@ -1539,7 +1695,7 @@ const processSSEData = (
               const storageDoneTime = Date.now();
               const storageDuration = storageDoneTime - storageStartTime;
               console.log(
-                `%c[ACTION_TOOL]${stepLabel} [sessionStorage保存完成] 完成=${new Date(storageDoneTime).toLocaleTimeString()} 耗时=${storageDuration}ms`,
+                `%c[ACTION]${stepLabel} [sessionStorage保存完成] 完成=${new Date(storageDoneTime).toLocaleTimeString()} 耗时=${storageDuration}ms`,
                 'color: #006400; font-weight: bold;'
               );
               saveStepsToStorage?.(newSteps);
@@ -1553,7 +1709,7 @@ const processSSEData = (
         // 【青色】渲染开始时间点
         const renderStartTime = Date.now();
         console.log(
-          `%c[ACTION_TOOL]${stepLabel} [渲染开始] 时间=${new Date(renderStartTime).toLocaleTimeString()}`,
+          `%c[ACTION]${stepLabel} [渲染开始] 时间=${new Date(renderStartTime).toLocaleTimeString()}`,
           'color: cyan;'
         );
 
@@ -1564,7 +1720,7 @@ const processSSEData = (
         const renderDoneTime = Date.now();
         const renderDuration = renderDoneTime - renderStartTime;
         console.log(
-          `%c[ACTION_TOOL]${stepLabel} [渲染完成] 完成=${new Date(renderDoneTime).toLocaleTimeString()} 耗时=${renderDuration}ms`,
+          `%c[ACTION]${stepLabel} [渲染完成] 完成=${new Date(renderDoneTime).toLocaleTimeString()} 耗时=${renderDuration}ms`,
           'color: cyan; font-weight: bold;'
         );
 

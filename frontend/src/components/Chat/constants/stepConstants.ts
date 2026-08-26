@@ -9,7 +9,7 @@
 export const STEP_LABEL_MAP: Record<string, string> = {
   start: '开始',
   thought: '思考',
-  action_tool: '执行',
+  action: '执行',
   observation: '观察',
   chunk: '回复',
   final: '完成',
@@ -24,7 +24,7 @@ export const STEP_LABEL_MAP: Record<string, string> = {
 export const STEP_ICON_MAP: Record<string, string> = {
   start: '🚀',
   thought: '💭',
-  action_tool: '⚙️',
+  action: '⚙️',
   observation: '📋',
   chunk: '💬',
   final: '✅',
