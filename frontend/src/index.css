@@ -38,3 +38,35 @@ body {
   padding: 0 !important;
   margin: 0 !important;
 }
+
+/* HITL 呼吸边框（8.4.11）工具调用行挂起时整行高亮呼吸 */
+.hitl-border {
+  border: 1px solid #faad14;
+  animation: hitl-breathing 1.4s ease-in-out infinite;
+}
+
+@keyframes hitl-breathing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(250, 173, 20, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(250, 173, 20, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(250, 173, 20, 0);
+  }
+}
+
+/* 思考流实时光标（8.4.10） */
+.thinking-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  animation: thinking-blink 1s step-start infinite;
+  color: #8c8c8c;
+}
+
+@keyframes thinking-blink {
+  50% {
+    opacity: 0;
+  }
+}
