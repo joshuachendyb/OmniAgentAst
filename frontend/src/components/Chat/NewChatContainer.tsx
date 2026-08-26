@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 接入 ModelPicker 组件(L2 会话级模型覆盖), 解构 sessionModelOverride/setSessionModelOverride
+// 编辑历史: 2026-08-26 小欧 - 修复A1(顶栏时间悬浮接线sessionApi.getSession)/A2(右侧默认展开新任务,点击旧任务展开,可收起)/A3(信息条随选中历史任务切换selectedDetail派生): 对应7.1⑤/7.3/7.5/7.6/4.5.1
 import React, {
   useEffect,
   useCallback,
@@ -12,6 +13,9 @@ import {
   API_BASE_URL,
   taskControlApi,
   tokenUsageApi,
+  sessionApi,
+  executionApi,
+  type TaskDetail,
 } from '../../services/api';
 import { STORAGE_KEY } from '../../utils/chatHistory';
 
@@ -184,7 +188,8 @@ const NewChatContainer: React.FC = () => {
   }, [chatSession]);
 
   // —— 8.3.3 插槽化组装新增状态与数据源 ——
-  const [rightOpen, setRightOpen] = useState(false);
+  // 【小欧 2026-08-26 修复 A2】右侧查看区(对话主体)默认展开，否则发消息后主屏空白(7.3/7.5)
+  const [rightOpen, setRightOpen] = useState(true);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [chainTokens, setChainTokens] = useState<number | null>(null); // 顶栏会话累计 token（A6 链口径）
   const [liveErrorText, setLiveErrorText] = useState<string | null>(null);
@@ -195,6 +200,33 @@ const NewChatContainer: React.FC = () => {
     sessionVersion,
     setSessionVersion,
   });
+
+  // 【小欧 2026-08-26 修复 A1】会话创建/更新时间(7.1⑤ 顶栏悬浮数据源)
+  const [sessionTimes, setSessionTimes] = useState<{
+    createdAt?: string;
+    updatedAt?: string;
+  }>({});
+  useEffect(() => {
+    if (!sessionId) return;
+    sessionApi
+      .getSession(sessionId)
+      .then((s) => setSessionTimes({ createdAt: s.created_at, updatedAt: s.updated_at }))
+      .catch(() => undefined);
+  }, [sessionId]);
+
+  // 【小欧 2026-08-26 修复 A3】任务信息条随左列点击切换：选中历史任务时拉取其详情，
+  // 注入 TaskInfoBar 作为动态信息来源(7.6 目标"当前任务=点击查看的历史任务")
+  const [selectedDetail, setSelectedDetail] = useState<TaskDetail | null>(null);
+  useEffect(() => {
+    if (activeTaskId && activeTaskId !== serverTaskId) {
+      executionApi
+        .getTaskDetail(activeTaskId)
+        .then((d) => setSelectedDetail(d))
+        .catch(() => setSelectedDetail(null));
+    } else {
+      setSelectedDetail(null);
+    }
+  }, [activeTaskId, serverTaskId]);
 
   // 任务结束沿（isReceiving true→false）统一刷新：任务列表 / 顶栏链累计 token
   const prevReceivingRef = useRef(false);
@@ -497,7 +529,12 @@ const NewChatContainer: React.FC = () => {
               onEditingStart={handleEditingStart}
               onEditingCancel={handleEditingCancel}
             />
-            <TopbarStats taskCount={total} chainTokens={chainTokens} />
+            <TopbarStats
+              taskCount={total}
+              chainTokens={chainTokens}
+              createdAt={sessionTimes.createdAt}
+              updatedAt={sessionTimes.updatedAt}
+            />
             {effective && (
               <Tag color={effective.source === 'session' ? 'blue' : 'default'}>
                 {effective.display_name ||
@@ -551,7 +588,8 @@ const NewChatContainer: React.FC = () => {
           <TaskInfoBar
             steps={executionSteps}
             frames={metaFrames}
-            receiving={isReceiving}
+            receiving={isReceiving && activeTaskId === serverTaskId}
+            detail={selectedDetail}
           />
         ),
         defaultVisible: true,
@@ -602,6 +640,7 @@ const NewChatContainer: React.FC = () => {
       setSessionVersion,
       total,
       chainTokens,
+      sessionTimes,
       effective,
       handleNewSession,
       tasks,
@@ -613,6 +652,7 @@ const NewChatContainer: React.FC = () => {
       liveErrorText,
       authorizationPending,
       metaFrames,
+      selectedDetail,
       loading,
       isPaused,
       handleSendWithMode,

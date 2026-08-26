@@ -1,3 +1,4 @@
+// 编辑历史: 2026-07-18 小欧 - FinalStep终态规整: 取消判定改为type=final+outcome=cancelled
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -15,13 +16,6 @@
  * @author 小强
  * @version 1.0.0
  * @since 2026-04-21
- *
- * 编辑历史:
- * 2026-07-18 小欧 FinalStep终态规整: 取消判定改为type=final+outcome=cancelled
- *   【病根】原取消判定step.type==='cancelled', FinalStep多态重构后取消统一为type=final+outcome=cancelled,
- *          导致取消事件无法被识别→取消过程中事件不被忽略→UI闪烁。
- *   【改法】isCancelEvent改为step.type==='final'&&step.outcome==='cancelled';
- *          取消过程中仅放行isCancelEvent, 其余事件仍忽略。
  */
 
 import { useCallback } from 'react';

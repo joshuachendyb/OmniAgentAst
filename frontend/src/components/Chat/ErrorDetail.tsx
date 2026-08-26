@@ -1,4 +1,5 @@
 /* eslint-disable react/prop-types */
+// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 错误详情组件(任务信息条错误展示)
 import React, { memo, useMemo } from "react";
 
 interface ErrorDetailProps {

@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-26 小欧 - 修复A1: 新增sessionApi.getSession返回Session(created_at/updated_at)供顶栏时间悬浮(7.1⑤)
 /**
  * API服务层 - api.ts
  *
@@ -756,6 +757,12 @@ export const sessionApi = {
       body
     );
     return response.data;
+  },
+
+  /** A1：会话级创建/更新时间（7.1⑤ 顶栏悬浮数据源） */
+  getSession: async (sessionId: string): Promise<Session> => {
+    const r = await api.get<Session>(`/sessions/${sessionId}`);
+    return r.data;
   },
 
   /**

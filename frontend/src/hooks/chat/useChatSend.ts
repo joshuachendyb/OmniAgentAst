@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 发送逻辑对齐CommandPanel/TaskType/contextLink(8.12/8.14)
 /**
  * useChatSend Hook - 消息发送逻辑
  * 

@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-26 小欧 - 修复C3: 左列created_at格式化为月/日 时:分(7.2时间显示)
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -17,6 +18,19 @@ interface TaskListPanelProps {
   activeTaskId: string | null;
   onSelect: (taskId: string) => void;
 }
+
+/** 【小欧 2026-08-26 修复 C3】ISO 时间格式化为 月/日 时:分，避免原始串溢出 */
+const formatTime = (s?: string): string => {
+  if (!s) return '-';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  return d.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
 
 /** 实测枚举（storage.py:467 初始 executing / :128 终态四值），未知值兜底灰色 */
 const STATUS_MAP: Record<
@@ -68,7 +82,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
             }}
           >
             <div style={{ fontSize: 12, color: '#595959' }}>
-              {t.created_at}
+               {formatTime(t.created_at)}
               {t.context_link_mode && (
                 <Tag
                   style={{ marginLeft: 6 }}

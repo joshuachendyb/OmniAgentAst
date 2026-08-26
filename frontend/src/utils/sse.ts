@@ -1,3 +1,7 @@
+// 编辑历史: 2026-07-18 小欧 - FinalStep终态规整: ExecutionStep接口加outcome/error_type/error_message; processSSEData同步解析
+// 编辑历史: 2026-08-18 小欧 - 三堂会审(P7/P4): case 'startinfo'并入'start'渲染; error分支优先content回退error_message
+// 编辑历史: 2026-08-23 小欧 - 三堂会审修复: 删除ExecutionStep重复声明error_type/error_message(TS2300)
+// 编辑历史: 2026-08-26 小欧 - 8.4/8.4.14实施: ExecutionStep.type改action+新增多case; 移除安全/性能旧字段; final解析累计usage
 /**
  * SSE 工具模块 V2 - Server-Sent Events 流式处理
  *
@@ -12,19 +16,6 @@
  * @author 小新
  * @version 2.0.0
  * @since 2026-03-04
- *
- * 编辑历史:
- * 2026-07-18 小欧 FinalStep终态规整: ExecutionStep接口加outcome/error_type/error_message; processSSEData同步解析
- *   【病根】原ExecutionStep无outcome字段, 后端FinalStep.to_dict()输出的outcome被丢弃,
- *          前端无法区分final事件的具体终态结果(completed/failed/cancelled)。
- *   【改法】①ExecutionStep加outcome/error_type/error_message三个可选字段
- *          ②processSSEData: 从rawData同步解析outcome和error_type到step对象
- * 2026-08-18 小欧 三堂会审(P7/P4): ① case 'startinfo' 并入 case 'start' 渲染, 修复后端实时事件由 start 改 startinfo 后任务头部占位失效; ② error 分支优先读 content 再回退 error_message, 修复 error_message 已迁 content 后实时错误显示退化'未知错误'
- * 2026-08-23 小欧 三堂会审修复: ExecutionStep 接口 error_type(:153)/error_message(:154) 历史遗留重复声明
- *   (TS2300 Duplicate identifier, tsc --noEmit 失败), 删除 :172/:177 处重复定义保留终态声明处单一权威
- * 2026-08-26 小欧 8.4/8.4.14 实施: ①ExecutionStep.type 移除旧动作类型名 改 action + 新增 startinfo/thought-start/usage/stats/final_stats/context_overview/truncated;
- *   ②移除安全校验旧字段与 import; ③移除性能估算态 估算消费(state/重置/返回/接口); ④start/startinfo 拆双 + usage/stats/final_stats/context_overview/truncated/thought-start 六新 case(统计类经 handlers.setMetaFrames 入 metaFrames 帧,不落库不导出);
- *   ⑤final 解析 accumulated_usage + 四维累计; ⑥error 不进 executionSteps(收敛为事件); ⑦metaFrames/usageAccumRef/lastUsageSeqRef 入 useSSE 闭包并经 handlers 注入模块级 processSSEData; ⑧全仓 旧动作类型名→action 同步改名
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -196,6 +187,8 @@ export interface ExecutionStep {
   step?: number;
   thought?: string;
   observation?: unknown; // ObservationData对象或字符串
+  // 【小欧 2026-08-26 4.9.3】observation 新字段：工具结果数组，优先于 content/summary 读取
+  tool_result?: unknown;
   result?: string;
   code?: string; // 【新增2026-05-22】状态码（SUCCESS/ERROR/WARNING）
 

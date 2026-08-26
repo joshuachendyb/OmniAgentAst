@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-26 小欧 - 修复B1: ToolResultRenderer优先读obsStep.tool_result(4.9.3/7.4⑦),兜底content/summary
 /**
  * ToolResultRenderer组件 - 工具结果渲染器（工厂模式）
  * 
@@ -48,6 +49,11 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
   const handleToggle = toggleExpand && stepIndex !== undefined 
     ? () => toggleExpand(stepIndex) 
     : undefined;
+
+  // 【小欧 2026-08-26 修复 B1】4.9.3：observation 优先读 tool_result 数组(新)，交由默认渲染器解析
+  if (step.tool_result !== undefined && step.tool_result !== null) {
+    return <DefaultRenderer step={step} />;
+  }
 
   // 工厂模式：根据后端注册名(tool_name)选择渲染器 — 小欧 2026-07-13 统一为后端真实短名
   switch (step.tool_name) {

@@ -1,3 +1,5 @@
+// 编辑历史: 2026-07-16 小欧 - parseMessage 解析 thought 字段
+// 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 两返回点字段 model_override→sessionModel
 /**
  * 聊天历史工具函数
  * 
@@ -7,8 +9,6 @@
  * @author 小新
  * @version 1.0.0
  * @since 2026-03-13
- * @updated 2026-07-16 小欧 - parseMessage 解析 thought 字段
- * @updated 2026-08-22 小欧 - sessionModel 结构化: 两返回点字段 model_override→sessionModel
  */
 
 import { sessionApi } from "../services/api";

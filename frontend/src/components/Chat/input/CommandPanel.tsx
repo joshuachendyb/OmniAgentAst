@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-26 小欧 - 8.12 实施: 快捷指令面板, 复用ShortcutPanel接口, 自持visible(4.6.2/R1-A5)
 /**
  * CommandPanel - 快捷指令面板（复用既有 ShortcutPanel 逻辑）
  * 【小欧 2026-08-26 8.12】可注册更多指令，不侵入 InputCore（4.6.2）。

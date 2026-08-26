@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-26 小欧 - 修复B1: 观察摘要优先tool_result(4.9.3),兜底summary/content
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -36,8 +37,11 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   const paramText = JSON.stringify(params);
   const toolName = tools.map((t) => t.tool).join(', ');
   const obs0 = observations[0];
-  // 优先 observation.summary，其次 obs.content(纯文本)
-  const obsSummary = obs0?.summary || obs0?.content || '';
+  // 优先 observation.summary，其次 obs.content(纯文本)，再次 tool_result(4.9.3 新字段)
+  const obsSummary =
+    obs0?.summary ||
+    obs0?.content ||
+    (obs0?.tool_result != null ? '[工具结果]' : '');
   const retryCount = action.action_retry_count;
   const attemptLabel =
     retryCount != null && retryCount > 0 ? `(重试${retryCount})` : '';

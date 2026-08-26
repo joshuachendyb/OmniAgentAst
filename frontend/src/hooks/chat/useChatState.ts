@@ -1,3 +1,5 @@
+// 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: sessionModelOverride state 类型 string|null→SessionModelOverride|null
+// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 统一状态管理对接NewChatContainer(8.x 状态重构)
 /**
  * useChatState Hook - 统一状态管理
  *
@@ -15,7 +17,6 @@
  * @author 小强
  * @version 1.0.0
  * @since 2026-04-21
- * @updated 2026-08-22 小欧 - sessionModel 结构化: sessionModelOverride state 类型 string | null → SessionModelOverride | null
  */
 
 import { useState, useRef, useEffect } from 'react';

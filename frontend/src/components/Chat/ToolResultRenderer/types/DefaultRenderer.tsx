@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-26 小欧 - 修复B1: DefaultRenderer优先读step.tool_result(4.9.3),兜底execution_result
 /**
  * DefaultRenderer - 默认工具结果渲染器（第13章设计方案改造）
  *
@@ -16,10 +17,12 @@ import { BaseRendererProps } from './BaseRendererProps';
 interface DefaultRendererProps extends BaseRendererProps {}
 
 const DefaultRenderer: React.FC<DefaultRendererProps> = ({ step }) => {
-  const execResult = step.execution_result;
+  // 【小欧 2026-08-26 修复 B1】4.9.3：优先读 obsStep.tool_result(新数组)，其次 execution_result
+  const raw =
+    (step as { tool_result?: unknown }).tool_result ??
+    (step as { execution_result?: unknown }).execution_result;
   const data =
-    (execResult as Record<string, unknown>)?.data ||
-    (execResult as Record<string, unknown>);
+    (raw as Record<string, unknown>)?.data || (raw as Record<string, unknown>);
 
   if (!data) {
     return null;

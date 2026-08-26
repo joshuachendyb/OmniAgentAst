@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-26 小欧 - 修复A3(接受detail派生历史任务动态信息/7.6+4.5.1)+B2(执行中实时计时/7.6②)+C2(上下文截断文字/7.9)
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -9,15 +10,17 @@
  * @date 2026-08-26
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Badge, Tag, Tooltip, Typography } from 'antd';
 import type { ExecutionStep, TaskMetaFrames } from '../../../utils/sse';
+import type { TaskDetail } from '../../../services/api';
 import { useTaskInfo } from '../../../hooks/chat/useTaskInfo';
 
 interface TaskInfoBarProps {
   steps: ExecutionStep[];
   frames: TaskMetaFrames; // 统计类元信息帧（8.4.14）
   receiving: boolean;
+  detail?: TaskDetail | null; // 【A3】选中历史任务时由其详情派生动态信息
 }
 
 const BADGE_MAP = {
@@ -33,10 +36,32 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   steps,
   frames,
   receiving,
+  detail,
 }) => {
   const [collapsed, setCollapsed] = useState(false);
-  const info = useTaskInfo(steps, frames, receiving);
+  const info = useTaskInfo(steps, frames, receiving, detail);
   const b = BADGE_MAP[info.badge];
+
+  // 【小欧 2026-08-26 修复 B2】执行中实时计时：当前任务(receiving+running)按 start 时刻走表，
+  // 历史任务(detail)用后端 duration，不计时。
+  const [liveElapsed, setLiveElapsed] = useState(0);
+  useEffect(() => {
+    if (receiving && info.badge === 'running' && !detail) {
+      const start = frames.startTimestamp || Date.now();
+      const t = setInterval(
+        () => setLiveElapsed(Math.max(0, Math.round((Date.now() - start) / 1000))),
+        1000
+      );
+      return () => clearInterval(t);
+    }
+    setLiveElapsed(0);
+    return undefined;
+  }, [receiving, info.badge, detail, frames.startTimestamp]);
+  const shownElapsed = detail
+    ? info.elapsedSec
+    : receiving && info.badge === 'running'
+      ? liveElapsed
+      : info.elapsedSec;
 
   return (
     <div
@@ -61,7 +86,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
       >
         <Badge status={b.status} text={b.text} />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          耗时 {Math.round(info.elapsedSec)}s
+          耗时 {Math.round(shownElapsed)}s
         </Typography.Text>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           步骤 {info.stepCount} / 轮次 {info.llmCallCount}
@@ -69,7 +94,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
         </Typography.Text>
         <Tooltip title={`P ${info.usage.prompt} / C ${info.usage.completion}`}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            token {info.usage.total}
+            本轮/任务 token {info.usage.total}
           </Typography.Text>
         </Tooltip>
         {/* 上下文概况：context_overview 帧优先，start.context_summary 兜底（8.9） */}
@@ -79,7 +104,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           >
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               上下文 {info.overview.estimated_tokens ?? '-'}tok
-              {info.overview.truncated && ' 🔴'}
+              {info.overview.truncated && ' 🔴已截断'}
             </Typography.Text>
           </Tooltip>
         ) : frames.contextSummary ? (

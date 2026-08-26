@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-26 小欧 - 8.4 实施: pipeline桶导出, 供RightViewer引用(8.5)
 /**
  * pipeline 桶导出
  *

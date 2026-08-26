@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-26 小欧 - 修复A3: useTaskInfo接受detail,历史任务优先由TaskDetail派生(7.6+4.5.1)
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -16,6 +17,7 @@
 
 import { useMemo } from 'react';
 import type { ExecutionStep, TaskMetaFrames } from '../../utils/sse';
+import type { TaskDetail } from '../../services/api';
 
 /** 卡死预警阈值：llm_call_count ≥ step_count×STUCK_RATIO 视为疑似死循环（待定案） */
 export const STUCK_RATIO = 3;
@@ -37,9 +39,38 @@ export type TaskBadge =
 export const useTaskInfo = (
   steps: ExecutionStep[],
   frames: TaskMetaFrames,
-  receiving: boolean
+  receiving: boolean,
+  detail?: TaskDetail | null
 ) => {
   return useMemo(() => {
+    // 【小欧 2026-08-26 修复 A3】选中历史任务：详情优先派生动态信息(状态/耗时/步骤/轮次/重试/token)
+    if (detail) {
+      const map: Record<string, TaskBadge> = {
+        executing: 'running',
+        paused: 'paused',
+        completed: 'completed',
+        failed: 'failed',
+        cancelled: 'cancelled',
+      };
+      const u = detail.accumulated_usage;
+      return {
+        badge: map[detail.status] ?? 'idle',
+        elapsedSec: detail.duration ?? 0,
+        stepCount: detail.total_steps,
+        llmCallCount: detail.llm_call_count,
+        retryCount: detail.retry_count,
+        usage: {
+          prompt: u?.prompt_tokens ?? 0,
+          completion: u?.completion_tokens ?? 0,
+          total: u?.total_tokens ?? 0,
+        },
+        overview: frames.contextOverview,
+        truncatedTip: frames.truncated?.content ?? null,
+        processEvents: [],
+        stuckWarning: false,
+      };
+    }
+
     let badge: TaskBadge = 'idle';
     const processEvents: ProcessEvent[] = [];
 
@@ -118,5 +149,5 @@ export const useTaskInfo = (
       processEvents: processEvents.slice(-20).reverse(), // 新事件插顶，保留最近20条
       stuckWarning,
     };
-  }, [steps, frames, receiving]);
+  }, [steps, frames, receiving, detail]);
 };

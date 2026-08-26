@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 任务取消/暂停控制对齐final_cancel事件(7.7)
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
  *

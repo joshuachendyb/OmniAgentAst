@@ -1,3 +1,5 @@
+// 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: state 类型 SessionModelOverride | null; loadSession/initializeSession 读 result.sessionModel
+// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 会话生命周期对接sessionModel/版本冲突(8.13/5.x)
 /**
  * useChatSession Hook - 会话生命周期管理
  *
@@ -14,7 +16,6 @@
  * @author 小强
  * @version 2.0.0
  * @since 2026-04-21
- * @updated 2026-08-22 小欧 - sessionModel 结构化: state 类型 SessionModelOverride | null; loadSession/initializeSession 读 result.sessionModel
  */
 
 import { useCallback } from "react";

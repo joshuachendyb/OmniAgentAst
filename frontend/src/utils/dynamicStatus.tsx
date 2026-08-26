@@ -1,3 +1,4 @@
+// 编辑历史: 2026-07-18 小欧 - FinalStep终态规整: statusConfig加failed key; deriveStatus按outcome分流cancelled/failed
 /**
  * 动态状态提示组件
  *
@@ -18,14 +19,6 @@
  * @author 小强
  * @version 1.0.0
  * @since 2026-04-03
- *
- * 编辑历史:
- * 2026-07-18 小欧 FinalStep终态规整: statusConfig加failed key; deriveStatus按outcome分流cancelled/failed
- *   【病根】原statusConfig无failed key, outcome=failed时fallback到waiting→显示🚀而非❌;
- *          deriveStatus读type=final统一返回'final'→无法区分failed终态。
- *   【改法】①statusConfig加failed:{icon:'❌',text:'AI任务执行失败'}
- *          ②deriveStatus: final+cancelled→'cancelled', final+failed→'failed', final+completed→'final'
- *          ③删旧type=cancelled分支(已废弃)
  */
 
 import React, { useState, useEffect } from 'react';
