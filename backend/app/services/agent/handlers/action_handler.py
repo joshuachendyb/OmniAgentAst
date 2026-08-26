@@ -110,6 +110,14 @@
 # 2026-08-18 - 小健 - 三堂会审修复(target推导): 删除硬编码_TARGE_FIELD(文件类工具+键read/web_search失配致_extract_target回退工具名真bug), 改为_resolve_target_field从tool_registry真实input_schema.properties按_TARGET_PARAM_PRIORITY推导字段名(target值取call入参LLM确定值); ActionStep.target极少截断; 预留ToolMetadata.target_param显式扩展点(OCP)
 # 2026-08-18 - 小欧 - §10.4.4 P3(错误全仅SSE): blocked/timeout/user_rejected/invalid_action 四处 ErrorStep→MetaStep(type="error", content=错误信息, error_type=); 删 ErrorStep import
 # 2026-08-18 - 小欧 - §10.4.4 P4(severity): error 四处加 severity="warn"; paused 加 severity="attention"; resumed 加 severity="info"
+# 2026-08-18 小健 三堂会审: 删除硬编码_TARGE_FIELD——该映射对文件类工具及部分键失配, 使_extract_target回退为工具名(真实bug):
+#   ①键失配: 映射键"read"/"web_search"与注册名"readtext"/未注册不符, _TARGET_FIELD.get()返回None→回退tool_name;
+#   ②字段失配: 文件类映射值file_path/dir_path/search_dir 与真实schema属性名path/pattern不符, _params.get(...)取到空串→回退tool_name;
+#   (注: grep/shell/httpget/fetchpage/download/ping_port/query_sql/execute_sql 映射值恰与schema一致, 旧代码本可工作; 推导化后统一正确且新增工具自动获得)
+#   字段名由_resolve_target_field从tool_registry真实input_schema.properties推导; target值取自call["tool_params"]的LLM已回传确定入参值(非结果)。
+# 2026-08-18 小欧 - §10.3.3(2) target 提取: 来源=工具调用入参(与observation展示的llm_data.action.target同源, 后者经工具内部转发)
+# 规范化主参数优先级: 用于在工具真实input_schema.properties中选定"操作对象"字段;
+# pattern置于path之前以区分搜索类(grep/find取pattern)与路径类(其余取path); 新增工具若含这些标准字段即自动获得target(DRY)
 # 2026-08-20 - 小欧 - 11.2-C 工具遥测回调(P0-2 修复): handle_action 执行结果处调用 agent.telemetry.on_tool_call(tool_name, success, duration), 供 tool_execution_seconds/task_tool_metrics 聚合(原未调用 → tool_execution_seconds 恒 0)
 # 2026-08-21 - 小欧 - 11.6.2: 回调循环扩展收集artifacts(工具自声明+target兜底派生); import os/extract_ext
 # 2026-08-21 - 小欧 - 12.2-Q1-D2(已撤销): 原设计将_operation_id经build_extra传action_handler双表贯通,
@@ -687,14 +695,6 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         return results
 
 
-# 2026-08-18 小健 三堂会审: 删除硬编码_TARGE_FIELD——该映射对文件类工具及部分键失配, 使_extract_target回退为工具名(真实bug):
-#   ①键失配: 映射键"read"/"web_search"与注册名"readtext"/未注册不符, _TARGET_FIELD.get()返回None→回退tool_name;
-#   ②字段失配: 文件类映射值file_path/dir_path/search_dir 与真实schema属性名path/pattern不符, _params.get(...)取到空串→回退tool_name;
-#   (注: grep/shell/httpget/fetchpage/download/ping_port/query_sql/execute_sql 映射值恰与schema一致, 旧代码本可工作; 推导化后统一正确且新增工具自动获得)
-#   字段名由_resolve_target_field从tool_registry真实input_schema.properties推导; target值取自call["tool_params"]的LLM已回传确定入参值(非结果)。
-# 2026-08-18 小欧 - §10.3.3(2) target 提取: 来源=工具调用入参(与observation展示的llm_data.action.target同源, 后者经工具内部转发)
-# 规范化主参数优先级: 用于在工具真实input_schema.properties中选定"操作对象"字段;
-# pattern置于path之前以区分搜索类(grep/find取pattern)与路径类(其余取path); 新增工具若含这些标准字段即自动获得target(DRY)
 _TARGET_PARAM_PRIORITY = (
     "command", "sql", "url", "host", "pattern",
     "path", "dir_path", "file_path", "source_path", "query", "content",
