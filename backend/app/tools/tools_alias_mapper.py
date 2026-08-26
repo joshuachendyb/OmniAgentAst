@@ -8,6 +8,7 @@
 # 2026-08-09 - 小欧 - TOOL_NAME_ALIASES 新增 writefile/readfile 幻觉名→writetext/readtext: sensenova-flash-lite 将写/读文本工具幻觉为 writefile, 因未注册被安全检查拦截(工具未注册)致 P5-07 任务空转防循环失败; get_tool 归一化后走注册名正常执行, execute_tools 内扩展名纠正再兜底
 # 2026-08-09 - 小欧 - TOOL_NAME_ALIASES 新增 writeetext/readetext/editetext(多一个e的拼写幻觉)→writetext/readtext/edittext: sensenova-flash-lite 将 writetext 幻觉为 writeetext, 因未注册被拦截致 COM-08 任务尾部空转防循环失败(与 writefile 同源, 拼写变异变体)
 # 2026-08-22 - 小欧 - TOOL_NAME_ALIASES 新增裸名 write/read/edit→writetext/readtext/edittext: COM-05b 实证 LLM 三轮幻觉调用裸名"write"(最自然通用名), 因不在别名表被拦截, 同名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后若扩展名为 .docx/.pdf 等仍由 execute_tools 扩展名预检二次路由, 无歧义风险
+# 2026-08-26 - 小欧 - TOOL_NAME_ALIASES 新增 write_content→writetext: com-test 12(任务007)实证 LLM 幻觉调用 write_content(最自然"写内容"名), 因不在别名表被安全检查以"工具未注册"拦截, 同一工具名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后走 writetext 正常执行(与 writefile/writeetext 同源修复)
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -334,9 +335,8 @@ PARAM_VALUE_ALIASES = {
 # 工具名别名: LLM生成的自然语言变体→注册名 — 小欧 2026-08-07
 # 实测: com-test 03中LLM调用"write_text"(带下划线)被系统以"工具未注册"误拦截3次致任务失败。
 # 与 PARAM_ALIASES 同款集中映射模式, 只收录实际发生+对称高频变体(YAGNI)。
-# 2026-08-26 - 小欧 - 新增 write_content→writetext: com-test 12(任务007)实证 LLM 幻觉调用 write_content(最自然的"写内容"名), 因不在别名表被安全检查以"工具未注册"拦截, 同一工具名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后走 writetext 正常执行
 TOOL_NAME_ALIASES = {
-    "write_content": "writetext",
+    "write_content": "writetext",  # LLM幻觉名→writetext - 小欧 2026-08-26
     "write_text": "writetext",
     "read_text": "readtext",
     "edit_text": "edittext",

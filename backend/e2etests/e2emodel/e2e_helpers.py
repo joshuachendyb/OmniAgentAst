@@ -72,6 +72,9 @@
 # 2026-08-23 - 小欧 - §1测试基本信息表新增"跨任务注入上下文"行(北京老陈指示): 展示本任务之前注入的连续对话历史体量,
 #   取自context_overview事件的injected_message_count/injected_estimated_tokens(多轮历史注入机制, 单轮任务为0显示"无");
 #   §5.2 context_overview行与跨任务行的tok统一标注"(估算)"(chars//4纯数学估算, 非真实LLM token, 防误解)
+# 2026-08-26 - 小欧 - model 结构信息空值修复(com-test 02/03实证): write_test_record中_sid原仅在`if dpi is None:`分支内赋值;
+#   单测传dpi=[](非None)使分支不执行→_sid未绑定→UnboundLocalError被except吞掉→session_id取不到→model结构信息(取chat_tasks.sessionModel)恒显"-";
+#   改法: 把`_sid = result.get("session_id","")`移到`if dpi is None:`外无条件赋值
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑

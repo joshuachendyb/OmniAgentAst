@@ -130,6 +130,7 @@
 #   ReAct 执行期 loop 不再被锁重试 time.sleep 短暂独占
 # 2026-08-25 - 小欧 - 合规重构(北京老陈驱动): M3 沙箱闸门逻辑从 check_safety_and_confirm 内嵌闭包(_sandbox_precheck/_sandbox_resolve)拆出至新建 app/services/agent/handlers/sandbox_gate.py(模块级函数+显式参数, 去隐式捕获约10个外层变量的"七绕八绕", 修正违反1.3公用函数规范-分层/先查后建/登记FUNCTIONS.md 与 KISS-DIRECT); 三处汇合点(①auto_confirm ②用户确认 ③循环体兜底)改显式调用; 业务语义/分支/状态机零改动(复制不重写)
 # 2026-08-25 - 小欧 - 合规重构: build_observation 内嵌闭包 _format_llm_data_text(纯展示格式化函数被囚为闭包, 违反1.3/复用优先)拆出至全局层 app/utils/display_utils.format_llm_data_text; 同步删除仅服务于该闭包的死 import json; 逻辑零改动(复制不重写)
+# 2026-08-26 小欧 - action步落库记录层修复(com-test 09实证): 原_exec_calls=_safe_calls if _safe_calls else [], 当全部调用被安全拦截时_exec_calls=[]→ActionStep.tools=[]→DB步骤完整性FAIL(无工具调用信息); 改法: 记录层新增_record_calls=_exec_calls if _exec_calls else call_result.all_calls(兜底取LLM意图调用含被拒项), 仅用于ActionStep.tools落库补全; 执行层仍用_exec_calls(绝不回退all_calls, 不绕过安全检查)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -925,9 +926,7 @@ async def handle_action(agent, parsed: Dict):
     _exec_calls = _safe_calls if _safe_calls else []
 
     # ── 新 action step: execute_tools 执行前 yield 一次（§10.3.3(2)）── 2026-08-18 小欧
-    # 2026-08-26 小欧 修复: action步tools记录用_record_calls——正常路径取_exec_calls(已通过安全检查的调用);
-    #   仅当全部调用被安全拦截致_exec_calls为空时, 兜底取call_result.all_calls(LLM意图调用, 含被拒), 避免_action_tools=[]→落库action步无工具信息(DB步骤完整性FAIL)。
-    #   【铁律】执行(下方execute_tools)仍只用_exec_calls, 绝不回退all_calls(会绕过安全检查, 见本文件line38 BUG#3); 此处仅解耦"记录层", 不改动执行层。
+    # 记录层兜底: 全部调用被安全拦截致_exec_calls空时, 取意图调用all_calls补全落库(执行层仍仅用_exec_calls, 不绕过安全) - 小欧 2026-08-26
     _record_calls = _exec_calls if _exec_calls else call_result.all_calls
     _action_tools = [{
         "tool": c.get("tool_name", ""),
