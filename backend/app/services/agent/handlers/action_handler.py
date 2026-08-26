@@ -925,11 +925,15 @@ async def handle_action(agent, parsed: Dict):
     _exec_calls = _safe_calls if _safe_calls else []
 
     # ── 新 action step: execute_tools 执行前 yield 一次（§10.3.3(2)）── 2026-08-18 小欧
+    # 2026-08-26 小欧 修复: action步tools记录用_record_calls——正常路径取_exec_calls(已通过安全检查的调用);
+    #   仅当全部调用被安全拦截致_exec_calls为空时, 兜底取call_result.all_calls(LLM意图调用, 含被拒), 避免_action_tools=[]→落库action步无工具信息(DB步骤完整性FAIL)。
+    #   【铁律】执行(下方execute_tools)仍只用_exec_calls, 绝不回退all_calls(会绕过安全检查, 见本文件line38 BUG#3); 此处仅解耦"记录层", 不改动执行层。
+    _record_calls = _exec_calls if _exec_calls else call_result.all_calls
     _action_tools = [{
         "tool": c.get("tool_name", ""),
         "target": _extract_target(c),
         "params": c.get("tool_params", {}) or {},
-    } for c in _exec_calls]
+    } for c in _record_calls]
     yield agent._step_emitter.emit(ActionStep(
         step=step,
         exec_type="single" if len(_action_tools) == 1 else "multi",
