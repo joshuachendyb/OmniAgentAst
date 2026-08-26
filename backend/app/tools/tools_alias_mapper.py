@@ -334,7 +334,9 @@ PARAM_VALUE_ALIASES = {
 # 工具名别名: LLM生成的自然语言变体→注册名 — 小欧 2026-08-07
 # 实测: com-test 03中LLM调用"write_text"(带下划线)被系统以"工具未注册"误拦截3次致任务失败。
 # 与 PARAM_ALIASES 同款集中映射模式, 只收录实际发生+对称高频变体(YAGNI)。
+# 2026-08-26 - 小欧 - 新增 write_content→writetext: com-test 12(任务007)实证 LLM 幻觉调用 write_content(最自然的"写内容"名), 因不在别名表被安全检查以"工具未注册"拦截, 同一工具名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后走 writetext 正常执行
 TOOL_NAME_ALIASES = {
+    "write_content": "writetext",
     "write_text": "writetext",
     "read_text": "readtext",
     "edit_text": "edittext",
