@@ -1,3 +1,7 @@
+// 编辑历史: 2026-02-17 小新 - 创建Layout组件(左右分栏+响应式)
+// 编辑历史: 2026-02-18 小新 - 添加移动端响应式支持
+// 编辑历史: 2026-08-22 小欧 - model结构化归一: updateConfig改传ai_model_ref结构; serviceStatus的provider/model读取点改经status.model_ref派生
+// 编辑历史: 2026-08-27 小欧 - 修复#31: serviceStatus.success→valid字段名对齐后端返回
 /**
  * Layout组件 - 应用主布局（响应式版）
  *

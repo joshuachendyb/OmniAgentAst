@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 修复A3: useTaskInfo接受detail,历史任务优先由TaskDetail派生(7.6+4.5.1)
+// 编辑历史: 2026-08-27 小欧 - 修复#5#6: 历史任务overview/truncatedTip改取空, 不再串味实时frames(实测失败用例转绿)
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -13,7 +14,6 @@
  *
  * @author 小欧
  * @date 2026-08-26
- * 2026-08-27 小欧 - 修复#5#6: 历史任务overview/truncatedTip改取空, 不再串味实时frames(实测失败用例转绿)
  */
 
 import { useMemo } from 'react';

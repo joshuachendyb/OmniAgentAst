@@ -1,3 +1,5 @@
+// 编辑历史: 2026-04-11 小强 - 创建统一错误处理中心(errorHandler)
+// 编辑历史: 2026-08-27 小欧 - 修复#9/#36/#37: formatTime复用/formatError重试死循环/重试递归改Math.pow
 /**
  * 统一错误处理中心 - errorHandler.ts
  *
