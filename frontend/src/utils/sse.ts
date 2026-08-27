@@ -1204,12 +1204,14 @@ const processSSEData = (
     onSeq,
   } = handlers;
 
-  if (!line.trim() || !line.startsWith('data: ')) {
+  // 2026-08-27 小欧 修复: SSE数据行可能带前导空格, 先trim再判断前缀
+  const trimmedLine = line.trim();
+  if (!trimmedLine || !trimmedLine.startsWith('data: ')) {
     return;
   }
 
   try {
-    let jsonStr = line.slice(6);
+    let jsonStr = trimmedLine.slice(6);
     jsonStr = jsonStr.trim();
     const rawData = JSON.parse(jsonStr);
 
