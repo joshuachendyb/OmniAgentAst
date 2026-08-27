@@ -85,6 +85,7 @@
 # 2026-08-24 - 小欧 - 目录前导(北京老陈裁定): chat_tasks.files_dir 落库锚同步改为 files/Sion_{session_id}/Task_{task_id}/,
 #   与 TaskFileWriter 物理目录经 file_persist 前缀常量同源拼装(DRY), 排查定位链不断; 旧目录不迁移(禁止backward)
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W6镜像写点(_setup_task_db内UPDATE chat_messages SET task_id), 系统对该表零写依赖
+# 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 删除finalize_message的import与db_ops.finalize=传参(随finalize_message整删, 终态由append_execution_step/chat_tasks承载)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 

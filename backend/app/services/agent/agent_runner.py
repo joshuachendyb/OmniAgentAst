@@ -73,6 +73,7 @@
 # 2026-08-24 - 小欧 - 问题报告三堂会审修复: ①ISS-005 过时注释修正(save_execution_steps_to_db→DB落库finalize/update_task, P4重构后函数已删除); ②ISS-001 孤儿task日志噪声抑制(_persist_final双重cancel下try/except捕获二次CancelledError, return None降级, logger.debug记知悉级, 不re-raise防重入)
 # 2026-08-24 - 小沈 - ISS-001 根治: 原修复仅catch二次CancelledError但未retrieve孤儿task异常(注释自承认"异常由loop兜底记WARNING"即日志噪声仍在);
 #   改用 add_done_callback 无条件调 t.exception() 确保异常必达retrieve, 从源头杜绝 "Task exception never retrieved" 日志噪声(三堂会审: CancelledError继承BaseException非Exception, 原报告建议except Exception有缺陷不采用)
+# 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整删finalize_message回调及其调用——删除stream_orchestrator.db_ops.finalize=传参与agent_runner行446-461的finalize调用块(原写chat_messages终态); 终态content/status/thought由append_execution_step(step_json)与_finalize_task_db(update_task+回填chat_user_message)承载, 系统对该表零写依赖
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 

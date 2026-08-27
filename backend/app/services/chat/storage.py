@@ -76,6 +76,8 @@ storage — 会话存储业务逻辑
   新增 _warn_oversize_step_dict 超限 error 告警扫描(安全网不砍数据); append_execution_step 改完整 step_json
   落库保历史回放权威源(5.1 铁律), 签名/返回值 -> None 原样零感知; 原"实验性的功能:TODO"占位随删除块一并清理(11.7.14-1)
 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除镜像写点W2(insert_assistant_message)/W3(allocate_and_insert_message内INSERT空白行)/W4(update_message_fields)/W5(finalize_message内UPDATE)及save_execution_steps中对W2/W4的调用; 删除后终态/步骤真实存储由chat_task_steps.step_json与chat_tasks承载; 同步清理孤儿import(IntegrityError/extract_metadata_from_steps)
+2026-08-27 - 小欧 - B1 SELECT 补 response 列: list_session_tasks 查询增加 response 字段返回，支撑左列任务列表显示任务结果全文（设计文档4.8.2要求user_input+response双列显示）
+2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整删finalize_message函数(原W5写chat_messages终态), 同步移除stream_orchestrator.db_ops.finalize=传参与agent_runner调用块(行446-461), 终态由append_execution_step(step_json)与_finalize_task_db(update_task+回填chat_user_message)承载
 """
 
 import json
