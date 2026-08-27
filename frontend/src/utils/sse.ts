@@ -5,7 +5,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审H2修复: classifyError改调纯classifyError(errorHandler)替代带副作用handleSSEError, 消除SSE错误路径误弹"正在重试"; 顶部import增classifyError别名
 // 编辑历史: 2026-08-27 小欧 - 三堂会审配套修复: observation解析同步execution_result=obsData, 供专用渲染器(data/llm_data)消费, 修复删tool_result早退后工具结果渲染空回归
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 删thought-start恒假守卫/死引用ttftRef等/死导出isPersistBlocked/死守卫!result.handled
-// 编辑历史: 2026-08-27 小欧 - 撤回8.6误删isPersistBlocked: sse-parsing.test.ts依赖其判定持久化黑名单, 非死导出, 已恢复PERSIST_BLOCKLIST+isPersistBlocked
+// 编辑历史: 2026-08-27 小欧 - 依用户铁律系统代码不留仅测试所需: 确认isPersistBlocked仅测试依赖(死导出), 维持8.6删除; 测试侧sse-parsing.test.ts改本地helper, 系统代码净化
 /**
  * SSE 工具模块 V2 - Server-Sent Events 流式处理
  *
@@ -36,19 +36,6 @@ import { taskControlApi } from '../services/api';
 // 问题：浏览器降频导致回调延迟执行，标签页可能被丢弃
 // 解决：同时保存到 ref + sessionStorage，即使标签页丢弃数据也不会丢失
 const SSE_STORAGE_KEY = 'sse_execution_steps_backup';
-
-// 编辑历史: 2026-08-27 小欧 - 撤回8.6误删: isPersistBlocked被sse-parsing.test.ts依赖(非死导出), 恢复PERSIST_BLOCKLIST+isPersistBlocked
-/** 持久化黑名单：统计类通知不落库不导出（生命周期类仍随步骤流落库，8.4.14 口径）*/
-export const PERSIST_BLOCKLIST = [
-  'startinfo',
-  'usage',
-  'stats',
-  'final_stats',
-  'context_overview',
-  'truncated',
-] as const;
-export const isPersistBlocked = (type: string): boolean =>
-  (PERSIST_BLOCKLIST as readonly string[]).includes(type);
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
 export interface StartInfoFrame {
