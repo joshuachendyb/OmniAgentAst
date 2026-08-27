@@ -1,3 +1,34 @@
+v0.19.32
+更新时间: 2026-08-27 14:02:33 - 小欧-2026-08-27
+## v0.19.31以来 变更汇总(15个commit) - 小欧-2026-08-27
+[2026-08-27 14:02:33 小欧] 汇总范围=v0.19.31以来全部commit(本分支 optimize-0.19.17 自v0.19.31累积15个commit，已打 tag v0.19.32)
+
+### docs(2个):
+- docs:[2]会话任务前后端架构设计 第九章实施计划(7阶段/每阶段验证标准/6里程碑5风险) - 小欧-2026-08-26
+- docs:前端真实缺陷清单58条(创建文档) - 小欧-2026-08-27
+
+### feat(6个):
+- feat:前端会话任务数据解析地基(8.4/8.4.14/8.2.1) - 小欧-2026-08-26
+- feat:pipeline渲染器七件套(8.4.7-8.4.13/8.11) - 小欧-2026-08-26
+- feat:会话页骨架与任务信息条(8.3/8.6/8.1/8.2) - 小欧-2026-08-26
+- feat:右侧查看区RightViewer+StaticStatsBlock(8.5) - 小欧-2026-08-26
+- feat:会话骨架集成+输入区+模型层+E1+NewChatContainer插槽化(8.3/8.5/8.6/8.12/8.13/8.14) - 小欧-2026-08-26
+- feat:阶段七清理收尾-删除旧渲染树+showExecution透传链+五关键词零命中+liveErrorText接线(8.B.2/8.15/8.10) - 小欧-2026-08-26
+
+### fix(7个):
+- fix:前端 统一补全编辑历史(44文件)并修复第七章A1/A2/A3/B1/B2/C1/C2/C3 - 小欧-2026-08-26
+- fix:sse/streaming核心修复40条缺陷中的SSE层(sse.ts/useChatStreaming/useChatCallbacks/useTaskInfo/useChatSession/useModelLayer) - 小欧-2026-08-27
+- fix:UI组件+工具/API修复(ChatHeader/ModelPicker/NewChatContainer/TrustPanel/RightViewer/StaticStatsBlock/CollapsibleText/TopbarStats/TaskInfoBar/Layout/errorHandler/clientInfo/dynamicStatus/api/chatHistory/SessionPanelRegistry) - 小欧-2026-08-27
+- fix:TaskListPanel导出formatTime供TopbarStats复用(修复#9顶栏时间格式化) - 小欧-2026-08-27
+- fix:6个文件编辑历史格式修正(4个条目移入编辑历史块+2个补建编辑历史块) - 小欧-2026-08-27
+- fix:sse.ts processSSEData修复SSE行前导空格导致解析失败(集成测试发现) - 小欧-2026-08-27
+- fix:前端视觉风格统一 9处颜色/字重修正 - 小欧-2026-08-27
+
+### 合计
+- docs: 2项 | feat: 6项 | fix: 7项 = 共15项
+
+---
+
 v0.19.31
 更新时间: 2026-08-26 19:12:00 - 小欧-2026-08-26
 ## v0.19.30以来 变更汇总(5个commit) - 小欧-2026-08-26
