@@ -293,21 +293,24 @@ const handleSSEError = (params: {
     serverTaskId,
   } = params;
 
-  // 使用统一错误处理中心（handleSSEError 恒返回 handled:true，无需再判 else 早退）
-  errorHandlerHandleSSE(error as Error, {
-    reconnectAttempts,
-    maxRetries: reconnectConfig.maxAttempts,
-    onReconnect: () => {
-      onSetReconnectStatus('reconnecting');
-      reconnectTimeoutRef.current = window.setTimeout(() => {
-        onReconnect();
-      }, reconnectConfig.baseDelay);
-    },
-  });
-
   // 如果不可重试或已超过最大次数
   const canRetry =
     reconnectAttempts < reconnectConfig.maxAttempts && pendingMessage;
+
+  // 使用统一错误处理中心（handleSSEError 恒返回 handled:true，无需再判 else 早退）
+  // 2026-08-27 小欧 修复B1: 仅canRetry时注入onReconnect, 达到maxAttempts后停止重连
+  errorHandlerHandleSSE(error as Error, {
+    reconnectAttempts,
+    maxRetries: reconnectConfig.maxAttempts,
+    onReconnect: canRetry
+      ? () => {
+          onSetReconnectStatus('reconnecting');
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            onReconnect();
+          }, reconnectConfig.baseDelay);
+        }
+      : undefined,
+  });
 
   if (!canRetry) {
     console.error(
@@ -541,7 +544,8 @@ export const useSSE = (
     (
       manualDisconnect: boolean = false,
       clearStorage: boolean = true,
-      onDisconnect?: () => void
+      onDisconnect?: () => void,
+      resetReconnectAttempts: boolean = true
     ) => {
       // 清空 sessionStorage 备份（除非重连时明确指定不清空）
       if (clearStorage) {
@@ -569,7 +573,10 @@ export const useSSE = (
       setIsConnected(false);
       setIsReceiving(false);
       setReconnectStatus('idle');
-      reconnectAttemptsRef.current = 0;
+      // 2026-08-27 小欧 修复B1: 仅真正手动断开/新会话/卸载才重置重连计数; 重连路径传false避免计数被清零导致无限重连
+      if (resetReconnectAttempts) {
+        reconnectAttemptsRef.current = 0;
+      }
 
       // 手动中断时清除 pendingMessage 并阻止重连
       if (manualDisconnect) {
@@ -628,7 +635,7 @@ export const useSSE = (
   ) => {
     const connectStartTime = new Date().toLocaleTimeString();
     console.log(`[SSE] [连接建立] 时间=${connectStartTime}`);
-    disconnect(false, false); // 重连时：非手动断开 + 不清空 sessionStorage
+    disconnect(false, false, undefined, false); // 2026-08-27 小欧 修复B1: 重连路径不重置重连计数
     // 小沈修复 2026-04-21：新请求时清空 steps，重连时保留 steps
     if (reconnectAttemptsRef.current > 0) {
       softClearSteps(); // 重连：保留 steps，只清理运行时状态
