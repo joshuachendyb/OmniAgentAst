@@ -4,7 +4,7 @@
 操作手册对照:
     用例: unit-11
      用户输入: "读取任务书E:\\test_dir\\task\\task006.txt,分析可行性和实施方案,逐一执行全部任务,做任务总结"
-     前置数据: E:\test_dir\task\task001.txt存在
+      前置数据: E:\test_dir\task\task006.txt存在
      预期过程: 读取任务书→分析任务个数→逐一执行→任务总结
      通过标准: 调用readtext;回复包含任务总结关键词;DB三表完整;日志无ERROR
      失败标准: 未读任务书;无总结;DB记录不完整;日志有ERROR
@@ -53,7 +53,7 @@ async def test_e2e_unit_11_task_execution():
     elapsed = 0.0
     error_info = None
     user_input = (
-        '你需要读取任务书"E:\\test_dir\\task\\task006.txt"的要求,'
+        '你需要读取任务书"E:\test_dir\task\task006.txt"的要求,'
         "分析任务的可行性和实施方案,"
         "分析任务书的任务要求是多少个,然后按照任务书的要求逐一执行全部任务!"
         "记录和分析任务的tool调用过程和合理性分析,将分析结果记录到任务执行总结文档中!"
