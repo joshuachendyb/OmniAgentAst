@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 修复B1: DefaultRenderer优先读step.tool_result(4.9.3),兜底execution_result
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.7 收窄object再取.data + 8.4.6 extractToolResult共享
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 /**
  * DefaultRenderer - 默认工具结果渲染器（第13章设计方案改造）
  *

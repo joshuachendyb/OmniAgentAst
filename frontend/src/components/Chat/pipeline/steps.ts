@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 8.4/8.10 实施: 权威过滤业务内容步骤, meta/统计类归信息条(4.4.4)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: META_STEP_TYPES补入cancelled(6)/取消thought-start特判统一二分(7)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 /**
  * pipeline 分流工具
  *

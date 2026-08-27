@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 7Hook组合入口整合(8.1~8.14 统一暴露)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-8透传setIsReceiving/12 hasSteps/13复用Options类型/14 memo依赖onError
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
