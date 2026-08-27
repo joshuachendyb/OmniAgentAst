@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-26 小欧 - 8.5 实施: 任务结束静态统计块7项+token终值, 历史C1/当前final_stats(4.5.1)
 // 编辑历史: 2026-08-27 小欧 - 修复#8: 工具汇总空对象{}时显'-'而非空白(实测失败用例转绿)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.2 抽STATUS_COLOR_MAP查表替嵌套三元
+// 编辑历史: 2026-08-27 小欧 - 三堂会审去框-P0-3/边距-P0-3: 去卡片双框留上分割线(borderTop#f0f0f0,去#fafafa+radius+padding覆盖), marginTop8→12 paddingTop8→padding12, 仅留终止语义锚点
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -32,12 +33,12 @@ const StaticStatsBlock: React.FC<{ detail: TaskDetail | null }> = ({
   return (
     <div
       style={{
+        marginTop: 12,
+        padding: 12,
+        background: 'transparent',
+        border: 'none',
+        borderRadius: 0,
         borderTop: '1px solid #f0f0f0',
-        marginTop: 8,
-        paddingTop: 8,
-        background: '#fafafa',
-        borderRadius: 6,
-        padding: 8,
       }}
     >
       <Typography.Text strong style={{ fontSize: 13 }}>

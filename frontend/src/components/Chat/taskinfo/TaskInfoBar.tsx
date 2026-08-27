@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-26 小欧 - 修复A3(接受detail派生历史任务动态信息/7.6+4.5.1)+B2(执行中实时计时/7.6②)+C2(上下文截断文字/7.9)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.4 useRef仅首次锚定start, 去frames.startTimestamp防抖动, 切换复位
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审去框-P0-2/边距-P0-2: 去整框留淡底(border→none,background#fafafa,radius6,padding8px); 内层过程区加滚动细线borderTop#f5f5f5+scrollbarWidth; 外层gap2→8主节奏
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -74,12 +75,13 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   return (
     <div
       style={{
-        border: '1px solid #f0f0f0',
+        border: 'none',
+        background: '#fafafa',
         borderRadius: 6,
-        padding: '4px 8px',
+        padding: '8px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 2,
+        gap: 8,
       }}
     >
       <div
@@ -136,7 +138,16 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
       </div>
 
       {!collapsed && info.processEvents.length > 0 && (
-        <div style={{ maxHeight: 72, overflowY: 'auto' }}>
+        <div
+          style={{
+            maxHeight: 72,
+            overflowY: 'auto',
+            scrollbarWidth: 'thin',
+            borderTop: '1px solid #f5f5f5',
+            marginTop: 4,
+            paddingTop: 4,
+          }}
+        >
           {info.processEvents.map((e, i) => (
             <div key={i} style={{ fontSize: 12, color: '#999' }}>
               {e.kind === 'started' && '▶️ '}
