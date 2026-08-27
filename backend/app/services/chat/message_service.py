@@ -17,6 +17,7 @@
 #   重构——权威源 chat_user_message 先落库(insert_user_message 原生自增分配 id), 再镜像写 chat_messages
 #   (同 id 对齐/失败仅留痕); 权威写失败改 fail-loud 抛 HTTPException(旧路径吞异常返 success 但权威缺行,
 #   历史回放丢消息属假成功); assistant legacy 直存分支行为不变; W1 两处镜像 INSERT 加 TODO 删除注释
+# 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W1镜像写点(user/assistant两处INSERT chat_messages), 删除后assistant消息由任务/步骤体系(chat_tasks.ai_message_id/chat_task_steps)管理, 系统对该表零写依赖
 """
 message_service — 消息业务服务(services/chat)
 
@@ -151,6 +152,7 @@ def save_message(session_id: str, message):
         if message.role == "assistant" and not display_name_to_save:
             display_name_to_save = display_name_cache.get(session_id)
 
+        message_id = None
         if message.role == "user":
             # 锚迁移(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): 权威源 chat_user_message
             # 先落库, id 由本表 AUTOINCREMENT 原生自增分配(不再取 chat_messages.lastrowid 一对一贯通);
@@ -165,27 +167,9 @@ def save_message(session_id: str, message):
                 network=message.network,
             )
             _track_user_message(session_id, message_id)
-            # 【chat_messages 只写镜像写点 W1-user】镜像行与权威源同 id 对齐; 失败仅留痕(纯副本无读者);
-            # TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23
-            try:
-                cursor.execute(
-                    "INSERT INTO chat_messages(id, session_id, role, content, timestamp, display_name, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    (message_id, session_id, message.role, message.content, local_time, display_name_to_save,
-                     message.client_os, message.browser, message.device, message.network))
-            except Exception as _mir_e:
-                logger.warning(f"[save_message] 镜像写chat_messages失败(session={session_id}, id={message_id}): {_mir_e}")
-        else:
-            # 【chat_messages 只写镜像写点 W1-assistant】legacy API 直存助手消息路径(纯镜像域, 无锚意义);
-            # TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23
-            try:
-                cursor.execute(
-                    "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?)",
-                    (session_id, message.role, message.content, local_time, display_name_to_save,
-                     message.client_os, message.browser, message.device, message.network))
-                message_id = cursor.lastrowid
-            except Exception as _mir_e:
-                logger.warning(f"[save_message] 镜像写chat_messages失败(session={session_id}): {_mir_e}")
-                message_id = None
+            # 镜像写点 W1-user(INSERT chat_messages) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
+        # 镜像写点 W1-assistant(legacy 助手直存 INSERT chat_messages) 已随 chat_messages 表退役整体移除;
+        # assistant 消息现由任务/步骤体系(chat_tasks.ai_message_id / chat_task_steps)管理 — 小欧 2026-08-27
 
         # 12.2-Q6附带修复: 绝对值覆盖→SQL自增(与storage.py:297 allocate路径同口径), 消除并发丢计数 — 小欧 2026-08-21
         cursor.execute(

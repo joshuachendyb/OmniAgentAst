@@ -54,7 +54,8 @@
 #   (TEXT DEFAULT '', _ensure_column 幂等)——任务级文件A/B 目录引用 $dir=files/{session_id}/{task_id}/,
 #   排查定位锚: 任务→files_dir→文件A 按 step/tool_no/retry_no 三键组定位→顺链文件B; orchestrator 同事务写入
 # 2026-08-24 - 小欧 - 目录前导(北京老陈裁定, 仅注释更正防失真, 本文件零代码改动): files_dir 实际值改为
-#   files/Sion_{session_id}/Task_{task_id}/(前缀常量定义于 file_persist, orchestrator 同源拼装落库)
+#       files/Sion_{session_id}/Task_{task_id}/(前缀常量定义于 file_persist, orchestrator 同源拼装落库)
+# 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W7启动清扫UPDATE chat_messages(崩溃残留空白AI行标败), 系统对该表零写依赖
 """
 db_initializer — 数据库初始化
 
@@ -322,18 +323,7 @@ def init_chat_db(get_conn):
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_task_call "
             "ON token_usage(task_id, llm_call_count)")
 
-        # ===== 12.2-C5: 启动期清扫崩溃残留空白AI行 =====
-        # 标败不删行(保引用完整性/message_count诚实), 幂等可重复执行;
-        # 与 derive_status_from_steps"空/无final判failed"同哲学(fail-safe) — 小欧 2026-08-21
-        # 【chat_messages 只写镜像写点 W7】北京老陈 2026-08-23 裁定: 写保留当空气, 系统零依赖本表;
-        #   TODO 删除: chat_messages 退役时随镜像策略整体移除 — 小欧 2026-08-23
-        try:
-            conn.execute(
-                "UPDATE chat_messages SET status='failed', "
-                "content=CASE WHEN content='' THEN '(任务中断，未产生输出)' ELSE content END "
-                "WHERE role='assistant' AND status IS NULL")
-        except Exception as _mir_e:
-            logger.warning(f"[init] 启动清扫chat_messages失败(表可能已移除): {_mir_e}")
+        # 镜像写点 W7(启动清扫 UPDATE chat_messages 崩溃残留空白AI行) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
 
         # v2.0: 旧 execution_steps 列退役(结构迁移已前移至索引之前执行) — 小欧 2026-08-19
 

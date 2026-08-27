@@ -75,13 +75,14 @@ storage — 会话存储业务逻辑
   删 _truncate_tool_result/_truncate_step_dict/_truncate_tool_result_strings 三函数+两 MAX_TOOL_RESULT_* 常量,
   新增 _warn_oversize_step_dict 超限 error 告警扫描(安全网不砍数据); append_execution_step 改完整 step_json
   落库保历史回放权威源(5.1 铁律), 签名/返回值 -> None 原样零感知; 原"实验性的功能:TODO"占位随删除块一并清理(11.7.14-1)
+2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除镜像写点W2(insert_assistant_message)/W3(allocate_and_insert_message内INSERT空白行)/W4(update_message_fields)/W5(finalize_message内UPDATE)及save_execution_steps中对W2/W4的调用; 删除后终态/步骤真实存储由chat_task_steps.step_json与chat_tasks承载; 同步清理孤儿import(IntegrityError/extract_metadata_from_steps)
 """
 
 import json
 import threading
 import types  # 11.1 冻结 token 零值常量, 防外部 mutate 污染全局 — 小欧 2026-08-20
 from typing import Any, Dict, Optional, Tuple
-from sqlite3 import Connection, IntegrityError
+from sqlite3 import Connection
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -91,7 +92,6 @@ from app.db import db
 from app.db.models.chat_models import SessionModelOverride, ModelRef   # 归一: ModelRef=SessionModelOverride 别名 — 小欧 2026-08-22
 from app.utils.json_utils import safe_json_dumps, parse_json
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
-from app.utils.display_utils import extract_metadata_from_steps
 
 # 存储每个session的消息ID
 # key: session_id, value: user_message_id 或 assistant_message_id
@@ -237,54 +237,10 @@ def ensure_session_exists(session_id: str, conn: Connection) -> None:
         raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
 
 
-def insert_assistant_message(
-    conn: Connection, ai_message_id: int, session_id: str,
-    display_name: Optional[str], update_data,
-) -> None:
-    """拷贝自 conversation.py 第115-131行
-    【chat_messages 只写镜像写点 W2】北京老陈 2026-08-23 裁定: 写保留当空气, 系统零依赖本表
-    (id 锚已迁 chat_user_message 自增/allocator 已查新表); TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23"""
-    cursor = conn.cursor()
-    local_time = get_local_iso_timestamp()
-    initial_content = update_data.content or ""
-    reply_to = getattr(update_data, 'reply_to_message_id', None)
-    try:
-        cursor.execute(
-            """INSERT INTO chat_messages
-               (id, session_id, role, content, timestamp, display_name, user_message_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (ai_message_id, session_id, "assistant", initial_content, local_time, display_name, reply_to),
-        )
-    except Exception as _mir_e:
-        logger.warning(f"[insert_assistant_message] 镜像写chat_messages失败(id={ai_message_id}): {_mir_e}")
-    logger.info(f"新消息创建: ai_message_id={ai_message_id}, session_id={session_id}, display_name={display_name}")
+# 镜像写点 W2(insert_assistant_message 写 chat_messages) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
 
 
-def update_message_fields(
-    conn: Connection, ai_message_id: int,
-    update_data, display_name: str,
-) -> None:
-    """拷贝自 conversation.py 第134-156行
-    【chat_messages 只写镜像写点 W4】北京老陈 2026-08-23 裁定: 写保留当空气;
-    TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23"""
-    cursor = conn.cursor()
-    fields: list = []
-    values: list = []
-    if update_data.content is not None:
-        fields.append("content = ?")
-        values.append(update_data.content)
-    if getattr(update_data, "status", None) is not None:
-        fields.append("status = ?")
-        values.append(update_data.status)
-    if fields:
-        values.append(ai_message_id)
-        try:
-            cursor.execute(
-                f'UPDATE chat_messages SET {", ".join(fields)} WHERE id = ?',
-                values,
-            )
-        except Exception as _mir_e:
-            logger.warning(f"[update_message_fields] 镜像写chat_messages失败(id={values[-1]}): {_mir_e}")
+# 镜像写点 W4(update_message_fields 写 chat_messages) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
 
 
 def update_session_message_count(
@@ -306,23 +262,13 @@ def update_session_message_count(
 
 
 async def save_execution_steps(session_id: str, update_data):
-    """拷贝自 conversation.py 第198-221行"""
+    """拷贝自 conversation.py 第198-221行; 镜像写点 W2/W4(insert_assistant_message / update_message_fields 均写 chat_messages)
+    已随 chat_messages 表退役整体移除, 本函数仅负责分配 assistant id + 会话消息计数 — 小欧 2026-08-27"""
     try:
         with db.get_conn("chat") as conn:
             ensure_session_exists(session_id, conn)
             ai_message_id, is_new = _allocator.allocate(session_id, conn)
-            metadata = extract_metadata_from_steps(update_data.execution_steps)
-            display_name = metadata.get("display_name")
-            try:
-                if is_new:
-                    insert_assistant_message(conn, ai_message_id, session_id, display_name, update_data)
-            except IntegrityError as _ie:
-                # 北京老陈 2026-08-22 铁律回归修复: 铁律后占用检查改读 chat_user_message+chat_tasks(禁读 chat_messages),
-                # 若 chat_messages 已存在该 id(如 legacy 直写助手消息未镜像至 chat_tasks)落库时 UNIQUE 撞键;
-                # 退化为复用该消息(与 铁律前 chat_messages 占用检查语义一致: 复用而非新建), 改走 UPDATE, 不读 chat_messages、不污染 chat_tasks
-                logger.warning(f"[save_execution_steps] id={ai_message_id} 已存在, 复用(UPDATE)而非新建: {_ie}")
-                is_new = False
-            update_message_fields(conn, ai_message_id, update_data, display_name)
+            # 镜像写点 W2/W4 已移除, 终态/步骤真实存储由 chat_task_steps / chat_tasks 承载 — 小欧 2026-08-27
             update_session_message_count(conn, session_id, is_new)
         logger.info(f"保存执行步骤成功: session_id={session_id}, ai_message_id={ai_message_id}, is_new={is_new}")
         return {"success": True, "ai_message_id": ai_message_id, "is_new_message": is_new}
@@ -350,22 +296,7 @@ def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Opti
     ensure_session_exists(session_id, conn)  # #17 fix: 写入前确保会话存在, 消除孤儿消息 — 小欧 2026-07-18
     ai_message_id, is_new = _allocator.allocate(session_id, conn, always_new=True)
     local_time = get_local_iso_timestamp()
-    if is_new:
-        # 【chat_messages 只写镜像写点 W3】北京老陈 2026-08-23 裁定: 写保留当空气
-        # (id 由 allocator 经 chat_user_message∪chat_tasks 分配, 本 INSERT 纯镜像);
-        # 镜像失败仅留痕不中断(三堂会审 A1·小欧 2026-08-23): 存量库 chat_messages 残留历史高 id 行,
-        # ai_message_id 可能撞其 UNIQUE 键——若不捕获会中止 with 块连带 insert_task 回滚,
-        # 致任务行/步骤/ai_message_id 全灭; 镜像是空气, 绝不允许它反噬主流程;
-        # 不把 chat_messages 加回占用检查(违反只写禁读铁律)。
-        # TODO 删除: 镜像退役时移除(注意保留 message_count UPDATE) — 小欧 2026-08-23
-        try:
-            conn.execute(
-                "INSERT INTO chat_messages(id, task_id, session_id, role, content, timestamp, user_message_id) "
-                "VALUES (?, ?, ?, 'assistant', ?, ?, ?)",
-                (ai_message_id, task_id, session_id, "", local_time, user_message_id),
-            )
-        except Exception as _mir_e:
-            logger.warning(f"[allocate] 镜像写chat_messages失败(session={session_id}, id={ai_message_id}): {_mir_e}")
+    # 镜像写点 W3(INSERT chat_messages 空白 assistant 行) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
     conn.execute(
         "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
         (local_time, session_id),
@@ -437,14 +368,6 @@ def load_execution_steps(conn: Connection, ai_message_id: int, task_id: Optional
     return []
 
 
-def finalize_message(conn: Connection, message_id: int, content: str, status: str, thought: str = "") -> None:
-    """finally 轻量终态 — 小欧 2026-07-14; 2026-07-16 小欧 增 thought 持久化
-    【chat_messages 只写镜像写点 W5】北京老陈 2026-08-23 裁定: 写保留当空气;
-    TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23"""
-    conn.execute(
-        "UPDATE chat_messages SET content=?, status=?, thought=? WHERE id=?",
-        (content, status, thought or None, message_id),
-    )
 
 
 # ====================================================================
@@ -867,7 +790,7 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int]:
         (session_id,),
     ).fetchone()[0]
     rows = conn.execute(
-        """SELECT task_id, user_input, status, duration, sessionModel,
+        """SELECT task_id, user_input, response, status, duration, sessionModel,
                   total_steps, llm_call_count, context_link_mode,
                   created_at, updated_at
            FROM chat_tasks WHERE session_id=? ORDER BY id DESC""",

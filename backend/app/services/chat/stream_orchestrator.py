@@ -84,6 +84,7 @@
 #   改经 db.atxn 进子线程 offload 出事件循环(复用既有薄壳, 行为等价), 请求编排期 loop 零同步 DB I/O
 # 2026-08-24 - 小欧 - 目录前导(北京老陈裁定): chat_tasks.files_dir 落库锚同步改为 files/Sion_{session_id}/Task_{task_id}/,
 #   与 TaskFileWriter 物理目录经 file_persist 前缀常量同源拼装(DRY), 排查定位链不断; 旧目录不迁移(禁止backward)
+# 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W6镜像写点(_setup_task_db内UPDATE chat_messages SET task_id), 系统对该表零写依赖
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -111,7 +112,7 @@ from app.services.agent.universal_agent import UniversalAgent
 from app.services.task.task_state import create_stream_buffer, get_stream_buffer
 from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
-from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, finalize_message, query_task_accumulation  # 12.2-Q3: 追加权威累计查询 — 小欧 2026-08-21
+from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, query_task_accumulation  # 12.2-Q3: 追加权威累计查询 — 小欧 2026-08-21
 from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_session_model, get_previous_task_chain  # S1/S2 任务级读写(10.1.4/10.1.7②); get_session_model 为 2026-08-22 由 get_session_model_override 改名(北京老陈 2026-08-22 L2 结构化)
 from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # 11.1 token 四层同构累计 — 小欧 2026-08-20
 from app.db import db  # 小健 2026-08-17 三堂会审-A1修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
@@ -290,7 +291,6 @@ async def chat_stream_orchestrator(
         import types as _types
         _db_ops = _types.SimpleNamespace(
             append_step=lambda c, mid, sid, idx, d, usage=None: append_execution_step(c, mid, sid, idx, d, task_id, usage=usage, user_message_id=_user_msg_id),  # _user_msg_id即chat_user_message.id（原生自增权威锚, 北京老陈 2026-08-23 锚迁移）— 小健 2026-08-19 P1-4
-            finalize=finalize_message,
             load_previous=lambda sid: _load_previous_messages(  # 任务上下文过滤(10.1.4⑤⑥)，经闭包注入链路计算的 context 两字段+上界(_user_msg_id)
                 sid, context_link_mode=context_link_mode, context_root_task_id=_context_root_task_id,
                 upper_message_id=_user_msg_id),
@@ -336,16 +336,7 @@ async def chat_stream_orchestrator(
             def _setup_task_db(conn):
                 _db_ops.insert_task(conn)
                 # v2.0 改动7: user 消息回填 task_id — 小欧 2026-08-19
-                if _user_msg_id:
-                    # 【chat_messages 只写镜像写点 W6】北京老陈 2026-08-23 裁定: 写保留当空气;
-                    # TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23
-                    try:
-                        conn.execute(
-                            "UPDATE chat_messages SET task_id=? WHERE id=?",
-                            (task_id, _user_msg_id),
-                        )
-                    except Exception as _mir_e:
-                        logger.warning(f"[setup_task] 镜像写chat_messages失败(task={task_id}): {_mir_e}")
+                # 镜像写点 W6(UPDATE chat_messages SET task_id) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
                 # 12.2-C4: eager分配assistant行+创建时即写chat_tasks.ai_message_id —
                 #   任务启动即分配(原首步惰性), 消除agent_runner finally legacy save_steps分支
                 #   (步骤丢失/覆写旧消息双风险根除) — 小欧 2026-08-21

@@ -443,22 +443,8 @@ async def run_agent_in_background(
         _terminal_status = _STATUS_MAP.get(end_type, "failed")
         saved_content = stream_state.current_content if stream_state else ""
         saved_thought = stream_state.current_thought if stream_state else ""
-        if current_execution_steps and ai_message_id is not None:  # 12.2-C4: eager注入后恒有id,None仅剩启动DB故障场景(步骤无从落库,finalize同样无意义) — 小欧 2026-08-21
-            for retry in range(2):
-                try:
-                    # 步骤已逐步落库, 仅 finalize content+status — 小欧 2026-07-14; legacy save_steps兜底分支整体移除(禁止backward) — 小欧 2026-08-21
-                    # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24); 终态必达防二次cancel(_persist_final 小欧 2026-08-24)
-                    await _persist_final(db.atxn("chat", lambda conn: db_ops.finalize(
-                        conn, ai_message_id, saved_content, _terminal_status, thought=saved_thought)))
-                    break
-                except sqlite3.IntegrityError as _ie:
-                    logger.warning(f"[Runner] DB finalize IntegrityError (不重试): {_ie}")
-                    break  # #14: UNIQUE约束不重试(YAGNI) — 小欧 2026-07-23
-                except Exception as save_err:
-                    if retry == 0:
-                        logger.warning(f"[Runner] DB 保存/finalize 失败, 重试: {save_err}")
-                    else:
-                        logger.error(f"[Runner] DB 保存/finalize 失败: {save_err}", exc_info=True)
+        # finalize_message 已随 chat_messages 表退役整体移除(阶段2 2026-08-27 小欧); 终态 content/status/thought
+        # 由 append_execution_step(step_json) 与 _finalize_task_db(update_task+回填chat_user_message) 承载, 无需此处镜像写
 
         if agent is not None and stream_state is not None:
             stream_state.llm_call_count = getattr(agent, "llm_call_count", 0)
