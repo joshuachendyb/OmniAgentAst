@@ -56,6 +56,7 @@
 # 2026-08-24 - 小欧 - 目录前导(北京老陈裁定, 仅注释更正防失真, 本文件零代码改动): files_dir 实际值改为
 #       files/Sion_{session_id}/Task_{task_id}/(前缀常量定义于 file_persist, orchestrator 同源拼装落库)
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W7启动清扫UPDATE chat_messages(崩溃残留空白AI行标败), 系统对该表零写依赖
+# 2026-08-27 - 小欧 - 阶段3(chat_messages表退役): 停建表——移除CREATE TABLE chat_messages及铁律注释、_ensure_column补齐(timestamp/display_name/client_os等/status/thought/task_id列)、idx_messages_session/idx_msg_task/idx_msg_timestamp索引; init_chat_db末尾真实DROP TABLE chat_messages(旧库历史数据已先由migrate_v2_chat_restructure回灌结构化表, 不丢数据); 系统对该表零依赖
 """
 db_initializer — 数据库初始化
 
@@ -84,18 +85,7 @@ def init_chat_db(get_conn):
                 version INTEGER DEFAULT 1
             );
             
-            -- ⚠️【北京老陈 2026-08-22 铁律：chat_messages = 只写表】本表仅供写入（INSERT 消息 / UPDATE content|status|thought|task_id|user_message_id），
-            --   严禁任何 SELECT 读取！读取会话/消息/步骤/任务数据必须走结构化读表：
-            --   chat_user_message（用户消息+AI最终回答：response/reasoning/model/provider/task_id）、chat_task_steps（步骤）、chat_tasks（任务，含 ai_message_id）、
-            --   chat_sessions（会话）、token_usage（token）、chat_session_trust（信任）。违反此铁律 = 退化。
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                timestamp TEXT,  -- 本地ISO无Z
-                display_name TEXT
-            );
+
             
             -- 独立步骤表 — 小欧 2026-07-14; v2.0 改名 chat_task_steps — 小欧 2026-08-19
             -- 锚B解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): 外键 REFERENCES chat_messages(id)
@@ -181,20 +171,14 @@ def init_chat_db(get_conn):
         _ensure_column(conn, "chat_sessions", "title_updated_at", "TEXT")
         _ensure_column(conn, "chat_sessions", "version", "INTEGER DEFAULT 1")
         
-        _ensure_column(conn, "chat_messages", "timestamp", "TEXT")
-        _ensure_column(conn, "chat_messages", "display_name", "TEXT")
-        
-        for field in ["client_os", "browser", "device", "network", "user_message_id"]:
-            col_type = "INTEGER" if field == "user_message_id" else "TEXT"
-            _ensure_column(conn, "chat_messages", field, col_type)
 
-        # 小欧 2026-07-13: 终态列(status), 记录一次请求的任务终态, 供前端/迁移直接读取
-        _ensure_column(conn, "chat_messages", "status", "TEXT")
-        _ensure_column(conn, "chat_messages", "thought", "TEXT")  # 小欧 2026-07-16
+        
+
+
+
 
         # ===== S0 补列（10.1.7① ②③，幂等只 ADD 缺列、老行 NULL 不丢数据）— 小欧 2026-08-16 =====
-        # ② chat_messages / chat_task_steps 补 task_id 列（B1 挂任务；对齐文档2 3.1.8-⑥）
-        _ensure_column(conn, "chat_messages", "task_id", "TEXT")
+        # ② chat_task_steps 补 task_id 列（B1 挂任务；对齐文档2 3.1.8-⑥）
         _ensure_column(conn, "chat_task_steps", "task_id", "TEXT")
         # ③ chat_sessions 补 sessionModel 列(会话级模型覆盖落库点, 结构化 provider+model 的 JSON)
         # 旧列 model_override 兼容迁移: 存在则改名(现代 SQLite); 老 SQLite 不支持 RENAME 时降级为
@@ -278,7 +262,7 @@ def init_chat_db(get_conn):
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON chat_sessions(updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON chat_sessions(is_deleted)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id)")
+
 
         # steps 表索引 — 小欧 2026-07-14
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_message ON chat_task_steps(ai_message_id)")
@@ -288,9 +272,7 @@ def init_chat_db(get_conn):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_session ON chat_tasks(session_id)")
         # chat_task_steps 复合索引：按 ai_message_id 与 (task_id, step_index)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_task ON chat_task_steps(task_id, step_index)")
-        # chat_messages 索引：按 task_id / timestamp（10.1.7① ② 权威=idx_msg_timestamp）— 小欧 2026-08-16
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_task ON chat_messages(task_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_timestamp ON chat_messages(timestamp)")
+
         # token_usage 五索引
         conn.execute("CREATE INDEX IF NOT EXISTS idx_token_session ON token_usage(session_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_token_task ON token_usage(task_id)")
@@ -445,8 +427,14 @@ def init_task_tracker_db(get_conn):
             );
 
             CREATE INDEX IF NOT EXISTS idx_ops_task ON task_operations(task_id);
-            CREATE INDEX IF NOT EXISTS idx_ops_seq  ON task_operations(task_id, sequence_number);
-        ''')
+                CREATE INDEX IF NOT EXISTS idx_ops_seq  ON task_operations(task_id, sequence_number);
+            ''')
+
+        # 阶段3(chat_messages表退役): 建表DDL/列补齐/索引已全部移除, 此处真实删除该表。
+        # 时序保障: 本 DROP 位于 init_chat_db 内所有 migrate(含 migrate_v2_chat_restructure 历史数据
+        # 回灌 chat_user_message/chat_tasks)与索引创建之后, 旧库 chat_messages 历史数据已被结构化表承载后再删,
+        # 不丢数据; 运行时已零读 chat_messages(阶段1/2 验证)。 — 小欧 2026-08-27
+        conn.execute("DROP TABLE IF EXISTS chat_messages")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, col_type: str):

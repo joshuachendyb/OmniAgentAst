@@ -14,6 +14,7 @@
 # 2026-08-19 小欧 v2.0迁移补全3: 新增 6.6 回填 chat_tasks.ai_message_id
 #   (由同session内相邻 assistant 消息补上 user+1; user↔assistant id 相邻配对对齐 storage.allocate;
 #    历史迁移漏带此列导致 ai_message_id 全空, 幂等仅回填为空的行)
+# 2026-08-27 小欧 阶段3(chat_messages表退役): migrate_execution_steps_status 新增"表存在"守卫(_table_exists), 表已DROP则跳过迁移, 防 PRAGMA table_info(chat_messages) 表不存在时报 no such table
 """
 migrate_steps — execution_steps 一次性数据迁移
 
@@ -172,6 +173,10 @@ def migrate_execution_steps_status(get_conn) -> int:
     _t0 = _time.time()
     updated = 0
     with get_conn("chat") as conn:
+        # 阶段3(chat_messages表退役 2026-08-27): 该表已被 DROP, 不存在则直接跳过迁移(表退役, 无数据可迁)
+        if not _table_exists(conn, "chat_messages"):
+            logger.info("[migrate] chat_messages 表已退役(不存在), 跳过 execution_steps 迁移")
+            return 0
         # v2.0 守卫(2026-08-19): chat_messages.execution_steps 列已随冻结废弃删除,
         # 新库无此列, 若触发迁移将报 no such column; 列不存在直接跳过 — 小欧 2026-08-19
         _cols = {r["name"] for r in conn.execute("PRAGMA table_info(chat_messages)").fetchall()}
