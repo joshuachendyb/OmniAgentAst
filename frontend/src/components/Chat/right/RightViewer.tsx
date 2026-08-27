@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-26 小欧 - 8.5 实施: 右侧查看区, 当前任务禁REST走liveSteps, 业务步骤分流(7.10/R1-B4/B9)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.1 抽toExecutionSteps收窄unknown[]→ExecutionStep[]替换裸as断言
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审P1-5/边距: 补空/错误三态(Empty暂无执行记录/Skeleton由Spin承载/Alert错误margin8px0#fff2f0隔离); 错误红字与统计块加间距防误读
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -13,7 +14,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Spin } from 'antd';
+import { Spin, Empty, Alert, Typography } from 'antd';
 import type { ExecutionStep } from '../../../types/execution';
 import {
   executionApi,
@@ -117,18 +118,43 @@ const RightViewer: React.FC<RightViewerProps> = ({
   }, [receiving, activeTaskId, serverTaskId, onSettledRefresh]);
 
   const displaySteps = isCurrentLive ? liveSteps : historySteps;
+  const hasSteps = displaySteps.length > 0;
 
   return (
     <Spin spinning={loading}>
-      <PipelineRenderer
-        steps={splitSteps(displaySteps).business}
-        streaming={isCurrentLive}
-        highlightToolName={highlightToolName}
-      />
+      {!loading && !hasSteps && !liveErrorText ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: 12, color: '#8c8c8c' }}
+            >
+              暂无执行记录
+            </Typography.Text>
+          }
+          style={{ padding: '24px 0' }}
+        />
+      ) : (
+        <PipelineRenderer
+          steps={splitSteps(displaySteps).business}
+          streaming={isCurrentLive}
+          highlightToolName={highlightToolName}
+        />
+      )}
       {liveErrorText && (
-        <div style={{ color: '#ff4d4f', fontSize: 13, margin: '4px 0' }}>
-          ❌ {liveErrorText}
-        </div>
+        <Alert
+          type="error"
+          showIcon
+          message={liveErrorText}
+          style={{
+            margin: '8px 0',
+            fontSize: 12,
+            borderRadius: 6,
+            background: '#fff2f0',
+            border: '1px solid #ffccc7',
+          }}
+        />
       )}
       <StaticStatsBlock detail={detail} />
     </Spin>
