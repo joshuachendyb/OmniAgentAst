@@ -1,4 +1,5 @@
 // 编辑历史: 2026-07-18 小欧 - FinalStep终态规整: 取消判定改为type=final+outcome=cancelled
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-9删后端自动保存死代码/10抽pickMsg/11终态清executionSteps
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -444,43 +445,7 @@ export const useChatCallbacks = (
         // console.log("  ├─ SSE传递的步骤数:", stepsFromSSE?.length, "个");
         // console.log("  └─ ref中的步骤数:", executionStepsRef.current?.length, "个");
 
-        try {
-          // 后端在流式结束时自动保存steps到数据库，无需前端触发
-          // console.log("✅ type=%s 后端已保存steps");
-          // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
-          // 原因：标题应该在用户修改时立即保存，避免版本冲突
-          // 如果需要同步最新数据，应该在用户修改标题时处理
-          // console.log("✅ [保存AI回复] 保存成功！");
-        } catch (saveError: unknown) {
-          const err = saveError as { message?: string };
-          console.error('❌ [保存AI回复] 保存失败:', err?.message || saveError);
-          console.error('   └─ 保存时使用的会话ID:', currentSessionId);
 
-          // 使用统一错误处理中心
-          const errorResult = handleApiError(saveError);
-
-          // 根据错误类型进行特殊处理
-          if (errorResult.errorType === ErrorType.SESSION_CONFLICT) {
-            // 409版本冲突 - 尝试从服务器获取最新数据
-            try {
-              const sessionData =
-                await sessionApi.getSessionMessages(currentSessionId);
-              if (sessionData.title) setSessionTitle(sessionData.title);
-            } catch (syncError) {
-              console.error('   └─ 同步最新数据失败:', syncError);
-            }
-            return;
-          }
-
-          // 如果是需要继续执行的错误（如用户消息保存失败），不阻断流程
-          if (errorResult.shouldContinue) {
-            console.warn('   └─ 保存失败但继续执行:', errorResult.errorType);
-            return;
-          }
-
-          // 其他错误已经通过errorHandler显示提示
-          return;
-        }
       } else {
         console.warn('⚠️ [保存AI回复] 跳过保存：缺少必要数据');
         console.log(
@@ -511,6 +476,7 @@ export const useChatCallbacks = (
       // ⭐ 【小资优化 2026-04-13】完成后清理ref，准备下一次对话
       streamingContentRef.current = '';
       streamingStepsRef.current = [];
+      executionStepsRef.current = []; // 2026-08-27 小欧 三堂会审: 终态清理executionSteps
       // lastUpdateTimeRef.current = 0;
 
       // console.log("✅ [onComplete] AI回答保存完成！");
@@ -544,6 +510,12 @@ export const useChatCallbacks = (
             }
           : error;
 
+      // 2026-08-27 小欧 三堂会审: 统一取错误消息, 去as unknown双重转换
+      const pickMsg = (e: SSEError): string => {
+        const o = e as SSEError & { message?: string };
+        return o.error_message || o.message || '未知错误';
+      };
+
       console.error('🔴 [onError] SSE 流式错误:', errorObj);
 
       // ⭐ 使用统一错误处理中心errorHandler处理提示
@@ -574,23 +546,13 @@ export const useChatCallbacks = (
             ...lastMessage,
             // 错误时直接用错误消息替换内容，不保留"思考中"
             // 【小沈修改2026-04-15】优先使用error_message，兼容旧字段message
-            content:
-              ((errorObj as unknown as Record<string, unknown>)
-                .error_message as string) ||
-              ((errorObj as unknown as Record<string, unknown>)
-                .message as string) ||
-              '未知错误',
+            content: pickMsg(errorObj), // 2026-08-27 小欧 三堂会审: 统一取错误消息
             isError: true,
             isStreaming: false,
             executionSteps: lastMessage.executionSteps || [], // 直接使用message中的steps
             // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除
             errorType: errorObj.error_type,
-            errorMessage:
-              ((errorObj as unknown as Record<string, unknown>)
-                .error_message as string) ||
-              ((errorObj as unknown as Record<string, unknown>)
-                .message as string) ||
-              '', // 【小沈修改2026-04-15】优先使用error_message
+            errorMessage: pickMsg(errorObj), // 2026-08-27 小欧 三堂会审: 统一取错误消息(原回落'')
             errorRetryAfter: errorObj.retry_after,
             errorTimestamp: errorObj.timestamp,
             errorContext: (errorObj as unknown as Record<string, unknown>)
@@ -621,17 +583,12 @@ export const useChatCallbacks = (
       setIsRetrying(false);
 
       // 【小沈修改2026-04-15】优先使用error_message，兼容旧字段message
-      logAIError(
-        ((errorObj as unknown as Record<string, unknown>)
-          .error_message as string) ||
-          ((errorObj as unknown as Record<string, unknown>)
-            .message as string) ||
-          '未知错误'
-      );
+      logAIError(pickMsg(errorObj)); // 2026-08-27 小欧 三堂会审: 统一取错误消息
 
       // ⭐ 完成后清理ref
       streamingContentRef.current = '';
       streamingStepsRef.current = [];
+      executionStepsRef.current = []; // 2026-08-27 小欧 三堂会审: 终态清理executionSteps
       // lastUpdateTimeRef.current = 0;
     },
     [

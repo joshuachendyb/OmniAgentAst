@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-23 小欧 - 三堂会审修复: 删除ExecutionStep重复声明error_type/error_message(TS2300)
 // 编辑历史: 2026-08-26 小欧 - 8.4/8.4.14实施: ExecutionStep.type改action+新增多case; 移除安全/性能旧字段; final解析累计usage
 // 编辑历史: 2026-08-27 小欧 - 三堂会审H2修复: classifyError改调纯classifyError(errorHandler)替代带副作用handleSSEError, 消除SSE错误路径误弹"正在重试"; 顶部import增classifyError别名
+// 编辑历史: 2026-08-27 小欧 - 三堂会审配套修复: observation解析同步execution_result=obsData, 供专用渲染器(data/llm_data)消费, 修复删tool_result早退后工具结果渲染空回归
 /**
  * SSE 工具模块 V2 - Server-Sent Events 流式处理
  *
@@ -1780,29 +1781,61 @@ const processSSEData = (
 
         // 【兼容层 2026-05-22 小资】支持两种格式，添加完整性验证
         // 先检查null（typeof null === 'object'是历史bug）
-        if (
+        // 2026-08-27 小欧 三堂会审: 适配后端08-18新契约 — observation步骤仅携带rawData.tool_result数组(顶层), 无observation字段
+        if (Array.isArray(rawData.tool_result) && rawData.tool_result.length) {
+          // 新契约(§10.3.3(3)): tool_result数组在rawData顶层, 每元素自包含{tool_name,llm_data,data_text,other_data}
+          const tr = rawData.tool_result as Array<Record<string, unknown>>;
+          step.tool_result = tr; // 供ToolResultRenderer早退/DefaultRenderer读取
+          const el = (tr[0] || {}) as Record<string, unknown>;
+          const llmData = (el.llm_data as Record<string, unknown>) || {};
+          const status = (llmData.status as Record<string, unknown>) || {};
+          // data_text承载原data对象(JSON字符串), 解析为data供专用渲染器读取data.* — 2026-08-27 小欧 三堂会审
+          let dataObj: Record<string, unknown> = {};
+          const dataText = el.data_text;
+          if (typeof dataText === 'string' && dataText.trim()) {
+            try {
+              dataObj = JSON.parse(dataText) as Record<string, unknown>;
+            } catch {
+              dataObj = { raw: dataText };
+            }
+          } else if (dataText && typeof dataText === 'object') {
+            dataObj = dataText as Record<string, unknown>;
+          }
+          step.execution_result = {
+            data: dataObj,
+            llm_data: llmData,
+            other_data: (el.other_data as Record<string, unknown>) || {},
+          }; // 2026-08-27 小欧 三堂会审: 构造execution_result供专用渲染器读取data/llm_data, 修复删早退后渲染空回归
+          step.tool_name = (el.tool_name as string) || '';
+          step.tool_params = (el.tool_params as Record<string, unknown>) || {};
+          step.return_direct = Boolean(
+            (el.other_data as Record<string, unknown>)?.return_direct
+          );
+          step.summary = (llmData.summary as string) || '';
+          step.execution_status =
+            (status.exec_code as 'success' | 'error' | 'warning') || undefined;
+          step.error_message = (status.message as string) || undefined;
+          step.content = step.summary;
+          step.parallel_results =
+            (rawData.parallel_results as typeof step.parallel_results) ||
+            undefined;
+        } else if (
           rawData.observation !== null &&
           rawData.observation !== undefined &&
           typeof rawData.observation === 'object'
         ) {
-          // 新格式（Phase 2）：observation是JSON对象，含llm_data/tool_result/other_data
+          // 兼容旧格式（observation 对象）
           const obsData = rawData.observation as Partial<{
             llm_data: Record<string, unknown>;
             tool_result: unknown;
             other_data: Record<string, unknown>;
-            // 兼容旧格式
             summary: string;
             tool_name: string;
             tool_params: Record<string, unknown>;
             return_direct: boolean;
             execution_status?: string;
             error_message?: string;
-            warning?: string;
-            next_actions?: unknown[];
           }>;
-
-          // Phase 2: 从llm_data/other_data提取字段
-          // llm_data是列表（单工具[dict]，多工具[dict1,dict2]），取首项给下游消费 — 北京老陈 2026-07-08
           const llmDataRaw = obsData.llm_data;
           const llmData = (
             Array.isArray(llmDataRaw) ? llmDataRaw[0] : llmDataRaw
@@ -1810,10 +1843,9 @@ const processSSEData = (
           const otherData = obsData.other_data as
             | Record<string, unknown>
             | undefined;
-
-          // 字段兼容：优先新格式(llm_data)，回退旧格式(summary等)
           step.observation = obsData;
-          step.tool_result = obsData.tool_result; // 2026-08-27 小欧 修复#1(B1): observation补全tool_result数据源, 否则ToolResultRenderer优先分支恒false(死代码)
+          step.tool_result = obsData.tool_result;
+          step.execution_result = obsData;
           step.tool_name =
             ((llmData?.action as Record<string, unknown>)?.tool as string) ??
             obsData.tool_name ??
@@ -1840,13 +1872,12 @@ const processSSEData = (
           step.error_message =
             ((llmData?.status as Record<string, unknown>)?.message as string) ??
             obsData.error_message;
-          step.content = step.summary; // content用于显示
-          // 并行tool call映射 — 小健 2026-06-25
+          step.content = step.summary;
           step.parallel_results = (
             obsData as { parallel_results?: typeof step.parallel_results }
           ).parallel_results;
         } else {
-          // 旧格式：observation是字符串或null/undefined（向后兼容）
+          // 旧格式：observation是字符串或null/undefined
           const obsStr =
             rawData.observation != null ? String(rawData.observation) : '';
           step.observation = obsStr;

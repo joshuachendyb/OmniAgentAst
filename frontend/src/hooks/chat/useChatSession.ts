@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: state 类型 SessionModelOverride | null; loadSession/initializeSession 读 result.sessionModel
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 会话生命周期对接sessionModel/版本冲突(8.13/5.x)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-16删编辑标题辅助函数/17删未用messages/18 deps补setSessionModelOverride
 /**
  * useChatSession Hook - 会话生命周期管理
  *
@@ -131,8 +132,7 @@ export const useChatSession = (
     titleInput, setTitleInput,
     lastSavedTitle, setLastSavedTitle,
     sessionModelOverride, setSessionModelOverride,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    messages, setMessages,
+    setMessages,
     currentSessionIdRef,
   } = state;
   
@@ -169,6 +169,7 @@ export const useChatSession = (
     setSessionVersion,
     setTitleLocked,
     setLastSavedTitle,
+    setSessionModelOverride, // 2026-08-27 小欧 三堂会审: 补全依赖
     currentSessionIdRef,
   ]);
 
@@ -380,6 +381,7 @@ export const useChatSession = (
     setSessionVersion,
     setTitleLocked,
     setLastSavedTitle,
+    setSessionModelOverride, // 2026-08-27 小欧 三堂会审: 补全依赖
     currentSessionIdRef,
   ]);
   
@@ -577,55 +579,6 @@ export const useChatSession = (
     setSessionVersion,
     setTitleLocked,
     setLastSavedTitle,
-  ]);
-  
-  // ========================================
-  // 标题编辑辅助函数
-  // ========================================
-  
-  /**
-   * startEditingTitle - 开始编辑标题
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const startEditingTitle = useCallback(() => {
-    setEditingTitle(true);
-    setTitleInput(sessionTitle);
-  }, [sessionTitle, setEditingTitle, setTitleInput]);
-  
-  /**
-   * cancelEditingTitle - 取消编辑标题
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const cancelEditingTitle = useCallback(() => {
-    setEditingTitle(false);
-    setTitleInput("");
-  }, [setEditingTitle, setTitleInput]);
-  
-  /**
-   * saveEditingTitle - 保存编辑的标题
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const saveEditingTitle = useCallback(async () => {
-    if (!titleInput.trim() || titleInput.trim() === sessionTitle) {
-      setEditingTitle(false);
-      setTitleInput("");
-      return;
-    }
-    
-    try {
-      await updateSessionTitle(titleInput.trim());
-      setEditingTitle(false);
-      setTitleInput("");
-    } catch (error) {
-      // 错误已在updateSessionTitle中处理
-      console.error("保存标题失败:", error);
-    }
-  }, [
-    titleInput,
-    sessionTitle,
-    setEditingTitle,
-    setTitleInput,
-    updateSessionTitle,
   ]);
   
   // ========================================

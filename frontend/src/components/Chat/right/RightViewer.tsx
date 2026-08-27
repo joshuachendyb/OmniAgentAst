@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 8.5 实施: 右侧查看区, 当前任务禁REST走liveSteps, 业务步骤分流(7.10/R1-B4/B9)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.1 抽toExecutionSteps收窄unknown[]→ExecutionStep[]替换裸as断言
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -21,6 +22,15 @@ import {
 import { PipelineRenderer } from '../pipeline';
 import { splitSteps } from '../pipeline/steps';
 import { StaticStatsBlock } from './StaticStatsBlock';
+
+// 2026-08-27 小欧 三堂会审: 收窄 unknown[]→ExecutionStep[], 形状不符回落空数组
+const toExecutionSteps = (raw: unknown): ExecutionStep[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (s): s is ExecutionStep =>
+      typeof s === 'object' && s !== null && 'type' in s
+  );
+};
 
 interface RightViewerProps {
   activeTaskId: string | null;
@@ -70,7 +80,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
         setDetail(d);
         if (s.steps.length > 0) {
           // 2026-08-27 小欧 修复#46: 拒绝裸断言, steps 缺失时回落空数组, 避免下游读step字段得undefined
-          setHistorySteps((s.steps ?? []) as ExecutionStep[]);
+          setHistorySteps(toExecutionSteps(s.steps)); // 2026-08-27 小欧 三堂会审: 收窄unknown[]→ExecutionStep[]
         } else if (sessionId) {
           const msgResp = await sessionApi.getSessionMessages(sessionId);
           if (cancelled) return;

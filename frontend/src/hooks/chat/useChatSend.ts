@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 发送逻辑对齐CommandPanel/TaskType/contextLink(8.12/8.14)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-15 删pendingMessageIdRef(回滚靠userMessage.id)
 /**
  * useChatSend Hook - 消息发送逻辑
  * 
@@ -15,7 +16,7 @@
  * @since 2026-04-23
  */
 
-import { useCallback, useRef } from "react";
+import { useCallback } from "react"; // 2026-08-27 小欧 三堂会审: 删pendingMessageIdRef后useRef不再使用
 import { handleError, ErrorType } from "../../utils/errorHandler";
 import { checkNetworkConnection } from "../../utils/network";
 import { showNetworkError } from "../../utils/chatMessages";
@@ -61,8 +62,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
     executeSend,
   } = options;
 
-  // 临时存储新创建的消息ID，用于错误回滚
-  const pendingMessageIdRef = useRef<string | null>(null);
+  // 2026-08-27 小欧 三堂会审: 回滚改靠userMessage.id, 删pendingMessageIdRef
 
   const handleSend = useCallback(
     async (messageContent: string, contextLinkMode?: 'linked' | 'independent') => {
@@ -107,8 +107,6 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
       content: messageContent.trim(),
       timestamp: new Date(),
     };
-    pendingMessageIdRef.current = userMessage.id;
-
     // 6. 乐观更新：立即添加到状态显示给用户
     setMessages((prev) => [...prev, userMessage]);
     logUserSend(userMessage.content);
@@ -152,7 +150,6 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
         waitTimerRef.current = null;
       }
       setWaitTime(0);
-      pendingMessageIdRef.current = null;
     }
   }, [
     loading,

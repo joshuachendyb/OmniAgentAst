@@ -1,3 +1,21 @@
+v0.19.35
+更新时间: 2026-08-27 18:09:05 - 小欧-2026-08-27
+## v0.19.34以来 变更汇总(4个commit) - 小欧-2026-08-27
+[2026-08-27 18:09:05 小欧] 汇总范围=v0.19.34以来全部commit(本分支 optimize-0.19.17 自v0.19.34累积, 已打 tag v0.19.35)
+
+### fix(3个):
+- fix:组1前端三堂会审修复(8文件: ChatHeader/NewChatContainer/TrustPanel/ModelPicker/ErrorDetail/SubmitBar/types-chat/formatSafeTimestamp) - 小欧-2026-08-27
+- fix:8.2+8.3前端三堂会审修复(NewChatContainer死解构/复用confirm/下沉sessionStorage; pipeline cancelled/tool_result优先/renderer可达) - 小欧-2026-08-27
+- fix:前端8.4_8.5组三堂会审修复+回归适配(sse新契约tool_result+早退恢复) - 小欧-2026-08-27
+
+### docs(1个):
+- docs:新文档 - 小欧-2026-08-27
+
+### 合计
+- fix: 3项 | docs: 1项 = 共4项
+
+---
+
 v0.19.33
 更新时间: 2026-08-27 16:47:04 - 小欧-2026-08-27
 ## v0.19.32以来 变更汇总(8个commit) - 小欧-2026-08-27

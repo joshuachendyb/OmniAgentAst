@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 任务取消/暂停控制对齐final_cancel事件(7.7)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-19删内层finally/20 抽callCancelApi/waitForCancelOrTimeout/resetUiFlags编排
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
  *
@@ -149,6 +150,30 @@ export const useChatTaskControl = (
   // 任务控制函数
   // =========================================================================
 
+  // 2026-08-27 小欧 三堂会审: 抽出小函数, 主函数仅编排(行为等价)
+  const resetUiFlags = useCallback((): void => {
+    setLoading(false);
+    setIsPaused(false);
+    if (setIsReceiving) setIsReceiving(false);
+  }, [setLoading, setIsPaused, setIsReceiving]);
+
+  const callCancelApi = useCallback(
+    async (taskId: string, sid: string | null): Promise<{ success: boolean; message: string }> => {
+      const timeoutPromise = new Promise<unknown>((_, reject) => {
+        setTimeout(() => reject(new Error('取消请求超时')), 5000);
+      });
+      return (await Promise.race([
+        taskControlApi.cancel(taskId, sid ?? undefined),
+        timeoutPromise,
+      ])) as { success: boolean; message: string };
+    },
+    []
+  );
+
+  const waitForCancelOrTimeout = useCallback(async (): Promise<void> => {
+    await waitForCancelEvent(3000, 200);
+  }, [waitForCancelEvent]);
+
   /**
    * handleCancel - 取消正在执行的任务
    *
@@ -179,29 +204,14 @@ export const useChatTaskControl = (
           console.log("[handleCancel] 已显示 '正在取消任务...' 提示");
 
           // ✅【方案1】立即更新UI状态，给用户即时反馈
-          setLoading(false);
-          setIsPaused(false);
-          if (setIsReceiving) setIsReceiving(false);
-
-          // ✅【方案3】设置超时保护，防止请求长时间挂起
-          const timeoutPromise = new Promise<unknown>((_, reject) => {
-            setTimeout(() => reject(new Error('取消请求超时')), 5000);
-          });
+          resetUiFlags();
 
           // ✅【关键修复】不立即断开连接！等待后端发送cancelled/final事件
-          // 如果后端正在处理，等它发送完事件后再断开
-          // 立即断开会导致收不到cancelled事件，UI一直显示"加载中"
-
-          // 使用统一的 taskControlApi（带超时）
-          const result = (await Promise.race([
-            taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined),
-            timeoutPromise,
-          ])) as { success: boolean; message: string };
+          const result = await callCancelApi(taskIdToCancel, sessionId);
           console.log('[handleCancel] cancel API 返回:', result);
 
           // ✅ 使用智能等待策略等待后端发送cancelled事件
-          // 最长等待3000ms，每200ms检查一次
-          await waitForCancelEvent(3000, 200);
+          await waitForCancelOrTimeout();
 
           // ✅ 停止所有进行中的倒计时
           if (waitTimerRef.current) {
@@ -243,11 +253,8 @@ export const useChatTaskControl = (
 
           showTaskControlMessage('cancel', false, errorMessage);
 
-          // ✅ 即使出错也要确保UI状态更新，并延迟断开
-          // 无论cancel API是否成功，都需要断开SSE连接
-          setLoading(false);
-          setIsPaused(false);
-          if (setIsReceiving) setIsReceiving(false);
+          // ✅ 即使出错也要确保UI状态更新
+          resetUiFlags();
 
           // 【重试机制】错误情况下也等待cancelled事件
           let retries = 0;
@@ -263,17 +270,12 @@ export const useChatTaskControl = (
           disconnect(true);
 
           console.log('[handleCancel] 已处理异常，强制断开SSE连接');
-        } finally {
-          // 【防重复点击】重置取消标志（无论成功还是失败都重置）
-          cancelInProgressRef.current = false;
         }
       } else {
         console.warn('[handleCancel] 没有有效的 taskId，可能任务尚未开始');
 
         // 【问题4修复】即使没有taskId，也要更新UI状态并断开连接
-        setLoading(false);
-        setIsPaused(false);
-        if (setIsReceiving) setIsReceiving(false);
+        resetUiFlags();
 
         // 断开SSE连接
         disconnect(true);
@@ -282,20 +284,19 @@ export const useChatTaskControl = (
         showTaskResultMessage('cancel', '任务尚未开始或已结束，请求已取消');
       }
     } finally {
-      // 兜底：确保取消标志重置
+      // 兜底：确保取消标志重置（保留外层，删内层重复重置）
       cancelInProgressRef.current = false;
     }
   }, [
     serverTaskId,
     sessionId,
-    setLoading,
-    setIsPaused,
-    setIsReceiving,
+    resetUiFlags,
+    callCancelApi,
+    waitForCancelOrTimeout,
     waitTimerRef,
     disconnect,
     hasReceivedCancelEventRef,
     cancelInProgressRef,
-    waitForCancelEvent,
   ]);
 
   /**

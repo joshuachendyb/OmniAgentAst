@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 修复A3(接受detail派生历史任务动态信息/7.6+4.5.1)+B2(执行中实时计时/7.6②)+C2(上下文截断文字/7.9)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.4 useRef仅首次锚定start, 去frames.startTimestamp防抖动, 切换复位
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -10,7 +11,7 @@
  * @date 2026-08-26
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Badge, Tag, Tooltip, Typography } from 'antd';
 import type { ExecutionStep, TaskMetaFrames } from '../../../utils/sse';
 import type { TaskDetail } from '../../../services/api';
@@ -45,9 +46,13 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   // 【小欧 2026-08-26 修复 B2】执行中实时计时：当前任务(receiving+running)按 start 时刻走表，
   // 历史任务(detail)用后端 duration，不计时。
   const [liveElapsed, setLiveElapsed] = useState(0);
+  const startRef = useRef<number | null>(null); // 2026-08-27 小欧 三堂会审: 仅首次锚定start, 防计时抖动
   useEffect(() => {
     if (receiving && info.badge === 'running' && !detail) {
-      const start = frames.startTimestamp || Date.now();
+      if (startRef.current == null) {
+        startRef.current = frames.startTimestamp || Date.now(); // 2026-08-27 小欧 三堂会审: 首次锚定
+      }
+      const start = startRef.current;
       const t = setInterval(
         () => setLiveElapsed(Math.max(0, Math.round((Date.now() - start) / 1000))),
         1000
@@ -55,8 +60,9 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
       return () => clearInterval(t);
     }
     setLiveElapsed(0);
+    startRef.current = null; // 2026-08-27 小欧 三堂会审: 任务切换复位startRef
     return undefined;
-  }, [receiving, info.badge, detail, frames.startTimestamp]);
+  }, [receiving, info.badge, detail]); // 2026-08-27 小欧 三堂会审: 去frames.startTimestamp防抖动
   const shownElapsed = detail
     ? info.elapsedSec
     : receiving && info.badge === 'running'

@@ -1,4 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 修复B1: ToolResultRenderer优先读obsStep.tool_result(4.9.3/7.4⑦),兜底content/summary
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.5 CANONICAL归一+删不实注释+8.4.6 删早退DefaultRenderer走switch
+// 编辑历史: 2026-08-27 小欧 - 三堂会审复核: 8.4.6删除早退经关联逻辑审查发现退化风险(后端08-18新契约data由data_text承载, 纯文本工具解析失败致专用渲染器渲染空), 据"严禁退化"铁规恢复早退tool_result→DefaultRenderer, 专用渲染器维持HEAD不可达状态(无退化)
 /**
  * ToolResultRenderer组件 - 工具结果渲染器（工厂模式）
  * 
@@ -10,9 +12,8 @@
  */
 
 import React from 'react';
-// 【北京老陈 2026-07-13 小欧】switch 必须按后端注册名路由(后端 Phase1 v6.0 已将工具名精简为短名:
-//   listdir/readtext/writetext/readmedia/edittext/tree/find/grep/compress/extract/move/copy/delete/rename
-//   timenow/timeadd/timediff/timer_set/timer_clear/timer_list)，旧长名(copy_file/list_directory...)已全部 miss 落到 DefaultRenderer。
+// 【北京老陈 2026-07-13 小欧】switch 必须按后端注册名路由(后端已将工具名精简为短名)。
+// 2026-08-27 小欧 三堂会审: 前端侧CANONICAL归一映射, 长名先归一为短名再路由(见下方常量)
 import ListDirectoryRenderer from './types/ListDirectoryRenderer';
 import ReadFileRenderer from './types/ReadFileRenderer';
 import WriteFileRenderer from './types/WriteFileRenderer';
@@ -33,6 +34,15 @@ import GetDirectoryTreeRenderer from './types/GetDirectoryTreeRenderer';
 import DefaultRenderer from './types/DefaultRenderer';
 import { BaseRendererProps } from './types/BaseRendererProps';
 
+// 2026-08-27 小欧 三堂会审: 前端侧CANONICAL归一映射, 长名先归一为短名再路由
+const CANONICAL: Record<string, string> = {
+  read_file: 'readtext',
+  write_file: 'writetext',
+  grep_file_content: 'grep',
+  search_file_content: 'grep',
+  get_current_time: 'timenow',
+};
+
 interface ToolResultRendererProps extends BaseRendererProps {
   toggleExpand?: (index: number) => void;
 }
@@ -50,21 +60,21 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
     ? () => toggleExpand(stepIndex) 
     : undefined;
 
-  // 【小欧 2026-08-26 修复 B1】4.9.3：observation 优先读 tool_result 数组(新)，交由默认渲染器解析
-  if (step.tool_result !== undefined && step.tool_result !== null) {
+  // 工厂模式：根据后端注册名(tool_name)选择渲染器 — 小欧 2026-07-13 统一为后端真实短名
+  // 2026-08-27 小欧 三堂会审: 先经CANONICAL归一化长名再路由
+  // 2026-08-27 小欧 三堂会审: 据"严禁退化"铁规保留早退 — 专用渲染器要求execution_result.data为对象,
+  // 但后端08-18新契约data由data_text(JSON字符串)承载, 纯文本工具解析失败会渲染空(退化), 故优先DefaultRenderer渲染tool_result
+  if (step.tool_result && Array.isArray(step.tool_result) && step.tool_result.length) {
     return <DefaultRenderer step={step} />;
   }
-
-  // 工厂模式：根据后端注册名(tool_name)选择渲染器 — 小欧 2026-07-13 统一为后端真实短名
-  switch (step.tool_name) {
+  const name = CANONICAL[step.tool_name ?? ''] ?? step.tool_name ?? ''; // 2026-08-27 小欧 三堂会审: 归一化工具名(防undefined索引)
+  switch (name) {
     // ===== 文件工具（后端注册名）=====
     case "listdir":
       return <ListDirectoryRenderer step={step} isExpanded={isExpanded} onToggle={handleToggle} />;
     case "readtext":
-    case "read_file":
       return <ReadFileRenderer step={step} />;
     case "writetext":
-    case "write_file":
       return <WriteFileRenderer step={step} />;
     case "delete":
       return <DeleteFileRenderer step={step} />;
@@ -73,8 +83,6 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
     case "find":
       return <SearchFilesRenderer step={step} />;
     case "grep":
-    case "grep_file_content":
-    case "search_file_content":
       return <SearchFileContentRenderer step={step} />;
     case "copy":
       return <CopyFileRenderer step={step} />;
@@ -96,7 +104,6 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
       return <TimerListRenderer step={step} />;
     // ===== 时间工具（后端注册名）=====
     case "timenow":
-    case "get_current_time":
       return <TimeNowRenderer step={step} />;
     case "timediff":
       return <TimeDiffRenderer step={step} />;

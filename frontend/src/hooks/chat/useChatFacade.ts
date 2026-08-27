@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 7Hook组合入口整合(8.1~8.14 统一暴露)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-8透传setIsReceiving/12 hasSteps/13复用Options类型/14 memo依赖onError
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
@@ -17,9 +18,10 @@
  * @since 2026-04-24
  */
 
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 import { useChatState } from './useChatState';
 import { useChatCallbacks } from './useChatCallbacks';
+import type { InitializeSessionOptions, InitializeSessionResult } from './useChatSession';
 import { useChatStreaming } from './useChatStreaming';
 import { useChatSession } from './useChatSession';
 import { useChatPersistence } from './useChatPersistence';
@@ -99,8 +101,7 @@ export interface UseChatFacadeReturn {
   };
 
   sessionOps: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    initializeSession: (options: any) => Promise<any>;
+    initializeSession: (options: InitializeSessionOptions) => Promise<InitializeSessionResult>;
     handleNewSession: (retry?: number) => Promise<void>;
     handleClear: () => void;
   };
@@ -146,12 +147,17 @@ export const useChatFacade = (options?: {
   onError?: (message: string) => void;
 }): UseChatFacadeReturn => {
   const { baseURL = '', sessionId } = options || {};
+  const onError = options?.onError; // 2026-08-27 小欧 三堂会审: 透传SSE错误用
 
   // 1. 基础状态（始终加载）
   const chatState = useChatState();
 
   // 2. 回调函数（始终加载）
-  const chatCallbacks = useChatCallbacks(chatState);
+  // 2026-08-27 小欧 三堂会审: 透传setIsReceiving, 经ref注入解循环依赖
+  const receivingSetterRef = useRef<(v: boolean) => void>();
+  const chatCallbacks = useChatCallbacks(chatState, {
+    setIsReceiving: (v: boolean) => receivingSetterRef.current?.(v),
+  });
 
   // 2.1 透传 SSE 错误给上层（RightViewer liveErrorText 红字直显，8.10）
   const chatCallbacksWithError = useMemo<ReturnType<typeof useChatCallbacks>>(
@@ -159,16 +165,16 @@ export const useChatFacade = (options?: {
       ...chatCallbacks,
       onError: (error: Parameters<typeof chatCallbacks.onError>[0]) => {
         chatCallbacks.onError(error);
-        if (options?.onError) {
+        if (onError) {
           const msg =
             typeof error === 'string'
               ? error
               : error.error_message || '未知错误';
-          options.onError(msg);
+          onError(msg);
         }
       },
     }),
-    [chatCallbacks, options]
+    [chatCallbacks, onError] // 2026-08-27 小欧 三堂会审: 依赖onError避免options每次新对象
   );
 
   // 3. 流式处理（始终加载，但可UI按需显示）
@@ -176,6 +182,11 @@ export const useChatFacade = (options?: {
     baseURL,
     sessionId: sessionId || chatState.sessionId,
   });
+
+  // 2026-08-27 小欧 三堂会审: 注入setIsReceiving到ref, 解循环依赖
+  useEffect(() => {
+    receivingSetterRef.current = chatStreaming.setIsReceiving;
+  }, [chatStreaming]);
 
   // 4. 会话管理（始终加载）
   const chatSession = useChatSession(chatState, chatStreaming);
@@ -430,7 +441,7 @@ export const useShouldLoadStreaming = (
       isReceiving: streaming?.isReceiving ?? false,
 
       // 是否有执行步骤（需要从chatState获取）
-      hasSteps: false, // 需要通过其他方式获取
+      hasSteps: (streaming?.executionSteps?.length ?? 0) > 0, // 2026-08-27 小欧 三堂会审: 由executionSteps派生
 
       // 是否可以显示工具面板
       showPanel:
