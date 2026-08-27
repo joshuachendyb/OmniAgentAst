@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-27 小欧 - 修复#12: 回车保存后Input卸载触发blur双发updateSession(409), 加editingRef守卫(实测失败用例转绿)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审H3修复: handleSaveTitle写后回填sessionApi.updateSession返回的version, 杜绝二次编辑必409冲突(409分支兜底保留)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 409恢复分支改用更轻的getSession(仅取version/title)
 /**
  * ChatHeader 组件 - 会话标题展示与编辑
  * 
@@ -95,7 +96,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         showSessionConflict();
         // 尝试重新获取最新会话数据
         try {
-          const sessionData = await sessionApi.getSessionMessages(sessionId);
+          // 2026-08-27 小欧 三堂会审: 409恢复仅取version/title, 用更轻的getSession(无需messages)
+          const sessionData = await sessionApi.getSession(sessionId);
           if (sessionData.version) {
             setSessionVersion(sessionData.version);
           }

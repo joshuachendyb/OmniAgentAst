@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 接入 ModelPicker 组件(L2 会话级模型覆盖), 解构 sessionModelOverride/setSessionModelOverride
 // 编辑历史: 2026-08-26 小欧 - 修复A1(顶栏时间悬浮接线sessionApi.getSession)/A2(右侧默认展开新任务,点击旧任务展开,可收起)/A3(信息条随选中历史任务切换selectedDetail派生): 对应7.1⑤/7.3/7.5/7.6/4.5.1
 // 编辑历史: 2026-08-27 小欧 - 修复#3: TrustPanel默认可见(原false致永不可触达); 修复#2: L2经sessionModelOverride同步useModelLayer使顶栏徽标反映会话级模型
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: HITL confirm(trust_session=True)成功后派发omni-trust-changed事件(通知TrustPanel刷新)
 import React, {
   useEffect,
   useCallback,
@@ -522,6 +523,10 @@ const NewChatContainer: React.FC = () => {
           confirmed,
           trustSession
         );
+        // 2026-08-27 小欧 三堂会审: HITL confirm(trust_session=True)写入成功后派发事件, 通知信任面板刷新
+        if (trustSession && sessionId) {
+          window.dispatchEvent(new CustomEvent('omni-trust-changed', { detail: { sessionId } }));
+        }
       } catch (error) {
         console.error('[Authorization] 确认失败:', error);
       } finally {

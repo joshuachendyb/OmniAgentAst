@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 8.12 实施: 底部功能行 模型按钮+附件+发送/停止+暂停继续(4.3.6)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: modelPickerSlot改为可选属性(调用方可不传)
 /**
  * SubmitBar - 底部功能行：模型按钮(ModelPicker) + 附件 + 发送/停止 + 暂停·继续
  *
@@ -23,7 +24,7 @@ interface SubmitBarProps {
   loading: boolean;
   isReceiving: boolean;
   isPaused: boolean;
-  modelPickerSlot: React.ReactNode; // 既有 ModelPicker 实例
+  modelPickerSlot?: React.ReactNode; // 既有 ModelPicker 实例（可选）
   onSend: () => void;
   onCancel: () => void;
   onTogglePause: () => void;

@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 8.7 实施: 信任操作面板, 查询/撤销信任, HITL confirm写入(4.3.5/4.7)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 新增omni-trust-changed事件监听, HITL信任写入后自动刷新面板
 /**
  * TrustPanel - 信任操作面板（config slot，默认收起）
  *
@@ -43,6 +44,16 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 2026-08-27 小欧 三堂会审: 监听HITL confirm(trust_session=True)成功后派发的事件, 仅命中本会话时刷新信任清单
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ sessionId: string }>;
+      if (ce.detail?.sessionId === sessionId) void load();
+    };
+    window.addEventListener('omni-trust-changed', handler as EventListener);
+    return () => window.removeEventListener('omni-trust-changed', handler as EventListener);
+  }, [sessionId, load]);
 
   const revoke = async (toolName: string) => {
     if (!sessionId) return;

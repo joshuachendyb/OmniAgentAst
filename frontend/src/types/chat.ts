@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 新增 SessionModelOverride 接口; HistoryLoadResult model_override→sessionModel
 // 编辑历史: 2026-08-22 小欧 - model结构化归一: SessionModelOverride 补 api_base
 // 编辑历史: 2026-08-26 小欧 - 8.4.7 移除安全校验旧字段、ActionToolMessage→ActionMessage、新增 StartInfoMessage/StartMessage.content
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 新增ModelListItem接口(模型列表项结构)
 /**
  * 流式API响应类型定义
  *
@@ -348,6 +349,13 @@ export interface SessionModelOverride {
   model: string;
   api_base?: string;
   display_name?: string;
+}
+
+// 2026-08-27 小欧 三堂会审: 模型列表项结构, 与后端/config/models返回对齐
+export interface ModelListItem {
+  provider: string;
+  model: string;
+  display_name: string;
 }
 
 /**

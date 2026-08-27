@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 8.13/L2 实施: 会话级模型覆盖选择器, 写sessionModel, 409冲突回读(5.1/5.2)
 // 编辑历史: 2026-08-27 小欧 - 修复#11: 切L2模型不再以'新会话'污染后端会话标题(实测失败用例转绿)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 模型列表类型归一为ModelListItem; 删IIFE改直线find写法
 /**
  * ModelPicker 组件 - 会话级模型覆盖(L2)选择器
  *
@@ -17,7 +18,7 @@ import React, { useEffect, useState } from 'react';
 import { Select, Tooltip } from 'antd';
 import { RobotOutlined } from '@ant-design/icons';
 import { sessionApi, configApi } from '../../services/api';
-import type { SessionModelOverride } from '../../types/chat';
+import type { SessionModelOverride, ModelListItem } from '../../types/chat';
 import { showSaveError, showSessionConflict } from '../../utils/chatMessages';
 
 interface ModelPickerProps {
@@ -39,7 +40,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
   setSessionModelOverride,
   setSessionVersion,
 }) => {
-  const [models, setModels] = useState<{ provider: string; model: string; display_name: string }[]>([]);
+  const [models, setModels] = useState<ModelListItem[]>([]); // 2026-08-27 小欧 三堂会审: 模型列表类型归一为ModelListItem
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -60,12 +61,11 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
 
   const handleChange = async (val: string) => {
     if (!sessionId) return;
-    const next: SessionModelOverride | null = val === FOLLOW_GLOBAL
-      ? null
-      : (() => {
-          const m = models.find((x) => `${x.provider}-${x.model}` === val);
-          return m ? { provider: m.provider, model: m.model, display_name: m.display_name } : null;
-        })();
+    // 2026-08-27 小欧 三堂会审: 删IIFE包裹, 直线写法取模型项
+    const foundModel = val === FOLLOW_GLOBAL ? undefined : models.find((x) => `${x.provider}-${x.model}` === val);
+    const next: SessionModelOverride | null = foundModel
+      ? { provider: foundModel.provider, model: foundModel.model, display_name: foundModel.display_name }
+      : null;
     if (!next && val !== FOLLOW_GLOBAL) return;
     const prev = sessionModelOverride;
     setLoading(true);

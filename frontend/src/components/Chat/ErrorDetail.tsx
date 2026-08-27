@@ -1,6 +1,8 @@
 /* eslint-disable react/prop-types */
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 错误详情组件(任务信息条错误展示)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 引入formatSafeTimestamp; formatErrorType提顶层; 来源/上下文注释澄清
 import React, { memo, useMemo } from "react";
+import { formatSafeTimestamp } from "../../utils/formatSafeTimestamp"; // 2026-08-27 小欧 三堂会审: 复用时戳安全格式化(复用优先)
 
 interface ErrorDetailProps {
   errorType?: string;
@@ -17,7 +19,13 @@ interface ErrorDetailProps {
     provider?: string;
     thought_content?: string;
   };
-}
+};
+
+// ========== 错误类型格式化纯函数（模块顶层，2026-08-27 小欧 三堂会审） ==========
+// 2026-08-27 小欧 三堂会审: 提到模块顶层保持纯函数, 与上方常量同区, 便于复用与测试
+const formatErrorType = (type?: string): string => {
+  return ERROR_TYPE_LABELS[type || ""] || type || "未知";
+};
 
 // ========== Step 2: 外部颜色配置常量 ==========
 const ERROR_COLORS_MAP: Record<string, { background: string; border: string; color: string; icon: string; title: string }> = {
@@ -191,11 +199,6 @@ const ErrorDetail: React.FC<ErrorDetailProps> = memo(({
     return ERROR_COLORS_MAP[errorType || ""] || ERROR_COLORS_MAP.default;
   }, [errorType]);
 
-  // 格式化错误类型显示
-  const formatErrorType = (type?: string) => {
-    return ERROR_TYPE_LABELS[type || ""] || type || "未知";
-  };
-
   // 动态code背景色
   const codeBackground = errorType === "security_error"
     ? "rgba(255, 193, 7, 0.2)"
@@ -251,12 +254,13 @@ const ErrorDetail: React.FC<ErrorDetailProps> = memo(({
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={labelStyle}>时间:</span>
             <span style={valueStyle}>
-              {new Date(errorTimestamp).toLocaleString("zh-CN")}
+              {formatSafeTimestamp(errorTimestamp)}
             </span>
           </div>
         )}
 
         {/* 来源 */}
+        {/* 2026-08-27 小欧 三堂会审: 顶层model/provider = 错误来源展示(顶层上下文) */}
         {(model || provider) && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, gridColumn: "span 2" }}>
             <span style={labelStyle}>来源:</span>
@@ -275,6 +279,7 @@ const ErrorDetail: React.FC<ErrorDetailProps> = memo(({
           <div style={{ ...contextBoxStyle, gridColumn: "span 2" }}>
             <div style={detailsBoxStyle}>上下文:</div>
             {errorContext.step && <div style={contentBoxStyle}>步骤: {errorContext.step}</div>}
+            {/* 2026-08-27 小欧 三堂会审: errorContext.model/provider = 出错步骤内的上下文(非顶层来源) */}
             {errorContext.model && <div style={contentBoxStyle}>模型: {errorContext.model}</div>}
             {errorContext.provider && <div style={contentBoxStyle}>提供商: {errorContext.provider}</div>}
           </div>
