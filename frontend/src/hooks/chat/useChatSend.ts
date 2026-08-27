@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 发送逻辑对齐CommandPanel/TaskType/contextLink(8.12/8.14)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-15 删pendingMessageIdRef(回滚靠userMessage.id)
+// 编辑历史: 2026-08-27 小欧 - hooks修复#9: executeSend抛错清理isStreaming占位幽灵消息
 /**
  * useChatSend Hook - 消息发送逻辑
  * 
@@ -138,6 +139,12 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
           msg.id === userMessage.id
             ? { ...msg, sendStatus: "failed" as const }
             : msg
+        )
+      );
+      // 2026-08-27 小欧 修复#9: 清理 executeSend 抛错残留的 isStreaming 占位 assistant 消息(幽灵消息), 避免会话卡"思考中"
+      setMessages((prev) =>
+        prev.filter(
+          (msg) => !(msg.role === "assistant" && msg.isStreaming === true)
         )
       );
       handleError(error, { source: "api" });

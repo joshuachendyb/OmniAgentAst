@@ -181,10 +181,12 @@ export const useChatCallbacks = (
             id: (Date.now() + 1).toString(),
             role: 'assistant',
             content:
-              step.content ||
-              (step.type === 'error'
-                ? step.error_message || '执行出错'
-                : '🤔 AI 正在思考...'),
+              step.type === 'final'
+                ? ((step.response as string) || (step.content as string) || '🤔 AI 正在思考...')
+                : (step.content ||
+                  (step.type === 'error'
+                    ? step.error_message || '执行出错'
+                    : '🤔 AI 正在思考...')),
             timestamp: step.timestamp ? new Date(step.timestamp) : new Date(),
             executionSteps: [step], // 直接使用当前step
             isStreaming: step.type !== 'error' && step.type !== 'final',
@@ -198,12 +200,21 @@ export const useChatCallbacks = (
         // 更新最后一条消息的executionSteps
         // 【修复 2026-04-16】同时更新 isStreaming，确保 final/error 时显示正确状态
         const updated = [...prev];
+        // 2026-08-27 小欧 修复#10: final 步骤携带 response 时回填消息内容(取消进行中收 completed 终态亦生效)
+        const stepDisplayContent =
+          step.type === 'final'
+            ? ((step.response as string) || (step.content as string) || lastMessage.content)
+            : lastMessage.content;
         updated[updated.length - 1] = {
           ...lastMessage,
+          content: stepDisplayContent,
           executionSteps: [...(lastMessage.executionSteps || []), step], // 直接追加到现有steps
-          // final/error 时必须设置 isStreaming=false，停止 DynamicStatusDisplay
+          // final/error/cancelled 时必须设置 isStreaming=false，停止 DynamicStatusDisplay
+          // 2026-08-27 小欧 修复#1/13: type==='cancelled' 亦须置 isStreaming=false
           isStreaming:
-            step.type !== 'error' && step.type !== 'final'
+            step.type !== 'error' &&
+            step.type !== 'final' &&
+            step.type !== 'cancelled'
               ? lastMessage.isStreaming
               : false,
         };
@@ -325,8 +336,12 @@ export const useChatCallbacks = (
           hasThoughtContent;
 
         if (hasValidContent) {
-          // 有有效内容，优先用final步骤的response，其次用thought
-          finalResponse = finalStepResponse || finalStepThought || '';
+          // 2026-08-27 小欧 修复#7: 答案位于 thought 步骤而 final.response/thought 均空时, 回落到首个含内容的 thought 步骤
+          const thoughtContent = thoughtSteps.find(
+            (s: ExecutionStep) => s.content && String(s.content).trim()
+          )?.content;
+          finalResponse =
+            finalStepResponse || finalStepThought || (thoughtContent as string) || '';
           console.info(
             '✅ finalResponse为空但executionSteps有有效内容，不标记error'
           );
@@ -354,7 +369,8 @@ export const useChatCallbacks = (
           // 问题：onStep异步更新message.executionSteps，onComplete可能在其完成前执行，导致覆盖
           // 解决：优先使用message中已有的executionSteps（如果更长），否则使用SSE传递的
           // 【修改 2026-06-09 小沈】直接使用message中的executionSteps，删除三源合并逻辑
-          const finalContent = streamingContentRef.current || finalResponse;
+          // 2026-08-27 小欧 修复#6: 优先用服务端最终 fullResponse(含暂停期间缓冲分块), 避免暂停分块因 streamingContentRef 未累积而丢失
+          const finalContent = finalResponse || streamingContentRef.current;
           const finalSteps = lastMessage.executionSteps || [];
 
           updated[updated.length - 1] = {
@@ -382,7 +398,22 @@ export const useChatCallbacks = (
           );
           return updated;
         }
-        return prev;
+        // 2026-08-27 小欧 修复#5: 末条非 assistant(重连/无占位)时新建 assistant 消息写入最终回复, 不再静默丢弃
+        const newAssistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: finalResponse || streamingContentRef.current,
+          isStreaming: false,
+          isError: isError,
+          errorType: errorType,
+          errorMessage: errorMessage,
+          executionSteps: executionStepsFromSSE || [],
+          timestamp: new Date(),
+          model: metadataObj.model,
+          provider: metadataObj.provider,
+          display_name: metadataObj.display_name,
+        };
+        return [...prev, newAssistantMessage];
       });
 
       // 保存AI回复到会话
@@ -520,7 +551,24 @@ export const useChatCallbacks = (
           };
           return updated;
         }
-        return prev;
+        // 2026-08-27 小欧 修复#4: 末条非 assistant(重连/无占位)时新建 assistant 错误消息, 不再静默丢弃
+        const newErrorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: pickMsg(errorObj),
+          isError: true,
+          isStreaming: false,
+          executionSteps: [],
+          timestamp: new Date(),
+          errorType: errorObj.error_type,
+          errorMessage: pickMsg(errorObj),
+          errorRetryAfter: errorObj.retry_after,
+          errorTimestamp: errorObj.timestamp,
+          errorContext: errorObj.context,
+          model: errorObj.model,
+          provider: errorObj.provider,
+        };
+        return [...prev, newErrorMessage];
       });
 
       // 清理状态
@@ -559,7 +607,9 @@ export const useChatCallbacks = (
   const onPaused = useCallback(() => {
     console.log('⏸️ [onPaused] SSE 暂停');
     setIsPaused(true);
-  }, [setIsPaused]);
+    // 2026-08-27 小欧 修复#3: 同步 isPausedRef.current, 否则服务端暂停不生效(分块仍直接显示而非缓冲)
+    isPausedRef.current = true;
+  }, [setIsPaused, isPausedRef]);
 
   // ==================== onResumed回调 ====================
 
@@ -620,6 +670,8 @@ export const useChatCallbacks = (
     // 清空缓冲区
     displayBufferRef.current = [];
 
+    // 2026-08-27 小欧 修复#2: 同步复位 isPausedRef.current, 否则恢复后分块仍进缓冲而丢失
+    isPausedRef.current = false;
     // 更新暂停状态
     setIsPaused(false);
 

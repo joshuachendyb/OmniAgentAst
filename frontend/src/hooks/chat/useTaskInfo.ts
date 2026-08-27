@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 修复A3: useTaskInfo接受detail,历史任务优先由TaskDetail派生(7.6+4.5.1)
 // 编辑历史: 2026-08-27 小欧 - 修复#5#6: 历史任务overview/truncatedTip改取空, 不再串味实时frames(实测失败用例转绿)
+// 编辑历史: 2026-08-27 小欧 - 修复chat-B: 过程事件>20条时保留 started 条目(slice(-20)不再裁掉首位)
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -140,6 +141,13 @@ export const useTaskInfo = (
       stepCount > 0 &&
       llmCallCount >= stepCount * STUCK_RATIO;
 
+    // 2026-08-27 小欧 修复: 过程事件>20条时 slice(-20) 会裁掉首位 started; 保留"任务已开始"条目(BUG-B)
+    let recentEvents = processEvents.slice(-20);
+    if (!recentEvents.some((e) => e.kind === 'started')) {
+      const startedEvt = processEvents.find((e) => e.kind === 'started');
+      if (startedEvt) recentEvents = [startedEvt, ...recentEvents];
+    }
+
     return {
       badge,
       elapsedSec: frames.finalStats?.duration ?? stats?.duration ?? 0, // 2026-08-27 小欧 修复#19/#20: finalStats终态duration优先(此前零消费, elapsedSec永远0)
@@ -149,7 +157,7 @@ export const useTaskInfo = (
       usage: frames.usage,
       overview: frames.contextOverview,
       truncatedTip: frames.truncated?.content ?? null,
-      processEvents: processEvents.slice(-20).reverse(), // 新事件插顶，保留最近20条
+      processEvents: recentEvents.reverse(), // 新事件插顶，保留最近20条
       stuckWarning,
     };
   }, [steps, frames, receiving, detail]);

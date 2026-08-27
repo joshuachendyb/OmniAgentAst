@@ -267,7 +267,8 @@ export const useChatTaskControl = (
             retries++;
           }
           hasReceivedCancelEventRef.current = false;
-          disconnect(true);
+          // 2026-08-27 小欧 修复#10: 新签名 (stopServer, force), force=true 使 manualDisconnect=true 禁止自动重连
+          disconnect(true, true);
 
           console.log('[handleCancel] 已处理异常，强制断开SSE连接');
         }
@@ -278,7 +279,8 @@ export const useChatTaskControl = (
         resetUiFlags();
 
         // 断开SSE连接
-        disconnect(true);
+        // 2026-08-27 小欧 修复#10: 新签名 (stopServer, force), force=true 使 manualDisconnect=true 禁止自动重连
+        disconnect(true, true);
 
         // 显示提示
         showTaskResultMessage('cancel', '任务尚未开始或已结束，请求已取消');
