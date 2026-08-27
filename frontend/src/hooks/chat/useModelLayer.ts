@@ -28,9 +28,15 @@ export const useModelLayer = (options: {
   sessionTitle: string;
   sessionVersion: number;
   setSessionVersion: (v: number) => void;
+  sessionModelOverride?: SessionModelOverride | null; // 2026-08-27 小欧 修复#2: 外部L2覆盖(来自useChatSession)驱动l2, 修复L2死代码
 }) => {
-  const { sessionId, sessionTitle, sessionVersion, setSessionVersion } =
-    options;
+  const {
+    sessionId,
+    sessionTitle,
+    sessionVersion,
+    setSessionVersion,
+    sessionModelOverride,
+  } = options;
   const [l1, setL1] = useState<SessionModelOverride | null>(null);
   const [l2, setL2] = useState<SessionModelOverride | null>(null);
 
@@ -40,6 +46,11 @@ export const useModelLayer = (options: {
       .then((cfg) => setL1(cfg.current_model_ref))
       .catch(() => setL1(null));
   }, []);
+
+  // 2026-08-27 小欧 修复#2: 外部会话级模型覆盖(L2)同步到l2, 使effective反映L2选择(顶栏徽标不再恒"全局")
+  useEffect(() => {
+    setL2(sessionModelOverride ?? null);
+  }, [sessionModelOverride]);
 
   const effective: EffectiveModel | null = useMemo(() => {
     const pick = (

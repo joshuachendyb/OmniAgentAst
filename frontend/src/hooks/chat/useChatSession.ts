@@ -19,7 +19,6 @@
  */
 
 import { useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
 import type { Message, SessionModelOverride } from "../../types/chat";
 import type { UseChatStateReturn } from "./useChatState";
 import type { UseChatStreamingReturn } from "./useChatStreaming";
@@ -122,9 +121,6 @@ export const useChatSession = (
   state: UseChatStateReturn,
   streaming?: UseChatStreamingReturn
 ): UseChatSessionReturn => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [searchParams] = useSearchParams();
-  
   // 从state中解构需要的状态和setter
   const {
     sessionId, setSessionId,
@@ -304,7 +300,10 @@ export const useChatSession = (
         setSessionTitle(restored.sessionTitle);
         setSessionVersion(restored.sessionVersion);
         setLastSavedTitle(restored.sessionTitle);
-        
+        // 2026-08-27 小欧 修复#55: 缓存恢复分支补调onRenderEnd/onMessageListLoadingEnd(URL加载分支已调用, 此处遗漏导致渲染/加载结束信号缺失)
+        onRenderEnd();
+        onMessageListLoadingEnd();
+
         onLoadingEnd();
         isLoadingHistoryRef.current = false;
         return { loaded: true, fromCache: true, hasUrlSession: false };
@@ -506,6 +505,7 @@ export const useChatSession = (
     setSessionVersion(1);
     setTitleLocked(false);
     setMessages([]);
+    setSessionModelOverride(null); // 2026-08-27 小欧 修复#41: 清空会话复位L2模型, 避免新会话继承旧模型覆盖
     setLastSavedTitle("新会话");
   }, [
     setSessionId,

@@ -773,9 +773,14 @@ export const useSSE = (
     executionStepsRef.current = [];
     setCurrentResponse('');
     responseBufferRef.current = '';
+    // 2026-08-27 小欧 修复#4: 跨任务重置usage累计与seq去重, 避免新任务token被旧任务污染
+    usageAccumRef.current = { prompt: 0, completion: 0, total: 0 };
+    lastUsageSeqRef.current = -1;
+    // 2026-08-27 小欧 修复#5: 跨任务重置metaFrames, 避免新任务串用旧统计帧
+    setMetaFrames(emptyMetaFrames());
     // 【小强添加 2026-03-18】同时清空 sessionStorage 备份
     clearStepsFromStorage();
-  }, [clearStepsFromStorage]);
+  }, [clearStepsFromStorage, setMetaFrames]);
 
   /**
    * 内部发送消息函数（用于重连）
@@ -1304,13 +1309,16 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const next = [...prev, ts];
           handlers.executionStepsRef.current = next;
-          setTimeout(() => {
-            try {
-              saveStepsToStorage?.(next);
-            } catch (e) {
-              console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-            }
-          }, 0);
+          // 2026-08-27 小欧 修复#17: thought-start为瞬时光标信号(7.4.9.2.8), 仅内存帧不落sessionStorage
+          if (ts.type !== 'thought-start') {
+            setTimeout(() => {
+              try {
+                saveStepsToStorage?.(next);
+              } catch (e) {
+                console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
+              }
+            }, 0);
+          }
           return next;
         });
         onStep?.(ts);
@@ -1802,6 +1810,7 @@ const processSSEData = (
 
           // 字段兼容：优先新格式(llm_data)，回退旧格式(summary等)
           step.observation = obsData;
+          step.tool_result = obsData.tool_result; // 2026-08-27 小欧 修复#1(B1): observation补全tool_result数据源, 否则ToolResultRenderer优先分支恒false(死代码)
           step.tool_name =
             ((llmData?.action as Record<string, unknown>)?.tool as string) ??
             obsData.tool_name ??

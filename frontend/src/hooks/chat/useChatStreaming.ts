@@ -56,7 +56,11 @@ export interface UseChatStreamingReturn {
   currentResponse: string;
 
   // SSE操作
-  sendMessage: (content: string, sessionId?: string) => Promise<void>;
+  sendMessage: (
+    content: string,
+    sessionId?: string,
+    contextLinkMode?: 'linked' | 'independent'
+  ) => Promise<void>;
   disconnect: (
     stopServer?: boolean,
     force?: boolean,
@@ -183,11 +187,12 @@ export const useChatStreaming = (
   // 【小沈 2026-04-22】中断任务函数
   const disconnectWithParams = useCallback(
     (stopServer?: boolean, force?: boolean, callback?: () => void) => {
-      disconnect();
+      // 2026-08-27 小欧 修复#51: 转发stopServer/force到底层disconnect(manualDisconnect/clearStorage),
+      // 否则取消时manualDisconnect=false导致SSE自动重连并重发消息
+      disconnect(stopServer ?? false, force ?? true, callback);
       // 清理流式状态
       streamingContentRef.current = '';
       streamingStepsRef.current = [];
-      if (callback) callback();
     },
     [disconnect, streamingContentRef, streamingStepsRef]
   );

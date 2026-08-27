@@ -179,6 +179,7 @@ export const useChatCallbacks = (
       ) {
         console.log('⚠️ [onStep] 重置暂停状态 isPausedRef=true -> false');
         setIsPaused(false);
+        isPausedRef.current = false; // 2026-08-27 小欧 修复#52: 立即同步ref, 避免line200检查时仍为true导致首step被吞
       }
 
       // type 处理流程日志（解析 -> 存储 -> 渲染）

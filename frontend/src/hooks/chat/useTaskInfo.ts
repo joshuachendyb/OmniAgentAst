@@ -13,6 +13,7 @@
  *
  * @author 小欧
  * @date 2026-08-26
+ * 2026-08-27 小欧 - 修复#5#6: 历史任务overview/truncatedTip改取空, 不再串味实时frames(实测失败用例转绿)
  */
 
 import { useMemo } from 'react';
@@ -64,8 +65,10 @@ export const useTaskInfo = (
           completion: u?.completion_tokens ?? 0,
           total: u?.total_tokens ?? 0,
         },
-        overview: frames.contextOverview,
-        truncatedTip: frames.truncated?.content ?? null,
+        // 历史任务无实时 metaFrames 源：contextOverview/truncated 仅实时流产生，
+        // 取实时 frames 会串味当前任务，故历史任务恒为空（2026-08-27 小欧 修复#5#6）
+        overview: '',
+        truncatedTip: null,
         processEvents: [],
         stuckWarning: false,
       };
@@ -139,7 +142,7 @@ export const useTaskInfo = (
 
     return {
       badge,
-      elapsedSec: stats?.duration ?? 0,
+      elapsedSec: frames.finalStats?.duration ?? stats?.duration ?? 0, // 2026-08-27 小欧 修复#19/#20: finalStats终态duration优先(此前零消费, elapsedSec永远0)
       stepCount,
       llmCallCount,
       retryCount: stats?.retry_count ?? 0,
