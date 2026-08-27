@@ -1,6 +1,10 @@
 // 编辑历史: 2026-08-26 小欧 - 修复A1: 新增sessionApi.getSession返回Session(created_at/updated_at)供顶栏时间悬浮(7.1⑤)
 // 编辑历史: 2026-08-27 小欧 - SessionTaskItem 新增 response 字段（optional），支撑左列任务列表显示任务结果全文
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: Config.ai_model_ref改可选(无前端读取点); api.Message重命名ApiMessage避免与types/chat.Message冲突
+// 编辑历史: 2026-08-27 小欧 - 修复BUG1: getSession兜底version/title_locked/title_source/title_updated_at, 杜绝ChatHeader 409恢复读version恒undefined致保存死循环
+// 编辑历史: 2026-08-27 小欧 - 修复BUG2: listSessions逐条兜底Session缺失字段
+// 编辑历史: 2026-08-27 小欧 - 修复BUG3: getSessionTitlesBatch对session_ids逐条encodeURIComponent, 避免空格/+/&扭曲
+// 编辑历史: 2026-08-27 小欧 - 修复BUG4: getSessionMessages兼容后端thought→is_reasoning并暴露thought字段
 /**
  * API服务层 - api.ts
  *
@@ -527,6 +531,7 @@ export interface ApiMessage {
   execution_steps?: ExecutionStep[];
   display_name?: string; // 前端小新代修改：模型显示名称
   is_reasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 snake_case）
+  thought?: string; // 2026-08-27 小欧 修复BUG4: 后端返回thought(思考文本), 兼容映射is_reasoning并暴露原文
 }
 
 // ⭐ 新增：获取会话消息响应（包含新字段）
@@ -619,7 +624,17 @@ export const sessionApi = {
     const response = await api.get<SessionListResponse>('/sessions', {
       params,
     });
-    return response.data;
+    // 2026-08-27 小欧 修复BUG2: 后端SessionResponse不含title_locked/title_source/title_updated_at/version, 兜底默认
+    return {
+      ...response.data,
+      sessions: (response.data.sessions ?? []).map((s) => ({
+        ...s,
+        title_locked: s.title_locked ?? false,
+        title_source: s.title_source ?? 'auto',
+        title_updated_at: s.title_updated_at ?? null,
+        version: s.version ?? 1,
+      })),
+    };
   },
 
   /**
@@ -640,6 +655,12 @@ export const sessionApi = {
       title_source: response.data.title_source ?? 'auto',
       title_updated_at: response.data.title_updated_at ?? null,
       version: response.data.version ?? 1,
+      // 2026-08-27 小欧 修复BUG4: 后端返回thought(思考文本), 映射到is_reasoning并暴露thought原文
+      messages: (response.data.messages ?? []).map((m) => ({
+        ...m,
+        thought: m.thought ?? (typeof m.is_reasoning === 'string' ? m.is_reasoning : undefined),
+        is_reasoning: m.is_reasoning ?? (m.thought != null && m.thought !== ''),
+      })),
     };
   },
 
@@ -762,10 +783,19 @@ export const sessionApi = {
     return response.data;
   },
 
-  /** A1：会话级创建/更新时间（7.1⑤ 顶栏悬浮数据源） */
+    /** A1：会话级创建/更新时间（7.1⑤ 顶栏悬浮数据源） */
   getSession: async (sessionId: string): Promise<Session> => {
     const r = await api.get<Session>(`/sessions/${sessionId}`);
-    return r.data;
+    const d = r.data;
+    // 2026-08-27 小欧 修复BUG1: 后端SessionResponse不返回version/title_*字段, 兜底默认,
+    // 避免ChatHeader 409恢复分支读sessionData.version恒undefined导致保存死循环
+    return {
+      ...d,
+      title_locked: d.title_locked ?? false,
+      title_source: d.title_source ?? 'auto',
+      title_updated_at: d.title_updated_at ?? null,
+      version: d.version ?? 1,
+    };
   },
 
   /**
@@ -794,7 +824,8 @@ export const sessionApi = {
     }
 
     // 验证4：检查URL长度
-    const url = `/sessions/titles/batch?session_ids=${validIds.join(',')}`;
+    // 2026-08-27 小欧 修复BUG3: 逐条encodeURIComponent, 避免含空格/+/&/=的id扭曲(对比tokenUsageApi已正确编码)
+    const url = `/sessions/titles/batch?session_ids=${validIds.map(encodeURIComponent).join(',')}`;
     if (url.length > 2000) {
       throw new Error('请求URL过长，请减少会话数量');
     }
