@@ -11,11 +11,15 @@ import { Spacing, Colors, FontSize, Radius } from '@/utils/stepStyles';
 
 const { Text, Paragraph } = Typography;
 
+// 2026-08-27 小欧 三堂会审C13: 行高常量化
+const LINE_HEIGHT_PX = 20;
+
 interface SmartContentRendererProps {
   content?: unknown;
   maxLines?: number;
 }
 
+// 2026-08-27 小欧 三堂会审B40: 要求至少2个代码特征才判为代码, 减少普通文本误判
 const isCode = (str: string): boolean => {
   const codeIndicators = [
     '{',
@@ -28,7 +32,10 @@ const isCode = (str: string): boolean => {
     'let',
     'var',
   ];
-  return codeIndicators.some((indicator) => str.includes(indicator));
+  const matchCount = codeIndicators.filter((indicator) =>
+    str.includes(indicator)
+  ).length;
+  return matchCount >= 2;
 };
 
 const renderString = (str: string, maxLines?: number): React.ReactNode => {
@@ -42,7 +49,7 @@ const renderString = (str: string, maxLines?: number): React.ReactNode => {
           borderRadius: Radius.SM,
           fontSize: FontSize.TERTIARY,
           overflow: 'auto',
-          maxHeight: maxLines ? `${maxLines * 20}px` : undefined,
+          maxHeight: maxLines ? `${maxLines * LINE_HEIGHT_PX}px` : undefined,
         }}
       >
         {str}
