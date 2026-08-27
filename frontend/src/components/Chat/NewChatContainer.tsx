@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-26 小欧 - 修复A1(顶栏时间悬浮接线sessionApi.getSession)/A2(右侧默认展开新任务,点击旧任务展开,可收起)/A3(信息条随选中历史任务切换selectedDetail派生): 对应7.1⑤/7.3/7.5/7.6/4.5.1
 // 编辑历史: 2026-08-27 小欧 - 修复#3: TrustPanel默认可见(原false致永不可触达); 修复#2: L2经sessionModelOverride同步useModelLayer使顶栏徽标反映会话级模型
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: HITL confirm(trust_session=True)成功后派发omni-trust-changed事件(通知TrustPanel刷新)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删除未使用解构变量(1)/授权超时改用taskControlApi.confirm(2)/删除调试console.log(3)/anchorTaskId空值守卫(4)/抽离saveChatState(5)
 import React, {
   useEffect,
   useCallback,
@@ -19,7 +20,7 @@ import {
   executionApi,
   type TaskDetail,
 } from '../../services/api';
-import { STORAGE_KEY } from '../../utils/chatHistory';
+import { saveChatState } from '../../utils/sessionStorage';
 
 import { ChatInput } from './ChatInput';
 import ChatHeader from './ChatHeader';
@@ -64,17 +65,13 @@ const NewChatContainer: React.FC = () => {
     setUseStream,
     setIsInitialized,
     setSessionJumpLoading,
-    isMessageListLoading,
     setIsMessageListLoading,
     retryCount,
     setRetryCount,
     setIsRenderingMessages,
-    isRetrying,
     isPaused,
-    setIsPaused,
     messages,
     loading,
-    waitTime,
     sessionId,
     sessionTitle,
     setSessionTitle,
@@ -95,7 +92,6 @@ const NewChatContainer: React.FC = () => {
     executionStepsRef,
     userScrolledUpRef,
     isLoadingHistoryRef,
-    logFlagsRef,
   } = chatState;
 
   // 解构chatStreaming
@@ -152,19 +148,8 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     if (authorizationPending) {
       authorizationTimeoutRef.current = setTimeout(() => {
-        console.warn('[Authorization] 前端超时，自动拒绝');
-        // 直接发送reject请求，不调用handleAuthorizationConfirm避免循环依赖
-        fetch(`${API_BASE_URL}/chat/stream/confirm`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            confirm_id: authorizationPending.confirmId,
-            confirmed: false,
-            trust_session: false,
-          }),
-        }).catch(() => {
-          /* 超时reject失败忽略 */
-        });
+        // 2026-08-27 小欧 三堂会审: 授权超时自动拒绝改用 taskControlApi.confirm(false,false)
+        taskControlApi.confirm(authorizationPending.confirmId, false, false).catch(() => undefined);
         setAuthorizationPending(null);
       }, 60000);
     }
@@ -185,7 +170,6 @@ const NewChatContainer: React.FC = () => {
 
   // 新建会话
   const handleNewSession = useCallback(() => {
-    console.log('🔍 [handleNewSession] 按钮被点击');
     chatSession.handleNewSession(0);
   }, [chatSession]);
 
@@ -263,6 +247,11 @@ const NewChatContainer: React.FC = () => {
       void refreshTasks();
       if (sessionId) {
         const anchorTaskId = serverTaskId ?? tasks[0]?.task_id;
+        // 2026-08-27 小欧 三堂会审: 空值守卫, 无锚定任务则跳过getChainTokens
+        if (!anchorTaskId) {
+          prevReceivingRef.current = isReceiving;
+          return;
+        }
         tokenUsageApi
           .getChainTokens({ sessionId, taskId: anchorTaskId })
           .then((r) =>
@@ -334,9 +323,6 @@ const NewChatContainer: React.FC = () => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         scrollToBottomDelayed();
-        console.log(
-          `[visibilitychange] 当前状态: isReceiving=${isReceiving}, hasExecutionSteps=${executionSteps.length > 0}`
-        );
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -348,11 +334,6 @@ const NewChatContainer: React.FC = () => {
   // 保存状态（用于beforeunload）
   const handleSaveBeforeUnload = useCallback(() => {
     if (!isReceiving || !sessionId) return;
-
-    console.log(
-      '💾 [beforeunload] 刷新前保存状态, steps:',
-      executionStepsRef.current.length
-    );
 
     let messagesToSave = messagesRef.current;
     if (executionStepsRef.current.length > 0) {
@@ -381,28 +362,8 @@ const NewChatContainer: React.FC = () => {
       isReceiving,
     };
 
-    try {
-      const stateStr = JSON.stringify(state);
-      if (stateStr.length > 4 * 1024 * 1024) {
-        const lightState = {
-          sessionId,
-          sessionTitle,
-          timestamp: Date.now(),
-          messageCount: messagesToSave.length,
-          isPaused,
-          isReceiving,
-        };
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
-      } else {
-        sessionStorage.setItem(STORAGE_KEY, stateStr);
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-        console.warn('⚠️ [beforeunload] sessionStorage容量满，跳过保存');
-      } else {
-        console.error('保存会话状态失败:', e);
-      }
-    }
+    // 2026-08-27 小欧 三堂会审: 会话状态保存下沉至 saveChatState(容量阈值/降级/容错)
+    saveChatState(state);
   }, [
     isReceiving,
     sessionId,
@@ -424,7 +385,6 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     return () => {
       message.destroy('session-load');
-      console.log('🔄 组件卸载（页面即将跳转或关闭）');
     };
   }, []);
 

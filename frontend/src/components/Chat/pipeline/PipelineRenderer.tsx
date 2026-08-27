@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 8.4.9 实施: 消息流水线渲染器, 按事件seq序产出段, 相邻同类合并, 实时与回放共用(4.4.2①/3.7.6)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 消除map自增副作用, 预计算lastThink判定光标(11)
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -81,15 +82,14 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   headerNode,
 }) => {
   const segs = buildSegments(steps);
-  let thinkingSegCount = 0;
-  const totalThinking = segs.filter((x) => x.kind === 'thinking').length;
+  // 2026-08-27 小欧 三堂会审: 预计算最后一个思考段索引, 消除map内自增副作用与额外filter
+  const lastThink = segs.reduce((a, s, i) => (s.kind === 'thinking' ? i : a), -1);
   return (
     <div style={{ fontSize: 14, lineHeight: 1.8 }}>
       {headerNode}
       {segs.map((seg, i) => {
         if (seg.kind === 'thinking') {
-          thinkingSegCount += 1;
-          const cursor = streaming && thinkingSegCount === totalThinking;
+          const cursor = streaming && i === lastThink;
           return <ThinkingStream key={i} text={seg.text} cursor={cursor} />;
         }
         if (seg.kind === 'text') {

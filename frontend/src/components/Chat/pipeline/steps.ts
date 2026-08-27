@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 8.4/8.10 实施: 权威过滤业务内容步骤, meta/统计类归信息条(4.4.4)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: META_STEP_TYPES补入cancelled(6)/取消thought-start特判统一二分(7)
 /**
  * pipeline 分流工具
  *
@@ -24,6 +25,7 @@ export const META_STEP_TYPES = [
   'final_stats',
   'context_overview',
   'truncated',
+  'cancelled',
 ] as const;
 
 export const isBusinessStep = (s: ExecutionStep): boolean =>
@@ -40,8 +42,8 @@ export const splitSteps = (steps: ExecutionStep[]): SplitResult => {
   const business: ExecutionStep[] = [];
   const meta: ExecutionStep[] = [];
   for (const s of steps) {
-    if (s.type === 'thought-start') business.push(s);
-    else if (isBusinessStep(s)) business.push(s);
+    // 2026-08-27 小欧 三堂会审: 取消thought-start特判, 统一按业务/元步骤二分
+    if (isBusinessStep(s)) business.push(s);
     else meta.push(s);
   }
   return { business, meta };

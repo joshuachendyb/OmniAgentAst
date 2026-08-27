@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 修复B1: 观察摘要优先tool_result(4.9.3),兜底summary/content
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删tool_params误用(8)/摘要tool_result优先(9)/展开渲染tool_result优先(10)
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -28,20 +29,18 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const tools = action.tools || [];
-  const params =
-    action.tool_params ||
-    (action.tools && action.tools.length > 0
-      ? action.tools[0].params
-      : undefined) ||
-    {};
+  // 2026-08-27 小欧 三堂会审: action步骤无tool_params, 参数正确来源为tools[0].params
+  const params = action.tools?.[0]?.params ?? {};
   const paramText = JSON.stringify(params);
   const toolName = tools.map((t) => t.tool).join(', ');
   const obs0 = observations[0];
-  // 优先 observation.summary，其次 obs.content(纯文本)，再次 tool_result(4.9.3 新字段)
+  // 2026-08-27 小欧 三堂会审: 折叠摘要优先级改为 tool_result 优先, 其次 summary/content
   const obsSummary =
-    obs0?.summary ||
-    obs0?.content ||
-    (obs0?.tool_result != null ? '[工具结果]' : '');
+    obs0?.tool_result != null
+      ? typeof obs0.tool_result === 'string'
+        ? obs0.tool_result
+        : '[工具结果]'
+      : (obs0?.summary || obs0?.content || '');
   const retryCount = action.action_retry_count;
   const attemptLabel =
     retryCount != null && retryCount > 0 ? `(重试${retryCount})` : '';
@@ -81,10 +80,11 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               <div style={{ color: '#8c8c8c', marginBottom: 4 }}>
                 观察{observations.length > 1 ? ` ${idx + 1}` : ''}：
               </div>
-              {typeof o.content === 'string' ? (
-                <CollapsibleText text={o.content} />
-              ) : (
+              {/* 2026-08-27 小欧 三堂会审: 富渲染tool_result可达, 有tool_result走ToolResultRenderer否则纯文本 */}
+              {o.tool_result != null ? (
                 <ToolResultRenderer step={o} />
+              ) : (
+                <CollapsibleText text={o.content ?? ''} />
               )}
             </div>
           ))}
