@@ -15,6 +15,7 @@
 #   (由同session内相邻 assistant 消息补上 user+1; user↔assistant id 相邻配对对齐 storage.allocate;
 #    历史迁移漏带此列导致 ai_message_id 全空, 幂等仅回填为空的行)
 # 2026-08-27 小欧 阶段3(chat_messages表退役): migrate_execution_steps_status 新增"表存在"守卫(_table_exists), 表已DROP则跳过迁移, 防 PRAGMA table_info(chat_messages) 表不存在时报 no such table
+# 2026-08-27 小欧 阶段3(chat_messages表退役)清理: 整删migrate_execution_steps_status死函数(全backend无调用方)及其MIGRATION_NAME常量、migrate_v2_chat_restructure块5/6/7(chat_messages双列/回灌chat_user_message/chat_task_steps, 表已DROP永跳过)死分支; scripts/migrate_utc_to_local.py与migrate_time_format.py(硬编码引用已退役chat_messages列)删除; 系统对该表零残留运行代码引用
 """
 migrate_steps — execution_steps 一次性数据迁移
 
@@ -128,9 +129,6 @@ def _migrate_one_step(step: dict) -> dict:
     return step
 
 
-MIGRATION_NAME = "migrate_execution_steps_status"
-
-
 def _ensure_migrations_table(conn):
     """确保迁移记录表存在(chat 库) — 小欧 2026-07-13
     用于登记"一次性迁移"是否已执行, 避免每次启动重跑。
@@ -162,57 +160,7 @@ def _mark_migration_applied(conn, name: str) -> None:
     conn.execute("INSERT OR IGNORE INTO schema_migrations(name) VALUES(?)", (name,))
 
 
-def migrate_execution_steps_status(get_conn) -> int:
-    """一次性迁移旧 execution_steps; 返回迁移记录数 — 小欧 2026-07-13
 
-    守卫逻辑(核心修复): 用 chat 库的 schema_migrations 表登记"已执行",
-    跑过一次之后续启动直接跳过整段全表扫描, 启动耗时从 ~25s 回到 ~0s。
-    迁移本身保持幂等: 已迁移的行 _needs_migration 返回 False 不会重复改。
-    """
-    import time as _time
-    _t0 = _time.time()
-    updated = 0
-    with get_conn("chat") as conn:
-        # 阶段3(chat_messages表退役 2026-08-27): 该表已被 DROP, 不存在则直接跳过迁移(表退役, 无数据可迁)
-        if not _table_exists(conn, "chat_messages"):
-            logger.info("[migrate] chat_messages 表已退役(不存在), 跳过 execution_steps 迁移")
-            return 0
-        # v2.0 守卫(2026-08-19): chat_messages.execution_steps 列已随冻结废弃删除,
-        # 新库无此列, 若触发迁移将报 no such column; 列不存在直接跳过 — 小欧 2026-08-19
-        _cols = {r["name"] for r in conn.execute("PRAGMA table_info(chat_messages)").fetchall()}
-        if "execution_steps" not in _cols:
-            logger.info("[migrate] chat_messages.execution_steps 列已废弃(无此列), 跳过迁移")
-            return 0
-        # 一次性迁移守卫: 已执行过则跳过整段扫描(核心修复) — 小欧 2026-07-13
-        if _is_migration_applied(conn, MIGRATION_NAME):
-            logger.info(f"[migrate] {MIGRATION_NAME} 已执行过, 跳过全表扫描")
-            logger.info(f"[启动耗时] migrate_execution_steps_status: {_time.time()-_t0:.3f}s (skipped)")
-            return 0
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, execution_steps FROM chat_messages WHERE execution_steps IS NOT NULL"
-        )
-        rows = cursor.fetchall()
-        for row in rows:
-            msg_id = row["id"]
-            steps = parse_json(row["execution_steps"], label="execution_steps")
-            if not isinstance(steps, list) or not steps:
-                continue
-            if not _needs_migration(steps):
-                continue
-            new_steps = [_migrate_one_step(s) for s in steps]
-            status = derive_status_from_steps(new_steps)
-            cursor.execute(
-                "UPDATE chat_messages SET execution_steps=?, status=? WHERE id=?",
-                (safe_json_dumps(new_steps), status, msg_id),
-            )
-            updated += 1
-        # 标记已执行, 后续启动跳过扫描
-        _mark_migration_applied(conn, MIGRATION_NAME)
-    if updated:
-        logger.info(f"[migrate] 迁移旧 execution_steps 记录数={updated}")
-    logger.info(f"[启动耗时] migrate_execution_steps_status: {_time.time()-_t0:.3f}s")
-    return updated
 
 
 V2_MIGRATION_NAME = "migrate_v2_chat_restructure"
@@ -241,10 +189,9 @@ def migrate_v2_chat_restructure(get_conn) -> bool:
       1. 改名 chat_message_steps→chat_task_steps(撞表先 DROP 空表)
       2. chat_task_steps 列 message_id→ai_message_id
       3. chat_task_steps 加 usage / user_message_id 列
-      4. chat_tasks 加 ai_message_id 列
-      5. chat_messages 双列并存处理: 已存在 user_message_id 则 DROP reply_to_message_id
-      8. 清死字段与冗余索引: DROP chat_sessions.metadata / chat_tasks.metadata / idx_messages_timestamp
-         (chat_messages.metadata 保留不删, 冻结范畴)
+       4. chat_tasks 加 ai_message_id 列
+       5-7. (已随 chat_messages 表退役整体移除: 双列处理/回灌 chat_user_message/chat_task_steps 均依赖已删表)
+       8. 清死字段与冗余索引: DROP chat_sessions.metadata / chat_tasks.metadata / idx_messages_timestamp
       9. 清 chat_session_title_history 死表
       10. 返值: 本次是否实际执行迁移(False=已登记跳过)
 
@@ -280,80 +227,14 @@ def migrate_v2_chat_restructure(get_conn) -> bool:
         if _table_exists(conn, "chat_tasks") and not _col_exists(conn, "chat_tasks", "ai_message_id"):
             conn.execute("ALTER TABLE chat_tasks ADD COLUMN ai_message_id INTEGER")
 
-        # 5. chat_messages 双列并存: 已存在 user_message_id 则 DROP reply_to_message_id(不能同名列 RENAME) — 小欧 2026-08-19
-        if _table_exists(conn, "chat_messages"):
-            if _col_exists(conn, "chat_messages", "reply_to_message_id"):
-                if not _col_exists(conn, "chat_messages", "user_message_id"):
-                    conn.execute("ALTER TABLE chat_messages RENAME COLUMN reply_to_message_id TO user_message_id")
-                else:
-                    conn.execute("ALTER TABLE chat_messages DROP COLUMN reply_to_message_id")
 
-        # 6. 回灌 chat_user_message(历史 user 消息, 改动3 保底 C1 详情可读) — 小欧 2026-08-19
-        if _table_exists(conn, "chat_user_message") and _table_exists(conn, "chat_messages"):
-            for row in conn.execute(
-                "SELECT id, session_id, content, client_os, browser, device, network, timestamp "
-                "FROM chat_messages WHERE role='user'"
-            ):
-                conn.execute(
-                    "INSERT OR IGNORE INTO chat_user_message"
-                    "(id, session_id, content, client_os, browser, device, network, created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?)",
-                    (row["id"], row["session_id"], row["content"], row["client_os"],
-                     row["browser"], row["device"], row["network"], row["timestamp"]),
-                )
-            # 6.5 反向回填 task_id: chat_user_message 由 chat_tasks.user_message_id 关联补上
-            #     (历史回灌只复制了 content, task_id 未带, 否则 C1 按 task_id 查 user 消息全落空; 对齐改动5 关联) — 小欧 2026-08-19
-            conn.execute(
-                "UPDATE chat_user_message SET task_id = (SELECT t.task_id FROM chat_tasks t "
-                " WHERE t.user_message_id = chat_user_message.id) "
-                "WHERE EXISTS(SELECT 1 FROM chat_tasks t WHERE t.user_message_id = chat_user_message.id)"
-            )
-            # 6.6 回填 chat_tasks.ai_message_id: 由同session内相邻 assistant 消息补上(user+1)
-            #     (user↔assistant id 相邻配对, 对齐 storage.allocate expected=user_id+1;
-            #      历史迁移漏带此列, 幂等: 仅回填 ai_message_id 为空的 task) — 小欧 2026-08-19
-            conn.execute(
-                "UPDATE chat_tasks SET ai_message_id = (SELECT cm.id FROM chat_messages cm "
-                " WHERE cm.role='assistant' AND cm.session_id = chat_tasks.session_id "
-                "   AND cm.id = chat_tasks.user_message_id + 1) "
-                "WHERE user_message_id IS NOT NULL AND ai_message_id IS NULL "
-                "AND EXISTS(SELECT 1 FROM chat_messages cm "
-                " WHERE cm.role='assistant' AND cm.session_id = chat_tasks.session_id "
-                "   AND cm.id = chat_tasks.user_message_id + 1)"
-            )
 
-        # 7. 历史 execution_steps 回灌 chat_task_steps(改动2 保底, P1-6) — 小欧 2026-08-19
-        #    ai_message_id 取该 assistant 消息 id; user_message_id 取 chat_messages.user_message_id
-        #    幂等守卫: 该 ai_message_id 已有步骤行则跳过(对齐文档9.6 line407 语义, 防登记丢失重跑重复回灌)
-        if (_table_exists(conn, "chat_task_steps") and _table_exists(conn, "chat_messages")
-                and _col_exists(conn, "chat_messages", "execution_steps")):
-            _backfilled_ids = set()
-            for row in conn.execute(
-                "SELECT id, session_id, task_id, execution_steps, user_message_id FROM chat_messages "
-                "WHERE role='assistant' AND execution_steps IS NOT NULL"
-            ):
-                if row["id"] in _backfilled_ids:
-                    continue
-                _has_row = conn.execute(
-                    "SELECT 1 FROM chat_task_steps WHERE ai_message_id=? LIMIT 1", (row["id"],)
-                ).fetchone()
-                if _has_row:
-                    _backfilled_ids.add(row["id"])
-                    continue
-                steps = parse_json(row["execution_steps"], label="execution_steps")
-                if not isinstance(steps, list) or not steps:
-                    continue
-                for idx, d in enumerate(steps, start=1):
-                    conn.execute(
-                        "INSERT INTO chat_task_steps"
-                        "(task_id, ai_message_id, session_id, step_index, step_json, usage, user_message_id) "
-                        "VALUES(?,?,?,?,?,?,?)",
-                        (row["task_id"], row["id"], row["session_id"], idx,
-                         safe_json_dumps(d), d.get("usage") if isinstance(d, dict) else None,
-                         row["user_message_id"]),
-                    )
+
+
+
 
         # 8. 清死字段与冗余索引(对齐 v2_chat_restructure.sql 第7步, 首版漏实现, 本版补全) — 小欧 2026-08-19
-        #    chat_messages.metadata 保留不删(SQL第6步冻结范畴, 代码不再写入); 仅删 sessions_/tasks 死字段
+        #    仅删 sessions_/tasks 死字段
         if _table_exists(conn, "chat_sessions") and _col_exists(conn, "chat_sessions", "metadata"):
             conn.execute("ALTER TABLE chat_sessions DROP COLUMN metadata")
         if _table_exists(conn, "chat_tasks") and _col_exists(conn, "chat_tasks", "metadata"):
