@@ -1,3 +1,27 @@
+v0.19.33
+更新时间: 2026-08-27 16:47:04 - 小欧-2026-08-27
+## v0.19.32以来 变更汇总(8个commit) - 小欧-2026-08-27
+[2026-08-27 16:47:04 小欧] 汇总范围=v0.19.32以来全部commit(本分支 optimize-0.19.17 自v0.19.32累积8个commit，已打 tag v0.19.33)
+
+### refactor(4个):
+- refactor:chat_messages镜像写点W1-W7改fail-safe - 小欧-2026-08-27
+- refactor:移除chat_messages镜像写点W1-W7及finalize_message - 小欧-2026-08-27
+- refactor:db_initializer.py/migrate_steps.py 阶段3停建chat_messages表并真实DROP+迁移守卫 - 小欧-2026-08-27
+- refactor:migrate_steps.py/scripts 清理chat_messages退役死代码(整删migrate_execution_steps_status及块5/6/7+删scripts) - 小欧-2026-08-27
+
+### docs(3个):
+- docs:chat_messages表移除测试实施方案 新增chat_messages移除测试实施方案文档 - 小欧-2026-08-27
+- docs:storage.py/stream_orchestrator.py/agent_runner.py 补阶段2(chat_messages退役)编辑历史 - 小欧-2026-08-27
+- docs:action-observation渲染链路分析报告 - 小欧-2026-08-27
+
+### feat(1个):
+- feat:TaskListPanel加response全文显示 - 小欧-2026-08-27
+
+### 合计
+- refactor: 4项 | docs: 3项 | feat: 1项 = 共8项
+
+---
+
 v0.19.32
 更新时间: 2026-08-27 14:02:33 - 小欧-2026-08-27
 ## v0.19.31以来 变更汇总(15个commit) - 小欧-2026-08-27
