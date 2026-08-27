@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 8.1 实施: 顶栏会话级聚合(任务数/token/时间), 三分归位②(4.5.1)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.3 删冗余??'-'(formatTime已返'-')
+// 编辑历史: 2026-08-27 小欧 - 三堂会审边距-P1: 顶栏聚合gap12→8对齐SessionLayout主节奏
 /**
  * TopbarStats - 顶栏会话级聚合信息（任务数/会话累计 token/创建更新时间悬浮）
  *
@@ -32,7 +33,7 @@ const TopbarStats: React.FC<TopbarStatsProps> = ({
       ? `创建：${formatTime(createdAt)}\n更新：${formatTime(updatedAt)}`
       : '';
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         任务数 {taskCount}
       </Typography.Text>
