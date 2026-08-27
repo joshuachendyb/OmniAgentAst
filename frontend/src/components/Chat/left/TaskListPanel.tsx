@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 修复C3: 左列created_at格式化为月/日 时:分(7.2时间显示)
+// 编辑历史: 2026-08-27 小欧 - 任务项新增response全文显示（设计文档4.8.2要求user_input+response双列）
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -102,6 +103,22 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                 </Tooltip>
               )}
             </div>
+            {t.response && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#8c8c8c',
+                  marginTop: 2,
+                  lineHeight: 1.4,
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'break-word',
+                  maxHeight: '5.3em',
+                  overflow: 'auto',
+                }}
+              >
+                {t.response}
+              </div>
+            )}
           </div>
         );
       })}

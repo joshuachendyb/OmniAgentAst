@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 修复A1: 新增sessionApi.getSession返回Session(created_at/updated_at)供顶栏时间悬浮(7.1⑤)
+// 编辑历史: 2026-08-27 小欧 - SessionTaskItem 新增 response 字段（optional），支撑左列任务列表显示任务结果全文
 /**
  * API服务层 - api.ts
  *
@@ -931,6 +932,7 @@ export const taskControlApi = {
 export interface SessionTaskItem {
   task_id: string;
   user_input: string;
+  response?: string; // 任务结果正文（final步骤response，全文显示）
   status: string; // 实测枚举：executing(初始,storage.py:467) → completed/failed/cancelled/paused(:128)；未知值前端兜底灰色
   duration: number | null;
   model: string | null; // sessionModel JSON 派生键（后端已派生）
