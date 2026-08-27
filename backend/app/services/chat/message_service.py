@@ -177,11 +177,15 @@ def save_message(session_id: str, message):
         else:
             # 【chat_messages 只写镜像写点 W1-assistant】legacy API 直存助手消息路径(纯镜像域, 无锚意义);
             # TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23
-            cursor.execute(
-                "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?)",
-                (session_id, message.role, message.content, local_time, display_name_to_save,
-                 message.client_os, message.browser, message.device, message.network))
-            message_id = cursor.lastrowid
+            try:
+                cursor.execute(
+                    "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (session_id, message.role, message.content, local_time, display_name_to_save,
+                     message.client_os, message.browser, message.device, message.network))
+                message_id = cursor.lastrowid
+            except Exception as _mir_e:
+                logger.warning(f"[save_message] 镜像写chat_messages失败(session={session_id}): {_mir_e}")
+                message_id = None
 
         # 12.2-Q6附带修复: 绝对值覆盖→SQL自增(与storage.py:297 allocate路径同口径), 消除并发丢计数 — 小欧 2026-08-21
         cursor.execute(

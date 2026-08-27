@@ -339,10 +339,13 @@ async def chat_stream_orchestrator(
                 if _user_msg_id:
                     # 【chat_messages 只写镜像写点 W6】北京老陈 2026-08-23 裁定: 写保留当空气;
                     # TODO 删除: 镜像退役时整体移除 — 小欧 2026-08-23
-                    conn.execute(
-                        "UPDATE chat_messages SET task_id=? WHERE id=?",
-                        (task_id, _user_msg_id),
-                    )
+                    try:
+                        conn.execute(
+                            "UPDATE chat_messages SET task_id=? WHERE id=?",
+                            (task_id, _user_msg_id),
+                        )
+                    except Exception as _mir_e:
+                        logger.warning(f"[setup_task] 镜像写chat_messages失败(task={task_id}): {_mir_e}")
                 # 12.2-C4: eager分配assistant行+创建时即写chat_tasks.ai_message_id —
                 #   任务启动即分配(原首步惰性), 消除agent_runner finally legacy save_steps分支
                 #   (步骤丢失/覆写旧消息双风险根除) — 小欧 2026-08-21

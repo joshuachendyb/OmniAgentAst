@@ -248,12 +248,15 @@ def insert_assistant_message(
     local_time = get_local_iso_timestamp()
     initial_content = update_data.content or ""
     reply_to = getattr(update_data, 'reply_to_message_id', None)
-    cursor.execute(
-        """INSERT INTO chat_messages
-           (id, session_id, role, content, timestamp, display_name, user_message_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (ai_message_id, session_id, "assistant", initial_content, local_time, display_name, reply_to),
-    )
+    try:
+        cursor.execute(
+            """INSERT INTO chat_messages
+               (id, session_id, role, content, timestamp, display_name, user_message_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (ai_message_id, session_id, "assistant", initial_content, local_time, display_name, reply_to),
+        )
+    except Exception as _mir_e:
+        logger.warning(f"[insert_assistant_message] 镜像写chat_messages失败(id={ai_message_id}): {_mir_e}")
     logger.info(f"新消息创建: ai_message_id={ai_message_id}, session_id={session_id}, display_name={display_name}")
 
 
@@ -275,10 +278,13 @@ def update_message_fields(
         values.append(update_data.status)
     if fields:
         values.append(ai_message_id)
-        cursor.execute(
-            f'UPDATE chat_messages SET {", ".join(fields)} WHERE id = ?',
-            values,
-        )
+        try:
+            cursor.execute(
+                f'UPDATE chat_messages SET {", ".join(fields)} WHERE id = ?',
+                values,
+            )
+        except Exception as _mir_e:
+            logger.warning(f"[update_message_fields] 镜像写chat_messages失败(id={values[-1]}): {_mir_e}")
 
 
 def update_session_message_count(

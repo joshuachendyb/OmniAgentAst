@@ -327,10 +327,13 @@ def init_chat_db(get_conn):
         # 与 derive_status_from_steps"空/无final判failed"同哲学(fail-safe) — 小欧 2026-08-21
         # 【chat_messages 只写镜像写点 W7】北京老陈 2026-08-23 裁定: 写保留当空气, 系统零依赖本表;
         #   TODO 删除: chat_messages 退役时随镜像策略整体移除 — 小欧 2026-08-23
-        conn.execute(
-            "UPDATE chat_messages SET status='failed', "
-            "content=CASE WHEN content='' THEN '(任务中断，未产生输出)' ELSE content END "
-            "WHERE role='assistant' AND status IS NULL")
+        try:
+            conn.execute(
+                "UPDATE chat_messages SET status='failed', "
+                "content=CASE WHEN content='' THEN '(任务中断，未产生输出)' ELSE content END "
+                "WHERE role='assistant' AND status IS NULL")
+        except Exception as _mir_e:
+            logger.warning(f"[init] 启动清扫chat_messages失败(表可能已移除): {_mir_e}")
 
         # v2.0: 旧 execution_steps 列退役(结构迁移已前移至索引之前执行) — 小欧 2026-08-19
 
