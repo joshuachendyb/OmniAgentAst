@@ -1070,10 +1070,11 @@ export function handleSSEError(
   const canRetry = config.retryable && context.reconnectAttempts < maxRetries;
 
   if (canRetry) {
-    const retryMessage = `正在重试 (${context.reconnectAttempts + 1}/${maxRetries})...`;
-    message.warning(retryMessage);
-
+    // 2026-08-27 小欧 修复Bug5: 无onReconnect时不展示"正在重试"误导文案(实际不会重连)
     if (context.onReconnect) {
+      const retryMessage = `正在重试 (${context.reconnectAttempts + 1}/${maxRetries})...`;
+      message.warning(retryMessage);
+
       const delay =
         config.retryDelay *
         Math.pow(config.retryBackoff || 2, context.reconnectAttempts);
