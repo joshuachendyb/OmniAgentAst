@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: SSE流式状态管理改造(8.4/8.6 事件分发/暂停续传)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审H1修复: executeSend内sendMessage加await闭合SSE发送Promise, 防拒绝变unhandled rejection/占位消息永久悬挂
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -323,7 +324,8 @@ export const useChatStreaming = (
       setMessages((prev) => [...prev, assistantMessage]);
 
       // 4. 调用sendMessage发送
-      sendMessage(
+      // 2026-08-27 小欧 三堂会审H1: await闭合SSE发送Promise, 防拒绝变unhandled rejection导致占位消息永久悬挂
+      await sendMessage(
         userMessage.content,
         currentSessionIdRef.current ?? sessionId ?? undefined,
         contextLinkMode

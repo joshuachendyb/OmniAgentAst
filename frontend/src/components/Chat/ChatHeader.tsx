@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-27 小欧 - 修复#12: 回车保存后Input卸载触发blur双发updateSession(409), 加editingRef守卫(实测失败用例转绿)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审H3修复: handleSaveTitle写后回填sessionApi.updateSession返回的version, 杜绝二次编辑必409冲突(409分支兜底保留)
 /**
  * ChatHeader 组件 - 会话标题展示与编辑
  * 
@@ -72,12 +73,16 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
     savingRef.current = true;
     try {
       // 保存标题到后端
-      await sessionApi.updateSession(
+      const res = await sessionApi.updateSession(
         sessionId,
         titleInput.trim(),
         sessionVersion
       );
-      
+      // 2026-08-27 小欧 三堂会审H3: 写后回填version, 杜绝二次编辑必409冲突
+      if (res && res.version) {
+        setSessionVersion(res.version);
+      }
+
       // 更新本地状态
       setSessionTitle(titleInput.trim());
       setTitleLocked(true); // 用户修改后锁定

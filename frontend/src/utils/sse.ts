@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-18 小欧 - 三堂会审(P7/P4): case 'startinfo'并入'start'渲染; error分支优先content回退error_message
 // 编辑历史: 2026-08-23 小欧 - 三堂会审修复: 删除ExecutionStep重复声明error_type/error_message(TS2300)
 // 编辑历史: 2026-08-26 小欧 - 8.4/8.4.14实施: ExecutionStep.type改action+新增多case; 移除安全/性能旧字段; final解析累计usage
+// 编辑历史: 2026-08-27 小欧 - 三堂会审H2修复: classifyError改调纯classifyError(errorHandler)替代带副作用handleSSEError, 消除SSE错误路径误弹"正在重试"; 顶部import增classifyError别名
 /**
  * SSE 工具模块 V2 - Server-Sent Events 流式处理
  *
@@ -23,6 +24,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   handleSSEError as errorHandlerHandleSSE,
   ErrorType,
+  classifyError as errorHandlerClassify, // 2026-08-27 小欧 三堂会审H2: 引入纯分类函数替代带副作用的handleSSEError
 } from './errorHandler';
 import { taskControlApi } from '../services/api';
 
@@ -371,10 +373,9 @@ const classifyError = (error: unknown): SSEErrorType => {
     if (errorType === 'fc_format_error') return 'fc_format_error';
   }
 
-  // 使用errorHandler的分类结果进行映射
-  const unifiedType = errorHandlerHandleSSE(error as Error, {
-    reconnectAttempts: 0,
-  }).errorType;
+  // 使用errorHandler的纯分类函数(无UI副作用, 避免误弹"正在重试")
+  // 2026-08-27 小欧 三堂会审H2: 原调handleSSEError会触发虚假重试提示, 改为纯classifyError取类型
+  const unifiedType = errorHandlerClassify(error);
 
   // 映射到SSE本地错误类型
   switch (unifiedType) {
