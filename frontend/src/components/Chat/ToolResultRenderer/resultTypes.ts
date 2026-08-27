@@ -12,13 +12,13 @@ import type { ExecutionStep } from '../../../types/execution';
 export type ResultType = 'generic' | 'tree' | 'code';
 
 // tool_name(后端真实注册名) -> 结果类型; 未列者默认 generic
-// 经后端核查(2026-08-27): 仅 listdir/tree 为树形, read_file/readtext 为文件内容;
+// 经后端核查(2026-08-27): 仅 listdir/tree 为树形, readtext 为文件内容;
 // compare_files/file_statistics/batch_rename 后端不存在, 故 diff/table 类当前无对应工具, 不实装(禁backward/YAGNI)。
+// 2026-08-27 小欧 三堂会审A29: 删旧长名read_file(后端注册名为readtext, 禁backward)
 const TOOL_RESULT_TYPE: Record<string, ResultType> = {
   listdir: 'tree',
   tree: 'tree',
   readtext: 'code',
-  read_file: 'code',
 };
 
 export const resolveResultType = (step: ExecutionStep): ResultType => {

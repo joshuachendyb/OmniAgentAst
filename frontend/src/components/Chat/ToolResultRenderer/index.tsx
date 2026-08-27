@@ -10,19 +10,25 @@
  * @since 2026-08-27
  */
 import React from 'react';
-import { TreeResultRenderer, CodeResultRenderer, DefaultResultRenderer } from './shapeRenderers';
+import {
+  TreeResultRenderer,
+  CodeResultRenderer,
+  DefaultResultRenderer,
+} from './shapeRenderers';
 import { resolveResultType } from './resultTypes';
 
+// 2026-08-27 小欧 三堂会审C10: 删未使用Props(isExpanded/toggleExpand/stepIndex), 调用方仅传step
 interface ToolResultRendererProps {
   step: import('../../../types/execution').ExecutionStep;
-  isExpanded?: boolean;
-  toggleExpand?: (index: number) => void;
-  stepIndex?: number;
 }
 
 const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({ step }) => {
   // 严禁退化: tool_result 为数组时优先通用渲染(后端08-18契约 data 由 data_text 承载, 专用渲染器解析会空)
-  if (step.tool_result && Array.isArray(step.tool_result) && step.tool_result.length) {
+  if (
+    step.tool_result &&
+    Array.isArray(step.tool_result) &&
+    step.tool_result.length
+  ) {
     return <DefaultResultRenderer step={step} />;
   }
   const type = resolveResultType(step);
