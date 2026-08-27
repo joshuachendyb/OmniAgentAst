@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * GetDirectoryTreeView - tree 工具结果渲染组件
  *
@@ -12,6 +14,7 @@
  */
 
 import React, { useState } from "react";
+import { viewOuter } from './viewTokens';
 import { CheckCircleOutlined, CloseCircleOutlined, FileOutlined, FolderOutlined, DownOutlined, RightOutlined } from "@ant-design/icons";
 
 interface TreeNode {
@@ -44,13 +47,7 @@ const formatFileSize = (bytes: number): string => {
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB";
 };
 
-const containerStyle = (success: boolean): React.CSSProperties => ({
-  background: success ? "#f6ffed" : "#fff2f0",
-  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
-  borderRadius: 8,
-  padding: "12px 16px",
-  marginTop: 6,
-});
+const containerStyle = (_success: boolean): React.CSSProperties => ({ ...viewOuter });
 
 const titleStyle = (success: boolean): React.CSSProperties => ({
   display: "flex",
@@ -89,7 +86,7 @@ const TreeNodeItem: React.FC<{ node: TreeNode; depth: number }> = ({ node, depth
         {isDirectory ? (
           <FolderOutlined style={{ marginRight: 6, fontSize: 14, color: "#faad14" }} />
         ) : (
-          <FileOutlined style={{ marginRight: 6, fontSize: 14, color: "#1890ff" }} />
+          <FileOutlined style={{ marginRight: 6, fontSize: 14, color: "#1677ff" }} />
         )}
         <span style={{ color: isDirectory ? "#333" : "#595959", fontWeight: isDirectory ? 500 : 400 }}>
           {node.name || "(未命名)"}

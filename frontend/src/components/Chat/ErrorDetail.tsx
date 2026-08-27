@@ -39,7 +39,7 @@ const ERROR_COLORS_MAP: Record<string, { background: string; border: string; col
   agent: {
     background: "rgba(24, 144, 255, 0.1)",
     border: "rgba(24, 144, 255, 0.3)",
-    color: "#1890ff",
+    color: "#1677ff",
     icon: "🤖",
     title: "Agent错误",
   },

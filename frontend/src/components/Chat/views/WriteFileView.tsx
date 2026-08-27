@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * WriteFileView - writetext 工具结果渲染组件
  *
@@ -11,6 +13,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
 
 interface WriteFileViewProps {
@@ -32,13 +35,7 @@ const formatBytes = (bytes: number): string => {
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB";
 };
 
-const writeContainerStyle = (success: boolean): React.CSSProperties => ({
-  background: success ? "#f6ffed" : "#fff2f0",
-  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
-  borderRadius: 8,
-  padding: "12px 16px",
-  marginTop: 6,
-});
+const writeContainerStyle = (_success: boolean): React.CSSProperties => ({ ...viewOuter });
 
 const writeTitleStyle = (success: boolean): React.CSSProperties => ({
   display: "flex",

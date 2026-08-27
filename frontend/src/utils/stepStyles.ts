@@ -125,7 +125,7 @@ export const Colors = {
     STRONG: '#bfbfbf', // 深边框（仍是浅色）
   },
   // 功能颜色（5种）
-  PRIMARY: '#1890ff', // 主色调 - 蓝色
+  PRIMARY: '#1677ff', // 主色调 - 蓝色
   SUCCESS: '#52c41a', // 成功状态 - 绿色
   ERROR: '#ff4d4f', // 错误状态 - 红色
   WARNING: '#d97706', // 警告/思考状态 - 橙色

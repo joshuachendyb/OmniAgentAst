@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * GetFileInfoView - get_file_info 工具结果渲染组件
  *
@@ -9,6 +11,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { FileOutlined, FolderOutlined, ClockCircleOutlined, LockOutlined } from "@ant-design/icons";
 
 interface GetFileInfoViewProps {
@@ -51,13 +54,7 @@ const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
 
   const hasError = error_message !== undefined && error_message !== "";
 
-  const containerStyle: React.CSSProperties = {
-    background: hasError ? "#fff2f0" : "#fafafa",
-    border: hasError ? "1px solid #ffa39e" : "1px solid #d9d9d9",
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 6,
-  };
+  const containerStyle: React.CSSProperties = { ...viewOuter };
 
   const titleStyle: React.CSSProperties = {
     display: "flex",
@@ -70,7 +67,7 @@ const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
 
   const processedSize = size !== undefined ? formatFileSize(size) : null;
   const FileIcon = is_directory ? FolderOutlined : FileOutlined;
-  const iconColor = is_directory ? "#fa8c16" : "#1890ff";
+  const iconColor = is_directory ? "#fa8c16" : "#1677ff";
 
   return (
     <div style={containerStyle}>

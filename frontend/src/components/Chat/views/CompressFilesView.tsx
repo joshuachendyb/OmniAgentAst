@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * CompressFilesView - compress 工具结果渲染组件
  *
@@ -11,6 +13,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { CheckCircleOutlined, CloseCircleOutlined, InboxOutlined, LockOutlined } from "@ant-design/icons";
 
 interface CompressFilesViewProps {
@@ -38,13 +41,7 @@ const formatFileSize = (bytes: number): string => {
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB";
 };
 
-const containerStyle = (success: boolean): React.CSSProperties => ({
-  background: success ? "#f6ffed" : "#fff2f0",
-  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
-  borderRadius: 8,
-  padding: "12px 16px",
-  marginTop: 6,
-});
+const containerStyle = (_success: boolean): React.CSSProperties => ({ ...viewOuter });
 
 const titleStyle = (success: boolean): React.CSSProperties => ({
   display: "flex",
@@ -62,7 +59,7 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data, metrics, su
   const { compression_level, encrypted, original_size, compression_ratio } = data;
   const { file_count, compressed_size, ratio, format } = metrics;
 
-  const ratioColor = ratio >= 70 ? "#52c41a" : ratio >= 30 ? "#faad14" : "#1890ff";
+  const ratioColor = ratio >= 70 ? "#52c41a" : ratio >= 30 ? "#faad14" : "#1677ff";
 
   return (
     <div style={containerStyle(success)}>
@@ -107,7 +104,7 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data, metrics, su
       {/* 文件数 */}
       {file_count > 0 && (
         <div style={infoItemStyle}>
-          <InboxOutlined style={{ marginRight: 6, color: "#1890ff" }} />
+          <InboxOutlined style={{ marginRight: 6, color: "#1677ff" }} />
           <span style={labelStyle}>包含文件：</span>
           <span>{file_count} 个</span>
         </div>

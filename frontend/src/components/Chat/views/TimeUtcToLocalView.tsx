@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * TimeUtcToLocalView - time_utc_to_local 工具结果渲染组件
  *
@@ -9,6 +11,7 @@
  */
 
 import React, { useMemo } from "react";
+import { viewOuter } from './viewTokens';
 import { GlobalOutlined, ArrowRightOutlined } from "@ant-design/icons";
 
 interface TimeUtcToLocalViewProps {
@@ -18,8 +21,10 @@ interface TimeUtcToLocalViewProps {
     utc_original?: string;
   };
 }
-
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
+
  * TimeUtcToLocalView 主组件
  */
 const TimeUtcToLocalView: React.FC<TimeUtcToLocalViewProps> = ({ data }) => {
@@ -35,13 +40,7 @@ const TimeUtcToLocalView: React.FC<TimeUtcToLocalViewProps> = ({ data }) => {
   }, [data, local_time]);
 
   // 容器样式
-  const containerStyle = useMemo(() => ({
-    background: "linear-gradient(135deg, #e6f7ff 0%, #f5f5f5 100%)",
-    border: "1px solid #91d5ff",
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 6,
-  }), []);
+  const containerStyle: React.CSSProperties = { ...viewOuter };
 
   // 标题样式
   const titleStyle = useMemo(() => ({
@@ -50,7 +49,7 @@ const TimeUtcToLocalView: React.FC<TimeUtcToLocalViewProps> = ({ data }) => {
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
-    color: "#1890ff",
+    color: "#1677ff",
   }), []);
 
   // 信息项样式
@@ -73,7 +72,7 @@ const TimeUtcToLocalView: React.FC<TimeUtcToLocalViewProps> = ({ data }) => {
   const bigNumberStyle = useMemo(() => ({
     fontSize: 16,
     fontWeight: 600,
-    color: "#1890ff",
+    color: "#1677ff",
     fontFamily: "Consolas, Monaco, 'Courier New', monospace",
   }), []);
 

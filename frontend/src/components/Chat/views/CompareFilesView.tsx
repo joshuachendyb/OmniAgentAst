@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * CompareFilesView - compare_files 工具结果渲染组件
  *
@@ -9,6 +11,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { CheckCircleOutlined, MinusCircleOutlined, FileOutlined, SwapOutlined } from "@ant-design/icons";
 
 interface CompareFilesViewProps {
@@ -53,13 +56,7 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
 
   const hasError = !success || (error_message !== undefined && error_message !== "");
 
-  const containerStyle: React.CSSProperties = {
-    background: hasError ? "#fff2f0" : "#e6f7ff",
-    border: hasError ? "1px solid #ffa39e" : "1px solid #91d5ff",
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 6,
-  };
+  const containerStyle: React.CSSProperties = { ...viewOuter };
 
   const titleStyle: React.CSSProperties = {
     display: "flex",
@@ -67,7 +64,7 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
-    color: hasError ? "#ff4d4f" : "#1890ff",
+    color: hasError ? "#ff4d4f" : "#1677ff",
   };
 
   // 处理文件大小
@@ -98,7 +95,7 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
           {/* 文件A */}
           <div style={FILE_CARD_STYLE}>
             <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
-              <FileOutlined style={{ marginRight: 6, color: "#1890ff" }} />
+              <FileOutlined style={{ marginRight: 6, color: "#1677ff" }} />
               <span style={{ fontWeight: 500 }}>文件A</span>
             </div>
             <div style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", wordBreak: "break-all" }}>

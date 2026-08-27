@@ -9,6 +9,7 @@
  */
 
 import React, { useMemo } from "react";
+import { viewOuter } from './viewTokens';
 import { GlobalOutlined, ArrowRightOutlined } from "@ant-design/icons";
 
 interface TimeLocalToUtcViewProps {
@@ -18,8 +19,10 @@ interface TimeLocalToUtcViewProps {
     local_original?: string;
   };
 }
-
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
+
  * TimeLocalToUtcView 主组件
  */
 const TimeLocalToUtcView: React.FC<TimeLocalToUtcViewProps> = ({ data }) => {
@@ -35,13 +38,7 @@ const TimeLocalToUtcView: React.FC<TimeLocalToUtcViewProps> = ({ data }) => {
   }, [data, utc_time]);
 
   // 容器样式
-  const containerStyle = useMemo(() => ({
-    background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
-    border: "1px solid #b7eb8f",
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 6,
-  }), []);
+  const containerStyle: React.CSSProperties = { ...viewOuter };
 
   // 标题样式
   const titleStyle = useMemo(() => ({
@@ -103,7 +100,7 @@ const TimeLocalToUtcView: React.FC<TimeLocalToUtcViewProps> = ({ data }) => {
         </div>
 
         {/* 箭头 */}
-        <ArrowRightOutlined style={{ margin: "0 16px", color: "#1890ff", fontSize: 20 }} />
+        <ArrowRightOutlined style={{ margin: "0 16px", color: "#1677ff", fontSize: 20 }} />
 
         {/* UTC时间 */}
         <div style={{ textAlign: "center", flex: 1 }}>
@@ -114,9 +111,9 @@ const TimeLocalToUtcView: React.FC<TimeLocalToUtcViewProps> = ({ data }) => {
 
       {/* 源时区 */}
       <div style={infoItemStyle}>
-        <GlobalOutlined style={{ marginRight: 6, color: "#1890ff" }} />
+        <GlobalOutlined style={{ marginRight: 6, color: "#1677ff" }} />
         <span style={labelStyle}>源时区：</span>
-        <span style={{ fontWeight: 500, color: "#1890ff" }}>UTC{source_timezone}</span>
+        <span style={{ fontWeight: 500, color: "#1677ff" }}>UTC{source_timezone}</span>
       </div>
     </div>
   );

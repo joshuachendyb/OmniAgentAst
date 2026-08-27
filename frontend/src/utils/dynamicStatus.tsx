@@ -177,7 +177,7 @@ export const DynamicStatusDisplay: React.FC<DynamicStatusDisplayProps> = ({
           .status-cursor {
             display: inline-block;
             font-size: 0.85em;
-            color: #1890ff;
+            color: #1677ff;
             animation: status-cursor-combo 1.2s ease-in-out infinite;
           }
         `}</style>

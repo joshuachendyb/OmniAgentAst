@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * CreateDirectoryView - create_directory 工具结果渲染组件
  *
@@ -9,6 +11,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { CheckCircleOutlined, CloseCircleOutlined, FolderOutlined, CopyOutlined } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
 
@@ -34,13 +37,7 @@ const CreateDirectoryView: React.FC<CreateDirectoryViewProps> = ({ data }) => {
     error_message 
   } = data;
 
-  const containerStyle: React.CSSProperties = {
-    background: success ? "#e6f7ff" : "#fff2f0",
-    border: success ? "1px solid #91d5ff" : "1px solid #ffa39e",
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 6,
-  };
+  const containerStyle: React.CSSProperties = { ...viewOuter };
 
   const titleStyle: React.CSSProperties = {
     display: "flex",
@@ -48,7 +45,7 @@ const CreateDirectoryView: React.FC<CreateDirectoryViewProps> = ({ data }) => {
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
-    color: success ? "#1890ff" : "#ff4d4f",
+    color: success ? "#1677ff" : "#ff4d4f",
   };
 
   const handleCopyPath = (path: string) => {

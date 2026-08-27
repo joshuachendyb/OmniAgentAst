@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * ReadFileView - readtext 工具结果渲染组件
  *
@@ -11,6 +13,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { CheckCircleOutlined, CloseCircleOutlined, FileTextOutlined, BarChartOutlined } from "@ant-design/icons";
 
 interface ReadFileViewProps {
@@ -27,13 +30,7 @@ interface ReadFileViewProps {
   success: boolean;
 }
 
-const readContainerStyle = (success: boolean): React.CSSProperties => ({
-  background: success ? "#f6ffed" : "#fff2f0",
-  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
-  borderRadius: 8,
-  padding: "12px 16px",
-  marginTop: 6,
-});
+const readContainerStyle = (_success: boolean): React.CSSProperties => ({ ...viewOuter });
 
 const readTitleStyle = (success: boolean): React.CSSProperties => ({
   display: "flex",
@@ -93,7 +90,7 @@ const ReadFileView: React.FC<ReadFileViewProps> = ({ data, metrics, summary, suc
       {/* 行数信息 */}
       <div style={{ marginTop: 8, fontSize: 12, color: "#666", display: "flex", gap: 12, flexWrap: "wrap" }}>
         {lines > 0 && (
-          <span style={{ background: "#e6f7ff", padding: "2px 8px", borderRadius: 4, color: "#1890ff", fontWeight: 500 }}>
+          <span style={{ background: "#e6f7ff", padding: "2px 8px", borderRadius: 4, color: "#1677ff", fontWeight: 500 }}>
             <BarChartOutlined style={{ marginRight: 4 }} /> 本次 {lines} 行 / 共 {total_lines} 行
           </span>
         )}

@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * BatchRenameView - batch_rename 工具结果渲染组件
  *
@@ -9,6 +11,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { CheckCircleOutlined, CloseCircleOutlined, WarningOutlined, SyncOutlined, RightOutlined } from "@ant-design/icons";
 import { Collapse, Tag } from "antd";
 
@@ -47,13 +50,7 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
   const hasList = rename_list && rename_list.length > 0;
   const hasError = error_message !== undefined && error_message !== "";
 
-  const containerStyle: React.CSSProperties = {
-    background: hasError ? "#fff2f0" : "#f6ffed",
-    border: hasError ? "1px solid #ffa39e" : "1px solid #b7eb8f",
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 6,
-  };
+  const containerStyle: React.CSSProperties = { ...viewOuter };
 
   const titleStyle: React.CSSProperties = {
     display: "flex",

@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * SearchFileContentView - grep 工具结果渲染组件
  *
@@ -14,6 +16,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { CheckCircleOutlined, CloseCircleOutlined, FileTextOutlined } from "@ant-design/icons";
 
 interface ContentMatch {
@@ -43,13 +46,7 @@ interface SearchFileContentViewProps {
   success: boolean;
 }
 
-const containerStyle = (success: boolean): React.CSSProperties => ({
-  background: success ? "#f6ffed" : "#fff2f0",
-  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
-  borderRadius: 8,
-  padding: "12px 16px",
-  marginTop: 6,
-});
+const containerStyle = (_success: boolean): React.CSSProperties => ({ ...viewOuter });
 
 const titleStyle = (success: boolean): React.CSSProperties => ({
   display: "flex",
@@ -94,7 +91,7 @@ const SearchFileContentView: React.FC<SearchFileContentViewProps> = ({ data, sum
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <FileTextOutlined style={{ color: "#1890ff" }} />
+                  <FileTextOutlined style={{ color: "#1677ff" }} />
                   <span style={{ flex: 1, fontFamily: "Consolas, Monaco, monospace", fontSize: 12, color: "#003a8c", wordBreak: "break-all" }}>
                     {file}
                     {cm.line !== undefined && <span style={{ color: "#8c8c8c" }}> : {cm.line}</span>}
@@ -151,7 +148,7 @@ const SearchFileContentView: React.FC<SearchFileContentViewProps> = ({ data, sum
                   fontSize: 13,
                 }}
               >
-                <FileTextOutlined style={{ color: "#1890ff", marginRight: 6 }} />
+                <FileTextOutlined style={{ color: "#1677ff", marginRight: 6 }} />
                 <span style={{ fontFamily: "Consolas, Monaco, monospace", fontSize: 12, color: "#003a8c", wordBreak: "break-all" }}>
                   {fm.file}
                 </span>

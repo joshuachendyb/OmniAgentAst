@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * TimerSetView - timer_set 工具结果渲染组件
  *
@@ -11,6 +13,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
 
 interface TimerSetViewProps {
@@ -31,13 +34,7 @@ const formatDelay = (seconds: number): string => {
   return `${(seconds / 3600).toFixed(1)} 小时`;
 };
 
-const containerStyle = (success: boolean): React.CSSProperties => ({
-  background: success ? "#f6ffed" : "#fff2f0",
-  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
-  borderRadius: 8,
-  padding: "12px 16px",
-  marginTop: 6,
-});
+const containerStyle = (_success: boolean): React.CSSProperties => ({ ...viewOuter });
 
 const titleStyle = (success: boolean): React.CSSProperties => ({
   display: "flex",
@@ -75,7 +72,7 @@ const TimerSetView: React.FC<TimerSetViewProps> = ({ data, metrics, summary, suc
       {/* 延迟 */}
       <div style={infoItemStyle}>
         <span style={labelStyle}>延迟：</span>
-        <span style={{ fontWeight: 600, color: "#1890ff" }}>{formatDelay(delay)}</span>
+        <span style={{ fontWeight: 600, color: "#1677ff" }}>{formatDelay(delay)}</span>
       </div>
 
       {/* 后端摘要 */}

@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * FileChecksumView - file_checksum 工具结果渲染组件
  *
@@ -9,6 +11,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { SafetyOutlined, CopyOutlined, WarningOutlined } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
 
@@ -45,13 +48,7 @@ const FileChecksumView: React.FC<FileChecksumViewProps> = ({ data }) => {
 
   const isEmpty = !data || (!file_path && checksums.length === 0);
 
-  const containerStyle: React.CSSProperties = {
-    background: success ? "#f6ffed" : "#fff2f0",
-    border: `1px solid ${success ? "#b7eb8f" : "#ffa39e"}`,
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 6,
-  };
+  const containerStyle: React.CSSProperties = { ...viewOuter };
 
   const titleStyle: React.CSSProperties = {
     display: "flex",
@@ -95,7 +92,7 @@ const FileChecksumView: React.FC<FileChecksumViewProps> = ({ data }) => {
         <div>
           {checksums.map((item, index) => (
             <div key={index} style={CHECKSUM_ROW_STYLE}>
-              <div style={{ minWidth: 70, fontWeight: 500, color: "#1890ff" }}>
+              <div style={{ minWidth: 70, fontWeight: 500, color: "#1677ff" }}>
                 {item.algorithm}
               </div>
               <div style={{ flex: 1, fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 11, wordBreak: "break-all" }}>

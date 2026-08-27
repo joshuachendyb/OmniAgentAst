@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * FileStatisticsView - file_statistics 工具结果渲染组件
  *
@@ -43,9 +45,9 @@ const FileStatisticsView: React.FC<FileStatisticsViewProps> = ({ data }) => {
   return (
     <div style={{ fontSize: 13, lineHeight: "20px" }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 4 }}>
-        <FolderOutlined style={{ color: "#1890ff" }} />
+        <FolderOutlined style={{ color: "#1677ff" }} />
         {directory && <span style={{ fontFamily: "Consolas, Monaco, monospace", fontSize: 12, color: "#595959" }}>{directory}</span>}
-        <span style={{ color: "#1890ff", fontWeight: 500 }}><FileOutlined /> {total_files}个文件</span>
+        <span style={{ color: "#1677ff", fontWeight: 500 }}><FileOutlined /> {total_files}个文件</span>
         <span style={{ color: "#595959" }}>{total_directories}个目录</span>
         <span style={{ color: "#8c8c8c" }}>{formatSize(total_size)}</span>
       </div>

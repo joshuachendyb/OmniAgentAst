@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * ListDirectoryView - listdir 工具结果渲染组件
  *
@@ -11,6 +13,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { CheckCircleOutlined, CloseCircleOutlined, FolderOutlined, FileOutlined, InboxOutlined } from "@ant-design/icons";
 
 interface DirEntry {
@@ -51,13 +54,7 @@ const formatMtime = (mtime?: number | string): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-const containerStyle = (success: boolean): React.CSSProperties => ({
-  background: success ? "#f6ffed" : "#fff2f0",
-  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
-  borderRadius: 8,
-  padding: "12px 16px",
-  marginTop: 6,
-});
+const containerStyle = (_success: boolean): React.CSSProperties => ({ ...viewOuter });
 
 const titleStyle = (success: boolean): React.CSSProperties => ({
   display: "flex",
@@ -117,7 +114,7 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, metrics, su
               {isDir ? (
                 <FolderOutlined style={{ color: "#faad14", marginRight: 8 }} />
               ) : (
-                <FileOutlined style={{ color: "#1890ff", marginRight: 8 }} />
+                <FileOutlined style={{ color: "#1677ff", marginRight: 8 }} />
               )}
               <span style={{ flex: 1, color: "#333", wordBreak: "break-all" }}>{name}</span>
               {entry.size !== undefined && entry.size !== null && (

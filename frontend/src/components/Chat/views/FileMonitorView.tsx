@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * FileMonitorView - file_monitor 工具结果渲染组件
  *
@@ -9,6 +11,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { EyeOutlined, FileAddOutlined, EditOutlined, DeleteOutlined, WarningOutlined, FolderOutlined } from "@ant-design/icons";
 import { List, Tag } from "antd";
 
@@ -36,13 +39,7 @@ const FileMonitorView: React.FC<FileMonitorViewProps> = ({ data }) => {
 
   const isEmpty = !data || (!directory && events.length === 0);
 
-  const containerStyle: React.CSSProperties = {
-    background: "#e6f7ff",
-    border: "1px solid #91d5ff",
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 6,
-  };
+  const containerStyle: React.CSSProperties = { ...viewOuter };
 
   const titleStyle: React.CSSProperties = {
     display: "flex",
@@ -50,13 +47,13 @@ const FileMonitorView: React.FC<FileMonitorViewProps> = ({ data }) => {
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
-    color: "#1890ff",
+    color: "#1677ff",
   };
 
   const getEventColor = (eventType: string): string => {
     switch (eventType) {
       case "created": return "#52c41a";
-      case "modified": return "#1890ff";
+      case "modified": return "#1677ff";
       case "deleted": return "#ff4d4f";
       case "renamed": return "#722ed1";
       default: return "#8c8c8c";

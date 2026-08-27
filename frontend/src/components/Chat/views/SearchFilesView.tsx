@@ -1,3 +1,5 @@
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
  * SearchFilesView - find 工具结果渲染组件
  *
@@ -11,6 +13,7 @@
  */
 
 import React from "react";
+import { viewOuter } from './viewTokens';
 import { CheckCircleOutlined, CloseCircleOutlined, FileOutlined, FolderOutlined, SearchOutlined } from "@ant-design/icons";
 
 interface FileMatch {
@@ -40,13 +43,7 @@ const formatFileSize = (bytes?: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 };
 
-const searchContainerStyle = (success: boolean): React.CSSProperties => ({
-  background: success ? "#f6ffed" : "#fff2f0",
-  border: success ? "1px solid #b7eb8f" : "1px solid #ffa39e",
-  borderRadius: 8,
-  padding: "12px 16px",
-  marginTop: 6,
-});
+const searchContainerStyle = (_success: boolean): React.CSSProperties => ({ ...viewOuter });
 
 const searchTitleStyle = (success: boolean): React.CSSProperties => ({
   display: "flex",
@@ -86,7 +83,7 @@ const SearchFilesView: React.FC<SearchFilesViewProps> = ({ data, metrics, summar
 
       {/* 总数 */}
       <div style={{ marginBottom: 8, fontSize: 12, color: "#595959" }}>
-        共匹配 <strong style={{ color: "#1890ff" }}>{total}</strong> 个文件
+        共匹配 <strong style={{ color: "#1677ff" }}>{total}</strong> 个文件
       </div>
 
       {/* 匹配列表 */}
@@ -110,7 +107,7 @@ const SearchFilesView: React.FC<SearchFilesViewProps> = ({ data, metrics, summar
               {isDir ? (
                 <FolderOutlined style={{ color: "#faad14", marginRight: 6 }} />
               ) : (
-                <FileOutlined style={{ color: "#1890ff", marginRight: 6 }} />
+                <FileOutlined style={{ color: "#1677ff", marginRight: 6 }} />
               )}
               <code
                 style={{

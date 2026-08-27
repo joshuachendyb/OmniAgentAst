@@ -9,6 +9,7 @@
  */
 
 import React, { useMemo } from "react";
+import { viewOuter } from './viewTokens';
 import { ClockCircleOutlined, CalendarOutlined } from "@ant-design/icons";
 
 interface TimeFormatViewProps {
@@ -19,8 +20,10 @@ interface TimeFormatViewProps {
     pattern_used?: string;
   };
 }
-
+// 编辑历史:
+// 2026-08-27 小欧 - 去框-P1-1: 外层容器去框透明(viewOuter), 内层列表/标题保留成功失败语义样式; 主色 #1890ff→#1677ff 收敛
 /**
+
  * TimeFormatView 主组件
  */
 const TimeFormatView: React.FC<TimeFormatViewProps> = ({ data }) => {
@@ -37,13 +40,7 @@ const TimeFormatView: React.FC<TimeFormatViewProps> = ({ data }) => {
   }, [data, timestamp, formatted]);
 
   // 容器样式
-  const containerStyle = useMemo(() => ({
-    background: "linear-gradient(135deg, #fff7e6 0%, #f5f5f5 100%)",
-    border: "1px solid #ffd591",
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 6,
-  }), []);
+  const containerStyle: React.CSSProperties = { ...viewOuter };
 
   // 标题样式
   const titleStyle = useMemo(() => ({
