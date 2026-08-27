@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-27 小欧 - 重构: 形状渲染器(Tree/Code/Default), 移植自原views/*(复用优先), 删per-tool视图(禁backward/KISS)
+// 编辑历史: 2026-08-27 小欧 - 修复chat-A: extractResult 合并 tool_result[].data_text 兜底, 新契约数据在 data_text 时树/码渲染不空
 // 2026-08-27 小欧 - 三堂会审: tree列表/树容器统一边框 1px #f0f0f0(与行分割线一致), 半径保持6
 /**
  * shapeRenderers - 按结果形状渲染(非 tool 名)
@@ -33,10 +34,28 @@ interface ResultData {
 
 const extractResult = (step: ExecutionStep): ResultData => {
   const er = (step.execution_result || {}) as Record<string, unknown>;
-  const data = (er.data || {}) as Record<string, unknown>;
+  const execData = (er.data || {}) as Record<string, unknown>;
+  // 2026-08-27 小欧 修复: 新契约 tool_result[].data_text 常承载结构数据, 解析并与 execution_result.data 合并兜底(BUG-A 鲁棒, 不退化 data_text 场景)
+  let textData: Record<string, unknown> = {};
+  const tr0 = Array.isArray(step.tool_result) ? step.tool_result[0] : null;
+  if (tr0 && typeof tr0 === 'object') {
+    const dt = (tr0 as Record<string, unknown>).data_text;
+    if (typeof dt === 'string') {
+      try {
+        textData = JSON.parse(dt) as Record<string, unknown>;
+      } catch {
+        textData = {};
+      }
+    }
+  }
+  const data = { ...textData, ...execData } as Record<string, unknown>;
   const llmData = (er.llm_data || {}) as Record<string, unknown>;
   const status = (llmData.status || {}) as Record<string, unknown>;
-  const metrics = (llmData.metrics || {}) as Record<string, unknown>;
+  // 2026-08-27 小欧 修复: 指标来源归一 llm_data.metrics 与 data.metrics 合并(BUG-A 契约 metrics 在 data.metrics)
+  const metrics = {
+    ...(llmData.metrics || {}),
+    ...(data.metrics || {}),
+  } as Record<string, unknown>;
   const success = status.exec_code === 'success';
   const summary = (llmData.summary as string) || undefined;
   return { data, llmData, success, summary, metrics };

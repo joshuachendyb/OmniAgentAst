@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-27 小欧 - 修复#8: 工具汇总空对象{}时显'-'而非空白(实测失败用例转绿)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.2 抽STATUS_COLOR_MAP查表替嵌套三元
 // 编辑历史: 2026-08-27 小欧 - 三堂会审去框-P0-3/边距-P0-3: 去卡片双框留上分割线(borderTop#f0f0f0,去#fafafa+radius+padding覆盖), marginTop8→12 paddingTop8→padding12, 仅留终止语义锚点
+// 编辑历史: 2026-08-27 小欧 - 修复chat-H: accumulated_usage 空对象{}时 token 字段缺失显'-'而非 undefined
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -70,9 +71,18 @@ const StaticStatsBlock: React.FC<{ detail: TaskDetail | null }> = ({
           </Descriptions.Item>
         )}
         <Descriptions.Item label="token 终值" span={2}>
-          {detail.accumulated_usage
-            ? `P ${detail.accumulated_usage.prompt_tokens} / C ${detail.accumulated_usage.completion_tokens} / T ${detail.accumulated_usage.total_tokens}`
-            : '-'}
+          {/* 2026-08-27 小欧 修复: accumulated_usage 为空对象{}时 token 字段缺失, 显'-'而非 undefined(BUG-H) */}
+          {(() => {
+            const u = detail.accumulated_usage;
+            const hasTokens =
+              u != null &&
+              (u.prompt_tokens != null ||
+                u.completion_tokens != null ||
+                u.total_tokens != null);
+            return hasTokens
+              ? `P ${u.prompt_tokens} / C ${u.completion_tokens} / T ${u.total_tokens}`
+              : '-';
+          })()}
         </Descriptions.Item>
         {detail.artifacts && detail.artifacts.length > 0 && (
           <Descriptions.Item label="产出物" span={2}>

@@ -1,6 +1,7 @@
 /* eslint-disable react/prop-types */
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 错误详情组件(任务信息条错误展示)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 引入formatSafeTimestamp; formatErrorType提顶层; 来源/上下文注释澄清
+// 编辑历史: 2026-08-27 小欧 - 修复chat-E: errorType 形如 network_error 需对齐配色键(network 等), 剥离 _error 后缀查表(BUG-E)
 import React, { memo } from 'react';
 import { formatSafeTimestamp } from '../../utils/formatSafeTimestamp'; // 2026-08-27 小欧 三堂会审: 复用时戳安全格式化(复用优先)
 
@@ -214,9 +215,11 @@ const ErrorDetail: React.FC<ErrorDetailProps> = memo(
     provider,
     errorContext,
   }) => {
-    // 2026-08-27 小欧 三堂会审B35: 移除useMemo(静态查表O(1), 缓存无收益)
+    // 2026-08-27 小欧 修复: errorType 形如 'network_error'/'validation_error' 需对齐配色键(network/validation); 剥离 _error 后缀查表, 否则回落默认标题(BUG-E)
     const colors =
-      ERROR_COLORS_MAP[errorType || ''] || ERROR_COLORS_MAP.default;
+      ERROR_COLORS_MAP[errorType || ''] ||
+      ERROR_COLORS_MAP[(errorType || '').replace(/_error$/, '')] ||
+      ERROR_COLORS_MAP.default;
 
     return (
       <div

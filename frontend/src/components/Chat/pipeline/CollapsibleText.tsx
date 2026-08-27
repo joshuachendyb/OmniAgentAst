@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 8.11 实施: 长AI消息>30行/2000字折叠首2行+展开全文, 全局共用(4.4.3)
 // 编辑历史: 2026-08-27 小欧 - 修复#7: 单行超长(无换行)文本按字符截断折叠, 不再整行展示(实测失败用例转绿)
+// 编辑历史: 2026-08-27 小欧 - 修复chat-G: 多行超长按首2行摘要, 不再按字符截断展现数十行(含第10行等)
 /**
  * CollapsibleText - 统一折叠组件（折叠非截断）
  *
@@ -33,8 +34,11 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
 
   const shown = useMemo(() => {
     if (!overflow || expanded) return text;
-    if (text.length > maxChars) return text.slice(0, maxChars) + '…'; // 单行超长按字符截断
-    return text.split('\n').slice(0, 2).join('\n'); // 首 2 行摘要
+    const lines = text.split('\n');
+    // 2026-08-27 小欧 修复: 多行内容优先取首2行摘要(BUG-G), 单行超长无换行才按字符截断(修复#7)
+    if (lines.length > 1) return lines.slice(0, 2).join('\n');
+    if (text.length > maxChars) return text.slice(0, maxChars) + '…';
+    return text;
   }, [text, overflow, expanded, maxChars]);
 
   return (

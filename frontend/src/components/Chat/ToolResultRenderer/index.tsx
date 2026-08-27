@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-27 小欧 - 重构: 删36套per-tool视图与switch, 改按结果类型(tree/code/generic)分派(铁规复用优先/禁backward/KISS)
+// 编辑历史: 2026-08-27 小欧 - 修复chat-A: 按结果类型(tree/code)分派专属渲染, 破除 tool_result 数组早退致目录树/代码块永远不可达
 /**
  * ToolResultRenderer - 工具结果渲染器(结果类型分派, 非 tool 名)
  *
@@ -23,23 +24,12 @@ interface ToolResultRendererProps {
 }
 
 const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({ step }) => {
-  // 严禁退化: tool_result 为数组时优先通用渲染(后端08-18契约 data 由 data_text 承载, 专用渲染器解析会空)
-  if (
-    step.tool_result &&
-    Array.isArray(step.tool_result) &&
-    step.tool_result.length
-  ) {
-    return <DefaultResultRenderer step={step} />;
-  }
+  // 2026-08-27 小欧 修复: 按结果类型(tree/code)分派专属渲染, 命中 tree/code 即走 TreeResultRenderer/CodeResultRenderer;
+  // 未命中专属形状(绝大多数 generic)才走 DefaultResultRenderer, 数据由 tool_result 数组承载(BUG-A 不退化)
   const type = resolveResultType(step);
-  switch (type) {
-    case 'tree':
-      return <TreeResultRenderer step={step} />;
-    case 'code':
-      return <CodeResultRenderer step={step} />;
-    default:
-      return <DefaultResultRenderer step={step} />;
-  }
+  if (type === 'tree') return <TreeResultRenderer step={step} />;
+  if (type === 'code') return <CodeResultRenderer step={step} />;
+  return <DefaultResultRenderer step={step} />;
 };
 
 export default React.memo(ToolResultRenderer);

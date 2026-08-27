@@ -19,11 +19,9 @@ interface SmartContentRendererProps {
   maxLines?: number;
 }
 
-// 2026-08-27 小欧 三堂会审B40: 要求至少2个代码特征才判为代码, 减少普通文本误判
+// 2026-08-27 小欧 修复chat-D: 移除裸花括号作为代码特征, 避免"请设置参数 {timeout:30}"等含花括号普通文本误判为代码块
 const isCode = (str: string): boolean => {
   const codeIndicators = [
-    '{',
-    '}',
     'function',
     'class',
     'import',

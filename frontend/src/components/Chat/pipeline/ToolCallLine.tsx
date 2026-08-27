@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删tool_params误用(8)/摘要tool_result优先(9)/展开渲染tool_result优先(10)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审边距-P0-1/去框-P0-4: margin6px0→8px0; 常态去radius改borderLeft2px#e8e8e8左线分态(highlight才#faad14+radius6); 主色#1890ff→#1677ff
+// 编辑历史: 2026-08-27 小欧 - 修复chat-C: 新契约 tool_result 数组取首项 summary/llm_data.summary, 不再回落字面量[工具结果]
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -36,13 +37,29 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   const paramText = JSON.stringify(params);
   const toolName = tools.map((t) => t.tool).join(', ');
   const obs0 = observations[0];
-  // 2026-08-27 小欧 三堂会审: 折叠摘要优先级改为 tool_result 优先, 其次 summary/content
-  const obsSummary =
-    obs0?.tool_result != null
-      ? typeof obs0.tool_result === 'string'
-        ? obs0.tool_result
-        : '[工具结果]'
-      : (obs0?.summary || obs0?.content || '');
+  // 2026-08-27 小欧 修复: 新契约 tool_result 为数组时取首项真实摘要, 不再回落字面量'[工具结果]'(BUG-C)
+  const getObsSummary = (o?: ExecutionStep): string => {
+    const tr = o?.tool_result;
+    if (tr != null) {
+      if (typeof tr === 'string') return tr;
+      if (Array.isArray(tr)) {
+        const parts = tr
+          .map((item) => {
+            if (typeof item === 'string') return item;
+            const obj = item as Record<string, unknown>;
+            const llm = (obj.llm_data || obj.llmData) as
+              | Record<string, unknown>
+              | undefined;
+            return (obj.summary as string) || (llm?.summary as string) || '';
+          })
+          .filter((s) => s);
+        if (parts.length) return parts.join('; ');
+      }
+      return '';
+    }
+    return (o?.summary as string) || (o?.content as string) || '';
+  };
+  const obsSummary = getObsSummary(obs0);
   const retryCount = action.action_retry_count;
   const attemptLabel =
     retryCount != null && retryCount > 0 ? `(重试${retryCount})` : '';
