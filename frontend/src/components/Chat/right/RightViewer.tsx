@@ -115,7 +115,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
         highlightToolName={highlightToolName}
       />
       {liveErrorText && (
-        <div style={{ color: '#cf1322', fontSize: 13, margin: '4px 0' }}>
+        <div style={{ color: '#ff4d4f', fontSize: 13, margin: '4px 0' }}>
           ❌ {liveErrorText}
         </div>
       )}

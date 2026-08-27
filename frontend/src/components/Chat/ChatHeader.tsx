@@ -163,7 +163,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             cursor: 'pointer',
             color: titleLocked ? '#000' : '#666',
             fontSize: titleLocked ? '16px' : '14px',
-            fontWeight: titleLocked ? 'bold' : 'normal',
+            fontWeight: titleLocked ? 600 : 'normal',
           }}
         >
           {sessionTitle || '未命名会话'}

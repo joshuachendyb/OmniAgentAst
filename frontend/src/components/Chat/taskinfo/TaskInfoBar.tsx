@@ -122,7 +122,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
         ) : null}
         {info.stuckWarning && <Tag color="volcano">疑似卡死(llm≫step)</Tag>}
         {info.truncatedTip && <Tag color="orange">⚠ {info.truncatedTip}</Tag>}
-        <span style={{ marginLeft: 'auto', color: '#bbb', fontSize: 12 }}>
+        <span style={{ marginLeft: 'auto', color: '#999', fontSize: 12 }}>
           {collapsed ? '展开' : '收起'}
         </span>
       </div>

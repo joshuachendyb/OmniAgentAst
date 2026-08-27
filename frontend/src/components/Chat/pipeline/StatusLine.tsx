@@ -20,7 +20,7 @@ interface StatusLineProps {
 const StatusLine: React.FC<StatusLineProps> = ({ step }) => {
   if (step.type !== 'error') return null;
   return (
-    <div style={{ color: '#cf1322', fontSize: 13, margin: '6px 0' }}>
+    <div style={{ color: '#ff4d4f', fontSize: 13, margin: '6px 0' }}>
       ⚠️ {step.error_message || step.details || step.content || '执行出错'}
     </div>
   );

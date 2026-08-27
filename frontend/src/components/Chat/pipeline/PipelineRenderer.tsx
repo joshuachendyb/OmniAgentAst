@@ -129,7 +129,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           return (
             <div
               key={i}
-              style={{ color: '#389e0d', fontSize: 13, margin: '4px 0' }}
+              style={{ color: '#52c41a', fontSize: 13, margin: '4px 0' }}
             >
               📋 {seg.step.summary || seg.step.content || ''}
             </div>

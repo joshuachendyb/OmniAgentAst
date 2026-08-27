@@ -51,7 +51,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
       className={highlight ? 'hitl-border' : undefined}
       style={{
         fontSize: 13,
-        color: '#595959',
+        color: '#666',
         margin: '6px 0',
         padding: '4px 8px',
         borderRadius: 4,
@@ -66,9 +66,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
           {paramText.length > 60 ? '…' : ''}
         </span>
         {obsSummary && (
-          <span style={{ color: '#389e0d' }}> → {obsSummary.slice(0, 40)}</span>
+          <span style={{ color: '#52c41a' }}> → {obsSummary.slice(0, 40)}</span>
         )}
-        <span style={{ marginLeft: 6, color: '#1677ff' }}>
+        <span style={{ marginLeft: 6, color: '#1890ff' }}>
           {open ? '▲' : '▼'}
         </span>
       </span>

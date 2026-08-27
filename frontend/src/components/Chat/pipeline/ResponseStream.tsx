@@ -27,7 +27,7 @@ const ResponseStream: React.FC<ResponseStreamProps> = ({
     return (
       <div
         style={{
-          color: '#bfbfbf',
+          color: '#8c8c8c',
           fontSize: 13,
           fontStyle: 'italic',
           margin: '6px 0',
