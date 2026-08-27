@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-27 小欧 - 修复#12: 回车保存后Input卸载触发blur双发updateSession(409), 加editingRef守卫(实测失败用例转绿)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审H3修复: handleSaveTitle写后回填sessionApi.updateSession返回的version, 杜绝二次编辑必409冲突(409分支兜底保留)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 409恢复分支改用更轻的getSession(仅取version/title)
+// 编辑历史: 2026-08-27 小欧 - 去头像-C1: 删ChatHeader内RobotOutlined代头像(顶栏"会话"标签), 仅留文字+渐变竖线锚点, 不扩至全局Layout
 /**
  * ChatHeader 组件 - 会话标题展示与编辑
  * 
@@ -15,7 +16,7 @@
 
 import React, { useRef } from 'react';
 import { Space, Input, Tooltip } from 'antd';
-import { RobotOutlined, InfoCircleOutlined, LockOutlined } from '@ant-design/icons';
+import { InfoCircleOutlined, LockOutlined } from '@ant-design/icons';
 import { sessionApi } from '../../services/api';
 import {
   showTitleSaved,
@@ -127,9 +128,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         onEditingStart();
       }}
     >
-      <RobotOutlined />
-      {/* 显示"会话"标签 + 分隔符 */}
-      <span style={{ marginLeft: 8, color: '#666', fontSize: 14 }}>会话</span>
+      {/* 2026-08-27 小欧 去头像-C1: 删RobotOutlined代头像, 仅保留"会话"文字+渐变竖线+分隔符托住标题锚点 */}
+      <span style={{ color: '#595959', fontSize: 14, fontWeight: 500 }}>会话</span>
       {/* 分隔符 */}
       <span style={{
         marginLeft: 8,
@@ -188,7 +188,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
           {titleLocked && (
             <Tooltip title='标题已锁定，防止自动覆盖'>
               <LockOutlined
-                style={{ fontSize: 12, marginLeft: 4, color: '#1890ff' }}
+                style={{ fontSize: 12, marginLeft: 4, color: '#1677ff' }}
               />
             </Tooltip>
           )}

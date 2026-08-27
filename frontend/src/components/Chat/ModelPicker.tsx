@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-26 小欧 - 8.13/L2 实施: 会话级模型覆盖选择器, 写sessionModel, 409冲突回读(5.1/5.2)
 // 编辑历史: 2026-08-27 小欧 - 修复#11: 切L2模型不再以'新会话'污染后端会话标题(实测失败用例转绿)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 模型列表类型归一为ModelListItem; 删IIFE改直线find写法
+// 编辑历史: 2026-08-27 小欧 - 去头像-C2: 删ModelPicker内RobotOutlined后缀图标, 回落Antd默认DownOutlined下拉箭头(更符下拉心智)
 /**
  * ModelPicker 组件 - 会话级模型覆盖(L2)选择器
  *
@@ -16,7 +17,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Select, Tooltip } from 'antd';
-import { RobotOutlined } from '@ant-design/icons';
+import { DownOutlined } from '@ant-design/icons';
 import { sessionApi, configApi } from '../../services/api';
 import type { SessionModelOverride, ModelListItem } from '../../types/chat';
 import { showSaveError, showSessionConflict } from '../../utils/chatMessages';
@@ -103,7 +104,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
         disabled={!sessionId || loading}
         style={{ minWidth: 180 }}
         placeholder="跟随全局"
-        suffixIcon={<RobotOutlined />}
+        suffixIcon={<DownOutlined />}
         options={[
           { value: FOLLOW_GLOBAL, label: '跟随全局' },
           ...models.map((m) => ({
