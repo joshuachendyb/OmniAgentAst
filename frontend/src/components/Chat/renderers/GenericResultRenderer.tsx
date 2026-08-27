@@ -1,7 +1,8 @@
+// 编辑历史: 2026-08-27 小欧 - 三堂会审: 删9色彩虹(colorSchemes), 嵌套块改单色左边线(Colors.BORDER.DEFAULT)+淡底(Colors.BG.LIGHT), 去色去框(KISS/DRY)
 /**
  * 通用结果数据渲染器（第13章设计方案）
  * 统一渲染工具返回的结构化数据
- * 使用9种浅色方案，禁止深色背景
+ * 嵌套块统一中性左边线+淡底，禁止深色背景与多色彩虹
  */
 import React from 'react';
 import { Typography, Descriptions, Tag, Image } from 'antd';
@@ -15,24 +16,21 @@ import {
 
 const { Text, Paragraph } = Typography;
 
+// 2026-08-27 小欧 三堂会审C12: 魔法数字提取为命名常量
+const MAX_STRING_LENGTH = 100; // 字符串截断阈值
+const MAX_INLINE_TAGS = 5; // 数组Tag内联上限
+const MAX_INLINE_ENTRIES = 3; // 对象键值内联上限
+
 interface GenericResultRendererProps {
   data?: Record<string, unknown> | null;
   title?: string;
 }
 
-const colorSchemes = [
-  { bg: Colors.BG.LIGHT, border: Colors.PRIMARY },
-  { bg: '#E6F7FF', border: '#1890FF' },
-  { bg: '#FFF7E6', border: '#FA8C16' },
-  { bg: '#F6FFED', border: '#52C41A' },
-  { bg: '#FFF1F0', border: '#FF4D4F' },
-  { bg: '#F9F0FF', border: '#722ED1' },
-  { bg: '#E6FFFB', border: '#13C2C2' },
-  { bg: '#FFF0F6', border: '#EB2F96' },
-  { bg: '#F0F5FF', border: '#2F54EB' },
-];
+// 2026-08-27 小欧 三堂会审: 去9色彩虹, 嵌套块统一中性左边线+淡底(去色去框, KISS/DRY/禁止backward)
+const NEST_BLOCK_BG = Colors.BG.LIGHT;          // #fafafa 淡底
+const NEST_BLOCK_LINE = Colors.BORDER.DEFAULT;  // #d9d9d9 单色左边线
 
-const renderValue = (value: unknown, depth = 0): React.ReactNode => {
+const renderValue = (value: unknown): React.ReactNode => {
   if (value === null || value === undefined) {
     return <Text type="secondary">-</Text>;
   }
@@ -46,7 +44,7 @@ const renderValue = (value: unknown, depth = 0): React.ReactNode => {
         <Image src={value} width={100} style={{ borderRadius: Radius.SM }} />
       );
     }
-    if (value.length > 100) {
+    if (value.length > MAX_STRING_LENGTH) {
       return (
         <Paragraph
           style={{ margin: 0, fontSize: FontSize.SECONDARY }}
@@ -60,12 +58,17 @@ const renderValue = (value: unknown, depth = 0): React.ReactNode => {
   }
 
   if (typeof value === 'number' || typeof value === 'boolean') {
-    return <Text style={{ fontSize: FontSize.SECONDARY }}>{String(value)}</Text>;
+    return (
+      <Text style={{ fontSize: FontSize.SECONDARY }}>{String(value)}</Text>
+    );
   }
 
   if (Array.isArray(value)) {
     if (value.length === 0) return <Text type="secondary">[]</Text>;
-    if (value.length <= 5 && value.every((v) => typeof v !== 'object')) {
+    if (
+      value.length <= MAX_INLINE_TAGS &&
+      value.every((v) => typeof v !== 'object')
+    ) {
       return (
         <div style={{ display: 'flex', gap: Spacing.XS, flexWrap: 'wrap' }}>
           {value.map((v, i) => (
@@ -80,9 +83,9 @@ const renderValue = (value: unknown, depth = 0): React.ReactNode => {
       <div
         style={{
           padding: Spacing.XS,
-          background: colorSchemes[depth % colorSchemes.length].bg,
+          background: NEST_BLOCK_BG,
           borderRadius: Radius.SM,
-          borderLeft: `${BorderWidth.THIN}px solid ${colorSchemes[depth % colorSchemes.length].border}`,
+            borderLeft: `${BorderWidth.THIN}px solid ${NEST_BLOCK_LINE}`,
         }}
       >
         {value.map((v, i) => (
@@ -90,7 +93,7 @@ const renderValue = (value: unknown, depth = 0): React.ReactNode => {
             key={i}
             style={{ marginBottom: i < value.length - 1 ? Spacing.XS : 0 }}
           >
-            {renderValue(v, depth + 1)}
+              {renderValue(v)}
           </div>
         ))}
       </div>
@@ -101,12 +104,12 @@ const renderValue = (value: unknown, depth = 0): React.ReactNode => {
     const entries = Object.entries(value as Record<string, unknown>);
     if (entries.length === 0) return <Text type="secondary">{'{}'}</Text>;
 
-    if (entries.length <= 3) {
+    if (entries.length <= MAX_INLINE_ENTRIES) {
       return (
         <div style={{ display: 'flex', gap: Spacing.SM, flexWrap: 'wrap' }}>
           {entries.map(([k, v]) => (
             <Text key={k} style={{ fontSize: FontSize.SECONDARY }}>
-              <Text type="secondary">{k}:</Text> {renderValue(v, depth + 1)}
+              <Text type="secondary">{k}:</Text> {renderValue(v)}
             </Text>
           ))}
         </div>
@@ -121,7 +124,7 @@ const renderValue = (value: unknown, depth = 0): React.ReactNode => {
         items={entries.map(([key, val]) => ({
           key,
           label: key,
-          children: renderValue(val, depth + 1),
+            children: renderValue(val),
         }))}
       />
     );
