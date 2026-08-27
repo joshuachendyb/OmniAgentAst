@@ -31,41 +31,8 @@ import {
 } from '../../utils/errorHandler';
 import { logAIComplete, logAIError } from '../../utils/chatLogger';
 import { sessionApi } from '../../services/api';
-
-// ============================================================================
-// 类型定义
-// ============================================================================
-
-/**
- * SSE错误类型
- */
-interface SSEError {
-  type: string;
-  error_type: string;
-  error_message: string;
-  timestamp: string;
-  model?: string;
-  provider?: string;
-  details?: string;
-  stack?: string;
-  retryable?: boolean;
-  retry_after?: number;
-  context?: {
-    step?: number;
-    model?: string;
-    provider?: string;
-    thought_content?: string;
-  };
-}
-
-/**
- * SSEMetadata类型
- */
-interface SSEMetadata {
-  model?: string;
-  provider?: string;
-  display_name?: string;
-}
+// 2026-08-27 小欧 三堂会审A2修复: SSEError/SSEMetadata从sse.ts导入, 消除重复定义
+import type { SSEError, SSEMetadata } from '../../utils/sse';
 
 /**
  * useChatCallbacks Hook返回值
@@ -445,8 +412,6 @@ export const useChatCallbacks = (
         // console.log("  ├─ 回复长度:", finalResponse.length, "字符");
         // console.log("  ├─ SSE传递的步骤数:", stepsFromSSE?.length, "个");
         // console.log("  └─ ref中的步骤数:", executionStepsRef.current?.length, "个");
-
-
       } else {
         console.warn('⚠️ [保存AI回复] 跳过保存：缺少必要数据');
         console.log(
@@ -501,7 +466,8 @@ export const useChatCallbacks = (
   const onError = useCallback(
     (error: string | SSEError) => {
       // ✅ 支持字符串和对象两种格式
-      const errorObj =
+      // 2026-08-27 小欧 三堂会审A3修复: 显式标注SSEError类型, 消除冗长双重断言
+      const errorObj: SSEError =
         typeof error === 'string'
           ? {
               type: 'error',
@@ -556,15 +522,7 @@ export const useChatCallbacks = (
             errorMessage: pickMsg(errorObj), // 2026-08-27 小欧 三堂会审: 统一取错误消息(原回落'')
             errorRetryAfter: errorObj.retry_after,
             errorTimestamp: errorObj.timestamp,
-            errorContext: (errorObj as unknown as Record<string, unknown>)
-              .context as
-              | {
-                  step?: number;
-                  model?: string;
-                  provider?: string;
-                  thought_content?: string;
-                }
-              | undefined,
+            errorContext: errorObj.context,
             // 如果 errorObj 中没有 model/provider，使用消息中已有的值
             model: errorObj.model || lastMessage.model,
             provider: errorObj.provider || lastMessage.provider,

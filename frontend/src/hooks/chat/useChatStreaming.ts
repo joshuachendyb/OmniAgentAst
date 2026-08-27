@@ -187,11 +187,14 @@ export const useChatStreaming = (
   );
 
   // 【小沈 2026-04-22】中断任务函数
+  // 2026-08-27 小欧 修复#51/B3: 参数名与底层disconnect对齐, 消除stopServer语义混淆
   const disconnectWithParams = useCallback(
-    (stopServer?: boolean, force?: boolean, callback?: () => void) => {
-      // 2026-08-27 小欧 修复#51: 转发stopServer/force到底层disconnect(manualDisconnect/clearStorage),
-      // 否则取消时manualDisconnect=false导致SSE自动重连并重发消息
-      disconnect(stopServer ?? false, force ?? true, callback);
+    (
+      manualDisconnect?: boolean,
+      clearStorage?: boolean,
+      callback?: () => void
+    ) => {
+      disconnect(manualDisconnect ?? false, clearStorage ?? true, callback);
       // 清理流式状态
       streamingContentRef.current = '';
       streamingStepsRef.current = [];
