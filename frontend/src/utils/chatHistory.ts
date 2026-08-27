@@ -1,5 +1,6 @@
 // 编辑历史: 2026-07-16 小欧 - parseMessage 解析 thought 字段
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 两返回点字段 model_override→sessionModel
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep改从types/execution导入; 删execution_steps camel兼容分支(后端仅发snake); 删装饰性console.log
 /**
  * 聊天历史工具函数
  * 
@@ -13,7 +14,7 @@
 
 import { sessionApi } from "../services/api";
 import type { Message, HistoryLoadResult } from "../types/chat";
-import type { ExecutionStep } from "../utils/sse";
+import type { ExecutionStep } from "../types/execution";
 
 // ============================================================
 // 常量配置
@@ -52,12 +53,10 @@ export const debounce = <T extends (...args: Parameters<T>) => void>(
  */
 export const parseMessage = (rawMessage: unknown): Message => {
   const msg = rawMessage as Record<string, unknown>;
-  // 处理 executionSteps（兼容两种字段名）
+  // 2026-08-27 小欧 三堂会审: 后端仅发 snake_case execution_steps(ApiMessage.execution_steps), 删 camel 兼容分支
   let executionSteps: ExecutionStep[] = [];
   if (msg.execution_steps && Array.isArray(msg.execution_steps)) {
     executionSteps = msg.execution_steps as ExecutionStep[];
-  } else if (msg.executionSteps && Array.isArray(msg.executionSteps)) {
-    executionSteps = msg.executionSteps as ExecutionStep[];
   }
 
   return {
@@ -88,8 +87,6 @@ export const loadHistoryMessages = async (
   sessionId: string,
   options?: { useCache?: boolean }
 ): Promise<HistoryLoadResult | null> => {
-  console.log("%c┌───── 历史消息加载 START", "color: blue; font-weight: bold; font-size: 14px;");
-
   try {
     // 先尝试从缓存读取（如果启用且不在DEBUG模式）
     if (options?.useCache !== false && !DEBUG_LOAD_FROM_API) {
@@ -105,8 +102,6 @@ export const loadHistoryMessages = async (
           if (timeDiff <= SESSION_EXPIRY_TIME && 
               state.sessionId === sessionId && 
               state.messages?.length > 0) {
-            console.log("%c│ 从缓存恢复: " + state.messages.length + " 条消息", "color: blue; font-size: 12px;");
-            console.log("%c└───── 历史消息加载 END", "color: blue; font-weight: bold; font-size: 14px;");
             return {
               messages: state.messages,
               title: state.sessionTitle || "会话",
@@ -126,8 +121,6 @@ export const loadHistoryMessages = async (
     if (!sessionData.messages || sessionData.messages.length === 0) {
       // 有标题的空会话，返回有效结果（不返回null）
       if (sessionData.title) {
-        console.log("%c│ 无历史消息（空会话），但有标题: " + sessionData.title, "color: blue; font-size: 12px;");
-console.log("%c└───── 历史消息加载 END", "color: blue; font-weight: bold; font-size: 14px;");
         return {
           messages: [],
           title: sessionData.title,
@@ -137,33 +130,11 @@ console.log("%c└───── 历史消息加载 END", "color: blue; font-we
           sessionModel: sessionData.sessionModel ?? null,
         };
       }
-      console.log("%c│ 无历史消息", "color: blue; font-size: 12px;");
-      console.log("%c└───── 历史消息加载 END", "color: blue; font-weight: bold; font-size: 14px;");
       return null;
     }
 
     // 解析消息
-const messages = sessionData.messages.map((rawMsg: unknown, index: number) => {
-      const parsedMsg = parseMessage(rawMsg);
-      (parsedMsg as Message & { dbIndex?: number }).dbIndex = index + 1;
-      return parsedMsg;
-    });
-
-    // 日志每条消息（带序号）
-    messages.forEach((m: Message & { dbIndex?: number }) => {
-      const isUser = m.role === "user";
-      const roleColor = isUser ? "green" : "purple";
-      const roleLabel = isUser ? "👤 用户" : "🤖 AI";
-      const msgIndex = m.dbIndex || "?";
-      console.log(
-        "%c│ [" + msgIndex + "] " + roleLabel + " | " + (m.content || "").substring(0, 40) + "...", 
-        "color: " + roleColor + "; font-size: 11px;"
-      );
-    });
-
-    // 日志结束
-    console.log("%c│ 共 " + messages.length + " 条消息", "color: blue; font-size: 12px;");
-    console.log("%c└───── 历史消息加载 END", "color: blue; font-weight: bold; font-size: 14px;");
+const messages = sessionData.messages.map((rawMsg: unknown) => parseMessage(rawMsg));
 
     // 返回统一格式
     return {

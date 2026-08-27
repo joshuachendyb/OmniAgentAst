@@ -21,7 +21,7 @@
 
 import { useCallback } from 'react';
 import type { Message } from '../../types/chat';
-import type { ExecutionStep } from '../../utils/sse';
+import type { ExecutionStep } from '../../types/execution';
 import type { UseChatStateReturn } from './useChatState';
 import {
   handleSSEError,

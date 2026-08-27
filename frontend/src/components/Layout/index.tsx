@@ -2,6 +2,7 @@
 // 编辑历史: 2026-02-18 小新 - 添加移动端响应式支持
 // 编辑历史: 2026-08-22 小欧 - model结构化归一: updateConfig改传ai_model_ref结构; serviceStatus的provider/model读取点改经status.model_ref派生
 // 编辑历史: 2026-08-27 小欧 - 修复#31: serviceStatus.success→valid字段名对齐后端返回
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 删_sessionCount死状态/refreshModelList透传/unreadCount死值; 精简console.log; Option上移; 更正Header高度注释
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -48,7 +49,6 @@ import {
 import { configApi } from "../../services/api";
 import type { ValidateResponse } from "../../services/api";
 import type { MenuProps } from "antd";
-const { Option } = Select;
 import ShortcutPanel from "../ShortcutPanel";
 import { useApp } from "../../contexts/AppContext";
 import { LayoutSkeleton } from "../Skeleton";
@@ -57,6 +57,7 @@ import { handleError, showSuccess, showMessage, ErrorType } from "../../utils/er
 
 const { useBreakpoint } = Grid;
 
+const { Option } = Select;
 const { Sider, Content, Header } = Layout;
 const { Title } = Typography;
 
@@ -88,8 +89,6 @@ interface LayoutProps {
 const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   // 路由导航
   const navigate = useNavigate();
-  // 未读消息数（实际应从全局状态获取）
-  const [unreadCount] = useState(0);
   // 导航折叠状态
   const [collapsed, setCollapsed] = useState(false);
   // 移动端抽屉显示状态
@@ -114,12 +113,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     isInitialized,
     initError,
   } = useApp();
-
-  // 同步sessionCount到本地state（因为其他地方可能依赖sessionCount变量）
-  const [_sessionCount, setSessionCount] = useState(0);
-  useEffect(() => {
-    setSessionCount(sessionCount);
-  }, [sessionCount]);
 
   // 【修复问题1】检查服务状态 - 使用AppContext
   // 监听初始化状态，在初始化过程中显示loading
@@ -301,15 +294,13 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       if (!result.success) {
         handleError({ message: result.message || "切换失败", error_type: ErrorType.SWITCH_MODEL_FAILED });
         // 切换失败时后端已回滚配置，刷新模型列表获取回滚后的模型
-        await refreshModelList();
+        await appRefreshModelList();
         return;
       }
       showSuccess(`已切换到 ${selectedModel.display_name}`);
-      console.log("[切换模型] 开始刷新状态...");
       // 【修复】使用refreshAfterModelChange串行刷新：验证新配置→刷新模型列表→刷新会话数
       // 替代之前错误的setServiceStatus手动调用和分散的refreshModelList/refreshSessionCount
       await refreshAfterModelChange();
-      console.log("[切换模型] 刷新完成, serviceStatus:", serviceStatus);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } }; message?: string };
       console.error("[切换模型] 失败:", error);
@@ -319,12 +310,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
 
   // 【新增】验证详情弹框
   const [validationModalVisible, setValidationModalVisible] = useState(false);
-
-  // 【修复】刷新模型列表 - 只调用AppContext的refreshModelList（不调用AI API验证）
-  // 注意：切换模型时不能调用refreshAll（会调用refreshServiceStatus），只刷新模型列表
-  const refreshModelList = async () => {
-    await appRefreshModelList();
-  };
 
   // 手动检查服务
   const handleCheckService = async () => {
@@ -361,7 +346,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       key: "/",
       icon: <MessageOutlined />,
       label: (
-        <Badge count={unreadCount} size="small" offset={[6, -4]}>
+        <Badge size="small" offset={[6, -4]}>
           <span>对话任务</span>
         </Badge>
       ),
@@ -582,7 +567,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
 
       {/* 右侧内容区 */}
       <Layout>
-        {/* 顶部Header - 前端小新代修改 VIS-L03: 固定Header高度64px */}
+        {/* 顶部Header - 固定Header高度43px（与LayoutSkeleton一致） */}
         <Header
           style={{
             height: 43,
@@ -680,7 +665,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                 // 【新增】打开下拉框时刷新模型列表，获取最新配置
                 onOpenChange={async (open: boolean) => {
                   if (open) {
-                    await refreshModelList();
+                    await appRefreshModelList();
                   }
                 }}
 onChange={handleModelChange}

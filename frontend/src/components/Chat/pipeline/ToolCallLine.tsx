@@ -12,7 +12,7 @@
  */
 
 import React, { useState } from 'react';
-import type { ExecutionStep } from '../../../utils/sse';
+import type { ExecutionStep } from '../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
 

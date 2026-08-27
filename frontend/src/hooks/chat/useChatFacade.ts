@@ -28,7 +28,7 @@ import { useChatPersistence } from './useChatPersistence';
 import { useChatSend } from './useChatSend';
 import { useChatTaskControl } from './useChatTaskControl';
 import type { Message } from '../../types/chat';
-import type { ExecutionStep } from '../../utils/sse';
+import type { ExecutionStep } from '../../types/execution';
 
 /**
  * useChatFacade 返回类型定义

@@ -12,7 +12,7 @@
  * @date 2026-08-26
  */
 
-import type { ExecutionStep } from '../../../utils/sse';
+import type { ExecutionStep } from '../../../types/execution';
 
 export const META_STEP_TYPES = [
   'start',

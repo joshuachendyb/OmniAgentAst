@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 抽resolveScheme复用取色; hexToRgba提模块级; 删isDarkMode/darkModeColors死代码
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
  *
@@ -12,36 +13,6 @@
  */
 
 import React from 'react';
-
-/**
- * 检测深色模式（第七步实现）
- * @returns true表示深色模式，false表示浅色模式
- */
-export const isDarkMode = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-};
-
-/**
- * 深色模式配色 - 9种浅色方案精简版
- * 设计原则：3种色系×3种深浅=9种浅色，绝对不用深色
- * 兼容说明：保留旧步骤行组件需要的临时属性，后续框层合并时删除
- */
-export const darkModeColors = {
-  // 基础3色（容器/边框/文字）
-  container: '#1f1f1f',
-  border: '#404040',
-  text: '#e5e5e5',
-  // 扩展色（保留必要区分度）
-  success: '#52c41a',
-  error: '#cf1322',
-  warning: '#d97706',
-  // 旧步骤行临时使用的属性（后续框层合并时删除）
-  headerBg: '#2a2a2a',
-  contentBg: '#141414',
-  footerBg: '#1a1a1a',
-  hoverBorder: '#595959',
-};
 
 // ==================== 类型定义 ====================
 
@@ -352,6 +323,20 @@ const colorSchemes: Record<StepType, ColorScheme> = {
 
 // ==================== 核心函数 ====================
 
+// 2026-08-27 小欧 三堂会审: 抽resolveScheme复用取色逻辑(DRY/KISS)
+const resolveScheme = (stepType: StepType | string): ColorScheme => {
+  return (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
+};
+
+// 2026-08-27 小欧 三堂会审: hexToRgba提模块级, 供getNextStepStyle复用
+const hexToRgba = (hex: string, alpha: number): string => {
+  const cleanHex = hex.replace('#', '');
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 /**
  * 获取步骤容器样式
  * @param stepType 步骤类型
@@ -362,9 +347,7 @@ export const getStepStyle = (
   stepType: StepType | string,
   isPrimary: boolean = true
 ) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
+  const scheme = resolveScheme(stepType);
 
   return {
     borderRadius: Radius.LG,
@@ -387,9 +370,7 @@ export const getStepStyle = (
  * @returns CSS样式对象
  */
 export const getStepTitleStyle = (stepType: StepType | string) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
+  const scheme = resolveScheme(stepType);
 
   return {
     fontWeight: FontWeight.BOLD,
@@ -409,9 +390,7 @@ export const getStepContentStyle = (
   stepType: StepType | string,
   variant: 'primary' | 'secondary' | 'detail' = 'primary'
 ) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
+  const scheme = resolveScheme(stepType);
 
   const variants = {
     primary: {
@@ -440,9 +419,7 @@ export const getStepContentStyle = (
  * @returns CSS样式对象
  */
 export const getStepLabelStyle = (stepType: StepType | string) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
+  const scheme = resolveScheme(stepType);
 
   return {
     display: 'inline-flex' as const,
@@ -469,9 +446,7 @@ export const getStepBadgeStyle = (
   stepType: StepType | string,
   variant: 'default' | 'outline' = 'default'
 ) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
+  const scheme = resolveScheme(stepType);
   const color = scheme.text;
 
   if (variant === 'outline') {
@@ -507,9 +482,7 @@ export const getStepBadgeStyle = (
  * @returns CSS样式对象
  */
 export const getStepDetailStyle = (stepType: StepType | string) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
+  const scheme = resolveScheme(stepType);
 
   return {
     marginTop: Spacing.SM,
@@ -535,7 +508,7 @@ export const getStepDetailStyle = (stepType: StepType | string) => {
  * @returns CSS样式对象
  */
 export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
-  const scheme = colorSchemes[stepType] || colorSchemes.start;
+  const scheme = resolveScheme(stepType);
 
   return {
     marginLeft: 'auto', // 靠右对齐
@@ -559,16 +532,7 @@ export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
  * @returns CSS样式对象
  */
 export const getNextStepStyle = (stepType: StepType): React.CSSProperties => {
-  const scheme = colorSchemes[stepType] || colorSchemes.start;
-
-  // 转换十六进制颜色为rgba格式，添加透明度
-  const hexToRgba = (hex: string, alpha: number): string => {
-    const cleanHex = hex.replace('#', '');
-    const r = parseInt(cleanHex.substring(0, 2), 16);
-    const g = parseInt(cleanHex.substring(2, 4), 16);
-    const b = parseInt(cleanHex.substring(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
+  const scheme = resolveScheme(stepType);
 
   return {
     marginTop: Spacing.SM,

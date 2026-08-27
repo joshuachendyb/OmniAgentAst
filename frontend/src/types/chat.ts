@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-22 小欧 - model结构化归一: SessionModelOverride 补 api_base
 // 编辑历史: 2026-08-26 小欧 - 8.4.7 移除安全校验旧字段、ActionToolMessage→ActionMessage、新增 StartInfoMessage/StartMessage.content
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 新增ModelListItem接口(模型列表项结构)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从./execution(断类型环)
 /**
  * 流式API响应类型定义
  *
@@ -14,7 +15,7 @@
  * @since 2026-03-09
  */
 
-import type { ExecutionStep } from '../utils/sse';
+import type { ExecutionStep } from './execution';
 
 // ============================================================
 // 消息类型定义（8种）

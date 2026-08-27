@@ -23,7 +23,7 @@
 import { useCallback } from 'react';
 import type { UseChatStateReturn } from './useChatState';
 import type { UseChatCallbacksReturn } from './useChatCallbacks';
-import type { ExecutionStep } from '../../utils/sse';
+import type { ExecutionStep } from '../../types/execution';
 import type { Message } from '../../types/chat';
 import { useSSE } from '../../utils/sse';
 import { sessionApi } from '../../services/api';

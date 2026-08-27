@@ -13,7 +13,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Spin } from 'antd';
-import type { ExecutionStep } from '../../../utils/sse';
+import type { ExecutionStep } from '../../../types/execution';
 import {
   executionApi,
   sessionApi,

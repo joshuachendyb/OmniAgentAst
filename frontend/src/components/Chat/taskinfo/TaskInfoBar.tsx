@@ -13,7 +13,8 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { Badge, Tag, Tooltip, Typography } from 'antd';
-import type { ExecutionStep, TaskMetaFrames } from '../../../utils/sse';
+import type { ExecutionStep } from '../../../types/execution';
+import type { TaskMetaFrames } from '../../../utils/sse';
 import type { TaskDetail } from '../../../services/api';
 import { useTaskInfo } from '../../../hooks/chat/useTaskInfo';
 

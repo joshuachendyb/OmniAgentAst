@@ -12,7 +12,7 @@
  */
 
 import React from 'react';
-import type { ExecutionStep } from '../../../utils/sse';
+import type { ExecutionStep } from '../../../types/execution';
 import { ThinkingStream } from './ThinkingStream';
 import { ResponseStream } from './ResponseStream';
 import { ToolCallLine } from './ToolCallLine';

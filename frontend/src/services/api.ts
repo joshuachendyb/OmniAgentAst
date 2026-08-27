@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 修复A1: 新增sessionApi.getSession返回Session(created_at/updated_at)供顶栏时间悬浮(7.1⑤)
 // 编辑历史: 2026-08-27 小欧 - SessionTaskItem 新增 response 字段（optional），支撑左列任务列表显示任务结果全文
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: Config.ai_model_ref改可选(无前端读取点); api.Message重命名ApiMessage避免与types/chat.Message冲突
 /**
  * API服务层 - api.ts
  *
@@ -20,7 +21,7 @@
  */
 
 import axios from 'axios';
-import type { ExecutionStep } from '../utils/sse';
+import type { ExecutionStep } from '../types/execution';
 import type { SessionModelOverride } from '../types/chat';
 import { handleApiError } from '../utils/errorHandler';
 
@@ -169,7 +170,8 @@ export const chatApi = {
 // ============================================
 export interface Config {
   // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): ai_provider/ai_model → ai_model_ref 结构(SessionModelOverride=后端ModelRef镜像)
-  ai_model_ref: SessionModelOverride;
+  // 2026-08-27 小欧 三堂会审: 后端可能未返回该字段, 故改为可选, 前端无直接读取点无需空守卫
+  ai_model_ref?: SessionModelOverride;
   api_key_configured: boolean;
   theme: 'light' | 'dark';
   language: string;
@@ -516,7 +518,7 @@ export interface SessionListResponse {
   sessions: Session[];
 }
 
-export interface Message {
+export interface ApiMessage {
   id: number;
   session_id: string;
   role: 'user' | 'assistant' | 'system';
@@ -536,7 +538,7 @@ export interface GetSessionMessagesResponse {
   title_updated_at: string | null;
   version?: number;
   sessionModel?: SessionModelOverride | null;
-  messages: Message[];
+  messages: ApiMessage[];
 }
 
 // ⭐ 新增：更新会话标题请求（包含version参数）

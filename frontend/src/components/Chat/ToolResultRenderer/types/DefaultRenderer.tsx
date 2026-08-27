@@ -14,7 +14,7 @@
 import React from 'react';
 import { GenericResultRenderer } from '@/components/Chat/renderers';
 import { BaseRendererProps } from './BaseRendererProps';
-import type { ExecutionStep } from '../../../../utils/sse';
+import type { ExecutionStep } from '../../../../types/execution';
 
 interface DefaultRendererProps extends BaseRendererProps {}
 

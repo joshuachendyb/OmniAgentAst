@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-27 小欧 - 修复#10: device触屏笔记本误判mobile, 改UA判定(实测失败用例转绿)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: device与isMobile共用IS_MOBILE_UA正则, 弃maxTouchPoints防触屏本误判
 /**
  * 客户端信息获取工具
  * 
@@ -16,6 +17,9 @@ interface ClientInfo {
   device: string;
   network?: string;
 }
+
+// 2026-08-27 小欧 三堂会审: 真移动端UA正则, device与isMobile共用, 弃maxTouchPoints(触屏笔记本误判)
+const IS_MOBILE_UA = /iPhone|iPad|Android|Mobile/i;
 
 /**
  * 获取客户端系统信息（渐进增强）
@@ -57,7 +61,7 @@ export function getClientInfo(): ClientInfo {
   else if (ua.includes("Opera") || ua.includes("OPR")) browser = "Opera";
 
   // 3. 获取设备类型（与 isMobile() 统一口径：以 UA 判定真移动端，避免触屏笔记本误判为 mobile）
-  const device = /iPhone|iPad|Android|Mobile/i.test(navigator.userAgent) ? "mobile" : "desktop";
+  const device = IS_MOBILE_UA.test(navigator.userAgent) ? "mobile" : "desktop";
 
   // 4. 获取网络类型（如果支持）
   let network: string | undefined;
@@ -89,9 +93,9 @@ export function getClientOS(): string {
  * 
  * @returns true 表示移动设备
  */
+// 2026-08-27 小欧 三堂会审: 弃maxTouchPoints(触屏笔记本误判为mobile), 与device共用IS_MOBILE_UA
 export function isMobile(): boolean {
-  return navigator.maxTouchPoints > 1 || 
-    /iPhone|iPad|Android/i.test(navigator.userAgent);
+  return IS_MOBILE_UA.test(navigator.userAgent);
 }
 
 export default getClientInfo;
