@@ -20,7 +20,7 @@ interface TaskListPanelProps {
 }
 
 /** 【小欧 2026-08-26 修复 C3】ISO 时间格式化为 月/日 时:分，避免原始串溢出 */
-const formatTime = (s?: string): string => {
+export const formatTime = (s?: string): string => {
   if (!s) return '-';
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return s;
