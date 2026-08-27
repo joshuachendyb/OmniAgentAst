@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-27 小欧 - 修复#10: device触屏笔记本误判mobile, 改UA判定(实测失败用例转绿)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: device与isMobile共用IS_MOBILE_UA正则, 弃maxTouchPoints防触屏本误判
+// 编辑历史: 2026-08-27 小欧 - 修复B4/B5: OS判定移动端(UA含Linux/Mac)优先于Android/iPhone/iPad; B6/B7: 浏览器Edge/Opera先于Chrome判定
 /**
  * 客户端信息获取工具
  * 
@@ -42,23 +43,26 @@ export function getClientInfo(): ClientInfo {
     client_os = nav.userAgentData.platform;
   } else {
     const ua = navigator.userAgent;
+    // 2026-08-27 小欧 修复B4/B5: 移动端UA(Android含Linux子串/iPhone含Mac子串)优先判定, 避免误判为Linux/macOS
     if (ua.includes("Windows")) client_os = "Windows";
-    else if (ua.includes("Mac")) client_os = "macOS";
-    else if (ua.includes("Linux")) client_os = "Linux";
     else if (ua.includes("iPhone")) client_os = "iOS";
     else if (ua.includes("iPad")) client_os = "iPadOS";
     else if (ua.includes("Android")) client_os = "Android";
+    else if (ua.includes("Mac")) client_os = "macOS";
+    else if (ua.includes("Linux")) client_os = "Linux";
     else if (navigator.platform) client_os = navigator.platform;
   }
 
   // 2. 获取浏览器信息
   const ua = navigator.userAgent;
   let browser = "Unknown";
-  if (ua.includes("Chrome")) browser = "Chrome";
-  else if (ua.includes("Firefox")) browser = "Firefox";
-  else if (ua.includes("Safari") && !ua.includes("Chrome")) browser = "Safari";
-  else if (ua.includes("Edge")) browser = "Edge";
+  // 2026-08-27 小欧 修复B6/B7: Edge/Opera的UA亦含Chrome子串, 须先于Chrome判定, 避免误判为Chrome
+  // 现代 Edge UA 子串为 "Edg"(Edg/EdgA), 旧版为 "Edge"; 两者均须前置
+  if (ua.includes("Edg") || ua.includes("Edge")) browser = "Edge";
   else if (ua.includes("Opera") || ua.includes("OPR")) browser = "Opera";
+  else if (ua.includes("Chrome")) browser = "Chrome";
+  else if (ua.includes("Firefox")) browser = "Firefox";
+  else if (ua.includes("Safari")) browser = "Safari";
 
   // 3. 获取设备类型（与 isMobile() 统一口径：以 UA 判定真移动端，避免触屏笔记本误判为 mobile）
   const device = IS_MOBILE_UA.test(navigator.userAgent) ? "mobile" : "desktop";

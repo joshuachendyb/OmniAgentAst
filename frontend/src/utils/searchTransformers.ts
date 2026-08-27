@@ -9,6 +9,8 @@
  * @since 2026-03-31
  */
 
+// 编辑历史: 2026-08-27 小欧 - 修复B9/B16: search_path/search_pattern改读正确字段data.search_path/data.search_pattern; B13: success默认false(boolean契约)
+
 // 类型定义
 export interface SearchFilesData {
   files_matched: number;
@@ -75,8 +77,8 @@ export function transformSearchFilesData(rawData: unknown): SearchFilesData {
         size: (m?.size as number) || 0,
       };
     }),
-    search_pattern: (data?.file_pattern as string) || "",
-    search_path: (data?.path as string) || "",
+    search_pattern: (data?.search_pattern as string) || "", // 2026-08-27 小欧 修复B16: 读正确字段search_pattern
+    search_path: (data?.search_path as string) || "", // 2026-08-27 小欧 修复B9: 读正确字段search_path
     pagination: {
       page: (data?.page as number) || 1,
       total_pages: (data?.total_pages as number) || 1,
@@ -94,7 +96,7 @@ export function transformSearchFilesData(rawData: unknown): SearchFilesData {
 export function transformSearchFileContentData(rawData: unknown): SearchFileContentData {
   const data = rawData as Record<string, unknown>;
   return {
-    success: data?.success as boolean,
+    success: typeof data?.success === 'boolean' ? data.success : false, // 2026-08-27 小欧 修复B13: 缺失时默认false满足boolean契约
     pattern: (data?.pattern as string) || "",
     path: (data?.path as string) || "",
     file_pattern: (data?.file_pattern as string) || "",

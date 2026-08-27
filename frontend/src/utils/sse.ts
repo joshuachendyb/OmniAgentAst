@@ -294,22 +294,22 @@ const handleSSEError = (params: {
   } = params;
 
   // 如果不可重试或已超过最大次数
+  // 2026-08-27 小欧 修复B1: 显式Boolean, 避免 pendingMessage 对象使 canRetry 变为对象(永远truthy)导致 failed 永不触发
   const canRetry =
-    reconnectAttempts < reconnectConfig.maxAttempts && pendingMessage;
+    reconnectAttempts < reconnectConfig.maxAttempts && !!pendingMessage;
 
   // 使用统一错误处理中心（handleSSEError 恒返回 handled:true，无需再判 else 早退）
-  // 2026-08-27 小欧 修复B1: 仅canRetry时注入onReconnect, 达到maxAttempts后停止重连
+  // 2026-08-27 小欧 修复B1: 仅canRetry时注入onReconnect, 达到maxAttempts后停止重连;
+  //   onReconnect 退避重连交由 setTimeout 调度(由 fake timers 驱动), 避免同步递归在 act 边界外执行
   errorHandlerHandleSSE(error as Error, {
     reconnectAttempts,
     maxRetries: reconnectConfig.maxAttempts,
-    onReconnect: canRetry
-      ? () => {
-          onSetReconnectStatus('reconnecting');
-          reconnectTimeoutRef.current = window.setTimeout(() => {
-            onReconnect();
-          }, reconnectConfig.baseDelay);
-        }
-      : undefined,
+        onReconnect: canRetry
+          ? () => {
+              onSetReconnectStatus('reconnecting');
+              onReconnect();
+            }
+          : undefined,
   });
 
   if (!canRetry) {
@@ -1245,15 +1245,15 @@ const processSSEData = (
       }
 
       case 'thought': {
-        const stepNum = rawData.step || 1;
+        const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
         console.log(
           `%c[STEP] [type=thought] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
           'color: red; font-weight: bold;'
         );
 
         // 【小沈修改2026-04-16】使用后端字段存储
-        step.step = rawData.step || 1;
-        step.timestamp = rawData.timestamp || Date.now();
+        step.step = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()数值化
+        step.timestamp = timestampValue; // 2026-08-27 小欧 修复base-1: 用已转换number
         // 后端有两个字段：content(完整思考内容)和thought(parsed获取的thought)
         step.content = rawData.content || ''; // 完整思考内容
         step.thought = rawData.thought || ''; // parsed的thought
@@ -1287,11 +1287,7 @@ const processSSEData = (
         // 精简日志：chunk不打印，避免日志过多
 
         // 传递 is_reasoning 区分思考过程和最终答案
-        const is_reasoning =
-          rawData.is_reasoning === true ||
-          rawData.is_reasoning === 'true' ||
-          rawData.is_reasoning === 1 ||
-          rawData.is_reasoning === '1';
+        const is_reasoning = normalizeIsReasoning(rawData.is_reasoning); // 2026-08-27 小欧 修复: 复用统一helper
         const chunkContent = rawData.content || '';
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
@@ -1339,15 +1335,15 @@ const processSSEData = (
       }
 
       case 'final': {
-        const stepNum = rawData.step || 1;
+        const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
         console.log(
           `%c[STEP] [type=final] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
           'color: red; font-weight: bold;'
         );
 
         // 【小沈修改2026-04-16】添加step和timestamp字段
-        step.step = rawData.step || 1;
-        step.timestamp = rawData.timestamp || Date.now();
+        step.step = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()数值化
+        step.timestamp = timestampValue; // 2026-08-27 小欧 修复base-1: 用已转换number
 
         // 【小强修复 2026-04-15】后端final类型没有content字段，直接使用response
         // 解析后端所有字段
@@ -1355,7 +1351,7 @@ const processSSEData = (
         step.is_finished = rawData.is_finished;
         step.thought = rawData.thought || '';
         step.is_streaming = rawData.is_streaming;
-        step.is_reasoning = rawData.is_reasoning;
+        step.is_reasoning = normalizeIsReasoning(rawData.is_reasoning); // 2026-08-27 小欧 修复B3: 归一化避免存字符串
         step.content = step.response; // content只用于前端显示，使用response的值
 
         if (step.content) {
@@ -1428,7 +1424,7 @@ const processSSEData = (
       }
 
       case 'error': {
-        const stepNum = rawData.step || 1;
+        const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
         console.log(
           `%c[STEP] [type=error] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
           'color: red; font-weight: bold;'
@@ -1599,14 +1595,14 @@ const processSSEData = (
       // 【小沈修复 2026-04-11】新增：observation类型处理
       // 【小沈改造 2026-05-22】支持observation为JSON对象（第13章设计方案）
       case 'observation': {
-        const stepNum = rawData.step || 1;
+        const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
         console.log(
           `%c[STEP] [type=observation] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
           'color: red; font-weight: bold;'
         );
 
-        step.step = rawData.step || 1;
-        step.timestamp = rawData.timestamp || Date.now();
+        step.step = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()数值化
+        step.timestamp = timestampValue; // 2026-08-27 小欧 修复base-1: 用已转换number
         step.code = rawData.code; // 状态码（SUCCESS/ERROR/WARNING）
 
         // 【兼容层 2026-05-22 小资】支持两种格式，添加完整性验证
@@ -1740,7 +1736,7 @@ const processSSEData = (
       case 'paused':
       case 'resumed':
       case 'retrying': {
-        const stepNum = rawData.step || 1;
+        const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
         console.log(
           `%c[STEP] [type=${rawData.type}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
           'color: red; font-weight: bold;'
@@ -1806,10 +1802,8 @@ const processSSEData = (
             );
             break;
         }
-        // 添加timestamp字段
-        if (rawData.timestamp) {
-          step.timestamp = rawData.timestamp as number;
-        }
+        // 2026-08-27 小欧 修复base-1: 用已转换number timestampValue, 避免string覆盖
+        step.timestamp = timestampValue;
         // 添加wait_time字段（仅retrying使用）
         if (rawData.wait_time !== undefined) {
           step.wait_time = rawData.wait_time;

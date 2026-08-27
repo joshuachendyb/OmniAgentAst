@@ -14,6 +14,8 @@
  * @update 2026-04-11 迁移到errorHandler统一处理 - by 小强
  */
 
+// 编辑历史: 2026-08-27 小欧 - 修复B8: handleSaveErrorWithCache去重字段改用data存储键(content/title), 避免字符串data展开后无assistant键导致去重失效
+
 import {
   ErrorType,
   showSuccess,
@@ -151,16 +153,22 @@ export const handleSaveErrorWithCache = async (
     );
 
     // 避免重复缓存
+    // 2026-08-27 小欧 修复B8: 字符串data展开后无assistant/title键, 去重永远失效;
+    //   改用实际存储键(content/message, title)比较, 并对字符串data统一存为对应键
+    const storeKey = dataType === 'message' ? 'content' : 'title';
     const exists = cached.some((item) => {
       if (dataType === 'message') {
-        return item.assistant === data;
+        return item.content === data || item.assistant === data;
       }
-      return item.title === data;
+      return item.title === data || item.content === data;
     });
 
     if (!exists) {
       cached.push({
-        ...(data as Record<string, unknown>),
+        ...(typeof data === 'object' && data !== null
+          ? (data as Record<string, unknown>)
+          : {}),
+        [storeKey]: data,
         timestamp: Date.now(),
       });
       localStorage.setItem(cacheKey, JSON.stringify(cached));

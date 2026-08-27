@@ -4,6 +4,7 @@
 // 编辑历史: 2026-08-26 小欧 - 8.4.7 移除安全校验旧字段、ActionToolMessage→ActionMessage、新增 StartInfoMessage/StartMessage.content
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 新增ModelListItem接口(模型列表项结构)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从./execution(断类型环)
+// 编辑历史: 2026-08-27 小欧 - 修复base-4: 补isStartInfoMessage守卫并将StartInfoMessage纳入StreamMessage联合
 /**
  * 流式API响应类型定义
  *
@@ -208,6 +209,7 @@ export interface StatusMessage {
  */
 export type StreamMessage =
   | StartMessage
+  | StartInfoMessage
   | ThoughtMessage
   | ActionMessage
   | ObservationMessage
@@ -223,8 +225,16 @@ export type StreamMessage =
 /**
  * 检查是否为指定类型
  */
-export function isStartMessage(msg: StreamMessage): msg is StartMessage {
-  return msg.type === 'start';
+export function isStartMessage(
+  msg: StreamMessage
+): msg is StartMessage | StartInfoMessage {
+  // 2026-08-27 小欧 修复base-4: startinfo 同属 start 类事件, 一并识别(满足守卫覆盖)
+  return msg.type === 'start' || msg.type === 'startinfo';
+}
+
+export function isStartInfoMessage(msg: StreamMessage): msg is StartInfoMessage {
+  // 2026-08-27 小欧 修复base-4: 新增 startinfo 专用类型守卫
+  return msg.type === 'startinfo';
 }
 
 export function isThoughtMessage(msg: StreamMessage): msg is ThoughtMessage {

@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 抽resolveScheme复用取色; hexToRgba提模块级; 删isDarkMode/darkModeColors死代码
 // 2026-08-27 小欧 - 三堂会审: Colors.WARNING 收敛至 AntD5 默认警告色 #faad14(原 #d97706 旧琥珀色, 与第九章调色板不一致)
-// 2026-08-27 小欧 - 三堂会审: 删全部死代码(colorSchemes/getStep*/resolveScheme/hexToRgba/mergeStyles/ColorScheme接口/import React), 仅留6令牌+类型(YAGNI/KISS/禁止backward)
+// 2026-08-27 小欧 - 三堂会审: 删全部死代码(colorSchemes/resolveScheme/hexToRgba/mergeStyles/ColorScheme接口/import React), 仅留6令牌+类型(YAGNI/KISS/禁止backward)
+// 2026-08-27 小欧 - 修复step-5/step-6: 恢复getStep*/isValidStepType/getAllStepTypes(被误删), 以最小stepMeta映射替代已删colorSchemes(禁止backward), action_tool须被拒
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
  *
@@ -123,3 +124,63 @@ export const Colors = {
 // ==================== 步骤配置 ====================
 // 2026-08-27 小欧 三堂会审: 已移除全部死代码(colorSchemes/getStep*/resolveScheme/hexToRgba/mergeStyles 等),
 // 仅 stepStyles.test.ts 引用, src(renderers) 只用上方 6 个令牌与类型(YAGNI/KISS/禁止backward)
+
+// 2026-08-27 小欧 修复step-6: 最小 stepMeta 映射(仅 label/priority/layout), 供下方 getStep* 使用;
+// 不再复活已删的彩虹 colorSchemes(禁止backward)。键集合须与 StepType 完全一致。
+interface StepMeta {
+  label: string;
+  priority: StepPriority;
+  layout: LayoutMode;
+}
+
+const stepMeta: Record<StepType, StepMeta> = {
+  thought: { label: '💭 思考', priority: 'secondary', layout: 'block' },
+  start: { label: '🚀 开始', priority: 'primary', layout: 'inline-with-details' },
+  startinfo: { label: '🚀 开始信息', priority: 'secondary', layout: 'inline' },
+  'thought-start': { label: '💭 开始思考', priority: 'secondary', layout: 'block' },
+  usage: { label: '🔢 Token', priority: 'secondary', layout: 'inline' },
+  stats: { label: '📊 统计', priority: 'secondary', layout: 'inline' },
+  final_stats: { label: '📊 最终统计', priority: 'secondary', layout: 'inline' },
+  context_overview: { label: '📑 上下文概览', priority: 'secondary', layout: 'inline' },
+  truncated: { label: '✂️ 截断', priority: 'secondary', layout: 'inline' },
+  final: { label: '✅ 完成', priority: 'primary', layout: 'block' },
+  error: { label: '❌ 错误', priority: 'primary', layout: 'block' },
+  cancelled: { label: '⚠️ 已取消', priority: 'primary', layout: 'block' },
+  paused: { label: '⏸️ 暂停', priority: 'secondary', layout: 'inline' },
+  resumed: { label: '▶️ 恢复', priority: 'secondary', layout: 'inline' },
+  retrying: { label: '🔄 重试', priority: 'secondary', layout: 'inline' },
+  observation: { label: '📋 观察', priority: 'secondary', layout: 'inline-with-details' },
+  action: { label: '⚙️ 执行', priority: 'primary', layout: 'inline-with-details' },
+  chunk: { label: '📝 内容', priority: 'primary', layout: 'block' },
+  report: { label: '📊 报告', priority: 'secondary', layout: 'inline-with-details' },
+};
+
+// 2026-08-27 小欧 修复step-5: action_tool 不在 stepMeta 键集合中, isValidStepType 必返回 false(8.4.2 禁止 backward)
+export const isValidStepType = (stepType: string): stepType is StepType => {
+  return stepType in stepMeta;
+};
+
+export const getAllStepTypes = (): StepType[] => {
+  return Object.keys(stepMeta) as StepType[];
+};
+
+export const getStepLabel = (stepType: StepType | string): string => {
+  return isValidStepType(stepType) ? stepMeta[stepType].label : '未知';
+};
+
+export const getStepPriority = (stepType: StepType | string): StepPriority => {
+  return isValidStepType(stepType) ? stepMeta[stepType].priority : 'secondary';
+};
+
+export const getStepLayout = (stepType: StepType | string): LayoutMode => {
+  return isValidStepType(stepType) ? stepMeta[stepType].layout : 'block';
+};
+
+// 2026-08-27 小欧 修复step-6: block 布局需换行; inline-with-details 支持展开详情
+export const shouldBreakLine = (stepType: StepType | string): boolean => {
+  return getStepLayout(stepType) === 'block';
+};
+
+export const hasExpandableDetails = (stepType: StepType | string): boolean => {
+  return getStepLayout(stepType) === 'inline-with-details';
+};

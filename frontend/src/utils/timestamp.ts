@@ -48,22 +48,26 @@
  *   2. sessionStorage 恢复时是否正确转换回 Date 对象
  *   3. 导出时 message.timestamp 的实际类型（可用 console.log 打印）
  */
+// 编辑历史: 2026-08-27 小欧 - 修复B10/B11: 非法日期返回空串(不再1970); 合法0(timestamp=0)不再被!ts误判为空
 export const formatTimestamp = (ts: number | string | undefined): string => {
-  if (!ts) return '';
-  
+  // 2026-08-27 小欧 修复B11: 区分合法0与空值, 仅 undefined/null/空串视为空
+  if (ts === undefined || ts === null || ts === '') return '';
+
   let timestamp: number;
-  
+
   // 【修复Bug - 2026-04-01 小强】
   // 原因：sessionStorage 恢复后 ts 是 ISO 字符串（如 "2026-04-01T08:13:25.744Z"）
   // 问题：parseInt("2026-04-01...", 10) 只取前导数字 2026，导致 new Date(2026) = 1970年
   // 解决：使用 Date.parse() 正确解析 ISO 格式字符串为毫秒时间戳
   if (typeof ts === 'string') {
     const parsed = Date.parse(ts);
-    timestamp = isNaN(parsed) ? 0 : parsed;
+    // 2026-08-27 小欧 修复B10: 解析失败(非法日期)返回空串, 不再当作0输出1970
+    if (isNaN(parsed)) return '';
+    timestamp = parsed;
   } else {
     timestamp = ts;
   }
-  
+
   if (isNaN(timestamp)) return '';
   const date = new Date(timestamp);
   const year = date.getFullYear();
