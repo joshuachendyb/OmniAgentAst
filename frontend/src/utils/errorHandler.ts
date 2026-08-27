@@ -8,6 +8,7 @@
 // 编辑历史: 2026-08-27 小欧 - 修复BUG10: classifyError支持字符串型错误
 // 编辑历史: 2026-08-27 小欧 - 修复Bug15: handleError/handleApiError展示原始error.message, 不丢调试信息
 // 编辑历史: 2026-08-27 小欧 - 修复Bug5/Bug6/Bug13/Bug14: handleSSEError无onReconnect不误导; 空文案不弹; handleApiError补齐回传fallbackMode/deleteMessage
+// 编辑历史: 2026-08-28 小欧 - 修复review-bugs#1: 新增 extractErrorMessage, handleError/handleApiError 兼容 axios response.data.detail/error.detail 等后端具体文案, 不再丢失后端 detail
 /**
  * 统一错误处理中心 - errorHandler.ts
  *
@@ -20,6 +21,9 @@
  */
 
 import { message } from 'antd';
+
+// 2026-08-27 小欧 修复review-bugs: 自引用命名空间, 使 vi.spyOn(errorHandler,'showMessage') 能拦截内部调用(统一错误提示的测试可观测)
+import * as ErrorHandlerSelf from './errorHandler';
 
 // ============================================
 // UI配置标准 - 统一提示样式
@@ -756,8 +760,27 @@ export function showSuccess(msg: string = '操作成功'): void {
   });
 }
 
+// 2026-08-28 小欧 修复review-bugs#1: 统一从各类错误形态提取可读文案(含 axios response.data.detail)
+function extractErrorMessage(error: unknown): string | undefined {
+  if (typeof error === 'string') return error;
+  if (error == null) return undefined;
+  const e = error as Record<string, any>;
+  if (typeof e.message === 'string' && e.message) return e.message;
+  const resp = e.response;
+  if (resp && typeof resp === 'object') {
+    const data = resp.data;
+    if (data && typeof data === 'object') {
+      if (typeof data.detail === 'string' && data.detail) return data.detail;
+      if (typeof data.message === 'string' && data.message) return data.message;
+    }
+  }
+  if (typeof e.detail === 'string' && e.detail) return e.detail;
+  if (typeof e.error === 'string' && e.error) return e.error;
+  return undefined;
+}
+
 // ============================================
-// 错误分类函数
+// 错误处理主函数
 // ============================================
 
 /**
@@ -771,11 +794,7 @@ export function classifyError(error: unknown): ErrorType {
   }
 
   // 2026-08-27 小欧 修复Bug10: 支持字符串型错误(无.message属性)
-  const err = (
-    typeof error === 'string'
-      ? { message: error }
-      : error
-  ) as {
+  const err = (typeof error === 'string' ? { message: error } : error) as {
     name?: string;
     message?: string;
     response?: { status?: number; config?: { url?: string } };
@@ -902,6 +921,8 @@ export interface ErrorContext {
   source?: 'api' | 'sse' | 'manual';
   onRetry?: () => void;
   continueOnError?: boolean;
+  // 2026-08-27 小欧 修复review-bugs#1: 调用方自定义文案优先于原始error.message透传
+  message?: string;
 }
 
 // 2026-08-27 小欧 三堂会审A34: 抽取重试递归共用函数(DRY), 消除handleError/handleApiError重复
@@ -942,11 +963,13 @@ export function handleError(
   const config = ERROR_CONFIG_MAP[errorType];
 
   // 2026-08-27 小欧 修复Bug15: 展示原始error.message, 不丢调试信息(空则回退config.message)
-  const rawMsg =
-    typeof error === 'string'
-      ? error
-      : (error as { message?: unknown })?.message;
-  showMessage(errorType, typeof rawMsg === 'string' ? rawMsg : undefined);
+  // 2026-08-28 小欧 修复review-bugs#1: 改用 extractErrorMessage, 兼容 axios response.data.detail 等后端具体文案
+  const rawMsg = extractErrorMessage(error);
+  // 2026-08-27 小欧 修复review-bugs#1: context.message 优先透传, 其次原始error.message, 确保调用方自定义文案不丢失
+  const customMsg =
+    (typeof context.message === 'string' && context.message) ||
+    (typeof rawMsg === 'string' ? rawMsg : undefined);
+  ErrorHandlerSelf.showMessage(errorType, customMsg);
 
   const result: ActionResult = {
     handled: true,
@@ -1002,12 +1025,13 @@ export function handleApiError(
   const config = ERROR_CONFIG_MAP[errorType];
 
   // 2026-08-27 小欧 修复Bug15: 展示原始error.message, 不丢调试信息
-  const rawMsg =
-    typeof error === 'string'
-      ? error
-      : (error as { message?: unknown })?.message;
+  // 2026-08-28 小欧 修复review-bugs#1: 改用 extractErrorMessage, 兼容 axios response.data.detail
+  const rawMsg = extractErrorMessage(error);
   if (options?.showError !== false) {
-    showMessage(errorType, typeof rawMsg === 'string' ? rawMsg : undefined);
+    ErrorHandlerSelf.showMessage(
+      errorType,
+      typeof rawMsg === 'string' ? rawMsg : undefined
+    );
   }
 
   const result: ActionResult = {
@@ -1086,7 +1110,7 @@ export function handleSSEError(
     return { handled: true, errorType };
   }
 
-  showMessage(errorType);
+  ErrorHandlerSelf.showMessage(errorType);
 
   return {
     handled: true,
@@ -1102,7 +1126,7 @@ export function handleSSEError(
  * 处理危险操作
  */
 export function handleDangerousOperation(): ActionResult {
-  showMessage(ErrorType.DANGEROUS_OPERATION);
+  ErrorHandlerSelf.showMessage(ErrorType.DANGEROUS_OPERATION);
   return {
     handled: true,
     deleteMessage: true,
@@ -1114,7 +1138,7 @@ export function handleDangerousOperation(): ActionResult {
  * 处理安全服务降级
  */
 export function handleSecurityServiceDown(): ActionResult {
-  showMessage(ErrorType.SECURITY_SERVICE_DOWN);
+  ErrorHandlerSelf.showMessage(ErrorType.SECURITY_SERVICE_DOWN);
   return {
     handled: true,
     fallbackMode: 'normal',
@@ -1126,7 +1150,7 @@ export function handleSecurityServiceDown(): ActionResult {
  * 处理用户消息保存失败但继续发送
  */
 export function handleUserMessageSaveFailed(): ActionResult {
-  showMessage(ErrorType.USER_MESSAGE_SAVE_FAILED);
+  ErrorHandlerSelf.showMessage(ErrorType.USER_MESSAGE_SAVE_FAILED);
   return {
     handled: true,
     shouldContinue: true,
@@ -1138,7 +1162,7 @@ export function handleUserMessageSaveFailed(): ActionResult {
  * 处理重复点击
  */
 export function handleDuplicateClick(): ActionResult {
-  showMessage(ErrorType.DUPLICATE_CLICK);
+  ErrorHandlerSelf.showMessage(ErrorType.DUPLICATE_CLICK);
   return {
     handled: true,
     shouldContinue: false,
@@ -1150,7 +1174,7 @@ export function handleDuplicateClick(): ActionResult {
  * 处理存储满
  */
 export function handleQuotaExceeded(): ActionResult {
-  showMessage(ErrorType.QUOTA_EXCEEDED);
+  ErrorHandlerSelf.showMessage(ErrorType.QUOTA_EXCEEDED);
   return {
     handled: true,
     errorType: ErrorType.QUOTA_EXCEEDED,
@@ -1160,22 +1184,4 @@ export function handleQuotaExceeded(): ActionResult {
 // ============================================
 // 导出所有函数
 // ============================================
-
-export default {
-  ErrorType,
-  UI_CONFIG,
-  ERROR_CONFIG_MAP,
-  classifyError,
-  shouldShowError,
-  isSilentError,
-  showMessage,
-  showSuccess,
-  handleError,
-  handleApiError,
-  handleSSEError,
-  handleDangerousOperation,
-  handleSecurityServiceDown,
-  handleUserMessageSaveFailed,
-  handleDuplicateClick,
-  handleQuotaExceeded,
-};
+// 2026-08-27 小欧 修复review-bugs: 移除未使用的默认导出(无调用方), 避免自引用命名空间实例化成独立模块导致 vi.spyOn 无法拦截内部 showMessage 调用
