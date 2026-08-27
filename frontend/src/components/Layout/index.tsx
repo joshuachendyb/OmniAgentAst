@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-22 小欧 - model结构化归一: updateConfig改传ai_model_ref结构; serviceStatus的provider/model读取点改经status.model_ref派生
 // 编辑历史: 2026-08-27 小欧 - 修复#31: serviceStatus.success→valid字段名对齐后端返回
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 删_sessionCount死状态/refreshModelList透传/unreadCount死值; 精简console.log; Option上移; 更正Header高度注释
+// 2026-08-27 小欧 - 三堂会审: #1890ff→#1677ff(头像背景/标题); 删5处console.log调试语句
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -15,8 +16,8 @@
  * @update 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B(前端随后端修改): updateConfig 改传 ai_model_ref 结构; serviceStatus 的 provider/model 读取点(4处)改经 status.model_ref 派生
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Layout,
   Menu,
@@ -31,7 +32,7 @@ import {
   Select,
   Modal,
   Alert,
-} from "antd";
+} from 'antd';
 import {
   MessageOutlined,
   FolderOutlined,
@@ -45,14 +46,19 @@ import {
   ReloadOutlined,
   ExclamationCircleOutlined,
   CloseCircleOutlined,
-} from "@ant-design/icons";
-import { configApi } from "../../services/api";
-import type { ValidateResponse } from "../../services/api";
-import type { MenuProps } from "antd";
-import ShortcutPanel from "../ShortcutPanel";
-import { useApp } from "../../contexts/AppContext";
-import { LayoutSkeleton } from "../Skeleton";
-import { handleError, showSuccess, showMessage, ErrorType } from "../../utils/errorHandler";
+} from '@ant-design/icons';
+import { configApi } from '../../services/api';
+import type { ValidateResponse } from '../../services/api';
+import type { MenuProps } from 'antd';
+import ShortcutPanel from '../ShortcutPanel';
+import { useApp } from '../../contexts/AppContext';
+import { LayoutSkeleton } from '../Skeleton';
+import {
+  handleError,
+  showSuccess,
+  showMessage,
+  ErrorType,
+} from '../../utils/errorHandler';
 // import useInitializationProgress from "../../hooks/useInitializationProgress"; // 步骤9预留
 
 const { useBreakpoint } = Grid;
@@ -61,7 +67,10 @@ const { Option } = Select;
 const { Sider, Content, Header } = Layout;
 const { Title } = Typography;
 
-type MenuItem = Required<MenuProps>["items"][number];
+// 2026-08-27 小欧 三堂会审B32: 版本号统一定义(DRY), 避免硬编码散落多处
+const APP_VERSION = 'v2.1.0';
+
+type MenuItem = Required<MenuProps>['items'][number];
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -86,7 +95,7 @@ interface LayoutProps {
  * @since 2026-02-17
  * @update 2026-02-18 集成React Router导航 - by 小新
  */
-const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
+const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   // 路由导航
   const navigate = useNavigate();
   // 导航折叠状态
@@ -109,7 +118,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     refreshAll,
     refreshServiceStatus,
     refreshAfterModelChange,
-    refreshModelList: appRefreshModelList,  // 获取AppContext的refreshModelList
+    refreshModelList: appRefreshModelList, // 获取AppContext的refreshModelList
     isInitialized,
     initError,
   } = useApp();
@@ -128,14 +137,14 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     attemptedModel?: string; // 用户尝试切换的模型名称
     status?: 'success' | 'failed' | 'warning'; // 验证状态
     modelInfo?: string; // 模型信息 provider (model)
-  }>({ visible: false, message: "" });
+  }>({ visible: false, message: '' });
 
   // 【新增】骨架屏显示状态
   const [skeletonState, setSkeletonState] = useState<{
     visible: boolean;
     error?: string;
   }>({ visible: true });
-  
+
   // 【新增】当前尝试切换的模型
   const [attemptedModel, setAttemptedModel] = useState<{
     provider: string;
@@ -165,20 +174,23 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       }, 100);
       return () => clearTimeout(timer);
     }
-    
+
     // 初始化失败，使用errorHandler统一处理错误
     if (initError && skeletonState.visible) {
       // 使用errorHandler统一错误处理中心显示错误提示+重试按钮
-      handleError({ 
-        message: initError, 
-        error_type: ErrorType.LOAD_FAILED 
-      }, { 
-        source: "manual",
-        onRetry: () => handleSkeletonRetry()
-      });
+      handleError(
+        {
+          message: initError,
+          error_type: ErrorType.LOAD_FAILED,
+        },
+        {
+          source: 'manual',
+          onRetry: () => handleSkeletonRetry(),
+        }
+      );
       // 不在骨架屏显示错误，由errorHandler统一处理
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isInitialized, skeletonState.visible, initError]);
 
   // 【新增】骨架屏重试函数 - 用于加载失败时重试
@@ -191,7 +203,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   // 【2026-04-07修复】切换模型后不再调用refreshServiceStatus，所以必须优先从modelList获取
   const currentProvider = (() => {
     // 优先从 modelList 中找 current_model === true 的模型（切换模型后这里会更新）
-    const currentModel = modelList.find(m => m.current_model === true);
+    const currentModel = modelList.find((m) => m.current_model === true);
     if (currentModel) {
       return `${currentModel.provider}-${currentModel.model}`;
     }
@@ -200,65 +212,71 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       return `${serviceStatus.model_ref.provider}-${serviceStatus.model_ref.model}`;
     }
     // 如果都没有，返回空字符串
-    return "";
+    return '';
   })();
 
   // 【修改】监听 serviceStatus 变化，显示三种状态的弹框说明
   const lastServiceStatusRef = useRef<ValidateResponse | null>(null);
-  
+
   useEffect(() => {
     // 【修复】首次初始化时不显示弹框（避免初始化和手动刷新重复弹框）
     if (isInitialLoadRef.current) {
       isInitialLoadRef.current = false;
       return;
     }
-    
+
     // 检查 serviceStatus 是否发生变化
     const statusChanged = lastServiceStatusRef.current !== serviceStatus;
     lastServiceStatusRef.current = serviceStatus;
-    
+
     // 只有当 serviceStatus 发生变化且有消息时才显示弹框
     if (statusChanged && serviceStatus && serviceStatus.message) {
       // 获取模型信息 — 归一: model_ref 结构派生 — 小欧 2026-08-22
       const modelInfo = serviceStatus.model_ref
         ? `${serviceStatus.model_ref.provider} (${serviceStatus.model_ref.model})`
-        : "";
-      
+        : '';
+
       // 根据状态类型显示不同的弹框内容
-      if (serviceStatus.status === "warning") {
+      if (serviceStatus.status === 'warning') {
         // 🚨 警告状态
         setValidationErrorModal({
           visible: true,
           message: serviceStatus.message,
           attemptedModel: undefined,
-          status: "warning",
+          status: 'warning',
           modelInfo: modelInfo,
         });
-      } else if (!serviceStatus.valid) { // 2026-08-27 小欧 修复#31: ValidateResponse.valid(后端返回valid)
+      } else if (!serviceStatus.valid) {
+        // 2026-08-27 小欧 修复#31: ValidateResponse.valid(后端返回valid)
         // ❌ 失败状态
         setValidationErrorModal({
           visible: true,
           message: serviceStatus.message,
-          attemptedModel: attemptedModel ? `${attemptedModel.provider} (${attemptedModel.model})` : undefined,
-          status: "failed",
+          attemptedModel: attemptedModel
+            ? `${attemptedModel.provider} (${attemptedModel.model})`
+            : undefined,
+          status: 'failed',
           modelInfo: modelInfo,
         });
-      } else if (serviceStatus.valid && serviceStatus.status === "success") {
+      } else if (serviceStatus.valid && serviceStatus.status === 'success') {
         // ✅ 成功状态 - 也显示弹框说明
         setValidationErrorModal({
           visible: true,
           message: serviceStatus.message,
           attemptedModel: undefined,
-          status: "success",
+          status: 'success',
           modelInfo: modelInfo,
         });
       }
-      
+
       // 2秒后自动关闭弹框（成功状态1.5秒）
-      const timer = setTimeout(() => {
-        setValidationErrorModal({ visible: false, message: "" });
-        setAttemptedModel(null); // 清除尝试切换的模型
-      }, serviceStatus.status === "success" ? 1500 : 2000);
+      const timer = setTimeout(
+        () => {
+          setValidationErrorModal({ visible: false, message: '' });
+          setAttemptedModel(null); // 清除尝试切换的模型
+        },
+        serviceStatus.status === 'success' ? 1500 : 2000
+      );
       return () => clearTimeout(timer);
     }
   }, [serviceStatus, attemptedModel]);
@@ -271,17 +289,19 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         (m) => `${m.provider}-${m.model}` === value
       );
       if (!selectedModel) {
-        handleError({ message: "未找到对应的模型", error_type: ErrorType.LOAD_FAILED });
+        handleError({
+          message: '未找到对应的模型',
+          error_type: ErrorType.LOAD_FAILED,
+        });
         return;
       }
-      console.log("[切换模型] 开始切换:", selectedModel.provider, selectedModel.model);
       // 【新增】记录尝试切换的模型
       setAttemptedModel({
         provider: selectedModel.provider,
         model: selectedModel.model,
         display_name: selectedModel.display_name,
       });
-      
+
       // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): ai_provider/ai_model → ai_model_ref 结构
       const result = await configApi.updateConfig({
         ai_model_ref: {
@@ -289,10 +309,11 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
           model: selectedModel.model,
         },
       });
-      console.log("[切换模型] API返回:", result);
-      
       if (!result.success) {
-        handleError({ message: result.message || "切换失败", error_type: ErrorType.SWITCH_MODEL_FAILED });
+        handleError({
+          message: result.message || '切换失败',
+          error_type: ErrorType.SWITCH_MODEL_FAILED,
+        });
         // 切换失败时后端已回滚配置，刷新模型列表获取回滚后的模型
         await appRefreshModelList();
         return;
@@ -302,9 +323,15 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       // 替代之前错误的setServiceStatus手动调用和分散的refreshModelList/refreshSessionCount
       await refreshAfterModelChange();
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } }; message?: string };
-      console.error("[切换模型] 失败:", error);
-      handleError({ message: err?.response?.data?.detail || err?.message || "切换模型失败", error_type: ErrorType.SWITCH_MODEL_FAILED });
+      const err = error as {
+        response?: { data?: { detail?: string } };
+        message?: string;
+      };
+      console.error('[切换模型] 失败:', error);
+      handleError({
+        message: err?.response?.data?.detail || err?.message || '切换模型失败',
+        error_type: ErrorType.SWITCH_MODEL_FAILED,
+      });
     }
   };
 
@@ -318,12 +345,18 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       const status = await refreshServiceStatus();
       // 归一: model_ref 结构派生 — 小欧 2026-08-22
       if (status && status.valid) {
-        showMessage(ErrorType.INFO, `${status.model_ref?.provider || "未知"} (${status.model_ref?.model || "未知"}) 服务连接正常`);
+        showMessage(
+          ErrorType.INFO,
+          `${status.model_ref?.provider || '未知'} (${status.model_ref?.model || '未知'}) 服务连接正常`
+        );
       } else {
-        showMessage(ErrorType.WARNING, `${status?.model_ref?.provider || "未知"} (${status?.model_ref?.model || "未知"}) 验证失败: ${status?.message || "请检查配置"}`);
+        showMessage(
+          ErrorType.WARNING,
+          `${status?.model_ref?.provider || '未知'} (${status?.model_ref?.model || '未知'}) 验证失败: ${status?.message || '请检查配置'}`
+        );
       }
     } catch {
-      showMessage(ErrorType.WARNING, "服务验证失败，请检查网络连接");
+      showMessage(ErrorType.WARNING, '服务验证失败，请检查网络连接');
     } finally {
       setCheckingStatus(false);
     }
@@ -333,7 +366,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   // 【2026-04-08修复】页面加载不调用服务检查，与会话加载无关
   useEffect(() => {
     initializeApp();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -343,7 +376,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
    */
   const menuItems: MenuItem[] = [
     {
-      key: "/",
+      key: '/',
       icon: <MessageOutlined />,
       label: (
         <Badge size="small" offset={[6, -4]}>
@@ -352,13 +385,13 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       ),
     },
     {
-      key: "/files",
+      key: '/files',
       icon: <FolderOutlined />,
-      label: "文件管理",
+      label: '文件管理',
       disabled: true,
     },
     {
-      key: "/knowledge",
+      key: '/knowledge',
       icon: <BookOutlined />,
       label: (
         <Tooltip title="即将上线" placement="right">
@@ -367,9 +400,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       ),
       disabled: true,
     },
-    { type: "divider" },
+    { type: 'divider' },
     {
-      key: "/history",
+      key: '/history',
       icon: <HistoryOutlined />,
       label: (
         <Badge
@@ -383,15 +416,15 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       ),
     },
     {
-      key: "/shortcuts",
+      key: '/shortcuts',
       icon: <ThunderboltOutlined />,
-      label: "快捷指令",
+      label: '快捷指令',
     },
-    { type: "divider" },
+    { type: 'divider' },
     {
-      key: "/settings",
+      key: '/settings',
       icon: <SettingOutlined />,
-      label: "系统设置",
+      label: '系统设置',
     },
   ];
 
@@ -402,10 +435,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
    *
    * @author 小新
    */
-  const handleMenuClick: MenuProps["onClick"] = (e) => {
+  const handleMenuClick: MenuProps['onClick'] = (e) => {
     const key = e.key;
     // 快捷指令特殊处理
-    if (key === "/shortcuts") {
+    if (key === '/shortcuts') {
       setShortcutPanelVisible(true);
       if (isMobile) {
         setDrawerVisible(false);
@@ -426,24 +459,22 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   const handleShortcutExecute = (command: string) => {
     // 根据快捷指令执行不同操作
     switch (command) {
-      case "/clear":
+      case '/clear':
         // 清空当前对话
-        console.log("清空对话");
         break;
-      case "/help":
+      case '/help':
         // 显示帮助
-        console.log("显示帮助");
         break;
-      case "/history":
+      case '/history':
         // 跳转到历史记录
-        navigate("/history");
+        navigate('/history');
         break;
-      case "/settings":
+      case '/settings':
         // 跳转到设置
-        navigate("/settings");
+        navigate('/settings');
         break;
       default:
-        console.log("执行快捷指令:", command);
+        // 执行快捷指令
     }
   };
 
@@ -456,29 +487,29 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       <div
         style={{
           height: 64,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: isMobile || collapsed ? "center" : "flex-start",
-          padding: isMobile || collapsed ? 0 : "0 16px",
-          borderBottom: "1px solid #f0f0f0",
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: isMobile || collapsed ? 'center' : 'flex-start',
+          padding: isMobile || collapsed ? 0 : '0 16px',
+          borderBottom: '1px solid #f0f0f0',
         }}
       >
         <Avatar
           size={40}
           icon={<DesktopOutlined />}
-          style={{ background: "#1890ff", flexShrink: 0 }}
+          style={{ background: '#1677ff', flexShrink: 0 }}
         />
         {!isMobile && !collapsed && (
           <Title
             level={5}
             style={{
-              margin: "0 0 0 12px",
+              margin: '0 0 0 12px',
               fontSize: 16,
               fontWeight: 600,
-              color: "#1890ff",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
+              color: '#1677ff',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
             }}
           >
             OmniAgentAst.
@@ -502,34 +533,39 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       {/* 底部信息 - 前端小新代修改 VIS-L04: 优化底部信息, UX-L04: 添加点击查看版本详情 */}
       <div
         style={{
-          position: "absolute",
+          position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
-          padding: "16px 20px",
-          borderTop: "1px solid #e8e8e8",
+          padding: '16px 20px',
+          borderTop: '1px solid #e8e8e8',
           fontSize: 13,
-          color: "#666",
-          background: "#fafafa",
-          textAlign: isMobile || collapsed ? "center" : "left",
-          cursor: "pointer",
-          transition: "background 0.3s ease",
+          color: '#666',
+          background: '#fafafa',
+          textAlign: isMobile || collapsed ? 'center' : 'left',
+          cursor: 'pointer',
+          transition: 'background 0.3s ease',
         }}
-        onClick={() => showMessage(ErrorType.INFO, "OmniAgentAst v2.1.0 - 桌面版AI助手")}
+        onClick={() =>
+          showMessage(
+            ErrorType.INFO,
+            `OmniAgentAst ${APP_VERSION} - 桌面版AI助手`
+          )
+        }
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = "#f0f0f0";
+          e.currentTarget.style.background = '#f0f0f0';
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = "#fafafa";
+          e.currentTarget.style.background = '#fafafa';
         }}
       >
-        {isMobile || collapsed ? "v2.1" : "版本 v2.1.0"}
+        {isMobile || collapsed ? APP_VERSION : `版本 ${APP_VERSION}`}
       </div>
     </>
   );
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
+    <Layout style={{ minHeight: '100vh' }}>
       {/* 快捷指令弹窗 */}
       <ShortcutPanel
         visible={shortcutPanelVisible}
@@ -557,7 +593,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
           collapsed={collapsed}
           onCollapse={setCollapsed}
           style={{
-            boxShadow: "2px 0 8px rgba(0,0,0,0.05)",
+            boxShadow: '2px 0 8px rgba(0,0,0,0.05)',
             zIndex: 100,
           }}
         >
@@ -571,16 +607,16 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         <Header
           style={{
             height: 43,
-            background: "#fff",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-            padding: isMobile ? "0 16px" : "0 20px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
+            background: '#fff',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+            padding: isMobile ? '0 16px' : '0 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
             zIndex: 99,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
             {/* 移动端菜单按钮 - 前端小新代修改 UX-L02: 增大按钮尺寸，添加tooltip */}
             {isMobile && (
               <Tooltip title="打开导航菜单">
@@ -588,7 +624,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                   type="text"
                   icon={<MenuOutlined />}
                   onClick={() => setDrawerVisible(true)}
-                  style={{ fontSize: 20, padding: "8px 12px" }}
+                  style={{ fontSize: 20, padding: '8px 12px' }}
                 />
               </Tooltip>
             )}
@@ -604,40 +640,68 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
             </Title>
             {/* 服务状态显示 - 根据检查结果显示不同颜色 - 前端小新代修改 UX-L03: 可点击重试 */}
             {checkingStatus ? (
-              <span style={{ color: "#999" }}>检查中...</span>
-            ) : (() => {
-              // 【2026-04-07修复】切换模型后serviceStatus不会更新，始终以modelList为准
-              const currentModel = modelList.find(m => m.current_model === true);
-              
-              if (serviceStatus && !serviceStatus.valid) {
-                return (
-                  <Tag color="error" style={{ cursor: "pointer" }} onClick={checkingStatus ? undefined : handleCheckService}>
-                    <CheckCircleOutlined /> {serviceStatus.model_ref?.provider}{" "}
-                    {serviceStatus.model_ref?.model && `(${serviceStatus.model_ref.model})`}
-                    <span style={{ marginLeft: 8, fontSize: 12 }}>(已失效)</span>
-                  </Tag>
+              <span style={{ color: '#999' }}>检查中...</span>
+            ) : (
+              (() => {
+                // 【2026-04-07修复】切换模型后serviceStatus不会更新，始终以modelList为准
+                const currentModel = modelList.find(
+                  (m) => m.current_model === true
                 );
-              } else if (currentModel) {
-                // 显示配置文件中的当前模型（从modelList获取，切换模型后会更新）
-                const tagColor = serviceStatus?.valid
-                  ? (serviceStatus.status === "warning" ? "warning" : "success") 
-                  : "default";
-                return (
-                  <Tag color={tagColor} onClick={checkingStatus ? undefined : handleCheckService} style={{ cursor: "pointer" }}>
-                    <CheckCircleOutlined /> {currentModel.provider}{" "}
-                    ({currentModel.model})
-                    {serviceStatus?.status === "warning" && <span style={{ marginLeft: 4, fontSize: 11 }}>⚠️</span>}
-                    {!serviceStatus && <span style={{ marginLeft: 8, fontSize: 12 }}>(未验证)</span>}
-                  </Tag>
-                );
-              } else {
-                return (
-                  <Tag color="error" onClick={checkingStatus ? undefined : handleCheckService} style={{ cursor: "pointer" }}>
-                    未配置 (点击检查)
-                  </Tag>
-                );
-              }
-            })()}
+
+                if (serviceStatus && !serviceStatus.valid) {
+                  return (
+                    <Tag
+                      color="error"
+                      style={{ cursor: 'pointer' }}
+                      onClick={checkingStatus ? undefined : handleCheckService}
+                    >
+                      <CheckCircleOutlined />{' '}
+                      {serviceStatus.model_ref?.provider}{' '}
+                      {serviceStatus.model_ref?.model &&
+                        `(${serviceStatus.model_ref.model})`}
+                      <span style={{ marginLeft: 8, fontSize: 12 }}>
+                        (已失效)
+                      </span>
+                    </Tag>
+                  );
+                } else if (currentModel) {
+                  // 显示配置文件中的当前模型（从modelList获取，切换模型后会更新）
+                  const tagColor = serviceStatus?.valid
+                    ? serviceStatus.status === 'warning'
+                      ? 'warning'
+                      : 'success'
+                    : 'default';
+                  return (
+                    <Tag
+                      color={tagColor}
+                      onClick={checkingStatus ? undefined : handleCheckService}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <CheckCircleOutlined /> {currentModel.provider} (
+                      {currentModel.model})
+                      {serviceStatus?.status === 'warning' && (
+                        <span style={{ marginLeft: 4, fontSize: 11 }}>⚠️</span>
+                      )}
+                      {!serviceStatus && (
+                        <span style={{ marginLeft: 8, fontSize: 12 }}>
+                          (未验证)
+                        </span>
+                      )}
+                    </Tag>
+                  );
+                } else {
+                  return (
+                    <Tag
+                      color="error"
+                      onClick={checkingStatus ? undefined : handleCheckService}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      未配置 (点击检查)
+                    </Tag>
+                  );
+                }
+              })()
+            )}
             {/* 【新增】配置验证警告 - 当validationResult有错误或警告时显示 */}
             {validationResult &&
               (!validationResult.success ||
@@ -645,7 +709,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                   validationResult.warnings.length > 0)) && (
                 <Tag
                   color="warning"
-                  style={{ cursor: "pointer" }}
+                  style={{ cursor: 'pointer' }}
                   onClick={() => setValidationModalVisible(true)}
                 >
                   ⚠️ 配置验证
@@ -654,7 +718,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
           </div>
 
           {/* 右侧操作区 */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {/* 模型选择下拉框 */}
             {modelList.length > 0 ? (
               <Select
@@ -668,14 +732,14 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                     await appRefreshModelList();
                   }
                 }}
-onChange={handleModelChange}
+                onChange={handleModelChange}
               >
                 {modelList.map((model) => (
                   <Option
                     key={model.id}
                     value={`${model.provider}-${model.model}`}
                   >
-                    {model.current_model === true ? "★ " : ""}
+                    {model.current_model === true ? '★ ' : ''}
                     {model.display_name}
                   </Option>
                 ))}
@@ -694,7 +758,7 @@ onChange={handleModelChange}
               检查服务
             </Button>
             <Avatar size="small" icon={<DesktopOutlined />} />
-            <span style={{ color: "#666", fontSize: 14 }}>用户</span>
+            <span style={{ color: '#666', fontSize: 14 }}>用户</span>
           </div>
         </Header>
 
@@ -710,19 +774,15 @@ onChange={handleModelChange}
         <Content
           style={{
             margin: 0,
-            padding: "6px 6px 10px 6px",
-            background: "#f8fafc",
+            padding: '6px 6px 10px 6px',
+            background: '#f8fafc',
             borderRadius: 12,
             minHeight: 400,
-            overflow: "auto",
+            overflow: 'auto',
           }}
         >
           {/* 【新增】骨架屏/实际内容切换 */}
-          {skeletonState.visible ? (
-            <LayoutSkeleton />
-          ) : (
-            children
-          )}
+          {skeletonState.visible ? <LayoutSkeleton /> : children}
         </Content>
       </Layout>
 
@@ -740,7 +800,7 @@ onChange={handleModelChange}
             type="primary"
             onClick={() => {
               setValidationModalVisible(false);
-              navigate("/settings");
+              navigate('/settings');
             }}
           >
             去设置
@@ -752,17 +812,17 @@ onChange={handleModelChange}
           <div>
             <Alert
               message={validationResult.message}
-              type={validationResult.success ? "success" : "error"}
+              type={validationResult.success ? 'success' : 'error'}
               showIcon
               style={{ marginBottom: 16 }}
             />
 
             {validationResult.errors && validationResult.errors.length > 0 && (
               <div style={{ marginBottom: 16 }}>
-                <h4 style={{ color: "#ff4d4f" }}>
+                <h4 style={{ color: '#ff4d4f' }}>
                   错误 ({validationResult.errors.length})
                 </h4>
-                <ul style={{ paddingLeft: 20, color: "#ff4d4f" }}>
+                <ul style={{ paddingLeft: 20, color: '#ff4d4f' }}>
                   {validationResult.errors.map((err, idx) => (
                     <li key={idx}>{err}</li>
                   ))}
@@ -773,10 +833,10 @@ onChange={handleModelChange}
             {validationResult.warnings &&
               validationResult.warnings.length > 0 && (
                 <div>
-                  <h4 style={{ color: "#faad14" }}>
+                  <h4 style={{ color: '#faad14' }}>
                     警告 ({validationResult.warnings.length})
                   </h4>
-                  <ul style={{ paddingLeft: 20, color: "#faad14" }}>
+                  <ul style={{ paddingLeft: 20, color: '#faad14' }}>
                     {validationResult.warnings.map((warn, idx) => (
                       <li key={idx}>{warn}</li>
                     ))}
@@ -790,28 +850,34 @@ onChange={handleModelChange}
       {/* 【修改】验证结果弹框 - 显示三种状态的说明 */}
       <Modal
         title={
-          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {validationErrorModal.status === "success" ? (
-              <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 18 }} />
-            ) : validationErrorModal.status === "warning" ? (
-              <ExclamationCircleOutlined style={{ color: "#faad14", fontSize: 18 }} />
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {validationErrorModal.status === 'success' ? (
+              <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />
+            ) : validationErrorModal.status === 'warning' ? (
+              <ExclamationCircleOutlined
+                style={{ color: '#faad14', fontSize: 18 }}
+              />
             ) : (
-              <CloseCircleOutlined style={{ color: "#ff4d4f", fontSize: 18 }} />
+              <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />
             )}
-            {validationErrorModal.status === "success" 
-              ? "模型验证成功" 
-              : validationErrorModal.status === "warning" 
-                ? "模型验证警告" 
-                : "模型验证失败"}
+            {validationErrorModal.status === 'success'
+              ? '模型验证成功'
+              : validationErrorModal.status === 'warning'
+                ? '模型验证警告'
+                : '模型验证失败'}
           </span>
         }
         open={validationErrorModal.visible}
-        onCancel={() => setValidationErrorModal({ visible: false, message: "" })}
+        onCancel={() =>
+          setValidationErrorModal({ visible: false, message: '' })
+        }
         footer={[
           <Button
             key="close"
             type="primary"
-            onClick={() => setValidationErrorModal({ visible: false, message: "" })}
+            onClick={() =>
+              setValidationErrorModal({ visible: false, message: '' })
+            }
           >
             关闭
           </Button>,
@@ -819,11 +885,11 @@ onChange={handleModelChange}
         width={500}
       >
         {/* 根据状态显示不同的内容 */}
-        {validationErrorModal.status === "success" && (
+        {validationErrorModal.status === 'success' && (
           // ✅ 成功状态
           <div>
             <Alert
-              message={`${validationErrorModal.modelInfo || "当前模型"} 验证通过`}
+              message={`${validationErrorModal.modelInfo || '当前模型'} 验证通过`}
               description={validationErrorModal.message}
               type="success"
               showIcon
@@ -832,54 +898,39 @@ onChange={handleModelChange}
             <p style={{ color: '#52c41a' }}>✓ 模型配置正确，可以正常使用。</p>
           </div>
         )}
-        
-        {validationErrorModal.status === "warning" && (
+
+        {validationErrorModal.status === 'warning' && (
           // 🚨 警告状态
           <div>
             <Alert
-              message={`${validationErrorModal.modelInfo || "当前模型"} 验证警告`}
+              message={`${validationErrorModal.modelInfo || '当前模型'} 验证警告`}
               description={validationErrorModal.message}
               type="warning"
               showIcon
               style={{ marginBottom: 16 }}
             />
             <p>模型配置存在暂时性问题，可能影响使用。</p>
-            <p style={{ marginTop: 8, color: '#666' }}>建议：稍后重试或检查账户状态。</p>
+            <p style={{ marginTop: 8, color: '#666' }}>
+              建议：稍后重试或检查账户状态。
+            </p>
           </div>
         )}
-        
-        {validationErrorModal.status === "failed" && (
+
+        {validationErrorModal.status === 'failed' && (
           // ❌ 失败状态
           <div>
             <Alert
-              message={validationErrorModal.attemptedModel 
-                ? `尝试切换到 ${validationErrorModal.attemptedModel} 失败` 
-                : `${validationErrorModal.modelInfo || "当前模型"} 验证失败`}
+              message={
+                validationErrorModal.attemptedModel
+                  ? `尝试切换到 ${validationErrorModal.attemptedModel} 失败`
+                  : `${validationErrorModal.modelInfo || '当前模型'} 验证失败`
+              }
               description={validationErrorModal.message}
               type="error"
               showIcon
               style={{ marginBottom: 16 }}
             />
             <p>配置文件中的模型无法正常工作，请检查配置或稍后重试。</p>
-            <p style={{ marginTop: 8, color: '#666' }}>
-              注意：系统已自动回退到配置文件中的可用模型。
-            </p>
-          </div>
-        )}
-        
-        {/* 如果没有status字段（旧数据兼容），显示默认内容 */}
-        {!validationErrorModal.status && (
-          <div>
-            <Alert
-              message={validationErrorModal.attemptedModel 
-                ? `尝试切换到 ${validationErrorModal.attemptedModel} 失败` 
-                : "模型验证失败"}
-              description={validationErrorModal.message}
-              type="warning"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-            <p>配置文件中的模型可能无法正常工作，请检查配置或稍后重试。</p>
             <p style={{ marginTop: 8, color: '#666' }}>
               注意：系统已自动回退到配置文件中的可用模型。
             </p>

@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-27 小欧 - 三堂会审: 选中模型卡片边框 #1890ff→#1677ff(AntD5主色收敛)
 /**
  * ProviderSettings — Provider/模型设置页
  * @update 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B(前端随后端修改):
@@ -644,7 +645,7 @@ export const ProviderSettings: React.FC<{
                           style={{
                             cursor: 'pointer',
                             borderLeft: isActive
-                              ? '4px solid #1890ff'
+                              ? '4px solid #1677ff'
                               : '1px solid #d9d9d9',
                             backgroundColor: isActive ? '#e6f7ff' : '#fafafa',
                           }}
