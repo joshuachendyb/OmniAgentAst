@@ -655,7 +655,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                       style={{ cursor: 'pointer' }}
                       onClick={checkingStatus ? undefined : handleCheckService}
                     >
-                      <CheckCircleOutlined />{' '}
+                      <CloseCircleOutlined />{' '}
                       {serviceStatus.model_ref?.provider}{' '}
                       {serviceStatus.model_ref?.model &&
                         `(${serviceStatus.model_ref.model})`}

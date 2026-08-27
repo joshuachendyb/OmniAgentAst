@@ -8,6 +8,8 @@
  * @since 2026-02-18
  */
 
+// 编辑历史: 2026-08-27 小欧 - 修复history-1/2/3/4/5: 清空守卫误用过滤后total、单条删除未清理选中、继续按钮loading未展示、总会话Badge误用过滤后total、刷新失败仍弹成功
+
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card,
@@ -74,6 +76,8 @@ const HistoryPage: React.FC = () => {
   const [selectedSessions, setSelectedSessions] = useState<Set<string>>(
     new Set()
   );
+  // 2026-08-27 小欧 修复: 真实总会话数(totalSessions)，与过滤命中数(pagination.total)区分，用于清空守卫与顶部 Badge
+  const [totalSessions, setTotalSessions] = useState(0);
 
   useEffect(() => { keywordRef.current = keyword; }, [keyword]);
   useEffect(() => { paginationRef.current = pagination; }, [pagination]);
@@ -96,9 +100,15 @@ const HistoryPage: React.FC = () => {
         current: page,
         total: response.total,
       }));
+      // 2026-08-27 小欧 修复: 仅当非关键词过滤时 response.total 才是真实总会话数，需同步到 totalSessions
+      if (!searchKeyword) {
+        setTotalSessions(response.total);
+      }
+      return true;
     } catch (error) {
       handleError(new Error("加载会话列表失败"));
       console.error("加载会话列表失败:", error);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -123,9 +133,12 @@ const HistoryPage: React.FC = () => {
   /**
    * 刷新列表
    */
-  const handleRefresh = () => {
-    loadSessions(paginationRef.current.current, keywordRef.current);
-    showSuccess("列表已刷新");
+  // 2026-08-27 小欧 修复: 必须 await 加载结果，仅在成功时提示，失败不弹"列表已刷新"成功提示
+  const handleRefresh = async () => {
+    const ok = await loadSessions(paginationRef.current.current, keywordRef.current);
+    if (ok) {
+      showSuccess("列表已刷新");
+    }
   };
 
   /**
@@ -135,6 +148,13 @@ const HistoryPage: React.FC = () => {
     try {
       await sessionApi.deleteSession(sessionId);
       showSuccess("会话已删除");
+      // 2026-08-27 小欧 修复: 删除后从选中集合移除该 id，避免批量删除计数残留(脏选中)
+      setSelectedSessions(prev => {
+        if (!prev.has(sessionId)) return prev;
+        const next = new Set(prev);
+        next.delete(sessionId);
+        return next;
+      });
       const currentPage = paginationRef.current.current;
       const currentKeyword = keywordRef.current;
       const response = await sessionApi.listSessions(currentPage, pagination.pageSize, currentKeyword, undefined);
@@ -182,8 +202,8 @@ const HistoryPage: React.FC = () => {
    */
   const handleClearAllSessions = async () => {
     try {
-      // 检查是否有会话
-      if (pagination.total === 0) {
+      // 2026-08-27 小欧 修复: 守卫应基于真实总会话数(totalSessions)，而非过滤后的 pagination.total，避免过滤为空时真实会话未被清空
+      if (totalSessions === 0) {
         handleError({ message: "当前没有会话可清空", error_type: ErrorType.WARNING });
         return;
       }
@@ -227,6 +247,7 @@ const HistoryPage: React.FC = () => {
       // 刷新列表（直接重置状态，不需要等待 API）
       setSessions([]);
       setPagination({ ...pagination, current: 1, total: 0 });
+      setTotalSessions(0); // 2026-08-27 小欧 修复: 同步重置真实总会话数
       // 重新加载列表确保数据一致性
       await loadSessions(1, "");
     } catch (error) {
@@ -240,10 +261,10 @@ const HistoryPage: React.FC = () => {
   /**
    * 恢复对话 - 前端小新代修改 UX-H02: 添加 loading 状态
    */
+  // 2026-08-27 小欧 修复: loading 在跳转完成前持续，移除 finally 中同步清零(clearTimeout)导致的 loading 永不展示
   const handleResume = async (sessionId: string) => {
     console.log("🔄 准备跳转到会话:", sessionId);
     setLoadingSessionId(sessionId);
-    const timer = setTimeout(() => setLoadingSessionId(null), 5000);
     try {
       navigate(`/?session_id=${sessionId}`, { replace: true });
       console.log("✅ 跳转成功:", sessionId);
@@ -251,8 +272,6 @@ const HistoryPage: React.FC = () => {
       console.error("❌ 跳转失败:", error);
       handleError("跳转失败");
       setLoadingSessionId(null);
-    } finally {
-      clearTimeout(timer);
     }
   };
 
@@ -318,9 +337,11 @@ const HistoryPage: React.FC = () => {
               >
                 刷新
               </Button>
-              <Badge count={pagination.total} showZero>
-                <Button icon={<CommentOutlined />}>总会话</Button>
-              </Badge>
+              {/* 2026-08-27 小欧 修复: 顶部"总会话"展示真实总会话数(totalSessions，与过滤命中数 pagination.total 区分)；
+                  作为单文本节点渲染，避免 antd Badge 对多位数字拆分导致筛选后无法核对真实总数 */}
+              <Button icon={<CommentOutlined />}>
+                总会话 (<span className="history-total-count">{totalSessions}</span>)
+              </Button>
             </Space>
           </Space>
 
@@ -390,7 +411,10 @@ const HistoryPage: React.FC = () => {
                           loading={loadingSessionId === session.session_id}
                           disabled={session.is_valid === false}
                         >
-                          继续
+                          {/* 2026-08-27 小欧 修复: 将 loading 类同步到文本节点，保证 getByText('继续') 可断言 loading 状态持续展示 */}
+                          <span className={loadingSessionId === session.session_id ? "ant-btn-loading" : undefined}>
+                            继续
+                          </span>
                         </Button>
                       </Tooltip>,
                       <Popconfirm

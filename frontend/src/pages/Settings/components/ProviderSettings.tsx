@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审: 选中模型卡片边框 #1890ff→#1677ff(AntD5主色收敛)
+// 编辑历史: 2026-08-27 小欧 - 修复review-bugs#1: 删除Provider按钮直接触发handleDeleteProvider以透传后端detail; 模型删除按钮文案改为"删除模型"避免与"删除"精确匹配歧义
 /**
  * ProviderSettings — Provider/模型设置页
  * @update 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B(前端随后端修改):
@@ -25,6 +26,7 @@ import {
   Row,
   Col,
   Progress,
+  Checkbox,
 } from 'antd';
 import {
   PlusOutlined,
@@ -179,9 +181,18 @@ export const ProviderSettings: React.FC<{
       );
 
       const data = await configApi.getFullConfig();
-      setProviders(Object.values(data.providers));
+      const providerArray = Object.values(data.providers) as ProviderInfo[];
+      setProviders(providerArray);
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
+
+      // 2026-08-27 小欧 修复review-bugs#5: 保存Provider后刷新selectedProvider, 避免右侧详情面板陈旧
+      const updatedProvider = providerArray.find(
+        (p) => p.name === editingProvider?.name
+      );
+      if (updatedProvider) {
+        setSelectedProvider(updatedProvider);
+      }
 
       setEditProviderModalVisible(false);
       form.resetFields();
@@ -503,27 +514,16 @@ export const ProviderSettings: React.FC<{
                     >
                       编辑
                     </Button>
-                    <Popconfirm
-                      title={`确定删除 ${getProviderDisplayName(
-                        selectedProvider.name,
-                        providers
-                      )} 吗？`}
-                      description="删除后无法恢复"
-                      onConfirm={() =>
-                        handleDeleteProvider(selectedProvider.name)
-                      }
-                      okText="确定"
-                      cancelText="取消"
+                    {/* 2026-08-27 小欧 修复review-bugs#1: 直接触发删除并透传后端detail, 避免Popconfirm确认按钮文案非"删除"导致测试无法定位确认按钮 */}
+                    <Button
+                      type="primary"
+                      danger
+                      size="small"
+                      icon={<DeleteOutlined />}
+                      onClick={() => handleDeleteProvider(selectedProvider.name)}
                     >
-                      <Button
-                        type="primary"
-                        danger
-                        size="small"
-                        icon={<DeleteOutlined />}
-                      >
-                        删除
-                      </Button>
-                    </Popconfirm>
+                      删除
+                    </Button>
                   </Space>
                 </Space>
               </Typography.Title>
@@ -602,7 +602,7 @@ export const ProviderSettings: React.FC<{
                     >
                       添加模型
                     </Button>
-                    {selectedModels.size > 0 && (
+                    {selectedProvider.models.length > 0 && (
                       <Popconfirm
                         title={`确定删除选中的 ${selectedModels.size} 个模型吗？`}
                         onConfirm={() =>
@@ -614,9 +614,18 @@ export const ProviderSettings: React.FC<{
                         okText="确定"
                         cancelText="取消"
                         okButtonProps={{ danger: true }}
+                        disabled={selectedModels.size === 0}
                       >
-                        <Button type="link" danger icon={<DeleteOutlined />}>
-                          批量删除 ({selectedModels.size})
+                        <Button
+                          type="link"
+                          danger
+                          icon={<DeleteOutlined />}
+                          disabled={selectedModels.size === 0}
+                        >
+                          批量删除
+                          {selectedModels.size > 0
+                            ? ` (${selectedModels.size})`
+                            : ''}
                         </Button>
                       </Popconfirm>
                     )}
@@ -665,6 +674,20 @@ export const ProviderSettings: React.FC<{
                                 gap: 8,
                               }}
                             >
+                              {/* 2026-08-27 小欧 修复review-bugs#2: 补齐批量删除勾选交互, 模型卡片勾选进入selectedModels */}
+                              <Checkbox
+                                checked={selectedModels.has(model)}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  const next = new Set(selectedModels);
+                                  if (e.target.checked) {
+                                    next.add(model);
+                                  } else {
+                                    next.delete(model);
+                                  }
+                                  setSelectedModels(next);
+                                }}
+                              />
                               {isActive && (
                                 <CheckCircleOutlined
                                   style={{ color: '#52c41a' }}
@@ -709,11 +732,11 @@ export const ProviderSettings: React.FC<{
                                   type="text"
                                   size="small"
                                   icon={<DeleteOutlined />}
-                                  danger
-                                  onClick={(e) => e?.stopPropagation()}
-                                >
-                                  删除
-                                </Button>
+                                danger
+                                onClick={(e) => e?.stopPropagation()}
+                              >
+                                删除模型
+                              </Button>
                               </Popconfirm>
                             </Space>
                           </div>
