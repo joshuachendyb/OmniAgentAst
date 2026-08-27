@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-27 小欧 - 修复#3: TrustPanel默认可见(原false致永不可触达); 修复#2: L2经sessionModelOverride同步useModelLayer使顶栏徽标反映会话级模型
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: HITL confirm(trust_session=True)成功后派发omni-trust-changed事件(通知TrustPanel刷新)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删除未使用解构变量(1)/授权超时改用taskControlApi.confirm(2)/删除调试console.log(3)/anchorTaskId空值守卫(4)/抽离saveChatState(5)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审P0-6/去框-P0-1: 外层Card套壳→div(flex列/minHeight0/白底), 去boxShadow+border双重留白, 仅保留1处120px高度约束(配合SessionLayout flex收敛)
 import React, {
   useEffect,
   useCallback,
@@ -10,7 +11,7 @@ import React, {
   useRef,
   useMemo,
 } from 'react';
-import { message, Card, Tag } from 'antd';
+import { message, Tag } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import {
   API_BASE_URL,
@@ -657,8 +658,16 @@ const NewChatContainer: React.FC = () => {
   );
 
   return (
-    <Card
-      styles={{ body: { padding: '0 4px 4px', height: 'calc(100vh - 120px)' } }}
+    <div
+      style={{
+        height: 'calc(100vh - 120px)',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        padding: '0 4px 4px',
+        background: '#fff',
+        minWidth: 0,
+      }}
     >
       <SessionLayout
         panels={panels}
@@ -670,7 +679,7 @@ const NewChatContainer: React.FC = () => {
         request={authorizationPending}
         onConfirm={handleAuthorizationConfirm}
       />
-    </Card>
+    </div>
   );
 };
 

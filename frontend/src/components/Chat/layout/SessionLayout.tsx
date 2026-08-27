@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 8.3 实施: 会话插槽化骨架, panels prop注入消除首帧闪屏(4.2.1/R1-B25)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审P0-6: 根gap4→8主节奏; 左列overflow hidden→auto(防贴边); 右侧滚动区加minHeight0+padding0 12px 8px防代码块贴边
 /**
  * SessionLayout - 会话页插槽化骨架（纯展示组件）
  *
@@ -49,8 +50,9 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
     style={{
       display: 'flex',
       flexDirection: 'column',
-      height: '100%',
-      gap: 4,
+      flex: 1,
+      minHeight: 0,
+      gap: 8,
       minWidth: 0,
     }}
   >
@@ -74,7 +76,8 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
           width: LEFT_WIDTH,
           flexShrink: 0,
           borderRight: '1px solid #f0f0f0',
-          overflow: 'hidden',
+          overflowY: 'auto',
+          overflowX: 'hidden',
         }}
       >
         {renderSlot(panels, 'left')}
@@ -96,7 +99,15 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
             onClick={onToggleRight}
             style={{ alignSelf: 'flex-end' }}
           />
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              padding: '0 12px 8px',
+            }}
+          >
             {renderSlot(panels, 'right')}
           </div>
         </div>
