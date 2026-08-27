@@ -39,36 +39,4 @@ export const readPanelVisible = (
   return raw === null ? def : raw === '1';
 };
 
-export const writePanelVisible = (
-  key: string,
-  persist: boolean,
-  visible: boolean
-): void => {
-  if (!persist) return; // 仅 persistVisible=true 才写存储
-  localStorage.setItem(PANEL_VISIBLE_PREFIX + key, visible ? '1' : '0');
-};
-
-class SessionPanelRegistry {
-  private panels: SessionPanel[] = [];
-
-  register(panel: SessionPanel): void {
-    this.unregister(panel.key);
-    this.panels.push(panel);
-  }
-
-  unregister(key: string): void {
-    this.panels = this.panels.filter((p) => p.key !== key);
-  }
-
-  getBySlot(slot: SlotName): SessionPanel[] {
-    return this.panels
-      .filter((p) => p.slot === slot)
-      .sort((a, b) => a.key.localeCompare(b.key));
-  }
-
-  getAll(): SessionPanel[] {
-    return [...this.panels];
-  }
-}
-
-export const sessionPanelRegistry = new SessionPanelRegistry();
+// 2026-08-27 小欧 修复#7: 删除死代码SessionPanelRegistry类+实例(PANEL_REGISTRY全仓无消费方,SessionLayout已改为panels prop注入)

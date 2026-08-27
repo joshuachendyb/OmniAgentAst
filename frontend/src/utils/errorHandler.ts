@@ -636,8 +636,11 @@ export function clearExpiredErrors(): void {
   }
 }
 
-// 定期清理过期记录
-setInterval(clearExpiredErrors, ERROR_DEDUP_WINDOW);
+// 定期清理过期记录（单例守卫：避免模块热重载重复创建计时器导致泄漏）
+if (!(globalThis as unknown as { __clearExpiredTimerSet?: boolean }).__clearExpiredTimerSet) {
+  (globalThis as unknown as { __clearExpiredTimerSet?: boolean }).__clearExpiredTimerSet = true;
+  setInterval(clearExpiredErrors, ERROR_DEDUP_WINDOW); // 2026-08-27 小欧 修复#37: 防止计时器泄漏
+}
 
 // ============================================
 // 静默处理判断 - AbortError等不需要提示
@@ -800,6 +803,9 @@ export function classifyError(error: unknown): ErrorType {
   }
 
   if (err.error_type) {
+    // 2026-08-27 小欧 修复#9: 前端自定义错误类型(err.error_type 即 ErrorType 枚举值)直接映射返回, 避免全归 UNKNOWN 导致去重/重试语义错乱
+    const asEnum = err.error_type as ErrorType;
+    if (Object.values(ErrorType).includes(asEnum)) return asEnum;
     switch (err.error_type) {
       case "empty_response":
         return ErrorType.BACKEND_ERROR;
@@ -878,14 +884,15 @@ export function handleError(error: unknown, context: ErrorContext = {}): ActionR
     let retryCount = 0;
     const maxRetries = config.maxRetries;
 
+    // 2026-08-27 小欧 修复#36: 重试改为递归, 直到maxRetries上限, 且delay按指数退避(retryBackoff^(n-1))递增
     const retry = () => {
-      if (retryCount < maxRetries) {
-        retryCount++;
-        const delay = config.retryDelay * Math.pow(config.retryBackoff || 1, retryCount - 1);
-        setTimeout(() => {
-          context.onRetry?.();
-        }, delay);
-      }
+      if (retryCount >= maxRetries) return;
+      retryCount++;
+      const delay = config.retryDelay * Math.pow(config.retryBackoff || 1, retryCount - 1);
+      setTimeout(() => {
+        context.onRetry?.();
+        retry();
+      }, delay);
     };
 
     retry();
@@ -934,13 +941,15 @@ error: unknown,
     let retryCount = 0;
     const maxRetries = config.maxRetries;
 
+    // 2026-08-27 小欧 修复#36: 重试递归至maxRetries上限, 采用指数退避
     const retry = () => {
-      if (retryCount < maxRetries) {
-        retryCount++;
-        setTimeout(() => {
-          options?.onRetry?.();
-        }, config.retryDelay);
-      }
+      if (retryCount >= maxRetries) return;
+      retryCount++;
+      const delay = config.retryDelay * Math.pow(config.retryBackoff || 1, retryCount - 1);
+      setTimeout(() => {
+        options?.onRetry?.();
+        retry();
+      }, delay);
     };
 
     retry();

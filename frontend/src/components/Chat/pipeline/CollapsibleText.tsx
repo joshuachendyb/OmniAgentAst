@@ -8,6 +8,7 @@
  *
  * @author 小欧
  * @date 2026-08-26
+ * 2026-08-27 小欧 - 修复#7: 单行超长(无换行)文本按字符截断折叠, 不再整行展示(实测失败用例转绿)
  */
 
 import React, { useMemo, useState } from 'react';
@@ -32,8 +33,9 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
 
   const shown = useMemo(() => {
     if (!overflow || expanded) return text;
+    if (text.length > maxChars) return text.slice(0, maxChars) + '…'; // 单行超长按字符截断
     return text.split('\n').slice(0, 2).join('\n'); // 首 2 行摘要
-  }, [text, overflow, expanded]);
+  }, [text, overflow, expanded, maxChars]);
 
   return (
     <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>

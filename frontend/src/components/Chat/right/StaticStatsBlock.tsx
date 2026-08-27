@@ -9,6 +9,7 @@
  *
  * @author 小欧
  * @date 2026-08-26
+ * 2026-08-27 小欧 - 修复#8: 工具汇总空对象{}时显'-'而非空白(实测失败用例转绿)
  */
 
 import React from 'react';
@@ -51,7 +52,7 @@ const StaticStatsBlock: React.FC<{ detail: TaskDetail | null }> = ({
         </Descriptions.Item>
         <Descriptions.Item label="重试">{detail.retry_count}</Descriptions.Item>
         <Descriptions.Item label="工具汇总" span={2}>
-          {detail.tool_stats
+          {detail.tool_stats && Object.keys(detail.tool_stats).length > 0
             ? Object.entries(detail.tool_stats)
                 .map(([k, v]) => `${k}×${v}`)
                 .join('、')

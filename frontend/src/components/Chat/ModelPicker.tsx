@@ -10,6 +10,7 @@
  *
  * @author 小欧
  * @date 2026-08-22
+ * 2026-08-27 小欧 - 修复#11: 切L2模型不再以'新会话'污染后端会话标题(实测失败用例转绿)
  */
 
 import React, { useEffect, useState } from 'react';
@@ -69,7 +70,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
     const prev = sessionModelOverride;
     setLoading(true);
     try {
-      const res = await sessionApi.updateSession(sessionId, sessionTitle || '新会话', sessionVersion, next);
+      const res = await sessionApi.updateSession(sessionId, sessionTitle, sessionVersion, next); // 2026-08-27 小欧 修复#11: 移除'新会话'字面量回退, 切L2模型不应污染后端会话标题
       if (res.version) setSessionVersion(res.version);
       setSessionModelOverride(next);
     } catch (err: unknown) {

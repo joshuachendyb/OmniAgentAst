@@ -237,7 +237,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
           status: "warning",
           modelInfo: modelInfo,
         });
-      } else if (!serviceStatus.success) {
+      } else if (!serviceStatus.valid) { // 2026-08-27 小欧 修复#31: ValidateResponse.valid(后端返回valid)
         // ❌ 失败状态
         setValidationErrorModal({
           visible: true,
@@ -246,7 +246,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
           status: "failed",
           modelInfo: modelInfo,
         });
-      } else if (serviceStatus.success && serviceStatus.status === "success") {
+      } else if (serviceStatus.valid && serviceStatus.status === "success") {
         // ✅ 成功状态 - 也显示弹框说明
         setValidationErrorModal({
           visible: true,
@@ -328,7 +328,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     try {
       const status = await refreshServiceStatus();
       // 归一: model_ref 结构派生 — 小欧 2026-08-22
-      if (status && status.success) {
+      if (status && status.valid) {
         showMessage(ErrorType.INFO, `${status.model_ref?.provider || "未知"} (${status.model_ref?.model || "未知"}) 服务连接正常`);
       } else {
         showMessage(ErrorType.WARNING, `${status?.model_ref?.provider || "未知"} (${status?.model_ref?.model || "未知"}) 验证失败: ${status?.message || "请检查配置"}`);
@@ -620,7 +620,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
               // 【2026-04-07修复】切换模型后serviceStatus不会更新，始终以modelList为准
               const currentModel = modelList.find(m => m.current_model === true);
               
-              if (serviceStatus && !serviceStatus.success) {
+              if (serviceStatus && !serviceStatus.valid) {
                 return (
                   <Tag color="error" style={{ cursor: "pointer" }} onClick={checkingStatus ? undefined : handleCheckService}>
                     <CheckCircleOutlined /> {serviceStatus.model_ref?.provider}{" "}
@@ -630,7 +630,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                 );
               } else if (currentModel) {
                 // 显示配置文件中的当前模型（从modelList获取，切换模型后会更新）
-                const tagColor = serviceStatus?.success 
+                const tagColor = serviceStatus?.valid
                   ? (serviceStatus.status === "warning" ? "warning" : "success") 
                   : "default";
                 return (

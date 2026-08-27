@@ -53,9 +53,13 @@ const RightViewer: React.FC<RightViewerProps> = ({
 
   // 拉取历史任务：C1+C2 并行；C2 空则 C3 按 message 降级（静态块降级为空，契约无通道）
   useEffect(() => {
-    if (!activeTaskId || isCurrentLive) return; // B4：执行中不拉 REST
+    if (!activeTaskId || isCurrentLive) {
+      // 2026-08-27 小欧 修复#45: 切到实时任务时清空历史detail, 避免StaticStatsBlock残留旧任务统计
+      setDetail(null);
+      return; // B4：执行中不拉 REST
+    }
     let cancelled = false;
-    setLoading(true);
+    if (!detail) setLoading(true); // 2026-08-27 小欧 修复#47: 仅首次加载显示spinner, 已有旧detail时不遮盖(避免切换任务闪烁)
     (async () => {
       try {
         const [d, s] = await Promise.all([
@@ -65,7 +69,8 @@ const RightViewer: React.FC<RightViewerProps> = ({
         if (cancelled) return;
         setDetail(d);
         if (s.steps.length > 0) {
-          setHistorySteps(s.steps as ExecutionStep[]);
+          // 2026-08-27 小欧 修复#46: 拒绝裸断言, steps 缺失时回落空数组, 避免下游读step字段得undefined
+          setHistorySteps((s.steps ?? []) as ExecutionStep[]);
         } else if (sessionId) {
           const msgResp = await sessionApi.getSessionMessages(sessionId);
           if (cancelled) return;
@@ -94,10 +99,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
       activeTaskId === serverTaskId &&
       activeTaskId
     ) {
-      executionApi
-        .getTaskDetail(activeTaskId)
-        .then((d) => setDetail(d))
-        .catch(() => undefined);
+      // 2026-08-27 小欧 修复#44: 移除冗余getTaskDetail(上方effect在isCurrentLive变false时已补取), 避免双发REST
       onSettledRefresh?.();
     }
     prevReceivingRef.current = receiving;

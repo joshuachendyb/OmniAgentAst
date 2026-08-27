@@ -10,7 +10,7 @@
  * @date 2026-08-26
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Collapse, List, Typography } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import { trustApi } from '../../../services/api';
@@ -22,11 +22,22 @@ interface TrustPanelProps {
 const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
   const [tools, setTools] = useState<string[]>([]);
 
+  const trustReqIdRef = useRef(0); // 2026-08-27 小欧 修复#50: 防切会话竞态, 仅采纳最新请求响应
+
   const load = useCallback(async () => {
     if (!sessionId) return;
-    // trustApi.getTrust 已适配为 string[]（8.C-②），直接入列
-    const tools = await trustApi.getTrust(sessionId);
-    setTools(tools);
+    const reqId = ++trustReqIdRef.current;
+    try {
+      // trustApi.getTrust 已适配为 string[]（8.C-②），直接入列
+      const fetchedTools = await trustApi.getTrust(sessionId);
+      if (reqId === trustReqIdRef.current) {
+        setTools(fetchedTools); // 2026-08-27 小欧 修复#12: 局部变量tools遮蔽状态tools, 改名避免遮蔽
+      }
+    } catch (e) {
+      // 2026-08-27 小欧 修复#49: load新增try/catch, 避免getTrust失败导致unhandled rejection
+      console.error('[TrustPanel] 加载信任清单失败', e);
+      if (reqId === trustReqIdRef.current) setTools([]);
+    }
   }, [sessionId]);
 
   useEffect(() => {

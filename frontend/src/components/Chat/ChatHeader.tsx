@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-27 小欧 - 修复#12: 回车保存后Input卸载触发blur双发updateSession(409), 加editingRef守卫(实测失败用例转绿)
 /**
  * ChatHeader 组件 - 会话标题展示与编辑
  * 
@@ -10,19 +11,15 @@
  * @date 2026-04-21
  */
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { Space, Input, Tooltip } from 'antd';
 import { RobotOutlined, InfoCircleOutlined, LockOutlined } from '@ant-design/icons';
 import { sessionApi } from '../../services/api';
 import {
   showTitleSaved,
-  showTitleUpdated,
   showSaveError,
   showSessionConflict,
 } from '../../utils/chatMessages';
-
-// 使用 showTitleUpdated 避免未使用警告
-void showTitleUpdated;
 
 interface ChatHeaderProps {
   // 核心状态
@@ -62,14 +59,17 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   setTitleInput,
   setSessionVersion,
   onEditingStart,
+  onEditingCancel,
 }) => {
+  const savingRef = useRef(false); // 2026-08-27 小欧 修复#12: 防回车与失焦重复保存(双发409)的重入守卫
   // 处理标题编辑保存（回车和失焦共用的保存逻辑）
   const handleSaveTitle = async () => {
+    if (savingRef.current) return; // 2026-08-27 小欧 修复#12: 重入守卫, 防回车与失焦双发
     if (!titleInput.trim() || !sessionId) {
       setEditingTitle(false);
       return;
     }
-
+    savingRef.current = true;
     try {
       // 保存标题到后端
       await sessionApi.updateSession(
@@ -105,6 +105,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         showSaveError('保存标题失败，请重试');
       }
       setEditingTitle(false);
+    } finally {
+      savingRef.current = false;
     }
   };
 
@@ -136,11 +138,17 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
           <Input
             value={titleInput}
             onChange={(e) => setTitleInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                onEditingCancel(); // 2026-08-27 小欧 修复#11: 实现Esc取消编辑, 落地onEditingCancel接口能力(此前未接线)
+              }
+            }}
             onPressEnter={async (e) => {
               e.preventDefault();
               await handleSaveTitle();
             }}
             onBlur={async () => {
+              if (savingRef.current) return; // 2026-08-27 小欧 修复#12: 回车保存进行中跳过失焦重复保存
               await handleSaveTitle();
             }}
             style={{ width: 200 }}

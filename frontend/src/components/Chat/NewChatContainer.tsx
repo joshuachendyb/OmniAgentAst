@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 接入 ModelPicker 组件(L2 会话级模型覆盖), 解构 sessionModelOverride/setSessionModelOverride
 // 编辑历史: 2026-08-26 小欧 - 修复A1(顶栏时间悬浮接线sessionApi.getSession)/A2(右侧默认展开新任务,点击旧任务展开,可收起)/A3(信息条随选中历史任务切换selectedDetail派生): 对应7.1⑤/7.3/7.5/7.6/4.5.1
+// 编辑历史: 2026-08-27 小欧 - 修复#3: TrustPanel默认可见(原false致永不可触达); 修复#2: L2经sessionModelOverride同步useModelLayer使顶栏徽标反映会话级模型
 import React, {
   useEffect,
   useCallback,
@@ -199,6 +200,7 @@ const NewChatContainer: React.FC = () => {
     sessionTitle,
     sessionVersion,
     setSessionVersion,
+    sessionModelOverride, // 2026-08-27 小欧 修复#2: 传入L2覆盖使顶栏徽标反映会话级模型(修复L2死代码)
   });
 
   // 【小欧 2026-08-26 修复 A1】会话创建/更新时间(7.1⑤ 顶栏悬浮数据源)
@@ -214,19 +216,44 @@ const NewChatContainer: React.FC = () => {
       .catch(() => undefined);
   }, [sessionId]);
 
+  // 【小欧 2026-08-27 修复#42】切换会话时重置跨会话泄漏状态, 避免RightViewer向旧会话任务发REST/残留统计
+  useEffect(() => {
+    setActiveTaskId(null);
+    setSelectedDetail(null);
+    setChainTokens(null);
+    setLiveErrorText(null);
+  }, [sessionId]);
+
   // 【小欧 2026-08-26 修复 A3】任务信息条随左列点击切换：选中历史任务时拉取其详情，
   // 注入 TaskInfoBar 作为动态信息来源(7.6 目标"当前任务=点击查看的历史任务")
   const [selectedDetail, setSelectedDetail] = useState<TaskDetail | null>(null);
   useEffect(() => {
     if (activeTaskId && activeTaskId !== serverTaskId) {
+      // 2026-08-27 小欧 修复#43: 增加cancelled守卫, 避免快速连点任务时旧响应覆盖新数据
+      let cancelled = false;
       executionApi
         .getTaskDetail(activeTaskId)
-        .then((d) => setSelectedDetail(d))
-        .catch(() => setSelectedDetail(null));
+        .then((d) => {
+          if (!cancelled) setSelectedDetail(d);
+        })
+        .catch(() => {
+          if (!cancelled) setSelectedDetail(null);
+        });
+      return () => {
+        cancelled = true;
+      };
     } else {
       setSelectedDetail(null);
     }
   }, [activeTaskId, serverTaskId]);
+
+  // 【小欧 2026-08-27 修复#6】新会话首个任务自动激活: serverTaskId 就绪但 activeTaskId 尚空时跟随,
+  // 避免右侧执行详情/任务信息条不随首个实时任务联动(历史点击手动选择时不覆盖)
+  useEffect(() => {
+    if (serverTaskId && !activeTaskId) {
+      setActiveTaskId(serverTaskId);
+    }
+  }, [serverTaskId, activeTaskId]);
 
   // 任务结束沿（isReceiving true→false）统一刷新：任务列表 / 顶栏链累计 token
   const prevReceivingRef = useRef(false);
@@ -598,7 +625,7 @@ const NewChatContainer: React.FC = () => {
         slot: 'config',
         key: 'config.trust',
         component: <TrustPanel sessionId={sessionId} />,
-        defaultVisible: false,
+        defaultVisible: true, // 2026-08-27 小欧 修复#3: TrustPanel默认可见, 否则信任操作面板永不可触达(违反8.7)
       },
       {
         slot: 'input',

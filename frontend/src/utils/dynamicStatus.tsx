@@ -32,7 +32,7 @@ const statusConfig: Record<
 > = {
   waiting: { icon: '🚀', text: 'AI开始执行任务', animate: true },
   start: { icon: '🤔', text: 'AI 正在思考', animate: true },
-  thought: { icon: '🛠️', text: 'Agent 正在执行"tool_name"', animate: true },
+  thought: { icon: '🛠️', text: 'Agent 正在执行工具', animate: true }, // 2026-08-27 小欧 修复#30: 移除未替换的tool_name占位符(真实工具名由ToolCallLine展示)
   action: {
     icon: '👁️',
     text: 'Agent 正在执行"observation"',

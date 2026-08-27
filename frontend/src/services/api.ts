@@ -119,7 +119,7 @@ export interface ChatRequest {
 }
 
 export interface ValidateResponse {
-  success: boolean;
+  valid: boolean; // 2026-08-27 小欧 修复#31: 后端/chat/validate返回valid, 非success(字段名不匹配导致校验成功误判为失效)
   // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): 后端 /chat/validate 响应 provider/model 键归一 model_ref 结构, 前端随之后端
   model_ref?: {
     provider: string;

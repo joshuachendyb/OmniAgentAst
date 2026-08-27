@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-27 小欧 - 修复#10: device触屏笔记本误判mobile, 改UA判定(实测失败用例转绿)
 /**
  * 客户端信息获取工具
  * 
@@ -55,8 +56,8 @@ export function getClientInfo(): ClientInfo {
   else if (ua.includes("Edge")) browser = "Edge";
   else if (ua.includes("Opera") || ua.includes("OPR")) browser = "Opera";
 
-  // 3. 获取设备类型
-  const device = navigator.maxTouchPoints > 1 ? "mobile" : "desktop";
+  // 3. 获取设备类型（与 isMobile() 统一口径：以 UA 判定真移动端，避免触屏笔记本误判为 mobile）
+  const device = /iPhone|iPad|Android|Mobile/i.test(navigator.userAgent) ? "mobile" : "desktop";
 
   // 4. 获取网络类型（如果支持）
   let network: string | undefined;

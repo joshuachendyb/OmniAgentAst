@@ -133,6 +133,7 @@ console.log("%c└───── 历史消息加载 END", "color: blue; font-we
           title: sessionData.title,
           sessionId: sessionData.session_id,
           version: sessionData.version,
+          title_locked: sessionData.title_locked, // 2026-08-27 小欧 修复#34: 空会话分支补title_locked(与有消息分支结构对齐)
           sessionModel: sessionData.sessionModel ?? null,
         };
       }

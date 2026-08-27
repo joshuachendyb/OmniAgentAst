@@ -98,7 +98,13 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           </Typography.Text>
         </Tooltip>
         {/* 上下文概况：context_overview 帧优先，start.context_summary 兜底（8.9） */}
-        {info.overview ? (
+        {typeof info.overview === 'string' ? (
+          <Tooltip title={info.overview}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              上下文摘要
+            </Typography.Text>
+          </Tooltip>
+        ) : info.overview ? (
           <Tooltip
             title={`${info.overview.summary}\n消息数 ${info.overview.message_count ?? '-'} · 估算 ${info.overview.estimated_tokens ?? '-'} tok`}
           >
