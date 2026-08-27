@@ -1,5 +1,13 @@
 // 编辑历史: 2026-04-11 小强 - 创建统一错误处理中心(errorHandler)
 // 编辑历史: 2026-08-27 小欧 - 修复#9/#36/#37: formatTime复用/formatError重试死循环/重试递归改Math.pow
+// 编辑历史: 2026-08-27 小欧 - 修复BUG1: storage/存储归STORAGE_ERROR(可重试), quota单独归QUOTA_EXCEEDED, 不再错失可重试语义
+// 编辑历史: 2026-08-27 小欧 - 修复BUG2: classifyError中timeout分支前置于network, "网络连接超时"正确归REQUEST_TIMEOUT
+// 编辑历史: 2026-08-27 小欧 - 修复BUG3: classifyError兼容顶层err.status(非仅response.status)
+// 编辑历史: 2026-08-27 小欧 - 修复BUG4: 404仅当url含sessions才归SESSION_NOT_FOUND, 其余归BACKEND_ERROR避免过度归类
+// 编辑历史: 2026-08-27 小欧 - 修复BUG9: isSilentError补美式"Canceled"(大小写不敏感)
+// 编辑历史: 2026-08-27 小欧 - 修复BUG10: classifyError支持字符串型错误
+// 编辑历史: 2026-08-27 小欧 - 修复Bug15: handleError/handleApiError展示原始error.message, 不丢调试信息
+// 编辑历史: 2026-08-27 小欧 - 修复Bug5/Bug6/Bug13/Bug14: handleSSEError无onReconnect不误导; 空文案不弹; handleApiError补齐回传fallbackMode/deleteMessage
 /**
  * 统一错误处理中心 - errorHandler.ts
  *
@@ -667,7 +675,9 @@ export function isSilentError(error: unknown): boolean {
     return true;
   }
 
-  if (err.message?.includes('canceled') || err.message?.includes('Cancelled')) {
+  // 2026-08-27 小欧 修复BUG9: 补美式"Canceled", 统一大小写不敏感匹配
+  const silentMsg = err.message?.toLowerCase() ?? '';
+  if (silentMsg.includes('canceled') || silentMsg.includes('cancelled')) {
     return true;
   }
 
@@ -705,6 +715,11 @@ export function showMessage(
   }
 
   const displayMessage = customMessage || config.message;
+
+  // 2026-08-27 小欧 修复Bug6: 空文案(如RETRY_WARNING)不弹空toast
+  if (!displayMessage) {
+    return;
+  }
 
   switch (config.severity) {
     case 'critical':
@@ -755,10 +770,16 @@ export function classifyError(error: unknown): ErrorType {
     return ErrorType.UNKNOWN;
   }
 
-  const err = error as {
+  // 2026-08-27 小欧 修复Bug10: 支持字符串型错误(无.message属性)
+  const err = (
+    typeof error === 'string'
+      ? { message: error }
+      : error
+  ) as {
     name?: string;
     message?: string;
-    response?: { status?: number };
+    response?: { status?: number; config?: { url?: string } };
+    status?: number;
     error_type?: string;
     code?: string;
   };
@@ -774,15 +795,20 @@ export function classifyError(error: unknown): ErrorType {
     return ErrorType.COMPONENT_UNMOUNTED;
   }
 
-  if (err.response?.status) {
-    const status = err.response.status;
+  // 2026-08-27 小欧 修复Bug3: 兼容顶层err.status(非仅response.status, fetch类错误常放顶层)
+  const status = err.response?.status ?? err.status;
+  if (status) {
     switch (status) {
       case 401:
         return ErrorType.AUTH_401;
       case 403:
         return ErrorType.AUTH_403;
       case 404:
-        return ErrorType.SESSION_NOT_FOUND;
+        // 2026-08-27 小欧 修复BUG4: 404仅当url含sessions才归SESSION_NOT_FOUND, 其余归通用后端错误避免过度归类
+        if (err.response?.config?.url?.includes('sessions')) {
+          return ErrorType.SESSION_NOT_FOUND;
+        }
+        return ErrorType.BACKEND_ERROR;
       case 409:
         return ErrorType.SESSION_CONFLICT;
       case 429:
@@ -810,13 +836,7 @@ export function classifyError(error: unknown): ErrorType {
     ) {
       return ErrorType.CONNECTION_RESET;
     }
-    if (
-      msg.includes('network') ||
-      msg.includes('fetch') ||
-      msg.includes('网络')
-    ) {
-      return ErrorType.NETWORK_ERROR;
-    }
+    // 2026-08-27 小欧 修复BUG2: timeout优先于network, "网络连接超时"正确归REQUEST_TIMEOUT
     if (msg.includes('timeout') || msg.includes('超时')) {
       return ErrorType.REQUEST_TIMEOUT;
     }
@@ -824,10 +844,17 @@ export function classifyError(error: unknown): ErrorType {
       return ErrorType.IDLE_TIMEOUT;
     }
     if (
-      msg.includes('quota') ||
-      msg.includes('storage') ||
-      msg.includes('存储')
+      msg.includes('network') ||
+      msg.includes('fetch') ||
+      msg.includes('网络')
     ) {
+      return ErrorType.NETWORK_ERROR;
+    }
+    // 2026-08-27 小欧 修复BUG1: storage/存储归STORAGE_ERROR(可重试), quota单独归QUOTA_EXCEEDED
+    if (msg.includes('storage') || msg.includes('存储')) {
+      return ErrorType.STORAGE_ERROR;
+    }
+    if (msg.includes('quota')) {
       return ErrorType.QUOTA_EXCEEDED;
     }
   }
@@ -914,7 +941,12 @@ export function handleError(
   const errorType = classifyError(error);
   const config = ERROR_CONFIG_MAP[errorType];
 
-  showMessage(errorType);
+  // 2026-08-27 小欧 修复Bug15: 展示原始error.message, 不丢调试信息(空则回退config.message)
+  const rawMsg =
+    typeof error === 'string'
+      ? error
+      : (error as { message?: unknown })?.message;
+  showMessage(errorType, typeof rawMsg === 'string' ? rawMsg : undefined);
 
   const result: ActionResult = {
     handled: true,
@@ -969,14 +1001,27 @@ export function handleApiError(
   const errorType = classifyError(error);
   const config = ERROR_CONFIG_MAP[errorType];
 
+  // 2026-08-27 小欧 修复Bug15: 展示原始error.message, 不丢调试信息
+  const rawMsg =
+    typeof error === 'string'
+      ? error
+      : (error as { message?: unknown })?.message;
   if (options?.showError !== false) {
-    showMessage(errorType);
+    showMessage(errorType, typeof rawMsg === 'string' ? rawMsg : undefined);
   }
 
   const result: ActionResult = {
     handled: true,
     errorType,
   };
+
+  if (config.deleteMessage) {
+    result.deleteMessage = true;
+  }
+
+  if (config.fallbackMode) {
+    result.fallbackMode = config.fallbackMode;
+  }
 
   if (config.continueOnError) {
     result.shouldContinue = true;
