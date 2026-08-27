@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 修复C3: 左列created_at格式化为月/日 时:分(7.2时间显示)
 // 编辑历史: 2026-08-27 小欧 - 任务项新增response全文显示（设计文档4.8.2要求user_input+response双列）
+// 编辑历史: 2026-08-27 小欧 - 三堂会审P0-5: 任务项div补role/tabIndex/aria/keyDown无障碍可达; 边距6px8px→8px; 选中蓝#1890ff→#1677ff; 滚动容器加minHeight0/scrollbarWidth; focus浅蓝外晕与选中态隔离
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -61,7 +62,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     );
   }
   return (
-    <div style={{ overflowY: 'auto', height: '100%' }}>
+    <div style={{ overflowY: 'auto', overflowX: 'hidden', minHeight: 0, scrollbarWidth: 'thin' }}>
       {tasks.map((t) => {
         const st = STATUS_MAP[t.status] ?? {
           text: t.status,
@@ -71,15 +72,28 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
         return (
           <div
             key={t.task_id}
+            className="task-list-item"
+            role="button"
+            tabIndex={0}
+            aria-pressed={active}
+            aria-label={`任务 ${t.task_id} ${st.text}`}
             onClick={() => onSelect(t.task_id)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect(t.task_id);
+              }
+            }}
             style={{
-              padding: '6px 8px',
+              padding: '8px',
               cursor: 'pointer',
               background: active ? '#e6f4ff' : 'transparent',
               borderLeft: active
-                ? '3px solid #1890ff'
+                ? '3px solid #1677ff'
                 : '3px solid transparent',
-              wordBreak: 'break-all', // 不截断可折返
+              overflowWrap: 'break-word',
+              wordBreak: 'break-word',
+              outline: 'none',
             }}
           >
             <div style={{ fontSize: 12, color: '#595959' }}>
