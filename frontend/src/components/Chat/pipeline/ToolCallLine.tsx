@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-26 小欧 - 修复B1: 观察摘要优先tool_result(4.9.3),兜底summary/content
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删tool_params误用(8)/摘要tool_result优先(9)/展开渲染tool_result优先(10)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审边距-P0-1/去框-P0-4: margin6px0→8px0; 常态去radius改borderLeft2px#e8e8e8左线分态(highlight才#faad14+radius6); 主色#1890ff→#1677ff
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -51,10 +52,13 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
       className={highlight ? 'hitl-border' : undefined}
       style={{
         fontSize: 13,
-        color: '#666',
-        margin: '6px 0',
-        padding: '4px 8px',
-        borderRadius: 4,
+        color: '#595959',
+        margin: '8px 0',
+        padding: '4px 8px 4px 10px',
+        borderRadius: highlight ? 6 : 0,
+        borderLeft: highlight
+          ? '1px solid #faad14'
+          : '2px solid #e8e8e8',
         background: highlight ? 'rgba(250,173,20,0.08)' : 'transparent',
       }}
     >
@@ -68,7 +72,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         {obsSummary && (
           <span style={{ color: '#52c41a' }}> → {obsSummary.slice(0, 40)}</span>
         )}
-        <span style={{ marginLeft: 6, color: '#1890ff' }}>
+        <span style={{ marginLeft: 6, color: '#1677ff' }}>
           {open ? '▲' : '▼'}
         </span>
       </span>

@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 8.4.12 实施: 状态行仅error渲染红字, 其余状态归任务信息条(4.9.1⑤)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审边距-P0-1: 段距margin6px0→8px0统一流水线节奏
 /**
  * StatusLine - 状态行（仅 error 渲染）
  *
@@ -20,7 +21,7 @@ interface StatusLineProps {
 const StatusLine: React.FC<StatusLineProps> = ({ step }) => {
   if (step.type !== 'error') return null;
   return (
-    <div style={{ color: '#ff4d4f', fontSize: 13, margin: '6px 0' }}>
+    <div style={{ color: '#ff4d4f', fontSize: 13, margin: '8px 0' }}>
       ⚠️ {step.error_message || step.details || step.content || '执行出错'}
     </div>
   );

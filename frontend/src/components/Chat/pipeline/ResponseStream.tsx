@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 8.4.12 实施: 最终答复同列同等字号, cancelled弱化小字, 长文折叠(4.4.3/4.9.1④⑤/8.11)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审边距-P0-1: 段距margin6px0→8px0(正文/cancelled)统一流水线节奏
 /**
  * ResponseStream - 最终答复流（取消弱化小字）
  *
@@ -30,7 +31,7 @@ const ResponseStream: React.FC<ResponseStreamProps> = ({
           color: '#8c8c8c',
           fontSize: 13,
           fontStyle: 'italic',
-          margin: '6px 0',
+          margin: '8px 0',
         }}
       >
         已取消
@@ -42,7 +43,7 @@ const ResponseStream: React.FC<ResponseStreamProps> = ({
       style={{
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
-        margin: '6px 0',
+        margin: '8px 0',
         fontSize: 14,
         lineHeight: 1.8,
       }}
