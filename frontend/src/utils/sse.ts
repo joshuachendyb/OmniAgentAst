@@ -6,6 +6,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审配套修复: observation解析同步execution_result=obsData, 供专用渲染器(data/llm_data)消费, 修复删tool_result早退后工具结果渲染空回归
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 删thought-start恒假守卫/死引用ttftRef等/死导出isPersistBlocked/死守卫!result.handled
 // 编辑历史: 2026-08-27 小欧 - 依用户铁律系统代码不留仅测试所需: 确认isPersistBlocked仅测试依赖(死导出), 维持8.6删除; 测试侧sse-parsing.test.ts改本地helper, 系统代码净化
+// 编辑历史: 2026-08-27 小欧 - 修复SSE-G1(B1): disconnect增resetReconnectAttempts参数+handleSSEError仅canRetry注入onReconnect, 终止无限重连; G2(B2/B3/base-2): is_reasoning归一化补'1'并统一helper; G3(base-1): 各分支时间戳统一timestampValue; G4(base-3): step加Number()
 /**
  * SSE 工具模块 V2 - Server-Sent Events 流式处理
  *
@@ -708,7 +709,9 @@ export const useSSE = (
             console.warn(
               `[SSE] 空闲超时：已经${timeSinceLastData / 1000}秒未收到数据，判定连接断开`
             );
-            throw new Error('SSE 空闲超时：长时间未收到数据');
+            // 2026-08-27 修复: setTimeout回调中throw不被外层catch捕获, 改为onError+disconnect
+            onError?.('SSE 空闲超时：长时间未收到数据');
+            disconnect(true);
           }
         }, IDLE_TIMEOUT);
 
@@ -808,7 +811,8 @@ export const useSSE = (
         pendingMessage: pendingMessageRef.current,
         onReconnect: () => {
           reconnectAttemptsRef.current++;
-          sendMessageInternal(content, sessionId);
+          // 2026-08-27 修复: 重连时传入lastContextLinkModeRef, 避免contextLinkMode丢失
+          sendMessageInternal(content, sessionId, lastContextLinkModeRef.current);
         },
         onSetReconnectStatus: setReconnectStatus,
         onSetIsConnected: setIsConnected,
@@ -963,6 +967,10 @@ export const useSSE = (
   };
 };
 
+// 2026-08-27 小欧 修复(B2/base-2): is_reasoning 归一化统一helper, 兼容 true/'true'/1/'1'
+const normalizeIsReasoning = (v: unknown): boolean =>
+  v === true || v === 'true' || v === 1 || v === '1';
+
 /**
  * 处理单行SSE数据
  */
@@ -1072,7 +1080,7 @@ const processSSEData = (
       message: rawData.message,
 
       // 保留字段
-      step: rawData.step || 1, // 与后端一致：step
+      step: rawData.step ?? 1, // 2026-08-27 修复: ??替代||, 避免step=0被替换为1
       thought: rawData.thought, // Agent.thought的值
       // 2026-07-18 小欧 FinalStep 终态规整：终态统一 type=final，由 outcome 声明；同步解析出后端字段
       outcome: rawData.outcome,
