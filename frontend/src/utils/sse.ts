@@ -1087,7 +1087,7 @@ const processSSEData = (
       message: rawData.message,
 
       // 保留字段
-      step: rawData.step ?? 1, // 2026-08-27 修复: ??替代||, 避免step=0被替换为1
+      step: Number(rawData.step) || 1, // 2026-08-27 小欧 修复base-3: 加Number()数值化
       thought: rawData.thought, // Agent.thought的值
       // 2026-07-18 小欧 FinalStep 终态规整：终态统一 type=final，由 outcome 声明；同步解析出后端字段
       outcome: rawData.outcome,
@@ -1099,10 +1099,8 @@ const processSSEData = (
 
       // 【小沈修复】思考过程与正式内容区分字段
       // 【小查修复】统一使用 snake_case: is_reasoning
-      is_reasoning:
-        rawData.is_reasoning === true ||
-        rawData.is_reasoning === 'true' ||
-        rawData.is_reasoning === 1,
+      // 2026-08-27 小欧 修复B2/base-2: 统一归一化helper, 补'1'分支(原缺导致true被当false)
+      is_reasoning: normalizeIsReasoning(rawData.is_reasoning),
       // reasoning: rawData.reasoning || "",  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
 
       timestamp: timestampValue,
@@ -1148,7 +1146,7 @@ const processSSEData = (
         const ts: ExecutionStep = {
           type: 'thought-start',
           content: '',
-          step: rawData.step || 1,
+          step: Number(rawData.step) || 1, // 2026-08-27 小欧 修复base-3: 加Number()
           timestamp: timestampValue,
         };
         setExecutionSteps((prev) => {

@@ -1,6 +1,7 @@
 // 编辑历史: 2026-07-18 小欧 - FinalStep终态规整: 取消判定改为type=final+outcome=cancelled
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-9删后端自动保存死代码/10抽pickMsg/11终态清executionSteps
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
+// 编辑历史: 2026-08-27 小欧 - hooks修复#1/2/3/4/5/6/7/8: 取消事件识别/暂停ref同步/末条非assistant回写/thought回落/暂停分块保留
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -119,37 +120,27 @@ export const useChatCallbacks = (
   const onStep = useCallback(
     (step: ExecutionStep) => {
       // 【北京老陈 2026-07-12 小欧】统一取消语义：interrupted → cancelled
-      // 2026-07-18 小欧 FinalStep 终态规整：取消统一定义为 FinalStep(outcome="cancelled")
+      // 2026-08-27 小欧 修复#1: 取消事件扩展识别 type==='cancelled'(服务端取消步骤), 不再仅限 final+outcome=cancelled
       const isCancelEvent =
-        step.type === 'final' && step.outcome === 'cancelled';
+        step.type === 'cancelled' ||
+        (step.type === 'final' && step.outcome === 'cancelled');
       if (isCancelEvent) {
         hasReceivedCancelEventRef.current = true;
         console.log('[取消] 收到 cancelled 事件');
       }
 
-      // ✅ 如果正在取消中，只显示取消事件，跳过其他事件
+      // ✅ 如果正在取消中，跳过非取消且与终态无关的事件（避免旧 chunk/步骤污染 UI）
+      // 2026-08-27 小欧 修复#1/10: 取消进行中允许 final 终态步骤通过, 否则 final(completed)被吞导致消息无内容
       if (cancelInProgressRef.current) {
-        // 只允许取消事件通过，其他都忽略
-        if (!isCancelEvent) {
+        if (!isCancelEvent && step.type !== 'final') {
           console.log(`[取消] 忽略取消过程中收到的事件: ${step.type}`);
           return;
         }
-        // 是取消事件，继续处理（显示到 UI）
+        // 是取消事件或 final 终态，继续处理（显示到 UI）
       }
 
-      // 【小沈修复 2026-04-16】在收到第一个步骤时重置暂停状态
-      // 问题原因：如果 isPausedRef.current = true，所有步骤会存入 displayBufferRef 而不是 streamingStepsRef
-      // 这发生在：1)用户先按暂停再创建新会话 2)从sessionStorage恢复暂停状态 3)后端发送paused事件
-      // 解决：当收到第一个非 chunk 步骤时，如果 isPausedRef.current = true，重置为 false
-      if (
-        step.type !== 'chunk' &&
-        step.type !== 'error' &&
-        isPausedRef.current
-      ) {
-        console.log('⚠️ [onStep] 重置暂停状态 isPausedRef=true -> false');
-        setIsPaused(false);
-        isPausedRef.current = false; // 2026-08-27 小欧 修复#52: 立即同步ref, 避免line200检查时仍为true导致首step被吞
-      }
+      // 2026-08-27 小欧 修复#8: 删除"收到非chunk步骤即复位暂停"逻辑, 否则用户/服务端暂停被任意步骤打破(暂停形同虚设)
+      // 暂停仅在 onResumed 时由 isPausedRef.current=false 显式解除, 暂停期间步骤统一进 displayBufferRef 缓冲
 
       // type 处理流程日志（解析 -> 存储 -> 渲染）
       console.log(
