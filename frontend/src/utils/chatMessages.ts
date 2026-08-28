@@ -16,6 +16,7 @@
 
 // 编辑历史: 2026-08-27 小欧 - 修复B8: handleSaveErrorWithCache去重字段改用data存储键(content/title), 避免字符串data展开后无assistant键导致去重失效
 // 编辑历史: 2026-08-28 小沈 - 修复review-bugs#5: 去重改String比较, 存储不展开data对象防缓存污染 - 小沈-2026-08-28
+// 编辑历史: 2026-08-28 小欧 - 删除未使用的handleSaveErrorWithCache死代码(三堂会审核查#5) - 小欧-2026-08-28
 
 import {
   ErrorType,
@@ -134,45 +135,6 @@ export const handleConflictError = (error: unknown): boolean => {
     return true;
   }
   return false;
-};
-
-/**
- * 保存失败并本地缓存
- */
-export const handleSaveErrorWithCache = async (
-  currentSessionId: string,
-  data: unknown,
-  dataType: 'message' | 'title',
-  errorMsg: string = '保存失败'
-) => {
-  showSaveError(errorMsg);
-
-  try {
-    const cacheKey = `unsaved_${dataType}_${currentSessionId}`;
-    const cached: Array<Record<string, unknown>> = JSON.parse(
-      localStorage.getItem(cacheKey) || '[]'
-    );
-
-    // 避免重复缓存
-    // 2026-08-27 小欧 修复B8: 字符串data展开后无assistant/title键, 去重永远失效;
-    //   改用实际存储键(content/message, title)比较, 并对字符串data统一存为对应键
-    // 2026-08-28 小沈 修复B5: 去重改String(item[storeKey])===String(data)避免对象===字符串永false; 存储不展开data防缓存污染
-    const storeKey = dataType === 'message' ? 'content' : 'title';
-    const exists = cached.some((item) => {
-      return String(item[storeKey]) === String(data);
-    });
-
-    if (!exists) {
-      cached.push({
-        [storeKey]: String(data),
-        timestamp: Date.now(),
-      });
-      localStorage.setItem(cacheKey, JSON.stringify(cached));
-      showCachedInfo();
-    }
-  } catch (cacheError) {
-    console.error('本地缓存失败:', cacheError);
-  }
 };
 
 /**
