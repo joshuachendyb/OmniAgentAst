@@ -10,10 +10,11 @@ export const parseTimeSafe = (input: Date | string | number): Date | null => {
   }
 };
 
+// 编辑历史: 2026-08-28 小欧 - 修复formatTimestamp契约回归: 非法日期返回原串(与formatTime一致), 空值返回'' - 小欧-2026-08-28
 export const formatTimestamp = (ts: number | string | undefined): string => {
   if (ts === undefined || ts === null || ts === '') return '';
   const d = parseTimeSafe(ts as string | number | Date);
-  if (!d) return '';
+  if (!d) return typeof ts === 'string' ? ts : '';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}.${String(d.getMilliseconds()).padStart(3, '0')}`;
 };
 
