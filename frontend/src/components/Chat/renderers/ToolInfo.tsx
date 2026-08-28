@@ -4,7 +4,7 @@
  * 使用系统样式常量，禁止硬编码
  */
 import React from 'react';
-import { Typography, Tag } from 'antd';
+import { Typography } from 'antd';
 import { Spacing, Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 
 const { Text } = Typography;
@@ -80,18 +80,15 @@ export const ToolInfo: React.FC<ToolInfoProps> = ({
               >
                 {key}=
               </Text>
-              <Tag
+              <Text
                 style={{
                   margin: 0,
-                  padding: '0 4px',
                   fontSize: FontSize.TERTIARY,
-                  lineHeight: '18px',
-                  background: Colors.BG.LIGHT,
-                  border: 'none',
+                  color: Colors.TEXT.SECONDARY,
                 }}
               >
                 {formatParamValue(value)}
-              </Tag>
+              </Text>
               {idx < paramEntries.length - 1 && (
                 <Text
                   style={{

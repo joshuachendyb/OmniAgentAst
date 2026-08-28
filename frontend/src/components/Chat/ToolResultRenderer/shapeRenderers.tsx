@@ -131,7 +131,7 @@ const TreeDirItem: React.FC<{
         alignItems: 'center',
         padding: '3px 0',
         borderBottom: idx < total - 1 ? `1px solid ${Colors.BORDER.LIGHT}` : 'none',
-        fontSize: 13,
+        fontSize: FontSize.TERTIARY,
       }}
     >
       {isDir ? (
@@ -139,17 +139,17 @@ const TreeDirItem: React.FC<{
       ) : (
         <FileOutlined style={{ color: Colors.PRIMARY, marginRight: 8 }} />
       )}
-      <span style={{ flex: 1, color: '#333', wordBreak: 'break-all' }}>
+      <span style={{ flex: 1, color: Colors.TEXT.STRONG, wordBreak: 'break-all' }}>
         {name}
       </span>
       {entry.size !== undefined && entry.size !== null && (
-        <span style={{ color: '#8c8c8c', fontSize: 12, marginRight: 12 }}>
+        <span style={{ color: Colors.TEXT.SECONDARY, fontSize: 12, marginRight: 12 }}>
           {formatFileSize(entry.size)}
         </span>
       )}
       {entry.mtime !== undefined && entry.mtime !== null && (
-        <span style={{ color: '#bfbfbf', fontSize: 12 }}>
-          <InboxOutlined style={{ marginRight: 4, color: '#d9d9d9' }} />
+          <span style={{ color: Colors.BORDER.STRONG, fontSize: 12 }}>
+            <InboxOutlined style={{ marginRight: 4, color: Colors.BORDER.DEFAULT }} />
           {formatMtime(entry.mtime)}
         </span>
       )}
@@ -165,7 +165,7 @@ const TreeTreeNode: React.FC<{ node: TreeNode; depth: number }> = ({
   const hasChildren = isDirectory && node.children && node.children.length > 0;
   const [expanded, setExpanded] = React.useState(depth < 2);
   return (
-    <div style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: 13 }}>
+    <div style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: FontSize.TERTIARY }}>
       <div
         style={{
           display: 'flex',
@@ -178,7 +178,7 @@ const TreeTreeNode: React.FC<{ node: TreeNode; depth: number }> = ({
       >
         <span style={{ width: depth * 16, display: 'inline-block' }} />
         {hasChildren ? (
-          <span style={{ marginRight: 4, fontSize: 10, color: '#8c8c8c' }}>
+           <span style={{ marginRight: 4, fontSize: 10, color: Colors.TEXT.SECONDARY }}>
             {expanded ? <DownOutlined /> : <RightOutlined />}
           </span>
         ) : (
@@ -193,7 +193,7 @@ const TreeTreeNode: React.FC<{ node: TreeNode; depth: number }> = ({
         )}
         <span
           style={{
-            color: isDirectory ? '#333' : '#595959',
+            color: isDirectory ? Colors.TEXT.STRONG : Colors.TEXT.PRIMARY,
             fontWeight: isDirectory ? 500 : 400,
           }}
         >
@@ -257,18 +257,18 @@ export const TreeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
               />
             ))}
           </div>
-        <div style={{ marginTop: 12, fontSize: 12, color: '#595959' }}>
+        <div style={{ marginTop: 12, fontSize: 12, color: Colors.TEXT.PRIMARY }}>
           共 {total} 项（目录 {dirCount} / 文件 {fileCount}），总大小{' '}
           {formatFileSize(totalSize)}
         </div>
         {data.truncated === true && (
-          <div style={{ color: '#faad14', fontSize: 12, marginTop: 4 }}>
+          <div style={{ color: Colors.WARNING, fontSize: 12, marginTop: 4 }}>
             结果已截断，仅显示部分
           </div>
         )}
         {summary && (
           <div
-            style={{ color: '#595959', whiteSpace: 'pre-wrap', marginTop: 4 }}
+            style={{ color: Colors.TEXT.PRIMARY, whiteSpace: 'pre-wrap', marginTop: 4 }}
           >
             {summary}
           </div>
@@ -293,8 +293,8 @@ export const TreeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
           ) : (
             <CloseCircleOutlined style={{ marginRight: 8 }} />
           )}
-          <FolderOutlined style={{ marginRight: 6, color: '#faad14' }} />
-          目录树结构
+           <FolderOutlined style={{ marginRight: 6, color: Colors.WARNING }} />
+           目录树结构
         </div>
           <div
             style={{
@@ -308,13 +308,13 @@ export const TreeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
           >
             <TreeTreeNode node={tree} depth={0} />
           </div>
-        <div style={{ marginTop: 8, fontSize: 12, color: '#595959' }}>
+        <div style={{ marginTop: 8, fontSize: 12, color: Colors.TEXT.PRIMARY }}>
           文件 {statistics.file_count ?? 0} / 目录 {statistics.dir_count ?? 0}
           ，总大小 {formatFileSize(statistics.total_size ?? 0)}
         </div>
         {summary && (
           <div
-            style={{ color: '#595959', whiteSpace: 'pre-wrap', marginTop: 4 }}
+            style={{ color: Colors.TEXT.PRIMARY, whiteSpace: 'pre-wrap', marginTop: 4 }}
           >
             {summary}
           </div>
@@ -332,9 +332,8 @@ export const TreeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
         ) : (
           <CloseCircleOutlined style={{ marginRight: 8 }} />
         )}
-        目录{success ? '成功' : '失败'}
       </div>
-      <div style={{ color: '#888', fontStyle: 'italic' }}>目录为空</div>
+      <div style={{ color: Colors.TEXT.WEAK, fontStyle: 'italic' }}>目录为空</div>
     </div>
   );
 };
@@ -365,7 +364,7 @@ export const CodeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
     return (
       <div style={containerStyle}>
         {TitleBadge}
-        <div style={{ color: '#888', fontStyle: 'italic' }}>
+        <div style={{ color: Colors.TEXT.WEAK, fontStyle: 'italic' }}>
           <FileTextOutlined style={{ marginRight: 8 }} />
           文件内容为空
         </div>
@@ -374,10 +373,10 @@ export const CodeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
   }
 
   const contentBackground: React.CSSProperties = {
-    background: Colors.BG.LIGHT,
+    background: 'transparent',
     border: 'none',
     borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
-    borderRadius: Radius.SM,
+    borderRadius: 0,
     padding: `${Spacing.XS}px ${Spacing.SM}px`,
     marginTop: 6,
     fontSize: FontSize.SECONDARY,
@@ -398,33 +397,25 @@ export const CodeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
         style={{
           marginTop: 8,
           fontSize: 12,
-          color: '#595959',
+          color: Colors.TEXT.PRIMARY,
           display: 'flex',
           gap: 12,
           flexWrap: 'wrap',
         }}
       >
         {lines > 0 && (
-          <span
-            style={{
-              background: '#e6f7ff',
-              padding: '2px 8px',
-              borderRadius: 4,
-              color: '#1677ff',
-              fontWeight: 500,
-            }}
-          >
+          <span style={{ color: Colors.PRIMARY, fontWeight: 500 }}>
             <BarChartOutlined style={{ marginRight: 4 }} /> 本次 {lines} 行 / 共{' '}
             {totalLines} 行
           </span>
         )}
-        {bytes > 0 && <span style={{ color: '#8c8c8c' }}>{bytes} 字节</span>}
+        {bytes > 0 && <span style={{ color: Colors.TEXT.SECONDARY }}>{bytes} 字节</span>}
         {truncatedLines !== undefined && truncatedLines > 0 && (
-          <span style={{ color: '#faad14' }}>已截断 {truncatedLines} 行</span>
+          <span style={{ color: Colors.WARNING }}>已截断 {truncatedLines} 行</span>
         )}
       </div>
       {summary && (
-        <div style={{ color: '#595959', whiteSpace: 'pre-wrap', marginTop: 4 }}>
+        <div style={{ color: Colors.TEXT.PRIMARY, whiteSpace: 'pre-wrap', marginTop: 4 }}>
           {summary}
         </div>
       )}

@@ -28,7 +28,8 @@ interface GenericResultRendererProps {
 
 // 2026-08-27 小欧 三堂会审: 去9色彩虹, 嵌套块统一中性左边线+淡底(去色去框, KISS/DRY/禁止backward)
 // 2026-08-28 小欧 - ④A/a3: 嵌套左线 DEFAULT #d9d9d9→VERTICAL #e8e8e8 与 Pipeline 统一
-const NEST_BLOCK_BG = Colors.BG.LIGHT;          // #fafafa 淡底
+// 2026-08-28 小欧 v1.3(P1-H1): 嵌套块底由 Colors.BG.LIGHT(#fafafa)填充→transparent, 与 Pipeline/Code 透明左线统一, 消同语义双皮肤
+const NEST_BLOCK_BG = 'transparent';            // v1.3 去#fafafa填充, 仅留左线
 const NEST_BLOCK_LINE = Colors.BORDER.VERTICAL;  // #e8e8e8 单色左边线
 
 const renderValue = (value: unknown): React.ReactNode => {
