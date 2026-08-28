@@ -8,6 +8,7 @@
 #   签名收窄为 (task_id, next_step, current_execution_steps), 消除 KISS-DIRECT 透传无用参数 — 小健 2026-08-17
 # 2026-08-18 - 小欧 - §10.4.4 P2(弃用 next_step): 各函数删 next_step 参数, 统一经 _current_step(task_id)
 #   读 running_tasks[task_id].agent.llm_call_count(or 1 兜底); 删 Callable import — 小欧 2026-08-18
+# 2026-08-28 小欧 - yield日志审计: _pause_core 的 paused/resumed yield 前加 logger.info("[pause] task step"), 覆盖4个无日志yield(SRP); 三堂会审无逻辑修正
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -130,6 +131,8 @@ async def _pause_core(
             set_status(_agent, AgentStatus.SUSPENDED, "用户暂停任务")
         if emit_sse:
             step_value = _current_step(task_id)
+            # 2026-08-28 小欧 yield日志审计: 暂停事件日志(SRP)
+            logger.info(f"[pause] task={task_id} step={step_value} paused")
             yield _emit_step_sse(step_value, "paused", '任务已暂停')
     try:
         if timeout:
@@ -148,6 +151,8 @@ async def _pause_core(
         set_status(_agent, AgentStatus.THINKING, "任务已恢复")
     if emit_sse:
         step_value = _current_step(task_id)
+        # 2026-08-28 小欧 yield日志审计: 恢复事件日志(SRP)
+        logger.info(f"[pause] task={task_id} step={step_value} resumed")
         yield _emit_step_sse(step_value, "resumed", '任务已恢复')
 
 
