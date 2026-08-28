@@ -3,6 +3,7 @@
 // 2026-08-27 小欧 - 三堂会审: 删全部死代码(colorSchemes/resolveScheme/hexToRgba/mergeStyles/ColorScheme接口/import React), 仅留6令牌+类型(YAGNI/KISS/禁止backward)
 // 2026-08-27 小欧 - 修复step-5/step-6: 恢复getStep*/isValidStepType/getAllStepTypes(被误删), 以最小stepMeta映射替代已删colorSchemes(禁止backward), action_tool须被拒
 // 2026-08-28 小沈 - 修复review-bugs#6: isValidStepType改hasOwnProperty, 防toString/__proto__原型污染 - 小沈-2026-08-28
+// 2026-08-28 小欧 - 三堂会审v1.3(P0): Colors.TEXT扩5档灰(PRIMARY#595959/SECONDARY#8c8c8c/TERTIARY#999/WEAK#888/STRONG#333), 消灰阶硬码复发(H3); FontSize.SECONDARY 13→12 废13档统一14/12二档(M2) - 小欧-2026-08-28
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
  *
@@ -48,10 +49,11 @@ export type LayoutMode = 'inline' | 'block' | 'inline-with-details';
 
 // 字体大小规范
 // ⚠️ 警告：修改或重命名属性前，请搜索 renderers/ 目录下所有引用（如 FontSize.SM/XS/XXS 过去已被误用过），务必同步更新，否则编译报错（历史教训 2026-05-23）
+// 2026-08-28 小欧 v1.3: 废 SECONDARY=13 半档, 统一 14/12 二档(M2); 13px 游离扫视不齐已消除
 export const FontSize = {
   // 主要内容字体
   PRIMARY: 14, // 主标题、重要信息（final、error主要内容）
-  SECONDARY: 13, // 普通内容（thought、start描述）
+  SECONDARY: 12, // 普通内容（thought、start描述）— v1.3 由13降12, 与TERTIARY同档, 全链仅14/12二档
   TERTIARY: 12, // 辅助信息（时间戳、ID）
   SMALL: 11, // 微小信息（标签、徽章）
   CAPTION: 10, // 注释文字
@@ -95,11 +97,13 @@ export const Radius = {
 
 // 颜色常量 - 语义化功能色 + 文字/背景/边框中性色
 export const Colors = {
-  // 文字颜色（3种浅色）
+  // 文字颜色（5种浅色灰阶，v1.3 扩档消硬码 H3）
   TEXT: {
-    PRIMARY: '#595959', // 主要文字 - 改用浅灰色（避免深色#262626）
-    SECONDARY: '#595959', // 次要文字 - 中灰
-    TERTIARY: '#999999', // 辅助文字 - 深灰（仍是浅色）
+    PRIMARY: '#595959', // 主要文字 - 中灰（标题/正文）
+    SECONDARY: '#8c8c8c', // 次要文字 - 浅灰（参数/说明）— v1.3 由#595959降#8c8c8c, 与PRIMARY拉开层级
+    TERTIARY: '#999999', // 辅助文字 - 浅灰
+    WEAK: '#888888', // 弱文字 - 空态/斜体
+    STRONG: '#333333', // 强文字 - 文件名/重点（替代硬码#333/#262626）
   },
   // 背景颜色（3种浅色）
   BG: {
