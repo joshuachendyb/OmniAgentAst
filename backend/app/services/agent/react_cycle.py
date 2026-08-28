@@ -117,6 +117,7 @@
 # 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.4 D2/11.9 P2): _process_single_step 在 prepare_messages_for_llm()
 #   之后调 agent.file_persist.append_conv_blocks(llm_call_count, messages) 增量落文件B(稳定 _msg_id 去重),
 #   随即 pop("_msg_id") 防泄漏 LLM wire; getattr 守卫 writer 未挂载空转, 旁路不阻塞主链路
+# 2026-08-28 小欧 - KISS修正(三堂会审yield链审查): 5处 emit_final_with_stats 调用点 async for→for(配合 step_emitter.emit_final_with_stats 改 sync 返回 (final, stats) 二元组); 原 async 体内零await, 纯伪异步包装; 行为等价无backward
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -615,7 +616,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                 content=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断，任务取消",
                 severity="warn",
             ))
-            async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=step,
                 response=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
                 outcome="cancelled",
@@ -666,7 +667,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             logger.warning(f"[run_react_cycle] LLM连续{_cnt}步调用相同工具(step={step}), 判定死循环, 终止")
             log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, same_tool_loop")  # 小欧 2026-08-08 控制台
             set_failed(agent, f"模型连续{_cnt}步重复调用相同工具, 疑似死循环, 任务终止")
-            async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=step,
                 response="模型反复调用相同工具未取得进展，任务已终止（疑似死循环）",
                 reasoning=llm_response.get("reasoning", "") or llm_response.get("thought", ""),
@@ -748,7 +749,7 @@ async def run_react_cycle(
 
     if max_steps <= 0:
         logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接终止")
-        async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
             step=len(agent.steps),  # S4: start 已 emit(step=0), 终态接续步号, 避免同消息下双 step=0 — 小欧 2026-08-16
             response=f"最大步骤数({max_steps})，无可执行步骤，任务取消",  # Bug2+5: max_steps<=0不是"已耗尽"; outcome=cancelled→消息一致 — 小欧 2026-07-23
             outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, max_steps=0终态统一
@@ -778,7 +779,7 @@ async def run_react_cycle(
                 from app.services.task.task_runtime import check_cancelled, wait_for_resume
                 if await check_cancelled(task_id):
                     logger.info(f"[run_react_cycle] 检测到任务取消(task_id={task_id}), 终止为 cancelled")
-                    async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+                    for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
                         # 2026-08-17 - 小健 - 三堂会审-S4修复: 首轮前取消(llm_call_count 尚未+1=0)时,
                         #   step=0 与 start(step=0)双 step0(与 S4"start占0,业务从1起"矛盾); or 1 接续唯一步号
                         step=agent.llm_call_count or 1,
@@ -849,7 +850,7 @@ async def run_react_cycle(
             AgentStatus.CANCELLED,
         ):
             logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 终止")
-            async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=agent.llm_call_count,
                 response=f"任务循环结束未设终态(status={agent.status})",  # Bug3: 循环自然退出不是"异常",用事实描述 — 小欧 2026-07-23
                 outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 循环结束无终态兜底统一
