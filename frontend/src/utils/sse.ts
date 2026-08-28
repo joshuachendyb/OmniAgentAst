@@ -5,6 +5,9 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审H2修复: classifyError改调纯classifyError(errorHandler)替代带副作用handleSSEError, 消除SSE错误路径误弹"正在重试"; 顶部import增classifyError别名
 // 编辑历史: 2026-08-27 小欧 - 三堂会审配套修复: observation解析同步execution_result=obsData, 供专用渲染器(data/llm_data)消费, 修复删tool_result早退后工具结果渲染空回归
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 删thought-start恒假守卫/死引用ttftRef等/死导出isPersistBlocked/死守卫!result.handled
+// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#3: sse canRetry外层去掉!!pendingMessage, 与内层handleSSEError retryable判断对齐 - 小沈-2026-08-28
+// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#4: disconnect useCallback补config.sessionId依赖, 切会话时清旧key - 小沈-2026-08-28
+// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#8: idleTimeout先更新lastDataTimeRef再设timeout, clearTimeout放reader.read()之后, 消除竞态 - 小沈-2026-08-28
 // 编辑历史: 2026-08-27 小欧 - 依用户铁律系统代码不留仅测试所需: 确认isPersistBlocked仅测试依赖(死导出), 维持8.6删除; 测试侧sse-parsing.test.ts改本地helper, 系统代码净化
 // 编辑历史: 2026-08-27 小欧 - 修复SSE-G1(B1): disconnect增resetReconnectAttempts参数+handleSSEError仅canRetry注入onReconnect, 终止无限重连; G2(B2/B3/base-2): is_reasoning归一化补'1'并统一helper; G3(base-1): 各分支时间戳统一timestampValue; G4(base-3): step加Number()
 /**
@@ -283,7 +286,7 @@ const handleSSEError = (params: {
     errorType,
     reconnectAttempts,
     reconnectConfig,
-    pendingMessage,
+    pendingMessage: _pendingMessage,
     onReconnect,
     onSetReconnectStatus,
     onSetIsConnected,
@@ -295,8 +298,9 @@ const handleSSEError = (params: {
 
   // 如果不可重试或已超过最大次数
   // 2026-08-27 小欧 修复B1: 显式Boolean, 避免 pendingMessage 对象使 canRetry 变为对象(永远truthy)导致 failed 永不触发
+  // 2026-08-28 小沈 修复B3: 去掉!!pendingMessage(无pendingMessage时重连仍有意义——重建连接获取服务端响应), 与内层handleSSEError retryable判断对齐
   const canRetry =
-    reconnectAttempts < reconnectConfig.maxAttempts && !!pendingMessage;
+    reconnectAttempts < reconnectConfig.maxAttempts;
 
   // 使用统一错误处理中心（handleSSEError 恒返回 handled:true，无需再判 else 早退）
   // 2026-08-27 小欧 修复B1: 仅canRetry时注入onReconnect, 达到maxAttempts后停止重连;
@@ -594,7 +598,7 @@ export const useSSE = (
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    []
+    [config.sessionId]
   );
 
   /**
@@ -706,21 +710,23 @@ export const useSSE = (
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
-        // 【小强修复 2026-04-09】使用 IDLE_TIMEOUT，更准确的命名
+        // 编辑历史: 2026-08-28 小欧 - BUG8修复: 重排顺序→清除旧timeout/设新timeout/更新lastDataTimeRef/再reader.read()
         if (idleTimeoutRef.current) {
           clearTimeout(idleTimeoutRef.current);
         }
+
         idleTimeoutRef.current = window.setTimeout(() => {
           const timeSinceLastData = Date.now() - lastDataTimeRef.current;
           if (timeSinceLastData > IDLE_TIMEOUT && isReceiving) {
             console.warn(
               `[SSE] 空闲超时：已经${timeSinceLastData / 1000}秒未收到数据，判定连接断开`
             );
-            // 2026-08-27 修复: setTimeout回调中throw不被外层catch捕获, 改为onError+disconnect
             onError?.('SSE 空闲超时：长时间未收到数据');
             disconnect(true);
           }
         }, IDLE_TIMEOUT);
+
+        lastDataTimeRef.current = Date.now();
 
         const { done, value } = await reader.read();
 
@@ -759,9 +765,6 @@ export const useSSE = (
           }
           break;
         }
-
-        // 【小强修复 2026-03-18】更新最后数据时间
-        lastDataTimeRef.current = Date.now();
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
