@@ -419,17 +419,10 @@ export const useChatCallbacks = (
         return [...prev, newAssistantMessage];
       });
 
-      // 编辑历史: 2026-08-28 小欧 - BUG11修复: 恢复currentSessionId&&finalResponse保存分支(后端自动落库+前端同步)
+      // 2026-08-28 小欧 修复: 后端已自动落库，前端无需额外保存（移除不存在的 updateMessages 调用，避免 tsc 报错）
       const currentSessionId = currentSessionIdRef.current;
       if (currentSessionId && finalResponse && finalResponse.trim()) {
-        try {
-          await sessionApi.updateMessages(currentSessionId, {
-            messages: [],
-            title: undefined,
-          });
-        } catch (saveErr) {
-          console.warn('[onComplete] 前端同步保存失败(后端已自动落库):', saveErr);
-        }
+        // 后端自动落库，前端仅同步标题/版本（已在 updateSession 流程中处理），此处不额外调用
       } else {
         console.warn('[onComplete] 无有效回复或sessionId，跳过前端同步保存');
       }
