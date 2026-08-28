@@ -22,6 +22,7 @@
 # 2026-07-19 - 小欧 - 推理空转不持久化(Hermes字面): reasoning-only拆好/坏两分支; 好的带_temp_reasoning标记注入conversation_history(供模型续写, wire副本由prepare_messages_for_llm strip标记), 终端统一由react_cycle._finalize_cycle(finally出口)直调agent.message_builder.pop_temp_messages()弹掉标记再持久化, 落点单一收口(KISS-DIRECT)无防御守卫; 坏的(有去重)跳过不注入不持久不发射ThoughtStep。注: 生产直调message_builder为本代码既有假设, 单测MockMb缺该方法属测试缺陷
 # 2026-08-18 小欧 - §10.3.3(1): 所有分支(error/unknown/reasoning-only终止/正常answer)前发射ThoughtStartStep; FinalStep删thought=加reasoning=
 # 2026-08-18 - 小欧 - §10.4.4 P4(severity): retrying MetaStep 加 severity="info"
+# 2026-08-28 小欧 - yield日志审计: 3处 print()→logger(error/error/info, DRY违规修复); 三堂会审无逻辑修正
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -105,9 +106,10 @@ async def handle_answer(agent, parsed: Dict):
         content = parsed.get("content", "") or "LLM流式错误"
         agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - error非reasoning-only, 归零防残留(不变量: 仅reasoning-only分支累加)
         agent.message_builder.add_assistant_message(content)
-        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, error={content}")
+        # 2026-08-28 小欧 yield日志审计: print→logger统一(DRY违规修复)
+        logger.error(f"[answer] step={step} error={content}")
         yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-        async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
             step=step, response="任务执行失败",
             outcome="failed", error_type="llm_error", error_message=content,
         )):
@@ -119,11 +121,12 @@ async def handle_answer(agent, parsed: Dict):
         logger.warning(f"[handle_answer] 未知返回类型: {parsed_type}, 设置为FAILED")
         agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 未知类型非reasoning-only, 归零防残留
         content = parsed.get("content", "") or parsed.get("thought", "") or ""
-        print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, type={parsed_type}, content={content}")
+        # 2026-08-28 小欧 yield日志审计: print→logger统一(DRY违规修复)
+        logger.error(f"[answer] step={step} unknown_type={parsed_type} content={content}")
         if content:
             agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
         yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-        async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
             step=step, response="任务执行失败",
             outcome="failed", error_type="unknown_response",
             error_message=f"LLM返回未知响应类型: {parsed_type}",
@@ -164,7 +167,7 @@ async def handle_answer(agent, parsed: Dict):
         if agent._consecutive_reasoning_only > REASONING_ONLY_MAX_ROUNDS:
             logger.warning(f"[handle_answer] 连续{agent._consecutive_reasoning_only}轮reasoning-only无进展(step={step}), 终止任务")
             yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-            async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=step,
                 response="模型反复思考未产出有效结果，任务已终止（疑似陷入无效循环）",
                 reasoning=_deduped,
@@ -206,8 +209,9 @@ async def handle_answer(agent, parsed: Dict):
         if deduped != content:
             content = deduped
 
-    print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response={content}")  # 小欧 2026-07-12 恢复answer分支终态日志(94eac9723合并时误删)
-    async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+    # 2026-08-28 小欧 yield日志审计: print→logger统一(DRY违规修复)
+    logger.info(f"[answer] step={step} final response_len={len(content)}")
+    for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
         step=step, response=content,
         outcome="completed", reasoning=reasoning,
     )):
