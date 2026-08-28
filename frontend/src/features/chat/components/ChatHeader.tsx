@@ -68,6 +68,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   onEditingCancel,
 }) => {
   const savingRef = useRef(false); // 2026-08-27 小欧 修复#12: 防回车与失焦重复保存(双发409)的重入守卫
+  // 编辑历史: 2026-08-28 小欧 - 修复卸载触发blur双发: 保存成功后标记本次编辑已落库, 拦截Input卸载时的blur二度保存 - 小欧-2026-08-28
+  const savedThisEditRef = useRef(false);
   // 处理标题编辑保存（回车和失焦共用的保存逻辑）
   const handleSaveTitle = async () => {
     if (savingRef.current) return; // 2026-08-27 小欧 修复#12: 重入守卫, 防回车与失焦双发
@@ -92,6 +94,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
       setSessionTitle(titleInput.trim());
       setTitleLocked(true); // 用户修改后锁定
       showTitleSaved();
+      savedThisEditRef.current = true; // 标记本次编辑已保存, 拦截卸载触发的blur双发
       setEditingTitle(false);
     } catch (error: unknown) {
       // 处理 409 版本冲突
@@ -151,7 +154,10 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             await handleSaveTitle();
           }}
           onBlur={async () => {
-            if (savingRef.current) return;
+            if (savingRef.current || savedThisEditRef.current) {
+              savedThisEditRef.current = false;
+              return;
+            }
             await handleSaveTitle();
           }}
           style={{ width: 'min(280px, 40vw)' }}
