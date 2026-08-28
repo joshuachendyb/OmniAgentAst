@@ -123,11 +123,11 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     initError,
   } = useApp();
 
+  // 编辑历史: 2026-08-28 小欧 - [25] 恢复isManualRefreshing状态+setter调用(防死状态)
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   // 【修复问题1】检查服务状态 - 使用AppContext
   // 监听初始化状态，在初始化过程中显示loading
   const [checkingStatus, setCheckingStatus] = useState(false);
-  // 【新增】手动刷新标志，避免自动重置
-  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   // 【新增】是否为首次初始化（首次不显示弹框）
   const isInitialLoadRef = useRef(true);
   // 【修改】验证错误弹框状态 - 支持三种状态
@@ -154,15 +154,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
 
   // 初始化时同步设置checkingStatus
   useEffect(() => {
-    // 【修复】只有在非手动刷新时才自动重置
-    if (!isManualRefreshing) {
-      if (!isInitialized) {
-        setCheckingStatus(true);
-      } else {
-        setCheckingStatus(false);
-      }
+    if (!isInitialized) {
+      setCheckingStatus(true);
+    } else {
+      setCheckingStatus(false);
     }
-  }, [isInitialized, isManualRefreshing]);
+  }, [isInitialized]);
 
   // 【修正】骨架屏切换：监听isInitialized完成后延迟100ms切换
   // 或监听initError使用errorHandler统一处理错误
@@ -225,8 +222,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       return;
     }
 
-    // 检查 serviceStatus 是否发生变化
-    const statusChanged = lastServiceStatusRef.current !== serviceStatus;
+    // 检查 serviceStatus 是否发生变化（比较关键字段避免引用不等导致重复弹窗）
+    // 编辑历史: 2026-08-28 老杨 - [26] 引用比较改为深比较关键字段valid/status，避免每次新对象即true
+    const statusChanged =
+      lastServiceStatusRef.current?.valid !== serviceStatus?.valid ||
+      lastServiceStatusRef.current?.status !== serviceStatus?.status ||
+      lastServiceStatusRef.current?.message !== serviceStatus?.message;
     lastServiceStatusRef.current = serviceStatus;
 
     // 只有当 serviceStatus 发生变化且有消息时才显示弹框
@@ -340,6 +341,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
 
   // 手动检查服务
   const handleCheckService = async () => {
+    setIsManualRefreshing(true);
     setCheckingStatus(true);
     try {
       const status = await refreshServiceStatus();
@@ -358,6 +360,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     } catch {
       showMessage(ErrorType.WARNING, '服务验证失败，请检查网络连接');
     } finally {
+      setIsManualRefreshing(false);
       setCheckingStatus(false);
     }
   };

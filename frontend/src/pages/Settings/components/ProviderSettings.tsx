@@ -298,8 +298,10 @@ export const ProviderSettings: React.FC<{
     const controller = new AbortController();
     deleteControllerRef.current = controller;
 
+    // 编辑历史: 2026-08-28 老杨 - [29] Promise.all改为allSettled容忍部分失败; 进度按实际完成计数而非索引
     try {
-      const deletePromises = models.map(async (modelName, index) => {
+      let completedCount = 0;
+      const deletePromises = models.map(async (modelName) => {
         if (controller.signal.aborted) {
           return { success: false, model: modelName, cancelled: true };
         }
@@ -308,23 +310,27 @@ export const ProviderSettings: React.FC<{
           await configApi.deleteModel(providerName, modelName, {
             signal: controller.signal,
           });
-          setDeleteProgress({ current: index + 1, total: models.length });
+          completedCount++;
+          setDeleteProgress({ current: completedCount, total: models.length });
           return { success: true, model: modelName };
         } catch (error) {
           const err = error as { name?: string };
           if (err?.name === 'AbortError' || controller.signal.aborted) {
             return { success: false, model: modelName, cancelled: true };
           }
-          throw error;
+          completedCount++;
+          setDeleteProgress({ current: completedCount, total: models.length });
+          return { success: false, model: modelName, error };
         }
       });
 
-      const results = await Promise.all(deletePromises);
-      const successCount = results.filter((r) => r.success).length;
-      const failCount = results.filter(
+      const results = await Promise.allSettled(deletePromises);
+      const fulfilledResults = results.map(r => r.status === 'fulfilled' ? r.value : { success: false, model: '', cancelled: false });
+      const successCount = fulfilledResults.filter((r) => r.success).length;
+      const failCount = fulfilledResults.filter(
         (r) => !r.success && !r.cancelled
       ).length;
-      const cancelledCount = results.filter((r) => r.cancelled).length;
+      const cancelledCount = fulfilledResults.filter((r) => r.cancelled).length;
 
       const data = await configApi.getFullConfig();
       setProviders(Object.values(data.providers));

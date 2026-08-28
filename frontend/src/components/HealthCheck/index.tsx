@@ -38,7 +38,7 @@ const HealthCheck: React.FC = () => {
       setEchoResponse(response);
       showSuccess("通信测试成功");
     } catch (error) {
-      handleError("通信测试失败");
+      handleError(error, { message: "通信测试失败" });
       console.error("Echo test failed:", error);
     }
   };

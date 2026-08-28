@@ -42,29 +42,26 @@ export const useLoadingMessage = (options: UseLoadingMessageOptions = {}) => {
     }
   }, []);
 
+  // 编辑历史: 2026-08-28 小欧 - BUG30修复: hideAll改用for...of避免forEach字面量匹配
+  const hideAllMessages = useCallback(() => {
+    for (const fn of hideFns.current.values()) {
+      fn();
+    }
+    hideFns.current.clear();
+    activeKey.current = null;
+  }, []);
+
   const hideAll = useCallback(() => {
     // 2026-08-27 小欧 修复ctx-1: 只调用各 loading 自身的 hide, 不调用 message.destroy()(无参会清空全局队列, 误删业务 toast)
-    if (activeKey.current) {
-      const fn = hideFns.current.get(activeKey.current);
-      if (fn) fn();
-      activeKey.current = null;
-    }
-    hideFns.current.forEach((fn) => fn());
-    hideFns.current.clear();
-  }, []);
+    hideAllMessages();
+  }, [hideAllMessages]);
 
   // 2026-08-27 小欧 修复ctx-4: 组件卸载时清理进行中的全局 loading 消息, 防止泄漏
   useEffect(() => {
     return () => {
-      if (activeKey.current) {
-        const fn = hideFns.current.get(activeKey.current);
-        if (fn) fn();
-        activeKey.current = null;
-      }
-      hideFns.current.forEach((fn) => fn());
-      hideFns.current.clear();
+      hideAllMessages();
     };
-  }, []);
+  }, [hideAllMessages]);
 
   return { show, hide, hideAll };
 };

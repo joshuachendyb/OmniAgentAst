@@ -163,6 +163,8 @@ const HistoryPage: React.FC = () => {
       } else {
         setSessions(response.sessions);
         setPagination(prev => ({ ...prev, current: currentPage, total: response.total }));
+        // 编辑历史: 2026-08-28 老杨 - [27] 单删后同步更新totalSessions，与批量删/清空逻辑一致
+        setTotalSessions(response.total);
       }
     } catch (error) {
       handleError("删除会话失败");
@@ -244,17 +246,19 @@ const HistoryPage: React.FC = () => {
       showSuccess(`已清空 ${successCount} 个会话`);
       setSelectedSessions(new Set());
       setKeyword("");
+      // 编辑历史: 2026-08-28 老杨 - [28] setPagination使用函数式更新避免闭包陈旧
       // 刷新列表（直接重置状态，不需要等待 API）
       setSessions([]);
-      setPagination({ ...pagination, current: 1, total: 0 });
+      setPagination(prev => ({ ...prev, current: 1, total: 0 }));
       setTotalSessions(0); // 2026-08-27 小欧 修复: 同步重置真实总会话数
       // 重新加载列表确保数据一致性
       await loadSessions(1, "");
     } catch (error) {
       handleError("清空会话失败");
       console.error("清空会话失败:", error);
+      // 编辑历史: 2026-08-28 老杨 - [28] catch中使用ref.current避免闭包陈旧值
       // 失败后刷新列表以恢复正确状态
-      await loadSessions(pagination.current, keyword);
+      await loadSessions(paginationRef.current.current, keywordRef.current);
     }
   };
 
