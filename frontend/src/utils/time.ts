@@ -17,10 +17,14 @@ export const formatTimestamp = (ts: number | string | undefined): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}.${String(d.getMilliseconds()).padStart(3, '0')}`;
 };
 
+// 编辑历史: 2026-08-28 小欧 - 修复formatTime契约回归(合并timeUtils时行为漂移): 空值返回'-',非法串返回原串,有效串含月/日 时:分 - 小欧-2026-08-28
 export const formatTime = (date: Date | string | number): string => {
+  if (date === undefined || date === null || date === '') return '-';
   const d = parseTimeSafe(date);
-  if (!d) return '';
-  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  if (!d) return String(date);
+  const md = `${d.getMonth() + 1}/${d.getDate()}`;
+  const hm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return `${md} ${hm}`;
 };
 
 export const formatRelativeTime = (date: Date | string | number): string => {
