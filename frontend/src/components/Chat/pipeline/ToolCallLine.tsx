@@ -3,6 +3,8 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审边距-P0-1/去框-P0-4: margin6px0→8px0; 常态去radius改borderLeft2px#e8e8e8左线分态(highlight才#faad14+radius6); 主色#1890ff→#1677ff
 // 编辑历史: 2026-08-27 小欧 - 修复chat-C: 新契约 tool_result 数组取首项 summary/llm_data.summary, 不再回落字面量[工具结果]
+// 编辑历史: 2026-08-28 小强 - 修复[21]: getObsSummary空数组回落丢失, parts为空时fallback到o.summary/content - 小强-2026-08-28
+// 编辑历史: 2026-08-28 小强 - 修复[22]: tool_result含空数组走错分支, 改条件为数组且长度>0 - 小强-2026-08-28
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -37,7 +39,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   const paramText = JSON.stringify(params);
   const toolName = tools.map((t) => t.tool).join(', ');
   const obs0 = observations[0];
-  // 2026-08-27 小欧 修复: 新契约 tool_result 为数组时取首项真实摘要, 不再回落字面量'[工具结果]'(BUG-C)
+  // 编辑历史: 2026-08-27 小欧 修复: 新契约 tool_result 为数组时取首项真实摘要, 不再回落字面量'[工具结果]'(BUG-C)
   const getObsSummary = (o?: ExecutionStep): string => {
     const tr = o?.tool_result;
     if (tr != null) {
@@ -53,9 +55,10 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
             return (obj.summary as string) || (llm?.summary as string) || '';
           })
           .filter((s) => s);
+        if (!parts.length) return (o?.summary as string) || (o?.content as string) || '';
         if (parts.length) return parts.join('; ');
       }
-      return '';
+      return (o?.summary as string) || (o?.content as string) || '';
     }
     return (o?.summary as string) || (o?.content as string) || '';
   };
@@ -103,7 +106,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                 观察{observations.length > 1 ? ` ${idx + 1}` : ''}：
               </div>
               {/* 2026-08-27 小欧 三堂会审: 富渲染tool_result可达, 有tool_result走ToolResultRenderer否则纯文本 */}
-              {o.tool_result != null ? (
+              {Array.isArray(o.tool_result) && o.tool_result.length > 0 ? (
                 <ToolResultRenderer step={o} />
               ) : (
                 <CollapsibleText text={o.content ?? ''} />

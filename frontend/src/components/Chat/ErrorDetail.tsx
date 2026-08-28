@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 错误详情组件(任务信息条错误展示)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 引入formatSafeTimestamp; formatErrorType提顶层; 来源/上下文注释澄清
 // 编辑历史: 2026-08-27 小欧 - 修复chat-E: errorType 形如 network_error 需对齐配色键(network 等), 剥离 _error 后缀查表(BUG-E)
+// 编辑历史: 2026-08-28 小强 - 修复[17]: errorContext.step=0误用真值, 改为!=null兼容0 - 小强-2026-08-28
 import React, { memo } from 'react';
 import { formatSafeTimestamp } from '../../utils/formatSafeTimestamp'; // 2026-08-27 小欧 三堂会审: 复用时戳安全格式化(复用优先)
 
@@ -300,7 +301,7 @@ const ErrorDetail: React.FC<ErrorDetailProps> = memo(
           {errorContext && (
             <div style={{ ...contextBoxStyle, gridColumn: 'span 2' }}>
               <div style={detailsBoxStyle}>上下文:</div>
-              {errorContext.step && (
+              {errorContext.step != null && (
                 <div style={contentBoxStyle}>步骤: {errorContext.step}</div>
               )}
               {/* 2026-08-27 小欧 三堂会审: errorContext.model/provider = 出错步骤内的上下文(非顶层来源) */}

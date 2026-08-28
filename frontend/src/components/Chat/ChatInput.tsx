@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 8.12 实施: 输入框组合根, 六组件组合, Props兼容父级+modelPickerSlot/onSend二参(8.14 E1)
+// 编辑历史: 2026-08-28 小欧 - ①A/a1: 去孤行+gap8, 指令+续聊并入SubmitBar leftExtra, 外层flex column gap8, 总高≤5行
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -12,6 +13,7 @@
  */
 
 import React, { useState } from 'react';
+import { Space } from 'antd';
 import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
 import { CommandPanel } from './input/CommandPanel';
@@ -48,23 +50,24 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   return (
-    <div style={{ padding: '4px 0' }}>
-      <CommandPanel onPick={(c) => setDraft((d) => (d ? `${d}\n${c}` : c))} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <InputCore
         value={draft}
         onChange={setDraft}
         onPressEnter={handleSendInternal}
         disabled={loading}
       />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <TaskTypeToggle checked={linked} onChange={setLinked} />
-        <span style={{ flex: 1 }} />
-      </div>
       <SubmitBar
         loading={loading}
         isReceiving={isReceiving}
         isPaused={isPaused}
         modelPickerSlot={modelPickerSlot ?? null}
+        leftExtra={
+          <Space size={8} style={{ display: 'inline-flex', alignItems: 'center' }}>
+            <CommandPanel onPick={(c) => setDraft((d) => (d ? `${d}\n${c}` : c))} />
+            <TaskTypeToggle checked={linked} onChange={setLinked} />
+          </Space>
+        }
         onSend={handleSendInternal}
         onCancel={onCancel}
         onTogglePause={onTogglePause}

@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 8.7 实施: 信任操作面板, 查询/撤销信任, HITL confirm写入(4.3.5/4.7)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 新增omni-trust-changed事件监听, HITL信任写入后自动刷新面板
+// 编辑历史: 2026-08-28 小欧 - ①B/b1: 空态不占位(tools0→null), ghost对齐padding4 0, 文案色#595959统一
 /**
  * TrustPanel - 信任操作面板（config slot，默认收起）
  *
@@ -61,20 +62,24 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
     await load(); // 撤销后刷新清单
   };
 
+  if (tools.length === 0) return null;
   return (
     <Collapse
       ghost
+      defaultActiveKey={[]}
+      style={{ padding: '4px 0' }}
       items={[
         {
           key: 'trust',
           label: (
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12, color: '#595959' }}>
               本会话信任的操作（{tools.length}）
             </Typography.Text>
           ),
           children: (
             <List
               size="small"
+              style={{ paddingLeft: 8 }}
               dataSource={tools}
               locale={{
                 emptyText: '暂无信任项（HITL 弹窗勾选"本次会话信任"后出现）',

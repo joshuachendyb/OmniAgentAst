@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.4 useRef仅首次锚定start, 去frames.startTimestamp防抖动, 切换复位
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审去框-P0-2/边距-P0-2: 去整框留淡底(border→none,background#fafafa,radius6,padding8px); 内层过程区加滚动细线borderTop#f5f5f5+scrollbarWidth; 外层gap2→8主节奏
+// 编辑历史: 2026-08-28 小欧 - ①C/c1: 去胶囊改透明+borderTop#f0f0f0, gap12→8, 数值加粗#595959 500, Tag→Text轻量化
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -14,7 +15,7 @@
  */
 
 import React, { useEffect, useState, useRef } from 'react';
-import { Badge, Tag, Tooltip, Typography } from 'antd';
+import { Badge, Tooltip, Typography } from 'antd';
 import type { ExecutionStep } from '../../../types/execution';
 import type { TaskMetaFrames } from '../../../utils/sse';
 import type { TaskDetail } from '../../../services/api';
@@ -75,10 +76,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   return (
     <div
       style={{
+        background: 'transparent',
         border: 'none',
-        background: '#fafafa',
-        borderRadius: 6,
-        padding: '8px',
+        borderTop: '1px solid #f0f0f0',
+        padding: '8px 0 0',
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
@@ -88,14 +89,14 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 12,
+          gap: 8,
           cursor: 'pointer',
           flexWrap: 'wrap',
         }}
         onClick={() => setCollapsed((v) => !v)}
       >
         <Badge status={b.status} text={b.text} />
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Text style={{ fontSize: 12, color: '#595959', fontWeight: 500 }}>
           耗时 {Math.round(shownElapsed)}s
         </Typography.Text>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -130,8 +131,8 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             </Typography.Text>
           </Tooltip>
         ) : null}
-        {info.stuckWarning && <Tag color="volcano">疑似卡死(llm≫step)</Tag>}
-        {info.truncatedTip && <Tag color="orange">⚠ {info.truncatedTip}</Tag>}
+        {info.stuckWarning && <Typography.Text type="warning" style={{ fontSize: 12 }}>疑似卡死(llm≫step)</Typography.Text>}
+        {info.truncatedTip && <Typography.Text type="warning" style={{ fontSize: 12 }}>⚠ {info.truncatedTip}</Typography.Text>}
         <span style={{ marginLeft: 'auto', color: '#999', fontSize: 12 }}>
           {collapsed ? '展开' : '收起'}
         </span>
@@ -143,9 +144,9 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             maxHeight: 72,
             overflowY: 'auto',
             scrollbarWidth: 'thin',
-            borderTop: '1px solid #f5f5f5',
-            marginTop: 4,
-            paddingTop: 4,
+            borderTop: '1px solid #f0f0f0',
+            paddingTop: 8,
+            marginTop: 0,
           }}
         >
           {info.processEvents.map((e, i) => (

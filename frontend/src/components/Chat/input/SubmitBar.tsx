@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 8.12 实施: 底部功能行 模型按钮+附件+发送/停止+暂停继续(4.3.6)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: modelPickerSlot改为可选属性(调用方可不传)
+// 编辑历史: 2026-08-28 小欧 - ①A/a2: 新增leftExtra插槽(指令+续聊), 左侧序leftExtra/modelPicker/附件, 去marginTop4, gap8节奏
 /**
  * SubmitBar - 底部功能行：模型按钮(ModelPicker) + 附件 + 发送/停止 + 暂停·继续
  *
@@ -25,6 +26,7 @@ interface SubmitBarProps {
   isReceiving: boolean;
   isPaused: boolean;
   modelPickerSlot?: React.ReactNode; // 既有 ModelPicker 实例（可选）
+  leftExtra?: React.ReactNode; // 2026-08-28 小欧 ①A: 指令+续聊插槽，置最左（工具>模型>附件）
   onSend: () => void;
   onCancel: () => void;
   onTogglePause: () => void;
@@ -35,14 +37,16 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
   isReceiving,
   isPaused,
   modelPickerSlot,
+  leftExtra,
   onSend,
   onCancel,
   onTogglePause,
 }) => (
   <Space
-    style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}
+    style={{ display: 'flex', justifyContent: 'space-between' }}
   >
-    <Space>
+    <Space size={8} style={{ display: 'inline-flex', alignItems: 'center' }}>
+      {leftExtra}
       {modelPickerSlot}
       <AttachmentArea />
     </Space>
