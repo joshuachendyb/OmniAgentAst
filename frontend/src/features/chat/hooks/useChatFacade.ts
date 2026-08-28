@@ -1,0 +1,485 @@
+// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 7Hook组合入口整合(8.1~8.14 统一暴露)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-8透传setIsReceiving/12 hasSteps/13复用Options类型/14 memo依赖onError
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
+/**
+ * useChatFacade Hook - 便捷的Chat状态组合
+ *
+ * 功能：
+ * - 提供统一的Chat状态访问入口
+ * - 组合7个独立Hook的便捷访问
+ * - 通过useMemo缓存避免不必要的重渲染
+ *
+ * 设计说明：
+ * - 不改变现有7个Hook的结构
+ * - 不追求"按需加载"Hook（React规则禁止）
+ * - 通过UI条件渲染实现"按需显示"
+ *
+ * @author 小强
+ * @version 1.0.0
+ * @since 2026-04-24
+ */
+
+import { useMemo, useRef, useEffect } from 'react';
+import { useChatState } from './useChatState';
+import { useChatCallbacks } from './useChatCallbacks';
+import type {
+  InitializeSessionOptions,
+  InitializeSessionResult,
+} from './useChatSession';
+import { useChatStreaming } from './useChatStreaming';
+import { useChatSession } from './useChatSession';
+import { useChatPersistence } from './useChatPersistence';
+import { useChatSend } from './useChatSend';
+import { useChatTaskControl } from './useChatTaskControl';
+import type { Message } from '../../../types/chat';
+import type { ExecutionStep } from '../../../types/execution';
+
+/**
+ * useChatFacade 返回类型定义
+ */
+export interface UseChatFacadeReturn {
+  // ===== 状态组 =====
+  session: {
+    sessionId: string | null;
+    sessionTitle: string;
+    sessionVersion: number;
+    titleLocked: boolean;
+    editingTitle: boolean;
+    titleInput: string;
+    setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
+    setSessionTitle: React.Dispatch<React.SetStateAction<string>>;
+    setSessionVersion: React.Dispatch<React.SetStateAction<number>>;
+    setTitleLocked: React.Dispatch<React.SetStateAction<boolean>>;
+    setEditingTitle: React.Dispatch<React.SetStateAction<boolean>>;
+    setTitleInput: React.Dispatch<React.SetStateAction<string>>;
+    currentSessionIdRef: React.MutableRefObject<string | null>;
+  };
+
+  message: {
+    messages: Message[];
+    loading: boolean;
+    isRetrying: boolean;
+    setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+    setLoading: React.Dispatch<React.SetStateAction<boolean>>;
+    setIsRetrying: React.Dispatch<React.SetStateAction<boolean>>;
+    messagesRef: React.MutableRefObject<Message[]>;
+    messagesEndRef: React.MutableRefObject<HTMLDivElement | null>;
+  };
+
+  streaming: {
+    isReceiving: boolean;
+    isPaused: boolean;
+    waitTime: number;
+    executionSteps: ExecutionStep[];
+    serverTaskId: string | null;
+    currentResponse: string;
+    setIsReceiving: (v: boolean) => void;
+    setIsPaused: React.Dispatch<React.SetStateAction<boolean>>;
+    setWaitTime: React.Dispatch<React.SetStateAction<number>>;
+  };
+
+  ui: {
+    useStream: boolean;
+    isInitialized: boolean;
+    sessionJumpLoading: boolean;
+    isMessageListLoading: boolean;
+    setUseStream: React.Dispatch<React.SetStateAction<boolean>>;
+    setIsInitialized: React.Dispatch<React.SetStateAction<boolean>>;
+    setSessionJumpLoading: React.Dispatch<React.SetStateAction<boolean>>;
+    setIsMessageListLoading: React.Dispatch<React.SetStateAction<boolean>>;
+    userScrolledUpRef: React.MutableRefObject<boolean>;
+    lastScrollTimeRef: React.MutableRefObject<number>;
+  };
+
+  // ===== 操作组 =====
+  send: {
+    handleSend: (
+      content: string,
+      contextLinkMode?: 'linked' | 'independent'
+    ) => Promise<void>;
+  };
+
+  interrupt: {
+    handleCancel: () => Promise<void>;
+    handleTogglePause: () => Promise<void>;
+  };
+
+  sessionOps: {
+    initializeSession: (
+      options: InitializeSessionOptions
+    ) => Promise<InitializeSessionResult>;
+    handleNewSession: (retry?: number) => Promise<void>;
+    handleClear: () => void;
+  };
+
+  persistence: {
+    saveStateWithSSECheck: (msg: Message) => void;
+    saveMessagesToStorage: React.MutableRefObject<
+      (
+        msgs: Message[],
+        sid: string,
+        title: string,
+        paused: boolean,
+        receiving: boolean
+      ) => void
+    >;
+  };
+
+  // ===== 共享Refs =====
+  shared: {
+    waitTimerRef: React.MutableRefObject<number | null>;
+    executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
+    isPausedRef: React.MutableRefObject<boolean>;
+    hasReceivedCancelEventRef: React.MutableRefObject<boolean>;
+    cancelInProgressRef: React.MutableRefObject<boolean>;
+  };
+
+  // ===== 原有Hook对象（兼容旧引用）=====
+  chatState: ReturnType<typeof useChatState>;
+  chatCallbacks: ReturnType<typeof useChatCallbacks>;
+  chatStreaming: ReturnType<typeof useChatStreaming>;
+  chatSession: ReturnType<typeof useChatSession>;
+  chatPersistence: ReturnType<typeof useChatPersistence>;
+  chatSend: ReturnType<typeof useChatSend>;
+  chatTaskControl: ReturnType<typeof useChatTaskControl>;
+}
+
+/**
+ * useChatFacade - 统一的Chat状态Facade
+ */
+export const useChatFacade = (options?: {
+  baseURL?: string;
+  sessionId?: string | null;
+  onError?: (message: string) => void;
+}): UseChatFacadeReturn => {
+  const { baseURL = '', sessionId } = options || {};
+  const onError = options?.onError; // 2026-08-27 小欧 三堂会审: 透传SSE错误用
+
+  // 1. 基础状态（始终加载）
+  const chatState = useChatState();
+
+  // 2. 回调函数（始终加载）
+  // 2026-08-27 小欧 三堂会审: 透传setIsReceiving, 经ref注入解循环依赖
+  const receivingSetterRef = useRef<(v: boolean) => void>();
+  const chatCallbacks = useChatCallbacks(chatState, {
+    setIsReceiving: (v: boolean) => receivingSetterRef.current?.(v),
+  });
+
+  // 2.1 透传 SSE 错误给上层（RightViewer liveErrorText 红字直显，8.10）
+  const chatCallbacksWithError = useMemo<ReturnType<typeof useChatCallbacks>>(
+    () => ({
+      ...chatCallbacks,
+      onError: (error: Parameters<typeof chatCallbacks.onError>[0]) => {
+        chatCallbacks.onError(error);
+        if (onError) {
+          const msg =
+            typeof error === 'string'
+              ? error
+              : error.error_message || '未知错误';
+          onError(msg);
+        }
+      },
+    }),
+    [chatCallbacks, onError] // 2026-08-27 小欧 三堂会审: 依赖onError避免options每次新对象
+  );
+
+  // 3. 流式处理（始终加载，但可UI按需显示）
+  const chatStreaming = useChatStreaming(chatState, chatCallbacksWithError, {
+    baseURL,
+    sessionId: sessionId || chatState.sessionId,
+  });
+
+  // 2026-08-27 小欧 三堂会审: 注入setIsReceiving到ref, 解循环依赖
+  useEffect(() => {
+    receivingSetterRef.current = chatStreaming.setIsReceiving;
+  }, [chatStreaming]);
+
+  // 4. 会话管理（始终加载）
+  const chatSession = useChatSession(chatState, chatStreaming);
+
+  // 5. 持久化（始终加载）
+  const chatPersistence = useChatPersistence(chatState, chatStreaming);
+
+  // 6. 消息发送（始终加载）
+  const chatSend = useChatSend({
+    loading: chatState.loading,
+    sessionId: chatState.sessionId,
+    messages: chatState.messages,
+    waitTime: chatState.waitTime,
+    setLoading: chatState.setLoading,
+    setSessionId: chatState.setSessionId,
+    setMessages: chatState.setMessages,
+    setWaitTime: chatState.setWaitTime,
+    waitTimerRef: chatState.waitTimerRef,
+    currentSessionIdRef: chatState.currentSessionIdRef,
+    executeSend: chatStreaming.executeSend,
+  });
+
+  // 7. 中断控制（始终加载）
+  const chatTaskControl = useChatTaskControl({
+    setters: {
+      setLoading: chatState.setLoading,
+      setIsPaused: chatState.setIsPaused,
+      setIsReceiving: chatStreaming.setIsReceiving,
+    },
+    states: {
+      isPaused: chatState.isPaused,
+      sessionId: chatState.sessionId,
+      serverTaskId: chatStreaming.serverTaskId,
+    },
+    refs: {
+      cancelInProgressRef: chatState.cancelInProgressRef,
+      hasReceivedCancelEventRef: chatState.hasReceivedCancelEventRef,
+      waitTimerRef: chatState.waitTimerRef,
+      isPausedRef: chatState.isPausedRef,
+    },
+    functions: {
+      disconnect: chatStreaming.disconnect,
+    },
+  });
+
+  // 通过useMemo统一返回，避免不必要的重渲染
+  return useMemo(
+    () => ({
+      // ===== 状态组 =====
+
+      // 会话状态
+      session: {
+        sessionId: chatState.sessionId,
+        sessionTitle: chatState.sessionTitle,
+        sessionVersion: chatState.sessionVersion,
+        titleLocked: chatState.titleLocked,
+        editingTitle: chatState.editingTitle,
+        titleInput: chatState.titleInput,
+        setSessionId: chatState.setSessionId,
+        setSessionTitle: chatState.setSessionTitle,
+        setSessionVersion: chatState.setSessionVersion,
+        setTitleLocked: chatState.setTitleLocked,
+        setEditingTitle: chatState.setEditingTitle,
+        setTitleInput: chatState.setTitleInput,
+        currentSessionIdRef: chatState.currentSessionIdRef,
+      },
+
+      // 消息状态
+      message: {
+        messages: chatState.messages,
+        loading: chatState.loading,
+        isRetrying: chatState.isRetrying,
+        setMessages: chatState.setMessages,
+        setLoading: chatState.setLoading,
+        setIsRetrying: chatState.setIsRetrying,
+        messagesRef: chatState.messagesRef,
+        messagesEndRef: chatState.messagesEndRef,
+      },
+
+      // 流式状态
+      streaming: {
+        isReceiving: chatStreaming.isReceiving,
+        isPaused: chatState.isPaused,
+        waitTime: chatState.waitTime,
+        executionSteps: chatStreaming.executionSteps,
+        serverTaskId: chatStreaming.serverTaskId,
+        currentResponse: chatStreaming.currentResponse,
+        setIsReceiving: chatStreaming.setIsReceiving,
+        setIsPaused: chatState.setIsPaused,
+        setWaitTime: chatState.setWaitTime,
+      },
+
+      // UI状态
+      ui: {
+        useStream: chatState.useStream,
+        isInitialized: chatState.isInitialized,
+        sessionJumpLoading: chatState.sessionJumpLoading,
+        isMessageListLoading: chatState.isMessageListLoading,
+        setUseStream: chatState.setUseStream,
+        setIsInitialized: chatState.setIsInitialized,
+        setSessionJumpLoading: chatState.setSessionJumpLoading,
+        setIsMessageListLoading: chatState.setIsMessageListLoading,
+        userScrolledUpRef: chatState.userScrolledUpRef,
+        lastScrollTimeRef: chatState.lastScrollTimeRef,
+      },
+
+      // ===== 操作组 =====
+
+      // 发送操作
+      send: {
+        handleSend: chatSend.handleSend,
+      },
+
+      // 中断操作
+      interrupt: {
+        handleCancel: chatTaskControl.handleCancel,
+        handleTogglePause: chatTaskControl.handleTogglePause,
+      },
+
+      // 会话操作
+      sessionOps: {
+        initializeSession: chatSession.initializeSession,
+        handleNewSession: chatSession.handleNewSession,
+        handleClear: chatSession.handleClear,
+      },
+
+      // 持久化操作
+      persistence: {
+        saveStateWithSSECheck: chatPersistence.saveStateWithSSECheck,
+        saveMessagesToStorage: chatPersistence.saveMessagesToStorage,
+      },
+
+      // ===== 共享Refs =====
+      shared: {
+        waitTimerRef: chatState.waitTimerRef,
+        executionStepsRef: chatState.executionStepsRef,
+        isPausedRef: chatState.isPausedRef,
+        hasReceivedCancelEventRef: chatState.hasReceivedCancelEventRef,
+        cancelInProgressRef: chatState.cancelInProgressRef,
+      },
+
+      // ===== 原有Hook对象（兼容旧引用）=====
+      chatState,
+      chatCallbacks,
+      chatStreaming,
+      chatSession,
+      chatPersistence,
+      chatSend,
+      chatTaskControl,
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }),
+    [
+      // ===== 会话状态 =====
+      chatState.sessionId,
+      chatState.sessionTitle,
+      chatState.sessionVersion,
+      chatState.titleLocked,
+      chatState.editingTitle,
+      chatState.titleInput,
+      chatState.setSessionId,
+      chatState.setSessionTitle,
+      chatState.setSessionVersion,
+      chatState.setTitleLocked,
+      chatState.setEditingTitle,
+      chatState.setTitleInput,
+      chatState.currentSessionIdRef,
+      // ===== 消息状态 =====
+      chatState.messages,
+      chatState.loading,
+      chatState.isRetrying,
+      chatState.setMessages,
+      chatState.setLoading,
+      chatState.setIsRetrying,
+      chatState.messagesRef,
+      chatState.messagesEndRef,
+      // ===== 流式状态 =====
+      chatStreaming.isReceiving,
+      chatStreaming.executionSteps,
+      chatStreaming.serverTaskId,
+      chatStreaming.currentResponse,
+      chatStreaming.setIsReceiving,
+      chatState.isPaused,
+      chatState.waitTime,
+      chatState.setIsPaused,
+      chatState.setWaitTime,
+      // ===== UI状态 =====
+      chatState.useStream,
+      chatState.isInitialized,
+      chatState.sessionJumpLoading,
+      chatState.isMessageListLoading,
+      chatState.setUseStream,
+      chatState.setIsInitialized,
+      chatState.setSessionJumpLoading,
+      chatState.setIsMessageListLoading,
+      chatState.userScrolledUpRef,
+      chatState.lastScrollTimeRef,
+      // ===== 操作函数 =====
+      chatSend.handleSend,
+      chatTaskControl.handleCancel,
+      chatTaskControl.handleTogglePause,
+      chatSession.initializeSession,
+      chatSession.handleNewSession,
+      chatSession.handleClear,
+      chatPersistence.saveStateWithSSECheck,
+      chatPersistence.saveMessagesToStorage,
+      // ===== Refs =====
+      chatState.waitTimerRef,
+      chatState.executionStepsRef,
+      chatState.isPausedRef,
+      chatState.hasReceivedCancelEventRef,
+      chatState.cancelInProgressRef,
+    ]
+  );
+};
+
+/**
+ * useShouldLoadStreaming - UI按需渲染判断
+ *
+ * 功能：
+ * - 判断是否需要显示streaming相关UI
+ * - 通过状态检查实现"按需显示"
+ * - 避免条件渲染Hook的问题
+ *
+ * 注意：此Hook需要配合useChatFacade使用
+ * 因为它依赖chatState中的状态
+ *
+ * 使用方法：
+ * ```typescript
+ * const chat = useChatFacade();
+ * const shouldLoad = useShouldLoadStreaming(chat);
+ *
+ * // UI按需渲染
+ * return (
+ *   <div>
+ *     {shouldLoad.isReceiving && <LoadingIndicator />}
+ *     {shouldLoad.hasSteps && <StepList />}
+ *     {shouldLoad.canCancel && <CancelButton />}
+ *   </div>
+ * );
+ * ```
+ */
+export const useShouldLoadStreaming = (
+  chat: ReturnType<typeof useChatFacade>
+) => {
+  // 从chat中获取streaming状态
+  const streaming = chat?.streaming;
+  const ui = chat?.ui;
+
+  return useMemo(
+    () => ({
+      // 是否正在接收
+      isReceiving: streaming?.isReceiving ?? false,
+
+      // 是否有执行步骤（需要从chatState获取）
+      hasSteps: (streaming?.executionSteps?.length ?? 0) > 0, // 2026-08-27 小欧 三堂会审: 由executionSteps派生
+
+      // 是否可以显示工具面板
+      showPanel:
+        (streaming?.isReceiving ?? false) ||
+        (streaming?.executionSteps?.length ?? 0) > 0,
+
+      // 是否可以显示中断按钮
+      canCancel: streaming?.isReceiving ?? false,
+
+      // 是否显示等待时间
+      showWaitTime:
+        (streaming?.isReceiving ?? false) &&
+        (ui?.isMessageListLoading ?? false),
+    }),
+    [streaming, ui]
+  );
+};
+
+/**
+ * useChatFacade组合 - 用于替代NewChatContainer中的多个Hook调用
+ *
+ * 使用示例：
+ * ```typescript
+ * // 之前（调用7个Hook）
+ * const chatState = useChatState();
+ * const chatStreaming = useChatStreaming(...);
+ * const chatSession = useChatSession(...);
+ * // ...
+ *
+ * // 之后（调用1个Facade）
+ * const chat = useChatFacade();
+ * const { session, message, streaming, send, interrupt } = chat;
+ * ```
+ */
+export default useChatFacade;

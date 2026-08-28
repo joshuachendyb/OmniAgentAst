@@ -692,8 +692,7 @@ const processSSEData = (
             Array.isArray(llmDataRaw) ? llmDataRaw[0] : llmDataRaw
           ) as Record<string, unknown> | undefined;
           const otherData = obsData.other_data as
-            | Record<string, unknown>
-            | undefined;
+            Record<string, unknown> | undefined;
           step.observation = obsData;
           step.tool_result = obsData.tool_result;
           step.execution_result = obsData;
@@ -715,9 +714,7 @@ const processSSEData = (
           step.summary = (llmData?.summary as string) ?? obsData.summary ?? '';
           step.execution_status =
             ((llmData?.status as Record<string, unknown>)?.exec_code as
-              | 'success'
-              | 'error'
-              | 'warning') ??
+              'success' | 'error' | 'warning') ??
             (obsData.execution_status as 'success' | 'error' | 'warning') ??
             undefined;
           step.error_message =

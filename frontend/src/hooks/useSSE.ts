@@ -118,8 +118,7 @@ const handleSSEError = (params: {
   // 如果不可重试或已超过最大次数
   // 2026-08-27 小欧 修复B1: 显式Boolean, 避免 pendingMessage 对象使 canRetry 变为对象(永远truthy)导致 failed 永不触发
   // 2026-08-28 小沈 修复B3: 去掉!!pendingMessage(无pendingMessage时重连仍有意义——重建连接获取服务端响应), 与内层handleSSEError retryable判断对齐
-  const canRetry =
-    reconnectAttempts < reconnectConfig.maxAttempts;
+  const canRetry = reconnectAttempts < reconnectConfig.maxAttempts;
 
   // 使用统一错误处理中心（handleSSEError 恒返回 handled:true，无需再判 else 早退）
   // 2026-08-27 小欧 修复B1: 仅canRetry时注入onReconnect, 达到maxAttempts后停止重连;
@@ -127,12 +126,12 @@ const handleSSEError = (params: {
   errorHandlerHandleSSE(error as Error, {
     reconnectAttempts,
     maxRetries: reconnectConfig.maxAttempts,
-        onReconnect: canRetry
-          ? () => {
-              onSetReconnectStatus('reconnecting');
-              onReconnect();
-            }
-          : undefined,
+    onReconnect: canRetry
+      ? () => {
+          onSetReconnectStatus('reconnecting');
+          onReconnect();
+        }
+      : undefined,
   });
 
   if (!canRetry) {
@@ -489,7 +488,10 @@ export const useSSE = (
       }
       const controller = new AbortController();
       abortControllerRef.current = controller; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
-      fetchTimeoutRef.current = window.setTimeout(() => controller.abort(), 180000); // 180s超时，qwen2.5:1.5b CPU首次推理约2分钟
+      fetchTimeoutRef.current = window.setTimeout(
+        () => controller.abort(),
+        180000
+      ); // 180s超时，qwen2.5:1.5b CPU首次推理约2分钟
 
       let response: Response;
       if (isReconnect) {
@@ -655,7 +657,11 @@ export const useSSE = (
         onReconnect: () => {
           reconnectAttemptsRef.current++;
           // 2026-08-27 修复: 重连时传入lastContextLinkModeRef, 避免contextLinkMode丢失
-          sendMessageInternal(content, sessionId, lastContextLinkModeRef.current);
+          sendMessageInternal(
+            content,
+            sessionId,
+            lastContextLinkModeRef.current
+          );
         },
         onSetReconnectStatus: setReconnectStatus,
         onSetIsConnected: setIsConnected,

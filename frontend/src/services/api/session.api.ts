@@ -128,7 +128,9 @@ export const sessionApi = {
       version: response.data.version ?? 1,
       messages: (response.data.messages ?? []).map((m) => ({
         ...m,
-        thought: m.thought ?? (typeof m.is_reasoning === 'string' ? m.is_reasoning : undefined),
+        thought:
+          m.thought ??
+          (typeof m.is_reasoning === 'string' ? m.is_reasoning : undefined),
         is_reasoning: m.is_reasoning ?? (m.thought != null && m.thought !== ''),
       })),
     };

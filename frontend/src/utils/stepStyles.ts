@@ -143,13 +143,29 @@ interface StepMeta {
 
 const stepMeta: Record<StepType, StepMeta> = {
   thought: { label: '💭 思考', priority: 'secondary', layout: 'block' },
-  start: { label: '🚀 开始', priority: 'primary', layout: 'inline-with-details' },
+  start: {
+    label: '🚀 开始',
+    priority: 'primary',
+    layout: 'inline-with-details',
+  },
   startinfo: { label: '🚀 开始信息', priority: 'secondary', layout: 'inline' },
-  'thought-start': { label: '💭 开始思考', priority: 'secondary', layout: 'block' },
+  'thought-start': {
+    label: '💭 开始思考',
+    priority: 'secondary',
+    layout: 'block',
+  },
   usage: { label: '🔢 Token', priority: 'secondary', layout: 'inline' },
   stats: { label: '📊 统计', priority: 'secondary', layout: 'inline' },
-  final_stats: { label: '📊 最终统计', priority: 'secondary', layout: 'inline' },
-  context_overview: { label: '📑 上下文概览', priority: 'secondary', layout: 'inline' },
+  final_stats: {
+    label: '📊 最终统计',
+    priority: 'secondary',
+    layout: 'inline',
+  },
+  context_overview: {
+    label: '📑 上下文概览',
+    priority: 'secondary',
+    layout: 'inline',
+  },
   truncated: { label: '✂️ 截断', priority: 'secondary', layout: 'inline' },
   final: { label: '✅ 完成', priority: 'primary', layout: 'block' },
   error: { label: '❌ 错误', priority: 'primary', layout: 'block' },
@@ -157,10 +173,22 @@ const stepMeta: Record<StepType, StepMeta> = {
   paused: { label: '⏸️ 暂停', priority: 'secondary', layout: 'inline' },
   resumed: { label: '▶️ 恢复', priority: 'secondary', layout: 'inline' },
   retrying: { label: '🔄 重试', priority: 'secondary', layout: 'inline' },
-  observation: { label: '📋 观察', priority: 'secondary', layout: 'inline-with-details' },
-  action: { label: '⚙️ 执行', priority: 'primary', layout: 'inline-with-details' },
+  observation: {
+    label: '📋 观察',
+    priority: 'secondary',
+    layout: 'inline-with-details',
+  },
+  action: {
+    label: '⚙️ 执行',
+    priority: 'primary',
+    layout: 'inline-with-details',
+  },
   chunk: { label: '📝 内容', priority: 'primary', layout: 'block' },
-  report: { label: '📊 报告', priority: 'secondary', layout: 'inline-with-details' },
+  report: {
+    label: '📊 报告',
+    priority: 'secondary',
+    layout: 'inline-with-details',
+  },
 };
 
 // 2026-08-27 小欧 修复step-5: action_tool 不在 stepMeta 键集合中, isValidStepType 必返回 false(8.4.2 禁止 backward)
