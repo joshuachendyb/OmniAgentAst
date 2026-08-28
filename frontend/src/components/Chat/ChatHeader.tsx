@@ -123,7 +123,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-      <span style={{ color: '#595959', fontSize: 14, fontWeight: 500 }}>会话</span>
+      <span style={{ color: Colors.TEXT.PRIMARY, fontSize: 14, fontWeight: 500 }}>会话</span>
       <span style={{ marginLeft: 8, marginRight: 8, height: 16, width: 1, background: Colors.BORDER.LIGHT }} />
       {sessionId && editingTitle ? (
         <Input
@@ -149,7 +149,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
       ) : (
         <Tooltip title={editingTitle ? '' : '点击编辑标题'}>
           <span
-            style={{ cursor: 'pointer', color: titleLocked ? '#262626' : '#595959', fontSize: 14, fontWeight: titleLocked ? 500 : 400 }}
+            style={{ cursor: 'pointer', color: titleLocked ? Colors.TEXT.STRONG : Colors.TEXT.PRIMARY, fontSize: 14, fontWeight: titleLocked ? 500 : 400 }}
             onClick={(e) => {
               e.stopPropagation();
               if (sessionId) {
@@ -161,11 +161,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             {sessionTitle || '未命名会话'}
             {!titleLocked ? (
               <Tooltip title='AI自动生成的标题'>
-                <InfoCircleOutlined style={{ fontSize: 12, marginLeft: 4, color: '#8c8c8c' }} />
+                <InfoCircleOutlined style={{ fontSize: 12, marginLeft: 4, color: Colors.TEXT.SECONDARY }} />
               </Tooltip>
             ) : (
               <Tooltip title='标题已锁定，防止自动覆盖'>
-                <LockOutlined style={{ fontSize: 12, marginLeft: 4, color: '#1677ff' }} />
+                <LockOutlined style={{ fontSize: 12, marginLeft: 4, color: Colors.PRIMARY }} />
               </Tooltip>
             )}
           </span>

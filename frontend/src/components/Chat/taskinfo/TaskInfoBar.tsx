@@ -19,6 +19,7 @@ import { Badge, Tooltip, Typography } from 'antd';
 import type { ExecutionStep } from '../../../types/execution';
 import type { TaskMetaFrames } from '../../../utils/sse';
 import type { TaskDetail } from '../../../services/api';
+import { Colors } from '@/utils/stepStyles';
 import { useTaskInfo } from '../../../hooks/chat/useTaskInfo';
 
 interface TaskInfoBarProps {
@@ -78,11 +79,12 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
       style={{
         background: 'transparent',
         border: 'none',
-        borderTop: '1px solid #f0f0f0',
+        borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
         padding: '8px 0 0',
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
+        textAlign: 'left',
       }}
     >
       <div
@@ -96,7 +98,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
         onClick={() => setCollapsed((v) => !v)}
       >
         <Badge status={b.status} text={b.text} />
-        <Typography.Text style={{ fontSize: 12, color: '#595959', fontWeight: 500 }}>
+        <Typography.Text style={{ fontSize: 12, color: Colors.TEXT.PRIMARY, fontWeight: 500 }}>
           耗时 {Math.round(shownElapsed)}s
         </Typography.Text>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -133,7 +135,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
         ) : null}
         {info.stuckWarning && <Typography.Text type="warning" style={{ fontSize: 12 }}>疑似卡死(llm≫step)</Typography.Text>}
         {info.truncatedTip && <Typography.Text type="warning" style={{ fontSize: 12 }}>⚠ {info.truncatedTip}</Typography.Text>}
-        <span style={{ marginLeft: 'auto', color: '#999', fontSize: 12 }}>
+        <span style={{ marginLeft: 'auto', color: Colors.TEXT.TERTIARY, fontSize: 12 }}>
           {collapsed ? '展开' : '收起'}
         </span>
       </div>
@@ -144,13 +146,13 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             maxHeight: 72,
             overflowY: 'auto',
             scrollbarWidth: 'thin',
-            borderTop: '1px solid #f0f0f0',
+            borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
             paddingTop: 8,
             marginTop: 0,
           }}
         >
           {info.processEvents.map((e, i) => (
-            <div key={i} style={{ fontSize: 12, color: '#999' }}>
+               <div key={i} style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
               {e.kind === 'started' && '▶️ '}
               {e.kind === 'paused' && '⏸️ '}
               {e.kind === 'resumed' && '▶️ '}

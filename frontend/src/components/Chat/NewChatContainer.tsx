@@ -42,6 +42,7 @@ import { TaskInfoBar } from './taskinfo/TaskInfoBar';
 import { TrustPanel } from './config/TrustPanel';
 import { useLoadingMessage } from '../../hooks/useLoadingMessage';
 import { useBeforeUnload } from '../../hooks/useBeforeUnload';
+import { Colors } from '@/utils/stepStyles';
 
 const NewChatContainer: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -235,11 +236,17 @@ const NewChatContainer: React.FC = () => {
 
   // 【小欧 2026-08-27 修复#6】新会话首个任务自动激活: serverTaskId 就绪但 activeTaskId 尚空时跟随,
   // 避免右侧执行详情/任务信息条不随首个实时任务联动(历史点击手动选择时不覆盖)
+  // 2026-08-28 小欧 v1.3: 纯历史会话(serverTaskId为空)加载后默认选中列表首项, 任务信息框显第一个任务(用户三态需求②)
   useEffect(() => {
-    if (serverTaskId && !activeTaskId) {
+    if (activeTaskId) return;
+    if (serverTaskId) {
       setActiveTaskId(serverTaskId);
+      return;
     }
-  }, [serverTaskId, activeTaskId]);
+    if (!isReceiving && tasks.length > 0) {
+      setActiveTaskId(tasks[0].task_id);
+    }
+  }, [serverTaskId, activeTaskId, isReceiving, tasks]);
 
   // 任务结束沿（isReceiving true→false）统一刷新：任务列表 / 顶栏链累计 token
   const prevReceivingRef = useRef(false);
@@ -530,10 +537,10 @@ const NewChatContainer: React.FC = () => {
             />
             {effective && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <Typography.Text type="secondary" style={{ fontSize: 12, color: '#595959' }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12, color: Colors.TEXT.PRIMARY }}>
                   {effective.display_name || `${effective.provider} (${effective.model})`}
                 </Typography.Text>
-                <span style={{ width: 4, height: 4, borderRadius: '50%', background: effective.source === 'session' ? '#1677ff' : '#d9d9d9', display: 'inline-block' }} />
+                <span style={{ width: 4, height: 4, borderRadius: '50%', background: effective.source === 'session' ? Colors.PRIMARY : Colors.BORDER.DEFAULT, display: 'inline-block' }} />
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {effective.source === 'session' ? '会话' : '全局'}
                 </Typography.Text>
@@ -669,8 +676,8 @@ const NewChatContainer: React.FC = () => {
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
-        padding: '0 4px 4px',
-        background: '#fff',
+        padding: '0 8px 8px',
+        background: Colors.BG.PRIMARY,
         minWidth: 0,
       }}
     >

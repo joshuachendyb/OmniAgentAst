@@ -5,6 +5,7 @@
 // 编辑历史: 2026-08-28 小强 - 修复[17]: errorContext.step=0误用真值, 改为!=null兼容0 - 小强-2026-08-28
 import React, { memo } from 'react';
 import { formatSafeTimestamp } from '../../utils/formatSafeTimestamp'; // 2026-08-27 小欧 三堂会审: 复用时戳安全格式化(复用优先)
+import { Colors } from '@/utils/stepStyles';
 
 interface ErrorDetailProps {
   errorType?: string;
@@ -53,7 +54,7 @@ const ERROR_COLORS_MAP: Record<
   agent: {
     background: 'rgba(24, 144, 255, 0.1)',
     border: 'rgba(24, 144, 255, 0.3)',
-    color: '#1677ff',
+    color: Colors.PRIMARY,
     icon: '🤖',
     title: 'Agent错误',
     codeBackground: 'rgba(24, 144, 255, 0.2)',
@@ -153,13 +154,13 @@ const gridStyle: React.CSSProperties = {
 };
 
 const labelStyle: React.CSSProperties = {
-  color: '#888',
+    color: Colors.TEXT.WEAK,
   whiteSpace: 'nowrap',
   fontSize: '13px',
 };
 
 const valueStyle: React.CSSProperties = {
-  color: '#666',
+    color: Colors.TEXT.SECONDARY,
   fontSize: '13px',
 };
 
@@ -178,13 +179,13 @@ const contextBoxStyle: React.CSSProperties = {
 };
 
 const detailsBoxStyle: React.CSSProperties = {
-  color: '#888',
+    color: Colors.TEXT.WEAK,
   fontSize: '12px',
   marginBottom: 4,
 };
 
 const contentBoxStyle: React.CSSProperties = {
-  color: '#666',
+    color: Colors.TEXT.SECONDARY,
   fontSize: '13px',
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-all',
@@ -195,7 +196,7 @@ const stackPreStyle: React.CSSProperties = {
   padding: '8px 12px',
   background: 'rgba(0, 0, 0, 0.03)',
   borderRadius: 6,
-  color: '#888',
+    color: Colors.TEXT.WEAK,
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-all',
@@ -328,7 +329,7 @@ const ErrorDetail: React.FC<ErrorDetailProps> = memo(
           {errorStack && (
             <details style={{ marginTop: 8, gridColumn: 'span 2' }}>
               <summary
-                style={{ color: '#888', fontSize: '13px', cursor: 'pointer' }}
+                style={{ color: Colors.TEXT.WEAK, fontSize: '13px', cursor: 'pointer' }}
               >
                 查看堆栈信息
               </summary>

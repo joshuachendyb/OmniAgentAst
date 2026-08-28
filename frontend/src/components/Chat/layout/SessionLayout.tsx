@@ -20,6 +20,7 @@ import {
   type SessionPanel,
   type SlotName,
 } from './SessionPanelRegistry';
+import { Colors } from '@/utils/stepStyles';
 
 interface SessionLayoutProps {
   panels: SessionPanel[];
@@ -27,7 +28,7 @@ interface SessionLayoutProps {
   onToggleRight: () => void;
 }
 
-const LEFT_WIDTH = 240;
+const LEFT_WIDTH = 'clamp(200px, 18vw, 280px)'; // 2026-08-28 小欧 v1.3(P2-H5): 定宽240→响应式区间, 防窄屏挤压
 
 const renderSlot = (panels: SessionPanel[], slot: SlotName) =>
   panels
@@ -40,6 +41,14 @@ const renderSlot = (panels: SessionPanel[], slot: SlotName) =>
       )
     )
     .map((p) => <React.Fragment key={p.key}>{p.component}</React.Fragment>);
+
+// 2026-08-28 小欧 v1.3(P2-M3): 判空槽, 空则不渲染外层div, 避免空div占gap8致间距翻倍
+const hasVisibleSlot = (panels: SessionPanel[], slot: SlotName): boolean =>
+  panels.some(
+    (p) =>
+      p.slot === slot &&
+      readPanelVisible(p.key, p.defaultVisible ?? true, p.persistVisible ?? false)
+  );
 
 const SessionLayout: React.FC<SessionLayoutProps> = ({
   panels,
@@ -75,7 +84,7 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
         style={{
           width: LEFT_WIDTH,
           flexShrink: 0,
-          borderRight: '1px solid #f0f0f0',
+          borderRight: `1px solid ${Colors.BORDER.LIGHT}`,
           overflowY: 'auto',
           overflowX: 'hidden',
         }}
@@ -131,9 +140,9 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
     </div>
 
     {/* ③④⑤ taskinfo / config / input */}
-    <div>{renderSlot(panels, 'taskinfo')}</div>
-    <div>{renderSlot(panels, 'config')}</div>
-    <div>{renderSlot(panels, 'input')}</div>
+    {hasVisibleSlot(panels, 'taskinfo') && <div>{renderSlot(panels, 'taskinfo')}</div>}
+    {hasVisibleSlot(panels, 'config') && <div>{renderSlot(panels, 'config')}</div>}
+    {hasVisibleSlot(panels, 'input') && <div>{renderSlot(panels, 'input')}</div>}
   </div>
 );
 
