@@ -20,14 +20,14 @@
  */
 
 import { useCallback } from 'react';
-import { taskControlApi } from '../../services/api';
+import { taskControlApi } from '../../services/api/task.api';
 import {
   showTaskControlInfo,
   showTaskResultMessage,
   showTaskControlMessage,
   showNoActiveTaskWarning,
 } from '../../utils/chatMessages';
-import { handleError } from '../../utils/errorHandler';
+import { handleError } from '@/services/error/handler';
 
 // ============================================================================
 // 类型定义

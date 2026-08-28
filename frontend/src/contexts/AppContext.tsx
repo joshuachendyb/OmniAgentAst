@@ -17,9 +17,9 @@ import React, {
   useRef,
   ReactNode,
 } from "react";
-import { configApi, chatApi, sessionApi } from "../services/api";
-import type { ValidateResponse } from "../services/api";
-
+import { configApi } from "../services/api/config.api";
+import { chatApi, type ValidateResponse } from "../services/api/chat.api";
+import { sessionApi } from "../services/api/session.api";
 /**
  * 模型数据类型
  */

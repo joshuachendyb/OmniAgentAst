@@ -18,7 +18,8 @@
 import React, { useEffect, useState } from 'react';
 import { Select, Tooltip } from 'antd';
 import { DownOutlined } from '@ant-design/icons';
-import { sessionApi, configApi } from '../../services/api';
+import { sessionApi } from '../../services/api/session.api';
+import { configApi } from '../../services/api/config.api';
 import type { SessionModelOverride, ModelListItem } from '../../types/chat';
 import { showSaveError, showSessionConflict } from '../../utils/chatMessages';
 

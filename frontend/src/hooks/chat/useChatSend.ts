@@ -19,10 +19,11 @@
  */
 
 import { useCallback, useRef } from "react"; // 2026-08-28 小强: 加回useRef(isSendingRef同步防重)
-import { handleError, ErrorType } from "../../utils/errorHandler";
+import { handleError, ErrorType } from "@/services/error/handler";
 import { checkNetworkConnection } from "../../utils/network";
 import { showNetworkError } from "../../utils/chatMessages";
-import { sessionApi, API_BASE_URL } from "../../services/api";
+import { sessionApi } from "../../services/api/session.api";
+import { API_BASE_URL } from "../../services/api/client";
 import { logUserSend } from "../../utils/chatLogger";
 import type { Message } from "../../types/chat";
 

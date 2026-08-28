@@ -47,8 +47,8 @@ import {
   ExclamationCircleOutlined,
   CloseCircleOutlined,
 } from '@ant-design/icons';
-import { configApi } from '../../services/api';
-import type { ValidateResponse } from '../../services/api';
+import { configApi } from '../../services/api/config.api';
+import type { ValidateResponse } from '../../services/api/chat.api';
 import type { MenuProps } from 'antd';
 import ShortcutPanel from '../ShortcutPanel';
 import { useApp } from '../../contexts/AppContext';
@@ -58,7 +58,7 @@ import {
   showSuccess,
   showMessage,
   ErrorType,
-} from '../../utils/errorHandler';
+} from '@/services/error/handler';
 // import useInitializationProgress from "../../hooks/useInitializationProgress"; // 步骤9预留
 
 const { useBreakpoint } = Grid;

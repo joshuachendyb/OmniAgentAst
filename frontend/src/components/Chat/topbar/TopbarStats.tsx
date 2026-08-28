@@ -12,7 +12,7 @@
  */
 
 import React from 'react';
-import { formatTime } from '../left/TaskListPanel'; // 2026-08-27 小欧 修复#9: 顶栏时间复用formatTime统一格式(此前显示ISO未格式化)
+import { formatDate } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatTime统一至utils/time.ts
 import { Tooltip, Typography } from 'antd';
 
 interface TopbarStatsProps {
@@ -30,7 +30,7 @@ const TopbarStats: React.FC<TopbarStatsProps> = ({
 }) => {
   const timeTip =
     createdAt || updatedAt
-      ? `创建：${formatTime(createdAt)}\n更新：${formatTime(updatedAt)}`
+      ? `创建：${formatDate(createdAt)}\n更新：${formatDate(updatedAt)}`
       : '';
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>

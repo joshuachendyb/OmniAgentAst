@@ -25,7 +25,7 @@ import { useCallback, useRef } from "react";
 import type { Message, SessionModelOverride } from "../../types/chat";
 import type { UseChatStateReturn } from "./useChatState";
 import type { UseChatStreamingReturn } from "./useChatStreaming";
-import { sessionApi } from "../../services/api";
+import { sessionApi } from "../../services/api/session.api";
 import { loadHistoryMessages, loadLatestHistoryMessages, STORAGE_KEY } from "../../utils/chatHistory";
 import { 
   showNewSessionSuccess, 

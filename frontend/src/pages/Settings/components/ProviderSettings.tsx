@@ -37,13 +37,12 @@ import {
   EyeOutlined,
   EyeInvisibleOutlined,
 } from '@ant-design/icons';
-import { configApi } from '../../../services/api';
-import type { ProviderInfo } from '../../../services/api';
+import { configApi, type ProviderInfo } from '../../../services/api/config.api';
 import {
   handleError,
   showSuccess,
   ErrorType,
-} from '../../../utils/errorHandler';
+} from '@/services/error/handler';
 import type { ModelOption } from '../types';
 import { GlobalConfigArea } from './GlobalConfigArea';
 import { ProviderList } from './ProviderList';

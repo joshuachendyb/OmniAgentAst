@@ -18,7 +18,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Badge, Tooltip, Typography } from 'antd';
 import type { ExecutionStep } from '../../../types/execution';
 import type { TaskMetaFrames } from '../../../utils/sse';
-import type { TaskDetail } from '../../../services/api';
+import type { TaskDetail } from '../../../services/api/task.api';
 import { Colors } from '@/utils/stepStyles';
 import { useTaskInfo } from '../../../hooks/chat/useTaskInfo';
 

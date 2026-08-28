@@ -21,7 +21,7 @@
 import { useMemo } from 'react';
 import type { ExecutionStep } from '../../types/execution'; // 编辑历史: 2026-08-28 小欧 - BUG16b修复: ExecutionStep统一从types/execution导入
 import type { TaskMetaFrames } from '../../utils/sse';
-import type { TaskDetail } from '../../services/api';
+import type { TaskDetail } from '../../services/api/task.api';
 
 /** 卡死预警阈值：llm_call_count ≥ step_count×STUCK_RATIO 视为疑似死循环（待定案） */
 export const STUCK_RATIO = 3;

@@ -33,8 +33,8 @@ import {
   handleSSEError as errorHandlerHandleSSE,
   ErrorType,
   classifyError as errorHandlerClassify, // 2026-08-27 小欧 三堂会审H2: 引入纯分类函数替代带副作用的handleSSEError
-} from './errorHandler';
-import { taskControlApi } from '../services/api';
+} from '@/services/error/handler';
+import { taskControlApi } from '../services/api/task.api';
 
 // 【小强修复 2026-03-18】sessionStorage key - 用于长时间隐藏页面时备份数据
 // 场景：用户切换到其他应用→页面隐藏→SSE 连接不断开→后端数据持续发送

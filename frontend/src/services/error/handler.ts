@@ -23,10 +23,10 @@
  * @since 2026-04-11
  */
 
-import { getMessage } from './antdApp';
+import { getMessage } from '@/utils/antdApp';
 
 // 2026-08-27 小欧 修复review-bugs: 自引用命名空间, 使 vi.spyOn(errorHandler,'showMessage') 能拦截内部调用(统一错误提示的测试可观测)
-import * as ErrorHandlerSelf from './errorHandler';
+import * as ErrorHandlerSelf from './handler';
 
 // ============================================
 // UI配置标准 - 统一提示样式

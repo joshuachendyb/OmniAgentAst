@@ -19,7 +19,7 @@
 import React, { useRef } from 'react';
 import { Input, Tooltip } from 'antd';
 import { InfoCircleOutlined, LockOutlined } from '@ant-design/icons';
-import { sessionApi } from '../../services/api';
+import { sessionApi } from '../../services/api/session.api';
 import { Colors } from '@/utils/stepStyles';
 import {
   showTitleSaved,

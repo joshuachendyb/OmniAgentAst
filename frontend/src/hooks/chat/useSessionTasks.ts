@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { sessionTaskApi, type SessionTaskItem } from '../../services/api';
+import { sessionTaskApi, type SessionTaskItem } from '../../services/api/task.api';
 
 export const useSessionTasks = (sessionId: string | null) => {
   const [tasks, setTasks] = useState<SessionTaskItem[]>([]);

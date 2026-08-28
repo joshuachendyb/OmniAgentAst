@@ -15,14 +15,14 @@ import React, {
 import { Typography } from 'antd';
 import { getMessage } from '../../utils/antdApp';
 import { useSearchParams } from 'react-router-dom';
+import { API_BASE_URL } from '../../services/api/client';
 import {
-  API_BASE_URL,
   taskControlApi,
   tokenUsageApi,
-  sessionApi,
   executionApi,
   type TaskDetail,
-} from '../../services/api';
+} from '../../services/api/task.api';
+import { sessionApi } from '../../services/api/session.api';
 import { saveChatState } from '../../utils/sessionStorage';
 
 import { ChatInput } from './ChatInput';

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Card, Tag, Button, Input } from "antd";
-import { healthApi, EchoResponse } from "../../services/api";
-import { handleError, showSuccess, ErrorType } from "../../utils/errorHandler";
+import { healthApi, type EchoResponse } from "../../services/api/health.api";
+import { handleError, showSuccess, ErrorType } from "@/services/error/handler";
 
 const HealthCheck: React.FC = () => {
   const [status, setStatus] = useState<string>("checking");

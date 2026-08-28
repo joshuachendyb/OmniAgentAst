@@ -12,7 +12,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { configApi, sessionApi } from '../../services/api';
+import { configApi } from '../../services/api/config.api';
+import { sessionApi } from '../../services/api/session.api';
 import type { SessionModelOverride } from '../../types/chat';
 
 export interface EffectiveModel {

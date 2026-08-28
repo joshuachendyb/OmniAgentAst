@@ -29,9 +29,9 @@ import type { UseChatCallbacksReturn } from './useChatCallbacks';
 import type { ExecutionStep } from '../../types/execution';
 import type { Message } from '../../types/chat';
 import { useSSE } from '../../utils/sse';
-import { sessionApi } from '../../services/api';
+import { sessionApi } from '../../services/api/session.api';
 import { getClientInfo } from '../../utils/clientInfo';
-import { handleError } from '../../utils/errorHandler';
+import { handleError } from '@/services/error/handler';
 
 // ============================================================================
 // 类型定义

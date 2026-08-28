@@ -15,7 +15,7 @@
 
 import React from 'react';
 import { Empty, Skeleton, Typography } from 'antd';
-import type { SessionTaskItem } from '../../../services/api';
+import type { SessionTaskItem } from '../../../services/api/task.api';
 import { Colors } from '@/utils/stepStyles';
 import { CollapsibleText } from '../pipeline/CollapsibleText';
 
@@ -25,19 +25,6 @@ interface TaskListPanelProps {
   onSelect: (taskId: string) => void;
   loading?: boolean;
 }
-
-/** 【小欧 2026-08-26 修复 C3】ISO 时间格式化为 月/日 时:分，避免原始串溢出 */
-export const formatTime = (s?: string): string => {
-  if (!s) return '-';
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
 
 const TaskListPanel: React.FC<TaskListPanelProps> = ({
   tasks,

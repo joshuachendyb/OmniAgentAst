@@ -17,11 +17,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Spin, Empty, Alert, Typography } from 'antd';
 import type { ExecutionStep } from '../../../types/execution';
 import { Colors } from '@/utils/stepStyles';
-import {
-  executionApi,
-  sessionApi,
-  type TaskDetail,
-} from '../../../services/api';
+import { sessionApi } from '../../../services/api/session.api';
+import { executionApi, type TaskDetail } from '../../../services/api/task.api';
 import { PipelineRenderer } from '../pipeline';
 import { splitSteps } from '../pipeline/steps';
 import { StaticStatsBlock } from './StaticStatsBlock';

@@ -12,7 +12,7 @@
  * @since 2026-03-13
  */
 
-import { sessionApi } from "../services/api";
+import { sessionApi } from "../services/api/session.api";
 import type { Message, HistoryLoadResult } from "../types/chat";
 import type { ExecutionStep } from "../types/execution";
 

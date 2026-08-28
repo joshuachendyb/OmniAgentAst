@@ -18,7 +18,7 @@
 
 import React from 'react';
 import { Descriptions, Tag, Typography } from 'antd';
-import type { TaskDetail } from '../../../services/api';
+import type { TaskDetail } from '../../../services/api/task.api';
 import { Colors } from '@/utils/stepStyles';
 
 // 2026-08-27 小欧 三堂会审: 状态色查表替嵌套三元

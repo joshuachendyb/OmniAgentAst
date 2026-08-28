@@ -17,13 +17,13 @@ import {
   CheckCircleOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { configApi } from '../../../services/api';
+import { configApi } from '../../../services/api/config.api';
 import {
   handleError,
   showSuccess,
   showMessage,
   ErrorType,
-} from '../../../utils/errorHandler';
+} from '@/services/error/handler';
 import type { ModelOption } from '../types';
 
 const { Text } = Typography;

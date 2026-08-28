@@ -15,7 +15,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Collapse, List, Typography } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
-import { trustApi } from '../../../services/api';
+import { trustApi } from '../../../services/api/task.api';
 import { Colors } from '@/utils/stepStyles';
 
 interface TrustPanelProps {

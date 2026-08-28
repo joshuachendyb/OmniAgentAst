@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Card, Button, Space, Typography, Tag, Input, Alert } from 'antd';
 import { PlusOutlined, ApiOutlined } from '@ant-design/icons';
-import type { ProviderInfo } from '../../../services/api';
+import type { ProviderInfo } from '../../../services/api/config.api';
 import type { ModelOption } from '../types';
 
 const { Text } = Typography;

@@ -4,7 +4,7 @@
 // 编辑历史: 2026-08-27 小欧 - 修复chat-E: errorType 形如 network_error 需对齐配色键(network 等), 剥离 _error 后缀查表(BUG-E)
 // 编辑历史: 2026-08-28 小强 - 修复[17]: errorContext.step=0误用真值, 改为!=null兼容0 - 小强-2026-08-28
 import React, { memo } from 'react';
-import { formatSafeTimestamp } from '../../utils/formatSafeTimestamp'; // 2026-08-27 小欧 三堂会审: 复用时戳安全格式化(复用优先)
+import { formatSafeTimestamp } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatSafeTimestamp统一至utils/time.ts
 import { Colors } from '@/utils/stepStyles';
 
 interface ErrorDetailProps {

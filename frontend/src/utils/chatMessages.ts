@@ -24,7 +24,7 @@ import {
   handleError,
   classifyError,
   showMessage,
-} from './errorHandler';
+} from '@/services/error/handler';
 
 // ============================================================
 // 成功提示

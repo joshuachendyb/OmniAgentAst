@@ -36,12 +36,13 @@ import {
   ClockCircleOutlined,
   CommentOutlined,
 } from "@ant-design/icons";
-import { sessionApi, Session } from "../../services/api";
+import { sessionApi, type Session } from "../../services/api/session.api";
 import { useNavigate } from "react-router-dom";
-import { handleError, showSuccess, ErrorType } from "../../utils/errorHandler";
+import { handleError, showSuccess, ErrorType } from "@/services/error/handler";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "dayjs/locale/zh-cn";
+import { formatDate } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatTime统一至utils/time.ts
 
 // 配置dayjs
 dayjs.extend(relativeTime);
@@ -279,13 +280,6 @@ const HistoryPage: React.FC = () => {
     }
   };
 
-  /**
-   * 格式化时间显示
-   */
-  const formatTime = (time: string) => {
-    return dayjs(time).fromNow();
-  };
-
   return (
     // 前端小新代修改 VIS-H01: 历史记录页面内部留白
     // 原因: index.css 中 .ant-card-body { padding: 0 !important; } 会覆盖 Card 组件的 bodyStyle 属性
@@ -484,7 +478,7 @@ const HistoryPage: React.FC = () => {
                             <Space>
                               <ClockCircleOutlined style={{ color: "#999" }} />
                               <Text type="secondary" style={{ fontSize: 12 }}>
-                                更新于 {formatTime(session.updated_at)}
+                                更新于 {formatDate(session.updated_at)}
                               </Text>
                             </Space>
                             <Text type="secondary" style={{ fontSize: 11 }}>
