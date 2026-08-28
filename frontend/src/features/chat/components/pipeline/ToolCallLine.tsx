@@ -78,8 +78,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         margin: '8px 0',
         padding: '4px 8px 4px 10px',
         borderRadius: highlight ? 6 : 0,
+        // 编辑历史: 2026-08-28 小欧 - 修复去框回归: 高亮态左线由THICK(2px)改THIN(1px), 契合P0-4去框轻量化意图 - 小欧-2026-08-28
         borderLeft: highlight
-          ? `${BorderWidth.THICK}px solid ${Colors.WARNING}`
+          ? `${BorderWidth.THIN}px solid ${Colors.WARNING}`
           : `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
         background: highlight ? Colors.WARNING_BG : 'transparent',
       }}
