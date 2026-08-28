@@ -13,6 +13,8 @@ Author: 小沈 - 2026-05-31
 2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): emit 内记录 _last_error(type=="error" 时读 _kwargs 取 error_type/error_message, 赋值 agent._last_error, KISS-DIRECT单一出口)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: emit FinalStep 时自动注入 task/session/chain_accumulated_tokens 三层累计(读 agent 内存态, 与 react_cycle yield 值一致); 仅 FinalStep 触发, 仅外部未设置时注入
 2026-08-18 - 小欧 - 三堂会审复核: ①emit._last_error 兼容 ErrorStep 载体(_kwargs 为空时回退读 error_type 属性), 防 error_type 丢失; ②删除死码 exit_with_error 及 ErrorStep import(YAGNI, 全仓无真实调用点)
+2026-08-28 小欧 - yield日志审计: emit()统一入口加 logger.debug("[StepEmit] type step"), 覆盖全部~50个Step yield(KISS+DRY, 单一日志出口), 三堂会审无逻辑修正
+2026-08-28 小欧 - KISS修正(三堂会审yield链审查): emit_final_with_stats 由 async def 改 sync 返回 (final, stats) 二元组; 原 async 体内零await, 纯伪异步包装, 逼出10处调用点写 async for 仪式代码; 调用点 async for→for, 行为等价无backward
 """
 
 from typing import Any, Dict, Optional
@@ -42,6 +44,8 @@ class StepEmitter:
             if step._chain_accumulated_tokens is None:
                 step._chain_accumulated_tokens = dict(getattr(self.agent, "chain_accumulated_tokens", {}))
         self.agent.steps.append(step)
+        # 2026-08-28 小欧 yield日志审计: Step emit统一入口(覆盖全部~50个Step yield, KISS+DRY)
+        logger.debug(f"[StepEmit] {getattr(step, 'type', '?')} step={getattr(step, 'step', '?')}")
         # 2026-08-18 - 小欧 - P3: error全仅SSE, emit统一出口记录_last_error供守卫填充final(KISS-DIRECT单一出口)
         if getattr(step, "type", "") == "error":
             # 2026-08-18 - 小欧 - 三堂会审复核: 兼容两种 error 载体——MetaStep(type="error") 走 _kwargs,
@@ -51,10 +55,11 @@ class StepEmitter:
             self.agent._last_error = (_et, step.get_content())
         return step
 
-    async def emit_final_with_stats(self, final_step):
-        """final 后单独 yield 终态统计事件 —— 先 .emit(final) 再 .emit(final_stats)，两事件分开、不塞进 final 键体（async 生成器，调用方 async for 转发）— 小欧 2026-08-20"""
-        yield self.emit(final_step)
-        yield self.emit(self.agent.telemetry.build_final_stats_step())
+    def emit_final_with_stats(self, final_step):
+        """final 后单独 emit 终态统计事件 —— 先 .emit(final) 再 .emit(final_stats)，两事件分开、不塞进 final 键体。
+        2026-08-28 小欧 KISS修正: 原 async def 但体内零 await, 纯伪异步包装, 逼出10处调用点写 async for 仪式代码;
+        改为 sync 返回 (final_step, stats_step) 二元组, 调用方 `for _s in ...: yield _s` 即可, 行为等价无backward。"""
+        return (self.emit(final_step), self.emit(self.agent.telemetry.build_final_stats_step()))
 
     def _get_tracker(self):
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""
