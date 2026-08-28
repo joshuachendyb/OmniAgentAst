@@ -6,12 +6,7 @@
  *   getFullConfig 消费点 data.current_provider → data.current_model_ref.provider(3处);
  *   updateConfig 改传 ai_model_ref 结构(替 ai_provider/ai_model 分离字段)
  */
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-} from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
   Button,
@@ -38,11 +33,7 @@ import {
   EyeInvisibleOutlined,
 } from '@ant-design/icons';
 import { configApi, type ProviderInfo } from '../../../services/api/config.api';
-import {
-  handleError,
-  showSuccess,
-  ErrorType,
-} from '@/services/error/handler';
+import { handleError, showSuccess, ErrorType } from '@/services/error/handler';
 import type { ModelOption } from '../types';
 import { GlobalConfigArea } from './GlobalConfigArea';
 import { ProviderList } from './ProviderList';
@@ -324,7 +315,11 @@ export const ProviderSettings: React.FC<{
       });
 
       const results = await Promise.allSettled(deletePromises);
-      const fulfilledResults = results.map(r => r.status === 'fulfilled' ? r.value : { success: false, model: '', cancelled: false });
+      const fulfilledResults = results.map((r) =>
+        r.status === 'fulfilled'
+          ? r.value
+          : { success: false, model: '', cancelled: false }
+      );
       const successCount = fulfilledResults.filter((r) => r.success).length;
       const failCount = fulfilledResults.filter(
         (r) => !r.success && !r.cancelled
@@ -525,7 +520,9 @@ export const ProviderSettings: React.FC<{
                       danger
                       size="small"
                       icon={<DeleteOutlined />}
-                      onClick={() => handleDeleteProvider(selectedProvider.name)}
+                      onClick={() =>
+                        handleDeleteProvider(selectedProvider.name)
+                      }
                     >
                       删除
                     </Button>
@@ -737,11 +734,11 @@ export const ProviderSettings: React.FC<{
                                   type="text"
                                   size="small"
                                   icon={<DeleteOutlined />}
-                                danger
-                                onClick={(e) => e?.stopPropagation()}
-                              >
-                                删除模型
-                              </Button>
+                                  danger
+                                  onClick={(e) => e?.stopPropagation()}
+                                >
+                                  删除模型
+                                </Button>
                               </Popconfirm>
                             </Space>
                           </div>

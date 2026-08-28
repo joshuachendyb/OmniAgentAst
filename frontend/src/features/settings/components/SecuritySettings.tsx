@@ -13,7 +13,10 @@ import {
   Collapse,
 } from 'antd';
 import { SafetyOutlined, ReloadOutlined, ApiOutlined } from '@ant-design/icons';
-import { configApi, type SecurityConfig } from '../../../services/api/config.api';
+import {
+  configApi,
+  type SecurityConfig,
+} from '../../../services/api/config.api';
 import { handleError, showSuccess } from '@/services/error/handler';
 
 const { Text } = Typography;

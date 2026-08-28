@@ -38,8 +38,8 @@ import {
   DesktopOutlined,
 } from '@ant-design/icons';
 import HealthCheck from '../../components/HealthCheck';
-import { ProviderSettings } from './components/ProviderSettings';
-import { SecuritySettings } from './components/SecuritySettings';
+import { ProviderSettings } from '@/features/settings/components/ProviderSettings';
+import { SecuritySettings } from '@/features/settings/components/SecuritySettings';
 
 /**
  * 设置页面
@@ -75,17 +75,29 @@ const Settings: React.FC = () => {
   const tabItems = [
     {
       key: 'model',
-      label: <span><KeyOutlined /> 模型配置</span>,
+      label: (
+        <span>
+          <KeyOutlined /> 模型配置
+        </span>
+      ),
       children: <ProviderSettings shouldLoad={loadedTabs.has('model')} />,
     },
     {
       key: 'security',
-      label: <span><SafetyOutlined /> 安全配置</span>,
+      label: (
+        <span>
+          <SafetyOutlined /> 安全配置
+        </span>
+      ),
       children: <SecuritySettings />,
     },
     {
       key: 'system',
-      label: <span><DesktopOutlined /> 系统状态</span>,
+      label: (
+        <span>
+          <DesktopOutlined /> 系统状态
+        </span>
+      ),
       children: <HealthCheck />,
     },
   ];
@@ -97,7 +109,12 @@ const Settings: React.FC = () => {
     >
       <Card style={{ marginTop: 0 }}>
         <div style={{ padding: '0 5px' }}>
-          <Tabs activeKey={activeKey} onChange={handleTabChange} type="line" items={tabItems} />
+          <Tabs
+            activeKey={activeKey}
+            onChange={handleTabChange}
+            type="line"
+            items={tabItems}
+          />
         </div>
       </Card>
     </div>
