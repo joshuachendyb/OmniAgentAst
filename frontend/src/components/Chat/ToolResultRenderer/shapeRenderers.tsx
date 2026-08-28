@@ -375,8 +375,8 @@ export const CodeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
 
   const contentBackground: React.CSSProperties = {
     background: Colors.BG.LIGHT,
+    border: 'none',
     borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
-    border: `none`,
     borderRadius: Radius.SM,
     padding: `${Spacing.XS}px ${Spacing.SM}px`,
     marginTop: 6,
