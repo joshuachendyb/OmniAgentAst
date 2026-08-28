@@ -1,4 +1,37 @@
-﻿v0.19.36
+﻿v0.19.37
+更新时间: 2026-08-29 07:54:49 - 小欧-2026-08-29
+## v0.19.36以来 变更汇总(20个commit) - 小欧-2026-08-29
+[2026-08-29 07:54:49 小欧] 汇总范围=v0.19.36以来全部commit(本分支 optimize-0.19.17 自v0.19.36累积20个commit, 已打 tag v0.19.37)
+
+### refactor(9个):
+- ChatPage+9hook 彻底瘦身ChatPage<100行并抽useChatInit/Lifecycle/Title/Scroll等useChat* hook(零逻辑变更仅复制重构)
+- 阶段一NewChatContainer瘦身(新hook+useChatPanels,新ChatPage)
+- features/chat整域迁移(components+hooks+constants迁入特性层)
+- features/settings建立(Settings组件+types迁入特性层)
+- sse.ts四合一拆分(hooks/useSSE+features/chat/services/sseParser+types/sse)
+- steps.ts→stepFilter.ts重命名
+- chatLogger→logStyles重命名
+- antdApp桥接合并(lib/antd/bridge.ts)
+- 前端阶段三重构(time合并+errorHandler迁移+api拆分6)
+
+### fix(5个):
+- ToolCallLine 去框-P0-4 高亮态左线THICK(2px)改THIN(1px)轻量化
+- ChatHeader 拦截Input卸载触发的blur双发updateSession(加savedThisEditRef守卫)
+- utils/time formatTimestamp非法日期回退返''契约(对齐utils-pure-bugs B10,与formatTime刻意不同)
+- utils/time formatTime契约回归(空值返'-'/非法串返原串/有效串含月日时分)
+- utils/time formatTimestamp非法日期返原串(已回退,保留演进记录)
+
+### chore(3个):
+- frontend api/index.ts 服务层API封装源码入库
+- .gitignore 前端测试目录frontend/src/tests/加忽略规则
+- .gitignore 加忽略并 git rm --cached 移出误跟踪Settings.test.tsx(历史遗留)
+
+### docs(3个):
+- 前端架构重构设计 熟读10遍3轮三堂会审一致性复核修正实证失准与自矛盾项(v2.2)
+- 前端架构重构设计 对照本地代码3轮三堂会审修正实证失效项(v2.3)
+- 移动TaskListPanel三堂会审/前端真实缺陷清单 两文档至doc-8月优化目录
+
+v0.19.36
 更新时间: 2026-08-28 20:56:36 - 小欧-2026-08-28
 ## v0.19.35以来 变更汇总(74个commit) - 小欧-2026-08-28
 [2026-08-28 20:56:36 小欧] 汇总范围=v0.19.35以来全部commit(本分支 optimize-0.19.17 自v0.19.35累积74个commit, 已打 tag v0.19.36)
