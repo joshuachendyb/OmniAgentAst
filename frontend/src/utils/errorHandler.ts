@@ -9,6 +9,8 @@
 // 编辑历史: 2026-08-27 小欧 - 修复Bug15: handleError/handleApiError展示原始error.message, 不丢调试信息
 // 编辑历史: 2026-08-27 小欧 - 修复Bug5/Bug6/Bug13/Bug14: handleSSEError无onReconnect不误导; 空文案不弹; handleApiError补齐回传fallbackMode/deleteMessage
 // 编辑历史: 2026-08-28 小欧 - 修复review-bugs#1: 新增 extractErrorMessage, handleError/handleApiError 兼容 axios response.data.detail/error.detail 等后端具体文案, 不再丢失后端 detail
+// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#1: extractErrorMessage优先级倒置——response.data.detail/message优先于e.message, 数组detail用JSON.stringify兜底 - 小沈-2026-08-28
+// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#2: retryWithBackoff改async/await, 成功后停止递归, 加计数器防无限 - 小沈-2026-08-28
 /**
  * 统一错误处理中心 - errorHandler.ts
  *
@@ -761,19 +763,23 @@ export function showSuccess(msg: string = '操作成功'): void {
 }
 
 // 2026-08-28 小欧 修复review-bugs#1: 统一从各类错误形态提取可读文案(含 axios response.data.detail)
+// 2026-08-28 小沈 修复优先级: response.data.detail/message优先于e.message(后端精确文案优先), 数组detail用JSON.stringify
 function extractErrorMessage(error: unknown): string | undefined {
   if (typeof error === 'string') return error;
   if (error == null) return undefined;
   const e = error as Record<string, any>;
-  if (typeof e.message === 'string' && e.message) return e.message;
   const resp = e.response;
   if (resp && typeof resp === 'object') {
     const data = resp.data;
     if (data && typeof data === 'object') {
-      if (typeof data.detail === 'string' && data.detail) return data.detail;
+      if (data.detail !== undefined && data.detail !== null) {
+        if (Array.isArray(data.detail)) return JSON.stringify(data.detail);
+        if (typeof data.detail === 'string' && data.detail) return data.detail;
+      }
       if (typeof data.message === 'string' && data.message) return data.message;
     }
   }
+  if (typeof e.message === 'string' && e.message) return e.message;
   if (typeof e.detail === 'string' && e.detail) return e.detail;
   if (typeof e.error === 'string' && e.error) return e.error;
   return undefined;
@@ -926,23 +932,26 @@ export interface ErrorContext {
 }
 
 // 2026-08-27 小欧 三堂会审A34: 抽取重试递归共用函数(DRY), 消除handleError/handleApiError重复
-const retryWithBackoff = (
-  onRetry: () => void,
+// 2026-08-28 小沈 修复: 改async/await, await onRetry()成功则停止, 失败才递归, 加计数器防无限
+const retryWithBackoff = async (
+  onRetry: () => void | Promise<void>,
   maxRetries: number,
   retryDelay: number,
   retryBackoff: number
-): void => {
+): Promise<void> => {
   let retryCount = 0;
-  const retry = () => {
+  const retry = async (): Promise<void> => {
     if (retryCount >= maxRetries) return;
     retryCount++;
     const delay = retryDelay * Math.pow(retryBackoff || 1, retryCount - 1);
-    setTimeout(() => {
-      onRetry();
-      retry();
-    }, delay);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    try {
+      await onRetry();
+    } catch {
+      await retry();
+    }
   };
-  retry();
+  await retry();
 };
 
 /**

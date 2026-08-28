@@ -49,33 +49,32 @@
  *   3. 导出时 message.timestamp 的实际类型（可用 console.log 打印）
  */
 // 编辑历史: 2026-08-27 小欧 - 修复B10/B11: 非法日期返回空串(不再1970); 合法0(timestamp=0)不再被!ts误判为空
+// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#7: 导出parseTimeSafe统一时间解析, 非法值统一返回null - 小沈-2026-08-28
+// 编辑历史: 2026-08-28 小欧 - 修复BUG7: formatTimestamp改用parseTimeSafe, 非法日期统一返回''与formatTime一致 - 小欧-2026-08-28
 export const formatTimestamp = (ts: number | string | undefined): string => {
   // 2026-08-27 小欧 修复B11: 区分合法0与空值, 仅 undefined/null/空串视为空
   if (ts === undefined || ts === null || ts === '') return '';
 
-  let timestamp: number;
+  const dateObj = parseTimeSafe(ts as Date | string | number);
+  if (!dateObj) return '';
 
-  // 【修复Bug - 2026-04-01 小强】
-  // 原因：sessionStorage 恢复后 ts 是 ISO 字符串（如 "2026-04-01T08:13:25.744Z"）
-  // 问题：parseInt("2026-04-01...", 10) 只取前导数字 2026，导致 new Date(2026) = 1970年
-  // 解决：使用 Date.parse() 正确解析 ISO 格式字符串为毫秒时间戳
-  if (typeof ts === 'string') {
-    const parsed = Date.parse(ts);
-    // 2026-08-27 小欧 修复B10: 解析失败(非法日期)返回空串, 不再当作0输出1970
-    if (isNaN(parsed)) return '';
-    timestamp = parsed;
-  } else {
-    timestamp = ts;
-  }
-
-  if (isNaN(timestamp)) return '';
-  const date = new Date(timestamp);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
-  const ms = String(date.getMilliseconds()).padStart(3, '0');
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const hours = String(dateObj.getHours()).padStart(2, '0');
+  const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+  const seconds = String(dateObj.getSeconds()).padStart(2, '0');
+  const ms = String(dateObj.getMilliseconds()).padStart(3, '0');
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
+};
+
+// 2026-08-28 小沈 修复B7: 统一时间解析函数, 非法值返回null, 供timestamp.ts和timeFormatters.ts共用
+export const parseTimeSafe = (input: Date | string | number): Date | null => {
+  try {
+    const dateObj = input instanceof Date ? input : new Date(input);
+    if (isNaN(dateObj.getTime())) return null;
+    return dateObj;
+  } catch {
+    return null;
+  }
 };
