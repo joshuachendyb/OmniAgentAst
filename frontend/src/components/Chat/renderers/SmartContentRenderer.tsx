@@ -7,7 +7,7 @@
  */
 import React from 'react';
 import { Typography } from 'antd';
-import { Spacing, Colors, FontSize, Radius, BorderWidth } from '@/utils/stepStyles';
+import { Spacing, Colors, FontSize, BorderWidth } from '@/utils/stepStyles';
 
 const { Text, Paragraph } = Typography;
 
@@ -78,8 +78,9 @@ const renderObject = (obj: unknown): React.ReactNode => {
         style={{
           margin: 0,
           padding: Spacing.SM,
-          background: Colors.BG.LIGHT,
-          borderRadius: Radius.SM,
+          background: 'transparent',
+          borderLeft: `2px solid ${Colors.BORDER.VERTICAL}`,
+          borderRadius: 0,
           fontSize: FontSize.TERTIARY,
           overflow: 'auto',
           maxHeight: '300px',
