@@ -74,7 +74,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
       className={highlight ? 'hitl-border' : undefined}
       style={{
         fontSize: 13,
-        color: '#595959',
+        color: Colors.TEXT.PRIMARY,
         margin: '8px 0',
         padding: '4px 8px 4px 10px',
         borderRadius: highlight ? 6 : 0,
@@ -86,25 +86,25 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     >
       <span style={{ cursor: 'pointer' }} onClick={() => setOpen((v) => !v)}>
         🔧 {toolName} {attemptLabel}
-        <span style={{ color: '#8c8c8c' }}>
+        <span style={{ color: Colors.TEXT.SECONDARY }}>
           {' '}
           参数：{paramText.slice(0, 60)}
           {paramText.length > 60 ? '…' : ''}
         </span>
         {obsSummary && (
-          <span style={{ color: '#52c41a' }}> → {obsSummary.slice(0, 40)}</span>
+          <span style={{ color: Colors.SUCCESS }}> → {obsSummary.slice(0, 40)}</span>
         )}
-        <span style={{ marginLeft: 6, color: '#1677ff' }}>
+        <span style={{ marginLeft: 6, color: Colors.PRIMARY }}>
           {open ? '▲' : '▼'}
         </span>
       </span>
       {open && (
         <div style={{ marginTop: 6, paddingLeft: 12 }}>
-          <div style={{ color: '#8c8c8c', marginBottom: 4 }}>参数：</div>
+          <div style={{ color: Colors.TEXT.SECONDARY, marginBottom: 4 }}>参数：</div>
           <CollapsibleText text={paramText} />
           {observations.map((o, idx) => (
             <div key={idx} style={{ marginTop: 4 }}>
-              <div style={{ color: '#8c8c8c', marginBottom: 4 }}>
+              <div style={{ color: Colors.TEXT.SECONDARY, marginBottom: 4 }}>
                 观察{observations.length > 1 ? ` ${idx + 1}` : ''}：
               </div>
               {/* 2026-08-27 小欧 三堂会审: 富渲染tool_result可达, 有tool_result走ToolResultRenderer否则纯文本 */}

@@ -13,6 +13,7 @@
 
 import React from 'react';
 import type { ExecutionStep } from '../../../utils/sse';
+import { Colors, FontSize } from '@/utils/stepStyles';
 
 interface StatusLineProps {
   step: ExecutionStep; // type=error
@@ -21,7 +22,7 @@ interface StatusLineProps {
 const StatusLine: React.FC<StatusLineProps> = ({ step }) => {
   if (step.type !== 'error') return null;
   return (
-    <div style={{ color: '#ff4d4f', fontSize: 13, margin: '8px 0' }}>
+    <div style={{ color: Colors.ERROR, fontSize: FontSize.TERTIARY, margin: '8px 0' }}>
       ⚠️ {step.error_message || step.details || step.content || '执行出错'}
     </div>
   );

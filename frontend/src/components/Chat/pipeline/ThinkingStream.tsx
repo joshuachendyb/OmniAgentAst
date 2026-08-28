@@ -11,6 +11,7 @@
  */
 
 import React from 'react';
+import { Colors } from '@/utils/stepStyles';
 
 interface ThinkingStreamProps {
   text: string;
@@ -26,7 +27,7 @@ const ThinkingStream: React.FC<ThinkingStreamProps> = ({
     <div
       className="thinking-stream"
       style={{
-        color: '#8c8c8c',
+        color: Colors.TEXT.SECONDARY,
         fontStyle: 'italic',
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',

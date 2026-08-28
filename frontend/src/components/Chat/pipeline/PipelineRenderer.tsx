@@ -20,7 +20,7 @@ import { ThinkingStream } from './ThinkingStream';
 import { ResponseStream } from './ResponseStream';
 import { ToolCallLine } from './ToolCallLine';
 import { StatusLine } from './StatusLine';
-import { Colors, BorderWidth } from '@/utils/stepStyles';
+import { Colors, BorderWidth, FontSize } from '@/utils/stepStyles';
 
 export type PipelineSegment =
   | { kind: 'thinking'; text: string }
@@ -141,7 +141,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           return (
             <div
               key={i}
-              style={{ color: '#52c41a', fontSize: 13, margin: '8px 0' }}
+              style={{ color: Colors.SUCCESS, fontSize: FontSize.TERTIARY, margin: '8px 0' }}
             >
               📋 {seg.step.summary || seg.step.content || ''}
             </div>

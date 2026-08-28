@@ -13,6 +13,7 @@
 
 import React from 'react';
 import { CollapsibleText } from './CollapsibleText';
+import { Colors, FontSize } from '@/utils/stepStyles';
 
 interface ResponseStreamProps {
   text: string;
@@ -28,8 +29,8 @@ const ResponseStream: React.FC<ResponseStreamProps> = ({
     return (
       <div
         style={{
-          color: '#8c8c8c',
-          fontSize: 13,
+          color: Colors.TEXT.SECONDARY,
+          fontSize: FontSize.TERTIARY,
           fontStyle: 'italic',
           margin: '8px 0',
         }}
