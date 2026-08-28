@@ -53,7 +53,7 @@ async def test_e2e_unit_08_task_execution():
     elapsed = 0.0
     error_info = None
     user_input = (
-        '你需要读取任务书"E:\task\task003.txt"的要求,'
+        '你需要读取任务书"E:\\task\\task003.txt"的要求,'
         "分析任务的可行性和实施方案,"
         "分析任务书的任务要求是多少个,然后按照任务书的要求逐一执行全部任务!"
         "记录和分析任务的tool调用过程和合理性分析,将分析结果记录到任务执行总结文档中!"
