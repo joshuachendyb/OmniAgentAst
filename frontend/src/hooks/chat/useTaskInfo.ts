@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-26 小欧 - 修复A3: useTaskInfo接受detail,历史任务优先由TaskDetail派生(7.6+4.5.1)
 // 编辑历史: 2026-08-27 小欧 - 修复#5#6: 历史任务overview/truncatedTip改取空, 不再串味实时frames(实测失败用例转绿)
 // 编辑历史: 2026-08-27 小欧 - 修复chat-B: 过程事件>20条时保留 started 条目(slice(-20)不再裁掉首位)
+// 编辑历史: 2026-08-28 小强 - hooks修复#16: 先unshift再slice(-20)保证上限20条+统一ExecutionStep从utils/sse导入(DRY)
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -18,7 +19,8 @@
  */
 
 import { useMemo } from 'react';
-import type { ExecutionStep, TaskMetaFrames } from '../../utils/sse';
+import type { ExecutionStep } from '../../types/execution'; // 编辑历史: 2026-08-28 小欧 - BUG16b修复: ExecutionStep统一从types/execution导入
+import type { TaskMetaFrames } from '../../utils/sse';
 import type { TaskDetail } from '../../services/api';
 
 /** 卡死预警阈值：llm_call_count ≥ step_count×STUCK_RATIO 视为疑似死循环（待定案） */
@@ -141,9 +143,9 @@ export const useTaskInfo = (
       stepCount > 0 &&
       llmCallCount >= stepCount * STUCK_RATIO;
 
-    // 2026-08-27 小欧 修复: 过程事件>20条时 slice(-20) 会裁掉首位 started; 保留"任务已开始"条目(BUG-B)
+    // 2026-08-28 小强 修复#16 + 小欧 修正: 先slice(-20)保证上限, 再检查started是否被裁掉并补回
     let recentEvents = processEvents.slice(-20);
-    if (!recentEvents.some((e) => e.kind === 'started')) {
+    if (hasStartInfo && !recentEvents.some((e) => e.kind === 'started')) {
       const startedEvt = processEvents.find((e) => e.kind === 'started');
       if (startedEvt) recentEvents = [startedEvt, ...recentEvents];
     }

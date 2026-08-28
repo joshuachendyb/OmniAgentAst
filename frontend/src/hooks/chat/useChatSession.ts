@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 会话生命周期对接sessionModel/版本冲突(8.13/5.x)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-16删编辑标题辅助函数/17删未用messages/18 deps补setSessionModelOverride
 // 编辑历史: 2026-08-27 小欧 - hooks修复#5(BUG12): 重试计数改由 ref 持久化, 破除 options.retryCount 永不回写导致的无限重试死循环
+// 编辑历史: 2026-08-28 小强 - hooks修复#13: 删不可达if(urlSessionId)分支+删重复onLoadingEnd(只保留finally中)
 /**
  * useChatSession Hook - 会话生命周期管理
  *
@@ -322,11 +323,7 @@ export const useChatSession = (
     }
 
     // 场景3: 加载最近会话
-    if (urlSessionId) {
-      // 有URL参数但不加载最近会话
-      onLoadingEnd();
-      return { loaded: false, fromCache: false, hasUrlSession: true };
-    }
+    // 2026-08-28 小强 修复#13: 删除不可达if(urlSessionId)分支(场景1已return)
 
     // 检查是否正在加载
     if (isLoadingHistoryRef.current) {
@@ -356,7 +353,6 @@ export const useChatSession = (
         
         setMessages(result.messages);
         
-        onLoadingEnd();
         onRenderEnd();
         onMessageListLoadingEnd();
         
@@ -367,11 +363,11 @@ export const useChatSession = (
         setMessages([]);
         setSessionId(null);
         setLastSavedTitle("新会话");
-        onLoadingEnd();
         onRenderEnd();
         onMessageListLoadingEnd();
       }
 
+      // 编辑历史: 2026-08-28 小欧 - BUG13b修复: onLoadingEnd移到if/else之后单次调用
       onLoadingEnd();
       isLoadingHistoryRef.current = false;
       setIsInitialized(true);

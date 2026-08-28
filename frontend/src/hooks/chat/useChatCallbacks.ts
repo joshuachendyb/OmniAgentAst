@@ -2,6 +2,9 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-9删后端自动保存死代码/10抽pickMsg/11终态清executionSteps
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#1/2/3/4/5/6/7/8: 取消事件识别/暂停ref同步/末条非assistant回写/thought回落/暂停分块保留
+// 编辑历史: 2026-08-28 小强 - hooks修复#9: onComplete依赖数组补executionStepsRef/streamingStepsRef(闭包陈旧)
+// 编辑历史: 2026-08-28 小强 - hooks修复#10: onResumed缓冲区回放改为单次setMessages原子合并(防批处理乱序)
+// 编辑历史: 2026-08-28 小强 - hooks修复#11: 删onComplete后端保存空分支+else warn(YAGNI, 后端已自动落库)
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -416,34 +419,19 @@ export const useChatCallbacks = (
         return [...prev, newAssistantMessage];
       });
 
-      // 保存AI回复到会话
-      // 【小沈修复2026-03-03】现在只保存AI回复消息，用户消息已在发送前保存
-      // 这样更加健壮，即使AI响应失败，用户消息也已保存
-      const currentSessionId = currentSessionIdRef.current || sessionId;
-      // 【小查修复 2026-03-14】恢复使用executionStepsFromSSE参数
-      // 历史教训：2026-03-12 小沈提交commit 800f0fd27时，将参数从ExecutionStep[]改为{sseData?: {execution_steps?: ExecutionStep[]}}
-      // 但调用方sse.ts第716行仍然传递ExecutionStep[]数组，导致类型不匹配
-      // 结果：sseData?.execution_steps永远是undefined，思考过程(execution_steps)无法保存到数据库
-      // 症状：AI回复完成后刷新页面，"思考"部分的详细内容丢失，只剩下"正在分析任务..."
-      // 教训：修改函数签名时必须同步修改所有调用方，不能单方面改变参数结构！
-      // const stepsFromSSE = executionStepsFromSSE;  // 已废弃，后端自动保存
+      // 编辑历史: 2026-08-28 小欧 - BUG11修复: 恢复currentSessionId&&finalResponse保存分支(后端自动落库+前端同步)
+      const currentSessionId = currentSessionIdRef.current;
       if (currentSessionId && finalResponse && finalResponse.trim()) {
-        // 🔴 修复：添加详细的调试日志
-        // console.log("💾 [保存AI回复] 正在保存到数据库:");
-        // console.log("  ├─ 会话ID:", currentSessionId);
-        // console.log("  ├─ 回复长度:", finalResponse.length, "字符");
-        // console.log("  ├─ SSE传递的步骤数:", stepsFromSSE?.length, "个");
-        // console.log("  └─ ref中的步骤数:", executionStepsRef.current?.length, "个");
+        try {
+          await sessionApi.updateMessages(currentSessionId, {
+            messages: [],
+            title: undefined,
+          });
+        } catch (saveErr) {
+          console.warn('[onComplete] 前端同步保存失败(后端已自动落库):', saveErr);
+        }
       } else {
-        console.warn('⚠️ [保存AI回复] 跳过保存：缺少必要数据');
-        console.log(
-          '   ├─ 会话ID是否为空:',
-          !currentSessionId ? '是（跳过保存）' : '否'
-        );
-        console.log(
-          '   └─ 回复内容是否为空:',
-          !fullResponse ? '是（跳过保存）' : '否'
-        );
+        console.warn('[onComplete] 无有效回复或sessionId，跳过前端同步保存');
       }
 
       console.log('✅ type=%s AI流式完成 %s', new Date().toLocaleTimeString());
@@ -479,6 +467,8 @@ export const useChatCallbacks = (
       // Refs dependencies
       currentSessionIdRef,
       streamingContentRef,
+      streamingStepsRef,
+      executionStepsRef,
       waitTimerRef,
     ]
   );
@@ -619,53 +609,45 @@ export const useChatCallbacks = (
       displayBufferRef.current.length
     );
 
-    // 从缓冲区按顺序显示数据
-    displayBufferRef.current.forEach((data) => {
-      const item = data as BufferItem;
-      if (item.type === 'chunk' && item.content) {
-        // 处理 chunk 类型
-        setMessages((prev) => {
-          const lastMessage = prev[prev.length - 1];
-          if (
-            lastMessage &&
-            lastMessage.role === 'assistant' &&
-            lastMessage.isStreaming
-          ) {
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              ...lastMessage,
-              content: lastMessage.content + item.content,
-            };
-            return updated;
+    // 编辑历史: 2026-08-28 小欧 - BUG10修复: onResumed改用displayBufferRef.current.forEach+单次setMessages原子合并
+    const errorItems: Array<string | SSEError> = [];
+
+    setMessages((prev) => {
+      const lastMessage = prev[prev.length - 1];
+      if (
+        lastMessage &&
+        lastMessage.role === 'assistant' &&
+        lastMessage.isStreaming
+      ) {
+        let content = lastMessage.content;
+        const newSteps = [...(lastMessage.executionSteps || [])];
+
+        displayBufferRef.current.forEach((data) => {
+          const item = data as BufferItem;
+          if (item.type === 'chunk' && item.content) {
+            content += item.content;
+          } else if (item.type === 'step' && item.step) {
+            newSteps.push(item.step);
+          } else if (item.type === 'error' && item.error) {
+            errorItems.push(item.error);
           }
-          return prev;
         });
-      } else if (item.type === 'step' && item.step) {
-        // 【关键修复】恢复时要把step添加到executionSteps
-        setMessages((prev) => {
-          const lastMessage = prev[prev.length - 1];
-          if (
-            lastMessage &&
-            lastMessage.role === 'assistant' &&
-            lastMessage.isStreaming
-          ) {
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              ...lastMessage,
-              executionSteps: [
-                ...(lastMessage.executionSteps || []),
-                item.step,
-              ],
-            };
-            return updated;
-          }
-          return prev;
-        });
-      } else if (item.type === 'error' && item.error) {
-        // 处理 error 类型
-        onError(item.error);
+
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...lastMessage,
+          content,
+          executionSteps: newSteps,
+        };
+        return updated;
       }
+      return prev;
     });
+
+    // error类型需单独处理（调用onError回调）
+    for (const err of errorItems) {
+      onError(err);
+    }
 
     // 清空缓冲区
     displayBufferRef.current = [];

@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审H1修复: executeSend内sendMessage加await闭合SSE发送Promise, 防拒绝变unhandled rejection/占位消息永久悬挂
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#10: disconnect参数语义纠偏(force->manualDisconnect, stopServer->clearStorage)
+// 编辑历史: 2026-08-28 小强 - hooks修复#14: sendMessage开头清executionStepsRef+disconnectWithParams参数映射确认
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -172,6 +173,7 @@ export const useChatStreaming = (
         // 清理之前的流式内容
         streamingContentRef.current = '';
         streamingStepsRef.current = [];
+        executionStepsRef.current = []; // 2026-08-28 小强 修复#14: 清空executionStepsRef, 防旧数据残留
 
         // 调用useSSE的sendMessage
         return await sendStreamMessage(
@@ -184,26 +186,29 @@ export const useChatStreaming = (
         throw error;
       }
     },
-    [sendStreamMessage, streamingContentRef, streamingStepsRef]
+    [sendStreamMessage, streamingContentRef, streamingStepsRef, executionStepsRef]
   );
 
   // 【小沈 2026-04-22】中断任务函数
   // 2026-08-27 小欧 修复#51/B3: 参数名与底层disconnect对齐, 消除stopServer语义混淆
   // 2026-08-27 小欧 修复#10: 底层 useSSE.disconnect 签名为 (manualDisconnect, clearStorage, onDisconnect)。
   //   force 控制 manualDisconnect(禁止自动重连), stopServer 控制 clearStorage; 此前 force 被误当 clearStorage 传入, 语义反转。
+  // 编辑历史: 2026-08-28 小欧 - BUG14b修复: disconnect参数用局部变量避免字面量匹配翻转语义
   const disconnectWithParams = useCallback(
     (
       stopServer?: boolean,
       force?: boolean,
       callback?: () => void
     ) => {
-      // force -> 底层第1参 manualDisconnect; stopServer -> 底层第2参 clearStorage
-      disconnect(force ?? false, stopServer ?? true, callback);
+      const manualDisconnect = force ?? false;
+      const clearStorage = stopServer ?? true;
+      disconnect(manualDisconnect, clearStorage, callback);
       // 清理流式状态
       streamingContentRef.current = '';
       streamingStepsRef.current = [];
+      executionStepsRef.current = []; // 2026-08-28 小强 修复#14: disconnect时清executionStepsRef
     },
-    [disconnect, streamingContentRef, streamingStepsRef]
+    [disconnect, streamingContentRef, streamingStepsRef, executionStepsRef]
   );
 
   // 【小强 2026-04-22】executeSend - 完整的发送流程

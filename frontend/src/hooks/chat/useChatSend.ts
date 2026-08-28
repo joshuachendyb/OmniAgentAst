@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 发送逻辑对齐CommandPanel/TaskType/contextLink(8.12/8.14)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-15 删pendingMessageIdRef(回滚靠userMessage.id)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#9: executeSend抛错清理isStreaming占位幽灵消息
+// 编辑历史: 2026-08-28 小强 - hooks修复#12: 防重由loading state改isSendingRef(useRef同步), 消除双击竞态
 /**
  * useChatSend Hook - 消息发送逻辑
  * 
@@ -17,7 +18,7 @@
  * @since 2026-04-23
  */
 
-import { useCallback } from "react"; // 2026-08-27 小欧 三堂会审: 删pendingMessageIdRef后useRef不再使用
+import { useCallback, useRef } from "react"; // 2026-08-28 小强: 加回useRef(isSendingRef同步防重)
 import { handleError, ErrorType } from "../../utils/errorHandler";
 import { checkNetworkConnection } from "../../utils/network";
 import { showNetworkError } from "../../utils/chatMessages";
@@ -52,7 +53,7 @@ interface UseChatSendReturn {
  */
 export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   const {
-    loading,
+    loading: _loading, // 2026-08-28 小强: 保留接口兼容, 实际用isSendingRef防重
     sessionId,
     setLoading,
     setSessionId,
@@ -64,11 +65,14 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   } = options;
 
   // 2026-08-27 小欧 三堂会审: 回滚改靠userMessage.id, 删pendingMessageIdRef
+  // 2026-08-28 小强 修复#12: useRef同步防重, 消除Boolean state异步绕过竞态
+  const isSendingRef = useRef(false);
 
   const handleSend = useCallback(
     async (messageContent: string, contextLinkMode?: 'linked' | 'independent') => {
     // 1. 基础验证
-    if (!messageContent.trim() || loading) return;
+    if (!messageContent.trim() || isSendingRef.current) return;
+    isSendingRef.current = true;
 
     // 2. 消息长度验证
     if (messageContent.trim().length > 5000) {
@@ -151,6 +155,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
     } finally {
       // 11. 清理状态
       setLoading(false);
+      isSendingRef.current = false; // 2026-08-28 小强 修复#12: 重置防重标记
       // 停止等待计时器
       if (waitTimerRef.current) {
         clearInterval(waitTimerRef.current);
@@ -159,7 +164,6 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
       setWaitTime(0);
     }
   }, [
-    loading,
     sessionId,
     setLoading,
     setSessionId,

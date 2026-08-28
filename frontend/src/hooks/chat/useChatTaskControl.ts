@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 任务取消/暂停控制对齐final_cancel事件(7.7)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-19删内层finally/20 抽callCancelApi/waitForCancelOrTimeout/resetUiFlags编排
+// 编辑历史: 2026-08-28 小强 - hooks修复#15: waitForCancelOrTimeout加5s超时兜底Promise.race, 防永久挂起
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
  *
@@ -170,8 +171,13 @@ export const useChatTaskControl = (
     []
   );
 
+  // 2026-08-28 小强 修复#15: Promise.race加5s硬超时兜底, 防waitForCancelEvent内部轮询永久挂起
   const waitForCancelOrTimeout = useCallback(async (): Promise<void> => {
-    await waitForCancelEvent(3000, 200);
+    const cancelPromise = waitForCancelEvent(3000, 200);
+    const timeoutPromise = new Promise<boolean>((resolve) => {
+      setTimeout(() => resolve(false), 5000);
+    });
+    await Promise.race([cancelPromise, timeoutPromise]);
   }, [waitForCancelEvent]);
 
   /**
