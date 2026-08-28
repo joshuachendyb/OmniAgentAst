@@ -11,6 +11,7 @@
 // 编辑历史: 2026-08-28 小欧 - 修复review-bugs#1: 新增 extractErrorMessage, handleError/handleApiError 兼容 axios response.data.detail/error.detail 等后端具体文案, 不再丢失后端 detail
 // 编辑历史: 2026-08-28 小沈 - 修复review-bugs#1: extractErrorMessage优先级倒置——response.data.detail/message优先于e.message, 数组detail用JSON.stringify兜底 - 小沈-2026-08-28
 // 编辑历史: 2026-08-28 小沈 - 修复review-bugs#2: retryWithBackoff改async/await, 成功后停止递归, 加计数器防无限 - 小沈-2026-08-28
+// 编辑历史: 2026-08-28 小欧 - 根治toast根因: 静态message改走antdApp.getMessage()上下文实例; showMessage增onClick点击消失 - 小欧-2026-08-28
 /**
  * 统一错误处理中心 - errorHandler.ts
  *
@@ -22,7 +23,7 @@
  * @since 2026-04-11
  */
 
-import { message } from 'antd';
+import { getMessage } from './antdApp';
 
 // 2026-08-27 小欧 修复review-bugs: 自引用命名空间, 使 vi.spyOn(errorHandler,'showMessage') 能拦截内部调用(统一错误提示的测试可观测)
 import * as ErrorHandlerSelf from './errorHandler';
@@ -729,22 +730,28 @@ export function showMessage(
 
   switch (config.severity) {
     case 'critical':
-      message.error({
+      getMessage().error({
         content: displayMessage,
         duration: UI_CONFIG.error.duration,
+        key: `eh-${errorType}`,
+        onClick: () => getMessage().destroy(`eh-${errorType}`),
       });
       break;
     case 'warning':
-      message.warning({
+      getMessage().warning({
         content: displayMessage,
         duration: UI_CONFIG.warning.duration,
+        key: `eh-${errorType}`,
+        onClick: () => getMessage().destroy(`eh-${errorType}`),
       });
       break;
     case 'info':
       if (displayMessage) {
-        message.info({
+        getMessage().info({
           content: displayMessage,
           duration: UI_CONFIG.info.duration,
+          key: `eh-${errorType}`,
+          onClick: () => getMessage().destroy(`eh-${errorType}`),
         });
       }
       break;
@@ -756,7 +763,7 @@ export function showMessage(
  * @param msg 成功消息
  */
 export function showSuccess(msg: string = '操作成功'): void {
-  message.success({
+  getMessage().success({
     content: msg,
     duration: UI_CONFIG.success.duration,
   });
@@ -1106,7 +1113,7 @@ export function handleSSEError(
     // 2026-08-27 小欧 修复Bug5: 无onReconnect时不展示"正在重试"误导文案(实际不会重连)
     if (context.onReconnect) {
       const retryMessage = `正在重试 (${context.reconnectAttempts + 1}/${maxRetries})...`;
-      message.warning(retryMessage);
+      getMessage().warning(retryMessage);
 
       const delay =
         config.retryDelay *

@@ -4,6 +4,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: HITL confirm(trust_session=True)成功后派发omni-trust-changed事件(通知TrustPanel刷新)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删除未使用解构变量(1)/授权超时改用taskControlApi.confirm(2)/删除调试console.log(3)/anchorTaskId空值守卫(4)/抽离saveChatState(5)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审P0-6/去框-P0-1: 外层Card套壳→div(flex列/minHeight0/白底), 去boxShadow+border双重留白, 仅保留1处120px高度约束(配合SessionLayout flex收敛)
+// 编辑历史: 2026-08-28 小欧 - 根治toast根因: 静态message.destroy改走antdApp.getMessage()上下文实例 - 小欧-2026-08-28
 import React, {
   useEffect,
   useCallback,
@@ -11,7 +12,8 @@ import React, {
   useRef,
   useMemo,
 } from 'react';
-import { message, Typography } from 'antd';
+import { Typography } from 'antd';
+import { getMessage } from '../../utils/antdApp';
 import { useSearchParams } from 'react-router-dom';
 import {
   API_BASE_URL,
@@ -392,7 +394,7 @@ const NewChatContainer: React.FC = () => {
   // 组件卸载前清理
   useEffect(() => {
     return () => {
-      message.destroy('session-load');
+      getMessage().destroy('session-load');
     };
   }, []);
 

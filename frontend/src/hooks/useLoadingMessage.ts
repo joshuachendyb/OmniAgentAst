@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-27 小欧 - 修复ctx-1/ctx-2/ctx-4: 按key精确控制loading, 卸载清理, 不再message.destroy()误清全局队列
+// 编辑历史: 2026-08-28 小欧 - 根治toast根因: 静态message改走antdApp.getMessage()上下文实例 - 小欧-2026-08-28
 import { useRef, useCallback, useEffect } from 'react';
-import { message } from 'antd';
+import { getMessage } from '../utils/antdApp';
 
 interface UseLoadingMessageOptions {
   duration?: number;
@@ -13,24 +14,27 @@ export const useLoadingMessage = (options: UseLoadingMessageOptions = {}) => {
   const hideFns = useRef<Map<string, () => void>>(new Map());
   const activeKey = useRef<string | null>(null);
 
-  const show = useCallback((content: string, key: string = 'loading') => {
-    // 2026-08-27 小欧 修复ctx-2: 先隐藏上一条进行中的 loading(单loading语义), 再创建新的
-    if (activeKey.current) {
-      const prev = hideFns.current.get(activeKey.current);
-      if (prev) prev();
-      hideFns.current.delete(activeKey.current);
-    }
+  const show = useCallback(
+    (content: string, key: string = 'loading') => {
+      // 2026-08-27 小欧 修复ctx-2: 先隐藏上一条进行中的 loading(单loading语义), 再创建新的
+      if (activeKey.current) {
+        const prev = hideFns.current.get(activeKey.current);
+        if (prev) prev();
+        hideFns.current.delete(activeKey.current);
+      }
 
-    const hide = message.loading({
-      content,
-      key,
-      duration,
-    });
+      const hide = getMessage().loading({
+        content,
+        key,
+        duration,
+      });
 
-    hideFns.current.set(key, hide);
-    activeKey.current = key;
-    return hide;
-  }, [duration]);
+      hideFns.current.set(key, hide);
+      activeKey.current = key;
+      return hide;
+    },
+    [duration]
+  );
 
   const hide = useCallback((key: string = 'loading') => {
     // 2026-08-27 小欧 修复ctx-2: 仅当 key 与当前活动 loading 一致时才隐藏, 精确控制不误伤其它
