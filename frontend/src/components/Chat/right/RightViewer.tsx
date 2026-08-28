@@ -16,6 +16,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Spin, Empty, Alert, Typography } from 'antd';
 import type { ExecutionStep } from '../../../types/execution';
+import { Colors } from '@/utils/stepStyles';
 import {
   executionApi,
   sessionApi,
@@ -128,7 +129,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
           description={
             <Typography.Text
               type="secondary"
-              style={{ fontSize: 12, color: '#8c8c8c' }}
+              style={{ fontSize: 12, color: Colors.TEXT.SECONDARY }}
             >
               暂无执行记录
             </Typography.Text>

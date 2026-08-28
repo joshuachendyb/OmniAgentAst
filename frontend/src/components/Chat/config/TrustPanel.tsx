@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Collapse, List, Typography } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import { trustApi } from '../../../services/api';
+import { Colors } from '@/utils/stepStyles';
 
 interface TrustPanelProps {
   sessionId: string | null;
@@ -72,7 +73,7 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
         {
           key: 'trust',
           label: (
-            <Typography.Text type="secondary" style={{ fontSize: 12, color: '#595959' }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12, color: Colors.TEXT.PRIMARY }}>
               本会话信任的操作（{tools.length}）
             </Typography.Text>
           ),

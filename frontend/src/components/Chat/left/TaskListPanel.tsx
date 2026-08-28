@@ -14,8 +14,10 @@
  */
 
 import React from 'react';
-import { Badge, Empty, Skeleton, Tooltip, Typography } from 'antd';
+import { Empty, Skeleton, Typography } from 'antd';
 import type { SessionTaskItem } from '../../../services/api';
+import { Colors } from '@/utils/stepStyles';
+import { CollapsibleText } from '../pipeline/CollapsibleText';
 
 interface TaskListPanelProps {
   tasks: SessionTaskItem[];
@@ -35,21 +37,6 @@ export const formatTime = (s?: string): string => {
     hour: '2-digit',
     minute: '2-digit',
   });
-};
-
-/** 实测枚举（storage.py:467 初始 executing / :128 终态四值），未知值兜底灰色 */
-const STATUS_MAP: Record<
-  string,
-  {
-    text: string;
-    color: 'processing' | 'success' | 'error' | 'default' | 'warning';
-  }
-> = {
-  executing: { text: '执行中', color: 'processing' },
-  paused: { text: '已暂停', color: 'warning' },
-  completed: { text: '完成', color: 'success' },
-  failed: { text: '失败', color: 'error' },
-  cancelled: { text: '已取消', color: 'default' },
 };
 
 const TaskListPanel: React.FC<TaskListPanelProps> = ({
@@ -77,10 +64,6 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 0' }}>
       {tasks.map((t) => {
-        const st = STATUS_MAP[t.status] ?? {
-          text: t.status,
-          color: 'default' as const,
-        };
         const active = t.task_id === activeTaskId;
         return (
           <div
@@ -89,7 +72,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
             role="button"
             tabIndex={0}
             aria-pressed={active}
-            aria-label={`任务 ${t.task_id} ${st.text}`}
+            aria-label={`任务 ${t.task_id} ${t.status}`}
             onClick={() => onSelect(t.task_id)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -101,67 +84,48 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               padding: '8px',
               cursor: 'pointer',
               background: 'transparent',
-              borderLeft: active ? '2px solid #1677ff' : '2px solid transparent',
+              borderLeft: active ? `2px solid ${Colors.PRIMARY}` : '2px solid transparent',
               borderRadius: 0,
               overflowWrap: 'break-word',
               wordBreak: 'break-word',
+              textAlign: 'left',
               outline: 'none',
             }}
           >
-            <div style={{ fontSize: 12, color: '#595959', display: 'flex', alignItems: 'center', gap: 6 }}>
-              {formatTime(t.created_at)}
-              {t.context_link_mode && (
-                <>
-                  <span style={{ width: 4, height: 4, borderRadius: '50%', background: t.context_link_mode === 'linked' ? '#1677ff' : '#52c41a', display: 'inline-block' }} />
-                  <Typography.Text type="secondary" style={{ fontSize: 12, color: '#8c8c8c' }}>
-                    {t.context_link_mode === 'linked' ? '续聊' : '新任务'}
-                  </Typography.Text>
-                </>
-              )}
-            </div>
-            <div style={{ fontSize: 12 }}>
-              <Badge status={st.color} text={st.text} />
-              {t.duration != null && (
-                <Tooltip title="耗时(秒)">
-                  <span style={{ marginLeft: 8, color: '#8c8c8c', fontSize: 12 }}>{Math.round(t.duration)}s</span>
-                </Tooltip>
-              )}
-            </div>
             {t.user_input && (
               <div
                 style={{
                   fontSize: 12,
-                  color: '#262626',
+                  color: Colors.TEXT.STRONG,
                   fontWeight: 500,
                   marginTop: 4,
                   lineHeight: 1.4,
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
                   wordBreak: 'break-word',
-                  whiteSpace: 'pre-wrap',
                 }}
               >
-                {t.user_input}
+                <CollapsibleText text={t.user_input} />
               </div>
             )}
             {t.response && (
               <div
                 style={{
-                  fontSize: 12,
-                  color: '#595959',
                   marginTop: 2,
-                  lineHeight: 1.5,
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                  wordBreak: 'break-word',
-                  whiteSpace: 'pre-wrap',
+                  paddingLeft: 8,
+                  borderLeft: `1px solid ${Colors.BORDER.LIGHT}`,
                 }}
               >
-                {t.response}
+                <span style={{ fontSize: 11, color: Colors.TEXT.TERTIARY }}>回复</span>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: Colors.TEXT.PRIMARY,
+                    marginTop: 2,
+                    lineHeight: 1.5,
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  <CollapsibleText text={t.response} />
+                </div>
               </div>
             )}
           </div>

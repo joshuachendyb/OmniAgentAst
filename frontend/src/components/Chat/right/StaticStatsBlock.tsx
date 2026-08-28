@@ -19,6 +19,7 @@
 import React from 'react';
 import { Descriptions, Tag, Typography } from 'antd';
 import type { TaskDetail } from '../../../services/api';
+import { Colors } from '@/utils/stepStyles';
 
 // 2026-08-27 小欧 三堂会审: 状态色查表替嵌套三元
 const STATUS_COLOR_MAP: Record<string, string> = {
@@ -40,7 +41,7 @@ const StaticStatsBlock: React.FC<{ detail: TaskDetail | null }> = ({
         background: 'transparent',
         border: 'none',
         borderRadius: 0,
-        borderTop: '1px solid #f0f0f0',
+        borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
       }}
     >
       <Typography.Text strong style={{ fontSize: 13 }}>
