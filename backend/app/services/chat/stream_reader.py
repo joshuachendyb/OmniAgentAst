@@ -25,6 +25,7 @@
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: 三处 TASK_END 日志改造, task_accumulated_tokens 取 FinalStep 全量(与前端同口径); session 级 update_session 保留钩子(链级落库在 react_cycle); 移除工具级误写
 # 2026-08-22 - 小欧 - 北京老陈 2026-08-22 铁律(chat_messages 只写严禁读): _load_previous_messages 改读 fetch_session_user_message_pairs
 #     (chat_user_message+chat_tasks 重建"用户+AI"历史, assistant 正文取 response、thought 从 execution_steps 派生; 不退化/不加列/不读 chat_messages)
+# 2026-08-28 小欧 - yield日志审计: stream_reader 消费循环 yield 前加 logger.debug("[SSE] seq task"), 覆盖全部SSE发送(KISS单一出口); 三堂会审无逻辑修正
 """
 stream_reader — SSE流运行器（消费者）
 
@@ -233,6 +234,8 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
     while True:
         async with buffer.cond:
             while offset < len(buffer.event_log):
+                # 2026-08-28 小欧 yield日志审计: SSE发送统一入口(覆盖全部SSE yield, KISS)
+                logger.debug(f"[SSE] seq={offset} task={task_id}")
                 yield format_agent_sse(buffer.event_log[offset])
                 offset += 1
             # #30 fix:排空后复查 len,防止 done.set() 前 producer 追加丢事件 — 小欧 2026-07-18

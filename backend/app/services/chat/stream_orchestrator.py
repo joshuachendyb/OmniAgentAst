@@ -86,6 +86,7 @@
 #   与 TaskFileWriter 物理目录经 file_persist 前缀常量同源拼装(DRY), 排查定位链不断; 旧目录不迁移(禁止backward)
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W6镜像写点(_setup_task_db内UPDATE chat_messages SET task_id), 系统对该表零写依赖
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 删除finalize_message的import与db_ops.finalize=传参(随finalize_message整删, 终态由append_execution_step/chat_tasks承载)
+# 2026-08-28 小欧 - yield日志审计: 编排①输入校验失败/编排②启动前已取消 两处 yield 前补 logger(warning/info), 覆盖7个无日志yield(KISS); 三堂会审无逻辑修正
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -192,10 +193,14 @@ async def chat_stream_orchestrator(
             logger.warning(f"[chat] context_link_mode 非法值 '{context_link_mode}', 按 independent 处理")
         context_link_mode = "independent"
     if not messages:
+        # 2026-08-28 小欧 yield日志审计: 输入校验失败日志(KISS)
+        logger.warning("[chat] 输入校验失败: 消息列表为空")
         yield create_error_response(error_type="invalid_request", error_message="消息列表不能为空")
         return
     user_input = messages[-1].content or ""
     if not user_input.strip():
+        # 2026-08-28 小欧 yield日志审计: 输入校验失败日志(KISS)
+        logger.warning("[chat] 输入校验失败: 消息内容为空")
         yield create_error_response(error_type="invalid_request", error_message="消息内容不能为空")
         return
 
@@ -261,6 +266,8 @@ async def chat_stream_orchestrator(
 
         is_cancelled, cancel_msg = await task_cancel_check(task_id)
         if is_cancelled:
+            # 2026-08-28 小欧 yield日志审计: 任务已取消日志(KISS)
+            logger.info(f"[chat] 任务启动前已取消: task={task_id}")
             yield cancel_msg
             return
 
