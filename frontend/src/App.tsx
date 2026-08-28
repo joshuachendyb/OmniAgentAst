@@ -19,7 +19,7 @@ import AppLayout from './components/Layout';
 import NewChatContainer from './components/Chat/NewChatContainer';
 import { AppProvider } from './contexts/AppContext';
 // 编辑历史: 2026-08-28 小欧 - 挂载AntdAppBridge桥接antd<App>上下文message/notification实例 - 小欧-2026-08-28
-import { AntdAppBridge } from './utils/antdAppBridge';
+import { AntdAppBridge } from './lib/antd/bridge';
 
 // 路由懒加载 - 减少首屏 bundle 大小
 const HistoryPage = lazy(() => import('./pages/History'));

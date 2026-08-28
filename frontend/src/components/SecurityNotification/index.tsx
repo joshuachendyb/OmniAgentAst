@@ -14,7 +14,7 @@ import React from 'react';
 import { Typography, Tag } from 'antd';
 import { WarningOutlined } from '@ant-design/icons';
 // 编辑历史: 2026-08-28 小欧 - 根治toast根因: 静态notification改走antdApp.getNotification()上下文实例 - 小欧-2026-08-28
-import { getNotification } from '../../utils/antdApp';
+import { getNotification } from '../../lib/antd/bridge';
 
 const { Text } = Typography;
 

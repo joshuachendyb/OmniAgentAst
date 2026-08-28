@@ -13,7 +13,7 @@ import React, {
   useMemo,
 } from 'react';
 import { Typography } from 'antd';
-import { getMessage } from '../../utils/antdApp';
+import { getMessage } from '../../lib/antd/bridge';
 import { useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/api/client';
 import {
