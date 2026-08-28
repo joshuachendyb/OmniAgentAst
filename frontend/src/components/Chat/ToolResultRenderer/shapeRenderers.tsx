@@ -242,21 +242,21 @@ export const TreeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
             style={{
               maxHeight: 360,
               overflow: 'auto',
-              background: '#fafafa',
-              border: '1px solid #f0f0f0',
-              borderRadius: 6,
-              padding: '6px 10px',
+              background: 'transparent',
+              borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
+              borderRadius: 0,
+              padding: `6px ${Spacing.SM}px 6px ${Spacing.MD}px`,
             }}
           >
-          {entries.map((entry, idx) => (
-            <TreeDirItem
-              key={`${entry.name || idx}-${idx}`}
-              entry={entry}
-              idx={idx}
-              total={entries.length}
-            />
-          ))}
-        </div>
+            {entries.map((entry, idx) => (
+              <TreeDirItem
+                key={`${entry.name || idx}-${idx}`}
+                entry={entry}
+                idx={idx}
+                total={entries.length}
+              />
+            ))}
+          </div>
         <div style={{ marginTop: 12, fontSize: 12, color: '#595959' }}>
           共 {total} 项（目录 {dirCount} / 文件 {fileCount}），总大小{' '}
           {formatFileSize(totalSize)}
@@ -300,14 +300,14 @@ export const TreeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
             style={{
               maxHeight: 400,
               overflow: 'auto',
-              background: '#fafafa',
-              border: '1px solid #f0f0f0',
-              borderRadius: 6,
-              padding: '8px 12px',
+              background: 'transparent',
+              borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
+              borderRadius: 0,
+              padding: `8px ${Spacing.MD}px`,
             }}
           >
-          <TreeTreeNode node={tree} depth={0} />
-        </div>
+            <TreeTreeNode node={tree} depth={0} />
+          </div>
         <div style={{ marginTop: 8, fontSize: 12, color: '#595959' }}>
           文件 {statistics.file_count ?? 0} / 目录 {statistics.dir_count ?? 0}
           ，总大小 {formatFileSize(statistics.total_size ?? 0)}
@@ -374,18 +374,19 @@ export const CodeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
   }
 
   const contentBackground: React.CSSProperties = {
-    background: '#1e1e1e',
-    border: '1px solid #303030',
-    borderRadius: 8,
-    padding: '10px 14px',
+    background: Colors.BG.LIGHT,
+    borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
+    border: `none`,
+    borderRadius: Radius.SM,
+    padding: `${Spacing.XS}px ${Spacing.SM}px`,
     marginTop: 6,
-    fontSize: '0.9em',
+    fontSize: FontSize.SECONDARY,
     lineHeight: 1.6,
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-all',
     maxHeight: 400,
     overflow: 'auto',
-    color: '#d4d4d4',
+    color: Colors.TEXT.PRIMARY,
     fontFamily: 'Consolas, Monaco, "Courier New", monospace',
   };
 
