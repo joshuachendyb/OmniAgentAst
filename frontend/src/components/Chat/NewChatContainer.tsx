@@ -11,7 +11,7 @@ import React, {
   useRef,
   useMemo,
 } from 'react';
-import { message, Tag } from 'antd';
+import { message, Typography } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import {
   API_BASE_URL,
@@ -180,7 +180,7 @@ const NewChatContainer: React.FC = () => {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [chainTokens, setChainTokens] = useState<number | null>(null); // 顶栏会话累计 token（A6 链口径）
   const [liveErrorText, setLiveErrorText] = useState<string | null>(null);
-  const { tasks, total, refresh: refreshTasks } = useSessionTasks(sessionId);
+  const { tasks, total, loading: tasksLoading, refresh: refreshTasks } = useSessionTasks(sessionId);
   const { effective } = useModelLayer({
     sessionId,
     sessionTitle,
@@ -505,7 +505,7 @@ const NewChatContainer: React.FC = () => {
         key: 'topbar.header',
         component: (
           <span
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
           >
             <ChatHeader
               sessionId={sessionId}
@@ -524,16 +524,20 @@ const NewChatContainer: React.FC = () => {
             />
             <TopbarStats
               taskCount={total}
-              chainTokens={chainTokens}
+              chainTokens={null}
               createdAt={sessionTimes.createdAt}
               updatedAt={sessionTimes.updatedAt}
             />
             {effective && (
-              <Tag color={effective.source === 'session' ? 'blue' : 'default'}>
-                {effective.display_name ||
-                  `${effective.provider} (${effective.model})`}
-                ·{effective.source === 'session' ? '会话' : '全局'}
-              </Tag>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12, color: '#595959' }}>
+                  {effective.display_name || `${effective.provider} (${effective.model})`}
+                </Typography.Text>
+                <span style={{ width: 4, height: 4, borderRadius: '50%', background: effective.source === 'session' ? '#1677ff' : '#d9d9d9', display: 'inline-block' }} />
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {effective.source === 'session' ? '会话' : '全局'}
+                </Typography.Text>
+              </span>
             )}
           </span>
         ),
@@ -553,6 +557,7 @@ const NewChatContainer: React.FC = () => {
             tasks={tasks}
             activeTaskId={activeTaskId}
             onSelect={handleSelectTask}
+            loading={tasksLoading}
           />
         ),
         defaultVisible: true,

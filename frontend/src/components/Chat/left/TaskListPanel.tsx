@@ -1,6 +1,8 @@
 // 编辑历史: 2026-08-26 小欧 - 修复C3: 左列created_at格式化为月/日 时:分(7.2时间显示)
 // 编辑历史: 2026-08-27 小欧 - 任务项新增response全文显示（设计文档4.8.2要求user_input+response双列）
 // 编辑历史: 2026-08-27 小欧 - 三堂会审P0-5: 任务项div补role/tabIndex/aria/keyDown无障碍可达; 边距6px8px→8px; 选中蓝#1890ff→#1677ff; 滚动容器加minHeight0/scrollbarWidth; focus浅蓝外晕与选中态隔离
+// 编辑历史: 2026-08-28 小欧 - ③A/a1: 去双重滚动(外层保留), 选中去#e6f4ff填色改2px左线透明体系
+// 编辑历史: 2026-08-28 小欧 - ③B/b1: 补user_input双列+Tag→点+Text轻量化, 字阶11→12, 截断lineClamp2
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -12,13 +14,14 @@
  */
 
 import React from 'react';
-import { Badge, Tag, Tooltip, Typography } from 'antd';
+import { Badge, Empty, Skeleton, Tooltip, Typography } from 'antd';
 import type { SessionTaskItem } from '../../../services/api';
 
 interface TaskListPanelProps {
   tasks: SessionTaskItem[];
   activeTaskId: string | null;
   onSelect: (taskId: string) => void;
+  loading?: boolean;
 }
 
 /** 【小欧 2026-08-26 修复 C3】ISO 时间格式化为 月/日 时:分，避免原始串溢出 */
@@ -53,16 +56,26 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   tasks,
   activeTaskId,
   onSelect,
+  loading = false,
 }) => {
+  if (loading) {
+    return (
+      <div style={{ padding: '16px 8px' }}>
+        <Skeleton active paragraph={{ rows: 3 }} />
+      </div>
+    );
+  }
   if (tasks.length === 0) {
     return (
-      <Typography.Text type="secondary" style={{ fontSize: 12, padding: 8 }}>
-        暂无任务
-      </Typography.Text>
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description={<Typography.Text type="secondary" style={{ fontSize: 12 }}>暂无任务</Typography.Text>}
+        style={{ padding: '24px 0' }}
+      />
     );
   }
   return (
-    <div style={{ overflowY: 'auto', overflowX: 'hidden', minHeight: 0, scrollbarWidth: 'thin' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 0' }}>
       {tasks.map((t) => {
         const st = STATUS_MAP[t.status] ?? {
           text: t.status,
@@ -87,47 +100,65 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
             style={{
               padding: '8px',
               cursor: 'pointer',
-              background: active ? '#e6f4ff' : 'transparent',
-              borderLeft: active
-                ? '3px solid #1677ff'
-                : '3px solid transparent',
+              background: 'transparent',
+              borderLeft: active ? '2px solid #1677ff' : '2px solid transparent',
+              borderRadius: 0,
               overflowWrap: 'break-word',
               wordBreak: 'break-word',
               outline: 'none',
             }}
           >
-            <div style={{ fontSize: 12, color: '#595959' }}>
-               {formatTime(t.created_at)}
+            <div style={{ fontSize: 12, color: '#595959', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {formatTime(t.created_at)}
               {t.context_link_mode && (
-                <Tag
-                  style={{ marginLeft: 6 }}
-                  color={t.context_link_mode === 'linked' ? 'blue' : 'green'}
-                >
-                  {t.context_link_mode === 'linked' ? '续聊' : '新任务'}
-                </Tag>
+                <>
+                  <span style={{ width: 4, height: 4, borderRadius: '50%', background: t.context_link_mode === 'linked' ? '#1677ff' : '#52c41a', display: 'inline-block' }} />
+                  <Typography.Text type="secondary" style={{ fontSize: 12, color: '#8c8c8c' }}>
+                    {t.context_link_mode === 'linked' ? '续聊' : '新任务'}
+                  </Typography.Text>
+                </>
               )}
             </div>
             <div style={{ fontSize: 12 }}>
               <Badge status={st.color} text={st.text} />
               {t.duration != null && (
                 <Tooltip title="耗时(秒)">
-                  <span style={{ marginLeft: 8, color: '#999' }}>
-                    {Math.round(t.duration)}s
-                  </span>
+                  <span style={{ marginLeft: 8, color: '#8c8c8c', fontSize: 12 }}>{Math.round(t.duration)}s</span>
                 </Tooltip>
               )}
             </div>
+            {t.user_input && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: '#262626',
+                  fontWeight: 500,
+                  marginTop: 4,
+                  lineHeight: 1.4,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  wordBreak: 'break-word',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {t.user_input}
+              </div>
+            )}
             {t.response && (
               <div
                 style={{
-                  fontSize: 11,
-                  color: '#8c8c8c',
+                  fontSize: 12,
+                  color: '#595959',
                   marginTop: 2,
-                  lineHeight: 1.4,
+                  lineHeight: 1.5,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  wordBreak: 'break-word',
                   whiteSpace: 'pre-wrap',
-                  overflowWrap: 'break-word',
-                  maxHeight: '5.3em',
-                  overflow: 'auto',
                 }}
               >
                 {t.response}

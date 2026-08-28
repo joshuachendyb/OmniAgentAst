@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 8.1 实施: 会话工具栏精简仅新建会话(4.3.1)
+// 编辑历史: 2026-08-28 小欧 - ②B/b1: 去Space冗余+删zIndex100残留, gap统一
 /**
  * ChatToolbar 组件 - 会话工具栏（topbar slot）
  *
@@ -10,7 +11,7 @@
  */
 
 import React from 'react';
-import { Button, Space } from 'antd';
+import { Button } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 
 interface ChatToolbarProps {
@@ -19,17 +20,9 @@ interface ChatToolbarProps {
 
 const ChatToolbar: React.FC<ChatToolbarProps> = ({ onNewSession }) => {
   return (
-    <Space>
-      <Button
-        icon={<PlusOutlined />}
-        onClick={onNewSession}
-        size="small"
-        type="primary"
-        style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
-      >
-        新建会话
-      </Button>
-    </Space>
+    <Button icon={<PlusOutlined />} onClick={onNewSession} size="small" type="primary">
+      新建会话
+    </Button>
   );
 };
 

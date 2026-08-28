@@ -2,6 +2,8 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审H3修复: handleSaveTitle写后回填sessionApi.updateSession返回的version, 杜绝二次编辑必409冲突(409分支兜底保留)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 409恢复分支改用更轻的getSession(仅取version/title)
 // 编辑历史: 2026-08-27 小欧 - 去头像-C1: 删ChatHeader内RobotOutlined代头像(顶栏"会话"标签), 仅留文字+渐变竖线锚点, 不扩至全局Layout
+// 编辑历史: 2026-08-28 小欧 - ②A/a1: 标题字号统一14+500/400, 分割线渐变→solid #f0f0f0令牌化, 令牌化去跳动
+// 编辑历史: 2026-08-28 小欧 - ②D/d1: 点击域收敛至标题段+Tooltip点击编辑, Input 200→min(280px,40vw)响应式, 去Space冗余
 /**
  * ChatHeader 组件 - 会话标题展示与编辑
  * 
@@ -15,9 +17,10 @@
  */
 
 import React, { useRef } from 'react';
-import { Space, Input, Tooltip } from 'antd';
+import { Input, Tooltip } from 'antd';
 import { InfoCircleOutlined, LockOutlined } from '@ant-design/icons';
 import { sessionApi } from '../../services/api';
+import { Colors } from '@/utils/stepStyles';
 import {
   showTitleSaved,
   showSaveError,
@@ -119,80 +122,54 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   };
 
   return (
-    <span 
-      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
-      onClick={() => {
-        if (!editingTitle && sessionId) {
-          setTitleInput(sessionTitle || '');
-        }
-        onEditingStart();
-      }}
-    >
-      {/* 2026-08-27 小欧 去头像-C1: 删RobotOutlined代头像, 仅保留"会话"文字+渐变竖线+分隔符托住标题锚点 */}
+    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
       <span style={{ color: '#595959', fontSize: 14, fontWeight: 500 }}>会话</span>
-      {/* 分隔符 */}
-      <span style={{
-        marginLeft: 8,
-        marginRight: 8,
-        height: 16,
-        width: 1,
-        background: 'linear-gradient(to bottom, transparent, #d9d9d9, transparent)',
-      }} />
-      
-      {/* 编辑模式 */}
+      <span style={{ marginLeft: 8, marginRight: 8, height: 16, width: 1, background: Colors.BORDER.LIGHT }} />
       {sessionId && editingTitle ? (
-        <Space>
-          <Input
-            value={titleInput}
-            onChange={(e) => setTitleInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                onEditingCancel(); // 2026-08-27 小欧 修复#11: 实现Esc取消编辑, 落地onEditingCancel接口能力(此前未接线)
+        <Input
+          value={titleInput}
+          onChange={(e) => setTitleInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              onEditingCancel();
+            }
+          }}
+          onPressEnter={async (e) => {
+            e.preventDefault();
+            await handleSaveTitle();
+          }}
+          onBlur={async () => {
+            if (savingRef.current) return;
+            await handleSaveTitle();
+          }}
+          style={{ width: 'min(280px, 40vw)' }}
+          autoFocus
+          placeholder={sessionTitle || '输入会话标题'}
+        />
+      ) : (
+        <Tooltip title={editingTitle ? '' : '点击编辑标题'}>
+          <span
+            style={{ cursor: 'pointer', color: titleLocked ? '#262626' : '#595959', fontSize: 14, fontWeight: titleLocked ? 500 : 400 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (sessionId) {
+                setTitleInput(sessionTitle || '');
+                onEditingStart();
               }
             }}
-            onPressEnter={async (e) => {
-              e.preventDefault();
-              await handleSaveTitle();
-            }}
-            onBlur={async () => {
-              if (savingRef.current) return; // 2026-08-27 小欧 修复#12: 回车保存进行中跳过失焦重复保存
-              await handleSaveTitle();
-            }}
-            style={{ width: 200 }}
-            autoFocus
-            placeholder={sessionTitle || '输入会话标题'}
-          />
-        </Space>
-      ) : (
-        /* 显示模式 */
-        <span
-          style={{
-            cursor: 'pointer',
-            color: titleLocked ? '#000' : '#666',
-            fontSize: titleLocked ? '16px' : '14px',
-            fontWeight: titleLocked ? 600 : 'normal',
-          }}
-        >
-          {sessionTitle || '未命名会话'}
-          
-          {/* 非锁定时显示 AI 图标提示 */}
-          {!titleLocked && (
-            <Tooltip title='AI自动生成的标题'>
-              <InfoCircleOutlined
-                style={{ fontSize: 12, marginLeft: 4, color: '#999' }}
-              />
-            </Tooltip>
-          )}
-          
-          {/* 锁定时显示锁定图标 */}
-          {titleLocked && (
-            <Tooltip title='标题已锁定，防止自动覆盖'>
-              <LockOutlined
-                style={{ fontSize: 12, marginLeft: 4, color: '#1677ff' }}
-              />
-            </Tooltip>
-          )}
-        </span>
+          >
+            {sessionTitle || '未命名会话'}
+            {!titleLocked ? (
+              <Tooltip title='AI自动生成的标题'>
+                <InfoCircleOutlined style={{ fontSize: 12, marginLeft: 4, color: '#8c8c8c' }} />
+              </Tooltip>
+            ) : (
+              <Tooltip title='标题已锁定，防止自动覆盖'>
+                <LockOutlined style={{ fontSize: 12, marginLeft: 4, color: '#1677ff' }} />
+              </Tooltip>
+            )}
+          </span>
+        </Tooltip>
       )}
     </span>
   );
