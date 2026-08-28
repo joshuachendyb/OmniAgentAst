@@ -16,7 +16,7 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import AppLayout from './components/Layout';
-import NewChatContainer from './features/chat/components/NewChatContainer';
+import ChatPage from './pages/ChatPage';
 import { AppProvider } from './contexts/AppContext';
 // 编辑历史: 2026-08-28 小欧 - 挂载AntdAppBridge桥接antd<App>上下文message/notification实例 - 小欧-2026-08-28
 import { AntdAppBridge } from './lib/antd/bridge';
@@ -56,11 +56,11 @@ const RouterContent: React.FC = () => {
     <AppLayout activeKey={location.pathname}>
       <Suspense fallback={<LazyLoadingFallback />}>
         <Routes>
-          <Route path="/" element={<NewChatContainer />} />
+          <Route path="/" element={<ChatPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings" element={<Settings />} />
           {/* 默认重定向到首页 */}
-          <Route path="*" element={<NewChatContainer />} />
+          <Route path="*" element={<ChatPage />} />
         </Routes>
       </Suspense>
     </AppLayout>
