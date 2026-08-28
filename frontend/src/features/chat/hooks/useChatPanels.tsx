@@ -1,5 +1,5 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离panels插槽组装逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
-import { useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
 import { ChatInput } from '../components/ChatInput';
@@ -12,8 +12,6 @@ import { RightViewer } from '../components/right/RightViewer';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
 import { TrustPanel } from '../components/config/TrustPanel';
 import { Colors } from '@/utils/stepStyles';
-import type { ExecutionStep } from '../../../types/execution';
-import type { SessionModelOverride } from '../../../types/chat';
 import type {
   TaskDetail,
   SessionTaskItem,
@@ -21,50 +19,36 @@ import type {
 import type { EffectiveModel } from './useModelLayer';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
 import type { TaskMetaFrames } from '../../../types/sse';
+import type { UseChatFacadeReturn } from './useChatFacade';
 
 interface UseChatPanelsOptions {
-  sessionId: string | null;
-  sessionTitle: string;
-  titleLocked: boolean;
-  editingTitle: boolean;
-  titleInput: string;
-  sessionVersion: number;
-  setSessionTitle: Dispatch<SetStateAction<string>>;
-  setTitleLocked: Dispatch<SetStateAction<boolean>>;
-  setEditingTitle: Dispatch<SetStateAction<boolean>>;
-  setTitleInput: Dispatch<SetStateAction<string>>;
-  setSessionVersion: Dispatch<SetStateAction<number>>;
-  handleEditingStart: () => void;
-  handleEditingCancel: () => void;
-  total: number;
-  tasksLoading: boolean;
-  chainTokens: number | null;
-  sessionTimes: { createdAt?: string; updatedAt?: string };
-  effective: EffectiveModel | null;
-  handleNewSession: () => void;
-  tasks: SessionTaskItem[];
-  activeTaskId: string | null;
-  handleSelectTask: (id: string) => void;
-  serverTaskId: string | null;
-  isReceiving: boolean;
-  executionSteps: ExecutionStep[];
+  chatState: UseChatFacadeReturn['chatState'];
+  chatStreaming: UseChatFacadeReturn['chatStreaming'];
+  chatTaskControl: UseChatFacadeReturn['chatTaskControl'];
+  chatSend: UseChatFacadeReturn['chatSend'];
   liveErrorText: string | null;
   authorizationPending: AuthorizationRequest | null;
-  metaFrames: TaskMetaFrames;
+  handleAuthorizationConfirm: (
+    confirmed: boolean,
+    trustSession: boolean
+  ) => void;
+  tasks: SessionTaskItem[];
+  total: number;
+  tasksLoading: boolean;
+  refreshTasks: () => void;
+  effective: EffectiveModel | null;
+  sessionTimes: { createdAt?: string; updatedAt?: string };
+  activeTaskId: string | null;
   selectedDetail: TaskDetail | null;
-  loading: boolean;
-  isPaused: boolean;
+  handleSelectTask: (id: string) => void;
+  chainTokens: number | null;
+  handleNewSession: () => void;
+  handleEditingStart: () => void;
+  handleEditingCancel: () => void;
   handleSendWithMode: (
     content: string,
     mode?: 'linked' | 'independent'
   ) => void;
-  handleCancel: () => Promise<void>;
-  handleTogglePause: () => Promise<void>;
-  refreshTasks: () => void;
-  sessionModelOverride: SessionModelOverride | null;
-  setSessionModelOverride: Dispatch<
-    SetStateAction<SessionModelOverride | null>
-  >;
 }
 
 /**
@@ -72,6 +56,30 @@ interface UseChatPanelsOptions {
  * 逻辑与 NewChatContainer 中原 useMemo 一致，未做行为改写
  */
 export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
+  const {
+    chatState,
+    chatStreaming,
+    chatTaskControl,
+    chatSend,
+    liveErrorText,
+    authorizationPending,
+    handleAuthorizationConfirm,
+    tasks,
+    total,
+    tasksLoading,
+    refreshTasks,
+    effective,
+    sessionTimes,
+    activeTaskId,
+    selectedDetail,
+    handleSelectTask,
+    chainTokens,
+    handleNewSession,
+    handleEditingStart,
+    handleEditingCancel,
+    handleSendWithMode,
+  } = opts;
+
   const {
     sessionId,
     sessionTitle,
@@ -84,33 +92,20 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     setEditingTitle,
     setTitleInput,
     setSessionVersion,
-    handleEditingStart,
-    handleEditingCancel,
-    total,
-    tasksLoading,
-    chainTokens,
-    sessionTimes,
-    effective,
-    handleNewSession,
-    tasks,
-    activeTaskId,
-    handleSelectTask,
-    serverTaskId,
-    isReceiving,
-    executionSteps,
-    liveErrorText,
-    authorizationPending,
-    metaFrames,
-    selectedDetail,
-    loading,
-    isPaused,
-    handleSendWithMode,
-    handleCancel,
-    handleTogglePause,
-    refreshTasks,
     sessionModelOverride,
     setSessionModelOverride,
-  } = opts;
+    loading,
+    isPaused,
+  } = chatState;
+  const {
+    isReceiving,
+    executionSteps,
+    currentResponse,
+    metaFrames,
+    serverTaskId,
+  } = chatStreaming;
+  const { handleCancel, handleTogglePause } = chatTaskControl;
+  const { handleSend } = chatSend;
 
   return useMemo<SessionPanel[]>(
     () => [
@@ -227,7 +222,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
         slot: 'config',
         key: 'config.trust',
         component: <TrustPanel sessionId={sessionId} />,
-        defaultVisible: true, // 2026-08-27 小欧 修复#3: TrustPanel默认可见, 否则信任操作面板永不可触达(违反8.7)
+        defaultVisible: true,
       },
       {
         slot: 'input',
@@ -267,7 +262,10 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       setEditingTitle,
       setTitleInput,
       setSessionVersion,
+      sessionModelOverride,
+      setSessionModelOverride,
       total,
+      tasksLoading,
       chainTokens,
       sessionTimes,
       effective,
@@ -278,8 +276,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       serverTaskId,
       isReceiving,
       executionSteps,
-      liveErrorText,
-      authorizationPending,
+      currentResponse,
       metaFrames,
       selectedDetail,
       loading,
@@ -287,9 +284,10 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       handleSendWithMode,
       handleCancel,
       handleTogglePause,
+      liveErrorText,
+      authorizationPending,
+      handleAuthorizationConfirm,
       refreshTasks,
-      sessionModelOverride,
-      setSessionModelOverride,
     ]
   );
 }
