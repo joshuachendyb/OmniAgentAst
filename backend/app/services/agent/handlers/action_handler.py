@@ -139,6 +139,7 @@
 # 2026-08-25 - 小欧 - 合规重构(北京老陈驱动): M3 沙箱闸门逻辑从 check_safety_and_confirm 内嵌闭包(_sandbox_precheck/_sandbox_resolve)拆出至新建 app/services/agent/handlers/sandbox_gate.py(模块级函数+显式参数, 去隐式捕获约10个外层变量的"七绕八绕", 修正违反1.3公用函数规范-分层/先查后建/登记FUNCTIONS.md 与 KISS-DIRECT); 三处汇合点(①auto_confirm ②用户确认 ③循环体兜底)改显式调用; 业务语义/分支/状态机零改动(复制不重写)
 # 2026-08-25 - 小欧 - 合规重构: build_observation 内嵌闭包 _format_llm_data_text(纯展示格式化函数被囚为闭包, 违反1.3/复用优先)拆出至全局层 app/utils/display_utils.format_llm_data_text; 同步删除仅服务于该闭包的死 import json; 逻辑零改动(复制不重写)
 # 2026-08-26 小欧 - action步落库记录层修复(com-test 09实证): 原_exec_calls=_safe_calls if _safe_calls else [], 当全部调用被安全拦截时_exec_calls=[]→ActionStep.tools=[]→DB步骤完整性FAIL(无工具调用信息); 改法: 记录层新增_record_calls=_exec_calls if _exec_calls else call_result.all_calls(兜底取LLM意图调用含被拒项), 仅用于ActionStep.tools落库补全; 执行层仍用_exec_calls(绝不回退all_calls, 不绕过安全检查)
+# 2026-08-28 小欧 - yield日志审计: check_safety_and_confirm 关键决策点(blocked/paused/timeout/rejected/resumed)补 logger(warning/info), 覆盖11个无日志yield(SRP); 三堂会审无逻辑修正
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -299,6 +300,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             # (2026-08-25 合规重构: 去嵌套闭包隐式耦合, Agent编排层落点, 三处汇合点共用, 每 call 恰好预检一次不重复)
 
             if safety_result.blocked:
+                # 2026-08-28 小欧 yield日志审计: 拦截决策日志(SRP)
+                logger.warning(f"[action] step={step} blocked: tool={_cn} reason={safety_result.message}")
                 yield agent._step_emitter.emit(MetaStep(
                     step=step, type="error", content=safety_result.message, error_type="blocked", severity="warn"
                 ))
@@ -311,6 +314,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
 
                 confirm_id = await create_confirmation(agent.task_id, _cn)  # S2: tool_name 透传供 trust 落库(10.1.7②-5) — 小欧 2026-08-16
 
+                # 2026-08-28 小欧 yield日志审计: 等待确认决策日志(SRP)
+                logger.info(f"[action] step={step} paused: tool={_cn} confirm_id={confirm_id}")
                 yield agent._step_emitter.emit(MetaStep(
                     step=step,
                     type="paused",
@@ -351,11 +356,15 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 if not auth.get("confirmed"):
                     if auth.get("expired"):
                         # #11 fix: 超时与拒绝分流 — 小欧 2026-07-18
+                        # 2026-08-28 小欧 yield日志审计: 超时决策日志(SRP)
+                        logger.warning(f"[action] step={step} timeout: tool={_cn}")
                         yield agent._step_emitter.emit(MetaStep(
                             step=step, type="error", content=f"工具确认超时未响应: {_cn}", error_type="timeout", severity="warn"
                         ))
                         _denied.append((_cn, "确认超时未响应", call))
                     else:
+                        # 2026-08-28 小欧 yield日志审计: 拒绝决策日志(SRP)
+                        logger.warning(f"[action] step={step} rejected: tool={_cn}")
                         yield agent._step_emitter.emit(MetaStep(
                             step=step, type="error", content=f"用户拒绝执行工具: {_cn}", error_type="user_rejected", severity="warn"
                         ))
@@ -368,6 +377,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 if getattr(safety_result, "auth_path", None):
                     from app.tools.security.temp_auth import grant_temp_auth
                     grant_temp_auth(safety_result.auth_path, recursive=True)
+                    # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP)
+                    logger.info(f"[action] step={step} resumed+auth: tool={_cn} path={safety_result.auth_path}")
                     yield agent._step_emitter.emit(MetaStep(
                         step=step,
                         type="resumed",
@@ -996,7 +1007,7 @@ async def handle_action(agent, parsed: Dict):
     if _denied_list:
         _add_denial_feedback(agent, _denied_list, call_result.fc_context)
     if orchestration.get("return_direct"):
-        async for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
             step=step, response=orchestration.get("return_direct_message", ""),
             outcome="completed", reasoning="",
         )):
