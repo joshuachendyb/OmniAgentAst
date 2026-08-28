@@ -10,6 +10,7 @@
 // 编辑历史: 2026-08-28 小沈 - 修复review-bugs#8: idleTimeout先更新lastDataTimeRef再设timeout, clearTimeout放reader.read()之后, 消除竞态 - 小沈-2026-08-28
 // 编辑历史: 2026-08-27 小欧 - 依用户铁律系统代码不留仅测试所需: 确认isPersistBlocked仅测试依赖(死导出), 维持8.6删除; 测试侧sse-parsing.test.ts改本地helper, 系统代码净化
 // 编辑历史: 2026-08-27 小欧 - 修复SSE-G1(B1): disconnect增resetReconnectAttempts参数+handleSSEError仅canRetry注入onReconnect, 终止无限重连; G2(B2/B3/base-2): is_reasoning归一化补'1'并统一helper; G3(base-1): 各分支时间戳统一timestampValue; G4(base-3): step加Number()
+// 编辑历史: 2026-08-28 小欧 - 根治切页/隐藏标签泄漏: disconnect()及卸载清理补清idleTimeoutRef/fetchTimeoutRef, 杜绝已卸载组件弹"空闲超时"toast并误重连 - 小欧-2026-08-28
 /**
  * SSE 工具模块 V2 - Server-Sent Events 流式处理
  *
@@ -492,6 +493,7 @@ export const useSSE = (
   // 【小强修复 2026-04-09】重命名为 IDLE_TIMEOUT，更准确反映语义
   const lastDataTimeRef = useRef<number>(0); // 最后收到数据的时间
   const idleTimeoutRef = useRef<number | null>(null); // 空闲超时检测
+  const fetchTimeoutRef = useRef<number | null>(null); // 180s fetch超时检测
   const IDLE_TIMEOUT = 60000; // 60 秒无数据判定为断开
 
   // 【小强添加 2026-03-18】sessionStorage 备份相关
@@ -558,6 +560,16 @@ export const useSSE = (
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
+      }
+
+      // 2026-08-28 小欧 根治切页/隐藏泄漏: disconnect必须清空闲超时与fetch超时, 否则卸载后定时器在已死组件上触发handleSSEError弹toast并误重连
+      if (idleTimeoutRef.current) {
+        clearTimeout(idleTimeoutRef.current);
+        idleTimeoutRef.current = null;
+      }
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+        fetchTimeoutRef.current = null;
       }
 
       // 【修复 2026-05-11 小健】abort正在进行的fetch请求，防止旧流与新流并行
@@ -659,7 +671,7 @@ export const useSSE = (
       }
       const controller = new AbortController();
       abortControllerRef.current = controller; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
-      const timeoutId = setTimeout(() => controller.abort(), 180000); // 180s超时，qwen2.5:1.5b CPU首次推理约2分钟
+      fetchTimeoutRef.current = window.setTimeout(() => controller.abort(), 180000); // 180s超时，qwen2.5:1.5b CPU首次推理约2分钟
 
       let response: Response;
       if (isReconnect) {
@@ -691,7 +703,10 @@ export const useSSE = (
         });
       }
 
-      clearTimeout(timeoutId);
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+        fetchTimeoutRef.current = null;
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
