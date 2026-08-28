@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 消除map自增副作用, 预计算lastThink判定光标(11)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审去框-P1-2/P1-6: 流水线容器左线化(borderLeft2px#e8e8e8+paddingLeft12+marginTop4), 靠换行+缩进+左线替代卡片; 段距已统一8px0
+// 编辑历史: 2026-08-28 小欧 - ④A/a1: 左线令牌化 Colors.BORDER.VERTICAL
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -19,6 +20,7 @@ import { ThinkingStream } from './ThinkingStream';
 import { ResponseStream } from './ResponseStream';
 import { ToolCallLine } from './ToolCallLine';
 import { StatusLine } from './StatusLine';
+import { Colors, BorderWidth } from '@/utils/stepStyles';
 
 export type PipelineSegment =
   | { kind: 'thinking'; text: string }
@@ -91,7 +93,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
       style={{
         fontSize: 14,
         lineHeight: 1.8,
-        borderLeft: '2px solid #e8e8e8',
+        borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
         paddingLeft: 12,
         marginTop: 4,
       }}

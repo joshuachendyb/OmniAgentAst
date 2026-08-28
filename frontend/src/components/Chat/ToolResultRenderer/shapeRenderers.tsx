@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-27 小欧 - 修复chat-A: extractResult 合并 tool_result[].data_text 兜底, 新契约数据在 data_text 时树/码渲染不空
 // 2026-08-27 小欧 - 三堂会审: tree列表/树容器统一边框 1px #f0f0f0(与行分割线一致), 半径保持6
 // 编辑历史: 2026-08-28 小强 - 修复[18]: extractResult遍历tool_result数组合并data_text, 不再仅取首项 - 小强-2026-08-28
+// 编辑历史: 2026-08-28 小欧 - ④B/b1: 去卡片填色改透明+左线, 令牌化, Code深色→浅底左线
 /**
  * shapeRenderers - 按结果形状渲染(非 tool 名)
  *
@@ -11,6 +12,7 @@
  */
 import React from 'react';
 import { GenericResultRenderer } from '@/components/Chat/renderers';
+import { Colors, BorderWidth, Spacing, Radius, FontSize } from '@/utils/stepStyles';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -97,7 +99,7 @@ const titleStyle = (success: boolean): React.CSSProperties => ({
   marginBottom: 12,
   fontSize: 14,
   fontWeight: 500,
-  color: success ? '#52c41a' : '#ff4d4f',
+  color: success ? Colors.SUCCESS : Colors.ERROR,
 });
 
 // ===== Tree: 目录树 / 目录列表(二形合一, 按 data.entries / data.tree 判定) =====
@@ -128,14 +130,14 @@ const TreeDirItem: React.FC<{
         display: 'flex',
         alignItems: 'center',
         padding: '3px 0',
-        borderBottom: idx < total - 1 ? '1px solid #f0f0f0' : 'none',
+        borderBottom: idx < total - 1 ? `1px solid ${Colors.BORDER.LIGHT}` : 'none',
         fontSize: 13,
       }}
     >
       {isDir ? (
-        <FolderOutlined style={{ color: '#faad14', marginRight: 8 }} />
+        <FolderOutlined style={{ color: Colors.WARNING, marginRight: 8 }} />
       ) : (
-        <FileOutlined style={{ color: '#1677ff', marginRight: 8 }} />
+        <FileOutlined style={{ color: Colors.PRIMARY, marginRight: 8 }} />
       )}
       <span style={{ flex: 1, color: '#333', wordBreak: 'break-all' }}>
         {name}
@@ -185,13 +187,9 @@ const TreeTreeNode: React.FC<{ node: TreeNode; depth: number }> = ({
           />
         )}
         {isDirectory ? (
-          <FolderOutlined
-            style={{ marginRight: 6, fontSize: 14, color: '#faad14' }}
-          />
+          <FolderOutlined style={{ marginRight: 6, fontSize: 14, color: Colors.WARNING }} />
         ) : (
-          <FileOutlined
-            style={{ marginRight: 6, fontSize: 14, color: '#1677ff' }}
-          />
+          <FileOutlined style={{ marginRight: 6, fontSize: 14, color: Colors.PRIMARY }} />
         )}
         <span
           style={{

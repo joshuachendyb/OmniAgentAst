@@ -5,6 +5,7 @@
 // 编辑历史: 2026-08-27 小欧 - 修复chat-C: 新契约 tool_result 数组取首项 summary/llm_data.summary, 不再回落字面量[工具结果]
 // 编辑历史: 2026-08-28 小强 - 修复[21]: getObsSummary空数组回落丢失, parts为空时fallback到o.summary/content - 小强-2026-08-28
 // 编辑历史: 2026-08-28 小强 - 修复[22]: tool_result含空数组走错分支, 改条件为数组且长度>0 - 小强-2026-08-28
+// 编辑历史: 2026-08-28 小欧 - ④A/a2: 高亮1px→2px + WARNING_BG令牌化, 左线统一2px
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -20,6 +21,7 @@ import React, { useState } from 'react';
 import type { ExecutionStep } from '../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
+import { Colors, BorderWidth } from '@/utils/stepStyles';
 
 interface ToolCallLineProps {
   action: ExecutionStep; // type=action
@@ -77,9 +79,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         padding: '4px 8px 4px 10px',
         borderRadius: highlight ? 6 : 0,
         borderLeft: highlight
-          ? '1px solid #faad14'
-          : '2px solid #e8e8e8',
-        background: highlight ? 'rgba(250,173,20,0.08)' : 'transparent',
+          ? `${BorderWidth.THICK}px solid ${Colors.WARNING}`
+          : `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
+        background: highlight ? Colors.WARNING_BG : 'transparent',
       }}
     >
       <span style={{ cursor: 'pointer' }} onClick={() => setOpen((v) => !v)}>
