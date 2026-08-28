@@ -1,3 +1,95 @@
+﻿v0.19.36
+更新时间: 2026-08-28 20:56:36 - 小欧-2026-08-28
+## v0.19.35以来 变更汇总(74个commit) - 小欧-2026-08-28
+[2026-08-28 20:56:36 小欧] 汇总范围=v0.19.35以来全部commit(本分支 optimize-0.19.17 自v0.19.35累积74个commit, 已打 tag v0.19.36)
+
+### docs(10个):
+- docs:前端架构重构设计 改名及产品级完稿(v1.9) - 小欧-2026-08-28
+- docs:前端审查文档(toast根因/交互场景/目录组织三堂会审) 提交审计结论 - 小欧-2026-08-28
+- docs:会话页整体UI审计 三堂会审收尾记录v1.3.2(任务列表布局/信息框三态/门禁修正/漏改) - 小欧-2026-08-28
+- docs:三堂会审-yield链审查 yield链三堂会审报告入库(伪异步KISS修正依据) - 小欧-2026-08-28
+- docs:三堂会审 30真问题定版 - 小欧-2026-08-28
+- docs:审计报告 6份UI审计+汇总落实标注与全局联动 - 小欧-2026-08-28
+- docs:审计报告 UI审查落实标注与全局联动 - 小欧-2026-08-28
+- docs:会话页面UI布局审计报告 - 小欧-2026-08-27
+- docs:删除测试记录unit-01~11笔记文件 - 小欧-2026-08-27
+- docs:前端三堂会审第8章问题汇总与修改方案文档+调试笔记 - 小欧-2026-08-27
+
+### refactor(22个):
+- refactor:step_emitter emit统一日志出口+emit_final_with_stats去伪异步包装 - 小欧-2026-08-28
+- refactor:react_cycle emit_final_with_stats调用点async for转for配套去伪异步 - 小欧-2026-08-28
+- refactor:answer_handler 补yield决策点日志(print转logger, DRY违规修复) - 小欧-2026-08-28
+- refactor:action_handler 补check_safety_and_confirm决策点yield日志 - 小欧-2026-08-28
+- refactor:stream_reader/stream_orchestrator 补SSE发送与编排yield点日志 - 小欧-2026-08-28
+- refactor:task_runtime 补pause/resume yield点日志 - 小欧-2026-08-28
+- refactor:errorHandler 审计注释归一与颜色常量收敛 - 小欧-2026-08-27
+- refactor:sse 导出SSEError/SSEMetadata供useChatCallbacks复用去重 - 小欧-2026-08-27
+- refactor:dynamicStatus 删死代码dynamicStatus.tsx - 小欧-2026-08-27
+- refactor:UI ErrorDetail/SmartContentRenderer/ToolInfo/errorHandler 第九章去框与常量化 - 小欧-2026-08-27
+- refactor:hooks useChatCallbacks SSEError/SSEMetadata改sse.ts导入去重; useChatStreaming disconnect参数对齐 - 小欧-2026-08-27
+- refactor:ToolResultRenderer 删未用Props与旧名read_file(禁backward) - 小欧-2026-08-27
+- refactor:renderers GenericResultRenderer彩虹→单色左边线, shapeRenderers树容器统一边框 - 小欧-2026-08-27
+- refactor:stepStyles 删全部死代码仅留6令牌, WARNING收敛#faad14 - 小欧-2026-08-27
+- refactor:ToolResultRenderer 删36套per-tool视图改按结果类型(tree/code/generic)分派 - 小欧-2026-08-27
+- refactor:views/theme 主色#1890ff到#1677ff收敛与视图去框viewOuter - 小欧-2026-08-27
+- refactor:pipeline 去框左线化与段距8px收敛 - 小欧-2026-08-27
+- refactor:TaskInfoBar/StaticStatsBlock 去框留淡底与分割线 - 小欧-2026-08-27
+- refactor:NewChatContainer/SessionLayout 去Card改div加flex布局与overflow - 小欧-2026-08-27
+- refactor:ChatHeader/ModelPicker 去头像RobotOutlined且ChatHeader回填res.version - 小欧-2026-08-27
+- refactor:index.css 去全局样式污染仅留box-sizing与chat-message-list - 小欧-2026-08-27
+- refactor:sse.ts 彻底清理仅测试依赖的isPersistBlocked/PERSIST_BLOCKLIST(系统代码净化,不为测试保留死导出) - 小欧-2026-08-27
+
+### fix(41个):
+- fix:sse 根治切页/隐藏标签空闲超时定时器泄漏(卸载清idleTimeoutRef/fetchTimeoutRef) - 小欧-2026-08-28
+- fix:errorHandler 根治toast根因-静态message改App上下文实例+错误toast点击消失 - 小欧-2026-08-28
+- fix:chatMessages 删除未使用死代码handleSaveErrorWithCache - 小欧-2026-08-28
+- fix:SmartContentRenderer 样式审计补正(去Radius/透明背景/左边框) - 小欧-2026-08-28
+- fix:e2etests e2e测试脚本同步修正(按全部指示入库) - 小欧-2026-08-28
+- fix:步骤样式工具审计修复 - 小欧-2026-08-28
+- fix:左右面板与任务列表审计修复(信任面板/任务列表重构/统计块) - 小欧-2026-08-28
+- fix:pipeline流渲染审计修复 - 小欧-2026-08-28
+- fix:渲染器审计修复(形状/CSS顺序/通用/工具信息) - 小欧-2026-08-28
+- fix:Chat核心布局组件审计修复(标题/错误/布局/任务栏) - 小欧-2026-08-28
+- fix:useChatCallbacks最终修正 - 小欧-2026-08-28
+- fix:shapeRenderers CSS属性顺序修正 - 小欧-2026-08-28
+- fix:shapeRenderers最终修复 - 小欧-2026-08-28
+- fix:审计Chat渲染器补丁-管道/工具结果/通用渲染器 - 小欧-2026-08-28
+- fix:审计Chat UI优化-标题响应式/工具栏收敛/任务列表重构 - 小欧-2026-08-28
+- fix:审计页面同步闭包与Layout深比较修复 - 小欧-2026-08-28
+- fix:审计Chat组件逻辑与深比较修复 - 小欧-2026-08-28
+- fix:审计hooks/chat原子化与竞态修复 - 小欧-2026-08-28
+- fix:审计去重失效与原型污染修复 - 小欧-2026-08-28
+- fix:审计SSE竞态与断开语义修复 - 小欧-2026-08-28
+- fix:审计时间解析统一与错误提取优先级修复 - 小欧-2026-08-28
+- fix:components/pages 修复Layout失效图标/HealthCheck吞错/History清空守卫/ProviderSettings批量删 - 小欧-2026-08-28
+- fix:components/Chat 修复工具结果树/折叠预览/花括号/错误详情对齐等渲染bug - 小欧-2026-08-28
+- fix:hooks 修复useLoadingMessage全局消息销毁与useBeforeUnload卸载清理 - 小欧-2026-08-28
+- fix:hooks/chat 修复暂停/取消/重连死循环/重试等会话钩子bug - 小欧-2026-08-28
+- fix:utils 修复sse重连计数/timestamp/is_reasoning归一化等基础工具多项bug - 小欧-2026-08-28
+- fix:errorHandler 修复review-bugs#1 新增extractErrorMessage兼容axios response.data.detail - 小欧-2026-08-27
+- fix:sse/hooks 修复base-2/base-3/B2 数值化step与is_reasoning归一化 - 小欧-2026-08-27
+- fix:errorHandler 修复Bug5 无onReconnect时不展示正在重试误导文案 - 小欧-2026-08-27
+- fix:sse 修复重连计数重置致无限重连(B1) - 小欧-2026-08-27
+- fix:api getSession/listSessions/getSessionTitlesBatch字段兜底与thought兼容 - 小欧-2026-08-27
+- fix:Layout/ProviderSettings #1890ff→#1677ff收敛主色, Layout删console.log - 小欧-2026-08-27
+- fix: vitest.config添加@路径别名与tsconfig同步 - 小欧-2026-08-27
+- fix:TopbarStats 边距gap12到8收敛 - 小欧-2026-08-27
+- fix:TaskListPanel a11y role与tabIndex与focus-visible浅蓝外晕 - 小欧-2026-08-27
+- fix:RightViewer 三态Empty/Skeleton/Alert错误态 - 小欧-2026-08-27
+- fix:前端8.6组4三堂会审修复(死代码清理/类型环断/ApiMessage重命名/移动端判定/编辑历史修正) - 小欧-2026-08-27
+- fix:8.6编辑历史补加+撤回isPersistBlocked误删(测试依赖保留) - 小欧-2026-08-27
+- fix:com-test_e2e_06 user_input路径修正为E:\task - 小欧-2026-08-27
+- fix:e2etest TASK_FILE和user_input路径统一为E:\task - 小欧-2026-08-27
+- fix:com-test_e2e_07~12 user_input路径修正 - 小欧-2026-08-27
+
+### chore(1个):
+- chore:frontend stylelint配置 - 小欧-2026-08-28
+
+### 合计
+- docs: 10个 | refactor: 22个 | fix: 41个 | chore: 1个 = 共74个
+
+---
+
 v0.19.35
 更新时间: 2026-08-27 18:09:05 - 小欧-2026-08-27
 ## v0.19.34以来 变更汇总(4个commit) - 小欧-2026-08-27
@@ -4132,3 +4224,4 @@ v0.14.9 把 base_react.py / react_handler_mixin.py 拆分为 package 目录(19 �
 ---
 
 ## v0.14.8→v0.14.9 变更汇总 - 小沈-2026-06-01
+
