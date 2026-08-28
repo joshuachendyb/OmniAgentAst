@@ -12,7 +12,7 @@
  */
 
 import React from 'react';
-import type { ExecutionStep } from '../../../utils/sse';
+import type { ExecutionStep } from '@/types/execution';
 import { Colors, FontSize } from '@/utils/stepStyles';
 
 interface StatusLineProps {

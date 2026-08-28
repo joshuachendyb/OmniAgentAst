@@ -13,7 +13,7 @@
  */
 
 import type { Message } from '../../types/chat';
-import type { ExecutionStep } from '../../utils/sse';
+import type { ExecutionStep } from '@/types/execution';
 
 // ============================================================================
 // 类型定义（直接定义，不从Hook导入）

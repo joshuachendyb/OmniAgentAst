@@ -15,5 +15,5 @@ export { ToolCallLine } from './ToolCallLine';
 export { ResponseStream } from './ResponseStream';
 export { StatusLine } from './StatusLine';
 export { CollapsibleText } from './CollapsibleText';
-export { splitSteps, isBusinessStep, META_STEP_TYPES } from './steps';
-export type { SplitResult } from './steps';
+export { splitSteps, isBusinessStep, META_STEP_TYPES } from './stepFilter';
+export type { SplitResult } from './stepFilter';

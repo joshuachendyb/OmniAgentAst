@@ -28,7 +28,7 @@ import type { UseChatStateReturn } from './useChatState';
 import type { UseChatCallbacksReturn } from './useChatCallbacks';
 import type { ExecutionStep } from '../../types/execution';
 import type { Message } from '../../types/chat';
-import { useSSE } from '../../utils/sse';
+import { useSSE } from '@/hooks/useSSE';
 import { sessionApi } from '../../services/api/session.api';
 import { getClientInfo } from '../../utils/clientInfo';
 import { handleError } from '@/services/error/handler';
@@ -76,7 +76,7 @@ export interface UseChatStreamingReturn {
   serverTaskId: string | null;
 
   // 任务元信息帧（8.4.14 透传）
-  metaFrames: import('../../utils/sse').TaskMetaFrames;
+  metaFrames: import('@/types/sse').TaskMetaFrames;
 
   // Refs - 用于累积流式内容（供外部访问）
   streamingContentRef: React.MutableRefObject<string>;
