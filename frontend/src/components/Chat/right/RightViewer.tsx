@@ -20,7 +20,7 @@ import { Colors } from '@/utils/stepStyles';
 import { sessionApi } from '../../../services/api/session.api';
 import { executionApi, type TaskDetail } from '../../../services/api/task.api';
 import { PipelineRenderer } from '../pipeline';
-import { splitSteps } from '../pipeline/steps';
+import { splitSteps } from '../pipeline/stepFilter';
 import { StaticStatsBlock } from './StaticStatsBlock';
 
 // 2026-08-27 小欧 三堂会审: 收窄 unknown[]→ExecutionStep[], 形状不符回落空数组
