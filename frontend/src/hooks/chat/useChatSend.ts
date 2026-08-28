@@ -24,7 +24,7 @@ import { checkNetworkConnection } from "../../utils/network";
 import { showNetworkError } from "../../utils/chatMessages";
 import { sessionApi } from "../../services/api/session.api";
 import { API_BASE_URL } from "../../services/api/client";
-import { logUserSend } from "../../utils/chatLogger";
+import { logUserSend } from "../../utils/logStyles";
 import type { Message } from "../../types/chat";
 
 interface UseChatSendOptions {

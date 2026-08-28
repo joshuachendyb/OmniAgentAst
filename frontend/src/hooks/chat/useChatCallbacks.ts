@@ -33,7 +33,7 @@ import {
   handleApiError,
   ErrorType,
 } from '@/services/error/handler';
-import { logAIComplete, logAIError } from '../../utils/chatLogger';
+import { logAIComplete, logAIError } from '../../utils/logStyles';
 import { sessionApi } from '../../services/api/session.api';
 // 2026-08-27 小欧 三堂会审A2修复: SSEError/SSEMetadata从sse.ts导入, 消除重复定义
 import type { SSEError, SSEMetadata } from '../../utils/sse';
