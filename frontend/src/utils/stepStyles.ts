@@ -2,6 +2,7 @@
 // 2026-08-27 小欧 - 三堂会审: Colors.WARNING 收敛至 AntD5 默认警告色 #faad14(原 #d97706 旧琥珀色, 与第九章调色板不一致)
 // 2026-08-27 小欧 - 三堂会审: 删全部死代码(colorSchemes/resolveScheme/hexToRgba/mergeStyles/ColorScheme接口/import React), 仅留6令牌+类型(YAGNI/KISS/禁止backward)
 // 2026-08-27 小欧 - 修复step-5/step-6: 恢复getStep*/isValidStepType/getAllStepTypes(被误删), 以最小stepMeta映射替代已删colorSchemes(禁止backward), action_tool须被拒
+// 2026-08-28 小沈 - 修复review-bugs#6: isValidStepType改hasOwnProperty, 防toString/__proto__原型污染 - 小沈-2026-08-28
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
  *
@@ -106,11 +107,13 @@ export const Colors = {
     SECONDARY: '#fafafa', // 次要背景 - 极浅灰
     TERTIARY: '#f5f5f5', // 第三背景 - 浅灰
     LIGHT: '#fafafa', // 浅背景（别名）
+    WARNING_LIGHT: '#fffbe6', // 警告浅底（高亮背景，替 rgba）
   },
   // 边框颜色（3种浅色）
   BORDER: {
-    LIGHT: '#f0f0f0', // 浅边框
-    DEFAULT: '#d9d9d9', // 中边框
+    LIGHT: '#f0f0f0', // 浅边框-水平分割线
+    VERTICAL: '#e8e8e8', // 垂直左线（Pipeline/通用嵌套统一）
+    DEFAULT: '#d9d9d9', // 中边框（通用嵌套旧值，逐步收敛至 VERTICAL）
     STRONG: '#bfbfbf', // 深边框（仍是浅色）
   },
   // 功能颜色（5种）
@@ -119,6 +122,7 @@ export const Colors = {
   ERROR: '#ff4d4f', // 错误状态 - 红色
   WARNING: '#faad14', // 警告/思考状态 - 橙色(AntD5默认警告色, 收敛)
   INFO: '#096dd9', // 信息/开始状态 - 蓝色
+  WARNING_BG: '#fffbe6', // 警告背景（高亮浅底）
 } as const;
 
 // ==================== 步骤配置 ====================
@@ -156,8 +160,9 @@ const stepMeta: Record<StepType, StepMeta> = {
 };
 
 // 2026-08-27 小欧 修复step-5: action_tool 不在 stepMeta 键集合中, isValidStepType 必返回 false(8.4.2 禁止 backward)
+// 2026-08-28 小沈 修复B6: 改hasOwnProperty.call, 只检查自有属性, 避免toString/__proto__原型污染命中
 export const isValidStepType = (stepType: string): stepType is StepType => {
-  return stepType in stepMeta;
+  return Object.prototype.hasOwnProperty.call(stepMeta, stepType);
 };
 
 export const getAllStepTypes = (): StepType[] => {

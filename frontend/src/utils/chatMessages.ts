@@ -15,6 +15,7 @@
  */
 
 // 编辑历史: 2026-08-27 小欧 - 修复B8: handleSaveErrorWithCache去重字段改用data存储键(content/title), 避免字符串data展开后无assistant键导致去重失效
+// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#5: 去重改String比较, 存储不展开data对象防缓存污染 - 小沈-2026-08-28
 
 import {
   ErrorType,
@@ -155,20 +156,15 @@ export const handleSaveErrorWithCache = async (
     // 避免重复缓存
     // 2026-08-27 小欧 修复B8: 字符串data展开后无assistant/title键, 去重永远失效;
     //   改用实际存储键(content/message, title)比较, 并对字符串data统一存为对应键
+    // 2026-08-28 小沈 修复B5: 去重改String(item[storeKey])===String(data)避免对象===字符串永false; 存储不展开data防缓存污染
     const storeKey = dataType === 'message' ? 'content' : 'title';
     const exists = cached.some((item) => {
-      if (dataType === 'message') {
-        return item.content === data || item.assistant === data;
-      }
-      return item.title === data || item.content === data;
+      return String(item[storeKey]) === String(data);
     });
 
     if (!exists) {
       cached.push({
-        ...(typeof data === 'object' && data !== null
-          ? (data as Record<string, unknown>)
-          : {}),
-        [storeKey]: data,
+        [storeKey]: String(data),
         timestamp: Date.now(),
       });
       localStorage.setItem(cacheKey, JSON.stringify(cached));
