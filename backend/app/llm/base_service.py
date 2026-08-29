@@ -143,6 +143,7 @@ class BaseAIService:
             context_limit=self.context_limit,
         )
         snap._is_snapshot = True
+        logger.info(f"[BaseAIService.snapshot] 构造独立客户端快照: model={snap.llm_model.model}, provider={snap.llm_model.provider}")
         return snap
 
     async def cancel(self):
