@@ -26,6 +26,7 @@
 #   prepare_messages_for_llm 开头单点惰性补 _msg_id(不进 LLM wire, 由 react_cycle 写盘后 pop)——文件B 稳定去重依赖;
 #   v3.29 单点化定案: conversation_history 全程同批 dict 引用(trim/inject/rebuild 不复制), 补标一次永久携带,
 #   各 add_*/inject_history/trim_history 零改动(最小侵入)
+# 2026-08-29 - 小沈 - bug#1修复: _trim_fc_pairs 丢弃 tool_call_id 为空/None 的孤儿 tool 消息(原 elif not tool_call_id 分支误保留→发LLM 400); KISS仅删该分支
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -495,9 +496,8 @@ class MessageBuilder:
                 new_msg["tool_calls"] = kept_tcs
                 result.append(new_msg)
             elif msg.get("role") == "tool":
+                # 丢弃 tool_call_id 为空/无配对 assistant 的孤儿 tool 消息(否则发给 LLM 触发 400) — 小沈 2026-08-29
                 if msg.get("tool_call_id") in paired_ids:
-                    result.append(msg)
-                elif not msg.get("tool_call_id"):
                     result.append(msg)
             else:
                 result.append(msg)

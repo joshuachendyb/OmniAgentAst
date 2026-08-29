@@ -26,6 +26,7 @@
 # 2026-08-22 - 小欧 - 北京老陈 2026-08-22 铁律(chat_messages 只写严禁读): _load_previous_messages 改读 fetch_session_user_message_pairs
 #     (chat_user_message+chat_tasks 重建"用户+AI"历史, assistant 正文取 response、thought 从 execution_steps 派生; 不退化/不加列/不读 chat_messages)
 # 2026-08-28 小欧 - yield日志审计: stream_reader 消费循环 yield 前加 logger.debug("[SSE] seq task"), 覆盖全部SSE发送(KISS单一出口); 三堂会审无逻辑修正
+# 2026-08-29 小沈 - bug#9修复: _parse_tool_calls 预扫描 observation FC id 集合, 仅保留与 observation 配对的 action tool_call, 丢弃无配对孤儿 tool_call(防 action/observation 工具数不一致→LLM 400)
 """
 stream_reader — SSE流运行器（消费者）
 
@@ -64,6 +65,25 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
         return []
     tool_calls = []
     _step_count: Dict[int, int] = {}   # 2026-08-18 小欧 兼容老 action_tool: 同 step 多工具追加组内序号
+    # bug#9修复(小沈 2026-08-29): 预扫描 observation 的 FC id 集合, 仅保留与 observation 配对的 action tool_call;
+    # 防 action/observation 工具数不一致→孤儿 tool_call(assistant 有 id 但无对应 tool 消息)→OpenAI 400
+    _obs_ids: set = set()
+    for _st in exec_steps:
+        if not isinstance(_st, dict) or _st.get("type") != "observation":
+            continue
+        _os = _st.get("step", 0)
+        _tr = _st.get("tool_result")
+        if isinstance(_tr, list):
+            for _oi, _el in enumerate(_tr):
+                if not isinstance(_el, dict):
+                    continue
+                if not (_el.get("data_text") or _el.get("llm_data_text") or ""):
+                    continue
+                _obs_ids.add(f"call_{msg_id}_{_os}_{_oi}")
+        else:
+            _oc = _st.get("content", "")
+            if _oc:
+                _obs_ids.add(f"call_{msg_id}_{_os}_{0}")
     for step in exec_steps:
         _type = step.get("type", "")
         if _type not in ("action", "action_tool"):   # 兼容老数据 action_tool
@@ -76,6 +96,9 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
             for _i, t in enumerate(tools):
                 if not isinstance(t, dict):
                     continue
+                _tcid = f"call_{msg_id}_{_s}_{_i}"
+                if _tcid not in _obs_ids:   # bug#9: 丢弃无配对 observation 的孤儿 tool_call
+                    continue
                 _name = t.get("tool", "")
                 _params = t.get("params") or {}
                 try:
@@ -83,20 +106,23 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
                 except (TypeError, ValueError):
                     arguments = "{}"
                 tool_calls.append({
-                    "id": f"call_{msg_id}_{_s}_{_i}",
+                    "id": _tcid,
                     "type": "function",
                     "function": {"name": _name, "arguments": arguments},
                 })
         else:  # 老 action_tool: 逐个 step 一工具, 同 step 用 _step_count 补序号, 与老 observation 对齐
             _c = _step_count.get(_s, 0)
             _step_count[_s] = _c + 1
+            _tcid = f"call_{msg_id}_{_s}_{_c}"
+            if _tcid not in _obs_ids:   # bug#9: 丢弃无配对 observation 的孤儿 tool_call
+                continue
             try:
                 arguments = json.dumps(step.get("tool_params", {}), ensure_ascii=False)
             except (TypeError, ValueError):
                 arguments = "{}"
                 logger.warning(f"[_parse_tool_calls] tool_params不可序列化, 降级为{{}}: {step.get('tool_name')}")
             tool_calls.append({
-                "id": f"call_{msg_id}_{_s}_{_c}",
+                "id": _tcid,
                 "type": "function",
                 "function": {"name": step.get("tool_name", ""), "arguments": arguments},
             })

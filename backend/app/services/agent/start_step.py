@@ -29,6 +29,7 @@
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.5: _build_start_contract 构造 StartStep 改传
 #   start_model=_ai.llm_model(ModelRef 单结构), 删 display_name=f"{provider} ({model})" 拼装与
 #   provider=/model= 分离入参(设计要求2: display_name 不再落库, 前端派生)
+# 2026-08-29 - 小沈 - bug#2修复: _compact_injected_history 摘要回填后加末条 tool 孤儿守卫, 丢弃尾随无配对 assistant 的 tool 消息(中段已被丢→孤儿→LLM 400)
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -159,10 +160,15 @@ async def _compact_injected_history(agent) -> None:
         logger.warning(f"[start_step] 锚定摘要失败, 保留原历史(零退化): {type(e).__name__}: {e!r}")
         summary_text = ""
     if summary_text:
-        agent.message_builder.conversation_history = (
+        compacted = (
             history[:1] + [{"role": "assistant", "content": summary_text}] + history[-1:]
         )
-        logger.debug(f"[start_step] 摘要回填完成 (tok={len(summary_text)}, 历史 {len(history)}→{3})")
+        # bug#2修复(小沈 2026-08-29): 中段 assistant 已被丢弃, 末条若仍是 tool 消息则成孤儿→发LLM 400;
+        # 最小守卫: 丢弃尾随无配对 assistant 的 tool 消息
+        while compacted and compacted[-1].get("role") == "tool":
+            compacted = compacted[:-1]
+        agent.message_builder.conversation_history = compacted
+        logger.debug(f"[start_step] 摘要回填完成 (tok={len(summary_text)}, 历史 {len(history)}→{len(compacted)})")
     agent._needs_compact = False
 
 
