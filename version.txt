@@ -1,5 +1,24 @@
-﻿v0.19.37
-更新时间: 2026-08-29 07:54:49 - 小欧-2026-08-29
+﻿v0.19.38
+更新时间: 2026-08-30 07:00:00 - 小欧-2026-08-30
+## v0.19.37以来 变更汇总(12个commit) - 小欧-2026-08-30
+[2026-08-30 07:00:00 小欧] 汇总范围=v0.19.37以来全部commit(本分支 optimize-0.19.17 自v0.19.37累积12个commit, 已打 tag v0.19.38)
+
+### fix(11个):
+- message_builder/start_step/stream_reader 修复FC配对孤儿tool消息致LLM 400(bb2aaef)
+- token_usage/execution_stream/task_execution 同步get_conn改db.atxn离载事件循环(a96eeb5)
+- dataanalysis_schema/tool_fc_helper 补图表轴标签字段并driver-aware转发SQL超时(7f09112)
+- error_classifier/storage/session_service 4xx归类+response默认None+version COALESCE(9436e15)
+- executor subprocess.run经asyncio.to_thread离载事件循环(9fe912c)
+- base_service/stream_orchestrator/agent_runner sessionModel覆盖改独立客户端快照根除单例竞态(5dd3f60)
+- useChatSend/useChatPanels/ToolCallLine/useSSE 发送卡死+链token+展开渲染+重连策略(f0653bf)
+- error_classifier/tool_fc_helper 补诊断日志(真实HTTP状态码分支命中+驱动超时键名映射)(41a43be)
+- message_builder/stream_reader 补孤儿FC消息/tool_call丢弃诊断日志(便于排查LLM 400)(4f5bc53)
+- base_service/agent_runner 补会话客户端快照构造/关闭诊断日志(根除单例竞态可观测)(08cd919)
+- error_classifier/tool_fc_helper/message_builder/stream_reader/agent_runner/base_service 补必要诊断日志+修复error_classifier缺logger导入(d381a1c)
+
+### docs(1个):
+- v0.19.36代码审查报告 增补修复实施记录(21确证bug最小直接修复+回归测试)(48f35d9)
+
 ## v0.19.36以来 变更汇总(20个commit) - 小欧-2026-08-29
 [2026-08-29 07:54:49 小欧] 汇总范围=v0.19.36以来全部commit(本分支 optimize-0.19.17 自v0.19.36累积20个commit, 已打 tag v0.19.37)
 
