@@ -499,6 +499,8 @@ class MessageBuilder:
                 # 丢弃 tool_call_id 为空/无配对 assistant 的孤儿 tool 消息(否则发给 LLM 触发 400) — 小沈 2026-08-29
                 if msg.get("tool_call_id") in paired_ids:
                     result.append(msg)
+                else:
+                    logger.debug(f"[_trim_fc_pairs] 丢弃孤儿tool消息: tool_call_id={msg.get('tool_call_id')!r}")
             else:
                 result.append(msg)
         return result

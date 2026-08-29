@@ -68,6 +68,7 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
     # bug#9修复(小沈 2026-08-29): 预扫描 observation 的 FC id 集合, 仅保留与 observation 配对的 action tool_call;
     # 防 action/observation 工具数不一致→孤儿 tool_call(assistant 有 id 但无对应 tool 消息)→OpenAI 400
     _obs_ids: set = set()
+    _orphan_skipped = 0
     for _st in exec_steps:
         if not isinstance(_st, dict) or _st.get("type") != "observation":
             continue
@@ -98,6 +99,7 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
                     continue
                 _tcid = f"call_{msg_id}_{_s}_{_i}"
                 if _tcid not in _obs_ids:   # bug#9: 丢弃无配对 observation 的孤儿 tool_call
+                    _orphan_skipped += 1
                     continue
                 _name = t.get("tool", "")
                 _params = t.get("params") or {}
@@ -126,6 +128,8 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
                 "type": "function",
                 "function": {"name": step.get("tool_name", ""), "arguments": arguments},
             })
+    if _orphan_skipped > 0:
+        logger.debug(f"[_parse_tool_calls] 跳过{_orphan_skipped}个无配对observation的孤儿tool_call(msg_id={msg_id})")
     return tool_calls
 
 
