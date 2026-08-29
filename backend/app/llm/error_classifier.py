@@ -27,7 +27,8 @@
    2026-07-16 小欧 M1 解决CLIENT(4xx)错误文案被覆盖问题: 此前classify_error_message对CLIENT类错误固定返回写死文案"客户端错误:请求参数异常", 丢弃服务商真实错误文本; 现CLIENT分支在error_message非空时直接透出。能力提升: 与client_sdk抛出的HTTPStatusError真因打通, 前端/用户获得可读的真实错误原因, 同时保持400不重试的既有重试策略不变
    2026-07-17 小沈 FC重命名: import/引用同步更新
    2026-07-18 小欧 #8 fix: 消除循环导入——LLMResponseError 改模块级 try/except 导入为 _check_special_errors 内函数级延迟导入; core.py 模块级 import error_classifier 不再触发循环, LLMResponseError 不再恒为 None
-   2026-08-14 小欧 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+    2026-08-14 小欧 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+    2026-08-29 小沈 修复#14: HTTP 状态分类改优先用异常对象真实响应状态码(httpx.HTTPStatusError.response.status_code)判定, 正则仅作文本补充; 消除 400/401/403 因 str(error) 无"status_code"语境致正则失配被误归 SERVER 可重试的缺陷, 4xx 正确归 CLIENT 不可重试
 """
 
 import re
@@ -130,9 +131,27 @@ class SystemErrorClassifier:
     _STATUS_CTX_RE = re.compile(r"status[_\s]*code['\"]?\s*[:=]?\s*(\d{3})", re.IGNORECASE)
 
     @staticmethod
-    def _check_http_status_errors(error_msg: str) -> Optional[SystemErrorCategory]:
-        """检查HTTP状态码错误 — #36 fix: 匹配 status_code 语境防误匹配数字 — 小欧 2026-07-18"""
-        m = SystemErrorClassifier._STATUS_CTX_RE.search(error_msg)
+    def _extract_http_status(error: Exception) -> Optional[int]:
+        """从异常对象提取真实 HTTP 状态码 — 小沈 2026-08-29 修复#14: 优先用对象属性, 不依赖 str(error) 文本"""
+        resp = getattr(error, "response", None)
+        if resp is not None:
+            code = getattr(resp, "status_code", None)
+            if isinstance(code, int):
+                return code
+        code = getattr(error, "status_code", None)
+        if isinstance(code, int):
+            return code
+        return None
+
+    @staticmethod
+    def _check_http_status_errors(error: Exception) -> Optional[SystemErrorCategory]:
+        """检查HTTP状态码错误 — 小沈 2026-08-29 修复#14: 优先用真实响应状态码, 正则仅作文本补充"""
+        # 优先: 直接从异常对象取真实 HTTP 状态码(如 httpx.HTTPStatusError), 规避 str(error) 无语境致正则失配
+        status_code = SystemErrorClassifier._extract_http_status(error)
+        if status_code is not None:
+            return HTTP_STATUS_TO_ERROR_TYPE.get(status_code)
+        # 补充: 从错误文本正则抠状态码(上下文感知, 防误匹配裸数字) — 小欧 2026-07-18
+        m = SystemErrorClassifier._STATUS_CTX_RE.search(str(error).lower())
         if m:
             return HTTP_STATUS_TO_ERROR_TYPE.get(int(m.group(1)))
         return None
@@ -160,8 +179,8 @@ class SystemErrorClassifier:
         if category:
             return category
         
-        # 2. HTTP状态码错误 → SERVER(retryable)
-        category = SystemErrorClassifier._check_http_status_errors(error_msg)
+        # 2. HTTP状态码错误 → 按真实状态码分类(4xx CLIENT 不可重试, 5xx SERVER 可重试)
+        category = SystemErrorClassifier._check_http_status_errors(error)
         if category:
             return category
         

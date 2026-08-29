@@ -16,6 +16,7 @@
 # 2026-08-26 - 小欧 - 三堂会审整改(get_session_info): ①SELECT 删除未消费的 title_locked/title_updated_at 两列(YAGNI,
 #   SessionResponse 无此二字段, 查了不用); ②conn.cursor() 两步改为 conn.execute 直取, 与本文件 update/delete 路径风格一致;
 #   ③docstring 使用场景补顶栏时间悬浮(文档2 8.B 已知事项①), 与设置界面并列。pytest -k "task or session" 158 passed 回归通过。
+# 2026-08-29 - 小沈 - BugFix #8: update_session 的 WHERE 裸 `version = ?` 对 version 为 NULL 的行永远不匹配(SELECT 用 COALESCE(version,1), UPDATE 未对齐)→ 迁移库 version=NULL 行更新必 409。改为 WHERE `COALESCE(version,1) = ?` 与 SELECT 对齐; 同步 SET `COALESCE(version,1)+1` 防 NULL+1=NULL 使版本号退化为空。
 """
 session_service — 会话业务服务(services/chat)
 
@@ -169,11 +170,11 @@ def update_session(session_id: str, update_data: SessionUpdate):
                 params.append(json.dumps(sm, ensure_ascii=False) if sm else None)
             set_parts.append("updated_at = ?")
             params.append(local_time)
-            set_parts.append("version = version + 1")
+            set_parts.append("version = COALESCE(version, 1) + 1")
             params.append(session_id)   # WHERE id = ? 占位(顺序须与SQL一致)
             params.append(session["version"])  # 乐观锁: WHERE version = ? 比对 SELECT 时的旧版本, 防并发丢失更新
             cursor.execute(
-                f"UPDATE chat_sessions SET {', '.join(set_parts)} WHERE id = ? AND is_deleted = FALSE AND version = ?",
+                f"UPDATE chat_sessions SET {', '.join(set_parts)} WHERE id = ? AND is_deleted = FALSE AND COALESCE(version, 1) = ?",
                 params,
             )
             if cursor.rowcount == 0:

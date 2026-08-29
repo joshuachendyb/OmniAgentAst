@@ -49,6 +49,7 @@
 #     读 sessionModel 列(JSON)→dict(provider+model, 用 parse_json 容错); ②关联调用点 stream_orchestrator 同步改名引用
 # 2026-08-22 - 小欧 - 三堂会审复核整改(北京老陈 2026-08-22): ①新增全系统唯一 parse_session_model(消除 message_service/session_service 重复实现, DRY), 返回 SessionModelOverride; ②get_session_model 返回值由 dict 改为 SessionModelOverride(类型统一, 杜绝调用方误用 .get 致 AttributeError); 关联 stream_orchestrator 消费点改属性访问(.model/.provider)
 # 2026-08-26 - 小欧 - D-1(文档2 8.D): list_session_tasks SELECT 补 context_link_mode 列, 前端左列"续聊/新任务"类型徽标数据源(4.8.3-B 契约已含该字段, 后端 SELECT 遗漏)
+# 2026-08-29 - 小沈 - BugFix #7: update_task 的 response 默认从 "" 改为 None; 循环内 `if _val is not None` 已存在, 故未显式传 response 时不再用空串覆盖已有列(幂等缺省不覆盖语义落地)。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -402,7 +403,7 @@ def insert_task(
 
 def update_task(
     conn: Connection, *,
-    task_id: str, response: str = "", status: str = None,
+    task_id: str, response: Optional[str] = None, status: str = None,
     end_time: Optional[str] = None, duration: Optional[float] = None,
     accumulated_usage: Optional[Dict] = None, llm_call_count: Optional[int] = None,
     total_steps: Optional[int] = None, retry_count: Optional[int] = None,
