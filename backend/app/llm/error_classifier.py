@@ -149,7 +149,10 @@ class SystemErrorClassifier:
         # 优先: 直接从异常对象取真实 HTTP 状态码(如 httpx.HTTPStatusError), 规避 str(error) 无语境致正则失配
         status_code = SystemErrorClassifier._extract_http_status(error)
         if status_code is not None:
-            return HTTP_STATUS_TO_ERROR_TYPE.get(status_code)
+            _cat = HTTP_STATUS_TO_ERROR_TYPE.get(status_code)
+            # 小沈 2026-08-29 修复#14: 记录真实状态码分支命中, 便于排查误分类
+            logger.debug(f"[ErrorClassifier] 真实HTTP状态码={status_code}, 分类={_cat}")
+            return _cat
         # 补充: 从错误文本正则抠状态码(上下文感知, 防误匹配裸数字) — 小欧 2026-07-18
         m = SystemErrorClassifier._STATUS_CTX_RE.search(str(error).lower())
         if m:
