@@ -13,6 +13,7 @@ execution_stream — 执行步骤流式查看
 # 2026-08-14 - 小欧 - 改名名实相符: sse.py → execution_stream.py(实为执行步骤流式查看业务端点, 非通用SSE设施)
 # 2026-08-22 - 小欧 - 北京老陈 2026-08-22 铁律(chat_messages 只写严禁读): _generate_execution_stream 改读 fetch_session_user_message_pairs
 #     (chat_user_message+chat_tasks 重建历史, assistant 正文取 response; 不读 chat_messages)
+# 2026-08-29 - 小沈 - 修复#16: 两处读库(生成器内 + 端点内)由同步 db.get_conn 改为 db.atxn 离载子线程, 不阻塞事件循环
 
 import json
 import asyncio
@@ -62,20 +63,25 @@ async def _generate_execution_stream(session_id: str):
     """
     try:
         # #21 fix: 先取数据退出 with 再 yield，连接不占 SSE 流 — 小欧 2026-07-18
-        _rows_with_steps = []
-        with db.get_conn("chat") as conn:
+        # 2026-08-29 小沈 修复#16: 读库经 db.atxn 离载子线程, 不阻塞事件循环
+        def _read(conn):
+            rows_with_steps = []
             # 北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 改读 chat_user_message+chat_tasks(复用 fetch_session_user_message_pairs)
             pairs = fetch_session_user_message_pairs(conn, session_id)
             if not pairs:
-                yield "event: error\ndata: {\"error\": \"会话不存在或没有消息\"}\n\n"
-                return
+                return None
             for p in pairs:
                 # 用户消息气泡
-                _rows_with_steps.append(("user", p["user_content"] or "", None))
+                rows_with_steps.append(("user", p["user_content"] or "", None))
                 ai_id = p["ai_message_id"]
                 if ai_id is None:
                     continue
-                _rows_with_steps.append(("assistant", p["ai_content"] or "", load_execution_steps(conn, ai_id)))
+                rows_with_steps.append(("assistant", p["ai_content"] or "", load_execution_steps(conn, ai_id)))
+            return rows_with_steps
+        _rows_with_steps = await db.atxn("chat", _read)
+        if _rows_with_steps is None:
+            yield "event: error\ndata: {\"error\": \"会话不存在或没有消息\"}\n\n"
+            return
         # 退出 with 后再 yield，连接及时释放
 
         for role, content, steps in _rows_with_steps:
@@ -122,16 +128,17 @@ async def get_execution_stream(session_id: str):
     - complete: 流结束
     """
     # 验证会话是否存在
-    with db.get_conn("chat") as conn:
+    def _check(conn):
         cursor = conn.cursor()
         cursor.execute(
             'SELECT id FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
             (session_id,)
         )
-        session = cursor.fetchone()
-        
-        if not session:
-            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+        return cursor.fetchone()
+    session = await db.atxn("chat", _check)
+
+    if not session:
+        raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
     
     # 返回SSE流
     return StreamingResponse(

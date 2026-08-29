@@ -8,6 +8,7 @@
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.3: GET /token-usage ?model= 裸名过滤 → 组装
 #   ModelRef(provider+model) 结构传 query_token_usage(model_ref=), 落 task_model JSON 列 json_extract 双键过滤;
 #   import 补 ModelRef — 方案B 契约随归一
+# 2026-08-29 - 小沈 - 修复#15: 读库由同步 db.get_conn 改为 db.atxn 离载到子线程, 避免阻塞事件循环(其余逻辑零改动)
 """
 token_usage — LLM token 用量四维度查询 API（chat 域）
 
@@ -59,7 +60,7 @@ async def get_token_usage(session_id: Optional[str] = None,
     if model:
         _provider = _get_cfg().get("ai", {}).get("provider", "")
         _model_ref = ModelRef(provider=_provider, model=model)
-    with db.get_conn("chat") as conn:
+    def _read(conn):
         row = query_token_usage(conn, session_id=session_id, task_id=task_id, model_ref=_model_ref)
         # 11.1 新增：读 DB 累计值(复用 storage 查询函数, 统一口径+缺行兜底) + chain 计算派生 — 小欧 2026-08-20
         _task_acc = query_task_accumulation(conn, task_id=task_id) if task_id else None
@@ -82,13 +83,14 @@ async def get_token_usage(session_id: Optional[str] = None,
                     "SELECT COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0) "
                     "FROM token_usage WHERE task_id = ?", (task_id,)).fetchone()
             _chain_acc = {"prompt_tokens": int(_row[0] or 0), "completion_tokens": int(_row[1] or 0), "total_tokens": int(_row[2] or 0)}
-    return TokenUsageResponse(
-        success=True,
-        calls=row["calls"],
-        prompt_tokens=row["prompt_tokens"],
-        completion_tokens=row["completion_tokens"],
-        total_tokens=row["total_tokens"],
-        task_accumulated_tokens=_task_acc,        # 11.1 新增
-        session_accumulated_tokens=_sess_acc,      # 11.1 新增
-        chain_accumulated_tokens=_chain_acc,       # 11.1 新增
-    )
+        return TokenUsageResponse(
+            success=True,
+            calls=row["calls"],
+            prompt_tokens=row["prompt_tokens"],
+            completion_tokens=row["completion_tokens"],
+            total_tokens=row["total_tokens"],
+            task_accumulated_tokens=_task_acc,        # 11.1 新增
+            session_accumulated_tokens=_sess_acc,      # 11.1 新增
+            chain_accumulated_tokens=_chain_acc,       # 11.1 新增
+        )
+    return await db.atxn("chat", _read)
