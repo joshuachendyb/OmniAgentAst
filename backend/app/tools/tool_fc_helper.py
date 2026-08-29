@@ -750,8 +750,7 @@ def _get_connection(connection_type, connection_string=None, db_path=None, timeo
                     "mysqlconnector": "connection_timeout",
                 }.get(_driver, "connect_timeout")
                 # 小沈 2026-08-29 修复#11/#12: 记录驱动检测与键名映射, 便于排查连接超时配置
-                import logging as _log
-                _log.getLogger(__name__).debug(f"[_get_connection] driver={_driver}, timeout_key={_timeout_key}, timeout={timeout}ms")
+                logger.debug(f"[_get_connection] driver={_driver}, timeout_key={_timeout_key}, timeout={timeout}ms")
                 engine = create_engine(connection_string, connect_args={_timeout_key: timeout / 1000})
                 return engine.connect(), engine, None
             except ImportError:

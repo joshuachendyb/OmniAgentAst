@@ -35,6 +35,8 @@ import re
 from enum import Enum
 from typing import Optional, Tuple, Dict, Any
 
+from app.logger import logger
+
 try:
     from app.utils.idle_timeout import IdleTimeoutError
 except ImportError:
