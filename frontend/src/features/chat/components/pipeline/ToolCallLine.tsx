@@ -6,6 +6,7 @@
 // 编辑历史: 2026-08-28 小强 - 修复[21]: getObsSummary空数组回落丢失, parts为空时fallback到o.summary/content - 小强-2026-08-28
 // 编辑历史: 2026-08-28 小强 - 修复[22]: tool_result含空数组走错分支, 改条件为数组且长度>0 - 小强-2026-08-28
 // 编辑历史: 2026-08-28 小欧 - ④A/a2: 高亮1px→2px + WARNING_BG令牌化, 左线统一2px
+// 编辑历史: 2026-08-29 小强 - 修复#22: 展开观察区支持字符串tool_result渲染(与数组/兜底content并列) - 小强-2026-08-29
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -116,6 +117,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               {/* 2026-08-27 小欧 三堂会审: 富渲染tool_result可达, 有tool_result走ToolResultRenderer否则纯文本 */}
               {Array.isArray(o.tool_result) && o.tool_result.length > 0 ? (
                 <ToolResultRenderer step={o} />
+              ) : typeof o.tool_result === 'string' ? (
+                <CollapsibleText text={o.tool_result} />
               ) : (
                 <CollapsibleText text={o.content ?? ''} />
               )}

@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离panels插槽组装逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
+// 编辑历史: 2026-08-29 小强 - 修复#21: TopbarStats chainTokens由硬编码null改为透传真实chainTokens(与依赖数组一致) - 小强-2026-08-29
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -133,7 +134,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             />
             <TopbarStats
               taskCount={total}
-              chainTokens={null}
+              chainTokens={chainTokens}
               createdAt={sessionTimes.createdAt}
               updatedAt={sessionTimes.updatedAt}
             />

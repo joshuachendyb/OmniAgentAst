@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-15 删pendingMessageIdRef(回滚靠userMessage.id)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#9: executeSend抛错清理isStreaming占位幽灵消息
 // 编辑历史: 2026-08-28 小强 - hooks修复#12: 防重由loading state改isSendingRef(useRef同步), 消除双击竞态
+// 编辑历史: 2026-08-29 小强 - 修复#20: 超长/网络失败early-return前复位isSendingRef, 避免绕过finally永久卡死发送 - 小强-2026-08-29
 /**
  * useChatSend Hook - 消息发送逻辑
  *
@@ -90,6 +91,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
           message: '消息过长，请精简到5000字符以内',
           error_type: ErrorType.CONTENT_TOO_LONG,
         });
+        isSendingRef.current = false; // 2026-08-29 小强 修复#20: early-return前复位防重标记, 避免绕过finally永久卡死
         return;
       }
 
@@ -109,6 +111,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
             waitTimerRef.current = null;
           }
           setWaitTime(0);
+          isSendingRef.current = false; // 2026-08-29 小强 修复#20: 网络失败early-return前复位防重标记
           return;
         }
       } catch (error) {

@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-28 小欧 - 由 utils/sse.ts 拆出 hook(429-1001)+工具函数(215-428 classifyError/handleSSEError/ERROR_CONFIG_MAP/calculateReconnectDelay), processSSEData拆至features/chat/services/sseParser.ts, 类型归types/sse.ts, 零逻辑变更 - 小欧-2026-08-28
+// 编辑历史: 2026-08-29 小强 - 修复#25: canRetry统一以ERROR_CONFIG_MAP[errorType].retryable为权威来源, unknown直达failed; 修复#26: 空闲超时改走reconnect()重连路径而非disconnect(true)绕过重连 - 小强-2026-08-29
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -118,7 +119,10 @@ const handleSSEError = (params: {
   // 如果不可重试或已超过最大次数
   // 2026-08-27 小欧 修复B1: 显式Boolean, 避免 pendingMessage 对象使 canRetry 变为对象(永远truthy)导致 failed 永不触发
   // 2026-08-28 小沈 修复B3: 去掉!!pendingMessage(无pendingMessage时重连仍有意义——重建连接获取服务端响应), 与内层handleSSEError retryable判断对齐
-  const canRetry = reconnectAttempts < reconnectConfig.maxAttempts;
+  // 2026-08-29 小强 修复#25: canRetry以单一权威来源ERROR_CONFIG_MAP[errorType].retryable为准, 使unknown(retryable:false)直达failed而非悬空
+  const errorConfig = ERROR_CONFIG_MAP[errorType];
+  const canRetry =
+    !!errorConfig?.retryable && reconnectAttempts < reconnectConfig.maxAttempts;
 
   // 使用统一错误处理中心（handleSSEError 恒返回 handled:true，无需再判 else 早退）
   // 2026-08-27 小欧 修复B1: 仅canRetry时注入onReconnect, 达到maxAttempts后停止重连;
@@ -405,7 +409,10 @@ export const useSSE = (
       }
       setIsConnected(false);
       setIsReceiving(false);
-      setReconnectStatus('idle');
+      // 2026-08-29 小强 修复#26: 非手动断开(重连路径)不强制回idle, 保留reconnecting由重连调度驱动
+      if (manualDisconnect) {
+        setReconnectStatus('idle');
+      }
       // 2026-08-27 小欧 修复B1: 仅真正手动断开/新会话/卸载才重置重连计数; 重连路径传false避免计数被清零导致无限重连
       if (resetReconnectAttempts) {
         reconnectAttemptsRef.current = 0;
@@ -478,7 +485,8 @@ export const useSSE = (
 
     setIsReceiving(true);
     setIsConnected(true);
-    setReconnectStatus('connecting');
+    // 2026-08-29 小强 修复#26: 重连进行中保持reconnecting状态, 不被connecting覆盖
+    setReconnectStatus((prev) => (prev === 'reconnecting' ? prev : 'connecting'));
 
     try {
       // 【北京老陈 2026-07-12 小欧】断线重连：复用 task_id 走 GET 读同一流态缓冲，避免双 agent
@@ -552,12 +560,13 @@ export const useSSE = (
 
         idleTimeoutRef.current = window.setTimeout(() => {
           const timeSinceLastData = Date.now() - lastDataTimeRef.current;
-          if (timeSinceLastData > IDLE_TIMEOUT && isReceiving) {
+          if (timeSinceLastData >= IDLE_TIMEOUT && isReceiving) {
             console.warn(
               `[SSE] 空闲超时：已经${timeSinceLastData / 1000}秒未收到数据，判定连接断开`
             );
             onError?.('SSE 空闲超时：长时间未收到数据');
-            disconnect(true);
+            // 2026-08-29 小强 修复#26: 空闲超时走重连路径而非disconnect(true)绕过重连, 确保自动重连发生
+            reconnect();
           }
         }, IDLE_TIMEOUT);
 
