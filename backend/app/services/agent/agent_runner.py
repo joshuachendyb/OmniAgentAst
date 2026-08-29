@@ -394,6 +394,13 @@ async def run_agent_in_background(
 
     # finally: 统一DB保存（①②③都会执行）— 小欧 2026-07-13
     finally:
+        # 关闭本任务持有的独立客户端快照(若有), 释放其 httpx 连接池, 防覆盖会话累积泄漏 — 小沈 2026-08-29
+        _snap_client = getattr(agent, "llm_client", None) if agent is not None else None
+        if _snap_client is not None and getattr(_snap_client, "_is_snapshot", False):
+            try:
+                await _snap_client.close()
+            except Exception as _ce:
+                logger.warning(f"[Runner] 关闭会话客户端快照失败(task={task_id}): {_ce}")
         # === 守卫：兜底补发 FinalStep（覆盖 ②CancelledError + react_cycle 内部 set_failed 等无 final 路径）— 小欧 2026-07-18 ===
         if not any(
             isinstance(s, dict) and s.get("type") == "final"

@@ -126,6 +126,25 @@ class BaseAIService:
         造成"记录身份与实际 HTTP 连接不一致" — 三堂会审 P1 修复 小欧 2026-08-22"""
         self._llm_sdk = None
 
+    def snapshot(self, model_ref: Optional[ModelRef] = None) -> "BaseAIService":
+        """构造本实例的独立副本(携带 model_ref 或当前模型), 与进程级共享单例解耦 — 小沈 2026-08-29
+        病根修复: sessionModel 覆盖此前直接改进程单例 llm_model + reset_sdk(全局副作用), 单例还原时序竞态
+        导致"断连时后台任务误用旧模型"与"后续无覆盖会话串用错误模型"两类退化。改为后台任务/会话持有自身
+        模型快照, 共享单例恒定全局默认不再被污染, 彻底根除该竞态。返回实例带 _is_snapshot 标记,
+        供 run_agent_in_background 结束后释放其 httpx 连接池。"""
+        snap = BaseAIService(
+            api_key=self.api_key,
+            llm_model=model_ref if model_ref is not None else self.llm_model,
+            timeout=self.timeout,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            seed=self.seed,
+            extra_body_params=self.extra_body_params,
+            context_limit=self.context_limit,
+        )
+        snap._is_snapshot = True
+        return snap
+
     async def cancel(self):
         logger.info(f"[BaseAIService.cancel] 正在强制取消请求, model={self.llm_model.model}")
         self._cancelled = True

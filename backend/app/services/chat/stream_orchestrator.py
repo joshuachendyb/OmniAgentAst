@@ -87,6 +87,7 @@
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W6镜像写点(_setup_task_db内UPDATE chat_messages SET task_id), 系统对该表零写依赖
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 删除finalize_message的import与db_ops.finalize=传参(随finalize_message整删, 终态由append_execution_step/chat_tasks承载)
 # 2026-08-28 小欧 - yield日志审计: 编排①输入校验失败/编排②启动前已取消 两处 yield 前补 logger(warning/info), 覆盖7个无日志yield(KISS); 三堂会审无逻辑修正
+# 2026-08-29 - 小沈 - 修复#5(彻底快照): 病根为 sessionModel 覆盖直接改进程单例 llm_model(全局副作用, 还原时序竞态致断连误模/跨会话串模)。改为构造本会话独立 LLM 客户端快照(ai_service.snapshot), 后台任务/流均用快照, 单例恒为全局默认不再被污染, 根除两类退化; run_agent_in_background finally 关闭快照释放连接池
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -234,7 +235,6 @@ async def chat_stream_orchestrator(
     # ── 编排⑤取续聊历史边界(user_msg_id 上界, 服务重启DB兜底) ——————————————————— 小健 2026-08-17
     _task_start_time = time.time()
     _user_msg_id = None
-    _orig_llm_model: Optional[ModelRef] = None  # 归一: 覆盖前保存单例原 ModelRef, finally 整体还原(替原 _orig_model/_orig_provider 双变量) — 小欧 2026-08-22
     try:
         _user_msg_id = get_user_message_id(session_id)
     except Exception:
@@ -281,16 +281,20 @@ async def chat_stream_orchestrator(
                 # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
                 _ov = await db.atxn("chat", lambda conn: get_session_model(conn, session_id))
                 if _ov and (_ov.model or _ov.provider):
-                    _orig_llm_model = ai_service.llm_model          # 整体保存, finally 整体还原
-                    ai_service.llm_model = ModelRef(
-                        provider=_ov.provider or _orig_llm_model.provider,
-                        model=_ov.model or _orig_llm_model.model,
-                        api_base=_ov.api_base or _orig_llm_model.api_base,
-                        display_name=_ov.display_name or _orig_llm_model.display_name,
+                    # 病根修复(小沈 2026-08-29): 旧实现直接改共享单例 ai_service.llm_model + reset_sdk,
+                    # 是"用全局副作用表达每会话模型", 单例还原时序竞态→断连后台任务误模/跨会话串模(#5)。
+                    # 改为构造本会话独立 LLM 客户端快照(携带覆盖模型), 与进程单例解耦: 会话流与后台任务均用快照,
+                    # 共享单例恒定全局默认不变, 不再需要 finally 还原, 根除 #5 两类退化(含断连后跨会话泄漏窄边界)。
+                    override_ref = ModelRef(
+                        provider=_ov.provider or ai_service.llm_model.provider,
+                        model=_ov.model or ai_service.llm_model.model,
+                        api_base=_ov.api_base or ai_service.llm_model.api_base,
+                        display_name=_ov.display_name or ai_service.llm_model.display_name,
                     )
-                    ai_service.reset_sdk()   # 三堂会审 P1 修复: 换模后重建 SDK, 保 api_base/model 实连一致 — 小欧 2026-08-22
-                    logger.info(f"[chat] L2 sessionModel 已生效: session={session_id}, "
-                                f"provider={ai_service.llm_model.provider}, model={ai_service.llm_model.model}")
+                    session_client = ai_service.snapshot(override_ref)
+                    agent.llm_client = session_client
+                    logger.info(f"[chat] L2 sessionModel 已生效(独立客户端快照): session={session_id}, "
+                                f"provider={session_client.llm_model.provider}, model={session_client.llm_model.model}")
             except Exception as _ov_e:
                 logger.warning(f"[chat] 读会话sessionModel失败(session={session_id}): {_ov_e}")
         # ── 编排⑦组装 db_ops 持久化回调命名空间(经闭包注入后台, 依赖 ⑥ agent) ——— 小健 2026-08-17
@@ -389,7 +393,7 @@ async def chat_stream_orchestrator(
         # ── 编排⑩流式转发(消费后台 agent 产出的 SSE → 转前端) ————————————————— 小健 2026-08-17
         async for sse_chunk in _stream_with_control(buffer, task_id, session_id, execution_steps, state):
             yield sse_chunk
-    # ── 编排⑪异常/收尾(断连静默/异常取消后台/还原model/reset ContextVar) ———— 小健 2026-08-17
+    # ── 编排⑪异常/收尾(断连静默/异常取消后台/reset ContextVar) ———— 小健 2026-08-17; 小沈 2026-08-29 bug#5: 去 finally 还原单例副作用
     except asyncio.CancelledError:
         # 客户端断开：静默返回，agent 后台继续运行 — 北京老陈 2026-07-12 小欧 2026-07-12
         logger.info(f"[chat_stream_orchestrator] 客户端断开(task={task_id})，agent 后台继续")
@@ -407,12 +411,6 @@ async def chat_stream_orchestrator(
         yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
     finally:
         _current_task_id.reset(_task_token)
-        # 小健 2026-08-17 三堂会审-AE修复: 还原被本任务覆盖的共享单例, 避免单例持久污染/并发会话串model
-        # 归一(小欧 2026-08-22): 双变量两段还原 → 单 ModelRef 整体还原
-        if _orig_llm_model is not None and ai_service.llm_model != _orig_llm_model:
-            ai_service.llm_model = _orig_llm_model
-            ai_service.reset_sdk()   # 还原后同步重建 SDK(与覆盖侧对称) — 小欧 2026-08-22
-            logger.info(f"[chat_stream_orchestrator] AE还原共享单例llm_model: task={task_id}, restore={_orig_llm_model.model}")
 
 
 async def _stream_with_control(buffer, task_id: str, session_id: str,
