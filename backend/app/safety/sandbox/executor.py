@@ -10,6 +10,7 @@
 #   BUG-E(中): 容量只 sum(impacts.size) 漏算副本自身/误算删除释放; 改 _disk_usage 真实落盘占用(rglob 累加)(小欧)
 #   BUG-F(中): F-B 扫描正则只认 C:\ 漏判 C:/ 正斜杠; _OUTSIDE_TARGET_RE 改 [\\/](小欧)
 #   全部修复经"修复前 FAIL/修复后 PASS"逐类反证, 功能只增强不退化
+# 2026-08-29 - 小沈 - 修复#18: shell/file_op 预检的同步 backend.run(subprocess 最长300s)经 asyncio.to_thread 离载到子线程, 释放事件循环不被冻结; 返回结构 BackendResult 不变
 import asyncio
 import os
 import re
@@ -242,7 +243,8 @@ class SandboxExecutor:
             except (TypeError, ValueError):
                 _to = self.default_timeout_sec
             logger.info(f"[sandbox][exec] shell 预检 run 启动: timeout={min(_to, self.max_timeout_sec)}s")
-            result = backend.run(command, workspace.path, min(_to, self.max_timeout_sec))
+            # 2026-08-29 小沈 修复#18: 同步 subprocess 经 to_thread 离载子线程, 事件循环不被冻结(并发任务不被延迟)
+            result = await asyncio.to_thread(backend.run, command, workspace.path, min(_to, self.max_timeout_sec))
             logger.info(f"[sandbox][exec] shell 预检 run 结束: rc={result.rc}, timed_out={result.timed_out}")
             impacts = workspace.diff_impacts()
             used = self._disk_usage(workspace.path)   # 以工作区真实磁盘占用来判定容量(防副本自身漏算/删除误算)
@@ -313,7 +315,7 @@ class SandboxExecutor:
                 return PreCheckResult(passed=False, needs_ruling=True,
                                       blocked_reason=f"目标超过影子副本上限{self.max_shadow_mb}MB, 未完成有效验证: {src}")
             workspace.snapshot_files()   # v1.21 Z3: 以副本为 diff 基线, 防副本自身被误报为 added 影响面
-            op_result = self._replay_file_op_on_replica(_backend, normalized, params, replica, workspace.path)
+            op_result = await self._replay_file_op_on_replica(_backend, normalized, params, replica, workspace.path)
             impacts = workspace.diff_impacts()
             used = self._disk_usage(workspace.path)   # 以工作区真实磁盘占用来判定容量(防副本自身漏算/删除误算)
             if not workspace.check_capacity(used):
@@ -342,11 +344,12 @@ class SandboxExecutor:
             workspace.destroy()
 
     @staticmethod
-    def _replay_file_op_on_replica(backend: JobObjectBackend, normalized: str,
+    async def _replay_file_op_on_replica(backend: JobObjectBackend, normalized: str,
                                     params: Dict, replica: Path, workspace: Path) -> BackendResult:
         """对工作区副本执行与原操作等价的动作 → BackendResult。
         v1.22 W3: 复用 backend.run(原为手写 Popen——无 Job 包裹、TimeoutExpired 未接会泄漏进程、
         且经 self 调用模块函数本会 AttributeError), Job 包裹/超时杀树/cleanup 契约全部复用(DRY)。
+        2026-08-29 小沈 修复#18: 改为 async, 内部 backend.run 经 asyncio.to_thread 离载子线程, 事件循环不被冻结
         delete→删除副本树; copy/move→在副本内重演目标变换。"""
         logger.info(f"[sandbox][exec] 重演文件操作: op={normalized}, replica={replica}")
         if normalized == "delete":
@@ -357,7 +360,7 @@ class SandboxExecutor:
         else:   # move: 副本内自移即验证可行性
             moved = replica.parent / "moved"
             replay_cmd = f"Move-Item -LiteralPath {_ps_literal_path(replica)} -Destination {_ps_literal_path(moved)} -Force"
-        return backend.run(replay_cmd, workspace, 60)
+        return await asyncio.to_thread(backend.run, replay_cmd, workspace, 60)
 
     def _disk_usage(self, ws_path) -> int:
         """工作区真实磁盘占用(字节): 容量判定应以实际落盘文件为准, 既包含影子副本自身占用,
