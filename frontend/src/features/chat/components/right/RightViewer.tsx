@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.1 抽toExecutionSteps收窄unknown[]→ExecutionStep[]替换裸as断言
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审P1-5/边距: 补空/错误三态(Empty暂无执行记录/Skeleton由Spin承载/Alert错误margin8px0#fff2f0隔离); 错误红字与统计块加间距防误读
+// 编辑历史: 2026-08-30 小欧 - 修复两个问题: ①auto-scroll: liveSteps变化时滚到底部(仅用户已在底部120px内触发, 防打断手动上翻); ②StaticStatsBlock仅非live时显示(消除执行中提前显示统计块的竞态)
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -13,7 +14,7 @@
  * @date 2026-08-26
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Spin, Empty, Alert, Typography } from 'antd';
 import type { ExecutionStep } from '../../../../types/execution';
 import { Colors } from '@/utils/stepStyles';
@@ -63,6 +64,35 @@ const RightViewer: React.FC<RightViewerProps> = ({
 
   const isCurrentLive =
     activeTaskId != null && activeTaskId === serverTaskId && receiving;
+
+  // 小欧 2026-08-30: 自动滚动 — liveSteps变化时滚到底部, 仅用户已在底部附近时触发(防打断手动上翻)
+  const pipelineEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const findScrollContainer = useCallback(() => {
+    if (!scrollContainerRef.current) {
+      scrollContainerRef.current = pipelineEndRef.current?.closest(
+        '[style*="overflow"]'
+      ) as HTMLDivElement | null;
+    }
+    return scrollContainerRef.current;
+  }, []);
+  useEffect(() => {
+    if (!isCurrentLive || liveSteps.length === 0) return;
+    const container = findScrollContainer();
+    if (!container) return;
+    const threshold = 120;
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      threshold;
+    if (isNearBottom) {
+      requestAnimationFrame(() => {
+        pipelineEndRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'end',
+        });
+      });
+    }
+  }, [liveSteps.length, isCurrentLive, findScrollContainer]);
 
   // 拉取历史任务：C1+C2 并行；C2 空则 C3 按 message 降级（静态块降级为空，契约无通道）
   useEffect(() => {
@@ -137,11 +167,13 @@ const RightViewer: React.FC<RightViewerProps> = ({
           style={{ padding: '24px 0' }}
         />
       ) : (
-        <PipelineRenderer
-          steps={splitSteps(displaySteps).business}
-          streaming={isCurrentLive}
-          highlightToolName={highlightToolName}
-        />
+        <div ref={pipelineEndRef}>
+          <PipelineRenderer
+            steps={splitSteps(displaySteps).business}
+            streaming={isCurrentLive}
+            highlightToolName={highlightToolName}
+          />
+        </div>
       )}
       {liveErrorText && (
         <Alert
@@ -157,7 +189,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
           }}
         />
       )}
-      <StaticStatsBlock detail={detail} />
+      {!isCurrentLive && <StaticStatsBlock detail={detail} />}
     </Spin>
   );
 };
