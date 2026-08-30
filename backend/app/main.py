@@ -10,6 +10,7 @@
 # 2026-08-14 - 小欧 - 改名名实相符: model_routes→config_routes(import与挂载变量model_router→config_router); api/v1/chat/sse→execution_stream(chat_execution_router导入同步)
 # 2026-08-14 - 小欧 - monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
 # 2026-08-16 - 小欧 - S2(10.1.7②-6/10.1.8 S2): 注册 token_usage_router(token 四维度查询 API, 新建 app/api/v1/token_usage.py), include_router 加 /api/v1 tags=token-usage
+# 2026-08-30 - 小欧 - 控制台写离线化(case09挂起根治): 启动 tip 两条 print→console_put(语义不变仅控制台, 非阻塞镜像), 事件循环线程零同步 stdout 写
 import sys
 import asyncio
 from typing import Optional
@@ -194,9 +195,10 @@ async def startup_event():
     _start_cleanup_task()
     logger.info(f"[启动耗时] _start_cleanup_task: {_time.time()-_t2:.3f}s")
     logger.info(f"[启动耗时] startup_event 合计: {_time.time()-_t0:.3f}s")
-    print(f"当前版本: {app_version}")
+    from app.logger.console_writer import console_put  # 小欧 2026-08-30 启动tip离线化(语义不变仅控制台)
+    console_put(f"当前版本: {app_version}")
     _cfg = get_config()
-    print(f"LLM 配置: provider={_cfg.get('ai.provider')}, model={_cfg.get('ai.model')}")
+    console_put(f"LLM 配置: provider={_cfg.get('ai.provider')}, model={_cfg.get('ai.model')}")
 
 
 @app.on_event("shutdown")

@@ -4,6 +4,8 @@
 - 根因：7个独立 handler 写同一文件 → Windows rename 文件锁冲突 → PermissionError 死循环
 - 修复：全局共享一个 handler，消除竞争；doRollover() 加 OSError 保护
 """
+# 编辑历史:
+# 2026-08-30 - 小欧 - 控制台写离线化(case09挂起根治): _check_and_rotate_by_date 轮转提示 print→console_put(日志emit路径零同步stdout写)
 
 import logging
 import logging.handlers
@@ -71,7 +73,8 @@ class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
         new_path = str(LOG_DIR / f"app_{today}.log")
         if new_path == self.baseFilename:
             return
-        print(f"[Logger] 日期轮转: {self.baseFilename} -> {new_path}")
+        from app.logger.console_writer import console_put  # 小欧 2026-08-30 轮转提示离线化(日志emit路径零同步stdout写)
+        console_put(f"[Logger] 日期轮转: {self.baseFilename} -> {new_path}")
         self.baseFilename = new_path
         if self.stream:
             self.stream.close()

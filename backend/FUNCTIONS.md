@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-08-24 12:19:40
-**最近更新**: 2026-08-24 12:19 小欧 目录前导(北京老陈裁定): file_persist 新增 SESSION_DIR_PREFIX("Sion_")/TASK_DIR_PREFIX("Task_") 常量唯一源, 物理目录与 chat_tasks.files_dir 落库锚同源拼装
+**最后更新时间**: 2026-08-30 08:05:00
+**最近更新**: 2026-08-30 08:05 小欧 新增 1.11 控制台镜像 app/logger/console_writer.py(console_put 非阻塞控制台写); log_and_print 与 action_handler/main/config 裸print 收口点统一复用(根治 case09 挂起)
 
 ---
 
@@ -106,6 +106,12 @@
 |--------|------|------|--------|
 | `backup_file` | 文件备份(.bak) | file_path, backup_dir, suffix | Dict |
 | `remove_readonly` | 去除文件只读属性(供删除/清理重试) | func, path, excinfo | None |
+
+### 1.11 控制台镜像（app/logger/console_writer.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `console_put` | 控制台镜像写(非阻塞): 全局 queue+daemon写线程, stdout阻塞时队列满则丢弃新消息, 绝不阻塞调用线程; log_and_print(logger/__init__.py)及裸print收口点(action_handler/main/config)统一出口 | msg: str | None |
 
 ---
 
@@ -307,6 +313,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v3.13 | 2026-08-30 08:05:00 | 新增 1.11 控制台镜像(app/logger/console_writer.py): console_put 非阻塞控制台写(全局queue+daemon写线程, 满则丢弃, 事件循环零同步stdout写); log_and_print 与 action_handler/main/config 裸print 收口点统一复用(根治 case09 挂起) | 小欧 |
 | v3.12 | 2026-08-25 16:30:00 | 合规重构(北京老陈驱动): ①新增 3.3 Agent层 handlers/sandbox_gate.py(sandbox_precheck/sandbox_resolve, 从 action_handler 嵌套闭包拆出, 去隐式耦合/分层落点); ②1.2 display_utils.py 新增 format_llm_data_text(从 action_handler.build_observation 内嵌闭包拆出的纯展示格式化函数, 全局层复用优先); 两处均逻辑零改动(复制不重写)、登记本清单、action_handler 去内联与死 import | 小欧 |
 | v3.11 | 2026-08-24 12:19:40 | 目录前导(北京老陈裁定): file_persist 新增常量 SESSION_DIR_PREFIX="Sion_" / TASK_DIR_PREFIX="Task_"(唯一源, DRY); 物理目录(TaskFileWriter._dir/purge_task/purge_session)与 chat_tasks.files_dir 落库锚(stream_orchestrator 编排⑨)全部经常量同源拼装, 排查定位链不断; 旧目录不迁移不兼容(禁止backward) | 小欧 |
 | v3.10 | 2026-08-24 11:53:30 | 后端卡死修复收尾: ①action_handler check_safety_and_confirm 的 session 反查+信任预查(2处)、stream_orchestrator 编排③链根/⑤DB兜底user_msg_id/⑥sessionModel(3处) 同步 db.get_conn(_with_retry) 改经 atxn offload; ②hitl_confirmation resolve_confirmation(同步函数)信任落库旁路块改 daemon 线程投递(fire-and-forget 语义不变); ③agent_runner 新增模块内私有 _persist_final(shield薄壳, 包 finalize/update_task 两处终态写防二次cancel, 非公用函数不单列条目)。全部复用 v3.9 atxn 既有薄壳, 零新抽象 | 小欧 |
