@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-27 小欧 - 修复chat-G: 多行超长按首2行摘要, 不再按字符截断展现数十行(含第10行等)
 // 编辑历史: 2026-08-28 小强 - 修复[19]: 多行折叠忽略maxChars, 首2行后按maxChars截断 - 小强-2026-08-28
 // 编辑历史: 2026-08-28 小强 - 修复[20]: expanded状态不随text重置, 新消息默认折叠 - 小强-2026-08-28
+// 编辑历史: 2026-08-30 小欧 - 修复: 展开全文/收起链接onClick/onKeyDown加stopPropagation阻断冒泡(左列任务response折叠按钮误触外层onSelect→右栏自动展开, 北京老陈反馈) - 小欧-2026-08-30
 /**
  * CollapsibleText - 统一折叠组件（折叠非截断）
  *
@@ -53,7 +54,12 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
       {shown}
       {overflow && !expanded && (
         <Typography.Link
-          onClick={() => setExpanded(true)}
+          onClick={(e) => {
+            // 2026-08-30 小欧: 阻断冒泡, 本链接交互不应泄漏到外层可点击容器(如左列任务项onSelect)
+            e.stopPropagation();
+            setExpanded(true);
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
           style={{ fontSize: 12, marginLeft: 8 }}
         >
           展开全文
@@ -61,7 +67,11 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
       )}
       {overflow && expanded && (
         <Typography.Link
-          onClick={() => setExpanded(false)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded(false);
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
           style={{ fontSize: 12, marginLeft: 8 }}
         >
           收起

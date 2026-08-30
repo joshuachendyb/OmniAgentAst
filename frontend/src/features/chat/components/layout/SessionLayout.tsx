@@ -1,5 +1,8 @@
 // 编辑历史: 2026-08-26 小欧 - 8.3 实施: 会话插槽化骨架, panels prop注入消除首帧闪屏(4.2.1/R1-B25)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审P0-6: 根gap4→8主节奏; 左列overflow hidden→auto(防贴边); 右侧滚动区加minHeight0+padding0 12px 8px防代码块贴边
+// 编辑历史: 2026-08-30 小欧 - v1.100实施: 左列flex:'1 1 0'自适应+min/max守卫(LEFTBAR_MINW=200/MAXW=560), 右栏收起分支flex:'0 0 auto'+marginLeft:auto仅按钮宽条(4.2.1/4.3.2/4.5.1/第十一章11.1-11.3) - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - v1.100三堂会审P1修复: 左列flex '1 1 0'→'1 1 25%'(实测201px仅14%不达验收"约1/4", 改后25%/74.5%精确吻合4.2.1/11.0/11.5; 依据真实Chrome测量, 同步文档11.2/11.5) - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - v1.100设计语义澄清修正: 收起态左列填满不设maxWidth(max560仅约束展开态), 展开态左列flex'1 1 25%'+max560; 实测收起态左≈1351px@容器1424 - 小欧-2026-08-30
 /**
  * SessionLayout - 会话页插槽化骨架（纯展示组件）
  *
@@ -28,7 +31,8 @@ interface SessionLayoutProps {
   onToggleRight: () => void;
 }
 
-const LEFT_WIDTH = 'clamp(200px, 18vw, 280px)'; // 2026-08-28 小欧 v1.3(P2-H5): 定宽240→响应式区间, 防窄屏挤压
+const LEFTBAR_MINW = 200; // 2026-08-30 小欧 v1.100: 左列宽度随右栏折叠 flex 自适应填充(见 4.3.2), min 全域生效防过窄
+const LEFTBAR_MAXW = 560; // max 防左列过宽——仅右栏展开态生效(防挤占右侧查看区); 右栏收起态左列填满不设 max(11.0 要求③)
 
 const renderSlot = (panels: SessionPanel[], slot: SlotName) =>
   panels
@@ -86,8 +90,9 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
     <div style={{ flex: 1, display: 'flex', minHeight: 0, gap: 8 }}>
       <div
         style={{
-          width: LEFT_WIDTH,
-          flexShrink: 0,
+          flex: rightOpen ? '1 1 25%' : '1 1 0',
+          minWidth: LEFTBAR_MINW,
+          ...(rightOpen ? { maxWidth: LEFTBAR_MAXW } : {}),
           borderRight: `1px solid ${Colors.BORDER.LIGHT}`,
           overflowY: 'auto',
           overflowX: 'hidden',
@@ -127,10 +132,8 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
       ) : (
         <div
           style={{
-            flex: 1,
-            minWidth: 0,
-            display: 'flex',
-            justifyContent: 'flex-end',
+            flex: '0 0 auto',
+            marginLeft: 'auto',
           }}
         >
           <Button
