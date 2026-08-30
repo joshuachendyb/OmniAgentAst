@@ -63,6 +63,7 @@
 # 2026-08-29 - 小沈 - BugFix #7: update_task 的 response 默认从 "" 改为 None; 循环内 `if _val is not None` 已存在, 故未显式传 response 时不再用空串覆盖已有列(幂等缺省不覆盖语义落地)。
 # 2026-08-30 - 小欧 - 第十二章 v1.103(设计文档[2]12.2 G1): list_session_tasks 排序 DESC→ASC(左列时间线=会话全部任务时间线清单, 新任务在底部, 4.3.2; 原 DESC 是 8.C-④ 顶栏锚点"首行=最新"的专用依赖, 一手排序喂两个反方向职责违反 SRP); 新增返回 latest_task_id(最新任务显式锚点, 顶栏/默认选中/结束沿 token 锚点统一消费, 排序一义+显式锚点解耦)。调用方 sessions.py 同步解包三元组(见 diff②)。
 # 2026-08-30 - 小欧 - 第十三章13.7 C2 收口(设计文档[2]13.12.8, 北京老陈 2026-08-30 批准): load_steps_by_task 对 thought 步骤剥离 content 键出参(回放只取 thought/reasoning 两字段契约, 13.3/13.6), 仅剥 content、其余键原样保全
+# 2026-08-30 - 小欧 - get_task_tool_stats SQL修复: json_extract $.tools[0].name→$.tools[0].tool(根因: ActionStep写入key为"tool"非"name", 致工具汇总全归null×4)
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -804,7 +805,7 @@ def get_task_tool_stats(conn: Connection, task_id: str) -> list:
     """C1: 从 chat_task_steps 统计该任务的工具调用次数"""
     rows = conn.execute(
         """SELECT
-             json_extract(step_json, '$.tools[0].name') as tool_name,
+             json_extract(step_json, '$.tools[0].tool') as tool_name,
              COUNT(*) as call_count
            FROM chat_task_steps
            WHERE task_id=? AND json_extract(step_json, '$.type')='action'
