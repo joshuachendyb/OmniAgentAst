@@ -23,6 +23,7 @@
 # 2026-08-18 小欧 - §10.3.3(1): 所有分支(error/unknown/reasoning-only终止/正常answer)前发射ThoughtStartStep; FinalStep删thought=加reasoning=
 # 2026-08-18 - 小欧 - §10.4.4 P4(severity): retrying MetaStep 加 severity="info"
 # 2026-08-28 小欧 - yield日志审计: 3处 print()→logger(error/error/info, DRY违规修复); 三堂会审无逻辑修正
+# 2026-08-30 小欧 - 恢复[Final]终态全文打印(65f4de7f7"print→logger"把response=全文误改response_len, 终态正文不再上控制台; log_and_print复用07-23收口+08-30离线化双写)
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -42,7 +43,7 @@ from typing import Dict
 
 from app.services.agent.steps import ThoughtStep, ThoughtStartStep, FinalStep, MetaStep  # 2026-08-18 小欧 ThoughtStartStep新增
 from app.utils.text_utils import format_tool_call_markup
-from app.logger import logger
+from app.logger import logger, log_and_print
 
 
 # ── 重复检测(版本2026-07-17: 句子频率法替代固定chunk) ──
@@ -209,8 +210,8 @@ async def handle_answer(agent, parsed: Dict):
         if deduped != content:
             content = deduped
 
-    # 2026-08-28 小欧 yield日志审计: print→logger统一(DRY违规修复)
-    logger.info(f"[answer] step={step} final response_len={len(content)}")
+    # 2026-08-30 小欧 恢复[Final]终态全文打印: 65f4de7f7(08-28)把response=全文误改为response_len, 终态正文不再上控制台; log_and_print复用07-23统一收口+08-30控制台离线化(事件循环零阻塞)
+    log_and_print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response_len={len(content)}, response={content}")
     for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
         step=step, response=content,
         outcome="completed", reasoning=reasoning,
