@@ -1,5 +1,7 @@
 // 编辑历史: 2026-08-28 小欧 - 由 utils/sse.ts 拆出 hook(429-1001)+工具函数(215-428 classifyError/handleSSEError/ERROR_CONFIG_MAP/calculateReconnectDelay), processSSEData拆至features/chat/services/sseParser.ts, 类型归types/sse.ts, 零逻辑变更 - 小欧-2026-08-28
 // 编辑历史: 2026-08-29 小强 - 修复#25: canRetry统一以ERROR_CONFIG_MAP[errorType].retryable为权威来源, unknown直达failed; 修复#26: 空闲超时改走reconnect()重连路径而非disconnect(true)绕过重连 - 小强-2026-08-29
+// 编辑历史: 2026-08-30 小欧 - 根治重连重复起任务: reconnect()空闲超时若尚无任务ID(首响应未到)即走统一错误中心判失败(不重新POST), sendMessageInternal再加兜底守卫禁止重连态无ID重POST(双任务/僵尸任务根治) - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 修正陈旧闭包: serverTaskId加serverTaskIdRef同步读写(parser回调同步ref+state), 内部判定全部改读ref, 使挂起reader帧/空闲定时器/重连守卫读到最新任务ID, 杜绝state闭包陈旧误判 - 小欧-2026-08-30
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -91,7 +93,7 @@ const handleSSEError = (params: {
   reconnectAttempts: number;
   reconnectConfig: ReconnectConfig;
   pendingMessage: { content: string; sessionId?: string } | null;
-  onReconnect: () => void;
+  onReconnect?: () => void;
   onSetReconnectStatus: (
     status: 'idle' | 'connecting' | 'reconnecting' | 'failed'
   ) => void;
@@ -133,7 +135,7 @@ const handleSSEError = (params: {
     onReconnect: canRetry
       ? () => {
           onSetReconnectStatus('reconnecting');
-          onReconnect();
+          onReconnect?.();
         }
       : undefined,
   });
@@ -289,6 +291,13 @@ export const useSSE = (
   const usageAccumRef = useRef({ prompt: 0, completion: 0, total: 0 });
   const lastUsageSeqRef = useRef<number>(-1);
   const [serverTaskId, setServerTaskId] = useState<string | null>(null);
+  // 2026-08-30 小欧 根治陈旧闭包: reader挂起帧运行在旧render上, state版serverTaskId在空闲定时器/重连守卫闭包中读到旧null值误判;
+  //   ref版始终同步最新值供内部判定, state版仅驱动UI重渲染(两者同步写入) - 小欧-2026-08-30
+  const serverTaskIdRef = useRef<string | null>(null);
+  const syncServerTaskId = useCallback((id: string | null) => {
+    serverTaskIdRef.current = id;
+    setServerTaskId(id);
+  }, []);
 
   // 重连相关
   const reconnectConfigRef = useRef<ReconnectConfig>({
@@ -486,11 +495,21 @@ export const useSSE = (
     setIsReceiving(true);
     setIsConnected(true);
     // 2026-08-29 小强 修复#26: 重连进行中保持reconnecting状态, 不被connecting覆盖
-    setReconnectStatus((prev) => (prev === 'reconnecting' ? prev : 'connecting'));
+    setReconnectStatus((prev) =>
+      prev === 'reconnecting' ? prev : 'connecting'
+    );
 
     try {
       // 【北京老陈 2026-07-12 小欧】断线重连：复用 task_id 走 GET 读同一流态缓冲，避免双 agent
-      const isReconnect = reconnectAttemptsRef.current > 0 && !!serverTaskId;
+      const isReconnect =
+        reconnectAttemptsRef.current > 0 && !!serverTaskIdRef.current;
+      // 2026-08-30 小欧 根治重复起任务: 重连中但尚无任务ID(首响应未到)时无GET续传目标, 若继续会重新POST起新任务(双任务/僵尸任务),
+      //   直接抛错走catch统一错误路径终止重连; 重连计数>0保证仅重连态触发, 用户首发的正常POST不受影响 - 小欧-2026-08-30
+      if (!isReconnect && reconnectAttemptsRef.current > 0) {
+        throw new Error(
+          'SSE 重连终止: 尚无任务ID(首响应未到), 未重复发起新任务'
+        );
+      }
       if (!isReconnect) {
         lastSeqRef.current = 0; // 新请求重置 seq 偏移
       }
@@ -504,7 +523,7 @@ export const useSSE = (
       let response: Response;
       if (isReconnect) {
         // 重连：GET /chat/stream/{task_id}?after_seq=N 续传，不重新发起对话 — 北京老陈 2026-07-12 小欧
-        const url = `${config.baseURL}/chat/stream/${serverTaskId}?session_id=${encodeURIComponent(sessionId || '')}&after_seq=${lastSeqRef.current}`;
+        const url = `${config.baseURL}/chat/stream/${serverTaskIdRef.current}?session_id=${encodeURIComponent(sessionId || '')}&after_seq=${lastSeqRef.current}`;
         console.log(`[SSE] [重连] GET ${url} after_seq=${lastSeqRef.current}`);
         response = await fetch(url, {
           method: 'GET',
@@ -596,7 +615,7 @@ export const useSSE = (
                 setIsReceiving,
                 setIsConnected,
                 disconnect,
-                setServerTaskId,
+                setServerTaskId: syncServerTaskId,
                 onSeq: (s: number) => {
                   if (s > lastSeqRef.current) lastSeqRef.current = s;
                 },
@@ -635,7 +654,7 @@ export const useSSE = (
               setIsReceiving,
               setIsConnected,
               disconnect,
-              setServerTaskId,
+              setServerTaskId: syncServerTaskId,
               onSeq: (s: number) => {
                 if (s > lastSeqRef.current) lastSeqRef.current = s;
               },
@@ -677,7 +696,7 @@ export const useSSE = (
         onSetIsReceiving: setIsReceiving,
         onError,
         reconnectTimeoutRef,
-        serverTaskId, // 【北京老陈 2026-07-12 小欧】重连耗尽用于发起取消
+        serverTaskId: serverTaskIdRef.current, // 【北京老陈 2026-07-12 小欧】重连耗尽用于发起取消
       });
 
       // 保存待重连的消息（用于下次重连）
@@ -694,6 +713,32 @@ export const useSSE = (
   const reconnect = useCallback(() => {
     if (!pendingMessageRef.current) {
       console.warn('[SSE] 没有待重连的消息');
+      return;
+    }
+
+    // 2026-08-30 小欧 根治重复起任务: 重连需GET续传同一任务(after_seq), 但尚无任务ID(首响应未到)则无目标可续;
+    //   继续走sendMessageInternal会重新POST起新任务(双任务/僵尸任务), 此处直接走统一错误中心判连接失败, 由用户重发 - 小欧-2026-08-30
+    if (!serverTaskIdRef.current) {
+      console.error(
+        '[SSE] 无任务ID(首响应未到), 无续传目标, 不重复POST起任务, 判定连接失败'
+      );
+      handleSSEError({
+        error: {
+          name: 'IdleTimeoutNoTaskError',
+          message: '首次响应未到，连接已中断',
+        },
+        errorType: 'idle_timeout',
+        reconnectAttempts: reconnectConfigRef.current.maxAttempts,
+        reconnectConfig: reconnectConfigRef.current,
+        pendingMessage: pendingMessageRef.current,
+        onReconnect: undefined,
+        onSetReconnectStatus: setReconnectStatus,
+        onSetIsConnected: setIsConnected,
+        onSetIsReceiving: setIsReceiving,
+        onError,
+        reconnectTimeoutRef,
+        serverTaskId: serverTaskIdRef.current,
+      });
       return;
     }
 
