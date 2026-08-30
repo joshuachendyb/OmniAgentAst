@@ -1,4 +1,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审: 删9色彩虹(colorSchemes), 嵌套块改单色左边线(Colors.BORDER.DEFAULT)+淡底(Colors.BG.LIGHT), 去色去框(KISS/DRY)
+// 编辑历史: 2026-08-30 小欧 - 北京老陈定案(内部行距4=SM-2派生, 不写死): antd Descriptions 键行格子 22→18px、值行 18.857→16px(=字号+行空心), 行间空隙≈8/6.9px→统一4px, 字号未动 - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 行高 `${FontSize.*+Spacing.XS}px`(键14→18/值12→16), 压 antd 1.5714 - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 北京老陈终定案(0留白): 修复数值型 lineHeight 144px——lineHeight: FontSize.SECONDARY(数字12) 无单位 12倍放大; 全部 `${FontSize.*}px` 带单位 - 小欧-2026-08-30
 /**
  * 通用结果数据渲染器（第13章设计方案）
  * 统一渲染工具返回的结构化数据
@@ -20,6 +23,17 @@ const { Text, Paragraph } = Typography;
 const MAX_STRING_LENGTH = 100; // 字符串截断阈值
 const MAX_INLINE_TAGS = 5; // 数组Tag内联上限
 const MAX_INLINE_ENTRIES = 3; // 对象键值内联上限
+// 2026-08-30 小欧: 北京老陈最新定案 字体留白0 + 行高=字号+Spacing.XS(4)
+const TXT_NO_GAP: React.CSSProperties = {
+  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+};
+const DESCRIPTIONS_CELL_STYLES = {
+  label: {
+    lineHeight: `${FontSize.PRIMARY + Spacing.XS}px`,
+    whiteSpace: 'nowrap' as const,
+  },
+  content: { lineHeight: `${FontSize.SECONDARY + Spacing.XS}px` },
+};
 
 interface GenericResultRendererProps {
   data?: Record<string, unknown> | null;
@@ -34,7 +48,11 @@ const NEST_BLOCK_LINE = Colors.BORDER.VERTICAL; // #e8e8e8 单色左边线
 
 const renderValue = (value: unknown): React.ReactNode => {
   if (value === null || value === undefined) {
-    return <Text type="secondary">-</Text>;
+    return (
+      <Text type="secondary" style={TXT_NO_GAP}>
+        -
+      </Text>
+    );
   }
 
   if (typeof value === 'string') {
@@ -49,24 +67,49 @@ const renderValue = (value: unknown): React.ReactNode => {
     if (value.length > MAX_STRING_LENGTH) {
       return (
         <Paragraph
-          style={{ margin: 0, fontSize: FontSize.SECONDARY }}
+          style={{
+            margin: 0,
+            fontSize: FontSize.SECONDARY,
+            lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+          }}
           ellipsis={{ rows: 2, expandable: true }}
         >
           {value}
         </Paragraph>
       );
     }
-    return <Text style={{ fontSize: FontSize.SECONDARY }}>{value}</Text>;
+    return (
+      <Text
+        style={{
+          fontSize: FontSize.SECONDARY,
+          lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+        }}
+      >
+        {value}
+      </Text>
+    );
   }
 
   if (typeof value === 'number' || typeof value === 'boolean') {
     return (
-      <Text style={{ fontSize: FontSize.SECONDARY }}>{String(value)}</Text>
+      <Text
+        style={{
+          fontSize: FontSize.SECONDARY,
+          lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+        }}
+      >
+        {String(value)}
+      </Text>
     );
   }
 
   if (Array.isArray(value)) {
-    if (value.length === 0) return <Text type="secondary">[]</Text>;
+    if (value.length === 0)
+      return (
+        <Text type="secondary" style={TXT_NO_GAP}>
+          []
+        </Text>
+      );
     if (
       value.length <= MAX_INLINE_TAGS &&
       value.every((v) => typeof v !== 'object')
@@ -74,7 +117,14 @@ const renderValue = (value: unknown): React.ReactNode => {
       return (
         <div style={{ display: 'flex', gap: Spacing.XS, flexWrap: 'wrap' }}>
           {value.map((v, i) => (
-            <Tag key={i} style={{ margin: 0, fontSize: FontSize.TERTIARY }}>
+            <Tag
+              key={i}
+              style={{
+                margin: 0,
+                fontSize: FontSize.TERTIARY,
+                lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
+              }}
+            >
               {String(v)}
             </Tag>
           ))}
@@ -104,15 +154,27 @@ const renderValue = (value: unknown): React.ReactNode => {
 
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length === 0) return <Text type="secondary">{'{}'}</Text>;
+    if (entries.length === 0)
+      return (
+        <Text type="secondary" style={TXT_NO_GAP}>
+          {'{}'}
+        </Text>
+      );
 
     if (entries.length <= MAX_INLINE_ENTRIES) {
       return (
         <div style={{ display: 'flex', gap: Spacing.SM, flexWrap: 'wrap' }}>
           {entries.map(([k, v]) => (
-            <Text key={k} style={{ fontSize: FontSize.SECONDARY }}>
-              <Text type="secondary">{k}:</Text> {renderValue(v)}
-            </Text>
+            <span
+              key={k}
+              style={{
+                fontSize: FontSize.SECONDARY,
+                lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+              }}
+            >
+              <span style={{ color: Colors.TEXT.SECONDARY }}>{k}:</span>{' '}
+              {renderValue(v)}
+            </span>
           ))}
         </div>
       );
@@ -123,6 +185,7 @@ const renderValue = (value: unknown): React.ReactNode => {
         size="small"
         column={1}
         style={{ fontSize: FontSize.SECONDARY }}
+        styles={DESCRIPTIONS_CELL_STYLES}
         items={entries.map(([key, val]) => ({
           key,
           label: key,
@@ -132,7 +195,16 @@ const renderValue = (value: unknown): React.ReactNode => {
     );
   }
 
-  return <Text style={{ fontSize: FontSize.SECONDARY }}>{String(value)}</Text>;
+  return (
+    <Text
+      style={{
+        fontSize: FontSize.SECONDARY,
+        lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+      }}
+    >
+      {String(value)}
+    </Text>
+  );
 };
 
 export const GenericResultRenderer: React.FC<GenericResultRendererProps> = ({
@@ -150,6 +222,7 @@ export const GenericResultRenderer: React.FC<GenericResultRendererProps> = ({
             display: 'block',
             marginBottom: Spacing.XS,
             fontSize: FontSize.SECONDARY,
+            lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
             color: Colors.TEXT.PRIMARY,
           }}
         >

@@ -11,6 +11,7 @@ import { Spacing, Colors, FontSize, BorderWidth } from '@/utils/stepStyles';
 
 const { Text, Paragraph } = Typography;
 
+// 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 行高 `${FontSize.*+Spacing.XS}px` - 小欧-2026-08-30
 // 2026-08-27 小欧 三堂会审C13: 行高常量化
 const LINE_HEIGHT_PX = 20;
 
@@ -47,6 +48,7 @@ const renderString = (str: string, maxLines?: number): React.ReactNode => {
           borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
           borderRadius: 0,
           fontSize: FontSize.TERTIARY,
+          lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
           overflow: 'auto',
           maxHeight: maxLines ? `${maxLines * LINE_HEIGHT_PX}px` : undefined,
         }}
@@ -61,6 +63,7 @@ const renderString = (str: string, maxLines?: number): React.ReactNode => {
       style={{
         margin: 0,
         fontSize: FontSize.SECONDARY,
+        lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
         color: Colors.TEXT.PRIMARY,
       }}
       ellipsis={maxLines ? { rows: maxLines, expandable: true } : false}
@@ -82,6 +85,7 @@ const renderObject = (obj: unknown): React.ReactNode => {
           borderLeft: `2px solid ${Colors.BORDER.VERTICAL}`,
           borderRadius: 0,
           fontSize: FontSize.TERTIARY,
+          lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
           overflow: 'auto',
           maxHeight: '300px',
         }}

@@ -3,6 +3,7 @@
 // 2026-08-27 小欧 - 三堂会审: tree列表/树容器统一边框 1px #f0f0f0(与行分割线一致), 半径保持6
 // 编辑历史: 2026-08-28 小强 - 修复[18]: extractResult遍历tool_result数组合并data_text, 不再仅取首项 - 小强-2026-08-28
 // 编辑历史: 2026-08-28 小欧 - ④B/b1: 去卡片填色改透明+左线, 令牌化, Code深色→浅底左线
+// 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 行高 `${FontSize.*+Spacing.XS}px` - 小欧-2026-08-30
 /**
  * shapeRenderers - 按结果形状渲染(非 tool 名)
  *
@@ -12,13 +13,7 @@
  */
 import React from 'react';
 import { GenericResultRenderer } from '@/features/chat/components/renderers';
-import {
-  Colors,
-  BorderWidth,
-  Spacing,
-  Radius,
-  FontSize,
-} from '@/utils/stepStyles';
+import { Colors, BorderWidth, Spacing, FontSize } from '@/utils/stepStyles';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -96,13 +91,13 @@ const formatMtime = (mtime?: number | string): string => {
 // 容器: 去框透明(内容即容器)
 const containerStyle: React.CSSProperties = {
   background: 'transparent',
-  marginTop: 4,
+  marginTop: Spacing.XS,
   padding: 0,
 };
 const titleStyle = (success: boolean): React.CSSProperties => ({
   display: 'flex',
   alignItems: 'center',
-  marginBottom: 12,
+  marginBottom: Spacing.LG,
   fontSize: 14,
   fontWeight: 500,
   color: success ? Colors.SUCCESS : Colors.ERROR,
@@ -277,7 +272,7 @@ export const TreeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
             background: 'transparent',
             borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
             borderRadius: 0,
-            padding: `6px ${Spacing.SM}px 6px ${Spacing.MD}px`,
+            padding: `${Spacing.SM}px ${Spacing.SM}px ${Spacing.SM}px ${Spacing.MD}px`,
           }}
         >
           {entries.map((entry, idx) => (
@@ -290,13 +285,23 @@ export const TreeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
           ))}
         </div>
         <div
-          style={{ marginTop: 12, fontSize: 12, color: Colors.TEXT.PRIMARY }}
+          style={{
+            marginTop: Spacing.LG,
+            fontSize: 12,
+            color: Colors.TEXT.PRIMARY,
+          }}
         >
           共 {total} 项（目录 {dirCount} / 文件 {fileCount}），总大小{' '}
           {formatFileSize(totalSize)}
         </div>
         {data.truncated === true && (
-          <div style={{ color: Colors.WARNING, fontSize: 12, marginTop: 4 }}>
+          <div
+            style={{
+              color: Colors.WARNING,
+              fontSize: 12,
+              marginTop: Spacing.XS,
+            }}
+          >
             结果已截断，仅显示部分
           </div>
         )}
@@ -305,7 +310,7 @@ export const TreeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
             style={{
               color: Colors.TEXT.PRIMARY,
               whiteSpace: 'pre-wrap',
-              marginTop: 4,
+              marginTop: Spacing.XS,
             }}
           >
             {summary}
@@ -341,12 +346,18 @@ export const TreeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
             background: 'transparent',
             borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
             borderRadius: 0,
-            padding: `8px ${Spacing.MD}px`,
+            padding: `${Spacing.MD}px ${Spacing.MD}px`,
           }}
         >
           <TreeTreeNode node={tree} depth={0} />
         </div>
-        <div style={{ marginTop: 8, fontSize: 12, color: Colors.TEXT.PRIMARY }}>
+        <div
+          style={{
+            marginTop: Spacing.MD,
+            fontSize: 12,
+            color: Colors.TEXT.PRIMARY,
+          }}
+        >
           文件 {statistics.file_count ?? 0} / 目录 {statistics.dir_count ?? 0}
           ，总大小 {formatFileSize(statistics.total_size ?? 0)}
         </div>
@@ -355,7 +366,7 @@ export const TreeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
             style={{
               color: Colors.TEXT.PRIMARY,
               whiteSpace: 'pre-wrap',
-              marginTop: 4,
+              marginTop: Spacing.XS,
             }}
           >
             {summary}
@@ -422,9 +433,9 @@ export const CodeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
     borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
     borderRadius: 0,
     padding: `${Spacing.XS}px ${Spacing.SM}px`,
-    marginTop: 6,
+    marginTop: Spacing.SM,
     fontSize: FontSize.SECONDARY,
-    lineHeight: 1.6,
+    lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-all',
     maxHeight: 400,
@@ -439,7 +450,7 @@ export const CodeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
       <pre style={contentBackground}>{content}</pre>
       <div
         style={{
-          marginTop: 8,
+          marginTop: Spacing.MD,
           fontSize: 12,
           color: Colors.TEXT.PRIMARY,
           display: 'flex',
@@ -467,7 +478,7 @@ export const CodeResultRenderer: React.FC<{ step: ExecutionStep }> = ({
           style={{
             color: Colors.TEXT.PRIMARY,
             whiteSpace: 'pre-wrap',
-            marginTop: 4,
+            marginTop: Spacing.XS,
           }}
         >
           {summary}
