@@ -62,6 +62,7 @@
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整删finalize_message函数(原W5写chat_messages终态), 同步移除stream_orchestrator.db_ops.finalize=传参与agent_runner调用块(行446-461), 终态由append_execution_step(step_json)与_finalize_task_db(update_task+回填chat_user_message)承载
 # 2026-08-29 - 小沈 - BugFix #7: update_task 的 response 默认从 "" 改为 None; 循环内 `if _val is not None` 已存在, 故未显式传 response 时不再用空串覆盖已有列(幂等缺省不覆盖语义落地)。
 # 2026-08-30 - 小欧 - 第十二章 v1.103(设计文档[2]12.2 G1): list_session_tasks 排序 DESC→ASC(左列时间线=会话全部任务时间线清单, 新任务在底部, 4.3.2; 原 DESC 是 8.C-④ 顶栏锚点"首行=最新"的专用依赖, 一手排序喂两个反方向职责违反 SRP); 新增返回 latest_task_id(最新任务显式锚点, 顶栏/默认选中/结束沿 token 锚点统一消费, 排序一义+显式锚点解耦)。调用方 sessions.py 同步解包三元组(见 diff②)。
+# 2026-08-30 - 小欧 - 第十三章13.7 C2 收口(设计文档[2]13.12.8, 北京老陈 2026-08-30 批准): load_steps_by_task 对 thought 步骤剥离 content 键出参(回放只取 thought/reasoning 两字段契约, 13.3/13.6), 仅剥 content、其余键原样保全
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -819,4 +820,9 @@ def load_steps_by_task(conn: Connection, task_id: str) -> list:
         "SELECT step_json FROM chat_task_steps WHERE task_id=? ORDER BY step_index ASC",
         (task_id,),
     ).fetchall()
-    return [parse_json(r["step_json"], label="step_json") for r in rows]
+    steps = [parse_json(r["step_json"], label="step_json") for r in rows]
+    # 13.7 C2 两字段契约收口: thought 步骤剥离 content(回显只取 thought/reasoning, 13.3), 仅出 type/step/timestamp/thought/reasoning — 小欧 2026-08-30
+    return [
+        s if s.get("type") != "thought" else {k: v for k, v in s.items() if k != "content"}
+        for s in steps
+    ]

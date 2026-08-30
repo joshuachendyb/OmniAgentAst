@@ -74,6 +74,7 @@
 # 2026-08-24 - 小沈 - ISS-001 根治: 原修复仅catch二次CancelledError但未retrieve孤儿task异常(注释自承认"异常由loop兜底记WARNING"即日志噪声仍在);
 #   改用 add_done_callback 无条件调 t.exception() 确保异常必达retrieve, 从源头杜绝 "Task exception never retrieved" 日志噪声(三堂会审: CancelledError继承BaseException非Exception, 原报告建议except Exception有缺陷不采用)
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整删finalize_message回调及其调用——删除stream_orchestrator.db_ops.finalize=传参与agent_runner行446-461的finalize调用块(原写chat_messages终态); 终态content/status/thought由append_execution_step(step_json)与_finalize_task_db(update_task+回填chat_user_message)承载, 系统对该表零写依赖
+# 2026-08-30 - 小欧 - 第十三章13.11 落库收口(设计文档[2]13.12.10, 北京老陈 2026-08-30 批准): _persist 内对 thought 步骤仅规约 content/thought/reasoning 三字段文本(调公用 normalize_blank_lines, 新数据入库即净), 其它类型/其它字段绝不触碰(防 tool_result/命令输出代码块多空行语义被误伤); import 补 normalize_blank_lines
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -109,6 +110,7 @@ from app.logger.prompt_logger import get_prompt_logger
 from app.utils.time_utils import get_local_iso_timestamp  # S2 update_task end_time(10.1.7②-1) — 小欧 2026-08-16
 from app.services.chat.storage import update_user_message_final  # v2.0 改动2 — 小欧 2026-08-19
 from app.utils.json_utils import safe_json_dumps  # v2.0 改动2: accumulated_usage序列化 — 小欧 2026-08-19
+from app.utils.text_utils import normalize_blank_lines  # 13.11 落库收口 — 小欧 2026-08-30
 
 
 # 后台任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者断开后任务再无强引用,
@@ -285,6 +287,13 @@ async def run_agent_in_background(
                             })
                             break
                 # 12.2-C4: ai_message_id已eager注入,惰性分支移除 — 小欧 2026-08-21
+                # 13.11 落库收口: 仅 thought 步骤规约 content/thought/reasoning 三字段(新数据入库即净);
+                #   其它类型/其它字段绝不触碰(防 tool_result/命令输出代码块多空行语义被误伤) — 小欧 2026-08-30
+                if event_type == "thought":
+                    for _k in ("content", "thought", "reasoning"):
+                        _v = ed.get(_k)
+                        if isinstance(_v, str):
+                            ed[_k] = normalize_blank_lines(_v)
                 # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
                 await db.atxn("chat", lambda conn: db_ops.append_step(
                     conn, ai_message_id, session_id,

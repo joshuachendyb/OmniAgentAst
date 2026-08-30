@@ -4,6 +4,8 @@
 # 2026-07-12 - 小欧 - v2.0: 新增 format_tool_call_markup
 # 2026-07-16 - 小欧 - v2.1: 新增 extract_tool_call_xml(P1-04推理降级XML提取) + _format_xml_tool_block改调它(DRY)
 # 2026-08-20 - 小欧 - 遥测收敛: 本文件在遥测链路被引用(工具调用标记格式化), 本次无逻辑改动仅补标准编辑历史头
+# 2026-08-30 - 小欧 - 13.11(设计文档[2]13.12.9): 新增公用 normalize_blank_lines(空行规约, 前后端同一张规则表, 幂等);
+#   format_tool_call_markup 末尾 \n{3,} 压缩+strip 收敛至该公用函数(answer 轮行为逐字节等价, DRY); __all__ 登记
 """
 文本处理工具函数 — 小沈 2026-06-09
 
@@ -136,6 +138,25 @@ def _format_xml_tool_block(match):
     return r + "\n" + "\n".join(params) if params else r
 
 
+# 2026-08-30 小欧 13.11: 空行规约公用函数(后端落库收口入口) — 与前端 normalizeBlankLines 同一张规则表(幂等)
+def normalize_blank_lines(text: str) -> str:
+    """空行规约——至多保留一个段落空行(13.11 规则表): 连续空行(含整行仅空格/制表)折叠为
+    一个空行(逐行折叠, KISS 幂等), 段首尾 trim. — 小欧 2026-08-30"""
+    if not text:
+        return text
+    out = []
+    blank = 0
+    for _ln in text.split("\n"):
+        if not _ln.strip():
+            blank += 1
+            if blank == 1:
+                out.append("")
+        else:
+            blank = 0
+            out.append(_ln)
+    return "\n".join(out).strip()
+
+
 def format_tool_call_markup(text: str) -> str:
     """将LLM输出中的XML/JSON tool call标记格式化为纯文本
 
@@ -181,8 +202,8 @@ def format_tool_call_markup(text: str) -> str:
         i += 1
 
     text = "".join(result)
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    return text.strip()
+    # 13.11 收口: 原 \n{3,} 压缩+strip 收敛至公用 normalize_blank_lines(行为逐字节等价, DRY) — 小欧 2026-08-30
+    return normalize_blank_lines(text)
 
 
 def truncate_summary(detail: str, max_chars: int = 200) -> str:
@@ -204,6 +225,7 @@ __all__ = [
     "smart_truncate_text",
     "add_line_numbers",
     "extract_tool_call_xml",
+    "normalize_blank_lines",
     "format_tool_call_markup",
     "truncate_summary",
 ]

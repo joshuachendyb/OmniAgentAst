@@ -85,6 +85,7 @@
 | `add_line_numbers` | 添加行号前缀 | content, offset | str |
 | `extract_tool_call_xml` | 从文本提取 `<tool_call>` XML 工具调用(非破坏性, reasoning/content中LLM降级旧格式时的恢复路径) | text | Optional[Dict[str, Any]] |
 | `format_tool_call_markup` | 将LLM输出XML/JSON tool call标记格式化为纯文本(破坏性) | text | str |
+| `normalize_blank_lines` | 空行规约(13.11): 连续空行(含整行空格/制表)折叠为一个空行, 段首尾trim, 幂等; 落库收口入口(与前端 normalizeBlankLines 同一张规则表) | text | str |
 
 ### 1.8 ID生成（id_utils.py）
 
@@ -313,6 +314,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v3.14 | 2026-08-30 14:50:00 | 13.11 空行规约(北京老陈 2026-08-30 批准): 1.7 text_utils 新增 normalize_blank_lines(连续空行折叠为一个空行+段首尾trim, 幂等, 后端落库收口入口, 与前端 normalizeBlankLines 同一张规则表); format_tool_call_markup 末尾压缩收敛复用(行为逐字节等价, DRY); agent_runner._persist 与 storage.load_steps_by_task 的 C2/规约逻辑为模块内私有改动不单列条目 | 小欧 |
 | v3.13 | 2026-08-30 08:05:00 | 新增 1.11 控制台镜像(app/logger/console_writer.py): console_put 非阻塞控制台写(全局queue+daemon写线程, 满则丢弃, 事件循环零同步stdout写); log_and_print 与 action_handler/main/config 裸print 收口点统一复用(根治 case09 挂起) | 小欧 |
 | v3.12 | 2026-08-25 16:30:00 | 合规重构(北京老陈驱动): ①新增 3.3 Agent层 handlers/sandbox_gate.py(sandbox_precheck/sandbox_resolve, 从 action_handler 嵌套闭包拆出, 去隐式耦合/分层落点); ②1.2 display_utils.py 新增 format_llm_data_text(从 action_handler.build_observation 内嵌闭包拆出的纯展示格式化函数, 全局层复用优先); 两处均逻辑零改动(复制不重写)、登记本清单、action_handler 去内联与死 import | 小欧 |
 | v3.11 | 2026-08-24 12:19:40 | 目录前导(北京老陈裁定): file_persist 新增常量 SESSION_DIR_PREFIX="Sion_" / TASK_DIR_PREFIX="Task_"(唯一源, DRY); 物理目录(TaskFileWriter._dir/purge_task/purge_session)与 chat_tasks.files_dir 落库锚(stream_orchestrator 编排⑨)全部经常量同源拼装, 排查定位链不断; 旧目录不迁移不兼容(禁止backward) | 小欧 |
