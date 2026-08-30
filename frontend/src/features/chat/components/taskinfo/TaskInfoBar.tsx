@@ -3,6 +3,9 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审去框-P0-2/边距-P0-2: 去整框留淡底(border→none,background#fafafa,radius6,padding8px); 内层过程区加滚动细线borderTop#f5f5f5+scrollbarWidth; 外层gap2→8主节奏
 // 编辑历史: 2026-08-28 小欧 - ①C/c1: 去胶囊改透明+borderTop#f0f0f0, gap12→8, 数值加粗#595959 500, Tag→Text轻量化
+// 编辑历史: 2026-08-30 小欧 - 13.14 8处Typography.Text→span+双组token本轮/任务累计(P/C/T后端直发) - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel移至TaskInfoBar第一行尾部集成（第一行尾巴） - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 修复×不显眼: DeleteOutlined→文本×、色#999→#595959、字号12→14加粗 - 小欧-2026-08-30
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -14,12 +17,13 @@
  * @date 2026-08-26
  */
 
-import React, { useEffect, useState, useRef } from 'react';
-import { Badge, Tooltip, Typography } from 'antd';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
+import { Badge, Tooltip } from 'antd';
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskMetaFrames } from '@/types/sse';
 import type { TaskDetail } from '../../../../services/api/task.api';
-import { Colors } from '@/utils/stepStyles';
+import { trustApi } from '../../../../services/api/task.api';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import { useTaskInfo } from '../../hooks/useTaskInfo';
 
 interface TaskInfoBarProps {
@@ -27,6 +31,7 @@ interface TaskInfoBarProps {
   frames: TaskMetaFrames; // 统计类元信息帧（8.4.14）
   receiving: boolean;
   detail?: TaskDetail | null; // 【A3】选中历史任务时由其详情派生动态信息
+  sessionId?: string | null; // 13.14 TrustPanel第一行尾部需会话ID
 }
 
 const BADGE_MAP = {
@@ -43,10 +48,44 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   frames,
   receiving,
   detail,
+  sessionId,
 }) => {
   const [collapsed, setCollapsed] = useState(false);
   const info = useTaskInfo(steps, frames, receiving, detail);
   const b = BADGE_MAP[info.badge];
+  const [trustExpanded, setTrustExpanded] = useState(false);
+  const [trustTools, setTrustTools] = useState<string[]>([]);
+  const trustReqIdRef = useRef(0);
+  const loadTrust = useCallback(async () => {
+    if (!sessionId) return;
+    const reqId = ++trustReqIdRef.current;
+    try {
+      const fetched = await trustApi.getTrust(sessionId);
+      if (reqId === trustReqIdRef.current) setTrustTools(fetched);
+    } catch {
+      if (reqId === trustReqIdRef.current) setTrustTools([]);
+    }
+  }, [sessionId]);
+  useEffect(() => {
+    void loadTrust();
+  }, [loadTrust]);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ sessionId: string }>;
+      if (ce.detail?.sessionId === sessionId) void loadTrust();
+    };
+    window.addEventListener('omni-trust-changed', handler as EventListener);
+    return () =>
+      window.removeEventListener(
+        'omni-trust-changed',
+        handler as EventListener
+      );
+  }, [sessionId, loadTrust]);
+  const revokeTrust = async (toolName: string) => {
+    if (!sessionId) return;
+    await trustApi.revokeTrust(sessionId, toolName);
+    await loadTrust();
+  };
 
   // 【小欧 2026-08-26 修复 B2】执行中实时计时：当前任务(receiving+running)按 start 时刻走表，
   // 历史任务(detail)用后端 duration，不计时。
@@ -99,63 +138,143 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
         onClick={() => setCollapsed((v) => !v)}
       >
         <Badge status={b.status} text={b.text} />
-        <Typography.Text
+        <span
           style={{ fontSize: 12, color: Colors.TEXT.PRIMARY, fontWeight: 500 }}
         >
           耗时 {Math.round(shownElapsed)}s
-        </Typography.Text>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        </span>
+        <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
           步骤 {info.stepCount} / 轮次 {info.llmCallCount}
           {info.retryCount > 0 && ` / 重试 ${info.retryCount}`}
-        </Typography.Text>
-        <Tooltip title={`P ${info.usage.prompt} / C ${info.usage.completion}`}>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            本轮/任务 token {info.usage.total}
-          </Typography.Text>
+        </span>
+        <Tooltip
+          title={`本轮 P ${info.roundUsage?.prompt ?? 0} / C ${info.roundUsage?.completion ?? 0} / T ${info.roundUsage?.total ?? 0}`}
+        >
+          <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
+            本轮 P{info.roundUsage?.prompt ?? 0}/C
+            {info.roundUsage?.completion ?? 0}/T{info.roundUsage?.total ?? 0}
+          </span>
+        </Tooltip>
+        <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}> | </span>
+        <Tooltip
+          title={`任务累计 P ${info.taskAccumulated?.prompt_tokens ?? info.usage.prompt} / C ${info.taskAccumulated?.completion_tokens ?? info.usage.completion} / T ${info.taskAccumulated?.total_tokens ?? info.usage.total}`}
+        >
+          <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
+            任务累计 P{info.taskAccumulated?.prompt_tokens ?? info.usage.prompt}
+            /C{info.taskAccumulated?.completion_tokens ?? info.usage.completion}
+            /T{info.taskAccumulated?.total_tokens ?? info.usage.total}
+          </span>
         </Tooltip>
         {/* 上下文概况：context_overview 帧优先，start.context_summary 兜底（8.9） */}
         {typeof info.overview === 'string' ? (
           <Tooltip title={info.overview}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
               上下文摘要
-            </Typography.Text>
+            </span>
           </Tooltip>
         ) : info.overview ? (
           <Tooltip
             title={`${info.overview.summary}\n消息数 ${info.overview.message_count ?? '-'} · 估算 ${info.overview.estimated_tokens ?? '-'} tok`}
           >
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
               上下文 {info.overview.estimated_tokens ?? '-'}tok
               {info.overview.truncated && ' 🔴已截断'}
-            </Typography.Text>
+            </span>
           </Tooltip>
         ) : frames.contextSummary ? (
           <Tooltip title={frames.contextSummary}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
               上下文摘要
-            </Typography.Text>
+            </span>
           </Tooltip>
         ) : null}
         {info.stuckWarning && (
-          <Typography.Text type="warning" style={{ fontSize: 12 }}>
+          <span style={{ fontSize: 12, color: Colors.WARNING }}>
             疑似卡死(llm≫step)
-          </Typography.Text>
+          </span>
         )}
         {info.truncatedTip && (
-          <Typography.Text type="warning" style={{ fontSize: 12 }}>
+          <span style={{ fontSize: 12, color: Colors.WARNING }}>
             ⚠ {info.truncatedTip}
-          </Typography.Text>
+          </span>
         )}
         <span
+          onClick={(e) => {
+            e.stopPropagation();
+            setTrustExpanded((v) => !v);
+          }}
           style={{
+            fontSize: FontSize.SECONDARY,
+            color:
+              trustTools.length > 0
+                ? Colors.TEXT.PRIMARY
+                : Colors.TEXT.TERTIARY,
+            cursor: 'pointer',
             marginLeft: 'auto',
+          }}
+        >
+          {trustExpanded ? '▾' : '▸'} 本会话信任的操作({trustTools.length})
+        </span>
+        <span
+          onClick={() => setCollapsed((v) => !v)}
+          style={{
             color: Colors.TEXT.TERTIARY,
             fontSize: 12,
+            cursor: 'pointer',
           }}
         >
           {collapsed ? '展开' : '收起'}
         </span>
       </div>
+      {trustExpanded && trustTools.length > 0 && (
+        <div
+          style={{
+            maxHeight: 70,
+            overflow: 'auto',
+            paddingTop: Spacing.XS,
+            borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
+            marginTop: 4,
+          }}
+        >
+          {trustTools.map((tool) => (
+            <div
+              key={tool}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: `${Spacing.XS - 2}px 0`,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+                }}
+              >
+                {tool}
+              </span>
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void revokeTrust(tool);
+                }}
+                style={{
+                  fontSize: 14,
+                  color: Colors.TEXT.PRIMARY,
+                  cursor: 'pointer',
+                  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+                  padding: '0 4px',
+                  fontWeight: 500,
+                }}
+                title="撤销信任"
+              >
+                ×
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {!collapsed && info.processEvents.length > 0 && (
         <div

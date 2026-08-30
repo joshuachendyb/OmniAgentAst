@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-28 小欧 - 由 utils/sse.ts 抽离 processSSEData(1002-1835)与 normalizeIsReasoning(995-997)至特性层services, 零逻辑变更 - 小欧-2026-08-28
+// 编辑历史: 2026-08-30 小欧 - 13.14 usage帧废止前端累加、直取后端本轮+三累计(P/C/T)四字段 - 小欧-2026-08-30
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -184,32 +185,38 @@ const processSSEData = (
         break;
       }
 
-      // usage：单任务 token 帧 —— 断线续传(E2)按 seq 去重防重复累加【R1-B13】
+      // usage：单任务 token 帧 —— 后端直发本轮+三累计(P/C/T)，前端直存直显不另算【13.14】
       case 'usage': {
         if (typeof rawData.seq === 'number') {
           if (rawData.seq <= (handlers.lastUsageSeqRef?.current ?? -1)) break;
           if (handlers.lastUsageSeqRef)
             handlers.lastUsageSeqRef.current = rawData.seq;
         }
-        if (handlers.usageAccumRef) {
-          handlers.usageAccumRef.current = {
-            prompt:
-              handlers.usageAccumRef.current.prompt +
-              (rawData.prompt_tokens ?? 0),
-            completion:
-              handlers.usageAccumRef.current.completion +
-              (rawData.completion_tokens ?? 0),
-            total:
-              handlers.usageAccumRef.current.total +
-              (rawData.total_tokens ?? 0),
-          };
-        }
-        const acc = handlers.usageAccumRef?.current ?? {
-          prompt: 0,
-          completion: 0,
-          total: 0,
+        const round = {
+          prompt: rawData.prompt_tokens ?? 0,
+          completion: rawData.completion_tokens ?? 0,
+          total: rawData.total_tokens ?? 0,
         };
-        handlers.setMetaFrames?.((prev) => ({ ...prev, usage: { ...acc } }));
+        const taskAcc = rawData.task_accumulated_tokens ?? null;
+        const sessAcc = rawData.session_accumulated_tokens ?? null;
+        const chainAcc = rawData.chain_accumulated_tokens ?? null;
+        const taskLike = taskAcc
+          ? {
+              prompt: taskAcc.prompt_tokens ?? 0,
+              completion: taskAcc.completion_tokens ?? 0,
+              total: taskAcc.total_tokens ?? 0,
+            }
+          : { ...round };
+        handlers.setMetaFrames?.((prev) => ({
+          ...prev,
+          usage: taskLike,
+          roundUsage: round,
+          taskAccumulated: taskAcc,
+          sessionAccumulated: sessAcc,
+          chainAccumulated: chainAcc,
+        }));
+        if (handlers.usageAccumRef)
+          handlers.usageAccumRef.current = { ...taskLike };
         break;
       }
 
@@ -692,7 +699,8 @@ const processSSEData = (
             Array.isArray(llmDataRaw) ? llmDataRaw[0] : llmDataRaw
           ) as Record<string, unknown> | undefined;
           const otherData = obsData.other_data as
-            Record<string, unknown> | undefined;
+            | Record<string, unknown>
+            | undefined;
           step.observation = obsData;
           step.tool_result = obsData.tool_result;
           step.execution_result = obsData;
@@ -714,7 +722,9 @@ const processSSEData = (
           step.summary = (llmData?.summary as string) ?? obsData.summary ?? '';
           step.execution_status =
             ((llmData?.status as Record<string, unknown>)?.exec_code as
-              'success' | 'error' | 'warning') ??
+              | 'success'
+              | 'error'
+              | 'warning') ??
             (obsData.execution_status as 'success' | 'error' | 'warning') ??
             undefined;
           step.error_message =

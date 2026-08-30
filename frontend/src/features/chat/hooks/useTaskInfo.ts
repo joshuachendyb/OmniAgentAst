@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-27 小欧 - 修复#5#6: 历史任务overview/truncatedTip改取空, 不再串味实时frames(实测失败用例转绿)
 // 编辑历史: 2026-08-27 小欧 - 修复chat-B: 过程事件>20条时保留 started 条目(slice(-20)不再裁掉首位)
 // 编辑历史: 2026-08-28 小强 - hooks修复#16: 先unshift再slice(-20)保证上限20条+统一ExecutionStep从utils/sse导入(DRY)
+// 编辑历史: 2026-08-30 小欧 - 13.14 新增 roundUsage/task/session/chain 四字段透出（后端直发三数字） - 小欧-2026-08-30
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -33,7 +34,12 @@ export interface ProcessEvent {
 }
 
 export type TaskBadge =
-  'idle' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+  | 'idle'
+  | 'running'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 export const useTaskInfo = (
   steps: ExecutionStep[],
@@ -63,6 +69,10 @@ export const useTaskInfo = (
           completion: u?.completion_tokens ?? 0,
           total: u?.total_tokens ?? 0,
         },
+        roundUsage: null,
+        taskAccumulated: u ?? null,
+        sessionAccumulated: null,
+        chainAccumulated: null,
         // 历史任务无实时 metaFrames 源：contextOverview/truncated 仅实时流产生，
         // 取实时 frames 会串味当前任务，故历史任务恒为空（2026-08-27 小欧 修复#5#6）
         overview: '',
@@ -151,7 +161,17 @@ export const useTaskInfo = (
       stepCount,
       llmCallCount,
       retryCount: stats?.retry_count ?? 0,
-      usage: frames.usage,
+      usage: frames.taskAccumulated
+        ? {
+            prompt: frames.taskAccumulated.prompt_tokens ?? 0,
+            completion: frames.taskAccumulated.completion_tokens ?? 0,
+            total: frames.taskAccumulated.total_tokens ?? 0,
+          }
+        : frames.usage,
+      roundUsage: frames.roundUsage ?? null,
+      taskAccumulated: frames.taskAccumulated ?? null,
+      sessionAccumulated: frames.sessionAccumulated ?? null,
+      chainAccumulated: frames.chainAccumulated ?? null,
       overview: frames.contextOverview,
       truncatedTip: frames.truncated?.content ?? null,
       processEvents: recentEvents.reverse(), // 新事件插顶，保留最近20条

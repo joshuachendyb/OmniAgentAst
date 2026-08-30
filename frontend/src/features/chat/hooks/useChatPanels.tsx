@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离panels插槽组装逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
 // 编辑历史: 2026-08-29 小强 - 修复#21: TopbarStats chainTokens由硬编码null改为透传真实chainTokens(与依赖数组一致) - 小强-2026-08-29
+// 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel由config slot移至TaskInfoBar第一行尾部集成，移除config.trust - 小欧-2026-08-30
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -11,7 +12,6 @@ import { TopbarStats } from '../components/topbar/TopbarStats';
 import { TaskListPanel } from '../components/left/TaskListPanel';
 import { RightViewer } from '../components/right/RightViewer';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
-import { TrustPanel } from '../components/config/TrustPanel';
 import { Colors } from '@/utils/stepStyles';
 import type {
   TaskDetail,
@@ -215,14 +215,9 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             frames={metaFrames}
             receiving={isReceiving && activeTaskId === serverTaskId}
             detail={selectedDetail}
+            sessionId={sessionId}
           />
         ),
-        defaultVisible: true,
-      },
-      {
-        slot: 'config',
-        key: 'config.trust',
-        component: <TrustPanel sessionId={sessionId} />,
         defaultVisible: true,
       },
       {

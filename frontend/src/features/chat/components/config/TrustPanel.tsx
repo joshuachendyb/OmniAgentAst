@@ -1,6 +1,8 @@
 // 编辑历史: 2026-08-26 小欧 - 8.7 实施: 信任操作面板, 查询/撤销信任, HITL confirm写入(4.3.5/4.7)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 新增omni-trust-changed事件监听, HITL信任写入后自动刷新面板
 // 编辑历史: 2026-08-28 小欧 - ①B/b1: 空态不占位(tools0→null), ghost对齐padding4 0, 文案色#595959统一
+// 编辑历史: 2026-08-30 小欧 - 13.14 纯div重构: 去Collapse/List/Typography/Button, 收起16px/展开90px(4×16+3×2+4), 零默认留白 - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 修复×不显眼: DeleteOutlined→文本×、色#8c8c8c→#595959、字号12→14加粗 - 小欧-2026-08-30
 /**
  * TrustPanel - 信任操作面板（config slot，默认收起）
  *
@@ -13,10 +15,8 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Collapse, List, Typography } from 'antd';
-import { DeleteOutlined } from '@ant-design/icons';
 import { trustApi } from '../../../../services/api/task.api';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 
 interface TrustPanelProps {
   sessionId: string | null;
@@ -67,56 +67,67 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
     await load(); // 撤销后刷新清单
   };
 
+  const [expanded, setExpanded] = useState(false);
   if (tools.length === 0) return null;
   return (
-    <Collapse
-      ghost
-      defaultActiveKey={[]}
-      style={{ padding: '4px 0' }}
-      items={[
-        {
-          key: 'trust',
-          label: (
-            <Typography.Text
-              type="secondary"
-              style={{ fontSize: 12, color: Colors.TEXT.PRIMARY }}
-            >
-              本会话信任的操作（{tools.length}）
-            </Typography.Text>
-          ),
-          children: (
-            <List
-              size="small"
-              style={{ paddingLeft: 8 }}
-              dataSource={tools}
-              locale={{
-                emptyText: '暂无信任项（HITL 弹窗勾选"本次会话信任"后出现）',
+    <div style={{ padding: 0 }}>
+      <div
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          cursor: 'pointer',
+          lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+        }}
+      >
+        <span
+          style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.PRIMARY }}
+        >
+          {expanded ? '▾' : '▸'} 本会话信任的操作（{tools.length}）
+        </span>
+      </div>
+      {expanded && (
+        <div
+          style={{ maxHeight: 70, overflow: 'auto', paddingTop: Spacing.XS }}
+        >
+          {tools.map((tool) => (
+            <div
+              key={tool}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: `${Spacing.XS - 2}px 0`,
               }}
-              renderItem={(tool) => (
-                <List.Item
-                  actions={[
-                    <Button
-                      key="revoke"
-                      size="small"
-                      type="text"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => void revoke(tool)}
-                    >
-                      撤销
-                    </Button>,
-                  ]}
-                >
-                  <Typography.Text style={{ fontSize: 12 }}>
-                    {tool}
-                  </Typography.Text>
-                </List.Item>
-              )}
-            />
-          ),
-        },
-      ]}
-    />
+            >
+              <span
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+                }}
+              >
+                {tool}
+              </span>
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void revoke(tool);
+                }}
+                style={{
+                  fontSize: 14,
+                  color: Colors.TEXT.PRIMARY,
+                  cursor: 'pointer',
+                  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+                  padding: '0 4px',
+                  fontWeight: 500,
+                }}
+                title="撤销信任"
+              >
+                ×
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 };
 

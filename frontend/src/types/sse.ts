@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-28 小欧 - 由 utils/sse.ts 抽离SSE专属类型归一至横切层; ExecutionStep已居types/execution.ts故不重复导出 - 小欧-2026-08-28
+// 编辑历史: 2026-08-30 小欧 - 13.14 新增 roundUsage/taskAccumulated/sessionAccumulated/chainAccumulated 四字段（后端直发P/C/T三数字，废止前端累加） - 小欧-2026-08-30
 import type { ExecutionStep } from './execution';
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
@@ -33,7 +34,23 @@ export interface TaskMetaFrames {
   contextSummary: string; // start.content
   startInfo: StartInfoFrame | null;
   startTimestamp: number; // start 事件时间戳（供 useTaskInfo 过程条首行使用）
-  usage: { prompt: number; completion: number; total: number }; // 逐帧累加
+  usage: { prompt: number; completion: number; total: number }; // 兼容：现为 taskAccumulated 的 P/C/T 映射（后端直发）
+  roundUsage?: { prompt: number; completion: number; total: number } | null; // 本轮三值（后端 prompt_tokens 直取）
+  taskAccumulated?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  } | null; // 任务累计三值
+  sessionAccumulated?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  } | null; // 会话累计三值（顶栏）
+  chainAccumulated?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  } | null; // 链累计三值
   stats: StatsFrame | null; // 保留上一帧
   finalStats: FinalStatsFrame | null;
   contextOverview: ContextOverviewFrame | null; // 保留上一帧
@@ -44,6 +61,10 @@ export const emptyMetaFrames = (): TaskMetaFrames => ({
   startInfo: null,
   startTimestamp: 0,
   usage: { prompt: 0, completion: 0, total: 0 },
+  roundUsage: null,
+  taskAccumulated: null,
+  sessionAccumulated: null,
+  chainAccumulated: null,
   stats: null,
   finalStats: null,
   contextOverview: null,
