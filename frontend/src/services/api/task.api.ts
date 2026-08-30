@@ -91,6 +91,8 @@ export interface SessionTaskItem {
 export interface SessionTasksResponse {
   tasks: SessionTaskItem[];
   total: number;
+  // 2026-08-30 小欧 设计文档[2]12.6 v1.103: B1 最新任务显式锚点(排序一义后顶栏/默认选中/链token锚点统一消费)
+  latest_task_id: string | null;
 }
 
 export interface TaskArtifact {

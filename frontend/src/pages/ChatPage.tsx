@@ -1,5 +1,8 @@
 // 编辑历史: 2026-08-28 小欧 - NewChatContainer瘦身: 抽9 hook(useAuthorization/useChatScroll/useSessionMeta/useTaskSelection/useChainTokens/useChatInit/useChatLifecycle/useChatTitle/useChatPanels), 本文件<100行(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
-import React, { useState, useEffect, useCallback } from 'react';
+// 编辑历史: 2026-08-30 小欧 - v1.100实施: 点击任务联动右栏展开, 新增handleSelectTaskOpenRight包装(useChatPanels入参handleSelectTask→handleSelectTaskOpenRight, 4.5.1联动锚定) - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 修复输入框悬空: 根div高度由写死calc(100vh-120px)改为height:100%填满Content(Content为flex:auto有确定高度, 原公式比实际可用高度矮61px导致底部空白) - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 设计文档[2]12.10 v1.103: G2修复(serverTaskId变化即refreshTasks, 4.8.4.2 SSE start帧任务产生即入列) + latestTaskId透传useTaskSelection/useChainTokens(diff⑤⑥签名同步) - 小欧-2026-08-30
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../services/api/client';
 import { useChatFacade } from '../features/chat/hooks/useChatFacade';
@@ -41,6 +44,7 @@ const ChatPage: React.FC = () => {
     total,
     loading: tasksLoading,
     refresh: refreshTasks,
+    latestTaskId,
   } = useSessionTasks(sessionId);
   const { effective } = useModelLayer({
     sessionId,
@@ -58,12 +62,34 @@ const ChatPage: React.FC = () => {
     sessionId,
     chatStreaming.serverTaskId,
     chatStreaming.isReceiving,
+    latestTaskId,
     tasks
+  );
+
+  // 2026-08-30 小欧 diff⑦: G2修复(4.8.4.2) serverTaskId变化即刷新任务列表(SSE start帧任务产生即入列, 左列实时可见)
+  const prevServerTaskIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevServerTaskIdRef.current !== chatStreaming.serverTaskId) {
+      prevServerTaskIdRef.current = chatStreaming.serverTaskId;
+      if (chatStreaming.serverTaskId) {
+        void refreshTasks();
+      }
+    }
+  }, [chatStreaming.serverTaskId, refreshTasks]);
+
+  // 2026-08-30 小欧 v1.100: 点击任务 → 右栏展开(4.5.1 联动锚定: 点击查看即展开)
+  const handleSelectTaskOpenRight = useCallback(
+    (taskId: string) => {
+      setRightOpen(true);
+      handleSelectTask(taskId);
+    },
+    [handleSelectTask]
   );
   const { chainTokens } = useChainTokens(
     sessionId,
     chatStreaming.serverTaskId,
     chatStreaming.isReceiving,
+    latestTaskId,
     tasks,
     refreshTasks
   );
@@ -101,7 +127,7 @@ const ChatPage: React.FC = () => {
     sessionTimes,
     activeTaskId,
     selectedDetail,
-    handleSelectTask,
+    handleSelectTask: handleSelectTaskOpenRight,
     chainTokens,
     handleNewSession,
     handleEditingStart,
@@ -112,7 +138,7 @@ const ChatPage: React.FC = () => {
   return (
     <div
       style={{
-        height: 'calc(100vh - 120px)',
+        height: 'calc(100vh - 59px)', // 2026-08-30 小欧: 精确贴合Content内容区高度=Header43+padding上6下10; 原calc(100vh-120px)矮61px致底部空白, height:100%会随父级撑高掉屏外, 两者均废弃
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,

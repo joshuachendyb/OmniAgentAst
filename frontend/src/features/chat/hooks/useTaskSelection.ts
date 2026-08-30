@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离任务选择与详情逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
+// 编辑历史: 2026-08-30 小欧 - 设计文档[2]12.9 v1.103: 拆两effect修G2/G3(①serverTaskId变化强制锚定当前任务, 去activeTaskId门闩; ②纯历史会话默认选中latestTaskId, ASC后tasks[0]≈最旧失效); 签名插入latestTaskId
 import { useCallback, useEffect, useState } from 'react';
 import { executionApi } from '../../../services/api/task.api';
 import type { TaskDetail } from '../../../services/api/task.api';
@@ -11,6 +12,7 @@ export function useTaskSelection(
   sessionId: string | null,
   serverTaskId: string | null,
   isReceiving: boolean,
+  latestTaskId: string | null, // 2026-08-30 小欧 diff⑥ v1.103: 最新任务显式锚点
   tasks: { task_id: string }[]
 ) {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -42,17 +44,21 @@ export function useTaskSelection(
     }
   }, [activeTaskId, serverTaskId]);
 
-  // 2026-08-27 修复#6 + 2026-08-28 v1.3: 新会话首个任务自动激活/纯历史会话默认选中首项
+  // 2026-08-30 小欧 diff⑥ effect①: serverTaskId 变化即锚定当前任务(G3修复, 4.5.1 有正在执行任务=当前任务; 用户点历史不改serverTaskId不受影响)
   useEffect(() => {
-    if (activeTaskId) return;
     if (serverTaskId) {
       setActiveTaskId(serverTaskId);
-      return;
     }
-    if (!isReceiving && tasks.length > 0) {
-      setActiveTaskId(tasks[0].task_id);
+  }, [serverTaskId]);
+
+  // 2026-08-30 小欧 diff⑥ effect②: 纯历史会话默认选中最新任务(ASC后tasks[0]≈最旧, 改显式latestTaskId)
+  useEffect(() => {
+    if (activeTaskId) return;
+    if (tasks.length === 0) return;
+    if (!isReceiving && latestTaskId) {
+      setActiveTaskId(latestTaskId);
     }
-  }, [serverTaskId, activeTaskId, isReceiving, tasks]);
+  }, [latestTaskId, activeTaskId, isReceiving, tasks]);
 
   const handleSelectTask = useCallback((id: string) => {
     setActiveTaskId(id);
