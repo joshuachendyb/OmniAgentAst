@@ -9,6 +9,8 @@
  */
 
 // 编辑历史: 2026-08-27 小欧 - 修复history-1/2/3/4/5: 清空守卫误用过滤后total、单条删除未清理选中、继续按钮loading未展示、总会话Badge误用过滤后total、刷新失败仍弹成功
+// 编辑历史: 2026-08-30 小欧 - 修复: handleDelete 单删后 setTotalSessions 加 !currentKeyword 守卫 — 过滤态下 list_sessions 返回的 total 为命中数而非真实总数，
+//           与 loadSessions 守卫对齐，防过滤态单删污染 totalSessions 致清空守卫误判"没有会话可清空"、总会话 Badge 显示错误数
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -22,7 +24,6 @@ import {
   Popconfirm,
   Empty,
   Spin,
-  Badge,
   Tooltip,
   Pagination,
   Checkbox,
@@ -184,7 +185,11 @@ const HistoryPage: React.FC = () => {
           total: response.total,
         }));
         // 编辑历史: 2026-08-28 老杨 - [27] 单删后同步更新totalSessions，与批量删/清空逻辑一致
-        setTotalSessions(response.total);
+        // 2026-08-30 小欧 修复: 过滤态下 response.total 为命中数，仅非过滤时才是真实总数(与 loadSessions L110 守卫对齐)，
+        //                     避免单删后 totalSessions 被过滤命中数污染，致清空守卫误判、总会话数显示错误
+        if (!currentKeyword) {
+          setTotalSessions(response.total);
+        }
       }
     } catch (error) {
       handleError('删除会话失败');
