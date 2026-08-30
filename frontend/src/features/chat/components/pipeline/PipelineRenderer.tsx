@@ -7,6 +7,7 @@
 // 编辑历史: 2026-08-30 小欧 - 北京老陈 标注修正(step之间8/step内部文字6/观察折叠内4): text 段同 step 后续标记 sameStep(thought的reasoning+thought), 主段 step 间距收敛 MD(8), 同 step 内文字块走 compact(6) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈新定案(step间6/内部4/折叠2=常量-2派生): stepMargin(false)=(MD-2)=6 统一 step 段距(obs 孤儿行同步), 数值不写死 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 容器 line-height=字号+Spacing.XS(4)(行间距4), step 间 SM6/step 内文字 XS4 折不折同 - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - final段修复: 流式不渲染(chunks已展示), 历史回放渲染reasoning+response两字段(此前仅response遗漏reasoning)
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -168,12 +169,30 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           );
         }
         if (seg.kind === 'final') {
+          // 小欧 2026-08-30: 流式chunks已展示thought/reasoning/response, final不重复;
+          //   历史回放无chunks, final是唯一载体, 需渲染reasoning+response两个字段
+          if (streaming) return null;
+          const reasoning = seg.step.reasoning;
           return (
-            <ResponseStream
-              key={i}
-              text={seg.step.response || seg.step.content || ''}
-              cancelled={seg.step.outcome === 'cancelled'}
-            />
+            <React.Fragment key={i}>
+              {reasoning && (
+                <div
+                  style={{
+                    color: Colors.TEXT.SECONDARY,
+                    fontStyle: 'italic',
+                    fontSize: FontSize.TERTIARY,
+                    lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
+                    margin: stepMargin(false),
+                  }}
+                >
+                  {reasoning}
+                </div>
+              )}
+              <ResponseStream
+                text={seg.step.response || seg.step.content || ''}
+                cancelled={seg.step.outcome === 'cancelled'}
+              />
+            </React.Fragment>
           );
         }
         if (seg.kind === 'tool') {

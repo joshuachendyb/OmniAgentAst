@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审P1-5/边距: 补空/错误三态(Empty暂无执行记录/Skeleton由Spin承载/Alert错误margin8px0#fff2f0隔离); 错误红字与统计块加间距防误读
 // 编辑历史: 2026-08-30 小欧 - 修复两个问题: ①auto-scroll: liveSteps变化时滚到底部(仅用户已在底部120px内触发, 防打断手动上翻); ②StaticStatsBlock仅非live时显示(消除执行中提前显示统计块的竞态)
+// 编辑历史: 2026-08-30 小欧 - 修复spinner: Spin spinning加!isCurrentLive守卫+setLoading加!isCurrentLive守卫, live模式不触发loading/spinner
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -102,7 +103,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
       return; // B4：执行中不拉 REST
     }
     let cancelled = false;
-    if (!detail) setLoading(true); // 2026-08-27 小欧 修复#47: 仅首次加载显示spinner, 已有旧detail时不遮盖(避免切换任务闪烁)
+    if (!detail && !isCurrentLive) setLoading(true); // 小欧 2026-08-30: 加!isCurrentLive守卫, live模式不触发spinner
     (async () => {
       try {
         const [d, s] = await Promise.all([
@@ -152,7 +153,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const hasSteps = displaySteps.length > 0;
 
   return (
-    <Spin spinning={loading}>
+    <Spin spinning={loading && !isCurrentLive}>
       {!loading && !hasSteps && !liveErrorText ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
