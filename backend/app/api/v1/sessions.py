@@ -10,6 +10,7 @@
 # 2026-08-26 - 小欧 - D-2(文档2 8.D): 新增 GET /sessions/{session_id} 单会话信息路由(调 session_service.get_session_info),
 #   使用场景: 设置界面读取会话级信息(title/created_at/updated_at/sessionModel) + 顶栏创建/更新时间悬浮数据源。
 #   路由置于文件末尾(防御性习惯; 本路由与 /titles/batch、/{id}/tasks 等子路径段数不同, 实际无遮蔽关系)。
+# 2026-08-30 - 小欧 - 设计文档[2]第十二章 v1.103: B1 响应新增 latest_task_id(最新任务显式锚点, 配合 storage.list_session_tasks 三元组返回解包, 排序一义后顶栏锚点不依赖 DESC 首行)。
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
 """
@@ -83,10 +84,11 @@ async def save_execution_steps_endpoint(session_id: str, update_data: ExecutionS
 
 @router.get("/sessions/{session_id}/tasks")
 def list_session_tasks_endpoint(session_id: str):
-    """B1/问题6(10.5): 会话任务列表 + 任务数（任务数=用户消息数, chat_tasks 行数新口径）— 小欧 2026-08-20"""
+    """B1/问题6(10.5): 会话任务列表 + 任务数 + 最新任务id（任务数=用户消息数, chat_tasks 行数新口径）— 小欧 2026-08-20
+    2026-08-30 小欧 设计文档[2]12.5 v1.103: 响应新增 latest_task_id(配合 storage 三元组返回, 排序一义后锚点解耦)"""
     with db.get_conn("chat") as conn:
-        tasks, total = list_session_tasks(conn, session_id)
-    return {"session_id": session_id, "total": total, "tasks": tasks}
+        tasks, total, latest_task_id = list_session_tasks(conn, session_id)
+    return {"session_id": session_id, "total": total, "tasks": tasks, "latest_task_id": latest_task_id}
 
 
 @router.get("/sessions/{session_id}/trust")

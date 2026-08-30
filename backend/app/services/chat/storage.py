@@ -11,6 +11,9 @@
 # 2026-07-18 - 小欧 - #17 fix: allocate_and_insert_message 首行补 ensure_session_exists, 消除孤儿消息风险
 # 2026-07-18 - 小欧 - #22 fix: allocator锁范围扩大覆盖SELECT+dict写入,消除竞态
 # 2026-07-21 - 小欧 - SQLite存储适配: MAX_TOOL_RESULT_STR_LEN=100(0a054a05e)→10000(4ee3ff070), _truncate_tool_result_strings方法, 写入前截断tool_result超长字符串防SQLite行溢出; _truncate_step_dict调用链; 不碰observation字段
+# 2026-07-21 - 小欧 - 修复 _truncate_step_dict 漏掉 execution_result+parallel_results 截断;
+# 2026-07-21 - 小欧 - 加 _truncate_tool_result_strings (带 tag 日志, 不碰 observation);
+# 2026-07-21 - 小欧 - 移动 MAX_TOOL_RESULT_STR_LEN 等常量;
 # 2026-07-23 - 小欧 - 北京老陈驱动: 安全兜底 MAX_TOOL_RESULT_STR_LEN
 #         10000→100000 (各tool自行截断输出后, storage仅兜底,
 #         不再做激进取舍)
@@ -48,37 +51,21 @@
 # 2026-08-22 - 小欧 - 北京老陈 2026-08-22 定: L2 会话级模型覆盖 sessionModel 结构化: ① get_session_model_override 改名 get_session_model,
 #     读 sessionModel 列(JSON)→dict(provider+model, 用 parse_json 容错); ②关联调用点 stream_orchestrator 同步改名引用
 # 2026-08-22 - 小欧 - 三堂会审复核整改(北京老陈 2026-08-22): ①新增全系统唯一 parse_session_model(消除 message_service/session_service 重复实现, DRY), 返回 SessionModelOverride; ②get_session_model 返回值由 dict 改为 SessionModelOverride(类型统一, 杜绝调用方误用 .get 致 AttributeError); 关联 stream_orchestrator 消费点改属性访问(.model/.provider)
+# 2026-08-22 - 小欧 - BUG修复(北京老陈 2026-08-22 铁律"系统代码不得退化"): 铁律后占用检查改读 chat_user_message+chat_tasks(禁读 chat_messages), 若 chat_messages 已存在该 id(如 legacy 直写助手消息未镜像至 chat_tasks)落库时 UNIQUE 撞键→500; save_execution_steps 改为撞键时退化为复用该消息(UPDATE, is_new 置 False 不重复计数), 与铁律前 chat_messages 占用检查"复用而非新建"语义一致, 不读 chat_messages、不污染 chat_tasks
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.3: 写侧三函数归一——insert_task(provider/model/display_name 三参→task_model: ModelRef 必填, 落 sessionModel JSON 单列)、token_usage_insert(model/provider→task_model: ModelRef 必填, NOT NULL)、update_user_message_final(model/provider→task_model: Optional[ModelRef], SET chat_model); 六读者派生——query_token_usage(model=→model_ref: json_extract 双键)、load_user_message_by_task/load_user_messages_by_session/fetch_session_user_message_pairs/get_task_detail/list_session_tasks (chat_model/sessionModel JSON→parse_session_model 派生 model/provider 键, 键名不变); import 补 ModelRef
+# 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): insert_task 删 `if task_model else None` 死防御——参数已必填, Pydantic 实例恒真值, else 分支永不可达(SLAP); 直取 model_dump_json()
+# 2026-08-23 - 小欧 - 锚A解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): insert_user_message id 分配锚迁移——user_message_id 显式入参退役(原=chat_messages.lastrowid 一对一贯通), 改 chat_user_message AUTOINCREMENT 原生自增并返回 lastrowid; INSERT OR REPLACE 随显式 id 退役(自增无撞键)改普通 INSERT; W2/W3/W4/W5 四个镜像写点加 TODO 删除注释(写保留, 系统零依赖 chat_messages)
+# 2026-08-23 - 小欧 - D4 截断退役(文档[1]11.8.6/11.8.11/11.9 P7, 10.6.2 定案"现役表不截断"): 删 _truncate_tool_result/_truncate_step_dict/_truncate_tool_result_strings 三函数+两 MAX_TOOL_RESULT_* 常量, 新增 _warn_oversize_step_dict 超限 error 告警扫描(安全网不砍数据); append_execution_step 改完整 step_json 落库保历史回放权威源(5.1 铁律), 签名/返回值 -> None 原样零感知; 原"实验性的功能:TODO"占位随删除块一并清理(11.7.14-1)
 # 2026-08-26 - 小欧 - D-1(文档2 8.D): list_session_tasks SELECT 补 context_link_mode 列, 前端左列"续聊/新任务"类型徽标数据源(4.8.3-B 契约已含该字段, 后端 SELECT 遗漏)
+# 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除镜像写点W2(insert_assistant_message)/W3(allocate_and_insert_message内INSERT空白行)/W4(update_message_fields)/W5(finalize_message内UPDATE)及save_execution_steps中对W2/W4的调用; 删除后终态/步骤真实存储由chat_task_steps.step_json与chat_tasks承载; 同步清理孤儿import(IntegrityError/extract_metadata_from_steps)
+# 2026-08-27 - 小欧 - B1 SELECT 补 response 列: list_session_tasks 查询增加 response 字段返回，支撑左列任务列表显示任务结果全文（设计文档4.8.2要求user_input+response双列显示）
+# 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整删finalize_message函数(原W5写chat_messages终态), 同步移除stream_orchestrator.db_ops.finalize=传参与agent_runner调用块(行446-461), 终态由append_execution_step(step_json)与_finalize_task_db(update_task+回填chat_user_message)承载
 # 2026-08-29 - 小沈 - BugFix #7: update_task 的 response 默认从 "" 改为 None; 循环内 `if _val is not None` 已存在, 故未显式传 response 时不再用空串覆盖已有列(幂等缺省不覆盖语义落地)。
+# 2026-08-30 - 小欧 - 第十二章 v1.103(设计文档[2]12.2 G1): list_session_tasks 排序 DESC→ASC(左列时间线=会话全部任务时间线清单, 新任务在底部, 4.3.2; 原 DESC 是 8.C-④ 顶栏锚点"首行=最新"的专用依赖, 一手排序喂两个反方向职责违反 SRP); 新增返回 latest_task_id(最新任务显式锚点, 顶栏/默认选中/结束沿 token 锚点统一消费, 排序一义+显式锚点解耦)。调用方 sessions.py 同步解包三元组(见 diff②)。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
 小欧 2026-07-10
-
-编辑历史: 2026-07-21 小欧
-2026-07-21 小欧: 修复 _truncate_step_dict 漏掉 execution_result+parallel_results 截断;
-2026-07-21: 小欧 加 _truncate_tool_result_strings (带 tag 日志, 不碰 observation);
-2026-07-21  小欧: 移动 MAX_TOOL_RESULT_STR_LEN 等常量; 
-2026-08-22 - 小欧 - BUG修复(北京老陈 2026-08-22 铁律"系统代码不得退化"): 铁律后占用检查改读 chat_user_message+chat_tasks(禁读 chat_messages), 若 chat_messages 已存在该 id(如 legacy 直写助手消息未镜像至 chat_tasks)落库时 UNIQUE 撞键→500; save_execution_steps 改为撞键时退化为复用该消息(UPDATE, is_new 置 False 不重复计数), 与铁律前 chat_messages 占用检查"复用而非新建"语义一致, 不读 chat_messages、不污染 chat_tasks
-2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.3: 写侧三函数归一——insert_task(provider/model/display_name
-  三参→task_model: ModelRef 必填, 落 sessionModel JSON 单列)、token_usage_insert(model/provider→task_model:
-  ModelRef 必填, NOT NULL)、update_user_message_final(model/provider→task_model: Optional[ModelRef], SET chat_model);
-  六读者派生——query_token_usage(model=→model_ref: json_extract 双键)、load_user_message_by_task/
-  load_user_messages_by_session/fetch_session_user_message_pairs/get_task_detail/list_session_tasks
-  (chat_model/sessionModel JSON→parse_session_model 派生 model/provider 键, 键名不变); import 补 ModelRef
-2026-08-23 - 小欧 - 三轮三堂会审修复(P1): insert_task 删 `if task_model else None` 死防御——参数已必填,
-  Pydantic 实例恒真值, else 分支永不可达(SLAP); 直取 model_dump_json()
-2026-08-23 - 小欧 - 锚A解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): insert_user_message
-  id 分配锚迁移——user_message_id 显式入参退役(原=chat_messages.lastrowid 一对一贯通), 改 chat_user_message
-  AUTOINCREMENT 原生自增并返回 lastrowid; INSERT OR REPLACE 随显式 id 退役(自增无撞键)改普通 INSERT;
-  W2/W3/W4/W5 四个镜像写点加 TODO 删除注释(写保留, 系统零依赖 chat_messages)
-2026-08-23 - 小欧 - D4 截断退役(文档[1]11.8.6/11.8.11/11.9 P7, 10.6.2 定案"现役表不截断"):
-  删 _truncate_tool_result/_truncate_step_dict/_truncate_tool_result_strings 三函数+两 MAX_TOOL_RESULT_* 常量,
-  新增 _warn_oversize_step_dict 超限 error 告警扫描(安全网不砍数据); append_execution_step 改完整 step_json
-  落库保历史回放权威源(5.1 铁律), 签名/返回值 -> None 原样零感知; 原"实验性的功能:TODO"占位随删除块一并清理(11.7.14-1)
-2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除镜像写点W2(insert_assistant_message)/W3(allocate_and_insert_message内INSERT空白行)/W4(update_message_fields)/W5(finalize_message内UPDATE)及save_execution_steps中对W2/W4的调用; 删除后终态/步骤真实存储由chat_task_steps.step_json与chat_tasks承载; 同步清理孤儿import(IntegrityError/extract_metadata_from_steps)
-2026-08-27 - 小欧 - B1 SELECT 补 response 列: list_session_tasks 查询增加 response 字段返回，支撑左列任务列表显示任务结果全文（设计文档4.8.2要求user_input+response双列显示）
-2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整删finalize_message函数(原W5写chat_messages终态), 同步移除stream_orchestrator.db_ops.finalize=传参与agent_runner调用块(行446-461), 终态由append_execution_step(step_json)与_finalize_task_db(update_task+回填chat_user_message)承载
 """
 
 import json
@@ -784,10 +771,12 @@ def get_task_detail(conn: Connection, task_id: str) -> Optional[dict]:
     return _r
 
 
-def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int]:
-    """B1/问题6(10.5): 会话任务列表 + 总数（任务数=用户消息数, 一条用户消息=一个任务;
+def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Optional[str]]:
+    """B1/问题6(10.5): 会话任务列表 + 总数 + 最新任务id（任务数=用户消息数, 一条用户消息=一个任务;
     失败/取消亦计入, 与文档2 3.5.3 口径一致）。chat_tasks 行数即新统计口径 — 小欧 2026-08-20
-    2026-08-22 小欧 归一报告v1.25 6.3: model/provider 两列 → sessionModel JSON 列派生(键名不变)"""
+    2026-08-22 小欧 归一报告v1.25 6.3: model/provider 两列 → sessionModel JSON 列派生(键名不变)
+    2026-08-30 小欧 设计文档[2]第十二章 v1.103: 排序 DESC→ASC(左列时间线=4.3.2, 新任务在底部) +
+    新增 latest_task_id(显式最新锚点, 顶栏/默认选中/结束沿token锚点统一消费, 解耦 8.C-④ DESC 一手双用)"""
     total = conn.execute(
         "SELECT COUNT(*) FROM chat_tasks WHERE session_id=?",
         (session_id,),
@@ -796,7 +785,7 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int]:
         """SELECT task_id, user_input, response, status, duration, sessionModel,
                   total_steps, llm_call_count, context_link_mode,
                   created_at, updated_at
-           FROM chat_tasks WHERE session_id=? ORDER BY id DESC""",
+           FROM chat_tasks WHERE session_id=? ORDER BY id ASC""",
         (session_id,),
     ).fetchall()
     out = []
@@ -806,7 +795,8 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int]:
         d["model"] = _sm.model if _sm else None       # 键名保留供消费方渐进迁移 — 小欧 2026-08-22
         d["provider"] = _sm.provider if _sm else None
         out.append(d)
-    return out, total
+    latest_task_id = out[-1]["task_id"] if out else None   # ASC 后最末行为最新任务, 显式锚点 — 小欧 2026-08-30
+    return out, total, latest_task_id
 
 
 def get_task_tool_stats(conn: Connection, task_id: str) -> list:
