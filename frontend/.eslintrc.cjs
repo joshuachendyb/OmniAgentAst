@@ -43,19 +43,26 @@ module.exports = {
     'no-restricted-syntax': [
       'error',
       {
-        selector: 'CallExpression[callee.object.name=message][callee.property.name=error]',
-        message: '禁止直接调用 message.error，请使用 errorHandler.handleError() 或 handleApiError()',
+        selector:
+          'CallExpression[callee.object.name=message][callee.property.name=error]',
+        message:
+          '禁止直接调用 message.error，请使用 errorHandler.handleError() 或 handleApiError()',
       },
       {
-        selector: 'CallExpression[callee.object.name=message][callee.property.name=warning]',
-        message: '禁止直接调用 message.warning，请使用 errorHandler.handleError() 或 handleApiError()',
+        selector:
+          'CallExpression[callee.object.name=message][callee.property.name=warning]',
+        message:
+          '禁止直接调用 message.warning，请使用 errorHandler.handleError() 或 handleApiError()',
       },
       {
-        selector: 'CallExpression[callee.object.name=message][callee.property.name=success]',
-        message: '禁止直接调用 message.success，请使用 errorHandler.showSuccess()',
+        selector:
+          'CallExpression[callee.object.name=message][callee.property.name=success]',
+        message:
+          '禁止直接调用 message.success，请使用 errorHandler.showSuccess()',
       },
       {
-        selector: 'CallExpression[callee.object.name=message][callee.property.name=info]',
+        selector:
+          'CallExpression[callee.object.name=message][callee.property.name=info]',
         message: '禁止直接调用 message.info，请使用 errorHandler.showMessage()',
       },
     ],
