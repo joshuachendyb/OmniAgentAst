@@ -3,6 +3,10 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审去框-P1-2/P1-6: 流水线容器左线化(borderLeft2px#e8e8e8+paddingLeft12+marginTop4), 靠换行+缩进+左线替代卡片; 段距已统一8px0
 // 编辑历史: 2026-08-28 小欧 - ④A/a1: 左线令牌化 Colors.BORDER.VERTICAL
+// 编辑历史: 2026-08-30 小欧 - 第十三章13.10.3.1(设计文档[2]13.12.1, 北京老陈 2026-08-30 批准): 正文 text 段接入 TextStream 打字机(预计算 lastText 作实时累积段); 容器 paddingLeft→Spacing.LG、marginTop→Spacing.XS、obs 失孤行 margin→Spacing.MD 去魔法数字 - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 北京老陈 标注修正(step之间8/step内部文字6/观察折叠内4): text 段同 step 后续标记 sameStep(thought的reasoning+thought), 主段 step 间距收敛 MD(8), 同 step 内文字块走 compact(6) - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 北京老陈新定案(step间6/内部4/折叠2=常量-2派生): stepMargin(false)=(MD-2)=6 统一 step 段距(obs 孤儿行同步), 数值不写死 - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 容器 line-height=字号+Spacing.XS(4)(行间距4), step 间 SM6/step 内文字 XS4 折不折同 - 小欧-2026-08-30
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -20,23 +24,41 @@ import { ThinkingStream } from './ThinkingStream';
 import { ResponseStream } from './ResponseStream';
 import { ToolCallLine } from './ToolCallLine';
 import { StatusLine } from './StatusLine';
-import { Colors, BorderWidth, FontSize } from '@/utils/stepStyles';
+import { TextStream } from './TextStream'; // 13.8 正文打字机 — 小欧 2026-08-30
+import {
+  Colors,
+  BorderWidth,
+  FontSize,
+  Spacing,
+  stepMargin,
+} from '@/utils/stepStyles';
 
 export type PipelineSegment =
-  | { kind: 'thinking'; text: string }
-  | { kind: 'text'; text: string }
+  | { kind: 'thinking'; text: string; sameStep?: boolean } // sameStep: 同 step 内部(13.6 reasoning+thought)→compact SM(6)
+  | { kind: 'text'; text: string; sameStep?: boolean }
   | { kind: 'final'; step: ExecutionStep }
   | { kind: 'tool'; action: ExecutionStep; observations: ExecutionStep[] }
   | { kind: 'obs'; step: ExecutionStep }
   | { kind: 'error'; step: ExecutionStep };
 
+// 可承载 sameStep 的段(thinking/text) — 2026-08-30 小欧 三堂会审: union 含 sameStep 的仅两类, 抽取避免写包任一段
+type TextishSegment = Extract<PipelineSegment, { kind: 'thinking' | 'text' }>;
+
 /** 纯函数：业务步骤 -> 顺序段（可单测） */
 export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
   const segs: PipelineSegment[] = [];
-  const appendToLast = (kind: 'thinking' | 'text', text: string) => {
+  const appendToLast = (
+    kind: 'thinking' | 'text',
+    text: string
+  ): TextishSegment => {
     const last = segs[segs.length - 1];
-    if (last && last.kind === kind) last.text += text;
-    else segs.push({ kind, text } as PipelineSegment);
+    if (last && last.kind === kind) {
+      last.text += text;
+      return last;
+    }
+    const seg = { kind, text } as TextishSegment;
+    segs.push(seg);
+    return seg;
   };
   for (const s of steps) {
     switch (s.type) {
@@ -46,10 +68,27 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
         if (s.is_reasoning) appendToLast('thinking', s.content ?? '');
         else appendToLast('text', s.content ?? '');
         break;
-      case 'thought':
-        // 回放重建思考流（stream_reader 只取 thought/reasoning）
-        appendToLast('thinking', s.thought || s.content || '');
+      case 'thought': {
+        // 13.6① 两字段契约：reasoning 在前(thinking 灰斜体)、thought 在后(text 正体)；s.content 永不下发不使用
+        // 13.6 三堂会审(2026-08-30): 同 step reasoning+thought 两段标 sameStep→compact(6); 单段只按 step 间距 MD(8)
+        const hasReasoning = !!s.reasoning && s.reasoning !== s.thought;
+        const hasBoth = hasReasoning && !!s.thought;
+        // reasoning 合并进旧段(跨 step 相邻 thinking)时非本 step 新建 → 不标 compact, 保持 step 间 MD(8)
+        const prevThinkWasLast =
+          segs.length > 0 && segs[segs.length - 1].kind === 'thinking';
+        if (hasReasoning && s.reasoning) appendToLast('thinking', s.reasoning);
+        const thoughtSeg = s.thought ? appendToLast('text', s.thought) : null;
+        if (hasBoth && thoughtSeg) {
+          thoughtSeg.sameStep = true;
+          if (!prevThinkWasLast) {
+            const thinkSeg = segs[segs.length - 2];
+            if (thinkSeg && thinkSeg.kind === 'thinking') {
+              thinkSeg.sameStep = true;
+            }
+          }
+        }
         break;
+      }
       case 'action':
         segs.push({ kind: 'tool', action: s, observations: [] });
         break;
@@ -91,30 +130,41 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
     (a, s, i) => (s.kind === 'thinking' ? i : a),
     -1
   );
+  // 13.8 打字机: 最后一个 text 段为实时累积段(打字), 前序已完成段静态呈现
+  const lastText = segs.reduce((a, s, i) => (s.kind === 'text' ? i : a), -1);
   return (
     <div
       style={{
-        fontSize: 14,
-        lineHeight: 1.8,
+        fontSize: FontSize.PRIMARY,
+        lineHeight: `${FontSize.PRIMARY + Spacing.XS}px`,
         borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
-        paddingLeft: 12,
-        marginTop: 4,
+        paddingLeft: Spacing.LG,
+        marginTop: Spacing.XS,
       }}
     >
       {headerNode}
       {segs.map((seg, i) => {
         if (seg.kind === 'thinking') {
           const cursor = streaming && i === lastThink;
-          return <ThinkingStream key={i} text={seg.text} cursor={cursor} />;
+          return (
+            <ThinkingStream
+              key={i}
+              text={seg.text}
+              cursor={cursor}
+              compact={seg.sameStep}
+            />
+          );
         }
         if (seg.kind === 'text') {
+          const isLive = streaming && i === lastText; // 实时且为累积中段 → 打字机态
           return (
-            <div
+            <TextStream
               key={i}
-              style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-            >
-              {seg.text}
-            </div>
+              text={seg.text}
+              typing={isLive}
+              cursor={isLive}
+              compact={seg.sameStep}
+            />
           );
         }
         if (seg.kind === 'final') {
@@ -147,7 +197,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               style={{
                 color: Colors.SUCCESS,
                 fontSize: FontSize.TERTIARY,
-                margin: '8px 0',
+                lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
+                margin: stepMargin(false),
               }}
             >
               📋 {seg.step.summary || seg.step.content || ''}

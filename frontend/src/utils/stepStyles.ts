@@ -81,6 +81,12 @@ export const Spacing = {
   XL: 16, // 超大间距
 } as const;
 
+// 2026-08-30 小欧 北京老陈最新定案(字体留白全0 + 行高=字号+4): 流水线段距单点——
+// 默认(独立 step)=Spacing.SM=6=step 间, compact(step 内文字 4 折不折同)=Spacing.XS=4;
+// 字体留白0 + 行高=字号+Spacing.XS(4)，数值一律 Spacing 常量 - 小欧-2026-08-30
+export const stepMargin = (compact: boolean): string =>
+  `${compact ? Spacing.XS : Spacing.SM}px 0`;
+
 // 边框宽度常量 - 小强 2026-05-22
 export const BorderWidth = {
   THIN: 1, // 细边框

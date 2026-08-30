@@ -7,6 +7,11 @@
 // 编辑历史: 2026-08-28 小强 - 修复[22]: tool_result含空数组走错分支, 改条件为数组且长度>0 - 小强-2026-08-28
 // 编辑历史: 2026-08-28 小欧 - ④A/a2: 高亮1px→2px + WARNING_BG令牌化, 左线统一2px
 // 编辑历史: 2026-08-29 小强 - 修复#22: 展开观察区支持字符串tool_result渲染(与数组/兜底content并列) - 小强-2026-08-29
+// 编辑历史: 2026-08-30 小欧 - 第十三章13.10.3.1+13.10.4(设计文档[2]13.12.6, 北京老陈 2026-08-30 批准): 全文件魔法数字收敛——margin(MD)/padding(XS·MD组合=4/8/4/10)/marginLeft(SM)/展开区 marginTop(XS)+paddingLeft(LG)+marginBottom(XS)/观察块 marginTop(XS) 全部落 Spacing; 常态去掉自带左线(borderLeft=undefined, 去双线, 流水线容器左线唯一), HITL 高亮态 THIN 黄线保留 - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 北京老陈新定案(step间6/内部4/折叠2=常量-2派生): 折叠展开内(展开区 marginTop/参数标头 marginBottom/观察块 marginTop/观察标头 marginBottom)一律 Spacing.XS-2=2, 数值不写死 - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 间距统一收口: 工具行自身 margin Spacing.MD(8)→stepMargin(false)(=MD-2=6), 与思考/正文/状态 step 段距同值, 杜绝工具行与文本行段距不一致 - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 根容器 lineHeight=字号+Spacing.XS(4) - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案: 字体留白全0 / step间6(SM) / step内文字4(XS折不折同) / obs标签4(XS) / 段内折不折2(XS-2): 观察块间4 标签4 段内2，工具行段距 SM6 - 小欧-2026-08-30
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -22,7 +27,7 @@ import React, { useState } from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
-import { Colors, BorderWidth } from '@/utils/stepStyles';
+import { Colors, BorderWidth, Spacing, stepMargin } from '@/utils/stepStyles';
 
 interface ToolCallLineProps {
   action: ExecutionStep; // type=action
@@ -53,7 +58,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
             if (typeof item === 'string') return item;
             const obj = item as Record<string, unknown>;
             const llm = (obj.llm_data || obj.llmData) as
-              Record<string, unknown> | undefined;
+              | Record<string, unknown>
+              | undefined;
             return (obj.summary as string) || (llm?.summary as string) || '';
           })
           .filter((s) => s);
@@ -76,13 +82,14 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
       style={{
         fontSize: 13,
         color: Colors.TEXT.PRIMARY,
-        margin: '8px 0',
-        padding: '4px 8px 4px 10px',
+        lineHeight: `${13 + Spacing.XS}px`,
+        margin: stepMargin(false),
+        padding: `${Spacing.XS}px ${Spacing.SM}px ${Spacing.XS}px ${Spacing.XS + Spacing.SM}px`, // 4/6/4/10
         borderRadius: highlight ? 6 : 0,
-        // 编辑历史: 2026-08-28 小欧 - 修复去框回归: 高亮态左线由THICK(2px)改THIN(1px), 契合P0-4去框轻量化意图 - 小欧-2026-08-28
+        // 13.10.4: 常态去掉自带左线(去双线, 容器总轴线唯一); HITL 高亮态 THIN 黄线保留
         borderLeft: highlight
           ? `${BorderWidth.THIN}px solid ${Colors.WARNING}`
-          : `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
+          : undefined,
         background: highlight ? Colors.WARNING_BG : 'transparent',
       }}
     >
@@ -99,19 +106,35 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
             → {obsSummary.slice(0, 40)}
           </span>
         )}
-        <span style={{ marginLeft: 6, color: Colors.PRIMARY }}>
+        <span style={{ marginLeft: Spacing.SM, color: Colors.PRIMARY }}>
           {open ? '▲' : '▼'}
         </span>
       </span>
       {open && (
-        <div style={{ marginTop: 6, paddingLeft: 12 }}>
-          <div style={{ color: Colors.TEXT.SECONDARY, marginBottom: 4 }}>
+        <div style={{ marginTop: Spacing.XS - 2, paddingLeft: Spacing.LG }}>
+          {' '}
+          {/* 展开区 2=XS-2 */}
+          <div
+            style={{
+              color: Colors.TEXT.SECONDARY,
+              lineHeight: `${13 + Spacing.XS}px`,
+              marginBottom: Spacing.XS,
+            }}
+          >
             参数：
           </div>
           <CollapsibleText text={paramText} />
           {observations.map((o, idx) => (
-            <div key={idx} style={{ marginTop: 4 }}>
-              <div style={{ color: Colors.TEXT.SECONDARY, marginBottom: 4 }}>
+            <div key={idx} style={{ marginTop: Spacing.XS }}>
+              {' '}
+              {/* 观察块间 4=XS */}
+              <div
+                style={{
+                  color: Colors.TEXT.SECONDARY,
+                  lineHeight: `${13 + Spacing.XS}px`,
+                  marginBottom: Spacing.XS,
+                }}
+              >
                 观察{observations.length > 1 ? ` ${idx + 1}` : ''}：
               </div>
               {/* 2026-08-27 小欧 三堂会审: 富渲染tool_result可达, 有tool_result走ToolResultRenderer否则纯文本 */}
