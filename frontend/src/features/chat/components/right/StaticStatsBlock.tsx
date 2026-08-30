@@ -4,6 +4,8 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审去框-P0-3/边距-P0-3: 去卡片双框留上分割线(borderTop#f0f0f0,去#fafafa+radius+padding覆盖), marginTop8→12 paddingTop8→padding12, 仅留终止语义锚点
 // 编辑历史: 2026-08-27 小欧 - 修复chat-H: accumulated_usage 空对象{}时 token 字段缺失显'-'而非 undefined
 // 编辑历史: 2026-08-28 小强 - 修复[23]: token字段缺失显undefined, 用?? '-'兜底 - 小强-2026-08-28
+// 编辑历史: 2026-08-30 小欧 - 修复工具汇总null×4: 工具汇总过滤tool_name为null的条目(根因: SQL取错key致全归null); 删除步骤/轮次行(TaskInfoBar已展示)
+// 编辑历史: 2026-08-30 小欧 - 布局调整: column 2→3, 第一行放最终状态/总耗时/token终值, 第二行工具汇总横跨3列; 删除重试行(TaskInfoBar已展示)
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -47,33 +49,14 @@ const StaticStatsBlock: React.FC<{ detail: TaskDetail | null }> = ({
       <Typography.Text strong style={{ fontSize: 13 }}>
         任务统计
       </Typography.Text>
-      <Descriptions size="small" column={2} style={{ marginTop: 4 }}>
+      <Descriptions size="small" column={3} style={{ marginTop: 4 }}>
         <Descriptions.Item label="最终状态">
           <Tag color={statusColor}>{detail.status}</Tag>
         </Descriptions.Item>
         <Descriptions.Item label="总耗时">
           {detail.duration != null ? `${Math.round(detail.duration)}s` : '-'}
         </Descriptions.Item>
-        <Descriptions.Item label="步骤/轮次">
-          {detail.total_steps} / {detail.llm_call_count}
-        </Descriptions.Item>
-        <Descriptions.Item label="重试">{detail.retry_count}</Descriptions.Item>
-        <Descriptions.Item label="工具汇总" span={2}>
-          {detail.tool_stats && Object.keys(detail.tool_stats).length > 0
-            ? Object.entries(detail.tool_stats)
-                .map(([k, v]) => `${k}×${v}`)
-                .join('、')
-            : '-'}
-        </Descriptions.Item>
-        {detail.error_message && (
-          <Descriptions.Item label="错误" span={2}>
-            <Typography.Text type="danger" style={{ fontSize: 12 }}>
-              [{detail.error_type}] {detail.error_message}
-            </Typography.Text>
-          </Descriptions.Item>
-        )}
-        <Descriptions.Item label="token 终值" span={2}>
-          {/* 2026-08-27 小欧 修复: accumulated_usage 为空对象{}时 token 字段缺失, 显'-'而非 undefined(BUG-H) */}
+        <Descriptions.Item label="token终值">
           {(() => {
             const u = detail.accumulated_usage;
             const hasTokens =
@@ -82,12 +65,27 @@ const StaticStatsBlock: React.FC<{ detail: TaskDetail | null }> = ({
                 u.completion_tokens != null ||
                 u.total_tokens != null);
             return hasTokens
-              ? `P ${u.prompt_tokens ?? '-'} / C ${u.completion_tokens ?? '-'} / T ${u.total_tokens ?? '-'}`
+              ? `P${u.prompt_tokens ?? '-'} / C${u.completion_tokens ?? '-'} / T${u.total_tokens ?? '-'}`
               : '-';
           })()}
         </Descriptions.Item>
+        <Descriptions.Item label="工具汇总" span={3}>
+          {detail.tool_stats && Object.keys(detail.tool_stats).length > 0
+            ? Object.entries(detail.tool_stats)
+                .filter(([k]) => k !== 'null')
+                .map(([k, v]) => `${k}×${v}`)
+                .join('、') || '-'
+            : '-'}
+        </Descriptions.Item>
+        {detail.error_message && (
+          <Descriptions.Item label="错误" span={3}>
+            <Typography.Text type="danger" style={{ fontSize: 12 }}>
+              [{detail.error_type}] {detail.error_message}
+            </Typography.Text>
+          </Descriptions.Item>
+        )}
         {detail.artifacts && detail.artifacts.length > 0 && (
-          <Descriptions.Item label="产出物" span={2}>
+          <Descriptions.Item label="产出物" span={3}>
             {detail.artifacts.map((a) => (
               <Tag key={a.path} color="blue" style={{ marginBottom: 2 }}>
                 {a.name}({a.type})

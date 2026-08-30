@@ -1,3 +1,4 @@
+// 编辑历史: 2026-08-30 小欧 - adaptTaskDetail修复: ①accumulated_usage为null时回退读task_accumulated_tokens(每轮即时落库更可靠); ②tool_stats过滤tool_name为null的条目; TaskDetail新增task_accumulated_tokens字段
 import api from './client';
 
 // ============================================================
@@ -116,6 +117,11 @@ export interface TaskDetail {
     completion_tokens?: number;
     total_tokens?: number;
   } | null;
+  task_accumulated_tokens: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
   artifacts: TaskArtifact[] | null;
   tool_stats: Record<string, number>;
 }
@@ -135,9 +141,29 @@ export function adaptTaskDetail(raw: {
   } else if (t.accumulated_usage && typeof t.accumulated_usage === 'object') {
     usage = t.accumulated_usage as TaskDetail['accumulated_usage'];
   }
+  // 小欧 2026-08-30: accumulated_usage为null时回退读task_accumulated_tokens(每轮即时落库,更可靠)
+  let taskAcc: TaskDetail['task_accumulated_tokens'] = null;
+  if (
+    typeof t.task_accumulated_tokens === 'string' &&
+    t.task_accumulated_tokens
+  ) {
+    try {
+      taskAcc = JSON.parse(t.task_accumulated_tokens);
+    } catch {
+      taskAcc = null;
+    }
+  } else if (
+    t.task_accumulated_tokens &&
+    typeof t.task_accumulated_tokens === 'object'
+  ) {
+    taskAcc =
+      t.task_accumulated_tokens as TaskDetail['task_accumulated_tokens'];
+  }
+  if (!usage && taskAcc) usage = taskAcc;
   const toolStats: Record<string, number> = {};
   for (const it of raw.tool_stats ?? []) {
-    toolStats[it.tool_name] = it.call_count;
+    if (it.tool_name && it.tool_name !== 'null')
+      toolStats[it.tool_name] = it.call_count;
   }
   return {
     task_id: String(t.task_id ?? ''),
@@ -150,6 +176,7 @@ export function adaptTaskDetail(raw: {
     error_type: (t.error_type as string | null) ?? null,
     error_message: (t.error_message as string | null) ?? null,
     accumulated_usage: usage,
+    task_accumulated_tokens: taskAcc,
     artifacts: (t.artifacts as TaskArtifact[] | null) ?? null,
     tool_stats: toolStats,
   };
