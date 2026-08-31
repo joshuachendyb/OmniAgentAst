@@ -1,3 +1,4 @@
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复三元运算符缩进层级(2空格→统一), 防止格式再次出错
 /**
  * useInitializationProgress Hook - 协调初始化时序
  *

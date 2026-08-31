@@ -5,6 +5,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 新增ModelListItem接口(模型列表项结构)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从./execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 修复base-4: 补isStartInfoMessage守卫并将StartInfoMessage纳入StreamMessage联合
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复函数签名多行→单行(行长度超80字符), 防止格式再次出错
 /**
  * 流式API响应类型定义
  *

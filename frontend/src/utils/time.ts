@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-28 小欧 - 合并 timestamp/timeFormatters/formatSafeTimestamp+组件内formatTime为单一源
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复toLocaleTimeString对象字面量多行→单行(行长度超80字符), 防止格式再次出错
 // 合并来源: timestamp.ts(80行) + timeFormatters.ts(43行) + formatSafeTimestamp.ts(10行) + TaskListPanel.tsx:30 + History/index.tsx:285
 
 export const parseTimeSafe = (input: Date | string | number): Date | null => {

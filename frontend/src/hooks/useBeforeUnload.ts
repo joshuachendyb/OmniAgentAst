@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-27 小欧 - 修复ctx-3: 保存失败/异步进行中必须preventDefault阻止卸载, 杜绝静默丢失
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复函数参数多余尾逗号(es5规则禁止函数参数尾逗号), 防止格式再次出错
 import { useEffect, useRef } from 'react';
 
 export interface BeforeUnloadOptions {

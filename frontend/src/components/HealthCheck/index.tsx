@@ -1,3 +1,4 @@
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复引号风格(双→单)、字符串字面量统一单引号, 防止格式再次出错
 import React, { useState, useEffect } from 'react';
 import { Card, Tag, Button, Input } from 'antd';
 import { healthApi, type EchoResponse } from '../../services/api/health.api';

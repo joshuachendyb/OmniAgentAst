@@ -1,3 +1,4 @@
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复对象属性/JSX属性行超80字符换行、import重排, 防止格式再次出错
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *

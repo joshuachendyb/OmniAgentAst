@@ -4,6 +4,7 @@
 // 编辑历史: 2026-08-27 小欧 - 修复#31: serviceStatus.success→valid字段名对齐后端返回
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 删_sessionCount死状态/refreshModelList透传/unreadCount死值; 精简console.log; Option上移; 更正Header高度注释
 // 2026-08-27 小欧 - 三堂会审: #1890ff→#1677ff(头像背景/标题); 删5处console.log调试语句
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复注释行尾多余空白, 防止格式再次出错
 /**
  * Layout组件 - 应用主布局（响应式版）
  *

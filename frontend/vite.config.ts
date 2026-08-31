@@ -1,3 +1,4 @@
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复配置对象属性换行/缩进统一, 防止格式再次出错
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import eslint from 'vite-plugin-eslint';
