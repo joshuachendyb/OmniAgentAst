@@ -122,8 +122,12 @@
 }
 
 @keyframes skeletonLoading {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* 响应式：移动端隐藏Sider骨架屏 */

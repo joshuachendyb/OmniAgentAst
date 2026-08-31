@@ -24,7 +24,10 @@ export const formatTime = (date: Date | string | number): string => {
   const d = parseTimeSafe(date);
   if (!d) return String(date);
   const md = `${d.getMonth() + 1}/${d.getDate()}`;
-  const hm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const hm = d.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
   return `${md} ${hm}`;
 };
 

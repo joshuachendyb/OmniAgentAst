@@ -13,7 +13,7 @@ export const useBeforeUnload = (options: BeforeUnloadOptions) => {
     shouldSave,
     saveData,
     showDialog = false,
-    dialogMessage = '您有未保存的更改，确定要离开吗？'
+    dialogMessage = '您有未保存的更改，确定要离开吗？',
   } = options;
 
   const saveDataRef = useRef(saveData);

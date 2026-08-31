@@ -16,10 +16,10 @@ import React, {
   useCallback,
   useRef,
   ReactNode,
-} from "react";
-import { configApi } from "../services/api/config.api";
-import { chatApi, type ValidateResponse } from "../services/api/chat.api";
-import { sessionApi } from "../services/api/session.api";
+} from 'react';
+import { configApi } from '../services/api/config.api';
+import { chatApi, type ValidateResponse } from '../services/api/chat.api';
+import { sessionApi } from '../services/api/session.api';
 /**
  * 模型数据类型
  */
@@ -65,7 +65,7 @@ interface AppState {
 
   // 标记是否已初始化（防止重复加载）
   isInitialized: boolean;
-  
+
   // 标记初始化错误
   initError: string | null;
 }
@@ -114,14 +114,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   const [serviceStatusLoading, setServiceStatusLoading] = useState(false);
 
   // 验证结果
-  const [validationResult, setValidationResult] = useState<ValidationResult | null>(
-    null
-  );
+  const [validationResult, setValidationResult] =
+    useState<ValidationResult | null>(null);
   const [validationLoading, setValidationLoading] = useState(false);
 
   // 标记是否已初始化
   const [isInitialized, setIsInitialized] = useState(false);
-  
+
   // 标记初始化错误
   const [initError, setInitError] = useState<string | null>(null);
 
@@ -140,7 +139,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       const response = await sessionApi.listSessions(1, 1, undefined, true);
       setSessionCount(response.total);
     } catch (error) {
-      console.warn("刷新会话数量失败:", error);
+      console.warn('刷新会话数量失败:', error);
       setSessionCount(0);
     } finally {
       setSessionCountLoading(false);
@@ -159,11 +158,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       if (modelData?.models && Array.isArray(modelData.models)) {
         setModelList(modelData.models);
       } else {
-        console.warn("getModelList 返回数据格式异常:", modelData);
+        console.warn('getModelList 返回数据格式异常:', modelData);
         setModelList([]);
       }
     } catch (error) {
-      console.warn("刷新模型列表失败:", error);
+      console.warn('刷新模型列表失败:', error);
       setModelList([]);
     } finally {
       setModelListLoading(false);
@@ -174,21 +173,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
    * 刷新服务状态
    * @author 小新
    */
-  const refreshServiceStatus = useCallback(async (): Promise<ValidateResponse | null> => {
-    setServiceStatusLoading(true);
-    try {
-      const status = await chatApi.validateService();
-      console.log("[refreshServiceStatus] validateService 返回:", status);
-      setServiceStatus(status);
-      return status;
-    } catch (error) {
-      console.warn("刷新服务状态失败:", error);
-      setServiceStatus(null);
-      return null;
-    } finally {
-      setServiceStatusLoading(false);
-    }
-  }, []);
+  const refreshServiceStatus =
+    useCallback(async (): Promise<ValidateResponse | null> => {
+      setServiceStatusLoading(true);
+      try {
+        const status = await chatApi.validateService();
+        console.log('[refreshServiceStatus] validateService 返回:', status);
+        setServiceStatus(status);
+        return status;
+      } catch (error) {
+        console.warn('刷新服务状态失败:', error);
+        setServiceStatus(null);
+        return null;
+      } finally {
+        setServiceStatusLoading(false);
+      }
+    }, []);
 
   /**
    * 刷新验证结果
@@ -201,7 +201,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       // 验证功能在 Settings 页面使用单独的 validateConfig 调用
       setValidationResult(null);
     } catch (error) {
-      console.warn("刷新验证结果失败:", error);
+      console.warn('刷新验证结果失败:', error);
       setValidationResult(null);
     } finally {
       setValidationLoading(false);
@@ -240,7 +240,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     //       后端 update_config 已使用 _validate_config_integrity 结果
     //       决定是否删除备份，前端只需刷新模型列表获取打*信息
     // ============================================================
-    
+
     // 1. 直接刷新模型列表（后端已验证配置文件完整性）
     await refreshModelList();
     // 【小强修复 2026-04-07】删除 refreshSessionCount()，因为切换模型不会改变会话数量
@@ -267,7 +267,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       setIsInitialized(false);
       setInitError(null);
     }
-    
+
     initInProgressRef.current = true;
     setInitError(null); // 重置错误状态
     setValidationLoading(true);
@@ -281,16 +281,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       setValidationResult(null);
 
       // 2. 只获取模型列表和会话数，不调用验证服务（由用户手动点击"检查服务"按钮）
-      await Promise.all([
-        refreshModelList(),
-        refreshSessionCount(),
-      ]);
-      
+      await Promise.all([refreshModelList(), refreshSessionCount()]);
+
       setIsInitialized(true);
-      console.log("[AppContext] 初始化完成");
+      console.log('[AppContext] 初始化完成');
     } catch (error) {
-      console.error("[AppContext] 初始化失败:", error);
-      const errorMsg = error instanceof Error ? error.message : "初始化失败，请检查网络连接";
+      console.error('[AppContext] 初始化失败:', error);
+      const errorMsg =
+        error instanceof Error ? error.message : '初始化失败，请检查网络连接';
       setInitError(errorMsg);
     } finally {
       initInProgressRef.current = false;
@@ -337,7 +335,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
 export const useApp = (): AppContextType => {
   const context = useContext(AppContext);
   if (!context) {
-    throw new Error("useApp must be used within an AppProvider");
+    throw new Error('useApp must be used within an AppProvider');
   }
   return context;
 };

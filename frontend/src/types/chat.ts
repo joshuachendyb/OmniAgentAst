@@ -232,7 +232,9 @@ export function isStartMessage(
   return msg.type === 'start' || msg.type === 'startinfo';
 }
 
-export function isStartInfoMessage(msg: StreamMessage): msg is StartInfoMessage {
+export function isStartInfoMessage(
+  msg: StreamMessage
+): msg is StartInfoMessage {
   // 2026-08-27 小欧 修复base-4: 新增 startinfo 专用类型守卫
   return msg.type === 'startinfo';
 }

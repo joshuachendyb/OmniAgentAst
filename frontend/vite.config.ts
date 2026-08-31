@@ -1,9 +1,9 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import eslint from "vite-plugin-eslint";
-import prettier from "vite-plugin-prettier";
-import { visualizer } from "rollup-plugin-visualizer";
-import path from "path";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import eslint from 'vite-plugin-eslint';
+import prettier from 'vite-plugin-prettier';
+import { visualizer } from 'rollup-plugin-visualizer';
+import path from 'path';
 
 // https://vitejs.dev/config/
 // 【小强 2026-04-21】性能优化：
@@ -12,22 +12,24 @@ import path from "path";
 //   3. 添加 optimizeDeps 加速冷启动预构建
 //   4. 注：antd v5 已原生支持 Tree-shaking，无需 vite-plugin-style-import
 export default defineConfig(({ command }) => {
-  const isBuild = command === "build";
+  const isBuild = command === 'build';
   const shouldCheck = isBuild;
-  
+
   return {
     plugins: [
       react(),
       shouldCheck && eslint(),
-      shouldCheck && prettier({
-        parser: "typescript",
-      }),
-      isBuild && visualizer({
-        filename: "dist/stats.html",
-        open: false,
-        gzipSize: true,
-        brotliSize: true,
-      }),
+      shouldCheck &&
+        prettier({
+          parser: 'typescript',
+        }),
+      isBuild &&
+        visualizer({
+          filename: 'dist/stats.html',
+          open: false,
+          gzipSize: true,
+          brotliSize: true,
+        }),
     ].filter(Boolean),
     // ⚠️ 警告：禁止删除 resolve.alias！@/ 别名被所有 renderers 使用，删除会导致全前端 500 错误（历史教训 2026-05-23）
     resolve: {
@@ -38,8 +40,8 @@ export default defineConfig(({ command }) => {
     server: {
       port: 5173,
       proxy: {
-        "/api": {
-          target: "http://localhost:8000",
+        '/api': {
+          target: 'http://localhost:8000',
           changeOrigin: true,
         },
       },
@@ -71,7 +73,14 @@ export default defineConfig(({ command }) => {
     },
     // 【小强 2026-04-21】预构建优化：开发模式冷启动加速
     optimizeDeps: {
-      include: ['react', 'react-dom', 'react-router-dom', 'antd', 'axios', 'dayjs'],
+      include: [
+        'react',
+        'react-dom',
+        'react-router-dom',
+        'antd',
+        'axios',
+        'dayjs',
+      ],
     },
   };
 });

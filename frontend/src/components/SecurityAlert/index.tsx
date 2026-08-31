@@ -12,7 +12,11 @@
 
 import React from 'react';
 import { Alert, Space, Typography, Tag, Button } from 'antd';
-import { StopOutlined, WarningOutlined, CheckOutlined } from '@ant-design/icons';
+import {
+  StopOutlined,
+  WarningOutlined,
+  CheckOutlined,
+} from '@ant-design/icons';
 
 const { Text, Title } = Typography;
 

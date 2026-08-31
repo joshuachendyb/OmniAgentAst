@@ -477,7 +477,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         navigate('/settings');
         break;
       default:
-        // 执行快捷指令
+      // 执行快捷指令
     }
   };
 

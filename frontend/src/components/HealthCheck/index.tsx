@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from "react";
-import { Card, Tag, Button, Input } from "antd";
-import { healthApi, type EchoResponse } from "../../services/api/health.api";
-import { handleError, showSuccess, ErrorType } from "@/services/error/handler";
+import React, { useState, useEffect } from 'react';
+import { Card, Tag, Button, Input } from 'antd';
+import { healthApi, type EchoResponse } from '../../services/api/health.api';
+import { handleError, showSuccess, ErrorType } from '@/services/error/handler';
 
 const HealthCheck: React.FC = () => {
-  const [status, setStatus] = useState<string>("checking");
-  const [version, setVersion] = useState<string>("");
-  const [testMessage, setTestMessage] = useState<string>("");
+  const [status, setStatus] = useState<string>('checking');
+  const [version, setVersion] = useState<string>('');
+  const [testMessage, setTestMessage] = useState<string>('');
   const [echoResponse, setEchoResponse] = useState<EchoResponse | null>(null);
 
   useEffect(() => {
@@ -19,27 +19,27 @@ const HealthCheck: React.FC = () => {
       setStatus(data.status);
       setVersion(data.version);
     } catch (error) {
-      setStatus("error");
+      setStatus('error');
       // 2026-08-27 小欧 修复review-bugs#4: 健康检查失败不再静默吞掉, 统一进入错误处理中心通知用户
       handleError(error, {
-        message: "系统健康检查失败，请确认后端服务已启动",
+        message: '系统健康检查失败，请确认后端服务已启动',
       });
     }
   };
 
   const handleEchoTest = async () => {
     if (!testMessage.trim()) {
-      handleError({ message: "请输入测试消息", error_type: ErrorType.WARNING });
+      handleError({ message: '请输入测试消息', error_type: ErrorType.WARNING });
       return;
     }
 
     try {
       const response = await healthApi.echo(testMessage);
       setEchoResponse(response);
-      showSuccess("通信测试成功");
+      showSuccess('通信测试成功');
     } catch (error) {
-      handleError(error, { message: "通信测试失败" });
-      console.error("Echo test failed:", error);
+      handleError(error, { message: '通信测试失败' });
+      console.error('Echo test failed:', error);
     }
   };
 
@@ -47,9 +47,9 @@ const HealthCheck: React.FC = () => {
     <Card title="系统状态" style={{ marginBottom: 16 }}>
       <div style={{ marginBottom: 16 }}>
         <span style={{ marginRight: 8 }}>后端状态:</span>
-        {status === "ok" || status === "healthy" ? (
+        {status === 'ok' || status === 'healthy' ? (
           <Tag color="success">正常</Tag>
-        ) : status === "checking" ? (
+        ) : status === 'checking' ? (
           <Tag color="processing">检查中...</Tag>
         ) : (
           <Tag color="error">异常</Tag>
@@ -72,11 +72,11 @@ const HealthCheck: React.FC = () => {
       </div>
 
       {echoResponse && (
-        <div style={{ background: "#f6ffed", padding: 12, borderRadius: 4 }}>
+        <div style={{ background: '#f6ffed', padding: 12, borderRadius: 4 }}>
           <div>
             <strong>后端回复:</strong> {echoResponse.received}
           </div>
-          <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
             时间戳: {new Date(echoResponse.timestamp).toLocaleString()}
           </div>
         </div>

@@ -49,13 +49,13 @@ export const useInitializationProgress = ({
   }, [sessionLoaded, chatDataReady]);
 
   const isReady = layoutReady && chatDataReady;
-  
-  const phase = !appInitialized 
-    ? 'initializing' 
-    : !layoutReady 
-      ? 'loading-layout' 
-      : !chatDataReady 
-        ? 'loading-chat' 
+
+  const phase = !appInitialized
+    ? 'initializing'
+    : !layoutReady
+      ? 'loading-layout'
+      : !chatDataReady
+        ? 'loading-chat'
         : 'ready';
 
   return { layoutReady, chatDataReady, isReady, phase };

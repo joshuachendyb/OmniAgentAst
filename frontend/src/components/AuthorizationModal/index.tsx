@@ -18,7 +18,11 @@
 
 import React from 'react';
 import { Modal, Button, Space, Typography, Tag, Checkbox } from 'antd';
-import { WarningOutlined, ExclamationCircleOutlined, StopOutlined } from '@ant-design/icons';
+import {
+  WarningOutlined,
+  ExclamationCircleOutlined,
+  StopOutlined,
+} from '@ant-design/icons';
 
 const { Text, Title } = Typography;
 
@@ -35,11 +39,18 @@ interface AuthorizationModalProps {
   onConfirm: (confirmed: boolean, trustSession: boolean) => void;
 }
 
-const SAFETY_LEVEL_CONFIG: Record<string, { color: string; label: string; icon: React.ReactNode }> = {
+const SAFETY_LEVEL_CONFIG: Record<
+  string,
+  { color: string; label: string; icon: React.ReactNode }
+> = {
   read_only: { color: 'green', label: '只读', icon: null },
   safe: { color: 'blue', label: '安全', icon: null },
   destructive: { color: 'orange', label: '破坏性', icon: <WarningOutlined /> },
-  dangerous_sandbox: { color: 'volcano', label: '沙箱危险', icon: <ExclamationCircleOutlined /> },
+  dangerous_sandbox: {
+    color: 'volcano',
+    label: '沙箱危险',
+    icon: <ExclamationCircleOutlined />,
+  },
   dangerous: { color: 'red', label: '系统危险', icon: <StopOutlined /> },
 };
 
@@ -96,7 +107,10 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           安全确认请求
         </Title>
 
-        <Tag color={safetyConfig.color} style={{ marginBottom: 16, fontSize: 14 }}>
+        <Tag
+          color={safetyConfig.color}
+          style={{ marginBottom: 16, fontSize: 14 }}
+        >
           {safetyConfig.label}
         </Tag>
 
@@ -158,10 +172,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         </div>
 
         <Space size="middle">
-          <Button
-            onClick={() => handleConfirm(false)}
-            size="large"
-          >
+          <Button onClick={() => handleConfirm(false)} size="large">
             拒绝执行
           </Button>
           <Button

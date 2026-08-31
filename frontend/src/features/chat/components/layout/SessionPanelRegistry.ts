@@ -12,7 +12,12 @@
 import type { ReactNode } from 'react';
 
 export type SlotName =
-  'topbar' | 'left' | 'right' | 'taskinfo' | 'config' | 'input';
+  | 'topbar'
+  | 'left'
+  | 'right'
+  | 'taskinfo'
+  | 'config'
+  | 'input';
 
 export interface SessionPanel {
   slot: SlotName;
