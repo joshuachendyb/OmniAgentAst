@@ -12,6 +12,7 @@
 // 编辑历史: 2026-08-30 小欧 - 间距统一收口: 工具行自身 margin Spacing.MD(8)→stepMargin(false)(=MD-2=6), 与思考/正文/状态 step 段距同值, 杜绝工具行与文本行段距不一致 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 根容器 lineHeight=字号+Spacing.XS(4) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案: 字体留白全0 / step间6(SM) / step内文字4(XS折不折同) / obs标签4(XS) / 段内折不折2(XS-2): 观察块间4 标签4 段内2，工具行段距 SM6 - 小欧-2026-08-30
+// 编辑历史: 2026-09-01 小欧 - 工具观察按工具维度组织: 单/多统一结构, 第一行集合名+同行工具名列表, 内层每工具子行(独立参数+状态+摘要, 按索引与tool_result配对); 修多工具只显首项结果; 修参数结果挤一行 - 小欧-2026-09-01
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -42,39 +43,60 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const tools = action.tools || [];
-  // 2026-08-27 小欧 三堂会审: action步骤无tool_params, 参数正确来源为tools[0].params
-  const params = action.tools?.[0]?.params ?? {};
-  const paramText = JSON.stringify(params);
-  const toolName = tools.map((t) => t.tool).join(', ');
-  const obs0 = observations[0];
-  // 编辑历史: 2026-08-27 小欧 修复: 新契约 tool_result 为数组时取首项真实摘要, 不再回落字面量'[工具结果]'(BUG-C)
-  const getObsSummary = (o?: ExecutionStep): string => {
-    const tr = o?.tool_result;
-    if (tr != null) {
-      if (typeof tr === 'string') return tr;
-      if (Array.isArray(tr)) {
-        const parts = tr
-          .map((item) => {
-            if (typeof item === 'string') return item;
-            const obj = item as Record<string, unknown>;
-            const llm = (obj.llm_data || obj.llmData) as
-              | Record<string, unknown>
-              | undefined;
-            return (obj.summary as string) || (llm?.summary as string) || '';
-          })
-          .filter((s) => s);
-        if (!parts.length)
-          return (o?.summary as string) || (o?.content as string) || '';
-        if (parts.length) return parts.join('; ');
-      }
-      return (o?.summary as string) || (o?.content as string) || '';
-    }
-    return (o?.summary as string) || (o?.content as string) || '';
+  // 单 observation step 的 tool_result 数组，与 tools[] 按索引 1:1 配对（2026-09-01 小欧）
+  const obsStep = observations[0];
+  const results = (
+    Array.isArray((obsStep as ExecutionStep | undefined)?.tool_result)
+      ? ((obsStep as ExecutionStep).tool_result as unknown)
+      : []
+  ) as Array<Record<string, unknown>>;
+  const isMulti = action.exec_type === 'multi';
+  const toolCount = tools.length;
+  const collectionLabel = isMulti
+    ? `并行 ${toolCount} 个工具`
+    : `调用 1 个工具`;
+  const toolNameList = tools.map((t) => t.tool).join(', ');
+  const firstLine = `${collectionLabel}  [${toolNameList}]`;
+  // 展开区完整参数：全部工具的 params 汇总（2026-09-01 小欧）
+  const paramText = JSON.stringify(tools.map((t) => t.params ?? {}));
+  // 每工具结果摘要 + 状态（按索引 i 取，杜绝只取首项）（2026-09-01 小欧）
+  // 三堂会审(2026-09-01): 保留旧 getObsSummary 摘要容错(llm_data.summary→data_text→summary→兜底'-'), 防关联退化
+  const getResultSummary = (i: number): string => {
+    const r = results[i];
+    if (!r) return '';
+    const llm = (r.llm_data || r.llmData) as
+      | Record<string, unknown>
+      | undefined;
+    return (
+      (llm?.summary as string) ||
+      (r.data_text as string) ||
+      (r.summary as string) ||
+      ''
+    );
   };
-  const obsSummary = getObsSummary(obs0);
+  const getResultStatus = (
+    i: number
+  ): 'success' | 'error' | 'warning' | undefined => {
+    const r = results[i];
+    if (!r) return undefined;
+    const llm = (r.llm_data || r.llmData) as
+      | Record<string, unknown>
+      | undefined;
+    const status = (llm?.status || {}) as Record<string, unknown>;
+    const code = status.exec_code as string;
+    return ['success', 'error', 'warning'].includes(code)
+      ? (code as 'success' | 'error' | 'warning')
+      : undefined;
+  };
   const retryCount = action.action_retry_count;
   const attemptLabel =
     retryCount != null && retryCount > 0 ? `(重试${retryCount})` : '';
+  const statusColorMap = {
+    success: Colors.SUCCESS,
+    error: Colors.ERROR,
+    warning: Colors.WARNING,
+  } as const;
+  const statusIconMap = { success: '✔', error: '✖', warning: '⚠' } as const;
 
   return (
     <div
@@ -94,22 +116,60 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
       }}
     >
       <span style={{ cursor: 'pointer' }} onClick={() => setOpen((v) => !v)}>
-        🔧 {toolName} {attemptLabel}
-        <span style={{ color: Colors.TEXT.SECONDARY }}>
-          {' '}
-          参数：{paramText.slice(0, 60)}
-          {paramText.length > 60 ? '…' : ''}
-        </span>
-        {obsSummary && (
-          <span style={{ color: Colors.SUCCESS }}>
-            {' '}
-            → {obsSummary.slice(0, 40)}
-          </span>
-        )}
+        🔧 {firstLine} {attemptLabel}
         <span style={{ marginLeft: Spacing.SM, color: Colors.PRIMARY }}>
           {open ? '▲' : '▼'}
         </span>
       </span>
+      {/* 每工具子行：工具名+参数一行，→结果独立一行缩进（2026-09-01 小欧） */}
+      {/* 间距遵循 stepStyles 既有 observation 风格(2026-08-30 定案): 字号 13(与展开区统一, 非12), 行高=字号13+Spacing.XS, 段内折不折=Spacing.XS-2, 间距一律 Spacing 常量派生 */}
+      <div style={{ marginTop: Spacing.XS }}>
+        {tools.map((t, i) => {
+          const tParamText = JSON.stringify(t.params ?? {});
+          const sum = getResultSummary(i);
+          const st = getResultStatus(i);
+          // 三堂会审(2026-09-01): 状态缺失时用中性文字色、不显图标, 防误报成功
+          const color = st ? statusColorMap[st] : Colors.TEXT.PRIMARY;
+          const icon = st ? `${statusIconMap[st]} ` : '';
+          const isLast = i === tools.length - 1;
+          const branch = isLast ? '└─' : '├─';
+          const sub = isLast ? '   ' : '│  ';
+          return (
+            <div
+              key={i}
+              style={{ marginTop: Spacing.XS, paddingLeft: Spacing.SM }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  lineHeight: `${13 + Spacing.XS}px`,
+                  color: Colors.TEXT.PRIMARY,
+                }}
+              >
+                {branch} {t.tool}{' '}
+                <span style={{ color: Colors.TEXT.SECONDARY }}>
+                  参数：{tParamText.slice(0, 60)}
+                  {tParamText.length > 60 ? '…' : ''}
+                </span>
+              </div>
+              {sum && (
+                <div
+                  style={{
+                    marginTop: Spacing.XS - 2 /* 段内折不折 2=XS-2 */,
+                    paddingLeft: Spacing.SM,
+                    lineHeight: `${13 + Spacing.XS}px`,
+                    color,
+                    fontSize: 13,
+                  }}
+                >
+                  {sub} {icon}
+                  {sum.slice(0, 60)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
       {open && (
         <div style={{ marginTop: Spacing.XS - 2, paddingLeft: Spacing.LG }}>
           {' '}
@@ -124,29 +184,32 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
             参数：
           </div>
           <CollapsibleText text={paramText} />
-          {observations.map((o, idx) => (
-            <div key={idx} style={{ marginTop: Spacing.XS }}>
-              {' '}
-              {/* 观察块间 4=XS */}
-              <div
-                style={{
-                  color: Colors.TEXT.SECONDARY,
-                  lineHeight: `${13 + Spacing.XS}px`,
-                  marginBottom: Spacing.XS,
-                }}
-              >
-                观察{observations.length > 1 ? ` ${idx + 1}` : ''}：
+          {tools.map((t, i) => {
+            // 单工具完整结果：构造仅含该工具 tool_result 的临时 step 交给 ToolResultRenderer
+            const singleResult = results[i] ? [results[i]] : [];
+            const singleStep = {
+              ...(obsStep as ExecutionStep),
+              tool_result: singleResult,
+            };
+            return (
+              <div key={i} style={{ marginTop: Spacing.XS }}>
+                <div
+                  style={{
+                    color: Colors.TEXT.SECONDARY,
+                    lineHeight: `${13 + Spacing.XS}px`,
+                    marginBottom: Spacing.XS,
+                  }}
+                >
+                  {t.tool} 结果：
+                </div>
+                {singleResult.length > 0 ? (
+                  <ToolResultRenderer step={singleStep} />
+                ) : (
+                  <CollapsibleText text={obsStep?.content ?? ''} />
+                )}
               </div>
-              {/* 2026-08-27 小欧 三堂会审: 富渲染tool_result可达, 有tool_result走ToolResultRenderer否则纯文本 */}
-              {Array.isArray(o.tool_result) && o.tool_result.length > 0 ? (
-                <ToolResultRenderer step={o} />
-              ) : typeof o.tool_result === 'string' ? (
-                <CollapsibleText text={o.tool_result} />
-              ) : (
-                <CollapsibleText text={o.content ?? ''} />
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
