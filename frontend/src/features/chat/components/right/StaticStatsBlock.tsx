@@ -6,6 +6,7 @@
 // 编辑历史: 2026-08-28 小强 - 修复[23]: token字段缺失显undefined, 用?? '-'兜底 - 小强-2026-08-28
 // 编辑历史: 2026-08-30 小欧 - 修复工具汇总null×4: 工具汇总过滤tool_name为null的条目(根因: SQL取错key致全归null); 删除步骤/轮次行(TaskInfoBar已展示)
 // 编辑历史: 2026-08-30 小欧 - 布局调整: column 2→3, 第一行放最终状态/总耗时/token终值, 第二行工具汇总横跨3列; 删除重试行(TaskInfoBar已展示)
+// 编辑历史: 2026-09-01 小欧 - 修复token终值行折行: 加contentStyle whiteSpace:nowrap强制单行 + 格式紧凑化P/C/T去/两侧空格省宽度; 不折行不剪切(北京老陈要求) - 小欧-2026-09-01
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -56,7 +57,10 @@ const StaticStatsBlock: React.FC<{ detail: TaskDetail | null }> = ({
         <Descriptions.Item label="总耗时">
           {detail.duration != null ? `${Math.round(detail.duration)}s` : '-'}
         </Descriptions.Item>
-        <Descriptions.Item label="token终值">
+        <Descriptions.Item
+          label="token终值"
+          contentStyle={{ whiteSpace: 'nowrap' }} // 2026-09-01 小欧: 强制单行不折行
+        >
           {(() => {
             const u = detail.accumulated_usage;
             const hasTokens =
@@ -64,8 +68,9 @@ const StaticStatsBlock: React.FC<{ detail: TaskDetail | null }> = ({
               (u.prompt_tokens != null ||
                 u.completion_tokens != null ||
                 u.total_tokens != null);
+            // 2026-09-01 小欧: 紧凑格式(去/两侧空格)省宽度, 配合nowrap单行显示, 不折行不剪切
             return hasTokens
-              ? `P${u.prompt_tokens ?? '-'} / C${u.completion_tokens ?? '-'} / T${u.total_tokens ?? '-'}`
+              ? `P${u.prompt_tokens ?? '-'}/C${u.completion_tokens ?? '-'}/T${u.total_tokens ?? '-'}`
               : '-';
           })()}
         </Descriptions.Item>
