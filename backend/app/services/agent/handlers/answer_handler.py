@@ -24,6 +24,7 @@
 # 2026-08-18 - 小欧 - §10.4.4 P4(severity): retrying MetaStep 加 severity="info"
 # 2026-08-28 小欧 - yield日志审计: 3处 print()→logger(error/error/info, DRY违规修复); 三堂会审无逻辑修正
 # 2026-08-30 小欧 - 恢复[Final]终态全文打印(65f4de7f7"print→logger"把response=全文误改response_len, 终态正文不再上控制台; log_and_print复用07-23收口+08-30离线化双写)
+# 2026-09-01 - 小欧 - 方案A实施: 删除正常answer终态的污染版ThoughtStep(thought=parsed.get("thought", content)恒退化为完整答案, 致历史回放reasoning/response双渲); 终态正文/推理由FinalStep单一承载; 保留ThoughtStartStep(实时光标)与reasoning-only分支/工具轮ThoughtStep(正当); 方案详见 doc-9月优化/final步骤历史回放重复显示-问题分析与修复方案-小欧-2026-09-01.md
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -195,14 +196,9 @@ async def handle_answer(agent, parsed: Dict):
         return
 
     agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 正常final answer, 归零空转计数(防御残留)
-    thought = parsed.get("thought", content)
-
+    # 2026-09-01 小欧 方案A: 删除污染版 ThoughtStep(thought恒退化=content, 致历史回放 reasoning/response 双渲);
+    #   终态正文/推理由 FinalStep 单一承载。保留 reasoning-only 分支(L189)与工具轮 ThoughtStep 不动。
     yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-
-    if thought:
-        yield agent._step_emitter.emit(ThoughtStep(
-            step=step, content=thought, reasoning=reasoning,
-        ))
 
     # ══ 重复检测(≥250字才检) — DB 入库前唯一保留的护栏 ══
     if len(content) >= REPEAT_CHECK_MIN_LEN:
