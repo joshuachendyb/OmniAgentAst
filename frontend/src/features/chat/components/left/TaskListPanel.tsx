@@ -4,6 +4,7 @@
 // 编辑历史: 2026-08-28 小欧 - ③A/a1: 去双重滚动(外层保留), 选中去#e6f4ff填色改2px左线透明体系
 // 编辑历史: 2026-08-28 小欧 - ③B/b1: 补user_input双列+Tag→点+Text轻量化, 字阶11→12, 截断lineClamp2
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被滚动容器隐藏修复(北京老陈反馈)。监听latestTaskId变化→scrollIntoView(block:'nearest')将最新任务带进可视区; 仅新任务诞生时触发, 可视区内不动, 不打断用户上翻历史 - 小欧-2026-09-01
+// 编辑历史: 2026-09-01 小欧 - 修复任务完成后左列"跳回第一个任务": 根因=刷新时loading=true使组件切Skeleton(旧列表卸载), 滚动容器内容高度骤降→scrollTop被浏览器clamp归零, 刷新完成列表回归但scrollTop仍停在顶部。修复=仅当"loading且无已有任务"才显Skeleton(首次加载), 否则保留旧列表渲染, 滚动位置不丢失(三堂会审: 不打断刷新中UI, 首次加载行为不变) - 小欧-2026-09-01
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -54,7 +55,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     // scrollIntoView 沿祖先滚动链自动定位到最近滚动容器(SessionLayout左列overflowY:auto), 无需改布局骨架
     anchorRef.current?.scrollIntoView({ block: 'nearest' });
   }, [latestTaskId, anchorRef]);
-  if (loading) {
+  if (loading && tasks.length === 0) {
     return (
       <div style={{ padding: '16px 8px' }}>
         <Skeleton active paragraph={{ rows: 3 }} />
