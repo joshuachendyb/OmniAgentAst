@@ -3,17 +3,21 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审P0-5: 任务项div补role/tabIndex/aria/keyDown无障碍可达; 边距6px8px→8px; 选中蓝#1890ff→#1677ff; 滚动容器加minHeight0/scrollbarWidth; focus浅蓝外晕与选中态隔离
 // 编辑历史: 2026-08-28 小欧 - ③A/a1: 去双重滚动(外层保留), 选中去#e6f4ff填色改2px左线透明体系
 // 编辑历史: 2026-08-28 小欧 - ③B/b1: 补user_input双列+Tag→点+Text轻量化, 字阶11→12, 截断lineClamp2
+// 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被滚动容器隐藏修复(北京老陈反馈)。监听latestTaskId变化→scrollIntoView(block:'nearest')将最新任务带进可视区; 仅新任务诞生时触发, 可视区内不动, 不打断用户上翻历史 - 小欧-2026-09-01
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
  * 【小欧 2026-08-26 8.2】时间+类型徽标(context_link_mode)+状态+耗时；
  * 当前任务高亮、点击联动右侧查看区（7.5）；不展示 token（4.5.1 三分归位）。
  *
+ * 【小欧 2026-09-01 方案C】新任务在数组末尾+左列滚动容器→被隐藏。依赖外部 latestTaskRef
+ * 挂到最新任务项, 监听 latestTaskId 变化时 scrollIntoView(nearest) 带进视野(见 4.3.2)。
+ *
  * @author 小欧
  * @date 2026-08-26
  */
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Empty, Skeleton, Typography } from 'antd';
 import type { SessionTaskItem } from '../../../../services/api/task.api';
 import { Colors } from '@/utils/stepStyles';
@@ -24,6 +28,9 @@ interface TaskListPanelProps {
   activeTaskId: string | null;
   onSelect: (taskId: string) => void;
   loading?: boolean;
+  // 2026-09-01 小欧 方案C: 最新任务锚点(后端latest_task_id) + 挂到最新任务项的ref(滚动定位用)
+  latestTaskId?: string | null;
+  latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
 }
 
 const TaskListPanel: React.FC<TaskListPanelProps> = ({
@@ -31,7 +38,22 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   activeTaskId,
   onSelect,
   loading = false,
+  latestTaskId = null,
+  latestTaskRef,
 }) => {
+  // 2026-09-01 小欧 方案C: 无外部ref时退化为自建内部ref, 保证定位逻辑始终可用
+  const internalRef = useRef<HTMLDivElement | null>(null);
+  const anchorRef = latestTaskRef ?? internalRef;
+
+  // 2026-09-01 小欧 方案C: 新任务诞生(latestTaskId变化)且不在可视区时, 滚动带进视野; 可视区内不动不打扰
+  const prevLatestIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!latestTaskId) return;
+    if (prevLatestIdRef.current === latestTaskId) return; // 非新任务, 不滚动
+    prevLatestIdRef.current = latestTaskId;
+    // scrollIntoView 沿祖先滚动链自动定位到最近滚动容器(SessionLayout左列overflowY:auto), 无需改布局骨架
+    anchorRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [latestTaskId, anchorRef]);
   if (loading) {
     return (
       <div style={{ padding: '16px 8px' }}>
@@ -63,9 +85,11 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     >
       {tasks.map((t) => {
         const active = t.task_id === activeTaskId;
+        const isLatest = t.task_id === latestTaskId; // 2026-09-01 小欧 方案C: 最新任务项挂锚点ref(供滚动定位)
         return (
           <div
             key={t.task_id}
+            ref={isLatest ? anchorRef : undefined}
             className="task-list-item"
             role="button"
             tabIndex={0}

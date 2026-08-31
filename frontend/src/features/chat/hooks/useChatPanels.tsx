@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离panels插槽组装逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
 // 编辑历史: 2026-08-29 小强 - 修复#21: TopbarStats chainTokens由硬编码null改为透传真实chainTokens(与依赖数组一致) - 小强-2026-08-29
 // 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel由config slot移至TaskInfoBar第一行尾部集成，移除config.trust - 小欧-2026-08-30
+// 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被隐藏修复。新增可选入参latestTaskId/latestTaskRef并透传给TaskListPanel(左列滚动定位) - 小欧-2026-09-01
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -50,6 +51,9 @@ interface UseChatPanelsOptions {
     content: string,
     mode?: 'linked' | 'independent'
   ) => void;
+  // 2026-09-01 小欧 方案C: 最新任务锚点id + 挂到最新任务项的ref(左列滚动定位透传)
+  latestTaskId?: string | null;
+  latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
 }
 
 /**
@@ -79,6 +83,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     handleEditingStart,
     handleEditingCancel,
     handleSendWithMode,
+    latestTaskId, // 2026-09-01 小欧 方案C: 透传最新任务锚点
+    latestTaskRef, // 2026-09-01 小欧 方案C: 透传挂最新任务的ref
   } = opts;
 
   const {
@@ -185,6 +191,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             activeTaskId={activeTaskId}
             onSelect={handleSelectTask}
             loading={tasksLoading}
+            latestTaskId={latestTaskId}
+            latestTaskRef={latestTaskRef}
           />
         ),
         defaultVisible: true,
@@ -284,6 +292,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       authorizationPending,
       handleAuthorizationConfirm,
       refreshTasks,
+      latestTaskId, // 2026-09-01 小欧 方案C
+      latestTaskRef, // 2026-09-01 小欧 方案C
     ]
   );
 }
