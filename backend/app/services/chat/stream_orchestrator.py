@@ -88,6 +88,13 @@
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 删除finalize_message的import与db_ops.finalize=传参(随finalize_message整删, 终态由append_execution_step/chat_tasks承载)
 # 2026-08-28 小欧 - yield日志审计: 编排①输入校验失败/编排②启动前已取消 两处 yield 前补 logger(warning/info), 覆盖7个无日志yield(KISS); 三堂会审无逻辑修正
 # 2026-08-29 - 小沈 - 修复#5(彻底快照): 病根为 sessionModel 覆盖直接改进程单例 llm_model(全局副作用, 还原时序竞态致断连误模/跨会话串模)。改为构造本会话独立 LLM 客户端快照(ai_service.snapshot), 后台任务/流均用快照, 单例恒为全局默认不再被污染, 根除两类退化; run_agent_in_background finally 关闭快照释放连接池
+# 2026-09-01 - 小欧 - [TASK_START]日志修复(北京老陈驱动): 原在会话覆盖快照生效(编排⑥)之前用 ai_service.llm_model(全局默认)打印, 且 model 字段显示全局而非实际生效模型, 误导排查(如本次会话覆盖 deepseek-v4-flash 生效, 日志却显 agnes)。移至覆盖快照生效后用 agent.llm_client.llm_model(实际生效客户端)打印
+# 2026-09-01 - 小欧 - L2 会话级切跨 provider 模型修复(北京老陈驱动, 503/AgnesAI_error): 编排⑥覆盖生效块
+#   按目标 provider+model 从 config.yaml 查 api_base/api_key(经 get_ai_config_resolver().get_service_config)+
+#   model_params(复用 service.parse_model_params, DRY 唯一权威): 此前仅传 provider/model, 快照沿用全局
+#   agnes 的 api_base/api_key/model_params→切 sensenova 仍 503。api_base 必须用目标 provider 的而非 _ov.api_base;
+#   并入 snapshot(api_key/extra_body_params/context_limit 三参); 同步 agent._task_llm_model 为生效快照模型,
+#   使 react_cycle/telemetry 日志显示真实生效模型(消除显 agnes 盲点); api_key 后端查配置, 不落库不出前端
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -252,12 +259,6 @@ async def chat_stream_orchestrator(
         except Exception as _eu:
             logger.warning(f"[chat] DB兜底取user消息id失败(session={session_id}): {_eu}")
     log_and_print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    log_and_print(
-        f"[TASK_START] provider={ai_service.llm_model.provider} model={ai_service.llm_model.model} |\n "   # 归一: F8 属性迁移 — 小欧 2026-08-22
-        f"task_id={task_id} session_id={session_id} "
-        f"user_message_id={_user_msg_id} |\n "
-        f"user_input={user_input}"
-    )
 
     bg_task = None  # BUG-32修复: 预初始化, 防 except 块 NameError — 小沈 2026-08-13
     try:
@@ -285,18 +286,51 @@ async def chat_stream_orchestrator(
                     # 是"用全局副作用表达每会话模型", 单例还原时序竞态→断连后台任务误模/跨会话串模(#5)。
                     # 改为构造本会话独立 LLM 客户端快照(携带覆盖模型), 与进程单例解耦: 会话流与后台任务均用快照,
                     # 共享单例恒定全局默认不变, 不再需要 finally 还原, 根除 #5 两类退化(含断连后跨会话泄漏窄边界)。
+                    # 2026-09-01 小欧: L2 切跨 provider 模型, api_base/api_key/model_params(含 context_limit)
+                    # 均按目标 provider+model 从 config.yaml 查出(后端内部, 不落库、不出前端);
+                    # api_base 必须用目标 provider 的, 而非 _ov.api_base or 全局(全局=agnes 地址, 仍 503)
+                    _pv_cfg = None
+                    _pv_key = None
+                    _pv_ebp = None
+                    _pv_ctx = None
+                    if _ov.provider and _ov.provider != ai_service.llm_model.provider:
+                        try:
+                            _pv_cfg = get_ai_config_resolver().get_service_config(
+                                _ov.provider, _ov.model or "")
+                            _pv_key = (_pv_cfg.get("api_key") or "").strip() or None
+                            # model_params 解析复用 service.parse_model_params(DRY 唯一权威, 与全局实例同逻辑)
+                            from app.services.lifecycle.service import parse_model_params
+                            _pv_ebp, _pv_ctx = parse_model_params(_pv_cfg, _ov.model or "")
+                        except Exception as _pv_e:
+                            logger.warning(f"[chat] 按 provider 查配置失败({_ov.provider}): {_pv_e}")
                     override_ref = ModelRef(
                         provider=_ov.provider or ai_service.llm_model.provider,
                         model=_ov.model or ai_service.llm_model.model,
-                        api_base=_ov.api_base or ai_service.llm_model.api_base,
+                        api_base=(_pv_cfg or {}).get("api_base") or ai_service.llm_model.api_base,
                         display_name=_ov.display_name or ai_service.llm_model.display_name,
                     )
-                    session_client = ai_service.snapshot(override_ref)
+                    session_client = ai_service.snapshot(
+                        override_ref,
+                        api_key=_pv_key,
+                        extra_body_params=_pv_ebp,
+                        context_limit=_pv_ctx,
+                    )
                     agent.llm_client = session_client
+                    # 2026-09-01 小欧: 同步 _task_llm_model 为生效快照模型, 使 react_cycle 日志/telemetry
+                    # 显示真实生效模型(而非全局 agnes), 与 TASK_START 显示实际生效模型同一精神
+                    agent._task_llm_model = getattr(session_client, "llm_model", None)
                     logger.info(f"[chat] L2 sessionModel 已生效(独立客户端快照): session={session_id}, "
                                 f"provider={session_client.llm_model.provider}, model={session_client.llm_model.model}")
             except Exception as _ov_e:
                 logger.warning(f"[chat] 读会话sessionModel失败(session={session_id}): {_ov_e}")
+        # ── [TASK_START] 在会话覆盖快照生效后打印, 用 agent.llm_client(实际生效模型)非全局默认
+        #    (修复: 原先打印 ai_service.llm_model 是全局默认且时机在覆盖前, 误导排查) — 小欧 2026-09-01
+        log_and_print(
+            f"[TASK_START] provider={agent.llm_client.llm_model.provider} model={agent.llm_client.llm_model.model} |\n "
+            f"task_id={task_id} session_id={session_id} "
+            f"user_message_id={_user_msg_id} |\n "
+            f"user_input={user_input}"
+        )
         # ── 编排⑦组装 db_ops 持久化回调命名空间(经闭包注入后台, 依赖 ⑥ agent) ——— 小健 2026-08-17
         # P4: 构造 db_ops 命名空间注入 agent_runner, 消除 agent→chat 反向依赖 — 小沈 2026-08-13
         #   10.1.7②-1 9属性(任务级读写扩展) — 小欧 2026-08-16

@@ -37,6 +37,10 @@
 # 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.2 D0/11.9 P3): request_stream 工具调用聚合处
 #   tool_calls_list 条目加 params_raw_str=args_str(:309 原始 arguments 串)——文件A③「LLM 原始参数」权威源,
 #   无论是否走截断修复分支 raw 都以它为准; 下游经 llm_stream D0b/_build_call_list D3b 两跳透传至落盘闭包
+# 2026-09-01 - 小欧 - L2 会话级切跨 provider 模型修复: snapshot 增可选 api_key/extra_body_params/context_limit
+#   三参注入——L2 覆盖 provider(如 sensenova) 时, 快照必须携带"目标 provider"的 api_base/api_key/model_params,
+#   否则沿用全局默认 provider(agnes) 会走错端点、用错 key、丢 reasoning_effort/context_limit(503/AgnesAI_error
+#   病根)。三参缺省 None 时回退 self, 快照不重复合并(个性参数权威合并仍由 __init__ 兜底 enable_thinking:True)
 """
 LLM 核心模块 — BaseAIService
 
@@ -126,21 +130,31 @@ class BaseAIService:
         造成"记录身份与实际 HTTP 连接不一致" — 三堂会审 P1 修复 小欧 2026-08-22"""
         self._llm_sdk = None
 
-    def snapshot(self, model_ref: Optional[ModelRef] = None) -> "BaseAIService":
+    def snapshot(self, model_ref: Optional[ModelRef] = None,
+                 api_key: Optional[str] = None,
+                 extra_body_params: Optional[Dict] = None,
+                 context_limit: Optional[int] = None) -> "BaseAIService":
         """构造本实例的独立副本(携带 model_ref 或当前模型), 与进程级共享单例解耦 — 小沈 2026-08-29
         病根修复: sessionModel 覆盖此前直接改进程单例 llm_model + reset_sdk(全局副作用), 单例还原时序竞态
         导致"断连时后台任务误用旧模型"与"后续无覆盖会话串用错误模型"两类退化。改为后台任务/会话持有自身
         模型快照, 共享单例恒定全局默认不再被污染, 彻底根除该竞态。返回实例带 _is_snapshot 标记,
-        供 run_agent_in_background 结束后释放其 httpx 连接池。"""
+        供 run_agent_in_background 结束后释放其 httpx 连接池。
+        L2 切跨 provider 模型(2026-09-01 小欧): 快照必须携带"目标 provider"的 api_key 与
+        个性参数(model_params/context_limit), 否则沿用全局默认 provider(agnes) 会走错端点、
+        用错 key、丢 reasoning_effort/context_limit(api_base/api_key/model_params 缺一不可)。
+        extra_body_params 由 __init__ 权威合并(顶层键用户优先, chat_template_kwargs 深合并,
+        保 enable_thinking:True 兜底), 此处仅直传不重复合并(DRY+KISS-DIRECT)。"""
         snap = BaseAIService(
-            api_key=self.api_key,
+            api_key=api_key or self.api_key,
             llm_model=model_ref if model_ref is not None else self.llm_model,
             timeout=self.timeout,
             max_tokens=self.max_tokens,
             temperature=self.temperature,
             seed=self.seed,
-            extra_body_params=self.extra_body_params,
-            context_limit=self.context_limit,
+            extra_body_params=extra_body_params
+            if extra_body_params is not None else self.extra_body_params,
+            context_limit=context_limit
+            if context_limit is not None else self.context_limit,
         )
         snap._is_snapshot = True
         logger.info(f"[BaseAIService.snapshot] 构造独立客户端快照: model={snap.llm_model.model}, provider={snap.llm_model.provider}")

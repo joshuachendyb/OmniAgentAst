@@ -8,6 +8,9 @@
 #   resolved_model(ModelRef); _current_provider 单值态升级 _current_model_ref 结构态(缓存判定整体比较);
 #   create_service_instance 构造 BaseAIService 改传 llm_model=ModelRef(api_base 由 provider_config 纳入,
 #   设计要求3); get_service_for_model 入参归一 model_ref: ModelRef — 调用点已随改(F8 无兼容 shim)
+# 2026-09-01 - 小欧 - DRY 归一: 新增 parse_model_params(provider_config, model)->(extra_body_params, context_limit)
+#   唯一权威解析 model_params; create_service_instance 与 stream_orchestrator(L2 跨 provider 快照)同用,
+#   消除 create_service_instance 内联 model_params 解析双份漂移
 """
 service — 服务创建与获取
 
@@ -15,7 +18,7 @@ service — 服务创建与获取
 小沈 2026-06-17
 """
 
-from typing import Optional
+from typing import Optional, Dict, Any, Tuple
 import threading
 
 from app.logger import setup_logger
@@ -76,15 +79,25 @@ def get_provider_config(ai_config: dict, final_provider: str) -> dict:
     return provider_config
 
 
+def parse_model_params(provider_config: dict, model: str) -> Tuple[Optional[dict], int]:
+    """解析 provider 配置的 model_params → (extra_body_params, context_limit)
+    复用优先/DRY 归一(小欧 2026-09-01): 原逻辑双份嵌在 create_service_instance(本文件) 与
+    stream_orchestrator(L2 跨 provider 快照), 双份漂移风险; 归一为本函数唯一权威, 两处同用。
+    行为: 取目标 model 专属 dict, pop context_limit(配置优先否则 DEFAULT_CONTEXT_LIMIT 兜底),
+    余量作 extra_body_params(无则 None)。与历史行为完全一致(仅去重, 不改逻辑)。"""
+    from app.services.agent.compaction_constants import DEFAULT_CONTEXT_LIMIT  # 小健 2026-08-17: 常量权威归一 agent/compaction_constants
+    model_params = (provider_config or {}).get("model_params", {}) or {}
+    specific_params = dict(model_params.get(model, {})) if model_params else {}
+    context_limit = specific_params.pop("context_limit", DEFAULT_CONTEXT_LIMIT)
+    return (specific_params or None), context_limit
+
+
 def create_service_instance(provider_config: dict, final_provider: str, final_model: str) -> BaseAIService:
     """创建服务实例 — 小沈 2026-06-08; 2026-06-17 去除_前缀+透传层; 小欧 2026-07-09 新增model_params透传;
     小健 2026-08-17 DEFAULT_CONTEXT_LIMIT 迁 agent.compaction_constants;
     2026-08-22 小欧 归一报告v1.25 6.6: BaseAIService 构造改传 llm_model=ModelRef(provider+model+api_base),
-    api_base 来源 provider_config(设计要求3纳入 ModelRef)"""
-    from app.services.agent.compaction_constants import DEFAULT_CONTEXT_LIMIT  # 小健 2026-08-17: 常量权威归一 agent/compaction_constants
-    model_params = provider_config.get("model_params", {}) or {}
-    specific_params = dict(model_params.get(final_model, {})) if model_params else {}
-    context_limit = specific_params.pop("context_limit", DEFAULT_CONTEXT_LIMIT)
+    api_base 来源 provider_config(设计要求3纳入 ModelRef); 2026-09-01 小欧 params 解析改复用 parse_model_params(DRY)"""
+    extra_body_params, context_limit = parse_model_params(provider_config, final_model)
     return BaseAIService(
         api_key=(provider_config.get("api_key") or "").strip(),
         llm_model=ModelRef(
@@ -96,7 +109,7 @@ def create_service_instance(provider_config: dict, final_provider: str, final_mo
         max_tokens=provider_config.get("max_tokens"),
         temperature=float(provider_config.get("temperature", 0.7)),
         seed=provider_config.get("seed", None),
-        extra_body_params=specific_params or None,
+        extra_body_params=extra_body_params,
         context_limit=context_limit,
     )
 
