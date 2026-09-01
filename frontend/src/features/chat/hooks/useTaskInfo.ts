@@ -3,6 +3,9 @@
 // 编辑历史: 2026-08-27 小欧 - 修复chat-B: 过程事件>20条时保留 started 条目(slice(-20)不再裁掉首位)
 // 编辑历史: 2026-08-28 小强 - hooks修复#16: 先unshift再slice(-20)保证上限20条+统一ExecutionStep从utils/sse导入(DRY)
 // 编辑历史: 2026-08-30 小欧 - 13.14 新增 roundUsage/task/session/chain 四字段透出（后端直发三数字） - 小欧-2026-08-30
+// 编辑历史: 2026-09-01 小欧 - 紧急bug修复(北京老陈驱动): paused由持久状态改瞬时事件,
+//   记录最近一次paused下标, 其后出现业务推进step(thought/action/observation)⇒badge推导回running,
+//   兜底后端部分恢复路径不发resumed引发的badge卡paused(耗时秒表被掐死失实时); 真HITL挂起仍paused - 小欧-2026-09-01
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -84,15 +87,22 @@ export const useTaskInfo = (
 
     let badge: TaskBadge = 'idle';
     const processEvents: ProcessEvent[] = [];
+    // 2026-09-01 小欧 - 紧急bug修复: paused 为瞬时事件而非持久状态。
+    // 记录最近一次 paused 下标; 其后若出现业务推进 step(thought/action/observation)
+    // ⇒ 任务已越过暂停点(如 auto_confirm), badge 推导回 running, 恢复前端耗时秒表;
+    // 真HITL挂起(paused后无推进)仍保持 paused。纯函数式确定, 兜底历史/漏发resumed旧数据。
+    let pausedIdx = -1;
 
     // ① 过程状态条事件 + 终态徽标（全量步骤流内派生）
     // 【小欧 2026-08-26 18:49 修正】startinfo 不进 executionSteps（8.4.3 只写 metaFrames），
     // 不可从 steps.find 搜索；改用 frames.startInfo 判断。
     const hasStartInfo = frames.startInfo !== null;
-    for (const s of steps) {
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
       switch (s.type) {
         case 'paused':
           badge = 'paused';
+          pausedIdx = i;
           processEvents.push({
             kind: 'paused',
             text: s.content || '任务已暂停',
@@ -101,6 +111,7 @@ export const useTaskInfo = (
           break;
         case 'resumed':
           badge = 'running';
+          pausedIdx = -1;
           processEvents.push({
             kind: 'resumed',
             text: s.content || '任务已恢复',
@@ -122,6 +133,15 @@ export const useTaskInfo = (
         case 'error':
           // 防御遗留库数据（error 现不入 executionSteps，见 8.4.5）；实时失败走 final.outcome
           badge = 'failed';
+          break;
+        case 'thought':
+        case 'action':
+        case 'observation':
+          // 2026-09-01 小欧 - 紧急bug修复: paused 之后的业务推进 ⇒ 任务已恢复, badge 推导回 running
+          if (pausedIdx !== -1) {
+            badge = 'running';
+            pausedIdx = -1;
+          }
           break;
         default:
           break;
