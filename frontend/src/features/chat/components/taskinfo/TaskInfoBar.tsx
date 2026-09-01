@@ -6,6 +6,7 @@
 // 编辑历史: 2026-08-30 小欧 - 13.14 8处Typography.Text→span+双组token本轮/任务累计(P/C/T后端直发) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel移至TaskInfoBar第一行尾部集成（第一行尾巴） - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 修复×不显眼: DeleteOutlined→文本×、色#999→#595959、字号12→14加粗 - 小欧-2026-08-30
+// 编辑历史: 2026-09-01 小欧 - TaskInfoBar一线三组最佳重排: 左主节奏(状态/耗时/步轮·重试) 中Token合一T(P/C) 右信任/收起 gap12/8 减半宽 - 小欧-2026-09-01
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -131,100 +132,145 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          gap: 12,
           cursor: 'pointer',
-          flexWrap: 'wrap',
+          flexWrap: 'nowrap',
         }}
         onClick={() => setCollapsed((v) => !v)}
       >
-        <Badge status={b.status} text={b.text} />
-        <span
-          style={{ fontSize: 12, color: Colors.TEXT.PRIMARY, fontWeight: 500 }}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexShrink: 0,
+          }}
         >
-          耗时 {Math.round(shownElapsed)}s
-        </span>
-        <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
-          步骤 {info.stepCount} / 轮次 {info.llmCallCount}
-          {info.retryCount > 0 && ` / 重试 ${info.retryCount}`}
-        </span>
-        <Tooltip
-          title={`本轮 P ${info.roundUsage?.prompt ?? 0} / C ${info.roundUsage?.completion ?? 0} / T ${info.roundUsage?.total ?? 0}`}
-        >
-          <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
-            本轮 P{info.roundUsage?.prompt ?? 0}/C
-            {info.roundUsage?.completion ?? 0}/T{info.roundUsage?.total ?? 0}
+          <Badge status={b.status} text={b.text} />
+          <span
+            style={{
+              fontSize: 12,
+              color: Colors.TEXT.PRIMARY,
+              fontWeight: 500,
+            }}
+          >
+            耗时 {Math.round(shownElapsed)}s
           </span>
-        </Tooltip>
-        <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}> | </span>
-        <Tooltip
-          title={`任务累计 P ${info.taskAccumulated?.prompt_tokens ?? info.usage.prompt} / C ${info.taskAccumulated?.completion_tokens ?? info.usage.completion} / T ${info.taskAccumulated?.total_tokens ?? info.usage.total}`}
-        >
           <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
-            任务累计 P{info.taskAccumulated?.prompt_tokens ?? info.usage.prompt}
-            /C{info.taskAccumulated?.completion_tokens ?? info.usage.completion}
-            /T{info.taskAccumulated?.total_tokens ?? info.usage.total}
+            步骤 {info.stepCount} / 轮次 {info.llmCallCount}
           </span>
-        </Tooltip>
-        {/* 上下文概况：context_overview 帧优先，start.context_summary 兜底（8.9） */}
-        {typeof info.overview === 'string' ? (
-          <Tooltip title={info.overview}>
-            <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
-              上下文摘要
+          {info.retryCount > 0 && (
+            <span style={{ fontSize: 12, color: Colors.WARNING }}>
+              · 重试 {info.retryCount}
+            </span>
+          )}
+          {info.stuckWarning && (
+            <span style={{ fontSize: 12, color: Colors.WARNING }}>
+              · 疑似卡死
+            </span>
+          )}
+          {info.truncatedTip && (
+            <span style={{ fontSize: 12, color: Colors.WARNING }}>
+              · ⚠ {info.truncatedTip}
+            </span>
+          )}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flex: 1,
+            minWidth: 0,
+            justifyContent: 'center',
+          }}
+        >
+          <Tooltip
+            title={`本轮 P ${info.roundUsage?.prompt ?? 0} / C ${info.roundUsage?.completion ?? 0} / T ${info.roundUsage?.total ?? 0}`}
+          >
+            <span
+              style={{
+                fontSize: 12,
+                color: Colors.TEXT.PRIMARY,
+                fontWeight: 500,
+              }}
+            >
+              T{info.roundUsage?.total ?? 0} (P{info.roundUsage?.prompt ?? 0}/C
+              {info.roundUsage?.completion ?? 0})
             </span>
           </Tooltip>
-        ) : info.overview ? (
+          <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>·</span>
           <Tooltip
-            title={`${info.overview.summary}\n消息数 ${info.overview.message_count ?? '-'} · 估算 ${info.overview.estimated_tokens ?? '-'} tok`}
+            title={`任务累计 P ${info.taskAccumulated?.prompt_tokens ?? info.usage.prompt} / C ${info.taskAccumulated?.completion_tokens ?? info.usage.completion} / T ${info.taskAccumulated?.total_tokens ?? info.usage.total}`}
           >
             <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
-              上下文 {info.overview.estimated_tokens ?? '-'}tok
-              {info.overview.truncated && ' 🔴已截断'}
+              累计 T{info.taskAccumulated?.total_tokens ?? info.usage.total}
             </span>
           </Tooltip>
-        ) : frames.contextSummary ? (
-          <Tooltip title={frames.contextSummary}>
+          <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>·</span>
+          {typeof info.overview === 'string' ? (
+            <Tooltip title={info.overview}>
+              <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
+                上下文摘要
+              </span>
+            </Tooltip>
+          ) : info.overview ? (
+            <Tooltip
+              title={`${info.overview.summary}\n消息数 ${info.overview.message_count ?? '-'} · 估算 ${info.overview.estimated_tokens ?? '-'} tok`}
+            >
+              <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
+                上下文 {info.overview.estimated_tokens ?? '-'}tok
+                {info.overview.truncated && ' 🔴'}
+              </span>
+            </Tooltip>
+          ) : frames.contextSummary ? (
+            <Tooltip title={frames.contextSummary}>
+              <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
+                上下文摘要
+              </span>
+            </Tooltip>
+          ) : (
             <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
-              上下文摘要
+              上下文 {0}tok
             </span>
-          </Tooltip>
-        ) : null}
-        {info.stuckWarning && (
-          <span style={{ fontSize: 12, color: Colors.WARNING }}>
-            疑似卡死(llm≫step)
-          </span>
-        )}
-        {info.truncatedTip && (
-          <span style={{ fontSize: 12, color: Colors.WARNING }}>
-            ⚠ {info.truncatedTip}
-          </span>
-        )}
-        <span
-          onClick={(e) => {
-            e.stopPropagation();
-            setTrustExpanded((v) => !v);
-          }}
+          )}
+        </div>
+        <div
           style={{
-            fontSize: FontSize.SECONDARY,
-            color:
-              trustTools.length > 0
-                ? Colors.TEXT.PRIMARY
-                : Colors.TEXT.TERTIARY,
-            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexShrink: 0,
             marginLeft: 'auto',
           }}
         >
-          {trustExpanded ? '▾' : '▸'} 本会话信任的操作({trustTools.length})
-        </span>
-        <span
-          onClick={() => setCollapsed((v) => !v)}
-          style={{
-            color: Colors.TEXT.TERTIARY,
-            fontSize: 12,
-            cursor: 'pointer',
-          }}
-        >
-          {collapsed ? '展开' : '收起'}
-        </span>
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              setTrustExpanded((v) => !v);
+            }}
+            style={{
+              fontSize: 12,
+              color:
+                trustTools.length > 0
+                  ? Colors.TEXT.PRIMARY
+                  : Colors.TEXT.TERTIARY,
+              cursor: 'pointer',
+            }}
+          >
+            {trustExpanded ? '▾' : '▸'} 信任({trustTools.length})
+          </span>
+          <span
+            onClick={() => setCollapsed((v) => !v)}
+            style={{
+              color: Colors.TEXT.TERTIARY,
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
+          >
+            {collapsed ? '展开' : '收起'}
+          </span>
+        </div>
       </div>
       {trustExpanded && trustTools.length > 0 && (
         <div
