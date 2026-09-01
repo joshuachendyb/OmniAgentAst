@@ -100,6 +100,7 @@ export interface TaskArtifact {
   name: string;
   path: string;
   type: string;
+  tool_name: string;
 }
 
 export interface TaskDetail {
@@ -124,6 +125,10 @@ export interface TaskDetail {
   } | null;
   artifacts: TaskArtifact[] | null;
   tool_stats: Record<string, number>;
+  provider: string | null;
+  model: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export function adaptTaskDetail(raw: {
@@ -179,6 +184,10 @@ export function adaptTaskDetail(raw: {
     task_accumulated_tokens: taskAcc,
     artifacts: (t.artifacts as TaskArtifact[] | null) ?? null,
     tool_stats: toolStats,
+    provider: (t.provider as string | null) ?? null,
+    model: (t.model as string | null) ?? null,
+    created_at: (t.created_at as string | null) ?? null,
+    updated_at: (t.updated_at as string | null) ?? null,
   };
 }
 

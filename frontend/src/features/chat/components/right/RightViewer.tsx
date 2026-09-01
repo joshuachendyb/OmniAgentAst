@@ -204,7 +204,9 @@ const RightViewer: React.FC<RightViewerProps> = ({
           }}
         />
       )}
-      {!isCurrentLive && <StaticStatsBlock detail={detail} />}
+      {!isCurrentLive && (
+        <StaticStatsBlock detail={detail} chainSteps={historySteps} />
+      )}
     </Spin>
   );
 };
