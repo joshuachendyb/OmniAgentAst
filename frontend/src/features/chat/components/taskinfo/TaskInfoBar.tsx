@@ -195,7 +195,8 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                 fontWeight: 500,
               }}
             >
-              T{info.roundUsage?.total ?? 0} (P{info.roundUsage?.prompt ?? 0}/C
+              本轮 T{info.roundUsage?.total ?? 0} (P
+              {info.roundUsage?.prompt ?? 0}/C
               {info.roundUsage?.completion ?? 0})
             </span>
           </Tooltip>
@@ -204,7 +205,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             title={`任务累计 P ${info.taskAccumulated?.prompt_tokens ?? info.usage.prompt} / C ${info.taskAccumulated?.completion_tokens ?? info.usage.completion} / T ${info.taskAccumulated?.total_tokens ?? info.usage.total}`}
           >
             <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
-              累计 T{info.taskAccumulated?.total_tokens ?? info.usage.total}
+              累计 T{info.taskAccumulated?.total_tokens ?? info.usage.total} (P
+              {info.taskAccumulated?.prompt_tokens ?? info.usage.prompt}/C
+              {info.taskAccumulated?.completion_tokens ?? info.usage.completion}
+              )
             </span>
           </Tooltip>
           <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>·</span>
