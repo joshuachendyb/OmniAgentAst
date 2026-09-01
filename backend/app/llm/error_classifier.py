@@ -29,6 +29,7 @@
    2026-07-18 小欧 #8 fix: 消除循环导入——LLMResponseError 改模块级 try/except 导入为 _check_special_errors 内函数级延迟导入; core.py 模块级 import error_classifier 不再触发循环, LLMResponseError 不再恒为 None
     2026-08-14 小欧 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
     2026-08-29 小沈 修复#14: HTTP 状态分类改优先用异常对象真实响应状态码(httpx.HTTPStatusError.response.status_code)判定, 正则仅作文本补充; 消除 400/401/403 因 str(error) 无"status_code"语境致正则失配被误归 SERVER 可重试的缺陷, 4xx 正确归 CLIENT 不可重试
+    2026-09-01 小欧 新增RATE_LIMIT枚举: 429限流单列为不可重试(RATE_LIMIT), 补to_status/description/SYSTEM_ERROR_TYPE_TO_MESSAGE四处映射, 429不再进L1重试直接走quota_exceeded快速失败 — 小欧 2026-09-01
 """
 
 import re
@@ -51,6 +52,7 @@ class SystemErrorCategory(Enum):
     UNKNOWN = "unknown"
     EMPTY_RESPONSE = "empty_response"
     IDLE_TIMEOUT = "idle_timeout"
+    RATE_LIMIT = "rate_limit"
 
     @property
     def is_retryable(self) -> bool:
@@ -72,6 +74,7 @@ class SystemErrorCategory(Enum):
             SystemErrorCategory.UNKNOWN: "error",
             SystemErrorCategory.EMPTY_RESPONSE: "empty_response",
             SystemErrorCategory.IDLE_TIMEOUT: "idle_timeout",
+            SystemErrorCategory.RATE_LIMIT: "rate_limit",
         }
         return mapping.get(self, "error")
 
@@ -85,17 +88,18 @@ class SystemErrorCategory(Enum):
             SystemErrorCategory.UNKNOWN: "未知错误",
             SystemErrorCategory.EMPTY_RESPONSE: "空响应",
             SystemErrorCategory.IDLE_TIMEOUT: "空闲超时",
+            SystemErrorCategory.RATE_LIMIT: "接口限流/配额",
         }
         return mapping.get(self, "未知错误")
 
 
 # HTTP状态码到错误类型的映射
-# 4xx 客户端错(400/401/403)归 CLIENT 不可重试；429 限流是唯一可重试 4xx 仍归 SERVER — 小欧 2026-07-16
+# 4xx 客户端错(400/401/403)归 CLIENT 不可重试；429 限流归 RATE_LIMIT 不可重试 — 小欧 2026-09-01
 HTTP_STATUS_TO_ERROR_TYPE: Dict[int, SystemErrorCategory] = {
     400: SystemErrorCategory.CLIENT,
     401: SystemErrorCategory.CLIENT,
     403: SystemErrorCategory.CLIENT,
-    429: SystemErrorCategory.SERVER,
+    429: SystemErrorCategory.RATE_LIMIT,
     500: SystemErrorCategory.SERVER,
     502: SystemErrorCategory.SERVER,
     503: SystemErrorCategory.SERVER,
@@ -110,6 +114,7 @@ SYSTEM_ERROR_TYPE_TO_MESSAGE: Dict[SystemErrorCategory, Tuple[str, str]] = {
     SystemErrorCategory.UNKNOWN: ("unknown", "AI 处理异常,请稍后重试"),
     SystemErrorCategory.EMPTY_RESPONSE: ("empty_response", "AI服务返回空响应,请稍后重试"),
     SystemErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "请求超时:AI模型30秒内未返回任何内容,已重试3次,请更换问题或稍后重试"),
+    SystemErrorCategory.RATE_LIMIT: ("rate_limit", "接口限流/配额已耗尽,请稍后重试"),
 }
 
 

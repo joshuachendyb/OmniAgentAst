@@ -4,6 +4,7 @@
 // 编辑历史: 2026-08-28 小强 - 修复[18]: extractResult遍历tool_result数组合并data_text, 不再仅取首项 - 小强-2026-08-28
 // 编辑历史: 2026-08-28 小欧 - ④B/b1: 去卡片填色改透明+左线, 令牌化, Code深色→浅底左线
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 行高 `${FontSize.*+Spacing.XS}px` - 小欧-2026-08-30
+// 编辑历史: 2026-09-01 小欧 - 修复readtext内容为空: extractResult对非JSON的data_text兜底为content, 消除"读取成功却文件内容为空"矛盾 - 小欧-2026-09-01
 /**
  * shapeRenderers - 按结果形状渲染(非 tool 名)
  *
@@ -51,7 +52,12 @@ const extractResult = (step: ExecutionStep): ResultData => {
             const parsed = JSON.parse(dt) as Record<string, unknown>;
             textData = { ...textData, ...parsed };
           } catch {
-            // 解析失败忽略
+            // 2026-09-01 小欧(北京老陈驱动): 解析失败说明 data_text 是 observation 展示文本
+            // (readtext 为 "── 文件内容 ──" 完整文件内容, listdir 为条目文本, 均非 JSON)。
+            // 兜底把原文当作 content 供 CodeResultRenderer 显示, 消除"读取成功却文件内容为空"矛盾。
+            if (textData['content'] === undefined) {
+              textData['content'] = dt;
+            }
           }
         }
       }

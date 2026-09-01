@@ -17,6 +17,7 @@
 # 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.2.1 D0b/11.9 P3): _build_tool_calls_response 的
 #   result 与 _pending_calls 两处透传 params_raw_str(源=D0 base_service)——补 #3 链路缺口,
 #   缺此跳 D3 落盘闭包永远 fallback 到已解析 tool_params, 违背 11.7.9-2③「LLM 原始参数」
+# 2026-09-01 小欧 L1/L2去放大: _yield_error_response透传error_type + call_llm_with_fallback按error_type分流(传输/限流类yield+return不重试,其它保持L2重试) — 小欧 2026-09-01
 """
 llm_stream — LLM流式调用+响应构建
 
@@ -114,7 +115,7 @@ def _yield_error_response(error_msg: str, agent, exc: Optional[BaseException] = 
     diag = f" | exc={type(exc).__name__}" if exc else (f" | type={exc_type}" if exc_type else "")
     logger.error(f"[LLM] {error_msg}{diag}")
     _log_llm_response(agent, error_msg, "error", None, finish_reason="error")
-    return ("response", {"type": "error", "content": error_msg})
+    return ("response", {"type": "error", "content": error_msg, "error_type": exc_type})
 
 
 def _build_answer_response(full_content, full_reasoning, usage_data, agent, finish_reason=None):
@@ -278,6 +279,11 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
                 if isinstance(item, tuple) and item[0] == "response":
                     resp = item[1]
                     if isinstance(resp, dict) and resp.get("type") == "error":
+                        # 2026-09-01 小欧 L2去放大: 按error_type分流, 传输/限流类(L1已处理)直接放行不重试, 其它保持L2重试 — 小欧 2026-09-01
+                        err_type = resp.get("error_type", "")
+                        if err_type in ("quota_exceeded", "rate_limit", "idle_timeout", "server"):
+                            yield item
+                            return
                         raise LLMResponseError(message=resp.get("content", "LLM流式错误"))
                 yield item
             return
