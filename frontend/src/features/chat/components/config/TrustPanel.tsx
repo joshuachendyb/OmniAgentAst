@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-28 小欧 - ①B/b1: 空态不占位(tools0→null), ghost对齐padding4 0, 文案色#595959统一
 // 编辑历史: 2026-08-30 小欧 - 13.14 纯div重构: 去Collapse/List/Typography/Button, 收起16px/展开90px(4×16+3×2+4), 零默认留白 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 修复×不显眼: DeleteOutlined→文本×、色#8c8c8c→#595959、字号12→14加粗 - 小欧-2026-08-30
+// 编辑历史: 2026-09-02 小欧 - task005会审P2无障碍修复(北京老陈定案): 纯div折叠回归→折叠区补 role="button"/aria-expanded/tabIndex/onKeyDown(Enter/Space)、列表补 role="list"/"listitem"; 不引 aria-controls(列表条件渲染, id可能不存在成无效引用) - 小欧-2026-09-02
 /**
  * TrustPanel - 信任操作面板（config slot，默认收起）
  *
@@ -72,7 +73,16 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
   return (
     <div style={{ padding: 0 }}>
       <div
+        role="button"
+        aria-expanded={expanded}
+        tabIndex={0}
         onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
         style={{
           cursor: 'pointer',
           lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
@@ -86,11 +96,13 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
       </div>
       {expanded && (
         <div
+          role="list"
           style={{ maxHeight: 70, overflow: 'auto', paddingTop: Spacing.XS }}
         >
           {tools.map((tool) => (
             <div
               key={tool}
+              role="listitem"
               style={{
                 display: 'flex',
                 alignItems: 'center',
