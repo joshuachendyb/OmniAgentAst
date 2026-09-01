@@ -18,6 +18,8 @@
 #   result 与 _pending_calls 两处透传 params_raw_str(源=D0 base_service)——补 #3 链路缺口,
 #   缺此跳 D3 落盘闭包永远 fallback 到已解析 tool_params, 违背 11.7.9-2③「LLM 原始参数」
 # 2026-09-01 小欧 L1/L2去放大: _yield_error_response透传error_type + call_llm_with_fallback按error_type分流(传输/限流类yield+return不重试,其它保持L2重试) — 小欧 2026-09-01
+# 2026-09-02 小欧 task005会审P1修复(北京老陈定案): L2去分流元组移除"server" — server(500/502/503)为瞬时/过载类错误
+#   应走 L2 重试(re raise LLMResponseError→指数退避重试), 而非放行致任务永久失败; 重试耗尽仍走FC降级/error兜底, 无死循环, 不退化 — 小欧 2026-09-02
 """
 llm_stream — LLM流式调用+响应构建
 
@@ -280,8 +282,9 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
                     resp = item[1]
                     if isinstance(resp, dict) and resp.get("type") == "error":
                         # 2026-09-01 小欧 L2去放大: 按error_type分流, 传输/限流类(L1已处理)直接放行不重试, 其它保持L2重试 — 小欧 2026-09-01
+                        # 2026-09-02 小欧 task005会审P1(北京老陈定案): "server"(500/502/503)移出放行元组——瞬时/过载错误应走L2重试(否则本可恢复任务永久失败), 重试耗尽仍由外层FC降级/error兜底, 不退化 — 小欧 2026-09-02
                         err_type = resp.get("error_type", "")
-                        if err_type in ("quota_exceeded", "rate_limit", "idle_timeout", "server"):
+                        if err_type in ("quota_exceeded", "rate_limit", "idle_timeout"):
                             yield item
                             return
                         raise LLMResponseError(message=resp.get("content", "LLM流式错误"))
