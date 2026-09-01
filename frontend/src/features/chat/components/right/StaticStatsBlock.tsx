@@ -180,7 +180,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             paddingLeft: 6,
           }}
         >
-          工具
+          工具汇总
         </Typography.Text>
         <Typography.Text
           style={{ fontSize: 12, display: 'block', marginTop: 4 }}
