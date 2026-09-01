@@ -8,6 +8,7 @@
 // 编辑历史: 2026-08-30 小欧 - 北京老陈新定案(step间6/内部4/折叠2=常量-2派生): stepMargin(false)=(MD-2)=6 统一 step 段距(obs 孤儿行同步), 数值不写死 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 容器 line-height=字号+Spacing.XS(4)(行间距4), step 间 SM6/step 内文字 XS4 折不折同 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - final段修复: 流式不渲染(chunks已展示), 历史回放渲染reasoning+response两字段(此前仅response遗漏reasoning)
+// 编辑历史: 2026-09-02 小欧 - 北京老陈定案(流水线等待光标UI设计 v1.6): 光标/打字机判定末段化(修复旧思考段光标常亮); 新增waiting判定, 末段非thinking/text且streaming时渲染SVG缺口圆弧等待符号(1.4em≈20px, #52c41a, stroke-width2, 逆时针1s转圈); 首chunk到达末段变content段waiting即消失, 内容从同一首列打字机接管, 等待符号禁止常驻
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -133,6 +134,15 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   );
   // 13.8 打字机: 最后一个 text 段为实时累积段(打字), 前序已完成段静态呈现
   const lastText = segs.reduce((a, s, i) => (s.kind === 'text' ? i : a), -1);
+  // 2026-09-02 小欧 · 北京老陈定案: 等待 thought——streaming 且末段无 content 段
+  // (thinking/text)时, 说明处于 action 执行/新 thought 未到, 在流水线内容输出位置
+  // (末段之下; 无任何段时即容器首列)渲染 ↻ 型 SVG 缺口圆弧; 首 chunk 到达,
+  // 末段变 thinking/text, waiting 即消失, 内容从同一首列打字机输出——等待符号
+  // 禁止常驻, 由内容覆盖接管
+  const lastSeg = segs[segs.length - 1];
+  const waiting =
+    streaming &&
+    (!lastSeg || (lastSeg.kind !== 'thinking' && lastSeg.kind !== 'text'));
   return (
     <div
       style={{
@@ -146,7 +156,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
       {headerNode}
       {segs.map((seg, i) => {
         if (seg.kind === 'thinking') {
-          const cursor = streaming && i === lastThink;
+          // 2026-09-02 小欧 · 北京老陈定案: 光标仅亮在"最后一段"(打字机末段), 旧 thinking 段完成即灭
+          const cursor = streaming && i === lastThink && i === segs.length - 1;
           return (
             <ThinkingStream
               key={i}
@@ -157,7 +168,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           );
         }
         if (seg.kind === 'text') {
-          const isLive = streaming && i === lastText; // 实时且为累积中段 → 打字机态
+          // 2026-09-02 小欧: 限定末段, 与 thinking 光标同策略
+          const isLive = streaming && i === lastText && i === segs.length - 1;
           return (
             <TextStream
               key={i}
@@ -226,6 +238,27 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         }
         return <StatusLine key={i} step={seg.step} />;
       })}
+      {waiting && (
+        <div
+          style={{
+            margin: stepMargin(false),
+          }}
+        >
+          <span className="waiting-cursor" aria-label="等待下一个思考内容">
+            <svg
+              width="1.4em"
+              height="1.4em"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#52c41a"
+              strokeWidth={2}
+              strokeLinecap="round"
+            >
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+          </span>
+        </div>
+      )}
     </div>
   );
 };
