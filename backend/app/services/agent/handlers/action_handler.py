@@ -141,6 +141,10 @@
 # 2026-08-26 小欧 - action步落库记录层修复(com-test 09实证): 原_exec_calls=_safe_calls if _safe_calls else [], 当全部调用被安全拦截时_exec_calls=[]→ActionStep.tools=[]→DB步骤完整性FAIL(无工具调用信息); 改法: 记录层新增_record_calls=_exec_calls if _exec_calls else call_result.all_calls(兜底取LLM意图调用含被拒项), 仅用于ActionStep.tools落库补全; 执行层仍用_exec_calls(绝不回退all_calls, 不绕过安全检查)
 # 2026-08-28 小欧 - yield日志审计: check_safety_and_confirm 关键决策点(blocked/paused/timeout/rejected/resumed)补 logger(warning/info), 覆盖11个无日志yield(SRP); 三堂会审无逻辑修正
 # 2026-08-30 小欧 - 控制台写离线化收口(case09挂起根治): handle_action 内唯一裸 print([Action]step=) → log_and_print, 延续2026-07-23统一治理; 事件循环线程零同步stdout写 + [Action]获得文件留痕增强
+# 2026-09-01 - 小欧 - 紧急bug修复(北京老陈驱动, 前端badge卡paused致耗时秒表失实时): 暂停后恢复路径补发resumed使事件成对——
+#   ①S1 auto_confirm分支(resolve_confirmation+set_status EXECUTING之后, 沙箱预检前)补发 MetaStep(type="resumed");
+#   ②S2 真HITL分支 resumed 从 if auth_path 内移出, 确认后无条件发1条(授权信息并入文案), 消除重复(KISS/DRY),
+#      user确认即恢复与是否授权白名单外路径解耦; resumed 非业务step, agent_runner.py 剔除集合已含, 不影响 total_steps。
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -341,6 +345,13 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         grant_temp_auth(safety_result.auth_path, recursive=True)
                     resolve_confirmation(confirm_id, confirmed=True, trust_session=True)
                     set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
+                    # 2026-09-01 小欧 - 紧急bug修复S1(前端badge卡paused): auto_confirm立即放行后补发resumed,
+                    #   使 paused/resumed 事件成对(对齐下方真HITL确认后恢复语义, 前端badge据此回running恢复耗时秒表)
+                    yield agent._step_emitter.emit(MetaStep(
+                        step=step, type="resumed",
+                        content=f"已自动确认工具执行: {_cn}",
+                        severity="info",
+                    ))
                     # v1.25 M3 插入点①: auto_confirm 汇合路径(continue 之前) — 沙箱预检最后闸门
                     _pre = await sandbox_precheck(safety_result, _cn, _cp)
                     if _pre is not None:
@@ -375,18 +386,22 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
 
                 # 用户已确认：恢复执行态继续工具执行（SUSPENDED→EXECUTING 合法）— 小欧 2026-07-12
                 # ⑮ 白名单外临时授权: 确认后授予本次操作权限(一次一申请, 支持递归, per-request) — 小欧 2026-08-10
+                # 2026-09-01 小欧 - 紧急bug修复S2(前端badge卡paused): resumed从if auth_path内移出,
+                #   用户确认即恢复(与是否授权白名单外路径解耦), 无条件发1条, 授权信息并入文案, 消除重复(KISS/DRY)
                 if getattr(safety_result, "auth_path", None):
                     from app.tools.security.temp_auth import grant_temp_auth
                     grant_temp_auth(safety_result.auth_path, recursive=True)
-                    # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP)
+                    # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP) — 保留(2026-09-01 S2移出resumed时同步保留授权留痕)
                     logger.info(f"[action] step={step} resumed+auth: tool={_cn} path={safety_result.auth_path}")
-                    yield agent._step_emitter.emit(MetaStep(
-                        step=step,
-                        type="resumed",
-                        content=f"已临时授权白名单外路径: {safety_result.auth_path}",
-                        severity="info",
-                    ))
+                # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP)
                 set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
+                yield agent._step_emitter.emit(MetaStep(
+                    step=step, type="resumed",
+                    content=(f"已临时授权白名单外路径: {safety_result.auth_path}"
+                             if getattr(safety_result, "auth_path", None)
+                             else f"用户已确认工具执行: {_cn}"),
+                    severity="info",
+                ))
                 # v1.25 M3 插入点②: 用户确认汇合路径(末尾加 continue, 防落入③重复预检)
                 _pre = await sandbox_precheck(safety_result, _cn, _cp)
                 if _pre is not None:

@@ -6,6 +6,9 @@
 #   [改法] 原逻辑逐字复制, 仅①去闭包改为模块级函数 ②隐式捕获改为显式参数 ③落点定在 Agent 编排层
 #          (app/services/agent/handlers/, 与 action_handler 同层, 依赖方向 handler→sandbox 单向, 无环)。
 #          业务语义/分支/状态机零改动(复制不重写)。
+# 2026-09-01 小欧 紧急bug修复(前端badge卡paused): sandbox_resolve 用户裁决确认分支(:confirmed)补发
+#   MetaStep(type="resumed"), 使 paused/resumed 事件成对, 前端badge据此回running恢复前端耗时秒表(秒实时)。
+#   resumed 非业务step, stream_reader/agent_runner 剔除不入 current_execution_steps, 不影响 total_steps。
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -74,6 +77,11 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     set_status(agent, AgentStatus.EXECUTING, "沙箱预检用户裁决完成")
     if auth.get("confirmed"):
         logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")
+        # 2026-09-01 小欧 - 紧急bug修复S3(前端badge卡paused): 沙箱用户裁决确认后恢复,
+        #   补发resumed使paused/resumed成对, 前端badge据此回running恢复耗时秒表
+        steps.append(agent._step_emitter.emit(MetaStep(
+            step=step, type="resumed",
+            content=f"沙箱预检已确认执行: {tool_name}", severity="info")))
         return True, steps
     logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
     denied_list.append((tool_name, "沙箱预检未完成验证且用户拒绝执行", call))
