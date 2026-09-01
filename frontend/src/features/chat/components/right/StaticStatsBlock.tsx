@@ -8,6 +8,8 @@
 // 编辑历史: 2026-08-30 小欧 - 布局调整: column 2→3, 第一行放最终状态/总耗时/token终值, 第二行工具汇总横跨3列; 删除重试行(TaskInfoBar已展示)
 // 编辑历史: 2026-09-01 小欧 - 修复token终值行折行: 加contentStyle whiteSpace:nowrap强制单行 + 格式紧凑化P/C/T去/两侧空格省宽度; 不折行不剪切(北京老陈要求) - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 任务统计增强 v0.8: 重构为极简六节(状态Tag同行/基本信息无框/Token行内/工具汇总+单折叠链/产出物极简列表/错误弱提示)，去重总耗时/tokenTag/产出Tag - 小欧-2026-09-01
+// 编辑历史: 2026-09-01 小欧 - 修复工具调用链折叠三角移至(*步)后 - 小欧-2026-09-01
+// 编辑历史: 2026-09-01 小欧 - 规范全页折叠方法与符号位置/大小统一：三角统一置于(*步)后、复用TrustPanel可访问方法与FontSize/Spacing/Colors常量，符号大小统一FontSize.SECONDARY - 小欧-2026-09-01
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -24,7 +26,7 @@ import React from 'react';
 import { Tag, Typography } from 'antd';
 import type { TaskDetail } from '../../../../services/api/task.api';
 import type { ExecutionStep } from '../../../../types/execution';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 
 const STATUS_COLOR_MAP: Record<string, string> = {
   completed: 'success',
@@ -204,16 +206,17 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             }
           }}
           style={{
-            fontSize: 12,
-            color: '#595959',
             cursor: 'pointer',
+            lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
             marginTop: 4,
           }}
         >
-          {chainOpen ? '▾' : '▸'} 工具调用链{' '}
-          {chain.length
-            ? `(${chain.length}步，点击${chainOpen ? '收起' : '展开'})`
-            : ''}
+          <span
+            style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.PRIMARY }}
+          >
+            工具调用链{chain.length ? ` (${chain.length}步)` : ''}{' '}
+            {chainOpen ? '▾' : '▸'}
+          </span>
         </div>
         {chainOpen && (
           <div style={{ marginTop: 4 }}>

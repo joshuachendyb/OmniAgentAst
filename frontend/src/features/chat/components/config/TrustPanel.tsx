@@ -4,6 +4,7 @@
 // 编辑历史: 2026-08-30 小欧 - 13.14 纯div重构: 去Collapse/List/Typography/Button, 收起16px/展开90px(4×16+3×2+4), 零默认留白 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 修复×不显眼: DeleteOutlined→文本×、色#8c8c8c→#595959、字号12→14加粗 - 小欧-2026-08-30
 // 编辑历史: 2026-09-02 小欧 - task005会审P2无障碍修复(北京老陈定案): 纯div折叠回归→折叠区补 role="button"/aria-expanded/tabIndex/onKeyDown(Enter/Space)、列表补 role="list"/"listitem"; 不引 aria-controls(列表条件渲染, id可能不存在成无效引用) - 小欧-2026-09-02
+// 编辑历史: 2026-09-01 小欧 - 规范折叠符号位置统一：三角移至“(*)”后，与工具调用链同位，保持全页单一折叠方法 - 小欧-2026-09-01
 /**
  * TrustPanel - 信任操作面板（config slot，默认收起）
  *
@@ -91,7 +92,7 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
         <span
           style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.PRIMARY }}
         >
-          {expanded ? '▾' : '▸'} 本会话信任的操作（{tools.length}）
+          本会话信任的操作（{tools.length}） {expanded ? '▾' : '▸'}
         </span>
       </div>
       {expanded && (
