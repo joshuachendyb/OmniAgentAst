@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-08-30 08:05:00
-**最近更新**: 2026-08-30 08:05 小欧 新增 1.11 控制台镜像 app/logger/console_writer.py(console_put 非阻塞控制台写); log_and_print 与 action_handler/main/config 裸print 收口点统一复用(根治 case09 挂起)
+**最后更新时间**: 2026-09-01 10:52:51
+**最近更新**: 2026-09-01 10:52:51 小欧 新增 3.4 服务模型配置解析 app/services/lifecycle/service.py — parse_model_params(provider_cfg, model)->(extra_body_params, context_limit), model_params 解析唯一权威(DRY 归一, create_service_instance 与 stream_orchestrator L2 快照同用)
 
 ---
 
@@ -159,6 +159,14 @@
 | `sandbox_resolve` | 预检结果处置: 危险型失败→denied登记+error步骤; 未完成有效验证→复用HITL原语请用户裁决; 杜绝LLM原样重发死循环 | agent, step, call, tool_name, params, pre, safety_result, denied_list | Tuple[bool, list] |
 
 > 落点说明(2026-08-25 小欧 合规重构): 原逻辑在 action_handler 内以嵌套闭包实现, 违反 1.3 公用函数规范(分层/先查后建/登记) 与 KISS-DIRECT(隐式捕获约10个外层变量); 现拆为 Agent 编排层模块级函数(依赖方向 handler→sandbox 单向, 无环), 逻辑零改动(复制不重写)。
+
+### 3.4 服务模型配置解析（app/services/lifecycle/service.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `parse_model_params` | 解析 provider 配置的 model_params → (extra_body_params, context_limit)；DRY 唯一权威(create_service_instance 与 stream_orchestrator L2 快照同用)；context_limit 配置优先否则 DEFAULT_CONTEXT_LIMIT 兜底，余量作 extra_body_params(无则 None) | provider_config: dict, model: str | Tuple[Optional[dict], int] |
+
+> 落点说明(2026-09-01 小欧 复用优先/DRY 归一): 原逻辑双份嵌在 create_service_instance(service.py) 与 stream_orchestrator(L2 跨 provider 快照), 归一为本函数唯一权威, 消除双份漂移; 行为与历史一致(仅去重, 不改逻辑)。
 
 ---
 
