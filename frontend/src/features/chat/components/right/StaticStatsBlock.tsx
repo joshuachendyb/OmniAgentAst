@@ -62,12 +62,17 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
         borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
       }}
     >
-      <Typography.Text strong style={{ fontSize: 13 }}>
-        任务统计
-      </Typography.Text>
       <div
-        style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginTop: 8,
+        }}
       >
+        <Typography.Text strong style={{ fontSize: 13 }}>
+          任务统计
+        </Typography.Text>
         <Tag color={statusColor} style={{ margin: 0 }}>
           {detail.status}
         </Tag>
@@ -111,10 +116,6 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
           <span style={{ color: '#8c8c8c' }}>结束</span>
           <span style={{ color: '#262626', whiteSpace: 'nowrap' }}>
             {fmtTime(detail.updated_at)}
-          </span>
-          <span style={{ color: '#8c8c8c' }}>耗时</span>
-          <span style={{ color: '#262626' }}>
-            {detail.duration != null ? `${Math.round(detail.duration)}s` : '-'}
           </span>
           <span style={{ color: '#8c8c8c' }}>事件</span>
           <span style={{ color: '#262626' }}>{detail.total_steps ?? '-'}</span>
@@ -194,6 +195,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                 .join(' · ')
             : '-'}
         </Typography.Text>
+        {/* 折叠规范(小欧 2026-09-01): 三角统一▲▼、大小14(PRIMARY)、颜色PRIMARY#595959、位置数量后、方法role=button/aria-expanded/tabIndex/onKeyDown - 北京老陈定案，全页统一 */}
         <div
           role="button"
           tabIndex={0}
@@ -207,15 +209,23 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
           }}
           style={{
             cursor: 'pointer',
-            lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+            lineHeight: `${FontSize.PRIMARY + Spacing.XS}px`,
             marginTop: 4,
           }}
         >
           <span
             style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.PRIMARY }}
           >
-            工具调用链{chain.length ? ` (${chain.length}步)` : ''}{' '}
-            {chainOpen ? '▾' : '▸'}
+            工具调用链{chain.length ? ` (${chain.length}步)` : ''}
+          </span>
+          <span
+            style={{
+              fontSize: FontSize.PRIMARY,
+              color: Colors.TEXT.PRIMARY,
+              marginLeft: 4,
+            }}
+          >
+            {chainOpen ? '▲' : '▼'}
           </span>
         </div>
         {chainOpen && (
@@ -223,33 +233,35 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             <Typography.Text style={{ fontSize: 12 }}>
               {chainSeq}
             </Typography.Text>
-            {chain.map((s, idx) => (
-              <div
-                key={idx}
-                style={{ fontSize: 12, display: 'flex', gap: 8, marginTop: 2 }}
-              >
-                <span style={{ color: '#8c8c8c', minWidth: 20 }}>
-                  {idx + 1}
-                </span>
-                <span style={{ color: '#595959' }}>
-                  {(s.tools ?? []).map((t) => t.tool).join(', ')}
-                </span>
-                <span
+            {chain.flatMap((s, sIdx) =>
+              (s.tools ?? []).map((t, tIdx) => (
+                <div
+                  key={`${sIdx}-${tIdx}`}
                   style={{
-                    color: '#8c8c8c',
-                    fontFamily: 'monospace',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
+                    fontSize: 12,
+                    display: 'flex',
+                    gap: 8,
+                    marginTop: 2,
                   }}
                 >
-                  {JSON.stringify((s.tools ?? [])[0]?.params ?? {}).slice(
-                    0,
-                    80
-                  )}
-                </span>
-              </div>
-            ))}
+                  <span style={{ color: '#8c8c8c', minWidth: 20 }}>
+                    {sIdx + 1}.{tIdx + 1}
+                  </span>
+                  <span style={{ color: '#595959' }}>{t.tool}</span>
+                  <span
+                    style={{
+                      color: '#8c8c8c',
+                      fontFamily: 'monospace',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {JSON.stringify(t.params ?? {}).slice(0, 80)}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>
@@ -260,23 +272,29 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
           paddingTop: 8,
         }}
       >
-        <Typography.Text
+        <div
           style={{
-            fontSize: 12,
-            fontWeight: 500,
-            color: '#595959',
-            borderLeft: `2px solid ${Colors.PRIMARY}`,
-            paddingLeft: 6,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginTop: 4,
           }}
         >
-          产出物
-        </Typography.Text>
-        <Typography.Text
-          type="secondary"
-          style={{ fontSize: 12, display: 'block', marginTop: 4 }}
-        >
-          产出 {(detail.artifacts ?? []).length} 个
-        </Typography.Text>
+          <Typography.Text
+            style={{
+              fontSize: 12,
+              fontWeight: 500,
+              color: '#595959',
+              borderLeft: `2px solid ${Colors.PRIMARY}`,
+              paddingLeft: 6,
+            }}
+          >
+            产出物
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {(detail.artifacts ?? []).length} 个
+          </Typography.Text>
+        </div>
         {(detail.artifacts ?? []).length > 0 ? (
           (detail.artifacts ?? []).map((a, i) => (
             <div

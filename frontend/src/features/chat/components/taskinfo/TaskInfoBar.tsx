@@ -249,21 +249,52 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             marginLeft: 'auto',
           }}
         >
+          {/* 折叠规范(小欧 2026-09-01): 三角统一▲▼、大小14(PRIMARY)、颜色PRIMARY#595959、位置数量后、方法role=button/aria-expanded/tabIndex/onKeyDown - 北京老陈定案，全页统一 */}
           <span
+            role="button"
+            tabIndex={0}
+            aria-expanded={trustExpanded}
             onClick={(e) => {
               e.stopPropagation();
               setTrustExpanded((v) => !v);
             }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                setTrustExpanded((v) => !v);
+              }
+            }}
             style={{
-              fontSize: 12,
-              color:
-                trustTools.length > 0
-                  ? Colors.TEXT.PRIMARY
-                  : Colors.TEXT.TERTIARY,
               cursor: 'pointer',
+              lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+              display: 'inline-flex',
+              alignItems: 'center',
             }}
           >
-            {trustExpanded ? '▾' : '▸'} 信任({trustTools.length})
+            <span
+              style={{
+                fontSize: FontSize.SECONDARY,
+                color:
+                  trustTools.length > 0
+                    ? Colors.TEXT.PRIMARY
+                    : Colors.TEXT.TERTIARY,
+              }}
+            >
+              信任({trustTools.length})
+            </span>
+            <span
+              style={{
+                fontSize: FontSize.PRIMARY,
+                color:
+                  trustTools.length > 0
+                    ? Colors.TEXT.PRIMARY
+                    : Colors.TEXT.TERTIARY,
+                marginLeft: 4,
+              }}
+            >
+              {trustExpanded ? '▲' : '▼'}
+            </span>
           </span>
           <span
             onClick={() => setCollapsed((v) => !v)}

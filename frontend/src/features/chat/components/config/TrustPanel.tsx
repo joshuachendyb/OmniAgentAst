@@ -73,6 +73,7 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
   if (tools.length === 0) return null;
   return (
     <div style={{ padding: 0 }}>
+      {/* 折叠规范(小欧 2026-09-01): 三角统一▲▼、大小14(PRIMARY)、颜色PRIMARY#595959、位置数量后、方法role=button/aria-expanded/tabIndex/onKeyDown - 北京老陈定案，全页统一 */}
       <div
         role="button"
         aria-expanded={expanded}
@@ -92,7 +93,16 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
         <span
           style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.PRIMARY }}
         >
-          本会话信任的操作（{tools.length}） {expanded ? '▾' : '▸'}
+          本会话信任的操作（{tools.length}）
+        </span>
+        <span
+          style={{
+            fontSize: FontSize.PRIMARY,
+            color: Colors.TEXT.PRIMARY,
+            marginLeft: 4,
+          }}
+        >
+          {expanded ? '▲' : '▼'}
         </span>
       </div>
       {expanded && (

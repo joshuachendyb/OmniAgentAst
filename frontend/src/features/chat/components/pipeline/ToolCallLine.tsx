@@ -14,6 +14,7 @@
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案: 字体留白全0 / step间6(SM) / step内文字4(XS折不折同) / obs标签4(XS) / 段内折不折2(XS-2): 观察块间4 标签4 段内2，工具行段距 SM6 - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - 工具观察按工具维度组织: 单/多统一结构, 第一行集合名+同行工具名列表, 内层每工具子行(独立参数+状态+摘要, 按索引与tool_result配对); 修多工具只显首项结果; 修参数结果挤一行 - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 修复重构退化(BUG#22): 展开区兜底恢复字符串tool_result渲染(与数组ToolResultRenderer/兜底content并列, 恢复2026-08-29 #22修复逻辑), results仅认数组致字符串tool_result被忽略 - 小欧-2026-09-01
+// 编辑历史: 2026-09-01 小欧 - 统一折叠三角：▲▼改▸▾、大小14(PRIMARY)、颜色PRIMARY、位置参数后，方法补role/aria/keyboard与TrustPanel一致 - 小欧-2026-09-01
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -29,7 +30,13 @@ import React, { useState } from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
-import { Colors, BorderWidth, Spacing, stepMargin } from '@/utils/stepStyles';
+import {
+  Colors,
+  BorderWidth,
+  FontSize,
+  Spacing,
+  stepMargin,
+} from '@/utils/stepStyles';
 
 interface ToolCallLineProps {
   action: ExecutionStep; // type=action
@@ -145,7 +152,11 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                 style={{ marginTop: Spacing.XS, paddingLeft: Spacing.SM }}
               >
                 {/* 2026-09-01 小欧(北京老陈定案, 修复"点击好几次才有效"根因): 收起/展开onClick放在折叠区(工具行+结果摘要)容器, 点这两行toggle该工具; 展开区移出onClick容器, 内部独立交互(GeneericResultRenderer的Paragraph ellipsis展开按钮/目录树节点/CollapsibleText链接)不被误触发收起 */}
+                {/* 折叠规范(小欧 2026-09-01): 三角统一▲▼、大小14(PRIMARY)、颜色PRIMARY#595959、位置数量后、方法role=button/aria-expanded/tabIndex/onKeyDown - 北京老陈定案，全页统一 */}
                 <div
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isOpen}
                   style={{ cursor: 'pointer' }}
                   onClick={() => {
                     setExpanded((prev) => {
@@ -153,6 +164,16 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       next[i] = !prev[i];
                       return next;
                     });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setExpanded((prev) => {
+                        const next = [...prev];
+                        next[i] = !prev[i];
+                        return next;
+                      });
+                    }
                   }}
                 >
                   {/* 工具行：随折叠区toggle; cursor提示可点 */}
@@ -169,7 +190,11 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       {tParamText.length > 60 ? '…' : ''}
                     </span>
                     <span
-                      style={{ marginLeft: Spacing.SM, color: Colors.PRIMARY }}
+                      style={{
+                        marginLeft: Spacing.SM,
+                        color: Colors.PRIMARY,
+                        fontSize: FontSize.PRIMARY,
+                      }}
                     >
                       {isOpen ? '▲' : '▼'}
                     </span>
