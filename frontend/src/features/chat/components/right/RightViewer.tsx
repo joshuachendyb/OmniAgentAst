@@ -4,6 +4,8 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审P1-5/边距: 补空/错误三态(Empty暂无执行记录/Skeleton由Spin承载/Alert错误margin8px0#fff2f0隔离); 错误红字与统计块加间距防误读
 // 编辑历史: 2026-08-30 小欧 - 修复两个问题: ①auto-scroll: liveSteps变化时滚到底部(仅用户已在底部120px内触发, 防打断手动上翻); ②StaticStatsBlock仅非live时显示(消除执行中提前显示统计块的竞态)
 // 编辑历史: 2026-08-30 小欧 - 修复spinner: Spin spinning加!isCurrentLive守卫+setLoading加!isCurrentLive守卫, live模式不触发loading/spinner
+// 编辑历史: 2026-09-02 小欧 - task005会审P3修复(北京老陈定案): findScrollContainer 弃字符串选择器 closest('[style*="overflow"]')
+//   (仅匹配内联样式, 改CSS类即失效且不报错)→改 getComputedStyle 沿祖先上溯找 overflowY auto/scroll, 稳健且语义等价 — 小欧-2026-09-02
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -69,13 +71,25 @@ const RightViewer: React.FC<RightViewerProps> = ({
   // 小欧 2026-08-30: 自动滚动 — liveSteps变化时滚到底部, 仅用户已在底部附近时触发(防打断手动上翻)
   const pipelineEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  // 2026-09-02 小欧 task005会审P3(北京老陈定案): 弃 closest('[style*="overflow"]') 字符串选择器(仅匹配内联样式, 改CSS类即静默失效),
+  //   改 getComputedStyle 沿祖先上溯找 overflowY:auto/scroll 滚动容器; 行为语义等价, 更稳健 — 小欧 2026-09-02
   const findScrollContainer = useCallback(() => {
-    if (!scrollContainerRef.current) {
-      scrollContainerRef.current = pipelineEndRef.current?.closest(
-        '[style*="overflow"]'
-      ) as HTMLDivElement | null;
+    if (scrollContainerRef.current) return scrollContainerRef.current;
+    let el: HTMLElement | null = pipelineEndRef.current;
+    while (el) {
+      const style = window.getComputedStyle(el);
+      if (
+        style.overflowY === 'auto' ||
+        style.overflowY === 'scroll' ||
+        style.overflow === 'auto' ||
+        style.overflow === 'scroll'
+      ) {
+        scrollContainerRef.current = el;
+        return el;
+      }
+      el = el.parentElement;
     }
-    return scrollContainerRef.current;
+    return null;
   }, []);
   useEffect(() => {
     if (!isCurrentLive || liveSteps.length === 0) return;
