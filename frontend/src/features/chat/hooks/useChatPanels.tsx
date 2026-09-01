@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-29 小强 - 修复#21: TopbarStats chainTokens由硬编码null改为透传真实chainTokens(与依赖数组一致) - 小强-2026-08-29
 // 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel由config slot移至TaskInfoBar第一行尾部集成，移除config.trust - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被隐藏修复。新增可选入参latestTaskId/latestTaskRef并透传给TaskListPanel(左列滚动定位) - 小欧-2026-09-01
+// 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): 入参新增sessionTokens(会话累计3字段), 解构并透传TopbarStats; chainTokens由number改3字段结构; sessionTokens加入useMemo依赖(否则实时/静态更新不重算是栏不刷新) - 小欧-2026-09-01
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -43,7 +44,16 @@ interface UseChatPanelsOptions {
   activeTaskId: string | null;
   selectedDetail: TaskDetail | null;
   handleSelectTask: (id: string) => void;
-  chainTokens: number | null;
+  sessionTokens: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  } | null; // 2026-09-01 小欧: 会话累计 token
+  chainTokens: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  } | null; // 2026-09-01 小欧: 链累计 token(改3字段)
   handleNewSession: () => void;
   handleEditingStart: () => void;
   handleEditingCancel: () => void;
@@ -78,6 +88,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     activeTaskId,
     selectedDetail,
     handleSelectTask,
+    sessionTokens,
     chainTokens,
     handleNewSession,
     handleEditingStart,
@@ -140,6 +151,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             />
             <TopbarStats
               taskCount={total}
+              sessionTokens={sessionTokens}
               chainTokens={chainTokens}
               createdAt={sessionTimes.createdAt}
               updatedAt={sessionTimes.updatedAt}
@@ -270,6 +282,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       setSessionModelOverride,
       total,
       tasksLoading,
+      sessionTokens, // 2026-09-01 小欧: 实时/静态双源更新需入依赖, 否则useMemo缓存旧值TopbarStats不刷新
       chainTokens,
       sessionTimes,
       effective,

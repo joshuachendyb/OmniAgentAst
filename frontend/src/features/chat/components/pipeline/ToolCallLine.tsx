@@ -13,6 +13,7 @@
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 根容器 lineHeight=字号+Spacing.XS(4) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案: 字体留白全0 / step间6(SM) / step内文字4(XS折不折同) / obs标签4(XS) / 段内折不折2(XS-2): 观察块间4 标签4 段内2，工具行段距 SM6 - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - 工具观察按工具维度组织: 单/多统一结构, 第一行集合名+同行工具名列表, 内层每工具子行(独立参数+状态+摘要, 按索引与tool_result配对); 修多工具只显首项结果; 修参数结果挤一行 - 小欧-2026-09-01
+// 编辑历史: 2026-09-01 小欧 - 修复重构退化(BUG#22): 展开区兜底恢复字符串tool_result渲染(与数组ToolResultRenderer/兜底content并列, 恢复2026-08-29 #22修复逻辑), results仅认数组致字符串tool_result被忽略 - 小欧-2026-09-01
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -41,7 +42,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   observations = [],
   highlight = false,
 }) => {
-  const [open, setOpen] = useState(false);
+  // 2026-09-01 小欧: 每工具独立展开状态(数组), 点某工具行任意位置只展开/收起该工具(北京老陈定案: 完全独立展开+独立观察)
+  const [expanded, setExpanded] = useState<boolean[]>([]);
   const tools = action.tools || [];
   // 单 observation step 的 tool_result 数组，与 tools[] 按索引 1:1 配对（2026-09-01 小欧）
   const obsStep = observations[0];
@@ -57,8 +59,6 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     : `调用 1 个工具`;
   const toolNameList = tools.map((t) => t.tool).join(', ');
   const firstLine = `${collectionLabel}  [${toolNameList}]`;
-  // 展开区完整参数：全部工具的 params 汇总（2026-09-01 小欧）
-  const paramText = JSON.stringify(tools.map((t) => t.params ?? {}));
   // 每工具结果摘要 + 状态（按索引 i 取，杜绝只取首项）（2026-09-01 小欧）
   // 三堂会审(2026-09-01): 保留旧 getObsSummary 摘要容错(llm_data.summary→data_text→summary→兜底'-'), 防关联退化
   const getResultSummary = (i: number): string => {
@@ -115,103 +115,105 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         background: highlight ? Colors.WARNING_BG : 'transparent',
       }}
     >
-      <span style={{ cursor: 'pointer' }} onClick={() => setOpen((v) => !v)}>
-        🔧 {firstLine} {attemptLabel}
-        <span style={{ marginLeft: Spacing.SM, color: Colors.PRIMARY }}>
-          {open ? '▲' : '▼'}
+      {/* 2026-09-01 小欧(北京老陈定案: 完全独立展开+独立观察): 第一行集合行纯文本展示, 无全局展开按钮; 每工具子行独立展开/收起, 点子行任意位置toggle该工具; 展开区只显示该工具完整observation(ToolResultRenderer), 不再有"参数:全集"重复 */}
+      <div>
+        <span>
+          🔧 {firstLine} {attemptLabel}
         </span>
-      </span>
-      {/* 每工具子行：工具名+参数一行，→结果独立一行缩进（2026-09-01 小欧） */}
-      {/* 间距遵循 stepStyles 既有 observation 风格(2026-08-30 定案): 字号 13(与展开区统一, 非12), 行高=字号13+Spacing.XS, 段内折不折=Spacing.XS-2, 间距一律 Spacing 常量派生 */}
-      <div style={{ marginTop: Spacing.XS }}>
-        {tools.map((t, i) => {
-          const tParamText = JSON.stringify(t.params ?? {});
-          const sum = getResultSummary(i);
-          const st = getResultStatus(i);
-          // 三堂会审(2026-09-01): 状态缺失时用中性文字色、不显图标, 防误报成功
-          const color = st ? statusColorMap[st] : Colors.TEXT.PRIMARY;
-          const icon = st ? `${statusIconMap[st]} ` : '';
-          const isLast = i === tools.length - 1;
-          const branch = isLast ? '└─' : '├─';
-          const sub = isLast ? '   ' : '│  ';
-          return (
-            <div
-              key={i}
-              style={{ marginTop: Spacing.XS, paddingLeft: Spacing.SM }}
-            >
-              <div
-                style={{
-                  fontSize: 13,
-                  lineHeight: `${13 + Spacing.XS}px`,
-                  color: Colors.TEXT.PRIMARY,
-                }}
-              >
-                {branch} {t.tool}{' '}
-                <span style={{ color: Colors.TEXT.SECONDARY }}>
-                  参数：{tParamText.slice(0, 60)}
-                  {tParamText.length > 60 ? '…' : ''}
-                </span>
-              </div>
-              {sum && (
-                <div
-                  style={{
-                    marginTop: Spacing.XS - 2 /* 段内折不折 2=XS-2 */,
-                    paddingLeft: Spacing.SM,
-                    lineHeight: `${13 + Spacing.XS}px`,
-                    color,
-                    fontSize: 13,
-                  }}
-                >
-                  {sub} {icon}
-                  {sum.slice(0, 60)}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {open && (
-        <div style={{ marginTop: Spacing.XS - 2, paddingLeft: Spacing.LG }}>
-          {' '}
-          {/* 展开区 2=XS-2 */}
-          <div
-            style={{
-              color: Colors.TEXT.SECONDARY,
-              lineHeight: `${13 + Spacing.XS}px`,
-              marginBottom: Spacing.XS,
-            }}
-          >
-            参数：
-          </div>
-          <CollapsibleText text={paramText} />
+        {/* 每工具子行：工具行可独立展开；间距遵循 stepStyles 既有 observation 风格(2026-08-30 定案): 字号 13, 行高=13+Spacing.XS, 段内折不折=Spacing.XS-2, 间距一律 Spacing 常量派生 */}
+        <div style={{ marginTop: Spacing.XS }}>
           {tools.map((t, i) => {
-            // 单工具完整结果：构造仅含该工具 tool_result 的临时 step 交给 ToolResultRenderer
+            const tParamText = JSON.stringify(t.params ?? {});
+            const sum = getResultSummary(i);
+            const st = getResultStatus(i);
+            // 三堂会审(2026-09-01): 状态缺失时用中性文字色、不显图标, 防误报成功
+            const color = st ? statusColorMap[st] : Colors.TEXT.PRIMARY;
+            const icon = st ? `${statusIconMap[st]} ` : '';
+            const isLast = i === tools.length - 1;
+            const branch = isLast ? '└─' : '├─';
+            const sub = isLast ? '   ' : '│  ';
+            const isOpen = !!expanded[i];
+            // 单工具完整观察：构造仅含该工具 tool_result 的临时 step 交给 ToolResultRenderer（2026-09-01 小欧）
             const singleResult = results[i] ? [results[i]] : [];
             const singleStep = {
               ...(obsStep as ExecutionStep),
               tool_result: singleResult,
             };
             return (
-              <div key={i} style={{ marginTop: Spacing.XS }}>
+              <div
+                key={i}
+                style={{ marginTop: Spacing.XS, paddingLeft: Spacing.SM }}
+              >
+                {/* 2026-09-01 小欧(北京老陈定案, 修复"点击好几次才有效"根因): 收起/展开onClick放在折叠区(工具行+结果摘要)容器, 点这两行toggle该工具; 展开区移出onClick容器, 内部独立交互(GeneericResultRenderer的Paragraph ellipsis展开按钮/目录树节点/CollapsibleText链接)不被误触发收起 */}
                 <div
-                  style={{
-                    color: Colors.TEXT.SECONDARY,
-                    lineHeight: `${13 + Spacing.XS}px`,
-                    marginBottom: Spacing.XS,
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => {
+                    setExpanded((prev) => {
+                      const next = [...prev];
+                      next[i] = !prev[i];
+                      return next;
+                    });
                   }}
                 >
-                  {t.tool} 结果：
+                  {/* 工具行：随折叠区toggle; cursor提示可点 */}
+                  <div
+                    style={{
+                      fontSize: 13,
+                      lineHeight: `${13 + Spacing.XS}px`,
+                      color: Colors.TEXT.PRIMARY,
+                    }}
+                  >
+                    {branch} {t.tool}{' '}
+                    <span style={{ color: Colors.TEXT.SECONDARY }}>
+                      参数：{tParamText.slice(0, 60)}
+                      {tParamText.length > 60 ? '…' : ''}
+                    </span>
+                    <span
+                      style={{ marginLeft: Spacing.SM, color: Colors.PRIMARY }}
+                    >
+                      {isOpen ? '▲' : '▼'}
+                    </span>
+                  </div>
+                  {/* 折叠态：结果摘要独立一行缩进（2026-09-01 小欧） */}
+                  {/* 三堂会审(2026-09-01): 去掉结果行自身 paddingLeft, 使其前导 │ 与上方工具行 ├─/└─ 竖线同列对齐(北京老陈反馈"绿线前移与黑竖线对齐更好看") */}
+                  {sum && (
+                    <div
+                      style={{
+                        marginTop: Spacing.XS - 2 /* 段内折不折 2=XS-2 */,
+                        lineHeight: `${13 + Spacing.XS}px`,
+                        color,
+                        fontSize: 13,
+                      }}
+                    >
+                      {sub} {icon}
+                      {sum.slice(0, 60)}
+                    </div>
+                  )}
                 </div>
-                {singleResult.length > 0 ? (
-                  <ToolResultRenderer step={singleStep} />
-                ) : (
-                  <CollapsibleText text={obsStep?.content ?? ''} />
+                {/* 展开区：该工具完整 observation（只显示观察，不显示参数全文，北京老陈定案 2026-09-01） */}
+                {/* 无onClick: 内部GeneericResultRenderer的Paragraph ellipsis"展开/收起"按钮、目录树节点、CollapsibleText链接各自独立交互, 不被折叠区toggle误触发(北京老陈定案 2026-09-01) */}
+                {isOpen && (
+                  <div
+                    style={{
+                      marginTop: Spacing.XS - 2,
+                      paddingLeft: Spacing.SM,
+                    }}
+                  >
+                    {singleResult.length > 0 ? (
+                      <ToolResultRenderer step={singleStep} />
+                    ) : typeof obsStep?.tool_result === 'string' ? (
+                      // 2026-09-01 小欧: 恢复字符串tool_result渲染(重构退化修复, results仅认数组故此处兜底)
+                      <CollapsibleText text={obsStep.tool_result as string} />
+                    ) : (
+                      <CollapsibleText text={obsStep?.content ?? ''} />
+                    )}
+                  </div>
                 )}
               </div>
             );
           })}
         </div>
-      )}
+      </div>
     </div>
   );
 };

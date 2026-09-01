@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-30 小欧 - 修复输入框悬空: 根div高度由写死calc(100vh-120px)改为height:100%填满Content(Content为flex:auto有确定高度, 原公式比实际可用高度矮61px导致底部空白) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 设计文档[2]12.10 v1.103: G2修复(serverTaskId变化即refreshTasks, 4.8.4.2 SSE start帧任务产生即入列) + latestTaskId透传useTaskSelection/useChainTokens(diff⑤⑥签名同步) - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被隐藏修复。创建latestTaskRef常驻ref并透传useChatPanels→TaskListPanel(左列滚动定位到最新任务) - 小欧-2026-09-01
+// 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): useChainTokens入参加metaFrames(SSE实时token帧源), 解构新增sessionTokens并透传useChatPanels - 小欧-2026-09-01
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../services/api/client';
@@ -88,13 +89,14 @@ const ChatPage: React.FC = () => {
     },
     [handleSelectTask]
   );
-  const { chainTokens } = useChainTokens(
+  const { sessionTokens, chainTokens } = useChainTokens(
     sessionId,
     chatStreaming.serverTaskId,
     chatStreaming.isReceiving,
     latestTaskId,
     tasks,
-    refreshTasks
+    refreshTasks,
+    chatStreaming.metaFrames // 2026-09-01 小欧: SSE实时token帧源
   );
   const handleSendWithMode = useCallback(
     (content: string, mode?: 'linked' | 'independent') => {
@@ -131,6 +133,7 @@ const ChatPage: React.FC = () => {
     activeTaskId,
     selectedDetail,
     handleSelectTask: handleSelectTaskOpenRight,
+    sessionTokens,
     chainTokens,
     handleNewSession,
     handleEditingStart,
