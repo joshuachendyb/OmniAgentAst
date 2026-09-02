@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-29 小强 - 修复#25: canRetry统一以ERROR_CONFIG_MAP[errorType].retryable为权威来源, unknown直达failed; 修复#26: 空闲超时改走reconnect()重连路径而非disconnect(true)绕过重连 - 小强-2026-08-29
 // 编辑历史: 2026-08-30 小欧 - 根治重连重复起任务: reconnect()空闲超时若尚无任务ID(首响应未到)即走统一错误中心判失败(不重新POST), sendMessageInternal再加兜底守卫禁止重连态无ID重POST(双任务/僵尸任务根治) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 修正陈旧闭包: serverTaskId加serverTaskIdRef同步读写(parser回调同步ref+state), 内部判定全部改读ref, 使挂起reader帧/空闲定时器/重连守卫读到最新任务ID, 杜绝state闭包陈旧误判 - 小欧-2026-08-30
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: SSE-02 isReceiving加Ref防闭包陈旧(空闲超时读旧值误重连) — 小欧-2026-09-02
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -273,6 +274,7 @@ export const useSSE = (
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
+  const isReceivingRef = useRef(false);
   const [executionSteps, setExecutionSteps] = useState<ExecutionStep[]>([]);
   const executionStepsRef = useRef<ExecutionStep[]>([]);
   const [currentResponse, setCurrentResponse] = useState('');
@@ -298,6 +300,9 @@ export const useSSE = (
     serverTaskIdRef.current = id;
     setServerTaskId(id);
   }, []);
+  useEffect(() => {
+    isReceivingRef.current = isReceiving;
+  }, [isReceiving]);
 
   // 重连相关
   const reconnectConfigRef = useRef<ReconnectConfig>({
@@ -579,7 +584,7 @@ export const useSSE = (
 
         idleTimeoutRef.current = window.setTimeout(() => {
           const timeSinceLastData = Date.now() - lastDataTimeRef.current;
-          if (timeSinceLastData >= IDLE_TIMEOUT && isReceiving) {
+          if (timeSinceLastData >= IDLE_TIMEOUT && isReceivingRef.current) {
             console.warn(
               `[SSE] 空闲超时：已经${timeSinceLastData / 1000}秒未收到数据，判定连接断开`
             );
