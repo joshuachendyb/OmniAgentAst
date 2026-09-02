@@ -11,6 +11,10 @@
 //   error 实时显示唯一位置收口=TaskInfoBar 位4(北京老陈定案): 删 Props :49 liveErrorText 声明 + 解构 :60 +
 //   空态条件去 !liveErrorText :172 + 删 error Alert 段 :194-207(其后 :208 StaticStatsBlock 原样保留) + 收回
 //   useChatPanels :222 传参(已随 §5.7-C 同提交) + 同步删 import Alert(未用即 ESLint 报错); 防 error 双显示(右栏+位4) — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 修复实时auto-scroll滚动慢/最新被盖住(北京老陈反馈):
+//   ①弃 scrollIntoView(smooth)——流式逐chunk增长下smooth动画反复被打断重起追赶不及, 改 scrollTop=scrollHeight 即时到底;
+//   ②驱动由 liveSteps.length 改 ResizeObserver 监听流水线内容高度——打字机段逐字增长length不变旧逻辑不触发, 内容增高即滚底;
+//   ③沿用"用户已在底部120px内才滚"防打断手动上翻(行为不进反退) - 小欧-2026-09-02
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -97,20 +101,27 @@ const RightViewer: React.FC<RightViewerProps> = ({
   useEffect(() => {
     if (!isCurrentLive || liveSteps.length === 0) return;
     const container = findScrollContainer();
-    if (!container) return;
+    const pipeline = pipelineEndRef.current;
+    if (!container || !pipeline) return;
     const threshold = 120;
-    const isNearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight <
-      threshold;
-    if (isNearBottom) {
-      requestAnimationFrame(() => {
-        pipelineEndRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'end',
+    // 2026-09-02 小欧 修复实时auto-scroll慢/被盖住(北京老陈反馈):
+    //  scrollTop=scrollHeight 即时滚底(弃 smooth——流式逐chunk增长反复打断动画追赶不及);
+    //  用户已在底部120px内才滚(沿用防打断手动上翻, 行为不进反退)
+    const stickToBottom = () => {
+      const isNearBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight <
+        threshold;
+      if (isNearBottom) {
+        requestAnimationFrame(() => {
+          container.scrollTop = container.scrollHeight;
         });
-      });
-    }
-  }, [liveSteps.length, isCurrentLive, findScrollContainer]);
+      }
+    };
+    // 内容高度变化驱动: 覆盖新增step与打字机段逐字增长(length不变旧依赖不触发)两情形
+    const ro = new ResizeObserver(stickToBottom);
+    ro.observe(pipeline);
+    return () => ro.disconnect();
+  }, [isCurrentLive, liveSteps.length, findScrollContainer]);
 
   // 拉取历史任务：C1+C2 并行；C2 空则 C3 按 message 降级（静态块降级为空，契约无通道）
   useEffect(() => {
