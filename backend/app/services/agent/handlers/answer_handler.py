@@ -24,6 +24,7 @@
 # 2026-08-18 - 小欧 - §10.4.4 P4(severity): retrying MetaStep 加 severity="info"
 # 2026-08-28 小欧 - yield日志审计: 3处 print()→logger(error/error/info, DRY违规修复); 三堂会审无逻辑修正
 # 2026-08-30 小欧 - 恢复[Final]终态全文打印(65f4de7f7"print→logger"把response=全文误改response_len, 终态正文不再上控制台; log_and_print复用07-23收口+08-30离线化双写)
+# 2026-09-02 小欧 - 配额类终态保真修复: error分支error_type透传(原写死llm_error丢粒度quota_exceeded/rate_limit/idle_timeout), errormessage已透传; KISS直线, 不新增事件类型 - 小欧-2026-09-02
 # 2026-09-01 - 小欧 - 方案A实施: 删除正常answer终态的污染版ThoughtStep(thought=parsed.get("thought", content)恒退化为完整答案, 致历史回放reasoning/response双渲); 终态正文/推理由FinalStep单一承载; 保留ThoughtStartStep(实时光标)与reasoning-only分支/工具轮ThoughtStep(正当); 方案详见 doc-9月优化/final步骤历史回放重复显示-问题分析与修复方案-小欧-2026-09-01.md
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
@@ -106,14 +107,15 @@ async def handle_answer(agent, parsed: Dict):
     # ── type="error" │ yield FinalStep(outcome=failed) ──
     if parsed_type == "error":
         content = parsed.get("content", "") or "LLM流式错误"
+        err_type = parsed.get("error_type") or "大模型错误"
         agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - error非reasoning-only, 归零防残留(不变量: 仅reasoning-only分支累加)
         agent.message_builder.add_assistant_message(content)
         # 2026-08-28 小欧 yield日志审计: print→logger统一(DRY违规修复)
-        logger.error(f"[answer] step={step} error={content}")
+        logger.error(f"[answer] step={step} error={content} error_type={err_type}")
         yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
         for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
             step=step, response="任务执行失败",
-            outcome="failed", error_type="llm_error", error_message=content,
+            outcome="failed", error_type=err_type, error_message=content,
         )):
             yield _s
         return
