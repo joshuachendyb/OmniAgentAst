@@ -25,6 +25,8 @@
 //   确保实时任务恢复自动滚(用户在历史任务中上翻→切回实时任务→ref保持true→不滚, 属于非预期行为) — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 修复findScrollContainer类型错误(HTMLElement→HTMLDivElement显式as断言, tsc TS2741)
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①RV-02/03去scrollContainerRef缓存与as强转(缓存永不失效+类型谎言)②RV-05 fallback加toExecutionSteps过滤防dirty污染③RV-06 Empty加liveBadge守卫(首chunk前waiting绕过)④RV-01去liveSteps.length驱动防误重置 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 修复auto-scroll完全失效(北京老陈反馈实时任务不自动滚): useEffect依赖加liveSteps.length,
+//   原仅isCurrentLive变化时执行, 实时任务开始时liveSteps.length=0→pipelineEndRef=null→effect return, 后续liveSteps增长不触发effect
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -120,7 +122,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
     return null;
   }, []);
   useEffect(() => {
-    if (!isCurrentLive || liveSteps.length === 0) return;
+    if (!isCurrentLive) return;
     const container = findScrollContainer();
     const pipeline = pipelineEndRef.current;
     if (!container || !pipeline) return;
@@ -145,7 +147,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
       ro.disconnect();
       container.removeEventListener('scroll', handleScroll);
     };
-  }, [isCurrentLive, findScrollContainer]);
+  }, [isCurrentLive, liveSteps.length, findScrollContainer]);
 
   // 拉取历史任务：C1+C2 并行；C2 空则 C3 按 message 降级（静态块降级为空，契约无通道）
   useEffect(() => {
