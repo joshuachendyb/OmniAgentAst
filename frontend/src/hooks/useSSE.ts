@@ -3,6 +3,8 @@
 // 编辑历史: 2026-08-30 小欧 - 根治重连重复起任务: reconnect()空闲超时若尚无任务ID(首响应未到)即走统一错误中心判失败(不重新POST), sendMessageInternal再加兜底守卫禁止重连态无ID重POST(双任务/僵尸任务根治) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 修正陈旧闭包: serverTaskId加serverTaskIdRef同步读写(parser回调同步ref+state), 内部判定全部改读ref, 使挂起reader帧/空闲定时器/重连守卫读到最新任务ID, 杜绝state闭包陈旧误判 - 小欧-2026-08-30
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: SSE-02 isReceiving加Ref防闭包陈旧(空闲超时读旧值误重连) — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 修复等待图标闪烁(北京老陈反馈): disconnect函数新增setReceiving参数(默认true),
+//   重连路径传递false避免setIsReceiving(false)→true间隙导致等待图标闪烁
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -380,13 +382,16 @@ export const useSSE = (
    * @param manualDisconnect - 是否是手动中断（手动中断不允许重连）
    * @param clearStorage - 是否清空 sessionStorage（重连时设为 false，保留数据）
    * @param onDisconnect - 断开后的回调函数【方案2增强】
+   * @param resetReconnectAttempts - 是否重置重连计数（重连时设为 false）
+   * @param setReceiving - 是否设置isReceiving（重连时设为 false，避免等待图标闪烁）
    */
   const disconnect = useCallback(
     (
       manualDisconnect: boolean = false,
       clearStorage: boolean = true,
       onDisconnect?: () => void,
-      resetReconnectAttempts: boolean = true
+      resetReconnectAttempts: boolean = true,
+      setReceiving: boolean = true
     ) => {
       // 清空 sessionStorage 备份（除非重连时明确指定不清空）
       if (clearStorage) {
@@ -422,7 +427,10 @@ export const useSSE = (
         eventSourceRef.current = null;
       }
       setIsConnected(false);
-      setIsReceiving(false);
+      // 2026-09-02 小欧: 重连路径不设置isReceiving=false，避免等待图标闪烁
+      if (setReceiving) {
+        setIsReceiving(false);
+      }
       // 2026-08-29 小强 修复#26: 非手动断开(重连路径)不强制回idle, 保留reconnecting由重连调度驱动
       if (manualDisconnect) {
         setReconnectStatus('idle');
@@ -489,7 +497,7 @@ export const useSSE = (
   ) => {
     const connectStartTime = new Date().toLocaleTimeString();
     console.log(`[SSE] [连接建立] 时间=${connectStartTime}`);
-    disconnect(false, false, undefined, false); // 2026-08-27 小欧 修复B1: 重连路径不重置重连计数
+    disconnect(false, false, undefined, false, false); // 2026-09-02 小欧: 重连路径不设置isReceiving=false，避免等待图标闪烁
     // 小沈修复 2026-04-21：新请求时清空 steps，重连时保留 steps
     if (reconnectAttemptsRef.current > 0) {
       softClearSteps(); // 重连：保留 steps，只清理运行时状态
