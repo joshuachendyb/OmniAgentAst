@@ -16,6 +16,7 @@
 // 编辑历史: 2026-09-01 小欧 - 修复重构退化(BUG#22): 展开区兜底恢复字符串tool_result渲染(与数组ToolResultRenderer/兜底content并列, 恢复2026-08-29 #22修复逻辑), results仅认数组致字符串tool_result被忽略 - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 统一折叠三角：▲▼改▸▾、大小14(PRIMARY)、颜色PRIMARY、位置参数后，方法补role/aria/keyboard与TrustPanel一致 - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①TC-01合并多observation(flatMap)防首项丢失②TC-02 JSON.stringify加try/catch防循环引用白屏③TC-03 expanded随action重置防跨任务泄漏④tParamText加try/catch — 小欧-2026-09-02
+// 编辑历史: 2026-09-03 小欧 - 工具执行UI优化(设计文档v1.8): 摘要头先显, 同容器挂齿轮+扳手组合动画(results===0)与工具子行(results>0)互斥, 覆盖动画位置 - 小欧-2026-09-03
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -132,9 +133,22 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         <span>
           🔧 {firstLine} {attemptLabel}
         </span>
-        {/* 每工具子行：工具行可独立展开；间距遵循 stepStyles 既有 observation 风格(2026-08-30 定案): 字号 13, 行高=13+Spacing.XS, 段内折不折=Spacing.XS-2, 间距一律 Spacing 常量派生 */}
+        {/* 2026-09-03 小欧(北京老陈定案): 摘要头先显; action 等待期摘要头下同容器挂齿轮+扳手组合动画; 工具子行(参数+结果+展开)等 observation 到达(全部N个结果一起)才渲染; 单/并行统一 */}
         <div style={{ marginTop: Spacing.XS }}>
-          {tools.map((t, i) => {
+          {/* 执行等待动画(results 空=action 已到未执行完); observation 到即卸载, 同容器被子行盖住 */}
+          {results.length === 0 && (
+            <span className="tool-waiting-cursor" aria-label="工具执行中">
+              <svg width="1.4em" height="1.4em" viewBox="0 0 24 24" fill="none" stroke="#fa8c16" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <g>
+                  <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
+                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.07-3.07a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z" />
+                </g>
+              </svg>
+            </span>
+          )}
+          {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
+          {results.length > 0 && tools.map((t, i) => {
+            // L139-L248: tools.map 函数体一字不改(参数/展开/结果行逻辑保持原样)
             let tParamText: string;
             try {
               tParamText = JSON.stringify(t.params ?? {});
