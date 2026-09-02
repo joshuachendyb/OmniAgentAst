@@ -34,6 +34,8 @@
 //     原liveBadge条件(startinfo延迟→badge=idle→Empty→pipelineEndRef=null)致auto-scroll完全失效;
 //   ②程序滚动标志: isProgramScrollingRef防止stickToBottom设置scrollTop触发scroll事件被误判为用户上翻,
 //     microtask重置保证下一个scroll事件正常判断用户真实滚动
+// 编辑历史: 2026-09-02 小欧 - 等待图标残留丢失根治(北京老陈驱动三堂会审): isCurrentLive由 receiving 单条件改 (receiving||liveBadge running/paused),
+//   根治纯网络空闲断连(无paused)60s重连间隙badge=idle致waiting消失的第4窗口; displaySteps与badge透传不再因SSE瞬断切历史, waiting由badge撑住; PipelineRenderer waiting补 error 终态守卫
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -96,14 +98,16 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const [loading, setLoading] = useState(false);
   const prevReceivingRef = useRef(false);
 
-  const isCurrentLive =
-    activeTaskId != null && activeTaskId === serverTaskId && receiving;
   // 2026-09-02 小欧: badge 权威派生——live 任务才取, 非live历史回放不传(不显示等待圈)
   const { badge: liveBadge } = useTaskInfo(
     liveSteps,
     frames ?? emptyMetaFrames(),
     receiving
   );
+  const isCurrentLive =
+    activeTaskId != null &&
+    activeTaskId === serverTaskId &&
+    (receiving || liveBadge === 'running' || liveBadge === 'paused');
 
   // 2026-09-02 小欧 三堂会审定稿: 滚动开关改"用户是否主动上翻>120px"事件驱动(语义同useChatScroll.ts:57-61),
   //   弃 isNearBottom 瞬态判定(首屏scrollTop=0内容超一屏即false永不滚) 与 双RAF/force(HIT确认暴力滚)

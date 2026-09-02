@@ -22,6 +22,7 @@
 //   非 live 历史回放 badge=undefined, 不显示圈 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 三堂会审task005-BUG-005修复: ToolCallLine key由索引i改step序号(任务切换时卸载重建, 展开状态不残留)
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①buildSegments去原地突变last.text改不可变更新(防污染缓存)②ThinkingStream/TextStream key由i改稳定key(防索引复用串味)③waiting终态守卫lastSeg.kind !== 'final'防失败后转圈 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 等待图标残留丢失根治(北京老陈驱动三堂会审): waiting守卫补 error 终态(exclude error与final同为终态, 防止error后转圈); 场景穷举12种, 残留主因为纯网络空闲断连isCurrentLive瞬false, 由RightViewer isCurrentLive改 (receiving||badge running/paused) 共担
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -170,7 +171,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
     (!lastSeg ||
       (lastSeg.kind !== 'thinking' &&
         lastSeg.kind !== 'text' &&
-        lastSeg.kind !== 'final'));
+        lastSeg.kind !== 'final' &&
+        lastSeg.kind !== 'error'));
   return (
     <div
       style={{
