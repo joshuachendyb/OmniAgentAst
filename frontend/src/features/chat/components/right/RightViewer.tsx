@@ -21,6 +21,8 @@
 //   ①container scroll监听维护"用户是否主动上翻>120px"标志 ②仅 !userScrolledUpRef 才 scrollTop=scrollHeight 即时滚底
 //   (弃 requestAnimationFrame 双帧延迟) ③弃 prevHighlightRef/force(首屏从未滚动→标志false→首帧即滚, HIT确认新内容到达即滚,
 //   用户真上翻读历史绝不打断) — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 修复路由切回实时任务不自动滚边界: isCurrentLive从false→true时重置userScrolledUpRef为false,
+//   确保实时任务恢复自动滚(用户在历史任务中上翻→切回实时任务→ref保持true→不滚, 属于非预期行为) — 小欧-2026-09-02
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -119,6 +121,8 @@ const RightViewer: React.FC<RightViewerProps> = ({
     return null;
   }, []);
   useEffect(() => {
+    // 2026-09-02 小欧: 切回实时任务时重置上翻标志, 确保实时任务恢复自动滚(修复路由切回不自动滚的边界)
+    if (isCurrentLive) userScrolledUpRef.current = false;
     if (!isCurrentLive || liveSteps.length === 0) return;
     const container = findScrollContainer();
     const pipeline = pipelineEndRef.current;
