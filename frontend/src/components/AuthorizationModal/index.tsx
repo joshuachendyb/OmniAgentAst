@@ -1,4 +1,5 @@
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复对象属性/JSX属性行超80字符换行、import重排, 防止格式再次出错
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①AM-01 request变化重置trustSession防跨请求残留②AM-02 Modal加maskClosable=false+keyboard=false防幽灵关闭死锁 — 小欧-2026-09-02
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -61,6 +62,9 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   onConfirm,
 }) => {
   const [trustSession, setTrustSession] = React.useState(false);
+  React.useEffect(() => {
+    setTrustSession(false);
+  }, [request?.confirmId]);
 
   if (!request) {
     return null;
@@ -83,6 +87,8 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
       title={null}
       footer={null}
       closable={false}
+      maskClosable={false}
+      keyboard={false}
       width={480}
       style={{
         border: '2px solid #faad14',

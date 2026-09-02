@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离授权弹窗逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: AU-02二次授权覆盖旧confirmId先confirm(false)防泄漏+裸as守卫 — 小欧-2026-09-02
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
@@ -19,13 +20,18 @@ export function useAuthorization(sessionId: string | null) {
     const handleAuthorizationRequired = (
       event: CustomEvent<Record<string, unknown>>
     ) => {
-      // 后端发送snake_case字段，前端AuthorizationModal使用camelCase
       const rawData = event.detail;
+      if (!rawData?.confirm_id || !rawData?.tool_name) return;
+      if (authorizationPending) {
+        taskControlApi
+          .confirm(authorizationPending.confirmId, false, false)
+          .catch(() => undefined);
+      }
       setAuthorizationPending({
         confirmId: rawData.confirm_id as string,
         toolName: rawData.tool_name as string,
         params: (rawData.params ?? {}) as Record<string, unknown>,
-        safetyLevel: rawData.safety_level as string,
+        safetyLevel: (rawData.safety_level as string) ?? 'unknown',
       });
     };
 
@@ -39,7 +45,7 @@ export function useAuthorization(sessionId: string | null) {
         handleAuthorizationRequired as EventListener
       );
     };
-  }, []);
+  }, [authorizationPending]);
 
   // 【v3.4新增 2026-06-09 小沈】授权超时自动关闭（60秒与后端一致）
   useEffect(() => {
