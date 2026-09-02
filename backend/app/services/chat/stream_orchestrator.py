@@ -95,6 +95,8 @@
 #   agnes 的 api_base/api_key/model_params→切 sensenova 仍 503。api_base 必须用目标 provider 的而非 _ov.api_base;
 #   并入 snapshot(api_key/extra_body_params/context_limit 三参); 同步 agent._task_llm_model 为生效快照模型,
 #   使 react_cycle/telemetry 日志显示真实生效模型(消除显 agnes 盲点); api_key 后端查配置, 不落库不出前端
+# 2026-09-02 小欧 三堂会审task005-BUG-004修复: 配置查找失败显式置空(_pv_cfg/_pv_key/_pv_ebp/_pv_ctx),
+#   原仅warning无置空, 虽初始化为None但显式表达降级意图, 日志补"放弃会话模型覆盖"便于排查
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -302,7 +304,11 @@ async def chat_stream_orchestrator(
                             from app.services.lifecycle.service import parse_model_params
                             _pv_ebp, _pv_ctx = parse_model_params(_pv_cfg, _ov.model or "")
                         except Exception as _pv_e:
-                            logger.warning(f"[chat] 按 provider 查配置失败({_ov.provider}): {_pv_e}")
+                            logger.warning(f"[chat] 按 provider 查配置失败({_ov.provider}): {_pv_e}, 放弃会话模型覆盖")
+                            _pv_cfg = None
+                            _pv_key = None
+                            _pv_ebp = None
+                            _pv_ctx = None
                     override_ref = ModelRef(
                         provider=_ov.provider or ai_service.llm_model.provider,
                         model=_ov.model or ai_service.llm_model.model,

@@ -20,6 +20,7 @@
 //   (startinfo 已到且 receiving → badge=running 撑圈) ②HIT挂起>60s 空闲超时重连 disconnect isReceiving=false 圈闪失
 //   (badge 仍 paused/running 撑圈) ③HIT confirm 后 resumed 前 highlight 已清 null 圈闪失(badge 仍 paused 撑圈);
 //   非 live 历史回放 badge=undefined, 不显示圈 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 三堂会审task005-BUG-005修复: ToolCallLine key由索引i改step序号(任务切换时卸载重建, 展开状态不残留)
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -258,7 +259,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         if (seg.kind === 'tool') {
           return (
             <ToolCallLine
-              key={i}
+              key={seg.action.step ?? i}
               action={seg.action}
               observations={seg.observations}
               highlight={

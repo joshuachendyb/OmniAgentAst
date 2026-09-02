@@ -145,6 +145,8 @@
 #   ①S1 auto_confirm分支(resolve_confirmation+set_status EXECUTING之后, 沙箱预检前)补发 MetaStep(type="resumed");
 #   ②S2 真HITL分支 resumed 从 if auth_path 内移出, 确认后无条件发1条(授权信息并入文案), 消除重复(KISS/DRY),
 #      user确认即恢复与是否授权白名单外路径解耦; resumed 非业务step, agent_runner.py 剔除集合已含, 不影响 total_steps。
+# 2026-09-02 小欧 三堂会审task005-BUG-001修复: auto_confirm分支resumed移至sandbox之后(原在sandbox前),
+#   若sandbox需用户裁决且被拒绝,无paired paused→resumed, badge卡running; 现仅sandbox通过(放行/无需预检)才发resumed, 语义=真正恢复执行
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -345,14 +347,10 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         grant_temp_auth(safety_result.auth_path, recursive=True)
                     resolve_confirmation(confirm_id, confirmed=True, trust_session=True)
                     set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
-                    # 2026-09-01 小欧 - 紧急bug修复S1(前端badge卡paused): auto_confirm立即放行后补发resumed,
-                    #   使 paused/resumed 事件成对(对齐下方真HITL确认后恢复语义, 前端badge据此回running恢复耗时秒表)
-                    yield agent._step_emitter.emit(MetaStep(
-                        step=step, type="resumed",
-                        content=f"已自动确认工具执行: {_cn}",
-                        severity="info",
-                    ))
                     # v1.25 M3 插入点①: auto_confirm 汇合路径(continue 之前) — 沙箱预检最后闸门
+                    # 2026-09-02 小欧 三堂会审BUG-001修复: resumed移至sandbox之后(原在sandbox前),
+                    #   若sandbox需用户裁决且被拒绝,无paired paused→resumed, badge卡running;
+                    #   现仅sandbox通过(放行/无需预检)才发resumed, 语义=真正恢复执行
                     _pre = await sandbox_precheck(safety_result, _cn, _cp)
                     if _pre is not None:
                         _ok, _steps = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
@@ -360,6 +358,13 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                             yield _st
                         if not _ok:
                             continue
+                    # 2026-09-02 小欧 BUG-001: sandbox通过后才发resumed(对齐下方真HITL确认后恢复语义,
+                    #   前端badge据此回running恢复耗时秒表); 若sandbox拒绝已continue不发resumed
+                    yield agent._step_emitter.emit(MetaStep(
+                        step=step, type="resumed",
+                        content=f"已自动确认工具执行: {_cn}",
+                        severity="info",
+                    ))
                     continue
 
                 set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认工具执行: {_cn}")

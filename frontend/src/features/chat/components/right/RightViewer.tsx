@@ -23,6 +23,7 @@
 //   用户真上翻读历史绝不打断) — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 修复路由切回实时任务不自动滚边界: isCurrentLive从false→true时重置userScrolledUpRef为false,
 //   确保实时任务恢复自动滚(用户在历史任务中上翻→切回实时任务→ref保持true→不滚, 属于非预期行为) — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 修复findScrollContainer类型错误(HTMLElement→HTMLDivElement显式as断言, tsc TS2741)
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -113,8 +114,8 @@ const RightViewer: React.FC<RightViewerProps> = ({
         style.overflow === 'auto' ||
         style.overflow === 'scroll'
       ) {
-        scrollContainerRef.current = el;
-        return el;
+        scrollContainerRef.current = el as HTMLDivElement;
+        return el as HTMLDivElement;
       }
       el = el.parentElement;
     }
