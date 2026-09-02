@@ -12,6 +12,7 @@
 //   liveErrorText(位4 error 实时源) + 组件解构同步 + useTaskInfo 五参调用 + 第一行去掉旧"· 重试N"累计(:163-168,
 //   来源stats.retry_count, 无内容看不懂——北京老陈质疑)与截断独立段(:174-178, 并入位4) + 位4渲染段(🔁/🛑/⚠
 //   图标映射, 置于 步骤/轮次 之后、·疑似卡死 之前; 新覆盖旧无优先级) - 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: TB-02 revokeTrust加try/catch防unhandledrejection上浮 — 小欧-2026-09-02
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -91,8 +92,12 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   }, [sessionId, loadTrust]);
   const revokeTrust = async (toolName: string) => {
     if (!sessionId) return;
-    await trustApi.revokeTrust(sessionId, toolName);
-    await loadTrust();
+    try {
+      await trustApi.revokeTrust(sessionId, toolName);
+      await loadTrust();
+    } catch {
+      /* 2026-09-02 小欧 TB-02: 捕获异常防unhandledrejection上浮 */
+    }
   };
 
   // 【小欧 2026-08-26 修复 B2】执行中实时计时：当前任务(receiving+running)按 start 时刻走表，

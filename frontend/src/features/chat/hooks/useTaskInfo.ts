@@ -10,6 +10,7 @@
 //   新增 LiveMeta 类型(位4只收 retrying/error/truncated 无优先级) + 签名五参(liveErrorText 位4 error 实时源)
 //   + 历史 detail 分支补 liveMeta:null(不占位不串味) + latestProcessEvent 记最近 retrying + return 前
 //   candidates.sort(time 大者胜)合成 liveMeta(新覆盖旧) + deps 补 liveErrorText - 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①HP-04 Date.now提出useMemo外防闪变②HP-05 recentEvents补slice(0,20)防21条越界 — 小欧-2026-09-02
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -197,21 +198,22 @@ export const useTaskInfo = (
     let recentEvents = processEvents.slice(-20);
     if (hasStartInfo && !recentEvents.some((e) => e.kind === 'started')) {
       const startedEvt = processEvents.find((e) => e.kind === 'started');
-      if (startedEvt) recentEvents = [startedEvt, ...recentEvents];
+      if (startedEvt) recentEvents = [startedEvt, ...recentEvents].slice(0, 20);
     }
 
     // 小欧 2026-09-02: 位4 liveMeta 合成(无优先级: retrying/error/truncated 各自到达即更新, 最后收到者胜, 新覆盖旧)
+    const now = Date.now();
     const candidates: LiveMeta[] = [
       ...(latestProcessEvent ? [latestProcessEvent] : []),
       ...(liveErrorText
-        ? [{ kind: 'error' as const, text: liveErrorText, time: Date.now() }]
+        ? [{ kind: 'error' as const, text: liveErrorText, time: now }]
         : []),
       ...(frames.truncated?.content
         ? [
             {
               kind: 'truncated' as const,
               text: frames.truncated.content,
-              time: Date.now(),
+              time: now,
             },
           ]
         : []),

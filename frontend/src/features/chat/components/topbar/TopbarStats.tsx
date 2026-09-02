@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.3 删冗余??'-'(formatTime已返'-')
 // 编辑历史: 2026-08-27 小欧 - 三堂会审边距-P1: 顶栏聚合gap12→8对齐SessionLayout主节奏
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): 前面会话累计(session)后面链累计(chain), 各为3字段P/C/T紧凑格式; chainTokens由number改TokenTriple
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: TB-03 taskCount加??0兜底防undefined闪烁 — 小欧-2026-09-02
 /**
  * TopbarStats - 顶栏会话级聚合信息（任务数/会话累计token/链累计token/创建更新时间悬浮）
  *
@@ -55,7 +56,7 @@ const TopbarStats: React.FC<TopbarStatsProps> = ({
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        任务数 {taskCount}
+        任务数 {taskCount ?? 0}
       </Typography.Text>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         会话累计 {formatTriple(sessionTokens)}

@@ -24,6 +24,7 @@
 // 编辑历史: 2026-09-02 小欧 - 修复路由切回实时任务不自动滚边界: isCurrentLive从false→true时重置userScrolledUpRef为false,
 //   确保实时任务恢复自动滚(用户在历史任务中上翻→切回实时任务→ref保持true→不滚, 属于非预期行为) — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 修复findScrollContainer类型错误(HTMLElement→HTMLDivElement显式as断言, tsc TS2741)
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①RV-02/03去scrollContainerRef缓存与as强转(缓存永不失效+类型谎言)②RV-05 fallback加toExecutionSteps过滤防dirty污染③RV-06 Empty加liveBadge守卫(首chunk前waiting绕过)④RV-01去liveSteps.length驱动防误重置 — 小欧-2026-09-02
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -100,11 +101,9 @@ const RightViewer: React.FC<RightViewerProps> = ({
   // 2026-09-02 小欧 task005会审P3(北京老陈定案): 弃 closest('[style*="overflow"]') 字符串选择器(仅匹配内联样式, 改CSS类即静默失效),
   //   改 getComputedStyle 沿祖先上溯找 overflowY:auto/scroll 滚动容器; 行为语义等价, 更稳健 — 小欧 2026-09-02
   const pipelineEndRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   // 用户在滚动中距底>120px视为主动上翻; 上翻后自动滚失效, 滚回底部自动恢复; 首屏从未滚动→false→内容增长即滚底
   const userScrolledUpRef = useRef(false);
   const findScrollContainer = useCallback(() => {
-    if (scrollContainerRef.current) return scrollContainerRef.current;
     let el: HTMLElement | null = pipelineEndRef.current;
     while (el) {
       const style = window.getComputedStyle(el);
@@ -114,16 +113,13 @@ const RightViewer: React.FC<RightViewerProps> = ({
         style.overflow === 'auto' ||
         style.overflow === 'scroll'
       ) {
-        scrollContainerRef.current = el as HTMLDivElement;
-        return el as HTMLDivElement;
+        return el as unknown as HTMLDivElement;
       }
       el = el.parentElement;
     }
     return null;
   }, []);
   useEffect(() => {
-    // 2026-09-02 小欧: 切回实时任务时重置上翻标志, 确保实时任务恢复自动滚(修复路由切回不自动滚的边界)
-    if (isCurrentLive) userScrolledUpRef.current = false;
     if (!isCurrentLive || liveSteps.length === 0) return;
     const container = findScrollContainer();
     const pipeline = pipelineEndRef.current;
@@ -149,7 +145,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
       ro.disconnect();
       container.removeEventListener('scroll', handleScroll);
     };
-  }, [isCurrentLive, liveSteps.length, findScrollContainer]);
+  }, [isCurrentLive, findScrollContainer]);
 
   // 拉取历史任务：C1+C2 并行；C2 空则 C3 按 message 降级（静态块降级为空，契约无通道）
   useEffect(() => {
@@ -176,9 +172,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
           if (cancelled) return;
           const fallback: ExecutionStep[] = [];
           for (const m of msgResp.messages) {
-            for (const st of m.execution_steps ?? []) fallback.push(st);
+            for (const st of m.execution_steps ?? [])
+              fallback.push(st as ExecutionStep);
           }
-          setHistorySteps(fallback);
+          setHistorySteps(toExecutionSteps(fallback));
         } else {
           setHistorySteps([]);
         }
@@ -210,7 +207,12 @@ const RightViewer: React.FC<RightViewerProps> = ({
 
   return (
     <Spin spinning={loading && !isCurrentLive}>
-      {!loading && !hasSteps ? (
+      {!loading &&
+      !hasSteps &&
+      !(
+        isCurrentLive &&
+        (liveBadge === 'running' || liveBadge === 'paused')
+      ) ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
