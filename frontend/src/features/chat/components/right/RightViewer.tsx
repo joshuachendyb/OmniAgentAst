@@ -29,6 +29,11 @@
 //   原仅isCurrentLive变化时执行, 实时任务开始时liveSteps.length=0→pipelineEndRef=null→effect return, 后续liveSteps增长不触发effect
 // 编辑历史: 2026-09-02 小欧 - 修复findScrollContainer永不生效(useCallback依赖[]→liveSteps.length): 组件挂载时pipelineEndRef为null→返回null,
 //   liveSteps增长后pipelineEndRef有值但findScrollContainer闭包捕获旧null→仍返回null, ResizeObserver永远不执行
+// 编辑历史: 2026-09-02 小欧 - auto-scroll双修复(北京老陈驱动三堂会审):
+//   ①渲染条件简化: 实时任务时始终渲染pipelineEndRef(!isCurrentLive&&!loading&&!hasSteps才Empty),
+//     原liveBadge条件(startinfo延迟→badge=idle→Empty→pipelineEndRef=null)致auto-scroll完全失效;
+//   ②程序滚动标志: isProgramScrollingRef防止stickToBottom设置scrollTop触发scroll事件被误判为用户上翻,
+//     microtask重置保证下一个scroll事件正常判断用户真实滚动
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -107,6 +112,8 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const pipelineEndRef = useRef<HTMLDivElement>(null);
   // 用户在滚动中距底>120px视为主动上翻; 上翻后自动滚失效, 滚回底部自动恢复; 首屏从未滚动→false→内容增长即滚底
   const userScrolledUpRef = useRef(false);
+  // 2026-09-02 小欧: 程序滚动标志，防止stickToBottom设置scrollTop触发scroll事件被误判为用户上翻
+  const isProgramScrollingRef = useRef(false);
   const findScrollContainer = useCallback(() => {
     let el: HTMLElement | null = pipelineEndRef.current;
     while (el) {
@@ -129,17 +136,23 @@ const RightViewer: React.FC<RightViewerProps> = ({
     const pipeline = pipelineEndRef.current;
     if (!container || !pipeline) return;
     const threshold = 120;
-    // 2026-09-02 小欧 三堂会审: scroll 事件维护上翻标志(仅用户真实滚动触发; scrollTop 程序赋值滚到底时远距<120→false 不误判)
+    // 2026-09-02 小欧: scroll 事件维护上翻标志(仅用户真实滚动触发; 程序设置scrollTop时跳过判断)
     const handleScroll = () => {
+      if (isProgramScrollingRef.current) return; // 程序滚动跳过
       userScrolledUpRef.current =
         container.scrollHeight - container.scrollTop - container.clientHeight >
         threshold;
     };
     container.addEventListener('scroll', handleScroll, { passive: true });
-    // 内容高度变化驱动(覆盖新增step与打字机段逐字增长) + 首帧立即滚底(弃RAF双帧延迟)
+    // 内容高度变化驱动(覆盖新增step与打字机段逐字增长) + 首帧立即滚底
     const stickToBottom = () => {
       if (!userScrolledUpRef.current) {
+        isProgramScrollingRef.current = true;
         container.scrollTop = container.scrollHeight;
+        // microtask重置标志，让下一个scroll事件正常判断
+        Promise.resolve().then(() => {
+          isProgramScrollingRef.current = false;
+        });
       }
     };
     const ro = new ResizeObserver(stickToBottom);
@@ -211,12 +224,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
 
   return (
     <Spin spinning={loading && !isCurrentLive}>
-      {!loading &&
-      !hasSteps &&
-      !(
-        isCurrentLive &&
-        (liveBadge === 'running' || liveBadge === 'paused')
-      ) ? (
+      {!isCurrentLive && !loading && !hasSteps ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
