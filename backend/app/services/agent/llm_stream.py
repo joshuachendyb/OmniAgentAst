@@ -297,8 +297,9 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
                     if isinstance(resp, dict) and resp.get("type") == "error":
                         # 2026-09-01 小欧 L2去放大: 按error_type分流, 传输/限流类(L1已处理)直接放行不重试, 其它保持L2重试 — 小欧 2026-09-01
                         # 2026-09-02 小欧 task005会审P1(北京老陈定案): "server"(500/502/503)移出放行元组——瞬时/过载错误应走L2重试(否则本可恢复任务永久失败), 重试耗尽仍由外层FC降级/error兜底, 不退化 — 小欧 2026-09-02
+                        # 2026-09-02 小欧 严谨修复404重试放大: 4xx配错(CLIENT→code=client)一律L1已判定不重试, L2亦直接放行不重试不降级, 杜绝404 Text降级再L1×3放大 — 小欧 2026-09-02
                         err_type = resp.get("error_type", "")
-                        if err_type in ("quota_exceeded", "rate_limit", "idle_timeout"):
+                        if err_type in ("quota_exceeded", "rate_limit", "idle_timeout", "client"):
                             yield item
                             return
                         raise LLMResponseError(message=resp.get("content", "LLM流式错误"))

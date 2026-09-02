@@ -28,8 +28,9 @@
    2026-07-17 小沈 FC重命名: import/引用同步更新
    2026-07-18 小欧 #8 fix: 消除循环导入——LLMResponseError 改模块级 try/except 导入为 _check_special_errors 内函数级延迟导入; core.py 模块级 import error_classifier 不再触发循环, LLMResponseError 不再恒为 None
     2026-08-14 小欧 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
-    2026-08-29 小沈 修复#14: HTTP 状态分类改优先用异常对象真实响应状态码(httpx.HTTPStatusError.response.status_code)判定, 正则仅作文本补充; 消除 400/401/403 因 str(error) 无"status_code"语境致正则失配被误归 SERVER 可重试的缺陷, 4xx 正确归 CLIENT 不可重试
-    2026-09-01 小欧 新增RATE_LIMIT枚举: 429限流单列为不可重试(RATE_LIMIT), 补to_status/description/SYSTEM_ERROR_TYPE_TO_MESSAGE四处映射, 429不再进L1重试直接走quota_exceeded快速失败 — 小欧 2026-09-01
+     2026-08-29 小沈 修复#14: HTTP 状态分类改优先用异常对象真实响应状态码(httpx.HTTPStatusError.response.status_code)判定, 正则仅作文本补充; 消除 400/401/403 因 str(error) 无"status_code"语境致正则失配被误归 SERVER 可重试的缺陷, 4xx 正确归 CLIENT 不可重试
+     2026-09-01 小欧 新增RATE_LIMIT枚举: 429限流单列为不可重试(RATE_LIMIT), 补to_status/description/SYSTEM_ERROR_TYPE_TO_MESSAGE四处映射, 429不再进L1重试直接走quota_exceeded快速失败 — 小欧 2026-09-01
+     2026-09-02 小欧 严谨修复404重试放大(北京老陈:三思三省): _check_http_status_errors 未枚举4xx(404/405/422等)按HTTP语义一律CLIENT不重试, 未枚举5xx一律SERVER可重试, 杜绝404配错黑名单兜底误判SERVER导致L1×3→L2×2→FC降级×3=12次120秒放大 — 小欧 2026-09-02
 """
 
 import re
@@ -152,18 +153,37 @@ class SystemErrorClassifier:
 
     @staticmethod
     def _check_http_status_errors(error: Exception) -> Optional[SystemErrorCategory]:
-        """检查HTTP状态码错误 — 小沈 2026-08-29 修复#14: 优先用真实响应状态码, 正则仅作文本补充"""
+        """检查HTTP状态码错误 — 小沈 2026-08-29 修复#14: 优先用真实响应状态码, 正则仅作文本补充
+        2026-09-02 小欧 严谨修复404重试放大(北京老陈:三思三省不误伤不滥用): 未枚举4xx(404/405/422等)按HTTP语义一律CLIENT不重试, 未枚举5xx一律SERVER可重试, 杜绝黑名单兜底误判SERVER导致404配错重试12次"""
         # 优先: 直接从异常对象取真实 HTTP 状态码(如 httpx.HTTPStatusError), 规避 str(error) 无语境致正则失配
         status_code = SystemErrorClassifier._extract_http_status(error)
         if status_code is not None:
             _cat = HTTP_STATUS_TO_ERROR_TYPE.get(status_code)
-            # 小沈 2026-08-29 修复#14: 记录真实状态码分支命中, 便于排查误分类
-            logger.debug(f"[ErrorClassifier] 真实HTTP状态码={status_code}, 分类={_cat}")
-            return _cat
+            if _cat is not None:
+                logger.debug(f"[ErrorClassifier] 真实HTTP状态码={status_code}, 分类={_cat}")
+                return _cat
+            if 400 <= status_code < 500:
+                _fallback = SystemErrorCategory.CLIENT
+                logger.debug(f"[ErrorClassifier] 真实HTTP状态码={status_code}, 未枚举4xx→CLIENT不重试")
+                return _fallback
+            if 500 <= status_code < 600:
+                _fallback = SystemErrorCategory.SERVER
+                logger.debug(f"[ErrorClassifier] 真实HTTP状态码={status_code}, 未枚举5xx→SERVER可重试")
+                return _fallback
+            logger.debug(f"[ErrorClassifier] 真实HTTP状态码={status_code}, 分类=None(非HTTP错误域)")
+            return None
         # 补充: 从错误文本正则抠状态码(上下文感知, 防误匹配裸数字) — 小欧 2026-07-18
         m = SystemErrorClassifier._STATUS_CTX_RE.search(str(error).lower())
         if m:
-            return HTTP_STATUS_TO_ERROR_TYPE.get(int(m.group(1)))
+            _code = int(m.group(1))
+            _cat = HTTP_STATUS_TO_ERROR_TYPE.get(_code)
+            if _cat is not None:
+                return _cat
+            if 400 <= _code < 500:
+                return SystemErrorCategory.CLIENT
+            if 500 <= _code < 600:
+                return SystemErrorCategory.SERVER
+            return None
         return None
     
     @staticmethod
