@@ -2,12 +2,19 @@
 // 编辑历史: 2026-08-30 小欧 - 13.14 usage帧废止前端累加、直取后端本轮+三累计(P/C/T)四字段 - 小欧-2026-08-30
 // 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 后端§5.7.4③④): paused帧 onAuthorizationRequired 透传四字段——
 //   trust_path(仅bypass时=rawData.trust_path, trust_panel的双写/撤回核心)、auto_confirm、confirm_timeout(前端倒计时=后端窗口-提前量)、backend_timeout - 小欧-2026-09-02
+// 编辑历史: 2026-09-03 小欧 Bug修复(24项): ㉒/㉗镜像 assignTimeout(合法0保留) + auto_confirm严格判断(防"false"误判), 与 useAuthorization 语义一致 — 小欧-2026-09-03
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
 // 2026-08-27 小欧 修复(B2/base-2): is_reasoning 归一化统一helper, 兼容 true/'true'/1/'1'
 const normalizeIsReasoning = (v: unknown): boolean =>
   v === true || v === 'true' || v === 1 || v === '1';
+
+// 2026-09-03 小欧 Bug-22: 计时解析(与 useAuthorization.parseTimeout 同语义), 合法 0 保留, 仅 NaN/负数兜 60
+const assignTimeout = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : 60;
+};
 
 const processSSEData = (
   line: string,
@@ -822,9 +829,13 @@ const processSSEData = (
                 params: rawData.params,
                 safety_level: rawData.safety_level,
                 trust_path: rawData.trust_path ?? null,
-                auto_confirm: Boolean(rawData.auto_confirm),
-                confirm_timeout: Number(rawData.confirm_timeout) || 60,
-                backend_timeout: Number(rawData.backend_timeout) || 60,
+                // 2026-09-03 小欧 Bug-27镜像: auto_confirm 严格判断(与 useAuthorization 一致), 防 "false" 误判
+                auto_confirm:
+                  rawData.auto_confirm === true ||
+                  rawData.auto_confirm === 'true',
+                // 2026-09-03 小欧 Bug-22镜像: 合法 0 不被 || 兜成 60(与 useAuthorization 的 parseTimeout 同语义)
+                confirm_timeout: assignTimeout(rawData.confirm_timeout),
+                backend_timeout: assignTimeout(rawData.backend_timeout),
               });
             }
             break;

@@ -17,6 +17,7 @@
 // 编辑历史: 2026-09-01 小欧 - 统一折叠三角：▲▼改▸▾、大小14(PRIMARY)、颜色PRIMARY、位置参数后，方法补role/aria/keyboard与TrustPanel一致 - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①TC-01合并多observation(flatMap)防首项丢失②TC-02 JSON.stringify加try/catch防循环引用白屏③TC-03 expanded随action重置防跨任务泄漏④tParamText加try/catch — 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 - 工具执行UI优化(设计文档v1.8): 摘要头先显, 同容器挂齿轮+扳手组合动画(results===0)与工具子行(results>0)互斥, 覆盖动画位置 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - Bug修复: ②results兼容字符串tool_result(防齿轮常驻) ③等待30s超时兜底降级提示(动画不再无限旋转) ④tools空/结果空显示占位防空壳 ⑧整批observation涌入前minHeight:32占位防页面晃动 - 小欧-2026-09-03
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -57,13 +58,33 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     setExpanded([]);
   }, [action]);
   const tools = action.tools || [];
-  const results = observations.flatMap((obs) =>
-    Array.isArray((obs as ExecutionStep | undefined)?.tool_result)
-      ? ((obs as ExecutionStep).tool_result as unknown as Array<
-          Record<string, unknown>
-        >)
-      : []
-  ) as Array<Record<string, unknown>>;
+  // 2026-09-03 小欧 Bug-2 重订(KISS/SLAP/DRY): 字符串 tool_result 不并入 results(保持数组契约),
+  //   results 仍只收对象结果供子行/展开区配对; 字符串是否已达由 hasResult 单独判定以控制动画卸载与子行渲染,
+  //   两职责分离 —— 不把字符串包成 {data_text} 对象(改前产生折叠摘要+展开区双重渲染致 getByText 多匹配)
+  const results = observations.flatMap((obs) => {
+    const tr = (obs as ExecutionStep | undefined)?.tool_result;
+    if (Array.isArray(tr)) {
+      return tr as Array<Record<string, unknown>>;
+    }
+    return [];
+  }) as Array<Record<string, unknown>>;
+  // 2026-09-03 小欧 Bug-2: 是否有任一结果(数组含对象 / 非空字符串), 供动画卸载与子行渲染判定
+  const hasResult = observations.some((obs) => {
+    const tr = (obs as ExecutionStep | undefined)?.tool_result;
+    if (Array.isArray(tr)) return tr.length > 0;
+    return typeof tr === 'string' && tr.length > 0;
+  });
+  // 2026-09-03 小欧 Bug-3: 等待超时兜底 — 工具已发未回(30s)降级提示, 动画不再无限旋转; results 到即关兜底
+  const [timedOut, setTimedOut] = useState(false);
+  useEffect(() => {
+    if (results.length > 0) {
+      setTimedOut(false);
+      return;
+    }
+    if (tools.length === 0) return;
+    const t = setTimeout(() => setTimedOut(true), 30000);
+    return () => clearTimeout(t);
+  }, [results.length, tools.length, action]);
   const obsStep = observations[0];
   const isMulti = action.exec_type === 'multi';
   const toolCount = tools.length;
@@ -118,6 +139,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         fontSize: 13,
         color: Colors.TEXT.PRIMARY,
         lineHeight: `${13 + Spacing.XS}px`,
+        // 2026-09-03 小欧 Bug-8/10/31: minHeight 占位稳定高度, 动画与子行切换(0行→N行/整批涌入)不引起页面高度突变晃动
+        minHeight: 32,
         margin: stepMargin(false),
         padding: `${Spacing.XS}px ${Spacing.SM}px ${Spacing.XS}px ${Spacing.XS + Spacing.SM}px`, // 4/6/4/10
         borderRadius: highlight ? 6 : 0,
@@ -136,7 +159,13 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         {/* 2026-09-03 小欧(北京老陈定案): 摘要头先显; action 等待期摘要头下同容器挂齿轮+扳手组合动画; 工具子行(参数+结果+展开)等 observation 到达(全部N个结果一起)才渲染; 单/并行统一 */}
         <div style={{ marginTop: Spacing.XS }}>
           {/* 执行等待动画(results 空=action 已到未执行完); observation 到即卸载, 同容器被子行盖住 */}
-          {results.length === 0 && (
+          {/* 2026-09-03 小欧 Bug-3/4: 动画仅 tools 非空且结果未达(results空)显示; 超时降级灰字提示; tools 空/结果空显占位防空壳 */}
+          {!hasResult && tools.length === 0 && (
+            <span style={{ color: Colors.TEXT.SECONDARY, fontSize: 12 }}>
+              工具调用无结果(已全部被安全拦截或未返回)
+            </span>
+          )}
+          {!hasResult && tools.length > 0 && !timedOut && (
             <span className="tool-waiting-cursor" aria-label="工具执行中">
               <svg
                 width="1.4em"
@@ -155,8 +184,24 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               </svg>
             </span>
           )}
+          {!hasResult && tools.length > 0 && timedOut && (
+            <span
+              style={{
+                color: Colors.TEXT.SECONDARY,
+                fontSize: 12,
+              }}
+            >
+              工具执行超时未返回结果，请重试或查看日志
+            </span>
+          )}
           {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
-          {results.length > 0 &&
+          {hasResult && tools.length === 0 && (
+            <span style={{ color: Colors.TEXT.SECONDARY, fontSize: 12 }}>
+              收到 {results.length} 条观察结果但无工具定义
+            </span>
+          )}
+          {hasResult &&
+            tools.length > 0 &&
             tools.map((t, i) => {
               // L139-L248: tools.map 函数体一字不改(参数/展开/结果行逻辑保持原样)
               let tParamText: string;
@@ -258,11 +303,18 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                         paddingLeft: Spacing.SM,
                       }}
                     >
-                      {singleResult.length > 0 ? (
+                      {typeof obsStep?.tool_result === 'string' ? (
+                        // 2026-09-03 小欧 Bug#22 守护: 字符串 tool_result → 优先 CollapsibleText 渲染原文
+                        //  (改前 {data_text} 包入 results 后走 ToolResultRenderer, 字符串被丢弃; 现字符串优先, 恢复 2026-08-29/09-01 逻辑)
+                        obsStep.tool_result ? (
+                          <CollapsibleText
+                            text={obsStep.tool_result as string}
+                          />
+                        ) : (
+                          <CollapsibleText text={obsStep?.content ?? ''} />
+                        )
+                      ) : singleResult.length > 0 ? (
                         <ToolResultRenderer step={singleStep} />
-                      ) : typeof obsStep?.tool_result === 'string' ? (
-                        // 2026-09-01 小欧: 恢复字符串tool_result渲染(重构退化修复, results仅认数组故此处兜底)
-                        <CollapsibleText text={obsStep.tool_result as string} />
                       ) : (
                         <CollapsibleText text={obsStep?.content ?? ''} />
                       )}

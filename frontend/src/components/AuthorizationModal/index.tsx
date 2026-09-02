@@ -2,6 +2,7 @@
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①AM-01 request变化重置trustSession防跨请求残留②AM-02 Modal加maskClosable=false+keyboard=false防幽灵关闭死锁 — 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 - v1.5.4 弹窗渲染完善: 环形进度Progress+大数字倒计时+最后5s转橙3s微脉动+bypass标题补全+countdown到0自动代发/拒绝 — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 三堂会审问题1方案A+问题3优化: ①handleConfirm强制bypass下trustSession=false(防bypass勾选偷偷落库转正为长期信任, 堵5.4防污染漏洞); ②countdown interval依赖数组移除countdown(函数式更新, 只在弹窗开/新请求建一次) — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 Bug修复(24项): ⑪countdown lazy初值跟随request防首渲染0误触发 ⑬/⑲autoHandledRef按confirmId一次性guard防倒计时到0 effect重入双发 ⑰submitting互斥态防连点意图翻转(按钮loading/disabled+勾选disabled) ⑳后端兜底文案5→60与实际一致 ㉑首tick 100ms即-1节奏对齐 ㉘trustPath缺失文案改"未指定路径，仅本次"防"任意整工具"误导 — 小欧-2026-09-03
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -75,27 +76,46 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   request,
   onConfirm,
 }) => {
+  // 2026-09-03 小欧 Bug-11: countdown 用 lazy 初值(跟随新 request), 避免默认 0 触发首渲染自动代发/拒绝
   const [trustSession, setTrustSession] = React.useState(false);
-  const [countdown, setCountdown] = React.useState(0);
+  const [countdown, setCountdown] = React.useState(
+    () => request?.confirmTimeout ?? 0
+  );
   const onConfirmRef = React.useRef(onConfirm);
+  // 2026-09-03 小欧 Bug-13/29: autoHandledRef 按 confirmId 一次性 guard, 防倒计时到 0 后 effect 重入双发
+  const autoHandledRef = React.useRef<string | null>(null);
+  // 2026-09-03 小欧 Bug-17: submitting 互斥态, 提交中禁用按钮/勾选, 防连点意图翻转
+  const [submitting, setSubmitting] = React.useState(false);
   const isBypass = Boolean(request?.autoConfirm);
   onConfirmRef.current = onConfirm;
 
   React.useEffect(() => {
     setTrustSession(false);
-    setCountdown(request?.confirmTimeout ?? 0);
+    setSubmitting(false);
+    if (request?.confirmId) {
+      setCountdown(request.confirmTimeout ?? 0);
+      autoHandledRef.current = null;
+    }
   }, [request?.confirmId, request?.confirmTimeout]);
 
   React.useEffect(() => {
-    // 小欧 2026-09-03 三堂会审问题3优化: 依赖数组移除 countdown——
-    //   用函数式更新 setCountdown(v=>...) 不读 countdown, interval 只在弹窗开/新请求时建一次, 不再每秒销毁重建
+    // 2026-09-03 小欧 Bug-21: 首 tick 100ms 内即刻 -1(节奏对齐), 再走 1s interval; 依赖无 countdown(函数式更新)
     if (!visible || !request) return;
-    const t = setInterval(() => setCountdown((v) => Math.max(0, v - 1)), 1000);
-    return () => clearInterval(t);
+    const tick = () => setCountdown((v) => Math.max(0, v - 1));
+    const t = setInterval(tick, 1000);
+    const first = setTimeout(tick, 100);
+    return () => {
+      clearInterval(t);
+      clearTimeout(first);
+    };
   }, [visible, request]);
 
   React.useEffect(() => {
     if (!visible || countdown !== 0 || !request) return;
+    // 2026-09-03 小欧 Bug-13/29: 同 confirmId 只代发一次, 防止 effect 因 deps 变化重入双发
+    if (autoHandledRef.current === request.confirmId) return;
+    autoHandledRef.current = request.confirmId;
+    setSubmitting(true);
     if (isBypass) {
       onConfirmRef.current(true, false);
     } else {
@@ -122,6 +142,8 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   // 小欧 2026-09-03 三堂会审问题1方案A: bypass(安全开关绕开)模式下即使勾选"信任此操作"也不产生信任,
   //   强制 trustSession=false(防绕过5.4防污染: bypass期间勾出的信任切回enabled:true后转正为长期豁免)
   const handleConfirm = (confirmed: boolean) => {
+    if (submitting) return;
+    setSubmitting(true);
     onConfirm(confirmed, isBypass ? false : trustSession);
     setTrustSession(false);
   };
@@ -201,8 +223,9 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             marginBottom: 12,
           }}
         >
+          {/* 2026-09-03 小欧 Bug-20: 后端兜底原文案 5s 与实际 60s 不符(useAuthorization 兜底即 60), 统一为 60 防文案欺骗 */}
           {isBypass
-            ? `将在 ${countdown}s 后自动确认（后端 ${request.backendTimeout ?? 5}s 兜底）`
+            ? `将在 ${countdown}s 后自动确认（后端 ${request.backendTimeout ?? 60}s 兜底）`
             : `未响应将在 ${countdown}s 后自动拒绝`}
         </div>
 
@@ -257,22 +280,30 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         <div style={{ marginBottom: 24 }}>
           <Checkbox
             checked={trustSession}
+            disabled={submitting}
             onChange={(e) => setTrustSession(e.target.checked)}
           >
+            {/* 2026-09-03 小欧 Bug-28: trustPath 缺失时不误导"任意，整工具"(前端未知后端 path), 改中性"未指定路径，仅本次" */}
             {request.trustPath
               ? `本次会话信任此操作（${request.toolName} › ${request.trustPath}，含子目录）`
-              : `本次会话信任此操作（${request.toolName} › 任意，整工具）`}
+              : `本次会话信任此操作（${request.toolName} › 未指定路径，仅本次）`}
           </Checkbox>
         </div>
 
         <Space size="middle">
-          <Button onClick={() => handleConfirm(false)} size="large">
+          <Button
+            onClick={() => handleConfirm(false)}
+            size="large"
+            disabled={submitting}
+          >
             拒绝执行
           </Button>
           <Button
             type="primary"
             onClick={() => handleConfirm(true)}
             size="large"
+            loading={submitting}
+            disabled={submitting}
             style={{
               backgroundColor: '#faad14',
               borderColor: '#faad14',

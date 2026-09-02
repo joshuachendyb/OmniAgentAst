@@ -13,6 +13,7 @@
 //   final段历史回放渲染 outcome=failed 时补 error_type/error_message 红字行(⚠[llm_error] 具体原因, 对齐StatusLine红字小字样式);
 //   数据链路本就贯通(sseParser:119-120 已解析outcome/error_type/error_message, FinalStep.to_dict输出:111-112原样透传),
 //   此前仅渲染 response/reasoning 二字段漏了错误字段; second修订: outcome三态显式分支(completed正常/failed红字原因行/cancelled弱化"已取消") - 小欧-2026-09-02
+// 编辑历史: 2026-09-03 小欧 - Bug-9: waiting 判定排除 tool 段 — 末段为工具段时不再叠加底部绿色缺口圆弧(双动画), 工具等待由 ToolCallLine 橙齿轮+扳手唯一承载 - 小欧-2026-09-03
 // 编辑历史: 2026-09-02 小欧 - HIT三处修复C: waiting判定加highlightToolName保活, HIT高亮时保持等待可见消确认后闪消 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 三堂会审定稿(北京老陈驱动, 根治等待圈三处丢失窗口): waiting判定由 streaming 单一依赖改
 //   taskActive = streaming||highlight||badge(running/paused), badge 复用 useTaskInfo 权威派生(paused→running 回推已实现,
@@ -171,6 +172,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
     (!lastSeg ||
       (lastSeg.kind !== 'thinking' &&
         lastSeg.kind !== 'text' &&
+        // 2026-09-03 小欧 Bug-9: 末段为 tool 段时不再叠加底部绿圆环 — 工具等待动画由 ToolCallLine 橙色齿轮+扳手唯一承载, 消除双动画
+        lastSeg.kind !== 'tool' &&
         lastSeg.kind !== 'final' &&
         lastSeg.kind !== 'error'));
   return (
