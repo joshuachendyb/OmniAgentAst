@@ -7,6 +7,10 @@
 // 编辑历史: 2026-09-02 小欧 - task005会审P3修复(北京老陈定案): findScrollContainer 弃字符串选择器 closest('[style*="overflow"]')
 //   (仅匹配内联样式, 改CSS类即失效且不报错)→改 getComputedStyle 沿祖先上溯找 overflowY auto/scroll, 稳健且语义等价 — 小欧-2026-09-02
 // 编辑历史: 2026-09-01 小欧 - 任务统计增强v0.8: StaticStatsBlock透传chainSteps=historySteps，复用C2步骤数据作工具调用链源 - 小欧-2026-09-01
+// 编辑历史: 2026-09-02 小欧 - 设计文档v1.21§5.7-D落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md):
+//   error 实时显示唯一位置收口=TaskInfoBar 位4(北京老陈定案): 删 Props :49 liveErrorText 声明 + 解构 :60 +
+//   空态条件去 !liveErrorText :172 + 删 error Alert 段 :194-207(其后 :208 StaticStatsBlock 原样保留) + 收回
+//   useChatPanels :222 传参(已随 §5.7-C 同提交) + 同步删 import Alert(未用即 ESLint 报错); 防 error 双显示(右栏+位4) — 小欧-2026-09-02
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -19,7 +23,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Spin, Empty, Alert, Typography } from 'antd';
+import { Spin, Empty, Typography } from 'antd';
 import type { ExecutionStep } from '../../../../types/execution';
 import { Colors } from '@/utils/stepStyles';
 import { sessionApi } from '../../../../services/api/session.api';
@@ -46,7 +50,6 @@ interface RightViewerProps {
   serverTaskId: string | null;
   receiving: boolean;
   liveSteps: ExecutionStep[];
-  liveErrorText: string | null; // useSSE onError.error_message（8.10）
   highlightToolName: string | null;
   onSettledRefresh?: () => void; // 结束沿通知外层刷新任务列表
 }
@@ -57,7 +60,6 @@ const RightViewer: React.FC<RightViewerProps> = ({
   serverTaskId,
   receiving,
   liveSteps,
-  liveErrorText,
   highlightToolName,
   onSettledRefresh,
 }) => {
@@ -169,7 +171,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
 
   return (
     <Spin spinning={loading && !isCurrentLive}>
-      {!loading && !hasSteps && !liveErrorText ? (
+      {!loading && !hasSteps ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
@@ -190,20 +192,6 @@ const RightViewer: React.FC<RightViewerProps> = ({
             highlightToolName={highlightToolName}
           />
         </div>
-      )}
-      {liveErrorText && (
-        <Alert
-          type="error"
-          showIcon
-          message={liveErrorText}
-          style={{
-            margin: '8px 0',
-            fontSize: 12,
-            borderRadius: 6,
-            background: '#fff2f0',
-            border: '1px solid #ffccc7',
-          }}
-        />
       )}
       {!isCurrentLive && (
         <StaticStatsBlock detail={detail} chainSteps={historySteps} />

@@ -6,6 +6,10 @@
 // 编辑历史: 2026-09-01 小欧 - 紧急bug修复(北京老陈驱动): paused由持久状态改瞬时事件,
 //   记录最近一次paused下标, 其后出现业务推进step(thought/action/observation)⇒badge推导回running,
 //   兜底后端部分恢复路径不发resumed引发的badge卡paused(耗时秒表被掐死失实时); 真HITL挂起仍paused - 小欧-2026-09-01
+// 编辑历史: 2026-09-02 小欧 - 设计文档v1.21§5.7-A落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md):
+//   新增 LiveMeta 类型(位4只收 retrying/error/truncated 无优先级) + 签名五参(liveErrorText 位4 error 实时源)
+//   + 历史 detail 分支补 liveMeta:null(不占位不串味) + latestProcessEvent 记最近 retrying + return 前
+//   candidates.sort(time 大者胜)合成 liveMeta(新覆盖旧) + deps 补 liveErrorText - 小欧-2026-09-02
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -36,6 +40,13 @@ export interface ProcessEvent {
   time: number;
 }
 
+// 小欧 2026-09-02: 位4 数据准予类型(只收三类, 无优先级)
+export interface LiveMeta {
+  kind: 'retrying' | 'error' | 'truncated';
+  text: string;
+  time: number;
+}
+
 export type TaskBadge =
   | 'idle'
   | 'running'
@@ -48,7 +59,8 @@ export const useTaskInfo = (
   steps: ExecutionStep[],
   frames: TaskMetaFrames,
   receiving: boolean,
-  detail?: TaskDetail | null
+detail?: TaskDetail | null,
+  liveErrorText?: string | null, // 小欧 2026-09-02: 位4 error 实时源(可选: TS1016 必选不能跟在可选后, 语义不变——undefined 时 candidates 不含 error)
 ) => {
   return useMemo(() => {
     // 【小欧 2026-08-26 修复 A3】选中历史任务：详情优先派生动态信息(状态/耗时/步骤/轮次/重试/token)
@@ -82,11 +94,18 @@ export const useTaskInfo = (
         truncatedTip: null,
         processEvents: [],
         stuckWarning: false,
+        liveMeta: null, // 小欧 2026-09-02: 历史回放位4置空不占位(无实时源)
       };
     }
 
     let badge: TaskBadge = 'idle';
     const processEvents: ProcessEvent[] = [];
+    // 小欧 2026-09-02: 位4 最近一条 retrying(新覆盖旧); 窄化 kind 直入 LiveMeta[] 合成, 免 TS 联合类型报错
+    let latestProcessEvent: {
+      kind: 'retrying';
+      text: string;
+      time: number;
+    } | null = null;
     // 2026-09-01 小欧 - 紧急bug修复: paused 为瞬时事件而非持久状态。
     // 记录最近一次 paused 下标; 其后若出现业务推进 step(thought/action/observation)
     // ⇒ 任务已越过暂停点(如 auto_confirm), badge 推导回 running, 恢复前端耗时秒表;
@@ -124,6 +143,12 @@ export const useTaskInfo = (
             text: s.content || '正在重试',
             time: s.timestamp,
           });
+          // 小欧 2026-09-02: 位4 回填(仅 retrying; paused/resumed 不进位4, 状态走徽标 - 北京老陈 2026-09-02 定案)
+          latestProcessEvent = {
+            kind: 'retrying',
+            text: s.content || '正在重试',
+            time: s.timestamp,
+          };
           break;
         case 'final':
           if (s.outcome === 'cancelled') badge = 'cancelled';
@@ -175,6 +200,24 @@ export const useTaskInfo = (
       if (startedEvt) recentEvents = [startedEvt, ...recentEvents];
     }
 
+    // 小欧 2026-09-02: 位4 liveMeta 合成(无优先级: retrying/error/truncated 各自到达即更新, 最后收到者胜, 新覆盖旧)
+    const candidates: LiveMeta[] = [
+      ...(latestProcessEvent ? [latestProcessEvent] : []),
+      ...(liveErrorText
+        ? [{ kind: 'error' as const, text: liveErrorText, time: Date.now() }]
+        : []),
+      ...(frames.truncated?.content
+        ? [
+            {
+              kind: 'truncated' as const,
+              text: frames.truncated.content,
+              time: Date.now(),
+            },
+          ]
+        : []),
+    ];
+    const liveMeta = candidates.sort((a, b) => b.time - a.time)[0] ?? null;
+
     return {
       badge,
       elapsedSec: frames.finalStats?.duration ?? stats?.duration ?? 0, // 2026-08-27 小欧 修复#19/#20: finalStats终态duration优先(此前零消费, elapsedSec永远0)
@@ -196,6 +239,7 @@ export const useTaskInfo = (
       truncatedTip: frames.truncated?.content ?? null,
       processEvents: recentEvents.reverse(), // 新事件插顶，保留最近20条
       stuckWarning,
+      liveMeta, // 小欧 2026-09-02: 位4(历史 detail 分支已置 null, 此字段恒在实时分支产出)
     };
-  }, [steps, frames, receiving, detail]);
+  }, [steps, frames, receiving, detail, liveErrorText]);
 };

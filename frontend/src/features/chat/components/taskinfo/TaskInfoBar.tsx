@@ -8,6 +8,10 @@
 // 编辑历史: 2026-08-30 小欧 - 修复×不显眼: DeleteOutlined→文本×、色#999→#595959、字号12→14加粗 - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - TaskInfoBar一线三组最佳重排: 左主节奏(状态/耗时/步轮·重试) 中Token合一T(P/C) 右信任/收起 gap12/8 减半宽 - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 去尾部"收起/展开"文字按钮(北京老陈驱动: 冒泡至整行onClick致setCollapsed两次切换抵消=点了没反应; 且与整行点击重复): 面板折叠仅保留整行点击(:139), 信任独立三角stopPropagation - 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 设计文档v1.21§5.7-B落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): Props六参补
+//   liveErrorText(位4 error 实时源) + 组件解构同步 + useTaskInfo 五参调用 + 第一行去掉旧"· 重试N"累计(:163-168,
+//   来源stats.retry_count, 无内容看不懂——北京老陈质疑)与截断独立段(:174-178, 并入位4) + 位4渲染段(🔁/🛑/⚠
+//   图标映射, 置于 步骤/轮次 之后、·疑似卡死 之前; 新覆盖旧无优先级) - 小欧-2026-09-02
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -34,6 +38,7 @@ interface TaskInfoBarProps {
   receiving: boolean;
   detail?: TaskDetail | null; // 【A3】选中历史任务时由其详情派生动态信息
   sessionId?: string | null; // 13.14 TrustPanel第一行尾部需会话ID
+  liveErrorText?: string | null; // 小欧 2026-09-02: 位4 error 实时源(useChatPanels 透传)
 }
 
 const BADGE_MAP = {
@@ -51,9 +56,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   receiving,
   detail,
   sessionId,
+  liveErrorText,
 }) => {
   const [collapsed, setCollapsed] = useState(false);
-  const info = useTaskInfo(steps, frames, receiving, detail);
+  const info = useTaskInfo(steps, frames, receiving, detail, liveErrorText);
   const b = BADGE_MAP[info.badge];
   const [trustExpanded, setTrustExpanded] = useState(false);
   const [trustTools, setTrustTools] = useState<string[]>([]);
@@ -160,19 +166,23 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
             步骤 {info.stepCount} / 轮次 {info.llmCallCount}
           </span>
-          {info.retryCount > 0 && (
-            <span style={{ fontSize: 12, color: Colors.WARNING }}>
-              · 重试 {info.retryCount}
+          {/* 小欧 2026-09-02: 第一行位4(位置固定, 新覆盖旧; 只收 retrying/error/truncated 无优先级; 去旧"重试N"累计与截断独立段) - 北京老陈拍板 */}
+          {info.liveMeta && (
+            <span
+              style={{ fontSize: 12, color: Colors.WARNING, marginLeft: 2 }}
+            >
+              [
+              {{
+                retrying: '🔁',
+                error: '🛑',
+                truncated: '⚠',
+              }[info.liveMeta.kind] ?? '🔔'}{' '}
+              {info.liveMeta.text}]
             </span>
           )}
           {info.stuckWarning && (
             <span style={{ fontSize: 12, color: Colors.WARNING }}>
               · 疑似卡死
-            </span>
-          )}
-          {info.truncatedTip && (
-            <span style={{ fontSize: 12, color: Colors.WARNING }}>
-              · ⚠ {info.truncatedTip}
             </span>
           )}
         </div>

@@ -3,6 +3,9 @@
 // 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel由config slot移至TaskInfoBar第一行尾部集成，移除config.trust - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被隐藏修复。新增可选入参latestTaskId/latestTaskRef并透传给TaskListPanel(左列滚动定位) - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): 入参新增sessionTokens(会话累计3字段), 解构并透传TopbarStats; chainTokens由number改3字段结构; sessionTokens加入useMemo依赖(否则实时/静态更新不重算是栏不刷新) - 小欧-2026-09-01
+// 编辑历史: 2026-09-02 小欧 - 设计文档v1.21§5.7-C/D落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): TaskInfoBar 增传
+//   liveErrorText(位4 🛑 数据源, error 实时显示唯一位置=taskinfo 第一行——北京老陈定案) + RightViewer 收回
+//   liveErrorText 传参(error 唯一位置收口, 防右栏+位4双显示); :79 解构/:304 依赖数组既有保留, 零新依赖 - 小欧-2026-09-02
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -219,7 +222,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             serverTaskId={serverTaskId}
             receiving={isReceiving}
             liveSteps={executionSteps}
-            liveErrorText={liveErrorText}
             highlightToolName={authorizationPending?.toolName ?? null}
             onSettledRefresh={refreshTasks}
           />
@@ -236,6 +238,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             receiving={isReceiving && activeTaskId === serverTaskId}
             detail={selectedDetail}
             sessionId={sessionId}
+            liveErrorText={liveErrorText} // 小欧 2026-09-02: 位4 🛑 数据源(error 实时显示唯一位置=taskinfo 第一行, 北京老陈定案)
           />
         ),
         defaultVisible: true,
