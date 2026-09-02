@@ -2,6 +2,7 @@
 //   集成 13.10 step 间段距与 13.11 空行规约(normalizeBlankLines 尾随守卫);
 //   2026-08-30 北京老陈定案纠正(step间8/内部6/折叠4): 主段12px(LG)废止 → margin 默认 MD(8)=step 间段距, compact=SM(6)=同 step 内部 - 小欧-2026-08-30
 //   2026-08-30 北京老陈新定案(step间6/内部4/折叠2=常量-2派生): 段距走 stepMargin → 默认=(MD)-2=6, compact=(SM)-2=4, 数值不写死 - 小欧-2026-08-30
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: TS-01 interval达终态即clear防CPU空转(原clear仅在unmount, 打完后仍空转) — 小欧-2026-09-02
 /**
  * TextStream - 正文打字机（真逐字 + 末位光标）
  *
@@ -41,7 +42,18 @@ const TextStream: React.FC<TextStreamProps> = ({
     // 打字机: 已显示进度回续(单调递增不回缩), 步进按长度自适应(短文逐字、长文加速, ≤4s 打完)
     const step = Math.max(1, Math.ceil(clean.length / 240));
     timerRef.current = window.setInterval(() => {
-      setShown((prev) => (prev >= clean.length ? prev : prev + step));
+      setShown((prev) => {
+        if (prev >= clean.length) {
+          if (timerRef.current) window.clearInterval(timerRef.current);
+          return prev;
+        }
+        const next = prev + step;
+        if (next >= clean.length) {
+          if (timerRef.current) window.clearInterval(timerRef.current);
+          return clean.length;
+        }
+        return next;
+      });
     }, 16);
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current);

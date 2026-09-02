@@ -21,6 +21,7 @@
 //   (badge 仍 paused/running 撑圈) ③HIT confirm 后 resumed 前 highlight 已清 null 圈闪失(badge 仍 paused 撑圈);
 //   非 live 历史回放 badge=undefined, 不显示圈 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 三堂会审task005-BUG-005修复: ToolCallLine key由索引i改step序号(任务切换时卸载重建, 展开状态不残留)
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①buildSegments去原地突变last.text改不可变更新(防污染缓存)②ThinkingStream/TextStream key由i改稳定key(防索引复用串味)③waiting终态守卫lastSeg.kind !== 'final'防失败后转圈 — 小欧-2026-09-02
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -68,8 +69,9 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
   ): TextishSegment => {
     const last = segs[segs.length - 1];
     if (last && last.kind === kind) {
-      last.text += text;
-      return last;
+      const updated = { ...last, text: last.text + text } as TextishSegment;
+      segs[segs.length - 1] = updated;
+      return updated;
     }
     const seg = { kind, text } as TextishSegment;
     segs.push(seg);
@@ -165,7 +167,10 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
     badge === 'paused'; // 2026-09-02 小欧: badge 权威派生(running=连接中但内容空窗, paused=HIT/卡顿挂起)
   const waiting =
     taskActive &&
-    (!lastSeg || (lastSeg.kind !== 'thinking' && lastSeg.kind !== 'text'));
+    (!lastSeg ||
+      (lastSeg.kind !== 'thinking' &&
+        lastSeg.kind !== 'text' &&
+        lastSeg.kind !== 'final'));
   return (
     <div
       style={{
@@ -183,7 +188,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           const cursor = streaming && i === lastThink && i === segs.length - 1;
           return (
             <ThinkingStream
-              key={i}
+              key={`thinking-${i}-${seg.text.slice(0, 16)}`}
               text={seg.text}
               cursor={cursor}
               compact={seg.sameStep}
@@ -195,7 +200,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           const isLive = streaming && i === lastText && i === segs.length - 1;
           return (
             <TextStream
-              key={i}
+              key={`text-${i}-${seg.text.slice(0, 16)}`}
               text={seg.text}
               typing={isLive}
               cursor={isLive}
@@ -273,7 +278,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           // 孤儿观察：无前置 action，独立弱化行展示摘要
           return (
             <div
-              key={i}
+              key={`obs-${i}-${seg.step.step ?? i}`}
               style={{
                 color: Colors.SUCCESS,
                 fontSize: FontSize.TERTIARY,
@@ -285,7 +290,12 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
             </div>
           );
         }
-        return <StatusLine key={i} step={seg.step} />;
+        return (
+          <StatusLine
+            key={`status-${i}-${seg.step.step ?? i}`}
+            step={seg.step}
+          />
+        );
       })}
       {waiting && (
         <div

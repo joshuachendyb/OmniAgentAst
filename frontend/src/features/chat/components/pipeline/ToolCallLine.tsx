@@ -15,6 +15,7 @@
 // 编辑历史: 2026-09-01 小欧 - 工具观察按工具维度组织: 单/多统一结构, 第一行集合名+同行工具名列表, 内层每工具子行(独立参数+状态+摘要, 按索引与tool_result配对); 修多工具只显首项结果; 修参数结果挤一行 - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 修复重构退化(BUG#22): 展开区兜底恢复字符串tool_result渲染(与数组ToolResultRenderer/兜底content并列, 恢复2026-08-29 #22修复逻辑), results仅认数组致字符串tool_result被忽略 - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 统一折叠三角：▲▼改▸▾、大小14(PRIMARY)、颜色PRIMARY、位置参数后，方法补role/aria/keyboard与TrustPanel一致 - 小欧-2026-09-01
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①TC-01合并多observation(flatMap)防首项丢失②TC-02 JSON.stringify加try/catch防循环引用白屏③TC-03 expanded随action重置防跨任务泄漏④tParamText加try/catch — 小欧-2026-09-02
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -26,7 +27,7 @@
  * @date 2026-08-26
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
@@ -51,14 +52,18 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
 }) => {
   // 2026-09-01 小欧: 每工具独立展开状态(数组), 点某工具行任意位置只展开/收起该工具(北京老陈定案: 完全独立展开+独立观察)
   const [expanded, setExpanded] = useState<boolean[]>([]);
+  useEffect(() => {
+    setExpanded([]);
+  }, [action]);
   const tools = action.tools || [];
-  // 单 observation step 的 tool_result 数组，与 tools[] 按索引 1:1 配对（2026-09-01 小欧）
-  const obsStep = observations[0];
-  const results = (
-    Array.isArray((obsStep as ExecutionStep | undefined)?.tool_result)
-      ? ((obsStep as ExecutionStep).tool_result as unknown)
+  const results = observations.flatMap((obs) =>
+    Array.isArray((obs as ExecutionStep | undefined)?.tool_result)
+      ? ((obs as ExecutionStep).tool_result as unknown as Array<
+          Record<string, unknown>
+        >)
       : []
   ) as Array<Record<string, unknown>>;
+  const obsStep = observations[0];
   const isMulti = action.exec_type === 'multi';
   const toolCount = tools.length;
   const collectionLabel = isMulti
@@ -130,7 +135,12 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         {/* 每工具子行：工具行可独立展开；间距遵循 stepStyles 既有 observation 风格(2026-08-30 定案): 字号 13, 行高=13+Spacing.XS, 段内折不折=Spacing.XS-2, 间距一律 Spacing 常量派生 */}
         <div style={{ marginTop: Spacing.XS }}>
           {tools.map((t, i) => {
-            const tParamText = JSON.stringify(t.params ?? {});
+            let tParamText: string;
+            try {
+              tParamText = JSON.stringify(t.params ?? {});
+            } catch {
+              tParamText = '[序列化错误]';
+            }
             const sum = getResultSummary(i);
             const st = getResultStatus(i);
             // 三堂会审(2026-09-01): 状态缺失时用中性文字色、不显图标, 防误报成功
@@ -148,7 +158,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
             };
             return (
               <div
-                key={i}
+                key={t.tool ? `${t.tool}-${i}` : `tool-${i}`}
                 style={{ marginTop: Spacing.XS, paddingLeft: Spacing.SM }}
               >
                 {/* 2026-09-01 小欧(北京老陈定案, 修复"点击好几次才有效"根因): 收起/展开onClick放在折叠区(工具行+结果摘要)容器, 点这两行toggle该工具; 展开区移出onClick容器, 内部独立交互(GeneericResultRenderer的Paragraph ellipsis展开按钮/目录树节点/CollapsibleText链接)不被误触发收起 */}

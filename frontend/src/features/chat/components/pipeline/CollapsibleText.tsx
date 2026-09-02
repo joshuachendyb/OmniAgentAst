@@ -4,6 +4,7 @@
 // 编辑历史: 2026-08-28 小强 - 修复[19]: 多行折叠忽略maxChars, 首2行后按maxChars截断 - 小强-2026-08-28
 // 编辑历史: 2026-08-28 小强 - 修复[20]: expanded状态不随text重置, 新消息默认折叠 - 小强-2026-08-28
 // 编辑历史: 2026-08-30 小欧 - 修复: 展开全文/收起链接onClick/onKeyDown加stopPropagation阻断冒泡(左列任务response折叠按钮误触外层onSelect→右栏自动展开, 北京老陈反馈) - 小欧-2026-08-30
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①CT-01移除text变化强制setExpanded(false)防打断展开②CT-02 Typography.Link补onKeyDown Enter/Space键盘展开(无障碍) — 小欧-2026-09-02
 /**
  * CollapsibleText - 统一折叠组件（折叠非截断）
  *
@@ -15,7 +16,7 @@
  * @date 2026-08-26
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Typography } from 'antd';
 
 interface CollapsibleTextProps {
@@ -30,7 +31,6 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
   maxChars = 2000,
 }) => {
   const [expanded, setExpanded] = useState(false);
-  useEffect(() => setExpanded(false), [text]);
   const overflow = useMemo(() => {
     const lineCount = text.split('\n').length;
     return lineCount > maxLines || text.length > maxChars;
@@ -55,11 +55,18 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
       {overflow && !expanded && (
         <Typography.Link
           onClick={(e) => {
-            // 2026-08-30 小欧: 阻断冒泡, 本链接交互不应泄漏到外层可点击容器(如左列任务项onSelect)
             e.stopPropagation();
             setExpanded(true);
           }}
-          onKeyDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              setExpanded(true);
+            } else {
+              e.stopPropagation();
+            }
+          }}
           style={{ fontSize: 12, marginLeft: 8 }}
         >
           展开全文
@@ -71,7 +78,15 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
             e.stopPropagation();
             setExpanded(false);
           }}
-          onKeyDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              setExpanded(false);
+            } else {
+              e.stopPropagation();
+            }
+          }}
           style={{ fontSize: 12, marginLeft: 8 }}
         >
           收起
