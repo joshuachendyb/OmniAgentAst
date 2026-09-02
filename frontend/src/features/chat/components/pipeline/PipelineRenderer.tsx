@@ -219,7 +219,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           const isFailed = seg.step.outcome === 'failed';
           const isCancelled = seg.step.outcome === 'cancelled';
           return (
-            <React.Fragment key={i}>
+            <React.Fragment key={`final-${i}-${seg.step.step ?? i}`}>
               {reasoning && (
                 <div
                   style={{
