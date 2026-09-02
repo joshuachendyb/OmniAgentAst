@@ -15,6 +15,7 @@
 //   ①弃 scrollIntoView(smooth)——流式逐chunk增长下smooth动画反复被打断重起追赶不及, 改 scrollTop=scrollHeight 即时到底;
 //   ②驱动由 liveSteps.length 改 ResizeObserver 监听流水线内容高度——打字机段逐字增长length不变旧逻辑不触发, 内容增高即滚底;
 //   ③沿用"用户已在底部120px内才滚"防打断手动上翻(行为不进反退) - 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - HIT三处修复A/B: ①首帧requestAnimationFrame补发消ResizeObserver断档漏触发 ②HIT确认highlightToolName由值→null时无条件滚底防阈值误拦 — 小欧-2026-09-02
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -76,8 +77,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
     activeTaskId != null && activeTaskId === serverTaskId && receiving;
 
   // 小欧 2026-08-30: 自动滚动 — liveSteps变化时滚到底部, 仅用户已在底部附近时触发(防打断手动上翻)
+  // 2026-09-02 小欧 HIT三处修复A/B: 首帧补发消ResizeObserver断档+ HIT确认无条件滚
   const pipelineEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const prevHighlightRef = useRef<string | null>(null);
   // 2026-09-02 小欧 task005会审P3(北京老陈定案): 弃 closest('[style*="overflow"]') 字符串选择器(仅匹配内联样式, 改CSS类即静默失效),
   //   改 getComputedStyle 沿祖先上溯找 overflowY:auto/scroll 滚动容器; 行为语义等价, 更稳健 — 小欧 2026-09-02
   const findScrollContainer = useCallback(() => {
@@ -107,11 +110,14 @@ const RightViewer: React.FC<RightViewerProps> = ({
     // 2026-09-02 小欧 修复实时auto-scroll慢/被盖住(北京老陈反馈):
     //  scrollTop=scrollHeight 即时滚底(弃 smooth——流式逐chunk增长反复打断动画追赶不及);
     //  用户已在底部120px内才滚(沿用防打断手动上翻, 行为不进反退)
+    // 2026-09-02 小欧 HIT三处修复A/B: 首帧补发消断档 + HIT确认无条件滚
+    const force = prevHighlightRef.current != null && highlightToolName == null;
+    prevHighlightRef.current = highlightToolName;
     const stickToBottom = () => {
       const isNearBottom =
         container.scrollHeight - container.scrollTop - container.clientHeight <
         threshold;
-      if (isNearBottom) {
+      if (force || isNearBottom) {
         requestAnimationFrame(() => {
           container.scrollTop = container.scrollHeight;
         });
@@ -120,8 +126,9 @@ const RightViewer: React.FC<RightViewerProps> = ({
     // 内容高度变化驱动: 覆盖新增step与打字机段逐字增长(length不变旧依赖不触发)两情形
     const ro = new ResizeObserver(stickToBottom);
     ro.observe(pipeline);
+    requestAnimationFrame(stickToBottom);
     return () => ro.disconnect();
-  }, [isCurrentLive, liveSteps.length, findScrollContainer]);
+  }, [isCurrentLive, liveSteps.length, highlightToolName, findScrollContainer]);
 
   // 拉取历史任务：C1+C2 并行；C2 空则 C3 按 message 降级（静态块降级为空，契约无通道）
   useEffect(() => {

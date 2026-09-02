@@ -13,6 +13,7 @@
 //   final段历史回放渲染 outcome=failed 时补 error_type/error_message 红字行(⚠[llm_error] 具体原因, 对齐StatusLine红字小字样式);
 //   数据链路本就贯通(sseParser:119-120 已解析outcome/error_type/error_message, FinalStep.to_dict输出:111-112原样透传),
 //   此前仅渲染 response/reasoning 二字段漏了错误字段; second修订: outcome三态显式分支(completed正常/failed红字原因行/cancelled弱化"已取消") - 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - HIT三处修复C: waiting判定加highlightToolName保活, HIT高亮时保持等待可见消确认后闪消 — 小欧-2026-09-02
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -143,9 +144,10 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   // (末段之下; 无任何段时即容器首列)渲染 ↻ 型 SVG 缺口圆弧; 首 chunk 到达,
   // 末段变 thinking/text, waiting 即消失, 内容从同一首列打字机输出——等待符号
   // 禁止常驻, 由内容覆盖接管
+  // 2026-09-02 小欧 HIT三处修复C: HIT高亮时保持等待可见, 消确认后圈闪消
   const lastSeg = segs[segs.length - 1];
   const waiting =
-    streaming &&
+    (streaming || !!highlightToolName) &&
     (!lastSeg || (lastSeg.kind !== 'thinking' && lastSeg.kind !== 'text'));
   return (
     <div
@@ -223,7 +225,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
                         margin: stepMargin(false),
                       }}
                     >
-                      ⚠️ [{seg.step.error_type || 'error'}] {seg.step.error_message}
+                      ⚠️ [{seg.step.error_type || 'error'}]{' '}
+                      {seg.step.error_message}
                     </div>
                   )}
                 </React.Fragment>
