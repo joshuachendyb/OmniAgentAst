@@ -27,6 +27,8 @@
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①RV-02/03去scrollContainerRef缓存与as强转(缓存永不失效+类型谎言)②RV-05 fallback加toExecutionSteps过滤防dirty污染③RV-06 Empty加liveBadge守卫(首chunk前waiting绕过)④RV-01去liveSteps.length驱动防误重置 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 修复auto-scroll完全失效(北京老陈反馈实时任务不自动滚): useEffect依赖加liveSteps.length,
 //   原仅isCurrentLive变化时执行, 实时任务开始时liveSteps.length=0→pipelineEndRef=null→effect return, 后续liveSteps增长不触发effect
+// 编辑历史: 2026-09-02 小欧 - 修复findScrollContainer永不生效(useCallback依赖[]→liveSteps.length): 组件挂载时pipelineEndRef为null→返回null,
+//   liveSteps增长后pipelineEndRef有值但findScrollContainer闭包捕获旧null→仍返回null, ResizeObserver永远不执行
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -120,7 +122,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
       el = el.parentElement;
     }
     return null;
-  }, []);
+  }, [liveSteps.length]);
   useEffect(() => {
     if (!isCurrentLive) return;
     const container = findScrollContainer();
