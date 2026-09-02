@@ -9,6 +9,10 @@
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 容器 line-height=字号+Spacing.XS(4)(行间距4), step 间 SM6/step 内文字 XS4 折不折同 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - final段修复: 流式不渲染(chunks已展示), 历史回放渲染reasoning+response两字段(此前仅response遗漏reasoning)
 // 编辑历史: 2026-09-02 小欧 - 北京老陈定案(流水线等待光标UI设计 v1.6): 光标/打字机判定末段化(修复旧思考段光标常亮); 新增waiting判定, 末段非thinking/text且streaming时渲染SVG缺口圆弧等待符号(1.4em≈20px, #52c41a, stroke-width2, 逆时针1s转圈); 首chunk到达末段变content段waiting即消失, 内容从同一首列打字机接管, 等待符号禁止常驻
+// 编辑历史: 2026-09-02 小欧 - 修复final段失败终态不显原因(北京老陈反馈: 失败任务右栏最后仅"任务执行失败"无原因):
+//   final段历史回放渲染 outcome=failed 时补 error_type/error_message 红字行(⚠[llm_error] 具体原因, 对齐StatusLine红字小字样式);
+//   数据链路本就贯通(sseParser:119-120 已解析outcome/error_type/error_message, FinalStep.to_dict输出:111-112原样透传),
+//   此前仅渲染 response/reasoning 二字段漏了错误字段; second修订: outcome三态显式分支(completed正常/failed红字原因行/cancelled弱化"已取消") - 小欧-2026-09-02
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -185,6 +189,11 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           //   历史回放无chunks, final是唯一载体, 需渲染reasoning+response两个字段
           if (streaming) return null;
           const reasoning = seg.step.reasoning;
+          // 小欧 2026-09-02: 终态三态显式分支（completed/failed/cancelled）——
+          //   cancelled 弱化小字"已取消"、failed 红字原因行(error_type/error_message)、
+          //   completed 正常 response；三者互斥走齐不留默认吞掉
+          const isFailed = seg.step.outcome === 'failed';
+          const isCancelled = seg.step.outcome === 'cancelled';
           return (
             <React.Fragment key={i}>
               {reasoning && (
@@ -200,10 +209,30 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
                   {reasoning}
                 </div>
               )}
-              <ResponseStream
-                text={seg.step.response || seg.step.content || ''}
-                cancelled={seg.step.outcome === 'cancelled'}
-              />
+              {isFailed ? (
+                <React.Fragment>
+                  <ResponseStream
+                    text={seg.step.response || seg.step.content || ''}
+                  />
+                  {(seg.step.error_message || seg.step.error_type) && (
+                    <div
+                      style={{
+                        color: Colors.ERROR,
+                        fontSize: FontSize.TERTIARY,
+                        lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
+                        margin: stepMargin(false),
+                      }}
+                    >
+                      ⚠️ [{seg.step.error_type || 'error'}] {seg.step.error_message}
+                    </div>
+                  )}
+                </React.Fragment>
+              ) : (
+                <ResponseStream
+                  text={seg.step.response || seg.step.content || ''}
+                  cancelled={isCancelled}
+                />
+              )}
             </React.Fragment>
           );
         }
