@@ -57,6 +57,9 @@
 #       files/Sion_{session_id}/Task_{task_id}/(前缀常量定义于 file_persist, orchestrator 同源拼装落库)
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W7启动清扫UPDATE chat_messages(崩溃残留空白AI行标败), 系统对该表零写依赖
 # 2026-08-27 - 小欧 - 阶段3(chat_messages表退役): 停建表——移除CREATE TABLE chat_messages及铁律注释、_ensure_column补齐(timestamp/display_name/client_os等/status/thought/task_id列)、idx_messages_session/idx_msg_task/idx_msg_timestamp索引; init_chat_db末尾真实DROP TABLE chat_messages(旧库历史数据已先由migrate_v2_chat_restructure回灌结构化表, 不丢数据); 系统对该表零依赖
+# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5⑤①(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): chat_session_trust 表结构+迁移——
+#  path 列(TEXT, NULL=无路径工具的工具级通配; 非空=该路径及子目录树前缀递归豁免), UNIQUE 从(session_id,tool_name)扩为(session_id,tool_name,path)支持同工具多路径行;
+#  建表后插入迁移段: PRAGMA table_info 检测旧表无 path 列→DROP 重建(存量工具级信任全部视为无效清空, 定案"存量全部清空不迁移")→新库含path列跳过
 """
 db_initializer — 数据库初始化
 
@@ -135,12 +138,16 @@ def init_chat_db(get_conn):
             );
 
             -- ⑤ chat_session_trust 新建（B3：HITL 会话信任清单，权威=文档2 3.1.7）
+            -- v1.5(2026-09-02 小欧, 北京老陈定案): 信任精确到 tool+path——
+            --   path 列: NULL=无路径工具的工具级通配; 非空=该路径及其子目录树递归(前缀递归);
+            --   UNIQUE 从 (session_id, tool_name) 扩为 (session_id, tool_name, path) 支持同工具多路径行
             CREATE TABLE IF NOT EXISTS chat_session_trust (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
                 tool_name TEXT NOT NULL,
+                path TEXT,
                 created_at TEXT,
-                UNIQUE(session_id, tool_name),
+                UNIQUE(session_id, tool_name, path),
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
 
@@ -283,6 +290,18 @@ def init_chat_db(get_conn):
             "ON token_usage(json_extract(task_model,'$.provider'), json_extract(task_model,'$.model'))")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_token_created ON token_usage(created_at)")
         # chat_session_trust 索引
+        # v1.5(2026-09-02 小欧): 存量信任全部视为无效(定案) + 加 path 列——检测到旧表无 path 列即重建(清空存量)
+        _trust_cols = [r[1] for r in conn.execute("PRAGMA table_info(chat_session_trust)").fetchall()]
+        if "path" not in _trust_cols:
+            conn.execute("DROP TABLE chat_session_trust")
+            conn.execute("""CREATE TABLE chat_session_trust (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                tool_name TEXT NOT NULL,
+                path TEXT,
+                created_at TEXT,
+                UNIQUE(session_id, tool_name, path),
+                FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE)""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_session ON chat_session_trust(session_id)")
 
         # ===== 12.2-C1: 步骤唯一性下沉DB — 同一AI行×同一任务×同一序号恰一行 =====

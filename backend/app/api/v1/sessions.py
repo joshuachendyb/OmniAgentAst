@@ -11,6 +11,8 @@
 #   使用场景: 设置界面读取会话级信息(title/created_at/updated_at/sessionModel) + 顶栏创建/更新时间悬浮数据源。
 #   路由置于文件末尾(防御性习惯; 本路由与 /titles/batch、/{id}/tasks 等子路径段数不同, 实际无遮蔽关系)。
 # 2026-08-30 - 小欧 - 设计文档[2]第十二章 v1.103: B1 响应新增 latest_task_id(最新任务显式锚点, 配合 storage.list_session_tasks 三元组返回解包, 排序一义后顶栏锚点不依赖 DESC 首行)。
+# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5⑤⑤(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): DELETE /sessions/{id}/trust/{tool_name} 端点增可选 query `path` 精确撤销——
+#   path 传入则精确 DELETE (session_id, tool_name, path) 该路径行; path=None(默认) 删工具级通配行(path IS NULL); 无匹配行返回 404 Trust not found
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
 """
@@ -100,13 +102,13 @@ def list_session_trust_endpoint(session_id: str):
 
 
 @router.delete("/sessions/{session_id}/trust/{tool_name}")
-def delete_session_trust_endpoint(session_id: str, tool_name: str):
-    """D3(10.5 问题4): 撤销会话对指定工具的信任 — 小欧 2026-08-20"""
+def delete_session_trust_endpoint(session_id: str, tool_name: str, path: Optional[str] = None):
+    """D3(10.5 问题4): 撤销会话对指定信任对象的信任 — 小欧 2026-08-20; v1.5 增 query path 精确撤销(path=None 删工具级通配行)"""
     with db.get_conn("chat") as conn:
-        removed = delete_session_trust(conn, session_id, tool_name)
+        removed = delete_session_trust(conn, session_id, tool_name, path)
     if not removed:
         raise HTTPException(status_code=404, detail="Trust not found")
-    return {"success": True, "session_id": session_id, "tool_name": tool_name}
+    return {"success": True, "session_id": session_id, "tool_name": tool_name, "path": path}
 
 
 @router.get("/sessions/{session_id}")

@@ -64,6 +64,13 @@
 # 2026-08-30 - 小欧 - 第十二章 v1.103(设计文档[2]12.2 G1): list_session_tasks 排序 DESC→ASC(左列时间线=会话全部任务时间线清单, 新任务在底部, 4.3.2; 原 DESC 是 8.C-④ 顶栏锚点"首行=最新"的专用依赖, 一手排序喂两个反方向职责违反 SRP); 新增返回 latest_task_id(最新任务显式锚点, 顶栏/默认选中/结束沿 token 锚点统一消费, 排序一义+显式锚点解耦)。调用方 sessions.py 同步解包三元组(见 diff②)。
 # 2026-08-30 - 小欧 - 第十三章13.7 C2 收口(设计文档[2]13.12.8, 北京老陈 2026-08-30 批准): load_steps_by_task 对 thought 步骤剥离 content 键出参(回放只取 thought/reasoning 两字段契约, 13.3/13.6), 仅剥 content、其余键原样保全
 # 2026-08-30 - 小欧 - get_task_tool_stats SQL修复: json_extract $.tools[0].name→$.tools[0].tool(根因: ActionStep写入key为"tool"非"name", 致工具汇总全归null×4)
+# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5⑤②(北京老陈定案"只有tool+path才是准确对象", 详见doc-9月优化/会话信任功能修复方案):
+#   chat_session_trust 四函数整体替换增 path 参数 + 前缀递归匹配——
+#   insert_session_trust(conn, session_id, tool_name, path=None): path=None=工具级通配, 非空=resolve绝对化落库;
+#   check_session_trust(conn, session_id, tool_name, path=None): path=None仅命中工具级通配行(path IS NULL), path给定命中通配行或信任根等于目标/为目标祖先目录(前缀递归, 与temp_auth语义对齐);
+#   list_session_trust: 返回增 path 字段(D1 信任清单带 path 展示);
+#   delete_session_trust(conn, session_id, tool_name, path=None): (tool,path)精确撤销, path=None仅删工具级通配行(D3);
+#   新增 _norm_trust_path 路径规范化(resolve绝对化, 落库/查询双侧一致); 文件首增 from pathlib import Path
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -73,6 +80,7 @@ storage — 会话存储业务逻辑
 import json
 import threading
 import types  # 11.1 冻结 token 零值常量, 防外部 mutate 污染全局 — 小欧 2026-08-20
+from pathlib import Path  # v1.5(2026-09-02 小欧): 信任路径 resolve 绝对化(前缀递归基础) — 小欧 2026-09-02
 from typing import Any, Dict, Optional, Tuple
 from sqlite3 import Connection
 
@@ -545,39 +553,71 @@ def get_session_model(conn: Connection, session_id: str) -> Optional[SessionMode
 
 # ---- ②-5 chat_session_trust 落库 ----
 
-def insert_session_trust(conn: Connection, session_id: str, tool_name: str) -> None:
-    """HITL"信任本次会话"落库（UNIQUE(session_id, tool_name) 幂等）— 小欧 2026-08-16"""
+def _norm_trust_path(path: Optional[str]) -> Optional[str]:
+    """信任路径规范化(resolve 绝对化, 供落库/查询双侧一致) — 小欧 2026-09-02"""
+    if not path:
+        return None
+    try:
+        return str(Path(path).resolve())
+    except Exception:
+        return None
+
+
+def insert_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None) -> None:
+    """HITL"信任本次会话"落库（UNIQUE(session_id, tool_name, path) 幂等）— 小欧 2026-08-16; v1.5 增 path 参数
+    path=None=无路径工具的工具级通配; 非空=该路径及子目录树递归豁免"""
     conn.execute(
-        "INSERT OR IGNORE INTO chat_session_trust(session_id, tool_name, created_at) VALUES (?,?,?)",
-        (session_id, tool_name, get_local_iso_timestamp()),
+        "INSERT OR IGNORE INTO chat_session_trust(session_id, tool_name, path, created_at) VALUES (?,?,?,?)",
+        (session_id, tool_name, _norm_trust_path(path), get_local_iso_timestamp()),
     )
 
 
-def check_session_trust(conn: Connection, session_id: str, tool_name: str) -> bool:
-    """工具安全检查豁免查询：会话已信任该工具则免二次 HITL 确认 — 小欧 2026-08-16"""
-    row = conn.execute(
-        "SELECT 1 FROM chat_session_trust WHERE session_id=? AND tool_name=?",
+def check_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None) -> bool:
+    """工具安全检查豁免查询：会话已信任该 tool+path 则免二次 HITL 确认 — 小欧 2026-08-16; v1.5 增 path 前缀递归匹配
+    匹配规则(北京老陈 2026-09-02 定案):
+      path=None: 仅命中工具级通配行(path IS NULL);
+      path 给定: 命中工具级通配行, 或任一行信任路径等于/为目标的父目录(前缀递归, 与 temp_auth 语义对齐)。"""
+    rows = conn.execute(
+        "SELECT path FROM chat_session_trust WHERE session_id=? AND tool_name=?",
         (session_id, tool_name),
-    ).fetchone()
-    return row is not None
+    ).fetchall()
+    if path is None:
+        return any(r["path"] is None for r in rows)
+    target = _norm_trust_path(path)
+    if target is None:
+        return False
+    target_p = Path(target)
+    for r in rows:
+        p = r["path"]
+        if p is None:
+            return True  # 工具级通配行: 任意路径命中
+        trusted_p = Path(p)
+        if trusted_p == target_p or trusted_p in target_p.parents:
+            return True  # 前缀递归: 信任根等于目标 或 为目标祖先目录
+    return False
 
 
 def list_session_trust(conn: Connection, session_id: str) -> list:
-    """D1(10.5 问题4): 会话已信任工具清单（HITL 信任列表, 供前端展示/撤销）— 小欧 2026-08-20"""
+    """D1(10.5 问题4): 会话已信任对象清单（tool+path, path 可为 NULL=工具级通配）— 小欧 2026-08-20; v1.5 增 path 返回"""
     rows = conn.execute(
-        "SELECT tool_name, created_at FROM chat_session_trust "
-        "WHERE session_id=? ORDER BY id DESC",
+        "SELECT id, tool_name, path, created_at FROM chat_session_trust WHERE session_id=? ORDER BY id DESC",
         (session_id,),
     ).fetchall()
     return [dict(r) for r in rows]
 
 
-def delete_session_trust(conn: Connection, session_id: str, tool_name: str) -> bool:
-    """D3(10.5 问题4): 撤销会话对指定工具的信任（HITL 解除豁免）— 小欧 2026-08-20"""
-    cur = conn.execute(
-        "DELETE FROM chat_session_trust WHERE session_id=? AND tool_name=?",
-        (session_id, tool_name),
-    )
+def delete_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None) -> bool:
+    """D3(10.5 问题4): 撤销会话对指定信任对象的信任——(tool, path) 精确撤销, path=None 仅删工具级通配行 — 小欧 2026-08-20; v1.5 增 path 匹配"""
+    if path is None:
+        cur = conn.execute(
+            "DELETE FROM chat_session_trust WHERE session_id=? AND tool_name=? AND path IS NULL",
+            (session_id, tool_name),
+        )
+    else:
+        cur = conn.execute(
+            "DELETE FROM chat_session_trust WHERE session_id=? AND tool_name=? AND path=?",
+            (session_id, tool_name, _norm_trust_path(path)),
+        )
     return cur.rowcount > 0
 
 
