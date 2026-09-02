@@ -15,6 +15,7 @@
 # 2026-08-16 - 小欧 - S1(10.1.4②): chat_stream_endpoint 透传 request.context_link_mode 给 orchestrator(任务上下文链)
 # 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.6): 注册task_execution_router(C1任务详情统计+C2步骤回放,
 #   嵌套于chat_router, 经main.py /api/v1前缀挂载为/api/v1/chat/execution/task/{task_id}路径)
+# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5 ①(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): confirm 端点调用改 `await resolve_confirmation(...)` — resolve_confirmation 由同步改 async 后, API 层路由必须 await(5.1 落库强一致, 反查失败 raise, 一处不改则运行时报错显性暴露)
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -76,7 +77,7 @@ async def confirm_stream_endpoint(request: Request):
     if not confirm_id:
         return {"success": False, "error": "missing confirm_id"}
 
-    ok = resolve_confirmation(confirm_id, confirmed, trust_session)
+    ok = await resolve_confirmation(confirm_id, confirmed, trust_session)  # 5.1(2026-09-02 小欧): resolve 改 async, await 同步落库零竞态
 
     if not ok:
         return {"success": False, "error": "confirm_id not found or already processed"}

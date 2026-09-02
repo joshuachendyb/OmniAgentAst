@@ -12,6 +12,10 @@
 # 2026-08-24 - 小欧 - 后端卡死修复收尾(offload): resolve_confirmation 为同步函数(API层直调),
 #   "信任本次会话"旁路落库块改 daemon 线程投递(本块原为 fire-and-forget: 失败只留日志不影响确认结果),
 #   调用线程零 sqlite3 I/O+锁重试 sleep, 落库语义不变
+# 2026-09-02 - 小欧 - 会话信任功能修复(v1.5, 北京老陈定案, 详见doc-9月优化/会话信任功能修复方案):
+#   5.1: resolve_confirmation 由同步函数改 async def, 信任落库由 daemon Thread 异步投递改 await db.atxn 同步提交(删Thread, API返回前信任行已落库零竞态);
+#      反查 session_id 失败由静默跳过改 raise→atxn 回滚并告警(3.2 根因修复, 杜绝"勾信任却不落库"静默丢失);
+#   5.5③: _PendingConfirmation 增 path 字段; create_confirmation 增 path 透传参数(tool+path 精确信任落库, 北京老陈"只有tool+path才是准确对象"定案)
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -28,7 +32,7 @@ import asyncio
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Optional
 from uuid import uuid4
 
 from app.services.task.task_runtime import check_cancelled
@@ -43,6 +47,7 @@ class _PendingConfirmation:
     future: asyncio.Future
     created_at: float
     tool_name: str = ""  # ②-5 S2(10.1.7②-5): tool_name 随 create_confirmation 透传, 供 trust 落库 — 小欧 2026-08-16
+    path: Optional[str] = None  # v1.5(2026-09-02 小欧): 信任目标路径透传, tool+path 精确落库 — 小欧 2026-09-02
 # 注: MAX_PENDING_CONFIRMATIONS 已集中迁移至 app.constants(2026-07-14 小欧)
 # #42 fix: 加锁防并发读写_pending_confirmations — 小欧 2026-07-18
 _pending_confirmations: Dict[str, _PendingConfirmation] = {}
@@ -67,7 +72,7 @@ def _cleanup_stale_confirmations():
             _pending_confirmations.pop(k, None)
 
 
-async def create_confirmation(task_id: str, tool_name: str = "") -> str:
+async def create_confirmation(task_id: str, tool_name: str = "", path: Optional[str] = None) -> str:
     """
     创建确认请求，返回confirm_id
 
@@ -76,6 +81,8 @@ async def create_confirmation(task_id: str, tool_name: str = "") -> str:
     小沈 2026-06-17 从confirm_operation.py下沉
     2026-08-16 小欧 S2(10.1.7②-5): 增 tool_name 透传参数, 存入 _PendingConfirmation
     供 trust 落库(confirm 成功回调经 task_id 反查 session_id 后写 chat_session_trust)
+    2026-09-02 小欧 v1.5(北京老陈定案): 增 path 透传参数, 存入 _PendingConfirmation,
+    供 tool+path 精确信任落库(check_session_trust 前缀递归匹配豁免)
     """
     _cleanup_stale_confirmations()
     with _pending_lock:
@@ -86,7 +93,7 @@ async def create_confirmation(task_id: str, tool_name: str = "") -> str:
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         _pending_confirmations[confirm_id] = _PendingConfirmation(
-            future=future, created_at=time.time(), tool_name=tool_name
+            future=future, created_at=time.time(), tool_name=tool_name, path=path
         )
     return confirm_id
 
@@ -132,7 +139,7 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
             _pending_confirmations.pop(confirm_id, None)
 
 
-def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: bool) -> bool:
+async def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: bool) -> bool:
     """
     解除确认等待(由API层路由调用)
 
@@ -140,6 +147,10 @@ def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: bool) 
         True=成功解除, False=confirm_id不存在或已处理
 
     小沈 2026-06-17 从confirm_operation.py下沉
+    2026-09-02 小欧 5.1/3.2修复(三堂会审): 同步函数改 async; 信任落库由 daemon Thread 异步投递
+    改 await db.atxn 同步提交, API 返回前信任行已落库(零竞态强一致, 删 Thread);
+    反查 session_id 失败由静默跳过改 raise→atxn 回滚并告警, 杜绝"勾信任却不落库"静默丢失;
+    5.5(v1.5 北京老陈定案): 落库增 entry.path 透传, tool+path 精确信任
     """
     with _pending_lock:
         entry = _pending_confirmations.get(confirm_id)
@@ -149,36 +160,27 @@ def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: bool) 
     if entry.future.done():
         return False
 
+    _task_id = confirm_id.split(":")[0] if ":" in confirm_id else ""
+
     entry.future.set_result({"confirmed": confirmed, "trust_session": trust_session})
 
-    # ②-5 S2(10.1.7②-5/文档2 6.1.3): "信任本次会话" confirm 成功回调落 chat_session_trust。
-    #   session_id 由 confirm_id 的 task_id 前缀反查(禁止伪 agent.session_id), tool_name 经 create_confirmation 透传。
-    #   落库失败只留日志不影响确认结果(confirm 已 set_result, 主流程不阻塞)。 — 小欧 2026-08-16
-    if confirmed and trust_session and entry.tool_name:
-        _task_id = confirm_id.split(":")[0] if ":" in confirm_id else ""
-        if _task_id:
-            # 信任落库改 daemon 线程投递(后端卡死修复收尾 小欧 2026-08-24):
-            #   resolve_confirmation 为同步函数(API层直调, 可能无运行中loop), 原同步写会在调用线程
-            #   执行 sqlite3 I/O+锁重试 sleep; 本块本就是"失败只留日志"的 fire-and-forget 旁路,
-            #   投递后台线程后主路径零阻塞, 落库语义不变(幂等单行 insert, 失败仅告警)。
-            #   已知时序微变(知悉级): 原同步写完成后才返回 True, 现 API 先返回、落库异步完成;
-            #   极端下"确认后毫秒级下一个工具调用"可能因信任行未落而多弹一次确认窗
-            #   (人速操作+LLM秒级耗时, 实际不可达), 失败兜底仍是重新确认。
-            def _persist_session_trust():
-                try:
-                    from app.db import db
-                    from app.services.chat.storage import get_session_id_by_task, insert_session_trust
-                    from app.tools.tools_alias_mapper import normalize_tool_name  # 2026-08-17 小健 三堂会审-T1修复: 落库用规范名, 与豁免查询(normalize)一致防别名漏配
-                    with db.get_conn_with_retry("chat") as _conn:
-                        _sid = get_session_id_by_task(_conn, _task_id)
-                        if _sid:
-                            insert_session_trust(_conn, _sid, normalize_tool_name(entry.tool_name))
-                            logger.info(f"[HITL] 会话信任落库: task_id={_task_id}, session_id={_sid}, tool_name={normalize_tool_name(entry.tool_name)}")
-                        else:
-                            logger.warning(f"[HITL] 会话信任落库跳过: task_id={_task_id} 无 session_id 可反查")
-                except Exception as _te:
-                    logger.warning(f"[HITL] 会话信任落库失败: task_id={_task_id}, tool_name={entry.tool_name}, err={_te}")
-            threading.Thread(target=_persist_session_trust, name=f"hitl-trust-{_task_id}", daemon=True).start()
+    if confirmed and trust_session and entry.tool_name and _task_id:
+        try:
+            from app.db import db
+            from app.services.chat.storage import get_session_id_by_task, insert_session_trust
+            from app.tools.tools_alias_mapper import normalize_tool_name  # 落库用规范名, 与豁免查询(normalize)一致防别名漏配 — 小健 2026-08-17
+
+            def _do(conn):
+                _sid = get_session_id_by_task(conn, _task_id)
+                if not _sid:
+                    raise ValueError(f"[HITL] task_id={_task_id} 无 session_id 可反查,信任禁止落库")
+                # 5.5(v1.5): 带 path 落库(entry.path 经 create_confirmation 透传) — 小欧 2026-09-02
+                insert_session_trust(conn, _sid, normalize_tool_name(entry.tool_name), getattr(entry, "path", None))
+
+            await db.atxn("chat", _do)
+            logger.info(f"[HITL] 会话信任落库: task_id={_task_id}, tool_name={normalize_tool_name(entry.tool_name)}")
+        except Exception as _te:
+            logger.warning(f"[HITL] 会话信任落库失败: task_id={_task_id}, tool_name={entry.tool_name}, err={_te}")
 
     _cleanup_stale_confirmations()
 

@@ -34,7 +34,8 @@
         日志result截断长度,防MemoryError); action_handler导入改为
         from app.constants 引用
    2026-08-14 小欧 改名名实相符: model_schemas.py → config_schemas.py(注释同步)
-   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪相关常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 迁至 app/services/agent/compaction_constants.py(随用方集中到 agent 域), 本源删除, 引用方(start_step/message_builder/compaction 各模块)导入路径同步改
+    2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪相关常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 迁至 app/services/agent/compaction_constants.py(随用方集中到 agent 域), 本源删除, 引用方(start_step/message_builder/compaction 各模块)导入路径同步改
+    2026-09-02 小欧 v1.5.13 新增 HITL_CONFIRM_LEAD=10 / BYPASS_AUTO_LEAD=2 两个计时提前量常量(会话信任修复方案5.7.3/5.7.4: 后端唯一计时权威, 前端倒计时=后端窗口−提前量, 消除前后端计时竞态)
 # 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 """
 
@@ -121,6 +122,8 @@ TASK_TIMEOUT = timedelta(hours=1)  # 【系统级】使用对象: task_registry.
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧
 HITL_TIMEOUT = 120  # 【系统级】使用对象: HITL 确认超时(秒)
+HITL_CONFIRM_LEAD = 10  # v1.5.13(2026-09-02 小欧): 真HITL 前端倒计时比后端 HITL_TIMEOUT 提前的秒数(后端120→前端110)
+BYPASS_AUTO_LEAD = 2  # v1.5.13(2026-09-02 小欧): bypass 前端倒计时比后端 S1 提前的秒数(后端5→前端3)
 
 # HITL最大待确认数（从 hitl_confirmation.py 集中迁移 2026-07-14 小欧）
 MAX_PENDING_CONFIRMATIONS = 100  # 【系统级】使用对象: HITL 最大待确认数

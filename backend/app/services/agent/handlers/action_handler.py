@@ -151,6 +151,13 @@
 #   sandbox_resolve 已含resumed(用户裁决确认, sandbox_gate:82)时跳过外层二次resumed, 以
 #   any(s.type=="resumed" for s in _steps) 去重, 规避报告A方案"无条件continue致bypass场景0次"缺陷;
 #   仅改去重不改语义(单次resumed成对, 双次幂等去重), 三堂会审通过(合规/合理/关联逻辑零退化)
+# 2026-09-02 - 小欧 - 会话信任功能修复(v1.5, 北京老陈定案, 详见doc-9月优化/会话信任功能修复方案):
+#   5.1③: auto_confirm分支(实际在S1 bypass分支)调用改为 await resolve_confirmation(confirm_id, confirmed, trust_session=False) 异步落库零竞态;
+#   5.4: trust_session 固定 False, bypass 直放不产生信任, 防自动落库污染信任清单;
+#   5.3⑤: 豁免收口点(L428插入点③前)补 grant_temp_auth(auth_path, recursive=True), 信任豁免跳窗但执行放行闭环;
+#   5.5④: 新增 _extract_trust_path 辅助 + 信任预查/check_session_trust/create_confirmation 带 path(tool+path 前缀递归精确化);
+#   5.7.1/5.7.4①②: auto_confirm 分支从立即resolve改为 wait_for_confirmation_result(S1窗口) 等前端 confirm_timeout 到0自动代发, S1超时bypass兜底放行;
+#   5.7.4①: paused emit 增 trust_path/auto_confirm/confirm_timeout/backend_timeout 四字段(后端唯一计时权威=后端窗口−提前量, constants.py HITL_CONFIRM_LEAD/BYPASS_AUTO_LEAD)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -177,7 +184,7 @@ from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error") P3
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.observation_formatter import build_observation_text
-from app.constants import HITL_TIMEOUT
+from app.constants import HITL_TIMEOUT, HITL_CONFIRM_LEAD, BYPASS_AUTO_LEAD  # v1.5.13(2026-09-02 小欧): 后端唯一计时权威前后端计时关联 — 小欧 2026-09-02
 from app.services.agent.tool_executor import execute_tool
 from app.services.task.task_context import set_current_task_id
 from app.db.models.operation_models import OperationStatus
@@ -300,7 +307,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     from app.services.chat.storage import check_session_trust
                     from app.tools.tools_alias_mapper import normalize_tool_name
                     # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
-                    _skip = await db.atxn("chat", lambda conn: check_session_trust(conn, _session_id, normalize_tool_name(_cn)))
+                    # v1.5(2026-09-02 小欧): 信任命中精确到 tool+path(北京老陈定案), 前缀递归匹配在 check_session_trust 内
+                    _tgt = _extract_trust_path(_cn, _cp)
+                    _skip = await db.atxn("chat", lambda conn: check_session_trust(conn, _session_id, normalize_tool_name(_cn), _tgt))
                 except Exception as _te:
                     logger.warning(f"[action_handler] 会话信任查询失败,按需确认: session={_session_id}, tool={_cn}, err={_te}")
                     _skip = False
@@ -323,10 +332,22 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 desensitized_params = {k: v for k, v in _cp.items()
                                        if k not in _SENSITIVE_FIELDS}
 
-                confirm_id = await create_confirmation(agent.task_id, _cn)  # S2: tool_name 透传供 trust 落库(10.1.7②-5) — 小欧 2026-08-16
+                confirm_id = await create_confirmation(agent.task_id, _cn, _extract_trust_path(_cn, _cp))  # v1.5: path 透传供 tool+path 落库 — 小欧 2026-09-02
 
                 # 2026-08-28 小欧 yield日志审计: 等待确认决策日志(SRP)
                 logger.info(f"[action] step={step} paused: tool={_cn} confirm_id={confirm_id}")
+                # v1.5.13(老陈三审定案: 后端唯一计时权威 + 前端倒计时=后端窗口−提前量)
+                #   真HITL: backend_timeout=HITL_TIMEOUT(120) / confirm_timeout=120-HITL_CONFIRM_LEAD(10)=110;
+                #   bypass: backend_timeout=security.auto_confirm_delay(默认5) / confirm_timeout=5-BYPASS_AUTO_LEAD(2)=3
+                _bypass = bool(getattr(safety_result, "auto_confirm", False))
+                if _bypass:
+                    from app.config import get_config as _get_cfg
+                    _backend_timeout = int(float(_get_cfg().get("security.auto_confirm_delay", 5.0)))
+                    _confirm_timeout = max(0, _backend_timeout - BYPASS_AUTO_LEAD)
+                else:
+                    _backend_timeout = int(HITL_TIMEOUT)
+                    _confirm_timeout = max(0, _backend_timeout - HITL_CONFIRM_LEAD)
+                _tp = _extract_trust_path(_cn, _cp)  # v1.5.3: trust_path 透传
                 yield agent._step_emitter.emit(MetaStep(
                     step=step,
                     type="paused",
@@ -336,20 +357,25 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     params=desensitized_params,
                     safety_level=safety_result.safety_level,
                     severity="attention",
+                    trust_path=_tp,
+                    auto_confirm=_bypass,
+                    confirm_timeout=_confirm_timeout,
+                    backend_timeout=_backend_timeout,
                 ))
 
                 if safety_result.auto_confirm:
-                    # P0-01修复: 安全绕过(security.enabled=false)时MetaStep照出但自动确认立即通过, 不挂起不等wait
-                    #   与tool_safety_checker.py bypass路径返回的auto_confirm=True配对 — 小沈 2026-08-03
-                    # 2026-08-11 小欧(P2-5): bypass模式(auto_confirm=True)下continue跳过下方grant_temp_auth —
-                    #   安全开关关闭时每次工具调用均auto_confirm直接放行, 无需累积临时授权, 跳过是正确语义
-                    # BUG-40修复(三堂会审 小沈 2026-08-13): bypass 模式下白名单外路径(auth_path 存在)仍需 grant_temp_auth,
-                    #   否则工具内 validate_path 会拦截(write 模式白名单外未授权返回 False), 工具返回错误, 违背 bypass"直放"语义;
-                    #   在 auto_confirm 分支内补 grant_temp_auth(若有 auth_path), 与下方确认后授权逻辑对齐, 不退化。
+                    # v1.5.13(2026-09-02 小欧, 5.7.1 bypass 自动代发): bypass 从"立即resolve"改为"等前端确认消息(S1窗口)"
+                    #   前端confirm_timeout到0自动代发confirm → resolve_confirmation → wait收到即走确认流程;
+                    #   前端未发(无浏览器/崩溃) → S1超时 → expired → bypass 兜底放行
+                    from app.services.task.hitl_confirmation import wait_for_confirmation_result as _wait_confirm
+                    from app.config import get_config as _get_cfg
+                    _s1 = float(_get_cfg().get("security.auto_confirm_delay", 5.0))
+                    _auth_result = await _wait_confirm(confirm_id, timeout=int(_s1 if _s1 > 0 else 0)) if _s1 > 0 else {"confirmed": True}
+                    _bypass_confirmed = bool(_auth_result.get("confirmed", False) or _auth_result.get("expired", False))
                     if getattr(safety_result, "auth_path", None):
                         from app.tools.security.temp_auth import grant_temp_auth
                         grant_temp_auth(safety_result.auth_path, recursive=True)
-                    resolve_confirmation(confirm_id, confirmed=True, trust_session=True)
+                    await resolve_confirmation(confirm_id, confirmed=_bypass_confirmed, trust_session=False)
                     set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
                     # v1.25 M3 插入点①: auto_confirm 汇合路径(continue 之前) — 沙箱预检最后闸门
                     # 2026-09-02 小欧 三堂会审BUG-001修复: resumed移至sandbox之后(原在sandbox前),
@@ -425,6 +451,13 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         continue
                 continue
 
+            # 5.3(2026-09-02 小欧, 病根3.5): 信任豁免/safe 直通汇合点统一授权收口——
+            #   tool_safety_checker 豁免返回 requires_confirmation=False 但保留 auth_path,
+            #   此处补 grant_temp_auth 闭环, 防"豁免跳窗不放行"(工具内部 validate_path 拦截执行失败)
+            if getattr(safety_result, "auth_path", None):
+                from app.tools.security.temp_auth import grant_temp_auth
+                grant_temp_auth(safety_result.auth_path, recursive=True)
+
             # v1.25 M3 插入点③: 循环体末尾兜底(仅 safe 直通/会话信任豁免触达) — 沙箱预检最后闸门
             _pre = await sandbox_precheck(safety_result, _cn, _cp)
             if _pre is not None:
@@ -495,6 +528,15 @@ def _parse_paths(name: str, params: Dict) -> Set[str]:
         if pval and isinstance(pval, str):
             out.add(pval)
     return out
+
+
+def _extract_trust_path(name: str, params: Dict) -> Optional[str]:
+    """提取工具调用用于信任落库/查询的目标路径(复用 _parse_paths, DRY) — 小欧 2026-09-02
+    取首个非 window: 键的文件路径; 无路径参数/窗口工具/提取失败返回 None(=工具级通配)"""
+    for p in _parse_paths(name, params or {}):
+        if not p.startswith("window:"):
+            return p
+    return None
 
 
 def _has_conflict(all_calls: List[Dict]) -> bool:
