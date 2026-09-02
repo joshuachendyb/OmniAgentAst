@@ -821,6 +821,14 @@ async def run_react_cycle(
                     agent._retry_count = getattr(agent, '_retry_count', 0) + 1
                     if agent._retry_count > 3:
                         logger.error(f"[run_react_cycle] 可恢复错误重试超限: {_step_err}")
+                        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+                            step=agent.llm_call_count,
+                            response=f"可恢复错误重试已达上限(3次): {_step_err}",
+                            outcome="failed",
+                            error_type="recoverable_retry_exhausted",
+                            error_message=f"可恢复错误重试已达上限(3次): {_step_err}",
+                        )):
+                            yield _s
                         set_failed(agent, f"可恢复错误重试已达上限(3次): {_step_err}")  # task007: 明确上限值 — 小欧 2026-07-23
                         break
                     logger.warning(f"[run_react_cycle] 可恢复异常, 第{agent._retry_count}次重试: {_step_err}")
@@ -847,6 +855,14 @@ async def run_react_cycle(
             if agent.status == AgentStatus.RETRYING:
                 agent._retry_count = getattr(agent, '_retry_count', 0) + 1
                 if agent._retry_count > 3:
+                    for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+                        step=agent.llm_call_count,
+                        response="可恢复错误重试已达上限(3次)",
+                        outcome="failed",
+                        error_type="recoverable_retry_exhausted",
+                        error_message="可恢复错误重试已达上限(3次)",
+                    )):
+                        yield _s
                     set_failed(agent, "可恢复错误重试已达上限(3次)")  # task007: 明确上限值 — 小欧 2026-07-23
                     break
                 set_status(agent, AgentStatus.THINKING, f"第{agent._retry_count}次重试")

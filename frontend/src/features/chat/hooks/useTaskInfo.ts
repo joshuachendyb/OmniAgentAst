@@ -175,13 +175,21 @@ export const useTaskInfo = (
       }
     }
 
-    if (
+    // ③ 兜底：若 steps 中存在 outcome=failed 的 FinalStep，强制置 failed
+    // 针对 quota_exceeded 等错误路径：无 error MetaStep、liveErrorText 为空、final 可能晚到或被清空
+    const hasFailedFinal = steps.some(
+      (s) => s.type === 'final' && s.outcome === 'failed'
+    );
+    if (hasFailedFinal) {
+      badge = 'failed';
+    } else if (
       liveErrorText &&
       badge !== 'failed' &&
       badge !== 'cancelled' &&
       badge !== 'completed'
-    )
+    ) {
       badge = 'failed';
+    }
     // ② startinfo 帧 -> "任务已开始"过程条首行 + 执行中徽标（B33：有帧才亮）
     // startinfo 仅存在于 metaFrames（8.4.3），时间戳取 start 事件的 startTimestamp
     if (hasStartInfo && badge === 'idle')

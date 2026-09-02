@@ -26,6 +26,10 @@
 # 2026-08-30 小欧 - 恢复[Final]终态全文打印(65f4de7f7"print→logger"把response=全文误改response_len, 终态正文不再上控制台; log_and_print复用07-23收口+08-30离线化双写)
 # 2026-09-02 小欧 - 配额类终态保真修复: error分支error_type透传(原写死llm_error丢粒度quota_exceeded/rate_limit/idle_timeout), errormessage已透传; KISS直线, 不新增事件类型 - 小欧-2026-09-02
 # 2026-09-01 - 小欧 - 方案A实施: 删除正常answer终态的污染版ThoughtStep(thought=parsed.get("thought", content)恒退化为完整答案, 致历史回放reasoning/response双渲); 终态正文/推理由FinalStep单一承载; 保留ThoughtStartStep(实时光标)与reasoning-only分支/工具轮ThoughtStep(正当); 方案详见 doc-9月优化/final步骤历史回放重复显示-问题分析与修复方案-小欧-2026-09-01.md
+# 2026-09-02 小欧 - 缺陷#4修复(测试验证 test_answer_handler_edge_cases): handle_answer 入口加 parsed=None 防御。
+#   病根: 上游LLM流异常/HTTP400等极端情况下 parsed 可能为 None, L105 parsed.get("type","answer") 抛 AttributeError 崩掉整个SSE流;
+#   修复: 入口 `if parsed is None` → 置空 dict, 后续走既有"真空→系统重试"分支(emit retrying MetaStep 由编排层重试), 不新增分支/不造新范式;
+#   三堂会审: 合规(SRP/DRY/KISS/SLAP/YAGNI) + 合理(空dict语义=空响应, 复用既有重试机制) + 关联(崩溃→优雅重试, 正常answer/error/unknown/reasoning-only四分支零影响) - 小欧-2026-09-02
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -101,6 +105,10 @@ async def handle_answer(agent, parsed: Dict):
     - 其他未知 type → 按 error 处理（兜底）
     
     type 产生于 llm_stream.py（见该模块头部），不由 LLM 输出，是 agent 推断。"""
+    # 2026-09-02 小欧 缺陷#4修复: parsed=None 防御(上游LLM流异常/HTTP400极端场景可能传 None)
+    #   置空dict后: parsed_type默认"answer"→content/reasoning皆空→走既有"真空→系统重试"分支, 不新增逻辑
+    if parsed is None:
+        parsed = {}
     step = agent.llm_call_count
     parsed_type = parsed.get("type", "answer")
 
