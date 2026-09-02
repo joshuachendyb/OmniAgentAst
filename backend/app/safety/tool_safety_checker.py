@@ -41,6 +41,11 @@
 # 2026-08-25 - 小欧 - M2(设计文档 3.2.4): 四条置位路径在 destructive 级条件成立时置 SafetyResult.sandbox_required=True(沙箱预检唯一触发依据):
 #   ①白名单外 destructive 写授权请求(代码库根/系统保护区/越权) ②路径越权(known_risk 命中路径越权 blocked) ③注册表写(registrywrite/registrydelete, 2.4 仅静态分析不动态执行, 置位交真实后端兜底) ④危险型失败兜底(rc!=0 且产生工作区影响/环境性 stderr);
 #   同时 cleanup 分支补 backend.cleanup() 资源泄漏修复(§8.7/R5); 安全开关不读此字段(总闸在 executor.pre_execute 单点), 存量 safe 级零感知
+# 2026-09-02 - 小欧 - 提示文案"准确+可读"优化(北京老陈驱动「提示文字看不懂」): _check_known_risks 用户可见 message 与日志串
+#   由专业黑话改为"术语保留(禁区分级/授权策略)+人话解释"并存——非系统禁区删:「该路径在受保护区域(非系统禁区),禁止删除」;
+#   非系统禁区写:「该路径在受保护区域(非系统禁区),写入需申请授权」; 系统禁区:「该路径在系统禁区,禁止访问」;
+#   白名单外:「该路径超出允许范围(白名单外),需临时授权」; msg 定位拼接自 path_safe_check(路径位于...);
+#   仅改文案不改逻辑(安全分级/blocked/requires_confirmation/auth_path/auto_confirm 一律不变), 测试不断言文案, 逻辑零退化
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -224,25 +229,25 @@ class ToolSafetyChecker:
                 # (validate_tool_path 已按 tool_name 推断 mode, 此处按注册名归一判断删除操作)
                 from app.tools.tools_alias_mapper import normalize_tool_name  # P2: 防别名漏判 — 小欧 2026-08-10
                 if normalize_tool_name(tool_name) == "delete":
-                    log_and_print(f"[ToolSafetyChecker] 路径越权硬拦(非系统禁区,禁止删除): tool={tool_name}, auth_path={failed_path}, {msg}")
-                    return SafetyResult(blocked=True, message=f"路径越权(非系统禁区,禁止删除): {msg}",
+                    log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)禁止删除(硬拦): tool={tool_name}, auth_path={failed_path}, {msg}")
+                    return SafetyResult(blocked=True, message=f"该路径在受保护区域(非系统禁区),禁止删除: {msg}",
                                         safety_level="dangerous", auth_path=failed_path)
                 # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
-                log_and_print(f"[ToolSafetyChecker] 路径越权转任务级授权请求: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
+                log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)写入需任务级授权: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
                 return SafetyResult(requires_confirmation=True, blocked=False,
-                                    message=f"路径超出白名单,需任务级授权: {msg}",
+                                    message=f"该路径在受保护区域(非系统禁区),写入需申请授权: {msg}",
                                     safety_level="destructive",
                                     auth_path=failed_path or (params.get("path") or params.get("dest")))
             if category == "system":
                 # 系统禁区写/删 → 硬拦永不授权
-                log_and_print(f"[ToolSafetyChecker] 路径越权硬拦(系统禁区): tool={tool_name}, auth_path={failed_path}, {msg}")
-                return SafetyResult(blocked=True, message=f"路径越权(系统禁区): {msg}",
+                log_and_print(f"[ToolSafetyChecker] 系统禁区拦截(硬拦): tool={tool_name}, auth_path={failed_path}, {msg}")
+                return SafetyResult(blocked=True, message=f"该路径在系统禁区,禁止访问: {msg}",
                                     safety_level="dangerous", auth_path=failed_path)
             # category == None: 白名单外非禁区 → 临时授权请求
             # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
-            log_and_print(f"[ToolSafetyChecker] 路径越权转临时授权请求: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
+            log_and_print(f"[ToolSafetyChecker] 白名单外路径需临时授权: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
             return SafetyResult(requires_confirmation=True, blocked=False,
-                                message=f"路径超出白名单,需临时授权: {msg}",
+                                message=f"该路径超出允许范围(白名单外),需临时授权: {msg}",
                                 safety_level="destructive",
                                 auth_path=failed_path or (params.get("path") or params.get("dest")))
 
