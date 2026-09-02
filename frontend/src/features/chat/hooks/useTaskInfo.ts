@@ -11,6 +11,7 @@
 //   + 历史 detail 分支补 liveMeta:null(不占位不串味) + latestProcessEvent 记最近 retrying + return 前
 //   candidates.sort(time 大者胜)合成 liveMeta(新覆盖旧) + deps 补 liveErrorText - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①HP-04 Date.now提出useMemo外防闪变②HP-05 recentEvents补slice(0,20)防21条越界 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 修复徽标executing残留: liveErrorText实时失败未进徽标派生致final晚1拍前badge仍running; 176后补liveErrorText→failed直线兜底(仅非终态时生效, final到达覆盖同值) - 小欧-2026-09-02
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -174,6 +175,13 @@ export const useTaskInfo = (
       }
     }
 
+    if (
+      liveErrorText &&
+      badge !== 'failed' &&
+      badge !== 'cancelled' &&
+      badge !== 'completed'
+    )
+      badge = 'failed';
     // ② startinfo 帧 -> "任务已开始"过程条首行 + 执行中徽标（B33：有帧才亮）
     // startinfo 仅存在于 metaFrames（8.4.3），时间戳取 start 事件的 startTimestamp
     if (hasStartInfo && badge === 'idle')

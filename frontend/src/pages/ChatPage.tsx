@@ -5,6 +5,7 @@
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被隐藏修复。创建latestTaskRef常驻ref并透传useChatPanels→TaskListPanel(左列滚动定位到最新任务) - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): useChainTokens入参加metaFrames(SSE实时token帧源), 解构新增sessionTokens并透传useChatPanels - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: CP-01 serverTaskId监听补sessionId防切会话残留旧列表 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 同类DB滞后修复: 直播失败即刷新左列(消executing残留) - 小欧-2026-09-02
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../services/api/client';
@@ -82,6 +83,18 @@ const ChatPage: React.FC = () => {
     }
   }, [chatStreaming.serverTaskId, sessionId, refreshTasks]);
 
+  // 2026-09-02 小欧 - 同类DB滞后修复2: 收流结束(成功/失败/取消)即刷新, 补final后DB仍executing窗口(与G2 start刷新成对) - 小欧-2026-09-02
+  const prevReceivingRef = useRef(false);
+  useEffect(() => {
+    if (
+      prevReceivingRef.current &&
+      !chatStreaming.isReceiving &&
+      chatStreaming.serverTaskId
+    )
+      void refreshTasks();
+    prevReceivingRef.current = chatStreaming.isReceiving;
+  }, [chatStreaming.isReceiving, chatStreaming.serverTaskId, refreshTasks]);
+
   // 2026-08-30 小欧 v1.100: 点击任务 → 右栏展开(4.5.1 联动锚定: 点击查看即展开)
   const handleSelectTaskOpenRight = useCallback(
     (taskId: string) => {
@@ -111,6 +124,11 @@ const ChatPage: React.FC = () => {
   useEffect(() => {
     setLiveErrorText(null);
   }, [sessionId]);
+
+  // 2026-09-02 小欧 - 同类DB滞后修复: 直播失败文案到达即刷新左列, 消DB executing残留(与useTaskInfo徽标兜底同窗) - 小欧-2026-09-02
+  useEffect(() => {
+    if (liveErrorText) void refreshTasks();
+  }, [liveErrorText, refreshTasks]);
 
   // 会话初始化 / 生命周期 / 标题编辑（抽离至各 hook）
   useChatInit({ chatFacade, searchParams });
