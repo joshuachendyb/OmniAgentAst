@@ -20,6 +20,10 @@
 # 2026-09-01 小欧 L1/L2去放大: _yield_error_response透传error_type + call_llm_with_fallback按error_type分流(传输/限流类yield+return不重试,其它保持L2重试) — 小欧 2026-09-01
 # 2026-09-02 小欧 task005会审P1修复(北京老陈定案): L2去分流元组移除"server" — server(500/502/503)为瞬时/过载类错误
 #   应走 L2 重试(re raise LLMResponseError→指数退避重试), 而非放行致任务永久失败; 重试耗尽仍走FC降级/error兜底, 无死循环, 不退化 — 小欧 2026-09-02
+# 2026-09-02 小欧 设计文档v1.21§5.3/§5.4落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): L1 retry_notice现场透传
+#   + L2/FC降级发 ("meta",{type:retrying}) 事件 — call_llm_stream 循环内 isinstance(chunk,StreamChunk) 检出 retry_notice(类型拦MagicMock,
+#   规避既有测试 _make_chunk 误判回归) → yield meta; except LLMResponseError 分支与 FC降级分支各 yield meta(yield不return, 生成器自然透传;
+#   FC降级内 Text 模式 L1 经 :305-306 天然透传零改动); 补 from app.llm.core import StreamChunk — 小欧 2026-09-02
 """
 llm_stream — LLM流式调用+响应构建
 
@@ -43,7 +47,7 @@ from typing import Any, Optional
 
 from app.services.agent.steps import ChunkStep
 from app.constants import LLM_RESPONSE_FALLBACK, LLM_RESPONSE_RETRIES, LLM_TOOL_CHOICE
-from app.llm.core import LLMResponseError
+from app.llm.core import LLMResponseError, StreamChunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock)
 from app.utils.text_utils import extract_tool_call_xml
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
@@ -157,6 +161,16 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
             if chunk.stream_error:
                 stream_error = chunk.stream_error
                 break
+
+            if isinstance(chunk, StreamChunk) and chunk.retry_notice:
+                # 小欧 2026-09-02: L1 重试事件透传为 ("meta", {...}) 元事件,
+                # 由 call_llm_with_fallback / react_cycle 消费转 MetaStep(type="retrying")
+                yield ("meta", {
+                    "type": "retrying",
+                    "content": f"LLM请求重试 {chunk.retry_attempt}/{chunk.retry_total}: {chunk.retry_notice}",
+                    "wait_time": None,
+                })
+                continue
 
             if chunk.tool_calls:
                 if tool_calls_result is None:
@@ -294,6 +308,12 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
             last_error = e
             logger.warning(f"[Retry][L2] LLM响应错误 第{attempt+1}/{LLM_RESPONSE_RETRIES}次: {e}")
             wait_time = min(0.5 * (2 ** attempt), 30)
+            # 小欧 2026-09-02: L2 重试事件透传发前端
+            yield ("meta", {
+                "type": "retrying",
+                "content": f"LLM响应重试 {attempt+1}/{LLM_RESPONSE_RETRIES}: {e.message}",
+                "wait_time": wait_time,
+            })
             await asyncio.sleep(wait_time)
             continue
 
@@ -301,6 +321,12 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
         logger.warning(f"[FC降级] FC模式{LLM_RESPONSE_RETRIES}次重试均失败，降级到Text模式")
         # #31 fix: fallback前reset事件，消cancel状态残留 — 小欧 2026-07-18
         agent.llm_client.reset_cancel()
+        # 小欧 2026-09-02: FC降级事件透传发前端（用户需知"FC失败已降级Text"）
+        yield ("meta", {
+            "type": "retrying",
+            "content": f"FC模式{LLM_RESPONSE_RETRIES}次重试均失败，降级到Text模式重试",
+            "wait_time": None,
+        })
         try:
             async for item in call_llm_stream(agent, messages, openai_tools=None):
                 yield item

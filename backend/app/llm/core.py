@@ -2,6 +2,8 @@
 # 编辑历史:
 # 2026-07-18 小欧 #34 fix: StreamChunk新增truncated字段
 # 2026-07-19 小欧 StreamChunk新增finish_reason字段(OpenAI兼容API终结原因:stop/length/tool_calls/content_filter)
+# 2026-09-02 小欧 设计文档v1.21§5.1落码: StreamChunk新增retry_notice/retry_attempt/retry_total字段
+#   (L1重试通知承载, 默认None零行为变化; llm_stream消费转MetaStep(retrying)发前端位4🔁)
 """
 LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05-27
 
@@ -37,6 +39,8 @@ LLM 响应 → type 分类链（知识备忘 — 小欧 2026-07-15）:
    2026-08-22 小欧 model结构化归一报告v1.25 6.4: ChatResponse(model/provider分离→chat_model:ModelRef)、
      StreamChunk(单字段model形态④→chunk_model:ModelRef补provider)、create_cancelled_chunk/create_error_chunk
      入参归一 chunk_model:ModelRef — F8 不留兼容别名, 消费点随改
+   2026-09-02 小欧 设计文档v1.21§5.1落码: StreamChunk新增retry_notice/retry_attempt/retry_total字段;
+     默认None零行为变化, L1重试通知由base_service yield, llm_stream消费转MetaStep(retrying)
 
 拆分原则:数据/辅助定义与BaseAIService主服务类分离,遵循SRP。
 对外透明:本模块由 app/llm/__init__.py 对外导出(ChatResponse/StreamChunk/create_cancelled_chunk等),外部import路径不变。 — 小欧 2026-08-14 更正(原"llm_core.py重新导出"失效,该文件已合并入 llm; 2026-08-14 llm 已独立为 app 顶层目录, 路径由 app/services/llm 改 app/llm)
@@ -87,7 +91,10 @@ class StreamChunk:
                  raw_data: str = "",
                  usage: Optional[Dict] = None,
                  truncated: bool = False,  # #34 fix: 超时截断标记 — 小欧 2026-07-18
-                 finish_reason: Optional[str] = None):  # 2026-07-19 小欧 新增: API最后chunk的finish_reason(stop/length/tool_calls)
+                 finish_reason: Optional[str] = None,  # 2026-07-19 小欧 新增: API最后chunk的finish_reason(stop/length/tool_calls)
+                 retry_notice: Optional[str] = None,   # 小欧 2026-09-02: L1重试通知(第N/M次+错误), llm_stream 消费转 MetaStep(retrying)
+                 retry_attempt: Optional[int] = None,  # 小欧 2026-09-02: 当前第几次重试
+                 retry_total: Optional[int] = None):   # 小欧 2026-09-02: 最大重试次数
         self.content = content
         self.chunk_model = chunk_model   # 前导+model; 补 provider(F8 不留 self.model 兼容别名)
         self.is_done = is_done
@@ -100,6 +107,9 @@ class StreamChunk:
         self.usage = usage
         self.truncated = truncated
         self.finish_reason = finish_reason  # 2026-07-19 小欧
+        self.retry_notice = retry_notice                # 小欧 2026-09-02
+        self.retry_attempt = retry_attempt              # 小欧 2026-09-02
+        self.retry_total = retry_total                  # 小欧 2026-09-02
 
 
 def create_cancelled_chunk(chunk_model: "ModelRef") -> StreamChunk:

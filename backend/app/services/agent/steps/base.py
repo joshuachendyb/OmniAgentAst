@@ -10,6 +10,10 @@
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.5: 基类 _model/_provider 两分离属性 → _step_model: Optional[ModelRef]
 #   单结构承载(用户裁定: step 只承载 ModelRef, 不留裸 model/provider 属性与兼容别名);
 #   SSE 输出由各子类 _extra_fields 从 step_model 派生裸键(前端随之后端)
+# 2026-09-02 - 小欧 - 设计文档v1.21§5.5落码配套(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md):
+#   MetaStep 补只读 .content property(返回 self._content)——对齐 ThoughtStep/ChunkStep 同型 property,
+#   TDD 验收(test_llm_retry_visibility:351)与 LLM 底层 retrying 事件消费方统一 .content 读取口;
+#   序列化不变(to_dict 仍走 get_content()), 纯增量零副作用 — 小欧 2026-09-02
 """
 ReasoningStep 抽象基类
 
@@ -127,6 +131,11 @@ class MetaStep(ReasoningStep):
         self.TYPE = type
         self._content = content
         self._kwargs = kwargs
+
+    @property
+    def content(self) -> str:
+        """只读内容property — 对齐 ThoughtStep/ChunkStep 同型接口 — 小欧 2026-09-02"""
+        return self._content
 
     def get_content(self) -> str:
         return self._content

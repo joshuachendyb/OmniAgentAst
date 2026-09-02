@@ -118,6 +118,10 @@
 #   之后调 agent.file_persist.append_conv_blocks(llm_call_count, messages) 增量落文件B(稳定 _msg_id 去重),
 #   随即 pop("_msg_id") 防泄漏 LLM wire; getattr 守卫 writer 未挂载空转, 旁路不阻塞主链路
 # 2026-08-28 小欧 - KISS修正(三堂会审yield链审查): 5处 emit_final_with_stats 调用点 async for→for(配合 step_emitter.emit_final_with_stats 改 sync 返回 (final, stats) 二元组); 原 async 体内零await, 纯伪异步包装; 行为等价无backward
+# 2026-09-02 - 小欧 - 设计文档v1.21§5.5落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): _process_single_step
+#   :435 async for 内拆包前拦截 ("meta", {...}) → yield MetaStep(type=retrying, step=llm_call_count, severity=info,
+#   wait_time) 走 StepEmitter 与既有 retrying 同路径发前端位4🔁; 命中即 continue(未命中照旧拆包走既有分支);
+#   LLM底层 L1/L2/FC降级重试通知全链落点收口
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -433,7 +437,18 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     llm_response = None
     _call_start = time.time()                   # 11.2-C LLM 调用计时 — 小欧 2026-08-20
     async for chunk_or_response in call_llm_with_fallback(agent, messages, openai_tools):
-        chunk_type, chunk_data = chunk_or_response
+        if isinstance(chunk_or_response, tuple) and chunk_or_response[0] == "meta":
+            # 小欧 2026-09-02: LLM 底层 L1/L2/降级重试通知 → 标准 retrying 事件发前端
+            _m = chunk_or_response[1]
+            yield agent._step_emitter.emit(MetaStep(
+                type=_m["type"],
+                step=agent.llm_call_count,
+                content=_m["content"],
+                severity="info",
+                wait_time=_m.get("wait_time"),
+            ))
+            continue
+        chunk_type, chunk_data = chunk_or_response   # 既有拆包(仅非meta时执行, 原 :436)
 
         if chunk_type == "chunk":
             content = chunk_data.content if hasattr(chunk_data, 'content') else str(chunk_data)

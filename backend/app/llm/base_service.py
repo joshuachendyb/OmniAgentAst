@@ -41,6 +41,9 @@
 #   三参注入——L2 覆盖 provider(如 sensenova) 时, 快照必须携带"目标 provider"的 api_base/api_key/model_params,
 #   否则沿用全局默认 provider(agnes) 会走错端点、用错 key、丢 reasoning_effort/context_limit(503/AgnesAI_error
 #   病根)。三参缺省 None 时回退 self, 快照不重复合并(个性参数权威合并仍由 __init__ 兜底 enable_thinking:True)
+# 2026-09-02 - 小欧 - 设计文档v1.21§5.2落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md):
+#   L1 重试分支(:414 logger后、sleep前) yield StreamChunk(retry_notice/retry_attempt/retry_total)——实时重试事件透出,
+#   llm_stream §5.3 消费转 ("meta",retrying) → react_cycle §5.5 转 MetaStep → 前端第一行位4🔁; 不设 stream_error 不触发读方 break
 """
 LLM 核心模块 — BaseAIService
 
@@ -412,6 +415,12 @@ class BaseAIService:
                                 except Exception:
                                     pass
                     logger.warning(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {e}")
+                    # 小欧 2026-09-02: 实时重试透出 —— L1 重试前发通知, 经 llm_stream §5.3 消费转 MetaStep(retrying) 发前端;
+                    #   不设 stream_error 故不触发读方 break; retry_notice=str(e) 带原始错误文本(str(ReadTimeout)="read timeout")
+                    yield StreamChunk(
+                        content="", chunk_model=self.llm_model, is_done=False,
+                        retry_notice=str(e), retry_attempt=retry_count, retry_total=max_retries,
+                    )
                     await asyncio.sleep(wait_time)
                     continue
                 else:
