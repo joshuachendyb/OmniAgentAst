@@ -147,6 +147,10 @@
 #      user确认即恢复与是否授权白名单外路径解耦; resumed 非业务step, agent_runner.py 剔除集合已含, 不影响 total_steps。
 # 2026-09-02 小欧 三堂会审task005-BUG-001修复: auto_confirm分支resumed移至sandbox之后(原在sandbox前),
 #   若sandbox需用户裁决且被拒绝,无paired paused→resumed, badge卡running; 现仅sandbox通过(放行/无需预检)才发resumed, 语义=真正恢复执行
+# 2026-09-02 - 小欧 - P9双重resumed去重(北京老陈驱动「问题报告P9验证」): auto_confirm/真HITL两处插入点
+#   sandbox_resolve 已含resumed(用户裁决确认, sandbox_gate:82)时跳过外层二次resumed, 以
+#   any(s.type=="resumed" for s in _steps) 去重, 规避报告A方案"无条件continue致bypass场景0次"缺陷;
+#   仅改去重不改语义(单次resumed成对, 双次幂等去重), 三堂会审通过(合规/合理/关联逻辑零退化)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -358,6 +362,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                             yield _st
                         if not _ok:
                             continue
+                        if any(getattr(_s, "type", None) == "resumed" for _s in _steps):
+                            continue
                     # 2026-09-02 小欧 BUG-001: sandbox通过后才发resumed(对齐下方真HITL确认后恢复语义,
                     #   前端badge据此回running恢复耗时秒表); 若sandbox拒绝已continue不发resumed
                     yield agent._step_emitter.emit(MetaStep(
@@ -414,6 +420,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     for _st in _steps:
                         yield _st
                     if not _ok:
+                        continue
+                    if any(getattr(_s, "type", None) == "resumed" for _s in _steps):
                         continue
                 continue
 

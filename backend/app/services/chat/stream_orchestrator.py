@@ -97,6 +97,9 @@
 #   使 react_cycle/telemetry 日志显示真实生效模型(消除显 agnes 盲点); api_key 后端查配置, 不落库不出前端
 # 2026-09-02 小欧 三堂会审task005-BUG-004修复: 配置查找失败显式置空(_pv_cfg/_pv_key/_pv_ebp/_pv_ctx),
 #   原仅warning无置空, 虽初始化为None但显式表达降级意图, 日志补"放弃会话模型覆盖"便于排查
+# 2026-09-02 - 小欧 - P10跨provider降级修复(北京老陈驱动「问题报告P10验证」): 配置查找失败(_pv_cfg is None
+#   且目标provider≠全局)时跳过覆盖, 全链用全局默认模型(不以目标provider名+全局api_base错配快照致401/503);
+#   规避报告_flag方案冗余, 以_pv_cfg判空直判, 仅改降级分支不改成功路径, 三堂会审通过(合规/合理/关联逻辑零退化)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -309,24 +312,27 @@ async def chat_stream_orchestrator(
                             _pv_key = None
                             _pv_ebp = None
                             _pv_ctx = None
-                    override_ref = ModelRef(
-                        provider=_ov.provider or ai_service.llm_model.provider,
-                        model=_ov.model or ai_service.llm_model.model,
-                        api_base=(_pv_cfg or {}).get("api_base") or ai_service.llm_model.api_base,
-                        display_name=_ov.display_name or ai_service.llm_model.display_name,
-                    )
-                    session_client = ai_service.snapshot(
-                        override_ref,
-                        api_key=_pv_key,
-                        extra_body_params=_pv_ebp,
-                        context_limit=_pv_ctx,
-                    )
-                    agent.llm_client = session_client
-                    # 2026-09-01 小欧: 同步 _task_llm_model 为生效快照模型, 使 react_cycle 日志/telemetry
-                    # 显示真实生效模型(而非全局 agnes), 与 TASK_START 显示实际生效模型同一精神
-                    agent._task_llm_model = getattr(session_client, "llm_model", None)
-                    logger.info(f"[chat] L2 sessionModel 已生效(独立客户端快照): session={session_id}, "
-                                f"provider={session_client.llm_model.provider}, model={session_client.llm_model.model}")
+                    if _pv_cfg is None and _ov.provider and _ov.provider != ai_service.llm_model.provider:
+                        logger.warning(f"[chat] 会话模型覆盖已跳过(配置查找失败), 使用全局默认模型: provider={ai_service.llm_model.provider}, model={ai_service.llm_model.model}")
+                    else:
+                        override_ref = ModelRef(
+                            provider=_ov.provider or ai_service.llm_model.provider,
+                            model=_ov.model or ai_service.llm_model.model,
+                            api_base=(_pv_cfg or {}).get("api_base") or ai_service.llm_model.api_base,
+                            display_name=_ov.display_name or ai_service.llm_model.display_name,
+                        )
+                        session_client = ai_service.snapshot(
+                            override_ref,
+                            api_key=_pv_key,
+                            extra_body_params=_pv_ebp,
+                            context_limit=_pv_ctx,
+                        )
+                        agent.llm_client = session_client
+                        # 2026-09-01 小欧: 同步 _task_llm_model 为生效快照模型, 使 react_cycle 日志/telemetry
+                        # 显示真实生效模型(而非全局 agnes), 与 TASK_START 显示实际生效模型同一精神
+                        agent._task_llm_model = getattr(session_client, "llm_model", None)
+                        logger.info(f"[chat] L2 sessionModel 已生效(独立客户端快照): session={session_id}, "
+                                    f"provider={session_client.llm_model.provider}, model={session_client.llm_model.model}")
             except Exception as _ov_e:
                 logger.warning(f"[chat] 读会话sessionModel失败(session={session_id}): {_ov_e}")
         # ── [TASK_START] 在会话覆盖快照生效后打印, 用 agent.llm_client(实际生效模型)非全局默认
