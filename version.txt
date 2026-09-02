@@ -1,4 +1,94 @@
-﻿v0.19.38
+﻿v0.19.39
+更新时间: 2026-09-02 12:07:38 - 小欧-2026-09-02
+## v0.19.38以来 变更汇总(69个commit) - 小欧-2026-09-02
+[2026-09-02 12:07:38 小欧] 汇总范围=v0.19.38以来全部commit(本分支 optimize-0.19.17 自v0.19.38累积69个commit, 已打 tag v0.19.39)
+
+### fix(35个):
+- task005三处bug修复(action_handler/stream_orchestrator/PipelineRenderer/RightViewer)
+- RightViewer.tsx 路由切回实时任务重置userScrolledUpRef+文档补三场景分析
+- PipelineRenderer.tsx+RightViewer.tsx+useChatPanels.tsx 右栏自动滚动失效与等待圈丢失根治
+- RightViewer.tsx+PipelineRenderer.tsx HIT弹框后滚动与等待圈三处修复A/B/C
+- error_classifier.py+llm_stream.py 404重试放大严谨修复4xx一律CLIENT不重试+L2放行client快fail防12次放大
+- RightViewer.tsx 实时auto-scroll改ResizeObserver内容高度驱动即时滚底修复最新步骤被盖住
+- PipelineRenderer.tsx final段outcome三态显式分支补齐failed错误原因红字行
+- TaskInfoBar.tsx 去尾部收起/展开冗余按钮面板折叠仅整行点击信任独立三角
+- TrustPanel.tsx/StaticStatsBlock.tsx/TaskInfoBar.tsx/ToolCallLine.tsx 统一折叠符号与布局一工具一行
+- StaticStatsBlock.tsx/TrustPanel.tsx 规范全页折叠方法与符号位置大小统一
+- StaticStatsBlock.tsx/task.api.ts/RightViewer.tsx 补编辑历史+修复工具汇总标签致单测失败
+- TaskListPanel.tsx P8 scrollIntoView包rAF消同批渲染ref竞态
+- RightViewer.tsx P3 弃closest字符串选择器改getComputedStyle沿祖先溯源
+- TrustPanel.tsx P2 折叠区补无障碍role/aria/tabIndex/keydown 列表补list/listitem
+- llm_stream.py P1 server移出L2放行元组改走重试 瞬时/过载错误不永久失败
+- useTaskInfo badge推导回running恢复前端耗时秒表
+- action_handler+sandbox_gate 恢复路径补发resumed使paused/resumed事件成对
+- TaskInfoBar 累计→本任务累计
+- TaskInfoBar 补回token两组各3字段 本轮T(P/C)与累计T(P/C)完整
+- error_classifier+llm_stream+shapeRenderers 按两文档设计原封不动实施L1/L2去放大与readtext兜底
+- base_service/stream_orchestrator/service L2会话切跨provider模型按provider查api_base/api_key/model_params+_task_llm_model同步
+- TopbarStats/useChainTokens 顶栏token双口径(会话累计+链累计)3字段+ToolCallLine修复字符串tool_result退化
+- ToolCallLine observation按工具维度渲染单/多统一结构
+- StaticStatsBlock token终值不折行+开发日志留档
+- TaskListPanel.tsx 修复任务完成后左列跳回第一个任务(loading时保留旧列表,滚动位置不丢失)
+- answer_handler.py 方案A实施-删除正常answer终态污染版ThoughtStep
+- TaskListPanel方案C新任务滚动定位+useChatPanels/ChatPage透传
+- RightViewer spinner守卫+PipelineRenderer final段流式跳过历史渲染reasoning
+- RightViewer auto-scroll+StaticStatsBlock仅非live显示
+- TrustPanel纯div重构+TaskInfoBar双组token+sseParser废累加
+- task.api/StaticStatsBlock token终值回退+null过滤+布局调整
+- storage/agent_runner 工具汇总null修复+accumulated_usage双重编码
+- SessionLayout左列flex自适应v1.100+CollapsibleText折叠按钮stopPropagation阻断冒泡
+- task.api/useSessionTasks/useChainTokens/useTaskSelection/ChatPage latest_task_id链路+G2服务端任务变化即刷新左列
+- storage.py/sessions.py list_session_tasks三元组返回+DESC改ASC+latest_task_id显式最新锚点
+- History index.tsx totalSessions非过滤态才更新守卫防过滤态单删污染清空守卫+清理Badge未用import
+- useSSE.ts 重连无任务ID禁重复POST根治双任务/僵尸任务+serverTaskIdRef根治陈旧闭包
+- answer_handler 恢复[Final]终态全文打印(08-28 print→logger误丢response全文, log_and_print收口)
+- app/logger console_writer控制台写离线化根治case09挂起
+
+### feat(12个):
+- useTaskInfo.ts/TaskInfoBar.tsx/useChatPanels.tsx/RightViewer.tsx taskinfo第一行位4🔁🛑⚠实时区落码设计文档§5.7-A/B/C/D error收口右栏
+- core.py/base_service.py/llm_stream.py/react_cycle.py/steps/base.py LLM重试事件实时透出MetaStep全链落码设计文档§5.1-5.5
+- PipelineRenderer.tsx/index.css 等待thought光标SVG缺口圆弧1.4em末段化落码
+- StaticStatsBlock.tsx/task.api.ts/RightViewer.tsx 任务统计增强六节极简重构真实diff落盘
+- TaskInfoBar 一线三组最佳重排 左主节奏中Token合一右信任 gap12/8
+- storage.py/sessions.py list_session_tasks三元组返回+DESC改ASC+latest_task_id显式最新锚点
+- task.api/useSessionTasks/useChainTokens/useTaskSelection/ChatPage latest_task_id链路+G2服务端任务变化即刷新左列
+- TextStream/textNormalize 正文打字机+空行规约
+- GenericResultRenderer等 富渲染行高+4 obs标签4段内2
+- stepStyles/PipelineRenderer等 流水线6/4/4/2+字体留白0+行高+4及thought斜体12
+- SessionLayout左列flex自适应v1.100+CollapsibleText折叠按钮stopPropagation阻断冒泡
+- task.api/useSessionTasks/useChainTokens/useTaskSelection/ChatPage latest_task_id链路+G2服务端任务变化即刷新左列
+
+### docs(19个):
+- 实时切历史任务显示与状态隔离问题分析与修复方案
+- 工具结果显示与taskinfo显示分析与设计 v1.21 §5全量diff落盘级复核
+- 工具结果显示与taskinfo显示分析与设计 第一行分位置位1-7定案+位4术语统一v1.18
+- 工具结果显示与taskinfo显示分析与设计 文档重命名+第9章清理v1.12每字段一行表格精简
+- 任务工具调用分析与LLM重试链路报告 v1.10九二节设计第一基准修正
+- 流水线等待光标UI设计 等待thought光标SVG缺口圆弧1.4em六章定案
+- 任务统计增强-测试记录产出物与头部信息与工具调用链-设计方案 完成v0.8极简六节真实diff
+- 任务暂停徽标卡死与数字冻结问题分析修复方案
+- 任务工具调用分析报告+readtext方案 10遍精读3轮三堂会审修正v1.4/v1.2落盘
+- L2会话切模型api_base缺失修复方案文档v2.3+FUNCTIONS.md登记parse_model_params
+- 工具调用Observation显示优设计 实时/历史双模式+7.5渲染效果展示
+- final步骤历史回放重复显示-问题分析与修复方案 完整方案文档
+- 14个文件补prettier格式统一编辑历史
+- [2]会话任务前后端架构设计2.0 13.14归集+TrustPanel移位+StaticStatsBlock优化
+- [2]会话任务前后端架构设计2.0 13.10最终定案6/4/4/2+字体留白0+行高+4及排版清单15项
+- [2]会话任务前后端架构设计2.0 第十一/十二章v1.100-v1.103布局定案+新任务时间线排序缺陷归档
+- [2]会话任务前后端架构设计2.0 第十三章13.11空行规约/13.12真实diff/13.13实施计划测试配套v1.116-v1.121
+- 挪文档至9月优化目录 任务报告+readtext方案
+- app/logger console_writer控制台写离线化根治case09挂起
+
+### refactor(1个):
+- ChatPage+9hook 彻底瘦身ChatPage<100行并抽useChatInit/Lifecycle/Title/Scroll等useChat* hook
+
+### style(1个):
+- prettier格式统一47个文件
+
+### chore(1个):
+- .stylelintrc块注释改行注释根治prettier解析失败+eslintrc格式规范化
+
+v0.19.38
 更新时间: 2026-08-30 07:00:00 - 小欧-2026-08-30
 ## v0.19.37以来 变更汇总(12个commit) - 小欧-2026-08-30
 [2026-08-30 07:00:00 小欧] 汇总范围=v0.19.37以来全部commit(本分支 optimize-0.19.17 自v0.19.37累积12个commit, 已打 tag v0.19.38)
