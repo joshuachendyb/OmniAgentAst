@@ -8,6 +8,7 @@
 //   liveErrorText 传参(error 唯一位置收口, 防右栏+位4双显示); :79 解构/:304 依赖数组既有保留, 零新依赖 - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - RightViewer 增传 frames=metaFrames(useTaskInfo badge 派生输入): 等待圈三处丢失根治,
 //   waiting 依赖由 streaming 单源改 streaming/highlight/badge 三源, badge runner/paused 撑住首屏/空闲超时/confirm空隙 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ChatInput增传sessionId(CI-02跨会话草稿泄漏)+useChatPanels依赖同步 — 小欧-2026-09-02
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -251,6 +252,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
         key: 'input.chat',
         component: (
           <ChatInput
+            sessionId={sessionId}
             loading={loading}
             isReceiving={isReceiving}
             isPaused={isPaused}

@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离滚动控制逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
-import { useCallback, useEffect } from 'react';
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①HP-02 scrollToBottomDelayed加timerRef+clearTimeout防堆积②HP-03首帧ref null时用MutationObserver重试防永不监听 — 小欧-2026-09-02
+import { useCallback, useEffect, useRef } from 'react';
 import type { UseChatFacadeReturn } from './useChatFacade';
 
 const SCROLL_THRESHOLD = 150;
@@ -32,11 +33,18 @@ export function useChatScroll(
   } = chatState;
   const { executionSteps, currentResponse, isReceiving } = chatStreaming;
 
+  const timerRef = useRef<number | null>(null);
   const scrollToBottomDelayed = useCallback(() => {
-    setTimeout(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
   }, [messagesEndRef]);
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     isPausedRef.current = isPaused;
@@ -51,17 +59,32 @@ export function useChatScroll(
   }, [executionSteps, executionStepsRef]);
 
   useEffect(() => {
-    const container = messagesEndRef.current?.parentElement;
-    if (!container) return;
-
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      userScrolledUpRef.current = distanceFromBottom > SCROLL_THRESHOLD;
+    let container = messagesEndRef.current?.parentElement;
+    let cleanup: (() => void) | undefined;
+    const attach = (c: HTMLElement) => {
+      const handleScroll = () => {
+        const { scrollTop, scrollHeight, clientHeight } = c;
+        const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+        userScrolledUpRef.current = distanceFromBottom > SCROLL_THRESHOLD;
+      };
+      c.addEventListener('scroll', handleScroll, { passive: true });
+      cleanup = () => c.removeEventListener('scroll', handleScroll);
     };
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
+    if (container) {
+      attach(container);
+    } else {
+      const mo = new MutationObserver(() => {
+        const c = messagesEndRef.current?.parentElement;
+        if (c) {
+          container = c;
+          mo.disconnect();
+          attach(c);
+        }
+      });
+      mo.observe(document.body, { childList: true, subtree: true });
+      cleanup = () => mo.disconnect();
+    }
+    return () => cleanup?.();
   }, [messagesEndRef, userScrolledUpRef]);
 
   useEffect(() => {
