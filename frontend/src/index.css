@@ -1,6 +1,7 @@
 /* 编辑历史: 2026-08-27 小欧 - 三堂会审P0-4: 删除全局*{margin:0;padding:0}重置与.ant-card-body/.ant-card-head/body/#root!important污染, 恢复AntD reset.css, 仅保留box-sizing与.chat-message-list留白 */
 /* 编辑历史: 2026-09-02 小欧 - 北京老陈定案(流水线等待光标UI设计 v1.6): 新增.waiting-cursor SVG缺口圆弧等待符号(1.4em≈20px, #52c41a, stroke-width2, 逆时针1s转圈), 与 PipelineRenderer 等待态配合, 首chunk到达由内容覆盖接管禁止常驻 */
 /* 编辑历史: 2026-09-03 小欧 - 工具执行等待动画(设计文档v1.8): 新增.tool-waiting-cursor 齿轮+扳手组合橙#fa8c16, 复用waiting-spin, 挂ToolCallLine摘要头下 - 小欧-2026-09-03 */
+/* 编辑历史: 2026-09-03 小欧 - 北京老陈定案: .tool-waiting-cursor 图标尺寸 1.4em→1em(≈14px), 缩小齿轮+扳手组合, 尺寸与文字更协调 - 小欧-2026-09-03 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;
@@ -78,6 +79,6 @@
 }
 .tool-waiting-cursor svg {
   display: block;
-  width: 1.4em;
-  height: 1.4em;
+  width: 1em;
+  height: 1em;
 }
