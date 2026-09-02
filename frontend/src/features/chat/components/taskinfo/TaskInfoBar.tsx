@@ -7,6 +7,7 @@
 // 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel移至TaskInfoBar第一行尾部集成（第一行尾巴） - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 修复×不显眼: DeleteOutlined→文本×、色#999→#595959、字号12→14加粗 - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - TaskInfoBar一线三组最佳重排: 左主节奏(状态/耗时/步轮·重试) 中Token合一T(P/C) 右信任/收起 gap12/8 减半宽 - 小欧-2026-09-01
+// 编辑历史: 2026-09-02 小欧 - 去尾部"收起/展开"文字按钮(北京老陈驱动: 冒泡至整行onClick致setCollapsed两次切换抵消=点了没反应; 且与整行点击重复): 面板折叠仅保留整行点击(:139), 信任独立三角stopPropagation - 小欧-2026-09-02
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -295,16 +296,6 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             >
               {trustExpanded ? '▲' : '▼'}
             </span>
-          </span>
-          <span
-            onClick={() => setCollapsed((v) => !v)}
-            style={{
-              color: Colors.TEXT.TERTIARY,
-              fontSize: 12,
-              cursor: 'pointer',
-            }}
-          >
-            {collapsed ? '展开' : '收起'}
           </span>
         </div>
       </div>
