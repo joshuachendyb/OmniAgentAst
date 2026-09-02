@@ -11,6 +11,8 @@
 #   resumed 非业务step, stream_reader/agent_runner 剔除不入 current_execution_steps, 不影响 total_steps。
 # 2026-09-03 小欧 沙箱用户裁决确认超时可配置化(北京老陈驱动): wait_for_confirmation_result 改读
 #   security.hitl_timeout(config.yaml优先, HITL_TIMEOUT 默认120兜底), 与真HITL确认超时同源。
+# 2026-09-03 小欧 Bug-16: sandbox paused 补齐 trust_path/auto_confirm/confirm_timeout/backend_timeout 四字段,
+#   改前缺字段致前端倒计时与后端不一致(60s/120s 错位); auto_confirm 恒False, 计时取 security.hitl_timeout−LEAD。
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -68,12 +70,22 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     # needs_ruling: 走现有确认机制(create_confirmation/wait_for_confirmation_result, 本函数上方已import)
     logger.info(f"[sandbox] 转HITL用户裁决: tool={tool_name}")
     confirm_id = await create_confirmation(agent.task_id, tool_name)
+    # 2026-09-03 小欧 Bug-16: sandbox paused 对齐主链四字段(trust_path/auto_confirm/confirm_timeout/backend_timeout),
+    #   改前缺 4 字段 → 前端倒计时与后端不一致(60s vs 120s 计时错位)。sandbox 为真HITL裁决(非bypass),
+    #   auto_confirm 恒 False, 计时与 security.hitl_timeout 对齐(backend 窗口 − HITL_CONFIRM_LEAD 提前量)
+    from app.config import get_config as _get_cfg_sb2
+    from app.constants import HITL_CONFIRM_LEAD  # HITL_TIMEOUT 第53行已导入, 不重复(DRY)
+    _bt = int(float(_get_cfg_sb2().get("security.hitl_timeout", HITL_TIMEOUT)))
+    _ct = max(0, _bt - HITL_CONFIRM_LEAD)
+    _sandbox_path = params.get("path") if isinstance(params.get("path"), str) else None
     steps = [agent._step_emitter.emit(MetaStep(
         step=step, type="paused",
         content=f"沙箱未能完成有效预检,需用户裁决是否直接执行: {tool_name}",
         confirm_id=confirm_id, tool_name=tool_name,
         params={k: v for k, v in params.items() if k not in _SENSITIVE_FIELDS},
-        safety_level="destructive", severity="attention"))]
+        safety_level="destructive", severity="attention",
+        trust_path=_sandbox_path, auto_confirm=False,
+        confirm_timeout=_ct, backend_timeout=_bt))]
     set_status(agent, AgentStatus.SUSPENDED, f"等待用户裁决沙箱预检: {tool_name}")
     from app.config import get_config as _get_cfg_sb
     # 对应 config.yaml security.hitl_timeout(与真HITL用户确认超时同源,默认120); 未配置兜底用常量 HITL_TIMEOUT — 小欧 2026-09-03

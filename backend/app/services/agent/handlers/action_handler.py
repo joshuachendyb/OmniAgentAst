@@ -1,6 +1,8 @@
 
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-09-03 小欧 Bug-1: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断; 全拦截/空 results 无条件发 ObservationStep(改前空 tool_result return 不发事件→前端齿轮永驻); 合成"无结果"占位保数组长度
+# 2026-09-03 小欧 Bug-25: grant_temp_auth 三处(bypass自动确认/用户确认授权/白名单豁免直通)包 try/finally 或 try/except, 授权异常不跳过 resolve_confirmation、不阻断执行流程, confirm_id 必收口
 # 2026-07-13 小欧 add_tool_result异常日志带类型与repr
 # 2026-07-16 小欧 op_id双表贯通修复
 # 2026-07-17 小欧 handle_action执行工具后重置_consecutive_reasoning_only(空转检测: 本步LLM发起工具调用=非reasoning-only空转, 归零)
@@ -177,6 +179,7 @@ import asyncio
 
 import time
 from dataclasses import dataclass, field
+from itertools import zip_longest  # 2026-09-03 小欧 Bug-1: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断丢失 tool_result
 from typing import Dict, List, Any, Optional, Set
 from app.logger import logger, log_and_print
 
@@ -378,10 +381,16 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     _s1 = float(_get_cfg().get("security.auto_confirm_delay", 10.0))
                     _auth_result = await _wait_confirm(confirm_id, timeout=int(_s1 if _s1 > 0 else 0)) if _s1 > 0 else {"confirmed": True}
                     _bypass_confirmed = bool(_auth_result.get("confirmed", False) or _auth_result.get("expired", False))
-                    if getattr(safety_result, "auth_path", None):
-                        from app.tools.security.temp_auth import grant_temp_auth
-                        grant_temp_auth(safety_result.auth_path, recursive=True)
-                    await resolve_confirmation(confirm_id, confirmed=_bypass_confirmed, trust_session=False)
+                    try:
+                        # 2026-09-03 小欧 Bug-25: grant_temp_auth 包 try/finally, 授权异常不跳过 resolve_confirmation,
+                        #   confirm_id 必被 resolve 收口, 前端 Modal 不泄漏挂到后端超时; 授权失败仅告警不改安全意图
+                        if getattr(safety_result, "auth_path", None):
+                            from app.tools.security.temp_auth import grant_temp_auth
+                            grant_temp_auth(safety_result.auth_path, recursive=True)
+                    except Exception as e:
+                        logger.warning(f"[action] grant_temp_auth失败仍放行: {e!r}")
+                    finally:
+                        await resolve_confirmation(confirm_id, confirmed=_bypass_confirmed, trust_session=False)
                     set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
                     # v1.25 M3 插入点①: auto_confirm 汇合路径(continue 之前) — 沙箱预检最后闸门
                     # 2026-09-02 小欧 三堂会审BUG-001修复: resumed移至sandbox之后(原在sandbox前),
@@ -433,11 +442,15 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 # ⑮ 白名单外临时授权: 确认后授予本次操作权限(一次一申请, 支持递归, per-request) — 小欧 2026-08-10
                 # 2026-09-01 小欧 - 紧急bug修复S2(前端badge卡paused): resumed从if auth_path内移出,
                 #   用户确认即恢复(与是否授权白名单外路径解耦), 无条件发1条, 授权信息并入文案, 消除重复(KISS/DRY)
-                if getattr(safety_result, "auth_path", None):
-                    from app.tools.security.temp_auth import grant_temp_auth
-                    grant_temp_auth(safety_result.auth_path, recursive=True)
-                    # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP) — 保留(2026-09-01 S2移出resumed时同步保留授权留痕)
-                    logger.info(f"[action] step={step} resumed+auth: tool={_cn} path={safety_result.auth_path}")
+                try:
+                    # 2026-09-03 小欧 Bug-25: 用户确认授权白名单外路径, grant_temp_auth 异常不阻断恢复执行态
+                    if getattr(safety_result, "auth_path", None):
+                        from app.tools.security.temp_auth import grant_temp_auth
+                        grant_temp_auth(safety_result.auth_path, recursive=True)
+                        # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP) — 保留(2026-09-01 S2移出resumed时同步保留授权留痕)
+                        logger.info(f"[action] step={step} resumed+auth: tool={_cn} path={safety_result.auth_path}")
+                except Exception as e:
+                    logger.warning(f"[action] 确认后grant_temp_auth失败不阻断: {e!r}")
                 # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP)
                 set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
                 yield agent._step_emitter.emit(MetaStep(
@@ -462,9 +475,13 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             # 5.3(2026-09-02 小欧, 病根3.5): 信任豁免/safe 直通汇合点统一授权收口——
             #   tool_safety_checker 豁免返回 requires_confirmation=False 但保留 auth_path,
             #   此处补 grant_temp_auth 闭环, 防"豁免跳窗不放行"(工具内部 validate_path 拦截执行失败)
-            if getattr(safety_result, "auth_path", None):
-                from app.tools.security.temp_auth import grant_temp_auth
-                grant_temp_auth(safety_result.auth_path, recursive=True)
+            try:
+                # 2026-09-03 小欧 Bug-25: 白名单外豁免直通亦包 try/except, grant_temp_auth 异常不阻断 sandbox 汇合
+                if getattr(safety_result, "auth_path", None):
+                    from app.tools.security.temp_auth import grant_temp_auth
+                    grant_temp_auth(safety_result.auth_path, recursive=True)
+            except Exception as e:
+                logger.warning(f"[action] 豁免直通grant_temp_auth失败不阻断: {e!r}")
 
             # v1.25 M3 插入点③: 循环体末尾兜底(仅 safe 直通/会话信任豁免触达) — 沙箱预检最后闸门
             _pre = await sandbox_precheck(safety_result, _cn, _cp)
@@ -845,7 +862,13 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
             reasoning=_fc.get("llm_reasoning", "") or None,
         )
 
-    for call, result in zip(ctx.all_calls, ctx.results):
+    for call, result in zip_longest(ctx.all_calls, ctx.results):
+        if call is None:
+            continue
+        # 2026-09-03 小欧 Bug-1: 全工具被安全拦截时 results 可能缺失该 call 的结果(zip_longest 补 None),
+        #   用合成"无结果"占位, 使 ObservationStep 必然发出、前端 results 保长度, 齿轮/动画不再永驻
+        if result is None:
+            result = {"llm_data": {"status": {"exec_code": "error"}}, "other_data": {"synthetic": True}}
         if isinstance(result, Exception):
             obs_text = f"Observation: 工具{call.get('tool_name', '?')}执行异常: {result}"
             _is_failed = True
@@ -908,9 +931,8 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
             _w = str(_other["warning"])
             orchestration["warning"] = (orchestration["warning"] + "\n\n" + _w).strip() if orchestration["warning"] else _w
 
-    if not tool_result:
-        return events, orchestration
-
+    # 2026-09-03 小欧 Bug-1: 无条件发 ObservationStep(即使 tool_result 为空/全拦截),
+    #   前端 results 到达即卸载等待动画, 杜绝齿轮/动画永驻(改前空 tool_result 直接 return 不发事件)
     events.append(ctx.agent._step_emitter.emit(ObservationStep(step=ctx.step, tool_result=tool_result)))
     return events, orchestration
 
