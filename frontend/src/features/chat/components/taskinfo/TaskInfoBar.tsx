@@ -13,6 +13,8 @@
 //   来源stats.retry_count, 无内容看不懂——北京老陈质疑)与截断独立段(:174-178, 并入位4) + 位4渲染段(🔁/🛑/⚠
 //   图标映射, 置于 步骤/轮次 之后、·疑似卡死 之前; 新覆盖旧无优先级) - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: TB-02 revokeTrust加try/catch防unhandledrejection上浮 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5⑤⑥(北京老陈定案"tool+path才是准确对象", 后端§5.5): TrustedTool带path升级一行一变——
+//   trustTools行键改 `${toolName}:${path}`、显示 {toolName} › {path ?? '任意'}(空=工具级通配)、revokeTrust签名带path精确撤销、Tooltip文案改"会话级 tool+path 免审白名单"(目标路径及其子目录免弹框) — 小欧-2026-09-02
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -29,7 +31,7 @@ import { Badge, Tooltip } from 'antd';
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskMetaFrames } from '@/types/sse';
 import type { TaskDetail } from '../../../../services/api/task.api';
-import { trustApi } from '../../../../services/api/task.api';
+import { trustApi, type TrustedTool } from '../../../../services/api/task.api'; // v1.5: TrustedTool 带 path — 小欧 2026-09-02
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import { useTaskInfo } from '../../hooks/useTaskInfo';
 
@@ -63,7 +65,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   const info = useTaskInfo(steps, frames, receiving, detail, liveErrorText);
   const b = BADGE_MAP[info.badge];
   const [trustExpanded, setTrustExpanded] = useState(false);
-  const [trustTools, setTrustTools] = useState<string[]>([]);
+  const [trustTools, setTrustTools] = useState<TrustedTool[]>([]); // v1.5: tool+path 行 — 小欧 2026-09-02
   const trustReqIdRef = useRef(0);
   const loadTrust = useCallback(async () => {
     if (!sessionId) return;
@@ -90,10 +92,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
         handler as EventListener
       );
   }, [sessionId, loadTrust]);
-  const revokeTrust = async (toolName: string) => {
+  const revokeTrust = async (toolName: string, path: string | null) => {
     if (!sessionId) return;
     try {
-      await trustApi.revokeTrust(sessionId, toolName);
+      await trustApi.revokeTrust(sessionId, toolName, path);
       await loadTrust();
     } catch {
       /* 2026-09-02 小欧 TB-02: 捕获异常防unhandledrejection上浮 */
@@ -288,17 +290,19 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               alignItems: 'center',
             }}
           >
-            <span
-              style={{
-                fontSize: FontSize.SECONDARY,
-                color:
-                  trustTools.length > 0
-                    ? Colors.TEXT.PRIMARY
-                    : Colors.TEXT.TERTIARY,
-              }}
-            >
-              信任({trustTools.length})
-            </span>
+            <Tooltip title="会话级 tool+path 免审白名单：勾信任后同会话同工具、目标路径及其子目录免弹框，危险操作仍拦截，可×撤销">
+              <span
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  color:
+                    trustTools.length > 0
+                      ? Colors.TEXT.PRIMARY
+                      : Colors.TEXT.TERTIARY,
+                }}
+              >
+                信任({trustTools.length})
+              </span>
+            </Tooltip>
             <span
               style={{
                 fontSize: FontSize.PRIMARY,
@@ -324,9 +328,9 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             marginTop: 4,
           }}
         >
-          {trustTools.map((tool) => (
+          {trustTools.map((t) => (
             <div
-              key={tool}
+              key={`${t.toolName}:${t.path ?? ''}`}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -340,12 +344,12 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                   lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
                 }}
               >
-                {tool}
+                {t.toolName} › {t.path ?? '任意'}
               </span>
               <span
                 onClick={(e) => {
                   e.stopPropagation();
-                  void revokeTrust(tool);
+                  void revokeTrust(t.toolName, t.path);
                 }}
                 style={{
                   fontSize: 14,

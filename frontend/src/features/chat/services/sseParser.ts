@@ -1,5 +1,7 @@
 // 编辑历史: 2026-08-28 小欧 - 由 utils/sse.ts 抽离 processSSEData(1002-1835)与 normalizeIsReasoning(995-997)至特性层services, 零逻辑变更 - 小欧-2026-08-28
 // 编辑历史: 2026-08-30 小欧 - 13.14 usage帧废止前端累加、直取后端本轮+三累计(P/C/T)四字段 - 小欧-2026-08-30
+// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 后端§5.7.4③④): paused帧 onAuthorizationRequired 透传四字段——
+//   trust_path(仅bypass时=rawData.trust_path, trust_panel的双写/撤回核心)、auto_confirm、confirm_timeout(前端倒计时=后端窗口-提前量)、backend_timeout - 小欧-2026-09-02
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -30,6 +32,10 @@ const processSSEData = (
       tool_name: string;
       params: Record<string, unknown>;
       safety_level: string;
+      trust_path?: string | null;
+      auto_confirm?: boolean;
+      confirm_timeout?: number;
+      backend_timeout?: number;
     }) => void;
     setCurrentResponse: React.Dispatch<React.SetStateAction<string>>;
     responseBufferRef: React.MutableRefObject<string>;
@@ -810,12 +816,15 @@ const processSSEData = (
           case 'paused':
             onPaused?.();
             if (rawData.confirm_id) {
-              // 【北京老陈 2026-07-13 小欧】HITL 授权请求：paused + confirm_id 触发授权弹窗
               handlers.onAuthorizationRequired?.({
                 confirm_id: rawData.confirm_id,
                 tool_name: rawData.tool_name,
                 params: rawData.params,
                 safety_level: rawData.safety_level,
+                trust_path: rawData.trust_path ?? null,
+                auto_confirm: Boolean(rawData.auto_confirm),
+                confirm_timeout: Number(rawData.confirm_timeout) || 60,
+                backend_timeout: Number(rawData.backend_timeout) || 60,
               });
             }
             break;

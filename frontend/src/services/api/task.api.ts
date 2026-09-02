@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-30 小欧 - adaptTaskDetail修复: ①accumulated_usage为null时回退读task_accumulated_tokens(每轮即时落库更可靠); ②tool_stats过滤tool_name为null的条目; TaskDetail新增task_accumulated_tokens字段
 // 编辑历史: 2026-09-01 小欧 - 任务统计增强v0.8: TaskArtifact补tool_name(4字段对齐artifacts)、TaskDetail补provider/model/created_at/updated_at、adaptTaskDetail透传四字段 - 小欧-2026-09-01
+// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 后端§5.5⑤/⑤⑥): TrustedTool增path字段、getTrust映射path(null=工具级)、revokeTrust增可选path登录?path=精确撤销(tool,path) — 小欧-2026-09-02
 import api from './client';
 
 // ============================================================
@@ -208,16 +209,32 @@ export const executionApi = {
     api.get(`/chat/execution/task/${taskId}/steps`).then((r) => r.data),
 };
 
+export interface TrustedTool {
+  toolName: string;
+  path: string | null;
+}
+
 export const trustApi = {
-  getTrust: async (sessionId: string): Promise<string[]> => {
+  getTrust: async (sessionId: string): Promise<TrustedTool[]> => {
     const r = await api.get(`/sessions/${sessionId}/trust`);
-    return ((r.data?.trusted_tools ?? []) as Array<{ tool_name: string }>).map(
-      (x) => x.tool_name
+    return (r.data?.trusted_tools ?? []).map(
+      (t: { tool_name: string; path: string | null }) => ({
+        toolName: t.tool_name,
+        path: t.path ?? null,
+      })
     );
   },
-  revokeTrust: (sessionId: string, toolName: string): Promise<void> =>
+  revokeTrust: (
+    sessionId: string,
+    toolName: string,
+    path?: string | null
+  ): Promise<void> =>
     api
-      .delete(`/sessions/${sessionId}/trust/${encodeURIComponent(toolName)}`)
+      .delete(
+        `/sessions/${sessionId}/trust/${encodeURIComponent(toolName)}${
+          path ? `?path=${encodeURIComponent(path)}` : ''
+        }`
+      )
       .then(() => undefined),
 };
 

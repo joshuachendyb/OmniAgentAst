@@ -1,19 +1,17 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离授权弹窗逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: AU-02二次授权覆盖旧confirmId先confirm(false)防泄漏+裸as守卫 — 小欧-2026-09-02
-import { useCallback, useEffect, useRef, useState } from 'react';
+// 编辑历史: 2026-09-03 小欧 - v1.5.4 计时统一: 移除setTimeout后备, 倒计时由AuthorizationModal countdown统一管理(§5.7.4-⑥) — 小欧-2026-09-03
+import { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
 
 /**
- * 授权弹窗 hook：监听 authorization_required 事件、60秒超时自动拒绝、确认回调（含 HITL 信任事件派发）
- * 逻辑与 NewChatContainer 中原逻辑一致，未做行为改写
+ * 授权弹窗 hook：监听 authorization_required 事件、确认回调（含 HITL 信任事件派发）
+ * 倒计时由 AuthorizationModal 组件内部 countdown 统一管理，本 hook 不再设 setTimeout
  */
 export function useAuthorization(sessionId: string | null) {
   const [authorizationPending, setAuthorizationPending] =
     useState<AuthorizationRequest | null>(null);
-  const authorizationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
 
   // 【v3.4新增 2026-06-09 小沈】授权请求回调（从useChatCallbacks传递）
   useEffect(() => {
@@ -32,6 +30,10 @@ export function useAuthorization(sessionId: string | null) {
         toolName: rawData.tool_name as string,
         params: (rawData.params ?? {}) as Record<string, unknown>,
         safetyLevel: (rawData.safety_level as string) ?? 'unknown',
+        trustPath: (rawData.trust_path as string) ?? null,
+        autoConfirm: Boolean(rawData.auto_confirm),
+        confirmTimeout: Number(rawData.confirm_timeout) || 60,
+        backendTimeout: Number(rawData.backend_timeout) || 60,
       });
     };
 
@@ -44,25 +46,6 @@ export function useAuthorization(sessionId: string | null) {
         'authorization_required',
         handleAuthorizationRequired as EventListener
       );
-    };
-  }, [authorizationPending]);
-
-  // 【v3.4新增 2026-06-09 小沈】授权超时自动关闭（60秒与后端一致）
-  useEffect(() => {
-    if (authorizationPending) {
-      authorizationTimeoutRef.current = setTimeout(() => {
-        // 2026-08-27 小欧 三堂会审: 授权超时自动拒绝改用 taskControlApi.confirm(false,false)
-        taskControlApi
-          .confirm(authorizationPending.confirmId, false, false)
-          .catch(() => undefined);
-        setAuthorizationPending(null);
-      }, 60000);
-    }
-    return () => {
-      if (authorizationTimeoutRef.current) {
-        clearTimeout(authorizationTimeoutRef.current);
-        authorizationTimeoutRef.current = null;
-      }
     };
   }, [authorizationPending]);
 

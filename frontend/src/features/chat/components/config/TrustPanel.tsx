@@ -5,6 +5,8 @@
 // 编辑历史: 2026-08-30 小欧 - 修复×不显眼: DeleteOutlined→文本×、色#8c8c8c→#595959、字号12→14加粗 - 小欧-2026-08-30
 // 编辑历史: 2026-09-02 小欧 - task005会审P2无障碍修复(北京老陈定案): 纯div折叠回归→折叠区补 role="button"/aria-expanded/tabIndex/onKeyDown(Enter/Space)、列表补 role="list"/"listitem"; 不引 aria-controls(列表条件渲染, id可能不存在成无效引用) - 小欧-2026-09-02
 // 编辑历史: 2026-09-01 小欧 - 规范折叠符号位置统一：三角移至“(*)”后，与工具调用链同位，保持全页单一折叠方法 - 小欧-2026-09-01
+// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5⑤⑥(北京老陈定案"tool+path才是准确对象", 后端§5.5): 面板升级 tool+path 精确信任——
+//   tools行类型带path、行键 `${toolName}:${path}`、显示 {toolName} › {path ?? '任意'}(空=工具级通配)、revoke签名带path精确撤销 — 小欧-2026-09-02
 /**
  * TrustPanel - 信任操作面板（config slot，默认收起）
  *
@@ -17,7 +19,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { trustApi } from '../../../../services/api/task.api';
+import { trustApi, type TrustedTool } from '../../../../services/api/task.api'; // v1.5: TrustedTool 带 path — 小欧 2026-09-02
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 
 interface TrustPanelProps {
@@ -25,7 +27,7 @@ interface TrustPanelProps {
 }
 
 const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
-  const [tools, setTools] = useState<string[]>([]);
+  const [tools, setTools] = useState<TrustedTool[]>([]); // v1.5: tool+path 行 — 小欧 2026-09-02
 
   const trustReqIdRef = useRef(0); // 2026-08-27 小欧 修复#50: 防切会话竞态, 仅采纳最新请求响应
 
@@ -63,10 +65,10 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
       );
   }, [sessionId, load]);
 
-  const revoke = async (toolName: string) => {
+  const revoke = async (toolName: string, path: string | null) => {
     if (!sessionId) return;
-    await trustApi.revokeTrust(sessionId, toolName);
-    await load(); // 撤销后刷新清单
+    await trustApi.revokeTrust(sessionId, toolName, path);
+    await load();
   };
 
   const [expanded, setExpanded] = useState(false);
@@ -110,9 +112,9 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
           role="list"
           style={{ maxHeight: 70, overflow: 'auto', paddingTop: Spacing.XS }}
         >
-          {tools.map((tool) => (
+          {tools.map((t) => (
             <div
-              key={tool}
+              key={`${t.toolName}:${t.path ?? ''}`}
               role="listitem"
               style={{
                 display: 'flex',
@@ -127,12 +129,12 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
                   lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
                 }}
               >
-                {tool}
+                {t.toolName} › {t.path ?? '任意'}
               </span>
               <span
                 onClick={(e) => {
                   e.stopPropagation();
-                  void revoke(tool);
+                  void revoke(t.toolName, t.path);
                 }}
                 style={{
                   fontSize: 14,

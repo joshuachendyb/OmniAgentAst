@@ -1,5 +1,7 @@
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复对象属性/JSX属性行超80字符换行、import重排, 防止格式再次出错
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①AM-01 request变化重置trustSession防跨请求残留②AM-02 Modal加maskClosable=false+keyboard=false防幽灵关闭死锁 — 小欧-2026-09-02
+// 编辑历史: 2026-09-03 小欧 - v1.5.4 弹窗渲染完善: 环形进度Progress+大数字倒计时+最后5s转橙3s微脉动+bypass标题补全+countdown到0自动代发/拒绝 — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - 三堂会审问题1方案A+问题3优化: ①handleConfirm强制bypass下trustSession=false(防bypass勾选偷偷落库转正为长期信任, 堵5.4防污染漏洞); ②countdown interval依赖数组移除countdown(函数式更新, 只在弹窗开/新请求建一次) — 小欧-2026-09-03
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -7,9 +9,9 @@
  *
  * 设计规范（参考DangerConfirmModal）：
  * - 宽度: 480px
- * - 边框: 2px solid #faad14 (橙色)
+ * - 边框: 2px solid #faad14 (橙色) / 2px dashed #1677ff (bypass)
  * - 图标: WarningOutlined (橙色, 48px)
- * - 按钮: "允许执行"（橙色）、"拒绝执行"（灰色）
+ * - 按钮: "允许执行"（橙色）、"拒绝执行"（灰色）/ bypass时保留按钮可点击
  * - 居中对齐
  *
  * 【v3.4实施 2026-06-09 小沈】
@@ -19,7 +21,15 @@
  */
 
 import React from 'react';
-import { Modal, Button, Space, Typography, Tag, Checkbox } from 'antd';
+import {
+  Modal,
+  Button,
+  Space,
+  Typography,
+  Tag,
+  Checkbox,
+  Progress,
+} from 'antd';
 import {
   WarningOutlined,
   ExclamationCircleOutlined,
@@ -33,6 +43,10 @@ export interface AuthorizationRequest {
   toolName: string;
   params: Record<string, unknown>;
   safetyLevel: string;
+  trustPath?: string | null;
+  autoConfirm?: boolean;
+  confirmTimeout?: number;
+  backendTimeout?: number;
 }
 
 interface AuthorizationModalProps {
@@ -62,9 +76,32 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   onConfirm,
 }) => {
   const [trustSession, setTrustSession] = React.useState(false);
+  const [countdown, setCountdown] = React.useState(0);
+  const onConfirmRef = React.useRef(onConfirm);
+  const isBypass = Boolean(request?.autoConfirm);
+  onConfirmRef.current = onConfirm;
+
   React.useEffect(() => {
     setTrustSession(false);
-  }, [request?.confirmId]);
+    setCountdown(request?.confirmTimeout ?? 0);
+  }, [request?.confirmId, request?.confirmTimeout]);
+
+  React.useEffect(() => {
+    // 小欧 2026-09-03 三堂会审问题3优化: 依赖数组移除 countdown——
+    //   用函数式更新 setCountdown(v=>...) 不读 countdown, interval 只在弹窗开/新请求时建一次, 不再每秒销毁重建
+    if (!visible || !request) return;
+    const t = setInterval(() => setCountdown((v) => Math.max(0, v - 1)), 1000);
+    return () => clearInterval(t);
+  }, [visible, request]);
+
+  React.useEffect(() => {
+    if (!visible || countdown !== 0 || !request) return;
+    if (isBypass) {
+      onConfirmRef.current(true, false);
+    } else {
+      onConfirmRef.current(false, false);
+    }
+  }, [visible, countdown, isBypass, request]);
 
   if (!request) {
     return null;
@@ -76,8 +113,16 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
     icon: null,
   };
 
+  const confirmTimeout = request.confirmTimeout ?? 60;
+  const progressPercent =
+    confirmTimeout > 0 ? Math.round((countdown / confirmTimeout) * 100) : 0;
+  const strokeColor =
+    countdown <= 3 ? '#fa541c' : countdown <= 5 ? '#faad14' : '#1677ff';
+
+  // 小欧 2026-09-03 三堂会审问题1方案A: bypass(安全开关绕开)模式下即使勾选"信任此操作"也不产生信任,
+  //   强制 trustSession=false(防绕过5.4防污染: bypass期间勾出的信任切回enabled:true后转正为长期豁免)
   const handleConfirm = (confirmed: boolean) => {
-    onConfirm(confirmed, trustSession);
+    onConfirm(confirmed, isBypass ? false : trustSession);
     setTrustSession(false);
   };
 
@@ -91,7 +136,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
       keyboard={false}
       width={480}
       style={{
-        border: '2px solid #faad14',
+        border: isBypass ? '2px dashed #1677ff' : '2px solid #faad14',
         borderRadius: '8px',
         overflow: 'hidden',
       }}
@@ -105,13 +150,13 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         <WarningOutlined
           style={{
             fontSize: 48,
-            color: '#faad14',
+            color: isBypass ? '#1677ff' : '#faad14',
             marginBottom: 16,
           }}
         />
 
         <Title level={4} style={{ marginBottom: 8 }}>
-          安全确认请求
+          {isBypass ? '将自动确认（安全开关已绕开）' : '安全确认请求'}
         </Title>
 
         <Tag
@@ -120,6 +165,46 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         >
           {safetyConfig.label}
         </Tag>
+
+        <div style={{ textAlign: 'center', marginBottom: 8 }}>
+          <Progress
+            type="circle"
+            size={88}
+            percent={progressPercent}
+            strokeColor={strokeColor}
+            strokeWidth={6}
+            format={() => (
+              <div style={{ textAlign: 'center', lineHeight: 1.2 }}>
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 600,
+                    color: countdown <= 3 ? '#fa541c' : '#333',
+                    animation:
+                      countdown <= 3
+                        ? 'pulse 0.5s ease-in-out infinite'
+                        : 'none',
+                  }}
+                >
+                  {countdown}
+                </div>
+                <div style={{ fontSize: 11, color: '#8c8c8c' }}>秒</div>
+              </div>
+            )}
+          />
+        </div>
+        <div
+          style={{
+            marginTop: 4,
+            fontSize: 12,
+            color: '#8c8c8c',
+            marginBottom: 12,
+          }}
+        >
+          {isBypass
+            ? `将在 ${countdown}s 后自动确认（后端 ${request.backendTimeout ?? 5}s 兜底）`
+            : `未响应将在 ${countdown}s 后自动拒绝`}
+        </div>
 
         <div
           style={{
@@ -174,7 +259,9 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             checked={trustSession}
             onChange={(e) => setTrustSession(e.target.checked)}
           >
-            本次会话信任此操作
+            {request.trustPath
+              ? `本次会话信任此操作（${request.toolName} › ${request.trustPath}，含子目录）`
+              : `本次会话信任此操作（${request.toolName} › 任意，整工具）`}
           </Checkbox>
         </div>
 
@@ -196,6 +283,12 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </Button>
         </Space>
       </div>
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.6; }
+        }
+      `}</style>
     </Modal>
   );
 };
