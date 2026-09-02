@@ -9,6 +9,8 @@
 # 2026-09-01 小欧 紧急bug修复(前端badge卡paused): sandbox_resolve 用户裁决确认分支(:confirmed)补发
 #   MetaStep(type="resumed"), 使 paused/resumed 事件成对, 前端badge据此回running恢复前端耗时秒表(秒实时)。
 #   resumed 非业务step, stream_reader/agent_runner 剔除不入 current_execution_steps, 不影响 total_steps。
+# 2026-09-03 小欧 沙箱用户裁决确认超时可配置化(北京老陈驱动): wait_for_confirmation_result 改读
+#   security.hitl_timeout(config.yaml优先, HITL_TIMEOUT 默认120兜底), 与真HITL确认超时同源。
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -73,7 +75,9 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         params={k: v for k, v in params.items() if k not in _SENSITIVE_FIELDS},
         safety_level="destructive", severity="attention"))]
     set_status(agent, AgentStatus.SUSPENDED, f"等待用户裁决沙箱预检: {tool_name}")
-    auth = await wait_for_confirmation_result(confirm_id, timeout=HITL_TIMEOUT)
+    from app.config import get_config as _get_cfg_sb
+    # 对应 config.yaml security.hitl_timeout(与真HITL用户确认超时同源,默认120); 未配置兜底用常量 HITL_TIMEOUT — 小欧 2026-09-03
+    auth = await wait_for_confirmation_result(confirm_id, timeout=int(float(_get_cfg_sb().get("security.hitl_timeout", HITL_TIMEOUT))))
     set_status(agent, AgentStatus.EXECUTING, "沙箱预检用户裁决完成")
     if auth.get("confirmed"):
         logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")

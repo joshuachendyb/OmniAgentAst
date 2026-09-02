@@ -54,7 +54,10 @@ app:
   theme: light
 
 # 安全配置
+# 2026-09-03 小欧: 新增 auto_confirm_delay(bypass自动确认S1窗口,默认10) 与 hitl_timeout(真HITL确认超时,默认120) 两个可配置计时键
 security:
+  auto_confirm_delay: 10
+  hitl_timeout: 120
   commandBlacklist: ''
   commandWhitelist: ''
   confirmDangerousOps: true

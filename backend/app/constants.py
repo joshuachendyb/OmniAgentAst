@@ -121,7 +121,8 @@ MAX_CACHE_SIZE = 1000  # 【系统级】使用对象: 会话/上下文缓存最�
 TASK_TIMEOUT = timedelta(hours=1)  # 【系统级】使用对象: task_registry.cleanup_expired_tasks 过期任务(创建>1h)兜底清理, 防 running_tasks 内存注册表泄漏
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧
-HITL_TIMEOUT = 120  # 【系统级】使用对象: HITL 确认超时(秒)
+# 2026-09-03 小欧 - 真HITL确认超时已可配置化(security.hitl_timeout, config.yaml优先): 此常量作兜底默认
+HITL_TIMEOUT = 120  # 【系统级】使用对象: HITL 确认超时(秒), 可被 config security.hitl_timeout 覆盖
 HITL_CONFIRM_LEAD = 10  # v1.5.13(2026-09-02 小欧): 真HITL 前端倒计时比后端 HITL_TIMEOUT 提前的秒数(后端120→前端110)
 BYPASS_AUTO_LEAD = 2  # v1.5.13(2026-09-02 小欧): bypass 前端倒计时比后端 S1 提前的秒数(后端5→前端3)
 

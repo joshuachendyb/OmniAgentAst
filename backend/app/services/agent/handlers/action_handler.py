@@ -158,6 +158,8 @@
 #   5.5④: 新增 _extract_trust_path 辅助 + 信任预查/check_session_trust/create_confirmation 带 path(tool+path 前缀递归精确化);
 #   5.7.1/5.7.4①②: auto_confirm 分支从立即resolve改为 wait_for_confirmation_result(S1窗口) 等前端 confirm_timeout 到0自动代发, S1超时bypass兜底放行;
 #   5.7.4①: paused emit 增 trust_path/auto_confirm/confirm_timeout/backend_timeout 四字段(后端唯一计时权威=后端窗口−提前量, constants.py HITL_CONFIRM_LEAD/BYPASS_AUTO_LEAD)
+# 2026-09-03 - 小欧 - bypass/真HITL确认超时可配置化(北京老陈驱动): auto_confirm_delay默认5→10(前端倒计时10−2=8s), 
+#   真HITL确认超时 HITL_TIMEOUT 改读 security.hitl_timeout(config.yaml优先, 默认120兜底); else分支补 get_config import 防NameError
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -338,14 +340,17 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 logger.info(f"[action] step={step} paused: tool={_cn} confirm_id={confirm_id}")
                 # v1.5.13(老陈三审定案: 后端唯一计时权威 + 前端倒计时=后端窗口−提前量)
                 #   真HITL: backend_timeout=HITL_TIMEOUT(120) / confirm_timeout=120-HITL_CONFIRM_LEAD(10)=110;
-                #   bypass: backend_timeout=security.auto_confirm_delay(默认5) / confirm_timeout=5-BYPASS_AUTO_LEAD(2)=3
+                #   bypass: backend_timeout=security.auto_confirm_delay(默认10) / confirm_timeout=10-BYPASS_AUTO_LEAD(2)=8
                 _bypass = bool(getattr(safety_result, "auto_confirm", False))
                 if _bypass:
                     from app.config import get_config as _get_cfg
-                    _backend_timeout = int(float(_get_cfg().get("security.auto_confirm_delay", 5.0)))
+                    # 对应 config.yaml security.auto_confirm_delay(默认10, 前端倒计时=此值−BYPASS_AUTO_LEAD即8s); 未配置兜底用 10.0 — 小欧 2026-09-03
+                    _backend_timeout = int(float(_get_cfg().get("security.auto_confirm_delay", 10.0)))
                     _confirm_timeout = max(0, _backend_timeout - BYPASS_AUTO_LEAD)
                 else:
-                    _backend_timeout = int(HITL_TIMEOUT)
+                    from app.config import get_config as _get_cfg
+                    # 对应 config.yaml security.hitl_timeout(真HITL后端确认窗口,默认120); 未配置兜底用常量 HITL_TIMEOUT=120 — 小欧 2026-09-03
+                    _backend_timeout = int(float(_get_cfg().get("security.hitl_timeout", HITL_TIMEOUT)))
                     _confirm_timeout = max(0, _backend_timeout - HITL_CONFIRM_LEAD)
                 _tp = _extract_trust_path(_cn, _cp)  # v1.5.3: trust_path 透传
                 yield agent._step_emitter.emit(MetaStep(
@@ -369,7 +374,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     #   前端未发(无浏览器/崩溃) → S1超时 → expired → bypass 兜底放行
                     from app.services.task.hitl_confirmation import wait_for_confirmation_result as _wait_confirm
                     from app.config import get_config as _get_cfg
-                    _s1 = float(_get_cfg().get("security.auto_confirm_delay", 5.0))
+                    # 对应 config.yaml security.auto_confirm_delay(S1后端等待窗口=backhone_timeout值,默认10); 未配置兜底 10.0 — 小欧 2026-09-03
+                    _s1 = float(_get_cfg().get("security.auto_confirm_delay", 10.0))
                     _auth_result = await _wait_confirm(confirm_id, timeout=int(_s1 if _s1 > 0 else 0)) if _s1 > 0 else {"confirmed": True}
                     _bypass_confirmed = bool(_auth_result.get("confirmed", False) or _auth_result.get("expired", False))
                     if getattr(safety_result, "auth_path", None):
@@ -400,7 +406,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     continue
 
                 set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认工具执行: {_cn}")
-                auth = await wait_for_confirmation_result(confirm_id, timeout=HITL_TIMEOUT)
+                from app.config import get_config as _get_cfg_wait
+                # 对应 config.yaml security.hitl_timeout(与 emit 的 backend_timeout 同源,默认120); 未配置兜底用常量 HITL_TIMEOUT — 小欧 2026-09-03
+                auth = await wait_for_confirmation_result(confirm_id, timeout=int(float(_get_cfg_wait().get("security.hitl_timeout", HITL_TIMEOUT))))
 
                 if not auth.get("confirmed"):
                     if auth.get("expired"):

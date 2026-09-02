@@ -16,6 +16,8 @@
 #   5.1: resolve_confirmation 由同步函数改 async def, 信任落库由 daemon Thread 异步投递改 await db.atxn 同步提交(删Thread, API返回前信任行已落库零竞态);
 #      反查 session_id 失败由静默跳过改 raise→atxn 回滚并告警(3.2 根因修复, 杜绝"勾信任却不落库"静默丢失);
 #   5.5③: _PendingConfirmation 增 path 字段; create_confirmation 增 path 透传参数(tool+path 精确信任落库, 北京老陈"只有tool+path才是准确对象"定案)
+# 2026-09-03 - 小欧 - 清理过期确认超时可配置化(北京老陈驱动): _cleanup_stale_confirmations 改读
+#   security.hitl_timeout(config.yaml优先, HITL_TIMEOUT 默认120兜底), 与真HITL确认超时同源。
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -65,9 +67,11 @@ def _cleanup_stale_confirmations():
         return
 
     _last_cleanup_time = now
+    from app.config import get_config as _get_cfg_cln  # 对应 config.yaml security.hitl_timeout(过期清理判据与确认等待同源,默认120); 兜底常量 HITL_TIMEOUT — 小欧 2026-09-03
+    _hitl_timeout = int(float(_get_cfg_cln().get("security.hitl_timeout", HITL_TIMEOUT)))
     with _pending_lock:
         stale = [k for k, v in _pending_confirmations.items()
-                 if v.future.done() or now - v.created_at > HITL_TIMEOUT]
+                 if v.future.done() or now - v.created_at > _hitl_timeout]
         for k in stale:
             _pending_confirmations.pop(k, None)
 
