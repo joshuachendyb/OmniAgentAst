@@ -14,6 +14,12 @@
 //   数据链路本就贯通(sseParser:119-120 已解析outcome/error_type/error_message, FinalStep.to_dict输出:111-112原样透传),
 //   此前仅渲染 response/reasoning 二字段漏了错误字段; second修订: outcome三态显式分支(completed正常/failed红字原因行/cancelled弱化"已取消") - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - HIT三处修复C: waiting判定加highlightToolName保活, HIT高亮时保持等待可见消确认后闪消 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 三堂会审定稿(北京老陈驱动, 根治等待圈三处丢失窗口): waiting判定由 streaming 单一依赖改
+//   taskActive = streaming||highlight||badge(running/paused), badge 复用 useTaskInfo 权威派生(paused→running 回推已实现,
+//   useTaskInfo.ts:109-170), 渲染器不重造业务判断; 覆盖: ①首屏 serverTaskId→activeTaskId 同步窗口 streaming=false 圈不亮
+//   (startinfo 已到且 receiving → badge=running 撑圈) ②HIT挂起>60s 空闲超时重连 disconnect isReceiving=false 圈闪失
+//   (badge 仍 paused/running 撑圈) ③HIT confirm 后 resumed 前 highlight 已清 null 圈闪失(badge 仍 paused 撑圈);
+//   非 live 历史回放 badge=undefined, 不显示圈 — 小欧-2026-09-02
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -27,6 +33,7 @@
 
 import React from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
+import type { TaskBadge } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: waiting 取 badge 权威派生
 import { ThinkingStream } from './ThinkingStream';
 import { ResponseStream } from './ResponseStream';
 import { ToolCallLine } from './ToolCallLine';
@@ -123,6 +130,7 @@ interface PipelineRendererProps {
   streaming?: boolean; // 实时流进行中（思考流尾随光标）
   highlightToolName?: string | null; // HITL 弹窗联动高亮（4.7）
   headerNode?: React.ReactNode; // 头部·模型标识
+  badge?: TaskBadge; // 2026-09-02 小欧: 任务活跃徽标(running/paused=任务仍进行), 撑起三个 waiting 丢失窗口
 }
 
 const PipelineRenderer: React.FC<PipelineRendererProps> = ({
@@ -130,6 +138,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   streaming = false,
   highlightToolName = null,
   headerNode,
+  badge, // 2026-09-02 小欧: 非 live 历史回放不传 → undefined → 不显示圈
 }) => {
   const segs = buildSegments(steps);
   // 2026-08-27 小欧 三堂会审: 预计算最后一个思考段索引, 消除map内自增副作用与额外filter
@@ -145,9 +154,16 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   // 末段变 thinking/text, waiting 即消失, 内容从同一首列打字机输出——等待符号
   // 禁止常驻, 由内容覆盖接管
   // 2026-09-02 小欧 HIT三处修复C: HIT高亮时保持等待可见, 消确认后圈闪消
+  // 2026-09-02 小欧 三堂会审定稿: streaming 单一依赖改 taskActive 三源(streaming/highlight/badge),
+  //   根治①首屏任务ID同步窗口②HIT挂起>60s空闲超时重连③confirm-resumed间隙三处圈丢失
   const lastSeg = segs[segs.length - 1];
+  const taskActive =
+    streaming ||
+    !!highlightToolName ||
+    badge === 'running' ||
+    badge === 'paused'; // 2026-09-02 小欧: badge 权威派生(running=连接中但内容空窗, paused=HIT/卡顿挂起)
   const waiting =
-    (streaming || !!highlightToolName) &&
+    taskActive &&
     (!lastSeg || (lastSeg.kind !== 'thinking' && lastSeg.kind !== 'text'));
   return (
     <div

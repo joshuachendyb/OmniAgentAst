@@ -59,8 +59,8 @@ export const useTaskInfo = (
   steps: ExecutionStep[],
   frames: TaskMetaFrames,
   receiving: boolean,
-detail?: TaskDetail | null,
-  liveErrorText?: string | null, // 小欧 2026-09-02: 位4 error 实时源(可选: TS1016 必选不能跟在可选后, 语义不变——undefined 时 candidates 不含 error)
+  detail?: TaskDetail | null,
+  liveErrorText?: string | null // 小欧 2026-09-02: 位4 error 实时源(可选: TS1016 必选不能跟在可选后, 语义不变——undefined 时 candidates 不含 error)
 ) => {
   return useMemo(() => {
     // 【小欧 2026-08-26 修复 A3】选中历史任务：详情优先派生动态信息(状态/耗时/步骤/轮次/重试/token)

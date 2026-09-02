@@ -6,6 +6,8 @@
 // 编辑历史: 2026-09-02 小欧 - 设计文档v1.21§5.7-C/D落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): TaskInfoBar 增传
 //   liveErrorText(位4 🛑 数据源, error 实时显示唯一位置=taskinfo 第一行——北京老陈定案) + RightViewer 收回
 //   liveErrorText 传参(error 唯一位置收口, 防右栏+位4双显示); :79 解构/:304 依赖数组既有保留, 零新依赖 - 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - RightViewer 增传 frames=metaFrames(useTaskInfo badge 派生输入): 等待圈三处丢失根治,
+//   waiting 依赖由 streaming 单源改 streaming/highlight/badge 三源, badge runner/paused 撑住首屏/空闲超时/confirm空隙 — 小欧-2026-09-02
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -223,6 +225,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             receiving={isReceiving}
             liveSteps={executionSteps}
             highlightToolName={authorizationPending?.toolName ?? null}
+            frames={metaFrames} // 2026-09-02 小欧: badge 派生输入(startInfo 判定 running)
             onSettledRefresh={refreshTasks}
           />
         ),

@@ -16,6 +16,11 @@
 //   ②驱动由 liveSteps.length 改 ResizeObserver 监听流水线内容高度——打字机段逐字增长length不变旧逻辑不触发, 内容增高即滚底;
 //   ③沿用"用户已在底部120px内才滚"防打断手动上翻(行为不进反退) - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - HIT三处修复A/B: ①首帧requestAnimationFrame补发消ResizeObserver断档漏触发 ②HIT确认highlightToolName由值→null时无条件滚底防阈值误拦 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 三堂会审定稿(北京老陈驱动, 根治三处不自动上滚): 滚动开关弃 isNearBottom(距底<120px瞬态判定,
+//   首屏scrollTop=0内容超一屏即false永不滚) 改 userScrolledUpRef 事件驱动(语义同useChatScroll.ts:57-61, 消息区已验证):
+//   ①container scroll监听维护"用户是否主动上翻>120px"标志 ②仅 !userScrolledUpRef 才 scrollTop=scrollHeight 即时滚底
+//   (弃 requestAnimationFrame 双帧延迟) ③弃 prevHighlightRef/force(首屏从未滚动→标志false→首帧即滚, HIT确认新内容到达即滚,
+//   用户真上翻读历史绝不打断) — 小欧-2026-09-02
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -39,6 +44,9 @@ import {
 import { PipelineRenderer } from '../pipeline';
 import { splitSteps } from '../pipeline/stepFilter';
 import { StaticStatsBlock } from './StaticStatsBlock';
+import { useTaskInfo } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: badge 权威派生(running/paused=任务进行), 撑 waiting 三处丢失窗口
+import type { TaskMetaFrames } from '@/types/sse';
+import { emptyMetaFrames } from '@/types/sse';
 
 // 2026-08-27 小欧 三堂会审: 收窄 unknown[]→ExecutionStep[], 形状不符回落空数组
 const toExecutionSteps = (raw: unknown): ExecutionStep[] => {
@@ -56,6 +64,7 @@ interface RightViewerProps {
   receiving: boolean;
   liveSteps: ExecutionStep[];
   highlightToolName: string | null;
+  frames: TaskMetaFrames; // 2026-09-02 小欧: useTaskInfo badge 派生输入(startInfo 判定 running)
   onSettledRefresh?: () => void; // 结束沿通知外层刷新任务列表
 }
 
@@ -66,6 +75,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   receiving,
   liveSteps,
   highlightToolName,
+  frames,
   onSettledRefresh,
 }) => {
   const [detail, setDetail] = useState<TaskDetail | null>(null);
@@ -75,14 +85,21 @@ const RightViewer: React.FC<RightViewerProps> = ({
 
   const isCurrentLive =
     activeTaskId != null && activeTaskId === serverTaskId && receiving;
+  // 2026-09-02 小欧: badge 权威派生——live 任务才取, 非live历史回放不传(不显示等待圈)
+  const { badge: liveBadge } = useTaskInfo(
+    liveSteps,
+    frames ?? emptyMetaFrames(),
+    receiving
+  );
 
-  // 小欧 2026-08-30: 自动滚动 — liveSteps变化时滚到底部, 仅用户已在底部附近时触发(防打断手动上翻)
-  // 2026-09-02 小欧 HIT三处修复A/B: 首帧补发消ResizeObserver断档+ HIT确认无条件滚
-  const pipelineEndRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const prevHighlightRef = useRef<string | null>(null);
+  // 2026-09-02 小欧 三堂会审定稿: 滚动开关改"用户是否主动上翻>120px"事件驱动(语义同useChatScroll.ts:57-61),
+  //   弃 isNearBottom 瞬态判定(首屏scrollTop=0内容超一屏即false永不滚) 与 双RAF/force(HIT确认暴力滚)
   // 2026-09-02 小欧 task005会审P3(北京老陈定案): 弃 closest('[style*="overflow"]') 字符串选择器(仅匹配内联样式, 改CSS类即静默失效),
   //   改 getComputedStyle 沿祖先上溯找 overflowY:auto/scroll 滚动容器; 行为语义等价, 更稳健 — 小欧 2026-09-02
+  const pipelineEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  // 用户在滚动中距底>120px视为主动上翻; 上翻后自动滚失效, 滚回底部自动恢复; 首屏从未滚动→false→内容增长即滚底
+  const userScrolledUpRef = useRef(false);
   const findScrollContainer = useCallback(() => {
     if (scrollContainerRef.current) return scrollContainerRef.current;
     let el: HTMLElement | null = pipelineEndRef.current;
@@ -107,28 +124,27 @@ const RightViewer: React.FC<RightViewerProps> = ({
     const pipeline = pipelineEndRef.current;
     if (!container || !pipeline) return;
     const threshold = 120;
-    // 2026-09-02 小欧 修复实时auto-scroll慢/被盖住(北京老陈反馈):
-    //  scrollTop=scrollHeight 即时滚底(弃 smooth——流式逐chunk增长反复打断动画追赶不及);
-    //  用户已在底部120px内才滚(沿用防打断手动上翻, 行为不进反退)
-    // 2026-09-02 小欧 HIT三处修复A/B: 首帧补发消断档 + HIT确认无条件滚
-    const force = prevHighlightRef.current != null && highlightToolName == null;
-    prevHighlightRef.current = highlightToolName;
-    const stickToBottom = () => {
-      const isNearBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight <
+    // 2026-09-02 小欧 三堂会审: scroll 事件维护上翻标志(仅用户真实滚动触发; scrollTop 程序赋值滚到底时远距<120→false 不误判)
+    const handleScroll = () => {
+      userScrolledUpRef.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight >
         threshold;
-      if (force || isNearBottom) {
-        requestAnimationFrame(() => {
-          container.scrollTop = container.scrollHeight;
-        });
+    };
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    // 内容高度变化驱动(覆盖新增step与打字机段逐字增长) + 首帧立即滚底(弃RAF双帧延迟)
+    const stickToBottom = () => {
+      if (!userScrolledUpRef.current) {
+        container.scrollTop = container.scrollHeight;
       }
     };
-    // 内容高度变化驱动: 覆盖新增step与打字机段逐字增长(length不变旧依赖不触发)两情形
     const ro = new ResizeObserver(stickToBottom);
     ro.observe(pipeline);
-    requestAnimationFrame(stickToBottom);
-    return () => ro.disconnect();
-  }, [isCurrentLive, liveSteps.length, highlightToolName, findScrollContainer]);
+    stickToBottom(); // 首帧/新内容到达: 用户未上翻即滚动到底 — 小欧 2026-09-02
+    return () => {
+      ro.disconnect();
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, [isCurrentLive, liveSteps.length, findScrollContainer]);
 
   // 拉取历史任务：C1+C2 并行；C2 空则 C3 按 message 降级（静态块降级为空，契约无通道）
   useEffect(() => {
@@ -208,6 +224,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
             steps={splitSteps(displaySteps).business}
             streaming={isCurrentLive}
             highlightToolName={highlightToolName}
+            badge={isCurrentLive ? liveBadge : undefined} // 2026-09-02 小欧: live才传badge, 历史回放不显示等待圈
           />
         </div>
       )}
