@@ -7,6 +7,7 @@
 # 2026-07-22 小欧 get_max_context_chars→get_max_context_tokens 重命名（语义纠正），默认值 500000→200000 对齐 constants.py
 # 2026-08-10 - 小欧 - 步骤1实施(①⑤⑩②③④, 北京老陈驱动「项目根=tool工作区, 代码库根=tool禁区」): ①get_project_root兜底改用户主目录(不再用代码位置当项目根); ⑩新增get_allowed_dirs授权目录列表(含代码库根/父子级边界约束); ②③④命名分离 _get_project_root→_get_code_root/get_default_project_root→get_code_root/get_config_path内部改调
 # 2026-08-17 - 小健 - 门限基准唯一化(北京老陈驱动): 删除 get_max_context_tokens 方法(唯一调用方 base_agent:68 已改默认构造, 且其值被 agent_runner 覆盖无实际作用); 上下文窗口基准收敛为 compaction_constants.DEFAULT_CONTEXT_LIMIT(配置优先)
+# 2026-09-02 小欧 - 注释热重载触发: get_config()每次必调_load_config()按mtime自动重读, 下一工具/LLM即生效免重启 - 小欧-2026-09-02
 
 import functools
 import os
@@ -195,7 +196,9 @@ _config_instance: Optional[Config] = None
 def get_config() -> Config:
     """
     获取配置实例 — 唯一公共API
-    每次调用检查文件mtime，变化则自动重读（支持运行时修改config.yaml）
+    每次调用检查文件mtime，变化则自动重读（支持运行时修改config.yaml，免重启）
+    触发场景(任一即热重载): 工具安全检查(_is_skip_safety)/路径校验/沙箱预检(sandbox.enabled)/
+    Agent环(get_max_steps/max_rounds)/LLM取provider/配置API读写/启动加载 — 小欧 2026-09-02
     
     Returns:
         Config: 配置管理实例
