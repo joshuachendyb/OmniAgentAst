@@ -36,6 +36,8 @@
 //     microtask重置保证下一个scroll事件正常判断用户真实滚动
 // 编辑历史: 2026-09-02 小欧 - 等待图标残留丢失根治(北京老陈驱动三堂会审): isCurrentLive由 receiving 单条件改 (receiving||liveBadge running/paused),
 //   根治纯网络空闲断连(无paused)60s重连间隙badge=idle致waiting消失的第4窗口; displaySteps与badge透传不再因SSE瞬断切历史, waiting由badge撑住; PipelineRenderer waiting补 error 终态守卫
+// 编辑历史: 2026-09-03 小欧 12.6修复: isCurrentLive增_hasFinal守卫, final已到即转历史拉取, 防receiving=false+running badge永久卡live
+// 编辑历史: 2026-09-03 小沈 BUG-01/04修复修正: effect依赖liveSteps.length改hasLiveSteps(0→1触发一次, 后续chunk不重跑), 消scroll监听每chunk重挂载
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -104,9 +106,14 @@ const RightViewer: React.FC<RightViewerProps> = ({
     frames ?? emptyMetaFrames(),
     receiving
   );
+  // 2026-09-03 小欧 12.6修复: 若liveSteps已含final终态, 不再判live(及时切历史拉取), 防final丢失前永久卡live
+  const _hasFinal = liveSteps.some((s) => s.type === 'final');
+  // 2026-09-03 小沈 BUG-01/04修复修正: hasLiveSteps仅0→1变化时触发effect重跑(首帧pipelineEndRef挂载), 后续chunk增长由ResizeObserver驱动不重挂载
+  const hasLiveSteps = liveSteps.length > 0;
   const isCurrentLive =
     activeTaskId != null &&
     activeTaskId === serverTaskId &&
+    !_hasFinal &&
     (receiving || liveBadge === 'running' || liveBadge === 'paused');
 
   // 2026-09-02 小欧 三堂会审定稿: 滚动开关改"用户是否主动上翻>120px"事件驱动(语义同useChatScroll.ts:57-61),
@@ -118,6 +125,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const userScrolledUpRef = useRef(false);
   // 2026-09-02 小欧: 程序滚动标志，防止stickToBottom设置scrollTop触发scroll事件被误判为用户上翻
   const isProgramScrollingRef = useRef(false);
+  // 2026-09-03 小欧 BUG-01/BUG-04修复: findScrollContainer仅遍历DOM找overflow容器, 不依赖liveSteps, 改[]防每chunk重挂载
   const findScrollContainer = useCallback(() => {
     let el: HTMLElement | null = pipelineEndRef.current;
     while (el) {
@@ -133,7 +141,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
       el = el.parentElement;
     }
     return null;
-  }, [liveSteps.length]);
+  }, []);
   useEffect(() => {
     if (!isCurrentLive) return;
     const container = findScrollContainer();
@@ -166,7 +174,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
       ro.disconnect();
       container.removeEventListener('scroll', handleScroll);
     };
-  }, [isCurrentLive, liveSteps.length, findScrollContainer]);
+  }, [isCurrentLive, hasLiveSteps, findScrollContainer]);
 
   // 拉取历史任务：C1+C2 并行；C2 空则 C3 按 message 降级（静态块降级为空，契约无通道）
   useEffect(() => {

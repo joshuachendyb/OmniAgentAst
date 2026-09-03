@@ -23,10 +23,11 @@
 // 编辑历史: 2026-09-02 小欧 - 三堂会审task005-BUG-005修复: ToolCallLine key由索引i改step序号(任务切换时卸载重建, 展开状态不残留)
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①buildSegments去原地突变last.text改不可变更新(防污染缓存)②ThinkingStream/TextStream key由i改稳定key(防索引复用串味)③waiting终态守卫lastSeg.kind !== 'final'防失败后转圈 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 等待图标残留丢失根治(北京老陈驱动三堂会审): waiting守卫补 error 终态(exclude error与final同为终态, 防止error后转圈); 场景穷举12种, 残留主因为纯网络空闲断连isCurrentLive瞬false, 由RightViewer isCurrentLive改 (receiving||badge running/paused) 共担
-// 编辑历史: 2026-09-03 小欧 - Bug-9: waiting 判定排除 tool 段 — 末段为工具段时不再叠加底部绿色缺口圆弧(双动画), 工具等待由 ToolCallLine 橙齿轮+扳手唯一承载 - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 D2-07: waiting补排除obs孤儿观察（与final/error同终态），防绿圈残留 - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 P3/P4/P5修复: buildSegments action段按step去重, 防重复seq致双实例(空obs走超时+有obs走子行并存) - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 P2修复: waiting判定tool段改为有obs时排除/无obs时保留, 恢复每轮thought前绿圈复现语义 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - Bug-9: waiting 判定排除 tool 段 — 末段为工具段时不再叠加底部绿色缺口圆弧(双动画), 工具等待由 ToolCallLine 橙齿轮+扳手唯一承载
+// 编辑历史: 2026-09-03 小欧 D2-07: waiting补排除obs孤儿观察（与final/error同终态），防绿圈残留
+// 编辑历史: 2026-09-03 小欧 P3/P4/P5修复: buildSegments action段按step去重, 防重复seq致双实例(空obs走超时+有obs走子行并存)
+// 编辑历史: 2026-09-03 小欧 P2修复: waiting判定tool段改为有obs时排除/无obs时保留, 恢复每轮thought前绿圈复现语义
+// 编辑历史: 2026-09-03 小沈 P3/P4/P5修复修正: buildSegments action去重改不可变更新(原existingTool.action=s原地突变违反BUG-18不可变原则)
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -113,12 +114,14 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
       }
       case 'action': {
         // 2026-09-03 小欧 P3/P4/P5修复: 同step的action段去重, 防重复seq致双实例(一个空obs走超时一个有obs走子行)
-        const existingTool = segs.find(
+        // 2026-09-03 小沈 修正: 原地突变改不可变更新, 与BUG-18修复原则一致(防污染调用方缓存)
+        const existingIdx = segs.findIndex(
           (seg): seg is Extract<PipelineSegment, { kind: 'tool' }> =>
             seg.kind === 'tool' && seg.action.step === s.step
         );
-        if (existingTool) {
-          existingTool.action = s;
+        if (existingIdx >= 0) {
+          const existing = segs[existingIdx] as Extract<PipelineSegment, { kind: 'tool' }>;
+          segs[existingIdx] = { kind: 'tool', action: s, observations: existing.observations };
         } else {
           segs.push({ kind: 'tool', action: s, observations: [] });
         }
