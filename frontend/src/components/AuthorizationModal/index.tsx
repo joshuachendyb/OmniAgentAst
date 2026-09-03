@@ -6,6 +6,7 @@
 // 编辑历史: 2026-09-03 小欧 UI优化(v1.1方案): 降高100px(420→288): Modal padding24→12+图标48→32+Title level4→5+Tag margin16→4+Progress size88→60+双卡合一(maxHeight200→150)+Checkbox margin24→12+Space→flex gap12+段距16→8 — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 UI优化第四章实施: 边框2px→1.5px+boxShadow+Title Tag同行flex+动效pulse0.8s/opacity0.7+信任行缩写"信任此操作（本次会话）"+Tooltip展开路径+去Space导入加Tooltip — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 P1修复: handleConfirm中autoHandledRef先设再调onConfirm, 堵countdown到0+用户同帧点击双发onConfirm时序缺口; P3: @keyframes pulse移至组件外避免重复注入 — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧/北京老陈: countdown就绪守卫 — 跨弹窗countdown残留0致新弹窗首帧即触发自动代发, 加countdownReadyRef守卫, 未就绪禁止代发
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -95,6 +96,8 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   const onConfirmRef = React.useRef(onConfirm);
   // 2026-09-03 小欧 Bug-13/29: autoHandledRef 按 confirmId 一次性 guard, 防倒计时到 0 后 effect 重入双发
   const autoHandledRef = React.useRef<string | null>(null);
+  // 2026-09-03 小欧/北京老陈: countdown就绪守卫 — 倒计时状态跨弹窗残留0, 新弹窗未重置前禁止自动代发
+  const countdownReadyRef = React.useRef<string | null>(null);
   // 2026-09-03 小欧 Bug-17: submitting 互斥态, 提交中禁用按钮/勾选, 防连点意图翻转
   const [submitting, setSubmitting] = React.useState(false);
   const isBypass = Boolean(request?.autoConfirm);
@@ -106,6 +109,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
     if (request?.confirmId) {
       setCountdown(request.confirmTimeout ?? 0);
       autoHandledRef.current = null;
+      countdownReadyRef.current = request.confirmId;
     }
   }, [request?.confirmId, request?.confirmTimeout]);
 
@@ -123,6 +127,8 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
 
   React.useEffect(() => {
     if (!visible || countdown !== 0 || !request) return;
+    // 2026-09-03 小欧/北京老陈: 就绪守卫 — countdown跨弹窗残留0时新弹窗未重置前禁止代发
+    if (countdownReadyRef.current !== request.confirmId) return;
     // 2026-09-03 小欧 Bug-13/29: 同 confirmId 只代发一次, 防止 effect 因 deps 变化重入双发
     if (autoHandledRef.current === request.confirmId) return;
     autoHandledRef.current = request.confirmId;
