@@ -7,6 +7,7 @@
 // 编辑历史: 2026-09-03 小欧 P1修复: handleAuthorizationConfirm加15s超时兜底, HTTP挂起时强制clearTimeout+setAuthorizationPending(null)防弹窗永久滞留 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧/北京老陈: 弹窗立即消失+API后台fire-and-forget — 改前await API后才关窗致死等，改后立即关窗API后台发，后端必有返回解耦 - 小欧/北京老陈-2026-09-03
 // 编辑历史: 2026-09-03 小欧/北京老陈: 前端错误提示 — 200+success False与网络/500均走公用handleError弹窗(WARNING)，改前仅console.error用户无感知 - 小欧/北京老陈-2026-09-03
+// 编辑历史: 2026-09-03 小欧/北京老陈 BUG FIX: 同步写入pendingRef — React useEffect子先父后致auto-confirm读旧confirmId发旧ID到后端, 弹窗0秒不消失; 改前pendingRef在useEffect同步(父effect后执行), 改后handleAuthorizationRequired中同步写入 - 小欧/北京老陈-2026-09-03
 import React, { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
@@ -47,7 +48,7 @@ export function useAuthorization(sessionId: string | null) {
           .confirm(cur.confirmId, false, false)
           .catch(() => undefined);
       }
-      setAuthorizationPending({
+      const newRequest: AuthorizationRequest = {
         confirmId: rawData.confirm_id as string,
         toolName: rawData.tool_name as string,
         params: (rawData.params ?? {}) as Record<string, unknown>,
@@ -65,7 +66,11 @@ export function useAuthorization(sessionId: string | null) {
             : null,
         confirmTimeout: parseTimeout(rawData.confirm_timeout),
         backendTimeout: parseTimeout(rawData.backend_timeout),
-      });
+      };
+      // 2026-09-03 小欧 北京老陈 BUG FIX: 同步写入pendingRef, 堵React useEffect子先父后致子auto-confirm读到旧confirmId
+      //   根因: React effects执行顺序=子先父后, setAuthorizationPending→子effect先跑→读pendingRef→旧值→发旧ID
+      pendingRef.current = newRequest;
+      setAuthorizationPending(newRequest);
     };
 
     window.addEventListener(
