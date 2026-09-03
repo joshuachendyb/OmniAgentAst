@@ -7,23 +7,28 @@
 // 编辑历史: 2026-09-01 小欧 - 规范折叠符号位置统一：三角移至“(*)”后，与工具调用链同位，保持全页单一折叠方法 - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5⑤⑥(北京老陈定案"tool+path才是准确对象", 后端§5.5): 面板升级 tool+path 精确信任——
 //   tools行类型带path、行键 `${toolName}:${path}`、显示 {toolName} › {path ?? '任意'}(空=工具级通配)、revoke签名带path精确撤销 — 小欧-2026-09-02
+// 编辑历史: 2026-09-03 小欧 - TaskInfoBar复用(北京老陈定案方向1, 零退化铁律): TrustPanel原为config孤儿(2026-08-30迁移TaskInfoBar时被内联复制成孤儿),
+//   现把TaskInfoBar内联信任实现(查询/刷新/撤销/折叠/无障碍/空态/计数配色 + Tooltip + stopPropagation + 撤销try/catch)全部合并回TrustPanel,
+//   TaskInfoBar改import复用删除内联重复(DRY); 以TaskInfoBar现有样式为准(紧凑"信任(N)"+Tooltip+计数配色+stopPropagation), 功能零丢失零退化 - 小欧-2026-09-03
 /**
- * TrustPanel - 信任操作面板（config slot，默认收起）
+ * TrustPanel - 信任操作面板（集成于 TaskInfoBar 第一行尾部，紧凑样式）
  *
- * 【小欧 2026-08-26 8.7】4.3.5/4.7：本会话信任的操作清单，按 tool_name 列出、
+ * 【小欧 2026-08-26 8.7】4.3.5/4.7：本会话信任的操作清单，按 tool_name(+path) 列出、
  * 可随时撤销；写入主通道 = HITL 弹窗 confirm(trust_session=True)（既有 F1），
  * 面板只做查询(D1)与撤销(D2)。REST 低频读写。
+ * 【小欧 2026-09-03】原 config slot 定位废弃，现为 TaskInfoBar 第一行尾巴集成（13.14）。
  *
  * @author 小欧
  * @date 2026-08-26
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Tooltip } from 'antd';
 import { trustApi, type TrustedTool } from '../../../../services/api/task.api'; // v1.5: TrustedTool 带 path — 小欧 2026-09-02
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 
 interface TrustPanelProps {
-  sessionId: string | null;
+  sessionId?: string | null; // 2026-09-03 小欧: 改可选, 兼容TaskInfoBar透传的 `string|null|undefined` (undefined→组件内 if(!sessionId) 已处理)
 }
 
 const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
@@ -65,49 +70,68 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
       );
   }, [sessionId, load]);
 
+  // 2026-09-03 小欧: 撤销带try/catch防unhandledrejection上浮(对齐TaskInfoBar原TB-02), 撤销成功重载清单 — 小欧-2026-09-03
   const revoke = async (toolName: string, path: string | null) => {
     if (!sessionId) return;
-    await trustApi.revokeTrust(sessionId, toolName, path);
-    await load();
+    try {
+      await trustApi.revokeTrust(sessionId, toolName, path);
+      await load();
+    } catch {
+      /* 2026-09-02 小欧 TB-02: 捕获异常防unhandledrejection上浮 */
+    }
   };
 
   const [expanded, setExpanded] = useState(false);
-  if (tools.length === 0) return null;
+  const hasTools = tools.length > 0;
+  // 2026-09-03 小欧: 计数配色——有信任 PRIMARY / 无 TERTIARY(对齐TaskInfoBar原实现) — 小欧-2026-09-03
+  const countColor = hasTools ? Colors.TEXT.PRIMARY : Colors.TEXT.TERTIARY;
   return (
     <div style={{ padding: 0 }}>
       {/* 折叠规范(小欧 2026-09-01): 三角统一▲▼、大小14(PRIMARY)、颜色PRIMARY#595959、位置数量后、方法role=button/aria-expanded/tabIndex/onKeyDown - 北京老陈定案，全页统一 */}
+      {/* 2026-09-03 小欧: stopPropagation——信任三角不冒泡触发TaskInfoBar整行折叠面板(对齐原内联实现), Tooltip保留 — 小欧-2026-09-03 */}
       <div
         role="button"
         aria-expanded={expanded}
         tabIndex={0}
-        onClick={() => setExpanded((v) => !v)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setExpanded((v) => !v);
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
+            e.stopPropagation();
             setExpanded((v) => !v);
           }
         }}
         style={{
           cursor: 'pointer',
           lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+          display: 'inline-flex',
+          alignItems: 'center',
         }}
       >
-        <span
-          style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.PRIMARY }}
-        >
-          本会话信任的操作（{tools.length}）
-        </span>
+        <Tooltip title="会话级 tool+path 免审白名单：勾信任后同会话同工具、目标路径及其子目录免弹框，危险操作仍拦截，可×撤销">
+          <span
+            style={{
+              fontSize: FontSize.SECONDARY,
+              color: countColor,
+            }}
+          >
+            信任({tools.length})
+          </span>
+        </Tooltip>
         <span
           style={{
             fontSize: FontSize.PRIMARY,
-            color: Colors.TEXT.PRIMARY,
+            color: countColor,
             marginLeft: 4,
           }}
         >
           {expanded ? '▲' : '▼'}
         </span>
       </div>
-      {expanded && (
+      {expanded && hasTools && (
         <div
           role="list"
           style={{ maxHeight: 70, overflow: 'auto', paddingTop: Spacing.XS }}

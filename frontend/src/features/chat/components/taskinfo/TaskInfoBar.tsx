@@ -26,14 +26,14 @@
  * @date 2026-08-26
  */
 
-import React, { useCallback, useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Badge, Tooltip } from 'antd';
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskMetaFrames } from '@/types/sse';
 import type { TaskDetail } from '../../../../services/api/task.api';
-import { trustApi, type TrustedTool } from '../../../../services/api/task.api'; // v1.5: TrustedTool 带 path — 小欧 2026-09-02
-import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors } from '@/utils/stepStyles'; // 2026-09-03 小欧: 移除FontSize/Spacing(信任区已移入TrustPanel, 不再使用) — 小欧-2026-09-03
 import { useTaskInfo } from '../../hooks/useTaskInfo';
+import { TrustPanel } from '../config/TrustPanel'; // 2026-09-03 小欧: 复用TrustPanel, 删TaskInfoBar内联信任实现(DRY) — 小欧-2026-09-03
 
 interface TaskInfoBarProps {
   steps: ExecutionStep[];
@@ -64,43 +64,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   const [collapsed, setCollapsed] = useState(false);
   const info = useTaskInfo(steps, frames, receiving, detail, liveErrorText);
   const b = BADGE_MAP[info.badge];
-  const [trustExpanded, setTrustExpanded] = useState(false);
-  const [trustTools, setTrustTools] = useState<TrustedTool[]>([]); // v1.5: tool+path 行 — 小欧 2026-09-02
-  const trustReqIdRef = useRef(0);
-  const loadTrust = useCallback(async () => {
-    if (!sessionId) return;
-    const reqId = ++trustReqIdRef.current;
-    try {
-      const fetched = await trustApi.getTrust(sessionId);
-      if (reqId === trustReqIdRef.current) setTrustTools(fetched);
-    } catch {
-      if (reqId === trustReqIdRef.current) setTrustTools([]);
-    }
-  }, [sessionId]);
-  useEffect(() => {
-    void loadTrust();
-  }, [loadTrust]);
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const ce = e as CustomEvent<{ sessionId: string }>;
-      if (ce.detail?.sessionId === sessionId) void loadTrust();
-    };
-    window.addEventListener('omni-trust-changed', handler as EventListener);
-    return () =>
-      window.removeEventListener(
-        'omni-trust-changed',
-        handler as EventListener
-      );
-  }, [sessionId, loadTrust]);
-  const revokeTrust = async (toolName: string, path: string | null) => {
-    if (!sessionId) return;
-    try {
-      await trustApi.revokeTrust(sessionId, toolName, path);
-      await loadTrust();
-    } catch {
-      /* 2026-09-02 小欧 TB-02: 捕获异常防unhandledrejection上浮 */
-    }
-  };
+  // 【2026-09-03 小欧 复用TrustPanel】信任查询/刷新/撤销/折叠逻辑已移入 TrustPanel 组件(TaskInfoBar 删除内联重复, DRY)
 
   // 【小欧 2026-08-26 修复 B2】执行中实时计时：当前任务(receiving+running)按 start 时刻走表，
   // 历史任务(detail)用后端 duration，不计时。
@@ -267,106 +231,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             marginLeft: 'auto',
           }}
         >
-          {/* 折叠规范(小欧 2026-09-01): 三角统一▲▼、大小14(PRIMARY)、颜色PRIMARY#595959、位置数量后、方法role=button/aria-expanded/tabIndex/onKeyDown - 北京老陈定案，全页统一 */}
-          <span
-            role="button"
-            tabIndex={0}
-            aria-expanded={trustExpanded}
-            onClick={(e) => {
-              e.stopPropagation();
-              setTrustExpanded((v) => !v);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                e.stopPropagation();
-                setTrustExpanded((v) => !v);
-              }
-            }}
-            style={{
-              cursor: 'pointer',
-              lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
-              display: 'inline-flex',
-              alignItems: 'center',
-            }}
-          >
-            <Tooltip title="会话级 tool+path 免审白名单：勾信任后同会话同工具、目标路径及其子目录免弹框，危险操作仍拦截，可×撤销">
-              <span
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  color:
-                    trustTools.length > 0
-                      ? Colors.TEXT.PRIMARY
-                      : Colors.TEXT.TERTIARY,
-                }}
-              >
-                信任({trustTools.length})
-              </span>
-            </Tooltip>
-            <span
-              style={{
-                fontSize: FontSize.PRIMARY,
-                color:
-                  trustTools.length > 0
-                    ? Colors.TEXT.PRIMARY
-                    : Colors.TEXT.TERTIARY,
-                marginLeft: 4,
-              }}
-            >
-              {trustExpanded ? '▲' : '▼'}
-            </span>
-          </span>
+          {/* 2026-09-03 小欧 复用TrustPanel(信任查询/刷新/撤销/折叠/Tooltip/stopPropagation全部组件内承载), 替换原内联折叠三角 */}
+          <TrustPanel sessionId={sessionId} />
         </div>
       </div>
-      {trustExpanded && trustTools.length > 0 && (
-        <div
-          style={{
-            maxHeight: 70,
-            overflow: 'auto',
-            paddingTop: Spacing.XS,
-            borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
-            marginTop: 4,
-          }}
-        >
-          {trustTools.map((t) => (
-            <div
-              key={`${t.toolName}:${t.path ?? ''}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: `${Spacing.XS - 2}px 0`,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
-                }}
-              >
-                {t.toolName} › {t.path ?? '任意'}
-              </span>
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void revokeTrust(t.toolName, t.path);
-                }}
-                style={{
-                  fontSize: 14,
-                  color: Colors.TEXT.PRIMARY,
-                  cursor: 'pointer',
-                  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
-                  padding: '0 4px',
-                  fontWeight: 500,
-                }}
-                title="撤销信任"
-              >
-                ×
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
 
       {!collapsed && info.processEvents.length > 0 && (
         <div
