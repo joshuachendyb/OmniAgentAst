@@ -181,6 +181,7 @@ const ChatPage: React.FC = () => {
         onToggleRight={() => setRightOpen((v) => !v)}
       />
       <AuthorizationModal
+        key={authorizationPending?.confirmId ?? 'none'}
         visible={!!authorizationPending}
         request={authorizationPending}
         onConfirm={handleAuthorizationConfirm}
