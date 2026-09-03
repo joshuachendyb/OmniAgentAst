@@ -1,14 +1,14 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离授权弹窗逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
-// 编辑历史: 2026-09-02 小欧 - 44case审计修复: AU-02二次授权覆盖旧confirmId先confirm(false)防泄漏+裸as守卫 — 小欧-2026-09-02
-// 编辑历史: 2026-09-03 小欧 - v1.5.4 计时统一: 移除setTimeout后备, 倒计时由AuthorizationModal countdown统一管理(§5.7.4-⑥) — 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 Bug修复(24项): ⑭pendingRef镜像+监听器一次注册[]消闭包窗口 ⑮确认失败不清空pending保留重试(改前 finally清空致后端挂起) ⑱/⑲旧请求覆盖前 await confirm(false) 回声防fire-and-forget ㉒parseTimeout合法0保留(Number||60吞0) ㉗auto_confirm严格判断防"false"误判bypass — 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一，P2-1: 同confirmId重放去重不二次resolve，P0-1: catch中404清pending防僵死 - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧/老杨 17.3: 404判定改读axios response.status+message（String(error)对axios得[object Object]无效） - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 P1修复: handleAuthorizationConfirm加15s超时兜底, HTTP挂起时强制clearTimeout+setAuthorizationPending(null)防弹窗永久滞留 - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧/北京老陈: 弹窗立即消失+API后台fire-and-forget — 改前await API后才关窗致死等，改后立即关窗API后台发，后端必有返回解耦 - 小欧/北京老陈-2026-09-03
-// 编辑历史: 2026-09-03 小欧/北京老陈: 前端错误提示 — 200+success False与网络/500均走公用handleError弹窗(WARNING)，改前仅console.error用户无感知 - 小欧/北京老陈-2026-09-03
-// 编辑历史: 2026-09-03 小欧/北京老陈 BUG FIX: 同步写入pendingRef — React useEffect子先父后致auto-confirm读旧confirmId发旧ID到后端, 弹窗0秒不消失; 改前pendingRef在useEffect同步(父effect后执行), 改后handleAuthorizationRequired中同步写入 - 小欧/北京老陈-2026-09-03
-// 编辑历史: 2026-09-03 小欧/北京老陈 根因修复: handleAuthorizationConfirm加confirmId参数, 优先用参数(弹窗直接传入), fallback用pendingRef(兜底); 堵ref时序竞态致旧弹窗auto-confirm发旧ID - 小欧/北京老陈-2026-09-03
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: AU-02二次授权覆盖旧confirmId先confirm(false)防泄漏+裸as守卫 - 小欧-2026-09-02
+// 编辑历史: 2026-09-03 小欧 - v1.5.4 计时统一: 移除setTimeout后备, 倒计时由AuthorizationModal countdown统一管理(§5.7.4-⑥) - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - Bug修复(24项): ⑭pendingRef镜像+监听器一次注册[]消闭包窗口 ⑮确认失败不清空pending保留重试(改前 finally清空致后端挂起) ⑱/⑲旧请求覆盖前 await confirm(false) 回声防fire-and-forget ㉒parseTimeout合法0保留(Number||60吞0) ㉗auto_confirm严格判断防"false"误判bypass - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - D2-10: normalizeAutoConfirm四态归一，P2-1: 同confirmId重放去重不二次resolve，P0-1: catch中404清pending防僵死 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - 17.3: 404判定改读axios response.status+message（String(error)对axios得[object Object]无效） - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - P1修复: handleAuthorizationConfirm加15s超时兜底, HTTP挂起时强制clearTimeout+setAuthorizationPending(null)防弹窗永久滞留 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - 弹窗立即消失+API后台fire-and-forget: 改前await API后才关窗致死等，改后立即关窗API后台发，后端必有返回解耦 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - 前端错误提示: 200+success False与网络/500均走公用handleError弹窗(WARNING)，改前仅console.error用户无感知 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - BUG FIX: 同步写入pendingRef — React useEffect子先父后致auto-confirm读旧confirmId发旧ID到后端, 弹窗0秒不消失; 改前pendingRef在useEffect同步(父effect后执行), 改后handleAuthorizationRequired中同步写入 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - 根因修复: handleAuthorizationConfirm加confirmId参数, 优先用参数(弹窗直接传入), fallback用pendingRef(兜底); 堵ref时序竞态致旧弹窗auto-confirm发旧ID - 小欧-2026-09-03
 import React, { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
@@ -78,10 +78,29 @@ export function useAuthorization(sessionId: string | null) {
       'authorization_required',
       handleAuthorizationRequired as EventListener
     );
+    // 2026-09-03 小沈 缺陷1修复: 监听resumed事件, 后端S1超时兜底放行后据此关弹窗(防御性兜底) — 小沈-2026-09-03
+    const handleAuthorizationResumed = (
+      event: CustomEvent<Record<string, unknown>>
+    ) => {
+      const resumedConfirmId = event.detail?.confirm_id as string | undefined;
+      if (!resumedConfirmId) return;
+      const cur = pendingRef.current;
+      if (cur && cur.confirmId === resumedConfirmId) {
+        setAuthorizationPending(null);
+      }
+    };
+    window.addEventListener(
+      'authorization_resumed',
+      handleAuthorizationResumed as EventListener
+    );
     return () => {
       window.removeEventListener(
         'authorization_required',
         handleAuthorizationRequired as EventListener
+      );
+      window.removeEventListener(
+        'authorization_resumed',
+        handleAuthorizationResumed as EventListener
       );
     };
     // 2026-09-03 小欧 Bug-14: 依赖改 [] 一次性注册, 不再随 authorizationPending 重建监听器(消闭包窗口)

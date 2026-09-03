@@ -843,6 +843,14 @@ const processSSEData = (
             }
             break;
           case 'resumed':
+            // 2026-09-03 小沈 缺陷1修复: resumed带confirm_id时派发事件, useAuthorization据此关弹窗(防御性兜底) — 小沈-2026-09-03
+            if (rawData.confirm_id) {
+              window.dispatchEvent(
+                new CustomEvent('authorization_resumed', {
+                  detail: { confirm_id: rawData.confirm_id },
+                })
+              );
+            }
             onResumed?.();
             break;
           case 'retrying':
