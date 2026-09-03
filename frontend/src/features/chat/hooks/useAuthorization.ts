@@ -4,6 +4,7 @@
 // 编辑历史: 2026-09-03 小欧 Bug修复(24项): ⑭pendingRef镜像+监听器一次注册[]消闭包窗口 ⑮确认失败不清空pending保留重试(改前 finally清空致后端挂起) ⑱/⑲旧请求覆盖前 await confirm(false) 回声防fire-and-forget ㉒parseTimeout合法0保留(Number||60吞0) ㉗auto_confirm严格判断防"false"误判bypass — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一，P2-1: 同confirmId重放去重不二次resolve，P0-1: catch中404清pending防僵死 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧/老杨 17.3: 404判定改读axios response.status+message（String(error)对axios得[object Object]无效） - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 P1修复: handleAuthorizationConfirm加15s超时兜底, HTTP挂起时强制clearTimeout+setAuthorizationPending(null)防弹窗永久滞留 - 小欧-2026-09-03
 import React, { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
@@ -85,6 +86,13 @@ export function useAuthorization(sessionId: string | null) {
         return;
       }
 
+      // 2026-09-03 小欧 P1修复: confirm请求超时兜底 — 后端S1窗口10s, 前端额外15s兜底防HTTP挂起致弹窗永久滞留
+      let _timedOut = false;
+      const _timeout = setTimeout(() => {
+        _timedOut = true;
+        setAuthorizationPending(null);
+      }, 15000);
+
       try {
         await taskControlApi.confirm(cur.confirmId, confirmed, trustSession);
         // 2026-08-27 小欧 三堂会审: HITL confirm(trust_session=True)写入成功后派发事件, 通知信任面板刷新
@@ -96,6 +104,7 @@ export function useAuthorization(sessionId: string | null) {
       } catch (error) {
         // 2026-09-03 小欧 Bug-15: 确认失败不清空 pending, 保留弹窗供重试(改前 finally 清空致后端挂起)
         // 2026-09-03 小欧/老杨 17.3: 404判定改读axios标准字段response.status+message，String(error)对axios对象得[object Object]无效
+        if (_timedOut) return; // 超时已清pending, 不重复处理
         console.error('[Authorization] 确认失败:', error);
         const _status = (error as { response?: { status?: number } })?.response?.status;
         const _isNotFound =
@@ -106,7 +115,10 @@ export function useAuthorization(sessionId: string | null) {
           setAuthorizationPending(null);
         }
         return;
+      } finally {
+        clearTimeout(_timeout);
       }
+      if (_timedOut) return; // 超时已清pending, 不重复处理
       setAuthorizationPending(null);
     },
     [sessionId]

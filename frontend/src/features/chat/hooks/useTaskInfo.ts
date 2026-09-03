@@ -12,6 +12,7 @@
 //   candidates.sort(time 大者胜)合成 liveMeta(新覆盖旧) + deps 补 liveErrorText - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①HP-04 Date.now提出useMemo外防闪变②HP-05 recentEvents补slice(0,20)防21条越界 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 修复徽标executing残留: liveErrorText实时失败未进徽标派生致final晚1拍前badge仍running; 176后补liveErrorText→failed直线兜底(仅非终态时生效, final到达覆盖同值) - 小欧-2026-09-02
+// 编辑历史: 2026-09-03 小欧 P6修复: 可恢复工具错误后业务推进badge回推running + post-loop liveErrorText检查加_badgeRecovered守卫防覆盖 - 小欧-2026-09-03
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -118,6 +119,8 @@ export const useTaskInfo = (
     // 【小欧 2026-08-26 18:49 修正】startinfo 不进 executionSteps（8.4.3 只写 metaFrames），
     // 不可从 steps.find 搜索；改用 frames.startInfo 判断。
     const hasStartInfo = frames.startInfo !== null;
+    // 小欧 2026-09-03 P6修复: 标记badge是否已从failed回推running, 防post-loop liveErrorText再次覆盖
+    let _badgeRecovered = false;
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
       switch (s.type) {
@@ -169,6 +172,11 @@ export const useTaskInfo = (
             badge = 'running';
             pausedIdx = -1;
           }
+          // 2026-09-03 小欧 P6修复: 可恢复工具错误(user_rejected/blocked/timeout)后业务推进 ⇒ badge回推running
+          if (badge === 'failed') {
+            badge = 'running';
+            _badgeRecovered = true;
+          }
           break;
         default:
           break;
@@ -184,6 +192,7 @@ export const useTaskInfo = (
       badge = 'failed';
     } else if (
       liveErrorText &&
+      !_badgeRecovered &&
       badge !== 'failed' &&
       badge !== 'cancelled' &&
       badge !== 'completed'
