@@ -165,6 +165,9 @@
 # 2026-09-03 小欧 D2-01: synthetic占位补llm_data.summary使折叠区显“已安全拦截：tool”，可观测性增强
 # 2026-09-03 小欧 D2-02: _confirm_timeout钳制max(5,bt-LEAD)避免0秒窗口（HITL/bypass/sandbox同钳）
 # 2026-09-03 小欧 P0-1: bypass S1已expired不二次resolve（已pop死码），防404僵死
+# 2026-09-03 小欧 D2-03: trust_path复用_extract_trust_path消除别名盲区（path/file_path/source_path等），防通配污染
+# 2026-09-03 小欧 17.1: sandbox_gate硬编码7key含window_title误授权，改函数内延迟import复用_extract_trust_path
+# 2026-09-03 小欧/北京老陈: bypass流程补日志 — S1窗口开始/S1结果两处关键节点, 改前无log无法排查bypass时序
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -192,7 +195,8 @@ from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error") P3
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.observation_formatter import build_observation_text
-from app.constants import HITL_TIMEOUT, HITL_CONFIRM_LEAD, BYPASS_AUTO_LEAD  # v1.5.13(2026-09-02 小欧): 后端唯一计时权威前后端计时关联 — 小欧 2026-09-02
+from app.constants import HITL_TIMEOUT, HITL_CONFIRM_LEAD, BYPASS_AUTO_LEAD, HITL_MIN_CONFIRM_TIMEOUT  # v1.5.13(2026-09-02 小欧): 后端唯一计时权威前后端计时关联 — 小欧 2026-09-02
+# 2026-09-03 小欧/北京老陈: 前端倒计时最小值改常量3(改前硬编码5)
 from app.services.agent.tool_executor import execute_tool
 from app.services.task.task_context import set_current_task_id
 from app.db.models.operation_models import OperationStatus
@@ -352,14 +356,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     from app.config import get_config as _get_cfg
                     # 对应 config.yaml security.auto_confirm_delay(默认10, 前端倒计时=此值−BYPASS_AUTO_LEAD即8s); 未配置兜底用 10.0 — 小欧 2026-09-03
                     _backend_timeout = int(float(_get_cfg().get("security.auto_confirm_delay", 10.0)))
-                    # 2026-09-03 小欧 D2-02: 0窗钳制≥5s，避免max(0,bt-LEAD)=0致0秒窗口瞬间消失
-                    _confirm_timeout = max(5, _backend_timeout - BYPASS_AUTO_LEAD)
+                    # 2026-09-03 小欧/北京老陈: 0窗钳制≥3s(改前5→常量3)，避免max(0,bt-LEAD)=0致0秒窗口瞬间消失
+                    _confirm_timeout = max(HITL_MIN_CONFIRM_TIMEOUT, _backend_timeout - BYPASS_AUTO_LEAD)
                 else:
                     from app.config import get_config as _get_cfg
                     # 对应 config.yaml security.hitl_timeout(真HITL后端确认窗口,默认120); 未配置兜底用常量 HITL_TIMEOUT=120 — 小欧 2026-09-03
                     _backend_timeout = int(float(_get_cfg().get("security.hitl_timeout", HITL_TIMEOUT)))
-                    # 2026-09-03 小欧 D2-02: 0窗钳制≥5s
-                    _confirm_timeout = max(5, _backend_timeout - HITL_CONFIRM_LEAD)
+                    # 2026-09-03 小欧/北京老陈: 0窗钳制≥3s(改前5→常量3)
+                    _confirm_timeout = max(HITL_MIN_CONFIRM_TIMEOUT, _backend_timeout - HITL_CONFIRM_LEAD)
                 _tp = _extract_trust_path(_cn, _cp)  # v1.5.3: trust_path 透传
                 yield agent._step_emitter.emit(MetaStep(
                     step=step,
@@ -384,7 +388,11 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     from app.config import get_config as _get_cfg
                     # 对应 config.yaml security.auto_confirm_delay(S1后端等待窗口=backhone_timeout值,默认10); 未配置兜底 10.0 — 小欧 2026-09-03
                     _s1 = float(_get_cfg().get("security.auto_confirm_delay", 10.0))
+                    # 2026-09-03 小欧/北京老陈: bypass S1窗口开始补日志
+                    logger.info(f"[action] bypass S1窗口开始: confirm_id={confirm_id}, S1={_s1}s, tool={_cn}")
                     _auth_result = await _wait_confirm(confirm_id, timeout=int(_s1 if _s1 > 0 else 0)) if _s1 > 0 else {"confirmed": True}
+                    # 2026-09-03 小欧/北京老陈: bypass S1结果补日志
+                    logger.info(f"[action] bypass S1结果: confirm_id={confirm_id}, expired={_auth_result.get('expired')}, confirmed={_auth_result.get('confirmed')}")
                     # 2026-09-03 小欧 P0-1: S1已expired则不再二次resolve(已pop死码)，仅confirmed分支需resolve
                     if _auth_result.get("expired"):
                         _bypass_confirmed = True

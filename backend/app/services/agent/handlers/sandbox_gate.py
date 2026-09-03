@@ -16,6 +16,7 @@
 # 2026-09-03 小欧 D2-02: _ct钳制max(5,bt-LEAD)避免0秒窗口（与action_handler同钳）
 # 2026-09-03 小欧 D2-03: trust_path改复用_extract_trust_path(tool,params)消除别名盲区（path/file_path/source_path等），防通配污染
 # 2026-09-03 小欧/老杨 17.1: 纠正16.3落盘偏差——硬编码7key含window_title误当文件路径授权，且_import路径错误（_extract_trust_path实定义于action_handler:567）；改函数内延迟import复用主链函数，与模块内既有延迟导入同模式
+# 2026-09-03 小欧/北京老陈: 前端倒计时最小值改常量3(改前硬编码5)
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -77,10 +78,10 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     #   改前缺 4 字段 → 前端倒计时与后端不一致(60s vs 120s 计时错位)。sandbox 为真HITL裁决(非bypass),
     #   auto_confirm 恒 False, 计时与 security.hitl_timeout 对齐(backend 窗口 − HITL_CONFIRM_LEAD 提前量)
     from app.config import get_config as _get_cfg_sb2
-    from app.constants import HITL_CONFIRM_LEAD  # HITL_TIMEOUT 第53行已导入, 不重复(DRY)
+    from app.constants import HITL_CONFIRM_LEAD, HITL_MIN_CONFIRM_TIMEOUT  # HITL_TIMEOUT 第53行已导入, 不重复(DRY)
     _bt = int(float(_get_cfg_sb2().get("security.hitl_timeout", HITL_TIMEOUT)))
-    # 2026-09-03 小欧 D2-02: 0窗钳制≥5s（与action_handler同钳）
-    _ct = max(5, _bt - HITL_CONFIRM_LEAD)
+    # 2026-09-03 小欧/北京老陈: 0窗钳制≥3s(改前5→常量3，与action_handler同钳)
+    _ct = max(HITL_MIN_CONFIRM_TIMEOUT, _bt - HITL_CONFIRM_LEAD)
     # 2026-09-03 小欧/老杨 17.1: 复用主链 _extract_trust_path（函数内延迟import规避循环，与模块内既有延迟导入同模式），纠正16.3硬编码7key及window_title误授权
     # 17.1补：_extract_trust_path对非FILE_OPERATION_TOOLS（如move_file vs move）返回None时，回落查常见文件路径键（不含window_title，防窗口标题误当文件路径）
     try:

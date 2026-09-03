@@ -18,6 +18,8 @@
 #   5.5③: _PendingConfirmation 增 path 字段; create_confirmation 增 path 透传参数(tool+path 精确信任落库, 北京老陈"只有tool+path才是准确对象"定案)
 # 2026-09-03 - 小欧 - 清理过期确认超时可配置化(北京老陈驱动): _cleanup_stale_confirmations 改读
 #   security.hitl_timeout(config.yaml优先, HITL_TIMEOUT 默认120兜底), 与真HITL确认超时同源。
+# 2026-09-03 - 小欧/北京老陈 - HITL全链路补日志: create_confirmation/wait_for_confirmation/resolve_confirmation
+#   _cleanup_stale_confirmations 四处关键路径补info/warning日志, 改前静默返回False无法排查confirm_id去向
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -74,6 +76,9 @@ def _cleanup_stale_confirmations():
                  if v.future.done() or now - v.created_at > _hitl_timeout]
         for k in stale:
             _pending_confirmations.pop(k, None)
+        # 2026-09-03 小欧/北京老陈: 清理补日志 — 改前静默清理, 无法追踪confirm_id生命周期
+        if stale:
+            logger.info(f"[HITL] 清理过期confirm: {stale}, hitl_timeout={_hitl_timeout}s")
 
 
 async def create_confirmation(task_id: str, tool_name: str = "", path: Optional[str] = None) -> str:
@@ -99,6 +104,8 @@ async def create_confirmation(task_id: str, tool_name: str = "", path: Optional[
         _pending_confirmations[confirm_id] = _PendingConfirmation(
             future=future, created_at=time.time(), tool_name=tool_name, path=path
         )
+        # 2026-09-03 小欧/北京老陈: create_confirmation补日志 — 确认confirm_id生命周期起点
+        logger.info(f"[HITL] 创建confirm: confirm_id={confirm_id}, tool={tool_name}, path={path}")
     return confirm_id
 
 
@@ -117,6 +124,8 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
     with _pending_lock:
         entry = _pending_confirmations.get(confirm_id)
     if entry is None:
+        # 2026-09-03 小欧/北京老陈: entry=None补日志 — 改前静默返回False, 无法区分"不存在"和"已处理"
+        logger.warning(f"[HITL] wait_for_confirmation: entry=None confirm_id={confirm_id}")
         return {"confirmed": False, "trust_session": False}
 
     try:
@@ -159,9 +168,13 @@ async def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: 
     with _pending_lock:
         entry = _pending_confirmations.get(confirm_id)
     if entry is None:
+        # 2026-09-03 小欧/北京老陈: entry=None补日志 — 改前静默返回False, 无法排查confirm_id去向
+        logger.warning(f"[HITL] resolve_confirmation: entry=None confirm_id={confirm_id}")
         return False
 
     if entry.future.done():
+        # 2026-09-03 小欧/北京老陈: future.done()补日志 — 改前静默返回False, 无法确认是否已超时/已resolve
+        logger.warning(f"[HITL] resolve_confirmation: future已done confirm_id={confirm_id}")
         return False
 
     _task_id = confirm_id.split(":")[0] if ":" in confirm_id else ""

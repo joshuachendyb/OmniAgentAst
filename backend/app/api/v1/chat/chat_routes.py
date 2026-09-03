@@ -16,6 +16,8 @@
 # 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.6): 注册task_execution_router(C1任务详情统计+C2步骤回放,
 #   嵌套于chat_router, 经main.py /api/v1前缀挂载为/api/v1/chat/execution/task/{task_id}路径)
 # 2026-09-02 - 小欧 - 会话信任功能修复 v1.5 ①(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): confirm 端点调用改 `await resolve_confirmation(...)` — resolve_confirmation 由同步改 async 后, API 层路由必须 await(5.1 落库强一致, 反查失败 raise, 一处不改则运行时报错显性暴露)
+# 2026-09-03 - 小欧/北京老陈 - confirm端点补日志: 改前无任何log, 问题排查全靠猜; 收到确认/确认成功/confirm_id不存在或已处理三处关键节点补info/warning
+# 2026-09-03 - 小欧/北京老陈 - 后端必有返回: 全链路try兜底, 异常也返回success False, 杜绝前端await死等(北京老陈"后端不能没有返回"铁律)
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -69,20 +71,31 @@ async def resume_stream_endpoint(task_id: str, session_id: Optional[str] = None)
 
 @task_router.post("/chat/stream/confirm")
 async def confirm_stream_endpoint(request: Request):
-    body = await request.json()
-    confirm_id = body.get("confirm_id")
-    confirmed = body.get("confirmed", True)
-    trust_session = body.get("trust_session", False)
+    # 2026-09-03 小欧/北京老陈: confirm端点补日志 — 改前无任何log, 问题排查全靠猜
+    # 2026-09-03 小欧/北京老陈: 后端必有返回 — 全链路try兜底, 异常也返回success False, 杜绝前端await死等
+    from app.logger import logger as _log
+    try:
+        body = await request.json()
+        confirm_id = body.get("confirm_id")
+        confirmed = body.get("confirmed", True)
+        trust_session = body.get("trust_session", False)
 
-    if not confirm_id:
-        return {"success": False, "error": "missing confirm_id"}
+        if not confirm_id:
+            _log.warning("[HITL-confirm] 缺少confirm_id")
+            return {"success": False, "error": "missing confirm_id"}
 
-    ok = await resolve_confirmation(confirm_id, confirmed, trust_session)  # 5.1(2026-09-02 小欧): resolve 改 async, await 同步落库零竞态
+        _log.info(f"[HITL-confirm] 收到确认: confirm_id={confirm_id}, confirmed={confirmed}, trust_session={trust_session}")
+        ok = await resolve_confirmation(confirm_id, confirmed, trust_session)  # 5.1(2026-09-02 小欧): resolve 改 async, await 同步落库零竞态
 
-    if not ok:
-        return {"success": False, "error": "confirm_id not found or already processed"}
+        if not ok:
+            _log.warning(f"[HITL-confirm] confirm_id不存在或已处理: confirm_id={confirm_id}")
+            return {"success": False, "error": "confirm_id not found or already processed"}
 
-    return {"success": True}
+        _log.info(f"[HITL-confirm] 确认成功: confirm_id={confirm_id}")
+        return {"success": True}
+    except Exception as e:
+        _log.error(f"[HITL-confirm] 异常: {e!r}")
+        return {"success": False, "error": str(e)}
 
 
 @router.get("/chat/validate")
