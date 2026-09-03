@@ -162,6 +162,9 @@
 #   真HITL确认超时 HITL_TIMEOUT 改读 security.hitl_timeout(config.yaml优先, 默认120兜底); else分支补 get_config import 防NameError
 # 2026-09-03 小欧 Bug-1: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断; 全拦截/空 results 无条件发 ObservationStep(改前空 tool_result return 不发事件→前端齿轮永驻); 合成"无结果"占位保数组长度
 # 2026-09-03 小欧 Bug-25: grant_temp_auth 三处(bypass自动确认/用户确认授权/白名单豁免直通)包 try/finally 或 try/except, 授权异常不跳过 resolve_confirmation、不阻断执行流程, confirm_id 必收口
+# 2026-09-03 小欧 D2-01: synthetic占位补llm_data.summary使折叠区显“已安全拦截：tool”，可观测性增强
+# 2026-09-03 小欧 D2-02: _confirm_timeout钳制max(5,bt-LEAD)避免0秒窗口（HITL/bypass/sandbox同钳）
+# 2026-09-03 小欧 P0-1: bypass S1已expired不二次resolve（已pop死码），防404僵死
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -349,12 +352,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     from app.config import get_config as _get_cfg
                     # 对应 config.yaml security.auto_confirm_delay(默认10, 前端倒计时=此值−BYPASS_AUTO_LEAD即8s); 未配置兜底用 10.0 — 小欧 2026-09-03
                     _backend_timeout = int(float(_get_cfg().get("security.auto_confirm_delay", 10.0)))
-                    _confirm_timeout = max(0, _backend_timeout - BYPASS_AUTO_LEAD)
+                    # 2026-09-03 小欧 D2-02: 0窗钳制≥5s，避免max(0,bt-LEAD)=0致0秒窗口瞬间消失
+                    _confirm_timeout = max(5, _backend_timeout - BYPASS_AUTO_LEAD)
                 else:
                     from app.config import get_config as _get_cfg
                     # 对应 config.yaml security.hitl_timeout(真HITL后端确认窗口,默认120); 未配置兜底用常量 HITL_TIMEOUT=120 — 小欧 2026-09-03
                     _backend_timeout = int(float(_get_cfg().get("security.hitl_timeout", HITL_TIMEOUT)))
-                    _confirm_timeout = max(0, _backend_timeout - HITL_CONFIRM_LEAD)
+                    # 2026-09-03 小欧 D2-02: 0窗钳制≥5s
+                    _confirm_timeout = max(5, _backend_timeout - HITL_CONFIRM_LEAD)
                 _tp = _extract_trust_path(_cn, _cp)  # v1.5.3: trust_path 透传
                 yield agent._step_emitter.emit(MetaStep(
                     step=step,
@@ -380,17 +385,21 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     # 对应 config.yaml security.auto_confirm_delay(S1后端等待窗口=backhone_timeout值,默认10); 未配置兜底 10.0 — 小欧 2026-09-03
                     _s1 = float(_get_cfg().get("security.auto_confirm_delay", 10.0))
                     _auth_result = await _wait_confirm(confirm_id, timeout=int(_s1 if _s1 > 0 else 0)) if _s1 > 0 else {"confirmed": True}
-                    _bypass_confirmed = bool(_auth_result.get("confirmed", False) or _auth_result.get("expired", False))
-                    try:
-                        # 2026-09-03 小欧 Bug-25: grant_temp_auth 包 try/finally, 授权异常不跳过 resolve_confirmation,
-                        #   confirm_id 必被 resolve 收口, 前端 Modal 不泄漏挂到后端超时; 授权失败仅告警不改安全意图
-                        if getattr(safety_result, "auth_path", None):
-                            from app.tools.security.temp_auth import grant_temp_auth
-                            grant_temp_auth(safety_result.auth_path, recursive=True)
-                    except Exception as e:
-                        logger.warning(f"[action] grant_temp_auth失败仍放行: {e!r}")
-                    finally:
-                        await resolve_confirmation(confirm_id, confirmed=_bypass_confirmed, trust_session=False)
+                    # 2026-09-03 小欧 P0-1: S1已expired则不再二次resolve(已pop死码)，仅confirmed分支需resolve
+                    if _auth_result.get("expired"):
+                        _bypass_confirmed = True
+                    else:
+                        _bypass_confirmed = bool(_auth_result.get("confirmed", False))
+                        try:
+                            # 2026-09-03 小欧 Bug-25: grant_temp_auth 包 try/finally, 授权异常不跳过 resolve_confirmation,
+                            #   confirm_id 必被 resolve 收口, 前端 Modal 不泄漏挂到后端超时; 授权失败仅告警不改安全意图
+                            if getattr(safety_result, "auth_path", None):
+                                from app.tools.security.temp_auth import grant_temp_auth
+                                grant_temp_auth(safety_result.auth_path, recursive=True)
+                        except Exception as e:
+                            logger.warning(f"[action] grant_temp_auth失败仍放行: {e!r}")
+                        finally:
+                            await resolve_confirmation(confirm_id, confirmed=_bypass_confirmed, trust_session=False)
                     set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
                     # v1.25 M3 插入点①: auto_confirm 汇合路径(continue 之前) — 沙箱预检最后闸门
                     # 2026-09-02 小欧 三堂会审BUG-001修复: resumed移至sandbox之后(原在sandbox前),
@@ -867,8 +876,10 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
             continue
         # 2026-09-03 小欧 Bug-1: 全工具被安全拦截时 results 可能缺失该 call 的结果(zip_longest 补 None),
         #   用合成"无结果"占位, 使 ObservationStep 必然发出、前端 results 保长度, 齿轮/动画不再永驻
+        # 2026-09-03 小欧 D2-01: synthetic补summary使折叠区可见“已安全拦截：tool”
         if result is None:
-            result = {"llm_data": {"status": {"exec_code": "error"}}, "other_data": {"synthetic": True}}
+            _syn_tool = call.get("tool_name", "?") if isinstance(call, dict) else "?"
+            result = {"llm_data": {"status": {"exec_code": "error"}, "summary": f"已安全拦截：{_syn_tool}"}, "other_data": {"synthetic": True}}
         if isinstance(result, Exception):
             obs_text = f"Observation: 工具{call.get('tool_name', '?')}执行异常: {result}"
             _is_failed = True
@@ -933,7 +944,9 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
 
     # 2026-09-03 小欧 Bug-1: 无条件发 ObservationStep(即使 tool_result 为空/全拦截),
     #   前端 results 到达即卸载等待动画, 杜绝齿轮/动画永驻(改前空 tool_result 直接 return 不发事件)
-    events.append(ctx.agent._step_emitter.emit(ObservationStep(step=ctx.step, tool_result=tool_result)))
+    # 2026-09-03 小欧 D2-01补：all_calls空时不发空观察（无工具调用无需观察）
+    if ctx.all_calls:
+        events.append(ctx.agent._step_emitter.emit(ObservationStep(step=ctx.step, tool_result=tool_result)))
     return events, orchestration
 
 

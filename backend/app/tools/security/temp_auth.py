@@ -8,6 +8,8 @@
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1 迁移(4.1.7 盲点五定案): 本文件由 app/safety/temp_auth.py 整体复制迁入 app/tools/security/(P6 移动,
 #   业务逻辑一字不改); 原 app.safety.path_safe_check 惰性导入改 app.tools.security.path_safe_check(同包内互引); 原编辑历史按规范保留。
+# 2026-09-03 小欧 P0-3: 文件路径强制recursive False（仅目录保持True），防task级目录越权子树全放
+# 2026-09-03 小欧 P2-2: 空/根路径前置拒绝（"" / "." / "/" 拒绝授权），防Path("").resolve得cwd扩域
 """
 temp_auth — 白名单外路径临时授权(3.3决策⑤, 文档7.8-5, 补A)
 
@@ -51,7 +53,16 @@ def grant_temp_auth(root: str, recursive: bool = True) -> None:
         root: 授权根路径
         recursive: True=授权根及其子目录树; False=仅精确路径
     """
-    _ensure_auth()[Path(root).resolve()] = recursive
+    # 2026-09-03 小欧 P2-2: 空/根路径前置拒绝（Path("").resolve()得cwd扩域根治）
+    if not root or (isinstance(root, str) and root.strip() in ("", ".", "/")):
+        from app.logger import logger as _lg
+        _lg.warning(f"[temp_auth] 空/根路径拒绝授权: {root!r}")
+        return
+    # 2026-09-03 小欧 P0-3: 文件路径(有后缀)强制recursive False，仅目录保持True，防task级目录越权
+    _recursive = recursive
+    if recursive and isinstance(root, str) and Path(root).suffix:
+        _recursive = False
+    _ensure_auth()[Path(root).resolve()] = _recursive
 
 
 def clear_temp_auth() -> None:
