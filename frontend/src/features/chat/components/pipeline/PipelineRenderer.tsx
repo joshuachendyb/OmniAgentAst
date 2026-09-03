@@ -25,6 +25,8 @@
 // 编辑历史: 2026-09-02 小欧 - 等待图标残留丢失根治(北京老陈驱动三堂会审): waiting守卫补 error 终态(exclude error与final同为终态, 防止error后转圈); 场景穷举12种, 残留主因为纯网络空闲断连isCurrentLive瞬false, 由RightViewer isCurrentLive改 (receiving||badge running/paused) 共担
 // 编辑历史: 2026-09-03 小欧 - Bug-9: waiting 判定排除 tool 段 — 末段为工具段时不再叠加底部绿色缺口圆弧(双动画), 工具等待由 ToolCallLine 橙齿轮+扳手唯一承载 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 D2-07: waiting补排除obs孤儿观察（与final/error同终态），防绿圈残留 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 P3/P4/P5修复: buildSegments action段按step去重, 防重复seq致双实例(空obs走超时+有obs走子行并存) - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 P2修复: waiting判定tool段改为有obs时排除/无obs时保留, 恢复每轮thought前绿圈复现语义 - 小欧-2026-09-03
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -109,9 +111,19 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
         }
         break;
       }
-      case 'action':
-        segs.push({ kind: 'tool', action: s, observations: [] });
+      case 'action': {
+        // 2026-09-03 小欧 P3/P4/P5修复: 同step的action段去重, 防重复seq致双实例(一个空obs走超时一个有obs走子行)
+        const existingTool = segs.find(
+          (seg): seg is Extract<PipelineSegment, { kind: 'tool' }> =>
+            seg.kind === 'tool' && seg.action.step === s.step
+        );
+        if (existingTool) {
+          existingTool.action = s;
+        } else {
+          segs.push({ kind: 'tool', action: s, observations: [] });
+        }
         break;
+      }
       case 'observation': {
         const last = segs[segs.length - 1];
         if (last && last.kind === 'tool') last.observations.push(s);
@@ -173,9 +185,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
     (!lastSeg ||
       (lastSeg.kind !== 'thinking' &&
         lastSeg.kind !== 'text' &&
-        // 2026-09-03 小欧 Bug-9: 末段为 tool 段时不再叠加底部绿圆环 — 工具等待动画由 ToolCallLine 橙色齿轮+扳手唯一承载, 消除双动画
-        // 2026-09-03 小欧 D2-07: 追加排除obs孤儿观察（终态）
-        lastSeg.kind !== 'tool' &&
+        // 2026-09-03 小欧 P2修复: tool段有observations(结果已到位)时排除, 无observations(工具仍等待)时保留绿圈复现语义
+        (lastSeg.kind !== 'tool' || (lastSeg as Extract<PipelineSegment, { kind: 'tool' }>).observations.length === 0) &&
         lastSeg.kind !== 'obs' &&
         lastSeg.kind !== 'final' &&
         lastSeg.kind !== 'error'));

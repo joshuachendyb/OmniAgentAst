@@ -21,6 +21,7 @@
 // 编辑历史: 2026-09-03 小欧 D2-04: hasResult/tools空分支计数改hasResult口径(字符串场景0→1) - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 D2-05: timedOut计时改hasResult口径防字符串空转，D2-06: 依赖action→action.step防频繁重建 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧/老杨 17.2: 去冗余三元hasResult?(results.length||1):0 → results.length||1（外层已保真） - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 P3/P4/P5修复: 超时文案由"工具执行超时未返回结果,请重试或查看日志"改为"工具执行等待超时(30s),结果可能仍在处理中", 分流LLM ReadTimeout与前端30s计时器 - 小欧-2026-09-03
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -195,7 +196,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                 fontSize: 12,
               }}
             >
-              工具执行超时未返回结果，请重试或查看日志
+              工具执行等待超时(30s)，结果可能仍在处理中
             </span>
           )}
           {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
