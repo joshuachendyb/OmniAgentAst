@@ -28,6 +28,9 @@
 // 编辑历史: 2026-09-03 小欧 P3/P4/P5修复: buildSegments action段按step去重, 防重复seq致双实例(空obs走超时+有obs走子行并存)
 // 编辑历史: 2026-09-03 小欧 P2修复: waiting判定tool段改为有obs时排除/无obs时保留, 恢复每轮thought前绿圈复现语义
 // 编辑历史: 2026-09-03 小沈 P3/P4/P5修复修正: buildSegments action去重改不可变更新(原existingTool.action=s原地突变违反BUG-18不可变原则)
+// 编辑历史: 2026-09-03 小沈 thought/action等待图标修复: 修正小欧P2(第29行)/D2-07(第27行)方向反转——
+//   tool有obs(工具完成等待LLM下一轮thought)应保留绿圈(observations.length>0), tool无obs(action执行中由ToolCallLine齿轮承载)应排除;
+//   obs孤儿观察段(结果已到等待LLM下一轮)应保留绿圈(去掉obs排除); 场景穷举6种: 无段✅thinking/text✅tool无obs✅tool有obs✅obs✅final/error✅ - 小沈-2026-09-03
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -183,14 +186,14 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
     !!highlightToolName ||
     badge === 'running' ||
     badge === 'paused'; // 2026-09-02 小欧: badge 权威派生(running=连接中但内容空窗, paused=HIT/卡顿挂起)
+  // 2026-09-03 小沈 修正小欧P2/D2-07方向反转: tool有obs(工具完成等待LLM下一轮)应保留绿圈,
+  //   tool无obs(action执行中ToolCallLine齿轮承载)应排除; obs段(孤儿观察结果已到等待LLM下一轮)应保留绿圈
   const waiting =
     taskActive &&
     (!lastSeg ||
       (lastSeg.kind !== 'thinking' &&
         lastSeg.kind !== 'text' &&
-        // 2026-09-03 小欧 P2修复: tool段有observations(结果已到位)时排除, 无observations(工具仍等待)时保留绿圈复现语义
-        (lastSeg.kind !== 'tool' || (lastSeg as Extract<PipelineSegment, { kind: 'tool' }>).observations.length === 0) &&
-        lastSeg.kind !== 'obs' &&
+        (lastSeg.kind !== 'tool' || (lastSeg as Extract<PipelineSegment, { kind: 'tool' }>).observations.length > 0) &&
         lastSeg.kind !== 'final' &&
         lastSeg.kind !== 'error'));
   return (
