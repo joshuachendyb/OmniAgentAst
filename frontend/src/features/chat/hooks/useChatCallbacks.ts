@@ -1,11 +1,11 @@
 // 编辑历史: 2026-07-18 小欧 - FinalStep终态规整: 取消判定改为type=final+outcome=cancelled
-// 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段(trust_path/auto_confirm/confirm_timeout/backend_timeout), 与 sseParser 下发契约一致, 全量透传保弹窗正确渲染 — 小欧-2026-09-03
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-9删后端自动保存死代码/10抽pickMsg/11终态清executionSteps
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#1/2/3/4/5/6/7/8: 取消事件识别/暂停ref同步/末条非assistant回写/thought回落/暂停分块保留
 // 编辑历史: 2026-08-28 小强 - hooks修复#9: onComplete依赖数组补executionStepsRef/streamingStepsRef(闭包陈旧)
 // 编辑历史: 2026-08-28 小强 - hooks修复#10: onResumed缓冲区回放改为单次setMessages原子合并(防批处理乱序)
 // 编辑历史: 2026-08-28 小强 - hooks修复#11: 删onComplete后端保存空分支+else warn(YAGNI, 后端已自动落库)
+// 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段(trust_path/auto_confirm/confirm_timeout/backend_timeout), 与 sseParser 下发契约一致, 全量透传保弹窗正确渲染 — 小欧-2026-09-03
 /**
  * useChatCallbacks Hook - 统一回调管理
  *

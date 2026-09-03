@@ -1,11 +1,11 @@
 // 编辑历史: 2026-08-28 小欧 - 由 utils/sse.ts 拆出 hook(429-1001)+工具函数(215-428 classifyError/handleSSEError/ERROR_CONFIG_MAP/calculateReconnectDelay), processSSEData拆至features/chat/services/sseParser.ts, 类型归types/sse.ts, 零逻辑变更 - 小欧-2026-08-28
-// 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段, 与 sseParser 下发契约一致 — 小欧-2026-09-03
 // 编辑历史: 2026-08-29 小强 - 修复#25: canRetry统一以ERROR_CONFIG_MAP[errorType].retryable为权威来源, unknown直达failed; 修复#26: 空闲超时改走reconnect()重连路径而非disconnect(true)绕过重连 - 小强-2026-08-29
 // 编辑历史: 2026-08-30 小欧 - 根治重连重复起任务: reconnect()空闲超时若尚无任务ID(首响应未到)即走统一错误中心判失败(不重新POST), sendMessageInternal再加兜底守卫禁止重连态无ID重POST(双任务/僵尸任务根治) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 修正陈旧闭包: serverTaskId加serverTaskIdRef同步读写(parser回调同步ref+state), 内部判定全部改读ref, 使挂起reader帧/空闲定时器/重连守卫读到最新任务ID, 杜绝state闭包陈旧误判 - 小欧-2026-08-30
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: SSE-02 isReceiving加Ref防闭包陈旧(空闲超时读旧值误重连) — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 修复等待图标闪烁(北京老陈反馈): disconnect函数新增setReceiving参数(默认true),
 //   重连路径传递false避免setIsReceiving(false)→true间隙导致等待图标闪烁
+// 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段, 与 sseParser 下发契约一致 — 小欧-2026-09-03
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {

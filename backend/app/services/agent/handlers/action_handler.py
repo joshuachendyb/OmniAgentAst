@@ -1,8 +1,6 @@
 
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-09-03 小欧 Bug-1: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断; 全拦截/空 results 无条件发 ObservationStep(改前空 tool_result return 不发事件→前端齿轮永驻); 合成"无结果"占位保数组长度
-# 2026-09-03 小欧 Bug-25: grant_temp_auth 三处(bypass自动确认/用户确认授权/白名单豁免直通)包 try/finally 或 try/except, 授权异常不跳过 resolve_confirmation、不阻断执行流程, confirm_id 必收口
 # 2026-07-13 小欧 add_tool_result异常日志带类型与repr
 # 2026-07-16 小欧 op_id双表贯通修复
 # 2026-07-17 小欧 handle_action执行工具后重置_consecutive_reasoning_only(空转检测: 本步LLM发起工具调用=非reasoning-only空转, 归零)
@@ -162,6 +160,8 @@
 #   5.7.4①: paused emit 增 trust_path/auto_confirm/confirm_timeout/backend_timeout 四字段(后端唯一计时权威=后端窗口−提前量, constants.py HITL_CONFIRM_LEAD/BYPASS_AUTO_LEAD)
 # 2026-09-03 - 小欧 - bypass/真HITL确认超时可配置化(北京老陈驱动): auto_confirm_delay默认5→10(前端倒计时10−2=8s), 
 #   真HITL确认超时 HITL_TIMEOUT 改读 security.hitl_timeout(config.yaml优先, 默认120兜底); else分支补 get_config import 防NameError
+# 2026-09-03 小欧 Bug-1: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断; 全拦截/空 results 无条件发 ObservationStep(改前空 tool_result return 不发事件→前端齿轮永驻); 合成"无结果"占位保数组长度
+# 2026-09-03 小欧 Bug-25: grant_temp_auth 三处(bypass自动确认/用户确认授权/白名单豁免直通)包 try/finally 或 try/except, 授权异常不跳过 resolve_confirmation、不阻断执行流程, confirm_id 必收口
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
