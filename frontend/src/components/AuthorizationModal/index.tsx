@@ -8,6 +8,7 @@
 // 编辑历史: 2026-09-03 小欧 P1修复: handleConfirm中autoHandledRef先设再调onConfirm, 堵countdown到0+用户同帧点击双发onConfirm时序缺口; P3: @keyframes pulse移至组件外避免重复注入 — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧/北京老陈: countdown就绪守卫 — 跨弹窗countdown残留0致新弹窗首帧即触发自动代发, 加countdownReadyRef守卫, 未就绪禁止代发
 // 编辑历史: 2026-09-03 小欧/北京老陈 根因修复: onConfirm接口加confirmId参数, auto-confirm不依赖pendingRef读confirmId(改前ref时序竞态致旧弹窗auto-confirm发旧ID到后端, 新ID从未被confirm→S1超时弹窗不消失) — 小欧/北京老陈-2026-09-03
+// 编辑历史: 2026-09-03 小欧/北京老陈 真根因修复: interval effect加request?.confirmId依赖+currentRequestRef追踪, 旧interval残留tick跳过(setCountdown(0)覆盖新请求countdown致auto-confirm立即触发弹窗不消失) — 小欧/北京老陈-2026-09-03
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -90,9 +91,11 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   onConfirm,
 }) => {
   // 2026-09-03 小欧 Bug-11: countdown 用 lazy 初值(跟随新 request), 避免默认 0 触发首渲染自动代发/拒绝
+  // 2026-09-03 小沈 修复: 初始值从0改-1, 防首次渲染request=null时countdown=0误触发autoHandledRef守卫,
+  //   致倒计时到0后effect被拦截、onConfirm永不执行、弹窗永久卡死 — 小沈-2026-09-03
   const [trustSession, setTrustSession] = React.useState(false);
   const [countdown, setCountdown] = React.useState(
-    () => request?.confirmTimeout ?? 0
+    () => request?.confirmTimeout ?? -1
   );
   const onConfirmRef = React.useRef(onConfirm);
   // 2026-09-03 小欧 Bug-13/29: autoHandledRef 按 confirmId 一次性 guard, 防倒计时到 0 后 effect 重入双发
@@ -104,10 +107,15 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   const isBypass = Boolean(request?.autoConfirm);
   onConfirmRef.current = onConfirm;
 
+  // 2026-09-03 小欧/北京老陈 根因修复: currentRequestRef追踪当前请求, 旧interval残留tick跳过不执行,
+  //   堵旧countdown=0污染新请求致auto-confirm立即触发弹窗不消失
+  const currentRequestRef = React.useRef<string | null>(null);
+
   React.useEffect(() => {
     setTrustSession(false);
     setSubmitting(false);
     if (request?.confirmId) {
+      currentRequestRef.current = request.confirmId;
       setCountdown(request.confirmTimeout ?? 0);
       autoHandledRef.current = null;
       countdownReadyRef.current = request.confirmId;
@@ -117,14 +125,20 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   React.useEffect(() => {
     // 2026-09-03 小欧 Bug-21: 首 tick 100ms 内即刻 -1(节奏对齐), 再走 1s interval; 依赖无 countdown(函数式更新)
     if (!visible || !request) return;
-    const tick = () => setCountdown((v) => Math.max(0, v - 1));
+    const rid = request.confirmId;
+    const tick = () => {
+      // 2026-09-03 小欧/北京老陈: 旧interval残留tick跳过 — 新请求到达后旧interval可能还触发一次,
+      //   此时currentRequestRef已更新为新ID, 旧tick的闭包request.confirmId≠currentRequestRef → 跳过
+      if (currentRequestRef.current !== rid) return;
+      setCountdown((v) => Math.max(0, v - 1));
+    };
     const t = setInterval(tick, 1000);
     const first = setTimeout(tick, 100);
     return () => {
       clearInterval(t);
       clearTimeout(first);
     };
-  }, [visible, request]);
+  }, [visible, request?.confirmId]);
 
   React.useEffect(() => {
     if (!visible || countdown !== 0 || !request) return;
