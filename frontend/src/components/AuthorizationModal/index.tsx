@@ -3,6 +3,8 @@
 // 编辑历史: 2026-09-03 小欧 - v1.5.4 弹窗渲染完善: 环形进度Progress+大数字倒计时+最后5s转橙3s微脉动+bypass标题补全+countdown到0自动代发/拒绝 — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 三堂会审问题1方案A+问题3优化: ①handleConfirm强制bypass下trustSession=false(防bypass勾选偷偷落库转正为长期信任, 堵5.4防污染漏洞); ②countdown interval依赖数组移除countdown(函数式更新, 只在弹窗开/新请求建一次) — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 Bug修复(24项): ⑪countdown lazy初值跟随request防首渲染0误触发 ⑬/⑲autoHandledRef按confirmId一次性guard防倒计时到0 effect重入双发 ⑰submitting互斥态防连点意图翻转(按钮loading/disabled+勾选disabled) ⑳后端兜底文案5→60与实际一致 ㉑首tick 100ms即-1节奏对齐 ㉘trustPath缺失文案改"未指定路径，仅本次"防"任意整工具"误导 — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 UI优化(v1.1方案): 降高100px(420→288): Modal padding24→12+图标48→32+Title level4→5+Tag margin16→4+Progress size88→60+双卡合一(maxHeight200→100)+Checkbox margin24→12+Space→flex gap12+段距16→8 — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 UI优化第四章实施: 边框2px→1.5px+boxShadow+Title Tag同行flex+动效pulse0.8s/opacity0.7+信任行缩写"信任此操作（本次会话）"+Tooltip展开路径+去Space导入加Tooltip — 小欧-2026-09-03
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -10,9 +12,9 @@
  *
  * 设计规范（参考DangerConfirmModal）：
  * - 宽度: 480px
- * - 边框: 2px solid #faad14 (橙色) / 2px dashed #1677ff (bypass)
- * - 图标: WarningOutlined (橙色, 48px)
- * - 按钮: "允许执行"（橙色）、"拒绝执行"（灰色）/ bypass时保留按钮可点击
+ * - 边框: 1.5px solid #faad14 (橙色) / 1.5px dashed #1677ff (bypass) + boxShadow
+ * - 图标: WarningOutlined (橙色, 32px)
+ * - 按钮: "允许执行"（橙色）、"拒绝执行"（danger ghost）/ bypass时保留按钮可点击
  * - 居中对齐
  *
  * 【v3.4实施 2026-06-09 小沈】
@@ -25,11 +27,11 @@ import React from 'react';
 import {
   Modal,
   Button,
-  Space,
   Typography,
   Tag,
   Checkbox,
   Progress,
+  Tooltip,
 } from 'antd';
 import {
   WarningOutlined,
@@ -158,43 +160,45 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
       keyboard={false}
       width={480}
       style={{
-        border: isBypass ? '2px dashed #1677ff' : '2px solid #faad14',
+        border: isBypass ? '1.5px dashed #1677ff' : '1.5px solid #faad14',
         borderRadius: '8px',
         overflow: 'hidden',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
       }}
       styles={{
         body: {
-          padding: '24px',
+          padding: '12px',
         },
       }}
     >
       <div style={{ textAlign: 'center' }}>
         <WarningOutlined
           style={{
-            fontSize: 48,
+            fontSize: 32,
             color: isBypass ? '#1677ff' : '#faad14',
-            marginBottom: 16,
+            marginBottom: 8,
           }}
         />
 
-        <Title level={4} style={{ marginBottom: 8 }}>
-          {isBypass ? '将自动确认（安全开关已绕开）' : '安全确认请求'}
-        </Title>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <Title level={5} style={{ marginBottom: 0 }}>
+            {isBypass ? '将自动确认（安全开关已绕开）' : '安全确认请求'}
+          </Title>
+          <Tag
+            color={safetyConfig.color}
+            style={{ marginBottom: 0, fontSize: 14 }}
+          >
+            {safetyConfig.label}
+          </Tag>
+        </div>
 
-        <Tag
-          color={safetyConfig.color}
-          style={{ marginBottom: 16, fontSize: 14 }}
-        >
-          {safetyConfig.label}
-        </Tag>
-
-        <div style={{ textAlign: 'center', marginBottom: 8 }}>
+        <div style={{ textAlign: 'center', marginBottom: 4 }}>
           <Progress
             type="circle"
-            size={88}
+            size={60}
             percent={progressPercent}
             strokeColor={strokeColor}
-            strokeWidth={6}
+            strokeWidth={5}
             format={() => (
               <div style={{ textAlign: 'center', lineHeight: 1.2 }}>
                 <div
@@ -204,7 +208,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
                     color: countdown <= 3 ? '#fa541c' : '#333',
                     animation:
                       countdown <= 3
-                        ? 'pulse 0.5s ease-in-out infinite'
+                        ? 'pulse 0.8s ease-in-out infinite'
                         : 'none',
                   }}
                 >
@@ -217,10 +221,10 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         </div>
         <div
           style={{
-            marginTop: 4,
-            fontSize: 12,
+            fontSize: 13,
+            fontWeight: 600,
             color: '#8c8c8c',
-            marginBottom: 12,
+            marginBottom: 4,
           }}
         >
           {/* 2026-09-03 小欧 Bug-20: 后端兜底原文案 5s 与实际 60s 不符(useAuthorization 兜底即 60), 统一为 60 防文案欺骗 */}
@@ -231,70 +235,68 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
 
         <div
           style={{
-            backgroundColor: '#fff7e6',
-            border: '1px solid #ffd591',
+            backgroundColor: '#fafafa',
+            border: '1px solid #f0f0f0',
             borderRadius: 4,
-            padding: 12,
-            marginBottom: 16,
+            padding: 8,
+            marginBottom: 8,
             textAlign: 'left',
-          }}
-        >
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            工具名称：
-          </Text>
-          <br />
-          <Text strong style={{ display: 'block', marginTop: 4, fontSize: 14 }}>
-            {request.toolName}
-          </Text>
-        </div>
-
-        <div
-          style={{
-            backgroundColor: '#f5f5f5',
-            border: '1px solid #d9d9d9',
-            borderRadius: 4,
-            padding: 12,
-            marginBottom: 16,
-            textAlign: 'left',
-            maxHeight: 200,
+            maxHeight: 100,
             overflow: 'auto',
           }}
         >
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            执行参数：
-          </Text>
-          <br />
-          <Text
-            code
-            style={{
-              display: 'block',
-              marginTop: 4,
-              fontSize: 12,
-              wordBreak: 'break-all',
-            }}
-          >
-            {JSON.stringify(request.params, null, 2)}
-          </Text>
+          <div style={{ marginBottom: 4 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              工具名称：
+            </Text>
+            <br />
+            <Text strong style={{ display: 'block', marginTop: 4, fontSize: 14 }}>
+              {request.toolName}
+            </Text>
+          </div>
+          <div>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              执行参数：
+            </Text>
+            <br />
+            <Text
+              code
+              style={{
+                display: 'block',
+                marginTop: 4,
+                fontSize: 12,
+                wordBreak: 'break-all',
+              }}
+            >
+              {JSON.stringify(request.params, null, 2)}
+            </Text>
+          </div>
         </div>
 
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 12 }}>
           <Checkbox
             checked={trustSession}
             disabled={submitting}
             onChange={(e) => setTrustSession(e.target.checked)}
           >
-            {/* 2026-09-03 小欧 Bug-28: trustPath 缺失时不误导"任意，整工具"(前端未知后端 path), 改中性"未指定路径，仅本次" */}
-            {request.trustPath
-              ? `本次会话信任此操作（${request.toolName} › ${request.trustPath}，含子目录）`
-              : `本次会话信任此操作（${request.toolName} › 未指定路径，仅本次）`}
+            {request.trustPath ? (
+              <Tooltip title={`${request.toolName} › ${request.trustPath}，含子目录`}>
+                <span>信任此操作（本次会话）</span>
+              </Tooltip>
+            ) : (
+              '信任此操作（本次会话）'
+            )}
           </Checkbox>
         </div>
 
-        <Space size="middle">
+        <div style={{ display: 'flex', gap: 12, width: '100%' }}>
           <Button
             onClick={() => handleConfirm(false)}
             size="large"
             disabled={submitting}
+            danger
+            ghost
+            style={{ flex: 1 }}
           >
             拒绝执行
           </Button>
@@ -308,16 +310,17 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
               backgroundColor: '#faad14',
               borderColor: '#faad14',
               color: '#fff',
+              flex: 1,
             }}
           >
             允许执行
           </Button>
-        </Space>
+        </div>
       </div>
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }
-          50% { opacity: 0.6; }
+          50% { opacity: 0.7; }
         }
       `}</style>
     </Modal>
