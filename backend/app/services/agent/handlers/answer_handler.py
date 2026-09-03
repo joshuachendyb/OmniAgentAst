@@ -30,6 +30,8 @@
 #   病根: 上游LLM流异常/HTTP400等极端情况下 parsed 可能为 None, L105 parsed.get("type","answer") 抛 AttributeError 崩掉整个SSE流;
 #   修复: 入口 `if parsed is None` → 置空 dict, 后续走既有"真空→系统重试"分支(emit retrying MetaStep 由编排层重试), 不新增分支/不造新范式;
 #   三堂会审: 合规(SRP/DRY/KISS/SLAP/YAGNI) + 合理(空dict语义=空响应, 复用既有重试机制) + 关联(崩溃→优雅重试, 正常answer/error/unknown/reasoning-only四分支零影响) - 小欧-2026-09-02
+# 2026-09-03 小欧 - fix: error/unknown分支set_failed移到emit_final_with_stats之前,
+#   使build_final_stats_step读到agent.status=FAILED→final_status='failed'→前端badge兜底生效(改前set_failed在yield之后致final_status='executing'→badge卡running) - 小欧-2026-09-03
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -120,6 +122,10 @@ async def handle_answer(agent, parsed: Dict):
         agent.message_builder.add_assistant_message(content)
         # 2026-08-28 小欧 yield日志审计: print→logger统一(DRY违规修复)
         logger.error(f"[answer] step={step} error={content} error_type={err_type}")
+        # 2026-09-03 小欧 修复: set_failed移到emit_final_with_stats之前,
+        #   使build_final_stats_step读到agent.status=FAILED→final_status='failed'→前端badge兜底生效
+        from app.services.agent.status_table import set_failed
+        set_failed(agent, content)
         yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
         for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
             step=step, response="任务执行失败",
@@ -137,6 +143,9 @@ async def handle_answer(agent, parsed: Dict):
         logger.error(f"[answer] step={step} unknown_type={parsed_type} content={content}")
         if content:
             agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
+        # 2026-09-03 小欧 修复: set_failed移到emit_final_with_stats之前
+        from app.services.agent.status_table import set_failed
+        set_failed(agent, f"LLM返回未知响应类型: {parsed_type}")
         yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
         for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
             step=step, response="任务执行失败",
