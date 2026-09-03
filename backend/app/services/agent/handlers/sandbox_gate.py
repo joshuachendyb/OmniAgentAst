@@ -15,6 +15,7 @@
 #   改前缺字段致前端倒计时与后端不一致(60s/120s 错位); auto_confirm 恒False, 计时取 security.hitl_timeout−LEAD。
 # 2026-09-03 小欧 D2-02: _ct钳制max(5,bt-LEAD)避免0秒窗口（与action_handler同钳）
 # 2026-09-03 小欧 D2-03: trust_path改复用_extract_trust_path(tool,params)消除别名盲区（path/file_path/source_path等），防通配污染
+# 2026-09-03 小欧/老杨 17.1: 纠正16.3落盘偏差——硬编码7key含window_title误当文件路径授权，且_import路径错误（_extract_trust_path实定义于action_handler:567）；改函数内延迟import复用主链函数，与模块内既有延迟导入同模式
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -80,10 +81,19 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     _bt = int(float(_get_cfg_sb2().get("security.hitl_timeout", HITL_TIMEOUT)))
     # 2026-09-03 小欧 D2-02: 0窗钳制≥5s（与action_handler同钳）
     _ct = max(5, _bt - HITL_CONFIRM_LEAD)
-    # 2026-09-03 小欧 D2-03: 消除别名盲区（path/file_path/source_path/dest_path/window_title等），防通配污染
-    # 复用action_handler._parse_paths逻辑的简化版（避免循环import）；取首个非空路径类参数
-    _sb_trust_keys = ("path", "file_path", "source_path", "dest_path", "target", "dir_path", "window_title")
-    _sandbox_path = next((params.get(k) for k in _sb_trust_keys if isinstance(params.get(k), str) and params.get(k)), None)
+    # 2026-09-03 小欧/老杨 17.1: 复用主链 _extract_trust_path（函数内延迟import规避循环，与模块内既有延迟导入同模式），纠正16.3硬编码7key及window_title误授权
+    # 17.1补：_extract_trust_path对非FILE_OPERATION_TOOLS（如move_file vs move）返回None时，回落查常见文件路径键（不含window_title，防窗口标题误当文件路径）
+    try:
+        from app.services.agent.handlers.action_handler import _extract_trust_path as _sb_trust_path
+        _sandbox_path = _sb_trust_path(tool_name, params)
+    except Exception:
+        _sandbox_path = None
+    if _sandbox_path is None:
+        for _k in ("path", "file_path", "source_path", "dest_path", "target", "dir_path"):
+            _v = params.get(_k)
+            if isinstance(_v, str) and _v:
+                _sandbox_path = _v
+                break
     steps = [agent._step_emitter.emit(MetaStep(
         step=step, type="paused",
         content=f"沙箱未能完成有效预检,需用户裁决是否直接执行: {tool_name}",
