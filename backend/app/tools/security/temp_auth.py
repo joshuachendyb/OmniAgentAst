@@ -10,6 +10,7 @@
 #   业务逻辑一字不改); 原 app.safety.path_safe_check 惰性导入改 app.tools.security.path_safe_check(同包内互引); 原编辑历史按规范保留。
 # 2026-09-03 小欧 P0-3: 文件路径强制recursive False（仅目录保持True），防task级目录越权子树全放
 # 2026-09-03 小欧 P2-2: 空/根路径前置拒绝（"" / "." / "/" 拒绝授权），防Path("").resolve得cwd扩域
+# 2026-09-03 小欧/北京老陈: temp_auth补日志: grant/clear/is_temp_authorized三处关键操作, 改前无log无法追踪授权生命周期
 """
 temp_auth — 白名单外路径临时授权(3.3决策⑤, 文档7.8-5, 补A)
 
@@ -63,10 +64,18 @@ def grant_temp_auth(root: str, recursive: bool = True) -> None:
     if recursive and isinstance(root, str) and Path(root).suffix:
         _recursive = False
     _ensure_auth()[Path(root).resolve()] = _recursive
+    # 2026-09-03 小欧/北京老陈: 授权操作补日志
+    from app.logger import logger as _lg
+    _lg.info(f"[temp_auth] 授权: root={root}, recursive={_recursive}")
 
 
 def clear_temp_auth() -> None:
     """清空当前作用域临时授权(task 结束调用) — 小欧 2026-08-10, M3 更新"""
+    # 2026-09-03 小欧/北京老陈: 清空授权补日志
+    from app.logger import logger as _lg
+    auth = _authorized_paths.get()
+    _count = len(auth) if auth else 0
+    _lg.info(f"[temp_auth] 清空授权: cleared={_count}项")
     _authorized_paths.set({})
 
 
@@ -97,9 +106,14 @@ def is_temp_authorized(file_path: str) -> bool:
     for root, recursive in auth.items():
         if recursive:
             if p == root or root in p.parents:
+                # 2026-09-03 小欧/北京老陈: 授权命中补日志
+                from app.logger import logger as _lg
+                _lg.info(f"[temp_auth] 授权命中: file={file_path}, root={root}, recursive=True")
                 return True
         else:
             if p == root:
+                from app.logger import logger as _lg
+                _lg.info(f"[temp_auth] 授权命中: file={file_path}, root={root}, recursive=False")
                 return True
     return False
 

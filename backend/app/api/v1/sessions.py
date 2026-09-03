@@ -13,6 +13,7 @@
 # 2026-08-30 - 小欧 - 设计文档[2]第十二章 v1.103: B1 响应新增 latest_task_id(最新任务显式锚点, 配合 storage.list_session_tasks 三元组返回解包, 排序一义后顶栏锚点不依赖 DESC 首行)。
 # 2026-09-02 - 小欧 - 会话信任功能修复 v1.5⑤⑤(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): DELETE /sessions/{id}/trust/{tool_name} 端点增可选 query `path` 精确撤销——
 #   path 传入则精确 DELETE (session_id, tool_name, path) 该路径行; path=None(默认) 删工具级通配行(path IS NULL); 无匹配行返回 404 Trust not found
+# 2026-09-03 - 小欧/北京老陈 - sessions端点补日志: trust相关端点(list/delete)补info/warning, 改前无log无法排查信任操作
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
 """
@@ -96,18 +97,26 @@ def list_session_tasks_endpoint(session_id: str):
 @router.get("/sessions/{session_id}/trust")
 def list_session_trust_endpoint(session_id: str):
     """D1(10.5 问题4): 会话已信任工具清单 — 小欧 2026-08-20"""
+    # 2026-09-03 小欧/北京老陈: trust查询补日志
+    from app.logger import logger as _log
     with db.get_conn("chat") as conn:
         rows = list_session_trust(conn, session_id)
+    _log.info(f"[trust] 查询信任清单: session_id={session_id}, count={len(rows)}")
     return {"session_id": session_id, "total": len(rows), "trusted_tools": rows}
 
 
 @router.delete("/sessions/{session_id}/trust/{tool_name}")
 def delete_session_trust_endpoint(session_id: str, tool_name: str, path: Optional[str] = None):
     """D3(10.5 问题4): 撤销会话对指定信任对象的信任 — 小欧 2026-08-20; v1.5 增 query path 精确撤销(path=None 删工具级通配行)"""
+    # 2026-09-03 小欧/北京老陈: trust撤销补日志
+    from app.logger import logger as _log
+    _log.info(f"[trust] 撤销信任: session_id={session_id}, tool={tool_name}, path={path}")
     with db.get_conn("chat") as conn:
         removed = delete_session_trust(conn, session_id, tool_name, path)
     if not removed:
+        _log.warning(f"[trust] 撤销失败(未找到): session_id={session_id}, tool={tool_name}, path={path}")
         raise HTTPException(status_code=404, detail="Trust not found")
+    _log.info(f"[trust] 撤销成功: session_id={session_id}, tool={tool_name}, path={path}")
     return {"success": True, "session_id": session_id, "tool_name": tool_name, "path": path}
 
 

@@ -10,6 +10,7 @@
 #   import 补 ModelRef — 方案B 契约随归一
 # 2026-08-29 - 小沈 - 修复#15: 读库由同步 db.get_conn 改为 db.atxn 离载到子线程, 避免阻塞事件循环(其余逻辑零改动)
 # 2026-09-03 小欧 chain兜底: token_usage表可能为空(_usage_events未写入), fallback到chat_tasks.task_accumulated_tokens防链累计P0/C0/T0
+# 2026-09-03 小欧/北京老陈: token_usage端点补日志: 查询请求/结果/异常三处关键节点, 改前无任何log
 """
 token_usage — LLM token 用量四维度查询 API（chat 域）
 
@@ -56,6 +57,9 @@ async def get_token_usage(session_id: Optional[str] = None,
         task_id: 按任务过滤
         model: 按模型名过滤(与当前 provider 组合成对过滤)
     """
+    # 2026-09-03 小欧/北京老陈: token_usage查询补日志
+    from app.logger import logger as _log
+    _log.info(f"[token-usage] 查询: session_id={session_id}, task_id={task_id}, model={model}")
     from app.config import get_config as _get_cfg   # 归一: 取当前 provider 与 model 组成 ModelRef — 小欧 2026-08-22
     _model_ref = None
     if model:
