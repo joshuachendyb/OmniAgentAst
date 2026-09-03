@@ -20,6 +20,7 @@
 // 编辑历史: 2026-09-03 小欧 - Bug修复: ②results兼容字符串tool_result(防齿轮常驻) ③等待30s超时兜底降级提示(动画不再无限旋转) ④tools空/结果空显示占位防空壳 ⑧整批observation涌入前minHeight:32占位防页面晃动 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 D2-04: hasResult/tools空分支计数改hasResult口径(字符串场景0→1) - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 D2-05: timedOut计时改hasResult口径防字符串空转，D2-06: 依赖action→action.step防频繁重建 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧/老杨 17.2: 去冗余三元hasResult?(results.length||1):0 → results.length||1（外层已保真） - 小欧-2026-09-03
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -198,10 +199,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
             </span>
           )}
           {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
-          {/* 2026-09-03 小欧 D2-04: 计数改hasResult口径(字符串场景results.length=0→hasResult真应计1) */}
           {hasResult && tools.length === 0 && (
             <span style={{ color: Colors.TEXT.SECONDARY, fontSize: 12 }}>
-              收到 {hasResult ? (results.length || 1) : 0} 条观察结果但无工具定义
+              收到 {results.length || 1} 条观察结果但无工具定义
             </span>
           )}
           {hasResult &&

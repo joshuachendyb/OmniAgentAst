@@ -3,6 +3,7 @@
 // 编辑历史: 2026-09-03 小欧 - v1.5.4 计时统一: 移除setTimeout后备, 倒计时由AuthorizationModal countdown统一管理(§5.7.4-⑥) — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 Bug修复(24项): ⑭pendingRef镜像+监听器一次注册[]消闭包窗口 ⑮确认失败不清空pending保留重试(改前 finally清空致后端挂起) ⑱/⑲旧请求覆盖前 await confirm(false) 回声防fire-and-forget ㉒parseTimeout合法0保留(Number||60吞0) ㉗auto_confirm严格判断防"false"误判bypass — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一，P2-1: 同confirmId重放去重不二次resolve，P0-1: catch中404清pending防僵死 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧/老杨 17.3: 404判定改读axios response.status+message（String(error)对axios得[object Object]无效） - 小欧-2026-09-03
 import React, { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
@@ -94,9 +95,14 @@ export function useAuthorization(sessionId: string | null) {
         }
       } catch (error) {
         // 2026-09-03 小欧 Bug-15: 确认失败不清空 pending, 保留弹窗供重试(改前 finally 清空致后端挂起)
-        // 2026-09-03 小欧 P0-1: 404/not found则清pending防僵死（任务已完了窗口不消失）
+        // 2026-09-03 小欧/老杨 17.3: 404判定改读axios标准字段response.status+message，String(error)对axios对象得[object Object]无效
         console.error('[Authorization] 确认失败:', error);
-        if (String(error).includes('404') || String(error).toLowerCase().includes('not found')) {
+        const _status = (error as { response?: { status?: number } })?.response?.status;
+        const _isNotFound =
+          _status === 404 ||
+          String((error as { message?: string })?.message ?? '').includes('404') ||
+          String((error as { message?: string })?.message ?? '').toLowerCase().includes('not found');
+        if (_isNotFound) {
           setAuthorizationPending(null);
         }
         return;
