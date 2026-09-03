@@ -3,8 +3,9 @@
 // 编辑历史: 2026-09-03 小欧 - v1.5.4 弹窗渲染完善: 环形进度Progress+大数字倒计时+最后5s转橙3s微脉动+bypass标题补全+countdown到0自动代发/拒绝 — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 三堂会审问题1方案A+问题3优化: ①handleConfirm强制bypass下trustSession=false(防bypass勾选偷偷落库转正为长期信任, 堵5.4防污染漏洞); ②countdown interval依赖数组移除countdown(函数式更新, 只在弹窗开/新请求建一次) — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 Bug修复(24项): ⑪countdown lazy初值跟随request防首渲染0误触发 ⑬/⑲autoHandledRef按confirmId一次性guard防倒计时到0 effect重入双发 ⑰submitting互斥态防连点意图翻转(按钮loading/disabled+勾选disabled) ⑳后端兜底文案5→60与实际一致 ㉑首tick 100ms即-1节奏对齐 ㉘trustPath缺失文案改"未指定路径，仅本次"防"任意整工具"误导 — 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 UI优化(v1.1方案): 降高100px(420→288): Modal padding24→12+图标48→32+Title level4→5+Tag margin16→4+Progress size88→60+双卡合一(maxHeight200→100)+Checkbox margin24→12+Space→flex gap12+段距16→8 — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 UI优化(v1.1方案): 降高100px(420→288): Modal padding24→12+图标48→32+Title level4→5+Tag margin16→4+Progress size88→60+双卡合一(maxHeight200→150)+Checkbox margin24→12+Space→flex gap12+段距16→8 — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 UI优化第四章实施: 边框2px→1.5px+boxShadow+Title Tag同行flex+动效pulse0.8s/opacity0.7+信任行缩写"信任此操作（本次会话）"+Tooltip展开路径+去Space导入加Tooltip — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 P1修复: handleConfirm中autoHandledRef先设再调onConfirm, 堵countdown到0+用户同帧点击双发onConfirm时序缺口; P3: @keyframes pulse移至组件外避免重复注入 — 小欧-2026-09-03
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -72,6 +73,14 @@ const SAFETY_LEVEL_CONFIG: Record<
   },
   dangerous: { color: 'red', label: '系统危险', icon: <StopOutlined /> },
 };
+
+// 2026-09-03 小欧 P3修复: @keyframes pulse移至组件外, 避免每次渲染重复注入<style>标签 — 小欧-2026-09-03
+const AUTH_MODAL_STYLE = `
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+`;
 
 const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   visible,
@@ -145,6 +154,8 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   //   强制 trustSession=false(防绕过5.4防污染: bypass期间勾出的信任切回enabled:true后转正为长期豁免)
   const handleConfirm = (confirmed: boolean) => {
     if (submitting) return;
+    // 2026-09-03 小欧 P1修复: 先设 guard 再调 onConfirm——堵 countdown effect 同帧双发(时序缺口: submitting state异步生效, countdown effect同帧看到 submitting=false 也能通过guard)
+    autoHandledRef.current = request.confirmId;
     setSubmitting(true);
     onConfirm(confirmed, isBypass ? false : trustSession);
     setTrustSession(false);
@@ -180,7 +191,14 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           }}
         />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 4,
+          }}
+        >
           <Title level={5} style={{ marginBottom: 0 }}>
             {isBypass ? '将自动确认（安全开关已绕开）' : '安全确认请求'}
           </Title>
@@ -241,7 +259,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             padding: 8,
             marginBottom: 8,
             textAlign: 'left',
-            maxHeight: 100,
+            maxHeight: 150,
             overflow: 'auto',
           }}
         >
@@ -250,7 +268,10 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
               工具名称：
             </Text>
             <br />
-            <Text strong style={{ display: 'block', marginTop: 4, fontSize: 14 }}>
+            <Text
+              strong
+              style={{ display: 'block', marginTop: 4, fontSize: 14 }}
+            >
               {request.toolName}
             </Text>
           </div>
@@ -280,7 +301,9 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             onChange={(e) => setTrustSession(e.target.checked)}
           >
             {request.trustPath ? (
-              <Tooltip title={`${request.toolName} › ${request.trustPath}，含子目录`}>
+              <Tooltip
+                title={`${request.toolName} › ${request.trustPath}，含子目录`}
+              >
                 <span>信任此操作（本次会话）</span>
               </Tooltip>
             ) : (
@@ -317,12 +340,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </Button>
         </div>
       </div>
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.7; }
-        }
-      `}</style>
+      <style>{AUTH_MODAL_STYLE}</style>
     </Modal>
   );
 };
