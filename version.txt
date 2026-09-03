@@ -1,5 +1,72 @@
-﻿v0.19.39
-更新时间: 2026-09-02 12:07:38 - 小欧-2026-09-02
+﻿v0.19.40
+更新时间: 2026-09-03 17:34:31 - 小欧-2026-09-03
+## v0.19.39以来 变更汇总(56个commit) - 小欧-2026-09-03
+[2026-09-03 17:34:31 小欧] 汇总范围=v0.19.39以来全部commit(本分支 optimize-0.19.17 自v0.19.39累积56个commit, 已打 tag v0.19.40)
+
+### feat(14个):
+- StaticStatsBlock.tsx 整个任务统计板块可折叠(默认折叠只显标题行)
+- hitl_confirmation.py+chat_routes.py+action_handler.py+tool_safety_checker.py+constants.py 会话信任修复(5.1 async强一致落库+5.3豁免带auth_path+5.4确认去信任+5.7.1 bypass自动代发+5.7.4①②四字段下发)
+- db_initializer.py+storage.py+sessions.py 会话信任修复(5.5工具/路径豁免表trust_session+迁移DROP重建+storage四函数带path前缀递归+DELETE带path query)
+- sseParser.ts+task.api.ts+TrustPanel.tsx+TaskInfoBar.tsx+useAuthorization.ts+AuthorizationModal 会话信任修复(5.5⑥带path+5.7.4③-⑦弹窗渲染+计时统一removeTimeout+三堂会审问题1方案Abpass强制不落信任+问题3countdown优化)
+- ToolCallLine.tsx+index.css 工具执行等待UI(设计v1.8) 摘要头先显+橙齿轮扳手动画与子行同容器互斥盖住
+- constants.py+action_handler.py+sandbox_gate.py+hitl_confirmation.py+config.yaml.example+工具等待UI 超时可配置化(bypass auto_confirm_delay默认5→10前端倒计时8s+真HITL hitl_timeout改读security.hitl_timeout默认120)
+- index.css 工具等待动画图标尺寸1.4em→1em(≈14px)缩小齿轮+扳手组合(北京老陈定案)
+- AuthorizationModal UI优化v1.1+第四章 降高100px+边框1.5px+flex布局+动效0.8s
+
+### fix(28个):
+- useChatScroll/useChatPanels/ChatPage 滚动监听防堆积+首帧ref空重试
+- PipelineRenderer/TextStream/ToolCallLine/CollapsibleText 44case审计修复(键盘无障碍+展开打断)
+- RightViewer/TaskInfoBar/TopbarStats/useTaskInfo 44case审计修复(滚动+badge+token)
+- AuthorizationModal/useAuthorization 授权弹窗键盘无障碍修复
+- ChatInput/useSSE 44case审计修复(输入框防抖+SSE重连)
+- TaskListPanel.tsx 左栏任务列表滚动修复
+- RightViewer.tsx auto-scroll完全失效修复(liveSteps.length依赖缺失)
+- RightViewer.tsx auto-scroll双重修复(liveSteps.length依赖+findScrollContainer闭包修复)
+- RightViewer.tsx auto-scroll双修复(渲染条件简化+程序滚动标志防误判)
+- PipelineRenderer.tsx final段key由索引i改稳定key(索引+step, 对齐thinking/text/obs/status规范)
+- action_handler.py+stream_orchestrator.py P9双重resumed去重+P10跨provider降级修复
+- useSSE.ts 等待图标闪烁修复(重连路径不设置isReceiving=false)
+- PipelineRenderer.tsx+RightViewer.tsx 等待图标偶发丢失根治(第4窗口纯网络断连isCurrentLive改badge撑住+error终态守卫)
+- useTaskInfo.ts+ChatPage.tsx 任务失败徽标executing残留与左列DB滞后根治
+- answer_handler.py 配额类终态error_type透传保真+中文化兜底
+- react_cycle.py+useTaskInfo.ts+answer_handler.py 任务失败徽标残留根治(可恢复异常重试超限emit FinalStep+badge推导hasFailedFinal兜底+parsed空防御)
+- action_handler.py+sandbox_gate.py Bug-1/16/25修复(Bug-1全拦截/空结果无条件发ObservationStep+Bug-25 grant_temp_auth三处try捕异常不阻断确认收口+Bug-16 sandbox paused补齐四字段)
+- ToolCallLine+PipelineRenderer+AuthorizationModal+useAuthorization+sseParser+useChatCallbacks+useSSE Bug-2/9/11,13,17,20,21,28,29/14,15,18,19,22,27/26
+- action_handler.py+sandbox_gate.py+temp_auth.py D2-01合成摘要/D2-02 0窗钳5/P0-1 S1死码/P0-3文件级不递归/P2-2空路径/D2-03别名
+- ToolCallLine.tsx+PipelineRenderer.tsx+useAuthorization.ts+sseParser.ts+useSSE.ts D2-04计数/D2-05 hasResult/D2-06 action.step/D2-07 obs排除/D2-10归一/P0-1 404/P1-3 IDLE/P2-1重放
+- sandbox_gate.py 17.1纠正16.3落盘偏差——硬编码7key含window_title误授权，改函数内延迟import复用主链_extract_trust_path
+- ToolCallLine.tsx+useAuthorization.ts 17.2去冗余三元+17.3 String(error)对axios无效改response.status+message
+- AuthorizationModal/index.tsx P1修复countdown同帧双发+P3 pulse移组件外+maxHeight150
+- llm_stream P7 CancelledError捕获+缓冲retry notice 重试通知必落事件流
+- PipelineRenderer+ToolCallLine P3/P4/P5 action去重+超时文案分流 P2 waiting绿圈复现
+- useTaskInfo+useAuthorization P6 badge failed→running回推 P1 confirm 15s超时兜底
+- llm_stream P7缓冲清除修正 yield后清pending防双重emit(小沈)
+- RightViewer+PipelineRenderer BUG-01/04+12.6+P3/4/5不可变修正(小欧/小沈)
+- ChatInput+ChatPage BUG-29 async回补修正(小欧/小沈)
+- CollapsibleText+ToolCallLine+useChatScroll BUG-16/19/25
+
+### refactor(2个):
+- tool_safety_checker.py+path_safe_check.py 提示文案准确可读优化(保留禁区分级术语+人话解释)
+- ToolCallLine.tsx prettier格式化(仅换行/缩进,零逻辑变更)
+- TrustPanel.tsx+TaskInfoBar.tsx 复用TrustPanel消除内联重复(TrustPanel孤儿合并回，TaskInfoBar删144行内联，DRY)
+
+### docs(12个):
+- 44case问题分析报告 新增
+- 会话信任功能修复方案 文档新建与归档
+- 会话信任功能修复方案 v1.1-v1.3(章节拆分+三堂会审9项修正+测试缺口补齐T6-T9/H17/R5)
+- 会话信任功能修复方案 会审3项裁决结论落档(三堂会审问题1方案A防bypass落信任+问题2保持现状+问题3countdown优化)
+- 工具并行执行step显示UI优化-分析与修改说明 单/并行工具摘要头先显+橙齿轮扳手动画+子行等observation(v1.0-v1.8)
+- 工具显示等待动画与安全bypass链路Bug分析与修复方案 24真实bug全量修复diff+三堂会审(v1.0-v1.4, 新增第十三章)
+- 工具显示等待动画与安全bypass链路Bug分析与修复方案 新增第十四章D2-10个+第十五章D3-8个+附实测现象及第十六章18个修复diff(均3轮三堂会审)
+- action_handler+PipelineRenderer+useChatCallbacks+useSSE 修正编辑历史顺序(Bug-1/Bug-9/Bug-16/Bug-25/Bug-26插入位置从板块顶部移至最底部)
+- 9月3日问题汇总分析与病根病因梳理 applog实证补全v1.1
+- AuthorizationModal UI优化方案 v1.2 maxHeight150+v1.3 P1/P3修复记录
+- 9月3日问题汇总 十遍一致性校对v1.2 修正状态列/行号/来源/缺字
+- 9月3日问题汇总 v1.3第十四章修复落码汇总
+- 并行Toolcall多个HITL弹窗深度分析 v1.0 前后端完整链路
+- 9月3日问题汇总分析与病根病因梳理 补全
+- config.py 热重载触发场景注释
+
 ## v0.19.38以来 变更汇总(69个commit) - 小欧-2026-09-02
 [2026-09-02 12:07:38 小欧] 汇总范围=v0.19.38以来全部commit(本分支 optimize-0.19.17 自v0.19.38累积69个commit, 已打 tag v0.19.39)
 
