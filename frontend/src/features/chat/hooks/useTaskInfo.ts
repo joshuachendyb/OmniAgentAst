@@ -13,6 +13,7 @@
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①HP-04 Date.now提出useMemo外防闪变②HP-05 recentEvents补slice(0,20)防21条越界 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 修复徽标executing残留: liveErrorText实时失败未进徽标派生致final晚1拍前badge仍running; 176后补liveErrorText→failed直线兜底(仅非终态时生效, final到达覆盖同值) - 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 P6修复: 可恢复工具错误后业务推进badge回推running + post-loop liveErrorText检查加_badgeRecovered守卫防覆盖 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 detail分支badge兜底: steps中有FinalStep(outcome=failed)时强制覆盖detail.status滞后, 防quota_exceeded等失败任务badge误显"执行中" - 小欧-2026-09-03
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -76,8 +77,13 @@ export const useTaskInfo = (
         cancelled: 'cancelled',
       };
       const u = detail.accumulated_usage;
+      // 2026-09-03 小欧 兜底: detail.status可能滞后(DB update_task在finally块, 微小时差),
+      //   steps中有FinalStep(outcome=failed)时强制覆盖, 防badge误显"执行中"
+      let badge: TaskBadge = map[detail.status] ?? 'idle';
+      const hasFailedFinal = steps.some(s => s.type === 'final' && s.outcome === 'failed');
+      if (hasFailedFinal) badge = 'failed';
       return {
-        badge: map[detail.status] ?? 'idle',
+        badge,
         elapsedSec: detail.duration ?? 0,
         stepCount: detail.total_steps,
         llmCallCount: detail.llm_call_count,

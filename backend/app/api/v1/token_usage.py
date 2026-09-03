@@ -9,6 +9,7 @@
 #   ModelRef(provider+model) 结构传 query_token_usage(model_ref=), 落 task_model JSON 列 json_extract 双键过滤;
 #   import 补 ModelRef — 方案B 契约随归一
 # 2026-08-29 - 小沈 - 修复#15: 读库由同步 db.get_conn 改为 db.atxn 离载到子线程, 避免阻塞事件循环(其余逻辑零改动)
+# 2026-09-03 小欧 chain兜底: token_usage表可能为空(_usage_events未写入), fallback到chat_tasks.task_accumulated_tokens防链累计P0/C0/T0
 """
 token_usage — LLM token 用量四维度查询 API（chat 域）
 
@@ -83,6 +84,9 @@ async def get_token_usage(session_id: Optional[str] = None,
                     "SELECT COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0) "
                     "FROM token_usage WHERE task_id = ?", (task_id,)).fetchone()
             _chain_acc = {"prompt_tokens": int(_row[0] or 0), "completion_tokens": int(_row[1] or 0), "total_tokens": int(_row[2] or 0)}
+            # 2026-09-03 小欧 兜底: token_usage表可能为空(_usage_events未写入), fallback到chat_tasks.task_accumulated_tokens
+            if _chain_acc["total_tokens"] == 0 and _task_acc and _task_acc.get("total_tokens", 0) > 0:
+                _chain_acc = dict(_task_acc)
         return TokenUsageResponse(
             success=True,
             calls=row["calls"],
