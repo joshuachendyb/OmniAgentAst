@@ -13,6 +13,7 @@
 # 2026-07-22 小欧 修复: usage_data 为 None 时不添加 null 字段，条件添加 usage
 # 2026-07-26 小欧 L2重试加指数退避: 原 flat 0.5s → min(0.5 * 2^attempt, 30). 根因:429配额耗尽后快速原地重试只会反复失败, 指数退避给配额恢复机会.
 # 2026-07-28 - 小欧 - 欧阳BUG-10修复: call_llm_with_fallback fallback前agent.llm_client._cancelled=False改agent.llm_client.reset_cancel(), 确保_current_response一并重置
+# 2026-09-03 小欧 P7修复: call_llm_with_fallback新增CancelledError捕获+缓冲retry notice, 保证L1重试通知在任务取消后必落事件流不丢失
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 # 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.2.1 D0b/11.9 P3): _build_tool_calls_response 的
 #   result 与 _pending_calls 两处透传 params_raw_str(源=D0 base_service)——补 #3 链路缺口,
@@ -287,6 +288,8 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
 async def call_llm_with_fallback(agent, messages, openai_tools):
     """FC模式失败时条件降级到Text模式 — 小欧 2026-06-25"""
     last_error = None
+    # 小欧 2026-09-03 P7修复: 缓冲最近一次retry notice, CancelledError中断时保证重试通知必落事件流
+    _pending_retry_notice = None
 
     for attempt in range(LLM_RESPONSE_RETRIES):
         try:
@@ -303,8 +306,21 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
                             yield item
                             return
                         raise LLMResponseError(message=resp.get("content", "LLM流式错误"))
+                # 小欧 2026-09-03 P7修复: 拦截retry notice并缓冲, 保证CancelledError中断时必落事件流
+                if isinstance(item, tuple) and item[0] == "meta":
+                    _meta = item[1]
+                    if isinstance(_meta, dict) and _meta.get("type") == "retrying":
+                        _pending_retry_notice = item
                 yield item
             return
+        except asyncio.CancelledError:
+            # 小欧 2026-09-03 P7修复: CancelledError中断async for时, call_llm_stream已产出的retry notice
+            #   未被消费即丢失; 此处缓冲保证重试通知必落event_log→SSE→前端可见
+            if _pending_retry_notice is not None:
+                logger.info("[P7] CancelledError中断, 补发缓冲的retry notice")
+                yield _pending_retry_notice
+                _pending_retry_notice = None
+            raise
         except LLMResponseError as e:
             last_error = e
             logger.warning(f"[Retry][L2] LLM响应错误 第{attempt+1}/{LLM_RESPONSE_RETRIES}次: {e}")
