@@ -39,7 +39,8 @@ interface UseChatPanelsOptions {
   authorizationPending: AuthorizationRequest | null;
   handleAuthorizationConfirm: (
     confirmed: boolean,
-    trustSession: boolean
+    trustSession: boolean,
+    confirmId?: string
   ) => void;
   tasks: SessionTaskItem[];
   total: number;

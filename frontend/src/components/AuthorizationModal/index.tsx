@@ -7,6 +7,7 @@
 // 编辑历史: 2026-09-03 小欧 UI优化第四章实施: 边框2px→1.5px+boxShadow+Title Tag同行flex+动效pulse0.8s/opacity0.7+信任行缩写"信任此操作（本次会话）"+Tooltip展开路径+去Space导入加Tooltip — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 P1修复: handleConfirm中autoHandledRef先设再调onConfirm, 堵countdown到0+用户同帧点击双发onConfirm时序缺口; P3: @keyframes pulse移至组件外避免重复注入 — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧/北京老陈: countdown就绪守卫 — 跨弹窗countdown残留0致新弹窗首帧即触发自动代发, 加countdownReadyRef守卫, 未就绪禁止代发
+// 编辑历史: 2026-09-03 小欧/北京老陈 根因修复: onConfirm接口加confirmId参数, auto-confirm不依赖pendingRef读confirmId(改前ref时序竞态致旧弹窗auto-confirm发旧ID到后端, 新ID从未被confirm→S1超时弹窗不消失) — 小欧/北京老陈-2026-09-03
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -57,7 +58,7 @@ export interface AuthorizationRequest {
 interface AuthorizationModalProps {
   visible: boolean;
   request: AuthorizationRequest | null;
-  onConfirm: (confirmed: boolean, trustSession: boolean) => void;
+  onConfirm: (confirmed: boolean, trustSession: boolean, confirmId?: string) => void;
 }
 
 const SAFETY_LEVEL_CONFIG: Record<
@@ -133,10 +134,11 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
     if (autoHandledRef.current === request.confirmId) return;
     autoHandledRef.current = request.confirmId;
     setSubmitting(true);
+    // 2026-09-03 小欧/北京老陈: 传confirmId参数, 不依赖pendingRef时序(根因修复)
     if (isBypass) {
-      onConfirmRef.current(true, false);
+      onConfirmRef.current(true, false, request.confirmId);
     } else {
-      onConfirmRef.current(false, false);
+      onConfirmRef.current(false, false, request.confirmId);
     }
   }, [visible, countdown, isBypass, request]);
 
@@ -163,7 +165,8 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
     // 2026-09-03 小欧 P1修复: 先设 guard 再调 onConfirm——堵 countdown effect 同帧双发(时序缺口: submitting state异步生效, countdown effect同帧看到 submitting=false 也能通过guard)
     autoHandledRef.current = request.confirmId;
     setSubmitting(true);
-    onConfirm(confirmed, isBypass ? false : trustSession);
+    // 2026-09-03 小欧/北京老陈: 传confirmId参数, 不依赖pendingRef时序(根因修复)
+    onConfirm(confirmed, isBypass ? false : trustSession, request.confirmId);
     setTrustSession(false);
   };
 

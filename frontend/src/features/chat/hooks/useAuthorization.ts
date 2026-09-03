@@ -8,6 +8,7 @@
 // 编辑历史: 2026-09-03 小欧/北京老陈: 弹窗立即消失+API后台fire-and-forget — 改前await API后才关窗致死等，改后立即关窗API后台发，后端必有返回解耦 - 小欧/北京老陈-2026-09-03
 // 编辑历史: 2026-09-03 小欧/北京老陈: 前端错误提示 — 200+success False与网络/500均走公用handleError弹窗(WARNING)，改前仅console.error用户无感知 - 小欧/北京老陈-2026-09-03
 // 编辑历史: 2026-09-03 小欧/北京老陈 BUG FIX: 同步写入pendingRef — React useEffect子先父后致auto-confirm读旧confirmId发旧ID到后端, 弹窗0秒不消失; 改前pendingRef在useEffect同步(父effect后执行), 改后handleAuthorizationRequired中同步写入 - 小欧/北京老陈-2026-09-03
+// 编辑历史: 2026-09-03 小欧/北京老陈 根因修复: handleAuthorizationConfirm加confirmId参数, 优先用参数(弹窗直接传入), fallback用pendingRef(兜底); 堵ref时序竞态致旧弹窗auto-confirm发旧ID - 小欧/北京老陈-2026-09-03
 import React, { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
@@ -91,16 +92,18 @@ export function useAuthorization(sessionId: string | null) {
   //   改前: await API → setPending(null), API失败/卡住→弹窗永久滞留
   //   改后: setPending(null)立即关弹窗 → API后台发, 失败弹message提示
   const handleAuthorizationConfirm = useCallback(
-    (confirmed: boolean, trustSession: boolean) => {
+    (confirmed: boolean, trustSession: boolean, confirmIdOverride?: string) => {
+      // 2026-09-03 小欧/北京老陈: 优先用弹窗传入的confirmId(精确), fallback用pendingRef(兜底)
       const cur = pendingRef.current;
-      if (!cur) {
+      const confirmId = confirmIdOverride ?? cur?.confirmId;
+      if (!confirmId) {
         return;
       }
       // 立即关弹窗, 不等API
       setAuthorizationPending(null);
       // API后台fire-and-forget — 成功/200+success False/网络500均走公用错误弹窗
       taskControlApi
-        .confirm(cur.confirmId, confirmed, trustSession)
+        .confirm(confirmId, confirmed, trustSession)
         .then((res: unknown) => {
           const ok = (res as { success?: boolean })?.success !== false;
           if (!ok) {
