@@ -16,6 +16,10 @@
 // 编辑历史: 2026-09-03 小欧 detail分支badge兜底: steps中有FinalStep(outcome=failed)时强制覆盖detail.status滞后, 防quota_exceeded等失败任务badge误显"执行中" - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧/北京老陈: quota_exceeded徽标卡running修复 — hasFailedFinal扩为 steps final failed || frames.finalStats.final_status==='failed'，detail/实时双分支单真源 - 小欧/北京老陈-2026-09-03
 // 编辑历史: 2026-09-03 小欧/北京老陈: DRY/SLAP重构 — hasFailedFinal 一处算双分支复用，detail/实时徽标单真源直线 - 小欧/北京老陈-2026-09-03
+// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 清pausedIdx变量及所有引用(pausedIdx=0/-1判断), paused转瞬时直译
+// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 for循环改for...of去下标, 代码更简洁
+// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 thought/action/observation case简化: if(paused)running/if(failed)running+_badgeRecovered
+// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 保留_badgeRecovered守卫防liveErrorText覆盖回failed
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -117,24 +121,17 @@ export const useTaskInfo = (
       text: string;
       time: number;
     } | null = null;
-    // 2026-09-01 小欧 - 紧急bug修复: paused 为瞬时事件而非持久状态。
-    // 记录最近一次 paused 下标; 其后若出现业务推进 step(thought/action/observation)
-    // ⇒ 任务已越过暂停点(如 auto_confirm), badge 推导回 running, 恢复前端耗时秒表;
-    // 真HITL挂起(paused后无推进)仍保持 paused。纯函数式确定, 兜底历史/漏发resumed旧数据。
-    let pausedIdx = -1;
+    // 2026-09-03 小欧 P6修复: 标记badge是否已从failed回推running, 防post-loop liveErrorText再次覆盖
+    let _badgeRecovered = false;
 
     // ① 过程状态条事件 + 终态徽标（全量步骤流内派生）
     // 【小欧 2026-08-26 18:49 修正】startinfo 不进 executionSteps（8.4.3 只写 metaFrames），
     // 不可从 steps.find 搜索；改用 frames.startInfo 判断。
     const hasStartInfo = frames.startInfo !== null;
-    // 小欧 2026-09-03 P6修复: 标记badge是否已从failed回推running, 防post-loop liveErrorText再次覆盖
-    let _badgeRecovered = false;
-    for (let i = 0; i < steps.length; i++) {
-      const s = steps[i];
+    for (const s of steps) {
       switch (s.type) {
         case 'paused':
           badge = 'paused';
-          pausedIdx = i;
           processEvents.push({
             kind: 'paused',
             text: s.content || '任务已暂停',
@@ -143,7 +140,6 @@ export const useTaskInfo = (
           break;
         case 'resumed':
           badge = 'running';
-          pausedIdx = -1;
           processEvents.push({
             kind: 'resumed',
             text: s.content || '任务已恢复',
@@ -175,12 +171,7 @@ export const useTaskInfo = (
         case 'thought':
         case 'action':
         case 'observation':
-          // 2026-09-01 小欧 - 紧急bug修复: paused 之后的业务推进 ⇒ 任务已恢复, badge 推导回 running
-          if (pausedIdx !== -1) {
-            badge = 'running';
-            pausedIdx = -1;
-          }
-          // 2026-09-03 小欧 P6修复: 可恢复工具错误(user_rejected/blocked/timeout)后业务推进 ⇒ badge回推running
+          if (badge === 'paused') badge = 'running';
           if (badge === 'failed') {
             badge = 'running';
             _badgeRecovered = true;

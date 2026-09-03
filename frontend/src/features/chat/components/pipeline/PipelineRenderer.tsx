@@ -31,6 +31,10 @@
 // 编辑历史: 2026-09-03 小沈 thought/action等待图标修复: 修正小欧P2(第29行)/D2-07(第27行)方向反转——
 //   tool有obs(工具完成等待LLM下一轮thought)应保留绿圈(observations.length>0), tool无obs(action执行中由ToolCallLine齿轮承载)应排除;
 //   obs孤儿观察段(结果已到等待LLM下一轮)应保留绿圈(去掉obs排除); 场景穷举6种: 无段✅thinking/text✅tool无obs✅tool有obs✅obs✅final/error✅ - 小沈-2026-09-03
+// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 observation统一存obs段, 不挂tool
+// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 showGreenCircle正向判断替代6条件否定式
+// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 ToolCallLine从segments数组按step找obs传入(修复obs独立后扳手一直转)
+// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 waiting变量改名showGreenCircle语义更清晰
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -131,9 +135,7 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
         break;
       }
       case 'observation': {
-        const last = segs[segs.length - 1];
-        if (last && last.kind === 'tool') last.observations.push(s);
-        else segs.push({ kind: 'obs', step: s }); // 无前置 action 的孤儿观察，独立弱化行
+        segs.push({ kind: 'obs', step: s });
         break;
       }
       case 'final':
@@ -178,24 +180,14 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   // 末段变 thinking/text, waiting 即消失, 内容从同一首列打字机输出——等待符号
   // 禁止常驻, 由内容覆盖接管
   // 2026-09-02 小欧 HIT三处修复C: HIT高亮时保持等待可见, 消确认后圈闪消
-  // 2026-09-02 小欧 三堂会审定稿: streaming 单一依赖改 taskActive 三源(streaming/highlight/badge),
-  //   根治①首屏任务ID同步窗口②HIT挂起>60s空闲超时重连③confirm-resumed间隙三处圈丢失
+  // 2026-09-03 小欧/北京老陈 v5.1 - 正向判断, 一句搞定
   const lastSeg = segs[segs.length - 1];
   const taskActive =
     streaming ||
     !!highlightToolName ||
     badge === 'running' ||
-    badge === 'paused'; // 2026-09-02 小欧: badge 权威派生(running=连接中但内容空窗, paused=HIT/卡顿挂起)
-  // 2026-09-03 小沈 修正小欧P2/D2-07方向反转: tool有obs(工具完成等待LLM下一轮)应保留绿圈,
-  //   tool无obs(action执行中ToolCallLine齿轮承载)应排除; obs段(孤儿观察结果已到等待LLM下一轮)应保留绿圈
-  const waiting =
-    taskActive &&
-    (!lastSeg ||
-      (lastSeg.kind !== 'thinking' &&
-        lastSeg.kind !== 'text' &&
-        (lastSeg.kind !== 'tool' || (lastSeg as Extract<PipelineSegment, { kind: 'tool' }>).observations.length > 0) &&
-        lastSeg.kind !== 'final' &&
-        lastSeg.kind !== 'error'));
+    badge === 'paused';
+  const showGreenCircle = taskActive && (!lastSeg || lastSeg.kind === 'obs');
   return (
     <div
       style={{
@@ -287,11 +279,14 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           );
         }
         if (seg.kind === 'tool') {
+          const toolObs = segs
+            .filter((s): s is Extract<PipelineSegment, { kind: 'obs' }> => s.kind === 'obs' && s.step.step === seg.action.step)
+            .map((s) => s.step);
           return (
             <ToolCallLine
               key={seg.action.step ?? i}
               action={seg.action}
-              observations={seg.observations}
+              observations={toolObs}
               highlight={
                 highlightToolName != null &&
                 !!seg.action.tools?.some((t) => t.tool === highlightToolName)
@@ -322,7 +317,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           />
         );
       })}
-      {waiting && (
+      {showGreenCircle && (
         <div
           style={{
             margin: stepMargin(false),

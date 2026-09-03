@@ -23,6 +23,8 @@
 // 编辑历史: 2026-09-03 小欧/老杨 17.2: 去冗余三元hasResult?(results.length||1):0 → results.length||1（外层已保真）
 // 编辑历史: 2026-09-03 小欧 P3/P4/P5修复: 超时文案由"工具执行超时未返回结果,请重试或查看日志"改为"工具执行等待超时(30s),结果可能仍在处理中", 分流LLM ReadTimeout与前端30s计时器
 // 编辑历史: 2026-09-03 小欧 BUG-19修复: 并行工具子行按tool_name配对查找结果, 乱序到达不串味, 无tool_name回退索引
+// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 删timedOut状态和超时分支, 扳手只靠!hasResult&&tools.length>0
+// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 删超时文案"工具执行等待超时(30s)"分支, 只保留扳手动画
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -79,18 +81,6 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     if (Array.isArray(tr)) return tr.length > 0;
     return typeof tr === 'string' && tr.length > 0;
   });
-  // 2026-09-03 小欧 Bug-3: 等待超时兜底 — 工具已发未回(30s)降级提示, 动画不再无限旋转; results 到即关兜底
-  // 2026-09-03 小欧 D2-05: 计时改hasResult口径(字符串结果不再空转)，D2-06: 依赖action→action.step防频繁重建
-  const [timedOut, setTimedOut] = useState(false);
-  useEffect(() => {
-    if (hasResult) {
-      setTimedOut(false);
-      return;
-    }
-    if (tools.length === 0) return;
-    const t = setTimeout(() => setTimedOut(true), 30000);
-    return () => clearTimeout(t);
-  }, [hasResult, tools.length, action.step]);
   const obsStep = observations[0];
   const isMulti = action.exec_type === 'multi';
   const toolCount = tools.length;
@@ -188,7 +178,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               工具调用无结果(已全部被安全拦截或未返回)
             </span>
           )}
-          {!hasResult && tools.length > 0 && !timedOut && (
+          {!hasResult && tools.length > 0 && (
             <span className="tool-waiting-cursor" aria-label="工具执行中">
               <svg
                 width="1.4em"
@@ -205,16 +195,6 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                   <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.07-3.07a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z" />
                 </g>
               </svg>
-            </span>
-          )}
-          {!hasResult && tools.length > 0 && timedOut && (
-            <span
-              style={{
-                color: Colors.TEXT.SECONDARY,
-                fontSize: 12,
-              }}
-            >
-              工具执行等待超时(30s)，结果可能仍在处理中
             </span>
           )}
           {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
