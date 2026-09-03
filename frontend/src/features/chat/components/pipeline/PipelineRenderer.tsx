@@ -24,6 +24,7 @@
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①buildSegments去原地突变last.text改不可变更新(防污染缓存)②ThinkingStream/TextStream key由i改稳定key(防索引复用串味)③waiting终态守卫lastSeg.kind !== 'final'防失败后转圈 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 等待图标残留丢失根治(北京老陈驱动三堂会审): waiting守卫补 error 终态(exclude error与final同为终态, 防止error后转圈); 场景穷举12种, 残留主因为纯网络空闲断连isCurrentLive瞬false, 由RightViewer isCurrentLive改 (receiving||badge running/paused) 共担
 // 编辑历史: 2026-09-03 小欧 - Bug-9: waiting 判定排除 tool 段 — 末段为工具段时不再叠加底部绿色缺口圆弧(双动画), 工具等待由 ToolCallLine 橙齿轮+扳手唯一承载 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 D2-07: waiting补排除obs孤儿观察（与final/error同终态），防绿圈残留 - 小欧-2026-09-03
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -173,7 +174,9 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
       (lastSeg.kind !== 'thinking' &&
         lastSeg.kind !== 'text' &&
         // 2026-09-03 小欧 Bug-9: 末段为 tool 段时不再叠加底部绿圆环 — 工具等待动画由 ToolCallLine 橙色齿轮+扳手唯一承载, 消除双动画
+        // 2026-09-03 小欧 D2-07: 追加排除obs孤儿观察（终态）
         lastSeg.kind !== 'tool' &&
+        lastSeg.kind !== 'obs' &&
         lastSeg.kind !== 'final' &&
         lastSeg.kind !== 'error'));
   return (

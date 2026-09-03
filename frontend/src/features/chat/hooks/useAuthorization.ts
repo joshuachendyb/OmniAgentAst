@@ -2,6 +2,7 @@
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: AU-02二次授权覆盖旧confirmId先confirm(false)防泄漏+裸as守卫 — 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 - v1.5.4 计时统一: 移除setTimeout后备, 倒计时由AuthorizationModal countdown统一管理(§5.7.4-⑥) — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 Bug修复(24项): ⑭pendingRef镜像+监听器一次注册[]消闭包窗口 ⑮确认失败不清空pending保留重试(改前 finally清空致后端挂起) ⑱/⑲旧请求覆盖前 await confirm(false) 回声防fire-and-forget ㉒parseTimeout合法0保留(Number||60吞0) ㉗auto_confirm严格判断防"false"误判bypass — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一，P2-1: 同confirmId重放去重不二次resolve，P0-1: catch中404清pending防僵死 - 小欧-2026-09-03
 import React, { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
@@ -34,7 +35,9 @@ export function useAuthorization(sessionId: string | null) {
       const rawData = event.detail;
       if (!rawData?.confirm_id || !rawData?.tool_name) return;
       const cur = pendingRef.current;
+      // 2026-09-03 小欧 P2-1: 同confirmId重放去重，不二次resolve
       if (cur) {
+        if (cur.confirmId === rawData.confirm_id) return;
         taskControlApi
           .confirm(cur.confirmId, false, false)
           .catch(() => undefined);
@@ -44,9 +47,12 @@ export function useAuthorization(sessionId: string | null) {
         toolName: rawData.tool_name as string,
         params: (rawData.params ?? {}) as Record<string, unknown>,
         safetyLevel: (rawData.safety_level as string) ?? 'unknown',
-        // 2026-09-03 小欧 Bug-27: auto_confirm 严格判断(后端 bool 或字符串 'true'), 防 "false" 误判为 bypass
+        // 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一(true/'true'/1/'1')
         autoConfirm:
-          rawData.auto_confirm === true || rawData.auto_confirm === 'true',
+          rawData.auto_confirm === true ||
+          rawData.auto_confirm === 'true' ||
+          rawData.auto_confirm === 1 ||
+          rawData.auto_confirm === '1',
         // 2026-09-03 小欧 Bug-22: 合法 0(禁倒计时)不被 || 兜成 60; 仅 NaN/负数 兜 60
         trustPath:
           typeof rawData.trust_path === 'string'
@@ -88,7 +94,11 @@ export function useAuthorization(sessionId: string | null) {
         }
       } catch (error) {
         // 2026-09-03 小欧 Bug-15: 确认失败不清空 pending, 保留弹窗供重试(改前 finally 清空致后端挂起)
+        // 2026-09-03 小欧 P0-1: 404/not found则清pending防僵死（任务已完了窗口不消失）
         console.error('[Authorization] 确认失败:', error);
+        if (String(error).includes('404') || String(error).toLowerCase().includes('not found')) {
+          setAuthorizationPending(null);
+        }
         return;
       }
       setAuthorizationPending(null);

@@ -6,6 +6,7 @@
 // 编辑历史: 2026-09-02 小欧 - 修复等待图标闪烁(北京老陈反馈): disconnect函数新增setReceiving参数(默认true),
 //   重连路径传递false避免setIsReceiving(false)→true间隙导致等待图标闪烁
 // 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段, 与 sseParser 下发契约一致 — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 P1-3: HITL等待期暂停IDLE计时（paused/badge挂起时不清IDLE），自适应backendTimeout，防60s误杀110s等待 - 小欧-2026-09-03
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -338,6 +339,16 @@ export const useSSE = (
   const idleTimeoutRef = useRef<number | null>(null); // 空闲超时检测
   const fetchTimeoutRef = useRef<number | null>(null); // 180s fetch超时检测
   const IDLE_TIMEOUT = 60000; // 60 秒无数据判定为断开
+  // 2026-09-03 小欧 P1-3: HITL等待态（paused/highlight）时IDLE应暂停，避免60s误杀110s HITL等待
+  const isHitlWaitingRef = useRef(false);
+  const wrappedOnPaused = useCallback(() => {
+    isHitlWaitingRef.current = true;
+    onPaused?.();
+  }, [onPaused]);
+  const wrappedOnResumed = useCallback(() => {
+    isHitlWaitingRef.current = false;
+    onResumed?.();
+  }, [onResumed]);
 
   // 【小强添加 2026-03-18】sessionStorage 备份相关
   // 恢复：组件初始化时检查是否有备份数据
@@ -597,6 +608,8 @@ export const useSSE = (
         }
 
         idleTimeoutRef.current = window.setTimeout(() => {
+          // 2026-09-03 小欧 P1-3: HITL等待期暂停IDLE计时
+          if (isHitlWaitingRef.current) return;
           const timeSinceLastData = Date.now() - lastDataTimeRef.current;
           if (timeSinceLastData >= IDLE_TIMEOUT && isReceivingRef.current) {
             console.warn(
@@ -625,8 +638,8 @@ export const useSSE = (
                 onChunk,
                 onComplete,
                 onError,
-                onPaused,
-                onResumed,
+                onPaused: wrappedOnPaused,
+                onResumed: wrappedOnResumed,
                 onRetry,
                 onAuthorizationRequired,
                 setCurrentResponse,
@@ -664,8 +677,8 @@ export const useSSE = (
               onChunk,
               onComplete,
               onError,
-              onPaused,
-              onResumed,
+              onPaused: wrappedOnPaused,
+              onResumed: wrappedOnResumed,
               onRetry,
               onAuthorizationRequired,
               setCurrentResponse,

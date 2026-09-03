@@ -18,6 +18,8 @@
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①TC-01合并多observation(flatMap)防首项丢失②TC-02 JSON.stringify加try/catch防循环引用白屏③TC-03 expanded随action重置防跨任务泄漏④tParamText加try/catch — 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 - 工具执行UI优化(设计文档v1.8): 摘要头先显, 同容器挂齿轮+扳手组合动画(results===0)与工具子行(results>0)互斥, 覆盖动画位置 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - Bug修复: ②results兼容字符串tool_result(防齿轮常驻) ③等待30s超时兜底降级提示(动画不再无限旋转) ④tools空/结果空显示占位防空壳 ⑧整批observation涌入前minHeight:32占位防页面晃动 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 D2-04: hasResult/tools空分支计数改hasResult口径(字符串场景0→1) - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 D2-05: timedOut计时改hasResult口径防字符串空转，D2-06: 依赖action→action.step防频繁重建 - 小欧-2026-09-03
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -75,16 +77,17 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     return typeof tr === 'string' && tr.length > 0;
   });
   // 2026-09-03 小欧 Bug-3: 等待超时兜底 — 工具已发未回(30s)降级提示, 动画不再无限旋转; results 到即关兜底
+  // 2026-09-03 小欧 D2-05: 计时改hasResult口径(字符串结果不再空转)，D2-06: 依赖action→action.step防频繁重建
   const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
-    if (results.length > 0) {
+    if (hasResult) {
       setTimedOut(false);
       return;
     }
     if (tools.length === 0) return;
     const t = setTimeout(() => setTimedOut(true), 30000);
     return () => clearTimeout(t);
-  }, [results.length, tools.length, action]);
+  }, [hasResult, tools.length, action.step]);
   const obsStep = observations[0];
   const isMulti = action.exec_type === 'multi';
   const toolCount = tools.length;
@@ -195,9 +198,10 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
             </span>
           )}
           {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
+          {/* 2026-09-03 小欧 D2-04: 计数改hasResult口径(字符串场景results.length=0→hasResult真应计1) */}
           {hasResult && tools.length === 0 && (
             <span style={{ color: Colors.TEXT.SECONDARY, fontSize: 12 }}>
-              收到 {results.length} 条观察结果但无工具定义
+              收到 {hasResult ? (results.length || 1) : 0} 条观察结果但无工具定义
             </span>
           )}
           {hasResult &&
