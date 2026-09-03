@@ -6,6 +6,7 @@
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): useChainTokens入参加metaFrames(SSE实时token帧源), 解构新增sessionTokens并透传useChatPanels - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: CP-01 serverTaskId监听补sessionId防切会话残留旧列表 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 同类DB滞后修复: 直播失败即刷新左列(消executing残留) - 小欧-2026-09-02
+// 编辑历史: 2026-09-03 小沈 BUG-29修复修正: handleSendWithMode改async+await, 原void吞Promise致ChatInput catch永不触发回填无效 - 小沈-2026-09-03
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../services/api/client';
@@ -113,9 +114,9 @@ const ChatPage: React.FC = () => {
     chatStreaming.metaFrames // 2026-09-01 小欧: SSE实时token帧源
   );
   const handleSendWithMode = useCallback(
-    (content: string, mode?: 'linked' | 'independent') => {
+    async (content: string, mode?: 'linked' | 'independent') => {
       setLiveErrorText(null);
-      void chatSend.handleSend(content, mode);
+      await chatSend.handleSend(content, mode);
     },
     [chatSend, setLiveErrorText]
   );
