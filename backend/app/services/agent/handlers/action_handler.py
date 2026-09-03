@@ -354,8 +354,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 _bypass = bool(getattr(safety_result, "auto_confirm", False))
                 if _bypass:
                     from app.config import get_config as _get_cfg
-                    # 对应 config.yaml security.auto_confirm_delay(默认10, 前端倒计时=此值−BYPASS_AUTO_LEAD即8s); 未配置兜底用 10.0 — 小欧 2026-09-03
-                    _backend_timeout = int(float(_get_cfg().get("security.auto_confirm_delay", 10.0)))
+                    # 对应 config.yaml security.auto_confirm_delay(默认10, 前端倒计时=此值−BYPASS_AUTO_LEAD即8s); 未配置兜底用 10.0 — 小欧-2026-09-03
+                    # 2026-09-03 小沈 缺陷2修复: 钳制≥HITL_MIN_CONFIRM_TIMEOUT+BYPASS_AUTO_LEAD, 确保confirm_timeout+S1差≥BYPASS_AUTO_LEAD — 小沈-2026-09-03
+                    _backend_timeout = max(HITL_MIN_CONFIRM_TIMEOUT + BYPASS_AUTO_LEAD, int(float(_get_cfg().get("security.auto_confirm_delay", 10.0))))
                     # 2026-09-03 小欧/北京老陈: 0窗钳制≥3s(改前5→常量3)，避免max(0,bt-LEAD)=0致0秒窗口瞬间消失
                     _confirm_timeout = max(HITL_MIN_CONFIRM_TIMEOUT, _backend_timeout - BYPASS_AUTO_LEAD)
                 else:
@@ -386,8 +387,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     #   前端未发(无浏览器/崩溃) → S1超时 → expired → bypass 兜底放行
                     from app.services.task.hitl_confirmation import wait_for_confirmation_result as _wait_confirm
                     from app.config import get_config as _get_cfg
-                    # 对应 config.yaml security.auto_confirm_delay(S1后端等待窗口=backhone_timeout值,默认10); 未配置兜底 10.0 — 小欧 2026-09-03
-                    _s1 = float(_get_cfg().get("security.auto_confirm_delay", 10.0))
+                    # 对应 config.yaml security.auto_confirm_delay(S1后端等待窗口=backend_timeout值,默认10); 未配置兜底 10.0 — 小欧-2026-09-03
+                    # 2026-09-03 小沈 缺陷2修复: 与上方同源钳制, 确保S1=backend_timeout — 小沈-2026-09-03
+                    _s1 = float(max(HITL_MIN_CONFIRM_TIMEOUT + BYPASS_AUTO_LEAD, int(float(_get_cfg().get("security.auto_confirm_delay", 10.0)))))
                     # 2026-09-03 小欧/北京老陈: bypass S1窗口开始补日志
                     logger.info(f"[action] bypass S1窗口开始: confirm_id={confirm_id}, S1={_s1}s, tool={_cn}")
                     _auth_result = await _wait_confirm(confirm_id, timeout=int(_s1 if _s1 > 0 else 0)) if _s1 > 0 else {"confirmed": True}
@@ -424,10 +426,12 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                             continue
                     # 2026-09-02 小欧 BUG-001: sandbox通过后才发resumed(对齐下方真HITL确认后恢复语义,
                     #   前端badge据此回running恢复耗时秒表); 若sandbox拒绝已continue不发resumed
+                    # 2026-09-03 小沈 缺陷1修复: resumed增confirm_id, 前端收到后可据此关弹窗(防御性兜底) — 小沈-2026-09-03
                     yield agent._step_emitter.emit(MetaStep(
                         step=step, type="resumed",
                         content=f"已自动确认工具执行: {_cn}",
                         severity="info",
+                        confirm_id=confirm_id,
                     ))
                     continue
 
@@ -470,12 +474,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     logger.warning(f"[action] 确认后grant_temp_auth失败不阻断: {e!r}")
                 # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP)
                 set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
+                # 2026-09-03 小沈 缺陷1修复: resumed增confirm_id, 前端收到后可据此关弹窗(防御性兜底) — 小沈-2026-09-03
                 yield agent._step_emitter.emit(MetaStep(
                     step=step, type="resumed",
                     content=(f"已临时授权白名单外路径: {safety_result.auth_path}"
                              if getattr(safety_result, "auth_path", None)
                              else f"用户已确认工具执行: {_cn}"),
                     severity="info",
+                    confirm_id=confirm_id,
                 ))
                 # v1.25 M3 插入点②: 用户确认汇合路径(末尾加 continue, 防落入③重复预检)
                 _pre = await sandbox_precheck(safety_result, _cn, _cp)
