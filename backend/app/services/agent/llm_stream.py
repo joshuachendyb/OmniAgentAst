@@ -25,6 +25,7 @@
 #   + L2/FC降级发 ("meta",{type:retrying}) 事件 — call_llm_stream 循环内 isinstance(chunk,StreamChunk) 检出 retry_notice(类型拦MagicMock,
 #   规避既有测试 _make_chunk 误判回归) → yield meta; except LLMResponseError 分支与 FC降级分支各 yield meta(yield不return, 生成器自然透传;
 #   FC降级内 Text 模式 L1 经 :305-306 天然透传零改动); 补 from app.llm.core import StreamChunk — 小欧 2026-09-02
+# 2026-09-03 小沈 P7缓冲清除修正: yield item后清_pending_retry_notice=None, 防正常消费后CancelledError双重emit旧通知
 """
 llm_stream — LLM流式调用+响应构建
 
@@ -312,6 +313,8 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
                     if isinstance(_meta, dict) and _meta.get("type") == "retrying":
                         _pending_retry_notice = item
                 yield item
+                # 2026-09-03 小沈 P7修正: 正常消费后清除缓冲, 防后续CancelledError补发已emit的旧通知(双重emit)
+                _pending_retry_notice = None
             return
         except asyncio.CancelledError:
             # 小欧 2026-09-03 P7修复: CancelledError中断async for时, call_llm_stream已产出的retry notice
