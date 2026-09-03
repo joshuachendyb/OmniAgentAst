@@ -14,6 +14,8 @@
 // 编辑历史: 2026-09-02 小欧 - 修复徽标executing残留: liveErrorText实时失败未进徽标派生致final晚1拍前badge仍running; 176后补liveErrorText→failed直线兜底(仅非终态时生效, final到达覆盖同值) - 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 P6修复: 可恢复工具错误后业务推进badge回推running + post-loop liveErrorText检查加_badgeRecovered守卫防覆盖 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 detail分支badge兜底: steps中有FinalStep(outcome=failed)时强制覆盖detail.status滞后, 防quota_exceeded等失败任务badge误显"执行中" - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧/北京老陈: quota_exceeded徽标卡running修复 — hasFailedFinal扩为 steps final failed || frames.finalStats.final_status==='failed'，detail/实时双分支单真源 - 小欧/北京老陈-2026-09-03
+// 编辑历史: 2026-09-03 小欧/北京老陈: DRY/SLAP重构 — hasFailedFinal 一处算双分支复用，detail/实时徽标单真源直线 - 小欧/北京老陈-2026-09-03
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -67,6 +69,8 @@ export const useTaskInfo = (
   liveErrorText?: string | null // 小欧 2026-09-02: 位4 error 实时源(可选: TS1016 必选不能跟在可选后, 语义不变——undefined 时 candidates 不含 error)
 ) => {
   return useMemo(() => {
+    // 2026-09-03 小欧/北京老陈: 单真源 — hasFailedFinal 一处算(DRY)，detail/实时双分支复用
+    const hasFailedFinal = steps.some((s) => s.type === 'final' && s.outcome === 'failed') || frames.finalStats?.final_status === 'failed';
     // 【小欧 2026-08-26 修复 A3】选中历史任务：详情优先派生动态信息(状态/耗时/步骤/轮次/重试/token)
     if (detail) {
       const map: Record<string, TaskBadge> = {
@@ -77,11 +81,9 @@ export const useTaskInfo = (
         cancelled: 'cancelled',
       };
       const u = detail.accumulated_usage;
-      // 2026-09-03 小欧 兜底: detail.status可能滞后(DB update_task在finally块, 微小时差),
-      //   steps中有FinalStep(outcome=failed)时强制覆盖, 防badge误显"执行中"
+      // 2026-09-03 小欧/北京老陈: detail分支单真源 — detail.status滞后时以 final/liveError 为准强制 failed
       let badge: TaskBadge = map[detail.status] ?? 'idle';
-      const hasFailedFinal = steps.some(s => s.type === 'final' && s.outcome === 'failed');
-      if (hasFailedFinal) badge = 'failed';
+      if (hasFailedFinal || detail.status === 'failed' || detail.error_type || liveErrorText) badge = 'failed';
       return {
         badge,
         elapsedSec: detail.duration ?? 0,
@@ -189,11 +191,7 @@ export const useTaskInfo = (
       }
     }
 
-    // ③ 兜底：若 steps 中存在 outcome=failed 的 FinalStep，强制置 failed
-    // 针对 quota_exceeded 等错误路径：无 error MetaStep、liveErrorText 为空、final 可能晚到或被清空
-    const hasFailedFinal = steps.some(
-      (s) => s.type === 'final' && s.outcome === 'failed'
-    );
+    // ③ 兜底：hasFailedFinal 单源(上文一处算) — quota_exceeded 等无 liveError 也能 failed
     if (hasFailedFinal) {
       badge = 'failed';
     } else if (
