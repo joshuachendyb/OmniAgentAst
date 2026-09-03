@@ -16,12 +16,13 @@
 // 编辑历史: 2026-09-01 小欧 - 修复重构退化(BUG#22): 展开区兜底恢复字符串tool_result渲染(与数组ToolResultRenderer/兜底content并列, 恢复2026-08-29 #22修复逻辑), results仅认数组致字符串tool_result被忽略 - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 统一折叠三角：▲▼改▸▾、大小14(PRIMARY)、颜色PRIMARY、位置参数后，方法补role/aria/keyboard与TrustPanel一致 - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①TC-01合并多observation(flatMap)防首项丢失②TC-02 JSON.stringify加try/catch防循环引用白屏③TC-03 expanded随action重置防跨任务泄漏④tParamText加try/catch — 小欧-2026-09-02
-// 编辑历史: 2026-09-03 小欧 - 工具执行UI优化(设计文档v1.8): 摘要头先显, 同容器挂齿轮+扳手组合动画(results===0)与工具子行(results>0)互斥, 覆盖动画位置 - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 - Bug修复: ②results兼容字符串tool_result(防齿轮常驻) ③等待30s超时兜底降级提示(动画不再无限旋转) ④tools空/结果空显示占位防空壳 ⑧整批observation涌入前minHeight:32占位防页面晃动 - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 D2-04: hasResult/tools空分支计数改hasResult口径(字符串场景0→1) - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 D2-05: timedOut计时改hasResult口径防字符串空转，D2-06: 依赖action→action.step防频繁重建 - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧/老杨 17.2: 去冗余三元hasResult?(results.length||1):0 → results.length||1（外层已保真） - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 P3/P4/P5修复: 超时文案由"工具执行超时未返回结果,请重试或查看日志"改为"工具执行等待超时(30s),结果可能仍在处理中", 分流LLM ReadTimeout与前端30s计时器 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - 工具执行UI优化(设计文档v1.8): 摘要头先显, 同容器挂齿轮+扳手组合动画(results===0)与工具子行(results>0)互斥, 覆盖动画位置
+// 编辑历史: 2026-09-03 小欧 - Bug修复: ②results兼容字符串tool_result(防齿轮常驻) ③等待30s超时兜底降级提示(动画不再无限旋转) ④tools空/结果空显示占位防空壳 ⑧整批observation涌入前minHeight:32占位防页面晃动
+// 编辑历史: 2026-09-03 小欧 D2-04: hasResult/tools空分支计数改hasResult口径(字符串场景0→1)
+// 编辑历史: 2026-09-03 小欧 D2-05: timedOut计时改hasResult口径防字符串空转，D2-06: 依赖action→action.step防频繁重建
+// 编辑历史: 2026-09-03 小欧/老杨 17.2: 去冗余三元hasResult?(results.length||1):0 → results.length||1（外层已保真）
+// 编辑历史: 2026-09-03 小欧 P3/P4/P5修复: 超时文案由"工具执行超时未返回结果,请重试或查看日志"改为"工具执行等待超时(30s),结果可能仍在处理中", 分流LLM ReadTimeout与前端30s计时器
+// 编辑历史: 2026-09-03 小欧 BUG-19修复: 并行工具子行按tool_name配对查找结果, 乱序到达不串味, 无tool_name回退索引
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -98,10 +99,27 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     : `调用 1 个工具`;
   const toolNameList = tools.map((t) => t.tool).join(', ');
   const firstLine = `${collectionLabel}  [${toolNameList}]`;
-  // 每工具结果摘要 + 状态（按索引 i 取，杜绝只取首项）（2026-09-01 小欧）
+  // 2026-09-03 小欧 BUG-19修复: 并行工具结果按tool_name配对(非索引), 防乱序到达时A工具显示B结果; 无tool_name则回退索引
+  const getResultForIndex = (idx: number): Record<string, unknown> | undefined => {
+    const toolName = tools[idx]?.tool;
+    if (toolName) {
+      const hit = results.find((r) => {
+        const rr = r as Record<string, unknown>;
+        if ((rr.tool as string) === toolName) return true;
+        if ((rr.tool_name as string) === toolName) return true;
+        if ((rr.name as string) === toolName) return true;
+        const llm = (rr.llm_data || rr.llmData) as Record<string, unknown> | undefined;
+        if (llm && ((llm.tool as string) === toolName || (llm.tool_name as string) === toolName)) return true;
+        return false;
+      });
+      if (hit) return hit;
+    }
+    return results[idx];
+  };
+  // 每工具结果摘要 + 状态（按tool_name配对, 兜底索引）（2026-09-01 小欧）
   // 三堂会审(2026-09-01): 保留旧 getObsSummary 摘要容错(llm_data.summary→data_text→summary→兜底'-'), 防关联退化
   const getResultSummary = (i: number): string => {
-    const r = results[i];
+    const r = getResultForIndex(i);
     if (!r) return '';
     const llm = (r.llm_data || r.llmData) as
       | Record<string, unknown>
@@ -116,7 +134,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   const getResultStatus = (
     i: number
   ): 'success' | 'error' | 'warning' | undefined => {
-    const r = results[i];
+    const r = getResultForIndex(i);
     if (!r) return undefined;
     const llm = (r.llm_data || r.llmData) as
       | Record<string, unknown>
@@ -224,8 +242,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               const branch = isLast ? '└─' : '├─';
               const sub = isLast ? '   ' : '│  ';
               const isOpen = !!expanded[i];
-              // 单工具完整观察：构造仅含该工具 tool_result 的临时 step 交给 ToolResultRenderer（2026-09-01 小欧）
-              const singleResult = results[i] ? [results[i]] : [];
+              // 2026-09-03 小欧 BUG-19修复: 单工具观察按tool_name取结果, 非索引 - 小欧-2026-09-03
+              const _resForTool = getResultForIndex(i);
+              const singleResult = _resForTool ? [_resForTool] : [];
               const singleStep = {
                 ...(obsStep as ExecutionStep),
                 tool_result: singleResult,

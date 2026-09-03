@@ -5,6 +5,7 @@
 // 编辑历史: 2026-08-28 小强 - 修复[20]: expanded状态不随text重置, 新消息默认折叠 - 小强-2026-08-28
 // 编辑历史: 2026-08-30 小欧 - 修复: 展开全文/收起链接onClick/onKeyDown加stopPropagation阻断冒泡(左列任务response折叠按钮误触外层onSelect→右栏自动展开, 北京老陈反馈) - 小欧-2026-08-30
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①CT-01移除text变化强制setExpanded(false)防打断展开②CT-02 Typography.Link补onKeyDown Enter/Space键盘展开(无障碍) — 小欧-2026-09-02
+// 编辑历史: 2026-09-03 小欧 BUG-16修复: text首100字符做key, 跨消息切换时重置expanded防状态残留
 /**
  * CollapsibleText - 统一折叠组件（折叠非截断）
  *
@@ -31,6 +32,15 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
   maxChars = 2000,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  // 2026-09-03 小欧 BUG-16修复: text变化(跨消息切换)时重置expanded, 用首100字符做key区分同消息内流式追加
+  const _textKey = text.slice(0, 100);
+  const _prevTextKeyRef = React.useRef(_textKey);
+  React.useEffect(() => {
+    if (_prevTextKeyRef.current !== _textKey) {
+      setExpanded(false);
+      _prevTextKeyRef.current = _textKey;
+    }
+  }, [_textKey]);
   const overflow = useMemo(() => {
     const lineCount = text.split('\n').length;
     return lineCount > maxLines || text.length > maxChars;
