@@ -12,6 +12,7 @@
 | v1.2 | 2026-09-04 16:20:00 | 小健 | 重排章节结构：按阶段划分，第1阶段完成，预留第2/3/4阶段 - 小健-2026-09-04 |
 | v1.3 | 2026-09-04 17:30:04 | 小健 | 新增第2阶段：4个函数下沉（target提取/factory/遥测）+ 沙箱DRY修复，原第2/3/4阶段顺延为第3/4/5阶段 - 小健-2026-09-04 |
 | v1.4 | 2026-09-04 17:45:00 | 小健 | 第2阶段新增沙箱DRY修复：run_sandbox_gate统一入口消除三处重复调用，44测试全过 - 小健-2026-09-04 |
+| v1.5 | 2026-09-04 18:35:00 | 小健 | 第2阶段函数下沉完成(第2阶段✅)；同时发现并修复 run_sandbox_gate DRY重构回归（bypass路径误拒） - 小健-2026-09-04 |
 
 ---
 
@@ -160,8 +161,8 @@ action_handler.py（1144行）是当前代码中最烂的文件——6个职责�
 |------|---------|------|---------|---------|
 | `_resolve_target_field` | action_handler.py L666-685 | 19行 | `app/tools/target_utils.py` | 纯工具schema查询，依赖tool_registry，与agent逻辑无关 |
 | `_extract_target` | action_handler.py L688-696 | 8行 | `app/tools/target_utils.py` | _resolve_target_field的消费者，同属工具schema层 |
-| `_fp_factory` | action_handler.py L922-943 | 21行 | `app/services/file_persist/fp_factory.py` | 文件持久化回调工厂，agent不该知道落盘细节 |
-| 遥测收集逻辑 | action_handler.py L635-655 | 20行 | `app/services/agent/telemetry.py` | duration/artifacts收集是telemetry的职责 |
+| `_fp_factory` | action_handler.py L922-943 | 21行 | `app/file_persist.py`（新增`make_fp_callback`） | 文件持久化回调工厂，agent不该知道落盘细节（复用既有文件存储模块，不新建目录） |
+| 遥测收集逻辑 | action_handler.py L635-655 | 20行 | `app/monitoring/agent_telemetry.py`（新增`collect_and_report`方法） | duration/artifacts收集是telemetry的职责 |
 
 ### 3.2 新建2个文件
 
@@ -179,13 +180,13 @@ action_handler.py（1144行）是当前代码中最烂的文件——6个职责�
 - `tool_registry` ← `app.tools.registry`
 - 无agent层依赖（纯工具层函数）
 
-#### 文件2：`backend/app/services/file_persist/fp_factory.py`（~25行）
+#### 文件2：`backend/app/file_persist.py`（新增 `make_fp_callback`，复用既有文件存储模块）
 
-**目的**：文件持久化回调工厂从handle_action下沉到file_persist模块。
+**目的**：文件持久化回调工厂从handle_action下沉到既有 file_persist 模块（不新建目录，复用优先）。
 
 | 内容 | 原始位置 | 行数 | 操作 |
 |------|---------|------|------|
-| `_fp_factory` 闭包 | action_handler.py L922-943 | 21行 | 完整复制为模块级函数 |
+| `_fp_factory` 闭包 | action_handler.py L922-943 | 21行 | 完整复制为模块级函数 `make_fp_callback(agent, step, exec_calls)`，内部 `_fp_factory(tno)` 闭包保留 |
 
 **依赖**：
 - `agent.file_persist` ← 调用方传入（解耦agent依赖）
@@ -197,39 +198,43 @@ action_handler.py（1144行）是当前代码中最烂的文件——6个职责�
 
 | 内容 | 原始位置 | 行数 | 操作 |
 |------|---------|------|------|
-| 遥测回调+artifact收集 | action_handler.py L635-655 | 20行 | 提取为 `telemetry.collect_and_report()` |
+| 遥测回调+artifact收集 | action_handler.py L635-655 | 20行 | 提取为 `agent_telemetry.collect_and_report()` |
 
 **改动**：
-- execute_tools.py: L635-655删除 → 改为调用 `agent.telemetry.collect_and_report(all_calls, results)`
-- telemetry.py: 新增 `collect_and_report()` 方法，封装duration/artifacts/tool_name收集逻辑
+- action_handler.py execute_tools: L635-655删除 → 改为调用 `agent.telemetry.collect_and_report(all_calls, results)`
+- agent_telemetry.py(TaskTelemetry): 新增 `collect_and_report()` 方法，封装duration/artifacts/tool_name收集逻辑
 
 ### 3.4 action_handler.py改动
 
 | 删除位置 | 行数 | 改为import |
 |---------|------|-----------|
 | L660-696（target提取） | 37行 | `from app.tools.target_utils import _resolve_target_field, _extract_target` |
-| L922-943（fp_factory闭包） | 21行 | `from app.services.file_persist.fp_factory import make_fp_callback` |
+| L922-943（fp_factory闭包） | 21行 | `from app.file_persist import make_fp_callback` |
 | L635-655（遥测收集） | 20行 | 删除内联逻辑，调用 `agent.telemetry.collect_and_report()` |
 
 **净减**：~78行（删除） - 2行（新增import） = ~76行
 
-### 3.5 实施步骤与状态
+### 3.5 实施步骤与状态 ✅ 已完成
 
 | 步骤 | 动作 | 验证 | 状态 |
 |------|------|------|------|
-| 1 | 新建 `backend/app/tools/target_utils.py`（完整复制） | py_compile | ⏳ 待实施 |
-| 2 | 新建 `backend/app/services/file_persist/fp_factory.py`（完整复制） | py_compile | ⏳ 待实施 |
-| 3 | 改造 `telemetry.py`（新增collect_and_report方法） | py_compile | ⏳ 待实施 |
-| 4 | 改造 `action_handler.py`（删内联→import） | py_compile | ⏳ 待实施 |
-| 5 | 改造其他引用文件（如有） | py_compile | ⏳ 待实施 |
-| 6 | 全量测试 | pytest | ⏳ 待实施 |
+| 1 | 新建 `backend/app/tools/target_utils.py`（完整复制） | py_compile | ✅ 完成 |
+| 2 | 在 `backend/app/file_persist.py` 新增 `make_fp_callback`（完整复制，复用既有模块） | py_compile | ✅ 完成 |
+| 3 | 改造 `agent_telemetry.py`（新增collect_and_report方法） | py_compile | ✅ 完成 |
+| 4 | 改造 `action_handler.py`（删内联→import） | py_compile | ✅ 完成 |
+| 5 | 改造其他引用文件（无外链，无需改） | py_compile | ✅ 完成 |
+| 6 | 回归测试 | pytest | ✅ 完成（44个action/trust/conflict测试PASS；sandbox_gate 6失败为第3阶段预写测试，baseline同样失败） |
+
+> **⚠️ 第2阶段回归修复（重要）**：run_sandbox_gate DRY重构遗漏bypass路径无条件 `yield resumed`+`continue`，
+> 导致auto_confirm工具沙箱放行后误落入真HITL等待（confirm_id已resolve→entry=None→误判"用户拒绝"），
+> E2E中shell被误拒致任务失败。已恢复预DRY的无条件resumed+continue（action_handler.py bypass路径）。
 
 ### 3.6 预期效果
 
 | 维度 | 改前 | 改后 |
 |------|------|------|
-| action_handler.py | 976行 | ~900行（-76行） |
-| 新建文件 | 0 | 2个（target_utils.py ~30行 + fp_factory.py ~25行） |
+| action_handler.py | 976行 | ~905行（-71行，另有沙箱回归修复+14行，净值约-57行） |
+| 新建文件 | 0 | 1个（target_utils.py ~51行）+ 复用既有 file_persist.py/agent_telemetry.py 各增1方法 |
 | agent层SRP违规 | 4处（target/factory/遥测/编排混合） | 0处 |
 
 ### 3.7 前置条件
