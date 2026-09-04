@@ -20,6 +20,9 @@
 #   security.hitl_timeout(config.yaml优先, HITL_TIMEOUT 默认120兜底), 与真HITL确认超时同源。
 # 2026-09-03 - 小欧/北京老陈 - HITL全链路补日志: create_confirmation/wait_for_confirmation/resolve_confirmation
 #   _cleanup_stale_confirmations 四处关键路径补info/warning日志, 改前静默返回False无法排查confirm_id去向
+# 2026-09-04 小健 第1阶段拆分: 内联落库逻辑→import trust.save_session_trust
+#   [改法] resolve_confirmation内联落库逻辑替换为 from app.tools.trust import save_session_trust
+#   [效果] DRY(落库逻辑集中在trust.py), hitl_confirmation.py职责更单一
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 

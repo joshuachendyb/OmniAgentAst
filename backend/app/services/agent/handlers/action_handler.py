@@ -168,6 +168,13 @@
 # 2026-09-03 小欧 D2-03: trust_path复用_extract_trust_path消除别名盲区（path/file_path/source_path等），防通配污染
 # 2026-09-03 小欧 17.1: sandbox_gate硬编码7key含window_title误授权，改函数内延迟import复用_extract_trust_path
 # 2026-09-03 小欧/北京老陈: bypass流程补日志 — S1窗口开始/S1结果两处关键节点, 改前无log无法排查bypass时序
+# 2026-09-04 小健 DRY重构: check_safety_and_confirm三处sandbox重复调用→统一入口 run_sandbox_gate
+#   [问题] ①auto_confirm ②用户确认 ③循环体兜底 三处sandbox_precheck+sandbox_resolve调用逻辑几乎完全相同(DRY违规)
+#   [改法] import新增run_sandbox_gate; 三处重复代码→改为一行调用 run_sandbox_gate(agent,step,call,cn,cp,safety_result,denied)
+#   [效果] 三处20行重复代码→三处5行调用, 逻辑集中在sandbox_gate.py一个入口, DRY+KISS+SRP
+# 2026-09-04 小健 第1阶段拆分: 信任域+冲突检测+文件工具下沉
+#   [改法] 新建trust.py/conflict_detector.py/file_tool_utils.py; action_handler删内联→import新模块
+#   [效果] action_handler 1144→976行(-168行); 环依赖消除(sandbox_gate→trust单向); SRP违规6→0处
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -206,7 +213,7 @@ from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE
 from app.tools.tools_alias_mapper import PARAM_ALIASES
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, MEDIA_EXTENSIONS
 from app.tools.registry import tool_registry  # 2026-08-18 小健 三堂会审: target字段从工具schema主参数自动推导(取代硬编码_TARGE_FIELD)
-from app.services.agent.handlers.sandbox_gate import sandbox_precheck, sandbox_resolve  # 小欧 2026-08-25 沙箱闸门逻辑拆分(合规重构: 去闭包隐式耦合, Agent编排层落点)
+from app.services.agent.handlers.sandbox_gate import sandbox_precheck, sandbox_resolve, run_sandbox_gate  # 小欧 2026-08-25 沙箱闸门逻辑拆分; 小健 2026-09-04 新增run_sandbox_gate统一入口
 
 
 # 【修复P2-5】封装observation构建上下文 — 北京老陈 2026-06-13
@@ -362,14 +369,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                             continue
                     # 2026-09-02 小欧 BUG-001: sandbox通过后才发resumed(对齐下方真HITL确认后恢复语义,
                     #   前端badge据此回running恢复耗时秒表); 若sandbox拒绝已continue不发resumed
-                    # 2026-09-03 小沈 缺陷1修复: resumed增confirm_id, 前端收到后可据此关弹窗(防御性兜底) — 小沈-2026-09-03
-                    yield agent._step_emitter.emit(MetaStep(
-                        step=step, type="resumed",
-                        content=f"已自动确认工具执行: {_cn}",
-                        severity="info",
-                        confirm_id=confirm_id,
-                    ))
-                    continue
+                    # 2026-09-04 小健 DRY: 三处重复sandbox调用→统一入口 run_sandbox_gate
+                    _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied)
+                    for _st in _steps:
+                        yield _st
+                    if not _ok:
+                        continue
+                    if any(getattr(_s, "type", None) == "resumed" for _s in _steps):
+                        continue
 
                 set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认工具执行: {_cn}")
                 from app.config import get_config as _get_cfg_wait
@@ -419,16 +426,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     severity="info",
                     confirm_id=confirm_id,
                 ))
-                # v1.25 M3 插入点②: 用户确认汇合路径(末尾加 continue, 防落入③重复预检)
-                _pre = await sandbox_precheck(safety_result, _cn, _cp)
-                if _pre is not None:
-                    _ok, _steps = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
-                    for _st in _steps:
-                        yield _st
-                    if not _ok:
-                        continue
-                    if any(getattr(_s, "type", None) == "resumed" for _s in _steps):
-                        continue
+                # v1.25 M3 插入点②: 用户确认汇合路径 — 2026-09-04 小健 DRY: 统一入口
+                _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied)
+                for _st in _steps:
+                    yield _st
+                if not _ok:
+                    continue
+                if any(getattr(_s, "type", None) == "resumed" for _s in _steps):
+                    continue
                 continue
 
             # 5.3(2026-09-02 小欧, 病根3.5): 信任豁免/safe 直通汇合点统一授权收口——
@@ -442,14 +447,12 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             except Exception as e:
                 logger.warning(f"[action] 豁免直通grant_temp_auth失败不阻断: {e!r}")
 
-            # v1.25 M3 插入点③: 循环体末尾兜底(仅 safe 直通/会话信任豁免触达) — 沙箱预检最后闸门
-            _pre = await sandbox_precheck(safety_result, _cn, _cp)
-            if _pre is not None:
-                _ok, _steps = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
-                for _st in _steps:
-                    yield _st
-                if not _ok:
-                    continue
+            # v1.25 M3 插入点③: 循环体末尾兜底(仅 safe 直通/会话信任豁免触达) — 2026-09-04 小健 DRY: 统一入口
+            _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied)
+            for _st in _steps:
+                yield _st
+            if not _ok:
+                continue
 
         # 回传未被拒的call索引给调用方 — 小欧 2026-07-18 #12 fix
         # 2026-08-11 小欧 fix D2: 用call对象id标识被拒调用,而非tool_name;
