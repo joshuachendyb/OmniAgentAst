@@ -21,6 +21,9 @@
 #   由event_emitter统一转换,职责从"业务+前端混合"收敛为"纯业务"。
 #   返回值: {"action": "passthrough/blocked/confirmed/rejected", ...}
 #   注意: paused MetaStep在阻塞等待前直接发射(过渡期设计),确保前端收到暂停事件
+# 2026-09-04 小健 - 修复重构错误4: blocked/rejected/confirmed路径补发"resumed" MetaStep,
+#   病根: 架构重构时删除所有yield MetaStep, 但paused/resumed事件需成对,
+#   缺resumed致前端badge卡paused; 复核: paused在阻塞前发射, resumed在用户裁决后发射
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -101,6 +104,11 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
 
     if auth.get("confirmed"):
         logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")
+        from app.services.agent.steps import MetaStep as _SbMetaStep3
+        agent._step_emitter.emit(_SbMetaStep3(
+            step=step, type="resumed",
+            content=f"用户确认执行沙箱预检: {tool_name}",
+            tool_name=tool_name))
         return {
             "action": "confirmed",
             "confirm_id": confirm_id,
@@ -112,5 +120,10 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
             "backend_timeout": _bt,
         }
     logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
+    from app.services.agent.steps import MetaStep as _SbMetaStep2
+    agent._step_emitter.emit(_SbMetaStep2(
+        step=step, type="resumed",
+        content=f"用户拒绝执行沙箱预检: {tool_name}",
+        tool_name=tool_name))
     denied_list.append((tool_name, "沙箱预检未完成验证且用户拒绝执行", call))
     return {"action": "rejected", "reason": "用户拒绝执行(预检未完成验证)", "tool_name": tool_name}

@@ -3,6 +3,9 @@
 # 2026-09-04 小健 - 新建: 统一转换层, handler业务结果→前端Step。
 #   解决病根: handler做前端的事(yield Step), 业务逻辑和展示逻辑混在一起。
 #   职责: 读取handler返回的dict, 按action类型构造并yield对应的Step对象。
+# 2026-09-04 小健 - 修复重构bug: completed分支补set_completed()调用,
+#   病根: 重构将handler的yield Step移到event_emitter, 但漏掉set_completed()副作用,
+#   致agent.status永远EXECUTING, 循环退出条件(agent.status in终态)永远不满足→死循环
 """
 event_emitter — 统一转换层：业务结果 → 前端Step
 
@@ -29,6 +32,8 @@ def emit_from_business_result(agent, step: int, result: dict):
     # answer_handler 返回的结果
     # ════════════════════════════════════════════════════
     if action == "completed":
+        from app.services.agent.status_table import set_completed
+        set_completed(agent)  # 小健 2026-09-04 修复: 重构漏掉set_completed, 致循环退出条件永远不满足
         yield agent._step_emitter.emit(ThoughtStartStep(step=step))
         for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
             step=step,

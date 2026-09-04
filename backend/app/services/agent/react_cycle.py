@@ -126,6 +126,9 @@
 #   _process_single_step调用点 async for→await + emit_from_business_result统一转换;
 #   action_handler路径仍在_dispatch_handler内async for遍历yield做状态推断后返回executing dict;
 #   event_emitter在_dispatch_handler内部import(阶段8统一移顶层)
+# 2026-09-04 小健 - 修复缺陷5: 新增_check_same_tool_name_loop二级死循环防御,
+#   病根: _check_same_tool_loop用完整JSON签名, LLM换文件名→签名不同→count重置→检测失效;
+#   改法: 新增同工具名连续调用检测(_MAX_CONSECUTIVE_SAME_TOOL_NAME=15), 捕获变参循环
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -168,6 +171,12 @@ _MAX_CONSECUTIVE_TRUNCATIONS = 3
 _SAME_TOOL_WARN_ROUNDS = 2             # 纠偏起点阈值: count==2(第2次相同调用)注入第1条警告 — 小欧 2026-08-08
 _SAME_TOOL_WARN_MAX = 3                # 纠偏最大条数: 第2/3/4次共3条 — 小欧 2026-08-08
 _MAX_CONSECUTIVE_SAME_TOOL_CALLS = 5   # 硬终止阈值: count>=5(第5次相同调用)时硬终止 — 小欧 2026-08-08
+
+# 二级死循环防御: 同工具名连续调用检测(捕获变参循环) — 小健 2026-09-04
+# 当LLM连续调用同一工具名(如write_text)但参数不同(换文件名)时,
+# 签名检测失效(签名变化→count重置), 本检测用工具名计数兜底。
+# 场景: LLM写"任务完成"文件→读回验证→再写不同文件名→再读, 形成48+次死循环。
+_MAX_CONSECUTIVE_SAME_TOOL_NAME = 15   # 同工具名连续调用硬终止阈值
 
 # 可恢复的拒绝/拦截错误: 拒绝≠失败(符合人类认知, 助手应换工具继续) — 小欧 2026-07-13
 # 反馈已写入LLM历史(_add_denial_feedback), 循环回THINKING由主循环 EXECUTING→THINKING 处理;
@@ -287,6 +296,22 @@ def _warn_same_tool_loop(agent, llm_response: Dict, count: int) -> None:
     agent._warned_same_tool_loop = getattr(agent, "_warned_same_tool_loop", 0) + 1
     logger.info(f"[run_react_cycle] LLM连续{count}次调用相同工具 {_tool}, 注入纠偏警告(第{agent._warned_same_tool_loop}条)")
     log_and_print(f"{time.strftime('%H:%M:%S')} [Loop] step={agent.llm_call_count} same tool warn={_tool}")
+
+
+def _check_same_tool_name_loop(agent, llm_response: Dict) -> int:
+    """同工具名连续调用检测(捕获变参循环) — 小健 2026-09-04
+    当LLM连续调用同一工具名(如write_text)但参数不同(换文件名)时,
+    _check_same_tool_loop的签名检测失效(签名变化→count重置), 本函数用工具名计数兜底。
+    count语义="第几continuous同工具名调用": 首次同工具名(count=1); 签名变化但工具名相同则count+1; 工具名变化则重置count=1。
+    返回int连续计数供调用方分支(count>=_MAX_CONSECUTIVE_SAME_TOOL_NAME硬终止)。"""
+    _tool = llm_response.get("tool_name", "") or ""
+    _last_tool = getattr(agent, "_last_tool_name", None)
+    if _tool and _tool == _last_tool:
+        agent._consecutive_same_tool_name = getattr(agent, "_consecutive_same_tool_name", 0) + 1
+    else:
+        agent._consecutive_same_tool_name = 1
+    agent._last_tool_name = _tool
+    return agent._consecutive_same_tool_name
 
 
 async def _dispatch_handler(agent, llm_response) -> dict:
@@ -663,11 +688,31 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             )):
                 yield _s
             return
+        # 二级防御: 同工具名连续调用检测(捕获变参循环) — 小健 2026-09-04
+        # 当LLM连续调用同一工具名但参数不同(换文件名)时, 签名检测失效, 工具名检测兜底
+        _name_cnt = _check_same_tool_name_loop(agent, llm_response)
+        if _name_cnt >= _MAX_CONSECUTIVE_SAME_TOOL_NAME:
+            _tool = llm_response.get("tool_name", "") or ""
+            logger.warning(f"[run_react_cycle] LLM连续{_name_cnt}步调用同工具名{_tool}(step={step}), 判定变参死循环, 终止")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, same_tool_name_loop({_tool})")
+            set_failed(agent, f"模型连续{_name_cnt}步重复调用工具{_tool}(参数变化), 疑似变参死循环, 任务终止")
+            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+                step=step,
+                response=f"模型反复调用工具{_tool}但未取得进展（参数变化但行为重复），任务已终止（疑似变参死循环）",
+                reasoning=llm_response.get("reasoning", "") or llm_response.get("thought", ""),
+                outcome="failed",
+                error_type="same_tool_name_loop",
+                error_message=f"模型连续{_name_cnt}步调用工具{_tool}(参数变化), 疑似变参死循环",
+            )):
+                yield _s
+            return
     else:
         # 非action(正常answer/final): 死循环检测仅在action语义下, 归零防残留(含纠偏标记) — 小欧 2026-08-08
         agent._consecutive_same_tool_calls = 0
         agent._last_tool_call_sig = None
         agent._warned_same_tool_loop = 0            # int计数归零 — 小欧 2026-08-08
+        agent._consecutive_same_tool_name = 0       # 同工具名计数归零 — 小健 2026-09-04
+        agent._last_tool_name = None                # 同工具名签名归零 — 小健 2026-09-04
 
     # ── 场景E: 正常分发 ─────────────────────────────────────────
     agent._consecutive_truncations = 0

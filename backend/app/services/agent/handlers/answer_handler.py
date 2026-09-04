@@ -35,6 +35,9 @@
 # 2026-09-04 小健 - 架构重构: handle_answer改为返回dict,删除所有yield Step(9处),
 #   由event_emitter统一转换,职责从"业务+前端混合"收敛为"纯业务"。
 #   返回值: {"action": "completed/failed/retrying/thought", ...}
+# 2026-09-04 小健 - 修复重构错误3: reasoning_only_limit分支补set_failed()调用,
+#   病根: 架构重构时reasoning_only_limit返回{"action":"failed"}但未调set_failed(),
+#   致agent.status永远EXECUTING, 前端badge卡running; 复核: 与error/unknown分支set_failed模式一致
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -161,6 +164,8 @@ async def handle_answer(agent, parsed: Dict) -> dict:
         agent._consecutive_reasoning_only += 1
         if agent._consecutive_reasoning_only > REASONING_ONLY_MAX_ROUNDS:
             logger.warning(f"[handle_answer] 连续{agent._consecutive_reasoning_only}轮reasoning-only无进展(step={step}), 终止任务")
+            from app.services.agent.status_table import set_failed
+            set_failed(agent, f"连续{REASONING_ONLY_MAX_ROUNDS}轮仅返回推理内容")
             return {
                 "action": "failed",
                 "response": "模型反复思考未产出有效结果，任务已终止（疑似陷入无效循环）",

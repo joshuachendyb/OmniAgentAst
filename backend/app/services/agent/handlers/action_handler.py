@@ -169,6 +169,9 @@
 # 2026-09-03 小欧 17.1: sandbox_gate硬编码7key含window_title误授权，改函数内延迟import复用_extract_trust_path
 # 2026-09-03 小欧/北京老陈: bypass流程补日志 — S1窗口开始/S1结果两处关键节点, 改前无log无法排查bypass时序
 # 2026-09-04 小健 Phase8: _parse_paths/_extract_trust_path改为import from trust.py(解环); sandbox_resolve返回dict适配(3处元组解包→dict访问) - 小健-2026-09-04
+# 2026-09-04 小健 Phase8收尾: _has_conflict/_partition_calls从内联改为import from conflict_detector.py;
+#   先复制后修改: 先精确复制本文件原版完整逻辑(窗口工具WINDOW_TARGET_TOOLS支持/计数版count>=2/索引返回List[List[int]])
+#   到conflict_detector.py补全其简化版缺失功能, 再删除本文件内联66行并import, 行为零退化 - 小健-2026-09-04
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -547,73 +550,7 @@ def _add_denial_feedback(agent, denied_items, fc_context=None):
 
 
 from app.tools.trust import _parse_paths, extract_trust_path as _extract_trust_path  # Phase8: 信任域下沉trust.py, 解环 - 小健-2026-09-04
-
-
-def _has_conflict(all_calls: List[Dict]) -> bool:
-    """检测路径/窗口冲突 — 北京老陈 2026-07-04 初版; 小欧 2026-08-09 计数版; 小欧 2026-08-11 窗口工具纳入
-    冲突：同一键(文件路径/窗口标题)被>=2次调用访问, 且(至少一个文件写操作 或 含窗口工具)
-    有冲突→顺序执行, 无冲突→并行
-    [2026-08-09 小欧] BUG修复: 旧实现用 set 存工具名不计数, 同名工具多次写
-    同一路径漏检(3×edittext 同文件)→误走并行→read-modify-write 竞态致内容丢失。
-    改为 path→(调用次数, 工具名set), 复用 _parse_paths 解析(与 _partition_calls 一致, DRY)。
-    [2026-08-11 小欧] 扩展: 窗口工具(window_focus/window_resize/set_window_state)同标题即冲突,
-    消除 task002 实测 P2(restore+resize 同批并行→resize 0.00s 莫名失败)的并行竞态。
-    注: 文件路径键与 "window:" 键空间不重叠, 同一 entry 的 tools 不会混合文件与窗口工具。
-    """
-    path_ops: Dict[str, Dict[str, Any]] = {}
-
-    def _record(_path: str, _name: str) -> None:
-        entry = path_ops.setdefault(_path, {"count": 0, "tools": set()})
-        entry["count"] += 1
-        entry["tools"].add(_name)
-
-    for c in all_calls:
-        name = c.get("tool_name", "")
-        if name not in FILE_OPERATION_TOOLS and name not in WINDOW_TARGET_TOOLS:
-            continue
-        for _path in _parse_paths(name, c.get("tool_params", {})):
-            _record(_path, name)
-
-    for path, entry in path_ops.items():
-        tools = entry["tools"]
-        if entry["count"] >= 2 and (any(t in _WRITE_OPS for t in tools) or any(t in WINDOW_TARGET_TOOLS for t in tools)):
-            logger.info(f"[_has_conflict] 操作冲突(路径/窗口): {path}, tools={tools}, 调用数={entry['count']}, 降级顺序执行")
-            return True
-    return False
-
-
-def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
-    """按路径/窗口相关性分组(并查集连通分量): 共享路径或同标题窗口的调用归一组, 组间无共享→可并行
-    返回: 组列表, 每组是 all_calls 的索引列表 — 小欧 2026-08-09 — 小欧 2026-08-11 窗口工具自动纳入
-    (窗口工具经 _parse_paths 返回 "window:标题" 冲突键, 同标题自动并组串行, 分组本体逻辑零改动)
-    """
-    n = len(all_calls)
-    parent = list(range(n))
-
-    def _find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def _union(a, b):
-        ra, rb = _find(a), _find(b)
-        if ra != rb:
-            parent[rb] = ra
-
-    path_to_calls = {}
-    for i, c in enumerate(all_calls):
-        for p in _parse_paths(c.get("tool_name", ""), c.get("tool_params", {})):
-            path_to_calls.setdefault(p, []).append(i)
-    for _p, idxs in path_to_calls.items():
-        base = idxs[0]
-        for i in idxs[1:]:
-            _union(base, i)
-
-    groups = {}
-    for i in range(n):
-        groups.setdefault(_find(i), []).append(i)
-    return list(groups.values())
+from app.tools.conflict_detector import _has_conflict, _partition_calls  # Phase8: 冲突检测下沉conflict_detector.py - 小健-2026-09-04
 
 
 async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
