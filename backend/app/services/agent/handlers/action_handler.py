@@ -191,6 +191,14 @@
 #   [效果] 删5个内联(ObsContext/_add_denial_feedback/execute_tools/build_observation/BuildCallListResult/_build_call_list),
 #          action_handler 920→~596行纯编排调度层(SRP); 拆分后与git原始代码 6代码块逐行IDENTICAL+AST语义MATCH(保等价),
 #          保留同名import→handle_action调用点与外部导入路径零改动; 回归: 11+33+336+83+4=467用例通过(2基线既有失败与本次无关)
+# 2026-09-04 小健 fix (北京老陈裁定): 拦截action不emit不落库 — 仅正常执行的action才ActionStep落库/yield前端
+#   [问题] 全调用被安全拦截时 _exec_calls=[] → 老"记录层兜底"_record_calls=all_calls 将未执行调用emit ActionStep+完整payload
+#         落库, 但 build_observation 守卫 `if ctx.all_calls:`(空) 不发ObservationStep → DB出现"有action无observation/tool_result"残步
+#         (E2E-P0-03b step2 实证: write text未注册被拒→tools=[{tool:write text,params:完整content}]无observation)
+#   [改法] 删除 2026-08-26 aba43fbea 记录层兜底 _record_calls, 改为 `if _exec_calls:` 才emit ActionStep(tools=_exec_calls真实执行)
+#   [效果] 拦截步不发action/不发observation(与D2-01空守卫自洽), 步骤干净无残步; 被拒call仍经_add_denial_feedback写LLM历史换方案
+#   [验证] mock全拦截(emit缺省)行为验证: emitted types=['thought-start','thought','error']无action/observation + 46单测通过;
+#          E2E-P0-03b重跑PASSED(79.89s), 新session所有action与observation成对、无残步
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -541,18 +549,21 @@ async def handle_action(agent, parsed: Dict):
     _exec_calls = _safe_calls if _safe_calls else []
 
     # ── 新 action step: execute_tools 执行前 yield 一次（§10.3.3(2)）── 2026-08-18 小欧
-    # 记录层兜底: 全部调用被安全拦截致_exec_calls空时, 取意图调用all_calls补全落库(执行层仍仅用_exec_calls, 不绕过安全) - 小欧 2026-08-26
-    _record_calls = _exec_calls if _exec_calls else call_result.all_calls
-    _action_tools = [{
-        "tool": c.get("tool_name", ""),
-        "target": _extract_target(c),
-        "params": c.get("tool_params", {}) or {},
-    } for c in _record_calls]
-    yield agent._step_emitter.emit(ActionStep(
-        step=step,
-        exec_type="single" if len(_action_tools) == 1 else "multi",
-        tools=_action_tools,
-    ))
+    # 2026-09-04 小健 fix (北京老陈裁定): 只有正常执行的action才emit/落库; 全部被安全拦截致_exec_calls为空→不发ActionStep
+    #   废除 2026-08-26 aba43fbea 记录层兜底(_record_calls=all_calls): 被拦截/未执行的调用emit ActionStep+完整payload落库
+    #   却无 ObservationStep/tool_result → DB出现"有action无observation"残步, 误导前端/校验器;
+    #   改后仅_exec_calls发ActionStep, 与 build_observation 的 `if ctx.all_calls:` 守卫(空不发observation)自洽 — 拦截步干净无残步
+    if _exec_calls:
+        _action_tools = [{
+            "tool": c.get("tool_name", ""),
+            "target": _extract_target(c),
+            "params": c.get("tool_params", {}) or {},
+        } for c in _exec_calls]
+        yield agent._step_emitter.emit(ActionStep(
+            step=step,
+            exec_type="single" if len(_action_tools) == 1 else "multi",
+            tools=_action_tools,
+        ))
 
     # ── 工具重试（隐蔽，前端不可见）── 小欧 2026-07-13
     # 工具重试由 tool_retry_engine 内部执行, 不向前端 emit 任何 step(北京老陈要求: tool 重试隐蔽)。
