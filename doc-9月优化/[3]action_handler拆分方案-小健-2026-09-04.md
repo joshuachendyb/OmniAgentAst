@@ -3,7 +3,7 @@
 **文档名称**: action_handler.py 拆分方案-小健-2026-09-04
 **编写人**: 小健
 **创建时间**: 2026-09-04 15:54:03
-**更新时间**: 2026-09-04 17:45:00
+**更新时间**: 2026-09-04 20:00:00
 
 | 版本 | 时间 | 更新人 | 更新要点 |
 |------|------|--------|----------|
@@ -13,6 +13,8 @@
 | v1.3 | 2026-09-04 17:30:04 | 小健 | 新增第2阶段：4个函数下沉（target提取/factory/遥测）+ 沙箱DRY修复，原第2/3/4阶段顺延为第3/4/5阶段 - 小健-2026-09-04 |
 | v1.4 | 2026-09-04 17:45:00 | 小健 | 第2阶段新增沙箱DRY修复：run_sandbox_gate统一入口消除三处重复调用，44测试全过 - 小健-2026-09-04 |
 | v1.5 | 2026-09-04 18:35:00 | 小健 | 第2阶段函数下沉完成(第2阶段✅)；同时发现并修复 run_sandbox_gate DRY重构回归（bypass路径误拒） - 小健-2026-09-04 |
+| v1.6 | 2026-09-04 19:10:00 | 小健 | 替换第3阶段：原yield架构改造章节→改为「名不副实函数下沉」方案（_build_call_list/_add_denial_feedback/build_observation/execute_tools），按先复制后修改规则 - 小健-2026-09-04 |
+| v1.7 | 2026-09-04 20:00:00 | 小健 | 按10大规范复核命名与目录：函数定名名副其实（parse_action_input/build_observation_feedback/execute_tools/add_denial_feedback），目录位置论证（SLAP同层+复用优先）；按YAGNI合并feedback_writer进observation_builder，4文件→3文件 - 小健-2026-09-04 |
 
 ---
 
@@ -151,7 +153,7 @@ action_handler.py（1144行）是当前代码中最烂的文件——6个职责�
 
 ---
 
-## 三、第2阶段：函数下沉（4个函数）⏳ 待实施
+## 三、第2阶段：函数下沉（4个函数）✅ 已完成
 
 > 三堂会审分析：action_handler.py中4个函数不属于agent层，应下沉到正确的模块位置
 
@@ -262,24 +264,136 @@ action_handler.py（1144行）是当前代码中最烂的文件——6个职责�
 
 ---
 
-## 四、第3阶段：yield架构改造（待实施）
+## 四、第3阶段：名不副实函数下沉 ⏳ 待实施
 
-> 对应设计文档第五章：handler→dict + event_emitter统一转换层
+> 三堂会审分析（小健 2026-09-04）：action_handler仍有4个「名不副实」的函数——它们做的都不是"action编排"，
+> 而是工具解析/LLM历史写入/反馈构建/工具批执行。按第2阶段规矩（先复制后修改）逐一拆到正确的模块位置。
+>
+> v1.7 按10大规范复核：函数重新定名确保"名副其实"，目录位置按"作用对象→所属层"论证（SLAP同层），
+> 并按YAGNI把 feedback_writer 合并进 observation_builder（4文件→3文件）。详见 4.8 命名与目录理由。
 
 ### 4.1 改造范围
 
-| 文件 | 改造内容 | 状态 |
-|------|---------|------|
-| `event_emitter.py` | 新建统一转换层 | ⏳ 待实施 |
-| `answer_handler.py` | yield→return dict | ⏳ 待实施 |
-| `sandbox_gate.py` | yield→return dict | ⏳ 待实施 |
-| `action_handler.py` | 16处yield→dict+直接emit | ⏳ 待实施 |
-| `react_cycle.py` | _dispatch_handler两路统一 | ⏳ 待实施 |
+| 函数 | 当前位置 | 现状职责 | 目标位置 | 名不副实理由 |
+|------|---------|---------|---------|-------------|
+| `_build_call_list`+`BuildCallListResult` | action_handler.py L765-810 | 解析parsed→action输入(all_calls+tool_name/params/is_parallel) | `app/services/agent/action_input_parser.py` | 返回值含编排决策字段，实为"LLM action输入解析"，非仅建调用列表 |
+| `_add_denial_feedback` | action_handler.py L488-506 | 被拒call→写入LLM历史 | `app/services/agent/observation_builder.py` | 操作message_builder，属LLM历史反馈层（与build_observation配套，并入同一文件） |
+| `build_observation` | action_handler.py L665-762 | 构建ObservationStep+写LLM历史+record_operation+编排决策收集 | `app/services/agent/observation_builder.py` | 职责远超"构建观察"，实为观察反馈构建层 |
+| `execute_tools` | action_handler.py L511-662 | 工具三分支(单/并行/顺序)执行调度 | `app/services/agent/tool_runner.py` | 工具批执行调度，非action编排本身 |
 
-### 4.2 前置条件
+### 4.2 新建/目标文件（3个）
+
+#### 文件1：`backend/app/services/agent/action_input_parser.py`（~46行）
+
+**目的**：把LLM输出的`parsed`反序列化/归一成 action 执行输入（调用列表+编排决策字段），从handle_action下沉。
+
+| 内容 | 原始位置 | 行数 | 操作 |
+|------|---------|------|------|
+| `ActionInput` dataclass（原`BuildCallListResult`） | action_handler.py L765-773 | 9行 | 完整复制改名 |
+| `parse_action_input`（原`_build_call_list`） | action_handler.py L776-810 | 35行 | 完整复制改名 |
+
+**依赖**：无agent依赖（纯解析，只用parsed字段）。
+
+#### 文件2：`backend/app/services/agent/observation_builder.py`（~130行）
+
+**目的**：工具结果→LLM历史(assistant+tool)+record_operation+ObservationStep+编排决策收集+拒绝反馈，观察反馈构建层独立（yield一个文件承载）。
+
+| 内容 | 原始位置 | 行数 | 操作 |
+|------|---------|------|------|
+| `ObservationContext` dataclass | action_handler.py L230-241 | 12行 | 完整复制 |
+| `build_observation_feedback`（原`build_observation`） | action_handler.py L665-762 | 98行 | 完整复制改名 |
+| `add_denial_feedback`（原`_add_denial_feedback`） | action_handler.py L488-506 | 19行 | 完整复制改名，并入本文件 |
+
+**依赖**：`ObservationContext`、`observation_formatter.build_observation_text`、`message_builder`、step类型。
+
+#### 文件3：`backend/app/services/agent/tool_runner.py`（~152行）
+
+**目的**：工具三分支批量执行调度（单/并行分组串行/顺序+冲突分组），与action_handler解耦。
+
+| 内容 | 原始位置 | 行数 | 操作 |
+|------|---------|------|------|
+| `execute_tools` | action_handler.py L511-662 | ~152行 | 完整复制，不改逻辑 |
+
+**依赖**：`execute_tool`（tool_executor）、`_partition_calls`/`_has_conflict`（conflict_detector）、`_auto_correct_file_tool`（file_tool_utils）。
+
+### 4.3 action_handler.py改动
+
+| 删除位置 | 行数 | 改为import |
+|---------|------|-----------|
+| L765-810（BuildCallListResult+_build_call_list） | 46行 | `from app.services.agent.action_input_parser import parse_action_input, ActionInput` |
+| L230-241, L488-506, L665-762（ObservationContext+_add_denial_feedback+build_observation） | ~129行 | `from app.services.agent.observation_builder import build_observation_feedback, add_denial_feedback, ObservationContext` |
+| L511-662（execute_tools） | ~152行 | `from app.services.agent.tool_runner import execute_tools` |
+
+**净减**：~327行（删除） - 3行（新增import） = ~324行（action_handler 920行→~596行为纯编排调度层）
+
+### 4.4 实施步骤与状态（先复制后修改）
+
+| 步骤 | 动作 | 验证 | 状态 |
+|------|------|------|------|
+| 1 | 新建 `action_input_parser.py`（完整复制改名） | py_compile | ⏳ 待实施 |
+| 2 | 新建 `observation_builder.py`（完整复制改名） | py_compile | ⏳ 待实施 |
+| 3 | 新建 `tool_runner.py`（完整复制） | py_compile | ⏳ 待实施 |
+| 4 | 改造 `action_handler.py`（删内联→import） | py_compile | ⏳ 待实施 |
+| 5 | 改造其他引用文件（观测/执行相关引用点） | py_compile | ⏳ 待实施 |
+| 6 | 回归测试 | pytest | ⏳ 待实施 |
+
+### 4.5 预期效果
+
+| 维度 | 改前 | 改后 |
+|------|------|------|
+| action_handler.py | 920行（编排+解析+历史+反馈+执行混装） | ~596行（纯编排调度层） |
+| 新建文件 | 0 | 3个（action_input_parser/observation_builder/tool_runner） |
+| 名不副实函数 | 4处 | 0处 |
+
+### 4.6 前置条件
 
 - ✅ 第1阶段完成（信任域+冲突检测+文件工具已拆分）
-- ⏳ 第2阶段完成（函数下沉后action_handler更干净）
+- ✅ 第2阶段完成（target提取/fp回调/遥测下沉）
+- ✅ 第2阶段回归修复（bypass路径误拒）完成
+- ⏳ 本阶段内部按"先复制后修改"顺序执行（先全部新建验证，再改源头）
+
+### 4.7 核查清单
+
+| 核查项 | 结果 |
+|--------|------|
+| 函数体完整复制 | ⏳ 逐行对比一致 |
+| 重命名名副其实 | ⏳ parse_action_input/build_observation_feedback/execute_tools/add_denial_feedback |
+| 依赖import正确 | ⏳ 新文件import路径可解析 |
+| 原始文件删除干净 | ⏳ action_handler.py无残留内联代码 |
+| import替换正确 | ⏳ 所有引用点改为新路径 |
+| 编译通过 | ⏳ py_compile每个文件 |
+| 测试通过 | ⏳ 关键测试PASS |
+
+### 4.8 命名与目录理由（10大规范复核）— 小健 2026-09-04
+
+> 回答两个问题：①拆出函数名是否名副其实 ②存放目录架构层次是否合理。
+
+**架构层次判断原则（SLAP-同一抽象层）**：`app/services/agent/` 平铺模块分3层 ——
+LLM交互层(`message_builder`/`observation_formatter`/`fc_message_types`)、编排层(`react_cycle`/`step_emitter`/`status_table`)、
+工具执行层(`tool_executor`/`tool_cache_manager`)。**看每个函数"作用对象"落在哪层，就放哪层，与其依赖同层。**
+
+| 函数 | 作用对象 | 所属层 | 存放位置 | 合理依据（复用优先+SLAP） |
+|------|---------|--------|---------|--------------------------|
+| `parse_action_input` | 解析LLM输出parsed→调用结构 | LLM交互层 | `action_input_parser.py`(agent 平铺) | ✅ 与 fc_message_types/message_builder 同层，紧邻LLM消息处理 |
+| `add_denial_feedback` | 写 message_builder(LLM历史) | LLM交互层(反馈) | `observation_builder.py`(agent 平铺) | ✅ 与 message_builder 同层，且是 build_observation 配套 |
+| `build_observation_feedback` | message_builder+record_operation+step_emitter | LLM交互层(反馈构建) | `observation_builder.py`(agent 平铺) | ✅ 与 observation_formatter 紧邻同层 |
+| `execute_tools` | 调 execute_tool+conflict_detector | 工具执行层(调度) | `tool_runner.py`(agent 平铺) | ✅ 与 tool_executor 同层，是 execute_tool 的上一层调度 |
+
+**结论：目录位置全部合理** —— 4个都放 `agent/` 平铺（不进 `handlers/` 子目录），与其依赖同层，
+符合"handlers 只留 ReAct 循环业务处理器"的解耦方向（与第2阶段 target_utils/file_persist/trust 下沉同思路）。
+
+**命名核实（名副其实）**：
+
+| 原函数 | 原名义副实？ | 新定名 | 理由 |
+|--------|------------|--------|------|
+| `_build_call_list`+`BuildCallListResult` | ❌ 名不副实 | `parse_action_input`+`ActionInput` | 返回值含 tool_name/params/is_parallel 编排决策字段，本质是"LLM action输入反序列化"，非"建个列表" |
+| `_add_denial_feedback` | ✅ 名副其实 | `add_denial_feedback` | 就是"把拒绝反馈写入(历史)" |
+| `build_observation` | ❌ 名不副实 | `build_observation_feedback` | 不只构建观察，还写LLM历史+record_operation+收集编排决策，加 feedback 更贴"反馈构建层" |
+| `execute_tools` | ✅ 名副其实 | `execute_tools` | 就是"批量执行工具" |
+
+**YAGNI 收紧**：原方案拆4个文件，`_add_denial_feedback`(仅19行)与 `build_observation` 同层且配套
+（handle_action在build_observation后调用），单独成 `feedback_writer.py` 过薄违反YAGNI，合并进 `observation_builder.py`。
+两个函数SRP各自独立（各做一件事），只是**同放一个观察反馈模块**，不违反SRP。
 
 ---
 
@@ -297,8 +411,7 @@ action_handler.py（1144行）是当前代码中最烂的文件——6个职责�
 ### 5.2 前置条件
 
 - ✅ 第1阶段完成
-- ⏳ 第2阶段完成（函数下沉后telemetry模块更清晰）
-- ⏳ 第3阶段完成（yield架构改造后，emit链路更清晰）
+- ⏳ 第3阶段完成（名不副实函数下沉后，action_handler为纯编排调度层，telemetry/反馈更清晰）
 
 ---
 
