@@ -188,6 +188,10 @@ async def run_agent_in_background(
     _has_chunk_steps: set = set()  # 2026-08-18 小健 Bug#2: 按 step 记录已发正文 chunk(短信号仅当非action轮的正文chunk)
     _action_steps: set = set() # 2026-08-18 小健 Bug#2 边界: 记录执行过action的step, 供return_direct final识别
     # (旧任务级 _has_chunk_sent 结论被多轮 return_direct 边界推翻, 改 step 粒度更精确 — 小健)
+    # 2026-09-04 小欧 方案一: 终态 final/final_stats SSE 待发缓冲——先收集, 待 finally 的
+    #   chat_tasks.status 落库成功后统一补发, 消除"SSE final 先到、DB status 后到"致前端
+    #   StaticStatsBlock 读 detail.status 卡 executing 的竞态(详见 doc-9月优化/任务统计执行中卡死-病根病因与修复方案-小欧-2026-09-04.md)
+    _pending_terminal_events: List[Dict] = []
 
     # [新] 生产者全权拥有 prompt-log 生命周期(创建) — 小欧 2026-07-18
     get_prompt_logger().start_request(last_message, session_id)
@@ -334,18 +338,28 @@ async def run_agent_in_background(
                 if event_type == "action":
                     _action_steps.add(event_dict.get("step", 0))   # 工具执行轮标记
                     await _append(event_dict)                      # §10.3.3 其余 SSE+落库: action 实时下发前端(yield 才到前端) — 小欧 2026-08-18
-                elif event_type == "final" and event_dict.get("outcome") == "completed":
-                    # 短信号仅当: 该 step 是普通answer轮且已发正文 chunk(非推理)。
-                    # 若该 step 是 action/return_direct 轮(final=工具结果,response即正文),
-                    #   一律完整发——即使该轮LLM曾先输出正文chunk("我来查询...")也不剥离真正的工具答案。
+                elif event_type == "final":
+                    # 2026-09-04 小欧 方案一: 终态 final 不立即 _append, 先入 _pending_terminal_events 缓冲,
+                    #   待 finally 里 chat_tasks.status 落库成功后再统一补发(见 finally 块),
+                    #   消除"SSE final 先到、DB status 后到"致前端 _hasFinal 提前、getTaskDetail 读到 stale executing 的竞态。
                     _s = event_dict.get("step", 0)
-                    if _s not in _action_steps and _s in _has_chunk_steps:
-                        _short = {k: event_dict[k] for k in ("type", "step", "timestamp", "outcome")}
-                        await _append(_short)     # SSE：短信号（chunk已发正文, 不重复带response）
+                    if event_dict.get("outcome") == "completed":
+                        # 短信号仅当: 该 step 是普通answer轮且已发正文 chunk(非推理)。
+                        # 若该 step 是 action/return_direct 轮(final=工具结果,response即正文),
+                        #   一律完整发——即使该轮LLM曾先输出正文chunk("我来查询...")也不剥离真正的工具答案。
+                        if _s not in _action_steps and _s in _has_chunk_steps:
+                            _pending_terminal_events.append(
+                                {k: event_dict[k] for k in ("type", "step", "timestamp", "outcome")})
+                        else:
+                            _pending_terminal_events.append(event_dict)  # SSE：完整（return_direct/action轮 或 无正文chunk, response 即正文）
                     else:
-                        await _append(event_dict) # SSE：完整（return_direct/action轮 或 无正文chunk, response 即正文）
+                        _pending_terminal_events.append(event_dict)   # SSE：完整 / failed / cancelled 等
+                elif event_type == "final_stats":
+                    # 2026-09-04 小欧 方案一: final_stats 终态统计随 final 一并延迟到 DB status 落库后补发,
+                    #   保证 frames.finalStats.final_status 与 chat_tasks.status 一致(单一终态时序)
+                    _pending_terminal_events.append(event_dict)
                 else:
-                    await _append(event_dict)     # SSE：完整 / failed / cancelled 等
+                    await _append(event_dict)     # SSE：完整（其余类型实时下发）
 
             # 更新 current_content / current_thought
             if event_type == "final":
@@ -525,7 +539,15 @@ async def run_agent_in_background(
                     except Exception as _um_e:
                         logger.warning(f"[Runner] 回填chat_user_message final失败(task={task_id}): {_um_e}")
                 # 终态必达防二次cancel(_persist_final 小欧 2026-08-24)
-                await _persist_final(db.atxn("chat", _finalize_task_db))
+                # 2026-09-04 小欧 方案一: try/finally 保证无论 status 落库成败, 终态 SSE 必达——
+                #   DB chat_tasks.status 落库(成功则已 terminal)后统一补发 final/final_stats,
+                #   根治"SSE final 先到、DB status 后到"致前端 StaticStatsBlock 读 detail.status 卡 executing 的竞态
+                try:
+                    await _persist_final(db.atxn("chat", _finalize_task_db))
+                finally:
+                    for _term_ed in _pending_terminal_events:
+                        await _append(_term_ed)
+                    _pending_terminal_events.clear()
                 # 11.8-H5: 文件A/B footer(终态回填 end_time/status/record_count) — 11.9 P6 小欧 2026-08-23
                 #   非DB文件写, 移出DB事务块(后端卡死修复 offload 小欧 2026-08-24):
                 #   成功路径等价; 失败路径更稳——旧代码 footer 写失败会连坐回滚整个 update_task 事务,
