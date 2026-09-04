@@ -32,6 +32,9 @@
 #   三堂会审: 合规(SRP/DRY/KISS/SLAP/YAGNI) + 合理(空dict语义=空响应, 复用既有重试机制) + 关联(崩溃→优雅重试, 正常answer/error/unknown/reasoning-only四分支零影响) - 小欧-2026-09-02
 # 2026-09-03 小欧 - fix: error/unknown分支set_failed移到emit_final_with_stats之前,
 #   使build_final_stats_step读到agent.status=FAILED→final_status='failed'→前端badge兜底生效(改前set_failed在yield之后致final_status='executing'→badge卡running) - 小欧-2026-09-03
+# 2026-09-04 小健 - 架构重构: handle_answer改为返回dict,删除所有yield Step(9处),
+#   由event_emitter统一转换,职责从"业务+前端混合"收敛为"纯业务"。
+#   返回值: {"action": "completed/failed/retrying/thought", ...}
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -43,13 +46,13 @@ v2.0: 新增错误消息检测，LLM返回错误时设FAILED而非COMPLETED — 
 v3.0: reasoning-only分支+tool call文本格式化 — 小欧 2026-07-12
 v4.0: 合并error/unknown处理，react_cycle只分两路 — 小欧 2026-07-12
 v4.1: reasoning-only分支改add_assistant_message(reasoning)合法注入(工具调用意图已由llm_stream提前提取为action,本分支仅处理纯推理文本) — 小欧 2026-07-16
+v5.0: 架构重构 yield→return dict, 由event_emitter统一转换 — 小健 2026-09-04
 """
 import re
 import time
 from collections import Counter
 from typing import Dict
 
-from app.services.agent.steps import ThoughtStep, ThoughtStartStep, FinalStep, MetaStep  # 2026-08-18 小欧 ThoughtStartStep新增
 from app.utils.text_utils import format_tool_call_markup
 from app.logger import logger, log_and_print
 
@@ -98,107 +101,75 @@ def _dedup_repeat(content: str) -> str:
     return deduped
 
 
-async def handle_answer(agent, parsed: Dict):
+async def handle_answer(agent, parsed: Dict) -> dict:
     """统一处理所有非action的LLM返回类型（answer/error/unknown）
-    
-    由 _dispatch_handler(react_cycle.py) 分派，接收 llm_stream.py 构建的 type：
-    - type="answer" → 正常终态流程（最终答复）
-    - type="error"  → LLM 流式异常 → FinalStep(outcome="failed") → set_failed
-    - 其他未知 type → 按 error 处理（兜底）
-    
-    type 产生于 llm_stream.py（见该模块头部），不由 LLM 输出，是 agent 推断。"""
-    # 2026-09-02 小欧 缺陷#4修复: parsed=None 防御(上游LLM流异常/HTTP400极端场景可能传 None)
-    #   置空dict后: parsed_type默认"answer"→content/reasoning皆空→走既有"真空→系统重试"分支, 不新增逻辑
+    返回 dict: {"action": "completed/failed/retrying/thought", ...}
+    不yield任何Step，由 event_emitter 统一转换。
+    """
     if parsed is None:
         parsed = {}
     step = agent.llm_call_count
     parsed_type = parsed.get("type", "answer")
 
-    # ── type="error" │ yield FinalStep(outcome=failed) ──
+    # ── type="error" ──
     if parsed_type == "error":
         content = parsed.get("content", "") or "LLM流式错误"
         err_type = parsed.get("error_type") or "大模型错误"
-        agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - error非reasoning-only, 归零防残留(不变量: 仅reasoning-only分支累加)
+        agent._consecutive_reasoning_only = 0
         agent.message_builder.add_assistant_message(content)
-        # 2026-08-28 小欧 yield日志审计: print→logger统一(DRY违规修复)
         logger.error(f"[answer] step={step} error={content} error_type={err_type}")
-        # 2026-09-03 小欧 修复: set_failed移到emit_final_with_stats之前,
-        #   使build_final_stats_step读到agent.status=FAILED→final_status='failed'→前端badge兜底生效
         from app.services.agent.status_table import set_failed
         set_failed(agent, content)
-        yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
-            step=step, response="任务执行失败",
-            outcome="failed", error_type=err_type, error_message=content,
-        )):
-            yield _s
-        return
+        return {
+            "action": "failed",
+            "response": "任务执行失败",
+            "error_type": err_type,
+            "error_message": content,
+        }
 
-    # ── 未知类型 │ yield FinalStep(outcome=failed) ──
+    # ── 未知类型 ──
     if parsed_type != "answer":
         logger.warning(f"[handle_answer] 未知返回类型: {parsed_type}, 设置为FAILED")
-        agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 未知类型非reasoning-only, 归零防残留
+        agent._consecutive_reasoning_only = 0
         content = parsed.get("content", "") or parsed.get("thought", "") or ""
-        # 2026-08-28 小欧 yield日志审计: print→logger统一(DRY违规修复)
         logger.error(f"[answer] step={step} unknown_type={parsed_type} content={content}")
         if content:
             agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
-        # 2026-09-03 小欧 修复: set_failed移到emit_final_with_stats之前
         from app.services.agent.status_table import set_failed
         set_failed(agent, f"LLM返回未知响应类型: {parsed_type}")
-        yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
-            step=step, response="任务执行失败",
-            outcome="failed", error_type="unknown_response",
-            error_message=f"LLM返回未知响应类型: {parsed_type}",
-        )):
-            yield _s
-        return
+        return {
+            "action": "failed",
+            "response": f"LLM返回未知响应类型: {parsed_type}",
+            "error_type": "unknown_response",
+            "error_message": content,
+        }
 
     # ── type="answer" ──
-    content = format_tool_call_markup(parsed.get("content", ""))
-    reasoning = format_tool_call_markup(parsed.get("reasoning", ""))
+    content = format_tool_call_markup(parsed.get("content", "") or "")
+    reasoning = format_tool_call_markup(parsed.get("reasoning", "") or "")
 
-    # 真·空：content和reasoning都空 → 系统重试通知(MetaStep.retrying)，由 RETRYING 态驱动编排层重试 — 小欧 2026-07-13 删 recoverable
+    # 真·空
     if not content and not reasoning:
         logger.warning(f"[handle_answer] LLM返回空内容(step={step}), 触发系统重试")
-        agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 真空非reasoning空转, 归零防残留误累计
+        agent._consecutive_reasoning_only = 0
         agent.message_builder.add_assistant_message("")
-        yield agent._step_emitter.emit(MetaStep(
-            type="retrying",
-            step=step,
-            content="LLM返回空内容，触发重试",
-            wait_time=1,
-            severity="info",
-        ))
-        return
+        return {"action": "retrying", "wait_time": 1}
 
-    # reasoning-only：LLM只返回推理没给最终答案 → 注入助理消息继续循环
-    # 注：若推理内嵌 <tool_call> XML（LLM降级旧格式），已在 llm_stream.py 的 type 判定前
-    #     提取为合法 action 执行，不会走到本分支。
-    #     本分支仅处理"纯推理、无工具调用意图"的情形，以合法 assistant(content) 保留上下文。— 小欧 2026-07-16
-    # reasoning-only: LLM只返回推理没给最终答案也没调工具 → 注入助理消息继续循环
-    # 2026-07-17 - 小欧 - 防御增强(不退化正常流程):
-    #   ① reasoning先_dedup_repeat剔除原样循环重复(复用L1-C2b同函数), 压缩history防触发trim破坏;
-    #   ② 连续reasoning-only达REASONING_ONLY_MAX_ROUNDS即终止, 切断LLM退化空转(如task-2ffbc517);
-    #   正常任务LLM每轮给answer或tool, 永不进本分支, 计数恒0, 完全不受影响。
+    # reasoning-only
     if not content and reasoning:
         _deduped = _dedup_repeat(reasoning)
         agent._consecutive_reasoning_only += 1
         if agent._consecutive_reasoning_only > REASONING_ONLY_MAX_ROUNDS:
             logger.warning(f"[handle_answer] 连续{agent._consecutive_reasoning_only}轮reasoning-only无进展(step={step}), 终止任务")
-            yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
-                step=step,
-                response="模型反复思考未产出有效结果，任务已终止（疑似陷入无效循环）",
-                reasoning=_deduped,
-                outcome="failed",
-            )):
-                yield _s
-            return
+            return {
+                "action": "failed",
+                "response": "模型反复思考未产出有效结果，任务已终止（疑似陷入无效循环）",
+                "error_type": "reasoning_only_limit",
+                "error_message": f"连续{REASONING_ONLY_MAX_ROUNDS}轮仅返回推理内容",
+                "reasoning": _deduped,
+            }
         if _deduped == reasoning:
-            # ── 好的: 无重复 → 贴便签(仿Hermes: content空 + 双字段reasoning/reasoning_content以OpenAI为主兼容DeepSeek) ── 小欧 2026-07-19
-            logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入临时推理(连续reasoning-only={agent._consecutive_reasoning_only})")
+            logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入临时推理")
             agent.message_builder.conversation_history.append({
                 "role": "assistant",
                 "content": "",
@@ -206,30 +177,22 @@ async def handle_answer(agent, parsed: Dict):
                 "reasoning_content": _deduped,
                 "_temp_reasoning": True,
             })
-            yield agent._step_emitter.emit(ThoughtStep(
-                step=step, content=_deduped, reasoning="",
-            ))
+            return {"action": "thought", "content": _deduped, "reasoning": ""}
         else:
-            # ── 坏的: 有重复去重 → 不注入不持久不发射, 仅warning ── 小欧 2026-07-19
             logger.warning(f"[handle_answer] reasoning检测到重复去重(step={step}), 跳过注入")
-        return
+        return {"action": "retrying", "wait_time": 1}
 
-    agent._consecutive_reasoning_only = 0   # 2026-07-17 - 小欧 - 正常final answer, 归零空转计数(防御残留)
-    # 2026-09-01 小欧 方案A: 删除污染版 ThoughtStep(thought恒退化=content, 致历史回放 reasoning/response 双渲);
-    #   终态正文/推理由 FinalStep 单一承载。保留 reasoning-only 分支(L189)与工具轮 ThoughtStep 不动。
-    yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-
-    # ══ 重复检测(≥250字才检) — DB 入库前唯一保留的护栏 ══
+    # 正常answer
+    agent._consecutive_reasoning_only = 0
     if len(content) >= REPEAT_CHECK_MIN_LEN:
         deduped = _dedup_repeat(content)
         if deduped != content:
             content = deduped
 
-    # 2026-08-30 小欧 恢复[Final]终态全文打印: 65f4de7f7(08-28)把response=全文误改为response_len, 终态正文不再上控制台; log_and_print复用07-23统一收口+08-30控制台离线化(事件循环零阻塞)
     log_and_print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response_len={len(content)}, response={content}")
-    for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
-        step=step, response=content,
-        outcome="completed", reasoning=reasoning,
-    )):
-        yield _s
     agent.message_builder.add_assistant_message(content)
+    return {
+        "action": "completed",
+        "response": content,
+        "reasoning": reasoning,
+    }
