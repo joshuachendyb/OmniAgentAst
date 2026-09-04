@@ -20,6 +20,7 @@ backend/pytest-of-chend/
 backend/reports/
 backend/report/
 backend/notes/测试记录-*.md
+frontend/src/tests/
 
 # logs & temp
 backend/logs/
@@ -32,6 +33,13 @@ backend/check_xc10_callchain.py
 backend/temp_calc.py
 backend/thought_steps.txt
 backend/xc10_thoughts.txt
+
+# file persist (旁路排查文件A/B)
+backend/files/
+
+# task report (本地任务报告,不入库)
+task_report/
+backend/task_report/
 
 # frontend build
 frontend/dist/

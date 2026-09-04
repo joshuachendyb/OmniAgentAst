@@ -14,6 +14,19 @@
 # 2026-08-09 - 小欧 - v1.7发送即清(北京老陈 2026-08-09 指示): prepare_messages_for_llm浅拷贝messages后, 由conversation_history源中
 #   立即剔除本轮已发送的_temp_*临时消息(纠偏/推理仅活"本轮发送这一次"), 防死循环长历史中残留/重复携带/污染压缩与持久化;
 #   与终态pop_temp_messages安全网双保险(reasoning-only/纠偏正常脱落)。ast语法✓
+# 2026-08-17 - 小健 - S5(compaction 落地 943a77917): ①add_tool_result 新增 summary 形参, 工具层 llm_data.summary
+#   透传 stash `_summary` 供 compaction.use_tool_summary 复用(DRY, 14.9.6 C2 前置, 与 observation_formatter 拼接解耦);
+#   ②prepare_messages_for_llm 新增 _COMPACTION_TEMP_KEYS=("_summary","_pruned","_compressed","_raw","_truncated"),
+#   浅拷贝后一并剥离, 与 _temp_* 同段清空, 防泄漏 LLM 请求/污染 wire(对齐 [4] 14.9.3②/14.9.6 C2 剥离要求)。
+# 2026-08-17 - 小健 - compaction 函数改名同步: add_tool_result 注释3处 t1_reuse_summary→use_tool_summary(供 compaction.use_tool_summary 复用/防空转)
+# 2026-08-17 - 小健 - 常量归属迁移(北京老陈驱动): 压缩/裁剪常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 由 app.constants 迁至 app.services.agent.compaction_constants, 导入路径同步改
+# 2026-08-17 - 小健 - 阈值重构(北京老陈 2026-08-17 定案, loop裁剪=上下文×3/4): trim_history 绝对值触发 self.MAX_CONTEXT_TOKENS(skip覆盖后运行时窗口)×TRIM_TRIGGER_RATIO 替换原×MAX_CONTEXT_RATIO; 构造默认 self.MAX_CONTEXT_TOKENS 由全局 MAX_CONTEXT_TOKENS(200000) 改 DEFAULT_CONTEXT_LIMIT(262144), 运行时仍被 agent_runner 覆盖为 context_limit
+# 2026-08-20 - 小欧 - C2修复(真实缺陷复核确认): trim_history 新增瞬时裁剪token指标 `_trimmed_tokens_this_round`(每轮重置0, 实际裁剪时= rough_current-裁剪后估算, 与 `_trimmed_this_round` 同周期), 供 react_cycle on_trim 透传落 task_metrics.trim_tokens; 原 on_trim 只拿到 bool、token 数恒0 且 finalize 丢弃 → 裁剪遥测死链路。
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.4.1 D2b/11.9 P2): __init__ 加 _msg_id_counter 自增计数 +
+#   prepare_messages_for_llm 开头单点惰性补 _msg_id(不进 LLM wire, 由 react_cycle 写盘后 pop)——文件B 稳定去重依赖;
+#   v3.29 单点化定案: conversation_history 全程同批 dict 引用(trim/inject/rebuild 不复制), 补标一次永久携带,
+#   各 add_*/inject_history/trim_history 零改动(最小侵入)
+# 2026-08-29 - 小沈 - bug#1修复: _trim_fc_pairs 丢弃 tool_call_id 为空/None 的孤儿 tool 消息(原 elif not tool_call_id 分支误保留→发LLM 400); KISS仅删该分支
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -36,8 +49,10 @@ import json
 from typing import Any, Dict, List, Optional
 
 from app.config import get_config  # 小欧 2026-07-08
-from app.constants import MAX_CONTEXT_TOKENS, MAX_CONTEXT_RATIO, COMPACTION_BUFFER, CHARS_PER_TOKEN, TEMP_HISTORY_CHAR_LIMIT
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
+from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
+    COMPACTION_BUFFER, CHARS_PER_TOKEN, DEFAULT_CONTEXT_LIMIT, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
+)
 from app.services.agent.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
     message_to_dict, dict_to_message,
@@ -77,12 +92,13 @@ class MessageBuilder:
     — 小欧 2026-07-22
     """
 
-    def __init__(self, max_context_tokens: int = MAX_CONTEXT_TOKENS):
+    def __init__(self, max_context_tokens: int = DEFAULT_CONTEXT_LIMIT):
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
         self.MAX_CONTEXT_TOKENS = max_context_tokens
         self._max_rounds: int = get_config().get_max_rounds()  # 最多保留FC轮数(默认100) — 小欧 2026-07-08
         self.last_total_tokens: Optional[int] = None  # 上一轮 LLM 返回的精确 total_tokens（Provider 返回），用于增量触发 — 小欧 2026-07-22
+        self._msg_id_counter: int = 0  # 自增计数器(#10 文件B 去重 — 文档[1]11.8.4.1 D2b v3.29 单点化) — 小欧 2026-08-23
 
     def reset_per_run(self) -> None:
         """每次 run_react_cycle 仅重置 conversation_history,缓存和计数保留跨会话"""
@@ -121,26 +137,34 @@ class MessageBuilder:
         self.conversation_history.append(message_to_dict(msg))
         return msg
 
-    def add_tool_result(self, tool_call_id: str, content: str) -> ToolResultMessage:
+    def add_tool_result(self, tool_call_id: str, content: str, summary: str = "") -> ToolResultMessage:
         """添加工具执行结果消息 — 北京老陈 2026-06-25
 
         与add_assistant_tool_call配对使用:
           每条tool通过tool_call_id关联回assistant中的某一条tool_call.id。
           同一轮的所有tool共用同一个assistant父消息。
         — 小欧 2026-07-12 — 小欧 2026-07-13 防御: 构造/序列化失败也兜底追加最小合法tool消息, 保证工具结果绝不丢失
+        — 小健 2026-08-17 (14.9.6 C2 前置): 新增 summary 形参, 工具层 llm_data.summary 透传 stash 为 _summary,
+          供 compaction.use_tool_summary 复用(DRY); 内部标记由 prepare_messages_for_llm 与 _temp_* 同段剥离。
         """
         try:
             msg = ToolResultMessage(content=content, tool_call_id=tool_call_id)
-            self.conversation_history.append(message_to_dict(msg))
+            d = message_to_dict(msg)
+            if summary:
+                d["_summary"] = summary          # 供 compaction.use_tool_summary 读取; 内部标记由 prepare_messages_for_llm 剥离
+            self.conversation_history.append(d)
             return msg
         except Exception as e:
             logger.warning(f"[message_builder] add_tool_result构造失败(tool_call_id={tool_call_id}): {type(e).__name__}: {e!r}")
             # 兜底: 直接追加最小合法tool消息, 保证对话历史完整(结果不丢失) — 小欧 2026-07-13
-            self.conversation_history.append({
+            d = {
                 "role": "tool",
                 "content": content,
                 "tool_call_id": tool_call_id,
-            })
+            }
+            if summary:
+                d["_summary"] = summary          # 兜底分支同步 stash, 防 use_tool_summary 空转
+            self.conversation_history.append(d)
             return None
 
     def init_history(self, sys_prompt: str, task_prompt: str) -> None:
@@ -240,12 +264,23 @@ class MessageBuilder:
         """
         # temp_history容量保护:总字符超50000时从最旧截断,再构建messages
         self._cap_temp_history()
+        # 惰性补 _msg_id(单点): conversation_history 内尚未打标的消息在此统一分配自增 id;
+        # dict 引用全程稳定(trim/inject/rebuild 不复制), 补一次永久携带; 新增消息每轮被此处兜住
+        # — 文档[1]11.8.4.1 D2b v3.29 单点化(北京老陈 裁定:A/B 独立化最小侵入) — 小欧 2026-08-23
+        for _m in self.conversation_history:
+            if "_msg_id" not in _m:
+                _m["_msg_id"] = self._msg_id_counter
+                self._msg_id_counter += 1
         messages = [dict(msg) for msg in self.conversation_history]   # 浅拷贝防篡改 — 小欧 2026-07-19
         if self.temp_history:
             messages = messages + [dict(msg) for msg in self.temp_history]
         # 剥离内部标记防止泄漏到 LLM 请求(_temp_reasoning/_temp_same_tool_warn) — 小欧 2026-07-19 / 2026-08-08 通用前缀
+        # 2026-08-17 - 小健 - S5(compaction): 一并剥离 compaction 内部标记(_summary/_pruned/_compressed/_raw/_truncated),
+        #   因 _pruned/_summary 现为短下划线而非 _temp_ 前缀(compaction 模块落地备用后这些标记留 bool/短名前缀),
+        #   统一在此浅拷贝后清空, 防泄漏 LLM 请求/污染 wire(对齐 [4] 14.9.3③/14.9.6 C2 剥离要求)。纯剥离不存在的字段零影响。
+        _COMPACTION_TEMP_KEYS = ("_summary", "_pruned", "_compressed", "_raw", "_truncated")
         for msg in messages:
-            for _k in [k for k in msg if k.startswith("_temp_")]:
+            for _k in [k for k in msg if k.startswith("_temp_") or k in _COMPACTION_TEMP_KEYS]:
                 msg.pop(_k, None)
         # 发送即清: 本轮发送的_temp_*临时消息(纠偏/推理)仅活"本轮发送这一次", 已浅拷贝进messages后
         # 由conversation_history源中立即剔除, 防后续轮次/压缩/持久化残留(北京老陈 2026-08-09 指示) — 小欧 2026-08-09
@@ -267,11 +302,13 @@ class MessageBuilder:
 
         裁剪策略:
         - 触发条件A(增量): 本轮粗估 - 上轮精确(last_total_tokens) > COMPACTION_BUFFER
-        - 触发条件B(绝对值): 历史 > MAX_CONTEXT_TOKENS × 0.8
+        - 触发条件B(绝对值): 历史 > MAX_CONTEXT_TOKENS × TRIM_TRIGGER_RATIO(上下文×3/4, 北京老陈 2026-08-17 定案)
         - 第1轮无 last_total_tokens → 只走绝对值
         - system+user 消息永保，剩余可用全给 _trim_to_budget
         - 配对不完整的 FC 对由 _trim_fc_pairs 清理
         """
+        self._trimmed_this_round = False            # 11.3 瞬时标志（每轮重置）— 小欧 2026-08-20
+        self._trimmed_tokens_this_round = 0         # 11.3 裁剪 token 数（每轮重置，随 _trimmed_this_round 一并提供）— 小欧 2026-08-20
         try:
             rough_current = self._estimate_tokens(self.conversation_history)
             msg_count = len(self.conversation_history)
@@ -283,7 +320,7 @@ class MessageBuilder:
             delta_trigger = (self.last_total_tokens is not None and
                              rough_current - self.last_total_tokens > COMPACTION_BUFFER)
             # 绝对值安全网: 历史占满 80%
-            abs_trigger = rough_current > self.MAX_CONTEXT_TOKENS * MAX_CONTEXT_RATIO
+            abs_trigger = rough_current > self.MAX_CONTEXT_TOKENS * TRIM_TRIGGER_RATIO
 
             if not (delta_trigger or abs_trigger) and msg_count <= self._max_rounds * 2 + 5:
                 return
@@ -306,6 +343,9 @@ class MessageBuilder:
             rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed)
             if rebuilt is not None:
                 self.conversation_history = rebuilt
+                self._trimmed_this_round = True     # 11.3 实际裁剪置真 — 小欧 2026-08-20
+                _trimmed_now = max(0, rough_current - self._estimate_tokens(rebuilt))  # 11.3 裁剪释放的 token 数 — 小欧 2026-08-20
+                self._trimmed_tokens_this_round = int(_trimmed_now)
                 trigger_reason = "delta" if delta_trigger else "abs" if abs_trigger else "msg_count"
                 logger.info(f"[trim_history] 裁剪: {msg_count}条({rough_current} tokens) "
                             f"→ {len(rebuilt)}条(触发: {trigger_reason})")
@@ -456,10 +496,11 @@ class MessageBuilder:
                 new_msg["tool_calls"] = kept_tcs
                 result.append(new_msg)
             elif msg.get("role") == "tool":
+                # 丢弃 tool_call_id 为空/无配对 assistant 的孤儿 tool 消息(否则发给 LLM 触发 400) — 小沈 2026-08-29
                 if msg.get("tool_call_id") in paired_ids:
                     result.append(msg)
-                elif not msg.get("tool_call_id"):
-                    result.append(msg)
+                else:
+                    logger.debug(f"[_trim_fc_pairs] 丢弃孤儿tool消息: tool_call_id={msg.get('tool_call_id')!r}")
             else:
                 result.append(msg)
         return result

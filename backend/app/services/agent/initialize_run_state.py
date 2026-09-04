@@ -10,6 +10,21 @@
 # 2026-08-10 - 小欧 - 撤销 I1 (北京老陈 2026-08-10): 「任务中目录解析功能点去掉」— 删除 _parse_task_auth_paths/_TASK_PATH_RE 及调用,
 #   目录权限全部走 LLM 工具参数路径进临时名单(3.2.12); 同步撤销 react_cycle 的 I2/I3/I4 任务级批量确认段; 保留 R1 clear_temp_auth
 # 2026-08-11 - 小欧 - 三堂会审复核落地(P2-3): I1撤销后 _parse_task_auth_paths 已删, List 无消费处, 移除死 import(代码卫生)
+# 2026-08-16 - 小欧 - S4(10.1.2②): sys_prompt 取到后存 agent._sys_prompt, 供 react_cycle 前置装配 start 读取(start 的 system_prompt 字段, 10.1.1③ 装配时机=initialize_run_state 后 loop 前)
+# 2026-08-17 - 小健 - S5(10.1.8, 943a77917): 新增 _maybe_compact_injected_history(agent), 注入历史后估 token
+#   超窗(MAX_CONTEXT_TOKENS×MAX_CONTEXT_RATIO)置 agent._needs_compact=True; 仅置标记不触发 LLM(实际压缩
+#   归 react_cycle _compact_injected_history); COMPACTION_ENABLED=False 期间行为同现状零退化; 估算复用
+#   MessageBuilder._estimate_tokens(DRY)
+# 2026-08-17 - 小健 - start 业务过程收敛(老陈驱动, 痛斥输入装配割裂): 从 initialize_run_state() 移除
+#   历史注入 _inject_conversation_history 与超窗标记 _maybe_compact_injected_history 两处调用, 收拢到
+#   react_cycle 的 start 装配段(emit 前一气呵成); 本文件退化为纯状态重置 + init_history(system+task 装载);
+#   两函数仍保留本模块供 react_cycle 延迟导入复用(单一归属不变)
+# 2026-08-17 - 小健 - start 业务物理独立模块(老陈驱动, 痛斥"一个事情到处乱放"): 新增 start_step.py 承载 start
+#   全部业务(inject/超窗判定/C4回填/装配入口), 自本文件移除 _inject_conversation_history 与
+#   _maybe_compact_injected_history 两函数定义(迁入 start_step.py)及 COMPACTION_ENABLED import;
+#   本文件退化为纯状态重置 + init_history, 不再持有任何 start 装配私有逻辑(单一归属, 依赖不反向)
+# 2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): 重置区加 agent._last_error=None(防跨任务残留)
+# 2026-08-18 - 小欧 - §10.4.4 P6(usage剔step_json): 重置区加 agent._usage_events=[]
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
@@ -28,59 +43,6 @@ from app.logger.prompt_logger import get_prompt_logger
 from app.db import db
 
 
-def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> None:
-    """注入会话历史(多轮对话支持) — 北京老陈 2026-06-13; 小沈 2026-06-17 参数名self→agent
-    小健 2026-06-26: 修复丢失tool消息和带tool_calls的assistant消息的bug(P0-1)，保留FC协议完整性
-    chendyg 2026-06-30: 修复重复user消息bug——previous_messages中最后一条user与init_history注入的task重复"""
-    if not context or not isinstance(context, dict):
-        return
-    prev = context.get("previous_messages")
-    if not prev or not isinstance(prev, list):
-        return
-    last_user_idx = -1
-    for i in range(len(prev) - 1, -1, -1):
-        if prev[i].get("role") == "user":
-            last_user_idx = i
-            break
-    history_msgs = []
-    for i, msg in enumerate(prev):
-        if i == last_user_idx:
-            continue
-        role = msg.get("role")
-        if role == "tool":
-            entry = {"role": "tool", "tool_call_id": msg.get("tool_call_id", ""), "content": msg.get("content", "")}
-            # M-04: FC协议需要name字段 — 小欧 2026-07-10
-            name = msg.get("name")
-            if name:
-                entry["name"] = name
-            history_msgs.append(entry)
-        elif role == "assistant":
-            tc_raw = msg.get("tool_calls")
-            # 历史重载边界校验 — 小欧 2026-07-18
-            # 病根: 持久化 assistant.tool_calls 若含非dict元素(截断/畸形LLM响应落库),
-            #       原样回传致 provider 400("Can only get item pairs from a mapping")并触发FC降级。
-            # 修复: 仅保留dict元素, 非dict一律剥离; 剥离后为空则回退content分支(无退化)。
-            if isinstance(tc_raw, list):
-                tc = [t for t in tc_raw if isinstance(t, dict)]
-            elif isinstance(tc_raw, dict):
-                tc = [tc_raw]
-            else:
-                tc = []
-            if tc:
-                history_msgs.append({
-                    "role": "assistant",
-                    "tool_calls": tc,
-                    "content": msg.get("content"),
-                })
-            elif msg.get("content"):
-                history_msgs.append({"role": "assistant", "content": msg["content"]})
-        elif role == "user" and msg.get("content"):
-            history_msgs.append({"role": "user", "content": msg["content"]})
-        elif role == "system" and msg.get("content"):
-            history_msgs.append({"role": "system", "content": msg["content"]})
-    agent.message_builder.inject_history(history_msgs)
-
-
 def initialize_run_state(
     agent, task: str, task_id: Optional[str], context: Optional[Dict[str, Any]] = None
 ) -> ChunkBuffer:
@@ -95,6 +57,8 @@ def initialize_run_state(
     agent._consecutive_same_tool_calls = 0
     agent._last_tool_call_sig = None
     agent._warned_same_tool_loop = 0   # v1.7双阈值: 纠偏注入条数计数(int, 第2/3/4次共3条), 落码新增字段 — 小欧 2026-08-08
+    agent._last_error = None  # 2026-08-18 - 小欧 - P3: 每轮重置, step_emitter.emit统一出口记录, 守卫读此填充final
+    agent._usage_events = []  # 2026-08-18 - 小欧 - P6: 每轮重置, react_cycle usage emit时append, agent_runner终态insert_token读
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent.task_id:
         try:
@@ -110,6 +74,7 @@ def initialize_run_state(
 
     agent._on_session_init(task, context)
     sys_prompt = agent._get_system_prompt()
+    agent._sys_prompt = sys_prompt  # S4(10.1.2②): start 装配用(system_prompt 来源=本处 _get_system_prompt, 供 react_cycle 前置装配 start 读取) — 小欧 2026-08-16
 
     prompt_logger = get_prompt_logger()
     prompt_logger.log_system_prompt(
@@ -125,6 +90,5 @@ def initialize_run_state(
 
     agent._on_before_loop(sys_prompt, task, context)
     agent.message_builder.init_history(sys_prompt, task)
-    _inject_conversation_history(agent, context)
 
     return ChunkBuffer(MAX_CONSECUTIVE_CHUNKS)

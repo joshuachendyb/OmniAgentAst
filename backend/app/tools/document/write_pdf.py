@@ -6,6 +6,7 @@
 # 2026-07-26 - 小欧 - char_count改为统计title+content+table_data全源；之前只统计content，遗漏表格和标题内容
 # 2026-07-31 - 小欧 - Bug⑧修复: CJK字体渐进回退(依次尝试simsun/msyh/simhei/Deng/simkai, 全部缺失才退默认并告警), 防simsun缺失时中文渲染方框; Bug⑯同型修复: 有序列表正则 ^\d+\.\s → ^\d{1,3}\.\s, 防"2026. 销售报告"被误当编号列表 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
 """
 D7: write_pdf — 写入PDF文档
 
@@ -24,7 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, List
 
 from app.logger import logger
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_WRITE_PDF
 from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
@@ -245,6 +246,7 @@ def write_pdf(
         doc.build(elements)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pdf_llm_data("success", duration_ms, str(path), user_title=title or "", char_count=content_char_count)
+        with_artifact_file(llm_data, str(path))   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # =============================================================================
         # 数据设计：file_path 从 data 移除，通过 llm_data.summary 传入 LLM observation。
         # summary 已包含文件路径: "写入PDF成功: /path.pdf"

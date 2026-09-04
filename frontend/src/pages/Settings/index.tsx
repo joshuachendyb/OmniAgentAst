@@ -1,3 +1,5 @@
+// 编辑历史: 2026-08-26 小欧 - 参与P1-P7会话设置整改(模型配置/会话级设置)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 删loadConfigInfo占位/空effect/死isDirty防丢失逻辑(无后端上报); 去全局eslint-disable
 /**
  * Settings 组件 - 系统设置页面
  *
@@ -28,18 +30,17 @@
  * @since 2026-02-22
  */
 
-import React, { useState, useEffect } from 'react';
-import { Card, Tabs, Modal } from 'antd';
+import React, { useState } from 'react';
+import { Card, Tabs } from 'antd';
 import {
   KeyOutlined,
   SafetyOutlined,
   DesktopOutlined,
 } from '@ant-design/icons';
 import HealthCheck from '../../components/HealthCheck';
-import { ProviderSettings } from './components/ProviderSettings';
-import { SecuritySettings } from './components/SecuritySettings';
+import { ProviderSettings } from '@/features/settings/components/ProviderSettings';
+import { SecuritySettings } from '@/features/settings/components/SecuritySettings';
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * 设置页面
  *
@@ -64,61 +65,39 @@ import { SecuritySettings } from './components/SecuritySettings';
  */
 const Settings: React.FC = () => {
   const [activeKey, setActiveKey] = useState('model');
-  const [isDirty, setIsDirty] = useState(false);
-  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
-  const [pendingKey, setPendingKey] = useState<string>('');
   const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(['model']));
 
-  const loadConfigInfo = async () => {
-    try {
-      console.log('📋 加载配置信息完成');
-    } catch (error) {
-      console.error('加载配置信息失败:', error);
-    }
-  };
-
-  useEffect(() => {
-    return () => undefined;
-  }, []);
-
-  useEffect(() => {
-    loadConfigInfo();
-  }, []);
-
   const handleTabChange = (key: string) => {
-    if (isDirty) {
-      setPendingKey(key);
-      setConfirmModalVisible(true);
-    } else {
-      setActiveKey(key);
-      setLoadedTabs((prev) => new Set(prev).add(key));
-    }
-  };
-
-  const handleConfirmSwitch = () => {
-    setIsDirty(false);
-    setActiveKey(pendingKey);
-    setConfirmModalVisible(false);
-  };
-
-  const handleCancelSwitch = () => {
-    setConfirmModalVisible(false);
+    setActiveKey(key);
+    setLoadedTabs((prev) => new Set(prev).add(key));
   };
 
   const tabItems = [
     {
       key: 'model',
-      label: <span><KeyOutlined /> 模型配置</span>,
+      label: (
+        <span>
+          <KeyOutlined /> 模型配置
+        </span>
+      ),
       children: <ProviderSettings shouldLoad={loadedTabs.has('model')} />,
     },
     {
       key: 'security',
-      label: <span><SafetyOutlined /> 安全配置</span>,
+      label: (
+        <span>
+          <SafetyOutlined /> 安全配置
+        </span>
+      ),
       children: <SecuritySettings />,
     },
     {
       key: 'system',
-      label: <span><DesktopOutlined /> 系统状态</span>,
+      label: (
+        <span>
+          <DesktopOutlined /> 系统状态
+        </span>
+      ),
       children: <HealthCheck />,
     },
   ];
@@ -130,20 +109,14 @@ const Settings: React.FC = () => {
     >
       <Card style={{ marginTop: 0 }}>
         <div style={{ padding: '0 5px' }}>
-          <Tabs activeKey={activeKey} onChange={handleTabChange} type="line" items={tabItems} />
+          <Tabs
+            activeKey={activeKey}
+            onChange={handleTabChange}
+            type="line"
+            items={tabItems}
+          />
         </div>
       </Card>
-
-      <Modal
-        title="确认切换Tab"
-        open={confirmModalVisible}
-        onOk={handleConfirmSwitch}
-        onCancel={handleCancelSwitch}
-        okText="保存并切换"
-        cancelText="取消切换"
-      >
-        <p>当前Tab有未保存的修改，是否保存后切换？</p>
-      </Modal>
     </div>
   );
 };

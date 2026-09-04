@@ -16,6 +16,7 @@
 #   与 impl 口径一致); #4 自嵌套防护(目标在源目录子树内拒绝, 主函数+impl 双层, 防 shutil.move 递归复制进自身子树,
 #   对齐 copy_file 防护); #5 目标存在探测/删除/移动/os 调用全链 to_win_long_path 长路径化(仅NT生效),
 #   深嵌套路径不再触发 WinError 206
+# 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
 """
 F10: move_file — 移动文件
 
@@ -32,7 +33,7 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import ERR_FILE_MOVE_FAILED
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
@@ -201,6 +202,7 @@ async def move(
 
     if result.get("success"):
         llm_data = _build_move_file_llm_data("success", duration_ms, source, destination=destination, user_overwrite=overwrite)
+        with_artifact_file(llm_data, destination)   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
         # trigger: 无上述20条分支匹配 — operation_id 不命中任何专用分支

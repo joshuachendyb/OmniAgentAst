@@ -11,6 +11,70 @@
 #          导致失败任务的end_type返回"final"而非"failed", PASS/FAIL判断无error事件→误判PASSED(unit-07)。
 #   【改法】①assert_stream_ended: 读final_event.outcome区分failed/cancelled/failed
 #          ②write_test_record: 读_final_outcome, 失败/取消时passed=False
+# 2026-08-19 - 小欧 - §10.4.4 流重构(chunk 承载 answer 文本, 同步 e2e 断言): send_chat 的 response_text 改由累加 chunk.content 得到(排除 is_reasoning), 不再依赖 final.content/response——final 现仅作终止符(只含 outcome/seq)。(注: 本文件为测试辅助, 按规不提交, 此条仅供本地可追溯)
+# 2026-08-21 - 小欧 - 北京老陈驱动: 对照v0.19.15→v0.19.21后端存储优化, 修正E2E记录/校验侧失配(M1-M5)。
+#   【病根】v0.19.18废除action_tool→action(tools[]={tool,target,params}); ObservationStep仅带tool_result;
+#          v0.19.19删chat_messages.execution_steps列; v0.19.21新增artifacts/token累计。但DB校验/记录侧仍按旧
+#          type=="action_tool"判断并读tool_name/tool_params/observation/execution_result/status顶层键, 致对真实
+#          action步骤完全不触发检查(假通过), 且observation/llm_call_count读错键恒空/恒1。
+#   【改法】check_db/verify_db_steps_data_completeness/verify_steps/verify_db_prompt_consistency 改用
+#          _is_action_step + _action_entries(读tools[].tool/params); observation读tool_result; 去掉步骤status检查;
+#          check_logs的llm_call_count改 len(LLM调用记录); write_test_record §5.2/§5.3 同步新字段。
+#          + verify_db_prompt_consistency 步骤数对比由全量(non-start/chunk)改为仅对齐 action+observation 数据步骤
+#            (prompt日志还记录 startinfo/usage/thought-start/chunk 等DB不持久化步骤, 全量对比为假阳性FAIL);
+#          + §7 观察结果数基线由 SSE工具数 改为 action步数(新协议单action步批量多工具, 观察按action步计)。
+#          + §2 细分为2.1回复正文+2.2终态元信息(final_stats: duration+artifacts), 原独立§8删除, 附加信息恢复为§8。
+#          (SSE/工具链侧 send_chat/_action_entries 已于2026-08-19适配, 本次不动; case脚本不动 — 北京老陈 2026-08-21 要求只改核心代码)
+# 2026-08-21 - 小欧 - §2.2 终态元信息拆分为两个表: 表1(执行耗时+产出物数量) + 表2(产出物明细)
+# 2026-08-22 - 小欧 - §2.2 表2对齐后端artifacts新结构(4字段: tool_name/name/path/type):
+#   取值bug修复(原读tool键恒空→改tool_name)+补文件名(name)列; 第8节清理过期final_stats注释(已迁§2.2);
+#   配合后端F1定案: 兜底派生已删, 仅写工具with_artifacts自声明才有产出物
+# 2026-08-22 - 小欧 - §5.2执行步骤表按现行落库字段重造(北京老陈指示"按现在的step和数据字段更新"):
+#   删恒空"状态"列(新协议步骤无status字段), 新增"内容摘要"列(_step_brief按type提取:
+#   start用户消息/context_overview消息数tokens/stats轮次耗时/thought正文/action目标/
+#   observation首条summary/final_stats耗时产出物/final结论/error类型);
+#   observation行"工具"列改从tool_result[].tool_name取值(原仅action行有值);
+#   字段真值经chat_task_steps.step_json实库核验
+# 2026-08-22 - 小欧 - §1测试基本信息表新增"Token使用(prompt/completion/total)"行(北京老陈指示):
+#   取DB final步骤accumulated_usage(prompt_tokens/completion_tokens/total_tokens), 无数据时显示"-"
+# 2026-08-22 - 小欧 - §5.3改按轮交错配对渲染(北京老陈定案病根: 测试记录代码两段式排版问题, 系统侧零缺失):
+#   原布局"全部轮次参数段→全部轮次观察段"致工具↔结果视觉对不上(action按工具计数/observation按轮计数,
+#   4vs2、12vs6强化缺失错觉); 现遍历db_steps遇action轮即输出本轮参数+本轮observation;
+#   附孤立observation兜底防静默丢数据; 三份P9记录扫描实证: 每轮必配对、0空观察
+# 2026-08-22 - 小欧 - §5.2/§5.3展示限制调整(北京老陈指示): §5.2取消15条上限改全部步骤(标题同步改"全部");
+#   §5.3限制只展示前10轮(第11轮起追加提示行, 全量步骤仍可在5.2表查看)
+# 2026-08-22 - 小欧 - check_db竞态修复(p9_03失败实证, 非系统代码问题): 大任务SSE结束后后台仍在写
+#   chat_user_message的task_id/response(p9_03: 17轮34工具大链路, 断言时未落库→has_assistant_message
+#   误判False, 31s后才写入); user_messages取数改为等待行内出现task_id或response, 重试对齐8次×2s
+# 2026-08-22 - 小欧 - §5.2 thought行摘要改双字段展示(北京老陈指示): 先"思考:"=reasoning(思考区)
+#   后"结论:"=thought(LLM答案区), 空段跳过; 有价值字段=thought+reasoning(content与其恒同值不读);
+#   病根=原取值漏reasoning字段致部分轮次(答案区空仅思考区)显示空白
+# 2026-08-22 - 小欧 - §5.2表列头"步骤号"改"轮次"(北京老陈指示, 该列语义即LLM执行轮次)
+# 2026-08-22 - 小欧 - §5.2 stats行摘要补retry_count展示(北京老陈问询驱动): 非零时追加"/工具重试N次",
+#   落库字段step_count/severity为常量无价值不显示
+# 2026-08-22 - 小欧 - §5.2接入token三层展示(定案: 系统代码无缺陷数据齐全, 记录侧此前未取):
+#   stats行追加"/本轮Ntok"(usage不落库P6仅SSE, 按轮从result.events的usage事件取total_tokens);
+#   final_stats行追加"/任务累计Ntok/会话累计Ntok"(从final步骤json的task/session_accumulated_tokens取)
+# 2026-08-22 - 小欧 - §5.2每轮stats行升级为三组token(北京老陈指示): 本轮/任务累计/会话累计,
+#   全部取自同一条SSE usage事件自带字段(llm_call_count_token/task/session_accumulated_tokens)
+# 2026-08-22 - 小欧 - §5.2 token每组三数全显修正(北京老陈指错驱动): 原每组仅显total_tokens一数,
+#   现新增_fmt_tok公共函数, 每组显示入(prompt)/出(completion)/总(total)三数; 三源真值核实:
+#   base_agent.py四组初始化三字段/react_cycle usage事件顶层三数/final落库json实测三字段齐全
+# 2026-08-22 - 小欧 - §5.2 SSE侧事件补行(北京老陈指示): usage/error/paused/resumed/retrying/cancelled
+#   仅SSE不落库(P1~P6)原表格无行, 现按流序与落库步骤混排成行; chunk量大/thought_start纯信号不补;
+#   落库类型分布实测8种(start/context_overview/thought/action/observation/stats/final_stats/final);
+#   usage独立成行显本轮入/出/总三数, stats行去重只留任务/会话累计两组(北京老陈裁定)
+# 2026-08-23 - 小欧 - §1测试基本信息表新增"model 结构信息"行(北京老陈指示): 展示归一后模型身份=ModelRef JSON,
+#   取自chat_tasks.sessionModel(回退token_usage.task_model), 解析 provider/model/display_name; 佐证ModelRef归一落库正确
+# 2026-08-23 - 小欧 - 消除测试记录"假PASSED"盲区: 新增 verify_token_usage 主动核查 token_usage 真实落库
+#   (原 passed 仅依赖日志ERROR扫描, 落库静默失败不打ERROR则假PASS); 有LLM调用时 token_usage 行数须≥1且与
+#   llm_call_count 一致, 否则 passed=False; 测试记录终态判定纳入此硬核查
+# 2026-08-23 - 小欧 - §1测试基本信息表新增"跨任务注入上下文"行(北京老陈指示): 展示本任务之前注入的连续对话历史体量,
+#   取自context_overview事件的injected_message_count/injected_estimated_tokens(多轮历史注入机制, 单轮任务为0显示"无");
+#   §5.2 context_overview行与跨任务行的tok统一标注"(估算)"(chars//4纯数学估算, 非真实LLM token, 防误解)
+# 2026-08-26 - 小欧 - model 结构信息空值修复(com-test 02/03实证): write_test_record中_sid原仅在`if dpi is None:`分支内赋值;
+#   单测传dpi=[](非None)使分支不执行→_sid未绑定→UnboundLocalError被except吞掉→session_id取不到→model结构信息(取chat_tasks.sessionModel)恒显"-";
+#   改法: 把`_sid = result.get("session_id","")`移到`if dpi is None:`外无条件赋值
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
@@ -73,6 +137,7 @@ E2E测试核心测试脚本和代码
   3.4 回复语义(相关性)   → 与指令是否相关需人工
 
 -- 小健 2026-06-14
+-- 更新: 2026-08-22 - 小欧 - 新增verify_db_tool_usage()公共函数(case侧DB工具步骤校验唯一入口, 复用_is_action_step/_action_entries新旧协议自适应; 登记FUNCTIONS.md v3.7 九.1)
 """
 
 import asyncio
@@ -374,16 +439,32 @@ async def send_chat(
                         if event_type == "error":
                             error_occurred = True
 
+                        # 2026-08-19 小欧 方法2修正(老陈驱动): chunk 不再边收边拼——全部事件已入 events(line373),
+                        #   最终答复待 stream 结束后按 final.step 取该轮非 reasoning 正文 chunk 拼接,
+                        #   避免把前几轮 thought 过渡话术混入(原全量拼接致02/03脏/01空)。
+
                         if event_type == "final":
                             final_event = event
-                            response_text = event.get("content") or event.get("response", "")
 
-                        if event_type == "action_tool":
-                            tool_calls.append({
-                                "type": event_type,
-                                "tool_name": event.get("tool_name", ""),
-                                "tool_params": event.get("tool_params", {}),
-                            })
+                        # 2026-08-19 小欧 协议适配(§10.3.3(2)废除action_tool→action): 工具调用事件改从 action.tools[] 取,
+                        #   每元素含 tool(工具名)/params(参数), 兼容旧 action_tool(tool_name/tool_params)。
+                        if event_type in ("action", "action_tool"):
+                            tools_raw = event.get("tools") or []
+                            if tools_raw:
+                                for _it in tools_raw:
+                                    if not isinstance(_it, dict):
+                                        continue
+                                    tool_calls.append({
+                                        "type": "action",
+                                        "tool_name": _it.get("tool") or _it.get("tool_name") or "",
+                                        "tool_params": _it.get("params") or _it.get("tool_params") or {},
+                                    })
+                            else:
+                                tool_calls.append({
+                                    "type": event_type,
+                                    "tool_name": event.get("tool_name", ""),
+                                    "tool_params": event.get("tool_params", {}),
+                                })
             except httpx.TimeoutException:
                 pass
             except Exception:
@@ -393,6 +474,27 @@ async def send_chat(
         event_types = [e.get("type", "") for e in events]
         logical_events = [e for e in events if e.get("type") != "chunk"]
         unique_step_numbers = len({e.get("step") for e in events if e.get("step") is not None})
+
+        # 2026-08-19 小欧 方法2修正(老陈驱动): 最终答复 = 最后一轮(fin_step)的 chunk 两类拼接——
+        #   reason(推理, is_reasoning 正文) + resp(最终答复, 非 reasoning), 用 [最后总结] 分隔线拼进记录 ## 2;
+        #   解决原全量拼接把前几轮 thought 过渡话术混入(02/03脏)+ 全 reasoning 被滤空(01)的问题;
+        #   若该轮无正文 chunk(return_direct/action轮), resp 回退 final.response/content。
+        fin_step = (final_event or {}).get("step")
+        reason = "".join(
+            e.get("content", "") for e in events
+            if e.get("type") == "chunk" and e.get("step") == fin_step and e.get("is_reasoning")
+        )
+        resp = "".join(
+            e.get("content", "") for e in events
+            if e.get("type") == "chunk" and e.get("step") == fin_step and not e.get("is_reasoning")
+        )
+        if not (resp or "").strip():
+            resp = (final_event or {}).get("response") or (final_event or {}).get("content") or ""
+        if (reason or "").strip():
+            response_text = reason.rstrip() + "\n[最后总结]: ------------\n" + resp
+        else:
+            response_text = resp
+
         ret = {
             "events": events,
             "final_event": final_event,
@@ -401,7 +503,10 @@ async def send_chat(
             "logical_step_count": len(logical_events),
             "unique_step_numbers": unique_step_numbers,
             "tool_calls": tool_calls,
-            "llm_call_count": len(tool_calls) + 1,
+            # 2026-08-21 小欧 修正: llm_call_count 应为「LLM调用次数」而非工具调用次数。
+            #   旧值 len(tool_calls)+1 把批量工具数当成LLM轮次(9_02误为5, 实3; com04误为39, 实13)。
+            #   真实LLM调用次数 = SSE中 usage 事件数(每次LLM完成必带一个usage), 与Prompt日志«LLM调用记录»一致。
+            "llm_call_count": sum(1 for e in events if e.get("type") == "usage") or (len(tool_calls) + 1),
             "total_time_ms": total_time_ms,
             "response_text": response_text,
             "reply": response_text,
@@ -539,7 +644,10 @@ def check_db(session_id: str) -> Dict[str, Any]:
     验证项:
       - session存在 + is_valid + created_at/updated_at合理
       - user message + assistant message都存在 + 顺序正确
-      - execution_steps中每个step的tool_name/tool_params/observation/status字段完整性
+      - execution_steps中每个step字段完整性:
+        action/action_tool步骤: tools[].tool/params 非空; observation步骤: tool_result 非空
+        (v0.19.18起 action_tool→action, observation 仅带 tool_result, 步骤无 status 字段)
+    v2.0: 不再读 chat_messages，改用 chat_user_message — 小欧 2026-08-21
     """
     result: Dict[str, Any] = {
         "session_exists": False,
@@ -574,55 +682,61 @@ def check_db(session_id: str) -> Dict[str, Any]:
             result["created_at"] = session_data.get("created_at")
             result["updated_at"] = session_data.get("updated_at")
 
-        # ── chat_messages (via API) ──
-        messages = session_data.get("messages", []) if session_data else []
-        result["messages_count"] = len(messages)
-        user_first_idx: Optional[int] = None
-        assistant_first_idx: Optional[int] = None
+        # ── chat_user_message (via API, 不再读 chat_messages) ──
+        # 2026-08-22 小欧 竞态修复(p9_03实证): 大任务SSE结束后 agent_runner 后台仍在大体积写库
+        #   (task_id/response 最晚31s后才落库), 原重试5次×1s不够致 has_assistant_message 误判False;
+        #   改为等待"行内出现task_id或response"才收数, 预算对齐sessions接口8次×2s
+        user_msgs_data = None
+        user_msgs: List[Dict[str, Any]] = []
+        for _attempt in range(8):
+            user_msgs_data = _api_get(f"/sessions/{session_id}/user_messages", timeout=30)
+            user_msgs = user_msgs_data.get("messages", []) if user_msgs_data else []
+            if any(m.get("response") or m.get("task_id") for m in user_msgs):
+                break
+            time.sleep(2)
 
-        for mi, msg in enumerate(messages):
-            role = msg.get("role", "")
-            if role == "user":
-                result["has_user_message"] = True
-                if user_first_idx is None:
-                    user_first_idx = mi
-            elif role == "assistant":
-                result["has_assistant_message"] = True
-                if assistant_first_idx is None:
-                    assistant_first_idx = mi
+        result["messages_count"] = len(user_msgs)
 
-                steps_raw = msg.get("execution_steps")
-                if steps_raw:
-                    steps = steps_raw if isinstance(steps_raw, list) else json.loads(steps_raw)
-                    result["execution_steps"] = steps
-                    result["execution_steps_count"] = len(steps)
+        # chat_user_message 每行是一个用户消息+AI回复，有 task_id 即有 assistant 消息
+        if user_msgs:
+            result["has_user_message"] = True
+            result["has_assistant_message"] = any(m.get("response") or m.get("task_id") for m in user_msgs)
+            result["message_order_correct"] = True  # chat_user_message 按 created_at 升序，天然有序
 
-                    for si, step in enumerate(steps):
-                        step_type = step.get("type", "")
-                        if step_type == "action_tool":
-                            if not step.get("tool_name"):
-                                result["step_field_issues"].append(
-                                    f"step[{si}]: tool_name empty(MUST)"
-                                )
-                            tp = step.get("tool_params")
-                            if not isinstance(tp, dict):
-                                result["step_field_issues"].append(
-                                    f"step[{si}]: tool_params非dict(MUST)"
-                                )
-                            obs = step.get("observation") or step.get("execution_result")
-                            if not obs:
-                                result["step_field_issues"].append(
-                                    f"step[{si}]: observation empty(MUST)"
-                                )
-                        status = step.get("status")
-                        if status is not None and status not in ("success", "error"):
-                            result["step_field_issues"].append(
-                                f"step[{si}]: status abnormal={status}"
-                            )
+            # 取最后一个有 execution_steps 的任务步骤
+            for _um in reversed(user_msgs):
+                _task_id = _um.get("task_id")
+                if _task_id:
+                    _steps_data = _api_get(f"/chat/execution/task/{_task_id}/steps", timeout=30)
+                    if _steps_data and _steps_data.get("steps"):
+                        steps = _steps_data["steps"]
+                        result["execution_steps"] = steps
+                        result["execution_steps_count"] = len(steps)
 
-        # ── message order ──
-        if user_first_idx is not None and assistant_first_idx is not None:
-            result["message_order_correct"] = user_first_idx < assistant_first_idx
+                        for si, step in enumerate(steps):
+                            step_type = step.get("type", "")
+                            if _is_action_step(step):
+                                _entries = _action_entries(step)
+                                if not _entries:
+                                    result["step_field_issues"].append(
+                                        f"step[{si}](type={step_type}): 无工具调用信息(MUST)"
+                                    )
+                                for _ei, _en in enumerate(_entries):
+                                    if not _en.get("tool_name"):
+                                        result["step_field_issues"].append(
+                                            f"step[{si}]#{_ei}: tool_name empty(MUST)"
+                                        )
+                                    _tp = _en.get("tool_params")
+                                    if not isinstance(_tp, dict):
+                                        result["step_field_issues"].append(
+                                            f"step[{si}]#{_ei}: tool_params非dict(MUST)"
+                                        )
+                            elif step_type == "observation":
+                                if not step.get("tool_result"):
+                                    result["step_field_issues"].append(
+                                        f"step[{si}]: tool_result empty(MUST)"
+                                    )
+                        break  # 取到步骤即退出
 
     except Exception as e:
         result["errors"].append(f"API query error: {e}")
@@ -638,7 +752,7 @@ SAFETY_KEYWORDS = [
     "create_task", "delete_task",
     "Permission denied", "DB operation failed",
     "NoneType", "Errno 13", "ERR_SQL_EXEC",
-    "UNIQUE constraint", "拒绝访问", "WinError 5",
+    "UNIQUE constraint", "拒绝访问", "WinError 5", "WinError 32",
     "readtext failed", "unable to open database",
 ]
 
@@ -677,6 +791,136 @@ def _obs_to_text(obs) -> str:
 
 
 # ─── 步骤8: SSE vs DB一致性验证 (verify_consistency) ────────────
+# 2026-08-19 小欧 工具调用协议适配(§10.3.3(2)废除action_tool→action):
+#   新增统一判定/规整辅助, DB侧从 tools[] {tool,params} 或旧 tool_name/tool_params 归一为 tool_name/tool_params。
+def _is_action_step(step: Any) -> bool:
+    """新旧协议工具步骤统一判定 - 小欧 2026-08-19"""
+    return isinstance(step, dict) and step.get("type") in ("action", "action_tool")
+
+
+def _action_entries(step: Any) -> List[Dict[str, Any]]:
+    """把工具步骤规整为 {tool_name, tool_params} 列表 - 小欧 2026-08-19
+    新协议 action: tools[] 每元素 {tool, params}; 旧协议 action_tool: 直接 tool_name/tool_params"""
+    if not isinstance(step, dict):
+        return []
+    if step.get("type") == "action":
+        out: List[Dict[str, Any]] = []
+        for t in step.get("tools") or []:
+            if isinstance(t, dict):
+                out.append({
+                    "tool_name": t.get("tool") or t.get("tool_name") or "",
+                    "tool_params": t.get("params") or t.get("tool_params") or {},
+                })
+        return out
+    if step.get("type") == "action_tool":
+        return [{
+            "tool_name": step.get("tool_name", ""),
+            "tool_params": step.get("tool_params", {}),
+        }]
+    return []
+
+
+def _fmt_tok(d: Any) -> str:
+    """token字典三数全显: 入=prompt_tokens/出=completion_tokens/总=total_tokens - 小欧 2026-08-22"""
+    d = d if isinstance(d, dict) else {}
+    return (
+        f"入{d.get('prompt_tokens', '?')}"
+        f"/出{d.get('completion_tokens', '?')}"
+        f"/总{d.get('total_tokens', '?')}"
+    )
+
+
+def verify_db_tool_usage(
+    db: Dict[str, Any],
+    expect_any_tools: Optional[List[str]] = None,
+    min_tool_steps: int = 1,
+) -> List[str]:
+    """DB侧工具步骤统一校验(case脚本唯一入口, 杜绝各case自写取数块) - 小欧 2026-08-22
+
+    病根定案: 19个case曾复制粘贴"action_tool过滤+顶层tool_name+observation字段"旧取数块,
+    §10.3模型变更即全量碎裂; 现收敛本函数单点维护, 内部复用_is_action_step/_action_entries
+    新旧协议自适应。校验三项:
+      ①工具步骤数≥min_tool_steps
+      ②expect_any_tools给定时, 全部工具步骤中至少命中一个期望工具
+      ③每个工具步骤: actions归一后工具名非空, 且按step号配对的observation步骤tool_result[]非空
+    返回问题列表(空=通过); 参数db为check_db()返回值。
+    """
+    issues: List[str] = []
+    steps = db.get("execution_steps", []) or []
+    tool_steps = [s for s in steps if _is_action_step(s)]
+    if len(tool_steps) < min_tool_steps:
+        issues.append(f"工具步骤数{len(tool_steps)}<{min_tool_steps}")
+        return issues
+    if expect_any_tools:
+        _used = {e.get("tool_name") for s in tool_steps for e in _action_entries(s)}
+        if not (_used & set(expect_any_tools)):
+            issues.append(f"期望工具未使用: 期望{sorted(set(expect_any_tools))} 实际{sorted(_used)}")
+    _obs_by_step = {s.get("step"): (s.get("tool_result") or [])
+                    for s in steps if s.get("type") == "observation"}
+    for s in tool_steps:
+        _names = [e.get("tool_name") for e in _action_entries(s)]
+        if not _names or not all(_names):
+            issues.append(f"step{s.get('step')}工具名缺失: {_names}")
+            continue
+        if not _obs_by_step.get(s.get("step")):
+            issues.append(f"step{s.get('step')}工具结果缺失: {_names}")
+    return issues
+
+
+def _step_brief(step: Any, limit: int = 40) -> str:
+    """按现行落库字段提取各类型步骤内容摘要(§5.2表格"内容摘要"列用) - 小欧 2026-08-22
+    字段真值经 chat_task_steps.step_json 实库核验: start(user_message)/context_overview(message_count,
+    estimated_tokens,truncated)/stats(llm_call_count,duration)/thought(content)/action(tools[].target)/
+    observation(tool_result[].llm_data.summary)/final_stats(duration,artifacts)/final(outcome,response)/error"""
+    if not isinstance(step, dict):
+        return ""
+
+    def _cut(val) -> str:
+        s = str(val or "").replace("\n", " ").replace("|", "\\|").strip()
+        return s[:limit] + ("…" if len(s) > limit else "")
+
+    t = step.get("type", "")
+    if t == "start":
+        return _cut(step.get("user_message"))
+    if t == "context_overview":
+        return f"消息{step.get('message_count', 0)}条/≈{step.get('estimated_tokens', 0)}tok(估算)" + ("/已裁剪" if step.get("truncated") else "")
+    if t == "stats":
+        # 2026-08-22 小欧 补展示retry_count(仅非零追加): stats落库字段=llm_call_count/duration/
+        #   retry_count/step_count(轮次预算常量100)/severity(恒info), 后两字段无展示价值不显示
+        _s = f"第{step.get('llm_call_count', 0)}轮/耗时{step.get('duration', 0)}s"
+        _rc = step.get("retry_count", 0) or 0
+        return _s + (f"/工具重试{_rc}次" if _rc else "")
+    if t == "thought":
+        # 2026-08-22 小欧 按北京老陈指示: 有价值字段=thought+reasoning(content与其恒同值不读);
+        #   展示顺序先"思考:"=reasoning(思考区)后"结论:"=thought(LLM答案区); 空段跳过
+        _parts = []
+        _c = str(step.get("thought") or "").strip()
+        _r = str(step.get("reasoning") or "").strip()
+        if _r:
+            _parts.append("思考: " + _cut(_r))
+        if _c:
+            _parts.append("结论: " + _cut(_c))
+        return " | ".join(_parts)
+    if t == "action":
+        tgts = [str(x.get("target", "")) for x in (step.get("tools") or []) if isinstance(x, dict)]
+        return _cut(", ".join(x for x in tgts if x))
+    if t == "observation":
+        tr = step.get("tool_result") or []
+        if not tr:
+            return ""
+        first = tr[0] if isinstance(tr[0], dict) else {}
+        ld = first.get("llm_data") or {}
+        prefix = f"[{len(tr)}项] " if len(tr) > 1 else ""
+        return prefix + _cut(ld.get("summary"))
+    if t == "final_stats":
+        arts = step.get("artifacts") or []
+        return f"耗时{step.get('duration', 0)}s/产出物{len(arts)}个"
+    if t == "final":
+        return _cut(f"[{step.get('outcome', '')}] {step.get('response', '')}")
+    if t == "error":
+        return _cut(f"[{step.get('error_type', '')}] {step.get('content', '')}")
+    return _cut(step.get("content"))
+
 
 def verify_consistency(
     result: Dict[str, Any], session_id: str
@@ -702,10 +946,10 @@ def verify_consistency(
     sse_tool_calls = result.get("tool_calls", [])
     db_steps = db.get("execution_steps", [])
 
-    db_tool_calls = [
-        s for s in db_steps
-        if s.get("type") == "action_tool" and s.get("tool_name")
-    ]
+    db_tool_calls = []
+    for s in db_steps:
+        if _is_action_step(s):
+            db_tool_calls.extend(_action_entries(s))
 
     # ── 数量对比(偏差<=2) ──
     sse_count = len(sse_tool_calls)
@@ -721,18 +965,19 @@ def verify_consistency(
         issues.append(f"tool_name完全不一致: SSE={sse_names}, DB={db_names}")
 
     # ── observation相似度>=80% ──
-    # SSE event有observation字段(dict)和content字段(格式化字符串), DB存的是dict
+    # 新协议 observation为独立 step, 观察结果在 tool_result[]; action 步骤不再内嵌 observation
     sse_obs_list = [
-        e.get("observation") or e.get("content", "")
+        e.get("tool_result") or e.get("observation") or e.get("content", "")
         for e in result["events"]
-        if e.get("type") == "action_tool"
-        and (e.get("observation") or e.get("content"))
+        if e.get("type") in ("action", "action_tool", "observation")
+        and (e.get("tool_result") or e.get("observation") or e.get("content"))
     ]
+    # 新协议 observation为独立 step, 观察结果在 tool_result[]
     db_obs_list = [
-        s.get("observation") or s.get("execution_result", "")
+        s.get("tool_result") or s.get("observation") or s.get("execution_result") or s.get("content", "")
         for s in db_steps
-        if s.get("type") == "action_tool"
-        and (s.get("observation") or s.get("execution_result"))
+        if s.get("type") == "observation"
+        and (s.get("tool_result") or s.get("observation") or s.get("execution_result") or s.get("content"))
     ]
     if sse_obs_list and db_obs_list:
         for sse_obs in sse_obs_list:
@@ -780,14 +1025,15 @@ def verify_db_prompt_consistency(
     session_id: str,
     user_msg_id: Optional[int] = None,
 ) -> List[str]:
-    """验证DB execution_steps与Prompt日志«执行步骤»严格一致性 -- 小健 2026-06-24
+    """验证DB execution_steps与Prompt日志«步骤产出»严格一致性 -- 小健 2026-06-24
 
     严格比较项:
       - 非chunk/start步骤数量必须完全一致
-      - 同步骤号: type, tool_name, tool_params必须完全一致
-      - action_tool步骤的execution_result必须完全一致
+      - 同步骤号: action 的 tool_name/tool_params 必须完全一致
+      - 同步骤号: observation 的 tool_result(错误码/状态) 必须一致
       - 步骤顺序必须完全一致
-    
+
+    v0.19.18起 action_tool→action(tools[]={tool,target,params}); observation 仅带 tool_result。
     v2.2: 增强严格性，不允许偏差
     """
     issues: List[str] = []
@@ -828,48 +1074,76 @@ def verify_db_prompt_consistency(
         issues.append("Prompt日志«步骤产出»为空")
         return issues
 
-    # 非start/chunk步骤数对比
-    db_main = [s for s in db_steps if s.get("type") not in ("start", "chunk")]
-    log_main = [s for s in log_steps if s.get("步骤类型") not in ("start", "chunk")]
+    # action/observation步骤数对比(对齐到双方都有意义的数据步骤)
+    # v0.19.18起 prompt日志还会记录 startinfo/usage/thought-start/chunk 等 DB不持久化的步骤,
+    # 故不能用全量步骤数对比, 只能对齐 action/observation 两类数据步骤。
+    db_main = [s for s in db_steps if _is_action_step(s) or s.get("type") == "observation"]
+    log_main = [
+        s for s in log_steps
+        if s.get("步骤类型") in ("action", "observation")
+        or (isinstance(s.get("数据"), dict) and _is_action_step(s.get("数据")))
+    ]
 
     if len(db_main) != len(log_main):
         issues.append(
-            f"非chunk/start步骤数不一致(DB={len(db_main)}, Prompt日志={len(log_main)})(MUST)"
+            f"action/observation步骤数不一致(DB={len(db_main)}, Prompt日志={len(log_main)})(MUST)"
         )
 
-    # 按步骤号分组，只取action_tool，按位置对比
-    db_by_step: Dict[int, List[Dict]] = {}
-    log_by_step: Dict[int, List[Dict]] = {}
+    # 按步骤号分组: 收集每个 step 的 action 工具项(tool_name/tool_params) 与 observation 文本
+    # v0.19.18起 action/action_tool: tools[]={tool,target,params}; observation: tool_result[]
+    def _collect(step):
+        _acts = _action_entries(step) if _is_action_step(step) else []
+        _obs = ""
+        if step.get("type") == "observation":
+            _tr = step.get("tool_result")
+            _obs = _obs_to_text(_tr) if _tr else ""
+        return _acts, _obs
+
+    db_acts: Dict[int, List[Dict]] = {}
+    db_obs: Dict[int, str] = {}
     for s in db_steps:
         sn = s.get("step")
-        if sn is not None and s.get("type") == "action_tool":
-            db_by_step.setdefault(sn, []).append(s)
+        if sn is None:
+            continue
+        _a, _o = _collect(s)
+        if _a:
+            db_acts.setdefault(sn, []).extend(_a)
+        if _o:
+            db_obs[sn] = _o
+    log_acts: Dict[int, List[Dict]] = {}
+    log_obs: Dict[int, str] = {}
     for s in log_steps:
         sn = s.get("步骤")
-        if sn is not None:
-            evt = s.get("数据", {})
-            if isinstance(evt, dict) and evt.get("type") == "action_tool":
-                log_by_step.setdefault(sn, []).append(evt)
+        if sn is None:
+            continue
+        evt = s.get("数据", {})
+        if not isinstance(evt, dict):
+            continue
+        _a, _o = _collect(evt)
+        if _a:
+            log_acts.setdefault(sn, []).extend(_a)
+        if _o:
+            log_obs[sn] = _o
 
-    all_step_nums = set(db_by_step.keys()) | set(log_by_step.keys())
+    all_step_nums = set(db_acts.keys()) | set(log_acts.keys()) | set(db_obs.keys()) | set(log_obs.keys())
     for sn in sorted(all_step_nums):
-        db_actions = db_by_step.get(sn, [])
-        log_actions = log_by_step.get(sn, [])
+        db_actions = db_acts.get(sn, [])
+        log_actions = log_acts.get(sn, [])
 
-        # 数量对比
+        # action 数量对比
         if len(db_actions) != len(log_actions):
             issues.append(
-                f"步骤{sn} action_tool数量不一致(DB={len(db_actions)}, Prompt日志={len(log_actions)})(MUST)"
+                f"步骤{sn} action数量不一致(DB={len(db_actions)}, Prompt日志={len(log_actions)})(MUST)"
             )
 
         max_len = max(len(db_actions), len(log_actions))
         for i in range(max_len):
             # 哪边多出
             if i >= len(db_actions):
-                issues.append(f"步骤{sn} DB少第{i+1}个action_tool, Prompt日志多出(MUST)")
+                issues.append(f"步骤{sn} DB少第{i+1}个action, Prompt日志多出(MUST)")
                 continue
             if i >= len(log_actions):
-                issues.append(f"步骤{sn} DB多出第{i+1}个action_tool, Prompt日志缺少(MUST)")
+                issues.append(f"步骤{sn} DB多出第{i+1}个action, Prompt日志缺少(MUST)")
                 continue
 
             db_s = db_actions[i]
@@ -896,22 +1170,20 @@ def verify_db_prompt_consistency(
                     f"步骤{sn} 第{i+1}个tool_params不一致(DB={db_tp}, Prompt日志={log_tp})(MUST)"
                 )
 
-            # observation对比(仅位置匹配)
-            db_obs = db_s.get("observation") or db_s.get("execution_result", "")
-            log_obs = log_evt.get("execution_result") or log_evt.get("observation") or ""
-            db_str = str(db_obs)
-            log_str = str(log_obs)
-            if db_str and log_str:
-                db_upper = ''.join(c for c in db_str if c.isupper() or c == '_')
-                log_upper = ''.join(c for c in log_str if c.isupper() or c == '_')
-                if 'ERR' in db_upper and 'ERR' not in log_upper:
-                    issues.append(
-                        f"步骤{sn} 第{i+1}个observation错误码不匹配: DB含错误码, Prompt日志未含(MUST)"
-                    )
-                elif 'SUCCESS' in db_upper and 'SUCCESS' not in log_upper:
-                    issues.append(
-                        f"步骤{sn} 第{i+1}个observation状态不匹配: DB含SUCCESS, Prompt日志未含(MUST)"
-                    )
+        # observation 对比(同 step 号)
+        db_o = db_obs.get(sn, "")
+        log_o = log_obs.get(sn, "")
+        if db_o and log_o:
+            db_upper = ''.join(c for c in db_o if c.isupper() or c == '_')
+            log_upper = ''.join(c for c in log_o if c.isupper() or c == '_')
+            if 'ERR' in db_upper and 'ERR' not in log_upper:
+                issues.append(
+                    f"步骤{sn} observation错误码不匹配: DB含错误码, Prompt日志未含(MUST)"
+                )
+            elif 'SUCCESS' in db_upper and 'SUCCESS' not in log_upper:
+                issues.append(
+                    f"步骤{sn} observation状态不匹配: DB含SUCCESS, Prompt日志未含(MUST)"
+                )
 
     return issues
 
@@ -921,12 +1193,12 @@ def verify_db_steps_data_completeness(
 ) -> List[str]:
     """验证DB执行步骤数据完整性 -- 小健 2026-06-24
 
-    严格检查每个action_tool步骤的:
-      - tool_name不能为空
-      - tool_params必须存在且为dict
-      - observation/execution_result必须存在
-      - status必须为success或error
-      - step号必须存在
+    严格检查每个 action/action_tool 步骤的:
+      - tools[].tool 不能为空
+      - tools[].params 必须存在且为dict
+    每个 observation 步骤的:
+      - tool_result 不能为空
+    (v0.19.18起废除action_tool→action(tools[]={tool,target,params}); observation仅带tool_result; 步骤无status字段)
     """
     issues: List[str] = []
     
@@ -940,32 +1212,28 @@ def verify_db_steps_data_completeness(
     for i, step in enumerate(db_steps):
         step_type = step.get("type", "")
         step_num = step.get("step", "")
-        
-        if step_type == "action_tool":
-            # tool_name检查
-            tool_name = step.get("tool_name", "")
-            if not tool_name:
-                issues.append(f"步骤{step_num}(index={i}): tool_name为空(MUST)")
-            
-            # tool_params检查
-            tool_params = step.get("tool_params")
-            if tool_params is None or not isinstance(tool_params, dict):
-                issues.append(f"步骤{step_num}(index={i}): tool_params为空或非dict(MUST)")
-            
-            # observation检查
-            obs = step.get("observation") or step.get("execution_result")
-            if not obs:
-                issues.append(f"步骤{step_num}(index={i}): observation/execution_result为空(MUST)")
-            
-            # status检查
-            status = step.get("status")
-            if status is not None and status not in ("success", "error"):
-                issues.append(f"步骤{step_num}(index={i}): status异常={status}(MUST)")
-            
-            # step号检查
-            if step_num is None:
-                issues.append(f"步骤(index={i}): step号缺失(MUST)")
-    
+
+        if _is_action_step(step):
+            # action/action_tool: 工具信息在 tools[]={tool,target,params}
+            _entries = _action_entries(step)
+            if not _entries:
+                issues.append(f"步骤{step_num}(index={i}): 无工具调用信息(MUST)")
+            for _ei, _en in enumerate(_entries):
+                tool_name = _en.get("tool_name", "")
+                if not tool_name:
+                    issues.append(f"步骤{step_num}(index={i})#{_ei}: tool_name为空(MUST)")
+                tool_params = _en.get("tool_params")
+                if tool_params is None or not isinstance(tool_params, dict):
+                    issues.append(f"步骤{step_num}(index={i})#{_ei}: tool_params为空或非dict(MUST)")
+        elif step_type == "observation":
+            # observation: 观察结果在 tool_result[]
+            if not step.get("tool_result"):
+                issues.append(f"步骤{step_num}(index={i}): tool_result为空(MUST)")
+
+        # step号检查
+        if step_num is None:
+            issues.append(f"步骤(index={i}): step号缺失(MUST)")
+
     return issues
 
 
@@ -989,11 +1257,11 @@ def verify_steps(
 
     steps = db["execution_steps"]
 
-    # ── 步骤编号连续性(仅检查action_tool步骤,允许并行调用共享step号) ──
+    # ── 步骤编号连续性(仅检查action/action_tool步骤,允许并行调用共享step号) ──
     # 小欧 2026-06-16: LLM可以在一次响应中返回多个并行tool_call,共享同一个step号
     tool_step_nums = [
         s.get("step") for s in steps
-        if s.get("type") == "action_tool" and s.get("step") is not None
+        if _is_action_step(s) and s.get("step") is not None
     ]
     if len(tool_step_nums) >= 2:
         for i in range(len(tool_step_nums) - 1):
@@ -1002,12 +1270,16 @@ def verify_steps(
             if tool_step_nums[i + 1] < tool_step_nums[i]:
                 issues.append(f"工具步骤编号不递增: {tool_step_nums[i]}->{tool_step_nums[i+1]}")
 
-    # ── observation完整性 ──
+    # ── observation完整性: 每个 action 步骤应有同 step 号的 observation 步骤且 tool_result 非空 ──
+    obs_by_step = {
+        s.get("step"): s for s in steps if s.get("type") == "observation"
+    }
     for i, step in enumerate(steps):
-        if step.get("type") == "action_tool" and step.get("tool_name"):
-            obs = step.get("observation") or step.get("execution_result")
-            if not obs:
-                issues.append(f"step[{i}]({step.get('tool_name')}): 缺observation")
+        if _is_action_step(step):
+            sn = step.get("step")
+            obs = obs_by_step.get(sn)
+            if obs is None or not obs.get("tool_result"):
+                issues.append(f"step[{i}]({step.get('type')} step={sn}): 缺对应observation(tool_result)")
 
     return issues
 
@@ -1077,6 +1349,12 @@ def check_logs(
             result["_debug_session_in_filtered"] = bool(session_id and session_id in content)
         else:
             content = raw_content
+
+        # ── 会话隔离(方案B: 不扫全量日志, 只认本会话) — 北京老陈 2026-08-25 ————
+        # 每行日志已带 session_id(shared_handler.SessionFilter 注入 %(session_id)s); 只保留含本会话标识的行,
+        # reload/别的任务的脏 ERROR(其 session_id 为 '-' 或不匹配) → 被排除, 不再误判本测试 FAIL
+        if session_id:
+            content = "\n".join(l for l in content.splitlines() if session_id in l)
 
         # ── ERROR检查(MUST) ──
         # 只匹配ERROR级别日志(格式: timestamp - ERROR - ...)，不匹配内容中的ERROR字样
@@ -1163,7 +1441,8 @@ def check_logs(
             for pf in recent[:1]:
                 try:
                     pdata = json.loads(pf.read_text(encoding="utf-8", errors="ignore"))
-                    result["llm_calls_found"] += pdata.get("llm_call_count", 0) or 1
+                    # Prompt日志顶层无 llm_call_count; LLM调用次数 = «LLM调用记录»数组长度
+                    result["llm_calls_found"] += len(pdata.get("LLM调用记录", [])) or 1
                 except Exception:
                     pass
 
@@ -1366,6 +1645,33 @@ def verify_test_record_exists(test_id: str) -> bool:
     return exists
 
 
+def verify_token_usage(session_id: str, expected_calls: int) -> List[str]:
+    """主动验证 token_usage 真实落库(消除"日志无ERROR即PASS"盲区) — 小欧 2026-08-23
+    原 write_test_record 的 passed 仅依赖日志ERROR扫描; 若 token_usage_insert 静默失败(不打ERROR),
+    测试记录会假PASSED。本函数直接查DB确认 token_usage 行数, 与 llm_call_count 比对。
+    返回 issue 列表(空=通过); expected_calls<=0 时不强制(任务可能无LLM调用)。"""
+    issues: List[str] = []
+    if not session_id:
+        return issues
+    try:
+        _c = sqlite3.connect(str(DB_PATH))
+        _c.row_factory = sqlite3.Row
+        _n = _c.execute(
+            "SELECT count(*) n FROM token_usage WHERE session_id=?", (session_id,)
+        ).fetchone()["n"]
+        _c.close()
+        if expected_calls and expected_calls > 0:
+            if _n == 0:
+                issues.append(
+                    f"token_usage 落库失败(静默): session={session_id} 期望≥{expected_calls}行, 实际0行")
+            elif _n < expected_calls:
+                issues.append(
+                    f"token_usage 落库不全: session={session_id} 期望{expected_calls}行, 实际{_n}行")
+    except Exception as _e:
+        issues.append(f"token_usage 核查异常: {_e}")
+    return issues
+
+
 def write_test_record(
     test_id: str,
     test_name: str,
@@ -1480,6 +1786,13 @@ def write_test_record(
             passed = False
         if len(log_check.get("tracebacks", [])) > 0:
             passed = False
+    # 2026-08-23 小欧: 主动核查 token_usage 落库(消除"日志无ERROR即PASS"盲区)
+    if passed:
+        _tu_sid = result.get("session_id", "")
+        if _tu_sid:
+            _tu_issues = verify_token_usage(_tu_sid, result.get("llm_call_count", 0))
+            if _tu_issues:
+                passed = False
     tool_calls = result.get("tool_calls", [])
     tool_names = [t.get("tool_name", "") for t in tool_calls]
     event_types = result.get("event_types", [])
@@ -1499,14 +1812,21 @@ def write_test_record(
                 pass
 
     # 自动调用 Prompt日志 vs DB步骤对比（用例脚本无需手动调用）
+    _sid = result.get("session_id", "")  # 小欧 2026-08-25 修复: 必须无条件赋值,否则下方model提取在dpi非None时抛UnboundLocalError被吞→model字段偶发为空
     if dpi is None:
-        _sid = result.get("session_id", "")
         _umid = result.get("user_msg_id")
         if _sid:
             try:
                 dpi = verify_db_prompt_consistency(_sid, _umid)
             except Exception:
                 dpi = []
+
+    # 任务Token使用情况(取DB final步骤accumulated_usage, 实库字段: prompt/completion/total_tokens) - 小欧 2026-08-22
+    _final_usage = {}
+    for _s in reversed(db.get("execution_steps", [])):
+        if isinstance(_s, dict) and _s.get("type") == "final":
+            _final_usage = _s.get("accumulated_usage") or {}
+            break
 
     lines: List[str] = []
     lines.append(f"# 测试记录-{test_id}-{date_str}")
@@ -1518,6 +1838,42 @@ def write_test_record(
     lines.append("")
     lines.append("---")
     lines.append("")
+
+    # model 结构信息(小欧 2026-08-23): 归一后模型身份=ModelRef JSON, 取自 chat_tasks.sessionModel(回退 token_usage.task_model)
+    _model_info = "-"
+    try:
+        if _sid:
+            _mc = sqlite3.connect(str(DB_PATH))
+            _mc.row_factory = sqlite3.Row
+            _mr = _mc.execute(
+                "SELECT sessionModel FROM chat_tasks WHERE session_id=? ORDER BY rowid DESC LIMIT 1",
+                (_sid,)).fetchone()
+            _mj = None
+            if _mr and _mr["sessionModel"]:
+                _mj = json.loads(_mr["sessionModel"])
+            else:
+                _mt = _mc.execute(
+                    "SELECT task_model FROM token_usage WHERE session_id=? ORDER BY rowid DESC LIMIT 1",
+                    (_sid,)).fetchone()
+                if _mt and _mt["task_model"]:
+                    _mj = json.loads(_mt["task_model"])
+            _mc.close()
+            if _mj:
+                _model_info = (f"provider={_mj.get('provider')}, model={_mj.get('model')}, "
+                               f"display_name={_mj.get('display_name')}")
+    except Exception:
+        _model_info = "-"
+
+    # 跨任务注入上下文(小欧 2026-08-23): 取自 context_overview 事件的 injected_message_count/injected_estimated_tokens,
+    # 展示本任务之前注入的连续对话历史体量(多轮历史注入机制, 单轮任务为0)
+    _inj_info = "无(本任务单轮/无历史注入)"
+    for _ev in result.get("events", []):
+        if isinstance(_ev, dict) and _ev.get("type") == "context_overview":
+            _inj_n = _ev.get("injected_message_count", 0) or 0
+            _inj_tok = _ev.get("injected_estimated_tokens", 0) or 0
+            if _inj_n or _inj_tok:
+                _inj_info = f"消息{_inj_n}条/≈{_inj_tok}tok(估算)"
+            break
 
     # 第1节：测试基本信息
     lines.append("## 1 测试基本信息")
@@ -1533,17 +1889,65 @@ def write_test_record(
     lines.append(f"| SSE接收耗时 | {sse_elapsed:.1f}秒 |")
     lines.append(f"| SSE总事件数 | {result.get('total_steps', 0)} |")
     lines.append(f"| LLM调用次数 | {result.get('llm_call_count', 0)} |")
+    if _final_usage:
+        _usage_cell = (
+            f"{_final_usage.get('prompt_tokens', '-')} / "
+            f"{_final_usage.get('completion_tokens', '-')} / "
+            f"{_final_usage.get('total_tokens', '-')}"
+        )
+    else:
+        _usage_cell = "-"
+    lines.append(f"| Token使用(prompt/completion/total) | {_usage_cell} |")
+    lines.append(f"| model 结构信息 | {_model_info} |")
+    lines.append(f"| 跨任务注入上下文 | {_inj_info} |")
     lines.append(f"| 逻辑步数 | {len(logical_events)} |")
     lines.append(f"| 不重复步骤号数 | {unique_step_nums} |")
     lines.append(f"| 测试结果 | **{status}** |")
     lines.append("")
 
-    # 第2节：LLM回复内容
+    # 第2节：LLM回复内容 + 终态元信息
     lines.append("## 2 LLM回复内容")
     lines.append("")
+    lines.append("### 2.1 回复正文")
+    lines.append("")
     lines.append("```")
-    lines.append(resp if resp else "(空)")
+    # 2026-08-19 小欧 转义: LLM答复内嵌的 ``` 会提前打断外层围栏致记录排版错位, 替换为 ~~~ 防冲突
+    _resp_cell = (resp or "").replace("```", "~~~")
+    lines.append(_resp_cell if resp else "(空)")
     lines.append("```")
+    lines.append("")
+    # 2.2 终态元信息(final_stats): duration(执行耗时) + artifacts(任务产出物)
+    # 小欧 2026-08-21: 后端v0.19.18起 final_stats 事件携带 duration/artifacts 两个meta字段
+    # 小欧 2026-08-22: artifacts 为4字段 {tool_name,name,path,type}, 且仅写工具自声明(F1定案删兜底派生)才有值
+    _final_stats = None
+    for _ev in result.get("events", []):
+        if isinstance(_ev, dict) and _ev.get("type") == "final_stats":
+            _final_stats = _ev
+            break
+    lines.append("### 2.2 终态元信息(final_stats)")
+    lines.append("")
+    if _final_stats:
+        _dur = _final_stats.get("duration")
+        _arts = _final_stats.get("artifacts") or []
+        # 表1: 执行耗时 + 产出物数量
+        lines.append(f"| 指标 | 值 |")
+        lines.append(f"|------|-----|")
+        if _dur is not None:
+            lines.append(f"| 执行耗时(duration) | {_dur}秒 |")
+        lines.append(f"| 产出物数量(artifacts) | {len(_arts)}个 |")
+        lines.append("")
+        # 表2: 产出物明细（4字段: tool_name/name/path/type — 小欧 2026-08-22 取值对齐新结构）
+        if _arts:
+            lines.append(f"| 序号 | 工具(tool_name) | 文件名(name) | 类型(type) | 路径(path) |")
+            lines.append(f"|------|------|------|------|------|")
+            for _ai, _a in enumerate(_arts):
+                _tname = _a.get("tool_name", "")
+                _name = _a.get("name", "")
+                _path = _a.get("path", "")
+                _type = _a.get("type", "")
+                lines.append(f"| {_ai+1} | {_tname} | {_name} | {_type} | `{_path}` |")
+    else:
+        lines.append("（本次无 final_stats 事件）")
     lines.append("")
 
     # 第3节：工具调用链
@@ -1595,38 +1999,161 @@ def write_test_record(
     lines.append(f"| 步骤字段问题数 | {len(db.get('step_field_issues', []))} |")
     lines.append("")
 
-    # 第5.2节：执行步骤详情（前15条）
+    # 第5.2节：执行步骤详情（全部步骤, 北京老陈指示取消15条限制）— 小欧 2026-08-22
     db_steps = db.get("execution_steps", [])
     if db_steps:
-        lines.append("### 5.2 执行步骤（前15条）")
+        # token三层接入(系统数据齐全, 记录侧此前未展示): usage不落库(P6)仅SSE通道, 本轮token按轮
+        #   从SSE usage事件取; 任务/会话累计从final步骤json取(每轮即时落库+终态透传) - 小欧 2026-08-22
+        _usage_by_step: Dict[Any, Dict[str, Any]] = {}
+        for _ev in result.get("events", []):
+            if isinstance(_ev, dict) and _ev.get("type") == "usage" and _ev.get("step") is not None:
+                _usage_by_step[_ev["step"]] = _ev
+        _final_db: Dict[str, Any] = {}
+        for _s in reversed(db_steps):
+            if isinstance(_s, dict) and _s.get("type") == "final":
+                _final_db = _s
+                break
+
+        # SSE侧事件补行(北京老陈指示): usage/error/paused/resumed/retrying/cancelled仅SSE不落库(P1~P6),
+        #   按流序插入本表与落库步骤混排; chunk逐token量大/thought_start纯开始信号(steps/__init__.py:11
+        #   仅SSE实时信号)不补。对齐法: 落库步骤随emit同步落库,SSE到达序=落库序,顺序遍历events遇落库
+        #   类型即按位消耗db_steps; 对齐守卫: events中落库类型事件数≠len(db_steps)(如断连缺帧)时
+        #   位置推断不可靠, 退化为"落库表全量在前+SSE行尾部追加", 宁可乱序不错位 - 小欧 2026-08-22
+        _SSE_WANT = ("usage", "error", "paused", "resumed", "retrying", "cancelled")
+        _SSE_SKIP = {"chunk", "thought_start"}
+        _rows: List[Any] = []  # 元素二元组: ("db", 落库step) / ("sse", SSE事件)
+        _n_db_ev = sum(
+            1 for _ev in result.get("events", [])
+            if isinstance(_ev, dict)
+            and _ev.get("type") not in _SSE_SKIP
+            and _ev.get("type") not in _SSE_WANT
+        )
+        if _n_db_ev == len(db_steps):
+            _j = 0
+            for _ev in result.get("events", []):
+                if not isinstance(_ev, dict):
+                    continue
+                _t = _ev.get("type")
+                if _t in _SSE_SKIP:
+                    continue
+                if _t in _SSE_WANT:
+                    _rows.append(("sse", _ev))
+                else:
+                    _rows.append(("db", db_steps[_j]))
+                    _j += 1
+        else:
+            _rows = [("db", _s) for _s in db_steps]
+            _rows += [
+                ("sse", _ev) for _ev in result.get("events", [])
+                if isinstance(_ev, dict) and _ev.get("type") in _SSE_WANT
+            ]
+
+        lines.append("### 5.2 执行步骤（全部·含SSE侧usage/error等未落库事件）")
         lines.append("")
-        lines.append("| 序号 | 步骤号 | 类型 | 工具 | 状态 |")
-        lines.append("|------|--------|------|------|--------|")
-        for i, s in enumerate(db_steps[:15]):
+        lines.append("| 序号 | 轮次 | 类型 | 工具 | 内容摘要 |")
+        lines.append("|------|--------|------|------|----------|")
+        for i, (_kind, _item) in enumerate(_rows):
+            if _kind == "sse":
+                _t = _item.get("type", "")
+                if _t == "usage":
+                    # usage独立成行: 本轮token三数入(prompt)/出(completion)/总(total)
+                    #   ——react_cycle.py:470-483每次LLM调用yield一条 - 小欧 2026-08-22
+                    _b = (
+                        f"本轮({_fmt_tok(_item)})tok"
+                        if _item.get("total_tokens") is not None
+                        else ""
+                    )
+                else:
+                    _b = _step_brief(_item)
+                lines.append(
+                    f"| {i+1} | {_item.get('step', '')} | {_t} |  | {_b} |"
+                )
+                continue
+            s = _item
             s_step = s.get("step", "")
             s_type = s.get("type", "")
-            s_tool = s.get("tool_name", "")
-            s_status = s.get("status", "")
-            lines.append(f"| {i+1} | {s_step} | {s_type} | {s_tool} | {s_status} |")
-        remaining = len(db_steps) - 15
-        if remaining > 0:
-            lines.append(f"| ... | (剩余{remaining}条) | | | |")
+            s_tool = ""
+            if _is_action_step(s):
+                _entries = _action_entries(s)
+                s_tool = ", ".join(e.get("tool_name", "") for e in _entries)
+            elif s_type == "observation":
+                _tr = s.get("tool_result") or []
+                s_tool = ", ".join(
+                    x.get("tool_name", "") for x in _tr if isinstance(x, dict)
+                )
+            _brief = _step_brief(s)
+            if s_type == "stats":
+                # 每轮stats行两组token三数全显(北京老陈指示): 任务/会话累计各含入(prompt)/出(completion)
+                #   /总(total)三数; 本轮三数由usage独立行承担, 此处不重复 - 小欧 2026-08-22
+                _u = _usage_by_step.get(s_step)
+                if _u and _u.get("total_tokens") is not None:
+                    _uk = _u.get("task_accumulated_tokens")
+                    _us = _u.get("session_accumulated_tokens")
+                    if _uk:
+                        _brief += f"/任务累计({_fmt_tok(_uk)})tok"
+                    if _us:
+                        _brief += f"/会话累计({_fmt_tok(_us)})tok"
+            elif s_type == "final_stats" and _final_db:
+                # final_stats行两组token三数全显: 任务/会话累计各含入/出/总三数 - 小欧 2026-08-22
+                _tk = _final_db.get("task_accumulated_tokens")
+                _sk = _final_db.get("session_accumulated_tokens")
+                if _tk:
+                    _brief += f"/任务累计({_fmt_tok(_tk)})tok"
+                if _sk:
+                    _brief += f"/会话累计({_fmt_tok(_sk)})tok"
+            lines.append(f"| {i+1} | {s_step} | {s_type} | {s_tool} | {_brief} |")
         lines.append("")
 
-        # 第5.3节：步骤数据内容（action_tool步骤）
-        action_steps = [s for s in db_steps if s.get("type") == "action_tool"]
-        if action_steps:
-            lines.append("### 5.3 步骤数据内容(action_tool)")
+        # 第5.3节：步骤数据内容 — 按轮交错配对(本轮参数→本轮观察结果), 消除原"全参数段→全观察段"
+        #   两段式排版造成的"工具↔结果对不上/时有时无"错觉 — 病根定案: 测试记录代码问题 - 小欧 2026-08-22
+        #   2026-08-22 北京老陈指示: §5.3限制只展示前10轮
+        action_steps = [s for s in db_steps if _is_action_step(s)]
+        obs_steps = [s for s in db_steps if s.get("type") == "observation"]
+        if action_steps or obs_steps:
+            _round_order: List[Any] = []
+            for _s in db_steps:
+                if _is_action_step(_s) or _s.get("type") == "observation":
+                    _sn = _s.get("step", "?")
+                    if _sn not in _round_order:
+                        _round_order.append(_sn)
+            _allowed_rounds = set(_round_order[:10])
+            _extra_rounds = len(_round_order) - len(_allowed_rounds)
+            lines.append(f"### 5.3 步骤数据内容(action/observation 按轮配对, 前10轮)")
             lines.append("")
-            for i, s in enumerate(action_steps):
-                tn = s.get("tool_name", "?")
-                tp = json.dumps(s.get("tool_params", {}), ensure_ascii=False)
-                obs_raw = s.get("observation") or s.get("execution_result", "")
-                obs_str = _obs_to_text(obs_raw) if obs_raw else "(空)"
-                lines.append(f"**步骤{s.get('step', '?')}: {tn}**")
-                lines.append(f"- 参数: `{tp}`")
+            _obs_by_step: Dict[Any, List[Dict[str, Any]]] = {}
+            for _o in obs_steps:
+                _obs_by_step.setdefault(_o.get("step", "?"), []).append(_o)
+
+            def _render_obs(o: Dict[str, Any]) -> None:
+                on = o.get("step", "?")
+                tr = o.get("tool_result")
+                obs_str = _obs_to_text(tr) if tr else "(空)"
+                lines.append(f"**步骤{on}: observation**")
                 lines.append(f"- 观察结果: `{obs_str}`")
-                lines.append("")
+
+            for s in db_steps:
+                if not _is_action_step(s):
+                    continue
+                sn = s.get("step", "?")
+                if sn not in _allowed_rounds:
+                    continue
+                for _en in _action_entries(s):
+                    tn = _en.get("tool_name", "?")
+                    tp = json.dumps(_en.get("tool_params", {}), ensure_ascii=False)
+                    lines.append(f"**步骤{sn}: {tn}**")
+                    lines.append(f"- 参数: `{tp}`")
+                for _o in _obs_by_step.pop(sn, []):
+                    _render_obs(_o)
+            # 兜底: 无action配对的孤立observation轮(正常不存在, 防静默丢数据)
+            for _sn in list(_obs_by_step.keys()):
+                if _sn not in _allowed_rounds:
+                    _obs_by_step.pop(_sn)
+            for _o_list in _obs_by_step.values():
+                for _o in _o_list:
+                    _render_obs(_o)
+            if _extra_rounds > 0:
+                lines.append(f"> (第11轮起共{_extra_rounds}轮未展示, 全量见5.2执行步骤表)")
+            lines.append("")
 
     # DB↔Prompt日志一致性(来自dpi参数或extra)
     db_prompt_issues = dpi if dpi is not None else (extra or {}).get("DbPromptIssues", [])
@@ -1732,8 +2259,14 @@ def write_test_record(
     lines.append("## 7 三方一致性（DB/应用日志/Prompt日志）")
     lines.append("")
 
-    db_tool_names = [s.get("tool_name", "") for s in db_steps if s.get("type") == "action_tool"]
-    db_obs_count = sum(1 for s in db_steps if s.get("type") == "action_tool" and (s.get("observation") or s.get("execution_result")))
+    # 2026-08-19 小欧 新协议适配: 工具名从 tools[]规整, 观察数按独立observation step计
+    db_tool_names = [
+        en["tool_name"]
+        for s in db_steps if _is_action_step(s)
+        for en in _action_entries(s)
+    ]
+    db_obs_count = sum(1 for s in db_steps if s.get("type") == "observation")
+    db_action_step_count = sum(1 for s in db_steps if _is_action_step(s))
     sse_tool_names = [t.get("tool_name", "") for t in tool_calls]
     log_llm_calls = log_check.get("llm_calls_found", 0)
     prompt_log_files = log_check.get("prompt_log_files", [])
@@ -1742,11 +2275,15 @@ def write_test_record(
     lines.append("|--------|-----|-----|------|----------|")
     lines.append(f"| 工具数量 | {len(db_tool_names)} | {len(sse_tool_names)} | {log_llm_calls}次LLM调用 | {'PASS' if abs(len(db_tool_names) - len(sse_tool_names)) <= 2 else 'FAIL'} |")
     lines.append(f"| 工具名称 | {db_tool_names[:5]} | {sse_tool_names[:5]} | - | {'PASS' if set(db_tool_names) & set(sse_tool_names) or (not db_tool_names and not sse_tool_names) else 'FAIL'} |")
-    lines.append(f"| 观察结果数 | {db_obs_count} | {len(tool_calls)} | - | {'PASS' if db_obs_count >= len(tool_calls) - 1 else 'WARN'} |")
+    # v0.19.18起 单action步骤可批量多工具, 观察结果按 action步骤 计(每action步1个observation), 故比对基线用 action步数 而非 工具数
+    # 纯对话(无action步)时无观察可比对, 直接PASS
+    _obs_ok = True if db_action_step_count == 0 else db_obs_count >= max(1, db_action_step_count - 1)
+    lines.append(f"| 观察结果数 | {db_obs_count} | {len(tool_calls)} (action步={db_action_step_count}) | - | {'PASS' if _obs_ok else 'WARN'} |")
     lines.append(f"| Prompt日志文件 | - | - | {prompt_log_files} | {'PASS' if prompt_log_files else 'WARN'} |")
     lines.append("")
 
     # 第8节：附加信息(排除已在验证表显示的DbPromptIssues)
+    # (final_stats 已迁§2.2渲染, 此处不再重复 — 小欧 2026-08-22 清理过期注释)
     if extra:
         lines.append("## 8 附加信息")
         lines.append("")

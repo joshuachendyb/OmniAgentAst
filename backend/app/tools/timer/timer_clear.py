@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-21 - 小欧 - 12.2-Q2-D3(按文档[1]12.2 diff设计落地): cancelled 状态 UPDATE 的 except 静默 pass→
+#   logger.error 提级留痕(带 timer_id+失败后果说明), 内存取消行为零改动, 仅补可追溯性
+# 2026-08-21 - 小欧 - 12.2-Q7-D4(按文档[1]12.2 diff设计落地): db.get_conn("operations")→db.get_conn("timers"),
+#   定时器查询切换到 timers.db 独立库(SRP) — 小欧 2026-08-21
 """
 timer_clear — 清除定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
@@ -63,10 +68,11 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
                 handle.cancel()
             _timer_callbacks.pop(timer_id, None)
         try:
-            with db.get_conn("operations") as conn:
+            with db.get_conn("timers") as conn:
                 conn.execute("UPDATE timers SET status='cancelled' WHERE timer_id=?", (timer_id,))
-        except Exception:
-            pass
+        except Exception as _e:
+            from app.logger import logger
+            logger.error(f"[timer_clear] 取消状态落库失败 timer_id={timer_id}(内存定时器已取消, 仅DB状态残留active, 可凭此日志追溯): {_e!r}")  # 12.2-Q2: 静默pass→error提级留痕 — 小欧 2026-08-21
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_clear_llm_data("success", duration_ms, timer_id, True)
         # =============================================================================

@@ -13,6 +13,7 @@
 #   + searchtool 注入所需 _loaded_categories/_tool_loader/_tool_cache(领域正确, 非 YAGNI 过度供给), 消除 hot-path 私有字段耦合
 # 2026-08-13 - 小沈 - BUG-6/7/25修复(三堂会审): ①_FacadeAgent 移至模块级(原函数内定义, 每次请求重建类对象);
 #   ②_retry_engine 模块级单例(ToolRetryEngine 无状态, 复用同一实例, KISS-DIRECT); ③result 非 dict 时判失败(原 ok=True 误报成功)
+# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): result.llm_data.status 可能为 str, 新增 _safe_status_message 防御 AttributeError
 """
 tool_facade — 工具门面(API 适配层)
 
@@ -32,6 +33,19 @@ from app.tools.tool_response import is_success
 from app.safety.tool_safety_checker import get_tool_safety_checker
 from app.safety.default_hooks import DefaultToolSecurityHooks
 from app.services.task.task_context import _current_task_id
+
+
+def _safe_status_message(result: dict) -> str:
+    """2026-08-18 小健 三堂会审 Bug#7(同源): result.llm_data.status 可能为 str, 防御 .get AttributeError"""
+    if not isinstance(result, dict):
+        return ""
+    _ld = result.get("llm_data")
+    if not isinstance(_ld, dict):
+        return ""
+    _st = _ld.get("status")
+    if not isinstance(_st, dict):
+        return ""
+    return _st.get("message", "")
 from app.utils.cache import TTLCache
 from app.constants import TOOL_CACHE_TTL as _TOOL_CACHE_TTL
 from app.logger import logger
@@ -144,7 +158,7 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
             "tool_name": tool_name,
             "success": ok,
             "result": result if ok else {},
-            "error": "" if ok else (result.get("llm_data", {}).get("status", {}).get("message", "")),
+            "error": "" if ok else _safe_status_message(result),
         }
     finally:
         _current_task_id.reset(token)

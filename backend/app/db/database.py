@@ -20,6 +20,9 @@
 #   【病根】①BUG-03: 47处调用方用get_conn(无retry), 并发写锁死时静默失败; ②BUG-04: get_conn_with_retry在except内re-yield违反@contextmanager协议 → "generator didn't stop after throw()"(日志09:11:16)
 #   【改法】①get_conn新增max_retries: 连接获取期(a)与commit期(b)对"locked"指数退避(0.5/1/2s), 47处调用零改动即获重试能力(DRY); ②get_conn_with_retry改为get_conn薄包装(仅透传, 单次yield)
 #   【合规】DRY+KISS-DIRECT+SRP
+# 2026-08-20 - 小欧 - 11.2-C 监控独立库: _db_paths["monitoring"] 注册 monitoring.db + import init_monitoring_db(启动统一初始化), 复用 get_conn/get_conn_with_retry 闸门
+# 2026-08-21 - 小欧 - 12.2-Q7/Q10(按文档[1]12.2 diff设计落地): ①Q10-D1 删observer条目+Q10-D2删init_observer方法(零调用方); ②Q7-D1 _db_paths加timers条目(timers.db独立库); ③Q7-D3 import加init_timers_db+init()内注册(紧跟init_operations_db之后) — 小欧 2026-08-21
+# 2026-08-24 - 小欧 - 后端卡死修复(offload薄壳): 新增 atxn/_run_txn 异步事务壳, 将同步 sqlite3 I/O + 锁重试 time.sleep(get_conn:188/206) 整体 offload 出事件循环; 根治 agent 落库热路径在 loop 主线程同步阻塞致 /health 超时/console 冻结。storage.* 与连接管理零改动(复用既有一切), 唯一入口仍 db。
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -44,6 +47,7 @@ Author: 小沈 - 2026-05-28
 小健 2026-06-18 删除向后兼容迁移代码(db_migrator.py)
 """
 
+import asyncio
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
@@ -52,8 +56,9 @@ from typing import Iterator
 from app.logger import logger
 from app.utils.time_utils import to_local_iso  # 小欧 2026-08-08: datetime/date 归一化为本地ISO无Z
 from app.db.db_initializer import (
-    init_chat_db, init_operations_db, init_task_tracker_db,
+    init_chat_db, init_operations_db, init_task_tracker_db, init_timers_db,  # 12.2-Q7: 加 init_timers_db — 小欧 2026-08-21
 )
+from app.monitoring.storage import init_monitoring_db  # 11.2-C 监控独立库 init — 小欧 2026-08-20
 
 
 class _ParamSafeConnection:
@@ -115,8 +120,9 @@ class DatabaseManager:
         self._db_paths = {
             "chat": self._db_dir / "chat_history.db",
             "operations": self._db_dir / "operations.db",
-            "observer": self._db_dir / "tool_observer.db",
+            "timers": self._db_dir / "timers.db",   # 12.2-Q7: 定时器独立库(SRP一库一域) — 小欧 2026-08-21
             "task_tracker": self._db_dir / "task_tracker.db",
+            "monitoring": self._db_dir / "monitoring.db",   # 11.2-C 监控独立库 — 小欧 2026-08-20
         }
         self._db_dir.mkdir(parents=True, exist_ok=True)
 
@@ -248,6 +254,25 @@ class DatabaseManager:
         with self.get_conn(db_name, max_retries=max_retries) as conn:
             yield conn
 
+    async def atxn(self, db_name: str, fn, *args, **kwargs):
+        """异步事务壳(后端卡死修复 小欧 2026-08-24): 在子线程内执行 `with get_conn(db_name) as conn: return fn(conn, *args, **kwargs)`
+
+        为什么需要它:
+            原 agent 落库热路径(stream_orchestrator/agent_runner/react_cycle 的 `with db.get_conn...`)
+            在事件循环主线程同步执行 sqlite3.connect/execute/commit, 且锁重试 time.sleep(get_conn:188/206)
+            直接睡在 loop 线程 → 长 blob 写/锁竞争时 loop 被独占 → 被动 /health 排不上队超时、console 静止(卡死)。
+        设计要点(合规/合理/关联):
+            - 整段 `with get_conn` 进 to_thread 子线程, 连接创建/使用/关闭同线程 → 零跨线程(规避 sqlite3.ProgrammingError);
+            - storage.* / get_conn / 参数闸门 / 锁重试 全部复用, 零改动(DRY/KISS-DIRECT);
+            - 多任务写经线程池并发 + SQLite 文件锁串行化, loop 永不被占(满足"多任务写DB可排队"诉求)。
+        """
+        return await asyncio.to_thread(self._run_txn, db_name, fn, *args, **kwargs)
+
+    def _run_txn(self, db_name, fn, *args, **kwargs):
+        """atxn 的子线程执行体: 在单线程内开连接→执行业务→提交/回滚/关闭 — 小欧 2026-08-24"""
+        with self.get_conn(db_name) as conn:
+            return fn(conn, *args, **kwargs)
+
     def init(self):
         """初始化所有数据库(应用启动时调用)"""
         import time as _time
@@ -258,15 +283,17 @@ class DatabaseManager:
         _tb = _time.time()
         init_operations_db(self.get_conn)
         logger.info(f"[启动耗时] init_operations_db: {_time.time()-_tb:.3f}s")
+        _tt = _time.time()
+        init_timers_db(self.get_conn)
+        logger.info(f"[启动耗时] init_timers_db: {_time.time()-_tt:.3f}s")
         _tc = _time.time()
         init_task_tracker_db(self.get_conn)
         logger.info(f"[启动耗时] init_task_tracker_db: {_time.time()-_tc:.3f}s")
+        _tm = _time.time()
+        init_monitoring_db(self.get_conn)
+        logger.info(f"[启动耗时] init_monitoring_db: {_time.time()-_tm:.3f}s")
         logger.info(f"[启动耗时] db.init 合计: {_time.time()-_ta:.3f}s")
         logger.info("All databases initialized successfully")
-    
-    def init_observer(self):
-        """初始化observer数据库(后续实现ToolObserver时调用)"""
-        logger.info("Observer database initialized (placeholder)")
 
 
 # 全局SDK实例(唯一入口)

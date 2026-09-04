@@ -10,6 +10,7 @@
 # 2026-07-25 - 小欧 - 编辑历史归并+去冗余示例: AnalyzeDataInput/FilterDataInput.path移除示例
 # 2026-07-25 - 小欧 - 删除max_rows: top_n唯一行数控制, 统计在head之前计算
 # 2026-08-07 - 小欧 - ExecuteSqlInput 新增 confirm_ddl 字段(危险DDL放行开关): True=显式确认后放行裸CREATE/DROP等DDL, False=默认拦截; 与 execute_sql 实现层白名单联动 — 小欧 2026-08-07
+# 2026-08-29 - 小沈 - BugFix #10: GenerateChartInput 补 x_label/y_label 字段, 对齐 generate_chart 实现已支持的轴标签参数(实现层231-234行已 apply), 暴露给 LLM 使其可传入坐标轴标签, 消除 schema/impl 漂移。
 """
 DataAnalysis Schema - 数据分析工具参数模型
 
@@ -94,6 +95,14 @@ class GenerateChartInput(BaseModel):
 - 传入: 使用指定路径
 
 示例: D:/output/chart.png"""
+    )
+    x_label: Optional[str] = Field(
+        default=None,
+        description="X轴标签(坐标轴名称)。不传则不显示X轴标签(饼图忽略此参数)"
+    )
+    y_label: Optional[str] = Field(
+        default=None,
+        description="Y轴标签(坐标轴名称)。不传则不显示Y轴标签(饼图忽略此参数)"
     )
 
 
@@ -223,6 +232,10 @@ class QuerySqlInput(_DbConnectionMixin):
         le=1000,
         description=f"返回行数上限，建议不超过{OBS_MAX_DISPLAY_ITEMS}条，超限部分需分页"
     )
+    timeout: Optional[int] = Field(
+        default=None,
+        description="查询超时时间(单位毫秒)。不传则使用实现默认值; 透传到数据库连接, 控制查询最长执行时间"
+    )
 
 
 class ExecuteSqlInput(_DbConnectionMixin):
@@ -275,6 +288,10 @@ class ExecuteSqlInput(_DbConnectionMixin):
 - True: 允许执行裸 CREATE TABLE / DROP TABLE（无 IF EXISTS）等被拦截的 DDL
 - False: 默认拦截（保持安全护栏）
 【注意】仅在确认需要修改表结构时设为 True，操作会记录审计日志"""
+    )
+    timeout: Optional[int] = Field(
+        default=None,
+        description="执行超时时间(单位毫秒)。不传则使用实现默认值; 透传到数据库连接, 控制执行最长耗时"
     )
 
 

@@ -298,7 +298,7 @@ OmniAgentAs-desk/
 │   │   ├── llm/                # LLM 客户端（httpx 多Provider，顶层能力层）
 │   │   ├── monitoring/         # 监控（collector / middleware，顶层能力层）
 │   │   ├── services/
-│   │   │   ├── agent/          # Agent体系（base_agent + universal_agent + agent_runner + react_cycle + tool_loader + handlers + steps）
+│   │   │   ├── agent/          # Agent体系（base_agent + universal_agent + agent_runner + react_cycle + tool_loader + handlers + steps + compaction）
 │   │   │   ├── chat/           # 对话编排（stream_orchestrator 编排 + stream_reader + sse_events + storage + session/message_service + migrate_steps）
 │   │   │   ├── lifecycle/      # 生命周期管理
 │   │   │   ├── model/          # 模型/配置解析（config_service + config_helpers）

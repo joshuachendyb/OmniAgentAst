@@ -1,3 +1,4 @@
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复import多行→单行(3个named import合并), 防止格式再次出错
 /**
  * 危险警告组件 - SecurityAlert
  *
@@ -12,7 +13,11 @@
 
 import React from 'react';
 import { Alert, Space, Typography, Tag, Button } from 'antd';
-import { StopOutlined, WarningOutlined, CheckOutlined } from '@ant-design/icons';
+import {
+  StopOutlined,
+  WarningOutlined,
+  CheckOutlined,
+} from '@ant-design/icons';
 
 const { Text, Title } = Typography;
 

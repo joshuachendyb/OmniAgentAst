@@ -7,6 +7,7 @@
 # 2026-07-26 - 小欧 - para_count排除Document()默认空段落；char_count含表格单元格文本；加table_count指标
 # 2026-07-31 - 小欧 - Bug⑯修复: 有序列表正则 ^\d+\.\s → ^\d{1,3}\.\s, 防"2026. 销售报告"数字开头散文被误当编号列表并剥数字 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
 """
 D5: write_docx — 写入Word文档
 
@@ -23,7 +24,7 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
@@ -240,6 +241,7 @@ def write_docx(
                         docx_char_count += len(p.text)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_docx_llm_data("success", duration_ms, str(path), user_title=title or "", para_count=paragraph_count, char_count=docx_char_count, table_count=table_count)
+        with_artifact_file(llm_data, str(path))   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # =============================================================================
         # 数据设计：file_path 从 data 移除，通过 llm_data.summary 传入 LLM observation。
         # summary 已包含文件路径: "写入Word成功: /path.docx"

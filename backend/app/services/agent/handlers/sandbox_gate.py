@@ -1,0 +1,129 @@
+# -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-25 小欧 沙箱闸门逻辑从 action_handler 拆分(合规重构, 非重写):
+#   [病根] action_handler.py 内以嵌套闭包 _sandbox_precheck/_sandbox_resolve 实现沙箱预检闸门,
+#          违反 1.3 公用函数规范(分层存放/先查后建/登记FUNCTIONS.md) 与 KISS-DIRECT(隐式捕获约10个外层变量)。
+#   [改法] 原逻辑逐字复制, 仅①去闭包改为模块级函数 ②隐式捕获改为显式参数 ③落点定在 Agent 编排层
+#          (app/services/agent/handlers/, 与 action_handler 同层, 依赖方向 handler→sandbox 单向, 无环)。
+#          业务语义/分支/状态机零改动(复制不重写)。
+# 2026-09-01 小欧 紧急bug修复(前端badge卡paused): sandbox_resolve 用户裁决确认分支(:confirmed)补发
+#   MetaStep(type="resumed"), 使 paused/resumed 事件成对, 前端badge据此回running恢复前端耗时秒表(秒实时)。
+#   resumed 非业务step, stream_reader/agent_runner 剔除不入 current_execution_steps, 不影响 total_steps。
+# 2026-09-03 小欧 沙箱用户裁决确认超时可配置化(北京老陈驱动): wait_for_confirmation_result 改读
+#   security.hitl_timeout(config.yaml优先, HITL_TIMEOUT 默认120兜底), 与真HITL确认超时同源。
+# 2026-09-03 小欧 Bug-16: sandbox paused 补齐 trust_path/auto_confirm/confirm_timeout/backend_timeout 四字段,
+#   改前缺字段致前端倒计时与后端不一致(60s/120s 错位); auto_confirm 恒False, 计时取 security.hitl_timeout−LEAD。
+# 2026-09-03 小欧 D2-02: _ct钳制max(5,bt-LEAD)避免0秒窗口（与action_handler同钳）
+# 2026-09-03 小欧 D2-03: trust_path改复用_extract_trust_path(tool,params)消除别名盲区（path/file_path/source_path等），防通配污染
+# 2026-09-03 小欧/老杨 17.1: 纠正16.3落盘偏差——硬编码7key含window_title误当文件路径授权，且_import路径错误（_extract_trust_path实定义于action_handler:567）；改函数内延迟import复用主链函数，与模块内既有延迟导入同模式
+# 2026-09-03 小欧/北京老陈: 前端倒计时最小值改常量3(改前硬编码5)
+# 2026-09-04 小健 - 架构重构: sandbox_resolve改为返回dict(不再返回tuple),删除所有yield MetaStep(4处),
+#   由event_emitter统一转换,职责从"业务+前端混合"收敛为"纯业务"。
+#   返回值: {"action": "passthrough/blocked/confirmed/rejected", ...}
+#   注意: paused MetaStep在阻塞等待前直接发射(过渡期设计),确保前端收到暂停事件
+# 2026-09-04 小健 - 修复重构错误4: blocked/rejected/confirmed路径补发"resumed" MetaStep,
+#   病根: 架构重构时删除所有yield MetaStep, 但paused/resumed事件需成对,
+#   缺resumed致前端badge卡paused; 复核: paused在阻塞前发射, resumed在用户裁决后发射
+"""沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
+
+本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
+依赖方向: handlers → sandbox(单向), 故本模块可安全 import sandbox, 反之不可。
+"""
+from app.logger import logger
+
+
+async def sandbox_precheck(safety_result, tool_name, params):
+    """destructive级沙箱预检; 返回None=无需预检/异常兜底"""
+    if not getattr(safety_result, "sandbox_required", False):
+        return None
+    try:
+        from app.safety.sandbox import get_sandbox_executor
+        pre = await get_sandbox_executor().pre_execute(tool_name, params)
+        logger.info(f"[sandbox] 预检结果: tool={tool_name}, passed={pre.passed}, "
+                    f"needs_ruling={pre.needs_ruling}, reason={pre.blocked_reason[:200]}")
+        return pre
+    except Exception as exc:
+        logger.warning(f"[action_handler] 沙箱预检异常(M4兜底直接执行): tool={tool_name}, err={exc}")
+        return None
+
+
+async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_result, denied_list):
+    """预检结果处置。返回dict: {"action": "passthrough/blocked/confirmed/rejected", ...}
+    不yield任何Step，由event_emitter统一转换。
+    注意: paused MetaStep在阻塞等待前直接发射(过渡期设计),确保前端收到暂停事件。"""
+    from app.services.agent.status_table import AgentStatus, set_status
+    from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result
+    from app.constants import HITL_TIMEOUT
+    from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS
+
+    if pre.passed:
+        logger.info(f"[sandbox] 放行执行: tool={tool_name}")
+        return {"action": "passthrough"}
+    if pre.needs_ruling and safety_result.auto_confirm:
+        logger.info(f"[sandbox] bypass下未完成有效验证,按bypass语义直接放行: tool={tool_name}, reason={pre.blocked_reason}")
+        return {"action": "passthrough"}
+    if not pre.needs_ruling:
+        logger.warning(f"[sandbox] 危险型拦截拒绝: tool={tool_name}, reason={pre.blocked_reason[:200]}")
+        denied_list.append((tool_name, f"沙箱预检未通过: {pre.blocked_reason}", call))
+        return {"action": "blocked", "reason": f"沙箱预检未通过: {pre.blocked_reason}", "tool_name": tool_name}
+
+    # needs_ruling: 走HITL用户裁决
+    logger.info(f"[sandbox] 转HITL用户裁决: tool={tool_name}")
+    confirm_id = await create_confirmation(agent.task_id, tool_name)
+    from app.config import get_config as _get_cfg_sb2
+    from app.constants import HITL_CONFIRM_LEAD, HITL_MIN_CONFIRM_TIMEOUT
+    _bt = int(float(_get_cfg_sb2().get("security.hitl_timeout", HITL_TIMEOUT)))
+    _ct = max(HITL_MIN_CONFIRM_TIMEOUT, _bt - HITL_CONFIRM_LEAD)
+    try:
+        from app.tools.trust import extract_trust_path as _sb_trust_path  # Phase8: 环依赖消除, sandbox_gate→trust单向 - 小健-2026-09-04
+        _sandbox_path = _sb_trust_path(tool_name, params)
+    except Exception:
+        _sandbox_path = None
+    if _sandbox_path is None:
+        for _k in ("path", "file_path", "source_path", "dest_path", "target", "dir_path"):
+            _v = params.get(_k)
+            if isinstance(_v, str) and _v:
+                _sandbox_path = _v
+                break
+
+    # 注意: paused MetaStep必须在阻塞等待前发射,否则前端永远收不到暂停事件
+    # 这是过渡期设计: sandbox_resolve直接发射paused, event_emitter不重复发射
+    from app.services.agent.steps import MetaStep as _SbMetaStep
+    agent._step_emitter.emit(_SbMetaStep(
+        step=step, type="paused",
+        content=f"沙箱未能完成有效预检,需用户裁决是否直接执行: {tool_name}",
+        confirm_id=confirm_id, tool_name=tool_name,
+        params={k: v for k, v in params.items() if k not in _SENSITIVE_FIELDS},
+        safety_level="destructive", severity="attention",
+        trust_path=_sandbox_path, auto_confirm=False,
+        confirm_timeout=_ct, backend_timeout=_bt))
+    set_status(agent, AgentStatus.SUSPENDED, f"等待用户裁决沙箱预检: {tool_name}")
+    from app.config import get_config as _get_cfg_sb
+    auth = await wait_for_confirmation_result(confirm_id, timeout=int(float(_get_cfg_sb().get("security.hitl_timeout", HITL_TIMEOUT))))
+    set_status(agent, AgentStatus.EXECUTING, "沙箱预检用户裁决完成")
+
+    if auth.get("confirmed"):
+        logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")
+        from app.services.agent.steps import MetaStep as _SbMetaStep3
+        agent._step_emitter.emit(_SbMetaStep3(
+            step=step, type="resumed",
+            content=f"用户确认执行沙箱预检: {tool_name}",
+            tool_name=tool_name))
+        return {
+            "action": "confirmed",
+            "confirm_id": confirm_id,
+            "tool_name": tool_name,
+            "params": {k: v for k, v in params.items() if k not in _SENSITIVE_FIELDS},
+            "safety_level": "destructive",
+            "trust_path": _sandbox_path,
+            "confirm_timeout": _ct,
+            "backend_timeout": _bt,
+        }
+    logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
+    from app.services.agent.steps import MetaStep as _SbMetaStep2
+    agent._step_emitter.emit(_SbMetaStep2(
+        step=step, type="resumed",
+        content=f"用户拒绝执行沙箱预检: {tool_name}",
+        tool_name=tool_name))
+    denied_list.append((tool_name, "沙箱预检未完成验证且用户拒绝执行", call))
+    return {"action": "rejected", "reason": "用户拒绝执行(预检未完成验证)", "tool_name": tool_name}

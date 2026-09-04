@@ -1,40 +1,84 @@
-/* 全局样式重置 */
+/* 编辑历史: 2026-08-27 小欧 - 三堂会审P0-4: 删除全局*{margin:0;padding:0}重置与.ant-card-body/.ant-card-head/body/#root!important污染, 恢复AntD reset.css, 仅保留box-sizing与.chat-message-list留白 */
+/* 编辑历史: 2026-09-02 小欧 - 北京老陈定案(流水线等待光标UI设计 v1.6): 新增.waiting-cursor SVG缺口圆弧等待符号(1.4em≈20px, #52c41a, stroke-width2, 逆时针1s转圈), 与 PipelineRenderer 等待态配合, 首chunk到达由内容覆盖接管禁止常驻 */
+/* 编辑历史: 2026-09-03 小欧 - 工具执行等待动画(设计文档v1.8): 新增.tool-waiting-cursor 齿轮+扳手组合橙#fa8c16, 复用waiting-spin, 挂ToolCallLine摘要头下 - 小欧-2026-09-03 */
+/* 编辑历史: 2026-09-03 小欧 - 北京老陈定案: .tool-waiting-cursor 图标尺寸 1.4em→1em(≈14px), 缩小齿轮+扳手组合, 尺寸与文字更协调 - 小欧-2026-09-03 */
+/* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
-  margin: 0;
-  padding: 0;
   box-sizing: border-box;
 }
 
-body {
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-#root {
-  margin: 0;
-  padding: 0;
-}
-
-/* Card 组件 body - 强制 padding 为 0（保留给对话页面自定义控制） */
-.ant-card-body {
-  padding: 0 !important;
-}
-
-/* 对话页面消息列表容器 - 控制消息显示留白 */
+/* 对话页面消息列表容器 - 控制消息显示留白（2026-08-27 小欧 三堂会审P0-4: 去全局!important污染） */
 .chat-message-list {
-  padding: 0 24px 0 8px !important;
-  margin: 0 !important;
-  margin-bottom: 4px !important;
+  padding: 0 24px 0 8px;
+  margin-bottom: 4px;
 }
 
-/* Card 组件 head - 调整 padding */
-.ant-card-head {
-  padding: 8px 24px 4px 24px !important;
-  border-bottom: 1px solid #f0f0f0 !important;
+/* HITL 呼吸边框（8.4.11）工具调用行挂起时整行高亮呼吸 */
+.hitl-border {
+  border: 1px solid #faad14;
+  animation: hitl-breathing 1.4s ease-in-out infinite;
 }
 
-/* 输入区域 */
-.chat-input-area {
-  padding: 0 !important;
-  margin: 0 !important;
+@keyframes hitl-breathing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(250, 173, 20, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(250, 173, 20, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(250, 173, 20, 0);
+  }
+}
+
+/* 思考流实时光标（8.4.10） */
+.thinking-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  animation: thinking-blink 1s step-start infinite;
+  color: #8c8c8c;
+}
+
+/* 任务列表项键盘聚焦浅蓝外晕（2026-08-27 小欧 三堂会审P0-5: 与选中深蓝#1677ff隔离, 不占位） */
+.task-list-item:focus-visible {
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.2);
+}
+
+@keyframes thinking-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 等待光标（2026-09-02 小欧 · 北京老陈定案：SVG 缺口圆弧=↻ 视觉，stroke-width 精确控粗，
+   高亮绿，逆时针转圈 1s，尺寸 1.4em≈20px；无 margin/padding——首 chunk 到达由本符号
+   让出的位置被内容覆盖接管，禁止常驻） */
+.waiting-cursor {
+  display: inline-block;
+  vertical-align: baseline;
+  animation: waiting-spin 1s linear infinite;
+}
+.waiting-cursor svg {
+  display: block;
+  width: 1.4em;
+  height: 1.4em;
+}
+@keyframes waiting-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+.tool-waiting-cursor {
+  display: inline-block;
+  vertical-align: baseline;
+  animation: waiting-spin 1s linear infinite;
+}
+.tool-waiting-cursor svg {
+  display: block;
+  width: 1em;
+  height: 1em;
 }

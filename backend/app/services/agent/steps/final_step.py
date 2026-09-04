@@ -15,19 +15,19 @@
 # 2026-07-18 小欧 #26 fix: outcome参数Literal["completed","failed","cancelled"]约束
 # 2026-07-18 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致
 # 2026-07-22 小欧 - 新增 accumulated_usage 可选字段(累计消耗统计), _extra_fields 输出供前端显示
+# 2026-08-18 小欧 - §10.3.3(4): 删 thought/is_finished/display_name(冗余); 新增 reasoning(历史回放推理载体)
+# 2026-08-20 - 小欧 - 11.1 token 四层同构: FinalStep 新增 task/session/chain_accumulated_tokens 三参数+三@property+_extra_fields 三键输出, 承载四层 token 累计透传至前端
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.5: model/provider 分离入参 → final_model: Optional[ModelRef]
+#   单结构承载(不留裸 model/provider 委托 property, 与基类裁定一致); SSE 裸键由 _extra_fields 派生
 
 from typing import Any, Dict, Literal, Optional
 
+from app.db.models.chat_models import ModelRef   # 归一 — 小欧 2026-08-22
 from .base import ReasoningStep
 
 
 class FinalStep(ReasoningStep):
-    """最终回答步骤 - Agent完成,最终给出答案
-
-    2026-07-18 小欧 多态自包含终态重构:
-    outcome字段声明终态结果: completed(成功)/failed(失败)/cancelled(取消)
-    error_type/error_message在失败时承载错误详情, 成功/取消时为空。
-    """
+    """最终回答步骤 - 多态自包含终态（§10.3.3(4）"""
 
     TYPE: str = "final"
     IS_DONE: bool = True
@@ -35,29 +35,29 @@ class FinalStep(ReasoningStep):
     def __init__(
         self,
         step: int,
-        response: str,
-        thought: str = "",
-        outcome: Literal["completed", "failed", "cancelled"] = "completed",  # #26 fix: Literal约束 — 小欧 2026-07-18
-        error_type: str = "",  # 小欧 2026-07-18: 失败时的错误类型(如llm_error/agent_operation_error)
-        error_message: str = "",  # 小欧 2026-07-18: 失败/取消时的错误信息
-        model: Optional[str] = None,
-        provider: Optional[str] = None,
-        is_finished: bool = True,
-        display_name: Optional[str] = None,
+        response: str = "",
+        outcome: Literal["completed", "failed", "cancelled"] = "completed",
+        error_type: str = "",
+        error_message: str = "",
+        final_model: Optional[ModelRef] = None,
+        accumulated_usage: Optional[Dict[str, int]] = None,
+        task_accumulated_tokens: Optional[Dict[str, int]] = None,    # 11.1 新增 — 小欧 2026-08-20
+        session_accumulated_tokens: Optional[Dict[str, int]] = None, # 11.1 新增
+        chain_accumulated_tokens: Optional[Dict[str, int]] = None,   # 11.1 新增（计算派生，不落库）
+        reasoning: str = "",
         timestamp: Optional[str] = None,
-        accumulated_usage: Optional[Dict[str, int]] = None,  # 2026-07-22 - 小欧 - 累计消耗: prompt_tokens/completion_tokens/total_tokens
     ):
         ReasoningStep.__init__(self, step, timestamp)
         self._response = response
-        self._thought = thought
         self._outcome = outcome
         self._error_type = error_type
         self._error_message = error_message
-        self._model = model
-        self._provider = provider
-        self._is_finished = is_finished
-        self._display_name = display_name or (f"{provider} ({model})" if provider and model else provider or model or "")
-        self._accumulated_usage = accumulated_usage  # 2026-07-22 - 小欧
+        self._step_model = final_model   # 复用基类唯一承载 — 小欧 2026-08-22
+        self._accumulated_usage = accumulated_usage
+        self._task_accumulated_tokens = task_accumulated_tokens       # 11.1 新增
+        self._session_accumulated_tokens = session_accumulated_tokens # 11.1 新增
+        self._chain_accumulated_tokens = chain_accumulated_tokens     # 11.1 新增
+        self._reasoning = reasoning
 
     def get_content(self) -> str:
         return self._response
@@ -67,40 +67,55 @@ class FinalStep(ReasoningStep):
         return self._response
 
     @property
-    def thought(self) -> str:
-        return self._thought
-
-    @property
-    def outcome(self) -> str:  # 小欧 2026-07-18: 终态声明读取器
+    def outcome(self) -> str:
         return self._outcome
 
     @property
-    def error_type(self) -> str:  # 小欧 2026-07-18: 错误类型读取器
+    def error_type(self) -> str:
         return self._error_type
 
     @property
-    def error_message(self) -> str:  # 小欧 2026-07-18: 错误信息读取器
+    def error_message(self) -> str:
         return self._error_message
 
     @property
-    def is_finished(self) -> bool:
-        return self._is_finished
+    def reasoning(self) -> str:
+        return self._reasoning
 
     @property
-    def display_name(self) -> str:
-        return self._display_name
+    def final_model(self) -> Optional[ModelRef]:
+        """终态模型身份(ModelRef 结构) — 归一唯一读取口 — 小欧 2026-08-22"""
+        return self.step_model
+
+    @property
+    def accumulated_usage(self) -> Optional[Dict[str, int]]:
+        return self._accumulated_usage
+
+    @property
+    def task_accumulated_tokens(self) -> Optional[Dict[str, int]]:  # 11.1 新增 — 小欧 2026-08-20
+        return self._task_accumulated_tokens
+
+    @property
+    def session_accumulated_tokens(self) -> Optional[Dict[str, int]]:  # 11.1 新增
+        return self._session_accumulated_tokens
+
+    @property
+    def chain_accumulated_tokens(self) -> Optional[Dict[str, int]]:  # 11.1 新增
+        return self._chain_accumulated_tokens
 
     def _extra_fields(self) -> Dict[str, Any]:
+        _m = self._step_model   # SSE 裸键从 ModelRef 派生(前端随之后端) — 小欧 2026-08-22
         return {
             "response": self._response,
-            "thought": self._thought,
-            "outcome": self._outcome,  # 小欧 2026-07-18: 输出终态声明
-            "error_type": self._error_type,  # 小欧 2026-07-18: 输出错误类型
-            "error_message": self._error_message,  # 小欧 2026-07-18: 输出错误信息
-            "model": self._model,
-            "provider": self._provider,
-            "is_finished": self._is_finished,
-            "display_name": self._display_name,
-            "accumulated_usage": self._accumulated_usage,  # 2026-07-22 - 小欧
+            "outcome": self._outcome,
+            "error_type": self._error_type,
+            "error_message": self._error_message,
+            "model": _m.model if _m else None,
+            "provider": _m.provider if _m else None,
+            "api_base": _m.api_base if _m else None,
+            "accumulated_usage": self._accumulated_usage,
+            "task_accumulated_tokens": self._task_accumulated_tokens,       # 11.1 新增
+            "session_accumulated_tokens": self._session_accumulated_tokens, # 11.1 新增
+            "chain_accumulated_tokens": self._chain_accumulated_tokens,     # 11.1 新增
+            "reasoning": self._reasoning,
         }
-

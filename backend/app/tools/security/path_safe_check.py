@@ -39,6 +39,10 @@
 #   【病根】ALLOWED_PATHS=get_default_allowed_paths() 模块级导入时计算, 仅被__all__导出(L458), 逻辑层从未引用(validate_path每次重调函数),
 #     既死代码又有"配置变更后陈旧白名单"潜在风险(file_register.py:4注释亦证移除意图)
 #   【改法】删除L129常量定义及__all__导出; get_default_allowed_paths 函数保留(逻辑在用), 无任何引用方依赖该常量(grep全仓仅注释/__all__)
+# 2026-09-02 - 小欧 - 提示文案"准确+可读"优化(北京老陈驱动「提示文字看不懂」): 本文件返回的 msg(定位路径落区, 作
+#   tool_safety_checker 用户 message 的拼接尾部)由黑话改"术语+人话"——代码库根:「路径位于受保护区域(项目代码库)」;
+#   系统敏感文件/目录:「路径位于系统禁区(敏感文件/敏感目录)」; 异常:「路径安全检查异常,已拒绝访问」;
+#   与前缀「该路径在受保护区域/系统禁区...」拼读通顺且保留禁区分级定位; 仅改文案不改逻辑(category 判定/hard-block 不变), 测试不断言文案, 逻辑零退化
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -177,11 +181,11 @@ def _is_forbidden_path(file_path: str) -> Tuple[Optional[str], Optional[str]]:
             for forbidden in FORBIDDEN_PATHS_WINDOWS_EXACT:
                 _f = forbidden.replace("C:", sys_drive, 1) if forbidden.upper().startswith("C:") else forbidden
                 if real_path_lower == _f.lower():
-                    return "system", f"禁止访问系统敏感文件: {file_path}"
+                    return "system", f"路径位于系统禁区(敏感文件): {file_path}"
             for forbidden_prefix in FORBIDDEN_PATHS_WINDOWS_PREFIX:
                 _f = forbidden_prefix.replace("C:", sys_drive, 1) if forbidden_prefix.upper().startswith("C:") else forbidden_prefix
                 if real_path_lower.startswith(_f.lower()):
-                    return "system", f"禁止访问系统敏感目录: {file_path}"
+                    return "system", f"路径位于系统禁区(敏感目录): {file_path}"
 
         # ⑦ 代码库根禁区(tool禁区, 开关无关硬拦截): 代码库根及其子/父级全部禁止 — 小欧 2026-08-10
         # P1: 代码库根属非系统禁区(non_system)
@@ -194,22 +198,22 @@ def _is_forbidden_path(file_path: str) -> Tuple[Optional[str], Optional[str]]:
                 if (real_path_lower == cr_lower
                         or real_path_lower.startswith(cr_lower + os.sep)
                         or real_path_lower.startswith(cr_lower + "/")):
-                    return "non_system", f"禁止访问代码库(tool禁区): {file_path}"
+                    return "non_system", f"路径位于受保护区域(项目代码库): {file_path}"
         except Exception:
             pass
 
         for forbidden in FORBIDDEN_PATHS_EXACT:
             if real_path_str == forbidden:
-                return "system", f"禁止访问系统敏感文件: {file_path}"
+                return "system", f"路径位于系统禁区(敏感文件): {file_path}"
         for forbidden_prefix in FORBIDDEN_PATHS_PREFIX:
             if real_path_str.startswith(forbidden_prefix):
-                return "system", f"禁止访问系统敏感目录: {file_path}"
+                return "system", f"路径位于系统禁区(敏感目录): {file_path}"
         
         return None, None
     except Exception as e:
         # 【P1-21修复】异常时拒绝访问而非放行 — chendyg 2026-06-26
         # P1: 异常判定为system禁区(硬拦永不授权)
-        return "system", f"路径安全检查异常,拒绝访问: {file_path} ({e})"
+        return "system", f"路径安全检查异常,已拒绝访问: {file_path} ({e})"
 
 
 def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,

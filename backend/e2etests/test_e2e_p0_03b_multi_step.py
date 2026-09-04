@@ -17,6 +17,7 @@
 -- 小健 2026-06-14
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
 -- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
+-- 更新: 2026-08-22 - 小欧 - §10.3适配: 本case旧action_tool取数块(type过滤+顶层tool_name+observation字段)收敛为verify_db_tool_usage单点校验(e2e_helpers FUNCTIONS.md九.1), 协议再变只改helper一处
 """
 
 TEST_CASE_ID = "E2E-P0-03b"
@@ -37,6 +38,7 @@ from e2emodel.e2e_helpers import (
     assert_stream_ended,
     register_pending_record,
     filter_safety_errors,
+    verify_db_tool_usage,
 )
 
 TEST_FILE = Path("E:/test_dir/test.txt")
@@ -96,15 +98,11 @@ async def test_e2e_p0_03b_multi_step_reasoning():
         assert db["execution_steps_count"] >= 2, f"must have >=2 steps(MUST P0-03b), got {db['execution_steps_count']}"
         assert len(db["step_field_issues"]) == 0, f"step fields incomplete(MUST): {db['step_field_issues']}"
 
-        db_tool_steps = [s for s in db["execution_steps"] if s.get("type") == "action_tool"]
-        db_read_steps = [s for s in db_tool_steps if s.get("tool_name") in read_tools]
-        assert len(db_read_steps) > 0, "DB steps must have read op(MUST P0-03b)"
+        # 2026-08-22 小欧 §10.3适配: 旧action_tool取数块收敛为verify_db_tool_usage单点校验(FUNCTIONS.md 9.1)
+        _ti = verify_db_tool_usage(db, expect_any_tools=read_tools)
+        assert len(_ti) == 0, f"DB steps must have read op(MUST P0-03b): {_ti}"
 
-        for step in db_tool_steps:
-            obs = step.get("observation") or step.get("execution_result")
-            assert obs, f"tool result not empty(MUST): {step.get('tool_name')}"
-
-        print(f"  [Step5] DB OK: steps={db['execution_steps_count']}, tool_steps={len(db_tool_steps)}, read_steps={len(db_read_steps)}")
+        print(f"  [Step5] DB OK: steps={db['execution_steps_count']}, tool_check=PASS")
 
         print(f"  [Step6] SSE-DB consistency...")
         ci = verify_consistency(result, sid)
@@ -137,7 +135,7 @@ async def test_e2e_p0_03b_multi_step_reasoning():
         print_report(
             "E2E-P0-03b", "multi-step reasoning-read file", result, db, lc,
             ci, si, True, elapsed,
-            extra={"LLM calls": result["llm_call_count"], "Tools": tool_names, "Read steps": len(db_read_steps), "DbPromptIssues": len(dpi)},
+            extra={"LLM calls": result["llm_call_count"], "Tools": tool_names, "DbPromptIssues": len(dpi)},
         )
 
         passed = True

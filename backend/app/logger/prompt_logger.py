@@ -12,6 +12,9 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#35: 删除观察条目重复字段"格式化内容"(与"内容"逐字节相同, 每个观察步骤存两份全文)
 #   【病根】2026-08-12补"内容"后L409 `entry["格式化内容"]=observation_content` 与"内容"完全重复, 大工具结果(读文件/长SQL输出)日志体积/IO/磁盘双倍开销, 违DRY
 #   【改法】删除"格式化内容"赋值, 保留"原始内容"兼容分析脚本; 已grep确认全仓无调用方依赖"格式化内容"键
+# 2026-08-22 - 小欧 - 北京老陈 2026-08-22 铁律(chat_messages 只写严禁读): _user_id_from_db 查询由 chat_messages(role='user' AND 序) 改读 chat_user_message(与全系统改读新表一致, 不退化/不读 chat_messages)
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.4③: log_llm_call 形参 (model, provider) 分离 → llm_model:
+#   ModelRef 结构; 日志落盘"模型"/"提供商"键取 llm_model.model/.provider(展示派生); import 补 ModelRef
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
@@ -35,6 +38,7 @@ from typing import Dict, Any, List, Optional
 from app.utils.json_utils import safe_json_dumps
 from app.services.chat.storage import get_user_message_id
 from app.db import db
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.logger import logger
 
 
@@ -108,7 +112,7 @@ class PromptLogger:
         try:
             with db.get_conn("chat") as conn:
                 row = conn.execute(
-                    "SELECT id FROM chat_messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+                    "SELECT id FROM chat_user_message WHERE session_id=? ORDER BY id DESC LIMIT 1",
                     (sid,)
                 ).fetchone()
                 return row[0] if row else None
@@ -257,20 +261,20 @@ class PromptLogger:
         self,
         round_number: int = 0,
         messages: List[Dict[str, str]] = None,
-        model: str = "",
-        provider: str = "",
+        llm_model: Optional[ModelRef] = None,
         call_type: str = "tools",
         extra_params: Optional[Dict[str, Any]] = None,
         tools: Optional[List[Dict[str, Any]]] = None
     ):
         """
         记录 LLM 调用
-        
+        2026-08-22 小欧 归一报告v1.25 6.4③: (model, provider) 分离形参 → llm_model: ModelRef 结构;
+          日志落盘取 .model/.provider 拼文本属展示派生(允许)
+
         Args:
             round_number: 调用轮次
             messages: 发送给 LLM 的完整消息列表
-            model: 模型名称
-            provider: 提供商
+            llm_model: 模型身份结构(ModelRef: provider+model)
             call_type: 调用类型(text/tools/response_format)
             extra_params: 额外参数
             tools: OpenAI tools 定义数组(完整 JSON Schema),2026-06-19 小欧新增
@@ -278,15 +282,15 @@ class PromptLogger:
         current_log = self._get_current_log()
         if not current_log:
             return
-        
+
         message_stats, message_summaries = self._summarize_messages(messages)
         tools_summary = self._summarize_tools(tools)
 
         entry = {
             "轮次": round_number,
             "调用类型": call_type,
-            "模型": model,
-            "提供商": provider,
+            "模型": llm_model.model if llm_model else "",
+            "提供商": llm_model.provider if llm_model else "",
             "消息统计": message_stats,
             "消息总数": len(messages),
             "消息摘要": message_summaries,

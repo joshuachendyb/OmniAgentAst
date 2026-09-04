@@ -34,6 +34,9 @@
         日志result截断长度,防MemoryError); action_handler导入改为
         from app.constants 引用
    2026-08-14 小欧 改名名实相符: model_schemas.py → config_schemas.py(注释同步)
+    2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪相关常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 迁至 app/services/agent/compaction_constants.py(随用方集中到 agent 域), 本源删除, 引用方(start_step/message_builder/compaction 各模块)导入路径同步改
+    2026-09-02 小欧 v1.5.13 新增 HITL_CONFIRM_LEAD=10 / BYPASS_AUTO_LEAD=2 两个计时提前量常量(会话信任修复方案5.7.3/5.7.4: 后端唯一计时权威, 前端倒计时=后端窗口−提前量, 消除前后端计时竞态)
+    2026-09-03 小欧/北京老陈 新增 HITL_MIN_CONFIRM_TIMEOUT=3 前端倒计时最小值常量(改前三处max(5,bt-LEAD)硬编码5→常量3)
 # 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 """
 
@@ -94,11 +97,8 @@ DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://local
 # 4. 内容截断与字符限制
 # ============================================================
 
-MAX_CONTEXT_TOKENS = 200000  # 【系统级】使用对象: Agent 总体上下文 Token 上限（默认值，配置可覆盖）
-MAX_CONTEXT_RATIO = 0.8      # 【系统级】使用对象: 裁剪绝对值安全网触发比例（默认80%，历史占满此比例即触发裁剪）
-COMPACTION_BUFFER = 20000    # 【系统级】使用对象: 输出预留缓冲区（OpenCode 式，用于增量触发和预算裁剪）
-CHARS_PER_TOKEN = 4          # 【系统级】使用对象: chars→token 换算系数
-TEMP_HISTORY_CHAR_LIMIT = 50000  # 【系统级】使用对象: 临时历史字符上限
+# 压缩/裁剪相关常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT)
+# 已迁移到 app/services/agent/compaction_constants.py (见 2026-08-17 编辑历史) — 小健 2026-08-17
 
 # 系统级长度常量(2026-07-15 归一化治理): 项目规则文件(OmniAgent.md)注入字符上限 — 小欧
 PROJECT_CONTEXT_MAX_CHARS = 10000   # 【系统级】使用对象: 项目规则文件(OmniAgent.md)注入 Prompt 字符上限
@@ -122,7 +122,11 @@ MAX_CACHE_SIZE = 1000  # 【系统级】使用对象: 会话/上下文缓存最�
 TASK_TIMEOUT = timedelta(hours=1)  # 【系统级】使用对象: task_registry.cleanup_expired_tasks 过期任务(创建>1h)兜底清理, 防 running_tasks 内存注册表泄漏
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧
-HITL_TIMEOUT = 120  # 【系统级】使用对象: HITL 确认超时(秒)
+# 2026-09-03 小欧 - 真HITL确认超时已可配置化(security.hitl_timeout, config.yaml优先): 此常量作兜底默认
+HITL_TIMEOUT = 120  # 【系统级】使用对象: HITL 确认超时(秒), 可被 config security.hitl_timeout 覆盖
+HITL_CONFIRM_LEAD = 10  # v1.5.13(2026-09-02 小欧): 真HITL 前端倒计时比后端 HITL_TIMEOUT 提前的秒数(后端120→前端110)
+BYPASS_AUTO_LEAD = 2  # v1.5.13(2026-09-02 小欧): bypass 前端倒计时比后端 S1 提前的秒数(后端5→前端3)
+HITL_MIN_CONFIRM_TIMEOUT = 3  # 2026-09-03 小欧/北京老陈: 前端倒计时最小值(后端窗口-LEAD钳制下限, 改前硬编码5→现常量3)
 
 # HITL最大待确认数（从 hitl_confirmation.py 集中迁移 2026-07-14 小欧）
 MAX_PENDING_CONFIRMATIONS = 100  # 【系统级】使用对象: HITL 最大待确认数

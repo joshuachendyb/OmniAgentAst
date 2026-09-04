@@ -27,12 +27,17 @@
    2026-07-16 小欧 M1 解决CLIENT(4xx)错误文案被覆盖问题: 此前classify_error_message对CLIENT类错误固定返回写死文案"客户端错误:请求参数异常", 丢弃服务商真实错误文本; 现CLIENT分支在error_message非空时直接透出。能力提升: 与client_sdk抛出的HTTPStatusError真因打通, 前端/用户获得可读的真实错误原因, 同时保持400不重试的既有重试策略不变
    2026-07-17 小沈 FC重命名: import/引用同步更新
    2026-07-18 小欧 #8 fix: 消除循环导入——LLMResponseError 改模块级 try/except 导入为 _check_special_errors 内函数级延迟导入; core.py 模块级 import error_classifier 不再触发循环, LLMResponseError 不再恒为 None
-   2026-08-14 小欧 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+    2026-08-14 小欧 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+     2026-08-29 小沈 修复#14: HTTP 状态分类改优先用异常对象真实响应状态码(httpx.HTTPStatusError.response.status_code)判定, 正则仅作文本补充; 消除 400/401/403 因 str(error) 无"status_code"语境致正则失配被误归 SERVER 可重试的缺陷, 4xx 正确归 CLIENT 不可重试
+     2026-09-01 小欧 新增RATE_LIMIT枚举: 429限流单列为不可重试(RATE_LIMIT), 补to_status/description/SYSTEM_ERROR_TYPE_TO_MESSAGE四处映射, 429不再进L1重试直接走quota_exceeded快速失败 — 小欧 2026-09-01
+     2026-09-02 小欧 严谨修复404重试放大(北京老陈:三思三省): _check_http_status_errors 未枚举4xx(404/405/422等)按HTTP语义一律CLIENT不重试, 未枚举5xx一律SERVER可重试, 杜绝404配错黑名单兜底误判SERVER导致L1×3→L2×2→FC降级×3=12次120秒放大 — 小欧 2026-09-02
 """
 
 import re
 from enum import Enum
 from typing import Optional, Tuple, Dict, Any
+
+from app.logger import logger
 
 try:
     from app.utils.idle_timeout import IdleTimeoutError
@@ -48,6 +53,7 @@ class SystemErrorCategory(Enum):
     UNKNOWN = "unknown"
     EMPTY_RESPONSE = "empty_response"
     IDLE_TIMEOUT = "idle_timeout"
+    RATE_LIMIT = "rate_limit"
 
     @property
     def is_retryable(self) -> bool:
@@ -69,6 +75,7 @@ class SystemErrorCategory(Enum):
             SystemErrorCategory.UNKNOWN: "error",
             SystemErrorCategory.EMPTY_RESPONSE: "empty_response",
             SystemErrorCategory.IDLE_TIMEOUT: "idle_timeout",
+            SystemErrorCategory.RATE_LIMIT: "rate_limit",
         }
         return mapping.get(self, "error")
 
@@ -82,17 +89,18 @@ class SystemErrorCategory(Enum):
             SystemErrorCategory.UNKNOWN: "未知错误",
             SystemErrorCategory.EMPTY_RESPONSE: "空响应",
             SystemErrorCategory.IDLE_TIMEOUT: "空闲超时",
+            SystemErrorCategory.RATE_LIMIT: "接口限流/配额",
         }
         return mapping.get(self, "未知错误")
 
 
 # HTTP状态码到错误类型的映射
-# 4xx 客户端错(400/401/403)归 CLIENT 不可重试；429 限流是唯一可重试 4xx 仍归 SERVER — 小欧 2026-07-16
+# 4xx 客户端错(400/401/403)归 CLIENT 不可重试；429 限流归 RATE_LIMIT 不可重试 — 小欧 2026-09-01
 HTTP_STATUS_TO_ERROR_TYPE: Dict[int, SystemErrorCategory] = {
     400: SystemErrorCategory.CLIENT,
     401: SystemErrorCategory.CLIENT,
     403: SystemErrorCategory.CLIENT,
-    429: SystemErrorCategory.SERVER,
+    429: SystemErrorCategory.RATE_LIMIT,
     500: SystemErrorCategory.SERVER,
     502: SystemErrorCategory.SERVER,
     503: SystemErrorCategory.SERVER,
@@ -107,6 +115,7 @@ SYSTEM_ERROR_TYPE_TO_MESSAGE: Dict[SystemErrorCategory, Tuple[str, str]] = {
     SystemErrorCategory.UNKNOWN: ("unknown", "AI 处理异常,请稍后重试"),
     SystemErrorCategory.EMPTY_RESPONSE: ("empty_response", "AI服务返回空响应,请稍后重试"),
     SystemErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "请求超时:AI模型30秒内未返回任何内容,已重试3次,请更换问题或稍后重试"),
+    SystemErrorCategory.RATE_LIMIT: ("rate_limit", "接口限流/配额已耗尽,请稍后重试"),
 }
 
 
@@ -130,11 +139,51 @@ class SystemErrorClassifier:
     _STATUS_CTX_RE = re.compile(r"status[_\s]*code['\"]?\s*[:=]?\s*(\d{3})", re.IGNORECASE)
 
     @staticmethod
-    def _check_http_status_errors(error_msg: str) -> Optional[SystemErrorCategory]:
-        """检查HTTP状态码错误 — #36 fix: 匹配 status_code 语境防误匹配数字 — 小欧 2026-07-18"""
-        m = SystemErrorClassifier._STATUS_CTX_RE.search(error_msg)
+    def _extract_http_status(error: Exception) -> Optional[int]:
+        """从异常对象提取真实 HTTP 状态码 — 小沈 2026-08-29 修复#14: 优先用对象属性, 不依赖 str(error) 文本"""
+        resp = getattr(error, "response", None)
+        if resp is not None:
+            code = getattr(resp, "status_code", None)
+            if isinstance(code, int):
+                return code
+        code = getattr(error, "status_code", None)
+        if isinstance(code, int):
+            return code
+        return None
+
+    @staticmethod
+    def _check_http_status_errors(error: Exception) -> Optional[SystemErrorCategory]:
+        """检查HTTP状态码错误 — 小沈 2026-08-29 修复#14: 优先用真实响应状态码, 正则仅作文本补充
+        2026-09-02 小欧 严谨修复404重试放大(北京老陈:三思三省不误伤不滥用): 未枚举4xx(404/405/422等)按HTTP语义一律CLIENT不重试, 未枚举5xx一律SERVER可重试, 杜绝黑名单兜底误判SERVER导致404配错重试12次"""
+        # 优先: 直接从异常对象取真实 HTTP 状态码(如 httpx.HTTPStatusError), 规避 str(error) 无语境致正则失配
+        status_code = SystemErrorClassifier._extract_http_status(error)
+        if status_code is not None:
+            _cat = HTTP_STATUS_TO_ERROR_TYPE.get(status_code)
+            if _cat is not None:
+                logger.debug(f"[ErrorClassifier] 真实HTTP状态码={status_code}, 分类={_cat}")
+                return _cat
+            if 400 <= status_code < 500:
+                _fallback = SystemErrorCategory.CLIENT
+                logger.debug(f"[ErrorClassifier] 真实HTTP状态码={status_code}, 未枚举4xx→CLIENT不重试")
+                return _fallback
+            if 500 <= status_code < 600:
+                _fallback = SystemErrorCategory.SERVER
+                logger.debug(f"[ErrorClassifier] 真实HTTP状态码={status_code}, 未枚举5xx→SERVER可重试")
+                return _fallback
+            logger.debug(f"[ErrorClassifier] 真实HTTP状态码={status_code}, 分类=None(非HTTP错误域)")
+            return None
+        # 补充: 从错误文本正则抠状态码(上下文感知, 防误匹配裸数字) — 小欧 2026-07-18
+        m = SystemErrorClassifier._STATUS_CTX_RE.search(str(error).lower())
         if m:
-            return HTTP_STATUS_TO_ERROR_TYPE.get(int(m.group(1)))
+            _code = int(m.group(1))
+            _cat = HTTP_STATUS_TO_ERROR_TYPE.get(_code)
+            if _cat is not None:
+                return _cat
+            if 400 <= _code < 500:
+                return SystemErrorCategory.CLIENT
+            if 500 <= _code < 600:
+                return SystemErrorCategory.SERVER
+            return None
         return None
     
     @staticmethod
@@ -160,8 +209,8 @@ class SystemErrorClassifier:
         if category:
             return category
         
-        # 2. HTTP状态码错误 → SERVER(retryable)
-        category = SystemErrorClassifier._check_http_status_errors(error_msg)
+        # 2. HTTP状态码错误 → 按真实状态码分类(4xx CLIENT 不可重试, 5xx SERVER 可重试)
+        category = SystemErrorClassifier._check_http_status_errors(error)
         if category:
             return category
         

@@ -1,3 +1,9 @@
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 抽resolveScheme复用取色; hexToRgba提模块级; 删isDarkMode/darkModeColors死代码
+// 2026-08-27 小欧 - 三堂会审: Colors.WARNING 收敛至 AntD5 默认警告色 #faad14(原 #d97706 旧琥珀色, 与第九章调色板不一致)
+// 2026-08-27 小欧 - 三堂会审: 删全部死代码(colorSchemes/resolveScheme/hexToRgba/mergeStyles/ColorScheme接口/import React), 仅留6令牌+类型(YAGNI/KISS/禁止backward)
+// 2026-08-27 小欧 - 修复step-5/step-6: 恢复getStep*/isValidStepType/getAllStepTypes(被误删), 以最小stepMeta映射替代已删colorSchemes(禁止backward), action_tool须被拒
+// 2026-08-28 小沈 - 修复review-bugs#6: isValidStepType改hasOwnProperty, 防toString/__proto__原型污染 - 小沈-2026-08-28
+// 2026-08-28 小欧 - 三堂会审v1.3(P0): Colors.TEXT扩5档灰(PRIMARY#595959/SECONDARY#8c8c8c/TERTIARY#999/WEAK#888/STRONG#333), 消灰阶硬码复发(H3); FontSize.SECONDARY 13→12 废13档统一14/12二档(M2) - 小欧-2026-08-28
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
  *
@@ -8,39 +14,8 @@
  * @version 2.1.0
  * @since 2026-03-24
  * @update 2026-04-28 小强 - 第七步添加深色模式支持
+ * @update 2026-08-26 小欧 - 8.4.14(5) StepType action 改名+覆盖7个meta类型+补 colorSchemes 条目
  */
-
-import React from 'react';
-
-/**
- * 检测深色模式（第七步实现）
- * @returns true表示深色模式，false表示浅色模式
- */
-export const isDarkMode = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-};
-
-/**
- * 深色模式配色 - 9种浅色方案精简版
- * 设计原则：3种色系×3种深浅=9种浅色，绝对不用深色
- * 兼容说明：保留StepRow组件需要的临时属性，后续框层合并时删除
- */
-export const darkModeColors = {
-  // 基础3色（容器/边框/文字）
-  container: '#1f1f1f',
-  border: '#404040',
-  text: '#e5e5e5',
-  // 扩展色（保留必要区分度）
-  success: '#52c41a',
-  error: '#cf1322',
-  warning: '#d97706',
-  // StepRow临时使用的属性（后续框层合并时删除）
-  headerBg: '#2a2a2a',
-  contentBg: '#141414',
-  footerBg: '#1a1a1a',
-  hoverBorder: '#595959',
-};
 
 // ==================== 类型定义 ====================
 
@@ -48,6 +23,13 @@ export const darkModeColors = {
 export type StepType =
   | 'thought'
   | 'start'
+  | 'startinfo'
+  | 'thought-start'
+  | 'usage'
+  | 'stats'
+  | 'final_stats'
+  | 'context_overview'
+  | 'truncated'
   | 'final'
   | 'error'
   | 'cancelled'
@@ -55,7 +37,7 @@ export type StepType =
   | 'resumed'
   | 'retrying'
   | 'observation'
-  | 'action_tool'
+  | 'action'
   | 'chunk'
   | 'report';
 
@@ -65,23 +47,13 @@ export type StepPriority = 'primary' | 'secondary' | 'accent';
 // 分行模式
 export type LayoutMode = 'inline' | 'block' | 'inline-with-details';
 
-// 颜色方案接口 - 9种浅色方案精简版
-interface ColorScheme {
-  bg1: string; // 背景色-主
-  bg2?: string; // 背景色-次（可选）
-  border: string; // 边框颜色
-  text: string; // 文字颜色
-  label: string; // 视觉标签
-  priority: StepPriority;
-  layout: LayoutMode; // 分行模式
-}
-
 // 字体大小规范
 // ⚠️ 警告：修改或重命名属性前，请搜索 renderers/ 目录下所有引用（如 FontSize.SM/XS/XXS 过去已被误用过），务必同步更新，否则编译报错（历史教训 2026-05-23）
+// 2026-08-28 小欧 v1.3: 废 SECONDARY=13 半档, 统一 14/12 二档(M2); 13px 游离扫视不齐已消除
 export const FontSize = {
   // 主要内容字体
   PRIMARY: 14, // 主标题、重要信息（final、error主要内容）
-  SECONDARY: 13, // 普通内容（thought、start描述）
+  SECONDARY: 12, // 普通内容（thought、start描述）— v1.3 由13降12, 与TERTIARY同档, 全链仅14/12二档
   TERTIARY: 12, // 辅助信息（时间戳、ID）
   SMALL: 11, // 微小信息（标签、徽章）
   CAPTION: 10, // 注释文字
@@ -109,6 +81,12 @@ export const Spacing = {
   XL: 16, // 超大间距
 } as const;
 
+// 2026-08-30 小欧 北京老陈最新定案(字体留白全0 + 行高=字号+4): 流水线段距单点——
+// 默认(独立 step)=Spacing.SM=6=step 间, compact(step 内文字 4 折不折同)=Spacing.XS=4;
+// 字体留白0 + 行高=字号+Spacing.XS(4)，数值一律 Spacing 常量 - 小欧-2026-08-30
+export const stepMargin = (compact: boolean): string =>
+  `${compact ? Spacing.XS : Spacing.SM}px 0`;
+
 // 边框宽度常量 - 小强 2026-05-22
 export const BorderWidth = {
   THIN: 1, // 细边框
@@ -123,14 +101,15 @@ export const Radius = {
   LG: 8, // 大圆角
 } as const;
 
-// 颜色常量 - 9种浅色方案精简版
-// 设计原则：3种色系×3种深浅=9种浅色，绝对不用深色，禁止到处框框色块
+// 颜色常量 - 语义化功能色 + 文字/背景/边框中性色
 export const Colors = {
-  // 文字颜色（3种浅色）
+  // 文字颜色（5种浅色灰阶，v1.3 扩档消硬码 H3）
   TEXT: {
-    PRIMARY: '#595959', // 主要文字 - 改用浅灰色（避免深色#262626）
-    SECONDARY: '#595959', // 次要文字 - 中灰
-    TERTIARY: '#999999', // 辅助文字 - 深灰（仍是浅色）
+    PRIMARY: '#595959', // 主要文字 - 中灰（标题/正文）
+    SECONDARY: '#8c8c8c', // 次要文字 - 浅灰（参数/说明）— v1.3 由#595959降#8c8c8c, 与PRIMARY拉开层级
+    TERTIARY: '#999999', // 辅助文字 - 浅灰
+    WEAK: '#888888', // 弱文字 - 空态/斜体
+    STRONG: '#333333', // 强文字 - 文件名/重点（替代硬码#333/#262626）
   },
   // 背景颜色（3种浅色）
   BG: {
@@ -138,501 +117,113 @@ export const Colors = {
     SECONDARY: '#fafafa', // 次要背景 - 极浅灰
     TERTIARY: '#f5f5f5', // 第三背景 - 浅灰
     LIGHT: '#fafafa', // 浅背景（别名）
+    WARNING_LIGHT: '#fffbe6', // 警告浅底（高亮背景，替 rgba）
   },
   // 边框颜色（3种浅色）
   BORDER: {
-    LIGHT: '#f0f0f0', // 浅边框
-    DEFAULT: '#d9d9d9', // 中边框
+    LIGHT: '#f0f0f0', // 浅边框-水平分割线
+    VERTICAL: '#e8e8e8', // 垂直左线（Pipeline/通用嵌套统一）
+    DEFAULT: '#d9d9d9', // 中边框（通用嵌套旧值，逐步收敛至 VERTICAL）
     STRONG: '#bfbfbf', // 深边框（仍是浅色）
   },
   // 功能颜色（5种）
-  PRIMARY: '#1890ff', // 主色调 - 蓝色
+  PRIMARY: '#1677ff', // 主色调 - 蓝色
   SUCCESS: '#52c41a', // 成功状态 - 绿色
   ERROR: '#ff4d4f', // 错误状态 - 红色
-  WARNING: '#d97706', // 警告/思考状态 - 橙色
+  WARNING: '#faad14', // 警告/思考状态 - 橙色(AntD5默认警告色, 收敛)
   INFO: '#096dd9', // 信息/开始状态 - 蓝色
+  WARNING_BG: '#fffbe6', // 警告背景（高亮浅底）
 } as const;
 
 // ==================== 步骤配置 ====================
+// 2026-08-27 小欧 三堂会审: 已移除全部死代码(colorSchemes/getStep*/resolveScheme/hexToRgba/mergeStyles 等),
+// 仅 stepStyles.test.ts 引用, src(renderers) 只用上方 6 个令牌与类型(YAGNI/KISS/禁止backward)
 
-// 精细化颜色方案映射 - 统一为3种主色调：灰/绿/橙
-const colorSchemes: Record<StepType, ColorScheme> = {
-  // ===== 思考类（橙色系）=====
-  thought: {
-    bg1: '#fff7e6',
-    bg2: '#fffbe6',
-    border: '#ffd591',
-    text: '#ad4e00',
-    label: '💭 思考',
-    priority: 'secondary',
-    layout: 'block',
-  },
-  cancelled: {
-    bg1: '#fff2e8',
-    bg2: '#fff',
-    border: '#ffbb96',
-    text: '#d4380d',
-    label: '⚠️ 已取消',
-    priority: 'primary',
-    layout: 'block',
-  },
+// 2026-08-27 小欧 修复step-6: 最小 stepMeta 映射(仅 label/priority/layout), 供下方 getStep* 使用;
+// 不再复活已删的彩虹 colorSchemes(禁止backward)。键集合须与 StepType 完全一致。
+interface StepMeta {
+  label: string;
+  priority: StepPriority;
+  layout: LayoutMode;
+}
 
-  // ===== 基础类（灰色系）=====
+const stepMeta: Record<StepType, StepMeta> = {
+  thought: { label: '💭 思考', priority: 'secondary', layout: 'block' },
   start: {
-    bg1: '#fafafa',
-    bg2: '#f5f5f5',
-    border: '#d9d9d9',
-    text: '#595959',
     label: '🚀 开始',
     priority: 'primary',
     layout: 'inline-with-details',
   },
-  retrying: {
-    bg1: '#f5f5f5',
-    bg2: '#f0f0f0',
-    border: '#d9d9d9',
-    text: '#595959',
-    label: '🔄 重试',
+  startinfo: { label: '🚀 开始信息', priority: 'secondary', layout: 'inline' },
+  'thought-start': {
+    label: '💭 开始思考',
     priority: 'secondary',
-    layout: 'inline',
-  },
-  action_tool: {
-    bg1: '#f5f5f5',
-    bg2: '#fafafa',
-    border: '#d9d9d9',
-    text: '#595959',
-    label: '⚙️ 执行',
-    priority: 'primary',
-    layout: 'inline-with-details',
-  },
-
-  // ===== 完成类（绿色系）=====
-  final: {
-    bg1: '#f6ffed',
-    border: '#b7eb8f',
-    text: '#52c41a',
-    label: '✅ 完成',
-    priority: 'primary',
     layout: 'block',
   },
-  resumed: {
-    bg1: '#f6ffed',
-    bg2: '#f5f5f5',
-    border: '#b7eb8f',
-    text: '#389e0d',
-    label: '▶️ 恢复',
+  usage: { label: '🔢 Token', priority: 'secondary', layout: 'inline' },
+  stats: { label: '📊 统计', priority: 'secondary', layout: 'inline' },
+  final_stats: {
+    label: '📊 最终统计',
     priority: 'secondary',
     layout: 'inline',
   },
+  context_overview: {
+    label: '📑 上下文概览',
+    priority: 'secondary',
+    layout: 'inline',
+  },
+  truncated: { label: '✂️ 截断', priority: 'secondary', layout: 'inline' },
+  final: { label: '✅ 完成', priority: 'primary', layout: 'block' },
+  error: { label: '❌ 错误', priority: 'primary', layout: 'block' },
+  cancelled: { label: '⚠️ 已取消', priority: 'primary', layout: 'block' },
+  paused: { label: '⏸️ 暂停', priority: 'secondary', layout: 'inline' },
+  resumed: { label: '▶️ 恢复', priority: 'secondary', layout: 'inline' },
+  retrying: { label: '🔄 重试', priority: 'secondary', layout: 'inline' },
   observation: {
-    bg1: '#f6ffed',
-    bg2: '#f5fff5',
-    border: '#b7eb8f',
-    text: '#389e0d',
     label: '📋 观察',
     priority: 'secondary',
     layout: 'inline-with-details',
   },
+  action: {
+    label: '⚙️ 执行',
+    priority: 'primary',
+    layout: 'inline-with-details',
+  },
+  chunk: { label: '📝 内容', priority: 'primary', layout: 'block' },
   report: {
-    bg1: '#f6ffed',
-    bg2: '#f5f5f5',
-    border: '#b7eb8f',
-    text: '#389e0d',
     label: '📊 报告',
     priority: 'secondary',
     layout: 'inline-with-details',
   },
-
-  // ===== 错误类（红色系）=====
-  error: {
-    bg1: '#fff1f0',
-    bg2: '#fff',
-    border: '#ffa39e',
-    text: '#cf1322',
-    label: '❌ 错误',
-    priority: 'primary',
-    layout: 'block', // 错误信息需要醒目显示
-  },
-
-  // ===== 暂停类（灰色系）- 表示暂停和等待 =====
-  paused: {
-    bg1: '#fafafa',
-    bg2: '#f5f5f5',
-    border: '#d9d9d9',
-    text: '#595959',
-    label: '⏸️ 暂停',
-    priority: 'secondary',
-    layout: 'inline', // 暂停信息简短，一行显示
-  },
-
-  // ===== 内容类（紫色系）- 表示内容片段 =====
-  chunk: {
-    bg1: '#f9f0ff',
-    bg2: '#f5f5ff',
-    border: '#d3adf7',
-    text: '#722ed1',
-    label: '📝 内容',
-    priority: 'primary',
-    layout: 'block', // 内容片段需要换行显示
-  },
 };
 
-// ==================== 核心函数 ====================
-
-/**
- * 获取步骤容器样式
- * @param stepType 步骤类型
- * @param isPrimary 是否为主信息
- * @returns CSS样式对象
- */
-export const getStepStyle = (
-  stepType: StepType | string,
-  isPrimary: boolean = true
-) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
-
-  return {
-    borderRadius: Radius.LG,
-    padding: `${Spacing.SM}px`,
-    marginTop: Spacing.SM,
-    fontSize: isPrimary ? FontSize.SECONDARY : FontSize.TERTIARY,
-    lineHeight: 1.8,
-    background: scheme.bg1,
-    border: `${BorderWidth.THIN}px solid ${scheme.border}`,
-    color: scheme.text,
-    display: 'flex' as const,
-    flexDirection: 'column' as const,
-    gap: `${BorderWidth.THIN}px`,
-  };
-};
-
-/**
- * 获取标题样式（用于步骤标题行）
- * @param stepType 步骤类型
- * @returns CSS样式对象
- */
-export const getStepTitleStyle = (stepType: StepType | string) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
-
-  return {
-    fontWeight: FontWeight.BOLD,
-    color: scheme.text,
-    fontSize: FontSize.SECONDARY,
-    marginBottom: Spacing.XS,
-  };
-};
-
-/**
- * 获取主要内容样式（用于步骤主内容）
- * @param stepType 步骤类型
- * @param variant 内容变体
- * @returns CSS样式对象
- */
-export const getStepContentStyle = (
-  stepType: StepType | string,
-  variant: 'primary' | 'secondary' | 'detail' = 'primary'
-) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
-
-  const variants = {
-    primary: {
-      fontSize: FontSize.SECONDARY,
-      color: scheme.text,
-      fontWeight: FontWeight.REGULAR,
-    },
-    secondary: {
-      fontSize: FontSize.TERTIARY,
-      color: Colors.TEXT.TERTIARY,
-      fontWeight: FontWeight.REGULAR,
-    },
-    detail: {
-      fontSize: FontSize.SMALL,
-      color: Colors.TEXT.TERTIARY,
-      fontWeight: FontWeight.LIGHT,
-    },
-  };
-
-  return variants[variant];
-};
-
-/**
- * 获取标签样式（用于步骤标签显示）
- * @param stepType 步骤类型
- * @returns CSS样式对象
- */
-export const getStepLabelStyle = (stepType: StepType | string) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
-
-  return {
-    display: 'inline-flex' as const,
-    alignItems: 'center' as const,
-    gap: Spacing.XS,
-    padding: '2px 0', // 取消背景色块后精简padding
-    borderRadius: 0, // 取消圆角
-    backgroundColor: 'transparent', // 无背景
-    color: scheme.text,
-    fontSize: FontSize.TERTIARY,
-    fontWeight: FontWeight.MEDIUM,
-    boxShadow: 'none', // 取消阴影
-  };
-};
-
-/**
- * 获取徽章样式（用于步骤编号、计数等）
- * 2026-04-28 小强修改：第二步实现渐变badge（设计文档3.2节要求）
- * @param stepType 步骤类型
- * @param variant 徽章变体
- * @returns CSS样式对象
- */
-export const getStepBadgeStyle = (
-  stepType: StepType | string,
-  variant: 'default' | 'outline' = 'default'
-) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
-  const color = scheme.text;
-
-  if (variant === 'outline') {
-    return {
-      padding: `${Spacing.XS}px ${Spacing.MD}px`,
-      borderRadius: Radius.DEFAULT,
-      fontSize: FontSize.TERTIARY,
-      fontWeight: FontWeight.BOLD,
-      color: color,
-      border: `${BorderWidth.THIN}px solid ${color}`,
-      backgroundColor: 'transparent',
-    };
-  }
-
-  // 渐变badge样式（默认改为无背景，只保留文字颜色）
-  return {
-    padding: '2px 0',
-    borderRadius: 0,
-    fontSize: FontSize.TERTIARY,
-    fontWeight: FontWeight.BOLD,
-    color: color,
-    backgroundColor: 'transparent',
-    border: 'none',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: Spacing.XS,
-  };
-};
-
-/**
- * 获取详情展开样式（用于可折叠的详细信息）
- * @param stepType 步骤类型
- * @returns CSS样式对象
- */
-export const getStepDetailStyle = (stepType: StepType | string) => {
-  const scheme =
-    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
-    colorSchemes.start;
-
-  return {
-    marginTop: Spacing.SM,
-    padding: `${Spacing.SM}px ${Spacing.MD}px`,
-    borderRadius: Radius.SM,
-    backgroundColor: `${scheme.bg1}20`, // 20% opacity
-    border: `${BorderWidth.THIN}px solid ${scheme.border}`,
-    fontSize: FontSize.CODE,
-    fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-    color: Colors.TEXT.TERTIARY,
-    lineHeight: 1.6,
-    whiteSpace: 'pre-wrap' as const,
-    wordBreak: 'break-word' as const,
-  };
-};
-
-// ==================== 新增样式函数（设计文档第4章要求） ====================
-
-/**
- * 时间戳样式 - 醒目版本，放在行右侧
- * 统一使用深灰色字体，浅色背景，对比强烈
- * @param stepType 步骤类型
- * @returns CSS样式对象
- */
-export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
-  const scheme = colorSchemes[stepType] || colorSchemes.start;
-
-  return {
-    marginLeft: 'auto', // 靠右对齐
-    padding: `${Spacing.XS - 1}px ${Spacing.MD}px`, // 增加内边距
-    borderRadius: Radius.DEFAULT, // 圆角
-    backgroundColor: scheme.bg1, // 步骤类型的浅色背景（保持各类型特色）
-    // 【小强修复 2026-04-14】去掉边框，更简洁
-    color: Colors.TEXT.PRIMARY, // 统一浅灰色字体，符合9种浅色方案
-    fontSize: FontSize.TERTIARY, // 12px
-    fontWeight: FontWeight.BOLD, // 加粗
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: Spacing.XS,
-    boxShadow: '0 1px 2px rgba(0,0,0,0.05)', // 轻微阴影
-  };
-};
-
-/**
- * 下一步信息样式
- * @param stepType 步骤类型
- * @returns CSS样式对象
- */
-export const getNextStepStyle = (stepType: StepType): React.CSSProperties => {
-  const scheme = colorSchemes[stepType] || colorSchemes.start;
-
-  // 转换十六进制颜色为rgba格式，添加透明度
-  const hexToRgba = (hex: string, alpha: number): string => {
-    const cleanHex = hex.replace('#', '');
-    const r = parseInt(cleanHex.substring(0, 2), 16);
-    const g = parseInt(cleanHex.substring(2, 4), 16);
-    const b = parseInt(cleanHex.substring(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
-
-  return {
-    marginTop: Spacing.SM,
-    padding: `${Spacing.SM}px ${Spacing.MD}px`,
-    borderRadius: Radius.SM,
-    backgroundColor: hexToRgba(scheme.bg1, 0.19), // 约30%透明度
-    border: `${BorderWidth.THIN}px solid ${hexToRgba(scheme.border, 0.25)}`, // 约40%透明度
-    fontSize: FontSize.TERTIARY,
-    color: scheme.text,
-    fontWeight: FontWeight.MEDIUM,
-  };
-};
-
-/**
- * 状态徽章样式
- * @param status 成功或失败状态
- * @returns CSS样式对象
- */
-export const getStatusBadgeStyle = (
-  status: 'success' | 'error'
-): React.CSSProperties => {
-  const isSuccess = status === 'success';
-  return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: Spacing.XS,
-    padding: `2px ${Spacing.SM}px`,
-    borderRadius: Radius.SM,
-    backgroundColor: isSuccess ? '#f6ffed' : '#fff1f0',
-    color: isSuccess ? Colors.SUCCESS : Colors.ERROR,
-    fontSize: FontSize.TERTIARY,
-    fontWeight: FontWeight.MEDIUM,
-    border: `${BorderWidth.THIN}px solid ${isSuccess ? '#b7eb8f' : '#ffa39e'}`,
-  };
-};
-
-/**
- * 结束徽章样式
- * @returns CSS样式对象
- */
-export const getFinishedBadgeStyle = (): React.CSSProperties => {
-  return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: Spacing.XS,
-    padding: `${Spacing.XS}px ${Spacing.LG}px`,
-    borderRadius: Radius.DEFAULT,
-    backgroundColor: '#f6ffed',
-    color: Colors.SUCCESS,
-    fontSize: FontSize.TERTIARY,
-    fontWeight: FontWeight.BOLD,
-    border: `${BorderWidth.THIN}px solid #b7eb8f`,
-    boxShadow: '0 2px 4px rgba(82,196,26,0.1)',
-  };
-};
-
-// ==================== 辅助函数 ====================
-
-/**
- * 获取步骤标签文本
- * @param stepType 步骤类型
- * @returns 标签文本（含emoji）
- */
-export const getStepLabel = (stepType: StepType | string): string => {
-  return isValidStepType(stepType)
-    ? colorSchemes[stepType]?.label || '未知'
-    : '未知';
-};
-
-/**
- * 检查步骤类型是否有效
- * @param stepType 步骤类型
- * @returns 是否有效
- */
+// 2026-08-27 小欧 修复step-5: action_tool 不在 stepMeta 键集合中, isValidStepType 必返回 false(8.4.2 禁止 backward)
+// 2026-08-28 小沈 修复B6: 改hasOwnProperty.call, 只检查自有属性, 避免toString/__proto__原型污染命中
 export const isValidStepType = (stepType: string): stepType is StepType => {
-  return stepType in colorSchemes;
+  return Object.prototype.hasOwnProperty.call(stepMeta, stepType);
 };
 
-/**
- * 获取所有步骤类型
- * @returns 步骤类型数组
- */
 export const getAllStepTypes = (): StepType[] => {
-  return Object.keys(colorSchemes) as StepType[];
+  return Object.keys(stepMeta) as StepType[];
 };
 
-/**
- * 获取步骤优先级
- * @param stepType 步骤类型
- * @returns 优先级
- */
+export const getStepLabel = (stepType: StepType | string): string => {
+  return isValidStepType(stepType) ? stepMeta[stepType].label : '未知';
+};
+
 export const getStepPriority = (stepType: StepType | string): StepPriority => {
-  return isValidStepType(stepType)
-    ? colorSchemes[stepType]?.priority || 'secondary'
-    : 'secondary';
+  return isValidStepType(stepType) ? stepMeta[stepType].priority : 'secondary';
 };
 
-/**
- * 获取分行模式
- * @param stepType 步骤类型
- * @returns 分行模式
- */
 export const getStepLayout = (stepType: StepType | string): LayoutMode => {
-  return isValidStepType(stepType)
-    ? colorSchemes[stepType]?.layout || 'block'
-    : 'block';
+  return isValidStepType(stepType) ? stepMeta[stepType].layout : 'block';
 };
 
-/**
- * 判断是否应该换行显示
- * @param stepType 步骤类型
- * @returns 是否应该换行
- */
+// 2026-08-27 小欧 修复step-6: block 布局需换行; inline-with-details 支持展开详情
 export const shouldBreakLine = (stepType: StepType | string): boolean => {
-  const layout = getStepLayout(stepType);
-  return layout === 'block';
+  return getStepLayout(stepType) === 'block';
 };
 
-/**
- * 判断是否支持展开详情
- * @param stepType 步骤类型
- * @returns 是否支持展开
- */
 export const hasExpandableDetails = (stepType: StepType | string): boolean => {
-  const layout = getStepLayout(stepType);
-  return layout === 'inline-with-details';
-};
-
-/**
- * 合并样式（用于自定义覆盖）
- * @param baseStyle 基础样式
- * @param overrides 覆盖样式
- * @returns 合并后的样式
- */
-export const mergeStyles = (
-  baseStyle: React.CSSProperties,
-  overrides: React.CSSProperties
-): React.CSSProperties => {
-  return { ...baseStyle, ...overrides };
+  return getStepLayout(stepType) === 'inline-with-details';
 };

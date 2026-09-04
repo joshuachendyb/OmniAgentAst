@@ -2,7 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-08-14 09:02:09
+**最后更新时间**: 2026-09-01 10:52:51
+**最近更新**: 2026-09-01 10:52:51 小欧 新增 3.4 服务模型配置解析 app/services/lifecycle/service.py — parse_model_params(provider_cfg, model)->(extra_body_params, context_limit), model_params 解析唯一权威(DRY 归一, create_service_instance 与 stream_orchestrator L2 快照同用)
 
 ---
 
@@ -37,6 +38,7 @@
 | `build_display_name` | 构建显示名称 | provider, model | str |
 | `extract_metadata_from_steps` | 从步骤提取元数据 | execution_steps | dict |
 | `format_param_value` | 将参数默认值格式化为字符串（供LLM提示文本使用），None→""、bool→"true"/"false" | val | str |
+| `format_llm_data_text` | 将工具结果 llm_data 格式化为前端展示文本（JSON美化，失败回退str）；2026-08-25 小欧 从 action_handler 内嵌闭包拆出至全局层（纯函数，零改动） | llm_data | str |
 
 ### 1.3 JSON解析（json_utils.py）
 
@@ -83,6 +85,7 @@
 | `add_line_numbers` | 添加行号前缀 | content, offset | str |
 | `extract_tool_call_xml` | 从文本提取 `<tool_call>` XML 工具调用(非破坏性, reasoning/content中LLM降级旧格式时的恢复路径) | text | Optional[Dict[str, Any]] |
 | `format_tool_call_markup` | 将LLM输出XML/JSON tool call标记格式化为纯文本(破坏性) | text | str |
+| `normalize_blank_lines` | 空行规约(13.11): 连续空行(含整行空格/制表)折叠为一个空行, 段首尾trim, 幂等; 落库收口入口(与前端 normalizeBlankLines 同一张规则表) | text | str |
 
 ### 1.8 ID生成（id_utils.py）
 
@@ -104,6 +107,12 @@
 |--------|------|------|--------|
 | `backup_file` | 文件备份(.bak) | file_path, backup_dir, suffix | Dict |
 | `remove_readonly` | 去除文件只读属性(供删除/清理重试) | func, path, excinfo | None |
+
+### 1.11 控制台镜像（app/logger/console_writer.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `console_put` | 控制台镜像写(非阻塞): 全局 queue+daemon写线程, stdout阻塞时队列满则丢弃新消息, 绝不阻塞调用线程; log_and_print(logger/__init__.py)及裸print收口点(action_handler/main/config)统一出口 | msg: str | None |
 
 ---
 
@@ -133,14 +142,31 @@
 |--------|------|------|--------|
 | `allocate_and_insert_message` | 预分配 assistant 消息ID + 插入空白行(幂等) | conn, session_id | int(message_id) |
 | `append_execution_step` | 逐步落库:一行=一步 | conn, message_id, session_id, step_index, step_dict | None |
-| `load_execution_steps` | 从 steps 表组装步骤列表(无数据时从chat_messages.execution_steps列读取) | conn, message_id | Optional[list] |
+| `load_execution_steps` | 从 chat_task_steps 表组装步骤列表(v2.0 起不再回退读 chat_messages.execution_steps, 未命中返回[]) | conn, ai_message_id, task_id | Optional[list] |
 | `finalize_message` | finally 轻量终态更新(content+status) | conn, message_id, content, status | None |
+| `query_task_accumulation` | 读取任务级 token 累计(JSON, 缺行/缺键归一3键零值) | conn, task_id | dict |
+| `query_session_accumulation` | 读取会话级 token 累计(JSON, 缺行/缺键归一) | conn, session_id | dict |
+| `update_task_accumulation` | 任务级 token 实时累计(Db读-加-写, 影响0行显式告警) | conn, task_id, llm_call_count_token | None |
+| `update_session_accumulation` | 会话级 token 实时累计(Db读-加-写, 影响0行显式告警) | conn, session_id, llm_call_count_token | None |
+| `query_chain_accumulation` | 上下文链 token 累计(按context_root聚合, 排除当前任务, 计算派生不落库) | conn, context_root_task_id, current_task_id | dict |
+| `fetch_session_user_message_pairs` | 重建"用户消息+其配对AI回答"有序列表(北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 从 chat_user_message LEFT JOIN chat_tasks 读取; 每项为一条用户消息及可选配对的AI回答, ai_message_id=None表示AI未生成; 供 get_session_messages/_load_previous_messages/execution_stream 复用, DRY/复用优先; 不含 execution steps, 步骤经 load_execution_steps 另行读取) | conn, session_id, lower_id, upper_id | list |
 
-### 3.3 步骤计数器（steps/base.py）
+### 3.3 沙箱执行闸门（handlers/sandbox_gate.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `create_step_counter` | 创建自增步骤计数器(闭包)，供 step 序号分配 | 无 | Callable[[], int] |
+| `sandbox_precheck` | destructive级沙箱预检; 返回None=无需预检(safe级直通)/异常兜底(M4)也返回None直通 | safety_result, tool_name, params | Optional[PreCheckResult] |
+| `sandbox_resolve` | 预检结果处置: 危险型失败→denied登记+error步骤; 未完成有效验证→复用HITL原语请用户裁决; 杜绝LLM原样重发死循环 | agent, step, call, tool_name, params, pre, safety_result, denied_list | Tuple[bool, list] |
+
+> 落点说明(2026-08-25 小欧 合规重构): 原逻辑在 action_handler 内以嵌套闭包实现, 违反 1.3 公用函数规范(分层/先查后建/登记) 与 KISS-DIRECT(隐式捕获约10个外层变量); 现拆为 Agent 编排层模块级函数(依赖方向 handler→sandbox 单向, 无环), 逻辑零改动(复制不重写)。
+
+### 3.4 服务模型配置解析（app/services/lifecycle/service.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `parse_model_params` | 解析 provider 配置的 model_params → (extra_body_params, context_limit)；DRY 唯一权威(create_service_instance 与 stream_orchestrator L2 快照同用)；context_limit 配置优先否则 DEFAULT_CONTEXT_LIMIT 兜底，余量作 extra_body_params(无则 None) | provider_config: dict, model: str | Tuple[Optional[dict], int] |
+
+> 落点说明(2026-09-01 小欧 复用优先/DRY 归一): 原逻辑双份嵌在 create_service_instance(service.py) 与 stream_orchestrator(L2 跨 provider 快照), 归一为本函数唯一权威, 消除双份漂移; 行为与历史一致(仅去重, 不改逻辑)。
 
 ---
 
@@ -282,10 +308,29 @@ def my_parse_json(json_str):
 
 ---
 
+## 九、E2E测试层（backend/e2etests/e2emodel/）
+
+### 9.1 E2E公共辅助（e2e_helpers.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `verify_db_tool_usage` | DB侧工具步骤统一校验（case脚本唯一入口）: 工具步骤数≥min_tool_steps、expect_any_tools至少命中一个、每个工具步骤按step号配对observation步骤tool_result[]非空; 内部复用_is_action_step/_action_entries新旧协议自适应, §10.3模型变更仅改此一处 | db: Dict[str,Any](check_db返回值), expect_any_tools: Optional[List[str]]=None, min_tool_steps: int=1 | List[str] 问题列表(空=通过) |
+
+---
+
 ## 版本历史
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v3.14 | 2026-08-30 14:50:00 | 13.11 空行规约(北京老陈 2026-08-30 批准): 1.7 text_utils 新增 normalize_blank_lines(连续空行折叠为一个空行+段首尾trim, 幂等, 后端落库收口入口, 与前端 normalizeBlankLines 同一张规则表); format_tool_call_markup 末尾压缩收敛复用(行为逐字节等价, DRY); agent_runner._persist 与 storage.load_steps_by_task 的 C2/规约逻辑为模块内私有改动不单列条目 | 小欧 |
+| v3.13 | 2026-08-30 08:05:00 | 新增 1.11 控制台镜像(app/logger/console_writer.py): console_put 非阻塞控制台写(全局queue+daemon写线程, 满则丢弃, 事件循环零同步stdout写); log_and_print 与 action_handler/main/config 裸print 收口点统一复用(根治 case09 挂起) | 小欧 |
+| v3.12 | 2026-08-25 16:30:00 | 合规重构(北京老陈驱动): ①新增 3.3 Agent层 handlers/sandbox_gate.py(sandbox_precheck/sandbox_resolve, 从 action_handler 嵌套闭包拆出, 去隐式耦合/分层落点); ②1.2 display_utils.py 新增 format_llm_data_text(从 action_handler.build_observation 内嵌闭包拆出的纯展示格式化函数, 全局层复用优先); 两处均逻辑零改动(复制不重写)、登记本清单、action_handler 去内联与死 import | 小欧 |
+| v3.11 | 2026-08-24 12:19:40 | 目录前导(北京老陈裁定): file_persist 新增常量 SESSION_DIR_PREFIX="Sion_" / TASK_DIR_PREFIX="Task_"(唯一源, DRY); 物理目录(TaskFileWriter._dir/purge_task/purge_session)与 chat_tasks.files_dir 落库锚(stream_orchestrator 编排⑨)全部经常量同源拼装, 排查定位链不断; 旧目录不迁移不兼容(禁止backward) | 小欧 |
+| v3.10 | 2026-08-24 11:53:30 | 后端卡死修复收尾: ①action_handler check_safety_and_confirm 的 session 反查+信任预查(2处)、stream_orchestrator 编排③链根/⑤DB兜底user_msg_id/⑥sessionModel(3处) 同步 db.get_conn(_with_retry) 改经 atxn offload; ②hitl_confirmation resolve_confirmation(同步函数)信任落库旁路块改 daemon 线程投递(fire-and-forget 语义不变); ③agent_runner 新增模块内私有 _persist_final(shield薄壳, 包 finalize/update_task 两处终态写防二次cancel, 非公用函数不单列条目)。全部复用 v3.9 atxn 既有薄壳, 零新抽象 | 小欧 |
+| v3.9 | 2026-08-24 10:30:00 | 新增 3.3 数据库SDK(app/db/database.py): atxn/_run_txn 异步事务壳(整段 get_conn 进 to_thread 子线程, 将同步 sqlite3 I/O + 锁重试 time.sleep offload 出事件循环, 根治后端卡死); 同步 3.2 已登记落库函数统一经 atxn 调用边界 offload | 小欧 |
+| v3.8 | 2026-08-22 14:10:48 | 3.2 新增 fetch_session_user_message_pairs（北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 从 chat_user_message LEFT JOIN chat_tasks 重建"用户消息+其配对AI回答"有序列表, 供 get_session_messages/_load_previous_messages/execution_stream 复用, DRY/复用优先; 不含 execution steps）; 更正 load_execution_steps 描述(v2.0 起不再回退 chat_messages) | 小欧 |
+| v3.7 | 2026-08-22 10:40:00 | 新增 九、E2E测试层 章节: 登记 e2e_helpers.verify_db_tool_usage（19个case曾复制粘贴旧action_tool取数块, §10.3模型变更即全量碎裂; 收敛单点校验入口, case瘦身为2行调用, 先查后建禁止重造） | 小欧 |
+| v3.6 | 2026-08-20 20:17:29 | 补登记 3.2 步骤存储(storage.py) 11.1 token 四层同构累计公用函数 5 个: query_task_accumulation/query_session_accumulation/query_chain_accumulation/update_task_accumulation/update_session_accumulation（供 react_cycle 每轮即时落库、agent_runner S2、token_usage API 复用；先查后建, 禁止重造） | 小欧 |
 | v3.5 | 2026-08-14 09:02:09 | 正文清除历史痕迹(小欧, 用户要求): 删除正文全部"迁/更正/误登记/来源/已迁"等历史过程说明、BUG编号(BOM-002/BUG-002/BUG-B/C/D)、设计编号(补A/R1/R2/R3-R6/⑦⑧⑨⑪⑫⑯)、署名时间戳(仅版本历史表保留历史信息)；正文只保留当前真实情况 | 小欧 |
 | v3.4 | 2026-08-14 08:53:31 | 三遍全文核查修正(小欧): ①1.1 删除不存在的 get_timestamp_ms(全仓无定义) ②create_step_counter 从 1.1 移至 3.3 Agent 层(实际定义于 agent/steps/base.py:84) ③第八章标题 app/services/safety/→app/safety/(safety 为顶层目录) ④⑤8.1 path_safe_check/8.3 temp_auth 标注实际位置 app/tools/security/(A1 2026-08-12 迁入) ⑥4.1 backup_file 注明已迁 app/utils/file_utils.py(P5b re-export) | 小欧 |
 | v2.9 | 2026-08-13 | A5职责拆分同步(小欧): 4.2 补登记 `error_hints.py`(5个错误提示函数自 file_path_checker 迁移: permission/error_hint_for_write/read/sql/data, 供 dataanalysis/document/file/network 复用) | 小欧 |

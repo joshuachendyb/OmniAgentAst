@@ -96,6 +96,82 @@
 #   [改法] ①tool_constants.FILE_OPERATION_TOOLS 并入8个office工具 ②_WRITE_OPS 排除集 {"readtext"}→_READ_TOOLS
 #         (含4个office读工具, 防 read_xlsx 等被误判写操作致读-读并行退化串行)
 #   [效果] 同路径写+读/写×2 并组串行, 同路径读×2/不同路径 仍并行, 无性能退化
+# 2026-08-16 - 小欧 - S2(10.1.7②-5/10.1.8 S2, 北京老陈驱动): HITL 确认链 tool_name 透传 + 豁免读取 session_id 接入——
+#   ①create_confirmation(agent.task_id) 增传 _cn(tool_name), 供 resolve_confirmation trust 落库;
+#   ②check_safety_and_confirm 入口经 agent.task_id 反查 session_id(禁伪 agent.session_id, chat_tasks 已建行),
+#     传 check_before_execute(session_id=) 做会话信任豁免(信任过的工具跳二次 HITL)
+# 2026-08-17 - 小健 - 三堂会审架构修复(北京老陈驱动): 会话信任预查由 safety 层上移到本 services 层——
+#   check_safety_and_confirm 循环内查 check_session_trust(_conn, _session_id, normalize_tool_name(_cn)),
+#   查得信任后传 check_before_execute(skip_confirmation=True) 豁免二次确认; 消除 safety→services 反向
+#   依赖违规(test_layer_boundaries 护栏); T1 normalize 语义随查询落在本层, 与写保护 BUG-2 同模式(防别名漏检)。
+# 2026-08-18 小欧 - §10.3.3(1/2/3): 新增ThoughtStartStep; handle_action发射新ActionStep(exec_type/tools); build_observation重写为tool_result数组+orchestration收集; 删_merge_llm_data/_merge_other_data
+# 2026-08-18 - 小健 - 三堂会审修复: ①删除无调用点的死代码 _merge_llm_data/_merge_other_data(编排收集改由 build_observation 按 tool_result[i].other_data 1:1 取代); ②删除 build_observation 死变量 _data(原始 data 已由 data_text/dl 承载); ③Bug#7 status/action 可能为 str 防御(isinstance 前判), 防 AttributeError
+# 2026-08-18 - 小健 - 恢复 op_id 双表贯通设计说明注释块(此前某次编辑被误删, 仅留行660短注释); 置于 _file_tool_names 逻辑正上方, 逐条核对当前代码(6文件工具白名单/预取队列/pop(0)分配)一致, 描述准确予以保留
+# 2026-08-18 - 小健 - 三堂会审修复(target推导): 删除硬编码_TARGE_FIELD(文件类工具+键read/web_search失配致_extract_target回退工具名真bug), 改为_resolve_target_field从tool_registry真实input_schema.properties按_TARGET_PARAM_PRIORITY推导字段名(target值取call入参LLM确定值); ActionStep.target极少截断; 预留ToolMetadata.target_param显式扩展点(OCP)
+# 2026-08-18 - 小欧 - §10.4.4 P3(错误全仅SSE): blocked/timeout/user_rejected/invalid_action 四处 ErrorStep→MetaStep(type="error", content=错误信息, error_type=); 删 ErrorStep import
+# 2026-08-18 - 小欧 - §10.4.4 P4(severity): error 四处加 severity="warn"; paused 加 severity="attention"; resumed 加 severity="info"
+# 2026-08-18 小健 三堂会审: 删除硬编码_TARGE_FIELD——该映射对文件类工具及部分键失配, 使_extract_target回退为工具名(真实bug):
+#   ①键失配: 映射键"read"/"web_search"与注册名"readtext"/未注册不符, _TARGET_FIELD.get()返回None→回退tool_name;
+#   ②字段失配: 文件类映射值file_path/dir_path/search_dir 与真实schema属性名path/pattern不符, _params.get(...)取到空串→回退tool_name;
+#   (注: grep/shell/httpget/fetchpage/download/ping_port/query_sql/execute_sql 映射值恰与schema一致, 旧代码本可工作; 推导化后统一正确且新增工具自动获得)
+#   字段名由_resolve_target_field从tool_registry真实input_schema.properties推导; target值取自call["tool_params"]的LLM已回传确定入参值(非结果)。
+# 2026-08-18 小欧 - §10.3.3(2) target 提取: 来源=工具调用入参(与observation展示的llm_data.action.target同源, 后者经工具内部转发)
+# 规范化主参数优先级: 用于在工具真实input_schema.properties中选定"操作对象"字段;
+# pattern置于path之前以区分搜索类(grep/find取pattern)与路径类(其余取path); 新增工具若含这些标准字段即自动获得target(DRY)
+# 2026-08-20 - 小欧 - 11.2-C 工具遥测回调(P0-2 修复): handle_action 执行结果处调用 agent.telemetry.on_tool_call(tool_name, success, duration), 供 tool_execution_seconds/task_tool_metrics 聚合(原未调用 → tool_execution_seconds 恒 0)
+# 2026-08-21 - 小欧 - 11.6.2: 回调循环扩展收集artifacts(工具自声明+target兜底派生); import os/extract_ext
+# 2026-08-21 - 小欧 - 12.2-Q1-D2(已撤销): 原设计将_operation_id经build_extra传action_handler双表贯通,
+#   但_operation_id是内部ID不应出现在给LLM的工具返回中(违反SRP:工具返回只服务LLM观察)。
+#   撤销: 删除result.get/pop _operation_id逻辑+白名单_file_tool_names+operation_id参数传递;
+#   record_operation不再传operation_id(由内部UUID生成, 双表贯通暂断, 后续如需恢复应改用side channel而非LLM可见返回)
+#   连带: 删除db导入依赖(operations/task_tracker仅预取块使用, 删除后无其他消费点)
+# 2026-08-22 - 小欧 - artifacts结构补充tool_name字段(4字段: tool_name/name/path/type): 收集时注入_tname到每个artifact
+# 2026-08-22 - 小欧 - 三堂会审F1定案(北京老陈): 删兜底派生, artifacts仅认写工具with_artifacts自声明;
+#   读工具(read_*/query_sql/analyze_data等)也构造action.target, 兜底派生会把读取对象误落为伪产出物(违反"art只能是写的tool"铁律);
+#   14个写工具均已自声明零丢失; 连带删除仅服务派生的import os/extract_ext
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.5 D3/D3b/11.9 P3-P4): ①handle_action 先定义 _fp_factory 闭包
+#   (按全局序号注入 tool_no; params_raw 权威源=闭包携带的 params_raw_str, #16/#20)再传 on_attempt_recorded 调 execute_tools;
+#   ②execute_tools 三分支(A单/B'分组并行/C顺序)全部以全局序号取号透传(#18); ③_build_call_list 透传 params_raw_str(D3b);
+#   build_observation 零改动(H3 已移入引擎回调, 防重复记)
+# 2026-08-24 - 小欧 - 后端卡死修复收尾(offload): check_safety_and_confirm 的 session 反查与每工具信任预查
+#   两处同步 db.get_conn_with_retry 改经 db.atxn 进子线程 offload 出事件循环(复用既有薄壳, 行为等价),
+#   ReAct 执行期 loop 不再被锁重试 time.sleep 短暂独占
+# 2026-08-25 - 小欧 - 合规重构(北京老陈驱动): M3 沙箱闸门逻辑从 check_safety_and_confirm 内嵌闭包(_sandbox_precheck/_sandbox_resolve)拆出至新建 app/services/agent/handlers/sandbox_gate.py(模块级函数+显式参数, 去隐式捕获约10个外层变量的"七绕八绕", 修正违反1.3公用函数规范-分层/先查后建/登记FUNCTIONS.md 与 KISS-DIRECT); 三处汇合点(①auto_confirm ②用户确认 ③循环体兜底)改显式调用; 业务语义/分支/状态机零改动(复制不重写)
+# 2026-08-25 - 小欧 - 合规重构: build_observation 内嵌闭包 _format_llm_data_text(纯展示格式化函数被囚为闭包, 违反1.3/复用优先)拆出至全局层 app/utils/display_utils.format_llm_data_text; 同步删除仅服务于该闭包的死 import json; 逻辑零改动(复制不重写)
+# 2026-08-26 小欧 - action步落库记录层修复(com-test 09实证): 原_exec_calls=_safe_calls if _safe_calls else [], 当全部调用被安全拦截时_exec_calls=[]→ActionStep.tools=[]→DB步骤完整性FAIL(无工具调用信息); 改法: 记录层新增_record_calls=_exec_calls if _exec_calls else call_result.all_calls(兜底取LLM意图调用含被拒项), 仅用于ActionStep.tools落库补全; 执行层仍用_exec_calls(绝不回退all_calls, 不绕过安全检查)
+# 2026-08-28 小欧 - yield日志审计: check_safety_and_confirm 关键决策点(blocked/paused/timeout/rejected/resumed)补 logger(warning/info), 覆盖11个无日志yield(SRP); 三堂会审无逻辑修正
+# 2026-08-30 小欧 - 控制台写离线化收口(case09挂起根治): handle_action 内唯一裸 print([Action]step=) → log_and_print, 延续2026-07-23统一治理; 事件循环线程零同步stdout写 + [Action]获得文件留痕增强
+# 2026-09-01 - 小欧 - 紧急bug修复(北京老陈驱动, 前端badge卡paused致耗时秒表失实时): 暂停后恢复路径补发resumed使事件成对——
+#   ①S1 auto_confirm分支(resolve_confirmation+set_status EXECUTING之后, 沙箱预检前)补发 MetaStep(type="resumed");
+#   ②S2 真HITL分支 resumed 从 if auth_path 内移出, 确认后无条件发1条(授权信息并入文案), 消除重复(KISS/DRY),
+#      user确认即恢复与是否授权白名单外路径解耦; resumed 非业务step, agent_runner.py 剔除集合已含, 不影响 total_steps。
+# 2026-09-02 小欧 三堂会审task005-BUG-001修复: auto_confirm分支resumed移至sandbox之后(原在sandbox前),
+#   若sandbox需用户裁决且被拒绝,无paired paused→resumed, badge卡running; 现仅sandbox通过(放行/无需预检)才发resumed, 语义=真正恢复执行
+# 2026-09-02 - 小欧 - P9双重resumed去重(北京老陈驱动「问题报告P9验证」): auto_confirm/真HITL两处插入点
+#   sandbox_resolve 已含resumed(用户裁决确认, sandbox_gate:82)时跳过外层二次resumed, 以
+#   any(s.type=="resumed" for s in _steps) 去重, 规避报告A方案"无条件continue致bypass场景0次"缺陷;
+#   仅改去重不改语义(单次resumed成对, 双次幂等去重), 三堂会审通过(合规/合理/关联逻辑零退化)
+# 2026-09-02 - 小欧 - 会话信任功能修复(v1.5, 北京老陈定案, 详见doc-9月优化/会话信任功能修复方案):
+#   5.1③: auto_confirm分支(实际在S1 bypass分支)调用改为 await resolve_confirmation(confirm_id, confirmed, trust_session=False) 异步落库零竞态;
+#   5.4: trust_session 固定 False, bypass 直放不产生信任, 防自动落库污染信任清单;
+#   5.3⑤: 豁免收口点(L428插入点③前)补 grant_temp_auth(auth_path, recursive=True), 信任豁免跳窗但执行放行闭环;
+#   5.5④: 新增 _extract_trust_path 辅助 + 信任预查/check_session_trust/create_confirmation 带 path(tool+path 前缀递归精确化);
+#   5.7.1/5.7.4①②: auto_confirm 分支从立即resolve改为 wait_for_confirmation_result(S1窗口) 等前端 confirm_timeout 到0自动代发, S1超时bypass兜底放行;
+#   5.7.4①: paused emit 增 trust_path/auto_confirm/confirm_timeout/backend_timeout 四字段(后端唯一计时权威=后端窗口−提前量, constants.py HITL_CONFIRM_LEAD/BYPASS_AUTO_LEAD)
+# 2026-09-03 - 小欧 - bypass/真HITL确认超时可配置化(北京老陈驱动): auto_confirm_delay默认5→10(前端倒计时10−2=8s), 
+#   真HITL确认超时 HITL_TIMEOUT 改读 security.hitl_timeout(config.yaml优先, 默认120兜底); else分支补 get_config import 防NameError
+# 2026-09-03 小欧 Bug-1: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断; 全拦截/空 results 无条件发 ObservationStep(改前空 tool_result return 不发事件→前端齿轮永驻); 合成"无结果"占位保数组长度
+# 2026-09-03 小欧 Bug-25: grant_temp_auth 三处(bypass自动确认/用户确认授权/白名单豁免直通)包 try/finally 或 try/except, 授权异常不跳过 resolve_confirmation、不阻断执行流程, confirm_id 必收口
+# 2026-09-03 小欧 D2-01: synthetic占位补llm_data.summary使折叠区显“已安全拦截：tool”，可观测性增强
+# 2026-09-03 小欧 D2-02: _confirm_timeout钳制max(5,bt-LEAD)避免0秒窗口（HITL/bypass/sandbox同钳）
+# 2026-09-03 小欧 P0-1: bypass S1已expired不二次resolve（已pop死码），防404僵死
+# 2026-09-03 小欧 D2-03: trust_path复用_extract_trust_path消除别名盲区（path/file_path/source_path等），防通配污染
+# 2026-09-03 小欧 17.1: sandbox_gate硬编码7key含window_title误授权，改函数内延迟import复用_extract_trust_path
+# 2026-09-03 小欧/北京老陈: bypass流程补日志 — S1窗口开始/S1结果两处关键节点, 改前无log无法排查bypass时序
+# 2026-09-04 小健 Phase8: _parse_paths/_extract_trust_path改为import from trust.py(解环); sandbox_resolve返回dict适配(3处元组解包→dict访问) - 小健-2026-09-04
+# 2026-09-04 小健 Phase8收尾: _has_conflict/_partition_calls从内联改为import from conflict_detector.py;
+#   先复制后修改: 先精确复制本文件原版完整逻辑(窗口工具WINDOW_TARGET_TOOLS支持/计数版count>=2/索引返回List[List[int]])
+#   到conflict_detector.py补全其简化版缺失功能, 再删除本文件内联66行并import, 行为零退化 - 小健-2026-09-04
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -110,17 +186,21 @@ action_handler — action类型处理（SRP拆分，模块级函数）
 小沈 2026-06-13 移除ActionHandler类,改为模块级函数
 """
 import asyncio
+
 import time
 from dataclasses import dataclass, field
+from itertools import zip_longest  # 2026-09-03 小欧 Bug-1: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断丢失 tool_result
 from typing import Dict, List, Any, Optional, Set
-
 from app.logger import logger, log_and_print
+
 from app.constants import ACTION_LOG_RESULT_MAX_CHARS
+from app.utils.display_utils import format_llm_data_text  # 小欧 2026-08-25 合规重构: 纯展示格式化函数拆至全局层 display_utils(去内嵌闭包)
 from app.logger.prompt_logger import get_prompt_logger
-from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep（工具重试隐蔽，不再 emit）
+from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error") P3
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.observation_formatter import build_observation_text
-from app.constants import HITL_TIMEOUT
+from app.constants import HITL_TIMEOUT, HITL_CONFIRM_LEAD, BYPASS_AUTO_LEAD, HITL_MIN_CONFIRM_TIMEOUT  # v1.5.13(2026-09-02 小欧): 后端唯一计时权威前后端计时关联 — 小欧 2026-09-02
+# 2026-09-03 小欧/北京老陈: 前端倒计时最小值改常量3(改前硬编码5)
 from app.services.agent.tool_executor import execute_tool
 from app.services.task.task_context import set_current_task_id
 from app.db.models.operation_models import OperationStatus
@@ -129,6 +209,8 @@ from app.db import db
 from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE_OPERATION_TOOLS
 from app.tools.tools_alias_mapper import PARAM_ALIASES
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, MEDIA_EXTENSIONS
+from app.tools.registry import tool_registry  # 2026-08-18 小健 三堂会审: target字段从工具schema主参数自动推导(取代硬编码_TARGE_FIELD)
+from app.services.agent.handlers.sandbox_gate import sandbox_precheck, sandbox_resolve  # 小欧 2026-08-25 沙箱闸门逻辑拆分(合规重构: 去闭包隐式耦合, Agent编排层落点)
 
 
 # 【修复P2-5】封装observation构建上下文 — 北京老陈 2026-06-13
@@ -216,17 +298,48 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result, resolve_confirmation
         safety_checker = get_tool_safety_checker()
 
+        # 小健 2026-08-17 三堂会审-架构修复: session_id 经 task_id 反查(agent 无 session_id 属性, 禁止伪变量),
+        #   反查失败置 None 不豁免(按需确认); 会话信任预查由本 services 层负责(消除 safety→services 违规),
+        #   查得信任后传 skip_confirmation=True 给 check_before_execute 豁免二次确认(跳 HITL) — 小健 2026-08-17
+        _session_id = None
+        try:
+            from app.services.chat.storage import get_session_id_by_task
+            from app.db import db
+            # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
+            _session_id = await db.atxn("chat", lambda conn: get_session_id_by_task(conn, agent.task_id))
+        except Exception:
+            _session_id = None
+
         _denied = []
         for call in all_calls:
             _cn = call.get("tool_name", "?")
             _cp = call.get("tool_params", {})
-            safety_result = safety_checker.check_before_execute(_cn, _cp)
+
+            # 会话信任预查(本 services 层, 合法依赖 app.services.chat.storage) — 小健 2026-08-17
+            _skip = False
+            if _session_id:
+                try:
+                    from app.db import db
+                    from app.services.chat.storage import check_session_trust
+                    from app.tools.tools_alias_mapper import normalize_tool_name
+                    # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
+                    # v1.5(2026-09-02 小欧): 信任命中精确到 tool+path(北京老陈定案), 前缀递归匹配在 check_session_trust 内
+                    _tgt = _extract_trust_path(_cn, _cp)
+                    _skip = await db.atxn("chat", lambda conn: check_session_trust(conn, _session_id, normalize_tool_name(_cn), _tgt))
+                except Exception as _te:
+                    logger.warning(f"[action_handler] 会话信任查询失败,按需确认: session={_session_id}, tool={_cn}, err={_te}")
+                    _skip = False
+
+            safety_result = safety_checker.check_before_execute(_cn, _cp, skip_confirmation=_skip)
+
+            # v1.25 M3(设计文档 3.2.3): 沙箱预检闸门 — 逻辑已拆分至 sandbox_gate.sandbox_precheck/sandbox_resolve
+            # (2026-08-25 合规重构: 去嵌套闭包隐式耦合, Agent编排层落点, 三处汇合点共用, 每 call 恰好预检一次不重复)
 
             if safety_result.blocked:
-                yield agent._step_emitter.emit(ErrorStep(
-                    step=step,
-                    error_type="blocked",
-                    error_message=safety_result.message
+                # 2026-08-28 小欧 yield日志审计: 拦截决策日志(SRP)
+                logger.warning(f"[action] step={step} blocked: tool={_cn} reason={safety_result.message}")
+                yield agent._step_emitter.emit(MetaStep(
+                    step=step, type="error", content=safety_result.message, error_type="blocked", severity="warn"
                 ))
                 _denied.append((_cn, f"被安全策略拦截: {safety_result.message}", call))
                 continue  # was: return  — 小欧 2026-07-18 #12 fix
@@ -235,8 +348,28 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 desensitized_params = {k: v for k, v in _cp.items()
                                        if k not in _SENSITIVE_FIELDS}
 
-                confirm_id = await create_confirmation(agent.task_id)
+                confirm_id = await create_confirmation(agent.task_id, _cn, _extract_trust_path(_cn, _cp))  # v1.5: path 透传供 tool+path 落库 — 小欧 2026-09-02
 
+                # 2026-08-28 小欧 yield日志审计: 等待确认决策日志(SRP)
+                logger.info(f"[action] step={step} paused: tool={_cn} confirm_id={confirm_id}")
+                # v1.5.13(老陈三审定案: 后端唯一计时权威 + 前端倒计时=后端窗口−提前量)
+                #   真HITL: backend_timeout=HITL_TIMEOUT(120) / confirm_timeout=120-HITL_CONFIRM_LEAD(10)=110;
+                #   bypass: backend_timeout=security.auto_confirm_delay(默认10) / confirm_timeout=10-BYPASS_AUTO_LEAD(2)=8
+                _bypass = bool(getattr(safety_result, "auto_confirm", False))
+                if _bypass:
+                    from app.config import get_config as _get_cfg
+                    # 对应 config.yaml security.auto_confirm_delay(默认10, 前端倒计时=此值−BYPASS_AUTO_LEAD即8s); 未配置兜底用 10.0 — 小欧-2026-09-03
+                    # 2026-09-03 小沈 缺陷2修复: 钳制≥HITL_MIN_CONFIRM_TIMEOUT+BYPASS_AUTO_LEAD, 确保confirm_timeout+S1差≥BYPASS_AUTO_LEAD — 小沈-2026-09-03
+                    _backend_timeout = max(HITL_MIN_CONFIRM_TIMEOUT + BYPASS_AUTO_LEAD, int(float(_get_cfg().get("security.auto_confirm_delay", 10.0))))
+                    # 2026-09-03 小欧/北京老陈: 0窗钳制≥3s(改前5→常量3)，避免max(0,bt-LEAD)=0致0秒窗口瞬间消失
+                    _confirm_timeout = max(HITL_MIN_CONFIRM_TIMEOUT, _backend_timeout - BYPASS_AUTO_LEAD)
+                else:
+                    from app.config import get_config as _get_cfg
+                    # 对应 config.yaml security.hitl_timeout(真HITL后端确认窗口,默认120); 未配置兜底用常量 HITL_TIMEOUT=120 — 小欧 2026-09-03
+                    _backend_timeout = int(float(_get_cfg().get("security.hitl_timeout", HITL_TIMEOUT)))
+                    # 2026-09-03 小欧/北京老陈: 0窗钳制≥3s(改前5→常量3)
+                    _confirm_timeout = max(HITL_MIN_CONFIRM_TIMEOUT, _backend_timeout - HITL_CONFIRM_LEAD)
+                _tp = _extract_trust_path(_cn, _cp)  # v1.5.3: trust_path 透传
                 yield agent._step_emitter.emit(MetaStep(
                     step=step,
                     type="paused",
@@ -245,40 +378,85 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     tool_name=_cn,
                     params=desensitized_params,
                     safety_level=safety_result.safety_level,
+                    severity="attention",
+                    trust_path=_tp,
+                    auto_confirm=_bypass,
+                    confirm_timeout=_confirm_timeout,
+                    backend_timeout=_backend_timeout,
                 ))
 
                 if safety_result.auto_confirm:
-                    # P0-01修复: 安全绕过(security.enabled=false)时MetaStep照出但自动确认立即通过, 不挂起不等wait
-                    #   与tool_safety_checker.py bypass路径返回的auto_confirm=True配对 — 小沈 2026-08-03
-                    # 2026-08-11 小欧(P2-5): bypass模式(auto_confirm=True)下continue跳过下方grant_temp_auth —
-                    #   安全开关关闭时每次工具调用均auto_confirm直接放行, 无需累积临时授权, 跳过是正确语义
-                    # BUG-40修复(三堂会审 小沈 2026-08-13): bypass 模式下白名单外路径(auth_path 存在)仍需 grant_temp_auth,
-                    #   否则工具内 validate_path 会拦截(write 模式白名单外未授权返回 False), 工具返回错误, 违背 bypass"直放"语义;
-                    #   在 auto_confirm 分支内补 grant_temp_auth(若有 auth_path), 与下方确认后授权逻辑对齐, 不退化。
-                    if getattr(safety_result, "auth_path", None):
-                        from app.tools.security.temp_auth import grant_temp_auth
-                        grant_temp_auth(safety_result.auth_path, recursive=True)
-                    resolve_confirmation(confirm_id, confirmed=True, trust_session=True)
+                    # v1.5.13(2026-09-02 小欧, 5.7.1 bypass 自动代发): bypass 从"立即resolve"改为"等前端确认消息(S1窗口)"
+                    #   前端confirm_timeout到0自动代发confirm → resolve_confirmation → wait收到即走确认流程;
+                    #   前端未发(无浏览器/崩溃) → S1超时 → expired → bypass 兜底放行
+                    from app.services.task.hitl_confirmation import wait_for_confirmation_result as _wait_confirm
+                    from app.config import get_config as _get_cfg
+                    # 对应 config.yaml security.auto_confirm_delay(S1后端等待窗口=backend_timeout值,默认10); 未配置兜底 10.0 — 小欧-2026-09-03
+                    # 2026-09-03 小沈 缺陷2修复: 与上方同源钳制, 确保S1=backend_timeout — 小沈-2026-09-03
+                    _s1 = float(max(HITL_MIN_CONFIRM_TIMEOUT + BYPASS_AUTO_LEAD, int(float(_get_cfg().get("security.auto_confirm_delay", 10.0)))))
+                    # 2026-09-03 小欧/北京老陈: bypass S1窗口开始补日志
+                    logger.info(f"[action] bypass S1窗口开始: confirm_id={confirm_id}, S1={_s1}s, tool={_cn}")
+                    _auth_result = await _wait_confirm(confirm_id, timeout=int(_s1 if _s1 > 0 else 0)) if _s1 > 0 else {"confirmed": True}
+                    # 2026-09-03 小欧/北京老陈: bypass S1结果补日志
+                    logger.info(f"[action] bypass S1结果: confirm_id={confirm_id}, expired={_auth_result.get('expired')}, confirmed={_auth_result.get('confirmed')}")
+                    # 2026-09-03 小欧 P0-1: S1已expired则不再二次resolve(已pop死码)，仅confirmed分支需resolve
+                    if _auth_result.get("expired"):
+                        _bypass_confirmed = True
+                    else:
+                        _bypass_confirmed = bool(_auth_result.get("confirmed", False))
+                        try:
+                            # 2026-09-03 小欧 Bug-25: grant_temp_auth 包 try/finally, 授权异常不跳过 resolve_confirmation,
+                            #   confirm_id 必被 resolve 收口, 前端 Modal 不泄漏挂到后端超时; 授权失败仅告警不改安全意图
+                            if getattr(safety_result, "auth_path", None):
+                                from app.tools.security.temp_auth import grant_temp_auth
+                                grant_temp_auth(safety_result.auth_path, recursive=True)
+                        except Exception as e:
+                            logger.warning(f"[action] grant_temp_auth失败仍放行: {e!r}")
+                        finally:
+                            await resolve_confirmation(confirm_id, confirmed=_bypass_confirmed, trust_session=False)
                     set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
+                    # v1.25 M3 插入点①: auto_confirm 汇合路径(continue 之前) — 沙箱预检最后闸门
+                    # 2026-09-02 小欧 三堂会审BUG-001修复: resumed移至sandbox之后(原在sandbox前),
+                    #   若sandbox需用户裁决且被拒绝,无paired paused→resumed, badge卡running;
+                    #   现仅sandbox通过(放行/无需预检)才发resumed, 语义=真正恢复执行
+                    _pre = await sandbox_precheck(safety_result, _cn, _cp)
+                    if _pre is not None:
+                        _sb_result = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
+                        # Phase3适配: sandbox_resolve返回dict, 不再返回(ok, steps)元组 - 小健-2026-09-04
+                        if _sb_result.get("action") not in ("passthrough", "confirmed"):
+                            continue
+                        if _sb_result.get("action") == "confirmed":
+                            continue
+                    # 2026-09-02 小欧 BUG-001: sandbox通过后才发resumed(对齐下方真HITL确认后恢复语义,
+                    #   前端badge据此回running恢复耗时秒表); 若sandbox拒绝已continue不发resumed
+                    # 2026-09-03 小沈 缺陷1修复: resumed增confirm_id, 前端收到后可据此关弹窗(防御性兜底) — 小沈-2026-09-03
+                    yield agent._step_emitter.emit(MetaStep(
+                        step=step, type="resumed",
+                        content=f"已自动确认工具执行: {_cn}",
+                        severity="info",
+                        confirm_id=confirm_id,
+                    ))
                     continue
 
                 set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认工具执行: {_cn}")
-                auth = await wait_for_confirmation_result(confirm_id, timeout=HITL_TIMEOUT)
+                from app.config import get_config as _get_cfg_wait
+                # 对应 config.yaml security.hitl_timeout(与 emit 的 backend_timeout 同源,默认120); 未配置兜底用常量 HITL_TIMEOUT — 小欧 2026-09-03
+                auth = await wait_for_confirmation_result(confirm_id, timeout=int(float(_get_cfg_wait().get("security.hitl_timeout", HITL_TIMEOUT))))
 
                 if not auth.get("confirmed"):
                     if auth.get("expired"):
                         # #11 fix: 超时与拒绝分流 — 小欧 2026-07-18
-                        yield agent._step_emitter.emit(ErrorStep(
-                            step=step,
-                            error_type="timeout",
-                            error_message=f"工具确认超时未响应: {_cn}"
+                        # 2026-08-28 小欧 yield日志审计: 超时决策日志(SRP)
+                        logger.warning(f"[action] step={step} timeout: tool={_cn}")
+                        yield agent._step_emitter.emit(MetaStep(
+                            step=step, type="error", content=f"工具确认超时未响应: {_cn}", error_type="timeout", severity="warn"
                         ))
                         _denied.append((_cn, "确认超时未响应", call))
                     else:
-                        yield agent._step_emitter.emit(ErrorStep(
-                            step=step,
-                            error_type="user_rejected",
-                            error_message=f"用户拒绝执行工具: {_cn}"
+                        # 2026-08-28 小欧 yield日志审计: 拒绝决策日志(SRP)
+                        logger.warning(f"[action] step={step} rejected: tool={_cn}")
+                        yield agent._step_emitter.emit(MetaStep(
+                            step=step, type="error", content=f"用户拒绝执行工具: {_cn}", error_type="user_rejected", severity="warn"
                         ))
                         _denied.append((_cn, "被用户拒绝执行", call))
                     set_status(agent, AgentStatus.EXECUTING, "用户拒绝/超时，恢复执行态")
@@ -286,15 +464,57 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
 
                 # 用户已确认：恢复执行态继续工具执行（SUSPENDED→EXECUTING 合法）— 小欧 2026-07-12
                 # ⑮ 白名单外临时授权: 确认后授予本次操作权限(一次一申请, 支持递归, per-request) — 小欧 2026-08-10
+                # 2026-09-01 小欧 - 紧急bug修复S2(前端badge卡paused): resumed从if auth_path内移出,
+                #   用户确认即恢复(与是否授权白名单外路径解耦), 无条件发1条, 授权信息并入文案, 消除重复(KISS/DRY)
+                try:
+                    # 2026-09-03 小欧 Bug-25: 用户确认授权白名单外路径, grant_temp_auth 异常不阻断恢复执行态
+                    if getattr(safety_result, "auth_path", None):
+                        from app.tools.security.temp_auth import grant_temp_auth
+                        grant_temp_auth(safety_result.auth_path, recursive=True)
+                        # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP) — 保留(2026-09-01 S2移出resumed时同步保留授权留痕)
+                        logger.info(f"[action] step={step} resumed+auth: tool={_cn} path={safety_result.auth_path}")
+                except Exception as e:
+                    logger.warning(f"[action] 确认后grant_temp_auth失败不阻断: {e!r}")
+                # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP)
+                set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
+                # 2026-09-03 小沈 缺陷1修复: resumed增confirm_id, 前端收到后可据此关弹窗(防御性兜底) — 小沈-2026-09-03
+                yield agent._step_emitter.emit(MetaStep(
+                    step=step, type="resumed",
+                    content=(f"已临时授权白名单外路径: {safety_result.auth_path}"
+                             if getattr(safety_result, "auth_path", None)
+                             else f"用户已确认工具执行: {_cn}"),
+                    severity="info",
+                    confirm_id=confirm_id,
+                ))
+                # v1.25 M3 插入点②: 用户确认汇合路径(末尾加 continue, 防落入③重复预检)
+                _pre = await sandbox_precheck(safety_result, _cn, _cp)
+                if _pre is not None:
+                    _sb_result = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
+                    # Phase3适配: sandbox_resolve返回dict, 不再返回(ok, steps)元组 - 小健-2026-09-04
+                    if _sb_result.get("action") not in ("passthrough", "confirmed"):
+                        continue
+                    if _sb_result.get("action") == "confirmed":
+                        continue
+                continue
+
+            # 5.3(2026-09-02 小欧, 病根3.5): 信任豁免/safe 直通汇合点统一授权收口——
+            #   tool_safety_checker 豁免返回 requires_confirmation=False 但保留 auth_path,
+            #   此处补 grant_temp_auth 闭环, 防"豁免跳窗不放行"(工具内部 validate_path 拦截执行失败)
+            try:
+                # 2026-09-03 小欧 Bug-25: 白名单外豁免直通亦包 try/except, grant_temp_auth 异常不阻断 sandbox 汇合
                 if getattr(safety_result, "auth_path", None):
                     from app.tools.security.temp_auth import grant_temp_auth
                     grant_temp_auth(safety_result.auth_path, recursive=True)
-                    yield agent._step_emitter.emit(MetaStep(
-                        step=step,
-                        type="resumed",
-                        content=f"已临时授权白名单外路径: {safety_result.auth_path}"
-                    ))
-                set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
+            except Exception as e:
+                logger.warning(f"[action] 豁免直通grant_temp_auth失败不阻断: {e!r}")
+
+            # v1.25 M3 插入点③: 循环体末尾兜底(仅 safe 直通/会话信任豁免触达) — 沙箱预检最后闸门
+            _pre = await sandbox_precheck(safety_result, _cn, _cp)
+            if _pre is not None:
+                _sb_result = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
+                # Phase3适配: sandbox_resolve返回dict, 不再返回(ok, steps)元组 - 小健-2026-09-04
+                if _sb_result.get("action") not in ("passthrough", "confirmed"):
+                    continue
 
         # 回传未被拒的call索引给调用方 — 小欧 2026-07-18 #12 fix
         # 2026-08-11 小欧 fix D2: 用call对象id标识被拒调用,而非tool_name;
@@ -329,106 +549,13 @@ def _add_denial_feedback(agent, denied_items, fc_context=None):
                 logger.debug(f"add_tool_result(空ID)也失败: {e2}")
 
 
-def _parse_paths(name: str, params: Dict) -> Set[str]:
-    """解析一个调用的路径/窗口冲突键集合(复用 PARAM_ALIASES 别名→规范名) — 小欧 2026-08-09 — 小欧 2026-08-11 窗口分支
-    文件工具: 解析 path 集合(与 _has_conflict/_partition_calls 共用, DRY)。
-    窗口工具: 以 "window:{window_title}" 为冲突键, 同标题窗口工具并入同组串行(状态变更非幂等);
-              缺 window_title 返回空集——窗口工具参数校验必失败, 不会操作任何窗口, 无竞态风险, 不参与分组。
-    """
-    if name in WINDOW_TARGET_TOOLS:
-        title = params.get("window_title", "")
-        if title and isinstance(title, str):
-            return {f"window:{title}"}
-        return set()
-    if name not in FILE_OPERATION_TOOLS:
-        return set()
-    aliases = PARAM_ALIASES.get(name, {})
-    if not aliases:
-        p = params.get("path", "")
-        return {p} if p and isinstance(p, str) else set()
-    resolved = {}
-    for key, value in params.items():
-        canon = aliases.get(key, key)
-        if canon not in resolved:
-            resolved[canon] = value
-    out = set()
-    for pname in set(aliases.values()):
-        pval = resolved.get(pname)
-        if pval and isinstance(pval, str):
-            out.add(pval)
-    return out
-
-
-def _has_conflict(all_calls: List[Dict]) -> bool:
-    """检测路径/窗口冲突 — 北京老陈 2026-07-04 初版; 小欧 2026-08-09 计数版; 小欧 2026-08-11 窗口工具纳入
-    冲突：同一键(文件路径/窗口标题)被>=2次调用访问, 且(至少一个文件写操作 或 含窗口工具)
-    有冲突→顺序执行, 无冲突→并行
-    [2026-08-09 小欧] BUG修复: 旧实现用 set 存工具名不计数, 同名工具多次写
-    同一路径漏检(3×edittext 同文件)→误走并行→read-modify-write 竞态致内容丢失。
-    改为 path→(调用次数, 工具名set), 复用 _parse_paths 解析(与 _partition_calls 一致, DRY)。
-    [2026-08-11 小欧] 扩展: 窗口工具(window_focus/window_resize/set_window_state)同标题即冲突,
-    消除 task002 实测 P2(restore+resize 同批并行→resize 0.00s 莫名失败)的并行竞态。
-    注: 文件路径键与 "window:" 键空间不重叠, 同一 entry 的 tools 不会混合文件与窗口工具。
-    """
-    path_ops: Dict[str, Dict[str, Any]] = {}
-
-    def _record(_path: str, _name: str) -> None:
-        entry = path_ops.setdefault(_path, {"count": 0, "tools": set()})
-        entry["count"] += 1
-        entry["tools"].add(_name)
-
-    for c in all_calls:
-        name = c.get("tool_name", "")
-        if name not in FILE_OPERATION_TOOLS and name not in WINDOW_TARGET_TOOLS:
-            continue
-        for _path in _parse_paths(name, c.get("tool_params", {})):
-            _record(_path, name)
-
-    for path, entry in path_ops.items():
-        tools = entry["tools"]
-        if entry["count"] >= 2 and (any(t in _WRITE_OPS for t in tools) or any(t in WINDOW_TARGET_TOOLS for t in tools)):
-            logger.info(f"[_has_conflict] 操作冲突(路径/窗口): {path}, tools={tools}, 调用数={entry['count']}, 降级顺序执行")
-            return True
-    return False
-
-
-def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
-    """按路径/窗口相关性分组(并查集连通分量): 共享路径或同标题窗口的调用归一组, 组间无共享→可并行
-    返回: 组列表, 每组是 all_calls 的索引列表 — 小欧 2026-08-09 — 小欧 2026-08-11 窗口工具自动纳入
-    (窗口工具经 _parse_paths 返回 "window:标题" 冲突键, 同标题自动并组串行, 分组本体逻辑零改动)
-    """
-    n = len(all_calls)
-    parent = list(range(n))
-
-    def _find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def _union(a, b):
-        ra, rb = _find(a), _find(b)
-        if ra != rb:
-            parent[rb] = ra
-
-    path_to_calls = {}
-    for i, c in enumerate(all_calls):
-        for p in _parse_paths(c.get("tool_name", ""), c.get("tool_params", {})):
-            path_to_calls.setdefault(p, []).append(i)
-    for _p, idxs in path_to_calls.items():
-        base = idxs[0]
-        for i in idxs[1:]:
-            _union(base, i)
-
-    groups = {}
-    for i in range(n):
-        groups.setdefault(_find(i), []).append(i)
-    return list(groups.values())
+from app.tools.trust import _parse_paths, extract_trust_path as _extract_trust_path  # Phase8: 信任域下沉trust.py, 解环 - 小健-2026-09-04
+from app.tools.conflict_detector import _has_conflict, _partition_calls  # Phase8: 冲突检测下沉conflict_detector.py - 小健-2026-09-04
 
 
 async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                         tool_name: str, tool_params: Dict,
-                        on_retry_started=None) -> List[Any]:
+                        on_retry_started=None, on_attempt_recorded=None) -> List[Any]:
         """工具执行调度 — 三分支策略（遵守SLAP：本层只做决策不分派执行细节）
          
         三分支说明：
@@ -474,7 +601,10 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         if len(all_calls) == 1:
             # A: 单工具
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={tool_name}")
-            result = await execute_tool(agent, tool_name, tool_params, agent._retry_engine, on_retry_started=on_retry_started)
+            # #18(2026-08-23): 文件A 每次尝试回调按【全局序号】取号 — 小欧 2026-08-23
+            _cb = on_attempt_recorded(1) if on_attempt_recorded else None
+            result = await execute_tool(agent, tool_name, tool_params, agent._retry_engine,
+                                        on_retry_started=on_retry_started, on_attempt_recorded=_cb)
             results = [result]
 
         elif is_parallel:
@@ -498,19 +628,25 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 group = [all_calls[i] for i in indices]
                 _g_start = time.time()  # 监控: 每组执行耗时起点 — 小欧 2026-08-09
                 if len(group) == 1:  # 单工具, 语义同原A
+                    # #18(2026-08-23): 工厂实参=全局序号(indices[0]+1), 禁用组内局部下标 — 小欧 2026-08-23
+                    _cb = on_attempt_recorded(indices[0] + 1) if on_attempt_recorded else None
                     _res = [await execute_tool(agent, _cn(group[0]), _cp(group[0]), agent._retry_engine,
-                                               on_retry_started=on_retry_started)]
+                                               on_retry_started=on_retry_started, on_attempt_recorded=_cb)]
                     _gmode = "单工具"
                 elif not conflicted:  # 组内无冲突→并行(try_once), 语义同原B
-                    tasks = [execute_tool(agent, _cn(c), _cp(c), agent._retry_engine, parallel=True) for c in group]
+                    # #18(2026-08-23): zip(indices, group) 对齐全局下标取号 — 小欧 2026-08-23
+                    tasks = [execute_tool(agent, _cn(c), _cp(c), agent._retry_engine, parallel=True,
+                                          on_attempt_recorded=(on_attempt_recorded(_gi + 1) if on_attempt_recorded else None))
+                             for _gi, c in zip(indices, group)]
                     _res = await asyncio.gather(*tasks, return_exceptions=True)
                     _gmode = "并行"
                 else:  # 组内冲突→串行(带重试), 语义同原C
                     _res = []
-                    for call in group:
+                    for _gi, call in zip(indices, group):
                         try:
+                            _cb = on_attempt_recorded(_gi + 1) if on_attempt_recorded else None
                             _res.append(await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine,
-                                                           on_retry_started=on_retry_started))
+                                                           on_retry_started=on_retry_started, on_attempt_recorded=_cb))
                         except Exception as e:
                             logger.warning(f"[action_handler] 工具{_cn(call)}组内顺序执行失败: {e}")
                             _res.append(e)
@@ -534,9 +670,12 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             _reason = "非并行模式"
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 顺序执行({_reason}): tools={_names}")
             results = []
-            for call in all_calls:
+            for _gi, call in enumerate(all_calls, 1):
                 try:
-                    result = await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine, on_retry_started=on_retry_started)
+                    # #18(2026-08-23): 顺序分支按全局序号取号 — 小欧 2026-08-23
+                    _cb = on_attempt_recorded(_gi) if on_attempt_recorded else None
+                    result = await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine,
+                                                on_retry_started=on_retry_started, on_attempt_recorded=_cb)
                     results.append(result)
                 except Exception as e:
                     logger.warning(f"[action_handler] 工具{_cn(call)}顺序执行失败: {e}")
@@ -560,269 +699,168 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 if isinstance(_llm, dict) and isinstance(_llm.get("summary"), str):
                     _llm["summary"] += f"（工具自动纠正自:{_orig_tool}）"
 
+        # 11.2-C 工具遥测回调（P0-2 修复：on_tool_call 未调用 → tool_execution_seconds 恒 0）— 小欧 2026-08-20
+        _tele = getattr(agent, "telemetry", None)
+        if _tele is not None:
+            for _call, _res in zip(all_calls, results):
+                _tname = _call.get("tool_name", "") if isinstance(_call, dict) else ""
+                _ok = not isinstance(_res, Exception)
+                _dur = 0.0
+                _arts = None
+                if _ok and isinstance(_res, dict):
+                    _llm_d = (_res.get("llm_data") or {})
+                    _dur = float(_llm_d.get("duration_ms", 0) or 0) / 1000.0
+                    _act = _llm_d.get("action")
+                    if isinstance(_act, dict):
+                        # 仅认写工具 with_artifacts 自声明；兜底派生已删(三堂会审F1: 读工具也构造action.target, 派生会把读取对象误落为伪产出物) — 小欧 2026-08-22 北京老陈定案
+                        _arts = _act.get("artifacts")
+                        # 注入 tool_name 到每个 artifact — 小欧 2026-08-22 设计补充（4字段: tool_name/name/path/type）
+                        if _arts and isinstance(_arts, list):
+                            for _a in _arts:
+                                if isinstance(_a, dict) and "tool_name" not in _a:
+                                    _a["tool_name"] = _tname
+                _tele.on_tool_call(_tname, _ok, _dur, artifacts=_arts)
+
         return results
 
 
-def _merge_llm_data(all_llm_data: List[Dict]) -> Dict:
-    """并行场景llm_data合并 — 小健 2026-06-22"""
-    if not all_llm_data:
-        return {}
-    # 过滤非dict条目，防止崩溃 — 小欧 2026-06-22
-    all_llm_data = [d for d in all_llm_data if isinstance(d, dict)]
-    if not all_llm_data:
-        return {}
-    if len(all_llm_data) == 1:
-        return all_llm_data[0]
-
-    severity_order = {"error": 3, "warning": 2, "success": 1}
-
-    def _severity_key(d):
-        status = d.get("status")
-        if not isinstance(status, dict):
-            return 0
-        exec_code = status.get("exec_code", "success")
-        return severity_order.get(exec_code, 0)
-
-    sorted_data = sorted(all_llm_data, key=_severity_key, reverse=True)
-
-    most_severe = sorted_data[0]
-
-    merged_metrics = {}
-    for llm_d in all_llm_data:
-        action = llm_d.get("action") if isinstance(llm_d.get("action"), dict) else {}
-        tool_name = action.get("tool", "unknown")
-        metrics = llm_d.get("metrics") if isinstance(llm_d.get("metrics"), dict) else {}
-        for k, v in metrics.items():
-            merged_metrics[f"{tool_name}.{k}"] = v
-
-    def _safe_str(val):
-        if val is None:
-            return ""
-        return str(val) if not isinstance(val, str) else val
-
-    return {
-        "summary": "\n\n".join([_safe_str(d.get("summary", "")) for d in all_llm_data]),
-        "action": most_severe.get("action") if isinstance(most_severe.get("action"), dict) else {},
-        "status": most_severe.get("status") if isinstance(most_severe.get("status"), dict) else {},
-        "duration_ms": max([d.get("duration_ms", 0) for d in all_llm_data]),
-        "metrics": merged_metrics,
-    }
+_TARGET_PARAM_PRIORITY = (
+    "command", "sql", "url", "host", "pattern",
+    "path", "dir_path", "file_path", "source_path", "query", "content",
+)
 
 
-def _merge_other_data(all_other_data: List[Dict]) -> Dict:
-    """并行场景other_data合并 — 小健 2026-06-22; 小欧 2026-06-22 过滤None条目"""
-    valid = [od for od in all_other_data if od is not None]
-    if not valid:
-        return {}
-
-    merged: Dict[str, Any] = {}
-    warnings = []
-    attachments = []
-    return_direct = False
-
-    for od in valid:
-        w = od.get("warning")
-        if w:
-            warnings.append(str(w) if not isinstance(w, str) else w)
-        if od.get("attachment") is not None:
-            attachments.append(od["attachment"])
-        if od.get("return_direct"):
-            return_direct = True
-        if "retry_count" not in merged and od.get("retry_count") is not None:
-            merged["retry_count"] = od["retry_count"]
-
-    if warnings:
-        merged["warning"] = "\n\n".join(warnings)
-    if attachments:
-        merged["attachment"] = attachments if len(attachments) > 1 else attachments[0]
-    if return_direct:
-        merged["return_direct"] = True
-    return merged
+def _resolve_target_field(tool_name: str) -> Optional[str]:
+    """2026-08-18 小健 三堂会审: 从工具schema主参数自动推导target字段名(取代硬编码映射, DRY/OCP)
+    ①显式声明tool.target_param优先(扩展点, 无需改动本函数) ②否则按_TARGET_PARAM_PRIORITY匹配真实properties
+    ③兜底: 必填参数→首参数; 均未命中返回None(调用方回退为工具名)"""
+    _tool = tool_registry.get_tool(tool_name)
+    if _tool is None:
+        return None
+    _props = (_tool.input_schema or {}).get("properties") or {}
+    if not _props:
+        return None
+    _explicit = getattr(_tool, "target_param", None)
+    if _explicit and _explicit in _props:
+        return _explicit
+    for _cand in _TARGET_PARAM_PRIORITY:
+        if _cand in _props:
+            return _cand
+    for _r in (_tool.input_schema or {}).get("required", []) or []:
+        if _r in _props:
+            return _r
+    return next(iter(_props))
 
 
-async def build_observation(ctx: ObservationContext, merged_other: Optional[Dict] = None) -> List:
-    """构建observation — FC-only: 传递fc_context,删除add_assistant — 小沈 2026-06-11
-    【修复P2-5】使用ObservationContext封装参数 — 北京老陈 2026-06-13"""
-    events = []
+def _extract_target(call: Dict[str, Any]) -> str:
+    """2026-08-18 小欧 - §10.3.3(2) 从工具调用入参提取展示用target(ActionStep结构化, 极少截断保留完整值; 截断收敛见observation_formatter)"""
+    _name = call.get("tool_name", "")
+    _params = call.get("tool_params", {}) or {}
+    _field = _resolve_target_field(_name)
+    if not _field:
+        return _name
+    _val = _params.get(_field, "")
+    return str(_val) if _val != "" else _name
 
-    for call, result in zip(ctx.all_calls, ctx.results):
-        if isinstance(result, Exception):
-            _ec = "error"
-        elif isinstance(result, dict):
-            _llm_data = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
-            _ec = _llm_data.get("status", {}).get("exec_code", "") if _llm_data else "error"
-        else:
-            _ec = "error"
-        action_step = ActionStep(
-            step=ctx.step,
-            tool_name=call.get("tool_name", ""),
-            tool_params=call.get("tool_params", {}),
-            execution_result=result,
-            execution_status=_ec if _ec else "",
-        )
-        events.append(ctx.agent._step_emitter.emit(action_step))
 
-    obs_parts = []
+async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
+    """构建 observation - tool_result 数组方案（§10.3.3(3)）— 2026-08-18 小欧
 
-    # 【Bug A修复】循环前：建1条assistant带所有tool_calls — 小沈 2026-07-06
-    # assistant+tool 配对规则:
-    #   1条assistant(带本轮N个tool_calls) + N条tool(每个tool_call_id对应1条)
-    #   历史结构: ...→assistant(tool_calls=[id1,id2])→tool(id1)→tool(id2)→...
-    #   注: 同一assistant的所有tool_calls是一次性发给LLM的"并行"请求
-    # — 小欧 2026-07-12
+    职责不变: 1条assistant(tool_calls)+逐工具add_tool_result喂LLM; record_operation双表同号
+    变更: 删 ActionStep 发射/删 _merge_other_data/删顶层 llm_data/tool_result/other_data/parallel_results
+          ObservationStep 仅 tool_result 数组; 编排层从各 tool_result[i].other_data 收集(return_direct/attachment/warning)
+    返回: (events, orchestration)  orchestration={"return_direct","attachments","warning","return_direct_message"}
+    """
+    events: List = []
+    tool_result: List[Dict[str, Any]] = []
+    orchestration = {"return_direct": False, "attachments": [], "warning": "", "return_direct_message": ""}
+
+    # assistant+tool 配对 — 建1条assistant带所有tool_calls
     _fc = ctx.fc_context or {}
     _shared_tc = _fc.get("tool_calls", [])
     if _shared_tc:
         ctx.agent.message_builder.add_assistant_tool_call(
             _shared_tc, content=_fc.get("llm_content", "") or None,
-            reasoning=_fc.get("llm_reasoning", "") or None  # 2026-07-19 小欧 reasoning传递
+            reasoning=_fc.get("llm_reasoning", "") or None,
         )
 
-    # ==========================================================================
-    # op_id 双表贯通（纯内部逻辑，与 LLM 返回结构零耦合） — 小欧 2026-07-16
-    # 目标：让同一文件操作在 file_operations 与 task_operations 两表共享同一
-    #       operation_id（双表同号），实现"一个文件操作、两个维度"的精确关联。
-    # 为什么需要 _file_tool_names 白名单（硬编码 6 个文件工具名）？
-    #   - 只有这 6 个文件工具会在内部调用 record_operation 写入 file_operations；
-    #   - 非文件工具（searchtool/sysinfo/timer/sql…）不写 file_operations，
-    #     若也去取 op_id 会"误关联"文件操作的 op_id；
-    #   - 白名单用于判定"当前 call 是否参与贯通"，把贯通精准限定在文件类工具维度。
-    #   - 硬编码而非查 registry：action_handler 只有 tool_name 字符串，查 category
-    #     需额外引入/遍历；硬编码最直接(KISS/YAGNI)。代价：新增文件工具需同步此集合。
-    # 解决的两个真实 bug（unit-02 暴露）：
-    #   1) 非文件工具误关联：原实现每个 call 都查 file_operations「最新」op_id，
-    #      导致 searchtool 抢走 write_docx 的 op_id 写进 task_operations（错误关联）；
-    #   2) 多文件工具同轮撞 UNIQUE：同轮多个文件工具抢同一 op_id →
-    #      "UNIQUE constraint failed: task_operations.operation_id"。
-    # 处理逻辑（三步）：
-    #   [预取] 取本 task 在 file_operations 中「尚未写入 task_operations」的 op_id，
-    #          按 created_at/rowid 升序排成候选队列 _pending_op_ids；
-    #   [分配] 循环内：仅文件类工具(call 在白名单)按 call 顺序 pop(0) 取一个候选，
-    #          非文件类工具 op_id=None 由 record_operation 内部自生成；
-    #   [写入] 用取出的 op_id 调 record_operation 写 task_operations，实现双表同号。
-    #   文件工具 call 顺序 == file_operations 写入顺序，故 pop 精确一一对应，不撞车。
-    # ==========================================================================
-    _file_tool_names = {
-        "delete", "copy", "move", "edittext",
-        "writetext", "compress",
-    }
-    _pending_op_ids = []
-    try:
-        with db.get_conn("operations") as _cf:
-            _fo = _cf.execute(
-                "SELECT operation_id FROM file_operations WHERE task_id = ? "
-                "ORDER BY created_at ASC, rowid ASC",
-                (ctx.agent.task_id,),
-            ).fetchall()
-        with db.get_conn("task_tracker") as _ct:
-            _used = set(r[0] for r in _ct.execute(
-                "SELECT operation_id FROM task_operations WHERE task_id = ?",
-                (ctx.agent.task_id,),
-            ).fetchall())
-        _pending_op_ids = [r[0] for r in _fo if r[0] not in _used]
-    except Exception as _e:
-        logger.warning(f"[action_handler] 查询 operation_id 候选失败: {_e}")
-        _pending_op_ids = []
-
-    for idx, (call, result) in enumerate(zip(ctx.all_calls, ctx.results)):
+    for call, result in zip_longest(ctx.all_calls, ctx.results):
+        if call is None:
+            continue
+        # 2026-09-03 小欧 Bug-1: 全工具被安全拦截时 results 可能缺失该 call 的结果(zip_longest 补 None),
+        #   用合成"无结果"占位, 使 ObservationStep 必然发出、前端 results 保长度, 齿轮/动画不再永驻
+        # 2026-09-03 小欧 D2-01: synthetic补summary使折叠区可见“已安全拦截：tool”
+        if result is None:
+            _syn_tool = call.get("tool_name", "?") if isinstance(call, dict) else "?"
+            result = {"llm_data": {"status": {"exec_code": "error"}, "summary": f"已安全拦截：{_syn_tool}"}, "other_data": {"synthetic": True}}
         if isinstance(result, Exception):
             obs_text = f"Observation: 工具{call.get('tool_name', '?')}执行异常: {result}"
-            _ec = "error"
             _is_failed = True
         else:
             obs_text = build_observation_text(result, call.get("tool_name", ""), call.get("tool_params", {}))
             _llm_data = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
-            _ec = _llm_data.get("status", {}).get("exec_code", "") if _llm_data else "error"
+            # 2026-08-18 小健 三堂会审 Bug#7: status 可能为 str(工具实现不规范), 防御防 AttributeError
+            _status = _llm_data.get("status") if isinstance(_llm_data.get("status"), dict) else {}
+            _ec = _status.get("exec_code", "")
             _is_failed = _ec == "error"
 
         get_prompt_logger().log_observation(
             step_name=f"步骤{ctx.step}: 工具执行结果",
-            observation_content=obs_text,
-            tool_name=call.get("tool_name", ""),
-            tool_params=call.get("tool_params", {}),
-            round_number=ctx.step,
-            raw_data=result,
+            observation_content=obs_text, tool_name=call.get("tool_name", ""),
+            tool_params=call.get("tool_params", {}), round_number=ctx.step, raw_data=result,
         )
-        # 取 op_id：文件类工具(白名单内)从候选队列按 call 顺序 pop(0) 取一个 → 双表同号；
-        #          非文件类工具为 None → record_operation 内部自生成。绝不读取工具返回值/LLM 字段(纯内部) — 小欧 2026-07-16
         _tool = call.get("tool_name", "?")
-        _op_id = None
-        if _tool in _file_tool_names and _pending_op_ids:
-            _op_id = _pending_op_ids.pop(0)
         ctx.agent.record_operation(
             _tool,
             status=OperationStatus.FAILED.value if _is_failed else OperationStatus.SUCCESS.value,
             error=str(result) if _is_failed else None,
-            operation_id=_op_id,
         )
-
         repair_warning = call.get("_repair_warning", "")
         if repair_warning:
             obs_text = f"Observation: {repair_warning}\n{obs_text}"
-            print(f"{time.strftime('%H:%M:%S')} [Warning] step={ctx.step}, {call.get('tool_name', '?')} 参数截断修复")
-            logger.warning(f"[action_handler] step={ctx.step}, {call.get('tool_name', '?')} 参数截断修复: {repair_warning}")
-        obs_parts.append(obs_text)
-
+            logger.warning(f"[action_handler] step={ctx.step}, {_tool} 参数截断修复: {repair_warning}")
         try:
             tc_id = call.get("_tool_call_id", "")
             ctx.agent.message_builder.add_tool_result(tc_id, obs_text)
         except Exception as e:
-            logger.warning(f"[action_handler] add_tool_result异常: {type(e).__name__}: {e!r}")  # — 小欧 2026-07-13
+            logger.warning(f"[action_handler] add_tool_result异常: {type(e).__name__}: {e!r}")
             try:
                 ctx.agent.message_builder.add_tool_result("", obs_text)
             except Exception as e2:
-                logger.warning(f"[action_handler] add_tool_result最终异常: {type(e2).__name__}: {e2!r}")  # — 小欧 2026-07-13
+                logger.warning(f"[action_handler] add_tool_result最终异常: {type(e2).__name__}: {e2!r}")
 
-    if not obs_parts:
-        obs_parts = ["Observation: 无结果"]
-
-    merged_obs = "\n\n".join(obs_parts) if len(obs_parts) > 1 else obs_parts[0]
-
-    _all_llm_data = []
-    _all_tool_results = []
-    _all_other_data = []
-    _parallel_results = []
-    is_parallel = len(ctx.all_calls) > 1
-    for call, result in zip(ctx.all_calls, ctx.results):
+        # ── 构建 tool_result[i]（每元素自包含, other_data 1:1 不合并）── 2026-08-18 小欧
+        # 2026-08-18 小健 三堂会审 Bug#4: 删除死变量 _data(只赋值未使用, 原始 data 已由 data_text/dl 承载)
         if isinstance(result, dict):
-            _all_llm_data.append(result.get("llm_data", {}))
-            _all_tool_results.append(result.get("data"))
-            _all_other_data.append(result.get("other_data", {}))
+            _llm = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
+            _other = result.get("other_data") if isinstance(result.get("other_data"), dict) else {}
         else:
-            _all_tool_results.append(result)
-        if is_parallel:
-            _parallel_results.append({
-                "tool_name": call["tool_name"],
-                "tool_params": call.get("tool_params", {}),
-                "llm_data": result.get("llm_data", {}) if isinstance(result, dict) else {},
-                "tool_result": result.get("data") if isinstance(result, dict) else result,
-                "other_data": result.get("other_data", {}) if isinstance(result, dict) else {},
-            })
+            _llm, _other = {}, {}
+        tool_result.append({
+            "tool_name": _tool,
+            "llm_data": _llm,
+            "llm_data_text": format_llm_data_text(_llm),
+            "data_text": obs_text,
+            "other_data": _other,
+        })
+        # ── 编排层收集（取代旧 _merge_other_data 盲目合并）── 2026-08-18 小欧
+        if _other.get("return_direct"):
+            orchestration["return_direct"] = True
+            # 2026-08-18 小健 Bug#7: status 可能非 dict, .get 前防御 (line 732 同各 status 取值点)
+            _rd_status = _llm.get("status") if isinstance(_llm.get("status"), dict) else {}
+            orchestration["return_direct_message"] = _rd_status.get("message", "") or obs_text
+        if _other.get("attachment") is not None:
+            orchestration["attachments"].append(_other["attachment"])
+        if _other.get("warning"):
+            _w = str(_other["warning"])
+            orchestration["warning"] = (orchestration["warning"] + "\n\n" + _w).strip() if orchestration["warning"] else _w
 
-    # 直接列表传递，不merge（各是各的，与parallel_results索引1:1）— 北京老陈 2026-07-08
-    llm_data_list = _all_llm_data if _all_llm_data else None
-
-    if llm_data_list:
-        for i, ld in enumerate(llm_data_list):
-            _st = ld.get("status", {}) if isinstance(ld, dict) else {}
-            _ac = ld.get("action", {}) if isinstance(ld, dict) else {}
-            _sm = (ld.get("summary", "") if isinstance(ld, dict) else "")[:120]
-            logger.info(f"[Observation] step={ctx.step}[{i}], tool={_ac.get('tool','')}, code={_st.get('exec_code','?')}, summary={_sm}")
-
-    if merged_other is None:
-        merged_other = _all_other_data[0] if _all_other_data else None
-        if len(_all_other_data) > 1:
-            merged_other = _merge_other_data(_all_other_data)
-
-    events.append(ctx.agent._step_emitter.emit(ObservationStep(
-        step=ctx.step,
-        llm_data=llm_data_list,
-        tool_result=_all_tool_results[0] if len(_all_tool_results) == 1 else _all_tool_results,
-        other_data=merged_other,
-        parallel_results=_parallel_results or None,
-    )))
-
-    return events
+    # 2026-09-03 小欧 Bug-1: 无条件发 ObservationStep(即使 tool_result 为空/全拦截),
+    #   前端 results 到达即卸载等待动画, 杜绝齿轮/动画永驻(改前空 tool_result 直接 return 不发事件)
+    # 2026-09-03 小欧 D2-01补：all_calls空时不发空观察（无工具调用无需观察）
+    if ctx.all_calls:
+        events.append(ctx.agent._step_emitter.emit(ObservationStep(step=ctx.step, tool_result=tool_result)))
+    return events, orchestration
 
 
 @dataclass
@@ -851,6 +889,7 @@ def _build_call_list(parsed: Dict) -> BuildCallListResult:
         "tool_name": tool_name, "tool_params": tool_params,
         "_tool_call_id": fc_context.get("tool_call_id", "") if fc_context else "",
         "_repair_warning": parsed.get("_repair_warning", ""),
+        "params_raw_str": parsed.get("params_raw_str", ""),   # #3 透传 LLM 原始参数串(11.7.9-2③) — 小欧 2026-08-23
     }]
     # 【P1-11修复】pending_calls条目缺tool_name时跳过 — chendyg 2026-06-26
     for pc in pending_calls:
@@ -862,6 +901,7 @@ def _build_call_list(parsed: Dict) -> BuildCallListResult:
             "tool_name": pc_name, "tool_params": pc.get("tool_params") or {},
             "_tool_call_id": pc.get("_tool_call_id", ""),
             "_repair_warning": pc.get("_repair_warning", ""),
+            "params_raw_str": pc.get("params_raw_str", ""),   # #3 并行调用各自原始串 — 小欧 2026-08-23
         })
 
     return BuildCallListResult(
@@ -896,21 +936,21 @@ async def handle_action(agent, parsed: Dict):
     if not call_result.tool_name:
         logger.warning(f"[handle_action] tool_name为空, parsed={parsed}")
         agent._consecutive_reasoning_only = 0  # 2026-07-17 - 小欧 - action空名异常非reasoning-only, 归零防残留
-        # chendyg 2026-07-01: 删set_failed，_dispatch_handler从ErrorStep推断状态
-        yield agent._step_emitter.emit(ErrorStep(
-            step=step, error_type="invalid_action",
-            error_message="LLM返回的action中tool_name为空",
+        # chendyg 2026-07-01: 删set_failed，_dispatch_handler从MetaStep(type="error")推断状态
+        yield agent._step_emitter.emit(MetaStep(
+            step=step, type="error", content="LLM返回的action中tool_name为空", error_type="invalid_action", severity="warn"
         ))
         return
 
     params_str = str(call_result.tool_params); params_short = (params_str[:180] + '..') if len(params_str) > 180 else params_str  # 小欧 2026-07-01 控制台截断 — 小沈 2026-07-05 50→100
-    print(f"{time.strftime('%H:%M:%S')} [Action]step={step} ={call_result.tool_name}, pars:{params_short}")  # 小欧 2026-07-01 控制台 — 小沈 2026-07-05 =→:
+    # 2026-08-30 小欧 收口: 裸print→log_and_print(延续2026-07-23统一治理), 控制台镜像离线化 + [Action]文件留痕增强
+    log_and_print(f"{time.strftime('%H:%M:%S')} [Action]step={step} ={call_result.tool_name}, pars:{params_short}")
 
     # thought 步骤 — content=LLM推理内容, reasoning=内部思维过程 — 小欧 2026-07-01
+    yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
     yield agent._step_emitter.emit(ThoughtStep(
         step=step,
         content=parsed.get("thought", ""),
-        tool_name=call_result.tool_name, tool_params=call_result.tool_params,
         reasoning=parsed.get("reasoning", ""),
     ))
 
@@ -924,13 +964,56 @@ async def handle_action(agent, parsed: Dict):
         yield event
     _exec_calls = _safe_calls if _safe_calls else []
 
+    # ── 新 action step: execute_tools 执行前 yield 一次（§10.3.3(2)）── 2026-08-18 小欧
+    # 记录层兜底: 全部调用被安全拦截致_exec_calls空时, 取意图调用all_calls补全落库(执行层仍仅用_exec_calls, 不绕过安全) - 小欧 2026-08-26
+    _record_calls = _exec_calls if _exec_calls else call_result.all_calls
+    _action_tools = [{
+        "tool": c.get("tool_name", ""),
+        "target": _extract_target(c),
+        "params": c.get("tool_params", {}) or {},
+    } for c in _record_calls]
+    yield agent._step_emitter.emit(ActionStep(
+        step=step,
+        exec_type="single" if len(_action_tools) == 1 else "multi",
+        tools=_action_tools,
+    ))
+
     # ── 工具重试（隐蔽，前端不可见）── 小欧 2026-07-13
     # 工具重试由 tool_retry_engine 内部执行, 不向前端 emit 任何 step(北京老陈要求: tool 重试隐蔽)。
     # 重试回调不再收集/上报, 仅后端内部重试。
     # H1 (v1.43): 移除工具批 finally 的 clear_temp_auth() — 清零点迁移到 task 级(R1, react_cycle.run_react_cycle finally)
+
+    # 2026-08-23 #B 闭环(北京老陈 裁定②): 文件A 工厂回调, 每次重试尝试各写一块, 闭合 11.7.9-2 — 小欧 2026-08-23
+    # v3.29: 回调内直接落盘(write_tool_block), step=本步 llm_call_count(系统既有字段名); 工厂按全局工具序号闭包注入 tool_no,
+    # 引擎每次尝试回调(action, attempt, params, result_or_exc, ok) 内调用 write_tool_block
+    def _fp_factory(_tno: int):
+        _call = _exec_calls[_tno - 1] if 0 < _tno <= len(_exec_calls) else {}
+        # #16 修正(2026-08-23): params_raw 权威源=_call["params_raw_str"](D0→D0b→D3b 链路的 LLM 原始 arguments 串),
+        #   必须由本闭包携带——引擎不持有原始串; or 回退防空串击穿(#16 同轮修正口径) — 小欧 2026-08-23
+        def _cb(_action, _attempt, _params, _res_or_exc, _ok):
+            _fp = getattr(agent, "file_persist", None)
+            if _fp is None:
+                return
+            if isinstance(_res_or_exc, dict):
+                _fp_llm = _res_or_exc.get("llm_data") if isinstance(_res_or_exc.get("llm_data"), dict) else {}
+                _fp_other = _res_or_exc.get("other_data") if isinstance(_res_or_exc.get("other_data"), dict) else None
+                _fp_data = _res_or_exc
+            else:
+                _fp_llm, _fp_other, _fp_data = {}, None, {"exception": str(_res_or_exc)}
+            _fp.write_tool_block(
+                step=step, tool_no=_tno, retry_no=_attempt,
+                tool_name=_action,
+                params_raw=(_call.get("params_raw_str") or _call.get("tool_params")),
+                params_final=_params,
+                llm_data=_fp_llm, data=_fp_data, other_data=_fp_other,
+            )
+        return _cb
+
     try:
+        # #20 修正(2026-08-23 终审): 先定义工厂、调用时传参, 回调内部 file_persist=None 守卫保证无文件任务空转安全 — 小欧 2026-08-23
         results = await execute_tools(agent, _exec_calls, call_result.is_parallel,
-                                      call_result.tool_name, call_result.tool_params)
+                                      call_result.tool_name, call_result.tool_params,
+                                      on_attempt_recorded=_fp_factory)
     except Exception as e:
         logger.error(f"[action_handler] execute_tools 异常: {e}")
         raise
@@ -943,20 +1026,18 @@ async def handle_action(agent, parsed: Dict):
         is_parallel=call_result.is_parallel, pending_calls=call_result.pending_calls,
         fc_context=call_result.fc_context,
     )
-    merged_other = _merge_other_data([r.get("other_data", {}) for r in results if isinstance(r, dict)]) if results else {}
-    for event in await build_observation(ctx, merged_other=merged_other):
+    # 2026-08-18 小欧 - build_observation 返回 (events, orchestration); 不再传 merged_other
+    events, orchestration = await build_observation(ctx)
+    for event in events:
         yield event
     # 2026-08-11 小欧 fix D2: 被拒call反馈在build_observation后补写(assistant已由build_observation统一写),
     #   精确到call对象, 不误标会执行的同名工具, 也不重复写assistant
     if _denied_list:
         _add_denial_feedback(agent, _denied_list, call_result.fc_context)
-    if merged_other.get("return_direct"):
-        merged_llm = _merge_llm_data([r.get("llm_data", {}) for r in results if isinstance(r, dict)]) if results else {}
-        _status = merged_llm.get("status", {}) if isinstance(merged_llm, dict) else {}
-        yield agent._step_emitter.emit(FinalStep(
-            step=step, response=_status.get("message", ""),
-            thought=parsed.get("thought", ""),
-            outcome="completed",  # 小欧 2026-07-18: 显式终态声明, 与FinalStep多态契约一致
-        ))
-        # chendyg 2026-07-01: 删set_completed，_dispatch_handler从FinalStep推断状态
+    if orchestration.get("return_direct"):
+        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+            step=step, response=orchestration.get("return_direct_message", ""),
+            outcome="completed", reasoning="",
+        )):
+            yield _s
 

@@ -22,20 +22,22 @@
  * @param apiBaseUrl - API基础URL
  * @returns Promise<boolean> - 网络连接是否正常
  */
-export const checkNetworkConnection = async (apiBaseUrl: string): Promise<boolean> => {
+export const checkNetworkConnection = async (
+  apiBaseUrl: string
+): Promise<boolean> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 3000);
 
   try {
     const response = await fetch(`${apiBaseUrl}/health`, {
-      method: "GET",
+      method: 'GET',
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
     return response.ok;
   } catch (error) {
     clearTimeout(timeoutId);
-    console.warn("网络连接检查失败:", error);
+    console.warn('网络连接检查失败:', error);
     return false;
   }
 };

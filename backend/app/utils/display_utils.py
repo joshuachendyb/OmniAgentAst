@@ -10,6 +10,11 @@ display_utils — display_name相关公共函数
 Author: 小沈 - 2026-05-28
 """
 
+# 编辑历史:
+# 2026-08-25 - 小欧 - 合规重构(北京老陈驱动): 新增 format_llm_data_text(将工具结果 llm_data 格式化为前端展示文本, JSON美化失败回退str);
+#   原函数体为 action_handler.build_observation 内嵌闭包(纯函数被囚为闭包, 违反1.3公用函数规范-分层/复用优先), 现拆至全局层 display_utils(逐字复制, 逻辑零改动), action_handler 改直接 import 调用并删死 import json
+
+import json
 from typing import Optional, List, Dict, Any
 
 
@@ -93,9 +98,30 @@ def format_param_value(val: Any) -> str:
     return str(val)
 
 
+def format_llm_data_text(llm_data: Dict[str, Any]) -> str:
+    """将工具结果 llm_data 格式化为前端展示文本(JSON 美化, 失败回退 str)
+
+    纯函数(无外部状态), 供 build_observation 等编排层复用; 原为 action_handler 内嵌闭包,
+    2026-08-25 小欧 合规重构拆出至全局层(逐字复制, 逻辑零改动)。
+
+    Args:
+        llm_data: 工具结果中的 llm_data 字典
+
+    Returns:
+        美化 JSON 字符串(ensure_ascii=False, indent=2); 空/非 dict → ""; 序列化失败 → str(llm_data)
+    """
+    if not llm_data:
+        return ""
+    try:
+        return json.dumps(llm_data, ensure_ascii=False, indent=2)
+    except (TypeError, ValueError):
+        return str(llm_data)
+
+
 __all__ = [
     "extract_display_name_from_steps",
     "build_display_name",
     "extract_metadata_from_steps",
     "format_param_value",
+    "format_llm_data_text",
 ]

@@ -14,13 +14,17 @@
  * @update 2026-04-11 迁移到errorHandler统一处理 - by 小强
  */
 
+// 编辑历史: 2026-08-27 小欧 - 修复B8: handleSaveErrorWithCache去重字段改用data存储键(content/title), 避免字符串data展开后无assistant键导致去重失效
+// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#5: 去重改String比较, 存储不展开data对象防缓存污染 - 小沈-2026-08-28
+// 编辑历史: 2026-08-28 小欧 - 删除未使用的handleSaveErrorWithCache死代码(三堂会审核查#5) - 小欧-2026-08-28
+
 import {
   ErrorType,
   showSuccess,
   handleError,
   classifyError,
   showMessage,
-} from './errorHandler';
+} from '@/services/error/handler';
 
 // ============================================================
 // 成功提示
@@ -131,44 +135,6 @@ export const handleConflictError = (error: unknown): boolean => {
     return true;
   }
   return false;
-};
-
-/**
- * 保存失败并本地缓存
- */
-export const handleSaveErrorWithCache = async (
-  currentSessionId: string,
-  data: unknown,
-  dataType: 'message' | 'title',
-  errorMsg: string = '保存失败'
-) => {
-  showSaveError(errorMsg);
-
-  try {
-    const cacheKey = `unsaved_${dataType}_${currentSessionId}`;
-    const cached: Array<Record<string, unknown>> = JSON.parse(
-      localStorage.getItem(cacheKey) || '[]'
-    );
-
-    // 避免重复缓存
-    const exists = cached.some((item) => {
-      if (dataType === 'message') {
-        return item.assistant === data;
-      }
-      return item.title === data;
-    });
-
-    if (!exists) {
-      cached.push({
-        ...(data as Record<string, unknown>),
-        timestamp: Date.now(),
-      });
-      localStorage.setItem(cacheKey, JSON.stringify(cached));
-      showCachedInfo();
-    }
-  } catch (cacheError) {
-    console.error('本地缓存失败:', cacheError);
-  }
 };
 
 /**

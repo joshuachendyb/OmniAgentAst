@@ -38,6 +38,7 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#23: 移除死导入 validate_str_param(合规/DRY)
 #   【病根】from app.tools.validate.file_path_checker import validate_str_param 全文件零调用(grep仅导入处1处), 冗余导入
 #   【改法】从导入行移除, 保留validate_path/OpCategory
+# 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
 """
 F4: edittext — 编辑文本文件
 
@@ -55,7 +56,7 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import EDITTEXT_INPUT_MAX_BYTES
 from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
 from app.tools.tool_constants import EDITTEXT_OUTPARM_LIMIT_OLD, EDITTEXT_OUTPARM_LIMIT_NEW, EDITTEXT_OUTPARM_LIMIT_SAFETY
@@ -633,6 +634,7 @@ async def edittext(
         user_mode=mode, user_ignore_case=ignore_case,
         user_encoding=encoding,
     )
+    with_artifact_file(llm_data, file_path)   # 11.6.1 产出物声明 — 小欧 2026-08-21
     # ---- observation_formatter route -------------------------------------------
     # branch: #21 fallback (key:val)
     # trigger: 无上述20条分支匹配 — result 含 applied_edits/diff，不命中任何专用分支

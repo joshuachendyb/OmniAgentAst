@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - rename新增overwrite参数并透传_move_file_impl: 原硬编码overwrite=False且不向LLM暴露该参数, 目标已存在时FileExistsError无法被LLM用overwrite=True纠正。对齐move/copy新增overwrite字段(默认False, 向后兼容)。另修复执行失败时被execute_with_safety吞掉真因的问题。
+# 2026-08-21 - 小欧 - 11.6.1: 两个success分支调 with_artifact_file 声明产出物
 """
 F13: rename_file — 重命名文件
 
@@ -16,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from app.tools.file.move_file import _move_file_impl
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import ERR_FILE_RENAME_FAILED
 from app.tools.validate.file_path_checker import validate_path, OpCategory
 
@@ -93,6 +94,7 @@ async def rename(
         llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination, user_overwrite=overwrite)
         llm_data["summary"] = f"重命名{source}，成功: {new_name}（名称相同，无操作）"
         llm_data["status"]["message"] = "名称相同，无需重命名"
+        with_artifact_file(llm_data, str(dst))   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val) — skipped path
         # trigger: 无上述20条分支匹配 — skipped/reason 不命中专用分支
@@ -106,6 +108,7 @@ async def rename(
 
     if result.get("success"):
         llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination, user_overwrite=overwrite)
+        with_artifact_file(llm_data, str(dst))   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
         # trigger: 无上述20条分支匹配 — operation_id 不命中专用分支

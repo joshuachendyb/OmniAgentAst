@@ -1,10 +1,11 @@
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复微小空白差异(JSX属性间距统一), 防止格式再次出错
 /**
  * Layout骨架屏组件
- * 
+ *
  * 功能：在Layout初始化完成前显示骨架屏
  * UI布局和视觉与现有Layout保持完全一致
  * 支持错误状态显示和重试按钮
- * 
+ *
  * @author 小资
  * @version 1.1.0
  * @since 2026-04-12
@@ -66,9 +67,9 @@ export const LayoutSkeleton: React.FC<LayoutSkeletonProps> = ({
               <div className={styles.skeletonErrorIcon}>!</div>
               <div className={styles.skeletonErrorText}>{error}</div>
               {onRetry && (
-                <Button 
-                  type="primary" 
-                  icon={<ReloadOutlined />} 
+                <Button
+                  type="primary"
+                  icon={<ReloadOutlined />}
                   onClick={onRetry}
                   className={styles.skeletonRetryButton}
                 >

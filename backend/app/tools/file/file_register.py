@@ -3,6 +3,9 @@
 # 2026-07-18 - 小欧 - #10 fix: compress/extract/copy/move/rename 的 examples 参数名 source→path、destination→dest,
 #    与 CompressInput/ExtractInput/MoveInput/CopyInput/RenameInput schema 对齐, 消除 example/schema 不一致
 # 2026-07-20 - 小欧 - 加【描述规范】注释:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
+# 2026-08-18 - 小健 - 三堂会审: find 显式声明 target_param="path"(操作对象=搜索目录, 与自报 action.target=search_dir 同源),
+#    默认按 _TARGET_PARAM_PRIORITY 推导会先命中 pattern(搜索词)致 ActionStep 与 observation 两处 target 不同源;
+#    与 grep(取 pattern)语义区分; 详见本文件 find 注册处行内注释(OCP 扩展点, DRY)
 """
 File Register - 文件工具注册点 v3.0
 
@@ -244,6 +247,10 @@ def _register_file_tools():
         desc = FILE_TOOL_DESCRIPTIONS.get(name, "")
         input_model = TOOL_INPUT_MODELS.get(name)
         examples = FILE_TOOL_EXAMPLES.get(name, [])
+        # 2026-08-18 小健 三堂会审: find 的操作对象是"搜索目录"(自报 action.target=search_dir);
+        # 默认按 _TARGET_PARAM_PRIORITY 推导会先命中 pattern(搜索词), 致 ActionStep 与 observation 两处 target 不同源,
+        # 故显式声明 target_param="path" 使两端一致(OCP 扩展点, 与 grep 取 pattern 的语义区分)
+        _tp = "path" if name == "find" else None
 
         tool_registry.register(
             name=name,
@@ -255,6 +262,7 @@ def _register_file_tools():
             examples=examples,
             dependencies=FILE_TOOL_DEPENDENCIES.get(name, []),
             needs_confirmation=bool(CONFIRMATION_MAP.get(name, False)),
+            target_param=_tp,
         )
 
         logger.debug(

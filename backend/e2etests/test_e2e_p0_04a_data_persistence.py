@@ -19,6 +19,7 @@
 -- 小健 2026-06-14, 小沈 2026-07-03 rewrite
 -- 更新: 2026-07-03(铁律6: 超时统一管理) 小欧
 -- 更新: 2026-07-14(提升user input复杂度-多工具串联链路) 小欧
+-- 更新: 2026-08-22 - 小欧 - §10.3适配: 本case旧action_tool取数块(type过滤+顶层tool_name+observation字段)收敛为verify_db_tool_usage单点校验(e2e_helpers FUNCTIONS.md九.1), 协议再变只改helper一处
 """
 
 TEST_CASE_ID = "E2E-P0-04a"
@@ -40,6 +41,7 @@ from e2emodel.e2e_helpers import (
     assert_stream_ended,
     register_pending_record,
     filter_safety_errors,
+    verify_db_tool_usage,
 )
 
 
@@ -96,10 +98,9 @@ async def test_e2e_p0_04a_data_persistence():
         if len(db["step_field_issues"]) > 0:
             print(f"  [WARN] step字段问题(SHOULD): {db['step_field_issues']}")
 
-        db_tool_steps = [s for s in db["execution_steps"] if s.get("type") == "action_tool"]
-        for step in db_tool_steps:
-            obs = step.get("observation") or step.get("execution_result")
-            assert obs, f"工具结果不能为空(MUST): {step.get('tool_name')}"
+        # 2026-08-22 小欧 §10.3适配: 旧action_tool取数块收敛为verify_db_tool_usage单点校验(FUNCTIONS.md 9.1)
+        _ti = verify_db_tool_usage(db)
+        assert len(_ti) == 0, f"DB工具步骤异常(MUST): {_ti}"
 
         print(f"  [Step6] SSE-DB consistency...")
         ci = verify_consistency(result, sid)

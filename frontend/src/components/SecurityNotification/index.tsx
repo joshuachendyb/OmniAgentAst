@@ -11,8 +11,10 @@
  */
 
 import React from 'react';
-import { notification, Typography, Tag } from 'antd';
+import { Typography, Tag } from 'antd';
 import { WarningOutlined } from '@ant-design/icons';
+// 编辑历史: 2026-08-28 小欧 - 根治toast根因: 静态notification改走antdApp.getNotification()上下文实例 - 小欧-2026-08-28
+import { getNotification } from '../../lib/antd/bridge';
 
 const { Text } = Typography;
 
@@ -35,7 +37,7 @@ export const showSecurityNotification = (
   score: number,
   message: string
 ): void => {
-  notification.warning({
+  getNotification().warning({
     message: (
       <div>
         <Text strong style={{ fontSize: 16 }}>

@@ -1,3 +1,11 @@
+// 编辑历史: 2026-07-16 小欧 - Message 接口增 thought 字段
+// 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 新增 SessionModelOverride 接口; HistoryLoadResult model_override→sessionModel
+// 编辑历史: 2026-08-22 小欧 - model结构化归一: SessionModelOverride 补 api_base
+// 编辑历史: 2026-08-26 小欧 - 8.4.7 移除安全校验旧字段、ActionToolMessage→ActionMessage、新增 StartInfoMessage/StartMessage.content
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 新增ModelListItem接口(模型列表项结构)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从./execution(断类型环)
+// 编辑历史: 2026-08-27 小欧 - 修复base-4: 补isStartInfoMessage守卫并将StartInfoMessage纳入StreamMessage联合
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复函数签名多行→单行(行长度超80字符), 防止格式再次出错
 /**
  * 流式API响应类型定义
  *
@@ -7,24 +15,9 @@
  * @author 小新
  * @version 1.0.0
  * @since 2026-03-09
- * @updated 2026-07-16 小欧 - Message 接口增 thought 字段
  */
 
-import type { ExecutionStep } from '../utils/sse';
-
-// ============================================================
-// 安全检查相关类型
-// ============================================================
-
-/**
- * 安全检查结果
- */
-export interface SecurityCheck {
-  is_safe: boolean;
-  risk_level: 'low' | 'medium' | 'high' | 'critical' | null;
-  risk: string | null;
-  blocked: boolean;
-}
+import type { ExecutionStep } from './execution';
 
 // ============================================================
 // 消息类型定义（8种）
@@ -40,13 +33,26 @@ export interface StartMessage {
   model: string;
   provider: string;
   task_id: string;
-  security_check?: SecurityCheck;
+  content?: string; // context_summary 上下文摘要（4.9.2.7）
+}
+
+/**
+ * startinfo类型 - 轻量占位（仅 SSE 不落库）
+ * 【小欧 2026-08-26 8.4】驱动任务信息条状态徽标（4.9.2.7）
+ */
+export interface StartInfoMessage {
+  type: 'startinfo';
+  task_id: string;
+  display_name?: string;
+  provider?: string;
+  model?: string;
+  ai_message_id?: string;
 }
 
 /**
  * thought类型 - LLM思考
  * 发送时机：ReAct第1阶段，LLM分析任务
- * 【小查修复2026-03-09】action_tool和params改为可选
+ * 【小查修复2026-03-09】动作类型字段和params改为可选
  */
 export interface ThoughtMessage {
   type: 'thought';
@@ -59,20 +65,18 @@ export interface ThoughtMessage {
 }
 
 /**
- * action_tool类型 - 执行动作
- * 发送时机：ReAct第2阶段，工具执行时
- * 【小强修改2026-04-15】删除raw_data，统一使用execution_result
+ * action类型 - 工具调用步骤新结构（4.9.2.9，禁止保留旧动作类型名）
+ * 【小欧 2026-08-26 8.4】exec_type single/multi + tools 数组（单工具也一个元素）
  */
-export interface ActionToolMessage {
-  type: 'action_tool';
+export interface ActionMessage {
+  type: 'action';
   step: number;
-  tool_name: string;
-  tool_params: Record<string, unknown>;
-  execution_status: 'success' | 'error' | 'warning';
-  summary: string;
-  execution_result?: Record<string, unknown> | null; // 【修改2026-04-15】raw_data → execution_result
-  execution_time_ms?: number; // 【新增2026-04-15】
-  action_retry_count: number;
+  exec_type: 'single' | 'multi';
+  tools: Array<{
+    tool: string;
+    target?: string; // file→file_path / shell→command / network→url 等（后端已提取）
+    params?: Record<string, unknown>; // 供回放重建 FC 参数
+  }>;
 }
 
 /**
@@ -206,8 +210,9 @@ export interface StatusMessage {
  */
 export type StreamMessage =
   | StartMessage
+  | StartInfoMessage
   | ThoughtMessage
-  | ActionToolMessage
+  | ActionMessage
   | ObservationMessage
   | ChunkMessage
   | FinalMessage
@@ -221,18 +226,26 @@ export type StreamMessage =
 /**
  * 检查是否为指定类型
  */
-export function isStartMessage(msg: StreamMessage): msg is StartMessage {
-  return msg.type === 'start';
+export function isStartMessage(
+  msg: StreamMessage
+): msg is StartMessage | StartInfoMessage {
+  // 2026-08-27 小欧 修复base-4: startinfo 同属 start 类事件, 一并识别(满足守卫覆盖)
+  return msg.type === 'start' || msg.type === 'startinfo';
+}
+
+export function isStartInfoMessage(
+  msg: StreamMessage
+): msg is StartInfoMessage {
+  // 2026-08-27 小欧 修复base-4: 新增 startinfo 专用类型守卫
+  return msg.type === 'startinfo';
 }
 
 export function isThoughtMessage(msg: StreamMessage): msg is ThoughtMessage {
   return msg.type === 'thought';
 }
 
-export function isActionToolMessage(
-  msg: StreamMessage
-): msg is ActionToolMessage {
-  return msg.type === 'action_tool';
+export function isActionMessage(msg: StreamMessage): msg is ActionMessage {
+  return msg.type === 'action';
 }
 
 export function isObservationMessage(
@@ -285,6 +298,7 @@ export interface ChatRequest {
   model?: string;
   task_id?: string;
   session_id?: string;
+  context_link_mode?: 'linked' | 'independent'; // 默认 independent（后端 ChatRequest 同名默认）
 }
 
 /**
@@ -341,6 +355,24 @@ export interface Message extends ChatMessage {
 }
 
 /**
+ * 会话级模型覆盖(L2) — 结构化 provider+model, 与后端 SessionModelOverride 对齐
+ * 2026-08-22 小欧 归一报告v1.25 6.1: 补 api_base?(端点定位) 与后端 ModelRef 形态一致
+ */
+export interface SessionModelOverride {
+  provider: string;
+  model: string;
+  api_base?: string;
+  display_name?: string;
+}
+
+// 2026-08-27 小欧 三堂会审: 模型列表项结构, 与后端/config/models返回对齐
+export interface ModelListItem {
+  provider: string;
+  model: string;
+  display_name: string;
+}
+
+/**
  * 历史消息加载结果
  */
 export interface HistoryLoadResult {
@@ -349,4 +381,5 @@ export interface HistoryLoadResult {
   sessionId: string;
   version?: number;
   title_locked?: boolean;
+  sessionModel?: SessionModelOverride | null;
 }

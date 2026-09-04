@@ -24,6 +24,7 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#22: _guard_forbidden_delete 删除死分支 `if p is None: return None`
 #   【病根】p = raw.expanduser().resolve() 恒返回Path(异常已被前try捕获返回), resolve()绝不返回None, L58-59分支永不可达(死代码, 违KISS)
 #   【改法】删除该分支; 无任何行为变化(resolve成功则p恒为Path)
+# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): extra_metrics.status 可能为 str, 防御 isinstance, 防 AttributeError
 """
 F12: delete_file — 删除文件
 
@@ -223,7 +224,12 @@ def _build_delete_file_llm_data(
             "duration_ms": duration_ms,
             "metrics": extra_metrics,
         }
-    _suffix = extra_metrics.get("status", {}).get("text", "") or extra_metrics.get("deleted", {}).get("text", "")
+    # 2026-08-18 小健 三堂会审 Bug#7(同源): extra_metrics.status 可能为 str, 防御 isinstance
+    _st = extra_metrics.get("status")
+    _st_text = _st.get("text", "") if isinstance(_st, dict) else ""
+    _dl = extra_metrics.get("deleted")
+    _dl_text = _dl.get("text", "") if isinstance(_dl, dict) else ""
+    _suffix = _st_text or _dl_text
     return {
         "summary": f"删除{source}，成功: {_suffix}" if _suffix else f"删除{source}，成功",
         "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": _act_params},
@@ -314,7 +320,7 @@ async def delete(
         llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=err, user_recursive=recursive, user_force=force)
         return build_error(data={}, llm_data=llm_data)
     if warn:
-        logger.warning(warn)
+        logger.info(warn)
 
     result = await _delete_file_impl(file_path=source, recursive=recursive, force=force)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

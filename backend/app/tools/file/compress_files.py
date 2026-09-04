@@ -38,6 +38,7 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#18: 通配跨多顶层目录时arcname计算抛ValueError
 #   【病根】原base_dir=Path(matched_paths[0]).parent(仅取首匹配父目录), 第二个及以上匹配目录的项 relative_to(base_dir) 不在其下抛ValueError, 多目录通配静默失败
 #   【改法】删base_dir, 目录匹配项以 matched_path 自身为arcname根(relative_to(matched_path)), 文件匹配项仍用自身name; 单目录/多目录/仅驱动器场景均不再跨树
+# 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(压缩包路径)
 """
 F8: compress_files — 压缩文件
 
@@ -60,7 +61,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INVALID
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
@@ -423,6 +424,7 @@ async def compress(
                 user_destination=dest, user_format=format, user_overwrite=overwrite,
                 user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "",
             )
+            with_artifact_file(llm_data, result.get("destination_path") or dest)   # 11.6.1 产出物声明 — 小欧 2026-08-21
             safe_data = {k: v for k, v in result.items() if k not in ("source_path", "destination_path", "format", "file_count", "compressed_files", "compression_ratio")}
             # ---- observation_formatter route -------------------------------------------
             # branch: #18 compress

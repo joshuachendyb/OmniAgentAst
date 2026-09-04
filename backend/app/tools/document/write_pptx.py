@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
 """
 D8: write_pptx — 写入PPT文档
 
@@ -18,7 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.logger import logger
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.file_safety_checker import check_content_safety
@@ -382,6 +384,7 @@ def write_pptx(
         slide_count = len(prs.slides)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pptx_llm_data("success", duration_ms, str(path), slide_count)
+        with_artifact_file(llm_data, str(path))   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # =============================================================================
         # 数据设计：slide_count/file_path 从 data 移除，通过 llm_data.metrics/summary
         # 传入 LLM observation。summary 已包含文件路径和页数：

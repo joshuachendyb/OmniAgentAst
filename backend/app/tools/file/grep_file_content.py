@@ -20,6 +20,9 @@
 #    summary.total_files 与实际匹配文件数一致, 避免误导 LLM 搜索范围判断
 # 2026-08-07 - 小欧 - P06优化(北京老陈驱动 task001): 返回前过滤已被删除/重命名的文件(_apply_grep_outlim后最终结果上做, 条件重建GrepSyncResult重算files/matches, 避免双重重建) | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-08-21 - 小欧 - 北京老陈驱动: 删除根目录级搜索拒绝护栏。根目录(含文件系统根/或受控根)递归搜索技术上无禁止理由;
+#    真实工具(grep -r /、rg /、findstr /s C:\)均允许从根搜索。grep内部已有 deadline 截断(TOOL_TIMEOUTS["grep"]=120s,
+#    见_grep_files_sync)与 Tool 层输出截断(_apply_grep_outlim)兜底, 不会无限卡死, 故移除先前"想当然"的拒绝政策。
 """
 F7: grep_file_content — 搜索文件内容
 

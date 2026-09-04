@@ -14,6 +14,11 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
 编辑历史: 2026-07-18 小欧 #33 fix: 兼容data:无空格格式
 编辑历史: 2026-07-18 小欧 #37 fix: request新增request_timeout形参并传httpx.Timeout
 编辑历史: 2026-07-28 小欧 BUG#1: 非流式请求必崩(AttributeError: _default_timeout undefined)。__init__ 漏存 self._default_timeout = read_timeout, request() 引用时崩溃。新增存储。
+编辑历史: 2026-08-22 小欧 model结构化归一报告v1.25 6.4: LLMClient 构造 (provider, model) 分离入参 → llm_model: ModelRef
+  单结构; base_url 取 llm_model.api_base(缺省回退 _default_base_url(llm_model.provider)); 请求体拼
+  self.llm_model.model 属裸单值调API场景(设计要求4允许并注释)
+编辑历史: 2026-08-23 小欧 三堂会审复核加固(P2): _base_url 回退链补 provider or "openai" 兜底——
+  防空 provider 时 _DEFAULT_URLS.get("","") 返回空串致 httpx base_url 为空(防御性语义与归一前对齐, 不弱化)
 """
 
 import httpx
@@ -29,6 +34,7 @@ from app.constants import (
     LLM_MAX_KEEPALIVE,
 )
 from app.config import get_config
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.logger import logger
 
 # 可重试 HTTP 状态: 429限流 / 5xx服务端瞬时错误, 由 base_service L1 重试处理 — 小欧 2026-07-17
@@ -95,20 +101,22 @@ def _extract_server_error_message(body_text: str) -> str:
 
 
 class LLMClient:
-    """LLM 客户端实例 - 小沈 2026-06-09"""
+    """LLM 客户端实例 - 小沈 2026-06-09
+    2026-08-22 小欧 归一报告v1.25 6.4: (provider, model) 分离入参 → llm_model: ModelRef 单结构
+    (F8 不留 self.model/self.provider 兼容别名); 请求体拼 model 单值属裸单值场景(设计要求4允许)"""
 
     def __init__(
         self,
-        provider: str,
-        model: str,
+        llm_model: ModelRef,
         api_key: str,
         base_url: Optional[str] = None,
         timeout: Optional[int] = None,
     ):
-        self.provider = provider
-        self.model = model
+        self.llm_model = llm_model   # 前导+model 命名铁律 — 小欧 2026-08-22
         self._api_key = api_key
-        self._base_url = base_url or self._default_base_url(provider)
+        # 三堂会审复核加固(小欧 2026-08-23): 保留原 provider or "openai" 兜底语义(防空 provider 时
+        # _default_base_url 返回空串致 httpx base_url 为空; 当前可达路径虽恒非空, 防御不弱化)
+        self._base_url = llm_model.api_base or self._default_base_url(llm_model.provider or "openai")
 
         read_timeout = float(timeout) if timeout else DEFAULT_READ_TIMEOUT
         self._default_timeout = read_timeout
@@ -158,7 +166,7 @@ class LLMClient:
     ) -> Dict[str, Any]:
         """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小欧 2026-07-09 新增extra_body; #37 新增request_timeout"""
         body = _build_request_body(
-            messages=messages, model=self.model,
+            messages=messages, model=self.llm_model.model,   # 裸单值调API(设计要求4允许) — 小欧 2026-08-22
             max_tokens=max_tokens, temperature=temperature, seed=seed,
             tools=tools, tool_choice=tool_choice, stream=False,
             extra_body=extra_body,
@@ -191,7 +199,7 @@ class LLMClient:
     ) -> AsyncGenerator[str, None]:
         """流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小健 2026-06-17 新增stream_options; 小欧 2026-07-09 新增extra_body"""
         body = _build_request_body(
-            messages=messages, model=self.model,
+            messages=messages, model=self.llm_model.model,   # 裸单值调API(设计要求4允许) — 小欧 2026-08-22
             max_tokens=max_tokens, temperature=temperature, seed=seed,
             tools=tools, tool_choice=tool_choice, stream=True,
             stream_options=stream_options,
@@ -242,12 +250,11 @@ class LLMClient:
 
 
 def create_llm_client(
-    provider: str,
-    model: str,
+    llm_model: ModelRef,
     api_key: str,
     base_url: Optional[str] = None,
     timeout: Optional[int] = None,
 ) -> LLMClient:
-    """创建 LLM 客户端 — 唯一入口 - 小沈 2026-06-09"""
-    return LLMClient(provider=provider, model=model, api_key=api_key, base_url=base_url, timeout=timeout)
+    """创建 LLM 客户端 — 唯一入口 - 小沈 2026-06-09; 2026-08-22 小欧 归一: 入参 llm_model: ModelRef"""
+    return LLMClient(llm_model=llm_model, api_key=api_key, base_url=base_url, timeout=timeout)
 

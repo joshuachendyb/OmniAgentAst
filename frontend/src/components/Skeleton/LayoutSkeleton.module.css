@@ -1,3 +1,4 @@
+/* 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复CSS属性缩进/空行统一, 防止格式再次出错 */
 /* Layout骨架屏样式 - 与现有Layout保持完全一致 */
 
 /* 骨架屏容器 */
@@ -122,8 +123,12 @@
 }
 
 @keyframes skeletonLoading {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* 响应式：移动端隐藏Sider骨架屏 */

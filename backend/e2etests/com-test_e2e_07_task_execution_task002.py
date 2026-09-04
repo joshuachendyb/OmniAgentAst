@@ -4,7 +4,7 @@
 操作手册对照:
     用例: unit-07
      用户输入: "读取任务书E:\\test_dir\\task\\task002.txt,分析可行性和实施方案,逐一执行全部任务,做任务总结"
-     前置数据: E:\test_dir\task\task001.txt存在
+      前置数据: E:\task\task002.txt存在
      预期过程: 读取任务书→分析任务个数→逐一执行→任务总结
      通过标准: 调用readtext;回复包含任务总结关键词;DB三表完整;日志无ERROR
      失败标准: 未读任务书;无总结;DB记录不完整;日志有ERROR
@@ -18,6 +18,7 @@
      6. 严禁在脚本内设任何超时 — 统一由pytest.ini的timeout=3000管理
 
 -- 小欧 2026-07-11 (与 case-06 互换读取目标: 本用例读取 task002.txt)
+-- 更新: 2026-08-22 - 小欧 - §10.3适配: 本case旧action_tool取数块(type过滤+顶层tool_name+observation字段)收敛为verify_db_tool_usage单点校验(e2e_helpers FUNCTIONS.md九.1), 协议再变只改helper一处
 """
 
 from datetime import datetime
@@ -29,9 +30,10 @@ from e2emodel.e2e_helpers import (
     print_report, write_test_record,
     assert_stream_ended, verify_consistency, verify_steps, filter_safety_errors,
     register_pending_record,
+    verify_db_tool_usage,
 )
 
-TASK_FILE = Path("E:/test_dir/task/task002.txt")  # 2026-08-12 小欧: 修复错误路径(原task001.txt与user_input的task002.txt不一致,与08/12同类漏改,现断言真正校验task002)
+TASK_FILE = Path("E:/task/task002.txt")
 
 
 @pytest.mark.e2e_full_link
@@ -51,7 +53,7 @@ async def test_e2e_unit_07_task_execution():
     elapsed = 0.0
     error_info = None
     user_input = (
-        '你需要读取任务书"E:\\test_dir\\task\\task002.txt"的要求,'
+        '你需要读取任务书"E:\\task\\task002.txt"的要求,'
         "分析任务的可行性和实施方案,"
         "分析任务书的任务要求是多少个,然后按照任务书的要求逐一执行全部任务!"
         "记录和分析任务的tool调用过程和合理性分析,将分析结果记录到任务执行总结文档中!"
@@ -99,13 +101,9 @@ async def test_e2e_unit_07_task_execution():
         assert db["execution_steps_count"] >= 1, (
             f"execution_steps必须有记录(MUST unit-05), 实际={db['execution_steps_count']}"
         )
-        db_tool_steps = [s for s in db["execution_steps"] if s.get("type") == "action_tool"]
-        db_read_steps = [s for s in db_tool_steps if s.get("tool_name") in file_tools]
-        assert len(db_read_steps) > 0, "DB steps中应有readtext操作(MUST unit-05)"
-
-        for step in db_tool_steps:
-            obs = step.get("observation") or step.get("execution_result")
-            assert obs, f"工具结果不能为空(MUST): {step.get('tool_name')}"
+        # 2026-08-22 小欧 §10.3适配: 旧action_tool取数块收敛为verify_db_tool_usage单点校验(FUNCTIONS.md 9.1)
+        _ti = verify_db_tool_usage(db, expect_any_tools=file_tools)
+        assert len(_ti) == 0, f"DB steps中应有readtext操作(MUST unit-05): {_ti}"
 
         # 2026-08-07 小欧: 原assert_data_consistency→verify_consistency+verify_steps
         ci = verify_consistency(result, sid)
@@ -127,7 +125,6 @@ async def test_e2e_unit_07_task_execution():
                 "LLM calls": result["llm_call_count"],
                 "Tools": tool_names,
                 "DB steps": db["execution_steps_count"],
-                "DB tool_steps": len(db_tool_steps),
             },
         )
 

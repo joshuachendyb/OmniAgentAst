@@ -8,6 +8,10 @@ F10合并: 小欧 - 2026-06-08
 """
 # 编辑历史:
 # 2026-08-14 - 小欧 - 改名名实相符: persistence.py → config_helpers.py("persistence"只盖住持久化一面, 实为配置域公用杂集: I/O+修复+验证+备份+装饰器)
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B: ①_update_provider/_update_model 两 handler 合一为
+#   _update_model_ref(provider+model+api_base 成对原子写入, 消除对 FIELD_HANDLERS 迭代顺序的耦合);
+#   FIELD_HANDLERS 键 "ai_provider"/"ai_model" → "ai_model_ref"; ②_auto_fix_and_validate 的 fail_result
+#   current_provider/current_model → current_model_ref 结构
 
 import shutil
 import yaml
@@ -235,8 +239,11 @@ def _auto_fix_and_validate(
         fail_result = {
             "success": False, "message": "配置验证失败", "errors": errors, "warnings": warnings,
             "backup_path": str(backup_path) if backup_path else None,
-            "current_provider": original_ai.get('provider', 'unknown'),
-            "current_model": original_ai.get('model', 'unknown'),
+            # 归一(小欧 2026-08-22 报告v1.25 6.6): current_provider/current_model → current_model_ref 结构
+            "current_model_ref": {
+                "provider": str(original_ai.get('provider', 'unknown')),
+                "model": str(original_ai.get('model', '')),
+            },
         }
         return False, errors, warnings, fail_result
     return True, [], warnings, None
@@ -299,26 +306,19 @@ __all__ = [
 # 来自 field_handlers.py
 # ====================================================================
 
-def _update_provider(config_data: dict, update) -> None:
+def _update_model_ref(config_data: dict, update) -> None:
+    """provider+model(+api_base) 成对原子写入 — 单一权威入口
+    2026-08-22 小欧 归一报告v1.25 6.6 方案B: 原 _update_provider/_update_model 两 handler 依赖
+    FIELD_HANDLERS 迭代顺序先后生效, 合并为单一 handler 消除该耦合(DRY/原子性, KISS-DIRECT)"""
     ai_config = config_data.get('ai', {})
-    if update.ai_provider not in ai_config:
-        raise HTTPException(status_code=400, detail=f"不支持的提供商: {update.ai_provider}")
-    config_data['ai']['provider'] = update.ai_provider
+    if update.ai_model_ref.provider not in ai_config:
+        raise HTTPException(status_code=400, detail=f"不支持的提供商: {update.ai_model_ref.provider}")
+    config_data['ai']['provider'] = update.ai_model_ref.provider
+    config_data['ai']['model'] = update.ai_model_ref.model
+    if update.ai_model_ref.api_base:
+        config_data['ai'][update.ai_model_ref.provider]['api_base'] = update.ai_model_ref.api_base
     reset()
-    logger.info(f"更新AI Provider: {update.ai_provider}")
-
-def _update_model(config_data: dict, update) -> None:
-    _ai_cfg = config_data.get('ai', {})
-    provider = update.ai_provider or _ai_cfg.get('provider')
-    if not provider:
-        for _k, _v in _ai_cfg.items():
-            if isinstance(_v, dict) and _v.get('models'):
-                provider = _k
-                break
-    if provider in config_data.get('ai', {}):
-        config_data['ai']['model'] = update.ai_model
-        logger.info(f"更新AI Model: {update.ai_model} (provider={provider})")
-        reset()
+    logger.info(f"更新AI模型: provider={update.ai_model_ref.provider}, model={update.ai_model_ref.model}")
 
 def _update_api_keys(config_data: dict, update) -> None:
     for provider_name, api_key in (update.provider_api_keys or {}).items():
@@ -353,8 +353,7 @@ def _update_security(config_data: dict, update) -> None:
     logger.info("更新安全配置成功")
 
 FIELD_HANDLERS: Dict[str, Any] = {
-    "ai_provider": _update_provider,
-    "ai_model": _update_model,
+    "ai_model_ref": _update_model_ref,   # 归一: provider/model 两键合一(方案B) — 小欧 2026-08-22
     "provider_api_keys": _update_api_keys,
     "theme": lambda config_data, update: _set_app_field(config_data, "theme", update.theme, "主题"),
     "language": lambda config_data, update: _set_app_field(config_data, "language", update.language, "语言"),

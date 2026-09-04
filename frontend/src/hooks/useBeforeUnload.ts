@@ -1,3 +1,5 @@
+// 编辑历史: 2026-08-27 小欧 - 修复ctx-3: 保存失败/异步进行中必须preventDefault阻止卸载, 杜绝静默丢失
+// 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复函数参数多余尾逗号(es5规则禁止函数参数尾逗号), 防止格式再次出错
 import { useEffect, useRef } from 'react';
 
 export interface BeforeUnloadOptions {
@@ -12,7 +14,7 @@ export const useBeforeUnload = (options: BeforeUnloadOptions) => {
     shouldSave,
     saveData,
     showDialog = false,
-    dialogMessage = '您有未保存的更改，确定要离开吗？'
+    dialogMessage = '您有未保存的更改，确定要离开吗？',
   } = options;
 
   const saveDataRef = useRef(saveData);
@@ -22,25 +24,34 @@ export const useBeforeUnload = (options: BeforeUnloadOptions) => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!shouldSave) return;
 
+      let saveFailed = false;
       try {
         const result = saveDataRef.current();
 
+        // 2026-08-27 小欧 修复ctx-3: 异步保存无法同步确认成败, 为防数据丢失直接阻止卸载
         if (result instanceof Promise) {
+          e.preventDefault();
+          e.returnValue = dialogMessage;
           result.catch((error) => {
             console.error('[beforeunload] 保存失败:', error);
           });
-        }
-
-        if (showDialog) {
-          e.preventDefault();
-          e.returnValue = dialogMessage;
+          return;
         }
       } catch (error) {
+        // 2026-08-27 小欧 修复ctx-3: 同步保存异常 -> 阻止卸载, 不再静默放行
         console.error('[beforeunload] 保存异常:', error);
-        if (showDialog) {
-          e.preventDefault();
-          e.returnValue = '数据保存失败，确定要离开吗？';
-        }
+        saveFailed = true;
+      }
+
+      if (saveFailed) {
+        e.preventDefault();
+        e.returnValue = '数据保存失败，确定要离开吗？';
+        return;
+      }
+
+      if (showDialog) {
+        e.preventDefault();
+        e.returnValue = dialogMessage;
       }
     };
 

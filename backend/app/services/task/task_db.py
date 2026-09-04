@@ -21,6 +21,9 @@
 #         ON CONFLICT(task_id) 只忽略主键, 其它约束照常抛出; P7属agent内部事务, 不产生LLM可见提示
 # 2026-08-09 - 小欧 - task005核查P7落地: create_task 幂等冲突(任务已存在)补 logger.info 日志
 #   病根: ON CONFLICT DO NOTHING 静默成功, 排查重放/agent重建场景无任何痕迹(可观测性缺失); 仅加日志不改语义
+# 2026-08-21 - 小欧 - 12.2-Q4(按文档[1]12.2 diff设计落地): tasks 计数单口径——①Q4-D1 complete_task 删现场
+#   COUNT 重算, 只写 status/completed_at; ②Q4-D2 add_operation 成功分支补 success_count+1 增量(与 failed/total
+#   同点同事务, 三计数同一口径); rolled_back_count 保留 mark_rolled_back 子查询现场 COUNT 不动(批量迁移=现场数)
 """
 task_db — 任务DB持久化（tasks表 + operations表）
 
@@ -76,17 +79,12 @@ class TaskTracker:
                 logger.info(f"[task_db] create_task 幂等跳过(任务已存在): task_id={task_id}")
 
     def complete_task(self, task_id: str, success: bool = True) -> None:
+        # 12.2-Q4: 删除现场COUNT重算 — success_count 已由 add_operation 实时增量维护(单条操作计数=增量,口径归一) — 小欧 2026-08-21
         status = TaskStatus.SUCCESS.value if success else TaskStatus.FAILED.value
         with db.get_conn("task_tracker") as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM task_operations WHERE task_id = ? AND status = ?",
-                (task_id, OperationStatus.SUCCESS.value),
-            ).fetchone()
-            success_count = row[0] if row else 0
             conn.execute(
-                """UPDATE tasks SET status = ?, completed_at = ?,
-                   success_count = ? WHERE task_id = ?""",
-                (status, get_local_iso_timestamp(), success_count, task_id),  # 小欧 2026-08-08: 本地ISO无Z入库
+                """UPDATE tasks SET status = ?, completed_at = ? WHERE task_id = ?""",
+                (status, get_local_iso_timestamp(), task_id),  # 小欧 2026-08-08: 本地ISO无Z入库
             )
 
     # ===== 操作管理 =====
@@ -138,6 +136,12 @@ class TaskTracker:
             if op_status == OperationStatus.FAILED.value:
                 conn.execute(
                     "UPDATE tasks SET failed_count = failed_count + 1 WHERE task_id = ?",
+                    (task_id,),
+                )
+            else:
+                # 12.2-Q4: 成功操作同步增量success_count(与failed/total同点同事务,三计数同一口径) — 小欧 2026-08-21
+                conn.execute(
+                    "UPDATE tasks SET success_count = success_count + 1 WHERE task_id = ?",
                     (task_id,),
                 )
             conn.execute(

@@ -3,6 +3,17 @@
 # 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() (UTC Z 字符串), 消除 create_timestamp 毫秒 int 依赖
 # 2026-07-18 - 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致; property 返回类型 int→str
 # 2026-08-08 - 小欧 - 全程统一本地时区: 默认 timestamp 改 get_local_iso_timestamp() (本地ISO无Z), 消除 UTC Z
+# 2026-08-16 - 小欧 - S4(10.1.7④/10.1.8 S4): create_step_counter 起始改 -1, 首次 next_step() 返回 0
+#   (start 显式占 step 0, 业务步骤从 1 起; 设计文档 2222 行遗留项要求)
+# 2026-08-18 - 小欧 - §10.4.4 P2(弃用 next_step): 删 create_step_counter 整段(step 统一取 agent.llm_call_count);
+#   Callable import 同步删除 — 小欧 2026-08-18
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.5: 基类 _model/_provider 两分离属性 → _step_model: Optional[ModelRef]
+#   单结构承载(用户裁定: step 只承载 ModelRef, 不留裸 model/provider 属性与兼容别名);
+#   SSE 输出由各子类 _extra_fields 从 step_model 派生裸键(前端随之后端)
+# 2026-09-02 - 小欧 - 设计文档v1.21§5.5落码配套(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md):
+#   MetaStep 补只读 .content property(返回 self._content)——对齐 ThoughtStep/ChunkStep 同型 property,
+#   TDD 验收(test_llm_retry_visibility:351)与 LLM 底层 retrying 事件消费方统一 .content 读取口;
+#   序列化不变(to_dict 仍走 get_content()), 纯增量零副作用 — 小欧 2026-09-02
 """
 ReasoningStep 抽象基类
 
@@ -13,13 +24,15 @@ Date: 2026-04-15
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
+from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 
 class ReasoningStep(ABC):
-    """所有Step类的抽象基类 — 小健 2026-06-18 添加model/provider property"""
+    """所有Step类的抽象基类 — 小健 2026-06-18 添加model/provider property;
+    2026-08-22 小欧 归一: 改由 _step_model(ModelRef) 单结构承载, 原裸 model/provider property 删除"""
 
     TYPE: str = ""
     IS_DONE: bool = False
@@ -27,8 +40,7 @@ class ReasoningStep(ABC):
     def __init__(self, step: int, timestamp: Optional[str] = None):
         self._step = step
         self._timestamp = timestamp or get_local_iso_timestamp()  # 小欧 2026-08-08 全程统一本地时区: 默认本地ISO无Z
-        self._model: Optional[str] = None
-        self._provider: Optional[str] = None
+        self._step_model: Optional[ModelRef] = None   # 归一唯一承载 — 小欧 2026-08-22
 
     @property
     def step(self) -> int:
@@ -39,12 +51,9 @@ class ReasoningStep(ABC):
         return self._timestamp
 
     @property
-    def model(self) -> Optional[str]:
-        return self._model
-
-    @property
-    def provider(self) -> Optional[str]:
-        return self._provider
+    def step_model(self) -> Optional[ModelRef]:
+        """步骤级模型身份(ModelRef 结构) — 归一唯一读取口 — 小欧 2026-08-22"""
+        return self._step_model
 
     @property
     def type(self) -> str:
@@ -79,18 +88,6 @@ class ReasoningStep(ABC):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(step={self._step}, type={self.get_type()})"
-
-
-def create_step_counter() -> Callable[[], int]:
-    """创建统一的步骤计数器函数 — 小欧 2026-06-08"""
-    step_counter = 0
-
-    def next_step() -> int:
-        nonlocal step_counter
-        step_counter += 1
-        return step_counter
-
-    return next_step
 
 
 @dataclass
@@ -134,6 +131,11 @@ class MetaStep(ReasoningStep):
         self.TYPE = type
         self._content = content
         self._kwargs = kwargs
+
+    @property
+    def content(self) -> str:
+        """只读内容property — 对齐 ThoughtStep/ChunkStep 同型接口 — 小欧 2026-09-02"""
+        return self._content
 
     def get_content(self) -> str:
         return self._content

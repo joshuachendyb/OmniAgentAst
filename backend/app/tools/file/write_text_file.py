@@ -22,6 +22,7 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#5: _write_file_atomic 的 open(读尾字节/写/降级重写)/mkdir/stat 全链
 #   to_win_long_path 长路径化(仅NT生效), 深嵌套目标不再 WinError 206; 编码降级回退分支同步;
 #   主函数/编码探测的 exists/is_file/read_text 探测同步长路径化(超长路径不误判"文件不存在")
+# 2026-08-21 - 小欧 - 11.6.1 exemplar: success分支调 with_artifact_file 声明产出物
 """
 F2: writetext — 写文本文件
 
@@ -40,7 +41,7 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error, build_warning
+from app.tools.tool_response import build_success, build_error, build_warning, with_artifact_file  # 2026-08-21 小欧 11.6.1: 产出物声明
 from app.tools.tool_constants import WRITETEXT_INER_PREVIEW_CHARS
 
 
@@ -395,6 +396,7 @@ async def writetext(
                     llm_data=llm_data,
                 )
             llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
+            with_artifact_file(llm_data, file_path)
             if auto_removed_pyeof:
                 llm_data["summary"] += "（已自动移除末尾PYEOF标记）"
                 llm_data["metrics"]["auto_removed_pyeof"] = {"value": True, "text": "已自动移除文件末尾的heredoc标记PYEOF"}

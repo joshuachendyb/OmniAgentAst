@@ -1,0 +1,321 @@
+// 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离panels插槽组装逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
+// 编辑历史: 2026-08-29 小强 - 修复#21: TopbarStats chainTokens由硬编码null改为透传真实chainTokens(与依赖数组一致) - 小强-2026-08-29
+// 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel由config slot移至TaskInfoBar第一行尾部集成，移除config.trust - 小欧-2026-08-30
+// 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被隐藏修复。新增可选入参latestTaskId/latestTaskRef并透传给TaskListPanel(左列滚动定位) - 小欧-2026-09-01
+// 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): 入参新增sessionTokens(会话累计3字段), 解构并透传TopbarStats; chainTokens由number改3字段结构; sessionTokens加入useMemo依赖(否则实时/静态更新不重算是栏不刷新) - 小欧-2026-09-01
+// 编辑历史: 2026-09-02 小欧 - 设计文档v1.21§5.7-C/D落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): TaskInfoBar 增传
+//   liveErrorText(位4 🛑 数据源, error 实时显示唯一位置=taskinfo 第一行——北京老陈定案) + RightViewer 收回
+//   liveErrorText 传参(error 唯一位置收口, 防右栏+位4双显示); :79 解构/:304 依赖数组既有保留, 零新依赖 - 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - RightViewer 增传 frames=metaFrames(useTaskInfo badge 派生输入): 等待圈三处丢失根治,
+//   waiting 依赖由 streaming 单源改 streaming/highlight/badge 三源, badge runner/paused 撑住首屏/空闲超时/confirm空隙 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ChatInput增传sessionId(CI-02跨会话草稿泄漏)+useChatPanels依赖同步 — 小欧-2026-09-02
+import { useMemo } from 'react';
+import { Typography } from 'antd';
+import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
+import { ChatInput } from '../components/ChatInput';
+import ChatHeader from '../components/ChatHeader';
+import ChatToolbar from '../components/ChatToolbar';
+import ModelPicker from '../components/ModelPicker';
+import { TopbarStats } from '../components/topbar/TopbarStats';
+import { TaskListPanel } from '../components/left/TaskListPanel';
+import { RightViewer } from '../components/right/RightViewer';
+import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
+import { Colors } from '@/utils/stepStyles';
+import type {
+  TaskDetail,
+  SessionTaskItem,
+} from '../../../services/api/task.api';
+import type { EffectiveModel } from './useModelLayer';
+import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
+import type { TaskMetaFrames } from '../../../types/sse';
+import type { UseChatFacadeReturn } from './useChatFacade';
+
+interface UseChatPanelsOptions {
+  chatState: UseChatFacadeReturn['chatState'];
+  chatStreaming: UseChatFacadeReturn['chatStreaming'];
+  chatTaskControl: UseChatFacadeReturn['chatTaskControl'];
+  chatSend: UseChatFacadeReturn['chatSend'];
+  liveErrorText: string | null;
+  authorizationPending: AuthorizationRequest | null;
+  handleAuthorizationConfirm: (
+    confirmed: boolean,
+    trustSession: boolean,
+    confirmId?: string
+  ) => void;
+  tasks: SessionTaskItem[];
+  total: number;
+  tasksLoading: boolean;
+  refreshTasks: () => void;
+  effective: EffectiveModel | null;
+  sessionTimes: { createdAt?: string; updatedAt?: string };
+  activeTaskId: string | null;
+  selectedDetail: TaskDetail | null;
+  handleSelectTask: (id: string) => void;
+  sessionTokens: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  } | null; // 2026-09-01 小欧: 会话累计 token
+  chainTokens: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  } | null; // 2026-09-01 小欧: 链累计 token(改3字段)
+  handleNewSession: () => void;
+  handleEditingStart: () => void;
+  handleEditingCancel: () => void;
+  handleSendWithMode: (
+    content: string,
+    mode?: 'linked' | 'independent'
+  ) => void;
+  // 2026-09-01 小欧 方案C: 最新任务锚点id + 挂到最新任务项的ref(左列滚动定位透传)
+  latestTaskId?: string | null;
+  latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
+}
+
+/**
+ * panels 插槽组装 hook：将各子面板组装为 SessionPanel[]，供 SessionLayout 注入（R1-B25）
+ * 逻辑与 NewChatContainer 中原 useMemo 一致，未做行为改写
+ */
+export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
+  const {
+    chatState,
+    chatStreaming,
+    chatTaskControl,
+    chatSend,
+    liveErrorText,
+    authorizationPending,
+    handleAuthorizationConfirm,
+    tasks,
+    total,
+    tasksLoading,
+    refreshTasks,
+    effective,
+    sessionTimes,
+    activeTaskId,
+    selectedDetail,
+    handleSelectTask,
+    sessionTokens,
+    chainTokens,
+    handleNewSession,
+    handleEditingStart,
+    handleEditingCancel,
+    handleSendWithMode,
+    latestTaskId, // 2026-09-01 小欧 方案C: 透传最新任务锚点
+    latestTaskRef, // 2026-09-01 小欧 方案C: 透传挂最新任务的ref
+  } = opts;
+
+  const {
+    sessionId,
+    sessionTitle,
+    titleLocked,
+    editingTitle,
+    titleInput,
+    sessionVersion,
+    setSessionTitle,
+    setTitleLocked,
+    setEditingTitle,
+    setTitleInput,
+    setSessionVersion,
+    sessionModelOverride,
+    setSessionModelOverride,
+    loading,
+    isPaused,
+  } = chatState;
+  const {
+    isReceiving,
+    executionSteps,
+    currentResponse,
+    metaFrames,
+    serverTaskId,
+  } = chatStreaming;
+  const { handleCancel, handleTogglePause } = chatTaskControl;
+  const { handleSend } = chatSend;
+
+  return useMemo<SessionPanel[]>(
+    () => [
+      {
+        slot: 'topbar',
+        key: 'topbar.header',
+        component: (
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+          >
+            <ChatHeader
+              sessionId={sessionId}
+              sessionTitle={sessionTitle}
+              titleLocked={titleLocked}
+              editingTitle={editingTitle}
+              titleInput={titleInput}
+              sessionVersion={sessionVersion}
+              setSessionTitle={setSessionTitle}
+              setTitleLocked={setTitleLocked}
+              setEditingTitle={setEditingTitle}
+              setTitleInput={setTitleInput}
+              setSessionVersion={setSessionVersion}
+              onEditingStart={handleEditingStart}
+              onEditingCancel={handleEditingCancel}
+            />
+            <TopbarStats
+              taskCount={total}
+              sessionTokens={sessionTokens}
+              chainTokens={chainTokens}
+              createdAt={sessionTimes.createdAt}
+              updatedAt={sessionTimes.updatedAt}
+            />
+            {effective && (
+              <span
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              >
+                <Typography.Text
+                  type="secondary"
+                  style={{ fontSize: 12, color: Colors.TEXT.PRIMARY }}
+                >
+                  {effective.display_name ||
+                    `${effective.provider} (${effective.model})`}
+                </Typography.Text>
+                <span
+                  style={{
+                    width: 4,
+                    height: 4,
+                    borderRadius: '50%',
+                    background:
+                      effective.source === 'session'
+                        ? Colors.PRIMARY
+                        : Colors.BORDER.DEFAULT,
+                    display: 'inline-block',
+                  }}
+                />
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {effective.source === 'session' ? '会话' : '全局'}
+                </Typography.Text>
+              </span>
+            )}
+          </span>
+        ),
+        defaultVisible: true,
+      },
+      {
+        slot: 'topbar',
+        key: 'topbar.toolbar',
+        component: <ChatToolbar onNewSession={handleNewSession} />,
+        defaultVisible: true,
+      },
+      {
+        slot: 'left',
+        key: 'left.taskList',
+        component: (
+          <TaskListPanel
+            tasks={tasks}
+            activeTaskId={activeTaskId}
+            onSelect={handleSelectTask}
+            loading={tasksLoading}
+            latestTaskId={latestTaskId}
+            latestTaskRef={latestTaskRef}
+          />
+        ),
+        defaultVisible: true,
+      },
+      {
+        slot: 'right',
+        key: 'right.viewer',
+        component: (
+          <RightViewer
+            activeTaskId={activeTaskId}
+            sessionId={sessionId}
+            serverTaskId={serverTaskId}
+            receiving={isReceiving}
+            liveSteps={executionSteps}
+            highlightToolName={authorizationPending?.toolName ?? null}
+            frames={metaFrames} // 2026-09-02 小欧: badge 派生输入(startInfo 判定 running)
+            onSettledRefresh={refreshTasks}
+          />
+        ),
+        defaultVisible: true,
+      },
+      {
+        slot: 'taskinfo',
+        key: 'taskinfo.bar',
+        component: (
+          <TaskInfoBar
+            steps={executionSteps}
+            frames={metaFrames}
+            receiving={isReceiving && activeTaskId === serverTaskId}
+            detail={selectedDetail}
+            sessionId={sessionId}
+            liveErrorText={liveErrorText} // 小欧 2026-09-02: 位4 🛑 数据源(error 实时显示唯一位置=taskinfo 第一行, 北京老陈定案)
+          />
+        ),
+        defaultVisible: true,
+      },
+      {
+        slot: 'input',
+        key: 'input.chat',
+        component: (
+          <ChatInput
+            sessionId={sessionId}
+            loading={loading}
+            isReceiving={isReceiving}
+            isPaused={isPaused}
+            onSend={handleSendWithMode}
+            onCancel={handleCancel}
+            onTogglePause={handleTogglePause}
+            modelPickerSlot={
+              <ModelPicker
+                sessionId={sessionId}
+                sessionTitle={sessionTitle}
+                sessionVersion={sessionVersion}
+                sessionModelOverride={sessionModelOverride}
+                setSessionModelOverride={setSessionModelOverride}
+                setSessionVersion={setSessionVersion}
+              />
+            }
+          />
+        ),
+        defaultVisible: true,
+      },
+    ],
+    [
+      sessionId,
+      sessionTitle,
+      titleLocked,
+      editingTitle,
+      titleInput,
+      sessionVersion,
+      setSessionTitle,
+      setTitleLocked,
+      setEditingTitle,
+      setTitleInput,
+      setSessionVersion,
+      sessionModelOverride,
+      setSessionModelOverride,
+      total,
+      tasksLoading,
+      sessionTokens, // 2026-09-01 小欧: 实时/静态双源更新需入依赖, 否则useMemo缓存旧值TopbarStats不刷新
+      chainTokens,
+      sessionTimes,
+      effective,
+      handleNewSession,
+      tasks,
+      activeTaskId,
+      handleSelectTask,
+      serverTaskId,
+      isReceiving,
+      executionSteps,
+      currentResponse,
+      metaFrames,
+      selectedDetail,
+      loading,
+      isPaused,
+      handleSendWithMode,
+      handleCancel,
+      handleTogglePause,
+      liveErrorText,
+      authorizationPending,
+      handleAuthorizationConfirm,
+      refreshTasks,
+      latestTaskId, // 2026-09-01 小欧 方案C
+      latestTaskRef, // 2026-09-01 小欧 方案C
+    ]
+  );
+}

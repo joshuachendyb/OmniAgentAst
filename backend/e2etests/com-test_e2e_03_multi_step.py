@@ -17,6 +17,7 @@
 
 -- 小健 2026-06-14
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
+-- 更新: 2026-08-22 - 小欧 - §10.3适配: 本case旧action_tool取数块(type过滤+顶层tool_name+observation字段)收敛为verify_db_tool_usage单点校验(e2e_helpers FUNCTIONS.md九.1), 协议再变只改helper一处
 """
 
 from datetime import datetime
@@ -29,6 +30,7 @@ from e2emodel.e2e_helpers import (
     print_report, write_test_record,
     assert_stream_ended, verify_consistency, verify_steps, filter_safety_errors,
     register_pending_record,
+    verify_db_tool_usage,
 )
 
 TEST_FILE = Path("E:/test_dir/test.txt")
@@ -89,13 +91,9 @@ async def test_e2e_p0_03_multi_step_reasoning():
         assert len(db["step_field_issues"]) == 0, f"DB步骤字段异常(MUST): {db['step_field_issues']}"
         assert db["execution_steps_count"] >= 2, f"must have >=2 steps(MUST P0-03), got {db['execution_steps_count']}"
 
-        db_tool_steps = [s for s in db["execution_steps"] if s.get("type") == "action_tool"]
-        db_read_steps = [s for s in db_tool_steps if s.get("tool_name") in read_tools]
-        assert len(db_read_steps) > 0, "DB steps must have read op(MUST P0-03)"
-
-        for step in db_tool_steps:
-            obs = step.get("observation") or step.get("execution_result")
-            assert obs, f"tool result not empty(MUST): {step.get('tool_name')}"
+        # 2026-08-22 小欧 §10.3适配: 旧action_tool取数块收敛为verify_db_tool_usage单点校验(FUNCTIONS.md 9.1)
+        _ti = verify_db_tool_usage(db, expect_any_tools=read_tools)
+        assert len(_ti) == 0, f"DB steps must have read op(MUST P0-03): {_ti}"
 
         # 2026-08-07 小欧: 原assert_data_consistency→verify_consistency+verify_steps
         ci = verify_consistency(result, sid)
@@ -116,7 +114,7 @@ async def test_e2e_p0_03_multi_step_reasoning():
         print_report(
             "unit-03", "multi-step reasoning-read file", result, db, lc,
             ci, si, True, elapsed,
-            extra={"LLM calls": result["llm_call_count"], "Tools": tool_names, "Read steps": len(db_read_steps), "DbPromptIssues": len(dpi)},
+            extra={"LLM calls": result["llm_call_count"], "Tools": tool_names, "DbPromptIssues": len(dpi)},
         )
 
         passed = True

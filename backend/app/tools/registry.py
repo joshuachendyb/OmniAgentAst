@@ -4,6 +4,7 @@
 # 2026-07-25 - 小欧 - ensure_tools_registered加即时重试(3次,500ms间隔),应对并发写导致的瞬态文件损坏
 # 2026-07-25 - 小欧 - 错误日志加filename:lineno上下文(欧阳建议)
 # 2026-08-07 - 小欧 - get_tool工具名别名归一化: LLM常生成变体名(write_text等), 经tools_alias_mapper.normalize_tool_name映射到注册名(writetext), 防"工具未注册"误拦截(com-test 03暴露)
+# 2026-08-18 - 小健 - 三堂会审: ToolMetadata 新增 target_param 字段(操作对象/主参数显式声明扩展点), register/register_tool 贯通透传; 供 action_handler._resolve_target_field 优先采用, 留空则按schema属性自动推导(DRY/OCP)
 """
 工具注册表模块 - 统一入口
 
@@ -135,6 +136,7 @@ class ToolRegistry:
         action_confirmation: Optional[Dict[str, bool]] = None,
         check_fn: Optional[Callable] = None,
         dependencies: Optional[List[Union[str, Dict[str, Any]]]] = None,
+        target_param: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         注册工具（单一入口，委托给私有方法）
@@ -156,6 +158,7 @@ class ToolRegistry:
                 input_schema, examples, version, deps,
                 expose_to_llm, failure_hint_fn,
                 needs_confirmation, action_confirmation, check_fn,
+                target_param,
             )
         
         # 职责2：注册新工具
@@ -163,7 +166,8 @@ class ToolRegistry:
             name, description, category, implementation, 
             input_schema, examples, version, 
             expose_to_llm, failure_hint_fn,
-            needs_confirmation, action_confirmation, check_fn, deps
+            needs_confirmation, action_confirmation, check_fn, deps,
+            target_param,
         )
     
     def _update_existing_tool(
@@ -181,6 +185,7 @@ class ToolRegistry:
         needs_confirmation: bool = False,
         action_confirmation: Optional[Dict[str, bool]] = None,
         check_fn: Optional[Callable] = None,
+        target_param: Optional[str] = None,
     ) -> Dict[str, Any]:
         """更新已注册工具 — chendyg 2026-06-26 P1-25/26修复: 补全所有字段更新和分类索引"""
         _update_tool_metadata(
@@ -196,6 +201,7 @@ class ToolRegistry:
             needs_confirmation=needs_confirmation,
             action_confirmation=action_confirmation,
             check_fn=check_fn,
+            target_param=target_param,
         )
         self._implementations[name] = implementation
         # 【P1-26修复】更新分类索引(类别可能变更) — chendyg 2026-06-26
@@ -217,6 +223,7 @@ class ToolRegistry:
         action_confirmation: Optional[Dict[str, bool]] = None,
         check_fn: Optional[Callable] = None,
         dependencies: List[Union[str, Dict[str, Any]]] = None,
+        target_param: Optional[str] = None,
     ) -> Dict[str, Any]:
         """注册新工具"""
         metadata = ToolMetadata(
@@ -232,6 +239,7 @@ class ToolRegistry:
             action_confirmation=action_confirmation,
             check_fn=check_fn,
             dependencies=dependencies or [],
+            target_param=target_param,
         )
         self._tools[name] = metadata
         self._implementations[name] = implementation
@@ -345,6 +353,7 @@ def register_tool(
     action_confirmation: Optional[Dict[str, bool]] = None,
     check_fn: Optional[Callable] = None,
     dependencies: Optional[List[Union[str, Dict[str, Any]]]] = None,
+    target_param: Optional[str] = None,
 ):
     """
     工具注册装饰器
@@ -375,6 +384,7 @@ def register_tool(
             action_confirmation=action_confirmation,
             check_fn=check_fn,
             dependencies=dependencies,
+            target_param=target_param,
         )
         return func
     

@@ -75,6 +75,60 @@
 #     ContextVar随任务结束丢弃故不漏, 但长连接/复用context(手动测试/常驻入口)会跨请求泄漏task_id
 #   【改法】与 clear_temp_auth 并列在 task 级 finally 调 reset_current_task_id(), 对称set/reset, 行为零退化
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+# 2026-08-16 - 小欧 - S4(10.1.1③/10.1.7④): start 装配进 agent.steps(占 step 0), 取消 orchestrator 旁路。
+#   P4 注入模式: 工厂由 orchestrator 注入 agent._start_step_factory(chat 层数据闭包捕获), 本处只读 agent 属性
+#   (system_prompt=_sys_prompt, previous_messages=context), 不 import chat 层; start 落库走 agent_runner 事件流
+# 2026-08-17 - 小健 - 三堂会审修复(北京老陈驱动, 11 bug 复核3遍):
+#   S4(步号唯一): 首轮前取消(llm_call_count 尚未在 _process_single_step 开头 +1 =0)时, FinalStep step=0 与
+#       start(占 step0) 双 step0 冲突; 改用 `step=agent.llm_call_count or 1` 接续唯一步号, 消除与 start 重复。
+# 2026-08-17 - 小健 - S5(10.1.8, 943a77917): 新增 _compact_injected_history(agent), 当 initialize_run_state
+#   已置 agent._needs_compact=True 且 COMPACTION_ENABLED 放开 R4 时: 对 conversation_history 做一次 LLM 锚定
+#   摘要, 以 assistant 消息回填(system[:1] + 摘要 + 最新 task[-1:]); tools=None 走 llm_stream Text 模式;
+#   回填新列表赋值 conversation_history(压缩生效); 摘要为空/异常则原样保留零退化; 主循环 while 前 await 调用
+# 2026-08-17 - 小健 - start 业务过程收敛(老陈驱动, 痛斥输入装配割裂): start 装配段(initialize_run_state 后、
+#   while 前)扩展为任务输入装配完整段——注入会话历史(_inject_conversation_history) → 超窗判定(_maybe_compact)
+#   → context_summary 快照 → 构造 StartStep → emit, 一气呵成; 历史注入/超窗标记自 initialize_run_state 收拢至此
+# 2026-08-17 - 小健 - start 业务物理独立模块(老陈驱动, 痛斥"一个事情到处乱放"): 新增 start_step.py 单一承载 start
+#   全部业务(_inject_conversation_history/_maybe_compact_injected_history/_compact_injected_history/assemble_start_step),
+#   自本文件移除 _assemble_start_step 与 _compact_injected_history 定义, 改为模块级薄 import(assemble_start_step
+#   as _assemble_start_step / _compact_injected_history); 主流程调用点不动(L569 _assemble_start_step / L578 _compact)
+#   MaxSteps 语义、编辑历史条目名不变; 本文件退回启动编排薄层 — 小健 2026-08-17
+# 2026-08-17 - 小健 - start 业务彻底单归属(老陈驱动, 三思三省): 契约构造迁入 start_step(_build_start_contract),
+#   装配数据来源由 chat 层 _start_step_factory 闭包改为 orchestrator 注入的 agent._start_meta(dict 运行元数据);
+#   本文件对 start 的接缝不变——仍『initialize_run_state → assemble_start_step(agent, context) → emit → 超窗 C4 回填』,
+#   仅数据来源改读 _start_meta(build_start_step 逻辑已在 start_step 模块内直接构造, 详见 start_step.py) — 小健 2026-08-17
+# 2026-08-17 - 小健 - 最合理核查(老陈追问): assemble_start_step 改同步(内部零 await), 调用点去 await — 小健 2026-08-17
+# 2026-08-17 - 小健 - 注释纠偏(北京老陈 2026-08-17): S5 超窗回填段注释去掉「依赖 COMPACTION_ENABLED 放开 R4」表述——
+#   开关仅限 start 超窗判定(start_step)使用; 触发条件只据 start 超窗置的 _needs_compact 标记(getattr 判断) — 小健 2026-08-17
+# 2026-08-18 小欧 - §10.3.3(4): same_tool_loop终止FinalStep的 thought= 改 reasoning=(FinalStep已删thought参数)
+# 2026-08-18 - 小欧 - §10.4.4 P2/P3/P4/P5/P6: handle_react_error/empty_response/chunk_buffer_timeout 改 MetaStep(type="error")(删ErrorStep import); _dispatch_handler 改读 _kwargs 取 error_type; usage emit 处 append _usage_events; 各 error/retrying/usage 加 severity(warn/info)
+# 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: 任务起点(run_react_cycle)读 DB 一次缓存 _session_acc_base/_chain_acc_base 到 agent 并初始化 session/chain 累计=基线(无 LLM 调用任务也正确反映历史累计, 杜绝日志/前端误显 0); usage 块改用缓存基线(消除每轮双 DB 连接冗余读取); DB 异常降级为零基线不阻断主链路
+# 2026-08-20 - 小欧 - 真实缺陷复核三遍修复(review 3x 确认后按最佳不退化): ①A(遥测 usage 门控): on_llm_call/build_stats_step/context_overview 原置于 `if _usage` 内, 无 usage 响应时 llm_calls/stats/context_overview 全丢; 移出到 response 分支末尾必发(usage 存在行为完全不变, 纯增强), 补 isinstance 守卫 error/finish_reason 计算; ②C2(裁剪token死活): on_trim 原只传 bool -> 透传 message_builder._trimmed_tokens_this_round, 裁掉token数不再恒0。
+# 2026-08-20 - 小欧 - 11.1b 运行中DB即时落库(北京老陈裁定"每轮即时落库"): 每轮 emit usage(MetaStep type=usage) 后同步 update_task/session_accumulation 落库, 供运行中他方查询/断线中间态读取实时累计; DB 读-加-写(当前DB值+本轮token)与内存态基线口径一致, 会话缺 session_id 守卫跳过; DB 异常降级 warning 不阻断主链路; 配套 agent_runner S2 移除重复 update 防同批 token 翻倍累加
+# 2026-08-20 - 小欧 - 解决问题18(2.4④ truncated): 新增 MetaStep(type="truncated") 统一"输出截断"事件, 仅触发于 LLM 输出截断 2 处(场景D)——重试分支(content=连续第N次+已注入重试Observation)与连续截断取消分支(content=连续N次+任务取消, 于 FinalStep 前下发), severity=warn; 上下文裁剪/工具结果截断已有 context_overview.truncated / observation data.truncated 通道, 不重复新增(DRY); MetaStep 不落库不占 steps, 不影响 total_steps
+# 2026-08-21 - 小欧 - 12.2-Q5-D3(按文档[1]12.2 diff设计落地): 每轮 token 累计落库块之后新增运行中 checkpoint——
+#   调 agent.telemetry.checkpoint_llm_calls() 增量持久化 llm_calls(整表重写+idx_llm_calls_task_call 唯一索引幂等去重);
+#   目的: 任务中途崩溃时监控数据最多丢最后一轮, 不再全丢; getattr 守卫无 telemetry 场景零影响, 主链路零改动
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.5/6.7: 三处 F8 属性迁移——:398 LLM 调用日志行改读
+#   llm_client.llm_model.model; :401 log_llm_call 改传 llm_model=llm_client.llm_model(prompt_logger 签名归一);
+#   :508 telemetry.on_llm_call 改传 tele_model=llm_client.llm_model — 全链 ModelRef 归一
+# 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): :398/:404/:509 三处改读任务快照 agent._task_llm_model 优先——
+#   防共享单例被并发还原后本任务后续轮次记录到他人模型(与 base_agent 快照/telemetry.finalize 同步落地)
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.4 D2/11.9 P2): _process_single_step 在 prepare_messages_for_llm()
+#   之后调 agent.file_persist.append_conv_blocks(llm_call_count, messages) 增量落文件B(稳定 _msg_id 去重),
+#   随即 pop("_msg_id") 防泄漏 LLM wire; getattr 守卫 writer 未挂载空转, 旁路不阻塞主链路
+# 2026-08-28 小欧 - KISS修正(三堂会审yield链审查): 5处 emit_final_with_stats 调用点 async for→for(配合 step_emitter.emit_final_with_stats 改 sync 返回 (final, stats) 二元组); 原 async 体内零await, 纯伪异步包装; 行为等价无backward
+# 2026-09-02 - 小欧 - 设计文档v1.21§5.5落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): _process_single_step
+#   :435 async for 内拆包前拦截 ("meta", {...}) → yield MetaStep(type=retrying, step=llm_call_count, severity=info,
+#   wait_time) 走 StepEmitter 与既有 retrying 同路径发前端位4🔁; 命中即 continue(未命中照旧拆包走既有分支);
+#   LLM底层 L1/L2/FC降级重试通知全链落点收口
+# 2026-09-04 小健 Phase4 react_cycle改造: _dispatch_handler从async generator→async function返回dict;
+#   _process_single_step调用点 async for→await + emit_from_business_result统一转换;
+#   action_handler路径仍在_dispatch_handler内async for遍历yield做状态推断后返回executing dict;
+#   event_emitter在_dispatch_handler内部import(阶段8统一移顶层)
+# 2026-09-04 小健 - 修复缺陷5: 新增_check_same_tool_name_loop二级死循环防御,
+#   病根: _check_same_tool_loop用完整JSON签名, LLM换文件名→签名不同→count重置→检测失效;
+#   改法: 新增同工具名连续调用检测(_MAX_CONSECUTIVE_SAME_TOOL_NAME=15), 捕获变参循环
 """
 run_react_cycle — ReAct 循环核心（薄调度）
 
@@ -91,14 +145,18 @@ from app.logger import logger, log_and_print
 from app.llm.error_classifier import SystemErrorClassifier
 from app.logger.prompt_logger import get_prompt_logger
 from app.config import get_config
-from app.services.agent.steps import ChunkStep, MetaStep, ObservationStep, ErrorStep, FinalStep
+from app.services.agent.steps import ChunkStep, MetaStep, ObservationStep, FinalStep  # 2026-08-18 小欧 P3: ErrorStep→MetaStep(type="error"), 删ErrorStep import
 from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_completed, set_cancelled
 from app.services.agent.initialize_run_state import initialize_run_state
+from app.services.agent.start_step import assemble_start_step as _assemble_start_step
+from app.services.agent.start_step import _compact_injected_history  # S5(10.1.8): C4 摘要回填, 独立模块 — 小健 2026-08-17
 from app.services.agent.handlers import (
     handle_action, handle_answer,
 )
 from app.services.agent.llm_stream import call_llm_with_fallback
 from app.services.agent.tool_cache_manager import get_openai_tools
+from app.db import db                                          # 11.1 新增: 读 DB 会话/链历史累计 — 小欧 2026-08-20
+from app.services.chat import storage                          # 11.1 新增: query_session_accumulation / query_chain_accumulation — 小欧 2026-08-20
 
 _MAX_CONSECUTIVE_TRUNCATIONS = 3
 
@@ -114,21 +172,29 @@ _SAME_TOOL_WARN_ROUNDS = 2             # 纠偏起点阈值: count==2(第2次相
 _SAME_TOOL_WARN_MAX = 3                # 纠偏最大条数: 第2/3/4次共3条 — 小欧 2026-08-08
 _MAX_CONSECUTIVE_SAME_TOOL_CALLS = 5   # 硬终止阈值: count>=5(第5次相同调用)时硬终止 — 小欧 2026-08-08
 
+# 二级死循环防御: 同工具名连续调用检测(捕获变参循环) — 小健 2026-09-04
+# 当LLM连续调用同一工具名(如write_text)但参数不同(换文件名)时,
+# 签名检测失效(签名变化→count重置), 本检测用工具名计数兜底。
+# 场景: LLM写"任务完成"文件→读回验证→再写不同文件名→再读, 形成48+次死循环。
+_MAX_CONSECUTIVE_SAME_TOOL_NAME = 15   # 同工具名连续调用硬终止阈值
+
 # 可恢复的拒绝/拦截错误: 拒绝≠失败(符合人类认知, 助手应换工具继续) — 小欧 2026-07-13
 # 反馈已写入LLM历史(_add_denial_feedback), 循环回THINKING由主循环 EXECUTING→THINKING 处理;
 # 仅当"同一工具+同类型错误"累计>=3次才置 FAILED(说明LLM陷入死胡同) — 北京老陈 2026-07-13。
 # 2026-08-13 - 小欧 - 三堂会审修复#2: 补 "timeout" — 确认超时(action_handler:263 发 error_type="timeout")
 #   是用户侧等待超时(软拒绝, 应换工具/重试继续), 判 FAILED 与 _add_denial_feedback 注入的"改用其他工具"
 #   引导自相矛盾; 纳入可恢复后由 _deny_counts 累计>=3 才 FAILED(与 user_rejected 同语义)。
+# 2026-08-24 - 小欧 - 后端卡死修复: 每轮 token 累计落库(update_task_accumulation/update_session_accumulation)与任务启动 token 基线读取(query_session/query_chain_accumulation)
+#   经 db.atxn 进子线程 offload 出事件循环, loop 不再被同步 sqlite3 I/O + time.sleep 锁重试独占, 根治 /health 超时/console 冻结; storage.* 与连接管理零改动复用
 _RECOVERABLE_ERRORS = {"user_rejected", "blocked", "timeout"}
 
 
 def handle_react_error(agent, error, step):
-    """统一处理ReAct循环中的错误 — 只创建 ErrorStep，不设状态 — chendyg 2026-07-01
-    小欧 2026-07-13: 删 recoverable（终态由 ErrorStep 表示，不再用 flag 区分可恢复）"""
+    """统一处理ReAct循环中的错误 — 返回MetaStep(type="error")仅SSE不落库 — 小欧 2026-08-18 P3
+    _last_error由step_emitter.emit统一出口记录, 守卫读此填充final"""
     error_type = SystemErrorClassifier.classify_error(error).name.lower()
     logger.error(f"[ErrorHandler] 错误类型={error_type}: {error}")
-    return ErrorStep(step=step, error_type=error_type, error_message=str(error))
+    return MetaStep(step=step, type="error", content=str(error), error_type=error_type, severity="warn")
 
 
 def _is_recoverable_error(error) -> bool:
@@ -232,60 +298,56 @@ def _warn_same_tool_loop(agent, llm_response: Dict, count: int) -> None:
     log_and_print(f"{time.strftime('%H:%M:%S')} [Loop] step={agent.llm_call_count} same tool warn={_tool}")
 
 
-async def _dispatch_handler(agent, llm_response):
-    """按type分派handler，基于 event type 推断状态 — chendyg 2026-07-01 / 小欧 2026-07-13 去掉 recoverable
-    
-    type 路由表（知识备忘 — 小欧 2026-07-15）：
-    ┌────────┬─────────────────┬───────────────────┐
-    │ type   │ handler          │ 状态              │
-    ├────────┼─────────────────┼───────────────────┤
-    │ action │ handle_action    │ 继(不设终态)       │
-    │ answer │ handle_answer    │ → FinalStep →     │
-    │        │                  │   set_completed   │
-    │ error  │ handle_answer    │ → ErrorStep →     │
-    │        │ (error 分支)     │   set_failed      │
-    │ 其他   │ handle_answer    │ → ErrorStep →     │
-    │        │ (未知类型分支)   │   set_failed      │
-    └────────┴─────────────────┴───────────────────┘
-    type 产生于 llm_stream.py call_llm_stream() 末尾，
-    规则：有 tool_calls → action；仅文本 → answer；异常 → error。
-    type 不由 LLM 输出，由 agent 推断（详见 llm/core.py 头部）。
-    
-    状态推断规则:
-    - 含 retrying → set_status(RETRYING)
-    - 含 final → set_completed（按 outcome 子规则: failed→set_failed, cancelled→set_cancelled）
-    - 含 error → 区分可恢复(拒绝/拦截,不失败,循环继续) 与 不可恢复(set_failed)
-    - 其他 → 不设置状态,继续
+def _check_same_tool_name_loop(agent, llm_response: Dict) -> int:
+    """同工具名连续调用检测(捕获变参循环) — 小健 2026-09-04
+    当LLM连续调用同一工具名(如write_text)但参数不同(换文件名)时,
+    _check_same_tool_loop的签名检测失效(签名变化→count重置), 本函数用工具名计数兜底。
+    count语义="第几continuous同工具名调用": 首次同工具名(count=1); 签名变化但工具名相同则count+1; 工具名变化则重置count=1。
+    返回int连续计数供调用方分支(count>=_MAX_CONSECUTIVE_SAME_TOOL_NAME硬终止)。"""
+    _tool = llm_response.get("tool_name", "") or ""
+    _last_tool = getattr(agent, "_last_tool_name", None)
+    if _tool and _tool == _last_tool:
+        agent._consecutive_same_tool_name = getattr(agent, "_consecutive_same_tool_name", 0) + 1
+    else:
+        agent._consecutive_same_tool_name = 1
+    agent._last_tool_name = _tool
+    return agent._consecutive_same_tool_name
+
+
+async def _dispatch_handler(agent, llm_response) -> dict:
+    """按type分派handler，获取业务结果并推断状态
+    返回 dict: {"action": "...", ...} 业务结果
+    不yield任何Step，由 run_react_cycle 调用 event_emitter 统一转换。
+    分两路处理：answer→await协程拿dict；action→async for遍历yield的状态推断。
     """
     parsed_type = llm_response.get("type", "answer")
     step = agent.llm_call_count
     thought = llm_response.get("thought", "")
     reasoning = llm_response.get("reasoning", "")
-    if thought or reasoning:  # 2026-07-19 小欧 修复: reason-only action step也输出控制台
+    if thought or reasoning:
         reasoning_part = f"\n{time.strftime('%H:%M:%S')} === 推理 ===\n{reasoning}" if reasoning else ""
-        log_and_print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}")  # 小欧 2026-07-02 控制台
-    if parsed_type == "action":
-        handler = handle_action(agent, llm_response)
-    else:
-        handler = handle_answer(agent, llm_response)
+        log_and_print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}")
 
+    # ── answer分支：直接await拿dict（已改造为return dict）──
+    if parsed_type != "action":
+        return await handle_answer(agent, llm_response)
+
+    # ── action分支：async for遍历yield的Step（尚未改造，仍yield）──
     _EV_FINAL, _EV_RETRY, _EV_ERROR = "final", "retrying", "error"
     seen_types = set()
     last_error_event = None
     final_event = None
-    async for event in handler:
+    async for event in handle_action(agent, llm_response):
         seen_types.add(event.type)
         if event.type == _EV_ERROR:
             last_error_event = event
         elif event.type == _EV_FINAL:
             final_event = event
-        yield event
 
+    # ── 状态推断(仅对action_handler的yield事件生效) ──
     if _EV_RETRY in seen_types:
         set_status(agent, AgentStatus.RETRYING, "触发重试")
     elif _EV_FINAL in seen_types:
-        # outcome 驱动终态声明: 读 FinalStep.outcome, 不依赖位置/类型 — 小欧 2026-07-18
-        # 用循环内单独捕获的 final_event(真实 FinalStep), 不取末事件 last_event(#7: 末事件未必是final, 脆弱)
         oc = getattr(final_event, "outcome", "completed")
         if oc == "failed":
             set_failed(agent, getattr(final_event, "error_message", "") or final_event.get_content())
@@ -294,17 +356,11 @@ async def _dispatch_handler(agent, llm_response):
         else:
             set_completed(agent)
     elif _EV_ERROR in seen_types:
-        # 无 final → 可恢复错误(blocked/user_rejected/timeout, 循环继续)或原子异常(旧数据)
         error_event = last_error_event
-        err_type = getattr(error_event, "error_type", "")
+        _kw = getattr(error_event, "_kwargs", {}) or {}
+        err_type = _kw.get("error_type", "")
         error_msg = error_event.get_content() if hasattr(error_event, 'get_content') else ""
         if err_type in _RECOVERABLE_ERRORS:
-            # 拒绝/拦截是可恢复的(拒绝≠失败, 符合人类认知): 不置终态, 反馈已进LLM历史,
-            # 主循环 EXECUTING→THINKING 让LLM换工具。 — 小欧 2026-07-13
-            # 计数按"同工具+同类型错误"累计(北京老陈 2026-07-13): 不同工具被拒不限次数
-            # (往往是参数问题, 换工具/换参数即可); 仅同一工具同一类拒绝累计≥3次才说明LLM
-            # 陷入死胡同, 必须停止 loop → FAILED。故用 per-(tool,type) 字典。
-            # 工具名缺失时不累计(无法分键, 避免空名合并误累计), 保持可恢复回THINKING, 不误杀。
             _tool = llm_response.get("tool_name", "") or getattr(error_event, "tool_name", "")
             if _tool:
                 _key = (str(_tool), str(err_type))
@@ -312,20 +368,11 @@ async def _dispatch_handler(agent, llm_response):
                 _deny[_key] = _deny.get(_key, 0) + 1
                 agent._deny_counts = _deny
                 if _deny[_key] >= 3:
-                    # 2026-08-08 小欧 机制冲突修复: 场景F(双阈值 count==2/3/4 纠偏)已注入纠偏消息且LLM尚未调整
-                    #   (_warned_same_tool_loop>0)时, 本处累计口径让位给纠偏, 给LLM调整机会,
-                    #   避免"纠偏刚注入即被deny_counts判FAILED"致纠偏形同虚设(COM_03真实场景: 连续3次
-                    #   delete被R6拦截, step=22纠偏与FAILED同轮触发, 响应仅6字"任务执行失败")。
-                    #   连续同签名死循环由场景F count>=5(第5次)硬终止兜底; 非连续死胡同(签名变化重置标记)
-                    #   仍由本处累计≥3次拦截, 语义不退化。 — 小欧 2026-08-08
                     if not getattr(agent, "_warned_same_tool_loop", 0):
                         set_failed(agent, f"工具 {_tool} 被反复{err_type}(≥3次), LLM陷入死胡同, 停止循环")
         else:
             set_failed(agent, error_msg)
     else:
-        # 正常成功执行(无 error/retrying/final, 且确为 action 执行了工具): 重置该工具的拒绝计数
-        # — 北京老陈 2026-07-13: 同工具成功后证明其未陷死胡同, 旧计数清零, 避免长会话里一次早已
-        # 解决的历史拒绝在后续被误累计触发 FAILED(增强不退化, 逻辑无漏洞)。answer/final 步不重置。
         if llm_response.get("type") == "action":
             _tool = llm_response.get("tool_name", "")
             if _tool:
@@ -333,6 +380,9 @@ async def _dispatch_handler(agent, llm_response):
                 _deny.pop((str(_tool), "user_rejected"), None)
                 _deny.pop((str(_tool), "blocked"), None)
                 agent._deny_counts = _deny
+
+    # action_handler路径：状态已推断，返回通用executing结果，event_emitter按上下文处理
+    return {"action": "executing", "source": "action_handler"}
 
 
 def _finalize_cycle(agent):
@@ -348,17 +398,30 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     # ── Phase 1: LLM 调用准备 ──────────────────────────────────
     agent.llm_call_count += 1
     agent.message_builder.trim_history()  # 唯一裁剪入口 — 小欧 2026-07-01
+    agent.telemetry.on_trim(
+        getattr(agent.message_builder, "_trimmed_this_round", False),
+        getattr(agent.message_builder, "_trimmed_tokens_this_round", 0),
+    )  # 11.3 C2修复(复核确认): 透传裁剪token数, 防 on_trim 恒0死数据 — 小欧 2026-08-20
+    _first_token_marked = False           # 11.2-B 首 chunk 只记一次首包时延 — 小欧 2026-08-20
     messages = agent.message_builder.prepare_messages_for_llm()
+    # 11.8-H2: 文件B 增量落盘(loop顺序/结构保真/增量前缀) — 小欧 2026-08-23
+    # call_no = agent.llm_call_count(本次调用序号, 上方刚自增) — 文档[1]11.7.10-2
+    # 经注入的 agent.file_persist 调用(与 telemetry 同模式, agent 层零 chat 依赖); writer 未挂载时空转 — 小欧 2026-08-23
+    _fp = getattr(agent, "file_persist", None)
+    if _fp is not None:
+        _fp.append_conv_blocks(agent.llm_call_count, messages)   # 读 _msg_id 去重(#10 修正)
+    for _m in messages:
+        _m.pop("_msg_id", None)        # 剥离内部标记后再发 LLM(防泄漏 wire) — #10 修正 小欧 2026-08-23
     openai_tools = get_openai_tools(agent)
 
-    logger.info(f"[LLM] 调用#{agent.llm_call_count}, messages={len(messages)}, tools={len(openai_tools)}, model={getattr(agent.llm_client, 'model', '?')}")
+    _task_llm = getattr(agent, "_task_llm_model", None) or getattr(agent.llm_client, "llm_model", None)   # 任务快照优先(三堂会审 P1) — 小欧 2026-08-22
+    logger.info(f"[LLM] 调用#{agent.llm_call_count}, messages={len(messages)}, tools={len(openai_tools)}, model={getattr(_task_llm, 'model', '?')}")
 
     prompt_logger = get_prompt_logger()
     prompt_logger.log_llm_call(
         round_number=agent.llm_call_count,
         messages=messages,
-        model=getattr(agent.llm_client, 'model', 'unknown'),
-        provider=getattr(agent.llm_client, 'provider', 'unknown'),
+        llm_model=_task_llm,   # 归一: 传 ModelRef 结构(任务级快照, 防单例还原竞态) — 小欧 2026-08-22
         call_type="tools",
         tools=openai_tools,
     )
@@ -368,13 +431,28 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
     # ── Phase 2: LLM 流式调用 ──────────────────────────────────
     llm_response = None
+    _call_start = time.time()                   # 11.2-C LLM 调用计时 — 小欧 2026-08-20
     async for chunk_or_response in call_llm_with_fallback(agent, messages, openai_tools):
-        chunk_type, chunk_data = chunk_or_response
+        if isinstance(chunk_or_response, tuple) and chunk_or_response[0] == "meta":
+            # 小欧 2026-09-02: LLM 底层 L1/L2/降级重试通知 → 标准 retrying 事件发前端
+            _m = chunk_or_response[1]
+            yield agent._step_emitter.emit(MetaStep(
+                type=_m["type"],
+                step=agent.llm_call_count,
+                content=_m["content"],
+                severity="info",
+                wait_time=_m.get("wait_time"),
+            ))
+            continue
+        chunk_type, chunk_data = chunk_or_response   # 既有拆包(仅非meta时执行, 原 :436)
 
         if chunk_type == "chunk":
             content = chunk_data.content if hasattr(chunk_data, 'content') else str(chunk_data)
             is_reasoning = getattr(chunk_data, 'is_reasoning', False)
             chunk_buffer.append(content)
+            if not _first_token_marked:          # 首 chunk 记首包时延 — 小欧 2026-08-20
+                agent.telemetry.mark_first_token()
+                _first_token_marked = True
             chunk_step = ChunkStep(
                 step=agent.llm_call_count,
                 content=content,
@@ -383,6 +461,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             yield agent._step_emitter.emit(chunk_step)
         elif chunk_type == "response":
             llm_response = chunk_data
+            _call_dur = time.time() - _call_start
             chunk_buffer.clear()
             # LLM usage 处理: 裁剪触发 + 累积消耗 + 逐次报告 — 小欧 2026-07-22
             _usage = llm_response.get("usage") if isinstance(llm_response, dict) else None
@@ -397,6 +476,27 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                     if _v is not None:
                         agent.accumulated_usage[_k] += int(_v)
                 # 逐次报告: emit MetaStep(type="usage") 带本次 usage 三个值
+                # 2026-08-18 小欧 P6: usage剔step_json, append _usage_events明细供agent_runner终态insert_token读
+                _ue = getattr(agent, "_usage_events", None)
+                if _ue is not None:
+                    _ue.append({"step": agent.llm_call_count, "prompt_tokens": _usage.get("prompt_tokens"), "completion_tokens": _usage.get("completion_tokens"), "total_tokens": _usage.get("total_tokens")})
+                # 11.1 token 四层同构累计 — 任务级用 agent 内存态逐轮累加(跨轮累计,不读DB,避免任务内DB未回写致不累计);
+                #   会话级/链级在缓存基线(任务开始前历史累计, 见 run_react_cycle 初始化, 任务内恒定)上叠加当前任务运行累计 — 小欧 2026-08-20
+                _llm_call_count_token = {
+                    "prompt_tokens": int(_usage.get("prompt_tokens") or 0),
+                    "completion_tokens": int(_usage.get("completion_tokens") or 0),
+                    "total_tokens": int(_usage.get("total_tokens") or 0),
+                }
+                _K = ("prompt_tokens", "completion_tokens", "total_tokens")
+                # 任务级: agent 内存态(初始0)逐轮 += 本轮 → 任务内天然累计
+                agent.task_accumulated_tokens = {k: agent.task_accumulated_tokens[k] + _llm_call_count_token[k] for k in _K}
+                # 会话级: 基线(历史累计, 任务内恒定, 见 run_react_cycle 初始化) + 当前任务运行累计
+                _ZERO = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                _sess_base = getattr(agent, "_session_acc_base", None) or _ZERO
+                agent.session_accumulated_tokens = {k: _sess_base[k] + agent.task_accumulated_tokens[k] for k in _K}
+                # 链累计（计算派生，不落库）— 基线(历史链累计, 任务内恒定) + 当前任务运行累计
+                _chain_base = getattr(agent, "_chain_acc_base", None) or _ZERO
+                agent.chain_accumulated_tokens = {k: _chain_base[k] + agent.task_accumulated_tokens[k] for k in _K}
                 _usage_step = MetaStep(
                     step=agent.llm_call_count,
                     type="usage",
@@ -404,8 +504,60 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                     prompt_tokens=_usage.get("prompt_tokens"),
                     completion_tokens=_usage.get("completion_tokens"),
                     total_tokens=_usage.get("total_tokens"),
+                    severity="info",
+                    llm_call_count_token=_llm_call_count_token,                  # 11.1 新增 — 小欧 2026-08-20
+                    task_accumulated_tokens=agent.task_accumulated_tokens,         # 11.1 新增
+                    session_accumulated_tokens=agent.session_accumulated_tokens,   # 11.1 新增
+                    chain_accumulated_tokens=agent.chain_accumulated_tokens,       # 11.1 新增
                 )
                 yield agent._step_emitter.emit(_usage_step)
+
+                # 11.1b 运行中DB即时落库（每轮 update 任务/会话累计，供运行中他方查询/断线中间态读取）— 小欧 2026-08-20
+                #   用户裁定"每轮即时落库"; DB 读-加-写(当前DB值+本轮token) 与内存态基线口径一致;
+                #   DB 异常降级不阻断主链路; agent_runner S2 已同步移除 update 防重复累加(翻倍)。
+                try:
+                    # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
+                    await db.atxn("chat", lambda conn: (
+                        storage.update_task_accumulation(conn, task_id=agent.task_id, llm_call_count_token=_llm_call_count_token),
+                        storage.update_session_accumulation(conn, session_id=agent._start_meta.get("session_id"), llm_call_count_token=_llm_call_count_token)
+                        if (getattr(agent, "_start_meta", None) and agent._start_meta.get("session_id")) else None))
+                except Exception as _sce_e:
+                    logger.warning(f"[react_cycle] 每轮token累计落库失败(降级, 不影响主链路): {_sce_e}")
+
+                # 12.2-Q5: 运行中checkpoint llm_calls(唯一索引幂等去重) — 中途崩溃监控数据不再全丢 — 小欧 2026-08-21
+                _tel = getattr(agent, "telemetry", None)
+                if _tel is not None:
+                    _tel.checkpoint_llm_calls()
+
+            # 11.2-C 遥测 + 11.2-B stats/11.3 context_overview —— 不依赖 usage，每次 LLM 响应必发（11.2-C 逐次明细）
+            # 修复A(小欧 2026-08-20 复核确认): 原置于 usage 门控内, 无 usage 的响应 llm_calls/stats/context_overview 全丢,
+            #   违背 11.2-C"每次调用一行"、11.2-B"每轮 stats"契约; 移出后 usage 存在不改变行为(纯增强不退化) — 小欧 2026-08-20
+            _llm_err = None
+            _fin = llm_response.get("finish_reason") if isinstance(llm_response, dict) else None
+            if isinstance(llm_response, dict) and llm_response.get("error"):
+                _llm_err = str(llm_response["error"])[:80]
+            agent.telemetry.on_llm_call(
+                _usage, duration=_call_dur,
+                tele_model=getattr(agent, "_task_llm_model", None)
+                           or getattr(agent.llm_client, "llm_model", None),   # 任务快照优先(三堂会审 P1 防还原竞态) — 小欧 2026-08-22
+                error_type=_llm_err, finish_reason=_fin,
+            )
+            # 11.2-B stats 事件（独立模块产出 MetaStep(type="stats", ...)）— 小欧 2026-08-20
+            _stats_step = agent.telemetry.build_stats_step()   # → MetaStep(type="stats", step_count/llm_call_count/retry_count/duration)
+            yield agent._step_emitter.emit(_stats_step)
+            # 11.3 context_overview 事件（独立模块产出 MetaStep(type="context_overview", ...)）
+            _overview = agent.telemetry.build_context_overview()
+            _llm_n = agent.llm_call_count
+            if _llm_n == 1 or getattr(agent.message_builder, "_trimmed_this_round", False) or _llm_n % 5 == 0:
+                yield agent._step_emitter.emit(MetaStep(
+                    step=_llm_n, type="context_overview", content=_overview.get("summary", ""),
+                    message_count=_overview["message_count"], estimated_tokens=_overview["estimated_tokens"],
+                    truncated=_overview["truncated"],
+                    injected_message_count=_overview["injected_message_count"],
+                    injected_estimated_tokens=_overview["injected_estimated_tokens"],
+                    injected_ratio=_overview["injected_ratio"],
+                    severity="info",
+                ))
 
     # ── Phase 3: 响应分发 ──────────────────────────────────────
     set_status(agent, AgentStatus.EXECUTING)
@@ -417,9 +569,8 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
         log_and_print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, empty_response")  # 小欧 2026-07-02 控制台
         set_failed(agent, "LLM返回空响应，任务终止")
-        yield agent._step_emitter.emit(ErrorStep(
-            step=step, error_type="empty_response",
-            error_message="LLM返回空响应，任务终止"  # Bug1: 不误导LLM(agent已fail),只陈述事实 — 小欧 2026-07-23
+        yield agent._step_emitter.emit(MetaStep(
+            step=step, type="error", content="LLM返回空响应，任务终止", error_type="empty_response", severity="warn"
         ))
         return
 
@@ -470,11 +621,18 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         if agent._consecutive_truncations >= _MAX_CONSECUTIVE_TRUNCATIONS:
             logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试")
             log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, consecutive_truncation")  # 小欧 2026-07-02 控制台
-            yield agent._step_emitter.emit(FinalStep(
+            # 解决问题18(2.4④): 连续截断取消前发 MetaStep(type="truncated") 统一"输出被截断"事件 — 小欧 2026-08-20
+            yield agent._step_emitter.emit(MetaStep(
+                step=step, type="truncated",
+                content=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断，任务取消",
+                severity="warn",
+            ))
+            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=step,
                 response=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
-                outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 连续截断终态统一
-            ))
+                outcome="cancelled",
+            )):
+                yield _s
             set_cancelled(agent)
             return
 
@@ -489,10 +647,15 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         agent.message_builder.add_observation(
             obs_text, {"tool_call_id": _retry_tc_id, "tool_calls": [], "llm_content": content},
         )
+        # 解决问题18(2.4④): 输出截断重试前发 MetaStep(type="truncated") 统一"输出被截断"事件 — 小欧 2026-08-20
+        yield agent._step_emitter.emit(MetaStep(
+            step=step, type="truncated",
+            content=f"LLM输出截断(连续第{agent._consecutive_truncations}次)，已注入重试Observation",
+            severity="warn",
+        ))
         yield agent._step_emitter.emit(ObservationStep(
             step=step,
-            llm_data=[{"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}}],
-            tool_result={},
+            tool_result=[{"tool_name": "truncated_output", "llm_data": {"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}}, "llm_data_text": "", "data_text": obs_text, "other_data": {}}],
         ))
         return
 
@@ -515,25 +678,49 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             logger.warning(f"[run_react_cycle] LLM连续{_cnt}步调用相同工具(step={step}), 判定死循环, 终止")
             log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, same_tool_loop")  # 小欧 2026-08-08 控制台
             set_failed(agent, f"模型连续{_cnt}步重复调用相同工具, 疑似死循环, 任务终止")
-            yield agent._step_emitter.emit(FinalStep(
+            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=step,
                 response="模型反复调用相同工具未取得进展，任务已终止（疑似死循环）",
-                thought=llm_response.get("reasoning", "") or llm_response.get("thought", ""),
+                reasoning=llm_response.get("reasoning", "") or llm_response.get("thought", ""),
                 outcome="failed",
                 error_type="same_tool_loop",
                 error_message=f"模型连续{_cnt}步重复调用相同工具，疑似死循环",
-            ))
+            )):
+                yield _s
+            return
+        # 二级防御: 同工具名连续调用检测(捕获变参循环) — 小健 2026-09-04
+        # 当LLM连续调用同一工具名但参数不同(换文件名)时, 签名检测失效, 工具名检测兜底
+        _name_cnt = _check_same_tool_name_loop(agent, llm_response)
+        if _name_cnt >= _MAX_CONSECUTIVE_SAME_TOOL_NAME:
+            _tool = llm_response.get("tool_name", "") or ""
+            logger.warning(f"[run_react_cycle] LLM连续{_name_cnt}步调用同工具名{_tool}(step={step}), 判定变参死循环, 终止")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, same_tool_name_loop({_tool})")
+            set_failed(agent, f"模型连续{_name_cnt}步重复调用工具{_tool}(参数变化), 疑似变参死循环, 任务终止")
+            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+                step=step,
+                response=f"模型反复调用工具{_tool}但未取得进展（参数变化但行为重复），任务已终止（疑似变参死循环）",
+                reasoning=llm_response.get("reasoning", "") or llm_response.get("thought", ""),
+                outcome="failed",
+                error_type="same_tool_name_loop",
+                error_message=f"模型连续{_name_cnt}步调用工具{_tool}(参数变化), 疑似变参死循环",
+            )):
+                yield _s
             return
     else:
         # 非action(正常answer/final): 死循环检测仅在action语义下, 归零防残留(含纠偏标记) — 小欧 2026-08-08
         agent._consecutive_same_tool_calls = 0
         agent._last_tool_call_sig = None
         agent._warned_same_tool_loop = 0            # int计数归零 — 小欧 2026-08-08
+        agent._consecutive_same_tool_name = 0       # 同工具名计数归零 — 小健 2026-09-04
+        agent._last_tool_name = None                # 同工具名签名归零 — 小健 2026-09-04
 
     # ── 场景E: 正常分发 ─────────────────────────────────────────
     agent._consecutive_truncations = 0
-    async for event in _dispatch_handler(agent, llm_response):
-        yield event
+    _dispatch_result = await _dispatch_handler(agent, llm_response)
+    # 业务结果→前端Step统一转换
+    from app.services.agent.event_emitter import emit_from_business_result
+    for _s in emit_from_business_result(agent, step, _dispatch_result):
+        yield _s
 
 
 async def run_react_cycle(
@@ -542,6 +729,7 @@ async def run_react_cycle(
     context: Optional[Dict[str, Any]] = None,
     max_steps: Optional[int] = None,
     task_id: Optional[str] = None,
+    start_time: Optional[float] = None,   # 11.2-B 同源起点（stream_orchestrator:198 → agent_runner → 此处）— 小欧 2026-08-20
 ):
     """ReAct循环:调用LLM→解析→分派handler→产出Step — chendyg 2026-07-01 状态集中管理重构v2"""
     if max_steps is None:
@@ -549,13 +737,58 @@ async def run_react_cycle(
 
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
 
+    # 11.2/11.3 监控采集器（独立模块 app/monitoring/agent_telemetry.py）— 小欧 2026-08-20
+    from app.monitoring.agent_telemetry import TaskTelemetry
+    _start_meta = getattr(agent, "_start_meta", None) or {}
+    _agent_tele = TaskTelemetry(
+        task_id=task_id or getattr(agent, "task_id", ""),
+        session_id=_start_meta.get("session_id", "") or "",
+        agent=agent,
+    )
+    _agent_tele.on_start(start_time)
+    agent.telemetry = _agent_tele
+
+    # 11.1 token 四层同构：会话级/链级累计基线(任务开始前历史累计)读 DB 一次并缓存到 agent,
+    #   任务内恒定; 同步初始化 session/chain 累计=基线(无 LLM 调用时也正确反映历史累计, 杜绝日志/前端误显 0) — 小欧 2026-08-20
+    if getattr(agent, "_start_meta", None):
+        try:
+            _chain_root = agent._start_meta.get("context_root_task_id") or agent.task_id
+            # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
+            _session_acc_base, _chain_acc_base = await db.atxn("chat", lambda conn: (
+                storage.query_session_accumulation(conn, session_id=agent._start_meta.get("session_id")),
+                storage.query_chain_accumulation(conn, context_root_task_id=_chain_root, current_task_id=agent.task_id)))
+            agent._session_acc_base = _session_acc_base
+            agent._chain_acc_base = _chain_acc_base
+            agent.session_accumulated_tokens = {k: agent._session_acc_base[k] for k in ("prompt_tokens", "completion_tokens", "total_tokens")}
+            agent.chain_accumulated_tokens = {k: agent._chain_acc_base[k] for k in ("prompt_tokens", "completion_tokens", "total_tokens")}
+        except Exception as _e:
+            logger.warning(f"[run_react_cycle] 初始化 token 累计基线失败(降级为零基线): {_e}")
+            agent._session_acc_base = None
+            agent._chain_acc_base = None
+
+    # S4/S5(10.1.7④⑤/10.1.8): start 装配进 agent.steps(占 step 0) — 任务输入装配完整过程收拢为一个模块。
+    #   P4 注入模式: 运行元数据由 orchestrator 注入 agent._start_meta(chat 层纯数据捕获),
+    #   start_step.assemble_start_step 从 _start_meta/_sys_prompt/context 读齐装配, 不 import chat 层。
+    #   落库: start 作为首个事件 yield → agent_runner 事件流分配 ai_message_id 并 append_step, 不再 execution_steps 双写。 — 小欧/小健 2026-08-17
+    _start_step = _assemble_start_step(agent, context)  # 同步装配(内部零 await, KISS — 小健 2026-08-17)
+    if _start_step is not None:
+        yield agent._step_emitter.emit(_start_step)
+
+    # S5(10.1.7⑤/10.1.8): C4 超窗锚定摘要回填 —— start 装配后、while 前一次性清洗注入的历史。
+    #   仅当 start 超窗判定(start_step._maybe_compact_injected_history)置 _needs_compact(=True) 才触发;
+    #   摘要以 assistant 消息回填, 保 system + 摘要 + 最新 task; 原库 conversation_history 被替换为新列表。
+    #   关联逻辑(增强不退化): 未超窗时 _needs_compact=False, 本段跳过, 主链路零改动。 — 小健 2026-08-17
+    if getattr(agent, "_needs_compact", False):
+        await _compact_injected_history(agent)
+
     if max_steps <= 0:
         logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接终止")
-        yield agent._step_emitter.emit(FinalStep(
-            step=0,
+        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+            step=len(agent.steps),  # S4: start 已 emit(step=0), 终态接续步号, 避免同消息下双 step=0 — 小欧 2026-08-16
             response=f"最大步骤数({max_steps})，无可执行步骤，任务取消",  # Bug2+5: max_steps<=0不是"已耗尽"; outcome=cancelled→消息一致 — 小欧 2026-07-23
             outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, max_steps=0终态统一
-        ))
+        )):
+            yield _s
         set_cancelled(agent)
         _finalize_cycle(agent)
         return
@@ -580,10 +813,13 @@ async def run_react_cycle(
                 from app.services.task.task_runtime import check_cancelled, wait_for_resume
                 if await check_cancelled(task_id):
                     logger.info(f"[run_react_cycle] 检测到任务取消(task_id={task_id}), 终止为 cancelled")
-                    yield agent._step_emitter.emit(FinalStep(
-                        step=agent.llm_call_count,
+                    for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+                        # 2026-08-17 - 小健 - 三堂会审-S4修复: 首轮前取消(llm_call_count 尚未+1=0)时,
+                        #   step=0 与 start(step=0)双 step0(与 S4"start占0,业务从1起"矛盾); or 1 接续唯一步号
+                        step=agent.llm_call_count or 1,
                         response="任务已被用户取消", outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 用户取消终态统一
-                    ))
+                    )):
+                        yield _s
                     set_cancelled(agent)
                     break
                 # 用户暂停检测(循环粒度, 阻塞等待恢复) — 小欧 2026-07-13
@@ -604,6 +840,14 @@ async def run_react_cycle(
                     agent._retry_count = getattr(agent, '_retry_count', 0) + 1
                     if agent._retry_count > 3:
                         logger.error(f"[run_react_cycle] 可恢复错误重试超限: {_step_err}")
+                        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+                            step=agent.llm_call_count,
+                            response=f"可恢复错误重试已达上限(3次): {_step_err}",
+                            outcome="failed",
+                            error_type="recoverable_retry_exhausted",
+                            error_message=f"可恢复错误重试已达上限(3次): {_step_err}",
+                        )):
+                            yield _s
                         set_failed(agent, f"可恢复错误重试已达上限(3次): {_step_err}")  # task007: 明确上限值 — 小欧 2026-07-23
                         break
                     logger.warning(f"[run_react_cycle] 可恢复异常, 第{agent._retry_count}次重试: {_step_err}")
@@ -611,6 +855,7 @@ async def run_react_cycle(
                         type="retrying",
                         step=agent.llm_call_count,
                         content=f"LLM请求异常，准备重试: {_step_err}",
+                        severity="info",
                     ))
                     # 2026-08-13 - 小欧 - 三堂会审修复#36: 此处不再 set RETRYING(计数已在上方+1),
                     #   直接 continue 回循环顶重试; 否则主循环 L614 RETRYING 处理再+1 → 一次异常计2次,
@@ -629,6 +874,14 @@ async def run_react_cycle(
             if agent.status == AgentStatus.RETRYING:
                 agent._retry_count = getattr(agent, '_retry_count', 0) + 1
                 if agent._retry_count > 3:
+                    for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+                        step=agent.llm_call_count,
+                        response="可恢复错误重试已达上限(3次)",
+                        outcome="failed",
+                        error_type="recoverable_retry_exhausted",
+                        error_message="可恢复错误重试已达上限(3次)",
+                    )):
+                        yield _s
                     set_failed(agent, "可恢复错误重试已达上限(3次)")  # task007: 明确上限值 — 小欧 2026-07-23
                     break
                 set_status(agent, AgentStatus.THINKING, f"第{agent._retry_count}次重试")
@@ -638,7 +891,7 @@ async def run_react_cycle(
             if chunk_buffer.should_force_stop():
                 logger.warning(f"[run_react_cycle] chunk累积超时({agent.llm_call_count}步),强制停止")
                 set_failed(agent, f"chunk累积超时({agent.llm_call_count}步)")
-                yield agent._step_emitter.emit(ErrorStep(step=agent.llm_call_count, error_type="chunk_buffer_timeout", error_message="响应累积超时，任务强制终止"))  # task007: 更友好 — 小欧 2026-07-23
+                yield agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="error", content="响应累积超时，任务强制终止", error_type="chunk_buffer_timeout", severity="warn"))  # P3+P4: error全仅SSE+severity — 小欧 2026-08-18
                 break
 
         if agent.status not in (
@@ -647,11 +900,12 @@ async def run_react_cycle(
             AgentStatus.CANCELLED,
         ):
             logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 终止")
-            yield agent._step_emitter.emit(FinalStep(
+            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=agent.llm_call_count,
                 response=f"任务循环结束未设终态(status={agent.status})",  # Bug3: 循环自然退出不是"异常",用事实描述 — 小欧 2026-07-23
                 outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 循环结束无终态兜底统一
-            ))
+            )):
+                yield _s
             set_cancelled(agent)
 
     except Exception as e:
@@ -662,6 +916,9 @@ async def run_react_cycle(
 
     finally:
         _finalize_cycle(agent)
+        _tele = getattr(agent, "telemetry", None)   # 11.2-C 监控落库（独立模块，非阻塞降级）— 小欧 2026-08-20
+        if _tele is not None:
+            _tele.finalize_and_persist()
         # R1 (v1.43): task 级清零点 — clear_temp_auth 在 finally 收口, 使授权后所有提前 break/异常/循环自然退出
         #   均走 finally; 注意 max_steps<=0 提前 return 在 try 之前(Bug4修正: 该分支 I2 尚未运行,
         #   无任何授权产生, 故不经过 finally 也无泄漏; 注释已修正不再声称其走 finally)
