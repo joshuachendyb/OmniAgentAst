@@ -21,6 +21,8 @@
 #   task_model=llm_model.model_dump_json()(F1 补 task_metrics 写入源); import 补 ModelRef
 # 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): finalize 的 task_model 改任务快照优先(_agent._task_llm_model,
 #   回退 llm_client.llm_model)——防共享单例被并发任务还原后记录到他人模型(既有竞态一并根治)
+# 2026-09-04 小健 - SLAP修复: build_final_stats_step加outcome参数,显式传入终态替代隐式读agent.status;
+#   outcome为空时fallback读agent.status(向后兼容),有值时直接用outcome - 小健-2026-09-04
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：

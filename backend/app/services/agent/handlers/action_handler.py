@@ -168,6 +168,7 @@
 # 2026-09-03 小欧 D2-03: trust_path复用_extract_trust_path消除别名盲区（path/file_path/source_path等），防通配污染
 # 2026-09-03 小欧 17.1: sandbox_gate硬编码7key含window_title误授权，改函数内延迟import复用_extract_trust_path
 # 2026-09-03 小欧/北京老陈: bypass流程补日志 — S1窗口开始/S1结果两处关键节点, 改前无log无法排查bypass时序
+# 2026-09-04 小健 Phase8: _parse_paths/_extract_trust_path改为import from trust.py(解环); sandbox_resolve返回dict适配(3处元组解包→dict访问) - 小健-2026-09-04
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -417,12 +418,11 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     #   现仅sandbox通过(放行/无需预检)才发resumed, 语义=真正恢复执行
                     _pre = await sandbox_precheck(safety_result, _cn, _cp)
                     if _pre is not None:
-                        _ok, _steps = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
-                        for _st in _steps:
-                            yield _st
-                        if not _ok:
+                        _sb_result = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
+                        # Phase3适配: sandbox_resolve返回dict, 不再返回(ok, steps)元组 - 小健-2026-09-04
+                        if _sb_result.get("action") not in ("passthrough", "confirmed"):
                             continue
-                        if any(getattr(_s, "type", None) == "resumed" for _s in _steps):
+                        if _sb_result.get("action") == "confirmed":
                             continue
                     # 2026-09-02 小欧 BUG-001: sandbox通过后才发resumed(对齐下方真HITL确认后恢复语义,
                     #   前端badge据此回running恢复耗时秒表); 若sandbox拒绝已continue不发resumed
@@ -486,12 +486,11 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 # v1.25 M3 插入点②: 用户确认汇合路径(末尾加 continue, 防落入③重复预检)
                 _pre = await sandbox_precheck(safety_result, _cn, _cp)
                 if _pre is not None:
-                    _ok, _steps = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
-                    for _st in _steps:
-                        yield _st
-                    if not _ok:
+                    _sb_result = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
+                    # Phase3适配: sandbox_resolve返回dict, 不再返回(ok, steps)元组 - 小健-2026-09-04
+                    if _sb_result.get("action") not in ("passthrough", "confirmed"):
                         continue
-                    if any(getattr(_s, "type", None) == "resumed" for _s in _steps):
+                    if _sb_result.get("action") == "confirmed":
                         continue
                 continue
 
@@ -509,10 +508,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             # v1.25 M3 插入点③: 循环体末尾兜底(仅 safe 直通/会话信任豁免触达) — 沙箱预检最后闸门
             _pre = await sandbox_precheck(safety_result, _cn, _cp)
             if _pre is not None:
-                _ok, _steps = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
-                for _st in _steps:
-                    yield _st
-                if not _ok:
+                _sb_result = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
+                # Phase3适配: sandbox_resolve返回dict, 不再返回(ok, steps)元组 - 小健-2026-09-04
+                if _sb_result.get("action") not in ("passthrough", "confirmed"):
                     continue
 
         # 回传未被拒的call索引给调用方 — 小欧 2026-07-18 #12 fix
