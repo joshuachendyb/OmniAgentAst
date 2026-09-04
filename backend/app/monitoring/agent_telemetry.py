@@ -142,20 +142,22 @@ class TaskTelemetry:
             severity="info",
         )
 
-    def build_final_stats_step(self):
-        """产出 MetaStep(type="final_stats") —— 终态统计单独事件（final 后单发；duration 与流式 stats 同 _run_start_ts 同源）— 小欧 2026-08-20"""
+    def build_final_stats_step(self, outcome: str = ""):
+        """产出 MetaStep(type="final_stats") —— 终态统计单独事件（final 后单发；duration 与流式 stats 同 _run_start_ts 同源）— 小欧 2026-08-20
+        outcome参数: 显式传入终态(completed/failed/cancelled), 消除隐式读agent.status的SLAP违规 - 小健-2026-09-04"""
         from app.services.agent.steps.base import MetaStep  # 局部导入防环
         _agent = self.agent
         _duration = round(time.time() - self._run_start_ts, 1) if self._run_start_ts else 0.0
-        # 2026-09-03 小沈 修复: 增发final_status字段, 从agent.status.value派生,
-        #   前端frames.finalStats.final_status据此兜底badge=failed, 防executionSteps中final step丢失时badge卡running — 小沈-2026-09-03
-        _final_status = getattr(getattr(_agent, "status", None), "value", None)
+        if outcome:
+            _final_status = outcome
+        else:
+            _final_status = getattr(getattr(_agent, "status", None), "value", None)
         return MetaStep(
             step=getattr(_agent, "llm_call_count", 0),
             type="final_stats",
             content="",
             duration=_duration,
-            artifacts=list(self._artifacts),   # 任务产出物：action_handler 经 on_tool_call 收集（内存态，单一来源）— 小欧 2026-08-21
+            artifacts=list(self._artifacts),
             severity="info",
             final_status=_final_status,
         )

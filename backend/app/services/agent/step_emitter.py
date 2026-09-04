@@ -55,11 +55,11 @@ class StepEmitter:
             self.agent._last_error = (_et, step.get_content())
         return step
 
-    def emit_final_with_stats(self, final_step):
+    def emit_final_with_stats(self, final_step, outcome: str = ""):
         """final 后单独 emit 终态统计事件 —— 先 .emit(final) 再 .emit(final_stats)，两事件分开、不塞进 final 键体。
-        2026-08-28 小欧 KISS修正: 原 async def 但体内零 await, 纯伪异步包装, 逼出10处调用点写 async for 仪式代码;
-        改为 sync 返回 (final_step, stats_step) 二元组, 调用方 `for _s in ...: yield _s` 即可, 行为等价无backward。"""
-        return (self.emit(final_step), self.emit(self.agent.telemetry.build_final_stats_step()))
+        2026-08-28 小欧 KISS修正: sync 返回 (final_step, stats_step) 二元组。
+        outcome参数: 显式透传终态给build_final_stats_step, 消除SLAP违规 - 小健-2026-09-04"""
+        return (self.emit(final_step), self.emit(self.agent.telemetry.build_final_stats_step(outcome=outcome)))
 
     def _get_tracker(self):
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""
