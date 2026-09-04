@@ -1,4 +1,44 @@
-﻿v0.19.40
+﻿v0.19.40.1
+更新时间: 2026-09-04 12:11:29 - 小欧-2026-09-04
+## v0.19.40以来 变更汇总(26个commit) - 小欧-2026-09-04
+[2026-09-04 12:11:29 小欧] 汇总范围=v0.19.40以来全部commit(本分支 optimize-0.19.40.1 自v0.19.40累积26个commit, 已打 tag v0.19.40.1)
+
+### feat(1个):
+- pipeline/useTaskInfo v5.1等待图标状态机重构
+
+### fix(14个):
+- PipelineRenderer.tsx thought/action等待图标不显示修复
+- answer_handler error/unknown分支set_failed前移修复quota_exceeded后badge卡running
+- agent_telemetry.py build_final_stats_step增发final_status字段从agent.status.value派生
+- AuthorizationModal加key强制重建+编辑历史修正
+- sseParser.ts+useAuthorization.ts resumed事件派发authorization_resumed+监听按confirm_id关弹窗
+- action_handler.py bypass resumed增confirm_id+auto_confirm_delay钳制HITL_MIN_CONFIRM_TIMEOUT+BYPASS_AUTO_LEAD
+- 补全编辑历史签名
+- AuthorizationModal旧interval残留tick覆盖新countdown致bypass弹窗不消失
+- AuthorizationModal根因修复 onConfirm传confirmId参数堵ref时序竞态
+- useAuthorization 同步写入pendingRef堵React useEffect子先父后致bypass弹窗countdown=0不消失
+- sessions+token_usage+temp_auth 前端相关API日志补全
+- chat_routes+hitl_confirmation+constants+action_handler+sandbox_gate HITL超时与confirm必返回修复
+- AuthorizationModal+useAuthorization bypass倒计时与API阻塞修复
+- token_usage+useTaskInfo badge执行中残留与链累计P0/C0/T0
+
+### refactor(3个):
+- useTaskInfo hasFailedFinal单源DRY重构
+- AuthorizationModal加key强制重建删6个guard简化370→230行
+
+### docs(8个):
+- 后端全代码10规范审查与重构方案v1.2
+- 等待图标状态机架构优化设计文档v5.1
+- HITL bypass倒计时与API阻塞深度挖掘分析与修复报告
+- 前后端业务数据配合优化分析+Step与Meta数据结构一致性优化分析
+- 前后端业务数据配合优化分析v1.5 第五章替换为真实代码+精确Diff
+- 前后端业务数据配合优化分析v1.6 第七章改为SRP合规拆分优化(8项→4项)
+- 前后端业务数据配合优化分析v2.4 TDD重构+三堂会审7处修复+测试全覆盖
+- v2.5 三堂会审复检修正10处
+
+---
+
+v0.19.40
 更新时间: 2026-09-03 17:34:31 - 小欧-2026-09-03
 ## v0.19.39以来 变更汇总(56个commit) - 小欧-2026-09-03
 [2026-09-03 17:34:31 小欧] 汇总范围=v0.19.39以来全部commit(本分支 optimize-0.19.17 自v0.19.39累积56个commit, 已打 tag v0.19.40)
