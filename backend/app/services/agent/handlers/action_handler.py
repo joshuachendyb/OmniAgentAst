@@ -175,6 +175,14 @@
 # 2026-09-04 小健 第1阶段拆分: 信任域+冲突检测+文件工具下沉
 #   [改法] 新建trust.py/conflict_detector.py/file_tool_utils.py; action_handler删内联→import新模块
 #   [效果] action_handler 1144→976行(-168行); 环依赖消除(sandbox_gate→trust单向); SRP违规6→0处
+# 2026-09-04 小健 第2阶段拆分: target提取+文件落盘回调+遥测收集下沉
+#   [改法] ①_TARGET_PARAM_PRIORITY/_resolve_target_field/_extract_target → import app.tools.target_utils
+#          ②_fp_factory闭包 → import app.file_persist.make_fp_callback(回调工厂下沉file_persist)
+#          ③execute_tools批量遥测收集 → 调用 agent.telemetry.collect_and_report(all_calls, results)
+#   [效果] action_handler不再持有工具schema查询/文件落盘细节/遥测收集逻辑, 职责更单一
+# 2026-09-04 小健 回归修复(bypass乱序严重bug): run_sandbox_gate DRY重构遗漏bypass路径无条件
+#   yield resumed + continue → 绕过确认的工具沙箱放行后误落入真HITL等待(confirm_id已resolve/弹出
+#   →entry=None→误判"用户拒绝"), 复现: E2E中shell被误拒致失败; 现恢复预DRY的resumed+continue
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -213,6 +221,8 @@ from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS, FILE
 from app.tools.tools_alias_mapper import PARAM_ALIASES
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, MEDIA_EXTENSIONS
 from app.tools.registry import tool_registry  # 2026-08-18 小健 三堂会审: target字段从工具schema主参数自动推导(取代硬编码_TARGE_FIELD)
+from app.tools.target_utils import _resolve_target_field, _extract_target  # 2026-09-04 小健 第2阶段拆分: target提取下沉工具层
+from app.file_persist import make_fp_callback  # 2026-09-04 小健 第2阶段拆分: 文件A落盘回调工厂下沉file_persist
 from app.services.agent.handlers.sandbox_gate import sandbox_precheck, sandbox_resolve, run_sandbox_gate  # 小欧 2026-08-25 沙箱闸门逻辑拆分; 小健 2026-09-04 新增run_sandbox_gate统一入口
 
 
@@ -370,6 +380,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     # 2026-09-02 小欧 BUG-001: sandbox通过后才发resumed(对齐下方真HITL确认后恢复语义,
                     #   前端badge据此回running恢复耗时秒表); 若sandbox拒绝已continue不发resumed
                     # 2026-09-04 小健 DRY: 三处重复sandbox调用→统一入口 run_sandbox_gate
+                    # 2026-09-04 小健 回归修复: bypass路径沙箱放行(无冲突,run_sandbox_gate返回True,[])后必须无条件
+                    #   yield resumed + continue(预DRY原有无条件continue被DRY重构遗漏), 否则落入下方真HITL等待
                     _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied)
                     for _st in _steps:
                         yield _st
@@ -377,6 +389,13 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         continue
                     if any(getattr(_s, "type", None) == "resumed" for _s in _steps):
                         continue
+                    yield agent._step_emitter.emit(MetaStep(
+                        step=step, type="resumed",
+                        content=f"已自动确认工具执行: {_cn}",
+                        severity="info",
+                        confirm_id=confirm_id,
+                    ))
+                    continue
 
                 set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认工具执行: {_cn}")
                 from app.config import get_config as _get_cfg_wait
@@ -635,68 +654,12 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 if isinstance(_llm, dict) and isinstance(_llm.get("summary"), str):
                     _llm["summary"] += f"（工具自动纠正自:{_orig_tool}）"
 
-        # 11.2-C 工具遥测回调（P0-2 修复：on_tool_call 未调用 → tool_execution_seconds 恒 0）— 小欧 2026-08-20
+        # 11.2-C 工具遥测回调（P0-2 修复：on_tool_call 未调用 → tool_execution_seconds 恒 0）— 小欧 2026-08-20; 2026-09-04 小健 第2阶段拆分: 批量聚合下沉 agent_telemetry.collect_and_report
         _tele = getattr(agent, "telemetry", None)
         if _tele is not None:
-            for _call, _res in zip(all_calls, results):
-                _tname = _call.get("tool_name", "") if isinstance(_call, dict) else ""
-                _ok = not isinstance(_res, Exception)
-                _dur = 0.0
-                _arts = None
-                if _ok and isinstance(_res, dict):
-                    _llm_d = (_res.get("llm_data") or {})
-                    _dur = float(_llm_d.get("duration_ms", 0) or 0) / 1000.0
-                    _act = _llm_d.get("action")
-                    if isinstance(_act, dict):
-                        # 仅认写工具 with_artifacts 自声明；兜底派生已删(三堂会审F1: 读工具也构造action.target, 派生会把读取对象误落为伪产出物) — 小欧 2026-08-22 北京老陈定案
-                        _arts = _act.get("artifacts")
-                        # 注入 tool_name 到每个 artifact — 小欧 2026-08-22 设计补充（4字段: tool_name/name/path/type）
-                        if _arts and isinstance(_arts, list):
-                            for _a in _arts:
-                                if isinstance(_a, dict) and "tool_name" not in _a:
-                                    _a["tool_name"] = _tname
-                _tele.on_tool_call(_tname, _ok, _dur, artifacts=_arts)
+            _tele.collect_and_report(all_calls, results)
 
         return results
-
-
-_TARGET_PARAM_PRIORITY = (
-    "command", "sql", "url", "host", "pattern",
-    "path", "dir_path", "file_path", "source_path", "query", "content",
-)
-
-
-def _resolve_target_field(tool_name: str) -> Optional[str]:
-    """2026-08-18 小健 三堂会审: 从工具schema主参数自动推导target字段名(取代硬编码映射, DRY/OCP)
-    ①显式声明tool.target_param优先(扩展点, 无需改动本函数) ②否则按_TARGET_PARAM_PRIORITY匹配真实properties
-    ③兜底: 必填参数→首参数; 均未命中返回None(调用方回退为工具名)"""
-    _tool = tool_registry.get_tool(tool_name)
-    if _tool is None:
-        return None
-    _props = (_tool.input_schema or {}).get("properties") or {}
-    if not _props:
-        return None
-    _explicit = getattr(_tool, "target_param", None)
-    if _explicit and _explicit in _props:
-        return _explicit
-    for _cand in _TARGET_PARAM_PRIORITY:
-        if _cand in _props:
-            return _cand
-    for _r in (_tool.input_schema or {}).get("required", []) or []:
-        if _r in _props:
-            return _r
-    return next(iter(_props))
-
-
-def _extract_target(call: Dict[str, Any]) -> str:
-    """2026-08-18 小欧 - §10.3.3(2) 从工具调用入参提取展示用target(ActionStep结构化, 极少截断保留完整值; 截断收敛见observation_formatter)"""
-    _name = call.get("tool_name", "")
-    _params = call.get("tool_params", {}) or {}
-    _field = _resolve_target_field(_name)
-    if not _field:
-        return _name
-    _val = _params.get(_field, "")
-    return str(_val) if _val != "" else _name
 
 
 async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
@@ -920,36 +883,14 @@ async def handle_action(agent, parsed: Dict):
     # H1 (v1.43): 移除工具批 finally 的 clear_temp_auth() — 清零点迁移到 task 级(R1, react_cycle.run_react_cycle finally)
 
     # 2026-08-23 #B 闭环(北京老陈 裁定②): 文件A 工厂回调, 每次重试尝试各写一块, 闭合 11.7.9-2 — 小欧 2026-08-23
-    # v3.29: 回调内直接落盘(write_tool_block), step=本步 llm_call_count(系统既有字段名); 工厂按全局工具序号闭包注入 tool_no,
-    # 引擎每次尝试回调(action, attempt, params, result_or_exc, ok) 内调用 write_tool_block
-    def _fp_factory(_tno: int):
-        _call = _exec_calls[_tno - 1] if 0 < _tno <= len(_exec_calls) else {}
-        # #16 修正(2026-08-23): params_raw 权威源=_call["params_raw_str"](D0→D0b→D3b 链路的 LLM 原始 arguments 串),
-        #   必须由本闭包携带——引擎不持有原始串; or 回退防空串击穿(#16 同轮修正口径) — 小欧 2026-08-23
-        def _cb(_action, _attempt, _params, _res_or_exc, _ok):
-            _fp = getattr(agent, "file_persist", None)
-            if _fp is None:
-                return
-            if isinstance(_res_or_exc, dict):
-                _fp_llm = _res_or_exc.get("llm_data") if isinstance(_res_or_exc.get("llm_data"), dict) else {}
-                _fp_other = _res_or_exc.get("other_data") if isinstance(_res_or_exc.get("other_data"), dict) else None
-                _fp_data = _res_or_exc
-            else:
-                _fp_llm, _fp_other, _fp_data = {}, None, {"exception": str(_res_or_exc)}
-            _fp.write_tool_block(
-                step=step, tool_no=_tno, retry_no=_attempt,
-                tool_name=_action,
-                params_raw=(_call.get("params_raw_str") or _call.get("tool_params")),
-                params_final=_params,
-                llm_data=_fp_llm, data=_fp_data, other_data=_fp_other,
-            )
-        return _cb
+    # v3.29: 回调内直接落盘(write_tool_block), step=本步 llm_call_count(系统既有字段名); 工厂按全局工具序号闭包注入 tool_no
+    # 2026-09-04 小健 第2阶段拆分: 回调工厂下沉 file_persist.make_fp_callback(逻辑完整复制)
 
     try:
         # #20 修正(2026-08-23 终审): 先定义工厂、调用时传参, 回调内部 file_persist=None 守卫保证无文件任务空转安全 — 小欧 2026-08-23
         results = await execute_tools(agent, _exec_calls, call_result.is_parallel,
                                       call_result.tool_name, call_result.tool_params,
-                                      on_attempt_recorded=_fp_factory)
+                                      on_attempt_recorded=make_fp_callback(agent, step, _exec_calls))
     except Exception as e:
         logger.error(f"[action_handler] execute_tools 异常: {e}")
         raise

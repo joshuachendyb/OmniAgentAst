@@ -21,6 +21,8 @@
 #   task_model=llm_model.model_dump_json()(F1 补 task_metrics 写入源); import 补 ModelRef
 # 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): finalize 的 task_model 改任务快照优先(_agent._task_llm_model,
 #   回退 llm_client.llm_model)——防共享单例被并发任务还原后记录到他人模型(既有竞态一并根治)
+# 2026-09-04 - 小健 - 新增 collect_and_report(第2阶段拆分): 工具执行批后批量聚合从 action_handler.execute_tools 下沉,
+#   收敛到 telemetry 模块, action_handler 不再持有 duration/artifacts 收集细节; 函数体完整复制不改逻辑
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -123,6 +125,32 @@ class TaskTelemetry:
                 self._artifacts.append(_a)
         if len(self._artifacts) > 50:
             self._artifacts = self._artifacts[:50]
+
+    def collect_and_report(self, all_calls: List[Any], results: List[Any]) -> None:
+        """工具执行批后批量聚合遥测（从 action_handler.execute_tools 下沉）— 小健 2026-09-04
+
+        遍历 all_calls+results 配对, 逐条调用 on_tool_call(tool_name, success, duration, artifacts)。
+        逻辑与下沉前完全一致(完整复制), 收敛到 telemetry 模块, action_handler 不再持有收集细节。
+        """
+        for _call, _res in zip(all_calls, results):
+            _tname = _call.get("tool_name", "") if isinstance(_call, dict) else ""
+            _ok = not isinstance(_res, Exception)
+            _dur = 0.0
+            _arts = None
+            if _ok and isinstance(_res, dict):
+                _llm_d = (_res.get("llm_data") or {})
+                _dur = float(_llm_d.get("duration_ms", 0) or 0) / 1000.0
+                _act = _llm_d.get("action")
+                if isinstance(_act, dict):
+                    # 仅认写工具 with_artifacts 自声明；兜底派生已删(三堂会审F1: 读工具也构造action.target, 派生会把读取对象误落为伪产出物) — 小欧 2026-08-22 北京老陈定案
+                    _arts = _act.get("artifacts")
+                    # 注入 tool_name 到每个 artifact — 小欧 2026-08-22 设计补充（4字段: tool_name/name/path/type）
+                    if _arts and isinstance(_arts, list):
+                        for _a in _arts:
+                            if isinstance(_a, dict) and "tool_name" not in _a:
+                                _a["tool_name"] = _tname
+            self.on_tool_call(_tname, _ok, _dur, artifacts=_arts)
+
 
     # ── 产出（SSE 事件，独立计算）─────────────────────────
     def build_stats_step(self):
