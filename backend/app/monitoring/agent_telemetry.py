@@ -23,6 +23,8 @@
 #   回退 llm_client.llm_model)——防共享单例被并发任务还原后记录到他人模型(既有竞态一并根治)
 # 2026-09-04 - 小健 - 新增 collect_and_report(第2阶段拆分): 工具执行批后批量聚合从 action_handler.execute_tools 下沉,
 #   收敛到 telemetry 模块, action_handler 不再持有 duration/artifacts 收集细节; 函数体完整复制不改逻辑
+# 2026-09-04 - 小健 - SLAP修复: build_final_stats_step 加 outcome 参数(默认空串), 优先用传入的 outcome,
+#   为空时 fallback 到 agent.status.value; 消除监控层隐式依赖核心状态 — 小健-2026-09-04
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -170,14 +172,17 @@ class TaskTelemetry:
             severity="info",
         )
 
-    def build_final_stats_step(self):
-        """产出 MetaStep(type="final_stats") —— 终态统计单独事件（final 后单发；duration 与流式 stats 同 _run_start_ts 同源）— 小欧 2026-08-20"""
+    def build_final_stats_step(self, outcome: str = ""):
+        """产出 MetaStep(type="final_stats") —— 终态统计单独事件（final 后单发；duration 与流式 stats 同 _run_start_ts 同源）— 小欧 2026-08-20
+        outcome参数: 调用方显式传入终态(completed/failed/cancelled), 优先使用; 为空时fallback到agent.status — 小健 2026-09-04
+        """
         from app.services.agent.steps.base import MetaStep  # 局部导入防环
         _agent = self.agent
         _duration = round(time.time() - self._run_start_ts, 1) if self._run_start_ts else 0.0
         # 2026-09-03 小沈 修复: 增发final_status字段, 从agent.status.value派生,
         #   前端frames.finalStats.final_status据此兜底badge=failed, 防executionSteps中final step丢失时badge卡running — 小沈-2026-09-03
-        _final_status = getattr(getattr(_agent, "status", None), "value", None)
+        # 2026-09-04 小健 SLAP修复: outcome显式传入优先, fallback到agent.status — 消除监控层隐式依赖核心状态
+        _final_status = outcome if outcome else getattr(getattr(_agent, "status", None), "value", None)
         return MetaStep(
             step=getattr(_agent, "llm_call_count", 0),
             type="final_stats",

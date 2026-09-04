@@ -15,6 +15,7 @@ Author: 小沈 - 2026-05-31
 2026-08-18 - 小欧 - 三堂会审复核: ①emit._last_error 兼容 ErrorStep 载体(_kwargs 为空时回退读 error_type 属性), 防 error_type 丢失; ②删除死码 exit_with_error 及 ErrorStep import(YAGNI, 全仓无真实调用点)
 2026-08-28 小欧 - yield日志审计: emit()统一入口加 logger.debug("[StepEmit] type step"), 覆盖全部~50个Step yield(KISS+DRY, 单一日志出口), 三堂会审无逻辑修正
 2026-08-28 小欧 - KISS修正(三堂会审yield链审查): emit_final_with_stats 由 async def 改 sync 返回 (final, stats) 二元组; 原 async 体内零await, 纯伪异步包装, 逼出10处调用点写 async for 仪式代码; 调用点 async for→for, 行为等价无backward
+2026-09-04 小健 - SLAP修复: emit_final_with_stats 从 final_step 提取 outcome 并透传给 build_final_stats_step(outcome=...), 消除发射层对遥测层隐式依赖 — 小健-2026-09-04
 """
 
 from typing import Any, Dict, Optional
@@ -58,8 +59,10 @@ class StepEmitter:
     def emit_final_with_stats(self, final_step):
         """final 后单独 emit 终态统计事件 —— 先 .emit(final) 再 .emit(final_stats)，两事件分开、不塞进 final 键体。
         2026-08-28 小欧 KISS修正: 原 async def 但体内零 await, 纯伪异步包装, 逼出10处调用点写 async for 仪式代码;
-        改为 sync 返回 (final_step, stats_step) 二元组, 调用方 `for _s in ...: yield _s` 即可, 行为等价无backward。"""
-        return (self.emit(final_step), self.emit(self.agent.telemetry.build_final_stats_step()))
+        改为 sync 返回 (final_step, stats_step) 二元组, 调用方 `for _s in ...: yield _s` 即可, 行为等价无backward。
+        2026-09-04 小健 SLAP修复: outcome从final_step显式提取并透传给build_final_stats_step, 消除隐式依赖 — 小健-2026-09-04"""
+        _outcome = getattr(final_step, "outcome", "completed")
+        return (self.emit(final_step), self.emit(self.agent.telemetry.build_final_stats_step(outcome=_outcome)))
 
     def _get_tracker(self):
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""
