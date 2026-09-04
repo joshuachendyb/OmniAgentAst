@@ -72,7 +72,7 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     _bt = int(float(_get_cfg_sb2().get("security.hitl_timeout", HITL_TIMEOUT)))
     _ct = max(HITL_MIN_CONFIRM_TIMEOUT, _bt - HITL_CONFIRM_LEAD)
     try:
-        from app.services.agent.handlers.action_handler import _extract_trust_path as _sb_trust_path
+        from app.tools.trust import extract_trust_path as _sb_trust_path  # Phase8: 环依赖消除, sandbox_gate→trust单向 - 小健-2026-09-04
         _sandbox_path = _sb_trust_path(tool_name, params)
     except Exception:
         _sandbox_path = None

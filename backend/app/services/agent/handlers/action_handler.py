@@ -548,43 +548,7 @@ def _add_denial_feedback(agent, denied_items, fc_context=None):
                 logger.debug(f"add_tool_result(空ID)也失败: {e2}")
 
 
-def _parse_paths(name: str, params: Dict) -> Set[str]:
-    """解析一个调用的路径/窗口冲突键集合(复用 PARAM_ALIASES 别名→规范名) — 小欧 2026-08-09 — 小欧 2026-08-11 窗口分支
-    文件工具: 解析 path 集合(与 _has_conflict/_partition_calls 共用, DRY)。
-    窗口工具: 以 "window:{window_title}" 为冲突键, 同标题窗口工具并入同组串行(状态变更非幂等);
-              缺 window_title 返回空集——窗口工具参数校验必失败, 不会操作任何窗口, 无竞态风险, 不参与分组。
-    """
-    if name in WINDOW_TARGET_TOOLS:
-        title = params.get("window_title", "")
-        if title and isinstance(title, str):
-            return {f"window:{title}"}
-        return set()
-    if name not in FILE_OPERATION_TOOLS:
-        return set()
-    aliases = PARAM_ALIASES.get(name, {})
-    if not aliases:
-        p = params.get("path", "")
-        return {p} if p and isinstance(p, str) else set()
-    resolved = {}
-    for key, value in params.items():
-        canon = aliases.get(key, key)
-        if canon not in resolved:
-            resolved[canon] = value
-    out = set()
-    for pname in set(aliases.values()):
-        pval = resolved.get(pname)
-        if pval and isinstance(pval, str):
-            out.add(pval)
-    return out
-
-
-def _extract_trust_path(name: str, params: Dict) -> Optional[str]:
-    """提取工具调用用于信任落库/查询的目标路径(复用 _parse_paths, DRY) — 小欧 2026-09-02
-    取首个非 window: 键的文件路径; 无路径参数/窗口工具/提取失败返回 None(=工具级通配)"""
-    for p in _parse_paths(name, params or {}):
-        if not p.startswith("window:"):
-            return p
-    return None
+from app.tools.trust import _parse_paths, extract_trust_path as _extract_trust_path  # Phase8: 信任域下沉trust.py, 解环 - 小健-2026-09-04
 
 
 def _has_conflict(all_calls: List[Dict]) -> bool:
