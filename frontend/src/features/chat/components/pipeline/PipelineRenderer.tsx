@@ -35,6 +35,7 @@
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 showGreenCircle正向判断替代6条件否定式
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 ToolCallLine从segments数组按step找obs传入(修复obs独立后扳手一直转)
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 waiting变量改名showGreenCircle语义更清晰
+// 编辑历史: 2026-09-04 小欧 - 修复 observation 重复显示(单/多工具并行时孤儿与 ToolCallLine 重复): toolStepSet 抑制已消费孤儿渲染 - 小欧-2026-09-04
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -167,6 +168,10 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   badge, // 2026-09-02 小欧: 非 live 历史回放不传 → undefined → 不显示圈
 }) => {
   const segs = buildSegments(steps);
+  // 2026-09-04 小欧 - observation 去重：已消费孤儿抑制（单/多工具并行时孤儿与 ToolCallLine 重复）
+  const toolStepSet = new Set(
+    segs.filter((s): s is Extract<PipelineSegment, { kind: 'tool' }> => s.kind === 'tool').map((s) => s.action.step)
+  );
   // 2026-08-27 小欧 三堂会审: 预计算最后一个思考段索引, 消除map内自增副作用与额外filter
   const lastThink = segs.reduce(
     (a, s, i) => (s.kind === 'thinking' ? i : a),
@@ -295,7 +300,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           );
         }
         if (seg.kind === 'obs') {
-          // 孤儿观察：无前置 action，独立弱化行展示摘要
+          // 2026-09-04 小欧 - 已被 ToolCallLine 消费的 observation 不再渲孤儿，防重复
+          if (toolStepSet.has(seg.step.step as number)) return null;
           return (
             <div
               key={`obs-${i}-${seg.step.step ?? i}`}
