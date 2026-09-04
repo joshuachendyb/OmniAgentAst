@@ -3,13 +3,15 @@
 **文档名称**: action_handler.py 拆分方案-小健-2026-09-04
 **编写人**: 小健
 **创建时间**: 2026-09-04 15:54:03
-**更新时间**: 2026-09-04 16:20:00
+**更新时间**: 2026-09-04 17:45:00
 
 | 版本 | 时间 | 更新人 | 更新要点 |
 |------|------|--------|----------|
 | v1.0 | 2026-09-04 15:54:03 | 小健 | 初版：方案C拆分方案（3个新文件） - 小健-2026-09-04 |
 | v1.1 | 2026-09-04 16:10:00 | 小健 | 补充拆分重构核心原则：先复制后修改 + 实施状态 - 小健-2026-09-04 |
 | v1.2 | 2026-09-04 16:20:00 | 小健 | 重排章节结构：按阶段划分，第1阶段完成，预留第2/3/4阶段 - 小健-2026-09-04 |
+| v1.3 | 2026-09-04 17:30:04 | 小健 | 新增第2阶段：4个函数下沉（target提取/factory/遥测）+ 沙箱DRY修复，原第2/3/4阶段顺延为第3/4/5阶段 - 小健-2026-09-04 |
+| v1.4 | 2026-09-04 17:45:00 | 小健 | 第2阶段新增沙箱DRY修复：run_sandbox_gate统一入口消除三处重复调用，44测试全过 - 小健-2026-09-04 |
 
 ---
 
@@ -148,11 +150,118 @@ action_handler.py（1144行）是当前代码中最烂的文件——6个职责�
 
 ---
 
-## 三、第2阶段：yield架构改造（待实施）
+## 三、第2阶段：函数下沉（4个函数）⏳ 待实施
+
+> 三堂会审分析：action_handler.py中4个函数不属于agent层，应下沉到正确的模块位置
+
+### 3.1 改造范围
+
+| 函数 | 当前位置 | 行数 | 目标位置 | 下沉理由 |
+|------|---------|------|---------|---------|
+| `_resolve_target_field` | action_handler.py L666-685 | 19行 | `app/tools/target_utils.py` | 纯工具schema查询，依赖tool_registry，与agent逻辑无关 |
+| `_extract_target` | action_handler.py L688-696 | 8行 | `app/tools/target_utils.py` | _resolve_target_field的消费者，同属工具schema层 |
+| `_fp_factory` | action_handler.py L922-943 | 21行 | `app/services/file_persist/fp_factory.py` | 文件持久化回调工厂，agent不该知道落盘细节 |
+| 遥测收集逻辑 | action_handler.py L635-655 | 20行 | `app/services/agent/telemetry.py` | duration/artifacts收集是telemetry的职责 |
+
+### 3.2 新建2个文件
+
+#### 文件1：`backend/app/tools/target_utils.py`（~30行）
+
+**目的**：target提取逻辑从action_handler下沉到工具层。
+
+| 函数 | 原始位置 | 行数 | 操作 |
+|------|---------|------|------|
+| `_TARGET_PARAM_PRIORITY` | action_handler.py L660-663 | 4行 | 完整复制 |
+| `_resolve_target_field` | action_handler.py L666-685 | 19行 | 完整复制 |
+| `_extract_target` | action_handler.py L688-696 | 8行 | 完整复制 |
+
+**依赖**：
+- `tool_registry` ← `app.tools.registry`
+- 无agent层依赖（纯工具层函数）
+
+#### 文件2：`backend/app/services/file_persist/fp_factory.py`（~25行）
+
+**目的**：文件持久化回调工厂从handle_action下沉到file_persist模块。
+
+| 内容 | 原始位置 | 行数 | 操作 |
+|------|---------|------|------|
+| `_fp_factory` 闭包 | action_handler.py L922-943 | 21行 | 完整复制为模块级函数 |
+
+**依赖**：
+- `agent.file_persist` ← 调用方传入（解耦agent依赖）
+- `step` / `_exec_calls` ← 闭包参数化
+
+### 3.3 遥测收集逻辑提取
+
+**目的**：execute_tools内的遥测收集逻辑提取到telemetry模块。
+
+| 内容 | 原始位置 | 行数 | 操作 |
+|------|---------|------|------|
+| 遥测回调+artifact收集 | action_handler.py L635-655 | 20行 | 提取为 `telemetry.collect_and_report()` |
+
+**改动**：
+- execute_tools.py: L635-655删除 → 改为调用 `agent.telemetry.collect_and_report(all_calls, results)`
+- telemetry.py: 新增 `collect_and_report()` 方法，封装duration/artifacts/tool_name收集逻辑
+
+### 3.4 action_handler.py改动
+
+| 删除位置 | 行数 | 改为import |
+|---------|------|-----------|
+| L660-696（target提取） | 37行 | `from app.tools.target_utils import _resolve_target_field, _extract_target` |
+| L922-943（fp_factory闭包） | 21行 | `from app.services.file_persist.fp_factory import make_fp_callback` |
+| L635-655（遥测收集） | 20行 | 删除内联逻辑，调用 `agent.telemetry.collect_and_report()` |
+
+**净减**：~78行（删除） - 2行（新增import） = ~76行
+
+### 3.5 实施步骤与状态
+
+| 步骤 | 动作 | 验证 | 状态 |
+|------|------|------|------|
+| 1 | 新建 `backend/app/tools/target_utils.py`（完整复制） | py_compile | ⏳ 待实施 |
+| 2 | 新建 `backend/app/services/file_persist/fp_factory.py`（完整复制） | py_compile | ⏳ 待实施 |
+| 3 | 改造 `telemetry.py`（新增collect_and_report方法） | py_compile | ⏳ 待实施 |
+| 4 | 改造 `action_handler.py`（删内联→import） | py_compile | ⏳ 待实施 |
+| 5 | 改造其他引用文件（如有） | py_compile | ⏳ 待实施 |
+| 6 | 全量测试 | pytest | ⏳ 待实施 |
+
+### 3.6 预期效果
+
+| 维度 | 改前 | 改后 |
+|------|------|------|
+| action_handler.py | 976行 | ~900行（-76行） |
+| 新建文件 | 0 | 2个（target_utils.py ~30行 + fp_factory.py ~25行） |
+| agent层SRP违规 | 4处（target/factory/遥测/编排混合） | 0处 |
+
+### 3.7 前置条件
+
+- ✅ 第1阶段完成（信任域+冲突检测+文件工具已拆分）
+
+### 3.8 沙箱DRY修复 ✅ 已完成
+
+> check_safety_and_confirm中三处sandbox_precheck+sandbox_resolve重复调用，DRY违规
+
+| 问题 | 说明 |
+|------|------|
+| **DRY违规** | ①auto_confirm ②用户确认 ③循环体兜底 三处调用逻辑几乎完全相同 |
+| **改法** | sandbox_gate.py新增 `run_sandbox_gate()` 统一入口，封装precheck→resolve→yield steps→check ok |
+| **效果** | 三处20行重复代码→三处5行调用，逻辑集中在sandbox_gate.py一个入口 |
+
+**改动文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `sandbox_gate.py` | 新增 `run_sandbox_gate()` 统一入口函数 |
+| `action_handler.py` | 三处重复调用→改为 `run_sandbox_gate()` 一行调用 |
+
+**验证**：44个测试全过（action_handler 11 + trust 16 + conflict_detector 17）
+
+---
+
+## 四、第3阶段：yield架构改造（待实施）
 
 > 对应设计文档第五章：handler→dict + event_emitter统一转换层
 
-### 3.1 改造范围
+### 4.1 改造范围
 
 | 文件 | 改造内容 | 状态 |
 |------|---------|------|
@@ -162,30 +271,37 @@ action_handler.py（1144行）是当前代码中最烂的文件——6个职责�
 | `action_handler.py` | 16处yield→dict+直接emit | ⏳ 待实施 |
 | `react_cycle.py` | _dispatch_handler两路统一 | ⏳ 待实施 |
 
-### 3.2 前置条件
+### 4.2 前置条件
 
 - ✅ 第1阶段完成（信任域+冲突检测+文件工具已拆分）
+- ⏳ 第2阶段完成（函数下沉后action_handler更干净）
 
 ---
 
-## 四、第3阶段：SRP合规拆分（待实施）
+## 五、第4阶段：SRP合规拆分（待实施）
 
 > 对应设计文档第七章：agent_telemetry + step_emitter SLAP修复
 
-### 4.1 改造范围
+### 5.1 改造范围
 
 | 文件 | 改造内容 | 状态 |
 |------|---------|------|
 | `agent_telemetry.py` | build_final_stats_step加outcome参数 | ⏳ 待实施 |
 | `step_emitter.py` | emit_final_with_stats显式透传outcome | ⏳ 待实施 |
 
-### 4.2 前置条件
+### 5.2 前置条件
 
 - ✅ 第1阶段完成
-- ⏳ 第2阶段完成（yield架构改造后，emit链路更清晰）
+- ⏳ 第2阶段完成（函数下沉后telemetry模块更清晰）
+- ⏳ 第3阶段完成（yield架构改造后，emit链路更清晰）
 
 ---
 
-## 五、第4阶段：最终集成验证（待实施）
+## 六、第5阶段：最终集成验证（待实施）
 
+## 七、第6阶段：最终集成验证（待实施）
+
+## 八、第7阶段：最终集成验证（待实施）
+
+## 九、第8阶段：最终集成验证（待实施）
 >
