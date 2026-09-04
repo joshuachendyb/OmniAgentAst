@@ -224,56 +224,15 @@ class ObservationContext:
     fc_context: Dict = None
 
 
-# 工具文件读操作集合（冲突检测用）— 小欧 2026-08-13
-# 同路径多次调用判定: 读-读无竞态不冲突(仍并行), 仅需从写集合排除, 防 read_xlsx 等被误判写操作致并行退化串行
-_READ_TOOLS = {"readtext", "read_xlsx", "read_docx", "read_pdf", "read_pptx"}
-# 工具文件写操作集合（冲突检测用）— 北京老陈 2026-07-04
-_WRITE_OPS = FILE_OPERATION_TOOLS - _READ_TOOLS
+# 以下常量/函数已拆分至 app/tools/file_tool_utils.py — 小健 2026-09-04
+from app.tools.file_tool_utils import _auto_correct_file_tool, _EXT_TO_READ_TOOL, _EXT_TO_WRITE_TOOL
 
-# 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A
-# 窗口状态变更(restore/resize/focus)作用于同一窗口时非幂等, 同批并行会产生竞态
-# (实测 P2: set_window_state(restore)+window_resize 同批并行, resize 0.00s 莫名失败),
-# 需与文件工具同机制: 同键(同 window_title)互斥 → 并入同组串行。
-# 不含 window_info(只读枚举, 不改变窗口状态, 无竞态)。
-WINDOW_TARGET_TOOLS = {"window_focus", "window_resize", "set_window_state"}
+# 以下常量/函数已拆分至 app/tools/conflict_detector.py — 小健 2026-09-04
+from app.tools.conflict_detector import _has_conflict, _partition_calls, _WRITE_OPS, _READ_TOOLS
 
-# #4 自动纠正: 文件扩展名→tool_name 映射（三分类: 文本→readtext, 文档→专用工具, 多媒体→readmedia）
-# P07修复: .csv 是双域(文本+表格), 从读取映射移除, 使 read_xlsx/readtext 均不被自动改写 — 小欧 2026-08-07
-_EXT_TO_READ_TOOL = {ext: "readtext" for ext in TEXT_EXTENSIONS if ext != ".csv"}
-_EXT_TO_READ_TOOL.update({ext: "readmedia" for ext in MEDIA_EXTENSIONS})
-_EXT_TO_READ_TOOL.update({
-    ".docx": "read_docx",
-    ".xlsx": "read_xlsx",
-    ".pdf": "read_pdf",
-    ".pptx": "read_pptx",
-})
-_EXT_TO_WRITE_TOOL = {ext: "writetext" for ext in TEXT_EXTENSIONS}
-_EXT_TO_WRITE_TOOL.update({
-    ".docx": "write_docx",
-    ".xlsx": "write_xlsx",
-    ".pdf": "write_pdf",
-    ".pptx": "write_pptx",
-})
+# 以下常量/函数已拆分至 app/tools/trust.py — 小健 2026-09-04
+from app.tools.trust import _parse_paths, extract_trust_path as _extract_trust_path, WINDOW_TARGET_TOOLS
 
-
-def _auto_correct_file_tool(tool_name: str, tool_params: dict) -> tuple:
-    """文件扩展名预检自动纠正tool_name — 返回 (纠正后名, 原始名或None)
-    三分类映射: 文本→readtext, 文档→专用工具, 多媒体→readmedia — 小欧 2026-07-25"""
-    _path = tool_params.get("path", "") if isinstance(tool_params, dict) else ""
-    if not _path or not isinstance(_path, str):
-        return tool_name, None
-    _ext = _path[_path.rfind("."):].lower() if "." in _path else ""
-    if not _ext:
-        return tool_name, None
-    if tool_name.startswith("read"):
-        _mapping = _EXT_TO_READ_TOOL
-    elif tool_name.startswith("write"):
-        _mapping = _EXT_TO_WRITE_TOOL
-    else:
-        return tool_name, None
-    if _ext in _mapping and tool_name != _mapping[_ext]:
-        return _mapping[_ext], tool_name
-    return tool_name, None
 
 
 async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None, _denied_out: list = None):
@@ -292,39 +251,16 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         """
         from app.safety.tool_safety_checker import get_tool_safety_checker
         from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result, resolve_confirmation
+        from app.tools.trust import resolve_skip
         safety_checker = get_tool_safety_checker()
-
-        # 小健 2026-08-17 三堂会审-架构修复: session_id 经 task_id 反查(agent 无 session_id 属性, 禁止伪变量),
-        #   反查失败置 None 不豁免(按需确认); 会话信任预查由本 services 层负责(消除 safety→services 违规),
-        #   查得信任后传 skip_confirmation=True 给 check_before_execute 豁免二次确认(跳 HITL) — 小健 2026-08-17
-        _session_id = None
-        try:
-            from app.services.chat.storage import get_session_id_by_task
-            from app.db import db
-            # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
-            _session_id = await db.atxn("chat", lambda conn: get_session_id_by_task(conn, agent.task_id))
-        except Exception:
-            _session_id = None
 
         _denied = []
         for call in all_calls:
             _cn = call.get("tool_name", "?")
             _cp = call.get("tool_params", {})
 
-            # 会话信任预查(本 services 层, 合法依赖 app.services.chat.storage) — 小健 2026-08-17
-            _skip = False
-            if _session_id:
-                try:
-                    from app.db import db
-                    from app.services.chat.storage import check_session_trust
-                    from app.tools.tools_alias_mapper import normalize_tool_name
-                    # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
-                    # v1.5(2026-09-02 小欧): 信任命中精确到 tool+path(北京老陈定案), 前缀递归匹配在 check_session_trust 内
-                    _tgt = _extract_trust_path(_cn, _cp)
-                    _skip = await db.atxn("chat", lambda conn: check_session_trust(conn, _session_id, normalize_tool_name(_cn), _tgt))
-                except Exception as _te:
-                    logger.warning(f"[action_handler] 会话信任查询失败,按需确认: session={_session_id}, tool={_cn}, err={_te}")
-                    _skip = False
+            # 会话信任预查 — 调用 trust.resolve_skip 独立函数 — 小健 2026-09-04
+            _skip = await resolve_skip(agent.task_id, _cn, _cp)
 
             safety_result = safety_checker.check_before_execute(_cn, _cp, skip_confirmation=_skip)
 
@@ -548,110 +484,6 @@ def _add_denial_feedback(agent, denied_items, fc_context=None):
                 logger.debug(f"add_tool_result(空ID)也失败: {e2}")
 
 
-def _parse_paths(name: str, params: Dict) -> Set[str]:
-    """解析一个调用的路径/窗口冲突键集合(复用 PARAM_ALIASES 别名→规范名) — 小欧 2026-08-09 — 小欧 2026-08-11 窗口分支
-    文件工具: 解析 path 集合(与 _has_conflict/_partition_calls 共用, DRY)。
-    窗口工具: 以 "window:{window_title}" 为冲突键, 同标题窗口工具并入同组串行(状态变更非幂等);
-              缺 window_title 返回空集——窗口工具参数校验必失败, 不会操作任何窗口, 无竞态风险, 不参与分组。
-    """
-    if name in WINDOW_TARGET_TOOLS:
-        title = params.get("window_title", "")
-        if title and isinstance(title, str):
-            return {f"window:{title}"}
-        return set()
-    if name not in FILE_OPERATION_TOOLS:
-        return set()
-    aliases = PARAM_ALIASES.get(name, {})
-    if not aliases:
-        p = params.get("path", "")
-        return {p} if p and isinstance(p, str) else set()
-    resolved = {}
-    for key, value in params.items():
-        canon = aliases.get(key, key)
-        if canon not in resolved:
-            resolved[canon] = value
-    out = set()
-    for pname in set(aliases.values()):
-        pval = resolved.get(pname)
-        if pval and isinstance(pval, str):
-            out.add(pval)
-    return out
-
-
-def _extract_trust_path(name: str, params: Dict) -> Optional[str]:
-    """提取工具调用用于信任落库/查询的目标路径(复用 _parse_paths, DRY) — 小欧 2026-09-02
-    取首个非 window: 键的文件路径; 无路径参数/窗口工具/提取失败返回 None(=工具级通配)"""
-    for p in _parse_paths(name, params or {}):
-        if not p.startswith("window:"):
-            return p
-    return None
-
-
-def _has_conflict(all_calls: List[Dict]) -> bool:
-    """检测路径/窗口冲突 — 北京老陈 2026-07-04 初版; 小欧 2026-08-09 计数版; 小欧 2026-08-11 窗口工具纳入
-    冲突：同一键(文件路径/窗口标题)被>=2次调用访问, 且(至少一个文件写操作 或 含窗口工具)
-    有冲突→顺序执行, 无冲突→并行
-    [2026-08-09 小欧] BUG修复: 旧实现用 set 存工具名不计数, 同名工具多次写
-    同一路径漏检(3×edittext 同文件)→误走并行→read-modify-write 竞态致内容丢失。
-    改为 path→(调用次数, 工具名set), 复用 _parse_paths 解析(与 _partition_calls 一致, DRY)。
-    [2026-08-11 小欧] 扩展: 窗口工具(window_focus/window_resize/set_window_state)同标题即冲突,
-    消除 task002 实测 P2(restore+resize 同批并行→resize 0.00s 莫名失败)的并行竞态。
-    注: 文件路径键与 "window:" 键空间不重叠, 同一 entry 的 tools 不会混合文件与窗口工具。
-    """
-    path_ops: Dict[str, Dict[str, Any]] = {}
-
-    def _record(_path: str, _name: str) -> None:
-        entry = path_ops.setdefault(_path, {"count": 0, "tools": set()})
-        entry["count"] += 1
-        entry["tools"].add(_name)
-
-    for c in all_calls:
-        name = c.get("tool_name", "")
-        if name not in FILE_OPERATION_TOOLS and name not in WINDOW_TARGET_TOOLS:
-            continue
-        for _path in _parse_paths(name, c.get("tool_params", {})):
-            _record(_path, name)
-
-    for path, entry in path_ops.items():
-        tools = entry["tools"]
-        if entry["count"] >= 2 and (any(t in _WRITE_OPS for t in tools) or any(t in WINDOW_TARGET_TOOLS for t in tools)):
-            logger.info(f"[_has_conflict] 操作冲突(路径/窗口): {path}, tools={tools}, 调用数={entry['count']}, 降级顺序执行")
-            return True
-    return False
-
-
-def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
-    """按路径/窗口相关性分组(并查集连通分量): 共享路径或同标题窗口的调用归一组, 组间无共享→可并行
-    返回: 组列表, 每组是 all_calls 的索引列表 — 小欧 2026-08-09 — 小欧 2026-08-11 窗口工具自动纳入
-    (窗口工具经 _parse_paths 返回 "window:标题" 冲突键, 同标题自动并组串行, 分组本体逻辑零改动)
-    """
-    n = len(all_calls)
-    parent = list(range(n))
-
-    def _find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def _union(a, b):
-        ra, rb = _find(a), _find(b)
-        if ra != rb:
-            parent[rb] = ra
-
-    path_to_calls = {}
-    for i, c in enumerate(all_calls):
-        for p in _parse_paths(c.get("tool_name", ""), c.get("tool_params", {})):
-            path_to_calls.setdefault(p, []).append(i)
-    for _p, idxs in path_to_calls.items():
-        base = idxs[0]
-        for i in idxs[1:]:
-            _union(base, i)
-
-    groups = {}
-    for i in range(n):
-        groups.setdefault(_find(i), []).append(i)
-    return list(groups.values())
 
 
 async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,

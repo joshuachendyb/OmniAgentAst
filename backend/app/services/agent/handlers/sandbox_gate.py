@@ -85,7 +85,7 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     # 2026-09-03 小欧/老杨 17.1: 复用主链 _extract_trust_path（函数内延迟import规避循环，与模块内既有延迟导入同模式），纠正16.3硬编码7key及window_title误授权
     # 17.1补：_extract_trust_path对非FILE_OPERATION_TOOLS（如move_file vs move）返回None时，回落查常见文件路径键（不含window_title，防窗口标题误当文件路径）
     try:
-        from app.services.agent.handlers.action_handler import _extract_trust_path as _sb_trust_path
+        from app.tools.trust import extract_trust_path as _sb_trust_path
         _sandbox_path = _sb_trust_path(tool_name, params)
     except Exception:
         _sandbox_path = None
