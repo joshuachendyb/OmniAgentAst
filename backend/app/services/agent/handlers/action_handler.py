@@ -183,18 +183,31 @@
 # 2026-09-04 小健 回归修复(bypass乱序严重bug): run_sandbox_gate DRY重构遗漏bypass路径无条件
 #   yield resumed + continue → 绕过确认的工具沙箱放行后误落入真HITL等待(confirm_id已resolve/弹出
 #   →entry=None→误判"用户拒绝"), 复现: E2E中shell被误拒致失败; 现恢复预DRY的resumed+continue
+# 2026-09-04 小健 第3阶段拆分: 4个"名不副实"函数下沉至3个新文件(先复制后修改, 逻辑零改动)
+#   [改法] ①新建 action_input_parser.py: _build_call_list + BuildCallListResult(LLM action输入解析, 零agent依赖)
+#          ②新建 observation_builder.py: ObservationContext + build_observation + _add_denial_feedback(观察反馈构建层,
+#            YAGNI合并: 不单拆 feedback_writer.py)
+#          ③新建 tool_runner.py: execute_tools(工具执行调度, 与 tool_executor 同层)
+#   [效果] 删5个内联(ObsContext/_add_denial_feedback/execute_tools/build_observation/BuildCallListResult/_build_call_list),
+#          action_handler 920→~596行纯编排调度层(SRP); 拆分后与git原始代码 6代码块逐行IDENTICAL+AST语义MATCH(保等价),
+#          保留同名import→handle_action调用点与外部导入路径零改动; 回归: 11+33+336+83+4=467用例通过(2基线既有失败与本次无关)
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
-3个职责单一的函数:
+2个顶层函数(职责单一):
 - check_safety_and_confirm: 安全检查+HITL确认(async generator,IncidentStep先yield再等确认)
-- execute_tools: 工具执行 → 返回results
-- build_observation: 构建observation → 返回events
+- handle_action: action编排调度(调用 handle_action 编排: _build_call_list→check_safety_and_confirm→execute_tools→build_observation)
+
+已下沉至新文件(2026-09-04 小健 第3阶段拆分, 详见头部编辑历史):
+- _build_call_list/BuildCallListResult → app/services/agent/action_input_parser.py (LLM action输入解析)
+- ObservationContext/build_observation/_add_denial_feedback → app/services/agent/observation_builder.py (观察反馈构建层)
+- execute_tools → app/services/agent/tool_runner.py (工具执行调度)
 
 小沈 2026-06-09
 小沈 2026-06-10 合并check_safety+wait_confirmation,消除重复check_before_execute调用
 小沈 2026-06-10 修复HITL bug: check_safety_and_confirm改为async generator,IncidentStep先yield再等确认
 小沈 2026-06-13 移除ActionHandler类,改为模块级函数
+小健 2026-09-04 第3阶段拆分: 原docstring"3个函数"随 execute_tools/build_observation 下沉更新为"2个顶层函数", 明确下沉去向(详见头部编辑历史)
 """
 import asyncio
 
@@ -225,20 +238,10 @@ from app.tools.target_utils import _resolve_target_field, _extract_target  # 202
 from app.file_persist import make_fp_callback  # 2026-09-04 小健 第2阶段拆分: 文件A落盘回调工厂下沉file_persist
 from app.services.agent.handlers.sandbox_gate import sandbox_precheck, sandbox_resolve, run_sandbox_gate  # 小欧 2026-08-25 沙箱闸门逻辑拆分; 小健 2026-09-04 新增run_sandbox_gate统一入口
 
-
-# 【修复P2-5】封装observation构建上下文 — 北京老陈 2026-06-13
-@dataclass
-class ObservationContext:
-    """构建observation所需的上下文 — 遵守ISP原则"""
-    agent: Any
-    all_calls: List[Dict]
-    results: List[Any]
-    step: int
-    tool_name: str
-    tool_params: Dict
-    is_parallel: bool
-    pending_calls: List
-    fc_context: Dict = None
+# 2026-09-04 小健 第3阶段拆分: 以下函数/类已拆分至3个新文件(action_input_parser/observation_builder/tool_runner), 先复制后修改
+from app.services.agent.action_input_parser import _build_call_list, BuildCallListResult  # 2026-09-04 小健 下沉: LLM action输入解析
+from app.services.agent.observation_builder import ObservationContext, build_observation, _add_denial_feedback  # 2026-09-04 小健 下沉: 观察反馈构建层
+from app.services.agent.tool_runner import execute_tools  # 2026-09-04 小健 下沉: 工具执行调度
 
 
 # 以下常量/函数已拆分至 app/tools/file_tool_utils.py — 小健 2026-09-04
@@ -483,332 +486,6 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         #   由_add_denial_feedback精确到call写(避免在execute前写tool result导致assistant重复/同名误标)
         if _denied_out is not None:
             _denied_out[:] = list(_denied)
-
-
-def _add_denial_feedback(agent, denied_items, fc_context=None):
-    """HITL拒绝/拦截→把反馈写入LLM历史, 让LLM换方案(符合人类认知: 拒绝≠失败) — 小欧 2026-07-13
-
-    2026-08-11 小欧 fix D2: 精确到call对象, 只对被拒call写observation:
-      原实现遍历all_calls按tool_name匹配→同批同名工具(实际会执行)被误标"被拦截",
-      且自行add_assistant_tool_call→与build_observation的assistant双重写, LLM历史矛盾;
-      现assistant统一由build_observation写(L649), 本函数在execute_tools后只补被拒call的tool result。
-    """
-    for _cn, _reason, _call in (denied_items or []):
-        _tid = _call.get("_tool_call_id", "")
-        _obs = f"[Observation] 工具 {_cn} {_reason}. 请改用其他工具或方式完成用户任务。"
-        try:
-            agent.message_builder.add_tool_result(_tid, _obs)
-        except Exception as e:
-            logger.debug(f"add_tool_result(_tid={_tid})失败, 尝试空ID: {e}")
-            try:
-                agent.message_builder.add_tool_result("", _obs)
-            except Exception as e2:
-                logger.debug(f"add_tool_result(空ID)也失败: {e2}")
-
-
-
-
-async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
-                        tool_name: str, tool_params: Dict,
-                        on_retry_started=None, on_attempt_recorded=None) -> List[Any]:
-        """工具执行调度 — 三分支策略（遵守SLAP：本层只做决策不分派执行细节）
-         
-        三分支说明：
-          A: 单工具（len==1）→ execute_tool(on_retry_started=...)
-             单个工具执行，注入重试回调。引擎层自动处理重试+通知。
-          B: 多工具无冲突 → execute_tool(parallel=True, 无on_retry_started)
-             各工具并行执行，用try_once一次执行不重试。
-             设计理由（YAGNI）：并行工具的瞬态失败概率低，不需要引擎自动重试。
-             LLM从observation看到失败后可自行决定重试。同时避免asyncio.gather内
-             多重试的复杂性。
-          C: 多工具有冲突/非并行模式 → 顺序执行，每个调execute_tool(on_retry_started=...)
-             文件路径冲突（一写多读）→降级顺序避免并发竞态。
-             非并行模式→依次执行不并发。
-         
-        参数变化历史：
-        北京老陈 2026-07-04: 初版，三分支+文件冲突检测
-        小欧 2026-07-09: 
-          - 并行分支B改用parallel=True（→try_once），删除手动重试循环（解决SRP/DRY违规）
-          - 新增on_retry_started参数，透传给单工具/顺序分支（解决重试无前端通知问题）
-        """
-        start_time = time.time()
-
-        # #4 自动纠正: 文件工具扩展名预检 — 小欧 2026-07-21
-        _correction_map = {}
-        for i, c in enumerate(all_calls):
-            _orig = c.get("tool_name", "")
-            _corrected, _raw = _auto_correct_file_tool(_orig, c.get("tool_params", {}))
-            if _raw:
-                logger.info(f"[action_handler] 自动纠正: {_raw}→{_corrected}")
-                c["tool_name"] = _corrected
-                _correction_map[i] = _raw
-        _corrected_tn, _raw_tn = _auto_correct_file_tool(tool_name, tool_params)
-        if _raw_tn:
-            tool_name = _corrected_tn
-            if all_calls:
-                _correction_map[0] = _raw_tn
-
-        def _cn(c):
-            return c.get("tool_name", "") if isinstance(c, dict) else ""
-        def _cp(c):
-            return c.get("tool_params", {}) if isinstance(c, dict) else {}
-
-        if len(all_calls) == 1:
-            # A: 单工具
-            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={tool_name}")
-            # #18(2026-08-23): 文件A 每次尝试回调按【全局序号】取号 — 小欧 2026-08-23
-            _cb = on_attempt_recorded(1) if on_attempt_recorded else None
-            result = await execute_tool(agent, tool_name, tool_params, agent._retry_engine,
-                                        on_retry_started=on_retry_started, on_attempt_recorded=_cb)
-            results = [result]
-
-        elif is_parallel:
-            # B': 并行分组调度 — 冲突组内串行, 无冲突组并行("该并行就并行") — 小欧 2026-08-09
-            _names = [_cn(c) for c in all_calls]
-            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组并行执行: tools={_names}")
-            groups = _partition_calls(all_calls)
-            # DRY(规范6): 每组冲突判定只算一次, 监控(_gmode)与执行(_run_group)共用,
-            # 消除二次 _has_conflict 冗余调用; 纯函数确定性保证监控与实际执行必然一致(无失真) — 小欧 2026-08-09
-            _gd = []
-            _gconf = []  # 每组冲突判定结果, 按 groups 顺序对齐
-            for _g in groups:
-                _gt = [_cn(all_calls[i]) for i in _g]
-                _conflicted = len(_g) > 1 and _has_conflict([all_calls[i] for i in _g])
-                _gconf.append(_conflicted)
-                _gmode = "单工具" if len(_g) == 1 else ("并行" if not _conflicted else "串行")
-                _gd.append(f"[{'/'.join(_gt)}:{_gmode}]")
-            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组明细({len(groups)}组): {' '.join(_gd)}")
-
-            async def _run_group(indices: List[int], conflicted: bool):
-                group = [all_calls[i] for i in indices]
-                _g_start = time.time()  # 监控: 每组执行耗时起点 — 小欧 2026-08-09
-                if len(group) == 1:  # 单工具, 语义同原A
-                    # #18(2026-08-23): 工厂实参=全局序号(indices[0]+1), 禁用组内局部下标 — 小欧 2026-08-23
-                    _cb = on_attempt_recorded(indices[0] + 1) if on_attempt_recorded else None
-                    _res = [await execute_tool(agent, _cn(group[0]), _cp(group[0]), agent._retry_engine,
-                                               on_retry_started=on_retry_started, on_attempt_recorded=_cb)]
-                    _gmode = "单工具"
-                elif not conflicted:  # 组内无冲突→并行(try_once), 语义同原B
-                    # #18(2026-08-23): zip(indices, group) 对齐全局下标取号 — 小欧 2026-08-23
-                    tasks = [execute_tool(agent, _cn(c), _cp(c), agent._retry_engine, parallel=True,
-                                          on_attempt_recorded=(on_attempt_recorded(_gi + 1) if on_attempt_recorded else None))
-                             for _gi, c in zip(indices, group)]
-                    _res = await asyncio.gather(*tasks, return_exceptions=True)
-                    _gmode = "并行"
-                else:  # 组内冲突→串行(带重试), 语义同原C
-                    _res = []
-                    for _gi, call in zip(indices, group):
-                        try:
-                            _cb = on_attempt_recorded(_gi + 1) if on_attempt_recorded else None
-                            _res.append(await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine,
-                                                           on_retry_started=on_retry_started, on_attempt_recorded=_cb))
-                        except Exception as e:
-                            logger.warning(f"[action_handler] 工具{_cn(call)}组内顺序执行失败: {e}")
-                            _res.append(e)
-                    _gmode = "串行"
-                logger.info(f"[action_handler] 分组执行完成: tools={[_cn(c) for c in group]}, 模式={_gmode}, 耗时={time.time()-_g_start:.2f}s")
-                return _res
-
-            _grouped = await asyncio.gather(*[_run_group(g, _gconf[i]) for i, g in enumerate(groups)],
-                                            return_exceptions=True)  # 组间失败隔离: 单组异常不取消其他组
-            results = [None] * len(all_calls)  # 结果按原顺序填回
-            for _indices, _res in zip(groups, _grouped):
-                if isinstance(_res, Exception):  # 整组失败: 组内全部标记为该异常(与原C分支单工具异常append语义一致)
-                    for _i in _indices:
-                        results[_i] = _res
-                    continue
-                for _i, _r in zip(_indices, _res):
-                    results[_i] = _r
-        else:
-            # C: 非并行模式 → 顺序执行（一个不丢）
-            _names = [_cn(c) for c in all_calls]
-            _reason = "非并行模式"
-            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 顺序执行({_reason}): tools={_names}")
-            results = []
-            for _gi, call in enumerate(all_calls, 1):
-                try:
-                    # #18(2026-08-23): 顺序分支按全局序号取号 — 小欧 2026-08-23
-                    _cb = on_attempt_recorded(_gi) if on_attempt_recorded else None
-                    result = await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine,
-                                                on_retry_started=on_retry_started, on_attempt_recorded=_cb)
-                    results.append(result)
-                except Exception as e:
-                    logger.warning(f"[action_handler] 工具{_cn(call)}顺序执行失败: {e}")
-                    results.append(e)
-
-        elapsed = time.time() - start_time
-        tool_names = [_cn(c) for c in all_calls]
-        logger.info(f"[action_handler] 工具执行完成: tools={tool_names}, 耗时={elapsed:.2f}s")
-
-        for i, (call, result) in enumerate(zip(all_calls, results)):
-            if isinstance(result, Exception):
-                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result=ERROR({result})")
-            else:
-                _r_str = str(result)
-                if len(_r_str) > ACTION_LOG_RESULT_MAX_CHARS:
-                    _r_str = _r_str[:ACTION_LOG_RESULT_MAX_CHARS] + f"...(截断{len(_r_str)}字符)"
-                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result={_r_str}")
-            _orig_tool = _correction_map.get(i)
-            if _orig_tool and isinstance(result, dict):
-                _llm = result.get("llm_data")
-                if isinstance(_llm, dict) and isinstance(_llm.get("summary"), str):
-                    _llm["summary"] += f"（工具自动纠正自:{_orig_tool}）"
-
-        # 11.2-C 工具遥测回调（P0-2 修复：on_tool_call 未调用 → tool_execution_seconds 恒 0）— 小欧 2026-08-20; 2026-09-04 小健 第2阶段拆分: 批量聚合下沉 agent_telemetry.collect_and_report
-        _tele = getattr(agent, "telemetry", None)
-        if _tele is not None:
-            _tele.collect_and_report(all_calls, results)
-
-        return results
-
-
-async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
-    """构建 observation - tool_result 数组方案（§10.3.3(3)）— 2026-08-18 小欧
-
-    职责不变: 1条assistant(tool_calls)+逐工具add_tool_result喂LLM; record_operation双表同号
-    变更: 删 ActionStep 发射/删 _merge_other_data/删顶层 llm_data/tool_result/other_data/parallel_results
-          ObservationStep 仅 tool_result 数组; 编排层从各 tool_result[i].other_data 收集(return_direct/attachment/warning)
-    返回: (events, orchestration)  orchestration={"return_direct","attachments","warning","return_direct_message"}
-    """
-    events: List = []
-    tool_result: List[Dict[str, Any]] = []
-    orchestration = {"return_direct": False, "attachments": [], "warning": "", "return_direct_message": ""}
-
-    # assistant+tool 配对 — 建1条assistant带所有tool_calls
-    _fc = ctx.fc_context or {}
-    _shared_tc = _fc.get("tool_calls", [])
-    if _shared_tc:
-        ctx.agent.message_builder.add_assistant_tool_call(
-            _shared_tc, content=_fc.get("llm_content", "") or None,
-            reasoning=_fc.get("llm_reasoning", "") or None,
-        )
-
-    for call, result in zip_longest(ctx.all_calls, ctx.results):
-        if call is None:
-            continue
-        # 2026-09-03 小欧 Bug-1: 全工具被安全拦截时 results 可能缺失该 call 的结果(zip_longest 补 None),
-        #   用合成"无结果"占位, 使 ObservationStep 必然发出、前端 results 保长度, 齿轮/动画不再永驻
-        # 2026-09-03 小欧 D2-01: synthetic补summary使折叠区可见“已安全拦截：tool”
-        if result is None:
-            _syn_tool = call.get("tool_name", "?") if isinstance(call, dict) else "?"
-            result = {"llm_data": {"status": {"exec_code": "error"}, "summary": f"已安全拦截：{_syn_tool}"}, "other_data": {"synthetic": True}}
-        if isinstance(result, Exception):
-            obs_text = f"Observation: 工具{call.get('tool_name', '?')}执行异常: {result}"
-            _is_failed = True
-        else:
-            obs_text = build_observation_text(result, call.get("tool_name", ""), call.get("tool_params", {}))
-            _llm_data = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
-            # 2026-08-18 小健 三堂会审 Bug#7: status 可能为 str(工具实现不规范), 防御防 AttributeError
-            _status = _llm_data.get("status") if isinstance(_llm_data.get("status"), dict) else {}
-            _ec = _status.get("exec_code", "")
-            _is_failed = _ec == "error"
-
-        get_prompt_logger().log_observation(
-            step_name=f"步骤{ctx.step}: 工具执行结果",
-            observation_content=obs_text, tool_name=call.get("tool_name", ""),
-            tool_params=call.get("tool_params", {}), round_number=ctx.step, raw_data=result,
-        )
-        _tool = call.get("tool_name", "?")
-        ctx.agent.record_operation(
-            _tool,
-            status=OperationStatus.FAILED.value if _is_failed else OperationStatus.SUCCESS.value,
-            error=str(result) if _is_failed else None,
-        )
-        repair_warning = call.get("_repair_warning", "")
-        if repair_warning:
-            obs_text = f"Observation: {repair_warning}\n{obs_text}"
-            logger.warning(f"[action_handler] step={ctx.step}, {_tool} 参数截断修复: {repair_warning}")
-        try:
-            tc_id = call.get("_tool_call_id", "")
-            ctx.agent.message_builder.add_tool_result(tc_id, obs_text)
-        except Exception as e:
-            logger.warning(f"[action_handler] add_tool_result异常: {type(e).__name__}: {e!r}")
-            try:
-                ctx.agent.message_builder.add_tool_result("", obs_text)
-            except Exception as e2:
-                logger.warning(f"[action_handler] add_tool_result最终异常: {type(e2).__name__}: {e2!r}")
-
-        # ── 构建 tool_result[i]（每元素自包含, other_data 1:1 不合并）── 2026-08-18 小欧
-        # 2026-08-18 小健 三堂会审 Bug#4: 删除死变量 _data(只赋值未使用, 原始 data 已由 data_text/dl 承载)
-        if isinstance(result, dict):
-            _llm = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
-            _other = result.get("other_data") if isinstance(result.get("other_data"), dict) else {}
-        else:
-            _llm, _other = {}, {}
-        tool_result.append({
-            "tool_name": _tool,
-            "llm_data": _llm,
-            "llm_data_text": format_llm_data_text(_llm),
-            "data_text": obs_text,
-            "other_data": _other,
-        })
-        # ── 编排层收集（取代旧 _merge_other_data 盲目合并）── 2026-08-18 小欧
-        if _other.get("return_direct"):
-            orchestration["return_direct"] = True
-            # 2026-08-18 小健 Bug#7: status 可能非 dict, .get 前防御 (line 732 同各 status 取值点)
-            _rd_status = _llm.get("status") if isinstance(_llm.get("status"), dict) else {}
-            orchestration["return_direct_message"] = _rd_status.get("message", "") or obs_text
-        if _other.get("attachment") is not None:
-            orchestration["attachments"].append(_other["attachment"])
-        if _other.get("warning"):
-            _w = str(_other["warning"])
-            orchestration["warning"] = (orchestration["warning"] + "\n\n" + _w).strip() if orchestration["warning"] else _w
-
-    # 2026-09-03 小欧 Bug-1: 无条件发 ObservationStep(即使 tool_result 为空/全拦截),
-    #   前端 results 到达即卸载等待动画, 杜绝齿轮/动画永驻(改前空 tool_result 直接 return 不发事件)
-    # 2026-09-03 小欧 D2-01补：all_calls空时不发空观察（无工具调用无需观察）
-    if ctx.all_calls:
-        events.append(ctx.agent._step_emitter.emit(ObservationStep(step=ctx.step, tool_result=tool_result)))
-    return events, orchestration
-
-
-@dataclass
-class BuildCallListResult:
-    """_build_call_list 返回值 — M-03 6元组→dataclass — 小欧 2026-07-10"""
-    tool_name: str
-    tool_params: Dict
-    fc_context: Dict
-    pending_calls: List
-    all_calls: List[Dict]
-    is_parallel: bool
-
-
-def _build_call_list(parsed: Dict) -> BuildCallListResult:
-    """构建工具调用列表 — 小欧 2026-06-18 从handle_action提取
-    chendyg 2026-06-26 P1-10/11修复: 防御tool_name为空和pending_calls缺字段"""
-    tool_name = parsed.get("tool_name", "")
-    tool_params = parsed.get("tool_params") or {}
-    fc_context = parsed.get("fc_context") or {}
-    pending_calls = parsed.get("_pending_calls", [])
-
-    # 【P1-10修复】tool_name为空时直接FAILED — chendyg 2026-06-26
-    # handle_action已兜底空检查(ErrorStep+return), 此处删除重复日志 — 小欧 2026-07-25
-
-    all_calls = [{
-        "tool_name": tool_name, "tool_params": tool_params,
-        "_tool_call_id": fc_context.get("tool_call_id", "") if fc_context else "",
-        "_repair_warning": parsed.get("_repair_warning", ""),
-        "params_raw_str": parsed.get("params_raw_str", ""),   # #3 透传 LLM 原始参数串(11.7.9-2③) — 小欧 2026-08-23
-    }]
-    # 【P1-11修复】pending_calls条目缺tool_name时跳过 — chendyg 2026-06-26
-    for pc in pending_calls:
-        pc_name = pc.get("tool_name", "")
-        if not pc_name:
-            logger.warning(f"[_build_call_list] pending_call缺tool_name,跳过: {pc}")
-            continue
-        all_calls.append({
-            "tool_name": pc_name, "tool_params": pc.get("tool_params") or {},
-            "_tool_call_id": pc.get("_tool_call_id", ""),
-            "_repair_warning": pc.get("_repair_warning", ""),
-            "params_raw_str": pc.get("params_raw_str", ""),   # #3 并行调用各自原始串 — 小欧 2026-08-23
-        })
-
-    return BuildCallListResult(
-        tool_name=tool_name, tool_params=tool_params, fc_context=fc_context,
-        pending_calls=pending_calls, all_calls=all_calls,
-        is_parallel=len(all_calls) > 1,
-    )
-
 
 
 async def handle_action(agent, parsed: Dict):
