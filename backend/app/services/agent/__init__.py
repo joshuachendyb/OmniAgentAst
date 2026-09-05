@@ -7,7 +7,7 @@ Agent 模块
 """
 
 from .base_agent import BaseAgent
-from .react_cycle import run_react_cycle
+from .react_loop import run_react_cycle  # 8.4拆分: react_cycle.py移交main循环给react_loop — 小健 2026-09-05
 __all__ = [
     "BaseAgent",
     "run_react_cycle",

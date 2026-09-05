@@ -45,7 +45,7 @@ from app.services.agent.chunk_buffer import ChunkBuffer
 from app.services.agent.message_builder import MessageBuilder
 
 from app.services.agent.step_emitter import StepEmitter
-from app.services.agent.react_cycle import run_react_cycle as _run
+from app.services.agent.react_loop import run_react_cycle as _run
 
 
 class BaseAgent(ABC):
