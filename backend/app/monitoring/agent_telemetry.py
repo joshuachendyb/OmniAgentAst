@@ -27,6 +27,10 @@
 #   为空时 fallback 到 agent.status.value; 消除监控层隐式依赖核心状态 — 小健-2026-09-04
 # 2026-09-05 - 小健 - [7]8.6 一拆三: _log_task_end 自 stream_reader.py 整份搬入(任务收尾日志+统计属遥测同类,
 #   仅改 import 归属零逻辑改动, 禁backward无垫片); 追加 log_and_print import(TASK_END console 打印)
+# 2026-09-05 - 小欧 - 防御加固(三堂会审): finalize 的 task_model 改走 _model_to_json 单向容错——原直呼
+#   _tm.model_dump_json(), 非Pydantic模型(SimpleNamespace等) AttributeError 致整表遥测落库失败(一行序列化拖垮
+#   全部指标, 与"降级不阻塞"声明相悖)。生产链路恒 ModelRef(Pydantic) 行为不变; 未来插件/轻量client出非Pydantic
+#   模型时该字段保全降级, 不再拖垮整表。来源线索: 回归测试以 SimpleNamespace 伪装模型触发 ERROR 日志 4 次。
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -35,6 +39,7 @@
 """
 from typing import Dict, Any, Optional, List
 import time
+import json  # _model_to_json 单向容错序列化(vars 兜底) — 小欧 2026-09-05
 from datetime import datetime
 
 from app.logger import logger, log_and_print  # log_and_print: TASK_END console 打印 — 小健 2026-09-05
@@ -47,6 +52,25 @@ _M_SKIP = {
     "usage", "paused", "resumed", "retrying", "cancelled",
     "authorization_required", "start", "stats", "context_overview", "final_stats",
 }
+
+
+def _model_to_json(_m):
+    """模型身份结构→JSON串(单向容错): Pydantic 直调 model_dump_json; 其余取 vars 兜底;
+    不可序列化降 None——绝不因一行序列化拖垮整表遥测落库 — 小欧 2026-09-05
+    生产链路恒 ModelRef(Pydantic) 行为与原 `_tm.model_dump_json() if _tm else None` 逐字节等价。"""
+    if _m is None:
+        return None
+    _mjd = getattr(_m, "model_dump_json", None)
+    if callable(_mjd):
+        try:
+            return _mjd()
+        except Exception:
+            pass
+    _d = vars(_m) if hasattr(_m, "__dict__") else None
+    if _d:
+        return json.dumps({k: v for k, v in _d.items() if not k.startswith("_")},
+                          ensure_ascii=False, default=str)
+    return None
 
 
 class TaskTelemetry:
@@ -265,7 +289,7 @@ class TaskTelemetry:
             "outcome": _outcome,
             "error_type": _error_type,
             # 归一(小欧 2026-08-22 报告v1.25 6.7): model/provider 两键 → task_model JSON 串(F1 补写入源)
-            "task_model": _tm.model_dump_json() if _tm else None,
+            "task_model": _model_to_json(_tm),
             "total_steps": len([s for s in _agent.steps if getattr(s, "TYPE", "") not in _M_SKIP]),
             "llm_call_count": getattr(_agent, "llm_call_count", 0),
             "retry_count": getattr(_agent, "_retry_count", 0),
