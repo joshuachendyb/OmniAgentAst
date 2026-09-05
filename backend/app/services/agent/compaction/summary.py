@@ -23,10 +23,10 @@ from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
 async def _extract_response_content(llm_agent, feed: List[Dict]) -> str:
     """调 call_llm_with_fallback 并提取最终文本(真实 async-generator 协议) — 小健 2026-08-17
 
-    真实协议(llm_stream.py): call_llm_with_fallback(agent, messages, openai_tools) 为 async generator,
-    item 即 tuple, item[0]=="response" 时 item[1]=resp dict, 文本在 resp["content"](见 _build_answer_response:126-129)。
+    真实协议(llm_call.py): call_llm_with_fallback(agent, messages, openai_tools) 为 async generator,
+    item 即 tuple, item[0]=="response" 时 item[1]=resp dict, 文本在 resp["content"](见 llm_response_builder._build_answer_response:126-129)。
     """
-    from app.services.agent.llm_stream import call_llm_with_fallback
+    from app.services.agent.llm_call import call_llm_with_fallback  # 2026-09-05 小健 8.5拆分: llm_stream→llm_call改名
 
     content = ""
     async for item in call_llm_with_fallback(agent=llm_agent, messages=feed, openai_tools=None):

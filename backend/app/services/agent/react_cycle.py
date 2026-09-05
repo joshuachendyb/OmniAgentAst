@@ -146,7 +146,7 @@ from app.services.agent.start_step import _compact_injected_history  # S5(10.1.8
 from app.services.agent.handlers import (
     handle_action, handle_answer,
 )
-from app.services.agent.llm_stream import call_llm_with_fallback
+from app.services.agent.llm_call import call_llm_with_fallback  # 2026-09-05 小健 8.5拆分: llm_stream→llm_call改名
 from app.services.agent.tool_cache_manager import get_openai_tools
 from app.db import db                                          # 11.1 新增: 读 DB 会话/链历史累计 — 小欧 2026-08-20
 from app.services.chat import storage                          # 11.1 新增: query_session_accumulation / query_chain_accumulation — 小欧 2026-08-20
