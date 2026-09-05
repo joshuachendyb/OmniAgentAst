@@ -33,6 +33,18 @@ class StreamBuffer:
     cond: asyncio.Condition = field(default_factory=asyncio.Condition)
     done: asyncio.Event = field(default_factory=asyncio.Event)
 
+    async def publish(self, step_dict: dict) -> int:
+        """生产者直写：append + seq + 唤醒消费者。返回seq。
+        与 agent_runner._append(行199-210) 同模式：先dict()拷贝防调用方副作用，
+        append 与 notify 均须持锁原子完成；cond.notify_all 未持锁调用抛 RuntimeError。
+        — 小健-2026-09-05；2026-09-06 小欧 步骤1落盘(文档[6]5.2)"""
+        step_dict = dict(step_dict)
+        step_dict["seq"] = len(self.event_log)
+        self.event_log.append(step_dict)
+        async with self.cond:
+            self.cond.notify_all()
+        return step_dict["seq"]
+
 
 # 流态缓冲表: task_id -> StreamBuffer(独立于 running_tasks 的生命周期)
 agent_streams: dict[str, "StreamBuffer"] = {}
