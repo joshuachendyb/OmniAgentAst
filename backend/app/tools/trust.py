@@ -83,7 +83,7 @@ async def resolve_skip(agent_task_id: str, tool_name: str, params: dict) -> bool
     完整复制自 action_handler.py:297-327（check_safety_and_confirm内联逻辑提取）
     """
     from app.db import db
-    from app.services.chat.storage import get_session_id_by_task, check_session_trust
+    from app.tools.trust_db import get_session_id_by_task, check_session_trust
     try:
         _sid = await db.atxn("chat", lambda conn: get_session_id_by_task(conn, agent_task_id))
     except Exception:
@@ -108,7 +108,7 @@ async def save_session_trust(task_id: str, tool_name: str, path) -> None:
     完整复制自 hitl_confirmation.py:184-200（resolve_confirmation内联逻辑提取）
     """
     from app.db import db
-    from app.services.chat.storage import get_session_id_by_task, insert_session_trust
+    from app.tools.trust_db import get_session_id_by_task, insert_session_trust
     from app.logger import logger
 
     def _do(conn):
