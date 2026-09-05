@@ -1,4 +1,36 @@
-﻿v0.19.40.1
+﻿v0.19.40.3
+更新时间: 2026-09-05 10:49:18 - 小沈-2026-09-05
+## v0.19.40.2以来 变更汇总(37个commit) - 小沈-2026-09-05
+[2026-09-05 10:49:18 小沈] 汇总范围=v0.19.40.2以来全部commit(本分支 optimize-0.19.40.1 自v0.19.40.2累积37个commit: 24个已提交+换挡后13个, 含新打的v0.19.40.3)
+
+### refactor(13个):
+- agent react_cycle.py 一拆四: 新建react_inference(常量+守卫群)/react_dispatch(类型分派+状态推断)/react_loop(主循环薄调度), react_cycle改名react_step收缩为单步, __init__/base_agent引用切换react_loop
+- chat stream_reader.py 一拆三并删空壳
+- model resolver.py 新增resolve_session_client外迁sessionModel块
+- agent llm_stream.py 拆builder并改名llm_call.py
+- action_handler SRP拆分: 下沉_build_call_list/_build_observation/execute_tools至3个新文件(action_input_parser+observation_builder+tool_runner), 第2阶段(target/fp回调/遥测下沉), 信任域+冲突检测+文件工具下沉
+- agent_telemetry.py+step_emitter.py SLAP修复: outcome显式透传消除监控层隐式依赖核心状态(19调用点显式finalStep.outcome)
+- 补充编辑历史(action_handler+sandbox_gate+hitl_confirmation)
+- docs 术语统一scheduler消亡
+
+### fix(5个):
+- agent_runner.py 终态final/final_stats延迟到DB status落库后补发, 消除SSE final先到DB status后到致前端StaticStatsBlock detail.status卡executing竞态
+- action_handler.py 拦截action不emit不落库(仅正常执行action才ActionStep落库/yield)
+- action_input_parser+observation_builder+tool_runner 三个拆分文件补提交
+- PipelineRenderer.tsx observation重复显示修复(toolStepSet抑制已消费孤儿渲染)
+- docs [7]文档编码损坏修复(还原父提交版本+backup替换)
+
+### docs(19个):
+- action_handler拆分方案 v1.3-v1.7(沙箱DRY+函数下沉+第2阶段完成+bypass回归修复记录)
+- doc-9月优化文档 v2.6-v2.7+拆分方案
+- 前后端业务数据配合优化分析 v2.9-v2.10 yield发射点补全+3.3链路+删除旧版
+- [4]前后端配合架构重构评估+任务统计执行中卡死病根病因与修复方案, 分组提交两份文档
+- [3]yield链路简化设计 v1.5-v1.6(重设计5.2/5.3/5.4输出参数+ActionStep补遗)+AB全修+[OPI]改名+[5]v1.1+[6]v1.10 三档通读一致性全检
+- 三档改名[5]yield [6]HITL网关 [7]架构重组, 文件改名[3]→[7]
+- [7]第八章 v1.11-v1.13(新增TDD实施计划+52引用盘点修正/铁规对齐/按命令行重写-一代码一阶段11阶段) + 一致性修正+8.9改实施顺序表 + 备份目录统一backup/
+- version.txt v0.19.40.1升级说明(26个commit)
+
+v0.19.40.1
 更新时间: 2026-09-04 12:11:29 - 小欧-2026-09-04
 ## v0.19.40以来 变更汇总(26个commit) - 小欧-2026-09-04
 [2026-09-04 12:11:29 小欧] 汇总范围=v0.19.40以来全部commit(本分支 optimize-0.19.40.1 自v0.19.40累积26个commit, 已打 tag v0.19.40.1)
