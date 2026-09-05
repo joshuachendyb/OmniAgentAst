@@ -100,6 +100,9 @@
 # 2026-09-02 - 小欧 - P10跨provider降级修复(北京老陈驱动「问题报告P10验证」): 配置查找失败(_pv_cfg is None
 #   且目标provider≠全局)时跳过覆盖, 全链用全局默认模型(不以目标provider名+全局api_base错配快照致401/503);
 #   规避报告_flag方案冗余, 以_pv_cfg判空直判, 仅改降级分支不改成功路径, 三堂会审通过(合规/合理/关联逻辑零退化)
+# 2026-09-05 - 小健 - [7]8.6 一拆三: 消费转发 stream_reader(原 stream_reader.py 行257-284)整份并入本模块
+#   (逐字复制零改动, 作为模块级函数, import format_agent_sse); _load_previous_messages 改指 history_loader,
+#   _log_task_end 改指 agent_telemetry; 删 stream_reader.py 空壳不留垫片(禁backward)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -120,7 +123,7 @@ from app.services.task.task_registry import register_task
 from app.services.task.task_runtime import (
     task_cancel_check, task_pause_check_and_yield, task_cancel_check_and_yield,
 )
-from app.services.chat.stream_reader import stream_reader
+from app.utils.sse_formatter import format_agent_sse  # 8.6 消费转发并回本模块(SSE格式化) — 小健 2026-09-05
 from app.services.agent.agent_runner import run_agent_in_background
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.task.task_state import create_stream_buffer, get_stream_buffer
@@ -130,7 +133,8 @@ from app.services.chat.storage import get_user_message_id, allocate_and_insert_m
 from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_previous_task_chain  # S1/S2 任务级读写(10.1.4/10.1.7②); get_session_model 已随 8.7 外迁 resolver 侧 — 小健 2026-09-05
 from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # 11.1 token 四层同构累计 — 小欧 2026-08-20
 from app.db import db  # 小健 2026-08-17 三堂会审-A1修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
-from app.services.chat.stream_reader import _load_previous_messages, _log_task_end
+from app.services.chat.history_loader import _load_previous_messages  # 8.6 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
+from app.monitoring.agent_telemetry import _log_task_end  # 8.6 收尾日志归遥测(统计同类) — 小健 2026-09-05
 
 
 # 后台 agent 任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者(generate)断开后任务再无强引用,
@@ -408,6 +412,38 @@ async def chat_stream_orchestrator(
         yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
     finally:
         _current_task_id.reset(_task_token)
+
+
+async def stream_reader(buffer, task_id: str, after_seq: int = 0):
+    """纯消费者：从事件缓冲按 seq 偏移读取并转发 SSE — 小欧 2026-07-12
+
+    解决什么问题：SSE 只做"读缓冲→转发"，断线即返回、不碰 agent；
+    重连复用同一函数（传 after_seq 续传），避免重复事件。 — 北京老陈 2026-07-12
+
+    小健 2026-09-05 自 stream_reader.py 整份并入本模块(8.6 一拆三, 逐字复制零改动)
+    """
+    offset = after_seq
+    while True:
+        async with buffer.cond:
+            while offset < len(buffer.event_log):
+                # 2026-08-28 小欧 yield日志审计: SSE发送统一入口(覆盖全部SSE yield, KISS)
+                logger.debug(f"[SSE] seq={offset} task={task_id}")
+                yield format_agent_sse(buffer.event_log[offset])
+                offset += 1
+            # #30 fix:排空后复查 len,防止 done.set() 前 producer 追加丢事件 — 小欧 2026-07-18
+            if offset < len(buffer.event_log):
+                continue
+            if buffer.done.is_set():
+                return
+            # cond.wait()无超时: 若producer崩溃永不set.done, 消费者永久挂起泄漏HTTP连接
+            # 加60s超时, 超时后循环重检done — 北京老陈 2026-07-30
+            try:
+                await asyncio.wait_for(buffer.cond.wait(), timeout=60.0)
+            except asyncio.TimeoutError:
+                logger.debug(f"[SSE] stream_reader cond.wait 60s超时, 重检done: task_id={task_id}")
+                if buffer.done.is_set():
+                    return
+                continue
 
 
 async def _stream_with_control(buffer, task_id: str, session_id: str,

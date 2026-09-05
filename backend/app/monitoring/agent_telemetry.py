@@ -25,6 +25,8 @@
 #   收敛到 telemetry 模块, action_handler 不再持有 duration/artifacts 收集细节; 函数体完整复制不改逻辑
 # 2026-09-04 - 小健 - SLAP修复: build_final_stats_step 加 outcome 参数(默认空串), 优先用传入的 outcome,
 #   为空时 fallback 到 agent.status.value; 消除监控层隐式依赖核心状态 — 小健-2026-09-04
+# 2026-09-05 - 小健 - [7]8.6 一拆三: _log_task_end 自 stream_reader.py 整份搬入(任务收尾日志+统计属遥测同类,
+#   仅改 import 归属零逻辑改动, 禁backward无垫片); 追加 log_and_print import(TASK_END console 打印)
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -35,7 +37,7 @@ from typing import Dict, Any, Optional, List
 import time
 from datetime import datetime
 
-from app.logger import logger
+from app.logger import logger, log_and_print  # log_and_print: TASK_END console 打印 — 小健 2026-09-05
 from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.monitoring import storage  # 落库层（独立，storage 内部惰性导入 database 防环）
 
@@ -308,3 +310,54 @@ class TaskTelemetry:
             storage.persist_llm_calls(self._llm_calls)
         except Exception as _e:
             logger.error(f"[TaskTelemetry] 落库 monitoring.db 失败(降级不阻塞主链路, 监控数据缺失可凭此日志追溯): {_e!r}")  # 12.2-Q2: warning→error提级留痕 — 小欧 2026-08-21
+
+
+def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = None,
+                  steps: Optional[list] = None, agent: Any = None) -> None:
+    """输出 TASK_END 日志（结束方式+耗时+步骤统计+LLM调用次数+累计token消耗）— 一行完整
+    小健 2026-09-05 自 stream_reader.py 整份搬入(8.6 一拆三, 统计杂务归遥测同类), 逐字复制零改动"""
+    parts = [f"task_id={task_id}", f"end_type={end_type}"]
+    if start_time is not None:
+        elapsed = time.time() - start_time
+        parts.append(f"duration={elapsed:.2f}s")
+    if agent is not None:
+        parts.append(f"llm_calls={getattr(agent, 'llm_call_count', 0)}")
+        # 累计 token 消耗(真实用量) — 小欧 2026-08-09: 修正 steps 中 usage=N 仅为 step 计数而非 token
+        _au = getattr(agent, "accumulated_usage", None)
+        if _au and isinstance(_au, dict):
+            parts.append("usage_tokens=" + ",".join(
+                f"{k}={_au.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
+        # 11.1 token 四层同构：追加任务级/会话级/链级累计输出 — 小欧 2026-08-20
+        _tau = getattr(agent, "task_accumulated_tokens", None)
+        if _tau and isinstance(_tau, dict):
+            parts.append("task_acc=" + ",".join(
+                f"{k}={_tau.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
+        _sau = getattr(agent, "session_accumulated_tokens", None)
+        if _sau and isinstance(_sau, dict):
+            parts.append("session_acc=" + ",".join(
+                f"{k}={_sau.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
+        _cau = getattr(agent, "chain_accumulated_tokens", None)
+        if _cau and isinstance(_cau, dict):
+            parts.append("chain_acc=" + ",".join(
+                f"{k}={_cau.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
+    if steps:
+        counter: Dict[str, int] = {}
+        for s in steps:
+            t = s.get("type", "?") if isinstance(s, dict) else "?"
+            counter[t] = counter.get(t, 0) + 1
+        # 2026-08-09 - 小欧 - 三审收尾: usage 为非业务 Meta 步骤, 真实消耗由 usage_tokens 承担, 不混入业务统计;
+        #   同性质非业务 MetaStep(paused/resumed/retrying/cancelled/authorization_required/start) 一并剔除, 与
+        #   "Meta 步骤非业务步骤"注释自洽; 业务步骤(action/thought/observation/final/error)不计入排除,
+        #   不误伤。total 必须在 pop 之后计算, 否则 total_steps 含排除项与注释声明矛盾。
+        # 2026-08-18 小欧 P1/P3/P5/P6: chunk/error/usage/paused/resumed/retrying/cancelled 均仅SSE不落库,
+        #   不入 current_execution_steps, total_steps 自然剔除; cancelled 经 task_runtime.task_cancel_check_and_yield(:90) append 进内存 steps 须显式剔除,
+        #   收敛剔除集={cancelled,authorization_required,start}与 agent_runner:388 口径一致(10.4.4 第0步) — 小欧 2026-08-18(修正)
+        for _t in ("cancelled", "authorization_required", "start"):
+            counter.pop(_t, None)
+        total = sum(counter.values())
+        step_summary = ",".join(f"{k}={v}" for k, v in sorted(counter.items()))
+        if step_summary:
+            parts.append(f"steps=[{step_summary}]")
+        parts.append(f"total_steps={total}")
+    _msg = f"[TASK_END] {time.strftime('%H:%M:%S')} {' | '.join(parts)}"
+    log_and_print(_msg)
