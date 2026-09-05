@@ -22,6 +22,9 @@
 #   [改法] 新增 run_sandbox_gate(agent,step,call,tool_name,params,safety_result,denied) 统一入口,
 #          封装 precheck→resolve→yield steps→check ok 逻辑; action_handler 三处改为一行调用
 #   [效果] 三处20行重复代码→三处5行调用, 逻辑集中在sandbox_gate.py一个入口, DRY+KISS+SRP
+# 2026-09-05 小欧 ISS-002修复(task006问题报告核验为真实问题): sandbox_resolve 确认分支 resumed 补
+#   confirm_id(本函数入口 create_confirmation 返回值, 作用域内可用), 对齐主路resumed(action_handler带
+#   confirm_id), 前端收到resumed可据此配对关闭对应弹窗, 两通道协议一致
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -117,9 +120,12 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")
         # 2026-09-01 小欧 - 紧急bug修复S3(前端badge卡paused): 沙箱用户裁决确认后恢复,
         #   补发resumed使paused/resumed成对, 前端badge据此回running恢复耗时秒表
+        # 2026-09-05 小欧 - ISS-002修复: resumed补confirm_id(本函数L81 create_confirmation已返回,作用域内可用),
+        #   对齐主路resumed(action_handler带confirm_id), 前端据此配对关弹窗
         steps.append(agent._step_emitter.emit(MetaStep(
             step=step, type="resumed",
-            content=f"沙箱预检已确认执行: {tool_name}", severity="info")))
+            content=f"沙箱预检已确认执行: {tool_name}", severity="info",
+            confirm_id=confirm_id)))
         return True, steps
     logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
     denied_list.append((tool_name, "沙箱预检未完成验证且用户拒绝执行", call))

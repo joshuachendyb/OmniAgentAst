@@ -199,6 +199,9 @@
 #   [效果] 拦截步不发action/不发observation(与D2-01空守卫自洽), 步骤干净无残步; 被拒call仍经_add_denial_feedback写LLM历史换方案
 #   [验证] mock全拦截(emit缺省)行为验证: emitted types=['thought-start','thought','error']无action/observation + 46单测通过;
 #          E2E-P0-03b重跑PASSED(79.89s), 新session所有action与observation成对、无残步
+# 2026-09-05 小欧 ISS-001修复(task006问题报告核验为真实问题): 删除DRY重构(commits 48a6563b6)遗留的旧块
+#   (L382-390 sandbox_precheck+sandbox_resolve双调用) — bypass路径同call沙箱预检曾执行2次(冗余预检/裁决残留,
+#   与run_sandbox_gate统一入口声明矛盾); import同步收窄仅run_sandbox_gate; 主路L460/481不变, 零波及
 """
 action_handler — action类型处理（SRP拆分，模块级函数）
 
@@ -244,7 +247,7 @@ from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, MEDIA_EXTENSIO
 from app.tools.registry import tool_registry  # 2026-08-18 小健 三堂会审: target字段从工具schema主参数自动推导(取代硬编码_TARGE_FIELD)
 from app.tools.target_utils import _resolve_target_field, _extract_target  # 2026-09-04 小健 第2阶段拆分: target提取下沉工具层
 from app.file_persist import make_fp_callback  # 2026-09-04 小健 第2阶段拆分: 文件A落盘回调工厂下沉file_persist
-from app.services.agent.handlers.sandbox_gate import sandbox_precheck, sandbox_resolve, run_sandbox_gate  # 小欧 2026-08-25 沙箱闸门逻辑拆分; 小健 2026-09-04 新增run_sandbox_gate统一入口
+from app.services.agent.handlers.sandbox_gate import run_sandbox_gate  # 小欧 2026-08-25 沙箱闸门逻辑拆分; 小健 2026-09-04 新增run_sandbox_gate统一入口; 小欧 2026-09-05 ISS-001 旧precheck/resolve随旧块删除,收窄仅run_sandbox_gate
 
 # 2026-09-04 小健 第3阶段拆分: 以下函数/类已拆分至3个新文件(action_input_parser/observation_builder/tool_runner), 先复制后修改
 from app.services.agent.action_input_parser import _build_call_list, BuildCallListResult  # 2026-09-04 小健 下沉: LLM action输入解析
@@ -375,24 +378,13 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         finally:
                             await resolve_confirmation(confirm_id, confirmed=_bypass_confirmed, trust_session=False)
                     set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
-                    # v1.25 M3 插入点①: auto_confirm 汇合路径(continue 之前) — 沙箱预检最后闸门
-                    # 2026-09-02 小欧 三堂会审BUG-001修复: resumed移至sandbox之后(原在sandbox前),
-                    #   若sandbox需用户裁决且被拒绝,无paired paused→resumed, badge卡running;
-                    #   现仅sandbox通过(放行/无需预检)才发resumed, 语义=真正恢复执行
-                    _pre = await sandbox_precheck(safety_result, _cn, _cp)
-                    if _pre is not None:
-                        _ok, _steps = await sandbox_resolve(agent, step, call, _cn, _cp, _pre, safety_result, _denied)
-                        for _st in _steps:
-                            yield _st
-                        if not _ok:
-                            continue
-                        if any(getattr(_s, "type", None) == "resumed" for _s in _steps):
-                            continue
-                    # 2026-09-02 小欧 BUG-001: sandbox通过后才发resumed(对齐下方真HITL确认后恢复语义,
-                    #   前端badge据此回running恢复耗时秒表); 若sandbox拒绝已continue不发resumed
-                    # 2026-09-04 小健 DRY: 三处重复sandbox调用→统一入口 run_sandbox_gate
-                    # 2026-09-04 小健 回归修复: bypass路径沙箱放行(无冲突,run_sandbox_gate返回True,[])后必须无条件
-                    #   yield resumed + continue(预DRY原有无条件continue被DRY重构遗漏), 否则落入下方真HITL等待
+                    # v1.25 M3 插入点①: auto_confirm 汇合路径 — 沙箱预检最后闸门(统一入口)
+                    # 2026-09-02 小欧 BUG-001: resumed须在sandbox通过后发(被拒已continue不发),
+                    #   否则无paired paused→resumed 前端badge卡running; 语义=真正恢复执行
+                    # 2026-09-04 小健 DRY: 三处重复调用→统一入口 run_sandbox_gate
+                    # 2026-09-04 小健 回归修复: 放行(返回True,[])后必须无条件resumed+continue, 否则落入下方真HITL等待
+                    # 2026-09-05 小欧 ISS-001修复: 删除DRY重构遗留的旧块(sandbox_precheck+sandbox_resolve双调用),
+                    #   现仅单一入口 run_sandbox_gate 一次预检, 消除bypass路径同call重复预检
                     _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied)
                     for _st in _steps:
                         yield _st
