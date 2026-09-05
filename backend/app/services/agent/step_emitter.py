@@ -16,6 +16,8 @@ Author: 小沈 - 2026-05-31
 2026-08-28 小欧 - yield日志审计: emit()统一入口加 logger.debug("[StepEmit] type step"), 覆盖全部~50个Step yield(KISS+DRY, 单一日志出口), 三堂会审无逻辑修正
 2026-08-28 小欧 - KISS修正(三堂会审yield链审查): emit_final_with_stats 由 async def 改 sync 返回 (final, stats) 二元组; 原 async 体内零await, 纯伪异步包装, 逼出10处调用点写 async for 仪式代码; 调用点 async for→for, 行为等价无backward
 2026-09-04 小健 - SLAP修复: emit_final_with_stats 从 final_step 提取 outcome 并透传给 build_final_stats_step(outcome=...), 消除发射层对遥测层隐式依赖 — 小健-2026-09-04
+# 2026-09-05 小健 - answer_focus第一阶段(10.3)搬二(8.2): 新增终态工厂 emit_completed_final/emit_failed_final,
+#   收口handler侧5处终态分产(顺序敏感set_failed内聚一步) - 小健-2026-09-05
 """
 
 from typing import Any, Dict, Optional
@@ -63,6 +65,23 @@ class StepEmitter:
         2026-09-04 小健 SLAP修复: outcome从final_step显式提取并透传给build_final_stats_step, 消除隐式依赖 — 小健-2026-09-04"""
         _outcome = getattr(final_step, "outcome", "completed")
         return (self.emit(final_step), self.emit(self.agent.telemetry.build_final_stats_step(outcome=_outcome)))
+
+    def emit_completed_final(self, step, response, reasoning=""):
+        """终态工厂(completed) — 小健 2026-09-05：收口 handler 侧 2 处 completed 分产；
+        状态沿用既有机制（dispatch 外层 seen_types→set_completed，本工厂不提前置状态），行为逐字节等价"""
+        return self.emit_final_with_stats(FinalStep(
+            step=step, response=response, outcome="completed", reasoning=reasoning,
+        ))
+
+    def emit_failed_final(self, step, response, error_type="", error_message="", reasoning=""):
+        """终态工厂(failed) — 小健 2026-09-05：收口 handler 侧 3 处 failed 分产；
+        09-03 顺序铁律内聚于此：set_failed 先行再 emit，使 build_final_stats_step 读到 FAILED"""
+        from app.services.agent.status_table import set_failed  # 延迟 import，随 answer_handler.py:127 既有惯例，防循环依赖 — 小健 2026-09-05
+        set_failed(self.agent, error_message or response)
+        return self.emit_final_with_stats(FinalStep(
+            step=step, response=response, outcome="failed",
+            error_type=error_type, error_message=error_message, reasoning=reasoning,
+        ))
 
     def _get_tracker(self):
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""
