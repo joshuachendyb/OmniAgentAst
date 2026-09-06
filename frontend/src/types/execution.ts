@@ -1,4 +1,6 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 从utils/sse.ts抽ExecutionStep至此, 断 chat→sse→api→chat 类型环(sse↔api循环)
+// 编辑历史: 2026-09-06 小欧 - 方案C观察点1/2根治: action 增 preview?: boolean(仅SSE齿轮先行预览行标记,
+//   刷新恢复时剔除, 与DB回放语义一致) — 小欧-2026-09-06
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，
@@ -129,6 +131,9 @@ export interface ExecutionStep {
     target?: string;
     params?: Record<string, unknown>;
   }>;
+  // 【小欧 2026-09-06 方案C观察点1/2根治】preview 仅SSE齿轮先行预览行标记(后端 preview=True):
+  //   拦截/拒绝的 action 本就不落库, 刷新恢复时剔除 preview 行与 DB 回放语义一致 — 小欧-2026-09-06
+  preview?: boolean;
 
   // === 【小欧 2026-08-26 8.4/8.6】MetaStep 扩展字段（旧任务 null 须 ?. 防空）===
   severity?: 'info' | 'warn' | 'error';

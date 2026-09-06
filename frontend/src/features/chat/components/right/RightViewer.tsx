@@ -86,6 +86,7 @@ interface RightViewerProps {
   liveSteps: ExecutionStep[];
   highlightToolName: string | null;
   frames: TaskMetaFrames; // 2026-09-02 小欧: useTaskInfo badge 派生输入(startInfo 判定 running)
+  deniedSteps: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 透传 PipelineRenderer 停齿轮 — 小欧-2026-09-06
   onSettledRefresh?: () => void; // 结束沿通知外层刷新任务列表
 }
 
@@ -97,6 +98,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   liveSteps,
   highlightToolName,
   frames,
+  deniedSteps,
   onSettledRefresh,
 }) => {
   const [detail, setDetail] = useState<TaskDetail | null>(null);
@@ -282,6 +284,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
             streaming={isCurrentLive}
             highlightToolName={highlightToolName}
             badge={isCurrentLive ? liveBadge : undefined} // 2026-09-02 小欧: live才传badge, 历史回放不显示等待圈
+            deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
           />
         </div>
       )}

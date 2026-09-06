@@ -36,6 +36,13 @@
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 ToolCallLine从segments数组按step找obs传入(修复obs独立后扳手一直转)
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 waiting变量改名showGreenCircle语义更清晰
 // 编辑历史: 2026-09-04 小欧 - 修复 observation 重复显示(单/多工具并行时孤儿与 ToolCallLine 重复): toolStepSet 抑制已消费孤儿渲染 - 小欧-2026-09-04
+// 编辑历史: 2026-09-06 小欧 - B2时序(北京老陈定案: action先于弹窗发): blocked 工具也进 action.tools(无 obs), toolDenied 判定纳入 blocked 停齿轮防空转 - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2三思三省修订(北京老陈驱动): interrupted 由"任一error存在"改"整批计数判定"——未执行工具数(blocked/user_rejected/timeout)>=tools总数才停齿轮; 修"1拒+1执行中"短暂误灰字缝隙 - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): 拒绝独立type="user_rejected"事件+error blocked/timeout两路实时聚合deniedSteps(Map step→计数),
+//   interrupted 整批计数判定数据源从"error段"换deniedSteps(erro事件不入liveSteps=原计数永远0=死代码); ToolCallLine传replay=!streaming(回放免齿轮) - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2(J1缝隙修复, 北京老陈核验): tool段新增candidateCount(预览全量候选数), buildSegments去重时预览先到
+//   canonical后覆盖, candidateCount取预览候选总数并保留; allDenied分母由seg.action.tools(被canonical覆盖后缩为执行集)改为
+//   candidateCount —— 原代码2工具1拒+1执行中: denied=1>=执行集长度1 误判全拒停齿轮(违"1拒+1执行中→齿轮保持"裁定), 改后1<2齿轮保持 — 小欧-2026-09-06
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -67,7 +74,12 @@ export type PipelineSegment =
   | { kind: 'thinking'; text: string; sameStep?: boolean } // sameStep: 同 step 内部(13.6 reasoning+thought)→compact SM(6)
   | { kind: 'text'; text: string; sameStep?: boolean }
   | { kind: 'final'; step: ExecutionStep }
-  | { kind: 'tool'; action: ExecutionStep; observations: ExecutionStep[] }
+  | {
+      kind: 'tool';
+      action: ExecutionStep;
+      observations: ExecutionStep[];
+      candidateCount: number; // 2026-09-06 小欧 B2(J1修复): 该step候选工具总数(预览全量), 供allDenied整批判定 —— canonical覆盖后action.tools缩为执行集, 不得作分母(1拒+1执行中会误停齿轮) — 小欧-2026-09-06
+    }
   | { kind: 'obs'; step: ExecutionStep }
   | { kind: 'error'; step: ExecutionStep };
 
@@ -123,15 +135,31 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
       case 'action': {
         // 2026-09-03 小欧 P3/P4/P5修复: 同step的action段去重, 防重复seq致双实例(一个空obs走超时一个有obs走子行)
         // 2026-09-03 小沈 修正: 原地突变改不可变更新, 与BUG-18修复原则一致(防污染调用方缓存)
+        // 2026-09-06 小欧 B2(J1修复): 预览action(tools=全量候选)先到, canonical(tools=执行集)后覆盖——
+        //   candidateCount取以致小者优先的预览候选总数, canonical覆盖时保留, 供allDenied作分母(不得用执行集) — 小欧-2026-09-06
         const existingIdx = segs.findIndex(
           (seg): seg is Extract<PipelineSegment, { kind: 'tool' }> =>
             seg.kind === 'tool' && seg.action.step === s.step
         );
         if (existingIdx >= 0) {
-          const existing = segs[existingIdx] as Extract<PipelineSegment, { kind: 'tool' }>;
-          segs[existingIdx] = { kind: 'tool', action: s, observations: existing.observations };
+          const existing = segs[existingIdx] as Extract<
+            PipelineSegment,
+            { kind: 'tool' }
+          >;
+          segs[existingIdx] = {
+            kind: 'tool',
+            action: s,
+            observations: existing.observations,
+            // 候选总数以预览全量为准(canonical tools=执行集只减不增, 覆盖时保留预览值)
+            candidateCount: existing.candidateCount ?? s.tools?.length ?? 0,
+          };
         } else {
-          segs.push({ kind: 'tool', action: s, observations: [] });
+          segs.push({
+            kind: 'tool',
+            action: s,
+            observations: [],
+            candidateCount: s.tools?.length ?? 0,
+          });
         }
         break;
       }
@@ -158,6 +186,7 @@ interface PipelineRendererProps {
   highlightToolName?: string | null; // HITL 弹窗联动高亮（4.7）
   headerNode?: React.ReactNode; // 头部·模型标识
   badge?: TaskBadge; // 2026-09-02 小欧: 任务活跃徽标(running/paused=任务仍进行), 撑起三个 waiting 丢失窗口
+  deniedSteps?: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 供停齿轮判定 — 小欧-2026-09-06
 }
 
 const PipelineRenderer: React.FC<PipelineRendererProps> = ({
@@ -166,11 +195,17 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   highlightToolName = null,
   headerNode,
   badge, // 2026-09-02 小欧: 非 live 历史回放不传 → undefined → 不显示圈
+  deniedSteps, // 2026-09-06 小欧 B2(方案C)
 }) => {
   const segs = buildSegments(steps);
   // 2026-09-04 小欧 - observation 去重：已消费孤儿抑制（单/多工具并行时孤儿与 ToolCallLine 重复）
   const toolStepSet = new Set(
-    segs.filter((s): s is Extract<PipelineSegment, { kind: 'tool' }> => s.kind === 'tool').map((s) => s.action.step)
+    segs
+      .filter(
+        (s): s is Extract<PipelineSegment, { kind: 'tool' }> =>
+          s.kind === 'tool'
+      )
+      .map((s) => s.action.step)
   );
   // 2026-08-27 小欧 三堂会审: 预计算最后一个思考段索引, 消除map内自增副作用与额外filter
   const lastThink = segs.reduce(
@@ -285,13 +320,31 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         }
         if (seg.kind === 'tool') {
           const toolObs = segs
-            .filter((s): s is Extract<PipelineSegment, { kind: 'obs' }> => s.kind === 'obs' && s.step.step === seg.action.step)
+            .filter(
+              (s): s is Extract<PipelineSegment, { kind: 'obs' }> =>
+                s.kind === 'obs' && s.step.step === seg.action.step
+            )
             .map((s) => s.step);
+          // 2026-09-06 小欧 B2(方案C, 北京老陈裁定): action 先于弹窗发→被拒/拦截/超时工具无 observation, 齿轮需停转;
+          //   interrupted 由 deniedSteps 实时聚合判定(step→denied计数, 两路来源: 独立 user_rejected 事件 + error
+          //   blocked/timeout), 整批计数语义与 09-06 三思三省修订一致——denied 计数 >= 候选工具总数才停齿轮防空转,
+          //   部分拒+部分执行中 -> denied 数 < 候选总数 -> 齿轮保持(还有工具在跑), 有 obs 则真实执行不停转;
+          //   分母用 tool 段保留的 candidateCount(预览全量候选数), 不用 seg.action.tools(预览被 canonical 覆盖后
+          //   缩为执行集, 例 2工具1拒1执行中: denied=1>=执行集长度1 → 误判全拒停齿轮; candidateCount=2 → 1<2 齿轮保持)
+          //   — 小欧-2026-09-06
+          //   数据源从"error 段计数"(error 不入 liveSteps→恒空=死代码) 换为 deniedSteps 实时聚合 — 小欧-2026-09-06
+          const toolDeniedCount =
+            deniedSteps?.get(seg.action.step as number) ?? 0;
+          const allDenied =
+            toolDeniedCount >=
+            (seg.candidateCount ?? seg.action.tools?.length ?? 0);
           return (
             <ToolCallLine
               key={seg.action.step ?? i}
               action={seg.action}
               observations={toolObs}
+              interrupted={toolObs.length === 0 && allDenied}
+              replay={!streaming} // 2026-09-06 小欧 B2(北京老陈裁定): 历史回放加了标志就自然不需要齿轮转动, 更简单 — 小欧-2026-09-06
               highlight={
                 highlightToolName != null &&
                 !!seg.action.tools?.some((t) => t.tool === highlightToolName)

@@ -25,6 +25,11 @@
 // 编辑历史: 2026-09-03 小欧 BUG-19修复: 并行工具子行按tool_name配对查找结果, 乱序到达不串味, 无tool_name回退索引
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 删timedOut状态和超时分支, 扳手只靠!hasResult&&tools.length>0
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 删超时文案"工具执行等待超时(30s)"分支, 只保留扳手动画
+// 编辑历史: 2026-09-06 小欧 - B2时序(北京老陈定案): interrupted 语义覆盖 blocked(被安全拦截也无 obs), 灰字文案改"未获用户允许/被安全拦截/确认超时" - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): 新增 replay prop(回放免齿轮动画——历史数据不需要齿轮转动), 齿轮分支条件补 !replay - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2(北京老陈定案: 灰字不醒目): 占位与中断两处提示文字改 Colors.ORANGE_RED 火山橘红#fa541c(未执行/被安全拦截/确认超时), 与 AuthorizationModal 告急色一致, 与齿轮橘同色带 — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - 北京老陈要求"去掉扳手留齿轮": 等待动画 SVG 由"齿轮+扳手组合"改标准单齿轮(Feather settings)——
+//   stroke线框风格/橙#fa8c16/1em旋转CSS(.tool-waiting-cursor)全部不变, 仅去掉扳手 path 换纯齿轮图标 — 小欧-2026-09-06
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -52,12 +57,16 @@ interface ToolCallLineProps {
   action: ExecutionStep; // type=action
   observations?: ExecutionStep[]; // type=observation
   highlight?: boolean; // HITL 联动高亮
+  interrupted?: boolean; // 2026-09-06 小欧 B2: 用户拒绝/确认超时且无结果——停齿轮(替换等待动画) — 小欧-2026-09-06
+  replay?: boolean; // 2026-09-06 小欧 B2(北京老陈裁定): 历史回放标志——历史数据不需要齿轮转动, 免齿轮动画 — 小欧-2026-09-06
 }
 
 const ToolCallLine: React.FC<ToolCallLineProps> = ({
   action,
   observations = [],
   highlight = false,
+  interrupted = false,
+  replay = false,
 }) => {
   // 2026-09-01 小欧: 每工具独立展开状态(数组), 点某工具行任意位置只展开/收起该工具(北京老陈定案: 完全独立展开+独立观察)
   const [expanded, setExpanded] = useState<boolean[]>([]);
@@ -90,7 +99,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   const toolNameList = tools.map((t) => t.tool).join(', ');
   const firstLine = `${collectionLabel}  [${toolNameList}]`;
   // 2026-09-03 小欧 BUG-19修复: 并行工具结果按tool_name配对(非索引), 防乱序到达时A工具显示B结果; 无tool_name则回退索引
-  const getResultForIndex = (idx: number): Record<string, unknown> | undefined => {
+  const getResultForIndex = (
+    idx: number
+  ): Record<string, unknown> | undefined => {
     const toolName = tools[idx]?.tool;
     if (toolName) {
       const hit = results.find((r) => {
@@ -98,8 +109,15 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         if ((rr.tool as string) === toolName) return true;
         if ((rr.tool_name as string) === toolName) return true;
         if ((rr.name as string) === toolName) return true;
-        const llm = (rr.llm_data || rr.llmData) as Record<string, unknown> | undefined;
-        if (llm && ((llm.tool as string) === toolName || (llm.tool_name as string) === toolName)) return true;
+        const llm = (rr.llm_data || rr.llmData) as
+          | Record<string, unknown>
+          | undefined;
+        if (
+          llm &&
+          ((llm.tool as string) === toolName ||
+            (llm.tool_name as string) === toolName)
+        )
+          return true;
         return false;
       });
       if (hit) return hit;
@@ -174,12 +192,32 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
           {/* 执行等待动画(results 空=action 已到未执行完); observation 到即卸载, 同容器被子行盖住 */}
           {/* 2026-09-03 小欧 Bug-3/4: 动画仅 tools 非空且结果未达(results空)显示; 超时降级灰字提示; tools 空/结果空显占位防空壳 */}
           {!hasResult && tools.length === 0 && (
-            <span style={{ color: Colors.TEXT.SECONDARY, fontSize: 12 }}>
+            <span
+              style={{
+                color:
+                  Colors.ORANGE_RED /* 2026-09-06 小欧: 灰字不醒目, 北京老陈定案改火山橘红 */,
+                fontSize: 12,
+              }}
+            >
               工具调用无结果(已全部被安全拦截或未返回)
             </span>
           )}
-          {!hasResult && tools.length > 0 && (
+          {!hasResult && tools.length > 0 && interrupted && (
+            // 2026-09-06 小欧 B2: action 先于弹窗→被拒/拦截/超时工具无 observation, 齿轮停转改提示字, 防空转
+            <span
+              style={{
+                color:
+                  Colors.ORANGE_RED /* 2026-09-06 小欧: 北京老陈定案 灰字改火山橘红更醒目 */,
+                fontSize: 12,
+              }}
+            >
+              未执行：未获用户允许／被安全拦截／确认超时
+            </span>
+          )}
+          {!hasResult && tools.length > 0 && !interrupted && !replay && (
             <span className="tool-waiting-cursor" aria-label="工具执行中">
+              {/* 2026-09-06 小欧(北京老陈要求: 去掉扳手留齿轮): 齿轮+扳手组合SVG换标准单齿轮(Feather settings),
+                  stroke风格/橙#fa8c16/1em旋转CSS一致, 仅图标由"含扳手"改"纯齿轮" — 小欧-2026-09-06 */}
               <svg
                 width="1.4em"
                 height="1.4em"
@@ -190,10 +228,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <g>
-                  <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
-                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.07-3.07a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z" />
-                </g>
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
             </span>
           )}

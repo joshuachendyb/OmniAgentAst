@@ -8,6 +8,7 @@
 // 编辑历史: 2026-09-02 小欧 - 同类DB滞后修复: 直播失败即刷新左列(消executing残留) - 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 - BUG-29修复修正: handleSendWithMode改async+await, 原void吞Promise致ChatInput catch永不触发回填无效 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 简化重构: AuthorizationModal加key={confirmId}强制重建, 新请求=新组件实例, 彻底消除countdown/autoHandledRef等跨请求残留 - 小欧-2026-09-03
+// 编辑历史: 2026-09-06 小欧 - B1「已放行」短时高亮: useAuthorization 解构 recentConfirmedTool 并透传 useChatPanels —— 小欧-2026-09-06
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../services/api/client';
@@ -62,8 +63,11 @@ const ChatPage: React.FC = () => {
     sessionModelOverride: chatState.sessionModelOverride,
   });
 
-  const { authorizationPending, handleAuthorizationConfirm } =
-    useAuthorization(sessionId);
+  const {
+    authorizationPending,
+    handleAuthorizationConfirm,
+    recentConfirmedTool,
+  } = useAuthorization(sessionId);
   useChatScroll(chatState, chatStreaming);
   const { sessionTimes } = useSessionMeta(sessionId);
   const { activeTaskId, selectedDetail, handleSelectTask } = useTaskSelection(
@@ -144,6 +148,7 @@ const ChatPage: React.FC = () => {
     chatSend,
     liveErrorText,
     authorizationPending,
+    recentConfirmedTool, // 2026-09-06 小欧 B1: 「已放行」短时高亮透传 — 小欧-2026-09-06
     handleAuthorizationConfirm,
     tasks,
     total,

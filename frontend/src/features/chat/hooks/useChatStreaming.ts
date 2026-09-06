@@ -3,6 +3,9 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#10: disconnect参数语义纠偏(force->manualDisconnect, stopServer->clearStorage)
 // 编辑历史: 2026-08-28 小强 - hooks修复#14: sendMessage开头清executionStepsRef+disconnectWithParams参数映射确认
+// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): 拒绝/拦截/超时三路聚合 deniedStepSet(Map step→denied计数,
+//   deniedCount>=tools.length 停齿轮)——handleDenied(独立 user_rejected 回调) + sseOnError(blocked/timeout
+//   error 事件带 step 过滤聚合, 不触发红字/liveErrorText); 注入 useSSE 第10参 — 小欧-2026-09-06
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -23,7 +26,7 @@
  * @update 2026-04-22 添加executeSend方法，迁移executeStreamSend逻辑
  */
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import type { UseChatStateReturn } from './useChatState';
 import type { UseChatCallbacksReturn } from './useChatCallbacks';
 import type { ExecutionStep } from '../../../types/execution';
@@ -78,6 +81,11 @@ export interface UseChatStreamingReturn {
   // 任务元信息帧（8.4.14 透传）
   metaFrames: import('@/types/sse').TaskMetaFrames;
 
+  // 2026-09-06 小欧 B2(方案C, 北京老陈裁定): 拒绝/拦截/超时的工具执行轮 step 聚合(Map: step→denied计数, 两路来源:
+  //   独立 user_rejected 事件 + error 通道 blocked/timeout), 供流水线"齿轮停转/灰字"整批计数判定;
+  //   error 事件仍不进 executionSteps(8.4.5 收敛设计不动), 仅此按 step 记计数 — 小欧-2026-09-06
+  deniedSteps: ReadonlyMap<number, number>;
+
   // Refs - 用于累积流式内容（供外部访问）
   streamingContentRef: React.MutableRefObject<string>;
   streamingStepsRef: React.MutableRefObject<ExecutionStep[]>;
@@ -122,6 +130,46 @@ export const useChatStreaming = (
     onAuthorizationRequired,
   } = callbacks;
 
+  // 2026-09-06 小欧 B2(方案C, 北京老陈裁定): 拒绝(user_rejected独立事件)/拦截(blocked)/超时(timeout) 的
+  //   工具执行轮 step 计数聚合(Map: step→denied计数), 供流水线"齿轮停转/灰字"整批计数判定;
+  //   error 事件仍不进 executionSteps(8.4.5 收敛), 仅在此按 step 记计数——聚合复用三 deny 型
+  //   与后端 safety_gate/sandbox_gate 发射点同集合 — 小欧-2026-09-06
+  const [deniedSteps, setDeniedSteps] = useState<ReadonlyMap<number, number>>(
+    new Map()
+  );
+  const markDenied = useCallback((step: number) => {
+    if (typeof step === 'number' && step >= 0) {
+      setDeniedSteps((prev) => {
+        const next = new Map(prev);
+        next.set(step, (next.get(step) ?? 0) + 1);
+        return next;
+      });
+    }
+  }, []);
+
+  // 2026-09-06 小欧 B2: 拦截(blocked)/超时(timeout) 仍走 error 通道(北京老陈裁定), 其错误对象现带 step ——
+  //   在此过滤聚合 deniedSteps(不打断原有 onError 红字提示链路); user_rejected 已独立事件不含此路 — 小欧-2026-09-06
+  const sseOnError = useCallback(
+    (error: string | import('@/types/sse').SSEError) => {
+      if (typeof error === 'object' && error !== null) {
+        const _e = error as import('@/types/sse').SSEError;
+        if (_e.error_type === 'blocked' || _e.error_type === 'timeout') {
+          if (typeof _e.step === 'number') markDenied(_e.step);
+        }
+      }
+      onError?.(error);
+    },
+    [onError, markDenied]
+  );
+
+  // 2026-09-06 小欧 B2: 独立拒绝事件回调(不占 error 通道, 无红字) — 小欧-2026-09-06
+  const handleDenied = useCallback(
+    (step: number, _message: string) => {
+      markDenied(step);
+    },
+    [markDenied]
+  );
+
   // 使用useSSE Hook
   const {
     isReceiving,
@@ -141,11 +189,12 @@ export const useChatStreaming = (
     onStep,
     onChunk,
     onComplete,
-    onError,
+    sseOnError, // 2026-09-06 小欧 B2: 包装聚合 blocked/timeout 到 deniedStepSet — 小欧-2026-09-06
     onPaused,
     onResumed,
     onRetry,
-    onAuthorizationRequired // 【v3.4新增 2026-06-09 小沈】
+    onAuthorizationRequired, // 【v3.4新增 2026-06-09 小沈】
+    handleDenied // 2026-09-06 小欧 B2: 独立拒绝事件聚合到 deniedStepSet — 小欧-2026-09-06
   );
 
   // 从state中获取Refs
@@ -174,6 +223,7 @@ export const useChatStreaming = (
         streamingContentRef.current = '';
         streamingStepsRef.current = [];
         executionStepsRef.current = []; // 2026-08-28 小强 修复#14: 清空executionStepsRef, 防旧数据残留
+        setDeniedSteps(new Map()); // 2026-09-06 小欧 B2: 新任务清空 denied 标记(与 executionSteps 同生命周期) — 小欧-2026-09-06
 
         // 调用useSSE的sendMessage
         return await sendStreamMessage(
@@ -378,6 +428,7 @@ export const useChatStreaming = (
     clearSteps,
     serverTaskId: serverTaskId || null,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
+    deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合, 供流水线停齿轮 — 小欧-2026-09-06
 
     // Refs
     streamingContentRef,

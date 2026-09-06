@@ -4,6 +4,10 @@
 //   trust_path(仅bypass时=rawData.trust_path, trust_panel的双写/撤回核心)、auto_confirm、confirm_timeout(前端倒计时=后端窗口-提前量)、backend_timeout - 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 Bug修复(24项): ㉒/㉗镜像 assignTimeout(合法0保留) + auto_confirm严格判断(防"false"误判), 与 useAuthorization 语义一致 — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一(true/'true'/1/'1')，与normalizeIsReasoning同策略，防bypass误判 - 小欧-2026-09-03
+// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): 拒绝独立 type="user_rejected" 单独发(不占 error 通道/liveErrorText),
+//   新增独立回调 onDenied(step,message) 供 useChatStreaming 聚合 deniedStepSet 停齿轮 — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - 方案C观察点1/2根治: action 解析 preview 标记(后端 preview=True, 仅SSE齿轮先行预览行),
+//   刷新恢复时剔除, 与 DB 回放语义一致 — 小欧-2026-09-06
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -36,6 +40,9 @@ const processSSEData = (
       executionSteps?: ExecutionStep[]
     ) => void;
     onError?: (error: string | SSEError) => void;
+    // 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 后端独立 type="user_rejected" 单独发,
+    //   独立回调(step, message)供 useChatStreaming 聚合 deniedStepSet 停齿轮, 不占 error 通道 — 小欧-2026-09-06
+    onDenied?: (step: number, message: string) => void;
     onPaused?: () => void;
     onResumed?: () => void;
     onRetry?: (message: string, waitTime?: number) => void;
@@ -79,6 +86,7 @@ const processSSEData = (
     onChunk,
     onComplete,
     onError,
+    onDenied,
     onPaused,
     onResumed,
     onRetry,
@@ -527,6 +535,7 @@ const processSSEData = (
           type: 'error',
           error_type: rawData.error_type || 'unknown_error',
           error_message: errorMsg,
+          step: stepNum, // 2026-09-06 小欧 B2(方案C): 错误透传所属执行轮 step, 前端按 blocked/timeout 聚合 deniedStepSet — 小欧-2026-09-06
           model: rawData.model,
           provider: rawData.provider,
           details: rawData.details,
@@ -540,6 +549,20 @@ const processSSEData = (
         // v0.8.75版本没有调用onComplete，UI显示正常
         setIsReceiving(false);
         setIsConnected(false);
+        break;
+      }
+
+      // 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 后端独立 type="user_rejected" 单独发——
+      //   独立回调 onDenied(step, message) 供聚合 deniedStepSet 停齿轮, 不占 error 通道/liveErrorText
+      case 'user_rejected': {
+        const deniedStep = Number(rawData.step) || 1;
+        const deniedMsg =
+          rawData.content || rawData.error_message || '用户拒绝执行';
+        console.log(
+          `%c[STEP] [type=user_rejected] [step=${deniedStep}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
+          'color: orange; font-weight: bold;'
+        );
+        onDenied?.(deniedStep, deniedMsg);
         break;
       }
 
@@ -572,6 +595,9 @@ const processSSEData = (
         step.content = tools
           .map((t) => (t.target ? `${t.tool}(${t.target})` : t.tool))
           .join(' + ');
+        // 【小欧 2026-09-06 方案C观察点1/2根治】preview 仅SSE预览行标记(后端 preview=True):
+        //   刷新恢复时剔除, 与 DB 回放语义一致(拦截/拒绝 action 本就不落库) — 小欧-2026-09-06
+        step.preview = rawData.preview === true;
 
         // 【红色】收到数据
         console.log(

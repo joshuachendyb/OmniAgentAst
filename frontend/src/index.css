@@ -2,6 +2,8 @@
 /* 编辑历史: 2026-09-02 小欧 - 北京老陈定案(流水线等待光标UI设计 v1.6): 新增.waiting-cursor SVG缺口圆弧等待符号(1.4em≈20px, #52c41a, stroke-width2, 逆时针1s转圈), 与 PipelineRenderer 等待态配合, 首chunk到达由内容覆盖接管禁止常驻 */
 /* 编辑历史: 2026-09-03 小欧 - 工具执行等待动画(设计文档v1.8): 新增.tool-waiting-cursor 齿轮+扳手组合橙#fa8c16, 复用waiting-spin, 挂ToolCallLine摘要头下 - 小欧-2026-09-03 */
 /* 编辑历史: 2026-09-03 小欧 - 北京老陈定案: .tool-waiting-cursor 图标尺寸 1.4em→1em(≈14px), 缩小齿轮+扳手组合, 尺寸与文字更协调 - 小欧-2026-09-03 */
+/* 编辑历史: 2026-09-06 小欧 - 北京老陈要求"去掉扳手留齿轮": ToolCallLine 等待动画图标由"齿轮+扳手组合"改标准单齿轮(Feather settings),
+   本 CSS 类只管旋转动画(1em 尺寸/逆时针1s转), 图标 SVG 内容变更在 ToolCallLine.tsx 内, 此处零改动 - 小欧-2026-09-06 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;

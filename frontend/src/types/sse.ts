@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-28 小欧 - 由 utils/sse.ts 抽离SSE专属类型归一至横切层; ExecutionStep已居types/execution.ts故不重复导出 - 小欧-2026-08-28
 // 编辑历史: 2026-08-30 小欧 - 13.14 新增 roundUsage/taskAccumulated/sessionAccumulated/chainAccumulated 四字段（后端直发P/C/T三数字，废止前端累加） - 小欧-2026-08-30
+// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): error 事件补充可选 step 字段(blocked/timeout 带 step 供 sseOnError 聚合 deniedStepSet 停齿轮) — 小欧-2026-09-06
 import type { ExecutionStep } from './execution';
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
@@ -83,7 +84,8 @@ export interface SSEError {
   error_message: string; // 用户友好的错误信息 【修改2026-04-15】message → error_message
   // 必填字段（1个）
   timestamp: string; // 时间戳
-  // 可选字段（8个）
+  // 可选字段（9个）
+  step?: number; // 2026-09-06 小欧 B2(方案C): 事件所属工具执行轮 step 号, 供 blocked/timeout 错误聚合 deniedStepSet 停齿轮 — 小欧-2026-09-06
   model?: string; // 模型名称
   provider?: string; // 提供商名称
   details?: string; // 详细错误信息

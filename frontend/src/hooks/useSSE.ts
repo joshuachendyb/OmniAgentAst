@@ -7,6 +7,12 @@
 //   重连路径传递false避免setIsReceiving(false)→true间隙导致等待图标闪烁
 // 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段, 与 sseParser 下发契约一致 — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 P1-3: HITL等待期暂停IDLE计时（paused/badge挂起时不清IDLE），自适应backendTimeout，防60s误杀110s等待 - 小欧-2026-09-03
+// 编辑历史: 2026-09-06 小欧 方案C三堂会审缺陷1修复: 每行热路径(L671循环内)processSSEData handlers 对象
+//   漏传 onDenied(done 块已传) → 流式期间独立 user_rejected 事件无法触发 deniedStepSet 聚合, 拒绝不停齿轮;
+//   补齐 onDenied 转发, useChatStreaming 侧 handleDenied 已注入(10参) — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 方案C观察点1/2根治(北京老陈批准方案2后端标记): sessionStorage 恢复时剔除
+//   preview 预览行(仅SSE齿轮先行, 拦截/拒绝 action 本就不落库) — 刷新恢复与 DB 回放语义一致,
+//   根治"刷新后无灰字工具行"(观察点1)与"双条 action"(观察点2) — 小欧-2026-09-06
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -279,7 +285,9 @@ export const useSSE = (
     auto_confirm?: boolean;
     confirm_timeout?: number;
     backend_timeout?: number;
-  }) => void
+  }) => void,
+  // 2026-09-06 小欧 B2(北京老陈裁定): 独立拒绝事件回调(user_rejected 不走 error 通道) — 小欧-2026-09-06
+  onDenied?: (step: number, message: string) => void
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -362,8 +370,13 @@ export const useSSE = (
           console.log(
             `[SSE] 从 sessionStorage 恢复 ${parsedSteps.length} 个步骤`
           );
-          executionStepsRef.current = parsedSteps;
-          setExecutionSteps(parsedSteps);
+          // 【小欧 2026-09-06 方案C观察点1/2根治】剔除 preview 预览行(仅SSE齿轮先行, 拦截/拒绝 action
+          //   本就不落库): 刷新恢复与 DB 回放语义一致, 根治"刷新后无灰字工具行"与"双条 action" — 小欧-2026-09-06
+          const restoredSteps = parsedSteps.filter(
+            (s: ExecutionStep) => !(s.type === 'action' && s.preview === true)
+          );
+          executionStepsRef.current = restoredSteps;
+          setExecutionSteps(restoredSteps);
         }
       } catch (e) {
         console.warn('[SSE] 解析 sessionStorage 备份失败:', e);
@@ -638,6 +651,7 @@ export const useSSE = (
                 onChunk,
                 onComplete,
                 onError,
+                onDenied,
                 onPaused: wrappedOnPaused,
                 onResumed: wrappedOnResumed,
                 onRetry,
@@ -677,6 +691,9 @@ export const useSSE = (
               onChunk,
               onComplete,
               onError,
+              // 方案C三堂会审缺陷1修复(2026-09-06 小欧): 每行热路径漏传 onDenied → 流式期间拒绝事件
+              //   永远收不到回调, deniedStepSet 无法聚合停齿轮; done 块已传, 补齐此处 — 小欧-2026-09-06
+              onDenied,
               onPaused: wrappedOnPaused,
               onResumed: wrappedOnResumed,
               onRetry,

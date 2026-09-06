@@ -9,6 +9,8 @@
 // 编辑历史: 2026-09-02 小欧 - RightViewer 增传 frames=metaFrames(useTaskInfo badge 派生输入): 等待圈三处丢失根治,
 //   waiting 依赖由 streaming 单源改 streaming/highlight/badge 三源, badge runner/paused 撑住首屏/空闲超时/confirm空隙 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ChatInput增传sessionId(CI-02跨会话草稿泄漏)+useChatPanels依赖同步 — 小欧-2026-09-02
+// 编辑历史: 2026-09-06 小欧 - B1「已放行」短时高亮: 入参加 recentConfirmedTool(可选Nullable), highlightToolName 合成
+//   authorizationPending?.toolName ?? recentConfirmedTool, useMemo 依赖数组纳入 recentConfirmedTool —— 小欧-2026-09-06
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -37,6 +39,8 @@ interface UseChatPanelsOptions {
   chatSend: UseChatFacadeReturn['chatSend'];
   liveErrorText: string | null;
   authorizationPending: AuthorizationRequest | null;
+  // 2026-09-06 小欧 B1: 「已放行」短时高亮工具名(确认后 2s)→RightViewer highlightToolName 合源 — 小欧-2026-09-06
+  recentConfirmedTool?: string | null;
   handleAuthorizationConfirm: (
     confirmed: boolean,
     trustSession: boolean,
@@ -85,6 +89,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     chatSend,
     liveErrorText,
     authorizationPending,
+    recentConfirmedTool,
     handleAuthorizationConfirm,
     tasks,
     total,
@@ -128,6 +133,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     currentResponse,
     metaFrames,
     serverTaskId,
+    deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合透传 RightViewer → PipelineRenderer — 小欧-2026-09-06
   } = chatStreaming;
   const { handleCancel, handleTogglePause } = chatTaskControl;
   const { handleSend } = chatSend;
@@ -226,8 +232,12 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             serverTaskId={serverTaskId}
             receiving={isReceiving}
             liveSteps={executionSteps}
-            highlightToolName={authorizationPending?.toolName ?? null}
+            highlightToolName={
+              // 2026-09-06 小欧 B1: pending 优先, 确认瞬间被清 pending 后由 recentConfirmedTool 承接 2s(F4 高亮空转根治) — 小欧-2026-09-06
+              authorizationPending?.toolName ?? recentConfirmedTool ?? null
+            }
             frames={metaFrames} // 2026-09-02 小欧: badge 派生输入(startInfo 判定 running)
+            deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
             onSettledRefresh={refreshTasks}
           />
         ),
@@ -304,6 +314,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       executionSteps,
       currentResponse,
       metaFrames,
+      deniedSteps, // 2026-09-06 小欧 B2(方案C): state 变化需触发面板重渲 — 小欧-2026-09-06
       selectedDetail,
       loading,
       isPaused,
@@ -311,7 +322,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       handleCancel,
       handleTogglePause,
       liveErrorText,
-      authorizationPending,
+      authorizationPending, // 2026-09-06 小欧 B1: recentConfirmedTool 同入依赖(否则 useMemo 缓存旧值 highlight 不刷新) — 小欧-2026-09-06
+      recentConfirmedTool,
       handleAuthorizationConfirm,
       refreshTasks,
       latestTaskId, // 2026-09-01 小欧 方案C
