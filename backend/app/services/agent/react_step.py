@@ -137,6 +137,14 @@
 #   meta分支→payload["type"]=="retrying", response分支→payload非空, chunk分支→payload为None;
 #   判别结果仍以 chunk_type/chunk_data 喂下方 chunk/response 既有处理体(L225起逐行不动);
 #   _task_llm_model 快照口径不变; 发射形态保留 4C publish(await _publish(emit(...).to_dict()))
+# 2026-09-06 小欧 4C(5.8.2)遗漏修复(路径1审计, 小沈发现): 连续截断上限取消分支(L404-421)原裸 return
+#   漏改为 return[](4C改造时其余5出口全[]唯独此分支落空); 调用方 react_loop L163 `for event in await
+#   _process_single_step(agent, chunk_buffer)` 对 None 迭代抛 TypeError('NoneType' object is not iterable),
+#   _is_recoverable_error(TypeError)=False → 外层 except Exception → set_failed 无条件覆盖: 本应 cancelled
+#   (final(cancelled)+final_stats 已 publish 已落库) 实际 status=FAILED → chat_tasks.status 落 failed,
+#   与 chat_task_steps 终态=cancelled 自相矛盾, SSE 多刷一条 error; 单测盲区: 直调 _process_single_step
+#   读 event_log 不看返回值(行300); 改为 return[](与 L444/L475 同风格, 事件已全量 publish), 并补
+#   test_run_react_cycle_truncation_max_cancelled 全循环回归 — 小欧 2026-09-06
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -418,7 +426,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             await _publish(_fs[0].to_dict())
             await _publish(_fs[1].to_dict())
             set_cancelled(agent)
-            return
+            return []  # 4C(5.8.2)审计修复(小欧-2026-09-06): 裸return→return[](防None被主循环L163 for迭代抛TypeError→外层except set_failed覆盖终态); 事件已全量publish, 与L444/L475同风格
 
         obs_text = "[Observation] 工具调用输出不完整，请重新调用该工具并补充完整参数"
         _retry_tc_id = ""
