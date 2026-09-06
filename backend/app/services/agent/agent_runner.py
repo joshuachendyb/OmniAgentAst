@@ -224,18 +224,14 @@ async def run_agent_in_background(
     # [新] 生产者全权拥有 prompt-log 生命周期(创建) — 小欧 2026-07-18
     get_prompt_logger().start_request(last_message, session_id)
 
-    async def _append(event_dict: Dict) -> None:
-        # 注意: current_execution_steps 由各调用点(主循环/异常分支)显式追加,
-        # 此处仅负责写入 event_log + 唤醒消费者, 禁止再 append current_execution_steps,
-        # 否则会导致DB步骤被重复累积(实测 SSE=21/DB=42 翻倍) — 小欧 2026-07-13
-        d = dict(event_dict)
-        d["seq"] = len(buffer.event_log)
-        buffer.event_log.append(d)
-        get_prompt_logger().log_step_yield(d, round_number=d.get("step", 0))
-        # 唤醒等待中的消费者: Condition.notify_all 必须在持锁时调用,
-        # 否则抛 RuntimeError('cannot notify on un-acquired lock') — 小欧 2026-07-13
-        async with buffer.cond:
-            buffer.cond.notify_all()
+    async def _publish(event_dict: Dict) -> int:
+        # 4C 收尾(2026-09-06 小欧): 自产/边缘事件统一改经 StreamBuffer.publish 发射,
+        #   seq 分配+append+notify_all 持锁原子权威在 publish(task_state.StreamBuffer, 文档[6]5.2),
+        #   私有 _append 写 event_log 入口退役(5.8.1 "删事件转发入口"单一写入口收口) — 小欧-2026-09-06
+        # publish 不记 prompt-log(订阅侧补齐), 自产事件在此发布点补记, 保 log_step_yield 链不退化 — 小欧-2026-09-06
+        seq = await buffer.publish(event_dict)
+        get_prompt_logger().log_step_yield(event_dict, round_number=event_dict.get("step", 0))
+        return seq
 
     # 退出分支与DB保存保证 — 小欧 2026-07-13
     # 本函数有 3 个退出路径，无论哪条路径 finally 都会执行 DB 保存：
@@ -287,16 +283,17 @@ async def run_agent_in_background(
         #   本层订阅取完成快照逐条走通道路由(_persist 落库/SSE 标记/current_content); SSE 实时由
         #   stream_reader(独立协程按 seq 实时读 publish 事件)负责, 实时性不受影响; DB 落库由本层扫描完成
         #   (崩溃前已 publish 事件含异常路径 error/final 全量可读不丢); 订阅体内已 publish 事件不再 _append
-        #   防双发(doc[6]5.8.5, 违反 6.5 event_log 单一 seq), _append 仅保留自产事件(startinfo/异常final/守卫补发) — 小欧-2026-09-06
+        #   防双发(doc[6]5.8.5, 违反 6.5 event_log 单一 seq); 自产事件(startinfo/异常final/守卫补发)统一经
+        #   _publish → StreamBuffer.publish 发射, 单一写入口(5.8.1) — 小欧-2026-09-06
         await agent.run_react_cycle(
             task=last_message, context=run_context, task_id=task_id, start_time=start_time  # 11.2-B start_time 同源透传 — 小欧 2026-08-20
         )
-        # publish 事件快照(全部已入缓冲), 自产 _append 事件(如 startinfo)追加在后不入快照, 不落库不双记 — 小欧-2026-09-06
+        # publish 事件快照(全部已入缓冲), 循环体内自产 startinfo 经 publish 追加在后不入本快照, 不落库不双记 — 小欧-2026-09-06
         for _scan_idx, event_dict in enumerate(list(buffer.event_log)):
             if not event_dict:
                 continue
             event_type = event_dict.get("type", "")
-            # prompt-log 生命周期(publish 不记, 订阅侧补齐替代原 _append 内 log_step_yield; 自产事件仍由 _append 记) — 小欧-2026-09-06
+            # prompt-log 生命周期(publish 不记, 订阅侧补齐替代原 _append 内 log_step_yield; 自产事件由 _publish 发布点补记) — 小欧-2026-09-06
             get_prompt_logger().log_step_yield(event_dict, round_number=event_dict.get("step", 0))
 
             # ── 通道路由（§10.3.3(1) + §10.4.3 P1）：thought 仅落库 / thought-start 仅SSE / chunk 仅SSE / 其余 SSE+落库 ──
@@ -353,7 +350,7 @@ async def run_agent_in_background(
                     "model": event_dict.get("model"),
                     "ai_message_id": ai_message_id,
                 }
-                await _append(_startinfo)   # 轻量 MetaStep 仅 SSE, 复用同一 ai_message_id — 小欧 2026-08-18
+                await _publish(_startinfo)   # 轻量 MetaStep 仅 SSE, 复用同一 ai_message_id — 小欧 2026-08-18
             elif event_type == "action":
                 _action_steps.add(event_dict.get("step", 0))   # 工具执行轮标记(已 publish, SSE 由 stream_reader 读, 不 _append) — 小欧-2026-09-06
                 # B2(方案C, 2026-09-06 小欧 三堂会审定案): 预览事件(tools=all_calls, _live_only=True)仅SSE齿轮先行不落库;
@@ -442,7 +439,7 @@ async def run_agent_in_background(
             await db.atxn("chat", lambda conn: db_ops.append_step(
                 conn, ai_message_id, session_id,
                 len(current_execution_steps) - 1, final_dict))
-        await _append(final_dict)
+        await _publish(final_dict)
         if stream_state is not None:
             stream_state.current_content = "任务执行失败"  # 兜底: ③路径 response_text 非空, 根治空 bug
         if agent is not None:
@@ -487,7 +484,7 @@ async def run_agent_in_background(
                     len(current_execution_steps) - 1, _fd))
             if stream_state is not None and _oc != "completed":
                 stream_state.current_content = _resp or stream_state.current_content
-            await _append(_fd)
+            await _publish(_fd)
 
         # 从 agent.status 推导 end_type — 小欧 2026-07-12 从 stream.py 迁移
         if end_type == "unknown" and agent is not None:
@@ -593,7 +590,7 @@ async def run_agent_in_background(
                             buffer.event_log[_final_stats_publish_index] = _term_ed
                             _final_stats_publish_index = None
                         else:
-                            await _append(_term_ed)
+                            await _publish(_term_ed)
                     _pending_terminal_events.clear()
                 # 11.8-H5: 文件A/B footer(终态回填 end_time/status/record_count) — 11.9 P6 小欧 2026-08-23
                 #   非DB文件写, 移出DB事务块(后端卡死修复 offload 小欧 2026-08-24):
