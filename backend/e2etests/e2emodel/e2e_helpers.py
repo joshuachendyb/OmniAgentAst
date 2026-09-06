@@ -448,7 +448,11 @@ async def send_chat(
 
                         # 2026-08-19 小欧 协议适配(§10.3.3(2)废除action_tool→action): 工具调用事件改从 action.tools[] 取,
                         #   每元素含 tool(工具名)/params(参数), 兼容旧 action_tool(tool_name/tool_params)。
+                        # 2026-09-06 小欧 根因修复: B2方案C preview(action)仅SSE齿轮先行不落库, canonical 才是真实执行——
+                        #   未过滤 preview 会把预览当工具调用计入 tool_calls 致 SSE=2xDB 翻倍(P0-02 一致性误判), 故 preview 事件跳过。
                         if event_type in ("action", "action_tool"):
+                            if event.get("preview"):
+                                continue
                             tools_raw = event.get("tools") or []
                             if tools_raw:
                                 for _it in tools_raw:
