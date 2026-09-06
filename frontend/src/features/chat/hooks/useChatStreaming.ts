@@ -10,6 +10,10 @@
 //   ①markDenied 两参→三参(step, tool?, reason?): tool 有名时同步聚合 deniedEntries(Map step→[{tool,reason}] 去重),
 //   reason=user_rejected.content / blocked/timeout 的 error_message(两路拒绝理由可见);
 //   ②sseOnError 取 SSEError.tool_name、handleDenied 三参透传——承 ToolCallLine 被拒工具点名橘红灰字 — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4A, 北京老陈裁定: 本会话恢复被拒灰字): deniedEntries 独立键持久化
+//   sessionStorage(与 steps 备份同生命周期概念)——①恢复: sessionId 变化读键回填(无记录置空) ②持久化:
+//   deniedEntries 非空写键(序列化 entries 数组) ③sendMessage/disconnect(clearStorage) 同步删键防陈旧残留;
+//   换会话/重启即失, 与"本会话够用"定案一致 — 小欧-2026-09-06
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -30,7 +34,7 @@
  * @update 2026-04-22 添加executeSend方法，迁移executeStreamSend逻辑
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react'; // 2026-09-06 小欧 B2(6.4A): useEffect 持久化被拒点名条 — 小欧-2026-09-06
 import type { UseChatStateReturn } from './useChatState';
 import type { UseChatCallbacksReturn } from './useChatCallbacks';
 import type { ExecutionStep } from '../../../types/execution';
@@ -39,6 +43,10 @@ import { useSSE } from '@/hooks/useSSE';
 import { sessionApi } from '../../../services/api/session.api';
 import { getClientInfo } from '../../../utils/clientInfo';
 import { handleError } from '@/services/error/handler';
+
+// 2026-09-06 小欧 B2(6.4A, 北京老陈裁定): 被拒工具点名条 sessionStorage 备份 key——
+//   与 useSSE.ts:43 `sse_execution_steps_backup`(steps 备份)平行命名, 本会话内刷新/重看恢复点名灰字 — 小欧-2026-09-06
+const DENIED_STORAGE_KEY = 'sse_denied_entries_backup';
 
 // ============================================================================
 // 类型定义
@@ -173,6 +181,47 @@ export const useChatStreaming = (
     []
   );
 
+  // 2026-09-06 小欧 B2(6.4A, 北京老陈裁定): 被拒工具点名条本会话持久化——
+  //   恢复: sessionId 变化时读独立键回填现有会话的被拒灰字(无记录置空, 防切任务残留旧会话点名);
+  //   存储格式: Map→entries 数组 [[step, [{tool,reason}]], …], 可 JSON 序列化 — 小欧-2026-09-06
+  useEffect(() => {
+    const key = `${DENIED_STORAGE_KEY}_${sessionId}`;
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setDeniedEntries(
+            new Map(
+              parsed as Array<[number, Array<{ tool: string; reason: string }>]>
+            )
+          );
+        }
+      } else {
+        setDeniedEntries(new Map());
+      }
+    } catch (e) {
+      console.warn('[SSE] 解析 sessionStorage 被拒点名条失败:', e);
+      sessionStorage.removeItem(key);
+      setDeniedEntries(new Map());
+    }
+  }, [sessionId]);
+
+  // 持久化: deniedEntries 非空时写独立键(流式聚合增长即跟写), 空则不动(避免覆盖恢复态/残留由删键接管) — 小欧-2026-09-06
+  useEffect(() => {
+    const key = `${DENIED_STORAGE_KEY}_${sessionId}`;
+    try {
+      if (deniedEntries.size > 0) {
+        sessionStorage.setItem(
+          key,
+          JSON.stringify(Array.from(deniedEntries.entries()))
+        );
+      }
+    } catch (e) {
+      console.warn('[SSE] 保存 sessionStorage 被拒点名条失败:', e);
+    }
+  }, [deniedEntries, sessionId]);
+
   // 2026-09-06 小欧 B2: 拦截(blocked)/超时(timeout) 仍走 error 通道(北京老陈裁定), 其错误对象现带 step ——
   //   在此过滤聚合 deniedSteps(不打断原有 onError 红字提示链路); user_rejected 已独立事件不含此路 — 小欧-2026-09-06
   const sseOnError = useCallback(
@@ -254,6 +303,11 @@ export const useChatStreaming = (
         executionStepsRef.current = []; // 2026-08-28 小强 修复#14: 清空executionStepsRef, 防旧数据残留
         setDeniedSteps(new Map()); // 2026-09-06 小欧 B2: 新任务清空 denied 标记(与 executionSteps 同生命周期) — 小欧-2026-09-06
         setDeniedEntries(new Map()); // 2026-09-06 小欧 B2(6.4): 新任务同步清空被拒工具点名条 — 小欧-2026-09-06
+        // 2026-09-06 小欧 B2(6.4A): 新任务删独立键, 防带旧会话/旧任务点名残留 — 小欧-2026-09-06
+        sessionStorage.removeItem(`${DENIED_STORAGE_KEY}_${sessionId}`);
+        sessionStorage.removeItem(
+          `${DENIED_STORAGE_KEY}_${customSessionId ?? sessionId}`
+        );
 
         // 调用useSSE的sendMessage
         return await sendStreamMessage(
@@ -271,6 +325,7 @@ export const useChatStreaming = (
       streamingContentRef,
       streamingStepsRef,
       executionStepsRef,
+      sessionId, // 2026-09-06 小欧 B2(6.4A): 删独立键依赖, 防陈旧会话闭包 — 小欧-2026-09-06
     ]
   );
 
@@ -284,12 +339,22 @@ export const useChatStreaming = (
       const manualDisconnect = force ?? false;
       const clearStorage = stopServer ?? true;
       disconnect(manualDisconnect, clearStorage, callback);
+      // 2026-09-06 小欧 B2(6.4A): 清 storage 时同步删被拒点名条独立键(与 steps 备份同清), 防陈旧残留 — 小欧-2026-09-06
+      if (clearStorage) {
+        sessionStorage.removeItem(`${DENIED_STORAGE_KEY}_${sessionId}`);
+      }
       // 清理流式状态
       streamingContentRef.current = '';
       streamingStepsRef.current = [];
       executionStepsRef.current = []; // 2026-08-28 小强 修复#14: disconnect时清executionStepsRef
     },
-    [disconnect, streamingContentRef, streamingStepsRef, executionStepsRef]
+    [
+      disconnect,
+      streamingContentRef,
+      streamingStepsRef,
+      executionStepsRef,
+      sessionId,
+    ] // 2026-09-06 小欧 B2(6.4A): sessionId 入依赖 — 小欧-2026-09-06
   );
 
   // 【小强 2026-04-22】executeSend - 完整的发送流程
