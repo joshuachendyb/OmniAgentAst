@@ -6,6 +6,9 @@
 # 2026-09-06 小欧 4B(5.7): handle_answer/handle_action 已纯函数化返 dict{events,result} →
 #   本层消费改 verdict=await handler + for verdict["events"] 逐条 yield; seen_types/last_error/final 逐条收集
 #   与下方终态推断块逐行保留, 语义无退化(4A=T4A, 4B=T4B, 5.7调度仍为 async generator 逐条外发) - 小欧-2026-09-06
+# 2026-09-06 小欧 4C(5.8.1): 返 list 收口 — _dispatch_events 收集循环(双兼容 dict/列表源), 状态推断块逐行
+#   保留, return _dispatch_events 置于状态推断之后(终态声明先执行, 与现状时序一致); 消费端 5.8.2 同 commit
+#   await 拿 list, react_step L461 async-for 对 list 即崩, 5.8.1-5.8.5 同 commit 齐发(文档[6]5.8缺陷D1) - 小欧-2026-09-06
 
 """react_dispatch — 类型分派 + 状态推断
 
@@ -15,6 +18,7 @@
 """
 
 import time
+from typing import List
 from app.logger import log_and_print
 from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_cancelled, set_completed
 from app.services.agent.handlers import (
@@ -63,16 +67,16 @@ async def _dispatch_handler(agent, llm_response):
     seen_types = set()
     last_error_event = None
     final_event = None
-    # 4B(5.7): handler 纯函数化返 dict{events},_dispatch_handler 保留 async generator 形状逐条 yield
-    #   await 拿 events 列表, 逐条收集 seen_types/error/final 后 yield(状态推断块不变, 语义锁) — 小欧-2026-09-06
+    # 4C(5.8.1): 返 list — 收集 _dispatch_events, 状态推断块逐行保留, 循环尾 return(5.8.2 消费 await 拿 list 同 commit) — 小欧-2026-09-06
     verdict = await handler  # handler 为 handle_action/handle_answer(agent, llm_response) 的 coroutine 结果
-    for event in verdict["events"]:
+    _dispatch_events: List = []
+    for event in (verdict.get("events", []) if isinstance(verdict, dict) else verdict):
         seen_types.add(event.type)
         if event.type == _EV_ERROR:
             last_error_event = event
         elif event.type == _EV_FINAL:
             final_event = event
-        yield event
+        _dispatch_events.append(event)
 
     if _EV_RETRY in seen_types:
         set_status(agent, AgentStatus.RETRYING, "触发重试")
@@ -127,3 +131,6 @@ async def _dispatch_handler(agent, llm_response):
                 _deny.pop((str(_tool), "user_rejected"), None)
                 _deny.pop((str(_tool), "blocked"), None)
                 agent._deny_counts = _deny
+
+    # 4C(5.8.1): return _dispatch_events 置于状态推断之后(终态声明在主循环 LLM 轮内先行, 时序与现状一致) — 小欧-2026-09-06
+    return _dispatch_events

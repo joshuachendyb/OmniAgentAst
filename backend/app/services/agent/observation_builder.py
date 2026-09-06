@@ -147,6 +147,8 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
     # 2026-09-03 小欧 Bug-1: 无条件发 ObservationStep(即使 tool_result 为空/全拦截),
     #   前端 results 到达即卸载等待动画, 杜绝齿轮/动画永驻(改前空 tool_result 直接 return 不发事件)
     # 2026-09-03 小欧 D2-01补：all_calls空时不发空观察（无工具调用无需观察）
+    # 4C(5.8.2): ObservationStep 不进缓冲由本层发布——事件统一在 react_step 分发消费(await _dispatch_handler 逐条
+    #   publish)发出, 本层仍返 events 列表(4B 纯函数垫), DRY 单一发射面, 避免同步函数 await 事件循环(追朔后回退) — 小欧-2026-09-06
     if ctx.all_calls:
         events.append(ctx.agent._step_emitter.emit(ObservationStep(step=ctx.step, tool_result=tool_result)))
     return events, orchestration

@@ -76,6 +76,19 @@
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整删finalize_message回调及其调用——删除stream_orchestrator.db_ops.finalize=传参与agent_runner行446-461的finalize调用块(原写chat_messages终态); 终态content/status/thought由append_execution_step(step_json)与_finalize_task_db(update_task+回填chat_user_message)承载, 系统对该表零写依赖
 # 2026-08-30 - 小欧 - 第十三章13.11 落库收口(设计文档[2]13.12.10, 北京老陈 2026-08-30 批准): _persist 内对 thought 步骤仅规约 content/thought/reasoning 三字段文本(调公用 normalize_blank_lines, 新数据入库即净), 其它类型/其它字段绝不触碰(防 tool_result/命令输出代码块多空行语义被误伤); import 补 normalize_blank_lines
 # 2026-08-30 - 小欧 - _finalize_task_db accumulated_usage双重编码修复: 去掉外层safe_json_dumps(根因: query_task_acc已返回dict, update_task内已调safe_json_dumps, 外层再包一次致双重编码前端解析失败显null)
+# 2026-09-06 小欧 4C(5.8.5, 与5.8.1-5.8.4同commit齐发): run_react_cycle 收敛普通 async(5.8.3)后, 本层由
+#   "async-for yield 逐条处理"改"订阅消费"——run_react_cycle 内事件已由 react_step/react_loop publish 直写
+#   event_log(带 seq), 完成后取缓冲快照(list)逐条走既有的通道路由(_persist 落库/SSE 标记/current_content)不变;
+#   SSE 实时性不受影响(stream_reader 独立协程按 seq 实时读), DB 落库由本层扫描完成(崩溃前已 publish 事件含
+#   异常路径 error/final 全量可读不丢); 双发修正(doc[6]5.8.5): 订阅体内已 publish 事件不再 _append(否则 SSE 双发
+#   违反 6.5 event_log 单一 seq), _append 仅保留自产事件(startinfo/异常final/守卫补发); 订阅体补 prompt-log
+#   log_step_yield(原 _append 内记录, publish 不记, 订阅侧补齐); buffer 缺省 create_stream_buffer ensure
+#   (react_loop/react_step 需缓冲 publish) — 小欧-2026-09-06
+# 2026-09-06 小欧 4C(5.8.6): 终态 SSE 单发根治——publish 终态(final/final_stats)实时已被 stream_reader
+#   按 seq 读走(完整条), finally 统一补发的剥离(短信号)/统计条改为"覆写 publish 原位(保 seq)", 不再 _append
+#   新增 seq: 原实现 event_log 内 final 双条(publish 完整 + 补发短/完整)致 SSE final 双发(bug, P4 专项测试捕获);
+#   覆写后 event_log 每种终态单条: 短信号场景前端仅见剥离条, 完整场景原位即完整, 守卫补发(无 publish 原条)仍 _append;
+#   零新增抽象, 覆写幂等(同内容覆写等价); final_stats 同法去重 — 小欧-2026-09-06
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -104,7 +117,7 @@ from app.services.task.task_registry import task_cleanup
 from app.tools import cleanup_shell_pool_by_task  # P5a: 从门面导入 — 小沈 2026-08-13
 from app.services.task.task_state import (
     running_tasks, running_tasks_lock,
-    agent_streams, reclaim_stream_buffer,
+    agent_streams, create_stream_buffer, reclaim_stream_buffer,
 )
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
@@ -179,6 +192,10 @@ async def run_agent_in_background(
         _self_task.add_done_callback(_background_tasks.discard)
 
     buffer = agent_streams.get(task_id)
+    if buffer is None:
+        # 4C(5.8.5): 缓冲缺省 ensure —— react_loop/react_step 在 run_react_cycle 内经 publish 直写 event_log,
+        #   无缓冲时 react_loop 抛 RuntimeError; 此处确保既有直连入口(跳过 stream_orchestrator)亦可创建 — 小欧-2026-09-06
+        buffer = create_stream_buffer(task_id)
     current_execution_steps: List[Dict] = []
     end_type = "unknown"
     # 12.2-C4: ai_message_id 局部初始化删除(参数即初值, eager注入) — 小欧 2026-08-21
@@ -192,6 +209,8 @@ async def run_agent_in_background(
     #   chat_tasks.status 落库成功后统一补发, 消除"SSE final 先到、DB status 后到"致前端
     #   StaticStatsBlock 读 detail.status 卡 executing 的竞态(详见 doc-9月优化/任务统计执行中卡死-病根病因与修复方案-小欧-2026-09-04.md)
     _pending_terminal_events: List[Dict] = []
+    _final_publish_index: Optional[int] = None       # 5.8.6: publish final 在 event_log 原位(短条覆写保单 seq) — 小欧 2026-09-06
+    _final_stats_publish_index: Optional[int] = None # 5.8.6: publish final_stats 原位(补发覆写去重) — 小欧 2026-09-06
 
     # [新] 生产者全权拥有 prompt-log 生命周期(创建) — 小欧 2026-07-18
     get_prompt_logger().start_request(last_message, session_id)
@@ -255,20 +274,21 @@ async def run_agent_in_background(
                 ctx["previous_messages"] = prev
         run_context = context or ctx or None
 
-        async for event in agent.run_react_cycle(
+        # 4C(5.8.5): run_react_cycle 收敛普通 async(5.8.3)——事件已在内部经 publish 直写 event_log,
+        #   本层订阅取完成快照逐条走通道路由(_persist 落库/SSE 标记/current_content); SSE 实时由
+        #   stream_reader(独立协程按 seq 实时读 publish 事件)负责, 实时性不受影响; DB 落库由本层扫描完成
+        #   (崩溃前已 publish 事件含异常路径 error/final 全量可读不丢); 订阅体内已 publish 事件不再 _append
+        #   防双发(doc[6]5.8.5, 违反 6.5 event_log 单一 seq), _append 仅保留自产事件(startinfo/异常final/守卫补发) — 小欧-2026-09-06
+        await agent.run_react_cycle(
             task=last_message, context=run_context, task_id=task_id, start_time=start_time  # 11.2-B start_time 同源透传 — 小欧 2026-08-20
-        ):
-            # event 可能为 dict 或 Step，统一 to_dict — chendyg 2026-06-26
-            if isinstance(event, dict):
-                event_dict = event
-            elif hasattr(event, "to_dict"):
-                event_dict = event.to_dict()
-            else:
-                logger.warning(f"[Runner] 跳过非Step事件: {type(event)}")
-                continue
+        )
+        # publish 事件快照(全部已入缓冲), 自产 _append 事件(如 startinfo)追加在后不入快照, 不落库不双记 — 小欧-2026-09-06
+        for _scan_idx, event_dict in enumerate(list(buffer.event_log)):
             if not event_dict:
                 continue
             event_type = event_dict.get("type", "")
+            # prompt-log 生命周期(publish 不记, 订阅侧补齐替代原 _append 内 log_step_yield; 自产事件仍由 _append 记) — 小欧-2026-09-06
+            get_prompt_logger().log_step_yield(event_dict, round_number=event_dict.get("step", 0))
 
             # ── 通道路由（§10.3.3(1) + §10.4.3 P1）：thought 仅落库 / thought-start 仅SSE / chunk 仅SSE / 其余 SSE+落库 ──
             # 2026-08-18 小健 P1实施: chunk 与 thought-start 同类(仅实时、不可回放), 改仅SSE不落库,
@@ -307,12 +327,11 @@ async def run_agent_in_background(
             if event_type == "thought":
                 await _persist(event_dict)              # 仅落库（历史回放用, 实时不重复发）
             elif event_type == "thought-start":
-                await _append(event_dict)         # 仅 SSE（纯实时信号, 不落库）
+                pass  # 4C(5.8.5): 仅SSE, 已 publish 入缓冲由 stream_reader 实时读, 订阅体不再 _append 防双发 — 小欧-2026-09-06
             elif event_type == "chunk":
                 # 仅 SSE（§10.4.3 P1）: chunk 纯实时逐字流, 不落库; 仅维护正文chunk标记供 final 短信号判定
                 if not event_dict.get("is_reasoning"):
                     _has_chunk_steps.add(event_dict.get("step", 0))
-                await _append(event_dict)
             elif event_type == "start":
                 await _persist(event_dict)   # P7: StartStep 落库, _persist 内惰性分配 ai_message_id — 小欧 2026-08-18
                 _startinfo = {
@@ -327,7 +346,7 @@ async def run_agent_in_background(
                 }
                 await _append(_startinfo)   # 轻量 MetaStep 仅 SSE, 复用同一 ai_message_id — 小欧 2026-08-18
             elif event_type in {"error", "usage", "paused", "resumed", "retrying", "cancelled"}:
-                await _append(event_dict)   # P3(error)/P5(通知类)/P6(usage): 一律仅 SSE 不落库 — 小欧 2026-08-18
+                pass  # 4C(5.8.5): 仅SSE(§10.4.4 P3/P5/P6), 已 publish 入缓冲由 stream_reader 实时读, 订阅体不再 _append 防双发 — 小欧-2026-09-06
             else:
                 await _persist(event_dict)              # 落库（始终完整 dict）
                 # ── final & completed SSE 短信号（§10.3.3(4)）── 2026-08-18 小欧
@@ -336,9 +355,10 @@ async def run_agent_in_background(
                 #   剥离后前端正文丢失(测试 test_return_direct_response_lost 捕获)。
                 #   → 有 chunk 才短信号; 无 chunk 发完整(含 response)。
                 if event_type == "action":
-                    _action_steps.add(event_dict.get("step", 0))   # 工具执行轮标记
-                    await _append(event_dict)                      # §10.3.3 其余 SSE+落库: action 实时下发前端(yield 才到前端) — 小欧 2026-08-18
+                    _action_steps.add(event_dict.get("step", 0))   # 工具执行轮标记(已 publish, SSE 由 stream_reader 读, 不 _append) — 小欧-2026-09-06
                 elif event_type == "final":
+                    if _final_publish_index is None:
+                        _final_publish_index = _scan_idx   # 5.8.6: 记 publish final 原位, 供 finally 覆写保单一 seq — 小欧 2026-09-06
                     # 2026-09-04 小欧 方案一: 终态 final 不立即 _append, 先入 _pending_terminal_events 缓冲,
                     #   待 finally 里 chat_tasks.status 落库成功后再统一补发(见 finally 块),
                     #   消除"SSE final 先到、DB status 后到"致前端 _hasFinal 提前、getTaskDetail 读到 stale executing 的竞态。
@@ -355,11 +375,12 @@ async def run_agent_in_background(
                     else:
                         _pending_terminal_events.append(event_dict)   # SSE：完整 / failed / cancelled 等
                 elif event_type == "final_stats":
+                    if _final_stats_publish_index is None:
+                        _final_stats_publish_index = _scan_idx   # 5.8.6: 记 publish final_stats 原位, 覆写去重 — 小欧 2026-09-06
                     # 2026-09-04 小欧 方案一: final_stats 终态统计随 final 一并延迟到 DB status 落库后补发,
                     #   保证 frames.finalStats.final_status 与 chat_tasks.status 一致(单一终态时序)
                     _pending_terminal_events.append(event_dict)
-                else:
-                    await _append(event_dict)     # SSE：完整（其余类型实时下发）
+                # else 其它类型: 已 publish 入缓冲, 订阅体不再 _append(防双发) — 小欧-2026-09-06
 
             # 更新 current_content / current_thought
             if event_type == "final":
@@ -546,7 +567,19 @@ async def run_agent_in_background(
                     await _persist_final(db.atxn("chat", _finalize_task_db))
                 finally:
                     for _term_ed in _pending_terminal_events:
-                        await _append(_term_ed)
+                        _ttp = _term_ed.get("type")
+                        # 4C(5.8.6) 终态单发根治: publish 终态实时已被 stream_reader 按 seq 读走(完整/统计条),
+                        #   finally 统一补发的剥离(短信号)/统计条覆写 publish 原位(保 seq 不变)而非 _append 新 seq——
+                        #   原实现 event_log 终态双条致 SSE final 双发(P4 捕获); 覆写后每种终态单条(短/完整/统计),
+                        #   重连回放读到的终态与实时一致; 守卫补发(无 publish 原条)仍 _append — 小欧 2026-09-06
+                        if _ttp == "final" and _final_publish_index is not None:
+                            buffer.event_log[_final_publish_index] = _term_ed
+                            _final_publish_index = None
+                        elif _ttp == "final_stats" and _final_stats_publish_index is not None:
+                            buffer.event_log[_final_stats_publish_index] = _term_ed
+                            _final_stats_publish_index = None
+                        else:
+                            await _append(_term_ed)
                     _pending_terminal_events.clear()
                 # 11.8-H5: 文件A/B footer(终态回填 end_time/status/record_count) — 11.9 P6 小欧 2026-08-23
                 #   非DB文件写, 移出DB事务块(后端卡死修复 offload 小欧 2026-08-24):

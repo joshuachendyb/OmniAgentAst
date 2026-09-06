@@ -3,6 +3,12 @@
 # 编辑历史:
 # 2026-09-05 小健 8.4拆分(react_cycle.py拆四): 提取 run_react_cycle(原行707-912)+_finalize_cycle(原行392-397),
 #   逐字复制只改import — 薄调度主循环(循环调度+状态推进), 调用方经 react_loop 引用(老名react_cycle消亡不留垫片)
+# 2026-09-06 小欧 4C(5.8.3, 与5.8.1/5.8.2/5.8.4/5.8.5同commit齐发): run_react_cycle 由 async generator 改普通
+#   async(事件全走 publish 直写 event_log, 零 yield 残留); 10处发射点位收口 publish(L84 start/L95-100 max_steps<=0
+#   final/L125-131 取消final/L152-159 重试超限final/L163 retrying/L186-193 重试超限final/L203 chunk超时/L212-217 循环
+#   无终态兜底/L223 不可恢复error); 主循环消费改 await _process_single_step 拿 list(5.8.2) 逐条 publish;
+#   done.set() 两处补置: max_steps<=0 分支(try 前 return 不进 finally, 原 done 仅 finally 置位→消费订阅永不退出挂死)
+#   与 finally 各一次, 消费订阅 done.is_set() 退出 — 小欧-2026-09-06
 
 """react_loop — ReAct 循环核心(薄调度)
 
@@ -11,7 +17,7 @@
 8.4拆分自 react_cycle.py(老名消亡) — 小健 2026-09-05
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from app.logger import logger
 from app.config import get_config
 from app.services.agent.steps import FinalStep, MetaStep
@@ -23,6 +29,7 @@ from app.services.agent.react_step import _process_single_step
 from app.services.agent.react_inference import handle_react_error, _is_recoverable_error
 from app.db import db
 from app.services.chat import storage
+from app.services.task.task_state import get_stream_buffer
 
 def _finalize_cycle(agent):
     """循环后收尾: 状态回调+任务追踪 — 小健 2026-06-17 从finally提取"""
@@ -40,9 +47,16 @@ async def run_react_cycle(
     task_id: Optional[str] = None,
     start_time: Optional[float] = None,   # 11.2-B 同源起点（stream_orchestrator:198 → agent_runner → 此处）— 小欧 2026-08-20
 ):
-    """ReAct循环:调用LLM→解析→分派handler→产出Step — chendyg 2026-07-01 状态集中管理重构v2"""
+    """ReAct循环:调用LLM→解析→分派handler→产出Step — chendyg 2026-07-01 状态集中管理重构v2
+    4C(5.8.3): 普通 async(零 yield), 事件 publish 直写 event_log 由 agent_runner 订阅消费 — 小欧 2026-09-06"""
     if max_steps is None:
         max_steps = get_config().get_max_steps()
+
+    # 4C(5.8.3): StreamBuffer 绑定 + publish 本地别名(loop级事件收发; react_step 内部同对象绑定) — 小欧-2026-09-06
+    _buf = get_stream_buffer(task_id or getattr(agent, "task_id", ""))
+    if _buf is None:
+        raise RuntimeError(f"[react_loop] StreamBuffer缺失(task={task_id or getattr(agent, 'task_id', '')})")
+    _publish = _buf.publish
 
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
 
@@ -81,7 +95,7 @@ async def run_react_cycle(
     #   落库: start 作为首个事件 yield → agent_runner 事件流分配 ai_message_id 并 append_step, 不再 execution_steps 双写。 — 小欧/小健 2026-08-17
     _start_step = _assemble_start_step(agent, context)  # 同步装配(内部零 await, KISS — 小健 2026-08-17)
     if _start_step is not None:
-        yield agent._step_emitter.emit(_start_step)
+        await _publish(agent._step_emitter.emit(_start_step).to_dict())
 
     # S5(10.1.7⑤/10.1.8): C4 超窗锚定摘要回填 —— start 装配后、while 前一次性清洗注入的历史。
     #   仅当 start 超窗判定(start_step._maybe_compact_injected_history)置 _needs_compact(=True) 才触发;
@@ -92,13 +106,15 @@ async def run_react_cycle(
 
     if max_steps <= 0:
         logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接终止")
-        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+        _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
             step=len(agent.steps),  # S4: start 已 emit(step=0), 终态接续步号, 避免同消息下双 step=0 — 小欧 2026-08-16
             response=f"最大步骤数({max_steps})，无可执行步骤，任务取消",  # Bug2+5: max_steps<=0不是"已耗尽"; outcome=cancelled→消息一致 — 小欧 2026-07-23
             outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, max_steps=0终态统一
-        )):
-            yield _s
+        ))
+        await _publish(_fs[0].to_dict())
+        await _publish(_fs[1].to_dict())
         set_cancelled(agent)
+        _buf.done.set()  # 5.8.3修正: 本分支 try 前 return 不进 finally, done 需在此置位, 否则消费订阅永不退出挂死 — 小欧-2026-09-06
         _finalize_cycle(agent)
         return
 
@@ -122,13 +138,14 @@ async def run_react_cycle(
                 from app.services.task.task_runtime import check_cancelled, wait_for_resume
                 if await check_cancelled(task_id):
                     logger.info(f"[run_react_cycle] 检测到任务取消(task_id={task_id}), 终止为 cancelled")
-                    for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+                    _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
                         # 2026-08-17 - 小健 - 三堂会审-S4修复: 首轮前取消(llm_call_count 尚未+1=0)时,
                         #   step=0 与 start(step=0)双 step0(与 S4"start占0,业务从1起"矛盾); or 1 接续唯一步号
                         step=agent.llm_call_count or 1,
                         response="任务已被用户取消", outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 用户取消终态统一
-                    )):
-                        yield _s
+                    ))
+                    await _publish(_fs[0].to_dict())
+                    await _publish(_fs[1].to_dict())
                     set_cancelled(agent)
                     break
                 # 用户暂停检测(循环粒度, 阻塞等待恢复) — 小欧 2026-07-13
@@ -142,30 +159,32 @@ async def run_react_cycle(
                 #   task_pause_check_and_yield 下发, 职责单一无死路。
                 await wait_for_resume(task_id)
             try:
-                async for event in _process_single_step(agent, chunk_buffer):
-                    yield event
+                # 4C(5.8.3/5.8.2): _process_single_step 普通 async 返 list, 逐条 publish(事件直写 event_log, 订阅端消费) — 小欧-2026-09-06
+                for event in await _process_single_step(agent, chunk_buffer):
+                    await _publish(event.to_dict())
             except Exception as _step_err:
                 if _is_recoverable_error(_step_err):
                     agent._retry_count = getattr(agent, '_retry_count', 0) + 1
                     if agent._retry_count > 3:
                         logger.error(f"[run_react_cycle] 可恢复错误重试超限: {_step_err}")
-                        for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+                        _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
                             step=agent.llm_call_count,
                             response=f"可恢复错误重试已达上限(3次): {_step_err}",
                             outcome="failed",
                             error_type="recoverable_retry_exhausted",
                             error_message=f"可恢复错误重试已达上限(3次): {_step_err}",
-                        )):
-                            yield _s
+                        ))
+                        await _publish(_fs[0].to_dict())
+                        await _publish(_fs[1].to_dict())
                         set_failed(agent, f"可恢复错误重试已达上限(3次): {_step_err}")  # task007: 明确上限值 — 小欧 2026-07-23
                         break
                     logger.warning(f"[run_react_cycle] 可恢复异常, 第{agent._retry_count}次重试: {_step_err}")
-                    yield agent._step_emitter.emit(MetaStep(
+                    await _publish(agent._step_emitter.emit(MetaStep(
                         type="retrying",
                         step=agent.llm_call_count,
                         content=f"LLM请求异常，准备重试: {_step_err}",
                         severity="info",
-                    ))
+                    )).to_dict())
                     # 2026-08-13 - 小欧 - 三堂会审修复#36: 此处不再 set RETRYING(计数已在上方+1),
                     #   直接 continue 回循环顶重试; 否则主循环 L614 RETRYING 处理再+1 → 一次异常计2次,
                     #   上限3实际第2次异常即FAILED。来源B(_dispatch_handler L273 retrying)仍走
@@ -183,14 +202,15 @@ async def run_react_cycle(
             if agent.status == AgentStatus.RETRYING:
                 agent._retry_count = getattr(agent, '_retry_count', 0) + 1
                 if agent._retry_count > 3:
-                    for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+                    _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
                         step=agent.llm_call_count,
                         response="可恢复错误重试已达上限(3次)",
                         outcome="failed",
                         error_type="recoverable_retry_exhausted",
                         error_message="可恢复错误重试已达上限(3次)",
-                    )):
-                        yield _s
+                    ))
+                    await _publish(_fs[0].to_dict())
+                    await _publish(_fs[1].to_dict())
                     set_failed(agent, "可恢复错误重试已达上限(3次)")  # task007: 明确上限值 — 小欧 2026-07-23
                     break
                 set_status(agent, AgentStatus.THINKING, f"第{agent._retry_count}次重试")
@@ -200,7 +220,7 @@ async def run_react_cycle(
             if chunk_buffer.should_force_stop():
                 logger.warning(f"[run_react_cycle] chunk累积超时({agent.llm_call_count}步),强制停止")
                 set_failed(agent, f"chunk累积超时({agent.llm_call_count}步)")
-                yield agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="error", content="响应累积超时，任务强制终止", error_type="chunk_buffer_timeout", severity="warn"))  # P3+P4: error全仅SSE+severity — 小欧 2026-08-18
+                await _publish(agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="error", content="响应累积超时，任务强制终止", error_type="chunk_buffer_timeout", severity="warn")).to_dict())  # P3+P4: error全仅SSE+severity — 小欧 2026-08-18
                 break
 
         if agent.status not in (
@@ -209,22 +229,24 @@ async def run_react_cycle(
             AgentStatus.CANCELLED,
         ):
             logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 终止")
-            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+            _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=agent.llm_call_count,
                 response=f"任务循环结束未设终态(status={agent.status})",  # Bug3: 循环自然退出不是"异常",用事实描述 — 小欧 2026-07-23
                 outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 循环结束无终态兜底统一
-            )):
-                yield _s
+            ))
+            await _publish(_fs[0].to_dict())
+            await _publish(_fs[1].to_dict())
             set_cancelled(agent)
 
     except Exception as e:
         logger.error(f"[run_react_cycle] 不可恢复异常: {e}", exc_info=True)
         error_step = handle_react_error(agent, e, agent.llm_call_count)
-        yield agent._step_emitter.emit(error_step)
+        await _publish(agent._step_emitter.emit(error_step).to_dict())
         set_failed(agent, f"循环异常: {e}"[:200])
 
     finally:
         _finalize_cycle(agent)
+        _buf.done.set()  # 5.8.3: 消费订阅退出信号(订阅循环 done.is_set() 退出) — 小欧-2026-09-06
         _tele = getattr(agent, "telemetry", None)   # 11.2-C 监控落库（独立模块，非阻塞降级）— 小欧 2026-08-20
         if _tele is not None:
             _tele.finalize_and_persist()

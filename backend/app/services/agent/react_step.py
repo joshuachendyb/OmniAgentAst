@@ -127,6 +127,12 @@
 # 2026-09-05 小健 8.4拆分(react_cycle.py拆四): 常量+守卫群→react_inference.py, _dispatch_handler(含状态推断)→react_dispatch.py,
 #   run_react_cycle+_finalize_cycle→react_loop.py; 本文件由 react_cycle.py git mv 改名(历史/blame不断),
 #   余部仅剩 _process_single_step — 逐字复制, 只改import
+# 2026-09-06 小欧 4C(5.8.2, 与5.8.1/5.8.3/5.8.4/5.8.5同commit齐发): _process_single_step 由 async generator 改
+#   普通 async 返 List(事件经 task_state.get_stream_buffer(agent.task_id).publish 直写 event_log); 11处发射点位
+#   (L201 retrying/L223 chunk/L275 usage/L309 stats/L314 context_overview/L334 empty error/L387 trunc-L392-397
+#   final截断/L413 trunc重试前/L418 ObservationStep/L443-451 same_tool_loop final) 全收口 publish, 按序极化见
+#   emit_final_with_stats 三处(L406/L443/余为直接emit)先publish再 for 拆二元组 publish; L461-462 消费改
+#   for await _dispatch_handler(5.8.1 list) 逐条 publish; _publish = _buf.publish 函数顶部绑定一次 — 小欧-2026-09-06
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -135,7 +141,7 @@
 """
 
 import time
-from typing import AsyncGenerator
+from typing import List
 from app.logger import logger, log_and_print
 from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ChunkStep, MetaStep, ObservationStep, FinalStep
@@ -154,8 +160,16 @@ from app.services.agent.react_dispatch import _dispatch_handler
 from app.db import db
 from app.services.chat import storage
 
-async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
-    """单步ReAct调度: LLM调用→响应处理→分发 — 小欧 2026-06-25 / 小欧 2026-07-09 加分区注释"""
+async def _process_single_step(agent, chunk_buffer) -> List:
+    """单步ReAct调度: LLM调用→响应处理→分发 — 小欧 2026-06-25 / 小欧 2026-07-09 加分区注释
+    4C(5.8.2): 普通 async 返 List, 事件经 publish 直写 event_log(11处发射收口), 由主循环订阅消费 — 小欧 2026-09-06"""
+
+    # ── 4C(5.8.2): StreamBuffer 绑定 + publish 本地别名(回调事件收发, 消费端订阅 event_log) — 小欧-2026-09-06
+    from app.services.task.task_state import get_stream_buffer
+    _buf = get_stream_buffer(agent.task_id)
+    if _buf is None:
+        raise RuntimeError(f"[react_step] StreamBuffer缺失(task={agent.task_id})")
+    _publish = _buf.publish
 
     # ── Phase 1: LLM 调用准备 ──────────────────────────────────
     agent.llm_call_count += 1
@@ -198,13 +212,13 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         if isinstance(chunk_or_response, tuple) and chunk_or_response[0] == "meta":
             # 小欧 2026-09-02: LLM 底层 L1/L2/降级重试通知 → 标准 retrying 事件发前端
             _m = chunk_or_response[1]
-            yield agent._step_emitter.emit(MetaStep(
+            await _publish(agent._step_emitter.emit(MetaStep(
                 type=_m["type"],
                 step=agent.llm_call_count,
                 content=_m["content"],
                 severity="info",
                 wait_time=_m.get("wait_time"),
-            ))
+            )).to_dict())
             continue
         chunk_type, chunk_data = chunk_or_response   # 既有拆包(仅非meta时执行, 原 :436)
 
@@ -220,7 +234,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                 content=content,
                 is_reasoning=is_reasoning,
             )
-            yield agent._step_emitter.emit(chunk_step)
+            await _publish(agent._step_emitter.emit(chunk_step).to_dict())
         elif chunk_type == "response":
             llm_response = chunk_data
             _call_dur = time.time() - _call_start
@@ -272,7 +286,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                     session_accumulated_tokens=agent.session_accumulated_tokens,   # 11.1 新增
                     chain_accumulated_tokens=agent.chain_accumulated_tokens,       # 11.1 新增
                 )
-                yield agent._step_emitter.emit(_usage_step)
+                await _publish(agent._step_emitter.emit(_usage_step).to_dict())
 
                 # 11.1b 运行中DB即时落库（每轮 update 任务/会话累计，供运行中他方查询/断线中间态读取）— 小欧 2026-08-20
                 #   用户裁定"每轮即时落库"; DB 读-加-写(当前DB值+本轮token) 与内存态基线口径一致;
@@ -306,12 +320,12 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             )
             # 11.2-B stats 事件（独立模块产出 MetaStep(type="stats", ...)）— 小欧 2026-08-20
             _stats_step = agent.telemetry.build_stats_step()   # → MetaStep(type="stats", step_count/llm_call_count/retry_count/duration)
-            yield agent._step_emitter.emit(_stats_step)
+            await _publish(agent._step_emitter.emit(_stats_step).to_dict())
             # 11.3 context_overview 事件（独立模块产出 MetaStep(type="context_overview", ...)）
             _overview = agent.telemetry.build_context_overview()
             _llm_n = agent.llm_call_count
             if _llm_n == 1 or getattr(agent.message_builder, "_trimmed_this_round", False) or _llm_n % 5 == 0:
-                yield agent._step_emitter.emit(MetaStep(
+                await _publish(agent._step_emitter.emit(MetaStep(
                     step=_llm_n, type="context_overview", content=_overview.get("summary", ""),
                     message_count=_overview["message_count"], estimated_tokens=_overview["estimated_tokens"],
                     truncated=_overview["truncated"],
@@ -319,7 +333,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
                     injected_estimated_tokens=_overview["injected_estimated_tokens"],
                     injected_ratio=_overview["injected_ratio"],
                     severity="info",
-                ))
+                )).to_dict())
 
     # ── Phase 3: 响应分发 ──────────────────────────────────────
     set_status(agent, AgentStatus.EXECUTING)
@@ -331,10 +345,10 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
         log_and_print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, empty_response")  # 小欧 2026-07-02 控制台
         set_failed(agent, "LLM返回空响应，任务终止")
-        yield agent._step_emitter.emit(MetaStep(
+        await _publish(agent._step_emitter.emit(MetaStep(
             step=step, type="error", content="LLM返回空响应，任务终止", error_type="empty_response", severity="warn"
-        ))
-        return
+        )).to_dict())
+        return []  # 4C(5.8.2): 普通 async 返 List, 空响应无事件 — 小欧-2026-09-06
 
     # ── 场景C: LLM直接回答/纯推理 → 注入复核warning（不重试）— 小健 2026-07-03
     # 设计: fall through到正常分发, warning进history,
@@ -384,17 +398,18 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试")
             log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, consecutive_truncation")  # 小欧 2026-07-02 控制台
             # 解决问题18(2.4④): 连续截断取消前发 MetaStep(type="truncated") 统一"输出被截断"事件 — 小欧 2026-08-20
-            yield agent._step_emitter.emit(MetaStep(
+            await _publish(agent._step_emitter.emit(MetaStep(
                 step=step, type="truncated",
                 content=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断，任务取消",
                 severity="warn",
-            ))
-            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+            )).to_dict())
+            _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=step,
                 response=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
                 outcome="cancelled",
-            )):
-                yield _s
+            ))
+            await _publish(_fs[0].to_dict())
+            await _publish(_fs[1].to_dict())
             set_cancelled(agent)
             return
 
@@ -410,16 +425,16 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             obs_text, {"tool_call_id": _retry_tc_id, "tool_calls": [], "llm_content": content},
         )
         # 解决问题18(2.4④): 输出截断重试前发 MetaStep(type="truncated") 统一"输出被截断"事件 — 小欧 2026-08-20
-        yield agent._step_emitter.emit(MetaStep(
+        await _publish(agent._step_emitter.emit(MetaStep(
             step=step, type="truncated",
             content=f"LLM输出截断(连续第{agent._consecutive_truncations}次)，已注入重试Observation",
             severity="warn",
-        ))
-        yield agent._step_emitter.emit(ObservationStep(
+        )).to_dict())
+        await _publish(agent._step_emitter.emit(ObservationStep(
             step=step,
             tool_result=[{"tool_name": "truncated_output", "llm_data": {"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}}, "llm_data_text": "", "data_text": obs_text, "other_data": {}}],
-        ))
-        return
+        )).to_dict())
+        return []  # 4C(5.8.2): 普通 async 返 List — 小欧-2026-09-06
 
 # ── 场景F: 相同工具调用死循环检测(双阈值纠偏/硬终止) ──────────
     # 2026-08-08 - 小欧 - P6_01(file_not_found)超时根因修复:
@@ -440,16 +455,17 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             logger.warning(f"[run_react_cycle] LLM连续{_cnt}步调用相同工具(step={step}), 判定死循环, 终止")
             log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, same_tool_loop")  # 小欧 2026-08-08 控制台
             set_failed(agent, f"模型连续{_cnt}步重复调用相同工具, 疑似死循环, 任务终止")
-            for _s in agent._step_emitter.emit_final_with_stats(FinalStep(
+            _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=step,
                 response="模型反复调用相同工具未取得进展，任务已终止（疑似死循环）",
                 reasoning=llm_response.get("reasoning", "") or llm_response.get("thought", ""),
                 outcome="failed",
                 error_type="same_tool_loop",
                 error_message=f"模型连续{_cnt}步重复调用相同工具，疑似死循环",
-            )):
-                yield _s
-            return
+            ))
+            await _publish(_fs[0].to_dict())
+            await _publish(_fs[1].to_dict())
+            return []  # 4C(5.8.2): 普通 async 返 List — 小欧-2026-09-06
     else:
         # 非action(正常answer/final): 死循环检测仅在action语义下, 归零防残留(含纠偏标记) — 小欧 2026-08-08
         agent._consecutive_same_tool_calls = 0
@@ -458,7 +474,9 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
     # ── 场景E: 正常分发 ─────────────────────────────────────────
     agent._consecutive_truncations = 0
-    async for event in _dispatch_handler(agent, llm_response):
-        yield event
+    # 4C(5.8.2/5.8.1): _dispatch_handler 返 list(5.8.1), 逐条 publish 收口(事件直写 event_log) — 小欧-2026-09-06
+    for event in await _dispatch_handler(agent, llm_response):
+        await _publish(event.to_dict())
+    return []  # 4C(5.8.2): 普通 async 返 List, 事件已全量 publish, 列表空由主循环消费 — 小欧-2026-09-06
 
 
