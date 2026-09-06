@@ -25,6 +25,12 @@
 # 2026-09-05 小欧 ISS-002修复(task006问题报告核验为真实问题): sandbox_resolve 确认分支 resumed 补
 #   confirm_id(本函数入口 create_confirmation 返回值, 作用域内可用), 对齐主路resumed(action_handler带
 #   confirm_id), 前端收到resumed可据此配对关闭对应弹窗, 两通道协议一致
+# 2026-09-06 小欧 步骤3A落盘(test_path1_step3a_gateway_cutover.py T3A红→绿, 文档[6]5.3.2+5.3.3):
+#   ① sandbox_resolve needs_ruling 分支"等待源头"收网关——删 create/wait/计时/trust_path扫描/paused/resumed
+#     组装/SUSPENDED/EXECUTING, 改 ConfirmSpec+hitl_confirm(唯一暂停源头); StreamBuffer缺失显式失败不静默;
+#     返回值仍(ok,steps), steps仅剩error类(paused/resumed由网关publish), 待收list留5.4.2(3B)
+#   ② 单paused策略(4.4定案): sandbox_resolve/run_sandbox_gate 均加 main_confirmed 短路——主路已confirmed
+#     则跳过二次裁决直接放行; bypass区传_bypass_confirmed/真HITL区传True/safe直通缺省False
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -54,18 +60,21 @@ async def sandbox_precheck(safety_result, tool_name, params):
         return None
 
 
-async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_result, denied_list):
+async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_result, denied_list,
+                          main_confirmed=False):
     """预检结果处置(DRY: 三处插入点共用)。返回(放行bool, 待下发steps列表)
     危险型失败→denied登记+error步骤; 未完成有效验证(超时/环境性)→复用HITL原语请用户裁决;
     杜绝LLM原样重发死循环"""
     # 延迟导入(修复循环import回归, 见模块顶部注释)
     from app.services.agent.steps import MetaStep
-    from app.services.agent.status_table import AgentStatus, set_status
-    from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result
-    from app.constants import HITL_TIMEOUT
-    from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS
+    # 3A: 等待/暂停/恢复组装、计时、SUSPENDED/EXECUTING 全部收 hitl_gateway,
+    #   此处仅剩阻塞前直通分支与 error 组装消费 MetaStep — 小欧 2026-09-06
     if pre.passed:
         logger.info(f"[sandbox] 放行执行: tool={tool_name}")
+        return True, []
+    # 单paused(4.4双paused策略): 主路已confirmed时信任主路裁决, 直接放行不再二次弹窗 — 小健 2026-09-05
+    if main_confirmed and pre.needs_ruling:
+        logger.info(f"[sandbox] 主路已确认, 跳过二次裁决直接放行: tool={tool_name}")
         return True, []
     if pre.needs_ruling and safety_result.auto_confirm:
         # bypass免打扰语义(v1.13 V2): security.enabled=false即用户要求全自动,
@@ -79,61 +88,28 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
             step=step, type="error",
             content=f"沙箱预检未通过: {pre.blocked_reason}",
             error_type="blocked", severity="warn"))]
-    # needs_ruling: 走现有确认机制(create_confirmation/wait_for_confirmation_result, 本函数上方已import)
+    # needs_ruling: 改走网关(唯一暂停源头)。网关内统一:
+    #   paused先于wait到达 / SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 — 小健 2026-09-05
+    from app.services.agent.handlers.hitl_gateway import ConfirmSpec, hitl_confirm       # 同层调用(hitl→task单向, 无环) — 小欧 2026-09-06
+    from app.services.task.task_state import get_stream_buffer                            # 延迟import防环 — 小欧 2026-09-06
     logger.info(f"[sandbox] 转HITL用户裁决: tool={tool_name}")
-    confirm_id = await create_confirmation(agent.task_id, tool_name)
-    # 2026-09-03 小欧 Bug-16: sandbox paused 对齐主链四字段(trust_path/auto_confirm/confirm_timeout/backend_timeout),
-    #   改前缺 4 字段 → 前端倒计时与后端不一致(60s vs 120s 计时错位)。sandbox 为真HITL裁决(非bypass),
-    #   auto_confirm 恒 False, 计时与 security.hitl_timeout 对齐(backend 窗口 − HITL_CONFIRM_LEAD 提前量)
-    from app.config import get_config as _get_cfg_sb2
-    from app.constants import HITL_CONFIRM_LEAD, HITL_MIN_CONFIRM_TIMEOUT  # HITL_TIMEOUT 第53行已导入, 不重复(DRY)
-    _bt = int(float(_get_cfg_sb2().get("security.hitl_timeout", HITL_TIMEOUT)))
-    # 2026-09-03 小欧/北京老陈: 0窗钳制≥3s(改前5→常量3，与action_handler同钳)
-    _ct = max(HITL_MIN_CONFIRM_TIMEOUT, _bt - HITL_CONFIRM_LEAD)
-    # 2026-09-03 小欧/老杨 17.1: 复用主链 _extract_trust_path（函数内延迟import规避循环，与模块内既有延迟导入同模式），纠正16.3硬编码7key及window_title误授权
-    # 17.1补：_extract_trust_path对非FILE_OPERATION_TOOLS（如move_file vs move）返回None时，回落查常见文件路径键（不含window_title，防窗口标题误当文件路径）
-    try:
-        from app.tools.trust import extract_trust_path as _sb_trust_path
-        _sandbox_path = _sb_trust_path(tool_name, params)
-    except Exception:
-        _sandbox_path = None
-    if _sandbox_path is None:
-        for _k in ("path", "file_path", "source_path", "dest_path", "target", "dir_path"):
-            _v = params.get(_k)
-            if isinstance(_v, str) and _v:
-                _sandbox_path = _v
-                break
-    steps = [agent._step_emitter.emit(MetaStep(
-        step=step, type="paused",
+    _buf = get_stream_buffer(agent.task_id)
+    if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05
+        raise RuntimeError(f"[sandbox] StreamBuffer缺失(task={agent.task_id})")
+    spec = ConfirmSpec(
+        mode="hitl", tool_name=tool_name, params=params,
         content=f"沙箱未能完成有效预检,需用户裁决是否直接执行: {tool_name}",
-        confirm_id=confirm_id, tool_name=tool_name,
-        params={k: v for k, v in params.items() if k not in _SENSITIVE_FIELDS},
-        safety_level="destructive", severity="attention",
-        trust_path=_sandbox_path, auto_confirm=False,
-        confirm_timeout=_ct, backend_timeout=_bt))]
-    set_status(agent, AgentStatus.SUSPENDED, f"等待用户裁决沙箱预检: {tool_name}")
-    from app.config import get_config as _get_cfg_sb
-    # 对应 config.yaml security.hitl_timeout(与真HITL用户确认超时同源,默认120); 未配置兜底用常量 HITL_TIMEOUT — 小欧 2026-09-03
-    auth = await wait_for_confirmation_result(confirm_id, timeout=int(float(_get_cfg_sb().get("security.hitl_timeout", HITL_TIMEOUT))))
-    set_status(agent, AgentStatus.EXECUTING, "沙箱预检用户裁决完成")
-    if auth.get("confirmed"):
+        safety_level="destructive", auto_confirm=False)
+    verdict = await hitl_confirm(agent, spec, _buf.publish)
+    if verdict["confirmed"]:
         logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")
-        # 2026-09-01 小欧 - 紧急bug修复S3(前端badge卡paused): 沙箱用户裁决确认后恢复,
-        #   补发resumed使paused/resumed成对, 前端badge据此回running恢复耗时秒表
-        # 2026-09-05 小欧 - ISS-002修复: resumed补confirm_id(本函数L81 create_confirmation已返回,作用域内可用),
-        #   对齐主路resumed(action_handler带confirm_id), 前端据此配对关弹窗
-        steps.append(agent._step_emitter.emit(MetaStep(
-            step=step, type="resumed",
-            content=f"沙箱预检已确认执行: {tool_name}", severity="info",
-            confirm_id=confirm_id)))
-        return True, steps
+        return True, []          # paused/resumed 已由网关publish, 此处不再组Step — 小健 2026-09-05
     logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
     denied_list.append((tool_name, "沙箱预检未完成验证且用户拒绝执行", call))
-    steps.append(agent._step_emitter.emit(MetaStep(
+    return False, [agent._step_emitter.emit(MetaStep(
         step=step, type="error",
         content=f"用户拒绝执行(预检未完成验证): {tool_name}",
-        error_type="user_rejected", severity="warn")))
-    return False, steps
+        error_type="user_rejected", severity="warn"))]
 
 
 # ════════════════════════════════════════════════════════════
@@ -141,14 +117,15 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
 # ════════════════════════════════════════════════════════════
 
 async def run_sandbox_gate(agent, step, call, tool_name, params,
-                           safety_result, denied) -> tuple:
+                           safety_result, denied, main_confirmed=False) -> tuple:
     """统一沙箱闸门: 预检+resolve, 返回 (ok, steps)
     消除 check_safety_and_confirm 中 ①auto_confirm ②用户确认 ③循环体兜底 三处重复调用。
     DRY: 三处20行重复代码→一处调用。 — 小健 2026-09-04
+    3A: main_confirmed 透传(单paused, 4.4) — 小欧 2026-09-06
     """
     pre = await sandbox_precheck(safety_result, tool_name, params)
     if pre is None:
         return True, []
     ok, steps = await sandbox_resolve(agent, step, call, tool_name, params,
-                                       pre, safety_result, denied)
+                                       pre, safety_result, denied, main_confirmed)
     return ok, steps

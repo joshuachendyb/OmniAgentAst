@@ -3,6 +3,12 @@
 # 2026-09-05 小健 新建(10.4第二阶段提一): check_safety_and_confirm 自 action_handler.py 整搬(逐字复制不重写),
 #   随迁import(trust/safety/hitl/sandbox/status/steps/constants); 函数内延迟import原样保留;
 #   本文件=安全检查+HITL确认门禁(安全+HITL+沙箱三合一), 与 sandbox_gate 同族目录。
+# 2026-09-06 小欧 步骤3A落盘(test_path1_step3a_gateway_cutover.py T3A红→绿, 文档[6]5.4.0):
+#   真HITL区(行156-212)/bypass区(行104-154)"等待源头"全收 hitl_gateway——删 create/wait/S1窗口/
+#   计时/trust_path/paused与resumed自行组装/SUSPENDED/EXECUTING/授权try收口, 改 ConfirmSpec+hitl_confirm
+#   唯一暂停源头; 函数保持 async generator 其余 yield 不动(收list/签名返回/sniff删归5.4.2三B);
+#   三处汇合点 run_sandbox_gate 加 main_confirmed 透传(141区传_bypass_confirmed/205区传True/226区缺省False);
+#   StreamBuffer缺失显式失败不静默; 仅凭auth_path授权不设trust_session门
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -10,11 +16,7 @@
 from typing import List, Dict
 
 from app.logger import logger
-from app.constants import HITL_TIMEOUT, HITL_CONFIRM_LEAD, BYPASS_AUTO_LEAD, HITL_MIN_CONFIRM_TIMEOUT  # v1.5.13(2026-09-02 小欧): 后端唯一计时权威前后端计时关联; 2026-09-03 小欧/北京老陈: 前端倒计时最小值改常量3(改前硬编码5)
 from app.services.agent.steps import MetaStep
-from app.services.agent.status_table import AgentStatus, set_status
-from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS
-from app.tools.trust import extract_trust_path as _extract_trust_path
 from app.services.agent.handlers.sandbox_gate import run_sandbox_gate
 
 __all__ = ["check_safety_and_confirm"]
@@ -34,7 +36,6 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         #   消除"会执行的同名工具被误标被拦截"与"assistant双重写入"的矛盾
         """
         from app.safety.tool_safety_checker import get_tool_safety_checker
-        from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result, resolve_confirmation
         from app.tools.trust import resolve_skip
         safety_checker = get_tool_safety_checker()
 
@@ -61,153 +62,73 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 continue  # was: return  — 小欧 2026-07-18 #12 fix
 
             if safety_result.requires_confirmation:
-                desensitized_params = {k: v for k, v in _cp.items()
-                                       if k not in _SENSITIVE_FIELDS}
-
-                confirm_id = await create_confirmation(agent.task_id, _cn, _extract_trust_path(_cn, _cp))  # v1.5: path 透传供 tool+path 落库 — 小欧 2026-09-02
-
-                # 2026-08-28 小欧 yield日志审计: 等待确认决策日志(SRP)
-                logger.info(f"[action] step={step} paused: tool={_cn} confirm_id={confirm_id}")
-                # v1.5.13(老陈三审定案: 后端唯一计时权威 + 前端倒计时=后端窗口−提前量)
-                #   真HITL: backend_timeout=HITL_TIMEOUT(120) / confirm_timeout=120-HITL_CONFIRM_LEAD(10)=110;
-                #   bypass: backend_timeout=security.auto_confirm_delay(默认10) / confirm_timeout=10-BYPASS_AUTO_LEAD(2)=8
+                # 3A: 等待源头全收 hitl_gateway——create/wait/S1窗口/三处独立计时/trust_path/引用信组装 全部删,
+                #   paused/resumed 由网关 publish(事件唯一入口), 函数保持 async generator 其余yield不动 — 小欧 2026-09-06
+                from app.services.agent.handlers.hitl_gateway import ConfirmSpec, hitl_confirm  # 同层调用(hitl→task单向, 无环) — 小欧 2026-09-06
+                from app.services.task.task_state import get_stream_buffer                # 延迟import防环 — 小欧 2026-09-06
+                _buf = get_stream_buffer(agent.task_id)
+                if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05
+                    raise RuntimeError(f"[safety] StreamBuffer缺失(task={agent.task_id})")
                 _bypass = bool(getattr(safety_result, "auto_confirm", False))
+                # 网关内统一: SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 / 单点resolve收口
+                _verdict = await hitl_confirm(agent, ConfirmSpec(
+                    mode="bypass" if _bypass else "hitl", tool_name=_cn, params=_cp,
+                    content=(f"安全策略自动确认工具执行: {_cn}" if _bypass
+                             else f"是否允许执行工具: {_cn}"),
+                    safety_level=getattr(safety_result, "safety_level", "")),
+                    _buf.publish)
                 if _bypass:
-                    from app.config import get_config as _get_cfg
-                    # 对应 config.yaml security.auto_confirm_delay(默认10, 前端倒计时=此值−BYPASS_AUTO_LEAD即8s); 未配置兜底用 10.0 — 小欧-2026-09-03
-                    # 2026-09-03 小沈 缺陷2修复: 钳制≥HITL_MIN_CONFIRM_TIMEOUT+BYPASS_AUTO_LEAD, 确保confirm_timeout+S1差≥BYPASS_AUTO_LEAD — 小沈-2026-09-03
-                    _backend_timeout = max(HITL_MIN_CONFIRM_TIMEOUT + BYPASS_AUTO_LEAD, int(float(_get_cfg().get("security.auto_confirm_delay", 10.0))))
-                    # 2026-09-03 小欧/北京老陈: 0窗钳制≥3s(改前5→常量3)，避免max(0,bt-LEAD)=0致0秒窗口瞬间消失
-                    _confirm_timeout = max(HITL_MIN_CONFIRM_TIMEOUT, _backend_timeout - BYPASS_AUTO_LEAD)
-                else:
-                    from app.config import get_config as _get_cfg
-                    # 对应 config.yaml security.hitl_timeout(真HITL后端确认窗口,默认120); 未配置兜底用常量 HITL_TIMEOUT=120 — 小欧 2026-09-03
-                    _backend_timeout = int(float(_get_cfg().get("security.hitl_timeout", HITL_TIMEOUT)))
-                    # 2026-09-03 小欧/北京老陈: 0窗钳制≥3s(改前5→常量3)
-                    _confirm_timeout = max(HITL_MIN_CONFIRM_TIMEOUT, _backend_timeout - HITL_CONFIRM_LEAD)
-                _tp = _extract_trust_path(_cn, _cp)  # v1.5.3: trust_path 透传
-                yield agent._step_emitter.emit(MetaStep(
-                    step=step,
-                    type="paused",
-                    content=f"需要用户确认工具执行: {_cn}",
-                    confirm_id=confirm_id,
-                    tool_name=_cn,
-                    params=desensitized_params,
-                    safety_level=safety_result.safety_level,
-                    severity="attention",
-                    trust_path=_tp,
-                    auto_confirm=_bypass,
-                    confirm_timeout=_confirm_timeout,
-                    backend_timeout=_backend_timeout,
-                ))
-
-                if safety_result.auto_confirm:
-                    # v1.5.13(2026-09-02 小欧, 5.7.1 bypass 自动代发): bypass 从"立即resolve"改为"等前端确认消息(S1窗口)"
-                    #   前端confirm_timeout到0自动代发confirm → resolve_confirmation → wait收到即走确认流程;
-                    #   前端未发(无浏览器/崩溃) → S1超时 → expired → bypass 兜底放行
-                    from app.services.task.hitl_confirmation import wait_for_confirmation_result as _wait_confirm
-                    from app.config import get_config as _get_cfg
-                    # 对应 config.yaml security.auto_confirm_delay(S1后端等待窗口=backend_timeout值,默认10); 未配置兜底 10.0 — 小欧-2026-09-03
-                    # 2026-09-03 小沈 缺陷2修复: 与上方同源钳制, 确保S1=backend_timeout — 小沈-2026-09-03
-                    _s1 = float(max(HITL_MIN_CONFIRM_TIMEOUT + BYPASS_AUTO_LEAD, int(float(_get_cfg().get("security.auto_confirm_delay", 10.0)))))
-                    # 2026-09-03 小欧/北京老陈: bypass S1窗口开始补日志
-                    logger.info(f"[action] bypass S1窗口开始: confirm_id={confirm_id}, S1={_s1}s, tool={_cn}")
-                    _auth_result = await _wait_confirm(confirm_id, timeout=int(_s1 if _s1 > 0 else 0)) if _s1 > 0 else {"confirmed": True}
-                    # 2026-09-03 小欧/北京老陈: bypass S1结果补日志
-                    logger.info(f"[action] bypass S1结果: confirm_id={confirm_id}, expired={_auth_result.get('expired')}, confirmed={_auth_result.get('confirmed')}")
-                    # 2026-09-03 小欧 P0-1: S1已expired则不再二次resolve(已pop死码)，仅confirmed分支需resolve
-                    if _auth_result.get("expired"):
-                        _bypass_confirmed = True
-                    else:
-                        _bypass_confirmed = bool(_auth_result.get("confirmed", False))
+                    _bypass_confirmed = _verdict["confirmed"] or _verdict["expired"]  # S1超时bypass兜底放行(原119-120语义) — 小欧 2026-09-06
+                    if getattr(safety_result, "auth_path", None):                    # 原126语义: 仅凭auth_path, 不设trust_session门 — 小欧 2026-09-06
                         try:
-                            # 2026-09-03 小欧 Bug-25: grant_temp_auth 包 try/finally, 授权异常不跳过 resolve_confirmation,
-                            #   confirm_id 必被 resolve 收口, 前端 Modal 不泄漏挂到后端超时; 授权失败仅告警不改安全意图
-                            if getattr(safety_result, "auth_path", None):
-                                from app.tools.security.temp_auth import grant_temp_auth
-                                grant_temp_auth(safety_result.auth_path, recursive=True)
+                            from app.tools.security.temp_auth import grant_temp_auth
+                            grant_temp_auth(safety_result.auth_path, recursive=True)
                         except Exception as e:
-                            logger.warning(f"[action] grant_temp_auth失败仍放行: {e!r}")
-                        finally:
-                            await resolve_confirmation(confirm_id, confirmed=_bypass_confirmed, trust_session=False)
-                    set_status(agent, AgentStatus.EXECUTING, "安全策略自动确认工具执行")
-                    # v1.25 M3 插入点①: auto_confirm 汇合路径 — 沙箱预检最后闸门(统一入口)
-                    # 2026-09-02 小欧 BUG-001: resumed须在sandbox通过后发(被拒已continue不发),
-                    #   否则无paired paused→resumed 前端badge卡running; 语义=真正恢复执行
-                    # 2026-09-04 小健 DRY: 三处重复调用→统一入口 run_sandbox_gate
-                    # 2026-09-04 小健 回归修复: 放行(返回True,[])后必须无条件resumed+continue, 否则落入下方真HITL等待
-                    # 2026-09-05 小欧 ISS-001修复: 删除DRY重构遗留的旧块(sandbox_precheck+sandbox_resolve双调用),
-                    #   现仅单一入口 run_sandbox_gate 一次预检, 消除bypass路径同call重复预检
-                    _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied)
+                            logger.warning(f"[action] bypass grant_temp_auth失败仍放行: {e!r}")
+                    # v1.25 M3 插入点①: auto_confirm 汇合路径 — 沙箱预检最后闸门(统一入口, 3A仅透传main_confirmed) — 小健 2026-09-04/2026-09-06
+                    _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied,
+                                                         _bypass_confirmed)
                     for _st in _steps:
                         yield _st
                     if not _ok:
                         continue
-                    if any(getattr(_s, "type", None) == "resumed" for _s in _steps):
+                    if any(getattr(_s, "type", None) == "resumed" for _s in _steps):  # 3A保留: sniff归3B删
                         continue
-                    yield agent._step_emitter.emit(MetaStep(
-                        step=step, type="resumed",
-                        content=f"已自动确认工具执行: {_cn}",
-                        severity="info",
-                        confirm_id=confirm_id,
-                    ))
                     continue
 
-                set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认工具执行: {_cn}")
-                from app.config import get_config as _get_cfg_wait
-                # 对应 config.yaml security.hitl_timeout(与 emit 的 backend_timeout 同源,默认120); 未配置兜底用常量 HITL_TIMEOUT — 小欧 2026-09-03
-                auth = await wait_for_confirmation_result(confirm_id, timeout=int(float(_get_cfg_wait().get("security.hitl_timeout", HITL_TIMEOUT))))
-
-                if not auth.get("confirmed"):
-                    if auth.get("expired"):
-                        # #11 fix: 超时与拒绝分流 — 小欧 2026-07-18
-                        # 2026-08-28 小欧 yield日志审计: 超时决策日志(SRP)
+                # 3A: 等待源头已收网关(上方requires_confirmation入口统一调hitl_confirm), 此处按verdict分流 — 小欧 2026-09-06
+                if not _verdict["confirmed"]:                     # verdict四键恒在(见5.1), 直接下标安全 — 小欧 2026-09-06
+                    if _verdict["expired"]:
+                        # #11 fix: 超时与拒绝分流 — 小欧 2026-07-18 (3A: error仍yield, 形态不动)
                         logger.warning(f"[action] step={step} timeout: tool={_cn}")
                         yield agent._step_emitter.emit(MetaStep(
                             step=step, type="error", content=f"工具确认超时未响应: {_cn}", error_type="timeout", severity="warn"
                         ))
                         _denied.append((_cn, "确认超时未响应", call))
                     else:
-                        # 2026-08-28 小欧 yield日志审计: 拒绝决策日志(SRP)
                         logger.warning(f"[action] step={step} rejected: tool={_cn}")
                         yield agent._step_emitter.emit(MetaStep(
                             step=step, type="error", content=f"用户拒绝执行工具: {_cn}", error_type="user_rejected", severity="warn"
                         ))
                         _denied.append((_cn, "被用户拒绝执行", call))
-                    set_status(agent, AgentStatus.EXECUTING, "用户拒绝/超时，恢复执行态")
                     continue  # was: return  — 小欧 2026-07-18 #12 fix
 
-                # 用户已确认：恢复执行态继续工具执行（SUSPENDED→EXECUTING 合法）— 小欧 2026-07-12
-                # ⑮ 白名单外临时授权: 确认后授予本次操作权限(一次一申请, 支持递归, per-request) — 小欧 2026-08-10
-                # 2026-09-01 小欧 - 紧急bug修复S2(前端badge卡paused): resumed从if auth_path内移出,
-                #   用户确认即恢复(与是否授权白名单外路径解耦), 无条件发1条, 授权信息并入文案, 消除重复(KISS/DRY)
-                try:
-                    # 2026-09-03 小欧 Bug-25: 用户确认授权白名单外路径, grant_temp_auth 异常不阻断恢复执行态
-                    if getattr(safety_result, "auth_path", None):
+                # 用户已确认: 仅凭auth_path授权(不设trust_session门), grant异常不阻断后续沙箱汇合 — 小欧 2026-09-06
+                if getattr(safety_result, "auth_path", None):
+                    try:
                         from app.tools.security.temp_auth import grant_temp_auth
                         grant_temp_auth(safety_result.auth_path, recursive=True)
-                        # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP) — 保留(2026-09-01 S2移出resumed时同步保留授权留痕)
+                        # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP) — 保留授权留痕
                         logger.info(f"[action] step={step} resumed+auth: tool={_cn} path={safety_result.auth_path}")
-                except Exception as e:
-                    logger.warning(f"[action] 确认后grant_temp_auth失败不阻断: {e!r}")
-                # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP)
-                set_status(agent, AgentStatus.EXECUTING, "用户已确认工具执行")
-                # 2026-09-03 小沈 缺陷1修复: resumed增confirm_id, 前端收到后可据此关弹窗(防御性兜底) — 小沈-2026-09-03
-                yield agent._step_emitter.emit(MetaStep(
-                    step=step, type="resumed",
-                    content=(f"已临时授权白名单外路径: {safety_result.auth_path}"
-                             if getattr(safety_result, "auth_path", None)
-                             else f"用户已确认工具执行: {_cn}"),
-                    severity="info",
-                    confirm_id=confirm_id,
-                ))
-                # v1.25 M3 插入点②: 用户确认汇合路径 — 2026-09-04 小健 DRY: 统一入口
-                _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied)
+                    except Exception as e:
+                        logger.warning(f"[action] 确认后grant_temp_auth失败不阻断: {e!r}")
+                # v1.25 M3 插入点②: 用户确认汇合路径 — 2026-09-04 小健 DRY: 统一入口(3A仅透传main_confirmed=True) — 小欧 2026-09-06
+                _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied, True)
                 for _st in _steps:
                     yield _st
                 if not _ok:
                     continue
-                if any(getattr(_s, "type", None) == "resumed" for _s in _steps):
+                if any(getattr(_s, "type", None) == "resumed" for _s in _steps):  # 3A保留: sniff归3B删
                     continue
                 continue
 
