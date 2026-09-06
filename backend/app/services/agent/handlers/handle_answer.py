@@ -36,6 +36,8 @@
 #   搬一(8.1): _dedup_repeat+REPEAT_*三常量迁text_utils.dedup_repeat, 删import re/Counter, 改L186/L224调用点 - 小健-2026-09-05
 #   搬二(8.2): 4处终态改调入emit_failed_final/emit_completed_final工厂, 删延迟import set_failed(11/12并行), 空转终止补09-03顺序 - 小健-2026-09-05
 #   搬三(8.3): 计数5处直写改调reasoning_guard(note_progress×4 + note_reasoning_only×1), 删REASONING_ONLY_MAX_ROUNDS常量 - 小健-2026-09-05
+# 2026-09-06 小欧 4A(5.5) 纯函数化: 10处yield→收集_events列表, 各return改return dict, 函数末尾补return;
+#   事件统一收集返回、由5.7驱动yield; 本函数不产paused/resumed(暂停事件单走publish) - 小欧-2026-09-06
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -57,7 +59,7 @@ from app.services.agent.reasoning_guard import note_progress, note_reasoning_onl
 from app.logger import logger, log_and_print
 
 
-async def handle_answer(agent, parsed: Dict):
+async def handle_answer(agent, parsed: Dict) -> dict:
     """统一处理所有非action的LLM返回类型（answer/error/unknown）
     
     由 _dispatch_handler(react_cycle.py) 分派，接收 llm_stream.py 构建的 type：
@@ -65,7 +67,9 @@ async def handle_answer(agent, parsed: Dict):
     - type="error"  → LLM 流式异常 → FinalStep(outcome="failed") → set_failed
     - 其他未知 type → 按 error 处理（兜底）
     
-    type 产生于 llm_stream.py（见该模块头部），不由 LLM 输出，是 agent 推断。"""
+    type 产生于 llm_stream.py（见该模块头部），不由 LLM 输出，是 agent 推断。
+    4A(5.5) 纯函数化: 事件统一收集_events返回dict、由5.7驱动yield; 本函数不产paused/resumed(单走publish) — 小欧-2026-09-06"""
+    _events = []  # 4A(5.5): 事件收集载体 — 小欧-2026-09-06
     # 2026-09-02 小欧 缺陷#4修复: parsed=None 防御(上游LLM流异常/HTTP400极端场景可能传 None)
     #   置空dict后: parsed_type默认"answer"→content/reasoning皆空→走既有"真空→系统重试"分支, 不新增逻辑
     if parsed is None:
@@ -81,12 +85,11 @@ async def handle_answer(agent, parsed: Dict):
         agent.message_builder.add_assistant_message(content)
         # 2026-08-28 小欧 yield日志审计: print→logger统一(DRY违规修复)
         logger.error(f"[answer] step={step} error={content} error_type={err_type}")
-        yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-        for _s in agent._step_emitter.emit_failed_final(
+        _events.append(agent._step_emitter.emit(ThoughtStartStep(step=step)))   # 4A(5.5): yield→append — 小欧-2026-09-06
+        _events.extend(agent._step_emitter.emit_failed_final(
             step=step, response="任务执行失败", error_type=err_type, error_message=content,
-        ):  # 小健 2026-09-05：set_failed 内聚工厂内(09-03顺序铁律)
-            yield _s
-        return
+        ))  # 小健 2026-09-05：set_failed 内聚工厂内(09-03顺序铁律); 4A: yield转发→extend — 小欧-2026-09-06
+        return {"events": _events, "type": parsed_type}
 
     # ── 未知类型 │ yield FinalStep(outcome=failed) ──
     if parsed_type != "answer":
@@ -97,13 +100,12 @@ async def handle_answer(agent, parsed: Dict):
         logger.error(f"[answer] step={step} unknown_type={parsed_type} content={content}")
         if content:
             agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
-        yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-        for _s in agent._step_emitter.emit_failed_final(
+        _events.append(agent._step_emitter.emit(ThoughtStartStep(step=step)))   # 4A(5.5): yield→append — 小欧-2026-09-06
+        _events.extend(agent._step_emitter.emit_failed_final(
             step=step, response="任务执行失败", error_type="unknown_response",
             error_message=f"LLM返回未知响应类型: {parsed_type}",
-        ):  # 小健 2026-09-05：set_failed 内聚工厂内(09-03顺序铁律)
-            yield _s
-        return
+        ))  # 小健 2026-09-05：set_failed 内聚工厂内(09-03顺序铁律); 4A: yield转发→extend — 小欧-2026-09-06
+        return {"events": _events, "type": "unknown"}
 
     # ── type="answer" ──
     content = format_tool_call_markup(parsed.get("content", ""))
@@ -114,14 +116,14 @@ async def handle_answer(agent, parsed: Dict):
         logger.warning(f"[handle_answer] LLM返回空内容(step={step}), 触发系统重试")
         note_progress(agent)  # 小健 2026-09-05：空转计数唯一写者收口(原注解 2026-07-17 小欧 真空非reasoning空转 归零防残留误累计 缀回行尾，语义不变)
         agent.message_builder.add_assistant_message("")
-        yield agent._step_emitter.emit(MetaStep(
+        _events.append(agent._step_emitter.emit(MetaStep(
             type="retrying",
             step=step,
             content="LLM返回空内容，触发重试",
             wait_time=1,
             severity="info",
-        ))
-        return
+        )))  # 4A(5.5): yield→append — 小欧-2026-09-06
+        return {"events": _events, "type": parsed_type}
 
     # reasoning-only：LLM只返回推理没给最终答案 → 注入助理消息继续循环
     # 注：若推理内嵌 <tool_call> XML（LLM降级旧格式），已在 llm_stream.py 的 type 判定前
@@ -136,14 +138,13 @@ async def handle_answer(agent, parsed: Dict):
         _deduped = dedup_repeat(reasoning)     # 小健 2026-09-05
         if note_reasoning_only(agent):  # 小健 2026-09-05：唯一 +=1 收口 guard 内，超限返回 True 走终止分支
             logger.warning(f"[handle_answer] 连续{agent._consecutive_reasoning_only}轮reasoning-only无进展(step={step}), 终止任务")
-            yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-            for _s in agent._step_emitter.emit_failed_final(
+            _events.append(agent._step_emitter.emit(ThoughtStartStep(step=step)))   # 4A(5.5): yield→append — 小欧-2026-09-06
+            _events.extend(agent._step_emitter.emit_failed_final(
                 step=step,
                 response="模型反复思考未产出有效结果，任务已终止（疑似陷入无效循环）",
                 reasoning=_deduped,
-            ):  # 小健 2026-09-05：error_type/message 缺省空串，set_failed 取 response 兜底(补09-03顺序)
-                yield _s
-            return
+            ))  # 小健 2026-09-05：error_type/message 缺省空串，set_failed 取 response 兜底(补09-03顺序); 4A: yield转发→extend — 小欧-2026-09-06
+            return {"events": _events, "type": parsed_type}
         if _deduped == reasoning:
             # ── 好的: 无重复 → 贴便签(仿Hermes: content空 + 双字段reasoning/reasoning_content以OpenAI为主兼容DeepSeek) ── 小欧 2026-07-19
             logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入临时推理(连续reasoning-only={agent._consecutive_reasoning_only})")
@@ -154,18 +155,18 @@ async def handle_answer(agent, parsed: Dict):
                 "reasoning_content": _deduped,
                 "_temp_reasoning": True,
             })
-            yield agent._step_emitter.emit(ThoughtStep(
+            _events.append(agent._step_emitter.emit(ThoughtStep(
                 step=step, content=_deduped, reasoning="",
-            ))
+            )))  # 4A(5.5): yield→append — 小欧-2026-09-06
         else:
             # ── 坏的: 有重复去重 → 不注入不持久不发射, 仅warning ── 小欧 2026-07-19
             logger.warning(f"[handle_answer] reasoning检测到重复去重(step={step}), 跳过注入")
-        return
+        return {"events": _events, "type": parsed_type}
 
     note_progress(agent)  # 小健 2026-09-05：空转计数唯一写者收口(原注解 2026-07-17 小欧 正常final answer 归零空转计数 缀回行尾，语义不变)
     # 2026-09-01 小欧 方案A: 删除污染版 ThoughtStep(thought恒退化=content, 致历史回放 reasoning/response 双渲);
     #   终态正文/推理由 FinalStep 单一承载。保留 reasoning-only 分支(L189)与工具轮 ThoughtStep 不动。
-    yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
+    _events.append(agent._step_emitter.emit(ThoughtStartStep(step=step)))   # 4A(5.5): yield→append — 小欧-2026-09-06
 
     # ══ 重复检测(≥250字才检) — DB 入库前唯一保留的护栏 ══
     if len(content) >= REPEAT_CHECK_MIN_LEN:
@@ -175,8 +176,8 @@ async def handle_answer(agent, parsed: Dict):
 
     # 2026-08-30 小欧 恢复[Final]终态全文打印: 65f4de7f7(08-28)把response=全文误改为response_len, 终态正文不再上控制台; log_and_print复用07-23统一收口+08-30控制台离线化(事件循环零阻塞)
     log_and_print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response_len={len(content)}, response={content}")
-    for _s in agent._step_emitter.emit_completed_final(
+    _events.extend(agent._step_emitter.emit_completed_final(
         step=step, response=content, reasoning=reasoning,
-    ):  # 小健 2026-09-05：completed 由 dispatch 外层置状态，工厂不提前置
-        yield _s
+    ))  # 小健 2026-09-05：completed 由 dispatch 外层置状态，工厂不提前置; 4A: yield转发→extend — 小欧-2026-09-06
     agent.message_builder.add_assistant_message(content)
+    return {"events": _events, "type": "answer"}

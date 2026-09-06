@@ -207,6 +207,8 @@
 #   action_handler→handle_action(改名成立条件: 拆完后本文件只剩handle_action), 余部8.2⑤return_direct改调
 #   emit_completed_final终态工厂 + 8.3两处_consecutive_reasoning_only=0直写改调note_progress(reasoning_guard);
 #   门禁import改正式依赖; 测试侧直引action_handler改指handle_action/safety_gate(仅本地禁commit)
+# 2026-09-06 小欧 4A(5.6) 纯函数化: 7处yield→收集_events列表, gate消费改_events.extend(await), 
+#   末尾return {"events": _events, "result": {...}}; 事件统一收集返回、由5.7驱动yield - 小欧-2026-09-06
 """
 handle_action — action编排处理(门禁已拆出)
 
@@ -270,24 +272,26 @@ from app.tools.conflict_detector import _has_conflict, _partition_calls, _WRITE_
 from app.tools.trust import _parse_paths, WINDOW_TARGET_TOOLS
 
 
-async def handle_action(agent, parsed: Dict):
+async def handle_action(agent, parsed: Dict) -> dict:
     """完整action处理流程 — FC-only: 提取fc_context传递
      
     处理管线（遵守SLAP，逐层递进）：
     1. _build_call_list → 解析parsed为all_calls
     2. emit ThoughtStep → LLM推理内容
-    3. check_safety_and_confirm → 安全检查+HITL（3B收list, 返回事件列表逐条外发）
+    3. check_safety_and_confirm → 安全检查+HITL（3B收list, 事件列表_events.extend并入）
     4. build retry notification callback → 收集重试通知
     5. execute_tools → 三分支执行（单/并行/顺序）
     6. 工具重试由 tool_retry_engine 内部执行（隐蔽，前端不可见）— 小欧 2026-07-13
     7. build ObservationContext → 收集执行结果
-    8. build_observation → yield ActionStep + ObservationStep
-    9. return_direct检查 → 需要时yield FinalStep提前结束
+    8. build_observation → ActionStep + ObservationStep
+    9. return_direct检查 → 需要时FinalStep提前结束
      
     小沈 2026-06-11
     小欧 2026-07-09: 新增重试通知注入（步骤4-6）
+    4A(5.6) 纯函数化: 事件统一收集_events返回dict、由5.7驱动yield — 小欧-2026-09-06
     """
     set_current_task_id(agent.task_id)
+    _events = []  # 4A(5.6): 事件收集载体 — 小欧-2026-09-06
     call_result = _build_call_list(parsed)
     step = agent.llm_call_count
 
@@ -296,32 +300,30 @@ async def handle_action(agent, parsed: Dict):
         # 2026-09-05 小健 8.3: 归零改 note_progress(收口至reasoning_guard); 原2026-07-17 小欧 注释: action空名异常非reasoning-only, 归零防残留
         note_progress(agent)
         # chendyg 2026-07-01: 删set_failed，_dispatch_handler从MetaStep(type="error")推断状态
-        yield agent._step_emitter.emit(MetaStep(
+        _events.append(agent._step_emitter.emit(MetaStep(
             step=step, type="error", content="LLM返回的action中tool_name为空", error_type="invalid_action", severity="warn"
-        ))
-        return
+        )))  # 4A(5.6): yield→append — 小欧-2026-09-06
+        return {"events": _events, "result": {}}
 
     params_str = str(call_result.tool_params); params_short = (params_str[:180] + '..') if len(params_str) > 180 else params_str  # 小欧 2026-07-01 控制台截断 — 小沈 2026-07-05 50→100
     # 2026-08-30 小欧 收口: 裸print→log_and_print(延续2026-07-23统一治理), 控制台镜像离线化 + [Action]文件留痕增强
     log_and_print(f"{time.strftime('%H:%M:%S')} [Action]step={step} ={call_result.tool_name}, pars:{params_short}")
 
     # thought 步骤 — content=LLM推理内容, reasoning=内部思维过程 — 小欧 2026-07-01
-    yield agent._step_emitter.emit(ThoughtStartStep(step=step))   # 2026-08-18 小欧 thought-start
-    yield agent._step_emitter.emit(ThoughtStep(
+    _events.append(agent._step_emitter.emit(ThoughtStartStep(step=step)))   # 4A(5.6): yield→append — 小欧-2026-09-06
+    _events.append(agent._step_emitter.emit(ThoughtStep(
         step=step,
         content=parsed.get("thought", ""),
         reasoning=parsed.get("reasoning", ""),
-    ))
+    )))  # 4A(5.6): yield→append — 小欧-2026-09-06
 
     # #11+#12 fix: 传_out收集通过安全检查的call, 拒绝不终止整批 — 小欧 2026-07-18
     # 2026-08-11 小欧 fix D2: 传_denied_out收集被拒call(tool_name,reason,call), 反馈在build_observation后写
     _safe_calls = []
     _denied_list = []
-    _events = await check_safety_and_confirm(agent, call_result.all_calls, step,
-                                             call_result.fc_context,
-                                             _out=_safe_calls, _denied_out=_denied_list)  # 3B(5.4.2): 纯函数返回事件列表, await收列表再逐条外发 — 小欧 2026-09-06
-    for event in _events:
-        yield event
+    _events.extend(await check_safety_and_confirm(agent, call_result.all_calls, step,
+                                                  call_result.fc_context,
+                                                  _out=_safe_calls, _denied_out=_denied_list))  # 4A(5.6): 返回完整list, extend并入(append会嵌套) — 小欧-2026-09-06
     _exec_calls = _safe_calls if _safe_calls else []
 
     # ── 新 action step: execute_tools 执行前 yield 一次（§10.3.3(2)）── 2026-08-18 小欧
@@ -335,11 +337,11 @@ async def handle_action(agent, parsed: Dict):
             "target": _extract_target(c),
             "params": c.get("tool_params", {}) or {},
         } for c in _exec_calls]
-        yield agent._step_emitter.emit(ActionStep(
+        _events.append(agent._step_emitter.emit(ActionStep(
             step=step,
             exec_type="single" if len(_action_tools) == 1 else "multi",
             tools=_action_tools,
-        ))
+        )))  # 4A(5.6): yield→append — 小欧-2026-09-06
 
     # ── 工具重试（隐蔽，前端不可见）── 小欧 2026-07-13
     # 工具重试由 tool_retry_engine 内部执行, 不向前端 emit 任何 step(北京老陈要求: tool 重试隐蔽)。
@@ -370,16 +372,18 @@ async def handle_action(agent, parsed: Dict):
     )
     # 2026-08-18 小欧 - build_observation 返回 (events, orchestration); 不再传 merged_other
     events, orchestration = await build_observation(ctx)
-    for event in events:
-        yield event
+    _events.extend(events)  # 4A(5.6): 转发→extend — 小欧-2026-09-06
     # 2026-08-11 小欧 fix D2: 被拒call反馈在build_observation后补写(assistant已由build_observation统一写),
     #   精确到call对象, 不误标会执行的同名工具, 也不重复写assistant
     if _denied_list:
         _add_denial_feedback(agent, _denied_list, call_result.fc_context)
     if orchestration.get("return_direct"):
         # 2026-09-05 小健 8.2⑤: return_direct 分支改用 emit_completed_final 终态工厂(收口 handler 侧 completed 分产, 行为逐字节等价 — 自 step_emitter.py:69)
-        for _s in agent._step_emitter.emit_completed_final(
+        _events.extend(agent._step_emitter.emit_completed_final(
             step=step, response=orchestration.get("return_direct_message", ""),
-        ):
-            yield _s
+        ))  # 4A(5.6): 转发→extend — 小欧-2026-09-06
+    return {"events": _events, "result": {
+        "return_direct": orchestration.get("return_direct", False),
+        "tool_name": call_result.tool_name,
+        "params": call_result.tool_params}}
 
