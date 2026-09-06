@@ -133,6 +133,10 @@
 #   final截断/L413 trunc重试前/L418 ObservationStep/L443-451 same_tool_loop final) 全收口 publish, 按序极化见
 #   emit_final_with_stats 三处(L406/L443/余为直接emit)先publish再 for 拆二元组 publish; L461-462 消费改
 #   for await _dispatch_handler(5.8.1 list) 逐条 publish; _publish = _buf.publish 函数顶部绑定一次 — 小欧-2026-09-06
+# 2026-09-06 小欧 路径2-5D(文档[6]2.5.4②): _process_single_step 消费判别段(L208-222)改 payload 单判别——
+#   meta分支→payload["type"]=="retrying", response分支→payload非空, chunk分支→payload为None;
+#   判别结果仍以 chunk_type/chunk_data 喂下方 chunk/response 既有处理体(L225起逐行不动);
+#   _task_llm_model 快照口径不变; 发射形态保留 4C publish(await _publish(emit(...).to_dict()))
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -208,19 +212,22 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     # ── Phase 2: LLM 流式调用 ──────────────────────────────────
     llm_response = None
     _call_start = time.time()                   # 11.2-C LLM 调用计时 — 小欧 2026-08-20
-    async for chunk_or_response in call_llm_with_fallback(agent, messages, openai_tools):
-        if isinstance(chunk_or_response, tuple) and chunk_or_response[0] == "meta":
-            # 小欧 2026-09-02: LLM 底层 L1/L2/降级重试通知 → 标准 retrying 事件发前端
-            _m = chunk_or_response[1]
-            await _publish(agent._step_emitter.emit(MetaStep(
-                type=_m["type"],
-                step=agent.llm_call_count,
-                content=_m["content"],
-                severity="info",
-                wait_time=_m.get("wait_time"),
-            )).to_dict())
-            continue
-        chunk_type, chunk_data = chunk_or_response   # 既有拆包(仅非meta时执行, 原 :436)
+    async for item in call_llm_with_fallback(agent, messages, openai_tools):
+        _p = getattr(item, "payload", None)          # 路径2 唯一判别: payload非空=终结响应/通知, 否则原生chunk — 小欧 2026-09-06
+        if _p is not None:
+            if _p.get("type") == "retrying":
+                # 原 meta 分支逻辑原样: 转 MetaStep(retrying) 发前端 — 小欧 2026-09-06
+                await _publish(agent._step_emitter.emit(MetaStep(
+                    type=_p["type"],
+                    step=agent.llm_call_count,
+                    content=_p["content"],
+                    severity="info",
+                    wait_time=_p.get("wait_time"),
+                )).to_dict())
+                continue
+            chunk_type, chunk_data = "response", _p  # 终结响应: 喂下方 response 分支(原 "response" 拆包语义)
+        else:
+            chunk_type, chunk_data = "chunk", item   # 原生 chunk: 喂下方 chunk 分支(原 "chunk" 拆包语义)
 
         if chunk_type == "chunk":
             content = chunk_data.content if hasattr(chunk_data, 'content') else str(chunk_data)
