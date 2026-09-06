@@ -14,6 +14,9 @@
 #   删sandbox resumed旁路判定(any(...=='resumed'))与事件透传plumbing(for _st: yield _st),
 #   函数由 async generator 收敛纯函数(返回事件列表), 零并发副作用; 等待/resolve/计时/暂停/恢复仍归网关;
 #   grant异常不阻断try/except三处保留, _out/_denied_out回传语义不变, handle_action消费点改 await 收列表
+# 2026-09-06 小欧 POT-002优化(老陈核查定案): grant_temp_auth 同函数内3处重复import合并——上提模块顶层一次
+#   (temp_auth仅标准库依赖contextvars/pathlib/typing, 依赖图核实无环, 上提不破坏任何防环边界);
+#   三处try/except保留(捕获授权执行异常不阻断), warning文案逐处保留(决策日志审计区分度), import失败改启动fail-fast
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -23,6 +26,7 @@ from typing import List, Dict
 from app.logger import logger
 from app.services.agent.steps import MetaStep
 from app.services.agent.handlers.sandbox_gate import run_sandbox_gate
+from app.tools.security.temp_auth import grant_temp_auth  # POT-002: 3处重复import合并上提(仅标准库依赖无环) — 小欧 2026-09-06
 
 __all__ = ["check_safety_and_confirm"]
 
@@ -89,7 +93,6 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     _bypass_confirmed = _verdict["confirmed"] or _verdict["expired"]  # S1超时bypass兜底放行(原119-120语义) — 小欧 2026-09-06
                     if getattr(safety_result, "auth_path", None):                    # 原126语义: 仅凭auth_path, 不设trust_session门 — 小欧 2026-09-06
                         try:
-                            from app.tools.security.temp_auth import grant_temp_auth
                             grant_temp_auth(safety_result.auth_path, recursive=True)
                         except Exception as e:
                             logger.warning(f"[action] bypass grant_temp_auth失败仍放行: {e!r}")
@@ -121,7 +124,6 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 # 用户已确认: 仅凭auth_path授权(不设trust_session门), grant异常不阻断后续沙箱汇合 — 小欧 2026-09-06
                 if getattr(safety_result, "auth_path", None):
                     try:
-                        from app.tools.security.temp_auth import grant_temp_auth
                         grant_temp_auth(safety_result.auth_path, recursive=True)
                         # 2026-09-06 小欧 3B: 保留授权留痕日志(决策日志SRP, 语义沿用2026-08-28审计)
                         logger.info(f"[action] step={step} resumed+auth: tool={_cn} path={safety_result.auth_path}")
@@ -140,7 +142,6 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             try:
                 # 2026-09-03 小欧 Bug-25: 白名单外豁免直通亦包 try/except, grant_temp_auth 异常不阻断 sandbox 汇合
                 if getattr(safety_result, "auth_path", None):
-                    from app.tools.security.temp_auth import grant_temp_auth
                     grant_temp_auth(safety_result.auth_path, recursive=True)
             except Exception as e:
                 logger.warning(f"[action] 豁免直通grant_temp_auth失败不阻断: {e!r}")

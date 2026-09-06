@@ -4,6 +4,8 @@
 #   网关内部固定顺序 publish(paused)→wait→publish(resumed)→单点resolve收口; 复用hitl_confirmation三原语不重写等待/超时/取消
 # 2026-09-06 小欧 步骤2落盘(test_path1_step2_hitl_gateway.py T2红→绿): 落点handlers/hitl_gateway.py, 与调用方同目录(handlers→task单向依赖防环);
 #   会审minor修正: _resolve_timeouts mode非法值显式ValueError校验
+# 2026-09-06 小欧 POT-001优化(老陈核查定案): _resolve_trust_path 去生成器内walrus改显式for循环——行为等价,
+#   规避"isinstance + walrus + 短路"三重嵌套可读性差(KISS-DIRECT反例), 沿用sandbox_gate行101同源回落键
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 from dataclasses import dataclass
 from typing import Optional
@@ -28,9 +30,14 @@ async def _resolve_trust_path(tool_name, params) -> Optional[str]:
     from app.tools.trust import extract_trust_path        # 延迟import防环（真实位置tools/trust.py行66）
     params = params or {}
     # 网关内统一提取（原主路_extract_trust_path + sandbox回落扫描，收拢；回落键与sandbox_gate行101同源）
-    return extract_trust_path(tool_name, params) or next(
-        (v for k in ("path", "file_path", "source_path", "dest_path", "target", "dir_path")
-         if isinstance((v := params.get(k)), str) and v), None)
+    _trust = extract_trust_path(tool_name, params)
+    if _trust:
+        return _trust
+    for _k in ("path", "file_path", "source_path", "dest_path", "target", "dir_path"):
+        _v = params.get(_k)
+        if isinstance(_v, str) and _v:
+            return _v
+    return None
 
 
 def _desensitize(params) -> dict:
