@@ -3,6 +3,8 @@
 # 2026-09-05 小健 8.5拆分(llm_stream.py提取builder成员): 5个纯函数逐字移入本文件(仅改import路径, 业务零改动)
 #   _build_tool_calls_response/_log_llm_response/_format_response_error/_yield_error_response/_build_answer_response
 #   原llm_stream.py余部只剩call_llm_stream+call_llm_with_fallback, git mv改名llm_call.py
+# 2026-09-06 小欧 文档[6]2.5.2/5.9落码: 三装配函数 return由("response",dict) 改 create_payload_chunk(payload=dict),
+#   载荷与改造前全等; 新增模块私有 _resolve_chunk_model(任务快照优先, 三堂会审P1同react_step判定)
 """
 llm_response_builder — LLM响应组装纯函数
 
@@ -17,9 +19,15 @@ call_llm_stream() 在流结束后根据 LLM 输出做"事后分类"：
 import json
 from typing import Optional
 
-from app.llm.core import LLMResponseError
+from app.llm.core import LLMResponseError, create_payload_chunk
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
+
+
+def _resolve_chunk_model(agent):
+    """解析 chunk_model — 任务级快照优先(三堂会审P1, 同 react_step 判别); _task_llm_model 缺省回退 llm_client.llm_model
+    — 小欧 2026-09-06 文档[6]2.5.2"""
+    return getattr(agent, "_task_llm_model", None) or getattr(agent.llm_client, "llm_model", None)
 
 
 def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent, full_reasoning=""):
@@ -59,7 +67,8 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
     }
     if usage_data is not None:  # 2026-07-22 - 小欧 - 修复: usage 为 None 时不添加 null 字段
         result["usage"] = usage_data
-    return ("response", result)
+    # chunk 产物即 StreamChunk(create_payload_chunk 工厂构造, payload 装 result dict 全保真) — 小欧 2026-09-06
+    return create_payload_chunk(_resolve_chunk_model(agent), result)
 
 
 def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_reason=None, **extra):
@@ -89,7 +98,11 @@ def _yield_error_response(error_msg: str, agent, exc: Optional[BaseException] = 
     diag = f" | exc={type(exc).__name__}" if exc else (f" | type={exc_type}" if exc_type else "")
     logger.error(f"[LLM] {error_msg}{diag}")
     _log_llm_response(agent, error_msg, "error", None, finish_reason="error")
-    return ("response", {"type": "error", "content": error_msg, "error_type": exc_type})
+    # chunk 产物即 StreamChunk(工厂构造, payload 装 {"type":"error",...} 全保真) — 小欧 2026-09-06
+    return create_payload_chunk(
+        _resolve_chunk_model(agent),
+        {"type": "error", "content": error_msg, "error_type": exc_type},
+    )
 
 
 def _build_answer_response(full_content, full_reasoning, usage_data, agent, finish_reason=None):
@@ -106,4 +119,5 @@ def _build_answer_response(full_content, full_reasoning, usage_data, agent, fini
     result = {"type": "answer", "content": full_content, "reasoning": full_reasoning, "finish_reason": finish_reason}
     if usage_data is not None:  # 2026-07-22 - 小欧 - 修复: usage 为 None 时不添加 null 字段
         result["usage"] = usage_data
-    return ("response", result)
+    # chunk 产物即 StreamChunk(create_payload_chunk 工厂构造, payload 装 answer dict 全保真) — 小欧 2026-09-06
+    return create_payload_chunk(_resolve_chunk_model(agent), result)
