@@ -4,7 +4,6 @@
 #   网关内部固定顺序 publish(paused)→wait→publish(resumed)→单点resolve收口; 复用hitl_confirmation三原语不重写等待/超时/取消
 # 2026-09-06 小欧 步骤2落盘(test_path1_step2_hitl_gateway.py T2红→绿): 落点handlers/hitl_gateway.py, 与调用方同目录(handlers→task单向依赖防环);
 #   会审minor修正: _resolve_timeouts mode非法值显式ValueError校验
-# app/services/agent/handlers/hitl_gateway.py  — 小健-2026-09-05（骨架，按4.2语义实现；落点纠正 task→handlers — 小健-2026-09-06）
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 from dataclasses import dataclass
 from typing import Optional
