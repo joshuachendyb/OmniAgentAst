@@ -15,6 +15,9 @@
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: TB-02 revokeTrust加try/catch防unhandledrejection上浮 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5⑤⑥(北京老陈定案"tool+path才是准确对象", 后端§5.5): TrustedTool带path升级一行一变——
 //   trustTools行键改 `${toolName}:${path}`、显示 {toolName} › {path ?? '任意'}(空=工具级通配)、revokeTrust签名带path精确撤销、Tooltip文案改"会话级 tool+path 免审白名单"(目标路径及其子目录免弹框) — 小欧-2026-09-02
+// 编辑历史: 2026-09-06 小欧 - R1秒表与徽标解耦(B1实证修复, 见 doc-9月优化/错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案): 秒表interval运行条件去badge依赖改为
+//   receiving&&!detail(实时流在就走表, 错误信号不再清零停表/业务恢复不再回跳); shownElapsed实时态一律liveElapsed, 非实时/历史回退elapsedSec;
+//   else分支原样保留(归零+startRef复位, 保终态duration显示与新任务归零) — 小欧-2026-09-06
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -66,12 +69,14 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   const b = BADGE_MAP[info.badge];
   // 【2026-09-03 小欧 复用TrustPanel】信任查询/刷新/撤销/折叠逻辑已移入 TrustPanel 组件(TaskInfoBar 删除内联重复, DRY)
 
-  // 【小欧 2026-08-26 修复 B2】执行中实时计时：当前任务(receiving+running)按 start 时刻走表，
+  // 【小欧 2026-08-26 修复 B2】实时计时：实时流(receiving)期间按 start 时刻走表
+  // （2026-09-06 R1: 不再挂靠徽标 running, 错误/失败态下秒表继续走不零不回跳），
   // 历史任务(detail)用后端 duration，不计时。
   const [liveElapsed, setLiveElapsed] = useState(0);
   const startRef = useRef<number | null>(null); // 2026-08-27 小欧 三堂会审: 仅首次锚定start, 防计时抖动
   useEffect(() => {
-    if (receiving && info.badge === 'running' && !detail) {
+    if (receiving && !detail) {
+      // 2026-09-06 小欧 R1: 去 info.badge==='running' 依赖 — 小欧-2026-09-06
       if (startRef.current == null) {
         startRef.current = frames.startTimestamp || Date.now(); // 2026-08-27 小欧 三堂会审: 首次锚定
       }
@@ -86,10 +91,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
     setLiveElapsed(0);
     startRef.current = null; // 2026-08-27 小欧 三堂会审: 任务切换复位startRef
     return undefined;
-  }, [receiving, info.badge, detail]); // 2026-08-27 小欧 三堂会审: 去frames.startTimestamp防抖动
+  }, [receiving, detail]); // 2026-09-06 小欧 R1: deps去info.badge; 其余保持(去frames.startTimestamp防抖动) — 小欧-2026-09-06
   const shownElapsed = detail
     ? info.elapsedSec
-    : receiving && info.badge === 'running'
+    : receiving // 2026-09-06 小欧 R1: 实时态一律走 liveElapsed(错误态继续走表); 非实时回退 elapsedSec(终态 duration) — 小欧-2026-09-06
       ? liveElapsed
       : info.elapsedSec;
 
