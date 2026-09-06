@@ -31,6 +31,10 @@
 #     返回值仍(ok,steps), steps仅剩error类(paused/resumed由网关publish), 待收list留5.4.2(3B)
 #   ② 单paused策略(4.4定案): sandbox_resolve/run_sandbox_gate 均加 main_confirmed 短路——主路已confirmed
 #     则跳过二次裁决直接放行; bypass区传_bypass_confirmed/真HITL区传True/safe直通缺省False
+# 2026-09-06 小欧 B2方案C(北京老陈裁定: 拒绝不是error事件): sandbox_resolve 用户拒绝分支
+#   由 MetaStep(type="error", error_type="blocked") 改独立 type="user_rejected" 单独发(无 error_type/
+#   severity, 不占 error 通道/liveErrorText); 前端 onDenied 独立回调聚合 deniedStepSet 停齿轮;
+#   配套：react_dispatch 状态推断适配、agent_runner 仅SSE集合补入(不落库)。 — 小欧-2026-09-06
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -106,10 +110,10 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         return True, []          # paused/resumed 已由网关publish, 此处不再组Step — 小健 2026-09-05
     logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
     denied_list.append((tool_name, "沙箱预检未完成验证且用户拒绝执行", call))
+    # 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 独立 type="user_rejected" 单独发 (与 safety_gate 拒绝路径同构)
     return False, [agent._step_emitter.emit(MetaStep(
-        step=step, type="error",
-        content=f"用户拒绝执行(预检未完成验证): {tool_name}",
-        error_type="user_rejected", severity="warn"))]
+        step=step, type="user_rejected",
+        content=f"用户拒绝执行(预检未完成验证): {tool_name}"))]
 
 
 # ════════════════════════════════════════════════════════════

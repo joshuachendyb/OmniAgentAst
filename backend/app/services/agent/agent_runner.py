@@ -89,6 +89,15 @@
 #   新增 seq: 原实现 event_log 内 final 双条(publish 完整 + 补发短/完整)致 SSE final 双发(bug, P4 专项测试捕获);
 #   覆写后 event_log 每种终态单条: 短信号场景前端仅见剥离条, 完整场景原位即完整, 守卫补发(无 publish 原条)仍 _append;
 #   零新增抽象, 覆写幂等(同内容覆写等价); final_stats 同法去重 — 小欧-2026-09-06
+# 2026-09-06 小欧 方案C三堂会审缺陷2修复(独立user_rejected不落库):
+#   独立 type="user_rejected" 后, 该事件不在仅SSE集合 {error,usage,paused,resumed,retrying,cancelled} 内 →
+#   通道路由落 else _persist 写库, total_steps 虚增 + 违反"拒绝仅SSE不落库"设计(全拒步 DB 出现无观察配对残步)。
+#   [修复] 该集合补 "user_rejected"(按 §10.4.4 P3 精神: 拒绝/拦截类均非业务步, 不落库不计数)
+#   blocked/timeout 走 error 已仅SSE; 前端 deniedStepSet 靠 SSE 独立事件聚合(不受落库影响) — 小欧-2026-09-06
+# 2026-09-06 小欧 B2方案C核心(北京老陈裁定, 与 handle_action 预览/规范/拒绝独立事件同commit):
+#   通道路由 action 分支识别 _live_only 预览标记(handle_action 早发, tools=all_calls 仅SSE齿轮先行)——
+#   带标记跳过 _persist 落库(prev 不落), 无标记 canonical(tools=_exec_calls 真实执行集)照常 _persist;
+#   恢复 09-04"拦截/拒绝的action不落库"不变式 + 全拒步无"有action无observation"DB残步; total_steps 口径不变 — 小欧-2026-09-06
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -345,8 +354,15 @@ async def run_agent_in_background(
                     "ai_message_id": ai_message_id,
                 }
                 await _append(_startinfo)   # 轻量 MetaStep 仅 SSE, 复用同一 ai_message_id — 小欧 2026-08-18
-            elif event_type in {"error", "usage", "paused", "resumed", "retrying", "cancelled"}:
-                pass  # 4C(5.8.5): 仅SSE(§10.4.4 P3/P5/P6), 已 publish 入缓冲由 stream_reader 实时读, 订阅体不再 _append 防双发 — 小欧-2026-09-06
+            elif event_type == "action":
+                _action_steps.add(event_dict.get("step", 0))   # 工具执行轮标记(已 publish, SSE 由 stream_reader 读, 不 _append) — 小欧-2026-09-06
+                # B2(方案C, 2026-09-06 小欧 三堂会审定案): 预览事件(tools=all_calls, _live_only=True)仅SSE齿轮先行不落库;
+                #   canonical(tools=_exec_calls 真实执行集, 无 _live_only 标记)走 _persist 落库——恢复 2026-09-04 小健
+                #   fix"拦截/拒绝的 action 不落库"不变式 + 消除全拒场景"有action无observation"DB残步
+                if not event_dict.get("_live_only"):
+                    await _persist(event_dict)
+            elif event_type in {"error", "usage", "paused", "resumed", "retrying", "cancelled", "user_rejected"}:
+                pass  # 4C(5.8.5): 仅SSE(§10.4.4 P3/P5/P6), 已 publish 入缓冲由 stream_reader 实时读, 订阅体不再 _append 防双发; 方案C(2026-09-06 小欧): user_rejected 独立类型补入(拒绝仅SSE不落库, total_steps 不虚增) — 小欧-2026-09-06
             else:
                 await _persist(event_dict)              # 落库（始终完整 dict）
                 # ── final & completed SSE 短信号（§10.3.3(4)）── 2026-08-18 小欧
@@ -354,9 +370,7 @@ async def run_agent_in_background(
                 #   return_direct 等无 chunk 场景, final.response 是前端唯一正文载体,
                 #   剥离后前端正文丢失(测试 test_return_direct_response_lost 捕获)。
                 #   → 有 chunk 才短信号; 无 chunk 发完整(含 response)。
-                if event_type == "action":
-                    _action_steps.add(event_dict.get("step", 0))   # 工具执行轮标记(已 publish, SSE 由 stream_reader 读, 不 _append) — 小欧-2026-09-06
-                elif event_type == "final":
+                if event_type == "final":
                     if _final_publish_index is None:
                         _final_publish_index = _scan_idx   # 5.8.6: 记 publish final 原位, 供 finally 覆写保单一 seq — 小欧 2026-09-06
                     # 2026-09-04 小欧 方案一: 终态 final 不立即 _append, 先入 _pending_terminal_events 缓冲,

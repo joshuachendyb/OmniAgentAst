@@ -209,6 +209,28 @@
 #   门禁import改正式依赖; 测试侧直引action_handler改指handle_action/safety_gate(仅本地禁commit)
 # 2026-09-06 小欧 4A(5.6) 纯函数化: 7处yield→收集_events列表, gate消费改_events.extend(await), 
 #   末尾return {"events": _events, "result": {...}}; 事件统一收集返回、由5.7驱动yield - 小欧-2026-09-06
+# 2026-09-06 小欧 B2时序根治(北京老陈定案: 一个action无论单/多工具必须先发action再发弹窗):
+#   初版"拆两阶段"落地后7个源码锚点测试红(文档[6]锁定check_safety_and_confirm单函数内含全部逻辑),
+#   撤销改法, 改方案X: safety_gate原样不动(源码锚点测试绿基线不破), handle_action在check_safety_and_confirm
+#   调用前直接publish ActionStep(tools=all_calls全部call, 含待确认/将拦截工具, exec_type按候选数single/multi),
+#   拦截/拒绝/超时经后续error事件回执, 前端ToolCallLine interrupted(含blocked)停齿轮防空转;
+#   检查仍只跑一次(无DRY重复), 事件仅经_events单一列表返回(4A继续成立) - 小欧-2026-09-06
+# 2026-09-06 小欧 B2修订(方案C, 北京老陈裁定+三思三省): 方案X的"error事件回执停齿轮"证伪——
+#   拒绝(currently user_rejected)误按 error 发会占前端 error 通道(红字/liveErrorText), 与"拒绝≠失败"认知矛盾;
+#   且 error 事件不进 liveSteps, 齿轮停靠的 error 数据源在 realtime 活期被证伪(死代码)。
+#   [修订] ①预览 ActionStep 标 _live_only(仅SSE齿轮先行; agent_runner 路由见此跳过落库, DB 只认下方 canonical,
+#   恢复 09-04"拦截/拒绝的action不落库"不变式, 全拒步无"有action无observation"残步);
+#   ②canonical ActionStep(tools=_exec_calls 真实执行集) 仍经 _events 走 react_step._publish 逐条发(SSE+落库),
+#   与 preview 同 step, 前端 buildSegments 按 step 覆盖去重(SSE 仅见 canonical), DB 无冗余;
+#   ③拒绝改独立 type="user_rejected"(safety_gate/sandbox_gate 各一处, 无 error_type/severity, 不占 error 通道),
+#   前端 onDenied 独立回调聚合 deniedStepSet(step→denied 计数, deniedCount>=tools.length 停齿轮);
+#   ④blocked/timeout 不变 error 事件(带 step, 仅SSE) 由 sseOnError 过滤聚合入同 deniedStepSet,
+#   拒绝/拦截/超时三路汇入同一停齿轮数据源, 回放(replay=!streaming)免齿轮 — 小欧-2026-09-06
+# 2026-09-06 小欧 方案C观察点1/2根治(北京老陈批准"方案2后端标记", 标志以最优雅形态落地):
+#   预览 ActionStep 增发 preview=True(前端可见, sse_formatter 剥离 _live_only 但保留 preview 下发);
+#   前端刷新恢复(sessionStorage)时剔除 type=action && preview 行——拦截/拒绝 action 本就不落库,
+#   恢复后不再出现"无灰字工具行"(观察点1)与"双条action"(观察点2), 与 DB 回放语义完全一致;
+#   实时预览行仍进 executionSteps(齿轮动画数据源), preview 字段对落库/路由零影响(落库只认 _live_only 判定) — 小欧-2026-09-06
 """
 handle_action — action编排处理(门禁已拆出)
 
@@ -259,7 +281,7 @@ from app.services.agent.action_input_parser import _build_call_list, BuildCallLi
 from app.services.agent.observation_builder import ObservationContext, build_observation, _add_denial_feedback  # 2026-09-04 小健 下沉: 观察反馈构建层
 from app.services.agent.tool_runner import execute_tools  # 2026-09-04 小健 下沉: 工具执行调度
 from app.services.agent.reasoning_guard import note_progress  # 2026-09-05 小健 8.3: action侧计数归零收口至reasoning_guard
-from app.services.agent.handlers.safety_gate import check_safety_and_confirm  # 2026-09-05 小健 10.4第二阶段: 门禁整搬出safety_gate, 此处为正式依赖(非重导出)
+from app.services.agent.handlers.safety_gate import check_safety_and_confirm  # 2026-09-05 小健 10.4第二阶段: 门禁整搬safety_gate
 
 
 # 以下常量/函数已拆分至 app/tools/file_tool_utils.py — 小健 2026-09-04
@@ -317,31 +339,58 @@ async def handle_action(agent, parsed: Dict) -> dict:
         reasoning=parsed.get("reasoning", ""),
     )))  # 4A(5.6): yield→append — 小欧-2026-09-06
 
+    # B2时序根治(北京老陈定案: action先发、弹窗后发, 单/多工具统一先发action): 在安全检查任一弹窗发出前,
+    #   先把 ActionStep publish(齿轮先行; tools=全部call=all_calls, 含待确认/将被拦截工具), 拒绝/拦截/超时结果
+    #   由 check_safety_and_confirm 后续事件回执(拒绝=独立 type="user_rejected", 拦截/超时=error), 前端
+    #   deniedStepSet 停齿轮防空转; 预览事件标 _live_only(仅SSE齿轮先行, agent_runner 路由跳过落库,
+    #   落库只认下方 canonical, 保 09-04"拦截action不落库"不变式); 不拆 safety_gate(源码锚点测试绿基线不破),
+    #   check仍只跑一次(无DRY重复) — 2026-09-06 小欧(方案C: 三思三省发现 实时齿轮死代码+DB落库倒退后修订)
+    if call_result.all_calls:
+        _action_tools = [{
+            "tool": c.get("tool_name", ""),
+            "target": _extract_target(c),
+            "params": c.get("tool_params", {}) or {},
+        } for c in call_result.all_calls]
+        from app.services.task.task_state import get_stream_buffer  # 延迟import防环 — 小欧-2026-09-06
+        _buf = get_stream_buffer(agent.task_id)
+        if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05
+            raise RuntimeError(f"[handle_action] StreamBuffer缺失(task={agent.task_id})")
+        _live_action = agent._step_emitter.emit(ActionStep(
+            step=step,
+            exec_type="single" if len(call_result.all_calls) == 1 else "multi",
+            tools=_action_tools,
+        )).to_dict()
+        _live_action["_live_only"] = True  # 预览标记: agent_runner 路由见此跳过落库(SSE 照发) — 小欧-2026-09-06
+        # 预览标记(前端可见): sse_formatter 剥离 _live_only(内部路由)但保留 preview 下发, 前端刷新恢复时
+        # 剔除预览行(拦截/拒绝的action本就不落库, 刷新与DB回放语义完全一致, 无"无灰字工具行"残影) — 小欧-2026-09-06
+        _live_action["preview"] = True
+        await _buf.publish(_live_action)  # B2: 直接publish不合并_events(保证齿轮先于弹窗落地) — 小欧-2026-09-06
+
     # #11+#12 fix: 传_out收集通过安全检查的call, 拒绝不终止整批 — 小欧 2026-07-18
     # 2026-08-11 小欧 fix D2: 传_denied_out收集被拒call(tool_name,reason,call), 反馈在build_observation后写
-    _safe_calls = []
+    _exec_calls: List[Dict] = []
     _denied_list = []
     _events.extend(await check_safety_and_confirm(agent, call_result.all_calls, step,
                                                   call_result.fc_context,
-                                                  _out=_safe_calls, _denied_out=_denied_list))  # 4A(5.6): 返回完整list, extend并入(append会嵌套) — 小欧-2026-09-06
-    _exec_calls = _safe_calls if _safe_calls else []
+                                                  _out=_exec_calls, _denied_out=_denied_list))
+    # 4A(5.6): gate消费改_events.extend(await收列表) — 小欧-2026-09-06
+    _exec_calls = _exec_calls or []  # 2026-07-28 BUG#3 语义: 全拒空列表, 不回退 all_calls — 小欧-2026-07-28
 
-    # ── 新 action step: execute_tools 执行前 yield 一次（§10.3.3(2)）── 2026-08-18 小欧
-    # 2026-09-04 小健 fix (北京老陈裁定): 只有正常执行的action才emit/落库; 全部被安全拦截致_exec_calls为空→不发ActionStep
-    #   废除 2026-08-26 aba43fbea 记录层兜底(_record_calls=all_calls): 被拦截/未执行的调用emit ActionStep+完整payload落库
-    #   却无 ObservationStep/tool_result → DB出现"有action无observation"残步, 误导前端/校验器;
-    #   改后仅_exec_calls发ActionStep, 与 build_observation 的 `if ctx.all_calls:` 守卫(空不发observation)自洽 — 拦截步干净无残步
+    # ── canonical ActionStep: check 后按真实执行集 emit(落库+SSE) ── 小欧-2026-09-06 三堂会审定案(方案C)
+    #   恢复到 2026-09-04 小健 fix 语义: 仅正常执行的 action 才落库(全拒/拦截不落库); 预览 tools=all_calls(SSE齿轮),
+    #   canonical tools=_exec_calls 真实执行集(DB 配对自洽, 09-04 不变式不破); 双事件同 step, 前端 buildSegments
+    #   按 step 已去重(取后者=canonical, 渲染唯一), DB 快照路由仅 canonical(无 _live_only)落库, 无冗余 — 小欧-2026-09-06
     if _exec_calls:
-        _action_tools = [{
+        _canonical_tools = [{
             "tool": c.get("tool_name", ""),
             "target": _extract_target(c),
             "params": c.get("tool_params", {}) or {},
         } for c in _exec_calls]
         _events.append(agent._step_emitter.emit(ActionStep(
             step=step,
-            exec_type="single" if len(_action_tools) == 1 else "multi",
-            tools=_action_tools,
-        )))  # 4A(5.6): yield→append — 小欧-2026-09-06
+            exec_type="single" if len(_canonical_tools) == 1 else "multi",
+            tools=_canonical_tools,
+        )))  # 经 4C react_step.py:478 _publish 逐条发(含 canonical), 与预览同 step 前端去重 — 小欧-2026-09-06
 
     # ── 工具重试（隐蔽，前端不可见）── 小欧 2026-07-13
     # 工具重试由 tool_retry_engine 内部执行, 不向前端 emit 任何 step(北京老陈要求: tool 重试隐蔽)。

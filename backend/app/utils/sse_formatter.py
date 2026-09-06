@@ -2,6 +2,8 @@
 # 编辑历史:
 # 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() 时间统一
 # 2026-08-08 - 小欧 - 全程统一本地时区: 默认 timestamp 改 get_local_iso_timestamp()
+# 2026-09-06 - 小欧 - B2(方案C): format_agent_sse 剥离内部路由标记 _live_only(仅 agent_runner 通道路由
+#   消费, 不下发给前端; 过滤副本不改 event_log 原引用, 快照扫描仍可读) — 小欧-2026-09-06
 """
 sse_formatter — SSE事件格式化工具(纯函数)
 
@@ -56,6 +58,10 @@ def format_agent_sse(step_dict: dict, step: int = None) -> str:
     step_num = step or step_dict.get('step', 0)
     if not event_type:
         return ''
+    # 2026-09-06 小欧 B2(方案C): 内部路由标记 _live_only 仅供 agent_runner 通道路由消费,
+    #   不下发给前端(过滤副本, 不改 event_log 原引用, 快照扫描仍可读) — 小欧-2026-09-06
+    if "_live_only" in step_dict:
+        step_dict = {k: v for k, v in step_dict.items() if k != "_live_only"}
     return format_sse_event(event_type, step_num, step_dict)
 
 

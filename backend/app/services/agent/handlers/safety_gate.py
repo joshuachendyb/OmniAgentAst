@@ -17,6 +17,10 @@
 # 2026-09-06 小欧 POT-002优化(老陈核查定案): grant_temp_auth 同函数内3处重复import合并——上提模块顶层一次
 #   (temp_auth仅标准库依赖contextvars/pathlib/typing, 依赖图核实无环, 上提不破坏任何防环边界);
 #   三处try/except保留(捕获授权执行异常不阻断), warning文案逐处保留(决策日志审计区分度), import失败改启动fail-fast
+# 2026-09-06 小欧 B2方案C(北京老陈裁定: 拒绝不是error事件): 真HITL拒绝(not confirmed)分支
+#   由 MetaStep(type="error", error_type="user_rejected") 改独立 type="user_rejected" 单独发(无 error_type/
+#   severity, 不占 error 通道/liveErrorText); 前端 onDenied 独立回调聚合 deniedStepSet 停齿轮;
+#   配套：react_dispatch 状态推断适配(独立ttype计入可恢复拒绝计数)、agent_runner 仅SSE集合补入(不落库) — 小欧-2026-09-06
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -115,8 +119,11 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         _denied.append((_cn, "确认超时未响应", call))
                     else:
                         logger.warning(f"[action] step={step} rejected: tool={_cn}")
+                        # 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 独立 type="user_rejected" 单独发
+                        #   (不挂 error_type/severity, 不占 error 通道); 仅 blocked(拦截)/timeout(超时) 走 error —
+                        #   前端按独立事件聚合 deniedStepSet 停齿轮, error 通道不再承载 user_rejected
                         _events.append(agent._step_emitter.emit(MetaStep(
-                            step=step, type="error", content=f"用户拒绝执行工具: {_cn}", error_type="user_rejected", severity="warn"
+                            step=step, type="user_rejected", content=f"用户拒绝执行工具: {_cn}"
                         )))
                         _denied.append((_cn, "被用户拒绝执行", call))
                     continue  # was: return  — 小欧 2026-07-18 #12 fix

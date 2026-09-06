@@ -9,6 +9,13 @@
 # 2026-09-06 小欧 4C(5.8.1): 返 list 收口 — _dispatch_events 收集循环(双兼容 dict/列表源), 状态推断块逐行
 #   保留, return _dispatch_events 置于状态推断之后(终态声明先执行, 与现状时序一致); 消费端 5.8.2 同 commit
 #   await 拿 list, react_step L461 async-for 对 list 即崩, 5.8.1-5.8.5 同 commit 齐发(文档[6]5.8缺陷D1) - 小欧-2026-09-06
+# 2026-09-06 小欧 方案C三堂会审缺陷3修复(独立user_rejected适配, 北京老陈裁定"拒绝≠error"):
+#   独立 type="user_rejected" 后, 拒绝事件不再是 type="error"(error_type=user_rejected), seen_types 无 "error"
+#   → 状态推断落 else"成功重置"分支: 拒绝计数既不累计(≥3次FAILED防死胡同机制失效) 反将已计数清零(语义错误)。
+#   [修复] ①seen_types 收集新增 _EV_DENIED("user_rejected"), error/user_rejected 事件统一入 last_denial_event
+#   槽(取轮内最后一条, 与旧"每次拒绝仅计一条"语义一致); ②推断分支改 `_EV_ERROR in seen_types or _EV_DENIED
+#   in seen_types`, err_type 按 event.type 判 user_rejected, 复用原 _RECOVERABLE_ERRORS 计数通道((tool,type)
+#   累计≥3→FAILED); ③blocked/timeout 仍走 error 分支行为不变; else"成功重置"仅真成功可达 — 小欧-2026-09-06
 
 """react_dispatch — 类型分派 + 状态推断
 
@@ -63,17 +70,19 @@ async def _dispatch_handler(agent, llm_response):
     else:
         handler = handle_answer(agent, llm_response)
 
-    _EV_FINAL, _EV_RETRY, _EV_ERROR = "final", "retrying", "error"
+    _EV_FINAL, _EV_RETRY, _EV_ERROR, _EV_DENIED = "final", "retrying", "error", "user_rejected"
     seen_types = set()
-    last_error_event = None
+    last_denial_event = None
     final_event = None
     # 4C(5.8.1): 返 list — 收集 _dispatch_events, 状态推断块逐行保留, 循环尾 return(5.8.2 消费 await 拿 list 同 commit) — 小欧-2026-09-06
     verdict = await handler  # handler 为 handle_action/handle_answer(agent, llm_response) 的 coroutine 结果
     _dispatch_events: List = []
     for event in (verdict.get("events", []) if isinstance(verdict, dict) else verdict):
         seen_types.add(event.type)
-        if event.type == _EV_ERROR:
-            last_error_event = event
+        # 方案C(2026-09-06 小欧): error/独立 user_rejected 统一入 last_denial_event 槽(轮内最后一条,
+        #   与旧"拒绝/拦截每次仅计一条"语义一致); 独立 type 后 user_rejected 不再是 error 的子类型 — 小欧-2026-09-06
+        if event.type in (_EV_ERROR, _EV_DENIED):
+            last_denial_event = event
         elif event.type == _EV_FINAL:
             final_event = event
         _dispatch_events.append(event)
@@ -90,11 +99,16 @@ async def _dispatch_handler(agent, llm_response):
             set_cancelled(agent)
         else:
             set_completed(agent)
-    elif _EV_ERROR in seen_types:
-        # 无 final → 可恢复错误(blocked/user_rejected/timeout, 循环继续)或原子异常(旧数据)
-        error_event = last_error_event
+    elif _EV_ERROR in seen_types or _EV_DENIED in seen_types:
+        # 无 final → 可恢复拒绝/拦截(blocked/user_rejected/timeout, 循环继续)或原子异常(旧数据)
+        error_event = last_denial_event
         _kw = getattr(error_event, "_kwargs", {}) or {}
-        err_type = _kw.get("error_type", "")
+        # 方案C(2026-09-06 小欧): 独立拒绝事件 type 即 err_type(旧 error 型时代由 error_type 承载, 迁移映射);
+        #   阻塞/超时仍读 error_type(独立拒绝事件无 error_type/severity, 与北京老陈裁定一致) — 小欧-2026-09-06
+        if error_event.type == _EV_DENIED:
+            err_type = _EV_DENIED
+        else:
+            err_type = _kw.get("error_type", "")
         error_msg = error_event.get_content() if hasattr(error_event, 'get_content') else ""
         if err_type in _RECOVERABLE_ERRORS:
             # 拒绝/拦截是可恢复的(拒绝≠失败, 符合人类认知): 不置终态, 反馈已进LLM历史,
