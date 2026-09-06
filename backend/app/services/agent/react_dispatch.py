@@ -3,6 +3,9 @@
 # 编辑历史:
 # 2026-09-05 小健 8.4拆分(react_cycle.py拆四): 提取 _dispatch_handler(原行288-389, 含函数体内状态推断块337-389),
 #   逐字复制只改import — 按type分派handler, 基于 event type 推断状态(物理上状态推断块在函数体内不可切分,整体随迁)
+# 2026-09-06 小欧 4B(5.7): handle_answer/handle_action 已纯函数化返 dict{events,result} →
+#   本层消费改 verdict=await handler + for verdict["events"] 逐条 yield; seen_types/last_error/final 逐条收集
+#   与下方终态推断块逐行保留, 语义无退化(4A=T4A, 4B=T4B, 5.7调度仍为 async generator 逐条外发) - 小欧-2026-09-06
 
 """react_dispatch — 类型分派 + 状态推断
 
@@ -60,7 +63,10 @@ async def _dispatch_handler(agent, llm_response):
     seen_types = set()
     last_error_event = None
     final_event = None
-    async for event in handler:
+    # 4B(5.7): handler 纯函数化返 dict{events},_dispatch_handler 保留 async generator 形状逐条 yield
+    #   await 拿 events 列表, 逐条收集 seen_types/error/final 后 yield(状态推断块不变, 语义锁) — 小欧-2026-09-06
+    verdict = await handler  # handler 为 handle_action/handle_answer(agent, llm_response) 的 coroutine 结果
+    for event in verdict["events"]:
         seen_types.add(event.type)
         if event.type == _EV_ERROR:
             last_error_event = event
