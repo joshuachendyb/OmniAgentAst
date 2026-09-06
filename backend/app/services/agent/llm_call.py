@@ -29,6 +29,8 @@
 # 2026-09-05 小健 8.5拆分(llm_stream.py→llm_call.py改名): 5个纯函数(builder成员)移出至llm_response_builder.py,
 #   余部仅留call_llm_stream+call_llm_with_fallback两个"发起LLM调用"入口, stream之名已不准, git mv改名成实;
 #   行为零改动, 引用路径同步(react_cycle.py:149/summary.py:29转引本模块)
+# 2026-09-06 小欧 文档[6]2.5.3/5.9落码: 出口全StreamChunk化—L1 retry通知/L2重试/FC降级改create_payload_chunk构造;
+#   chunk改SDK原生直透(弃ChunkStep包装删import); error分流/retrying缓冲判别改payload检查(分流常量元组与P1定案一字不改)
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -54,11 +56,11 @@ from app.services.agent.llm_response_builder import (  # 2026-09-05 小健 8.5�
     _build_answer_response,
     _build_tool_calls_response,
     _format_response_error,
+    _resolve_chunk_model,          # 小健 2026-09-06: 路径2 出口统一取模型 ModelRef(复用2.5.2, 防二次重复)
     _yield_error_response,
 )
-from app.services.agent.steps import ChunkStep
 from app.constants import LLM_RESPONSE_FALLBACK, LLM_RESPONSE_RETRIES, LLM_TOOL_CHOICE
-from app.llm.core import LLMResponseError, StreamChunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock)
+from app.llm.core import LLMResponseError, StreamChunk, create_payload_chunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock); 小欧 2026-09-06 +create_payload_chunk(路径2出口统一构造)
 from app.utils.text_utils import extract_tool_call_xml
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
@@ -85,9 +87,9 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
                 break
 
             if isinstance(chunk, StreamChunk) and chunk.retry_notice:
-                # 小欧 2026-09-02: L1 重试事件透传为 ("meta", {...}) 元事件,
-                # 由 call_llm_with_fallback / react_cycle 消费转 MetaStep(type="retrying")
-                yield ("meta", {
+                # 2026-09-06 小欧 文档[6]2.5.3: L1 重试通知以 create_payload_chunk 单协议承载,
+                # 由 react_step/summary 消费转 MetaStep(type="retrying")
+                yield create_payload_chunk(_resolve_chunk_model(agent), {
                     "type": "retrying",
                     "content": f"LLM请求重试 {chunk.retry_attempt}/{chunk.retry_total}: {chunk.retry_notice}",
                     "wait_time": None,
@@ -108,7 +110,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
                     full_reasoning += chunk.content
                 else:
                     full_content += chunk.content
-                yield ("chunk", ChunkStep(step=agent.llm_call_count, content=chunk.content, is_reasoning=is_reasoning))
+                yield chunk   # 路径2 单协议: SDK 原生 StreamChunk 直透, 消费侧读 .content/.is_reasoning — 小欧 2026-09-06 文档[6]2.5.3
 
             if chunk.is_done:
                 if chunk.usage:
@@ -216,22 +218,20 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
         try:
             async for item in call_llm_stream(agent, messages, openai_tools):
                 # 流式error响应(type:"error")会绕过L2重试直抵set_failed使agent失败;此处转LLMResponseError交给上层重试 — 小欧 2026-07-15
-                if isinstance(item, tuple) and item[0] == "response":
-                    resp = item[1]
-                    if isinstance(resp, dict) and resp.get("type") == "error":
-                        # 2026-09-01 小欧 L2去放大: 按error_type分流, 传输/限流类(L1已处理)直接放行不重试, 其它保持L2重试 — 小欧 2026-09-01
-                        # 2026-09-02 小欧 task005会审P1(北京老陈定案): "server"(500/502/503)移出放行元组——瞬时/过载错误应走L2重试(否则本可恢复任务永久失败), 重试耗尽仍由外层FC降级/error兜底, 不退化 — 小欧 2026-09-02
-                        # 2026-09-02 小欧 严谨修复404重试放大: 4xx配错(CLIENT→code=client)一律L1已判定不重试, L2亦直接放行不重试不降级, 杜绝404 Text降级再L1×3放大 — 小欧 2026-09-02
-                        err_type = resp.get("error_type", "")
-                        if err_type in ("quota_exceeded", "rate_limit", "idle_timeout", "client"):
-                            yield item
-                            return
-                        raise LLMResponseError(message=resp.get("content", "LLM流式错误"))
+                if isinstance(item, StreamChunk) and item.payload is not None \
+                        and item.payload.get("type") == "error":
+                    resp = item.payload
+                    # 2026-09-01 小欧 L2去放大: 按error_type分流, 传输/限流类(L1已处理)直接放行不重试, 其它保持L2重试 — 小欧 2026-09-01
+                    # 2026-09-02 小欧 task005会审P1(北京老陈定案): "server"(500/502/503)移出放行元组——瞬时/过载错误应走L2重试(否则本可恢复任务永久失败), 重试耗尽仍由外层FC降级/error兜底, 不退化 — 小欧 2026-09-02
+                    # 2026-09-02 小欧 严谨修复404重试放大: 4xx配错(CLIENT→code=client)一律L1已判定不重试, L2亦直接放行不重试不降级, 杜绝404 Text降级再L1×3放大 — 小欧 2026-09-02
+                    err_type = resp.get("error_type", "")
+                    if err_type in ("quota_exceeded", "rate_limit", "idle_timeout", "client"):
+                        yield item
+                        return
+                    raise LLMResponseError(message=resp.get("content", "LLM流式错误"))
                 # 小欧 2026-09-03 P7修复: 拦截retry notice并缓冲, 保证CancelledError中断时必落事件流
-                if isinstance(item, tuple) and item[0] == "meta":
-                    _meta = item[1]
-                    if isinstance(_meta, dict) and _meta.get("type") == "retrying":
-                        _pending_retry_notice = item
+                if getattr(item, "payload", None) and item.payload.get("type") == "retrying":
+                    _pending_retry_notice = item
                 yield item
                 # 2026-09-03 小沈 P7修正: 正常消费后清除缓冲, 防后续CancelledError补发已emit的旧通知(双重emit)
                 _pending_retry_notice = None
@@ -249,7 +249,7 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
             logger.warning(f"[Retry][L2] LLM响应错误 第{attempt+1}/{LLM_RESPONSE_RETRIES}次: {e}")
             wait_time = min(0.5 * (2 ** attempt), 30)
             # 小欧 2026-09-02: L2 重试事件透传发前端
-            yield ("meta", {
+            yield create_payload_chunk(_resolve_chunk_model(agent), {
                 "type": "retrying",
                 "content": f"LLM响应重试 {attempt+1}/{LLM_RESPONSE_RETRIES}: {e.message}",
                 "wait_time": wait_time,
@@ -262,7 +262,7 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
         # #31 fix: fallback前reset事件，消cancel状态残留 — 小欧 2026-07-18
         agent.llm_client.reset_cancel()
         # 小欧 2026-09-02: FC降级事件透传发前端（用户需知"FC失败已降级Text"）
-        yield ("meta", {
+        yield create_payload_chunk(_resolve_chunk_model(agent), {
             "type": "retrying",
             "content": f"FC模式{LLM_RESPONSE_RETRIES}次重试均失败，降级到Text模式重试",
             "wait_time": None,
