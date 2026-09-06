@@ -294,7 +294,10 @@ async def run_agent_in_background(
                 continue
             event_type = event_dict.get("type", "")
             # prompt-log 生命周期(publish 不记, 订阅侧补齐替代原 _append 内 log_step_yield; 自产事件由 _publish 发布点补记) — 小欧-2026-09-06
-            get_prompt_logger().log_step_yield(event_dict, round_number=event_dict.get("step", 0))
+            # B2方案C(2026-09-06 小欧 根因修复): preview(action)仅SSE齿轮不落库, 禁止记 Prompt 日志
+            #   (否则 DB=8/Prompt日志=12 对账 2x 误报, verify_db_prompt_consistency 失败) — 小欧-2026-09-06
+            if not event_dict.get("_live_only"):
+                get_prompt_logger().log_step_yield(event_dict, round_number=event_dict.get("step", 0))
 
             # ── 通道路由（§10.3.3(1) + §10.4.3 P1）：thought 仅落库 / thought-start 仅SSE / chunk 仅SSE / 其余 SSE+落库 ──
             # 2026-08-18 小健 P1实施: chunk 与 thought-start 同类(仅实时、不可回放), 改仅SSE不落库,
