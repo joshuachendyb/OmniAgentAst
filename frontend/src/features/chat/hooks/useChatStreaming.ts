@@ -6,6 +6,10 @@
 // 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): 拒绝/拦截/超时三路聚合 deniedStepSet(Map step→denied计数,
 //   deniedCount>=tools.length 停齿轮)——handleDenied(独立 user_rejected 回调) + sseOnError(blocked/timeout
 //   error 事件带 step 过滤聚合, 不触发红字/liveErrorText); 注入 useSSE 第10参 — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字痕迹): 聚合升级——
+//   ①markDenied 两参→三参(step, tool?, reason?): tool 有名时同步聚合 deniedEntries(Map step→[{tool,reason}] 去重),
+//   reason=user_rejected.content / blocked/timeout 的 error_message(两路拒绝理由可见);
+//   ②sseOnError 取 SSEError.tool_name、handleDenied 三参透传——承 ToolCallLine 被拒工具点名橘红灰字 — 小欧-2026-09-06
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -86,6 +90,10 @@ export interface UseChatStreamingReturn {
   //   error 事件仍不进 executionSteps(8.4.5 收敛设计不动), 仅此按 step 记计数 — 小欧-2026-09-06
   deniedSteps: ReadonlyMap<number, number>;
 
+  // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 被拒工具点名条聚合(Map: step→[{tool, reason}]),
+  //   user_rejected(独立事件, reason=content) + blocked/timeout(error 通道, reason=error_message) 两路 — 小欧-2026-09-06
+  deniedEntries: ReadonlyMap<number, Array<{ tool: string; reason: string }>>;
+
   // Refs - 用于累积流式内容（供外部访问）
   streamingContentRef: React.MutableRefObject<string>;
   streamingStepsRef: React.MutableRefObject<ExecutionStep[]>;
@@ -137,15 +145,33 @@ export const useChatStreaming = (
   const [deniedSteps, setDeniedSteps] = useState<ReadonlyMap<number, number>>(
     new Map()
   );
-  const markDenied = useCallback((step: number) => {
-    if (typeof step === 'number' && step >= 0) {
-      setDeniedSteps((prev) => {
-        const next = new Map(prev);
-        next.set(step, (next.get(step) ?? 0) + 1);
-        return next;
-      });
-    }
-  }, []);
+  // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 被拒工具点名条聚合(Map: step→[{tool,reason}] 按工具去重),
+  //   供 ToolCallLine 对被拒工具显橘红灰字点名单 — 小欧-2026-09-06
+  const [deniedEntries, setDeniedEntries] = useState<
+    ReadonlyMap<number, Array<{ tool: string; reason: string }>>
+  >(new Map());
+  const markDenied = useCallback(
+    (step: number, tool?: string, reason?: string) => {
+      if (typeof step === 'number' && step >= 0) {
+        setDeniedSteps((prev) => {
+          const next = new Map(prev);
+          next.set(step, (next.get(step) ?? 0) + 1);
+          return next;
+        });
+        // 2026-09-06 小欧 B2(6.4): tool 有名才聚点名条(拒绝事件带 tool_name 是灰字链路前提), 按工具去重 — 小欧-2026-09-06
+        if (tool && reason) {
+          setDeniedEntries((prev) => {
+            const next = new Map(prev);
+            const existing = next.get(step) ?? [];
+            if (!existing.some((e) => e.tool === tool))
+              next.set(step, [...existing, { tool, reason }]);
+            return next;
+          });
+        }
+      }
+    },
+    []
+  );
 
   // 2026-09-06 小欧 B2: 拦截(blocked)/超时(timeout) 仍走 error 通道(北京老陈裁定), 其错误对象现带 step ——
   //   在此过滤聚合 deniedSteps(不打断原有 onError 红字提示链路); user_rejected 已独立事件不含此路 — 小欧-2026-09-06
@@ -154,7 +180,9 @@ export const useChatStreaming = (
       if (typeof error === 'object' && error !== null) {
         const _e = error as import('@/types/sse').SSEError;
         if (_e.error_type === 'blocked' || _e.error_type === 'timeout') {
-          if (typeof _e.step === 'number') markDenied(_e.step);
+          // 2026-09-06 小欧 B2(6.4): 事件带被拒工具名与理由, 聚合点名条(deniedEntries) — 小欧-2026-09-06
+          if (typeof _e.step === 'number')
+            markDenied(_e.step, _e.tool_name, _e.error_message);
         }
       }
       onError?.(error);
@@ -164,8 +192,9 @@ export const useChatStreaming = (
 
   // 2026-09-06 小欧 B2: 独立拒绝事件回调(不占 error 通道, 无红字) — 小欧-2026-09-06
   const handleDenied = useCallback(
-    (step: number, _message: string) => {
-      markDenied(step);
+    (step: number, message: string, toolName?: string) => {
+      // 2026-09-06 小欧 B2(6.4): toolName 透传, 聚合点名条(reason=拒绝消息) — 小欧-2026-09-06
+      markDenied(step, toolName, message);
     },
     [markDenied]
   );
@@ -224,6 +253,7 @@ export const useChatStreaming = (
         streamingStepsRef.current = [];
         executionStepsRef.current = []; // 2026-08-28 小强 修复#14: 清空executionStepsRef, 防旧数据残留
         setDeniedSteps(new Map()); // 2026-09-06 小欧 B2: 新任务清空 denied 标记(与 executionSteps 同生命周期) — 小欧-2026-09-06
+        setDeniedEntries(new Map()); // 2026-09-06 小欧 B2(6.4): 新任务同步清空被拒工具点名条 — 小欧-2026-09-06
 
         // 调用useSSE的sendMessage
         return await sendStreamMessage(
@@ -429,6 +459,7 @@ export const useChatStreaming = (
     serverTaskId: serverTaskId || null,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
     deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合, 供流水线停齿轮 — 小欧-2026-09-06
+    deniedEntries, // 2026-09-06 小欧 B2(6.4): 被拒工具点名条集合, 供 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
 
     // Refs
     streamingContentRef,

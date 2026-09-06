@@ -30,6 +30,9 @@
 // 编辑历史: 2026-09-06 小欧 - B2(北京老陈定案: 灰字不醒目): 占位与中断两处提示文字改 Colors.ORANGE_RED 火山橘红#fa541c(未执行/被安全拦截/确认超时), 与 AuthorizationModal 告急色一致, 与齿轮橘同色带 — 小欧-2026-09-06
 // 编辑历史: 2026-09-06 小欧 - 北京老陈要求"去掉扳手留齿轮": 等待动画 SVG 由"齿轮+扳手组合"改标准单齿轮(Feather settings)——
 //   stroke线框风格/橙#fa8c16/1em旋转CSS(.tool-waiting-cursor)全部不变, 仅去掉扳手 path 换纯齿轮图标 — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字): 新增 deniedTools prop(本执行轮被拒
+//   工具点名条 [{tool,reason}]), 对被拒工具显火山橘红灰字点名单(对齐子行缩进/分支线, reason=拒绝理由);
+//   有结果时在 tools.map 后收尾、无结果时独立成行——全拒/部分拒被拒工具均点名留痕; 点名接管时占位/聚合灰字隐藏不重复 — 小欧-2026-09-06
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -59,6 +62,7 @@ interface ToolCallLineProps {
   highlight?: boolean; // HITL 联动高亮
   interrupted?: boolean; // 2026-09-06 小欧 B2: 用户拒绝/确认超时且无结果——停齿轮(替换等待动画) — 小欧-2026-09-06
   replay?: boolean; // 2026-09-06 小欧 B2(北京老陈裁定): 历史回放标志——历史数据不需要齿轮转动, 免齿轮动画 — 小欧-2026-09-06
+  deniedTools?: Array<{ tool: string; reason: string }>; // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 本执行轮被拒工具点名条(带拒绝理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
 }
 
 const ToolCallLine: React.FC<ToolCallLineProps> = ({
@@ -67,6 +71,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   highlight = false,
   interrupted = false,
   replay = false,
+  deniedTools, // 2026-09-06 小欧 B2(6.4)
 }) => {
   // 2026-09-01 小欧: 每工具独立展开状态(数组), 点某工具行任意位置只展开/收起该工具(北京老陈定案: 完全独立展开+独立观察)
   const [expanded, setExpanded] = useState<boolean[]>([]);
@@ -98,6 +103,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     : `调用 1 个工具`;
   const toolNameList = tools.map((t) => t.tool).join(', ');
   const firstLine = `${collectionLabel}  [${toolNameList}]`;
+  // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(本执行轮被拒工具名+理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
+  const deniedList = Array.isArray(deniedTools) ? deniedTools : [];
+  const deniedCount = deniedList.length;
   // 2026-09-03 小欧 BUG-19修复: 并行工具结果按tool_name配对(非索引), 防乱序到达时A工具显示B结果; 无tool_name则回退索引
   const getResultForIndex = (
     idx: number
@@ -191,7 +199,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         <div style={{ marginTop: Spacing.XS }}>
           {/* 执行等待动画(results 空=action 已到未执行完); observation 到即卸载, 同容器被子行盖住 */}
           {/* 2026-09-03 小欧 Bug-3/4: 动画仅 tools 非空且结果未达(results空)显示; 超时降级灰字提示; tools 空/结果空显占位防空壳 */}
-          {!hasResult && tools.length === 0 && (
+          {!hasResult && tools.length === 0 && deniedCount === 0 && (
             <span
               style={{
                 color:
@@ -202,18 +210,21 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               工具调用无结果(已全部被安全拦截或未返回)
             </span>
           )}
-          {!hasResult && tools.length > 0 && interrupted && (
-            // 2026-09-06 小欧 B2: action 先于弹窗→被拒/拦截/超时工具无 observation, 齿轮停转改提示字, 防空转
-            <span
-              style={{
-                color:
-                  Colors.ORANGE_RED /* 2026-09-06 小欧: 北京老陈定案 灰字改火山橘红更醒目 */,
-                fontSize: 12,
-              }}
-            >
-              未执行：未获用户允许／被安全拦截／确认超时
-            </span>
-          )}
+          {!hasResult &&
+            tools.length > 0 &&
+            interrupted &&
+            deniedCount === 0 && (
+              // 2026-09-06 小欧 B2: action 先于弹窗→被拒/拦截/超时工具无 observation, 齿轮停转改提示字, 防空转
+              <span
+                style={{
+                  color:
+                    Colors.ORANGE_RED /* 2026-09-06 小欧: 北京老陈定案 灰字改火山橘红更醒目 */,
+                  fontSize: 12,
+                }}
+              >
+                未执行：未获用户允许／被安全拦截／确认超时
+              </span>
+            )}
           {!hasResult && tools.length > 0 && !interrupted && !replay && (
             <span className="tool-waiting-cursor" aria-label="工具执行中">
               {/* 2026-09-06 小欧(北京老陈要求: 去掉扳手留齿轮): 齿轮+扳手组合SVG换标准单齿轮(Feather settings),
@@ -254,7 +265,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               // 三堂会审(2026-09-01): 状态缺失时用中性文字色、不显图标, 防误报成功
               const color = st ? statusColorMap[st] : Colors.TEXT.PRIMARY;
               const icon = st ? `${statusIconMap[st]} ` : '';
-              const isLast = i === tools.length - 1;
+              const isLast = i === tools.length - 1 && deniedCount === 0; // 2026-09-06 小欧 B2(6.4): 被拒点名行在 tools.map 后收尾, 有被拒行时执行行非末行(分支线对齐) — 小欧-2026-09-06
               const branch = isLast ? '└─' : '├─';
               const sub = isLast ? '   ' : '│  ';
               const isOpen = !!expanded[i];
@@ -360,6 +371,38 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       )}
                     </div>
                   )}
+                </div>
+              );
+            })}
+          {/* 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 被拒工具点名橘红灰字行——tools.map 之后收尾(有结果时),
+            全拒无结果时独立成行; 与执行工具子行同缩进/分支线, reason=拒绝理由链(用户拒绝/拦截/超时) — 小欧-2026-09-06 */}
+          {deniedCount > 0 &&
+            deniedList.map((d, di) => {
+              const dIsLast = di === deniedCount - 1;
+              const dBranch = dIsLast ? '└─' : '├─';
+              return (
+                <div
+                  key={`denied-${d.tool}`}
+                  style={{ marginTop: Spacing.XS, paddingLeft: Spacing.SM }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13,
+                      lineHeight: `${13 + Spacing.XS}px`,
+                      color:
+                        Colors.ORANGE_RED /* 2026-09-06 小欧: 火山橘红, 与齿轮同色带/AuthorizationModal告急色一致 */,
+                    }}
+                  >
+                    {dBranch} {d.tool}{' '}
+                    <span
+                      style={{
+                        color: Colors.ORANGE_RED,
+                        fontSize: 12,
+                      }}
+                    >
+                      未执行：{d.reason}
+                    </span>
+                  </div>
                 </div>
               );
             })}

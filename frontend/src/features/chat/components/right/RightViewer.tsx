@@ -42,6 +42,8 @@
 //   ①新增visibilitychange兜底——浏览器后台节流后切回可见立即重滚到底(对称左栏useChatScroll.ts:93-103);
 //   ②主滚动effect守卫由"仅live"放宽为"live或历史数据就绪"——后台任务final切历史(hasHistorySteps 0→1)后首帧滚底, 防右栏停半空;
 //   ③抽scrollToBottomNow统一滚底实现(RO/首帧/切历史/visibilitychange共用, DRY) — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定): deniedEntries prop 接收/透传 PipelineRenderer,
+//   承被拒工具点名条(橘红灰字)数据链路 — 小欧-2026-09-06
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -87,6 +89,7 @@ interface RightViewerProps {
   highlightToolName: string | null;
   frames: TaskMetaFrames; // 2026-09-02 小欧: useTaskInfo badge 派生输入(startInfo 判定 running)
   deniedSteps: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 透传 PipelineRenderer 停齿轮 — 小欧-2026-09-06
+  deniedEntries: ReadonlyMap<number, Array<{ tool: string; reason: string }>>; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 透传 ToolCallLine 灰字 — 小欧-2026-09-06
   onSettledRefresh?: () => void; // 结束沿通知外层刷新任务列表
 }
 
@@ -99,6 +102,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   highlightToolName,
   frames,
   deniedSteps,
+  deniedEntries, // 2026-09-06 小欧 B2(6.4)
   onSettledRefresh,
 }) => {
   const [detail, setDetail] = useState<TaskDetail | null>(null);
@@ -285,6 +289,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
             highlightToolName={highlightToolName}
             badge={isCurrentLive ? liveBadge : undefined} // 2026-09-02 小欧: live才传badge, 历史回放不显示等待圈
             deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
+            deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
           />
         </div>
       )}

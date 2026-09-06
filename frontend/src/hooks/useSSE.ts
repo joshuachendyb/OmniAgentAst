@@ -13,6 +13,8 @@
 // 编辑历史: 2026-09-06 小欧 方案C观察点1/2根治(北京老陈批准方案2后端标记): sessionStorage 恢复时剔除
 //   preview 预览行(仅SSE齿轮先行, 拦截/拒绝 action 本就不落库) — 刷新恢复与 DB 回放语义一致,
 //   根治"刷新后无灰字工具行"(观察点1)与"双条 action"(观察点2) — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定): onDenied 回调签名两参→三参
+//   (step, message, toolName?) 与 sseParser 三参回调契约对齐, 透传被拒工具名供点名条聚合 — 小欧-2026-09-06
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -287,7 +289,7 @@ export const useSSE = (
     backend_timeout?: number;
   }) => void,
   // 2026-09-06 小欧 B2(北京老陈裁定): 独立拒绝事件回调(user_rejected 不走 error 通道) — 小欧-2026-09-06
-  onDenied?: (step: number, message: string) => void
+  onDenied?: (step: number, message: string, toolName?: string) => void // 2026-09-06 小欧 B2(6.4): 三参带被拒工具名 — 小欧-2026-09-06
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);

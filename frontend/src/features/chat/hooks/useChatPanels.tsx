@@ -11,6 +11,8 @@
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ChatInput增传sessionId(CI-02跨会话草稿泄漏)+useChatPanels依赖同步 — 小欧-2026-09-02
 // 编辑历史: 2026-09-06 小欧 - B1「已放行」短时高亮: 入参加 recentConfirmedTool(可选Nullable), highlightToolName 合成
 //   authorizationPending?.toolName ?? recentConfirmedTool, useMemo 依赖数组纳入 recentConfirmedTool —— 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定): deniedEntries 解构/透传 RightViewer(deps 同步),
+//   承被拒工具点名条数据链路 — 小欧-2026-09-06
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -134,6 +136,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     metaFrames,
     serverTaskId,
     deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合透传 RightViewer → PipelineRenderer — 小欧-2026-09-06
+    deniedEntries, // 2026-09-06 小欧 B2(6.4): 被拒工具点名条透传 RightViewer → ToolCallLine — 小欧-2026-09-06
   } = chatStreaming;
   const { handleCancel, handleTogglePause } = chatTaskControl;
   const { handleSend } = chatSend;
@@ -238,6 +241,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             }
             frames={metaFrames} // 2026-09-02 小欧: badge 派生输入(startInfo 判定 running)
             deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
+            deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
             onSettledRefresh={refreshTasks}
           />
         ),
@@ -315,6 +319,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       currentResponse,
       metaFrames,
       deniedSteps, // 2026-09-06 小欧 B2(方案C): state 变化需触发面板重渲 — 小欧-2026-09-06
+      deniedEntries, // 2026-09-06 小欧 B2(6.4): state 变化需触发面板重渲 — 小欧-2026-09-06
       selectedDetail,
       loading,
       isPaused,

@@ -43,6 +43,8 @@
 // 编辑历史: 2026-09-06 小欧 - B2(J1缝隙修复, 北京老陈核验): tool段新增candidateCount(预览全量候选数), buildSegments去重时预览先到
 //   canonical后覆盖, candidateCount取预览候选总数并保留; allDenied分母由seg.action.tools(被canonical覆盖后缩为执行集)改为
 //   candidateCount —— 原代码2工具1拒+1执行中: denied=1>=执行集长度1 误判全拒停齿轮(违"1拒+1执行中→齿轮保持"裁定), 改后1<2齿轮保持 — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字): 新增 deniedEntries prop, tool 段按 step
+//   取出被拒工具点名条传入 ToolCallLine(部分拒/全拒对被拒工具显橘红灰字点名单) — 小欧-2026-09-06
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -187,6 +189,7 @@ interface PipelineRendererProps {
   headerNode?: React.ReactNode; // 头部·模型标识
   badge?: TaskBadge; // 2026-09-02 小欧: 任务活跃徽标(running/paused=任务仍进行), 撑起三个 waiting 丢失窗口
   deniedSteps?: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 供停齿轮判定 — 小欧-2026-09-06
+  deniedEntries?: ReadonlyMap<number, Array<{ tool: string; reason: string }>>; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 传 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
 }
 
 const PipelineRenderer: React.FC<PipelineRendererProps> = ({
@@ -196,6 +199,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   headerNode,
   badge, // 2026-09-02 小欧: 非 live 历史回放不传 → undefined → 不显示圈
   deniedSteps, // 2026-09-06 小欧 B2(方案C)
+  deniedEntries, // 2026-09-06 小欧 B2(6.4)
 }) => {
   const segs = buildSegments(steps);
   // 2026-09-04 小欧 - observation 去重：已消费孤儿抑制（单/多工具并行时孤儿与 ToolCallLine 重复）
@@ -349,6 +353,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
                 highlightToolName != null &&
                 !!seg.action.tools?.some((t) => t.tool === highlightToolName)
               }
+              deniedTools={// 2026-09-06 小欧 B2(6.4): 本执行轮被拒工具点名条(橘红灰字数据源, 按 step 取) — 小欧-2026-09-06
+              deniedEntries?.get(seg.action.step as number)}
             />
           );
         }
