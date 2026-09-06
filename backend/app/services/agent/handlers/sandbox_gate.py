@@ -35,6 +35,9 @@
 #   由 MetaStep(type="error", error_type="blocked") 改独立 type="user_rejected" 单独发(无 error_type/
 #   severity, 不占 error 通道/liveErrorText); 前端 onDenied 独立回调聚合 deniedStepSet 停齿轮;
 #   配套：react_dispatch 状态推断适配、agent_runner 仅SSE集合补入(不落库)。 — 小欧-2026-09-06
+# 2026-09-06 小欧 BUG-2 拒绝计数记错工具修复(react_dispatch 死胡同机制, A/B实证): sandbox_resolve
+#   拒绝分支构造 user_rejected 未传 tool_name(旧 error_type/blocked 亦不带, 计数一直落到主工具名下);
+#   [修复] user_rejected 事件补 tool_name=tool_name(被拒工具名, 拒绝语义自包含) — 小欧-2026-09-06
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -111,9 +114,10 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
     denied_list.append((tool_name, "沙箱预检未完成验证且用户拒绝执行", call))
     # 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 独立 type="user_rejected" 单独发 (与 safety_gate 拒绝路径同构)
+    # 2026-09-06 小欧 根因修复(b2 test_02/06/07): user_rejected 必须带被拒工具名 tool_name, 否则拒绝计数回退主工具致错键 — 小欧-2026-09-06
     return False, [agent._step_emitter.emit(MetaStep(
         step=step, type="user_rejected",
-        content=f"用户拒绝执行(预检未完成验证): {tool_name}"))]
+        content=f"用户拒绝执行(预检未完成验证): {tool_name}", tool_name=tool_name))]
 
 
 # ════════════════════════════════════════════════════════════

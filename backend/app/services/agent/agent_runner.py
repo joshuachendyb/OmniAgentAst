@@ -98,6 +98,14 @@
 #   通道路由 action 分支识别 _live_only 预览标记(handle_action 早发, tools=all_calls 仅SSE齿轮先行)——
 #   带标记跳过 _persist 落库(prev 不落), 无标记 canonical(tools=_exec_calls 真实执行集)照常 _persist;
 #   恢复 09-04"拦截/拒绝的action不落库"不变式 + 全拒步无"有action无observation"DB残步; total_steps 口径不变 — 小欧-2026-09-06
+# 2026-09-06 小欧 单写入口退役(_append→_publish 统一, 85214690a):
+#   startinfo/异常final/守卫补发/终态补发四处自产事件原 _append 直接追加 event_log, 与 publish
+#   (经 merge_meta_seq 分配 seq)并存为双写路径 → seq 分配竞态且同序事件来源分裂;
+#   [修复] 四处改走 _publish(buffer.publish 同源同序, stream_reader 按 seq 流读无破绽), _append 退役 — 小欧-2026-09-06
+# 2026-09-06 小欧 preview 不入 Prompt 日志(6009edc1b, P0-02 DB-Prompt 对账 2x 二次根因):
+#   B2方案C每轮双 action(preview 齿轮先行 + canonical), 订阅体对 preview(_live_only) 也调 log_step_yield →
+#   Prompt 日志比 DB 多 preview 行(2x 误报, P0-02 表 5.3);
+#   [修复] 订阅体补 `if not event_dict.get("_live_only")` 才 log_step_yield(Prompt 仅记业务 canonical 步) — 小欧-2026-09-06
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 

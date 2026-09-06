@@ -21,6 +21,10 @@
 #   由 MetaStep(type="error", error_type="user_rejected") 改独立 type="user_rejected" 单独发(无 error_type/
 #   severity, 不占 error 通道/liveErrorText); 前端 onDenied 独立回调聚合 deniedStepSet 停齿轮;
 #   配套：react_dispatch 状态推断适配(独立ttype计入可恢复拒绝计数)、agent_runner 仅SSE集合补入(不落库) — 小欧-2026-09-06
+# 2026-09-06 小欧 BUG-2 拒绝计数记错工具修复(react_dispatch 死胡同机制, A/B实证):
+#   真HITL拒绝分支构造 user_rejected 事件时未传 tool_name → react_dispatch 取 llm_response.
+#   tool_name(主工具) 兜底计数 → 拒绝累到主工具名下, 被拒工具读不完防呆的3次FAILED阈值;
+#   [修复] user_rejected 事件补 tool_name=_cn(被拒工具名, 拒绝语义自包含) — 小欧-2026-09-06
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -122,8 +126,10 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         # 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 独立 type="user_rejected" 单独发
                         #   (不挂 error_type/severity, 不占 error 通道); 仅 blocked(拦截)/timeout(超时) 走 error —
                         #   前端按独立事件聚合 deniedStepSet 停齿轮, error 通道不再承载 user_rejected
+                        # 2026-09-06 小欧 根因修复(b2 test_02/06/07): user_rejected 必须带被拒工具名 tool_name,
+                        #   否则 react_dispatch 回退主工具名 → 多工具并行拒绝死胡同计数记错键 — 小欧-2026-09-06
                         _events.append(agent._step_emitter.emit(MetaStep(
-                            step=step, type="user_rejected", content=f"用户拒绝执行工具: {_cn}"
+                            step=step, type="user_rejected", content=f"用户拒绝执行工具: {_cn}", tool_name=_cn
                         )))
                         _denied.append((_cn, "被用户拒绝执行", call))
                     continue  # was: return  — 小欧 2026-07-18 #12 fix
