@@ -38,6 +38,10 @@
 //   根治纯网络空闲断连(无paused)60s重连间隙badge=idle致waiting消失的第4窗口; displaySteps与badge透传不再因SSE瞬断切历史, waiting由badge撑住; PipelineRenderer waiting补 error 终态守卫
 // 编辑历史: 2026-09-03 小欧 12.6修复: isCurrentLive增_hasFinal守卫, final已到即转历史拉取, 防receiving=false+running badge永久卡live
 // 编辑历史: 2026-09-03 小沈 BUG-01/04修复修正: effect依赖liveSteps.length改hasLiveSteps(0→1触发一次, 后续chunk不重跑), 消scroll监听每chunk重挂载
+// 编辑历史: 2026-09-06 小欧 RG-1/RG-2(北京老陈定案直接改码, 文档: 前端问题统一分析-HITL弹窗顺序与后台滚动失效-小欧-2026-09-06):
+//   ①新增visibilitychange兜底——浏览器后台节流后切回可见立即重滚到底(对称左栏useChatScroll.ts:93-103);
+//   ②主滚动effect守卫由"仅live"放宽为"live或历史数据就绪"——后台任务final切历史(hasHistorySteps 0→1)后首帧滚底, 防右栏停半空;
+//   ③抽scrollToBottomNow统一滚底实现(RO/首帧/切历史/visibilitychange共用, DRY) — 小欧-2026-09-06
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -110,6 +114,8 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const _hasFinal = liveSteps.some((s) => s.type === 'final');
   // 2026-09-03 小沈 BUG-01/04修复修正: hasLiveSteps仅0→1变化时触发effect重跑(首帧pipelineEndRef挂载), 后续chunk增长由ResizeObserver驱动不重挂载
   const hasLiveSteps = liveSteps.length > 0;
+  // 2026-09-06 小欧 RG-2: 历史数据是否已就绪(0→1驱动主滚动effect重跑, 后台final切历史后滚底兜底) — 小欧-2026-09-06
+  const hasHistorySteps = historySteps.length > 0;
   const isCurrentLive =
     activeTaskId != null &&
     activeTaskId === serverTaskId &&
@@ -142,8 +148,21 @@ const RightViewer: React.FC<RightViewerProps> = ({
     }
     return null;
   }, []);
+  // 2026-09-06 小欧 RG-1/RG-2: 抽统一滚底(scrollToBottomNow)——主effect(RO/首帧/切历史)与visibilitychange兜底共用, DRY — 小欧-2026-09-06
+  const scrollToBottomNow = useCallback(() => {
+    if (userScrolledUpRef.current) return;
+    const container = findScrollContainer();
+    if (!container) return;
+    isProgramScrollingRef.current = true;
+    container.scrollTop = container.scrollHeight;
+    // microtask重置标志，让下一个scroll事件正常判断
+    Promise.resolve().then(() => {
+      isProgramScrollingRef.current = false;
+    });
+  }, [findScrollContainer]);
   useEffect(() => {
-    if (!isCurrentLive) return;
+    // RG-2: 守卫放宽——live 或 历史数据已就绪(后台任务final切历史后滚动兜底, 防右栏停半空) — 小欧-2026-09-06
+    if (!isCurrentLive && !hasHistorySteps) return;
     const container = findScrollContainer();
     const pipeline = pipelineEndRef.current;
     if (!container || !pipeline) return;
@@ -156,25 +175,32 @@ const RightViewer: React.FC<RightViewerProps> = ({
         threshold;
     };
     container.addEventListener('scroll', handleScroll, { passive: true });
-    // 内容高度变化驱动(覆盖新增step与打字机段逐字增长) + 首帧立即滚底
-    const stickToBottom = () => {
-      if (!userScrolledUpRef.current) {
-        isProgramScrollingRef.current = true;
-        container.scrollTop = container.scrollHeight;
-        // microtask重置标志，让下一个scroll事件正常判断
-        Promise.resolve().then(() => {
-          isProgramScrollingRef.current = false;
-        });
-      }
-    };
-    const ro = new ResizeObserver(stickToBottom);
+    // 内容高度变化驱动(覆盖新增step与打字机段逐字增长) + 首帧立即滚底(历史数据到达亦立即滚底)
+    const ro = new ResizeObserver(scrollToBottomNow);
     ro.observe(pipeline);
-    stickToBottom(); // 首帧/新内容到达: 用户未上翻即滚动到底 — 小欧 2026-09-02
+    scrollToBottomNow(); // 首帧/新内容到达: 用户未上翻即滚动到底 — 小欧 2026-09-02/09-06
     return () => {
       ro.disconnect();
       container.removeEventListener('scroll', handleScroll);
     };
-  }, [isCurrentLive, hasLiveSteps, findScrollContainer]);
+  }, [
+    isCurrentLive,
+    hasLiveSteps,
+    hasHistorySteps,
+    findScrollContainer,
+    scrollToBottomNow,
+  ]);
+  // RG-1: 浏览器后台节流后切回可见——visibilitychange 兜底重滚(左栏 useChatScroll.ts:93-103 已有, 右栏补对称) — 小欧-2026-09-06
+  useEffect(() => {
+    if (!isCurrentLive && !hasHistorySteps) return;
+    const handleVisibility = () => {
+      if (!document.hidden) scrollToBottomNow();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [isCurrentLive, hasHistorySteps, scrollToBottomNow]);
 
   // 拉取历史任务：C1+C2 并行；C2 空则 C3 按 message 降级（静态块降级为空，契约无通道）
   useEffect(() => {
