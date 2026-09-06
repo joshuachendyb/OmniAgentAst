@@ -231,6 +231,12 @@
 
 ## 五、LLM核心层（app/llm/）
 
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `create_payload_chunk` | 元事件载荷工厂: meta事件(retrying/error/usage/停顿)统一经 payload 随 chunk 直送, 废弃二元tuple协议(文档[6]2.5.1/5.9); 与取消/错误族工厂同列单行构造 | chunk_model: ModelRef, payload: Dict | StreamChunk |
+| `create_cancelled_chunk` | 取消响应工厂(取消语义, payload恒None) | chunk_model: ModelRef | StreamChunk |
+| `create_error_chunk` | 错误响应工厂(流异常/出错, payload恒None) | chunk_model, error, error_type="http_error" | StreamChunk |
+
 ---
 
 ## 六、使用示例

@@ -37,6 +37,7 @@ from app.llm.core import (
 from app.llm.core import (
     create_cancelled_chunk,
     create_error_chunk,
+    create_payload_chunk,
 )
 
 __all__ = [
@@ -51,4 +52,5 @@ __all__ = [
     "_resolve_exception",
     "create_cancelled_chunk",
     "create_error_chunk",
+    "create_payload_chunk",
 ]
