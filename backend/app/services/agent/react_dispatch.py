@@ -16,6 +16,11 @@
 #   槽(取轮内最后一条, 与旧"每次拒绝仅计一条"语义一致); ②推断分支改 `_EV_ERROR in seen_types or _EV_DENIED
 #   in seen_types`, err_type 按 event.type 判 user_rejected, 复用原 _RECOVERABLE_ERRORS 计数通道((tool,type)
 #   累计≥3→FAILED); ③blocked/timeout 仍走 error 分支行为不变; else"成功重置"仅真成功可达 — 小欧-2026-09-06
+# 2026-09-06 小欧 BUG-2 计数错键修复(问题挖掘文档六.6.2/6.3): ①计数 tool_name 优先读事件级 _kw["tool_name"]
+#   (拒绝事件自 2026-09-06 起带被拒工具名), 回退 llm_response.tool_name(旧事件/单工具兼容)——多工具并行拒绝
+#   精确分键, 不再全落主工具名下; ②成功重置改按本轮 LLM 实际发出工具集清桶(fc_context.tool_calls→function.name,
+#   与 llm_response_builder.py:41 同源; 顶层无 tool_calls, 候选diff字段已按真实结构核验修正),
+#   不再误用主工具名清错桶——被拒工具计数跨轮永不归零的病根消除 — 小欧-2026-09-06
 
 """react_dispatch — 类型分派 + 状态推断
 
@@ -117,7 +122,8 @@ async def _dispatch_handler(agent, llm_response):
             # (往往是参数问题, 换工具/换参数即可); 仅同一工具同一类拒绝累计≥3次才说明LLM
             # 陷入死胡同, 必须停止 loop → FAILED。故用 per-(tool,type) 字典。
             # 工具名缺失时不累计(无法分键, 避免空名合并误累计), 保持可恢复回THINKING, 不误杀。
-            _tool = llm_response.get("tool_name", "") or getattr(error_event, "tool_name", "")
+            # BUG-2修复(2026-09-06 小欧): tool_name 优先取事件级(被拒工具精确分键), 回退 llm_response(单工具/旧事件兼容) — 小欧-2026-09-06
+            _tool = _kw.get("tool_name", "") or llm_response.get("tool_name", "")
             if _tool:
                 _key = (str(_tool), str(err_type))
                 _deny = getattr(agent, "_deny_counts", {}) or {}
@@ -139,11 +145,20 @@ async def _dispatch_handler(agent, llm_response):
         # — 北京老陈 2026-07-13: 同工具成功后证明其未陷死胡同, 旧计数清零, 避免长会话里一次早已
         # 解决的历史拒绝在后续被误累计触发 FAILED(增强不退化, 逻辑无漏洞)。answer/final 步不重置。
         if llm_response.get("type") == "action":
-            _tool = llm_response.get("tool_name", "")
-            if _tool:
+            # BUG-2修复(2026-09-06 小欧, 问题挖掘文档六.6.3): 成功轮按本轮 LLM 实际发出的工具调用清桶
+            #   (并行多工具全清, 不再误用主工具名清错桶)——源=fc_context.tool_calls(OpenAI原生, 函数名在
+            #   function.name, 与 llm_response_builder.py:41 同源; 顶层无 tool_calls, 候选diff字段按真实结构修正);
+            #   无调用条目时回退 tool_name(旧格式兼容, 不空清不误清) — 小欧-2026-09-06
+            _tc_list = (llm_response.get("fc_context") or {}).get("tool_calls") or []
+            _tools = [tc.get("function", {}).get("name", "") for tc in _tc_list
+                      if tc.get("function", {}).get("name")]
+            if not _tools and llm_response.get("tool_name"):
+                _tools = [llm_response.get("tool_name")]
+            if _tools:
                 _deny = getattr(agent, "_deny_counts", {}) or {}
-                _deny.pop((str(_tool), "user_rejected"), None)
-                _deny.pop((str(_tool), "blocked"), None)
+                for _t in _tools:
+                    _deny.pop((str(_t), "user_rejected"), None)
+                    _deny.pop((str(_t), "blocked"), None)
                 agent._deny_counts = _deny
 
     # 4C(5.8.1): return _dispatch_events 置于状态推断之后(终态声明在主循环 LLM 轮内先行, 时序与现状一致) — 小欧-2026-09-06

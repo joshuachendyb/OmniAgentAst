@@ -38,6 +38,8 @@
 # 2026-09-06 小欧 BUG-2 拒绝计数记错工具修复(react_dispatch 死胡同机制, A/B实证): sandbox_resolve
 #   拒绝分支构造 user_rejected 未传 tool_name(旧 error_type/blocked 亦不带, 计数一直落到主工具名下);
 #   [修复] user_rejected 事件补 tool_name=tool_name(被拒工具名, 拒绝语义自包含) — 小欧-2026-09-06
+# 2026-09-06 小欧 BUG-2 拒绝计数错键修复补全(问题挖掘文档六.6.2): 与 user_rejected 同根——危险型拦截 blocked
+#   事件亦未带 tool_name(计数回退主工具名, 同键跨拦截累计漂移); [修复] blocked 事件补 tool_name=tool_name — 小欧-2026-09-06
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -94,7 +96,8 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         return False, [agent._step_emitter.emit(MetaStep(
             step=step, type="error",
             content=f"沙箱预检未通过: {pre.blocked_reason}",
-            error_type="blocked", severity="warn"))]
+            error_type="blocked", severity="warn",
+            tool_name=tool_name))]
     # needs_ruling: 改走网关(唯一暂停源头)。网关内统一:
     #   paused先于wait到达 / SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 — 小健 2026-09-05
     from app.services.agent.handlers.hitl_gateway import ConfirmSpec, hitl_confirm       # 同层调用(hitl→task单向, 无环) — 小欧 2026-09-06

@@ -231,6 +231,11 @@
 #   前端刷新恢复(sessionStorage)时剔除 type=action && preview 行——拦截/拒绝 action 本就不落库,
 #   恢复后不再出现"无灰字工具行"(观察点1)与"双条action"(观察点2), 与 DB 回放语义完全一致;
 #   实时预览行仍进 executionSteps(齿轮动画数据源), preview 字段对落库/路由零影响(落库只认 _live_only 判定) — 小欧-2026-09-06
+# 2026-09-06 小欧 BUG-1修复(问题挖掘文档六.6.1, 取证测试 test_01/08/09 红→绿): thought-start/thought 原仅 append
+#   _events 延迟发布, 预览 ActionStep 直接 publish 提前插队 → SSE/前端顺序错乱(思考正文逆到工具行下/被隔断)
+#   且 HITL 弹窗等待期思考不可见; [改法] thought 先行直接 publish(buffer 统一提前获取至 thought 前), 从 _events
+#   摘除防 react_step.py:485 二次 publish 双发; DB 落库不经 _events(agent_runner._scan L344 读 buffer.event_log
+#   已 publish 的 thought 落库, 无退化) — 小欧-2026-09-06
 """
 handle_action — action编排处理(门禁已拆出)
 
@@ -331,13 +336,21 @@ async def handle_action(agent, parsed: Dict) -> dict:
     # 2026-08-30 小欧 收口: 裸print→log_and_print(延续2026-07-23统一治理), 控制台镜像离线化 + [Action]文件留痕增强
     log_and_print(f"{time.strftime('%H:%M:%S')} [Action]step={step} ={call_result.tool_name}, pars:{params_short}")
 
-    # thought 步骤 — content=LLM推理内容, reasoning=内部思维过程 — 小欧 2026-07-01
-    _events.append(agent._step_emitter.emit(ThoughtStartStep(step=step)))   # 4A(5.6): yield→append — 小欧-2026-09-06
-    _events.append(agent._step_emitter.emit(ThoughtStep(
+    # BUG-1修复(2026-09-06 小欧, 问题挖掘文档六.6.1): thought-start/thought 先于预览落地(方案C契约
+    #   thought→action 前序) — 原实现 thought 仅 append _events 延迟发布, 预览 ActionStep 于 L367 直接 publish
+    #   提前插队 → SSE/前端顺序错乱(思考正文逆到工具行下/被隔断)且 HITL 弹窗等待期思考不可见;
+    #   [改法] thought 先行直接 publish(先于预览与弹窗), 同步从 _events 摘除, 防 react_step.py:485 二次 publish 双发;
+    #   DB 落库不经 _events(agent_runner._scan L344 读 buffer.event_log 已 publish 的 thought 落库, 无退化) — 小欧-2026-09-06
+    from app.services.task.task_state import get_stream_buffer  # 延迟import防环 — 小欧-2026-09-06
+    _buf = get_stream_buffer(agent.task_id)
+    if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05
+        raise RuntimeError(f"[handle_action] StreamBuffer缺失(task={agent.task_id})")
+    await _buf.publish(agent._step_emitter.emit(ThoughtStartStep(step=step)).to_dict())
+    await _buf.publish(agent._step_emitter.emit(ThoughtStep(
         step=step,
         content=parsed.get("thought", ""),
         reasoning=parsed.get("reasoning", ""),
-    )))  # 4A(5.6): yield→append — 小欧-2026-09-06
+    )).to_dict())
 
     # B2时序根治(北京老陈定案: action先发、弹窗后发, 单/多工具统一先发action): 在安全检查任一弹窗发出前,
     #   先把 ActionStep publish(齿轮先行; tools=全部call=all_calls, 含待确认/将被拦截工具), 拒绝/拦截/超时结果
@@ -351,10 +364,7 @@ async def handle_action(agent, parsed: Dict) -> dict:
             "target": _extract_target(c),
             "params": c.get("tool_params", {}) or {},
         } for c in call_result.all_calls]
-        from app.services.task.task_state import get_stream_buffer  # 延迟import防环 — 小欧-2026-09-06
-        _buf = get_stream_buffer(agent.task_id)
-        if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05
-            raise RuntimeError(f"[handle_action] StreamBuffer缺失(task={agent.task_id})")
+        # BUG-1修复(2026-09-06 小欧): buffer 已上移至 thought 前统一获取, 此处删除重复获取防冗余 — 小欧-2026-09-06
         _live_action = agent._step_emitter.emit(ActionStep(
             step=step,
             exec_type="single" if len(call_result.all_calls) == 1 else "multi",

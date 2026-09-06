@@ -25,6 +25,9 @@
 #   真HITL拒绝分支构造 user_rejected 事件时未传 tool_name → react_dispatch 取 llm_response.
 #   tool_name(主工具) 兜底计数 → 拒绝累到主工具名下, 被拒工具读不完防呆的3次FAILED阈值;
 #   [修复] user_rejected 事件补 tool_name=_cn(被拒工具名, 拒绝语义自包含) — 小欧-2026-09-06
+# 2026-09-06 小欧 BUG-2 拒绝计数错键修复补全(问题挖掘文档六.6.2): 与 user_rejected 同根——blocked(拦截)/timeout(超时)
+#   事件亦未带被拒工具名 tool_name, react_dispatch 计数同样回退主工具名;_deny_counts 同键跨拦截/超时累计漂移;
+#   [修复] blocked/timeout 事件均补 tool_name=_cn(拒绝语义自包含, react_dispatch 事件级优先取数) — 小欧-2026-09-06
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -76,7 +79,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 # 2026-08-28 小欧 决策日志审计: 拦截决策日志(SRP); 3B: blocked错误併入列表 — 小欧 2026-09-06
                 logger.warning(f"[action] step={step} blocked: tool={_cn} reason={safety_result.message}")
                 _events.append(agent._step_emitter.emit(MetaStep(
-                    step=step, type="error", content=safety_result.message, error_type="blocked", severity="warn"
+                    step=step, type="error", content=safety_result.message, error_type="blocked", severity="warn",
+                    tool_name=_cn
                 )))
                 _denied.append((_cn, f"被安全策略拦截: {safety_result.message}", call))
                 continue  # was: return  — 小欧 2026-07-18 #12 fix
@@ -118,7 +122,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         # #11 fix: 超时与拒绝分流 — 小欧 2026-07-18 (3B: 错误併入列表)
                         logger.warning(f"[action] step={step} timeout: tool={_cn}")
                         _events.append(agent._step_emitter.emit(MetaStep(
-                            step=step, type="error", content=f"工具确认超时未响应: {_cn}", error_type="timeout", severity="warn"
+                            step=step, type="error", content=f"工具确认超时未响应: {_cn}", error_type="timeout", severity="warn",
+                            tool_name=_cn
                         )))
                         _denied.append((_cn, "确认超时未响应", call))
                     else:
