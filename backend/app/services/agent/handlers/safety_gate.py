@@ -9,6 +9,11 @@
 #   唯一暂停源头; 函数保持 async generator 其余 yield 不动(收list/签名返回/sniff删归5.4.2三B);
 #   三处汇合点 run_sandbox_gate 加 main_confirmed 透传(141区传_bypass_confirmed/205区传True/226区缺省False);
 #   StreamBuffer缺失显式失败不静默; 仅凭auth_path授权不设trust_session门
+# 2026-09-06 小欧 步骤3B落盘(文档[6]5.4.2终态, 对应清单#4纯函数半#3纯函数半补):
+#   收list→签名->list, blocked/超时/拒绝错误与三处sandbox汇合事件全部并入 _events 列表(单一出口return),
+#   删sandbox resumed旁路判定(any(...=='resumed'))与事件透传plumbing(for _st: yield _st),
+#   函数由 async generator 收敛纯函数(返回事件列表), 零并发副作用; 等待/resolve/计时/暂停/恢复仍归网关;
+#   grant异常不阻断try/except三处保留, _out/_denied_out回传语义不变, handle_action消费点改 await 收列表
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -21,8 +26,8 @@ from app.services.agent.handlers.sandbox_gate import run_sandbox_gate
 
 __all__ = ["check_safety_and_confirm"]
 
-async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None, _denied_out: list = None):
-        """安全检查+HITL确认 — async generator: MetaStep先yield给前端,再等确认 — 小沈 2026-06-10
+async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None, _denied_out: list = None) -> list:
+        """安全检查+HITL确认 — 纯函数返回事件列表(MetaStep dict/replay), 3B终态(5.4.2收list) — 小欧 2026-09-06
 
         拒绝/拦截是可恢复的(符合人类认知: 拒绝≠失败), 不置终态FAILED:
         - 把"工具被拒绝/拦截"作为 observation 写进LLM历史(_add_denial_feedback), 让LLM换方案;
@@ -34,12 +39,15 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         #   _out过滤从按tool_name改按id(call)对象精确标识(同批同名工具1个被拒不再误杀);
         #   反馈推迟到调用方build_observation之后(_denied_out回传), 由_add_denial_feedback精确到call写,
         #   消除"会执行的同名工具被误标被拦截"与"assistant双重写入"的矛盾
+        # 2026-09-06 小欧 3B终态(文档[6]5.4.2): 事件只经 _events 单一列表路径返回(5.5纯函数零并发副作用),
+        #   删sandbox resumed旁路判定与事件透传plumbing; blocked/超时/拒绝错误并入列表, 签名落->list
         """
         from app.safety.tool_safety_checker import get_tool_safety_checker
         from app.tools.trust import resolve_skip
         safety_checker = get_tool_safety_checker()
 
         _denied = []
+        _events = []
         for call in all_calls:
             _cn = call.get("tool_name", "?")
             _cp = call.get("tool_params", {})
@@ -53,17 +61,17 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             # (2026-08-25 合规重构: 去嵌套闭包隐式耦合, Agent编排层落点, 三处汇合点共用, 每 call 恰好预检一次不重复)
 
             if safety_result.blocked:
-                # 2026-08-28 小欧 yield日志审计: 拦截决策日志(SRP)
+                # 2026-08-28 小欧 决策日志审计: 拦截决策日志(SRP); 3B: blocked错误併入列表 — 小欧 2026-09-06
                 logger.warning(f"[action] step={step} blocked: tool={_cn} reason={safety_result.message}")
-                yield agent._step_emitter.emit(MetaStep(
+                _events.append(agent._step_emitter.emit(MetaStep(
                     step=step, type="error", content=safety_result.message, error_type="blocked", severity="warn"
-                ))
+                )))
                 _denied.append((_cn, f"被安全策略拦截: {safety_result.message}", call))
                 continue  # was: return  — 小欧 2026-07-18 #12 fix
 
             if safety_result.requires_confirmation:
                 # 3A: 等待源头全收 hitl_gateway——create/wait/S1窗口/三处独立计时/trust_path/引用信组装 全部删,
-                #   paused/resumed 由网关 publish(事件唯一入口), 函数保持 async generator 其余yield不动 — 小欧 2026-09-06
+                #   paused/resumed 由网关 publish(事件唯一入口); 3B: 本函数纯函数化收list — 小欧 2026-09-06
                 from app.services.agent.handlers.hitl_gateway import ConfirmSpec, hitl_confirm  # 同层调用(hitl→task单向, 无环) — 小欧 2026-09-06
                 from app.services.task.task_state import get_stream_buffer                # 延迟import防环 — 小欧 2026-09-06
                 _buf = get_stream_buffer(agent.task_id)
@@ -85,31 +93,28 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                             grant_temp_auth(safety_result.auth_path, recursive=True)
                         except Exception as e:
                             logger.warning(f"[action] bypass grant_temp_auth失败仍放行: {e!r}")
-                    # v1.25 M3 插入点①: auto_confirm 汇合路径 — 沙箱预检最后闸门(统一入口, 3A仅透传main_confirmed) — 小健 2026-09-04/2026-09-06
+                    # v1.25 M3 插入点①: auto_confirm 汇合路径 — 沙箱预检最后闸门(统一入口) — 小健 2026-09-04/2026-09-06
                     _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied,
                                                          _bypass_confirmed)
-                    for _st in _steps:
-                        yield _st
+                    _events.extend(_steps)  # 3B: 汇合事件併入返回列表(透传plumbing删除) — 小欧 2026-09-06
                     if not _ok:
-                        continue
-                    if any(getattr(_s, "type", None) == "resumed" for _s in _steps):  # 3A保留: sniff归3B删
                         continue
                     continue
 
                 # 3A: 等待源头已收网关(上方requires_confirmation入口统一调hitl_confirm), 此处按verdict分流 — 小欧 2026-09-06
                 if not _verdict["confirmed"]:                     # verdict四键恒在(见5.1), 直接下标安全 — 小欧 2026-09-06
                     if _verdict["expired"]:
-                        # #11 fix: 超时与拒绝分流 — 小欧 2026-07-18 (3A: error仍yield, 形态不动)
+                        # #11 fix: 超时与拒绝分流 — 小欧 2026-07-18 (3B: 错误併入列表)
                         logger.warning(f"[action] step={step} timeout: tool={_cn}")
-                        yield agent._step_emitter.emit(MetaStep(
+                        _events.append(agent._step_emitter.emit(MetaStep(
                             step=step, type="error", content=f"工具确认超时未响应: {_cn}", error_type="timeout", severity="warn"
-                        ))
+                        )))
                         _denied.append((_cn, "确认超时未响应", call))
                     else:
                         logger.warning(f"[action] step={step} rejected: tool={_cn}")
-                        yield agent._step_emitter.emit(MetaStep(
+                        _events.append(agent._step_emitter.emit(MetaStep(
                             step=step, type="error", content=f"用户拒绝执行工具: {_cn}", error_type="user_rejected", severity="warn"
-                        ))
+                        )))
                         _denied.append((_cn, "被用户拒绝执行", call))
                     continue  # was: return  — 小欧 2026-07-18 #12 fix
 
@@ -118,17 +123,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     try:
                         from app.tools.security.temp_auth import grant_temp_auth
                         grant_temp_auth(safety_result.auth_path, recursive=True)
-                        # 2026-08-28 小欧 yield日志审计: 临时授权日志(SRP) — 保留授权留痕
+                        # 2026-09-06 小欧 3B: 保留授权留痕日志(决策日志SRP, 语义沿用2026-08-28审计)
                         logger.info(f"[action] step={step} resumed+auth: tool={_cn} path={safety_result.auth_path}")
                     except Exception as e:
                         logger.warning(f"[action] 确认后grant_temp_auth失败不阻断: {e!r}")
-                # v1.25 M3 插入点②: 用户确认汇合路径 — 2026-09-04 小健 DRY: 统一入口(3A仅透传main_confirmed=True) — 小欧 2026-09-06
+                # v1.25 M3 插入点②: 用户确认汇合路径 — 2026-09-04 小健 DRY: 统一入口 — 小欧 2026-09-06
                 _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied, True)
-                for _st in _steps:
-                    yield _st
+                _events.extend(_steps)  # 3B: 用户确认汇合事件併入返回列表(透传plumbing删除) — 小欧 2026-09-06
                 if not _ok:
-                    continue
-                if any(getattr(_s, "type", None) == "resumed" for _s in _steps):  # 3A保留: sniff归3B删
                     continue
                 continue
 
@@ -145,8 +147,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
 
             # v1.25 M3 插入点③: 循环体末尾兜底(仅 safe 直通/会话信任豁免触达) — 2026-09-04 小健 DRY: 统一入口
             _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied)
-            for _st in _steps:
-                yield _st
+            _events.extend(_steps)  # 3B: 兜底汇合事件併入返回列表(透传plumbing删除) — 小欧 2026-09-06
             if not _ok:
                 continue
 
@@ -160,4 +161,6 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         #   由_add_denial_feedback精确到call写(避免在execute前写tool result导致assistant重复/同名误标)
         if _denied_out is not None:
             _denied_out[:] = list(_denied)
+
+        return _events  # 3B: 单一列表出口返回事件(纯函数零并发副作用) — 小欧 2026-09-06
 

@@ -276,7 +276,7 @@ async def handle_action(agent, parsed: Dict):
     处理管线（遵守SLAP，逐层递进）：
     1. _build_call_list → 解析parsed为all_calls
     2. emit ThoughtStep → LLM推理内容
-    3. check_safety_and_confirm → 安全检查+HITL（async generator）
+    3. check_safety_and_confirm → 安全检查+HITL（3B收list, 返回事件列表逐条外发）
     4. build retry notification callback → 收集重试通知
     5. execute_tools → 三分支执行（单/并行/顺序）
     6. 工具重试由 tool_retry_engine 内部执行（隐蔽，前端不可见）— 小欧 2026-07-13
@@ -317,9 +317,10 @@ async def handle_action(agent, parsed: Dict):
     # 2026-08-11 小欧 fix D2: 传_denied_out收集被拒call(tool_name,reason,call), 反馈在build_observation后写
     _safe_calls = []
     _denied_list = []
-    async for event in check_safety_and_confirm(agent, call_result.all_calls, step,
-                                                call_result.fc_context,
-                                                _out=_safe_calls, _denied_out=_denied_list):
+    _events = await check_safety_and_confirm(agent, call_result.all_calls, step,
+                                             call_result.fc_context,
+                                             _out=_safe_calls, _denied_out=_denied_list)  # 3B(5.4.2): 纯函数返回事件列表, await收列表再逐条外发 — 小欧 2026-09-06
+    for event in _events:
         yield event
     _exec_calls = _safe_calls if _safe_calls else []
 
