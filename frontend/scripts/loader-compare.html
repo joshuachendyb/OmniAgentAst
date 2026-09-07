@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>齿轮动画方案对比 - 老陈选型</title>
+  <style>
+    body { font-family: 'Microsoft YaHei', sans-serif; background: #f5f5f5; padding: 40px; }
+    .card {
+      display: inline-block; vertical-align: top; width: 220px; margin: 16px;
+      background: #fff; border-radius: 12px; padding: 24px 16px; text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      cursor: pointer; transition: box-shadow 0.2s;
+    }
+    .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+    .card.selected { box-shadow: 0 0 0 3px #1677ff; }
+    .icon-box {
+      height: 80px; display: flex; align-items: center; justify-content: center;
+    }
+    .icon-box svg { width: 1.1em; height: 1.1em; }
+    .label { margin-top: 16px; font-size: 14px; font-weight: 600; color: #333; }
+    .desc { margin-top: 8px; font-size: 12px; color: #888; line-height: 1.5; }
+    h1 { font-size: 22px; color: #333; margin-bottom: 8px; }
+    p { font-size: 14px; color: #666; margin-bottom: 24px; }
+
+    /* 当前齿轮 */
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+    .spin { display: inline-block; animation: spin 1s linear infinite; }
+
+    /* 方案A: 齿轮加缺口+加速 */
+    .spin-a { display: inline-block; animation: spin 0.7s linear infinite; }
+
+    /* 方案B: 弧段loader */
+    .spin-b { display: inline-block; animation: spin 1s linear infinite; }
+
+    /* 方案C: 三弧loader */
+    .spin-c { display: inline-block; animation: spin 0.8s ease-in-out infinite; }
+
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-top: 10px; }
+    .tag-now { background: #e8e8e8; color: #666; }
+    .tag-rec { background: #e6f7ff; color: #1677ff; }
+  </style>
+</head>
+<body>
+
+  <h1>工具执行等待图标对比</h1>
+  <p>当前是 <b>Feather 齿轮</b>（settings），对称图形旋转时视觉变化弱，看起来不清楚。<br>下面 3 个候选都是橙色 #fa8c16，选一个你喜欢的。</p>
+
+  <!-- 当前齿轮 -->
+  <div class="card" onclick="pick(this,0)">
+    <div class="icon-box">
+      <span class="spin">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fa8c16" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </span>
+    </div>
+    <div class="label">当前齿轮</div>
+    <div class="desc">Feather settings<br>1em(14px) / 1s匀速</div>
+    <span class="tag tag-now">现状</span>
+  </div>
+
+  <!-- 方案A: 弧段loader -->
+  <div class="card" onclick="pick(this,1)">
+    <div class="icon-box">
+      <span class="spin-b">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fa8c16" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v4"/>
+          <path d="M12 18v4"/>
+          <path d="M4.93 4.93l2.83 2.83"/>
+          <path d="M16.24 16.24l2.83 2.83"/>
+          <path d="M2 12h4"/>
+          <path d="M18 12h4"/>
+          <path d="M4.93 19.07l2.83-2.83"/>
+          <path d="M16.24 7.76l2.83-2.83"/>
+        </svg>
+      </span>
+    </div>
+    <div class="label">方案 A：弧段 loader</div>
+    <div class="desc">Feather loader<br>三段弧旋转，8px/1s<br>经典转圈，视觉重心偏移明显</div>
+    <span class="tag tag-rec">推荐</span>
+  </div>
+
+  <!-- 方案B: Ant Design LoadingOutlined 三弧 -->
+  <div class="card" onclick="pick(this,2)">
+    <div class="icon-box">
+      <span class="spin-c">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 1024 1024" fill="#fa8c16">
+          <path d="M512 64a32 32 0 0 1 32 32v192a32 32 0 0 1-64 0V96a32 32 0 0 1 32-32zm0 640a32 32 0 0 1 32 32v192a32 32 0 1 1-64 0V736a32 32 0 0 1 32-32zM195.2 195.2a32 32 0 0 1 45.248 0L376.32 331.008a32 32 0 0 1-45.248 45.248L195.2 240.448a32 32 0 0 1 0-45.248zm452.544 452.544a32 32 0 0 1 45.248 0l135.872 135.872a32 32 0 0 1-45.248 45.248L647.744 692.992a32 32 0 0 1 0-45.248zM64 512a32 32 0 0 1 32-32h192a32 32 0 0 1 0 64H96a32 32 0 0 1-32-32zm640 0a32 32 0 0 1 32-32h192a32 32 0 1 1 0 64H736a32 32 0 0 1-32-32zM195.2 828.8a32 32 0 0 1 0-45.248l135.872-135.872a32 32 0 0 1 45.248 45.248L240.448 828.8a32 32 0 0 1-45.248 0zm452.544-452.544a32 32 0 0 1 0-45.248L512 195.072a32 32 0 0 1 45.248-45.248l135.872 135.872a32 32 0 0 1-45.248 45.248L647.744 376.256z"/>
+        </svg>
+      </span>
+    </div>
+    <div class="label">方案 B：antd 三弧</div>
+    <div class="desc">Ant Design LoadingOutlined<br>三段弧带渐变，ease-in-out<br>与 antd 生态一致</div>
+  </div>
+
+  <!-- 方案C: 简单圆弧 loader（Notion/Linear 风格）-->
+  <div class="card" onclick="pick(this,3)">
+    <div class="icon-box">
+      <span class="spin-b" style="animation-duration:0.9s">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fa8c16" stroke-width="2.5" stroke-linecap="round">
+          <path d="M12 2a10 10 0 0 1 10 10" opacity="1"/>
+          <path d="M12 2a10 10 0 1 0 10 10" opacity="0.2"/>
+        </svg>
+      </span>
+    </div>
+    <div class="label">方案 C：圆弧 loader</div>
+    <div class="desc">单弧+尾迹渐变<br>Notion/Linear 风格<br>0.9s，简洁优雅</div>
+  </div>
+
+  <script>
+    function pick(el, idx) {
+      document.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      const names = ['当前齿轮(1em/1s)', '方案A: 弧段loader(1s)', '方案B: antd三弧(0.8s)', '方案C: 圆弧loader(0.9s)'];
+      document.title = '已选: ' + names[idx];
+    }
+  </script>
+
+</body>
+</html>
