@@ -9,6 +9,12 @@
 #   无终态兜底/L223 不可恢复error); 主循环消费改 await _process_single_step 拿 list(5.8.2) 逐条 publish;
 #   done.set() 两处补置: max_steps<=0 分支(try 前 return 不进 finally, 原 done 仅 finally 置位→消费订阅永不退出挂死)
 #   与 finally 各一次, 消费订阅 done.is_set() 退出 — 小欧-2026-09-06
+# 2026-09-07 小欧 4.4.2 thought-start 第1发射点(时序根治 前端消息分类处理分析及设计-小欧-2026-09-06.md 4.4.2):
+#   [问题] 旧 5 处 thought-start 发射点(handle_action×1 + handle_answer×4)均在 LLM 响应之后发(错),
+#          前端 waiting 图标时序错乱(obs 到即收/收尾轮误亮); 本文件原无 thought-start 发射;
+#   [改法] 新增进 loop 前(while 前)第 1 发射点, step=agent.llm_call_count or 1(首个 thought 步号, 避开 start 0);
+#          与 handle_action 每工具轮 observation 后各 1 个合计=loop 内调工具次数+1(发射公式);
+#          max_steps<=0 提前分支(main中该分支在本点之前 return)不发 — 无终态无害信号; 纯实时不落库(§10.3.3(1)) — 小欧-2026-09-07
 
 """react_loop — ReAct 循环核心(薄调度)
 
@@ -20,7 +26,7 @@
 from typing import Any, Dict, List, Optional
 from app.logger import logger
 from app.config import get_config
-from app.services.agent.steps import FinalStep, MetaStep
+from app.services.agent.steps import FinalStep, MetaStep, ThoughtStartStep  # 4.4.2 2026-09-07 小欧 ThoughtStartStep新增(进 loop 前发射点)
 from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_cancelled
 from app.services.agent.initialize_run_state import initialize_run_state
 from app.services.agent.start_step import assemble_start_step as _assemble_start_step
@@ -117,6 +123,13 @@ async def run_react_cycle(
         _buf.done.set()  # 5.8.3修正: 本分支 try 前 return 不进 finally, done 需在此置位, 否则消费订阅永不退出挂死 — 小欧-2026-09-06
         _finalize_cycle(agent)
         return
+
+    # 4.4.2 thought-start 第1发射点(2026-09-07 小欧, 时序根治 前端消息分类处理分析及设计 4.4.2[9]):
+    #   进 loop 前(首个可见轮 LLM 请求之前)发第 1 个等待信号 — 前缀"等待第一个 thought 出现";
+    #   与 handle_action 每工具轮 observation 后各 1 个合计=loop 内调工具次数+1(发射公式);
+    #   [时序根治] 旧 5 点均在 LLM 响应后发(错); 本点在请求前发;
+    #   retrying 空轮/真空重试(不可见中间轮)不进本代码路径不加发; 纯实时不落库(§10.3.3(1)) — 小欧-2026-09-07
+    await _publish(agent._step_emitter.emit(ThoughtStartStep(step=agent.llm_call_count or 1)).to_dict())
 
     try:
         while agent.llm_call_count < max_steps:

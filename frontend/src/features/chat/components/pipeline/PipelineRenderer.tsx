@@ -43,6 +43,13 @@
 // 编辑历史: 2026-09-06 小欧 - B2(J1缝隙修复, 北京老陈核验): tool段新增candidateCount(预览全量候选数), buildSegments去重时预览先到
 //   canonical后覆盖, candidateCount取预览候选总数并保留; allDenied分母由seg.action.tools(被canonical覆盖后缩为执行集)改为
 //   candidateCount —— 原代码2工具1拒+1执行中: denied=1>=执行集长度1 误判全拒停齿轮(违"1拒+1执行中→齿轮保持"裁定), 改后1<2齿轮保持 — 小欧-2026-09-06
+// 编辑历史: 2026-09-07 小欧 - 4.4.2 thought-start→waiting 段(时序根治 前端消息分类处理分析及设计-小欧-2026-09-06.md 4.4.2):
+//   ①union 新增 {kind:'waiting', step?} 段——thought-start 由"break 丢弃"改为落段(信号真正驱动图标, 取代条件推断);
+//   ②appendToLast 就地覆盖 waiting——首个内容(chunk/thought)到达, waiting 段原位变 thinking/text, 图标位变文字(内容覆盖制);
+//   ③渲染分支门控: waiting 仅"末段+taskActive"亮圈(非末段/历史回放 taskActive=false 自动灭, 杜绝常驻);
+//   UI 观感机制不变(该亮照亮、内容到即消失), showGreenCircle 保留(空容器/obs 窗口), waiting 为末段时其条件不成立无双圈 — 小欧-2026-09-07
+// 编辑历史: 2026-09-07 小欧 - 4.4.2 DRY 重构(北京老陈审查, 10大规范): 等待图标 SVG markup 两处重复
+//   (waiting 段渲染分支 + showGreenCircle 兜底) → 抽唯一 WaitingIcon 组件共用; 行为零变化(测试全绿前提下, 设计3.4原则七) — 小欧-2026-09-07
 // 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字): 新增 deniedEntries prop, tool 段按 step
 //   取出被拒工具点名条传入 ToolCallLine(部分拒/全拒对被拒工具显橘红灰字点名单) — 小欧-2026-09-06
 /**
@@ -83,10 +90,29 @@ export type PipelineSegment =
       candidateCount: number; // 2026-09-06 小欧 B2(J1修复): 该step候选工具总数(预览全量), 供allDenied整批判定 —— canonical覆盖后action.tools缩为执行集, 不得作分母(1拒+1执行中会误停齿轮) — 小欧-2026-09-06
     }
   | { kind: 'obs'; step: ExecutionStep }
-  | { kind: 'error'; step: ExecutionStep };
+  | { kind: 'error'; step: ExecutionStep }
+  | { kind: 'waiting'; step?: number }; // 4.4.2(2026-09-07 小欧): thought-start 落段, 可被首个内容覆盖接管
 
 // 可承载 sameStep 的段(thinking/text) — 2026-08-30 小欧 三堂会审: union 含 sameStep 的仅两类, 抽取避免写包任一段
 type TextishSegment = Extract<PipelineSegment, { kind: 'thinking' | 'text' }>;
+
+// 4.4.2(2026-09-07 小欧, 10大规范-复用优先/DRY): 等待图标唯一 SVG 定义 —
+//   waiting 段渲染分支(L259)与 showGreenCircle 兜底(L419)两处共用, 杜绝图标 markup 重复 — 小欧-2026-09-07
+const WaitingIcon: React.FC = () => (
+  <span className="waiting-cursor" aria-label="等待下一个思考内容">
+    <svg
+      width="1.4em"
+      height="1.4em"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#52c41a"
+      strokeWidth={2}
+      strokeLinecap="round"
+    >
+      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </svg>
+  </span>
+);
 
 /** 纯函数：业务步骤 -> 顺序段（可单测） */
 export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
@@ -96,6 +122,12 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
     text: string
   ): TextishSegment => {
     const last = segs[segs.length - 1];
+    // 4.4.2(2026-09-07 小欧): 末段为 waiting(首列等待图标)时, 首个内容就地覆盖接管(图标位变文字)
+    if (last && last.kind === 'waiting') {
+      const updated = { kind, text } as TextishSegment;
+      segs[segs.length - 1] = updated;
+      return updated;
+    }
     if (last && last.kind === kind) {
       const updated = { ...last, text: last.text + text } as TextishSegment;
       segs[segs.length - 1] = updated;
@@ -108,7 +140,8 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
   for (const s of steps) {
     switch (s.type) {
       case 'thought-start':
-        break; // 光标信号由 streaming prop 承载，不产出内容
+        segs.push({ kind: 'waiting', step: s.step }); // 4.4.2(2026-09-07 小欧): 产 waiting 段, 首个内容到达被覆盖
+        break;
       case 'chunk':
         if (s.is_reasoning) appendToLast('thinking', s.content ?? '');
         else appendToLast('text', s.content ?? '');
@@ -244,6 +277,16 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
     >
       {headerNode}
       {segs.map((seg, i) => {
+        if (seg.kind === 'waiting') {
+          // 4.4.2(2026-09-07 小欧): waiting 段首列亮等待图标; 仅"末段+taskActive"才显示,
+          //   final/error/停止后非末段自动灭, 杜绝常驻
+          if (i !== segs.length - 1 || !taskActive) return null;
+          return (
+            <div key={`waiting-${i}`} style={{ margin: stepMargin(false) }}>
+              <WaitingIcon />
+            </div>
+          );
+        }
         if (seg.kind === 'thinking') {
           // 2026-09-02 小欧 · 北京老陈定案: 光标仅亮在"最后一段"(打字机末段), 旧 thinking 段完成即灭
           const cursor = streaming && i === lastThink && i === segs.length - 1;
@@ -388,19 +431,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
             margin: stepMargin(false),
           }}
         >
-          <span className="waiting-cursor" aria-label="等待下一个思考内容">
-            <svg
-              width="1.4em"
-              height="1.4em"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#52c41a"
-              strokeWidth={2}
-              strokeLinecap="round"
-            >
-              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-            </svg>
-          </span>
+          <WaitingIcon />
         </div>
       )}
     </div>
