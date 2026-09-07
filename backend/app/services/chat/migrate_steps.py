@@ -16,117 +16,28 @@
 #    历史迁移漏带此列导致 ai_message_id 全空, 幂等仅回填为空的行)
 # 2026-08-27 小欧 阶段3(chat_messages表退役): migrate_execution_steps_status 新增"表存在"守卫(_table_exists), 表已DROP则跳过迁移, 防 PRAGMA table_info(chat_messages) 表不存在时报 no such table
 # 2026-08-27 小欧 阶段3(chat_messages表退役)清理: 整删migrate_execution_steps_status死函数(全backend无调用方)及其MIGRATION_NAME常量、migrate_v2_chat_restructure块5/6/7(chat_messages双列/回灌chat_user_message/chat_task_steps, 表已DROP永跳过)死分支; scripts/migrate_utc_to_local.py与migrate_time_format.py(硬编码引用已退役chat_messages列)删除; 系统对该表零残留运行代码引用
+# 2026-07-18 小欧 #5 fix: _needs_migration final分支补齐response字段(与_migrate_one_step一致); 取消文本仅存response的历史消息不再漏迁移误判完成(恢复docstring改写时误删的第二板块同条记录, 禁止删除历史)
+# 2026-09-07 小欧 4.4.1(B7/B8): 规则#3 incident_value=cancelled 改产 type=final+outcome=cancelled; 规则#4 旧取消FinalStep 改原地补 outcome=cancelled(不再重建 type=cancelled dict, 保字段不丢)
+# 2026-09-07 小欧 4.4.1旧case清零(北京老陈裁定删死代码): 删 _needs_migration/_migrate_one_step/_confirm_id_of 三死函数及 typing/json_utils/storage 死导入(驱动 migrate_execution_steps_status 已于 2026-08-27 删除, 零调用方); 旧取消行改写另立新一次性行迁移 migrate_cancelled_rows_to_final 承接
+# 2026-09-07 小欧 4.4.1(B7/B8): 规则#3 incident_value=cancelled 改产 type=final+outcome=cancelled;
+#   规则#4 旧取消 FinalStep 改原地补 outcome=cancelled(不再重建 type=cancelled dict, 保字段不丢);
+#   模块 docstring 目标表示同步; _needs_migration 检测条件不变(两类旧标记仍需迁移, 仅目标表示变)
 """
-migrate_steps — execution_steps 一次性数据迁移
+migrate_steps — 数据迁移
 
-背景: v3.2 终态 Step 统一约定上线前, 历史 chat_messages.execution_steps 存在旧表示:
-  - error 末步带 recoverable 布尔(已废弃)
-  - 生命周期信号用 step.type='incident' + incident_value('cancelled'/'retrying'/'paused')
-  - HITL 用 authorization_required=True
-  - 取消终态曾用 FinalStep(type='final', content 含'已取消')
+背景: 4.4.1(2026-09-07)前取消终态曾用 type='cancelled' 事件步; 4.4.1 起取消收尾单一由
+type=final+outcome=cancelled 承担, 前端不再消费 cancelled 事件。本模块提供
+migrate_cancelled_rows_to_final, 在 init_chat_db 末尾幂等执行一次, 将
+chat_task_steps.step_json 中 type='cancelled' 的历史行改写为
+type=final+outcome=cancelled(content/timestamp/step 原样保留), 与运行期新契约同口径。
+改写后徽章推导(useTaskInfo 认 final+cancelled)与终态推导(derive_status_from_steps 读
+最后一条 final)对历史取消消息恢复正确。
 
-本模块在 init_chat_db 末尾幂等执行一次, 将上述旧表示改写为新统一表示:
-  - 删 recoverable
-  - incident → type=incident_value(value 注入 step)
-  - authorization_required → MetaStep(type='paused', confirm_id=...)
-  - 旧取消 FinalStep → MetaStep(type='cancelled')
-
-一次性守卫(小欧 2026-07-13): 用 chat 库 schema_migrations 表登记"已执行",
-跑过一次后续启动直接跳过全表扫描。修复前该迁移每次启动无条件全表扫描
-2.5GB 聊天库(3107 行), 单次耗时 ~25s, 是启动变慢根因; 加守卫后启动回到 <1s。
-
-10规范(DRY): 复用 json_utils.parse_json / safe_json_dumps
-小欧 2026-07-13
-# 编辑历史:
-# 2026-07-18 小欧 #5 fix: _needs_migration final分支补齐response字段(与_migrate_one_step一致); 取消文本仅存response的历史消息不再漏迁移误判完成
+一次性守卫: 用 chat 库 schema_migrations 表登记"已执行",
+跑过一次后续启动直接跳过全表扫描(沿用 2026-07-13 守卫机制)。
 """
-
-from typing import Any, Dict, List, Optional
 
 from app.logger import logger
-from app.utils.json_utils import parse_json, safe_json_dumps
-from app.services.chat.storage import derive_status_from_steps
-
-
-def _needs_migration(steps: List[dict]) -> bool:
-    """判断是否含旧标记, 决定是否需要改写(幂等)"""
-    for s in steps:
-        if not isinstance(s, dict):
-            continue
-        if "recoverable" in s:
-            return True
-        if "authorization_required" in s:
-            return True
-        if s.get("type") == "incident":
-            return True
-        if s.get("type") == "final":
-            text = (s.get("content") or "") + (s.get("response") or "") + (s.get("reason") or "")
-            if "已取消" in text or "取消" in text:
-                return True
-    return False
-
-
-def _confirm_id_of(step: dict) -> str:
-    """从 HITL step 提取 confirm_id(兼容 confirm_data / data 两种包裹) — 小欧 2026-07-13"""
-    cid = step.get("confirm_id")
-    if cid:
-        return str(cid)
-    for bucket in ("confirm_data", "data"):
-        wrapper = step.get(bucket)
-        if isinstance(wrapper, dict) and wrapper.get("confirm_id"):
-            return str(wrapper.get("confirm_id"))
-    return ""
-
-
-def _migrate_one_step(step: dict) -> dict:
-    """改写单条 step; 无旧标记则原样返回"""
-    if not isinstance(step, dict):
-        return step
-
-    # 1) error 末步 recoverable 删除
-    if "recoverable" in step:
-        step.pop("recoverable", None)
-
-    # 2) HITL authorization_required → MetaStep(paused)
-    if step.get("authorization_required"):
-        step.pop("authorization_required", None)
-        # 兼容旧 step 把工具信息放在顶层或 data 包裹两种表示 — 小欧 2026-07-13
-        _data = step.get("data") if isinstance(step.get("data"), dict) else {}
-        return {
-            "type": "paused",
-            "step": step.get("step"),
-            "timestamp": step.get("timestamp"),
-            "content": step.get("content") or "等待用户确认授权",
-            "confirm_id": _confirm_id_of(step),
-            "tool_name": step.get("tool_name") or _data.get("tool_name"),
-            "params": step.get("params") or _data.get("params"),
-            "safety_level": step.get("safety_level") or _data.get("safety_level"),
-        }
-
-    # 3) incident → type=incident_value
-    if step.get("type") == "incident":
-        incident_value = step.get("incident_value")
-        step.pop("incident_value", None)
-        new_type = incident_value if incident_value in ("cancelled", "retrying", "paused") else "incident"
-        step["type"] = new_type
-        if "value" in step:
-            step.setdefault("content", step.pop("value"))
-        return step
-
-    # 4) 旧取消 FinalStep → MetaStep(cancelled)
-    # 小沈 2026-07-13: 旧 FinalStep 取消文本可能在 content 或 response 字段(取决于历史时期),
-    # 必须两者都查, 否则用 response 存储的取消 FinalStep 不会被识别, 迁移后仍为 final(误判完成)
-    if step.get("type") == "final":
-        text = (step.get("content") or "") + (step.get("response") or "") + (step.get("reason") or "")
-        if "已取消" in text or "取消" in text:
-            return {
-                "type": "cancelled",
-                "step": step.get("step"),
-                "timestamp": step.get("timestamp"),
-                "content": step.get("content") or step.get("response") or "任务已被取消",
-            }
-
-    return step
 
 
 def _ensure_migrations_table(conn):
@@ -249,4 +160,53 @@ def migrate_v2_chat_restructure(get_conn) -> bool:
         _mark_migration_applied(conn, V2_MIGRATION_NAME)
     logger.info(f"[migrate] {V2_MIGRATION_NAME} 结构迁移完成")
     logger.info(f"[启动耗时] migrate_v2_chat_restructure: {_time.time()-_t0:.3f}s")
+    return True
+
+
+CANCELLED_ROWS_MIGRATION_NAME = "migrate_cancelled_rows_to_final"
+
+
+def migrate_cancelled_rows_to_final(get_conn) -> bool:
+    """现存 type=cancelled 旧行一次性改写(4.4.1 旧case清零) — 小欧 2026-09-07
+
+    背景: 4.4.1 前取消终态曾用 type='cancelled' 事件步, 前端删 case 后该类行:
+      徽章推导走 default 不变(应为已取消)、终态推导 derive_status_from_steps 读最后
+      final、无则判 failed(应为 cancelled)。本迁移将 chat_task_steps.step_json 中
+      type='cancelled' 的历史行原地改写为 type=final+outcome=cancelled,
+      content/timestamp/step 等其余字段原样保留(content 缺失才补"任务已被取消")。
+
+    幂等: 改写后行 type 已是 final, 重跑不再匹配; schema_migrations 登记后跳过。
+    安全: 表/列缺失(新库无旧行)直接登记跳过; 坏 JSON 行跳过不中断。
+    返值: 本次实际执行迁移 True; 已登记/无表列跳过 False。
+    """
+    import json as _json
+    import time as _time
+    _t0 = _time.time()
+    with get_conn("chat") as conn:
+        if _is_migration_applied(conn, CANCELLED_ROWS_MIGRATION_NAME):
+            logger.info(f"[migrate] {CANCELLED_ROWS_MIGRATION_NAME} 已执行过, 跳过")
+            return False
+        if not _table_exists(conn, "chat_task_steps") or not _col_exists(conn, "chat_task_steps", "step_json"):
+            logger.info(f"[migrate] {CANCELLED_ROWS_MIGRATION_NAME} 无 chat_task_steps.step_json, 登记跳过")
+            _mark_migration_applied(conn, CANCELLED_ROWS_MIGRATION_NAME)
+            return False
+        _rows = conn.execute("SELECT rowid, step_json FROM chat_task_steps").fetchall()
+        _n = 0
+        for _rid, _raw in _rows:
+            try:
+                _step = _json.loads(_raw) if isinstance(_raw, str) else None
+            except Exception:
+                continue
+            if not isinstance(_step, dict) or _step.get("type") != "cancelled":
+                continue
+            _step["type"] = "final"
+            _step["outcome"] = "cancelled"
+            if not _step.get("content"):
+                _step["content"] = "任务已被取消"
+            conn.execute("UPDATE chat_task_steps SET step_json=? WHERE rowid=?",
+                         (_json.dumps(_step, ensure_ascii=False), _rid))
+            _n += 1
+        _mark_migration_applied(conn, CANCELLED_ROWS_MIGRATION_NAME)
+    logger.info(f"[migrate] {CANCELLED_ROWS_MIGRATION_NAME} 完成, 改写 {_n} 行")
+    logger.info(f"[启动耗时] migrate_cancelled_rows_to_final: {_time.time()-_t0:.3f}s")
     return True

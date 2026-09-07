@@ -9,6 +9,9 @@
 # 2026-08-18 - 小欧 - §10.4.4 P2(弃用 next_step): 各函数删 next_step 参数, 统一经 _current_step(task_id)
 #   读 running_tasks[task_id].agent.llm_call_count(or 1 兜底); 删 Callable import — 小欧 2026-08-18
 # 2026-08-28 小欧 - yield日志审计: _pause_core 的 paused/resumed yield 前加 logger.info("[pause] task step"), 覆盖4个无日志yield(SRP); 三堂会审无逻辑修正
+# 2026-09-07 小欧 - 4.4.1(取消终态信号的分工): 新增 _cancel_final_dict(task_id) 顶层构造 final+cancelled(禁止 build_step_dict 防 data 嵌套, 前端读顶层 outcome 失效);
+#   task_cancel_check_and_yield 去重检测扩展认 final+cancelled + 产出改 final; task_cancel_check 启动前分支同改。— 配套前端删 case 'cancelled', 取消收尾单一由 final+outcome=cancelled 承担。
+# 2026-09-07 小欧 - 4.4.1(B9): task_cancel_check_and_yield 去重删 type=cancelled 与 incident_value 两枝历史兼容分支(禁止backward; incident_value 线上零生产者, 运行任务只产新契约终态), 单条件完备
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -46,6 +49,18 @@ def _current_step(task_id: str) -> int:
         return getattr(_agent, "llm_call_count", None) or 1
     return 1
 
+
+def _cancel_final_dict(task_id: str) -> dict:
+    """组装取消终态 step dict(type=final, outcome=cancelled) — 小欧 2026-09-07 4.4.1:
+    前端 case 'cancelled' 已删, 取消收尾单一由 type=final+outcome=cancelled 承担。
+    禁止 build_step_dict: 其 data 参数会被 MetaStep 包成 data 嵌套, 前端读顶层 outcome 会失效。"""
+    return {
+        "step": _current_step(task_id),
+        "type": "final",
+        "outcome": "cancelled",
+        "content": "任务已被取消",
+    }
+
 async def cancel_task(task_id: str, session_id=None) -> dict:
     cancel_time = datetime.now()
     logger.info(f"[TaskControl] 取消任务 {task_id}")
@@ -78,16 +93,19 @@ async def task_cancel_check_and_yield(
     # 小健 2026-08-17 三堂会审收敛(KISS-DIRECT): 删死参数 session_id/current_content(函数体从未使用, 调用点白算)
     # 小欧 2026-08-18 P2(§10.4.4): 删 next_step, 步号统一 _current_step(task_id)
     if await check_cancelled(task_id):
+        # 2026-09-07 小欧 4.4.1(B9): 去重只认 type=final+outcome=cancelled, 删 type=cancelled
+        #   与 incident_value 两枝历史兼容分支(禁止backward; incident_value 线上零生产者, 迁移后亦无,
+        #   运行任务只产新契约终态, 单条件即完备)
         has_cancelled = any(
-            s.get('incident_value') == 'cancelled' or s.get('type') == 'cancelled'
+            s.get('type') == 'final' and s.get('outcome') == 'cancelled'
             for s in current_execution_steps
         )
         if has_cancelled:
-            logger.info(f"[CancelCheck] 任务 {task_id} 已有cancelled step,跳过")
+            logger.info(f"[CancelCheck] 任务 {task_id} 已有cancelled终态,跳过")
             return None
         logger.info(f"[CancelCheck] 任务 {task_id} 取消状态: True")
-        step_dict = build_step_dict(_current_step(task_id), "cancelled", '任务已被取消')
-        logger.info(f"[Step] 发送 cancelled 步骤")
+        step_dict = _cancel_final_dict(task_id)
+        logger.info(f"[Step] 发送 final(cancelled) 步骤")
         current_execution_steps.append(step_dict)
         return format_agent_sse(step_dict)
     return None
@@ -101,8 +119,9 @@ async def task_cancel_check(
     task_id: str,
 ) -> tuple:
     if await check_cancelled(task_id):
-        step_value = _current_step(task_id)
-        return True, _emit_step_sse(step_value, "cancelled", '任务已被取消')
+        # 4.4.1(2026-09-07 小欧): 启动前取消分支产出改 final+cancelled,
+        #   与 task_cancel_check_and_yield 同口径(前端删 case 'cancelled' 后仅认 final 收尾)
+        return True, format_agent_sse(_cancel_final_dict(task_id))
     return False, ""
 
 
