@@ -1,4 +1,56 @@
-﻿v0.19.40.4
+﻿v0.19.40.5
+更新时间: 2026-09-07 13:09:01 - 小欧-2026-09-07
+## v0.19.40.4以来 变更汇总(38个commit) - 小欧-2026-09-07
+[2026-09-07 13:09:01 小欧] 汇总范围=v0.19.40.4以来全部commit(本分支 optimize-0.19.40.1 自v0.19.40.4累积38个commit)
+
+### docs(11个):
+- 前端消息分类处理分析及设计-小欧-2026-09-06.md 完成4.4.1~4.4.3真实代码diff写入并核证修正4.4.3字段描述(api_base/display_name仅start携带,startinfo实际字段) - 小欧-2026-09-07
+- 错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案v2.0人话重排(总原则/错误值域12+3/R1已完成R3待审) - 小欧-2026-09-06
+- 错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案v1.2审核稿(错误源全景/Q14问题点清单/改动点边界) - 小欧-2026-09-06
+- 错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案(B1秒表清零停表情景+B3同源三通道实证case, R1方案) - 小欧-2026-09-06
+- 问题挖掘与分析-B2方案C-BUG1顺序与BUG2计数错键-小欧-2026-09-06.md v1.1取证汇总(2病根+12表象映射+对照PASS) - 小欧-2026-09-06
+- B2方案C最终设计说明-HITL弹窗顺序与齿轮根治+前端问题统一分析 v1.6(候选总数分母修正+前端指向追加) - 小欧-2026-09-06
+- [6]事件总线与HITL网关设计 6.2实施表删全部开发时长标注(0.5/1/1.5天共12处)+版本历史精简 - 小欧-2026-09-06
+- [6]事件总线与HITL网关设计 v1.14-v1.17 外部审计17项整改(遗留6项全修)+序号体系阿拉伯化+老陈D1/D12收口 - 小欧-2026-09-06
+- [6]事件总线与HITL网关设计 v1.10-v1.13 第四部分TDD缺陷修正+终验细化+老陈定案 - 小欧-2026-09-06
+- [6]事件总线与HITL网关设计 实施步骤拆细可独立验收(6.2八步三A三B四A四B五A五B+6.5严格实施要求) - 小健-2026-09-06
+- [6]事件总线与HITL网关设计 B8网关落点纠正task→handlers - 小健-2026-09-06
+
+### feat(4个):
+- useChatStreaming 被拒工具点名灰字本会话持久化(6.4A, 北京老陈裁定) - 小欧-2026-09-06
+- 前端 被拒工具UI灰字点名(文档6.4) sseParser/useSSE等10文件 - 小欧-2026-09-06
+- hitl_gateway.py 新建HITL确认网关唯一入口(固定时序publish paused→wait→resumed+单点resolve收口) - 小欧-2026-09-06
+- task_state.py StreamBuffer新增publish生产者直写(事件唯一入口, 文档[6]步骤1 5.2) - 小欧-2026-09-06
+
+### fix(9个):
+- TaskInfoBar 秒表与徽标解耦-R1(错误信号不再清零停表/恢复不回跳, interval条件改receiving&&!detail) - 小欧-2026-09-06
+- react_step.py 连续截断上限取消分支裸return→return[]防None迭代TypeError覆盖终态(4C遗漏,同返List契约,配全循环回归测试) - 小欧-2026-09-06
+- e2e_helpers.py/pytest.ini preview(action)不计SSE工具调用防SSE=2xDB翻倍误判+排除tests/output收集 - 小欧-2026-09-06
+- handle_action/safety_gate/sandbox_gate/react_dispatch BUG-1发布顺序+BUG-2拒绝计数错键修复 - 小欧-2026-09-06
+- safety_gate/sandbox_gate/agent_runner BUG-2拒绝计数错键修复(user_rejected补tool_name拒绝语义自包含) - 小欧-2026-09-06
+- agent_runner.py preview(action)不入Prompt日志(DB-Prompt对账2x误报) - 小欧-2026-09-06
+- PipelineRenderer/ToolCallLine/RightViewer/useAuthorization等9文件 B2方案C-前端deniedSteps整批计数齿轮判定 - 小欧-2026-09-06
+- agent_runner/handle_action/safety_gate/sandbox_gate/react_dispatch/sse_formatter B2方案C-HITL拒绝独立user_rejected事件+预览/落库分离 - 小欧-2026-09-06
+- RightViewer/useChatScroll 后台切回防自动滚失效(RG-1~RG-4) - 小欧-2026-09-06
+
+### refactor(14个):
+- agent_runner.py 自产事件统一经StreamBuffer.publish单写入口(_append退役) - 小欧-2026-09-06
+- summary.py 路径2-5E payload判别收口 - 小欧-2026-09-06
+- react_step.py 路径2-5D payload单判别 - 小欧-2026-09-06
+- llm_call.py 路径2-5C 出口统一(import+_resolve_chunk_model/create_payload_chunk+判别改payload载体) - 小欧-2026-09-06
+- llm_response_builder.py 路径2-5B 三装配函数改返回create_payload_chunk - 小欧-2026-09-06
+- llm/core.py 路径2-5A payload字段+create_payload_chunk工厂出厂 - 小欧-2026-09-06
+- agent 4C async收敛 六文件(react_loop/react_step/react_dispatch/base_agent/agent_runner/observation_builder 5.8.1-5.8.6) - 小欧-2026-09-06
+- react_dispatch 调度层await dict handler逐条yield(4B文档6 5.7) - 小欧-2026-09-06
+- handle_answer+handle_action handle纯函数化返dict(4A文档6 5.5-5.6) - 小欧-2026-09-06
+- hitl_gateway.py+safety_gate.py POT-001/POT-002低优优化 - 小欧-2026-09-06
+- safety_gate.py+handle_action.py 步骤3B门禁纯函数化收list(5.4.2终态) - 小欧-2026-09-06
+- task_state.py VULN-006 publish的seq+append移入cond持锁原子 - 小欧-2026-09-06
+- safety_gate.py+sandbox_gate.py 步骤3A门禁等待源头收网关(唯一暂停源头hitl_confirm) - 小欧-2026-09-06
+- hitl_gateway.py 编辑历史块残注归位 - 小欧-2026-09-06
+
+---
+v0.19.40.4
 更新时间: 2026-09-06 04:51:03 - 小欧-2026-09-06
 ## v0.19.40.3以来 变更汇总(28个commit) - 小欧-2026-09-06
 [2026-09-06 04:51:03 小欧] 汇总范围=v0.19.40.3以来全部commit(本分支 optimize-0.19.40.1 自v0.19.40.3累积28个commit)
