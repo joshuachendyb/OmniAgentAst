@@ -15,6 +15,12 @@
 #   [改法] 新增进 loop 前(while 前)第 1 发射点, step=agent.llm_call_count or 1(首个 thought 步号, 避开 start 0);
 #          与 handle_action 每工具轮 observation 后各 1 个合计=loop 内调工具次数+1(发射公式);
 #          max_steps<=0 提前分支(main中该分支在本点之前 return)不发 — 无终态无害信号; 纯实时不落库(§10.3.3(1)) — 小欧-2026-09-07
+# 2026-09-07 小欧 4.4.3(前端消息分类处理分析及设计-小欧-2026-09-06.md, 北京老陈批准):
+#   start/startinfo 双信号拆分——startinfo 合并入 start(后端侧):
+#   [2] start 发布前装配 ai_message_id: emit 出 start dict 后, 顶层写 agent._ai_message_id
+#       (agent_runner run_agent_in_background 入口透传的 eager 值)再 publish;
+#       publish 做 dict 浅拷贝(task_state.py:49), 事后回填追不上实时流, 故 publish 前装配;
+#       None 守卫(getattr)——eager 分配失败时按缺失处理, 与现状 startinfo 缺失行为一致 — 小欧-2026-09-07
 
 """react_loop — ReAct 循环核心(薄调度)
 
@@ -101,7 +107,11 @@ async def run_react_cycle(
     #   落库: start 作为首个事件 yield → agent_runner 事件流分配 ai_message_id 并 append_step, 不再 execution_steps 双写。 — 小欧/小健 2026-08-17
     _start_step = _assemble_start_step(agent, context)  # 同步装配(内部零 await, KISS — 小健 2026-08-17)
     if _start_step is not None:
-        await _publish(agent._step_emitter.emit(_start_step).to_dict())
+        # 4.4.3(2026-09-07 小欧): start 携带 ai_message_id 发布, startinfo 合并入 start;
+        #   publish 前装配(publish 做 dict 浅拷贝, 事后回填追不上实时流, 见 task_state.py:49)
+        _start_dict = agent._step_emitter.emit(_start_step).to_dict()
+        _start_dict["ai_message_id"] = getattr(agent, "_ai_message_id", None)
+        await _publish(_start_dict)
 
     # S5(10.1.7⑤/10.1.8): C4 超窗锚定摘要回填 —— start 装配后、while 前一次性清洗注入的历史。
     #   仅当 start 超窗判定(start_step._maybe_compact_injected_history)置 _needs_compact(=True) 才触发;

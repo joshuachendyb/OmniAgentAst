@@ -106,6 +106,11 @@
 #   B2方案C每轮双 action(preview 齿轮先行 + canonical), 订阅体对 preview(_live_only) 也调 log_step_yield →
 #   Prompt 日志比 DB 多 preview 行(2x 误报, P0-02 表 5.3);
 #   [修复] 订阅体补 `if not event_dict.get("_live_only")` 才 log_step_yield(Prompt 仅记业务 canonical 步) — 小欧-2026-09-06
+# 2026-09-07 小欧 4.4.3(前端消息分类处理分析及设计-小欧-2026-09-06.md, 北京老陈批准):
+#   start/startinfo 双信号拆分——startinfo 合并入 start:
+#   [1] run_agent_in_background 入口将 eager ai_message_id 透传挂到 agent._ai_message_id(供 react_loop start 发布前装配);
+#   [2] 删 start 分支 startinfo 派生构造 13 行, 仅保留 _persist 落库(start 已自带 ai_message_id);
+#   [3] 通道路由注释同步(start/startinfo 不再双发, startinfo 事件从链路移除, 前端不再消费) — 小欧-2026-09-07
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -219,6 +224,9 @@ async def run_agent_in_background(
     # 12.2-C4: eager绑定prompt-logger(原惰性分支内update_ai_message_id迁至此) — 小欧 2026-08-21
     if ai_message_id is not None:
         get_prompt_logger().update_ai_message_id(str(ai_message_id))
+    # 4.4.3(2026-09-07 小欧): ai_message_id 透传 agent 层, 供 react_loop start 发布时携带;
+    #   startinfo 合并入 start 的前提(eager 值在 run_react_cycle 启动前已就绪, 无需延迟 publish)
+    agent._ai_message_id = ai_message_id
     _has_chunk_steps: set = set()  # 2026-08-18 小健 Bug#2: 按 step 记录已发正文 chunk(短信号仅当非action轮的正文chunk)
     _action_steps: set = set() # 2026-08-18 小健 Bug#2 边界: 记录执行过action的step, 供return_direct final识别
     # (旧任务级 _has_chunk_sent 结论被多轮 return_direct 边界推翻, 改 step 粒度更精确 — 小健)
@@ -350,18 +358,7 @@ async def run_agent_in_background(
                 if not event_dict.get("is_reasoning"):
                     _has_chunk_steps.add(event_dict.get("step", 0))
             elif event_type == "start":
-                await _persist(event_dict)   # P7: StartStep 落库, _persist 内惰性分配 ai_message_id — 小欧 2026-08-18
-                _startinfo = {
-                    "type": "startinfo", "step": event_dict.get("step", 0),
-                    "timestamp": event_dict.get("timestamp"),
-                    "content": "任务开始", "severity": "info",
-                    "task_id": event_dict.get("task_id"),
-                    # display_name 键消亡(归一设计要求2: 后端零依赖仅前端派生, 前端随 startinfo.provider/model 自行派生) — 小欧 2026-08-22
-                    "provider": event_dict.get("provider"),
-                    "model": event_dict.get("model"),
-                    "ai_message_id": ai_message_id,
-                }
-                await _publish(_startinfo)   # 轻量 MetaStep 仅 SSE, 复用同一 ai_message_id — 小欧 2026-08-18
+                await _persist(event_dict)   # P7: StartStep 落库; 4.4.3: start 已自带 ai_message_id(react_loop 发布前装配), startinfo 删除
             elif event_type == "action":
                 _action_steps.add(event_dict.get("step", 0))   # 工具执行轮标记(已 publish, SSE 由 stream_reader 读, 不 _append) — 小欧-2026-09-06
                 # B2(方案C, 2026-09-06 小欧 三堂会审定案): 预览事件(tools=all_calls, _live_only=True)仅SSE齿轮先行不落库;
