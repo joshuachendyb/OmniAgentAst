@@ -13,6 +13,10 @@
 //   构造对象补 tool_name(rawData.tool_name, 后端 6.2 事件已带被拒工具名)——两路同源承灰字链路 — 小欧-2026-09-06
 // 编辑历史: 2026-09-07 小欧 - 4.4.1取消终态: 删外层 case 'cancelled' 与内层 switch 分支, 取消收尾单一由
 //   type=final+outcome=cancelled 承担(paused/resumed/retrying 保留); incident 废弃注释同步移出 cancelled — 小欧-2026-09-07
+// 编辑历史: 2026-09-07 小欧 - 4.4.3 start/startinfo 双信号拆分(前端消息分类处理分析及设计-小欧-2026-09-06.md):
+//   startinfo 合并入 start——后端 start 现已自带 ai_message_id, 删除 case 'startinfo' 分支;
+//   case 'start' 合并写入 contextSummary + startTimestamp + startInfo(含 ai_message_id),
+//   徽标(running/idle)/过程条首行/计时/概况支付行为全不变(startInfo 到达提前到 start, 徽章 running 只更早亮) — 小欧-2026-09-07
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -168,25 +172,19 @@ const processSSEData = (
     }
 
     switch (rawData.type) {
-      // 【小欧 2026-08-26 8.4.3】start/startinfo 拆双（4.9.2.7）：
-      //  - start.content=context_summary -> 元信息帧 contextSummary（任务信息条上下文概况，三分归位③），
+      // 【小欧 2026-08-26 8.4.3】start/startinfo 拆双（4.9.2.7）；
+      // 2026-09-07 小欧 4.4.3: startinfo 合并入 start——start 自带 ai_message_id,
+      //  - start.content=context_summary -> 元信息帧 contextSummary（任务信息条上下文概况，三分归位③）+
+      //    元信息帧 startInfo（驱动状态徽标），同样不入步骤列表；
       //    不进右侧查看区流水线（4.4.4）；user_message 对话界面已可见不重复渲染（4.9.1）；
       //    model/provider 由顶栏徽标承载（4.8.3-A）。
-      //  - startinfo -> 元信息帧 startInfo（驱动状态徽标），同样不入步骤列表。
-      case 'start':
-      case 'startinfo': {
-        if (rawData.type === 'start') {
-          const summary =
-            typeof rawData.content === 'string' ? rawData.content : '';
-          handlers.setMetaFrames?.((prev) => ({
-            ...prev,
-            contextSummary: summary,
-            startTimestamp: Date.now(),
-          }));
-          break;
-        }
+      case 'start': {
+        const summary =
+          typeof rawData.content === 'string' ? rawData.content : '';
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
+          contextSummary: summary,
+          startTimestamp: Date.now(),
           startInfo: {
             task_id: rawData.task_id,
             display_name: rawData.display_name,

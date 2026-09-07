@@ -10,6 +10,9 @@
 // 编辑历史: 2026-09-03 小欧 - 根因修复: onConfirm接口加confirmId参数, auto-confirm不依赖pendingRef读confirmId(改前ref时序竞态致旧弹窗auto-confirm发旧ID到后端, 新ID从未被confirm→S1超时弹窗不消失) - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 真根因修复: interval effect加request?.confirmId依赖+currentRequestRef追踪, 旧interval残留tick跳过(setCountdown(0)覆盖新请求countdown致auto-confirm立即触发弹窗不消失) - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 简化重构: ChatPage加key={confirmId}强制重建, 删除autoHandledRef/countdownReadyRef/currentRequestRef/resetEffect, 组件从370行→230行 - 小欧-2026-09-03
+// 编辑历史: 2026-09-07 小欧 - B3 防御加固: countdown 归零 effect 加 submitting guard, 组件自体防双发;
+//   改前仅靠 ChatPage key={confirmId} 重建兜底, 本组件 countdown 走完归零后(未重挂)会重入代发,
+//   加固后手动确认/代发任一次即锁定, 消除对 key 重建的依赖(与回归守卫 BUG-13/BUG-11 断言对齐) - 小欧-2026-09-07
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -115,7 +118,9 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   }, [visible, request]);
 
   React.useEffect(() => {
-    if (!visible || countdown !== 0 || !request) return;
+    // 2026-09-07 小欧 B3 防御加固: submitting 互斥入守卫——手动确认/已代发一次即锁定, 防 same 实例
+    //   countdown 归零重入双发(改前仅靠 ChatPage key={confirmId} 重建兜底, 组件自体无防护)
+    if (!visible || countdown !== 0 || !request || submitting) return;
     setSubmitting(true);
     // 2026-09-03 小欧/北京老陈: 传confirmId参数, 不依赖pendingRef时序(根因修复)
     if (isBypass) {
@@ -123,7 +128,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
     } else {
       onConfirmRef.current(false, false, request.confirmId);
     }
-  }, [visible, countdown, isBypass, request]);
+  }, [visible, countdown, isBypass, request, submitting]);
 
   if (!request) {
     return null;
