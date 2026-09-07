@@ -30,6 +30,7 @@
 #   取值bug修复(原读tool键恒空→改tool_name)+补文件名(name)列; 第8节清理过期final_stats注释(已迁§2.2);
 #   配合后端F1定案: 兜底派生已删, 仅写工具with_artifacts自声明才有产出物
 # 2026-08-22 - 小欧 - §5.2执行步骤表按现行落库字段重造(北京老陈指示"按现在的step和数据字段更新"):
+# 2026-09-07 - 小欧 - 4.4.1旧case清零: §5.2 _SSE_WANT 删cancelled(取消收尾单一由final+cancelled承担, 仅SSE集合移出不影响落库)
 #   删恒空"状态"列(新协议步骤无status字段), 新增"内容摘要"列(_step_brief按type提取:
 #   start用户消息/context_overview消息数tokens/stats轮次耗时/thought正文/action目标/
 #   observation首条summary/final_stats耗时产出物/final结论/error类型);
@@ -2018,12 +2019,12 @@ def write_test_record(
                 _final_db = _s
                 break
 
-        # SSE侧事件补行(北京老陈指示): usage/error/paused/resumed/retrying/cancelled仅SSE不落库(P1~P6),
+        # SSE侧事件补行(北京老陈指示): usage/error/paused/resumed/retrying仅SSE不落库(P1~P6, 2026-09-07 小欧 4.4.1: cancelled 移出该集合),
         #   按流序插入本表与落库步骤混排; chunk逐token量大/thought_start纯开始信号(steps/__init__.py:11
         #   仅SSE实时信号)不补。对齐法: 落库步骤随emit同步落库,SSE到达序=落库序,顺序遍历events遇落库
         #   类型即按位消耗db_steps; 对齐守卫: events中落库类型事件数≠len(db_steps)(如断连缺帧)时
         #   位置推断不可靠, 退化为"落库表全量在前+SSE行尾部追加", 宁可乱序不错位 - 小欧 2026-08-22
-        _SSE_WANT = ("usage", "error", "paused", "resumed", "retrying", "cancelled")
+        _SSE_WANT = ("usage", "error", "paused", "resumed", "retrying")
         _SSE_SKIP = {"chunk", "thought_start"}
         _rows: List[Any] = []  # 元素二元组: ("db", 落库step) / ("sse", SSE事件)
         _n_db_ev = sum(
