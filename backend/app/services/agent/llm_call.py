@@ -31,6 +31,10 @@
 #   行为零改动, 引用路径同步(react_cycle.py:149/summary.py:29转引本模块)
 # 2026-09-06 小欧 文档[6]2.5.3/5.9落码: 出口全StreamChunk化—L1 retry通知/L2重试/FC降级改create_payload_chunk构造;
 #   chunk改SDK原生直透(弃ChunkStep包装删import); error分流/retrying缓冲判别改payload检查(分流常量元组与P1定案一字不改)
+# 2026-09-07 小欧 病根修复(取消风暴/终态矛盾): ①L228放行元组补"cancelled"——用户取消(create_cancelled_chunk→
+#   stream_error_type="cancelled")不再走L2重试2次+FC降级Text再调1次(取消一次白打3+次LLM, 约3分钟);
+#   直接yield error放行, 由handle_answer置CANCELLED; ②except Exception分支 _cancelled=True 时由静默return
+#   改yield error(cancelled)承接——杜绝下游空响应被set_failed标FAILED覆盖取消终态 — 小欧 2026-09-07
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -123,6 +127,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     except Exception as e:
         if getattr(agent.llm_client, '_cancelled', False):
             logger.info(f"[LLM] 调用因取消而中断, 跳过异常响应")
+            yield _yield_error_response("LLM调用因用户取消而中断", agent, exc_type="cancelled")
             return
         yield _yield_error_response(f"LLM调用异常: {e}", agent, exc=e)
         return
@@ -225,7 +230,7 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
                     # 2026-09-02 小欧 task005会审P1(北京老陈定案): "server"(500/502/503)移出放行元组——瞬时/过载错误应走L2重试(否则本可恢复任务永久失败), 重试耗尽仍由外层FC降级/error兜底, 不退化 — 小欧 2026-09-02
                     # 2026-09-02 小欧 严谨修复404重试放大: 4xx配错(CLIENT→code=client)一律L1已判定不重试, L2亦直接放行不重试不降级, 杜绝404 Text降级再L1×3放大 — 小欧 2026-09-02
                     err_type = resp.get("error_type", "")
-                    if err_type in ("quota_exceeded", "rate_limit", "idle_timeout", "client"):
+                    if err_type in ("quota_exceeded", "rate_limit", "idle_timeout", "client", "cancelled"):
                         yield item
                         return
                     raise LLMResponseError(message=resp.get("content", "LLM流式错误"))

@@ -38,6 +38,20 @@
 #   搬三(8.3): 计数5处直写改调reasoning_guard(note_progress×4 + note_reasoning_only×1), 删REASONING_ONLY_MAX_ROUNDS常量 - 小健-2026-09-05
 # 2026-09-06 小欧 4A(5.5) 纯函数化: 10处yield→收集_events列表, 各return改return dict, 函数末尾补return;
 #   事件统一收集返回、由5.7驱动yield; 本函数不产paused/resumed(暂停事件单走publish) - 小欧-2026-09-06
+# 2026-09-07 小欧 4.4.2 thought-start 时序根治(前端消息分类处理分析及设计-小欧-2026-09-06.md 4.4.2):
+#   [问题] 本文件 4 处 ThoughtStartStep 发射点(error L88/unknown L103/reasoning终止 L141/正常answer L169)
+#          均在 LLM 响应之后发(错): 收尾轮/异常终态轮本就在末尾, 前端 waiting 图标误亮至结束(文档观察点A/B);
+#   [改法] ①全部 4 处删除(error/unknown/reasoning超限/正常answer 收尾轮统一豁免, 4.4.2 元规则:
+#          "收尾 answer 轮/异常终态轮/return_direct 轮不发");
+#         ②等待信号改由 react_loop 进 loop 前 + handle_action 每工具轮 obs 后两处承接(合计=工具次数+1);
+#         正常 answer 轮 waiting 图标由上一工具轮的发射持续承接, 真空重试(retrying)/reasoning-only 继续轮
+#         不可见中间轮保持不发(不可退化) — 小欧-2026-09-07
+# 2026-09-07 小欧 病根修复(取消终态): error 分支新增 err_type=="cancelled" 特判——
+#   用户主动取消(create_cancelled_chunk→stream_error_type="cancelled", 或取消中断异常)时
+#   终态必须为 CANCELLED 而非 FAILED; 否则取消一次被当可恢复错误 L2重试2次+FC降级Text再调1次
+#   (白白白打3+次LLM, 约3分钟), 且 set_failed 覆盖已定的取消终态(chat_tasks.status=failed
+#   与 chat_task_steps=cancelled 自相矛盾); 直接 emit FinalStep(outcome="cancelled"),
+#   由 react_dispatch 状态推断置 CANCELLED, 与 task_runtime 取消终态分工一致 — 小欧-2026-09-07
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -53,7 +67,7 @@ v4.1: reasoning-only分支改add_assistant_message(reasoning)合法注入(工具
 import time
 from typing import Dict
 
-from app.services.agent.steps import ThoughtStep, ThoughtStartStep, FinalStep, MetaStep  # 2026-08-18 小欧 ThoughtStartStep新增
+from app.services.agent.steps import ThoughtStep, FinalStep, MetaStep  # 2026-09-07 小欧: 4.4.2 时序根治删除ThoughtStartStep导入(全分支已移走) — 2026-08-18 小欧 ThoughtStartStep新增
 from app.utils.text_utils import format_tool_call_markup, dedup_repeat, REPEAT_CHECK_MIN_LEN  # 小健 2026-09-05：去重函数归位文本层；门槛常量随迁，供L182预检引用
 from app.services.agent.reasoning_guard import note_progress, note_reasoning_only  # 小健 2026-09-05：空转计数唯一写者收口
 from app.logger import logger, log_and_print
@@ -85,7 +99,17 @@ async def handle_answer(agent, parsed: Dict) -> dict:
         agent.message_builder.add_assistant_message(content)
         # 2026-08-28 小欧 yield日志审计: print→logger统一(DRY违规修复)
         logger.error(f"[answer] step={step} error={content} error_type={err_type}")
-        _events.append(agent._step_emitter.emit(ThoughtStartStep(step=step)))   # 4A(5.5): yield→append — 小欧-2026-09-06
+        # 2026-09-07 小欧 病根修复(用户取消终态): err_type=="cancelled"(用户主动取消, LLM流被强制关闭)
+        #   终态必须为 CANCELLED 而非 FAILED——否则取消一次白白L2重试2次+FC降级Text再调1次(约3分钟)
+        #   且 set_failed 覆盖已定的取消终态(chat_tasks.status=failed 与 chat_task_steps=cancelled 自相矛盾);
+        #   直接 emit final(outcome=cancelled), 由 react_dispatch 状态推断置 CANCELLED — 小欧 2026-09-07
+        if err_type == "cancelled":
+            logger.info(f"[answer] step={step} 用户取消, 终态 CANCELLED: {content}")
+            _events.extend(agent._step_emitter.emit_final_with_stats(FinalStep(
+                step=step, response="任务已被用户取消", outcome="cancelled",
+                error_type="cancelled", error_message=content,
+            )))
+            return {"events": _events, "type": parsed_type}
         _events.extend(agent._step_emitter.emit_failed_final(
             step=step, response="任务执行失败", error_type=err_type, error_message=content,
         ))  # 小健 2026-09-05：set_failed 内聚工厂内(09-03顺序铁律); 4A: yield转发→extend — 小欧-2026-09-06
@@ -100,7 +124,6 @@ async def handle_answer(agent, parsed: Dict) -> dict:
         logger.error(f"[answer] step={step} unknown_type={parsed_type} content={content}")
         if content:
             agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
-        _events.append(agent._step_emitter.emit(ThoughtStartStep(step=step)))   # 4A(5.5): yield→append — 小欧-2026-09-06
         _events.extend(agent._step_emitter.emit_failed_final(
             step=step, response="任务执行失败", error_type="unknown_response",
             error_message=f"LLM返回未知响应类型: {parsed_type}",
@@ -138,7 +161,6 @@ async def handle_answer(agent, parsed: Dict) -> dict:
         _deduped = dedup_repeat(reasoning)     # 小健 2026-09-05
         if note_reasoning_only(agent):  # 小健 2026-09-05：唯一 +=1 收口 guard 内，超限返回 True 走终止分支
             logger.warning(f"[handle_answer] 连续{agent._consecutive_reasoning_only}轮reasoning-only无进展(step={step}), 终止任务")
-            _events.append(agent._step_emitter.emit(ThoughtStartStep(step=step)))   # 4A(5.5): yield→append — 小欧-2026-09-06
             _events.extend(agent._step_emitter.emit_failed_final(
                 step=step,
                 response="模型反复思考未产出有效结果，任务已终止（疑似陷入无效循环）",
@@ -166,7 +188,6 @@ async def handle_answer(agent, parsed: Dict) -> dict:
     note_progress(agent)  # 小健 2026-09-05：空转计数唯一写者收口(原注解 2026-07-17 小欧 正常final answer 归零空转计数 缀回行尾，语义不变)
     # 2026-09-01 小欧 方案A: 删除污染版 ThoughtStep(thought恒退化=content, 致历史回放 reasoning/response 双渲);
     #   终态正文/推理由 FinalStep 单一承载。保留 reasoning-only 分支(L189)与工具轮 ThoughtStep 不动。
-    _events.append(agent._step_emitter.emit(ThoughtStartStep(step=step)))   # 4A(5.5): yield→append — 小欧-2026-09-06
 
     # ══ 重复检测(≥250字才检) — DB 入库前唯一保留的护栏 ══
     if len(content) >= REPEAT_CHECK_MIN_LEN:
