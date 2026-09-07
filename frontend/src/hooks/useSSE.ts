@@ -15,6 +15,10 @@
 //   根治"刷新后无灰字工具行"(观察点1)与"双条 action"(观察点2) — 小欧-2026-09-06
 // 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定): onDenied 回调签名两参→三参
 //   (step, message, toolName?) 与 sseParser 三参回调契约对齐, 透传被拒工具名供点名条聚合 — 小欧-2026-09-06
+// 编辑历史: 2026-09-07 小欧 - REQUEST-ABORT静默短路(9月优化5.3.1, 北京老陈裁定方案): 主动断开意图标记
+//   disconnect()主动abort与180s fetch超时abort同型(AbortError)无法靠error区分, 以操作语义标记判别:
+//   ①disconnect确有活动连接时设intentionalAbortRef并2s兜底清残留; ②catch入口读标+errorHandlerClassify===REQUEST_ABORT短路静默,
+//   根治"手动停止/卸载→误判request_timeout→1s后自动重连复活任务/误弹超时warning"; 180s超时abort无标记, 仍走原重连 - 小欧-2026-09-07
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -305,6 +309,11 @@ export const useSSE = (
   const abortControllerRef = useRef<AbortController | null>(null); // 【修复 2026-05-11 小健】fetch AbortController ref，disconnect时可abort
   const responseBufferRef = useRef('');
   const isProcessingRef = useRef(false);
+  // 2026-09-07 小欧 REQUEST-ABORT静默短路(9月优化5.3.1): 主动断开意图标记
+  //   disconnect()主动abort 与 180s fetch超时abort 同型(AbortError), 无法靠error区分来源,
+  //   以操作语义标记: disconnect确有活动连接时设标, catch读后即清, 2s兜底清残留 - 小欧-2026-09-07
+  const intentionalAbortRef = useRef(false);
+  const intentionalAbortTimerRef = useRef<number | null>(null);
 
   // 【小欧 2026-08-26 8.4.14】任务元信息帧状态 + usage 续传去重
   const [metaFrames, setMetaFrames] =
@@ -446,6 +455,17 @@ export const useSSE = (
 
       // 【修复 2026-05-11 小健】abort正在进行的fetch请求，防止旧流与新流并行
       if (abortControllerRef.current) {
+        // 2026-09-07 小欧 REQUEST-ABORT静默短路(9月优化5.3.1): 确有活动连接才设主动断开标记,
+        //   abort触发的AbortError进catch时按此标记静默, 与180s fetch超时abort(无标记,继续重连)区分 - 小欧-2026-09-07
+        intentionalAbortRef.current = true;
+        if (intentionalAbortTimerRef.current) {
+          clearTimeout(intentionalAbortTimerRef.current);
+        }
+        // 兜底: 若该abort无对应catch消费(极端残留), 2s后自动清除, 防污染后续真实错误分类
+        intentionalAbortTimerRef.current = window.setTimeout(() => {
+          intentionalAbortRef.current = false;
+          intentionalAbortTimerRef.current = null;
+        }, 2000);
         try {
           abortControllerRef.current.abort();
         } catch (_e) {
@@ -723,6 +743,24 @@ export const useSSE = (
       reconnectAttemptsRef.current = 0;
       abortControllerRef.current = null; // 【修复 2026-05-11 小健】请求完成清理ref
     } catch (error: unknown) {
+      // 2026-09-07 小欧 REQUEST-ABORT静默短路(9月优化5.3.1): 主动断开(disconnect abort)引发的AbortError静默收尾,
+      //   不再误判为request_timeout弹warning/自动重连复活任务; 标记读后即清 - 小欧-2026-09-07
+      if (
+        intentionalAbortRef.current &&
+        errorHandlerClassify(error) === ErrorType.REQUEST_ABORT
+      ) {
+        intentionalAbortRef.current = false;
+        if (intentionalAbortTimerRef.current) {
+          clearTimeout(intentionalAbortTimerRef.current);
+          intentionalAbortTimerRef.current = null;
+        }
+        abortControllerRef.current = null;
+        setIsConnected(false);
+        setIsReceiving(false);
+        console.info('[SSE] 主动断开引发的AbortError, 静默收尾');
+        return;
+      }
+
       console.error('[SSE] 请求错误:', error);
       abortControllerRef.current = null; // 【修复 2026-05-11 小健】请求失败清理ref
 

@@ -5,6 +5,10 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 删_sessionCount死状态/refreshModelList透传/unreadCount死值; 精简console.log; Option上移; 更正Header高度注释
 // 2026-08-27 小欧 - 三堂会审: #1890ff→#1677ff(头像背景/标题); 删5处console.log调试语句
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复注释行尾多余空白, 防止格式再次出错
+// 编辑历史: 2026-09-08 小欧 - 删顶部模型状态指示Tag(北京老陈令): 右侧已有独立模型Select+检查按钮, 左侧Tag功能完全冗余, 删除更简洁 — 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 删左侧Logo区Avatar(北京老陈令): 顶部仅保留文字标识"OmniAgentAst.", 更简洁 — 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 标题图标化(北京老陈令): 顶部"对话与任务"文字换D三色弧段loader(蓝绿橙, 与 title-icon-compare.html 的D三色版一致),
+//   复用 waiting-spin 逆时针1s常转, Tooltip 保留原标题; Title 组件仍被 Logo 区使用, import 保留 — 小欧-2026-09-08
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -498,11 +502,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           borderBottom: '1px solid #f0f0f0',
         }}
       >
-        <Avatar
-          size={40}
-          icon={<DesktopOutlined />}
-          style={{ background: '#1677ff', flexShrink: 0 }}
-        />
         {!isMobile && !collapsed && (
           <Title
             level={5}
@@ -632,80 +631,27 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                 />
               </Tooltip>
             )}
-            <Title
-              level={4}
-              style={{
-                margin: 0,
-                fontWeight: 500,
-                fontSize: isMobile ? 16 : 18,
-              }}
-            >
-              对话与任务
-            </Title>
-            {/* 服务状态显示 - 根据检查结果显示不同颜色 - 前端小新代修改 UX-L03: 可点击重试 */}
-            {checkingStatus ? (
-              <span style={{ color: '#999' }}>检查中...</span>
-            ) : (
-              (() => {
-                // 【2026-04-07修复】切换模型后serviceStatus不会更新，始终以modelList为准
-                const currentModel = modelList.find(
-                  (m) => m.current_model === true
-                );
-
-                if (serviceStatus && !serviceStatus.valid) {
-                  return (
-                    <Tag
-                      color="error"
-                      style={{ cursor: 'pointer' }}
-                      onClick={checkingStatus ? undefined : handleCheckService}
-                    >
-                      <CloseCircleOutlined />{' '}
-                      {serviceStatus.model_ref?.provider}{' '}
-                      {serviceStatus.model_ref?.model &&
-                        `(${serviceStatus.model_ref.model})`}
-                      <span style={{ marginLeft: 8, fontSize: 12 }}>
-                        (已失效)
-                      </span>
-                    </Tag>
-                  );
-                } else if (currentModel) {
-                  // 显示配置文件中的当前模型（从modelList获取，切换模型后会更新）
-                  const tagColor = serviceStatus?.valid
-                    ? serviceStatus.status === 'warning'
-                      ? 'warning'
-                      : 'success'
-                    : 'default';
-                  return (
-                    <Tag
-                      color={tagColor}
-                      onClick={checkingStatus ? undefined : handleCheckService}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <CheckCircleOutlined /> {currentModel.provider} (
-                      {currentModel.model})
-                      {serviceStatus?.status === 'warning' && (
-                        <span style={{ marginLeft: 4, fontSize: 11 }}>⚠️</span>
-                      )}
-                      {!serviceStatus && (
-                        <span style={{ marginLeft: 8, fontSize: 12 }}>
-                          (未验证)
-                        </span>
-                      )}
-                    </Tag>
-                  );
-                } else {
-                  return (
-                    <Tag
-                      color="error"
-                      onClick={checkingStatus ? undefined : handleCheckService}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      未配置 (点击检查)
-                    </Tag>
-                  );
-                }
-              })()
-            )}
+            {/* 2026-09-08 小欧 - 标题图标化(北京老陈令): "对话与任务"文字换D三色弧段loader(蓝绿橙),
+                与对比页 title-icon-compare.html 的 D 三色版一致, 1s逆时针常转; Tooltip 保留原标题, 无障碍 — 小欧-2026-09-08 */}
+            <Tooltip title="对话与任务" placement="bottom">
+              <span className="title-spin-icon" aria-label="对话与任务">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  strokeWidth={2.5}
+                  strokeLinecap="round"
+                >
+                  <path d="M12 2v4" stroke="#1677ff" />
+                  <path d="M16.24 7.76l2.83-2.83" stroke="#1677ff" />
+                  <path d="M18 12h4" stroke="#1677ff" />
+                  <path d="M16.24 16.24l2.83 2.83" stroke="#52c41a" />
+                  <path d="M12 18v4" stroke="#52c41a" />
+                  <path d="M4.93 19.07l2.83-2.83" stroke="#52c41a" />
+                  <path d="M2 12h4" stroke="#fa8c16" />
+                  <path d="M4.93 4.93l2.83 2.83" stroke="#fa8c16" />
+                </svg>
+              </span>
+            </Tooltip>
             {/* 【新增】配置验证警告 - 当validationResult有错误或警告时显示 */}
             {validationResult &&
               (!validationResult.success ||

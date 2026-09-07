@@ -4,6 +4,8 @@
 /* 编辑历史: 2026-09-03 小欧 - 北京老陈定案: .tool-waiting-cursor 图标尺寸 1.4em→1em(≈14px), 缩小齿轮+扳手组合, 尺寸与文字更协调 - 小欧-2026-09-03 */
 /* 编辑历史: 2026-09-06 小欧 - 北京老陈要求"去掉扳手留齿轮": ToolCallLine 等待动画图标由"齿轮+扳手组合"改标准单齿轮(Feather settings),
    本 CSS 类只管旋转动画(1em 尺寸/逆时针1s转), 图标 SVG 内容变更在 ToolCallLine.tsx 内, 此处零改动 - 小欧-2026-09-06 */
+/* 编辑历史: 2026-09-08 小欧 - 标题图标(北京老陈令): 新增.title-spin-icon(D三色弧段loader, 复用waiting-spin逆时针1s常转, 20px),
+   .tool-waiting-cursor 尺寸 1em→1.1em - 小欧-2026-09-08 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;
@@ -81,6 +83,18 @@
 }
 .tool-waiting-cursor svg {
   display: block;
-  width: 1em;
-  height: 1em;
+  /* 2026-09-08 小欧 - 图标换型(北京老陈令): 尺寸1em→1.1em(≈15px), 与loader弧段视觉更协调 — 小欧-2026-09-08 */
+  width: 1.1em;
+  height: 1.1em;
+}
+
+/* 2026-09-08 小欧 - 标题图标(北京老陈令): 顶部"对话与任务"文字换D三色弧段loader, 复用waiting-spin逆时针1s常转, 尺寸20px — 小欧-2026-09-08 */
+.title-spin-icon {
+  display: inline-block;
+  animation: waiting-spin 1s linear infinite;
+}
+.title-spin-icon svg {
+  display: block;
+  width: 20px;
+  height: 20px;
 }
