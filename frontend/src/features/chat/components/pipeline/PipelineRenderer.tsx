@@ -50,6 +50,10 @@
 //   UI 观感机制不变(该亮照亮、内容到即消失), showGreenCircle 保留(空容器/obs 窗口), waiting 为末段时其条件不成立无双圈 — 小欧-2026-09-07
 // 编辑历史: 2026-09-07 小欧 - 4.4.2 DRY 重构(北京老陈审查, 10大规范): 等待图标 SVG markup 两处重复
 //   (waiting 段渲染分支 + showGreenCircle 兜底) → 抽唯一 WaitingIcon 组件共用; 行为零变化(测试全绿前提下, 设计3.4原则七) — 小欧-2026-09-07
+// 编辑历史: 2026-09-07 小欧 - 4.4.2 旧逻辑清理(北京老陈定案, 设计3.4原则七"showGreenCircle 去留"):
+//   删除 showGreenCircle 双条件推断(!lastSeg || lastSeg.kind==='obs')整段 —— 等待图标改由 thought-start 信号唯一驱动
+//   (每可见轮 LLM 请求前必发, 产 waiting 段, 内容覆盖制); 空容器首圈由首信号到达即亮, obs 后等待由紧邻 thought-start
+//   (waiting 段)承接, 同批 SSE 无缝隙, 不再双机制并行; 相关旧注释块一并清除 — 小欧-2026-09-07
 // 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字): 新增 deniedEntries prop, tool 段按 step
 //   取出被拒工具点名条传入 ToolCallLine(部分拒/全拒对被拒工具显橘红灰字点名单) — 小欧-2026-09-06
 /**
@@ -97,7 +101,7 @@ export type PipelineSegment =
 type TextishSegment = Extract<PipelineSegment, { kind: 'thinking' | 'text' }>;
 
 // 4.4.2(2026-09-07 小欧, 10大规范-复用优先/DRY): 等待图标唯一 SVG 定义 —
-//   waiting 段渲染分支(L259)与 showGreenCircle 兜底(L419)两处共用, 杜绝图标 markup 重复 — 小欧-2026-09-07
+//   waiting 段渲染分支专用(旧 showGreenCircle 兜底已删除, 见编辑历史 2026-09-07 去留) — 小欧-2026-09-07
 const WaitingIcon: React.FC = () => (
   <span className="waiting-cursor" aria-label="等待下一个思考内容">
     <svg
@@ -251,20 +255,15 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   );
   // 13.8 打字机: 最后一个 text 段为实时累积段(打字), 前序已完成段静态呈现
   const lastText = segs.reduce((a, s, i) => (s.kind === 'text' ? i : a), -1);
-  // 2026-09-02 小欧 · 北京老陈定案: 等待 thought——streaming 且末段无 content 段
-  // (thinking/text)时, 说明处于 action 执行/新 thought 未到, 在流水线内容输出位置
-  // (末段之下; 无任何段时即容器首列)渲染 ↻ 型 SVG 缺口圆弧; 首 chunk 到达,
-  // 末段变 thinking/text, waiting 即消失, 内容从同一首列打字机输出——等待符号
-  // 禁止常驻, 由内容覆盖接管
-  // 2026-09-02 小欧 HIT三处修复C: HIT高亮时保持等待可见, 消确认后圈闪消
-  // 2026-09-03 小欧/北京老陈 v5.1 - 正向判断, 一句搞定
-  const lastSeg = segs[segs.length - 1];
+  // 4.4.2(2026-09-07 小欧, 北京老陈定案·清旧): 等待图标改由 thought-start 信号唯一驱动——
+  //   后端每"可见轮"LLM 请求前必发(react_loop 进 loop 前 + 每工具轮 observation 后), 前端据此产 waiting 段;
+  //   旧 showGreenCircle 双条件推断(!lastSeg || lastSeg.kind==='obs')已删除: 空容器首圈由首信号到达即亮,
+  //   obs 后等待由紧邻的 thought-start(waiting 段)承接, 无连接缝隙(<同批SSE), 不再双机制(设计3.4原则七去留)
   const taskActive =
     streaming ||
     !!highlightToolName ||
     badge === 'running' ||
     badge === 'paused';
-  const showGreenCircle = taskActive && (!lastSeg || lastSeg.kind === 'obs');
   return (
     <div
       style={{
@@ -425,15 +424,6 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           />
         );
       })}
-      {showGreenCircle && (
-        <div
-          style={{
-            margin: stepMargin(false),
-          }}
-        >
-          <WaitingIcon />
-        </div>
-      )}
     </div>
   );
 };
