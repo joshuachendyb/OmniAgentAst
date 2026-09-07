@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 从utils/sse.ts抽ExecutionStep至此, 断 chat→sse→api→chat 类型环(sse↔api循环)
 // 编辑历史: 2026-09-06 小欧 - 方案C观察点1/2根治: action 增 preview?: boolean(仅SSE齿轮先行预览行标记,
+// 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删ExecutionStep.type的cancelled分支(取消收尾单一由final+cancelled承担)
 //   刷新恢复时剔除, 与DB回放语义一致) — 小欧-2026-09-06
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
@@ -30,7 +31,6 @@ export interface ExecutionStep {
     | 'final_stats'
     | 'context_overview'
     | 'truncated'
-    | 'cancelled'
     | 'paused'
     | 'resumed'
     | 'retrying';

@@ -5,6 +5,7 @@
 // 2026-08-28 小沈 - 修复review-bugs#6: isValidStepType改hasOwnProperty, 防toString/__proto__原型污染 - 小沈-2026-08-28
 // 2026-08-28 小欧 - 三堂会审v1.3(P0): Colors.TEXT扩5档灰(PRIMARY#595959/SECONDARY#8c8c8c/TERTIARY#999/WEAK#888/STRONG#333), 消灰阶硬码复发(H3); FontSize.SECONDARY 13→12 废13档统一14/12二档(M2) - 小欧-2026-08-28
 // 2026-09-06 小欧 - B2(北京老陈定案: 灰字不醒目): Colors 新增功能色 ORANGE_RED=#fa541c(AntD5 volcano-6 火山橘红)——工具"未执行/被安全拦截/确认超时"提示色, 替代灰字 T.SECONDARY(占位) 与 WARNING(中断)；与 AuthorizationModal 倒计时告急色(已用 #fa541c)一致, 与齿轮橘#fa8c16/警告橙#faad14 同色带不冲突 ERROR 红#ff4d4f - 小欧-2026-09-06
+// 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删StepType/cancelled分支与stepMeta cancelled条目(取消收尾单一由final+cancelled承担)
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
  *
@@ -33,7 +34,6 @@ export type StepType =
   | 'truncated'
   | 'final'
   | 'error'
-  | 'cancelled'
   | 'paused'
   | 'resumed'
   | 'retrying'
@@ -177,7 +177,6 @@ const stepMeta: Record<StepType, StepMeta> = {
   truncated: { label: '✂️ 截断', priority: 'secondary', layout: 'inline' },
   final: { label: '✅ 完成', priority: 'primary', layout: 'block' },
   error: { label: '❌ 错误', priority: 'primary', layout: 'block' },
-  cancelled: { label: '⚠️ 已取消', priority: 'primary', layout: 'block' },
   paused: { label: '⏸️ 暂停', priority: 'secondary', layout: 'inline' },
   resumed: { label: '▶️ 恢复', priority: 'secondary', layout: 'inline' },
   retrying: { label: '🔄 重试', priority: 'secondary', layout: 'inline' },
