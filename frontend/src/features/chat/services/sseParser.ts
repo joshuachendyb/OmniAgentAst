@@ -11,6 +11,8 @@
 // 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字痕迹): ①onDenied 回调两参→三参
 //   (step,message,toolName)——user_rejected 事件透传 rawData.tool_name 供聚合被拒工具点名条; ②error blocked/timeout
 //   构造对象补 tool_name(rawData.tool_name, 后端 6.2 事件已带被拒工具名)——两路同源承灰字链路 — 小欧-2026-09-06
+// 编辑历史: 2026-09-07 小欧 - 4.4.1取消终态: 删外层 case 'cancelled' 与内层 switch 分支, 取消收尾单一由
+//   type=final+outcome=cancelled 承担(paused/resumed/retrying 保留); incident 废弃注释同步移出 cancelled — 小欧-2026-09-07
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -809,10 +811,10 @@ const processSSEData = (
         break;
       }
 
-      // 【北京老陈 2026-07-13 小欧】incident 类型已废弃: 后端统一用 type=cancelled/paused/retrying/resumed 直接表示
+      // 【北京老陈 2026-07-13 小欧】incident 类型已废弃: 后端统一用 type=paused/retrying/resumed 直接表示(2026-09-07 小欧 4.4.1: cancelled 移出该集合, 取消终态由 final+outcome=cancelled 承担)
 
-      // 【北京老陈 2026-07-12 小欧】直接处理 cancelled/paused/resumed/retrying 类型
-      case 'cancelled':
+      // 【北京老陈 2026-07-12 小欧】直接处理 paused/resumed/retrying 类型
+      // 2026-09-07 小欧 4.4.1: 删 cancelled——取消终态由 type=final+outcome=cancelled 承担, 前端不再消费 cancelled 事件
       case 'paused':
       case 'resumed':
       case 'retrying': {
@@ -846,15 +848,6 @@ const processSSEData = (
 
         // 根据type调用对应的回调
         switch (rawData.type) {
-          case 'cancelled':
-            onComplete?.(
-              responseBufferRef.current,
-              undefined,
-              handlers.executionStepsRef.current
-            );
-            setIsReceiving(false);
-            setIsConnected(false);
-            break;
           case 'paused':
             onPaused?.();
             if (rawData.confirm_id) {

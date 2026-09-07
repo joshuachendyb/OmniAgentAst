@@ -6,6 +6,8 @@
 // 编辑历史: 2026-08-28 小强 - hooks修复#10: onResumed缓冲区回放改为单次setMessages原子合并(防批处理乱序)
 // 编辑历史: 2026-08-28 小强 - hooks修复#11: 删onComplete后端保存空分支+else warn(YAGNI, 后端已自动落库)
 // 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段(trust_path/auto_confirm/confirm_timeout/backend_timeout), 与 sseParser 下发契约一致, 全量透传保弹窗正确渲染 — 小欧-2026-09-03
+// 编辑历史: 2026-09-07 小欧 - 4.4.1取消终态: isCancelEvent 窄化为 type=final+outcome=cancelled(删 type=cancelled
+//   分支)/isStreaming 终态条件同步移除 cancelled/取消日志文案对齐新契约 — 小欧-2026-09-07
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -129,13 +131,13 @@ export const useChatCallbacks = (
   const onStep = useCallback(
     (step: ExecutionStep) => {
       // 【北京老陈 2026-07-12 小欧】统一取消语义：interrupted → cancelled
-      // 2026-08-27 小欧 修复#1: 取消事件扩展识别 type==='cancelled'(服务端取消步骤), 不再仅限 final+outcome=cancelled
+      // 2026-09-07 小欧 4.4.1: type=cancelled 已从链路移除, 取消心跳/收尾单一由 final+outcome=cancelled 承担
       const isCancelEvent =
-        step.type === 'cancelled' ||
-        (step.type === 'final' && step.outcome === 'cancelled');
+        step.type === 'final' && step.outcome === 'cancelled';
       if (isCancelEvent) {
         hasReceivedCancelEventRef.current = true;
-        console.log('[取消] 收到 cancelled 事件');
+        // 2026-09-07 小欧 4.4.1(B10): 日志文案对齐新契约, type=cancelled 事件已不存在
+        console.log('[取消] 收到取消终态 final+cancelled');
       }
 
       // ✅ 如果正在取消中，跳过非取消且与终态无关的事件（避免旧 chunk/步骤污染 UI）
@@ -179,7 +181,7 @@ export const useChatCallbacks = (
         const lastMessage = prev[prev.length - 1];
         if (!lastMessage || lastMessage.role !== 'assistant') {
           // 【关键修复 2026-04-13】任何step都创建消息，不只是start
-          // 因为后端可能直接发 cancelled/paused/retrying，不发 start
+          // 因为后端可能直接发 paused/retrying/resumed，不发 start(2026-09-07 小欧 4.4.1: cancelled 移出该集合)
           const extractedDisplay_name = step.display_name;
           let finalDisplay_name = extractedDisplay_name;
           if (!finalDisplay_name && step.model && step.provider) {
@@ -222,12 +224,10 @@ export const useChatCallbacks = (
           ...lastMessage,
           content: stepDisplayContent,
           executionSteps: [...(lastMessage.executionSteps || []), step], // 直接追加到现有steps
-          // final/error/cancelled 时必须设置 isStreaming=false，停止 DynamicStatusDisplay
-          // 2026-08-27 小欧 修复#1/13: type==='cancelled' 亦须置 isStreaming=false
+          // final/error 时必须设置 isStreaming=false，停止 DynamicStatusDisplay
+          // 2026-09-07 小欧 4.4.1: type=cancelled 已从链路移除, 条件不再需要
           isStreaming:
-            step.type !== 'error' &&
-            step.type !== 'final' &&
-            step.type !== 'cancelled'
+            step.type !== 'error' && step.type !== 'final'
               ? lastMessage.isStreaming
               : false,
         };
