@@ -1,4 +1,32 @@
-﻿v0.19.40.6
+﻿v0.19.40.7
+更新时间: 2026-09-08 16:22:01 - 小欧-2026-09-08
+## v0.19.40.6以来 变更汇总(13个commit) - 小欧-2026-09-08
+[2026-09-08 16:22:01 小欧] 汇总范围=v0.19.40.6以来全部commit(共13个: docs4/feat5/fix2/feat-fix1/style1)
+
+### docs(4个):
+- LLM重试通知空串静默丢弃问题分析与修复方案-小欧-2026-09-08.md v1.0 根因三层证据链(日志码点/httpcore/httpx源码/asyncio空TimeoutError实测)+修复方案+回归单测+三堂会审 - 小欧-2026-09-08
+- [10]前端消息分类处理分析及设计 6.7改写TDD实施计划与步骤+瑕疵修正(计数10-11/表B5图标) - 小欧-2026-09-08
+- 前端UI静默10秒整批显示问题分析与修复方案-小欧-2026-09-08.md v1.0 根因(badge idle回落击穿修复)+修复方案+三堂会审+验收口径 - 小欧-2026-09-08
+- 前端消息分类设计 六章回归总原则(请求级只进P3)+6.3.4错误图标UI区分+清理正文版本标记 - 小欧-2026-09-08
+
+### feat(5个):
+- 前端[10]6.7[TDD]C1~C8: 后端业务错误只进P3不弹窗+请求级/执行级位4图标区分(请求级判据step===0, 执行级CloseCircleFilled/请求级StopOutlined)+useChatFacade包装器(先onError再上抛LiveError)+sseParser BUG-7对象content承接 - 小欧-2026-09-08
+- [12]log-and-print 取消/心跳6文件 console双写可见(北京老陈指令): A2/A5/A6/B1/B3取消5点双写+心跳C1双写带计数 - 小欧-2026-09-08
+- [12]心跳/取消加固 constants.py HEARTBEAT_INTERVAL常量化+心跳带换行P1吞事件修复+E/F文案DRY走cancel_terminal_text - 小欧-2026-09-08
+- [12]方案二 useSSE.ts 重连耗尽改轮询会话任务列表观察终态不再自动取消(防误杀假断连) - 小欧-2026-09-08
+- [12]方案一+方案五 后端6文件(chat_routes/stream_orchestrator/task_runtime/agent_runner/handle_answer/react_loop/final_step) 心跳保活+取消来源cancel_source区分A-G文案 - 小欧-2026-09-08
+
+### fix(2个):
+- base_service.py L1重试通知空串被真值判定静默丢弃修复(前端永不收retrying) retry_notice=str(e) or type(e).__name__兜底 - 小欧-2026-09-08
+- useTaskInfo.ts 前端UI静默10秒整批显示修复 thought/action/observation补idle->running恢复 badge不再被receiving门压回idle - 小欧-2026-09-08
+
+### feat/fix(1个):
+- [12]60000加固 useSSE.ts空闲超时实证打点+轮询中止信号F6/F9+idle定时器清理F10+类型修正, handler.ts sanitizeDisplayMessage防裸数字上弹+Toast打点 - 小欧-2026-09-08
+
+### style(1个):
+- AuthorizationModal/ChatInput/useTaskInfo prettier格式清理(历史欠账,北京老陈批准) - 小欧-2026-09-08
+
+v0.19.40.6
 更新时间: 2026-09-08 12:04:00 - 小欧-2026-09-08
 ## v0.19.40.5以来 变更汇总(20个commit) - 小欧-2026-09-08
 [2026-09-08 12:04:00 小欧] 汇总范围=v0.19.40.5以来全部commit(共20个: docs9/feat3/fix5/refactor3)
