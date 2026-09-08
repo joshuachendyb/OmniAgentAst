@@ -1,4 +1,37 @@
-﻿v0.19.40.5
+﻿v0.19.40.6
+更新时间: 2026-09-08 12:04:00 - 小欧-2026-09-08
+## v0.19.40.5以来 变更汇总(20个commit) - 小欧-2026-09-08
+[2026-09-08 12:04:00 小欧] 汇总范围=v0.19.40.5以来全部commit(共20个: docs9/feat3/fix5/refactor3)
+
+### docs(9个):
+- [12]连接中断自动取消任务-问题处理分析与解决方案-小欧-2026-09-08.md - 小欧-2026-09-08
+- [10]前端消息分类处理分析及设计 增补表B9(taskinfo折叠区事件去向,实码核对) v3.7 - 小欧-2026-09-08
+- [10]前端消息分类处理分析及设计 六章P3唯一定稿+6.1.1逻辑思路+一致性修正(v3.6) - 小欧-2026-09-08
+- [12]连接中断自动取消任务 问题处理分析与解决方案 v1.2追加九/十章真实代码diff+TDD用例实施步骤(附[11]根因说明v.更新) - 小欧-2026-09-08
+- [11]连接中断自动取消任务-根因分析说明-小欧-2026-09-07.md 编号归档提交 - 小欧-2026-09-08
+- 前端消息分类处理分析及设计-小欧-2026-09-06.md 5.3.1意图标记修订(v3.1)+[10]编号归档 - 小欧-2026-09-08
+- 会话记录-小欧-2026-08-26.md 移动归档至doc-9月优化目录 - 小欧-2026-09-07
+- 日志分析报告-小欧-2026-09-07.md v1.1 3天日志7问题定论(3修/1证伪/3非bug)3b病根时间线证据 - 小欧-2026-09-07
+- 前端消息分类处理分析及设计-小欧-2026-09-06.md 4.4.1旧case清零-同步文档（已按指示恢复后提交） - 小欧-2026-09-07
+
+### feat(3个):
+- scripts loader/title图标对比预览页(UI选型用) - 小欧-2026-09-08
+- agent_runner/react_loop 4.4.3 start自带ai_message_id+startinfo合并入start - 小欧-2026-09-08
+- useSSE/ToolCallLine/Layout/index.css 意图标记短路+loader弧段换型+标题D三色图标 - 小欧-2026-09-08
+
+### fix(5个):
+- AuthorizationModal/sseParser B3 submitting防双发+startinfo分支删除 - 小欧-2026-09-08
+- llm_call.py/handle_answer.py 3b用户取消病根-L2放行元组补cancelled+取消中断异常承接+error分支cancelled终态特判 - 小欧-2026-09-07
+- e2e_helpers.py 4.4.1旧case清零-仅SSE集合移出cancelled - 小欧-2026-09-07
+- sseParser.ts/useChatCallbacks.ts 4.4.1取消收尾收敛-删type=cancelled链路与日志文案 - 小欧-2026-09-07
+- task_runtime.py/migrate_steps.py/db_initializer.py 4.4.1旧case清零-后端取消终态与行迁移 - 小欧-2026-09-07
+
+### refactor(3个):
+- PipelineRenderer.tsx showGreenCircle去留清理(北京老陈定案)-等待图标改thought-start信号唯一驱动 - 小欧-2026-09-07
+- handle_action.py/react_loop.py/PipelineRenderer.tsx 4.4.2 thought-start时序根治-发射点前移至请求前+waiting段落段覆盖 - 小欧-2026-09-07
+- chat.ts/execution.ts/stepStyles.ts/stepConstants.ts/stepFilter.ts 4.4.1旧case清零-前端类型防御层 - 小欧-2026-09-07
+
+v0.19.40.5
 更新时间: 2026-09-07 13:09:01 - 小欧-2026-09-07
 ## v0.19.40.4以来 变更汇总(38个commit) - 小欧-2026-09-07
 [2026-09-07 13:09:01 小欧] 汇总范围=v0.19.40.4以来全部commit(本分支 optimize-0.19.40.1 自v0.19.40.4累积38个commit)
