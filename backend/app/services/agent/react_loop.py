@@ -21,6 +21,10 @@
 #       (agent_runner run_agent_in_background 入口透传的 eager 值)再 publish;
 #       publish 做 dict 浅拷贝(task_state.py:49), 事后回填追不上实时流, 故 publish 前装配;
 #       None 守卫(getattr)——eager 分配失败时按缺失处理, 与现状 startinfo 缺失行为一致 — 小欧-2026-09-07
+# 2026-09-08 小欧 方案五(6.6.2 D/E/F 路径, 北京老陈 2026-09-08, 见doc-9月优化[12] 6.6):
+#   D(循环顶取消)来源读 agent._cancel_source(A/B经cancel_task写回, D被动继承), 文案按来源出, FinalStep带source;
+#   E(max_steps<=0)→source=config_limit文案"已达最大执行步数限制，任务结束"; F(循环结束无终态兜底)→source=status_inconsistency
+#   文案"执行状态异常，任务已结束" — 取消终态区分来源落库/下发(A-G全覆盖)
 
 """react_loop — ReAct 循环核心(薄调度)
 
@@ -123,9 +127,10 @@ async def run_react_cycle(
     if max_steps <= 0:
         logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接终止")
         _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
+            # 2026-09-08 小欧 方案五 E路径: 文案/来源按 6.6.2 config_limit 口径, source 独立落库 — 北京老陈 2026-09-08
             step=len(agent.steps),  # S4: start 已 emit(step=0), 终态接续步号, 避免同消息下双 step=0 — 小欧 2026-08-16
-            response=f"最大步骤数({max_steps})，无可执行步骤，任务取消",  # Bug2+5: max_steps<=0不是"已耗尽"; outcome=cancelled→消息一致 — 小欧 2026-07-23
-            outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, max_steps=0终态统一
+            response="已达最大执行步数限制，任务结束",  # Bug2+5: max_steps<=0不是"已耗尽"; outcome=cancelled→消息一致 — 小欧 2026-07-23
+            outcome="cancelled", cancel_source="config_limit",  # 小欧 2026-07-18: MetaStep→FinalStep, max_steps=0终态统一
         ))
         await _publish(_fs[0].to_dict())
         await _publish(_fs[1].to_dict())
@@ -158,14 +163,18 @@ async def run_react_cycle(
             # 注: 原 react_cycle 场景B 依赖 llm_client._cancelled, 该属性全局从未赋值(死代码),
             # 曾导致用户取消误走 empty_response→ErrorStep(failed)。 — 小沈 2026-07-13
             if task_id:
-                from app.services.task.task_runtime import check_cancelled, wait_for_resume
+                from app.services.task.task_runtime import check_cancelled, wait_for_resume, cancel_terminal_text
                 if await check_cancelled(task_id):
-                    logger.info(f"[run_react_cycle] 检测到任务取消(task_id={task_id}), 终止为 cancelled")
+                    # 2026-09-08 小欧 方案五 D路径: 来源读 agent._cancel_source(A/B 经 cancel_task 写回, D 被动继承),
+                    #   文案按来源出, FinalStep 带 source 落库 — 北京老陈 2026-09-08
+                    cancel_source = getattr(agent, "_cancel_source", None) or "user_requested"
+                    logger.info(f"[run_react_cycle] 检测到任务取消(task_id={task_id}, source={cancel_source}), 终止为 cancelled")
                     _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
                         # 2026-08-17 - 小健 - 三堂会审-S4修复: 首轮前取消(llm_call_count 尚未+1=0)时,
                         #   step=0 与 start(step=0)双 step0(与 S4"start占0,业务从1起"矛盾); or 1 接续唯一步号
                         step=agent.llm_call_count or 1,
-                        response="任务已被用户取消", outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 用户取消终态统一
+                        response=cancel_terminal_text(cancel_source), outcome="cancelled",
+                        cancel_source=cancel_source,  # 方案五 D路径 source — 小欧 2026-09-08
                     ))
                     await _publish(_fs[0].to_dict())
                     await _publish(_fs[1].to_dict())
@@ -254,8 +263,8 @@ async def run_react_cycle(
             logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 终止")
             _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=agent.llm_call_count,
-                response=f"任务循环结束未设终态(status={agent.status})",  # Bug3: 循环自然退出不是"异常",用事实描述 — 小欧 2026-07-23
-                outcome="cancelled",  # 小欧 2026-07-18: MetaStep→FinalStep, 循环结束无终态兜底统一
+                response="执行状态异常，任务已结束",  # 2026-09-08 小欧 方案五 F路径: 文案按 6.6.2 status_inconsistency 口径 — 北京老陈 2026-09-08
+                outcome="cancelled", cancel_source="status_inconsistency",  # 小欧 2026-07-18: MetaStep→FinalStep, 循环结束无终态兜底统一
             ))
             await _publish(_fs[0].to_dict())
             await _publish(_fs[1].to_dict())

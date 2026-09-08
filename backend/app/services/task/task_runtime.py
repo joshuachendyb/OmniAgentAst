@@ -12,6 +12,9 @@
 # 2026-09-07 小欧 - 4.4.1(取消终态信号的分工): 新增 _cancel_final_dict(task_id) 顶层构造 final+cancelled(禁止 build_step_dict 防 data 嵌套, 前端读顶层 outcome 失效);
 #   task_cancel_check_and_yield 去重检测扩展认 final+cancelled + 产出改 final; task_cancel_check 启动前分支同改。— 配套前端删 case 'cancelled', 取消收尾单一由 final+outcome=cancelled 承担。
 # 2026-09-07 小欧 - 4.4.1(B9): task_cancel_check_and_yield 去重删 type=cancelled 与 incident_value 两枝历史兼容分支(禁止backward; incident_value 线上零生产者, 运行任务只产新契约终态), 单条件完备
+# 2026-09-08 小欧 - 方案四/五(北京老陈, 见doc-9月优化[12] 6.5/6.6): cancel_task/_cancel_final_dict 增 source 来源区分,
+#   CANCEL_SOURCE_TERMINAL_TEXT+cancel_terminal_text 按来源出终态文案(6.6.2 A-G 全覆盖); set_cancelled(**extra=cancel_source) 落库;
+#   C/D 随 agent._cancel_source 继承 A/B 来源; task_cancel_check(_and_yield) source 随 running_tasks.cancel_source 带出。
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -50,25 +53,51 @@ def _current_step(task_id: str) -> int:
     return 1
 
 
-def _cancel_final_dict(task_id: str) -> dict:
+# ============================================================
+# 取消来源→用户可见终态文案(方案五 6.6.2 A-G 全覆盖, 北京老陈 2026-09-08)
+# ============================================================
+CANCEL_SOURCE_TERMINAL_TEXT: dict = {
+    "user_requested": "任务已被用户取消",                           # A 人工
+    "client_disconnect_timeout": "连接中断多次重连失败，任务已自动取消",  # B 断连重连耗尽(本案例路径)
+    "config_limit": "已达最大执行步数限制，任务结束",                  # E 配置限制
+    "status_inconsistency": "执行状态异常，任务已结束",               # F 状态异常兜底
+    "orchestrator_error": "服务内部异常，任务已终止",                 # G orchestrator 异常自保取消
+}
+
+
+def cancel_terminal_text(source: Optional[str]) -> str:
+    """取消来源→终态文案(方案五 6.6.2): 缺省/未知来源回落既有文案"任务已被取消", 兼容原则 — 小欧 2026-09-08"""
+    return CANCEL_SOURCE_TERMINAL_TEXT.get(source or "", "任务已被取消")
+
+
+def _cancel_final_dict(task_id: str, source: Optional[str] = None) -> dict:
     """组装取消终态 step dict(type=final, outcome=cancelled) — 小欧 2026-09-07 4.4.1:
     前端 case 'cancelled' 已删, 取消收尾单一由 type=final+outcome=cancelled 承担。
-    禁止 build_step_dict: 其 data 参数会被 MetaStep 包成 data 嵌套, 前端读顶层 outcome 会失效。"""
+    禁止 build_step_dict: 其 data 参数会被 MetaStep 包成 data 嵌套, 前端读顶层 outcome 会失效。
+    2026-09-08 小欧 方案五: content 按来源出文案, 顶层带 cancel_source 供前端展示/排查(随 step dict 一并落库)。"""
     return {
         "step": _current_step(task_id),
         "type": "final",
         "outcome": "cancelled",
-        "content": "任务已被取消",
+        "content": cancel_terminal_text(source),
+        "cancel_source": source or "user_requested",
     }
 
-async def cancel_task(task_id: str, session_id=None) -> dict:
+async def cancel_task(task_id: str, session_id=None, source: str = "user_requested") -> dict:
     cancel_time = datetime.now()
-    logger.info(f"[TaskControl] 取消任务 {task_id}")
+    logger.info(f"[TaskControl] 取消任务 {task_id} source={source}")  # 6.6.1 日志区分来源 — 小欧 2026-09-08
     success = await set_cancelled(
         task_id,
         cancel_time=cancel_time.isoformat(),
         cancel_request_time=cancel_time.timestamp(),
+        cancel_source=source,
     )
+    # 方案五 C/D 继承(6.6.2): 来源写回 agent._cancel_source, 使被打断的在飞 LLM 流(handle_answer C路径)
+    #   与循环顶检出(D路径)能读到 A/B 原来源, 一个取消动作一个来源(DRY/KISS) — 小欧 2026-09-08
+    _task = running_tasks.get(task_id, {})
+    _agent = _task.get("agent")
+    if _agent is not None:
+        _agent._cancel_source = source
     ai_service = await get_task_field(task_id, "ai_service")
     if ai_service:
         try:
@@ -104,7 +133,8 @@ async def task_cancel_check_and_yield(
             logger.info(f"[CancelCheck] 任务 {task_id} 已有cancelled终态,跳过")
             return None
         logger.info(f"[CancelCheck] 任务 {task_id} 取消状态: True")
-        step_dict = _cancel_final_dict(task_id)
+        _cancel_source = running_tasks.get(task_id, {}).get("cancel_source")  # 方案五: source 随落库值带出 — 小欧 2026-09-08
+        step_dict = _cancel_final_dict(task_id, _cancel_source)
         logger.info(f"[Step] 发送 final(cancelled) 步骤")
         current_execution_steps.append(step_dict)
         return format_agent_sse(step_dict)
@@ -121,7 +151,9 @@ async def task_cancel_check(
     if await check_cancelled(task_id):
         # 4.4.1(2026-09-07 小欧): 启动前取消分支产出改 final+cancelled,
         #   与 task_cancel_check_and_yield 同口径(前端删 case 'cancelled' 后仅认 final 收尾)
-        return True, format_agent_sse(_cancel_final_dict(task_id))
+        # 2026-09-08 小欧 方案五: source 随落库值带出
+        _cancel_source = running_tasks.get(task_id, {}).get("cancel_source")
+        return True, format_agent_sse(_cancel_final_dict(task_id, _cancel_source))
     return False, ""
 
 

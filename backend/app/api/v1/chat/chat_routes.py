@@ -18,6 +18,7 @@
 # 2026-09-02 - 小欧 - 会话信任功能修复 v1.5 ①(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): confirm 端点调用改 `await resolve_confirmation(...)` — resolve_confirmation 由同步改 async 后, API 层路由必须 await(5.1 落库强一致, 反查失败 raise, 一处不改则运行时报错显性暴露)
 # 2026-09-03 - 小欧/北京老陈 - confirm端点补日志: 改前无任何log, 问题排查全靠猜; 收到确认/确认成功/confirm_id不存在或已处理三处关键节点补info/warning
 # 2026-09-03 - 小欧/北京老陈 - 后端必有返回: 全链路try兜底, 异常也返回success False, 杜绝前端await死等(北京老陈"后端不能没有返回"铁律)
+# 2026-09-08 - 小欧 - 方案五(6.6.1): cancel 端点增 source query 参数(缺省 user_requested), 透传 task_runtime.cancel_task 落库; 支撑方案四断连超时来源区分
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -55,8 +56,9 @@ async def chat_stream_endpoint(request: ChatRequest):
 
 
 @task_router.post("/chat/stream/cancel/{task_id}")
-async def cancel_stream_endpoint(task_id: str, session_id: Optional[str] = None):
-    return await cancel_task(task_id, session_id)
+async def cancel_stream_endpoint(task_id: str, session_id: Optional[str] = None, source: str = "user_requested"):
+    """取消任务 — source 区分取消来源(A人工 user_requested / 方案四断连超时 client_disconnect_timeout 等), 随取消请求落库 — 北京老陈 2026-09-08 小欧"""
+    return await cancel_task(task_id, session_id, source)
 
 
 @task_router.post("/chat/stream/pause/{task_id}")

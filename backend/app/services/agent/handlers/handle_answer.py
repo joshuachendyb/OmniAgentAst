@@ -52,6 +52,9 @@
 #   (白白白打3+次LLM, 约3分钟), 且 set_failed 覆盖已定的取消终态(chat_tasks.status=failed
 #   与 chat_task_steps=cancelled 自相矛盾); 直接 emit FinalStep(outcome="cancelled"),
 #   由 react_dispatch 状态推断置 CANCELLED, 与 task_runtime 取消终态分工一致 — 小欧-2026-09-07
+# 2026-09-08 小欧 方案五(6.6.2 C路径): err_type=="cancelled" 分支取消来源区分——
+#   取消来源读 agent._cancel_source(A/B 经 cancel_task 写回, C 被动继承), 终态文案按来源出(cancel_terminal_text),
+#   FinalStep 携带 cancel_source 落库/SSE下发, 不再统一"用户取消" — 北京老陈 2026-09-08
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -104,10 +107,14 @@ async def handle_answer(agent, parsed: Dict) -> dict:
         #   且 set_failed 覆盖已定的取消终态(chat_tasks.status=failed 与 chat_task_steps=cancelled 自相矛盾);
         #   直接 emit final(outcome=cancelled), 由 react_dispatch 状态推断置 CANCELLED — 小欧 2026-09-07
         if err_type == "cancelled":
-            logger.info(f"[answer] step={step} 用户取消, 终态 CANCELLED: {content}")
+            # 2026-09-08 小欧 方案五(6.6.2 C路径): 取消来源读 agent._cancel_source(A/B 经 cancel_task 写回),
+            #   文案按来源区分(不再统一"用户取消"), FinalStep 带 cancel_source 落库/下发 — 北京老陈 2026-09-08
+            from app.services.task.task_runtime import cancel_terminal_text
+            cancel_source = getattr(agent, "_cancel_source", None) or "user_requested"
+            logger.info(f"[answer] step={step} 终态 CANCELLED source={cancel_source}: {content}")
             _events.extend(agent._step_emitter.emit_final_with_stats(FinalStep(
-                step=step, response="任务已被用户取消", outcome="cancelled",
-                error_type="cancelled", error_message=content,
+                step=step, response=cancel_terminal_text(cancel_source), outcome="cancelled",
+                error_type="cancelled", error_message=content, cancel_source=cancel_source,
             )))
             return {"events": _events, "type": parsed_type}
         _events.extend(agent._step_emitter.emit_failed_final(

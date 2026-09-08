@@ -440,7 +440,12 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
             try:
                 await asyncio.wait_for(buffer.cond.wait(), timeout=60.0)
             except asyncio.TimeoutError:
-                logger.debug(f"[SSE] stream_reader cond.wait 60s超时, 重检done: task_id={task_id}")
+                logger.debug(f"[SSE] stream_reader cond.wait 60s超时, 发心跳保活后重检done: task_id={task_id}")
+                # 方案一 SSE keep-alive 心跳(北京老陈 2026-09-08): 60s无业务事件(如 tool 参数流式期间)时
+                #   向前端发 SSE 注释行, 刷新前端 IDLE_TIMEOUT=60000 空闲计时(useSSE.ts:659 按字节计时刷新);
+                #   前端 processSSEData 对非 'data: ' 前缀行直接 return(sseParser.ts:112-115), 零业务解析零副作用。
+                #   真断连时 heartbeat 随连接自然停发, 前端仍按 60s 判死走重连/兜底。 — 小欧 2026-09-08
+                yield ": ping"
                 if buffer.done.is_set():
                     return
                 continue

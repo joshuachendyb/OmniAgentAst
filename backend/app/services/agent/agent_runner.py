@@ -111,6 +111,10 @@
 #   [1] run_agent_in_background 入口将 eager ai_message_id 透传挂到 agent._ai_message_id(供 react_loop start 发布前装配);
 #   [2] 删 start 分支 startinfo 派生构造 13 行, 仅保留 _persist 落库(start 已自带 ai_message_id);
 #   [3] 通道路由注释同步(start/startinfo 不再双发, startinfo 事件从链路移除, 前端不再消费) — 小欧-2026-09-07
+# 2026-09-08 小欧 方案五(6.6.2 G路径, 北京老陈 2026-09-08, 见doc-9月优化[12] 6.6):
+#   ②CancelledError 取消分支(CancelledError 系 orchestrator 异常→bg_task.cancel() 触发, G路径):
+#   未标记来源时置 agent._cancel_source="orchestrator_error"; finally 守卫 CANCELLED 分支文案改
+#   cancel_terminal_text(source) 按来源出; 守卫 FinalStep 携带 cancel_source 落库/下发(A-G全覆盖)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -428,6 +432,10 @@ async def run_agent_in_background(
                 set_cancelled(agent)
             except ValueError:
                 pass
+            if getattr(agent, "_cancel_source", None) is None:
+                # 方案五 G路径(6.6.2): CancelledError 系 orchestrator 异常→bg_task.cancel() 触发(BUG-32 链路),
+                #   非用户取消, 未标记来源则定为后端自保取消; A/B 若已标记则尊重原来源不覆盖 — 小欧 2026-09-08
+                agent._cancel_source = "orchestrator_error"
 
     # ③ 异常分支 — 小欧 2026-07-13
     except Exception as e:
@@ -473,7 +481,9 @@ async def run_agent_in_background(
         ):
             _oc, _resp, _et, _em = "failed", "任务执行失败", "agent_operation_error", ""
             if agent and agent.status == AgentStatus.CANCELLED:
-                _oc, _resp, _et, _em = "cancelled", "任务已取消", "", ""
+                # 方案五 G路径(2026-09-08 小欧): 文案按来源出(orchestrator_error="服务内部异常，任务已终止"), 不再统一"任务已取消"
+                from app.services.task.task_runtime import cancel_terminal_text
+                _oc, _resp, _et, _em = "cancelled", cancel_terminal_text(getattr(agent, "_cancel_source", None)), "", ""
             elif agent and agent.status == AgentStatus.COMPLETED:
                 # 防御性: 正常流程成功必有 FinalStep, 此处仅兜底, 不误标 failed — 小欧 2026-07-18
                 _oc, _resp, _et, _em = "completed", "任务执行完成", "", ""
@@ -482,7 +492,8 @@ async def run_agent_in_background(
                 if _last_err:
                     _et, _em = _last_err[0] or "agent_operation_error", _last_err[1] or ""
             _fs = FinalStep(step=(agent.llm_call_count if agent else None) or 1, response=_resp, reasoning=_em or _resp,  # P2(§10.4.4): 弃 next_step, 统一 agent 轮数; 三堂会审复核(小欧): agent 空防御统一
-                            outcome=_oc, error_type=_et, error_message=_em)
+                            outcome=_oc, error_type=_et, error_message=_em,
+                            cancel_source=(getattr(agent, "_cancel_source", None) if _oc == "cancelled" else ""))  # 方案五: 取消终态带来源落库/下发 — 小欧 2026-09-08
             _fd = _fs.to_dict()
             current_execution_steps.append(_fd)
             if ai_message_id is not None:
