@@ -25,6 +25,14 @@
 #   D(循环顶取消)来源读 agent._cancel_source(A/B经cancel_task写回, D被动继承), 文案按来源出, FinalStep带source;
 #   E(max_steps<=0)→source=config_limit文案"已达最大执行步数限制，任务结束"; F(循环结束无终态兜底)→source=status_inconsistency
 #   文案"执行状态异常，任务已结束" — 取消终态区分来源落库/下发(A-G全覆盖)
+# 2026-09-08 小欧 方案五修订2(三堂会审3轮, 北京老陈核准): E/F 路径终态文案由硬编码字面量改为
+#   cancel_terminal_text("config_limit"/"status_inconsistency") — DRY 单一文案源(与 task_runtime CANCEL_SOURCE_TERMINAL_TEXT 同值),
+#   E/F 日志补 source 便于问题跟踪; cancel_terminal_text 顶层 import(D 路径局部 import 同函数去重, 已验证无循环依赖)
+#   — 小欧-2026-09-08
+# 2026-09-08 小欧 循环依赖回归修复(9-08 TDD实施期发现): react_loop 顶层 import task_runtime 使
+#   task包冷启动(如pytest直接import task模块)踩 load-time 循环: task/__init__→registry→agent.steps→
+#   base_agent→react_loop→task_runtime(partial)→registry(partial)ImportError。恢复 cancel_terminal_text
+#   走 D 路径局部 import(下方同函数已局部 import task_runtime, 运行期无循环), 顶层依赖消除 — 小欧-2026-09-08
 
 """react_loop — ReAct 循环核心(薄调度)
 
@@ -46,6 +54,8 @@ from app.services.agent.react_inference import handle_react_error, _is_recoverab
 from app.db import db
 from app.services.chat import storage
 from app.services.task.task_state import get_stream_buffer
+# 2026-09-08 小欧 循环依赖回归修复: cancel_terminal_text 移除顶层 import(改D路径局部import),
+#   否则 task包冷启动(import task_runtime/task_registry)踩 load-time 循环 — 小欧-2026-09-08
 
 def _finalize_cycle(agent):
     """循环后收尾: 状态回调+任务追踪 — 小健 2026-06-17 从finally提取"""
@@ -73,6 +83,9 @@ async def run_react_cycle(
     if _buf is None:
         raise RuntimeError(f"[react_loop] StreamBuffer缺失(task={task_id or getattr(agent, 'task_id', '')})")
     _publish = _buf.publish
+    # 2026-09-08 小欧 循环依赖回归修复: cancel_terminal_text 由顶层import迁至运行期局部import
+    #   (E/F/D 三路径共用; task包冷启动 load-time 循环治理, 见编辑历史) — 小欧-2026-09-08
+    from app.services.task.task_runtime import cancel_terminal_text
 
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
 
@@ -125,11 +138,11 @@ async def run_react_cycle(
         await _compact_injected_history(agent)
 
     if max_steps <= 0:
-        logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接终止")
+        logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接终止 source=config_limit")
         _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
             # 2026-09-08 小欧 方案五 E路径: 文案/来源按 6.6.2 config_limit 口径, source 独立落库 — 北京老陈 2026-09-08
             step=len(agent.steps),  # S4: start 已 emit(step=0), 终态接续步号, 避免同消息下双 step=0 — 小欧 2026-08-16
-            response="已达最大执行步数限制，任务结束",  # Bug2+5: max_steps<=0不是"已耗尽"; outcome=cancelled→消息一致 — 小欧 2026-07-23
+            response=cancel_terminal_text("config_limit"),  # 2026-09-08 小欧 修订: 文案走 cancel_terminal_text 单一源(DRY, 三堂会审)
             outcome="cancelled", cancel_source="config_limit",  # 小欧 2026-07-18: MetaStep→FinalStep, max_steps=0终态统一
         ))
         await _publish(_fs[0].to_dict())
@@ -163,7 +176,7 @@ async def run_react_cycle(
             # 注: 原 react_cycle 场景B 依赖 llm_client._cancelled, 该属性全局从未赋值(死代码),
             # 曾导致用户取消误走 empty_response→ErrorStep(failed)。 — 小沈 2026-07-13
             if task_id:
-                from app.services.task.task_runtime import check_cancelled, wait_for_resume, cancel_terminal_text
+                from app.services.task.task_runtime import check_cancelled, wait_for_resume
                 if await check_cancelled(task_id):
                     # 2026-09-08 小欧 方案五 D路径: 来源读 agent._cancel_source(A/B 经 cancel_task 写回, D 被动继承),
                     #   文案按来源出, FinalStep 带 source 落库 — 北京老陈 2026-09-08
@@ -260,10 +273,10 @@ async def run_react_cycle(
             AgentStatus.FAILED,
             AgentStatus.CANCELLED,
         ):
-            logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 终止")
+            logger.warning(f"[run_react_cycle] 循环结束无终态(status={agent.status}), 终止 source=status_inconsistency")
             _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=agent.llm_call_count,
-                response="执行状态异常，任务已结束",  # 2026-09-08 小欧 方案五 F路径: 文案按 6.6.2 status_inconsistency 口径 — 北京老陈 2026-09-08
+                response=cancel_terminal_text("status_inconsistency"),  # 2026-09-08 小欧 修订: 文案走 cancel_terminal_text 单一源(DRY, 三堂会审)
                 outcome="cancelled", cancel_source="status_inconsistency",  # 小欧 2026-07-18: MetaStep→FinalStep, 循环结束无终态兜底统一
             ))
             await _publish(_fs[0].to_dict())

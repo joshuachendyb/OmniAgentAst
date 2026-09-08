@@ -103,6 +103,16 @@
 # 2026-09-05 - 小健 - [7]8.6 一拆三: 消费转发 stream_reader(原 stream_reader.py 行257-284)整份并入本模块
 #   (逐字复制零改动, 作为模块级函数, import format_agent_sse); _load_previous_messages 改指 history_loader,
 #   _log_task_end 改指 agent_telemetry; 删 stream_reader.py 空壳不留垫片(禁backward)
+# 2026-09-08 - 小欧 - 方案一心跳修订(北京老陈 2026-09-08 裁定, 三堂会审3轮):
+#   [P1吞事件] 心跳原 yield ": ping" 无换行尾 → 与下一条 data: 事件粘连成一行, 前端 split('\n') 后整行
+#    前缀非 'data: '(sseParser.ts:113 return) → 心跳后的第一个业务事件被整行丢弃(可能 final → 前端卡终态);
+#    改 yield ": ping\n" 心跳独立成行(SSE 注释行标准带换行)。
+#   [边界] 心跳周期原 60s 与前端 IDLE_TIMEOUT=60000 同时到期零余量, 网络/调度抖动下前端先判死致多余重连;
+#    timeout 60.0→25.0(老陈裁定 25s 与前端 60s 错开), 保证 60s 窗口内必收字节, 日志/注释文案同步。
+#   log: 心跳仍走 logger.debug("[SSE] cond.wait 25s超时" task_id) — 高频心跳不升 info 防日志噪杂。 — 小欧-2026-09-08
+# 2026-09-08 - 小欧 - 心跳周期 25.0 抽常量化(北京老陈 2026-09-08 指令): timeout/日志/注释硬编码 25s 改引
+#   constants.py §6 HEARTBEAT_INTERVAL(常量注释含与前端 IDLE_TIMEOUT=60000ms 的错开关系即"心跳先于前端判死"设计依据,
+#   变更须前端联动); 功能零变化, 消除裸魔法数。 — 小欧-2026-09-08
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -127,6 +137,7 @@ from app.utils.sse_formatter import format_agent_sse  # 8.6 消费转发并回�
 from app.services.agent.agent_runner import run_agent_in_background
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.task.task_state import create_stream_buffer, get_stream_buffer
+from app.constants import HEARTBEAT_INTERVAL  # 心跳周期常量(与前端 IDLE_TIMEOUT 的错开关系见 constants.py §6) — 小欧 2026-09-08
 from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
 from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, query_task_accumulation  # 12.2-Q3: 追加权威累计查询 — 小欧 2026-08-21
@@ -436,16 +447,18 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
             if buffer.done.is_set():
                 return
             # cond.wait()无超时: 若producer崩溃永不set.done, 消费者永久挂起泄漏HTTP连接
-            # 加60s超时, 超时后循环重检done — 北京老陈 2026-07-30
+            # 加超时并循环重检done — 北京老陈 2026-07-30; 2026-09-08 小欧: timeout 60s→25s(兼心跳保活周期, 见编辑历史)
             try:
-                await asyncio.wait_for(buffer.cond.wait(), timeout=60.0)
+                await asyncio.wait_for(buffer.cond.wait(), timeout=HEARTBEAT_INTERVAL)  # 心跳周期 HEARTBEAT_INTERVAL(错开关系见 constants.py §6, 与前端 IDLE_TIMEOUT=60s 错开)
             except asyncio.TimeoutError:
-                logger.debug(f"[SSE] stream_reader cond.wait 60s超时, 发心跳保活后重检done: task_id={task_id}")
-                # 方案一 SSE keep-alive 心跳(北京老陈 2026-09-08): 60s无业务事件(如 tool 参数流式期间)时
-                #   向前端发 SSE 注释行, 刷新前端 IDLE_TIMEOUT=60000 空闲计时(useSSE.ts:659 按字节计时刷新);
+                logger.debug(f"[SSE] stream_reader cond.wait {HEARTBEAT_INTERVAL}s超时, 发心跳保活后重检done: task_id={task_id}")
+                # 方案一 SSE keep-alive 心跳(北京老陈 2026-09-08, 周期 HEARTBEAT_INTERVAL): 该周期内无业务事件(如 tool 参数流式期间)时
+                #   向前端发 SSE 注释行 ": ping\n" —— 注意带换行尾(修订: 原 ": ping" 无换行会与下一条 data: 事件粘连,
+                #   前端 split('\n') 后整行前缀非 'data: ' 被 sseParser.ts:113 整行丢弃, 吞掉心跳后的第一个业务事件),
+                #   刷新前端 IDLE_TIMEOUT=60000 空闲计时; 心跳 HEARTBEAT_INTERVAL 与前端 60s 错开(constants.py §6), 无同时到期竞态;
                 #   前端 processSSEData 对非 'data: ' 前缀行直接 return(sseParser.ts:112-115), 零业务解析零副作用。
                 #   真断连时 heartbeat 随连接自然停发, 前端仍按 60s 判死走重连/兜底。 — 小欧 2026-09-08
-                yield ": ping"
+                yield ": ping\n"
                 if buffer.done.is_set():
                     return
                 continue

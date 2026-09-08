@@ -37,6 +37,8 @@
     2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪相关常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 迁至 app/services/agent/compaction_constants.py(随用方集中到 agent 域), 本源删除, 引用方(start_step/message_builder/compaction 各模块)导入路径同步改
     2026-09-02 小欧 v1.5.13 新增 HITL_CONFIRM_LEAD=10 / BYPASS_AUTO_LEAD=2 两个计时提前量常量(会话信任修复方案5.7.3/5.7.4: 后端唯一计时权威, 前端倒计时=后端窗口−提前量, 消除前后端计时竞态)
     2026-09-03 小欧/北京老陈 新增 HITL_MIN_CONFIRM_TIMEOUT=3 前端倒计时最小值常量(改前三处max(5,bt-LEAD)硬编码5→常量3)
+    2026-09-08 北京老陈裁定+小欧 新增 HEARTBEAT_INTERVAL=25.0 SSE keep-alive 心跳周期常量(stream_orchestrator 心跳
+        原硬编码 timeout=25.0 → 常量引用; 常量注释含与前端 IDLE_TIMEOUT=60000ms 的错开关系设计依据, 常量与前端改动联动)
 # 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 """
 
@@ -120,6 +122,16 @@ MAX_CACHE_SIZE = 1000  # 【系统级】使用对象: 会话/上下文缓存最�
 # ============================================================
 
 TASK_TIMEOUT = timedelta(hours=1)  # 【系统级】使用对象: task_registry.cleanup_expired_tasks 过期任务(创建>1h)兜底清理, 防 running_tasks 内存注册表泄漏
+
+# 2026-09-08 北京老陈裁定+小欧: SSE keep-alive 心跳周期常量(stream_orchestrator 原硬编码 timeout=25.0 → 本常量引用)
+HEARTBEAT_INTERVAL = 25.0  # 【系统级】使用对象: stream_orchestrator.stream_reader 心跳周期(秒)
+#   【与前端数字的关系 — 设计依据】:
+#   ① 前端空闲判死: IDLE_TIMEOUT=60000ms(frontend/src/hooks/useSSE.ts), 即 60s 内未收到任何数据字节即判定连接死亡。
+#   ② 后端心跳: 每 HEARTBEAT_INTERVAL=25s 无业务事件(如 tool 参数流式期间)向前端发 SSE 注释行 ": ping\n" 保活。
+#   ③ 错开原则(北京老陈 2026-09-08 裁定): 心跳 25s 必须 < 前端 60s 且非整倍数错开 —— 任何 60s 判死窗口内必含至少
+#      2 次心跳(25/50s), 网络/调度抖动下心跳先于前端判死刷新空闲计时, 前端不会误判死引发多余重连;
+#      若真断连心跳随连接自然停发, 前端仍按 60s 判死走重连/兜底(方案二)。变更本常量时必须同步改前端 IDLE_TIMEOUT,
+#      保持"心跳周期 < 前端判死窗口"; 原 60s 心跳与 60s 判死同时到期零余量, 已废弃(见 stream_orchestrator 编辑历史 2026-09-08)。
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧
 # 2026-09-03 小欧 - 真HITL确认超时已可配置化(security.hitl_timeout, config.yaml优先): 此常量作兜底默认

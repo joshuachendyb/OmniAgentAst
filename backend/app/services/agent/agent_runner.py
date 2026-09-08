@@ -115,6 +115,8 @@
 #   ②CancelledError 取消分支(CancelledError 系 orchestrator 异常→bg_task.cancel() 触发, G路径):
 #   未标记来源时置 agent._cancel_source="orchestrator_error"; finally 守卫 CANCELLED 分支文案改
 #   cancel_terminal_text(source) 按来源出; 守卫 FinalStep 携带 cancel_source 落库/下发(A-G全覆盖)
+# 2026-09-08 小欧 补缺日志(北京老陈"新改代码需合理log"核查): G路径来源定级处补 logger.info
+#   ("未标记取消来源, 定为 orchestrator_error"), 取消终态文案出处排查不再无痕 — 小欧-2026-09-08
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -436,6 +438,7 @@ async def run_agent_in_background(
                 # 方案五 G路径(6.6.2): CancelledError 系 orchestrator 异常→bg_task.cancel() 触发(BUG-32 链路),
                 #   非用户取消, 未标记来源则定为后端自保取消; A/B 若已标记则尊重原来源不覆盖 — 小欧 2026-09-08
                 agent._cancel_source = "orchestrator_error"
+                logger.info(f"[Runner] 任务 {task_id} 未标记取消来源, 定为 orchestrator_error(后端自保取消)")  # 2026-09-08 小欧: G路径来源定级日志, 排查取消终态文案出处不可无痕 — 小欧-2026-09-08
 
     # ③ 异常分支 — 小欧 2026-07-13
     except Exception as e:

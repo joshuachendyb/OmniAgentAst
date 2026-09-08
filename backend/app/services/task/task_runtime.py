@@ -15,6 +15,8 @@
 # 2026-09-08 小欧 - 方案四/五(北京老陈, 见doc-9月优化[12] 6.5/6.6): cancel_task/_cancel_final_dict 增 source 来源区分,
 #   CANCEL_SOURCE_TERMINAL_TEXT+cancel_terminal_text 按来源出终态文案(6.6.2 A-G 全覆盖); set_cancelled(**extra=cancel_source) 落库;
 #   C/D 随 agent._cancel_source 继承 A/B 来源; task_cancel_check(_and_yield) source 随 running_tasks.cancel_source 带出。
+# 2026-09-08 小欧 补缺日志(北京老陈"新改代码需合理log"核查): task_cancel_check 启动前取消分支补 logger.info
+#   (含 source), 消费侧来源跟踪闭环(生产侧 cancel_task 已记录) — 小欧-2026-09-08
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -153,6 +155,7 @@ async def task_cancel_check(
         #   与 task_cancel_check_and_yield 同口径(前端删 case 'cancelled' 后仅认 final 收尾)
         # 2026-09-08 小欧 方案五: source 随落库值带出
         _cancel_source = running_tasks.get(task_id, {}).get("cancel_source")
+        logger.info(f"[CancelCheck] 启动前取消(任务启动即终止) task={task_id} source={_cancel_source or 'user_requested'}")  # 2026-09-08 小欧: 消费侧来源跟踪, 补缺日志 — 小欧-2026-09-08
         return True, format_agent_sse(_cancel_final_dict(task_id, _cancel_source))
     return False, ""
 
