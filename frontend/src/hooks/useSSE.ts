@@ -19,6 +19,9 @@
 //   disconnect()主动abort与180s fetch超时abort同型(AbortError)无法靠error区分, 以操作语义标记判别:
 //   ①disconnect确有活动连接时设intentionalAbortRef并2s兜底清残留; ②catch入口读标+errorHandlerClassify===REQUEST_ABORT短路静默,
 //   根治"手动停止/卸载→误判request_timeout→1s后自动重连复活任务/误弹超时warning"; 180s超时abort无标记, 仍走原重连 - 小欧-2026-09-07
+// 编辑历史: 2026-09-08 小欧 - 方案二(北京老陈, 见doc-9月优化[12] 6.3): 重连N次全失败不再自动调cancel(任务可能仍在正常执行,
+//   tool参数流式等假断连会被误杀), 改为轮询会话任务列表(GET /sessions/{session_id}/tasks, 复用sessionTaskApi.listTasks)
+//   观察终态: 任务不存在或已终态(completed/failed/cancelled)即静默收尾, 轮询超时仍在执行才提示用户手动确认 - 小欧-2026-09-08
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -26,7 +29,7 @@ import {
   ErrorType,
   classifyError as errorHandlerClassify, // 2026-08-27 小欧 三堂会审H2: 引入纯分类函数替代带副作用的handleSSEError
 } from '@/services/error/handler';
-import { taskControlApi } from '../services/api/task.api';
+import { sessionTaskApi } from '../services/api/task.api'; // 2026-09-08 小欧 方案二: taskControlApi 移出(重连耗尽不再自动取消)
 import type {
   SSEError,
   SSEMetadata,
@@ -99,6 +102,55 @@ interface ErrorConfig {
   stopAction?: () => void; // 停止后的操作
 }
 
+// ============================================================
+// 方案二 轮询观察模式(北京老陈 2026-09-08): 重连耗尽后不再自动取消, 轮询会话任务列表观察终态。
+// 复用后端 GET /sessions/{session_id}/tasks(sessions.py:88-94) + 前端 sessionTaskApi.listTasks(task.api.ts:196-199)。
+// 任务不存在或已终态(completed/failed/cancelled) → 静默收尾; 轮询超时仍未终态 → 提示用户手动确认。 — 小欧-2026-09-08
+// ============================================================
+const TASK_POLL_INTERVAL = 5000; // 每5秒轮询一次
+const TASK_POLL_MAX = 30; // 最多30次(约2.5分钟)
+const TASK_TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'];
+
+const pollSessionTaskStatus = async (params: {
+  sessionId: string;
+  serverTaskId: string;
+  onError: ((error: SSEError) => void) | undefined;
+  onSetIsReceiving: (receiving: boolean) => void;
+}): Promise<void> => {
+  const { sessionId, serverTaskId, onError, onSetIsReceiving } = params;
+  for (let i = 0; i < TASK_POLL_MAX; i++) {
+    await new Promise((r) => setTimeout(r, TASK_POLL_INTERVAL));
+    try {
+      const res = await sessionTaskApi.listTasks(sessionId);
+      const task = res.tasks.find((t) => t.task_id === serverTaskId);
+      const status = task?.status;
+      // 任务不存在或已终态 → 正常收尾, 不取消不误报 — 小欧-2026-09-08
+      if (!task || TASK_TERMINAL_STATUSES.includes(status)) {
+        console.info(
+          `[SSE] 轮询终态: task=${serverTaskId} status=${status ?? 'not_found'}, 正常收尾`
+        );
+        onSetIsReceiving(false);
+        return;
+      }
+      console.info(
+        `[SSE] 轮询观察中: task=${serverTaskId} status=${status} (${i + 1}/${TASK_POLL_MAX})`
+      );
+    } catch (e) {
+      console.warn(`[SSE] 轮询失败(第${i + 1}次):`, e);
+    }
+  }
+  // 轮询超时仍未终态 → 提示用户手动处理(仍不自动取消) — 小欧-2026-09-08
+  console.warn(
+    `[SSE] 轮询 ${TASK_POLL_MAX} 次任务仍在执行, 提示用户手动确认 task=${serverTaskId}`
+  );
+  onError?.({
+    type: 'error',
+    error_type: 'server',
+    error_message: '连接已断开且任务仍在执行，请手动确认任务状态',
+    timestamp: new Date().toISOString(),
+  });
+};
+
 /**
  * 统一错误处理函数
  * 【小强添加 2026-04-11】使用统一错误处理中心errorHandler
@@ -119,6 +171,7 @@ const handleSSEError = (params: {
   onError: ((error: SSEError) => void) | undefined;
   reconnectTimeoutRef: React.MutableRefObject<number | null>;
   serverTaskId?: string | null; // 【北京老陈 2026-07-12 小欧】重连耗尽用于发起取消
+  sessionId?: string; // 【北京老陈 2026-09-08 小欧 方案二】重连耗尽后轮询观察会话任务列表所需 sessionId
 }) => {
   const {
     error,
@@ -165,12 +218,19 @@ const handleSSEError = (params: {
     onSetIsConnected(false);
     onSetIsReceiving(false);
 
-    // 【北京老陈 2026-07-12 小欧】重连 N 次全失败 → 才置为取消（不武断算取消）
-    if (serverTaskId) {
+    // 【北京老陈 2026-07-12 小欧 → 2026-09-08 小欧 方案二】重连 N 次全失败不再自动取消:
+    //   任务可能仍在正常执行(tool 参数流式等, 本案例根因), 自动取消会误杀; 改为轮询会话任务列表观察终态
+    //   (GET /sessions/{session_id}/tasks, 复用 sessionTaskApi.listTasks), 任务不存在或已终态即静默收尾 — 小欧-2026-09-08
+    if (serverTaskId && (params.sessionId || _pendingMessage?.sessionId)) {
       console.warn(
-        `[SSE] 重连 ${reconnectConfig.maxAttempts} 次均失败，发起取消 task=${serverTaskId}`
+        `[SSE] 重连 ${reconnectConfig.maxAttempts} 次均失败, 进入轮询观察 task=${serverTaskId}`
       );
-      taskControlApi.cancel(serverTaskId).catch(() => {});
+      void pollSessionTaskStatus({
+        sessionId: params.sessionId || _pendingMessage?.sessionId || '',
+        serverTaskId,
+        onError,
+        onSetIsReceiving,
+      });
     }
 
     // 调用错误回调
@@ -786,6 +846,7 @@ export const useSSE = (
         onError,
         reconnectTimeoutRef,
         serverTaskId: serverTaskIdRef.current, // 【北京老陈 2026-07-12 小欧】重连耗尽用于发起取消
+        sessionId: sessionId ?? config.sessionId, // 【北京老陈 2026-09-08 小欧 方案二】重连耗尽轮询观察所需 sessionId, 兜底 config.sessionId 防外层未传自定义会话时轮询静默失效 (2026-09-08 实施修正)
       });
 
       // 保存待重连的消息（用于下次重连）
@@ -827,6 +888,7 @@ export const useSSE = (
         onError,
         reconnectTimeoutRef,
         serverTaskId: serverTaskIdRef.current,
+        sessionId: pendingMessageRef.current?.sessionId, // 2026-09-08 小欧 方案二: 轮询观察 sessionId
       });
       return;
     }
