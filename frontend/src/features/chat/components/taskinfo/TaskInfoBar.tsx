@@ -21,6 +21,8 @@
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): prop 第7位 liveErrorText✗ string 改 liveError?: LiveError|null
 //   (P3数据源对象形态, useChatPanels 透传) + 位4 图标分层——执行级 error 用 CloseCircleFilled(红圆底白×,
 //   替原🛑, ·/着色 Colors.ERROR) + 请求级 error 用 ⛔(后端业务错误如"消息列表为空"); retrying🔁/truncated⚠ 不变 — 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - [HITL排查探针·临时]: 第一行onClick加console.log目标元素 + useEffect([])挂载日志,
+//   定位"事件区自动展开"是否真触发toggle(老陈怀疑点击事件泄露到taskinfo)或组件重挂载; 真机复现确认后删除 — 小欧-2026-09-08
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -71,6 +73,11 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   const [collapsed, setCollapsed] = useState(false);
   const info = useTaskInfo(steps, frames, receiving, detail, liveError);
   const b = BADGE_MAP[info.badge];
+  // 【HITL排查探针·临时 2026-09-08 小欧】挂载/重挂载日志——若"自动展开"因重挂载归零collapsed, 此处必有输出
+  useEffect(() => {
+    console.log('[TaskInfoBar探针] mount', { sessionId, receiving, pid: Math.random().toString(36).slice(2) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // 【2026-09-03 小欧 复用TrustPanel】信任查询/刷新/撤销/折叠逻辑已移入 TrustPanel 组件(TaskInfoBar 删除内联重复, DRY)
 
   // 【小欧 2026-08-26 修复 B2】实时计时：实时流(receiving)期间按 start 时刻走表
@@ -123,7 +130,16 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           cursor: 'pointer',
           flexWrap: 'nowrap',
         }}
-        onClick={() => setCollapsed((v) => !v)}
+        onClick={(e) => {
+          // 【HITL排查探针·临时 2026-09-08 小欧】打印触发toggle的真实事件源——验证老陈怀疑的"弹窗点击事件泄露"
+          console.log('[TaskInfoBar探针] toggle 触发', {
+            collapsedBefore: collapsed,
+            target: (e.target as HTMLElement)?.tagName,
+            targetText: (e.target as HTMLElement)?.textContent?.slice(0, 20),
+            isTrusted: e.nativeEvent?.isTrusted,
+          });
+          setCollapsed((v) => !v);
+        }}
       >
         <div
           style={{
