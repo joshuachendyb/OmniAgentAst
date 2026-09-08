@@ -63,7 +63,11 @@ export interface AuthorizationRequest {
 interface AuthorizationModalProps {
   visible: boolean;
   request: AuthorizationRequest | null;
-  onConfirm: (confirmed: boolean, trustSession: boolean, confirmId?: string) => void;
+  onConfirm: (
+    confirmed: boolean,
+    trustSession: boolean,
+    confirmId?: string
+  ) => void;
 }
 
 const SAFETY_LEVEL_CONFIG: Record<

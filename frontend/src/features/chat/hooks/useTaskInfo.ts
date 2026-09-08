@@ -74,7 +74,9 @@ export const useTaskInfo = (
 ) => {
   return useMemo(() => {
     // 2026-09-03 小欧/北京老陈: 单真源 — hasFailedFinal 一处算(DRY)，detail/实时双分支复用
-    const hasFailedFinal = steps.some((s) => s.type === 'final' && s.outcome === 'failed') || frames.finalStats?.final_status === 'failed';
+    const hasFailedFinal =
+      steps.some((s) => s.type === 'final' && s.outcome === 'failed') ||
+      frames.finalStats?.final_status === 'failed';
     // 【小欧 2026-08-26 修复 A3】选中历史任务：详情优先派生动态信息(状态/耗时/步骤/轮次/重试/token)
     if (detail) {
       const map: Record<string, TaskBadge> = {
@@ -87,7 +89,13 @@ export const useTaskInfo = (
       const u = detail.accumulated_usage;
       // 2026-09-03 小欧/北京老陈: detail分支单真源 — detail.status滞后时以 final/liveError 为准强制 failed
       let badge: TaskBadge = map[detail.status] ?? 'idle';
-      if (hasFailedFinal || detail.status === 'failed' || detail.error_type || liveErrorText) badge = 'failed';
+      if (
+        hasFailedFinal ||
+        detail.status === 'failed' ||
+        detail.error_type ||
+        liveErrorText
+      )
+        badge = 'failed';
       return {
         badge,
         elapsedSec: detail.duration ?? 0,
