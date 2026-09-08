@@ -22,6 +22,15 @@
 // 编辑历史: 2026-09-08 小欧 - 方案二(北京老陈, 见doc-9月优化[12] 6.3): 重连N次全失败不再自动调cancel(任务可能仍在正常执行,
 //   tool参数流式等假断连会被误杀), 改为轮询会话任务列表(GET /sessions/{session_id}/tasks, 复用sessionTaskApi.listTasks)
 //   观察终态: 任务不存在或已终态(completed/failed/cancelled)即静默收尾, 轮询超时仍在执行才提示用户手动确认 - 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 空闲超时实证打点+类型修正(北京老陈驱动「xx 60000」toast 定位):
+//   ①空闲超时触发点 readStream 加 console.warn 打点, 打印完整上下文(timeSinceLastData/thresholdMs/receiving/hitlWaiting/
+//   nowIso), 复现时与 handler.ts 的 [Toast] 打点对照即可明确 60000 是 timeSinceLastData 本身还是下游 error 透传;
+//   ②tsc 既有类型瑕疵修正: 轮询终态判定 status 可为 undefined 而 includes 需 string, ?? '' 兜底(语义不变) - 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 方案二实施期新增真实bug修复(测试F6/F9红→绿, 与sse-reconnect-poll用例对齐):
+//   轮询无中止信号——组件卸载后轮询仍持续 listTasks 并误弹"手动确认", 用户再发新消息后旧轮询与新消息请求叠加;
+//   新增 pollSignalRef+signal 中止信号(handleSSEError/pollSessionTaskStatus/useSSE 三条链路透传), 卸载/新消息置 aborted 即静默停止 - 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 方案二实施期新增真实bug修复(测试F10红→绿): 正常完成流后未清理残留 idle 定时器,
+//   60s后僵尸 reconnect 再造重连链/再生轮询; connect 成功路径补 idleTimeoutRef 清理(clearTimeout+置null) - 小欧-2026-09-08
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -116,16 +125,21 @@ const pollSessionTaskStatus = async (params: {
   serverTaskId: string;
   onError: ((error: SSEError) => void) | undefined;
   onSetIsReceiving: (receiving: boolean) => void;
+  // 2026-09-08 小欧 F6/F9修复(实施期新增真实bug): 轮询中止信号, 组件卸载/用户再发新消息即静默停止
+  signal?: { aborted: boolean };
 }): Promise<void> => {
-  const { sessionId, serverTaskId, onError, onSetIsReceiving } = params;
+  const { sessionId, serverTaskId, onError, onSetIsReceiving, signal } = params;
   for (let i = 0; i < TASK_POLL_MAX; i++) {
     await new Promise((r) => setTimeout(r, TASK_POLL_INTERVAL));
+    // 2026-09-08 小欧 F6/F9修复: 每tick前检查中止信号, 根治"unmount后轮询仍持续listTasks+误弹手动确认"
+    //   与"新消息发起后旧轮询请求叠加"两个真实缺陷(见sse-reconnect-poll.test.tsx F6/F9红→绿) - 小欧-2026-09-08
+    if (signal?.aborted) return;
     try {
       const res = await sessionTaskApi.listTasks(sessionId);
       const task = res.tasks.find((t) => t.task_id === serverTaskId);
       const status = task?.status;
       // 任务不存在或已终态 → 正常收尾, 不取消不误报 — 小欧-2026-09-08
-      if (!task || TASK_TERMINAL_STATUSES.includes(status)) {
+      if (!task || TASK_TERMINAL_STATUSES.includes(status ?? '')) {
         console.info(
           `[SSE] 轮询终态: task=${serverTaskId} status=${status ?? 'not_found'}, 正常收尾`
         );
@@ -172,6 +186,8 @@ const handleSSEError = (params: {
   reconnectTimeoutRef: React.MutableRefObject<number | null>;
   serverTaskId?: string | null; // 【北京老陈 2026-07-12 小欧】重连耗尽用于发起取消
   sessionId?: string; // 【北京老陈 2026-09-08 小欧 方案二】重连耗尽后轮询观察会话任务列表所需 sessionId
+  // 2026-09-08 小欧 F6/F9修复(实施期新增真实bug): 轮询中止信号透传, 组件卸载/新消息即停止本轮轮询 - 小欧-2026-09-08
+  pollSignal?: { aborted: boolean };
 }) => {
   const {
     error,
@@ -230,6 +246,7 @@ const handleSSEError = (params: {
         serverTaskId,
         onError,
         onSetIsReceiving,
+        signal: params.pollSignal,
       });
     }
 
@@ -400,6 +417,8 @@ export const useSSE = (
     maxDelay: 10000,
   });
   const reconnectAttemptsRef = useRef(0);
+  // 2026-09-08 小欧 F6/F9修复(实施期新增真实bug): 轮询中止信号ref, 组件卸载/新消息发起置aborted停止轮询 - 小欧-2026-09-08
+  const pollSignalRef = useRef({ aborted: false });
   // 【北京老陈 2026-07-12 小欧】记录已收到的最大后端事件 seq，断线重连时作为 after_seq 续传
   const lastSeqRef = useRef(0);
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -710,6 +729,15 @@ export const useSSE = (
             console.warn(
               `[SSE] 空闲超时：已经${timeSinceLastData / 1000}秒未收到数据，判定连接断开`
             );
+            // 2026-09-08 小欧 实证打点(北京老陈驱动「xx 60000」toast 定位): 打印空闲超时触发完整上下文,
+            //   复现时按 F12 对照 toast 出现时刻, 即可明确 60000 是 timeSinceLastData 本身还是下游 error 透传。 — 小欧-2026-09-08
+            console.warn('[SSE] ⏱️ 空闲超时触发上下文:', {
+              timeSinceLastData,
+              thresholdMs: IDLE_TIMEOUT,
+              receiving: isReceivingRef.current,
+              hitlWaiting: isHitlWaitingRef.current,
+              nowIso: new Date().toISOString(),
+            });
             onError?.('SSE 空闲超时：长时间未收到数据');
             // 2026-08-29 小强 修复#26: 空闲超时走重连路径而非disconnect(true)绕过重连, 确保自动重连发生
             reconnect();
@@ -799,6 +827,12 @@ export const useSSE = (
       }
 
       // 成功，重置重连状态
+      // 2026-09-08 小欧 F10修复(实施期新增真实bug): 正常完成流后清理残留 idle 定时器,
+      //   否则60s后僵尸reconnect再造重连链/再生轮询(F10红→绿) - 小欧-2026-09-08
+      if (idleTimeoutRef.current) {
+        clearTimeout(idleTimeoutRef.current);
+        idleTimeoutRef.current = null;
+      }
       setReconnectStatus('idle');
       reconnectAttemptsRef.current = 0;
       abortControllerRef.current = null; // 【修复 2026-05-11 小健】请求完成清理ref
@@ -847,6 +881,7 @@ export const useSSE = (
         reconnectTimeoutRef,
         serverTaskId: serverTaskIdRef.current, // 【北京老陈 2026-07-12 小欧】重连耗尽用于发起取消
         sessionId: sessionId ?? config.sessionId, // 【北京老陈 2026-09-08 小欧 方案二】重连耗尽轮询观察所需 sessionId, 兜底 config.sessionId 防外层未传自定义会话时轮询静默失效 (2026-09-08 实施修正)
+        pollSignal: pollSignalRef.current, // 2026-09-08 小欧 F6/F9: 轮询中止信号透传, 组件卸载/新消息即停止 - 小欧-2026-09-08
       });
 
       // 保存待重连的消息（用于下次重连）
@@ -889,6 +924,7 @@ export const useSSE = (
         reconnectTimeoutRef,
         serverTaskId: serverTaskIdRef.current,
         sessionId: pendingMessageRef.current?.sessionId, // 2026-09-08 小欧 方案二: 轮询观察 sessionId
+        pollSignal: pollSignalRef.current, // 2026-09-08 小欧 F6/F9: 轮询中止信号透传 - 小欧-2026-09-08
       });
       return;
     }
@@ -964,6 +1000,9 @@ export const useSSE = (
         return;
       }
       isProcessingRef.current = true;
+      // 2026-09-08 小欧 F6/F9修复(实施期新增真实bug): 用户再发新消息时中止旧轮询, 防轮询请求与新一轮处理叠加 - 小欧-2026-09-08
+      pollSignalRef.current.aborted = true;
+      pollSignalRef.current = { aborted: false };
 
       // 保存待重连的消息
       pendingMessageRef.current = { content, sessionId };
@@ -994,6 +1033,9 @@ export const useSSE = (
   useEffect(() => {
     return () => {
       disconnect();
+      // 2026-09-08 小欧 F6/F9修复(实施期新增真实bug): 组件卸载即中止进行中轮询, 根治
+      //   "unmount后轮询仍持续listTasks并误弹手动确认"(F6红→绿) - 小欧-2026-09-08
+      pollSignalRef.current.aborted = true;
       // 【修复小查问题】清理 pendingMessageRef 避免内存泄漏
       pendingMessageRef.current = null;
       // 【小新修复 2026-03-14】额外确保 reconnectTimeoutRef 被清理
