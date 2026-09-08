@@ -44,6 +44,10 @@
 # 2026-09-02 - 小欧 - 设计文档v1.21§5.2落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md):
 #   L1 重试分支(:414 logger后、sleep前) yield StreamChunk(retry_notice/retry_attempt/retry_total)——实时重试事件透出,
 #   llm_stream §5.3 消费转 ("meta",retrying) → react_cycle §5.5 转 MetaStep → 前端第一行位4🔁; 不设 stream_error 不触发读方 break
+# 2026-09-08 - 小欧 - 修复: L1 retry_notice 空串被真值判定静默丢弃(前端永不收重试通知)。
+#   根因: asyncio 读超时抛无参 TimeoutError() → httpcore/httpx map_exceptions 逐层包装 → httpx.ReadTimeout(""),
+#   str(e)==""→llm_call.py:93 真值判定丢弃。修复: retry_notice=str(e) or type(e).__name__ 兜底为类型名;
+#   日志行同改 {str(e) or type(e).__name__}。回归单测: tests/test_llm_retry_visibility.py §5.2b。
 """
 LLM 核心模块 — BaseAIService
 
@@ -414,12 +418,15 @@ class BaseAIService:
                                     wait_time = max(int(_dt.timestamp() - time.time()), 1)
                                 except Exception:
                                     pass
-                    logger.warning(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {e}")
-                    # 小欧 2026-09-02: 实时重试透出 —— L1 重试前发通知, 经 llm_stream §5.3 消费转 MetaStep(retrying) 发前端;
-                    #   不设 stream_error 故不触发读方 break; retry_notice=str(e) 带原始错误文本(str(ReadTimeout)="read timeout")
+                    logger.warning(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {str(e) or type(e).__name__}")
+                    # 小欧 2026-09-02: 实时重试透出 —— L1 重试前发通知, 经 llm_call 消费转 MetaStep(retrying) 发前端;
+                    #   不设 stream_error 故不触发读方 break; retry_notice 带原始错误文本。
+                    #   小欧 2026-09-08 修复: 实测生产日志 httpx.ReadTimeout 的 str(e) 恒为空串
+                    #   (asyncio 超时抛无参 TimeoutError() → httpcore/httpx 逐层 map_exceptions 包装, 见 httpcore._exceptions._map/httpx._transports.default),
+                    #   空串真值=假被 llm_call.py:93 丢弃 → 前端永不收 retrying。修复: str(e) or type(e).__name__ 兜底。
                     yield StreamChunk(
                         content="", chunk_model=self.llm_model, is_done=False,
-                        retry_notice=str(e), retry_attempt=retry_count, retry_total=max_retries,
+                        retry_notice=str(e) or type(e).__name__, retry_attempt=retry_count, retry_total=max_retries,
                     )
                     await asyncio.sleep(wait_time)
                     continue
