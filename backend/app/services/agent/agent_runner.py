@@ -117,6 +117,9 @@
 #   cancel_terminal_text(source) 按来源出; 守卫 FinalStep 携带 cancel_source 落库/下发(A-G全覆盖)
 # 2026-09-08 小欧 补缺日志(北京老陈"新改代码需合理log"核查): G路径来源定级处补 logger.info
 #   ("未标记取消来源, 定为 orchestrator_error"), 取消终态文案出处排查不再无痕 — 小欧-2026-09-08
+# 2026-09-08 小欧 北京老陈指令(console可见性): G路径来源定级 logger.info→log_and_print 双写,
+#   后端命令行可见"未标记取消来源,定为orchestrator_error"; 另 B2 守卫兜底补发取消终态补 logger.info(仅文件)
+#   — 小欧-2026-09-08
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -147,7 +150,7 @@ from app.services.task.task_state import (
     running_tasks, running_tasks_lock,
     agent_streams, create_stream_buffer, reclaim_stream_buffer,
 )
-from app.logger import logger
+from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print 双写(console可见G路径定级) — 小欧-2026-09-08
 from app.logger.prompt_logger import get_prompt_logger
 from app.utils.time_utils import get_local_iso_timestamp  # S2 update_task end_time(10.1.7②-1) — 小欧 2026-08-16
 from app.services.chat.storage import update_user_message_final  # v2.0 改动2 — 小欧 2026-08-19
@@ -438,7 +441,7 @@ async def run_agent_in_background(
                 # 方案五 G路径(6.6.2): CancelledError 系 orchestrator 异常→bg_task.cancel() 触发(BUG-32 链路),
                 #   非用户取消, 未标记来源则定为后端自保取消; A/B 若已标记则尊重原来源不覆盖 — 小欧 2026-09-08
                 agent._cancel_source = "orchestrator_error"
-                logger.info(f"[Runner] 任务 {task_id} 未标记取消来源, 定为 orchestrator_error(后端自保取消)")  # 2026-09-08 小欧: G路径来源定级日志, 排查取消终态文案出处不可无痕 — 小欧-2026-09-08
+                log_and_print(f"{time.strftime('%H:%M:%S')} [Runner] 任务 {task_id} 未标记取消来源, 定为 orchestrator_error(后端自保取消)")  # 2026-09-08 小欧: 双写(console可见) — 小欧-2026-09-08
 
     # ③ 异常分支 — 小欧 2026-07-13
     except Exception as e:
@@ -487,6 +490,7 @@ async def run_agent_in_background(
                 # 方案五 G路径(2026-09-08 小欧): 文案按来源出(orchestrator_error="服务内部异常，任务已终止"), 不再统一"任务已取消"
                 from app.services.task.task_runtime import cancel_terminal_text
                 _oc, _resp, _et, _em = "cancelled", cancel_terminal_text(getattr(agent, "_cancel_source", None)), "", ""
+                logger.info(f"[Runner] 守卫兜底补发取消终态(task={task_id}, source={getattr(agent, '_cancel_source', None)}, text={_resp})")  # 2026-09-08 小欧 北京老陈指令: 兜底补发留痕(仅文件, 不双写) — 小欧-2026-09-08
             elif agent and agent.status == AgentStatus.COMPLETED:
                 # 防御性: 正常流程成功必有 FinalStep, 此处仅兜底, 不误标 failed — 小欧 2026-07-18
                 _oc, _resp, _et, _em = "completed", "任务执行完成", "", ""

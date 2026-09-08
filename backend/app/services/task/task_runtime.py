@@ -17,6 +17,9 @@
 #   C/D 随 agent._cancel_source 继承 A/B 来源; task_cancel_check(_and_yield) source 随 running_tasks.cancel_source 带出。
 # 2026-09-08 小欧 补缺日志(北京老陈"新改代码需合理log"核查): task_cancel_check 启动前取消分支补 logger.info
 #   (含 source), 消费侧来源跟踪闭环(生产侧 cancel_task 已记录) — 小欧-2026-09-08
+# 2026-09-08 小欧 北京老陈指令(console可见性): cancel_task 入口 logger.info→log_and_print 双写 —
+#   setup_logger 的 console handler 仅放行 WARNING 以上(logger/__init__.py:112), info 不落控制台;
+#   双写后后端命令行(uvicorn窗口)直接可见取消请求(task/source) — 小欧-2026-09-08
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -24,10 +27,11 @@ task_runtime — 运行态任务管理（内存）
 小欧 2026-07-10
 """
 
+import time
 from datetime import datetime
 from typing import Optional, AsyncGenerator
 
-from app.logger import logger
+from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print 双写(console可见取消请求) — 小欧-2026-09-08
 from app.utils.sse_formatter import format_agent_sse
 from app.utils.response_utils import api_success, api_failure
 from app.services.task.task_state import (
@@ -87,7 +91,7 @@ def _cancel_final_dict(task_id: str, source: Optional[str] = None) -> dict:
 
 async def cancel_task(task_id: str, session_id=None, source: str = "user_requested") -> dict:
     cancel_time = datetime.now()
-    logger.info(f"[TaskControl] 取消任务 {task_id} source={source}")  # 6.6.1 日志区分来源 — 小欧 2026-09-08
+    log_and_print(f"{time.strftime('%H:%M:%S')} [TaskControl] 取消任务 {task_id} source={source}")  # 2026-09-08 小欧: 双写(console可见取消请求) — 小欧-2026-09-08
     success = await set_cancelled(
         task_id,
         cancel_time=cancel_time.isoformat(),

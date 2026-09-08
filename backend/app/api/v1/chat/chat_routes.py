@@ -19,6 +19,9 @@
 # 2026-09-03 - 小欧/北京老陈 - confirm端点补日志: 改前无任何log, 问题排查全靠猜; 收到确认/确认成功/confirm_id不存在或已处理三处关键节点补info/warning
 # 2026-09-03 - 小欧/北京老陈 - 后端必有返回: 全链路try兜底, 异常也返回success False, 杜绝前端await死等(北京老陈"后端不能没有返回"铁律)
 # 2026-09-08 - 小欧 - 方案五(6.6.1): cancel 端点增 source query 参数(缺省 user_requested), 透传 task_runtime.cancel_task 落库; 支撑方案四断连超时来源区分
+# 2026-09-08 - 小欧 - 北京老陈指令(console可见性): cancel 端点补 logger.info(仅文件, 不双写; 双写仅疑点5处)。
+#   [背景] cancel 链路可靠日志已有: task_runtime.cancel_task 双写 + http关闭 info; 本处补 API 层入口留痕
+#   (task_id/session_id/source), 排查"前端是否真发了取消"不再靠猜 — 小欧-2026-09-08
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -29,6 +32,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+
+from app.logger import logger  # 2026-09-08 小欧: cancel峰值入口留痕(仅文件, 不双写) — 小欧-2026-09-08
 
 from app.api.v1.chat.models import ChatRequest
 from app.services.chat.stream_orchestrator import (
@@ -58,6 +63,7 @@ async def chat_stream_endpoint(request: ChatRequest):
 @task_router.post("/chat/stream/cancel/{task_id}")
 async def cancel_stream_endpoint(task_id: str, session_id: Optional[str] = None, source: str = "user_requested"):
     """取消任务 — source 区分取消来源(A人工 user_requested / 方案四断连超时 client_disconnect_timeout 等), 随取消请求落库 — 北京老陈 2026-09-08 小欧"""
+    logger.info(f"[Cancel] 收到取消请求 task={task_id}, session={session_id or '-'}, source={source}")  # 2026-09-08 小欧: API入口留痕(仅文件) — 小欧-2026-09-08
     return await cancel_task(task_id, session_id, source)
 
 

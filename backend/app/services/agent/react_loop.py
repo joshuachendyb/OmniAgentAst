@@ -33,6 +33,8 @@
 #   task包冷启动(如pytest直接import task模块)踩 load-time 循环: task/__init__→registry→agent.steps→
 #   base_agent→react_loop→task_runtime(partial)→registry(partial)ImportError。恢复 cancel_terminal_text
 #   走 D 路径局部 import(下方同函数已局部 import task_runtime, 运行期无循环), 顶层依赖消除 — 小欧-2026-09-08
+# 2026-09-08 小欧 北京老陈指令(console可见性): D路径循环顶检出取消 logger.info→log_and_print 双写,
+#   后端命令行可见"检测到任务取消"(task_id/source) — 小欧-2026-09-08
 
 """react_loop — ReAct 循环核心(薄调度)
 
@@ -41,8 +43,9 @@
 8.4拆分自 react_cycle.py(老名消亡) — 小健 2026-09-05
 """
 
+import time  # 2026-09-08 小欧: 双写console带时间戳 — 小欧-2026-09-08
 from typing import Any, Dict, List, Optional
-from app.logger import logger
+from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print 双写(console可见取消检出) — 小欧-2026-09-08
 from app.config import get_config
 from app.services.agent.steps import FinalStep, MetaStep, ThoughtStartStep  # 4.4.2 2026-09-07 小欧 ThoughtStartStep新增(进 loop 前发射点)
 from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_cancelled
@@ -181,7 +184,7 @@ async def run_react_cycle(
                     # 2026-09-08 小欧 方案五 D路径: 来源读 agent._cancel_source(A/B 经 cancel_task 写回, D 被动继承),
                     #   文案按来源出, FinalStep 带 source 落库 — 北京老陈 2026-09-08
                     cancel_source = getattr(agent, "_cancel_source", None) or "user_requested"
-                    logger.info(f"[run_react_cycle] 检测到任务取消(task_id={task_id}, source={cancel_source}), 终止为 cancelled")
+                    log_and_print(f"{time.strftime('%H:%M:%S')} [run_react_cycle] 检测到任务取消(task_id={task_id}, source={cancel_source}), 终止为 cancelled")  # 2026-09-08 小欧: 双写(console可见) — 小欧-2026-09-08
                     _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
                         # 2026-08-17 - 小健 - 三堂会审-S4修复: 首轮前取消(llm_call_count 尚未+1=0)时,
                         #   step=0 与 start(step=0)双 step0(与 S4"start占0,业务从1起"矛盾); or 1 接续唯一步号

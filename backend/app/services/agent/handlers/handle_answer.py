@@ -55,6 +55,8 @@
 # 2026-09-08 小欧 方案五(6.6.2 C路径): err_type=="cancelled" 分支取消来源区分——
 #   取消来源读 agent._cancel_source(A/B 经 cancel_task 写回, C 被动继承), 终态文案按来源出(cancel_terminal_text),
 #   FinalStep 携带 cancel_source 落库/SSE下发, 不再统一"用户取消" — 北京老陈 2026-09-08
+# 2026-09-08 小欧 北京老陈指令(console可见性): C路径取消终态 logger.info→log_and_print 双写,
+#   后端命令行可见"终态 CANCELLED + source" — 小欧-2026-09-08
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -111,7 +113,7 @@ async def handle_answer(agent, parsed: Dict) -> dict:
             #   文案按来源区分(不再统一"用户取消"), FinalStep 带 cancel_source 落库/下发 — 北京老陈 2026-09-08
             from app.services.task.task_runtime import cancel_terminal_text
             cancel_source = getattr(agent, "_cancel_source", None) or "user_requested"
-            logger.info(f"[answer] step={step} 终态 CANCELLED source={cancel_source}: {content}")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [answer] step={step} 终态 CANCELLED source={cancel_source}: {content}")  # 2026-09-08 小欧: 双写(console可见取消终态) — 小欧-2026-09-08
             _events.extend(agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=step, response=cancel_terminal_text(cancel_source), outcome="cancelled",
                 error_type="cancelled", error_message=content, cancel_source=cancel_source,

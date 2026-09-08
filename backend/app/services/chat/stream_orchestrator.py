@@ -113,6 +113,13 @@
 # 2026-09-08 - 小欧 - 心跳周期 25.0 抽常量化(北京老陈 2026-09-08 指令): timeout/日志/注释硬编码 25s 改引
 #   constants.py §6 HEARTBEAT_INTERVAL(常量注释含与前端 IDLE_TIMEOUT=60000ms 的错开关系即"心跳先于前端判死"设计依据,
 #   变更须前端联动); 功能零变化, 消除裸魔法数。 — 小欧-2026-09-08
+# 2026-09-08 - 小欧 - 北京老陈指令(console可见性): 客户端断开"agent后台继续"(触发方案四断连取消链路)
+#   logger.info→log_and_print 双写, 后端命令行可见断开动作(task_id); 心跳 yield 仍保持 logger.debug
+#   (老陈"其他处不需双写,加log即可", 此处本就有debug日志) — 小欧-2026-09-08
+# 2026-09-08 - 小欧 - 北京老陈 2026-09-08 后续指令勘正: 心跳 yield ": ping\n" 必须双写+计数——
+#   原上一条(:118)按"心跳只需加log"保留 logger.debug 即属理解偏差, 本条目正式更改为
+#   logger.debug→log_and_print 双写(console 可见每次心跳+序号 heartbeat_seq), 高频克制: 25s 一次, 不刷屏。
+#   不得回改 debug, 不得删此条目(铁规: 编辑型禁删历史) — 小欧-2026-09-08
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -407,8 +414,8 @@ async def chat_stream_orchestrator(
             yield sse_chunk
     # ── 编排⑪异常/收尾(断连静默/异常取消后台/reset ContextVar) ———— 小健 2026-08-17; 小沈 2026-08-29 bug#5: 去 finally 还原单例副作用
     except asyncio.CancelledError:
-        # 客户端断开：静默返回，agent 后台继续运行 — 北京老陈 2026-07-12 小欧 2026-07-12
-        logger.info(f"[chat_stream_orchestrator] 客户端断开(task={task_id})，agent 后台继续")
+        # 客户端断开：静默返回，agent 后台继续 — 北京老陈 2026-07-12 小欧 2026-07-12
+        log_and_print(f"{time.strftime('%H:%M:%S')} [chat_stream_orchestrator] 客户端断开(task={task_id})，agent 后台继续")  # 2026-09-08 小欧: 双写(console可见断开动作) — 小欧-2026-09-08
         return
     except Exception as e:
         logger.error(f"[chat_stream_orchestrator] Error: {e}", exc_info=True)
@@ -434,6 +441,7 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
     小健 2026-09-05 自 stream_reader.py 整份并入本模块(8.6 一拆三, 逐字复制零改动)
     """
     offset = after_seq
+    heartbeat_seq = 0  # 2026-09-08 小欧: 心跳计数器(北京老陈指令心跳双写+计数, 见编辑历史) — 小欧-2026-09-08
     while True:
         async with buffer.cond:
             while offset < len(buffer.event_log):
@@ -451,7 +459,8 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
             try:
                 await asyncio.wait_for(buffer.cond.wait(), timeout=HEARTBEAT_INTERVAL)  # 心跳周期 HEARTBEAT_INTERVAL(错开关系见 constants.py §6, 与前端 IDLE_TIMEOUT=60s 错开)
             except asyncio.TimeoutError:
-                logger.debug(f"[SSE] stream_reader cond.wait {HEARTBEAT_INTERVAL}s超时, 发心跳保活后重检done: task_id={task_id}")
+                heartbeat_seq += 1  # 2026-09-08 小欧: 心跳计数递增(北京老陈指令双写+计数) — 小欧-2026-09-08
+                log_and_print(f"{time.strftime('%H:%M:%S')} [SSE] 心跳#{heartbeat_seq} task={task_id} cond.wait {HEARTBEAT_INTERVAL}s超时, 发 :ping 保活")  # 2026-09-08 小欧: debug→双写(北京老陈指令) — 小欧-2026-09-08
                 # 方案一 SSE keep-alive 心跳(北京老陈 2026-09-08, 周期 HEARTBEAT_INTERVAL): 该周期内无业务事件(如 tool 参数流式期间)时
                 #   向前端发 SSE 注释行 ": ping\n" —— 注意带换行尾(修订: 原 ": ping" 无换行会与下一条 data: 事件粘连,
                 #   前端 split('\n') 后整行前缀非 'data: ' 被 sseParser.ts:113 整行丢弃, 吞掉心跳后的第一个业务事件),
