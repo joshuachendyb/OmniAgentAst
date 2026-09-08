@@ -20,6 +20,10 @@
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 for循环改for...of去下标, 代码更简洁
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 thought/action/observation case简化: if(paused)running/if(failed)running+_badgeRecovered
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 保留_badgeRecovered守卫防liveErrorText覆盖回failed
+// 编辑历史: 2026-09-08 小欧 - 「前端UI静默10秒整批显示」修复(北京老陈批准): thought/action/observation 补
+//   idle→running 恢复——业务 step 到达即证执行中, 防 SSE receiving=false 窗内 startinfo 门(:207-208)
+//   每次重算把 badge 压回 idle 致 RightViewer.isCurrentLive(:125-129)翻 false(streaming=false 停齿轮 +
+//   displaySteps 切历史视图 + liveSteps 静默压栈 + 重连整批回放); 2026-09-02 三态并集修复被击穿的根治 — 小欧-2026-09-08
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -179,6 +183,13 @@ export const useTaskInfo = (
         case 'thought':
         case 'action':
         case 'observation':
+          // 2026-09-08 小欧 - 前端UI静默10秒整批显示修复(北京老陈批准, 文档:
+          //   doc-9月优化/前端UI静默10秒整批显示问题分析与修复方案-小欧-2026-09-08.md):
+          //   业务 step(thought/action/observation)到达即证任务执行中, 补 idle→running 恢复,
+          //   防 SSE receiving=false 窗内 startinfo 门(207-208)把 badge 压回 idle,
+          //   致 RightViewer.isCurrentLive 翻 false(停齿轮+切历史视图+整批回放)
+          //   ——2026-09-02 三态并集修复被击穿的根因 — 小欧-2026-09-08
+          if (badge === 'idle') badge = 'running';
           if (badge === 'paused') badge = 'running';
           if (badge === 'failed') {
             badge = 'running';
