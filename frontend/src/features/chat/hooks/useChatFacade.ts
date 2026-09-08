@@ -1,6 +1,9 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 7Hook组合入口整合(8.1~8.14 统一暴露)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-8透传setIsReceiving/12 hasSteps/13复用Options类型/14 memo依赖onError
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈裁定回归总原则): onError 包装器不再把 SSEError 压成 string,
+//   改构 LiveError{text, requestLevel} 上抛(P3 数据源对象形态); options.onError 签名同步升级;
+//   内部 chatCallbacks.onError 仍先调(后端分道早退不影响 P3 写入) — 小欧-2026-09-08
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
@@ -33,6 +36,7 @@ import { useChatSend } from './useChatSend';
 import { useChatTaskControl } from './useChatTaskControl';
 import type { Message } from '../../../types/chat';
 import type { ExecutionStep } from '../../../types/execution';
+import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4: P3 数据源对象形态 — 小欧-2026-09-08
 
 /**
  * useChatFacade 返回类型定义
@@ -150,7 +154,7 @@ export interface UseChatFacadeReturn {
 export const useChatFacade = (options?: {
   baseURL?: string;
   sessionId?: string | null;
-  onError?: (message: string) => void;
+  onError?: (liveError: LiveError) => void;
 }): UseChatFacadeReturn => {
   const { baseURL = '', sessionId } = options || {};
   const onError = options?.onError; // 2026-08-27 小欧 三堂会审: 透传SSE错误用
@@ -165,18 +169,22 @@ export const useChatFacade = (options?: {
     setIsReceiving: (v: boolean) => receivingSetterRef.current?.(v),
   });
 
-  // 2.1 透传 SSE 错误给上层（RightViewer liveErrorText 红字直显，8.10）
+  // 2.1 透传 SSE 错误给上层（P3 数据源对象形态，6.3.4——不再压 string）
   const chatCallbacksWithError = useMemo<ReturnType<typeof useChatCallbacks>>(
     () => ({
       ...chatCallbacks,
       onError: (error: Parameters<typeof chatCallbacks.onError>[0]) => {
+        // 2026-09-08 小欧 6.3.3 Q级: 内部先调(后端业务错误分道早退只清refs; 本地错误走弹窗+P2),
+        //   P3 写入不因早退而跳过 —— 由构造 LiveError 继续完成
         chatCallbacks.onError(error);
         if (onError) {
-          const msg =
+          const text =
             typeof error === 'string'
               ? error
               : error.error_message || '未知错误';
-          onError(msg);
+          const requestLevel =
+            typeof error === 'string' ? false : error.request_level === true;
+          onError({ text, requestLevel });
         }
       },
     }),

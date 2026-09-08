@@ -8,6 +8,9 @@
 // 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段(trust_path/auto_confirm/confirm_timeout/backend_timeout), 与 sseParser 下发契约一致, 全量透传保弹窗正确渲染 — 小欧-2026-09-03
 // 编辑历史: 2026-09-07 小欧 - 4.4.1取消终态: isCancelEvent 窄化为 type=final+outcome=cancelled(删 type=cancelled
 //   分支)/isStreaming 终态条件同步移除 cancelled/取消日志文案对齐新契约 — 小欧-2026-09-07
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.3(北京老陈裁定回归总原则): onError 分道——errorObj.from_backend===true
+//   (后端业务错误) 时只清三refs即return, 不进 handleSSEError(弹窗)与 isPausedRef(缓冲)与 setMessages(P2红字),
+//   不等下发 loading/计时(计时不停) — P3 由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -500,6 +503,16 @@ export const useChatCallbacks = (
         const o = e as SSEError & { message?: string };
         return o.error_message || o.message || '未知错误';
       };
+
+      // 2026-09-08 小欧 6.3.3 分道: 后端业务错误(from_backend=true)只进P3——不弹窗/不替换消息/不进缓冲/不停计时,
+      //   仅清三refs准备下一轮(最终终态由随后 final 承担); P3 显示由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
+      if (errorObj.from_backend === true) {
+        console.info('[onError] 后端业务错误: 只进P3, 不弹窗/不替换消息/不停计时 (6.3.3)');
+        streamingContentRef.current = '';
+        streamingStepsRef.current = [];
+        executionStepsRef.current = [];
+        return;
+      }
 
       console.error('🔴 [onError] SSE 流式错误:', errorObj);
 

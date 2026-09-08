@@ -9,8 +9,12 @@
 // 编辑历史: 2026-09-03 小欧 - BUG-29修复修正: handleSendWithMode改async+await, 原void吞Promise致ChatInput catch永不触发回填无效 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 简化重构: AuthorizationModal加key={confirmId}强制重建, 新请求=新组件实例, 彻底消除countdown/autoHandledRef等跨请求残留 - 小欧-2026-09-03
 // 编辑历史: 2026-09-06 小欧 - B1「已放行」短时高亮: useAuthorization 解构 recentConfirmedTool 并透传 useChatPanels —— 小欧-2026-09-06
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): liveErrorText✗ string 改 liveError(LiveError|null 对象形态,
+//   onError 升为 (liveError: LiveError)=>void 接收 位4/类型分层字段) + setter/一处消费(if(liveError)refreshTasks,
+//   暂用对象真值判空)与 useChatPanels 透传同步 — 小欧-2026-09-08
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
 import { API_BASE_URL } from '../services/api/client';
 import { useChatFacade } from '../features/chat/hooks/useChatFacade';
 import { useSessionTasks } from '../features/chat/hooks/useSessionTasks';
@@ -30,14 +34,14 @@ import { Colors } from '@/utils/stepStyles';
 
 const ChatPage: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const [liveErrorText, setLiveErrorText] = useState<string | null>(null);
+  const [liveError, setLiveError] = useState<LiveError | null>(null); // 2026-09-08 小欧 6.3.4: 对象形态(位4 类型+分层字段) — 小欧-2026-09-08
   const [rightOpen, setRightOpen] = useState(true);
   // 2026-09-01 小欧 方案C: 左列最新任务锚点ref(常驻, 传入useChatPanels→TaskListPanel滚动定位)
   const latestTaskRef = useRef<HTMLDivElement | null>(null);
   const chatFacade = useChatFacade({
     baseURL: API_BASE_URL,
     sessionId: searchParams.get('session_id'),
-    onError: (message: string) => setLiveErrorText(message),
+    onError: (liveError: LiveError) => setLiveError(liveError),
   });
   const {
     chatState,
@@ -120,21 +124,21 @@ const ChatPage: React.FC = () => {
   );
   const handleSendWithMode = useCallback(
     async (content: string, mode?: 'linked' | 'independent') => {
-      setLiveErrorText(null);
+      setLiveError(null);
       await chatSend.handleSend(content, mode);
     },
-    [chatSend, setLiveErrorText]
+    [chatSend, setLiveError]
   );
 
-  // 2026-08-27 小欧 修复#42: 切换会话时重置跨会话泄漏状态(liveErrorText)
+  // 2026-08-27 小欧 修复#42: 切换会话时重置跨会话泄漏状态(liveError)
   useEffect(() => {
-    setLiveErrorText(null);
+    setLiveError(null);
   }, [sessionId]);
 
   // 2026-09-02 小欧 - 同类DB滞后修复: 直播失败文案到达即刷新左列, 消DB executing残留(与useTaskInfo徽标兜底同窗) - 小欧-2026-09-02
   useEffect(() => {
-    if (liveErrorText) void refreshTasks();
-  }, [liveErrorText, refreshTasks]);
+    if (liveError) void refreshTasks();
+  }, [liveError, refreshTasks]);
 
   // 会话初始化 / 生命周期 / 标题编辑（抽离至各 hook）
   useChatInit({ chatFacade, searchParams });
@@ -146,7 +150,7 @@ const ChatPage: React.FC = () => {
     chatStreaming,
     chatTaskControl,
     chatSend,
-    liveErrorText,
+    liveError,
     authorizationPending,
     recentConfirmedTool, // 2026-09-06 小欧 B1: 「已放行」短时高亮透传 — 小欧-2026-09-06
     handleAuthorizationConfirm,

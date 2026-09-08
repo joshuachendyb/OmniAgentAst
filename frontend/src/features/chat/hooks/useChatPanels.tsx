@@ -13,6 +13,8 @@
 //   authorizationPending?.toolName ?? recentConfirmedTool, useMemo 依赖数组纳入 recentConfirmedTool —— 小欧-2026-09-06
 // 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定): deniedEntries 解构/透传 RightViewer(deps 同步),
 //   承被拒工具点名条数据链路 — 小欧-2026-09-06
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): liveErrorText✗ string 改 liveError(LiveError|null 对象形态)
+//   + 解构/:260 TaskInfoBar 透传/:329 useMemo 依赖数组同步(liveErrorText→liveError) — 小欧-2026-09-08
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -31,7 +33,7 @@ import type {
 } from '../../../services/api/task.api';
 import type { EffectiveModel } from './useModelLayer';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
-import type { TaskMetaFrames } from '../../../types/sse';
+import type { TaskMetaFrames, LiveError } from '../../../types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位4数据源对象形态 — 小欧-2026-09-08
 import type { UseChatFacadeReturn } from './useChatFacade';
 
 interface UseChatPanelsOptions {
@@ -39,7 +41,7 @@ interface UseChatPanelsOptions {
   chatStreaming: UseChatFacadeReturn['chatStreaming'];
   chatTaskControl: UseChatFacadeReturn['chatTaskControl'];
   chatSend: UseChatFacadeReturn['chatSend'];
-  liveErrorText: string | null;
+  liveError: LiveError | null; // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象形态) — 小欧-2026-09-08
   authorizationPending: AuthorizationRequest | null;
   // 2026-09-06 小欧 B1: 「已放行」短时高亮工具名(确认后 2s)→RightViewer highlightToolName 合源 — 小欧-2026-09-06
   recentConfirmedTool?: string | null;
@@ -89,7 +91,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     chatStreaming,
     chatTaskControl,
     chatSend,
-    liveErrorText,
+    liveError,
     authorizationPending,
     recentConfirmedTool,
     handleAuthorizationConfirm,
@@ -257,7 +259,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             receiving={isReceiving && activeTaskId === serverTaskId}
             detail={selectedDetail}
             sessionId={sessionId}
-            liveErrorText={liveErrorText} // 小欧 2026-09-02: 位4 🛑 数据源(error 实时显示唯一位置=taskinfo 第一行, 北京老陈定案)
+            liveError={liveError} // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象形态, error 实时显示唯一位置=taskinfo 第一行, 北京老陈定案) — 小欧-2026-09-08
           />
         ),
         defaultVisible: true,
@@ -326,7 +328,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       handleSendWithMode,
       handleCancel,
       handleTogglePause,
-      liveErrorText,
+      liveError,
       authorizationPending, // 2026-09-06 小欧 B1: recentConfirmedTool 同入依赖(否则 useMemo 缓存旧值 highlight 不刷新) — 小欧-2026-09-06
       recentConfirmedTool,
       handleAuthorizationConfirm,

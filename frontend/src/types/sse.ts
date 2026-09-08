@@ -3,6 +3,9 @@
 // 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): error 事件补充可选 step 字段(blocked/timeout 带 step 供 sseOnError 聚合 deniedStepSet 停齿轮) — 小欧-2026-09-06
 // 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定): SSEError 补可选 tool_name(被拒工具名)——blocked/timeout 错误
 //   携带, 供 sseOnError 聚合被拒工具点名条(deniedEntries: tool+reason)承灰字链路数据源 — 小欧-2026-09-06
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.1(北京老陈裁定回归总原则): SSEError 补可选 from_backend(后端业务错误来源标记,
+//   useChatCallbacks 据此分道只进P3不弹窗); 6.3.4 补可选 request_level(请求级step=0标记, 位4图标分层);
+//   新增 LiveError 接口(P3数据源对象形态) — 小欧-2026-09-08
 import type { ExecutionStep } from './execution';
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
@@ -86,7 +89,7 @@ export interface SSEError {
   error_message: string; // 用户友好的错误信息 【修改2026-04-15】message → error_message
   // 必填字段（1个）
   timestamp: string; // 时间戳
-  // 可选字段（9个）
+  // 可选字段（11个）
   step?: number; // 2026-09-06 小欧 B2(方案C): 事件所属工具执行轮 step 号, 供 blocked/timeout 错误聚合 deniedStepSet 停齿轮 — 小欧-2026-09-06
   tool_name?: string; // 2026-09-06 小欧 B2(6.4): 被拒工具名(blocked/timeout 由后端事件带), 供被拒工具点名条灰字 — 小欧-2026-09-06
   model?: string; // 模型名称
@@ -102,6 +105,19 @@ export interface SSEError {
     provider?: string;
     thought_content?: string;
   };
+  from_backend?: boolean; // 2026-09-08 小欧 6.3.1: 后端业务错误来源标记(sseParser onError 无条件 true), useChatCallbacks 据此分道只进P3不弹窗 — 小欧-2026-09-08
+  request_level?: boolean; // 2026-09-08 小欧 6.3.4: 请求级错误标记(sseParser 读原始 step===0), 位4图标请求级⛔区分执行级红圆底白× — 小欧-2026-09-08
+}
+
+/**
+ * P3 页面级实时错误数据源对象形态
+ * 文档：[10]前端消息分类处理分析及设计 6.3.4（北京老陈 2026-09-08 裁定）
+ * useChatFacade onError 包装器不再把 SSEError 压成 string, 改构 LiveError{text, requestLevel} 上抛;
+ * 前端本地错误(string) 缺 requestLevel → false, 位4 沿用执行级样式。
+ */
+export interface LiveError {
+  text: string;
+  requestLevel: boolean;
 }
 
 /**

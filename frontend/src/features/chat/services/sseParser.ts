@@ -17,6 +17,12 @@
 //   startinfo 合并入 start——后端 start 现已自带 ai_message_id, 删除 case 'startinfo' 分支;
 //   case 'start' 合并写入 contextSummary + startTimestamp + startInfo(含 ai_message_id),
 //   徽标(running/idle)/过程条首行/计时/概况支付行为全不变(startInfo 到达提前到 start, 徽章 running 只更早亮) — 小欧-2026-09-07
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.1/6.3.4(北京老陈裁定回归总原则): error case onError 构造对象无条件打
+//   from_backend=true(来源判据, 不做类型匹配) + request_level=rawData.step===0(层级判据, 读原始值禁stepNum归一;
+//   请求级step=0为真, 执行级step≥1/缺失为false) — useChatCallbacks 据此分道只进P3; step/tool_name 仍照传(聚合源不变) — 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - BUG-7回归修复(全量回归红): case 'start' 的 contextSummary 承接对象 content——
+//   后端 StartStep.get_content() 返回 context_summary 对象(非字符串), 原 typeof==='string' 三元把对象丢弃为 '',
+//   任务信息条上下文概况(tooltip)空白(数据退化)。改: 对象 JSON 序列化承接, null/undefined 仍为空 — 小欧-2026-09-08
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -179,8 +185,15 @@ const processSSEData = (
       //    不进右侧查看区流水线（4.4.4）；user_message 对话界面已可见不重复渲染（4.9.1）；
       //    model/provider 由顶栏徽标承载（4.8.3-A）。
       case 'start': {
+        // 2026-09-08 小欧 BUG-7修复: 后端 StartStep.get_content() 返回 context_summary 对象(非字符串),
+        //   原 typeof==='string' 三元把对象丢弃为 '' → contextSummary 空白(任务信息条上下文概况退化)。
+        //   改: 对象 JSON 序列化承接(tooltip 消费 string), null/undefined 仍空 — 小欧-2026-09-08
         const summary =
-          typeof rawData.content === 'string' ? rawData.content : '';
+          typeof rawData.content === 'string'
+            ? rawData.content
+            : rawData.content != null
+              ? JSON.stringify(rawData.content)
+              : '';
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
           contextSummary: summary,
@@ -540,6 +553,10 @@ const processSSEData = (
           error_message: errorMsg,
           step: stepNum, // 2026-09-06 小欧 B2(方案C): 错误透传所属执行轮 step, 前端按 blocked/timeout 聚合 deniedStepSet — 小欧-2026-09-06
           tool_name: rawData.tool_name, // 2026-09-06 小欧 B2(6.4): 透传被拒工具名(blocked/timeout), 供被拒工具点名条 — 小欧-2026-09-06
+          // 2026-09-08 小欧 6.3.1: 后端 error 事件无条件打来源标 —— useChatCallbacks 据此分道只进P3不弹窗 — 小欧-2026-09-08
+          from_backend: true, // 判据=来源(事件由 SSE 解析而来)而非类型匹配
+          // 2026-09-08 小欧 6.3.4: 层级标记读原始 rawData.step===0(禁 stepNum 归一, 恒≥1判不出请求级) — 小欧-2026-09-08
+          request_level: rawData.step === 0,
           model: rawData.model,
           provider: rawData.provider,
           details: rawData.details,

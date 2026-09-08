@@ -24,6 +24,9 @@
 //   idle→running 恢复——业务 step 到达即证执行中, 防 SSE receiving=false 窗内 startinfo 门(:207-208)
 //   每次重算把 badge 压回 idle 致 RightViewer.isCurrentLive(:125-129)翻 false(streaming=false 停齿轮 +
 //   displaySteps 切历史视图 + liveSteps 静默压栈 + 重连整批回放); 2026-09-02 三态并集修复被击穿的根治 — 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈裁定): 第5参 liveErrorText✗ string 改 liveError?: LiveError|null
+//   (P3数据源对象形态) + LiveMeta 补 requestLevel(位4图标分层用; retrying/truncated 恒执行级false) +
+//   detail分支/兜底/candidates/依赖同步改造 — 小欧-2026-09-08
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -42,7 +45,7 @@
 
 import { useMemo } from 'react';
 import type { ExecutionStep } from '../../../types/execution'; // 编辑历史: 2026-08-28 小欧 - BUG16b修复: ExecutionStep统一从types/execution导入
-import type { TaskMetaFrames } from '@/types/sse';
+import type { TaskMetaFrames, LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位4数据源对象形态 — 小欧-2026-09-08
 import type { TaskDetail } from '../../../services/api/task.api';
 
 /** 卡死预警阈值：llm_call_count ≥ step_count×STUCK_RATIO 视为疑似死循环（待定案） */
@@ -54,11 +57,13 @@ export interface ProcessEvent {
   time: number;
 }
 
-// 小欧 2026-09-02: 位4 数据准予类型(只收三类, 无优先级)
+// 小欧 2026-09-02: 位4 数据准予类型(只收三类, 无优先级);
+// 2026-09-08 小欧 6.3.4: 补 requestLevel(位4图标分层——error 请求级⛔/执行级红圆底白×; retrying/truncated 恒执行级false) — 小欧-2026-09-08
 export interface LiveMeta {
   kind: 'retrying' | 'error' | 'truncated';
   text: string;
   time: number;
+  requestLevel: boolean;
 }
 
 export type TaskBadge =
@@ -74,7 +79,7 @@ export const useTaskInfo = (
   frames: TaskMetaFrames,
   receiving: boolean,
   detail?: TaskDetail | null,
-  liveErrorText?: string | null // 小欧 2026-09-02: 位4 error 实时源(可选: TS1016 必选不能跟在可选后, 语义不变——undefined 时 candidates 不含 error)
+  liveError?: LiveError | null // 小欧 2026-09-02+09-08: 位4 error 实时源(P3数据源对象形态; undefined 时 candidates 不含 error)
 ) => {
   return useMemo(() => {
     // 2026-09-03 小欧/北京老陈: 单真源 — hasFailedFinal 一处算(DRY)，detail/实时双分支复用
@@ -97,7 +102,7 @@ export const useTaskInfo = (
         hasFailedFinal ||
         detail.status === 'failed' ||
         detail.error_type ||
-        liveErrorText
+        liveError
       )
         badge = 'failed';
       return {
@@ -128,10 +133,12 @@ export const useTaskInfo = (
     let badge: TaskBadge = 'idle';
     const processEvents: ProcessEvent[] = [];
     // 小欧 2026-09-02: 位4 最近一条 retrying(新覆盖旧); 窄化 kind 直入 LiveMeta[] 合成, 免 TS 联合类型报错
+    // 2026-09-08 小欧 6.3.4: retrying 恒执行级(requestLevel=false) — 小欧-2026-09-08
     let latestProcessEvent: {
       kind: 'retrying';
       text: string;
       time: number;
+      requestLevel: false;
     } | null = null;
     // 2026-09-03 小欧 P6修复: 标记badge是否已从failed回推running, 防post-loop liveErrorText再次覆盖
     let _badgeRecovered = false;
@@ -169,6 +176,7 @@ export const useTaskInfo = (
             kind: 'retrying',
             text: s.content || '正在重试',
             time: s.timestamp,
+            requestLevel: false, // 2026-09-08 小欧 6.3.4: 过程事件恒执行级 — 小欧-2026-09-08
           };
           break;
         case 'final':
@@ -205,7 +213,7 @@ export const useTaskInfo = (
     if (hasFailedFinal) {
       badge = 'failed';
     } else if (
-      liveErrorText &&
+      liveError &&
       !_badgeRecovered &&
       badge !== 'failed' &&
       badge !== 'cancelled' &&
@@ -241,11 +249,20 @@ export const useTaskInfo = (
     }
 
     // 小欧 2026-09-02: 位4 liveMeta 合成(无优先级: retrying/error/truncated 各自到达即更新, 最后收到者胜, 新覆盖旧)
+    // 2026-09-08 小欧 6.3.4: detail 分支直接入 candidates(旧文本丢入 meta, 语义]]), wait 2026年:
+    //   error 项用 liveError(LiveError 对象) 携带 requestLevel; truncated/retrying 恒执行级(false) — 小欧-2026-09-08
     const now = Date.now();
     const candidates: LiveMeta[] = [
       ...(latestProcessEvent ? [latestProcessEvent] : []),
-      ...(liveErrorText
-        ? [{ kind: 'error' as const, text: liveErrorText, time: now }]
+      ...(liveError
+        ? [
+            {
+              kind: 'error' as const,
+              text: liveError.text,
+              time: now,
+              requestLevel: liveError.requestLevel, // 位4 图标分层:S2 请求级 step=0 判定打标(S3 判定来源转"后端业务错误"再取) — 小欧-2026-09-08
+            },
+          ]
         : []),
       ...(frames.truncated?.content
         ? [
@@ -253,6 +270,7 @@ export const useTaskInfo = (
               kind: 'truncated' as const,
               text: frames.truncated.content,
               time: now,
+              requestLevel: false, // 截断提示恒执行级 — 小欧-2026-09-08
             },
           ]
         : []),
@@ -282,5 +300,5 @@ export const useTaskInfo = (
       stuckWarning,
       liveMeta, // 小欧 2026-09-02: 位4(历史 detail 分支已置 null, 此字段恒在实时分支产出)
     };
-  }, [steps, frames, receiving, detail, liveErrorText]);
+  }, [steps, frames, receiving, detail, liveError]);
 };

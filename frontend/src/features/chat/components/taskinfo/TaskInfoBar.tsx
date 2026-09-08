@@ -18,6 +18,9 @@
 // 编辑历史: 2026-09-06 小欧 - R1秒表与徽标解耦(B1实证修复, 见 doc-9月优化/错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案): 秒表interval运行条件去badge依赖改为
 //   receiving&&!detail(实时流在就走表, 错误信号不再清零停表/业务恢复不再回跳); shownElapsed实时态一律liveElapsed, 非实时/历史回退elapsedSec;
 //   else分支原样保留(归零+startRef复位, 保终态duration显示与新任务归零) — 小欧-2026-09-06
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): prop 第7位 liveErrorText✗ string 改 liveError?: LiveError|null
+//   (P3数据源对象形态, useChatPanels 透传) + 位4 图标分层——执行级 error 用 CloseCircleFilled(红圆底白×,
+//   替原🛑, ·/着色 Colors.ERROR) + 请求级 error 用 ⛔(后端业务错误如"消息列表为空"); retrying🔁/truncated⚠ 不变 — 小欧-2026-09-08
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -31,8 +34,9 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { Badge, Tooltip } from 'antd';
+import { CloseCircleFilled } from '@ant-design/icons'; // 2026-09-08 小欧 6.3.4: 执行级 error 位4 图标(红圆底白×, 替原🛑) — 小欧-2026-09-08
 import type { ExecutionStep } from '../../../../types/execution';
-import type { TaskMetaFrames } from '@/types/sse';
+import type { TaskMetaFrames, LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位4数据源对象形态 — 小欧-2026-09-08
 import type { TaskDetail } from '../../../../services/api/task.api';
 import { Colors } from '@/utils/stepStyles'; // 2026-09-03 小欧: 移除FontSize/Spacing(信任区已移入TrustPanel, 不再使用) — 小欧-2026-09-03
 import { useTaskInfo } from '../../hooks/useTaskInfo';
@@ -44,7 +48,7 @@ interface TaskInfoBarProps {
   receiving: boolean;
   detail?: TaskDetail | null; // 【A3】选中历史任务时由其详情派生动态信息
   sessionId?: string | null; // 13.14 TrustPanel第一行尾部需会话ID
-  liveErrorText?: string | null; // 小欧 2026-09-02: 位4 error 实时源(useChatPanels 透传)
+  liveError?: LiveError | null; // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象, useChatPanels 透传) — 小欧-2026-09-08
 }
 
 const BADGE_MAP = {
@@ -62,10 +66,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   receiving,
   detail,
   sessionId,
-  liveErrorText,
+  liveError,
 }) => {
   const [collapsed, setCollapsed] = useState(false);
-  const info = useTaskInfo(steps, frames, receiving, detail, liveErrorText);
+  const info = useTaskInfo(steps, frames, receiving, detail, liveError);
   const b = BADGE_MAP[info.badge];
   // 【2026-09-03 小欧 复用TrustPanel】信任查询/刷新/撤销/折叠逻辑已移入 TrustPanel 组件(TaskInfoBar 删除内联重复, DRY)
 
@@ -148,11 +152,19 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               style={{ fontSize: 12, color: Colors.WARNING, marginLeft: 2 }}
             >
               [
-              {{
-                retrying: '🔁',
-                error: '🛑',
-                truncated: '⚠',
-              }[info.liveMeta.kind] ?? '🔔'}{' '}
+              {info.liveMeta.kind === 'retrying' ? (
+                '🔁'
+              ) : info.liveMeta.kind === 'error' ? (
+                // 2026-09-08 小欧 6.3.4 北京老陈定案: 请求级(error)用 ⛔(后端业务错误),
+                //   执行级(error)用 CloseCircleFilled 红圆底白×(替原🛑, 直观"执行被中断") — 小欧-2026-09-08
+                info.liveMeta.requestLevel ? (
+                  '⛔'
+                ) : (
+                  <CloseCircleFilled style={{ fontSize: 12, color: Colors.ERROR }} />
+                )
+              ) : (
+                '⚠'
+              )}{' '}
               {info.liveMeta.text}]
             </span>
           )}
