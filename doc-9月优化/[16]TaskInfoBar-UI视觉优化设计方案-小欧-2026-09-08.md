@@ -18,6 +18,7 @@
 | v3.3 | 2026-09-08 22:10:23 | G0 折叠改为 **G8 折叠**：番号体系 G0~G7 重组为 **G1~G8**（G1状态/G2耗时/G3进度/G4异常/G5 Token/G6上下文/G7信任/G8折叠），番号=渲染顺序，删除"番号≠渲染顺序"特殊说明；2.2.1、5.1、5.8、P0-2、2.2.1-八 全链同步 | 小欧 |
 | v3.4 | 2026-09-08 22:15:20 | 图标渲染格式选型：全行图标统一为**单一格式 = @ant-design/icons 内联 SVG 组件**（fontSize 矢量缩放调大小 / currentColor 随文变色 / 跨平台一致 / 动画内建），否决 emoji、Unicode 纯文本符号、iconfont 字体图标、外链图、纯 CSS；**过程事件行由"纯文本符号 ▶ ⏸ ↻"升级为 antd SVG 图标**（PlayCircle/PauseCircle/ReloadOutlined），同步 2.2.4、P1-5、P2-13、5.4、5.9 | 小欧 |
 | v3.5 | 2026-09-08 22:20:48 | 全文熟读核查一致性（修 4 处：v3.3 行"2.2.1-A 八"笔误、5.7"（原 P1-10）"冗余、5.9 emoji 检查补齐文本符号、2.2.1-七 表头列名统一"内联 SVG"）；**新增第十章"代码复用与模块划分（10 大规范核查）"**：依 DRY 抽 MetricItem/EllipsisTip/infoMaps 三文件，依 YAGNI 留 confirmRevoke/G7 样式在组件内，明确先查后建与判定规则 | 小欧 |
+| v3.7 | 2026-09-08 23:29:10 | 全文精读核查一致性（修 10 处）：G8 折叠图标 `▾`→`<DownOutlined/>` 对齐 5.4 SVG 铁律；2.2.4 过程事件线框图+5.4 表统一 Outlined 后缀+首行 G4 同步 SVG；2.2.4 时序矛盾定案"最新在顶"+三列改两列；8.2 改均长线（删"线长≈间隔"承诺）；P/C 两段对称+T 空格统一 `T 1,234`；PRIMARY 歧义改全称 `TEXT.PRIMARY`+WARNING 对比度 `#faad14`→`#AD6800`；G7 三选一定案 A+5.7 删 ToolOutlined；5.8 两表合并+Drawer 宽 `min(360px,80vw)`+折叠热区定案 32px+P1-11 定案 B；上下文 `有摘要`→`摘要·无计数`+破折号统一 en-dash；11.3 令牌名改 9.1 已定义 | 小欧 |
 | v3.6 | 2026-09-08 22:35:08 | **新增第十一章"实施计划与步骤（TDD 模式）"**：判定 TDD 可行（主体 TDD + 视觉类后置验证混合）；分 6 阶段实施（底座→复用层→P0→P1→P2→回归），每步红→绿→重构；新增测试用例 27 项（纯函数 8 / 组件交互 11 / E2E 3 条链路），程序段前已核查前端无既有测试文件故无修改既有用例；DoD 验收 6 条 | 小欧 |
 
 ---
@@ -86,9 +87,9 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ G1●执行中  G2 12s  G3 3步·2轮  G4↻重试中   G5 本轮T1,234/累计  G6上下文 │
+│ G1●执行中  G2 12s  G3 3步·2轮  G4[SyncOutlined]重试中  G5 本轮 T 1,234/累计  G6上下文 │
 │                                                                          │
-│ 上下文 2,048tok           G7 信任(2)   G8 [▾] 收起                   │
+│ 上下文 2,048tok           G7 信任(2)   G8 [<DownOutlined/>] 收起       │
 │ ── 主信息(运行态) ──       ── 次信息(资源态) ──   ── 操作项 ──        │
 └──────────────────────────────────────────────────────────────────────────┘
      渲染序：G1 → G2 → G3 → G4 → G5 → G6 → G7 → G8（从左到右）
@@ -105,14 +106,14 @@
 
 | 番号 | 渲染序 | 类型 | 内容 | 字号 | 字重 | 色值 Token | 说明 |
 |---|---|---|---|---|---|---|---|
-| G1 状态 | 1 | 主 | Badge + 文字 | 12 | 500 | PRIMARY | antd Badge dot，**重要信息打头** |
-| G2 耗时 | 2 | 主 | `12s` | 12 | 600 | PRIMARY | **tabular-nums** 等宽，加粗最醒目 |
-| G3 进度 | 3 | 主 | `3步·2轮` | 12 | 400 | SECONDARY | 辅助信息，中灰 |
+| G1 状态 | 1 | 主 | Badge + 文字 | 12 | 500 | TEXT.PRIMARY | antd Badge dot，**重要信息打头** |
+| G2 耗时 | 2 | 主 | `12s` | 12 | 600 | TEXT.PRIMARY | **tabular-nums** 等宽，加粗最醒目 |
+| G3 进度 | 3 | 主 | `3步·2轮` | 12 | 400 | TEXT.SECONDARY | 辅助信息，中灰 |
 | G4 异常 | 4 | 主 | 图标+文字 | 12 | 500 | 见图标映射 | **统一 antd icon**，去掉 emoji |
-| G5 Token数值 | 5 | 次 | 本轮 T / 累计 T | 见 2.2.2 | — | — | **本轮/累计 T 加粗、P/C 中灰** |
+| G5 Token数值 | 5 | 次 | 本轮 T / 累计 T（P/C 可见或进 Tooltip） | 见 2.2.2 | — | — | **本轮/累计 T 加粗、P/C 中灰，两段对称** |
 | G6 上下文 | 6 | 次 | 上下文段 | 见 2.2.8 | — | — | **标签+数值两段式，独立番号** |
-| G7 信任 | 7 | 操作 | `信任(2)` | 12 | 500 | PRIMARY | **可点击文字样式**，Drawer 侧滑面板 |
-| G8 折叠 | 8 | 操作 | `[▾] 收起` | 10 | 400 | TERTIARY | **辅助操作放最右**，不抢首位 |
+| G7 信任 | 7 | 操作 | `信任(2)` | 12 | 500 | TEXT.PRIMARY | **可点击文字样式（方案A定案）**：加粗+hover变色，Drawer 侧滑面板 |
+| G8 折叠 | 8 | 操作 | `[<DownOutlined/>] 收起` | 10 | 400 | TERTIARY | **辅助操作放最右**，不抢首位 |
 
 **五、操作项的可点击样式（不让用户猜"能不能点"）**
 
@@ -120,23 +121,21 @@
 
 | 操作位 | 可点击表达 | 说明 |
 |--------|-----------|------|
-| **G7 信任** | **文字样式**：PRIMARY 深色 + 加粗（或加圆角方框/下划线） | 靠**字体样式**提示可点，无需箭头图标 |
-| **G8 折叠** | `[▾]` 箭头 | 纯图标，箭头方向=展开语义 |
+| **G7 信任** | **文字样式（方案A定案）**：TEXT.PRIMARY 深灰 + fontWeight 500 + hover 变色 | 靠**字体样式**提示可点，无图标/框线 |
+| **G8 折叠** | `[<DownOutlined/>]` antd SVG 图标 | 内联 SVG，fontSize 10，TERTIARY 色，箭头方向=展开语义 |
 
-> **设计取舍**：信任是"一段可点文字"，用**文字样式**（加粗/深色/框线/下划线）表达可点击，简洁直接；
-> 折叠是"一个纯图标按钮"，用 `[▾]` 箭头表达。两操作位不需要一对方向箭头。
+> **定案**：信任用 **方案A字体样式**（加粗+hover 变色，不加图标/框线/下划线）；折叠用 `<DownOutlined/>` 内联 SVG 图标。
+> 方案B（方框）与方案C（下划线）已否决——B 额外引入 Tag 元素增加视觉噪音，C 与浏览器原生链接语义混淆。
 
-**G7 信任可点击样式方案**（三选一，统一即可）：
+**G7 信任可点击样式（定案方案A）**：
 
-| 方案 | 实现 | 说明 |
+| 要素 | 实现 | 说明 |
 |------|------|------|
-| 方案 A：字体样式 | `信任(2)` 用 `colors: PRIMARY` + `fontWeight: 500` + hover 变色 | 最简洁，靠颜色+字重暗示可点 |
-| 方案 B：方框 | `信任(2)` 套 `border-radius + padding 2px 6px + 浅底 #fafafa`（hover 加深）| 类似 Tag/按钮，一眼可点 |
-| 方案 C：下划线 | `信任(2)` 文字加 `text-decoration: underline` | 经典链接语义，明确可点 |
-| 交互反馈（通用） | hover 变 PRIMARY 深色 + `cursor: pointer`；focus-visible 2px outline | 任何方案都要带 |
+| 字体样式 | `信任(2)` 用 `color: Colors.TEXT.PRIMARY` + `fontWeight: 500` | 最简洁，靠颜色+字重暗示可点 |
+| 交互反馈 | hover 变 `Colors.PRIMARY` 蓝 + `cursor: pointer`；focus-visible 2px outline | 任何方案都要带 |
 | 无障碍 | `role="button"` + `aria-expanded={drawerOpen}` + `aria-controls` | 屏读播报"信任清单，已展开" |
 
-> 推荐 **方案 A（字体样式）**：与第一行其他文字同位同构，不额外引入框/线元素，视觉最干净。
+> ~~方案B（方框）~~ / ~~方案C（下划线）~~已否决：B 额外引入 Tag 元素增加视觉噪音，C 与浏览器原生链接语义混淆。
 
 **六、关键改动汇总**
 
@@ -160,7 +159,7 @@
 
 ```
 现状：整行 cursor:pointer，无任何视觉提示
-改进：G8 区域加 [▾] 小三角（10px，TERTIARY色），点击响应折叠
+改进：G8 区域加 [<DownOutlined/>] antd SVG 图标（10px，TERTIARY色），点击响应折叠
       整行仍可点击（扩大热区），但三角是视觉锚点
       补 role="button" + aria-expanded + tabIndex + onKeyDown
 ```
@@ -190,8 +189,8 @@
 | 元素 | 字号 | 字重 | 色值 | 说明 |
 |------|------|------|------|------|
 | 标签"本轮/累计" | 11 | 400 | TERTIARY | 小字灰色，不抢 |
-| 数值 T 总数 | 12 | 600 | PRIMARY | 加粗，最醒目，核心监控值 |
-| P/C 数值 | 12 | 500 | SECONDARY | 中灰，辅助信息 |
+| 数值 T 总数 | 12 | 600 | TEXT.PRIMARY | 加粗，最醒目，核心监控值 |
+| P/C 数值 | 12 | 500 | TEXT.SECONDARY | 中灰，辅助信息 |
 | 分隔符 `·` | 12 | 400 | BORDER | 极淡，不抢 |
 
 ---
@@ -248,30 +247,29 @@
 ⏸️ 任务已暂停 14:32:20      ← 无 tabular-nums
 ```
 
-**改进**（垂直时间线 + 事件分段带，事件从上到下按时间排列）：
-```
-  事件带(右列)                        时间线(中列)      时间(左列)
+**改进**（两列布局：左列=时间线+时间上下堆，右列=事件图标+文本）：
 
-  ▶ 任务已开始              │ ●                 14:32:01
-                            │ │
-  ↻ 正在重试                │ │ ●               14:32:15
-                            │ │ │
-  ⏸ 任务已暂停              │ │ ●               14:32:20
-                            └─┴─┴
-                              ↑ 竖线段长≈时间间隔，一眼看出疏密
 ```
+  时间线+时间(左列)              事件(右列)
 
-**三列布局规范**：
+  14:32:20 ── [<PauseCircleOutlined/>] 任务已暂停
+      │
+  14:32:15 ── [<ReloadOutlined/>] 正在重试
+      │
+  14:32:01 ── [<PlayCircleOutlined/>] 任务已开始
+```
+> 最新在顶（遵循现状 reversed），均长竖线只保留先后关系，不编码时间间隔。
+
+**两列布局规范**：
 
 | 列 | 内容 | 字号 | 字重 | 色值 | 说明 |
 |----|------|------|------|------|------|
-| 左列 | 时间 `14:32:01` | 11 | 400 | SECONDARY | **tabular-nums** 等宽，右侧对齐 |
-| 中列 | 时间线：`│` 竖线 + `●` 节点 | 10 | 400 | BORDER | 节点按时间顺序，竖线段长≈间隔 |
-| 右列 | 事件图标 + 文本 | 12 | 400 | TERTIARY | antd SVG icon：PlayCircle/PauseCircle/ReloadOutlined |
+| 左列 | 时间 `14:32:01` + 时间线 `│` 竖线 + `●` 节点 | 11 | 400 | TEXT.SECONDARY | **tabular-nums** 等宽，竖线均长不编码间隔 |
+| 右列 | 事件 antd SVG 图标 + 文本 | 12 | 400 | TEXT.TERTIARY | `<PlayCircleOutlined/>` `<PauseCircleOutlined/>` `<ReloadOutlined/>` |
 
 **时序与关系表达**：
-1. **从上到下**按时间顺序排列（最新在顶，遵循现状 reversed）
-2. **时间线竖线**把各事件串起来──竖线段物理长度与时间间隔成正比，间隔大则段长、间隔小则段短，肉眼可读疏密
+1. **从上到下**按时间倒序排列（最新在顶，遵循现状 reversed）
+2. **均长竖线**把各事件串起来──竖线固定长度，只保留先后顺序关系，不编码时间间隔长短
 3. 每个事件都有**节点圆点**闭环，强化"这是一条连续的时间序列"
 4. `role="log"` + `aria-live="polite"`，新事件实时播报
 
@@ -284,10 +282,10 @@
   本轮 T1234 (P890/C344) · 任务累计 T5678 (P3456/C2222) · 上下文 2048tok 🔴
   ↑ ↑ ↑ ↑ ↑ ↑ 全12px全灰，扫描6个元素才能找到重点
 
-改进后（主次分明）：
-  本轮  T 1,234  P 890/C 344   │  累计  T 5,678   │  上下文  2,048 tok
-  ──── 灰 ──── 加粗 ─── 中灰 ──   ──── 灰 ─── 加粗 ──   ──── 灰 ──── 中灰 ──
-  ↑ 3个层级：标签→总数→分项，扫一眼抓到 T 值
+改进后（主次分明，两段对称）：
+  本轮  T 1,234  P 890/C 344   │  累计  T 5,678  P 3,456/C 2,222
+  ──── 灰 ──── 加粗 ─── 中灰 ──   ──── 灰 ──── 加粗 ──── 中灰 ──
+  ↑ 3个层级：标签→总数→分项，扫一眼抓到 T 值；本轮/累计两段均露 P/C
 ```
 
 ---
@@ -301,7 +299,7 @@
 | 标签/辅助文字 | `Colors.TEXT.TERTIARY #999` | 400 | 标签、事件文本 |
 | 正常进行中 | `Colors.PRIMARY #1677ff` | - | Badge running dot |
 | 错误（执行级） | `Colors.ERROR #ff4d4f` | - | CloseCircleFilled 红圆 |
-| 警告（重试/截断） | `Colors.WARNING #faad14` | 500 | SyncOutlined / WarningOutlined |
+| 警告（重试/截断） | `Colors.WARNING #AD6800` | 500 | SyncOutlined / WarningOutlined（对比度≥4.5:1） |
 | 业务错误（请求级） | `Colors.TEXT.SECONDARY #8c8c8c` | - | StopOutlined 灰色 |
 | 分隔线 | `Colors.BORDER.LIGHT #f0f0f0` | - | 顶部分隔 |
 
@@ -343,7 +341,7 @@
 | 元素 | 字号 | 字重 | 色值 | 说明 |
 |------|------|------|------|------|
 | 标签"上下文" | 11 | 400 | TERTIARY | 小字灰色，与"本轮/累计"同级但独立定义 |
-| 数值 `{n} tok` | 12 | 600 | PRIMARY | 加粗；截断时改 WARNING |
+| 数值 `{n} tok` | 12 | 600 | TEXT.PRIMARY | 加粗；截断时改 WARNING |
 | 截断标记 | 12 | 500 | WARNING | `<WarningOutlined />` 表示"被截断"非"出错" |
 
 **上下文段文案状态机**（4种→统一两段式）：
@@ -351,7 +349,7 @@
 | 状态 | 标签 | 数值 | 数值色值 | 图标 |
 |------|------|------|-----------|------|
 | 有 overview + 有 token 数 | `上下文` | `{n} tok` | PRIMARY | 无 |
-| 有 overview + 无 token 数 | `上下文` | `有摘要` | TERTIARY | 无 |
+| 有 overview + 无 token 数 | `上下文` | `摘要·无计数` | TERTIARY | 无（Tooltip 显示 overview 前 N 字） |
 | 截断 | `上下文` | `{n} tok` | WARNING | WarningOutlined |
 | 无数据 | `上下文` | `–` | TERTIARY | 无 |
 
@@ -479,7 +477,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 
 **改进**：
 1. 外层 div 补 `role="button"` + `aria-expanded={collapsed}` + `tabIndex={0}` + `onKeyDown`
-2. G8 区域（折叠位）加一个小三角 `[▾]`（10px，TERTIARY 色）作为折叠视觉锚点
+2. G8 区域（折叠位）加 antd SVG 图标 `[<DownOutlined/>]`（10px，TERTIARY 色）作为折叠视觉锚点
 3. 整行保留 onClick（扩大热区），但三角区域 stopPropagation
 
 ---
@@ -574,8 +572,8 @@ const revoke = async (toolName: string, path: string | null) => {
 - 长错误文本（如 `info.liveMeta.text`）无 `maxWidth/ellipsis`，会把左组撑宽
 
 **改进**：
-1. error 场景改 `Colors.ERROR (#ff4d4f)`（对比度 4.6:1，达标）
-2. retrying/truncated 保留 WARNING 但加粗 `fontWeight: 500`
+1. WARNING 色值从 `#faad14` 改为 `#AD6800`（深黄棕，白底对比度≥4.5:1，达标）
+2. retrying/truncated 保留 WARNING + `fontWeight: 500`
 3. 文本加 `maxWidth: 200px` + `overflow: hidden` + `textOverflow: ellipsis` + Tooltip 全文
 
 ---
@@ -594,19 +592,19 @@ const revoke = async (toolName: string, path: string | null) => {
 2. P/C 数值藏在 Tooltip 内，最有用的分项信息反而要点开才见
 3. `·` 分隔符与 TERTIARY 同色，视觉分隔弱
 
-**改进**：本轮/累计两段统一"标签+数值"两段式，主次分明
+**改进**：本轮/累计两段统一"标签+数值"两段式，两段对称（P/C 均可见）
 
 ```
-本轮   T 1,234   累计   T 5,678
-标签  数值      标签  数值
-灰    加粗      灰    加粗(截断时WARNING+WarningOutlined)
+本轮   T 1,234  P 890/C 344    累计   T 5,678  P 3,456/C 2,222
+标签  数值    分项            标签  数值      分项
+灰    加粗    中灰            灰    加粗      中灰
 ```
 
 | 元素 | 字号 | 字重 | 色值 |
 |------|------|------|------|
 | 标签"本轮/累计" | 11 | 400 | TERTIARY |
-| 数值 T 总数 | 12 | 600 | PRIMARY |
-| P/C 数值 | 12 | 500 | SECONDARY |
+| 数值 T 总数 | 12 | 600 | TEXT.PRIMARY |
+| P/C 数值 | 12 | 500 | TEXT.SECONDARY |
 | 分隔符 `·` | 12 | 400 | BORDER |
 
 > 「上下文」段已独立成番号 P1-8（设计见第二章 2.2.8），不再于此定义，为后续单独优化预留。
@@ -657,7 +655,7 @@ const revoke = async (toolName: string, path: string | null) => {
 | 元素 | 字号 | 字重 | 色值 | 说明 |
 |------|------|------|------|------|
 | 标签"上下文" | 11 | 400 | TERTIARY | 小字灰色，与"本轮/累计"同级但独立定义 |
-| 数值 `{n} tok` | 12 | 600 | PRIMARY | 加粗；截断时改 WARNING |
+| 数值 `{n} tok` | 12 | 600 | TEXT.PRIMARY | 加粗；截断时改 WARNING |
 | 截断标记 | 12 | 500 | WARNING | `<WarningOutlined />` 表示"被截断"非"出错" |
 
 **上下文段文案状态机**（4种→统一两段式）：
@@ -665,7 +663,7 @@ const revoke = async (toolName: string, path: string | null) => {
 | 状态 | 标签 | 数值 | 数值色值 | 图标 |
 |------|------|------|-----------|------|
 | 有 overview + 有 token 数 | `上下文` | `{n} tok` | PRIMARY | 无 |
-| 有 overview + 无 token 数 | `上下文` | `有摘要` | TERTIARY | 无 |
+| 有 overview + 无 token 数 | `上下文` | `摘要·无计数` | TERTIARY | 无（Tooltip 显示 overview 前 N 字） |
 | 截断 | `上下文` | `{n} tok` | WARNING | WarningOutlined |
 | 无数据 | `上下文` | `–` | TERTIARY | 无 |
 
@@ -741,9 +739,7 @@ padding: '8px 0 0',  // ← 无底部 padding
 
 **问题**：本条只有顶部 `borderTop`，底部靠 `SessionLayout.tsx:72` 的 `gap: 8` 悬空，视觉上像"浮条"而非"状态栏"。input 区也没有顶部 border，两块之间靠 gap 分隔，视觉界限模糊。
 
-**改进**：
-- 方案 A：本条加 `borderBottom` + `paddingBottom: 8` 收口
-- 方案 B（更干净）：本条去掉 `borderTop`，改为 input 区顶部统一加 `borderTop`，让分隔线归属"输入区上沿"
+**改进（定案 B）**：本条去掉 `borderTop`，改为 input 区顶部统一加 `borderTop`，让分隔线归属"输入区上沿"。本条靠 `gap` 与 input 区分隔即可。
 
 ---
 
@@ -931,23 +927,23 @@ maxHeight: 72,  // ← 固定 72px（约 3-4 行事件）
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ G1●执行中  G2 12s  G3 3步·2轮  G4↻重试中  G5 本轮T1,234/累计 G6上下文│
-│ 上下文 2,048tok          G7 信任(2)           G8 [▾] 收起              │
+│ G1●执行中  G2 12s  G3 3步·2轮  G4[SyncOutlined]重试中  G5 本轮 T 1,234/累计 G6上下文│
+│ 上下文 2,048tok          G7 信任(2)           G8 [<DownOutlined/>] 收起 │
 └──────────────────────────────────────────────────────────────────────┘
          ↑ 渲染序 G1→G2→G3→G4→G5→G6→G7→G8：折叠(辅助操作)放最右不抢眼
-         ↑ G7 信任以文字样式提示可点：深色加粗/框线/下划线，无需箭头图标
+         ↑ G7 信任以文字样式提示可点：TEXT.PRIMARY 加粗+hover 变色，无需图标
 ```
 
 | 番号 | 渲染序 | 内容 | 字号 | 字重 | 色值 Token | 说明 |
 |---|---|---|---|---|---|---|
-| G1 状态 | 1 | Badge + 文字 | 12 | 500 | PRIMARY | antd Badge dot，重要信息打头 |
-| G2 耗时 | 2 | `12s` | 12 | 600 | PRIMARY | **tabular-nums**，等宽 |
-| G3 进度 | 3 | `3步·2轮` | 12 | 400 | SECONDARY | 辅助信息 |
+| G1 状态 | 1 | Badge + 文字 | 12 | 500 | TEXT.PRIMARY | antd Badge dot，重要信息打头 |
+| G2 耗时 | 2 | `12s` | 12 | 600 | TEXT.PRIMARY | **tabular-nums**，等宽 |
+| G3 进度 | 3 | `3步·2轮` | 12 | 400 | TEXT.SECONDARY | 辅助信息 |
 | G4 异常 | 4 | 图标+文字 | 12 | 500 | 见图标映射 | 统一 antd icon |
-| G5 Token数值 | 5 | 本轮 T / 累计 T | 见 5.2 | — | — | **本轮/累计 T 加粗、P/C 中灰** |
+| G5 Token数值 | 5 | 本轮 T / 累计 T（P/C 可见或进 Tooltip） | 见 5.2 | — | — | **本轮/累计 T 加粗、P/C 中灰，两段对称** |
 | G6 上下文 | 6 | 上下文段 | 见 5.3 | — | — | **标签+数值两段式，独立番号** |
-| G7 信任 | 7 | `信任(N)` | 12 | 500 | PRIMARY | **可点击文字样式**：深色加粗/框线/下划线 |
-| G8 折叠 | 8 | `▾` 收起 | 10 | 400 | TERTIARY | **辅助操作排最右**，不占首位 |
+| G7 信任 | 7 | `信任(N)` | 12 | 500 | TEXT.PRIMARY | **可点击文字样式（方案A定案）**：加粗+hover 变色 |
+| G8 折叠 | 8 | `[<DownOutlined/>] 收起` | 10 | 400 | TERTIARY | **辅助操作排最右**，不占首位 |
 
 > 番号 G1~G8 是信息位标识；渲染按 G1→G8 顺序，折叠(最次要辅助操作)放最右端，轻重有序。
 > **G7 信任可点击样式**（详见 5.7）：以文字样式（PRIMARY 深色加粗/框线/下划线）+ hover 变色 + focus 描边表达可点击，无需箭头图标。
@@ -957,16 +953,16 @@ maxHeight: 72,  // ← 固定 72px（约 3-4 行事件）
 ### 5.2 Token 数值行（G5 信息位，改进后）
 
 ```
-本轮  T 1,234  P 890 / C 344   │  累计  T 5,678
- ── 标签灰 ── 加粗 ── 中灰 ──      ── 标签灰 ── 加粗
+本轮  T 1,234  P 890/C 344   │  累计  T 5,678  P 3,456/C 2,222
+ ── 标签灰 ── 加粗 ── 中灰 ──   ── 标签灰 ──── 加粗 ──── 中灰 ──
 ```
-> 「上下文」已独立成 5.3 小节（信息位 G6），故 5.2 仅承载"本轮/累计"两段（信息位 G5）。
+> 「上下文」已独立成 5.3 小节（信息位 G6），故 5.2 仅承载"本轮/累计"两段（信息位 G5）。本轮/累计两段对称展示 P/C。
 
 | 元素 | 字号 | 字重 | 色值 Token | 说明 |
 |---|---|---|---|---|
 | 标签"本轮/累计" | 11 | 400 | TERTIARY | 小字灰色 |
-| T 总数 | 12 | 600 | PRIMARY | 加粗，最醒目 |
-| P/C 数值 | 12 | 500 | SECONDARY | 中灰，辅助 |
+| T 总数 | 12 | 600 | TEXT.PRIMARY | 加粗，最醒目 |
+| P/C 数值 | 12 | 500 | TEXT.SECONDARY | 中灰，辅助 |
 | 分隔符 `·` | 12 | 400 | BORDER | 极淡，不抢 |
 
 ---
@@ -989,7 +985,7 @@ maxHeight: 72,  // ← 固定 72px（约 3-4 行事件）
 | 元素 | 字号 | 字重 | 色值 Token | 说明 |
 |------|------|------|-----------|------|
 | 标签"上下文" | 11 | 400 | TERTIARY | 小字灰色，独立定义 |
-| 数值 `{n} tok` | 12 | 600 | PRIMARY | 加粗；截断时 WARNING |
+| 数值 `{n} tok` | 12 | 600 | TEXT.PRIMARY | 加粗；截断时 WARNING |
 | 截断标记 | 12 | 500 | WARNING | `<WarningOutlined />` 非"出错" |
 
 **状态机**（4种→统一两段式）：
@@ -997,7 +993,7 @@ maxHeight: 72,  // ← 固定 72px（约 3-4 行事件）
 | 状态 | 标签 | 数值 | 色值 Token | 图标 |
 |------|------|------|-----------|------|
 | 有 overview + 有 token 数 | `上下文` | `{n} tok` | PRIMARY | 无 |
-| 有 overview + 无 token 数 | `上下文` | `有摘要` | TERTIARY | 无 |
+| 有 overview + 无 token 数 | `上下文` | `摘要·无计数` | TERTIARY | 无（Tooltip 显示 overview 前 N 字） |
 | 截断 | `上下文` | `{n} tok` | WARNING | WarningOutlined |
 | 无数据 | `上下文` | `–` | TERTIARY | 无 |
 
@@ -1075,7 +1071,7 @@ maxHeight: 72,  // ← 固定 72px（约 3-4 行事件）
 | 标签/辅助文字 | `Colors.TEXT.TERTIARY #999` | 400 | 标签、事件文本 |
 | 正常进行中 | `Colors.PRIMARY #1677ff` | - | Badge running dot |
 | 错误（执行级） | `Colors.ERROR #ff4d4f` | - | CloseCircleFilled 红圆 |
-| 警告（重试/截断） | `Colors.WARNING #faad14` | 500 | SyncOutlined / WarningOutlined |
+| 警告（重试/截断） | `Colors.WARNING #AD6800` | 500 | SyncOutlined / WarningOutlined（对比度≥4.5:1） |
 | 业务错误（请求级） | `Colors.TEXT.SECONDARY #8c8c8c` | - | StopOutlined 灰色 |
 | 分隔线 | `Colors.BORDER.LIGHT #f0f0f0` | - | 顶部分隔 |
 
@@ -1100,8 +1096,9 @@ maxHeight: 72,  // ← 固定 72px（约 3-4 行事件）
 **组件结构调整**（TrustPanel.tsx 重构方向）：
 ```typescript
 // 第一行：仅保留计数徽标 + 展开按钮（不再内嵌列表）
-<div role="button" aria-expanded={drawerOpen} tabIndex={0} onClick={openDrawer}>
-  <ToolOutlined /> 信任({trustCount})                      // 点击打开 Drawer
+<div role="button" aria-expanded={drawerOpen} tabIndex={0} onClick={openDrawer}
+  style={{ color: Colors.TEXT.PRIMARY, fontWeight: 500, cursor: 'pointer' }}>
+  信任({trustCount})                                      // 点击打开 Drawer
 </div>
 
 // Drawer（右侧滑出），列表抽离为独立渲染
@@ -1110,7 +1107,7 @@ maxHeight: 72,  // ← 固定 72px（约 3-4 行事件）
   open={drawerOpen}
   onClose={closeDrawer}
   title="会话信任清单"
-  width={360}
+  width="min(360px, 80vw)"
 >
   {tools.length === 0 ? (
     <Empty description="暂无信任工具" />
@@ -1156,12 +1153,19 @@ const confirmRevoke = (t: TrustItem) => {
 
 ### 5.8 第一行响应式断点策略（P1-9 落地）
 
-| 断点 | 行为 |
-|------|------|
-| ≥ 1280px | 全部 8 个信息位展示（G1 状态 / G2 耗时 / G3 进度 / G4 异常 / G5 Token / G6 上下文 / G7 信任 / G8 折叠） |
-| 1280 ~ 960px | G3 进度（`3步·2轮`）折叠进 Tooltip，仅留数字 |
-| 960 ~ 768px | G4 异常文本省略（maxWidth 200 + ellipsis + Tooltip 全文） |
-| < 768px | G2 耗时 + G3 进度合并，G5 Token 行（5.2）换行到第二行 |
+**G1~G8 断点行为矩阵**：
+
+| 断点 | G1 状态 | G2 耗时 | G3 进度 | G4 异常 | G5 Token | G6 上下文 | G7 信任 | G8 折叠 |
+|------|---------|---------|---------|---------|----------|-----------|---------|---------|
+| ≥ 1280px | 完整 | 完整 | 完整（`3步·2轮`） | 完整 | 完整（本轮/累计并排） | 完整（两段式） | 完整 | 完整 |
+| 1280~960px | 完整 | 完整 | 收窄（仅留数字，Tooltip 展开） | 完整 | 累计段收窄 | 可能换行 | 完整 | 完整 |
+| 960~768px | 完整 | 完整 | 收窄 | 省略（maxWidth 200 + ellipsis + Tooltip 全文） | 累计段进 Tooltip | 进 Tooltip | 仅计数 | 完整 |
+| < 768px | 完整 | 合并进 G3 | 合并 | 省略 | 换行到第二行 | 换行到第二行 | 仅计数 | 完整 |
+
+**折叠热区定案**：
+- G8 三角图标区域 `32px × 32px` 为主热区（onClick + stopPropagation），方便键盘/鼠标点击
+- 整行保留 onClick（扩大热区），但设置 `user-select: text`，文本区可选中、点击不触发折叠
+- 折叠触发仅限 G8 三角区域，避免与文本选中冲突
 
 ```css
 /* 外层容器允许换行，G5 Token 区最小宽度不为 0 */
@@ -1171,12 +1175,6 @@ const confirmRevoke = (t: TrustItem) => {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 ```
-
-| 断点 | G5（Token 数值） | G6（上下文） | G1-G4（状态/耗时/进度/异常） | G7（信任） |
-|------|------------------|--------------|----------------|------------|
-| ≥ 1280px | 完整（本轮/累计并排） | 完整（两段式） | 完整 | 完整 |
-| < 1280px | 累计段可能收窄 | 独立段（5.3）可能换行 | 完整 | 完整 |
-| < 960px | 累计段收进 Tooltip | 收进 Tooltip | 耗时 tabular-nums | 仅计数徽标 |
 
 ---
 
@@ -1275,11 +1273,11 @@ Select-String -Path "frontend\src\features\chat\components\taskinfo\TaskInfoBar.
 | Drawer 打开/关闭动画与 SSE 高频重渲染冲突 | 低 | 偶发闪烁 | Drawer 使用 `motion` 默认；列表数据变化仅触发内部刷新 |
 | 第一行按钮可发现性降低（列表隐藏进抽屉） | 中 | 用户找不到信任项 | 保留计数徽标与可点击文字样式提示；hover 提示"查看信任清单" |
 
-### 8.2 时间轴+分段带风险
+### 8.2 时间轴风险
 
 | 风险 | 等级 | 影响 | 缓解/降级 |
 |------|------|------|-----------|
-| 事件间隔过大导致竖线过长占高 | 中 | 列表过高挤压布局 | 竖线最大高度封顶（如 24px），超过部分不变长 |
+| 均长竖线不编码时间间隔 | 低 | 密度感知弱于比例竖线 | 保留时间列（tabular-nums），靠时间数字区分先后疏密 |
 | 单一事件无间隔，时间轴退化为点列 | 低 | 视觉单调 | 无间隔时节点紧凑排列，仍保留时间列区分先后 |
 | tabular-nums 字体在部分浏览器缺字符 | 低 | 数字宽度仍抖动 | 回退为 `font-variant-numeric: tabular-nums` + 等宽 `monospace` 兜底 |
 
@@ -1313,7 +1311,7 @@ Select-String -Path "frontend\src\features\chat\components\taskinfo\TaskInfoBar.
 | `Colors.TEXT.TERTIARY` | `#999` | 标签、事件文本 |
 | `Colors.PRIMARY` | `#1677ff` | Badge running、焦点 outline |
 | `Colors.ERROR` | `#ff4d4f` | 执行级错误红圆 |
-| `Colors.WARNING` | `#faad14` | 重试/截断警告 |
+| `Colors.WARNING` | `#AD6800` | 重试/截断警告（对比度≥4.5:1） |
 | `Colors.BORDER.LIGHT` | `#f0f0f0` | 分隔线 |
 | `FontSize.SECONDARY` | 12 | 主体数值 |
 | `FontSize.CAPTION` | 11 | 标签/时间 |
@@ -1430,13 +1428,13 @@ Select-String -Path "frontend\src\features\chat\components\taskinfo\TaskInfoBar.
 
 | 用例 | 断言要点（红） | 对应设计稿 |
 |------|----------------|-----------|
-| `mapStatus — ok`（有 overview 与 token） | 返回"正常"标签/数值/BLUE/对应 data-state | 2.2.8 |
-| `mapStatus — summary-only`（仅总结令牌） | 返回收窄数值/SEGMENT 灰 | 2.2.8 |
-| `mapStatus — truncated` | 返回截断态 + WarningOutlined + 色值 | 2.2.8 |
-| `mapStatus — empty` | 返回"待注入"SURFACE 灰 | 2.2.8 |
+| `mapStatus — ok`（有 overview 与 token） | 返回"正常"标签/数值/`TEXT.PRIMARY`/`data-state="ok"` | 2.2.8 |
+| `mapStatus — summary-only`（仅总结令牌） | 返回收窄数值/`TEXT.TERTIARY`/`data-state="summary-only"` | 2.2.8 |
+| `mapStatus — truncated` | 返回截断态 + WarningOutlined + `Colors.WARNING`/`data-state="truncated"` | 2.2.8 |
+| `mapStatus — empty` | 返回"–"/`TEXT.TERTIARY`/`data-state="empty"` | 2.2.8 |
 | `EVENT_ICON_MAP` | started→PlayCircle / paused→PauseCircle / resumed→PlayCircle / retrying→Reload | 2.2.4 |
 | `BADGE_MAP` | idle→default+待命、cancelled→error/muted 区分（P2-15） | 2.2.1 |
-| `formatToken` | 1234→"T 1,234"、无值→"—" | 5.2 |
+| `formatToken` | 1234→"T 1,234"、无值→"–" | 5.2 |
 | `formatTime` | 时间→"HH:MM:SS" 固定格式 | 2.2.4 |
 
 **B. 组件与交互（Vitest + RTL）**
@@ -1493,4 +1491,6 @@ Select-String -Path "frontend\src\features\chat\components\taskinfo\TaskInfoBar.
 
 **编写人：小欧**
 **编写时间：2026-09-08 22:35:08**
-**文档版本：v3.6**
+**更新人：小欧**
+**更新时间：2026-09-08 23:29:10**
+**文档版本：v3.7**
