@@ -23,7 +23,7 @@ import ChatHeader from '../components/ChatHeader';
 import ChatToolbar from '../components/ChatToolbar';
 import ModelPicker from '../components/ModelPicker';
 import { TopbarStats } from '../components/topbar/TopbarStats';
-import { TaskListPanel } from '../components/left/TaskListPanel';
+import { TaskListPanel } from '../components/layout/TaskListPanel';
 import { RightViewer } from '../components/right/RightViewer';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
 import { Colors } from '@/utils/stepStyles';
