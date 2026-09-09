@@ -19,6 +19,7 @@
 //   去TaskMetaFrames类型导入/chatSend/handleSend解构(死代码) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B7: 补handleEditingCancel/handleEditingStart依赖(真补);
 //   删body未用currentResponse与handleAuthorizationConfirm(解构+依赖数组同步清除, 先误删5行opts解构已用git diff识别恢复) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 透传rightOpen状态给TaskListPanel, 控制模型标签provider前缀条件显示 - 小欧-2026-09-09
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -83,6 +84,8 @@ interface UseChatPanelsOptions {
   // 2026-09-01 小欧 方案C: 最新任务锚点id + 挂到最新任务项的ref(左列滚动定位透传)
   latestTaskId?: string | null;
   latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
+  // 2026-09-09 小欧: 右侧展开状态, 透传TaskListPanel控制模型标签provider显示
+  rightOpen?: boolean;
 }
 
 /**
@@ -114,6 +117,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     handleSendWithMode,
     latestTaskId, // 2026-09-01 小欧 方案C: 透传最新任务锚点
     latestTaskRef, // 2026-09-01 小欧 方案C: 透传挂最新任务的ref
+    rightOpen, // 2026-09-09 小欧: 右侧展开状态, 透传TaskListPanel控制模型标签provider显示
   } = opts;
 
   const {
@@ -223,6 +227,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             loading={tasksLoading}
             latestTaskId={latestTaskId}
             latestTaskRef={latestTaskRef}
+            rightOpen={rightOpen}
           />
         ),
         defaultVisible: true,

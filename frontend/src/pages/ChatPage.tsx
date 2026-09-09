@@ -13,6 +13,7 @@
 //   onError 升为 (liveError: LiveError)=>void 接收 位4/类型分层字段) + setter/一处消费(if(liveError)refreshTasks,
 //   暂用对象真值判空)与 useChatPanels 透传同步 — 小欧-2026-09-08
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-A类: 去chatSession/chatPersistence解构(死解构, eslint@typescript-eslint/no-unused-vars) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 透传rightOpen状态给useChatPanels, 控制TaskListPanel模型标签provider前缀条件显示 - 小欧-2026-09-09
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -165,6 +166,7 @@ const ChatPage: React.FC = () => {
     handleSendWithMode,
     latestTaskId, // 2026-09-01 小欧 方案C: 左列最新任务锚点透传
     latestTaskRef, // 2026-09-01 小欧 方案C: 滚动定位ref透传
+    rightOpen, // 2026-09-09 小欧: 右侧展开状态透传TaskListPanel
   });
 
   return (

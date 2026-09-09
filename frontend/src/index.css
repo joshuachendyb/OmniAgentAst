@@ -6,6 +6,7 @@
    本 CSS 类只管旋转动画(1em 尺寸/逆时针1s转), 图标 SVG 内容变更在 ToolCallLine.tsx 内, 此处零改动 - 小欧-2026-09-06 */
 /* 编辑历史: 2026-09-08 小欧 - 标题图标(北京老陈令): 新增.title-spin-icon(D三色弧段loader, 复用waiting-spin逆时针1s常转, 20px),
    .tool-waiting-cursor 尺寸 1em→1.1em - 小欧-2026-09-08 */
+/* 编辑历史: 2026-09-09 小欧 - UI视觉优化(北京老陈定案): 新增.task-list-item:hover悬浮态/.active选中态/.task-text-block相对定位/.task-copy-btn复制按钮(绝对定位右上角hover显示) - 小欧-2026-09-09 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;
@@ -46,6 +47,50 @@
 /* 任务列表项键盘聚焦浅蓝外晕（2026-08-27 小欧 三堂会审P0-5: 与选中深蓝#1677ff隔离, 不占位） */
 .task-list-item:focus-visible {
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.2);
+}
+
+/* 2026-09-09 小欧 - UI视觉优化(北京老陈定案): 悬浮态极浅灰背景，交互反馈更流畅 */
+.task-list-item:hover {
+  background-color: #fafafa !important;
+}
+
+/* 2026-09-09 小欧 - UI视觉优化(北京老陈定案): 选中态极浅蓝背景，与内联style.backgroundColor双保险 */
+.task-list-item.active {
+  background-color: #e6f4ff !important;
+}
+
+/* 2026-09-09 小欧 - 复制按钮样式: 文本块相对定位, 按钮绝对定位右上角, hover时显示 */
+.task-text-block {
+  position: relative;
+}
+.task-copy-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #999;
+  opacity: 0;
+  transition: all 0.15s ease;
+}
+.task-copy-btn:hover {
+  background: #f5f5f5;
+  color: #1677ff;
+  border-color: #1677ff;
+}
+.task-copy-btn:active {
+  background: #e6f4ff;
+}
+.task-text-block:hover .task-copy-btn {
+  opacity: 1;
 }
 
 @keyframes thinking-blink {
