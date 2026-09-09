@@ -1,11 +1,12 @@
-# TaskInfoBar UI视觉优化设计方案（去重合并版 v4.1）
+# TaskInfoBar UI视觉优化设计方案（去重合并版 v4.2）
 
 **编写人：小欧**
 **编写时间：2026-09-08 19:57:56**
 **去重合并人：小欧**
 **去重合并时间：2026-09-08 23:47:47**
 **v4.1 更新时间：2026-09-09 09:01:58**
-**文档版本：v4.1**
+**v4.2 更新时间：2026-09-09 09:32:53**
+**文档版本：v4.2**
 
 ---
 
@@ -25,6 +26,7 @@
 | v3.7 | 2026-09-08 23:29:10 | 核查报告 10 处落定：G8 `▾`→`<DownOutlined/>`；2.2.4 时序矛盾定案"最新在顶"+三列改两列；8.2 改均长线；P/C 两段对称+T 空格 `T 1,234`；PRIMARY 全称化 `TEXT.PRIMARY`；WARNING `#faad14`→`#AD6800`；G7 定案 A；5.7 删 ToolOutlined；5.8 两表合并热区 32px；Drawer `min(360px,80vw)`；P1-11 定案 B；上下文 `有摘要`→`摘要·无计数`；破折号 en-dash；11.3 令牌名改 9.1 已定义 | 小欧 |
 | **v4.0** | **2026-09-08 23:47:47** | **全量去重合并重写**：删除 2.2.x 与 5.x 双份规范（每份只留一处）、问题清单只留"问题+改法指针"；删单列审查范围（并入文档目的）、风险章节、与 v3.7 定案矛盾的术语表；保留 18 项问题、全部规范、D1~D5、优先级、令牌、复用、TDD 实施、27 项测试用例、DoD；重新排章节号 | 小欧 |
 | v4.1 | 2026-09-09 09:01:58 | 折叠交互定案变更：**取消整行折叠（信息带恒定 1 行），拆为两块独立 Popover 浮层**（上下文卡片锚 G6 + 事件卡片锚 G8）；G8 语义由"折叠任务面板"改为"事件序列入口"；位置"锚点右缘对齐向左展开"、窄屏右贴边；hover 规格 2（32×32 热区背景淡入+图标 PRIMARY+展开态 rotate 180°）；6.5.3.4/6.5.3.8/6.5.3.10 真实代码、7.3 测试用例全链同步 | 小欧 |
+| v4.2 | 2026-09-09 09:32:53 | 第二轮源码级核查落定：**G6/G8 双浮层入口抽公共组件 `FloatingEntry.tsx`**（Popover 壳 + 热区 a11y + Enter/Space 键盘，卡片内容留调用方；DRY，17 行×2 处重复收敛）；**G8 `onClick` 删除手动 toggle 双重写入**（开合交还 antd trigger 单一真源，与 G6 对齐）；6.1/6.2/6.3 复用清单、6.5.2.4 新建文件规约、6.5.3.2/6.5.3.4/6.5.3.8 调用、7.2 阶段 1.5、7.3 断言全链同步 | 小欧 |
 
 ---
 
@@ -558,8 +560,8 @@ const confirmRevoke = (t: TrustItem) => {
 
 | 位置 | 现状 | 改进 |
 |------|------|------|
-| G6 上下文入口 | 无 role/tabIndex/aria | `role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `tabIndex={0}` + `onKeyDown`（见 6.5.3.8） |
-| G8 事件入口 | 无 role/tabIndex/aria | `role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `tabIndex={0}` + `onKeyDown`（见 6.5.3.4） |
+| G6 上下文入口 | 无 role/tabIndex/aria | `role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `tabIndex={0}` + `onKeyDown`（v4.2 经 `FloatingEntry` 实现，见 6.5.2.4；调用见 6.5.3.8） |
+| G8 事件入口 | 无 role/tabIndex/aria | `role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `tabIndex={0}` + `onKeyDown`（v4.2 经 `FloatingEntry` 实现，见 6.5.2.4；调用见 6.5.3.4） |
 | 浮层卡片 | 无（新增） | 卡片容器 `role="dialog"` + `aria-label="上下文详情/事件序列"`，焦点移入、Esc 关闭回入口 |
 | TrustPanel 折叠 | ✅ 已有 role/aria/keyboard | 不变 |
 | TrustPanel 撤销按钮 | 纯 span × | 改 antd Button + aria-label |
@@ -664,6 +666,7 @@ const confirmRevoke = (t: TrustItem) => {
 | **标签+数值两段式**结构 | G5/G6/各信息位同构定义 ≥4 处 | DRY | **抽独立组件 `MetricItem.tsx`** |
 | **省略文本 + Tooltip** | G4 长错误、G5 收窄、浮层摘要 ≥4 处 | DRY | **抽独立组件 `EllipsisTip.tsx`** |
 | **状态 → 文案/色值/图标**映射 | BADGE_MAP、上下文 4 态、事件图标映射 | DRY + SRP | **抽独立常量文件 `infoMaps.ts`** + 纯函数 `mapStatus()` |
+| **浮层入口（Popover 壳 + 热区 a11y + 键盘）** | G6 上下文入口 / G8 事件入口同构（Popover 6 props + 入口 a11y 9 属性 + Enter/Space 处理，约 17 行×2 处） | DRY | **抽独立组件 `FloatingEntry.tsx`**（v4.2；卡片内容/样式留调用方注入） |
 | **等宽数字**规范 | 耗时、事件时间、token 数都用 tabular-nums | DRY | 共享 style 常量（复用 stepStyles 令牌），不新建文件 |
 | **时间格式化** | `toLocaleTimeString()` 多处 | DRY/复用优先 | **先查** `src/utils/` 已有工具；无则纯函数 `formatTime()` |
 | **Drawer + Modal.confirm 撤销** | 仅信任清单 1 处 | YAGNI | **不抽文件**，留 TrustPanel.tsx 内部函数 |
@@ -677,6 +680,7 @@ const confirmRevoke = (t: TrustItem) => {
 | `MetricItem`（标签+数值+可选图标） | 独立组件/文件 | 4 处重复、props 稳定（label/text/tone/icon），改一处全行同构 | — |
 | `EllipsisTip`（文本 + maxWidth ellipsis + Tooltip 全文） | 独立组件/文件 | 4 处 hover/省略场景，行为一致 | — |
 | `infoMaps.ts`（状态映射常量 + `mapStatus` 纯函数） | 独立常量模块 | 状态语义集中管理，新增状态仅加映射（OCP 扩展） | — |
+| `FloatingEntry`（Popover 壳 + 热区 a11y + 键盘） | 独立组件/文件 | G6/G8 双入口同构（约 17 行×2 处），props 稳定（open/onOpenChange/placement/cardId/ariaLabel/content/children）；抽后 G8 双重写入类漂移可防 | — |
 | `formatTime()` | 独立函数 | 跨 G1~G8 多处时间展示 | 若 `src/utils/` 已有则**直接复用** |
 | `confirmRevoke()` | 组件内函数 | — | 单处使用，抽文件违反 YAGNI |
 | G7 可点击样式 | 组件内样式 | — | 单处使用，禁止过早抽象 |
@@ -690,6 +694,7 @@ const confirmRevoke = (t: TrustItem) => {
 | `MetricItem.tsx` | 标签（灰 11px）+ 数值（加粗 12px）+ 可选 SVG 图标，支持 tone/截断态 | `frontend/src/features/chat/components/taskinfo/` |
 | `EllipsisTip.tsx` | 省略文本 + Tooltip 全文的封装 | 同上 |
 | `infoMaps.ts` | BADGE_MAP / CONTEXT_STATE_MAP(4 态) / EVENT_ICON_MAP + `mapStatus()` 纯函数 | 同上 |
+| `FloatingEntry.tsx` | G6/G8 双浮层入口公共壳：Popover 配置（hover/click 双触发、0.15/0.3s 延时、arrow）+ `taskinfo-entry` 热区 a11y + Enter/Space 键盘 + 单真源开合（v4.2，DRY） | 同上 |
 
 ### 6.4 复用优先核查纪律（实现前必查）
 
@@ -714,20 +719,21 @@ const confirmRevoke = (t: TrustItem) => {
 | 新建 `infoMaps.ts` | P1-8 / P2-15 / P2-14 辅助 | 约 90 行 | 0 | +90 |
 | 新建 `MetricItem.tsx` | P1-7 / P1-8 / 6.x 复用 | 约 55 行 | 0 | +55 |
 | 新建 `EllipsisTip.tsx` | P1-6 / 6.x 复用 | 约 35 行 | 0 | +35 |
-| 修改 `TaskInfoBar.tsx` | P0-1/2/3、P1-5/6/7/8/9/11、P2-12/13/16/17、v4.1 双浮层 | 约 210 行 | 约 70 行 | +140 |
+| 新建 `FloatingEntry.tsx` | v4.2 G6/G8 双浮层入口公共壳 | 约 60 行 | 0 | +60 |
+| 修改 `TaskInfoBar.tsx` | P0-1/2/3、P1-5/6/7/8/9/11、P2-12/13/16/17、v4.1 双浮层、v4.2 FloatingEntry 调用 + G8 双写修复 | 约 150 行 | 约 70 行 | +80 |
 | 修改 `TrustPanel.tsx` | P0-4、P1-10、P2-18 | 约 85 行 | 约 55 行 | +30 |
 | 修改 `useTaskInfo.ts` | P2-14 | 1 行 | 1 行 | 0 |
 | 修改 `stepStyles.ts` | P1-6（WARNING 色值） | 1 行 | 1 行 | 0 |
 | 修改 `src/utils/time.ts` | 3.6（formatTimeHMS） | 约 9 行 | 0 | +9 |
 | 修改 `InputCore.tsx` | P1-11（分隔线归属） | 1 行 | 0 | +1 |
 
-**工作量结论**：共 8 个文件、19 项改动（含 v4.1 双浮层重构）；新增约 485 行、删除约 126 行。三份新建文件为纯展示层，无业务逻辑；修改文件全部为样式/交互重构，`useTaskInfo.ts` 仅 1 处时间源替换，零行为变化。
+**工作量结论**：共 9 个文件、20 项改动（含 v4.1 双浮层重构、v4.2 FloatingEntry 抽取 + G8 双写修复）；新增约 485 行、删除约 126 行。四份新建文件为纯展示层，无业务逻辑；修改文件全部为样式/交互重构，`useTaskInfo.ts` 仅 1 处时间源替换，零行为变化。
 
 > ⚠️ `Colors.WARNING` 改 `#AD6800` 牵动 6 处既有引用（ToolCallLine/WarningBox/StatusIcon/shapeRenderers×5/Notification 系列）——均为警告图标/边框/文字色，由浅橙变深琥珀后白底对比度全面提升，**视觉增强非退化**；`WARNING_BG: #fffbe6` 或 `Colors.BORDER.*` 不受影响。三堂会审：合规（令牌化）/合理（全链统一）/关联（无白字衬浅橙的反例）均通过。
 
 ---
 
-#### 6.5.2 新建文件（3 个，全量真实代码）
+#### 6.5.2 新建文件（4 个，全量真实代码）
 
 ##### 6.5.2.1 `infoMaps.ts`（新建）
 
@@ -955,6 +961,76 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
 };
 ```
 
+##### 6.5.2.4 `FloatingEntry.tsx`（新建，v4.2）
+
+位置：`frontend/src/features/chat/components/taskinfo/FloatingEntry.tsx`
+
+> v4.2 第二轮核查落定：G6/G8 双浮层入口同构（Popover 6 props + 入口 a11y 9 属性 + Enter/Space 键盘，约 17 行×2 处），按 6.2 判定（复用处 ≥ 2 → 独立文件）抽公共壳；卡片内容与卡片样式留调用方注入（SRP：壳只管开合与 a11y，不管卡片语义）。G8 `onClick` 手动 toggle 随抽取一并删除——开合唯一真源为 antd trigger + `onOpenChange`，键盘经 `onOpenChange(!open)` 同路写入，单源无双写。
+
+```typescript
+// 编辑历史: 2026-09-09 小欧 - v4.2: 抽 G6/G8 双浮层入口公共壳(DRY, 17 行×2 处重复收敛)
+//   Popover 配置 + taskinfo-entry 热区 a11y + Enter/Space 键盘 + 单真源开合; 卡片内容/样式调用方注入 — 小欧-2026-09-09
+import React from 'react';
+import { Popover } from 'antd';
+
+export interface FloatingEntryProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  placement: 'bottom-start' | 'bottom-end'; // G6 左缘对齐 / G8 右缘对齐(3.9)
+  cardId: string; // 卡片 id（= 入口 aria-controls，关系内聚于组件内）
+  ariaLabel: string; // 入口 + 卡片共用 aria-label
+  cardStyle?: React.CSSProperties; // 卡片容器样式（宽/布局，调用方注入）
+  content: React.ReactNode; // 卡片内容（调用方注入，内部 a11y 如 role="log" 自带）
+  children: React.ReactNode; // 入口热区内容（G6: MetricItem / G8: DownOutlined + "事件"）
+}
+
+export const FloatingEntry: React.FC<FloatingEntryProps> = ({
+  open,
+  onOpenChange,
+  placement,
+  cardId,
+  ariaLabel,
+  cardStyle,
+  content,
+  children,
+}) => (
+  <Popover
+    open={open}
+    onOpenChange={onOpenChange}
+    trigger={['hover', 'click']}
+    placement={placement}
+    mouseEnterDelay={0.15}
+    mouseLeaveDelay={0.3}
+    arrow={{ pointAtCenter: true }}
+    content={
+      <div id={cardId} role="dialog" aria-label={ariaLabel} style={cardStyle}>
+        {content}
+      </div>
+    }
+  >
+    <div
+      className={`taskinfo-entry${open ? ' taskinfo-entry-open' : ''}`}
+      data-open={open}
+      role="button"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-label={ariaLabel}
+      aria-controls={cardId}
+      tabIndex={0}
+      onClick={(e) => e.stopPropagation()} // 仅止冒泡；开合交还 antd trigger（v4.2 双写修复：删手动 toggle）
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpenChange(!open);
+        }
+      }}
+    >
+      {children}
+    </div>
+  </Popover>
+);
+```
+
 ---
 
 #### 6.5.3 TaskInfoBar.tsx 真实差分
@@ -982,10 +1058,10 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
 -    });
 ```
 
-##### 6.5.3.2 文件头（import 区，P1-5/P1-6/P1-8/P2-12）
+##### 6.5.3.2 文件头（import 区，P1-5/P1-6/P1-8/P2-12 + v4.2）
 
 ```diff
- import { Badge, Popover, Tooltip } from 'antd'; // v4.1: +Popover(上下文/事件双浮层)
+ import { Badge, Tooltip } from 'antd'; // v4.2: Popover 随 G6/G8 迁入 FloatingEntry(6.5.2.4), 本文件不再直引
 -import { CloseCircleFilled } from '@ant-design/icons'; // 6.3.4 执行级 error 位4 图标
 +import {
 +  CloseCircleFilled,
@@ -1007,6 +1083,7 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
  import { TrustPanel } from '../config/TrustPanel';
 +import { EllipsisTip } from './EllipsisTip';
 +import { MetricItem } from './MetricItem';
++import { FloatingEntry } from './FloatingEntry'; // v4.2: G6/G8 双浮层入口公共壳(见 6.5.2.4)
 +import { BADGE_MAP, CONTEXT_STATE_MAP, EVENT_ICON_MAP, TABULAR_NUMS, formatToken, mapStatus } from './infoMaps';
 
 -const BADGE_MAP = { idle:...cancelled:... }; // 整块迁入 infoMaps.ts（P2-15）
@@ -1030,7 +1107,7 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
  +// 新增: eventsOpen、ctxOpen 各 useState(false)(见 6.5.3.4 / 6.5.3.8), 随组件轻量瞬态, 不持久化
 ```
 
-##### 6.5.3.4 P0-2 + P1-9 + P1-11 + v4.1 G8 事件入口（`:112-143`，外层结构与浮层热区）
+##### 6.5.3.4 P0-2 + P1-9 + P1-11 + v4.1 G8 事件入口 + v4.2 FloatingEntry 复用/G8 双写修复（`:112-143`，外层结构与浮层热区）
 
 ```diff
    <div
@@ -1082,51 +1159,22 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
       >
         {/* G7 信任: 内为 TrustPanel 触发按钮(6.5.4.3 改 Drawer 打开), 不承担折叠 */}
         <TrustPanel sessionId={sessionId} />
-        {/* G8 事件入口(v4.1/P0-2/P2-12): 浮层② 事件卡片, 热区 32×32, hover 规格 2, 3.8 键盘 */}
-        <Popover
+        {/* G8 事件入口(v4.1/P0-2/P2-12, v4.2 经 FloatingEntry 实现): 浮层② 事件卡片, 热区 32×32, hover 规格 2, 3.8 键盘 */}
+        {/* v4.2 双写修复: 删 onClick 手动 setEventsOpen toggle(与 antd trigger click 双重写入), 开合唯一真源为 trigger + onOpenChange, 与 G6 对齐 */}
+        <FloatingEntry
           open={eventsOpen}
           onOpenChange={setEventsOpen}
-          trigger={['hover', 'click']}
           placement="bottom-end" // v4.1: 右缘对齐 G8, 向左展开(3.9)
-          mouseEnterDelay={0.15}
-          mouseLeaveDelay={0.3}
-          arrow={{ pointAtCenter: true }}
-          content={
-            <div
-              id="taskinfo-events-card"
-              role="dialog"
-              aria-label="事件序列"
-              style={{ width: 520, maxWidth: '90vw' }}
-            >
-              {eventsTimeline} {/* 6.5.3.10 移入: role="log" + aria-live + maxHeight 40vh 内滚 */}
-            </div>
-          }
+          cardId="taskinfo-events-card"
+          ariaLabel="事件序列"
+          cardStyle={{ width: 520, maxWidth: '90vw' }}
+          content={eventsTimeline} // 6.5.3.10 移入: role="log" + aria-live + maxHeight 40vh 内滚
         >
-          <div
-            className={`taskinfo-entry${eventsOpen ? ' taskinfo-entry-open' : ''}`}
-            data-open={eventsOpen}
-            role="button"
-            aria-haspopup="dialog"
-            aria-expanded={eventsOpen}
-            aria-label="事件序列"
-            aria-controls="taskinfo-events-card"
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation(); // 3.9: 仅 G8 触发, 不冒泡
-              setEventsOpen((v) => !v);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setEventsOpen((v) => !v);
-              }
-            }}
-            style={{ fontSize: FontSize.CAPTION }}
-          >
+          <span style={{ fontSize: FontSize.CAPTION }}>
             <DownOutlined style={{ fontSize: FontSize.CAPTION }} /> {/* P1-5 + v4.1: 方向=弹出语义 */}
             事件
-          </div>
-        </Popover>
+          </span>
+        </FloatingEntry>
       </div>
 ```
 
@@ -1218,7 +1266,7 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
 
 > G1 字重（3.1.2 表 G1：12px/500/PRIMARY）：如需 500 字重，`<Badge status={b.status} text={b.text} style={{ fontWeight: 500 }} />`；现状 antd Badge 默认 normal，此项为增量可选，不阻塞（Badge status 色已达标）。
 
-##### 6.5.3.8 P1-7 + P1-8 + v4.1 G5 Token / G6 上下文入口重构（`:193-257` 整块替换）
+##### 6.5.3.8 P1-7 + P1-8 + v4.1 G5 Token / G6 上下文入口重构 + v4.2 FloatingEntry 复用（`:193-257` 整块替换）
 
 > P1-8 现状块含 `:243 {' 🔴'}` 截断红点（3.4 表行 5），随整块替换一并删除——truncated 态改由 WarningOutlined 承担（3.3 状态机）。
 
@@ -1266,69 +1314,46 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
 +                : info.overview?.summary ?? frames.contextSummary ?? '';
 +            // 3.3 状态机: ok/truncated 均显 "{n} tok"(truncated 警告色+图标); summary-only/empty 用态文案
 +            const showTokens = ctxState === 'ok' || ctxState === 'truncated';
++            // v4.2: G6 入口经 FloatingEntry 实现(见 6.5.2.4), onClick 保持仅 stopPropagation(与 G8 对齐后单真源)
 +            return (
-+              <Popover
++              <FloatingEntry
 +                open={ctxOpen}
 +                onOpenChange={setCtxOpen}
-+                trigger={['hover', 'click']}
 +                placement="bottom-start" // v4.1: 左缘对齐 G6; 窄屏右贴安全边距(v4.1 定案)
-+                mouseEnterDelay={0.15}
-+                mouseLeaveDelay={0.3}
-+                arrow={{ pointAtCenter: true }}
++                cardId="taskinfo-context-card"
++                ariaLabel="上下文详情"
++                cardStyle={{
++                  width: 320,
++                  maxWidth: '90vw',
++                  display: 'flex',
++                  flexDirection: 'column',
++                  gap: Spacing.SM,
++                  fontSize: FontSize.SECONDARY,
++                  color: Colors.TEXT.SECONDARY,
++                }}
 +                content={
-+                  <div
-+                    id="taskinfo-context-card"
-+                    role="dialog"
-+                    aria-label="上下文详情"
-+                    style={{
-+                      width: 320,
-+                      maxWidth: '90vw',
-+                      display: 'flex',
-+                      flexDirection: 'column',
-+                      gap: Spacing.SM,
-+                      fontSize: FontSize.SECONDARY,
-+                      color: Colors.TEXT.SECONDARY,
-+                    }}
-+                  >
++                  <>
 +                    <div style={{ fontWeight: FontWeight.BOLD, color: Colors.TEXT.PRIMARY }}>上下文详情</div>
 +                    <div>摘要: {summary.slice(0, 60)}{summary.length > 60 ? '…' : ''}</div>
 +                    <div>估算 token: {showTokens ? `${(tokens ?? 0).toLocaleString('en-US')} tok` : '—'}</div>
 +                    <div style={{ color: ctx.tone === 'warning' ? Colors.WARNING : Colors.TEXT.TERTIARY }}>
 +                      {ctxState === 'ok' ? '正常' : ctx.tooltip}
 +                    </div>
-+                  </div>
++                  </>
 +                }
 +              >
-+                <div
-+                  className={`taskinfo-entry${ctxOpen ? ' taskinfo-entry-open' : ''}`}
-+                  data-open={ctxOpen}
-+                  role="button"
-+                  aria-haspopup="dialog"
-+                  aria-expanded={ctxOpen}
-+                  aria-label="上下文详情"
-+                  aria-controls="taskinfo-context-card"
-+                  tabIndex={0}
-+                  onClick={(e) => e.stopPropagation()}
-+                  onKeyDown={(e) => {
-+                    if (e.key === 'Enter' || e.key === ' ') {
-+                      e.preventDefault();
-+                      setCtxOpen((v) => !v);
-+                    }
-+                  }}
-+                >
-+                  <MetricItem
-+                    label="上下文"
-+                    value={
-+                      showTokens
-+                        ? `${(tokens ?? 0).toLocaleString('en-US')} tok`
-+                        : ctx.text
-+                    }
-+                    tone={ctx.tone}
++                <MetricItem
++                  label="上下文"
++                  value={
++                    showTokens
++                      ? `${(tokens ?? 0).toLocaleString('en-US')} tok`
++                      : ctx.text
++                  }
++                  tone={ctx.tone}
 +                    icon={ctx.icon}
 +                    dataState={ctxState}
 +                  />
-+                </div>
-+              </Popover>
++              </FloatingEntry>
 +            );
 +          })()}
          </div>
@@ -1350,7 +1375,7 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
    />
 ```
 
-##### 6.5.3.10 P2-13 + P2-17 过程事件时间轴 → v4.1 事件卡片内容（`:272-293` 移入 G8 Popover）
+##### 6.5.3.10 P2-13 + P2-17 过程事件时间轴 → v4.1 事件卡片内容（`:272-293` 移入 G8 FloatingEntry content，v4.2）
 
 `eventsTimeline`（6.5.3.4 引用）＝本块渲染结果；`{!collapsed && ...}` 条件删除（v4.1 无折叠态）：
 
@@ -1371,7 +1396,7 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
 -          ))}
 -        </div>
 -      )}
-+      {/* eventsTimeline(v4.1): 渲染于 G8 Popover content(6.5.3.4), 无折叠态条件 */}
++      {/* eventsTimeline(v4.1, v4.2 经 FloatingEntry 注入): 渲染于 G8 卡片 content(6.5.3.4), 无折叠态条件 */}
 +      {info.processEvents.length > 0 && (
 +        <div
 +          role="log"
@@ -1415,7 +1440,7 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
 +      )}
 ```
 
-> 时间轴接线说明：`info.processEvents` 已在 `useTaskInfo` 尾部 `reverse()`（最新在顶，现状已如此），渲染顺序即时间倒序，故不再二次排序。事件卡片宽 520px（6.5.3.4），`role="log"` + `aria-live` 随卡片进入 G8 Popover（3.8 浮层卡片行）。
+> 时间轴接线说明：`info.processEvents` 已在 `useTaskInfo` 尾部 `reverse()`（最新在顶，现状已如此），渲染顺序即时间倒序，故不再二次排序。事件卡片宽 520px（6.5.3.4），`role="log"` + `aria-live` 随卡片进入 G8 FloatingEntry（v4.2，3.8 浮层卡片行）。
 
 ---
 
@@ -1679,11 +1704,12 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 | | 1.2 | `formatToken`（千分位 T 1,234）、`formatTimeHMS`（HH:MM:SS 新增，见 6.5.7）：先写断言 → **红** → 建纯函数 → **绿**（先查 `src/utils/time.ts`） | 3.2/3.3 | 0.1 |
 | | 1.3 | `MetricItem`：先写 props 渲染 / tone / 截断态 aria 测试 → **红** → 建组件 → **绿** | 3.2/3.3 | 0.1 |
 | | 1.4 | `EllipsisTip`：先写省略 + Tooltip 全文测试 → **红** → 建组件 → **绿** | 3.1(G4)/3.9/3.3 | 0.1 |
+| | 1.5 | `FloatingEntry`（v4.2）：先写热区 a11y（role/aria-haspopup/aria-expanded/tabIndex）+ Enter/Space 开合 + click 单次开合（G8 双写修复）测试 → **红** → 建组件 → **绿** | 3.8/3.9 | 0.1 |
 | 2 P0 | 2.1 | P0-1 探针删除：直接删（零逻辑，回归验证） | P0-1 | — |
-| | 2.2 | P0-2/v4.1 浮层入口 a11y：先写 G6/G8 `role="button"` / `aria-haspopup="dialog"` / `aria-expanded` / `tabIndex` / Enter+Space 开合测试 → **红** → 浮层实现 → **绿** | 3.1/3.8 | 1.4 |
+| | 2.2 | P0-2/v4.1 浮层入口 a11y：先写 G6/G8 `role="button"` / `aria-haspopup="dialog"` / `aria-expanded` / `tabIndex` / Enter+Space 开合测试 → **红** → `FloatingEntry` 实现（v4.2，G6/G8 共用） → **绿** | 3.1/3.8 | 1.4+1.5 |
 | | 2.3 | P0-4 撤销确认：点撤销触发 `Modal.confirm`、取消不删、确认才删 → **红** → 实现 → **绿** | 3.5 | 0.1 |
 | 3 P1 | 3.1 | P1-5 图标统一：先写"过程事件无 emoji/无纯文本符号、渲染 antd SVG" → **红** → 替换 → **绿** | 3.4 | 1.1 |
-| | 3.2 | P1-8/v4.1 上下文入口：先写 4 态 `data-state` + G6 入口 `role="button"`/`aria-haspopup` + 浮层① 开合（hover/click/Esc） → **红** → 接 `CONTEXT_STATE_MAP` + MetricItem + Popover → **绿** | 3.3 | 1.1+1.3 |
+| | 3.2 | P1-8/v4.1 上下文入口：先写 4 态 `data-state` + G6 入口 `role="button"`/`aria-haspopup` + 浮层① 开合（hover/click/Esc） → **红** → 接 `CONTEXT_STATE_MAP` + MetricItem + `FloatingEntry`（v4.2） → **绿** | 3.3 | 1.1+1.3+1.5 |
 | | 3.3 | P1-7 Token 两段式：先写"本轮/累计分离、千分位、P/C 中灰" → **红** → 接 MetricItem → **绿** | 3.2 | 1.1+1.2 |
 | | 3.4 | P1-10 信任 Drawer：先写 `role="button"` + 打开 Drawer + 焦点移入面板 → **红** → 实现 → **绿** | 3.5 | 1.4 |
 | | 3.5 | P1-6/P1-11（直接实现）：对比度调色、分隔线归属，不走红绿，E2E/视觉锁定 | P1-6/P1-11 | — |
@@ -1713,9 +1739,9 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 
 | 用例 | 断言要点（红） | 对应设计稿 |
 |------|----------------|-----------|
-| G8 事件入口（v4.1） | `role="button"`/`aria-haspopup`/`aria-expanded`/`tabIndex`/Enter+Space 开合事件卡片（P0-2/v4.1） | 3.1/3.8 |
-| G6 上下文入口（v4.1） | `role="button"`/`aria-haspopup`/开合浮层① + `data-state` 4 态（P1-8/v4.1） | 3.3/3.8 |
-| 浮层卡片 | 打开后焦点入卡、`Esc` 关闭回入口、`stopPropagation` 不冒泡（v4.1/3.9） | 3.8/3.9 |
+| G8 事件入口（v4.1/v4.2） | `role="button"`/`aria-haspopup`/`aria-expanded`/`tabIndex`/Enter+Space 开合事件卡片（P0-2/v4.1，v4.2 经 `FloatingEntry` 实现） | 3.1/3.8 |
+| G6 上下文入口（v4.1/v4.2） | `role="button"`/`aria-haspopup`/开合浮层① + `data-state` 4 态（P1-8/v4.1，v4.2 经 `FloatingEntry` 实现） | 3.3/3.8 |
+| 浮层卡片 | 打开后焦点入卡、`Esc` 关闭回入口、`stopPropagation` 不冒泡、G8 click 单次开合（v4.2 双写修复，v4.1/3.9） | 3.8/3.9 |
 | MetricItem | label/value/tone/截断态 + aria-label | 3.2 |
 | EllipsisTip | 文本省略 + Tooltip 全文 + aria | 3.1(G4) |
 | Token 两段式 | 本轮/累计分离渲染、千分位、P/C 中灰（P1-7） | 3.2 |
@@ -1765,4 +1791,5 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 **去重合并人：小欧**
 **去重合并时间：2026-09-08 23:47:47**
 **v4.1 更新时间：2026-09-09 09:01:58**
-**文档版本：v4.1**
+**v4.2 更新时间：2026-09-09 09:32:53**
+**文档版本：v4.2**
