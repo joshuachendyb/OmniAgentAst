@@ -34,6 +34,9 @@
 // 编辑历史: 2026-09-09 小欧 - A类死代码清理: disconnect内去reconnectTimeoutRef解构(196-205) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B10/B11: :589 disconnect的eslint-disable注释原错位于}行末未生效,
 //   移至依赖数组行上方使生效+写明理由; :975 attemptReconnect依赖数组真补onError — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - saveStepsToStorage防抖: 原实现每个SSE事件排队setTimeout(0)宏任务,
+//   N个事件→N次同步JSON.stringify(fullSteps)+sessionStorage.setItem, 累积O(N²)阻塞主线程,
+//   React渲染被推迟导致UI冻结; 改为300ms防抖, 合并连续事件只保留最后一次保存 — 小欧-2026-09-09
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -477,17 +480,22 @@ export const useSSE = (
     }
   }, [config.sessionId]); // 仅在 sessionId 变化时检查
 
-  // 保存到 sessionStorage 的辅助函数
+  // 保存到 sessionStorage 的辅助函数(防抖300ms, 合并连续事件避免O(N²)主线程阻塞)
+  const saveStepsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveStepsToStorage = useCallback(
     (steps: ExecutionStep[]) => {
-      if (steps.length > 0 && config.sessionId) {
+      if (steps.length === 0 || !config.sessionId) return;
+      if (saveStepsTimerRef.current !== null)
+        clearTimeout(saveStepsTimerRef.current);
+      saveStepsTimerRef.current = setTimeout(() => {
         const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
         try {
           sessionStorage.setItem(storageKey, JSON.stringify(steps));
         } catch (e) {
           console.warn('[SSE] 保存到 sessionStorage 失败:', e);
         }
-      }
+        saveStepsTimerRef.current = null;
+      }, 300);
     },
     [config.sessionId]
   );
@@ -498,6 +506,16 @@ export const useSSE = (
     const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
     sessionStorage.removeItem(storageKey);
   }, [config.sessionId]);
+
+  // 2026-09-09 小欧: 组件卸载时清理防抖timer, 防止卸载后仍写sessionStorage
+  useEffect(() => {
+    return () => {
+      if (saveStepsTimerRef.current !== null) {
+        clearTimeout(saveStepsTimerRef.current);
+        saveStepsTimerRef.current = null;
+      }
+    };
+  }, []);
 
   /**
    * 断开连接

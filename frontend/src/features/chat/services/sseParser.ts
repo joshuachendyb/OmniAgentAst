@@ -45,6 +45,9 @@
 // 编辑历史: 2026-09-09 小欧 - 失败终态透传修复(北京老陈「UI冻住/日志不完整」排查实证): final 分支补解析
 //   outcome/error_type/error_message —— 后端 FinalStep(2026-07-18 规整) 已稳定下发, 前端漏解析导致
 //   useChatCallbacks.onComplete 无法识别失败终态, 4333字思考草稿(5轮流式chunk累积)被当"完整回复"正常展示 — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - saveStepsToStorage防抖配套: thought/chunk/final/action/observation/paused六处去掉外层
+//   setTimeout(() => { saveStepsToStorage?.(newSteps); }, 0), 改为直接调用(防抖已在useSSE内部处理),
+//   消除N个事件→N个宏任务排队→O(N²)主线程阻塞 — 小欧-2026-09-09
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -377,14 +380,12 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
-          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
-          setTimeout(() => {
-            try {
-              saveStepsToStorage?.(newSteps);
-            } catch (e) {
-              console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-            }
-          }, 0);
+          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
+          try {
+            saveStepsToStorage?.(newSteps);
+          } catch (e) {
+            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
+          }
           return newSteps;
         });
         onStep?.(step);
@@ -428,14 +429,12 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
-          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
-          setTimeout(() => {
-            try {
-              saveStepsToStorage?.(newSteps);
-            } catch (e) {
-              console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-            }
-          }, 0);
+          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
+          try {
+            saveStepsToStorage?.(newSteps);
+          } catch (e) {
+            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
+          }
           return newSteps;
         });
         onStep?.(step);
@@ -502,14 +501,12 @@ const processSSEData = (
         // 【小查修复】保存final到executionSteps，以便导出功能能获取到
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
-          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
-          setTimeout(() => {
-            try {
-              saveStepsToStorage?.(newSteps);
-            } catch (e) {
-              console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-            }
-          }, 0);
+          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
+          try {
+            saveStepsToStorage?.(newSteps);
+          } catch (e) {
+            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
+          }
           return newSteps;
         });
         onStep?.(step);
@@ -681,14 +678,12 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
-
-          setTimeout(() => {
-            try {
-              saveStepsToStorage?.(newSteps);
-            } catch (e) {
-              console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-            }
-          }, 0);
+          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
+          try {
+            saveStepsToStorage?.(newSteps);
+          } catch (e) {
+            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
+          }
           return newSteps;
         });
 
@@ -834,13 +829,12 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
-          setTimeout(() => {
-            try {
-              saveStepsToStorage?.(newSteps);
-            } catch (e) {
-              console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-            }
-          }, 0);
+          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
+          try {
+            saveStepsToStorage?.(newSteps);
+          } catch (e) {
+            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
+          }
           return newSteps;
         });
         onStep?.(step);
@@ -875,13 +869,12 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
-          setTimeout(() => {
-            try {
-              saveStepsToStorage?.(newSteps);
-            } catch (e) {
-              console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-            }
-          }, 0);
+          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
+          try {
+            saveStepsToStorage?.(newSteps);
+          } catch (e) {
+            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
+          }
           return newSteps;
         });
         onStep?.(step);
