@@ -1,4 +1,4 @@
-# TaskInfoBar UI视觉优化设计方案（去重合并版 v4.2）
+# TaskInfoBar UI视觉优化设计方案（去重合并版 v4.3）
 
 **编写人：小欧**
 **编写时间：2026-09-08 19:57:56**
@@ -6,7 +6,8 @@
 **去重合并时间：2026-09-08 23:47:47**
 **v4.1 更新时间：2026-09-09 09:01:58**
 **v4.2 更新时间：2026-09-09 09:32:53**
-**文档版本：v4.2**
+**v4.3 更新时间：2026-09-09 10:44:31**
+**文档版本：v4.3**
 
 ---
 
@@ -27,6 +28,7 @@
 | **v4.0** | **2026-09-08 23:47:47** | **全量去重合并重写**：删除 2.2.x 与 5.x 双份规范（每份只留一处）、问题清单只留"问题+改法指针"；删单列审查范围（并入文档目的）、风险章节、与 v3.7 定案矛盾的术语表；保留 18 项问题、全部规范、D1~D5、优先级、令牌、复用、TDD 实施、27 项测试用例、DoD；重新排章节号 | 小欧 |
 | v4.1 | 2026-09-09 09:01:58 | 折叠交互定案变更：**取消整行折叠（信息带恒定 1 行），拆为两块独立 Popover 浮层**（上下文卡片锚 G6 + 事件卡片锚 G8）；G8 语义由"折叠任务面板"改为"事件序列入口"；位置"锚点右缘对齐向左展开"、窄屏右贴边；hover 规格 2（32×32 热区背景淡入+图标 PRIMARY+展开态 rotate 180°）；6.5.3.4/6.5.3.8/6.5.3.10 真实代码、7.3 测试用例全链同步 | 小欧 |
 | v4.2 | 2026-09-09 09:32:53 | 第二轮源码级核查落定：**G6/G8 双浮层入口抽公共组件 `FloatingEntry.tsx`**（Popover 壳 + 热区 a11y + Enter/Space/Esc 键盘 + 焦点管理，卡片内容留调用方；DRY，17 行×2 处重复收敛；3.8/7.3 Esc+焦点断言补实现归属）；**G8 `onClick` 删除手动 toggle 双重写入**（开合交还 antd trigger 单一真源，与 G6 对齐）；3.9 热区 CSS 落盘 `src/index.css`；6.1/6.2/6.3 复用清单、6.5.2.4 新建文件规约、6.5.3.2/6.5.3.4/6.5.3.8 调用、7.1/7.2 阶段 1.5、7.3 断言全链同步 | 小欧 |
+| v4.3 | 2026-09-09 10:44:31 | **实施落盘校正（7 处偏离字面，以实码为准）**：(1)`infoMaps.ts`→`infoMaps.tsx`（含 JSX，`.ts` 编译失败）；(2)删 `infoMaps` 未用 `Colors` 导入；(3)精简 `TaskInfoBar` 未用 `Tooltip`/过程图标导入（迁 `infoMaps`）；(4)删 `TrustPanel` 未用 `Spacing`；(5)placement `bottom-start/bottom-end`→`bottomLeft/bottomRight`（antd 真值）；(6)6.5.5 P2-14 顺序 `末条步骤‖帧started‖Date.now()` + candidates 新信号前置（防旧时间遮新 G4 信号 + 0 穿透）；(7)7.4"无既有测试"失实→实有 765 项，3 文件按先红后绿迁移；全文 806 绿零失败、tsc/lint 零 error，行为等价 | 小欧 |
 
 ---
 
@@ -388,7 +390,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 | click 钉住 | 单击整段 | 卡片钉住（Pin），`Esc`/点卡片外关闭；hover 与 click 用 delay 防抖互斥 |
 | hover（截断） | hover 带 WarningOutlined | 卡片内状态区高亮警告"上下文被截断，可能影响回答质量" |
 | hover（无数据） | hover `上下文 –` | 卡片内显示"上下文缺失，检查 frames 数据链路" |
-| 位置 | 卡片锚定 G6（`placement="bottom-start"` 左缘对齐、向右展开）；窄屏右贴安全边距 | 与事件卡片（G8）互不干扰，各自独立开合 |
+| 位置 | 卡片锚定 G6（`placement="bottomLeft"` antd 真值，语义 `bottom-start` 左缘对齐、向右展开）；窄屏右贴安全边距 | 与事件卡片（G8）互不干扰，各自独立开合 |
 
 **浮层①卡片内容**（上下文卡片，宽约 320px，v4.1 独立块）：
 
@@ -605,7 +607,7 @@ const confirmRevoke = (t: TrustItem) => {
 - **G8 事件入口**：主热区 `32px × 32px` 圆角 8（click 触发开卡片，键盘鼠标均可点；v4.2 开合唯一真源为 antd trigger + `onOpenChange`，入口无手动 toggle）；hover 背景 `#fafafa→#f0f0f0` 淡入、图标 TERTIARY→PRIMARY、展开态 `rotate(180deg)`、`transition 0.2s ease`、`cursor: pointer`
 - **G6 上下文入口**：整段（标签+数值+▸）热区 ≥ 32px，同规格背景/色变 hover；内嵌箭头指示符
 - 入口 `user-select: text`、信息位子元素（G1~G5 各 span）不参与触发，避免与文本选中冲突（v4.1：整行已不再折叠，热区只归各自入口）
-- 浮层位置：G8 事件卡片 `placement="bottom-end"` 锚定入口**右缘、向左展开**（窄屏右贴安全边距不顶出视口）；G6 上下文卡片 `placement="bottom-start"` 锚定**左缘、向右展开**；双卡均 `mouseEnterDelay=0.15` / `mouseLeaveDelay=0.3` 防抖
+- 浮层位置：G8 事件卡片 `placement="bottomRight"`（antd 真值，语义 `bottom-end`）锚定入口**右缘、向左展开**（窄屏右贴安全边距不顶出视口）；G6 上下文卡片 `placement="bottomLeft"`（语义 `bottom-start`）锚定**左缘、向右展开**；双卡均 `mouseEnterDelay=0.15` / `mouseLeaveDelay=0.3` 防抖（v4.3 实码校正）
 
 ```css
 /* 外层容器允许换行，G5 Token 区最小宽度不为 0 */
@@ -697,8 +699,8 @@ const confirmRevoke = (t: TrustItem) => {
 |------|------|----------|
 | `MetricItem.tsx` | 标签（灰 11px）+ 数值（加粗 12px）+ 可选 SVG 图标，支持 tone/截断态 | `frontend/src/features/chat/components/taskinfo/` |
 | `EllipsisTip.tsx` | 省略文本 + Tooltip 全文的封装 | 同上 |
-| `infoMaps.ts` | BADGE_MAP / CONTEXT_STATE_MAP(4 态) / EVENT_ICON_MAP + `mapStatus()` 纯函数 | 同上 |
-| `FloatingEntry.tsx` | G6/G8 双浮层入口公共壳：Popover 配置（hover/click 双触发、0.15/0.3s 延时、arrow）+ `taskinfo-entry` 热区 a11y + Enter/Space/Esc 键盘 + 单真源开合 + 焦点管理（v4.2，DRY） | 同上 |
+| `infoMaps.tsx` | BADGE_MAP / CONTEXT_STATE_MAP(4 态) / EVENT_ICON_MAP + `mapStatus()` 纯函数（v4.3：含 JSX 改 `.tsx`，无扩名 import 零影响） | 同上 |
+| `FloatingEntry.tsx` | G6/G8 双浮层入口公共壳：Popover 配置（hover/click 双触发、0.15/0.3s 延时、arrow）+ `taskinfo-entry` 热区 a11y + Enter/Space/Esc 键盘 + 单真源开合 + 焦点管理（v4.2，DRY；v4.3 placement `bottomLeft/bottomRight`） | 同上 |
 
 ### 6.4 复用优先核查纪律（实现前必查）
 
@@ -740,9 +742,9 @@ const confirmRevoke = (t: TrustItem) => {
 
 #### 6.5.2 新建文件（4 个，全量真实代码）
 
-##### 6.5.2.1 `infoMaps.ts`（新建）
+##### 6.5.2.1 `infoMaps.tsx`（新建，v4.3 含 JSX 改 `.tsx`）
 
-位置：`frontend/src/features/chat/components/taskinfo/infoMaps.ts`
+位置：`frontend/src/features/chat/components/taskinfo/infoMaps.tsx`（v4.3：含 `<WarningOutlined/>` JSX，`.ts` 下 esbuild 报错 `Expected ">" but found "/"`，故改 `.tsx`；无扩名 `from './infoMaps'` 零影响）
 
 ```typescript
 // 编辑历史: 2026-09-08 小欧 - 六章6.5: 自 TaskInfoBar 抽取状态映射常量+纯函数(DRY/SRP/OCP, 禁止backward 不兼容旧写法)
@@ -755,8 +757,8 @@ import {
   ReloadOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { Colors } from '@/utils/stepStyles';
 import type { ProcessEvent, TaskBadge } from '../../hooks/useTaskInfo';
+// v4.3 实码删未用 `Colors`（本文件仅用 tone 字符串，`Colors.WARNING` 由调用方按 tone 取色；留导入 lint 挂）
 
 // ---------- BADGE_MAP（P2-15：cancelled 与 idle 区分） ----------
 export interface BadgeEntry {
@@ -981,7 +983,7 @@ import { Popover } from 'antd';
 export interface FloatingEntryProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  placement: 'bottom-start' | 'bottom-end'; // G6 左缘对齐 / G8 右缘对齐(3.9)
+  placement: 'bottomLeft' | 'bottomRight'; // v4.3 antd 真值：G6 `bottomLeft` 左缘对齐向右展开 / G8 `bottomRight` 右缘对齐向左展开（语义同 3.9 的 bottom-start/end）
   cardId: string; // 卡片 id（= 入口 aria-controls，关系内聚于组件内）
   ariaLabel: string; // 入口 + 卡片共用 aria-label
   cardStyle?: React.CSSProperties; // 卡片容器样式（宽/布局，调用方注入）
@@ -1093,18 +1095,14 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
 ##### 6.5.3.2 文件头（import 区，P1-5/P1-6/P1-8/P2-12 + v4.2）
 
 ```diff
- import { Badge, Tooltip } from 'antd'; // v4.2: Popover 随 G6/G8 迁入 FloatingEntry(6.5.2.4), 本文件不再直引
--import { CloseCircleFilled } from '@ant-design/icons'; // 6.3.4 执行级 error 位4 图标
+  import { Badge } from 'antd'; // v4.2: PopoverTooltip 随 G6/G8 迁入 FloatingEntry/EllipsisTip, 本文件不再直引（v4.3 实码 lint 去未用 Tooltip）
 +import {
 +  CloseCircleFilled,
 +  DownOutlined,
-+  PauseCircleOutlined,
-+  PlayCircleOutlined,
-+  ReloadOutlined,
 +  StopOutlined,
 +  SyncOutlined,
 +  WarningOutlined,
-+} from '@ant-design/icons'; // 3.4: G4/G8/过程事件全 antd SVG (P1-5)
++} from '@ant-design/icons'; // 3.4: G4/G8 全 antd SVG（v4.3：过程图标 Pause/Play/Reload 随 EVENT_ICON_MAP 迁 infoMaps，本文件不再直引）
  import type { ExecutionStep } from '../../../../types/execution';
  import type { TaskMetaFrames, LiveError } from '@/types/sse';
  import type { TaskDetail } from '../../../../services/api/task.api';
@@ -1116,10 +1114,9 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
 +import { EllipsisTip } from './EllipsisTip';
 +import { MetricItem } from './MetricItem';
 +import { FloatingEntry } from './FloatingEntry'; // v4.2: G6/G8 双浮层入口公共壳(见 6.5.2.4)
-+import { BADGE_MAP, CONTEXT_STATE_MAP, EVENT_ICON_MAP, TABULAR_NUMS, formatToken, mapStatus } from './infoMaps';
++import { BADGE_MAP, CONTEXT_STATE_MAP, EVENT_ICON_MAP, TABULAR_NUMS, formatToken, mapStatus } from './infoMaps'; // v4.3 实为 './infoMaps.tsx'，无扩名 import 零影响
 
--const BADGE_MAP = { idle:...cancelled:... }; // 整块迁入 infoMaps.ts（P2-15）
-+// BADGE_MAP 由 6.5.2.1 infoMaps.ts 定义，本文件经 import 使用（6.5.3.2），不再内联定义
+-const BADGE_MAP = { idle:...cancelled:... }; // 整块迁入 infoMaps.tsx（P2-15，v4.3 含 JSX 改扩展名）
 ```
 
 ##### 6.5.3.3 P0-3 collapsed 状态机删除 + P2-12 令牌（`:73` 附近）
@@ -1196,7 +1193,7 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
         <FloatingEntry
           open={eventsOpen}
           onOpenChange={setEventsOpen}
-          placement="bottom-end" // v4.1: 右缘对齐 G8, 向左展开(3.9)
+          placement="bottomRight" // v4.1: 右缘对齐 G8, 向左展开(3.9)（v4.3 antd 真值，语义 bottom-end）
           cardId="taskinfo-events-card"
           ariaLabel="事件序列"
           cardStyle={{ width: 520, maxWidth: '90vw' }}
@@ -1351,7 +1348,7 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
 +              <FloatingEntry
 +                open={ctxOpen}
 +                onOpenChange={setCtxOpen}
-+                placement="bottom-start" // v4.1: 左缘对齐 G6; 窄屏右贴安全边距(v4.1 定案)
++                placement="bottomLeft" // v4.1: 左缘对齐 G6; 窄屏右贴安全边距(v4.1 定案)（v4.3 antd 真值，语义 bottom-start）
 +                cardId="taskinfo-context-card"
 +                ariaLabel="上下文详情"
 +                cardStyle={{
@@ -1487,7 +1484,7 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
 +import { CloseOutlined } from '@ant-design/icons';
  import { trustApi, type TrustedTool } from '../../../../services/api/task.api';
 -import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
-+import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
++import { Colors, FontSize, FontWeight } from '@/utils/stepStyles'; // v4.3 实码 lint 去未用 Spacing
 ```
 
 ##### 6.5.4.2 P0-4 + P2-18 撤销：Button + Modal.confirm（`:74-82` + `:158-174`）
@@ -1646,12 +1643,22 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
 
 ```diff
 -    const now = Date.now();
-+    // P2-14: 时间源改从帧/末条步骤取(useMemo 幂等), 不再依赖 Date.now()
-+    //   顺序: 帧 started 时间 → 末条业务 step 时间; Error 帧无 startTimestamp 时回退 Date.now()
-+    const now = frames.startTimestamp ?? steps[steps.length - 1]?.timestamp ?? Date.now();
++    // P2-14: 时间源改从末条步骤/帧取(useMemo 幂等), 不再依赖 Date.now()
++    //   顺序: 末条业务 step 时间 → 帧 started 时间; 均无时回退 Date.now()(与现状等价)
++    //   注: 不取"帧 started 时间优先"(文档字面)——旧时间会令新到的 error/truncated 在排序中输给近期过程事件,
++    //   G4 新信号被遮(退化); 且 startTimestamp 为 0 时 `??` 不穿透。末条步骤时间恒 ≥ latestProcessEvent 时间,
++    //   新信号 candidates 前置保序, 与现状 winner 等价 — 小欧-2026-09-09
++    const now =
++      steps[steps.length - 1]?.timestamp || frames.startTimestamp || Date.now();
++    const candidates: LiveMeta[] = [
++      // v4.3 实码校正：新信号 liveError/truncated 前置（与旧排序 winner 等价）
++      ...(liveError ? [{ kind: 'error' as const, text: liveError.text, time: now, requestLevel: liveError.requestLevel }] : []),
++      ...(frames.truncated?.content ? [{ kind: 'truncated' as const, text: frames.truncated.content, time: now, requestLevel: false }] : []),
++      ...(latestProcessEvent ? [latestProcessEvent] : []),
++    ];
 ```
 
-> 行为验证：`frames.startTimestamp` 在有 startinfo 帧时恒在（:232 已用）→ 常态一致；无 startinfo（纯 error 流防御分支）回退 `Date.now()`，与现状等价。排序 `candidates.sort(b.time-a.time)` 语义不变。
+> 行为验证：`末条步骤时间 || 帧 started 时间 || Date.now()` 以 `||` 穿透 0 值；`latestProcessEvent.time` 取自末条 retrying 步骤，末条时间恒 ≥ 其时间，故新信号前置与旧排序 winner 等价。排序 `candidates.sort(b.time-a.time)` 语义不变；`||` 防 0 陷阱。
 
 ---
 
@@ -1792,9 +1799,9 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 
 > E2E 铁律照旧：一次只跑一个 case、真实后端、subprocess.Popen 落盘、禁 Mock（见 AGENTS.md E2E 手册）。
 
-### 7.4 既有测试用例处理
+### 7.4 既有测试用例处理（v4.3 实测校正）
 
-已核查 `frontend/`：**无既有单测/E2E 断言文件**（`tests/` 仅 measurement 脚本，不涉 UI 断言）→ 本轮**无修改既有用例**，全部新增。若实现阶段联动改动既有业务组件断言，按"先测后改"迁移（先红后绿），禁止先改断言再实现。
+实测 `frontend/src/tests/`：**既有 765 项单测（77 文件）**（`src/tests/unit/` + `integration/` + `reality/`；仅 `tests/` 目录为 measurement 脚本）。本轮**新增 41 项，新迁 3 文件**：`taskinfo-error-icon-level.test.tsx`（N15 `⛔`→`StopOutlined`）、`pipeline-audit.test.tsx`（高亮 `#faad14`→`#AD6800`）、`trust-panel.test.tsx`（折叠→Drawer + 撤销×→首列 Button + Modal.confirm 二次确认，新增"取消不删"、Esc 回焦点）——均按"先测后改"迁移（先红→后绿），禁止先改断言再实现。`frontend/src/tests/` 处于 `.gitignore`，新增测试本地运行不入库（与既有 77 文件同规）。
 
 ### 7.5 测试命令
 
@@ -1824,4 +1831,5 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 **去重合并时间：2026-09-08 23:47:47**
 **v4.1 更新时间：2026-09-09 09:01:58**
 **v4.2 更新时间：2026-09-09 09:32:53**
-**文档版本：v4.2**
+**v4.3 更新时间：2026-09-09 10:44:31**
+**文档版本：v4.3**
