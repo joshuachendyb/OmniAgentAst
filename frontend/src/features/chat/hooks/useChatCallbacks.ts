@@ -11,6 +11,9 @@
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.3(北京老陈裁定回归总原则): onError 分道——errorObj.from_backend===true
 //   (后端业务错误) 时只清三refs即return, 不进 handleSSEError(弹窗)与 isPausedRef(缓冲)与 setMessages(P2红字),
 //   不等下发 loading/计时(计时不停) — P3 由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - A1修复(356步残留类累积根治): onStep入口任务内指纹去重(type|step|preview|content前64),
+//   拦截 SSE 重复行/重连GET重放导致的同一执行轮事件重复 append; preview 与 canonical 因 preview 位不同不误杀,
+//   chunk 逐块 content 不同不误杀; onComplete/onError 终态 clear Set 供下任务重新计数 — 小欧-2026-09-09
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -30,7 +33,7 @@
  * @since 2026-04-21
  */
 
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react'; // 2026-09-09 小欧 A1: 加useRef(任务内指纹去重Set) — 小欧-2026-09-09
 import type { Message } from '../../../types/chat';
 import type { ExecutionStep } from '../../../types/execution';
 import type { UseChatStateReturn } from './useChatState';
@@ -131,8 +134,31 @@ export const useChatCallbacks = (
 
   // ==================== onStep回调 ====================
 
+  // ---- A1(2026-09-09 小欧): 任务内步骤指纹去重 ----
+  // 根治356步残留类累积: sseParser 对同一SSE行/重连GET重放会无条件 append + onStep 回调,
+  //   前端无 seq 去重护栏, 同一执行轮事件(断线重连续传尤甚)被重复消费直入消息 executionSteps.
+  //   此处以"任务内指纹Set"在唯一消费枢纽拦截: 指纹=type|step|preview|content(前64字符),
+  //   preview 与 canonical 因 preview 位不同不误杀, chunk 逐块 content 不同不误杀;
+  //   onComplete/onError 终态清空 Set, 供下一任务重新计数 — 小欧-2026-09-09
+  const onStepFingerprintRef = useRef<Set<string>>(new Set());
+
   const onStep = useCallback(
     (step: ExecutionStep) => {
+      // A1(2026-09-09 小欧): 指纹去重——同 type|step|preview|content(前64) 事件视为重放/重复行跳过,
+      //   防 executionSteps 无界膨胀(356步残留)与渲染错乱 — 小欧-2026-09-09
+      const fingerprint = [
+        step.type,
+        step.step ?? '',
+        step.preview ? 'p' : '',
+        (step.content ?? '').slice(0, 64),
+      ].join('|');
+      if (onStepFingerprintRef.current.has(fingerprint)) {
+        console.log(
+          `[onStep] 去重跳过重复事件: ${step.type}/step=${step.step ?? ''}`
+        );
+        return;
+      }
+      onStepFingerprintRef.current.add(fingerprint);
       // 【北京老陈 2026-07-12 小欧】统一取消语义：interrupted → cancelled
       // 2026-09-07 小欧 4.4.1: type=cancelled 已从链路移除, 取消心跳/收尾单一由 final+outcome=cancelled 承担
       const isCancelEvent =
@@ -462,6 +488,8 @@ export const useChatCallbacks = (
       streamingContentRef.current = '';
       streamingStepsRef.current = [];
       executionStepsRef.current = []; // 2026-08-27 小欧 三堂会审: 终态清理executionSteps
+      // A1(2026-09-09 小欧): 终态清空任务内指纹去重Set, 供下一任务重新计数 — 小欧-2026-09-09
+      onStepFingerprintRef.current.clear();
       // lastUpdateTimeRef.current = 0;
 
       // console.log("✅ [onComplete] AI回答保存完成！");
@@ -507,10 +535,15 @@ export const useChatCallbacks = (
       // 2026-09-08 小欧 6.3.3 分道: 后端业务错误(from_backend=true)只进P3——不弹窗/不替换消息/不进缓冲/不停计时,
       //   仅清三refs准备下一轮(最终终态由随后 final 承担); P3 显示由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
       if (errorObj.from_backend === true) {
-        console.info('[onError] 后端业务错误: 只进P3, 不弹窗/不替换消息/不停计时 (6.3.3)');
+        console.info(
+          '[onError] 后端业务错误: 只进P3, 不弹窗/不替换消息/不停计时 (6.3.3)'
+        );
         streamingContentRef.current = '';
         streamingStepsRef.current = [];
         executionStepsRef.current = [];
+        // A1(2026-09-09 小欧): from_backend 错误后会话终止, 同步清空任务内指纹Set——查漏补洞:
+        //   防"错误后异常断链(无 final/无 onComplete)致 Set 残留, 下一任务同 step 同 content 被误拦" — 小欧-2026-09-09
+        onStepFingerprintRef.current.clear();
         return;
       }
 
@@ -596,6 +629,8 @@ export const useChatCallbacks = (
       streamingContentRef.current = '';
       streamingStepsRef.current = [];
       executionStepsRef.current = []; // 2026-08-27 小欧 三堂会审: 终态清理executionSteps
+      // A1(2026-09-09 小欧): 终态清空任务内指纹去重Set, 供下一任务重新计数 — 小欧-2026-09-09
+      onStepFingerprintRef.current.clear();
       // lastUpdateTimeRef.current = 0;
     },
     [

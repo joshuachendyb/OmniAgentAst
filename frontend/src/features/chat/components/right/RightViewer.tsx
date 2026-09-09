@@ -44,6 +44,9 @@
 //   ③抽scrollToBottomNow统一滚底实现(RO/首帧/切历史/visibilitychange共用, DRY) — 小欧-2026-09-06
 // 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定): deniedEntries prop 接收/透传 PipelineRenderer,
 //   承被拒工具点名条(橘红灰字)数据链路 — 小欧-2026-09-06
+// 编辑历史: 2026-09-09 小欧 - A3修复(final→历史切换竞态): REST拉取对"刚结束的实时任务自身"加 300ms 缓冲——
+//   SSE final 先发、DB 落库稍后, 立即拉会拿到 executing 旧态覆盖 failed/completed 结果; 历史回放即时拉不变;
+//   effect 依赖补 _hasFinal/serverTaskId — 小欧-2026-09-09
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -216,38 +219,51 @@ const RightViewer: React.FC<RightViewerProps> = ({
       return; // B4：执行中不拉 REST
     }
     let cancelled = false;
-    if (!detail && !isCurrentLive) setLoading(true); // 小欧 2026-08-30: 加!isCurrentLive守卫, live模式不触发spinner
-    (async () => {
-      try {
-        const [d, s] = await Promise.all([
-          executionApi.getTaskDetail(activeTaskId),
-          executionApi.getTaskSteps(activeTaskId),
-        ]);
-        if (cancelled) return;
-        setDetail(d);
-        if (s.steps.length > 0) {
-          // 2026-08-27 小欧 修复#46: 拒绝裸断言, steps 缺失时回落空数组, 避免下游读step字段得undefined
-          setHistorySteps(toExecutionSteps(s.steps)); // 2026-08-27 小欧 三堂会审: 收窄unknown[]→ExecutionStep[]
-        } else if (sessionId) {
-          const msgResp = await sessionApi.getSessionMessages(sessionId);
+    let settleTimer: number | null = null;
+    const startFetch = () => {
+      if (!detail && !isCurrentLive) setLoading(true); // 小欧 2026-08-30: 加!isCurrentLive守卫, live模式不触发spinner
+      (async () => {
+        try {
+          const [d, s] = await Promise.all([
+            executionApi.getTaskDetail(activeTaskId),
+            executionApi.getTaskSteps(activeTaskId),
+          ]);
           if (cancelled) return;
-          const fallback: ExecutionStep[] = [];
-          for (const m of msgResp.messages) {
-            for (const st of m.execution_steps ?? [])
-              fallback.push(st as ExecutionStep);
+          setDetail(d);
+          if (s.steps.length > 0) {
+            // 2026-08-27 小欧 修复#46: 拒绝裸断言, steps 缺失时回落空数组, 避免下游读step字段得undefined
+            setHistorySteps(toExecutionSteps(s.steps)); // 2026-08-27 小欧 三堂会审: 收窄unknown[]→ExecutionStep[]
+          } else if (sessionId) {
+            const msgResp = await sessionApi.getSessionMessages(sessionId);
+            if (cancelled) return;
+            const fallback: ExecutionStep[] = [];
+            for (const m of msgResp.messages) {
+              for (const st of m.execution_steps ?? [])
+                fallback.push(st as ExecutionStep);
+            }
+            setHistorySteps(toExecutionSteps(fallback));
+          } else {
+            setHistorySteps([]);
           }
-          setHistorySteps(toExecutionSteps(fallback));
-        } else {
-          setHistorySteps([]);
+        } finally {
+          if (!cancelled) setLoading(false);
         }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+      })();
+    };
+    // A3(2026-09-09 小欧): final 到达后 DB 落库存在窗口(SSE final 先发、DB 写入稍后), 立即拉 REST 会拿到
+    //   executing 旧态覆盖 failed/completed 结果(429案例: final failed 先到达, DB 仍 executing);
+    //   仅对"刚结束的实时任务自身"缓冲 300ms 等落库再拉, 历史回放(activeTaskId!=serverTaskId)仍即时 —
+    //   小欧-2026-09-09
+    if (_hasFinal && activeTaskId === serverTaskId) {
+      settleTimer = window.setTimeout(startFetch, 300);
+    } else {
+      startFetch();
+    }
     return () => {
       cancelled = true;
+      if (settleTimer !== null) window.clearTimeout(settleTimer);
     };
-  }, [activeTaskId, sessionId, isCurrentLive]);
+  }, [activeTaskId, sessionId, isCurrentLive, _hasFinal, serverTaskId]);
 
   // B16：锚定的当前任务结束沿 -> 补取 C1 终态详情并刷新外层列表
   useEffect(() => {

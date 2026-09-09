@@ -56,6 +56,9 @@
 //   (waiting 段)承接, 同批 SSE 无缝隙, 不再双机制并行; 相关旧注释块一并清除 — 小欧-2026-09-07
 // 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字): 新增 deniedEntries prop, tool 段按 step
 //   取出被拒工具点名条传入 ToolCallLine(部分拒/全拒对被拒工具显橘红灰字点名单) — 小欧-2026-09-06
+// 编辑历史: 2026-09-09 小欧 - A2修复(跨任务 step 号回绕互踩): buildSegments tool 段去重升级——同 step 仅允许
+//   preview+canonical 各一次合一(保持 UI 一行契约, candidateCount 以预览全量为准), 第三次起的同 step action
+//   (跨任务/异常残留)独立追加不覆盖历史段, 杜绝"旧任务工具行被新任务同 step 覆盖篡改" — 小欧-2026-09-09
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -121,6 +124,11 @@ const WaitingIcon: React.FC = () => (
 /** 纯函数：业务步骤 -> 顺序段（可单测） */
 export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
   const segs: PipelineSegment[] = [];
+  // A2(2026-09-09 小欧): preview 槽位制——后端 B2 时序约定"每个 action 必先发 preview(tools=全量候选)、
+  //   再发 canonical(tools=执行集, 落库)", 二者同 step 属同一轮双保险, 合一为单 tool 段:
+  //   canonical 仅允许覆盖"最后一个未配对的 preview 段", 覆盖后槽位清空;
+  //   无 preview 配对的 action(跨任务/回绕/异常残留)直接新增独立 tool 段, 兜底绝不让历史段被篡改 — 小欧-2026-09-09
+  let pendingPreviewToolIdx = -1;
   const appendToLast = (
     kind: 'thinking' | 'text',
     text: string
@@ -176,23 +184,34 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
         // 2026-09-03 小沈 修正: 原地突变改不可变更新, 与BUG-18修复原则一致(防污染调用方缓存)
         // 2026-09-06 小欧 B2(J1修复): 预览action(tools=全量候选)先到, canonical(tools=执行集)后覆盖——
         //   candidateCount取以致小者优先的预览候选总数, canonical覆盖时保留, 供allDenied作分母(不得用执行集) — 小欧-2026-09-06
-        const existingIdx = segs.findIndex(
-          (seg): seg is Extract<PipelineSegment, { kind: 'tool' }> =>
-            seg.kind === 'tool' && seg.action.step === s.step
-        );
-        if (existingIdx >= 0) {
-          const existing = segs[existingIdx] as Extract<
+        // A2(2026-09-09 小欧): preview 槽位制——preview action 登记"待正式化槽位"并新增 tool 段;
+        //   canonical action 仅当存在未配对 preview 槽位时覆盖之(合一为单 tool 段), 覆盖后槽位清空;
+        //   无 preview 配对的 action(跨任务/回绕/异常残留)直接新增独立 tool 段, 历史 tool 段永不被篡改 — 小欧-2026-09-09
+        if (s.preview) {
+          // 登记槽位: 即将 push 的 tool 段索引
+          pendingPreviewToolIdx = segs.length;
+          segs.push({
+            kind: 'tool',
+            action: s,
+            observations: [],
+            // 候选总数以预览全量为准(canonical tools=执行集只减不增, 覆盖时保留预览值)
+            candidateCount: s.tools?.length ?? 0,
+          });
+        } else if (pendingPreviewToolIdx >= 0) {
+          const idx = pendingPreviewToolIdx;
+          const existing = segs[idx] as Extract<
             PipelineSegment,
             { kind: 'tool' }
           >;
-          segs[existingIdx] = {
+          pendingPreviewToolIdx = -1; // 槽位配对完成, 清空防后续 canonical 再覆盖
+          segs[idx] = {
             kind: 'tool',
             action: s,
-            observations: existing.observations,
-            // 候选总数以预览全量为准(canonical tools=执行集只减不增, 覆盖时保留预览值)
+            observations: existing.observations ?? [],
             candidateCount: existing.candidateCount ?? s.tools?.length ?? 0,
           };
         } else {
+          // 无 preview 配对(跨任务/回绕/异常残留): 独立新增, 绝不篡改历史段
           segs.push({
             kind: 'tool',
             action: s,
