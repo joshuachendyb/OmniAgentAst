@@ -534,7 +534,7 @@ const confirmRevoke = (t: TrustItem) => {
 
 | 位置 | 现状 | 改进 |
 |------|------|------|
-| 整行折叠 | 无 role/tabIndex/aria | `role="button"` + `aria-expanded` + `tabIndex={0}` + `onKeyDown` |
+| 折叠控件（G8） | 无 role/tabIndex/aria | `role="button"` + `aria-expanded` + `tabIndex={0}` + `onKeyDown`（见 6.5.3.4） |
 | 折叠热区 | 整行 onClick（与文本选中冲突） | 三角区域 onClick + stopPropagation，整行保留但不响应文本区 |
 | TrustPanel 折叠 | ✅ 已有 role/aria/keyboard | 不变 |
 | TrustPanel 撤销按钮 | 纯 span × | 改 antd Button + aria-label |
@@ -544,7 +544,7 @@ const confirmRevoke = (t: TrustItem) => {
 
 | 按键 | 行为 |
 |------|------|
-| `Tab` | 聚焦第一行（`role="button"` + `tabIndex={0}`） |
+| `Tab` | 聚焦 G8 折叠控件（`role="button"` + `tabIndex={0}`） |
 | `Enter` / `Space` | 切换 collapsed 折叠态 |
 | `Shift+Tab` | 向后导航到 Token 行（`role="status"`） |
 
@@ -572,10 +572,10 @@ const confirmRevoke = (t: TrustItem) => {
 | 960~768px | 完整 | 完整 | 收窄 | 省略（maxWidth 200 + ellipsis + Tooltip 全文） | 累计段进 Tooltip | 进 Tooltip | 仅计数 | 完整 |
 | < 768px | 完整 | 合并进 G3 | 合并 | 省略 | 换行到第二行 | 换行到第二行 | 仅计数 | 完整 |
 
-**折叠热区定案**：
-- G8 三角图标区域 `32px × 32px` 为主热区（onClick + stopPropagation），键盘鼠标均可点
-- 整行保留 onClick（扩大热区），但 `user-select: text`，文本区可选中、点击不触发折叠
-- 折叠触发仅限 G8 三角区域，避免与文本选中冲突
+**折叠热区定案**（消除"仅限 G8"与"整行扩大热区"的表述矛盾）：
+- 主热区：G8 三角图标区域 `32px × 32px`（onClick + stopPropagation），键盘鼠标均可点
+- 兜底热区：整行保留 onClick，但**仅行内空白区**命中 `e.target === e.currentTarget` 时触发（扩大热区），`user-select: text` 保证文本区可选中、点击永不折叠
+- 文本与信息位子元素（``G1~G6 各 span``）不参与触发，避免与文本选中冲突；角色/键盘由 G8 控件承载（见 6.5.3.4）
 
 ```css
 /* 外层容器允许换行，G5 Token 区最小宽度不为 0 */
@@ -728,15 +728,16 @@ export const BADGE_MAP: Record<TaskBadge, BadgeEntry> = {
 export type ContextState = 'ok' | 'summary-only' | 'truncated' | 'empty';
 export interface ContextStateEntry {
   text: string; // 数值区文案（ok 态由调用方传入 token，此处留空）
-  tone: 'primary' | 'secondary' | 'warning';
+  tone: 'primary' | 'secondary' | 'warning' | 'tertiary';
   icon?: ReactNode;
   tooltip: string;
 }
 export const CONTEXT_STATE_MAP: Record<ContextState, ContextStateEntry> = {
   'ok': { text: '', tone: 'primary', tooltip: '上下文正常', },
-  'summary-only': { text: '摘要·无计数', tone: 'secondary', tooltip: '上下文概览尚无 token 计数', },
+  // 3.3 状态机: summary-only/empty 数值色 TERTIARY(标签级弱文字), 非 SECONDARY(3.3 表/7.3 用例一致)
+  'summary-only': { text: '摘要·无计数', tone: 'tertiary', tooltip: '上下文概览尚无 token 计数', },
   'truncated': { text: '', tone: 'warning', icon: <WarningOutlined />, tooltip: '上下文被截断，可能影响回答质量', },
-  'empty': { text: '–', tone: 'secondary', tooltip: '上下文缺失，检查 frames 数据链路', },
+  'empty': { text: '–', tone: 'tertiary', tooltip: '上下文缺失，检查 frames 数据链路', },
 };
 
 // ---------- mapStatus（纯函数：输入数据源 → 4 态，供测试直接断言 data-state） ----------
@@ -790,7 +791,7 @@ import { Tooltip } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { EllipsisTip } from './EllipsisTip';
 
-export type MetricTone = 'primary' | 'secondary' | 'warning';
+export type MetricTone = 'primary' | 'secondary' | 'warning' | 'tertiary';
 
 export interface MetricItemProps {
   label: string; // 标签（灰 11px）
@@ -806,6 +807,7 @@ export interface MetricItemProps {
 const TONE_COLOR: Record<MetricTone, string> = {
   primary: Colors.TEXT.PRIMARY,
   secondary: Colors.TEXT.SECONDARY,
+  tertiary: Colors.TEXT.TERTIARY, // 3.3: summary-only/empty 标签级弱文字
   warning: Colors.WARNING,
 };
 
@@ -1124,22 +1126,32 @@ onClick={(e) => {
 +          )}
 ```
 
-##### 6.5.3.6 P2-16 耗时 + P2-12 令牌（`:160`）
+##### 6.5.3.6 P2-16 耗时 + G3 进度 + P2-12 令牌（`:158-164`）
 
 ```diff
            <span
              style={{
--              fontSize: 12,
-+              fontSize: FontSize.SECONDARY,
+ -              fontSize: 12,
+ +              fontSize: FontSize.SECONDARY,
                color: Colors.TEXT.PRIMARY,
--              fontWeight: 500,
-+              fontWeight: FontWeight.BOLD, // 3.1.2: G2 耗时 600
-+              ...TABULAR_NUMS, // P2-16: 等宽数字, 位数不抖动
+ -              fontWeight: 500,
+ +              fontWeight: FontWeight.BOLD, // 3.1.2: G2 耗时 600
+ +              ...TABULAR_NUMS, // P2-16: 等宽数字, 位数不抖动
              }}
            >
--            耗时 {Math.round(shownElapsed)}s
-+            耗时 {Math.round(shownElapsed)}s
+ -            耗时 {Math.round(shownElapsed)}s
+ +            耗时 {Math.round(shownElapsed)}s
            </span>
+```
+
+```diff
+<!-- G3 进度（:162-164）：3.1.2 表 G3 = `3步·2轮`/12px/400/SECONDARY -->
+-          <span style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
+-            步骤 {info.stepCount} / 轮次 {info.llmCallCount}
+-          </span>
++          <span style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
++            {info.stepCount}步·{info.llmCallCount}轮
++          </span>
 ```
 
 ##### 6.5.3.7 P2-15 徽标（`BADGE_MAP` 迁入 `infoMaps.ts` 6.5.2.1）
@@ -1147,12 +1159,16 @@ onClick={(e) => {
 `:56-63` 原 `BADGE_MAP` 整块删除，`:75` `const b = BADGE_MAP[info.badge];` 改为：
 
 ```diff
--const BADGE_MAP = { idle:...running:...cancelled:... }; // 已迁 infoMaps.ts
--const b = BADGE_MAP[info.badge];
-+const b = BADGE_MAP[info.badge]; // 同 import, cancelled = {status:'error', text:'已取消'}(P2-15)
+ -const BADGE_MAP = { idle:...running:...cancelled:... }; // 已迁 infoMaps.ts
+ -const b = BADGE_MAP[info.badge];
+ +const b = BADGE_MAP[info.badge]; // 同 import, cancelled = {status:'error', text:'已取消'}(P2-15)
 ```
 
+> G1 字重（3.1.2 表 G1：12px/500/PRIMARY）：如需 500 字重，`<Badge status={b.status} text={b.text} style={{ fontWeight: 500 }} />`；现状 antd Badge 默认 normal，此项为增量可选，不阻塞（Badge status 色已达标）。
+
 ##### 6.5.3.8 P1-7 + P1-8 G5/G6 中组重构（`:193-257` 整块替换）
+
+> P1-8 现状块含 `:243 {' 🔴'}` 截断红点（3.4 表行 5），随整块替换一并删除——truncated 态改由 WarningOutlined 承担（3.3 状态机）。
 
 ```diff
          <div style={{ display:'flex', alignItems:'center', gap:Spacing.MD, flex:1,
@@ -1220,7 +1236,7 @@ onClick={(e) => {
 
 ##### 6.5.3.9 P1-11 分隔线归属（定案 B，双文件）
 
-`TaskInfoBar.tsx:117`：本条 `borderTop` 已删（6.5.3.4）；分隔线上移至 input 区——`InputCore.tsx:45`：
+`TaskInfoBar.tsx:117`：本条 `borderTop` 已删（6.5.3.4）；分隔线上移至 input 区——`InputCore.tsx:45`（注：若 input 区另有顶层容器，borderTop 应上移至该容器顶部、紧贴 TaskInfoBar 下沿，语义最准；TextArea 同色覆盖仅作代码归属落点）：
 
 ```diff
    <TextArea
@@ -1268,6 +1284,7 @@ onClick={(e) => {
 +              }}
 +            >
 +              {/* 左列: 时间 HH:MM:SS + 均长竖线(3.6 定案, 不编码间隔) */}
++              {/* 节点: 3.6 表"● 节点"由右列 SVG 图标承载, 不另加 ● 文本符(避免违背 3.4 图标铁律) */}
 +              <span
 +                style={{
 +                  fontSize: FontSize.SMALL, // 11px
