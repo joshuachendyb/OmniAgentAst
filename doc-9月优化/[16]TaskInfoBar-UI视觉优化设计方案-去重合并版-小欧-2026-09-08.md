@@ -26,7 +26,7 @@
 | v3.7 | 2026-09-08 23:29:10 | 核查报告 10 处落定：G8 `▾`→`<DownOutlined/>`；2.2.4 时序矛盾定案"最新在顶"+三列改两列；8.2 改均长线；P/C 两段对称+T 空格 `T 1,234`；PRIMARY 全称化 `TEXT.PRIMARY`；WARNING `#faad14`→`#AD6800`；G7 定案 A；5.7 删 ToolOutlined；5.8 两表合并热区 32px；Drawer `min(360px,80vw)`；P1-11 定案 B；上下文 `有摘要`→`摘要·无计数`；破折号 en-dash；11.3 令牌名改 9.1 已定义 | 小欧 |
 | **v4.0** | **2026-09-08 23:47:47** | **全量去重合并重写**：删除 2.2.x 与 5.x 双份规范（每份只留一处）、问题清单只留"问题+改法指针"；删单列审查范围（并入文档目的）、风险章节、与 v3.7 定案矛盾的术语表；保留 18 项问题、全部规范、D1~D5、优先级、令牌、复用、TDD 实施、27 项测试用例、DoD；重新排章节号 | 小欧 |
 | v4.1 | 2026-09-09 09:01:58 | 折叠交互定案变更：**取消整行折叠（信息带恒定 1 行），拆为两块独立 Popover 浮层**（上下文卡片锚 G6 + 事件卡片锚 G8）；G8 语义由"折叠任务面板"改为"事件序列入口"；位置"锚点右缘对齐向左展开"、窄屏右贴边；hover 规格 2（32×32 热区背景淡入+图标 PRIMARY+展开态 rotate 180°）；6.5.3.4/6.5.3.8/6.5.3.10 真实代码、7.3 测试用例全链同步 | 小欧 |
-| v4.2 | 2026-09-09 09:32:53 | 第二轮源码级核查落定：**G6/G8 双浮层入口抽公共组件 `FloatingEntry.tsx`**（Popover 壳 + 热区 a11y + Enter/Space 键盘，卡片内容留调用方；DRY，17 行×2 处重复收敛）；**G8 `onClick` 删除手动 toggle 双重写入**（开合交还 antd trigger 单一真源，与 G6 对齐）；6.1/6.2/6.3 复用清单、6.5.2.4 新建文件规约、6.5.3.2/6.5.3.4/6.5.3.8 调用、7.2 阶段 1.5、7.3 断言全链同步 | 小欧 |
+| v4.2 | 2026-09-09 09:32:53 | 第二轮源码级核查落定：**G6/G8 双浮层入口抽公共组件 `FloatingEntry.tsx`**（Popover 壳 + 热区 a11y + Enter/Space/Esc 键盘 + 焦点管理，卡片内容留调用方；DRY，17 行×2 处重复收敛；3.8/7.3 Esc+焦点断言补实现归属）；**G8 `onClick` 删除手动 toggle 双重写入**（开合交还 antd trigger 单一真源，与 G6 对齐）；3.9 热区 CSS 落盘 `src/index.css`；6.1/6.2/6.3 复用清单、6.5.2.4 新建文件规约、6.5.3.2/6.5.3.4/6.5.3.8 调用、7.1/7.2 阶段 1.5、7.3 断言全链同步 | 小欧 |
 
 ---
 
@@ -93,7 +93,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 3. **与 TrustPanel 双标**：TrustPanel（:92-106）有完整 role/aria，外层折叠行却啥都没有
 4. **文本选中冲突**：点击选中的 token 数字会触发折叠
 
-**改法**：见 [3.1 G6/G8 入口](#311-整体线框图)、[3.8 无障碍](#38-无障碍与键盘导航)、[3.9 断点与热区](#39-响应式断点与浮层热区)（v4.1 定案）：**取消整行折叠**——信息带恒定 1 行不再收起；触发收敛到两个独立浮层入口：G6 上下文入口（`role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `tabIndex` + `onKeyDown`）、G8 事件入口（同规格，`<DownOutlined/>` 视觉锚点）；热区与 hover 见 3.9。
+**改法**：见 [3.1 G6/G8 入口](#31-第一行整体设计信息位-g1g8)、[3.8 无障碍](#38-无障碍与键盘导航)、[3.9 断点与热区](#39-响应式断点与浮层热区p1-9-落地v41-双浮层定案)（v4.1 定案）：**取消整行折叠**——信息带恒定 1 行不再收起；触发收敛到两个独立浮层入口：G6 上下文入口（`role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `tabIndex` + `onKeyDown`）、G8 事件入口（同规格，`<DownOutlined/>` 视觉锚点）；热区与 hover 见 3.9。
 
 ---
 
@@ -115,7 +115,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 
 **现状**：点击 `×` 直接 `revoke()`，无任何确认。误触即丢失信任配置，且不可恢复（信任写入有 HITL 弹窗确认，撤销却一键生效）。
 
-**改法**：revoke 前加 antd `Modal.confirm`，二次确认文案含工具名（见 [3.5 信任 Drawer](#35-信任-drawerg7-p1-10p0-4p2-18-落地)）。
+**改法**：revoke 前加 antd `Modal.confirm`，二次确认文案含工具名（见 [3.5 信任 Drawer](#35-信任-drawerg7p1-10p0-4p2-18-落地)）。
 
 ---
 
@@ -174,7 +174,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 
 **现状**：`flexWrap: nowrap` + 左组 `flexShrink: 0`（:149）= 窗口收窄时中组被压缩成 0 宽度。
 
-**改法**：基础行 `flexWrap: 'wrap'` 允许换行；明细内容 v4.1 全部移入浮层，不再挤占基础行；断点行为见 [3.9 响应式断点](#39-响应式断点与浮层热区)。
+**改法**：基础行 `flexWrap: 'wrap'` 允许换行；明细内容 v4.1 全部移入浮层，不再挤占基础行；断点行为见 [3.9 响应式断点](#39-响应式断点与浮层热区p1-9-落地v41-双浮层定案)。
 
 ---
 
@@ -184,7 +184,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 
 **现状**：展开列表渲染在第一行右组内，`maxHeight: 70` 撑高行高，左/中组视觉跳动。
 
-**改法（定案：Drawer 侧滑面板）**：见 [3.5 信任 Drawer](#35-信任-drawerg7-p1-10p0-4p2-18-落地)。
+**改法（定案：Drawer 侧滑面板）**：见 [3.5 信任 Drawer](#35-信任-drawerg7p1-10p0-4p2-18-落地)。
 
 ---
 
@@ -266,7 +266,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 
 **现状**：`<span onClick>×</span>` 文本符号、无 role/tabIndex/keydown、无 aria-label（title 不替代）、撤销不可逆无确认。
 
-**改法**：改 `<Button type="text" size="small" icon={<CloseOutlined />} />`（antd 自带 role/keyboard/aria）+ `aria-label="撤销信任 {toolName}"` + Modal.confirm 二次确认（见 [3.5](#35-信任-drawerg7-p1-10p0-4p2-18-落地)）。
+**改法**：改 `<Button type="text" size="small" icon={<CloseOutlined />} />`（antd 自带 role/keyboard/aria）+ `aria-label="撤销信任 {toolName}"` + Modal.confirm 二次确认（见 [3.5](#35-信任-drawerg7p1-10p0-4p2-18-落地)）。
 
 ---
 
@@ -332,7 +332,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 
 > 方案B（方框）/方案C（下划线）已否决：B 引入 Tag 元素增加视觉噪音，C 与浏览器原生链接语义混淆。
 
-**装置无障碍**：G6/G8 浮层入口均 `role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `aria-label` + `aria-controls`，屏读播报"上下文卡片，已展开 / 事件序列，已展开"等完整语义；`:focus-visible` 显式 outline（2px PRIMARY 蓝）。
+**装置无障碍**：G6/G8 浮层入口均 `role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `aria-label` + `aria-controls`，屏读播报"上下文详情，已展开 / 事件序列，已展开"等完整语义；`:focus-visible` 显式 outline（2px PRIMARY 蓝）。
 
 ---
 
@@ -602,7 +602,7 @@ const confirmRevoke = (t: TrustItem) => {
 
 **浮层热区定案**（G6/G8 双入口，hover 规格 2）：
 
-- **G8 事件入口**：主热区 `32px × 32px` 圆角 8（onClick 开卡片，键盘鼠标均可点）；hover 背景 `#fafafa→#f0f0f0` 淡入、图标 TERTIARY→PRIMARY、展开态 `rotate(180deg)`、`transition 0.2s ease`、`cursor: pointer`
+- **G8 事件入口**：主热区 `32px × 32px` 圆角 8（click 触发开卡片，键盘鼠标均可点；v4.2 开合唯一真源为 antd trigger + `onOpenChange`，入口无手动 toggle）；hover 背景 `#fafafa→#f0f0f0` 淡入、图标 TERTIARY→PRIMARY、展开态 `rotate(180deg)`、`transition 0.2s ease`、`cursor: pointer`
 - **G6 上下文入口**：整段（标签+数值+▸）热区 ≥ 32px，同规格背景/色变 hover；内嵌箭头指示符
 - 入口 `user-select: text`、信息位子元素（G1~G5 各 span）不参与触发，避免与文本选中冲突（v4.1：整行已不再折叠，热区只归各自入口）
 - 浮层位置：G8 事件卡片 `placement="bottom-end"` 锚定入口**右缘、向左展开**（窄屏右贴安全边距不顶出视口）；G6 上下文卡片 `placement="bottom-start"` 锚定**左缘、向右展开**；双卡均 `mouseEnterDelay=0.15` / `mouseLeaveDelay=0.3` 防抖
@@ -623,7 +623,11 @@ const confirmRevoke = (t: TrustItem) => {
 }
 .taskinfo-entry:hover { background: #f0f0f0; color: Colors.PRIMARY; }
 .taskinfo-entry[data-open="true"] svg { transform: rotate(180deg); }
+/* 键盘焦点可见性（3.8：无鼠标纯键盘可操作，2px PRIMARY 蓝 outline） */
+.taskinfo-entry:focus-visible { outline: 2px solid Colors.PRIMARY; outline-offset: 2px; }
 ```
+
+> 落盘：本段 CSS 追加至 `frontend/src/index.css` 尾部（全局样式，带编辑历史署名+日期；见 6.5.1）。
 
 ---
 
@@ -666,7 +670,7 @@ const confirmRevoke = (t: TrustItem) => {
 | **标签+数值两段式**结构 | G5/G6/各信息位同构定义 ≥4 处 | DRY | **抽独立组件 `MetricItem.tsx`** |
 | **省略文本 + Tooltip** | G4 长错误、G5 收窄、浮层摘要 ≥4 处 | DRY | **抽独立组件 `EllipsisTip.tsx`** |
 | **状态 → 文案/色值/图标**映射 | BADGE_MAP、上下文 4 态、事件图标映射 | DRY + SRP | **抽独立常量文件 `infoMaps.ts`** + 纯函数 `mapStatus()` |
-| **浮层入口（Popover 壳 + 热区 a11y + 键盘）** | G6 上下文入口 / G8 事件入口同构（Popover 6 props + 入口 a11y 9 属性 + Enter/Space 处理，约 17 行×2 处） | DRY | **抽独立组件 `FloatingEntry.tsx`**（v4.2；卡片内容/样式留调用方注入） |
+| **浮层入口（Popover 壳 + 热区 a11y + 键盘）** | G6 上下文入口 / G8 事件入口同构（Popover 6 props + 入口 a11y 9 属性 + Enter/Space 处理，约 17 行×2 处）+ Esc/焦点管理（3.8/7.3 有测无实现） | DRY | **抽独立组件 `FloatingEntry.tsx`**（v4.2；卡片内容/样式留调用方注入） |
 | **等宽数字**规范 | 耗时、事件时间、token 数都用 tabular-nums | DRY | 共享 style 常量（复用 stepStyles 令牌），不新建文件 |
 | **时间格式化** | `toLocaleTimeString()` 多处 | DRY/复用优先 | **先查** `src/utils/` 已有工具；无则纯函数 `formatTime()` |
 | **Drawer + Modal.confirm 撤销** | 仅信任清单 1 处 | YAGNI | **不抽文件**，留 TrustPanel.tsx 内部函数 |
@@ -680,7 +684,7 @@ const confirmRevoke = (t: TrustItem) => {
 | `MetricItem`（标签+数值+可选图标） | 独立组件/文件 | 4 处重复、props 稳定（label/text/tone/icon），改一处全行同构 | — |
 | `EllipsisTip`（文本 + maxWidth ellipsis + Tooltip 全文） | 独立组件/文件 | 4 处 hover/省略场景，行为一致 | — |
 | `infoMaps.ts`（状态映射常量 + `mapStatus` 纯函数） | 独立常量模块 | 状态语义集中管理，新增状态仅加映射（OCP 扩展） | — |
-| `FloatingEntry`（Popover 壳 + 热区 a11y + 键盘） | 独立组件/文件 | G6/G8 双入口同构（约 17 行×2 处），props 稳定（open/onOpenChange/placement/cardId/ariaLabel/content/children）；抽后 G8 双重写入类漂移可防 | — |
+| `FloatingEntry`（Popover 壳 + 热区 a11y + 键盘） | 独立组件/文件 | G6/G8 双入口同构（约 17 行×2 处），props 稳定（open/onOpenChange/placement/cardId/ariaLabel/content/children）；抽后 G8 双重写入类漂移可防；Esc/焦点内聚（3.8/7.3 断言有实现归属） | — |
 | `formatTime()` | 独立函数 | 跨 G1~G8 多处时间展示 | 若 `src/utils/` 已有则**直接复用** |
 | `confirmRevoke()` | 组件内函数 | — | 单处使用，抽文件违反 YAGNI |
 | G7 可点击样式 | 组件内样式 | — | 单处使用，禁止过早抽象 |
@@ -694,7 +698,7 @@ const confirmRevoke = (t: TrustItem) => {
 | `MetricItem.tsx` | 标签（灰 11px）+ 数值（加粗 12px）+ 可选 SVG 图标，支持 tone/截断态 | `frontend/src/features/chat/components/taskinfo/` |
 | `EllipsisTip.tsx` | 省略文本 + Tooltip 全文的封装 | 同上 |
 | `infoMaps.ts` | BADGE_MAP / CONTEXT_STATE_MAP(4 态) / EVENT_ICON_MAP + `mapStatus()` 纯函数 | 同上 |
-| `FloatingEntry.tsx` | G6/G8 双浮层入口公共壳：Popover 配置（hover/click 双触发、0.15/0.3s 延时、arrow）+ `taskinfo-entry` 热区 a11y + Enter/Space 键盘 + 单真源开合（v4.2，DRY） | 同上 |
+| `FloatingEntry.tsx` | G6/G8 双浮层入口公共壳：Popover 配置（hover/click 双触发、0.15/0.3s 延时、arrow）+ `taskinfo-entry` 热区 a11y + Enter/Space/Esc 键盘 + 单真源开合 + 焦点管理（v4.2，DRY） | 同上 |
 
 ### 6.4 复用优先核查纪律（实现前必查）
 
@@ -719,15 +723,16 @@ const confirmRevoke = (t: TrustItem) => {
 | 新建 `infoMaps.ts` | P1-8 / P2-15 / P2-14 辅助 | 约 90 行 | 0 | +90 |
 | 新建 `MetricItem.tsx` | P1-7 / P1-8 / 6.x 复用 | 约 55 行 | 0 | +55 |
 | 新建 `EllipsisTip.tsx` | P1-6 / 6.x 复用 | 约 35 行 | 0 | +35 |
-| 新建 `FloatingEntry.tsx` | v4.2 G6/G8 双浮层入口公共壳 | 约 60 行 | 0 | +60 |
+| 新建 `FloatingEntry.tsx` | v4.2 G6/G8 双浮层入口公共壳（含 Esc/焦点管理） | 约 85 行 | 0 | +85 |
 | 修改 `TaskInfoBar.tsx` | P0-1/2/3、P1-5/6/7/8/9/11、P2-12/13/16/17、v4.1 双浮层、v4.2 FloatingEntry 调用 + G8 双写修复 | 约 150 行 | 约 70 行 | +80 |
 | 修改 `TrustPanel.tsx` | P0-4、P1-10、P2-18 | 约 85 行 | 约 55 行 | +30 |
 | 修改 `useTaskInfo.ts` | P2-14 | 1 行 | 1 行 | 0 |
 | 修改 `stepStyles.ts` | P1-6（WARNING 色值） | 1 行 | 1 行 | 0 |
 | 修改 `src/utils/time.ts` | 3.6（formatTimeHMS） | 约 9 行 | 0 | +9 |
 | 修改 `InputCore.tsx` | P1-11（分隔线归属） | 1 行 | 0 | +1 |
+| 修改 `src/index.css` | 3.9 热区样式落盘（`.taskinfo-entry` + `:focus-visible`，全局样式，带编辑历史署名） | 约 20 行 | 0 | +20 |
 
-**工作量结论**：共 9 个文件、20 项改动（含 v4.1 双浮层重构、v4.2 FloatingEntry 抽取 + G8 双写修复）；新增约 485 行、删除约 126 行。四份新建文件为纯展示层，无业务逻辑；修改文件全部为样式/交互重构，`useTaskInfo.ts` 仅 1 处时间源替换，零行为变化。
+**工作量结论**：共 11 个文件、23 项改动（含 v4.1 双浮层重构、v4.2 FloatingEntry 抽取 + G8 双写修复 + Esc/焦点 + 热区 CSS 落盘）；新增约 530 行、删除约 126 行。四份新建文件为纯展示层，无业务逻辑；修改文件全部为样式/交互重构，`useTaskInfo.ts` 仅 1 处时间源替换，零行为变化。
 
 > ⚠️ `Colors.WARNING` 改 `#AD6800` 牵动 6 处既有引用（ToolCallLine/WarningBox/StatusIcon/shapeRenderers×5/Notification 系列）——均为警告图标/边框/文字色，由浅橙变深琥珀后白底对比度全面提升，**视觉增强非退化**；`WARNING_BG: #fffbe6` 或 `Colors.BORDER.*` 不受影响。三堂会审：合规（令牌化）/合理（全链统一）/关联（无白字衬浅橙的反例）均通过。
 
@@ -965,12 +970,12 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
 
 位置：`frontend/src/features/chat/components/taskinfo/FloatingEntry.tsx`
 
-> v4.2 第二轮核查落定：G6/G8 双浮层入口同构（Popover 6 props + 入口 a11y 9 属性 + Enter/Space 键盘，约 17 行×2 处），按 6.2 判定（复用处 ≥ 2 → 独立文件）抽公共壳；卡片内容与卡片样式留调用方注入（SRP：壳只管开合与 a11y，不管卡片语义）。G8 `onClick` 手动 toggle 随抽取一并删除——开合唯一真源为 antd trigger + `onOpenChange`，键盘经 `onOpenChange(!open)` 同路写入，单源无双写。
+> v4.2 第二轮核查落定：G6/G8 双浮层入口同构（Popover 6 props + 入口 a11y 9 属性 + Enter/Space 键盘，约 17 行×2 处），按 6.2 判定（复用处 ≥ 2 → 独立文件）抽公共壳；卡片内容与卡片样式留调用方注入（SRP：壳只管开合与 a11y，不管卡片语义）。G8 `onClick` 手动 toggle 随抽取一并删除——开合唯一真源为 antd trigger + `onOpenChange`，键盘经 `onOpenChange(!open)` 同路写入，单源无双写。**Esc 关闭 + 焦点管理（3.8/7.3 有测无实现，收敛入壳）**：卡片 `tabIndex={-1}`，入口持有焦点时打开跟进焦点（hover 打开不抢焦点），卡片内 Esc 经 portal 冒泡关闭回入口。
 
 ```typescript
 // 编辑历史: 2026-09-09 小欧 - v4.2: 抽 G6/G8 双浮层入口公共壳(DRY, 17 行×2 处重复收敛)
-//   Popover 配置 + taskinfo-entry 热区 a11y + Enter/Space 键盘 + 单真源开合; 卡片内容/样式调用方注入 — 小欧-2026-09-09
-import React from 'react';
+//   Popover 配置 + taskinfo-entry 热区 a11y + Enter/Space/Esc 键盘 + 单真源开合 + 焦点管理(3.8/7.3); 卡片内容/样式调用方注入 — 小欧-2026-09-09
+import React, { useEffect, useRef } from 'react';
 import { Popover } from 'antd';
 
 export interface FloatingEntryProps {
@@ -993,42 +998,69 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
   cardStyle,
   content,
   children,
-}) => (
-  <Popover
-    open={open}
-    onOpenChange={onOpenChange}
-    trigger={['hover', 'click']}
-    placement={placement}
-    mouseEnterDelay={0.15}
-    mouseLeaveDelay={0.3}
-    arrow={{ pointAtCenter: true }}
-    content={
-      <div id={cardId} role="dialog" aria-label={ariaLabel} style={cardStyle}>
-        {content}
-      </div>
+}) => {
+  const entryRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const wasOpen = useRef(open);
+  // 打开后焦点入卡(3.8/7.3)：仅当入口持有焦点时跟进（hover 打开不抢焦点）
+  useEffect(() => {
+    if (open && !wasOpen.current && document.activeElement === entryRef.current) {
+      cardRef.current?.focus();
     }
-  >
+    wasOpen.current = open;
+  }, [open]);
+  // 卡片内 Esc（portal 内容经 React 树冒泡至外层 div）：关闭 + 焦点回入口(3.8/7.3)
+  const closeToEntry = () => {
+    onOpenChange(false);
+    entryRef.current?.focus();
+  };
+  return (
     <div
-      className={`taskinfo-entry${open ? ' taskinfo-entry-open' : ''}`}
-      data-open={open}
-      role="button"
-      aria-haspopup="dialog"
-      aria-expanded={open}
-      aria-label={ariaLabel}
-      aria-controls={cardId}
-      tabIndex={0}
-      onClick={(e) => e.stopPropagation()} // 仅止冒泡；开合交还 antd trigger（v4.2 双写修复：删手动 toggle）
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpenChange(!open);
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          closeToEntry();
         }
       }}
     >
-      {children}
+      <Popover
+        open={open}
+        onOpenChange={onOpenChange}
+        trigger={['hover', 'click']}
+        placement={placement}
+        mouseEnterDelay={0.15}
+        mouseLeaveDelay={0.3}
+        arrow={{ pointAtCenter: true }}
+        content={
+          <div ref={cardRef} tabIndex={-1} id={cardId} role="dialog" aria-label={ariaLabel} style={cardStyle}>
+            {content}
+          </div>
+        }
+      >
+        <div
+          ref={entryRef}
+          className={`taskinfo-entry${open ? ' taskinfo-entry-open' : ''}`}
+          data-open={open}
+          role="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={ariaLabel}
+          aria-controls={cardId}
+          tabIndex={0}
+          onClick={(e) => e.stopPropagation()} // 仅止冒泡；开合交还 antd trigger（v4.2 双写修复：删手动 toggle）
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onOpenChange(!open);
+            }
+          }}
+        >
+          {children}
+        </div>
+      </Popover>
     </div>
-  </Popover>
-);
+  );
+};
 ```
 
 ---
@@ -1145,7 +1177,7 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
      >
 ```
 
-**右组（G7 信任 + G8 事件入口）真实实现**（v4.1：G8 承载事件卡片全部 a11y/热区/键盘——满足 3.8 G8 入口键表与 3.1.3 hover 规格 2）：
+**右组（G7 信任 + G8 事件入口）真实实现**（v4.1：G8 承载事件卡片；v4.2：壳层 a11y/热区/键盘收敛入 `FloatingEntry` 见 6.5.2.4——满足 3.8 G8 入口键表与 3.1.3 hover 规格 2）：
 
 ```typescript
       <div
@@ -1689,8 +1721,8 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 | 测试对象 | 属性 | TDD 适配度 | 处理方式 |
 |----------|------|-----------|----------|
 | 纯函数与映射：`mapStatus` / `EVENT_ICON_MAP` / `BADGE_MAP` / `formatToken` / `formatTimeHMS` | 逻辑纯化 | ✅ 完全适配 | 红→绿→重构（最快循环） |
-| 组件渲染与 aria：G6/G8 浮层入口（P0-2/v4.1）、上下文 4 态（P1-8）、MetricItem、EllipsisTip、Token 两段式（P1-7） | DOM 可断言 | ✅ 适配 | 红→绿→重构 |
-| 交互链路：撤销 Modal.confirm（P0-4）、信任 Drawer 开合与焦点（P1-10）、G6/G8 浮层开合与键盘（v4.1） | DOM 事件 | ✅ 适配 | 红→绿→重构 |
+| 组件渲染与 aria：G6/G8 浮层入口（P0-2/v4.1，v4.2 经 `FloatingEntry` 实现）、上下文 4 态（P1-8）、MetricItem、EllipsisTip、Token 两段式（P1-7） | DOM 可断言 | ✅ 适配 | 红→绿→重构 |
+| 交互链路：撤销 Modal.confirm（P0-4）、信任 Drawer 开合与焦点（P1-10）、G6/G8 浮层开合与键盘（v4.1/v4.2 双写修复） | DOM 事件 | ✅ 适配 | 红→绿→重构 |
 | 视觉样式：tabular-nums 对齐（P2-16）、对比度（P1-6）、断点切换（P1-9）、Drawer 动画 | 视觉弱断言 | ⚠️ 收益低 | 实现后 E2E/视觉验证锁定，不做红绿循环 |
 
 > 前端现状核查：`frontend/` 已配 Vitest + Playwright，但**无既有测试文件**（`tests/` 仅测量脚本）→ 本轮全部为**新增用例**，无修改既有用例。
@@ -1704,7 +1736,7 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 | | 1.2 | `formatToken`（千分位 T 1,234）、`formatTimeHMS`（HH:MM:SS 新增，见 6.5.7）：先写断言 → **红** → 建纯函数 → **绿**（先查 `src/utils/time.ts`） | 3.2/3.3 | 0.1 |
 | | 1.3 | `MetricItem`：先写 props 渲染 / tone / 截断态 aria 测试 → **红** → 建组件 → **绿** | 3.2/3.3 | 0.1 |
 | | 1.4 | `EllipsisTip`：先写省略 + Tooltip 全文测试 → **红** → 建组件 → **绿** | 3.1(G4)/3.9/3.3 | 0.1 |
-| | 1.5 | `FloatingEntry`（v4.2）：先写热区 a11y（role/aria-haspopup/aria-expanded/tabIndex）+ Enter/Space 开合 + click 单次开合（G8 双写修复）测试 → **红** → 建组件 → **绿** | 3.8/3.9 | 0.1 |
+| | 1.5 | `FloatingEntry`（v4.2）：先写热区 a11y（role/aria-haspopup/aria-expanded/tabIndex）+ Enter/Space 开合 + click 单次开合（G8 双写修复）+ Esc 关闭/焦点回入口测试 → **红** → 建组件 → **绿** | 3.8/3.9 | 0.1 |
 | 2 P0 | 2.1 | P0-1 探针删除：直接删（零逻辑，回归验证） | P0-1 | — |
 | | 2.2 | P0-2/v4.1 浮层入口 a11y：先写 G6/G8 `role="button"` / `aria-haspopup="dialog"` / `aria-expanded` / `tabIndex` / Enter+Space 开合测试 → **红** → `FloatingEntry` 实现（v4.2，G6/G8 共用） → **绿** | 3.1/3.8 | 1.4+1.5 |
 | | 2.3 | P0-4 撤销确认：点撤销触发 `Modal.confirm`、取消不删、确认才删 → **红** → 实现 → **绿** | 3.5 | 0.1 |
