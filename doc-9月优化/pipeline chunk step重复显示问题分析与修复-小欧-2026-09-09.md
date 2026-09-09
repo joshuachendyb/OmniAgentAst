@@ -101,7 +101,23 @@ onStep?.(step);
 6. 后端按旧 `after_seq` 重发已处理事件
 7. `setExecutionSteps` 无去重 → 追加 → **pipeline 重复显示**
 
-### 2.4 铁证清单
+### 2.4 setExecutionSteps 无去重（次要根因）
+
+7处 `setExecutionSteps` updater 直接 `[...prev, step]` 追加，无任何去重：
+
+```
+sseParser.ts 各 case:
+setExecutionSteps((prev) => {
+  const newSteps = [...prev, step];  // ← 无 has() 检查，直接追加
+  handlers.executionStepsRef.current = newSteps;
+  saveStepsToStorage?.(newSteps);
+  return newSteps;
+});
+```
+
+→ `executionSteps` state → RightViewer `liveSteps` → PipelineRenderer 渲染
+
+### 2.5 铁证清单
 
 | # | 位置 | 证据 |
 |---|------|------|
