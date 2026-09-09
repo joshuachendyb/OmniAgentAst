@@ -131,7 +131,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 
 ---
 
-#### P1-6：位4 liveMeta 警告色对比度不足
+#### P1-6：G4 liveMeta 警告色对比度不足
 
 **位置**：`TaskInfoBar.tsx:167-168`
 
@@ -386,7 +386,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 | click 钉住 | 单击整段 | 卡片钉住（Pin），`Esc`/点卡片外关闭；hover 与 click 用 delay 防抖互斥 |
 | hover（截断） | hover 带 WarningOutlined | 卡片内状态区高亮警告"上下文被截断，可能影响回答质量" |
 | hover（无数据） | hover `上下文 –` | 卡片内显示"上下文缺失，检查 frames 数据链路" |
-| 位置 | 卡片锚定 G6 右缘、向左展开（窄屏右贴安全边距） | 与事件卡片（G8）互不干扰，各自独立开合 |
+| 位置 | 卡片锚定 G6（`placement="bottom-start"` 左缘对齐、向右展开）；窄屏右贴安全边距 | 与事件卡片（G8）互不干扰，各自独立开合 |
 
 **浮层①卡片内容**（上下文卡片，宽约 320px，v4.1 独立块）：
 
@@ -425,7 +425,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 
 **否决的候选**：iconfont 字体图标（单色依赖 web-font）、外链 `<img>`/背景图（不能变色多请求）、纯 CSS 绘制（复杂图形开销大）、emoji/Unicode 文本符号（跨平台不一致仅能改色）。
 
-**迁移检查清单（5.9 落地）**：
+**迁移检查清单（验收归口：7.6 DoD 第 5 条）**：
 
 | # | 检查点 | 来源代码 | 动作 |
 |---|--------|----------|------|
@@ -603,7 +603,7 @@ const confirmRevoke = (t: TrustItem) => {
 - **G8 事件入口**：主热区 `32px × 32px` 圆角 8（onClick 开卡片，键盘鼠标均可点）；hover 背景 `#fafafa→#f0f0f0` 淡入、图标 TERTIARY→PRIMARY、展开态 `rotate(180deg)`、`transition 0.2s ease`、`cursor: pointer`
 - **G6 上下文入口**：整段（标签+数值+▸）热区 ≥ 32px，同规格背景/色变 hover；内嵌箭头指示符
 - 入口 `user-select: text`、信息位子元素（G1~G5 各 span）不参与触发，避免与文本选中冲突（v4.1：整行已不再折叠，热区只归各自入口）
-- 浮层位置：锚定各自入口**右缘、向左展开**（窄屏右贴安全边距不顶出视口）；`mouseEnterDelay=0.15` / `mouseLeaveDelay=0.3` 防抖
+- 浮层位置：G8 事件卡片 `placement="bottom-end"` 锚定入口**右缘、向左展开**（窄屏右贴安全边距不顶出视口）；G6 上下文卡片 `placement="bottom-start"` 锚定**左缘、向右展开**；双卡均 `mouseEnterDelay=0.15` / `mouseLeaveDelay=0.3` 防抖
 
 ```css
 /* 外层容器允许换行，G5 Token 区最小宽度不为 0 */
@@ -1136,7 +1136,7 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
       </div>
 ```
 
-##### 6.5.3.5 P1-5 + P1-6 G4 位4（`:166-186`）
+##### 6.5.3.5 P1-5 + P1-6 G4 异常（`:166-186`）
 
 ```diff
 -          {info.liveMeta && (
@@ -1764,4 +1764,5 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 **编写时间：2026-09-08 19:57:56**
 **去重合并人：小欧**
 **去重合并时间：2026-09-08 23:47:47**
-**文档版本：v4.0**
+**v4.1 更新时间：2026-09-09 09:01:58**
+**文档版本：v4.1**
