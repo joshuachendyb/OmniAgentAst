@@ -716,7 +716,7 @@ const sanitizeDisplayMessage = (raw: unknown): string | undefined => {
   const t = raw.trim();
   if (!t) return undefined;
   if (/^-?\d+(\.\d+)?$/.test(t)) return undefined; // 纯数字(含负数/小数), 如 "60000"
-  if (/^[0-9,.\s]+$/.test(t)) return undefined;    // 纯数字字符集(防千分位 "60,000"), 排除科学记数/字母
+  if (/^[0-9,.\s]+$/.test(t)) return undefined; // 纯数字字符集(防千分位 "60,000"), 排除科学记数/字母
   if (/^(undefined|null|nan|\[object object\])$/i.test(t)) return undefined;
   return raw;
 };
@@ -741,7 +741,8 @@ export function showMessage(
   }
 
   // 2026-09-08 小欧 B加固: 透传文案过 sanitizeDisplayMessage 防裸数字/垃圾值上弹窗(如 "60000"), 非法即回退固定中文 — 小欧-2026-09-08
-  const displayMessage = sanitizeDisplayMessage(customMessage) || config.message;
+  const displayMessage =
+    sanitizeDisplayMessage(customMessage) || config.message;
 
   // 2026-09-08 小欧 实证打点: 每次 toast 上弹前打印 errorType 与最终文案, 「xx 60000」再次出现时据此反查来源 — 小欧-2026-09-08
   console.info(`[Toast] ${errorType}: ${displayMessage ?? ''}`);

@@ -120,7 +120,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     modelList,
     validationResult,
     initializeApp,
-    refreshAll,
     refreshServiceStatus,
     refreshAfterModelChange,
     refreshModelList: appRefreshModelList, // 获取AppContext的refreshModelList
@@ -129,7 +128,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   } = useApp();
 
   // 编辑历史: 2026-08-28 小欧 - [25] 恢复isManualRefreshing状态+setter调用(防死状态)
-  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const [, setIsManualRefreshing] = useState(false);
   // 【修复问题1】检查服务状态 - 使用AppContext
   // 监听初始化状态，在初始化过程中显示loading
   const [checkingStatus, setCheckingStatus] = useState(false);

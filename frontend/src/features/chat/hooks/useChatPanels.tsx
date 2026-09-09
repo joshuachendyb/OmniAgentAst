@@ -33,7 +33,7 @@ import type {
 } from '../../../services/api/task.api';
 import type { EffectiveModel } from './useModelLayer';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
-import type { TaskMetaFrames, LiveError } from '../../../types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位4数据源对象形态 — 小欧-2026-09-08
+import type { LiveError } from '../../../types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位4数据源对象形态 — 小欧-2026-09-08
 import type { UseChatFacadeReturn } from './useChatFacade';
 
 interface UseChatPanelsOptions {
@@ -90,7 +90,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     chatState,
     chatStreaming,
     chatTaskControl,
-    chatSend,
     liveError,
     authorizationPending,
     recentConfirmedTool,
@@ -141,7 +140,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     deniedEntries, // 2026-09-06 小欧 B2(6.4): 被拒工具点名条透传 RightViewer → ToolCallLine — 小欧-2026-09-06
   } = chatStreaming;
   const { handleCancel, handleTogglePause } = chatTaskControl;
-  const { handleSend } = chatSend;
 
   return useMemo<SessionPanel[]>(
     () => [

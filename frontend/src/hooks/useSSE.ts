@@ -200,7 +200,6 @@ const handleSSEError = (params: {
     onSetIsConnected,
     onSetIsReceiving,
     onError,
-    reconnectTimeoutRef,
     serverTaskId,
   } = params;
 

@@ -43,14 +43,7 @@ const ChatPage: React.FC = () => {
     sessionId: searchParams.get('session_id'),
     onError: (liveError: LiveError) => setLiveError(liveError),
   });
-  const {
-    chatState,
-    chatStreaming,
-    chatSession,
-    chatPersistence,
-    chatSend,
-    chatTaskControl,
-  } = chatFacade;
+  const { chatState, chatStreaming, chatSend, chatTaskControl } = chatFacade;
   const { sessionId } = chatState;
   const {
     tasks,

@@ -37,13 +37,9 @@ import { useCallback, useRef } from 'react'; // 2026-09-09 小欧 A1: 加useRef(
 import type { Message } from '../../../types/chat';
 import type { ExecutionStep } from '../../../types/execution';
 import type { UseChatStateReturn } from './useChatState';
-import {
-  handleSSEError,
-  handleApiError,
-  ErrorType,
-} from '@/services/error/handler';
+import { handleSSEError } from '@/services/error/handler';
 import { logAIComplete, logAIError } from '../../../utils/logStyles';
-import { sessionApi } from '../../../services/api/session.api';
+
 // 2026-08-27 小欧 三堂会审A2修复: SSEError/SSEMetadata从sse.ts导入, 消除重复定义
 import type { SSEError, SSEMetadata } from '@/types/sse';
 
@@ -115,8 +111,6 @@ export const useChatCallbacks = (
     setWaitTime,
     setIsRetrying,
     setIsPaused,
-    sessionId,
-    setSessionTitle,
 
     // Refs
     messagesEndRef,
@@ -271,7 +265,6 @@ export const useChatCallbacks = (
     },
     [
       setMessages,
-      setIsPaused,
       messagesEndRef,
       // Refs dependencies
       cancelInProgressRef,
@@ -499,8 +492,6 @@ export const useChatCallbacks = (
       setLoading,
       setWaitTime,
       setIsRetrying,
-      setSessionTitle,
-      sessionId,
       // Refs dependencies
       currentSessionIdRef,
       streamingContentRef,
