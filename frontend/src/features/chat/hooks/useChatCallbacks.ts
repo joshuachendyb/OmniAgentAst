@@ -18,6 +18,9 @@
 //   连带删除解构sessionId/setSessionTitle(死解构) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B4/B5: onError依赖数组真补streamingStepsRef/executionStepsRef(修复终态清空时机陈旧);
 //   onResumed依赖数组真补isPausedRef(修复缓冲复位时机陈旧) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理」): 删 onStep 每步「📝 type= timestamp=」打点
+//   ——sseParser 各 case 已统一打 [STEP]/[ACTION] [收到数据], 此处与解析层重复(D.R.Y); 删 onComplete 注释掉的死日志
+//   (AI回答保存完成 等)——终态已由 ✅ type=AI流式完成 保留打点(测试断言锚点) — 小欧-2026-09-09
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -181,11 +184,7 @@ export const useChatCallbacks = (
       // 暂停仅在 onResumed 时由 isPausedRef.current=false 显式解除, 暂停期间步骤统一进 displayBufferRef 缓冲
 
       // type 处理流程日志（解析 -> 存储 -> 渲染）
-      console.log(
-        '📝 type=%s timestamp=%s',
-        step.type,
-        step.timestamp ? new Date(step.timestamp).toLocaleTimeString() : 'N/A'
-      );
+      // 2026-09-09 小欧 清理: sseParser 各 case 已统一打 [STEP]/[ACTION] [收到数据], 此处 📝 type= 每step重复打点即删(DRY)
 
       // 只打印第一个chunk，减少日志
       if (step.type === 'chunk') {
@@ -487,9 +486,6 @@ export const useChatCallbacks = (
       executionStepsRef.current = []; // 2026-08-27 小欧 三堂会审: 终态清理executionSteps
       // A1(2026-09-09 小欧): 终态清空任务内指纹去重Set, 供下一任务重新计数 — 小欧-2026-09-09
       onStepFingerprintRef.current.clear();
-      // lastUpdateTimeRef.current = 0;
-
-      // console.log("✅ [onComplete] AI回答保存完成！");
     },
     [
       setMessages,

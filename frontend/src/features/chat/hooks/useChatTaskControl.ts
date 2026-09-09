@@ -1,6 +1,9 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 任务取消/暂停控制对齐final_cancel事件(7.7)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-19删内层finally/20 抽callCancelApi/waitForCancelOrTimeout/resetUiFlags编排
 // 编辑历史: 2026-08-28 小强 - hooks修复#15: waitForCancelOrTimeout加5s超时兜底Promise.race, 防永久挂起
+// 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「与后端消息不匹配的必须一致起来」): 3 处「cancelled 事件」文案
+//   对齐后端现行取消终态契约 type=final+outcome=cancelled(waitForCancelEvent 2处 + handleCancel 1处)——取消事件已不存在,
+//   取消收尾单一由 final+outcome=cancelled 承担(sseParser 4.4.1 所述), 日志反映系统实际 — 小欧-2026-09-09
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
  *
@@ -129,7 +132,9 @@ export const useChatTaskControl = (
 
       while (Date.now() - startTime < maxWaitTime) {
         if (hasReceivedCancelEventRef.current) {
-          console.log('[waitForCancelEvent] 已收到 cancelled 事件');
+          console.log(
+            '[waitForCancelEvent] 已收到取消终态 final+outcome=cancelled'
+          );
           hasReceivedEvent = true;
           break;
         }
@@ -138,7 +143,7 @@ export const useChatTaskControl = (
 
       if (!hasReceivedEvent) {
         console.warn(
-          `[waitForCancelEvent] 在 ${maxWaitTime}ms 内未收到 cancelled 事件，继续执行`
+          `[waitForCancelEvent] 在 ${maxWaitTime}ms 内未收到取消终态(final+outcome=cancelled)，继续执行`
         );
       }
 
@@ -270,7 +275,9 @@ export const useChatTaskControl = (
           while (retries < 3) {
             await new Promise((resolve) => setTimeout(resolve, 500));
             if (hasReceivedCancelEventRef.current) {
-              console.log('[handleCancel] 异常情况下仍收到 cancelled 事件');
+              console.log(
+                '[handleCancel] 异常情况下仍收到取消终态 final+outcome=cancelled'
+              );
               break;
             }
             retries++;

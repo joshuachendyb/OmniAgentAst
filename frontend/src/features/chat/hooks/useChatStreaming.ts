@@ -14,6 +14,9 @@
 //   sessionStorage(与 steps 备份同生命周期概念)——①恢复: sessionId 变化读键回填(无记录置空) ②持久化:
 //   deniedEntries 非空写键(序列化 entries 数组) ③sendMessage/disconnect(clearStorage) 同步删键防陈旧残留;
 //   换会话/重启即失, 与"本会话够用"定案一致 — 小欧-2026-09-06
+// 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理」): executeSend 删 3 处调试噪音——
+//   ①🔍客户端信息(整对象打印) ②🔍在调用AI之前先保存用户消息(整 userMessage 打印) ③🔍assistant消息ID(占位ID计算过程);
+//   保留启动/保存成功/404清空/未找到sessionId/失败 等真实流程锚点打点 — 小欧-2026-09-09
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -387,12 +390,6 @@ export const useChatStreaming = (
         try {
           // 获取客户端信息
           const clientInfo = getClientInfo();
-          console.log('🔍 [executeSend] 客户端信息:', clientInfo);
-
-          console.log(
-            '🔍 [executeSend] 在调用AI之前先保存用户消息:',
-            userMessage
-          );
           const saveResult = await sessionApi.saveMessage(currentSessionId, {
             role: 'user',
             content: userMessage.content,
@@ -463,13 +460,6 @@ export const useChatStreaming = (
       const assistantId = backendUserMessageId
         ? (backendUserMessageId + 1).toString()
         : (Date.now() + 1).toString();
-      console.log(
-        '🔍 [executeSend] assistant消息ID:',
-        assistantId,
-        '(后端ID:',
-        backendUserMessageId,
-        '+1)'
-      );
 
       const assistantMessage: Message = {
         id: assistantId,

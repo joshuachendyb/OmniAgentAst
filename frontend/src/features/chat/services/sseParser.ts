@@ -23,6 +23,25 @@
 // 编辑历史: 2026-09-08 小欧 - BUG-7回归修复(全量回归红): case 'start' 的 contextSummary 承接对象 content——
 //   后端 StartStep.get_content() 返回 context_summary 对象(非字符串), 原 typeof==='string' 三元把对象丢弃为 '',
 //   任务信息条上下文概况(tooltip)空白(数据退化)。改: 对象 JSON 序列化承接, null/undefined 仍为空 — 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理、与后端消息不匹配的必须一致」):
+//   case 'action' 删 6 条耗时打点(执行Steps保存开始/完成、sessionStorage保存开始/完成、渲染开始/完成)与 9 个计时变量
+//   (execStepsStartTime/execStepsDoneTime/execStepsDuration、storageStartTime/storageDoneTime/storageDuration、
+//   renderStartTime/renderDoneTime/renderDuration)——sseParser 性能打点与 sse_parser 职责无关且高噪(D.R.Y);
+//   final 分支「[连接断开]」误导文案改为「[收到final终态]」——该处实为收到 final 终态事件, 非连接异常收尾 — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - thought-start/action/observation 到达打点精确化(北京老陈指示「准确记录到达时间、单步并行准确log」):
+//   ①thought-start 补到达打点(原无 log) [type=thought-start][step][开始思考]+秒级到达时间;
+//   ②action 打点补 exec_type 直标 single/multi(单步橙标·并行 orange 多×N) + 工具点名(与 step.content 同源 join('+')),
+//     到达时间=receiveTime(收到帧即时截取, 原用解析后时间不精确);
+//   ③observation 打点移出解析前占位(原在解析前打无工具名/状态), 移到解析完成后直打 [工具名][状态=exec_code][结果×N] + 收到帧时刻 receiveTime,
+//     并行观察由 tool_result 数组长度反映(>1=并行动作多次观察); 均秒级 toLocaleTimeString — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - action 双发事件独立点名(北京老陈指示「每次 action 都记, 分别记为 action_preview/action_canonical」):
+//   后端 handle_action 同一步 preview(齿轮先行 tools=all_calls _live_only) 与 canonical(真实执行集 _exec_calls) 双发,
+//   打点 type 字段据 step.preview 前缀化 [type=action_preview]/[type=action_canonical], observation 不参与(单次到达) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 时序统一核查(北京老陈指示「核查时序准确性, log标签简洁明了准确」):
+//   ①新增 frameTime=本条SSE帧到达时刻(processSSEData 逐行调用即帧到达), 各分支日志统一引用,
+//     消除原分支内 Date.now()/接收时间 各自截取的毫秒级不一致(同帧各日志时间必然一致);
+//   ②thought-start/thought/action/observation/error/final/user_rejected/paused/resumed/retrying 全部换用 frameTime;
+//   ③删 action/observation 分支内私有 receiveTime(回归 frameTime 单一真源) — 小欧-2026-09-09
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -125,6 +144,10 @@ const processSSEData = (
     jsonStr = jsonStr.trim();
     const rawData = JSON.parse(jsonStr);
 
+    // 2026-09-09 小欧 时序统一: frameTime=本条SSE帧到达时刻(processSSEData被逐行调用即帧到达),
+    //   thought-start/thought/action/observation 等日志统一引用, 同帧内时间一致且准确 — 小欧-2026-09-09
+    const frameTime = Date.now();
+
     // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，断线重连时用于 after_seq 续传避免重复
     if (typeof rawData.seq === 'number' && onSeq) {
       onSeq(rawData.seq);
@@ -217,6 +240,12 @@ const processSSEData = (
           step: Number(rawData.step) || 1, // 2026-08-27 小欧 修复base-3: 加Number()
           timestamp: timestampValue,
         };
+        console.log(
+          `%c[STEP] [type=thought-start] [step=${ts.step}] [开始思考] 时间=${new Date(
+            frameTime
+          ).toLocaleTimeString()}`,
+          'color: blue; font-weight: bold;'
+        );
         setExecutionSteps((prev) => {
           const next = [...prev, ts];
           handlers.executionStepsRef.current = next;
@@ -321,7 +350,9 @@ const processSSEData = (
       case 'thought': {
         const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
         console.log(
-          `%c[STEP] [type=thought] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
+          `%c[STEP] [type=thought] [step=${stepNum}] [收到数据] 时间=${new Date(
+            frameTime
+          ).toLocaleTimeString()}`,
           'color: red; font-weight: bold;'
         );
 
@@ -411,7 +442,9 @@ const processSSEData = (
       case 'final': {
         const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
         console.log(
-          `%c[STEP] [type=final] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
+          `%c[STEP] [type=final] [step=${stepNum}] [收到数据] 时间=${new Date(
+            frameTime
+          ).toLocaleTimeString()}`,
           'color: red; font-weight: bold;'
         );
 
@@ -489,7 +522,7 @@ const processSSEData = (
         );
 
         console.log(
-          `[SSE] [连接断开] 时间=${new Date().toLocaleTimeString()} 收到steps=${handlers.getCurrentExecutionSteps().length}`
+          `[SSE] [收到final终态] 时间=${new Date(frameTime).toLocaleTimeString()} steps=${handlers.getCurrentExecutionSteps().length}`
         );
 
         setIsReceiving(false);
@@ -500,7 +533,9 @@ const processSSEData = (
       case 'error': {
         const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
         console.log(
-          `%c[STEP] [type=error] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
+          `%c[STEP] [type=error] [step=${stepNum}] [收到数据] 时间=${new Date(
+            frameTime
+          ).toLocaleTimeString()}`,
           'color: red; font-weight: bold;'
         );
 
@@ -580,7 +615,9 @@ const processSSEData = (
         const deniedMsg =
           rawData.content || rawData.error_message || '用户拒绝执行';
         console.log(
-          `%c[STEP] [type=user_rejected] [step=${deniedStep}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
+          `%c[STEP] [type=user_rejected] [step=${deniedStep}] [收到数据] 时间=${new Date(
+            frameTime
+          ).toLocaleTimeString()}`,
           'color: orange; font-weight: bold;'
         );
         onDenied?.(deniedStep, deniedMsg, rawData.tool_name); // 2026-09-06 小欧 B2(6.4): 三参带被拒工具名 — 小欧-2026-09-06
@@ -590,9 +627,7 @@ const processSSEData = (
       // 【小欧 2026-08-26 8.4】action 新结构：exec_type(single/multi) + tools 数组
       // 单工具也是一个元素不做特判（4.9.2.9）；禁止保留 旧动作类型名 兼容分支
       case 'action': {
-        const receiveTime = Date.now(); // 【收到数据】时间
         const actionStepNum = step.step; // step 序号
-        const stepLabel = ` [type=action] [step=${actionStepNum}]`;
 
         step.exec_type = rawData.exec_type === 'multi' ? 'multi' : 'single';
         const tools: Array<{
@@ -620,47 +655,27 @@ const processSSEData = (
         //   刷新恢复时剔除, 与 DB 回放语义一致(拦截/拒绝 action 本就不落库) — 小欧-2026-09-06
         step.preview = rawData.preview === true;
 
-        // 【红色】收到数据
+        // 【小欧 2026-09-09 准确打点】每次 action 到达分别记录: preview/canonical 双发(list-back 时序),
+        //   exec_type 直标 single/multi×N; 工具点名与 step.content 同源 join('+')
+        const _multi = step.exec_type === 'multi';
+        const _typeLabel = step.preview ? 'action_preview' : 'action_canonical';
         console.log(
-          `%c[ACTION]${stepLabel} [收到数据] 时间=${new Date(receiveTime).toLocaleTimeString()}`,
-          'color: red; font-weight: bold;'
-        );
-
-        // 【蓝色】ExecutionSteps保存开始时间
-        const execStepsStartTime = Date.now();
-        console.log(
-          `%c[ACTION]${stepLabel} [ExecutionSteps保存开始] 时间=${new Date(execStepsStartTime).toLocaleTimeString()}`,
-          'color: blue; font-weight: bold;'
+          `%c[ACTION] [type=${_typeLabel}] [step=${actionStepNum}] [${
+            _multi ? `multi×${tools.length}` : 'single'
+          }] [工具=${step.content}] [收到数据] 时间=${new Date(
+            frameTime
+          ).toLocaleTimeString()}`,
+          _multi
+            ? 'color: orange; font-weight: bold;'
+            : 'color: red; font-weight: bold;'
         );
 
         setExecutionSteps((prev) => {
-          // 【蓝色】ExecutionSteps保存完成
-          const execStepsDoneTime = Date.now();
-          const execStepsDuration = execStepsDoneTime - execStepsStartTime;
-          console.log(
-            `%c[ACTION]${stepLabel} [ExecutionSteps保存完成] 完成=${new Date(execStepsDoneTime).toLocaleTimeString()} 耗时=${execStepsDuration}ms`,
-            'color: blue; font-weight: bold;'
-          );
-
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
 
-          // 【紫色】sessionStorage保存开始时间
-          const storageStartTime = Date.now();
-          console.log(
-            `%c[ACTION]${stepLabel} [sessionStorage保存开始] 时间=${new Date(storageStartTime).toLocaleTimeString()}`,
-            'color: #006400; font-weight: bold;'
-          );
-
           setTimeout(() => {
             try {
-              // 【紫色】sessionStorage保存完成
-              const storageDoneTime = Date.now();
-              const storageDuration = storageDoneTime - storageStartTime;
-              console.log(
-                `%c[ACTION]${stepLabel} [sessionStorage保存完成] 完成=${new Date(storageDoneTime).toLocaleTimeString()} 耗时=${storageDuration}ms`,
-                'color: #006400; font-weight: bold;'
-              );
               saveStepsToStorage?.(newSteps);
             } catch (e) {
               console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
@@ -669,22 +684,7 @@ const processSSEData = (
           return newSteps;
         });
 
-        // 【青色】渲染开始时间点
-        const renderStartTime = Date.now();
-        console.log(
-          `%c[ACTION]${stepLabel} [渲染开始] 时间=${new Date(renderStartTime).toLocaleTimeString()}`,
-          'color: cyan; font-weight: bold;'
-        );
-
         onStep?.(step);
-
-        // 【青色】渲染完成时间点
-        const renderDoneTime = Date.now();
-        const renderDuration = renderDoneTime - renderStartTime;
-        console.log(
-          `%c[ACTION]${stepLabel} [渲染完成] 完成=${new Date(renderDoneTime).toLocaleTimeString()} 耗时=${renderDuration}ms`,
-          'color: cyan; font-weight: bold;'
-        );
 
         break;
       }
@@ -693,12 +693,7 @@ const processSSEData = (
       // 【小沈改造 2026-05-22】支持observation为JSON对象（第13章设计方案）
       case 'observation': {
         const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
-        console.log(
-          `%c[STEP] [type=observation] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
-          'color: red; font-weight: bold;'
-        );
-
-        step.step = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()数值化
+        step.step = stepNum; // 2026-08-27 小欧 修复base-3: 加Number()数值化
         step.timestamp = timestampValue; // 2026-08-27 小欧 修复base-1: 用已转换number
         step.code = rawData.code; // 状态码（SUCCESS/ERROR/WARNING）
 
@@ -810,6 +805,20 @@ const processSSEData = (
           step.content = obsStr;
         }
 
+        // 【小欧 2026-09-09 准确打点】观察结果日志: 工具名+执行状态+并行结果数, 与后端契约一致
+        //   (tool_result 数组长度>1 ⇒ 并行动作的多次观察; execution_status 源自 llm_data.status.exec_code)
+        const _obsCount = Array.isArray(step.tool_result)
+          ? step.tool_result.length
+          : 0;
+        console.log(
+          `%c[STEP] [type=observation] [step=${step.step}] [工具=${step.tool_name || '—'}] [状态=${
+            step.execution_status || 'undefined'
+          }]${_obsCount > 0 ? ` [结果×${_obsCount}]` : ''} [收到数据] 时间=${new Date(
+            frameTime
+          ).toLocaleTimeString()}`,
+          'color: red; font-weight: bold;'
+        );
+
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
@@ -835,7 +844,9 @@ const processSSEData = (
       case 'retrying': {
         const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
         console.log(
-          `%c[STEP] [type=${rawData.type}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
+          `%c[STEP] [type=${rawData.type}] [step=${stepNum}] [收到数据] 时间=${new Date(
+            frameTime
+          ).toLocaleTimeString()}`,
           'color: red; font-weight: bold;'
         );
         // 小欧 2026-07-13: 后端 MetaStep 统一以 content 字段承载文本(与 ThoughtStep/FinalStep 契约一致),
