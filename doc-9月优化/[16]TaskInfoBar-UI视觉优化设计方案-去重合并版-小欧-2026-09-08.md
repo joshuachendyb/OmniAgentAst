@@ -1,13 +1,7 @@
-# TaskInfoBar UI视觉优化设计方案（去重合并版 v4.3）
+# TaskInfoBar UI视觉优化设计方案（去重合并版 v4.5）
 
 **编写人：小欧**
-**编写时间：2026-09-08 19:57:56**
-**去重合并人：小欧**
-**去重合并时间：2026-09-08 23:47:47**
-**v4.1 更新时间：2026-09-09 09:01:58**
-**v4.2 更新时间：2026-09-09 09:32:53**
-**v4.3 更新时间：2026-09-09 10:44:31**
-**文档版本：v4.3**
+**文档版本：v4.5**
 
 ---
 
@@ -16,19 +10,7 @@
 | 版本 | 时间 | 修改简介 | 作者 |
 |------|------|----------|------|
 | v1.0 | 2026-09-08 19:57:56 | 初版：基于全量源码精读，发现 18 项问题，分 P0/P1/P2 三级 | 小欧 |
-| v2.0 | 2026-09-08 20:00:00 | 新增第二章"现状与改进对比（线框图）"：含 2.1 现状问题图 + 2.2 改进后设计稿（A-G 七图）；章节重排（原三~七章顺延为四~七章），优化设计基础前置 | 小欧 |
-| v3.0 | 2026-09-08 20:36:06 | 全链有机整合北京老陈三点建议：(1) 上下文标签/数值拆分，并**独立成番号 P1-8 / 2.2.8 / 5.3**，为后续单独优化预留挂载点；(2) 信任详情改 **Drawer 侧滑面板** + 撤销按钮移入每行首列 + Modal.confirm 二次确认（D2 定案）；(3) 过程事件改**时间轴+分段带**（体现时序与疏密）。线框图 B/C/D/H、问题清单 P1-7/P1-8/P1-10、设计稿 5.2/5.3、决策表 D2/D5、优先级表全链同步 | 小欧 |
-| v3.1 | 2026-09-08 20:50:00 | 第一行信息位**独立番号 G0~G7**：G0折叠/G1状态/G2耗时/G3进度/G4异常/**G5 Token数值/G6 上下文/G7 信任**，弃用"左/中/右组"合并分组；A 图、5.1、5.8 全链同步 G0~G7 番号 | 小欧 |
-| v3.2 | 2026-09-08 22:04:21 | 全文章节号重排：2.2 子节由字母 A~H 重排为数字 **2.2.1~2.2.8**，全文交叉引用同步；G7 信任可点击样式统一为"文字样式（深色加粗/框线/下划线）"，去除箭头与盾图标（[▸]/[盾]/RightOutlined）并同步 2.2.3/5.1/5.7/5.8/8.1；5.8 断点表列名改"G1-G4（状态/耗时/进度/异常）" | 小欧 |
-| v3.3 | 2026-09-08 22:10:23 | G0 折叠改为 **G8 折叠**：番号体系 G0~G7 重组为 **G1~G8**（G1状态/G2耗时/G3进度/G4异常/G5 Token/G6上下文/G7信任/G8折叠），番号=渲染顺序；2.2.1、5.1、5.8、P0-2、2.2.1-八 全链同步 | 小欧 |
-| v3.4 | 2026-09-08 22:15:20 | 图标渲染格式选型：全行图标统一为**单一格式 = @ant-design/icons 内联 SVG 组件**；**过程事件行升级为 antd SVG 图标**（PlayCircle/PauseCircle/ReloadOutlined），同步 2.2.4、P1-5、P2-13、5.4、5.9 | 小欧 |
-| v3.5 | 2026-09-08 22:20:48 | 一致性修正 4 处（v3.3 行"2.2.1-A 八"笔误、5.7"（原 P1-10）"冗余、5.9 emoji 检查补齐文本符号、2.2.1-七 表头列名统一"内联 SVG"）；**新增第十章"代码复用与模块划分（10 大规范核查）"** | 小欧 |
-| v3.6 | 2026-09-08 22:35:08 | **新增第十一章"实施计划与步骤（TDD 模式）"**：主体 TDD + 视觉类后置验证混合；6 阶段实施；新增测试用例 27 项；DoD 验收 6 条 | 小欧 |
-| v3.7 | 2026-09-08 23:29:10 | 核查报告 10 处落定：G8 `▾`→`<DownOutlined/>`；2.2.4 时序矛盾定案"最新在顶"+三列改两列；8.2 改均长线；P/C 两段对称+T 空格 `T 1,234`；PRIMARY 全称化 `TEXT.PRIMARY`；WARNING `#faad14`→`#AD6800`；G7 定案 A；5.7 删 ToolOutlined；5.8 两表合并热区 32px；Drawer `min(360px,80vw)`；P1-11 定案 B；上下文 `有摘要`→`摘要·无计数`；破折号 en-dash；11.3 令牌名改 9.1 已定义 | 小欧 |
-| **v4.0** | **2026-09-08 23:47:47** | **全量去重合并重写**：删除 2.2.x 与 5.x 双份规范（每份只留一处）、问题清单只留"问题+改法指针"；删单列审查范围（并入文档目的）、风险章节、与 v3.7 定案矛盾的术语表；保留 18 项问题、全部规范、D1~D5、优先级、令牌、复用、TDD 实施、27 项测试用例、DoD；重新排章节号 | 小欧 |
-| v4.1 | 2026-09-09 09:01:58 | 折叠交互定案变更：**取消整行折叠（信息带恒定 1 行），拆为两块独立 Popover 浮层**（上下文卡片锚 G6 + 事件卡片锚 G8）；G8 语义由"折叠任务面板"改为"事件序列入口"；位置"锚点右缘对齐向左展开"、窄屏右贴边；hover 规格 2（32×32 热区背景淡入+图标 PRIMARY+展开态 rotate 180°）；6.5.3.4/6.5.3.8/6.5.3.10 真实代码、7.3 测试用例全链同步 | 小欧 |
-| v4.2 | 2026-09-09 09:32:53 | 第二轮源码级核查落定：**G6/G8 双浮层入口抽公共组件 `FloatingEntry.tsx`**（Popover 壳 + 热区 a11y + Enter/Space/Esc 键盘 + 焦点管理，卡片内容留调用方；DRY，17 行×2 处重复收敛；3.8/7.3 Esc+焦点断言补实现归属）；**G8 `onClick` 删除手动 toggle 双重写入**（开合交还 antd trigger 单一真源，与 G6 对齐）；3.9 热区 CSS 落盘 `src/index.css`；6.1/6.2/6.3 复用清单、6.5.2.4 新建文件规约、6.5.3.2/6.5.3.4/6.5.3.8 调用、7.1/7.2 阶段 1.5、7.3 断言全链同步 | 小欧 |
-| v4.3 | 2026-09-09 10:44:31 | **实施落盘校正（7 处偏离字面，以实码为准）**：(1)`infoMaps.ts`→`infoMaps.tsx`（含 JSX，`.ts` 编译失败）；(2)删 `infoMaps` 未用 `Colors` 导入；(3)精简 `TaskInfoBar` 未用 `Tooltip`/过程图标导入（迁 `infoMaps`）；(4)删 `TrustPanel` 未用 `Spacing`；(5)placement `bottom-start/bottom-end`→`bottomLeft/bottomRight`（antd 真值）；(6)6.5.5 P2-14 顺序 `末条步骤‖帧started‖Date.now()` + candidates 新信号前置（防旧时间遮新 G4 信号 + 0 穿透）；(7)7.4"无既有测试"失实→实有 765 项，3 文件按先红后绿迁移；全文 806 绿零失败、tsc/lint 零 error，行为等价 | 小欧 |
+
 
 ---
 
@@ -610,23 +592,28 @@ const confirmRevoke = (t: TrustItem) => {
 - 浮层位置：G8 事件卡片 `placement="bottomRight"`（antd 真值，语义 `bottom-end`）锚定入口**右缘、向左展开**（窄屏右贴安全边距不顶出视口）；G6 上下文卡片 `placement="bottomLeft"`（语义 `bottom-start`）锚定**左缘、向右展开**；双卡均 `mouseEnterDelay=0.15` / `mouseLeaveDelay=0.3` 防抖（v4.3 实码校正）
 
 ```css
-/* 外层容器允许换行，G5 Token 区最小宽度不为 0 */
+/* 外层容器允许换行（G5 Token 区最小宽度不为 0，断点矩阵兜底） */
 .taskinfo-bar { display: flex; flex-wrap: wrap; row-gap: 4px; }
+/* 第一行左组（G1~G4 信息位）：min-height 保高 ≥20px 不与中组错位 */
 .taskinfo-token { min-width: 0; min-height: 20px; }
-.taskinfo-token-inner {
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-/* 浮层入口热区（hover 规格 2；已展开态 rotate 180°） */
+/* 编辑历史: 2026-09-09 小欧 v4.5(北京老陈裁定): 删 .taskinfo-token-inner 死 CSS——
+   省略唯一真源=EllipsisTip 组件, CSS 层再省略=双机制打架(DRY/SRP 违); 断点矩阵收窄走"明细进浮层"不硬截断;
+   G5 基础行恒短无溢出场景(YAGNI); .taskinfo-bar 已 flex-wrap 换行兜底 — 小欧-2026-09-09 */
+/* 浮层入口热区（hover 规格 2；已展开态 rotate 180°）
+   编辑历史: 2026-09-09 小欧 #6: 伪令牌实值化(Colors.TEXT.TERTIARY→#999 / Colors.PRIMARY→#1677ff,
+   CSS 无 JS 令牌可解析, 落盘即真实色值, 与 stepStyles.ts 定义一一对应) — 小欧-2026-09-09 */
 .taskinfo-entry {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 32px; min-height: 32px; border-radius: 8px;
-  cursor: pointer; color: Colors.TEXT.TERTIARY;
+  cursor: pointer; color: #999; /* Colors.TEXT.TERTIARY #999 */
   transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
-.taskinfo-entry:hover { background: #f0f0f0; color: Colors.PRIMARY; }
+.taskinfo-entry:hover { background: #f0f0f0; color: #1677ff; --taskinfo-entry-active: #1677ff; }
+/* --taskinfo-entry-active(v4.4 修复#1): hover 注入 PRIMARY, MetricItem 数值/图标 var() 消费,
+   G6 任意 tone 数值 hover 统一变 PRIMARY(3.1.3), 无分支无 !important */
 .taskinfo-entry[data-open="true"] svg { transform: rotate(180deg); }
 /* 键盘焦点可见性（3.8：无鼠标纯键盘可操作，2px PRIMARY 蓝 outline） */
-.taskinfo-entry:focus-visible { outline: 2px solid Colors.PRIMARY; outline-offset: 2px; }
+.taskinfo-entry:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
 ```
 
 > 落盘：本段 CSS 追加至 `frontend/src/index.css` 尾部（全局样式，带编辑历史署名+日期；见 6.5.1）。
