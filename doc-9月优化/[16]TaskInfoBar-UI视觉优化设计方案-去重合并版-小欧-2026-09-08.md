@@ -1,10 +1,11 @@
-# TaskInfoBar UI视觉优化设计方案（去重合并版 v4.0）
+# TaskInfoBar UI视觉优化设计方案（去重合并版 v4.1）
 
 **编写人：小欧**
 **编写时间：2026-09-08 19:57:56**
 **去重合并人：小欧**
 **去重合并时间：2026-09-08 23:47:47**
-**文档版本：v4.0**
+**v4.1 更新时间：2026-09-09 09:01:58**
+**文档版本：v4.1**
 
 ---
 
@@ -23,6 +24,7 @@
 | v3.6 | 2026-09-08 22:35:08 | **新增第十一章"实施计划与步骤（TDD 模式）"**：主体 TDD + 视觉类后置验证混合；6 阶段实施；新增测试用例 27 项；DoD 验收 6 条 | 小欧 |
 | v3.7 | 2026-09-08 23:29:10 | 核查报告 10 处落定：G8 `▾`→`<DownOutlined/>`；2.2.4 时序矛盾定案"最新在顶"+三列改两列；8.2 改均长线；P/C 两段对称+T 空格 `T 1,234`；PRIMARY 全称化 `TEXT.PRIMARY`；WARNING `#faad14`→`#AD6800`；G7 定案 A；5.7 删 ToolOutlined；5.8 两表合并热区 32px；Drawer `min(360px,80vw)`；P1-11 定案 B；上下文 `有摘要`→`摘要·无计数`；破折号 en-dash；11.3 令牌名改 9.1 已定义 | 小欧 |
 | **v4.0** | **2026-09-08 23:47:47** | **全量去重合并重写**：删除 2.2.x 与 5.x 双份规范（每份只留一处）、问题清单只留"问题+改法指针"；删单列审查范围（并入文档目的）、风险章节、与 v3.7 定案矛盾的术语表；保留 18 项问题、全部规范、D1~D5、优先级、令牌、复用、TDD 实施、27 项测试用例、DoD；重新排章节号 | 小欧 |
+| v4.1 | 2026-09-09 09:01:58 | 折叠交互定案变更：**取消整行折叠（信息带恒定 1 行），拆为两块独立 Popover 浮层**（上下文卡片锚 G6 + 事件卡片锚 G8）；G8 语义由"折叠任务面板"改为"事件序列入口"；位置"锚点右缘对齐向左展开"、窄屏右贴边；hover 规格 2（32×32 热区背景淡入+图标 PRIMARY+展开态 rotate 180°）；6.5.3.4/6.5.3.8/6.5.3.10 真实代码、7.3 测试用例全链同步 | 小欧 |
 
 ---
 
@@ -89,7 +91,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 3. **与 TrustPanel 双标**：TrustPanel（:92-106）有完整 role/aria，外层折叠行却啥都没有
 4. **文本选中冲突**：点击选中的 token 数字会触发折叠
 
-**改法**：见 [3.1 G8 折叠](#311-整体线框图) 与 [3.8 无障碍](#38-无障碍与键盘导航)：外层 div 补 `role="button"` + `aria-expanded` + `tabIndex` + `onKeyDown`；G8 加 `<DownOutlined/>` 视觉锚点；热区定案（见 [3.9 断点与热区](#39-响应式断点与折叠热区)）。
+**改法**：见 [3.1 G6/G8 入口](#311-整体线框图)、[3.8 无障碍](#38-无障碍与键盘导航)、[3.9 断点与热区](#39-响应式断点与浮层热区)（v4.1 定案）：**取消整行折叠**——信息带恒定 1 行不再收起；触发收敛到两个独立浮层入口：G6 上下文入口（`role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `tabIndex` + `onKeyDown`）、G8 事件入口（同规格，`<DownOutlined/>` 视觉锚点）；热区与 hover 见 3.9。
 
 ---
 
@@ -101,7 +103,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 
 **问题**：用户收起的面板被重置；与 `SessionPanelRegistry.persistVisible` 持久化机制不一致。
 
-**改法**：方案 A（推荐）collapsed 接入 `localStorage`，key = `session_panel_collapsed:taskinfo.bar`；方案 B 上提 `useChatPanels` 通过 props 传入。已定案 A。
+**改法**（v4.1 定案）：取消整行折叠态机——信息带恒定 1 行，`collapsed` 状态与 `session_panel_collapsed:taskinfo.bar` 持久化随设计变更一并删除（折叠动作不复存在），不再有"收起面板被重置"问题。
 
 ---
 
@@ -170,7 +172,7 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 
 **现状**：`flexWrap: nowrap` + 左组 `flexShrink: 0`（:149）= 窗口收窄时中组被压缩成 0 宽度。
 
-**改法**：外层 `flexWrap: 'wrap'` 允许换行；中组加 `minWidth: 0` + `overflow: hidden` + `whiteSpace: nowrap` + `textOverflow: ellipsis`；断点行为见 [3.9 响应式断点](#39-响应式断点与折叠热区)。
+**改法**：基础行 `flexWrap: 'wrap'` 允许换行；明细内容 v4.1 全部移入浮层，不再挤占基础行；断点行为见 [3.9 响应式断点](#39-响应式断点与浮层热区)。
 
 ---
 
@@ -285,15 +287,25 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ G1●执行中  G2 12s  G3 3步·2轮  G4[SyncOutlined]重试中  G5 本轮 T 1,234/累计  G6上下文 │
-│                                                                          │
-│ 上下文 2,048tok           G7 信任(2)   G8 [<DownOutlined/>] 收起       │
-│ ── 主信息(运行态) ──       ── 次信息(资源态) ──   ── 操作项 ──        │
+│ G1●执行中  G2 12s  G3 3步·2轮  G4[SyncOutlined]重试中  G5 本轮 T 1,234/累计  │
+│ G6[上下文 2,048tok▸]   G7 信任(2)   G8[<DownOutlined/> 事件▸]             │
+│ ── 主信息(运行态) ──       ── 次信息(资源态) ──   ── 操作项(浮层入口) ──  │
 └──────────────────────────────────────────────────────────────────────────┘
      渲染序：G1 → G2 → G3 → G4 → G5 → G6 → G7 → G8（从左到右）
+
+ 浮层① 上下文卡片（v4.1 定案，锚定 G6，hover 预览/click 钉住）
+   ┌──────────────┐
+   │ 上下文摘要 summary 前 N 字 │
+   │ 估算 token · 状态 · 截断说明 │
+   └──────────────┘
+ 浮层② 事件卡片（锚定 G8，maxHeight 40vh 内滚）
+   ┌──────────────────────────────┐
+   │ 09:01:58 │[PlayCircle] 事件已开始  │
+   │ 09:02:10 │[Reload] 重试中…          │
+   └──────────────────────────────┘
 ```
 
-**番号体系**：番号（逻辑分组）= 渲染顺序（物理从左到右）= G1 状态 · G2 耗时 · G3 进度 · G4 异常 · G5 Token数值 · G6 上下文 · G7 信任 · G8 折叠。折叠是最次要辅助操作排最右端，主信息 G1 打头。
+**番号体系**：番号（逻辑分组）= 渲染顺序（物理从左到右）= G1 状态 · G2 耗时 · G3 进度 · G4 异常 · G5 Token数值 · G6 上下文 · G7 信任 · G8 事件入口。主信息 G1 打头，操作项排最右；信息带**恒定 1 行**（v4.1 取消整行折叠），明细内容全部进独立浮层，永不推挤会话流。
 
 #### 3.1.2 各信息位设计规范表
 
@@ -304,20 +316,21 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 | G3 进度 | 3 | 主 | `3步·2轮` | 12 | 400 | TEXT.SECONDARY | 辅助信息，中灰 |
 | G4 异常 | 4 | 主 | 图标+文字 | 12 | 500 | 见图标映射 | **统一 antd icon**，去掉 emoji |
 | G5 Token数值 | 5 | 次 | 本轮 T / 累计 T（P/C 均可见） | 见 3.2 | — | — | **本轮/累计 T 加粗、P/C 中灰，两段对称** |
-| G6 上下文 | 6 | 次 | 上下文段 | 见 3.3 | — | — | **标签+数值两段式，独立番号** |
+| G6 上下文 | 6 | 次 | 上下文段 | 见 3.3 | — | — | **标签+数值两段式，独立番号；整段为浮层①入口**（hover 预览/click 钉住，见 3.3） |
 | G7 信任 | 7 | 操作 | `信任(2)` | 12 | 500 | TEXT.PRIMARY | **可点击文字样式（方案A定案）**：加粗+hover 变色，Drawer 侧滑 |
-| G8 折叠 | 8 | 操作 | `[<DownOutlined/>] 收起` | 10 | 400 | TERTIARY | **辅助操作放最右**，不抢首位 |
+| G8 事件入口 | 8 | 操作 | `[<DownOutlined/>] 事件` | 10 | 400 | TERTIARY | **浮层②入口**：事件序列时间轴（hover 预览/click 钉住），排最右；热区 32×32 + hover 规格 2（见 3.9） |
 
-#### 3.1.3 操作项可点击样式（G7/G8，方案A定案）
+#### 3.1.3 操作项可点击样式（G6/G7/G8，方案A定案）
 
 | 操作位 | 可点击表达 | 说明 |
 |--------|-----------|------|
 | **G7 信任** | **文字样式（方案A）**：`color: Colors.TEXT.PRIMARY` + `fontWeight: 500`，hover 变 `Colors.PRIMARY` 蓝 + `cursor: pointer`，focus-visible 2px outline | 靠字体样式提示可点，无图标/框线/下划线 |
-| **G8 折叠** | `[<DownOutlined/>]` antd SVG 图标，fontSize 10，TERTIARY 色 | 内联 SVG，箭头方向=展开语义 |
+| **G6 上下文入口** | 整段（标签+数值+▸）为浮层①入口：hover 背景淡入 + 数值变 `Colors.PRIMARY` + `cursor: pointer`；热区 ≥ 32×32 | popover 箭头指示符隐藏在 MetricItem 后，hover/click 均触发（见 3.3） |
+| **G8 事件入口** | `[<DownOutlined/>] 事件` antd SVG 图标，fontSize 10，TERTIARY 色；**hover 规格 2**：32×32 热区圆角 8，背景 `#fafafa→#f0f0f0` 淡入，图标变 PRIMARY，展开态 `rotate(180deg)`，`transition 0.2s ease`，`cursor: pointer` | 内联 SVG，箭头方向=弹出语义 |
 
 > 方案B（方框）/方案C（下划线）已否决：B 引入 Tag 元素增加视觉噪音，C 与浏览器原生链接语义混淆。
 
-**装置无障碍**：G7/G8 均 `role="button"` + `aria-expanded` + `aria-label="/aria-controls"`，屏读播报"信任清单，已展开"等完整语义。
+**装置无障碍**：G6/G8 浮层入口均 `role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `aria-label` + `aria-controls`，屏读播报"上下文卡片，已展开 / 事件序列，已展开"等完整语义；`:focus-visible` 显式 outline（2px PRIMARY 蓝）。
 
 ---
 
@@ -365,16 +378,27 @@ console.log('[TaskInfoBar探针] toggle 触发', {
 | 截断 | `上下文` | `{n} tok` | WARNING | WarningOutlined |
 | 无数据 | `上下文` | `–` | TERTIARY | 无 |
 
-**交互行为**：
+**交互行为**（v4.1：整段为**浮层① 上下文卡片**入口，锚定 G6，独立于事件区）：
 
 | 交互 | 触发 | 响应 |
 |------|------|------|
-| 悬停（有数据） | hover `<上下文 2,048 tok>` | Tooltip 显示 overview 摘要前 N 字 |
-| 悬停（截断） | hover 带 WarningOutlined | Tooltip"上下文被截断，可能影响回答质量" |
-| 悬停（无数据） | hover `上下文 –` | Tooltip"上下文缺失，检查 frames 数据链路" |
-| 点击（预留） | 单击整段 | 预留：展开上下文详情 Drawer（未来挂载点） |
+| hover 预览 | hover `<上下文 2,048 tok>` | 150ms 后浮出**上下文卡片**（快速瞄一眼），鼠标移开 300ms 自动消失 |
+| click 钉住 | 单击整段 | 卡片钉住（Pin），`Esc`/点卡片外关闭；hover 与 click 用 delay 防抖互斥 |
+| hover（截断） | hover 带 WarningOutlined | 卡片内状态区高亮警告"上下文被截断，可能影响回答质量" |
+| hover（无数据） | hover `上下文 –` | 卡片内显示"上下文缺失，检查 frames 数据链路" |
+| 位置 | 卡片锚定 G6 右缘、向左展开（窄屏右贴安全边距） | 与事件卡片（G8）互不干扰，各自独立开合 |
 
-**aria 语义**：`role="status"` + `aria-live="polite"`（token 数变化温和播报）+ `aria-label="上下文 {n} tok{截断?'，已截断':''}"` + `data-state="ok / summary-only / truncated / empty"`（测试与样式钩子）。
+**浮层①卡片内容**（上下文卡片，宽约 320px，v4.1 独立块）：
+
+```
+┌ 上下文详情 ─────────────┐
+│ 摘要: {overview.summary 前 N 字} │
+│ 估算 token: {n} tok           │
+│ 状态: 正常 / 已截断 / 无计数 / 缺失 │
+└────────────────────────┘
+```
+
+**aria 语义**：入口 `role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `aria-controls` + `aria-label="上下文 {n} tok{截断?'，已截断':''}"`；数值区（基础行保持）`role="status"` + `aria-live="polite"` + `data-state="ok / summary-only / truncated / empty"`（测试与样式钩子）。
 
 **未来优化预留位**：上下文摘要（summary 全文/展开）、注入比例 injected_ratio、消息数 message_count、截断策略/预警分级。
 
@@ -478,7 +502,7 @@ const confirmRevoke = (t: TrustItem) => {
 | 撤销按钮 | 每行首列，`操作在前、对象在后`，Tab 顺序=视觉顺序 |
 | 焦点管理 | Drawer 打开后焦点移入面板，关闭后回到触发按钮 |
 | 空态 | Drawer 内 `Empty` 组件"暂无信任工具" |
-| 持久化 | Drawer 开合不持久化（轻量瞬态），仅折叠态持久化（P0-3） |
+| 持久化 | Drawer 开合不持久化（轻量瞬态）；浮层卡片开合同理（v4.1 已无折叠态） |
 
 ---
 
@@ -534,19 +558,21 @@ const confirmRevoke = (t: TrustItem) => {
 
 | 位置 | 现状 | 改进 |
 |------|------|------|
-| 折叠控件（G8） | 无 role/tabIndex/aria | `role="button"` + `aria-expanded` + `tabIndex={0}` + `onKeyDown`（见 6.5.3.4） |
-| 折叠热区 | 整行 onClick（与文本选中冲突） | 三角区域 onClick + stopPropagation，整行保留但不响应文本区 |
+| G6 上下文入口 | 无 role/tabIndex/aria | `role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `tabIndex={0}` + `onKeyDown`（见 6.5.3.8） |
+| G8 事件入口 | 无 role/tabIndex/aria | `role="button"` + `aria-haspopup="dialog"` + `aria-expanded` + `tabIndex={0}` + `onKeyDown`（见 6.5.3.4） |
+| 浮层卡片 | 无（新增） | 卡片容器 `role="dialog"` + `aria-label="上下文详情/事件序列"`，焦点移入、Esc 关闭回入口 |
 | TrustPanel 折叠 | ✅ 已有 role/aria/keyboard | 不变 |
 | TrustPanel 撤销按钮 | 纯 span × | 改 antd Button + aria-label |
-| 过程事件列表 | 无 role | `role="log"` + `aria-live="polite"` |
+| 过程事件列表 | 无 role | 卡片内 `role="log"` + `aria-live="polite"` |
 
-**折叠行键盘操作**：
+**浮层入口键盘操作**（G6 上下文 / G8 事件共用）：
 
 | 按键 | 行为 |
 |------|------|
-| `Tab` | 聚焦 G8 折叠控件（`role="button"` + `tabIndex={0}`） |
-| `Enter` / `Space` | 切换 collapsed 折叠态 |
+| `Tab` | 依次聚焦 G6 → G8 入口（`role="button"` + `tabIndex={0}`） |
+| `Enter` / `Space` | 打开对应浮层卡片（钉住） |
 | `Shift+Tab` | 向后导航到 Token 行（`role="status"`） |
+| 卡片内 `Esc` | 关闭卡片，焦点回到触发入口 |
 
 **信任 Drawer 键盘操作**：
 
@@ -557,25 +583,27 @@ const confirmRevoke = (t: TrustItem) => {
 | `Tab` | 首列撤销 → 对象 → 下一行撤销（视觉/焦点顺序一致） |
 | `Enter` / `Space`（撤销聚焦时） | 触发 Modal.confirm 二次确认 |
 
-**焦点可见性**：折叠行与撤销按钮 `:focus-visible` 显式 outline（2px PRIMARY 蓝），无鼠标纯键盘可操作。
+**焦点可见性**：G6/G8 浮层入口与撤销按钮 `:focus-visible` 显式 outline（2px PRIMARY 蓝），无鼠标纯键盘可操作。
 
 ---
 
-### 3.9 响应式断点与折叠热区（P1-9 落地）
+### 3.9 响应式断点与浮层热区（P1-9 落地，v4.1 双浮层定案）
 
 **G1~G8 断点行为矩阵**：
 
-| 断点 | G1 状态 | G2 耗时 | G3 进度 | G4 异常 | G5 Token | G6 上下文 | G7 信任 | G8 折叠 |
+| 断点 | G1 状态 | G2 耗时 | G3 进度 | G4 异常 | G5 Token | G6 上下文入口 | G7 信任 | G8 事件入口 |
 |------|---------|---------|---------|---------|----------|-----------|---------|---------|
 | ≥ 1280px | 完整 | 完整 | 完整（`3步·2轮`） | 完整 | 完整（本轮/累计并排） | 完整（两段式） | 完整 | 完整 |
-| 1280~960px | 完整 | 完整 | 收窄（仅留数字，Tooltip 展开） | 完整 | 累计段收窄 | 可能换行 | 完整 | 完整 |
-| 960~768px | 完整 | 完整 | 收窄 | 省略（maxWidth 200 + ellipsis + Tooltip 全文） | 累计段进 Tooltip | 进 Tooltip | 仅计数 | 完整 |
-| < 768px | 完整 | 合并进 G3 | 合并 | 省略 | 换行到第二行 | 换行到第二行 | 仅计数 | 完整 |
+| 1280~960px | 完整 | 完整 | 收窄（仅留数字，Tooltip 展开） | 完整 | 累计段收窄 | 收窄（数字+▸，明细进浮层①） | 完整 | 完整 |
+| 960~768px | 完整 | 完整 | 收窄 | 省略（maxWidth 200 + ellipsis + Tooltip 全文） | 累计段进浮层 | 收窄（明细进浮层①） | 仅计数 | 完整 |
+| < 768px | 完整 | 合并进 G3 | 合并 | 省略 | 基础行恒定，**明细全部进浮层** | 条目浓缩进浮层① | 仅计数 | 完整 |
 
-**折叠热区定案**（消除"仅限 G8"与"整行扩大热区"的表述矛盾）：
-- 主热区：G8 三角图标区域 `32px × 32px`（onClick + stopPropagation），键盘鼠标均可点
-- 兜底热区：整行保留 onClick，但**仅行内空白区**命中 `e.target === e.currentTarget` 时触发（扩大热区），`user-select: text` 保证文本区可选中、点击永不折叠
-- 文本与信息位子元素（``G1~G6 各 span``）不参与触发，避免与文本选中冲突；角色/键盘由 G8 控件承载（见 6.5.3.4）
+**浮层热区定案**（G6/G8 双入口，hover 规格 2）：
+
+- **G8 事件入口**：主热区 `32px × 32px` 圆角 8（onClick 开卡片，键盘鼠标均可点）；hover 背景 `#fafafa→#f0f0f0` 淡入、图标 TERTIARY→PRIMARY、展开态 `rotate(180deg)`、`transition 0.2s ease`、`cursor: pointer`
+- **G6 上下文入口**：整段（标签+数值+▸）热区 ≥ 32px，同规格背景/色变 hover；内嵌箭头指示符
+- 入口 `user-select: text`、信息位子元素（G1~G5 各 span）不参与触发，避免与文本选中冲突（v4.1：整行已不再折叠，热区只归各自入口）
+- 浮层位置：锚定各自入口**右缘、向左展开**（窄屏右贴安全边距不顶出视口）；`mouseEnterDelay=0.15` / `mouseLeaveDelay=0.3` 防抖
 
 ```css
 /* 外层容器允许换行，G5 Token 区最小宽度不为 0 */
@@ -584,6 +612,15 @@ const confirmRevoke = (t: TrustItem) => {
 .taskinfo-token-inner {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* 浮层入口热区（hover 规格 2；已展开态 rotate 180°） */
+.taskinfo-entry {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 32px; min-height: 32px; border-radius: 8px;
+  cursor: pointer; color: Colors.TEXT.TERTIARY;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+.taskinfo-entry:hover { background: #f0f0f0; color: Colors.PRIMARY; }
+.taskinfo-entry[data-open="true"] svg { transform: rotate(180deg); }
 ```
 
 ---
@@ -595,7 +632,7 @@ const confirmRevoke = (t: TrustItem) => {
 | D1 | Token P/C 露出来还是 hover？ | 露出来（占空间） | hover 看（紧凑） | **A：露出来**，核心监控信息 |
 | D2 | TrustPanel 展开用浮层还是固定在第二行？ | absolute 浮层 | 固定第二行 | **Drawer 侧滑面板**，撤销移入每行首列 + Modal.confirm |
 | D3 | 过程事件时间用绝对还是相对？ | `14:32:01` | `12秒前` | **A：绝对时间**，无需定时刷新 |
-| D4 | collapsed 持久化方案？ | localStorage | 上提 state | **A：localStorage**，简单直接 |
+| D4 | collapsed 持久化方案？ | localStorage | 上提 state | ~~A：localStorage~~ **v4.1 取消折叠态机，D4 失效** |
 | D5 | 上下文段是否独立成番号？ | 独立（G6） | 依附 token 行 | **A：独立**，为后续优化预留挂载点 |
 
 ## 五、设计令牌索引
@@ -611,7 +648,7 @@ const confirmRevoke = (t: TrustItem) => {
 | `Colors.BORDER.LIGHT` | `#f0f0f0` | 分隔线 |
 | `FontSize.SECONDARY` | 12 | 主体数值 |
 | `FontSize.SMALL` | 11 | 标签（上下文/时间） |
-| `FontSize.CAPTION` | 10 | G8 折叠、极小注释 |
+| `FontSize.CAPTION` | 10 | G8 事件入口、极小注释 |
 | `Spacing.XS` | 4 | 紧凑间距 |
 
 ---
@@ -625,7 +662,7 @@ const confirmRevoke = (t: TrustItem) => {
 | 可复用逻辑 | 设计中重复出现处 | 违反规范 | 结论：抽取粒度 |
 |------------|--------------------|----------|----------------|
 | **标签+数值两段式**结构 | G5/G6/各信息位同构定义 ≥4 处 | DRY | **抽独立组件 `MetricItem.tsx`** |
-| **省略文本 + Tooltip** | G4 长错误、G5 收窄、G6 hover、折叠提示 ≥4 处 | DRY | **抽独立组件 `EllipsisTip.tsx`** |
+| **省略文本 + Tooltip** | G4 长错误、G5 收窄、浮层摘要 ≥4 处 | DRY | **抽独立组件 `EllipsisTip.tsx`** |
 | **状态 → 文案/色值/图标**映射 | BADGE_MAP、上下文 4 态、事件图标映射 | DRY + SRP | **抽独立常量文件 `infoMaps.ts`** + 纯函数 `mapStatus()` |
 | **等宽数字**规范 | 耗时、事件时间、token 数都用 tabular-nums | DRY | 共享 style 常量（复用 stepStyles 令牌），不新建文件 |
 | **时间格式化** | `toLocaleTimeString()` 多处 | DRY/复用优先 | **先查** `src/utils/` 已有工具；无则纯函数 `formatTime()` |
@@ -677,14 +714,14 @@ const confirmRevoke = (t: TrustItem) => {
 | 新建 `infoMaps.ts` | P1-8 / P2-15 / P2-14 辅助 | 约 90 行 | 0 | +90 |
 | 新建 `MetricItem.tsx` | P1-7 / P1-8 / 6.x 复用 | 约 55 行 | 0 | +55 |
 | 新建 `EllipsisTip.tsx` | P1-6 / 6.x 复用 | 约 35 行 | 0 | +35 |
-| 修改 `TaskInfoBar.tsx` | P0-1/2/3、P1-5/6/7/8/9/11、P2-12/13/16/17 | 约 150 行 | 约 45 行 | +105 |
+| 修改 `TaskInfoBar.tsx` | P0-1/2/3、P1-5/6/7/8/9/11、P2-12/13/16/17、v4.1 双浮层 | 约 210 行 | 约 70 行 | +140 |
 | 修改 `TrustPanel.tsx` | P0-4、P1-10、P2-18 | 约 85 行 | 约 55 行 | +30 |
 | 修改 `useTaskInfo.ts` | P2-14 | 1 行 | 1 行 | 0 |
 | 修改 `stepStyles.ts` | P1-6（WARNING 色值） | 1 行 | 1 行 | 0 |
 | 修改 `src/utils/time.ts` | 3.6（formatTimeHMS） | 约 9 行 | 0 | +9 |
 | 修改 `InputCore.tsx` | P1-11（分隔线归属） | 1 行 | 0 | +1 |
 
-**工作量结论**：共 8 个文件、19 项改动；新增约 425 行、删除约 100 行。三份新建文件为纯展示层，无业务逻辑；修改文件全部为样式/交互重构，`useTaskInfo.ts` 仅 1 处时间源替换，零行为变化。
+**工作量结论**：共 8 个文件、19 项改动（含 v4.1 双浮层重构）；新增约 485 行、删除约 126 行。三份新建文件为纯展示层，无业务逻辑；修改文件全部为样式/交互重构，`useTaskInfo.ts` 仅 1 处时间源替换，零行为变化。
 
 > ⚠️ `Colors.WARNING` 改 `#AD6800` 牵动 6 处既有引用（ToolCallLine/WarningBox/StatusIcon/shapeRenderers×5/Notification 系列）——均为警告图标/边框/文字色，由浅橙变深琥珀后白底对比度全面提升，**视觉增强非退化**；`WARNING_BG: #fffbe6` 或 `Colors.BORDER.*` 不受影响。三堂会审：合规（令牌化）/合理（全链统一）/关联（无白字衬浅橙的反例）均通过。
 
@@ -948,7 +985,7 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
 ##### 6.5.3.2 文件头（import 区，P1-5/P1-6/P1-8/P2-12）
 
 ```diff
- import { Badge, Tooltip } from 'antd';
+ import { Badge, Popover, Tooltip } from 'antd'; // v4.1: +Popover(上下文/事件双浮层)
 -import { CloseCircleFilled } from '@ant-design/icons'; // 6.3.4 执行级 error 位4 图标
 +import {
 +  CloseCircleFilled,
@@ -976,62 +1013,62 @@ export const EllipsisTip: React.FC<EllipsisTipProps> = ({
 +// BADGE_MAP 由 6.5.2.1 infoMaps.ts 定义，本文件经 import 使用（6.5.3.2），不再内联定义
 ```
 
-##### 6.5.3.3 P0-3 collapsed 持久化 + P2-12 令牌（`:73` 附近）
+##### 6.5.3.3 P0-3 collapsed 状态机删除 + P2-12 令牌（`:73` 附近）
 
 ```diff
--const [collapsed, setCollapsed] = useState(false);
-+// P0-3: localStorage 持久化(定案 A)；7.2-2.4 同键
-+export const COLLAPSE_KEY = 'session_panel_collapsed:taskinfo.bar';
-+const getCollapsed = (): boolean =>
-+  typeof window !== 'undefined' && localStorage.getItem(COLLAPSE_KEY) === '1';
-+const [collapsed, setCollapsed] = useState<boolean>(getCollapsed);
-+const toggleCollapsed = () =>
-+  setCollapsed((v) => {
-+    localStorage.setItem(COLLAPSE_KEY, v ? '0' : '1');
-+    return !v;
-+  });
+ -const [collapsed, setCollapsed] = useState(false);
+ -export const COLLAPSE_KEY = 'session_panel_collapsed:taskinfo.bar';
+ -const getCollapsed = (): boolean =>
+ -  typeof window !== 'undefined' && localStorage.getItem(COLLAPSE_KEY) === '1';
+ -const [collapsed, setCollapsed] = useState<boolean>(getCollapsed);
+ -const toggleCollapsed = () =>
+ -  setCollapsed((v) => {
+ -    localStorage.setItem(COLLAPSE_KEY, v ? '0' : '1');
+ -    return !v;
+ -  });
+ +// v4.1: 取消整行折叠(P0-3), 上述状态机/localStorage 键/全部 collapsed 引用整体删除
+ +// 新增: eventsOpen、ctxOpen 各 useState(false)(见 6.5.3.4 / 6.5.3.8), 随组件轻量瞬态, 不持久化
 ```
 
-##### 6.5.3.4 P0-2 + P1-9 + P1-11 折叠行（`:112-143`，外层结构与折叠热区）
+##### 6.5.3.4 P0-2 + P1-9 + P1-11 + v4.1 G8 事件入口（`:112-143`，外层结构与浮层热区）
 
 ```diff
    <div
      style={{
        background: 'transparent',
        border: 'none',
--      borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
--      padding: '8px 0 0',
-+      borderTop: 'none', // P1-11 定案 B: 分隔线归属 input 区上沿(见 6.5.3.9), 本条不带上边框
-+      padding: `${Spacing.MD}px 0 0`, // P2-12: 8px → Spacing.MD
+ -      borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
+ -      padding: '8px 0 0',
+ +      borderTop: 'none', // P1-11 定案 B: 分隔线归属 input 区上沿(见 6.5.3.9), 本条不带上边框
+ +      padding: `${Spacing.MD}px 0 0`, // P2-12: 8px → Spacing.MD
        display: 'flex',
        flexDirection: 'column',
--      gap: 8,
-+      gap: Spacing.MD,
+ -      gap: 8,
+ +      gap: Spacing.MD,
        textAlign: 'left',
      }}
    >
-+   {/* P1-9: 允许收窄换行; 文本区可选中, 点击不折叠; 折叠触发仅 G8(见 3.9 热区定案) */}
++   {/* v4.1: 信息带恒定 1 行, 整行折叠态机已删除(P0-3 随删); G1~G6 渲染其中, 无整行点击 */}
      <div
        style={{
          display: 'flex',
          alignItems: 'center',
--        gap: 12,
--        cursor: 'pointer',
--        flexWrap: 'nowrap',
-+        gap: Spacing.LG,
-+        cursor: 'default',
-+        flexWrap: 'wrap',
-+        userSelect: 'text',
+ -        gap: 12,
+ -        cursor: 'pointer',
+ -        flexWrap: 'nowrap',
+ +        gap: Spacing.LG,
+ +        cursor: 'default',
+ +        flexWrap: 'wrap',
+ +        userSelect: 'text', // 3.9: 文本可选中, 点击不触发任何折叠
        }}
-onClick={(e) => {
+-      onClick={(e) => {
 -        // 【HITL排查探针·临时...】console.log(...)  ← P0-1 删除 6.5.3.1
--        setCollapsed((v) => !v);
-+        if (e.target === e.currentTarget) toggleCollapsed(); // P0-2/3.9: 仅行内空白区触发, 文本选中不折叠
-        }}
-      >
+-        setCollapsed((v) => !v); // v4.1: 整行折叠取消, collapsed 随 P0-3 删除
+-      }}
+     >
 ```
 
-**右组（G7 信任 + G8 折叠）真实实现**（`TaskInfoBar.tsx:258-269` 现状仅 `<TrustPanel/>`，改进后 G8 折叠控件追加其后。G8 承载全部折叠 a11y/热区/键盘——满足 3.8 折叠行键盘表与 3.1.3 可点击样式）：
+**右组（G7 信任 + G8 事件入口）真实实现**（v4.1：G8 承载事件卡片全部 a11y/热区/键盘——满足 3.8 G8 入口键表与 3.1.3 hover 规格 2）：
 
 ```typescript
       <div
@@ -1043,42 +1080,57 @@ onClick={(e) => {
           marginLeft: 'auto',
         }}
       >
-        {/* G7 信任: 内为 TrustPanel 触发按钮(6.5.4.3 改 Drawer 打开), 不再承担折叠 */}
+        {/* G7 信任: 内为 TrustPanel 触发按钮(6.5.4.3 改 Drawer 打开), 不承担折叠 */}
         <TrustPanel sessionId={sessionId} />
-        {/* G8 折叠(P0-2/P2-12/P1-5): 3.1.3 方案A — DownOutlined, 3.9 热区 32×32, 3.8 键盘 */}
-        <div
-          role="button"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? '展开任务面板' : '收起任务面板'}
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation(); // 3.9: 仅 G8 触发, 不冒泡
-            toggleCollapsed();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              toggleCollapsed();
-            }
-          }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 32, // 3.9: 热区 32×32
-            height: 32,
-            cursor: 'pointer',
-            color: Colors.TEXT.TERTIARY,
-            fontSize: FontSize.CAPTION,
-          }}
+        {/* G8 事件入口(v4.1/P0-2/P2-12): 浮层② 事件卡片, 热区 32×32, hover 规格 2, 3.8 键盘 */}
+        <Popover
+          open={eventsOpen}
+          onOpenChange={setEventsOpen}
+          trigger={['hover', 'click']}
+          placement="bottom-end" // v4.1: 右缘对齐 G8, 向左展开(3.9)
+          mouseEnterDelay={0.15}
+          mouseLeaveDelay={0.3}
+          arrow={{ pointAtCenter: true }}
+          content={
+            <div
+              id="taskinfo-events-card"
+              role="dialog"
+              aria-label="事件序列"
+              style={{ width: 520, maxWidth: '90vw' }}
+            >
+              {eventsTimeline} {/* 6.5.3.10 移入: role="log" + aria-live + maxHeight 40vh 内滚 */}
+            </div>
+          }
         >
-          <DownOutlined style={{ fontSize: FontSize.CAPTION }} /> {/* P1-5: ▾ → antd SVG */}
-          收起
-        </div>
+          <div
+            className={`taskinfo-entry${eventsOpen ? ' taskinfo-entry-open' : ''}`}
+            data-open={eventsOpen}
+            role="button"
+            aria-haspopup="dialog"
+            aria-expanded={eventsOpen}
+            aria-label="事件序列"
+            aria-controls="taskinfo-events-card"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation(); // 3.9: 仅 G8 触发, 不冒泡
+              setEventsOpen((v) => !v);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setEventsOpen((v) => !v);
+              }
+            }}
+            style={{ fontSize: FontSize.CAPTION }}
+          >
+            <DownOutlined style={{ fontSize: FontSize.CAPTION }} /> {/* P1-5 + v4.1: 方向=弹出语义 */}
+            事件
+          </div>
+        </Popover>
       </div>
 ```
 
-> 折叠热区定案（v3.7）落地说明：G8 即唯一折叠触发点（`stopPropagation`）；整行 onClick 仅当 `e.target === e.currentTarget`（点行内空白 padding）时兜底触发一次，文本区可选中、点击即不折叠——与 3.9「整行保留 onClick（扩大热区），文本区不触发」一致。折叠 a11y 五行「键盘 + role + aria」全部收敛在 G8 上，满足 3.8 表。
+> v4.1 落地说明：整行折叠取消（P0-3 状态机删除），事件序列由 G8 独立浮层承载；热区/hover 全部收敛在 `taskinfo-entry`（3.9 CSS：hover 背景淡入 + 图标 PRIMARY + `data-open` 时 rotate 180°），满足 3.8 G8 键表与 3.9 热区定案。`eventsOpen` 以 `useState(false)` 声明。
 
 ```diff
       </div>
@@ -1166,7 +1218,7 @@ onClick={(e) => {
 
 > G1 字重（3.1.2 表 G1：12px/500/PRIMARY）：如需 500 字重，`<Badge status={b.status} text={b.text} style={{ fontWeight: 500 }} />`；现状 antd Badge 默认 normal，此项为增量可选，不阻塞（Badge status 色已达标）。
 
-##### 6.5.3.8 P1-7 + P1-8 G5/G6 中组重构（`:193-257` 整块替换）
+##### 6.5.3.8 P1-7 + P1-8 + v4.1 G5 Token / G6 上下文入口重构（`:193-257` 整块替换）
 
 > P1-8 现状块含 `:243 {' 🔴'}` 截断红点（3.4 表行 5），随整块替换一并删除——truncated 态改由 WarningOutlined 承担（3.3 状态机）。
 
@@ -1197,7 +1249,7 @@ onClick={(e) => {
 +            detail={`P ${info.taskAccumulated?.prompt_tokens ?? info.usage.prompt} / C ${info.taskAccumulated?.completion_tokens ?? info.usage.completion}`}
 +            tooltip="任务累计 P/C/T"
 +          />
-+          {/* G6 上下文: 4 态统一两段式(P1-8), data-state 供测试 */}
++          {/* G6 上下文(v4.1): 基础行 MetricItem 为浮层① 入口锚点, data-state 供测试 */}
 +          {(() => {
 +            const ctxState = mapStatus({
 +              overview: info.overview,
@@ -1208,27 +1260,75 @@ onClick={(e) => {
 +              typeof info.overview === 'object' && info.overview
 +                ? info.overview.estimated_tokens
 +                : null;
++            const summary =
++              typeof info.overview === 'string'
++                ? info.overview
++                : info.overview?.summary ?? frames.contextSummary ?? '';
 +            // 3.3 状态机: ok/truncated 均显 "{n} tok"(truncated 警告色+图标); summary-only/empty 用态文案
 +            const showTokens = ctxState === 'ok' || ctxState === 'truncated';
 +            return (
-+              <MetricItem
-+                label="上下文"
-+                value={
-+                  showTokens
-+                    ? `${(tokens ?? 0).toLocaleString('en-US')} tok`
-+                    : ctx.text
++              <Popover
++                open={ctxOpen}
++                onOpenChange={setCtxOpen}
++                trigger={['hover', 'click']}
++                placement="bottom-start" // v4.1: 左缘对齐 G6; 窄屏右贴安全边距(v4.1 定案)
++                mouseEnterDelay={0.15}
++                mouseLeaveDelay={0.3}
++                arrow={{ pointAtCenter: true }}
++                content={
++                  <div
++                    id="taskinfo-context-card"
++                    role="dialog"
++                    aria-label="上下文详情"
++                    style={{
++                      width: 320,
++                      maxWidth: '90vw',
++                      display: 'flex',
++                      flexDirection: 'column',
++                      gap: Spacing.SM,
++                      fontSize: FontSize.SECONDARY,
++                      color: Colors.TEXT.SECONDARY,
++                    }}
++                  >
++                    <div style={{ fontWeight: FontWeight.BOLD, color: Colors.TEXT.PRIMARY }}>上下文详情</div>
++                    <div>摘要: {summary.slice(0, 60)}{summary.length > 60 ? '…' : ''}</div>
++                    <div>估算 token: {showTokens ? `${(tokens ?? 0).toLocaleString('en-US')} tok` : '—'}</div>
++                    <div style={{ color: ctx.tone === 'warning' ? Colors.WARNING : Colors.TEXT.TERTIARY }}>
++                      {ctxState === 'ok' ? '正常' : ctx.tooltip}
++                    </div>
++                  </div>
 +                }
-+                tone={ctx.tone}
-+                icon={ctx.icon}
-+                tooltip={
-+                  ctxState === 'ok'
-+                    ? typeof info.overview === 'string'
-+                      ? info.overview
-+                      : ctx.tooltip
-+                    : ctx.tooltip
-+                }
-+                dataState={ctxState}
-+              />
++              >
++                <div
++                  className={`taskinfo-entry${ctxOpen ? ' taskinfo-entry-open' : ''}`}
++                  data-open={ctxOpen}
++                  role="button"
++                  aria-haspopup="dialog"
++                  aria-expanded={ctxOpen}
++                  aria-label="上下文详情"
++                  aria-controls="taskinfo-context-card"
++                  tabIndex={0}
++                  onClick={(e) => e.stopPropagation()}
++                  onKeyDown={(e) => {
++                    if (e.key === 'Enter' || e.key === ' ') {
++                      e.preventDefault();
++                      setCtxOpen((v) => !v);
++                    }
++                  }}
++                >
++                  <MetricItem
++                    label="上下文"
++                    value={
++                      showTokens
++                        ? `${(tokens ?? 0).toLocaleString('en-US')} tok`
++                        : ctx.text
++                    }
++                    tone={ctx.tone}
++                    icon={ctx.icon}
++                    dataState={ctxState}
++                  />
++                </div>
++              </Popover>
 +            );
 +          })()}
          </div>
@@ -1250,19 +1350,16 @@ onClick={(e) => {
    />
 ```
 
-##### 6.5.3.10 P2-13 + P2-17 过程事件时间轴（`:272-293`）
+##### 6.5.3.10 P2-13 + P2-17 过程事件时间轴 → v4.1 事件卡片内容（`:272-293` 移入 G8 Popover）
+
+`eventsTimeline`（6.5.3.4 引用）＝本块渲染结果；`{!collapsed && ...}` 条件删除（v4.1 无折叠态）：
 
 ```diff
-       {!collapsed && info.processEvents.length > 0 && (
-         <div
+-      {!collapsed && info.processEvents.length > 0 && (
+-        <div
 -          style={{ maxHeight: 72, overflowY: 'auto', scrollbarWidth: 'thin',
 -                   borderTop: `1px solid ${Colors.BORDER.LIGHT}`, paddingTop: 8, marginTop: 0 }}
-+          role="log"
-+          aria-live="polite" // 3.6: 新事件实时播报
-+          style={{ maxHeight: 80, // P2-17: 72→80(4 行整含底部 padding)
-+                   overflowY: 'auto', scrollbarWidth: 'thin',
-+                   borderTop: `1px solid ${Colors.BORDER.LIGHT}`, paddingTop: Spacing.MD, marginTop: 0 }}
-         >
+-        >
 -          {info.processEvents.map((e, i) => (
 -            <div key={i} style={{ fontSize: 12, color: Colors.TEXT.TERTIARY }}>
 -              {e.kind === 'started' && '▶️ '}
@@ -1272,6 +1369,16 @@ onClick={(e) => {
 -              {e.text} {new Date(e.time).toLocaleTimeString()}
 -            </div>
 -          ))}
+-        </div>
+-      )}
++      {/* eventsTimeline(v4.1): 渲染于 G8 Popover content(6.5.3.4), 无折叠态条件 */}
++      {info.processEvents.length > 0 && (
++        <div
++          role="log"
++          aria-live="polite" // 3.6: 新事件实时播报
++          style={{ maxHeight: '40vh', // v4.1/P2-17: 浮层卡片内滚, 不撑 TaskInfoBar 高度
++                   overflowY: 'auto', scrollbarWidth: 'thin' }}
++        >
 +          {info.processEvents.map((e) => (
 +            <div
 +              key={`${e.time}-${e.kind}`} // P2-13: 唯一 key, 弃索引 {i}
@@ -1284,7 +1391,6 @@ onClick={(e) => {
 +              }}
 +            >
 +              {/* 左列: 时间 HH:MM:SS + 均长竖线(3.6 定案, 不编码间隔) */}
-+              {/* 节点: 3.6 表"● 节点"由右列 SVG 图标承载, 不另加 ● 文本符(避免违背 3.4 图标铁律) */}
 +              <span
 +                style={{
 +                  fontSize: FontSize.SMALL, // 11px
@@ -1298,20 +1404,18 @@ onClick={(e) => {
 +                {formatTimeHMS(e.time)}
 +              </span>
 +              <span style={{ color: Colors.BORDER.LIGHT }}>│</span>
-+              {/* 右列: antd SVG 图标 + 文本(P1-5) */}
-+              <span
-+                style={{ color: Colors.TEXT.TERTIARY, minWidth: 0 }}
-+              >
++              {/* 右列: antd SVG 图标 + 文本(P1-5); 图标即 3.6 "● 节点", 不另加 ● 文本符 */}
++              <span style={{ color: Colors.TEXT.TERTIARY, minWidth: 0 }}>
 +                {EVENT_ICON_MAP[e.kind]}
 +                <span style={{ marginLeft: Spacing.XS }}>{e.text}</span>
 +              </span>
 +            </div>
 +          ))}
-         </div>
-       )}
++        </div>
++      )}
 ```
 
-> 时间轴接线说明：`info.processEvents` 已在 `useTaskInfo` 尾部 `reverse()`（最新在顶，现状已如此），渲染顺序即时间倒序，故不再二次排序。
+> 时间轴接线说明：`info.processEvents` 已在 `useTaskInfo` 尾部 `reverse()`（最新在顶，现状已如此），渲染顺序即时间倒序，故不再二次排序。事件卡片宽 520px（6.5.3.4），`role="log"` + `aria-live` 随卡片进入 G8 Popover（3.8 浮层卡片行）。
 
 ---
 
@@ -1560,8 +1664,8 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 | 测试对象 | 属性 | TDD 适配度 | 处理方式 |
 |----------|------|-----------|----------|
 | 纯函数与映射：`mapStatus` / `EVENT_ICON_MAP` / `BADGE_MAP` / `formatToken` / `formatTimeHMS` | 逻辑纯化 | ✅ 完全适配 | 红→绿→重构（最快循环） |
-| 组件渲染与 aria：折叠按钮（P0-2）、上下文 4 态（P1-8）、MetricItem、EllipsisTip、Token 两段式（P1-7） | DOM 可断言 | ✅ 适配 | 红→绿→重构 |
-| 交互链路：撤销 Modal.confirm（P0-4）、Drawer 开合与焦点（P1-10）、G8 折叠 toggle | DOM 事件 | ✅ 适配 | 红→绿→重构 |
+| 组件渲染与 aria：G6/G8 浮层入口（P0-2/v4.1）、上下文 4 态（P1-8）、MetricItem、EllipsisTip、Token 两段式（P1-7） | DOM 可断言 | ✅ 适配 | 红→绿→重构 |
+| 交互链路：撤销 Modal.confirm（P0-4）、信任 Drawer 开合与焦点（P1-10）、G6/G8 浮层开合与键盘（v4.1） | DOM 事件 | ✅ 适配 | 红→绿→重构 |
 | 视觉样式：tabular-nums 对齐（P2-16）、对比度（P1-6）、断点切换（P1-9）、Drawer 动画 | 视觉弱断言 | ⚠️ 收益低 | 实现后 E2E/视觉验证锁定，不做红绿循环 |
 
 > 前端现状核查：`frontend/` 已配 Vitest + Playwright，但**无既有测试文件**（`tests/` 仅测量脚本）→ 本轮全部为**新增用例**，无修改既有用例。
@@ -1576,11 +1680,10 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 | | 1.3 | `MetricItem`：先写 props 渲染 / tone / 截断态 aria 测试 → **红** → 建组件 → **绿** | 3.2/3.3 | 0.1 |
 | | 1.4 | `EllipsisTip`：先写省略 + Tooltip 全文测试 → **红** → 建组件 → **绿** | 3.1(G4)/3.9/3.3 | 0.1 |
 | 2 P0 | 2.1 | P0-1 探针删除：直接删（零逻辑，回归验证） | P0-1 | — |
-| | 2.2 | P0-2 折叠 a11y：先写 `role="button"` / `aria-expanded` / `tabIndex` / Enter+Space 触发测试 → **红** → 改折叠实现 → **绿** | 3.1/3.8 | 1.4 |
+| | 2.2 | P0-2/v4.1 浮层入口 a11y：先写 G6/G8 `role="button"` / `aria-haspopup="dialog"` / `aria-expanded` / `tabIndex` / Enter+Space 开合测试 → **红** → 浮层实现 → **绿** | 3.1/3.8 | 1.4 |
 | | 2.3 | P0-4 撤销确认：点撤销触发 `Modal.confirm`、取消不删、确认才删 → **红** → 实现 → **绿** | 3.5 | 0.1 |
-| | 2.4 | P0-3 collapsed 持久化：localStorage 键 `session_panel_collapsed:taskinfo.bar` 存取/挂载恢复 → **红** → 实现 → **绿** | 3.5 | 0.1 |
 | 3 P1 | 3.1 | P1-5 图标统一：先写"过程事件无 emoji/无纯文本符号、渲染 antd SVG" → **红** → 替换 → **绿** | 3.4 | 1.1 |
-| | 3.2 | P1-8 上下文 4 态：先写 4 态 `data-state` / 标签 / aria-label → **红** → 接 `CONTEXT_STATE_MAP` + MetricItem → **绿** | 3.3 | 1.1+1.3 |
+| | 3.2 | P1-8/v4.1 上下文入口：先写 4 态 `data-state` + G6 入口 `role="button"`/`aria-haspopup` + 浮层① 开合（hover/click/Esc） → **红** → 接 `CONTEXT_STATE_MAP` + MetricItem + Popover → **绿** | 3.3 | 1.1+1.3 |
 | | 3.3 | P1-7 Token 两段式：先写"本轮/累计分离、千分位、P/C 中灰" → **红** → 接 MetricItem → **绿** | 3.2 | 1.1+1.2 |
 | | 3.4 | P1-10 信任 Drawer：先写 `role="button"` + 打开 Drawer + 焦点移入面板 → **红** → 实现 → **绿** | 3.5 | 1.4 |
 | | 3.5 | P1-6/P1-11（直接实现）：对比度调色、分隔线归属，不走红绿，E2E/视觉锁定 | P1-6/P1-11 | — |
@@ -1610,9 +1713,9 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 
 | 用例 | 断言要点（红） | 对应设计稿 |
 |------|----------------|-----------|
-| 折叠按钮（G8） | `role`/`aria-expanded`/`tabIndex`/Enter/Space 触发 toggle（P0-2） | 3.1/3.8 |
-| 折叠轨道三角 | `stopPropagation` 点击不冒泡到底行 | 3.9 |
-| 上下文段 4 态 | `data-state` + 标签/数值/aria 文案（P1-8） | 3.3 |
+| G8 事件入口（v4.1） | `role="button"`/`aria-haspopup`/`aria-expanded`/`tabIndex`/Enter+Space 开合事件卡片（P0-2/v4.1） | 3.1/3.8 |
+| G6 上下文入口（v4.1） | `role="button"`/`aria-haspopup`/开合浮层① + `data-state` 4 态（P1-8/v4.1） | 3.3/3.8 |
+| 浮层卡片 | 打开后焦点入卡、`Esc` 关闭回入口、`stopPropagation` 不冒泡（v4.1/3.9） | 3.8/3.9 |
 | MetricItem | label/value/tone/截断态 + aria-label | 3.2 |
 | EllipsisTip | 文本省略 + Tooltip 全文 + aria | 3.1(G4) |
 | Token 两段式 | 本轮/累计分离渲染、千分位、P/C 中灰（P1-7） | 3.2 |
@@ -1620,14 +1723,13 @@ export const formatTimeHMS = (date: Date | string | number): string => {
 | 信任（G7） | `role="button"` + 打开 Drawer + 焦点移入面板（P1-10） | 3.5 |
 | 撤销按钮 + Modal.confirm | 点击弹确认、取消不删、确认走 `revoke`（P0-4/P2-18） | 3.5 |
 | 耗时数字 | tabular-nums 类、位数不抖动（P2-16） | 3.1 |
-| collapsed 持久化 | localStorage 写入/挂载恢复（P0-3） | 3.5 |
 
 **C. E2E（Playwright，真实后端 + 真实 LLM 会话）**
 
 | 用例 | 链路 |
 |------|------|
-| 会话渲染 | 新建会话 → 第一行 8 信息位渲染（G1 状态 / G2 耗时 / G3 进度 / G4 异常 / G5 Token / G6 上下文 / G7 信任 / G8 折叠） |
-| 折叠 + 持久化 | 点击 G8 收起 → 宽度收窄 → 刷新后保持收起（P0-3） |
+| 会话渲染 | 新建会话 → 基础行 8 信息位渲染（G1 状态 / G2 耗时 / G3 进度 / G4 异常 / G5 Token / G6 上下文入口 / G7 信任 / G8 事件入口） |
+| 浮层开合 | hover G6/G8 出卡片、click 钉住、Esc 关闭焦点回入口（v4.1） |
 | 信任 Drawer + 撤销 | 打开 G7 → Drawer 侧滑 → 撤销 → Modal.confirm 确认 → 真实撤销语义 |
 
 > E2E 铁律照旧：一次只跑一个 case、真实后端、subprocess.Popen 落盘、禁 Mock（见 AGENTS.md E2E 手册）。
