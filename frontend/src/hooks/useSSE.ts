@@ -31,6 +31,9 @@
 //   新增 pollSignalRef+signal 中止信号(handleSSEError/pollSessionTaskStatus/useSSE 三条链路透传), 卸载/新消息置 aborted 即静默停止 - 小欧-2026-09-08
 // 编辑历史: 2026-09-08 小欧 - 方案二实施期新增真实bug修复(测试F10红→绿): 正常完成流后未清理残留 idle 定时器,
 //   60s后僵尸 reconnect 再造重连链/再生轮询; connect 成功路径补 idleTimeoutRef 清理(clearTimeout+置null) - 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - A类死代码清理: disconnect内去reconnectTimeoutRef解构(196-205) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B10/B11: :589 disconnect的eslint-disable注释原错位于}行末未生效,
+//   移至依赖数组行上方使生效+写明理由; :975 attemptReconnect依赖数组真补onError — 小欧-2026-09-09
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {

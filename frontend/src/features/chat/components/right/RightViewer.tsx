@@ -47,6 +47,8 @@
 // 编辑历史: 2026-09-09 小欧 - A3修复(final→历史切换竞态): REST拉取对"刚结束的实时任务自身"加 300ms 缓冲——
 //   SSE final 先发、DB 落库稍后, 立即拉会拿到 executing 旧态覆盖 failed/completed 结果; 历史回放即时拉不变;
 //   effect 依赖补 _hasFinal/serverTaskId — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B1: 主REST effect的detail有意不入依赖数组(setDetail后自激循环REST, 见:266注释),
+//   eslint-disable移至依赖数组行上方使生效+写明理由 — 小欧-2026-09-09
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *

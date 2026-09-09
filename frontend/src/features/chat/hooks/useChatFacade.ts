@@ -4,6 +4,8 @@
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈裁定回归总原则): onError 包装器不再把 SSEError 压成 string,
 //   改构 LiveError{text, requestLevel} 上抛(P3 数据源对象形态); options.onError 签名同步升级;
 //   内部 chatCallbacks.onError 仍先调(后端分道早退不影响 P3 写入) — 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B6: :355 useMemo有意只列字段级依赖(整体对象入deps每次重建级联渲染),
+//   eslint-disable注释移至依赖数组行上方使生效+写明理由 — 小欧-2026-09-09
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *

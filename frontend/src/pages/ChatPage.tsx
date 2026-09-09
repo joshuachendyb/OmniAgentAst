@@ -12,6 +12,7 @@
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): liveErrorText✗ string 改 liveError(LiveError|null 对象形态,
 //   onError 升为 (liveError: LiveError)=>void 接收 位4/类型分层字段) + setter/一处消费(if(liveError)refreshTasks,
 //   暂用对象真值判空)与 useChatPanels 透传同步 — 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-A类: 去chatSession/chatPersistence解构(死解构, eslint@typescript-eslint/no-unused-vars) — 小欧-2026-09-09
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08

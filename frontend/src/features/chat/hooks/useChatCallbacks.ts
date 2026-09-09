@@ -14,6 +14,10 @@
 // 编辑历史: 2026-09-09 小欧 - A1修复(356步残留类累积根治): onStep入口任务内指纹去重(type|step|preview|content前64),
 //   拦截 SSE 重复行/重连GET重放导致的同一执行轮事件重复 append; preview 与 canonical 因 preview 位不同不误杀,
 //   chunk 逐块 content 不同不误杀; onComplete/onError 终态 clear Set 供下任务重新计数 — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - A类死代码清理: 删handleApiError/ErrorType/sessionApi死导入; onCancel/其他useCallback依赖数组去setIsPaused(272-274)与sessionId(497-503);
+//   连带删除解构sessionId/setSessionTitle(死解构) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B4/B5: onError依赖数组真补streamingStepsRef/executionStepsRef(修复终态清空时机陈旧);
+//   onResumed依赖数组真补isPausedRef(修复缓冲复位时机陈旧) — 小欧-2026-09-09
 /**
  * useChatCallbacks Hook - 统一回调管理
  *

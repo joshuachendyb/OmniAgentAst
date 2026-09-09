@@ -25,6 +25,8 @@
 // 编辑历史: 2026-09-09 小欧 - [16]v4.4 修复#3: 3.9 断点矩阵落地(useInfoBreakpoint 1280/960/768)——G2/G3 xsmall 合并(G3 含耗时段)、
 //   G3 mid/narrow 收窄(仅数字+Tooltip 展开全文本)、G4 narrow/xsmall 省略(maxWidth200+ellipsis+Tooltip 全文)、G5 累计段收窄(明细进 MetricItem Tooltip 轻浮层)、
 //   G7 narrow/xsmall 仅计数(TrustPanel compact)、G6/G8 恒完整(FloatingEntry 基础行数字+▸+明细进浮层① 已满足矩阵) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B2: 秒表interval的frames.startTimestamp有意不入依赖数组(R1定时器防每帧重置去抖, 见:122注释),
+//   加eslint-disable+理由注释 — 小欧-2026-09-09
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *

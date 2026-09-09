@@ -9,6 +9,8 @@
 // 编辑历史: 2026-09-08 小欧 - 删左侧Logo区Avatar(北京老陈令): 顶部仅保留文字标识"OmniAgentAst.", 更简洁 — 小欧-2026-09-08
 // 编辑历史: 2026-09-08 小欧 - 标题图标化(北京老陈令): 顶部"对话与任务"文字换D三色弧段loader(蓝绿橙, 与 title-icon-compare.html 的D三色版一致),
 //   复用 waiting-spin 逆时针1s常转, Tooltip 保留原标题; Title 组件仍被 Logo 区使用, import 保留 — 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-A类: 去refreshAll解构; isManualRefreshing改[,setIsManualRefreshing]
+//   (保留setter调用防死状态:131注释, 仅弃读值) — 小欧-2026-09-09
 /**
  * Layout组件 - 应用主布局（响应式版）
  *

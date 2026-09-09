@@ -2,6 +2,8 @@
 // 编辑历史: 2026-08-30 小欧 - 设计文档[2]12.8 v1.103: 结束沿锚点加 latestTaskId 兜底(排序一义后 tasks[0]≈最旧, 原 DESC 首行=最新语义失效, 改显式最新锚点防 ASC 回归取错任务)
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): 返回 { sessionTokens, chainTokens } 两组3字段结构, 前面会话累计(session)后面链累计(chain); 取数字段由 r.total_tokens 改为对应层 3 字段
 // 编辑历史: 2026-09-01 小欧 - 实时/静态双源合并(北京老陈"三思三省"): 运行中读 SSE metaFrames 实时值(每轮LLM调用推), 静止/历史/重进读 DB 拉取值; 实时优先覆盖静态
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B3: 任务结束沿useEffect依赖数组真补serverTaskId/latestTaskId
+//   (原漏导致结束锚点陈旧, 结束沿拉取可能用旧任务ID), 功能增强无退化 — 小欧-2026-09-09
 import { useEffect, useRef, useState } from 'react';
 import { tokenUsageApi } from '../../../services/api/task.api';
 import type { TaskMetaFrames } from '../../../types/sse';

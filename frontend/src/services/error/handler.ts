@@ -17,6 +17,8 @@
 //     垃圾值, 一律回退 ERROR_CONFIG_MAP[errorType] 固定中文文案, 杜绝 UI 裸弹 60000 之类数字(后端原始报文不受影响,
 //     console 仍完整可查);
 //   ②showMessage 弹前加 console.info("[Toast] errorType: 文案") 打点, 供复现时反查 60000 来源字段 — 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-C1: extractErrorMessage入参Record<string,any>→Record<string,unknown>+data双重收窄
+//   (消除lib用any与裸断言, 语义不变) — 小欧-2026-09-09
 /**
  * 统一错误处理中心 - errorHandler.ts
  *

@@ -15,6 +15,10 @@
 //   承被拒工具点名条数据链路 — 小欧-2026-09-06
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): liveErrorText✗ string 改 liveError(LiveError|null 对象形态)
 //   + 解构/:260 TaskInfoBar 透传/:329 useMemo 依赖数组同步(liveErrorText→liveError) — 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - 目录整理+存量warning清零-A类: TaskListPanel import路径 left→layout(目录并入);
+//   去TaskMetaFrames类型导入/chatSend/handleSend解构(死代码) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B7: 补handleEditingCancel/handleEditingStart依赖(真补);
+//   删body未用currentResponse与handleAuthorizationConfirm(解构+依赖数组同步清除, 先误删5行opts解构已用git diff识别恢复) — 小欧-2026-09-09
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
