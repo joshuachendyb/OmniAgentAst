@@ -49,6 +49,10 @@
 //   effect 依赖补 _hasFinal/serverTaskId — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B1: 主REST effect的detail有意不入依赖数组(setDetail后自激循环REST, 见:266注释),
 //   eslint-disable移至依赖数组行上方使生效+写明理由 — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 北京老陈 - 任务1/任务2 UI冻结根治: isCurrentLive 增 hasBusinessSteps 铁证兜底——
+//   liveSteps 含任一业务步骤(thought/action/observation/chunk)即证执行中, 不受 receiving/badge 时序竞态影响,
+//   根治 HITL暂停/工具执行空窗/SSE断连重连 三类窗口下 isCurrentLive 翻 false 致 displaySteps 切历史空态、
+//   action/observation 静默压栈、恢复后整批回放 ——与 useTaskInfo badge fix(2026-09-08) 双保险 — 北京老陈-2026-09-09
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -114,6 +118,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const [historySteps, setHistorySteps] = useState<ExecutionStep[]>([]);
   const [loading, setLoading] = useState(false);
   const prevReceivingRef = useRef(false);
+  const prevIsCurrentLiveRef = useRef(false); // [DEBUG-1] 2026-09-09 北京老陈
 
   // 2026-09-02 小欧: badge 权威派生——live 任务才取, 非live历史回放不传(不显示等待圈)
   const { badge: liveBadge } = useTaskInfo(
@@ -127,11 +132,33 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const hasLiveSteps = liveSteps.length > 0;
   // 2026-09-06 小欧 RG-2: 历史数据是否已就绪(0→1驱动主滚动effect重跑, 后台final切历史后滚底兜底) — 小欧-2026-09-06
   const hasHistorySteps = historySteps.length > 0;
+  // 2026-09-09 北京老陈 铁证兜底: liveSteps含任一业务步骤即证执行中(不可翻false)
+  const _businessTypes = new Set(['thought', 'action', 'observation', 'chunk']);
+  const hasBusinessSteps = liveSteps.some((s) => _businessTypes.has(s.type));
   const isCurrentLive =
     activeTaskId != null &&
     activeTaskId === serverTaskId &&
     !_hasFinal &&
-    (receiving || liveBadge === 'running' || liveBadge === 'paused');
+    (hasBusinessSteps ||
+      receiving ||
+      liveBadge === 'running' ||
+      liveBadge === 'paused');
+  // [DEBUG-1] 2026-09-09 北京老陈 冻结诊断：isCurrentLive 各因子
+  if (liveSteps.length > 0 || isCurrentLive !== prevIsCurrentLiveRef.current) {
+    console.log(
+      `[DBG-1] isCurrentLive=${isCurrentLive}`,
+      `active=${activeTaskId}`,
+      `server=${serverTaskId}`,
+      `match=${activeTaskId === serverTaskId}`,
+      `hasFinal=${_hasFinal}`,
+      `hasBiz=${hasBusinessSteps}`,
+      `receiving=${receiving}`,
+      `liveBadge=${liveBadge}`,
+      `liveSteps=${liveSteps.length}`,
+      `histSteps=${historySteps.length}`
+    );
+    prevIsCurrentLiveRef.current = isCurrentLive;
+  }
 
   // 2026-09-02 小欧 三堂会审定稿: 滚动开关改"用户是否主动上翻>120px"事件驱动(语义同useChatScroll.ts:57-61),
   //   弃 isNearBottom 瞬态判定(首屏scrollTop=0内容超一屏即false永不滚) 与 双RAF/force(HIT确认暴力滚)
@@ -284,6 +311,18 @@ const RightViewer: React.FC<RightViewerProps> = ({
 
   const displaySteps = isCurrentLive ? liveSteps : historySteps;
   const hasSteps = displaySteps.length > 0;
+  // [DEBUG-2] 2026-09-09 北京老陈 displaySteps 切换侦测
+  const _prevSrcRef = useRef<string>('live');
+  const _src = isCurrentLive ? 'live' : 'hist';
+  if (_src !== _prevSrcRef.current) {
+    console.log(
+      `[DBG-2] displaySteps 切换: ${_prevSrcRef.current} → ${_src}`,
+      `liveLen=${liveSteps.length}`,
+      `histLen=${historySteps.length}`,
+      `liveTypes=${liveSteps.map((s) => s.type).join(',')}`
+    );
+    _prevSrcRef.current = _src;
+  }
 
   return (
     <Spin spinning={loading && !isCurrentLive}>
