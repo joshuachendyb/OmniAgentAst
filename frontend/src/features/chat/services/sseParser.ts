@@ -693,6 +693,10 @@ const processSSEData = (
         });
 
         onStep?.(step);
+        // [DEBUG-6] 2026-09-09 北京老陈 action处理完成
+        console.log(
+          `[DBG-6] action已处理: step=${step.step} preview=${step.preview} → setExecutionSteps+onStep已调用`
+        );
 
         break;
       }
@@ -840,10 +844,12 @@ const processSSEData = (
           return newSteps;
         });
         onStep?.(step);
+        // [DEBUG-6b] 2026-09-09 北京老陈 observation处理完成
+        console.log(
+          `[DBG-6b] observation已处理: step=${step.step} tool=${step.tool_name} status=${step.execution_status}`
+        );
         break;
       }
-
-      // 【北京老陈 2026-07-13 小欧】incident 类型已废弃: 后端统一用 type=paused/retrying/resumed 直接表示(2026-09-07 小欧 4.4.1: cancelled 移出该集合, 取消终态由 final+outcome=cancelled 承担)
 
       // 【北京老陈 2026-07-12 小欧】直接处理 paused/resumed/retrying 类型
       // 2026-09-07 小欧 4.4.1: 删 cancelled——取消终态由 type=final+outcome=cancelled 承担, 前端不再消费 cancelled 事件

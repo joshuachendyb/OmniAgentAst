@@ -258,6 +258,13 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   deniedEntries, // 2026-09-06 小欧 B2(6.4)
 }) => {
   const segs = buildSegments(steps);
+  // [DEBUG-5] 2026-09-09 北京老陈 buildSegments 输出
+  console.log(
+    `[DBG-5] PipelineRenderer: steps(${steps.length})→segs(${segs.length})`,
+    `types=[${steps.map((s) => s.type).join(',')}]`,
+    `segKinds=[${segs.map((s) => s.kind).join(',')}]`,
+    `streaming=${streaming}`
+  );
   // 2026-09-04 小欧 - observation 去重：已消费孤儿抑制（单/多工具并行时孤儿与 ToolCallLine 重复）
   const toolStepSet = new Set(
     segs

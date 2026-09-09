@@ -562,6 +562,10 @@ export const useSSE = (
       setIsConnected(false);
       // 2026-09-02 小欧: 重连路径不设置isReceiving=false，避免等待图标闪烁
       if (setReceiving) {
+        // [DEBUG-7] 2026-09-09 北京老陈 receiving=false 触发点
+        console.log(
+          `[DBG-7] setIsReceiving(false) ← disconnect setReceiving=${setReceiving}`
+        );
         setIsReceiving(false);
       }
       // 2026-08-29 小强 修复#26: 非手动断开(重连路径)不强制回idle, 保留reconnecting由重连调度驱动
@@ -633,11 +637,19 @@ export const useSSE = (
     disconnect(false, false, undefined, false, false); // 2026-09-02 小欧: 重连路径不设置isReceiving=false，避免等待图标闪烁
     // 小沈修复 2026-04-21：新请求时清空 steps，重连时保留 steps
     if (reconnectAttemptsRef.current > 0) {
+      // [DEBUG-7e] 2026-09-09 北京老陈 重连清空
+      console.log(`[DBG-7e] softClearSteps ← 重连保留steps`);
       softClearSteps(); // 重连：保留 steps，只清理运行时状态
     } else {
+      // [DEBUG-7e] 2026-09-09 北京老陈 新请求清空
+      console.log(`[DBG-7e] clearSteps ← 新请求完全清空`);
       clearSteps(); // 新请求：完全清空 steps
     }
 
+    // [DEBUG-7d] 2026-09-09 北京老陈 receiving=true ← connect建立
+    console.log(
+      `[DBG-7d] setIsReceiving(true) ← connect isReconnect=${reconnectAttemptsRef.current > 0}`
+    );
     setIsReceiving(true);
     setIsConnected(true);
     // 2026-08-29 小强 修复#26: 重连进行中保持reconnecting状态, 不被connecting覆盖
@@ -852,12 +864,18 @@ export const useSSE = (
         }
         abortControllerRef.current = null;
         setIsConnected(false);
+        // [DEBUG-7b] 2026-09-09 北京老陈 receiving=false ← 主动断开
+        console.log(`[DBG-7b] setIsReceiving(false) ← intentionalAbort`);
         setIsReceiving(false);
         console.info('[SSE] 主动断开引发的AbortError, 静默收尾');
         return;
       }
 
       console.error('[SSE] 请求错误:', error);
+      // [DEBUG-7c] 2026-09-09 北京老陈 receiving=false ← 请求错误
+      console.log(
+        `[DBG-7c] handleSSEError即将调用, 可能setIsReceiving(false) errorType=${classifyError(error)}`
+      );
       abortControllerRef.current = null; // 【修复 2026-05-11 小健】请求失败清理ref
 
       // 使用统一的错误处理中心
@@ -898,6 +916,10 @@ export const useSSE = (
    * 【小强修复 2026-04-09】重新添加缺失的 reconnect 函数，移到 sendMessageInternal 之后避免变量未定义问题
    */
   const reconnect = useCallback(() => {
+    // [DEBUG-7f] 2026-09-09 北京老陈 重连触发
+    console.log(
+      `[DBG-7f] reconnect触发 attempts=${reconnectAttemptsRef.current} taskId=${serverTaskIdRef.current}`
+    );
     if (!pendingMessageRef.current) {
       console.warn('[SSE] 没有待重连的消息');
       return;

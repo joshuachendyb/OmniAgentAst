@@ -131,6 +131,11 @@ export const useTaskInfo = (
     }
 
     let badge: TaskBadge = 'idle';
+    // [DEBUG-3] 2026-09-09 北京老陈 badge 起始值+steps类型摘要
+    const _stepTypes = steps.map((s) => s.type).join(',');
+    console.log(
+      `[DBG-3] badge起始=idle steps(${steps.length})=[${_stepTypes}] receiving=${receiving}`
+    );
     const processEvents: ProcessEvent[] = [];
     // 小欧 2026-09-02: 位4 最近一条 retrying(新覆盖旧); 窄化 kind 直入 LiveMeta[] 合成, 免 TS 联合类型报错
     // 2026-09-08 小欧 6.3.4: retrying 恒执行级(requestLevel=false) — 小欧-2026-09-08
@@ -203,6 +208,10 @@ export const useTaskInfo = (
             badge = 'running';
             _badgeRecovered = true;
           }
+          // [DEBUG-3b] 2026-09-09 北京老陈 badge fix 命中
+          console.log(
+            `[DBG-3b] badge fix命中: type=${s.type} step=${s.step} → badge=${badge}`
+          );
           break;
         default:
           break;
@@ -223,8 +232,13 @@ export const useTaskInfo = (
     }
     // ② startinfo 帧 -> "任务已开始"过程条首行 + 执行中徽标（B33：有帧才亮）
     // startinfo 仅存在于 metaFrames（8.4.3），时间戳取 start 事件的 startTimestamp
-    if (hasStartInfo && badge === 'idle')
+    if (hasStartInfo && badge === 'idle') {
+      // [DEBUG-3c] 2026-09-09 北京老陈 startinfo门压badge
+      console.log(
+        `[DBG-3c] startinfo门: badge=idle, receiving=${receiving} → badge=${receiving ? 'running' : 'idle'}`
+      );
       badge = receiving ? 'running' : 'idle';
+    }
     if (hasStartInfo) {
       processEvents.unshift({
         kind: 'started',
