@@ -98,3 +98,49 @@
   width: 20px;
   height: 20px;
 }
+
+/* 编辑历史: 2026-09-09 小欧 - [16]3.9 浮层入口热区样式落盘(hover 规格 2 + 展开态 rotate + :focus-visible)(见 6.5.1) — 小欧-2026-09-09 */
+/* 编辑历史: 2026-09-09 小欧 - [16]v4.4 修复#1: .taskinfo-entry:hover 注入 --taskinfo-entry-active(PRIMARY 蓝),
+ *   供 MetricItem 数值/图标 var() 消费 → G6 任意 tone 数值 hover 统一变 PRIMARY(3.1.3), 无分支无 !important — 小欧-2026-09-09 */
+/* 编辑历史: 2026-09-09 小欧 - [16]v4.5 三堂会审裁定(北京老陈拍板): 删 .taskinfo-token-inner 死 CSS
+ *   (省略唯一真源=EllipsisTip 组件, CSS 层再省略=双机制打架 DRY/SRP 违; 断点矩阵收窄走"明细进浮层"不硬截断;
+ *   G5 基础行恒短无溢出场景 YAGNI; .taskinfo-bar 已 flex-wrap 换行兜底)。.taskinfo-token 语义澄清=第一行左组(G1~G4) — 小欧-2026-09-09 */
+/* 外层容器允许换行（G5 Token 区最小宽度不为 0，断点矩阵兜底） */
+.taskinfo-bar {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+/* 第一行左组（G1~G4 信息位）：min-height 保高 ≥20px 不与中组错位 */
+.taskinfo-token {
+  min-width: 0;
+  min-height: 20px;
+}
+/* 浮层入口热区（hover 规格 2；已展开态 rotate 180°） */
+.taskinfo-entry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #999;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+.taskinfo-entry:hover {
+  background: #f0f0f0;
+  color: #1677ff;
+  --taskinfo-entry-active: #1677ff; /* #1: 注入数值 hover 色(3.1.3 G6) */
+}
+.taskinfo-entry[data-open='true'] svg {
+  transform: rotate(180deg);
+}
+/* 键盘焦点可见性（3.8：无鼠标纯键盘可操作，2px PRIMARY 蓝 outline） */
+.taskinfo-entry:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+}

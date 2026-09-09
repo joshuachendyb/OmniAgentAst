@@ -6,6 +6,7 @@
 // 2026-08-28 小欧 - 三堂会审v1.3(P0): Colors.TEXT扩5档灰(PRIMARY#595959/SECONDARY#8c8c8c/TERTIARY#999/WEAK#888/STRONG#333), 消灰阶硬码复发(H3); FontSize.SECONDARY 13→12 废13档统一14/12二档(M2) - 小欧-2026-08-28
 // 2026-09-06 小欧 - B2(北京老陈定案: 灰字不醒目): Colors 新增功能色 ORANGE_RED=#fa541c(AntD5 volcano-6 火山橘红)——工具"未执行/被安全拦截/确认超时"提示色, 替代灰字 T.SECONDARY(占位) 与 WARNING(中断)；与 AuthorizationModal 倒计时告急色(已用 #fa541c)一致, 与齿轮橘#fa8c16/警告橙#faad14 同色带不冲突 ERROR 红#ff4d4f - 小欧-2026-09-06
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删StepType/cancelled分支与stepMeta cancelled条目(取消收尾单一由final+cancelled承担)
+// 编辑历史: 2026-09-09 小欧 - P1-6: WARNING #faad14→#AD6800(白底对比度≥4.5:1), 全链统一(6 处引用同步增强) — 小欧-2026-09-09
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
  *
@@ -131,7 +132,7 @@ export const Colors = {
   PRIMARY: '#1677ff', // 主色调 - 蓝色
   SUCCESS: '#52c41a', // 成功状态 - 绿色
   ERROR: '#ff4d4f', // 错误状态 - 红色
-  WARNING: '#faad14', // 警告/思考状态 - 橙色(AntD5默认警告色, 收敛)
+  WARNING: '#AD6800', // 警告/思考状态 - 深琥珀(白底对比度约 4.7:1, P1-6 定案 3.7)
   INFO: '#096dd9', // 信息/开始状态 - 蓝色
   ORANGE_RED: '#fa541c', // 未执行/被安全拦截/确认超时提示 - 火山橘红(AntD5 volcano-6, 2026-09-06 北京老陈定案 替灰字不醒目) — 小欧-2026-09-06
   WARNING_BG: '#fffbe6', // 警告背景（高亮浅底）

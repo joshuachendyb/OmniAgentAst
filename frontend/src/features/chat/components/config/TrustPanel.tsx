@@ -10,6 +10,8 @@
 // 编辑历史: 2026-09-03 小欧 - TaskInfoBar复用(北京老陈定案方向1, 零退化铁律): TrustPanel原为config孤儿(2026-08-30迁移TaskInfoBar时被内联复制成孤儿),
 //   现把TaskInfoBar内联信任实现(查询/刷新/撤销/折叠/无障碍/空态/计数配色 + Tooltip + stopPropagation + 撤销try/catch)全部合并回TrustPanel,
 //   TaskInfoBar改import复用删除内联重复(DRY); 以TaskInfoBar现有样式为准(紧凑"信任(N)"+Tooltip+计数配色+stopPropagation), 功能零丢失零退化 - 小欧-2026-09-03
+// 编辑历史: 2026-09-09 小欧 - [16]v4.x P1-10/P0-4/P2-18: 展开列表改 Drawer 侧滑面板(第一行高度恒定不跳动); 撤销移入每行首列 + Modal.confirm 二次确认(文案含工具名);
+//   触发按钮文字样式(PRIMARY+500)提示可点; 关闭后焦点回触发按钮; load/omni-trust-changed监听/trustReqIdRef竞态守卫原样不动 — 小欧-2026-09-09
 /**
  * TrustPanel - 信任操作面板（集成于 TaskInfoBar 第一行尾部，紧凑样式）
  *
@@ -23,15 +25,17 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Tooltip } from 'antd';
+import { Button, Drawer, Empty, Modal, Table, Tooltip } from 'antd';
+import { CloseOutlined } from '@ant-design/icons';
 import { trustApi, type TrustedTool } from '../../../../services/api/task.api'; // v1.5: TrustedTool 带 path — 小欧 2026-09-02
-import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 
 interface TrustPanelProps {
   sessionId?: string | null; // 2026-09-03 小欧: 改可选, 兼容TaskInfoBar透传的 `string|null|undefined` (undefined→组件内 if(!sessionId) 已处理)
+  compact?: boolean; // 小欧 2026-09-09 3.9 修复#3: narrow/xsmall 仅计数(按钮只显 (N), Tooltip 保留)
 }
 
-const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
+const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
   const [tools, setTools] = useState<TrustedTool[]>([]); // v1.5: tool+path 行 — 小欧 2026-09-02
 
   const trustReqIdRef = useRef(0); // 2026-08-27 小欧 修复#50: 防切会话竞态, 仅采纳最新请求响应
@@ -70,112 +74,114 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId }) => {
       );
   }, [sessionId, load]);
 
-  // 2026-09-03 小欧: 撤销带try/catch防unhandledrejection上浮(对齐TaskInfoBar原TB-02), 撤销成功重载清单 — 小欧-2026-09-03
-  const revoke = async (toolName: string, path: string | null) => {
+  // P0-4: 撤销前 Modal.confirm 二次确认（文案含工具名），确认才删
+  const confirmRevoke = (t: TrustedTool) => {
     if (!sessionId) return;
-    try {
-      await trustApi.revokeTrust(sessionId, toolName, path);
-      await load();
-    } catch {
-      /* 2026-09-02 小欧 TB-02: 捕获异常防unhandledrejection上浮 */
-    }
+    Modal.confirm({
+      title: '确认撤销信任？',
+      content: `撤销后将重新弹框确认「${t.toolName} › ${t.path ?? '全局'}」。`,
+      okText: '确认撤销',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await trustApi.revokeTrust(sessionId, t.toolName, t.path);
+          await load();
+        } catch {
+          /* 撤销失败保持清单不变 */
+        }
+      },
+    });
   };
 
-  const [expanded, setExpanded] = useState(false);
-  const hasTools = tools.length > 0;
-  // 2026-09-03 小欧: 计数配色——有信任 PRIMARY / 无 TERTIARY(对齐TaskInfoBar原实现) — 小欧-2026-09-03
-  const countColor = hasTools ? Colors.TEXT.PRIMARY : Colors.TEXT.TERTIARY;
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const drawerPanelRef = useRef<HTMLDivElement>(null); // 小欧 2026-09-09 #4: 打开后焦点移入靶点
+  const openDrawer = () => setDrawerOpen(true);
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    triggerRef.current?.focus(); // 3.5: 关闭后焦点回到触发按钮
+  };
+  // 小欧 2026-09-09 #4: Drawer 打开后焦点移入面板(3.5/P1-10 键盘无障碍)；
+  //   open 置 true 时内容已渲染, 直接聚焦(不依赖 antd 动画 afterOpenChange, 测试可判定)
+  useEffect(() => {
+    if (drawerOpen) drawerPanelRef.current?.focus();
+  }, [drawerOpen]);
+  // 3.1.3 方案A: 文字样式(PRIMARY + 500)提示可点
   return (
     <div style={{ padding: 0 }}>
-      {/* 折叠规范(小欧 2026-09-01): 三角统一▲▼、大小14(PRIMARY)、颜色PRIMARY#595959、位置数量后、方法role=button/aria-expanded/tabIndex/onKeyDown - 北京老陈定案，全页统一 */}
-      {/* 2026-09-03 小欧: stopPropagation——信任三角不冒泡触发TaskInfoBar整行折叠面板(对齐原内联实现), Tooltip保留 — 小欧-2026-09-03 */}
       <div
+        ref={triggerRef}
         role="button"
-        aria-expanded={expanded}
+        aria-expanded={drawerOpen}
+        aria-label="会话信任清单"
         tabIndex={0}
-        onClick={(e) => {
-          e.stopPropagation();
-          setExpanded((v) => !v);
-        }}
+        onClick={openDrawer}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            e.stopPropagation();
-            setExpanded((v) => !v);
+            openDrawer();
           }
         }}
         style={{
           cursor: 'pointer',
-          lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
-          display: 'inline-flex',
-          alignItems: 'center',
+          color: Colors.TEXT.PRIMARY,
+          fontWeight: FontWeight.MEDIUM,
+          fontSize: FontSize.SECONDARY,
         }}
       >
         <Tooltip title="会话级 tool+path 免审白名单：勾信任后同会话同工具、目标路径及其子目录免弹框，危险操作仍拦截，可×撤销">
-          <span
-            style={{
-              fontSize: FontSize.SECONDARY,
-              color: countColor,
-            }}
-          >
-            信任({tools.length})
+          <span>
+            {compact ? `(${tools.length})` : `信任(${tools.length})`}{' '}
+            {/* 3.9 修复#3: narrow/xsmall 仅计数, Tooltip 全文保留 */}
           </span>
         </Tooltip>
-        <span
-          style={{
-            fontSize: FontSize.PRIMARY,
-            color: countColor,
-            marginLeft: 4,
-          }}
-        >
-          {expanded ? '▲' : '▼'}
-        </span>
       </div>
-      {expanded && hasTools && (
-        <div
-          role="list"
-          style={{ maxHeight: 70, overflow: 'auto', paddingTop: Spacing.XS }}
-        >
-          {tools.map((t) => (
-            <div
-              key={`${t.toolName}:${t.path ?? ''}`}
-              role="listitem"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: `${Spacing.XS - 2}px 0`,
-              }}
+      {/* Drawer 侧滑面板: 第一行高度恒 28px 不跳动(P1-10) */}
+      <Drawer
+        placement="right"
+        open={drawerOpen}
+        onClose={closeDrawer}
+        title="会话信任清单"
+        width="min(360px, 80vw)" // v3.7 定案
+      >
+        <div ref={drawerPanelRef} tabIndex={-1}>
+          {' '}
+          {/* 小欧 2026-09-09 #4: 焦点靶点(可聚焦但不出 Tab 序) */}
+          {tools.length === 0 ? (
+            <Empty description="暂无信任工具" />
+          ) : (
+            <Table
+              dataSource={tools}
+              size="small"
+              rowKey={(t) => `${t.toolName}|${t.path}`}
+              pagination={false}
             >
-              <span
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
-                }}
-              >
-                {t.toolName} › {t.path ?? '任意'}
-              </span>
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void revoke(t.toolName, t.path);
-                }}
-                style={{
-                  fontSize: 14,
-                  color: Colors.TEXT.PRIMARY,
-                  cursor: 'pointer',
-                  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
-                  padding: '0 4px',
-                  fontWeight: 500,
-                }}
-                title="撤销信任"
-              >
-                ×
-              </span>
-            </div>
-          ))}
+              <Table.Column
+                title="撤销" // 操作在前、对象在后(3.5, Tab 顺序=视觉顺序)
+                width={64}
+                render={(_, t: TrustedTool) => (
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CloseOutlined />}
+                    aria-label={`撤销信任 ${t.toolName}`}
+                    onClick={(e) => {
+                      e.stopPropagation(); // 小欧 2026-09-09 #7(6.5.4.2): 行内撤销防冒泡
+                      confirmRevoke(t);
+                    }}
+                  />
+                )}
+              />
+              <Table.Column
+                title="对象"
+                render={(_, t: TrustedTool) =>
+                  `${t.toolName} › ${t.path ?? '全局'}`
+                }
+              />
+            </Table>
+          )}
         </div>
-      )}
+      </Drawer>
     </div>
   );
 };

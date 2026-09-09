@@ -251,9 +251,14 @@ export const useTaskInfo = (
     // 小欧 2026-09-02: 位4 liveMeta 合成(无优先级: retrying/error/truncated 各自到达即更新, 最后收到者胜, 新覆盖旧)
     // 2026-09-08 小欧 6.3.4: detail 分支直接入 candidates(旧文本丢入 meta, 语义]]), wait 2026年:
     //   error 项用 liveError(LiveError 对象) 携带 requestLevel; truncated/retrying 恒执行级(false) — 小欧-2026-09-08
-    const now = Date.now();
+    // 小欧 2026-09-09 P2-14: 时间源改从末条步骤/帧取(useMemo 幂等), 不再依赖 Date.now()
+    //   顺序: 末条业务 step 时间 → 帧 started 时间; 均无时回退 Date.now()(与现状等价)
+    //   注: 不取"帧 started 时间优先"(文档 6.5.5 字面)——旧时间会令新到的 error/truncated 在排序中输给近期过程事件,
+    //   G4 新信号被遮(退化); 且 startTimestamp 为 0 时 `??` 不穿透。末条步骤时间恒 ≥ latestProcessEvent 时间,
+    //   新信号 candidates 前置保序, 与现状 winner 等价 — 小欧-2026-09-09
+    const now =
+      steps[steps.length - 1]?.timestamp || frames.startTimestamp || Date.now();
     const candidates: LiveMeta[] = [
-      ...(latestProcessEvent ? [latestProcessEvent] : []),
       ...(liveError
         ? [
             {
@@ -274,6 +279,7 @@ export const useTaskInfo = (
             },
           ]
         : []),
+      ...(latestProcessEvent ? [latestProcessEvent] : []),
     ];
     const liveMeta = candidates.sort((a, b) => b.time - a.time)[0] ?? null;
 
