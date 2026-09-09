@@ -25,6 +25,9 @@
 //   final.outcome=failed / final.error_type 有值——失败任务优先展示 final.response('任务执行失败')并置 isError 错误态,
 //   不再把 responseBuffer 全程累积的思考草稿(实证 4333字 = 五轮流式chunk: 1737+169+447+668+1312)当"完整回复"正常展示;
 //   与 sseParser final 分支 outcome/error_type/error_message 透传配套, 正常/cancelled 终态不受影响 — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - bug-2修复(task2 step5/step6丢失): onComplete 读 lastMessage.executionSteps 是 React
+//   批处理旧态(不含 final step), 导致 PipelineRenderer 缺数据; 改为优先取 executionStepsFromSSE(sseParser 传入的完整
+//   ref 含 final), 与 sseParser final 分支 :499-500 更新 ref + :520 读 ref + :522 传参配套 — 小欧-2026-09-09
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -446,7 +449,14 @@ export const useChatCallbacks = (
           // 【修改 2026-06-09 小沈】直接使用message中的executionSteps，删除三源合并逻辑
           // 2026-08-27 小欧 修复#6: 优先用服务端最终 fullResponse(含暂停期间缓冲分块), 避免暂停分块因 streamingContentRef 未累积而丢失
           const finalContent = finalResponse || streamingContentRef.current;
-          const finalSteps = lastMessage.executionSteps || [];
+          // 2026-09-09 小欧 bug-2修复: sseParser final分支在调onComplete前已将final step追加到ref(:499-500),
+          //   并作为executionStepsFromSSE(:520)传入; 此处优先用它(含final), 防React批处理prev旧态覆盖
+          const finalSteps =
+            executionStepsFromSSE &&
+            executionStepsFromSSE.length >
+              (lastMessage.executionSteps?.length || 0)
+              ? executionStepsFromSSE
+              : lastMessage.executionSteps || [];
 
           updated[updated.length - 1] = {
             ...lastMessage,
