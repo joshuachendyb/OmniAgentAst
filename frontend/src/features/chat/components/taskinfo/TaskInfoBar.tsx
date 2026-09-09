@@ -27,6 +27,11 @@
 //   G7 narrow/xsmall 仅计数(TrustPanel compact)、G6/G8 恒完整(FloatingEntry 基础行数字+▸+明细进浮层① 已满足矩阵) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B2: 秒表interval的frames.startTimestamp有意不入依赖数组(R1定时器防每帧重置去抖, 见:122注释),
 //   加eslint-disable+理由注释 — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 位4错误信息字符级截断(北京老陈令): renderLiveMeta 文本超 LIVE_META_TEXT_MAX(60)截断加…,
+//   宽/中屏超长时 Tooltip 全文(窄屏沿用 G4 EllipsisTip maxWidth200, 不叠双层Tooltip), 杜绝超长 error_message 撑爆第一行;
+//   G6上下文卡片标签"上下文详情"→"历史上下文"(ariaLabel+卡片标题同步, 北京老陈令), 摘要移除 slice(0,60) 截断改完整显示 — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 北京老陈纠正定案: 第一行 G6 上下文标签"上下文"→"历史上下文"(隐藏于 FloatingEntry 的 MetricItem label),
+//   MetricItem label 恒直出 + 浮层摘要全文显示(非截断), 两块均与"上下文详情→历史上下文"命名一致 — 小欧-2026-09-09
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -66,6 +71,9 @@ import {
   formatToken,
   mapStatus,
 } from './infoMaps';
+
+// 2026-09-09 小欧 - 位4 liveMeta 文本字符上限: 超长 error/truncated 文案截断加…, 全文进 Tooltip — 小欧-2026-09-09
+const LIVE_META_TEXT_MAX = 60;
 
 // BADGE_MAP 由 6.5.2.1 infoMaps.ts 定义，本文件经 import 使用（6.5.3.2），不再内联定义
 
@@ -176,7 +184,13 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
       </div>
     ) : null;
 
-  // renderLiveMeta(3.9 重用: wide/mid 完整 + narrow/xsmall 经 EllipsisTip 省略 均同源) — v4.4 修复#3
+  // renderLiveMeta(3.9 重用 + 2026-09-09 位4字符级截断): 文本超 LIVE_META_TEXT_MAX 截断加…,
+  //   briefMeta() 一次性返回 {text(截断后), truncated(是否超长)}, renderLiveMeta 渲染截断文本,
+  //   宽/中屏由调用处据 truncated 决定是否包 Tooltip 全文, 窄屏外层 EllipsisTip(maxWidth 200) — 小欧-2026-09-09
+  const briefMeta = (m: LiveMeta): { text: string; truncated: boolean } =>
+    m.text.length > LIVE_META_TEXT_MAX
+      ? { text: `${m.text.slice(0, LIVE_META_TEXT_MAX)}…`, truncated: true }
+      : { text: m.text, truncated: false };
   const renderLiveMeta = (m: LiveMeta) => (
     <span
       style={{
@@ -204,7 +218,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
       ) : (
         <WarningOutlined /> // P1-5: ⚠ → WarningOutlined
       )}{' '}
-      {m.text}
+      {briefMeta(m).text}
     </span>
   );
 
@@ -295,6 +309,11 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               >
                 {renderLiveMeta(info.liveMeta)}
               </EllipsisTip>
+            ) : briefMeta(info.liveMeta).truncated ? (
+              // 2026-09-09 小欧: 宽/中屏文本超长也截断(renderLiveMeta 内部按字符上限), 全文包 Tooltip 兜底可读 — 小欧-2026-09-09
+              <Tooltip title={info.liveMeta.text}>
+                {renderLiveMeta(info.liveMeta)}
+              </Tooltip>
             ) : (
               renderLiveMeta(info.liveMeta)
             ))}
@@ -370,7 +389,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                 onOpenChange={setCtxOpen}
                 placement="bottomLeft" // v4.1: 左缘对齐 G6; 窄屏右贴安全边距(v4.1 定案)(antd 真值, 见 FloatingEntry)
                 cardId="taskinfo-context-card"
-                ariaLabel="上下文详情"
+                ariaLabel="历史上下文"
                 cardStyle={{
                   width: 320,
                   maxWidth: '90vw',
@@ -388,12 +407,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                         color: Colors.TEXT.PRIMARY,
                       }}
                     >
-                      上下文详情
+                      历史上下文
                     </div>
-                    <div>
-                      摘要: {summary.slice(0, 60)}
-                      {summary.length > 60 ? '…' : ''}
-                    </div>
+                    {/* 2026-09-09 北京老陈令: 摘要不截断, 完整显示 */}
+                    <div>摘要: {summary}</div>
                     <div>
                       估算 token:{' '}
                       {showTokens
@@ -414,7 +431,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                 }
               >
                 <MetricItem
-                  label="上下文"
+                  label="历史上下文"
                   value={
                     showTokens
                       ? `${(tokens ?? 0).toLocaleString('en-US')} tok`
