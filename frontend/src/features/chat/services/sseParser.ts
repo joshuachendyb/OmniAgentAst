@@ -695,7 +695,7 @@ const processSSEData = (
         onStep?.(step);
         // [DEBUG-6] 2026-09-09 北京老陈 action处理完成
         console.log(
-          `[DBG-6] action已处理: step=${step.step} preview=${step.preview} → setExecutionSteps+onStep已调用`
+          `[DBG-6] action已处理: tool=${step.tool_name} preview=${step.preview}`
         );
 
         break;
@@ -846,7 +846,7 @@ const processSSEData = (
         onStep?.(step);
         // [DEBUG-6b] 2026-09-09 北京老陈 observation处理完成
         console.log(
-          `[DBG-6b] observation已处理: step=${step.step} tool=${step.tool_name} status=${step.execution_status}`
+          `[DBG-6b] observation已处理: tool=${step.tool_name} status=${step.execution_status}`
         );
         break;
       }
