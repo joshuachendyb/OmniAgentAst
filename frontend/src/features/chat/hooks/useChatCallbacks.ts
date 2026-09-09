@@ -146,11 +146,13 @@ export const useChatCallbacks = (
   //   preview 与 canonical 因 preview 位不同不误杀, chunk 逐块 content 不同不误杀;
   //   onComplete/onError 终态清空 Set, 供下一任务重新计数 — 小欧-2026-09-09
   const onStepFingerprintRef = useRef<Set<string>>(new Set());
+  const _dbgRoundRef = useRef(0); // [DEBUG-4] 轮次计数器
 
   const onStep = useCallback(
     (step: ExecutionStep) => {
-      // [DEBUG-4] 2026-09-09 执行路径追踪(精简一行)
-      console.log(`[DBG-4] → ${step.type}/step=${step.step ?? ''}`);
+      // [DEBUG-4] 2026-09-09 执行路径追踪(轮次)
+      if (step.type === 'thought-start') _dbgRoundRef.current++;
+      console.log(`[DBG-4] → ${step.type}/R${_dbgRoundRef.current}`);
       // A1(2026-09-09 小欧): 指纹去重——同 type|step|preview|content(前64) 事件视为重放/重复行跳过,
       //   防 executionSteps 无界膨胀(356步残留)与渲染错乱 — 小欧-2026-09-09
       const fingerprint = [
