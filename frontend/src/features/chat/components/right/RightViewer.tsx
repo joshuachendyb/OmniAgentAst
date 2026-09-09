@@ -143,19 +143,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
       receiving ||
       liveBadge === 'running' ||
       liveBadge === 'paused');
-  // [DEBUG-1] 2026-09-09 北京老陈 冻结诊断：isCurrentLive 各因子
-  if (liveSteps.length > 0 || isCurrentLive !== prevIsCurrentLiveRef.current) {
+  // [DEBUG-1] 2026-09-09 北京老陈 冻结诊断：isCurrentLive 仅状态变化时打
+  if (isCurrentLive !== prevIsCurrentLiveRef.current) {
     console.log(
-      `[DBG-1] isCurrentLive=${isCurrentLive}`,
-      `active=${activeTaskId}`,
-      `server=${serverTaskId}`,
-      `match=${activeTaskId === serverTaskId}`,
-      `hasFinal=${_hasFinal}`,
-      `hasBiz=${hasBusinessSteps}`,
-      `receiving=${receiving}`,
-      `liveBadge=${liveBadge}`,
-      `liveSteps=${liveSteps.length}`,
-      `histSteps=${historySteps.length}`
+      `[DBG-1] live=${isCurrentLive} match=${activeTaskId === serverTaskId} final=${_hasFinal} biz=${hasBusinessSteps} recv=${receiving} badge=${liveBadge} live=${liveSteps.length} hist=${historySteps.length}`
     );
     prevIsCurrentLiveRef.current = isCurrentLive;
   }

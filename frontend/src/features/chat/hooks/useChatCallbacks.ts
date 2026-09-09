@@ -149,11 +149,8 @@ export const useChatCallbacks = (
 
   const onStep = useCallback(
     (step: ExecutionStep) => {
-      // [DEBUG-4] 2026-09-09 北京老陈 onStep 入口
-      console.log(
-        `[DBG-4] onStep 入口: type=${step.type} step=${step.step} preview=${step.preview ?? false}`,
-        `cancelInProgress=${cancelInProgressRef.current} isPaused=${isPausedRef.current}`
-      );
+      // [DEBUG-4] 2026-09-09 执行路径追踪(精简一行)
+      console.log(`[DBG-4] → ${step.type}/step=${step.step ?? ''}`);
       // A1(2026-09-09 小欧): 指纹去重——同 type|step|preview|content(前64) 事件视为重放/重复行跳过,
       //   防 executionSteps 无界膨胀(356步残留)与渲染错乱 — 小欧-2026-09-09
       const fingerprint = [
@@ -163,11 +160,7 @@ export const useChatCallbacks = (
         (step.content ?? '').slice(0, 64),
       ].join('|');
       if (onStepFingerprintRef.current.has(fingerprint)) {
-        console.log(
-          `[onStep] 去重跳过重复事件: ${step.type}/step=${step.step ?? ''}`
-        );
-        // [DEBUG-4b] 2026-09-09 北京老陈 去重拦截
-        console.log(`[DBG-4b] 去重拦截: fp=${fingerprint}`);
+        // [onStep] 去重跳过重复事件
         return;
       }
       onStepFingerprintRef.current.add(fingerprint);
@@ -217,10 +210,6 @@ export const useChatCallbacks = (
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (!lastMessage || lastMessage.role !== 'assistant') {
-          // [DEBUG-4c] 2026-09-09 北京老陈 无assistant消息→新建
-          console.log(
-            `[DBG-4c] onStep: 无assistant消息, 新建 type=${step.type} step=${step.step}`
-          );
           // 【关键修复 2026-04-13】任何step都创建消息，不只是start
           // 因为后端可能直接发 paused/retrying/resumed，不发 start(2026-09-07 小欧 4.4.1: cancelled 移出该集合)
           const extractedDisplay_name = step.display_name;

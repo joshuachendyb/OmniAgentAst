@@ -258,13 +258,32 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   deniedEntries, // 2026-09-06 小欧 B2(6.4)
 }) => {
   const segs = buildSegments(steps);
-  // [DEBUG-5] 2026-09-09 北京老陈 buildSegments 输出
-  console.log(
-    `[DBG-5] PipelineRenderer: steps(${steps.length})→segs(${segs.length})`,
-    `types=[${steps.map((s) => s.type).join(',')}]`,
-    `segKinds=[${segs.map((s) => s.kind).join(',')}]`,
-    `streaming=${streaming}`
-  );
+  // [DEBUG-5] 2026-09-09 北京老陈 steps→segs 执行路径(连续重复压缩, 仅streaming)
+  if (streaming) {
+    const _compressPath = (
+      arr: { type?: string; kind?: string }[],
+      key: 'type' | 'kind'
+    ) => {
+      const parts: string[] = [];
+      let prev = '',
+        cnt = 0;
+      for (const item of arr) {
+        const v = (item[key] ?? '') as string;
+        if (v === prev) {
+          cnt++;
+        } else {
+          if (prev) parts.push(`${prev}${cnt > 1 ? '×' + cnt : ''}`);
+          prev = v;
+          cnt = 1;
+        }
+      }
+      if (prev) parts.push(`${prev}${cnt > 1 ? '×' + cnt : ''}`);
+      return parts.join('→');
+    };
+    console.log(
+      `[DBG-5] steps(${steps.length})[${_compressPath(steps, 'type')}] → segs(${segs.length})[${_compressPath(segs, 'kind')}]`
+    );
+  }
   // 2026-09-04 小欧 - observation 去重：已消费孤儿抑制（单/多工具并行时孤儿与 ToolCallLine 重复）
   const toolStepSet = new Set(
     segs
