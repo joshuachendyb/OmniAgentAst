@@ -14,7 +14,7 @@
 | v1.3 | 2026-09-09 23:18:18 | 全部修订点替换为真实diff代码，删除所有伪代码和示意图 | 小欧 |
 | v1.4 | 2026-09-09 23:20:05 | 恢复v1.2调用链图，放置在3.2节，标注真实行号 | 小欧 |
 | v1.5 | 2026-09-09 23:57:15 | 全文一致性核查+三堂会审：修正3处文档错误，四章新增同类问题A-J共10个真实bug | 小欧 |
-| v1.6 | 2026-09-10 05:12:58 | 三堂会审第二轮：发现修复方案重大缺陷——chunk分支steps1-3无去重, 双流时文本翻倍, 新增4.5节 | 小欧 |
+
 
 **关联文档**:
 - [17]任务1任务2问题根因分析报告-小欧-2026-09-09.md
@@ -337,54 +337,3 @@ useSSE.ts                                          sseParser.ts
 | 同类问题 | 发现 A-J 共10个真实可测bug，其中 **B（双流并存）是本重复问题的核心根因加强**，E（final直写ref缺obs）与历史bug-2同根 |
 | 建议 | 修复本文差异后，优先处理 B（重连abort旧流）与 E（final同步ref时序），二者是重复/丢失的机械根因 |
 
-### 4.5 修复方案第二轮三堂会审：重大缺陷发现
-
-> 核查人：小欧 / 核查时间：2026-09-10 05:12:58
-
-**发现：chunk 分支的修复不完整，双流并存时文本内容仍会翻倍。**
-
-chunk 事件在 sseParser.ts:395-441 的处理有 5 个步骤：
-
-| 步骤 | 行号 | 操作 | 去重保护 |
-|------|------|------|---------|
-| 1 | :401 | `responseBufferRef.current += chunkContent` | **无** |
-| 2 | :402 | `setCurrentResponse(responseBufferRef.current)` | **无** |
-| 3 | :403 | `onChunk?.(chunkContent)` → `streamingContentRef.current += chunk` → message.content 翻倍 | **无** |
-| 4 | :429 | `setExecutionSteps` → executionSteps 追加 | ✅ 有（本文修复） |
-| 5 | :440 | `onStep` → message.executionSteps 追加 | ✅ 有（已有） |
-
-**双流并存时的执行轨迹**：
-
-```
-旧流处理 chunk(content="abc"):
-  step1: responseBufferRef = "abc"          ← 无去重
-  step2: setCurrentResponse("abc")          ← 无去重
-  step3: onChunk → streamingRef = "abc"     ← 无去重
-  step4: setExecutionSteps → 加入           ← 有去重
-  step5: onStep → 加入                      ← 有去重
-
-新流处理同一个 chunk(content="abc"):
-  step1: responseBufferRef = "abcabc"       ← 翻倍！
-  step2: setCurrentResponse("abcabc")       ← 翻倍！
-  step3: onChunk → streamingRef = "abcabc"  ← 翻倍！message.content = "abcabc"
-  step4: setExecutionSteps → dedup捕获跳过  ← 正确
-  step5: onStep → dedup捕获跳过             ← 正确
-```
-
-**结果**：executionSteps 去重了（只有1份），但用户看到的**文本内容翻倍**（"abcabc"）。修复方案不完整。
-
-**结论**：本文修复只保护了路径A（executionSteps），未保护路径C（responseBufferRef/streamingContentRef/message.content）。需在 chunk 分支的 steps 1-3 也加去重，或在更上游（reader.read 循环）拦截重复帧。
-
----
-
-## 五、编辑历史
-
-| 日期 | 署名 | 修改目的和逻辑说明 |
-|------|------|-------------------|
-| 2026-09-09 | 小欧 | 初版：chunk/step重复显示根因分析+修复diff |
-| 2026-09-09 | 小欧 | v1.1: 补充second漏洞final分支line499直接ref赋值绕过去重+8处全覆盖清单 |
-| 2026-09-09 | 小欧 | v1.2: 重写第三章加完整调用链图拆分6子章节按执行顺序排列 |
-| 2026-09-09 | 小欧 | v1.3: 全部修订点替换为真实diff代码, 删除所有伪代码和示意图, 14个修订点逐一标注行号 |
-| 2026-09-09 | 小欧 | v1.4: 恢复v1.2调用链图放3.2节标注真实行号 |
-| 2026-09-09 | 小欧 | v1.5: 全文一致性核查+三堂会审, 修正3处文档错误(铁证#1/#5/章节3.3重复), 新增四章同类问题深挖A-J共10个真实bug |
-| 2026-09-10 | 小欧 | v1.6: 三堂会审第二轮发现修复方案重大缺陷(chunk分支steps1-3无去重双流时文本翻倍), 新增4.5节 |
