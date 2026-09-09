@@ -263,6 +263,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
       cancelled = true;
       if (settleTimer !== null) window.clearTimeout(settleTimer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- detail有意不入deps: setDetail后重Run会自激循环REST(loading窗口见#45修复) — 小欧-2026-09-09
   }, [activeTaskId, sessionId, isCurrentLive, _hasFinal, serverTaskId]);
 
   // B16：锚定的当前任务结束沿 -> 补取 C1 终态详情并刷新外层列表

@@ -798,10 +798,12 @@ export function showSuccess(msg: string = '操作成功'): void {
 function extractErrorMessage(error: unknown): string | undefined {
   if (typeof error === 'string') return error;
   if (error == null) return undefined;
-  const e = error as Record<string, any>;
+  const e = error as Record<string, unknown>;
   const resp = e.response;
   if (resp && typeof resp === 'object') {
-    const data = resp.data;
+    const data = (resp as Record<string, unknown>).data as
+      | Record<string, unknown>
+      | undefined;
     if (data && typeof data === 'object') {
       if (data.detail !== undefined && data.detail !== null) {
         if (Array.isArray(data.detail)) return JSON.stringify(data.detail);

@@ -90,7 +90,7 @@ export function useChainTokens(
       }
     }
     prevReceivingRef.current = isReceiving;
-  }, [isReceiving, refreshTasks, sessionId, tasks]);
+  }, [isReceiving, refreshTasks, sessionId, tasks, serverTaskId, latestTaskId]);
 
   return { sessionTokens, chainTokens };
 }

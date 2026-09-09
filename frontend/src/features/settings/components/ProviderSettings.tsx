@@ -163,10 +163,10 @@ export const ProviderSettings: React.FC<{
   };
 
   const handleSaveProvider = async (values: Record<string, unknown>) => {
+    if (!editingProvider) return; // 2026-09-09 小欧 C2: 守卫替代non-null断言, 消除禁用注释既防运行时错误 — 小欧-2026-09-09
     try {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       await configApi.updateProvider(
-        editingProvider!.name,
+        editingProvider.name,
         values as Record<string, unknown>
       );
 

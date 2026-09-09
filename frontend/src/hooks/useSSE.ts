@@ -584,8 +584,8 @@ export const useSSE = (
       if (onDisconnect) {
         onDisconnect();
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- disconnect为手动入口, 故意仅依赖sessionId(闭包全引用运行时refs) — 小欧-2026-09-09
     [config.sessionId]
   );
 
@@ -972,7 +972,7 @@ export const useSSE = (
       reconnectAttemptsRef.current++;
       sendMessageInternal(content, sessionId, lastContextLinkModeRef.current);
     }, delay);
-  }, [sendMessageInternal]);
+  }, [sendMessageInternal, onError]);
 
   /**
    * 发送消息建立SSE连接

@@ -634,6 +634,8 @@ export const useChatCallbacks = (
       displayBufferRef,
       streamingContentRef,
       waitTimerRef,
+      streamingStepsRef,
+      executionStepsRef,
     ]
   );
 
@@ -706,7 +708,14 @@ export const useChatCallbacks = (
     if (streaming?.setIsReceiving) {
       streaming.setIsReceiving(true);
     }
-  }, [setMessages, setIsPaused, onError, streaming, displayBufferRef]);
+  }, [
+    setMessages,
+    setIsPaused,
+    onError,
+    streaming,
+    displayBufferRef,
+    isPausedRef,
+  ]);
 
   // ==================== onRetry回调 ====================
 

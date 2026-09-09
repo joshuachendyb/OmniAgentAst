@@ -350,8 +350,8 @@ export const useChatFacade = (options?: {
       chatPersistence,
       chatSend,
       chatTaskControl,
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- facade单次组装: 底层各hook各自精确依赖, 整体入deps会全量重建级联渲染 — 小欧-2026-09-09
     [
       // ===== 会话状态 =====
       chatState.sessionId,

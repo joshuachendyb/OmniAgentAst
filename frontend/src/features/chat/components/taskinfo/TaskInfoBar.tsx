@@ -119,6 +119,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
     setLiveElapsed(0);
     startRef.current = null; // 2026-08-27 小欧 三堂会审: 任务切换复位startRef
     return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- frames.startTimestamp有意不入deps: R1定时器防每帧重置(去抖动, 变更记录见R1注释) — 小欧-2026-09-09
   }, [receiving, detail]); // 2026-09-06 小欧 R1: deps去info.badge; 其余保持(去frames.startTimestamp防抖动) — 小欧-2026-09-06
   const shownElapsed = detail
     ? info.elapsedSec

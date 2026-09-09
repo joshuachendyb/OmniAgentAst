@@ -93,7 +93,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     liveError,
     authorizationPending,
     recentConfirmedTool,
-    handleAuthorizationConfirm,
     tasks,
     total,
     tasksLoading,
@@ -133,7 +132,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
   const {
     isReceiving,
     executionSteps,
-    currentResponse,
     metaFrames,
     serverTaskId,
     deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合透传 RightViewer → PipelineRenderer — 小欧-2026-09-06
@@ -290,6 +288,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       },
     ],
     [
+      handleEditingCancel,
+      handleEditingStart,
       sessionId,
       sessionTitle,
       titleLocked,
@@ -316,7 +316,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       serverTaskId,
       isReceiving,
       executionSteps,
-      currentResponse,
       metaFrames,
       deniedSteps, // 2026-09-06 小欧 B2(方案C): state 变化需触发面板重渲 — 小欧-2026-09-06
       deniedEntries, // 2026-09-06 小欧 B2(6.4): state 变化需触发面板重渲 — 小欧-2026-09-06
@@ -329,7 +328,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       liveError,
       authorizationPending, // 2026-09-06 小欧 B1: recentConfirmedTool 同入依赖(否则 useMemo 缓存旧值 highlight 不刷新) — 小欧-2026-09-06
       recentConfirmedTool,
-      handleAuthorizationConfirm,
       refreshTasks,
       latestTaskId, // 2026-09-01 小欧 方案C
       latestTaskRef, // 2026-09-01 小欧 方案C
