@@ -131,11 +131,13 @@ export const useTaskInfo = (
     }
 
     let badge: TaskBadge = 'idle';
-    // [DEBUG-3] 2026-09-09 北京老陈 badge 起始值+steps执行路径(连续重复压缩)
+    // [DEBUG-3] 2026-09-09 北京老陈 badge 起始值+steps执行路径(chunk只计总数, 路径列非chunk步骤)
+    const _chunkCount = steps.filter((s) => s.type === 'chunk').length;
     const _pathParts: string[] = [];
     let _prev = '',
       _cnt = 0;
     for (const s of steps) {
+      if (s.type === 'chunk') continue;
       if (s.type === _prev) {
         _cnt++;
       } else {
@@ -146,7 +148,7 @@ export const useTaskInfo = (
     }
     if (_prev) _pathParts.push(`${_prev}${_cnt > 1 ? '×' + _cnt : ''}`);
     console.log(
-      `[DBG-3] badge=idle steps(${steps.length}) [${_pathParts.join('→')}] recv=${receiving}`
+      `[DBG-3] badge=idle steps(${steps.length}) chunk=${_chunkCount} [${_pathParts.join('→')}] recv=${receiving}`
     );
     const processEvents: ProcessEvent[] = [];
     // 小欧 2026-09-02: 位4 最近一条 retrying(新覆盖旧); 窄化 kind 直入 LiveMeta[] 合成, 免 TS 联合类型报错
