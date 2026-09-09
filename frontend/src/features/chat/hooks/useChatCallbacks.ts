@@ -21,6 +21,10 @@
 // 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理」): 删 onStep 每步「📝 type= timestamp=」打点
 //   ——sseParser 各 case 已统一打 [STEP]/[ACTION] [收到数据], 此处与解析层重复(D.R.Y); 删 onComplete 注释掉的死日志
 //   (AI回答保存完成 等)——终态已由 ✅ type=AI流式完成 保留打点(测试断言锚点) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 失败终态修复(北京老陈「还是没有找到问题在哪里」追问实证): onComplete 前置判定
+//   final.outcome=failed / final.error_type 有值——失败任务优先展示 final.response('任务执行失败')并置 isError 错误态,
+//   不再把 responseBuffer 全程累积的思考草稿(实证 4333字 = 五轮流式chunk: 1737+169+447+668+1312)当"完整回复"正常展示;
+//   与 sseParser final 分支 outcome/error_type/error_message 透传配套, 正常/cancelled 终态不受影响 — 小欧-2026-09-09
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -347,7 +351,30 @@ export const useChatCallbacks = (
       // 【小沈修改2026-04-15】删除errorCode字段，统一使用errorMessage
       let errorMessage: string | undefined = undefined;
 
-      if (!finalResponse || !finalResponse.trim()) {
+      // 【2026-09-09 小欧 失败终态先判定】
+      // 实证案例(004924): final.outcome=failed/error_type=quota_exceeded, 但 responseBufferRef 全程累积
+      //   5轮流式思考草稿(4333字, 1737+169+447+668+1312 精确) → 原逻辑 fullResponse 非空即跳过判空分支,
+      //   isError 恒 false, 失败任务被当"完整回复"正常展示。此处前置判定: 失败终态优先展示 final.response
+      //   失败文案并置错误态, 杜绝草稿冒充最终回答 — 小欧-2026-09-09
+      const sseStepsAll =
+        executionStepsFromSSE || executionStepsRef.current || [];
+      const finalStepAll = sseStepsAll.find(
+        (s: ExecutionStep) => s.type === 'final'
+      ) as (ExecutionStep & Record<string, unknown>) | undefined;
+      if (
+        (finalStepAll?.outcome as string) === 'failed' ||
+        (finalStepAll?.error_type as string)
+      ) {
+        console.warn(
+          '🔴 [onComplete] 终态失败: outcome=%s error_type=%s, 展示失败文案而非思考草稿',
+          finalStepAll?.outcome,
+          finalStepAll?.error_type
+        );
+        finalResponse = (finalStepAll?.response as string) || '任务执行失败';
+        isError = true;
+        errorType = finalStepAll?.error_type as string | undefined;
+        errorMessage = finalStepAll?.error_message as string | undefined;
+      } else if (!finalResponse || !finalResponse.trim()) {
         // 【修复 2026-05-05 小沈】Agent路径不发chunk，finalResponse永远为空，
         // 但executionSteps可能完全正常（有thought步骤含回答内容）。
         // 判断条件：final步骤的response和thought都空，且没有thought步骤有content，才判error

@@ -42,6 +42,9 @@
 //     消除原分支内 Date.now()/接收时间 各自截取的毫秒级不一致(同帧各日志时间必然一致);
 //   ②thought-start/thought/action/observation/error/final/user_rejected/paused/resumed/retrying 全部换用 frameTime;
 //   ③删 action/observation 分支内私有 receiveTime(回归 frameTime 单一真源) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 失败终态透传修复(北京老陈「UI冻住/日志不完整」排查实证): final 分支补解析
+//   outcome/error_type/error_message —— 后端 FinalStep(2026-07-18 规整) 已稳定下发, 前端漏解析导致
+//   useChatCallbacks.onComplete 无法识别失败终态, 4333字思考草稿(5轮流式chunk累积)被当"完整回复"正常展示 — 小欧-2026-09-09
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -460,6 +463,11 @@ const processSSEData = (
         step.is_streaming = rawData.is_streaming;
         step.is_reasoning = normalizeIsReasoning(rawData.is_reasoning); // 2026-08-27 小欧 修复B3: 归一化避免存字符串
         step.content = step.response; // content只用于前端显示，使用response的值
+        // 2026-09-09 小欧 失败终态透传: 后端 FinalStep 已下发 outcome/error_type/error_message,
+        //   前端原漏解析致 onComplete 无法识别失败终态(4333字思考草稿被当完整回复) — 小欧-2026-09-09
+        step.outcome = rawData.outcome;
+        step.error_type = rawData.error_type;
+        step.error_message = rawData.error_message;
 
         if (step.content) {
           if (!responseBufferRef.current) {

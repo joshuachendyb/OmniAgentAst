@@ -17,6 +17,9 @@
 // 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理」): executeSend 删 3 处调试噪音——
 //   ①🔍客户端信息(整对象打印) ②🔍在调用AI之前先保存用户消息(整 userMessage 打印) ③🔍assistant消息ID(占位ID计算过程);
 //   保留启动/保存成功/404清空/未找到sessionId/失败 等真实流程锚点打点 — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 等待心跳打点(北京老陈「UI冻住/日志不完整」实证): executeSend waitTimer
+//   每秒 waitTime+1 时每5秒 console 打点「已等待后端响应 Ns」, 终结等待期 console 一片空白
+//   「像假死/日志不完整」的误判; 实证 waitTime 全链 0 处 .tsx 消费(从不展示等待秒数), 心跳打点为最低代价活性证据 — 小欧-2026-09-09
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -377,7 +380,16 @@ export const useChatStreaming = (
         clearInterval(waitTimerRef.current);
       }
       waitTimerRef.current = setInterval(() => {
-        setWaitTime((t: number) => t + 1);
+        setWaitTime((t: number) => {
+          const nt = t + 1;
+          // 【2026-09-09 小欧 等待心跳】后端响应间隔>5s 时 console 每5秒打点一次"已等待N秒",
+          //   终结"等待期 console 一片空白→疑似日志不完整/前端假死"的误判(UI 冻住 实证:
+          //   waitTime 全链 0 处 .tsx 消费, 等待秒数从不展示, UI 20s 空档完全静止) — 小欧-2026-09-09
+          if (nt % 5 === 0) {
+            console.log(`⏳ [心跳] 已等待后端响应 ${nt}s, 流式持续接收中...`);
+          }
+          return nt;
+        });
       }, 1000);
       clearSteps();
 
