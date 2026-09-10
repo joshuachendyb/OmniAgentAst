@@ -47,6 +47,11 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段三S15收尾: 组件卸载cleanup追加 hitlWaitingKeysRef.current.clear(),
 //   HITL等待key Set卸载即归零, 封死abort竞态窗口旧流帧add残留口子(disconnect已断流清定时器, 此行为防御完备)
 //   — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段三S12/S19门禁实施落地(v2.17): flushPendingSteps改ref权威源等价值
+//   计算(批batch取自splice已清空, 无并发丢更新, ref同步幂等), 并恢复saveStepsToStorage兜底快照调用
+//   (S12.2六分支删saveStepsToStorage后调用点未重新挂接, S19元数据外壳写入实际断链); saveStepsToStorage
+//   声明提前至flushPendingSteps之前以在useCallback直接引用; 同步清理S12.2残留死参数:
+//   sseParser handlers 的 saveStepsToStorage 字段/解构及 useSSE 两处传参已无调用点, 一并删除 — 小欧-2026-09-10
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -399,19 +404,49 @@ export const useSSE = (
   const pendingStepsRef = useRef<ExecutionStep[]>([]);
   const flushScheduledRef = useRef(false);
 
+  // 保存到 sessionStorage 的辅助函数(5s 防抖, 合并连续事件避免O(N²)主线程阻塞)
+  // 小欧 2026-09-10 S12.3: 5s 兜底快照，去主线程同步阻塞
+  const saveStepsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveStepsToStorage = useCallback(
+    (steps: ExecutionStep[]) => {
+      if (steps.length === 0 || !config.sessionId) return;
+      if (saveStepsTimerRef.current !== null)
+        clearTimeout(saveStepsTimerRef.current);
+      saveStepsTimerRef.current = setTimeout(() => {
+        const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
+        try {
+          // 小欧 2026-09-10 S19: 写入元数据外壳——恢复时按 source 区分累积 vs 外部
+          const envelope = {
+            steps: steps,
+            source: 'live' as const,
+            timestamp: Date.now(),
+          };
+          sessionStorage.setItem(storageKey, JSON.stringify(envelope));
+        } catch (e) {
+          console.warn('[SSE] 保存到 sessionStorage 失败:', e);
+        }
+        saveStepsTimerRef.current = null;
+      }, 5000); // 小欧 2026-09-10 S12: 5s 兜底快照，去主线程同步阻塞
+    },
+    [config.sessionId]
+  );
+
   const flushPendingSteps = useCallback(() => {
     if (pendingStepsRef.current.length === 0) {
       flushScheduledRef.current = false;
       return;
     }
     const batch = pendingStepsRef.current.splice(0);
-    setExecutionSteps((prev) => {
-      const newSteps = [...prev, ...batch];
-      executionStepsRef.current = newSteps;
-      return newSteps;
-    });
+    // 小欧 2026-09-10 S12.1: ref 权威源等价值计算（核查注 :955-961 等价改法）——
+    //  batch 全部来自 pendingStepsRef（splice 取出即清空），无并发丢更新；ref 同步赋值幂等
+    const newSteps = [...executionStepsRef.current, ...batch];
+    executionStepsRef.current = newSteps;
+    setExecutionSteps(newSteps); // 非函数式 set，S12 后所有写入均经 pendingSteps
+    // 小欧 2026-09-10 S12.3(+v2.17 修复): flush 即批量落库点，恢复 saveStepsToStorage 兜底快照调用
+    //  （S12.2 六分支删 saveStepsToStorage 后调用点未重新挂接，快照写入实际断链 — 小欧-2026-09-10）
+    saveStepsToStorage(newSteps);
     flushScheduledRef.current = false;
-  }, []);
+  }, [saveStepsToStorage]);
 
   const scheduleFlush = useCallback(() => {
     if (!flushScheduledRef.current) {
@@ -515,32 +550,6 @@ export const useSSE = (
       }
     }
   }, [config.sessionId]); // 仅在 sessionId 变化时检查
-
-  // 保存到 sessionStorage 的辅助函数(防抖300ms, 合并连续事件避免O(N²)主线程阻塞)
-  const saveStepsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveStepsToStorage = useCallback(
-    (steps: ExecutionStep[]) => {
-      if (steps.length === 0 || !config.sessionId) return;
-      if (saveStepsTimerRef.current !== null)
-        clearTimeout(saveStepsTimerRef.current);
-      saveStepsTimerRef.current = setTimeout(() => {
-        const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
-        try {
-          // 小欧 2026-09-10 S19: 写入元数据外壳——恢复时按 source 区分累积 vs 外部
-          const envelope = {
-            steps: steps,
-            source: 'live' as const,
-            timestamp: Date.now(),
-          };
-          sessionStorage.setItem(storageKey, JSON.stringify(envelope));
-        } catch (e) {
-          console.warn('[SSE] 保存到 sessionStorage 失败:', e);
-        }
-        saveStepsTimerRef.current = null;
-      }, 5000); // 小欧 2026-09-10 S12: 5s 兜底快照，去主线程同步阻塞
-    },
-    [config.sessionId]
-  );
 
   // 清空 sessionStorage 的辅助函数
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -815,7 +824,6 @@ export const useSSE = (
                 setExecutionSteps,
                 getCurrentExecutionSteps: () => executionStepsRef.current,
                 executionStepsRef,
-                saveStepsToStorage,
                 onStep,
                 onChunk,
                 onComplete,
@@ -857,7 +865,6 @@ export const useSSE = (
               setExecutionSteps,
               getCurrentExecutionSteps: () => executionStepsRef.current,
               executionStepsRef,
-              saveStepsToStorage,
               onStep,
               onChunk,
               onComplete,

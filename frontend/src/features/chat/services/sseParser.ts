@@ -53,6 +53,8 @@
 //   零同步序列化消除O(N²)主线程阻塞; final分支同步flush防组件卸载前丢尾; handlers新增pendingStepsRef/scheduleFlush — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - S15并发HITL: onPaused/onResumed加可选confirmId参数(并发HITL区分), paused/resumed分支透传rawData.confirm_id — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - S3 seq守卫: handlers新增lastSeqRef, 入口层拦截重复事件(seq<=lastSeqRef.current即跳过), 防断连重连重复帧 — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段三S12.2残留死参清理(v2.17): handlers删saveStepsToStorage字段(:78)+解构(:133,
+//   与useSSE两处传参同步删), 该参已无调用点(S12改用pendingStepsRef+scheduleFlush, 落库收敛于flushPendingSteps) — 小欧-2026-09-10
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -76,7 +78,6 @@ const processSSEData = (
     setExecutionSteps: React.Dispatch<React.SetStateAction<ExecutionStep[]>>;
     getCurrentExecutionSteps: () => ExecutionStep[];
     executionStepsRef: React.MutableRefObject<ExecutionStep[]>; // 【小新添加 2026-03-15】用于同步更新 ref
-    saveStepsToStorage?: (steps: ExecutionStep[]) => void; // 【小强添加 2026-03-18】保存到 sessionStorage
     onStep?: (step: ExecutionStep) => void;
     onChunk?: (chunk: string, is_reasoning?: boolean) => void;
     onComplete?: (
@@ -131,7 +132,6 @@ const processSSEData = (
 ) => {
   const {
     setExecutionSteps,
-    saveStepsToStorage,
     onStep,
     onChunk,
     onComplete,

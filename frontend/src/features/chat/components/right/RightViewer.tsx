@@ -59,6 +59,11 @@
 //   S13.3 去掉300ms猜测缓冲(settleTimer), 立即拉REST;
 //   S13.4 REST结果与settledSteps等长校验(短则弃,保留settledSteps兜底);
 //   新增 executionStepsRef prop(从useChatPanels透传) — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段三S13门禁实施落地(v2.17): S13.1条件原为 `_hasFinal && isCurrentLive`, 但
+//   isCurrentLive 定义自身含 !_hasFinal, 两者恒互斥→快照effect永不触发, settledRef恒空,S13防丢尾整体失效;
+//   改 _hasFinal 驱动, 不加 settledRef 长度守卫(多任务切换时 settledRef 残留旧值, 守卫会阻止新任务快照覆盖
+//   旧值, 引入任务切换残留), final 到达即固化 executionStepsRef 全量(幂等, 多次同值不触发重渲染)。
+//   【纠正上条误记 2026-09-10 小欧】: 原版本误写"+settledRef.length守卫", 三堂会审裁定不放守卫, 以代码为准 — 小欧-2026-09-10
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -163,9 +168,13 @@ const RightViewer: React.FC<RightViewerProps> = ({
     prevIsCurrentLiveRef.current = isCurrentLive;
   }
 
-  // 小欧 2026-09-10 S13.1: final 到达瞬时快照——用 ref（同步）而非 state（异步）
+// 小欧 2026-09-10 S13.1: final 到达瞬时快照——用 ref（同步）而非 state（异步）
+  // v2.17 修复(小欧 2026-09-10)：原条件 `_hasFinal && isCurrentLive` 恒假（isCurrentLive 定义含 !_hasFinal），
+  //   快照 effect 永不触发，settledRef/settledSteps 恒空，S13 防丢尾整体失效——改 _hasFinal 驱动，
+  //   不加 settledRef 守卫（多任务切换时 settledRef 会残留旧值，守卫会阻止新任务快照覆盖），
+  //   final 到达即固化 executionStepsRef 全量（幂等，多次执行值相同，React 不重渲染）
   useEffect(() => {
-    if (_hasFinal && isCurrentLive) {
+    if (_hasFinal) {
       const snapshot =
         executionStepsRef && executionStepsRef.current.length > 0
           ? [...executionStepsRef.current]
@@ -173,7 +182,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
       settledRef.current = snapshot;
       setSettledSteps(snapshot);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 不依赖 liveSteps（ref 已同步更新） — 小欧 2026-09-10 S13.1
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 不依赖 liveSteps（ref 已同步更新） — 小欧 2026-09-10
   }, [_hasFinal, isCurrentLive]);
 
   // 2026-09-02 小欧 三堂会审定稿: 滚动开关改"用户是否主动上翻>120px"事件驱动(语义同useChatScroll.ts:57-61),
