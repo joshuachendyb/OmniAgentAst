@@ -53,6 +53,12 @@
 //   liveSteps 含任一业务步骤(thought/action/observation/chunk)即证执行中, 不受 receiving/badge 时序竞态影响,
 //   根治 HITL暂停/工具执行空窗/SSE断连重连 三类窗口下 isCurrentLive 翻 false 致 displaySteps 切历史空态、
 //   action/observation 静默压栈、恢复后整批回放 ——与 useTaskInfo badge fix(2026-09-08) 双保险 — 北京老陈-2026-09-09
+// 编辑历史: 2026-09-10 小欧 - S13 live→终态单一真源平滑交接(根治Q13丢尾):
+//   S13.1 新增 settledSteps/settledRef + useEffect(final到达时快照executionStepsRef全量);
+//   S13.2 displaySteps 非live时优先用 settledSteps(兜底), REST成功且更长时再替换;
+//   S13.3 去掉300ms猜测缓冲(settleTimer), 立即拉REST;
+//   S13.4 REST结果与settledSteps等长校验(短则弃,保留settledSteps兜底);
+//   新增 executionStepsRef prop(从useChatPanels透传) — 小欧-2026-09-10
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -95,6 +101,7 @@ interface RightViewerProps {
   serverTaskId: string | null;
   receiving: boolean;
   liveSteps: ExecutionStep[];
+  executionStepsRef?: React.MutableRefObject<ExecutionStep[]>; // 小欧 2026-09-10 S13: 同步 ref，final 到达时快照用
   highlightToolName: string | null;
   frames: TaskMetaFrames; // 2026-09-02 小欧: useTaskInfo badge 派生输入(startInfo 判定 running)
   deniedSteps: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 透传 PipelineRenderer 停齿轮 — 小欧-2026-09-06
@@ -108,6 +115,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   serverTaskId,
   receiving,
   liveSteps,
+  executionStepsRef, // 小欧 2026-09-10 S13: 同步 ref
   highlightToolName,
   frames,
   deniedSteps,
@@ -119,6 +127,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const [loading, setLoading] = useState(false);
   const prevReceivingRef = useRef(false);
   const prevIsCurrentLiveRef = useRef(false); // [DEBUG-1] 2026-09-09 北京老陈
+  // 小欧 2026-09-10 S13: live→终态快照 — final 到达时固化 executionStepsRef 全量
+  const [settledSteps, setSettledSteps] = useState<ExecutionStep[]>([]);
+  const settledRef = useRef<ExecutionStep[]>([]);
+
 
   // 2026-09-02 小欧: badge 权威派生——live 任务才取, 非live历史回放不传(不显示等待圈)
   const { badge: liveBadge } = useTaskInfo(
@@ -150,6 +162,19 @@ const RightViewer: React.FC<RightViewerProps> = ({
     );
     prevIsCurrentLiveRef.current = isCurrentLive;
   }
+
+  // 小欧 2026-09-10 S13.1: final 到达瞬时快照——用 ref（同步）而非 state（异步）
+  useEffect(() => {
+    if (_hasFinal && isCurrentLive) {
+      const snapshot =
+        executionStepsRef && executionStepsRef.current.length > 0
+          ? [...executionStepsRef.current]
+          : [...liveSteps];
+      settledRef.current = snapshot;
+      setSettledSteps(snapshot);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 不依赖 liveSteps（ref 已同步更新） — 小欧 2026-09-10 S13.1
+  }, [_hasFinal, isCurrentLive]);
 
   // 2026-09-02 小欧 三堂会审定稿: 滚动开关改"用户是否主动上翻>120px"事件驱动(语义同useChatScroll.ts:57-61),
   //   弃 isNearBottom 瞬态判定(首屏scrollTop=0内容超一屏即false永不滚) 与 双RAF/force(HIT确认暴力滚)
@@ -239,7 +264,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
       return; // B4：执行中不拉 REST
     }
     let cancelled = false;
-    let settleTimer: number | null = null;
+
     const startFetch = () => {
       if (!detail && !isCurrentLive) setLoading(true); // 小欧 2026-08-30: 加!isCurrentLive守卫, live模式不触发spinner
       (async () => {
@@ -250,6 +275,18 @@ const RightViewer: React.FC<RightViewerProps> = ({
           ]);
           if (cancelled) return;
           setDetail(d);
+          // 小欧 2026-09-10 S13.4: REST 结果与 settledSteps 等长校验——短则弃，保留 settledSteps 兜底
+          if (
+            s.steps.length > 0 &&
+            settledRef.current.length > 0 &&
+            s.steps.length < settledRef.current.length
+          ) {
+            console.warn(
+              `[RV] REST 步骤数(${s.steps.length}) < settledSteps(${settledRef.current.length})，弃用 REST`
+            );
+            setHistorySteps(toExecutionSteps(settledRef.current));
+            return;
+          }
           if (s.steps.length > 0) {
             // 2026-08-27 小欧 修复#46: 拒绝裸断言, steps 缺失时回落空数组, 避免下游读step字段得undefined
             setHistorySteps(toExecutionSteps(s.steps)); // 2026-08-27 小欧 三堂会审: 收窄unknown[]→ExecutionStep[]
@@ -270,18 +307,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
         }
       })();
     };
-    // A3(2026-09-09 小欧): final 到达后 DB 落库存在窗口(SSE final 先发、DB 写入稍后), 立即拉 REST 会拿到
-    //   executing 旧态覆盖 failed/completed 结果(429案例: final failed 先到达, DB 仍 executing);
-    //   仅对"刚结束的实时任务自身"缓冲 300ms 等落库再拉, 历史回放(activeTaskId!=serverTaskId)仍即时 —
-    //   小欧-2026-09-09
-    if (_hasFinal && activeTaskId === serverTaskId) {
-      settleTimer = window.setTimeout(startFetch, 300);
-    } else {
-      startFetch();
-    }
+    // 小欧 2026-09-10 S13.3: 立即拉 REST，结果与 settledSteps 等长校验（替代 300ms 猜测缓冲）
+    startFetch();
     return () => {
       cancelled = true;
-      if (settleTimer !== null) window.clearTimeout(settleTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- detail有意不入deps: setDetail后重Run会自激循环REST(loading窗口见#45修复) — 小欧-2026-09-09
   }, [activeTaskId, sessionId, isCurrentLive, _hasFinal, serverTaskId]);
@@ -300,7 +329,12 @@ const RightViewer: React.FC<RightViewerProps> = ({
     prevReceivingRef.current = receiving;
   }, [receiving, activeTaskId, serverTaskId, onSettledRefresh]);
 
-  const displaySteps = isCurrentLive ? liveSteps : historySteps;
+  // 小欧 2026-09-10 S13.2: 结束瞬时先用 live 快照兜底，REST 成功且更长时再替换
+  const displaySteps = isCurrentLive
+    ? liveSteps
+    : settledSteps.length > 0
+      ? settledSteps
+      : historySteps;
   const hasSteps = displaySteps.length > 0;
   // [DEBUG-2] 2026-09-09 北京老陈 displaySteps 切换侦测
   const _prevSrcRef = useRef<string>('live');
