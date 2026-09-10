@@ -59,6 +59,9 @@
 //   原实现函数式updater(prev=>[...prev,...batch])且updater内含写ref副作用, 违反T11更新器零副作用(StrictMode双执行双写ref);
 //   且原ref先行只补当前step、漏早前未flush的pending, onComplete读ref缺失早前步骤。
 //   改非函数式set: batch全量+ref权威源展开, ref同步赋值后再setState, StrictMode幂等 — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - [C1/C2]终态后作废守卫(北京老陈排查35失败): handlers新增可选中terminalSeqRef,
+//   final/error分支记录终态seq, 入口层拦截终态后到达的更高seq晚到帧(防pendingSteps被污染);
+//   start/final_stats/usage元信息帧放行(终态统计仍需落) — 小欧-2026-09-10
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -121,6 +124,8 @@ const processSSEData = (
     onSeq?: (seq: number) => void;
     // 小欧 2026-09-10 S3: seq 守卫 ref，sseParser 入口层拦截重复事件（seq <= lastSeqRef.current 即跳过）
     lastSeqRef?: React.MutableRefObject<number>;
+    // 小欧 2026-09-10 [C1/C2]: 终态后作废守卫 ref —— final/error 已处理后，晚到更高 seq 帧拦截（防 pendingSteps 污染）
+    terminalSeqRef?: React.MutableRefObject<number>;
     // 小欧 2026-09-10 S12: 批量 commit — 传入 pendingStepsRef + scheduleFlush
     pendingStepsRef?: React.MutableRefObject<ExecutionStep[]>;
     scheduleFlush?: () => void;
@@ -151,6 +156,7 @@ const processSSEData = (
     disconnect: _disconnect,
     setServerTaskId,
     onSeq,
+    terminalSeqRef,
   } = handlers;
 
   // 2026-08-27 小欧 修复: SSE数据行可能带前导空格, 先trim再判断前缀
@@ -175,6 +181,24 @@ const processSSEData = (
         console.debug(`[SSE] seq守卫拦截: seq=${rawData.seq} <= lastSeq=${handlers.lastSeqRef.current}`);
         return;
       }
+    }
+
+    // 小欧 2026-09-10 [C1/C2]: 终态后作废守卫 —— final/error 已处理后到达的更高 seq 帧(网络重排晚到)
+    //   不再放行, 防 pendingSteps/executionSteps 被终态后续帧污染;
+    //   start/final_stats/usage 元信息帧放行不受影响(终态统计信息仍需落) — 小欧-2026-09-10
+    if (
+      terminalSeqRef &&
+      terminalSeqRef.current >= 0 &&
+      typeof rawData.seq === 'number' &&
+      rawData.seq > terminalSeqRef.current &&
+      rawData.type !== 'start' &&
+      rawData.type !== 'final_stats' &&
+      rawData.type !== 'usage'
+    ) {
+      console.debug(
+        `[SSE] 终态后作废: type=${rawData.type} seq=${rawData.seq} 晚于终态 seq=${terminalSeqRef.current}`
+      );
+      return;
     }
 
     // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，断线重连时用于 after_seq 续传避免重复
@@ -516,6 +540,8 @@ const processSSEData = (
 
         setIsReceiving(false);
         setIsConnected(false);
+        // 小欧 2026-09-10 [C1/C2]: final 终态后作废 —— 记录终态 seq, 后续晚到帧被守卫拦截
+        if (terminalSeqRef) terminalSeqRef.current = step.step;
         break;
       }
 
@@ -594,6 +620,8 @@ const processSSEData = (
         // v0.8.75版本没有调用onComplete，UI显示正常
         setIsReceiving(false);
         setIsConnected(false);
+        // 小欧 2026-09-10 [C1/C2]: error 终态后作废 —— 记录终态 seq, 后续晚到帧被守卫拦截
+        if (terminalSeqRef) terminalSeqRef.current = step.step;
         break;
       }
 
