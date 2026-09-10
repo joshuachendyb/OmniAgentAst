@@ -159,7 +159,7 @@ export interface UseSSEReturn {
   isReceiving: boolean;
   setIsReceiving?: (value: boolean) => void; // 【方案3】暴露setter用于中断时立即更新状态
   executionSteps: ExecutionStep[];
-  executionStepsRef?: React.MutableRefObject<ExecutionStep[]>; // 小欧 2026-09-10 S2: 暴露 ref 供外部直接读取
+  executionStepsRef: React.MutableRefObject<ExecutionStep[]>; // 小欧 2026-09-10 S2: 暴露 ref 供外部直接读取（必填，useSSE 总会返回）
   currentResponse: string;
   sendMessage: (
     content: string,
