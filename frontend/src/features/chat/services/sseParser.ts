@@ -55,6 +55,10 @@
 // 编辑历史: 2026-09-10 小欧 - S3 seq守卫: handlers新增lastSeqRef, 入口层拦截重复事件(seq<=lastSeqRef.current即跳过), 防断连重连重复帧 — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - 阶段三S12.2残留死参清理(v2.17): handlers删saveStepsToStorage字段(:78)+解构(:133,
 //   与useSSE两处传参同步删), 该参已无调用点(S12改用pendingStepsRef+scheduleFlush, 落库收敛于flushPendingSteps) — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段三final分支ref权威源修复(v2.17, 与useSSE flushPendingSteps同款):
+//   原实现函数式updater(prev=>[...prev,...batch])且updater内含写ref副作用, 违反T11更新器零副作用(StrictMode双执行双写ref);
+//   且原ref先行只补当前step、漏早前未flush的pending, onComplete读ref缺失早前步骤。
+//   改非函数式set: batch全量+ref权威源展开, ref同步赋值后再setState, StrictMode幂等 — 小欧-2026-09-10
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -483,14 +487,15 @@ const processSSEData = (
 
         // 小欧 2026-09-10 S12.2.1: final 分支同步 flush，防组件卸载前丢尾
         handlers.pendingStepsRef?.current.push(step);
-        handlers.executionStepsRef.current = [...handlers.executionStepsRef.current, step]; // ref 先行供 onComplete 读
-        // final 帧同步 flush（不经 rAF），确保 onComplete 读到全量
+        // v2.17 修复(小欧 2026-09-10): 与 useSSE flushPendingSteps 同款 ref 权威源等价值计算——
+        //   原实现用函数式 updater（setExecutionSteps(prev => [...prev, ...batch])）且 updater 内含写 ref 副作用
+        //   （T11 要求 updater 零副作用, StrictMode 下 updater 双执行即双写 ref）; 且原 ref 先行只补 step
+        //   而 batch 含早前未 flush 的 pending, 此时 onComplete 读 ref 缺失早前步骤。改非函数式 set:
+        //   batch 全量 + ref 权威源展开, ref 同步赋值后再 setState, StrictMode 幂等, updater 彻底消失
         const batch = handlers.pendingStepsRef?.current.splice(0) ?? [step];
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, ...batch];
-          handlers.executionStepsRef.current = newSteps;
-          return newSteps;
-        });
+        const newSteps = [...handlers.executionStepsRef.current, ...batch];
+        handlers.executionStepsRef.current = newSteps;
+        setExecutionSteps(newSteps);
         onStep?.(step);
 
         const finalStepsWithCurrent = handlers.executionStepsRef.current;
