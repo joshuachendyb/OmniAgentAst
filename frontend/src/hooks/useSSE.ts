@@ -58,6 +58,10 @@
 //   disconnect 内散落的 4 段 clearTimeout 替换为 clearAllTimers() 一行;
 //   组件卸载 effect 内 reconnectTimeoutRef 清理替换为 clearAllTimers();
 //   sendMessageInternal 成功路径 idleTimeoutRef 清理替换为 clearIdleMonitor() — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - [C1/C2/B1]终态作废+空流终态(北京老陈排查35失败): ①新增terminalSeqRef
+//   (初始-1)传入sseParser供终态后作废守卫; ②reader循环done分支补空流终态——200+空body(异常断流)
+//   原实现buffer.trim()空即跳过全部处理, isReceiving永久true/placeholder永久思考中; 现触发
+//   onError+复位isReceiving/isConnected — 小欧-2026-09-10
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -500,6 +504,8 @@ export const useSSE = (
   // 【北京老陈 2026-07-12 小欧】记录已收到的最大后端事件 seq，断线重连时作为 after_seq 续传
   // 小欧 2026-09-10 S3: 已处理最大 seq 语义，初始 -1（首帧 seq=0 不被误拦）
   const lastSeqRef = useRef(-1);
+  // 小欧 2026-09-10 [C1/C2]: 终态后作废守卫 ref —— final/error 已处理 seq 记录, sseParser 拦截晚到帧
+  const terminalSeqRef = useRef(-1);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const pendingMessageRef = useRef<{
     content: string;
@@ -746,6 +752,7 @@ export const useSSE = (
       }
       if (!isReconnect) {
         lastSeqRef.current = -1; // 小欧 2026-09-10 S3: 重置为已处理最大 seq 初始值
+        terminalSeqRef.current = -1; // 小欧 2026-09-10 [C1/C2]: 新任务重置终态作废标记（重连不断不重置）
       }
       const controller = new AbortController();
       abortControllerRef.current = controller; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
@@ -866,6 +873,7 @@ export const useSSE = (
                   if (s > lastSeqRef.current) lastSeqRef.current = s;
                 },
                 lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
+                terminalSeqRef, // 小欧 2026-09-10 [C1/C2]: 终态作废守卫
                 pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
                 scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
                 setMetaFrames,
@@ -873,6 +881,13 @@ export const useSSE = (
                 lastUsageSeqRef,
               }
             );
+          } else {
+            // 小欧 2026-09-10 [B1]: 空流终态 —— 200+空body(异常断流)原实现跳过全部处理,
+            //   isReceiving 永久 true / 消息 placeholder 永久"思考中"; 现触发 onError + 复位连接态
+            console.warn('[SSE] 空响应流: 未收到任何数据, 触发空流终态');
+            onError?.('SSE 空响应：未收到任何数据');
+            setIsReceiving(false);
+            setIsConnected(false);
           }
           break;
         }
@@ -905,19 +920,20 @@ export const useSSE = (
               setIsConnected,
               disconnect,
               setServerTaskId, // 小欧 2026-09-10 S14: useStateWithRef 内置 ref 同步
-              onSeq: (s: number) => {
-                if (s > lastSeqRef.current) lastSeqRef.current = s;
-              },
-              lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
-              pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
-              scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
-              setMetaFrames,
-              usageAccumRef,
-              lastUsageSeqRef,
-            }
-          );
+onSeq: (s: number) => {
+                  if (s > lastSeqRef.current) lastSeqRef.current = s;
+                },
+                lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
+                terminalSeqRef, // 小欧 2026-09-10 [C1/C2]: 终态作废守卫
+                pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
+                scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
+                setMetaFrames,
+                usageAccumRef,
+                lastUsageSeqRef,
+              }
+            );
+          }
         }
-      }
 
 
       // 成功，重置重连状态

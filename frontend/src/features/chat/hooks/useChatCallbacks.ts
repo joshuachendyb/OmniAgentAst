@@ -35,6 +35,12 @@
 //   ①读点(onComplete 失败终态判定)改取 sseParser 三参 executionStepsFromSSE, fallback 置空(该接口永传三参);
 //   ②清空点(终态/from_backend/错误)删除——useSSE 新请求经 clearSteps()(:660-672) 统一清 executionSteps state+ref,
 //   此处冗余; executionSteps 生命周期自此归 useSSE 单一职责 — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - [A1/A2/A3/A5/A8]暂停/取消终态五缺陷修复(北京老陈排查35失败, 全部系统缺陷)——
+//   ①A1 onResumed 回放分块未累积 streamingContentRef, 后续 onChunk 以暂停前旧值拼正文覆盖缓冲内容;
+//   ②A2 缓冲 chunk 的 is_reasoning 回放丢失; ③A3 并发暂停无计数, 单恢复全复位(并发HITL场景破坏);
+//   ④A5 onComplete 不检查 cancelInProgressRef, 取消窗口期 completed 终态被当正常完成写入;
+//   ⑤A8 errorItems 在 setMessages updater 内收集, 末条 isStreaming=false 时 updater return → error 永久丢弃
+//   (重构: error 收集移出条件, 回放与错误处理解耦) — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - S22 错误终态幂等清理: onError from_backend 分道之后插入 request_level 判据闸门
 //   (isRequestLevel = step===0 || error_type==='request_timeout'), 请求级错误立即清 waitTimerRef+指纹Set,
 //   执行级错误保持"等 final"不动; 幂等保证——即便随后 final 到达, onComplete 再清无副作用 — 小欧-2026-09-10
@@ -159,6 +165,9 @@ export const useChatCallbacks = (
   //   onComplete/onError 终态清空 Set, 供下一任务重新计数 — 小欧-2026-09-09
   const onStepFingerprintRef = useRef<Set<string>>(new Set());
   const _dbgRoundRef = useRef(0); // [DEBUG-4] 轮次计数器
+  // 小欧 2026-09-10 [A3]: 并发暂停计数 —— 多个暂停来源(并发HITL/服务端)依次进入,
+  //   仅当最后一个来源恢复才解除暂停; 单恢复不再误灭其他来源的暂停
+  const pauseCountRef = useRef(0);
 
   const onStep = useCallback(
     (step: ExecutionStep) => {
@@ -360,6 +369,14 @@ export const useChatCallbacks = (
       metadata?: string | SSEMetadata,
       executionStepsFromSSE?: ExecutionStep[]
     ) => {
+      // 小欧 2026-09-10 [A5]: 取消进行中 final(completed) 不当正常完成写入消息 ——
+      //   cancelInProgress 窗口期后端 completed 终态短窗到达, 否则与"取消=静默收尾"语义冲突;
+      //   取消终态由 cancelled final 帧经 onStep 展示, 此处直接 return(标志由 useChatTaskControl finally 复位)
+      if (cancelInProgressRef.current) {
+        console.log('[onComplete] 取消进行中，跳过完成态写入');
+        return;
+      }
+
       // ✅ 支持旧格式（model 字符串）和新格式（metadata 对象）
       const metadataObj =
         typeof metadata === 'string' ? { model: metadata } : metadata || {};
@@ -548,6 +565,7 @@ export const useChatCallbacks = (
       currentSessionIdRef,
       streamingContentRef,
       waitTimerRef,
+      cancelInProgressRef,
     ]
   );
 
@@ -699,10 +717,12 @@ export const useChatCallbacks = (
 
   const onPaused = useCallback(() => {
     console.log('⏸️ [onPaused] SSE 暂停');
+    // 小欧 2026-09-10 [A3]: 并发暂停计数 —— 每来源暂停计数+1, isPaused 恒为 true(最强暂停语义)
+    pauseCountRef.current += 1;
     setIsPaused(true);
     // 2026-08-27 小欧 修复#3: 同步 isPausedRef.current, 否则服务端暂停不生效(分块仍直接显示而非缓冲)
     isPausedRef.current = true;
-  }, [setIsPaused, isPausedRef]);
+  }, [setIsPaused, isPausedRef, pauseCountRef]);
 
   // ==================== onResumed回调 ====================
 
@@ -712,40 +732,75 @@ export const useChatCallbacks = (
       displayBufferRef.current.length
     );
 
-    // 编辑历史: 2026-08-28 小欧 - BUG10修复: onResumed改用displayBufferRef.current.forEach+单次setMessages原子合并
+    // 小欧 2026-09-10 [A3]: 并发暂停计数递减 —— 仍有其他来源暂停时保持暂停, 不清缓冲不回放;
+    //   最后一个来源恢复才统一回放(缓冲数据跨来源累积, 提前回放会破坏暂停中来源的暂存)
+    if (pauseCountRef.current > 0) pauseCountRef.current -= 1;
+    if (pauseCountRef.current > 0) {
+      console.log(
+        `⏸️ [onResumed] 仍有 ${pauseCountRef.current} 个暂停来源, 保持暂停`
+      );
+      return;
+    }
+
+    // 小欧 2026-09-10 [A8]: error 收集移出 setMessages 条件 —— 原实现 errorItems 在 updater 内收集,
+    //   最后一条消息 isStreaming=false(暂停期 final 已定稿)时 updater 整体 return, error 一个都收不到,
+    //   且 buffer 随后被清空 → error 永久丢失。先独立遍历收集, 再决定回放。
+    const buffered = displayBufferRef.current;
     const errorItems: Array<string | SSEError> = [];
-
-    setMessages((prev) => {
-      const lastMessage = prev[prev.length - 1];
-      if (
-        lastMessage &&
-        lastMessage.role === 'assistant' &&
-        lastMessage.isStreaming
+    let hasReplayable = false;
+    for (const data of buffered) {
+      const item = data as BufferItem;
+      if (item.type === 'error' && item.error) {
+        errorItems.push(item.error);
+      } else if (
+        (item.type === 'chunk' && item.content) ||
+        item.type === 'step'
       ) {
-        let content = lastMessage.content;
-        const newSteps = [...(lastMessage.executionSteps || [])];
-
-        displayBufferRef.current.forEach((data) => {
-          const item = data as BufferItem;
-          if (item.type === 'chunk' && item.content) {
-            content += item.content;
-          } else if (item.type === 'step' && item.step) {
-            newSteps.push(item.step);
-          } else if (item.type === 'error' && item.error) {
-            errorItems.push(item.error);
-          }
-        });
-
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...lastMessage,
-          content,
-          executionSteps: newSteps,
-        };
-        return updated;
+        hasReplayable = true;
       }
-      return prev;
-    });
+    }
+
+    // 编辑历史: 2026-08-28 小欧 - BUG10修复: onResumed改用单次setMessages原子合并(防批处理乱序)
+    if (hasReplayable) {
+      setMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (
+          lastMessage &&
+          lastMessage.role === 'assistant' &&
+          lastMessage.isStreaming
+        ) {
+          let content = lastMessage.content;
+          let isReasoning = lastMessage.is_reasoning;
+          const newSteps = [...(lastMessage.executionSteps || [])];
+
+          for (const data of buffered) {
+            const item = data as BufferItem;
+            if (item.type === 'chunk' && item.content) {
+              content += item.content;
+              // 小欧 2026-09-10 [A1]: 回放分块同步累积 streamingContentRef —— 原实现只合并消息内容,
+              //   sCR 保持暂停前旧值, 后续 onChunk 以旧值拼正文 → 缓冲内容被覆盖永久丢失
+              streamingContentRef.current += item.content;
+              // 小欧 2026-09-10 [A2]: 回放分块回带 is_reasoning —— 缓冲 chunk 的思考标记不丢失
+              if (item.is_reasoning !== undefined) {
+                isReasoning = item.is_reasoning;
+              }
+            } else if (item.type === 'step' && item.step) {
+              newSteps.push(item.step);
+            }
+          }
+
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...lastMessage,
+            content,
+            executionSteps: newSteps,
+            is_reasoning: isReasoning,
+          };
+          return updated;
+        }
+        return prev;
+      });
+    }
 
     // 小欧 2026-09-10 S5: 先复位 isPausedRef 再回放 — 死循环根治
     // 原 isPausedRef 复位在回放循环之后(:747)，onError(:600) 命中暂停态
@@ -774,6 +829,8 @@ export const useChatCallbacks = (
     streaming,
     displayBufferRef,
     isPausedRef,
+    streamingContentRef,
+    pauseCountRef,
   ]);
 
   // ==================== onRetry回调 ====================
