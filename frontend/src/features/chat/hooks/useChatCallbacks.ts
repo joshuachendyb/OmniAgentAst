@@ -35,6 +35,9 @@
 //   ①读点(onComplete 失败终态判定)改取 sseParser 三参 executionStepsFromSSE, fallback 置空(该接口永传三参);
 //   ②清空点(终态/from_backend/错误)删除——useSSE 新请求经 clearSteps()(:660-672) 统一清 executionSteps state+ref,
 //   此处冗余; executionSteps 生命周期自此归 useSSE 单一职责 — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - S22 错误终态幂等清理: onError from_backend 分道之后插入 request_level 判据闸门
+//   (isRequestLevel = step===0 || error_type==='request_timeout'), 请求级错误立即清 waitTimerRef+指纹Set,
+//   执行级错误保持"等 final"不动; 幂等保证——即便随后 final 到达, onComplete 再清无副作用 — 小欧-2026-09-10
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -582,6 +585,16 @@ export const useChatCallbacks = (
         //   防"错误后异常断链(无 final/无 onComplete)致 Set 残留, 下一任务同 step 同 content 被误拦" — 小欧-2026-09-09
         onStepFingerprintRef.current.clear();
         return;
+      }
+
+      // 小欧 2026-09-10 S22: request_level 幂等清理闸门
+      // 仅请求级错误(整个请求失败, 不可能再有 final)做终态清理
+      // 执行级错误(blocked/timeout, 任务仍继续)保持"等 final"不动
+      const isRequestLevel = errorObj.step === 0 || errorObj.error_type === 'request_timeout';
+      if (isRequestLevel) {
+        console.info('[onError] 请求级错误: 幂等清理 waitTimer + 聚合状态');
+        if (waitTimerRef.current) { clearInterval(waitTimerRef.current); waitTimerRef.current = null; }
+        onStepFingerprintRef.current.clear();
       }
 
       console.error('🔴 [onError] SSE 流式错误:', errorObj);

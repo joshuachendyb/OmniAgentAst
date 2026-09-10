@@ -52,6 +52,12 @@
 //   (S12.2六分支删saveStepsToStorage后调用点未重新挂接, S19元数据外壳写入实际断链); saveStepsToStorage
 //   声明提前至flushPendingSteps之前以在useCallback直接引用; 同步清理S12.2残留死参数:
 //   sseParser handlers 的 saveStepsToStorage 字段/解构及 useSSE 两处传参已无调用点, 一并删除 — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段四S20: 连接层函数提取——
+//   提取 clearIdleMonitor(useCallback) 收敛 idleTimeoutRef 清理(disconnect/成功路径/卸载三处复用);
+//   提取 clearAllTimers(useCallback) 统一收敛所有定时器清理(idle/firstChunk/reconnect/saveSteps/intentionalAbort),
+//   disconnect 内散落的 4 段 clearTimeout 替换为 clearAllTimers() 一行;
+//   组件卸载 effect 内 reconnectTimeoutRef 清理替换为 clearAllTimers();
+//   sendMessageInternal 成功路径 idleTimeoutRef 清理替换为 clearIdleMonitor() — 小欧-2026-09-10
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -558,6 +564,35 @@ export const useSSE = (
     sessionStorage.removeItem(storageKey);
   }, [config.sessionId]);
 
+  // 小欧 2026-09-10 S20.1: 提取 clearIdleMonitor — 收敛 idleTimeoutRef 清理（disconnect/成功路径/卸载三处复用）
+  const clearIdleMonitor = useCallback(() => {
+    if (idleTimeoutRef.current) {
+      clearTimeout(idleTimeoutRef.current);
+      idleTimeoutRef.current = null;
+    }
+  }, []);
+
+  // 小欧 2026-09-10 S20.2: 提取 clearAllTimers — 统一收敛所有定时器清理，新增定时器只改此处
+  const clearAllTimers = useCallback(() => {
+    clearIdleMonitor();
+    if (firstChunkTimeoutRef.current) {
+      clearTimeout(firstChunkTimeoutRef.current);
+      firstChunkTimeoutRef.current = null;
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (saveStepsTimerRef.current !== null) {
+      clearTimeout(saveStepsTimerRef.current);
+      saveStepsTimerRef.current = null;
+    }
+    if (intentionalAbortTimerRef.current) {
+      clearTimeout(intentionalAbortTimerRef.current);
+      intentionalAbortTimerRef.current = null;
+    }
+  }, [clearIdleMonitor]);
+
   // 2026-09-09 小欧: 组件卸载时清理防抖timer, 防止卸载后仍写sessionStorage
   useEffect(() => {
     return () => {
@@ -588,20 +623,8 @@ export const useSSE = (
       if (clearStorage) {
         clearStepsFromStorage();
       }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-
-      // 2026-08-28 小欧 根治切页/隐藏泄漏: disconnect必须清空闲超时与fetch超时, 否则卸载后定时器在已死组件上触发handleSSEError弹toast并误重连
-      if (idleTimeoutRef.current) {
-        clearTimeout(idleTimeoutRef.current);
-        idleTimeoutRef.current = null;
-      }
-      if (firstChunkTimeoutRef.current) {
-        clearTimeout(firstChunkTimeoutRef.current);
-        firstChunkTimeoutRef.current = null;
-      }
+      // 小欧 2026-09-10 S20.3: 统一定时器清理替代散落的 clearTimeout
+      clearAllTimers();
 
       // 【修复 2026-05-11 小健】abort正在进行的fetch请求，防止旧流与新流并行
       if (abortControllerRef.current) {
@@ -898,12 +921,8 @@ export const useSSE = (
 
 
       // 成功，重置重连状态
-      // 2026-09-08 小欧 F10修复(实施期新增真实bug): 正常完成流后清理残留 idle 定时器,
-      //   否则60s后僵尸reconnect再造重连链/再生轮询(F10红→绿) - 小欧-2026-09-08
-      if (idleTimeoutRef.current) {
-        clearTimeout(idleTimeoutRef.current);
-        idleTimeoutRef.current = null;
-      }
+      // 小欧 2026-09-10 S20.3: clearIdleMonitor 替代散落清理（F10修复: 正常完成流后清理残留 idle 定时器）
+      clearIdleMonitor();
       setReconnectStatus('idle');
       reconnectAttemptsRef.current = 0;
       abortControllerRef.current = null; // 【修复 2026-05-11 小健】请求完成清理ref
@@ -1109,11 +1128,8 @@ export const useSSE = (
       pollSignalRef.current.aborted = true;
       // 【修复小查问题】清理 pendingMessageRef 避免内存泄漏
       pendingMessageRef.current = null;
-      // 【小新修复 2026-03-14】额外确保 reconnectTimeoutRef 被清理
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
+      // 小欧 2026-09-10 S20.3: clearAllTimers 替代散落的 reconnectTimeoutRef 清理
+      clearAllTimers();
       // 小欧 2026-09-10 S15收尾: 组件卸载清空 HITL 等待 key Set——
       //   disconnect 已断流中止 reader（abort 竞态窗口内最多向死 Set 加一个 key，无人再读），
       //   clear() 一行封死该原理口子，卸载后状态归零，防残留语义完备 —— 小欧-2026-09-10
