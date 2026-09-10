@@ -2,6 +2,8 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 统一状态管理对接NewChatContainer(8.x 状态重构)
 // 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: 删streamingStepsRef定义+类型声明+返回值透传(146/258/360);
 //   阶段二S2提前实施: executionStepsRef保留(useChatStreaming透传useSSE的ref, 此处ref作备用/兼容) — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): 删executionStepsRef定义+类型声明+返回值透传(useSSE唯一真源,
+//   useChatStreaming不再从state解构, 无任何消费者); 删废弃类型导入ExecutionStep, warning清零 — 小欧-2026-09-10
 /**
  * useChatState Hook - 统一状态管理
  *
@@ -23,7 +25,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import type { Message, SessionModelOverride } from '../../../types/chat';
-import type { ExecutionStep } from '@/types/execution';
+
 
 // ============================================================================
 // 类型定义
@@ -146,7 +148,6 @@ export interface UseChatStateReturn {
   isPausedRef: React.MutableRefObject<boolean>;
 
   // SSE相关Refs
-  executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
   streamingContentRef: React.MutableRefObject<string>;
 
 
@@ -258,7 +259,6 @@ export const useChatState = (): UseChatStateReturn => {
   const isPausedRef = useRef(false);
 
   // SSE相关Refs
-  const executionStepsRef = useRef<ExecutionStep[]>([]);
   const streamingContentRef = useRef('');
 
 
@@ -360,7 +360,6 @@ export const useChatState = (): UseChatStateReturn => {
     replyUserMessageIdRef,
     displayBufferRef,
     isPausedRef,
-    executionStepsRef,
     streamingContentRef,
 
     userScrolledUpRef,

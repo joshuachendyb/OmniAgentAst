@@ -23,6 +23,8 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: 删streamingStepsRef类型声明+解构+清空+依赖数组(110/280/306/330/352/531);
 //   阶段二S2提前实施: useSSE新增第12参externalExecutionStepsRef透传state.executionStepsRef, executionStepsRef改从useSSE解构
 //   (263行), state解构删除executionStepsRef(280行) — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): useSSE删除第12参externalExecutionStepsRef(唯一真源独立useRef),
+//   此处删除传参state.executionStepsRef(285行), executionStepsRef仍从useSSE解构(264行) — 小欧-2026-09-10
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -258,12 +260,12 @@ export const useChatStreaming = (
   );
 
   // 使用useSSE Hook
-  // 小欧 2026-09-10 S2: 传 state.executionStepsRef 给 useSSE，收敛单一真源
+  // 小欧 2026-09-10 S2收尾(方案A): useSSE 唯一真源，此处从 useSSE 解构 executionStepsRef
   const {
     isReceiving,
     setIsReceiving,
     executionSteps,
-    executionStepsRef, // 小欧 2026-09-10 S2: 从 useSSE 取（与 state 共享同一对象）
+    executionStepsRef, // 小欧 2026-09-10 S2: 从 useSSE 取（useSSE 唯一真源）
     currentResponse,
     sendMessage: sendStreamMessage,
     disconnect,
@@ -283,8 +285,7 @@ export const useChatStreaming = (
     onResumed,
     onRetry,
     onAuthorizationRequired, // 【v3.4新增 2026-06-09 小沈】
-    handleDenied, // 2026-09-06 小欧 B2: 独立拒绝事件聚合到 deniedStepSet — 小欧-2026-09-06
-    state.executionStepsRef // 小欧 2026-09-10 S2: 外部 ref，与 useChatState 共享同一对象
+    handleDenied // 2026-09-06 小欧 B2: 独立拒绝事件聚合到 deniedStepSet — 小欧-2026-09-06
   );
 
   // 从state中获取Refs

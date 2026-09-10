@@ -1,4 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 状态持久化对接消息/任务恢复(8.x)
+// 编辑历史: 2026-09-10 小欧 - S12: messages持久化防抖由1000ms改5000ms, 与steps防抖同频, 去双路全量stringify — 小欧-2026-09-10
 /**
  * useChatPersistence Hook - 状态持久化与恢复
  *
@@ -401,7 +402,7 @@ export const useChatPersistence = (
     // 使用防抖保存，避免频繁写入
     const timer = setTimeout(() => {
       saveStateWithSSECheck();
-    }, 1000);
+    }, 5000); // 小欧 2026-09-10 S12: 与 steps 防抖同频，去双路全量 stringify
 
     return () => {
       clearTimeout(timer);

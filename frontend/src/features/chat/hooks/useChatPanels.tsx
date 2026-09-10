@@ -20,6 +20,7 @@
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B7: 补handleEditingCancel/handleEditingStart依赖(真补);
 //   删body未用currentResponse与handleAuthorizationConfirm(解构+依赖数组同步清除, 先误删5行opts解构已用git diff识别恢复) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 透传rightOpen状态给TaskListPanel, 控制模型标签provider前缀条件显示 - 小欧-2026-09-09
+// 编辑历史: 2026-09-10 小欧 - S13: 从chatStreaming解构executionStepsRef透传RightViewer(final到达时快照用) - 小欧-2026-09-10
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -140,6 +141,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
   const {
     isReceiving,
     executionSteps,
+    executionStepsRef, // 小欧 2026-09-10 S13: 透传 RightViewer 快照用
     metaFrames,
     serverTaskId,
     deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合透传 RightViewer → PipelineRenderer — 小欧-2026-09-06
@@ -242,6 +244,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             serverTaskId={serverTaskId}
             receiving={isReceiving}
             liveSteps={executionSteps}
+            executionStepsRef={executionStepsRef} // 小欧 2026-09-10 S13: 同步 ref 透传
             highlightToolName={
               // 2026-09-06 小欧 B1: pending 优先, 确认瞬间被清 pending 后由 recentConfirmedTool 承接 2s(F4 高亮空转根治) — 小欧-2026-09-06
               authorizationPending?.toolName ?? recentConfirmedTool ?? null
@@ -325,6 +328,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       serverTaskId,
       isReceiving,
       executionSteps,
+      executionStepsRef, // 小欧 2026-09-10 S13: ref 透传依赖
       metaFrames,
       deniedSteps, // 2026-09-06 小欧 B2(方案C): state 变化需触发面板重渲 — 小欧-2026-09-06
       deniedEntries, // 2026-09-06 小欧 B2(6.4): state 变化需触发面板重渲 — 小欧-2026-09-06

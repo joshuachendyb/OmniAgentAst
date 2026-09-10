@@ -31,6 +31,10 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段一零风险清障: ①S1 删streamingStepsRef解构+清空+依赖数组(133/528/539/576/664/680);
 //   ②S5 onResumed复位提前(isPausedRef=false移至for回放循环前, 根治死循环);
 //   ③S6 cancelInProgress收紧(条件从!isCancelEvent&&type!=='final'改为!isCancelEvent, 根治双final) — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): useChatCallbacks 彻底移除 executionStepsRef 依赖——
+//   ①读点(onComplete 失败终态判定)改取 sseParser 三参 executionStepsFromSSE, fallback 置空(该接口永传三参);
+//   ②清空点(终态/from_backend/错误)删除——useSSE 新请求经 clearSteps()(:660-672) 统一清 executionSteps state+ref,
+//   此处冗余; executionSteps 生命周期自此归 useSSE 单一职责 — 小欧-2026-09-10
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -134,7 +138,6 @@ export const useChatCallbacks = (
     currentSessionIdRef,
     displayBufferRef,
     isPausedRef,
-    executionStepsRef,
     streamingContentRef,
 
     logFlagsRef,
@@ -371,8 +374,7 @@ export const useChatCallbacks = (
       //   5轮流式思考草稿(4333字, 1737+169+447+668+1312 精确) → 原逻辑 fullResponse 非空即跳过判空分支,
       //   isError 恒 false, 失败任务被当"完整回复"正常展示。此处前置判定: 失败终态优先展示 final.response
       //   失败文案并置错误态, 杜绝草稿冒充最终回答 — 小欧-2026-09-09
-      const sseStepsAll =
-        executionStepsFromSSE || executionStepsRef.current || [];
+      const sseStepsAll = executionStepsFromSSE || [];
       const finalStepAll = sseStepsAll.find(
         (s: ExecutionStep) => s.type === 'final'
       ) as (ExecutionStep & Record<string, unknown>) | undefined;
@@ -393,8 +395,7 @@ export const useChatCallbacks = (
         // 【修复 2026-05-05 小沈】Agent路径不发chunk，finalResponse永远为空，
         // 但executionSteps可能完全正常（有thought步骤含回答内容）。
         // 判断条件：final步骤的response和thought都空，且没有thought步骤有content，才判error
-        const sseSteps =
-          executionStepsFromSSE || executionStepsRef.current || [];
+        const sseSteps = executionStepsFromSSE || [];
         const finalStep = sseSteps.find(
           (s: ExecutionStep) => s.type === 'final'
         ) as (ExecutionStep & Record<string, unknown>) | undefined;
@@ -532,7 +533,6 @@ export const useChatCallbacks = (
       // ⭐ 【小资优化 2026-04-13】完成后清理ref，准备下一次对话
       streamingContentRef.current = '';
 
-      executionStepsRef.current = []; // 2026-08-27 小欧 三堂会审: 终态清理executionSteps
       // A1(2026-09-09 小欧): 终态清空任务内指纹去重Set, 供下一任务重新计数 — 小欧-2026-09-09
       onStepFingerprintRef.current.clear();
     },
@@ -544,8 +544,6 @@ export const useChatCallbacks = (
       // Refs dependencies
       currentSessionIdRef,
       streamingContentRef,
-
-      executionStepsRef,
       waitTimerRef,
     ]
   );
@@ -580,7 +578,6 @@ export const useChatCallbacks = (
         );
         streamingContentRef.current = '';
 
-        executionStepsRef.current = [];
         // A1(2026-09-09 小欧): from_backend 错误后会话终止, 同步清空任务内指纹Set——查漏补洞:
         //   防"错误后异常断链(无 final/无 onComplete)致 Set 残留, 下一任务同 step 同 content 被误拦" — 小欧-2026-09-09
         onStepFingerprintRef.current.clear();
@@ -668,7 +665,6 @@ export const useChatCallbacks = (
       // ⭐ 完成后清理ref
       streamingContentRef.current = '';
 
-      executionStepsRef.current = []; // 2026-08-27 小欧 三堂会审: 终态清理executionSteps
       // A1(2026-09-09 小欧): 终态清空任务内指纹去重Set, 供下一任务重新计数 — 小欧-2026-09-09
       onStepFingerprintRef.current.clear();
       // lastUpdateTimeRef.current = 0;
@@ -683,8 +679,6 @@ export const useChatCallbacks = (
       displayBufferRef,
       streamingContentRef,
       waitTimerRef,
-
-      executionStepsRef,
     ]
   );
 

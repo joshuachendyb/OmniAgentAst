@@ -8,6 +8,8 @@
 //   eslint-disable注释移至依赖数组行上方使生效+写明理由 — 小欧-2026-09-09
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2提前实施: shared.executionStepsRef改从chatStreaming取(useSSE单一真源),
 //   deps同步改源(341/413行) — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): shared.executionStepsRef 维持从 chatStreaming 取,
+//   useChatCallbacks 不再需要 executionStepsRef(读点用 sseParser 三参、清空点归 useSSE.clearSteps) — 小欧-2026-09-10
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
