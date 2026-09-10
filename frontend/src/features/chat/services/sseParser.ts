@@ -62,6 +62,9 @@
 // 编辑历史: 2026-09-10 小欧 - [C1/C2]终态后作废守卫(北京老陈排查35失败): handlers新增可选中terminalSeqRef,
 //   final/error分支记录终态seq, 入口层拦截终态后到达的更高seq晚到帧(防pendingSteps被污染);
 //   start/final_stats/usage元信息帧放行(终态统计仍需落) — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - TS类型修复: final/error分支 terminalSeqRef.current 赋值由 step.step 改
+//   stepNum——step.step 类型为 number|undefined, stepNum 经 Number(rawData.step)||1 保证 number,
+//   消除类型安全隐患, 终态 seq 记录值语义不变 — 小欧-2026-09-10
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -541,7 +544,7 @@ const processSSEData = (
         setIsReceiving(false);
         setIsConnected(false);
         // 小欧 2026-09-10 [C1/C2]: final 终态后作废 —— 记录终态 seq, 后续晚到帧被守卫拦截
-        if (terminalSeqRef) terminalSeqRef.current = step.step;
+        if (terminalSeqRef) terminalSeqRef.current = stepNum;
         break;
       }
 
@@ -621,7 +624,7 @@ const processSSEData = (
         setIsReceiving(false);
         setIsConnected(false);
         // 小欧 2026-09-10 [C1/C2]: error 终态后作废 —— 记录终态 seq, 后续晚到帧被守卫拦截
-        if (terminalSeqRef) terminalSeqRef.current = step.step;
+        if (terminalSeqRef) terminalSeqRef.current = stepNum;
         break;
       }
 
