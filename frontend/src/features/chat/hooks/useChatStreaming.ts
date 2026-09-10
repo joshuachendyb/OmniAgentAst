@@ -20,6 +20,9 @@
 // 编辑历史: 2026-09-09 小欧 - 等待心跳打点(北京老陈「UI冻住/日志不完整」实证): executeSend waitTimer
 //   每秒 waitTime+1 时每5秒 console 打点「已等待后端响应 Ns」, 终结等待期 console 一片空白
 //   「像假死/日志不完整」的误判; 实证 waitTime 全链 0 处 .tsx 消费(从不展示等待秒数), 心跳打点为最低代价活性证据 — 小欧-2026-09-09
+// 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: 删streamingStepsRef类型声明+解构+清空+依赖数组(110/280/306/330/352/531);
+//   阶段二S2提前实施: useSSE新增第12参externalExecutionStepsRef透传state.executionStepsRef, executionStepsRef改从useSSE解构
+//   (263行), state解构删除executionStepsRef(280行) — 小欧-2026-09-10
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -110,7 +113,7 @@ export interface UseChatStreamingReturn {
 
   // Refs - 用于累积流式内容（供外部访问）
   streamingContentRef: React.MutableRefObject<string>;
-  streamingStepsRef: React.MutableRefObject<ExecutionStep[]>;
+
   executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
 
   // 【小强 2026-04-22】executeSend - 完整的发送流程
@@ -255,10 +258,12 @@ export const useChatStreaming = (
   );
 
   // 使用useSSE Hook
+  // 小欧 2026-09-10 S2: 传 state.executionStepsRef 给 useSSE，收敛单一真源
   const {
     isReceiving,
     setIsReceiving,
     executionSteps,
+    executionStepsRef, // 小欧 2026-09-10 S2: 从 useSSE 取（与 state 共享同一对象）
     currentResponse,
     sendMessage: sendStreamMessage,
     disconnect,
@@ -278,14 +283,13 @@ export const useChatStreaming = (
     onResumed,
     onRetry,
     onAuthorizationRequired, // 【v3.4新增 2026-06-09 小沈】
-    handleDenied // 2026-09-06 小欧 B2: 独立拒绝事件聚合到 deniedStepSet — 小欧-2026-09-06
+    handleDenied, // 2026-09-06 小欧 B2: 独立拒绝事件聚合到 deniedStepSet — 小欧-2026-09-06
+    state.executionStepsRef // 小欧 2026-09-10 S2: 外部 ref，与 useChatState 共享同一对象
   );
 
   // 从state中获取Refs
   const {
     streamingContentRef,
-    streamingStepsRef,
-    executionStepsRef,
     // 【小强 2026-04-22】需要解构的Refs和状态setters
     currentSessionIdRef,
     replyUserMessageIdRef,
@@ -305,7 +309,7 @@ export const useChatStreaming = (
       try {
         // 清理之前的流式内容
         streamingContentRef.current = '';
-        streamingStepsRef.current = [];
+
         executionStepsRef.current = []; // 2026-08-28 小强 修复#14: 清空executionStepsRef, 防旧数据残留
         setDeniedSteps(new Map()); // 2026-09-06 小欧 B2: 新任务清空 denied 标记(与 executionSteps 同生命周期) — 小欧-2026-09-06
         setDeniedEntries(new Map()); // 2026-09-06 小欧 B2(6.4): 新任务同步清空被拒工具点名条 — 小欧-2026-09-06
@@ -329,7 +333,7 @@ export const useChatStreaming = (
     [
       sendStreamMessage,
       streamingContentRef,
-      streamingStepsRef,
+
       executionStepsRef,
       sessionId, // 2026-09-06 小欧 B2(6.4A): 删独立键依赖, 防陈旧会话闭包 — 小欧-2026-09-06
     ]
@@ -351,13 +355,13 @@ export const useChatStreaming = (
       }
       // 清理流式状态
       streamingContentRef.current = '';
-      streamingStepsRef.current = [];
+
       executionStepsRef.current = []; // 2026-08-28 小强 修复#14: disconnect时清executionStepsRef
     },
     [
       disconnect,
       streamingContentRef,
-      streamingStepsRef,
+
       executionStepsRef,
       sessionId,
     ] // 2026-09-06 小欧 B2(6.4A): sessionId 入依赖 — 小欧-2026-09-06
@@ -530,7 +534,7 @@ export const useChatStreaming = (
 
     // Refs
     streamingContentRef,
-    streamingStepsRef,
+
     executionStepsRef,
 
     // 【小强 2026-04-22】executeSend

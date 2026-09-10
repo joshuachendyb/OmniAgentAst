@@ -6,6 +6,8 @@
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.1(北京老陈裁定回归总原则): SSEError 补可选 from_backend(后端业务错误来源标记,
 //   useChatCallbacks 据此分道只进P3不弹窗); 6.3.4 补可选 request_level(请求级step=0标记, 位4图标分层);
 //   新增 LiveError 接口(P3数据源对象形态) — 小欧-2026-09-08
+// 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: ReconnectConfig接口删enabled字段; 阶段二S2提前实施:
+//   UseSSEReturn新增executionStepsRef可选字段(供外部直接读取ref) — 小欧-2026-09-10
 import type { ExecutionStep } from './execution';
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
@@ -143,7 +145,7 @@ export interface SSEConfig {
  * SSE重连配置
  */
 export interface ReconnectConfig {
-  enabled: boolean;
+
   maxAttempts: number;
   baseDelay: number;
   maxDelay: number;
@@ -157,6 +159,7 @@ export interface UseSSEReturn {
   isReceiving: boolean;
   setIsReceiving?: (value: boolean) => void; // 【方案3】暴露setter用于中断时立即更新状态
   executionSteps: ExecutionStep[];
+  executionStepsRef?: React.MutableRefObject<ExecutionStep[]>; // 小欧 2026-09-10 S2: 暴露 ref 供外部直接读取
   currentResponse: string;
   sendMessage: (
     content: string,

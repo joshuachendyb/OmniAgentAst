@@ -6,6 +6,8 @@
 //   内部 chatCallbacks.onError 仍先调(后端分道早退不影响 P3 写入) — 小欧-2026-09-08
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B6: :355 useMemo有意只列字段级依赖(整体对象入deps每次重建级联渲染),
 //   eslint-disable注释移至依赖数组行上方使生效+写明理由 — 小欧-2026-09-09
+// 编辑历史: 2026-09-10 小欧 - 阶段二S2提前实施: shared.executionStepsRef改从chatStreaming取(useSSE单一真源),
+//   deps同步改源(341/413行) — 小欧-2026-09-10
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
@@ -338,7 +340,7 @@ export const useChatFacade = (options?: {
       // ===== 共享Refs =====
       shared: {
         waitTimerRef: chatState.waitTimerRef,
-        executionStepsRef: chatState.executionStepsRef,
+        executionStepsRef: chatStreaming.executionStepsRef, // 小欧 2026-09-10 S2: 改从 chatStreaming 取（useSSE 单一真源）
         isPausedRef: chatState.isPausedRef,
         hasReceivedCancelEventRef: chatState.hasReceivedCancelEventRef,
         cancelInProgressRef: chatState.cancelInProgressRef,
@@ -410,7 +412,7 @@ export const useChatFacade = (options?: {
       chatPersistence.saveMessagesToStorage,
       // ===== Refs =====
       chatState.waitTimerRef,
-      chatState.executionStepsRef,
+      chatStreaming.executionStepsRef, // 小欧 2026-09-10 S2: deps 同步改源
       chatState.isPausedRef,
       chatState.hasReceivedCancelEventRef,
       chatState.cancelInProgressRef,

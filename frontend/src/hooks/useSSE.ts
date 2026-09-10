@@ -37,6 +37,11 @@
 // 编辑历史: 2026-09-09 小欧 - saveStepsToStorage防抖: 原实现每个SSE事件排队setTimeout(0)宏任务,
 //   N个事件→N次同步JSON.stringify(fullSteps)+sessionStorage.setItem, 累积O(N²)阻塞主线程,
 //   React渲染被推迟导致UI冻结; 改为300ms防抖, 合并连续事件只保留最后一次保存 — 小欧-2026-09-09
+// 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: 删reconnectConfigRef.enabled字段+设置代码(418/596-601);
+//   阶段一S8超时改名: fetchTimeoutRef→firstChunkTimeoutRef(442/549/677/712);
+//   阶段一S1.3: processSSEData调用删除第3参isProcessingRef(796/837);
+//   阶段二S2提前实施: 新增第12参externalExecutionStepsRef, executionStepsRef优先用外部ref,
+//   useSSE返回值暴露executionStepsRef供useChatStreaming透传(1070行) — 小欧-2026-09-10
 import { useState, useCallback, useRef, useEffect } from 'react';
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -375,13 +380,16 @@ export const useSSE = (
     backend_timeout?: number;
   }) => void,
   // 2026-09-06 小欧 B2(北京老陈裁定): 独立拒绝事件回调(user_rejected 不走 error 通道) — 小欧-2026-09-06
-  onDenied?: (step: number, message: string, toolName?: string) => void // 2026-09-06 小欧 B2(6.4): 三参带被拒工具名 — 小欧-2026-09-06
+  onDenied?: (step: number, message: string, toolName?: string) => void, // 2026-09-06 小欧 B2(6.4): 三参带被拒工具名 — 小欧-2026-09-06
+  // 小欧 2026-09-10 S2: 外部传入 executionStepsRef，收敛单一真源（与 useChatState 共享同一 ref 对象）
+  externalExecutionStepsRef?: React.MutableRefObject<ExecutionStep[]>
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
   const isReceivingRef = useRef(false);
   const [executionSteps, setExecutionSteps] = useState<ExecutionStep[]>([]);
-  const executionStepsRef = useRef<ExecutionStep[]>([]);
+  // 小欧 2026-09-10 S2: 优先使用外部 ref（useChatState 的），收敛单一真源
+  const executionStepsRef = externalExecutionStepsRef ?? useRef<ExecutionStep[]>([]);
   const [currentResponse, setCurrentResponse] = useState('');
   const [reconnectStatus, setReconnectStatus] = useState<
     'idle' | 'connecting' | 'reconnecting' | 'failed'
@@ -415,8 +423,7 @@ export const useSSE = (
   }, [isReceiving]);
 
   // 重连相关
-  const reconnectConfigRef = useRef<ReconnectConfig>({
-    enabled: true,
+  const reconnectConfigRef = useRef<Omit<ReconnectConfig, 'enabled'>>({
     maxAttempts: 3,
     baseDelay: 1000,
     maxDelay: 10000,
@@ -440,7 +447,7 @@ export const useSSE = (
   // 【小强修复 2026-04-09】重命名为 IDLE_TIMEOUT，更准确反映语义
   const lastDataTimeRef = useRef<number>(0); // 最后收到数据的时间
   const idleTimeoutRef = useRef<number | null>(null); // 空闲超时检测
-  const fetchTimeoutRef = useRef<number | null>(null); // 180s fetch超时检测
+  const firstChunkTimeoutRef = useRef<number | null>(null); // 首响应超时(180s) — 流中途活性由 idle(60s)+心跳(25s)保障
   const IDLE_TIMEOUT = 60000; // 60 秒无数据判定为断开
   // 2026-09-03 小欧 P1-3: HITL等待态（paused/highlight）时IDLE应暂停，避免60s误杀110s HITL等待
   const isHitlWaitingRef = useRef(false);
@@ -547,9 +554,9 @@ export const useSSE = (
         clearTimeout(idleTimeoutRef.current);
         idleTimeoutRef.current = null;
       }
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-        fetchTimeoutRef.current = null;
+      if (firstChunkTimeoutRef.current) {
+        clearTimeout(firstChunkTimeoutRef.current);
+        firstChunkTimeoutRef.current = null;
       }
 
       // 【修复 2026-05-11 小健】abort正在进行的fetch请求，防止旧流与新流并行
@@ -594,11 +601,7 @@ export const useSSE = (
       // 手动中断时清除 pendingMessage 并阻止重连
       if (manualDisconnect) {
         pendingMessageRef.current = null;
-        reconnectConfigRef.current.enabled = false;
-        // 3秒后恢复重连功能（避免永久禁用）
-        setTimeout(() => {
-          reconnectConfigRef.current.enabled = true;
-        }, 3000);
+
       }
 
       // 【方案2新增】调用断开回调
@@ -679,10 +682,10 @@ export const useSSE = (
       }
       const controller = new AbortController();
       abortControllerRef.current = controller; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
-      fetchTimeoutRef.current = window.setTimeout(
+      firstChunkTimeoutRef.current = window.setTimeout(
         () => controller.abort(),
         180000
-      ); // 180s超时，qwen2.5:1.5b CPU首次推理约2分钟
+      ); // 首响应超时(180s) — 流中途活性由 idle(60s)+心跳(25s)保障
 
       let response: Response;
       if (isReconnect) {
@@ -714,9 +717,9 @@ export const useSSE = (
         });
       }
 
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-        fetchTimeoutRef.current = null;
+      if (firstChunkTimeoutRef.current) {
+        clearTimeout(firstChunkTimeoutRef.current);
+        firstChunkTimeoutRef.current = null;
       }
 
       if (!response.ok) {
@@ -798,8 +801,7 @@ export const useSSE = (
                 setMetaFrames,
                 usageAccumRef,
                 lastUsageSeqRef,
-              },
-              isProcessingRef
+              }
             );
           }
           break;
@@ -840,8 +842,7 @@ export const useSSE = (
               setMetaFrames,
               usageAccumRef,
               lastUsageSeqRef,
-            },
-            isProcessingRef
+            }
           );
         }
       }
@@ -1071,6 +1072,7 @@ export const useSSE = (
     isReceiving,
     setIsReceiving, // 【方案3】暴露setter用于中断时立即更新状态
     executionSteps,
+    executionStepsRef, // 小欧 2026-09-10 S2: 暴露 ref 供 useChatStreaming 透传，收敛单一真源
     currentResponse,
     sendMessage,
     disconnect,

@@ -1,5 +1,7 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: sessionModelOverride state 类型 string|null→SessionModelOverride|null
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 统一状态管理对接NewChatContainer(8.x 状态重构)
+// 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: 删streamingStepsRef定义+类型声明+返回值透传(146/258/360);
+//   阶段二S2提前实施: executionStepsRef保留(useChatStreaming透传useSSE的ref, 此处ref作备用/兼容) — 小欧-2026-09-10
 /**
  * useChatState Hook - 统一状态管理
  *
@@ -146,7 +148,7 @@ export interface UseChatStateReturn {
   // SSE相关Refs
   executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
   streamingContentRef: React.MutableRefObject<string>;
-  streamingStepsRef: React.MutableRefObject<ExecutionStep[]>;
+
 
   // 滚动相关Refs
   userScrolledUpRef: React.MutableRefObject<boolean>;
@@ -258,7 +260,7 @@ export const useChatState = (): UseChatStateReturn => {
   // SSE相关Refs
   const executionStepsRef = useRef<ExecutionStep[]>([]);
   const streamingContentRef = useRef('');
-  const streamingStepsRef = useRef<ExecutionStep[]>([]);
+
 
   // 滚动相关Refs
   const userScrolledUpRef = useRef(false);
@@ -360,7 +362,7 @@ export const useChatState = (): UseChatStateReturn => {
     isPausedRef,
     executionStepsRef,
     streamingContentRef,
-    streamingStepsRef,
+
     userScrolledUpRef,
     lastScrollTimeRef,
     isLoadingHistoryRef,

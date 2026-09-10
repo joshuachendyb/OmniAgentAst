@@ -1,3 +1,4 @@
+// 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: StreamingGroupRefs接口删streamingStepsRef字段(104行) — 小欧-2026-09-10
 /**
  * 状态分组类型定义
  *
@@ -104,7 +105,7 @@ export interface StreamingGroupRefs {
   streamingContentRef: React.MutableRefObject<string>;
   displayBufferRef: React.MutableRefObject<unknown[]>;
   isPausedRef: React.MutableRefObject<boolean>;
-  streamingStepsRef: React.MutableRefObject<ExecutionStep[]>;
+
   waitTimerRef: React.MutableRefObject<number | null>;
 }
 

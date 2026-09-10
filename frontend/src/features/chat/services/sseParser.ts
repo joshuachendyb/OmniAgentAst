@@ -48,6 +48,7 @@
 // 编辑历史: 2026-09-09 小欧 - saveStepsToStorage防抖配套: thought/chunk/final/action/observation/paused六处去掉外层
 //   setTimeout(() => { saveStepsToStorage?.(newSteps); }, 0), 改为直接调用(防抖已在useSSE内部处理),
 //   消除N个事件→N个宏任务排队→O(N²)主线程阻塞 — 小欧-2026-09-09
+// 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: processSSEData签名删除未使用形参_isProcessingRef — 小欧-2026-09-10
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -108,6 +109,8 @@ const processSSEData = (
     setServerTaskId?: (taskId: string) => void;
     // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，用于断线重连 after_seq 续传
     onSeq?: (seq: number) => void;
+    // 小欧 2026-09-10 S3: seq 守卫 ref，sseParser 入口层拦截重复事件（seq <= lastSeqRef.current 即跳过）
+    lastSeqRef?: React.MutableRefObject<number>;
     // 【小欧 2026-08-26 8.4.14】元信息帧状态注入（useSSE 闭包 state/ref 透传进模块级 processSSEData）
     setMetaFrames?: React.Dispatch<React.SetStateAction<TaskMetaFrames>>;
     usageAccumRef?: React.MutableRefObject<{
@@ -116,8 +119,7 @@ const processSSEData = (
       total: number;
     }>;
     lastUsageSeqRef?: React.MutableRefObject<number>;
-  },
-  _isProcessingRef: React.MutableRefObject<boolean>
+  }
 ) => {
   const {
     setExecutionSteps,

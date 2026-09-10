@@ -28,6 +28,9 @@
 // 编辑历史: 2026-09-09 小欧 - bug-2修复(task2 step5/step6丢失): onComplete 读 lastMessage.executionSteps 是 React
 //   批处理旧态(不含 final step), 导致 PipelineRenderer 缺数据; 改为优先取 executionStepsFromSSE(sseParser 传入的完整
 //   ref 含 final), 与 sseParser final 分支 :499-500 更新 ref + :520 读 ref + :522 传参配套 — 小欧-2026-09-09
+// 编辑历史: 2026-09-10 小欧 - 阶段一零风险清障: ①S1 删streamingStepsRef解构+清空+依赖数组(133/528/539/576/664/680);
+//   ②S5 onResumed复位提前(isPausedRef=false移至for回放循环前, 根治死循环);
+//   ③S6 cancelInProgress收紧(条件从!isCancelEvent&&type!=='final'改为!isCancelEvent, 根治双final) — 小欧-2026-09-10
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -133,7 +136,7 @@ export const useChatCallbacks = (
     isPausedRef,
     executionStepsRef,
     streamingContentRef,
-    streamingStepsRef,
+
     logFlagsRef,
     hasReceivedCancelEventRef,
     cancelInProgressRef,
@@ -182,7 +185,9 @@ export const useChatCallbacks = (
       // ✅ 如果正在取消中，跳过非取消且与终态无关的事件（避免旧 chunk/步骤污染 UI）
       // 2026-08-27 小欧 修复#1/10: 取消进行中允许 final 终态步骤通过, 否则 final(completed)被吞导致消息无内容
       if (cancelInProgressRef.current) {
-        if (!isCancelEvent && step.type !== 'final') {
+        // 小欧 2026-09-10 S6: 取消态只放行 cancelled 帧
+        // 原条件 type !== 'final' 放行了 final(completed)，导致双 final
+        if (!isCancelEvent) {
           console.log(`[取消] 忽略取消过程中收到的事件: ${step.type}`);
           return;
         }
@@ -526,7 +531,7 @@ export const useChatCallbacks = (
 
       // ⭐ 【小资优化 2026-04-13】完成后清理ref，准备下一次对话
       streamingContentRef.current = '';
-      streamingStepsRef.current = [];
+
       executionStepsRef.current = []; // 2026-08-27 小欧 三堂会审: 终态清理executionSteps
       // A1(2026-09-09 小欧): 终态清空任务内指纹去重Set, 供下一任务重新计数 — 小欧-2026-09-09
       onStepFingerprintRef.current.clear();
@@ -539,7 +544,7 @@ export const useChatCallbacks = (
       // Refs dependencies
       currentSessionIdRef,
       streamingContentRef,
-      streamingStepsRef,
+
       executionStepsRef,
       waitTimerRef,
     ]
@@ -574,7 +579,7 @@ export const useChatCallbacks = (
           '[onError] 后端业务错误: 只进P3, 不弹窗/不替换消息/不停计时 (6.3.3)'
         );
         streamingContentRef.current = '';
-        streamingStepsRef.current = [];
+
         executionStepsRef.current = [];
         // A1(2026-09-09 小欧): from_backend 错误后会话终止, 同步清空任务内指纹Set——查漏补洞:
         //   防"错误后异常断链(无 final/无 onComplete)致 Set 残留, 下一任务同 step 同 content 被误拦" — 小欧-2026-09-09
@@ -662,7 +667,7 @@ export const useChatCallbacks = (
 
       // ⭐ 完成后清理ref
       streamingContentRef.current = '';
-      streamingStepsRef.current = [];
+
       executionStepsRef.current = []; // 2026-08-27 小欧 三堂会审: 终态清理executionSteps
       // A1(2026-09-09 小欧): 终态清空任务内指纹去重Set, 供下一任务重新计数 — 小欧-2026-09-09
       onStepFingerprintRef.current.clear();
@@ -678,7 +683,7 @@ export const useChatCallbacks = (
       displayBufferRef,
       streamingContentRef,
       waitTimerRef,
-      streamingStepsRef,
+
       executionStepsRef,
     ]
   );
@@ -735,6 +740,11 @@ export const useChatCallbacks = (
       return prev;
     });
 
+    // 小欧 2026-09-10 S5: 先复位 isPausedRef 再回放 — 死循环根治
+    // 原 isPausedRef 复位在回放循环之后(:747)，onError(:600) 命中暂停态
+    // 将 error 推回 buffer → 死循环。提前到回放前，onError 不再命中暂停。
+    isPausedRef.current = false;
+
     // error类型需单独处理（调用onError回调）
     for (const err of errorItems) {
       onError(err);
@@ -743,8 +753,6 @@ export const useChatCallbacks = (
     // 清空缓冲区
     displayBufferRef.current = [];
 
-    // 2026-08-27 小欧 修复#2: 同步复位 isPausedRef.current, 否则恢复后分块仍进缓冲而丢失
-    isPausedRef.current = false;
     // 更新暂停状态
     setIsPaused(false);
 
