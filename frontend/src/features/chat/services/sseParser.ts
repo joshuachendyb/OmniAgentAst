@@ -49,6 +49,10 @@
 //   setTimeout(() => { saveStepsToStorage?.(newSteps); }, 0), 改为直接调用(防抖已在useSSE内部处理),
 //   消除N个事件→N个宏任务排队→O(N²)主线程阻塞 — 小欧-2026-09-09
 // 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: processSSEData签名删除未使用形参_isProcessingRef — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - S12批量commit: thought-start/thought/chunk/action/observation/paused/resumed六处改push+scheduleFlush,
+//   零同步序列化消除O(N²)主线程阻塞; final分支同步flush防组件卸载前丢尾; handlers新增pendingStepsRef/scheduleFlush — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - S15并发HITL: onPaused/onResumed加可选confirmId参数(并发HITL区分), paused/resumed分支透传rawData.confirm_id — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - S3 seq守卫: handlers新增lastSeqRef, 入口层拦截重复事件(seq<=lastSeqRef.current即跳过), 防断连重连重复帧 — 小欧-2026-09-10
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -84,8 +88,9 @@ const processSSEData = (
     // 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 后端独立 type="user_rejected" 单独发,
     //   独立回调(step, message, toolName?)供 useChatStreaming 聚合 deniedStepSet/被拒工具点名条, 不占 error 通道 — 小欧-2026-09-06
     onDenied?: (step: number, message: string, toolName?: string) => void;
-    onPaused?: () => void;
-    onResumed?: () => void;
+    // 小欧 2026-09-10 S15: onPaused/onResumed 加 confirmId 参数（并发 HITL 区分）
+    onPaused?: (confirmId?: string) => void;
+    onResumed?: (confirmId?: string) => void;
     onRetry?: (message: string, waitTime?: number) => void;
     onAuthorizationRequired?: (data: {
       confirm_id: string;
@@ -111,6 +116,9 @@ const processSSEData = (
     onSeq?: (seq: number) => void;
     // 小欧 2026-09-10 S3: seq 守卫 ref，sseParser 入口层拦截重复事件（seq <= lastSeqRef.current 即跳过）
     lastSeqRef?: React.MutableRefObject<number>;
+    // 小欧 2026-09-10 S12: 批量 commit — 传入 pendingStepsRef + scheduleFlush
+    pendingStepsRef?: React.MutableRefObject<ExecutionStep[]>;
+    scheduleFlush?: () => void;
     // 【小欧 2026-08-26 8.4.14】元信息帧状态注入（useSSE 闭包 state/ref 透传进模块级 processSSEData）
     setMetaFrames?: React.Dispatch<React.SetStateAction<TaskMetaFrames>>;
     usageAccumRef?: React.MutableRefObject<{
@@ -155,6 +163,15 @@ const processSSEData = (
     // 2026-09-09 小欧 时序统一: frameTime=本条SSE帧到达时刻(processSSEData被逐行调用即帧到达),
     //   thought-start/thought/action/observation 等日志统一引用, 同帧内时间一致且准确 — 小欧-2026-09-09
     const frameTime = Date.now();
+
+    // 小欧 2026-09-10 S3: seq 权威守卫 — 已处理最大 seq 语义(初始-1)
+    // 守卫在 onSeq 之前、switch 之前：先拦截重复，再推进，再放行
+    if (typeof rawData.seq === 'number' && handlers.lastSeqRef) {
+      if (rawData.seq <= handlers.lastSeqRef.current) {
+        console.debug(`[SSE] seq守卫拦截: seq=${rawData.seq} <= lastSeq=${handlers.lastSeqRef.current}`);
+        return;
+      }
+    }
 
     // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，断线重连时用于 after_seq 续传避免重复
     if (typeof rawData.seq === 'number' && onSeq) {
@@ -254,12 +271,9 @@ const processSSEData = (
           ).toLocaleTimeString()}`,
           'color: blue; font-weight: bold;'
         );
-        setExecutionSteps((prev) => {
-          const next = [...prev, ts];
-          handlers.executionStepsRef.current = next;
-          // 2026-08-27 小欧 三堂会审: thought-start为瞬时光标信号, 仅内存帧不落sessionStorage, 故无持久化逻辑
-          return next;
-        });
+        // 小欧 2026-09-10 S12: 批量 append，零同步序列化
+        handlers.pendingStepsRef?.current.push(ts);
+        handlers.scheduleFlush?.();
         onStep?.(ts);
         break;
       }
@@ -373,23 +387,9 @@ const processSSEData = (
         step.reasoning = rawData.reasoning || '';
         step.tool_name = rawData.tool_name || '';
         step.tool_params = rawData.tool_params || rawData.params || {}; // 兼容旧字段
-        // console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
-        // 添加到步骤数组，显示思考过程
-        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
-        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
-        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
-        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
-          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
-          try {
-            saveStepsToStorage?.(newSteps);
-          } catch (e) {
-            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-          }
-          return newSteps;
-        });
+        // 小欧 2026-09-10 S12: 批量 append，零同步序列化
+        handlers.pendingStepsRef?.current.push(step);
+        handlers.scheduleFlush?.();
         onStep?.(step);
         break;
       }
@@ -423,22 +423,9 @@ const processSSEData = (
         //   - 历史教训：不能为了解决刷新问题而破坏保存数据的正确性！
         step.content = chunkContent;
 
-        // 【小沈带小强修改 2026-03-17】
-        // 问题描述：前端导出 JSON 时只有 3 个步骤（start, thought, chunk），但数据库有 55 个步骤
-        // 【小强修复 2026-04-10】使用回调函数模式，与 start/thought/action/observation 保持一致
-        // 问题：之前使用直接同步更新，导致 ref 和 state 不同步
-        // 解决：在 setExecutionSteps 回调函数内部更新 ref，确保同步
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
-          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
-          try {
-            saveStepsToStorage?.(newSteps);
-          } catch (e) {
-            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-          }
-          return newSteps;
-        });
+        // 小欧 202G-09-10 S12: 批量 append，零同步序列化
+        handlers.pendingStepsRef?.current.push(step);
+        handlers.scheduleFlush?.();
         onStep?.(step);
         break;
       }
@@ -494,28 +481,18 @@ const processSSEData = (
 
         const displayName = rawData.display_name;
 
-        // 【关键修复 2026-04-13】在回调之前先更新ref，确保onComplete获取完整数据
-        // 问题：setExecutionSteps回调是异步的，导致onComplete拿到旧值
-        // 解决：先直接更新ref，再调用onComplete
-        const updatedSteps = [...handlers.executionStepsRef.current, step];
-        handlers.executionStepsRef.current = updatedSteps;
-
-        // 【小查修复】保存final到executionSteps，以便导出功能能获取到
+        // 小欧 2026-09-10 S12.2.1: final 分支同步 flush，防组件卸载前丢尾
+        handlers.pendingStepsRef?.current.push(step);
+        handlers.executionStepsRef.current = [...handlers.executionStepsRef.current, step]; // ref 先行供 onComplete 读
+        // final 帧同步 flush（不经 rAF），确保 onComplete 读到全量
+        const batch = handlers.pendingStepsRef?.current.splice(0) ?? [step];
         setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
-          try {
-            saveStepsToStorage?.(newSteps);
-          } catch (e) {
-            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-          }
+          const newSteps = [...prev, ...batch];
+          handlers.executionStepsRef.current = newSteps;
           return newSteps;
         });
         onStep?.(step);
 
-        // 【关键修复 2026-04-13】在onComplete调用前手动构建完整的steps数组
-        // 问题：setExecutionSteps回调是异步的，handlers.executionStepsRef.current已更新为最新值
-        // 解决：直接使用已更新的ref
         const finalStepsWithCurrent = handlers.executionStepsRef.current;
 
         onComplete?.(
@@ -677,17 +654,9 @@ const processSSEData = (
             : 'color: red; font-weight: bold;'
         );
 
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
-          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
-          try {
-            saveStepsToStorage?.(newSteps);
-          } catch (e) {
-            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-          }
-          return newSteps;
-        });
+        // 小欧 2026-09-10 S12: 批量 append，零同步序列化
+        handlers.pendingStepsRef?.current.push(step);
+        handlers.scheduleFlush?.();
 
         onStep?.(step);
         // [DEBUG-6] 2026-09-09 北京老陈 action处理完成
@@ -828,17 +797,9 @@ const processSSEData = (
           'color: red; font-weight: bold;'
         );
 
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
-          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
-          try {
-            saveStepsToStorage?.(newSteps);
-          } catch (e) {
-            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-          }
-          return newSteps;
-        });
+        // 小欧 2026-09-10 S12: 批量 append，零同步序列化
+        handlers.pendingStepsRef?.current.push(step);
+        handlers.scheduleFlush?.();
         onStep?.(step);
         // [DEBUG-6b] 2026-09-09 北京老陈 observation处理完成
         console.log(
@@ -867,24 +828,15 @@ const processSSEData = (
         step.type = rawData.type as ExecutionStep['type'];
         step.content = statusMessage;
 
-        // 统一调用onStep（所有类型都需要添加到executionSteps）
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
-          // 2026-09-09 小欧: 防抖已在useSSE内部处理, 此处直接调用, 去掉setTimeout(0)包裹
-          try {
-            saveStepsToStorage?.(newSteps);
-          } catch (e) {
-            console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
-          }
-          return newSteps;
-        });
+        // 小欧 2026-09-10 S12: 批量 append，零同步序列化
+        handlers.pendingStepsRef?.current.push(step);
+        handlers.scheduleFlush?.();
         onStep?.(step);
 
         // 根据type调用对应的回调
         switch (rawData.type) {
           case 'paused':
-            onPaused?.();
+            onPaused?.(rawData.confirm_id as string | undefined); // 小欧 2026-09-10 S15: 传 confirmId
             if (rawData.confirm_id) {
               handlers.onAuthorizationRequired?.({
                 confirm_id: rawData.confirm_id,
@@ -909,7 +861,7 @@ const processSSEData = (
                 })
               );
             }
-            onResumed?.();
+            onResumed?.(rawData.confirm_id as string | undefined); // 小欧 2026-09-10 S15: 传 confirmId
             break;
           case 'retrying':
             // 小欧 2026-07-13: 同上, 读取后端 content 字段作为重试提示文本。
