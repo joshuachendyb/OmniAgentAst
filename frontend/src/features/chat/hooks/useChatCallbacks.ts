@@ -44,6 +44,10 @@
 // 编辑历史: 2026-09-10 小欧 - S22 错误终态幂等清理: onError from_backend 分道之后插入 request_level 判据闸门
 //   (isRequestLevel = step===0 || error_type==='request_timeout'), 请求级错误立即清 waitTimerRef+指纹Set,
 //   执行级错误保持"等 final"不动; 幂等保证——即便随后 final 到达, onComplete 再清无副作用 — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - [A9]final暂停期到达后onResumed不再重置接收态: setIsReceiving 加
+//   hasReplayable 守卫——final 在暂停期间到达 → onComplete 设 isStreaming=false → onResumed
+//   若无条件 setIsReceiving(true) 会把已结束的流重新标记为接收中, 任务结束后 UI 再次转"等待图标";
+//   无回放内容(流已终态/空暂停)不重置 isReceiving — 小欧-2026-09-10
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -818,8 +822,11 @@ export const useChatCallbacks = (
     // 更新暂停状态
     setIsPaused(false);
 
-    // 通知流式组件恢复接收
-    if (streaming?.setIsReceiving) {
+    // 通知流式组件恢复接收（仅当有可回放数据时 —— 流仍活跃;
+    //   无回放内容说明流已终态(isStreaming=false)或空暂停, 不应重置 isReceiving）
+    //   小欧 2026-09-10 [A9]: final 到达暂停期间 → onComplete 设 isStreaming=false →
+    //   onResumed 不应将已结束的流重新标记为接收中
+    if (hasReplayable && streaming?.setIsReceiving) {
       streaming.setIsReceiving(true);
     }
   }, [
