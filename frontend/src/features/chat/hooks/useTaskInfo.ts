@@ -27,6 +27,9 @@
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈裁定): 第5参 liveErrorText✗ string 改 liveError?: LiveError|null
 //   (P3数据源对象形态) + LiveMeta 补 requestLevel(位4图标分层用; retrying/truncated 恒执行级false) +
 //   detail分支/兜底/candidates/依赖同步改造 — 小欧-2026-09-08
+// 编辑历史: 2026-09-11 小欧 - 契约化(method2, 北京老陈 2026-09-11 定案): thought=仅历史回显事件(DB
+//   executionSteps), 实时 SSE 永不发(后端 _SSE_EXCLUDE_TYPES 过滤)。badge 派生"业务step到达即证执行中"
+//   剔除 'thought'(thought-start/action/observation 仍实时, idle→running 恢复语义不变) — 小欧-2026-09-11
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -105,6 +108,12 @@ export const useTaskInfo = (
         liveError
       )
         badge = 'failed';
+      // 2026-09-11 小欧 DB滞后兜底: detail.status为executing但有duration(>0)或updated_at时覆盖为completed - 小欧-2026-09-11
+      if (
+        badge === 'running' &&
+        ((detail.duration != null && detail.duration > 0) || detail.updated_at)
+      )
+        badge = 'completed';
       return {
         badge,
         elapsedSec: detail.duration ?? 0,
@@ -188,7 +197,8 @@ export const useTaskInfo = (
           // 防御遗留库数据（error 现不入 executionSteps，见 8.4.5）；实时失败走 final.outcome
           badge = 'failed';
           break;
-        case 'thought':
+        // 2026-09-11 小欧 契约化(method2): thought=仅历史回显事件(DB), 实时 SSE 永不发,
+        //   执行中信号剔除 thought(thought-start/action/observation 仍实时兜住 idle→running) — 小欧-2026-09-11
         case 'action':
         case 'observation':
           // 2026-09-08 小欧 - 前端UI静默10秒整批显示修复(北京老陈批准, 文档:

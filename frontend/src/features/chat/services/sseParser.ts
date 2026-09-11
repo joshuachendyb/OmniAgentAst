@@ -65,6 +65,9 @@
 // 编辑历史: 2026-09-10 小欧 - TS类型修复: final/error分支 terminalSeqRef.current 赋值由 step.step 改
 //   stepNum——step.step 类型为 number|undefined, stepNum 经 Number(rawData.step)||1 保证 number,
 //   消除类型安全隐患, 终态 seq 记录值语义不变 — 小欧-2026-09-10
+// 编辑历史: 2026-09-11 小欧 - 契约化(method2, 北京老陈 2026-09-11 定案): thought=仅历史回显事件(DB executionSteps),
+//   实时 SSE 永不发(后端 stream_reader 经 _SSE_EXCLUDE_TYPES 过滤)。case 'thought' 改为纯防御分支——
+//   原实时收集 thought 入 executionSteps 为历史错逻辑(实时+DB 双通道重复根因), 现收到即丢弃仅打日志 — 小欧-2026-09-11
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -401,27 +404,18 @@ const processSSEData = (
       }
 
       case 'thought': {
-        const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
-        console.log(
-          `%c[STEP] [type=thought] [step=${stepNum}] [收到数据] 时间=${new Date(
+        // 2026-09-11 小欧 契约化(method2, 北京老陈 2026-09-11 定案): thought = 仅历史回显事件
+        //   (DB executionSteps), 实时 SSE 永不发(后端 stream_reader 经 _SSE_EXCLUDE_TYPES 过滤)。
+        //   纠正的历史错逻辑: 实时收到 thought 即收集入 executionSteps → 与 DB 回放 thought
+        //   双通道重复(前端重复显示根因), 且 S12 批量 append 令思考草稿与正文并存。
+        //   现改为纯防御分支: 后端异常误发时打日志并丢弃, 绝不污染实时 executionSteps — 小欧-2026-09-11
+        const stepNum = Number(rawData.step) || 1;
+        console.warn(
+          `%c[契约] [type=thought] 实时SSE不应出现 thought(仅历史回显), 已防御丢弃 step=${stepNum} 时间=${new Date(
             frameTime
           ).toLocaleTimeString()}`,
-          'color: red; font-weight: bold;'
+          'color: orange; font-weight: bold;'
         );
-
-        // 【小沈修改2026-04-16】使用后端字段存储
-        step.step = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()数值化
-        step.timestamp = timestampValue; // 2026-08-27 小欧 修复base-1: 用已转换number
-        // 后端有两个字段：content(完整思考内容)和thought(parsed获取的thought)
-        step.content = rawData.content || ''; // 完整思考内容
-        step.thought = rawData.thought || ''; // parsed的thought
-        step.reasoning = rawData.reasoning || '';
-        step.tool_name = rawData.tool_name || '';
-        step.tool_params = rawData.tool_params || rawData.params || {}; // 兼容旧字段
-        // 小欧 2026-09-10 S12: 批量 append，零同步序列化
-        handlers.pendingStepsRef?.current.push(step);
-        handlers.scheduleFlush?.();
-        onStep?.(step);
         break;
       }
 
@@ -487,6 +481,8 @@ const processSSEData = (
         step.outcome = rawData.outcome;
         step.error_type = rawData.error_type;
         step.error_message = rawData.error_message;
+        // 2026-09-11 小欧 北京老陈定案: cancelled终态渲染第二行✕取消来源, final分支补解析(后端FinalStep.to_dict恒输出cancel_source) — 小欧-2026-09-11
+        step.cancel_source = rawData.cancel_source;
 
         if (step.content) {
           if (!responseBufferRef.current) {

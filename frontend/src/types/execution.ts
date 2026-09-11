@@ -88,6 +88,8 @@ export interface ExecutionStep {
   outcome?: 'completed' | 'failed' | 'cancelled'; // 终态类型：完成/失败/取消
   error_type?: string; // 失败时的错误类型
   error_message?: string; // 失败/取消时的错误信息
+  // 2026-09-11 小欧 北京老陈定案: cancelled终态渲染第二行✕取消来源, 前端补解析该字段(后端FinalStep.to_dict恒输出) — 小欧-2026-09-11
+  cancel_source?: string; // 取消来源(user_requested/client_disconnect_timeout/config_limit/status_inconsistency/orchestrator_error)
 
   // === type=observation 字段 【新增2026-04-15】===
   return_direct?: boolean; // 是否直接返回

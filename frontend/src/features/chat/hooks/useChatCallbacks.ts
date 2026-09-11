@@ -48,6 +48,10 @@
 //   hasReplayable 守卫——final 在暂停期间到达 → onComplete 设 isStreaming=false → onResumed
 //   若无条件 setIsReceiving(true) 会把已结束的流重新标记为接收中, 任务结束后 UI 再次转"等待图标";
 //   无回放内容(流已终态/空暂停)不重置 isReceiving — 小欧-2026-09-10
+// 编辑历史: 2026-09-11 小欧 - 契约化(method2, 北京老陈 2026-09-11 定案): 空响应判断删除对 SSE 实时
+//   thought 步骤的依赖(thought=仅历史回显事件, 实时 SSE 永不发, 后端 _SSE_EXCLUDE_TYPES 过滤)。
+//   原 hasThoughtContent 兜底是 thought 泄漏到实时流时期"把思考草稿顶成回答"的历史错逻辑(老陈指正
+//   "前端的毛病"), 现回归"真实产出正文"判断: final.response ∨ final.thought — 小欧-2026-09-11
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -416,9 +420,10 @@ export const useChatCallbacks = (
         errorType = finalStepAll?.error_type as string | undefined;
         errorMessage = finalStepAll?.error_message as string | undefined;
       } else if (!finalResponse || !finalResponse.trim()) {
-        // 【修复 2026-05-05 小沈】Agent路径不发chunk，finalResponse永远为空，
-        // 但executionSteps可能完全正常（有thought步骤含回答内容）。
-        // 判断条件：final步骤的response和thought都空，且没有thought步骤有content，才判error
+        // 2026-09-11 小欧 契约化(method2, 北京老陈 2026-09-11 定案): 删除对 SSE 实时 thought 步骤的依赖——
+        //   thought=仅历史回显事件(DB executionSteps), 实时 SSE 永不发(后端 _SSE_EXCLUDE_TYPES 过滤)。
+        //   原 hasThoughtContent(SSE thoughtSteps) 兜底是 thought 泄漏到实时流时期"把思考草稿顶成回答"
+        //   的历史错逻辑; 真实空响应(模型零输出, 无 final.response/thought)即判 empty_response — 小欧-2026-09-11
         const sseSteps = executionStepsFromSSE || [];
         const finalStep = sseSteps.find(
           (s: ExecutionStep) => s.type === 'final'
@@ -426,32 +431,15 @@ export const useChatCallbacks = (
         const finalStepResponse = (finalStep?.response as string) || '';
         const finalStepThought = (finalStep?.thought as string) || '';
 
-        // 也检查thought步骤中是否有content（LLM的回答通常在thought步骤的content里）
-        const thoughtSteps = sseSteps.filter(
-          (s: ExecutionStep) => s.type === 'thought'
-        );
-        const hasThoughtContent = thoughtSteps.some(
-          (s: ExecutionStep) => s.content && String(s.content).trim()
-        );
-
-        // response或thought任一有内容，或有thought步骤含content，都不算error
+        // response或thought任一有内容，都不算error
         const hasValidContent =
           (finalStepResponse && finalStepResponse.trim()) ||
-          (finalStepThought && finalStepThought.trim()) ||
-          hasThoughtContent;
+          (finalStepThought && finalStepThought.trim());
 
         if (hasValidContent) {
-          // 2026-08-27 小欧 修复#7: 答案位于 thought 步骤而 final.response/thought 均空时, 回落到首个含内容的 thought 步骤
-          const thoughtContent = thoughtSteps.find(
-            (s: ExecutionStep) => s.content && String(s.content).trim()
-          )?.content;
-          finalResponse =
-            finalStepResponse ||
-            finalStepThought ||
-            (thoughtContent as string) ||
-            '';
+          finalResponse = finalStepResponse || finalStepThought;
           console.info(
-            '✅ finalResponse为空但executionSteps有有效内容，不标记error'
+            '✅ finalResponse为空但final步骤有有效内容，不标记error'
           );
         } else {
           // response和thought都空，且没有thought步骤有内容 → 确实是空响应

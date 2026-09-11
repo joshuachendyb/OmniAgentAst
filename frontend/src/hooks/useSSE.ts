@@ -62,6 +62,9 @@
 //   (初始-1)传入sseParser供终态后作废守卫; ②reader循环done分支补空流终态——200+空body(异常断流)
 //   原实现buffer.trim()空即跳过全部处理, isReceiving永久true/placeholder永久思考中; 现触发
 //   onError+复位isReceiving/isConnected — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - [B2]空流误报修复(北京老陈反馈「final收不到」): B1上线后final已正常处理后
+//   流结束buffer亦空, 误触B1空流onError覆盖成功终态; 补else if(terminalSeqRef.current>=0)分支——
+//   终态(final/error)已处理完毕即视为流正常结束不报错, 仅真·200+空body(无任何终态)才走B1 — 小欧-2026-09-10
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -881,6 +884,10 @@ export const useSSE = (
                 lastUsageSeqRef,
               }
             );
+          } else if (terminalSeqRef.current >= 0) {
+            // 小欧 2026-09-10 [B2]: final已收到 —— 流正常结束但buffer已空,
+            //   terminalSeqRef被设为stepNum(>=0), 说明final/error已处理完毕, 不触发空流错误
+            console.info('[SSE] 流正常结束: final已收到, buffer为空(正常)');
           } else {
             // 小欧 2026-09-10 [B1]: 空流终态 —— 200+空body(异常断流)原实现跳过全部处理,
             //   isReceiving 永久 true / 消息 placeholder 永久"思考中"; 现触发 onError + 复位连接态
