@@ -59,6 +59,7 @@
 // 编辑历史: 2026-09-09 小欧 - A2修复(跨任务 step 号回绕互踩): buildSegments tool 段去重升级——同 step 仅允许
 //   preview+canonical 各一次合一(保持 UI 一行契约, candidateCount 以预览全量为准), 第三次起的同 step action
 //   (跨任务/异常残留)独立追加不覆盖历史段, 杜绝"旧任务工具行被新任务同 step 覆盖篡改" — 小欧-2026-09-09
+// 编辑历史: 2026-09-11 小欧 - 修复reasoning/thought重复: thought步骤的reasoning字段与chunk步骤(is_reasoning=true)内容重叠时去重, 防appendToLast拼接致双倍文本 - 小欧-2026-09-11
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -166,8 +167,25 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
         // reasoning 合并进旧段(跨 step 相邻 thinking)时非本 step 新建 → 不标 compact, 保持 step 间 MD(8)
         const prevThinkWasLast =
           segs.length > 0 && segs[segs.length - 1].kind === 'thinking';
-        if (hasReasoning && s.reasoning) appendToLast('thinking', s.reasoning);
-        const thoughtSeg = s.thought ? appendToLast('text', s.thought) : null;
+        // 2026-09-11 小欧 去重: chunk(is_reasoning=true)已流式累积thinking段, thought.reasoning与之重叠时不再追加防双倍
+        if (hasReasoning && s.reasoning) {
+          const lastSeg = segs[segs.length - 1];
+          const alreadyHas =
+            lastSeg &&
+            lastSeg.kind === 'thinking' &&
+            lastSeg.text.endsWith(s.reasoning);
+          if (!alreadyHas) appendToLast('thinking', s.reasoning);
+        }
+        // 2026-09-11 小欧 去重: chunk已流式累积text段, thought字段与之重叠时不再追加防双倍
+        let thoughtSeg: TextishSegment | null = null;
+        if (s.thought) {
+          const lastTextSeg = segs[segs.length - 1];
+          const textAlreadyHas =
+            lastTextSeg &&
+            lastTextSeg.kind === 'text' &&
+            lastTextSeg.text.endsWith(s.thought);
+          if (!textAlreadyHas) thoughtSeg = appendToLast('text', s.thought);
+        }
         if (hasBoth && thoughtSeg) {
           thoughtSeg.sameStep = true;
           if (!prevThinkWasLast) {
@@ -237,6 +255,15 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
   }
   return segs;
 };
+
+// 2026-09-11 小欧 复用优先(北京老陈): 终态细节行样式工厂——final段 reasoning/取消来源行/红字错误行
+//   结构完全同式仅色异, 抽共用免三处内联重复, 颜色按态传(取消ORANGE_RED/失败ERROR/reasoning灰) — 小欧-2026-09-11
+const terminalDetailStyle = (color: string): React.CSSProperties => ({
+  color,
+  fontSize: FontSize.TERTIARY,
+  lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
+  margin: stepMargin(false),
+});
 
 interface PipelineRendererProps {
   steps: ExecutionStep[];
@@ -335,50 +362,31 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           //   历史回放无chunks, final是唯一载体, 需渲染reasoning+response两个字段
           if (streaming) return null;
           const reasoning = seg.step.reasoning;
-          // 小欧 2026-09-02: 终态三态显式分支（completed/failed/cancelled）——
-          //   cancelled 弱化小字"已取消"、failed 红字原因行(error_type/error_message)、
-          //   completed 正常 response；三者互斥走齐不留默认吞掉
+          // 2026-09-11 小欧 北京老陈定案(最终): 终态三态平铺统一——首行 ResponseStream 共用(completed/failed/cancelled 全是response),
+          //   细节行按态条件渲染: cancelled="! 取消来源: cancel_source"橘红(ORANGE_RED)、failed="⚠️ [error_type] error_message"红字,
+          //   行样式共用 terminalDetailStyle 工厂, 不复用无中间态嵌套 — 小欧-2026-09-11
           const isFailed = seg.step.outcome === 'failed';
           const isCancelled = seg.step.outcome === 'cancelled';
           return (
             <React.Fragment key={`final-${i}-${seg.step.step ?? i}`}>
               {reasoning && (
-                <div
-                  style={{
-                    color: Colors.TEXT.SECONDARY,
-                    fontStyle: 'italic',
-                    fontSize: FontSize.TERTIARY,
-                    lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
-                    margin: stepMargin(false),
-                  }}
-                >
+                <div style={terminalDetailStyle(Colors.TEXT.SECONDARY)}>
                   {reasoning}
                 </div>
               )}
-              {isFailed ? (
-                <React.Fragment>
-                  <ResponseStream
-                    text={seg.step.response || seg.step.content || ''}
-                  />
-                  {(seg.step.error_message || seg.step.error_type) && (
-                    <div
-                      style={{
-                        color: Colors.ERROR,
-                        fontSize: FontSize.TERTIARY,
-                        lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
-                        margin: stepMargin(false),
-                      }}
-                    >
-                      ⚠️ [{seg.step.error_type || 'error'}]{' '}
-                      {seg.step.error_message}
-                    </div>
-                  )}
-                </React.Fragment>
-              ) : (
-                <ResponseStream
-                  text={seg.step.response || seg.step.content || ''}
-                  cancelled={isCancelled}
-                />
+              <ResponseStream
+                text={seg.step.response || seg.step.content || ''}
+              />
+              {isCancelled && seg.step.cancel_source && (
+                <div style={terminalDetailStyle(Colors.ORANGE_RED)}>
+                  ! 取消来源: {seg.step.cancel_source}
+                </div>
+              )}
+              {isFailed && (seg.step.error_message || seg.step.error_type) && (
+                <div style={terminalDetailStyle(Colors.ERROR)}>
+                  ⚠️ [{seg.step.error_type || 'error'}]{' '}
+                  {seg.step.error_message}
+                </div>
               )}
             </React.Fragment>
           );

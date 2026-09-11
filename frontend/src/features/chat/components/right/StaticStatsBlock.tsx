@@ -11,6 +11,7 @@
 // 编辑历史: 2026-09-01 小欧 - 修复工具调用链折叠三角移至(*步)后 - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 规范全页折叠方法与符号位置/大小统一：三角统一置于(*步)后、复用TrustPanel可访问方法与FontSize/Spacing/Colors常量，符号大小统一FontSize.SECONDARY - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 整个板块可折叠(北京老陈定案): 默认折叠只显标题行(任务统计+Tag+运行时间+▼), 点击展开显示完整统计内容; 与内层工具调用链折叠独立互不影响
+// 编辑历史: 2026-09-11 小欧 - DB滞后兜底: detail.status为executing但有duration(>0)或updated_at时覆盖为completed, 防SSE final后DB未及时更新致状态残留 - 小欧-2026-09-11
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -46,7 +47,13 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
   const [expanded, setExpanded] = React.useState(false); // 默认折叠
   const [chainOpen, setChainOpen] = React.useState(false);
   if (!detail) return null;
-  const statusColor = STATUS_COLOR_MAP[detail.status] ?? 'default';
+  // 2026-09-11 小欧 DB滞后兜底: SSE final已到但DB status仍executing时, 有duration或updated_at即覆盖为completed
+  const effectiveStatus =
+    detail.status === 'executing' &&
+    ((detail.duration != null && detail.duration > 0) || detail.updated_at)
+      ? 'completed'
+      : detail.status;
+  const statusColor = STATUS_COLOR_MAP[effectiveStatus] ?? 'default';
   const fmtTime = (v: string | null) =>
     v ? v.slice(0, 19).replace('T', ' ') : '-';
   const chain = (chainSteps ?? []).filter((s) => s.type === 'action');
@@ -88,7 +95,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
           任务统计
         </Typography.Text>
         <Tag color={statusColor} style={{ margin: 0 }}>
-          {detail.status}
+          {effectiveStatus}
         </Tag>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           运行{' '}

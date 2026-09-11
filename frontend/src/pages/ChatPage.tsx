@@ -14,6 +14,10 @@
 //   暂用对象真值判空)与 useChatPanels 透传同步 — 小欧-2026-09-08
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-A类: 去chatSession/chatPersistence解构(死解构, eslint@typescript-eslint/no-unused-vars) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 透传rightOpen状态给useChatPanels, 控制TaskListPanel模型标签provider前缀条件显示 - 小欧-2026-09-09
+// 编辑历史: 2026-09-10 小欧 - thought重复根治(三堂会审定案): 病根=useChatInit effect依赖searchParams对象引用
+//   (React Router useSearchParams每次渲染返回新对象)致流式期间反复重跑initializeSession, 直接赋值
+//   setMessages(result.messages)覆盖流式assistant消息; 根治=只传稳定urlSessionId字符串(非全局searchParams对象),
+//   effect依赖它(session_id不变即不重跑)。曾用useMemo稳定引用(堵截)与isReceiving守卫(边界退化)两案, 复查后撤销 — 小欧-2026-09-10
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -36,6 +40,9 @@ import { Colors } from '@/utils/stepStyles';
 
 const ChatPage: React.FC = () => {
   const [searchParams] = useSearchParams();
+  // 2026-09-10 小欧: thought重复根治(三堂会审定案): 传稳定urlSessionId字符串给useChatInit,
+  //   effect依赖它(非全局searchParams对象引用), 流式期间session_id不变即不重跑initializeSession。 — 小欧-2026-09-10
+  const urlSessionId = searchParams.get('session_id');
   const [liveError, setLiveError] = useState<LiveError | null>(null); // 2026-09-08 小欧 6.3.4: 对象形态(位4 类型+分层字段) — 小欧-2026-09-08
   const [rightOpen, setRightOpen] = useState(true);
   // 2026-09-01 小欧 方案C: 左列最新任务锚点ref(常驻, 传入useChatPanels→TaskListPanel滚动定位)
@@ -89,14 +96,18 @@ const ChatPage: React.FC = () => {
   }, [chatStreaming.serverTaskId, sessionId, refreshTasks]);
 
   // 2026-09-02 小欧 - 同类DB滞后修复2: 收流结束(成功/失败/取消)即刷新, 补final后DB仍executing窗口(与G2 start刷新成对) - 小欧-2026-09-02
+  // 2026-09-11 小欧 - DB滞后补充: 即时刷新后延迟500ms再刷一次, 覆盖DB写入延迟窗口 - 小欧-2026-09-11
   const prevReceivingRef = useRef(false);
   useEffect(() => {
     if (
       prevReceivingRef.current &&
       !chatStreaming.isReceiving &&
       chatStreaming.serverTaskId
-    )
+    ) {
       void refreshTasks();
+      const timer = setTimeout(() => void refreshTasks(), 500);
+      return () => clearTimeout(timer);
+    }
     prevReceivingRef.current = chatStreaming.isReceiving;
   }, [chatStreaming.isReceiving, chatStreaming.serverTaskId, refreshTasks]);
 
@@ -136,7 +147,7 @@ const ChatPage: React.FC = () => {
   }, [liveError, refreshTasks]);
 
   // 会话初始化 / 生命周期 / 标题编辑（抽离至各 hook）
-  useChatInit({ chatFacade, searchParams });
+  useChatInit({ chatFacade, urlSessionId });
   const { handleNewSession } = useChatLifecycle({ chatFacade });
   const { handleEditingStart, handleEditingCancel } = useChatTitle(chatState);
 

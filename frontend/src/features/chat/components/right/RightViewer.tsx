@@ -64,6 +64,9 @@
 //   改 _hasFinal 驱动, 不加 settledRef 长度守卫(多任务切换时 settledRef 残留旧值, 守卫会阻止新任务快照覆盖
 //   旧值, 引入任务切换残留), final 到达即固化 executionStepsRef 全量(幂等, 多次同值不触发重渲染)。
 //   【纠正上条误记 2026-09-10 小欧】: 原版本误写"+settledRef.length守卫", 三堂会审裁定不放守卫, 以代码为准 — 小欧-2026-09-10
+// 编辑历史: 2026-09-11 小欧 - 契约化(method2, 北京老陈 2026-09-11 定案): thought=仅历史回显事件(DB
+//   executionSteps), 实时 SSE 永不发(后端 _SSE_EXCLUDE_TYPES 过滤)。hasBusinessSteps 判定剔除 thought
+//   (thought-start/action/observation/chunk 仍实时兜住 isCurrentLive 铁证, 语义不变) — 小欧-2026-09-11
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -150,7 +153,9 @@ const RightViewer: React.FC<RightViewerProps> = ({
   // 2026-09-06 小欧 RG-2: 历史数据是否已就绪(0→1驱动主滚动effect重跑, 后台final切历史后滚底兜底) — 小欧-2026-09-06
   const hasHistorySteps = historySteps.length > 0;
   // 2026-09-09 北京老陈 铁证兜底: liveSteps含任一业务步骤即证执行中(不可翻false)
-  const _businessTypes = new Set(['thought', 'action', 'observation', 'chunk']);
+  // 2026-09-11 小欧 契约化(method2): thought=仅历史回显(实时再也不来), 信号移出 thought
+  //   (action/observation/chunk 已足够; thought-start 由 pipeline 消费) — 小欧-2026-09-11
+  const _businessTypes = new Set(['action', 'observation', 'chunk']);
   const hasBusinessSteps = liveSteps.some((s) => _businessTypes.has(s.type));
   const isCurrentLive =
     activeTaskId != null &&
