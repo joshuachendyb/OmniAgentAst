@@ -2,6 +2,7 @@
 //   数据源=final 帧(outcome/duration/model/provider/token), 绝不读 DB; 两行排版视觉优先 — 小欧-2026-09-11
 // 2026-09-11 小欧 - 修: 去 as 强转(DRY/类型安全), 复用 formatTokenCompact 公用函数; 第一行=状态+时长+模型, 第二行=4组token
 // 2026-09-11 小欧 - 三堂会审修复: P1-3删??null(与TokenLayer number|undefined对齐, TS2322归零); P2模型顺序统一provider/model(站点惯例+StaticStatsBlock一致); P2 cancelled归default(非error红语义) — 小欧-2026-09-11
+// 2026-09-12 小欧 - P1-6三堂会审修复: 抽renderToken()消4组token包裹渲染重复(DRY); 原IIFE三连Typography.Text改4行直线调用 — 小欧-2026-09-12
 import React from 'react';
 import { Tag, Typography } from 'antd';
 import type { ExecutionStep } from '@/types/execution';
@@ -23,10 +24,19 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
   const duration = finalStep.duration;
   const model = finalStep.model;
   const provider = finalStep.provider;
+  // 2026-09-12 小欧 P1-6: 抽renderToken()——4组token包裹渲染同构, 抽单一helper消重复 — 小欧-2026-09-12
+  const renderToken = (text: string | false | null | undefined) =>
+    text ? (
+      <Typography.Text
+        type="secondary"
+        style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+      >
+        {text}
+      </Typography.Text>
+    ) : null;
   // 2026-09-11 小欧 三堂会审P1-3: 删 ?? null——TokenLayer 字段类型 number|undefined, 传 null 违 TS2322；此处语义完全等价保留 — 小欧-2026-09-11
   const prompt =
-    finalStep.prompt_tokens ??
-    finalStep.accumulated_usage?.prompt_tokens;
+    finalStep.prompt_tokens ?? finalStep.accumulated_usage?.prompt_tokens;
   const completion =
     finalStep.completion_tokens ??
     finalStep.accumulated_usage?.completion_tokens;
@@ -35,7 +45,7 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
   const taskAcc = finalStep.task_accumulated_tokens;
   const sessAcc = finalStep.session_accumulated_tokens;
   const chainAcc = finalStep.chain_accumulated_tokens;
-    // 2026-09-11 小欧 三堂会审P2: cancelled 归 default——原 error 红过重(主动取消/超时), 与 StaticStatsBlock STATUS_COLOR_MAP 默认灰对齐 — 小欧-2026-09-11
+  // 2026-09-11 小欧 三堂会审P2: cancelled 归 default——原 error 红过重(主动取消/超时), 与 StaticStatsBlock STATUS_COLOR_MAP 默认灰对齐 — 小欧-2026-09-11
   const statusColor =
     outcome === 'completed'
       ? 'success'
@@ -102,51 +112,17 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
           flexWrap: 'wrap',
         }}
       >
-        {prompt != null && (
-          <Typography.Text
-            type="secondary"
-            style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-          >
-            {formatTokenCompact('累计', {
+        {prompt != null &&
+          renderToken(
+            formatTokenCompact('累计', {
               prompt_tokens: prompt,
               completion_tokens: completion,
               total_tokens: total,
-            })}
-          </Typography.Text>
-        )}
-        {(() => {
-          const t = formatTokenCompact('任务', taskAcc);
-          const s = formatTokenCompact('会话', sessAcc);
-          const c = formatTokenCompact('链', chainAcc);
-          return (
-            <>
-              {t && (
-                <Typography.Text
-                  type="secondary"
-                  style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-                >
-                  {t}
-                </Typography.Text>
-              )}
-              {s && (
-                <Typography.Text
-                  type="secondary"
-                  style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-                >
-                  {s}
-                </Typography.Text>
-              )}
-              {c && (
-                <Typography.Text
-                  type="secondary"
-                  style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-                >
-                  {c}
-                </Typography.Text>
-              )}
-            </>
-          );
-        })()}
+            })
+          )}
+        {renderToken(formatTokenCompact('任务', taskAcc))}
+        {renderToken(formatTokenCompact('会话', sessAcc))}
+        {renderToken(formatTokenCompact('链', chainAcc))}
       </div>
     </div>
   );

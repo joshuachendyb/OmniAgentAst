@@ -14,6 +14,7 @@
 // 编辑历史: 2026-09-11 小欧 - DB滞后兜底: detail.status为executing但有duration(>0)或updated_at时覆盖为completed, 防SSE final后DB未及时更新致状态残留 - 小欧-2026-09-11
 // 编辑历史: 2026-09-11 小欧 - 第七章 M3c(R5/R7): 标题行(title 段)析出至 TitleBlock, 折叠状态提升父级受控; finalStats 帧复合兜底(tool_stats/artifacts/llm/步数), DB 失败也渲染折叠区 — 小欧-2026-09-11
 // 编辑历史: 2026-09-11 小欧 - 三堂会审修复: P0-1 fmtTime块体补return(原缺return恒返undefined TS2322×2); P1-4 props复用TokenLayer消重复私有形状(DRY), import TokenLayer — 小欧-2026-09-11
+// 编辑历史: 2026-09-12 小欧 - P1-3三堂会审修复: 抽sectionStyle/sectionTitleStyle模块级常量消4处容器+4处标题重复(DRY); 全部硬编码灰阶收敛至Colors.TEXT三档, fontSize:12收敛至FontSize.SECONDARY(复用优先) — 小欧-2026-09-12
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -31,7 +32,27 @@ import { Typography } from 'antd'; // Tag 已移至 TitleBlock，此处删除
 import type { TaskDetail } from '../../../../services/api/task.api';
 import type { ExecutionStep } from '../../../../types/execution';
 import type { FinalStatsFrame } from '@/types/sse'; // 2026-09-11 小欧 第七章 M3c(R7): 折叠区复合兜底数据源 — 小欧-2026-09-11
-import { Colors, FontSize, Spacing, formatTokenFull, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-11 小欧 三堂会审P1-4: 复用公用 TokenLayer 消重复私有形状(DRY) — 小欧-2026-09-11
+import {
+  Colors,
+  FontSize,
+  Spacing,
+  formatTokenFull,
+  type TokenLayer,
+} from '@/utils/stepStyles'; // 2026-09-11 小欧 三堂会审P1-4: 复用公用 TokenLayer 消重复私有形状(DRY) — 小欧-2026-09-11
+
+// 2026-09-12 小欧 P1-3: 模块级样式常量, 消四处section容器+四处标题完全重复(DRY) — 小欧-2026-09-12
+const sectionStyle: React.CSSProperties = {
+  marginTop: 10,
+  borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
+  paddingTop: 8,
+};
+const sectionTitleStyle: React.CSSProperties = {
+  fontSize: FontSize.SECONDARY,
+  fontWeight: 500,
+  color: Colors.TEXT.PRIMARY,
+  borderLeft: `2px solid ${Colors.PRIMARY}`,
+  paddingLeft: 6,
+};
 
 interface StaticStatsProps {
   detail: TaskDetail | null;
@@ -87,24 +108,9 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
     >
       {/* 展开内容（title 段已由父级 TitleBlock 渲染，此处从"基本信息"开始）— 小欧 2026-09-11 第七章 M3c */}
       <>
-        <div
-          style={{
-            marginTop: 10,
-            borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
-            paddingTop: 8,
-          }}
-        >
-          <Typography.Text
-            style={{
-              fontSize: 12,
-              fontWeight: 500,
-              color: '#595959',
-              borderLeft: `2px solid ${Colors.PRIMARY}`,
-              paddingLeft: 6,
-            }}
-          >
-            基本信息
-          </Typography.Text>
+        {/* 2026-09-12 P1-3: 基本信息 section 容器/标题复用 sectionStyle/sectionTitleStyle, 字号12→FontSize.SECONDARY, 标签色#8c8c8c→Colors.TEXT.SECONDARY, 值色#262626→Colors.TEXT.STRONG — 小欧-2026-09-12 */}
+        <div style={sectionStyle}>
+          <Typography.Text style={sectionTitleStyle}>基本信息</Typography.Text>
           <div
             style={{
               display: 'grid',
@@ -112,38 +118,38 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
               columnGap: 12,
               rowGap: 4,
               marginTop: 6,
-              fontSize: 12,
+              fontSize: FontSize.SECONDARY,
             }}
           >
-            <span style={{ color: '#8c8c8c' }}>开始</span>
-            <span style={{ color: '#262626', whiteSpace: 'nowrap' }}>
+            <span style={{ color: Colors.TEXT.SECONDARY }}>开始</span>
+            <span style={{ color: Colors.TEXT.STRONG, whiteSpace: 'nowrap' }}>
               {fmtTime(detail?.created_at)}{' '}
               {/* 小欧 2026-09-11 M3c⑭: detail 可能 null(DB 失败+finalStats 兜底)，加可选链防 TypeError — 小欧-2026-09-11 */}
             </span>
-            <span style={{ color: '#8c8c8c' }}>结束</span>
-            <span style={{ color: '#262626', whiteSpace: 'nowrap' }}>
+            <span style={{ color: Colors.TEXT.SECONDARY }}>结束</span>
+            <span style={{ color: Colors.TEXT.STRONG, whiteSpace: 'nowrap' }}>
               {fmtTime(detail?.updated_at)}{' '}
               {/* 小欧 2026-09-11 M3c⑭: 同上 — 小欧-2026-09-11 */}
             </span>
-            <span style={{ color: '#8c8c8c' }}>事件</span>
-            <span style={{ color: '#262626' }}>
+            <span style={{ color: Colors.TEXT.SECONDARY }}>事件</span>
+            <span style={{ color: Colors.TEXT.STRONG }}>
               {stepCount ?? '-'}{' '}
               {/* 小欧 2026-09-11 M3c: DB 优先 final_stats 兜底 — 小欧-2026-09-11 */}
             </span>
-            <span style={{ color: '#8c8c8c' }}>LLM</span>
-            <span style={{ color: '#262626' }}>
+            <span style={{ color: Colors.TEXT.SECONDARY }}>LLM</span>
+            <span style={{ color: Colors.TEXT.STRONG }}>
               {llmCallCount ?? '-'}{' '}
               {/* 小欧 2026-09-11 M3c: DB 优先 final_stats 兜底 — 小欧-2026-09-11 */}
             </span>
-            <span style={{ color: '#8c8c8c' }}>步数</span>
-            <span style={{ color: '#262626' }}>
+            <span style={{ color: Colors.TEXT.SECONDARY }}>步数</span>
+            <span style={{ color: Colors.TEXT.STRONG }}>
               {stepCount ?? '-'}{' '}
               {/* 小欧 2026-09-11 M3c: DB 优先 final_stats 兜底 — 小欧-2026-09-11 */}
             </span>
-            <span style={{ color: '#8c8c8c' }}>模型</span>
+            <span style={{ color: Colors.TEXT.SECONDARY }}>模型</span>
             <span
               style={{
-                color: '#262626',
+                color: Colors.TEXT.STRONG,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -154,26 +160,15 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             </span>
           </div>
         </div>
-        <div
-          style={{
-            marginTop: 10,
-            borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
-            paddingTop: 8,
-          }}
-        >
+        {/* 2026-09-12 P1-3: Token section 容器/标题复用常量, 字号12→FontSize.SECONDARY — 小欧-2026-09-12 */}
+        <div style={sectionStyle}>
+          <Typography.Text style={sectionTitleStyle}>Token</Typography.Text>
           <Typography.Text
             style={{
-              fontSize: 12,
-              fontWeight: 500,
-              color: '#595959',
-              borderLeft: `2px solid ${Colors.PRIMARY}`,
-              paddingLeft: 6,
+              fontSize: FontSize.SECONDARY,
+              display: 'block',
+              marginTop: 4,
             }}
-          >
-            Token
-          </Typography.Text>
-          <Typography.Text
-            style={{ fontSize: 12, display: 'block', marginTop: 4 }}
           >
             {formatTokenFull(detail?.accumulated_usage)}
           </Typography.Text>
@@ -188,7 +183,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                 style={{
                   marginTop: 6,
                   fontSize: 11,
-                  color: '#8c8c8c',
+                  color: Colors.TEXT.SECONDARY,
                   lineHeight: '18px',
                 }}
               >
@@ -199,26 +194,15 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             );
           })()}
         </div>
-        <div
-          style={{
-            marginTop: 10,
-            borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
-            paddingTop: 8,
-          }}
-        >
+        {/* 2026-09-12 P1-3: 工具汇总 section 复用常量, 字号12→FontSize.SECONDARY; 次级#8c8c8c→SECONDARY, 工具名#595959→PRIMARY — 小欧-2026-09-12 */}
+        <div style={sectionStyle}>
+          <Typography.Text style={sectionTitleStyle}>工具汇总</Typography.Text>
           <Typography.Text
             style={{
-              fontSize: 12,
-              fontWeight: 500,
-              color: '#595959',
-              borderLeft: `2px solid ${Colors.PRIMARY}`,
-              paddingLeft: 6,
+              fontSize: FontSize.SECONDARY,
+              display: 'block',
+              marginTop: 4,
             }}
-          >
-            工具汇总
-          </Typography.Text>
-          <Typography.Text
-            style={{ fontSize: 12, display: 'block', marginTop: 4 }}
           >
             {toolStats && Object.keys(toolStats).length > 0
               ? Object.entries(toolStats)
@@ -265,7 +249,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
           </div>
           {chainOpen && (
             <div style={{ marginTop: 4 }}>
-              <Typography.Text style={{ fontSize: 12 }}>
+              <Typography.Text style={{ fontSize: FontSize.SECONDARY }}>
                 {chainSeq}
               </Typography.Text>
               {chain.flatMap((s, sIdx) =>
@@ -273,19 +257,21 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                   <div
                     key={`${sIdx}-${tIdx}`}
                     style={{
-                      fontSize: 12,
+                      fontSize: FontSize.SECONDARY,
                       display: 'flex',
                       gap: 8,
                       marginTop: 2,
                     }}
                   >
-                    <span style={{ color: '#8c8c8c', minWidth: 20 }}>
+                    <span
+                      style={{ color: Colors.TEXT.SECONDARY, minWidth: 20 }}
+                    >
                       {sIdx + 1}.{tIdx + 1}
                     </span>
-                    <span style={{ color: '#595959' }}>{t.tool}</span>
+                    <span style={{ color: Colors.TEXT.PRIMARY }}>{t.tool}</span>
                     <span
                       style={{
-                        color: '#8c8c8c',
+                        color: Colors.TEXT.SECONDARY,
                         fontFamily: 'monospace',
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
@@ -300,13 +286,8 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             </div>
           )}
         </div>
-        <div
-          style={{
-            marginTop: 10,
-            borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
-            paddingTop: 8,
-          }}
-        >
+        {/* 2026-09-12 P1-3: 产出物 section 复用常量; 序号/类型#8c8c8c→SECONDARY, 工具名#595959→PRIMARY, 名称#262626→STRONG — 小欧-2026-09-12 */}
+        <div style={sectionStyle}>
           <div
             style={{
               display: 'flex',
@@ -315,18 +296,11 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
               marginTop: 4,
             }}
           >
+            <Typography.Text style={sectionTitleStyle}>产出物</Typography.Text>
             <Typography.Text
-              style={{
-                fontSize: 12,
-                fontWeight: 500,
-                color: '#595959',
-                borderLeft: `2px solid ${Colors.PRIMARY}`,
-                paddingLeft: 6,
-              }}
+              type="secondary"
+              style={{ fontSize: FontSize.SECONDARY }}
             >
-              产出物
-            </Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {(artifacts ?? []).length} 个{' '}
               {/* 小欧 2026-09-11 M3c: DB 优先 final_stats 兜底 — 小欧-2026-09-11 */}
             </Typography.Text>
@@ -338,17 +312,23 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                 style={{
                   display: 'flex',
                   gap: 8,
-                  fontSize: 12,
+                  fontSize: FontSize.SECONDARY,
                   lineHeight: '22px',
                 }}
               >
-                <span style={{ color: '#8c8c8c', minWidth: 16 }}>{i + 1}</span>
-                <span style={{ color: '#595959' }}>{a.tool_name || '-'}</span>
-                <span style={{ color: '#262626' }}>{a.name}</span>
-                <span style={{ color: '#8c8c8c', fontSize: 11 }}>{a.type}</span>
+                <span style={{ color: Colors.TEXT.SECONDARY, minWidth: 16 }}>
+                  {i + 1}
+                </span>
+                <span style={{ color: Colors.TEXT.PRIMARY }}>
+                  {a.tool_name || '-'}
+                </span>
+                <span style={{ color: Colors.TEXT.STRONG }}>{a.name}</span>
+                <span style={{ color: Colors.TEXT.SECONDARY, fontSize: 11 }}>
+                  {a.type}
+                </span>
                 <span
                   style={{
-                    color: '#595959',
+                    color: Colors.TEXT.PRIMARY,
                     fontFamily: 'monospace',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
@@ -360,22 +340,19 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
               </div>
             ))
           ) : (
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: FontSize.SECONDARY }}
+            >
               0 个 — 无产出物
             </Typography.Text>
           )}
         </div>
         {detail?.error_message && (
-          <div
-            style={{
-              marginTop: 10,
-              borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
-              paddingTop: 8,
-            }}
-          >
+          <div style={sectionStyle}>
             <Typography.Text
               style={{
-                fontSize: 12,
+                fontSize: FontSize.SECONDARY,
                 background: '#fff1f0',
                 border: '1px solid #ffa39e',
                 borderRadius: 4,

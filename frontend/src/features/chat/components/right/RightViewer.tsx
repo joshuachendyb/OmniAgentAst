@@ -70,6 +70,7 @@
 // 编辑历史: 2026-09-11 小欧 - 第七章 M1/M2/M3a: hasFinalStats 派生(R8/R9/R4 统一信号) + effect1 显式守卫 +
 //   B16 删 prevReceivingRef 死码 + import TitleBlock + statsExpanded 折叠状态提升 + finalStep 派生 + 渲染块拆分 — 小欧-2026-09-11
 // 编辑历史: 2026-09-11 小欧 - 三堂会审修复: P1-4 props复用TokenLayer(与StaticStatsBlock必选/可选形状对齐, TS2322归零, DRY), import TokenLayer — 小欧-2026-09-11
+// 编辑历史: 2026-09-12 小欧 - P1-9三堂会审修复: _businessTypes 组件体每次渲染重建 Set 提升模块级常量 BUSINESS_TYPES(性能+DRY) — 小欧-2026-09-12
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -97,6 +98,13 @@ import { TitleBlock } from './TitleBlock'; // 2026-09-11 小欧 第七章 M3a(R5
 import { useTaskInfo } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: badge 权威派生(running/paused=任务进行), 撑 waiting 三处丢失窗口
 import type { TaskMetaFrames } from '@/types/sse';
 import { emptyMetaFrames } from '@/types/sse';
+
+// 2026-09-12 小欧 P1-9: 业务步骤类型集合提升模块级, 消组件体每次渲染重建 Set(性能+DRY) — 小欧-2026-09-12
+const BUSINESS_TYPES = new Set<ExecutionStep['type']>([
+  'action',
+  'observation',
+  'chunk',
+]);
 
 // 2026-08-27 小欧 三堂会审: 收窄 unknown[]→ExecutionStep[], 形状不符回落空数组
 const toExecutionSteps = (raw: unknown): ExecutionStep[] => {
@@ -169,8 +177,8 @@ const RightViewer: React.FC<RightViewerProps> = ({
   // 2026-09-09 北京老陈 铁证兜底: liveSteps含任一业务步骤即证执行中(不可翻false)
   // 2026-09-11 小欧 契约化(method2): thought=仅历史回显(实时再也不来), 信号移出 thought
   //   (action/observation/chunk 已足够; thought-start 由 pipeline 消费) — 小欧-2026-09-11
-  const _businessTypes = new Set(['action', 'observation', 'chunk']);
-  const hasBusinessSteps = liveSteps.some((s) => _businessTypes.has(s.type));
+  // 2026-09-12 小欧 P1-9: 提升模块级 BUSINESS_TYPES — 小欧-2026-09-12
+  const hasBusinessSteps = liveSteps.some((s) => BUSINESS_TYPES.has(s.type));
   const isCurrentLive =
     activeTaskId != null &&
     activeTaskId === serverTaskId &&

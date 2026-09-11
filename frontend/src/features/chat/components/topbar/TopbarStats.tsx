@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审边距-P1: 顶栏聚合gap12→8对齐SessionLayout主节奏
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): 前面会话累计(session)后面链累计(chain), 各为3字段P/C/T紧凑格式; chainTokens由number改TokenTriple
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: TB-03 taskCount加??0兜底防undefined闪烁 — 小欧-2026-09-02
+// 编辑历史: 2026-09-12 小欧 - P1-1三堂会审修复: 删私有TokenTriple改复用stepStyles.ts公用TokenLayer(DRY, 消类型碎片), formatTriple语义不变 — 小欧-2026-09-12
 /**
  * TopbarStats - 顶栏会话级聚合信息（任务数/会话累计token/链累计token/创建更新时间悬浮）
  *
@@ -17,16 +18,11 @@
 import React from 'react';
 import { formatDate } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatTime统一至utils/time.ts
 import { Tooltip, Typography } from 'antd';
-
-// 2026-09-01 小欧: token 3 字段口径
-interface TokenTriple {
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-}
+import { type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧 P1-1: 复用公用TokenLayer消重复私有形状 — 小欧-2026-09-12
 
 // 2026-09-01 小欧: 3字段紧凑格式(与StaticStatsBlock的P/C/T一致, 去/两侧空格省宽度), 无值显'-'
-const formatTriple = (t: TokenTriple | null): string => {
+// 2026-09-12 小欧 P1-1: 参数类型 TokenTriple→TokenLayer(复用公用, 消私有形状) — 小欧-2026-09-12
+const formatTriple = (t: TokenLayer): string => {
   if (!t) return '-';
   const p = t.prompt_tokens ?? '-';
   const c = t.completion_tokens ?? '-';
@@ -36,8 +32,8 @@ const formatTriple = (t: TokenTriple | null): string => {
 
 interface TopbarStatsProps {
   taskCount: number;
-  sessionTokens: TokenTriple | null; // 2026-09-01 小欧: 会话累计 token(前)
-  chainTokens: TokenTriple | null; // 2026-09-01 小欧: 链累计 token(后, 由number改3字段)
+  sessionTokens: TokenLayer; // 2026-09-01 小欧: 会话累计 token(前, TokenLayer复用 P1-1) — 小欧-2026-09-12
+  chainTokens: TokenLayer; // 2026-09-01 小欧: 链累计 token(后, TokenLayer复用 P1-1) — 小欧-2026-09-12
   createdAt?: string;
   updatedAt?: string;
 }
@@ -78,4 +74,3 @@ const TopbarStats: React.FC<TopbarStatsProps> = ({
 };
 
 export { TopbarStats };
-export type { TokenTriple }; // 2026-09-01 小欧: 供外部复用类型

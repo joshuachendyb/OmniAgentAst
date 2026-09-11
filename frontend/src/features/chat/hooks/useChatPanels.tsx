@@ -21,6 +21,7 @@
 //   删body未用currentResponse与handleAuthorizationConfirm(解构+依赖数组同步清除, 先误删5行opts解构已用git diff识别恢复) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 透传rightOpen状态给TaskListPanel, 控制模型标签provider前缀条件显示 - 小欧-2026-09-09
 // 编辑历史: 2026-09-10 小欧 - S13: 从chatStreaming解构executionStepsRef透传RightViewer(final到达时快照用) - 小欧-2026-09-10
+// 编辑历史: 2026-09-12 小欧 - P1-1三堂会审修复: opts.sessionTokens/chainTokens 形状改复用TokenLayer(消私有形状重复, DRY), import TokenLayer — 小欧-2026-09-12
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -32,7 +33,7 @@ import { TopbarStats } from '../components/topbar/TopbarStats';
 import { TaskListPanel } from '../components/layout/TaskListPanel';
 import { RightViewer } from '../components/right/RightViewer';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧 P1-1: 复用TokenLayer消opts重复私有形状 — 小欧-2026-09-12
 import type {
   TaskDetail,
   SessionTaskItem,
@@ -65,16 +66,8 @@ interface UseChatPanelsOptions {
   activeTaskId: string | null;
   selectedDetail: TaskDetail | null;
   handleSelectTask: (id: string) => void;
-  sessionTokens: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  } | null; // 2026-09-01 小欧: 会话累计 token
-  chainTokens: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  } | null; // 2026-09-01 小欧: 链累计 token(改3字段)
+  sessionTokens: TokenLayer; // 2026-09-01 小欧: 会话累计 token (TokenLayer复用 P1-1) — 小欧-2026-09-12
+  chainTokens: TokenLayer; // 2026-09-01 小欧: 链累计 token(改3字段, TokenLayer复用 P1-1) — 小欧-2026-09-12
   handleNewSession: () => void;
   handleEditingStart: () => void;
   handleEditingCancel: () => void;
