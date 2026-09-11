@@ -1,7 +1,9 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 从utils/sse.ts抽ExecutionStep至此, 断 chat→sse→api→chat 类型环(sse↔api循环)
 // 编辑历史: 2026-09-06 小欧 - 方案C观察点1/2根治: action 增 preview?: boolean(仅SSE齿轮先行预览行标记,
-// 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删ExecutionStep.type的cancelled分支(取消收尾单一由final+cancelled承担)
 //   刷新恢复时剔除, 与DB回放语义一致) — 小欧-2026-09-06
+// 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删ExecutionStep.type的cancelled分支(取消收尾单一由final+cancelled承担)
+// 编辑历史: 2026-09-12 小欧 - P0-5三堂会审修复: artifacts补tool_name?字段(与FinalStatsFrame(sse.ts)对齐后端4字段契约tool_name/name/path/type) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - P1-4/P1-5三堂会审修复: 删code死字段(只写不读, execution_status含同语义); 删final_status死字段(outcome为终态单一权威) — 小欧-2026-09-12
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，
@@ -59,7 +61,7 @@ export interface ExecutionStep {
   // 【小欧 2026-08-26 4.9.3】observation 新字段：工具结果数组，优先于 content/summary 读取
   tool_result?: unknown;
   result?: string;
-  code?: string; // 【新增2026-05-22】状态码（SUCCESS/ERROR/WARNING）
+  // 2026-09-12 小欧 P1-4: 删 code 死字段(只写不读, sseParser:721赋值无人消费; execution_status(L65)含同语义) — 小欧-2026-09-12
 
   // === 【小新重构】type=action 新字段（与thought类型共用tool_name/tool_params）===
   execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
@@ -172,8 +174,15 @@ export interface ExecutionStep {
   duration?: number; // 秒
   // final_stats 终态统计
   tool_stats?: Record<string, number>;
-  artifacts?: Array<{ name: string; path: string; type: string }> | null;
-  final_status?: 'completed' | 'failed' | 'cancelled';
+  // 2026-09-12 小欧 P0-5三堂会审修复: artifacts 补 tool_name? —— 与 FinalStatsFrame(sse.ts:34) 对齐后端 4 字段契约
+  //   (tool_name/name/path/type, 见 handle_action.py 11.6.2); 原 3 字段缺 tool_name 与 sse.ts 契约分裂 — 小欧-2026-09-12
+  artifacts?: Array<{
+    tool_name?: string;
+    name: string;
+    path: string;
+    type: string;
+  }> | null;
+  // 2026-09-12 小欧 P1-5: 删 final_status 死字段(useTaskInfo 读 frames.finalStats.final_status, 不读 step; outcome(L88)为终态单一权威) — 小欧-2026-09-12
   // context_overview
   message_count?: number;
   estimated_tokens?: number;

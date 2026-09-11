@@ -9,6 +9,8 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: ReconnectConfig接口删enabled字段; 阶段二S2提前实施:
 //   UseSSEReturn新增executionStepsRef可选字段(供外部直接读取ref) — 小欧-2026-09-10
 // 编辑历史: 2026-09-11 小欧 - 三堂会审P1-2: FinalStatsFrame.artifacts补tool_name?(与后端4字段契约对齐, 见handle_action.py 11.6.2; 原3字段漏tool_name致产出物编译错) — 小欧-2026-09-11
+// 编辑历史: 2026-09-12 小欧 - P1-11三堂会审修复: TaskMetaFrames 删 usage 死字段(与 taskAccumulated 完全同值的 P/C/T 映射, 消费已归一 taskAccumulated, sseParser/useTaskInfo 同步收敛) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - P0-3三堂会审修复: SSEConfig删taskId死字段(全仓无config.taskId消费点, useSSE只读baseURL/sessionId/token) — 小欧-2026-09-12
 import type { ExecutionStep } from './execution';
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
@@ -31,7 +33,12 @@ export interface FinalStatsFrame {
   // 2026-09-11 小欧 三堂会审P1-2: artifacts 补 tool_name?——后端 final_stats 实为 4 字段契约
   //   (tool_name/name/path/type, 见 backend/app/services/agent/handlers/handle_action.py 11.6.2),
   //   原 3 字段漏 tool_name 致 StaticStatsBlock 产出物列表编译错(TS2339) — 小欧-2026-09-11
-  artifacts?: Array<{ tool_name?: string; name: string; path: string; type: string }> | null;
+  artifacts?: Array<{
+    tool_name?: string;
+    name: string;
+    path: string;
+    type: string;
+  }> | null;
   final_status?: 'completed' | 'failed' | 'cancelled';
   retry_count?: number;
   // 小欧 2026-09-11 第七章 M5a(R7): 补全统计键——与后端 build_final_stats_step 7 键对齐(3.4 FinalStatsStep._extra_fields) — 小欧-2026-09-11
@@ -49,7 +56,7 @@ export interface TaskMetaFrames {
   contextSummary: string; // start.content
   startInfo: StartInfoFrame | null;
   startTimestamp: number; // start 事件时间戳（供 useTaskInfo 过程条首行使用）
-  usage: { prompt: number; completion: number; total: number }; // 兼容：现为 taskAccumulated 的 P/C/T 映射（后端直发）
+  // 2026-09-12 小欧 P1-11: 删 usage 死字段(与 taskAccumulated 完全同值的 P/C/T 映射, useTaskInfo 已归一到 taskAccumulated) — 小欧-2026-09-12
   roundUsage?: { prompt: number; completion: number; total: number } | null; // 本轮三值（后端 prompt_tokens 直取）
   taskAccumulated?: {
     prompt_tokens: number;
@@ -75,7 +82,6 @@ export const emptyMetaFrames = (): TaskMetaFrames => ({
   contextSummary: '',
   startInfo: null,
   startTimestamp: 0,
-  usage: { prompt: 0, completion: 0, total: 0 },
   roundUsage: null,
   taskAccumulated: null,
   sessionAccumulated: null,
@@ -145,7 +151,7 @@ export interface SSEConfig {
   baseURL: string;
   sessionId: string;
   token?: string;
-  taskId?: string;
+  // 2026-09-12 小欧 P0-3三堂会审修复: 删 taskId 死字段(YAGNI, 全仓无任何 config.taskId 消费点, useSSE 只读 baseURL/sessionId/token) — 小欧-2026-09-12
 }
 
 /**
