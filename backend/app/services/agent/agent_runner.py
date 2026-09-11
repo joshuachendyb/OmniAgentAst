@@ -122,6 +122,9 @@
 #   — 小欧-2026-09-08
 # 2026-09-11 小欧 - [27]方案: ①新增 _publish_final_stats 延后单发(门禁+兜底帧+先落库t3后发布t3'+落库失败照发);
 #   ②死码清理3处(_final_stats_publish_index/扫描循环收集/finally覆写); ③短信号补 duration — 小欧-2026-09-11
+# 2026-09-11 小欧 - BUG-A+B修复: _publish_final_stats 包裹 try/except ValueError, build 异常降级走兜底帧,
+#   防 outcome="" + agent.status=None 致 ValueError 崩溃 — 小欧-2026-09-11
+# 2026-09-11 小欧 - BUG-C修复: 兜底帧 step 从硬编码 0 改为 agent.llm_call_count, 与正常帧对齐 — 小欧-2026-09-11
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -299,11 +302,15 @@ async def run_agent_in_background(
     async def _publish_final_stats(agent_ref, outcome):
         _tel = getattr(agent_ref, "telemetry", None)
         if _tel is not None:
-            _fs_dict = _tel.build_final_stats_step(outcome=outcome).to_dict()
-        else:
+            try:
+                _fs_dict = _tel.build_final_stats_step(outcome=outcome).to_dict()
+            except (ValueError, TypeError) as _build_err:
+                logger.error(f"[Runner] final_stats build 失败(task={task_id})，降级走兜底帧: {_build_err}")
+                _tel = None  # 走下方兜底帧逻辑
+        if _tel is None:
             # 极端兜底(telemetry 未初始化): 构造 7 键默认合法帧照发——折叠必达 + 每键有值两不误
             _fs_dict = {
-                "type": "final_stats", "step": 0, "timestamp": get_local_iso_timestamp(),
+                "type": "final_stats", "step": getattr(agent_ref, "llm_call_count", 0), "timestamp": get_local_iso_timestamp(),
                 "duration": 0.0, "artifacts": [], "final_status": outcome,
                 "tool_stats": {}, "llm_call_count": 0, "retry_count": 0, "step_count": 0,
             }

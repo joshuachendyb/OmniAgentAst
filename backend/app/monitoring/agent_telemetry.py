@@ -33,6 +33,10 @@
 #   模型时该字段保全降级, 不再拖垮整表。来源线索: 回归测试以 SimpleNamespace 伪装模型触发 ERROR 日志 4 次。
 # 2026-09-11 - 小欧 - [27]方案: build_final_stats_step 补全统计 7 键(tool_stats/llm_call_count/retry_count/step_count),
 #   删 content=""、severity="info" 冗余键; 每键 getattr 默认值兜底结构上永不产 None 键 — 小欧-2026-09-11
+# 2026-09-11 - 小欧 - 设计缺陷修复: _log_task_end 的步骤剔除集由硬编码3种改为复用 _M_SKIP(单一来源),
+#   消除同文件同目的两套维护, 防后续加类型时漏改导致 total_steps 不一致 — 小欧-2026-09-11
+# 2026-09-11 - 小欧 - BUG-D修复: build_stats_step 的 _agent.steps 改为 getattr(_agent, "steps", []),
+#   与 build_final_stats_step L219 对齐防御风格, 防 agent 无 steps 属性时崩溃 — 小欧-2026-09-11
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -187,7 +191,7 @@ class TaskTelemetry:
         """产出 MetaStep(type="stats") —— 与 11.2-B 字段口径一致"""
         from app.services.agent.steps.base import MetaStep  # 局部导入防环
         _agent = self.agent
-        _step_count = len([s for s in _agent.steps if getattr(s, "TYPE", "") not in _M_SKIP])
+        _step_count = len([s for s in getattr(_agent, "steps", []) if getattr(s, "TYPE", "") not in _M_SKIP])
         _duration = round(time.time() - self._run_start_ts, 1) if self._run_start_ts else 0.0
         return MetaStep(
             step=getattr(_agent, "llm_call_count", 0),
@@ -385,8 +389,10 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
         # 2026-08-18 小欧 P1/P3/P5/P6: chunk/error/usage/paused/resumed/retrying/cancelled 均仅SSE不落库,
         #   不入 current_execution_steps, total_steps 自然剔除; cancelled 经 task_runtime.task_cancel_check_and_yield(:90) append 进内存 steps 须显式剔除,
         #   收敛剔除集={cancelled,authorization_required,start}与 agent_runner:388 口径一致(10.4.4 第0步) — 小欧 2026-08-18(修正)
-        for _t in ("cancelled", "authorization_required", "start"):
-            counter.pop(_t, None)
+        # 2026-09-11 小欧: 剔除集改为复用 _M_SKIP(单一来源, 与 build_stats_step/build_final_stats_step 同源)
+        for _t in list(counter.keys()):
+            if _t in _M_SKIP:
+                counter.pop(_t)
         total = sum(counter.values())
         step_summary = ",".join(f"{k}={v}" for k, v in sorted(counter.items()))
         if step_summary:
