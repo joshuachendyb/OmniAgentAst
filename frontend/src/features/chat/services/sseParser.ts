@@ -68,16 +68,21 @@
 // 编辑历史: 2026-09-11 小欧 - 契约化(method2, 北京老陈 2026-09-11 定案): thought=仅历史回显事件(DB executionSteps),
 //   实时 SSE 永不发(后端 stream_reader 经 _SSE_EXCLUDE_TYPES 过滤)。case 'thought' 改为纯防御分支——
 //   原实时收集 thought 入 executionSteps 为历史错逻辑(实时+DB 双通道重复根因), 现收到即丢弃仅打日志 — 小欧-2026-09-11
+// 编辑历史: 2026-09-12 小欧 - P1-7/P1-8三堂会审修复: normalizeIsReasoning/normalizeAutoConfirm同名同体合并为
+//   normalizeBoolean(DRY); Number(rawData.step)||1 十处重复抽 toStepNumber helper(DRY, SLAP) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - P0-1/P0-2三堂会审修复: ①error分支step.step改toStepNumber归一化(原直接赋string致终态seq守卫string/number比较失效);
+//   ②action分支补赋tool_name(单工具=tools[0].tool, 多工具=join(' + ')), 原从未赋值致 DBG-6 日志恒undefined — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - P1-11三堂会审修复: usage帧taskLike不再round fallback(taskAcc空时→{0,0,0}), usage字段写入删除(→types/sse.ts P1-11) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - P1-4三堂会审修复: action分支删step.code赋值(死字段, 原rawData.code无人消费; execution_status含同语义) — 小欧-2026-09-12
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
-// 2026-08-27 小欧 修复(B2/base-2): is_reasoning 归一化统一helper, 兼容 true/'true'/1/'1'
-const normalizeIsReasoning = (v: unknown): boolean =>
+// 2026-09-12 小欧 P1-7: normalizeIsReasoning/normalizeAutoConfirm同名同体, 合并为单一 normalizeBoolean(DRY) — 小欧-2026-09-12
+const normalizeBoolean = (v: unknown): boolean =>
   v === true || v === 'true' || v === 1 || v === '1';
 
-// 2026-09-03 小欧 D2-10: auto_confirm四态归一，与is_reasoning同策略
-const normalizeAutoConfirm = (v: unknown): boolean =>
-  v === true || v === 'true' || v === 1 || v === '1';
+// 2026-09-12 小欧 P1-8: step 数值化 helper, 消原始十处 Number(rawData.step)||1 重复(DRY) — 小欧-2026-09-12
+const toStepNumber = (v: unknown): number => Number(v) || 1;
 
 // 2026-09-03 小欧 Bug-22: 计时解析(与 useAuthorization.parseTimeout 同语义), 合法 0 保留, 仅 NaN/负数兜 60
 const assignTimeout = (v: unknown): number => {
@@ -238,7 +243,7 @@ const processSSEData = (
       message: rawData.message,
 
       // 保留字段
-      step: Number(rawData.step) || 1, // 2026-08-27 小欧 修复base-3: 加Number()数值化
+      step: toStepNumber(rawData.step), // 2026-08-27 小欧 修复base-3: 加Number()数值化; 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
       thought: rawData.thought, // Agent.thought的值
       // 2026-07-18 小欧 FinalStep 终态规整：终态统一 type=final，由 outcome 声明；同步解析出后端字段
       outcome: rawData.outcome,
@@ -251,7 +256,7 @@ const processSSEData = (
       // 【小沈修复】思考过程与正式内容区分字段
       // 【小查修复】统一使用 snake_case: is_reasoning
       // 2026-08-27 小欧 修复B2/base-2: 统一归一化helper, 补'1'分支(原缺导致true被当false)
-      is_reasoning: normalizeIsReasoning(rawData.is_reasoning),
+      is_reasoning: normalizeBoolean(rawData.is_reasoning), // 2026-09-12 P1-7: 统用normalizeBoolean(原normalizeIsReasoning) — 小欧-2026-09-12
       // reasoning: rawData.reasoning || "",  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
 
       timestamp: timestampValue,
@@ -298,7 +303,7 @@ const processSSEData = (
         const ts: ExecutionStep = {
           type: 'thought-start',
           content: '',
-          step: Number(rawData.step) || 1, // 2026-08-27 小欧 修复base-3: 加Number()
+          step: toStepNumber(rawData.step), // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
           timestamp: timestampValue,
         };
         console.log(
@@ -329,16 +334,16 @@ const processSSEData = (
         const taskAcc = rawData.task_accumulated_tokens ?? null;
         const sessAcc = rawData.session_accumulated_tokens ?? null;
         const chainAcc = rawData.chain_accumulated_tokens ?? null;
+        // 2026-09-12 小欧 P1-11: taskLike 由 round fallback 改 taskAcc 空时硬 {0,0,0}(不再复用 round, taskAccumulated 单一真源) — 小欧-2026-09-12
         const taskLike = taskAcc
           ? {
               prompt: taskAcc.prompt_tokens ?? 0,
               completion: taskAcc.completion_tokens ?? 0,
               total: taskAcc.total_tokens ?? 0,
             }
-          : { ...round };
+          : { prompt: 0, completion: 0, total: 0 };
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
-          usage: taskLike,
           roundUsage: round,
           taskAccumulated: taskAcc,
           sessionAccumulated: sessAcc,
@@ -414,7 +419,7 @@ const processSSEData = (
         //   纠正的历史错逻辑: 实时收到 thought 即收集入 executionSteps → 与 DB 回放 thought
         //   双通道重复(前端重复显示根因), 且 S12 批量 append 令思考草稿与正文并存。
         //   现改为纯防御分支: 后端异常误发时打日志并丢弃, 绝不污染实时 executionSteps — 小欧-2026-09-11
-        const stepNum = Number(rawData.step) || 1;
+        const stepNum = toStepNumber(rawData.step); // 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
         console.warn(
           `%c[契约] [type=thought] 实时SSE不应出现 thought(仅历史回显), 已防御丢弃 step=${stepNum} 时间=${new Date(
             frameTime
@@ -428,7 +433,7 @@ const processSSEData = (
         // 精简日志：chunk不打印，避免日志过多
 
         // 传递 is_reasoning 区分思考过程和最终答案
-        const is_reasoning = normalizeIsReasoning(rawData.is_reasoning); // 2026-08-27 小欧 修复: 复用统一helper
+        const is_reasoning = normalizeBoolean(rawData.is_reasoning); // 2026-08-27 小欧 修复: 复用统一helper; 2026-09-12 P1-7: 统用normalizeBoolean — 小欧-2026-09-12
         const chunkContent = rawData.content || '';
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
@@ -461,7 +466,7 @@ const processSSEData = (
       }
 
       case 'final': {
-        const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
+        const stepNum = toStepNumber(rawData.step); // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
         console.log(
           `%c[STEP] [type=final] [step=${stepNum}] [收到数据] 时间=${new Date(
             frameTime
@@ -470,7 +475,7 @@ const processSSEData = (
         );
 
         // 【小沈修改2026-04-16】添加step和timestamp字段
-        step.step = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()数值化
+        step.step = toStepNumber(rawData.step); // 2026-08-27 小欧 修复base-3: 加Number()数值化; 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
         step.timestamp = timestampValue; // 2026-08-27 小欧 修复base-1: 用已转换number
 
         // 【小强修复 2026-04-15】后端final类型没有content字段，直接使用response
@@ -479,7 +484,7 @@ const processSSEData = (
         step.is_finished = rawData.is_finished;
         step.thought = rawData.thought || '';
         step.is_streaming = rawData.is_streaming;
-        step.is_reasoning = normalizeIsReasoning(rawData.is_reasoning); // 2026-08-27 小欧 修复B3: 归一化避免存字符串
+        step.is_reasoning = normalizeBoolean(rawData.is_reasoning); // 2026-08-27 小欧 修复B3: 归一化避免存字符串; 2026-09-12 P1-7: 统用normalizeBoolean — 小欧-2026-09-12
         step.content = step.response; // content只用于前端显示，使用response的值
         // 2026-09-09 小欧 失败终态透传: 后端 FinalStep 已下发 outcome/error_type/error_message,
         //   前端原漏解析致 onComplete 无法识别失败终态(4333字思考草稿被当完整回复) — 小欧-2026-09-09
@@ -554,7 +559,7 @@ const processSSEData = (
       }
 
       case 'error': {
-        const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
+        const stepNum = toStepNumber(rawData.step); // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
         console.log(
           `%c[STEP] [type=error] [step=${stepNum}] [收到数据] 时间=${new Date(
             frameTime
@@ -571,8 +576,9 @@ const processSSEData = (
         step.error_type = rawData.error_type || '';
 
         // 解析后端存在的字段
+        // 2026-09-12 小欧 P0-1三堂会审修复: 原直接赋值rawData.step(string)致终态seq守卫string/number比较失效, 统一Number()归一化 — 小欧-2026-09-12
         if (rawData.step) {
-          step.step = rawData.step;
+          step.step = toStepNumber(rawData.step);
         }
         if (rawData.model) {
           step.model = rawData.model;
@@ -636,7 +642,7 @@ const processSSEData = (
       // 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 后端独立 type="user_rejected" 单独发——
       //   独立回调 onDenied(step, message) 供聚合 deniedStepSet 停齿轮, 不占 error 通道/liveErrorText
       case 'user_rejected': {
-        const deniedStep = Number(rawData.step) || 1;
+        const deniedStep = toStepNumber(rawData.step); // 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
         const deniedMsg =
           rawData.content || rawData.error_message || '用户拒绝执行';
         console.log(
@@ -673,6 +679,12 @@ const processSSEData = (
             )
           : [];
         step.tools = tools;
+        // 2026-09-12 小欧 P0-2三堂会审修复: 补赋值 tool_name(单工具=tools[0].tool, 多工具=join(' + ')), 与 step.content 同源 —
+        //   原从未赋值致 debug 日志 [DBG-6] 恒打印 undefined; 下游 ToolCallLine 单工具场景读 tool_name 亦受益 — 小欧-2026-09-12
+        step.tool_name =
+          tools.length === 1
+            ? tools[0].tool
+            : tools.map((t) => t.tool).join(' + ');
         step.content = tools
           .map((t) => (t.target ? `${t.tool}(${t.target})` : t.tool))
           .join(' + ');
@@ -711,10 +723,10 @@ const processSSEData = (
       // 【小沈修复 2026-04-11】新增：observation类型处理
       // 【小沈改造 2026-05-22】支持observation为JSON对象（第13章设计方案）
       case 'observation': {
-        const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
+        const stepNum = toStepNumber(rawData.step); // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
         step.step = stepNum; // 2026-08-27 小欧 修复base-3: 加Number()数值化
         step.timestamp = timestampValue; // 2026-08-27 小欧 修复base-1: 用已转换number
-        step.code = rawData.code; // 状态码（SUCCESS/ERROR/WARNING）
+        // 2026-09-12 小欧 P1-4: 删 step.code 赋值(死字段, 原 rawData.code 无人消费; execution_status 含同语义) — 小欧-2026-09-12
 
         // 【兼容层 2026-05-22 小资】支持两种格式，添加完整性验证
         // 先检查null（typeof null === 'object'是历史bug）
@@ -854,7 +866,7 @@ const processSSEData = (
       case 'paused':
       case 'resumed':
       case 'retrying': {
-        const stepNum = Number(rawData.step) || 1; // 2026-08-27 小欧 修复base-3: 加Number()
+        const stepNum = toStepNumber(rawData.step); // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
         console.log(
           `%c[STEP] [type=${rawData.type}] [step=${stepNum}] [收到数据] 时间=${new Date(
             frameTime
@@ -885,8 +897,8 @@ const processSSEData = (
                 params: rawData.params,
                 safety_level: rawData.safety_level,
                 trust_path: rawData.trust_path ?? null,
-                // 2026-09-03 小欧 D2-10: 改用normalizeAutoConfirm四态归一
-                auto_confirm: normalizeAutoConfirm(rawData.auto_confirm),
+                // 2026-09-03 小欧 D2-10: 改用normalizeAutoConfirm四态归一; 2026-09-12 P1-7: 函数更名normalizeBoolean — 小欧-2026-09-12
+                auto_confirm: normalizeBoolean(rawData.auto_confirm),
                 // 2026-09-03 小欧 Bug-22镜像: 合法 0 不被 || 兜成 60(与 useAuthorization 的 parseTimeout 同语义)
                 confirm_timeout: assignTimeout(rawData.confirm_timeout),
                 backend_timeout: assignTimeout(rawData.backend_timeout),
