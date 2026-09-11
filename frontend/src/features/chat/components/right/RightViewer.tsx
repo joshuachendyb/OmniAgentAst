@@ -67,6 +67,9 @@
 // 编辑历史: 2026-09-11 小欧 - 契约化(method2, 北京老陈 2026-09-11 定案): thought=仅历史回显事件(DB
 //   executionSteps), 实时 SSE 永不发(后端 _SSE_EXCLUDE_TYPES 过滤)。hasBusinessSteps 判定剔除 thought
 //   (thought-start/action/observation/chunk 仍实时兜住 isCurrentLive 铁证, 语义不变) — 小欧-2026-09-11
+// 编辑历史: 2026-09-11 小欧 - 第七章 M1/M2/M3a: hasFinalStats 派生(R8/R9/R4 统一信号) + effect1 显式守卫 +
+//   B16 删 prevReceivingRef 死码 + import TitleBlock + statsExpanded 折叠状态提升 + finalStep 派生 + 渲染块拆分 — 小欧-2026-09-11
+// 编辑历史: 2026-09-11 小欧 - 三堂会审修复: P1-4 props复用TokenLayer(与StaticStatsBlock必选/可选形状对齐, TS2322归零, DRY), import TokenLayer — 小欧-2026-09-11
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -81,7 +84,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Spin, Empty, Typography } from 'antd';
 import type { ExecutionStep } from '../../../../types/execution';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-11 小欧 三堂会审P1-4: 复用公用 TokenLayer 消重复定义 — 小欧-2026-09-11
 import { sessionApi } from '../../../../services/api/session.api';
 import {
   executionApi,
@@ -90,6 +93,7 @@ import {
 import { PipelineRenderer } from '../pipeline';
 import { splitSteps } from '../pipeline/stepFilter';
 import { StaticStatsBlock } from './StaticStatsBlock';
+import { TitleBlock } from './TitleBlock'; // 2026-09-11 小欧 第七章 M3a(R5): title 段独立组件 — 小欧-2026-09-11
 import { useTaskInfo } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: badge 权威派生(running/paused=任务进行), 撑 waiting 三处丢失窗口
 import type { TaskMetaFrames } from '@/types/sse';
 import { emptyMetaFrames } from '@/types/sse';
@@ -114,6 +118,9 @@ interface RightViewerProps {
   frames: TaskMetaFrames; // 2026-09-02 小欧: useTaskInfo badge 派生输入(startInfo 判定 running)
   deniedSteps: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 透传 PipelineRenderer 停齿轮 — 小欧-2026-09-06
   deniedEntries: ReadonlyMap<number, Array<{ tool: string; reason: string }>>; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 透传 ToolCallLine 灰字 — 小欧-2026-09-06
+  // 2026-09-11 小欧 三堂会审P1-4: 复用公用 TokenLayer——原 {prompt_tokens?: number;...} | null 与 StaticStatsBlock 必选字段形状不匹配(TS2322), 统一后 DRY — 小欧-2026-09-11
+  sessionTokens?: TokenLayer;
+  chainTokens?: TokenLayer;
   onSettledRefresh?: () => void; // 结束沿通知外层刷新任务列表
 }
 
@@ -128,17 +135,21 @@ const RightViewer: React.FC<RightViewerProps> = ({
   frames,
   deniedSteps,
   deniedEntries, // 2026-09-06 小欧 B2(6.4)
+  sessionTokens, // 2026-09-11 小欧 三堂会审P1-4: 复用 TokenLayer(类型统一) — 小欧-2026-09-11
+  chainTokens,
   onSettledRefresh,
 }) => {
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [historySteps, setHistorySteps] = useState<ExecutionStep[]>([]);
   const [loading, setLoading] = useState(false);
-  const prevReceivingRef = useRef(false);
   const prevIsCurrentLiveRef = useRef(false); // [DEBUG-1] 2026-09-09 北京老陈
   // 小欧 2026-09-10 S13: live→终态快照 — final 到达时固化 executionStepsRef 全量
   const [settledSteps, setSettledSteps] = useState<ExecutionStep[]>([]);
   const settledRef = useRef<ExecutionStep[]>([]);
 
+  // 小欧 2026-09-11 第七章 M3a(R5): 统计区折叠状态提升到父级——TitleBlock(title 段)持折叠箭头,
+  //   StaticStatsBlock(折叠区)受控显隐, 两次独立渲染事件互不干扰 — 小欧-2026-09-11
+  const [statsExpanded, setStatsExpanded] = useState(false);
 
   // 2026-09-02 小欧: badge 权威派生——live 任务才取, 非live历史回放不传(不显示等待圈)
   const { badge: liveBadge } = useTaskInfo(
@@ -152,6 +163,9 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const hasLiveSteps = liveSteps.length > 0;
   // 2026-09-06 小欧 RG-2: 历史数据是否已就绪(0→1驱动主滚动effect重跑, 后台final切历史后滚底兜底) — 小欧-2026-09-06
   const hasHistorySteps = historySteps.length > 0;
+  // 小欧 2026-09-11 第七章 M1/M2(R8/R9/R4): hasFinalStats = frames.finalStats 非空 = final_stats 到达 =
+  //   DB 已落库信号(t3', v1.9 方案 A)——折叠区 DB 读(effect1)与任务列表刷新(B16)以此统一信号读 DB — 小欧-2026-09-11
+  const hasFinalStats = !!frames?.finalStats;
   // 2026-09-09 北京老陈 铁证兜底: liveSteps含任一业务步骤即证执行中(不可翻false)
   // 2026-09-11 小欧 契约化(method2): thought=仅历史回显(实时再也不来), 信号移出 thought
   //   (action/observation/chunk 已足够; thought-start 由 pipeline 消费) — 小欧-2026-09-11
@@ -173,7 +187,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
     prevIsCurrentLiveRef.current = isCurrentLive;
   }
 
-// 小欧 2026-09-10 S13.1: final 到达瞬时快照——用 ref（同步）而非 state（异步）
+  // 小欧 2026-09-10 S13.1: final 到达瞬时快照——用 ref（同步）而非 state（异步）
   // v2.17 修复(小欧 2026-09-10)：原条件 `_hasFinal && isCurrentLive` 恒假（isCurrentLive 定义含 !_hasFinal），
   //   快照 effect 永不触发，settledRef/settledSteps 恒空，S13 防丢尾整体失效——改 _hasFinal 驱动，
   //   不加 settledRef 守卫（多任务切换时 settledRef 会残留旧值，守卫会阻止新任务快照覆盖），
@@ -277,6 +291,14 @@ const RightViewer: React.FC<RightViewerProps> = ({
       setDetail(null);
       return; // B4：执行中不拉 REST
     }
+    // 小欧 2026-09-11 第七章 M1(R8/R9): 当前任务 final 已到但 final_stats(DB 就绪信号 t3')未到——
+    //   此刻 update_task(任务级)尚未落库(final 先发后落, t0≪t3), 读必 stale executing/旧时长, 绝不读 DB;
+    //   isCurrentLive 含 !_hasFinal, final 一到即翻 false 会强制本 effect 重跑——仅换依赖数组治不了本,
+    //   须显式守卫挡住此路径; 历史任务选择(activeTaskId!==serverTaskId)DB 已稳定, 不受守卫
+    if (activeTaskId === serverTaskId && !hasFinalStats) {
+      setDetail(null);
+      return;
+    }
     let cancelled = false;
 
     const startFetch = () => {
@@ -327,21 +349,17 @@ const RightViewer: React.FC<RightViewerProps> = ({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- detail有意不入deps: setDetail后重Run会自激循环REST(loading窗口见#45修复) — 小欧-2026-09-09
-  }, [activeTaskId, sessionId, isCurrentLive, _hasFinal, serverTaskId]);
+  }, [activeTaskId, sessionId, isCurrentLive, hasFinalStats, serverTaskId]);
 
-  // B16：锚定的当前任务结束沿 -> 补取 C1 终态详情并刷新外层列表
+  // 小欧 2026-09-11 第七章 M2(R4): 刷新信号由"receiving 翻 false"(final 到达)后置到 hasFinalStats
+  //   (final_stats 到达 = DB 已落库 t3', v1.9 方案 A)——final 瞬间 DB 仍未落库, 此时刷列表必读 stale
+  //   executing/旧 response; prevReceivingRef 随信号替换变死码, 同步删除(L136) — 小欧-2026-09-11
   useEffect(() => {
-    if (
-      prevReceivingRef.current &&
-      !receiving &&
-      activeTaskId === serverTaskId &&
-      activeTaskId
-    ) {
+    if (hasFinalStats && activeTaskId === serverTaskId && activeTaskId) {
       // 2026-08-27 小欧 修复#44: 移除冗余getTaskDetail(上方effect在isCurrentLive变false时已补取), 避免双发REST
       onSettledRefresh?.();
     }
-    prevReceivingRef.current = receiving;
-  }, [receiving, activeTaskId, serverTaskId, onSettledRefresh]);
+  }, [hasFinalStats, activeTaskId, serverTaskId, onSettledRefresh]);
 
   // 小欧 2026-09-10 S13.2: 结束瞬时先用 live 快照兜底，REST 成功且更长时再替换
   const displaySteps = isCurrentLive
@@ -349,6 +367,9 @@ const RightViewer: React.FC<RightViewerProps> = ({
     : settledSteps.length > 0
       ? settledSteps
       : historySteps;
+  // 小欧 2026-09-11 第七章 M3a(R6): title 段数据源=final 帧——实时=settledSteps 快照(final 已入 ref 快照),
+  //   历史回放=historySteps 的 final step; final 到达即可渲染, 绝不读 DB(R6) — 小欧-2026-09-11
+  const finalStep = displaySteps.find((s) => s.type === 'final');
   const hasSteps = displaySteps.length > 0;
   // [DEBUG-2] 2026-09-09 北京老陈 displaySteps 切换侦测
   const _prevSrcRef = useRef<string>('live');
@@ -391,7 +412,25 @@ const RightViewer: React.FC<RightViewerProps> = ({
         </div>
       )}
       {!isCurrentLive && (
-        <StaticStatsBlock detail={detail} chainSteps={historySteps} />
+        // 小欧 2026-09-11 第七章 M3a(R5/R6/R7): 统计区拆两段两次独立渲染——TitleBlock(title 段,
+        //   final 帧驱动, 绝不读 DB)为每次渲染第二段; StaticStatsBlock(折叠区, final_stats 到达后
+        //   effect1 已读 DB, finalStats 帧复合兜底)为第三次渲染, 各自独立互不影响 — 小欧-2026-09-11
+        <>
+          <TitleBlock
+            finalStep={finalStep}
+            expanded={statsExpanded}
+            onToggle={() => setStatsExpanded((v) => !v)}
+          />
+          {statsExpanded && (
+            <StaticStatsBlock
+              detail={detail}
+              chainSteps={historySteps}
+              finalStats={frames.finalStats}
+              sessionTokens={sessionTokens}
+              chainTokens={chainTokens}
+            />
+          )}
+        </>
       )}
     </Spin>
   );
