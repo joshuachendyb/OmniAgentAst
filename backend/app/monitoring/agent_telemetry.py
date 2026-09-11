@@ -31,6 +31,8 @@
 #   _tm.model_dump_json(), 非Pydantic模型(SimpleNamespace等) AttributeError 致整表遥测落库失败(一行序列化拖垮
 #   全部指标, 与"降级不阻塞"声明相悖)。生产链路恒 ModelRef(Pydantic) 行为不变; 未来插件/轻量client出非Pydantic
 #   模型时该字段保全降级, 不再拖垮整表。来源线索: 回归测试以 SimpleNamespace 伪装模型触发 ERROR 日志 4 次。
+# 2026-09-11 - 小欧 - [27]方案: build_final_stats_step 补全统计 7 键(tool_stats/llm_call_count/retry_count/step_count),
+#   删 content=""、severity="info" 冗余键; 每键 getattr 默认值兜底结构上永不产 None 键 — 小欧-2026-09-11
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -201,6 +203,8 @@ class TaskTelemetry:
     def build_final_stats_step(self, outcome: str = ""):
         """产出 MetaStep(type="final_stats") —— 终态统计单独事件（final 后单发；duration 与流式 stats 同 _run_start_ts 同源）— 小欧 2026-08-20
         outcome参数: 调用方显式传入终态(completed/failed/cancelled), 优先使用; 为空时fallback到agent.status — 小健 2026-09-04
+        [27] v1.3 2026-09-11 小欧: 补全统计 7 键(tool_stats/llm_call_count/retry_count/step_count), 删 content/severity 冗余;
+          每键 getattr 默认值兜底 → 结构上永不产 None 键, 门禁仅查 7 统计键
         """
         from app.services.agent.steps.base import MetaStep  # 局部导入防环
         _agent = self.agent
@@ -209,14 +213,18 @@ class TaskTelemetry:
         #   前端frames.finalStats.final_status据此兜底badge=failed, 防executionSteps中final step丢失时badge卡running — 小沈-2026-09-03
         # 2026-09-04 小健 SLAP修复: outcome显式传入优先, fallback到agent.status — 消除监控层隐式依赖核心状态
         _final_status = outcome if outcome else getattr(getattr(_agent, "status", None), "value", None)
+        # [27] 2026-09-11 小欧: step_count 算法同 build_stats_step(L188, _M_SKIP 过滤后计数) — 小欧-2026-09-11
+        _step_count = len([s for s in getattr(_agent, "steps", []) if getattr(s, "TYPE", "") not in _M_SKIP])
         return MetaStep(
             step=getattr(_agent, "llm_call_count", 0),
             type="final_stats",
-            content="",
-            duration=_duration,
-            artifacts=list(self._artifacts),   # 任务产出物：action_handler 经 on_tool_call 收集（内存态，单一来源）— 小欧 2026-08-21
-            severity="info",
-            final_status=_final_status,
+            duration=_duration,                            # 同源：now - _run_start_ts（与 DB update_task 同一算式）
+            artifacts=list(self._artifacts) or [],         # 权威源 _artifacts（空表=合法终值，照发）
+            step_count=_step_count or 0,                   # 算法同 build_stats_step L188（_M_SKIP 过滤后计数）
+            llm_call_count=getattr(_agent, "llm_call_count", 0) or 0,
+            retry_count=getattr(_agent, "_retry_count", 0) or 0,
+            tool_stats=dict(self._tool_stats) or {},       # 权威源 _tool_stats（空表=合法终值，照发）
+            final_status=_final_status or outcome,         # outcome 显式传入兜底，永不 None
         )
 
     def build_context_overview(self) -> Dict[str, Any]:
