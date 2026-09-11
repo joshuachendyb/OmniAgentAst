@@ -252,6 +252,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             frames={metaFrames} // 2026-09-02 小欧: badge 派生输入(startInfo 判定 running)
             deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
             deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
+            sessionTokens={sessionTokens} // 2026-09-11 小欧: 折叠区4组token显示
+            chainTokens={chainTokens}
             onSettledRefresh={refreshTasks}
           />
         ),

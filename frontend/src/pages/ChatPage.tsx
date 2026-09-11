@@ -18,6 +18,8 @@
 //   (React Router useSearchParams每次渲染返回新对象)致流式期间反复重跑initializeSession, 直接赋值
 //   setMessages(result.messages)覆盖流式assistant消息; 根治=只传稳定urlSessionId字符串(非全局searchParams对象),
 //   effect依赖它(session_id不变即不重跑)。曾用useMemo稳定引用(堵截)与isReceiving守卫(边界退化)两案, 复查后撤销 — 小欧-2026-09-10
+// 编辑历史: 2026-09-11 小欧 - R3+R4修复: R3加prevReceivingForR3Ref effect(isReceiving翻false时从messages取final.response即时写入task, 不读DB);
+//   R4删旧prevReceivingRef effect改hasFinalStats信号(final_stats到达=DB已落库才触发refreshTasks); 解构补updateTaskResponse — 小欧-2026-09-11
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -60,6 +62,7 @@ const ChatPage: React.FC = () => {
     loading: tasksLoading,
     refresh: refreshTasks,
     latestTaskId,
+    updateTaskResponse, // 小欧 2026-09-11 R3: SSE final 帧到达时即时更新 task response — 小欧-2026-09-11
   } = useSessionTasks(sessionId);
   const { effective } = useModelLayer({
     sessionId,
@@ -95,21 +98,35 @@ const ChatPage: React.FC = () => {
     }
   }, [chatStreaming.serverTaskId, sessionId, refreshTasks]);
 
-  // 2026-09-02 小欧 - 同类DB滞后修复2: 收流结束(成功/失败/取消)即刷新, 补final后DB仍executing窗口(与G2 start刷新成对) - 小欧-2026-09-02
-  // 2026-09-11 小欧 - DB滞后补充: 即时刷新后延迟500ms再刷一次, 覆盖DB写入延迟窗口 - 小欧-2026-09-11
-  const prevReceivingRef = useRef(false);
+  // 小欧 2026-09-11 R3: 实时当前任务回复只读 final.response，不读 DB
+  //   isReceiving 翻 false = final 到达 → 从 chatState.messages 取 final.response 即时写入 task — 小欧-2026-09-11
+  const prevReceivingForR3Ref = useRef(false);
   useEffect(() => {
     if (
-      prevReceivingRef.current &&
+      prevReceivingForR3Ref.current &&
       !chatStreaming.isReceiving &&
       chatStreaming.serverTaskId
     ) {
-      void refreshTasks();
-      const timer = setTimeout(() => void refreshTasks(), 500);
-      return () => clearTimeout(timer);
+      const lastMsg = chatState.messages[chatState.messages.length - 1];
+      if (lastMsg?.role === 'assistant' && lastMsg.content) {
+        updateTaskResponse(chatStreaming.serverTaskId, lastMsg.content);
+      }
     }
-    prevReceivingRef.current = chatStreaming.isReceiving;
-  }, [chatStreaming.isReceiving, chatStreaming.serverTaskId, refreshTasks]);
+    prevReceivingForR3Ref.current = chatStreaming.isReceiving;
+  }, [
+    chatStreaming.isReceiving,
+    chatStreaming.serverTaskId,
+    chatState.messages,
+    updateTaskResponse,
+  ]);
+
+  // 小欧 2026-09-11 R4: refreshTasks 后置到 final_stats(DB 已落库 t3')，替代 prevReceivingRef 旧逻辑 — 小欧-2026-09-11
+  const hasFinalStats = !!chatStreaming.metaFrames?.finalStats;
+  useEffect(() => {
+    if (hasFinalStats && chatStreaming.serverTaskId) {
+      void refreshTasks();
+    }
+  }, [hasFinalStats, chatStreaming.serverTaskId, refreshTasks]);
 
   // 2026-08-30 小欧 v1.100: 点击任务 → 右栏展开(4.5.1 联动锚定: 点击查看即展开)
   const handleSelectTaskOpenRight = useCallback(

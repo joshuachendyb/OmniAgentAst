@@ -184,7 +184,9 @@ const processSSEData = (
     // 守卫在 onSeq 之前、switch 之前：先拦截重复，再推进，再放行
     if (typeof rawData.seq === 'number' && handlers.lastSeqRef) {
       if (rawData.seq <= handlers.lastSeqRef.current) {
-        console.debug(`[SSE] seq守卫拦截: seq=${rawData.seq} <= lastSeq=${handlers.lastSeqRef.current}`);
+        console.debug(
+          `[SSE] seq守卫拦截: seq=${rawData.seq} <= lastSeq=${handlers.lastSeqRef.current}`
+        );
         return;
       }
     }
@@ -361,7 +363,8 @@ const processSSEData = (
         break;
       }
 
-      // final_stats：终态统计独立步（duration/tool_stats/artifacts）
+      // final_stats：终态统计独立步（duration/tool_stats/artifacts/step_count/llm_call_count）
+      // 小欧 2026-09-11 第七章 M5b(R7): 补解析 step_count/llm_call_count（后端 3.4 FinalStatsStep 新增 7 键, 折叠区步数/轮次来源） — 小欧-2026-09-11
       case 'final_stats': {
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
@@ -371,6 +374,8 @@ const processSSEData = (
             artifacts: rawData.artifacts,
             final_status: rawData.final_status,
             retry_count: rawData.retry_count,
+            step_count: rawData.step_count,
+            llm_call_count: rawData.llm_call_count,
           },
         }));
         break;
@@ -483,6 +488,10 @@ const processSSEData = (
         step.error_message = rawData.error_message;
         // 2026-09-11 小欧 北京老陈定案: cancelled终态渲染第二行✕取消来源, final分支补解析(后端FinalStep.to_dict恒输出cancel_source) — 小欧-2026-09-11
         step.cancel_source = rawData.cancel_source;
+        // 小欧 2026-09-11 第七章 M4(R6): final 分支补 duration 解析——title 段运行时长唯一实时源
+        //   (后端 3.1 FinalStep._extra_fields 新增, 与 DB update_task duration 同源算式: now-_run_start_ts)
+        //   不读 DB; ExecutionStep.duration 字段已存在(类型 L155: number?) — 小欧-2026-09-11
+        step.duration = rawData.duration;
 
         if (step.content) {
           if (!responseBufferRef.current) {

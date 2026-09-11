@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 8.1/8.2 实施: 会话任务清单Hook, 顶栏任务数/左列共用, final/error后refresh(6.1.9 B1)
 // 编辑历史: 2026-08-30 小欧 - 设计文档[2]12.7 v1.103: 新增 latestTaskId(B1 最新任务锚点透传, 顶栏/默认选中/链token锚点消费, 排序一义后不用 tasks[0])
+// 编辑历史: 2026-09-11 小欧 - R3修复: 新增updateTaskResponse方法(SSE final帧到达时即时更新task response, 不等DB refresh), 返回值补updateTaskResponse — 小欧-2026-09-11
 /**
  * useSessionTasks - 会话任务清单 Hook（消费 6.1.9 B1 接口）
  *
@@ -44,5 +45,12 @@ export const useSessionTasks = (sessionId: string | null) => {
     void refresh();
   }, [refresh]);
 
-  return { tasks, total, loading, refresh, latestTaskId };
+  // 小欧 2026-09-11 R3: SSE final 帧到达时即时更新 task response，不等 DB refresh — 小欧-2026-09-11
+  const updateTaskResponse = useCallback((taskId: string, response: string) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.task_id === taskId ? { ...t, response } : t))
+    );
+  }, []);
+
+  return { tasks, total, loading, refresh, latestTaskId, updateTaskResponse };
 };
