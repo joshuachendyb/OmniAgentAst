@@ -4,6 +4,9 @@
 # 【拨乱反正 2026-05-28 小沈】session→task 命名修正
 
 Author: 小沈 - 2026-05-22
+# 【拨乱反正 2026-09-10 小欧】TaskRecord字段注释残留"会话"字样清理为"任务"：
+#   status 会话状态→任务状态; created_at 会话开始时间→任务开始时间; completed_at 会话完成时间→任务完成时间;
+#   "# 会话信息"→"# 任务归属信息"(仅改注释/描述, 零逻辑变更) — 小欧-2026-09-10
 """
 from datetime import datetime
 from enum import Enum
@@ -105,12 +108,12 @@ class TaskRecord(BaseModel):
     id: Optional[int] = Field(default=None, description="数据库自增ID")
     task_id: str = Field(..., description="任务执行ID (UUID)")
     
-    # 会话信息
+    # 任务归属信息
     agent_id: str = Field(..., description="执行操作的Agent ID")
     task_description: str = Field(..., description="任务描述")
     
     # 状态
-    status: OperationStatus = Field(default=OperationStatus.PENDING, description="会话状态")
+    status: OperationStatus = Field(default=OperationStatus.PENDING, description="任务状态")
     
     # 统计信息
     total_operations: int = Field(default=0, description="总操作数")
@@ -123,8 +126,8 @@ class TaskRecord(BaseModel):
     report_path: Optional[str] = Field(default=None, description="报告文件路径")
     
     # 时间戳
-    created_at: datetime = Field(default_factory=datetime.now, description="会话开始时间")
-    completed_at: Optional[datetime] = Field(default=None, description="会话完成时间")
+    created_at: datetime = Field(default_factory=datetime.now, description="任务开始时间")
+    completed_at: Optional[datetime] = Field(default=None, description="任务完成时间")
     
     model_config = ConfigDict(
         json_schema_extra={
