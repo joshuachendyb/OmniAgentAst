@@ -12,13 +12,14 @@ steps包 - ReAct Agent Step封装类
 - start_content_step.py: StartStep (start完整任务契约, 落库, content=context_summary)
 - final_step.py: FinalStep
 - error_step.py: ErrorStep
+- final_stats_step.py: FinalStatsStep (final_stats终态统计)
 
 Author: 小沈
 Date: 2026-04-15
 Updated: 2026-06-22 SRP拆分：ActionStep(action_tool) + ObservationStep(observation)
 Updated: 2026-08-18 小欧 - §10.3: 废action_tool改action, 新增ThoughtStartStep, ObservationStep仅tool_result, FinalStep删冗余加reasoning
+Updated: 2026-09-11 小欧 - 接线①: 导出 FinalStatsStep 子类(打字法显式写成 [27] 定案的 final_stats 终态) — 小欧 2026-09-11
 """
-
 from .base import ReasoningStep, MetaStep
 from .action_step import ActionStep
 from .observation_step import ObservationStep
@@ -28,6 +29,7 @@ from .thought_start_step import ThoughtStartStep   # 2026-08-18 小欧 新增
 from .start_content_step import StartStep           # 2026-08-18 小欧 新增(§10.1.2 P7 start 拆双)
 from .final_step import FinalStep
 from .error_step import ErrorStep
+from .final_stats_step import FinalStatsStep
 
 __all__ = [
     "ReasoningStep",
@@ -40,4 +42,6 @@ __all__ = [
     "StartStep",
     "FinalStep",
     "ErrorStep",
+    "FinalStatsStep",
 ]
+

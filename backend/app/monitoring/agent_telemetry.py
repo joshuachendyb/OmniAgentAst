@@ -201,12 +201,14 @@ class TaskTelemetry:
         )
 
     def build_final_stats_step(self, outcome: str = ""):
-        """产出 MetaStep(type="final_stats") —— 终态统计单独事件（final 后单发；duration 与流式 stats 同 _run_start_ts 同源）— 小欧 2026-08-20
+        """产出 FinalStatsStep(type="final_stats") —— 终态统计独立事件（final 后单发；duration 与流式 stats 同 _run_start_ts 同源）— 小欧 2026-08-20
         outcome参数: 调用方显式传入终态(completed/failed/cancelled), 优先使用; 为空时fallback到agent.status — 小健 2026-09-04
-        [27] v1.3 2026-09-11 小欧: 补全统计 7 键(tool_stats/llm_call_count/retry_count/step_count), 删 content/severity 冗余;
-          每键 getattr 默认值兜底 → 结构上永不产 None 键, 门禁仅查 7 统计键
+        [27] v1.4 2026-09-11 北京老陈定案: MetaStep → FinalStatsStep 独立子类(接线②) — 小欧 2026-09-11;
+          steps/final_stats_step.py FinalStatsStep(7统计键强类型+构造门禁+TYPE="final_stats"+IS_DONE=True),
+          本 build 产出该子类 —— 7 统计键逐键等价 MetaStep 时代(零 backward), type 键由 TYPE 类常量承载(删键),
+          step 键怪癖(塞 llm_call_count)照单全收(零 backward, 前端逐键等价) — 小欧 2026-09-11
         """
-        from app.services.agent.steps.base import MetaStep  # 局部导入防环
+        from app.services.agent.steps.final_stats_step import FinalStatsStep  # 局部导入防环 — 小欧 2026-09-11
         _agent = self.agent
         _duration = round(time.time() - self._run_start_ts, 1) if self._run_start_ts else 0.0
         # 2026-09-03 小沈 修复: 增发final_status字段, 从agent.status.value派生,
@@ -215,16 +217,15 @@ class TaskTelemetry:
         _final_status = outcome if outcome else getattr(getattr(_agent, "status", None), "value", None)
         # [27] 2026-09-11 小欧: step_count 算法同 build_stats_step(L188, _M_SKIP 过滤后计数) — 小欧-2026-09-11
         _step_count = len([s for s in getattr(_agent, "steps", []) if getattr(s, "TYPE", "") not in _M_SKIP])
-        return MetaStep(
-            step=getattr(_agent, "llm_call_count", 0),
-            type="final_stats",
-            duration=_duration,                            # 同源：now - _run_start_ts（与 DB update_task 同一算式）
-            artifacts=list(self._artifacts) or [],         # 权威源 _artifacts（空表=合法终值，照发）
-            step_count=_step_count or 0,                   # 算法同 build_stats_step L188（_M_SKIP 过滤后计数）
-            llm_call_count=getattr(_agent, "llm_call_count", 0) or 0,
-            retry_count=getattr(_agent, "_retry_count", 0) or 0,
-            tool_stats=dict(self._tool_stats) or {},       # 权威源 _tool_stats（空表=合法终值，照发）
-            final_status=_final_status or outcome,         # outcome 显式传入兜底，永不 None
+        return FinalStatsStep(
+            step=getattr(_agent, "llm_call_count", 0),    #  llm_call_count 而非 step 序号 — 小欧 2026-08-20
+            duration=_duration,                            # 同源：now - _run_start_ts（与 DB update_task 同一算式）— 小欧 2026-08-20
+            artifacts=list(self._artifacts) or [],         # 任务产出物：action_handler 经 on_tool_call 收集（内存态，单一来源）— 小欧 2026-08-21; or []兜底空表=合法终值 — 小欧 2026-09-11
+            step_count=_step_count or 0,                   # 算法同 build_stats_step L188（_M_SKIP 过滤后计数）— 小欧 2026-09-11
+            llm_call_count=getattr(_agent, "llm_call_count", 0) or 0,  # [27] 补全统计键 — 小欧 2026-09-11
+            retry_count=getattr(_agent, "_retry_count", 0) or 0,      # [27] 补全统计键 — 小欧 2026-09-11
+            tool_stats=dict(self._tool_stats) or {},       # 权威源 _tool_stats（空表=合法终值，照发）— 小欧 2026-09-11
+            final_status=_final_status or outcome,         # outcome 显式传入兜底，永不 None — 小欧 2026-09-11
         )
 
     def build_context_overview(self) -> Dict[str, Any]:
