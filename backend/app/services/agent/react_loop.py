@@ -35,6 +35,8 @@
 #   走 D 路径局部 import(下方同函数已局部 import task_runtime, 运行期无循环), 顶层依赖消除 — 小欧-2026-09-08
 # 2026-09-08 小欧 北京老陈指令(console可见性): D路径循环顶检出取消 logger.info→log_and_print 双写,
 #   后端命令行可见"检测到任务取消"(task_id/source) — 小欧-2026-09-08
+# 2026-09-11 小欧 - [27]方案: emit_final_with_stats 改返回一元组(final,), 5 处调用点删除
+#   `await _publish(_fs[1].to_dict())`(final_stats 移出循环链, 由 runner 延后单发, 杜绝残缺组装即发) — 小欧-2026-09-11
 
 """react_loop — ReAct 循环核心(薄调度)
 
@@ -149,7 +151,6 @@ async def run_react_cycle(
             outcome="cancelled", cancel_source="config_limit",  # 小欧 2026-07-18: MetaStep→FinalStep, max_steps=0终态统一
         ))
         await _publish(_fs[0].to_dict())
-        await _publish(_fs[1].to_dict())
         set_cancelled(agent)
         _buf.done.set()  # 5.8.3修正: 本分支 try 前 return 不进 finally, done 需在此置位, 否则消费订阅永不退出挂死 — 小欧-2026-09-06
         _finalize_cycle(agent)
@@ -193,7 +194,6 @@ async def run_react_cycle(
                         cancel_source=cancel_source,  # 方案五 D路径 source — 小欧 2026-09-08
                     ))
                     await _publish(_fs[0].to_dict())
-                    await _publish(_fs[1].to_dict())
                     set_cancelled(agent)
                     break
                 # 用户暂停检测(循环粒度, 阻塞等待恢复) — 小欧 2026-07-13
@@ -223,7 +223,6 @@ async def run_react_cycle(
                             error_message=f"可恢复错误重试已达上限(3次): {_step_err}",
                         ))
                         await _publish(_fs[0].to_dict())
-                        await _publish(_fs[1].to_dict())
                         set_failed(agent, f"可恢复错误重试已达上限(3次): {_step_err}")  # task007: 明确上限值 — 小欧 2026-07-23
                         break
                     logger.warning(f"[run_react_cycle] 可恢复异常, 第{agent._retry_count}次重试: {_step_err}")
@@ -258,7 +257,6 @@ async def run_react_cycle(
                         error_message="可恢复错误重试已达上限(3次)",
                     ))
                     await _publish(_fs[0].to_dict())
-                    await _publish(_fs[1].to_dict())
                     set_failed(agent, "可恢复错误重试已达上限(3次)")  # task007: 明确上限值 — 小欧 2026-07-23
                     break
                 set_status(agent, AgentStatus.THINKING, f"第{agent._retry_count}次重试")
@@ -283,7 +281,6 @@ async def run_react_cycle(
                 outcome="cancelled", cancel_source="status_inconsistency",  # 小欧 2026-07-18: MetaStep→FinalStep, 循环结束无终态兜底统一
             ))
             await _publish(_fs[0].to_dict())
-            await _publish(_fs[1].to_dict())
             set_cancelled(agent)
 
     except Exception as e:

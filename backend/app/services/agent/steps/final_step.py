@@ -21,6 +21,7 @@
 #   单结构承载(不留裸 model/provider 委托 property, 与基类裁定一致); SSE 裸键由 _extra_fields 派生
 # 2026-09-08 小欧 - 方案五(6.6.2 A-G): FinalStep 新增 cancel_source 可选参数(缺省"" 向后兼容), 取消终态来源
 #   随 _extra_fields 落库/SSE下发, 前端据此展示取消原因文案(A-G 全覆盖) — 小欧-2026-09-08
+# 2026-09-11 小欧 — [27]方案: 新增 duration 可选字段, 运行时长实时唯一源(now - _run_start_ts, 与 DB update_task 同源), 随 _extra_fields 下发
 
 from typing import Any, Dict, Literal, Optional
 
@@ -49,6 +50,7 @@ class FinalStep(ReasoningStep):
         reasoning: str = "",
         cancel_source: str = "",  # 方案五(6.6.2): 取消来源(user_requested/client_disconnect_timeout/config_limit/status_inconsistency/orchestrator_error) — 小欧-2026-09-08
         timestamp: Optional[str] = None,
+        duration: Optional[float] = None,  # [27] 运行时长实时唯一源 — 小欧 2026-09-11
     ):
         ReasoningStep.__init__(self, step, timestamp)
         self._response = response
@@ -62,6 +64,7 @@ class FinalStep(ReasoningStep):
         self._chain_accumulated_tokens = chain_accumulated_tokens     # 11.1 新增
         self._reasoning = reasoning
         self._cancel_source = cancel_source
+        self._duration = duration  # [27] 运行时长 — 小欧 2026-09-11
 
     def get_content(self) -> str:
         return self._response
@@ -89,6 +92,11 @@ class FinalStep(ReasoningStep):
     @property
     def cancel_source(self) -> str:
         return self._cancel_source
+
+    @property
+    def duration(self) -> Optional[float]:
+        """[27] 运行时长实时唯一源 — 小欧 2026-09-11"""
+        return self._duration
 
     @property
     def final_model(self) -> Optional[ModelRef]:
@@ -127,4 +135,5 @@ class FinalStep(ReasoningStep):
             "chain_accumulated_tokens": self._chain_accumulated_tokens,     # 11.1 新增
             "reasoning": self._reasoning,
             "cancel_source": self._cancel_source,
+            "duration": self._duration,  # [27] 运行时长实时唯一源 — 小欧 2026-09-11
         }

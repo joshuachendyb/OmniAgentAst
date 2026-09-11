@@ -146,6 +146,9 @@
 #   读 event_log 不看返回值(行300); 改为 return[](与 L444/L475 同风格, 事件已全量 publish), 并补
 #   test_run_react_cycle_truncation_max_cancelled 全循环回归 — 小欧 2026-09-06
 
+# 2026-09-11 小欧 - [27]方案: emit_final_with_stats 改返回一元组(final,), 2 处调用点删除
+#   `await _publish(_fs[1].to_dict())`(final_stats 移出循环链, 由 runner 延后单发, 杜绝残缺组装即发) — 小欧-2026-09-11
+
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
 职责: 单步编排(LLM调用准备→流式调用→响应分发), 不包含主循环调度/类型分派/推断基元。
@@ -424,7 +427,6 @@ async def _process_single_step(agent, chunk_buffer) -> List:
                 outcome="cancelled",
             ))
             await _publish(_fs[0].to_dict())
-            await _publish(_fs[1].to_dict())
             set_cancelled(agent)
             return []  # 4C(5.8.2)审计修复(小欧-2026-09-06): 裸return→return[](防None被主循环L163 for迭代抛TypeError→外层except set_failed覆盖终态); 事件已全量publish, 与L444/L475同风格
 
@@ -479,7 +481,6 @@ async def _process_single_step(agent, chunk_buffer) -> List:
                 error_message=f"模型连续{_cnt}步重复调用相同工具，疑似死循环",
             ))
             await _publish(_fs[0].to_dict())
-            await _publish(_fs[1].to_dict())
             return []  # 4C(5.8.2): 普通 async 返 List — 小欧-2026-09-06
     else:
         # 非action(正常answer/final): 死循环检测仅在action语义下, 归零防残留(含纠偏标记) — 小欧 2026-08-08

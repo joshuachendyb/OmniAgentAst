@@ -18,6 +18,7 @@ Author: 小沈 - 2026-05-31
 2026-09-04 小健 - SLAP修复: emit_final_with_stats 从 final_step 提取 outcome 并透传给 build_final_stats_step(outcome=...), 消除发射层对遥测层隐式依赖 — 小健-2026-09-04
 # 2026-09-05 小健 - answer_focus第一阶段(10.3)搬二(8.2): 新增终态工厂 emit_completed_final/emit_failed_final,
 #   收口handler侧5处终态分产(顺序敏感set_failed内聚一步) - 小健-2026-09-05
+# 2026-09-11 小欧 - [27]方案: emit_final_with_stats 返回一元组(final,); final_stats 移出循环链由 runner 延后单发 — 小欧-2026-09-11
 """
 
 from typing import Any, Dict, Optional
@@ -59,12 +60,11 @@ class StepEmitter:
         return step
 
     def emit_final_with_stats(self, final_step):
-        """final 后单独 emit 终态统计事件 —— 先 .emit(final) 再 .emit(final_stats)，两事件分开、不塞进 final 键体。
+        """[27] v1.2 2026-09-11 小欧: 返回一元组 (final,); final_stats 不再由此构建/发布, 改由 runner 延后单发。
         2026-08-28 小欧 KISS修正: 原 async def 但体内零 await, 纯伪异步包装, 逼出10处调用点写 async for 仪式代码;
-        改为 sync 返回 (final_step, stats_step) 二元组, 调用方 `for _s in ...: yield _s` 即可, 行为等价无backward。
+        改为 sync 返回 (final_step,) 一元组, 调用方 `for _s in ...: yield _s` 即可, 行为等价无backward。
         2026-09-04 小健 SLAP修复: outcome从final_step显式提取并透传给build_final_stats_step, 消除隐式依赖 — 小健-2026-09-04"""
-        _outcome = getattr(final_step, "outcome", "completed")
-        return (self.emit(final_step), self.emit(self.agent.telemetry.build_final_stats_step(outcome=_outcome)))
+        return (self.emit(final_step),)
 
     def emit_completed_final(self, step, response, reasoning=""):
         """终态工厂(completed) — 小健 2026-09-05：收口 handler 侧 2 处 completed 分产；
