@@ -1,4 +1,72 @@
-﻿v0.19.40.10
+﻿v0.19.40.11
+更新时间: 2026-09-12 05:52:52 - 小欧-2026-09-12
+## v0.19.40.10以来 变更汇总(55个commit) - 小欧-2026-09-12
+[2026-09-12 05:52:52 小欧] 汇总范围=v0.19.40.10以来全部commit(共55个: docs25/fix14/refactor9/feat7)
+
+### docs(25个):
+- d21caac59 docs:[25]前端SSE接收处理链路三份报告交叉核查与根治优化方案 v2.8小沈四轮核查修正8处实质矛盾 - 小欧-2026-09-10
+- 0d255009d docs:[25]前端SSE接收处理链路三份报告交叉核查与根治优化方案 v2.9+v2.10+v2.11三项修订(阶段门禁计数修正/S21对齐已落地S12/S4并入S12消除前后拉锯) - 小欧-2026-09-10
+- 8215ea613 docs:[25]前端SSE接收处理链路三份报告交叉核查与根治优化方案 v2.12+v2.13阶段一实施情况核查标注+step0基础设施落地 - 小欧-2026-09-10
+- 1f8456bef docs:[25]前端SSE接收处理链路三份报告交叉核查与根治优化方案 v2.14阶段一实施完成标注 - 小欧-2026-09-10
+- 23763001c docs:[25]前端SSE接收处理链路三份报告交叉核查与根治优化方案 v2.18阶段二测试门禁达成标注 - 小欧-2026-09-10
+- 036415d29 docs:[25]前端SSE优化方案 v2.19阶段四实施情况标注(S20✅/S21跳过/S22✅) - 小欧-2026-09-10
+- a48279d8d docs:[25]前端SSE优化方案 3.5/3.6/第4章/第5章落地情况核查标注 - 小沈-2026-09-10
+- b1d38a9ed docs:3.5问题清单三堂会审核查报告+S21handlers分组与IndexedDB迁移方案 新增文档 - 小沈-2026-09-10
+- 13eda911e docs:[26]事件落库与实时发送分流重构设计 新增设计文档 - 小欧-2026-09-11
+- f45a8e5e5 docs:备份-事件落库与实时发送分流重构设计 v59备份文档 - 小欧-2026-09-11
+- 677a726ff docs:[26]事件落库与实时发送分流重构设计 更新内容 - 小欧-2026-09-11
+- 716a9db1a docs:[27]final及相关前端的对应处理 新增设计文档 - 小欧-2026-09-11
+- 3ba3a057c docs:[27]final及相关前端的对应处理 更新内容 - 小欧-2026-09-11
+- 9235f50fd docs:[27]final及相关前端的对应处理 更新内容 - 小欧-2026-09-11
+- 278a70f8a docs:[27]final及相关前端的对应处理 更新内容 - 小欧-2026-09-11
+- 0fa63d1f0 docs:[27]final及相关前端的对应处理 v1.17:后端TDD实施流程+前端概要设计+详细diff - 小欧-2026-09-11
+- 5089db8ed docs:[27]final及相关前端的对应处理 v1.17备份 - 小欧-2026-09-11
+- 26c6eaf70 docs:[27]final及相关前端的对应处理 v1.22:全章diff化+一致性核查3修 - 小欧-2026-09-11
+- 6d9b87a2f docs:[27]final及相关前端的对应处理 v1.23:10轮代码核查2处缺陷修复 - 小欧-2026-09-11
+- 353a8f1f1 docs:[27]final及相关前端的对应处理 v1.24:第八章前端TDD实施计划 - 小欧-2026-09-11
+- 35bd54f73 docs:[27]final及相关前端的对应处理 v1.25:第八章核查6修 - 小欧-2026-09-11
+- 6c47f8e0a docs:[27]final及相关前端的对应处理 v1.26:第八章二次核查7修 - 小欧-2026-09-11
+- 33cc8e93e docs:[27]final及相关前端的对应处理 第八章v1.27三次核查5修 - 小欧-2026-09-11
+- ca34775c3 docs:[27]final及相关前端的对应处理 第七章前端处理定稿+三堂会审4bug核查记录 - 小欧-2026-09-11
+- e212bf332 docs:.gitignore 新增backend/output忽略(junit测试产物勿入库)+清理临时xml - 小欧-2026-09-11
+
+### fix(14个):
+- f5adc5456 fix:SSE前端阶段一零风险清障+S2透传提前 - 小欧-2026-09-10
+- 42f3ecb4e fix:useChatLifecycle executionStepsRef改从chatStreaming取(S2配套) - 小欧-2026-09-10
+- fff7c1763 fix:SSE阶段三门禁实施落地 - useSSE(ref权威源+saveStepsToStorage恢复)+sseParser(S12.2残留死参清理+编辑历史)+RightViewer(S13条件修正) - 小欧-2026-09-10
+- 64f3ccba0 fix:sseParser final分支ref权威源等价值计算(S12.2.1)+编辑历史补充 - 小欧-2026-09-10
+- 797dff48e fix:SSE阶段四 - useSSE(S20连接层定时器清理收敛)+useChatCallbacks(S22错误终态幂等清理) - 小欧-2026-09-10
+- 66cd546ed fix:sseParser C1/C2终态后作废守卫(防止终态后晚到帧污染pendingSteps) - 小欧-2026-09-10
+- ccb54debd fix:useChatCallbacks+useSSE 35失败根因修复(A1暂停累积/A2reasoning回带/A3并发暂停计数/A5取消检查/A8error回放/B1空流终态/C1C2终态作废) - 小欧-2026-09-10
+- 51ff200db fix:sseParser terminalSeqRef赋值改stepNum消除类型安全隐患(number|undefined→number) - 小沈-2026-09-10
+- c06d32492 fix:useChatCallbacks [A9]onResumed加hasReplayable守卫防final暂停期到达后重置接收态 - 小沈-2026-09-10
+- 164465882 fix:stream_orchestrator [26][27]事件落库与实时发送分流重构设计落地的后端对应处理 - 小欧-2026-09-11
+- 2d72e34fe fix:前端SSE核心链路 thought契约化+B2空流修复+cancel_source类型+DB滞后兜底 - 小欧-2026-09-11
+- 30a7d8594 fix:前端UI组件终态三态统一渲染+reasoning去重+DB延迟刷新 - 小欧-2026-09-11
+- 393e23ebf fix:agent_telemetry [27]恢复原注释+去重行+FinalStatsStep接线 - 小欧-2026-09-11
+- 63653a74f fix:agent_telemetry+agent_runner [27]final_stats 4bug+1设计缺陷修复 - 小欧-2026-09-11
+
+### refactor(9个):
+- 66b7e51d4 refactor:useSSE/SSE核心基础设施 - S2单一真源+S3 seq守卫+S12批量commit+S14 useStateWithRef+S15并发HITL - 小欧-2026-09-10
+- 3665bbf93 refactor:sseParser - S12批量commit零同步序列化+S15并发HITL confirmId+S3 seq守卫 - 小欧-2026-09-10
+- 66f2edf4d refactor:Chat Hooks - S2 executionStepsRef单一真源透传+S12防抖同步+S13 live→终态平滑交接 - 小欧-2026-09-10
+- 825050c3c refactor:operation_models.py TaskRecord字段注释残留会话字样清理为任务(零逻辑变更) - 小欧-2026-09-11
+- fe9c9a122 refactor:execution+sse 类型契约对齐+死字段清理(artifacts补tool_name统一4字段, 删code/final_status/usage/taskId死字段) - 小欧-2026-09-12
+- a99a88c5a refactor:sseParser P0-1/2 error分支step归一化+action补tool_name赋值, P1-4删code, P1-7/8 normalizeBoolean/toStepNumber DRY, P1-11 usage死字段收敛 - 小欧-2026-09-12
+- aca62727a refactor:useSSE P0-4 去Omit死壳(ReconnectConfig已无enabled字段)+prettier格式化对齐 - 小欧-2026-09-12
+- e8f160f44 refactor:TopbarStats+useChainTokens+useChatPanels+StaticStatsBlock+TitleBlock+RightViewer P1-1/2/3/6/9 TokenLayer统一复用+样式常量收敛+renderToken抽函数+BUSINESS_TYPES模块级 - 小欧-2026-09-12
+- 6274279a6 refactor:useTaskInfo+ChatPage P1-11 usage兜底改{0,0,0}(frames.usage已删)+P1-10 urlSessionId去重复取参 - 小欧-2026-09-12
+
+### feat(7个):
+- 4e9074ad1 feat:RightViewer - S13 live→终态单一真源平滑交接(根治Q13丢尾) - 小欧-2026-09-10
+- 6639e63c2 feat:agent [27]final_stats延后单发+emit_final一元组+FinalStep补duration - 小欧-2026-09-11
+- 5c9f8bd44 feat:monitoring [27]build_final_stats_step补全7键统计+删冗余键 - 小欧-2026-09-11
+- 2df5abd6e feat:execution+sse+stepStyles [27]token四层对象化+FinalStatsFrame7键对齐+TokenLayer公用格式化, 三堂会审P1-2/P1-3/P1-4类型契约对齐 - 小欧-2026-09-11
+- c344967b9 feat:sseParser+useSessionTasks+useChatPanels+ChatPage [27]R3即时updateTaskResponse+R4hasFinalStats统一信号+token透传 - 小欧-2026-09-11
+- 3801bb8e0 feat:StaticStatsBlock+TitleBlock+RightViewer+useChainTokens [27]title段拆分+折叠+4组token+三堂会审修复(P0-1 fmtTime/P1-4 TokenLayer统一/P1-5防自激循环/P2提供model顺序+cancelled色) - 小欧-2026-09-11
+- 2847cd6c3 feat:step_emitter [27]终态统一注入model/provider/duration(与react_step同源), set_failed先于emit_failed_final - 小欧-2026-09-11
+
+v0.19.40.10
 更新时间: 2026-09-10 14:20:41 - 小欧-2026-09-10
 ## v0.19.40.9以来 变更汇总(44个commit) - 小欧-2026-09-10
 [2026-09-10 14:20:41 小欧] 汇总范围=v0.19.40.9以来全部commit(共44个: docs25/fix4/refactor10/feat4)
