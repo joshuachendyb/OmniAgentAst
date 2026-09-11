@@ -8,6 +8,7 @@
 //   新增 LiveError 接口(P3数据源对象形态) — 小欧-2026-09-08
 // 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: ReconnectConfig接口删enabled字段; 阶段二S2提前实施:
 //   UseSSEReturn新增executionStepsRef可选字段(供外部直接读取ref) — 小欧-2026-09-10
+// 编辑历史: 2026-09-11 小欧 - 三堂会审P1-2: FinalStatsFrame.artifacts补tool_name?(与后端4字段契约对齐, 见handle_action.py 11.6.2; 原3字段漏tool_name致产出物编译错) — 小欧-2026-09-11
 import type { ExecutionStep } from './execution';
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
@@ -27,9 +28,15 @@ export interface StatsFrame {
 export interface FinalStatsFrame {
   duration?: number;
   tool_stats?: Record<string, number>;
-  artifacts?: Array<{ name: string; path: string; type: string }> | null;
+  // 2026-09-11 小欧 三堂会审P1-2: artifacts 补 tool_name?——后端 final_stats 实为 4 字段契约
+  //   (tool_name/name/path/type, 见 backend/app/services/agent/handlers/handle_action.py 11.6.2),
+  //   原 3 字段漏 tool_name 致 StaticStatsBlock 产出物列表编译错(TS2339) — 小欧-2026-09-11
+  artifacts?: Array<{ tool_name?: string; name: string; path: string; type: string }> | null;
   final_status?: 'completed' | 'failed' | 'cancelled';
   retry_count?: number;
+  // 小欧 2026-09-11 第七章 M5a(R7): 补全统计键——与后端 build_final_stats_step 7 键对齐(3.4 FinalStatsStep._extra_fields) — 小欧-2026-09-11
+  step_count?: number;
+  llm_call_count?: number;
 }
 export interface ContextOverviewFrame {
   summary: string;
@@ -145,7 +152,6 @@ export interface SSEConfig {
  * SSE重连配置
  */
 export interface ReconnectConfig {
-
   maxAttempts: number;
   baseDelay: number;
   maxDelay: number;

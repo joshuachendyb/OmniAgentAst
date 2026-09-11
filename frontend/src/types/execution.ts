@@ -141,13 +141,30 @@ export interface ExecutionStep {
   severity?: 'info' | 'warn' | 'error';
   ai_message_id?: string;
   // usage（每轮 LLM 响应 usage）+ 四维累计（final._extra_fields 同名）
+  accumulated_usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null; // 2026-09-11 小欧: TitleBlock/StaticStatsBlock 读取
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
   llm_call_count_token?: number;
-  task_accumulated_tokens?: number;
-  session_accumulated_tokens?: number;
-  chain_accumulated_tokens?: number;
+  task_accumulated_tokens?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
+  session_accumulated_tokens?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
+  chain_accumulated_tokens?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
   // stats 流式统计
   step_count?: number;
   llm_call_count?: number;
