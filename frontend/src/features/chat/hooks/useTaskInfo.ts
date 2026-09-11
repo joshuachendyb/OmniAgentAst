@@ -30,6 +30,7 @@
 // 编辑历史: 2026-09-11 小欧 - 契约化(method2, 北京老陈 2026-09-11 定案): thought=仅历史回显事件(DB
 //   executionSteps), 实时 SSE 永不发(后端 _SSE_EXCLUDE_TYPES 过滤)。badge 派生"业务step到达即证执行中"
 //   剔除 'thought'(thought-start/action/observation 仍实时, idle→running 恢复语义不变) — 小欧-2026-09-11
+// 编辑历史: 2026-09-12 小欧 - P1-11三堂会审修复: 实时分支usage兜底由frames.usage改{0,0,0}(frames.usage已删, taskAccumulated单一真源) — 小欧-2026-09-12
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -308,13 +309,14 @@ export const useTaskInfo = (
       stepCount,
       llmCallCount,
       retryCount: stats?.retry_count ?? 0,
+      // 2026-09-12 小欧 P1-11: usage 兜底由 frames.usage 改 {0,0,0}(frames.usage 已删, taskAccumulated 单一真源) — 小欧-2026-09-12
       usage: frames.taskAccumulated
         ? {
             prompt: frames.taskAccumulated.prompt_tokens ?? 0,
             completion: frames.taskAccumulated.completion_tokens ?? 0,
             total: frames.taskAccumulated.total_tokens ?? 0,
           }
-        : frames.usage,
+        : { prompt: 0, completion: 0, total: 0 },
       roundUsage: frames.roundUsage ?? null,
       taskAccumulated: frames.taskAccumulated ?? null,
       sessionAccumulated: frames.sessionAccumulated ?? null,

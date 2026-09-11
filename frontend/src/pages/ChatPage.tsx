@@ -20,6 +20,7 @@
 //   effect依赖它(session_id不变即不重跑)。曾用useMemo稳定引用(堵截)与isReceiving守卫(边界退化)两案, 复查后撤销 — 小欧-2026-09-10
 // 编辑历史: 2026-09-11 小欧 - R3+R4修复: R3加prevReceivingForR3Ref effect(isReceiving翻false时从messages取final.response即时写入task, 不读DB);
 //   R4删旧prevReceivingRef effect改hasFinalStats信号(final_stats到达=DB已落库才触发refreshTasks); 解构补updateTaskResponse — 小欧-2026-09-11
+// 编辑历史: 2026-09-12 小欧 - P1-10三堂会审修复: L54 searchParams.get('session_id') 复用已有 urlSessionId(L47), 消重复取参(DRY) — 小欧-2026-09-12
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -51,7 +52,7 @@ const ChatPage: React.FC = () => {
   const latestTaskRef = useRef<HTMLDivElement | null>(null);
   const chatFacade = useChatFacade({
     baseURL: API_BASE_URL,
-    sessionId: searchParams.get('session_id'),
+    sessionId: urlSessionId, // 2026-09-12 小欧 P1-10: 复用 L47 已取 urlSessionId, 消重复 searchParams.get(DRY) — 小欧-2026-09-12
     onError: (liveError: LiveError) => setLiveError(liveError),
   });
   const { chatState, chatStreaming, chatSend, chatTaskControl } = chatFacade;
