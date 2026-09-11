@@ -19,9 +19,12 @@ Author: 小沈 - 2026-05-31
 # 2026-09-05 小健 - answer_focus第一阶段(10.3)搬二(8.2): 新增终态工厂 emit_completed_final/emit_failed_final,
 #   收口handler侧5处终态分产(顺序敏感set_failed内聚一步) - 小健-2026-09-05
 # 2026-09-11 小欧 - [27]方案: emit_final_with_stats 返回一元组(final,); final_stats 移出循环链由 runner 延后单发 — 小欧-2026-09-11
+# 2026-09-11 小欧 - [27] 修复: emit() 注入 model/provider(任务快照优先) + duration(now - telemetry._run_start_ts),
+#   根因: emit_completed_final/emit_failed_final 未传 final_model/duration 致 DB step_json 三字段 null — 小欧-2026-09-11
 """
 
 from typing import Any, Dict, Optional
+import time
 
 from app.services.agent.steps import FinalStep
 from app.logger import logger
@@ -47,6 +50,15 @@ class StepEmitter:
                 step._session_accumulated_tokens = dict(getattr(self.agent, "session_accumulated_tokens", {}))
             if step._chain_accumulated_tokens is None:
                 step._chain_accumulated_tokens = dict(getattr(self.agent, "chain_accumulated_tokens", {}))
+            # [27] 注入 model/provider: 任务快照优先(三堂会审 P1 防还原竞态) — 小欧-2026-09-11
+            if step._step_model is None:
+                step._step_model = getattr(self.agent, "_task_llm_model", None) or getattr(getattr(self.agent, "llm_client", None), "llm_model", None)
+            # [27] 注入 duration: now - telemetry._run_start_ts(同源 build_final_stats_step) — 小欧-2026-09-11
+            if step._duration is None:
+                _tele = getattr(self.agent, "telemetry", None)
+                _start = getattr(_tele, "_run_start_ts", None) if _tele else None
+                if _start:
+                    step._duration = round(time.time() - _start, 1)
         self.agent.steps.append(step)
         # 2026-08-28 小欧 yield日志审计: Step emit统一入口(覆盖全部~50个Step yield, KISS+DRY)
         logger.debug(f"[StepEmit] {getattr(step, 'type', '?')} step={getattr(step, 'step', '?')}")
