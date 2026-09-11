@@ -120,6 +120,11 @@
 #   原上一条(:118)按"心跳只需加log"保留 logger.debug 即属理解偏差, 本条目正式更改为
 #   logger.debug→log_and_print 双写(console 可见每次心跳+序号 heartbeat_seq), 高频克制: 25s 一次, 不刷屏。
 #   不得回改 debug, 不得删此条目(铁规: 编辑型禁删历史) — 小欧-2026-09-08
+# 2026-09-11 - 小欧 - 通用规则落地(method2, 北京老陈 2026-09-11 定案): SSE 转发层唯一咽喉点
+#   (stream_reader L450 format_agent_sse, 实时/重连共用)按类型过滤"仅落库不入SSE"事件——
+#   thought 照常 publish 进 event_log(落库扫描/簿记/序号零改动), reader 转发时跳过;
+#   新增 _SSE_EXCLUDE_TYPES 集合(OCP: 未来同类仅落库事件只扩集合, reader 零改动);
+#   根因修复: 前端因 thought 双通道(实时SSE+历史回放DB)重复显示/裹挟(文档[26]问题一/二)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -432,6 +437,16 @@ async def chat_stream_orchestrator(
         _current_task_id.reset(_task_token)
 
 
+# ============================================================
+# SSE 转发通用规则(method2, 北京老陈 2026-09-11 定案) — 小欧-2026-09-11
+# event_log = 落库与 SSE 共源(生产端 publish 直写, 序号/簿记/落库天然安全);
+# stream_reader 为唯一转发咽喉点(实时/重连共用), 按类型过滤"仅落库不入SSE"事件。
+# thought: 落库回放必需、实时SSE无价值(前端双通道重复根因)；未来同类仅落库事件只扩本集合(OCP)。
+# 三问正交: 不影响 publish 先行时序 / db.atxn 异步落库 / final 三分类两套数据 — 小欧-2026-09-11
+# ============================================================
+_SSE_EXCLUDE_TYPES = {"thought"}
+
+
 async def stream_reader(buffer, task_id: str, after_seq: int = 0):
     """纯消费者：从事件缓冲按 seq 偏移读取并转发 SSE — 小欧 2026-07-12
 
@@ -446,9 +461,12 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
         async with buffer.cond:
             while offset < len(buffer.event_log):
                 # 2026-08-28 小欧 yield日志审计: SSE发送统一入口(覆盖全部SSE yield, KISS)
-                logger.debug(f"[SSE] seq={offset} task={task_id}")
-                yield format_agent_sse(buffer.event_log[offset])
-                offset += 1
+                _ev = buffer.event_log[offset]
+                offset += 1  # 2026-09-11 小欧 先推进再判: 过滤不卡循环, event_log 序号恒单调连续 — 小欧-2026-09-11
+                if not _ev or _ev.get("type") in _SSE_EXCLUDE_TYPES:
+                    continue  # 仅落库不入SSE类型(thought)不转发; 落库扫描/event_log/重连均不受影响 — 小欧-2026-09-11
+                logger.debug(f"[SSE] seq={offset - 1} task={task_id}")
+                yield format_agent_sse(_ev)
             # #30 fix:排空后复查 len,防止 done.set() 前 producer 追加丢事件 — 小欧 2026-07-18
             if offset < len(buffer.event_log):
                 continue
