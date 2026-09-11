@@ -19,6 +19,7 @@ tests/output/
 backend/pytest-of-chend/
 backend/reports/
 backend/report/
+backend/output/ # 2026-09-11 小欧: 后端pytest junit输出目录, 防测试产物入库 — 小欧-2026-09-11
 backend/notes/测试记录-*.md
 frontend/src/tests/
 
