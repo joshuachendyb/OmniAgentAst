@@ -65,6 +65,7 @@
 // 编辑历史: 2026-09-10 小欧 - [B2]空流误报修复(北京老陈反馈「final收不到」): B1上线后final已正常处理后
 //   流结束buffer亦空, 误触B1空流onError覆盖成功终态; 补else if(terminalSeqRef.current>=0)分支——
 //   终态(final/error)已处理完毕即视为流正常结束不报错, 仅真·200+空body(无任何终态)才走B1 — 小欧-2026-09-10
+// 编辑历史: 2026-09-12 小欧 - P0-4三堂会审修复: useRef<ReconnectConfig>去Omit<ReconnectConfig,'enabled'>死壳(ReconnectConfig已删enabled字段, Omit无意义且锁死后续字段变更) — 小欧-2026-09-12
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -404,7 +405,7 @@ export const useSSE = (
     backend_timeout?: number;
   }) => void,
   // 2026-09-06 小欧 B2(北京老陈裁定): 独立拒绝事件回调(user_rejected 不走 error 通道) — 小欧-2026-09-06
-  onDenied?: (step: number, message: string, toolName?: string) => void, // 2026-09-06 小欧 B2(6.4): 三参带被拒工具名 — 小欧-2026-09-06
+  onDenied?: (step: number, message: string, toolName?: string) => void // 2026-09-06 小欧 B2(6.4): 三参带被拒工具名 — 小欧-2026-09-06
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   // 小欧 2026-09-10 S14: useStateWithRef 替换手工双写（state 驱动渲染 + ref 供异步回调读最新值）
@@ -489,14 +490,18 @@ export const useSSE = (
   const usageAccumRef = useRef({ prompt: 0, completion: 0, total: 0 });
   const lastUsageSeqRef = useRef<number>(-1);
   // 小欧 2026-09-10 S14: useStateWithRef 替换 serverTaskId 手工双写
-  const [serverTaskId, serverTaskIdRef, setServerTaskId] = useStateWithRef<string | null>(null);
+  const [serverTaskId, serverTaskIdRef, setServerTaskId] = useStateWithRef<
+    string | null
+  >(null);
   // 2026-08-30 小欧 根治陈旧闭包: reader挂起帧运行在旧render上, state版serverTaskId在空闲定时器/重连守卫闭包中读到旧null值误判;
   //   ref版始终同步最新值供内部判定, state版仅驱动UI重渲染(两者同步写入) - 小欧-2026-08-30
   // 小欧 2026-09-10 S14: syncServerTaskId 不再需要（useStateWithRef 已内置 ref 同步）
   // 小欧 2026-09-10 S14: 删除 useEffect 手动同步（useStateWithRef 已内置 ref 同步）
 
   // 重连相关
-  const reconnectConfigRef = useRef<Omit<ReconnectConfig, 'enabled'>>({
+  // 2026-09-12 小欧 P0-4三堂会审修复: 去 Omit<ReconnectConfig,'enabled'> 死壳——ReconnectConfig 已删 enabled 字段,
+  //   Omit 语义等价于 ReconnectConfig 本体, 属死代码(禁止backward, 防后续改字段被 Omit 反向锁死) — 小欧-2026-09-12
+  const reconnectConfigRef = useRef<ReconnectConfig>({
     maxAttempts: 3,
     baseDelay: 1000,
     maxDelay: 10000,
@@ -528,15 +533,25 @@ export const useSSE = (
   // 2026-09-03 小欧 P1-3: HITL等待态（paused/highlight）时IDLE应暂停，避免60s误杀110s HITL等待
   // 小欧 2026-09-10 S15: Set 计数 — 并发 HITL 场景防误判
   const hitlWaitingKeysRef = useRef(new Set<string>());
-  const isHitlWaitingRef = { get current() { return hitlWaitingKeysRef.current.size > 0; } };
-  const wrappedOnPaused = useCallback((confirmId?: string) => {
-    hitlWaitingKeysRef.current.add(confirmId ?? 'default');
-    onPaused?.();
-  }, [onPaused]);
-  const wrappedOnResumed = useCallback((confirmId?: string) => {
-    hitlWaitingKeysRef.current.delete(confirmId ?? 'default');
-    onResumed?.();
-  }, [onResumed]);
+  const isHitlWaitingRef = {
+    get current() {
+      return hitlWaitingKeysRef.current.size > 0;
+    },
+  };
+  const wrappedOnPaused = useCallback(
+    (confirmId?: string) => {
+      hitlWaitingKeysRef.current.add(confirmId ?? 'default');
+      onPaused?.();
+    },
+    [onPaused]
+  );
+  const wrappedOnResumed = useCallback(
+    (confirmId?: string) => {
+      hitlWaitingKeysRef.current.delete(confirmId ?? 'default');
+      onResumed?.();
+    },
+    [onResumed]
+  );
 
   // 【小强添加 2026-03-18】sessionStorage 备份相关
   // 恢复：组件初始化时检查是否有备份数据
@@ -550,9 +565,13 @@ export const useSSE = (
         const parsedSteps: ExecutionStep[] = Array.isArray(parsedRaw)
           ? parsedRaw
           : (parsedRaw?.steps ?? []);
-        const source: string = Array.isArray(parsedRaw) ? 'legacy' : (parsedRaw?.source ?? 'unknown');
+        const source: string = Array.isArray(parsedRaw)
+          ? 'legacy'
+          : (parsedRaw?.source ?? 'unknown');
         if (parsedSteps.length > 0) {
-          console.info(`[SSE] 从 sessionStorage 恢复 ${parsedSteps.length} 步, source=${source}`);
+          console.info(
+            `[SSE] 从 sessionStorage 恢复 ${parsedSteps.length} 步, source=${source}`
+          );
           const restoredSteps = parsedSteps.filter(
             (s: ExecutionStep) => !(s.type === 'action' && s.preview === true)
           );
@@ -677,7 +696,6 @@ export const useSSE = (
       // 手动中断时清除 pendingMessage 并阻止重连
       if (manualDisconnect) {
         pendingMessageRef.current = null;
-
       }
 
       // 【方案2新增】调用断开回调
@@ -769,7 +787,9 @@ export const useSSE = (
         // 重连：GET /chat/stream/{task_id}?after_seq=N 续传，不重新发起对话 — 北京老陈 2026-07-12 小欧
         // 小欧 2026-09-10 S3: after_seq 改为 lastSeqRef.current + 1（续传从已处理最大 seq 的下一帧开始）
         const url = `${config.baseURL}/chat/stream/${serverTaskIdRef.current}?session_id=${encodeURIComponent(sessionId || '')}&after_seq=${lastSeqRef.current + 1}`;
-        console.log(`[SSE] [重连] GET ${url} after_seq=${lastSeqRef.current + 1}`);
+        console.log(
+          `[SSE] [重连] GET ${url} after_seq=${lastSeqRef.current + 1}`
+        );
         response = await fetch(url, {
           method: 'GET',
           signal: controller.signal,
@@ -851,39 +871,36 @@ export const useSSE = (
 
         if (done) {
           if (buffer.trim()) {
-            processSSEData(
-              buffer,
-              {
-                setExecutionSteps,
-                getCurrentExecutionSteps: () => executionStepsRef.current,
-                executionStepsRef,
-                onStep,
-                onChunk,
-                onComplete,
-                onError,
-                onDenied,
-                onPaused: wrappedOnPaused,
-                onResumed: wrappedOnResumed,
-                onRetry,
-                onAuthorizationRequired,
-                setCurrentResponse,
-                responseBufferRef,
-                setIsReceiving,
-                setIsConnected,
-                disconnect,
-                setServerTaskId, // 小欧 2026-09-10 S14: useStateWithRef 内置 ref 同步
-                onSeq: (s: number) => {
-                  if (s > lastSeqRef.current) lastSeqRef.current = s;
-                },
-                lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
-                terminalSeqRef, // 小欧 2026-09-10 [C1/C2]: 终态作废守卫
-                pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
-                scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
-                setMetaFrames,
-                usageAccumRef,
-                lastUsageSeqRef,
-              }
-            );
+            processSSEData(buffer, {
+              setExecutionSteps,
+              getCurrentExecutionSteps: () => executionStepsRef.current,
+              executionStepsRef,
+              onStep,
+              onChunk,
+              onComplete,
+              onError,
+              onDenied,
+              onPaused: wrappedOnPaused,
+              onResumed: wrappedOnResumed,
+              onRetry,
+              onAuthorizationRequired,
+              setCurrentResponse,
+              responseBufferRef,
+              setIsReceiving,
+              setIsConnected,
+              disconnect,
+              setServerTaskId, // 小欧 2026-09-10 S14: useStateWithRef 内置 ref 同步
+              onSeq: (s: number) => {
+                if (s > lastSeqRef.current) lastSeqRef.current = s;
+              },
+              lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
+              terminalSeqRef, // 小欧 2026-09-10 [C1/C2]: 终态作废守卫
+              pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
+              scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
+              setMetaFrames,
+              usageAccumRef,
+              lastUsageSeqRef,
+            });
           } else if (terminalSeqRef.current >= 0) {
             // 小欧 2026-09-10 [B2]: final已收到 —— 流正常结束但buffer已空,
             //   terminalSeqRef被设为stepNum(>=0), 说明final/error已处理完毕, 不触发空流错误
@@ -904,44 +921,40 @@ export const useSSE = (
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          processSSEData(
-            line,
-            {
-              setExecutionSteps,
-              getCurrentExecutionSteps: () => executionStepsRef.current,
-              executionStepsRef,
-              onStep,
-              onChunk,
-              onComplete,
-              onError,
-              // 方案C三堂会审缺陷1修复(2026-09-06 小欧): 每行热路径漏传 onDenied → 流式期间拒绝事件
-              //   永远收不到回调, deniedStepSet 无法聚合停齿轮; done 块已传, 补齐此处 — 小欧-2026-09-06
-              onDenied,
-              onPaused: wrappedOnPaused,
-              onResumed: wrappedOnResumed,
-              onRetry,
-              onAuthorizationRequired,
-              setCurrentResponse,
-              responseBufferRef,
-              setIsReceiving,
-              setIsConnected,
-              disconnect,
-              setServerTaskId, // 小欧 2026-09-10 S14: useStateWithRef 内置 ref 同步
-onSeq: (s: number) => {
-                  if (s > lastSeqRef.current) lastSeqRef.current = s;
-                },
-                lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
-                terminalSeqRef, // 小欧 2026-09-10 [C1/C2]: 终态作废守卫
-                pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
-                scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
-                setMetaFrames,
-                usageAccumRef,
-                lastUsageSeqRef,
-              }
-            );
-          }
+          processSSEData(line, {
+            setExecutionSteps,
+            getCurrentExecutionSteps: () => executionStepsRef.current,
+            executionStepsRef,
+            onStep,
+            onChunk,
+            onComplete,
+            onError,
+            // 方案C三堂会审缺陷1修复(2026-09-06 小欧): 每行热路径漏传 onDenied → 流式期间拒绝事件
+            //   永远收不到回调, deniedStepSet 无法聚合停齿轮; done 块已传, 补齐此处 — 小欧-2026-09-06
+            onDenied,
+            onPaused: wrappedOnPaused,
+            onResumed: wrappedOnResumed,
+            onRetry,
+            onAuthorizationRequired,
+            setCurrentResponse,
+            responseBufferRef,
+            setIsReceiving,
+            setIsConnected,
+            disconnect,
+            setServerTaskId, // 小欧 2026-09-10 S14: useStateWithRef 内置 ref 同步
+            onSeq: (s: number) => {
+              if (s > lastSeqRef.current) lastSeqRef.current = s;
+            },
+            lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
+            terminalSeqRef, // 小欧 2026-09-10 [C1/C2]: 终态作废守卫
+            pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
+            scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
+            setMetaFrames,
+            usageAccumRef,
+            lastUsageSeqRef,
+          });
         }
-
+      }
 
       // 成功，重置重连状态
       // 小欧 2026-09-10 S20.3: clearIdleMonitor 替代散落清理（F10修复: 正常完成流后清理残留 idle 定时器）
