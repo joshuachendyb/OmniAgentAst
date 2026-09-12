@@ -37,6 +37,18 @@
 #   后端命令行可见"检测到任务取消"(task_id/source) — 小欧-2026-09-08
 # 2026-09-11 小欧 - [27]方案: emit_final_with_stats 改返回一元组(final,), 5 处调用点删除
 #   `await _publish(_fs[1].to_dict())`(final_stats 移出循环链, 由 runner 延后单发, 杜绝残缺组装即发) — 小欧-2026-09-11
+# 2026-09-12 小欧 - X2 终态长短信号分离(方案[31] §4.1.2): run_react_cycle 体首(initialize_run_state 后)插入
+#   终态判定上下文 _final_short_ctx + 长条缓存载体 _pending_final_db 初始化(每任务一次, 发射侧 react_step
+#   _emit_publish 运行时读写); 上层顶层终态(cancelled/failed/start 等)零改动(4.1.4, 非 completed 恒完整) — 小欧-2026-09-12
+# 2026-09-12 小欧 - X2 E2E-X2-01 竞态根因修复(方案[31] §5.4): 删除内部两处过早 `_buf.done.set()`——
+#   max_steps<=0 分支(原 L163, 5.8.3 加, "否则消费订阅永不退出挂死") 与 finally(原 L302, 5.8.3 加):
+#   run_react_cycle 结束即置 done → stream_reader 排空后立即 return 关闭 SSE 流, 而 [27] final_stats
+#   已移出循环链由 runner 延后单发(_publish_final_stats, 在 done 之后才 publish)→ SSE 漏发 final_stats
+#   (E2E 断言 assert fs_events 失败; DB 先落库不受影响)。修复后 done 权威置位收敛唯一:
+#   agent_runner run_agent_in_background finally(L708-713, 所有事件含 final_stats 发布完成后), 本文件不再置位,
+#   react_loop 各路径 return 后 runner finally 必执行(与守卫补发/取消/异常路径同受保护) — 小欧-2026-09-12
+# 2026-09-12 小欧 - 追踪关键日志(北京老陈指令): max_steps<=0 早退分支补 logger.info 发布留痕,
+#   供后续核对"早退终态是否已 publish、done 是否交 runner 置位"(E2E-X2-01 竞态监控点延伸) — 小欧-2026-09-12
 
 """react_loop — ReAct 循环核心(薄调度)
 
@@ -93,6 +105,11 @@ async def run_react_cycle(
     from app.services.task.task_runtime import cancel_terminal_text
 
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
+
+    # X2(2026-09-12 小欧): 终态长短判定上下文初始化(发射侧维护, 替代 agent_runner 扫描累积) — 小欧 2026-09-12
+    agent._final_short_ctx = {"chunk_steps": set(), "action_steps": set()}
+    # X2: 终态长条缓存载体初始化(emit 侧写入, 扫描消费落库) — 小欧 2026-09-12
+    agent._pending_final_db = None
 
     # 11.2/11.3 监控采集器（独立模块 app/monitoring/agent_telemetry.py）— 小欧 2026-08-20
     from app.monitoring.agent_telemetry import TaskTelemetry
@@ -152,7 +169,11 @@ async def run_react_cycle(
         ))
         await _publish(_fs[0].to_dict())
         set_cancelled(agent)
-        _buf.done.set()  # 5.8.3修正: 本分支 try 前 return 不进 finally, done 需在此置位, 否则消费订阅永不退出挂死 — 小欧-2026-09-06
+        # 2026-09-12 小欧 - E2E-X2-01 竞态根因修复 + 追踪关键点: 本分支(早退路径)终态已 publish, done 不再在此置位,
+        #   统一交由 run_agent_in_background finally(L708-713, 所有事件含 final_stats 发布完成后)权威置位——否则
+        #   stream_reader 见 done 即排空退出, 漏掉 runner 延后单发的 final_stats。早退终态发布留 trace 于下行:
+        #   — 小欧-2026-09-12
+        logger.info(f"[run_react_cycle] max_steps<=0 早退终态已发布(task={task_id or ''}, status=cancelled)")
         _finalize_cycle(agent)
         return
 
@@ -291,7 +312,11 @@ async def run_react_cycle(
 
     finally:
         _finalize_cycle(agent)
-        _buf.done.set()  # 5.8.3: 消费订阅退出信号(订阅循环 done.is_set() 退出) — 小欧-2026-09-06
+        # 2026-09-12 小欧 - E2E-X2-01 竞态根因修复: 原 `_buf.done.set()` 在此置位过早——run_react_cycle 结束即置 done,
+        #   stream_reader 排空后立即 return 关闭 SSE 流, 而 runner 收尾 _publish_final_stats 延后单发([27])的 final_stats
+        #   在 done.set() 之后才写入 event_log, 无消费者转发 → SSE 漏发(X2 E2E 断言失败/D B 先落库不受影响)。
+        #   done 权威置位收敛唯一: agent_runner run_agent_in_background finally(L708-713, 所有事件含 final_stats 发布完成)
+        #   — 小欧-2026-09-12
         _tele = getattr(agent, "telemetry", None)   # 11.2-C 监控落库（独立模块，非阻塞降级）— 小欧 2026-08-20
         if _tele is not None:
             _tele.finalize_and_persist()

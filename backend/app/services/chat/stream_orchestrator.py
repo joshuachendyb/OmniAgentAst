@@ -125,6 +125,12 @@
 #   thought 照常 publish 进 event_log(落库扫描/簿记/序号零改动), reader 转发时跳过;
 #   新增 _SSE_EXCLUDE_TYPES 集合(OCP: 未来同类仅落库事件只扩集合, reader 零改动);
 #   根因修复: 前端因 thought 双通道(实时SSE+历史回放DB)重复显示/裹挟(文档[26]问题一/二)
+# 2026-09-12 小欧 - X2 E2E-X2-01 竞态根因修复(方案[31] §5.4): 删除临时 [Diag] reader exit 诊断日志,
+#   恢复 done 分支纯 return; 根因在 react_loop 内部过早 done.set()(详见 react_loop.py 编辑历史 2026-09-12),
+#   修复后 done 由 agent_runner finally 权威置位(所有事件含 final_stats 已发布), reader 排空即全量 — 小欧-2026-09-12
+# 2026-09-12 小欧 - 追踪关键日志(北京老陈指令): stream_reader done 退出点补 logger.info(已转发offset/缓冲总长/
+#   末类型/含final_stats), 与 [Runner] final_stats 已发布 seq 比对即可判定"SSE 漏发终态"(offset 停在 fs seq 前)
+#   或"正常全量"(offset 越过 fs seq); 重连同语义 — 小欧-2026-09-12
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -471,6 +477,14 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
             if offset < len(buffer.event_log):
                 continue
             if buffer.done.is_set():
+                # 2026-09-12 小欧 - 追踪关键点: sole 流结束/断流截断点——offset 为已转发事件数(≤len),
+                #   与远端 [Runner] final_stats 已发布 seq 比对即可判定"SSE 是否漏发终态"(offset 停在 fs seq 之前
+                #   = 截断) 或"正常全量"(offset 越过 fs seq)。重连场景 offset 为续传起点, 同语义。
+                #   — 小欧-2026-09-12
+                _tail_type = (buffer.event_log[-1] or {}).get("type") if buffer.event_log else "empty"
+                _has_fs = any((e or {}).get("type") == "final_stats" for e in (buffer.event_log or []))
+                logger.info(f"[SSE] reader退出(task={task_id}, 已转发={offset}, 缓冲总长={len(buffer.event_log or [])}, "
+                            f"末类型={_tail_type}, 含final_stats={_has_fs})")  # 小欧-2026-09-12 追踪点
                 return
             # cond.wait()无超时: 若producer崩溃永不set.done, 消费者永久挂起泄漏HTTP连接
             # 加超时并循环重检done — 北京老陈 2026-07-30; 2026-09-08 小欧: timeout 60s→25s(兼心跳保活周期, 见编辑历史)
