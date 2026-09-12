@@ -31,6 +31,8 @@
 //   executionSteps), 实时 SSE 永不发(后端 _SSE_EXCLUDE_TYPES 过滤)。badge 派生"业务step到达即证执行中"
 //   剔除 'thought'(thought-start/action/observation 仍实时, idle→running 恢复语义不变) — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - P1-11三堂会审修复: 实时分支usage兜底由frames.usage改{0,0,0}(frames.usage已删, taskAccumulated单一真源) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 补 thought-start badge 分支: 对齐 09-11 契约化注释(thought-start 仍实时兜住 idle→running),
+//   thought-start 系"开始思考"实时信号, 到达即证执行中, 防 RightViewer 误切历史视图 — 小欧-2026-09-12
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -200,6 +202,7 @@ export const useTaskInfo = (
           break;
         // 2026-09-11 小欧 契约化(method2): thought=仅历史回显事件(DB), 实时 SSE 永不发,
         //   执行中信号剔除 thought(thought-start/action/observation 仍实时兜住 idle→running) — 小欧-2026-09-11
+        case 'thought-start':
         case 'action':
         case 'observation':
           // 2026-09-08 小欧 - 前端UI静默10秒整批显示修复(北京老陈批准, 文档:
