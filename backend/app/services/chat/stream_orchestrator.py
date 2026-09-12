@@ -134,6 +134,14 @@
 # 2026-09-12 小欧 - 白名单落地([29]§7.3, 北京老陈 2026-09-12 批准 TDD 实施): 黑名单 _SSE_EXCLUDE_TYPES 反转为
 #   白名单 _SSE_FORWARD_TYPES(默认拦截结构性杜绝 thought 事故), 配套登记源 steps/__init__.py ALL_STEP_TYPES;
 #   过滤点 L481 反向判定 not in; 行为不变(白名单全集==当前转发全集=16实时+cancelled防御) — 小欧-2026-09-12
+# 2026-09-13 小欧 - [30]§8.2 TDD P2(行488-490): 删除持锁死分支(原 L479 async with buffer.cond 持锁期间生产者
+#   无法追加, 排空后复查 len 的 offset<len 分支恒 False 永不触发) 与 "# #30 fix:" 双井号噪声注释——
+#   消费不丢由 notify_all 唤醒保证, 删除零行为差异(死代码清理)
+# 2026-09-13 小欧 - 重连链路追踪补齐(北京老陈指令, 补点A/B): ①重连端点 chat_stream_reconnect_orchestrator
+#   补 logger.info/logger.warning(收到重连请求: task/after_seq/session/缓冲总长/含final_stats;
+#   任务不存在留 warning), 消除重连 zero-log——谁何时以 after_seq 发起重连、续传多少帧均可查;
+#   ②stream_reader done 退出日志追加 is_reconnect/起点seq/续传帧数, 首连(after_seq=0)与重连可区分,
+#   多 client 连同一 task 可分辨, 对账闭环(after_seq→续传帧数→已转发→含final_stats) — 小欧-2026-09-13
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -485,9 +493,6 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
                     continue  # 白名单: 未登记类型不转发(默认拦截); 落库扫描/event_log/重连均不受影响 — 小欧-2026-09-12
                 logger.debug(f"[SSE] seq={offset - 1} task={task_id}")
                 yield format_agent_sse(_ev)
-            # #30 fix:排空后复查 len,防止 done.set() 前 producer 追加丢事件 — 小欧 2026-07-18
-            if offset < len(buffer.event_log):
-                continue
             if buffer.done.is_set():
                 # 2026-09-12 小欧 - 追踪关键点: sole 流结束/断流截断点——offset 为已转发事件数(≤len),
                 #   与远端 [Runner] final_stats 已发布 seq 比对即可判定"SSE 是否漏发终态"(offset 停在 fs seq 之前
@@ -495,8 +500,9 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
                 #   — 小欧-2026-09-12
                 _tail_type = (buffer.event_log[-1] or {}).get("type") if buffer.event_log else "empty"
                 _has_fs = any((e or {}).get("type") == "final_stats" for e in (buffer.event_log or []))
-                logger.info(f"[SSE] reader退出(task={task_id}, 已转发={offset}, 缓冲总长={len(buffer.event_log or [])}, "
-                            f"末类型={_tail_type}, 含final_stats={_has_fs})")  # 小欧-2026-09-12 追踪点
+                logger.info(f"[SSE] reader退出(task={task_id}, is_reconnect={after_seq > 0}, 起点seq={after_seq}, "
+                            f"续传帧数={offset - after_seq}, 已转发={offset}, 缓冲总长={len(buffer.event_log or [])}, "
+                            f"末类型={_tail_type}, 含final_stats={_has_fs})")  # 小欧-2026-09-13 补点B: 首连/重连可区分, 对账闭环
                 return
             # cond.wait()无超时: 若producer崩溃永不set.done, 消费者永久挂起泄漏HTTP连接
             # 加超时并循环重检done — 北京老陈 2026-07-30; 2026-09-08 小欧: timeout 60s→25s(兼心跳保活周期, 见编辑历史)
@@ -542,8 +548,10 @@ async def chat_stream_reconnect_orchestrator(
     """SSE 重连编排：读同一任务的流态缓冲，不启动新 agent — 自 openai.py 迁入 — 小欧 2026-08-13"""
     buffer = get_stream_buffer(task_id)
     if not buffer:
+        logger.warning(f"[SSE] 重连任务不存在(task={task_id}, after_seq={after_seq}, session={session_id or '-'})")  # 小欧-2026-09-13 重连追踪补点A
         yield create_error_response(error_type="not_found", error_message="任务不存在或已结束")
         return
+    logger.info(f"[SSE] 重连请求接收(task={task_id}, after_seq={after_seq}, session={session_id or '-'}, 缓冲总长={len(buffer.event_log or [])}, 含final_stats={any((e or {}).get('type') == 'final_stats' for e in (buffer.event_log or []))})")  # 小欧-2026-09-13 重连追踪补点A
     async for sse_chunk in _stream_with_control(
         buffer, task_id, session_id or "", [], None, after_seq
     ):

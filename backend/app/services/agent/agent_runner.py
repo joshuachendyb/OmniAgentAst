@@ -139,6 +139,12 @@
 # 2026-09-12 小欧 - 追踪关键日志(北京老陈指令): ①_publish_final_stats 发布后补 logger.info(seq/status),
 #   供比对 SSE 是否收全终态; ②done 置位后快照缓冲状态(last_type/has_final_stats), 监控"置位时终态是否已入队"
 #   (E2E-X2-01 竞态监控点, 若末类型非 final_stats 即 SSE 提前关闭根源) — 小欧-2026-09-12
+# 2026-09-13 小欧 - [30]§8.2 TDD P1(行338): _publish_final_stats 日志 status 由引用闭包变量 _fs_outcome
+#   改为本函数入参 outcome——_fs_outcome 仅在本函数外 finally 赋值, 闭包耦合潜在 NameError(free variable referenced
+#   before assignment), 现靠唯一调用点先赋值侥幸躲过; 改 outcome 消除闭包耦合(违 KISS-DIRECT/SLAP), 行为不变
+# 2026-09-13 小欧 - [30]§8.2 TDD P3(行258-259): X2 删除标记注释改述——原称"L244-251 删除", 但 L244-248
+#   (缓冲缺省 ensure create_stream_buffer) 仍是活代码, 注释与实际矛盾误导读者; 改为仅述"长短判定/终态缓冲/
+#   finally 覆写机制已删除", 明确缓冲 ensure 保留在役
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -255,8 +261,8 @@ async def run_agent_in_background(
     # 4.4.3(2026-09-07 小欧): ai_message_id 透传 agent 层, 供 react_loop start 发布时携带;
     #   startinfo 合并入 start 的前提(eager 值在 run_react_cycle 启动前已就绪, 无需延迟 publish)
     agent._ai_message_id = ai_message_id
-    # X2(2026-09-12 小欧): L244-251 删除——长短判定/登记上移 react_step 发射侧(_emit_publish,
-    #   agent._final_short_ctx), 终态缓冲+finally 覆写机制整体移除(见 4.2.4), 扫描侧三组状态全成死码 — 小欧 2026-09-12
+    # X2(2026-09-12 小欧): 长短判定/登记上移 react_step 发射侧(_emit_publish, agent._final_short_ctx),
+    #   终态缓冲+finally 覆写机制整体移除(见 4.2.4); 上方 L244-248 缓冲缺省 ensure 保留在役(直连入口) — 小欧 2026-09-12
 
     # [新] 生产者全权拥有 prompt-log 生命周期(创建) — 小欧 2026-07-18
     get_prompt_logger().start_request(last_message, session_id)
@@ -335,7 +341,7 @@ async def run_agent_in_background(
         # 2026-09-12 小欧 - 追踪关键点: final_stats 发布 seq 落日志(每次任务1条), 供核对"延后单发已完成、
         #   done 置位前已入缓冲"——若后续发现 SSE 缺 final_stats, 查本行有无 + seq 与 reader 退出 offset 比对即可定位
         _fs_seq = await _publish(_fs_dict)  # 后发布(t3')——DB 就绪信号, 折叠区/任务列表 refresh 以此统一信号读 DB
-        logger.info(f"[Runner] final_stats 已发布(task={task_id}, seq={_fs_seq}, status={_fs_outcome})")  # 小欧-2026-09-12 追踪点
+        logger.info(f"[Runner] final_stats 已发布(task={task_id}, seq={_fs_seq}, status={outcome})")  # 小欧-2026-09-12 追踪点
 
     # 退出分支与DB保存保证 — 小欧 2026-07-13
     # 本函数有 3 个退出路径，无论哪条路径 finally 都会执行 DB 保存：

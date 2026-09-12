@@ -6,6 +6,8 @@
 #   async with cond 锁内, 与 agent_runner._append 同步收紧, "seq分配+append+notify 持锁原子"注释声明名副其实;
 #   防 4C 阶段多生产者直写事件总线时 seq 分配被插入 await 导致重复序号(当前 asyncio 单线程单生产者无实际竞态,
 #   seq=len与append间无await点不会协程插队, 属防御性加固零行为变化)
+# 2026-09-13 - 小欧 - [30]§8.2 TDD P4(行46 docstring): 改述删除已退役 _append 引用——publish 是 event_log
+#   唯一写入口(agent_runner _publish → buffer.publish 同源), _append 全仓已无定义(09-06 退役), 扫码注释残留清理
 """
 task_state — 运行态任务数据存储 + 只读查询
 
@@ -43,7 +45,7 @@ class StreamBuffer:
 
     async def publish(self, step_dict: dict) -> int:
         """生产者直写：append + seq + 唤醒消费者。返回seq。
-        与 agent_runner._append(行199-210) 同模式：先dict()拷贝防调用方副作用，
+        经 agent_runner._publish 统一走 StreamBuffer.publish(唯一写入口) 同模式：先dict()拷贝防调用方副作用，
         seq分配+append+notify 均须持锁原子完成；cond.notify_all 未持锁调用抛 RuntimeError。
         — 小健-2026-09-05；2026-09-06 小欧 步骤1落盘(文档[6]5.2)；2026-09-06 小欧 VULN-006加固(seq+append入锁)"""
         step_dict = dict(step_dict)
