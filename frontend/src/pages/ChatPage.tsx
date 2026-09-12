@@ -21,6 +21,7 @@
 // 编辑历史: 2026-09-11 小欧 - R3+R4修复: R3加prevReceivingForR3Ref effect(isReceiving翻false时从messages取final.response即时写入task, 不读DB);
 //   R4删旧prevReceivingRef effect改hasFinalStats信号(final_stats到达=DB已落库才触发refreshTasks); 解构补updateTaskResponse — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - P1-10三堂会审修复: L54 searchParams.get('session_id') 复用已有 urlSessionId(L47), 消重复取参(DRY) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - P1左卡草稿根治: R3数据源修正(lastMsg.content→executionSteps中type=final的step.response, 无兜底) — 小欧-2026-09-12
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -100,7 +101,8 @@ const ChatPage: React.FC = () => {
   }, [chatStreaming.serverTaskId, sessionId, refreshTasks]);
 
   // 小欧 2026-09-11 R3: 实时当前任务回复只读 final.response，不读 DB
-  //   isReceiving 翻 false = final 到达 → 从 chatState.messages 取 final.response 即时写入 task — 小欧-2026-09-11
+  //   isReceiving 翻 false = final 到达 → 从 executionSteps 取 type=final step.response 即时写入 task —
+  //   2026-09-12 修: 原读 chatState.messages 尾部 lastMsg.content(实为流式正文含草稿, 非 final.response) — 小欧-2026-09-12
   const prevReceivingForR3Ref = useRef(false);
   useEffect(() => {
     if (
@@ -108,16 +110,19 @@ const ChatPage: React.FC = () => {
       !chatStreaming.isReceiving &&
       chatStreaming.serverTaskId
     ) {
-      const lastMsg = chatState.messages[chatState.messages.length - 1];
-      if (lastMsg?.role === 'assistant' && lastMsg.content) {
-        updateTaskResponse(chatStreaming.serverTaskId, lastMsg.content);
+      const finalStep = chatStreaming.executionSteps.find(
+        (s) => s.type === 'final'
+      );
+      const finalResponse = (finalStep?.response as string) || '';
+      if (finalResponse) {
+        updateTaskResponse(chatStreaming.serverTaskId, finalResponse);
       }
     }
     prevReceivingForR3Ref.current = chatStreaming.isReceiving;
   }, [
     chatStreaming.isReceiving,
     chatStreaming.serverTaskId,
-    chatState.messages,
+    chatStreaming.executionSteps,
     updateTaskResponse,
   ]);
 
