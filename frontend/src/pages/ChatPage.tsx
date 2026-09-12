@@ -22,6 +22,7 @@
 //   R4删旧prevReceivingRef effect改hasFinalStats信号(final_stats到达=DB已落库才触发refreshTasks); 解构补updateTaskResponse — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - P1-10三堂会审修复: L54 searchParams.get('session_id') 复用已有 urlSessionId(L47), 消重复取参(DRY) — 小欧-2026-09-12
 // 编辑历史: 2026-09-12 小欧 - P1左卡草稿根治: R3数据源修正(lastMsg.content→executionSteps中type=final的step.response, 无兜底) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - X2终态短信号(北京老陈定案): 删除R4(hasFinalStats→refreshTasks DB兜底补左侧response), 铁命令: 左侧只用final.response, 实时短条留空、历史回放从DB读; useChainTokens 的 final_stats→refreshTasks(token刷新)保持不变 — 小欧-2026-09-12
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -103,6 +104,9 @@ const ChatPage: React.FC = () => {
   // 小欧 2026-09-11 R3: 实时当前任务回复只读 final.response，不读 DB
   //   isReceiving 翻 false = final 到达 → 从 executionSteps 取 type=final step.response 即时写入 task —
   //   2026-09-12 修: 原读 chatState.messages 尾部 lastMsg.content(实为流式正文含草稿, 非 final.response) — 小欧-2026-09-12
+  // 铁命令(北京老陈 2026-09-12): 左侧任务 response 只允许源自 SSE final 帧的 final.response,
+  //   严禁用 DB 查询/消息正文/refreshTasks 全量刷新或其他任何兜底顶替——R4(hasFinalStats→refreshTasks)已据令删除。
+  //   实时短条 final.response 为空则左侧留空; 历史回放的完整 response 由 DB 落库长条经 useSessionTasks.refresh() 加载。 — 小欧-2026-09-12
   const prevReceivingForR3Ref = useRef(false);
   useEffect(() => {
     if (
@@ -125,14 +129,6 @@ const ChatPage: React.FC = () => {
     chatStreaming.executionSteps,
     updateTaskResponse,
   ]);
-
-  // 小欧 2026-09-11 R4: refreshTasks 后置到 final_stats(DB 已落库 t3')，替代 prevReceivingRef 旧逻辑 — 小欧-2026-09-11
-  const hasFinalStats = !!chatStreaming.metaFrames?.finalStats;
-  useEffect(() => {
-    if (hasFinalStats && chatStreaming.serverTaskId) {
-      void refreshTasks();
-    }
-  }, [hasFinalStats, chatStreaming.serverTaskId, refreshTasks]);
 
   // 2026-08-30 小欧 v1.100: 点击任务 → 右栏展开(4.5.1 联动锚定: 点击查看即展开)
   const handleSelectTaskOpenRight = useCallback(
