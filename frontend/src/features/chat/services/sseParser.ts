@@ -74,6 +74,10 @@
 //   ②action分支补赋tool_name(单工具=tools[0].tool, 多工具=join(' + ')), 原从未赋值致 DBG-6 日志恒undefined — 小欧-2026-09-12
 // 编辑历史: 2026-09-12 小欧 - P1-11三堂会审修复: usage帧taskLike不再round fallback(taskAcc空时→{0,0,0}), usage字段写入删除(→types/sse.ts P1-11) — 小欧-2026-09-12
 // 编辑历史: 2026-09-12 小欧 - P1-4三堂会审修复: action分支删step.code赋值(死字段, 原rawData.code无人消费; execution_status含同语义) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - [30]§8.2问题1实施(北京老陈批准, 作废守卫退役): 删[ C1/C2]终态后作废守卫全部残留——
+//   接口定义/解构/入口拦截块/ final·error分支终态seq记录 五处删除(第二套度量衡退役, event_log seq全局连续单调+TCP有序
+//   +final后无业务帧 ⇒ 晚到高seq帧物理不存在, 守卫零拦截量, YAGNI纯删除)。useSSE侧S904 B2空流判定改用lastSeqRef
+//   (见useSSE.ts编辑历史, done权威置位在后final先publish, 判定语义等价)。编辑历史注释保留可追溯 — 小欧-2026-09-12
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -135,8 +139,8 @@ const processSSEData = (
     onSeq?: (seq: number) => void;
     // 小欧 2026-09-10 S3: seq 守卫 ref，sseParser 入口层拦截重复事件（seq <= lastSeqRef.current 即跳过）
     lastSeqRef?: React.MutableRefObject<number>;
-    // 小欧 2026-09-10 [C1/C2]: 终态后作废守卫 ref —— final/error 已处理后，晚到更高 seq 帧拦截（防 pendingSteps 污染）
-    terminalSeqRef?: React.MutableRefObject<number>;
+    // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 接口定义已删除(作废守卫退役,
+    //   event_log seq 全局连续单调+TCP有序+final后无业务帧 ⇒ 晚到高seq帧物理不存在, YAGNI) — 小欧-2026-09-12
     // 小欧 2026-09-10 S12: 批量 commit — 传入 pendingStepsRef + scheduleFlush
     pendingStepsRef?: React.MutableRefObject<ExecutionStep[]>;
     scheduleFlush?: () => void;
@@ -167,7 +171,7 @@ const processSSEData = (
     disconnect: _disconnect,
     setServerTaskId,
     onSeq,
-    terminalSeqRef,
+    // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 解构已删除(作废守卫退役) — 小欧-2026-09-12
   } = handlers;
 
   // 2026-08-27 小欧 修复: SSE数据行可能带前导空格, 先trim再判断前缀
@@ -196,24 +200,8 @@ const processSSEData = (
       }
     }
 
-    // 小欧 2026-09-10 [C1/C2]: 终态后作废守卫 —— final/error 已处理后到达的更高 seq 帧(网络重排晚到)
-    //   不再放行, 防 pendingSteps/executionSteps 被终态后续帧污染;
-    //   start/final_stats/usage 元信息帧放行不受影响(终态统计信息仍需落) — 小欧-2026-09-10
-    if (
-      terminalSeqRef &&
-      terminalSeqRef.current >= 0 &&
-      typeof rawData.seq === 'number' &&
-      rawData.seq > terminalSeqRef.current &&
-      rawData.type !== 'start' &&
-      rawData.type !== 'final_stats' &&
-      rawData.type !== 'usage'
-    ) {
-      console.debug(
-        `[SSE] 终态后作废: type=${rawData.type} seq=${rawData.seq} 晚于终态 seq=${terminalSeqRef.current}`
-      );
-      return;
-    }
-
+    // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原「终态后作废守卫」拦截块已删除(作废守卫退役,
+    //   本文件编辑历史板块 2026-09-12 条目同步) — 小欧-2026-09-12
     // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，断线重连时用于 after_seq 续传避免重复
     if (typeof rawData.seq === 'number' && onSeq) {
       onSeq(rawData.seq);
@@ -553,8 +541,7 @@ const processSSEData = (
 
         setIsReceiving(false);
         setIsConnected(false);
-        // 小欧 2026-09-10 [C1/C2]: final 终态后作废 —— 记录终态 seq, 后续晚到帧被守卫拦截
-        if (terminalSeqRef) terminalSeqRef.current = stepNum;
+        // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原「final 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
         break;
       }
 
@@ -634,8 +621,7 @@ const processSSEData = (
         // v0.8.75版本没有调用onComplete，UI显示正常
         setIsReceiving(false);
         setIsConnected(false);
-        // 小欧 2026-09-10 [C1/C2]: error 终态后作废 —— 记录终态 seq, 后续晚到帧被守卫拦截
-        if (terminalSeqRef) terminalSeqRef.current = stepNum;
+        // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原「error 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
         break;
       }
 

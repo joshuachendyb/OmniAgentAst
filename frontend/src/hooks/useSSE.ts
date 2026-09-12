@@ -66,6 +66,10 @@
 //   流结束buffer亦空, 误触B1空流onError覆盖成功终态; 补else if(terminalSeqRef.current>=0)分支——
 //   终态(final/error)已处理完毕即视为流正常结束不报错, 仅真·200+空body(无任何终态)才走B1 — 小欧-2026-09-10
 // 编辑历史: 2026-09-12 小欧 - P0-4三堂会审修复: useRef<ReconnectConfig>去Omit<ReconnectConfig,'enabled'>死壳(ReconnectConfig已删enabled字段, Omit无意义且锁死后续字段变更) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - [30]§8.2问题1实施(北京老陈批准, 作废守卫退役, 前端部分): 删 terminalSeqRef 声明/
+//   新任务重置/两处传参; [B2]空流判定分支改 lastSeqRef(current>=0)判定——原 terminalSeqRef 只能判「final/error已处理」,
+//   现收敛到唯一权威基线 lastSeqRef(收到过任一帧即推进), 正常流 final 先于 done 权威置位发布(agent_runner.py L708-714 实测),
+//   done+buffer空时 lastSeqRef≥0 ⇔ 终态已处理, 空流/异常断流 lastSeqRef=-1 走B1, 判定语义等价 — 小欧-2026-09-12
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -512,8 +516,8 @@ export const useSSE = (
   // 【北京老陈 2026-07-12 小欧】记录已收到的最大后端事件 seq，断线重连时作为 after_seq 续传
   // 小欧 2026-09-10 S3: 已处理最大 seq 语义，初始 -1（首帧 seq=0 不被误拦）
   const lastSeqRef = useRef(-1);
-  // 小欧 2026-09-10 [C1/C2]: 终态后作废守卫 ref —— final/error 已处理 seq 记录, sseParser 拦截晚到帧
-  const terminalSeqRef = useRef(-1);
+  // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 声明(useRef(-1))已删除(作废守卫退役,
+  //   B2 空流判定改用 lastSeqRef, 见本文件底部编辑历史板块 2026-09-12 条目) — 小欧-2026-09-12
   const reconnectTimeoutRef = useRef<number | null>(null);
   const pendingMessageRef = useRef<{
     content: string;
@@ -773,7 +777,7 @@ export const useSSE = (
       }
       if (!isReconnect) {
         lastSeqRef.current = -1; // 小欧 2026-09-10 S3: 重置为已处理最大 seq 初始值
-        terminalSeqRef.current = -1; // 小欧 2026-09-10 [C1/C2]: 新任务重置终态作废标记（重连不断不重置）
+        // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 新任务重置(current=-1)已删除(作废守卫退役) — 小欧-2026-09-12
       }
       const controller = new AbortController();
       abortControllerRef.current = controller; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
@@ -894,16 +898,17 @@ export const useSSE = (
                 if (s > lastSeqRef.current) lastSeqRef.current = s;
               },
               lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
-              terminalSeqRef, // 小欧 2026-09-10 [C1/C2]: 终态作废守卫
+              // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 传参(done块)已删除(作废守卫退役) — 小欧-2026-09-12
               pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
               scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
               setMetaFrames,
               usageAccumRef,
               lastUsageSeqRef,
             });
-          } else if (terminalSeqRef.current >= 0) {
-            // 小欧 2026-09-10 [B2]: final已收到 —— 流正常结束但buffer已空,
-            //   terminalSeqRef被设为stepNum(>=0), 说明final/error已处理完毕, 不触发空流错误
+          } else if (lastSeqRef.current >= 0) {
+            // 小欧 2026-09-12 [30]§8.2问题1(作废守卫退役): [B2] final已收到 —— 流正常结束但buffer已空,
+            //   原 terminalSeqRef 判定改 lastSeqRef(唯一权威基线: 收到过任一帧即 lastSeqRef≥0, 正常流 final 先于
+            //   done 权威置位发布实测成立, 判定语义等价; 空流/异常断流 lastSeqRef 仍为 -1 走下方 B1) — 小欧-2026-09-12
             console.info('[SSE] 流正常结束: final已收到, buffer为空(正常)');
           } else {
             // 小欧 2026-09-10 [B1]: 空流终态 —— 200+空body(异常断流)原实现跳过全部处理,
@@ -946,7 +951,7 @@ export const useSSE = (
               if (s > lastSeqRef.current) lastSeqRef.current = s;
             },
             lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
-            terminalSeqRef, // 小欧 2026-09-10 [C1/C2]: 终态作废守卫
+            // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 传参(热路径)已删除(作废守卫退役) — 小欧-2026-09-12
             pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
             scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
             setMetaFrames,
