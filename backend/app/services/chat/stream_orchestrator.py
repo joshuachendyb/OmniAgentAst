@@ -131,6 +131,9 @@
 # 2026-09-12 小欧 - 追踪关键日志(北京老陈指令): stream_reader done 退出点补 logger.info(已转发offset/缓冲总长/
 #   末类型/含final_stats), 与 [Runner] final_stats 已发布 seq 比对即可判定"SSE 漏发终态"(offset 停在 fs seq 前)
 #   或"正常全量"(offset 越过 fs seq); 重连同语义 — 小欧-2026-09-12
+# 2026-09-12 小欧 - 白名单落地([29]§7.3, 北京老陈 2026-09-12 批准 TDD 实施): 黑名单 _SSE_EXCLUDE_TYPES 反转为
+#   白名单 _SSE_FORWARD_TYPES(默认拦截结构性杜绝 thought 事故), 配套登记源 steps/__init__.py ALL_STEP_TYPES;
+#   过滤点 L481 反向判定 not in; 行为不变(白名单全集==当前转发全集=16实时+cancelled防御) — 小欧-2026-09-12
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -444,13 +447,22 @@ async def chat_stream_orchestrator(
 
 
 # ============================================================
-# SSE 转发通用规则(method2, 北京老陈 2026-09-11 定案) — 小欧-2026-09-11
-# event_log = 落库与 SSE 共源(生产端 publish 直写, 序号/簿记/落库天然安全);
-# stream_reader 为唯一转发咽喉点(实时/重连共用), 按类型过滤"仅落库不入SSE"事件。
-# thought: 落库回放必需、实时SSE无价值(前端双通道重复根因)；未来同类仅落库事件只扩本集合(OCP)。
-# 三问正交: 不影响 publish 先行时序 / db.atxn 异步落库 / final 三分类两套数据 — 小欧-2026-09-11
+# SSE 转发通道路由表(白名单, 北京老陈 2026-09-12 复核定案; [29]§7.3.2 实施定稿) — 小欧-2026-09-12
+# event_log = 落库与 SSE 共源(生产端 publish 直写); stream_reader = 唯一转发咽喉点(实时/重连共用)。
+# 白名单语义: 仅下列类型被实时转发前端; 未登记类型一律不转发(默认拦截, 结构性杜绝 thought 事故)。
+# 纪律([29]§7.3.1): 新增任何 Step/事件类型必须·在此登记 + ·steps/__init__.py ALL_STEP_TYPES 登记源登记, 缺一不放行。
+# 全集来源: [29]§7.1.3(当前 HEAD 4bf3ea987 逐字面值实证)。
 # ============================================================
-_SSE_EXCLUDE_TYPES = {"thought"}
+_SSE_FORWARD_TYPES = frozenset({
+    # SSE + 落库
+    "start", "action", "observation", "final", "final_stats",
+    # 仅SSE(实时信号, 落库由 agent_runner 扫描分支处理)
+    "chunk", "thought-start",
+    "error", "usage", "paused", "resumed", "retrying",
+    "user_rejected", "stats", "context_overview", "truncated",
+    # 防御性保留: 当前无独立发射源, 若未来新增取消通知类可转发
+    "cancelled",
+})
 
 
 async def stream_reader(buffer, task_id: str, after_seq: int = 0):
@@ -469,8 +481,8 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
                 # 2026-08-28 小欧 yield日志审计: SSE发送统一入口(覆盖全部SSE yield, KISS)
                 _ev = buffer.event_log[offset]
                 offset += 1  # 2026-09-11 小欧 先推进再判: 过滤不卡循环, event_log 序号恒单调连续 — 小欧-2026-09-11
-                if not _ev or _ev.get("type") in _SSE_EXCLUDE_TYPES:
-                    continue  # 仅落库不入SSE类型(thought)不转发; 落库扫描/event_log/重连均不受影响 — 小欧-2026-09-11
+                if not _ev or _ev.get("type") not in _SSE_FORWARD_TYPES:
+                    continue  # 白名单: 未登记类型不转发(默认拦截); 落库扫描/event_log/重连均不受影响 — 小欧-2026-09-12
                 logger.debug(f"[SSE] seq={offset - 1} task={task_id}")
                 yield format_agent_sse(_ev)
             # #30 fix:排空后复查 len,防止 done.set() 前 producer 追加丢事件 — 小欧 2026-07-18
