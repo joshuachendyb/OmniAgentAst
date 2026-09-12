@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离保存/离开拦截/快捷键生命周期至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2提前实施: executionStepsRef改从chatStreaming取(useSSE单一真源, 25/34/58行) — 小欧-2026-09-10
+// 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 import { useCallback, useEffect } from 'react';
 import { useBeforeUnload } from '../../../hooks/useBeforeUnload';
 import { saveChatState } from '../../../utils/sessionStorage';
@@ -23,7 +24,8 @@ export function useChatLifecycle(opts: { chatFacade: UseChatFacadeReturn }): {
     if (!chatStreaming.isReceiving || !chatState.sessionId) return;
 
     let messagesToSave = chatState.messagesRef.current;
-    if (chatStreaming.executionStepsRef.current.length > 0) { // 小欧 2026-09-10 S2: 改从 chatStreaming 取（useSSE 单一真源）
+    if (chatStreaming.executionStepsRef.current.length > 0) {
+      // 小欧 2026-09-10 S2: 改从 chatStreaming 取（useSSE 单一真源）
       messagesToSave = chatState.messagesRef.current.map((msg, idx) => {
         if (
           msg.role === 'assistant' &&

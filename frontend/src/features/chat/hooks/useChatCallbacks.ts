@@ -52,6 +52,7 @@
 //   thought 步骤的依赖(thought=仅历史回显事件, 实时 SSE 永不发, 后端 _SSE_EXCLUDE_TYPES 过滤)。
 //   原 hasThoughtContent 兜底是 thought 泄漏到实时流时期"把思考草稿顶成回答"的历史错逻辑(老陈指正
 //   "前端的毛病"), 现回归"真实产出正文"判断: final.response ∨ final.thought — 小欧-2026-09-11
+// 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -600,10 +601,14 @@ export const useChatCallbacks = (
       // 小欧 2026-09-10 S22: request_level 幂等清理闸门
       // 仅请求级错误(整个请求失败, 不可能再有 final)做终态清理
       // 执行级错误(blocked/timeout, 任务仍继续)保持"等 final"不动
-      const isRequestLevel = errorObj.step === 0 || errorObj.error_type === 'request_timeout';
+      const isRequestLevel =
+        errorObj.step === 0 || errorObj.error_type === 'request_timeout';
       if (isRequestLevel) {
         console.info('[onError] 请求级错误: 幂等清理 waitTimer + 聚合状态');
-        if (waitTimerRef.current) { clearInterval(waitTimerRef.current); waitTimerRef.current = null; }
+        if (waitTimerRef.current) {
+          clearInterval(waitTimerRef.current);
+          waitTimerRef.current = null;
+        }
         onStepFingerprintRef.current.clear();
       }
 

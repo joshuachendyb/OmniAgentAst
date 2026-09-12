@@ -60,6 +60,7 @@
 //   preview+canonical 各一次合一(保持 UI 一行契约, candidateCount 以预览全量为准), 第三次起的同 step action
 //   (跨任务/异常残留)独立追加不覆盖历史段, 杜绝"旧任务工具行被新任务同 step 覆盖篡改" — 小欧-2026-09-09
 // 编辑历史: 2026-09-11 小欧 - 修复reasoning/thought重复: thought步骤的reasoning字段与chunk步骤(is_reasoning=true)内容重叠时去重, 防appendToLast拼接致双倍文本 - 小欧-2026-09-11
+// 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -384,8 +385,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               )}
               {isFailed && (seg.step.error_message || seg.step.error_type) && (
                 <div style={terminalDetailStyle(Colors.ERROR)}>
-                  ⚠️ [{seg.step.error_type || 'error'}]{' '}
-                  {seg.step.error_message}
+                  ⚠️ [{seg.step.error_type || 'error'}] {seg.step.error_message}
                 </div>
               )}
             </React.Fragment>

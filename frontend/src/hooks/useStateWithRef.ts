@@ -3,6 +3,7 @@
 //   原因：updater 可能延迟执行（React 批处理/并发模式），导致 ref.current 在 updater 运行前仍是旧值，
 //   异步回调（如 handleSSEError 读 serverTaskIdRef）拿到旧值致逻辑断裂。同步赋值保证 ref 即时可用。
 //   StrictMode 安全：setValue 调用即写 ref.current + setState(next)，双执行时两次写同一值（幂等），无害。
+// 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 import { useState, useRef, useCallback, type MutableRefObject } from 'react';
 
 /**

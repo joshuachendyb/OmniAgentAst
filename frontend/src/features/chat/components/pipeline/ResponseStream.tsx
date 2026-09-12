@@ -8,6 +8,7 @@
 // 编辑历史: 2026-09-11 小欧 - 北京老陈定案(最终): cancelled终态改由 PipelineRenderer 统一渲染(对齐failed模式):
 //   首行response正常字号 + 第二行"✕ 取消来源: cancel_source"红字小字(符号换✕与取消相得益彰); 本组件回归纯正文,
 //   删 cancelled prop 与弱化"已取消"分支(禁backward) — 北京老陈-2026-09-11
+// 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 /**
  * ResponseStream - 最终答复流（纯正文）
  *

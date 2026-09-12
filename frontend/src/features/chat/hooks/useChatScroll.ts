@@ -4,6 +4,7 @@
 // 编辑历史: 2026-09-06 小欧 RG-4(北京老陈定案直接改码): scrollIntoView smooth→auto(即时到底), 消流式逐chunk高频下平滑动画反复被打断重启/追赶不及(右栏已弃smooth); 保留100ms防抖 — 小欧-2026-09-06
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): executionStepsRef 改从 chatStreaming(useSSE 唯一真源)取,
 //   ScrollChatState 类型删该字段、ScrollStreaming 类型补该字段(useChatState 已删其定义) — 小欧-2026-09-10
+// 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 import { useCallback, useEffect, useRef } from 'react';
 import type { UseChatFacadeReturn } from './useChatFacade';
 import type { ExecutionStep } from '../../../types/execution'; // 小欧 2026-09-10 S2收尾: ScrollStreaming 类型引用
@@ -31,13 +32,8 @@ export function useChatScroll(
   chatState: ScrollChatState,
   chatStreaming: ScrollStreaming
 ): void {
-  const {
-    messagesEndRef,
-    userScrolledUpRef,
-    isPausedRef,
-    messages,
-    isPaused,
-  } = chatState;
+  const { messagesEndRef, userScrolledUpRef, isPausedRef, messages, isPaused } =
+    chatState;
   const { executionSteps, currentResponse, isReceiving, executionStepsRef } =
     chatStreaming;
 

@@ -25,6 +25,7 @@
 //   (263行), state解构删除executionStepsRef(280行) — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): useSSE删除第12参externalExecutionStepsRef(唯一真源独立useRef),
 //   此处删除传参state.executionStepsRef(285行), executionStepsRef仍从useSSE解构(264行) — 小欧-2026-09-10
+// 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -359,13 +360,7 @@ export const useChatStreaming = (
 
       executionStepsRef.current = []; // 2026-08-28 小强 修复#14: disconnect时清executionStepsRef
     },
-    [
-      disconnect,
-      streamingContentRef,
-
-      executionStepsRef,
-      sessionId,
-    ] // 2026-09-06 小欧 B2(6.4A): sessionId 入依赖 — 小欧-2026-09-06
+    [disconnect, streamingContentRef, executionStepsRef, sessionId] // 2026-09-06 小欧 B2(6.4A): sessionId 入依赖 — 小欧-2026-09-06
   );
 
   // 【小强 2026-04-22】executeSend - 完整的发送流程
