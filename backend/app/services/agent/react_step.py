@@ -148,6 +148,13 @@
 
 # 2026-09-11 小欧 - [27]方案: emit_final_with_stats 改返回一元组(final,), 2 处调用点删除
 #   `await _publish(_fs[1].to_dict())`(final_stats 移出循环链, 由 runner 延后单发, 杜绝残缺组装即发) — 小欧-2026-09-11
+# 2026-09-12 小欧 - X2 终态长短信号分离(方案[31] §4.1): 新增 _emit_publish 发射统一收口(4.1.1, L187 后)——
+#   ① chunk(非推理)/action 当场登记 _final_short_ctx(替代 agent_runner 扫描累积);
+#   ② completed final 当场分流: 一律先缓存完整长条 _pending_final_db(供扫描落库), 短判定(有正文chunk+非action轮)
+#     → 剥五键短条(type/step/timestamp/outcome/duration) publish, 长判定(return_direct/action轮/failed/cancelled)
+#     → 完整长条(=缓存同源)原样 publish; event_log 只进应转发形态, G2(实时长/重连短)根治;
+#   ③ 12 处 publish 调用点 L231/255/307/341/346/366/419/429/445/450/483/495 全改走 _emit_publish(4.1.3 C1~C12);
+#   ④ import 补 Dict 类型标注。非 final 事件原样 publish 逐字节等价, 无 backward — 小欧-2026-09-12
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -156,7 +163,7 @@
 """
 
 import time
-from typing import List
+from typing import Dict, List    # X2: 补 Dict 类型标注（4.1.1 _emit_publish 类型标注需要）— 小欧 2026-09-12
 from app.logger import logger, log_and_print
 from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ChunkStep, MetaStep, ObservationStep, FinalStep
@@ -185,6 +192,42 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     if _buf is None:
         raise RuntimeError(f"[react_step] StreamBuffer缺失(task={agent.task_id})")
     _publish = _buf.publish
+
+    # X2(2026-09-12 小欧): 发射统一收口——本函数定义后, 4.1.3 全部 12 处 publish 调用点改走 _emit_publish
+    #   (chunk L255 / handler 全事件含 completed final L495 / 截断取消 L429 / 死循环 L483 / 其余 MetaStep/Observation):
+    #   ① 登记长短判定上下文 chunk_steps/action_steps(发射侧实时登记, 替代 agent_runner 扫描累积, 见 4.2.2);
+    #   ② final 当场分流(统一先缓存长条, 再按长短判定决定 publish 形态, 见下方代码块/注1):
+    #      一律先 agent._pending_final_db = dict(step_dict)(完整长条, 供扫描落库, 保 DB step 序号=事件顺序不变式);
+    #      其后再分流: 短判定(有正文chunk的completed)→剥五键短条 publish; 长判定(其余)→完整条(=长条)原样 publish,
+    #      event_log 只进应转发形态(有正文 chunk 的 completed→短五键; 其余→完整条);
+    #   ③ 非 final 事件原样 publish(行为逐字节等价, 无 backward)。
+    #   [G2 根治] event_log 终态唯一形态(发射即定, finally 不再覆写, 见 4.2.4), 实时/重连读同一形态。
+    #   [竞态] [27] final_stats 延后单发已是 DB 就绪信号, final 实时先到仅驱动快照(读内存流不读 DB) — 小欧 2026-09-12
+    async def _emit_publish(step_dict: Dict):
+        _st = step_dict.get("type", "")
+        _ctx = getattr(agent, "_final_short_ctx", None)
+        if _st == "chunk" and not step_dict.get("is_reasoning") and _ctx is not None:
+            _ctx["chunk_steps"].add(step_dict.get("step", 0))   # 正文 chunk 轮登记(与 agent_runner 扫描 L408 语义等价)
+        elif _st == "action" and _ctx is not None:
+            _ctx["action_steps"].add(step_dict.get("step", 0))  # action 轮登记(预览/canonical 同一步号, 与扫描 L412 语义等价)
+        if _st == "final":
+            _fs_step = step_dict.get("step", 0)
+            # 长短判定(原 agent_runner.py:434-438 逻辑, 整体上移发射侧; 语义逐条等价)
+            _short = (
+                step_dict.get("outcome") == "completed"
+                and _fs_step not in (_ctx["action_steps"] if _ctx is not None else ())
+                and _fs_step in (_ctx["chunk_steps"] if _ctx is not None else ())
+            )
+            # 长条缓存: 完整 dict 供扫描落库(DB 回放完整 response) — KISS: 终态唯一, 单值覆盖安全
+            agent._pending_final_db = dict(step_dict)
+            # 长短分流(北京老陈 2026-09-12 定案, 勿误解):
+            #   短条场景(_short=True): 前端只发五键短条(duration 带运行时长); 完整长条只进 _pending_final_db→DB, 绝不转发前端。
+            #   长条场景(_short=False: error/failed/cancelled/return_direct): 完整长条必须发前端
+            #     (response=错误/取消文本是前端唯一正文载体), 同时完整长条进 _pending_final_db 落库。
+            #     ≠"长条只存DB"仅适用于短条场景, 不适用于此场景 — 小欧 2026-09-12
+            if _short:
+                step_dict = {k: step_dict[k] for k in ("type", "step", "timestamp", "outcome", "duration")}  # [27] 2026-09-11 小欧: 短信号带 duration, 重连回放与实时一致
+        await _publish(step_dict)
 
     # ── Phase 1: LLM 调用准备 ──────────────────────────────────
     agent.llm_call_count += 1
@@ -228,7 +271,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
         if _p is not None:
             if _p.get("type") == "retrying":
                 # 原 meta 分支逻辑原样: 转 MetaStep(retrying) 发前端 — 小欧 2026-09-06
-                await _publish(agent._step_emitter.emit(MetaStep(
+                await _emit_publish(agent._step_emitter.emit(MetaStep(
                     type=_p["type"],
                     step=agent.llm_call_count,
                     content=_p["content"],
@@ -252,7 +295,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
                 content=content,
                 is_reasoning=is_reasoning,
             )
-            await _publish(agent._step_emitter.emit(chunk_step).to_dict())
+            await _emit_publish(agent._step_emitter.emit(chunk_step).to_dict())
         elif chunk_type == "response":
             llm_response = chunk_data
             _call_dur = time.time() - _call_start
@@ -304,7 +347,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
                     session_accumulated_tokens=agent.session_accumulated_tokens,   # 11.1 新增
                     chain_accumulated_tokens=agent.chain_accumulated_tokens,       # 11.1 新增
                 )
-                await _publish(agent._step_emitter.emit(_usage_step).to_dict())
+                await _emit_publish(agent._step_emitter.emit(_usage_step).to_dict())
 
                 # 11.1b 运行中DB即时落库（每轮 update 任务/会话累计，供运行中他方查询/断线中间态读取）— 小欧 2026-08-20
                 #   用户裁定"每轮即时落库"; DB 读-加-写(当前DB值+本轮token) 与内存态基线口径一致;
@@ -338,12 +381,12 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             )
             # 11.2-B stats 事件（独立模块产出 MetaStep(type="stats", ...)）— 小欧 2026-08-20
             _stats_step = agent.telemetry.build_stats_step()   # → MetaStep(type="stats", step_count/llm_call_count/retry_count/duration)
-            await _publish(agent._step_emitter.emit(_stats_step).to_dict())
+            await _emit_publish(agent._step_emitter.emit(_stats_step).to_dict())
             # 11.3 context_overview 事件（独立模块产出 MetaStep(type="context_overview", ...)）
             _overview = agent.telemetry.build_context_overview()
             _llm_n = agent.llm_call_count
             if _llm_n == 1 or getattr(agent.message_builder, "_trimmed_this_round", False) or _llm_n % 5 == 0:
-                await _publish(agent._step_emitter.emit(MetaStep(
+                await _emit_publish(agent._step_emitter.emit(MetaStep(
                     step=_llm_n, type="context_overview", content=_overview.get("summary", ""),
                     message_count=_overview["message_count"], estimated_tokens=_overview["estimated_tokens"],
                     truncated=_overview["truncated"],
@@ -363,7 +406,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
         log_and_print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, empty_response")  # 小欧 2026-07-02 控制台
         set_failed(agent, "LLM返回空响应，任务终止")
-        await _publish(agent._step_emitter.emit(MetaStep(
+        await _emit_publish(agent._step_emitter.emit(MetaStep(
             step=step, type="error", content="LLM返回空响应，任务终止", error_type="empty_response", severity="warn"
         )).to_dict())
         return []  # 4C(5.8.2): 普通 async 返 List, 空响应无事件 — 小欧-2026-09-06
@@ -416,7 +459,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试")
             log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, consecutive_truncation")  # 小欧 2026-07-02 控制台
             # 解决问题18(2.4④): 连续截断取消前发 MetaStep(type="truncated") 统一"输出被截断"事件 — 小欧 2026-08-20
-            await _publish(agent._step_emitter.emit(MetaStep(
+            await _emit_publish(agent._step_emitter.emit(MetaStep(
                 step=step, type="truncated",
                 content=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断，任务取消",
                 severity="warn",
@@ -426,7 +469,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
                 response=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
                 outcome="cancelled",
             ))
-            await _publish(_fs[0].to_dict())
+            await _emit_publish(_fs[0].to_dict())
             set_cancelled(agent)
             return []  # 4C(5.8.2)审计修复(小欧-2026-09-06): 裸return→return[](防None被主循环L163 for迭代抛TypeError→外层except set_failed覆盖终态); 事件已全量publish, 与L444/L475同风格
 
@@ -442,12 +485,12 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             obs_text, {"tool_call_id": _retry_tc_id, "tool_calls": [], "llm_content": content},
         )
         # 解决问题18(2.4④): 输出截断重试前发 MetaStep(type="truncated") 统一"输出被截断"事件 — 小欧 2026-08-20
-        await _publish(agent._step_emitter.emit(MetaStep(
+        await _emit_publish(agent._step_emitter.emit(MetaStep(
             step=step, type="truncated",
             content=f"LLM输出截断(连续第{agent._consecutive_truncations}次)，已注入重试Observation",
             severity="warn",
         )).to_dict())
-        await _publish(agent._step_emitter.emit(ObservationStep(
+        await _emit_publish(agent._step_emitter.emit(ObservationStep(
             step=step,
             tool_result=[{"tool_name": "truncated_output", "llm_data": {"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}}, "llm_data_text": "", "data_text": obs_text, "other_data": {}}],
         )).to_dict())
@@ -480,7 +523,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
                 error_type="same_tool_loop",
                 error_message=f"模型连续{_cnt}步重复调用相同工具，疑似死循环",
             ))
-            await _publish(_fs[0].to_dict())
+            await _emit_publish(_fs[0].to_dict())
             return []  # 4C(5.8.2): 普通 async 返 List — 小欧-2026-09-06
     else:
         # 非action(正常answer/final): 死循环检测仅在action语义下, 归零防残留(含纠偏标记) — 小欧 2026-08-08
@@ -492,7 +535,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     agent._consecutive_truncations = 0
     # 4C(5.8.2/5.8.1): _dispatch_handler 返 list(5.8.1), 逐条 publish 收口(事件直写 event_log) — 小欧-2026-09-06
     for event in await _dispatch_handler(agent, llm_response):
-        await _publish(event.to_dict())
+        await _emit_publish(event.to_dict())
     return []  # 4C(5.8.2): 普通 async 返 List, 事件已全量 publish, 列表空由主循环消费 — 小欧-2026-09-06
 
 
