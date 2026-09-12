@@ -78,6 +78,11 @@
 //   接口定义/解构/入口拦截块/ final·error分支终态seq记录 五处删除(第二套度量衡退役, event_log seq全局连续单调+TCP有序
 //   +final后无业务帧 ⇒ 晚到高seq帧物理不存在, 守卫零拦截量, YAGNI纯删除)。useSSE侧S904 B2空流判定改用lastSeqRef
 //   (见useSSE.ts编辑历史, done权威置位在后final先publish, 判定语义等价)。编辑历史注释保留可追溯 — 小欧-2026-09-12
+// 编辑历史: 2026-09-13 小欧 - [30]§8.2 TDD P6(行154/311-315): lastUsageSeqRef 第二基线退役——①handlers 接口删除
+//   lastUsageSeqRef 字段声明(仅保留 lastSeqRef 唯一条基线); ②usage 分支内 seq<=lastUsageSeqRef.current 守卫块整块删除
+//   (入口 lastSeqRef 层已拦截全部重复帧, 该守卫拦截量 0, F2 与入口重复; 单基线纪律 3.2, YAGNI) — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - [30]重连链路追踪补点C(北京老陈指令): 入口 seq 守卫拦截 console.debug→console.warn——
+//   重发正是本专项核心, 若未来引入物理重复帧(seq<=lastSeq)必须醒目可见(debug 级易被忽略且不落盘), 升 warn 保追踪 — 小欧-2026-09-13
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 
@@ -151,7 +156,6 @@ const processSSEData = (
       completion: number;
       total: number;
     }>;
-    lastUsageSeqRef?: React.MutableRefObject<number>;
   }
 ) => {
   const {
@@ -193,7 +197,7 @@ const processSSEData = (
     // 守卫在 onSeq 之前、switch 之前：先拦截重复，再推进，再放行
     if (typeof rawData.seq === 'number' && handlers.lastSeqRef) {
       if (rawData.seq <= handlers.lastSeqRef.current) {
-        console.debug(
+        console.warn(
           `[SSE] seq守卫拦截: seq=${rawData.seq} <= lastSeq=${handlers.lastSeqRef.current}`
         );
         return;
@@ -309,11 +313,6 @@ const processSSEData = (
 
       // usage：单任务 token 帧 —— 后端直发本轮+三累计(P/C/T)，前端直存直显不另算【13.14】
       case 'usage': {
-        if (typeof rawData.seq === 'number') {
-          if (rawData.seq <= (handlers.lastUsageSeqRef?.current ?? -1)) break;
-          if (handlers.lastUsageSeqRef)
-            handlers.lastUsageSeqRef.current = rawData.seq;
-        }
         const round = {
           prompt: rawData.prompt_tokens ?? 0,
           completion: rawData.completion_tokens ?? 0,

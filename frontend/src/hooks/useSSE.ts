@@ -70,6 +70,17 @@
 //   新任务重置/两处传参; [B2]空流判定分支改 lastSeqRef(current>=0)判定——原 terminalSeqRef 只能判「final/error已处理」,
 //   现收敛到唯一权威基线 lastSeqRef(收到过任一帧即推进), 正常流 final 先于 done 权威置位发布(agent_runner.py L708-714 实测),
 //   done+buffer空时 lastSeqRef≥0 ⇔ 终态已处理, 空流/异常断流 lastSeqRef=-1 走B1, 判定语义等价 — 小欧-2026-09-12
+// 编辑历史: 2026-09-13 小欧 - [30]§8.2 TDD P6(行495/733/906/959): lastUsageSeqRef 第二基线退役——①:495 删除
+//   useRef(-1) 声明; ②:733 删除新任务重置(lastUsageSeqRef.current=-1); ③:906/:959 删除两处 processSSEData
+//   调用 lastUsageSeqRef 传参(usage 去重守卫已退役, 前端只保留 lastSeqRef 唯一条基线, 单基线纪律 3.2) — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - fetch+ReadableStream 绝对正确性三处修复(先合规审查后实施: KISS/DRY/SRP/YAGNI/禁止backward全过):
+//   ①done分支补 decoder.decode() 收尾flush——stream:true 滞留截断的多字节UTF-8残余, 原未flush致末帧截断中文丢失/JSON.parse失败丢帧;
+//   ②controller/reader 提升 try 外 + finally 统一释放 + abortControllerRef 引用守卫——原成功/静默短路/主错误三处无条件置null,
+//     重连竞态下旧流catch可能误清新一轮controller引用(双流并行隐患); 现仅当 ref 仍指向本次请求才清空;
+//   ③reader.releaseLock() 规范释放(error路径原未释放; done后流自然关闭, 无副作用) — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - [三思三省]180s 注释勘正: firstChunkTimeout 实际只在 fetch 返回响应头前生效(:832-835
+//   fetch 返回即清除), 并非"首帧超时"; 真正的首帧活性由 idle(60s)+心跳(25s)保障——原注释"首响应超时(180s)"语义误导
+//   (暗示首帧可等180s, 实际只防请求头挂死), 改"请求头超时(180s)"口径, 逻辑零改动 — 小欧-2026-09-13
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -478,7 +489,8 @@ export const useSSE = (
     'idle' | 'connecting' | 'reconnecting' | 'failed'
   >('idle');
 
-  const eventSourceRef = useRef<EventSource | null>(null);
+  // 编辑历史: 2026-09-13 05:03 小欧 - 原 eventSourceRef 定义(useRef<EventSource|null>)已删除(早期残留从未 new EventSource,
+  //   真实链路全走 fetch+AbortController+getReader; 配套 disconnect 空守卫块同步删除, YAGNI) — 小欧-2026-09-13
   const abortControllerRef = useRef<AbortController | null>(null); // 【修复 2026-05-11 小健】fetch AbortController ref，disconnect时可abort
   const responseBufferRef = useRef('');
   const isProcessingRef = useRef(false);
@@ -492,7 +504,6 @@ export const useSSE = (
   const [metaFrames, setMetaFrames] =
     useState<TaskMetaFrames>(emptyMetaFrames());
   const usageAccumRef = useRef({ prompt: 0, completion: 0, total: 0 });
-  const lastUsageSeqRef = useRef<number>(-1);
   // 小欧 2026-09-10 S14: useStateWithRef 替换 serverTaskId 手工双写
   const [serverTaskId, serverTaskIdRef, setServerTaskId] = useStateWithRef<
     string | null
@@ -532,7 +543,7 @@ export const useSSE = (
   // 【小强修复 2026-04-09】重命名为 IDLE_TIMEOUT，更准确反映语义
   const lastDataTimeRef = useRef<number>(0); // 最后收到数据的时间
   const idleTimeoutRef = useRef<number | null>(null); // 空闲超时检测
-  const firstChunkTimeoutRef = useRef<number | null>(null); // 首响应超时(180s) — 流中途活性由 idle(60s)+心跳(25s)保障
+  const firstChunkTimeoutRef = useRef<number | null>(null); // 请求头超时(180s), fetch 返回响应头即清除(:832); 首帧活性由 idle(60s)+心跳(25s)保障
   const IDLE_TIMEOUT = 60000; // 60 秒无数据判定为断开
   // 2026-09-03 小欧 P1-3: HITL等待态（paused/highlight）时IDLE应暂停，避免60s误杀110s HITL等待
   // 小欧 2026-09-10 S15: Set 计数 — 并发 HITL 场景防误判
@@ -679,10 +690,7 @@ export const useSSE = (
         abortControllerRef.current = null;
       }
 
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
+      // 编辑历史: 2026-09-13 05:03 小欧 - 原 eventSourceRef 空守卫块(if close)已删除(从未赋值恒走不进去, 真实断开走 abortController) — 小欧-2026-09-13
       setIsConnected(false);
       // 2026-09-02 小欧: 重连路径不设置isReceiving=false，避免等待图标闪烁
       if (setReceiving) {
@@ -730,7 +738,6 @@ export const useSSE = (
     responseBufferRef.current = '';
     // 2026-08-27 小欧 修复#4: 跨任务重置usage累计与seq去重, 避免新任务token被旧任务污染
     usageAccumRef.current = { prompt: 0, completion: 0, total: 0 };
-    lastUsageSeqRef.current = -1;
     // 2026-08-27 小欧 修复#5: 跨任务重置metaFrames, 避免新任务串用旧统计帧
     setMetaFrames(emptyMetaFrames());
     // 【小强添加 2026-03-18】同时清空 sessionStorage 备份
@@ -747,6 +754,9 @@ export const useSSE = (
     sessionId?: string,
     contextLinkMode?: 'linked' | 'independent'
   ) => {
+    // 2026-09-13 小欧 流资源收尾改造: controller/reader 提升至 try 外, 供 catch/finally 统一释放(修复重连竞态+规范释放) — 小欧-2026-09-13
+    let controller: AbortController | null = null;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     const connectStartTime = new Date().toLocaleTimeString();
     console.log(`[SSE] [连接建立] 时间=${connectStartTime}`);
     disconnect(false, false, undefined, false, false); // 2026-09-02 小欧: 重连路径不设置isReceiving=false，避免等待图标闪烁
@@ -779,12 +789,15 @@ export const useSSE = (
         lastSeqRef.current = -1; // 小欧 2026-09-10 S3: 重置为已处理最大 seq 初始值
         // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 新任务重置(current=-1)已删除(作废守卫退役) — 小欧-2026-09-12
       }
-      const controller = new AbortController();
-      abortControllerRef.current = controller; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
+      // 2026-09-13 小欧: 局部别名 ctrl 供本次请求内同步引用(abort回调/fetch signal), 外置 controller 供 finally 释放守卫 —
+      //   原 setTimeout 回调引用 controller === null 状态抛 TypeError; 别名为快照, 回调恒有效 — 小欧-2026-09-13
+      const ctrl = new AbortController();
+      controller = ctrl;
+      abortControllerRef.current = ctrl; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
       firstChunkTimeoutRef.current = window.setTimeout(
-        () => controller.abort(),
+        () => ctrl.abort(),
         180000
-      ); // 首响应超时(180s) — 流中途活性由 idle(60s)+心跳(25s)保障
+      ); // 请求头超时(180s): 仅覆盖 fetch 等待响应头(返回即清除, 见:832); 首帧/流中途活性由 idle(60s)+心跳(25s)保障
 
       let response: Response;
       if (isReconnect) {
@@ -832,7 +845,9 @@ export const useSSE = (
         throw new Error('响应体为空');
       }
 
-      const reader = response.body.getReader();
+      // 2026-09-13 小欧: 局部别名 r 供 while 循环内引用(避 null 收窄), 外置 reader 供 finally releaseLock — 小欧-2026-09-13
+      const r = response.body.getReader();
+      reader = r;
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
 
@@ -871,9 +886,12 @@ export const useSSE = (
 
         lastDataTimeRef.current = Date.now();
 
-        const { done, value } = await reader.read();
+        const { done, value } = await r.read();
 
         if (done) {
+          // 小欧 2026-09-13 收尾flush: decoder此前全用{stream:true}增量解码, 内部可能暂存未完整的多字节字符;
+          //   流结束时空调decode()吐出残留, 防极端断包丢1字符 — 小欧-2026-09-13
+          buffer += decoder.decode();
           if (buffer.trim()) {
             processSSEData(buffer, {
               setExecutionSteps,
@@ -903,7 +921,6 @@ export const useSSE = (
               scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
               setMetaFrames,
               usageAccumRef,
-              lastUsageSeqRef,
             });
           } else if (lastSeqRef.current >= 0) {
             // 小欧 2026-09-12 [30]§8.2问题1(作废守卫退役): [B2] final已收到 —— 流正常结束但buffer已空,
@@ -956,7 +973,6 @@ export const useSSE = (
             scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
             setMetaFrames,
             usageAccumRef,
-            lastUsageSeqRef,
           });
         }
       }
@@ -966,7 +982,7 @@ export const useSSE = (
       clearIdleMonitor();
       setReconnectStatus('idle');
       reconnectAttemptsRef.current = 0;
-      abortControllerRef.current = null; // 【修复 2026-05-11 小健】请求完成清理ref
+      // 2026-09-13 小欧: abortControllerRef 清理已收敛至 finally(引用守卫, 防误清新一轮 controller) — 小欧-2026-09-13
     } catch (error: unknown) {
       // 2026-09-07 小欧 REQUEST-ABORT静默短路(9月优化5.3.1): 主动断开(disconnect abort)引发的AbortError静默收尾,
       //   不再误判为request_timeout弹warning/自动重连复活任务; 标记读后即清 - 小欧-2026-09-07
@@ -979,15 +995,15 @@ export const useSSE = (
           clearTimeout(intentionalAbortTimerRef.current);
           intentionalAbortTimerRef.current = null;
         }
-        abortControllerRef.current = null;
+        // 2026-09-13 小欧: abortControllerRef 清理收敛至 finally(引用守卫) — 小欧-2026-09-13
         setIsConnected(false);
         setIsReceiving(false);
         console.info('[SSE] 主动断开引发的AbortError, 静默收尾');
         return;
       }
 
+      // 2026-09-13 小欧: abortControllerRef 清理收敛至 finally(引用守卫) — 小欧-2026-09-13
       console.error('[SSE] 请求错误:', error);
-      abortControllerRef.current = null; // 【修复 2026-05-11 小健】请求失败清理ref
 
       // 使用统一的错误处理中心
       handleSSEError({
@@ -1019,6 +1035,19 @@ export const useSSE = (
       if (pendingMessageRef.current) {
         // 消息已由 handleSSEError 处理
       }
+    } finally {
+      // 编辑历史: 2026-09-13 小欧 - controller/reader 本次请求资源统一释放(修复重连竞态+规范释放):
+      //   ①引用守卫 abortControllerRef.current===controller: 仅当引用仍指向本次请求才清空, 旧流 catch/finally 不再误清新一轮
+      //     controller 引用(原成功路径/静默短路/主错误路径三处无条件置null, DRY收敛于此);
+      //   ②reader.releaseLock() 规范释放(error路径原未释放; done后流已自然关闭, releaseLock 无副作用) — 小欧-2026-09-13
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+      if (reader) {
+        reader.releaseLock();
+        reader = null;
+      }
+      controller = null;
     }
   };
 
