@@ -1,4 +1,32 @@
-﻿v0.19.40.13
+﻿v0.19.40.14
+更新时间: 2026-09-14 07:02:12 - 小欧-2026-09-14
+## v0.19.40.13以来 变更汇总(16个commit) - 小欧-2026-09-14
+[2026-09-14 07:02:12 小欧] 汇总范围=v0.19.40.13以来全部commit(共16个: feat5/fix4/docs7)
+
+### feat(5个):
+- 6ba78c6b3 feat:ChatHeader/useChatSend 会话标题策略调整(生成端取消截断存全量, 顶栏显示截断用常量SESSION_TITLE_DISPLAY_MAX=10省略, 点进编辑框看全文) - 小欧-2026-09-13
+- f8e5e38fb feat:新建会话右栏旧步骤残留根治+新会话右栏默认折叠(渲染期复位prevSessionId哨兵+justSwitchedRef跳过期自动选中+切会话同步清空tasks/latestTaskId+resetSettledAndHistory统一清理+setStatsExpanded/setRightOpen复位+clearSteps清serverTaskId并去冗余ref双写) - 小欧-2026-09-13
+- 3077df5a0 feat:CircleArrow/PillBadge可复用组件 - 小欧-2026-09-13
+- b0114e9ba feat:TitleBlock用CircleArrow/PillBadge替换Tag和▲▼ - 小欧-2026-09-13
+- f33cd90e7 feat:WaitingIcons+PipelineRenderer thought-action等待态CSS动画与渲染 - 小欧-2026-09-13
+
+### fix(4个):
+- fe88d378d fix:RightViewer 实时任务完成后点切历史任务右侧不切换回归修复(settledSteps终态快照仅当activeTaskId===serverTaskId回放时优先, 抽pickDisplaySteps纯函数供回归钉死, REST等长校验同守卫防快照覆盖污染) - 小欧-2026-09-13
+- d4af1d99c fix:RightViewer 切换历史任务右侧不切换根治版(北京老陈否决守卫治标责令重写): 渲染期复位prevActiveTaskIdRef哨兵切走即清展示态(无闪现无残留)+快照effect加activeTaskId===serverTaskId守卫deps补全切回即重固化+废弃pickDisplaySteps纯函数改组件级真场景回归+S13.4等长校验去冗余守卫(渲染期复位已保证语义) - 小欧-2026-09-13
+- 28af3dce1 fix:WaitingIcons+stepStyles 漏洞2 SVG硬编码色令牌化(5处色值+WAIT_ACTION令牌) - 小欧-2026-09-14
+- 67f5a1b42 fix:[34]布局底部被推出视口修复 外层100vh锁高+中部flex滚动输入条钉底 - 小欧-2026-09-14
+
+### docs(7个):
+- f8e885c92 docs:ChatPage/useSessionTasks 左侧回复区注释补充文件职责+代码实际逻辑说明 - 小欧-2026-09-13
+- 1c83b3f1e docs:[33]左侧任务列表回复区数据来源分析v1.4 可读性优化 - 小欧-2026-09-13
+- c4a3e40e7 docs:[34]浏览器布局底部被推出视口问题分析报告 - 小欧-2026-09-13
+- 1cf816b31 docs:任务统计样式定案HTML - 小欧-2026-09-13
+- c6bb1d52b docs:[35]thought-action等待状态分析与实施方案 - 小欧-2026-09-13
+- 620b617e1 docs:[33]左侧任务列表回复区数据来源分析 更新 - 小欧-2026-09-14
+- f6f266689 docs:[34]布局分析报告更新+[36]前端3接收实时变量 - 小欧-2026-09-14
+
+---
+v0.19.40.13
 更新时间: 2026-09-13 10:42:20 - 小欧-2026-09-13
 ## v0.19.40.12以来 变更汇总(11个commit) - 小欧-2026-09-13
 [2026-09-13 10:42:20 小欧] 汇总范围=v0.19.40.12以来全部commit(共11个: feat7/docs3/chore1, E2E测试资产入库与前端用例编号化专项)
