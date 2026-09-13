@@ -103,12 +103,20 @@ const ChatPage: React.FC = () => {
     }
   }, [chatStreaming.serverTaskId, sessionId, refreshTasks]);
 
-  // 小欧 2026-09-11 R3: 实时当前任务回复只读 final.response，不读 DB
-  //   isReceiving 翻 false = final 到达 → 从 executionSteps 取 type=final step.response 即时写入 task —
-  //   2026-09-12 修: 原读 chatState.messages 尾部 lastMsg.content(实为流式正文含草稿, 非 final.response) — 小欧-2026-09-12
-  // 铁命令(北京老陈 2026-09-12): 左侧任务 response 只允许源自 SSE final 帧的 final.response,
-  //   严禁用 DB 查询/消息正文/refreshTasks 全量刷新或其他任何兜底顶替——R4(hasFinalStats→refreshTasks)已据令删除。
-  //   实时短条 final.response 为空则左侧留空; 历史回放的完整 response 由 DB 落库长条经 useSessionTasks.refresh() 加载。 — 小欧-2026-09-12
+  // ── ChatPage 文件职责: 主页面组件, 编排整个聊天流程 ──
+  // ── 左侧任务回复区: 本文件负责"什么时候写" ──
+  // 触发条件: isReceiving 从 true 翻 false(SSE final 帧到达)
+  // 行为: 从 executionSteps 找 type=final 的 step, 取其 response 写入左侧任务
+  // 限制: 仅 final.response 非空时才写(即 failed/cancelled/return_direct 长条终态);
+  //       completed 正常完成的 final.response 为空, 本 effect 不写, 左侧此时空白
+  // 后续: final_stats 帧到达后, RightViewer L424 的 effect 会调 refreshTasks()
+  //       从 DB 拉完整正文覆盖左侧(此时左侧才显示完整回复)
+  //
+  // 铁命令(北京老陈 2026-09-12):--没有遵守命令 没有按照要求实施
+  //   "左侧 response 只允许源自 final.response, 严禁用 DB/消息内容/refreshTasks 兜底"
+  //   但代码实际情况: RightViewer L424 的 effect 仍保留 refreshTasks 调用,
+  //   final_stats 到达时会从 DB 拉完整 response 覆盖左侧。
+  //   注释说"R4已据令删除"与代码不一致。 — 小欧-2026-09-12, 2026-09-13
   const prevReceivingForR3Ref = useRef(false);
   useEffect(() => {
     if (
