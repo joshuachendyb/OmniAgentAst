@@ -1,4 +1,46 @@
-﻿v0.19.40.11
+﻿v0.19.40.12
+更新时间: 2026-09-13 08:16:15 - 小欧-2026-09-13
+## v0.19.40.11以来 变更汇总(28个commit) - 小欧-2026-09-13
+[2026-09-13 08:16:15 小欧] 汇总范围=v0.19.40.11以来全部commit(共28个: docs17/fix5/refactor4/feat2)
+
+### docs(17个):
+- 861f67d20 docs:README.md 重构收官(新增六配置文件说明/十三E2E案例编写参考手册, 配置模板移至backend/config.yaml.example, 删除遗留settings.yaml/config.json) - 小欧-2026-09-13
+- 187c1a9d1 docs:[30]重连重复发送问题分析与处理 新增第10章前后端链接与重连实现分析(10.1 fetch+ReadableStream与EventSource技术对比/10.2-10.9传输形态数据面首连断线重连幂等参数全链条代码实证, 原第10章顺延为第11章, 版本历史追加v4.18/v4.19) - 小欧-2026-09-13
+- 4002f94f7 docs:[30]重连重复发送问题分析与处理 新增第十章前后端链接与端点重连问题分析和讨论(断点续传核心理念沉淀, 仅已有实证再组织) - 小欧-2026-09-13
+- 85ac59397 docs:[30]重连重复发送分析 合并远端v4.15与本地v4.16(版本历史双保留,9.2验证列取并集) - 小欧-2026-09-12
+- 868c41c69 docs:[30]重连重复发送分析 第四章重写为新的概要设计及重连机制线条图 - 小欧-2026-09-12
+- 768068ce1 docs:[30]重连重复发送分析 第四章重写为新的概要设计及重连机制线条图 - 小欧-2026-09-12
+- 346576a56 docs:[30]重连重复发送分析 第4章设计原则第6章问题清单核查及B3白名单名修正 - 小欧-2026-09-12
+- 94a5d9460 docs:[30]重连重复发送分析 前六章及第七章清理与基线行号实测纠错 - 小欧-2026-09-12
+- a4bb4b39b docs:[30]重连重复发送分析更新 作废守卫退役同步 - 小欧-2026-09-12
+- 65e96266e docs:[32]重连重发移出问题记录与处置分析新增 - 小欧-2026-09-12
+- 63bc0389d docs:[29][30] 白名单实施定稿与重连分析更新 - 小欧-2026-09-12
+- b6c046668 docs:[30]重连重复发送问题分析与处理 更新 - 小欧-2026-09-12
+- 2e0d8c196 docs:[31]X2方案 v2.3+§5.6竞态根因修复节+§7改动面补充(done权威置位收敛, E2E-X2-01验证) - 小欧-2026-09-12
+- 565dc92ec docs:[31]X2方案 §4.4更新两场景对照(实时短条留空/历史回放DB有值) - 小欧-2026-09-12
+- 86ea39271 docs:useSessionTasks 铁命令注释(updateTaskResponse只能写final.response严禁兜底, refresh严禁作实时补response之用) - 小欧-2026-09-12
+- 99f5325eb docs:doc-9月优化 4篇09-12文档按建立时间顺序补序号[28]final/[29]4C通道路由缺口/[30]重连重复发送/[31]X2终态, 文内引用同步更新+[31]X2代码块补typing标注 - 小欧-2026-09-12
+- 9f74ed25d docs:文档整理归档 开发人员规则.md移入docs-项目规范/, 删过时日志分析报告(2026-09-07), 新增doc-9月优化4篇(4C通路缺口/X2终态长短信号分离/final三态字段渲染契约/重连重复发送分析) - 小欧-2026-09-12
+
+### fix(5个):
+- ac0c5a2d2 fix:useSSE/sseParser SSE绝对正确性三处修复+180s注释勘正+lastUsageSeqRef单基线退役(useSSE done分支decoder收尾flush防截断中文丢帧/controller-reader提升try外+finally统一释放+abortControllerRef引用守卫防重连竞态双流/releaseLock规范释放/180s注释改请求头超时口径; sseParser仅保留lastSeqRef唯一条基线,usage守卫退役YAGNI) - 小欧-2026-09-13
+- 3c4e195a9 fix:stream_orchestrator/steps SSE黑名单转白名单落地([29]7.3实施, ALL_STEP_TYPES登记源) - 小欧-2026-09-12
+- 9d9cf0dd1 fix:react_loop/agent_runner/stream_orchestrator E2E-X2-01竞态根因修复(done权威置位收敛唯一至runner finally, 删除react_loop两处过早done.set; 增追踪日志4点) - 小欧-2026-09-12
+- cc2a82e8b fix:useTaskInfo 补 thought-start badge分支对齐09-11契约化注释 - 小欧-2026-09-12
+- 1b2d0ca59 fix:ChatPage P1左卡草稿根治 R3数据源修正(chatState.messages尾部lastMsg.content→executionSteps中type=final的step.response, 无兜底非空校验, 杜绝流式正文草稿入task) - 小欧-2026-09-12
+
+### refactor(4个):
+- 6f8cd07d1 refactor:前端8文件 Prettier格式统一专项(纯格式零逻辑,附编辑历史留痕) - 小欧-2026-09-13
+- 6cd27d8b1 refactor:agent_runner/stream_orchestrator/task_state [30]§8.2 TDD P1-P4注释勘正与死代码清理(P1 final_stats日志改outcome入参消除闭包耦合/P2持锁死分支清理/P3注释与实际矛盾改述/P4 publish唯一写入口改述)+重连链路追踪补点A/B(重连请求接收与reader退出含is_reconnect/起点seq/续传帧数) - 小欧-2026-09-13
+- 979c911a3 refactor:sseParser/useSSE [30]8.2作废守卫退役(terminalSeqRef删除,B2改lastSeqRef判定) - 小欧-2026-09-12
+- 15de3baec refactor:ChatPage 删R4(hasFinalStats→refreshTasks DB兜底补左侧response)+R3处铁命令注释(左侧response只用final.response, 严禁其他数据源/兜底顶替) - 小欧-2026-09-12
+
+### feat(2个):
+- 992038e2b feat:e2etests E2E-30/31断线重连续传全链路测试(30后半场帧不重复+终态权威; 31双次断线链式续传不重不漏+reader退出三键日志闭环对账, 均真实后端真实LLM, 一次一case) - 小欧-2026-09-13
+- 97879f7ae feat:react_step.py X2终态长短信号分离发射侧改造(_emit_publish统一收口, 12处publish调用点全接入, 长短判定上移发射侧) - 小欧-2026-09-12
+
+---
+v0.19.40.11
 更新时间: 2026-09-12 05:52:52 - 小欧-2026-09-12
 ## v0.19.40.10以来 变更汇总(55个commit) - 小欧-2026-09-12
 [2026-09-12 05:52:52 小欧] 汇总范围=v0.19.40.10以来全部commit(共55个: docs25/fix14/refactor9/feat7)
