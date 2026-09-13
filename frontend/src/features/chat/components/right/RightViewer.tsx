@@ -71,6 +71,12 @@
 //   B16 删 prevReceivingRef 死码 + import TitleBlock + statsExpanded 折叠状态提升 + finalStep 派生 + 渲染块拆分 — 小欧-2026-09-11
 // 编辑历史: 2026-09-11 小欧 - 三堂会审修复: P1-4 props复用TokenLayer(与StaticStatsBlock必选/可选形状对齐, TS2322归零, DRY), import TokenLayer — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - P1-9三堂会审修复: _businessTypes 组件体每次渲染重建 Set 提升模块级常量 BUSINESS_TYPES(性能+DRY) — 小欧-2026-09-12
+// 编辑历史: 2026-09-13 小欧 - 新建会话右栏残留根治(北京老陈三思三省定位): REST历史effect的 !activeTaskId 早退分支补清
+//   settledSteps/settledRef/historySteps——原早退仅setDetail(null), 会话切换首帧旧activeTaskId跨会话拉旧任务步骤回填后,
+//   activeTaskId归空时不清steps→右栏永久残留; 补清保证"无活动任务必空态", 与useTaskSelection渲染期复位双钳制 — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - DRY收敛(北京老陈质疑"多余改动"驱动三轮会审): 两处三行清零(settledSteps/settledRef/historySteps)
+//   抽 resetSettledAndHistory 唯一入口, sessionId切换effect与REST早退共用; 函数职责=RightViewer展示态清理, 与useSSE.clearSteps正交 — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - 北京老陈复测: 切会话折叠区(统计区)复位为折叠——新会话默认折叠, 防展开旧统计残留; statsExpanded声明上移供effect复位 — 小欧-2026-09-13
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -154,10 +160,26 @@ const RightViewer: React.FC<RightViewerProps> = ({
   // 小欧 2026-09-10 S13: live→终态快照 — final 到达时固化 executionStepsRef 全量
   const [settledSteps, setSettledSteps] = useState<ExecutionStep[]>([]);
   const settledRef = useRef<ExecutionStep[]>([]);
-
   // 小欧 2026-09-11 第七章 M3a(R5): 统计区折叠状态提升到父级——TitleBlock(title 段)持折叠箭头,
   //   StaticStatsBlock(折叠区)受控显隐, 两次独立渲染事件互不干扰 — 小欧-2026-09-11
+  // 2026-09-13 小欧 北京老陈 新建会话右栏彻底清态: statsExpanded 声明上移, 供切会话effect复位折叠 — 小欧-2026-09-13
   const [statsExpanded, setStatsExpanded] = useState(false);
+
+  // 2026-09-13 小欧 DRY收敛(三轮会审): 终态快照/历史步骤清理唯一入口——sessionId切换effect与REST早退共用,
+  //   消除两处三行重复清零; 与useSSE.clearSteps/serverTaskId语义正交, 仅管RightViewer内部展示态 — 小欧-2026-09-13
+  const resetSettledAndHistory = useCallback(() => {
+    setSettledSteps([]);
+    settledRef.current = [];
+    setHistorySteps([]);
+  }, []);
+
+  // 2026-09-13 小欧 北京老陈 新建会话右侧残留修复: 会话切换时清零settledSteps/historySteps,
+  //   防旧会话的终态快照/历史拉取残留导致displaySteps渲染旧步骤 — 小欧-2026-09-13
+  // 2026-09-13 小欧 北京老陈 复测: 折叠区(统计区)随切会话复位为折叠(新会话默认折叠, 防展开旧统计残留) — 小欧-2026-09-13
+  useEffect(() => {
+    resetSettledAndHistory();
+    setStatsExpanded(false);
+  }, [sessionId, resetSettledAndHistory]);
 
   // 2026-09-02 小欧: badge 权威派生——live 任务才取, 非live历史回放不传(不显示等待圈)
   const { badge: liveBadge } = useTaskInfo(
@@ -297,6 +319,12 @@ const RightViewer: React.FC<RightViewerProps> = ({
     if (!activeTaskId || isCurrentLive) {
       // 2026-08-27 小欧 修复#45: 切到实时任务时清空历史detail, 避免StaticStatsBlock残留旧任务统计
       setDetail(null);
+      // 2026-09-13 小欧 根治(北京老陈三思三省定位): 活跃任务为空时同步清终态快照/历史步骤——会话切换首帧
+      //   旧activeTaskId跨会话拉旧任务REST回填historySteps后, activeTaskId归空早退仅清detail不清steps,
+      //   右栏永久残留旧执行记录; 补清后"无活动任务必空态", 不依赖effect执行时序 — 小欧-2026-09-13
+      if (!activeTaskId) {
+        resetSettledAndHistory();
+      }
       return; // B4：执行中不拉 REST
     }
     // 小欧 2026-09-11 第七章 M1(R8/R9): 当前任务 final 已到但 final_stats(DB 就绪信号 t3')未到——

@@ -23,6 +23,8 @@
 // 编辑历史: 2026-09-12 小欧 - P1-10三堂会审修复: L54 searchParams.get('session_id') 复用已有 urlSessionId(L47), 消重复取参(DRY) — 小欧-2026-09-12
 // 编辑历史: 2026-09-12 小欧 - P1左卡草稿根治: R3数据源修正(lastMsg.content→executionSteps中type=final的step.response, 无兜底) — 小欧-2026-09-12
 // 编辑历史: 2026-09-12 小欧 - X2终态短信号(北京老陈定案): 删除R4(hasFinalStats→refreshTasks DB兜底补左侧response), 铁命令: 左侧只用final.response, 实时短条留空、历史回放从DB读; useChainTokens 的 final_stats→refreshTasks(token刷新)保持不变 — 小欧-2026-09-12
+// 编辑历史: 2026-09-13 小欧 - 北京老陈定案: 新建会话时右侧面板整体折叠(rightOpen=false)——右栏残留信息已根治清空,
+//   但新会话仍展开空态右栏不符预期; handleNewSession 包装置折叠, 点任务经 handleSelectTaskOpenRight 再展开 — 小欧-2026-09-13
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -167,7 +169,16 @@ const ChatPage: React.FC = () => {
 
   // 会话初始化 / 生命周期 / 标题编辑（抽离至各 hook）
   useChatInit({ chatFacade, urlSessionId });
-  const { handleNewSession } = useChatLifecycle({ chatFacade });
+  // 2026-09-13 小欧 北京老陈定案: 新建会话时右侧面板整体折叠(收起)——rightOpen 原默认且新建不复位,
+  //   旧会话右栏残留信息虽已根治清空, 但新会话页面右栏仍展开占位(仅剩"暂无执行记录"空态)不符预期;
+  //   新建动作同步 setRightOpen(false), 新会话默认右栏收起, 点任务经 handleSelectTaskOpenRight 再展开 — 小欧-2026-09-13
+  const { handleNewSession: handleNewSessionBase } = useChatLifecycle({
+    chatFacade,
+  });
+  const handleNewSession = useCallback(() => {
+    setRightOpen(false);
+    return handleNewSessionBase();
+  }, [handleNewSessionBase]);
   const { handleEditingStart, handleEditingCancel } = useChatTitle(chatState);
 
   const panels = useChatPanels({

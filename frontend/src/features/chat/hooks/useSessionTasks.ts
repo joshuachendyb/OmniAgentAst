@@ -2,6 +2,9 @@
 // 编辑历史: 2026-08-30 小欧 - 设计文档[2]12.7 v1.103: 新增 latestTaskId(B1 最新任务锚点透传, 顶栏/默认选中/链token锚点消费, 排序一义后不用 tasks[0])
 // 编辑历史: 2026-09-11 小欧 - R3修复: 新增updateTaskResponse方法(SSE final帧到达时即时更新task response, 不等DB refresh), 返回值补updateTaskResponse — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - X2终态短信号(北京老陈铁命令): 左侧任务 response 只允许由 updateTaskResponse(final.response) 写入, 严禁任何其他数据源/兜底顶替 — 小欧-2026-09-12
+// 编辑历史: 2026-09-13 小欧 - 新建会话右栏残留根治(北京老陈复测定位, 首修被effect②覆盖): refresh为异步, 切会话瞬间
+//   旧会话tasks/latestTaskId仍存活, useTaskSelection effect②(纯历史默认选中最新)持旧latestTaskId把activeTaskId拉回旧任务,
+//   RightViewer跨会话拉旧步骤→右栏残留"复活"; 根治点: sessionId一变立即同步清空任务清单/锚点, 封死旧数据窗口 — 小欧-2026-09-13
 /**
  * useSessionTasks - 会话任务清单 Hook（消费 6.1.9 B1 接口）
  *
@@ -44,7 +47,14 @@ export const useSessionTasks = (sessionId: string | null) => {
     }
   }, [sessionId]);
 
+  // 2026-09-13 小欧 新建会话右栏残留根治(北京老陈复测定位·展开折叠仍显旧信息): refresh为异步, 切会话瞬间
+  //   旧会话tasks/latestTaskId仍存活, useTaskSelection effect②持旧latestTaskId把activeTaskId拉回旧任务,
+  //   RightViewer跨会话拉旧步骤→右栏残留复活; 改"同步清空→再refresh"封死旧数据窗口; refresh依赖[sessionId],
+  //   手动refreshTasks调用不重跑本effect, 无扰 — 小欧-2026-09-13
   useEffect(() => {
+    setTasks([]);
+    setTotal(0);
+    setLatestTaskId(null);
     void refresh();
   }, [refresh]);
 

@@ -81,6 +81,10 @@
 // 编辑历史: 2026-09-13 小欧 - [三思三省]180s 注释勘正: firstChunkTimeout 实际只在 fetch 返回响应头前生效(:832-835
 //   fetch 返回即清除), 并非"首帧超时"; 真正的首帧活性由 idle(60s)+心跳(25s)保障——原注释"首响应超时(180s)"语义误导
 //   (暗示首帧可等180s, 实际只防请求头挂死), 改"请求头超时(180s)"口径, 逻辑零改动 — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - 三堂会审冗余清理(北京老陈核查"有无瞎写/多余"): clearSteps 删手工双写
+//   serverTaskIdRef.current=null——useStateWithRef setter 已内置 ref 同步(:24-28), 双写同一值纯冗余瞎写;
+//   依赖数组同步删 serverTaskIdRef(闭包不再引用); 其余改动(清零serverTaskId/清tasks/渲染期复位/justSwitchedRef/
+//   resetSettledAndHistory/statsExpanded复位/右栏折叠)逐点审查均为必要, 逻辑零改动 — 小欧-2026-09-13
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -740,9 +744,14 @@ export const useSSE = (
     usageAccumRef.current = { prompt: 0, completion: 0, total: 0 };
     // 2026-08-27 小欧 修复#5: 跨任务重置metaFrames, 避免新任务串用旧统计帧
     setMetaFrames(emptyMetaFrames());
+    // 2026-09-13 小欧 北京老陈 新建会话右侧残留修复: 清零serverTaskId, 防跨会话泄漏旧任务ID导致isCurrentLive误判
+    // 2026-09-13 小欧 三堂会审冗余清理(北京老陈核查): setServerTaskId 依赖 useStateWithRef 内置 ref 同步
+    //   (setValue 内同步 ref.current=next), 原手工双写 serverTaskIdRef.current=null 纯冗余, 删除;
+    //   依赖数组同步删 serverTaskIdRef(闭包不再引用, 防 ESLint unnecessary dependency) — 小欧-2026-09-13
+    setServerTaskId(null);
     // 【小强添加 2026-03-18】同时清空 sessionStorage 备份
     clearStepsFromStorage();
-  }, [clearStepsFromStorage, setMetaFrames]);
+  }, [clearStepsFromStorage, setMetaFrames, setServerTaskId]);
 
   /**
    * 内部发送消息函数（用于重连）
