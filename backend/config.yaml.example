@@ -1,8 +1,8 @@
 # OmniAgentAs-desk 配置文件模板
 # 使用说明：
-# 1. 复制此文件为 config.yaml
+# 1. 复制此文件到 config/config.yaml
 # 2. 填入您的API密钥
-# 3.  config.yaml 已被Git忽略，不会提交到仓库
+# 3. config.yaml 已被Git忽略，不会提交到仓库
 
 ai:
   # ✅ 顶层配置（全局）
@@ -22,7 +22,6 @@ ai:
     api_base: https://api.longcat.chat/openai/v1
     api_key: ak_xxx...
     models:
-      - LongCat-Flash-Thinking
       - LongCat-Flash-Thinking
     timeout: 120
 
@@ -79,18 +78,8 @@ sandbox:
   default_timeout_sec: 60          # 预检默认超时(LLM未声明timeout时生效)
   max_timeout_sec: 300             # 预检硬上限5分钟; 声明超上限直接转HITL强确认
 
-# 文件操作配置
-file_operations:
-  # 工作目录（文件操作的根目录）
-  workspace_dir: "./workspace"
-  # 是否启用安全模式（禁止删除操作）
-  safe_mode: true
-  # 最大文件大小（MB）
-  max_file_size: 10
-
 # 日志配置
 logging:
-  level: INFO  # DEBUG, INFO, WARNING, ERROR
-  file: logs/app.log
-  max_size: 10MB
-  backup_count: 5
+  level: INFO                  # DEBUG, INFO, WARNING, ERROR
+  max_file_size: 10485760      # 单日志文件大小上限（字节）
+  backup_count: 5              # 轮转保留文件数
