@@ -20,10 +20,25 @@ export class ChatPage {
     await this.page.goto('/');
   }
 
-  /** 输入并发送一条消息（发送后 isReceiving=true，页面切"停止"按钮） */
+  /** 输入并发送一条消息（发送后 isReceiving=true，页面切"停止"按钮）
+   *  编辑历史: 2026-09-13 小欧 - 抗"加载最近会话"期间拦截发送(⏭️正在加载中→handleSend提前return):
+   *    发送后若 input 仍保留原文且未进流(停止钮不可见)则等加载完成重发一次, 防连续跑轮次残留会话致 POST 未达 - 小欧-2026-09-13
+   */
   async sendPrompt(prompt: string): Promise<void> {
     await this.input.fill(prompt);
     await this.sendBtn.click();
+    // 拦截判定: 1.5s 内未进流(停止钮可见) → 判断被"加载会话"拦截
+    // 编辑历史: 2026-09-13 小欧 v2 - 拦截后 React 重渲染会清空 input, "残留值判定"不可靠 → 一律 3.5s 后重新 fill+click 兜底 - 小欧-2026-09-13
+    await this.page.waitForTimeout(1500);
+    const inFlight = await this.stopBtn.isVisible().catch(() => false);
+    if (!inFlight) {
+      await this.page.waitForTimeout(2000);
+      const stillNot = !(await this.stopBtn.isVisible().catch(() => false));
+      if (stillNot) {
+        await this.input.fill(prompt);
+        await this.sendBtn.click();
+      }
+    }
   }
 
   /** 等流已启动："停止"按钮可见 */

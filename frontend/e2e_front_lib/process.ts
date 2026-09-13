@@ -36,11 +36,12 @@ export const ps = (cmd: string): string => {
   }
 };
 
-// 编辑历史: 2026-09-13 小欧 - 修复: 先 Get 并判断存在再 Stop-Process(对空端口/不存在PID, Stop-Process 使进程exit=1, 空catch也救不回) - 小欧-2026-09-13
-/** 杀掉指定端口（Listen 状态）的进程，用于断流/重启服务场景 */
+// 编辑历史: 2026-09-13 小欧 v2 - 杀全量 listener owner(多listener并存时 $c 为数组, $c.OwningProcess 被PS拼接成"a b"
+//   致 Stop-Process -Id 无效 → 静默空杀 → 后端 is_reconnect=False 直通 final(E2E步骤5假红) - 小欧-2026-09-13
+/** 杀掉指定端口（Listen 状态）的全部进程，用于断流/重启服务场景 */
 export const killPort = (port: number): void => {
   ps(
-    `$c = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue; if ($c) { Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue }`
+    `$c = @(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue); foreach ($x in $c) { try { Stop-Process -Id $x.OwningProcess -Force -ErrorAction Stop } catch {} }`
   );
 };
 
@@ -83,12 +84,12 @@ export const waitPortDown = (port: number): boolean => {
   }
 };
 
-// 编辑历史: 2026-09-13 小欧 - 新增: 启动断线重连E2E专用后端代理(node tests/e2e/api-proxy.ts, 9000→8000), 返回PID
+// 编辑历史: 2026-09-13 小欧 v2 - 迁移后路径: 断线重连E2E专用后端代理(node e2e_case/api-proxy.ts, 9000→8000), 返回PID
 //   进程分离断流方案核心入口; 断流=kill代理(REFUSED/RST), 恢复=再启本代理。日志代理内部自落盘, 不做PS重定向
 //   (PS 5.1 Start-Process -Redirect 持有子句柄致父PS挂起ETIMEDOUT) - 小欧-2026-09-13
 export const startProxyServer = (frontendDir: string): number => {
   const out = ps(
-    `$p = Start-Process -FilePath 'node.exe' -ArgumentList 'tests/e2e/api-proxy.ts' -WorkingDirectory '${frontendDir}' -WindowStyle Hidden -PassThru; $p.Id`
+    `$p = Start-Process -FilePath 'node.exe' -ArgumentList 'e2e_case/api-proxy.ts' -WorkingDirectory '${frontendDir}' -WindowStyle Hidden -PassThru; $p.Id`
   );
   return Number(out);
 };

@@ -31,14 +31,18 @@ export const logBaseOf = (logPath: string): number => {
 export const readLogSince = (logPath: string, base: number): string =>
   readFileSync(logPath, 'utf8').slice(Math.max(base, 0));
 
-/** 在 page 上挂 chat/stream 相关监听：网络请求 REQ/RES/FAIL + 前端 SSE console，返回收集数组 */
-export const attachStreamDiag = (page: Page): {
+/** attachStreamDiag 的完整返回（含 t0 时间基准，供外部换算"距上次业务帧"） */
+export interface DiagBundle {
   streamReqs: string[];
   reconnectLogs: string[];
   sseErrors: string[];
   consoleAll: string[];
   allFailed: string[];
-} => {
+  t0: number;
+}
+
+/** 在 page 上挂 chat/stream 相关监听：网络请求 REQ/RES/FAIL + 前端 SSE console，返回收集数组 */
+export const attachStreamDiag = (page: Page): DiagBundle => {
   const streamReqs: string[] = [];
   const reconnectLogs: string[] = [];
   const sseErrors: string[] = [];
@@ -91,7 +95,7 @@ export const attachStreamDiag = (page: Page): {
       streamReqs.push(`[${ts()}] FAIL ${req.method()} ${req.url()} :: ${req.failure()?.errorText}`);
     }
   });
-  return { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed };
+  return { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed, t0 };
 };
 
 /**
@@ -102,9 +106,14 @@ export const attachStreamDiag = (page: Page): {
 export const findAdjacentDup = (text: string): string[] => {
   const hits: string[] = [];
   for (const line of text.split(/\r?\n/)) {
+    // 编辑历史: 2026-09-13 小欧 - 跳过纯符号行(表格分隔线 |------|)、重复片段须含字母/汉字:
+    //   取证run-on命中全为Markdown表格线(LLM天然输出), 非流式拼接特征 → 误报修复 - 小欧-2026-09-13
+    if (/^[\s|:=\-+*#_.~()\[\]{}'"`\\/]*$/.test(line)) continue;
     for (let k = 6; k <= 30; k += 3) {
       for (let i = 0; i + 2 * k <= line.length; i++) {
-        if (line.slice(i, i + k) === line.slice(i + k, i + 2 * k)) {
+        const seg = line.slice(i, i + k);
+        if (!/[A-Za-z0-9\u4e00-\u9fff]/.test(seg)) continue;
+        if (seg === line.slice(i + k, i + 2 * k)) {
           const w = Math.min(12, k);
           hits.push(
             JSON.stringify(line.slice(Math.max(0, i - w), Math.min(line.length, i + 3 * k)))
