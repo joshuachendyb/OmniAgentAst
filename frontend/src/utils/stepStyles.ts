@@ -9,6 +9,7 @@
 // 编辑历史: 2026-09-09 小欧 - P1-6: WARNING #faad14→#AD6800(白底对比度≥4.5:1), 全链统一(6 处引用同步增强) — 小欧-2026-09-09
 // 编辑历史: 2026-09-11 小欧 - 第七章 M3b/M3c(R6/R7): 新增公用 TokenLayer 类型 + formatTokenCompact/formatTokenFull(DRY)——TitleBlock/StaticStatsBlock 四组 token 格式化复用, 全层不重复实现 — 小欧-2026-09-11
 // 编辑历史: 2026-09-11 小欧 - 三堂会审P1-3/P1-4: TokenLayer 字段定为 number|undefined(null 不入类型), 三处 props 统一复用本类型; 补本条前漏记的历史记录 — 小欧-2026-09-11
+// 编辑历史: 2026-09-14 小欧 - 漏洞2修复: Colors 新增 WAIT_ACTION 令牌(#fa8c16 工具执行等待齿轮橘, ToolWaitingIcon loader 色), WaitingIcons 硬编码色令牌化 — 小欧-2026-09-14
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
  *
@@ -137,6 +138,7 @@ export const Colors = {
   WARNING: '#AD6800', // 警告/思考状态 - 深琥珀(白底对比度约 4.7:1, P1-6 定案 3.7)
   INFO: '#096dd9', // 信息/开始状态 - 蓝色
   ORANGE_RED: '#fa541c', // 未执行/被安全拦截/确认超时提示 - 火山橘红(AntD5 volcano-6, 2026-09-06 北京老陈定案 替灰字不醒目) — 小欧-2026-09-06
+  WAIT_ACTION: '#fa8c16', // 工具执行等待齿轮橘(ToolWaitingIcon loader, 北京老陈钦定名 WAIT_ACTION, 与 ORANGE_RED/WARNING 同色带不冲突) — 小欧-2026-09-14
   WARNING_BG: '#fffbe6', // 警告背景（高亮浅底）
 } as const;
 

@@ -1,6 +1,8 @@
 // 编辑历史: 2026-09-13 小欧 - 新建等待图标控件组: ThoughtWaitingIcon/ToolWaitingIcon/ActionWaitingIcon从PipelineRenderer/ToolCallLine内联提取, 统一导出, DRY复用 — 小欧-2026-09-13
 // 编辑历史: 2026-09-13 小欧 - ActionWaitingIcon换型(北京老陈令选title-icon-compare G波纹扩散): 蓝色270°弧线旋转改蓝核心圆+双层扩散波纹(SVG36x36, .action-ripple-1/.action-ripple-2, 1.8s不旋转) — 小欧-2026-09-13
+// 编辑历史: 2026-09-14 小欧 - 漏洞2修复: 组件内5处硬编码SVG色令牌化(绿#52c41a→Colors.SUCCESS / 橙#fa8c16→Colors.WAIT_ACTION / 蓝#1677ff→Colors.PRIMARY), 零行为变化 — 小欧-2026-09-14
 import React from 'react';
+import { Colors } from '@/utils/stepStyles';
 
 /**
  * ThoughtWaitingIcon — 绿色270°弧线旋转
@@ -14,7 +16,7 @@ export const ThoughtWaitingIcon: React.FC = () => (
       height="1.4em"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#52c41a"
+      stroke={Colors.SUCCESS}
       strokeWidth={2}
       strokeLinecap="round"
     >
@@ -33,7 +35,7 @@ export const ToolWaitingIcon: React.FC = () => (
     <svg
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#fa8c16"
+      stroke={Colors.WAIT_ACTION}
       strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -65,14 +67,14 @@ export const ActionWaitingIcon: React.FC = () => (
       fill="none"
       strokeWidth={2}
     >
-      <circle cx="18" cy="18" r="6" stroke="#1677ff" />
+      <circle cx="18" cy="18" r="6" stroke={Colors.PRIMARY} />
       <circle
         cx="18"
         cy="18"
         r="10"
         opacity="0.6"
         className="action-ripple-1"
-        stroke="#1677ff"
+        stroke={Colors.PRIMARY}
       />
       <circle
         cx="18"
@@ -80,7 +82,7 @@ export const ActionWaitingIcon: React.FC = () => (
         r="10"
         opacity="0.6"
         className="action-ripple-2"
-        stroke="#1677ff"
+        stroke={Colors.PRIMARY}
       />
     </svg>
   </span>
