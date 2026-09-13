@@ -74,3 +74,14 @@ tmp_*
 
 # 远程对象副本(自包含用,不提交)
 .git-remote/
+
+# Playwright e2e 结果目录(截图/视频/trace/html报告): 小欧 2026-09-13
+frontend/test-results/
+frontend/playwright-report/
+
+# 前端 E2E 运行产物(e2e_case/output代理自落盘日志)与TS增量缓存: 小欧 2026-09-13
+frontend/e2e_case/output/
+frontend/tsconfig.node.tsbuildinfo
+
+# tsc 构建产物: 小欧 2026-09-13
+*.tsbuildinfo
