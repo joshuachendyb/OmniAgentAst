@@ -5,7 +5,9 @@
  * 含：当日后端日志路径/本轮新增日志对账、网络 REQ/RES/FAIL 收集、前端重连 console 收集、
  * run-on 无重复检测、DIAG 诊断输出。任何 chat/stream 流式用例失败归因都可复用。
  */
-import { readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 /** 生成当日后端日志路径 `${backendDir}\logs\app_YYYY-MM-DD.log`（日志文件按日期轮转） */
@@ -72,10 +74,16 @@ export const attachStreamDiag = (page: Page): DiagBundle => {
   // 编辑历史: 2026-09-13 小欧 - beforeunload探针: 定位 reload 的真正触发源(区分 vite full-reload vs 其他) - 小欧-2026-09-13
   page.addInitScript(() => {
     // window 唯一 id: 重生(document 重建)时打印 [BU] docid, 用于鉴别 reload vs 事件误报
-    (window as unknown as { __docid?: string }).__docid = Math.random().toString(36).slice(2, 8);
-    console.warn(`[BU] document init docid=${(window as unknown as { __docid?: string }).__docid}`);
+    (window as unknown as { __docid?: string }).__docid = Math.random()
+      .toString(36)
+      .slice(2, 8);
+    console.warn(
+      `[BU] document init docid=${(window as unknown as { __docid?: string }).__docid}`
+    );
     window.addEventListener('beforeunload', () => {
-      console.warn(`[BU] beforeunload fired docid=${(window as unknown as { __docid?: string }).__docid}`);
+      console.warn(
+        `[BU] beforeunload fired docid=${(window as unknown as { __docid?: string }).__docid}`
+      );
     });
   });
   page.on('request', (req) => {
@@ -90,9 +98,13 @@ export const attachStreamDiag = (page: Page): DiagBundle => {
   });
   page.on('requestfailed', (req) => {
     // 编辑历史: 2026-09-13 小欧 - 全URL失败探针(不限于chat/stream), 定位 reload 前"无JS日志"的额外REFUSED真身 - 小欧-2026-09-13
-    allFailed.push(`[${ts()}] ${req.method()} ${req.url()} :: ${req.failure()?.errorText}`);
+    allFailed.push(
+      `[${ts()}] ${req.method()} ${req.url()} :: ${req.failure()?.errorText}`
+    );
     if (req.url().includes('/chat/stream')) {
-      streamReqs.push(`[${ts()}] FAIL ${req.method()} ${req.url()} :: ${req.failure()?.errorText}`);
+      streamReqs.push(
+        `[${ts()}] FAIL ${req.method()} ${req.url()} :: ${req.failure()?.errorText}`
+      );
     }
   });
   return { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed, t0 };
@@ -116,7 +128,9 @@ export const findAdjacentDup = (text: string): string[] => {
         if (seg === line.slice(i + k, i + 2 * k)) {
           const w = Math.min(12, k);
           hits.push(
-            JSON.stringify(line.slice(Math.max(0, i - w), Math.min(line.length, i + 3 * k)))
+            JSON.stringify(
+              line.slice(Math.max(0, i - w), Math.min(line.length, i + 3 * k))
+            )
           );
         }
       }
@@ -126,38 +140,86 @@ export const findAdjacentDup = (text: string): string[] => {
 };
 
 /** 判定是否有行内相邻重复（true=有，导致断言失败） */
-export const hasAdjacentDup = (text: string): boolean => findAdjacentDup(text).length > 0;
+export const hasAdjacentDup = (text: string): boolean =>
+  findAdjacentDup(text).length > 0;
 
-/** [DIAG] 无条件输出网络/重连/后端日志片段诊断（供失败归因，不参与断言） */
+/** 取当前 spec 文件名(去 .spec.ts)作为 caseId（供 DIAG/Playwright 产物命名关联）
+ *  编辑历史: 2026-09-13 小欧 - 新增: 前端E2E日志/产物统一落盘规范 caseId 自动提取 - 小欧-2026-09-13 */
+export const getCaseId = (): string => {
+  try {
+    const file = test.info().file;
+    const name = file.split(/[\\/]/).pop() ?? '';
+    return name.replace(/\.spec\.ts$/, '');
+  } catch {
+    return 'unknown';
+  }
+};
+
+/** 落盘 DIAG 文本到 e2e_case/output/diag-<caseId>-<ts>.log（追加型），返回绝对路径
+ *  编辑历史: 2026-09-13 小欧 - 新增: 前端E2E日志/产物统一落盘规范 - 小欧-2026-09-13 */
+export const writeDiagToFile = (
+  caseId: string,
+  title: string,
+  body: string
+): string | null => {
+  try {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    const ts = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+    const outDir = join('e2e_case', 'output');
+    mkdirSync(outDir, { recursive: true });
+    const filePath = join(outDir, `diag-${caseId}-${ts}.log`);
+    appendFileSync(filePath, `\n===== ${title} =====\n${body}`, 'utf8');
+    return filePath;
+  } catch (err) {
+    console.log(`[DIAG] !! 落盘失败: ${(err as Error).message}`);
+    return null;
+  }
+};
+
+/** [DIAG] 无条件输出网络/重连/后端日志片段诊断（供失败归因，不参与断言）；
+ *  编辑历史: 2026-09-13 小欧 - 传 caseId 时同步落盘 e2e_case/output/diag-<caseId>-<ts>.log（统一日志/产物规范） - 小欧-2026-09-13 */
 export const printDiag = (
   streamReqs: string[],
   reconnectLogs: string[],
   sseErrors: string[],
   consoleAll: string[],
   tail: string,
-  allFailed: string[] = [] // 2026-09-13 小欧: 全URL请求失败(定位reload前额外REFUSED) - 小欧-2026-09-13
+  allFailed: string[] = [], // 2026-09-13 小欧: 全URL请求失败(定位reload前额外REFUSED) - 小欧-2026-09-13
+  caseId?: string
 ): void => {
-  console.log('\n[DIAG] === streamReqs(chat/stream 网络全量) ===');
-  streamReqs.forEach((l) => console.log(`[DIAG]   ${l}`));
-  console.log('[DIAG] === allFailed(全URL请求失败全量) ===');
-  allFailed.forEach((l) => console.log(`[DIAG]   ${l}`));
-  console.log('[DIAG] === reconnectLogs(前端SSE重连console) ===');
-  reconnectLogs.forEach((l) => console.log(`[DIAG]   ${l}`));
-  console.log('[DIAG] === sseErrors(前端SSE错误/终止console) ===');
-  sseErrors.forEach((l) => console.log(`[DIAG]   ${l}`));
-  console.log('[DIAG] === consoleAll(全量,取尾部40) ===');
+  const lines: string[] = [];
+  const emit = (l: string): void => {
+    console.log(l);
+    lines.push(l);
+  };
+  emit('\n[DIAG] === streamReqs(chat/stream 网络全量) ===');
+  streamReqs.forEach((l) => emit(`[DIAG]   ${l}`));
+  emit('[DIAG] === allFailed(全URL请求失败全量) ===');
+  allFailed.forEach((l) => emit(`[DIAG]   ${l}`));
+  emit('[DIAG] === reconnectLogs(前端SSE重连console) ===');
+  reconnectLogs.forEach((l) => emit(`[DIAG]   ${l}`));
+  emit('[DIAG] === sseErrors(前端SSE错误/终止console) ===');
+  sseErrors.forEach((l) => emit(`[DIAG]   ${l}`));
+  emit('[DIAG] === consoleAll(全量,取尾部40) ===');
   consoleAll
-    .filter((l) => /SSE|nav|Toast|abort|断|停止|重|轮询|Failed|network|Error|错误|warn/i.test(l))
+    .filter((l) =>
+      /SSE|nav|Toast|abort|断|停止|重|轮询|Failed|network|Error|错误|warn/i.test(
+        l
+      )
+    )
     .slice(-40)
-    .forEach((l) => console.log(`[DIAG]   ${l}`));
-  console.log('[DIAG] === consoleAllRaw(全量,取尾部60不过滤) ===');
-  consoleAll
-    .slice(-60)
-    .forEach((l) => console.log(`[DIAG]   ${l}`));
-  console.log('[DIAG] === 后端本轮日志片段(重连相关) ===');
+    .forEach((l) => emit(`[DIAG]   ${l}`));
+  emit('[DIAG] === consoleAllRaw(全量,取尾部60不过滤) ===');
+  consoleAll.slice(-60).forEach((l) => emit(`[DIAG]   ${l}`));
+  emit('[DIAG] === 后端本轮日志片段(重连相关) ===');
   tail
     .split('\n')
     .filter((l) => /重连|reconnect|final_stats|reader|客户端断开/i.test(l))
     .slice(-15)
-    .forEach((l) => console.log(`[DIAG]   ${l}`));
+    .forEach((l) => emit(`[DIAG]   ${l}`));
+  if (caseId) {
+    const filePath = writeDiagToFile(caseId, 'stream diag', lines.join('\n'));
+    if (filePath) console.log(`[DIAG] === 已落盘: ${filePath} ===`);
+  }
 };

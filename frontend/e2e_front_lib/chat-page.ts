@@ -60,4 +60,9 @@ export class ChatPage {
   async getFinalText(): Promise<string> {
     return this.page.evaluate(() => document.body.innerText);
   }
+
+  /** 等待毫秒数（供 runChatFlow 等流终止后的 UI 稳定窗口复用）— 小欧 2026-09-13 */
+  async waitMs(ms: number): Promise<void> {
+    await this.page.waitForTimeout(ms);
+  }
 }
