@@ -3,6 +3,8 @@
 // 编辑历史: 2026-08-27 小欧 - hooks修复#9: executeSend抛错清理isStreaming占位幽灵消息
 // 编辑历史: 2026-08-28 小强 - hooks修复#12: 防重由loading state改isSendingRef(useRef同步), 消除双击竞态
 // 编辑历史: 2026-08-29 小强 - 修复#20: 超长/网络失败early-return前复位isSendingRef, 避免绕过finally永久卡死发送 - 小强-2026-08-29
+// 编辑历史: 2026-09-13 小欧 - 会话标题截断50→10(北京老陈复查, 30仍显冗长): 待界面查看效果 - 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - 北京老陈定案: 生成端取消标题截断,创建会话存全量标题(截断只发生在显示端ChatHeader SESSION_TITLE_DISPLAY_MAX=10) - 小欧-2026-09-13
 /**
  * useChatSend Hook - 消息发送逻辑
  *
@@ -134,7 +136,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
         let currentSessionId = sessionId;
         if (!currentSessionId) {
           const newSession = await sessionApi.createSession(
-            messageContent.trim().substring(0, 50)
+            messageContent.trim() // 2026-09-13 小欧 北京老陈定案: 生成端不截断,标题存全量(截断只在显示端,见ChatHeader SESSION_TITLE_DISPLAY_MAX)
           );
           currentSessionId = newSession.session_id;
           setSessionId(currentSessionId);
