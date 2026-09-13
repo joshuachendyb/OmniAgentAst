@@ -569,7 +569,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   );
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       {/* 快捷指令弹窗 */}
       <ShortcutPanel
         visible={shortcutPanelVisible}
@@ -728,7 +728,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
             padding: '6px 6px 10px 6px',
             background: '#f8fafc',
             borderRadius: 12,
-            minHeight: 400,
+            minHeight: 0,
+            flex: 1,
             overflow: 'auto',
           }}
         >

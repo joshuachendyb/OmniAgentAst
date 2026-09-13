@@ -71,6 +71,7 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
       minHeight: 0,
       gap: 8,
       minWidth: 0,
+      overflow: 'hidden', // 2026-09-15 小欧: 外层Layout已锁定height:100vh, 本层不再留paddingBottom, 输入条回正常文档流由flex底部钉住, 中部滚动区自行滚动
     }}
   >
     {/* ① 顶栏区 */}

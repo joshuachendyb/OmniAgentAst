@@ -25,6 +25,8 @@
 // 编辑历史: 2026-09-12 小欧 - X2终态短信号(北京老陈定案): 删除R4(hasFinalStats→refreshTasks DB兜底补左侧response), 铁命令: 左侧只用final.response, 实时短条留空、历史回放从DB读; useChainTokens 的 final_stats→refreshTasks(token刷新)保持不变 — 小欧-2026-09-12
 // 编辑历史: 2026-09-13 小欧 - 北京老陈定案: 新建会话时右侧面板整体折叠(rightOpen=false)——右栏残留信息已根治清空,
 //   但新会话仍展开空态右栏不符预期; handleNewSession 包装置折叠, 点任务经 handleSelectTaskOpenRight 再展开 — 小欧-2026-09-13
+// 编辑历史: 2026-09-14 小欧 - [34]布局底部被推出视口修复(北京老陈令): 根div高度由calc(100vh-59px)改height:'100%'+overflow:'hidden',
+//   外层Layout已锁height:100vh, 本层填满Content即可, 输入条/整体窗口底部始终钉视口内(Edge/Chrome缩放实测通过) — 小欧-2026-09-14
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -219,15 +221,16 @@ const ChatPage: React.FC = () => {
   });
 
   return (
-    <div
+      <div
       style={{
-        height: 'calc(100vh - 59px)', // 2026-08-30 小欧: 精确贴合Content内容区高度=Header43+padding上6下10; 原calc(100vh-120px)矮61px致底部空白, height:100%会随父级撑高掉屏外, 两者均废弃
+        height: '100%', // 2026-09-15 小欧: 外层Layout已锁定height:100vh+overflow:hidden, 本层填满Content即可, 不再用calc(100vh-59px)
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
         padding: '0 8px 8px',
         background: Colors.BG.PRIMARY,
         minWidth: 0,
+        overflow: 'hidden',
       }}
     >
       <SessionLayout
