@@ -467,7 +467,7 @@ E2E（端到端）用**真实环境**模拟真实用户操作，验证系统全�
 | 后端核心 helper（所有通用逻辑） | `backend/e2etests/e2emodel/e2e_helpers.py` |
 | 后端 case 模板（四类） | `backend/e2etests/e2emodel/model-test_e2e_0*.py` |
 | 前端 E2E 公共库（POM/进程/诊断） | `frontend/e2e_front_lib/` |
-| 前端 UI 全链路用例（断线重连） | `frontend/tests/e2e/reconnect-ui.spec.ts` |
+| 前端 UI 全链路用例（断线重连） | `frontend/e2e_case/reconnect-ui.spec.ts` |
 
 ### 13.1 总则与铁律
 
@@ -621,14 +621,14 @@ async def test_e2e_p0_xx_xxx():
 
 ### 13.5 前端 E2E：case 编写（重点）
 
-前端 E2E = Playwright **真实浏览器**（chromium）+ 真实后端（:8000）+ 真实 LLM + 真实 SQLite。用例 `frontend/tests/e2e/*.spec.ts`，公共库唯一来源 `frontend/e2e_front_lib/`。
+前端 E2E = Playwright **真实浏览器**（chromium）+ 真实后端（:8000）+ 真实 LLM + 真实 SQLite。用例 `frontend/e2e_case/*.spec.ts`，公共库唯一来源 `frontend/e2e_front_lib/`。
 
 #### 13.5.1 架构与断流原理（认识"进程分离"，写断线类 case 的前提）
 
 | 角色 | 进程 | 职责 |
 |------|------|------|
 | 页面服务 A | vite dev `:5173`（hmr:false） | 永活服务页面，**全程不杀**（页面永不 reload） |
-| 后端代理 B | `tests/e2e/api-proxy.ts :9000→8000` | 页面 API/SSE 直连目标（`VITE_API_BASE_URL=http://localhost:9000/api/v1` 注入） |
+| 后端代理 B | `e2e_case/api-proxy.ts :9000→8000` | 页面 API/SSE 直连目标（`VITE_API_BASE_URL=http://localhost:9000/api/v1` 注入） |
 | 后端 C | uvicorn `:8000` | 内存任务持有者，断流期间任务存活 |
 
 断线 → 重连剧本：`killPort(9000)` 杀 B → 浏览器↔A(5173) 完好、仅 API 链路断，前端 fetch 收到**真实 TCP RST**（真·断线，页面不 reload）→ C 任务后台存活 → 重启 B → 前端退避 `GET /chat/stream/{task_id}?after_seq=lastSeqRef+1` 断点续传。
