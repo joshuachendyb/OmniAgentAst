@@ -3,10 +3,13 @@
 // 2026-09-11 小欧 - 修: 去 as 强转(DRY/类型安全), 复用 formatTokenCompact 公用函数; 第一行=状态+时长+模型, 第二行=4组token
 // 2026-09-11 小欧 - 三堂会审修复: P1-3删??null(与TokenLayer number|undefined对齐, TS2322归零); P2模型顺序统一provider/model(站点惯例+StaticStatsBlock一致); P2 cancelled归default(非error红语义) — 小欧-2026-09-11
 // 2026-09-12 小欧 - P1-6三堂会审修复: 抽renderToken()消4组token包裹渲染重复(DRY); 原IIFE三连Typography.Text改4行直线调用 — 小欧-2026-09-12
+// 2026-09-13 小欧 - 用CircleArrow/PillBadge可复用组件替换Tag和▲▼; 间距: pill↔time=12px time↔model=15px — 小欧-2026-09-13
 import React from 'react';
-import { Tag, Typography } from 'antd';
+import { Typography } from 'antd';
 import type { ExecutionStep } from '@/types/execution';
-import { Colors, FontSize, formatTokenCompact } from '@/utils/stepStyles';
+import { Colors, formatTokenCompact } from '@/utils/stepStyles';
+import { CircleArrow } from '@/components/CircleArrow';
+import { PillBadge } from '@/components/PillBadge';
 
 interface TitleBlockProps {
   finalStep?: ExecutionStep | null;
@@ -45,13 +48,13 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
   const taskAcc = finalStep.task_accumulated_tokens;
   const sessAcc = finalStep.session_accumulated_tokens;
   const chainAcc = finalStep.chain_accumulated_tokens;
-  // 2026-09-11 小欧 三堂会审P2: cancelled 归 default——原 error 红过重(主动取消/超时), 与 StaticStatsBlock STATUS_COLOR_MAP 默认灰对齐 — 小欧-2026-09-11
-  const statusColor =
+  // 2026-09-13 小欧: outcome→PillBadge背景色映射
+  const pillColor =
     outcome === 'completed'
-      ? 'success'
+      ? '#52c41a'
       : outcome === 'failed'
-        ? 'error'
-        : 'default';
+        ? '#ff4d4f'
+        : '#bfbfbf';
   return (
     <div
       role="button"
@@ -71,20 +74,20 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
         cursor: 'pointer',
       }}
     >
-      {/* 上行：任务统计 + 状态Tag + 运行时长 + model/provider + 折叠箭头 */}
+      {/* 上行：任务统计 + PillBadge + pill↔time=12px + 运行时长 + time↔model=15px + model/provider + CircleArrow */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Typography.Text strong style={{ fontSize: 13 }}>
           任务统计
         </Typography.Text>
-        <Tag color={statusColor} style={{ margin: 0 }}>
-          {outcome ?? '-'}
-        </Tag>
+        <PillBadge text={outcome ?? '-'} color={pillColor} shine />
+        <span style={{ display: 'inline-block', width: 12 }} />
         <Typography.Text
           type="secondary"
           style={{ fontSize: 11, whiteSpace: 'nowrap' }}
         >
           运行 {duration != null ? `${Math.round(duration)}s` : '-'}
         </Typography.Text>
+        <span style={{ display: 'inline-block', width: 15 }} />
         <Typography.Text
           type="secondary"
           style={{ fontSize: 11, whiteSpace: 'nowrap' }}
@@ -92,15 +95,11 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
           {/* 2026-09-11 小欧 三堂会审P2: 统一 provider/model——与站点惯例(useChatPanels L191 provider (model))及 StaticStatsBlock 一致 — 小欧-2026-09-11 */}
           {provider ?? '-'} / {model ?? '-'}
         </Typography.Text>
-        <span
-          style={{
-            fontSize: FontSize.PRIMARY,
-            color: Colors.TEXT.PRIMARY,
-            marginLeft: 'auto',
-          }}
-        >
-          {expanded ? '▲' : '▼'}
-        </span>
+        <CircleArrow
+          expanded={expanded}
+          glow
+          style={{ marginLeft: 'auto' }}
+        />
       </div>
       {/* 下行：token 4组 */}
       <div
