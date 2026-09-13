@@ -7,6 +7,7 @@
 /* 编辑历史: 2026-09-08 小欧 - 标题图标(北京老陈令): 新增.title-spin-icon(D三色弧段loader, 复用waiting-spin逆时针1s常转, 20px),
    .tool-waiting-cursor 尺寸 1em→1.1em - 小欧-2026-09-08 */
 /* 编辑历史: 2026-09-09 小欧 - UI视觉优化(北京老陈定案): 新增.task-list-item:hover悬浮态/.active选中态/.task-text-block相对定位/.task-copy-btn复制按钮(绝对定位右上角hover显示) - 小欧-2026-09-09 */
+/* 编辑历史: 2026-09-13 小欧 - action等待图标(北京老陈令选G波纹扩散): 新增@keyframes action-ripple与.action-ripple-1/.action-ripple-2(1.8s交替scale0.5→1.4+opacity1→0), .action-waiting-cursor去waiting-spin改静态容器(图标SVG在WaitingIcons/ToolWaitingIcon之下) — 小欧-2026-09-13 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;
@@ -142,6 +143,36 @@
   display: block;
   width: 20px;
   height: 20px;
+}
+
+/* 2026-09-13 小欧 - action等待图标: 蓝色波纹扩散(G样式), scale 0.5→1.4 + opacity 1→0, 1.8s周期, 不旋转 — 小欧-2026-09-13 */
+@keyframes action-ripple {
+  0% {
+    transform: scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+.action-waiting-cursor {
+  display: inline-block;
+  vertical-align: baseline;
+}
+.action-waiting-cursor svg {
+  display: block;
+}
+.action-ripple-1 {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: action-ripple 1.8s ease-out infinite;
+}
+.action-ripple-2 {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: action-ripple 1.8s ease-out infinite;
+  animation-delay: 0.9s;
 }
 
 /* 编辑历史: 2026-09-09 小欧 - [16]3.9 浮层入口热区样式落盘(hover 规格 2 + 展开态 rotate + :focus-visible)(见 6.5.1) — 小欧-2026-09-09 */

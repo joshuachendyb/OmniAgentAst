@@ -61,6 +61,9 @@
 //   (跨任务/异常残留)独立追加不覆盖历史段, 杜绝"旧任务工具行被新任务同 step 覆盖篡改" — 小欧-2026-09-09
 // 编辑历史: 2026-09-11 小欧 - 修复reasoning/thought重复: thought步骤的reasoning字段与chunk步骤(is_reasoning=true)内容重叠时去重, 防appendToLast拼接致双倍文本 - 小欧-2026-09-11
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - [35]thought-action等待状态实施: 内联WaitingIcon拆为WaitingIcons控件ThoughtWaitingIcon; 新增action-waiting段
+//   (thinking末段+taskActive时组件体内追加ActionWaitingIcon段, 北京老陈令选G波纹扩散样式, action到达/任务结束自动消失);
+//   union加action-waiting类型, 渲染分支加ActionWaitingIcon; 注释统一用组件名(ThoughtWaitingIcon/ToolWaitingIcon/ActionWaitingIcon) — 小欧-2026-09-13
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -81,6 +84,10 @@ import { ToolCallLine } from './ToolCallLine';
 import { StatusLine } from './StatusLine';
 import { TextStream } from './TextStream'; // 13.8 正文打字机 — 小欧 2026-08-30
 import {
+  ThoughtWaitingIcon,
+  ActionWaitingIcon,
+} from '@/components/WaitingIcons'; // 2026-09-13 小欧: ThoughtWaitingIcon/ActionWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
+import {
   Colors,
   BorderWidth,
   FontSize,
@@ -100,28 +107,11 @@ export type PipelineSegment =
     }
   | { kind: 'obs'; step: ExecutionStep }
   | { kind: 'error'; step: ExecutionStep }
-  | { kind: 'waiting'; step?: number }; // 4.4.2(2026-09-07 小欧): thought-start 落段, 可被首个内容覆盖接管
+  | { kind: 'waiting'; step?: number } // 4.4.2(2026-09-07 小欧): thought-start 落段, 可被首个内容覆盖接管
+  | { kind: 'action-waiting' }; // 2026-09-13 小欧: thinking末段+taskActive时追加ActionWaitingIcon(LLM推理action中)
 
 // 可承载 sameStep 的段(thinking/text) — 2026-08-30 小欧 三堂会审: union 含 sameStep 的仅两类, 抽取避免写包任一段
 type TextishSegment = Extract<PipelineSegment, { kind: 'thinking' | 'text' }>;
-
-// 4.4.2(2026-09-07 小欧, 10大规范-复用优先/DRY): 等待图标唯一 SVG 定义 —
-//   waiting 段渲染分支专用(旧 showGreenCircle 兜底已删除, 见编辑历史 2026-09-07 去留) — 小欧-2026-09-07
-const WaitingIcon: React.FC = () => (
-  <span className="waiting-cursor" aria-label="等待下一个思考内容">
-    <svg
-      width="1.4em"
-      height="1.4em"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="#52c41a"
-      strokeWidth={2}
-      strokeLinecap="round"
-    >
-      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-    </svg>
-  </span>
-);
 
 /** 纯函数：业务步骤 -> 顺序段（可单测） */
 export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
@@ -286,6 +276,20 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   deniedEntries, // 2026-09-06 小欧 B2(6.4)
 }) => {
   const segs = buildSegments(steps);
+  // 2026-09-13 小欧 - ActionWaitingIcon segment追加(第4章方案): buildSegments是纯函数(只接收steps),
+  //   此处用streaming/badge等组件props判定末段是否需要追加ActionWaitingIcon segment;
+  //   末段是thinking + taskActive=true时追加, action到达后tool segment排在后面自然消失 — 小欧-2026-09-13
+  const taskActive =
+    streaming ||
+    !!highlightToolName ||
+    badge === 'running' ||
+    badge === 'paused';
+  // 2026-09-13 小欧 - ActionWaitingIcon segment追加: 末段是thinking + taskActive=true时,
+  //   追加ActionWaitingIcon; action到达后tool segment排在它后面自然消失; taskActive=false时不显示
+  const lastSeg = segs[segs.length - 1];
+  if (lastSeg && lastSeg.kind === 'thinking' && taskActive) {
+    segs.push({ kind: 'action-waiting' });
+  }
   // 2026-09-04 小欧 - observation 去重：已消费孤儿抑制（单/多工具并行时孤儿与 ToolCallLine 重复）
   const toolStepSet = new Set(
     segs
@@ -302,15 +306,6 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   );
   // 13.8 打字机: 最后一个 text 段为实时累积段(打字), 前序已完成段静态呈现
   const lastText = segs.reduce((a, s, i) => (s.kind === 'text' ? i : a), -1);
-  // 4.4.2(2026-09-07 小欧, 北京老陈定案·清旧): 等待图标改由 thought-start 信号唯一驱动——
-  //   后端每"可见轮"LLM 请求前必发(react_loop 进 loop 前 + 每工具轮 observation 后), 前端据此产 waiting 段;
-  //   旧 showGreenCircle 双条件推断(!lastSeg || lastSeg.kind==='obs')已删除: 空容器首圈由首信号到达即亮,
-  //   obs 后等待由紧邻的 thought-start(waiting 段)承接, 无连接缝隙(<同批SSE), 不再双机制(设计3.4原则七去留)
-  const taskActive =
-    streaming ||
-    !!highlightToolName ||
-    badge === 'running' ||
-    badge === 'paused';
   return (
     <div
       style={{
@@ -324,12 +319,24 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
       {headerNode}
       {segs.map((seg, i) => {
         if (seg.kind === 'waiting') {
-          // 4.4.2(2026-09-07 小欧): waiting 段首列亮等待图标; 仅"末段+taskActive"才显示,
+          // 4.4.2(2026-09-07 小欧): thinking段首列亮ThoughtWaitingIcon; 仅"末段+taskActive"才显示,
           //   final/error/停止后非末段自动灭, 杜绝常驻
           if (i !== segs.length - 1 || !taskActive) return null;
           return (
             <div key={`waiting-${i}`} style={{ margin: stepMargin(false) }}>
-              <WaitingIcon />
+              <ThoughtWaitingIcon />
+            </div>
+          );
+        }
+        if (seg.kind === 'action-waiting') {
+          // 2026-09-13 小欧: ActionWaitingIcon, 仅末段+taskActive显示, action到达后tool段排在后面自然消失
+          if (i !== segs.length - 1 || !taskActive) return null;
+          return (
+            <div
+              key={`action-waiting-${i}`}
+              style={{ margin: stepMargin(false) }}
+            >
+              <ActionWaitingIcon />
             </div>
           );
         }

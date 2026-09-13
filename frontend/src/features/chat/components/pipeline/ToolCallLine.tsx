@@ -35,6 +35,7 @@
 //   有结果时在 tools.map 后收尾、无结果时独立成行——全拒/部分拒被拒工具均点名留痕; 点名接管时占位/聚合灰字隐藏不重复 — 小欧-2026-09-06
 // 编辑历史: 2026-09-08 小欧 - 图标换型(北京老陈令): 齿轮(settings)旋转视觉不明显→换Feather loader弧段,
 //   三段弧非对称旋转位置变化幅度大, 感知清晰; stroke线框橙#fa8c16/1s逆时针不变, 尺寸由index.css统一控 1.1em(≈15px) — 小欧-2026-09-08
+// 编辑历史: 2026-09-13 小欧 - 内联橙色loader SVG提取为WaitingIcons/ToolWaitingIcon控件, 行为零变化(同SVG同CSS类), 注释统一用组件名 — 小欧-2026-09-13
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -57,6 +58,7 @@ import {
   Spacing,
   stepMargin,
 } from '@/utils/stepStyles';
+import { ToolWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ToolWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
 
 interface ToolCallLineProps {
   action: ExecutionStep; // type=action
@@ -228,28 +230,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               </span>
             )}
           {!hasResult && tools.length > 0 && !interrupted && !replay && (
-            <span className="tool-waiting-cursor" aria-label="工具执行中">
-              {/* 2026-09-08 小欧 - 图标换型(北京老陈令:齿轮旋转不明显): 齿轮(settings)换Feather loader弧段,
-                  三段弧非对称旋转时位置变化幅度大, 视觉感知明显; stroke线框橙#fa8c16/1s逆时针不变,
-                  尺寸由index.css统一控 1.1em(≈15px) — 小欧-2026-09-08 */}
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#fa8c16"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 2v4" />
-                <path d="M12 18v4" />
-                <path d="M4.93 4.93l2.83 2.83" />
-                <path d="M16.24 16.24l2.83 2.83" />
-                <path d="M2 12h4" />
-                <path d="M18 12h4" />
-                <path d="M4.93 19.07l2.83-2.83" />
-                <path d="M16.24 7.76l2.83-2.83" />
-              </svg>
-            </span>
+            <ToolWaitingIcon />
           )}
           {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
           {hasResult && tools.length === 0 && (
