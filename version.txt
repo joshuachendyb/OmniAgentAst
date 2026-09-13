@@ -1,4 +1,27 @@
-﻿v0.19.40.12
+﻿v0.19.40.13
+更新时间: 2026-09-13 10:42:20 - 小欧-2026-09-13
+## v0.19.40.12以来 变更汇总(11个commit) - 小欧-2026-09-13
+[2026-09-13 10:42:20 小欧] 汇总范围=v0.19.40.12以来全部commit(共11个: feat7/docs3/chore1, E2E测试资产入库与前端用例编号化专项)
+
+### feat(7个):
+- d10db46b2 feat:e2e_case fre2e_01~04 接入浏览器退出双通道开关挂起钩子(keepBrowserOpenIfRequested, 单case调试保留页面) - 小欧-2026-09-13
+- 0b808fd75 feat:e2e_front_lib stream-diag 浏览器退出双通道开关(命令行KEEP_BROWSER=1临时覆盖优先 + e2e.config.ts E2E_KEEP_BROWSER_OPEN常驻开关, 跑完挂起保留页面单case调试/Ctrl+C结束) - 小欧-2026-09-13
+- d4e6faf8d feat:e2e_front_lib 新增normal-chat普通会话流POM(查天气/股票/目录分析普通case复用环境)+chat-page/index/process/stream-diag升级 - 小欧-2026-09-13
+- f91a5800a feat:前端E2E用例编号化重构(fre2e_01断线重连/02天气/03股票/04目录分析, 旧reconnect-ui.spec退役删除, api-proxy日志PROXY_LOG命名+playwright产物统一落e2e_case/output) - 小欧-2026-09-13
+- 68cc0afcd feat:e2e_front_lib升级(sendPrompt抗加载会话拦截重发/killPort杀全量listener修复静默空杀/stream-diag跳过纯符号行防表格线误报+DiagBundle加t0基准) - 小欧-2026-09-13
+- f18e54a27 feat:前端E2E案例迁移 tests/e2e→e2e_case目录(playwright testDir/vitest exclude同步切换, 案例含断线重连spec/后端代理/独立vite config) - 小欧-2026-09-13
+- 73121695a feat:e2etests E2E测试资产入库(e2e_front_lib前端Playwright公共库chat-page/process/stream-diag/index + 全链路E2E测试手册v2.11更新, 北京老陈特批测试资产入库) - 小欧-2026-09-13
+
+### docs(3个):
+- b759f32ea docs:全链路E2E测试手册 v2.15 9.2新增(6)浏览器退出双通道开关+(7)前端console日志采集原理,章节与版本记录同步 - 小欧-2026-09-13
+- 3e1961fbb docs:全链路E2E测试手册v2.13更新(前端用例编号化fre2e_01~04+普通会话POM+产物落盘规范) - 小欧-2026-09-13
+- 95c8c8509 docs:全链路E2E测试手册v2.12案例迁移章节更新+README十三章E2E路径同步(e2e_case目录/断流原理) - 小欧-2026-09-13
+
+### chore(1个):
+- 1b4225aec chore:.gitignore 补前端E2E产物忽略(frontend/test-results与playwright-report结果目录/e2e_case/output自落盘日志/tsconfig.node.tsbuildinfo增量缓存) - 小欧-2026-09-13
+
+---
+v0.19.40.12
 更新时间: 2026-09-13 08:16:15 - 小欧-2026-09-13
 ## v0.19.40.11以来 变更汇总(28个commit) - 小欧-2026-09-13
 [2026-09-13 08:16:15 小欧] 汇总范围=v0.19.40.11以来全部commit(共28个: docs17/fix5/refactor4/feat2)
