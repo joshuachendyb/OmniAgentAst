@@ -77,6 +77,12 @@
 // 编辑历史: 2026-09-13 小欧 - DRY收敛(北京老陈质疑"多余改动"驱动三轮会审): 两处三行清零(settledSteps/settledRef/historySteps)
 //   抽 resetSettledAndHistory 唯一入口, sessionId切换effect与REST早退共用; 函数职责=RightViewer展示态清理, 与useSSE.clearSteps正交 — 小欧-2026-09-13
 // 编辑历史: 2026-09-13 小欧 - 北京老陈复测: 切会话折叠区(统计区)复位为折叠——新会话默认折叠, 防展开旧统计残留; statsExpanded声明上移供effect复位 — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - 回归修复(北京老陈实证: 实时任务完成后点击左侧旧任务, 右侧不切换仍显实时任务step, 刷新后正常):
+//   settledSteps/settledRef 是"当前任务"终态快照, 同会话内切换历史任务(activeTaskId!==serverTaskId)时残留且恒非空,
+//   ①displaySteps三选一原 settledSteps.length>0 永远优先于 historySteps→右侧显示旧任务快照不切换;
+//   ②REST等长校验用 settledRef 残留当基准, 旧任务步骤更少时误判丢尾→用快照覆盖historySteps二次污染;
+//   修: 两处均加 activeTaskId===serverTaskId 守卫, 快照仅庇当前任务回放, 历史任务切换一律走historySteps;
+//   与"刷新后正常"(重挂载置空)语义一致, S13快照机制语义不改 — 小欧-2026-09-13
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -120,6 +126,24 @@ const toExecutionSteps = (raw: unknown): ExecutionStep[] => {
       typeof s === 'object' && s !== null && 'type' in s
   );
 };
+
+// 2026-09-13 小欧 回归修复(北京老陈实证: 实时任务完成后点击左侧旧任务右侧不切换, 刷新后正常):
+//   右侧步骤三选一逻辑抽纯函数供回归测试钉死——settledSteps(当前任务终态快照)仅当"当前任务回放"
+//   (currentTaskMatch=activeTaskId===serverTaskId)时优先; 同会话内切换其他历史任务必须走 historySteps(REST),
+//   与"刷新后正常"(重挂载settledSteps置空)语义一致。 — 小欧-2026-09-13
+export function pickDisplaySteps(options: {
+  isCurrentLive: boolean;
+  currentTaskMatch: boolean;
+  liveSteps: ExecutionStep[];
+  settledSteps: ExecutionStep[];
+  historySteps: ExecutionStep[];
+}): ExecutionStep[] {
+  if (options.isCurrentLive) return options.liveSteps;
+  if (options.currentTaskMatch && options.settledSteps.length > 0) {
+    return options.settledSteps;
+  }
+  return options.historySteps;
+}
 
 interface RightViewerProps {
   activeTaskId: string | null;
@@ -348,7 +372,11 @@ const RightViewer: React.FC<RightViewerProps> = ({
           if (cancelled) return;
           setDetail(d);
           // 小欧 2026-09-10 S13.4: REST 结果与 settledSteps 等长校验——短则弃，保留 settledSteps 兜底
+          // 2026-09-13 小欧 回归修复(与displaySteps守卫同根)：settledRef 是当前任务终态快照, 点击切换其他历史任务
+          //   时 settledRef 残留旧值, 若旧任务REST步骤数更少会被误判"丢尾"→用快照覆盖historySteps(=实时任务steps)再次污染;
+          //   加 activeTaskId===serverTaskId 守卫, 等长校验仅在同任务回放语境有效, 跨任务禁止拿快照顶替 — 小欧-2026-09-13
           if (
+            activeTaskId === serverTaskId &&
             s.steps.length > 0 &&
             settledRef.current.length > 0 &&
             s.steps.length < settledRef.current.length
@@ -398,11 +426,17 @@ const RightViewer: React.FC<RightViewerProps> = ({
   }, [hasFinalStats, activeTaskId, serverTaskId, onSettledRefresh]);
 
   // 小欧 2026-09-10 S13.2: 结束瞬时先用 live 快照兜底，REST 成功且更长时再替换
-  const displaySteps = isCurrentLive
-    ? liveSteps
-    : settledSteps.length > 0
-      ? settledSteps
-      : historySteps;
+  // 2026-09-13 小欧 回归修复(北京老陈实证: 实时任务完成后点击左侧旧任务, 右侧不切换仍显实时任务step; 刷新后正常):
+  //   settledSteps 是"当前实时任务"的终态快照, 但点击切换其他历史任务(activeTaskId!==serverTaskId)时不清理、恒非空,
+  //   原三选一使 settledSteps 永远优先于 historySteps→右侧显示旧快照; pickDisplaySteps 加 currentTaskMatch 守卫,
+  //   快照只庇当前任务回放, 历史任务切换一律走 historySteps(REST拉取), 刷新语义(=重挂载置空)一致 — 小欧-2026-09-13
+  const displaySteps = pickDisplaySteps({
+    isCurrentLive,
+    currentTaskMatch: activeTaskId === serverTaskId,
+    liveSteps,
+    settledSteps,
+    historySteps,
+  });
   // 小欧 2026-09-11 第七章 M3a(R6): title 段数据源=final 帧——实时=settledSteps 快照(final 已入 ref 快照),
   //   历史回放=historySteps 的 final step; final 到达即可渲染, 绝不读 DB(R6) — 小欧-2026-09-11
   const finalStep = displaySteps.find((s) => s.type === 'final');
