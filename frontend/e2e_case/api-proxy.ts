@@ -21,16 +21,20 @@
  * 编辑历史: 2026-09-13 小欧 - 移除 CORS 注入/自答 OPTIONS: 后端 uvicorn 已配 CORS(允许5173), 代理再注入*致
  *   多值头 "http://localhost:5173, *" 被浏览器护栏拒收(Net Error/网络连接异常); 全透传交由后端CORS中间件 - 小欧-2026-09-13
  * 编辑历史: 2026-09-13 小欧 - 迁移: tests/e2e → e2e_case; 日志路径同步改 e2e_case/output - 小欧-2026-09-13
+ * 编辑历史: 2026-09-13 小欧 - 日志/产物统一规范: 支持 PROXY_LOG 环境变量命名自落盘日志(断连 case 每轮独立轮次文件),
+ *   未注入时默认 e2e_case/output/api-proxy.log - 小欧-2026-09-13
  */
 import http from 'node:http';
 import { appendFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const TARGET = process.env.PROXY_TARGET || 'http://localhost:8000';
 const PORT = Number(process.env.PROXY_PORT || 9000);
-const LOG_PATH = join(process.cwd(), 'e2e_case', 'output', 'api-proxy.log');
+const LOG_PATH = process.env.PROXY_LOG
+  ? join(process.cwd(), process.env.PROXY_LOG)
+  : join(process.cwd(), 'e2e_case', 'output', 'api-proxy.log');
 
-mkdirSync(join(process.cwd(), 'e2e_case', 'output'), { recursive: true });
+mkdirSync(dirname(LOG_PATH), { recursive: true });
 const logLine = (s: string): void => {
   try {
     appendFileSync(LOG_PATH, `${new Date().toISOString()} ${s}\n`, 'utf8');
@@ -73,5 +77,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  logLine(`[api-proxy] listening on :${PORT} -> ${TARGET} (pid=${process.pid})`);
+  logLine(
+    `[api-proxy] listening on :${PORT} -> ${TARGET} (pid=${process.pid})`
+  );
 });

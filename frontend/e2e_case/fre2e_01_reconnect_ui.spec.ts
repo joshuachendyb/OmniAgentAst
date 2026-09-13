@@ -5,9 +5,11 @@ import {
   getTodayLogPath,
   hasAdjacentDup,
   findAdjacentDup,
+  getCaseId,
   killPort,
   logBaseOf,
   printDiag,
+  proxyLogPath,
   readLogSince,
   startDevServer,
   startProxyServer,
@@ -43,7 +45,8 @@ test.describe('断线重连 UI 全链路', () => {
     test.setTimeout(600_000);
 
     const chat = new ChatPage(page);
-    const { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed, t0 } = attachStreamDiag(page);
+    const { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed, t0 } =
+      attachStreamDiag(page);
 
     // 环境就绪(进程分离-跨origin): 后端代理B(:9000→8000, 页面API/SSE经VITE_API_BASE_URL直连跨域)
     //   + vite A(:5173, hmr:false, 永活服务页面)
@@ -51,18 +54,28 @@ test.describe('断线重连 UI 全链路', () => {
     //   经中间代理(如vite http-proxy)中转时, 上游RST被代理静默吞掉挂起(前端无感, 端点活UA);
     //   故页面API基址注入为 http://localhost:9000/api/v1 直连代理B(跨域CORS), 杀B=浏览器直连RST。
     killPort(9000);
-    await expect.poll(() => waitPortDown(9000), { timeout: 20_000, interval: 500 }).toBeTruthy();
-    startProxyServer(FRONTEND_DIR);
-    await expect.poll(() => waitPortUp(9000), { timeout: 60_000, interval: 500 }).toBeTruthy();
+    await expect
+      .poll(() => waitPortDown(9000), { timeout: 20_000, interval: 500 })
+      .toBeTruthy();
+    // 编辑历史: 2026-09-13 小欧 - 代理日志按轮落盘(api-proxy-<ts>.log), 断/重启两轮各独立命名 - 小欧-2026-09-13
+    const proxyLog1 = proxyLogPath();
+    startProxyServer(FRONTEND_DIR, proxyLog1);
+    await expect
+      .poll(() => waitPortUp(9000), { timeout: 60_000, interval: 500 })
+      .toBeTruthy();
 
     killPort(5173);
-    await expect.poll(() => waitPortDown(5173), { timeout: 20_000, interval: 500 }).toBeTruthy();
+    await expect
+      .poll(() => waitPortDown(5173), { timeout: 20_000, interval: 500 })
+      .toBeTruthy();
     startDevServer(
       FRONTEND_DIR,
       'run dev -- --config e2e_case/vite.e2e.config.ts',
       'set "VITE_API_BASE_URL=http://localhost:9000/api/v1" && '
     );
-    await expect.poll(() => waitPortUp(5173), { timeout: 60_000, interval: 500 }).toBeTruthy();
+    await expect
+      .poll(() => waitPortUp(5173), { timeout: 60_000, interval: 500 })
+      .toBeTruthy();
 
     await chat.gotoChat();
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
@@ -78,7 +91,15 @@ test.describe('断线重连 UI 全链路', () => {
     try {
       await chat.waitReceiving(90_000);
     } catch (e) {
-      printDiag(streamReqs, reconnectLogs, sseErrors, consoleAll, readLogSince(BLOG, 0), allFailed);
+      printDiag(
+        streamReqs,
+        reconnectLogs,
+        sseErrors,
+        consoleAll,
+        readLogSince(BLOG, 0),
+        allFailed,
+        getCaseId()
+      );
       throw e;
     }
 
@@ -94,7 +115,10 @@ test.describe('断线重连 UI 全链路', () => {
       for (const c of consoleAll.slice(-50)) {
         const mt = c.match(/\[T\+(\d+)ms\]/);
         const tt = Number(mt?.[1] || 0);
-        if (tt && !/onPaused|连接建立|重连|暂停|缓冲|清空|加载|初始化/.test(c)) {
+        if (
+          tt &&
+          !/onPaused|连接建立|重连|暂停|缓冲|清空|加载|初始化/.test(c)
+        ) {
           t = Math.max(t, tt);
         }
       }
@@ -112,25 +136,39 @@ test.describe('断线重连 UI 全链路', () => {
 
     // 4) 杀后端代理B(:9000) → 页面<->vite(A)完好, 仅 API 链路 RST → 前端感知断线(页面不 reload)
     killPort(9000);
-    await expect.poll(() => waitPortDown(9000), { timeout: 20_000, interval: 500 }).toBeTruthy();
+    await expect
+      .poll(() => waitPortDown(9000), { timeout: 20_000, interval: 500 })
+      .toBeTruthy();
 
     // 5) 断言前端检测到断线并进入重连(console 出现 "准备重连"/"重连")
     //    2026-09-13 小欧: 改手动轮询, 失败即打全量诊断(定位"断线未被前端感知"归属: 代理未真断/流未起/vite proxy吞错)
-    const detectReconnect = (): boolean => reconnectLogs.some((c) => c.includes('重连'));
+    const detectReconnect = (): boolean =>
+      reconnectLogs.some((c) => c.includes('重连'));
     const deadline = Date.now() + 30_000;
     while (!detectReconnect() && Date.now() < deadline) {
       await page.waitForTimeout(500);
     }
     if (!detectReconnect()) {
-      printDiag(streamReqs, reconnectLogs, sseErrors, consoleAll, readLogSince(BLOG, 0), allFailed);
+      printDiag(
+        streamReqs,
+        reconnectLogs,
+        sseErrors,
+        consoleAll,
+        readLogSince(BLOG, 0),
+        allFailed,
+        getCaseId()
+      );
       throw new Error('[E2E] 前端未进入重连(断线未被感知)');
     }
 
     // 6) 重启后端代理B(:9000, 后端任务存活, API 链路经代理恢复)
     //    2026-09-13 小欧: vite A(:5173) 全程未杀, 页面永活 → GET#2/3 退避重连续传不被销毁中断,
     //    最贴近真实"网关/反代短暂重启": 恢复后首次 GET 即达后端续传。
-    startProxyServer(FRONTEND_DIR);
-    await expect.poll(() => waitPortUp(9000), { timeout: 60_000, interval: 500 }).toBeTruthy();
+    const proxyLog2 = proxyLogPath();
+    startProxyServer(FRONTEND_DIR, proxyLog2);
+    await expect
+      .poll(() => waitPortUp(9000), { timeout: 60_000, interval: 500 })
+      .toBeTruthy();
 
     // 7) 等流结束: "发送"按钮复现(isReceiving=false, done 已处理)
     await chat.waitDone(300_000);
@@ -155,8 +193,18 @@ test.describe('断线重连 UI 全链路', () => {
     } catch (e) {
       // 编辑历史: 2026-09-13 小欧 - 失败时打印重复片段上下文, 区分"LLM天然重复误报"与"续传重叠真run-on" - 小欧-2026-09-13
       console.log('[run-on] findAdjacentDup 命中列表(前10):');
-      findAdjacentDup(finalText).slice(0, 10).forEach((h) => console.log(`[run-on]   ${h}`));
-      printDiag(streamReqs, reconnectLogs, sseErrors, consoleAll, readLogSince(BLOG, logBase), allFailed);
+      findAdjacentDup(finalText)
+        .slice(0, 10)
+        .forEach((h) => console.log(`[run-on]   ${h}`));
+      printDiag(
+        streamReqs,
+        reconnectLogs,
+        sseErrors,
+        consoleAll,
+        readLogSince(BLOG, logBase),
+        allFailed,
+        getCaseId()
+      );
       throw e;
     }
 
@@ -179,7 +227,15 @@ test.describe('断线重连 UI 全链路', () => {
     }
 
     // [DIAG] 无条件输出网络/重连全量诊断(供失败归因, 不参与断言)
-    printDiag(streamReqs, reconnectLogs, sseErrors, consoleAll, tail, allFailed);
+    printDiag(
+      streamReqs,
+      reconnectLogs,
+      sseErrors,
+      consoleAll,
+      tail,
+      allFailed,
+      getCaseId()
+    );
 
     expect(recon).not.toBeNull();
     expect(Number(recon![1])).toBeGreaterThan(0);
