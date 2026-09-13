@@ -9,6 +9,7 @@ import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { E2E_KEEP_BROWSER_OPEN } from '../e2e_case/e2e.config';
 
 /** 生成当日后端日志路径 `${backendDir}\logs\app_YYYY-MM-DD.log`（日志文件按日期轮转） */
 export const getTodayLogPath = (backendDir: string): string => {
@@ -222,4 +223,24 @@ export const printDiag = (
     const filePath = writeDiagToFile(caseId, 'stream diag', lines.join('\n'));
     if (filePath) console.log(`[DIAG] === 已落盘: ${filePath} ===`);
   }
+};
+
+// 编辑历史: 2026-09-13 小欧 v3 - 双通道开关: 命令行 KEEP_BROWSER=1 临时覆盖优先, 否则用 e2e.config.ts 的
+//   E2E_KEEP_BROWSER_OPEN(文件常驻开关). true=跑完挂起不关浏览器(单case调试), false=跑完自动关闭(默认) - 小欧-2026-09-13
+/** 浏览器"跑完是否自动退出"开关（优先级：命令行 `KEEP_BROWSER=1` 临时覆盖 > 配置文件 `e2e.config.ts` 的 E2E_KEEP_BROWSER_OPEN）。
+ *  may be true 时：完成后挂起保留页面供查看（Ctrl+C 结束，仅适合单 case 调试）；默认 false 零副作用（多 case / CI 不受影响）。
+ *  命令行用法: `set "KEEP_BROWSER=1"&& npx playwright test e2e_case/fre2e_xx_...spec.ts --headed` */
+export const keepBrowserOpenIfRequested = async (page: Page): Promise<void> => {
+  const keep = process.env.KEEP_BROWSER
+    ? process.env.KEEP_BROWSER === '1'
+    : E2E_KEEP_BROWSER_OPEN;
+  if (!keep) return;
+  test.setTimeout(0); // 取消本用例超时，防挂起被 test.setTimeout(600_000) 掐断
+  const src = process.env.KEEP_BROWSER
+    ? '命令行 KEEP_BROWSER=1'
+    : `配置文件 E2E_KEEP_BROWSER_OPEN=${E2E_KEEP_BROWSER_OPEN}`;
+  console.log(
+    `[E2E] ${src} 已开启：跑完挂起保留页面(page=${page.url()})，查看完毕按 Ctrl+C 结束`
+  );
+  await new Promise<void>(() => {});
 };
