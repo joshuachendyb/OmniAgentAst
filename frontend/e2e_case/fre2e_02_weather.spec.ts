@@ -5,6 +5,7 @@ import {
   findAdjacentDup,
   getCaseId,
   getTodayLogPath,
+  keepBrowserOpenIfRequested,
   logBaseOf,
   printDiag,
   readLogSince,
@@ -94,5 +95,8 @@ test.describe('查天气 UI 全链路', () => {
       .filter((l) => l.includes('[tool_executor]'))
       .slice(-8)
       .forEach((l) => console.log(`[TOOL]  ${l.trim()}`));
+
+    // 特例保留: 双开关(命令行 KEEP_BROWSER=1 临时 / e2e.config.ts E2E_KEEP_BROWSER_OPEN=true)时完成后挂起不关浏览器(仅单 case 调试, Ctrl+C 结束)
+    await keepBrowserOpenIfRequested(page);
   });
 });

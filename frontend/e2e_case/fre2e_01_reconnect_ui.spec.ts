@@ -8,6 +8,7 @@ import {
   getCaseId,
   killPort,
   logBaseOf,
+  keepBrowserOpenIfRequested,
   printDiag,
   proxyLogPath,
   readLogSince,
@@ -239,5 +240,8 @@ test.describe('断线重连 UI 全链路', () => {
 
     expect(recon).not.toBeNull();
     expect(Number(recon![1])).toBeGreaterThan(0);
+
+    // 特例保留: 双开关(命令行 KEEP_BROWSER=1 临时 / e2e.config.ts E2E_KEEP_BROWSER_OPEN=true)时完成后挂起不关浏览器(仅单 case 调试, Ctrl+C 结束)
+    await keepBrowserOpenIfRequested(page);
   });
 });
