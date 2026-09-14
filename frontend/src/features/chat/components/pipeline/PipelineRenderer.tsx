@@ -66,6 +66,9 @@
 //   union加action-waiting类型, 渲染分支加ActionWaitingIcon; 注释统一用组件名(ThoughtWaitingIcon/ToolWaitingIcon/ActionWaitingIcon) — 小欧-2026-09-13
 // 编辑历史: 2026-09-14 小欧 [36]改动点④(方案A, 北京老陈批准): taskActive 判定提纯复用 computeTaskActive 纯函数
 //   (删 streaming 条件, highlight/badge 双权威信号), import viewState — 小欧-2026-09-14
+// 编辑历史: 2026-09-14 小欧 - [35]蓝色圈圈显示逻辑停用(北京老陈令, 定义/CSS/import保留为将来新方案启用):
+//   删 union {kind:'action-waiting'} 类型; 删组件体内末段thinking+taskActive时追加action-waiting段逻辑;
+//   删渲染分支 action-waiting段渲染; 绿ThoughtWaitingIcon/橙ToolWaitingIcon及蓝色定义与CSS一律不动 — 小欧-2026-09-14
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -110,8 +113,7 @@ export type PipelineSegment =
     }
   | { kind: 'obs'; step: ExecutionStep }
   | { kind: 'error'; step: ExecutionStep }
-  | { kind: 'waiting'; step?: number } // 4.4.2(2026-09-07 小欧): thought-start 落段, 可被首个内容覆盖接管
-  | { kind: 'action-waiting' }; // 2026-09-13 小欧: thinking末段+taskActive时追加ActionWaitingIcon(LLM推理action中)
+  | { kind: 'waiting'; step?: number }; // 4.4.2(2026-09-07 小欧): thought-start 落段, 可被首个内容覆盖接管
 
 // 可承载 sameStep 的段(thinking/text) — 2026-08-30 小欧 三堂会审: union 含 sameStep 的仅两类, 抽取避免写包任一段
 type TextishSegment = Extract<PipelineSegment, { kind: 'thinking' | 'text' }>;
@@ -279,18 +281,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   deniedEntries, // 2026-09-06 小欧 B2(6.4)
 }) => {
   const segs = buildSegments(steps);
-  // 2026-09-13 小欧 - ActionWaitingIcon segment追加(第4章方案): buildSegments是纯函数(只接收steps),
-  //   此处用streaming/badge等组件props判定末段是否需要追加ActionWaitingIcon segment;
-  //   末段是thinking + taskActive=true时追加, action到达后tool segment排在后面自然消失 — 小欧-2026-09-13
-  // 2026-09-14 小欧 [36]改动点④(方案A, 北京老陈批准): taskActive 判定提纯复用 computeTaskActive(删 streaming 条件,
-  //   highlight/badge 双权威信号; 唯一差异窗口=startinfo 未到无 UI 载体, C4 单测锁定) — 小欧-2026-09-14
   const taskActive = computeTaskActive(highlightToolName, badge);
-  // 2026-09-13 小欧 - ActionWaitingIcon segment追加: 末段是thinking + taskActive=true时,
-  //   追加ActionWaitingIcon; action到达后tool segment排在它后面自然消失; taskActive=false时不显示
-  const lastSeg = segs[segs.length - 1];
-  if (lastSeg && lastSeg.kind === 'thinking' && taskActive) {
-    segs.push({ kind: 'action-waiting' });
-  }
   // 2026-09-04 小欧 - observation 去重：已消费孤儿抑制（单/多工具并行时孤儿与 ToolCallLine 重复）
   const toolStepSet = new Set(
     segs
@@ -326,18 +317,6 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           return (
             <div key={`waiting-${i}`} style={{ margin: stepMargin(false) }}>
               <ThoughtWaitingIcon />
-            </div>
-          );
-        }
-        if (seg.kind === 'action-waiting') {
-          // 2026-09-13 小欧: ActionWaitingIcon, 仅末段+taskActive显示, action到达后tool段排在后面自然消失
-          if (i !== segs.length - 1 || !taskActive) return null;
-          return (
-            <div
-              key={`action-waiting-${i}`}
-              style={{ margin: stepMargin(false) }}
-            >
-              <ActionWaitingIcon />
             </div>
           );
         }
