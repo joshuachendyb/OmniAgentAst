@@ -90,6 +90,12 @@
 //   切回当前final任务时用 executionStepsRef 重新固化(切回即回), 非当前任务永不固化; ③两处守卫纯冗余删除
 //   (渲染期复位已保证 settledRef 非空即当前任务语境); ④废弃为测而抽的 pickDisplaySteps 纯函数与自测case,
 //   改组件级真场景回归(切任务后 must 显示新任务数据非残留快照) — 小欧-2026-09-13
+// 编辑历史: 2026-09-15 小欧 - 三思三省根治"实时任务完成后点历史任务右侧仍显实时step"反复复发(北京老陈驱动):
+//   根因复盘=第二次修复(d4af1d99c)删掉了第一次修复(fe88d378d)的pickDisplaySteps的currentTaskMatch守卫,
+//   displaySteps三选一settledSteps.length>0无条件优先→同会话切历史任务时settledSteps(A快照)残留且恒非空,
+//   右侧永远显示A的step; 渲染期复位setState在当前帧未生效→settledSteps仍是旧值→守卫是计算层面唯一可靠防线;
+//   恢复activeTaskId===serverTaskId守卫(displaySteps+REST等长校验两处), 保留渲染期复位防historySteps闪现;
+//   用户锁(userLockRef)经实测与本bug无关(activeTaskId未被effect①抢走)已全部撤销 — 小欧-2026-09-15
 // 编辑历史: 2026-09-14 小欧 [36]删 receiving(方案A, 北京老陈批准): ①props接口/解构删 receiving ②useTaskInfo 调用
 //   改四参签名 ③isCurrentLive 判定提纯复用 computeIsCurrentLive(改动点③, 删 receiving 条件)
 //   ④DBG-1 日志去 recv 槽位(5.5.3-(二) 只留 live/match/final/biz 前缀四字段) ⑤import viewState — 小欧-2026-09-14
@@ -377,10 +383,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
           if (cancelled) return;
           setDetail(d);
           // 小欧 2026-09-10 S13.4: REST 结果与 settledSteps 等长校验——短则弃，保留 settledSteps 兜底
-          // 2026-09-13 小欧 三思三省根治(北京老陈否决守卫治标方案): 去 activeTaskId===serverTaskId 守卫——
-          //   渲染期复位保证切走即清 settledRef, 快照 effect 保证非当前任务不固化, 故 settledRef 非空
-          //   即当前任务回放语境, 守卫纯冗余; 等长校验仅在当前任务有效, 跨任务永不触发 — 小欧-2026-09-13
+          // 2026-09-15 小欧 三思三省根治: 加回 activeTaskId===serverTaskId 守卫——防跨任务时 settledRef 残留旧快照,
+          //   误判"丢尾"用旧快照覆盖新 historySteps, 与 displaySteps 守卫互补 — 小欧-2026-09-15
           if (
+            activeTaskId === serverTaskId &&
             s.steps.length > 0 &&
             settledRef.current.length > 0 &&
             s.steps.length < settledRef.current.length
@@ -429,9 +435,13 @@ const RightViewer: React.FC<RightViewerProps> = ({
     }
   }, [hasFinalStats, activeTaskId, serverTaskId, onSettledRefresh]);
 
+  // 小欧 2026-09-10 S13.2: 结束瞬时先用 live 快照兜底，REST 成功且更长时再替换
+  // 2026-09-15 小欧 三思三省根治: activeTaskId===serverTaskId 守卫——settledSteps 仅当前任务回放时优先,
+  //   防同会话切历史任务时 settledSteps(A快照)残留且恒非空致右侧永远显示A的step; 渲染期复位清 historySteps
+  //   防闪现, 两者互补不可缺一 — 小欧-2026-09-15
   const displaySteps = isCurrentLive
     ? liveSteps
-    : settledSteps.length > 0
+    : activeTaskId === serverTaskId && settledSteps.length > 0
       ? settledSteps
       : historySteps;
   // 小欧 2026-09-11 第七章 M3a(R6): title 段数据源=final 帧——实时=settledSteps 快照(final 已入 ref 快照),
