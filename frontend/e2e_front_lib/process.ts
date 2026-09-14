@@ -95,12 +95,15 @@ export const waitPortDown = (port: number): boolean => {
 //   (PS 5.1 Start-Process -Redirect 持有子句柄致父PS挂起ETIMEDOUT) - 小欧-2026-09-13
 // 编辑历史: 2026-09-13 小欧 v3 - 按日志/产物统一规范: 支持传 logFile, 通过 PROXY_LOG 环境变量注入代理
 //   自落盘命名(默认无传则沿用 e2e_case/output/api-proxy.log) - 小欧-2026-09-13
+// 编辑历史: 2026-09-14 小欧 v5 - 修复: PROXY_LOG 注入语法 `set "VAR=x"&&` 的内嵌引号被 Start-Process
+//   -ArgumentList 数组拼接破坏(实测9000不监听, E1 断连case卡waitPortUp 60s超时), 改无引号 `set VAR=x&&`
+//   (cmd 的 && 天然分隔, 值无空格or特殊字符即稳; 本仓库前端夹路径无空格) - 小欧-2026-09-14
 /** 启动 9000→8000 后端代理(node e2e_case/api-proxy.ts)。logFile 为可选的代理自落盘日志路径(经 PROXY_LOG 注入) */
 export const startProxyServer = (
   frontendDir: string,
   logFile?: string
 ): number => {
-  const envPrefix = logFile ? `set "PROXY_LOG=${logFile}"&& ` : '';
+  const envPrefix = logFile ? `set PROXY_LOG=${logFile}&& ` : '';
   const out = ps(
     `$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c',('cd /d ${frontendDir} && ' + '${envPrefix}' + 'node e2e_case/api-proxy.ts') -WindowStyle Hidden -PassThru; $p.Id`
   );

@@ -23,15 +23,17 @@
  * 编辑历史: 2026-09-13 小欧 - 迁移: tests/e2e → e2e_case; 日志路径同步改 e2e_case/output - 小欧-2026-09-13
  * 编辑历史: 2026-09-13 小欧 - 日志/产物统一规范: 支持 PROXY_LOG 环境变量命名自落盘日志(断连 case 每轮独立轮次文件),
  *   未注入时默认 e2e_case/output/api-proxy.log - 小欧-2026-09-13
+ * 编辑历史: 2026-09-14 小欧 - 修复: LOG_PATH 对绝对路径 PROXY_LOG 又 join(cwd) 致畸形路径,
+ *   mkdirSync 抛异常 node 崩溃退出(9000 不监听, E1 卡 waitPortUp), 改 resolve(绝对/相对双向正确) - 小欧-2026-09-14
  */
 import http from 'node:http';
 import { appendFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const TARGET = process.env.PROXY_TARGET || 'http://localhost:8000';
 const PORT = Number(process.env.PROXY_PORT || 9000);
 const LOG_PATH = process.env.PROXY_LOG
-  ? join(process.cwd(), process.env.PROXY_LOG)
+  ? resolve(process.cwd(), process.env.PROXY_LOG)
   : join(process.cwd(), 'e2e_case', 'output', 'api-proxy.log');
 
 mkdirSync(dirname(LOG_PATH), { recursive: true });

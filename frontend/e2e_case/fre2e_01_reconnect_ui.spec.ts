@@ -46,7 +46,7 @@ test.describe('断线重连 UI 全链路', () => {
     test.setTimeout(600_000);
 
     const chat = new ChatPage(page);
-    const { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed, t0 } =
+    const { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed } =
       attachStreamDiag(page);
 
     // 环境就绪(进程分离-跨origin): 后端代理B(:9000→8000, 页面API/SSE经VITE_API_BASE_URL直连跨域)
@@ -84,8 +84,17 @@ test.describe('断线重连 UI 全链路', () => {
     // 本轮日志基线: 只对账本次运行新增日志(防止匹配到以往轮次遗留的重连记录)
     const logBase = logBaseOf(BLOG);
 
-    const prompt = '请简要描述你在当前开发环境中的进程与端口情况，并给出结论。';
-    await chat.sendPrompt(prompt);
+    // 编辑历史: 2026-09-14 小欧 - 断连窗口健壮性修复(两次连败, 快模型下任务50s即终态):
+    //   busy原始用consoleAll末尾50条判活跃, 2000步经渲染洪水(DBG-3b/4d逐step一条)经Playwright事件队列
+    //   背压滞后, "看着新鲜"的时间戳在任务已自然完成后误判活跃→kill空连接→前端EOF当自然结束不重连;
+    //   改busiest只认真实业务帧([ACTION]/thought-start等, 剔除DBG渲染) + isFinalArrived守卫(终态到不kill)
+    //   + 换多工具长任务prompt拉长任务窗口, 三重保障断连窗口可重复命中 - 小欧-2026-09-14
+    const PROMPT =
+      '请依次完成三项研究并输出一份结构化报告(300字以上,含标题/Markdown列表/结论段)：' +
+      '①用文件工具统计 backend/app 目录下 .py 文件数量, 并找出其中含 "TODO" 注释的全部文件路径;' +
+      '②用联网搜索工具查询北京今天的天气(含温度/空气质量);' +
+      '③将①②研究结果汇总为最终报告。注意请在完成全部研究后才输出最终报告, 不要提前收尾。';
+    await chat.sendPrompt(PROMPT);
 
     // 1) 流已启动: 等"停止"按钮出现(发送后 isReceiving=true 即切停止)
     //    2026-09-13 小欧: 失败即打全量诊断(定位发送后未进流: 代理跨域拦/POST未达/token问题)
@@ -104,35 +113,47 @@ test.describe('断线重连 UI 全链路', () => {
       throw e;
     }
 
-    // 2) 等绿圈(已收到 thinking 帧, 内容实质开流), 非强制
-    await chat.waitGreenDot(90_000);
+    // 2) 等绿圈(已收到 thinking 帧) —— 非强制锚点, 见下注
+    // 编辑历史: 2026-09-14 小欧 - 弃用绿圈锚点: 实测本任务绿圈(T~45s)是"收尾锚点"非"开流锚点"
+    //   (LLM先跑完1078步工具调用, 最后才产thinking+报告), waitGreenDot 阻塞到45s+固定延后=距final仅3s
+    //   → 断连窗口必错失; 正式锚点改回 waitReceiving(停止按钮=流已建立, T~11s) + 固定4s断(余量33s) - 小欧-2026-09-14
+    // await chat.waitGreenDot(90_000);
 
-    // 3) 等"在途活跃帧"窗口再断: 固定4s断流会偶发断在"流尾部/任务已产完"(final早已转发,
-    //    只剩空保活连接) → kill只切空连接, 前端EOF视为自然结束不重连(取证: reader is_reconnect=False 直通final)。
-    //    编辑历史: 2026-09-13 小欧 - 轮询最近业务帧(newest非pause console) age<2.5s 才动手, 确保断点撞在数据流动中 - 小欧-2026-09-13
-    const busiest = (): number => {
-      // [T+Xms] 与当前时刻同为 attach 的 t0(绝对 Date.now)基准
-      let t = 0;
-      for (const c of consoleAll.slice(-50)) {
-        const mt = c.match(/\[T\+(\d+)ms\]/);
-        const tt = Number(mt?.[1] || 0);
-        if (
-          tt &&
-          !/onPaused|连接建立|重连|暂停|缓冲|清空|加载|初始化/.test(c)
-        ) {
-          t = Math.max(t, tt);
-        }
-      }
-      return t;
-    };
-    const dl3 = Date.now() + 90_000;
-    while (Date.now() < dl3) {
-      const lastT = busiest();
-      if (lastT && Date.now() - (t0 + lastT) < 2500) {
-        await page.waitForTimeout(200);
-        break;
-      }
-      await page.waitForTimeout(800);
+    // 3) 确定"在途活跃"断点: waitReceiving 返回(停止按钮已现=流已建立/SSE已连, 实测T~11s),
+    //    之后固定等4s即断 → 断点落 T~15s 数据流中段(final实测T~48s, 余量33s), 避开"断在流尾部"(final
+    //    早已转发只剩空保活连接, kill只切空连接, 前端EOF视为自然结束不重连)。
+    //    编辑历史: 2026-09-13 小欧 - 原先"固定4s断流"会偶发断在流尾部; 后改"最近业务帧 age<2.5s"才动手 - 小欧-2026-09-13
+    //    编辑历史: 2026-09-14 小欧 - 放弃console活跃帧采样与绿圈锚点(实测任务1697步console几乎全是DBG-3b
+    //      渲染洪水,真业务帧仅T+17.8s一条→busiest恒错过; 绿圈在收尾段才出现), 回归 waitReceiving 锚点固定4s断 - 小欧-2026-09-14
+    const isFinalArrived = (): boolean =>
+      consoleAll.some(
+        (c) =>
+          c.includes('[收到final终态]') ||
+          c.includes('[SSE] 流正常结束') ||
+          c.includes('AI流式完成') ||
+          c.includes('AI响应完成 END')
+      );
+    await page.waitForTimeout(4000);
+
+    // 3.5) 窗口守卫: 断点前任务已自然终态 → 不可执行断连语义, 走终态验证并明示"窗口错过"需重跑(诚实, 不伪装已测断连)
+    //     编辑历史: 2026-09-14 小欧 - 新增: 快模型下任务50s即终态的根因兜底 - 小欧-2026-09-14
+    if (isFinalArrived()) {
+      // 编辑历史: 2026-09-14 小欧 - 错过窗口时先落全量DIAG再throw(取证本轮console时间线), 便于归因任务时长/帧到达滞后 - 小欧-2026-09-14
+      printDiag(
+        streamReqs,
+        reconnectLogs,
+        sseErrors,
+        consoleAll,
+        readLogSince(BLOG, logBase),
+        allFailed,
+        getCaseId()
+      );
+      await chat.waitDone(60_000);
+      const ft = await chat.getFinalText();
+      expect(ft.trim().length).toBeGreaterThan(30);
+      throw new Error(
+        '[E2E] 断连窗口错过: 任务在 kill 前已自然完成(final已收), 重连语义未执行——请重跑本条以覆盖断连分支'
+      );
     }
 
     // 4) 杀后端代理B(:9000) → 页面<->vite(A)完好, 仅 API 链路 RST → 前端感知断线(页面不 reload)
