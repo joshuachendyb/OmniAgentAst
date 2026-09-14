@@ -100,6 +100,7 @@ import {
   stepMargin,
 } from '@/utils/stepStyles';
 import { computeTaskActive } from '@/utils/viewState'; // 2026-09-14 小欧 [36]改动点④(方案A): taskActive 判定提纯复用 — 小欧-2026-09-14
+import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
 
 export type PipelineSegment =
   | { kind: 'thinking'; text: string; sameStep?: boolean } // sameStep: 同 step 内部(13.6 reasoning+thought)→compact SM(6)
@@ -323,6 +324,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         if (seg.kind === 'thinking') {
           // 2026-09-02 小欧 · 北京老陈定案: 光标仅亮在"最后一段"(打字机末段), 旧 thinking 段完成即灭
           const cursor = streaming && i === lastThink && i === segs.length - 1;
+          if (cursor) console.log(`${formatDebugTime()} CURSOR T`); // 2026-09-14 小欧 — 小欧-2026-09-14
           return (
             <ThinkingStream
               key={`thinking-${i}-${seg.text.slice(0, 16)}`}
@@ -335,6 +337,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         if (seg.kind === 'text') {
           // 2026-09-02 小欧: 限定末段, 与 thinking 光标同策略
           const isLive = streaming && i === lastText && i === segs.length - 1;
+          if (isLive) console.log(`${formatDebugTime()} CURSOR F`); // 2026-09-14 小欧 — 小欧-2026-09-14
           return (
             <TextStream
               key={`text-${i}-${seg.text.slice(0, 16)}`}
@@ -400,7 +403,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
             (seg.candidateCount ?? seg.action.tools?.length ?? 0);
           return (
             <ToolCallLine
-              key={seg.action.step ?? i}
+              key={`tool-${i}-${seg.action.step ?? i}`}
               action={seg.action}
               observations={toolObs}
               interrupted={toolObs.length === 0 && allDenied}
