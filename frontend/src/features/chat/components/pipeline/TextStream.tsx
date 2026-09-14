@@ -7,11 +7,12 @@
 //   打字机进度门槛(打字机追平即灭→光标大部分时间消失病根), 改 bind 末段+流式进行中恒亮; CURSOR F 打点下放本组件
 //   反转检测(false→true 才打, ref 去重 StrictMode 双渲染) — 小欧-2026-09-14
 //   2026-09-14 小欧 - [37]DRY: 反转检测打点抽取公用 hook useRiseLog(与 ThinkingStream 同款逻辑去重) — 小欧-2026-09-14
+// 编辑历史: 2026-09-14 小欧 - [38]正文末位光标换型(北京老陈驱动): 静态<span>▍</span>(无动画)→复用 WaitingIcons/ActionWaitingIcon(蓝#1677ff核心圆+双层波纹扩散, 复用既有CSS零新增, [37]清理后首次启用) — 小欧-2026-09-14
 /**
  * TextStream - 正文打字机（真逐字 + 末位光标）
  *
  * 【小欧 2026-08-30 13.8】13.8.4 方案1 落地：streaming 实时按"已累积文本"逐字微延迟流出、
- * 末位闪烁光标（兑现文档1 §3.7.3.3"打字机效果"）；streaming 结束/历史回放整段静态呈现。
+ * 末位等待圈（复用 ActionWaitingIcon 蓝色波纹扩散）；streaming 结束/历史回放整段静态呈现。
  * 内置 normalizeBlankLines（13.11）：流式走尾随守卫(防打字机回缩)、终态统一 trim。
  *
  * @author 小欧
@@ -21,6 +22,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { getStreamStyle } from '@/utils/stepStyles';
 import { normalizeBlankLines } from '@/utils/textNormalize';
 import { useRiseLog } from '@/features/chat/hooks/useRiseLog'; // 2026-09-14 小欧 [37]: CURSOR F 翻转打点(抽公用 hook) — 小欧-2026-09-14
+import { ActionWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-14 小欧 [38]: 正文末位光标换型(蓝色波纹扩散圈) — 小欧-2026-09-14
 
 interface TextStreamProps {
   text: string;
@@ -73,7 +75,7 @@ const TextStream: React.FC<TextStreamProps> = ({
       style={getStreamStyle(compact)}
     >
       {clean.slice(0, typing ? shown : clean.length)}
-      {cursor && typing && <span>▍</span>}
+      {cursor && typing && <ActionWaitingIcon />}
     </div>
   );
 };
