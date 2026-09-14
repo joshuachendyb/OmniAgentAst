@@ -22,6 +22,11 @@
 // 编辑历史: 2026-09-09 小欧 - 透传rightOpen状态给TaskListPanel, 控制模型标签provider前缀条件显示 - 小欧-2026-09-09
 // 编辑历史: 2026-09-10 小欧 - S13: 从chatStreaming解构executionStepsRef透传RightViewer(final到达时快照用) - 小欧-2026-09-10
 // 编辑历史: 2026-09-12 小欧 - P1-1三堂会审修复: opts.sessionTokens/chainTokens 形状改复用TokenLayer(消私有形状重复, DRY), import TokenLayer — 小欧-2026-09-12
+// 编辑历史: 2026-09-14 小欧 [36]改动点③(方案A, 北京老陈批准): RightViewer 透传删 receiving={isReceiving}
+//   (props 已删接收变量; TaskInfoBar 的 receiving 语义保留, isCurrentLive 改纯函数判定) — 小欧-2026-09-14
+// 编辑历史: 2026-09-14 小欧 [36]删第二个变量+第三个(北京老陈令): TaskInfoBar receiving prop 已整体删除,
+//   秒表启停改由 frames 权威信号(startInfo 非空 && finalStats 空=执行走廊)驱动, 本处透传 receiving 一并删除;
+//   连接级 isReceiving 只保留 ChatInput(L278)消费 — 小欧-2026-09-14
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -235,7 +240,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             activeTaskId={activeTaskId}
             sessionId={sessionId}
             serverTaskId={serverTaskId}
-            receiving={isReceiving}
             liveSteps={executionSteps}
             executionStepsRef={executionStepsRef} // 小欧 2026-09-10 S13: 同步 ref 透传
             highlightToolName={
@@ -259,7 +263,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
           <TaskInfoBar
             steps={executionSteps}
             frames={metaFrames}
-            receiving={isReceiving && activeTaskId === serverTaskId}
             detail={selectedDetail}
             sessionId={sessionId}
             liveError={liveError} // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象形态, error 实时显示唯一位置=taskinfo 第一行, 北京老陈定案) — 小欧-2026-09-08

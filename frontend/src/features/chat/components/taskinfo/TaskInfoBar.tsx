@@ -32,6 +32,14 @@
 //   G6上下文卡片标签"上下文详情"→"历史上下文"(ariaLabel+卡片标题同步, 北京老陈令), 摘要移除 slice(0,60) 截断改完整显示 — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 北京老陈纠正定案: 第一行 G6 上下文标签"上下文"→"历史上下文"(隐藏于 FloatingEntry 的 MetricItem label),
 //   MetricItem label 恒直出 + 浮层摘要全文显示(非截断), 两块均与"上下文详情→历史上下文"命名一致 — 小欧-2026-09-09
+// 编辑历史: 2026-09-14 小欧 [36]改动点①(方案A, 北京老陈批准): useTaskInfo 改四参签名 (steps, frames, detail, liveError)
+//   ——receiving 不再透传徽标派生(断连窗由 startinfo 门承接), 组件自身 receiving prop 保留(秒表 interval 启停, D3 契约) — 小欧-2026-09-14
+// 编辑历史: 2026-09-14 小欧 [36]删第二个变量(北京老陈令): receiving prop 整体删除——秒表启停改由 frames 权威信号驱动:
+//   走廊判定=startInfo非空(已开始)&&finalStats空(未终态落库); 实时走廊走表(R1语义等价), 断连窗/错误中间态继续走表(旧
+//   receiving=false缺陷窗口=进化, 09-08同源根治), final到达(hasFinalStats)停表回退duration(终态准确), 未开始startInfo空
+//   不走表(旧receiving=true提前走表窗口=修正); shownElapsed同步: detail→elapsedSec / 走廊→liveElapsed / 终态→elapsedSec;
+//   deps 保持派生布尔(跨帧值稳定), frames对象有意不入deps(R1防每帧重置); useChatPanels 透传一并删除, 连接级isReceiving
+//   只留ChatInput消费 — 小欧-2026-09-14
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -80,7 +88,6 @@ const LIVE_META_TEXT_MAX = 60;
 interface TaskInfoBarProps {
   steps: ExecutionStep[];
   frames: TaskMetaFrames; // 统计类元信息帧（8.4.14）
-  receiving: boolean;
   detail?: TaskDetail | null; // 【A3】选中历史任务时由其详情派生动态信息
   sessionId?: string | null; // 13.14 TrustPanel第一行尾部需会话ID
   liveError?: LiveError | null; // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象, useChatPanels 透传) — 小欧-2026-09-08
@@ -89,7 +96,6 @@ interface TaskInfoBarProps {
 const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   steps,
   frames,
-  receiving,
   detail,
   sessionId,
   liveError,
@@ -98,7 +104,9 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   // 新增: eventsOpen、ctxOpen 各 useState(false)(见 6.5.3.4 / 6.5.3.8), 随组件轻量瞬态, 不持久化
   const [eventsOpen, setEventsOpen] = useState(false);
   const [ctxOpen, setCtxOpen] = useState(false);
-  const info = useTaskInfo(steps, frames, receiving, detail, liveError);
+  // 2026-09-14 小欧 [36]改动点①(方案A, 北京老陈批准): useTaskInfo 改四参签名, receiving prop 本身保留
+  //   (秒表 interval 启停仍以 receiving 为准, D3 契约); 仅不再透传给徽标派生 — 小欧-2026-09-14
+  const info = useTaskInfo(steps, frames, detail, liveError);
   const b = BADGE_MAP[info.badge];
   // 3.9 断点矩阵（v4.4 修复#3）：wide≥1280 / mid 1280~960 / narrow 960~768 / xsmall<768
   const bp = useInfoBreakpoint();
@@ -107,13 +115,19 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   const isMid = bp === 'mid';
   // 【2026-09-03 小欧 复用TrustPanel】信任查询/刷新/撤销/折叠逻辑已移入 TrustPanel 组件(TaskInfoBar 删除内联重复, DRY)
 
-  // 【小欧 2026-08-26 修复 B2】实时计时：实时流(receiving)期间按 start 时刻走表
+  // 【小欧 2026-08-26 修复 B2】实时计时：实时流期间按 start 时刻走表
   // （2026-09-06 R1: 不再挂靠徽标 running, 错误/失败态下秒表继续走不零不回跳），
   // 历史任务(detail)用后端 duration，不计时。
+  // 2026-09-14 小欧 [36]删第二个变量(北京老陈令): receiving prop 删除——秒表启停改由 frames 权威信号驱动:
+  //   startInfo 非空(任务已开始) && finalStats 空(尚未终态落库)=执行中走廊, 走表;
+  //   断连窗/错误中间态(旧 receiving=false 缺陷窗口)继续走表=进化, final 到达(hasFinalStats)归零回退 duration;
+  //   与 RightViewer hasFinalStats/isCurrentLive 同源, 连接级 isReceiving 只留 ChatInput 消费 — 小欧-2026-09-14
+  const taskStarted = frames.startInfo !== null;
+  const taskFinished = !!frames.finalStats;
   const [liveElapsed, setLiveElapsed] = useState(0);
   const startRef = useRef<number | null>(null); // 2026-08-27 小欧 三堂会审: 仅首次锚定start, 防计时抖动
   useEffect(() => {
-    if (receiving && !detail) {
+    if (!detail && taskStarted && !taskFinished) {
       // 2026-09-06 小欧 R1: 去 info.badge==='running' 依赖 — 小欧-2026-09-06
       if (startRef.current == null) {
         startRef.current = frames.startTimestamp || Date.now(); // 2026-08-27 小欧 三堂会审: 首次锚定
@@ -129,11 +143,11 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
     setLiveElapsed(0);
     startRef.current = null; // 2026-08-27 小欧 三堂会审: 任务切换复位startRef
     return undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- frames.startTimestamp有意不入deps: R1定时器防每帧重置(去抖动, 变更记录见R1注释) — 小欧-2026-09-09
-  }, [receiving, detail]); // 2026-09-06 小欧 R1: deps去info.badge; 其余保持(去frames.startTimestamp防抖动) — 小欧-2026-09-06
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- taskStarted/taskFinished 为帧派生布尔(跨帧值稳定), 有意不入frames防每帧重置(R1去抖) — 小欧-2026-09-09
+  }, [detail, taskStarted, taskFinished]); // 2026-09-06 小欧 R1: deps 保持稳定(派生布尔); frames.startTimestamp 有意不入 deps 防每帧重置(去抖动, 变更记录见R1注释) — 小欧-2026-09-09
   const shownElapsed = detail
     ? info.elapsedSec
-    : receiving // 2026-09-06 小欧 R1: 实时态一律走 liveElapsed(错误态继续走表); 非实时回退 elapsedSec(终态 duration) — 小欧-2026-09-06
+    : taskStarted && !taskFinished // 2026-09-06 小欧 R1: 执行中走廊一律走 liveElapsed(错误态继续走表); 终态/未开始回退 elapsedSec(终态 duration) — 小欧-2026-09-06
       ? liveElapsed
       : info.elapsedSec;
 

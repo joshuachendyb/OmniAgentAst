@@ -90,6 +90,9 @@
 //   切回当前final任务时用 executionStepsRef 重新固化(切回即回), 非当前任务永不固化; ③两处守卫纯冗余删除
 //   (渲染期复位已保证 settledRef 非空即当前任务语境); ④废弃为测而抽的 pickDisplaySteps 纯函数与自测case,
 //   改组件级真场景回归(切任务后 must 显示新任务数据非残留快照) — 小欧-2026-09-13
+// 编辑历史: 2026-09-14 小欧 [36]删 receiving(方案A, 北京老陈批准): ①props接口/解构删 receiving ②useTaskInfo 调用
+//   改四参签名 ③isCurrentLive 判定提纯复用 computeIsCurrentLive(改动点③, 删 receiving 条件)
+//   ④DBG-1 日志去 recv 槽位(5.5.3-(二) 只留 live/match/final/biz 前缀四字段) ⑤import viewState — 小欧-2026-09-14
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -115,6 +118,7 @@ import { splitSteps } from '../pipeline/stepFilter';
 import { StaticStatsBlock } from './StaticStatsBlock';
 import { TitleBlock } from './TitleBlock'; // 2026-09-11 小欧 第七章 M3a(R5): title 段独立组件 — 小欧-2026-09-11
 import { useTaskInfo } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: badge 权威派生(running/paused=任务进行), 撑 waiting 三处丢失窗口
+import { computeIsCurrentLive } from '@/utils/viewState'; // 2026-09-14 小欧 [36]改动点③(方案A): isCurrentLive 判定提纯复用 — 小欧-2026-09-14
 import type { TaskMetaFrames } from '@/types/sse';
 import { emptyMetaFrames } from '@/types/sse';
 
@@ -138,7 +142,6 @@ interface RightViewerProps {
   activeTaskId: string | null;
   sessionId: string | null;
   serverTaskId: string | null;
-  receiving: boolean;
   liveSteps: ExecutionStep[];
   executionStepsRef?: React.MutableRefObject<ExecutionStep[]>; // 小欧 2026-09-10 S13: 同步 ref，final 到达时快照用
   highlightToolName: string | null;
@@ -155,7 +158,6 @@ const RightViewer: React.FC<RightViewerProps> = ({
   activeTaskId,
   sessionId,
   serverTaskId,
-  receiving,
   liveSteps,
   executionStepsRef, // 小欧 2026-09-10 S13: 同步 ref
   highlightToolName,
@@ -206,10 +208,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
   }, [sessionId, resetSettledAndHistory]);
 
   // 2026-09-02 小欧: badge 权威派生——live 任务才取, 非live历史回放不传(不显示等待圈)
+  // 2026-09-14 小欧 [36]改动点①(方案A, 北京老陈批准): 签名删 receiving, 断连窗由 startinfo 门承接 — 小欧-2026-09-14
   const { badge: liveBadge } = useTaskInfo(
     liveSteps,
-    frames ?? emptyMetaFrames(),
-    receiving
+    frames ?? emptyMetaFrames()
   );
   // 2026-09-03 小欧 12.6修复: 若liveSteps已含final终态, 不再判live(及时切历史拉取), 防final丢失前永久卡live
   const _hasFinal = liveSteps.some((s) => s.type === 'final');
@@ -225,18 +227,20 @@ const RightViewer: React.FC<RightViewerProps> = ({
   //   (action/observation/chunk 已足够; thought-start 由 pipeline 消费) — 小欧-2026-09-11
   // 2026-09-12 小欧 P1-9: 提升模块级 BUSINESS_TYPES — 小欧-2026-09-12
   const hasBusinessSteps = liveSteps.some((s) => BUSINESS_TYPES.has(s.type));
-  const isCurrentLive =
-    activeTaskId != null &&
-    activeTaskId === serverTaskId &&
-    !_hasFinal &&
-    (hasBusinessSteps ||
-      receiving ||
-      liveBadge === 'running' ||
-      liveBadge === 'paused');
+  // 2026-09-14 小欧 [36]改动点③(方案A, 北京老陈批准): isCurrentLive 判定提纯为 computeIsCurrentLive
+  //   纯函数(借力 startinfo 门无条件 running/业务 steps), 删 receiving 条件 — 小欧-2026-09-14
+  const isCurrentLive = computeIsCurrentLive({
+    activeTaskId,
+    serverTaskId,
+    hasFinal: _hasFinal,
+    hasBusinessSteps,
+    liveBadge,
+  });
   // [DEBUG-1] 2026-09-09 北京老陈 冻结诊断：isCurrentLive 仅状态变化时打
+  // 2026-09-14 小欧 [36]5.5.3-(二): DBG-1 日志去 recv 槽位(接收变量已删, 只留 live/match/final/biz 前缀四字段) — 小欧-2026-09-14
   if (isCurrentLive !== prevIsCurrentLiveRef.current) {
     console.log(
-      `[DBG-1] live=${isCurrentLive} match=${activeTaskId === serverTaskId} final=${_hasFinal} biz=${hasBusinessSteps} recv=${receiving} badge=${liveBadge} live=${liveSteps.length} hist=${historySteps.length}`
+      `[DBG-1] live=${isCurrentLive} match=${activeTaskId === serverTaskId} final=${_hasFinal} biz=${hasBusinessSteps} badge=${liveBadge} live=${liveSteps.length} hist=${historySteps.length}`
     );
     prevIsCurrentLiveRef.current = isCurrentLive;
   }
@@ -466,7 +470,8 @@ const RightViewer: React.FC<RightViewerProps> = ({
           style={{ padding: '24px 0' }}
         />
       ) : (
-        <div ref={pipelineEndRef}>
+        // 编辑历史: 2026-09-14 小欧 - 容器加 right-viewer-body 类名: E2E唯一正文定位锚点(getFinalText整页innerText在多任务/切历史下尾串脆弱), 零UI影响 - 小欧-2026-09-14
+        <div ref={pipelineEndRef} className="right-viewer-body">
           <PipelineRenderer
             steps={splitSteps(displaySteps).business}
             streaming={isCurrentLive}

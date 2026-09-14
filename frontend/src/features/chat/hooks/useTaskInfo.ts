@@ -33,6 +33,9 @@
 // 编辑历史: 2026-09-12 小欧 - P1-11三堂会审修复: 实时分支usage兜底由frames.usage改{0,0,0}(frames.usage已删, taskAccumulated单一真源) — 小欧-2026-09-12
 // 编辑历史: 2026-09-12 小欧 - 补 thought-start badge 分支: 对齐 09-11 契约化注释(thought-start 仍实时兜住 idle→running),
 //   thought-start 系"开始思考"实时信号, 到达即证执行中, 防 RightViewer 误切历史视图 — 小欧-2026-09-12
+// 编辑历史: 2026-09-14 小欧 [36]删 receiving(方案A, 北京老陈批准): 签名五参→四参 (steps, frames, detail?, liveError?);
+//   改动点② startinfo 门去掉 receiving 依赖改无条件 running(断连窗不压 idle);
+//   deps 去 receiving; DBG-3c 日志同步去 receiving 槽位 — 小欧-2026-09-14
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -83,9 +86,11 @@ export type TaskBadge =
 export const useTaskInfo = (
   steps: ExecutionStep[],
   frames: TaskMetaFrames,
-  receiving: boolean,
   detail?: TaskDetail | null,
-  liveError?: LiveError | null // 小欧 2026-09-02+09-08: 位4 error 实时源(P3数据源对象形态; undefined 时 candidates 不含 error)
+  // 小欧 2026-09-02+09-08: 位4 error 实时源(P3数据源对象形态; undefined 时 candidates 不含 error)
+  liveError?: LiveError | null
+  // 2026-09-14 小欧 [36]删 receiving 参数(方案A, 北京老陈批准): 断连窗已由 startinfo 门无条件 running
+  //   平滑承接, receiving=SSE连接级信号不再参与徽标派生; 新签名四参 (steps, frames, detail?, liveError?) — 小欧-2026-09-14
 ) => {
   return useMemo(() => {
     // 2026-09-03 小欧/北京老陈: 单真源 — hasFailedFinal 一处算(DRY)，detail/实时双分支复用
@@ -241,12 +246,12 @@ export const useTaskInfo = (
     }
     // ② startinfo 帧 -> "任务已开始"过程条首行 + 执行中徽标（B33：有帧才亮）
     // startinfo 仅存在于 metaFrames（8.4.3），时间戳取 start 事件的 startTimestamp
+    // 2026-09-14 小欧 [36]改动点②(北京老陈批准): startinfo 门改无条件 running——SSE 断连窗(receiving 已删)
+    //   不再把 badge 压回 idle, RightViewer.isCurrentLive 不翻 false, 根治09-08「前端UI静默10秒整批显示」 — 小欧-2026-09-14
     if (hasStartInfo && badge === 'idle') {
       // [DEBUG-3c] 2026-09-09 北京老陈 startinfo门压badge
-      console.log(
-        `[DBG-3c] startinfo门: badge=idle, receiving=${receiving} → badge=${receiving ? 'running' : 'idle'}`
-      );
-      badge = receiving ? 'running' : 'idle';
+      console.log(`[DBG-3c] startinfo门: badge=idle → badge=running`);
+      badge = 'running';
     }
     if (hasStartInfo) {
       processEvents.unshift({
@@ -330,5 +335,5 @@ export const useTaskInfo = (
       stuckWarning,
       liveMeta, // 小欧 2026-09-02: 位4(历史 detail 分支已置 null, 此字段恒在实时分支产出)
     };
-  }, [steps, frames, receiving, detail, liveError]);
+  }, [steps, frames, detail, liveError]);
 };

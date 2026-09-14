@@ -64,6 +64,8 @@
 // 编辑历史: 2026-09-13 小欧 - [35]thought-action等待状态实施: 内联WaitingIcon拆为WaitingIcons控件ThoughtWaitingIcon; 新增action-waiting段
 //   (thinking末段+taskActive时组件体内追加ActionWaitingIcon段, 北京老陈令选G波纹扩散样式, action到达/任务结束自动消失);
 //   union加action-waiting类型, 渲染分支加ActionWaitingIcon; 注释统一用组件名(ThoughtWaitingIcon/ToolWaitingIcon/ActionWaitingIcon) — 小欧-2026-09-13
+// 编辑历史: 2026-09-14 小欧 [36]改动点④(方案A, 北京老陈批准): taskActive 判定提纯复用 computeTaskActive 纯函数
+//   (删 streaming 条件, highlight/badge 双权威信号), import viewState — 小欧-2026-09-14
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -94,6 +96,7 @@ import {
   Spacing,
   stepMargin,
 } from '@/utils/stepStyles';
+import { computeTaskActive } from '@/utils/viewState'; // 2026-09-14 小欧 [36]改动点④(方案A): taskActive 判定提纯复用 — 小欧-2026-09-14
 
 export type PipelineSegment =
   | { kind: 'thinking'; text: string; sameStep?: boolean } // sameStep: 同 step 内部(13.6 reasoning+thought)→compact SM(6)
@@ -279,11 +282,9 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   // 2026-09-13 小欧 - ActionWaitingIcon segment追加(第4章方案): buildSegments是纯函数(只接收steps),
   //   此处用streaming/badge等组件props判定末段是否需要追加ActionWaitingIcon segment;
   //   末段是thinking + taskActive=true时追加, action到达后tool segment排在后面自然消失 — 小欧-2026-09-13
-  const taskActive =
-    streaming ||
-    !!highlightToolName ||
-    badge === 'running' ||
-    badge === 'paused';
+  // 2026-09-14 小欧 [36]改动点④(方案A, 北京老陈批准): taskActive 判定提纯复用 computeTaskActive(删 streaming 条件,
+  //   highlight/badge 双权威信号; 唯一差异窗口=startinfo 未到无 UI 载体, C4 单测锁定) — 小欧-2026-09-14
+  const taskActive = computeTaskActive(highlightToolName, badge);
   // 2026-09-13 小欧 - ActionWaitingIcon segment追加: 末段是thinking + taskActive=true时,
   //   追加ActionWaitingIcon; action到达后tool segment排在它后面自然消失; taskActive=false时不显示
   const lastSeg = segs[segs.length - 1];
