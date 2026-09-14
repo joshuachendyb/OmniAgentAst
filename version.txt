@@ -1,4 +1,26 @@
-﻿v0.19.40.16
+﻿v0.19.40.17
+更新时间: 2026-09-14 21:44:29 - 小欧-2026-09-14
+## v0.19.40.16以来 变更汇总(9个commit) - 小欧-2026-09-14
+[2026-09-14 21:44:29 小欧] 汇总范围=v0.19.40.16以来全部commit(共9个: fix4/refactor4/docs1)
+
+### fix(4个):
+- c988b7b24 fix:task_runtime.py 取消终态字段修正删content改response与FinalStep对齐 - 小欧-2026-09-14
+- f6a44fa4b fix: PipelineRenderer tool段key修复(并行step重复)+CURSOR T/F打点, RightViewer删CURSOR-A - 小欧-2026-09-14
+- bd452889c fix:fre2e_01 hasAdjacentDup硬断言改软提示-修复LLM并行调用同名工具误报 - 小欧-2026-09-14
+- 730956d3b fix:[37]光标翻转打点DRY抽取useRiseLog+PipelineRenderer console/import清理 - 小欧-2026-09-14
+
+### refactor(4个):
+- 907c2c32b refactor: DRY时间戳/流式样式公共函数提取(formatDebugTime+getStreamStyle) - 小欧-2026-09-14
+- 270342783 refactor: sseParser pushAndFlush提取+logTypeArrival统一打点(chunk独立片段T/F) - 小欧-2026-09-14
+- 270b6c882 refactor:前端console.log清理-删除重复无意义日志约50条(54%) - 小欧-2026-09-14
+- 183b7ef47 refactor:PipelineRenderer 蓝色圈圈显示逻辑停用(删action-waiting段三分支, 定义/CSS/import保留为将来新方案) - 小欧-2026-09-14
+
+### docs(1个):
+- 79838dda5 docs:[37]思考光标不显示问题分析 打印机光标不该消失时消失病根分析(TextStream光标绑打字机进度shown+日志打点位置校准) - 小欧-2026-09-14
+
+---
+
+v0.19.40.16
 更新时间: 2026-09-14 12:15:00 - 小欧-2026-09-14
 ## v0.19.40.15以来 变更汇总(1个commit) - 小欧-2026-09-14
 [2026-09-14 12:15:00 小欧] 汇总范围=v0.19.40.15以来全部commit(共1个: docs1)
