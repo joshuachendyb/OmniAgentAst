@@ -85,6 +85,7 @@
 //   重发正是本专项核心, 若未来引入物理重复帧(seq<=lastSeq)必须醒目可见(debug 级易被忽略且不落盘), 升 warn 保追踪 — 小欧-2026-09-13
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
+import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
 
 // 2026-09-12 小欧 P1-7: normalizeIsReasoning/normalizeAutoConfirm同名同体, 合并为单一 normalizeBoolean(DRY) — 小欧-2026-09-12
 const normalizeBoolean = (v: unknown): boolean =>
@@ -97,6 +98,20 @@ const toStepNumber = (v: unknown): number => Number(v) || 1;
 const assignTimeout = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : 60;
+};
+
+// 2026-09-14 小欧 DRY: push+flush 模式提取, 消6处重复 — 小欧-2026-09-14
+const pushAndFlush = (
+  handlers: { pendingStepsRef?: React.MutableRefObject<ExecutionStep[]>; scheduleFlush?: () => void },
+  step: ExecutionStep
+) => {
+  handlers.pendingStepsRef?.current.push(step);
+  handlers.scheduleFlush?.();
+};
+
+// 2026-09-14 小欧 debug: 各 SSE type 到达打点, 格式: [HH:MM:SS.mmm] 轮次=X type — 小欧-2026-09-14
+const logTypeArrival = (type: string, round?: number) => {
+  console.log(`${formatDebugTime()} 轮次=${round ?? '?'} ${type}`);
 };
 
 const processSSEData = (
@@ -299,14 +314,15 @@ const processSSEData = (
           timestamp: timestampValue,
         };
         // 小欧 2026-09-10 S12: 批量 append，零同步序列化
-        handlers.pendingStepsRef?.current.push(ts);
-        handlers.scheduleFlush?.();
+        pushAndFlush(handlers, ts);
         onStep?.(ts);
+        logTypeArrival('thought-start', ts.step); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         break;
       }
 
       // usage：单任务 token 帧 —— 后端直发本轮+三累计(P/C/T)，前端直存直显不另算【13.14】
       case 'usage': {
+        logTypeArrival('usage'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         const round = {
           prompt: rawData.prompt_tokens ?? 0,
           completion: rawData.completion_tokens ?? 0,
@@ -337,6 +353,7 @@ const processSSEData = (
 
       // stats：耗时/轮次流式帧
       case 'stats': {
+        logTypeArrival('stats'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
           stats: {
@@ -352,6 +369,7 @@ const processSSEData = (
       // final_stats：终态统计独立步（duration/tool_stats/artifacts/step_count/llm_call_count）
       // 小欧 2026-09-11 第七章 M5b(R7): 补解析 step_count/llm_call_count（后端 3.4 FinalStatsStep 新增 7 键, 折叠区步数/轮次来源） — 小欧-2026-09-11
       case 'final_stats': {
+        logTypeArrival('final_stats'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
           finalStats: {
@@ -369,6 +387,7 @@ const processSSEData = (
 
       // context_overview：上下文概况帧
       case 'context_overview': {
+        logTypeArrival('context_overview'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
           contextOverview: {
@@ -384,6 +403,7 @@ const processSSEData = (
 
       // truncated：输出截断提示帧（severity=warn，字段=content）
       case 'truncated': {
+        logTypeArrival('truncated'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
           truncated: {
@@ -416,6 +436,7 @@ const processSSEData = (
         // 传递 is_reasoning 区分思考过程和最终答案
         const is_reasoning = normalizeBoolean(rawData.is_reasoning); // 2026-08-27 小欧 修复: 复用统一helper; 2026-09-12 P1-7: 统用normalizeBoolean — 小欧-2026-09-12
         const chunkContent = rawData.content || '';
+        console.log(`${formatDebugTime()} ${is_reasoning ? 'T' : 'F'} =${chunkContent}`); // 2026-09-14 小欧 cursor打点输出chunk独立片段 — 小欧-2026-09-14
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
         onChunk?.(chunkContent, is_reasoning);
@@ -440,13 +461,13 @@ const processSSEData = (
         step.content = chunkContent;
 
         // 小欧 202G-09-10 S12: 批量 append，零同步序列化
-        handlers.pendingStepsRef?.current.push(step);
-        handlers.scheduleFlush?.();
+        pushAndFlush(handlers, step);
         onStep?.(step);
         break;
       }
 
       case 'final': {
+        logTypeArrival('final', step.step); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
 
         // 【小沈修改2026-04-16】添加step和timestamp字段
@@ -530,6 +551,7 @@ const processSSEData = (
 
       case 'error': {
         const stepNum = toStepNumber(rawData.step); // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
+        logTypeArrival('error', stepNum); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
 
         // 【小强修复 2026-04-15】后端error类型只有以下字段，只解析后端存在的字段
         // 【小欧 2026-08-18 三堂会审】P4 起 error 文本统一由 MetaStep.content 承载(新)，
@@ -606,6 +628,7 @@ const processSSEData = (
       //   独立回调 onDenied(step, message) 供聚合 deniedStepSet 停齿轮, 不占 error 通道/liveErrorText
       case 'user_rejected': {
         const deniedStep = toStepNumber(rawData.step); // 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
+        logTypeArrival('user_rejected', deniedStep); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         const deniedMsg =
           rawData.content || rawData.error_message || '用户拒绝执行';
         onDenied?.(deniedStep, deniedMsg, rawData.tool_name); // 2026-09-06 小欧 B2(6.4): 三参带被拒工具名 — 小欧-2026-09-06
@@ -653,10 +676,10 @@ const processSSEData = (
         const _typeLabel = step.preview ? 'action_preview' : 'action_canonical';
 
         // 小欧 2026-09-10 S12: 批量 append，零同步序列化
-        handlers.pendingStepsRef?.current.push(step);
-        handlers.scheduleFlush?.();
+        pushAndFlush(handlers, step);
 
         onStep?.(step);
+        logTypeArrival('action', step.step); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
 
         break;
       }
@@ -665,6 +688,7 @@ const processSSEData = (
       // 【小沈改造 2026-05-22】支持observation为JSON对象（第13章设计方案）
       case 'observation': {
         const stepNum = toStepNumber(rawData.step); // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
+        logTypeArrival('observation', stepNum); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         step.step = stepNum; // 2026-08-27 小欧 修复base-3: 加Number()数值化
         step.timestamp = timestampValue; // 2026-08-27 小欧 修复base-1: 用已转换number
         // 2026-09-12 小欧 P1-4: 删 step.code 赋值(死字段, 原 rawData.code 无人消费; execution_status 含同语义) — 小欧-2026-09-12
@@ -778,8 +802,7 @@ const processSSEData = (
         }
 
         // 小欧 2026-09-10 S12: 批量 append，零同步序列化
-        handlers.pendingStepsRef?.current.push(step);
-        handlers.scheduleFlush?.();
+        pushAndFlush(handlers, step);
         onStep?.(step);
         break;
       }
@@ -789,6 +812,7 @@ const processSSEData = (
       case 'paused':
       case 'resumed':
       case 'retrying': {
+        logTypeArrival(rawData.type, step.step); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         // 小欧 2026-07-13: 后端 MetaStep 统一以 content 字段承载文本(与 ThoughtStep/FinalStep 契约一致),
         // 前端须读 content 而非旧 message 字段, 否则用户取消/重试提示显示为空(真实跨层缺陷, 已修)。
         const statusMessage = rawData.content || '';
@@ -798,8 +822,7 @@ const processSSEData = (
         step.content = statusMessage;
 
         // 小欧 2026-09-10 S12: 批量 append，零同步序列化
-        handlers.pendingStepsRef?.current.push(step);
-        handlers.scheduleFlush?.();
+        pushAndFlush(handlers, step);
         onStep?.(step);
 
         // 根据type调用对应的回调
