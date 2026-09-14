@@ -8,6 +8,7 @@
    .tool-waiting-cursor 尺寸 1em→1.1em - 小欧-2026-09-08 */
 /* 编辑历史: 2026-09-09 小欧 - UI视觉优化(北京老陈定案): 新增.task-list-item:hover悬浮态/.active选中态/.task-text-block相对定位/.task-copy-btn复制按钮(绝对定位右上角hover显示) - 小欧-2026-09-09 */
 /* 编辑历史: 2026-09-13 小欧 - action等待图标(北京老陈令选G波纹扩散): 新增@keyframes action-ripple与.action-ripple-1/.action-ripple-2(1.8s交替scale0.5→1.4+opacity1→0), .action-waiting-cursor去waiting-spin改静态容器(图标SVG在WaitingIcons/ToolWaitingIcon之下) — 小欧-2026-09-13 */
+/* 编辑历史: 2026-09-15 小欧 - 左侧Logo图形化+品牌文字移位(北京老陈令): ①新建.logo-gridwave-icon(3x3九色点阵, 新增@keyframes gridwave斜向波浪2s波动, 尺寸36px, 复用原html 70号图标); ②新建.brand-title-text(右侧顶栏动画圈圈后品牌名, 16px/600/#1677ff与左侧一致) — 小欧-2026-09-15 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;
@@ -143,6 +144,39 @@
   display: block;
   width: 20px;
   height: 20px;
+}
+
+/* 2026-09-15 小欧 - 左侧Logo图形化(北京老陈令选title-icon-compare 70号斜向波浪): 
+   3x3九色点阵Svg, 每格 gridwave 2s 斜向波动动画, 尺寸36px 与侧栏等宽 — 小欧-2026-09-15 */
+.logo-gridwave-icon {
+  display: inline-block;
+}
+.logo-gridwave-icon svg {
+  display: block;
+  width: 36px;
+  height: 36px;
+}
+@keyframes gridwave {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.gridwave {
+  animation: gridwave 2s ease-in-out infinite;
+}
+
+/* 2026-09-15 小欧 - 右侧顶栏品牌文字(北京老陈令): 左侧"OmniAgentAst."移位至此, 动画圈圈之后, 样式与原左侧一致 — 小欧-2026-09-15 */
+.brand-title-text {
+  margin-left: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1677ff;
+  white-space: nowrap;
+  line-height: 43px;
 }
 
 /* 2026-09-13 小欧 - action等待图标: 蓝色波纹扩散(G样式), scale 0.5→1.4 + opacity 1→0, 1.8s周期, 不旋转 — 小欧-2026-09-13 */
