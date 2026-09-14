@@ -46,6 +46,8 @@ import {
   ExclamationCircleOutlined,
   StopOutlined,
 } from '@ant-design/icons';
+// 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons), 单例注入防重复style — 小欧-2026-09-15
+import { injectKeyframes } from '../AnimatedIcons/animations';
 
 const { Text, Title } = Typography;
 
@@ -86,18 +88,15 @@ const SAFETY_LEVEL_CONFIG: Record<
 };
 
 // 2026-09-03 小欧 P3修复: @keyframes pulse移至组件外, 避免每次渲染重复注入<style>标签 — 小欧-2026-09-03
-const AUTH_MODAL_STYLE = `
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-  }
-`;
+// 2026-09-15 小欧 - pulse动画keyframes迁 AnimatedIcons/animations.ts 统一承载(北京老陈令), 组件仅调用注入 — 小欧-2026-09-15
 
 const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   visible,
   request,
   onConfirm,
 }) => {
+  // 2026-09-15 小欧 - 动画keyframes注入(AnimatedIcons/animations.ts 单例承载, DRY)
+  injectKeyframes('pulse');
   // 2026-09-03 小欧 Bug-11: countdown 用 lazy 初值(跟随新 request), 避免默认 0 触发首渲染自动代发/拒绝
   const [trustSession, setTrustSession] = React.useState(false);
   const [countdown, setCountdown] = React.useState(
@@ -339,7 +338,6 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </Button>
         </div>
       </div>
-      <style>{AUTH_MODAL_STYLE}</style>
     </Modal>
   );
 };

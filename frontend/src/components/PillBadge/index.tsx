@@ -1,5 +1,9 @@
 // 编辑历史: 2026-09-13 小欧 - PillBadge 简洁版：胶囊药丸标签+竖线扫光动画 — 小欧-2026-09-13
+// 编辑历史: 2026-09-15 小欧 - 扫光keyframes迁 AnimatedIcons/animations.ts 统一承载(北京老陈令):
+//   删本地injectShine重复注入逻辑, 改调 injectKeyframes('pillShine') 单例注入(DRY) — 小欧-2026-09-15
 import React from 'react';
+// 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons) — 小欧-2026-09-15
+import { injectKeyframes } from '../AnimatedIcons/animations';
 
 interface PillBadgeProps {
   /** 标签文本 */
@@ -12,16 +16,6 @@ interface PillBadgeProps {
   style?: React.CSSProperties;
 }
 
-// 扫光动画样式，只注入一次
-let injected = false;
-const injectShine = () => {
-  if (injected) return;
-  injected = true;
-  const el = document.createElement('style');
-  el.textContent = `@keyframes pillShine{0%{background-position:0 200%}100%{background-position:0 -100%}}`;
-  document.head.appendChild(el);
-};
-
 const PillBadge: React.FC<PillBadgeProps> = ({
   text,
   color = '#52c41a',
@@ -29,7 +23,8 @@ const PillBadge: React.FC<PillBadgeProps> = ({
   className,
   style,
 }) => {
-  if (shine) injectShine();
+  // 2026-09-15 小欧 - 扫光动画keyframes注入(AnimatedIcons单例承载), 仅在启用时注入 — 小欧-2026-09-15
+  if (shine) injectKeyframes('pillShine');
 
   return (
     <span
