@@ -2,7 +2,7 @@
 
 **编写人**：小欧
 **编写时间**：2026-09-13 21:09:45
-**版本**：v1.4
+**版本**：v1.7
 
 ---
 
@@ -453,6 +453,99 @@ export const ActionWaitingIcon: React.FC = () => (
 
 ---
 
-**更新时间**：2026-09-13 22:15:00
-**版本**：v1.4
-**更新内容**：文档对齐实际代码——ActionWaitingIcon 换 G 波纹扩散（5.1/5.2/5.3/5.6），各 diff 注释统一用组件名（ThoughtWaitingIcon/ToolWaitingIcon/ActionWaitingIcon），补齐 WaitingIcons 编辑历史
+## 六、等待图标代码梳理（小欧 2026-09-14）
+
+### 6.1 三种等待图标定义
+
+| 图标 | 组件名 | 颜色 | 色值 | 动画 | 定义位置 |
+|------|--------|------|------|------|---------|
+| 绿色弧线旋转 | `ThoughtWaitingIcon` | SUCCESS | `#52c41a` | `waiting-spin` 1s逆时针旋转 | `components/WaitingIcons/index.tsx:12-26` |
+| 蓝色波纹扩散 | `ActionWaitingIcon` | PRIMARY | `#1677ff` | `action-ripple` 1.8s scale 0.5→1.4 + opacity 1→0，双层交替 | `components/WaitingIcons/index.tsx:61-89` |
+| 橙色齿轮旋转 | `ToolWaitingIcon` | WAIT_ACTION | `#fa8c16` | `waiting-spin` 1s逆时针旋转 | `components/WaitingIcons/index.tsx:33-53` |
+
+**颜色令牌**：定义在 `utils/stepStyles.ts:110-143`，`Colors.PRIMARY` / `Colors.SUCCESS` / `Colors.WAIT_ACTION`。
+
+### 6.2 CSS 动画定义
+
+| 动画 | 文件位置 | 关键参数 |
+|------|---------|---------|
+| `@keyframes waiting-spin` | `index.css:116-123` | 0→360deg逆时针，1s linear infinite，被绿色弧线/橙色齿轮/title图标复用 |
+| `@keyframes action-ripple` | `index.css:148-158` | scale(0.5)→scale(1.4) + opacity(1)→opacity(0)，1.8s ease-out infinite |
+| `.action-ripple-1` | `index.css:166-170` | transform-origin:center, transform-box:fill-box, animation: action-ripple 1.8s |
+| `.action-ripple-2` | `index.css:171-176` | 同上 + animation-delay: 0.9s（与 ripple-1 交替扩散） |
+
+### 6.3 触发与消失逻辑
+
+**PipelineRenderer** (`pipeline/PipelineRenderer.tsx`)：
+
+```
+buildSegments(steps) → PipelineSegment[]
+         ↓
+taskActive = computeTaskActive(highlightToolName, badge)   ← viewState.ts:13-18
+         ↓
+末段 kind === 'thinking' + taskActive === true
+         ↓
+追加 { kind: 'action-waiting' } segment                    ← :291-293
+         ↓
+渲染: action-waiting 段 → <ActionWaitingIcon />              ← :332-342
+```
+
+**消失触发**（任一满足）：
+1. action 步到达 → `buildSegments` 产生 `tool` 段 → action-waiting 不再是末段 → 自动消失
+2. taskActive=false（final/error/badge=completed）→ 不渲染
+3. 新 thought-start 覆盖为绿色等待圈
+
+### 6.4 状态管理链路
+
+| 状态 | 管理方式 | 位置 |
+|------|---------|------|
+| `taskActive` | 纯函数 `computeTaskActive()` | `utils/viewState.ts:13-18` |
+| `isCurrentLive` | 纯函数 `computeIsCurrentLive()` | `utils/viewState.ts:39-51` |
+| `badge` | `useMemo` 派生（从 steps/frames/detail 计算） | `hooks/useTaskInfo.ts` |
+| `loading` | `useState(false)` REST 历史加载 | `components/right/RightViewer.tsx:173` |
+
+**taskActive 判定逻辑**：
+```typescript
+!!highlightToolName || badge === 'running' || badge === 'paused'
+```
+
+### 6.5 组件调用链路
+
+```
+ChatPage → useChatPanels → useChatState (loading/isPaused)
+                    ↓
+         ┌── ChatInput → SubmitBar (loading→发送/停止切换)
+         │
+         └── RightViewer
+                │
+                ├── Spin spinning={loading && !isCurrentLive}    ← AntD spinner
+                │
+                └── PipelineRenderer
+                       │
+                       ├── buildSegments(steps) → PipelineSegment[]
+                       │     ├── 'waiting'段 → ThoughtWaitingIcon (绿色)
+                       │     ├── 'action-waiting'段 → ActionWaitingIcon (蓝色)
+                       │     └── 'tool'段 → ToolCallLine → ToolWaitingIcon (橙色)
+                       │
+                       ├── ThinkingStream (thinking-cursor ▍光标闪烁)
+                       └── computeTaskActive(highlightToolName, badge)
+```
+
+### 6.6 文件清单
+
+| 文件 | 角色 |
+|------|------|
+| `components/WaitingIcons/index.tsx` | 三个等待图标组件定义 |
+| `index.css:106-176` | 所有等待动画 CSS（waiting-spin + action-ripple） |
+| `utils/viewState.ts` | `computeTaskActive` / `computeIsCurrentLive` 纯函数 |
+| `utils/stepStyles.ts:110-143` | Colors 令牌定义 |
+| `pipeline/PipelineRenderer.tsx` | 流水线渲染，构建 segment 并消费等待图标 |
+| `pipeline/ThinkingStream.tsx:48` | thinking-cursor ▍光标 |
+| `hooks/useTaskInfo.ts` | badge 状态派生（idle/running/paused/completed/failed） |
+| `components/right/RightViewer.tsx:458` | Spin spinner + isCurrentLive 判定 |
+
+---
+
+**更新时间**：2026-09-14 12:15:00
+**版本**：v1.8
+**更新内容**：第六章6.5图已恢复（含ToolCallLine/ThinkingStream），6.6文件清单仅保留蓝色圈圈相关文件，小欧编写
