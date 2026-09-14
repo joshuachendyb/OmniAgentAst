@@ -10,6 +10,8 @@
 // 编辑历史: 2026-09-11 小欧 - 第七章 M3b/M3c(R6/R7): 新增公用 TokenLayer 类型 + formatTokenCompact/formatTokenFull(DRY)——TitleBlock/StaticStatsBlock 四组 token 格式化复用, 全层不重复实现 — 小欧-2026-09-11
 // 编辑历史: 2026-09-11 小欧 - 三堂会审P1-3/P1-4: TokenLayer 字段定为 number|undefined(null 不入类型), 三处 props 统一复用本类型; 补本条前漏记的历史记录 — 小欧-2026-09-11
 // 编辑历史: 2026-09-14 小欧 - 漏洞2修复: Colors 新增 WAIT_ACTION 令牌(#fa8c16 工具执行等待齿轮橘, ToolWaitingIcon loader 色), WaitingIcons 硬编码色令牌化 — 小欧-2026-09-14
+// 编辑历史: 2026-09-14 小欧 - DRY: 新增 getStreamStyle 公共样式函数, ThinkingStream/TextStream 复用 — 小欧-2026-09-14
+import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
  *
@@ -233,6 +235,13 @@ export const shouldBreakLine = (stepType: StepType | string): boolean => {
 export const hasExpandableDetails = (stepType: StepType | string): boolean => {
   return getStepLayout(stepType) === 'inline-with-details';
 };
+
+// 2026-09-14 小欧 - DRY: ThinkingStream/TextStream 公共样式(whiteSpace/wordBreak/margin)提取, 消重复 — 小欧-2026-09-14
+export const getStreamStyle = (compact: boolean): CSSProperties => ({
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  margin: stepMargin(compact),
+});
 
 // 2026-09-11 小欧: token四组公用格式化(DRY) — TitleBlock/StaticStatsBlock 复用
 export type TokenLayer =

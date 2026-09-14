@@ -15,7 +15,7 @@
  */
 
 import React from 'react';
-import { Colors, FontSize, Spacing, stepMargin } from '@/utils/stepStyles';
+import { Colors, FontSize, Spacing, getStreamStyle } from '@/utils/stepStyles';
 import { normalizeBlankLines } from '@/utils/textNormalize'; // 13.11 显示兜底 — 小欧 2026-08-30
 
 interface ThinkingStreamProps {
@@ -39,9 +39,7 @@ const ThinkingStream: React.FC<ThinkingStreamProps> = ({
         fontSize: FontSize.SECONDARY,
         lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
         fontStyle: 'italic',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        margin: stepMargin(compact),
+        ...getStreamStyle(compact),
       }}
     >
       {clean}

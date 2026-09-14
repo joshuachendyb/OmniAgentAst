@@ -65,3 +65,10 @@ export const formatTimeHMS = (date: Date | string | number): string => {
   if (!d) return '-';
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
 };
+
+// 小欧 2026-09-14 DRY: console.log调试时间戳 [HH:MM:SS.mmm] — 小欧-2026-09-14
+export const formatDebugTime = (): string => {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `[${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}]`;
+};

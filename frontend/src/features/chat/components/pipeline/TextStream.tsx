@@ -14,7 +14,7 @@
  * @date 2026-08-30
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { stepMargin } from '@/utils/stepStyles';
+import { getStreamStyle } from '@/utils/stepStyles';
 import { normalizeBlankLines } from '@/utils/textNormalize';
 
 interface TextStreamProps {
@@ -62,11 +62,7 @@ const TextStream: React.FC<TextStreamProps> = ({
 
   return (
     <div
-      style={{
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        margin: stepMargin(compact), // 13.10.3 step 间段距 MD(8); 同 step 内部 compact→SM(6)
-      }}
+      style={getStreamStyle(compact)}
     >
       {clean.slice(0, typing ? shown : clean.length)}
       {cursor && typing && shown < clean.length && <span>▍</span>}
