@@ -132,9 +132,6 @@ export const useChatTaskControl = (
 
       while (Date.now() - startTime < maxWaitTime) {
         if (hasReceivedCancelEventRef.current) {
-          console.log(
-            '[waitForCancelEvent] 已收到取消终态 final+outcome=cancelled'
-          );
           hasReceivedEvent = true;
           break;
         }
@@ -201,28 +198,22 @@ export const useChatTaskControl = (
   const handleCancel = useCallback(async () => {
     // 【防重复点击】如果正在取消中，忽略后续点击
     if (cancelInProgressRef.current) {
-      console.log('[handleCancel] 正在取消中，忽略重复点击');
       return;
     }
     cancelInProgressRef.current = true;
 
     const taskIdToCancel = serverTaskId;
-    console.log(
-      `[handleCancel] serverTaskId=${serverTaskId}, taskIdToCancel=${taskIdToCancel}`
-    );
 
     try {
       if (taskIdToCancel) {
         try {
           showTaskControlInfo('正在取消任务...');
-          console.log("[handleCancel] 已显示 '正在取消任务...' 提示");
 
           // ✅【方案1】立即更新UI状态，给用户即时反馈
           resetUiFlags();
 
           // ✅【关键修复】不立即断开连接！等待后端发送cancelled/final事件
           const result = await callCancelApi(taskIdToCancel, sessionId);
-          console.log('[handleCancel] cancel API 返回:', result);
 
           // ✅ 使用智能等待策略等待后端发送cancelled事件
           await waitForCancelOrTimeout();
@@ -231,22 +222,16 @@ export const useChatTaskControl = (
           if (waitTimerRef.current) {
             clearInterval(waitTimerRef.current);
             waitTimerRef.current = null;
-            console.log('[handleCancel] 已清除waitTimerRef倒计时');
           }
 
           disconnect(true, true, () => {
-            console.log('[handleCancel] SSE已断开，状态已同步');
             // 在断开连接完成后重置标记
             hasReceivedCancelEventRef.current = false;
           });
-          console.log('[handleCancel] 已调用 disconnect(true)');
 
           // 显示后端返回的具体消息
           showTaskResultMessage('cancel', result.message);
-          console.log('[handleCancel] 已显示取消成功提示');
         } catch (error) {
-          console.error('[handleCancel] 错误:', error);
-
           // 【增强错误处理】区分错误类型并给出明确提示
           let errorMessage = '取消请求失败';
           if (error instanceof Error) {
@@ -275,9 +260,6 @@ export const useChatTaskControl = (
           while (retries < 3) {
             await new Promise((resolve) => setTimeout(resolve, 500));
             if (hasReceivedCancelEventRef.current) {
-              console.log(
-                '[handleCancel] 异常情况下仍收到取消终态 final+outcome=cancelled'
-              );
               break;
             }
             retries++;
@@ -285,12 +267,8 @@ export const useChatTaskControl = (
           hasReceivedCancelEventRef.current = false;
           // 2026-08-27 小欧 修复#10: 新签名 (stopServer, force), force=true 使 manualDisconnect=true 禁止自动重连
           disconnect(true, true);
-
-          console.log('[handleCancel] 已处理异常，强制断开SSE连接');
         }
       } else {
-        console.warn('[handleCancel] 没有有效的 taskId，可能任务尚未开始');
-
         // 【问题4修复】即使没有taskId，也要更新UI状态并断开连接
         resetUiFlags();
 
@@ -338,7 +316,6 @@ export const useChatTaskControl = (
           serverTaskId ?? undefined,
           sessionId ?? undefined
         );
-        console.log('⏸️ [handleTogglePause] 已发送暂停请求，后端返回:', result);
 
         // 更新前端暂停状态
         setIsPaused(true);
@@ -352,7 +329,6 @@ export const useChatTaskControl = (
           serverTaskId ?? undefined,
           sessionId ?? undefined
         );
-        console.log('▶️ [handleTogglePause] 已发送恢复请求，后端返回:', result);
 
         // 更新前端暂停状态
         setIsPaused(false);
@@ -362,7 +338,6 @@ export const useChatTaskControl = (
         showTaskResultMessage('resume', result.message);
       }
     } catch (error) {
-      console.error('❌ [handleTogglePause] 暂停/继续请求失败:', error);
       // 使用统一错误处理中心 - 任务控制失败
       handleError(error, { source: 'api' });
     }

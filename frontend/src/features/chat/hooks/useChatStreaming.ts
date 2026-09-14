@@ -370,8 +370,6 @@ export const useChatStreaming = (
       userMessage: Message,
       contextLinkMode?: 'linked' | 'independent'
     ) => {
-      console.log('📡 [executeSend] 开始发送消息');
-
       // 1. 启动等待计时器
       setLoading(true);
       setWaitTime(0);
@@ -427,19 +425,10 @@ export const useChatStreaming = (
                   ...newMessages[userMsgIndex],
                   id: String(backendUserMessageId),
                 };
-                console.log(
-                  '✅ [executeSend] 用户消息ID已更新:',
-                  backendUserMessageId
-                );
               }
               return newMessages;
             });
           }
-
-          console.log(
-            '✅ [executeSend] 用户消息保存成功, message_id:',
-            saveResult?.message_id
-          );
         } catch (error) {
           console.error('❌ [executeSend] 保存用户消息失败:', error);
           const is404 =
@@ -491,7 +480,6 @@ export const useChatStreaming = (
         currentSessionIdRef.current ?? sessionId ?? undefined,
         contextLinkMode
       );
-      console.log('✅ [executeSend] sendStreamMessage已调用');
     },
     [
       sessionId,

@@ -173,16 +173,12 @@ export const useChatCallbacks = (
   //   preview 与 canonical 因 preview 位不同不误杀, chunk 逐块 content 不同不误杀;
   //   onComplete/onError 终态清空 Set, 供下一任务重新计数 — 小欧-2026-09-09
   const onStepFingerprintRef = useRef<Set<string>>(new Set());
-  const _dbgRoundRef = useRef(0); // [DEBUG-4] 轮次计数器
   // 小欧 2026-09-10 [A3]: 并发暂停计数 —— 多个暂停来源(并发HITL/服务端)依次进入,
   //   仅当最后一个来源恢复才解除暂停; 单恢复不再误灭其他来源的暂停
   const pauseCountRef = useRef(0);
 
   const onStep = useCallback(
     (step: ExecutionStep) => {
-      // [DEBUG-4] 2026-09-09 执行路径追踪(轮次)
-      if (step.type === 'thought-start') _dbgRoundRef.current++;
-      console.log(`[DBG-4] → ${step.type}/R${_dbgRoundRef.current}`);
       // A1(2026-09-09 小欧): 指纹去重——同 type|step|preview|content(前64) 事件视为重放/重复行跳过,
       //   防 executionSteps 无界膨胀(356步残留)与渲染错乱 — 小欧-2026-09-09
       const fingerprint = [
@@ -202,8 +198,6 @@ export const useChatCallbacks = (
         step.type === 'final' && step.outcome === 'cancelled';
       if (isCancelEvent) {
         hasReceivedCancelEventRef.current = true;
-        // 2026-09-07 小欧 4.4.1(B10): 日志文案对齐新契约, type=cancelled 事件已不存在
-        console.log('[取消] 收到取消终态 final+cancelled');
       }
 
       // ✅ 如果正在取消中，跳过非取消且与终态无关的事件（避免旧 chunk/步骤污染 UI）
@@ -212,7 +206,6 @@ export const useChatCallbacks = (
         // 小欧 2026-09-10 S6: 取消态只放行 cancelled 帧
         // 原条件 type !== 'final' 放行了 final(completed)，导致双 final
         if (!isCancelEvent) {
-          console.log(`[取消] 忽略取消过程中收到的事件: ${step.type}`);
           return;
         }
         // 是取消事件或 final 终态，继续处理（显示到 UI）
@@ -226,15 +219,11 @@ export const useChatCallbacks = (
 
       // 只打印第一个chunk，减少日志
       if (step.type === 'chunk') {
-        if (!logFlagsRef.current.chunkFirstDone) {
-          console.log('🔍 [onStep] 收到步骤, type= chunk (第一个)');
-          logFlagsRef.current.chunkFirstDone = true;
-        }
+        logFlagsRef.current.chunkFirstDone = true;
       }
 
       // ⭐ 暂停时存入缓冲区，不直接显示（原有逻辑保留）
       if (isPausedRef.current) {
-        console.log('⏸️ [onStep] 暂停中，存入缓冲区, type:', step.type);
         displayBufferRef.current.push({ type: 'step', step });
         return;
       }
@@ -284,11 +273,6 @@ export const useChatCallbacks = (
               (step.content as string) ||
               lastMessage.content
             : lastMessage.content;
-        // [DEBUG-4d] 2026-09-09 北京老陈 追加step到已有消息
-        console.log(
-          `[DBG-4d] onStep: 追加到assistant消息 type=${step.type} step=${step.step}`,
-          `msgSteps=${(lastMessage.executionSteps || []).length}→${(lastMessage.executionSteps || []).length + 1}`
-        );
         updated[updated.length - 1] = {
           ...lastMessage,
           content: stepDisplayContent,
@@ -329,7 +313,6 @@ export const useChatCallbacks = (
 
       // ⭐ 暂停时存入缓冲区，不直接显示（原有逻辑保留）
       if (isPausedRef.current) {
-        console.log('⏸️ [onChunk] 暂停中，存入缓冲区');
         displayBufferRef.current.push({
           type: 'chunk',
           content: chunk,
@@ -382,7 +365,6 @@ export const useChatCallbacks = (
       //   cancelInProgress 窗口期后端 completed 终态短窗到达, 否则与"取消=静默收尾"语义冲突;
       //   取消终态由 cancelled final 帧经 onStep 展示, 此处直接 return(标志由 useChatTaskControl finally 复位)
       if (cancelInProgressRef.current) {
-        console.log('[onComplete] 取消进行中，跳过完成态写入');
         return;
       }
 
@@ -491,15 +473,6 @@ export const useChatCallbacks = (
             display_name: metadataObj.display_name || lastMessage.display_name,
             executionSteps: finalSteps,
           };
-          console.log(
-            '  └─ ✅ 已更新 steps:',
-            finalSteps.length,
-            '| last3:',
-            finalSteps
-              .slice(-3)
-              .map((s: ExecutionStep) => s.type)
-              .join(',')
-          );
           return updated;
         }
         // 2026-08-27 小欧 修复#5: 末条非 assistant(重连/无占位)时新建 assistant 消息写入最终回复, 不再静默丢弃
@@ -525,10 +498,8 @@ export const useChatCallbacks = (
       if (currentSessionId && finalResponse && finalResponse.trim()) {
         // 后端自动落库，前端仅同步标题/版本（已在 updateSession 流程中处理），此处不额外调用
       } else {
-        console.warn('[onComplete] 无有效回复或sessionId，跳过前端同步保存');
+        // 后端自动落库，前端无需额外保存
       }
-
-      console.log('✅ type=%s AI流式完成 %s', new Date().toLocaleTimeString());
 
       // ========== 黄色结束标志 ==========
       logAIComplete(fullResponse?.length || 0);
@@ -713,7 +684,6 @@ export const useChatCallbacks = (
   // ==================== onPaused回调 ====================
 
   const onPaused = useCallback(() => {
-    console.log('⏸️ [onPaused] SSE 暂停');
     // 小欧 2026-09-10 [A3]: 并发暂停计数 —— 每来源暂停计数+1, isPaused 恒为 true(最强暂停语义)
     pauseCountRef.current += 1;
     setIsPaused(true);
@@ -724,18 +694,10 @@ export const useChatCallbacks = (
   // ==================== onResumed回调 ====================
 
   const onResumed = useCallback(() => {
-    console.log(
-      '▶️ [onResumed] 收到恢复事件，缓冲区长度:',
-      displayBufferRef.current.length
-    );
-
     // 小欧 2026-09-10 [A3]: 并发暂停计数递减 —— 仍有其他来源暂停时保持暂停, 不清缓冲不回放;
     //   最后一个来源恢复才统一回放(缓冲数据跨来源累积, 提前回放会破坏暂停中来源的暂存)
     if (pauseCountRef.current > 0) pauseCountRef.current -= 1;
     if (pauseCountRef.current > 0) {
-      console.log(
-        `⏸️ [onResumed] 仍有 ${pauseCountRef.current} 个暂停来源, 保持暂停`
-      );
       return;
     }
 
@@ -837,7 +799,6 @@ export const useChatCallbacks = (
 
   const onRetry = useCallback(
     (message: string, waitTime?: number) => {
-      console.log('🔄 [onRetry] 收到重试事件:', message, '等待时间:', waitTime);
       setIsRetrying(true);
       if (waitTime !== undefined) {
         setWaitTime(waitTime);
@@ -863,7 +824,6 @@ export const useChatCallbacks = (
       confirm_timeout?: number;
       backend_timeout?: number;
     }) => {
-      console.log('[Authorization] 收到授权请求:', data);
       // 触发授权弹窗（通过自定义事件通知NewChatContainer）
       window.dispatchEvent(
         new CustomEvent('authorization_required', { detail: data })

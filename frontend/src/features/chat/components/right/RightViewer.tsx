@@ -236,12 +236,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
     hasBusinessSteps,
     liveBadge,
   });
+  console.log(`[CURSOR-A] live=${isCurrentLive} match=${activeTaskId===serverTaskId} final=${_hasFinal} biz=${hasBusinessSteps} badge=${liveBadge} types=${liveSteps.map(s=>s.type).join(',')}`); // 2026-09-14 小欧 debug光标
   // [DEBUG-1] 2026-09-09 北京老陈 冻结诊断：isCurrentLive 仅状态变化时打
   // 2026-09-14 小欧 [36]5.5.3-(二): DBG-1 日志去 recv 槽位(接收变量已删, 只留 live/match/final/biz 前缀四字段) — 小欧-2026-09-14
   if (isCurrentLive !== prevIsCurrentLiveRef.current) {
-    console.log(
-      `[DBG-1] live=${isCurrentLive} match=${activeTaskId === serverTaskId} final=${_hasFinal} biz=${hasBusinessSteps} badge=${liveBadge} live=${liveSteps.length} hist=${historySteps.length}`
-    );
     prevIsCurrentLiveRef.current = isCurrentLive;
   }
 
@@ -445,12 +443,6 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const _prevSrcRef = useRef<string>('live');
   const _src = isCurrentLive ? 'live' : 'hist';
   if (_src !== _prevSrcRef.current) {
-    console.log(
-      `[DBG-2] displaySteps 切换: ${_prevSrcRef.current} → ${_src}`,
-      `liveLen=${liveSteps.length}`,
-      `histLen=${historySteps.length}`,
-      `liveTypes=${liveSteps.map((s) => s.type).join(',')}`
-    );
     _prevSrcRef.current = _src;
   }
 

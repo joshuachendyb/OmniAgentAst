@@ -223,9 +223,6 @@ export const useTaskInfo = (
             _badgeRecovered = true;
           }
           // [DEBUG-3b] 2026-09-09 北京老陈 badge fix 命中
-          console.log(
-            `[DBG-3b] badge fix命中: type=${s.type} step=${s.step} → badge=${badge}`
-          );
           break;
         default:
           break;
@@ -249,8 +246,6 @@ export const useTaskInfo = (
     // 2026-09-14 小欧 [36]改动点②(北京老陈批准): startinfo 门改无条件 running——SSE 断连窗(receiving 已删)
     //   不再把 badge 压回 idle, RightViewer.isCurrentLive 不翻 false, 根治09-08「前端UI静默10秒整批显示」 — 小欧-2026-09-14
     if (hasStartInfo && badge === 'idle') {
-      // [DEBUG-3c] 2026-09-09 北京老陈 startinfo门压badge
-      console.log(`[DBG-3c] startinfo门: badge=idle → badge=running`);
       badge = 'running';
     }
     if (hasStartInfo) {
