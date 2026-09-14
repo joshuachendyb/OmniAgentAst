@@ -20,6 +20,8 @@
 # 2026-09-08 小欧 北京老陈指令(console可见性): cancel_task 入口 logger.info→log_and_print 双写 —
 #   setup_logger 的 console handler 仅放行 WARNING 以上(logger/__init__.py:112), info 不落控制台;
 #   双写后后端命令行(uvicorn窗口)直接可见取消请求(task/source) — 小欧-2026-09-08
+# 2026-09-14 小欧 - _cancel_final_dict 取消终态字段修正: 删 content 改 response, 与 FinalStep.to_dict() 对齐,
+#   前端 sseParser final 分支读 response 字段, content 无消费者 — 小欧-2026-09-14
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -80,12 +82,13 @@ def _cancel_final_dict(task_id: str, source: Optional[str] = None) -> dict:
     """组装取消终态 step dict(type=final, outcome=cancelled) — 小欧 2026-09-07 4.4.1:
     前端 case 'cancelled' 已删, 取消收尾单一由 type=final+outcome=cancelled 承担。
     禁止 build_step_dict: 其 data 参数会被 MetaStep 包成 data 嵌套, 前端读顶层 outcome 会失效。
-    2026-09-08 小欧 方案五: content 按来源出文案, 顶层带 cancel_source 供前端展示/排查(随 step dict 一并落库)。"""
+    2026-09-08 小欧 方案五: response 按来源出文案, 顶层带 cancel_source 供前端展示/排查(随 step dict 一并落库)。
+    2026-09-14 小欧 修复: 统一放 response 字段, 与 FinalStep.to_dict() 对齐(删 content, 前端只读 response)。"""
     return {
         "step": _current_step(task_id),
         "type": "final",
         "outcome": "cancelled",
-        "content": cancel_terminal_text(source),
+        "response": cancel_terminal_text(source),  # 2026-09-14 小欧 修复: 取消终态统一放response, 与FinalStep.to_dict()对齐 — 小欧-2026-09-14
         "cancel_source": source or "user_requested",
     }
 
