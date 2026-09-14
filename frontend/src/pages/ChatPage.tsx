@@ -27,6 +27,15 @@
 //   但新会话仍展开空态右栏不符预期; handleNewSession 包装置折叠, 点任务经 handleSelectTaskOpenRight 再展开 — 小欧-2026-09-13
 // 编辑历史: 2026-09-14 小欧 - [34]布局底部被推出视口修复(北京老陈令): 根div高度由calc(100vh-59px)改height:'100%'+overflow:'hidden',
 //   外层Layout已锁height:100vh, 本层填满Content即可, 输入条/整体窗口底部始终钉视口内(Edge/Chrome缩放实测通过) — 小欧-2026-09-14
+// 编辑历史: 2026-09-15 小欧 - 新任务开始执行自动展开右栏(北京老陈反馈修复): 2026-09-13 折叠改动后 rightOpen 只靠初始
+//   true 兜底, 新建会话折叠后直接发新任务无任何 setRightOpen(true), 右侧step面板一直折叠不显示; 在 serverTaskId
+//   变化(SSE start帧=任务开始执行)的既有effect守卫内补 setRightOpen(true), 一处覆盖所有产任务路径(新消息/重试),
+//   不误伤"新建会话默认折叠"定案(切会话serverTaskId清空为null不进守卫) — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 三堂会审(北京老陈质疑"什么鬼控件/有无不当重复/10大规范")方案A退回改方案B:
+//   方案A用 prevServerTaskIdRef+useEffect 绕到"serverTaskId变化"才展开, 违KISS-DIRECT(发送入口唯一却绕远路)/
+//   SRP(污染G2刷新列表effect)/YAGNI(为不存在的"重试"产任务路径通用化)+冗余依赖setRightOpen; 已撤销effect内改动;
+//   改为在唯一发送入口 handleSendWithMode 直线 setRightOpen(true)(发送即展开右侧step面板, 请求级失败右栏展开亦无副作用);
+//   "点击任务展开"与"发送任务展开"两触发源调同一setter非重复实现(DRY合规), G2 effect恢复单一职责 — 小欧-2026-09-15
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -162,9 +171,10 @@ const ChatPage: React.FC = () => {
   const handleSendWithMode = useCallback(
     async (content: string, mode?: 'linked' | 'independent') => {
       setLiveError(null);
+      setRightOpen(true); // 2026-09-15 小欧: 新任务发送即展开右侧step面板(方案B, 直线入口) — 小欧-2026-09-15
       await chatSend.handleSend(content, mode);
     },
-    [chatSend, setLiveError]
+    [chatSend, setLiveError, setRightOpen]
   );
 
   // 2026-08-27 小欧 修复#42: 切换会话时重置跨会话泄漏状态(liveError)
