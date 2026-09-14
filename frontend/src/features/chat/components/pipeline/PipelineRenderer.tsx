@@ -69,6 +69,11 @@
 // 编辑历史: 2026-09-14 小欧 - [35]蓝色圈圈显示逻辑停用(北京老陈令, 定义/CSS/import保留为将来新方案启用):
 //   删 union {kind:'action-waiting'} 类型; 删组件体内末段thinking+taskActive时追加action-waiting段逻辑;
 //   删渲染分支 action-waiting段渲染; 绿ThoughtWaitingIcon/橙ToolWaitingIcon及蓝色定义与CSS一律不动 — 小欧-2026-09-14
+// 编辑历史: 2026-09-14 小欧 - [37]思考光标不显示问题修复(北京老陈驱动, 文档[37]): 删渲染函数体内
+//   CURSOR T/CURSOR F 两处 console.log(render 副作用+StrictMode 双渲染致 2~4 倍虚假重复, 且条件 isLive
+//   与 UI 光标真实条件 shown<clean.length 不同步); 打点已下放至 TextStream/ThinkingStream 内部翻转检测;
+//   formatDebugTime import 同步删除 — 小欧-2026-09-14
+//   2026-09-14 小欧 - [37]lint清理: 删 [35] 遗留未使用 import ActionWaitingIcon(仅 import+注释, 无实际使用) — 小欧-2026-09-14
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -90,8 +95,7 @@ import { StatusLine } from './StatusLine';
 import { TextStream } from './TextStream'; // 13.8 正文打字机 — 小欧 2026-08-30
 import {
   ThoughtWaitingIcon,
-  ActionWaitingIcon,
-} from '@/components/WaitingIcons'; // 2026-09-13 小欧: ThoughtWaitingIcon/ActionWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
+} from '@/components/WaitingIcons'; // 2026-09-13 小欧: ThoughtWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
 import {
   Colors,
   BorderWidth,
@@ -100,7 +104,6 @@ import {
   stepMargin,
 } from '@/utils/stepStyles';
 import { computeTaskActive } from '@/utils/viewState'; // 2026-09-14 小欧 [36]改动点④(方案A): taskActive 判定提纯复用 — 小欧-2026-09-14
-import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
 
 export type PipelineSegment =
   | { kind: 'thinking'; text: string; sameStep?: boolean } // sameStep: 同 step 内部(13.6 reasoning+thought)→compact SM(6)
@@ -324,7 +327,6 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         if (seg.kind === 'thinking') {
           // 2026-09-02 小欧 · 北京老陈定案: 光标仅亮在"最后一段"(打字机末段), 旧 thinking 段完成即灭
           const cursor = streaming && i === lastThink && i === segs.length - 1;
-          if (cursor) console.log(`${formatDebugTime()} CURSOR T`); // 2026-09-14 小欧 — 小欧-2026-09-14
           return (
             <ThinkingStream
               key={`thinking-${i}-${seg.text.slice(0, 16)}`}
@@ -337,7 +339,6 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         if (seg.kind === 'text') {
           // 2026-09-02 小欧: 限定末段, 与 thinking 光标同策略
           const isLive = streaming && i === lastText && i === segs.length - 1;
-          if (isLive) console.log(`${formatDebugTime()} CURSOR F`); // 2026-09-14 小欧 — 小欧-2026-09-14
           return (
             <TextStream
               key={`text-${i}-${seg.text.slice(0, 16)}`}
