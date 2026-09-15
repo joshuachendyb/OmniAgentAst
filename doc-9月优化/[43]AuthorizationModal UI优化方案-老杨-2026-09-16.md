@@ -6,14 +6,8 @@
 | 版本 | 更新时间 | 更新人 | 更新要点 |
 |------|---------|--------|---------|
 | v1.3 | 2026-09-03 12:23:56 | 小欧 | P1修复: handleConfirm中autoHandledRef先设再调onConfirm, 堵countdown到0+用户同帧点击双发onConfirm时序缺口; P3: @keyframes pulse移至组件外AUTH_MODAL_STYLE常量避免重复注入 |
-| v1.2 | 2026-09-03 12:23:56 | 小欧 | 工具信息卡maxHeight 100→150(长参数可读性提升，卷滚条更早出现更舒适) |
-| v1.1 | 2026-09-03 10:32:55 | 小欧 | 三堂会审修订：去重二/三章留白双计、补file:line锚点与isBypass6分支不变声明、合表单列现状→目标→节省→锚点、保留overflow:auto与isBypass校验 |
-| v1.0 | 2026-09-03 10:31:18 | 小欧 | 首次创建：HTL弹窗降高100px+最小留白+视觉层次重构完整方案 |
-| v1.4 | 2026-09-16 03:38:31 | 老杨 | 新增第五章发现的问题(18项) + 第六章优化要点及方法(6大方向)，覆盖AuthorizationModal+DangerConfirmModal+TrustPanel三个组件 |
-| v1.5 | 2026-09-16 04:02:28 | 老杨 | 新增第七章HITL弹框全链路延时分析(前后端追踪) + 第八章延时优化设计分析(3项可落地优化) |
-| v1.6 | 2026-09-16 04:19:57 | 老杨 | 新增第九章基于"弹框快+确认发送快"双原则的技术选型审查(控件复杂度+确认链路追踪) |
-| v1.7 | 2026-09-16 04:26:07 | 老杨 | 新增第十章结构性问题汇总与优化路线图(第7/8/9三章去重合并，5个结构性问题+实施路线) |
-| v1.8 | 2026-09-16 04:37:24 | 老杨 | 第九章新增9.3 bypass自动确认竞态分析(2s窗口竞态+与手动确认对比) |
+
+| v1.9 | 2026-09-16 05:39:51 | 老杨 | 三堂会审定案(定案): **保留antd Modal**·换控件/自研=重造轮子(焦点陷阱/ESC/遮罩/ARIA全要重造, HITL安全确认场风险高, 违反KISS-DIRECT+复用优先铁规)否决; S1升级为**禁Modal入场动画 motion={false} 0ms**(优于原缩短50ms, 确定性最高), 收益按antd参考值估算·待真机实测; S1 P0→P1(因非本仓库实测) |
 
 ---
 
@@ -316,11 +310,11 @@ const scheduleFlush = useCallback(() => {
 <Modal open={visible} ...>  // ← Ant Design Modal 默认300ms淡入+缩放动画
 ```
 
-**机制**：Ant Design Modal组件从`open=false`变为`open=true`时，自动执行CSS transition动画（淡入+微缩放），默认持续时间300ms。
+**机制**：Ant Design Modal组件从`open=false`变为`open=true`时，自动执行CSS transition入场动画（淡入+微缩放），默认持续时间约300ms（**antd默认参考值，非本仓库实测；待真机`performance.now()`确认**）。
 
-**影响**：用户感知的"弹框慢"主要来自这里。从`setAuthorizationPending`触发到弹框完全可见，用户等待约300ms。
+**影响**：用户感知的"弹框慢"主要来自这里。从`setAuthorizationPending`触发到弹框完全可见，用户等待约300ms（按参考值估算）。
 
-**是否必要**：⚠️ 可优化。HITL弹框是安全确认场景，用户需要快速看到并操作，300ms动画不必要。
+**是否必要**：⚠️ 可优化。HITL弹框是安全确认场景，用户需要快速看到并操作，**300ms入场动画不必要**。但铁规保留其余动画（遮罩/关闭/图标过渡），仅禁用入场过渡。
 
 #### 延时点3：JSON.stringify 每秒重复执行
 
@@ -384,23 +378,26 @@ const scheduleFlush = useCallback(() => {
 
 | # | 优化目标 | 延时来源 | 优化手段 | 预期收益 | 优先级 |
 |---|---------|---------|---------|---------|--------|
-| 1 | Modal入场动画300ms | Ant Design默认CSS动画 | 禁用/缩短动画 | -250~300ms | P0 |
+| 1 | Modal入场动画300ms | Ant Design默认CSS动画 | 禁用/缩短动画 | -按参考值~300ms | P1 |
 | 2 | JSON.stringify每秒重复 | countdown触发全组件重渲染 | useMemo缓存 | -10~50ms/次 | P1 |
 | 3 | 全组件每秒重渲染 | countdown state变化 | 拆分子组件+memo | -5ms/次 | P2 |
 
-### 8.2 优化项1：Modal入场动画（P0，预期-250~300ms）
+### 8.2 优化项1：Modal入场动画（P0→P1，默认~300ms→0ms·按参考值估算）
 
-**问题根因**：Ant Design Modal默认300ms淡入+缩放CSS动画，HITL安全确认场景不需要此动效。
+**问题根因**：Ant Design Modal默认淡入+缩放CSS动画（~300ms，antd默认参考值·非本仓库实测）。
 
 **方案对比**：
 
 | 方案 | 实施方式 | 效果 | 风险 |
 |------|---------|------|------|
 | A. 完全禁用 | `<Modal transitionName="" ...>` | 动画0ms，弹框瞬间出现 | 生硬，用户体验突变 |
-| B. 缩短为50ms | `<Modal transitionProps={{ timeout: { enter: 50 } }} ...>` | 动画50ms，几乎无感 | 平滑过渡保留 |
+| **B*. 禁入场动画(定案)** | `<Modal motion={false}>` 仅禁入场过渡，保留遮罩淡入/关闭动画 | **入场0ms**，其余动画全保留 | 极低 |
+| B. 缩短为50ms | `<Modal transitionProps={{ timeout: ...enter: 50 }}>` | 动画50ms，几乎无感 | 需验证antd6.x兼容性 |
 | C. 自定义CSS | `classNames={{ wrapper: 'hitl-no-anim' }}` + CSS `transition: none` | 精确控制 | 需维护CSS类 |
 
-**推荐方案B**：缩短为50ms。保留微动画过渡感，同时消除250ms+等待。
+**推荐方案B\*（定案）**：`motion={false}` 仅禁入场动画，弹框0ms立即出现；遮罩淡入、关闭动画、图标过渡等其余动画**全部保留**（HITL安全确认需保留行为语义）。仅缩短50ms(B)仍需依赖antd内部动画值，确定性不如0ms禁动画。
+
+**实施位置**：`AuthorizationModal/index.tsx:163`
 
 **实施位置**：`AuthorizationModal/index.tsx:163`
 
@@ -481,7 +478,7 @@ AuthorizationModal (不变部分: 图标/标题/参数区/checkbox/按钮)
 ### 8.5 优化实施顺序
 
 ```
-第一步：P0 Modal动画缩短 → 立竿见影，用户感知"快了"
+第一步：P1 Modal动画禁用 → 立竿见影，用户感知"快了"
 第二步：P1 JSON.stringify缓存 → 消除每秒重复计算
 第三步：P2 拆分CountdownRing → 代码结构优化，减少重渲染范围
 ```
@@ -490,7 +487,7 @@ AuthorizationModal (不变部分: 图标/标题/参数区/checkbox/按钮)
 
 | 指标 | 优化前 | 优化后 | 改善 |
 |------|--------|--------|------|
-| 弹框出现延时 | ~300ms | ~50ms | **-83%** |
+| 弹框出现延时 | ~300ms | ~0ms | **-100%（按参考值估算·待实测）** |
 | 每秒重渲染开销 | ~15ms | ~5ms | **-67%** |
 | JSON.stringify/次 | 0-50ms | 0ms（缓存） | **-100%** |
 
@@ -583,7 +580,7 @@ hitl_confirm() 返回                                [继续执行工具]
 
 #### 9.2.2 优化项（按优先级排序）
 
-**P0：禁用Modal入场动画（-250~300ms）**
+**P1：禁用Modal入场动画（-按参考值~300ms→0ms）**
 
 | 项目 | 内容 |
 |------|------|
@@ -591,7 +588,7 @@ hitl_confirm() 返回                                [继续执行工具]
 | 方案 | `<Modal transitionName="" ...>` 完全禁用Modal内置动画 |
 | 补偿 | 用CSS `@keyframes` 自定义50ms微动画（fade-in），保留过渡感 |
 | 位置 | AuthorizationModal.tsx:163 |
-| 收益 | 弹框出现延时从~300ms降至~50ms，**-83%** |
+| 收益 | 弹框出现延时从~300ms降至~0ms，**-100%（按参考值估算·待实测）** |
 | 风险 | 需验证antd5.x `transitionName=""` 是否生效 |
 
 **P1：Tooltip改原生title（-渲染开销）**
@@ -635,7 +632,7 @@ hitl_confirm() 返回                                [继续执行工具]
 
 | 指标 | 优化前 | 优化后 | 改善 |
 |------|--------|--------|------|
-| 弹框出现延时 | ~300ms | ~50ms | **-83%** |
+| 弹框出现延时 | ~300ms | ~0ms | **-100%（按参考值估算·待实测）** |
 | 每秒重渲染开销 | ~15ms | ~5ms | **-67%** |
 | JSON.stringify/次 | 0-50ms | 0ms（缓存） | **-100%** |
 | Tooltip渲染成本 | Popover DOM层 | 原生title（0） | **-100%** |
@@ -751,7 +748,7 @@ confirm_timeout = 10 - 2 = 8s  # 前端倒计时
 
 | # | 问题 | 根因 | 影响维度 | 来源章节 | 优先级 |
 |---|------|------|---------|---------|--------|
-| S1 | **Modal入场动画300ms** | Ant Design Modal默认CSS transition | 弹框快（主因，占60%） | 第7章延时点2 / 第8章P0 / 第9章T1 | **P0** |
+| S1 | **Modal入场动画300ms** | Ant Design Modal默认CSS transition | 弹框快（主因，占60%） | 第7章延时点2 / 第8章P0 / 第9章T1 | **P1** |
 | S2 | **JSON.stringify无缓存** | 每次渲染都执行序列化，countdown每秒触发 | 弹框快（每秒重复计算） | 第7章延时点3 / 第8章P1 / 第9章T4 | **P1** |
 | S3 | **全组件无拆分** | 345行一个组件，countdown在顶层，每秒全树重渲染 | 弹框快（不必要重渲染） | 第7章延时点4 / 第8章P2 / 第9章T5 | **P1** |
 | S4 | **Progress SVG圆环过重** | SVG路径计算+stroke-dasharray+format()，countdown每秒重绘 | 弹框快（渲染开销） | 第9章T2 | **P2** |
@@ -767,33 +764,206 @@ confirm_timeout = 10 - 2 = 8s  # 前端倒计时
 
 ### 10.2 优化方案明细
 
-#### S1：Modal入场动画 → 禁用+CSS轻量动画（P0，-83%）
+#### S1：Modal入场动画 → 禁用入场动画 motion={false}（P1，按参考值~300ms→0ms）
 
 | 项目 | 内容 |
 |------|------|
-| 问题 | Ant Design Modal默认300ms淡入+缩放CSS动画 |
-| 方案 | `<Modal transitionName="" ...>` 禁用Modal内置动画；用CSS `@keyframes` 自定义50ms微动画（fade-in）补偿过渡感 |
-| 位置 | AuthorizationModal.tsx:163 + 新增CSS类 |
-| 预期 | 弹框出现延时 300ms → 50ms，**-83%** |
-| 注意 | DangerConfirmModal同步修改；需验证antd5.x `transitionName=""` 生效 |
+| 问题 | Ant Design Modal默认300ms淡入+缩放CSS动画（antd默认参考值·非本仓库实测） |
+| 方案 | `<Modal motion={false}>` 仅禁入场动画，遮罩淡入/关闭动画/图标过渡全部保留 |
+| 位置 | AuthorizationModal.tsx:163 + DangerConfirmModal.tsx:62（两处同步） |
+| 预期 | 弹框入场 0ms（确定性硬锁定），收益按参考值估算·待真机实测 |
+| 注意 | `motion={false}` 只禁入场过渡，不影响关闭/遮罩/内容动画；DangerConfirmModal必须同步 |
+
+**代码diff — AuthorizationModal/index.tsx:163**
+
+```diff
+// 编辑历史: 2026-09-16 老杨 - 禁入场动画: motion={false}仅禁Modal入场过渡(0ms),其余动画保留 - 老杨-2026-09-16
+
+  return (
+    <Modal
+      open={visible}
++     motion={false}          // ← 禁入场动画0ms,保留遮罩/关闭/图标过渡
+      title={null}
+      footer={null}
+      closable={false}
+      maskClosable={false}
+      keyboard={false}
+      width={480}
+```
+
+**代码diff — DangerConfirmModal/index.tsx:62（同步）**
+
+```diff
+  return (
+    <Modal
+      open={visible}
++     motion={false}          // ← DangerConfirmModal同步禁入场动画
+      title={null}
+      footer={null}
+      closable={false}
+      width={480}
+```
 
 #### S2：JSON.stringify加useMemo缓存（P1，-100%重复计算）
 
 | 项目 | 内容 |
 |------|------|
-| 问题 | `JSON.stringify(params, null, 2)`每次渲染都执行，countdown每秒触发→每秒重算 |
-| 方案 | `useMemo(() => JSON.stringify(request.params, null, 2), [request.params])` + try/catch防循环引用 |
+| 问题 | `JSON.stringify(request.params, null, 2)`每次渲染都执行，countdown每秒触发→每秒重算，大参数可达10-50ms |
+| 方案 | `useMemo(() => JSON.stringify(...), [request.params])` + try/catch防循环引用白屏 |
 | 位置 | AuthorizationModal.tsx:290 |
 | 预期 | 首次渲染后缓存，countdown变化不再重算，**-100%重复计算** |
+
+**代码diff — AuthorizationModal/index.tsx**
+
+```diff
+// 编辑历史: 2026-09-16 老杨 - useMemo缓存JSON.stringify,防循环引用白屏 - 老杨-2026-09-16
+
+  const [submitting, setSubmitting] = React.useState(false);
+  const isBypass = Boolean(request?.autoConfirm);
+  onConfirmRef.current = onConfirm;
+
++ // useMemo缓存JSON.stringify结果,request.params不变则不重算
++ const paramsStr = React.useMemo(() => {
++   try {
++     return JSON.stringify(request.params, null, 2);
++   } catch {
++     return '"[参数序列化失败]"';
++   }
++ }, [request.params]);
+
+  React.useEffect(() => {
+    // ... countdown effect (unchanged)
+  }, [visible, request]);
+
+  // ... 之后的JSX中:
+
+          <Text
+            code
+            style={{
+              display: 'block',
+              marginTop: 4,
+              fontSize: 12,
+              wordBreak: 'break-all',
+            }}
+          >
+-           {JSON.stringify(request.params, null, 2)}
++           {paramsStr}
+          </Text>
+```
 
 #### S3：拆分CountdownRing子组件（P1，-67%重渲染）
 
 | 项目 | 内容 |
 |------|------|
-| 问题 | 345行一个组件，countdown在顶层，每秒变化→整个组件树重渲染 |
+| 问题 | 345行一个组件，countdown在顶层，每秒变化→整个组件树重渲染（含工具卡/参数卡/按钮） |
 | 方案 | Progress+countdown数字+strokeColor拆到独立`CountdownRing`子组件，`React.memo`包裹 |
-| 位置 | 新建`CountdownRing`子组件，AuthorizationModal.tsx引用 |
+| 位置 | 新建`CountdownRing.tsx`，AuthorizationModal.tsx引用 |
 | 预期 | AuthorizationModal从每秒重渲染降为仅首次+props变化时重渲染，**-67%** |
+
+**代码diff — 新建 CountdownRing.tsx**
+
+```tsx
+// CountdownRing.tsx — countdown/progress隔离,防每秒扩散到工具卡/参数卡/按钮
+// 编辑历史: 2026-09-16 老杨 - 拆分CountdownRing子组件,React.memo隔离重渲染 - 老杨-2026-09-16
+
+import React from 'react';
+import { Progress } from 'antd';
+
+interface CountdownRingProps {
+  countdown: number;
+  confirmTimeout: number;
+}
+
+const CountdownRing: React.FC<CountdownRingProps> = React.memo(
+  ({ countdown, confirmTimeout }) => {
+    const progressPercent =
+      confirmTimeout > 0 ? Math.round((countdown / confirmTimeout) * 100) : 0;
+    const strokeColor =
+      countdown <= 3 ? '#fa541c' : countdown <= 5 ? '#faad14' : '#1677ff';
+
+    return (
+      <div style={{ textAlign: 'center', marginBottom: 4 }}>
+        <Progress
+          type="circle"
+          size={60}
+          percent={progressPercent}
+          strokeColor={strokeColor}
+          strokeWidth={5}
+          format={() => (
+            <div style={{ textAlign: 'center', lineHeight: 1.2 }}>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 600,
+                  color: countdown <= 3 ? '#fa541c' : '#333',
+                  animation:
+                    countdown <= 3
+                      ? 'pulse 0.8s ease-in-out infinite'
+                      : 'none',
+                }}
+              >
+                {countdown}
+              </div>
+              <div style={{ fontSize: 11, color: '#8c8c8c' }}>秒</div>
+            </div>
+          )}
+        />
+      </div>
+    );
+  }
+);
+
+CountdownRing.displayName = 'CountdownRing';
+export default CountdownRing;
+```
+
+**代码diff — AuthorizationModal/index.tsx（替换原Progress段）**
+
+```diff
++ import CountdownRing from './CountdownRing';
+
+  // ... countdown state/effect不变 ...
+
+  // 删除原 progressPercent/strokeColor 计算(已移入CountdownRing)
+- const progressPercent =
+-   confirmTimeout > 0 ? Math.round((countdown / confirmTimeout) * 100) : 0;
+- const strokeColor =
+-   countdown <= 3 ? '#fa541c' : countdown <= 5 ? '#faad14' : '#1677ff';
+
+  // JSX中替换原 <Progress> 段:
+
+-       <div style={{ textAlign: 'center', marginBottom: 4 }}>
+-         <Progress
+-           type="circle"
+-           size={60}
+-           percent={progressPercent}
+-           strokeColor={strokeColor}
+-           strokeWidth={5}
+-           format={() => (
+-             <div style={{ textAlign: 'center', lineHeight: 1.2 }}>
+-               <div
+-                 style={{
+-                   fontSize: 22,
+-                   fontWeight: 600,
+-                   color: countdown <= 3 ? '#fa541c' : '#333',
+-                   animation:
+-                     countdown <= 3
+-                       ? 'pulse 0.8s ease-in-out infinite'
+-                       : 'none',
+-                 }}
+-               >
+-                 {countdown}
+-               </div>
+-               <div style={{ fontSize: 11, color: '#8c8c8c' }}>秒</div>
+-             </div>
+-           )}
+-         />
+-       </div>
++       <CountdownRing
++         countdown={countdown}
++         confirmTimeout={confirmTimeout}
++       />
+```
 
 #### S4：Progress SVG圆环保留但隔离（P2，降渲染范围）
 
@@ -801,8 +971,10 @@ confirm_timeout = 10 - 2 = 8s  # 前端倒计时
 |------|------|
 | 问题 | SVG圆环渲染成本偏高（path计算+stroke-dasharray+format()） |
 | 方案 | 保留SVG圆环（视觉效果值得），随S3拆入CountdownRing子组件，隔离渲染范围 |
-| 位置 | 随S3一并实施 |
+| 位置 | 随S3一并实施（CountdownRing.tsx内） |
 | 预期 | SVG重绘仅限CountdownRing子组件，不扩散到参数区/按钮 |
+
+> S4与S3为同一实施动作，无独立代码diff。见上方S3的CountdownRing.tsx。
 
 #### S5：Tooltip改原生title（P2，-100%Popover开销）
 
@@ -813,10 +985,41 @@ confirm_timeout = 10 - 2 = 8s  # 前端倒计时
 | 位置 | AuthorizationModal.tsx:302-306 |
 | 预期 | 消除一套Popover DOM层+定位计算，文案内容不变 |
 
+**代码diff — AuthorizationModal/index.tsx:296-310**
+
+```diff
+// 编辑历史: 2026-09-16 老杨 - Tooltip改原生title,消除Popover DOM层 - 老杨-2026-09-16
+
+  <div style={{ marginBottom: 12 }}>
+    <Checkbox
+      checked={trustSession}
+      disabled={submitting}
+      onChange={(e) => setTrustSession(e.target.checked)}
++   title={request.trustPath ? `${request.toolName} › ${request.trustPath}，含子目录` : undefined}
+    >
+-     {request.trustPath ? (
+-       <Tooltip
+-         title={`${request.toolName} › ${request.trustPath}，含子目录`}
+-       >
+-         <span>信任此操作（本次会话）</span>
+-       </Tooltip>
+-     ) : (
+-       '信任此操作（本次会话）'
+-     )}
++     信任此操作（本次会话）
+    </Checkbox>
+  </div>
+```
+
+```diff
+// import区删除Tooltip（若无其他使用）:
+- import { Tooltip } from 'antd';
+```
+
 ### 10.3 实施路线图
 
 ```
-第一步（P0）：S1 Modal动画禁用+CSS微动画
+第一步（P1）：S1 Modal动画禁用+CSS微动画
   → 立竿见影，弹框快的主因消除
   → 同步修改DangerConfirmModal
 
@@ -832,7 +1035,7 @@ confirm_timeout = 10 - 2 = 8s  # 前端倒计时
 
 | 指标 | 优化前 | 优化后 | 改善 | 对应问题 |
 |------|--------|--------|------|---------|
-| 弹框出现延时 | ~300ms | ~50ms | **-83%** | S1 |
+| 弹框出现延时 | ~300ms | ~0ms | **-100%（按参考值估算·待实测）** | S1 |
 | 每秒重渲染开销 | ~15ms | ~5ms | **-67%** | S2+S3 |
 | JSON.stringify/次 | 0-50ms | 0ms（缓存） | **-100%** | S2 |
 | Tooltip渲染成本 | Popover DOM层 | 原生title（0） | **-100%** | S5 |
@@ -842,10 +1045,375 @@ confirm_timeout = 10 - 2 = 8s  # 前端倒计时
 
 | 结构性问题 | 第7章出处 | 第8章出处 | 第9章出处 |
 |-----------|----------|----------|----------|
-| S1 Modal动画 | 延时点2（行309-321） | P0（行385,389-416） | T1 |
+| S1 Modal动画 | 延时点2（行309-321） | P1（行385,389-416） | T1 |
 | S2 JSON.stringify | 延时点3（行323-335） | P1（行386,418-451） | T4 |
 | S3 全组件无拆分 | 延时点4（行337-345） | P2（行387,453-470） | T5 |
 | S4 Progress SVG | — | — | T2 |
 | S5 Tooltip | — | — | T3 |
 
 **编写人**：老杨　　**日期**：2026-09-16 04:26:07
+
+---
+
+## 十一、第5/6章优化要点汇总（与第10章去重后新增）
+
+> 审查人：老杨　　时间：2026-09-16 05:52:28
+> 来源：第5章发现的问题(18项) + 第6章优化要点及方法(6大方向)
+> 原则：与第10章(S1-S5)去重，仅保留第10章未覆盖的新增项
+
+### 11.1 新增问题清单（7个，与第10章无重复）
+
+| # | 问题 | 根因 | 影响维度 | 来源章节 | 优先级 |
+|---|------|------|---------|---------|--------|
+| T1 | **两个Modal视觉不统一** | 边框(1.5px/2px)、图标(32/48px)、内边距(12/24px)、按钮文案不一致 | 视觉一致性 | 第5章#1-4 | P2 |
+| T2 | **DangerConfirmModal有emoji** | `⚠️ 此操作可能对项目文件造成影响`emoji残留 | 视觉一致性 | 第5章#5 | P3 |
+| T3 | **魔法数字散布** | `480/12/32/60/150/8/4`等尺寸全部硬编码，两个Modal重复 | 代码质量 | 第5章#6/#7 | P2 |
+| T4 | **参数区域无折叠** | 长参数JSON撑满150px，短参数也占满空间 | 交互体验 | 第5章#11 | P2 |
+| T5 | **Bypass无专属图标** | Bypass和正常模式共用WarningOutlined，仅颜色区分 | 交互体验 | 第5章#9 | P2 |
+| T6 | **Trust checkbox无解释** | "信任此操作（本次会话）"无Tooltip，用户不知含义 | 交互体验 | 第5章#10 | P2 |
+| T7 | **可访问性缺失** | DangerConfirmModal无role/aria-modal、按钮无aria-label、焦点陷阱缺失 | 可访问性 | 第5章#14-16 | P2 |
+
+**不动项（确认最优）**：
+
+| 项目 | 状态 | 说明 |
+|------|------|------|
+| injectKeyframes单例守卫 | ✅ 不动 | 已有单例守卫+AnimatedIcons/animations.ts承载，函数调用开销可忽略 |
+| countdown interval上限 | ✅ 不动 | 已有cleanup(visible变化清理)，实际使用场景不会长时间不关 |
+
+### 11.2 优化方案明细
+
+#### T1：统一Modal壳（P2，解决#1/#2/#3/#4/#7）
+
+| 项目 | 内容 |
+|------|------|
+| 问题 | AuthorizationModal vs DangerConfirmModal 边框/图标/内边距/按钮文案不一致 |
+| 方案 | 提取`HITLModalShell`公共组件，统一border/radius/shadow/footer |
+| 位置 | 新建`HITLModalShell.tsx`，两个Modal引用 |
+| 预期 | 视觉语言统一，消除"两个系统"感知；DRY，改一处全局生效 |
+
+**代码diff — 新建 HITLModalShell.tsx**
+
+```tsx
+// HITLModalShell.tsx — 统一Modal壳: border/radius/shadow/footer一致
+// 编辑历史: 2026-09-16 老杨 - 统一Modal壳: 消除两Modal视觉不一致 - 老杨-2026-09-16
+
+import React from 'react';
+import { Modal } from 'antd';
+
+// 设计令牌(解决魔法数字散布)
+export const HITL_TOKENS = {
+  MODAL_WIDTH: 480,
+  ICON_SIZE: 32,
+  BODY_PADDING: 12,
+  BORDER_RADIUS: 8,
+  BORDER_WIDTH: 1.5,
+  PROGRESS_SIZE: 60,
+} as const;
+
+interface HITLModalShellProps {
+  open: boolean;
+  isBypass?: boolean;
+  children: React.ReactNode;
+}
+
+const HITLModalShell: React.FC<HITLModalShellProps> = ({
+  open,
+  isBypass = false,
+  children,
+}) => (
+  <Modal
+    open={open}
+    motion={false}
+    title={null}
+    footer={null}
+    closable={false}
+    maskClosable={false}
+    keyboard={false}
+    width={HITL_TOKENS.MODAL_WIDTH}
+    style={{
+      border: isBypass
+        ? `${HITL_TOKENS.BORDER_WIDTH}px dashed #1677ff`
+        : `${HITL_TOKENS.BORDER_WIDTH}px solid #faad14`,
+      borderRadius: `${HITL_TOKENS.BORDER_RADIUS}px`,
+      overflow: 'hidden',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+    }}
+    styles={{ body: { padding: `${HITL_TOKENS.BODY_PADDING}px` } }}
+  >
+    {children}
+  </Modal>
+);
+
+export default HITLModalShell;
+```
+
+**代码diff — AuthorizationModal/index.tsx（替换Modal为HITLModalShell）**
+
+```diff
++ import HITLModalShell, { HITL_TOKENS } from './HITLModalShell';
+
+  return (
+-   <Modal
+-     open={visible}
+-     motion={false}
+-     title={null}
+-     footer={null}
+-     closable={false}
+-     maskClosable={false}
+-     keyboard={false}
+-     width={480}
+-     style={{
+-       border: isBypass ? '1.5px dashed #1677ff' : '1.5px solid #faad14',
+-       borderRadius: '8px',
+-       overflow: 'hidden',
+-       boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+-     }}
+-     styles={{ body: { padding: '12px' } }}
+-   >
++   <HITLModalShell open={visible} isBypass={isBypass}>
+      {/* 内容不变 */}
+-   </Modal>
++   </HITLModalShell>
+```
+
+#### T2：DangerConfirmModal删除emoji（P3，解决#5）
+
+| 项目 | 内容 |
+|------|------|
+| 问题 | DangerConfirmModal有`⚠️`emoji，专业弹框中不协调 |
+| 方案 | 删除emoji，改纯文字WarningOutlined图标（与AuthorizationModal一致） |
+| 位置 | DangerConfirmModal.tsx:147 |
+
+**代码diff — DangerConfirmModal/index.tsx:147**
+
+```diff
+- ⚠️ 此操作可能对项目文件造成影响
++ 此操作可能对项目文件造成影响
+```
+
+#### T3：设计令牌统一（P2，解决#6）
+
+| 项目 | 内容 |
+|------|------|
+| 问题 | `480/12/32/60/150/8/4`等尺寸全部硬编码，修改一处漏改其他 |
+| 方案 | 全部收敛到`HITL_TOKENS`常量（已在T1的HITLModalShell.tsx中定义） |
+| 位置 | HITLModalShell.tsx + 两个Modal引用 |
+
+> T3随T1一并实施，无独立diff。`HITL_TOKENS`已在T1代码中定义。
+
+#### T4：参数区域折叠（P2，解决#11）
+
+| 项目 | 内容 |
+|------|------|
+| 问题 | 长参数JSON撑满150px，短参数也占满空间 |
+| 方案 | JSON参数区复用`CollapsibleText`组件，超5行/200字自动折叠 |
+| 位置 | AuthorizationModal.tsx:252-293 |
+| 预期 | 短参数不浪费空间，长参数可折叠不撑高弹框 |
+
+**代码diff — AuthorizationModal/index.tsx:252-293**
+
+```diff
++ import CollapsibleText from './CollapsibleText';
+
+  <div
+    style={{
+      backgroundColor: '#fafafa',
+      border: '1px solid #f0f0f0',
+      borderRadius: 4,
+      padding: 8,
+      marginBottom: 8,
+      textAlign: 'left',
+-     maxHeight: 150,
+-     overflow: 'auto',
+    }}
+  >
+    <div style={{ marginBottom: 4 }}>
+      <Text type="secondary" style={{ fontSize: 12 }}>
+        工具名称：
+      </Text>
+      <br />
+      <Text
+        strong
+        style={{ display: 'block', marginTop: 4, fontSize: 14 }}
+      >
+        {request.toolName}
+      </Text>
+    </div>
+    <div>
+      <Text type="secondary" style={{ fontSize: 12 }}>
+        执行参数：
+      </Text>
+      <br />
+-     <Text
+-       code
+-       style={{
+-         display: 'block',
+-         marginTop: 4,
+-         fontSize: 12,
+-         wordBreak: 'break-all',
+-       }}
+-     >
+-       {paramsStr}
+-     </Text>
++     <CollapsibleText
++       text={paramsStr}
++       maxLines={5}
++       maxChars={200}
++     />
+    </div>
+  </div>
+```
+
+#### T5：Bypass专属图标（P2，解决#9）
+
+| 项目 | 内容 |
+|------|------|
+| 问题 | Bypass和正常模式共用WarningOutlined，仅颜色区分 |
+| 方案 | Bypass模式图标改`ThunderboltOutlined`（蓝色），正常模式`WarningOutlined`（橙色） |
+| 位置 | AuthorizationModal.tsx:184-189 |
+
+**代码diff — AuthorizationModal/index.tsx:184-189**
+
+```diff
++ import { ThunderboltOutlined } from '@ant-design/icons';
+
+  <div style={{ textAlign: 'center' }}>
+-   <WarningOutlined
++   {isBypass ? (
++     <ThunderboltOutlined
++       style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#1677ff', marginBottom: 8 }}
++     />
++   ) : (
++     <WarningOutlined
+       style={{
+-         fontSize: 32,
+-         color: isBypass ? '#1677ff' : '#faad14',
++         fontSize: HITL_TOKENS.ICON_SIZE,
++         color: '#faad14',
+         marginBottom: 8,
+       }}
+     />
++   )}
+  </div>
+```
+
+#### T6：Trust checkbox加Tooltip解释（P2，解决#10）
+
+| 项目 | 内容 |
+|------|------|
+| 问题 | "信任此操作（本次会话）"无Tooltip，用户不知信任后会怎样、如何撤销 |
+| 方案 | Trust checkbox旁加`?`图标Tooltip，解释信任含义/范围/撤销方式 |
+| 位置 | AuthorizationModal.tsx:295-311 |
+
+**代码diff — AuthorizationModal/index.tsx:295-311**
+
+```diff
+  <div style={{ marginBottom: 12 }}>
+    <Checkbox
+      checked={trustSession}
+      disabled={submitting}
+      onChange={(e) => setTrustSession(e.target.checked)}
+      title={request.trustPath ? `${request.toolName} › ${request.trustPath}，含子目录` : undefined}
+    >
+      信任此操作（本次会话）
+    </Checkbox>
++   <Tooltip
++     title={
++       <div>
++         <div>信任后：同会话同工具+目标路径免弹框</div>
++         <div>范围：仅本次会话有效</div>
++         <div>撤销：TaskInfoBar → 信任(N) → Drawer → 点×</div>
++       </div>
++     }
++   >
++     <QuestionCircleOutlined style={{ marginLeft: 4, color: '#8c8c8c' }} />
++   </Tooltip>
+  </div>
+```
+
+#### T7：可访问性修复（P2，解决#14/#15/#16）
+
+| 项目 | 内容 |
+|------|------|
+| 问题 | DangerConfirmModal无role/aria-modal、按钮无aria-label、焦点陷阱缺失 |
+| 方案 | 加role="dialog" + aria-modal="true" + aria-label + autoFocus第一个按钮 |
+| 位置 | DangerConfirmModal.tsx:62 + 两个Modal按钮 |
+
+**代码diff — DangerConfirmModal/index.tsx:62**
+
+```diff
+  <Modal
+    open={visible}
++   role="dialog"
++   aria-modal="true"
+    title={null}
+```
+
+**代码diff — 两个Modal按钮aria-label**
+
+```diff
+  <Button
+    onClick={() => handleConfirm(false)}
+    size="large"
+    disabled={submitting}
+    danger
+    ghost
+    style={{ flex: 1 }}
++   aria-label="拒绝执行此工具操作"
+  >
+    拒绝执行
+  </Button>
+  <Button
+    type="primary"
+    onClick={() => handleConfirm(true)}
+    size="large"
+    loading={submitting}
+    disabled={submitting}
++   aria-label="允许执行此工具操作"
+    style={{ ... }}
+  >
+    允许执行
+  </Button>
+```
+
+### 11.3 实施路线图
+
+```
+第一步（P2）：T1统一Modal壳 + T3设计令牌 + T2删除emoji
+  → 两Modal视觉统一，消除"两个系统"感知
+  → T3随T1一并实施
+
+第二步（P2）：T5 Bypass专属图标 + T6 Trust Tooltip
+  → 交互体验完善，辨识度+可理解性提升
+
+第三步（P2）：T7可访问性修复
+  → WCAG合规，焦点陷阱+aria-label+role
+
+第四步（P2）：T4参数折叠
+  → 长参数体验优化，弹框高度可控
+```
+
+### 11.4 预期总体效果
+
+| 指标 | 优化前 | 优化后 | 改善 | 对应问题 |
+|------|--------|--------|------|---------|
+| Modal视觉一致性 | 两套样式 | 统一Modal壳 | **100%** | T1/T2/T3 |
+| 魔法数字 | 硬编码散布 | HITL_TOKENS统一 | **100%** | T3 |
+| 参数区体验 | 固定150px | 可折叠 | **体验提升** | T4 |
+| Bypass辨识度 | 仅颜色区分 | 图标+颜色双区分 | **辨识提升** | T5 |
+| Trust可理解性 | 无解释 | Tooltip解释含义/范围/撤销 | **可理解提升** | T6 |
+| 可访问性 | WCAG不合规 | role+aria-label+焦点陷阱 | **合规** | T7 |
+
+### 11.5 问题来源追溯表
+
+| 新增问题 | 第5章出处 | 第6章出处 |
+|---------|----------|----------|
+| T1 统一Modal壳 | #1边框 + #2图标 + #3内边距 + #4按钮文案 + #7重复样式 | 6.1 提取HITLModalShell |
+| T2 DangerConfirmModal emoji | #5 emoji残留 | 6.1 统一后删除 |
+| T3 设计令牌统一 | #6 魔法数字散布 | 6.2 统一到stepStyles.ts |
+| T4 参数折叠 | #11 参数区域无折叠 | 6.3 CollapsibleText |
+| T5 Bypass专属图标 | #9 Bypass无专属图标 | 6.4 Bypass专属视觉 |
+| T6 Trust Tooltip | #10 Trust checkbox无解释 | 6.4 Trust checkbox加?图标 |
+| T7 可访问性修复 | #14无role + #15无aria-label + #16焦点陷阱 | 6.6 可访问性修复 |
+
+**编写人**：老杨　　**日期**：2026-09-16 05:52:28
