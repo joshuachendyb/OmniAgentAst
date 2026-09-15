@@ -27,6 +27,8 @@
 // 编辑历史: 2026-09-14 小欧 [36]删第二个变量+第三个(北京老陈令): TaskInfoBar receiving prop 已整体删除,
 //   秒表启停改由 frames 权威信号(startInfo 非空 && finalStats 空=执行走廊)驱动, 本处透传 receiving 一并删除;
 //   连接级 isReceiving 只保留 ChatInput(L278)消费 — 小欧-2026-09-14
+// 编辑历史: 2026-09-15 小欧 - [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+//   UseChatPanelsOptions 新增 updateTaskResponse prop, 解构并透传 RightViewer; 删除 onSettledRefresh(不再传) — 小欧-2026-09-15
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -66,6 +68,9 @@ interface UseChatPanelsOptions {
   total: number;
   tasksLoading: boolean;
   refreshTasks: () => void;
+  // 2026-09-15 小欧 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+  //   updateTaskResponse 由 ChatPage 解构自 useSessionTasks 传入, 透传 RightViewer 供历史任务写 final.response — 小欧-2026-09-15
+  updateTaskResponse: (taskId: string, response: string) => void;
   effective: EffectiveModel | null;
   sessionTimes: { createdAt?: string; updatedAt?: string };
   activeTaskId: string | null;
@@ -103,6 +108,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     total,
     tasksLoading,
     refreshTasks,
+    updateTaskResponse, // 2026-09-15 小欧 [33]第七章: 透传 RightViewer 供历史任务写 final.response — 小欧-2026-09-15
     effective,
     sessionTimes,
     activeTaskId,
@@ -251,7 +257,9 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
             sessionTokens={sessionTokens} // 2026-09-11 小欧: 折叠区4组token显示
             chainTokens={chainTokens}
-            onSettledRefresh={refreshTasks}
+            // 2026-09-15 小欧 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+            //   历史任务加载 steps 后写 final.response 到左侧(替代原 onSettledRefresh 从 DB 拉 chat_tasks.response) — 小欧-2026-09-15
+            updateTaskResponse={updateTaskResponse}
           />
         ),
         defaultVisible: true,
@@ -340,6 +348,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       authorizationPending, // 2026-09-06 小欧 B1: recentConfirmedTool 同入依赖(否则 useMemo 缓存旧值 highlight 不刷新) — 小欧-2026-09-06
       recentConfirmedTool,
       refreshTasks,
+      updateTaskResponse, // 2026-09-15 小欧 [33]第七章: RightViewer 透传写 final.response — 小欧-2026-09-15
       latestTaskId, // 2026-09-01 小欧 方案C
       latestTaskRef, // 2026-09-01 小欧 方案C
     ]

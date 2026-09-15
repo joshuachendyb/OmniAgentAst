@@ -5,6 +5,9 @@
 // 编辑历史: 2026-09-13 小欧 - 新建会话右栏残留根治(北京老陈复测定位, 首修被effect②覆盖): refresh为异步, 切会话瞬间
 //   旧会话tasks/latestTaskId仍存活, useTaskSelection effect②(纯历史默认选中最新)持旧latestTaskId把activeTaskId拉回旧任务,
 //   RightViewer跨会话拉旧步骤→右栏残留"复活"; 根治点: sessionId一变立即同步清空任务清单/锚点, 封死旧数据窗口 — 小欧-2026-09-13
+// 编辑历史: 2026-09-15 小欧 - [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+//   refresh() 从 DB 拉取 tasks 后 response 字段一律清空(undefined), 禁止 chat_tasks.response(chunk累积)显示;
+//   左侧只由 updateTaskResponse(final.step.response) 写入(R3实时/RightViewer历史) — 小欧-2026-09-15
 /**
  * useSessionTasks - 会话任务清单 Hook（消费 6.1.9 B1 接口）
  *
@@ -27,8 +30,8 @@ export const useSessionTasks = (sessionId: string | null) => {
   const [latestTaskId, setLatestTaskId] = useState<string | null>(null); // 2026-08-30 小欧 v1.103: B1 最新任务锚点
   const [loading, setLoading] = useState(false);
 
-  // 铁命令(北京老陈 2026-09-12): refresh 从 DB 全量刷新任务列表(含 response), 仅供任务列表入列/链token/历史回放加载;
-  //   严禁用作"实时补左侧 response"的兜底——实时左侧 response 唯一写入点是 updateTaskResponse(final.response)。 — 小欧-2026-09-12
+  // 铁命令(北京老陈 2026-09-12): refresh 从 DB 拉任务列表(入列/链token/历史加载);
+  //   但 response 字段一律清空——左侧只用 final.step.response 显示, 禁止 chat_tasks.response 显示。 — 小欧-2026-09-15
   const refresh = useCallback(async () => {
     if (!sessionId) {
       setTasks([]);
@@ -39,7 +42,10 @@ export const useSessionTasks = (sessionId: string | null) => {
     setLoading(true);
     try {
       const res = await sessionTaskApi.listTasks(sessionId);
-      setTasks(res.tasks);
+      // 2026-09-15 小欧 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+      //   refresh() 从 DB 拉取的 chat_tasks.response(chunk累积内容) 不允许显示在左侧;
+      //   清空 response 后左侧留空, 等 updateTaskResponse(final.response) 写入(R3实时/RightViewer历史) — 小欧-2026-09-15
+      setTasks(res.tasks.map((t) => ({ ...t, response: undefined })));
       setTotal(res.total);
       setLatestTaskId(res.latest_task_id ?? null); // 2026-08-30 小欧 v1.103: 后端 null 兜底
     } finally {
@@ -60,14 +66,11 @@ export const useSessionTasks = (sessionId: string | null) => {
 
   // ── useSessionTasks 文件职责: 任务列表状态管理Hook ──
   // ── 左侧任务回复区: 本文件负责"怎么写"(提供 updateTaskResponse 和 refresh 方法) ──
-  // updateTaskResponse: 实时写入, 仅限长条终态(final.response 非空)即时写入左侧
-  // refresh: 从 DB 拉完整 response, 历史任务加载 + final_stats 到达后刷新左侧
+  // updateTaskResponse: 唯一写入点——从 SSE/REST steps 中取 final.step.response 写入左侧(实时+历史)
+  // refresh: 从 DB 拉任务列表(入列/链token/历史加载), 但 response 字段一律清空——禁止 chat_tasks.response 显示
   //
-  // 铁命令(北京老陈 2026-09-12):没有遵守命令 没有按照要求实施
-  //   "左侧 response 只允许由 updateTaskResponse 写入, 严禁用 refreshTasks 兜底"
-  //   但代码实际情况: RightViewer L424 的 effect 仍保留 refreshTasks 调用,
-  //   final_stats 到达时会调用本方法 refresh() 从 DB 拉完整 response 覆盖左侧。
-  //   注释说"严禁用 refreshTasks 兜底"与代码不一致。 — 小欧-2026-09-12, 2026-09-13
+  // 铁命令(北京老陈 2026-09-12/2026-09-15): 左侧任务 response 只允许由 updateTaskResponse(final.step.response) 写入,
+  //   严禁使用 chat_tasks.response(chunk累积内容)/refreshTasks 兜底/任何其他数据源 — 小欧-2026-09-15
   const updateTaskResponse = useCallback((taskId: string, response: string) => {
     setTasks((prev) =>
       prev.map((t) => (t.task_id === taskId ? { ...t, response } : t))

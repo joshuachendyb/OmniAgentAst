@@ -36,6 +36,8 @@
 //   SRP(污染G2刷新列表effect)/YAGNI(为不存在的"重试"产任务路径通用化)+冗余依赖setRightOpen; 已撤销effect内改动;
 //   改为在唯一发送入口 handleSendWithMode 直线 setRightOpen(true)(发送即展开右侧step面板, 请求级失败右栏展开亦无副作用);
 //   "点击任务展开"与"发送任务展开"两触发源调同一setter非重复实现(DRY合规), G2 effect恢复单一职责 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+//   useChatPanels 调用新增 updateTaskResponse 透传(供 RightViewer 历史任务加载 steps 后写 final.response 到左侧) — 小欧-2026-09-15
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -214,6 +216,7 @@ const ChatPage: React.FC = () => {
     total,
     tasksLoading,
     refreshTasks,
+    updateTaskResponse, // 2026-09-15 小欧 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——透传 useChatPanels→RightViewer — 小欧-2026-09-15
     effective,
     sessionTimes,
     activeTaskId,
@@ -231,7 +234,7 @@ const ChatPage: React.FC = () => {
   });
 
   return (
-      <div
+    <div
       style={{
         height: '100%', // 2026-09-15 小欧: 外层Layout已锁定height:100vh+overflow:hidden, 本层填满Content即可, 不再用calc(100vh-59px)
         display: 'flex',

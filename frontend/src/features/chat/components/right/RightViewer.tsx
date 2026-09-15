@@ -47,6 +47,11 @@
 // 编辑历史: 2026-09-09 小欧 - A3修复(final→历史切换竞态): REST拉取对"刚结束的实时任务自身"加 300ms 缓冲——
 //   SSE final 先发、DB 落库稍后, 立即拉会拿到 executing 旧态覆盖 failed/completed 结果; 历史回放即时拉不变;
 //   effect 依赖补 _hasFinal/serverTaskId — 小欧-2026-09-09
+// 编辑历史: 2026-09-15 小欧 - 北京老陈定案([33]第七章): 左侧回复区只用 final.step.response 渲染——
+//   ①props: onSettledRefresh → updateTaskResponse(历史任务拉 steps 后写 final.response 到左侧任务列表)
+//   ②删除 B16 DB 刷新覆盖 effect(hasFinalStats→onSettledRefresh refreshTasks 从 chat_tasks.response 拉 chunk 累积内容违反铁令)
+//   ③主 REST effect 三处(主来源/等长校验回退/C3降级)加载 steps 后取 type=final 的 response 写左侧
+//   ④task.response(chat_tasks.response) 不再作为左侧显示来源 — 小欧-2026-09-15
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B1: 主REST effect的detail有意不入依赖数组(setDetail后自激循环REST, 见:266注释),
 //   eslint-disable移至依赖数组行上方使生效+写明理由 — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 北京老陈 - 任务1/任务2 UI冻结根治: isCurrentLive 增 hasBusinessSteps 铁证兜底——
@@ -157,7 +162,9 @@ interface RightViewerProps {
   // 2026-09-11 小欧 三堂会审P1-4: 复用公用 TokenLayer——原 {prompt_tokens?: number;...} | null 与 StaticStatsBlock 必选字段形状不匹配(TS2322), 统一后 DRY — 小欧-2026-09-11
   sessionTokens?: TokenLayer;
   chainTokens?: TokenLayer;
-  onSettledRefresh?: () => void; // 结束沿通知外层刷新任务列表
+  // 2026-09-15 小欧 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+  //   历史任务加载 steps 后写 final.response 到左侧任务列表(实时任务由 ChatPage R3 effect 写) — 小欧-2026-09-15
+  updateTaskResponse?: (taskId: string, response: string) => void;
 }
 
 const RightViewer: React.FC<RightViewerProps> = ({
@@ -172,7 +179,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   deniedEntries, // 2026-09-06 小欧 B2(6.4)
   sessionTokens, // 2026-09-11 小欧 三堂会审P1-4: 复用 TokenLayer(类型统一) — 小欧-2026-09-11
   chainTokens,
-  onSettledRefresh,
+  updateTaskResponse, // 2026-09-15 小欧 [33]第七章: 历史任务 final.response 写入左侧唯一入口 — 小欧-2026-09-15
 }) => {
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [historySteps, setHistorySteps] = useState<ExecutionStep[]>([]);
@@ -382,6 +389,18 @@ const RightViewer: React.FC<RightViewerProps> = ({
           ]);
           if (cancelled) return;
           setDetail(d);
+          // 小欧 2026-09-15 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+          //   历史任务须从 chat_task_steps.step_json 的 type=final step 取 response 写左侧;
+          //   严禁用 task.response(chat_tasks.response=chunk累积) 显示; 无 final.response 则留空 — 小欧-2026-09-15
+          const writeFinalResponse = (stepsArray: unknown[]) => {
+            const fs = toExecutionSteps(stepsArray).find(
+              (s) => s.type === 'final'
+            );
+            const resp = fs?.response;
+            if (resp && !cancelled) {
+              updateTaskResponse?.(activeTaskId, resp);
+            }
+          };
           // 小欧 2026-09-10 S13.4: REST 结果与 settledSteps 等长校验——短则弃，保留 settledSteps 兜底
           // 2026-09-15 小欧 三思三省根治: 加回 activeTaskId===serverTaskId 守卫——防跨任务时 settledRef 残留旧快照,
           //   误判"丢尾"用旧快照覆盖新 historySteps, 与 displaySteps 守卫互补 — 小欧-2026-09-15
@@ -395,11 +414,13 @@ const RightViewer: React.FC<RightViewerProps> = ({
               `[RV] REST 步骤数(${s.steps.length}) < settledSteps(${settledRef.current.length})，弃用 REST`
             );
             setHistorySteps(toExecutionSteps(settledRef.current));
+            writeFinalResponse(settledRef.current);
             return;
           }
           if (s.steps.length > 0) {
             // 2026-08-27 小欧 修复#46: 拒绝裸断言, steps 缺失时回落空数组, 避免下游读step字段得undefined
             setHistorySteps(toExecutionSteps(s.steps)); // 2026-08-27 小欧 三堂会审: 收窄unknown[]→ExecutionStep[]
+            writeFinalResponse(s.steps);
           } else if (sessionId) {
             const msgResp = await sessionApi.getSessionMessages(sessionId);
             if (cancelled) return;
@@ -409,6 +430,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
                 fallback.push(st as ExecutionStep);
             }
             setHistorySteps(toExecutionSteps(fallback));
+            writeFinalResponse(fallback);
           } else {
             setHistorySteps([]);
           }
@@ -425,15 +447,8 @@ const RightViewer: React.FC<RightViewerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- detail有意不入deps: setDetail后重Run会自激循环REST(loading窗口见#45修复) — 小欧-2026-09-09
   }, [activeTaskId, sessionId, isCurrentLive, hasFinalStats, serverTaskId]);
 
-  // 小欧 2026-09-11 第七章 M2(DB落库信号触发刷新): 刷新信号由"receiving 翻 false"(final 到达)后置到 hasFinalStats
-  //   (final_stats 到达 = DB 已落库 t3', v1.9 方案 A)——final 瞬间 DB 仍未落库, 此时刷列表必读 stale
-  //   executing/旧 response; prevReceivingRef 随信号替换变死码, 同步删除(L136) — 小欧-2026-09-11
-  useEffect(() => {
-    if (hasFinalStats && activeTaskId === serverTaskId && activeTaskId) {
-      // 2026-08-27 小欧 修复#44: 移除冗余getTaskDetail(上方effect在isCurrentLive变false时已补取), 避免双发REST
-      onSettledRefresh?.();
-    }
-  }, [hasFinalStats, activeTaskId, serverTaskId, onSettledRefresh]);
+  // 小欧 2026-09-15 [33]第七章(北京老陈定案): 删除原 B16 hasFinalStats→onSettledRefresh(refreshTasks)
+  //   effect——其从 DB 拉 chat_tasks.response(chunk累积) 覆盖左侧, 违反"左侧只用 final.step.response"铁命令 — 小欧-2026-09-15
 
   // 小欧 2026-09-10 S13.2: 结束瞬时先用 live 快照兜底，REST 成功且更长时再替换
   // 2026-09-15 小欧 三思三省根治: activeTaskId===serverTaskId 守卫——settledSteps 仅当前任务回放时优先,
