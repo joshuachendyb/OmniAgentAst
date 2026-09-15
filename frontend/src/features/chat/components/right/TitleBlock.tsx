@@ -1,4 +1,4 @@
-// 编辑历史: 2026-09-11 小欧 - 第七章 M3b(R6/R6-1): 新增 TitleBlock——任务统计 title 段独立组件,
+// 编辑历史: 2026-09-11 小欧 - 第七章 M3b(title段独立组件): 新增 TitleBlock——任务统计 title 段独立组件,
 //   数据源=final 帧(outcome/duration/model/provider/token), 绝不读 DB; 两行排版视觉优先 — 小欧-2026-09-11
 // 2026-09-11 小欧 - 修: 去 as 强转(DRY/类型安全), 复用 formatTokenCompact 公用函数; 第一行=状态+时长+模型, 第二行=4组token
 // 2026-09-11 小欧 - 三堂会审修复: P1-3删??null(与TokenLayer number|undefined对齐, TS2322归零); P2模型顺序统一provider/model(站点惯例+StaticStatsBlock一致); P2 cancelled归default(非error红语义) — 小欧-2026-09-11

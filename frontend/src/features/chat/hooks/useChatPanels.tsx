@@ -88,7 +88,7 @@ interface UseChatPanelsOptions {
 }
 
 /**
- * panels 插槽组装 hook：将各子面板组装为 SessionPanel[]，供 SessionLayout 注入（R1-B25）
+ * panels 插槽组装 hook：将各子面板组装为 SessionPanel[]，供 SessionLayout 注入
  * 逻辑与 NewChatContainer 中原 useMemo 一致，未做行为改写
  */
 export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {

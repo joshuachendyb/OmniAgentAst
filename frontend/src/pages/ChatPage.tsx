@@ -18,11 +18,11 @@
 //   (React Router useSearchParams每次渲染返回新对象)致流式期间反复重跑initializeSession, 直接赋值
 //   setMessages(result.messages)覆盖流式assistant消息; 根治=只传稳定urlSessionId字符串(非全局searchParams对象),
 //   effect依赖它(session_id不变即不重跑)。曾用useMemo稳定引用(堵截)与isReceiving守卫(边界退化)两案, 复查后撤销 — 小欧-2026-09-10
-// 编辑历史: 2026-09-11 小欧 - R3+R4修复: R3加prevReceivingForR3Ref effect(isReceiving翻false时从messages取final.response即时写入task, 不读DB);
-//   R4删旧prevReceivingRef effect改hasFinalStats信号(final_stats到达=DB已落库才触发refreshTasks); 解构补updateTaskResponse — 小欧-2026-09-11
+// 编辑历史: 2026-09-11 小欧 - 即时写入final.response+DB刷新覆盖修复: 新增isReceiving翻false时写入final.response effect(isReceiving翻false时从executionSteps取final.response即时写入task, 不读DB);
+//   删旧prevReceivingRef effect改DB落库信号触发刷新(final_stats到达=DB已落库才触发refreshTasks); 解构补updateTaskResponse — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - P1-10三堂会审修复: L54 searchParams.get('session_id') 复用已有 urlSessionId(L47), 消重复取参(DRY) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - P1左卡草稿根治: R3数据源修正(lastMsg.content→executionSteps中type=final的step.response, 无兜底) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - X2终态短信号(北京老陈定案): 删除R4(hasFinalStats→refreshTasks DB兜底补左侧response), 铁命令: 左侧只用final.response, 实时短条留空、历史回放从DB读; useChainTokens 的 final_stats→refreshTasks(token刷新)保持不变 — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - P1左卡草稿根治: 数据源修正(lastMsg.content→executionSteps中type=final的step.response, 无兜底) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - X2终态短信号(北京老陈定案): 删除DB刷新覆盖(hasFinalStats→refreshTasks DB兜底补左侧response), 铁命令: 左侧只用final.response, 实时短条留空、历史回放从DB读; useChainTokens 的 final_stats→refreshTasks(token刷新)保持不变 — 小欧-2026-09-12
 // 编辑历史: 2026-09-13 小欧 - 北京老陈定案: 新建会话时右侧面板整体折叠(rightOpen=false)——右栏残留信息已根治清空,
 //   但新会话仍展开空态右栏不符预期; handleNewSession 包装置折叠, 点任务经 handleSelectTaskOpenRight 再展开 — 小欧-2026-09-13
 // 编辑历史: 2026-09-14 小欧 - [34]布局底部被推出视口修复(北京老陈令): 根div高度由calc(100vh-59px)改height:'100%'+overflow:'hidden',
@@ -78,7 +78,7 @@ const ChatPage: React.FC = () => {
     loading: tasksLoading,
     refresh: refreshTasks,
     latestTaskId,
-    updateTaskResponse, // 小欧 2026-09-11 R3: SSE final 帧到达时即时更新 task response — 小欧-2026-09-11
+    updateTaskResponse, // 小欧 2026-09-11 SSE final 帧到达时即时更新 task response — 小欧-2026-09-11
   } = useSessionTasks(sessionId);
   const { effective } = useModelLayer({
     sessionId,
@@ -127,7 +127,7 @@ const ChatPage: React.FC = () => {
   //   "左侧 response 只允许源自 final.response, 严禁用 DB/消息内容/refreshTasks 兜底"
   //   但代码实际情况: RightViewer L424 的 effect 仍保留 refreshTasks 调用,
   //   final_stats 到达时会从 DB 拉完整 response 覆盖左侧。
-  //   注释说"R4已据令删除"与代码不一致。 — 小欧-2026-09-12, 2026-09-13
+  //   注释说"DB刷新覆盖已据令删除"与代码不一致。 — 小欧-2026-09-12, 2026-09-13
   const prevReceivingForR3Ref = useRef(false);
   useEffect(() => {
     if (

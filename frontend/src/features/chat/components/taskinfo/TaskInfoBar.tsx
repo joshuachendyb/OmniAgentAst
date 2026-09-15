@@ -15,7 +15,7 @@
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: TB-02 revokeTrust加try/catch防unhandledrejection上浮 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5⑤⑥(北京老陈定案"tool+path才是准确对象", 后端§5.5): TrustedTool带path升级一行一变——
 //   trustTools行键改 `${toolName}:${path}`、显示 {toolName} › {path ?? '任意'}(空=工具级通配)、revokeTrust签名带path精确撤销、Tooltip文案改"会话级 tool+path 免审白名单"(目标路径及其子目录免弹框) — 小欧-2026-09-02
-// 编辑历史: 2026-09-06 小欧 - R1秒表与徽标解耦(B1实证修复, 见 doc-9月优化/错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案): 秒表interval运行条件去badge依赖改为
+// 编辑历史: 2026-09-06 小欧 - 秒表与徽标解耦(B1实证修复, 见 doc-9月优化/错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案): 秒表interval运行条件去badge依赖改为
 //   receiving&&!detail(实时流在就走表, 错误信号不再清零停表/业务恢复不再回跳); shownElapsed实时态一律liveElapsed, 非实时/历史回退elapsedSec;
 //   else分支原样保留(归零+startRef复位, 保终态duration显示与新任务归零) — 小欧-2026-09-06
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): prop 第7位 liveErrorText✗ string 改 liveError?: LiveError|null
@@ -25,7 +25,7 @@
 // 编辑历史: 2026-09-09 小欧 - [16]v4.4 修复#3: 3.9 断点矩阵落地(useInfoBreakpoint 1280/960/768)——G2/G3 xsmall 合并(G3 含耗时段)、
 //   G3 mid/narrow 收窄(仅数字+Tooltip 展开全文本)、G4 narrow/xsmall 省略(maxWidth200+ellipsis+Tooltip 全文)、G5 累计段收窄(明细进 MetricItem Tooltip 轻浮层)、
 //   G7 narrow/xsmall 仅计数(TrustPanel compact)、G6/G8 恒完整(FloatingEntry 基础行数字+▸+明细进浮层① 已满足矩阵) — 小欧-2026-09-09
-// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B2: 秒表interval的frames.startTimestamp有意不入依赖数组(R1定时器防每帧重置去抖, 见:122注释),
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B2: 秒表interval的frames.startTimestamp有意不入依赖数组(定时器防每帧重置去抖, 见:122注释),
 //   加eslint-disable+理由注释 — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 位4错误信息字符级截断(北京老陈令): renderLiveMeta 文本超 LIVE_META_TEXT_MAX(60)截断加…,
 //   宽/中屏超长时 Tooltip 全文(窄屏沿用 G4 EllipsisTip maxWidth200, 不叠双层Tooltip), 杜绝超长 error_message 撑爆第一行;
@@ -35,10 +35,10 @@
 // 编辑历史: 2026-09-14 小欧 [36]改动点①(方案A, 北京老陈批准): useTaskInfo 改四参签名 (steps, frames, detail, liveError)
 //   ——receiving 不再透传徽标派生(断连窗由 startinfo 门承接), 组件自身 receiving prop 保留(秒表 interval 启停, D3 契约) — 小欧-2026-09-14
 // 编辑历史: 2026-09-14 小欧 [36]删第二个变量(北京老陈令): receiving prop 整体删除——秒表启停改由 frames 权威信号驱动:
-//   走廊判定=startInfo非空(已开始)&&finalStats空(未终态落库); 实时走廊走表(R1语义等价), 断连窗/错误中间态继续走表(旧
+//   走廊判定=startInfo非空(已开始)&&finalStats空(未终态落库); 实时走廊走表(语义等价旧receiving), 断连窗/错误中间态继续走表(旧
 //   receiving=false缺陷窗口=进化, 09-08同源根治), final到达(hasFinalStats)停表回退duration(终态准确), 未开始startInfo空
 //   不走表(旧receiving=true提前走表窗口=修正); shownElapsed同步: detail→elapsedSec / 走廊→liveElapsed / 终态→elapsedSec;
-//   deps 保持派生布尔(跨帧值稳定), frames对象有意不入deps(R1防每帧重置); useChatPanels 透传一并删除, 连接级isReceiving
+//   deps 保持派生布尔(跨帧值稳定), frames对象有意不入deps(防每帧重置去抖); useChatPanels 透传一并删除, 连接级isReceiving
 //   只留ChatInput消费 — 小欧-2026-09-14
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
@@ -116,7 +116,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   // 【2026-09-03 小欧 复用TrustPanel】信任查询/刷新/撤销/折叠逻辑已移入 TrustPanel 组件(TaskInfoBar 删除内联重复, DRY)
 
   // 【小欧 2026-08-26 修复 B2】实时计时：实时流期间按 start 时刻走表
-  // （2026-09-06 R1: 不再挂靠徽标 running, 错误/失败态下秒表继续走不零不回跳），
+  // （2026-09-06 不再挂靠徽标 running, 错误/失败态下秒表继续走不零不回跳），
   // 历史任务(detail)用后端 duration，不计时。
   // 2026-09-14 小欧 [36]删第二个变量(北京老陈令): receiving prop 删除——秒表启停改由 frames 权威信号驱动:
   //   startInfo 非空(任务已开始) && finalStats 空(尚未终态落库)=执行中走廊, 走表;
@@ -128,7 +128,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   const startRef = useRef<number | null>(null); // 2026-08-27 小欧 三堂会审: 仅首次锚定start, 防计时抖动
   useEffect(() => {
     if (!detail && taskStarted && !taskFinished) {
-      // 2026-09-06 小欧 R1: 去 info.badge==='running' 依赖 — 小欧-2026-09-06
+      // 2026-09-06 小欧 去 info.badge==='running' 依赖 — 小欧-2026-09-06
       if (startRef.current == null) {
         startRef.current = frames.startTimestamp || Date.now(); // 2026-08-27 小欧 三堂会审: 首次锚定
       }
@@ -143,11 +143,11 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
     setLiveElapsed(0);
     startRef.current = null; // 2026-08-27 小欧 三堂会审: 任务切换复位startRef
     return undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- taskStarted/taskFinished 为帧派生布尔(跨帧值稳定), 有意不入frames防每帧重置(R1去抖) — 小欧-2026-09-09
-  }, [detail, taskStarted, taskFinished]); // 2026-09-06 小欧 R1: deps 保持稳定(派生布尔); frames.startTimestamp 有意不入 deps 防每帧重置(去抖动, 变更记录见R1注释) — 小欧-2026-09-09
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- taskStarted/taskFinished 为帧派生布尔(跨帧值稳定), 有意不入frames防每帧重置(去抖) — 小欧-2026-09-09
+  }, [detail, taskStarted, taskFinished]); // 2026-09-06 小欧 deps 保持稳定(派生布尔); frames.startTimestamp 有意不入 deps 防每帧重置(去抖动, 变更记录见上方注释) — 小欧-2026-09-09
   const shownElapsed = detail
     ? info.elapsedSec
-    : taskStarted && !taskFinished // 2026-09-06 小欧 R1: 执行中走廊一律走 liveElapsed(错误态继续走表); 终态/未开始回退 elapsedSec(终态 duration) — 小欧-2026-09-06
+    : taskStarted && !taskFinished // 2026-09-06 小欧 执行中走廊一律走 liveElapsed(错误态继续走表); 终态/未开始回退 elapsedSec(终态 duration) — 小欧-2026-09-06
       ? liveElapsed
       : info.elapsedSec;
 

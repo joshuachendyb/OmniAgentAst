@@ -4,7 +4,7 @@
 // 编辑历史: 2026-09-01 小欧 - 实时/静态双源合并(北京老陈"三思三省"): 运行中读 SSE metaFrames 实时值(每轮LLM调用推), 静止/历史/重进读 DB 拉取值; 实时优先覆盖静态
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B3: 任务结束沿useEffect依赖数组真补serverTaskId/latestTaskId
 //   (原漏导致结束锚点陈旧, 结束沿拉取可能用旧任务ID), 功能增强无退化 — 小欧-2026-09-09
-// 编辑历史: 2026-09-11 小欧 - R4修复: 删旧prevReceivingRef effect改hasFinalStats信号(final_stats到达=DB已落库才触发refreshTasks+拉token), 替代receiving翻false旧逻辑 — 小欧-2026-09-11
+// 编辑历史: 2026-09-11 小欧 - DB落库信号触发刷新修复: 删旧prevReceivingRef effect改hasFinalStats信号(final_stats到达=DB已落库才触发refreshTasks+拉token), 替代receiving翻false旧逻辑 — 小欧-2026-09-11
 // 编辑历史: 2026-09-11 小欧 - 三堂会审P1-5: hasFinalStats effect原deps含tasks, 体内refreshTasks更新tasks引用致自激无限循环; 改key型边界触发器(含session|anchor)防重入, 会话切/新任务到自动复位 — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - P1-1/P1-2三堂会审修复: ①删私有TokenTriple统一复用stepStyles.ts公用TokenLayer(DRY, 消类型碎片);
 //   ②抽fetchTokens内部函数消除L64-71/L89-97重复的getChainTokens+setState(DRY), 行为等价 — 小欧-2026-09-12
@@ -75,7 +75,7 @@ export function useChainTokens(
     void fetchTokens(sessionId, anchorTaskId); // 2026-09-12 小欧 P1-2: 复用 fetchTokens — 小欧-2026-09-12
   }, [sessionId, serverTaskId, latestTaskId, tasks, isReceiving]);
 
-  // 小欧 2026-09-11 R4: 刷新信号改 hasFinalStats(DB 已落库 t3')，替代 prevReceivingRef 旧逻辑 — 小欧-2026-09-11
+  // 小欧 2026-09-11 DB落库信号触发刷新: 刷新信号改 hasFinalStats(DB 已落库 t3')，替代 prevReceivingRef 旧逻辑 — 小欧-2026-09-11
   // 2026-09-11 小欧 三堂会审P1-5: effect deps含tasks, 体内refreshTasks更新tasks引用致自激无限循环; 用key型边界触发器(含sessionId+anchor)防重入(会话切/新任务到复位) — 小欧-2026-09-11
   const hasFinalStats = !!metaFrames?.finalStats;
   // P1-5: key型边界触发器——hasFinalStats到达且session|anchor首次出现时触发一次, 后续tasks引用变化不重入; 会话切或新任务到时锚点变化自动复位 — 小欧-2026-09-11

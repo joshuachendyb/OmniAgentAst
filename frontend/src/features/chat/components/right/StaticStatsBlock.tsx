@@ -12,7 +12,7 @@
 // 编辑历史: 2026-09-01 小欧 - 规范全页折叠方法与符号位置/大小统一：三角统一置于(*步)后、复用TrustPanel可访问方法与FontSize/Spacing/Colors常量，符号大小统一FontSize.SECONDARY - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 整个板块可折叠(北京老陈定案): 默认折叠只显标题行(任务统计+Tag+运行时间+▼), 点击展开显示完整统计内容; 与内层工具调用链折叠独立互不影响
 // 编辑历史: 2026-09-11 小欧 - DB滞后兜底: detail.status为executing但有duration(>0)或updated_at时覆盖为completed, 防SSE final后DB未及时更新致状态残留 - 小欧-2026-09-11
-// 编辑历史: 2026-09-11 小欧 - 第七章 M3c(R5/R7): 标题行(title 段)析出至 TitleBlock, 折叠状态提升父级受控; finalStats 帧复合兜底(tool_stats/artifacts/llm/步数), DB 失败也渲染折叠区 — 小欧-2026-09-11
+// 编辑历史: 2026-09-11 小欧 - 第七章 M3c(标题行析出+折叠状态提升): 标题行(title 段)析出至 TitleBlock, 折叠状态提升父级受控; finalStats 帧复合兜底(tool_stats/artifacts/llm/步数), DB 失败也渲染折叠区 — 小欧-2026-09-11
 // 编辑历史: 2026-09-11 小欧 - 三堂会审修复: P0-1 fmtTime块体补return(原缺return恒返undefined TS2322×2); P1-4 props复用TokenLayer消重复私有形状(DRY), import TokenLayer — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - P1-3三堂会审修复: 抽sectionStyle/sectionTitleStyle模块级常量消4处容器+4处标题重复(DRY); 全部硬编码灰阶收敛至Colors.TEXT三档, fontSize:12收敛至FontSize.SECONDARY(复用优先) — 小欧-2026-09-12
 // 编辑历史: 2026-09-15 小欧 - [40]第一阶段: S6错误警示条#fff1f0/#ffa39e→Colors.ERROR_BG/ERROR_BORDER;
@@ -33,7 +33,7 @@ import React from 'react';
 import { Typography } from 'antd'; // Tag 已移至 TitleBlock，此处删除
 import type { TaskDetail } from '../../../../services/api/task.api';
 import type { ExecutionStep } from '../../../../types/execution';
-import type { FinalStatsFrame } from '@/types/sse'; // 2026-09-11 小欧 第七章 M3c(R7): 折叠区复合兜底数据源 — 小欧-2026-09-11
+import type { FinalStatsFrame } from '@/types/sse'; // 2026-09-11 小欧 第七章 M3c(final_stats帧复合兜底): 折叠区复合兜底数据源 — 小欧-2026-09-11
 import {
   Colors,
   FontSize,
@@ -61,7 +61,7 @@ const sectionTitleStyle: React.CSSProperties = {
 interface StaticStatsProps {
   detail: TaskDetail | null;
   chainSteps?: ExecutionStep[];
-  // 小欧 2026-09-11 第七章 M3c(R7): final_stats 帧复合兜底——DB 缺失/失败时折叠区字段不空(三者复合) — 小欧-2026-09-11
+  // 小欧 2026-09-11 第七章 M3c(final_stats帧复合兜底): final_stats 帧复合兜底——DB 缺失/失败时折叠区字段不空(三者复合) — 小欧-2026-09-11
   finalStats?: FinalStatsFrame | null;
   // 2026-09-11 小欧 三堂会审P1-4: TokenLayer 复用(stepStyles.ts 公用), 与 RightViewer props 同契约, 消除必选/可选形状不一致(TS2322) — 小欧-2026-09-11
   sessionTokens?: TokenLayer;
@@ -71,15 +71,15 @@ interface StaticStatsProps {
 const StaticStatsBlock: React.FC<StaticStatsProps> = ({
   detail,
   chainSteps,
-  finalStats, // 小欧 2026-09-11 第七章 M3c(R7): 折叠区复合兜底 — 小欧-2026-09-11
+  finalStats, // 小欧 2026-09-11 第七章 M3c(final_stats帧复合兜底): 折叠区复合兜底 — 小欧-2026-09-11
   sessionTokens,
   chainTokens,
 }) => {
   const [chainOpen, setChainOpen] = React.useState(false);
-  // 小欧 2026-09-11 第七章 M3c(R7): DB 全缺失时 final_stats 帧兜底，两者都无才隐藏
-  // 小欧 2026-09-11 第七章 M3c(R7): effectiveStatus/statusColor 已移至 TitleBlock（final 帧 outcome 驱动，不读 DB）— 小欧-2026-09-11
+  // 小欧 2026-09-11 第七章 M3c(final_stats帧复合兜底): DB 全缺失时 final_stats 帧兜底，两者都无才隐藏
+  // 小欧 2026-09-11 第七章 M3c(final_stats帧复合兜底): effectiveStatus/statusColor 已移至 TitleBlock（final 帧 outcome 驱动，不读 DB）— 小欧-2026-09-11
   if (!detail && !finalStats) return null;
-  // 小欧 2026-09-11 第七章 M3c(R7): DB 读到的字段优先, final_stats 帧兜底(DB 失败/缺失时折叠区不空) — 小欧-2026-09-11
+  // 小欧 2026-09-11 第七章 M3c(final_stats帧复合兜底): DB 读到的字段优先, final_stats 帧兜底(DB 失败/缺失时折叠区不空) — 小欧-2026-09-11
   const toolStats: Record<string, number> =
     detail?.tool_stats && Object.keys(detail.tool_stats).length > 0
       ? detail.tool_stats

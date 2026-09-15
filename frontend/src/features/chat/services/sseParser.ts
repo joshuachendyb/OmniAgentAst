@@ -367,7 +367,7 @@ const processSSEData = (
       }
 
       // final_stats：终态统计独立步（duration/tool_stats/artifacts/step_count/llm_call_count）
-      // 小欧 2026-09-11 第七章 M5b(R7): 补解析 step_count/llm_call_count（后端 3.4 FinalStatsStep 新增 7 键, 折叠区步数/轮次来源） — 小欧-2026-09-11
+      // 小欧 2026-09-11 第七章 M5b(finalStats补解析): 补解析 step_count/llm_call_count（后端 3.4 FinalStatsStep 新增 7 键, 折叠区步数/轮次来源） — 小欧-2026-09-11
       case 'final_stats': {
         logTypeArrival('final_stats'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         handlers.setMetaFrames?.((prev) => ({
@@ -489,7 +489,7 @@ const processSSEData = (
         step.error_message = rawData.error_message;
         // 2026-09-11 小欧 北京老陈定案: cancelled终态渲染第二行✕取消来源, final分支补解析(后端FinalStep.to_dict恒输出cancel_source) — 小欧-2026-09-11
         step.cancel_source = rawData.cancel_source;
-        // 小欧 2026-09-11 第七章 M4(R6): final 分支补 duration 解析——title 段运行时长唯一实时源
+        // 小欧 2026-09-11 第七章 M4(title段duration解析): final 分支补 duration 解析——title 段运行时长唯一实时源
         //   (后端 3.1 FinalStep._extra_fields 新增, 与 DB update_task duration 同源算式: now-_run_start_ts)
         //   不读 DB; ExecutionStep.duration 字段已存在(类型 L155: number?) — 小欧-2026-09-11
         step.duration = rawData.duration;

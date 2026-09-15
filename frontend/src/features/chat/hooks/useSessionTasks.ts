@@ -1,6 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 8.1/8.2 实施: 会话任务清单Hook, 顶栏任务数/左列共用, final/error后refresh(6.1.9 B1)
 // 编辑历史: 2026-08-30 小欧 - 设计文档[2]12.7 v1.103: 新增 latestTaskId(B1 最新任务锚点透传, 顶栏/默认选中/链token锚点消费, 排序一义后不用 tasks[0])
-// 编辑历史: 2026-09-11 小欧 - R3修复: 新增updateTaskResponse方法(SSE final帧到达时即时更新task response, 不等DB refresh), 返回值补updateTaskResponse — 小欧-2026-09-11
+// 编辑历史: 2026-09-11 小欧 - 即时写入final.response修复: 新增updateTaskResponse方法(SSE final帧到达时即时更新task response, 不等DB refresh), 返回值补updateTaskResponse — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - X2终态短信号(北京老陈铁命令): 左侧任务 response 只允许由 updateTaskResponse(final.response) 写入, 严禁任何其他数据源/兜底顶替 — 小欧-2026-09-12
 // 编辑历史: 2026-09-13 小欧 - 新建会话右栏残留根治(北京老陈复测定位, 首修被effect②覆盖): refresh为异步, 切会话瞬间
 //   旧会话tasks/latestTaskId仍存活, useTaskSelection effect②(纯历史默认选中最新)持旧latestTaskId把activeTaskId拉回旧任务,

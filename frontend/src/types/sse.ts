@@ -41,7 +41,7 @@ export interface FinalStatsFrame {
   }> | null;
   final_status?: 'completed' | 'failed' | 'cancelled';
   retry_count?: number;
-  // 小欧 2026-09-11 第七章 M5a(R7): 补全统计键——与后端 build_final_stats_step 7 键对齐(3.4 FinalStatsStep._extra_fields) — 小欧-2026-09-11
+  // 小欧 2026-09-11 第七章 M5a(finalStats补全): 补全统计键——与后端 build_final_stats_step 7 键对齐(3.4 FinalStatsStep._extra_fields) — 小欧-2026-09-11
   step_count?: number;
   llm_call_count?: number;
 }

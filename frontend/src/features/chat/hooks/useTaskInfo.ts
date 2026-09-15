@@ -39,7 +39,7 @@
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
- * 【小欧 2026-08-26 8.6 / R1 修正】
+ * 【小欧 2026-08-26 8.6 / 修正】
  * - B2：输入=全量 executionSteps（final 是业务类型，此前只喂 meta 流导致
  *   completed/failed 徽标成死分支）+ metaFrames（统计类通知，见 8.4.14）；
  *   注：error 事件不入 executionSteps（8.4.5），失败徽标由 final.outcome='failed'

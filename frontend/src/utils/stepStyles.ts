@@ -7,7 +7,7 @@
 // 2026-09-06 小欧 - B2(北京老陈定案: 灰字不醒目): Colors 新增功能色 ORANGE_RED=#fa541c(AntD5 volcano-6 火山橘红)——工具"未执行/被安全拦截/确认超时"提示色, 替代灰字 T.SECONDARY(占位) 与 WARNING(中断)；与 AuthorizationModal 倒计时告急色(已用 #fa541c)一致, 与齿轮橘#fa8c16/警告橙#faad14 同色带不冲突 ERROR 红#ff4d4f - 小欧-2026-09-06
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删StepType/cancelled分支与stepMeta cancelled条目(取消收尾单一由final+cancelled承担)
 // 编辑历史: 2026-09-09 小欧 - P1-6: WARNING #faad14→#AD6800(白底对比度≥4.5:1), 全链统一(6 处引用同步增强) — 小欧-2026-09-09
-// 编辑历史: 2026-09-11 小欧 - 第七章 M3b/M3c(R6/R7): 新增公用 TokenLayer 类型 + formatTokenCompact/formatTokenFull(DRY)——TitleBlock/StaticStatsBlock 四组 token 格式化复用, 全层不重复实现 — 小欧-2026-09-11
+// 编辑历史: 2026-09-11 小欧 - 第七章 M3b/M3c(title段独立+折叠区复合兜底): 新增公用 TokenLayer 类型 + formatTokenCompact/formatTokenFull(DRY)——TitleBlock/StaticStatsBlock 四组 token 格式化复用, 全层不重复实现 — 小欧-2026-09-11
 // 编辑历史: 2026-09-11 小欧 - 三堂会审P1-3/P1-4: TokenLayer 字段定为 number|undefined(null 不入类型), 三处 props 统一复用本类型; 补本条前漏记的历史记录 — 小欧-2026-09-11
 // 编辑历史: 2026-09-14 小欧 - 漏洞2修复: Colors 新增 WAIT_ACTION 令牌(#fa8c16 工具执行等待齿轮橘, ToolWaitingIcon loader 色), WaitingIcons 硬编码色令牌化 — 小欧-2026-09-14
 // 编辑历史: 2026-09-14 小欧 - DRY: 新增 getStreamStyle 公共样式函数, ThinkingStream/TextStream 复用 — 小欧-2026-09-14
