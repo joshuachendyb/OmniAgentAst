@@ -17,6 +17,9 @@
 // 编辑历史: 2026-09-12 小欧 - P1-3三堂会审修复: 抽sectionStyle/sectionTitleStyle模块级常量消4处容器+4处标题重复(DRY); 全部硬编码灰阶收敛至Colors.TEXT三档, fontSize:12收敛至FontSize.SECONDARY(复用优先) — 小欧-2026-09-12
 // 编辑历史: 2026-09-15 小欧 - [40]第一阶段: S6错误警示条#fff1f0/#ffa39e→Colors.ERROR_BG/ERROR_BORDER;
 //   S7二级折叠▲▼→CircleArrow(20px 静止animated=false, 复用组件); A1/A2参数slice(0,80)硬截→省略号+复用EllipsisTip悬停全文 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 全板块间距/字号令牌化收敛——
+//   sectionStyle marginTop10→Spacing.MD/paddingTop8→MD; 标题 paddingLeft6→SM; 网格 columnGap12→LG/rowGap4→XS/marginTop6→SM;
+//   fontSize11→FontSize.CAPTION×2 处; lineHeight 18/22px→字号+Spacing派生; gap8→MD; marginTop 6/4/2→SM/XS/XS/2 — 小欧-2026-09-15
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -46,16 +49,16 @@ import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 [40
 
 // 2026-09-12 小欧 P1-3: 模块级样式常量, 消四处section容器+四处标题完全重复(DRY) — 小欧-2026-09-12
 const sectionStyle: React.CSSProperties = {
-  marginTop: 10,
+  marginTop: Spacing.MD,
   borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
-  paddingTop: 8,
+  paddingTop: Spacing.MD,
 };
 const sectionTitleStyle: React.CSSProperties = {
   fontSize: FontSize.SECONDARY,
   fontWeight: 500,
   color: Colors.TEXT.PRIMARY,
   borderLeft: `2px solid ${Colors.PRIMARY}`,
-  paddingLeft: 6,
+  paddingLeft: Spacing.SM,
 };
 
 interface StaticStatsProps {
@@ -119,9 +122,9 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             style={{
               display: 'grid',
               gridTemplateColumns: '72px 1fr 72px 1fr',
-              columnGap: 12,
-              rowGap: 4,
-              marginTop: 6,
+              columnGap: Spacing.LG,
+              rowGap: Spacing.XS,
+              marginTop: Spacing.SM,
               fontSize: FontSize.SECONDARY,
             }}
           >
@@ -171,7 +174,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             style={{
               fontSize: FontSize.SECONDARY,
               display: 'block',
-              marginTop: 4,
+              marginTop: Spacing.XS,
             }}
           >
             {formatTokenFull(detail?.accumulated_usage)}
@@ -185,10 +188,10 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             return (
               <div
                 style={{
-                  marginTop: 6,
-                  fontSize: 11,
+                  marginTop: Spacing.SM,
+                  fontSize: FontSize.CAPTION,
                   color: Colors.TEXT.SECONDARY,
-                  lineHeight: '18px',
+                  lineHeight: `${FontSize.CAPTION + Spacing.XS}px`,
                 }}
               >
                 {t && <div>任务级: {formatTokenFull(t)}</div>}
@@ -205,7 +208,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             style={{
               fontSize: FontSize.SECONDARY,
               display: 'block',
-              marginTop: 4,
+              marginTop: Spacing.XS,
             }}
           >
             {toolStats && Object.keys(toolStats).length > 0
@@ -232,7 +235,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
               alignItems: 'center',
               cursor: 'pointer',
               lineHeight: `${FontSize.PRIMARY + Spacing.XS}px`,
-              marginTop: 4,
+              marginTop: Spacing.XS,
             }}
           >
             <span
@@ -254,7 +257,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             />
           </div>
           {chainOpen && (
-            <div style={{ marginTop: 4 }}>
+            <div style={{ marginTop: Spacing.XS }}>
               <Typography.Text style={{ fontSize: FontSize.SECONDARY }}>
                 {chainSeq}
               </Typography.Text>
@@ -269,8 +272,8 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                       style={{
                         fontSize: FontSize.SECONDARY,
                         display: 'flex',
-                        gap: 8,
-                        marginTop: 2,
+                        gap: Spacing.MD,
+                        marginTop: Spacing.XS / 2,
                       }}
                     >
                       <span
@@ -310,8 +313,8 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 8,
-              marginTop: 4,
+              gap: Spacing.MD,
+              marginTop: Spacing.XS,
             }}
           >
             <Typography.Text style={sectionTitleStyle}>产出物</Typography.Text>
@@ -329,9 +332,9 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                 key={a.path}
                 style={{
                   display: 'flex',
-                  gap: 8,
+                  gap: Spacing.MD,
                   fontSize: FontSize.SECONDARY,
-                  lineHeight: '22px',
+                  lineHeight: `${FontSize.SECONDARY + Spacing.SM}px`,
                 }}
               >
                 <span style={{ color: Colors.TEXT.SECONDARY, minWidth: 16 }}>
@@ -341,7 +344,12 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                   {a.tool_name || '-'}
                 </span>
                 <span style={{ color: Colors.TEXT.STRONG }}>{a.name}</span>
-                <span style={{ color: Colors.TEXT.SECONDARY, fontSize: 11 }}>
+                <span
+                  style={{
+                    color: Colors.TEXT.SECONDARY,
+                    fontSize: FontSize.CAPTION,
+                  }}
+                >
                   {a.type}
                 </span>
                 <span
@@ -366,7 +374,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             </Typography.Text>
           )}
         </div>
-{detail?.error_message && (
+        {detail?.error_message && (
           /* 2026-09-15 小欧 [40]①H3: 错误(低频)脱离统一sectionStyle(去borderTop分隔), 弱化为贴边警示，与高频四节分主次 — 小欧-2026-09-15 */
           <div style={{ marginTop: Spacing.MD }}>
             {/* 2026-09-15 小欧 [40]①S6: 警示条#fff1f0/#ffa39e→Colors.ERROR_BG/ERROR_BORDER 令牌化 — 小欧-2026-09-15 */}

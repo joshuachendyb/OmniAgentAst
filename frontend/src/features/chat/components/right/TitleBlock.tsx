@@ -130,7 +130,7 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
           display: 'flex',
           alignItems: 'center',
           gap: Spacing.MD,
-          marginTop: 2,
+          marginTop: Spacing.XS / 2,
           flexWrap: 'wrap',
         }}
       >
