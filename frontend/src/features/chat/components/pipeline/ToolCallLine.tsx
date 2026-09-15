@@ -36,6 +36,7 @@
 // 编辑历史: 2026-09-08 小欧 - 图标换型(北京老陈令): 齿轮(settings)旋转视觉不明显→换Feather loader弧段,
 //   三段弧非对称旋转位置变化幅度大, 感知清晰; stroke线框橙#fa8c16/1s逆时针不变, 尺寸由index.css统一控 1.1em(≈15px) — 小欧-2026-09-08
 // 编辑历史: 2026-09-13 小欧 - 内联橙色loader SVG提取为WaitingIcons/ToolWaitingIcon控件, 行为零变化(同SVG同CSS类), 注释统一用组件名 — 小欧-2026-09-13
+// 编辑历史: 2026-09-15 小欧 - [40]第一阶段S7: 三级折叠三角▲▼→CircleArrow(20px/PRIMARY#595959/静止animated=false), 复用组件消三角字符 — 小欧-2026-09-15
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -51,10 +52,10 @@ import React, { useEffect, useState } from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
+import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 [40]①S7: 复用折叠箭头组件 — 小欧-2026-09-15
 import {
   Colors,
   BorderWidth,
-  FontSize,
   Spacing,
   stepMargin,
 } from '@/utils/stepStyles';
@@ -307,15 +308,18 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                         参数：{tParamText.slice(0, 60)}
                         {tParamText.length > 60 ? '…' : ''}
                       </span>
-                      <span
+                      {/* 2026-09-15 小欧 [40]①S7: ▲▼→CircleArrow(20px/PRIMARY#595959/静止animated=false), 复用组件消双三角字符 — 小欧-2026-09-15 */}
+                      <CircleArrow
+                        size={20}
+                        color={Colors.TEXT.PRIMARY}
+                        expandedColor={Colors.TEXT.PRIMARY}
+                        expanded={isOpen}
+                        animated={false}
                         style={{
                           marginLeft: Spacing.SM,
-                          color: Colors.PRIMARY,
-                          fontSize: FontSize.PRIMARY,
+                          verticalAlign: 'middle',
                         }}
-                      >
-                        {isOpen ? '▲' : '▼'}
-                      </span>
+                      />
                     </div>
                     {/* 折叠态：结果摘要独立一行缩进（2026-09-01 小欧） */}
                     {/* 三堂会审(2026-09-01): 去掉结果行自身 paddingLeft, 使其前导 │ 与上方工具行 ├─/└─ 竖线同列对齐(北京老陈反馈"绿线前移与黑竖线对齐更好看") */}

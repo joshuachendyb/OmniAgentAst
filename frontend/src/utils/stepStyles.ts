@@ -11,6 +11,7 @@
 // 编辑历史: 2026-09-11 小欧 - 三堂会审P1-3/P1-4: TokenLayer 字段定为 number|undefined(null 不入类型), 三处 props 统一复用本类型; 补本条前漏记的历史记录 — 小欧-2026-09-11
 // 编辑历史: 2026-09-14 小欧 - 漏洞2修复: Colors 新增 WAIT_ACTION 令牌(#fa8c16 工具执行等待齿轮橘, ToolWaitingIcon loader 色), WaitingIcons 硬编码色令牌化 — 小欧-2026-09-14
 // 编辑历史: 2026-09-14 小欧 - DRY: 新增 getStreamStyle 公共样式函数, ThinkingStream/TextStream 复用 — 小欧-2026-09-14
+// 编辑历史: 2026-09-15 小欧 - [40]第一阶段S5/S6: Colors 新增 FOLD_COLLAPSED/FOLD_EXPANDED(主折叠箭头蓝/粉, 2026-09-13定案) 与 ERROR_BG/ERROR_BORDER(错误警示条), 消除 CircleArrow 双色与警示条硬编码 — 小欧-2026-09-15
 import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
@@ -137,6 +138,10 @@ export const Colors = {
   PRIMARY: '#1677ff', // 主色调 - 蓝色
   SUCCESS: '#52c41a', // 成功状态 - 绿色
   ERROR: '#ff4d4f', // 错误状态 - 红色
+  ERROR_BG: '#fff1f0', // 错误浅底(错误警示条背景, [40]第一阶段S6令牌化) — 小欧-2026-09-15
+  ERROR_BORDER: '#ffa39e', // 错误浅框(错误警示条边框, [40]第一阶段S6令牌化) — 小欧-2026-09-15
+  FOLD_COLLAPSED: '#4096ff', // 主折叠箭头-收起态蓝(2026-09-13定案, [40]第一阶段S5令牌化) — 小欧-2026-09-15
+  FOLD_EXPANDED: '#ff4d94', // 主折叠箭头-展开态粉(2026-09-13定案, [40]第一阶段S5令牌化) — 小欧-2026-09-15
   WARNING: '#AD6800', // 警告/思考状态 - 深琥珀(白底对比度约 4.7:1, P1-6 定案 3.7)
   INFO: '#096dd9', // 信息/开始状态 - 蓝色
   ORANGE_RED: '#fa541c', // 未执行/被安全拦截/确认超时提示 - 火山橘红(AntD5 volcano-6, 2026-09-06 北京老陈定案 替灰字不醒目) — 小欧-2026-09-06

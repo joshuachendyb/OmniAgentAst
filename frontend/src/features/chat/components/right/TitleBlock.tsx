@@ -4,10 +4,13 @@
 // 2026-09-11 小欧 - 三堂会审修复: P1-3删??null(与TokenLayer number|undefined对齐, TS2322归零); P2模型顺序统一provider/model(站点惯例+StaticStatsBlock一致); P2 cancelled归default(非error红语义) — 小欧-2026-09-11
 // 2026-09-12 小欧 - P1-6三堂会审修复: 抽renderToken()消4组token包裹渲染重复(DRY); 原IIFE三连Typography.Text改4行直线调用 — 小欧-2026-09-12
 // 2026-09-13 小欧 - 用CircleArrow/PillBadge可复用组件替换Tag和▲▼; 间距: pill↔time=12px time↔model=15px — 小欧-2026-09-13
+// 2026-09-15 小欧 - [40]第一阶段: S1标题13→14(FontSize.PRIMARY); S2间距12/15→Spacing(LG/XL,15无档取XL16收敛);
+//   S3字号11→常量; S4 pill三态色令牌化; ④时长/模型灰字改TEXT.PRIMARY+12px;
+//   ⑤⑥非completed且provider/model不缺失才渲染模型段(completed隐藏模型,字段缺失不显示); H2累计组强调; A3容器title悬停提示 — 小欧-2026-09-15
 import React from 'react';
 import { Typography } from 'antd';
 import type { ExecutionStep } from '@/types/execution';
-import { Colors, formatTokenCompact } from '@/utils/stepStyles';
+import { Colors, FontSize, Spacing, formatTokenCompact } from '@/utils/stepStyles';
 import { CircleArrow } from '@/components/CircleArrow';
 import { PillBadge } from '@/components/PillBadge';
 
@@ -27,12 +30,20 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
   const duration = finalStep.duration;
   const model = finalStep.model;
   const provider = finalStep.provider;
-  // 2026-09-12 小欧 P1-6: 抽renderToken()——4组token包裹渲染同构, 抽单一helper消重复 — 小欧-2026-09-12
-  const renderToken = (text: string | false | null | undefined) =>
+  // 2026-09-15 小欧 [40]①S3/H2: 字号11→FontSize.SMALL; 新增 strong——累计组整行强调(PRIMARY色+500字重) — 小欧-2026-09-15
+  const renderToken = (
+    text: string | false | null | undefined,
+    strong = false,
+  ) =>
     text ? (
       <Typography.Text
-        type="secondary"
-        style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+        type={strong ? undefined : 'secondary'}
+        style={{
+          fontSize: FontSize.SMALL,
+          whiteSpace: 'nowrap',
+          color: strong ? Colors.TEXT.PRIMARY : undefined,
+          fontWeight: strong ? 500 : undefined,
+        }}
       >
         {text}
       </Typography.Text>
@@ -48,18 +59,19 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
   const taskAcc = finalStep.task_accumulated_tokens;
   const sessAcc = finalStep.session_accumulated_tokens;
   const chainAcc = finalStep.chain_accumulated_tokens;
-  // 2026-09-13 小欧: outcome→PillBadge背景色映射
+  // 2026-09-15 小欧 [40]①S4: pill三态色令牌化(SUCCESS/ERROR/BORDER.STRONG)去硬编码 — 小欧-2026-09-15
   const pillColor =
     outcome === 'completed'
-      ? '#52c41a'
+      ? Colors.SUCCESS
       : outcome === 'failed'
-        ? '#ff4d4f'
-        : '#bfbfbf';
+        ? Colors.ERROR
+        : Colors.BORDER.STRONG;
   return (
     <div
       role="button"
       tabIndex={0}
       aria-expanded={expanded}
+      title={expanded ? '点击收起统计详情' : '点击展开统计详情'}
       onClick={onToggle}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -68,34 +80,45 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
         }
       }}
       style={{
-        marginTop: 12,
-        padding: '8px 12px 0',
+        marginTop: Spacing.LG,
+        padding: `${Spacing.MD}px ${Spacing.LG}px 0`,
         borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
         cursor: 'pointer',
       }}
     >
-      {/* 上行：任务统计 + PillBadge + pill↔time=12px + 运行时长 + time↔model=15px + model/provider + CircleArrow */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Typography.Text strong style={{ fontSize: 13 }}>
+      {/* 上行：任务统计 + PillBadge + 运行时长 + [非completed时 model/provider] + CircleArrow
+          2026-09-15 小欧 [40]①: S2间距→Spacing(12=LG,15无档收敛XL16); S3标题13→14(FontSize.PRIMARY);
+          ④时长/模型灰字改TEXT.PRIMARY+FontSize.SECONDARY; ⑤非completed才渲染模型段; ⑥provider/model均缺不渲染 — 小欧-2026-09-15 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: Spacing.MD }}>
+        <Typography.Text strong style={{ fontSize: FontSize.PRIMARY }}>
           任务统计
         </Typography.Text>
         <PillBadge text={outcome ?? '-'} color={pillColor} shine />
-        <span style={{ display: 'inline-block', width: 12 }} />
+        <span style={{ display: 'inline-block', width: Spacing.LG }} />
         <Typography.Text
-          type="secondary"
-          style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+          style={{
+            fontSize: FontSize.SECONDARY,
+            whiteSpace: 'nowrap',
+          }}
         >
-          运行 {duration != null ? `${Math.round(duration)}s` : '-'}
+          运行耗时 {duration != null ? `${Math.round(duration)}s` : '-'}
         </Typography.Text>
-        <span style={{ display: 'inline-block', width: 15 }} />
-        <Typography.Text
-          type="secondary"
-          style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-        >
-          {/* 2026-09-11 小欧 三堂会审P2: 统一 provider/model——与站点惯例(useChatPanels L191 provider (model))及 StaticStatsBlock 一致 — 小欧-2026-09-11 */}
-          {provider ?? '-'} / {model ?? '-'}
-        </Typography.Text>
+        {outcome !== 'completed' && (provider || model) && (
+          <>
+            <span style={{ display: 'inline-block', width: Spacing.XL }} />
+            <Typography.Text
+              style={{
+                fontSize: FontSize.SECONDARY,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {/* 2026-09-11 小欧 三堂会审P2: 统一 provider/model——与站点惯例(useChatPanels L191 provider (model))及 StaticStatsBlock 一致 — 小欧-2026-09-11 */}
+              {provider ?? '-'} / {model ?? '-'}
+            </Typography.Text>
+          </>
+        )}
         <CircleArrow
+          size={24}
           expanded={expanded}
           glow
           style={{ marginLeft: 'auto' }}
@@ -106,7 +129,7 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          gap: Spacing.MD,
           marginTop: 2,
           flexWrap: 'wrap',
         }}
@@ -117,7 +140,8 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
               prompt_tokens: prompt,
               completion_tokens: completion,
               total_tokens: total,
-            })
+            }),
+            true
           )}
         {renderToken(formatTokenCompact('任务', taskAcc))}
         {renderToken(formatTokenCompact('会话', sessAcc))}

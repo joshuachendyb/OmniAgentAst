@@ -1,14 +1,16 @@
 // 编辑历史: 2026-09-13 小欧 - PillBadge 简洁版：胶囊药丸标签+竖线扫光动画 — 小欧-2026-09-13
 // 编辑历史: 2026-09-15 小欧 - 扫光keyframes迁 AnimatedIcons/animations.ts 统一承载(北京老陈令):
 //   删本地injectShine重复注入逻辑, 改调 injectKeyframes('pillShine') 单例注入(DRY) — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - [40]第一阶段S3/S4: 默认色引 Colors.SUCCESS 去硬编码 + 字号 FontSize.SECONDARY 收敛 — 小欧-2026-09-15
 import React from 'react';
 // 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons) — 小欧-2026-09-15
 import { injectKeyframes } from '../AnimatedIcons/animations';
+import { Colors, FontSize } from '@/utils/stepStyles';
 
 interface PillBadgeProps {
   /** 标签文本 */
   text: string;
-  /** 背景色，默认#52c41a */
+  /** 背景色，默认Colors.SUCCESS(#52c41a) */
   color?: string;
   /** 启用竖线扫光动画，默认false */
   shine?: boolean;
@@ -18,7 +20,7 @@ interface PillBadgeProps {
 
 const PillBadge: React.FC<PillBadgeProps> = ({
   text,
-  color = '#52c41a',
+  color = Colors.SUCCESS,
   shine = false,
   className,
   style,
@@ -37,7 +39,7 @@ const PillBadge: React.FC<PillBadgeProps> = ({
         height: 22,
         borderRadius: 11,
         color: '#fff',
-        fontSize: 12,
+        fontSize: FontSize.SECONDARY,
         fontWeight: 500,
         padding: '0 10px',
         ...(shine

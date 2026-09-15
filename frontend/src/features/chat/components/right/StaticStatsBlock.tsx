@@ -15,6 +15,8 @@
 // 编辑历史: 2026-09-11 小欧 - 第七章 M3c(R5/R7): 标题行(title 段)析出至 TitleBlock, 折叠状态提升父级受控; finalStats 帧复合兜底(tool_stats/artifacts/llm/步数), DB 失败也渲染折叠区 — 小欧-2026-09-11
 // 编辑历史: 2026-09-11 小欧 - 三堂会审修复: P0-1 fmtTime块体补return(原缺return恒返undefined TS2322×2); P1-4 props复用TokenLayer消重复私有形状(DRY), import TokenLayer — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - P1-3三堂会审修复: 抽sectionStyle/sectionTitleStyle模块级常量消4处容器+4处标题重复(DRY); 全部硬编码灰阶收敛至Colors.TEXT三档, fontSize:12收敛至FontSize.SECONDARY(复用优先) — 小欧-2026-09-12
+// 编辑历史: 2026-09-15 小欧 - [40]第一阶段: S6错误警示条#fff1f0/#ffa39e→Colors.ERROR_BG/ERROR_BORDER;
+//   S7二级折叠▲▼→CircleArrow(20px 静止animated=false, 复用组件); A1/A2参数slice(0,80)硬截→省略号+复用EllipsisTip悬停全文 — 小欧-2026-09-15
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -39,6 +41,8 @@ import {
   formatTokenFull,
   type TokenLayer,
 } from '@/utils/stepStyles'; // 2026-09-11 小欧 三堂会审P1-4: 复用公用 TokenLayer 消重复私有形状(DRY) — 小欧-2026-09-11
+import { EllipsisTip } from '../taskinfo/EllipsisTip'; // 2026-09-15 小欧 [40]①A2: 复用省略+Tooltip全文封装 — 小欧-2026-09-15
+import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 [40]①S7: 复用折叠箭头组件 — 小欧-2026-09-15
 
 // 2026-09-12 小欧 P1-3: 模块级样式常量, 消四处section容器+四处标题完全重复(DRY) — 小欧-2026-09-12
 const sectionStyle: React.CSSProperties = {
@@ -224,6 +228,8 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
               }
             }}
             style={{
+              display: 'flex',
+              alignItems: 'center',
               cursor: 'pointer',
               lineHeight: `${FontSize.PRIMARY + Spacing.XS}px`,
               marginTop: 4,
@@ -237,15 +243,15 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             >
               工具调用链{chain.length ? ` (${chain.length}步)` : ''}
             </span>
-            <span
-              style={{
-                fontSize: FontSize.PRIMARY,
-                color: Colors.TEXT.PRIMARY,
-                marginLeft: 4,
-              }}
-            >
-              {chainOpen ? '▲' : '▼'}
-            </span>
+            {/* 2026-09-15 小欧 [40]①S7: ▲▼→CircleArrow(20px/PRIMARY#595959/静止animated=false), 复用组件消双三角符号 — 小欧-2026-09-15 */}
+            <CircleArrow
+              size={20}
+              color={Colors.TEXT.PRIMARY}
+              expandedColor={Colors.TEXT.PRIMARY}
+              expanded={chainOpen}
+              animated={false}
+              style={{ marginLeft: Spacing.XS }}
+            />
           </div>
           {chainOpen && (
             <div style={{ marginTop: 4 }}>
@@ -253,35 +259,47 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                 {chainSeq}
               </Typography.Text>
               {chain.flatMap((s, sIdx) =>
-                (s.tools ?? []).map((t, tIdx) => (
-                  <div
-                    key={`${sIdx}-${tIdx}`}
-                    style={{
-                      fontSize: FontSize.SECONDARY,
-                      display: 'flex',
-                      gap: 8,
-                      marginTop: 2,
-                    }}
-                  >
-                    <span
-                      style={{ color: Colors.TEXT.SECONDARY, minWidth: 20 }}
-                    >
-                      {sIdx + 1}.{tIdx + 1}
-                    </span>
-                    <span style={{ color: Colors.TEXT.PRIMARY }}>{t.tool}</span>
-                    <span
+                (s.tools ?? []).map((t, tIdx) => {
+                  // 2026-09-15 小欧 [40]①A1/A2: 提取paramText, slice(0,80)硬截→加省略号+EllipsisTip悬停全文兜底 — 小欧-2026-09-15
+                  const paramText = JSON.stringify(t.params ?? {});
+                  const truncated = paramText.length > 80;
+                  return (
+                    <div
+                      key={`${sIdx}-${tIdx}`}
                       style={{
-                        color: Colors.TEXT.SECONDARY,
-                        fontFamily: 'monospace',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
+                        fontSize: FontSize.SECONDARY,
+                        display: 'flex',
+                        gap: 8,
+                        marginTop: 2,
                       }}
                     >
-                      {JSON.stringify(t.params ?? {}).slice(0, 80)}
-                    </span>
-                  </div>
-                ))
+                      <span
+                        style={{ color: Colors.TEXT.SECONDARY, minWidth: 20 }}
+                      >
+                        {sIdx + 1}.{tIdx + 1}
+                      </span>
+                      <span style={{ color: Colors.TEXT.PRIMARY }}>
+                        {t.tool}
+                      </span>
+                      <EllipsisTip
+                        text={paramText}
+                        tooltip={truncated ? paramText : undefined}
+                        maxWidth={320}
+                      >
+                        <span
+                          style={{
+                            color: Colors.TEXT.SECONDARY,
+                            fontFamily: 'monospace',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {paramText.slice(0, 80)}
+                          {truncated ? '…' : ''}
+                        </span>
+                      </EllipsisTip>
+                    </div>
+                  );
+                })
               )}
             </div>
           )}
@@ -348,13 +366,15 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             </Typography.Text>
           )}
         </div>
-        {detail?.error_message && (
-          <div style={sectionStyle}>
+{detail?.error_message && (
+          /* 2026-09-15 小欧 [40]①H3: 错误(低频)脱离统一sectionStyle(去borderTop分隔), 弱化为贴边警示，与高频四节分主次 — 小欧-2026-09-15 */
+          <div style={{ marginTop: Spacing.MD }}>
+            {/* 2026-09-15 小欧 [40]①S6: 警示条#fff1f0/#ffa39e→Colors.ERROR_BG/ERROR_BORDER 令牌化 — 小欧-2026-09-15 */}
             <Typography.Text
               style={{
                 fontSize: FontSize.SECONDARY,
-                background: '#fff1f0',
-                border: '1px solid #ffa39e',
+                background: Colors.ERROR_BG,
+                border: `1px solid ${Colors.ERROR_BORDER}`,
                 borderRadius: 4,
                 padding: '2px 6px',
                 display: 'inline-block',
