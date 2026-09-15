@@ -40,6 +40,11 @@
 //   不走表(旧receiving=true提前走表窗口=修正); shownElapsed同步: detail→elapsedSec / 走廊→liveElapsed / 终态→elapsedSec;
 //   deps 保持派生布尔(跨帧值稳定), frames对象有意不入deps(防每帧重置去抖); useChatPanels 透传一并删除, 连接级isReceiving
 //   只留ChatInput消费 — 小欧-2026-09-14
+// 编辑历史: 2026-09-15 小欧 - [33]北京老陈定案(整体视觉): 纯白页面中 taskinfo 白条无分隔看不清——
+//   加底色 Colors.BG.LIGHT(#fafafa) 整条通栏平铺(无圆角卡片, 全页无卡片语法), 与纯白输入区形成明暗层次,
+//   分隔线仍走输入框上沿(P1-11 定案B), 色块下沿即贴 1px #f0f0f0 线衔接 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - [33]北京老陈令(长方形封边): taskinfo 色块顶部补 1px #f0f0f0 上边框线,
+//   与输入框上沿线同色, 色块成完整"长方形"框感(顶线+底面), 与上方中部滚动区白底分隔 — 小欧-2026-09-15
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -237,13 +242,18 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   );
 
   // 3.1.3 方案A: 文字样式(PRIMARY + 500)提示可点
+  // 2026-09-15 小欧 [33]北京老陈定案: 整条压回真一行——外层 padding 8px 顶→4px(Spacing.XS),
+  //   超一半留白主要来自此处 8px+热区32px(min-height 已并降到20), 两处合并后高度≈24px 恰一行;
+  //   渗透加固(整体视觉): 加底色 Colors.BG.LIGHT 通栏平铺, 白条不可见问题根治 — 小欧-2026-09-15
   return (
     <div
       style={{
-        background: 'transparent',
-        border: 'none',
-        borderTop: 'none', // P1-11 定案 B: 分隔线归属 input 区上沿(见 6.5.3.9), 本条不带上边框
-        padding: `${Spacing.MD}px 0 0`, // P2-12: 8px → Spacing.MD
+        // 2026-09-15 小欧 [33]: #fafafa 通栏底色——白底页面中界定任务信息条, 与输入区白色/上沿1px #f0f0f0 分线形成层次 — 小欧-2026-09-15
+        background: Colors.BG.LIGHT,
+        // 2026-09-15 小欧 北京老陈令(长方形闭环): 色块顶部补 1px 上边框线, 与输入框上沿 #f0f0f0 同色,
+        //   taskinfo 成完整"长方形"框感(顶线+底面), 与上方中部滚动区白底分隔; P1-11 定案B下沿线仍在输入框 — 小欧-2026-09-15
+        borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
+        padding: `${Spacing.XS}px 0 0`, // P2-12: 8px → Spacing.MD; 2026-09-15 小欧: MD→XS 压回一行 — 小欧-2026-09-15
         display: 'flex',
         flexDirection: 'column',
         gap: Spacing.MD,

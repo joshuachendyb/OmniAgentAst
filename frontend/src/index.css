@@ -226,13 +226,15 @@
   min-width: 0;
   min-height: 20px;
 }
+/* 编辑历史: 2026-09-15 小欧 - [33]北京老陈定案(恒一行): 信息带已恒定1行(P0-3), 其余信息全收弹框;
+ *   浮层入口热区 min-height 32→20 与 .taskinfo-token 对齐, 整条压回一行高度(原32撑高成"像2行") — 小欧-2026-09-15 */
 /* 浮层入口热区（hover 规格 2；已展开态 rotate 180°） */
 .taskinfo-entry {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 32px;
-  min-height: 32px;
+  min-height: 20px;
   border-radius: 8px;
   cursor: pointer;
   color: #999;
