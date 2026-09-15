@@ -37,6 +37,7 @@
 //   三段弧非对称旋转位置变化幅度大, 感知清晰; stroke线框橙#fa8c16/1s逆时针不变, 尺寸由index.css统一控 1.1em(≈15px) — 小欧-2026-09-08
 // 编辑历史: 2026-09-13 小欧 - 内联橙色loader SVG提取为WaitingIcons/ToolWaitingIcon控件, 行为零变化(同SVG同CSS类), 注释统一用组件名 — 小欧-2026-09-13
 // 编辑历史: 2026-09-15 小欧 - [40]第一阶段S7: 三级折叠三角▲▼→CircleArrow(20px/PRIMARY#595959/静止animated=false), 复用组件消三角字符 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 老杨 - 水滴图标 DropletIcon/DropletStatus 替代成功/失败字符符号, 复用组件消字符 — 老杨-2026-09-15
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -53,9 +54,11 @@ import type { ExecutionStep } from '../../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 [40]①S7: 复用折叠箭头组件 — 小欧-2026-09-15
+import { DropletIcon, type DropletStatus } from '@/components/DropletIcon'; // 2026-09-15 老杨: 水滴图标替代字符符号 — 老杨-2026-09-15
 import {
   Colors,
   BorderWidth,
+  FontSize,
   Spacing,
   stepMargin,
 } from '@/utils/stepStyles';
@@ -169,20 +172,14 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   const retryCount = action.action_retry_count;
   const attemptLabel =
     retryCount != null && retryCount > 0 ? `(重试${retryCount})` : '';
-  const statusColorMap = {
-    success: Colors.SUCCESS,
-    error: Colors.ERROR,
-    warning: Colors.WARNING,
-  } as const;
-  const statusIconMap = { success: '✔', error: '✖', warning: '⚠' } as const;
 
   return (
     <div
       className={highlight ? 'hitl-border' : undefined}
       style={{
-        fontSize: 13,
+        fontSize: FontSize.PRIMARY,
         color: Colors.TEXT.PRIMARY,
-        lineHeight: `${13 + Spacing.XS}px`,
+        lineHeight: `${FontSize.PRIMARY + Spacing.XS}px`,
         // 2026-09-03 小欧 Bug-8/10/31: minHeight 占位稳定高度, 动画与子行切换(0行→N行/整批涌入)不引起页面高度突变晃动
         minHeight: 32,
         margin: stepMargin(false),
@@ -209,7 +206,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               style={{
                 color:
                   Colors.ORANGE_RED /* 2026-09-06 小欧: 灰字不醒目, 北京老陈定案改火山橘红 */,
-                fontSize: 12,
+                fontSize: FontSize.SECONDARY,
               }}
             >
               工具调用无结果(已全部被安全拦截或未返回)
@@ -224,7 +221,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                 style={{
                   color:
                     Colors.ORANGE_RED /* 2026-09-06 小欧: 北京老陈定案 灰字改火山橘红更醒目 */,
-                  fontSize: 12,
+                  fontSize: FontSize.SECONDARY,
                 }}
               >
                 未执行：未获用户允许／被安全拦截／确认超时
@@ -235,14 +232,18 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
           )}
           {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
           {hasResult && tools.length === 0 && (
-            <span style={{ color: Colors.TEXT.SECONDARY, fontSize: 12 }}>
+            <span
+              style={{
+                color: Colors.TEXT.SECONDARY,
+                fontSize: FontSize.SECONDARY,
+              }}
+            >
               收到 {results.length || 1} 条观察结果但无工具定义
             </span>
           )}
           {hasResult &&
             tools.length > 0 &&
             tools.map((t, i) => {
-              // L139-L248: tools.map 函数体一字不改(参数/展开/结果行逻辑保持原样)
               let tParamText: string;
               try {
                 tParamText = JSON.stringify(t.params ?? {});
@@ -251,14 +252,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               }
               const sum = getResultSummary(i);
               const st = getResultStatus(i);
-              // 三堂会审(2026-09-01): 状态缺失时用中性文字色、不显图标, 防误报成功
-              const color = st ? statusColorMap[st] : Colors.TEXT.PRIMARY;
-              const icon = st ? `${statusIconMap[st]} ` : '';
-              const isLast = i === tools.length - 1 && deniedCount === 0; // 2026-09-06 小欧 B2(6.4): 被拒点名行在 tools.map 后收尾, 有被拒行时执行行非末行(分支线对齐) — 小欧-2026-09-06
-              const branch = isLast ? '└─' : '├─';
-              const sub = isLast ? '   ' : '│  ';
               const isOpen = !!expanded[i];
-              // 2026-09-03 小欧 BUG-19修复: 单工具观察按tool_name取结果, 非索引 - 小欧-2026-09-03
               const _resForTool = getResultForIndex(i);
               const singleResult = _resForTool ? [_resForTool] : [];
               const singleStep = {
@@ -270,8 +264,6 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                   key={t.tool ? `${t.tool}-${i}` : `tool-${i}`}
                   style={{ marginTop: Spacing.XS, paddingLeft: Spacing.SM }}
                 >
-                  {/* 2026-09-01 小欧(北京老陈定案, 修复"点击好几次才有效"根因): 收起/展开onClick放在折叠区(工具行+结果摘要)容器, 点这两行toggle该工具; 展开区移出onClick容器, 内部独立交互(GeneericResultRenderer的Paragraph ellipsis展开按钮/目录树节点/CollapsibleText链接)不被误触发收起 */}
-                  {/* 折叠规范(小欧 2026-09-01): 三角统一▲▼、大小14(PRIMARY)、颜色PRIMARY#595959、位置数量后、方法role=button/aria-expanded/tabIndex/onKeyDown - 北京老陈定案，全页统一 */}
                   <div
                     role="button"
                     tabIndex={0}
@@ -295,50 +287,60 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       }
                     }}
                   >
-                    {/* 工具行：随折叠区toggle; cursor提示可点 */}
+                    {/* 水滴图标+工具名+结果摘要：左右对齐 */}
                     <div
                       style={{
-                        fontSize: 13,
-                        lineHeight: `${13 + Spacing.XS}px`,
-                        color: Colors.TEXT.PRIMARY,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: Spacing.SM,
                       }}
                     >
-                      {branch} {t.tool}{' '}
-                      <span style={{ color: Colors.TEXT.SECONDARY }}>
-                        参数：{tParamText.slice(0, 60)}
-                        {tParamText.length > 60 ? '…' : ''}
+                      {/* 水滴图标：成功绿/失败红/警告黄 */}
+                      <DropletIcon status={st ?? 'success'} size={10} />
+                      {/* 工具名：左列 */}
+                      <span
+                        style={{ color: Colors.TEXT.PRIMARY, flexShrink: 0 }}
+                      >
+                        {t.tool}
                       </span>
-                      {/* 2026-09-15 小欧 [40]①S7: ▲▼→CircleArrow(20px/PRIMARY#595959/静止animated=false), 复用组件消双三角字符 — 小欧-2026-09-15 */}
+                      {/* 结果摘要：右列，flexGrow填满 */}
+                      {sum && (
+                        <span
+                          style={{
+                            color: Colors.TEXT.SECONDARY,
+                            flexGrow: 1,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontSize: FontSize.SECONDARY,
+                          }}
+                        >
+                          {sum.slice(0, 60)}
+                        </span>
+                      )}
+                      {/* 展开箭头 */}
                       <CircleArrow
-                        size={20}
+                        size={16}
                         color={Colors.TEXT.PRIMARY}
-                        expandedColor={Colors.TEXT.PRIMARY}
                         expanded={isOpen}
                         animated={false}
-                        style={{
-                          marginLeft: Spacing.SM,
-                          verticalAlign: 'middle',
-                        }}
                       />
                     </div>
-                    {/* 折叠态：结果摘要独立一行缩进（2026-09-01 小欧） */}
-                    {/* 三堂会审(2026-09-01): 去掉结果行自身 paddingLeft, 使其前导 │ 与上方工具行 ├─/└─ 竖线同列对齐(北京老陈反馈"绿线前移与黑竖线对齐更好看") */}
-                    {sum && (
+                    {/* 参数：默认隐藏，展开后显示 */}
+                    {isOpen && (
                       <div
                         style={{
-                          marginTop: Spacing.XS - 2 /* 段内折不折 2=XS-2 */,
-                          lineHeight: `${13 + Spacing.XS}px`,
-                          color,
-                          fontSize: 13,
+                          marginTop: Spacing.XS,
+                          paddingLeft: Spacing.LG,
+                          fontSize: FontSize.SECONDARY,
+                          color: Colors.TEXT.SECONDARY,
                         }}
                       >
-                        {sub} {icon}
-                        {sum.slice(0, 60)}
+                        参数：{tParamText}
                       </div>
                     )}
                   </div>
-                  {/* 展开区：该工具完整 observation（只显示观察，不显示参数全文，北京老陈定案 2026-09-01） */}
-                  {/* 无onClick: 内部GeneericResultRenderer的Paragraph ellipsis"展开/收起"按钮、目录树节点、CollapsibleText链接各自独立交互, 不被折叠区toggle误触发(北京老陈定案 2026-09-01) */}
+                  {/* 展开区：该工具完整 observation */}
                   {isOpen && (
                     <div
                       style={{
@@ -347,8 +349,6 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       }}
                     >
                       {typeof obsStep?.tool_result === 'string' ? (
-                        // 2026-09-03 小欧 Bug#22 守护: 字符串 tool_result → 优先 CollapsibleText 渲染原文
-                        //  (改前 {data_text} 包入 results 后走 ToolResultRenderer, 字符串被丢弃; 现字符串优先, 恢复 2026-08-29/09-01 逻辑)
                         obsStep.tool_result ? (
                           <CollapsibleText
                             text={obsStep.tool_result as string}
@@ -370,8 +370,6 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
             全拒无结果时独立成行; 与执行工具子行同缩进/分支线, reason=拒绝理由链(用户拒绝/拦截/超时) — 小欧-2026-09-06 */}
           {deniedCount > 0 &&
             deniedList.map((d, di) => {
-              const dIsLast = di === deniedCount - 1;
-              const dBranch = dIsLast ? '└─' : '├─';
               return (
                 <div
                   key={`denied-${d.tool}`}
@@ -379,17 +377,20 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                 >
                   <div
                     style={{
-                      fontSize: 13,
-                      lineHeight: `${13 + Spacing.XS}px`,
-                      color:
-                        Colors.ORANGE_RED /* 2026-09-06 小欧: 火山橘红, 与齿轮同色带/AuthorizationModal告急色一致 */,
+                      fontSize: FontSize.PRIMARY,
+                      lineHeight: `${FontSize.PRIMARY + Spacing.XS}px`,
+                      color: Colors.ORANGE_RED,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: Spacing.SM,
                     }}
                   >
-                    {dBranch} {d.tool}{' '}
+                    <DropletIcon status="error" size={10} />
+                    <span>{d.tool}</span>
                     <span
                       style={{
                         color: Colors.ORANGE_RED,
-                        fontSize: 12,
+                        fontSize: FontSize.SECONDARY,
                       }}
                     >
                       未执行：{d.reason}

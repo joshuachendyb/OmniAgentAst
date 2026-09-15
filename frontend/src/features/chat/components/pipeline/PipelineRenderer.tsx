@@ -74,6 +74,7 @@
 //   与 UI 光标真实条件 shown<clean.length 不同步); 打点已下放至 TextStream/ThinkingStream 内部翻转检测;
 //   formatDebugTime import 同步删除 — 小欧-2026-09-14
 //   2026-09-14 小欧 - [37]lint清理: 删 [35] 遗留未使用 import ActionWaitingIcon(仅 import+注释, 无实际使用) — 小欧-2026-09-14
+// 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 步骤摘要段去📋emoji前缀, 只留 summary/content 文本 — 小欧-2026-09-15
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -93,9 +94,7 @@ import { ResponseStream } from './ResponseStream';
 import { ToolCallLine } from './ToolCallLine';
 import { StatusLine } from './StatusLine';
 import { TextStream } from './TextStream'; // 13.8 正文打字机 — 小欧 2026-08-30
-import {
-  ThoughtWaitingIcon,
-} from '@/components/WaitingIcons'; // 2026-09-13 小欧: ThoughtWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
+import { ThoughtWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ThoughtWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
 import {
   Colors,
   BorderWidth,
@@ -431,7 +430,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
                 margin: stepMargin(false),
               }}
             >
-              📋 {seg.step.summary || seg.step.content || ''}
+              {seg.step.summary || seg.step.content || ''}
             </div>
           );
         }
