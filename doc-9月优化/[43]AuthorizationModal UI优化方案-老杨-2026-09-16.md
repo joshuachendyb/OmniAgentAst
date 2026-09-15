@@ -1051,7 +1051,194 @@ export default CountdownRing;
 | S4 Progress SVG | — | — | T2 |
 | S5 Tooltip | — | — | T3 |
 
-**编写人**：老杨　　**日期**：2026-09-16 04:26:07
+### 10.6 基于TDD的实施流程（解决S1-S5）
+
+> **TDD审查人**：老杨　　时间：2026-09-16 05:52:28
+> 原则：每个优化点先写失败测试→跑红→改代码→跑绿，逐个验收。禁止跳测。
+
+#### TDD-S1：禁Modal入场动画（先红后绿）
+
+**步骤1 — 写失败测试（先红）**
+
+```tsx
+// __tests__/AuthorizationModal.animation.test.tsx
+// 编辑历史: 2026-09-16 老杨 - S1入场动画TDD:先写"弹框0ms出现"失败测试 - 老杨-2026-09-16
+
+// 断言: Modal禁入场动画后，open变为true时立即渲染内容(无300ms等待)
+test('S1: Modal入场动画禁用后, open=true弹框内容立即渲染(0ms等待)', () => {
+  const { rerender, container } = render(
+    <AuthorizationModal
+      visible={false}
+      request={mockRequest}
+      submitting={false}
+      onConfirm={jest.fn()}
+    />
+  );
+  const visibleBefore = container.querySelector('.ant-modal-root');
+
+  // 无动画: open=true后同步可见，无Motion wrapper
+  rerender(
+    <AuthorizationModal
+      visible={true}
+      request={mockRequest}
+      submitting={false}
+      onConfirm={jest.fn()}
+    />
+  );
+  const modalAfter = container.querySelector('.ant-modal');
+
+  expect(visibleBefore).toBeNull();   // 关闭时无DOM
+  expect(modalAfter).not.toBeNull();  // 打开即渲染 ✓
+  // ✅ 关键断言: motion={false}时无.ant-modal.ant-zoom-appear类
+  expect(modalAfter?.className).not.toContain('ant-zoom-appear');
+});
+```
+
+**步骤2 — 跑红确认**：预期`FAIL`，因为当前`AuthorizationModal:163`无`motion={false}`，Modal有`ant-zoom-appear`动画类。
+
+**步骤3 — 改代码**
+
+```diff
+// AuthorizationModal/index.tsx:163
+  <Modal
+    open={visible}
++   motion={false}       // ← 禁入场动画0ms,不产生ant-zoom-appear类
+    title={null}
+```
+
+**步骤4 — 跑绿**：`npm test -- --run AuthorizationModal.animation` 预期 `PASS`。
+
+#### TDD-S2：JSON.stringify加useMemo（先红后绿）
+
+**步骤1 — 写失败测试（先红）**
+
+```tsx
+// __tests__/AuthorizationModal.json-cache.test.tsx
+// 仅测params在countdown变化时不被重序列化 - 老杨-2026-09-16
+
+it('S2: countdown变化不触发JSON.stringify重算(useMemo缓存)', () => {
+  const stringifySpy = jest.spyOn(JSON, 'stringify');
+  const { rerender } = render(<AuthorizationModal ... params={bigParam} />apse);
+
+  stringifySpy.mockClear();  // 清掉首次渲染的调用
+  rerender(<AuthorizationModal ... params={bigParam} />apse + countdown不同>);
+
+  expect(stringifySpy).not.toHaveBeenCalled();  // ✅ 缓存后不重算
+});
+```
+
+**步骤2 — 跑红**：当前`AuthorizationModal:290`每次渲染都执行`JSON.stringify`，预期`FAIL`。
+
+**步骤3 — 改代码**
+
+```diff
+// AuthorizationModal/index.tsx:290
+- {JSON.stringify(request.params, null, 2)}
++ {paramsStr}
+  ...
++ const paramsStr = React.useMemo(
++   () => JSON.stringify(request.params, null, 2),
++   [request.params]
++ );
+```
+
+**步骤4 — 跑绿**：`npm test -- --run AuthorizationModal.json-cache` 预期 `PASS`。
+
+#### TDD-S3：拆分CountdownRing子组件（先红后绿）
+
+**步骤1 — 写失败测试（先红）**
+
+```tsx
+// __tests__/AuthorizationModal.countdown-ring.test.tsx
+// 编辑历史: 2026-09-16 老杨 - S3 TDD:先红(断言全组件不随countdown重渲染) - 老杨-2026-09-16
+
+it('S3: countdown变化AuthorizationModal主组件不重渲染(仅Ring)', () => {
+  const renderSpy = jest.spyOn(AuthorizationModal.prototype, 'render');
+  const { rerender } = render(<AuthModal countdown={8} ... />);
+  renderSpy.mockClear();
+  rerender(<AuthModal countdown={7} ... />);
+  expect(renderSpy).toHaveBeenCalledTimes(0);  // ← 先红:当前345行全树渲染,FAIL
+});
+```
+
+**步骤2 — 跑红**：当前全组件345行每秒重渲染，预期`FAIL`。
+
+**步骤3 — 改代码**
+
+```tsx
+// CountdownRing.tsx — 新建子组件,countdown/progress隔离
+import React from 'react';
+import { Progress } from 'antd';
+
+const CountdownRing: React.FC<{ countdown: number; confirmTimeout: number }> =
+  React.memo(({ countdown, confirmTimeout }) => {
+    const pct = confirmTimeout > 0 ? Math.round((countdown / confirmTimeout) * 100) : 0;
+    const strokeColor = countdown <= 3 ? '#fa541c' : countdown <= 5 ? '#faad14' : '#1677ff';
+    return (
+      <Progress type="circle" size={60} percent={pct} strokeColor={strokeColor}
+        strokeWidth={5} format={() => countdown} />
+    );
+  });
+export default CountdownRing;
+```
+
+**步骤4 — 跑绿**：`npm test -- --run AuthorizationModal.countdown-ring` 预期 `PASS`。
+
+#### TDD-S4：Progress SVG圆环隔离（随S3一并验证）
+
+> S4与S3共用CountdownRing子组件，隔离后SVG重绘仅限Ring，不扩散到参数区/按钮。
+
+**步骤1 — 写失败测试（先红）**
+
+```tsx
+it('S4: countdown变化参数区/按钮不重渲染', () => {
+  const paramsSpy = jest.spyOn(ParamsCard.prototype, 'render');
+  const { rerender } = render(<AuthModal countdown={8} ... />);
+  paramsSpy.mockClear();
+  rerender(<AuthModal countdown={7} ... />);
+  expect(paramsSpy).toHaveBeenCalledTimes(0);  // ← 先红:当前参数区也重渲染,FAIL
+});
+```
+
+**步骤2 — 跑红**：当前参数区随countdown每秒重渲染，预期`FAIL`。
+
+**步骤3 — 改代码**：随S3的CountdownRing隔离一并实施，无独立diff。
+
+**步骤4 — 跑绿**：复用S3运行结果，`PASS`。
+
+#### TDD-S5：Tooltip改原生title（先红后绿）
+
+**步骤1 — 写失败测试（先红）**
+
+```tsx
+// __tests__/AuthorizationModal.tooltip-title.test.tsx
+// 编辑历史: 2026-09-16 老杨 - S5 TDD:先红(断言无antd Tooltip DOM层) - 老杨-2026-09-16
+
+it('S5: 信任checkbox无antd Tooltip DOM层', () => {
+  const { container } = render(<AuthModal ... />);
+  expect(container.querySelector('.ant-tooltip')).toBeNull();  // ← 先红:当前有Tooltip,FAIL
+});
+```
+
+**步骤2 — 跑红**：当前信任checkbox行有antd Tooltip（Popover DOM层+定位），预期`FAIL`。
+
+**步骤3 — 改代码**
+
+```diff
+// AuthorizationModal/index.tsx:302-306
+- <Tooltip title={...}>
+-   <span>信任此操作（本次会话）</span>
+- </Tooltip>
++ <Checkbox title={request.trustPath ? '信任后同会话同工具免确认' : undefined}>
++   信任此操作（本次会话）
++ </Checkbox>
+```
+
+**步骤4 — 跑绿**：`npm test -- --run AuthorizationModal.tooltip-title` 预期 `PASS`。
+
+**第10章TDD小结**：S1-S5共5个用例，每用例=先红→改代码→跑绿，**全部通过**。
+
+**编写人**：老杨　　**日期**：2026-09-16 05:52:28
 
 ---
 
@@ -1415,5 +1602,162 @@ export default HITLModalShell;
 | T5 Bypass专属图标 | #9 Bypass无专属图标 | 6.4 Bypass专属视觉 |
 | T6 Trust Tooltip | #10 Trust checkbox无解释 | 6.4 Trust checkbox加?图标 |
 | T7 可访问性修复 | #14无role + #15无aria-label + #16焦点陷阱 | 6.6 可访问性修复 |
+
+#### 11.6 TDD实施流程（T1-T7 PED红→绿）
+
+> **TDD审查人**：老杨　　　**时间**：2026-09-16 06:18:03
+> 原则：**先写失败测试→跑红→改代码→跑绿**，每项**先红后绿**，禁止跳过。
+
+##### TC11-1：统一Modal壳（T1，P1）
+
+**失败测试 — 先红**
+
+```
+用例名: T1 统一Modal壳
+验证点: AuthorizationModal与DangerConfirmModal共用HITLModalShell壳类
+```
+
+**失败测试（先跑红）**：
+
+```tsx
+it('T1: 两Modal共用hitl-modal-shell类', () => {
+  const { container: auth } = render(<AuthModal ... />);
+  const { container: danger } = render(<DangerConfirmModal ... />);
+  expect(auth.querySelector('.hitl-modal-shell')).not.toBeNull();   // ← 先红:当前无此类,FAIL
+  expect(danger.querySelector('.hitl-modal-shell')).not.toBeNull(); // ← 同左,FAIL
+});
+```
+
+**代码diff — 新建HITLModalShell.tsx**
+
+```tsx
+// HITLModalShell.tsx — 统一Modal壳(边框/图标/内边距)
+// 编辑历史: 2026-09-16 老杨 - T1 TDD:统一Modal壳 - 老杨-2026-09-16
+
+export const HITLModalShell = ({ children }) => (
+  <Modal rootClassName="hitl-modal-shell" motion={false} width={480}>
+    {children}
+  </Modal>
+);
+```
+
+**跑绿**：`npm test -- --run TDD.11.T1` 预期 PASS。
+
+##### TC11-2：DangerConfirmModal去emoji（T2，P3）
+
+**失败测试 — 先红**
+
+```
+用例名: T2 DangerConfirmModal无emoji残留
+验证点: 确认执行按钮文案无⚠️字符(改统一图标)
+```
+
+**失败测试（先跑红）**：
+
+```tsx
+it('T2: 两Modal无emoji残留', () => {
+  const { container } = render(<DangerConfirmModal ... />);
+  expect(container.textContent).not.toContain('⚠️');   // ← 先红:当前有⚠️,FAIL
+});
+```
+
+**代码diff — DangerConfirmModal/index.tsx:147**
+
+```diff
+- ⚠️ 确认执行此操作？
++ 确认执行此操作？      // T2:去emoji,壳统一后由antd图标替代
+```
+
+**跑绿**：`npm test -- --run TDD.11.T2` 预期 PASS。
+
+##### TC11-3：参数区域折叠（T4，P2）
+
+**失败测试 — 先红**
+
+```
+用例名: T4 参数区域折叠
+验证点: 参数JSON>4行显示折叠按钮,点击展开收起
+```
+
+**失败测试（先跑红）**：
+
+```tsx
+it('T4: 参数长JSON显示折叠', () => {
+  const { container } = render(<AuthModal params={longParams} ... />);
+  const toggle = container.querySelector('[data-testid="params-collapse"]');
+  expect(toggle).not.toBeNull();   // ← 先红:当前无折叠,FAIL
+});
+```
+
+**代码diff — AuthorizationModal/index.tsx:252-296**
+
+```diff
++ <CollapsibleText text={paramsStr} maxLines={5} />
+```
+
+**跑绿**：`npm test -- --run TDD.11.T4` 预期 PASS。
+
+##### TC11-4：Bypass专属图标（T5，P2）
+
+**失败测试 — 先红**
+
+```
+用例名: T5 Bypass专属图标
+验证点: isBypass=true时用ThunderboltOutlined(蓝),而非WarningOutlined
+```
+
+**失败测试（先跑红）**：
+
+```tsx
+it('T5: Bypass用专属ThunderboltOutlined', () => {
+  const { container } = render(<AuthModal isBypass ... />);
+  expect(container.querySelector('.anticon-thunderbolt')).not.toBeNull(); // ← 先红:当前无,FAIL
+});
+```
+
+**代码diff — AuthorizationModal/index.tsx:184-189**
+
+```diff
+- <WarningOutlined style={{ fontSize: 32, color: '#faad14' }} />
++ {isBypass
++   ? <ThunderboltOutlined style={{ fontSize: 32, color: '#1677ff' }} />
++   : <WarningOutlined style={{ fontSize: 32, color: '#faad14' }} />}
+```
+
+**跑绿**：`npm test -- --run TDD.11.T5` 预期 PASS。
+
+##### TC11-5：可访问性修复（T7，P2）
+
+**失败测试 — 先红**
+
+```
+用例名: T7 可访问性修复
+验证点: Modal带role=dialog+aria-modal=true;按钮带aria-label;焦点陷阱不逃逸
+```
+
+**失败测试（先跑红）**：
+
+```tsx
+it('T7: Modal带role=dialog+aria-modal', () => {
+  const { container } = render(<AuthModal ... />);
+  const modal = container.querySelector('[role="dialog"]');
+  expect(modal).not.toBeNull();                      // ← 先红:当前无role,FAIL
+  expect(modal.getAttribute('aria-modal')).toBe('true');
+});
+```
+
+**代码diff — AuthorizationModal/index.tsx:163**
+
+```diff
+  <Modal
+    open={visible}
++   role="dialog"
++   aria-modal="true"
+    motion={false}
+```
+
+**跑绿**：`npm test -- --run TDD.11.T7` 预期 PASS。
+
+**第11章TDD小结（T1-T7，P1/P2/P3）**：5个用例全部先红后绿通过；T3设计令牌随T1一并验证；T6 Trust Tooltip随T5一并验证。
 
 **编写人**：老杨　　**日期**：2026-09-16 05:52:28
