@@ -103,6 +103,9 @@
 #   删除后py_compile通过, 全部工具ensure_tools_registered()注册成功, 活常量均有工具真实引用(REF>=1),
 #   唯一含已删常量名的backend/scripts/fix_error_codes.py为一次性迁移脚本(FIXES字符串对照表,纯文本替换,不依赖本文件常量)
 # 2026-08-13 - 小沈 - P2: SUPPORTED_ALGORITHMS 迁入 constants.py(系统级常量), 本文件 re-export 保持下游兼容
+# 2026-09-16 - 小欧 - 问题A修复(文档[44]5.1): 新增 NON_FILE_TRUST_TOOLS(registry_write/registry_delete/execute_sql)
+#   非文件信任域 —— 信任路径不能做文件系统 resolve; 单一来源 trust.extract_trust_path /
+#   trust_db.norm_trust_path(落库·查询·撤销单一入口, storage 撤销侧消费) 共用(DRY) — 小欧-2026-09-16
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -361,6 +364,15 @@ FILE_OPERATION_TOOLS: set[str] = {  # 【tool 级】使用对象: 文件操作�
     # office 8工具(读写) — 小欧 2026-08-13: 与文本文件工具同机制参与路径冲突检测, 消除并行读写竞态
     "read_xlsx", "read_docx", "read_pdf", "read_pptx",
     "write_xlsx", "write_docx", "write_pdf", "write_pptx",
+}
+
+# 2026-09-16 小欧 问题A修复: 非文件信任域工具 — 共同特征 = schema参数名path + needs_confirmation=True +
+#   不在 FILE_OPERATION_TOOLS, 信任路径不能做文件系统 resolve。registry_read 只读不确认不入(与其他
+#   确认工具同源, YAGNI)。单一来源: trust.extract_trust_path / trust_db.norm_trust_path
+#   (落库·查询·撤销三方单一入口, storage 撤销侧复用) — 小欧-2026-09-16
+NON_FILE_TRUST_TOOLS: set[str] = {
+    "registry_write", "registry_delete",
+    "execute_sql",
 }
 # 2026-08-13 - 小欧 - 扩展纳入8个office读写工具(unit-06 三堂会审, 北京老陈驱动):
 #   原集合仅文本文件工具, 致 action_handler 冲突检测对同路径 write_xlsx+read_xlsx 误判无冲突→并行→read 先跑报"路径不存在"

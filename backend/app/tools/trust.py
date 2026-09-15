@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-09-04 小健 - 新建: trust 三合一提取下沉, 解环 action_handler → trust 单向依赖 - 小健-2026-09-04
+# 2026-09-16 小欧 - 问题A修复(文档[44]5.2): extract_trust_path 补非文件信任域专用提取 —— 仅认规范 path 及
+#   定向别名(key_path/registry_key/db_path → path), 排除 data→value 非路径别名污染; 不动 _parse_paths
+#   (保护 conflict_detector 并查集分组); 与 FILE 流程共用 PARAM_ALIASES 只取规范 path — 小欧-2026-09-16
 """
 trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过判定 + 信任落库
 
@@ -16,7 +19,7 @@ trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过�
 """
 from typing import Dict, Optional, Set
 from app.tools.tools_alias_mapper import PARAM_ALIASES, normalize_tool_name
-from app.tools.tool_constants import FILE_OPERATION_TOOLS
+from app.tools.tool_constants import FILE_OPERATION_TOOLS, NON_FILE_TRUST_TOOLS
 
 # 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A
 # 窗口状态变更(restore/resize/focus)作用于同一窗口时非幂等, 同批并行会产生竞态
@@ -66,11 +69,24 @@ def _parse_paths(name: str, params: Dict) -> Set[str]:
 def extract_trust_path(name: str, params: Dict) -> Optional[str]:
     """提取工具调用用于信任落库/查询的目标路径(复用 _parse_paths, DRY) — 小欧 2026-09-02
     取首个非 window: 键的文件路径; 无路径参数/窗口工具/提取失败返回 None(=工具级通配)
+    2026-09-16 小欧 问题A修复: 非文件信任域(registry/sql)补专用提取 —— _parse_paths 按
+      FILE_OPERATION_TOOLS 过滤, registry_write 等不在其中致 trust_path 恒 None(查询侧永不命中);
+      此处仅认规范 path 及定向别名(key_path/registry_key/db_path → path), 排除 data→value 等
+      非路径别名, 防注册表值/数据污染信任路径; 不动 _parse_paths(保护 conflict_detector 并查集分组) — 小欧-2026-09-16
     完整复制自 action_handler.py:581-587，取首个非 window: 键的文件路径
     """
     for p in _parse_paths(name, params or {}):
         if not p.startswith("window:"):
             return p
+    if name in NON_FILE_TRUST_TOOLS:          # 小欧 2026-09-16
+        _params = params or {}
+        for _akey, _acn in PARAM_ALIASES.get(name, {}).items():
+            if _acn == "path":                # 仅规范 path 的定向别名(key_path/registry_key/db_path...)
+                _v = _params.get(_akey)
+                if isinstance(_v, str) and _v:
+                    return _v
+        _v = _params.get("path")              # 规范名兜底
+        return _v if isinstance(_v, str) and _v else None
     return None
 
 
