@@ -1,5 +1,34 @@
-﻿v0.19.40.17
-更新时间: 2026-09-14 21:44:29 - 小欧-2026-09-14
+﻿v0.19.40.18
+更新时间: 2026-09-15 20:54:03 - 小欧-2026-09-15
+## v0.19.40.17以来 变更汇总(18个commit) - 小欧-2026-09-15
+[2026-09-15 20:54:03 小欧] 汇总范围=v0.19.40.17以来全部commit(共18个: feat9/fix4/refactor3/docs3)
+
+### feat(9个):
+- 2dfd3811b feat:main.tsx 全站Tooltip白底浅卡片统一 ConfigProvider单点token - 小欧-2026-09-15
+- 9b0ad9d09 feat:Layout 左侧菜单栏优化 默认折叠+折叠Logo不显示修复+折叠tooltip黑框无字修复 - 小欧-2026-09-15
+- ba40c524d feat:AnimatedIcons 新建动画/渲染无关抽离组件组 LogoGridIcon点阵+TitleSpinIcon圈圈 - 小欧-2026-09-15
+- b20267ef6 feat:[38]TextStream 正文末位光标换型ActionWaitingIcon蓝色波纹扩散圈 - 小欧-2026-09-14
+- 7de92c5ec feat:RightViewer/useChatPanels/useSessionTasks/ChatPage [33]第七章左侧回复区数据来源铁命令落地 - 小欧-2026-09-15
+- 9e56dc5be feat:TaskInfoBar [33]taskinfo恒一行压缩+底色#fafafa通栏平铺+顶线1px闭环 - 小欧-2026-09-15
+- 198325715 feat:[40]统计面板令牌化收敛 TitleBlock/StaticStatsBlock间距字号全收敛 - 小欧-2026-09-15
+- 0b3bb250c feat:[42]Step页面视觉审查落地 状态行去emoji+ERROR_BG样式/水滴图标替代字符符号 - 小欧-2026-09-15
+- f1b8ead00 feat:[40]step面板统计条第一阶段UI优化 - 小欧-2026-09-15
+
+### fix(4个):
+- 286345bfb fix:ChatPage 新任务发送即展开右侧step面板 - 小欧-2026-09-15
+- aa38d31db fix:RightViewer 三思三省根治displaySteps跨任务settledSteps残留 - 小欧-2026-09-15
+- 6b215ba7e fix:前端chat hooks [41]cancel根治v1.3落地(F3闸复位唯一化/F4'finally不再无条件setLoading/F5 executeSend起点兜底复位) - 小欧-2026-09-15
+- 57ae1ac8a refactor:CollapsibleText+ToolCallLine+GearIcon 步骤3.3-3.6折叠箭头/齿轮图标/折叠阈值优化 - 小欧-2026-09-15
+
+### refactor(3个):
+- 57ae1ac8a refactor:CollapsibleText+ToolCallLine+GearIcon 步骤3.3-3.6折叠箭头/齿轮图标/折叠阈值优化 - 小欧-2026-09-15
+- 3d0e4e3ea refactor:hooks注释清理P-008 去除F2/F3/F4'/F5代号改描述性术语 - 小欧-2026-09-15
+- b79b79bd0 docs:前端注释清理去除R1-R9代号改用描述性术语 - 小欧-2026-09-15
+
+### docs(3个):
+- 56e89d613 docs:[41][42] cancel任务右键不渲染final根因分析+Step页面UI视觉审查报告 - 小欧-2026-09-15
+- 96e13119f docs:[33]左侧任务列表回复区数据来源分析v1.5+[42]Step页面UI视觉审查报告M5 - 小欧-2026-09-15
+- eb0f9c53d docs:[38][39] 左侧菜单栏优化分析+Tooltip样式分析与统一方案 - 小欧-2026-09-15
 ## v0.19.40.16以来 变更汇总(9个commit) - 小欧-2026-09-14
 [2026-09-14 21:44:29 小欧] 汇总范围=v0.19.40.16以来全部commit(共9个: fix4/refactor4/docs1)
 
