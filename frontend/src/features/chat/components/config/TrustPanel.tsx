@@ -12,6 +12,8 @@
 //   TaskInfoBar改import复用删除内联重复(DRY); 以TaskInfoBar现有样式为准(紧凑"信任(N)"+Tooltip+计数配色+stopPropagation), 功能零丢失零退化 - 小欧-2026-09-03
 // 编辑历史: 2026-09-09 小欧 - [16]v4.x P1-10/P0-4/P2-18: 展开列表改 Drawer 侧滑面板(第一行高度恒定不跳动); 撤销移入每行首列 + Modal.confirm 二次确认(文案含工具名);
 //   触发按钮文字样式(PRIMARY+500)提示可点; 关闭后焦点回触发按钮; load/omni-trust-changed监听/trustReqIdRef竞态守卫原样不动 — 小欧-2026-09-09
+// 编辑历史: 2026-09-16 小欧 - 文档[44]5.7 问题C文案修正(方案A决策落地): Tooltip 文案精准反映"信任豁免的是确认弹框, 非所有弹框",
+//   补"沙箱预检未完成验证时仍可能弹窗" — 小欧-2026-09-16
 /**
  * TrustPanel - 信任操作面板（集成于 TaskInfoBar 第一行尾部，紧凑样式）
  *
@@ -129,7 +131,7 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
           fontSize: FontSize.SECONDARY,
         }}
       >
-        <Tooltip title="会话级 tool+path 免审白名单：勾信任后同会话同工具、目标路径及其子目录免弹框，危险操作仍拦截，可×撤销">
+        <Tooltip title="会话级 tool+path 信任：同会话同工具+目标路径免确认弹框（沙箱预检未完成验证时仍可能弹窗），危险操作仍拦截，可×撤销">
           <span>
             {compact ? `(${tools.length})` : `信任(${tools.length})`}{' '}
             {/* 3.9 修复#3: narrow/xsmall 仅计数, Tooltip 全文保留 */}

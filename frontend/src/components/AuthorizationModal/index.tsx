@@ -13,6 +13,8 @@
 // 编辑历史: 2026-09-07 小欧 - B3 防御加固: countdown 归零 effect 加 submitting guard, 组件自体防双发;
 //   改前仅靠 ChatPage key={confirmId} 重建兜底, 本组件 countdown 走完归零后(未重挂)会重入代发,
 //   加固后手动确认/代发任一次即锁定, 消除对 key 重建的依赖(与回归守卫 BUG-13/BUG-11 断言对齐) - 小欧-2026-09-07
+// 编辑历史: 2026-09-16 小欧 - 文档[44]5.6 缺陷①③修复: 缺陷①bypass下disable勾选框(原仅handleConfirm强改false, UI仍可勾, 静默失效误导);
+//   缺陷③按工具域区分文案(registry工具路径含子键, 其余含子目录) — 小欧-2026-09-16
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -295,12 +297,19 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         <div style={{ marginBottom: 12 }}>
           <Checkbox
             checked={trustSession}
-            disabled={submitting}
+            disabled={submitting || isBypass} // 2026-09-16 小欧 缺陷①修复: bypass 禁用勾选框, 防静默失效误导(原仅 handleConfirm 强改 false, UI 仍可勾) — 小欧-2026-09-16
             onChange={(e) => setTrustSession(e.target.checked)}
           >
-            {request.trustPath ? (
+            {isBypass ? (
+              <Tooltip title="自动确认模式下信任不落库，勾选无效">
+                <span>信任此操作（本次会话）</span>
+              </Tooltip>
+            ) : request.trustPath ? (
               <Tooltip
-                title={`${request.toolName} › ${request.trustPath}，含子目录`}
+                // 2026-09-16 小欧 缺陷③修复: 按工具域区分文案(registry→含子键, 其余→含子目录) — 小欧-2026-09-16
+                title={`${request.toolName} › ${request.trustPath}${
+                  request.toolName.startsWith('registry') ? '，含子键' : '，含子目录'
+                }`}
               >
                 <span>信任此操作（本次会话）</span>
               </Tooltip>
