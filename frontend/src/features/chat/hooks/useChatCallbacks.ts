@@ -194,10 +194,12 @@ export const useChatCallbacks = (
       onStepFingerprintRef.current.add(fingerprint);
       // 【北京老陈 2026-07-12 小欧】统一取消语义：interrupted → cancelled
       // 2026-09-07 小欧 4.4.1: type=cancelled 已从链路移除, 取消心跳/收尾单一由 final+outcome=cancelled 承担
+      // 2026-09-15 小欧 [41]v1.3: F3复位点唯一化 — 收到取消终态帧处复位闸
       const isCancelEvent =
         step.type === 'final' && step.outcome === 'cancelled';
       if (isCancelEvent) {
         hasReceivedCancelEventRef.current = true;
+        cancelInProgressRef.current = false; // F3: 闸解得，后续帧自然放行
       }
 
       // ✅ 如果正在取消中，跳过非取消且与终态无关的事件（避免旧 chunk/步骤污染 UI）

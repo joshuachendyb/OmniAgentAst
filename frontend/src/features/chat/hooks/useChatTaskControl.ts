@@ -118,38 +118,6 @@ export const useChatTaskControl = (
   const { disconnect } = functions;
 
   // =========================================================================
-  // 内部辅助函数
-  // =========================================================================
-
-  /**
-   * 智能等待取消事件函数
-   * 等待后端发送 cancelled 事件，最多等待 maxWaitTime
-   */
-  const waitForCancelEvent = useCallback(
-    async (maxWaitTime = 3000, checkInterval = 200): Promise<boolean> => {
-      const startTime = Date.now();
-      let hasReceivedEvent = false;
-
-      while (Date.now() - startTime < maxWaitTime) {
-        if (hasReceivedCancelEventRef.current) {
-          hasReceivedEvent = true;
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, checkInterval));
-      }
-
-      if (!hasReceivedEvent) {
-        console.warn(
-          `[waitForCancelEvent] 在 ${maxWaitTime}ms 内未收到取消终态(final+outcome=cancelled)，继续执行`
-        );
-      }
-
-      return hasReceivedEvent;
-    },
-    [hasReceivedCancelEventRef]
-  );
-
-  // =========================================================================
   // 任务控制函数
   // =========================================================================
 
@@ -176,15 +144,6 @@ export const useChatTaskControl = (
     []
   );
 
-  // 2026-08-28 小强 修复#15: Promise.race加5s硬超时兜底, 防waitForCancelEvent内部轮询永久挂起
-  const waitForCancelOrTimeout = useCallback(async (): Promise<void> => {
-    const cancelPromise = waitForCancelEvent(3000, 200);
-    const timeoutPromise = new Promise<boolean>((resolve) => {
-      setTimeout(() => resolve(false), 5000);
-    });
-    await Promise.race([cancelPromise, timeoutPromise]);
-  }, [waitForCancelEvent]);
-
   /**
    * handleCancel - 取消正在执行的任务
    *
@@ -195,6 +154,8 @@ export const useChatTaskControl = (
    * 4. 断开SSE连接
    * 5. 更新UI状态
    */
+  // 2026-09-15 小欧 [41]v1.3: F2删病根断连+F4'复位点唯一化
+  // 取消确认由 SSE 自然流到达的 final+cancelled 承载，前端不再主动 disconnect
   const handleCancel = useCallback(async () => {
     // 【防重复点击】如果正在取消中，忽略后续点击
     if (cancelInProgressRef.current) {
@@ -215,8 +176,7 @@ export const useChatTaskControl = (
           // ✅【关键修复】不立即断开连接！等待后端发送cancelled/final事件
           const result = await callCancelApi(taskIdToCancel, sessionId);
 
-          // ✅ 使用智能等待策略等待后端发送cancelled事件
-          await waitForCancelOrTimeout();
+          // F2: 删除 await waitForCancelOrTimeout() — 死代码（3s<5s，5s分支永不触发）
 
           // ✅ 停止所有进行中的倒计时
           if (waitTimerRef.current) {
@@ -224,10 +184,7 @@ export const useChatTaskControl = (
             waitTimerRef.current = null;
           }
 
-          disconnect(true, true, () => {
-            // 在断开连接完成后重置标记
-            hasReceivedCancelEventRef.current = false;
-          });
+          // F2: 删除 disconnect(true, true) — 病根（掐死SSE通道，丢final帧的唯一动作）
 
           // 显示后端返回的具体消息
           showTaskResultMessage('cancel', result.message);
@@ -255,40 +212,31 @@ export const useChatTaskControl = (
           // ✅ 即使出错也要确保UI状态更新
           resetUiFlags();
 
-          // 【重试机制】错误情况下也等待cancelled事件
-          let retries = 0;
-          while (retries < 3) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            if (hasReceivedCancelEventRef.current) {
-              break;
-            }
-            retries++;
-          }
-          hasReceivedCancelEventRef.current = false;
-          // 2026-08-27 小欧 修复#10: 新签名 (stopServer, force), force=true 使 manualDisconnect=true 禁止自动重连
-          disconnect(true, true);
+          // F4'兜底：取消失败/无取消终态帧路径，显式复位闸，防S6永锁
+          cancelInProgressRef.current = false;
         }
       } else {
-        // 【问题4修复】即使没有taskId，也要更新UI状态并断开连接
+        // 【问题4修复】即使没有taskId，也要更新UI状态
         resetUiFlags();
 
-        // 断开SSE连接
-        // 2026-08-27 小欧 修复#10: 新签名 (stopServer, force), force=true 使 manualDisconnect=true 禁止自动重连
-        disconnect(true, true);
+        // F4'兜底：无taskId路径，显式复位闸，防S6永锁
+        cancelInProgressRef.current = false;
 
         // 显示提示
         showTaskResultMessage('cancel', '任务尚未开始或已结束，请求已取消');
       }
     } finally {
-      // 兜底：确保取消标志重置（保留外层，删内层重复重置）
-      cancelInProgressRef.current = false;
+      // F4': finally不再无条件复位（复位点唯一化：成功取消路径由 isCancelEvent 分支复位）
+      // 仅保留兜底：若 try/catch 都未复位（极端异常），finally 兜底防永久锁死
+      if (cancelInProgressRef.current) {
+        cancelInProgressRef.current = false;
+      }
     }
   }, [
     serverTaskId,
     sessionId,
     resetUiFlags,
     callCancelApi,
-    waitForCancelOrTimeout,
     waitTimerRef,
     disconnect,
     hasReceivedCancelEventRef,

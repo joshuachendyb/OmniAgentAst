@@ -146,7 +146,7 @@ export const useChatStreaming = (
   callbacks: UseChatCallbacksReturn,
   config: SSEConfig
 ): UseChatStreamingReturn => {
-  const { sessionId, setSessionId } = state;
+  const { sessionId, setSessionId, cancelInProgressRef } = state;
   const {
     onStep,
     onChunk,
@@ -370,6 +370,9 @@ export const useChatStreaming = (
       userMessage: Message,
       contextLinkMode?: 'linked' | 'independent'
     ) => {
+      // 2026-09-15 小欧 [41]v1.3: F5 executeSend起点兜底复位 — 极端终态帧丢失时新消息必达
+      cancelInProgressRef.current = false;
+
       // 1. 启动等待计时器
       setLoading(true);
       setWaitTime(0);
