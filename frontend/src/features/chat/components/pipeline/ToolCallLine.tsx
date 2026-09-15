@@ -55,6 +55,7 @@ import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 [40]①S7: 复用折叠箭头组件 — 小欧-2026-09-15
 import { DropletIcon, type DropletStatus } from '@/components/DropletIcon'; // 2026-09-15 老杨: 水滴图标替代字符符号 — 老杨-2026-09-15
+import { GearIcon } from '@/components/GearIcon'; // 2026-09-15 老杨: 齿轮图标替代🔧emoji — 老杨-2026-09-15
 import {
   Colors,
   BorderWidth,
@@ -194,39 +195,24 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     >
       {/* 2026-09-01 小欧(北京老陈定案: 完全独立展开+独立观察): 第一行集合行纯文本展示, 无全局展开按钮; 每工具子行独立展开/收起, 点子行任意位置toggle该工具; 展开区只显示该工具完整observation(ToolResultRenderer), 不再有"参数:全集"重复 */}
       <div>
-        <span>
-          🔧 {firstLine} {attemptLabel}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: Spacing.SM }}>
+          <GearIcon />
+          {firstLine} {attemptLabel}
         </span>
         {/* 2026-09-03 小欧(北京老陈定案): 摘要头先显; action 等待期摘要头下同容器挂齿轮+扳手组合动画; 工具子行(参数+结果+展开)等 observation 到达(全部N个结果一起)才渲染; 单/并行统一 */}
         <div style={{ marginTop: Spacing.XS }}>
           {/* 执行等待动画(results 空=action 已到未执行完); observation 到即卸载, 同容器被子行盖住 */}
           {/* 2026-09-03 小欧 Bug-3/4: 动画仅 tools 非空且结果未达(results空)显示; 超时降级灰字提示; tools 空/结果空显占位防空壳 */}
           {!hasResult && tools.length === 0 && deniedCount === 0 && (
-            <span
-              style={{
-                color:
-                  Colors.ORANGE_RED /* 2026-09-06 小欧: 灰字不醒目, 北京老陈定案改火山橘红 */,
-                fontSize: FontSize.SECONDARY,
-              }}
-            >
+            <span style={{ color: Colors.ORANGE_RED, fontSize: FontSize.SECONDARY }}>
               工具调用无结果(已全部被安全拦截或未返回)
             </span>
           )}
-          {!hasResult &&
-            tools.length > 0 &&
-            interrupted &&
-            deniedCount === 0 && (
-              // 2026-09-06 小欧 B2: action 先于弹窗→被拒/拦截/超时工具无 observation, 齿轮停转改提示字, 防空转
-              <span
-                style={{
-                  color:
-                    Colors.ORANGE_RED /* 2026-09-06 小欧: 北京老陈定案 灰字改火山橘红更醒目 */,
-                  fontSize: FontSize.SECONDARY,
-                }}
-              >
-                未执行：未获用户允许／被安全拦截／确认超时
-              </span>
-            )}
+          {!hasResult && tools.length > 0 && interrupted && deniedCount === 0 && (
+            <span style={{ color: Colors.ORANGE_RED, fontSize: FontSize.SECONDARY }}>
+              未执行：未获用户允许／被安全拦截／确认超时
+            </span>
+          )}
           {!hasResult && tools.length > 0 && !interrupted && !replay && (
             <ToolWaitingIcon />
           )}
@@ -259,6 +245,13 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                 ...(obsStep as ExecutionStep),
                 tool_result: singleResult,
               };
+              const toggleTool = () => {
+                setExpanded((prev) => {
+                  const next = [...prev];
+                  next[i] = !prev[i];
+                  return next;
+                });
+              };
               return (
                 <div
                   key={t.tool ? `${t.tool}-${i}` : `tool-${i}`}
@@ -269,21 +262,11 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                     tabIndex={0}
                     aria-expanded={isOpen}
                     style={{ cursor: 'pointer' }}
-                    onClick={() => {
-                      setExpanded((prev) => {
-                        const next = [...prev];
-                        next[i] = !prev[i];
-                        return next;
-                      });
-                    }}
+                    onClick={toggleTool}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        setExpanded((prev) => {
-                          const next = [...prev];
-                          next[i] = !prev[i];
-                          return next;
-                        });
+                        toggleTool();
                       }
                     }}
                   >

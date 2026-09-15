@@ -62,6 +62,8 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
     return text;
   }, [text, overflow, expanded, maxChars]);
 
+  const toggle = () => setExpanded((prev) => !prev);
+
   return (
     <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
       {shown}
@@ -72,13 +74,13 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
           aria-expanded={expanded}
           onClick={(e) => {
             e.stopPropagation();
-            setExpanded(!expanded);
+            toggle();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               e.stopPropagation();
-              setExpanded(!expanded);
+              toggle();
             } else {
               e.stopPropagation();
             }
