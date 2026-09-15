@@ -26,6 +26,7 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): useSSE删除第12参externalExecutionStepsRef(唯一真源独立useRef),
 //   此处删除传参state.executionStepsRef(285行), executionStepsRef仍从useSSE解构(264行) — 小欧-2026-09-10
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
+// 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F5代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -370,7 +371,7 @@ export const useChatStreaming = (
       userMessage: Message,
       contextLinkMode?: 'linked' | 'independent'
     ) => {
-      // 2026-09-15 小欧 [41]v1.3: F5 executeSend起点兜底复位 — 极端终态帧丢失时新消息必达
+      // 2026-09-15 小欧 [41]v1.3: executeSend起点兜底复位 — 极端终态帧丢失时新消息必达
       cancelInProgressRef.current = false;
 
       // 1. 启动等待计时器

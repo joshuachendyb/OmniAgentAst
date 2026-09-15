@@ -4,6 +4,7 @@
 // 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「与后端消息不匹配的必须一致起来」): 3 处「cancelled 事件」文案
 //   对齐后端现行取消终态契约 type=final+outcome=cancelled(waitForCancelEvent 2处 + handleCancel 1处)——取消事件已不存在,
 //   取消收尾单一由 final+outcome=cancelled 承担(sseParser 4.4.1 所述), 日志反映系统实际 — 小欧-2026-09-09
+// 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F2/F4'代号, 改描述性术语(与commit b79b79b清理口径一致) — 小欧-2026-09-15 20:13:04
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
  *
@@ -154,7 +155,7 @@ export const useChatTaskControl = (
    * 4. 断开SSE连接
    * 5. 更新UI状态
    */
-  // 2026-09-15 小欧 [41]v1.3: F2删病根断连+F4'复位点唯一化
+  // 2026-09-15 小欧 [41]v1.3: 删强断连病根+取消失败复位点唯一化
   // 取消确认由 SSE 自然流到达的 final+cancelled 承载，前端不再主动 disconnect
   const handleCancel = useCallback(async () => {
     // 【防重复点击】如果正在取消中，忽略后续点击
@@ -176,7 +177,7 @@ export const useChatTaskControl = (
           // ✅【关键修复】不立即断开连接！等待后端发送cancelled/final事件
           const result = await callCancelApi(taskIdToCancel, sessionId);
 
-          // F2: 删除 await waitForCancelOrTimeout() — 死代码（3s<5s，5s分支永不触发）
+          // 删除多余等待: await waitForCancelOrTimeout() — 死代码（3s<5s，5s分支永不触发）
 
           // ✅ 停止所有进行中的倒计时
           if (waitTimerRef.current) {
@@ -184,7 +185,7 @@ export const useChatTaskControl = (
             waitTimerRef.current = null;
           }
 
-          // F2: 删除 disconnect(true, true) — 病根（掐死SSE通道，丢final帧的唯一动作）
+          // 删除强制断连 disconnect(true, true) — 病根（掐死SSE通道，丢final帧的唯一动作）
 
           // 显示后端返回的具体消息
           showTaskResultMessage('cancel', result.message);
@@ -212,21 +213,21 @@ export const useChatTaskControl = (
           // ✅ 即使出错也要确保UI状态更新
           resetUiFlags();
 
-          // F4'兜底：取消失败/无取消终态帧路径，显式复位闸，防S6永锁
+          // 取消失败/无取消终态帧路径兜底：显式复位闸，防取消闸永锁
           cancelInProgressRef.current = false;
         }
       } else {
         // 【问题4修复】即使没有taskId，也要更新UI状态
         resetUiFlags();
 
-        // F4'兜底：无taskId路径，显式复位闸，防S6永锁
+        // 无taskId路径兜底：显式复位闸，防取消闸永锁
         cancelInProgressRef.current = false;
 
         // 显示提示
         showTaskResultMessage('cancel', '任务尚未开始或已结束，请求已取消');
       }
     } finally {
-      // F4': finally不再无条件复位（复位点唯一化：成功取消路径由 isCancelEvent 分支复位）
+      // 复位点唯一化：finally不再无条件复位（成功取消路径由取消终态帧 isCancelEvent 分支复位）
       // 仅保留兜底：若 try/catch 都未复位（极端异常），finally 兜底防永久锁死
       if (cancelInProgressRef.current) {
         cancelInProgressRef.current = false;

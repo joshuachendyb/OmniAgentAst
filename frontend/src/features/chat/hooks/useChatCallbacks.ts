@@ -53,6 +53,7 @@
 //   原 hasThoughtContent 兜底是 thought 泄漏到实时流时期"把思考草稿顶成回答"的历史错逻辑(老陈指正
 //   "前端的毛病"), 现回归"真实产出正文"判断: final.response ∨ final.thought — 小欧-2026-09-11
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
+// 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F3代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -199,7 +200,7 @@ export const useChatCallbacks = (
         step.type === 'final' && step.outcome === 'cancelled';
       if (isCancelEvent) {
         hasReceivedCancelEventRef.current = true;
-        cancelInProgressRef.current = false; // F3: 闸解得，后续帧自然放行
+        cancelInProgressRef.current = false; // 收到取消终态帧即解闸，后续帧自然放行
       }
 
       // ✅ 如果正在取消中，跳过非取消且与终态无关的事件（避免旧 chunk/步骤污染 UI）
