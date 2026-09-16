@@ -40,6 +40,8 @@
 #   [修复] user_rejected 事件补 tool_name=tool_name(被拒工具名, 拒绝语义自包含) — 小欧-2026-09-06
 # 2026-09-06 小欧 BUG-2 拒绝计数错键修复补全(问题挖掘文档六.6.2): 与 user_rejected 同根——危险型拦截 blocked
 #   事件亦未带 tool_name(计数回退主工具名, 同键跨拦截累计漂移); [修复] blocked 事件补 tool_name=tool_name — 小欧-2026-09-06
+# 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①行98 type="error"→"rejected", 新增 reject_type="sandbox"; ②行123 type="user_rejected"→"rejected", 新增 reject_type="user" - 小欧-2026-09-17
+# 2026-09-17 小欧 会审V3(#11): rejected content/denied_list 去"沙箱安全检查未通过:"前缀(重复冗长+双源不同长), 同源同文 - 小欧-2026-09-17
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -91,12 +93,15 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         logger.info(f"[sandbox] bypass下未完成有效验证,按bypass语义直接放行: tool={tool_name}, reason={pre.blocked_reason}")
         return True, []
     if not pre.needs_ruling:
+        # 2026-09-17 小欧 会审V3(#11): 去"沙箱安全检查未通过:"前缀(结果语义已含"沙箱内执行失败",
+        #   且 blocked_reason 现附 stderr 尾部供 LLM 自纠, 前缀只会重复冗长; denied_list 喂 LLM 与 content
+        #   进前端同源同文, 不再双源不同长) — 小欧-2026-09-17
         logger.warning(f"[sandbox] 危险型拦截拒绝: tool={tool_name}, reason={pre.blocked_reason[:200]}")
-        denied_list.append((tool_name, f"沙箱预检未通过: {pre.blocked_reason}", call))
+        denied_list.append((tool_name, pre.blocked_reason, call))
         return False, [agent._step_emitter.emit(MetaStep(
-            step=step, type="error",
-            content=f"沙箱预检未通过: {pre.blocked_reason}",
-            error_type="blocked", severity="warn",
+            step=step, type="rejected",
+            content=pre.blocked_reason[:80],
+            reject_type="sandbox",
             tool_name=tool_name))]
     # needs_ruling: 改走网关(唯一暂停源头)。网关内统一:
     #   paused先于wait到达 / SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 — 小健 2026-09-05
@@ -115,12 +120,13 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")
         return True, []          # paused/resumed 已由网关publish, 此处不再组Step — 小健 2026-09-05
     logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
-    denied_list.append((tool_name, "沙箱预检未完成验证且用户拒绝执行", call))
+    denied_list.append((tool_name, "用户拒绝执行", call))
     # 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 独立 type="user_rejected" 单独发 (与 safety_gate 拒绝路径同构)
     # 2026-09-06 小欧 根因修复(b2 test_02/06/07): user_rejected 必须带被拒工具名 tool_name, 否则拒绝计数回退主工具致错键 — 小欧-2026-09-06
     return False, [agent._step_emitter.emit(MetaStep(
-        step=step, type="user_rejected",
-        content=f"用户拒绝执行(预检未完成验证): {tool_name}", tool_name=tool_name))]
+        step=step, type="rejected",
+        content=f"用户拒绝执行: {tool_name}", reject_type="user",
+        tool_name=tool_name))]
 
 
 # ════════════════════════════════════════════════════════════

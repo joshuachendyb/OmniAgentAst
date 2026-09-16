@@ -3,6 +3,7 @@
 # 编辑历史:
 # 2026-09-05 小健 8.4拆分(react_cycle.py拆四): 提取 常量(原行154-176)+守卫函数群(原行179-285),
 #   逐字复制只改import — 死循环/截断/可恢复错误 判定与阈值, 供 loop/dispatch/step 共用
+# 2026-09-17 小欧 - 统一拒绝事件 type="rejected": _RECOVERABLE_ERRORS 新增 "rejected"(原只有 "blocked", "timeout") - 小欧-2026-09-17
 
 """react_inference — 状态推断基元(常量 + 守卫判定函数群)
 
@@ -41,7 +42,7 @@ _MAX_CONSECUTIVE_SAME_TOOL_CALLS = 5   # 硬终止阈值: count>=5(第5次相同
 #   引导自相矛盾; 纳入可恢复后由 _deny_counts 累计>=3 才 FAILED(与 user_rejected 同语义)。
 # 2026-08-24 - 小欧 - 后端卡死修复: 每轮 token 累计落库(update_task_accumulation/update_session_accumulation)与任务启动 token 基线读取(query_session/query_chain_accumulation)
 #   经 db.atxn 进子线程 offload 出事件循环, loop 不再被同步 sqlite3 I/O + time.sleep 锁重试独占, 根治 /health 超时/console 冻结; storage.* 与连接管理零改动复用
-_RECOVERABLE_ERRORS = {"user_rejected", "blocked", "timeout"}
+_RECOVERABLE_ERRORS = {"rejected", "blocked", "timeout"}
 
 
 def handle_react_error(agent, error, step):

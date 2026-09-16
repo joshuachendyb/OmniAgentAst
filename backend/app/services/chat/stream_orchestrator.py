@@ -142,6 +142,7 @@
 #   任务不存在留 warning), 消除重连 zero-log——谁何时以 after_seq 发起重连、续传多少帧均可查;
 #   ②stream_reader done 退出日志追加 is_reconnect/起点seq/续传帧数, 首连(after_seq=0)与重连可区分,
 #   多 client 连同一 task 可分辨, 对账闭环(after_seq→续传帧数→已转发→含final_stats) — 小欧-2026-09-13
+# 2026-09-17 小欧 - 统一拒绝事件 type="rejected": _SSE_FORWARD_TYPES 新增 "rejected", 删除 "user_rejected" - 小欧-2026-09-17
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -467,7 +468,7 @@ _SSE_FORWARD_TYPES = frozenset({
     # 仅SSE(实时信号, 落库由 agent_runner 扫描分支处理)
     "chunk", "thought-start",
     "error", "usage", "paused", "resumed", "retrying",
-    "user_rejected", "stats", "context_overview", "truncated",
+    "rejected", "stats", "context_overview", "truncated",
     # 防御性保留: 当前无独立发射源, 若未来新增取消通知类可转发
     "cancelled",
 })

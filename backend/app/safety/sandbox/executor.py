@@ -11,6 +11,8 @@
 #   BUG-F(中): F-B 扫描正则只认 C:\ 漏判 C:/ 正斜杠; _OUTSIDE_TARGET_RE 改 [\\/](小欧)
 #   全部修复经"修复前 FAIL/修复后 PASS"逐类反证, 功能只增强不退化
 # 2026-08-29 - 小沈 - 修复#18: shell/file_op 预检的同步 backend.run(subprocess 最长300s)经 asyncio.to_thread 离载到子线程, 释放事件循环不被冻结; 返回结构 BackendResult 不变
+# 2026-09-17 小欧 会审V3(#10): 规则5/7 blocked_reason 落实 v1.22 W4 承诺——附带 stderr 尾部供 LLM 自纠(空则不加后缀, 截200字符) - 小欧-2026-09-17
+# 2026-09-17 小欧 - 优化reject原因文字可读性: ①类方法中5处reject原因简化(去技术术语/截断过长内容); ②shell预检中5处reject原因简化; ③file_op预检中6处reject原因简化 - 小欧-2026-09-17
 import asyncio
 import os
 import re
@@ -51,6 +53,15 @@ def _is_shell_tool(tool_name: str) -> bool:
     判定(该枚举仅'which'); 显式列 shell 执行类归一名, 新增须同步加入本集合"""
     _shell = frozenset({"shell", "executeshellcommand", "executeshellcommandsafety"})
     return normalize_tool_name(tool_name) in _shell
+
+
+def _attach_stderr_tail(reason: str, stderr_tail: str) -> str:
+    """v1.22 W4 承载落码: 危险型拒绝 reason 附 stderr 尾部供 LLM 自纠(4.2 承诺 stderr 原文随行),
+    空则不加后缀避免悬空分隔符; 截 200 字符收敛进 LLM 反馈(全文已存 PreCheckResult.stderr_tail) — 小欧-2026-09-17"""
+    tail = (stderr_tail or "").strip()
+    if not tail:
+        return reason
+    return f"{reason} | {tail[:200]}"
 
 # —— F-B 写意图扫描器(v1.19 P4 真实实现, v1.21 Z1/Z10 补重定向与词表): 只判越界写意图, 不判危险等级 ——
 _WRITE_CMD_RE = re.compile(
@@ -165,7 +176,7 @@ class SandboxExecutor:
         if result.timed_out:
             # 规则2 超时: run 被硬上限截断, 未完成有效验证(数据来源 BackendResult.timed_out, v1.17 N4)
             return PreCheckResult(passed=False, needs_ruling=True,
-                                  blocked_reason=f"预检超硬上限{self.max_timeout_sec}s被截断",
+                                  blocked_reason=f"执行预检超时（超过{self.max_timeout_sec}秒）",
                                   impacts=impacts,
                                   stdout_tail=result.stdout_tail, stderr_tail=result.stderr_tail)
         escaped = [i for i in impacts if not self._in_workspace_or_temp(i.path)]
@@ -177,26 +188,24 @@ class SandboxExecutor:
             # v1.21 Z2 明示: diff_impacts 只在工作区 rglob, 本分支当前不可达(防御性预留)——
             # 运行期越界探测完全依赖 run 前的 F-B 预扫描(守卫②); 未来外扩 %TEMP%/全盘增量扫描后才可激活
             return PreCheckResult(passed=False, needs_ruling=True,
-                                  blocked_reason="检测到工作区外影响: " + ", ".join(i.path for i in escaped),
+                                  blocked_reason="操作影响范围超出沙箱",
                                   impacts=impacts,
                                   stdout_tail=result.stdout_tail, stderr_tail=result.stderr_tail)
         if impacts:
             # 规则5 危险型: rc!=0 且 impacts 非空且全在工作区内("非空"前置=v1.17 N6 防空集陷阱);
-            # v1.22 W4: stderr 尾部随反馈下发(4.2 条件1/2 承诺的承载)
+            # v1.22 W4: stderr 尾部随反馈下发(4.2 条件1/2 承诺的承载); 2026-09-17 会审V3(#10)落码
             return PreCheckResult(passed=False,
-                                  blocked_reason=(f"沙箱内试执行失败(rc={result.rc})且产生工作区影响面"
-                                                  f" | stderr: ...{result.stderr_tail[-256:]}"),
+                                  blocked_reason=_attach_stderr_tail("沙箱内执行失败，影响了文件", result.stderr_tail),
                                   impacts=impacts,
                                   stdout_tail=result.stdout_tail, stderr_tail=result.stderr_tail)
         if any(p in result.stderr_tail.lower() for p in _ENV_STDERR_PATTERNS):
             # 规则6 环境性失败: 非命令有害, 转用户裁决避免 LLM 原样重发死循环(v1.10 FP2)
             return PreCheckResult(passed=False, needs_ruling=True,
-                                  blocked_reason=f"未完成有效验证(环境性): ...{result.stderr_tail[-256:]}",
+                                  blocked_reason="环境问题导致验证未完成",
                                   stderr_tail=result.stderr_tail)
-        # 规则7 其余 rc!=0: 危险型反馈 LLM 自纠(stderr 原文随行, v1.22 W4)
+        # 规则7 其余 rc!=0: 危险型反馈 LLM 自纠(stderr 原文随行, v1.22 W4; 2026-09-17 会审V3(#10) attach 落码)
         return PreCheckResult(passed=False,
-                              blocked_reason=(f"沙箱内试执行失败(rc={result.rc})"
-                                              f" | stderr: ...{result.stderr_tail[-256:]}"),
+                              blocked_reason=_attach_stderr_tail("沙箱内执行失败", result.stderr_tail),
                               stdout_tail=result.stdout_tail, stderr_tail=result.stderr_tail)
 
     def _in_workspace_or_temp(self, path: str) -> bool:
@@ -219,14 +228,14 @@ class SandboxExecutor:
             logger.warning(f"[sandbox][exec] 声明timeout超硬上限转HITL: declared={declared}s, 上限={self.max_timeout_sec}s")
             return PreCheckResult(
                 passed=False, needs_ruling=True,
-                blocked_reason=f"工具声明 timeout={declared}s 超硬上限 {self.max_timeout_sec}s, 等待不可接受, 转用户裁决",
+                blocked_reason=f"工具执行超时设置不合理（{declared}秒），请调整后重试",
             )
         # 守卫②(F-B): 命令文本越界写意图扫描 -> 不运行 backend, 直接转 HITL(保 2.1 预检不改状态)
         if _scan_command_write_intent(command):
             logger.warning(f"[sandbox][exec] 命令含越界写意图, 转HITL: command_head={command[:120]!r}")
             return PreCheckResult(
                 passed=False, needs_ruling=True,
-                blocked_reason="命令含越界写意图(绝对路径/UNC/注册表驱动器/$env/~/), sandbox 不执行, 转用户裁决",
+                blocked_reason="命令包含危险操作，需要用户确认",
             )
         # 白名单快速通道(v1.17 N3/N5 定序: 必须在 F-B 扫描之后判定, 防重定向逃逸绕过扫描)
         if _is_readonly_whitelisted(command):
@@ -252,7 +261,7 @@ class SandboxExecutor:
                 # v1.22 W5: 3.1.1 工作区上限接线(原方法存在但无人调用)——超限拒绝预检转 HITL 强确认
                 logger.warning(f"[sandbox][exec] 工作区超上限转HITL: used={used}B, 上限={self.max_workspace_mb}MB")
                 return PreCheckResult(passed=False, needs_ruling=True,
-                                       blocked_reason=f"沙箱工作区写入 {used} 字节超上限 {self.max_workspace_mb}MB, 转用户裁决",
+                                       blocked_reason=f"沙箱工作区写入数据量超限（{used}字节）",
                                        impacts=impacts,
                                        stdout_tail=result.stdout_tail, stderr_tail=result.stderr_tail)
             return self._classify(result, impacts)   # 4.2 判定分流算法(规则2-7)
@@ -260,13 +269,13 @@ class SandboxExecutor:
             # R3(v1.19 P6): Job Object 收编失败(进程已提权等, assign 上抛非静默) → 升级 HITL 强确认而非静默放行
             logger.warning(f"[sandbox][exec] Job Object 收编失败转HITL: {exc}")
             return PreCheckResult(passed=False, needs_ruling=True,
-                                  blocked_reason=f"Job Object 收编失败, 转用户裁决: {exc}")
+                                  blocked_reason="沙箱环境配置异常，需要用户确认")
         except Exception as exc:
             # v1.21 Z9: 非 OSError 异常(编码/内部错误/注入测试)不得穿透到 action_handler 炸掉整批调用,
             # 统一转 needs_ruling 交用户裁决(资源由下方 finally 回收, 对齐 8.5 异常注入用例)
             logger.warning(f"[sandbox][exec] 预检内部异常转HITL: {exc}")
             return PreCheckResult(passed=False, needs_ruling=True,
-                                  blocked_reason=f"预检器内部异常, 未完成有效验证: {exc}")
+                                  blocked_reason="沙箱预检器内部异常，需要用户确认")
         finally:
             backend.cleanup()      # TerminateJobObject 杀树 + CloseHandle(8.7 句柄守恒断言; v1.21 Z4 含 proc 兜底收割)
             try:
@@ -284,7 +293,7 @@ class SandboxExecutor:
             # 重演副本, rc=0 产生虚假 passed=True 放行(预检形同虚设); 一律转用户裁决
             logger.warning(f"[sandbox][exec] 未支持操作类型转HITL: op={normalized}")
             return PreCheckResult(passed=False, needs_ruling=True,
-                                  blocked_reason=f"沙箱预检器未支持该操作类型: {normalized}, 转用户裁决")
+                                  blocked_reason=f"沙箱预检器暂不支持此操作类型: {normalized}")
         # 参数别名归一(与真实工具分发一致: tools_alias_mapper.PARAM_ALIASES 将 src/file/target/source
         # 等映射到 path/dest)。不归一则读不到源路径, 会以 Path("") 退化为复制当前工作目录, 预检形同虚设(BUG-A)
         params = normalize_params(normalized, params)[0]
@@ -302,7 +311,7 @@ class SandboxExecutor:
             # 源不存在: 无法做有效预演(复制不存在的源无任何意义), 转 HITL 裁决而非退化为复制 cwd 误放行(BUG-A/BUG-D)
             logger.info(f"[sandbox][exec] 源不存在转HITL: {src}")
             return PreCheckResult(passed=False, needs_ruling=True,
-                                  blocked_reason=f"源不存在，沙箱预检未完成有效验证: {src}")
+                                  blocked_reason=f"源文件不存在，无法执行操作: {src.name}")
         _backend = self._dispatch_backend()   # _backend=None 兜底: 若此处异常, finally 判 None 不误清
         workspace = SandboxWorkspace(max_workspace_mb=self.max_workspace_mb,
                                      max_shadow_mb=self.max_shadow_mb)
@@ -313,7 +322,7 @@ class SandboxExecutor:
                 # 超限跳过副本 → 未完成有效验证转裁决(3.1.1 降级规则, FP4 同通道)
                 logger.warning(f"[sandbox][exec] 目标超影子副本上限转HITL: {src}, 上限={self.max_shadow_mb}MB")
                 return PreCheckResult(passed=False, needs_ruling=True,
-                                      blocked_reason=f"目标超过影子副本上限{self.max_shadow_mb}MB, 未完成有效验证: {src}")
+                                      blocked_reason=f"文件过大（超过{self.max_shadow_mb}MB），无法在沙箱中验证")
             workspace.snapshot_files()   # v1.21 Z3: 以副本为 diff 基线, 防副本自身被误报为 added 影响面
             op_result = await self._replay_file_op_on_replica(_backend, normalized, params, replica, workspace.path)
             impacts = workspace.diff_impacts()
@@ -322,19 +331,19 @@ class SandboxExecutor:
                 # v1.22 W5: 工作区上限接线(同 shell 流程)
                 logger.warning(f"[sandbox][exec] 工作区超上限转HITL(file_op): used={used}B, 上限={self.max_workspace_mb}MB")
                 return PreCheckResult(passed=False, needs_ruling=True,
-                                       blocked_reason=f"沙箱工作区写入 {used} 字节超上限 {self.max_workspace_mb}MB, 转用户裁决",
+                                       blocked_reason=f"沙箱工作区写入数据量超限（{used}字节）",
                                        impacts=impacts, stderr_tail=op_result.stderr_tail)
             return self._classify(op_result, impacts)   # 复用同一套判定分流算法(DRY)
         except OSError as exc:
             # v1.22 W2: 影子副本/重演失败(源被占用/不可读等) → 未完成有效验证转裁决, 不穿透炸批(对齐 shell 流 Z9)
             logger.warning(f"[sandbox][exec] 影子副本预演失败转HITL: {exc}")
             return PreCheckResult(passed=False, needs_ruling=True,
-                                  blocked_reason=f"影子副本预演失败, 转用户裁决: {exc}")
+                                  blocked_reason="文件操作预演失败，需要用户确认")
         except Exception as exc:
             # v1.22 W2: 非 OSError 异常同样不穿透(对齐 shell 流 Z9)
             logger.warning(f"[sandbox][exec] 文件预检内部异常转HITL: {exc}")
             return PreCheckResult(passed=False, needs_ruling=True,
-                                  blocked_reason=f"文件预检器内部异常, 未完成有效验证: {exc}")
+                                  blocked_reason="文件预检器内部异常，需要用户确认")
         finally:
             if _backend is not None:
                 try:

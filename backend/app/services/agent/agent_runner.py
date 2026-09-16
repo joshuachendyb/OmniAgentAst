@@ -145,6 +145,8 @@
 # 2026-09-13 小欧 - [30]§8.2 TDD P3(行258-259): X2 删除标记注释改述——原称"L244-251 删除", 但 L244-248
 #   (缓冲缺省 ensure create_stream_buffer) 仍是活代码, 注释与实际矛盾误导读者; 改为仅述"长短判定/终态缓冲/
 #   finally 覆写机制已删除", 明确缓冲 ensure 保留在役
+# 2026-09-17 小欧 - 统一拒绝事件 type="rejected": 行433 SSE集合新增 "rejected"(原 "user_rejected") - 小欧-2026-09-17
+# 2026-09-17 小欧 会审V3(#13): 行435 SSE仅转发集合注释更新(user_rejected 表述更正为已统一 rejected, 原注释过时) - 小欧-2026-09-17
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -430,8 +432,10 @@ async def run_agent_in_background(
                 #   fix"拦截/拒绝的 action 不落库"不变式 + 消除全拒场景"有action无observation"DB残步
                 if not event_dict.get("_live_only"):
                     await _persist(event_dict)
-            elif event_type in {"error", "usage", "paused", "resumed", "retrying", "cancelled", "user_rejected"}:
-                pass  # 4C(5.8.5): 仅SSE(§10.4.4 P3/P5/P6), 已 publish 入缓冲由 stream_reader 实时读, 订阅体不再 _append 防双发; 方案C(2026-09-06 小欧): user_rejected 独立类型补入(拒绝仅SSE不落库, total_steps 不虚增) — 小欧-2026-09-06
+            elif event_type in {"error", "usage", "paused", "resumed", "retrying", "cancelled", "rejected"}:
+                pass  # 4C(5.8.5): 仅SSE(§10.4.4 P3/P5/P6), 已 publish 入缓冲由 stream_reader 实时读, 订阅体不再 _append 防双发;
+                      # 2026-09-17 小欧 会审V3(#13): 上述集合与 _SSE_FORWARD_TYPES 闭合一致; 原独立 user_rejected 类型已于
+                      # 2026-09-16 统一为 rejected(此处即该项, 拒绝仅SSE不落库, total_steps 不虚增) — 小欧-2026-09-17
             else:
                 # X2(2026-09-12 小欧): 长短分流已上移发射侧(4.1.1 _emit_publish), 此处 event_log 的 final 即「应转发形态」;
                 #   DB 落库取发射侧缓存的长条(完整 response, _pending_final_db), 保 DB=长条恒等式 +

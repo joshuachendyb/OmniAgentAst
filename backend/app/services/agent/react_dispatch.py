@@ -21,6 +21,8 @@
 #   精确分键, 不再全落主工具名下; ②成功重置改按本轮 LLM 实际发出工具集清桶(fc_context.tool_calls→function.name,
 #   与 llm_response_builder.py:41 同源; 顶层无 tool_calls, 候选diff字段已按真实结构核验修正),
 #   不再误用主工具名清错桶——被拒工具计数跨轮永不归零的病根消除 — 小欧-2026-09-06
+# 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①行78 _EV_DENIED 改为 "rejected"(原 "user_rejected"); ②行160 _deny.pop 改为 "rejected"(原 "user_rejected") - 小欧-2026-09-17
+# 2026-09-17 小欧 会审V3整改(#12/#15): ①失败文案 err_type 英文→中文映射("工具 X 被反复拒绝/拦截/超时"); ②成功重置清桶补 pop(("timeout")) 旧键 - 小欧-2026-09-17
 
 """react_dispatch — 类型分派 + 状态推断
 
@@ -30,7 +32,7 @@
 """
 
 import time
-from typing import List
+from typing import Dict, List
 from app.logger import log_and_print
 from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_cancelled, set_completed
 from app.services.agent.handlers import (
@@ -75,7 +77,9 @@ async def _dispatch_handler(agent, llm_response):
     else:
         handler = handle_answer(agent, llm_response)
 
-    _EV_FINAL, _EV_RETRY, _EV_ERROR, _EV_DENIED = "final", "retrying", "error", "user_rejected"
+    _EV_FINAL, _EV_RETRY, _EV_ERROR, _EV_DENIED = "final", "retrying", "error", "rejected"
+    # 2026-09-17 小欧 会审V3(#12): 失败文案 err_type 英文→中文映射(用户可见, 原样透出 "rejected"/"blocked"/"timeout" 生硬) — 小欧-2026-09-17
+    _ERR_CN: Dict[str, str] = {"rejected": "拒绝", "blocked": "拦截", "timeout": "超时"}
     seen_types = set()
     last_denial_event = None
     final_event = None
@@ -137,7 +141,7 @@ async def _dispatch_handler(agent, llm_response):
                     #   连续同签名死循环由场景F count>=5(第5次)硬终止兜底; 非连续死胡同(签名变化重置标记)
                     #   仍由本处累计≥3次拦截, 语义不退化。 — 小欧 2026-08-08
                     if not getattr(agent, "_warned_same_tool_loop", 0):
-                        set_failed(agent, f"工具 {_tool} 被反复{err_type}(≥3次), LLM陷入死胡同, 停止循环")
+                        set_failed(agent, f"工具 {_tool} 被反复{_ERR_CN.get(err_type, err_type)}(≥3次), LLM陷入死胡同, 停止循环")
         else:
             set_failed(agent, error_msg)
     else:
@@ -157,8 +161,10 @@ async def _dispatch_handler(agent, llm_response):
             if _tools:
                 _deny = getattr(agent, "_deny_counts", {}) or {}
                 for _t in _tools:
-                    _deny.pop((str(_t), "user_rejected"), None)
+                    _deny.pop((str(_t), "rejected"), None)
                     _deny.pop((str(_t), "blocked"), None)
+                    # 2026-09-17 小欧 会审V3(#15): 补 timeout 键清理(旧 error(channel) 时代的键, 热更场景残留永不清) — 小欧-2026-09-17
+                    _deny.pop((str(_t), "timeout"), None)
                 agent._deny_counts = _deny
 
     # 4C(5.8.1): return _dispatch_events 置于状态推断之后(终态声明在主循环 LLM 轮内先行, 时序与现状一致) — 小欧-2026-09-06

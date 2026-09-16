@@ -28,6 +28,7 @@
 # 2026-09-06 小欧 BUG-2 拒绝计数错键修复补全(问题挖掘文档六.6.2): 与 user_rejected 同根——blocked(拦截)/timeout(超时)
 #   事件亦未带被拒工具名 tool_name, react_dispatch 计数同样回退主工具名;_deny_counts 同键跨拦截/超时累计漂移;
 #   [修复] blocked/timeout 事件均补 tool_name=_cn(拒绝语义自包含, react_dispatch 事件级优先取数) — 小欧-2026-09-06
+# 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①行82 type="error"→"rejected", 新增 reject_type="safety"; ②行125 type="error"→"rejected", 新增 reject_type="timeout"; ③行137 type="user_rejected"→"rejected", 新增 reject_type="user" - 小欧-2026-09-17
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -79,7 +80,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 # 2026-08-28 小欧 决策日志审计: 拦截决策日志(SRP); 3B: blocked错误併入列表 — 小欧 2026-09-06
                 logger.warning(f"[action] step={step} blocked: tool={_cn} reason={safety_result.message}")
                 _events.append(agent._step_emitter.emit(MetaStep(
-                    step=step, type="error", content=safety_result.message, error_type="blocked", severity="warn",
+                    step=step, type="rejected", content=safety_result.message, reject_type="safety",
                     tool_name=_cn
                 )))
                 _denied.append((_cn, f"被安全策略拦截: {safety_result.message}", call))
@@ -122,10 +123,10 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         # #11 fix: 超时与拒绝分流 — 小欧 2026-07-18 (3B: 错误併入列表)
                         logger.warning(f"[action] step={step} timeout: tool={_cn}")
                         _events.append(agent._step_emitter.emit(MetaStep(
-                            step=step, type="error", content=f"工具确认超时未响应: {_cn}", error_type="timeout", severity="warn",
+                            step=step, type="rejected", content=f"工具执行确认超时: {_cn}", reject_type="timeout",
                             tool_name=_cn
                         )))
-                        _denied.append((_cn, "确认超时未响应", call))
+                        _denied.append((_cn, "确认超时", call))
                     else:
                         logger.warning(f"[action] step={step} rejected: tool={_cn}")
                         # 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 独立 type="user_rejected" 单独发
@@ -134,7 +135,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         # 2026-09-06 小欧 根因修复(b2 test_02/06/07): user_rejected 必须带被拒工具名 tool_name,
                         #   否则 react_dispatch 回退主工具名 → 多工具并行拒绝死胡同计数记错键 — 小欧-2026-09-06
                         _events.append(agent._step_emitter.emit(MetaStep(
-                            step=step, type="user_rejected", content=f"用户拒绝执行工具: {_cn}", tool_name=_cn
+                            step=step, type="rejected", content=f"用户拒绝执行工具: {_cn}", reject_type="user",
+                            tool_name=_cn
                         )))
                         _denied.append((_cn, "被用户拒绝执行", call))
                     continue  # was: return  — 小欧 2026-07-18 #12 fix
