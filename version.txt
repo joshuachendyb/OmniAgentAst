@@ -1,4 +1,43 @@
-﻿v0.19.40.18
+﻿v0.19.40.19
+更新时间: 2026-09-17 06:34:45 - 小欧-2026-09-17
+## v0.19.40.18以来 变更汇总(26个commit) - 小欧-2026-09-17
+[2026-09-17 06:34:45 小欧] 汇总范围=v0.19.40.18以来全部commit(共26个: feat7/refactor1/fix4/docs14)
+
+### feat(7个):
+- 761cb9056 feat:拒绝可视化图标与类型契约(ToolCallLine/PipelineRenderer/RightViewer/infoMaps/execution) - 小欧-2026-09-17
+- 06ddf2f63 feat:rejected统一事件前端全链路(sseParser/useSSE/useChatStreaming/useTaskInfo) - 小欧-2026-09-17
+- 8b7f53e04 feat:统一拒绝事件rejected收口(executor/sandbox_gate/safety_gate/react_dispatch/react_inference/stream_orchestrator/agent_runner) - 小欧-2026-09-17
+- 8bf24a3be feat:AuthorizationModal index.tsx HITL工具名词参数显示优化v1.7(4行高+左对齐+box-sizing修正) - 小欧-2026-09-16
+- b6ba5eb76 feat:hitl_gateway 第11章T4.2参数摘要 _summarize_params(主键extract_trust_path优先+smart_truncate_text兜底80截断, 组装行包裹, 脱敏仍由_desensitize收口) - 小欧-2026-09-16
+- 5eace1cb0 feat:AuthorizationModal 第11章TDD T1-T7(统一Modal壳/去emoji/Bypass图标/Trust?图标/可访问性) - 老杨-2026-09-16
+- 023a3c84a feat:AuthorizationModal 第10章TDD S1-S5(motion/useMemo/CountdownRing隔离/Tooltip改title) - 老杨-2026-09-16
+
+### refactor(1个):
+- fc3512ed7 refactor:AuthorizationModal UI优化参数区纯文本+间距收紧 - 小欧-2026-09-16
+
+### fix(4个):
+- a6987957f fix:hitl_gateway.py HITL参数摘要截断改尾部+阈值140+换行压空格单行化 - 小欧-2026-09-16
+- b56a90509 fix:前端代码-HITLModalShell/DangerConfirm/CountdownRing ModalProps类型合法化+eslint清零(motion/role/aria-modal非antd ModalProps→transitionName空串/删除零退化, prop-types对齐惯例disable) - 小欧-2026-09-16
+- b0d35c9f3 fix:前端代码-文档[44]缺陷①③修复: AuthModal bypass勾选框禁用+registry/子目录文案区分/TrustPanel Tooltip精准化 - 小欧-2026-09-16
+- 7a1a78350 fix:后端代码-文档[44]缺陷修复+DRY重构: hitl_gateway同步def还原/trust非文件信任域提取/storage撤销侧消除双份副本 - 小欧-2026-09-16
+
+### docs(14个):
+- 3783d7b3c docs:46号文档v2.4实施状态与偏差说明 - 小欧-2026-09-17
+- c79ba33c2 docs:[46]工具执行拒绝与心跳显示优化方案-小欧-2026-09-16.md 工具执行拒绝与心跳显示优化方案 - 小欧-2026-09-16
+- aa1092dd9 docs:[43]/[44] 实施偏差修正记录 TDD落盘偏差同步(白屏根因/motion修正/norm_trust_path单源) - 小欧-2026-09-16
+- ac4f6e72f docs:[45]HITL窗口工具名词参数显示优化审核报告 v1.7(加序号+同步代码/4行/textAlign) - 小欧-2026-09-16
+- 5dff0b588 docs:FUNCTIONS.md更新 - 小欧-2026-09-16
+- dee25e8fe docs:[43]AuthorizationModal UI优化方案 新增第10/11章TDD实施流程10个用例(先红→绿) - 老杨-2026-09-16
+- 8a64c88ac docs:[44]信任机制现状分析 v1.3 TDD复核修正 - 小欧-2026-09-16
+- 1c2f7e7d9 docs:[43]AuthorizationModal UI优化方案 v1.9→v2.0 全文11章一致性核查10遍去重修正(8.6/9.2.2/9.2.3/10.2/10.4/10.5/11.1-11.5/8.2/8.5/8.6/9.1. naked path) - 老杨-2026-09-16
+- 611fa80e4 docs:[44]信任机制现状分析 v1.0 三思三省10遍核验重构第五章 - 小欧-2026-09-16
+- 55eb5dfdd docs:[44]信任机制现状分析 v0.7 第四章修改策略+第五章代码diff - 小欧-2026-09-16
+- bf93036c1 docs:[44]信任机制现状分析 v0.6 问题链路图解 - 小欧-2026-09-16
+- f452b84af docs:[44]信任机制现状分析 v0.5 全文重写: 严分确凿问题与已确认非问题 - 小欧-2026-09-16
+- 1125dcd1b docs:[43]AuthorizationModal UI优化方案重命名+v1.8老杨扩充 [44]信任机制现状分析 v0.3 - 小欧/老杨-2026-09-16
+- b5d960b1d docs:version.txt v0.19.40.17分层重置 + version_backup.txt备份入库 - 小欧-2026-09-16
+
+v0.19.40.18
 更新时间: 2026-09-15 20:54:03 - 小欧-2026-09-15
 ## v0.19.40.17以来 变更汇总(18个commit) - 小欧-2026-09-15
 [2026-09-15 20:54:03 小欧] 汇总范围=v0.19.40.17以来全部commit(共18个: feat9/fix4/refactor3/docs3)
