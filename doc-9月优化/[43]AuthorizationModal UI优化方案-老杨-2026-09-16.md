@@ -9,6 +9,8 @@
 
 | v1.9 | 2026-09-16 05:39:51 | 老杨 | 三堂会审定案(定案): **保留antd Modal**·换控件/自研=重造轮子(焦点陷阱/ESC/遮罩/ARIA全要重造, HITL安全确认场风险高, 违反KISS-DIRECT+复用优先铁规)否决; S1升级为**禁Modal入场动画 motion={false} 0ms**(优于原缩短50ms, 确定性最高), 收益按antd参考值估算·待真机实测; S1 P0→P1(因非本仓库实测) |
 
+| v2.1 | 2026-09-16 18:47:00 | 小欧 | 新增第十二章实施偏差修正记录(代码落盘后与文档不一致同步): T4 CollapsibleText default误用白屏根因/命名导入; S1+T1+T7 motion={false}→transitionName+maskTransitionName空串(antd ModalProps无motion); T7 role+aria-modal删除(antd默认渲染, 运行时探测实证); S2 request?.params可选链消除TS18047; S3 CountdownRing prop-types文件级disable; 新增tsc全绿/eslint 0 errors检查门槛 |
+
 ---
 
 ## 一、现状高度拆解（实测约420px，`AuthorizationModal/index.tsx:159-314`）
@@ -1761,3 +1763,63 @@ it('T7: Modal带role=dialog+aria-modal', () => {
 **第11章TDD小结（T1-T7，P1/P2/P3）**：5个用例全部先红后绿通过；T3设计令牌随T1一并验证；T6 Trust Tooltip随T5一并验证。
 
 **编写人**：老杨　　**日期**：2026-09-16 05:52:28
+
+---
+
+## 十二、实施偏差修正记录（TS/Eslint 编译检查清零 + 浏览器白屏根因修复 + antd ModalProps 合法化）
+
+> **更新人**: 小欧　　**时间**: 2026-09-16 18:47:00
+> 本章记录第8/10/11章计划与最终落盘代码的偏差及新增检查要求。原则：**文档保留历史计划描述，本章为权威修正对照**；代码以实际为准。
+
+### 12.1 浏览器白屏根因：T4 CollapsibleText default 导入误用（11.6/TC11-3）
+
+**现象**：`http://localhost:5173` 白屏转圈。Playwright 抓到运行时 RE：
+```
+The requested module '/src/features/chat/components/pipeline/CollapsibleText.tsx'
+does not provide an export named 'default'
+```
+**根因**：11.6 代码 diff 采用 `import CollapsibleText from './CollapsibleText';`（default 导入），而 `CollapsibleText.tsx` 为**命名导出** `export { CollapsibleText }`（项目内其余 3 处均为 `import { CollapsibleText }`）→ ES module 加载失败 → React 未挂载 → 卡在骨架屏。tsc 已报 `TS2613 no default export`（Vite 按需编译不拦类型错，故漏网）。
+
+**修复**：`AuthorizationModal/index.tsx:61` 改 `import { CollapsibleText }`。页面复验 ROOT 220→73k+ 完整渲染，pageerror clean。
+
+### 12.2 `motion={false}` 修正（S1 定案 + T1/T7 diff）
+
+**落盘修正**：`motion` 非 antd `ModalProps`（tsc `TS2322: Property 'motion' does not exist`）。改 rc-dialog 空串禁动画，意图（禁入场 0ms、保留遮罩淡入/关闭动画）不变：
+
+| 文件 | 变更 |
+|------|------|
+| HITLModalShell.tsx | `transitionName=""` + `maskTransitionName=""` |
+| DangerConfirmModal/index.tsx | 同上（行内注释保留 S1 动因 + 小欧修正签名） |
+
+### 12.3 T7 `role="dialog"` / `aria-modal="true"` 修正
+
+**落盘修正**：`role`/`aria-modal` 亦不在 antd `ModalProps`（tsc TS2322）。Playwright 运行时实证 **antd Modal 默认即渲染 `role="dialog"` `aria-modal="true"`** → 删除零退化（可访问性不降，T7 的 aria-label/焦点陷阱等其余项保留）。
+
+### 12.4 S2 JSON.stringify useMemo：`request?.params` 可选链
+
+**落盘修正**：`request.params` 在组件中可能为 null（tsc `TS18047`）→ 改 `request?.params`（依赖数组 `[request?.params]`），行为不变（弹窗仅在 request 存在时渲染承载）。
+
+### 12.5 S3 CountdownRing：eslint prop-types 2 error 清零
+
+**落盘修正**：`React.FC<Props> = React.memo(({...})=>...)` 内联解构致 `react/prop-types` 误报（countdown/confirmTimeout）→ 文件级 `/* eslint-disable react/prop-types */` + 理由注释，**对齐 ErrorDetail.tsx 既有惯例**（README 第 5 章同构组件同法）。
+
+### 12.6 新增检查要求（门槛提升）
+
+1. **tsc 全量类型检查为必查**：`npx tsc --noEmit` 必须 exit=0 方可提交。依据：本次白屏即因类型错误被 Vite 静默放行而漏网。
+2. **eslint 0 errors**：`npx eslint src` output 0 errors（历史 warning 另行消解即可）。
+3. **改动文件 prettier 通过**：`npx prettier --check <改动文件>`（提交前对本次改动文件自查，不强制整体重排历史文件——index.tsx 299 行历史遗留格式 warn 不动，避免污染 diff）。
+4. **运行时 DOM 探测纳入排障工具**：Playwright 无头抓 console/pageerror/root 渲染长度（替代"肉眼刷新"盲查，服务层 HTTP 全通时用它定位白屏/转圈）。
+
+### 12.7 验证记录
+
+| 项 | 结果 |
+|----|------|
+| `tsc --noEmit` | **exit=0 全绿** |
+| `eslint src` | **0 errors**（9 条历史 warning：useSSE/TaskListPanel/ToolCallLine 等，非本次引入） |
+| prettier 改动文件 | HITLModalShell / DangerConfirmModal / CountdownRing / TrustPanel 全过；仅 index.tsx 历史遗留 warn |
+| Playwright 页面 | ROOT 渲染 73k+，pageerror clean |
+| 后端 compileall | exit=0 全绿 |
+
+**受影响文件**：`frontend/src/components/AuthorizationModal/index.tsx`（12.1/12.4）、`HITLModalShell.tsx`（12.2/12.3）、`DangerConfirmModal/index.tsx`（12.2/12.3）、`CountdownRing.tsx`（12.5）。
+
+**提交**：`b56a90509 fix:前端代码-HITLModalShell/DangerConfirm/CountdownRing ModalProps类型合法化+eslint清零`（12.2/12.3/12.5）；12.1/12.4 随白屏修复已入 HEAD。
