@@ -17,6 +17,8 @@
 //   缺陷③按工具域区分文案(registry工具路径含子键, 其余含子目录) — 小欧-2026-09-16
 // 编辑历史: 2026-09-16 小欧 - 浏览器白屏根因修复: 老杨T4 CollapsibleText误用default导入(命名导出)ES模块加载失败致React未挂载, 改命名导入;
 //   S2 request possibly null 改可选链 — 小欧-2026-09-16
+// 编辑历史: 2026-09-16 老陈 - UI微调: ①工具名称+工具名词label+值改为flex同行(去<br/>分行); ②底部拒绝/允许按钮size="large"→"middle"取消偏大 - 老陈-2026-09-16
+// 编辑历史: 2026-09-16 老陈 - 参数区去掉展开收起,超过2行直接出滚动条; paramsStr改Object.entries纯文本无花括号 - 老陈-2026-09-16
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -56,9 +58,7 @@ import { injectKeyframes } from '../AnimatedIcons/animations';
 import CountdownRing from './CountdownRing';
 // 2026-09-16 老杨 - T1:引入HITLModalShell统一壳+HITL_TOKENS设计令牌 - 老杨-2026-09-16
 import HITLModalShell, { HITL_TOKENS } from './HITLModalShell';
-// 2026-09-16 老杨 - T4:引入CollapsibleText,参数区可折叠 - 老杨-2026-09-16
-// 2026-09-16 小欧 - 修复: CollapsibleText为命名导出, default导入致ES module加载失败白屏, 改命名导入 - 小欧-2026-09-16
-import { CollapsibleText } from '../../features/chat/components/pipeline/CollapsibleText';
+
 
 const { Text, Title } = Typography;
 
@@ -119,13 +119,17 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   const isBypass = Boolean(request?.autoConfirm);
   onConfirmRef.current = onConfirm;
 
-  // 2026-09-16 老杨 - S2: useMemo缓存JSON.stringify,防循环引用白屏
+  // 2026-09-16 老陈 - 纯文本显示,去掉{}花括号
   // 2026-09-16 小欧 - 修复: request?.params 可选链, 消除 tsc TS18047 possibly null - 小欧-2026-09-16
   const paramsStr = React.useMemo(() => {
     try {
-      return JSON.stringify(request?.params, null, 2);
+      const p = request?.params;
+      if (!p || typeof p !== 'object') return String(p ?? '');
+      return Object.entries(p)
+        .map(([k, v]) => `${k}: ${String(v ?? '')}`)
+        .join('\n');
     } catch {
-      return '"[参数序列化失败]"';
+      return '[参数序列化失败]';
     }
   }, [request?.params]);
 
@@ -181,14 +185,14 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
       <div style={{ textAlign: 'center' }}>
         {isBypass ? (
           <ThunderboltOutlined
-            style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#1677ff', marginBottom: 8 }}
+            style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#1677ff', marginBottom: 4 }}
           />
         ) : (
           <WarningOutlined
             style={{
               fontSize: HITL_TOKENS.ICON_SIZE,
               color: '#faad14',
-              marginBottom: 8,
+              marginBottom: 4,
             }}
           />
         )}
@@ -197,8 +201,8 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            marginBottom: 4,
+            gap: 4,
+            marginBottom: 2,
           }}
         >
           <Title level={5} style={{ marginBottom: 0 }}>
@@ -221,7 +225,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             fontSize: 13,
             fontWeight: 600,
             color: '#8c8c8c',
-            marginBottom: 4,
+            marginBottom: 2,
           }}
         >
           {/* 2026-09-03 小欧 Bug-20: 后端兜底原文案 5s 与实际 60s 不符(useAuthorization 兜底即 60), 统一为 60 防文案欺骗 */}
@@ -235,33 +239,37 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             backgroundColor: '#fafafa',
             border: '1px solid #f0f0f0',
             borderRadius: 4,
-            padding: 8,
-            marginBottom: 8,
+            padding: 6,
+            marginBottom: 4,
             textAlign: 'left',
           }}
         >
-          <div style={{ marginBottom: 4 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
+            <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
               工具名称：
             </Text>
-            <br />
-            <Text
-              strong
-              style={{ display: 'block', marginTop: 4, fontSize: 14 }}
-            >
+            <Text strong style={{ fontSize: 14 }}>
               {request.toolName}
             </Text>
           </div>
-          <div>
+          <div style={{ marginBottom: 4 }}>
             <Text type="secondary" style={{ fontSize: 12 }}>
               执行参数：
             </Text>
-            <br />
-            <CollapsibleText text={paramsStr} maxLines={5} maxChars={200} />
+          </div>
+          <div style={{
+            backgroundColor: '#fff',
+            border: '1px solid #e8e8e8',
+            borderRadius: 4,
+            padding: 6,
+            maxHeight: 120,
+            overflow: 'auto',
+          }}>
+            <span style={{ fontSize: 12, lineHeight: '18px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{paramsStr}</span>
           </div>
         </div>
 
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 6 }}>
           <Checkbox
             checked={trustSession}
             disabled={submitting || isBypass} // 2026-09-16 小欧 缺陷①修复: bypass 禁用勾选框, 防静默失效误导(原仅 handleConfirm 强改 false, UI 仍可勾) — 小欧-2026-09-16
@@ -291,10 +299,10 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </Tooltip>
         </div>
 
-        <div style={{ display: 'flex', gap: 12, width: '100%' }}>
+        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
           <Button
             onClick={() => handleConfirm(false)}
-            size="large"
+            size="middle"
             disabled={submitting}
             danger
             ghost
@@ -306,7 +314,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           <Button
             type="primary"
             onClick={() => handleConfirm(true)}
-            size="large"
+            size="middle"
             loading={submitting}
             disabled={submitting}
             aria-label="允许执行此工具操作"

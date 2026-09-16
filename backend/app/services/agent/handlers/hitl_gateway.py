@@ -8,6 +8,7 @@
 #   在问题A修复(文档[44]5.5)时随函数一并删除, hitl_confirm 直接调主链 extract_trust_path(KISS 无透传); 本条为历史留痕
 # 2026-09-16 小欧 缺陷还原(5.5伴随): _desensitize 回退同步 def(HttpRuntimeWarning: coroutine never awaited 探出,
 #   内部纯同步无await, async 声明致 MetaStep(params=coroutine)入队前失真; 与 HEAD def 原语义一致) — 小欧-2026-09-16
+# 2026-09-16 老陈 - 后端参数摘要[43]11.6-T4: 新增_summarize_params(主键path+长值截断80) + 组装行包裹_desensitize收口 - 老陈-2026-09-16
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 from dataclasses import dataclass
 from typing import Optional
@@ -39,6 +40,7 @@ def _summarize_params(tool_name: str, params: dict) -> dict:
     复现[43]11.6 T4设计: 弹窗只显核心参数(主键path), 长值折叠防弹窗超高;
     脱敏仍由组装行 _desensitize 统一收口(本函数不重复脱敏)。"""
     from app.utils.text_utils import smart_truncate_text  # 延迟import防环(与_desensitize同款; FUNCTIONS.md:84已登记) — 小欧-2026-09-16
+    from app.tools.trust import extract_trust_path        # 延迟import防环(主键权威) — 老陈-2026-09-16
     _all: dict = {k: v for k, v in (params or {}).items()}
     _path = extract_trust_path(tool_name, params)          # 复用trust.py:69主键权威, 不重写
     _out: dict = {}

@@ -10,7 +10,7 @@ import { Modal } from 'antd';
 export const HITL_TOKENS = {
   MODAL_WIDTH: 480,
   ICON_SIZE: 32,
-  BODY_PADDING: 12,
+  BODY_PADDING: 24,
   BORDER_RADIUS: 8,
   BORDER_WIDTH: 1.5,
   PROGRESS_SIZE: 60,
