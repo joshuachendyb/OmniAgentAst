@@ -1,6 +1,7 @@
 // HITLModalShell.tsx — 统一Modal壳: border/radius/shadow/footer一致
 // 编辑历史: 2026-09-16 老杨 - 统一Modal壳: 消除两Modal视觉不一致 - 老杨-2026-09-16
 // 编辑历史: 2026-09-16 小欧 - 修复: motion={false}非antd ModalProps(tsc TS2322), 改rc-dialog transitionName/maskTransitionName空串禁入场动画, 意图不变 - 小欧-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 修复: role/aria-modal非antd ModalProps(tsc TS2322), 运行时探测antd默认即渲染role=dialog+aria-modal=true, 删除零退化 - 小欧-2026-09-16
 
 import React from 'react';
 import { Modal } from 'antd';
@@ -30,8 +31,6 @@ const HITLModalShell: React.FC<HITLModalShellProps> = ({
     open={open}
     transitionName=""
     maskTransitionName=""
-    role="dialog"
-    aria-modal="true"
     title={null}
     footer={null}
     closable={false}

@@ -1,5 +1,7 @@
 // CountdownRing.tsx — countdown/progress隔离,防每秒扩散到工具卡/参数卡/按钮
 // 编辑历史: 2026-09-16 老杨 - 拆分CountdownRing子组件,React.memo隔离重渲染 - 老杨-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 修复: React.FC+memo内联解构致react/prop-types误报2error, 对齐ErrorDetail.tsx惯例文件级disable - 小欧-2026-09-16
+/* eslint-disable react/prop-types */
 
 import React from 'react';
 import { Progress } from 'antd';
@@ -32,9 +34,7 @@ const CountdownRing: React.FC<CountdownRingProps> = React.memo(
                   fontWeight: 600,
                   color: countdown <= 3 ? '#fa541c' : '#333',
                   animation:
-                    countdown <= 3
-                      ? 'pulse 0.8s ease-in-out infinite'
-                      : 'none',
+                    countdown <= 3 ? 'pulse 0.8s ease-in-out infinite' : 'none',
                 }}
               >
                 {countdown}

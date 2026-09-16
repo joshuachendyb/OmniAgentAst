@@ -61,10 +61,8 @@ export const DangerConfirmModal: React.FC<DangerConfirmModalProps> = ({
   return (
     <Modal
       open={visible}
-      transitionName=""        // 2026-09-16 老杨S1禁入场动画; 2026-09-16 小欧:motion非合法ModalProps,改rc-dialog transitionName空串
+      transitionName="" // 2026-09-16 老杨S1禁入场动画; 2026-09-16 小欧:motion/role/aria-modal非合法ModalProps, motion改transitionName空串, role/aria删除(antd默认渲染role=dialog+aria-modal=true零退化) - 小欧-2026-09-16
       maskTransitionName=""
-      role="dialog"           // 2026-09-16 老杨 - T7:可访问性修复
-      aria-modal="true"       // 2026-09-16 老杨 - T7:可访问性修复
       title={null}
       footer={null}
       closable={false}
@@ -153,7 +151,12 @@ export const DangerConfirmModal: React.FC<DangerConfirmModalProps> = ({
 
         {/* 按钮组 */}
         <Space size="middle">
-          <Button onClick={onCancel} size="large" disabled={loading} aria-label="取消此操作">
+          <Button
+            onClick={onCancel}
+            size="large"
+            disabled={loading}
+            aria-label="取消此操作"
+          >
             取消
           </Button>
           <Button
