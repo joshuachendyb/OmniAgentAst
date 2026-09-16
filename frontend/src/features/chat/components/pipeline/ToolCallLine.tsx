@@ -38,6 +38,8 @@
 // 编辑历史: 2026-09-13 小欧 - 内联橙色loader SVG提取为WaitingIcons/ToolWaitingIcon控件, 行为零变化(同SVG同CSS类), 注释统一用组件名 — 小欧-2026-09-13
 // 编辑历史: 2026-09-15 小欧 - [40]第一阶段S7: 三级折叠三角▲▼→CircleArrow(20px/PRIMARY#595959/静止animated=false), 复用组件消三角字符 — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 老杨 - 水滴图标 DropletIcon/DropletStatus 替代成功/失败字符符号, 复用组件消字符 — 老杨-2026-09-15
+// 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①deniedTools 类型新增 reject_type 字段; ②根据 reject_type 显示不同图标+文字标签(🔒[安全]/⏱️[超时]/🚫[拒绝]/🛡️[沙箱]); ③拒绝工具不再显示水滴图标; ④视觉分层优化(标签橘红/工具名深灰加粗/原因浅灰弱化) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 会审V3整改(#6/#8): 拒绝图标 emoji→antd SVG(按全局定案禁emoji, 无圆底), 标签/图标映射提取为模块级导出常量 REJECT_LABEL_MAP/REJECT_ICON_MAP(防重建+测试断言真实映射) - 小欧-2026-09-17
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -54,12 +56,19 @@ import type { ExecutionStep } from '../../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 [40]①S7: 复用折叠箭头组件 — 小欧-2026-09-15
-import { DropletIcon, type DropletStatus } from '@/components/DropletIcon'; // 2026-09-15 老杨: 水滴图标替代字符符号 — 老杨-2026-09-15
+import { DropletIcon } from '@/components/DropletIcon'; // 2026-09-15 老杨: 水滴图标替代字符符号 — 老杨-2026-09-15
 import { GearIcon } from '@/components/GearIcon'; // 2026-09-15 老杨: 齿轮图标替代🔧emoji — 老杨-2026-09-15
+import {
+  LockOutlined,
+  ClockCircleOutlined,
+  StopOutlined,
+  SafetyCertificateOutlined,
+} from '@ant-design/icons'; // 2026-09-17 小欧 会审V3(#6): 拒绝图标按全局定案用 antd SVG — 小欧-2026-09-17
 import {
   Colors,
   BorderWidth,
   FontSize,
+  FontWeight,
   Spacing,
   stepMargin,
 } from '@/utils/stepStyles';
@@ -71,8 +80,27 @@ interface ToolCallLineProps {
   highlight?: boolean; // HITL 联动高亮
   interrupted?: boolean; // 2026-09-06 小欧 B2: 用户拒绝/确认超时且无结果——停齿轮(替换等待动画) — 小欧-2026-09-06
   replay?: boolean; // 2026-09-06 小欧 B2(北京老陈裁定): 历史回放标志——历史数据不需要齿轮转动, 免齿轮动画 — 小欧-2026-09-06
-  deniedTools?: Array<{ tool: string; reason: string }>; // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 本执行轮被拒工具点名条(带拒绝理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
+  deniedTools?: Array<{ tool: string; reason: string; reject_type?: string }>; // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 本执行轮被拒工具点名条(带拒绝理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
 }
+
+// 2026-09-17 小欧 会审V3(#8): 拒绝标签/图标从 .map 内联提取为模块级持久常量(避免每次拒绝行渲染重建对象),
+//   (#6): 按项目全局定案(infoMaps.tsx 注释"过程事件统一 antd SVG 图标、禁 emoji")emoji 换 antd SVG 图标,
+//   无圆底(开发文档声称的圆底从未实现, 以实际实现为准) — 小欧-2026-09-17
+// 导出版本供测试断言真实映射(替代测试内本地模拟, 防实现与断言脱钩)
+export const REJECT_LABEL_MAP: Readonly<Record<string, string>> = {
+  safety: '安全',
+  timeout: '超时',
+  user: '拒绝',
+  sandbox: '沙箱',
+};
+export const REJECT_DEFAULT_LABEL = '拒绝';
+export const REJECT_ICON_MAP: Readonly<Record<string, React.ReactNode>> = {
+  safety: <LockOutlined />,
+  timeout: <ClockCircleOutlined />,
+  user: <StopOutlined />,
+  sandbox: <SafetyCertificateOutlined />,
+};
+export const REJECT_DEFAULT_ICON = <StopOutlined />;
 
 const ToolCallLine: React.FC<ToolCallLineProps> = ({
   action,
@@ -195,7 +223,13 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     >
       {/* 2026-09-01 小欧(北京老陈定案: 完全独立展开+独立观察): 第一行集合行纯文本展示, 无全局展开按钮; 每工具子行独立展开/收起, 点子行任意位置toggle该工具; 展开区只显示该工具完整observation(ToolResultRenderer), 不再有"参数:全集"重复 */}
       <div>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: Spacing.SM }}>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: Spacing.SM,
+          }}
+        >
           <GearIcon />
           {firstLine} {attemptLabel}
         </span>
@@ -204,15 +238,25 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
           {/* 执行等待动画(results 空=action 已到未执行完); observation 到即卸载, 同容器被子行盖住 */}
           {/* 2026-09-03 小欧 Bug-3/4: 动画仅 tools 非空且结果未达(results空)显示; 超时降级灰字提示; tools 空/结果空显占位防空壳 */}
           {!hasResult && tools.length === 0 && deniedCount === 0 && (
-            <span style={{ color: Colors.ORANGE_RED, fontSize: FontSize.SECONDARY }}>
+            <span
+              style={{ color: Colors.ORANGE_RED, fontSize: FontSize.SECONDARY }}
+            >
               工具调用无结果(已全部被安全拦截或未返回)
             </span>
           )}
-          {!hasResult && tools.length > 0 && interrupted && deniedCount === 0 && (
-            <span style={{ color: Colors.ORANGE_RED, fontSize: FontSize.SECONDARY }}>
-              未执行：未获用户允许／被安全拦截／确认超时
-            </span>
-          )}
+          {!hasResult &&
+            tools.length > 0 &&
+            interrupted &&
+            deniedCount === 0 && (
+              <span
+                style={{
+                  color: Colors.ORANGE_RED,
+                  fontSize: FontSize.SECONDARY,
+                }}
+              >
+                未执行：未获用户允许／被安全拦截／确认超时
+              </span>
+            )}
           {!hasResult && tools.length > 0 && !interrupted && !replay && (
             <ToolWaitingIcon />
           )}
@@ -352,7 +396,12 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
           {/* 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 被拒工具点名橘红灰字行——tools.map 之后收尾(有结果时),
             全拒无结果时独立成行; 与执行工具子行同缩进/分支线, reason=拒绝理由链(用户拒绝/拦截/超时) — 小欧-2026-09-06 */}
           {deniedCount > 0 &&
-            deniedList.map((d, di) => {
+            deniedList.map((d) => {
+              // 2026-09-17 小欧 会审V3(#8): 由模块级常量映射取标签/图标(不再每次渲染重建) — 小欧-2026-09-17
+              const rejectLabel =
+                REJECT_LABEL_MAP[d.reject_type ?? ''] ?? REJECT_DEFAULT_LABEL;
+              const rejectIcon =
+                REJECT_ICON_MAP[d.reject_type ?? ''] ?? REJECT_DEFAULT_ICON;
               return (
                 <div
                   key={`denied-${d.tool}`}
@@ -362,17 +411,43 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                     style={{
                       fontSize: FontSize.PRIMARY,
                       lineHeight: `${FontSize.PRIMARY + Spacing.XS}px`,
-                      color: Colors.ORANGE_RED,
                       display: 'flex',
                       alignItems: 'center',
                       gap: Spacing.SM,
                     }}
                   >
-                    <DropletIcon status="error" size={10} />
-                    <span>{d.tool}</span>
+                    {/* 图标：橘红色 antd SVG */}
                     <span
                       style={{
                         color: Colors.ORANGE_RED,
+                        fontSize: FontSize.PRIMARY,
+                      }}
+                    >
+                      {rejectIcon}
+                    </span>
+                    {/* 标签：橘红色小字 */}
+                    <span
+                      style={{
+                        color: Colors.ORANGE_RED,
+                        fontSize: FontSize.SECONDARY,
+                        fontWeight: FontWeight.MEDIUM,
+                      }}
+                    >
+                      [{rejectLabel}]
+                    </span>
+                    {/* 工具名：深色加粗 */}
+                    <span
+                      style={{
+                        color: Colors.TEXT.STRONG,
+                        fontWeight: FontWeight.MEDIUM,
+                      }}
+                    >
+                      {d.tool}
+                    </span>
+                    {/* 未执行+原因：灰色弱化 */}
+                    <span
+                      style={{
+                        color: Colors.TEXT.SECONDARY,
                         fontSize: FontSize.SECONDARY,
                       }}
                     >

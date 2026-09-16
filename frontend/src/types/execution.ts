@@ -4,6 +4,7 @@
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删ExecutionStep.type的cancelled分支(取消收尾单一由final+cancelled承担)
 // 编辑历史: 2026-09-12 小欧 - P0-5三堂会审修复: artifacts补tool_name?字段(与FinalStatsFrame(sse.ts)对齐后端4字段契约tool_name/name/path/type) — 小欧-2026-09-12
 // 编辑历史: 2026-09-12 小欧 - P1-4/P1-5三堂会审修复: 删code死字段(只写不读, execution_status含同语义); 删final_status死字段(outcome为终态单一权威) — 小欧-2026-09-12
+// 编辑历史: 2026-09-17 小欧 会审V3(#14): ExecutionStep.type 成员补 'rejected'(统一拒绝事件契约, SSE协议真实存在, 当前不落库/不入执行步骤流, 类型防御) — 小欧-2026-09-17
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，
@@ -35,7 +36,9 @@ export interface ExecutionStep {
     | 'truncated'
     | 'paused'
     | 'resumed'
-    | 'retrying';
+    | 'retrying'
+    | 'rejected'; // 2026-09-17 小欧 会审V3(#14): 统一拒绝事件 type="rejected"。注明: 当前 rejected 不落库(库表无此 type)
+  //   且 sseParser 拒绝分支不入 executionSteps, 该成员为类型契约防御(SSE 协议真实存在), 非数据源 — 小欧-2026-09-17
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
 
   // 【6-03-09】添加task_id字段，用于分页请求

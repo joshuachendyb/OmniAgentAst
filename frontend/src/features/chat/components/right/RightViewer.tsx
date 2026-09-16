@@ -104,6 +104,7 @@
 // 编辑历史: 2026-09-14 小欧 [36]删 receiving(方案A, 北京老陈批准): ①props接口/解构删 receiving ②useTaskInfo 调用
 //   改四参签名 ③isCurrentLive 判定提纯复用 computeIsCurrentLive(改动点③, 删 receiving 条件)
 //   ④DBG-1 日志去 recv 槽位(5.5.3-(二) 只留 live/match/final/biz 前缀四字段) ⑤import viewState — 小欧-2026-09-14
+// 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": RightViewerProps deniedEntries 类型新增 reject_type 字段 - 小欧-2026-09-17
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -158,7 +159,7 @@ interface RightViewerProps {
   highlightToolName: string | null;
   frames: TaskMetaFrames; // 2026-09-02 小欧: useTaskInfo badge 派生输入(startInfo 判定 running)
   deniedSteps: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 透传 PipelineRenderer 停齿轮 — 小欧-2026-09-06
-  deniedEntries: ReadonlyMap<number, Array<{ tool: string; reason: string }>>; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 透传 ToolCallLine 灰字 — 小欧-2026-09-06
+  deniedEntries: ReadonlyMap<number, Array<{ tool: string; reason: string; reject_type?: string }>>; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 透传 ToolCallLine 灰字 — 小欧-2026-09-06
   // 2026-09-11 小欧 三堂会审P1-4: 复用公用 TokenLayer——原 {prompt_tokens?: number;...} | null 与 StaticStatsBlock 必选字段形状不匹配(TS2322), 统一后 DRY — 小欧-2026-09-11
   sessionTokens?: TokenLayer;
   chainTokens?: TokenLayer;

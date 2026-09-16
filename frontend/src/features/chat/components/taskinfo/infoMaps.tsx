@@ -1,12 +1,18 @@
 // 编辑历史: 2026-09-08 小欧 - 六章6.5: 自 TaskInfoBar 抽取状态映射常量+纯函数(DRY/SRP/OCP, 禁止backward 不兼容旧写法)
-//   职责: BADGE_MAP(P2-15 cancelled 区分) / CONTEXT_STATE_MAP(4态 P1-8) / EVENT_ICON_MAP(4事件 P1-5)
+//   职责: BADGE_MAP(P2-15 cancelled 区分) / CONTEXT_STATE_MAP(4态 P1-8) / EVENT_ICON_MAP(9事件 P1-5+新增)
 //   / mapStatus(纯函数) / formatToken(千分位 3.2) — 小欧-2026-09-08
+// 编辑历史: 2026-09-17 小欧 - 新增5个事件图标: error/rejected/cancelled/heartbeat/final - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 会审V3(#2): 删除 heartbeat 事件图标——后端心跳是 SSE 协议层 ":ping"(stream_orchestrator)，
+//   永不被前端解析成 ProcessEvent, EVENT_ICON_MAP 中 heartbeat 为死代码(YAGNI 清理); 事件清单实为8类 — 小欧-2026-09-17
 import type { CSSProperties, ReactNode } from 'react';
 import {
   PauseCircleOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
   WarningOutlined,
+  StopOutlined,
+  CloseCircleOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import type { ProcessEvent, TaskBadge } from '../../hooks/useTaskInfo';
 
@@ -80,11 +86,17 @@ export const mapStatus = (src: ContextSource): ContextState => {
 };
 
 // ---------- EVENT_ICON_MAP（3.4/P1-5：过程事件统一 antd SVG，禁 emoji） ----------
+// 2026-09-17 小欧 会审V3(#2): 8类事件——heartbeat 非事件(后端心跳=SSE 协议层 ":ping" 服务器注释帧,
+//   对 JS EventSource 不可见, 永不解析为 ProcessEvent; 变更流不打 event 行, 已核实 stream_orchestrator) — 小欧-2026-09-17
 export const EVENT_ICON_MAP: Record<ProcessEvent['kind'], ReactNode> = {
   started: <PlayCircleOutlined />, // 现状 ▶️   → SVG（3.4 定案）
   paused: <PauseCircleOutlined />, // 现状 ⏸️   → SVG
   resumed: <PlayCircleOutlined />, // 现状 ▶️   → SVG
   retrying: <ReloadOutlined />, // 现状 🔁   → SVG
+  error: <WarningOutlined />, // 2026-09-17 小欧: 错误事件 - 小欧-2026-09-17
+  rejected: <StopOutlined />, // 2026-09-17 小欧: 拒绝事件 - 小欧-2026-09-17
+  cancelled: <CloseCircleOutlined />, // 2026-09-17 小欧: 取消事件 - 小欧-2026-09-17
+  final: <CheckCircleOutlined />, // 2026-09-17 小欧: 任务完成/失败 - 小欧-2026-09-17
 };
 
 // ---------- formatToken（3.2：T 千分位，1234 → "T 1,234"；无值 → "–"） ----------
