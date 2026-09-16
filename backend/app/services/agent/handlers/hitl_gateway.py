@@ -34,6 +34,26 @@ def _desensitize(params) -> dict:
     return {k: v for k, v in (params or {}).items() if k not in SENSITIVE_FIELDS}
 
 
+def _summarize_params(tool_name: str, params: dict) -> dict:
+    """HITL弹窗参数摘要: 主键(path类extract_trust_path权威)优先展示 + 长值smart_truncate_text兜底截断 — 小欧-2026-09-16
+    复现[43]11.6 T4设计: 弹窗只显核心参数(主键path), 长值折叠防弹窗超高;
+    脱敏仍由组装行 _desensitize 统一收口(本函数不重复脱敏)。"""
+    from app.utils.text_utils import smart_truncate_text  # 延迟import防环(与_desensitize同款; FUNCTIONS.md:84已登记) — 小欧-2026-09-16
+    _all: dict = {k: v for k, v in (params or {}).items()}
+    _path = extract_trust_path(tool_name, params)          # 复用trust.py:69主键权威, 不重写
+    _out: dict = {}
+    if _path:
+        _out["path"] = _path
+    for _k, _v in _all.items():
+        if _k in ("path",) or _k in _out:
+            continue                                        # path已由主键摘出, 防重复展示
+        if isinstance(_v, str) and len(_v) > 80:            # 长值→顶格截断防弹窗超高(复用公用函数)
+            _out[_k] = smart_truncate_text(_v, 80)
+        else:
+            _out[_k] = _v
+    return _out
+
+
 async def _resolve_timeouts(mode):
     """返回 (backend_timeout, confirm_timeout) 二元组（调用处双解包 — 小健-2026-09-05）。
     点分扁平键（与三处同源，禁嵌套get("security")取法）+ 分mode公式：
@@ -64,7 +84,8 @@ async def hitl_confirm(agent, spec: ConfirmSpec, publish):
     _auto = spec.auto_confirm if spec.auto_confirm is not None else (spec.mode == "bypass")
     paused = agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="paused",
         content=spec.content, confirm_id=confirm_id, tool_name=spec.tool_name,
-        params=_desensitize(spec.params), safety_level=spec.safety_level,
+        params=_desensitize(_summarize_params(spec.tool_name, spec.params)),  # [43]11.6-T4 参数摘要(主键path优先+长值截断)防弹窗超高 — 小健-2026-09-16
+        safety_level=spec.safety_level,
         severity="attention", trust_path=_path, auto_confirm=_auto,
         confirm_timeout=_ct, backend_timeout=_bt))
     set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认: {spec.tool_name}")
