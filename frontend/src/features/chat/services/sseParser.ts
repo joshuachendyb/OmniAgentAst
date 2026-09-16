@@ -1,4 +1,3 @@
-// 编辑历史: 2026-08-28 小欧 - 由 utils/sse.ts 抽离 processSSEData(1002-1835)与 normalizeIsReasoning(995-997)至特性层services, 零逻辑变更 - 小欧-2026-08-28
 // 编辑历史: 2026-08-30 小欧 - 13.14 usage帧废止前端累加、直取后端本轮+三累计(P/C/T)四字段 - 小欧-2026-08-30
 // 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 后端§5.7.4③④): paused帧 onAuthorizationRequired 透传四字段——
 //   trust_path(仅bypass时=rawData.trust_path, trust_panel的双写/撤回核心)、auto_confirm、confirm_timeout(前端倒计时=后端窗口-提前量)、backend_timeout - 小欧-2026-09-02
@@ -83,6 +82,7 @@
 //   (入口 lastSeqRef 层已拦截全部重复帧, 该守卫拦截量 0, F2 与入口重复; 单基线纪律 3.2, YAGNI) — 小欧-2026-09-13
 // 编辑历史: 2026-09-13 小欧 - [30]重连链路追踪补点C(北京老陈指令): 入口 seq 守卫拦截 console.debug→console.warn——
 //   重发正是本专项核心, 若未来引入物理重复帧(seq<=lastSeq)必须醒目可见(debug 级易被忽略且不落盘), 升 warn 保追踪 — 小欧-2026-09-13
+// 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①新增 onRejected 回调接口; ②新增 case 'rejected' 分支, 调用 onRejected + 兼容调用 onDenied; ③onRejected 接收 {step,message,tool_name,reject_type,from_backend} - 小欧-2026-09-17
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -102,7 +102,10 @@ const assignTimeout = (v: unknown): number => {
 
 // 2026-09-14 小欧 DRY: push+flush 模式提取, 消6处重复 — 小欧-2026-09-14
 const pushAndFlush = (
-  handlers: { pendingStepsRef?: React.MutableRefObject<ExecutionStep[]>; scheduleFlush?: () => void },
+  handlers: {
+    pendingStepsRef?: React.MutableRefObject<ExecutionStep[]>;
+    scheduleFlush?: () => void;
+  },
   step: ExecutionStep
 ) => {
   handlers.pendingStepsRef?.current.push(step);
@@ -128,9 +131,15 @@ const processSSEData = (
       executionSteps?: ExecutionStep[]
     ) => void;
     onError?: (error: string | SSEError) => void;
-    // 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 后端独立 type="user_rejected" 单独发,
-    //   独立回调(step, message, toolName?)供 useChatStreaming 聚合 deniedStepSet/被拒工具点名条, 不占 error 通道 — 小欧-2026-09-06
-    onDenied?: (step: number, message: string, toolName?: string) => void;
+    // 2026-09-16 小欧: 统一拒绝事件 type="rejected" — 替代旧 error(blocked/timeout) + user_rejected;
+    // 2026-09-17 小欧 会审V3: onDenied 回调整链删除(YAGNI, 唯一调用方 useChatStreaming 已传 undefined, 零消费者);
+    //   from_backend 硬编码字段删除(YAGNI, 全链透传零消费) — 小欧-2026-09-17
+    onRejected?: (data: {
+      step: number;
+      message: string;
+      tool_name?: string;
+      reject_type: string;
+    }) => void;
     // 小欧 2026-09-10 S15: onPaused/onResumed 加 confirmId 参数（并发 HITL 区分）
     onPaused?: (confirmId?: string) => void;
     onResumed?: (confirmId?: string) => void;
@@ -179,7 +188,7 @@ const processSSEData = (
     onChunk,
     onComplete,
     onError,
-    onDenied,
+    onRejected,
     onPaused,
     onResumed,
     onRetry,
@@ -436,7 +445,9 @@ const processSSEData = (
         // 传递 is_reasoning 区分思考过程和最终答案
         const is_reasoning = normalizeBoolean(rawData.is_reasoning); // 2026-08-27 小欧 修复: 复用统一helper; 2026-09-12 P1-7: 统用normalizeBoolean — 小欧-2026-09-12
         const chunkContent = rawData.content || '';
-        console.log(`${formatDebugTime()} ${is_reasoning ? 'T' : 'F'} =${chunkContent}`); // 2026-09-14 小欧 cursor打点输出chunk独立片段 — 小欧-2026-09-14
+        console.log(
+          `${formatDebugTime()} ${is_reasoning ? 'T' : 'F'} =${chunkContent}`
+        ); // 2026-09-14 小欧 cursor打点输出chunk独立片段 — 小欧-2026-09-14
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
         onChunk?.(chunkContent, is_reasoning);
@@ -624,14 +635,26 @@ const processSSEData = (
         break;
       }
 
-      // 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 后端独立 type="user_rejected" 单独发——
-      //   独立回调 onDenied(step, message) 供聚合 deniedStepSet 停齿轮, 不占 error 通道/liveErrorText
-      case 'user_rejected': {
-        const deniedStep = toStepNumber(rawData.step); // 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
-        logTypeArrival('user_rejected', deniedStep); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
-        const deniedMsg =
-          rawData.content || rawData.error_message || '用户拒绝执行';
-        onDenied?.(deniedStep, deniedMsg, rawData.tool_name); // 2026-09-06 小欧 B2(6.4): 三参带被拒工具名 — 小欧-2026-09-06
+      // 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 后端独立 type="user_rejected" 单独发 —
+      //   2026-09-17 小欧 会审V3: 该 case 已删除(后端 2026-09-16 起统一发 type="rejected", user_rejected 永不到达,
+      //   禁止backward 残留死代码清理) — 小欧-2026-09-17
+
+      // 2026-09-16 小欧: 统一拒绝事件 type="rejected" — 替代旧 error(blocked/timeout) + user_rejected
+      //   统一回调 onRejected, 传递 reject_type 供下游区分具体拒绝原因(safety/sandbox/timeout/user)
+      case 'rejected': {
+        const rejectedStep = toStepNumber(rawData.step);
+        logTypeArrival('rejected', rejectedStep);
+        const rejectMsg =
+          rawData.content || rawData.error_message || '执行被拒绝';
+        const rejectType = rawData.reject_type || 'unknown';
+
+        // 统一回调, 传递 reject_type 供下游区分具体拒绝原因
+        onRejected?.({
+          step: rejectedStep,
+          message: rejectMsg,
+          tool_name: rawData.tool_name,
+          reject_type: rejectType,
+        });
         break;
       }
 

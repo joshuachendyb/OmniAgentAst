@@ -85,6 +85,8 @@
 //   serverTaskIdRef.current=null——useStateWithRef setter 已内置 ref 同步(:24-28), 双写同一值纯冗余瞎写;
 //   依赖数组同步删 serverTaskIdRef(闭包不再引用); 其余改动(清零serverTaskId/清tasks/渲染期复位/justSwitchedRef/
 //   resetSettledAndHistory/statsExpanded复位/右栏折叠)逐点审查均为必要, 逻辑零改动 — 小欧-2026-09-13
+// 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①新增 onRejected 回调参数; ②两处 processSSEData 调用传递 onRejected - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 会审V3整改: onDenied 参数/两处透传全链删除(YAGNI 零消费者), onRejected 类型去 from_backend(全链透传零消费) - 小欧-2026-09-17
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -423,8 +425,15 @@ export const useSSE = (
     confirm_timeout?: number;
     backend_timeout?: number;
   }) => void,
-  // 2026-09-06 小欧 B2(北京老陈裁定): 独立拒绝事件回调(user_rejected 不走 error 通道) — 小欧-2026-09-06
-  onDenied?: (step: number, message: string, toolName?: string) => void // 2026-09-06 小欧 B2(6.4): 三参带被拒工具名 — 小欧-2026-09-06
+  // 2026-09-16 小欧: 统一拒绝事件 type="rejected" — 替代旧 error(blocked/timeout) + user_rejected;
+  // 2026-09-17 小欧 会审V3: onDenied 参数删除(YAGNI, 唯一调用方 useChatStreaming 传 undefined, 零消费者),
+  //   onRejected 去 from_backend 字段(YAGNI, 全链透传零消费, 后端真实字段; 前端不从后端拷贝伪造) — 小欧-2026-09-17
+  onRejected?: (data: {
+    step: number;
+    message: string;
+    tool_name?: string;
+    reject_type: string;
+  }) => void
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   // 小欧 2026-09-10 S14: useStateWithRef 替换手工双写（state 驱动渲染 + ref 供异步回调读最新值）
@@ -910,7 +919,7 @@ export const useSSE = (
               onChunk,
               onComplete,
               onError,
-              onDenied,
+              onRejected,
               onPaused: wrappedOnPaused,
               onResumed: wrappedOnResumed,
               onRetry,
@@ -960,9 +969,7 @@ export const useSSE = (
             onChunk,
             onComplete,
             onError,
-            // 方案C三堂会审缺陷1修复(2026-09-06 小欧): 每行热路径漏传 onDenied → 流式期间拒绝事件
-            //   永远收不到回调, deniedStepSet 无法聚合停齿轮; done 块已传, 补齐此处 — 小欧-2026-09-06
-            onDenied,
+            onRejected,
             onPaused: wrappedOnPaused,
             onResumed: wrappedOnResumed,
             onRetry,

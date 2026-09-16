@@ -36,6 +36,7 @@
 // 编辑历史: 2026-09-14 小欧 [36]删 receiving(方案A, 北京老陈批准): 签名五参→四参 (steps, frames, detail?, liveError?);
 //   改动点② startinfo 门去掉 receiving 依赖改无条件 running(断连窗不压 idle);
 //   deps 去 receiving; DBG-3c 日志同步去 receiving 槽位 — 小欧-2026-09-14
+// 编辑历史: 2026-09-17 小欧 会审V3整改(#2/#3): ProcessEvent.kind 去 'heartbeat'(SSE协议层:ping 永非事件), 删 steps 遍历 case 'rejected'(永不落库/不入steps 死代码), rejected 事件实时走 onRejected 点名条链路 - 小欧-2026-09-17
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -61,7 +62,17 @@ import type { TaskDetail } from '../../../services/api/task.api';
 export const STUCK_RATIO = 3;
 
 export interface ProcessEvent {
-  kind: 'started' | 'paused' | 'resumed' | 'retrying';
+  // 2026-09-17 小欧 会审V3(#2): kind 删除 'heartbeat'——后端心跳是 SSE 协议层 ":ping", 永不为 ProcessEvent;
+  //   'rejected' 保留(8类过程事件之一, 现无数据源仅为类型防御, 见下 case) — 小欧-2026-09-17
+  kind:
+    | 'started'
+    | 'paused'
+    | 'resumed'
+    | 'retrying'
+    | 'error'
+    | 'rejected'
+    | 'cancelled'
+    | 'final';
   text: string;
   time: number;
 }
@@ -197,14 +208,41 @@ export const useTaskInfo = (
           };
           break;
         case 'final':
-          if (s.outcome === 'cancelled') badge = 'cancelled';
-          else if (s.outcome === 'failed') badge = 'failed';
-          else badge = 'completed';
+          if (s.outcome === 'cancelled') {
+            badge = 'cancelled';
+            processEvents.push({
+              kind: 'cancelled',
+              text: s.content || '任务已取消',
+              time: s.timestamp,
+            });
+          } else if (s.outcome === 'failed') {
+            badge = 'failed';
+            processEvents.push({
+              kind: 'final',
+              text: s.content || '任务失败',
+              time: s.timestamp,
+            });
+          } else {
+            badge = 'completed';
+            processEvents.push({
+              kind: 'final',
+              text: s.content || '任务已完成',
+              time: s.timestamp,
+            });
+          }
           break;
         case 'error':
           // 防御遗留库数据（error 现不入 executionSteps，见 8.4.5）；实时失败走 final.outcome
           badge = 'failed';
+          processEvents.push({
+            kind: 'error',
+            text: s.content || '发生错误',
+            time: s.timestamp,
+          });
           break;
+        // 2026-09-17 小欧 会审V3(#3): 原 case 'rejected' 已删除——rejected 不落库(库表无此 type)且
+        //   sseParser rejected 分支不入 executionSteps, steps 遍历永无 rejected, 判空分支死代码(YAGNI);
+        //   拒绝事件实时走 onRejected → deniedEntries 点名条链路, 不经 TaskInfoBar 事件列表 — 小欧-2026-09-17
         // 2026-09-11 小欧 契约化(method2): thought=仅历史回显事件(DB), 实时 SSE 永不发,
         //   执行中信号剔除 thought(thought-start/action/observation 仍实时兜住 idle→running) — 小欧-2026-09-11
         case 'thought-start':

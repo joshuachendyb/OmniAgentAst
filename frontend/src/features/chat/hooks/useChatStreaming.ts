@@ -27,6 +27,7 @@
 //   此处删除传参state.executionStepsRef(285行), executionStepsRef仍从useSSE解构(264行) — 小欧-2026-09-10
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 // 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F5代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
+// 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①deniedEntries 数据结构新增 reject_type 字段; ②markDenied 函数新增 reject_type 参数; ③删除旧 sseOnError/handleDenied; ④新增统一 handleRejected 函数 - 小欧-2026-09-17
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -113,7 +114,10 @@ export interface UseChatStreamingReturn {
 
   // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 被拒工具点名条聚合(Map: step→[{tool, reason}]),
   //   user_rejected(独立事件, reason=content) + blocked/timeout(error 通道, reason=error_message) 两路 — 小欧-2026-09-06
-  deniedEntries: ReadonlyMap<number, Array<{ tool: string; reason: string }>>;
+  deniedEntries: ReadonlyMap<
+    number,
+    Array<{ tool: string; reason: string; reject_type?: string }>
+  >;
 
   // Refs - 用于累积流式内容（供外部访问）
   streamingContentRef: React.MutableRefObject<string>;
@@ -169,10 +173,13 @@ export const useChatStreaming = (
   // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 被拒工具点名条聚合(Map: step→[{tool,reason}] 按工具去重),
   //   供 ToolCallLine 对被拒工具显橘红灰字点名单 — 小欧-2026-09-06
   const [deniedEntries, setDeniedEntries] = useState<
-    ReadonlyMap<number, Array<{ tool: string; reason: string }>>
+    ReadonlyMap<
+      number,
+      Array<{ tool: string; reason: string; reject_type?: string }>
+    >
   >(new Map());
   const markDenied = useCallback(
-    (step: number, tool?: string, reason?: string) => {
+    (step: number, tool?: string, reason?: string, reject_type?: string) => {
       if (typeof step === 'number' && step >= 0) {
         setDeniedSteps((prev) => {
           const next = new Map(prev);
@@ -185,7 +192,7 @@ export const useChatStreaming = (
             const next = new Map(prev);
             const existing = next.get(step) ?? [];
             if (!existing.some((e) => e.tool === tool))
-              next.set(step, [...existing, { tool, reason }]);
+              next.set(step, [...existing, { tool, reason, reject_type }]);
             return next;
           });
         }
@@ -206,7 +213,12 @@ export const useChatStreaming = (
         if (Array.isArray(parsed)) {
           setDeniedEntries(
             new Map(
-              parsed as Array<[number, Array<{ tool: string; reason: string }>]>
+              parsed as Array<
+                [
+                  number,
+                  Array<{ tool: string; reason: string; reject_type?: string }>,
+                ]
+              >
             )
           );
         }
@@ -235,28 +247,20 @@ export const useChatStreaming = (
     }
   }, [deniedEntries, sessionId]);
 
-  // 2026-09-06 小欧 B2: 拦截(blocked)/超时(timeout) 仍走 error 通道(北京老陈裁定), 其错误对象现带 step ——
-  //   在此过滤聚合 deniedSteps(不打断原有 onError 红字提示链路); user_rejected 已独立事件不含此路 — 小欧-2026-09-06
-  const sseOnError = useCallback(
-    (error: string | import('@/types/sse').SSEError) => {
-      if (typeof error === 'object' && error !== null) {
-        const _e = error as import('@/types/sse').SSEError;
-        if (_e.error_type === 'blocked' || _e.error_type === 'timeout') {
-          // 2026-09-06 小欧 B2(6.4): 事件带被拒工具名与理由, 聚合点名条(deniedEntries) — 小欧-2026-09-06
-          if (typeof _e.step === 'number')
-            markDenied(_e.step, _e.tool_name, _e.error_message);
-        }
-      }
-      onError?.(error);
-    },
-    [onError, markDenied]
-  );
-
-  // 2026-09-06 小欧 B2: 独立拒绝事件回调(不占 error 通道, 无红字) — 小欧-2026-09-06
-  const handleDenied = useCallback(
-    (step: number, message: string, toolName?: string) => {
-      // 2026-09-06 小欧 B2(6.4): toolName 透传, 聚合点名条(reason=拒绝消息) — 小欧-2026-09-06
-      markDenied(step, toolName, message);
+  // 2026-09-16 小欧: 统一拒绝事件 type="rejected" — 替代旧 error(blocked/timeout) + user_rejected
+  //   合并为统一的 handleRejected 函数，接收 reject_type 参数
+  // 2026-09-17 小欧 会审V3(#9): 外层 if(tool_name && reject_type) 护栏删除——护栏会把整回调包死,
+  //   tool_name 缺失时齿轮(deniedSteps)不再停转; markDenied 内部已有 step≥0 计数护栏杆,
+  //   点名条聚合自带 tool&&reason 条件, 分层职责清晰 — 小欧-2026-09-17
+  const handleRejected = useCallback(
+    (data: {
+      step: number;
+      message: string;
+      tool_name?: string;
+      reject_type: string;
+    }) => {
+      // 统一聚合到 deniedEntries，传递 reject_type 供 UI 显示不同图标
+      markDenied(data.step, data.tool_name, data.message, data.reject_type);
     },
     [markDenied]
   );
@@ -282,12 +286,12 @@ export const useChatStreaming = (
     onStep,
     onChunk,
     onComplete,
-    sseOnError, // 2026-09-06 小欧 B2: 包装聚合 blocked/timeout 到 deniedStepSet — 小欧-2026-09-06
+    onError,
     onPaused,
     onResumed,
     onRetry,
     onAuthorizationRequired, // 【v3.4新增 2026-06-09 小沈】
-    handleDenied // 2026-09-06 小欧 B2: 独立拒绝事件聚合到 deniedStepSet — 小欧-2026-09-06
+    handleRejected // 小欧 2026-09-17 会审V3: 原 onDenied 位传 undefined 占位已删(YAGNI 零消费者), 统一拒绝回调直传 — 小欧-2026-09-17
   );
 
   // 从state中获取Refs
