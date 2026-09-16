@@ -15,6 +15,8 @@
 //   加固后手动确认/代发任一次即锁定, 消除对 key 重建的依赖(与回归守卫 BUG-13/BUG-11 断言对齐) - 小欧-2026-09-07
 // 编辑历史: 2026-09-16 小欧 - 文档[44]5.6 缺陷①③修复: 缺陷①bypass下disable勾选框(原仅handleConfirm强改false, UI仍可勾, 静默失效误导);
 //   缺陷③按工具域区分文案(registry工具路径含子键, 其余含子目录) — 小欧-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 浏览器白屏根因修复: 老杨T4 CollapsibleText误用default导入(命名导出)ES模块加载失败致React未挂载, 改命名导入;
+//   S2 request possibly null 改可选链 — 小欧-2026-09-16
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -35,21 +37,28 @@
 
 import React from 'react';
 import {
-  Modal,
   Button,
   Typography,
   Tag,
   Checkbox,
-  Progress,
   Tooltip,
 } from 'antd';
 import {
   WarningOutlined,
   ExclamationCircleOutlined,
   StopOutlined,
+  ThunderboltOutlined,
+  QuestionCircleOutlined,
 } from '@ant-design/icons';
 // 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons), 单例注入防重复style — 小欧-2026-09-15
 import { injectKeyframes } from '../AnimatedIcons/animations';
+// 2026-09-16 老杨 - S3:引入CountdownRing子组件,countdown/progress隔离 - 老杨-2026-09-16
+import CountdownRing from './CountdownRing';
+// 2026-09-16 老杨 - T1:引入HITLModalShell统一壳+HITL_TOKENS设计令牌 - 老杨-2026-09-16
+import HITLModalShell, { HITL_TOKENS } from './HITLModalShell';
+// 2026-09-16 老杨 - T4:引入CollapsibleText,参数区可折叠 - 老杨-2026-09-16
+// 2026-09-16 小欧 - 修复: CollapsibleText为命名导出, default导入致ES module加载失败白屏, 改命名导入 - 小欧-2026-09-16
+import { CollapsibleText } from '../../features/chat/components/pipeline/CollapsibleText';
 
 const { Text, Title } = Typography;
 
@@ -110,6 +119,16 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   const isBypass = Boolean(request?.autoConfirm);
   onConfirmRef.current = onConfirm;
 
+  // 2026-09-16 老杨 - S2: useMemo缓存JSON.stringify,防循环引用白屏
+  // 2026-09-16 小欧 - 修复: request?.params 可选链, 消除 tsc TS18047 possibly null - 小欧-2026-09-16
+  const paramsStr = React.useMemo(() => {
+    try {
+      return JSON.stringify(request?.params, null, 2);
+    } catch {
+      return '"[参数序列化失败]"';
+    }
+  }, [request?.params]);
+
   React.useEffect(() => {
     // 2026-09-03 小欧 Bug-21: 首 tick 100ms 内即刻 -1(节奏对齐), 再走 1s interval; 依赖无 countdown(函数式更新)
     if (!visible || !request) return;
@@ -146,10 +165,6 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   };
 
   const confirmTimeout = request.confirmTimeout ?? 60;
-  const progressPercent =
-    confirmTimeout > 0 ? Math.round((countdown / confirmTimeout) * 100) : 0;
-  const strokeColor =
-    countdown <= 3 ? '#fa541c' : countdown <= 5 ? '#faad14' : '#1677ff';
 
   // 小欧 2026-09-03 三堂会审问题1方案A: bypass(安全开关绕开)模式下即使勾选"信任此操作"也不产生信任,
   //   强制 trustSession=false(防绕过5.4防污染: bypass期间勾出的信任切回enabled:true后转正为长期豁免)
@@ -162,34 +177,21 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   };
 
   return (
-    <Modal
-      open={visible}
-      title={null}
-      footer={null}
-      closable={false}
-      maskClosable={false}
-      keyboard={false}
-      width={480}
-      style={{
-        border: isBypass ? '1.5px dashed #1677ff' : '1.5px solid #faad14',
-        borderRadius: '8px',
-        overflow: 'hidden',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-      }}
-      styles={{
-        body: {
-          padding: '12px',
-        },
-      }}
-    >
+    <HITLModalShell open={visible} isBypass={isBypass}>
       <div style={{ textAlign: 'center' }}>
-        <WarningOutlined
-          style={{
-            fontSize: 32,
-            color: isBypass ? '#1677ff' : '#faad14',
-            marginBottom: 8,
-          }}
-        />
+        {isBypass ? (
+          <ThunderboltOutlined
+            style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#1677ff', marginBottom: 8 }}
+          />
+        ) : (
+          <WarningOutlined
+            style={{
+              fontSize: HITL_TOKENS.ICON_SIZE,
+              color: '#faad14',
+              marginBottom: 8,
+            }}
+          />
+        )}
 
         <div
           style={{
@@ -210,33 +212,10 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </Tag>
         </div>
 
-        <div style={{ textAlign: 'center', marginBottom: 4 }}>
-          <Progress
-            type="circle"
-            size={60}
-            percent={progressPercent}
-            strokeColor={strokeColor}
-            strokeWidth={5}
-            format={() => (
-              <div style={{ textAlign: 'center', lineHeight: 1.2 }}>
-                <div
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 600,
-                    color: countdown <= 3 ? '#fa541c' : '#333',
-                    animation:
-                      countdown <= 3
-                        ? 'pulse 0.8s ease-in-out infinite'
-                        : 'none',
-                  }}
-                >
-                  {countdown}
-                </div>
-                <div style={{ fontSize: 11, color: '#8c8c8c' }}>秒</div>
-              </div>
-            )}
-          />
-        </div>
+        <CountdownRing
+          countdown={countdown}
+          confirmTimeout={confirmTimeout}
+        />
         <div
           style={{
             fontSize: 13,
@@ -259,8 +238,6 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             padding: 8,
             marginBottom: 8,
             textAlign: 'left',
-            maxHeight: 150,
-            overflow: 'auto',
           }}
         >
           <div style={{ marginBottom: 4 }}>
@@ -280,17 +257,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
               执行参数：
             </Text>
             <br />
-            <Text
-              code
-              style={{
-                display: 'block',
-                marginTop: 4,
-                fontSize: 12,
-                wordBreak: 'break-all',
-              }}
-            >
-              {JSON.stringify(request.params, null, 2)}
-            </Text>
+            <CollapsibleText text={paramsStr} maxLines={5} maxChars={200} />
           </div>
         </div>
 
@@ -299,24 +266,29 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             checked={trustSession}
             disabled={submitting || isBypass} // 2026-09-16 小欧 缺陷①修复: bypass 禁用勾选框, 防静默失效误导(原仅 handleConfirm 强改 false, UI 仍可勾) — 小欧-2026-09-16
             onChange={(e) => setTrustSession(e.target.checked)}
+            // 2026-09-16 老杨 - S5:Tooltip改原生title,消除Popover DOM层; 保留缺陷①③文案
+            title={isBypass
+              ? '自动确认模式下信任不落库，勾选无效'
+              : request.trustPath
+                ? `${request.toolName} › ${request.trustPath}${
+                    request.toolName.startsWith('registry') ? '，含子键' : '，含子目录'
+                  }`
+                : undefined}
           >
-            {isBypass ? (
-              <Tooltip title="自动确认模式下信任不落库，勾选无效">
-                <span>信任此操作（本次会话）</span>
-              </Tooltip>
-            ) : request.trustPath ? (
-              <Tooltip
-                // 2026-09-16 小欧 缺陷③修复: 按工具域区分文案(registry→含子键, 其余→含子目录) — 小欧-2026-09-16
-                title={`${request.toolName} › ${request.trustPath}${
-                  request.toolName.startsWith('registry') ? '，含子键' : '，含子目录'
-                }`}
-              >
-                <span>信任此操作（本次会话）</span>
-              </Tooltip>
-            ) : (
-              '信任此操作（本次会话）'
-            )}
+            信任此操作（本次会话）
           </Checkbox>
+          {/* 2026-09-16 老杨 - T6:Trust checkbox加Tooltip解释信任含义/范围/撤销 */}
+          <Tooltip
+            title={
+              <div>
+                <div>信任后：同会话同工具+目标路径免弹框</div>
+                <div>范围：仅本次会话有效</div>
+                <div>撤销：TaskInfoBar → 信任(N) → Drawer → 点×</div>
+              </div>
+            }
+          >
+            <QuestionCircleOutlined style={{ marginLeft: 4, color: '#8c8c8c' }} />
+          </Tooltip>
         </div>
 
         <div style={{ display: 'flex', gap: 12, width: '100%' }}>
@@ -327,6 +299,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             danger
             ghost
             style={{ flex: 1 }}
+            aria-label="拒绝执行此工具操作"
           >
             拒绝执行
           </Button>
@@ -336,6 +309,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             size="large"
             loading={submitting}
             disabled={submitting}
+            aria-label="允许执行此工具操作"
             style={{
               backgroundColor: '#faad14',
               borderColor: '#faad14',
@@ -347,7 +321,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </Button>
         </div>
       </div>
-    </Modal>
+    </HITLModalShell>
   );
 };
 
