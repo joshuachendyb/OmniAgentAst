@@ -19,6 +19,11 @@
 //   S2 request possibly null 改可选链 — 小欧-2026-09-16
 // 编辑历史: 2026-09-16 老陈 - UI微调: ①工具名称+工具名词label+值改为flex同行(去<br/>分行); ②底部拒绝/允许按钮size="large"→"middle"取消偏大 - 老陈-2026-09-16
 // 编辑历史: 2026-09-16 老陈 - 参数区去掉展开收起,超过2行直接出滚动条; paramsStr改Object.entries纯文本无花括号 - 老陈-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 文档v1.5定案实施(设计文档《HITL窗口工具名词参数显示优化审核报告》):
+//   ①参数格式化改key=value每参数一行(冒号改等号,禁JSON式) ②参数区固定3行高height:54+overflow滚动+超长wordBreak:break-all自动换行 ③参数区改单层轻量视觉容器(浅灰底#fafafa+细边框#e8e8e8+圆角4)取消与内层白底#fff的双层叠加 ④工具名称+执行参数标签合并flex同行 ⑤工具名称品牌蓝#1677ff高亮 - 小欧-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 三堂会审修复(2项): ①参数容器height:54在antd5全局border-box下含padding(4×2)+border(1×2)致内容区仅44px≈2.4行不足定案3行, 补boxSizing:'content-box'保证内容高=54px(3行×18px); ②P2合并行外层div删textAlign:'left'死属性(flex容器下对flex item无效) - 小欧-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 参数区居中对齐bug修复: 参数容器div补textAlign:'left'(外层textAlign:'center'继承至span致参数文本居中, 需在容器覆盖) - 小欧-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 参数区高度3行→4行: 北京老陈目视验收"整体高度不错,参数区可设4行", height:54(3×18)→72(4×18) - 小欧-2026-09-16
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -38,13 +43,7 @@
  */
 
 import React from 'react';
-import {
-  Button,
-  Typography,
-  Tag,
-  Checkbox,
-  Tooltip,
-} from 'antd';
+import { Button, Typography, Tag, Checkbox, Tooltip } from 'antd';
 import {
   WarningOutlined,
   ExclamationCircleOutlined,
@@ -58,7 +57,6 @@ import { injectKeyframes } from '../AnimatedIcons/animations';
 import CountdownRing from './CountdownRing';
 // 2026-09-16 老杨 - T1:引入HITLModalShell统一壳+HITL_TOKENS设计令牌 - 老杨-2026-09-16
 import HITLModalShell, { HITL_TOKENS } from './HITLModalShell';
-
 
 const { Text, Title } = Typography;
 
@@ -121,12 +119,13 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
 
   // 2026-09-16 老陈 - 纯文本显示,去掉{}花括号
   // 2026-09-16 小欧 - 修复: request?.params 可选链, 消除 tsc TS18047 possibly null - 小欧-2026-09-16
+  // 2026-09-16 小欧 - 文档v1.5定案: 参数禁JSON式, 改key=value每参数一行(\n连接) - 小欧-2026-09-16
   const paramsStr = React.useMemo(() => {
     try {
       const p = request?.params;
       if (!p || typeof p !== 'object') return String(p ?? '');
       return Object.entries(p)
-        .map(([k, v]) => `${k}: ${String(v ?? '')}`)
+        .map(([k, v]) => `${k}=${String(v ?? '')}`)
         .join('\n');
     } catch {
       return '[参数序列化失败]';
@@ -185,7 +184,11 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
       <div style={{ textAlign: 'center' }}>
         {isBypass ? (
           <ThunderboltOutlined
-            style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#1677ff', marginBottom: 4 }}
+            style={{
+              fontSize: HITL_TOKENS.ICON_SIZE,
+              color: '#1677ff',
+              marginBottom: 4,
+            }}
           />
         ) : (
           <WarningOutlined
@@ -216,10 +219,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </Tag>
         </div>
 
-        <CountdownRing
-          countdown={countdown}
-          confirmTimeout={confirmTimeout}
-        />
+        <CountdownRing countdown={countdown} confirmTimeout={confirmTimeout} />
         <div
           style={{
             fontSize: 13,
@@ -234,39 +234,59 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             : `未响应将在 ${countdown}s 后自动拒绝`}
         </div>
 
+        {/* 2026-09-16 小欧 文档v1.5定案: 去外层灰底盒子(取消双层叠加), 工具名称+执行参数标签合并flex同行(P2) + 参数区单层轻量视觉容器(P0/P1b/P3) — 小欧-2026-09-16 */}
         <div
           style={{
-            backgroundColor: '#fafafa',
-            border: '1px solid #f0f0f0',
-            borderRadius: 4,
-            padding: 6,
-            marginBottom: 4,
-            textAlign: 'left',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 2,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
-            <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-              工具名称：
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <Text
+              type="secondary"
+              style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+            >
+              工具名称:
             </Text>
-            <Text strong style={{ fontSize: 14 }}>
+            <Text strong style={{ fontSize: 13, color: '#1677ff' }}>
               {request.toolName}
             </Text>
           </div>
-          <div style={{ marginBottom: 4 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              执行参数：
+          {paramsStr && (
+            <Text
+              type="secondary"
+              style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+            >
+              执行参数:
             </Text>
-          </div>
-          <div style={{
-            backgroundColor: '#fff',
-            border: '1px solid #e8e8e8',
-            borderRadius: 4,
-            padding: 6,
-            maxHeight: 120,
+          )}
+        </div>
+        {/* 参数值区域: 固定4行高(height:72=4×18) + 滚动条 + 超长自动换行 + 单层轻量视觉容器; boxSizing:content-box确保border-box下内容区=72px(62+8+2=72); textAlign:left覆盖外层继承的center(否则参数文本居中) — 小欧-2026-09-16 */}
+        <div
+          style={{
+            height: 72,
             overflow: 'auto',
-          }}>
-            <span style={{ fontSize: 12, lineHeight: '18px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{paramsStr}</span>
-          </div>
+            lineHeight: '18px',
+            borderRadius: 4,
+            padding: '4px 6px',
+            backgroundColor: '#fafafa',
+            border: '1px solid #e8e8e8',
+            marginBottom: 4,
+            boxSizing: 'content-box',
+            textAlign: 'left',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 12,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+            }}
+          >
+            {paramsStr}
+          </span>
         </div>
 
         <div style={{ marginBottom: 6 }}>
@@ -275,13 +295,17 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             disabled={submitting || isBypass} // 2026-09-16 小欧 缺陷①修复: bypass 禁用勾选框, 防静默失效误导(原仅 handleConfirm 强改 false, UI 仍可勾) — 小欧-2026-09-16
             onChange={(e) => setTrustSession(e.target.checked)}
             // 2026-09-16 老杨 - S5:Tooltip改原生title,消除Popover DOM层; 保留缺陷①③文案
-            title={isBypass
-              ? '自动确认模式下信任不落库，勾选无效'
-              : request.trustPath
-                ? `${request.toolName} › ${request.trustPath}${
-                    request.toolName.startsWith('registry') ? '，含子键' : '，含子目录'
-                  }`
-                : undefined}
+            title={
+              isBypass
+                ? '自动确认模式下信任不落库，勾选无效'
+                : request.trustPath
+                  ? `${request.toolName} › ${request.trustPath}${
+                      request.toolName.startsWith('registry')
+                        ? '，含子键'
+                        : '，含子目录'
+                    }`
+                  : undefined
+            }
           >
             信任此操作（本次会话）
           </Checkbox>
@@ -295,7 +319,9 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
               </div>
             }
           >
-            <QuestionCircleOutlined style={{ marginLeft: 4, color: '#8c8c8c' }} />
+            <QuestionCircleOutlined
+              style={{ marginLeft: 4, color: '#8c8c8c' }}
+            />
           </Tooltip>
         </div>
 
