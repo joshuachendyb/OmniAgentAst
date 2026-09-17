@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>秒表计时样式演示 · 5 种 × 4 状态</title>
+<style>
+  :root{
+    --green:#52c41a; --yellow:#faad14; --orange:#fa541c; --red:#f5222d; --gray:#bfbfbf;
+    --ink:#262626; --sub:#8c8c8c; --line:#e8e8e8; --bg:#f6f8fb; --card:#fff;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    background:var(--bg); color:var(--ink); padding:32px 24px 64px;
+  }
+  .page{max-width:1180px; margin:0 auto;}
+  h1{font-size:24px; letter-spacing:.5px;}
+  .sub{color:var(--sub); font-size:13px; margin:6px 0 4px;}
+  .legend{display:flex; gap:20px; margin:16px 0 28px; flex-wrap:wrap; font-size:13px;}
+  .legend .item{display:flex; align-items:center; gap:6px; color:#595959;}
+  .sw{width:14px; height:14px; border-radius:4px; display:inline-block;}
+  .sw.normal{background:var(--green);} .sw.warm{background:var(--yellow);}
+  .sw.alert{background:var(--orange);} .sw.dead{background:var(--gray);}
+
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:22px 24px; margin-bottom:24px; box-shadow:0 2px 10px rgba(0,0,0,.04);
+  }
+  .card h2{font-size:17px; margin-bottom:2px;}
+  .card .meta{font-size:13px; color:var(--sub); margin-bottom:16px; line-height:1.6;}
+  .stages{display:grid; grid-template-columns:repeat(4,1fr); gap:12px;}
+  .stage{
+    border:1px solid var(--line); border-radius:12px; padding:12px 10px 10px;
+    text-align:center; position:relative; background:#fafbfc;
+  }
+  .stage .tag{font-size:12px; font-weight:600; color:var(--ink); display:block; margin-bottom:2px;}
+  .stage .tag-mid{font-size:11px; color:var(--sub); display:block; margin-bottom:10px; min-height:15px;}
+  .stage .msg{font-size:12px; color:#8c2f15; margin-top:6px; font-weight:600; min-height:16px;}
+  .stage .msg.gray{color:#595959;}
+  .stage .nomsg{font-size:12px; color:#bbb; margin-top:6px; min-height:16px;}
+  .demo{height:64px; display:flex; align-items:center; justify-content:center; position:relative;}
+
+  /* ---------- 图标底座 ---------- */
+  .icon-holder{width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:#fff; box-shadow:0 0 0 1px var(--line), 0 2px 6px rgba(0,0,0,.05); position:relative;}
+  .core{width:14px; height:14px; border-radius:4px; background:currentColor; opacity:.85;
+    border-radius:50%; animation:coreSpin 2.4s linear infinite;}
+  @keyframes coreSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+
+  /* ================= ① 声纳呼吸环 ================= */
+  .sonar{position:relative; width:64px; height:64px;}
+  .sonar .ring{position:absolute; inset:0; border-radius:50%;
+    border:2px solid currentColor; opacity:0;
+    animation:sonarRing 3.6s cubic-bezier(.22,.61,.36,1) infinite;}
+  .sonar .ring:nth-child(1){animation-delay:0s;}
+  .sonar .ring:nth-child(2){animation-delay:1.2s;}
+  .sonar .ring:nth-child(3){animation-delay:2.4s;}
+  @keyframes sonarRing{
+    0%{transform:scale(.35); opacity:.85;}
+    70%{opacity:.25;}
+    100%{transform:scale(1.25); opacity:0;}
+  }
+  .sonar .core{position:absolute; left:50%; top:50%; margin:-7px 0 0 -7px;}
+
+  /* ================= ② 微型钟面 ================= */
+  .clock{position:relative; width:64px; height:64px;}
+  .clock svg{width:100%; height:100%; display:block;}
+  .clock .hand{transform-origin:32px 32px; animation:tick 6s linear infinite;}
+  @keyframes tick{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  .clock .num{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; color:currentColor;}
+  .clock .beat{position:absolute; inset:-3px; border-radius:50%; border:1.5px solid currentColor;
+    opacity:0; pointer-events:none; animation:beatPeriodic 6s ease-out infinite;}
+  @keyframes beatPeriodic{
+    0%,96%{opacity:0; transform:scale(.92);}
+    98%{opacity:.55; transform:scale(1.05);}
+    100%{opacity:0; transform:scale(1.22);}
+  }
+
+  /* ================= ③ 轨道行星 ================= */
+  .orbit{position:relative; width:72px; height:72px;}
+  .orbit .sv{position:absolute; inset:4px; border:1px solid currentColor; border-radius:50%;
+    opacity:.45; transform:rotate(-18deg) scaleY(.6);}
+  .orbit .plane{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    animation:coreSpin 5s linear infinite;}
+  .orbit .moon{position:absolute; width:7px; height:7px; border-radius:50%; background:currentColor;
+    transform-origin:36px 36px; top:calc(50% - 3.5px); left:calc(50% - 3.5px);}
+  .orbit .moon.m1{transform:rotate(0deg)   translateX(26px);}
+  .orbit .moon.m2{transform:rotate(60deg)  translateX(26px);}
+  .orbit .moon.m3{transform:rotate(120deg) translateX(26px);}
+  .orbit .moon.m4{transform:rotate(180deg) translateX(26px);}
+  .orbit .moon.m5{transform:rotate(240deg) translateX(26px);}
+  .orbit .moon.m6{transform:rotate(300deg) translateX(26px);}
+  .orbit .moon.m7{transform:rotate(30deg)  translateX(26px);}
+  .orbit .moon.m8{transform:rotate(90deg)  translateX(26px);}
+  .orbit .moon.m9{transform:rotate(150deg) translateX(26px);}
+  .orbit .moon.m10{transform:rotate(210deg) translateX(26px);}
+  .orbit .moon.m11{transform:rotate(270deg) translateX(26px);}
+  .orbit .moon.m12{transform:rotate(330deg) translateX(26px);}
+  .orbit .core{position:absolute; left:50%; top:50%; margin:-7px 0 0 -7px;}
+
+  /* ================= ④ 琥珀滴管 ================= */
+  .tube{position:relative; width:34px; height:62px;}
+  .tube svg{width:100%; height:100%; display:block;}
+  .tube .drop{position:absolute; left:50%; width:7px; height:9px; margin-left:-3.5px; border-radius:60% 60% 50% 50%;
+    background:currentColor; opacity:0; animation:dropFall 3.2s ease-in infinite; z-index:2;}
+  .drop-cap{animation-duration:1.6s;}
+  .fill-cap{animation-duration:1.6s;}
+  @keyframes dropFall{
+    0%{top:6px; opacity:0;}
+    12%{opacity:.9;}
+    30%{top:26px; opacity:0;}
+    100%{top:26px; opacity:0;}
+  }
+  .tube .liquid{transition:height .2s ease;}
+
+  /* ================= ⑤ 凝光聚核 ================= */
+  .focus{position:relative; width:68px; height:68px;}
+  .focus .g{position:absolute; width:6px; height:6px; border-radius:50%; background:currentColor;
+    left:50%; top:50%; opacity:.15; animation:glowPulse 2.2s ease-in-out infinite;}
+  .focus .core{position:absolute; left:50%; top:50%; margin:-7px 0 0 -7px;}
+  @keyframes glowPulse{0%,100%{opacity:.15; transform:scale(.8)}50%{opacity:.85; transform:scale(1.25)}}
+  .focus .g:nth-child(1){transform:translate(24px,0);}
+  .focus .g:nth-child(2){transform:translate(17px,17px); animation-delay:.28s;}
+  .focus .g:nth-child(3){transform:translate(0,24px); animation-delay:.56s;}
+  .focus .g:nth-child(4){transform:translate(-17px,17px); animation-delay:.84s;}
+  .focus .g:nth-child(5){transform:translate(-24px,0); animation-delay:1.12s;}
+  .focus .g:nth-child(6){transform:translate(-17px,-17px); animation-delay:1.4s;}
+  .focus .g:nth-child(7){transform:translate(0,-24px); animation-delay:1.68s;}
+  .focus .g:nth-child(8){transform:translate(17px,-17px); animation-delay:1.96s;}
+  .focus.dense .g:nth-child(9){transform:translate(7.8px,22.7px); animation-delay:.14s;}
+  .focus.dense .g:nth-child(10){transform:translate(-7.8px,22.7px); animation-delay:.42s;}
+  .focus.dense .g:nth-child(11){transform:translate(-22.7px,7.8px); animation-delay:.7s;}
+  .focus.dense .g:nth-child(12){transform:translate(-22.7px,-7.8px); animation-delay:.98s;}
+  .focus.dense .g:nth-child(13){transform:translate(22.7px,7.8px); animation-delay:1.26s;}
+  .focus.dense .g:nth-child(14){transform:translate(22.7px,-7.8px); animation-delay:1.54s;}
+
+  /* 档位配色 */
+  .c-normal{color:var(--green);}
+  .c-warm{color:var(--yellow);}
+  .c-alert{color:var(--orange);}
+  .c-dead{color:var(--gray);}
+  .c-normal .msg{color:#389e0d;}
+  .c-dead .msg{color:#595959;}
+
+  @media(max-width:900px){ .stages{grid-template-columns:repeat(2,1fr);} }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>秒表计时样式演示 · 5 种样式 × 4 种状态</h1>
+  <div class="sub">编写人：小欧 · 2026-09-17 · 纯 HTML/CSS 动画，直接浏览器打开即看效果</div>
+
+  <div class="legend">
+    <div class="item"><span class="sw normal"></span> 10~60s 基态（秒表正常走字）</div>
+    <div class="item"><span class="sw warm"></span>&gt;60s 转黄（取代文字"最近有动静"，图标传达）</div>
+    <div class="item"><span class="sw alert"></span>&gt;120s 转橙红 + 文案「后端长时间未响应」</div>
+    <div class="item"><span class="sw dead"></span>断连 变灰 + 文案「连接疑似中断」</div>
+  </div>
+
+  <!-- ==================== ① 声纳呼吸环 ==================== -->
+  <div class="card">
+    <h2>① 声纳呼吸环（同心脉冲波）</h2>
+    <div class="meta">等待图标为核心，每 10s 弹出一圈扩散波环，波环数=已过的 10s 周期；波向外扩散、永不走完 → 无"满格=完成"伪进度。</div>
+    <div class="stages">
+      <div class="stage c-normal">
+        <span class="tag">基态 10~60s</span><span class="tag-mid">波环逐圈扩散·绿</span>
+        <div class="demo"><div class="sonar"><i class="ring"></i><i class="ring"></i><i class="ring"></i><span class="core"></span></div></div>
+        <div class="nomsg">无文字</div>
+      </div>
+      <div class="stage c-warm">
+        <span class="tag">60~120s</span><span class="tag-mid">波环转黄</span>
+        <div class="demo"><div class="sonar"><i class="ring"></i><i class="ring"></i><i class="ring"></i><span class="core"></span></div></div>
+        <div class="nomsg">无文字（图标传达）</div>
+      </div>
+      <div class="stage c-alert">
+        <span class="tag">&gt;120s</span><span class="tag-mid">波环转橙红</span>
+        <div class="demo"><div class="sonar"><i class="ring"></i><i class="ring"></i><i class="ring"></i><span class="core"></span></div></div>
+        <div class="msg">后端长时间未响应</div>
+      </div>
+      <div class="stage c-dead">
+        <span class="tag">断连</span><span class="tag-mid">波环停、变灰</span>
+        <div class="demo"><div class="sonar"><span class="core" style="animation:none;"></span></div></div>
+        <div class="msg gray">连接疑似中断</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== ② 微型钟面 ==================== -->
+  <div class="card">
+    <h2>② 微型钟面（60s 归零指针）</h2>
+    <div class="meta">微型表盘（短针版）：短针贴内缘环带扫过＝时间流逝，每 60s 归零重扫、不遮中央；中央等宽数字＝纯秒精确计数（≥10s 显示、无单位，小尺寸仍清晰）；每次收到后端心跳→盘外圈闪一道光波＝存活确认（演示缩时：指针约 6s 一圈、心跳约 6s 一闪）；颜色三档按统一时长 60s/120s。</div>
+    <div class="stages">
+      <div class="stage c-normal">
+        <span class="tag">基态 10~60s</span><span class="tag-mid">指针扫动·绿盘·心跳微闪</span>
+        <div class="demo">
+          <div class="clock">
+            <svg viewBox="0 0 64 64">
+              <circle cx="32" cy="32" r="30" fill="none" stroke="currentColor" stroke-width="2" opacity=".9"/>
+              <circle cx="32" cy="32" r="19" fill="none" stroke="currentColor" stroke-width="1" opacity=".3" stroke-dasharray="2 4"/>
+              <g stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".7">
+                <line x1="32" y1="5" x2="32" y2="9"/>
+                <line x1="32" y1="55" x2="32" y2="59"/>
+                <line x1="5" y1="32" x2="9" y2="32"/>
+                <line x1="55" y1="32" x2="59" y2="32"/>
+              </g>
+              <rect class="hand" x="31" y="9" width="2.4" height="11" rx="1.2" fill="currentColor"/>
+            </svg>
+            <span class="num">36</span>
+            <span class="beat"></span>
+          </div>
+        </div>
+        <div class="nomsg">无文字</div>
+      </div>
+      <div class="stage c-warm">
+        <span class="tag">60~120s</span><span class="tag-mid">盘转黄·心跳微闪</span>
+        <div class="demo">
+          <div class="clock">
+            <svg viewBox="0 0 64 64">
+              <circle cx="32" cy="32" r="30" fill="none" stroke="currentColor" stroke-width="2" opacity=".9"/>
+              <circle cx="32" cy="32" r="19" fill="none" stroke="currentColor" stroke-width="1" opacity=".3" stroke-dasharray="2 4"/>
+              <g stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".7">
+                <line x1="32" y1="5" x2="32" y2="9"/>
+                <line x1="32" y1="55" x2="32" y2="59"/>
+                <line x1="5" y1="32" x2="9" y2="32"/>
+                <line x1="55" y1="32" x2="59" y2="32"/>
+              </g>
+              <rect class="hand" x="31" y="9" width="2.4" height="11" rx="1.2" fill="currentColor"/>
+            </svg>
+            <span class="num">72</span>
+            <span class="beat"></span>
+          </div>
+        </div>
+        <div class="nomsg">无文字（图标传达）</div>
+      </div>
+      <div class="stage c-alert">
+        <span class="tag">&gt;120s</span><span class="tag-mid">盘转橙红·心跳微闪</span>
+        <div class="demo">
+          <div class="clock">
+            <svg viewBox="0 0 64 64">
+              <circle cx="32" cy="32" r="30" fill="none" stroke="currentColor" stroke-width="2" opacity=".9"/>
+              <circle cx="32" cy="32" r="19" fill="none" stroke="currentColor" stroke-width="1" opacity=".3" stroke-dasharray="2 4"/>
+              <g stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".7">
+                <line x1="32" y1="5" x2="32" y2="9"/>
+                <line x1="32" y1="55" x2="32" y2="59"/>
+                <line x1="5" y1="32" x2="9" y2="32"/>
+                <line x1="55" y1="32" x2="59" y2="32"/>
+              </g>
+              <rect class="hand" x="31" y="9" width="2.4" height="11" rx="1.2" fill="currentColor"/>
+            </svg>
+            <span class="num">125</span>
+            <span class="beat"></span>
+          </div>
+        </div>
+        <div class="msg">后端长时间未响应</div>
+      </div>
+      <div class="stage c-dead">
+        <span class="tag">断连</span><span class="tag-mid">指停、盘灰、心跳无</span>
+        <div class="demo">
+          <div class="clock">
+            <svg viewBox="0 0 64 64">
+              <circle cx="32" cy="32" r="30" fill="none" stroke="currentColor" stroke-width="2" opacity=".9"/>
+              <circle cx="32" cy="32" r="19" fill="none" stroke="currentColor" stroke-width="1" opacity=".3" stroke-dasharray="2 4"/>
+              <g stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".7">
+                <line x1="32" y1="5" x2="32" y2="9"/>
+                <line x1="32" y1="55" x2="32" y2="59"/>
+                <line x1="5" y1="32" x2="9" y2="32"/>
+                <line x1="55" y1="32" x2="59" y2="32"/>
+              </g>
+              <rect x="31" y="9" width="2.4" height="11" rx="1.2" fill="currentColor" opacity=".5" style="animation:none;"/>
+            </svg>
+            <span class="num" style="opacity:.6;">107</span>
+          </div>
+        </div>
+        <div class="msg gray">连接疑似中断</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== ③ 轨道行星 ==================== -->
+  <div class="card">
+    <h2>③ 轨道行星（光点绕行 · 数量递增）</h2>
+    <div class="meta">等待图标为恒星，每 10s 点缀出一颗绕行卫星（60s=6 颗，120s=12 颗）；点数粗估时长，绕行永不停 → 无"走完=完成"。</div>
+    <div class="stages">
+      <div class="stage c-normal">
+        <span class="tag">基态 10~60s</span><span class="tag-mid">卫星逐颗增·绿</span>
+        <div class="demo">
+          <div class="orbit">
+            <div class="sv"></div>
+            <div class="plane">
+              <span class="moon m1"></span><span class="moon m2"></span><span class="moon m3"></span>
+            </div>
+            <span class="core"></span>
+          </div>
+        </div>
+        <div class="nomsg">无文字</div>
+      </div>
+      <div class="stage c-warm">
+        <span class="tag">60~120s</span><span class="tag-mid">6 颗·转黄</span>
+        <div class="demo">
+          <div class="orbit">
+            <div class="sv"></div>
+            <div class="plane">
+              <span class="moon m1"></span><span class="moon m2"></span><span class="moon m3"></span>
+              <span class="moon m4"></span><span class="moon m5"></span><span class="moon m6"></span>
+            </div>
+            <span class="core"></span>
+          </div>
+        </div>
+        <div class="nomsg">无文字（图标传达）</div>
+      </div>
+      <div class="stage c-alert">
+        <span class="tag">&gt;120s</span><span class="tag-mid">12 颗·转橙红</span>
+        <div class="demo">
+          <div class="orbit">
+            <div class="sv"></div>
+            <div class="plane">
+              <span class="moon m1"></span><span class="moon m2"></span><span class="moon m3"></span>
+              <span class="moon m4"></span><span class="moon m5"></span><span class="moon m6"></span>
+              <span class="moon m7"></span><span class="moon m8"></span><span class="moon m9"></span>
+              <span class="moon m10"></span><span class="moon m11"></span><span class="moon m12"></span>
+            </div>
+            <span class="core"></span>
+          </div>
+        </div>
+        <div class="msg">后端长时间未响应</div>
+      </div>
+      <div class="stage c-dead">
+        <span class="tag">断连</span><span class="tag-mid">卫星停·灰</span>
+        <div class="demo">
+          <div class="orbit">
+            <div class="sv"></div>
+            <div class="plane" style="animation:none;">
+              <span class="moon m1"></span><span class="moon m3"></span><span class="moon m5"></span>
+            </div>
+            <span class="core"></span>
+          </div>
+        </div>
+        <div class="msg gray">连接疑似中断</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== ④ 琥珀滴管 ==================== -->
+  <div class="card">
+    <h2>④ 琥珀滴管（拟物液面累积）</h2>
+    <div class="meta">每 10s 滴入一滴，液面=档位（60s 染黄、120s 染橙红）；拟物直观、辨识度高，需防"液满=快好"误读（用变色+归零化解）。</div>
+    <div class="stages">
+      <div class="stage c-normal">
+        <span class="tag">基态 10~60s</span><span class="tag-mid">滴珠累积·绿</span>
+        <div class="demo">
+          <div class="tube">
+            <svg viewBox="0 0 34 62">
+              <rect x="6" y="4" width="22" height="54" rx="10" fill="none" stroke="currentColor" stroke-width="2" opacity=".9"/>
+              <rect class="liquid" x="9" y="40" width="16" height="15" rx="6" fill="currentColor" opacity=".55"> <animate attributeName="y" values="52;40;52" dur="6s" repeatCount="indefinite"/> </rect>
+            </svg>
+            <span class="drop"></span>
+          </div>
+        </div>
+        <div class="nomsg">无文字</div>
+      </div>
+      <div class="stage c-warm">
+        <span class="tag">60~120s</span><span class="tag-mid">液位中·黄</span>
+        <div class="demo">
+          <div class="tube">
+            <svg viewBox="0 0 34 62">
+              <rect x="6" y="4" width="22" height="54" rx="10" fill="none" stroke="currentColor" stroke-width="2" opacity=".9"/>
+              <rect class="liquid" x="9" y="24" width="16" height="31" rx="6" fill="currentColor" opacity=".55"/>
+            </svg>
+            <span class="drop drop-cap" style="animation-delay:-1.6s;"></span>
+          </div>
+        </div>
+        <div class="nomsg">无文字（图标传达）</div>
+      </div>
+      <div class="stage c-alert">
+        <span class="tag">&gt;120s</span><span class="tag-mid">液位高·橙红</span>
+        <div class="demo">
+          <div class="tube">
+            <svg viewBox="0 0 34 62">
+              <rect x="6" y="4" width="22" height="54" rx="10" fill="none" stroke="currentColor" stroke-width="2" opacity=".9"/>
+              <rect class="liquid" x="9" y="10" width="16" height="45" rx="6" fill="currentColor" opacity=".55"/>
+            </svg>
+            <span class="drop drop-cap" style="animation-delay:-1.6s;"></span>
+          </div>
+        </div>
+        <div class="msg">后端长时间未响应</div>
+      </div>
+      <div class="stage c-dead">
+        <span class="tag">断连</span><span class="tag-mid">停滴·灰</span>
+        <div class="demo">
+          <div class="tube">
+            <svg viewBox="0 0 34 62">
+              <rect x="6" y="4" width="22" height="54" rx="10" fill="none" stroke="currentColor" stroke-width="2" opacity=".9"/>
+              <rect class="liquid" x="9" y="38" width="16" height="17" rx="6" fill="currentColor" opacity=".35"/>
+            </svg>
+          </div>
+        </div>
+        <div class="msg gray">连接疑似中断</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== ⑤ 凝光聚核 ==================== -->
+  <div class="card">
+    <h2>⑤ 凝光聚核（光点渐密 · 聚拢核心）</h2>
+    <div class="meta">外围光点随等待持续浮现、密度渐增（60s 半圈、120s 满圈）；"聚拢"略带收束直觉，视觉上有利有弊。</div>
+    <div class="stages">
+      <div class="stage c-normal">
+        <span class="tag">基态 10~60s</span><span class="tag-mid">零星光点·绿</span>
+        <div class="demo">
+          <div class="focus"><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><span class="core"></span></div>
+        </div>
+        <div class="nomsg">无文字</div>
+      </div>
+      <div class="stage c-warm">
+        <span class="tag">60~120s</span><span class="tag-mid">半圈密·黄</span>
+        <div class="demo">
+          <div class="focus"><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><span class="core"></span></div>
+        </div>
+        <div class="nomsg">无文字（图标传达）</div>
+      </div>
+      <div class="stage c-alert">
+        <span class="tag">&gt;120s</span><span class="tag-mid">满圈密·橙红</span>
+        <div class="demo">
+          <div class="focus dense"><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><span class="core"></span></div>
+        </div>
+        <div class="msg">后端长时间未响应</div>
+      </div>
+      <div class="stage c-dead">
+        <span class="tag">断连</span><span class="tag-mid">光点熄·灰</span>
+        <div class="demo">
+          <div class="focus"><i class="g" style="animation:none; opacity:.18;"></i><i class="g" style="animation:none; opacity:.18;"></i><i class="g" style="animation:none; opacity:.18;"></i><span class="core"></span></div>
+        </div>
+        <div class="msg gray">连接疑似中断</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sub" style="margin-top:8px;">断连档位：秒表动画停摆（指针/波环/卫星/滴珠/光点全部静止）+ 变灰 + 「连接疑似中断」；回放/结束：全部隐藏清零，不在此页演示。</div>
+
+</div>
+</body>
+</html>
