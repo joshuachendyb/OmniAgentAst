@@ -106,6 +106,7 @@
 //   ④DBG-1 日志去 recv 槽位(5.5.3-(二) 只留 live/match/final/biz 前缀四字段) ⑤import viewState — 小欧-2026-09-14
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": RightViewerProps deniedEntries 类型新增 reject_type 字段 - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock prop(类型导入 ClockSignals/接口声明/解构/透传 PipelineRenderer) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 会审V3修复(复核三遍): Prettier 格式对齐——deniedEntries 内联类型超长行展开为多行(项目 prettier 排版规范, 纯格式零逻辑) — 小欧-2026-09-17
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -160,7 +161,10 @@ interface RightViewerProps {
   highlightToolName: string | null;
   frames: TaskMetaFrames; // 2026-09-02 小欧: useTaskInfo badge 派生输入(startInfo 判定 running)
   deniedSteps: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 透传 PipelineRenderer 停齿轮 — 小欧-2026-09-06
-  deniedEntries: ReadonlyMap<number, Array<{ tool: string; reason: string; reject_type?: string }>>; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 透传 ToolCallLine 灰字 — 小欧-2026-09-06
+  deniedEntries: ReadonlyMap<
+    number,
+    Array<{ tool: string; reason: string; reject_type?: string }>
+  >; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 透传 ToolCallLine 灰字 — 小欧-2026-09-06
   waitClock?: ClockSignals; // 2026-09-17 小欧 [46]第五章: 钟面信号, 透传 PipelineRenderer — 小欧-2026-09-17
   // 2026-09-11 小欧 三堂会审P1-4: 复用公用 TokenLayer——原 {prompt_tokens?: number;...} | null 与 StaticStatsBlock 必选字段形状不匹配(TS2322), 统一后 DRY — 小欧-2026-09-11
   sessionTokens?: TokenLayer;

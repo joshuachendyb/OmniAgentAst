@@ -77,6 +77,7 @@
 // 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 步骤摘要段去📋emoji前缀, 只留 summary/content 文本 — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": PipelineRendererProps deniedEntries 类型新增 reject_type 字段 - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock prop 并透传; waiting段 ThoughtWaitingIcon / TextStream / ToolCallLine 三处挂钟面(历史回放不传→无钟面) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 会审V3修复(复核三遍): Prettier 格式对齐——deniedEntries 内联类型超长行展开为多行(项目 prettier 排版规范, 纯格式零逻辑) — 小欧-2026-09-17
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -274,7 +275,10 @@ interface PipelineRendererProps {
   headerNode?: React.ReactNode; // 头部·模型标识
   badge?: TaskBadge; // 2026-09-02 小欧: 任务活跃徽标(running/paused=任务仍进行), 撑起三个 waiting 丢失窗口
   deniedSteps?: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 供停齿轮判定 — 小欧-2026-09-06
-  deniedEntries?: ReadonlyMap<number, Array<{ tool: string; reason: string; reject_type?: string }>>; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 传 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
+  deniedEntries?: ReadonlyMap<
+    number,
+    Array<{ tool: string; reason: string; reject_type?: string }>
+  >; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 传 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
   waitClock?: ClockSignals; // 2026-09-17 小欧 [46]第五章: 钟面信号(历史回放不传→无钟面, 语义自洽) — 小欧-2026-09-17
 }
 
@@ -324,7 +328,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           if (i !== segs.length - 1 || !taskActive) return null;
           return (
             <div key={`waiting-${i}`} style={{ margin: stepMargin(false) }}>
-              <ThoughtWaitingIcon waitClock={waitClock} /> {/* 2026-09-17 小欧 [46]: 等待图标与钟面并存(追加) — 小欧-2026-09-17 */}
+              <ThoughtWaitingIcon waitClock={waitClock} />{' '}
+              {/* 2026-09-17 小欧 [46]: 等待图标与钟面并存(追加) — 小欧-2026-09-17 */}
             </div>
           );
         }

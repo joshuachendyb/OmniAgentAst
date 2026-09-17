@@ -51,13 +51,15 @@ __all__ = [
 #   并携带通道路由表(SSE/DB/短信号 三列)逐行对照迁移, 缺一不放行。
 # 转发表推导: stream_orchestrator._SSE_FORWARD_TYPES = ALL_STEP_TYPES − {"thought"}(仅落库集), DRY 单一来源。
 # 全集来源: [29]§7.1.3(当前 HEAD 4bf3ea987 逐字面值实证)。
+# 2026-09-17 小欧 会审复核(#3): "user_rejected" 退位 → "rejected"(2026-09-16 统一拒绝事件后 user_rejected 零发射,
+#   登记源同步, 与 stream_orchestrator._SSE_FORWARD_TYPES 白名单/纪律[29]§7.3.1 对齐) — 小欧-2026-09-17
 ALL_STEP_TYPES = frozenset({
     # SSE + 落库(SSE✓/DB✓)
     "start", "action", "observation", "final", "final_stats",
     # 仅SSE(SSE✓/DB✗, 实时信号)
     "chunk", "thought-start",
     "error", "usage", "paused", "resumed", "retrying",
-    "user_rejected", "stats", "context_overview", "truncated",
+    "rejected", "stats", "context_overview", "truncated",
     # 仅落库(SSE✗/DB✓)
     "thought",
     # 防御性保留(当前无独立发射源)

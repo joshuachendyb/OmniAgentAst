@@ -38,6 +38,8 @@
 //   deps 去 receiving; DBG-3c 日志同步去 receiving 槽位 — 小欧-2026-09-14
 // 编辑历史: 2026-09-17 小欧 会审V3整改(#2/#3): ProcessEvent.kind 去 'heartbeat'(SSE协议层:ping 永非事件), 删 steps 遍历 case 'rejected'(永不落库/不入steps 死代码), rejected 事件实时走 onRejected 点名条链路 - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小沈 - 事件排序改为正序(最早在上): 去除 recentEvents.reverse(), processEvents 按时间正序输出 — 小沈-2026-09-17
+// 编辑历史: 2026-09-17 小欧 会审V3(#5)修复 复核三遍: failed 终态事件 kind: 'final' → 'error'(原用 final 对勾图标
+//   致失败任务事件列表显示成功绿勾, 成功/失败不可区分; 改 error 走 WarningOutlined 警告图标) — 小欧-2026-09-17
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -218,8 +220,9 @@ export const useTaskInfo = (
             });
           } else if (s.outcome === 'failed') {
             badge = 'failed';
+            // 2026-09-17 小欧 会审V3(#5): failed 终态事件用 error 图标(警告), 不再用 final 对勾(成功/失败区分) — 小欧-2026-09-17
             processEvents.push({
-              kind: 'final',
+              kind: 'error',
               text: s.content || '任务失败',
               time: s.timestamp,
             });
@@ -371,4 +374,3 @@ export const useTaskInfo = (
     };
   }, [steps, frames, detail, liveError]);
 };
-

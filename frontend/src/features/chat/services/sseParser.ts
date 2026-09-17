@@ -84,6 +84,8 @@
 //   重发正是本专项核心, 若未来引入物理重复帧(seq<=lastSeq)必须醒目可见(debug 级易被忽略且不落盘), 升 warn 保追踪 — 小欧-2026-09-13
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①新增 onRejected 回调接口; ②新增 case 'rejected' 分支, 调用 onRejected + 兼容调用 onDenied; ③onRejected 接收 {step,message,tool_name,reject_type,from_backend} - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - [46]第五章实施: ①handlers 新增 onHeartbeat/onBiz 回调; ②入口识别 `: ping` 上报心跳(原被前缀判断静默丢弃); ③业务帧在 seq 守卫后上报 onBiz 刷新业务静默基线(6.6#1 校核: 过期帧不得掩盖真实静默) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 会审V3更正: 上一版历史"②调用 onRejected + 兼容调用 onDenied"停用——onDenied 回调整链
+//   同日会审V3已删除(YAGNI, 唯一调用方 useChatStreaming 曾传 undefined, 零消费者), 现仅 onRejected 单链(见 :135-137) - 小欧-2026-09-17
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14

@@ -23,6 +23,10 @@
 #   不再误用主工具名清错桶——被拒工具计数跨轮永不归零的病根消除 — 小欧-2026-09-06
 # 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①行78 _EV_DENIED 改为 "rejected"(原 "user_rejected"); ②行160 _deny.pop 改为 "rejected"(原 "user_rejected") - 小欧-2026-09-17
 # 2026-09-17 小欧 会审V3整改(#12/#15): ①失败文案 err_type 英文→中文映射("工具 X 被反复拒绝/拦截/超时"); ②成功重置清桶补 pop(("timeout")) 旧键 - 小欧-2026-09-17
+# 2026-09-17 小欧 会审V3整改(#1/#2) 复核三遍修正: ①(#1)≥3次拒绝终态原因丢失——set_failed 同步写 agent._last_error
+#   (统一 rejected 后 blocked/timeout 不再走 type="error", step_emitter 不记录, 守卫读空→终态退化成通用文案);
+#   ②(#2)拒绝计数桶合并——计数键按 reject_type 细分(safety/sandbox/user/timeout 分桶, 防"拦截1+超时1+拒绝1"合并误判≥3),
+#   成功重置清桶遍历 _DENY_KEY_TYPES 全量 6 键防残留; _ERR_CN 扩 safety/sandbox/user 中文映射 — 小欧-2026-09-17
 
 """react_dispatch — 类型分派 + 状态推断
 
@@ -39,6 +43,10 @@ from app.services.agent.handlers import (
     handle_action, handle_answer,
 )
 from app.services.agent.react_inference import _RECOVERABLE_ERRORS
+
+# 2026-09-17 小欧 会审V3整改(#2): 全量拒绝类键清单——rejected/blocked/timeout 为旧 error 通道时代键(兼容保留),
+#   safety/sandbox/user 为统一 rejected 事件的 reject_type 取值; 成功清桶需遍历全清防残留 — 小欧-2026-09-17
+_DENY_KEY_TYPES = ("rejected", "blocked", "timeout", "safety", "sandbox", "user")
 
 async def _dispatch_handler(agent, llm_response):
     """按type分派handler，基于 event type 推断状态 — chendyg 2026-07-01 / 小欧 2026-07-13 去掉 recoverable
@@ -78,8 +86,12 @@ async def _dispatch_handler(agent, llm_response):
         handler = handle_answer(agent, llm_response)
 
     _EV_FINAL, _EV_RETRY, _EV_ERROR, _EV_DENIED = "final", "retrying", "error", "rejected"
-    # 2026-09-17 小欧 会审V3(#12): 失败文案 err_type 英文→中文映射(用户可见, 原样透出 "rejected"/"blocked"/"timeout" 生硬) — 小欧-2026-09-17
-    _ERR_CN: Dict[str, str] = {"rejected": "拒绝", "blocked": "拦截", "timeout": "超时"}
+    # 2026-09-17 小欧 会审V3(#12): 失败文案 err_type 英文→中文映射(用户可见, 原样透出 "rejected"/"blocked"/"timeout" 生硬);
+    #   #2整改: 分桶的拒绝类型扩展——rejected 的 reject_type(safety/sandbox/user/timeout) 直接入文案 — 小欧-2026-09-17
+    _ERR_CN: Dict[str, str] = {
+        "rejected": "拒绝", "blocked": "拦截", "timeout": "超时",
+        "safety": "安全拦截", "sandbox": "沙箱拦截", "user": "用户拒绝",
+    }
     seen_types = set()
     last_denial_event = None
     final_event = None
@@ -129,7 +141,10 @@ async def _dispatch_handler(agent, llm_response):
             # BUG-2修复(2026-09-06 小欧): tool_name 优先取事件级(被拒工具精确分键), 回退 llm_response(单工具/旧事件兼容) — 小欧-2026-09-06
             _tool = _kw.get("tool_name", "") or llm_response.get("tool_name", "")
             if _tool:
-                _key = (str(_tool), str(err_type))
+                # #2整改(2026-09-17 小欧): 分桶键按 reject_type 细分(rejected 事件带 safety/sandbox/user/timeout),
+                #   杜绝不同拒绝原因合并计一桶(safety拦截+timeout超时+user拒绝 原同落 "rejected" → 误判≥3 FAILED) — 小欧-2026-09-17
+                _rk = _kw.get("reject_type", "") or err_type
+                _key = (str(_tool), str(_rk))
                 _deny = getattr(agent, "_deny_counts", {}) or {}
                 _deny[_key] = _deny.get(_key, 0) + 1
                 agent._deny_counts = _deny
@@ -141,7 +156,11 @@ async def _dispatch_handler(agent, llm_response):
                     #   连续同签名死循环由场景F count>=5(第5次)硬终止兜底; 非连续死胡同(签名变化重置标记)
                     #   仍由本处累计≥3次拦截, 语义不退化。 — 小欧 2026-08-08
                     if not getattr(agent, "_warned_same_tool_loop", 0):
-                        set_failed(agent, f"工具 {_tool} 被反复{_ERR_CN.get(err_type, err_type)}(≥3次), LLM陷入死胡同, 停止循环")
+                        _fail_msg = f"工具 {_tool} 被反复{_ERR_CN.get(_rk, _rk)}(≥3次), LLM陷入死胡同, 停止循环"
+                        set_failed(agent, _fail_msg)
+                        # #1整改(2026-09-17 小欧): set_failed 同步写 _last_error, 供 agent_runner 守卫取回终态原因。
+                        #   原 blocked/timeout 走 type="error" 在 step_emitter:66 记录 _last_error; 统一 rejected 后不再触发, 原因丢失 — 小欧-2026-09-17
+                        agent._last_error = (str(_rk), _fail_msg)
         else:
             set_failed(agent, error_msg)
     else:
@@ -161,10 +180,10 @@ async def _dispatch_handler(agent, llm_response):
             if _tools:
                 _deny = getattr(agent, "_deny_counts", {}) or {}
                 for _t in _tools:
-                    _deny.pop((str(_t), "rejected"), None)
-                    _deny.pop((str(_t), "blocked"), None)
-                    # 2026-09-17 小欧 会审V3(#15): 补 timeout 键清理(旧 error(channel) 时代的键, 热更场景残留永不清) — 小欧-2026-09-17
-                    _deny.pop((str(_t), "timeout"), None)
+                    # #2整改(2026-09-17 小欧): 成功重置清桶遍历全量键类型(rejected/blocked/timeout 旧 error 时代键
+                    #   + safety/sandbox/user reject_type 键), 杜绝新旧键残留漂移 — 小欧-2026-09-17
+                    for _dt in _DENY_KEY_TYPES:
+                        _deny.pop((str(_t), _dt), None)
                 agent._deny_counts = _deny
 
     # 4C(5.8.1): return _dispatch_events 置于状态推断之后(终态声明在主循环 LLM 轮内先行, 时序与现状一致) — 小欧-2026-09-06
