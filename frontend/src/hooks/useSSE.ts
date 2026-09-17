@@ -87,7 +87,8 @@
 //   resetSettledAndHistory/statsExpanded复位/右栏折叠)逐点审查均为必要, 逻辑零改动 — 小欧-2026-09-13
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①新增 onRejected 回调参数; ②两处 processSSEData 调用传递 onRejected - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3整改: onDenied 参数/两处透传全链删除(YAGNI 零消费者), onRejected 类型去 from_backend(全链透传零消费) - 小欧-2026-09-17
-import { useState, useCallback, useRef, useEffect } from 'react';
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: ①新增 lastBizTsRef/heartbeatTs 信号源; ②流起始重置业务基线; ③两处 processSSEData 透传 onHeartbeat/onBiz; ④useMemo 打包 waitClock 并暴露 - 小欧-2026-09-17
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
@@ -104,6 +105,7 @@ import type {
   UseSSEReturn,
   SSEErrorType,
   TaskMetaFrames,
+  ClockSignals,
 } from '@/types/sse';
 import { emptyMetaFrames } from '@/types/sse';
 import type { ExecutionStep } from '@/types/execution';
@@ -558,6 +560,11 @@ export const useSSE = (
   const idleTimeoutRef = useRef<number | null>(null); // 空闲超时检测
   const firstChunkTimeoutRef = useRef<number | null>(null); // 请求头超时(180s), fetch 返回响应头即清除(:832); 首帧活性由 idle(60s)+心跳(25s)保障
   const IDLE_TIMEOUT = 60000; // 60 秒无数据判定为断开
+  // 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面信号源(与 IDLE_TIMEOUT 同域, 语义同源):
+  //   lastBizTsRef=业务事件(含chunk)到达时刻; heartbeatTs=`: ping`到达时刻(低频 state, 驱动盘外圈微闪);
+  //   数据静默基线复用上方既有 lastDataTimeRef(其更新含 `: ping`, 天然覆盖心跳) — 小欧-2026-09-17
+  const lastBizTsRef = useRef<number>(Date.now());
+  const [heartbeatTs, setHeartbeatTs] = useState(0);
   // 2026-09-03 小欧 P1-3: HITL等待态（paused/highlight）时IDLE应暂停，避免60s误杀110s HITL等待
   // 小欧 2026-09-10 S15: Set 计数 — 并发 HITL 场景防误判
   const hitlWaitingKeysRef = useRef(new Set<string>());
@@ -871,6 +878,7 @@ export const useSSE = (
 
       // 【小强修复 2026-03-18】初始化最后数据时间
       lastDataTimeRef.current = Date.now();
+      lastBizTsRef.current = Date.now(); // 2026-09-17 小欧 [46]: 新一轮流重置业务基线, 防上轮陈旧值致钟面误升档 — 小欧-2026-09-17
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
@@ -939,6 +947,11 @@ export const useSSE = (
               scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
               setMetaFrames,
               usageAccumRef,
+              // 2026-09-17 小欧 [46]第五章: 钟面信号上报(心跳微闪 / 业务静默基线) — 小欧-2026-09-17
+              onHeartbeat: () => setHeartbeatTs(Date.now()),
+              onBiz: () => {
+                lastBizTsRef.current = Date.now();
+              },
             });
           } else if (lastSeqRef.current >= 0) {
             // 小欧 2026-09-12 [30]§8.2问题1(作废守卫退役): [B2] final已收到 —— 流正常结束但buffer已空,
@@ -989,6 +1002,11 @@ export const useSSE = (
             scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
             setMetaFrames,
             usageAccumRef,
+            // 2026-09-17 小欧 [46]第五章: 钟面信号上报(心跳微闪 / 业务静默基线) — 小欧-2026-09-17
+            onHeartbeat: () => setHeartbeatTs(Date.now()),
+            onBiz: () => {
+              lastBizTsRef.current = Date.now();
+            },
           });
         }
       }
@@ -1223,6 +1241,12 @@ export const useSSE = (
     };
   }, [disconnect]);
 
+  // 2026-09-17 小欧 [46]第五章: 钟面信号打包(引用稳定; 仅 heartbeatTs 25s 低频变化才重建) — 小欧-2026-09-17
+  const waitClock = useMemo<ClockSignals>(
+    () => ({ lastBizTsRef, lastDataTsRef: lastDataTimeRef, heartbeatTs }),
+    [heartbeatTs]
+  );
+
   return {
     isConnected,
     isReceiving,
@@ -1238,6 +1262,7 @@ export const useSSE = (
     reconnectStatus,
     reconnect,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照
+    waitClock, // 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面信号 — 小欧-2026-09-17
   };
 };
 

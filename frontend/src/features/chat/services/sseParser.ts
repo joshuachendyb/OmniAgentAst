@@ -83,6 +83,7 @@
 // 编辑历史: 2026-09-13 小欧 - [30]重连链路追踪补点C(北京老陈指令): 入口 seq 守卫拦截 console.debug→console.warn——
 //   重发正是本专项核心, 若未来引入物理重复帧(seq<=lastSeq)必须醒目可见(debug 级易被忽略且不落盘), 升 warn 保追踪 — 小欧-2026-09-13
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①新增 onRejected 回调接口; ②新增 case 'rejected' 分支, 调用 onRejected + 兼容调用 onDenied; ③onRejected 接收 {step,message,tool_name,reject_type,from_backend} - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: ①handlers 新增 onHeartbeat/onBiz 回调; ②入口识别 `: ping` 上报心跳(原被前缀判断静默丢弃); ③业务帧在 seq 守卫后上报 onBiz 刷新业务静默基线(6.6#1 校核: 过期帧不得掩盖真实静默) - 小欧-2026-09-17
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -180,6 +181,9 @@ const processSSEData = (
       completion: number;
       total: number;
     }>;
+    // 2026-09-17 小欧 [46]第五章: 心跳/业务到达信号(钟面数据源) — 小欧-2026-09-17
+    onHeartbeat?: () => void; // 收到后端 `: ping` 保活注释行
+    onBiz?: () => void; // 收到任一业务 data 帧(含 chunk)
   }
 ) => {
   const {
@@ -204,6 +208,12 @@ const processSSEData = (
 
   // 2026-08-27 小欧 修复: SSE数据行可能带前导空格, 先trim再判断前缀
   const trimmedLine = line.trim();
+  // 2026-09-17 小欧 [46]第五章: 后端 `: ping`(stream_orchestrator.py:515, 周期 constants.HEARTBEAT_INTERVAL=25s)
+  //   原被下行前缀判断静默丢弃(前端无任何 UI 可感知通路); 现上报心跳信号供钟面盘外圈微闪(存活确认, 不参与计时) — 小欧-2026-09-17
+  if (trimmedLine === ': ping') {
+    handlers.onHeartbeat?.();
+    return;
+  }
   if (!trimmedLine || !trimmedLine.startsWith('data: ')) {
     return;
   }
@@ -234,6 +244,11 @@ const processSSEData = (
     if (typeof rawData.seq === 'number' && onSeq) {
       onSeq(rawData.seq);
     }
+
+    // 2026-09-17 小欧 [46]第五章: 业务帧到达(=后端仍在活跃产出) → 刷新业务时间基线;
+    //   长输出期间 chunk 不断, 保证不被误判"业务静默"而升档(与心跳/断连语义正交);
+    //   按 6.6#1 校核置于 seq 守卫之后, 仅通过守卫的真正新帧才刷新基线(过期帧不得掩盖真实静默) — 小欧-2026-09-17
+    handlers.onBiz?.();
 
     // 【小强修复 2026-03-18】统一处理timestamp转换
     // 后端有些字段返回字符串格式timestamp，前端需要转换为毫秒数
