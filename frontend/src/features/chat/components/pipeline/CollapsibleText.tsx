@@ -10,6 +10,8 @@
 //   (aria-expanded+Enter/Space 键盘), 支持展开/收起双向切换; 字号/间距令牌化(FontSize.SECONDARY/Spacing.SM/XS) — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小沈 - 折叠按钮从左侧独占一行改为右侧对齐: 外层包 flex justifyContent:flex-end,
 //   去掉 display:block/marginLeft, 按钮置于文本末行右侧, 视觉更协调 — 小沈-2026-09-17
+// 编辑历史: 2026-09-17 小沈 - 折叠按钮改为内联跟在文本末尾不另起新行: 去掉外层 flex div,
+//   span display:inline + whiteSpace:nowrap 直接跟在 shown 文本流末尾(最后一行右侧尾巴) — 小沈-2026-09-17
 /**
  * CollapsibleText - 统一折叠组件（折叠非截断）
  *
@@ -70,45 +72,39 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
     <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
       {shown}
       {overflow && (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            marginTop: Spacing.XS,
+        <span
+          role="button"
+          tabIndex={0}
+          aria-expanded={expanded}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggle();
           }}
-        >
-          <span
-            role="button"
-            tabIndex={0}
-            aria-expanded={expanded}
-            onClick={(e) => {
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
               e.stopPropagation();
               toggle();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                e.stopPropagation();
-                toggle();
-              } else {
-                e.stopPropagation();
-              }
-            }}
-            style={{
-              fontSize: FontSize.SECONDARY,
-              color: Colors.PRIMARY,
-              cursor: 'pointer',
-            }}
-          >
-            <CircleArrow
-              size={14}
-              color={Colors.PRIMARY}
-              expanded={expanded}
-              animated={false}
-            />
-            {expanded ? ' 收起' : ' 展开'}
-          </span>
-        </div>
+            } else {
+              e.stopPropagation();
+            }
+          }}
+          style={{
+            fontSize: FontSize.SECONDARY,
+            marginLeft: Spacing.XS,
+            color: Colors.PRIMARY,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <CircleArrow
+            size={14}
+            color={Colors.PRIMARY}
+            expanded={expanded}
+            animated={false}
+          />
+          {expanded ? ' 收起' : ' 展开'}
+        </span>
       )}
     </div>
   );
