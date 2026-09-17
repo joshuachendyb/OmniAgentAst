@@ -29,6 +29,7 @@
 //   连接级 isReceiving 只保留 ChatInput(L278)消费 — 小欧-2026-09-14
 // 编辑历史: 2026-09-15 小欧 - [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
 //   UseChatPanelsOptions 新增 updateTaskResponse prop, 解构并透传 RightViewer; 删除 onSettledRefresh(不再传) — 小欧-2026-09-15
+// 编辑历史: 2026-09-17 小沈 - TopbarStats 包 span 加 marginLeft:12, 标题与任务数间距加大到约20px(5字符留白) — 小沈-2026-09-17
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -177,13 +178,15 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
               onEditingStart={handleEditingStart}
               onEditingCancel={handleEditingCancel}
             />
-            <TopbarStats
-              taskCount={total}
-              sessionTokens={sessionTokens}
-              chainTokens={chainTokens}
-              createdAt={sessionTimes.createdAt}
-              updatedAt={sessionTimes.updatedAt}
-            />
+            <span style={{ marginLeft: 12 }}>
+              <TopbarStats
+                taskCount={total}
+                sessionTokens={sessionTokens}
+                chainTokens={chainTokens}
+                createdAt={sessionTimes.createdAt}
+                updatedAt={sessionTimes.updatedAt}
+              />
+            </span>
             {effective && (
               <span
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
